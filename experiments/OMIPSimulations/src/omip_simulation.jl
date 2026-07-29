@@ -177,42 +177,59 @@ end
 # field is always its own zero-mean field, the applied restoring integrates to zero over the wet
 # ocean exactly, independently of when `update_restoring_flux!` refreshes it from the model state.
 
-struct ConservativeSurfaceFluxRestoring{R, F, M} <: Function
-    flux           :: R   # wrapped raw surface-flux restoring (getbc-compatible)
-    corrected_flux :: F   # 2D field storing raw - ⟨raw⟩; read by the boundary condition
-    mean_flux      :: M   # Field(Average(corrected_flux, dims=(1,2))) — host-side scratch
+struct ConservativeSurfaceFluxRestoring{R, F, W, M, N} <: Function
+    flux            :: R   # wrapped raw surface-flux restoring (getbc-compatible)
+    corrected_flux  :: F   # 2D field storing the applied flux; read by the boundary condition
+    open_water      :: W   # 2D weight the restoring acts through: 1 everywhere, or 1 - ℵ under ice
+    mean_flux       :: M   # host-side scratch reductions
+    mean_open_water :: N
 end
 
 function ConservativeSurfaceFluxRestoring(flux, grid)
     corrected_flux = Field{Center, Center, Nothing}(grid)
-    mean_flux = Field(Average(corrected_flux, dims=(1, 2)))
-    return ConservativeSurfaceFluxRestoring(flux, corrected_flux, mean_flux)
+    open_water = Field{Center, Center, Nothing}(grid)
+    return ConservativeSurfaceFluxRestoring(flux, corrected_flux, open_water,
+                                            Field(Average(corrected_flux, dims=(1, 2))),
+                                            Field(Average(open_water, dims=(1, 2))))
 end
 
-# The boundary condition reads only the pre-corrected field; `mean_flux` (a reduction over
-# `corrected_flux`) is host-side scratch and is dropped on the device.
+# The boundary condition reads only the pre-corrected field; the weight and the reductions over it are
+# host-side scratch and are dropped on the device.
 Adapt.adapt_structure(to, sf::ConservativeSurfaceFluxRestoring) =
     ConservativeSurfaceFluxRestoring(Adapt.adapt(to, sf.flux),
                                      Adapt.adapt(to, sf.corrected_flux),
-                                     nothing)
+                                     Adapt.adapt(to, sf.open_water),
+                                     nothing, nothing)
 
 @inline Oceananigans.BoundaryConditions.getbc(sf::ConservativeSurfaceFluxRestoring, i, j, grid, clock, fields) =
     @inbounds sf.corrected_flux[i, j, 1]
 
-@kernel function _materialize_surface_flux!(buffer, flux, grid, clock, fields)
+@inline open_water_fraction(::Nothing, i, j, grid) = one(grid)
+@inline open_water_fraction(ℵ, i, j, grid) = @inbounds one(grid) - ℵ[i, j, 1]
+
+@kernel function _materialize_surface_flux!(buffer, weight, flux, grid, clock, fields, ice_concentration)
     i, j = @index(Global, NTuple)
-    @inbounds buffer[i, j, 1] = getbc(flux, i, j, grid, clock, fields)
+    w = open_water_fraction(ice_concentration, i, j, grid)
+    @inbounds weight[i, j, 1] = w
+    @inbounds buffer[i, j, 1] = w * getbc(flux, i, j, grid, clock, fields)
 end
 
-# Refresh the stored zero-mean restoring flux from the current model state: materialize the wrapped
-# raw flux, compute its wet-area mean (immersed cells excluded), and subtract it in place.
-function update_restoring_flux!(sf::ConservativeSurfaceFluxRestoring, model)
+# Refresh the stored restoring flux from the current model state: materialize the wrapped raw flux,
+# weight it by the open-water fraction, and remove a multiple of that same weight so the applied flux
+# both integrates to zero over the wet ocean and vanishes wherever the weight does. Passing
+# `ice_concentration = nothing` leaves the weight at one and recovers `raw - ⟨raw⟩` exactly.
+function update_restoring_flux!(sf::ConservativeSurfaceFluxRestoring, model, ice_concentration = nothing)
     grid   = model.grid
     arch   = architecture(grid)
     fields = merge(model.velocities, model.tracers)
-    launch!(arch, grid, :xy, _materialize_surface_flux!, sf.corrected_flux, sf.flux, grid, model.clock, fields)
+
+    launch!(arch, grid, :xy, _materialize_surface_flux!, sf.corrected_flux, sf.open_water,
+            sf.flux, grid, model.clock, fields, ice_concentration)
+
     compute!(sf.mean_flux)
-    interior(sf.corrected_flux) .-= interior(sf.mean_flux)
+    compute!(sf.mean_open_water)
+    interior(sf.corrected_flux) .-= interior(sf.mean_flux) ./ interior(sf.mean_open_water) .* interior(sf.open_water)
+
     return nothing
 end
 
@@ -225,10 +242,18 @@ conservative_restoring(sf::ConservativeSurfaceFluxRestoring) = sf
 conservative_restoring(other)                                = nothing
 
 struct RefreshSalinityRestoring{R}
-    restoring :: R
+    restoring          :: R
+    mask_under_sea_ice :: Bool
 end
 
-(r::RefreshSalinityRestoring)(sim) = update_restoring_flux!(r.restoring, sim.model.ocean.model)
+@inline restoring_ice_concentration(::Nothing) = nothing
+@inline restoring_ice_concentration(sea_ice) = sea_ice.model.ice_concentration
+
+function (r::RefreshSalinityRestoring)(sim)
+    ℵ = r.mask_under_sea_ice ? restoring_ice_concentration(sim.model.sea_ice) : nothing
+    update_restoring_flux!(r.restoring, sim.model.ocean.model, ℵ)
+    return nothing
+end
 
 #####
 ##### Global freshwater-flux normalization
@@ -456,7 +481,13 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `forcing_dir`: directory for JRA55 forcing data. Default: `"forcing_data"`.
 - `restoring_dir`: directory for restoring/IC climatology. Default: `"climatology"`.
 - `piston_velocity`: surface salinity restoring piston velocity in m/day. Default: `1/6`.
-  Restoring is applied uniformly over the ocean surface, including under sea ice.
+  Restoring is applied uniformly over the ocean surface, including under sea ice unless
+  `restoring_under_sea_ice = false`.
+- `restoring_under_sea_ice`: whether the surface-salinity restoring acts under sea ice. Default:
+  `true`, the OMIP-2 convention. Set `false` to weight it by the open-water fraction `1 - ℵ`, since
+  WOA is poorly constrained beneath ice and the restoring there works against the ice--ocean salt
+  flux. The zero-global-mean correction is then spread over the open-water weight alone, so the
+  applied flux still injects no net salt while vanishing under ice. Requires `normalize_salinity`.
 - `normalize_freshwater`: removal of the drift in total ocean + sea-ice + snow water, held to its
   initial value by lowering or raising the free surface. Tracer concentrations are rescaled by the
   same factor within each column, so heat and salt content are unchanged and the stratification is
@@ -471,6 +502,18 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
       secular imbalance.
     * `:annual`: remove `Δt / 365.25days` of the excess each step, which removes the drift while
       leaving the seasonal cycle in place.
+- `river_spread_radius`: radius in degrees over which each river mouth's discharge is divided equally
+  among the wet cells around its landing cell. A geographic footprint keeps the freshwater flux per
+  unit area put as the grid refines; a fixed cell count concentrates it by the square of the
+  resolution ratio and drives coastal salinity to zero. Per-config default: `1.2` for the refined
+  grids, `nothing` for `:orca`/`:test`, which pins them to the historical cell-count footprint so
+  their existing integrations stay reproducible.
+- `river_spread_cells`: number of cells in that footprint, nearest first — a cap when
+  `river_spread_radius` is set, and the footprint itself when it is `nothing`. Per-config default:
+  `nothing` (uncapped) for the refined grids, `8` for `:orca`/`:test`.
+- `river_mixing`, `river_mixing_κ`, `river_mixing_depth`: extra vertical tracer diffusivity applied over
+  the whole spread footprint (cf. NEMO `rn_avt_rnf` over `rn_hrnf`). Defaults: `true`, `0.1` m² s⁻¹,
+  `10` m.
 - `start_date`, `end_date`: bracket for forcing/restoring metadata. Defaults: 1958-01-01 .. 2018-01-01.
 - `Δt`: simulation time step. Per-config default: `5minutes` for `:twelfthdegree`, `20minutes` for
   `:quarterdegree`, `30minutes` otherwise.
@@ -537,10 +580,13 @@ function omip_simulation(config::Symbol = :halfdegree;
                          with_snow = false,
                          with_ice_dynamics = true,
                          normalize_salinity = true,
+                         restoring_under_sea_ice = true,
                          normalize_freshwater = false,
                          river_mixing = true,
                          river_mixing_κ = 0.1,
                          river_mixing_depth = 10,
+                         river_spread_radius = ConfigDefault(),
+                         river_spread_cells = ConfigDefault(),
                          diagnostics = true,
                          field_mean_interval = 5days,
                          surface_averaging_interval = 5days,
@@ -549,6 +595,11 @@ function omip_simulation(config::Symbol = :halfdegree;
                          output_dir = ".",
                          filename_prefix = string(config),
                          file_splitting_interval = 360days)
+
+    # The ice mask is applied where the conservative restoring materializes its flux, so there is
+    # nowhere to hang it without that machinery.
+    restoring_under_sea_ice || normalize_salinity ||
+        throw(ArgumentError("restoring_under_sea_ice = false requires normalize_salinity = true"))
 
     cfg = Val(config)
 
@@ -559,6 +610,8 @@ function omip_simulation(config::Symbol = :halfdegree;
     κ_skew               = resolve_config_default(κ_skew,               config_κ_skew(cfg))
     κ_symmetric          = resolve_config_default(κ_symmetric,          config_κ_symmetric(cfg))
     biharmonic_timescale = resolve_config_default(biharmonic_timescale, config_biharmonic_timescale(cfg))
+    river_spread_radius  = resolve_config_default(river_spread_radius,  config_river_spread_radius(cfg))
+    river_spread_cells   = resolve_config_default(river_spread_cells,   config_river_spread_cells(cfg))
     Δt                   = resolve_config_default(Δt,                   config_Δt(cfg))
 
     grid = build_grid(cfg, arch, Nz, depth; Δz_top)
@@ -580,7 +633,9 @@ function omip_simulation(config::Symbol = :halfdegree;
     maximum_search_radius = max(5, ceil(Int, 3 / ((360 / Nx + 180 / Ny) / 2)))
     land = JRA55PrescribedLand(grid; dir = atmosphere_dir, dataset = MultiYearJRA55(),
                                start_date, end_date, time_indices_in_memory = backend_size, prefetch = true,
-                               maximum_search_radius)
+                               maximum_search_radius,
+                               spread_radius = river_spread_radius,
+                               n_spread_cells = river_spread_cells)
 
     river_κ = river_mixing ?
         river_mouth_vertical_diffusivity(grid, land.river_routing; κ = river_mixing_κ, mixing_depth = river_mixing_depth) :
@@ -641,8 +696,9 @@ function omip_simulation(config::Symbol = :halfdegree;
     # already sees a valid corrected flux.
     salt_restoring = conservative_restoring(ocean.model.tracers.S.boundary_conditions.top.condition)
     if !isnothing(salt_restoring)
-        update_restoring_flux!(salt_restoring, ocean.model)
-        add_callback!(simulation, RefreshSalinityRestoring(salt_restoring), IterationInterval(1))
+        refresh_restoring = RefreshSalinityRestoring(salt_restoring, !restoring_under_sea_ice)
+        refresh_restoring(simulation)
+        add_callback!(simulation, refresh_restoring, IterationInterval(1))
     end
 
     # NEMO recomputes its Treguier coefficient every step from the current stratification. Primed here
@@ -1046,6 +1102,18 @@ config_κ_symmetric(::Val{:halfdegree})    = 250
 config_κ_symmetric(::Val{:quarterdegree}) = nothing
 config_κ_symmetric(::Val{:twelfthdegree}) = nothing
 config_κ_symmetric(::Val{:test})          = nothing
+
+# River-mouth footprint. `:orca` and its `:test` preset keep the historical eight-cell footprint so
+# their long integrations stay reproducible; the refined grids use a geographic radius, because a fixed
+# cell count shrinks the footprint as the square of the resolution ratio and concentrates the
+# freshwater flux until coastal salinity hits zero.
+config_river_spread_radius(::Val)                 = 1.2
+config_river_spread_radius(::Val{:orca})          = nothing
+config_river_spread_radius(::Val{:test})          = nothing
+
+config_river_spread_cells(::Val)                 = nothing
+config_river_spread_cells(::Val{:orca})          = 8
+config_river_spread_cells(::Val{:test})          = 8
 
 config_biharmonic_timescale(::Val)                 = 50days
 config_biharmonic_timescale(::Val{:quarterdegree}) = nothing

@@ -90,6 +90,25 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
                              field. Equivalent continuously, not discretely, so
                              the two give different answers run-to-run.
                 Adds "_gmadv" to the run name when set to advective.
+  RESTORING_UNDER_ICE Set to "false" to stop the surface-salinity restoring acting under
+                sea ice (weighted by the open-water fraction 1-ℵ, with the zero-mean
+                correction spread over open water only, so no net salt is injected).
+                WOA is poorly constrained beneath ice and the restoring there fights the
+                ice-ocean salt flux. Requires NORMALIZE_SALINITY=true. Adds "_noicerest"
+                to the run name. Default: true (OMIP-2 convention).
+  RIVER_SPREAD  Radius in degrees over which each river/iceberg mouth's discharge is
+                divided equally among the surrounding wet cells. A geographic radius
+                keeps the freshwater flux per unit area resolution-independent; raise it
+                if a refined grid drives coastal salinity to zero. Set to "none" for the
+                historical cell-count footprint instead. Per-config default: 1.2 for the
+                refined grids, "none" for orca/test (pinned to their old behaviour).
+  RIVER_SPREAD_CELLS  Cells in that footprint, nearest first: a cap when RIVER_SPREAD is
+                a radius, the footprint itself when it is "none". Per-config default:
+                unset (uncapped) for the refined grids, 8 for orca/test.
+  RIVER_MIXING  Set to "false" to disable the extra vertical diffusivity applied over
+                the spread footprint. Default: true.
+  RIVER_MIXING_K      That diffusivity in m^2/s (default: 0.1).
+  RIVER_MIXING_DEPTH  Depth in m over which it is applied (default: 10).
   CATKE_CWUSTAR `Cᵂu★` of CATKEEquation: surface shear-driven TKE flux
                 coefficient. Higher → more wind-injected TKE → deeper
                 equatorial ML. Default (Oceananigans): 3.179.
@@ -242,6 +261,7 @@ RUN_NAME="$CONFIG"
 [[ "${CLOSURE:-catke}" == "nemo_tke" ]]        && RUN_NAME="${RUN_NAME}_nemotke"
 [[ "${WIND_VELOCITY:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_wind"
 [[ "${NORMALIZE_SALINITY:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_rawsalt"
+[[ "${RESTORING_UNDER_ICE:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_noicerest"
 case "${NORMALIZE_FRESHWATER:-none}" in
   true|timestep) RUN_NAME="${RUN_NAME}_fwnorm" ;;
   annual)        RUN_NAME="${RUN_NAME}_fwnormann" ;;
@@ -383,6 +403,14 @@ case "$NORMALIZE_SALINITY" in
 esac
 NORMALIZE_SALINITY_KWARG="normalize_salinity = ${NORMALIZE_SALINITY},"
 
+RESTORING_UNDER_ICE="${RESTORING_UNDER_ICE:-true}"
+case "$RESTORING_UNDER_ICE" in
+    true|false) ;;
+    *) echo "RESTORING_UNDER_ICE must be 'true' or 'false', got '$RESTORING_UNDER_ICE'" >&2; exit 1 ;;
+esac
+RESTORING_UNDER_ICE_KWARG=""
+[[ "$RESTORING_UNDER_ICE" == "false" ]] && RESTORING_UNDER_ICE_KWARG="restoring_under_sea_ice = false,"
+
 NORMALIZE_FRESHWATER="${NORMALIZE_FRESHWATER:-none}"
 case "$NORMALIZE_FRESHWATER" in
     none|false)    NORMALIZE_FRESHWATER_JULIA=":none" ;;
@@ -391,6 +419,17 @@ case "$NORMALIZE_FRESHWATER" in
     *) echo "NORMALIZE_FRESHWATER must be none|timestep|annual, got '$NORMALIZE_FRESHWATER'" >&2; exit 1 ;;
 esac
 NORMALIZE_FRESHWATER_KWARG="normalize_freshwater = ${NORMALIZE_FRESHWATER_JULIA},"
+
+RIVER_KWARG=""
+if [[ -n "${RIVER_SPREAD:-}" ]]; then
+    RIVER_SPREAD_JULIA="$RIVER_SPREAD"
+    [[ "$RIVER_SPREAD" == "none" ]] && RIVER_SPREAD_JULIA="nothing"
+    RIVER_KWARG="${RIVER_KWARG}river_spread_radius = ${RIVER_SPREAD_JULIA},"
+fi
+[[ -n "${RIVER_SPREAD_CELLS:-}" ]]  && RIVER_KWARG="${RIVER_KWARG}river_spread_cells = ${RIVER_SPREAD_CELLS},"
+[[ -n "${RIVER_MIXING_K:-}" ]]      && RIVER_KWARG="${RIVER_KWARG}river_mixing_κ = ${RIVER_MIXING_K},"
+[[ -n "${RIVER_MIXING_DEPTH:-}" ]]  && RIVER_KWARG="${RIVER_KWARG}river_mixing_depth = ${RIVER_MIXING_DEPTH},"
+[[ "${RIVER_MIXING:-true}" == "false" ]] && RIVER_KWARG="${RIVER_KWARG}river_mixing = false,"
 
 SKEW_FORMULATION="${SKEW_FORMULATION:-diffusive}"
 case "$SKEW_FORMULATION" in
@@ -458,7 +497,9 @@ sim = omip_simulation(:${CONFIG};
                       ${PVELKWARG}
                       ${CATKE_CWUSTAR_KWARG}
                       ${NORMALIZE_SALINITY_KWARG}
+                      ${RESTORING_UNDER_ICE_KWARG}
                       ${NORMALIZE_FRESHWATER_KWARG}
+                      ${RIVER_KWARG}
                       ${SKEW_FORMULATION_KWARG}
                       Δt = ${DT},
                       forcing_dir = \"${FORCING_DIR}\",

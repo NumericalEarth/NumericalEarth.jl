@@ -125,11 +125,15 @@ end
 
 """
     build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
-                        maximum_search_radius = 5)
+                        maximum_search_radius = 5, spread_radius = 1.2, n_spread_cells = nothing)
 
-Map each river mouth at `(outlet_λ, outlet_φ)` to the nearest active ocean cell of `target_grid` within `maximum_search_radius`
+Map each river mouth at `(outlet_λ, outlet_φ)` onto the active ocean cells of `target_grid` within `maximum_search_radius`
 cells, returning a [`RiverRouting`](@ref). River mouths with no active ocean cell in range are dropped (and reported), so the
 global freshwater budget is conserved up to the dropped discharge.
+
+Discharge is divided equally over every wet cell within `spread_radius` degrees of the mouth's landing cell, capped at
+`n_spread_cells` (nearest first) when that is not `nothing`. The footprint is set by a geographic radius rather than a cell
+count so the freshwater flux per unit area does not grow as the grid refines.
 
 `outlet_weight[n]` is the per-mouth factor that converts the outlet's stored value into a mass discharge (kg s⁻¹):
 the deposited flux is `outlet_weight[n] * value[outlet_n] / Aᵒᶜᵉᵃⁿ`. For a volumetric discharge (m³ s⁻¹) it is the
@@ -137,7 +141,8 @@ freshwater density; for a per-area mass flux (kg m⁻² s⁻¹) it is the source
 """
 function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
                              maximum_search_radius = 5,
-                             n_spread_cells = 8)
+                             spread_radius = 1.2,
+                             n_spread_cells = nothing)
 
     arch = architecture(target_grid)
     FT = eltype(target_grid)
@@ -158,13 +163,13 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     wet_i, wet_j, wet_λ, wet_φ = wet_cells(wet, λc, φc)
     max_degrees = maximum_search_radius * (360 / Nx + 180 / Ny) / 2
 
-    # Split each mouth's discharge equally among its `n_spread_cells` nearest ocean cells so
-    # no single coarse coastal cell receives a runaway freshwater flux (which crashes salinity).
+    # Split each mouth's discharge equally over its plume footprint so no single coastal cell receives
+    # a runaway freshwater flux (which drives salinity to zero and crashes the run).
     contributions = Dict{Tuple{Int, Int}, Vector{Tuple{Int, Int, FT}}}()
     dropped = 0
     for n in eachindex(outlet_i)
-        targets = nearest_active_cells(wet_i, wet_j, wet_λ, wet_φ, outlet_λ[n], outlet_φ[n],
-                                       max_degrees, n_spread_cells)
+        targets = spread_target_cells(wet_i, wet_j, wet_λ, wet_φ, outlet_λ[n], outlet_φ[n],
+                                      max_degrees, spread_radius, n_spread_cells)
         if isempty(targets)
             dropped += 1
             continue
@@ -239,16 +244,42 @@ function wet_cells(wet, λc, φc)
     return wet_i, wet_j, wet_λ, wet_φ
 end
 
-function nearest_active_cells(wet_i, wet_j, wet_λ, wet_φ, λₒ, φₒ, max_degrees, K)
-    cap = max_degrees^2
-    candidates = Tuple{Float64, Int}[]
+"""
+    spread_target_cells(wet_i, wet_j, wet_λ, wet_φ, λₒ, φₒ, max_degrees, spread_radius, maximum_cells)
+
+Return the ocean cells a mouth at `(λₒ, φₒ)` discharges into: every wet cell within `spread_radius`
+degrees of the mouth's landing cell, nearest first, capped at `maximum_cells` unless that is `nothing`.
+Empty when no wet cell lies within `max_degrees` of the mouth.
+
+`spread_radius = nothing` instead takes the `maximum_cells` cells nearest the outlet itself, a footprint
+fixed in cell count rather than in area.
+"""
+function spread_target_cells(wet_i, wet_j, wet_λ, wet_φ, λₒ, φₒ, max_degrees, spread_radius, maximum_cells)
+    reach = max_degrees^2
+    nearest = 0
+    nearest_distance = Inf
+    reachable = Tuple{Float64, Int}[]
     for n in eachindex(wet_i)
         d = squared_distance(λₒ, φₒ, wet_λ[n], wet_φ[n])
-        d < cap && push!(candidates, (d, n))
+        d < nearest_distance && (nearest_distance = d; nearest = n)
+        d < reach && push!(reachable, (d, n))
     end
-    sort!(candidates; by = first)
-    nfound = min(K, length(candidates))
-    return [(wet_i[candidates[m][2]], wet_j[candidates[m][2]]) for m in 1:nfound]
+    nearest_distance < reach || return Tuple{Int, Int}[]
+
+    targets = if isnothing(spread_radius)
+        sort!(reachable; by = first)   # cell-count footprint, ranked from the outlet
+    else
+        # Spread around the landing cell rather than the outlet, so mouths relocated onto the shelf
+        # (the Ob and Yenisei move 2-3°) still get a full footprint instead of collapsing onto one cell.
+        λ★, φ★ = wet_λ[nearest], wet_φ[nearest]
+        footprint = spread_radius^2
+        centred = [(squared_distance(λ★, φ★, wet_λ[n], wet_φ[n]), n) for (_, n) in reachable]
+        filter!(t -> first(t) <= footprint, centred)
+        sort!(centred; by = first)
+    end
+
+    nkeep = isnothing(maximum_cells) ? length(targets) : min(maximum_cells, length(targets))
+    return [(wet_i[targets[m][2]], wet_j[targets[m][2]]) for m in 1:nkeep]
 end
 
 #####

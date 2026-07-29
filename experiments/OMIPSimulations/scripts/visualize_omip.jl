@@ -104,6 +104,7 @@ const FIG_REGISTRY = [
     (n = 26, file = "fig26_amoc_rapid.jl",                fn = :fig26),
     (n = 27, file = "fig27_ssh_drift.jl",                 fn = :fig27),
     (n = 28, file = "fig28_content_conservation.jl",      fn = :fig28),
+    (n = 29, file = "fig29_barotropic_streamfunction.jl", fn = :fig29),
 ]
 
 # ══════════════════════════════════════════════════════════════
