@@ -89,6 +89,23 @@ end
     return εᵈᵛ⁻¹ * pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) * pᵛ⁺)
 end
 
+# Saturation phase of a humidity formulation, used only for the initial surface-
+# humidity guess in the flux kernel. Most formulations store it directly;
+# composite formulations forward to their soil branch.
+@inline interface_phase(q_formulation) = q_formulation.phase
+
+# Atmospheric vapor flux `Jᵃ = -ρᵃᵗ u★ q★` (positive upward) from the previous
+# similarity iterate, and the humidity increment `Δq = qˢ⁻ - qᵃᵗ`. The series-
+# resistance humidity formulations (`SkinHumidity`, `DryLayerHumidity`,
+# `CanopyConductanceHumidity`, `CompositeSurfaceHumidity`) all close their flux
+# balance against these two quantities.
+@inline function atmospheric_vapor_flux(Ψₛ, Ψₐ, ℂᵃᵗ)
+    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
+    Jᵃ  = - ρᵃᵗ * Ψₛ.fluxes.u★ * Ψₛ.fluxes.q★
+    Δq  = Ψₛ.specific_humidity - Ψₐ.q
+    return Jᵃ, Δq
+end
+
 # `BulkHumidity` — surface specific humidity for a bulk land surface with no
 # skin-resistance parameterization. The surface is saturated at the bulk
 # (skin) temperature wherever there is water, and dry otherwise:
@@ -456,6 +473,57 @@ assemble_interior_fields(state, temperature_formulation::IDST) = state
     return Ψᵢ.T + clamp(T★ - Ψᵢ.T, -max_ΔT, max_ΔT)
 end
 
+"""
+    SoilConductiveFlux(conductivity, thickness)
+
+Internal conductive flux for a **land** skin temperature: the radiating skin
+exchanges heat with the bulk slab across a thin surface layer of thermal
+conductivity `κᵀ` (`conductivity`, W m⁻¹ K⁻¹) and thickness `ℓᵀ` (`thickness`, m),
+giving the skin↔bulk conductance `Λⁱⁿ = κᵀ/ℓᵀ` (W m⁻² K⁻¹). Pair with
+`SkinTemperature(SoilConductiveFlux(...))` on the atmosphere–land interface so the
+radiometric surface temperature `Tⁱⁿ` (what a satellite LST sees, and what sets the
+diurnal amplitude of the outgoing longwave and the sensible/latent partition) can
+differ from the bulk slab `Tˡᵃ`.
+
+Unlike the ocean [`DiffusiveFlux`](@ref), whose `κ` is a thermal *diffusivity*
+converted to a conductance through the interior density/heat capacity, this holds
+the physical conductance directly: the diagnostic balance
+`Rₙ(Tⁱⁿ) = H(Tⁱⁿ) + LE(Tⁱⁿ) + Λⁱⁿ(Tⁱⁿ − Tˡᵃ)` is a temperature *root*, so it is
+invariant to the overall energy-to-tendency scale and needs no soil `ρ`/`c`.
+
+Reasonable defaults are `conductivity = 1.5`, `thickness = 0.05` ⇒ `Λⁱⁿ = 30`.
+The skin is a thin radiometric film on top of the bulk diurnal layer; its
+conductance and the force-restore heat capacity / deep restoring represent distinct
+layers and coexist (no re-tuning of the bulk closure). Moisture-dependent
+conductivity `κᵀ(𝒮)` (wet soil conducts better) is a natural learnable extension.
+"""
+struct SoilConductiveFlux{K, Z}
+    conductivity :: K   # κᵀ, W m⁻¹ K⁻¹
+    thickness    :: Z   # ℓᵀ, m
+end
+
+@inline skin_conductance(F::SoilConductiveFlux) = F.conductivity / F.thickness
+
+# Land skin balance, the ρc-free equivalent of the `DiffusiveFlux` method above:
+# Rₙ − H − LE − Λⁱⁿ(Tⁱⁿ − Tᵈ) = 0 with the deep endpoint Tᵈ = Ψᵢ.T (bulk slab),
+# the sensible heat linearized through Ωᵀ = 𝒬ᵀ/ΔT and the balance multiplied by
+# ΔT = Tᵃᵗ − Tⁱⁿ⁻ to stay finite as ΔT → 0. Λⁱⁿ → ∞ recovers `BulkTemperature`
+# (Tⁱⁿ → Tˡᵃ); Λⁱⁿ → 0 fully decouples the skin.
+@inline function flux_balance_temperature(st::SkinTemperature{<:SoilConductiveFlux}, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+    FT = typeof(Ψₛ.temperature)
+    Λ  = convert(FT, skin_conductance(st.internal_flux))
+    Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd   # net non-sensible flux, positive up
+
+    Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
+    ΔT  = Tᵃᵗ - Ψₛ.temperature
+
+    D  = Λ * ΔT - 𝒬ᵀ
+    T★ = (Ψᵢ.T * Λ * ΔT - Qa * ΔT - 𝒬ᵀ * Tᵃᵗ) / D
+    T★ = ifelse(D == 0, Ψₛ.temperature, T★)
+    max_ΔT = convert(FT, st.max_ΔT)
+    return Ψᵢ.T + clamp(T★ - Ψᵢ.T, -max_ΔT, max_ΔT)
+end
+
 # Solve the surface flux balance equation:
 #   Qa(Tₛ) + Ωc (Tᵃᵗ - Tₛ) + (Tₛ - Tᵦ) / R = 0
 # where R is the total thermal resistance (h/k for bare ice, hₛ/kₛ + hᵢ/kᵢ with snow),
@@ -523,34 +591,24 @@ end
     return conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
 end
 
-@inline function compute_interface_temperature(st::SkinTemperature,
-                                               interface_state,
-                                               atmosphere_state,
-                                               interior_state,
-                                               radiation_state,
-                                               interface_properties,
-                                               atmosphere_properties,
-                                               interior_properties)
-
+# Turbulent (sensible + latent, positive up) and radiative (upwelling longwave
+# `ℐꜛˡʷ`, and the net-downward non-turbulent term `Qd`) fluxes at the previous
+# iterate. Shared by the `SkinTemperature` and `EnergyBalanceTemperature`
+# diagnostic temperature solves. `radiation_state` carries zero-valued σ/α/ϵ/SW/LW
+# when radiation is off.
+@inline function skin_surface_fluxes(interface_state, atmosphere_state, radiation_state, atmosphere_properties)
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
     Tᵃᵗ = atmosphere_state.T
     pᵃᵗ = atmosphere_state.p
     qᵃᵗ = atmosphere_state.q
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
     cᵃᵗ = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, qᵃᵗ) # moist heat capacity
+    ℒⁱ  = interface_latent_heat(ℂᵃᵗ, Tᵃᵗ, interface_state)
 
-    # TODO: this depends on the phase of the interface
-    #ℰv = 0 #AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, Tᵃᵗ)
-    ℒⁱ = AtmosphericThermodynamics.latent_heat_sublim(ℂᵃᵗ, Tᵃᵗ)
-
-    # upwelling radiation is calculated explicitly. radiation_state is
-    # produced by `air_sea_interface_radiation_state` (or its sea-ice
-    # variant) and contains zero-valued σ/α/ϵ/SW/LW when radiation is off.
-    Tₛ⁻ = interface_state.temperature # approximate interface temperature from previous iteration
+    Tₛ⁻ = interface_state.temperature
     σ = radiation_state.σ
     ϵ = radiation_state.ϵ
     α = radiation_state.α
-
     ℐꜜˢʷ = radiation_state.ℐꜜˢʷ
     ℐꜜˡʷ = radiation_state.ℐꜜˡʷ
     ℐꜛˡʷ = σ * ϵ * Tₛ⁻^4
@@ -560,20 +618,119 @@ end
     θ★ = interface_state.fluxes.θ★
     q★ = interface_state.fluxes.q★
 
-    # Turbulent heat fluxes, sensible + latent (positive out of the ocean)
-    𝒬ᵀ = - ρᵃᵗ * cᵃᵗ * u★ * θ★ # = - ρᵃᵗ cᵃᵗ u★ Ch / sqrt(Cd) * (θᵃᵗ - Tₛ)
+    # Turbulent heat fluxes, sensible + latent (positive out of the surface)
+    𝒬ᵀ = - ρᵃᵗ * cᵃᵗ * u★ * θ★
     𝒬ᵛ = - ρᵃᵗ * ℒⁱ * u★ * q★
 
-    Tₛ = flux_balance_temperature(st,
-                                  interface_state,
-                                  interface_properties,
-                                  𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd,
-                                  interior_state,
-                                  interior_properties,
-                                  atmosphere_state,
-                                  atmosphere_properties)
+    return 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd
+end
 
-    return Tₛ
+@inline function compute_interface_temperature(st::SkinTemperature,
+                                               interface_state,
+                                               atmosphere_state,
+                                               interior_state,
+                                               radiation_state,
+                                               interface_properties,
+                                               atmosphere_properties,
+                                               interior_properties)
+
+    𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd = skin_surface_fluxes(interface_state, atmosphere_state,
+                                            radiation_state, atmosphere_properties)
+
+    return flux_balance_temperature(st,
+                                    interface_state,
+                                    interface_properties,
+                                    𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd,
+                                    interior_state,
+                                    interior_properties,
+                                    atmosphere_state,
+                                    atmosphere_properties)
+end
+
+####
+#### EnergyBalanceTemperature — a diagnostic surface-energy-balance temperature,
+#### generalizing the land soil skin toward a shared soil-skin / canopy-leaf type.
+####
+#### A land soil skin and a canopy leaf are the same capability from two
+#### directions: each is a second temperature obtained by closing a surface
+#### energy balance `Rₙ = H + LE + G` inside the interface fixed point, differing
+#### only in the coupling `G` to the bulk slab. `EnergyBalanceTemperature` carries
+#### the `kind` and solves it with one (ρc-free) root, sharing the MO-consistent
+#### fluxes with `SkinTemperature` through `skin_surface_fluxes`.
+####
+####  - `SoilSkin(coupling)` — conducts to the bulk slab through
+####    `G = Λⁱⁿ(Tⁱⁿ − Tˡᵃ)`, `Λⁱⁿ` from a [`SoilConductiveFlux`](@ref); identical
+####    to `SkinTemperature(SoilConductiveFlux(...))`.
+####
+#### Only `SoilSkin` is implemented. A canopy-leaf kind (a massless leaf,
+#### `Rₙ = H + LE`, no soil conduction) is not included: a robust `G = 0` leaf
+#### balance needs the outgoing-longwave `T⁴` term (a two-face canopy longwave
+#### ledger) or a small prognostic leaf heat capacity to stay conditioned as the
+#### sensible flux vanishes, and it needs the canopy/ground shortwave split carried
+#### to the temperature call site.
+
+struct SoilSkin end
+Base.summary(::SoilSkin) = "SoilSkin"
+
+"""
+    EnergyBalanceTemperature(kind, coupling; max_ΔT=50)
+
+Diagnostic interface temperature that closes a surface energy balance
+`Rₙ = H + LE + G` each step. The only `kind` presently implemented is
+[`SoilSkin`](@ref), which conducts to the bulk slab through `coupling`, a
+[`SoilConductiveFlux`](@ref); use the convenience constructor
+[`SoilSkinTemperature`](@ref). `Λⁱⁿ → ∞` recovers [`BulkTemperature`](@ref).
+"""
+struct EnergyBalanceTemperature{K, C, FT}
+    kind     :: K
+    coupling :: C
+    max_ΔT   :: FT
+end
+
+EnergyBalanceTemperature(kind, coupling; max_ΔT=50) = EnergyBalanceTemperature(kind, coupling, max_ΔT)
+
+"""
+    SoilSkinTemperature(conductivity, thickness; max_ΔT=50)
+
+A soil-skin [`EnergyBalanceTemperature`](@ref): the skin conducts to the bulk
+slab with conductance `Λⁱⁿ = conductivity/thickness` (W m⁻² K⁻¹). Behaviorally
+identical to `SkinTemperature(SoilConductiveFlux(conductivity, thickness))`.
+"""
+SoilSkinTemperature(conductivity, thickness; max_ΔT=50) =
+    EnergyBalanceTemperature(SoilSkin(), SoilConductiveFlux(conductivity, thickness), max_ΔT)
+
+Base.summary(t::EnergyBalanceTemperature) = string("EnergyBalanceTemperature(", summary(t.kind), ")")
+Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
+
+# Skin↔bulk conductance per kind: SoilSkin conducts (Λⁱⁿ = κᵀ/ℓᵀ).
+@inline balance_conductance(::SoilSkin, coupling) = skin_conductance(coupling)
+
+@inline function compute_interface_temperature(t::EnergyBalanceTemperature,
+                                               interface_state,
+                                               atmosphere_state,
+                                               interior_state,
+                                               radiation_state,
+                                               interface_properties,
+                                               atmosphere_properties,
+                                               interior_properties)
+
+    𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd = skin_surface_fluxes(interface_state, atmosphere_state,
+                                            radiation_state, atmosphere_properties)
+
+    FT  = typeof(interface_state.temperature)
+    Λ   = convert(FT, balance_conductance(t.kind, t.coupling))
+    Qa  = 𝒬ᵛ + ℐꜛˡʷ + Qd                       # net non-sensible flux, positive up
+    Tᵈ  = interior_state.T                       # bulk slab (deep endpoint / anchor)
+    Tᵃᵗ = surface_atmosphere_temperature(atmosphere_state, atmosphere_properties)
+    ΔT  = Tᵃᵗ - interface_state.temperature
+
+    # Rₙ − H − LE − Λ(Tⁱⁿ − Tᵈ) = 0, ΔT-multiplied to stay finite as ΔT → 0
+    # (the same root as `flux_balance_temperature(::SkinTemperature{<:SoilConductiveFlux})`).
+    D  = Λ * ΔT - 𝒬ᵀ
+    T★ = (Tᵈ * Λ * ΔT - Qa * ΔT - 𝒬ᵀ * Tᵃᵗ) / D
+    T★ = ifelse(D == 0, interface_state.temperature, T★)
+    max_ΔT = convert(FT, t.max_ΔT)
+    return Tᵈ + clamp(T★ - Tᵈ, -max_ΔT, max_ΔT)
 end
 
 ####
@@ -583,13 +740,13 @@ end
 # Diagnostic formulations (`ImpureSaturationSpecificHumidity`, `BulkHumidity`):
 # qˢ is an explicit function of the interface temperature `Tₛ` and the surface
 # scalar (salinity / saturation `𝒮`) from `humidity_surface_scalar`. The interior
-# state `Ψᵢ` is ignored.
-@inline compute_interface_humidity(q_formulation, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ) =
+# state `Ψᵢ` and radiation state `Ψᵣ` are ignored.
+@inline compute_interface_humidity(q_formulation, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ) =
     surface_specific_humidity(q_formulation, ℙₐ.thermodynamics_parameters, Ψₐ.p, Tₛ, humidity_surface_scalar(Ψₛ), Ψₐ.q)
 
 # `FractionalHumidity`: qˢ = β · qᵛ⁺(Tₛ) at the skin temperature, with the
 # evaporation efficiency β derived from the materialized hydrology state.
-@inline function compute_interface_humidity(q::FractionalHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+@inline function compute_interface_humidity(q::FractionalHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     FT  = eltype(Ψₛ)
     β   = evaporation_efficiency(q.efficiency, Ψₛ.hydrology)
@@ -623,7 +780,7 @@ end
 # temperature — the same deep endpoint the conductive heat flux uses. `Tₛ` is
 # therefore unused here (`qˢ` is decoupled from the skin temperature, as a dry
 # skin implies).
-@inline function compute_interface_humidity(q::SkinHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+@inline function compute_interface_humidity(q::SkinHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     FT  = eltype(Ψₛ)
     pᵃᵗ = Ψₐ.p
@@ -737,44 +894,64 @@ end
 @inline humidity_surface_scalar(Ψ::AirIceInterfaceState) = zero(eltype(Ψ))
 
 """
-    AirLandInterfaceState{FT, H, E}
+    AirLandInterfaceState{FT, H, E, V}
 
 Air–land interface state. In place of salinity it carries the land's `hydrology`
 and `energy` surface state (e.g. `(saturation = 𝒮,)` and `(temperature = Tᵢ,)`),
-from which the surface humidity models derive what they need — the moisture
-availability `β`, the reservoir temperature, etc. `β` is *not* stored: it is
+together with any prescribed `vegetation` surface state (e.g.
+`(leaf_area_index = LAI,)`), from which the surface humidity models derive what
+they need — the moisture availability `β`, the reservoir temperature, the canopy
+conductance, etc. `β` is *not* stored: it is
 `evaporation_efficiency(efficiency, saturation)`, computed by the formulation.
 """
-struct AirLandInterfaceState{FT, H, E} <: AbstractInterfaceState{FT}
+struct AirLandInterfaceState{FT, H, E, V} <: AbstractInterfaceState{FT}
     fluxes            :: InterfaceFluxScales{FT}
     velocities        :: InterfaceVelocities{FT}
     temperature       :: FT
     specific_humidity :: FT
     hydrology         :: H
     energy            :: E
+    vegetation        :: V
 end
 
-@inline AirLandInterfaceState(u★, θ★, q★, u, v, T, q, hydrology, energy) =
-    AirLandInterfaceState(InterfaceFluxScales(u★, θ★, q★), InterfaceVelocities(u, v), T, q, hydrology, energy)
+# Convenience constructors defaulting `vegetation` to an empty substate — every
+# non-canopy formulation ignores it, so their call sites stay unchanged.
+@inline AirLandInterfaceState(fluxes::InterfaceFluxScales, velocities::InterfaceVelocities, T, q, hydrology, energy) =
+    AirLandInterfaceState(fluxes, velocities, T, q, hydrology, energy, (;))
+
+@inline AirLandInterfaceState(u★, θ★, q★, u, v, T, q, hydrology, energy, vegetation=(;)) =
+    AirLandInterfaceState(InterfaceFluxScales(u★, θ★, q★), InterfaceVelocities(u, v), T, q, hydrology, energy, vegetation)
 
 # (i, j, grid)-first convenience constructor — pulls the per-cell land
-# energy/hydrology substate from `land_state` via the humidity formulation, so
-# the kernel call site stays compact. `Tₛ` and `qₛ` are passed in because they
-# typically share computation with the atmosphere thermodynamics at the call
-# site (e.g. the saturation humidity needs `Tₛ`, `pᵃᵗ`, and `ℂᵃᵗ`).
+# energy/hydrology/vegetation substate from `land_state`/`vegetation` via the
+# humidity formulation, so the kernel call site stays compact. `Tₛ` and `qₛ` are
+# passed in because they typically share computation with the atmosphere
+# thermodynamics at the call site (e.g. the saturation humidity needs `Tₛ`,
+# `pᵃᵗ`, and `ℂᵃᵗ`). `time_interpolator` is the host-side time index used to
+# interpolate a `FieldTimeSeries` vegetation input (`nothing` when static).
 @inline function AirLandInterfaceState(i, j, grid,
                                        fluxes::InterfaceFluxScales,
                                        velocities::InterfaceVelocities,
                                        q_formulation,
                                        land_state,
+                                       vegetation,
+                                       time_interpolator,
                                        Tₛ, qₛ)
     FT  = typeof(Tₛ)
-    energy    = interface_energy_state(i, j, grid, q_formulation, land_state)
-    hydrology = interface_hydrology_state(i, j, grid, q_formulation, land_state)
-    return AirLandInterfaceState(fluxes, velocities, convert(FT, Tₛ), convert(FT, qₛ), hydrology, energy)
+    energy           = interface_energy_state(i, j, grid, q_formulation, land_state)
+    hydrology        = interface_hydrology_state(i, j, grid, q_formulation, land_state)
+    vegetation_state = interface_vegetation_state(i, j, grid, q_formulation, vegetation, time_interpolator)
+    return AirLandInterfaceState(fluxes, velocities, convert(FT, Tₛ), convert(FT, qₛ),
+                                 hydrology, energy, vegetation_state)
 end
 
 @inline humidity_surface_scalar(Ψ::AirLandInterfaceState) = Ψ.hydrology.saturation
+
+# Latent heat of the surface vapor flux entering the `SkinTemperature` energy
+# balance. Land evaporates liquid water (vaporization); ocean and sea ice keep
+# the existing sublimation value so their skin solves are unchanged.
+@inline interface_latent_heat(ℂ, T, ::AbstractInterfaceState) = AtmosphericThermodynamics.latent_heat_sublim(ℂ, T)
+@inline interface_latent_heat(ℂ, T, ::AirLandInterfaceState)  = AtmosphericThermodynamics.latent_heat_vapor(ℂ, T)
 
 # Rebuild the next iterate, carrying the fixed per-surface state forward.
 @inline rebuild_interface_state(Ψ⁻::AirSeaInterfaceState, fluxes, T, q) =
@@ -784,7 +961,7 @@ end
     AirIceInterfaceState(fluxes, Ψ⁻.velocities, T, q)
 
 @inline rebuild_interface_state(Ψ⁻::AirLandInterfaceState, fluxes, T, q) =
-    AirLandInterfaceState(fluxes, Ψ⁻.velocities, T, q, Ψ⁻.hydrology, Ψ⁻.energy)
+    AirLandInterfaceState(fluxes, Ψ⁻.velocities, T, q, Ψ⁻.hydrology, Ψ⁻.energy, Ψ⁻.vegetation)
 
 function Base.show(io::IO, Ψ::AbstractInterfaceState)
     print(io, nameof(typeof(Ψ)), "(",

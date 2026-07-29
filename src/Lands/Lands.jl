@@ -18,6 +18,8 @@ export AbstractLand,
        NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
        NoRunoff, InfiltrationCapacityRunoff,
        VariablySaturatedHydrology,
+       # Canopy interception store
+       InterceptingHydrology,
        # Atmosphere-facing accessors
        surface_temperature, surface_saturation
 
@@ -72,6 +74,10 @@ include("hydrology/hydraulic_functions.jl")
 include("hydrology/deep_liquid_fluxes.jl")
 include("hydrology/runoff_models.jl")
 include("hydrology/variably_saturated_hydrology.jl")
+
+# Canopy interception store — wraps a soil hydrology (throughfall + wet-canopy
+# evaporation), depends on `merge_unique` from the container above.
+include("hydrology/intercepting_hydrology.jl")
 
 # Legacy PrescribedLand component (river / iceberg freshwater forcing).
 include("prescribed_land.jl")

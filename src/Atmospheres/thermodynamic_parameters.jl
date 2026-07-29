@@ -59,8 +59,8 @@ of total mass into vapor, liquid, and ice mass fractions, and
 ``Rᵐ`` is the effective specific gas constant for the mixture.
 """
 function ConstitutiveParameters(FT = Oceananigans.defaults.FloatType;
-                                gas_constant       = 8.3144598,
-                                dry_air_molar_mass = 0.02897,
+                                gas_constant       = default_gas_constant,
+                                dry_air_molar_mass = default_dry_air_molar_mass,
                                 water_molar_mass   = 0.018015)
 
     return ConstitutiveParameters{FT}(convert(FT, gas_constant),
