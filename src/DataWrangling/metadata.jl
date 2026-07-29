@@ -649,17 +649,48 @@ Keyword Argument
 ================
 - `start_time`: The start time for calculating the time difference. Defaults to the first
                 date in the metadata.
+
+Each date is shifted by the dataset's [`time_window_offset`](@ref), which places a
+window-averaged sample at the midpoint of its window rather than at the date its file is
+stamped with.
 """
 function native_times(metadata; start_time=first(metadata).dates)
     times = zeros(length(metadata))
     for (t, data) in enumerate(metadata)
         date = data.dates
         delta = date - start_time
-        delta = Second(delta).value
+        delta = Second(delta).value + time_window_offset(data)
         times[t] = delta
     end
 
     return times
+end
+
+"""
+    sample_window(metadatum)
+
+The `(start, stop)` dates of the averaging window the value in `metadatum` represents.
+Defaults to a zero-width window at the stamp itself, which is an instantaneous sample; a
+product whose files hold window averages extends this with its own averaging period.
+"""
+sample_window(metadatum) = (metadatum.dates, metadatum.dates)
+
+"""
+    time_window_offset(metadatum)
+
+The offset in seconds from the date a file is stamped with to the midpoint of its
+[`sample_window`](@ref), which is where a window mean equals the value of the field itself
+and so where a linearly interpolating `FieldTimeSeries` has to place it.
+
+Zero for an instantaneous sample, half a period for a stamp that labels the start of an
+averaging window, and negative for one that labels the end.
+"""
+function time_window_offset(metadatum)
+    start, stop = sample_window(metadatum)
+    stamp = comparable_datetime(metadatum.dates)
+    start_offset = Dates.value(Dates.Second(comparable_datetime(start) - stamp))
+    stop_offset = Dates.value(Dates.Second(comparable_datetime(stop) - stamp))
+    return (start_offset + stop_offset) / 2
 end
 
 ####

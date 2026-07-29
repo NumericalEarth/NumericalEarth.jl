@@ -70,6 +70,11 @@ DataWrangling.all_dates(dataset::ECCO4Monthly, variable) = metadata_epoch(datase
 DataWrangling.all_dates(dataset::ECCO2Monthly, variable) = metadata_epoch(dataset) : Month(1) : DateTime(2024, 12, 1)
 DataWrangling.all_dates(dataset::ECCO2Daily,   variable) = metadata_epoch(dataset) : Day(1)   : DateTime(2024, 12, 31)
 
+# A V4r4 monthly file holds the mean over a calendar month and carries that window's center
+# in its own `time` variable, so its value belongs half a month after the date naming it.
+DataWrangling.sample_window(metadatum::Metadatum{<:ECCO4Monthly}) =
+    (metadatum.dates, metadatum.dates + Month(1))
+
 DataWrangling.longitude_interfaces(::ECCODataset) = (0, 360)
 DataWrangling.longitude_interfaces(::ECCO4Monthly) = (-180, 180)
 DataWrangling.latitude_interfaces(::ECCODataset) = (-90, 90)

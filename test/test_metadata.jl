@@ -4,6 +4,7 @@ using NumericalEarth.DataWrangling: Column, Linear, Nearest,
                                     BoundingBox, dataset_location,
                                     restrict_location, native_grid
 using NumericalEarth.DataWrangling: restrict, restrict_longitude, download_cache
+using NumericalEarth.DataWrangling: native_times, sample_window, time_window_offset
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel
 
 using Oceananigans: location
@@ -230,6 +231,38 @@ end
             ENV["NUMERICALEARTH_DATA_DIRECTORY"] = saved
         end
     end
+end
+
+@testset "Monthly-mean sample windows" begin
+    # The dates these files carry in their own `time` variable: the center of each month,
+    # which is a half day later in a 31-day month than in a 30-day one.
+    en4_centers = (1 => DateTime(2010, 1, 16, 12), 2 => DateTime(2010, 2, 15),
+                   6 => DateTime(2010, 6, 16),     7 => DateTime(2010, 7, 16, 12))
+
+    for (month, center) in en4_centers
+        first_of_month = DateTime(2010, month, 1)
+        metadatum = Metadatum(:temperature; dataset = EN4Monthly(), date = first_of_month)
+        @test sample_window(metadatum) == (first_of_month, first_of_month + Month(1))
+        @test time_window_offset(metadatum) == Dates.value(Second(center - first_of_month))
+    end
+
+    ecco = Metadatum(:v_velocity; dataset = ECCO4Monthly(), date = DateTime(1993, 1, 1))
+    @test sample_window(ecco) == (DateTime(1993, 1, 1), DateTime(1993, 2, 1))
+    @test time_window_offset(ecco) == Dates.value(Second(DateTime(1993, 1, 16, 12) - ecco.dates))
+
+    # A twelve-month axis then reproduces the time coordinates the files themselves carry,
+    # in days from the first of January.
+    metadata = Metadata(:temperature; dataset = EN4Monthly(),
+                        dates = [DateTime(2010, m, 1) for m in 1:12])
+    @test native_times(metadata) ./ 86400 == [15.5, 45.0, 74.5, 105.0, 135.5, 166.0,
+                                              196.5, 227.5, 258.0, 288.5, 319.0, 349.5]
+
+    # An instantaneous product has no window and is left where its stamp puts it.
+    hourly = Metadatum(:temperature; dataset = ERA5HourlySingleLevel(), date = DateTime(2020, 4, 1))
+    @test sample_window(hourly) == (DateTime(2020, 4, 1), DateTime(2020, 4, 1))
+    @test time_window_offset(hourly) == 0
+    @test native_times(Metadata(:temperature; dataset = ERA5HourlySingleLevel(),
+                                dates = [DateTime(2020, 4, 1, h) for h in 0:2])) == [0, 3600, 7200]
 end
 
 @testset "nan_convert_missing" begin
