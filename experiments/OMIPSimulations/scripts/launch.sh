@@ -166,7 +166,7 @@ case "$CONFIG" in
 run!(sim, pickup=:latest)"
         ;;
     quarterdegree)
-        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DEFAULT_DT="2"; DEFAULT_DZ_TOP="1.5"
+        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DEFAULT_DT="5minutes"; DEFAULT_DZ_TOP="1.5"
         DEFAULT_BIHARMONIC="nothing"; ARCH="GPU()"; GPUS_PER_NODE=1
         EXTRA_USING="using Oceananigans.DistributedComputations"
         FILE_SPLIT=""
