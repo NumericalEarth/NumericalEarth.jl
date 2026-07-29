@@ -393,6 +393,12 @@ DataWrangling.longitude_name(::ESAWorldCoverMetadatum) = "lon"
 DataWrangling.latitude_name(::ESAWorldCoverMetadatum)  = "lat"
 DataWrangling.default_inpainting(::ESAWorldCoverMetadatum) = nothing
 
+# Float64 rather than the Float32 default: cell area on a latitude–longitude grid
+# carries a `sin φ₂ - sin φ₁` factor, and at ~110 m spacing that subtraction loses
+# most of Float32's precision, leaving the conservative regrid ~1e-4 short of
+# conserving area (fractions drift off one and stray outside [0, 1]).
+Base.eltype(::ESAWorldCoverMetadatum) = Float64
+
 # `0` is the no-data code for the categorical `:landcover_class` product and is
 # correctly masked to NaN on load. For the derived fraction products, `0.0` is a
 # *legitimate* value (a water cell has zero vegetation fraction), so there is no
