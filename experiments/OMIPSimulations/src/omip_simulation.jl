@@ -441,7 +441,11 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   `depth`/`Nz`) otherwise.
 - `κ_skew`, `κ_symmetric`: GM/Redi diffusivities. Per-config defaults: `nothing` (no isopycnal
   diffusivity) for the eddy-resolving `:quarterdegree`/`:twelfthdegree` and for `:test`, `800` for
-  `:orca`, `250` for `:halfdegree`.
+  `:orca`, `250` for `:halfdegree`. Either may instead be `:nemo`, which selects NEMO's Treguier
+  et al. (1997) coefficient (`nn_aei_ijk_t = nn_aht_ijk_t = 21`, the setting CMCC's ORCA1 uses):
+  the internal Rossby radius squared times the baroclinic growth rate, recomputed every step and
+  held depth-uniform. GM tapers to zero equatorward of 20°, Redi rises to its reference value there
+  and carries a floor of one fifth of it. See [`NEMOEddyCoefficients`](@ref).
 - `skew_flux_formulation`: how the GM skew flux is discretized. `:diffusive` (default) adds it to
   the tracer flux; `:advective` builds the eddy-induced velocity and advects with it, which also
   makes the bolus transport available as a model field. Equivalent continuously, not discretely.
@@ -582,8 +586,12 @@ function omip_simulation(config::Symbol = :halfdegree;
         river_mouth_vertical_diffusivity(grid, land.river_routing; κ = river_mixing_κ, mixing_depth = river_mixing_depth) :
         nothing
 
+    nemo_eddy_coefficients = uses_nemo_eddy_coefficients(κ_skew, κ_symmetric) ?
+        NEMOEddyCoefficients(grid) : nothing
+
     ocean = build_ocean(cfg, grid;
                         κ_skew, κ_symmetric, Cᵇ,
+                        nemo_eddy_coefficients,
                         biharmonic_timescale,
                         biharmonic_viscosity,
                         vertical_closure,
@@ -635,6 +643,13 @@ function omip_simulation(config::Symbol = :halfdegree;
     if !isnothing(salt_restoring)
         update_restoring_flux!(salt_restoring, ocean.model)
         add_callback!(simulation, RefreshSalinityRestoring(salt_restoring), IterationInterval(1))
+    end
+
+    # NEMO recomputes its Treguier coefficient every step from the current stratification. Primed here
+    # so the first step sees a valid field rather than zeros.
+    if !isnothing(nemo_eddy_coefficients)
+        compute_nemo_eddy_coefficients!(nemo_eddy_coefficients, ocean.model)
+        add_callback!(simulation, RefreshNEMOEddyCoefficients(nemo_eddy_coefficients), IterationInterval(1))
     end
 
     # Hold the global ocean volume fixed by removing the global mean of the atmospheric freshwater
@@ -1062,10 +1077,14 @@ function build_ocean(config, grid;
                      vertical_closure = :catke,
                      implicit_vertical_advection = true,
                      skew_flux_formulation = :diffusive,
+                     nemo_eddy_coefficients = nothing,
                      Cᵂu★ = nothing,
                      normalize_salinity = true,
                      additional_tracer_closure = nothing,
                      start_date, end_date)
+
+    κ_skew      = resolve_nemo_coefficient(κ_skew,      nemo_eddy_coefficients, :skew_coefficient)
+    κ_symmetric = resolve_nemo_coefficient(κ_symmetric, nemo_eddy_coefficients, :symmetric_coefficient)
 
     additional_surface_fluxes = if piston_velocity == 0
         NamedTuple()
