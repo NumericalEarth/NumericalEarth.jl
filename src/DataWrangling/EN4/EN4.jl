@@ -27,8 +27,6 @@ struct EN4Monthly end
 Base.size(::EN4Monthly, variable) = (360, 173, 42)
 DataWrangling.all_dates(::EN4Monthly, variable) = DateTime(1900, 1, 1) : Month(1) : DateTime(2024, 12, 1)
 
-# An analysis file holds the mean over a calendar month and carries that window's center in
-# its own `time` variable, so its value belongs half a month after the date naming it.
 DataWrangling.sample_window(metadatum::Metadatum{<:EN4Monthly}) =
     (metadatum.dates, metadatum.dates + Month(1))
 
