@@ -54,7 +54,7 @@ end
     return Sx^2 + Sy^2
 end
 
-@kernel function _compute_nemo_eddy_coefficients!(aei, aht, grid, limiter, buoyancy, tracers, parameters)
+@kernel function _compute_nemo_eddy_coefficients!(aei, aht, grid, limiter, buoyancy, tracers, Ω, parameters)
     i, j = @index(Global, NTuple)
     aei0, aht0, Romin, Romax = parameters
     Nz = size(grid, 3)
@@ -75,8 +75,8 @@ end
     end
 
     φ = φnode(i, j, 1, grid, Center(), Center(), Center())
-    f = 2 * Oceananigans.defaults.planet_rotation_rate * sind(φ)
-    f20 = 2 * Oceananigans.defaults.planet_rotation_rate * sind(convert(eltype(grid), 20))
+    f = 2 * Ω * sind(φ)
+    f20 = 2 * Ω * sind(convert(eltype(grid), 20))
 
     Ro = clamp(convert(eltype(grid), 2//5) * zn / max(abs(f), convert(eltype(grid), 1e-10)), Romin, Romax)
     growth_rate = sqrt(zah / max(zhw, one(grid)))
@@ -106,10 +106,15 @@ Refresh both coefficient fields from the current buoyancy field.
 """
 function compute_nemo_eddy_coefficients!(coefficients::NEMOEddyCoefficients, ocean_model)
     grid = ocean_model.grid
+
+    # `Oceananigans.defaults` is a mutable global; reading it inside the kernel makes the device
+    # dereference host memory, which faults on GPU. Resolve it here and pass the value in.
+    Ω = convert(eltype(grid), Oceananigans.defaults.planet_rotation_rate)
+
     launch!(architecture(grid), grid, :xy, _compute_nemo_eddy_coefficients!,
             coefficients.skew_coefficient, coefficients.symmetric_coefficient, grid,
             coefficients.slope_limiter, ocean_model.buoyancy, fields(ocean_model),
-            coefficients.parameters)
+            Ω, coefficients.parameters)
 
     return nothing
 end
