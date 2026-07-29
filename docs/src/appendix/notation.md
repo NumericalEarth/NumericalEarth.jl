@@ -206,6 +206,12 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``\alpha`` | `α` | albedo | Surface reflectivity (–) |
 | ``\epsilon`` | `ϵ` | emissivity | Surface emissivity (–) |
 
+## Vegetation properties
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``\Lambda`` | `Λ` | leaf area index | One-sided leaf area per unit ground area (m² m⁻²) |
+
 ## Similarity theory / surface layer
 
 | Math | Code | Property | Description |
@@ -320,6 +326,7 @@ Most symbols can be entered in the Julia REPL and in editors with Julia support 
 | `σ` | `\sigma` | Sigma (Stefan–Boltzmann constant) |
 | `α` | `\alpha` | Alpha (albedo) |
 | `ϵ` | `\epsilon` | Epsilon (emissivity) |
+| `Λ` | `\Lambda` | Capital Lambda (leaf area index) |
 | `ℵ` | `\aleph` | Aleph (ice concentration) |
 | `ϰ` | `\varkappa` | Varkappa (von Kármán constant) |
 | `Ψ` | `\Psi` | Capital Psi (interface state) |

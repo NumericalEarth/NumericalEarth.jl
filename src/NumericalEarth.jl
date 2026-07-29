@@ -117,6 +117,14 @@ export
     EN4Monthly,
     WOAClimatology, WOAAnnual, WOAMonthly,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
+    MCD15A2H, MCD12Q1, MODISLAIClimatology, build_lai_climatology!,
+    retained_retrieval_metadatum,
+    lai_screening_mask, recommended_lai_screening, lai_rejection_flags,
+    mask_lai_landcover, modis_landcover_class_names,
+    landcover_class_names, igbp_class_names, igbp_non_vegetated_classes,
+    class_fraction, class_fractions,
+    class_maximum_gap, landcover_change_flag, zero_non_vegetated!,
+    period_index, composite_window,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
@@ -145,6 +153,11 @@ export
     meridional_heat_transport,
     location,
     native_grid,
+    fill_gaps!,
+    fill_seasonal_gaps!,
+    gap_fill_provenance,
+    gap_fill_denial,
+    time_average,
     natural_earth_lines,
     surface_elevation,
     exchange_state!,
@@ -275,6 +288,7 @@ using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
 using .DataWrangling.CopernicusLandAlbedo
+using .DataWrangling.MODISLand
 
 using PrecompileTools: @setup_workload, @compile_workload
 

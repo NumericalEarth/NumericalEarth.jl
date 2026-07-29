@@ -16,15 +16,27 @@ function compute_bounding_nodes(grid, LH, hnodes)
     return h₁, h₂
 end
 
-# `ε` forgives Float32 to Float64 promotion noise so the slice doesn't lose a
-# cell at each end when grid centers are compared against file centers.
+# `ε` forgives the difference between the grid's nodes and the file's coordinates so the
+# slice doesn't lose a cell at each end. Nodes are usually stored in Float32 and are built
+# by accumulating a spacing, so a node can sit several ULPs from the file coordinate it
+# should match. An eps-scaled tolerance does not cover that on a fine grid — at 1/336° a
+# latitude node lands ~5e-6 from its coordinate while eps(Float32)|φ| is ~4.5e-6 — and the
+# index then moves a whole cell. Tolerate a quarter of the file's local spacing instead:
+# far above the node noise, and far below the half spacing that decides which cell a node
+# belongs to.
 function compute_bounding_indices(bounds::Tuple, hc)
     h₁, h₂ = bounds
     Nh = length(hc)
-    ε  = eps(Float32) * max(one(eltype(hc)), abs(h₁), abs(h₂))
-    i₁ = max(searchsortedfirst(hc, h₁ - ε),  1)
-    i₂ = min( searchsortedlast(hc, h₂ + ε), Nh)
+    i₁ = max(searchsortedfirst(hc, h₁ - bounding_index_tolerance(hc, h₁)),  1)
+    i₂ = min( searchsortedlast(hc, h₂ + bounding_index_tolerance(hc, h₂)), Nh)
     return i₁, i₂
+end
+
+function bounding_index_tolerance(hc, h)
+    float_noise = eps(Float32) * max(one(eltype(hc)), abs(h))
+    length(hc) < 2 && return float_noise
+    i = clamp(searchsortedfirst(hc, h), 2, length(hc))
+    return max(float_noise, abs(hc[i] - hc[i-1]) / 4)
 end
 
 # Periodic only when the restricted span equals the full native span.
@@ -94,10 +106,13 @@ function region_info(::BoundingBox, target, λc, φc)
     λmin, λmax = compute_bounding_nodes(target.grid, LX, λnodes)
     φmin, φmax = compute_bounding_nodes(target.grid, LY, φnodes)
 
-    # Shift the target's longitude into the file's `[λc[1], λc[1]+360)`
+    # Shift the target's longitude into the file's `[λc[1], λc[1]+360)`, in double
+    # precision: the conversion takes a modulo against 360, and handing it a Float32 node
+    # runs that in Float32, whose spacing at 360 is 3e-5° — enough on its own to move the
+    # index a cell on a fine grid.
     if !isempty(λc)
-        λmin = convert_to_λ₀_λ₀_plus360(λmin, λc[1])
-        λmax = convert_to_λ₀_λ₀_plus360(λmax, λc[1])
+        λmin = convert_to_λ₀_λ₀_plus360(Float64(λmin), Float64(λc[1]))
+        λmax = convert_to_λ₀_λ₀_plus360(Float64(λmax), Float64(λc[1]))
     end
 
     i₁, _ = compute_bounding_indices((λmin, λmax), λc)

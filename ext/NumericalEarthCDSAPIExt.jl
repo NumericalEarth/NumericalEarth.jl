@@ -950,19 +950,19 @@ function build_albedo_request(name, dates)
     )
 end
 
-# The delivery is either a ZIP of per-variable NetCDF files or a single NetCDF.
-function extract_albedo_files(download_path, extraction_dir)
+# The delivery is either a ZIP of NetCDF files or a single NetCDF.
+function extract_delivered_nc_files(download_path, extraction_dir, fallback_name)
     if is_zip(download_path)
         run(`unzip -qo $download_path -d $extraction_dir`)
     else
-        cp(download_path, joinpath(extraction_dir, "albedo.nc"); force=true)
+        cp(download_path, joinpath(extraction_dir, fallback_name); force=true)
     end
     return filter(p -> endswith(p, ".nc"), readdir(extraction_dir; join=true))
 end
 
 # The dekad a delivered file belongs to, from its time coordinate (authoritative)
 # or the timestamp in its filename.
-function albedo_file_date(path)
+function delivered_file_date(path)
     date = NCDatasets.Dataset(path) do ds
         haskey(ds, "time") || return nothing
         t = ds["time"][1]
@@ -972,14 +972,14 @@ function albedo_file_date(path)
 
     stamp = match(r"_(\d{8})\d{0,6}_", basename(path))
     isnothing(stamp) &&
-        error("Cannot determine the date of the delivered albedo file $(basename(path)).")
+        error("Cannot determine the date of the delivered file $(basename(path)).")
     return Dates.DateTime(stamp[1], Dates.dateformat"yyyymmdd")
 end
 
 function repack_albedo_batch(nc_files, batch, path_of, destination_names, expected_size)
     members = Dict{Dates.DateTime, Dict{Symbol, Tuple{String, String}}}()
     for path in nc_files
-        date = albedo_file_date(path)
+        date = delivered_file_date(path)
         entry = get!(members, date, Dict{Symbol, Tuple{String, String}}())
         blacksky_name = find_albedo_variable(path, albedo_source_variable_candidates.blacksky)
         whitesky_name = find_albedo_variable(path, albedo_source_variable_candidates.whitesky)
@@ -1031,7 +1031,7 @@ function Downloads.download(metadata::AlbedoMetadata; skip_existing=true, cleanu
         extraction_dir = mktempdir(dir)
         try
             retrieve_with_retries(ALBEDO_CDS_PRODUCT, request, tmp_download)
-            nc_files = extract_albedo_files(tmp_download, extraction_dir)
+            nc_files = extract_delivered_nc_files(tmp_download, extraction_dir, "albedo.nc")
             repack_albedo_batch(nc_files, batch, path_of, destination_names, expected_size)
         finally
             # Gate both on `cleanup` so `cleanup=false` keeps the raw download and the

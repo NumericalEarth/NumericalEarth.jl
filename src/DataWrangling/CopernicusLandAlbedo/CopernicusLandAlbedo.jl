@@ -9,7 +9,8 @@ using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
-                       metadata_path, default_download_directory, native_convention_longitude
+                       metadata_path, default_download_directory,
+                       native_convention_longitude, native_cell_range
 
 import Oceananigans
 
@@ -280,21 +281,6 @@ end
 ##### materialization, so `retrieve_data` and `read_file_coords` must window identically.
 #####
 
-# 1-based native cell range covered by `bbox` on the axis `(left, right)` split into `N`
-# cells — must match `restrict()` in metadata_field.jl (returned count = `i⁺ - i⁻`, so the
-# cell range `(i⁻+1):i⁺` has that same length, pinning the region offset to di = dj = 0).
-function albedo_cell_range(bbox, interfaces, N)
-    left, right = interfaces
-    Δ = (right - left) / N
-    i⁻ = clamp(floor(Int, (bbox[1] - left) / Δ - 1/2), 0, N)
-    i⁺ = clamp(ceil( Int, (bbox[2] - left) / Δ + 1/2), 0, N)
-    if i⁺ ≤ i⁻
-        i⁺ = min(i⁻ + 1, N)
-        i⁻ = max(i⁺ - 1, 0)
-    end
-    return (i⁻ + 1):i⁺
-end
-
 """
     albedo_read_window(metadatum)
 
@@ -316,8 +302,8 @@ function albedo_read_window(metadatum)
     left, right = native_longitude
     span = bbox_longitude[2] - bbox_longitude[1]
     (span == 360 || (bbox_longitude[1] ≥ left && bbox_longitude[2] > right)) && return nothing
-    icols = albedo_cell_range(bbox_longitude, native_longitude, Nx)
-    jrows = albedo_cell_range(region.latitude, DataWrangling.latitude_interfaces(metadatum), Ny)
+    icols = native_cell_range(bbox_longitude, native_longitude, Nx)
+    jrows = native_cell_range(region.latitude, DataWrangling.latitude_interfaces(metadatum), Ny)
 
     return icols, jrows
 end
