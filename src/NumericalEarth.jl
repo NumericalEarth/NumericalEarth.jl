@@ -117,6 +117,7 @@ export
     ECCO2DarwinMonthly, ECCO4DarwinMonthly,
     EN4Monthly,
     WOAClimatology, WOAAnnual, WOAMonthly,
+    ASTERGEDv3,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum,
@@ -276,6 +277,7 @@ using .DataWrangling.GloFAS
 using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
+using .DataWrangling.ASTERGED
 using .DataWrangling.CopernicusLandAlbedo
 using .DataWrangling.OpenLandMap
 
