@@ -23,15 +23,15 @@ function globfp3d_tile_catalog(cache_dir)
     object_regex = r"\{[^{}]*\}"
     name_regex   = r"\"name\"\s*:\s*\"([^\"]+)\""
     url_regex    = r"\"download_url\"\s*:\s*\"([^\"]+)\""
-    for id in FIGSHARE_ARTICLE_IDS
+    for id in GLOBFP3D_FIGSHARE_ARTICLE_IDS
         json = sprint() do io
-            Downloads.download(figshare_article_url(id), io)
+            Downloads.download(globfp3d_figshare_article_url(id), io)
         end
         for object in eachmatch(object_regex, json)
             name = match(name_regex, object.match)
             url  = match(url_regex,  object.match)
             (isnothing(name) || isnothing(url)) && continue
-            bounds = parse_tile_bounds(name[1])
+            bounds = globfp3d_parse_tile_bounds(name[1])
             isnothing(bounds) && continue
             push!(entries, (; name = String(name[1]), url = String(url[1]),
                               west = bounds.west, south = bounds.south,
@@ -144,12 +144,12 @@ function NumericalEarth.DataWrangling.GloBFP3D.globfp3d_rasterize_to_netcdf(
 
     cache_dir = joinpath(dirname(nc_path), "tiles")
     catalog = globfp3d_tile_catalog(cache_dir)
-    tiles = filter(e -> tile_intersects(e, region), catalog)
+    tiles = filter(e -> globfp3d_tile_intersects(e, region), catalog)
     isempty(tiles) &&
         error("No 3D-GloBFP tiles intersect the requested region $(summary(region)).")
 
-    Δ = native_cell_size(dataset)
-    grid = native_region_grid(region, Δ, Δ)
+    Δ = globfp3d_native_cell_size(dataset)
+    grid = globfp3d_native_region_grid(region, Δ, Δ)
     height = zeros(Float64, grid.Nx, grid.Ny)
     for tile in tiles
         vsi_path = globfp3d_download_tile(tile, cache_dir)

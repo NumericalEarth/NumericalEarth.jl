@@ -87,17 +87,17 @@ DataWrangling.default_download_directory(::GlobalBuildingFootprints3D) = downloa
 DataWrangling.longitude_interfaces(::GlobalBuildingFootprints3D) = (-180, 180)
 DataWrangling.latitude_interfaces(::GlobalBuildingFootprints3D)  = (-90, 90)
 
-native_resolution(dataset::GlobalBuildingFootprints3D) = dataset.resolution
+globfp3d_native_resolution(dataset::GlobalBuildingFootprints3D) = dataset.resolution
 
 # Degree step of a `resolution`-meter arc, used in BOTH longitude and latitude so the raster stays
 # a sub-window of the global lattice the shared `Field(::Metadatum)` read path assumes; a
 # latitude-dependent Δλ would misalign that read. Cells are ~`resolution` m N–S, less E–W.
-native_cell_size(dataset::GlobalBuildingFootprints3D) =
-    rad2deg(native_resolution(dataset) / Oceananigans.defaults.planet_radius)
+globfp3d_native_cell_size(dataset::GlobalBuildingFootprints3D) =
+    rad2deg(globfp3d_native_resolution(dataset) / Oceananigans.defaults.planet_radius)
 
 # Nominal global native size in EPSG:4326 (only the windowed portion is materialized).
 function Base.size(dataset::GlobalBuildingFootprints3D, variable)
-    Δ = native_cell_size(dataset)
+    Δ = globfp3d_native_cell_size(dataset)
     Nx = round(Int, 360 / Δ)
     Ny = round(Int, 180 / Δ)
     return (Nx, Ny, 1)
@@ -157,13 +157,13 @@ Oceananigans.Fields.location(::GlobalBuildingFootprints3DMetadatum) = (Center, C
 #####
 
 """
-    native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
+    globfp3d_native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
 
 Regular lat/lon raster of longitude/latitude cell steps `Δλ`/`Δφ` (degrees) covering `region`,
 snapped to the global lattice anchored at `(-180, -90)` and padded by `pad` cells on each side.
 Returns `(; west, south, Δλ, Δφ, Nx, Ny)`.
 """
-function native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
+function globfp3d_native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
     west, east   = region.longitude
     south, north = region.latitude
     i₀ = floor(Int, (west  + 180) / Δλ) - pad
@@ -303,25 +303,25 @@ end
 #####
 
 # figshare article ids of the ten dataset parts (see the Zenodo record's data_links.txt).
-const FIGSHARE_ARTICLE_IDS = (28879733, 28881749, 28882700, 28889813, 28890593,
+const GLOBFP3D_FIGSHARE_ARTICLE_IDS = (28879733, 28881749, 28882700, 28889813, 28890593,
                               28891631, 28903454, 28903853, 28904453, 28906499)
 
-figshare_article_url(id) = string("https://api.figshare.com/v2/articles/", id)
+globfp3d_figshare_article_url(id) = string("https://api.figshare.com/v2/articles/", id)
 
 """
-    parse_tile_bounds(name)
+    globfp3d_parse_tile_bounds(name)
 
 Parse a 3D-GloBFP tile filename `gridID_lon1_lat1_lon2_lat2_…` into
 `(; gid, west, south, east, north)`, or `nothing` if it does not match.
 """
-function parse_tile_bounds(name)
+function globfp3d_parse_tile_bounds(name)
     m = match(r"^(\d+)_(-?\d+\.?\d*)_(-?\d+\.?\d*)_(-?\d+\.?\d*)_(-?\d+\.?\d*)_", name)
     isnothing(m) && return nothing
     W, S, E, N = parse.(Float64, (m[2], m[3], m[4], m[5]))
     return (; gid = parse(Int, m[1]), west = W, south = S, east = E, north = N)
 end
 
-function tile_intersects(bounds, region::BoundingBox)
+function globfp3d_tile_intersects(bounds, region::BoundingBox)
     λ₁, λ₂ = region.longitude
     φ₁, φ₂ = region.latitude
     return !(bounds.east < λ₁ || bounds.west > λ₂ || bounds.north < φ₁ || bounds.south > φ₂)

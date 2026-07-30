@@ -1,8 +1,8 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.DataWrangling.GloBFP3D: reduce_morphometry, native_region_grid,
-                                             parse_tile_bounds, tile_intersects,
-                                             native_cell_size, native_resolution,
+using NumericalEarth.DataWrangling.GloBFP3D: reduce_morphometry, globfp3d_native_region_grid,
+                                             globfp3d_parse_tile_bounds, globfp3d_tile_intersects,
+                                             globfp3d_native_cell_size, globfp3d_native_resolution,
                                              globfp3d_rasterize_to_netcdf
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum,
                                     longitude_interfaces, latitude_interfaces,
@@ -81,8 +81,8 @@ end
 @testset "GloBFP3D native aggregation grid" begin
     dataset = GlobalBuildingFootprints3D()
     region = BoundingBox(longitude = (-74.02, -73.93), latitude = (40.70, 40.82))
-    Δ = native_cell_size(dataset)
-    g = native_region_grid(region, Δ, Δ)
+    Δ = globfp3d_native_cell_size(dataset)
+    g = globfp3d_native_region_grid(region, Δ, Δ)
     @test g.west ≤ -74.02 && g.west + g.Nx * g.Δλ ≥ -73.93
     @test g.south ≤ 40.70 && g.south + g.Ny * g.Δφ ≥ 40.82
     @test g.Δλ ≈ Δ && g.Δφ ≈ Δ
@@ -96,16 +96,16 @@ end
 #####
 
 @testset "GloBFP3D tile selection" begin
-    b = parse_tile_bounds("845_0.0_51.25_1.25_52.5_UK-ENG.zip")
+    b = globfp3d_parse_tile_bounds("845_0.0_51.25_1.25_52.5_UK-ENG.zip")
     @test b.gid == 845
     @test (b.west, b.south, b.east, b.north) == (0.0, 51.25, 1.25, 52.5)
-    b2 = parse_tile_bounds("985_-2.5_42.5_-1.25_43.75_FR_SP.shp")
+    b2 = globfp3d_parse_tile_bounds("985_-2.5_42.5_-1.25_43.75_FR_SP.shp")
     @test (b2.west, b2.south, b2.east, b2.north) == (-2.5, 42.5, -1.25, 43.75)
-    @test isnothing(parse_tile_bounds("world_grid.zip"))
+    @test isnothing(globfp3d_parse_tile_bounds("world_grid.zip"))
 
     nyc = BoundingBox(longitude = (-74.02, -73.93), latitude = (40.70, 40.82))
-    @test tile_intersects((; west = -75.0, south = 40.0, east = -73.75, north = 41.25), nyc)
-    @test !tile_intersects((; west = 0.0, south = 51.25, east = 1.25, north = 52.5), nyc)
+    @test globfp3d_tile_intersects((; west = -75.0, south = 40.0, east = -73.75, north = 41.25), nyc)
+    @test !globfp3d_tile_intersects((; west = 0.0, south = 51.25, east = 1.25, north = 52.5), nyc)
 end
 
 #####
@@ -116,7 +116,7 @@ end
     region = BoundingBox(longitude = (-74.02, -73.93), latitude = (40.70, 40.82))
 
     @test GlobalBuildingFootprints3D().resolution == 3
-    @test native_resolution(GlobalBuildingFootprints3D(resolution = 10)) == 10
+    @test globfp3d_native_resolution(GlobalBuildingFootprints3D(resolution = 10)) == 10
     @test_throws ArgumentError GlobalBuildingFootprints3D(resolution = 0)
 
     dataset = GlobalBuildingFootprints3D()
