@@ -15,8 +15,6 @@ using NumericalEarth.DataWrangling.ASTERGED: asterged_short_name, asterged_versi
                                              broadband_map, place_tile!,
                                              OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS
 
-const OpenLandMap = NumericalEarth.DataWrangling.OpenLandMap
-
 function NumericalEarth.DataWrangling.IBCAO.reproject_ibcao_to_netcdf(tiff_path, nc_path)
     ArchGDAL.read(tiff_path) do src
         # Warp from EPSG:3996 (Polar Stereographic) to EPSG:4326 (WGS84)
@@ -221,7 +219,7 @@ function validate_geographic_northup(dataset, geotransform)
     return nothing
 end
 
-function OpenLandMap.read_cog_window(source, bbox::BoundingBox)
+function NumericalEarth.DataWrangling.OpenLandMap.read_cog_window(source, bbox::BoundingBox)
     configure_vsicurl!()
 
     W, E = bbox.longitude
