@@ -149,33 +149,23 @@ function OpenLandMap.read_cog_window(source, bbox::BoundingBox)
 end
 
 #####
-##### 3D-GloBFP building-footprint ingest (per-tile shapefiles → per-cell morphometry)
-#####
-#####
-##### Discovers the figshare tile `.zip`s intersecting a BoundingBox, downloads them, rasterizes
-##### the EPSG:4326 footprint `Height`s onto a fine lat/lon raster, and writes a regional
-##### building-height NetCDF. The shared `Field(::Metadatum, grid)` path reads and regrids it, and
-##### `building_morphometry` reduces it to per-cell morphometry.
+##### 3D-GloBFP building-footprint ingest: download the figshare tile shapefiles intersecting a
+##### `BoundingBox` and rasterize their footprint `Height`s into a building-height NetCDF.
 #####
 
-# Fetch and cache the tile catalog: (name, download_url, west, south, east, north) for every
-# tile across the ten figshare parts, parsed from the filenames. Cached as a TSV so the ten
-# figshare API calls happen only once per machine.
+# Tile catalog for the ten figshare parts, cached as a TSV so the API calls happen once per machine.
 function globfp3d_tile_catalog(cache_dir)
     catalog_path = joinpath(cache_dir, "tile_catalog.tsv")
     if isfile(catalog_path)
         entries = read_tile_catalog(catalog_path)
         isnothing(entries) || return entries
-        # A malformed or partial catalog (e.g. an interrupted legacy write) is discarded and rebuilt.
         rm(catalog_path; force = true)
     end
 
     mkpath(cache_dir)
     entries = NamedTuple[]
     # figshare file objects are flat JSON (no nested braces), so match each object and read its
-    # `name`/`download_url` independently: order-independent, and a link-only file (null
-    # `download_url`) simply fails the url match and is skipped. Non-file objects are filtered by
-    # `parse_tile_bounds`.
+    # `name`/`download_url` independently; a link-only file (null `download_url`) is skipped.
     object_regex = r"\{[^{}]*\}"
     name_regex   = r"\"name\"\s*:\s*\"([^\"]+)\""
     url_regex    = r"\"download_url\"\s*:\s*\"([^\"]+)\""
@@ -206,9 +196,8 @@ function globfp3d_tile_catalog(cache_dir)
     return entries
 end
 
-# Read a cached tile catalog, returning `nothing` (so the caller rebuilds) if any line is not the
-# expected six tab-separated fields with parseable coordinates — e.g. a truncated last line from an
-# interrupted write, or a legacy format.
+# Returns `nothing`, so the caller rebuilds, if any line is not the expected six tab-separated
+# fields with parseable coordinates — a truncated write, or a legacy format.
 function read_tile_catalog(catalog_path)
     entries = NamedTuple[]
     for line in eachline(catalog_path)
@@ -240,8 +229,7 @@ function globfp3d_download_tile(entry, cache_dir)
     return globfp3d_vsi_shapefile(zip_path)
 end
 
-# The shapefile inside a tile archive can have a different basename than the zip, or sit in a
-# subfolder, so find the `.shp` by listing the archive recursively instead of assuming its name.
+# The `.shp` basename can differ from the zip's and can sit in a subfolder, so list the archive.
 function globfp3d_vsi_shapefile(zip_path)
     vsi_root = string("/vsizip/", zip_path)
     entries = vsireaddirrecursive(vsi_root)
@@ -253,10 +241,9 @@ function globfp3d_vsi_shapefile(zip_path)
     return string(vsi_root, "/", entries[index])
 end
 
-# Burn the footprint `Height`s of one tile onto the region raster, over just the window the tile's
-# features occupy — found from the layer extent, which bounds every footprint including any that
-# overhangs the nominal tile edge — so cost scales with the tile rather than the whole region.
-# Disjoint tiles combine by max (a plain union).
+# Burn one tile's footprint `Height`s onto the region raster, over just the window its layer extent
+# covers, which bounds every footprint including ones overhanging the nominal tile edge. Disjoint
+# tiles combine by max.
 function globfp3d_rasterize_tile!(height, vsi_path, grid)
     ArchGDAL.read(vsi_path) do dataset
         layer = ArchGDAL.getlayer(dataset, 0)

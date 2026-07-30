@@ -26,26 +26,20 @@ end
 """
     GlobalBuildingFootprints3D(; resolution = 3)
 
-3D-GloBFP building footprints (Che et al. 2024): ~1.3 billion individual building footprint
-polygons (LoD1), each carrying an estimated `Height` (m), distributed globally as per-tile
-shapefiles in EPSG:4326.
+3D-GloBFP building footprints (Che et al. 2024): ~1.3 billion building polygons (LoD1), each
+carrying an estimated height, distributed globally as per-tile shapefiles in EPSG:4326.
 
-The adapter **rasterizes** the footprint heights onto a fine grid of `resolution` meters
-(default 3 m), producing a single decoded field. `:building_height` (the height of the
-building covering each cell, `0` where unbuilt). This fine building-height raster is the
-accurate common source for per-cell morphometry: [`building_morphometry`](@ref) reduces it
-onto any (coarser) target grid, computing the mean/maximum height, height standard deviation,
-built-up fraction, frontal-area index, and gross building lift, each with the estimator
-appropriate to it.
+The adapter rasterizes the footprint heights onto a fine grid of `resolution` meters, giving a
+single variable `:building_height` (m, `0` where unbuilt). [`building_morphometry`](@ref) reduces
+that raster onto a coarser target grid.
 
 Because it is a global vector product, it is read in regional windows only: construct the
-`Metadatum` with a longitude/latitude `BoundingBox`. The windowed tile download + rasterization
-is performed by `ext/NumericalEarthArchGDALExt.jl` and requires `using ArchGDAL`.
+`Metadatum` with a longitude/latitude `BoundingBox`. The tile download and rasterization require
+`using ArchGDAL`.
 
-The heights are ML-estimated (XGBoost, RMSE 1.9–14.6 m) and biased low. The `Height`
-attributes are licensed CC BY 4.0; the footprint geometry derives from Microsoft Building
-Footprints (ODbL), OpenStreetMap (ODbL) and Google–Microsoft Open Buildings (CC BY 4.0),
-whose share-alike/attribution terms may propagate to a derived product.
+Heights are ML-estimated (RMSE 1.9–14.6 m) and biased low. They are licensed CC BY 4.0; the
+footprint geometry derives from Microsoft Building Footprints and OpenStreetMap (ODbL) and
+Google–Microsoft Open Buildings (CC BY 4.0).
 
 Reference: Che, Y. et al. (2024), *3D-GloBFP: the first global three-dimensional building
 footprint dataset*, Earth Syst. Sci. Data 16:5357–5374, doi:10.5194/essd-16-5357-2024
@@ -75,7 +69,7 @@ Base.show(io::IO, dataset::GlobalBuildingFootprints3D) = print(io, summary(datas
 const GlobalBuildingFootprints3DMetadatum = Metadatum{<:GlobalBuildingFootprints3D}
 
 #####
-##### Variables — the adapter decodes a single fine building-height raster
+##### Variables
 #####
 
 GloBFP3D_variable_names = Dict(:building_height => "building_height")
@@ -89,20 +83,15 @@ DataWrangling.dataset_variable_name(data::GlobalBuildingFootprints3DMetadatum) =
 
 DataWrangling.default_download_directory(::GlobalBuildingFootprints3D) = download_GloBFP3D_cache
 
-# The rasterized regional raster is on a plain lat/lon grid; the native hull is the global
-# lat/lon extent and the shared regrid restricts it to the BoundingBox.
+# The native hull is global; the shared regrid restricts the read to the metadatum's BoundingBox.
 DataWrangling.longitude_interfaces(::GlobalBuildingFootprints3D) = (-180, 180)
 DataWrangling.latitude_interfaces(::GlobalBuildingFootprints3D)  = (-90, 90)
 
 native_resolution(dataset::GlobalBuildingFootprints3D) = dataset.resolution
 
-# Degree step of a `resolution`-meter arc on the default planet, using the same metric a
-# LatitudeLongitudeGrid does (`meters = radius · deg2rad(degrees)`). The raster uses this step in
-# BOTH longitude and latitude — a uniform lat/lon grid — so it is a sub-window of the global
-# lattice the shared `Field(::Metadatum)` read path assumes (from `longitude_interfaces` + `size`);
-# a latitude-dependent Δλ would misalign that integer-offset read. Cells are thus ~`resolution` m
-# N–S and ~`resolution`·cos φ m E–W. Ingest has no target grid, so we use the global default
-# radius (a custom-radius grid shifts this by < 0.1%).
+# Degree step of a `resolution`-meter arc, used in BOTH longitude and latitude so the raster stays
+# a sub-window of the global lattice the shared `Field(::Metadatum)` read path assumes; a
+# latitude-dependent Δλ would misalign that read. Cells are ~`resolution` m N–S, less E–W.
 native_cell_size(dataset::GlobalBuildingFootprints3D) =
     rad2deg(native_resolution(dataset) / Oceananigans.defaults.planet_radius)
 
@@ -158,7 +147,7 @@ DataWrangling.is_three_dimensional(::GlobalBuildingFootprints3DMetadatum) = fals
 DataWrangling.longitude_name(::GlobalBuildingFootprints3DMetadatum) = "lon"
 DataWrangling.latitude_name(::GlobalBuildingFootprints3DMetadatum)  = "lat"
 
-# NEVER inpaint: a building height of 0 over non-built land is physical, not a gap.
+# A building height of 0 over unbuilt land is physical, not a gap: never inpaint.
 DataWrangling.default_inpainting(::GlobalBuildingFootprints3DMetadatum) = nothing
 
 Oceananigans.Fields.location(::GlobalBuildingFootprints3DMetadatum) = (Center, Center, Center)
@@ -187,39 +176,21 @@ end
 #####
 ##### Per-cell morphometry from the fine building-height raster
 #####
-#####
-##### Each variable is reduced from the fine cells falling in a target cell with the
-##### estimator appropriate to it: a mean over built cells for the height statistics, the
-##### coverage fraction for λp, the whole-cell mean for the gross lift, a running max for
-##### Hmax, and the windward wall area (from height steps) for the frontal-area index λf.
-#####
 
-# Target cell each fine coordinate falls in, from the target cell `faces`. Resolved once per fine
-# row/column (not per cell), so the hot loop stays O(1) per fine cell for regular and stretched
-# grids alike. `searchsortedlast` returns 0 or `N+1` outside the target hull (filtered by the
-# bounds check in the loop).
+# Target cell each fine coordinate falls in, resolved once per fine row/column rather than per
+# cell. `searchsortedlast` returns 0 or `N+1` outside the target hull, filtered by the bounds
+# check in the loop below.
 target_index_map(faces, coordinates) = Int[searchsortedlast(faces, c) for c in coordinates]
 
 """
     reduce_morphometry(height, longitudes, latitudes, target_grid)
 
-Reduce a fine building-height raster — `height` (m, `0` where unbuilt) on the regular grid of
-cell-center `longitudes`/`latitudes` (degrees) — onto `target_grid` (a coarser
-`LatitudeLongitudeGrid`, regular or latitude/longitude-stretched). Returns a NamedTuple of
-`(Nx, Ny)` arrays:
+Reduce the fine building-height raster `height` (m), on the regular grid of cell-center
+`longitudes`/`latitudes` (degrees), onto `target_grid`. Returns the arrays that
+[`building_morphometry`](@ref) wraps in `Field`s; empty target cells are `0`.
 
-- `built_up_fraction` `λp` — fraction of fine cells that are built.
-- `mean_building_height` `H` — mean height over the **built** fine cells (area-weighted).
-- `building_height_std` `σH` — standard deviation of height over the built fine cells.
-- `maximum_building_height` `Hmax` — maximum height (max-pooled).
-- `gross_building_height` — mean height over **all** fine cells (`= λp·H`), the DSM lift.
-- `frontal_area_index` `λf` — windward wall area from height steps, direction-averaged:
-  `(Σₓ|ΔH|·dy + Σᵧ|ΔH|·dx) / (4·A)`.
-
-Empty target cells are `0`. The fine raster is geographic (EPSG:4326), so `target_grid` must be a
-`LatitudeLongitudeGrid` (coarser than the raster); each fine cell is placed by the target cell
-faces, so a latitude/longitude-stretched grid works too, and the latitude-varying cell size is
-carried through the metric `dx`/`dy` in `λf`.
+Each fine cell is placed by the target cell faces, so a latitude/longitude-stretched
+`target_grid` works too, with the latitude-varying cell size carried through `dx`/`dy` in `λf`.
 """
 function reduce_morphometry(height, longitudes, latitudes, target_grid::LatitudeLongitudeGrid)
     Nx = size(target_grid, 1)
@@ -265,8 +236,7 @@ function reduce_morphometry(height, longitudes, latitudes, target_grid::Latitude
     gross_building_height   = zeros(Float64, Nx, Ny)
     frontal_area_index      = zeros(Float64, Nx, Ny)
 
-    # Metric fine-cell sizes on the target grid's sphere, as Oceananigans measures them
-    # (Δx = radius·cosd(φ)·deg2rad(Δλ), Δy = radius·deg2rad(Δφ)).
+    # Fine-cell sizes on the target grid's sphere, as Oceananigans measures them.
     R = target_grid.radius
     for J in 1:Ny
         φc = φcenters[J]
@@ -299,10 +269,17 @@ end
 
 Per-cell building morphometry on `target_grid` (a `LatitudeLongitudeGrid`, coarser than the
 `dataset` rasterization resolution), aggregated from the fine 3D-GloBFP building-height raster
-over `region`. Returns a NamedTuple of `Field`s (`mean_building_height`, `building_height_std`,
-`maximum_building_height`, `built_up_fraction`, `frontal_area_index`, `gross_building_height`)
-via [`reduce_morphometry`](@ref); see there for the per-variable estimators. Downloading and
-rasterizing the footprints requires `using ArchGDAL`.
+over `region`. Returns a NamedTuple of `Field`s:
+
+- `built_up_fraction` `λp` — fraction of fine cells that are built.
+- `mean_building_height` `H` — mean height over the built fine cells.
+- `building_height_std` `σH` — standard deviation of height over the built fine cells.
+- `maximum_building_height` `Hmax` — maximum height.
+- `gross_building_height` — mean height over all fine cells (`= λp·H`), the digital surface lift.
+- `frontal_area_index` `λf` — windward wall area from height steps, direction-averaged:
+  `(Σₓ|ΔH|·dy + Σᵧ|ΔH|·dx) / (4·A)`.
+
+Downloading and rasterizing the footprints requires `using ArchGDAL`.
 """
 function building_morphometry(target_grid::LatitudeLongitudeGrid; dataset = GlobalBuildingFootprints3D(), region)
     metadatum = Metadatum(:building_height; dataset, region)
@@ -312,7 +289,6 @@ function building_morphometry(target_grid::LatitudeLongitudeGrid; dataset = Glob
 
     reduced = reduce_morphometry(height, longitudes, latitudes, target_grid)
 
-    # The reduction runs on the host; move each result onto the target architecture (CPU or GPU).
     arch = architecture(target_grid)
     return map(reduced) do array
         field = Field{Center, Center, Nothing}(target_grid)
@@ -322,10 +298,8 @@ function building_morphometry(target_grid::LatitudeLongitudeGrid; dataset = Glob
 end
 
 #####
-##### Tile discovery — the 3D-GloBFP shapefiles are hosted on figshare in ten parts, one
-##### `.zip` per grid tile named `gridID_lon1_lat1_lon2_lat2_region.zip` (SW/NE corners).
-##### The tile bbox is parsed from the filename; the figshare file index + download live in
-##### the ArchGDAL extension.
+##### Tile discovery — 3D-GloBFP ships one `.zip` per grid tile, named
+##### `gridID_lon1_lat1_lon2_lat2_region.zip` (SW/NE corners), across ten figshare parts.
 #####
 
 # figshare article ids of the ten dataset parts (see the Zenodo record's data_links.txt).
@@ -347,11 +321,6 @@ function parse_tile_bounds(name)
     return (; gid = parse(Int, m[1]), west = W, south = S, east = E, north = N)
 end
 
-"""
-    tile_intersects(bounds, region::BoundingBox)
-
-Whether a tile's `bounds` (from [`parse_tile_bounds`](@ref)) overlaps `region`.
-"""
 function tile_intersects(bounds, region::BoundingBox)
     λ₁, λ₂ = region.longitude
     φ₁, φ₂ = region.latitude
@@ -371,8 +340,7 @@ function Downloads.download(metadatum::GlobalBuildingFootprints3DMetadatum)
     return nc_path
 end
 
-# Implemented in ext/NumericalEarthArchGDALExt.jl once `ArchGDAL` is loaded. This fallback
-# fires only when the extension is not active.
+# Implemented in ext/NumericalEarthArchGDALExt.jl; this fallback fires when it is not active.
 globfp3d_rasterize_to_netcdf(metadatum, nc_path) =
     error("Reading the 3D-GloBFP footprint shapefiles requires the ArchGDAL package " *
           "(for the OGR vector read + rasterization). Load it with `using ArchGDAL`.")
