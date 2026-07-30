@@ -363,6 +363,7 @@ include("IBCSO/IBCSO.jl")
 include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
 include("CopernicusDEM/CopernicusDEM.jl")
+include("ETHSentinel2Canopy/ETHSentinel2Canopy.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
 
 using .ETOPO
@@ -380,6 +381,7 @@ using .IBCSO
 using .GEBCO
 using .IBCAO
 using .CopernicusDEM
+using .ETHSentinel2Canopy
 using .CopernicusLandAlbedo
 
 function dataset_modules()

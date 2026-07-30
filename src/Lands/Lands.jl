@@ -18,6 +18,11 @@ export AbstractLand,
        NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
        NoRunoff, InfiltrationCapacityRunoff,
        VariablySaturatedHydrology,
+       # Aerodynamic roughness closure (drag partition)
+       DragPartitionParameters, DragPartitionRoughness, canopy_drag_parameters, canopy_roughness,
+       canopy_wind_ratio, aerodynamic_parameters, compute_aerodynamic_roughness!,
+       canopy_roughness_climatology, drag_partition_group, representative_canopy_height,
+       is_vegetated, nonvegetated_roughness,
        # Atmosphere-facing accessors
        surface_temperature, surface_saturation
 
@@ -32,13 +37,14 @@ instead.
 abstract type AbstractLand end
 
 using Adapt: Adapt
+using DocStringExtensions: TYPEDSIGNATURES, TYPEDEF
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField
 using Oceananigans.Grids: grid_name, Center, Face
-using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series
+using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series, FieldTimeSeries
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!, prettysummary, prettytime
@@ -51,6 +57,12 @@ using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, Co
 include("energy_balance/energy_balance.jl")
 include("hydrology/hydrology.jl")
 include("properties/property_providers.jl")
+
+# Aerodynamic roughness closure (drag partition): canopy height + leaf area index
+# → momentum roughness length ℓᵐ and zero-plane displacement d.
+include("roughness/canopy_roughness_closure.jl")
+include("roughness/igbp_canopy_classes.jl")
+include("roughness/canopy_roughness_field.jl")
 
 # Container.
 include("slab_land.jl")

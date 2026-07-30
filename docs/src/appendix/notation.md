@@ -127,13 +127,13 @@ component-superscript rule above.
 |:----:|:----:|:---------|:------------|
 | ``T`` | `temperature` | ground temperature | Prognostic land-column temperature (K) |
 | ``M`` | `water_storage` | land water | Prognostic land water mass per area (kg m⁻²) |
-| ``M^{+}`` | `maximum_water_storage` | maximum land water | Bucket capacity; soil-science "field capacity" (kg m⁻²) |
+| ``M^{+}`` | `maximum_water_storage` | maximum land water | Bucket capacity after [Manabe (1969)](@cite manabe1969climate); soil-science "field capacity" (kg m⁻²) |
 | ``𝒮`` | `saturation` | surface saturation | Continuous land surface saturation ``\mathrm{clamp}(M/M⁺, 0, 1)``; the interface humidity models derive their availability ``β`` from it (–) |
-| ``𝒮ᶜ`` | `critical_saturation` | critical saturation | Saturation above which the surface evaporates at full efficiency, for `CriticalSaturation` (–) |
+| ``𝒮ᶜ`` | `critical_saturation` | critical saturation | Saturation above which the surface evaporates at full efficiency, for `CriticalSaturation` — the critical wetness of [Manabe (1969)](@cite manabe1969climate) (–) |
 | ``𝒮ᶜ`` | `dry_layer_onset_saturation` | dry-layer onset saturation | Saturation below which a dry surface layer forms, for `StorageBasedDryLayerDepth`; shares the symbol ``𝒮ᶜ`` with `critical_saturation` above (–) |
 | ``T^{\mathrm{deep}}`` | `deep_temperature` | deep climatological temperature | Prescribed deep/climatological target temperature for force-restore (K) |
 | ``τ^{\mathrm{deep}}`` | `deep_time_scale` | deep-restore time scale | Time scale of surface relaxation toward ``T^{\mathrm{deep}}`` (s) |
-| ``d`` | `surface_thickness` | surface thickness | Thickness of the dry surface layer through which soil vapor diffuses, for `SkinHumidity` (m) |
+| ``\delta^s`` | `surface_thickness` | surface thickness | Thickness of the dry surface layer through which soil vapor diffuses, for `SkinHumidity` (m); the prescribed sibling of the diagnostic ``\delta^v`` below |
 | ``κ^q`` | `vapor_diffusivity` | soil vapor diffusivity | Vapor mass diffusivity in the surface soil layer, for `SkinHumidity` (kg m⁻¹ s⁻¹) |
 | ``\chi^{\mathrm{sand}}`` | `sand` | soil sand fraction | Mass fraction of sand grains in the mineral (non-organic) solid matrix (kg kg⁻¹)
 | ``\chi^{\mathrm{silt}}`` | `silt` | soil silt fraction | Mass fraction of silt grains in the mineral (non-organic) solid matrix (kg kg⁻¹)
@@ -145,7 +145,11 @@ component-superscript rule above.
 ### Variably-saturated slab land
 
 Symbols introduced by [`VariablySaturatedHydrology`](@ref),
-[`WaterCoupledEnergy`](@ref), and [`DryLayerHumidity`](@ref).
+[`WaterCoupledEnergy`](@ref), and [`DryLayerHumidity`](@ref). The retention curve ``\Pi(𝒮)`` and
+conductivity ``K(𝒮)`` follow [van Genuchten (1980)](@cite vangenuchten1980) with the
+[Mualem (1976)](@cite mualem1976new) pore-bundle model; the dry-layer symbols (``\delta^v``,
+``T^e``, ``q^e``, ``w^d``) follow the dry surface layer of
+[Ye and Pielke (1993)](@cite yepielke1993) and [Swenson and Lawrence (2014)](@cite swenson2014dry).
 
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
@@ -179,6 +183,46 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``D^v`` | `molecular_diffusivity` | vapor diffusivity in air | Molecular vapor diffusivity in air (m² s⁻¹) |
 | ``w^d`` | – | dry-layer piston velocity | ``w^d = D^v_{eff}/\max(\delta^v, \delta^v_{min})`` (m s⁻¹) |
 
+### Canopy aerodynamic roughness
+
+Symbols introduced by [`DragPartitionRoughness`](@ref), the drag-partition roughness sublayer of
+[Raupach (1994)](@cite raupach1994simplified) as parameterized for land-cover classes by
+[Jasinski et al. (2005)](@cite jasinski2005bulk) and recalibrated against satellite retrievals by
+[Borak et al. (2025)](@cite borak2025global), whose equation numbers the closure's docstrings
+quote. The momentum roughness length keeps
+the surface-layer symbol ``\ell^\mathrm{m}`` (see [Similarity theory / surface layer](@ref) and
+`interior_properties.momentum_roughness_length`, which consumes it). The displacement height is
+plain ``d``, the boundary-layer convention, with no element-type superscript: whether the
+roughness elements are leaves or roofs, ``d`` is the same quantity and only the closure that
+computes it changes.
+
+Area indices take the script ``𝒜``, superscripted when more than one is in play
+(``𝒜^{\mathrm{stem}}``, ``𝒜^{\mathrm{plant}}``); bare ``𝒜`` is the leaf area index while it is the
+only one. [Raupach's (1994)](@cite raupach1994simplified) own symbol ``\Lambda`` is unavailable — it is `deep_conductance`
+(``\Lambda^{\mathrm{deep}}``) above — as are ``\lambda`` (longitude) and ``L`` (one letter from the
+Obukhov length ``L_\star``). The critical index ``𝒜^c`` follows ``𝒮^c``: the value beyond which the
+behavior changes.
+
+Two of the source's symbols are avoided: `displacement_coefficient` keeps its verbose field name
+because ``\alpha`` is albedo here, and the drag ratio is written out as ``C^R/C^S`` because
+``\beta`` is moisture availability.
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``\ell^\mathrm{m}`` | `momentum_roughness_length` | momentum roughness length | Canopy aerodynamic roughness length from the drag partition (m) |
+| ``d`` | `displacement_height` | zero-plane displacement | Height of the logarithmic-profile origin above ground; the profile is ``\log[(z - d)/\ell^\mathrm{m}]`` (m) |
+| ``h`` | `canopy_height` | canopy height | Measured or class-representative canopy top height (m) |
+| ``𝒜`` | `leaf_area_index` | leaf area index | One-sided leaf area per unit ground area (m² m⁻²); the closure's input in place of Raupach's canopy area index (–) |
+| ``𝒜^c`` | `critical_leaf_area_index` | critical (skimming) index | Index above which the wind ratio saturates ([Borak et al. 2025](@cite borak2025global), Table 2); caps ``\gamma`` only, not ``d`` or ``\ell^\mathrm{m}`` (–) |
+| – | `maximum_valid_leaf_area_index` | data-quality ceiling | A larger index is treated as fill/artifact and gapped; not physics (–) |
+| ``\gamma`` | – | wind ratio | ``\gamma \equiv U_h/u_\star``, the drag partition between vegetation form drag and substrate friction (–) |
+| ``C^R`` | `form_drag_coefficient` | form drag coefficient | Vegetation element form drag coefficient (–) |
+| ``C^S`` | `substrate_drag_coefficient` | substrate drag coefficient | Ground-surface friction drag coefficient (–) |
+| ``(u_\star/U_h)_{\mathrm{max}}`` | `maximum_friction_ratio` | friction-ratio cap | Ceiling on the inverse wind ratio, flooring ``\gamma`` (–) |
+| ``c`` | `sublayer_decay_coefficient` | sublayer decay coefficient | Wind-profile decay in the roughness sublayer; closure-local, distinct from the heat capacities ``c^{pm}`` (–) |
+| – | `displacement_coefficient` | displacement coefficient | Coefficient of the ``1/(\gamma\sqrt{𝒜})`` correction in ``d/h`` (–) |
+| – | `sublayer_influence` | roughness-sublayer influence | Constant 0.193 offsetting the log profile within the roughness sublayer ([Raupach 1995](@cite raupach1995corrigenda)); distinct from the stability function ``\psi`` (–) |
+
 ## Ocean state variables
 
 | Math | Code | Property | Description |
@@ -207,6 +251,9 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``\epsilon`` | `ϵ` | emissivity | Surface emissivity (–) |
 
 ## Similarity theory / surface layer
+
+Monin–Obukhov surface-layer symbols. The default roughness lengths and stability functions
+follow [Edson et al. (2013)](@cite edson2013exchange).
 
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
@@ -315,6 +362,8 @@ Most symbols can be entered in the Julia REPL and in editors with Julia support 
 | `𝒬` | `\scrQ` | Script Q (heat flux) |
 | `ℐ` | `\scrI` | Script I (radiative intensity) |
 | `ℒ` | `\scrL` | Script L (latent heat) |
+| `𝒜` | `\scrA` | Script A (area index) |
+| `ℓ` | `\ell` | Script ell (roughness length) |
 | `τ` | `\tau` | Tau (kinematic stress) |
 | `ρ` | `\rho` | Rho (density) |
 | `σ` | `\sigma` | Sigma (Stefan–Boltzmann constant) |

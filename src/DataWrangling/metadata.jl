@@ -34,6 +34,16 @@ BoundingBox(grid::AbstractGrid; padding = 0) =
     BoundingBox(longitude = extrema(λnodes(grid, Face(), Center(), Center())) .+ (-padding, padding),
                 latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padding, padding))
 
+# Filename suffix keying a materialized regional file to its window, e.g.
+# `lon_4_5_lat_51_52`, or `global` for an unbounded (`nothing`) region. Shared by the
+# region-windowed datasets (CopernicusDEM, ETHSentinel2Canopy).
+bounded_region_suffix(::Nothing) = "global"
+bounded_region_suffix(region::BoundingBox) =
+    string("lon_", bound_str(region.longitude), "_lat_", bound_str(region.latitude))
+
+bound_str(::Nothing) = "nothing"
+bound_str(bounds) = string(bounds[1], "_", bounds[2])
+
 # `cells` grid cells of margin (degrees) so boundary target cells interpolate from real
 # source data instead of extrapolating past the window edge.
 function grid_cell_padding(grid; cells = 2)
