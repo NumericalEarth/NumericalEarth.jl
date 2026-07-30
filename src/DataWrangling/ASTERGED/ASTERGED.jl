@@ -22,13 +22,9 @@ end
 ##### Broadband-emissivity synthesis coefficients
 #####
 
-# Narrowband → broadband coefficients for ASTER TIR bands 10–14 (8.3, 8.6, 9.1,
-# 10.6, 11.3 µm) over the 8.0–13.5 µm window, from Ogawa & Schmugge (2004),
-# Earth Interactions 8(7), doi:10.1175/1087-3562(2004)008<0001:MSBEOT>2.0.CO;2.
-# The weights sum to unity so the broadband value is a convex combination of the
-# band emissivities. NOTE these are regressed over the Sahara Desert and applied
-# globally here — an extrapolation over humid/vegetated surfaces (see the
-# `ASTERGEDv3` docstring). A global multi-biome fit would be more defensible.
+# Narrowband → broadband coefficients for ASTER TIR bands 10–14 over the 8.0–13.5 µm
+# window, from Ogawa & Schmugge (2004). The weights sum to unity, so the broadband
+# value is a convex combination of the band emissivities.
 const OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS = [0.088, 0.053, 0.174, 0.380, 0.305]
 
 #####
@@ -38,60 +34,45 @@ const OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS = [0.088, 0.053, 0.174, 0.380, 
 """
     ASTERGEDv3 <: AbstractStaticDataset
 
-Global Emissivity Dataset (GED) v3 from the Advanced Spaceborne Thermal Emission
-and Reflection Radiometer (ASTER) aboard NASA's Terra satellite: a static (2000–2008 clear-sky
-mean) climatology of land-surface emissivity on a plain geographic (WGS84 lat/lon) grid,
-distributed as HDF5 in 1°×1° tiles. Two resolutions are supported:
+Global Emissivity Dataset (GED) v3 from the Advanced Spaceborne Thermal Emission and
+Reflection Radiometer (ASTER) aboard NASA's Terra satellite: a static 2000–2008
+clear-sky mean of land-surface emissivity on a WGS84 lat/lon grid, distributed as HDF5
+in 1°×1° tiles. Two resolutions are supported:
 
-- `:low_1km` — 1 km (36 arcsec, 100×100 px/tile). Default; matches typical
-  Earth-system grids without fetching ~100× the data.
-- `:high_100m` — 100 m (3.6 arcsec, 1000×1000 px/tile). For sub-km domains.
+- `:low_1km` — 1 km (36 arcsec), the default.
+- `:high_100m` — 100 m (3.6 arcsec), for sub-km domains.
 
-Internally these map to NASA's product short names (`AG100` / `AG1KM`), which
-appear in CMR queries and tile filenames.
+ASTER GED provides five narrowband emissivities (TIR bands 10–14). A longwave scheme
+needs a single broadband value, so the download collapses the five bands using the
+[Ogawa & Schmugge (2004)](@cite ogawa2004mapping) coefficients. The resulting `Field`
+is finite everywhere and can be passed to `SurfaceRadiationProperties` as its
+`emissivity`.
 
-ASTER GED provides five narrowband emissivities (TIR bands 10–14). A longwave
-scheme needs a single broadband value, so the download step collapses the five
-bands to one broadband emissivity using the [Ogawa & Schmugge (2004)](@cite ogawa2004mapping)
-coefficients.
+The product also retrieves an emissivity over water (open-ocean broadband ε ≈ 0.98).
+Genuine gaps appear only where a clear-sky retrieval was never obtained — persistent
+tropical cloud, summertime snow screened as cloud — and are inpainted when the `Field`
+is built, land from land and water from water, so a coastal gap never inherits the
+ocean value.
 
-The product retrieves an emissivity almost everywhere, including over water,
-where it reports a physical value (open-ocean broadband ε ≈ 0.98). Genuine gaps
-appear only where a clear-sky retrieval was never obtained (persistent cloud in the
-humid tropics, summertime snow screened as cloud); the product stores its fill value
-there, which decodes to `NaN`. Those `NaN`s are filled when a `Field` is built — see
-the gap-filling note below. The finite emissivity `Field` can be passed directly to
-`SurfaceRadiationProperties` as its `emissivity`.
-
-!!! note "Gap filling"
-    Building a `Field` fills every `NaN` gap with the default
-    `NearestNeighborInpainting(Inf)`, so the returned field is finite everywhere. A gap
-    over land is filled from land alone, never across the coastline from the water
-    retrievals, using the tiles' land/water map (see `fill_land_gaps`).
-
-Because ASTER GED is a fine regional-window raster, it is read in regional windows
-only: build the `Metadatum` with a longitude/latitude `BoundingBox`, most simply
-derived from the model grid,
+ASTER GED is read in regional windows only, so build the `Metadatum` with a
+longitude/latitude `BoundingBox`, most simply derived from the model grid,
 
     region = BoundingBox(grid; padding = default_horizontal_padding(ASTERGEDv3()))
 
-Reading the HDF5 tiles requires `ArchGDAL` (with the HDF5 driver) and NASA
-Earthdata credentials (`EARTHDATA_USERNAME` / `EARTHDATA_PASSWORD`); that path
-lives in `ext/NumericalEarthArchGDALExt.jl`.
+Reading the HDF5 tiles requires `ArchGDAL` (with the HDF5 driver) and NASA Earthdata
+credentials (`EARTHDATA_USERNAME` / `EARTHDATA_PASSWORD`).
 
 !!! note "Limitations"
-    The broadband coefficients are a Sahara-desert regression applied globally.
-    Being a static clear-sky mean, the product also misses temporal effects on the
-    model's own timescale — soil-moisture-driven emissivity changes during rain/TC
-    events, vegetation phenology, and snow (ε is 0.03–0.08 higher under snow) — and
-    the clear-sky sampling biases it toward dry states. Over water the returned value
-    is ASTER GED's own retrieval (≈ 0.98 over open ocean).
+    The broadband coefficients are a Sahara-desert regression applied globally, an
+    extrapolation over humid and vegetated surfaces. As a static clear-sky mean the
+    product also misses soil moisture, vegetation phenology, and snow (ε is 0.03–0.08
+    higher under snow), and its clear-sky sampling biases it toward dry states.
 
+Reference: Hulley et al. (2015), https://doi.org/10.1002/2015GL065564
 Data source: https://www.earthdata.nasa.gov/data/catalog/lpcloud-ag100-003
-Reference: Hulley et al. (2015), GRL, doi:10.1002/2015GL065564.
 """
 struct ASTERGEDv3 <: AbstractStaticDataset
-    resolution :: Symbol   # :low_1km (1 km) or :high_100m (100 m)
+    resolution :: Symbol
 end
 
 """
@@ -124,38 +105,33 @@ const ASTERGEDMetadatum = Metadatum{<:ASTERGEDv3}
 const ASTERGED_variables = (:emissivity, :emissivity_uncertainty)
 
 #####
-##### Pure decode / broadband synthesis core (no credentials / IO)
+##### Decode and broadband synthesis
 #####
 
 """
     asterged_decode_emissivity(DN)
 
-Decode a raw ASTER GED `/Emissivity/Mean` digital number to a `Float32`
-emissivity: fill value −9999 maps to `NaN`, otherwise scale by **0.001**
-(`ε = 0.001 · DN`) and clamp to the physical range `[0, 1]`.
-
-Note: ASTER GED's Temperature/Emissivity Separation retrieval carries no `ε ≤ 1`
-constraint, and the product stores band emissivities well above unity.
+Decode a raw `/Emissivity/Mean` digital number to a `Float32` emissivity: fill value
+−9999 maps to `NaN`, otherwise `ε = 0.001 · DN` clamped to `[0, 1]`. The clamp is
+needed because ASTER's Temperature/Emissivity Separation retrieval carries no `ε ≤ 1`
+constraint, and the product stores band emissivities above unity.
 """
 @inline asterged_decode_emissivity(DN) = ifelse(DN == -9999, NaN32, clamp(0.001f0 * DN, 0, 1))
 
 """
     asterged_decode_uncertainty(DN)
 
-Decode a raw ASTER GED `/Emissivity/SDev` digital number to a `Float32`
-emissivity standard deviation: fill value −9999 maps to `NaN`, otherwise scale
-by **0.0001** (`σ = 1.0e-4 · DN`). The scale differs from
-`asterged_decode_emissivity`'s 0.001 by 10× — decoding SDev with the Mean scale
-is a silent 10× error.
+Decode a raw `/Emissivity/SDev` digital number to a `Float32` emissivity standard
+deviation: fill value −9999 maps to `NaN`, otherwise `σ = 1e-4 · DN`. Note the scale
+is 10× smaller than `asterged_decode_emissivity`'s.
 """
 @inline asterged_decode_uncertainty(DN) = ifelse(DN == -9999, NaN32, 1f-4 * DN)
 
 """
     broadband_emissivity(ε_vector, coefficients)
 
-Collapse the five decoded narrowband emissivities (ASTER bands 10–14) to a single
-broadband emissivity as the dot product with `coefficients` (`NaN` in any band
-propagates).
+Collapse the five decoded narrowband emissivities (ASTER bands 10–14) to one broadband
+emissivity, the dot product with `coefficients`. `NaN` in any band propagates.
 """
 broadband_emissivity(ε_vector, coefficients) =
     sum(coefficients[b] * ε_vector[b] for b in eachindex(coefficients))
@@ -164,9 +140,9 @@ broadband_emissivity(ε_vector, coefficients) =
     broadband_uncertainty(σ_vector, coefficients)
 
 Propagate the five per-band standard deviations to a broadband uncertainty as the
-**fully-correlated** upper bound `σ = Σ cᵢ σᵢ`. ASTER TES band emissivities share
-one temperature retrieval and atmospheric correction, so their errors are strongly
-positively correlated.
+fully-correlated upper bound `σ = Σ cᵢ σᵢ`. ASTER TES band emissivities share one
+temperature retrieval and atmospheric correction, so their errors are strongly
+correlated.
 """
 broadband_uncertainty(σ_vector, coefficients) =
     sum(coefficients[b] * σ_vector[b] for b in eachindex(coefficients))
@@ -174,10 +150,9 @@ broadband_uncertainty(σ_vector, coefficients) =
 """
     broadband_map(decoded_bands, coefficients)
 
-Collapse a decoded `(5, Nx, Ny)` array (band index first, as in the HDF5
-`/Emissivity/*` layout) to a broadband `(Nx, Ny)` array — the array form of
-`broadband_emissivity` / `broadband_uncertainty` (both are the same nonnegative
-linear combination). `NaN` in any band propagates.
+Array form of `broadband_emissivity` and `broadband_uncertainty`: collapse a decoded
+`(5, Nx, Ny)` array (band index first, as in the HDF5 `/Emissivity/*` layout) to a
+broadband `(Nx, Ny)` array.
 """
 function broadband_map(decoded_bands, coefficients)
     FT = eltype(decoded_bands)
@@ -185,8 +160,7 @@ function broadband_map(decoded_bands, coefficients)
     return dropdims(sum(weights .* decoded_bands; dims = 1); dims = 1)
 end
 
-# Native spacing along an axis; for a degenerate single-cell axis, fall back to the
-# tile's own (identical) spacing so the index map avoids dividing by a zero span.
+# Fall back to the tile's spacing on a single-cell axis, whose span is zero.
 function axis_spacing(axis, tile_axis)
     length(axis)      > 1 && return (axis[end] - axis[1]) / (length(axis) - 1)
     length(tile_axis) > 1 && return abs(tile_axis[2] - tile_axis[1])
@@ -196,16 +170,12 @@ end
 """
     place_tile!(field, tile_values, tile_longitude, tile_latitude, longitude, latitude)
 
-Block-copy a decoded tile's cells onto the analytic regional grid `(longitude,
-latitude)` — both uniform and (for ASTER GED's integer-degree tiles) aligned — by
-mapping each tile-cell center to its native index. `NaN` tile cells are skipped so
-a valid value from an adjacent tile at a shared boundary is not overwritten. Cells
-outside the tile's footprint are left untouched. Value-based indexing, so it does
-not care whether the tile stores latitude ascending or descending.
-
-Longitude offsets are folded into `[-180, 180]`, so a `[-180, 180]` tile lands on a
-grid labeled in any convention (including one crossing the antimeridian). This
-assumes the region spans less than 180° of longitude.
+Block-copy a decoded tile onto the regional grid `(longitude, latitude)` by mapping
+each tile-cell center to its native index. Indexing is by value, so the tile may store
+latitude in either direction; longitudes are folded into `[-180, 180]`, so a tile lands
+on a grid labeled in any convention (this assumes the region spans less than 180° of
+longitude). `NaN` tile cells are skipped, leaving a valid value from an adjacent tile
+at a shared boundary in place, and cells outside the tile's footprint are untouched.
 """
 function place_tile!(field, tile_values, tile_longitude, tile_latitude, longitude, latitude)
     Nx, Ny = size(field)
@@ -215,7 +185,6 @@ function place_tile!(field, tile_values, tile_longitude, tile_latitude, longitud
         jr = round(Int, (φ - latitude[1]) / Δφ) + 1
         (1 ≤ jr ≤ Ny) || continue
         for (il, λ) in enumerate(tile_longitude)
-            # Fold into [-180, 180] so a [-180, 180] tile lands on any-convention grid labels.
             ic = round(Int, rem(λ - longitude[1], 360, RoundNearest) / Δλ) + 1
             (1 ≤ ic ≤ Nx) || continue
             v = tile_values[il, jl]
@@ -237,22 +206,18 @@ DataWrangling.default_horizontal_padding(::ASTERGEDv3) = 0.02
 
 DataWrangling.reversed_latitude_axis(::ASTERGEDv3) = false
 
-# Follow CopernicusDEM: the native lat/lon hull is the global integer-degree tile
-# boundaries; `construct_native_grid` restricts it to the requested BoundingBox.
 DataWrangling.longitude_interfaces(::ASTERGEDv3) = (-180, 180)
 DataWrangling.latitude_interfaces(::ASTERGEDv3) = (-90, 90)
 
-# Global pixel counts (Nx, Ny, Nz) set only the native resolution Δ; the download
-# returns the restricted regional window.
-# :high_100m: 1000 px/deg (100 m); :low_1km: 100 px/deg (1 km).
+# Global pixel counts set the native resolution Δ; the download returns the regional window.
 global_pixels(::Val{:high_100m}) = (360_000, 180_000, 1)
 global_pixels(::Val{:low_1km})   = (36_000, 18_000, 1)
 
 Base.size(dataset::ASTERGEDv3) = global_pixels(Val(dataset.resolution))
 Base.size(dataset::ASTERGEDv3, variable) = size(dataset)
 
-# Region-keyed but variable-independent: one regional NetCDF holds both the
-# emissivity and its uncertainty (the tile download produces both at once).
+# Region-keyed but variable-independent: one regional NetCDF holds both the emissivity
+# and its uncertainty, since the tile download produces both at once.
 DataWrangling.metadata_filename(dataset::ASTERGEDv3, name, date, region) =
     string("ASTERGED_", dataset.resolution, "_", region_suffix(region), ".nc")
 
@@ -267,8 +232,6 @@ end
 bound_str(::Nothing) = "nothing"
 bound_str(bounds) = string(bounds[1], "_", bounds[2])
 
-# Shared by `validate_dataset_coverage` and `Downloads.download` so the guard fires
-# on every load path.
 function require_bounded_region(metadata::ASTERGEDMetadatum)
     region = metadata.region
     if !(region isa BoundingBox) || isnothing(region.longitude) || isnothing(region.latitude)
@@ -291,12 +254,11 @@ DataWrangling.validate_dataset_coverage(grid, metadata::ASTERGEDMetadatum) =
 DataWrangling.is_three_dimensional(::ASTERGEDMetadatum) = false
 DataWrangling.dataset_variable_name(metadata::ASTERGEDMetadatum) = string(metadata.name)
 
-# Water gaps left by `fill_land_gaps` are filled here, from any neighbor. `Inf` iterations
-# so no gap is left as the zero a capped inpainting would write.
+# `Inf` iterations, so no gap is left as the zero a capped inpainting would write.
 DataWrangling.default_inpainting(::ASTERGEDMetadatum) = NearestNeighborInpainting(Inf)
 
 # The regional NetCDF is variable-independent, so key the inpainted cache on the
-# variable name too (otherwise emissivity and uncertainty would collide).
+# variable name too; otherwise emissivity and uncertainty would collide.
 DataWrangling.inpainted_metadata_path(metadata::ASTERGEDMetadatum) =
     joinpath(metadata.dir,
              string("inpainted_", metadata.name, "_", replace(metadata.filename, ".nc" => ".jld2")))
@@ -313,27 +275,22 @@ Oceananigans.Fields.location(::ASTERGEDMetadatum) = (Center, Center, Nothing)
 ##### Product identity
 #####
 
-# NASA CMR short name / version for the ASTER GED product at each resolution
-# ("AG" abbreviates ASTER GED). `DataWrangling.cmr_granules` turns these into the
-# download URLs of the tiles intersecting a region.
+# NASA CMR short name and version at each resolution ("AG" abbreviates ASTER GED).
 asterged_short_name(dataset::ASTERGEDv3) = asterged_short_name(Val(dataset.resolution))
 asterged_short_name(::Val{:high_100m}) = "AG100"
 asterged_short_name(::Val{:low_1km})   = "AG1KM"
 asterged_version(::ASTERGEDv3) = "003"
 
 #####
-##### Data retrieval — the regional NetCDF already holds the decoded broadband
-##### floats (with NaN over clear-sky retrieval gaps), so this is a dumb reader; the
-##### decode / broadband / assembly happens at download time (see the ArchGDAL extension).
+##### Data retrieval
 #####
 
 """
     retrieve_data(metadata::ASTERGEDMetadatum)
 
-Read the regional broadband `Float32` field for `metadata.name` from the NetCDF
-written by the download step (see `asterged_tiles_to_netcdf`), and fill its land gaps
-from land (see `fill_land_gaps`). Water gaps are left `NaN` for the downstream
-inpainting. Returns a regional `(Nx, Ny)` array.
+Read the regional `(Nx, Ny)` broadband field for `metadata.name` and fill its land gaps
+from land. Water gaps are left `NaN` for the downstream inpainting. The decode and
+broadband collapse happen at download time, in the ArchGDAL extension.
 """
 function DataWrangling.retrieve_data(metadata::ASTERGEDMetadatum)
     metadata.name ∈ ASTERGED_variables ||
@@ -342,8 +299,7 @@ function DataWrangling.retrieve_data(metadata::ASTERGEDMetadatum)
 
     ds = DataWrangling.Dataset(metadata_path(metadata))
     data = ds[DataWrangling.dataset_variable_name(metadata)][:, :]
-    # 0 = land, 1 = water; the map's own −9999 fill and cells outside every tile (NaN)
-    # count as land, so a gap there is filled from land rather than across a coastline.
+    # Only 1 is water, so the map's own fill and cells outside every tile count as land.
     water = ds["land_water_map"][:, :] .== 1
     close(ds)
 
@@ -353,16 +309,14 @@ end
 """
     fill_land_gaps(data, water, metadata)
 
-Fill the clear-sky retrieval gaps over land from land alone. ASTER GED retrieves an
-emissivity over water too (open-ocean broadband ε ≈ 0.98, against 0.94–0.96 over land),
-so a coastal land gap filled from any neighbor inherits the ocean value. Blanking the
-water first denies it that: a `NaN` neighbor never donates, so the surviving donors are
-land. Water keeps its own retrievals, and its gaps stay `NaN` for the ungated inpainting
-that `Field` runs next.
+Fill the clear-sky retrieval gaps over land from land alone. Water is blanked to `NaN`
+first so it cannot donate: a coastal land gap would otherwise inherit the open-ocean
+ε ≈ 0.98 against 0.94–0.96 over land. Water keeps its own retrievals, and its gaps stay
+`NaN` for the ungated inpainting that `Field` runs next.
 """
 function fill_land_gaps(data, water, metadata)
     land = .!water
-    any(land .& .!isnan.(data)) || return data   # no land donor: leave it to the caller
+    any(land .& .!isnan.(data)) || return data   # no land donor
 
     blanked = copy(data)
     blanked[water] .= NaN32
@@ -382,9 +336,7 @@ function fill_land_gaps(data, water, metadata)
 end
 
 #####
-##### Download — the real fetch (CMR discovery, Earthdata GET, HDF5 read, decode,
-##### broadband collapse, regional-NetCDF write) lives in the ArchGDAL extension.
-##### The entry points below fall back to a clear error when it is not loaded.
+##### Download
 #####
 
 function Downloads.download(metadata::ASTERGEDMetadatum)
@@ -396,7 +348,7 @@ function Downloads.download(metadata::ASTERGEDMetadatum)
     return path
 end
 
-# Implemented in ext/NumericalEarthArchGDALExt.jl once `ArchGDAL` is loaded.
+# Implemented in the ArchGDAL extension.
 asterged_tiles_to_netcdf(metadata, path) =
     error("Reading ASTER GED HDF5 tiles requires ArchGDAL (built with the HDF5 driver) " *
           "and NASA Earthdata credentials. Load ArchGDAL with `using ArchGDAL`, and provide " *

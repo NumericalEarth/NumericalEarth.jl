@@ -1,11 +1,10 @@
 #####
 ##### NASA Earthdata access: granule discovery through the Common Metadata Repository
-##### (CMR) plus authenticated granule download. Nothing here is product-specific
-##### beyond the CMR `short_name` / `version` passed in, so any Earthdata-hosted
-##### dataset module can use it.
+##### (CMR), plus authenticated granule download. Product-specific only through the
+##### `short_name` / `version` passed in, so any Earthdata dataset module can use it.
 #####
 
-# Retry a download on transient failures, discarding a partial file between attempts.
+# Retry on transient failures, discarding a partial file between attempts.
 function download_with_retries(url, path; attempts = 3, downloader = nothing, description = "Download")
     for attempt in 1:attempts
         try
@@ -55,8 +54,8 @@ end
     earthdata_download_cached(url, cache_dir; attempts = 3)
 
 Download the granule at `url` into `cache_dir` unless it is already there, and return
-its path. Keyed on `basename(url)` (the granule name), so overlapping regions and
-sibling variables reuse a granule instead of re-downloading it.
+its path. Keyed on the granule name, so overlapping regions and sibling variables
+reuse a granule instead of re-downloading it.
 """
 function earthdata_download_cached(url, cache_dir; attempts = 3)
     path = joinpath(cache_dir, basename(url))

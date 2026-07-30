@@ -15,11 +15,8 @@ using NumericalEarth: stateindex
 using Oceananigans.Grids: λnodes, φnodes
 using Oceananigans.Fields: location
 
-# The real HDF5 tile read + Earthdata download live in the ArchGDAL extension and
-# need network + NASA Earthdata credentials. Everything else — the decode/broadband
-# core, the analytic tile placement (`place_tile!`), the dataset-interface logic,
-# and a synthetic-NetCDF regional Field (CPU and GPU) — is credential-free and
-# exercised here.
+# The HDF5 tile read and Earthdata download live in the ArchGDAL extension and need
+# network and credentials. Everything else is credential-free and exercised here.
 
 @testset "ASTER GED decode scaling" begin
     # Mean scale is 0.001; fill −9999 → NaN (not −9.999).
@@ -28,8 +25,7 @@ using Oceananigans.Fields: location
     @test isnan(asterged_decode_emissivity(-9999))
     @test asterged_decode_emissivity(-9999) != -9.999
 
-    # SDev scale is 0.0001 — 10× smaller than Mean. Decoding with the Mean scale
-    # would be a silent 10× error.
+    # SDev scale is 0.0001, 10× smaller than Mean.
     @test asterged_decode_uncertainty(120) ≈ 0.012
     @test asterged_decode_uncertainty(120) != asterged_decode_emissivity(120)
     @test asterged_decode_emissivity(120) ≈ 10 * asterged_decode_uncertainty(120)
@@ -63,7 +59,6 @@ end
     @test sum(coefficients) ≈ 1
     @test length(coefficients) == 5
 
-    # Equal bands → that value; a non-uniform vector → the plain dot product.
     @test broadband_emissivity(fill(0.96, 5), coefficients) ≈ 0.96
     ε = [0.92, 0.88, 0.90, 0.97, 0.98]
     @test broadband_emissivity(ε, coefficients) ≈ sum(coefficients .* ε)
@@ -73,8 +68,8 @@ end
     coefficients = OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS
     σ = fill(0.012, 5)
 
-    # Fully-correlated band errors: σ = Σ cᵢ σᵢ (= 0.012 here, since Σ cᵢ = 1), and
-    # strictly larger than the independence-assuming RSS which biases σ low.
+    # σ = Σ cᵢ σᵢ (= 0.012 here, since Σ cᵢ = 1), strictly larger than the
+    # independence-assuming RSS, which biases σ low.
     @test broadband_uncertainty(σ, coefficients) ≈ 0.012
     @test broadband_uncertainty(σ, coefficients) > sqrt(sum(coefficients .^ 2 .* σ .^ 2))
 end
@@ -292,9 +287,8 @@ end
         @test values[3, 3] ≈ 0.95 atol = 1e-4
         @test values[2, 2] ≈ 0.95 atol = 1e-4   # inpainted from uniform neighbors
 
-        # The reduced (Center, Center, Nothing) field slots directly into
-        # `SurfaceRadiationProperties` and is safely `stateindex`-able at any k,
-        # as the air-land interface flux kernels do at k = Nz.
+        # The reduced field is `stateindex`-able at any k, as the interface flux
+        # kernels do at k = Nz.
         properties = SurfaceRadiationProperties(albedo = 0.3, emissivity = field)
         if arch isa CPU
             ϵ = stateindex(properties.emissivity, 3, 3, 7, field.grid, nothing, (Center, Center, Center))
@@ -336,8 +330,6 @@ end
 
         write_synthetic_asterged_netcdf(metadata_path(metadatum), λc, φc, emissivity, uncertainty; land_water_map)
 
-        # `fill_land_gaps` blanks the water, so the land gap sees only land donors.
-        # Water keeps its own retrievals and its gap is left for the generic inpainting.
         retrieved = retrieve_data(metadatum)
         @test retrieved[gap_i, gap_j] ≈ 0.96f0 atol = 1e-4
         @test isnan(retrieved[water_gap_i, water_gap_j])

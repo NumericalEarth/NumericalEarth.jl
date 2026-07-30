@@ -11,21 +11,12 @@ struct NearestNeighborInpainting{M}
     maxiter :: M
 end
 
-# Nothing to propagate into without a mask, mirroring `continue_downwards!(field, ::Nothing)`.
 propagate_horizontally!(::NearestNeighborInpainting, field, ::Nothing, args...; kw...) = field
 
-# Number of cells still to be inpainted.
 remaining_gaps(field, mask) = sum(isnan, field; condition=interior(mask))
 
-"""
-    propagating(field, mask, iter, previous_gaps, inpainting::NearestNeighborInpainting)
-
-Return `true` while the propagate/substitute sweeps should continue.
-`NearestNeighborInpainting` continues while gaps remain, `iter` is below `maxiter`, and
-the previous sweep filled at least one cell. An unchanged gap count means no valid donor
-is reachable for what is left (an all-`NaN` connected component, say), which at the
-default `maxiter = Inf` would otherwise never stop.
-"""
+# Stop once a sweep fills nothing: no donor is reachable for what is left, and the
+# default `maxiter = Inf` would otherwise never terminate.
 function propagating(field, mask, iter, previous_gaps, inpainting::NearestNeighborInpainting)
     gaps = remaining_gaps(field, mask)
     return gaps > 0 && gaps != previous_gaps && iter < inpainting.maxiter

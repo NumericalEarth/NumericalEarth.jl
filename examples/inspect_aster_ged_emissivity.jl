@@ -1,7 +1,7 @@
 using NumericalEarth
 using NumericalEarth.DataWrangling: BoundingBox
 using Oceananigans
-using ArchGDAL      # activates the ASTER GED HDF5 read/download extension
+using ArchGDAL      # activates the ASTER GED extension
 using CairoMakie
 
 dataset = ASTERGEDv3(resolution = :high_100m)
@@ -20,12 +20,12 @@ congo_emissivity = emissivity_field(dataset, :emissivity, (18, 20), (-1, 1))
 fig = Figure(size = (1650, 520), backgroundcolor = :white)
 Label(fig[0, 1:6], "ASTER GED v3 broadband emissivity (100 m)"; fontsize = 19, font = :bold)
 
-ax1 = Axis(fig[1, 1]; title = "Emissivity — Grand Canyon (4-tile mosaic)",
+ax1 = Axis(fig[1, 1]; title = "Emissivity — Grand Canyon",
            xlabel = "longitude (°)", ylabel = "latitude (°)", aspect = 1)
 hm1 = heatmap!(ax1, gc_emissivity; colormap = :viridis, colorrange = (0.90, 0.98))
 Colorbar(fig[1, 2], hm1; label = "broadband ε")
 
-ax2 = Axis(fig[1, 3]; title = "Uncertainty σ(ε) (SDev path)",
+ax2 = Axis(fig[1, 3]; title = "Uncertainty σ(ε)",
            xlabel = "longitude (°)", ylabel = "latitude (°)", aspect = 1)
 hm2 = heatmap!(ax2, gc_uncertainty; colormap = :viridis, colorrange = (0, 0.02))
 Colorbar(fig[1, 4], hm2; label = "broadband σ(ε)")

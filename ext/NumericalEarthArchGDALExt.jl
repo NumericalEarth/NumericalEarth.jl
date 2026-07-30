@@ -57,27 +57,17 @@ function NumericalEarth.DataWrangling.IBCAO.reproject_ibcao_to_netcdf(tiff_path,
 end
 
 #####
-##### ASTER GED emissivity ingest (HDF5 tiles on a plain lat/lon grid)
-#####
-##### ASTER GED is the Global Emissivity Dataset from ASTER, the Advanced Spaceborne
-##### Thermal Emission and Reflection Radiometer aboard NASA's Terra satellite:
+##### Advanced Spaceborne Thermal Emission and Reflection Radiometer 
+##### Global Emissivity Database version 3 (ASTER-GEDv3):
 ##### https://lpdaac.usgs.gov/products/ag100v003/
 #####
-##### Resolves the 1°×1° HDF5 tiles intersecting the region via NASA CMR, downloads
-##### them with Earthdata credentials (cached per tile, so overlapping regions and
-##### both variables reuse them), reads the `/Emissivity/Mean`, `/Emissivity/SDev`
-##### and `/Geolocation/*` subdatasets through GDAL's HDF5 driver, decodes and
-##### collapses the five TIR bands to one broadband float per cell, and writes a
-##### regional NetCDF of the broadband emissivity + uncertainty on the analytic
-##### native grid (NaN over clear-sky retrieval gaps, for the downstream inpainting).
-##### The tiles' land/water map is read and written as `land_water_map`, so the
-##### inpainting fills land and water gaps separately (see the `ASTERGEDv3` docstring).
-#####
-##### Requires GDAL_jll built with the HDF5 driver.
+##### ASTER GED emissivity ingest: resolve the 1°×1° HDF5 tiles intersecting the region
+##### via NASA CMR, download them with Earthdata credentials, and write a regional NetCDF
+##### of the broadband emissivity and uncertainty. Requires GDAL_jll with the HDF5 driver.
 #####
 
-# Open an HDF5 subdataset via GDAL's `HDF5:"file"://path` syntax and return the
-# full raster array. Multi-band datasets come back as `(Nx, Ny, nbands)`.
+# Open an HDF5 subdataset via GDAL's `HDF5:"file"://path` syntax and return the full
+# raster array. Multi-band datasets come back as `(Nx, Ny, nbands)`.
 function read_asterged_subdataset(h5_path, layer)
     name = string("HDF5:\"", h5_path, "\":", layer)
     return ArchGDAL.read(name) do dataset
@@ -91,9 +81,8 @@ function NumericalEarth.DataWrangling.ASTERGED.asterged_tiles_to_netcdf(metadatu
     (bbox isa BoundingBox && !isnothing(bbox.longitude) && !isnothing(bbox.latitude)) ||
         error("asterged_tiles_to_netcdf requires a BoundingBox region.")
 
-    # Target axes = the same native grid the Field will use, so tile cells land on
-    # file cells by construction (no empirical axis reconstruction, no half-pixel
-    # registration guesswork).
+    # Write on the same native grid the Field will use, so tile cells land on file
+    # cells by construction.
     grid = native_grid(metadatum, CPU())
     longitude = collect(λnodes(grid, Center()))
     latitude  = collect(φnodes(grid, Center()))
@@ -105,9 +94,8 @@ function NumericalEarth.DataWrangling.ASTERGED.asterged_tiles_to_netcdf(metadatu
     version = asterged_version(dataset)
     coefficients = OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS
 
-    # Query CMR over the native extent (padded a cell) so every file cell is covered.
-    # CMR needs [-180, 180] longitudes; fold so a grid labeled in any convention works
-    # (a folded west > east tells CMR the box crosses the antimeridian).
+    # Pad the query a cell so every file cell is covered. CMR needs [-180, 180]
+    # longitudes, and reads a folded west > east as crossing the antimeridian.
     to_pm180(λ) = rem(λ, 360, RoundNearest)
     query = BoundingBox(longitude = (to_pm180(longitude[1] - Δλ), to_pm180(longitude[end] + Δλ)),
                         latitude  = (latitude[1]  - Δφ, latitude[end]  + Δφ))
@@ -117,9 +105,8 @@ function NumericalEarth.DataWrangling.ASTERGED.asterged_tiles_to_netcdf(metadatu
 
     emissivity  = fill(NaN32, Nx, Ny)
     uncertainty = fill(NaN32, Nx, Ny)
-    # 0 = land, 1 = water (GEE coding on the AG100/AG1KM tiles — not the LP DAAC 1/2
-    # coding), −9999 = fill. Only 1 counts as water downstream, so fill cells and cells
-    # outside every tile (left NaN) are treated as land.
+    # 0 = land, 1 = water, −9999 = fill (the GEE coding on the AG100/AG1KM tiles, not
+    # the LP DAAC 1/2 coding).
     land_water_map = fill(NaN32, Nx, Ny)
 
     tile_cache = joinpath(dirname(nc_path), string(short_name, "_tiles"))
@@ -136,9 +123,6 @@ function NumericalEarth.DataWrangling.ASTERGED.asterged_tiles_to_netcdf(metadatu
         mean_bands = permutedims(asterged_decode_emissivity.(read_asterged_subdataset(h5, "//Emissivity/Mean")), (3, 1, 2))
         sdev_bands = permutedims(asterged_decode_uncertainty.(read_asterged_subdataset(h5, "//Emissivity/SDev")), (3, 1, 2))
 
-        # LWmap carries its own −9999 fill over retrieval gaps; it copies through as-is
-        # (place_tile! only skips NaN sources) and the `== 1` water test downstream puts
-        # those cells on the land side.
         lwmap_tile = Float32.(read_asterged_subdataset(h5, "//Land_Water_Map/LWmap")[:, :, 1])
 
         place_tile!(emissivity,     broadband_map(mean_bands, coefficients), tile_longitude, tile_latitude, longitude, latitude)
