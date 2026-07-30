@@ -11,22 +11,25 @@
 $(TYPEDEF)
 
 Drag-partition parameters for one vegetation group. `γ ≡ Uh/u★` partitions momentum
-between vegetation form drag and substrate friction drag. All fields are dimensionless.
+between vegetation form drag and substrate friction drag. All parameters are dimensionless.
 
-$(TYPEDFIELDS)
+Keyword Arguments
+=================
+
+- `form_drag_coefficient`: vegetation-element form drag coefficient `Cᴿ`.
+- `substrate_drag_coefficient`: ground-surface friction drag coefficient `Cˢ`.
+- `maximum_friction_ratio`: ceiling `(u★/Uh)ₘₐₓ` on the inverse wind ratio, flooring `γ`.
+- `sublayer_decay_coefficient`: roughness-sublayer wind-profile decay coefficient `c`.
+- `displacement_coefficient`: coefficient `α` of the `1/(γ√𝒜)` correction in `d/h`.
+- `critical_leaf_area_index`: critical (skimming) leaf area index `𝒜ᶜ`, beyond which the
+  wind ratio saturates.
 """
 struct DragPartitionParameters{FT}
-    "form drag coefficient `Cᴿ`"
     form_drag_coefficient :: FT
-    "substrate (ground) drag coefficient `Cˢ`"
     substrate_drag_coefficient :: FT
-    "maximum friction-to-wind ratio `(u★/Uh)ₘₐₓ`"
     maximum_friction_ratio :: FT
-    "roughness-sublayer wind-profile decay coefficient `c`"
     sublayer_decay_coefficient :: FT
-    "displacement coefficient `α`"
     displacement_coefficient :: FT
-    "critical (skimming) leaf area index `𝒜ᶜ`"
     critical_leaf_area_index :: FT
 end
 
@@ -46,8 +49,8 @@ function DragPartitionParameters(FT=Oceananigans.defaults.FloatType;
 end
 
 # The five Borak et al. (2025) drag-partition groups. IGBP classes map onto these via
-# `drag_partition_group` (canopy_classes.jl); `canopy_drag_parameters(FT, class)` resolves a
-# class to its group's parameters.
+# `drag_partition_group` (igbp_canopy_classes.jl); `canopy_drag_parameters(FT, class)` resolves
+# a class to its group's parameters.
 drag_group_parameters(FT, group::Symbol) = drag_group_parameters(FT, Val(group))
 drag_group_parameters(FT, ::Val{:boreal})    = DragPartitionParameters{FT}(0.21, 0.0030, 0.27, 0.28, 1.90, 1.90)
 drag_group_parameters(FT, ::Val{:broadleaf}) = DragPartitionParameters{FT}(0.31, 0.0030, 0.31, 0.36, 1.15, 1.70)
@@ -180,20 +183,25 @@ A closure evaluates through the
 `aerodynamic_parameters(closure, cell)` contract, so other roughness closures can be added
 against the same interface.
 
-$(TYPEDFIELDS)
+Keyword Arguments
+=================
+
+- `vegetation_type`: IGBP class selecting `parameters` and `representative_height`.
+- `parameters`: [`DragPartitionParameters`](@ref) for the canopy vegetation class.
+- `representative_height`: canopy height (m) used where no measured height is supplied.
+- `von_karman_constant`: `ϰ`.
+- `sublayer_influence`: roughness-sublayer influence, constant 0.193
+  ([Raupach 1995](@cite raupach1995corrigenda)).
+- `maximum_valid_leaf_area_index`: data-quality ceiling; a larger index is treated as
+  fill/artifact and gapped.
+- `iterations`: fixed-point iterations for the wind ratio `γ`.
 """
 struct DragPartitionRoughness{FT}
-    "drag-partition parameters for the canopy vegetation class"
     parameters :: DragPartitionParameters{FT}
-    "representative canopy height (m), the fallback where no measured height is supplied"
     representative_height :: FT
-    "von Kármán constant `ϰ`"
     von_karman_constant :: FT
-    "roughness-sublayer influence (constant 0.193; [Raupach 1995](@cite raupach1995corrigenda))"
     sublayer_influence :: FT
-    "data-quality ceiling on the leaf area index; a larger index is treated as fill/artifact and gapped"
     maximum_valid_leaf_area_index :: FT
-    "fixed-point iterations for the wind ratio `γ`"
     iterations :: Int
 end
 

@@ -16,10 +16,6 @@
 # from the windowed COGs (anonymous `/vsicurl/`). Needs `using ArchGDAL` and `using CairoMakie`.
 
 using NumericalEarth
-using NumericalEarth.DataWrangling.ETHSentinel2Canopy: ETHSentinel2CanopyHeight, canopy_height_field
-using NumericalEarth.Lands: DragPartitionRoughness, compute_aerodynamic_roughness!,
-                            canopy_roughness, canopy_wind_ratio,
-                            canopy_drag_parameters, representative_canopy_height
 using Oceananigans
 using ArchGDAL   # activates the COG-read extension used by canopy_height_field
 using CairoMakie
