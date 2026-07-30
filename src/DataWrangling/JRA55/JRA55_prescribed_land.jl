@@ -1,5 +1,6 @@
 using Oceananigans.Architectures: architecture
-using ...Lands: PrescribedLand, positive_outlet_indices, source_cell_areas, build_river_routing
+using ...Lands: PrescribedLand, ever_positive_mask, outlet_indices_from_mask, source_cell_areas,
+                build_river_routing
 
 """
     JRA55PrescribedLand(grid;
@@ -13,6 +14,7 @@ using ...Lands: PrescribedLand, positive_outlet_indices, source_cell_areas, buil
                         maximum_search_radius = 5,
                         spread_radius = 1.2,
                         n_spread_cells = nothing,
+                        n_outlet_snapshots = 365,
                         other_kw...)
 
 Return a [`PrescribedLand`](@ref) representing JRA55 reanalysis land surface data
@@ -35,6 +37,7 @@ function JRA55PrescribedLand(grid;
                              maximum_search_radius = 5,
                              spread_radius = 1.2,
                              n_spread_cells = nothing,
+                             n_outlet_snapshots = 365,
                              other_kw...)
 
     arch = architecture(grid)
@@ -47,17 +50,20 @@ function JRA55PrescribedLand(grid;
     Fic = JRA55FieldTimeSeries(:iceberg_freshwater_flux)
 
     freshwater_flux = (; rivers = Fri, icebergs = Fic)
-    river_routing = map(fts -> build_flux_routing(grid, fts; maximum_search_radius, spread_radius, n_spread_cells), freshwater_flux)
+    river_routing = map(fts -> build_flux_routing(grid, fts; maximum_search_radius, spread_radius, n_spread_cells,
+                                                        n_outlet_snapshots), freshwater_flux)
 
     return PrescribedLand(freshwater_flux; river_routing)
 end
 
-# Route a per-area mass-flux component: nonzero forcing-grid cells are mouths, weighted by
-# their source-cell area so the mass delivered to the ocean equals ∫ flux dA at the source.
-function build_flux_routing(grid, flux_fts; maximum_search_radius = 5, spread_radius = 1.2, n_spread_cells = nothing)
-    snapshot = flux_fts[1]
-    outlet_i, outlet_j, outlet_λ, outlet_φ = positive_outlet_indices(snapshot)
-    outlet_weight = source_cell_areas(snapshot.grid, outlet_i, outlet_j)
+# Route a per-area mass-flux component: cells that discharge at any point over the first
+# `n_outlet_snapshots` are mouths, weighted by their source-cell area so the mass delivered to the
+# ocean equals ∫ flux dA at the source.
+function build_flux_routing(grid, flux_fts; maximum_search_radius = 5, spread_radius = 1.2,
+                            n_spread_cells = nothing, n_outlet_snapshots = 365)
+    outlet_mask = ever_positive_mask(flux_fts, n_outlet_snapshots)
+    outlet_i, outlet_j, outlet_λ, outlet_φ = outlet_indices_from_mask(outlet_mask, flux_fts.grid)
+    outlet_weight = source_cell_areas(flux_fts.grid, outlet_i, outlet_j)
     return build_river_routing(grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
                                maximum_search_radius, spread_radius, n_spread_cells)
 end

@@ -84,9 +84,14 @@ Return `(outlet_i, outlet_j, outlet_λ, outlet_φ)` for the coastal runoff cells
 per-area freshwater `flux` `Field` (the JRA55 convention: runoff is a positive mass
 flux at coastal cells and zero elsewhere). Every strictly positive cell is a mouth.
 """
-function positive_outlet_indices(flux)
-    grid = flux.grid
-    outlet_mask = Array(interior(flux))[:, :, 1] .> 0
+positive_outlet_indices(flux) = outlet_indices_from_mask(Array(interior(flux))[:, :, 1] .> 0, flux.grid)
+
+"""
+    outlet_indices_from_mask(outlet_mask, grid)
+
+Return `(outlet_i, outlet_j, outlet_λ, outlet_φ)` for the `true` cells of a 2-D `outlet_mask` on `grid`.
+"""
+function outlet_indices_from_mask(outlet_mask, grid)
     indices = findall(outlet_mask)
 
     outlet_i = [I[1] for I in indices]
@@ -98,6 +103,22 @@ function positive_outlet_indices(flux)
     outlet_φ = [φc[j] for j in outlet_j]
 
     return outlet_i, outlet_j, outlet_λ, outlet_φ
+end
+
+"""
+    ever_positive_mask(flux_fts, n_snapshots)
+
+Cells of `flux_fts` positive in *any* of its first `n_snapshots`. A cell dry in the first snapshot but
+discharging later — an intermittent river, or a high-latitude one frozen at the start date — would
+otherwise never enter the routing map and its water would be dropped for the whole run, so the mask is
+taken over a full seasonal cycle rather than a single time.
+"""
+function ever_positive_mask(flux_fts, n_snapshots)
+    mask = Array(interior(flux_fts[1]))[:, :, 1] .> 0
+    for n in 2:min(n_snapshots, length(flux_fts.times))
+        mask .|= Array(interior(flux_fts[n]))[:, :, 1] .> 0
+    end
+    return mask
 end
 
 """
