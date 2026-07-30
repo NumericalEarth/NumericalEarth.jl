@@ -1,5 +1,6 @@
 using KernelAbstractions: @index, @kernel
 using Oceananigans.Architectures: architecture
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.BuoyancyFormulations: ∂z_b
 using Oceananigans.Grids: Center, Face, inactive_node, φnode
 using Oceananigans.Operators: Δzᶜᶜᶠ, ℑxᶜᵃᵃ, ℑyᵃᶜᵃ
@@ -48,10 +49,14 @@ function NEMOEddyCoefficients(grid;
                                 slope_limiter, parameters)
 end
 
+@inline finite_or_zero(x, grid) = ifelse(isfinite(x), x, zero(grid))
+
+# The slope stencil reaches into the halo, and on the tripolar fold row the folded metrics can return a
+# non-finite slope. One such level would otherwise poison the whole column sum below.
 @inline function squared_isopycnal_slope(i, j, k, grid, limiter, buoyancy, tracers)
     Sx = ℑxᶜᵃᵃ(i, j, k, grid, ϵSxᶠᶜᶠ, limiter, buoyancy, tracers)
     Sy = ℑyᵃᶜᵃ(i, j, k, grid, ϵSyᶜᶠᶠ, limiter, buoyancy, tracers)
-    return Sx^2 + Sy^2
+    return finite_or_zero(Sx^2, grid) + finite_or_zero(Sy^2, grid)
 end
 
 @kernel function _compute_nemo_eddy_coefficients!(aei, aht, grid, limiter, buoyancy, tracers, Ω, parameters)
@@ -67,7 +72,7 @@ end
     for k in 1:Nz
         inactive = inactive_node(i, j, k, grid, Center(), Center(), Face())
         Δz = ifelse(inactive, zero(grid), Δzᶜᶜᶠ(i, j, k, grid))
-        N² = max(∂z_b(i, j, k, grid, buoyancy, tracers), zero(grid))
+        N² = max(finite_or_zero(∂z_b(i, j, k, grid, buoyancy, tracers), grid), zero(grid))
         N² = ifelse(inactive, zero(grid), N²)
         zn  += sqrt(N²) * Δz
         zah += N² * squared_isopycnal_slope(i, j, k, grid, limiter, buoyancy, tracers) * Δz
@@ -86,8 +91,12 @@ end
 
     aeiw = min(tropical * Ro^2 * growth_rate, aei0)
 
+    # NEMO's `MAX(zaht_min, aht) + zaht` has no final bound, so between the equator and 20° — where the
+    # GM taper is only half applied but `aei` can still sit at its cap — it overshoots to as much as
+    # `aei0 + 0.8 aht0`. Bounded here to the maximum NEMO's own namelist print documents.
     ahtmin = convert(eltype(grid), 1//5) * aht0
     ahtw = max(ahtmin, aeiw) + (one(grid) - tropical) * (aht0 - ahtmin)
+    ahtw = min(ahtw, max(aei0, aht0))
 
     dry = zhw == zero(grid)
     aeiw = ifelse(dry, zero(grid), aeiw)
@@ -115,6 +124,13 @@ function compute_nemo_eddy_coefficients!(coefficients::NEMOEddyCoefficients, oce
             coefficients.skew_coefficient, coefficients.symmetric_coefficient, grid,
             coefficients.slope_limiter, ocean_model.buoyancy, fields(ocean_model),
             Ω, coefficients.parameters)
+
+    # Without this the halos stay zero, so the two cells sharing a face across the periodic seam or the
+    # tripolar fold evaluate the isopycnal flux with different κ. The face flux is then not antisymmetric
+    # between them, the divergence stops telescoping, and the closure leaks salt at a steady rate.
+    # A scalar κ has no halo to get wrong, which is why only the field-valued coefficient needs this.
+    fill_halo_regions!(coefficients.skew_coefficient)
+    fill_halo_regions!(coefficients.symmetric_coefficient)
 
     return nothing
 end

@@ -177,20 +177,25 @@ end
 # field is always its own zero-mean field, the applied restoring integrates to zero over the wet
 # ocean exactly, independently of when `update_restoring_flux!` refreshes it from the model state.
 
+# Materializes the restoring flux into a field the boundary condition reads, which is what lets the
+# open-water weight and the zero-mean correction be applied at all. The two are independent: either can
+# be active alone.
 struct ConservativeSurfaceFluxRestoring{R, F, W, M, N} <: Function
     flux            :: R   # wrapped raw surface-flux restoring (getbc-compatible)
     corrected_flux  :: F   # 2D field storing the applied flux; read by the boundary condition
     open_water      :: W   # 2D weight the restoring acts through: 1 everywhere, or 1 - ℵ under ice
     mean_flux       :: M   # host-side scratch reductions
     mean_open_water :: N
+    normalize       :: Bool
 end
 
-function ConservativeSurfaceFluxRestoring(flux, grid)
+function ConservativeSurfaceFluxRestoring(flux, grid; normalize = true)
     corrected_flux = Field{Center, Center, Nothing}(grid)
     open_water = Field{Center, Center, Nothing}(grid)
     return ConservativeSurfaceFluxRestoring(flux, corrected_flux, open_water,
                                             Field(Average(corrected_flux, dims=(1, 2))),
-                                            Field(Average(open_water, dims=(1, 2))))
+                                            Field(Average(open_water, dims=(1, 2))),
+                                            normalize)
 end
 
 # The boundary condition reads only the pre-corrected field; the weight and the reductions over it are
@@ -199,7 +204,7 @@ Adapt.adapt_structure(to, sf::ConservativeSurfaceFluxRestoring) =
     ConservativeSurfaceFluxRestoring(Adapt.adapt(to, sf.flux),
                                      Adapt.adapt(to, sf.corrected_flux),
                                      Adapt.adapt(to, sf.open_water),
-                                     nothing, nothing)
+                                     nothing, nothing, sf.normalize)
 
 @inline Oceananigans.BoundaryConditions.getbc(sf::ConservativeSurfaceFluxRestoring, i, j, grid, clock, fields) =
     @inbounds sf.corrected_flux[i, j, 1]
@@ -226,9 +231,11 @@ function update_restoring_flux!(sf::ConservativeSurfaceFluxRestoring, model, ice
     launch!(arch, grid, :xy, _materialize_surface_flux!, sf.corrected_flux, sf.open_water,
             sf.flux, grid, model.clock, fields, ice_concentration)
 
-    compute!(sf.mean_flux)
-    compute!(sf.mean_open_water)
-    interior(sf.corrected_flux) .-= interior(sf.mean_flux) ./ interior(sf.mean_open_water) .* interior(sf.open_water)
+    if sf.normalize
+        compute!(sf.mean_flux)
+        compute!(sf.mean_open_water)
+        interior(sf.corrected_flux) .-= interior(sf.mean_flux) ./ interior(sf.mean_open_water) .* interior(sf.open_water)
+    end
 
     return nothing
 end
@@ -486,8 +493,9 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `restoring_under_sea_ice`: whether the surface-salinity restoring acts under sea ice. Default:
   `true`, the OMIP-2 convention. Set `false` to weight it by the open-water fraction `1 - ℵ`, since
   WOA is poorly constrained beneath ice and the restoring there works against the ice--ocean salt
-  flux. The zero-global-mean correction is then spread over the open-water weight alone, so the
-  applied flux still injects no net salt while vanishing under ice. Requires `normalize_salinity`.
+  flux. When `normalize_salinity` is also on, the zero-global-mean correction is spread over the
+  open-water weight alone, so the applied flux still injects no net salt while vanishing under ice.
+  The two are independent — either may be used without the other.
 - `normalize_freshwater`: removal of the drift in total ocean + sea-ice + snow water, held to its
   initial value by lowering or raising the free surface. Tracer concentrations are rescaled by the
   same factor within each column, so heat and salt content are unchanged and the stratification is
@@ -596,11 +604,6 @@ function omip_simulation(config::Symbol = :halfdegree;
                          filename_prefix = string(config),
                          file_splitting_interval = 360days)
 
-    # The ice mask is applied where the conservative restoring materializes its flux, so there is
-    # nowhere to hang it without that machinery.
-    restoring_under_sea_ice || normalize_salinity ||
-        throw(ArgumentError("restoring_under_sea_ice = false requires normalize_salinity = true"))
-
     cfg = Val(config)
 
     # Resolve resolution-sensitive parameters to their per-configuration defaults unless the
@@ -652,6 +655,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                         vertical_closure,
                         implicit_vertical_advection,
                         skew_flux_formulation,
+                        restoring_under_sea_ice,
                         Cᵂu★,
                         restoring_dir, piston_velocity,
                         normalize_salinity,
@@ -944,7 +948,8 @@ end
 function salinity_surface_restoring(grid, dataset;
                                     restoring_dir,
                                     piston_velocity,
-                                    conservative = true)
+                                    conservative = true,
+                                    mask_under_sea_ice = false)
 
     Nz = size(grid, 3)
     Δz_surface = CUDA.@allowscalar Δzᶜᶜᶜ(1, 1, Nz, grid)
@@ -961,7 +966,11 @@ function salinity_surface_restoring(grid, dataset;
 
     surface_restoring = SurfaceFluxRestoring(restoring)
 
-    return conservative ? ConservativeSurfaceFluxRestoring(surface_restoring, grid) : surface_restoring
+    # Either option needs the flux materialized into a field; without both, the bare inline restoring
+    # is cheaper and behaves identically.
+    materialize = conservative | mask_under_sea_ice
+    return materialize ? ConservativeSurfaceFluxRestoring(surface_restoring, grid; normalize = conservative) :
+                         surface_restoring
 end
 
 #####
@@ -1146,6 +1155,7 @@ function build_ocean(config, grid;
                      implicit_vertical_advection = true,
                      skew_flux_formulation = :diffusive,
                      nemo_eddy_coefficients = nothing,
+                     restoring_under_sea_ice = true,
                      Cᵂu★ = nothing,
                      normalize_salinity = true,
                      additional_tracer_closure = nothing,
@@ -1157,7 +1167,9 @@ function build_ocean(config, grid;
     additional_surface_fluxes = if piston_velocity == 0
         NamedTuple()
     else
-        salt_restoring = salinity_surface_restoring(grid, WOAMonthly(); restoring_dir, piston_velocity, conservative = normalize_salinity)
+        salt_restoring = salinity_surface_restoring(grid, WOAMonthly(); restoring_dir, piston_velocity,
+                                                    conservative = normalize_salinity,
+                                                    mask_under_sea_ice = !restoring_under_sea_ice)
         (; S = salt_restoring)
     end
 
