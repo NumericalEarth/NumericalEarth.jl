@@ -1,6 +1,6 @@
 module GloBFP3D
 
-export BuildingFootprints3D, building_morphometry
+export GlobalBuildingFootprints3D, building_morphometry
 
 using Downloads: Downloads
 using Oceananigans: Center, Face
@@ -24,7 +24,7 @@ end
 #####
 
 """
-    BuildingFootprints3D(; resolution = 3)
+    GlobalBuildingFootprints3D(; resolution = 3)
 
 3D-GloBFP building footprints (Che et al. 2024): ~1.3 billion individual building footprint
 polygons (LoD1), each carrying an estimated `Height` (m), distributed globally as per-tile
@@ -52,27 +52,27 @@ footprint dataset*, Earth Syst. Sci. Data 16:5357–5374, doi:10.5194/essd-16-53
 (Zenodo 10.5281/zenodo.11319913).
 
 ```jldoctest
-julia> using NumericalEarth.DataWrangling.GloBFP3D
+julia> using NumericalEarth
 
-julia> BuildingFootprints3D()
-BuildingFootprints3D(resolution = 3 m)
+julia> GlobalBuildingFootprints3D()
+GlobalBuildingFootprints3D(resolution = 3 m)
 ```
 """
-struct BuildingFootprints3D <: AbstractStaticDataset
+struct GlobalBuildingFootprints3D <: AbstractStaticDataset
     resolution :: Int
 end
 
-function BuildingFootprints3D(; resolution = 3)
+function GlobalBuildingFootprints3D(; resolution = 3)
     resolution > 0 ||
-        throw(ArgumentError("BuildingFootprints3D resolution must be a positive number of meters, got $resolution."))
-    return BuildingFootprints3D(resolution)
+        throw(ArgumentError("GlobalBuildingFootprints3D resolution must be a positive number of meters, got $resolution."))
+    return GlobalBuildingFootprints3D(resolution)
 end
 
-Base.summary(dataset::BuildingFootprints3D) =
-    string("BuildingFootprints3D(resolution = ", dataset.resolution, " m)")
-Base.show(io::IO, dataset::BuildingFootprints3D) = print(io, summary(dataset))
+Base.summary(dataset::GlobalBuildingFootprints3D) =
+    string("GlobalBuildingFootprints3D(resolution = ", dataset.resolution, " m)")
+Base.show(io::IO, dataset::GlobalBuildingFootprints3D) = print(io, summary(dataset))
 
-const BuildingFootprints3DMetadatum = Metadatum{<:BuildingFootprints3D}
+const GlobalBuildingFootprints3DMetadatum = Metadatum{<:GlobalBuildingFootprints3D}
 
 #####
 ##### Variables — the adapter decodes a single fine building-height raster
@@ -80,21 +80,21 @@ const BuildingFootprints3DMetadatum = Metadatum{<:BuildingFootprints3D}
 
 GloBFP3D_variable_names = Dict(:building_height => "building_height")
 
-DataWrangling.available_variables(::BuildingFootprints3D) = GloBFP3D_variable_names
-DataWrangling.dataset_variable_name(data::BuildingFootprints3DMetadatum) = GloBFP3D_variable_names[data.name]
+DataWrangling.available_variables(::GlobalBuildingFootprints3D) = GloBFP3D_variable_names
+DataWrangling.dataset_variable_name(data::GlobalBuildingFootprints3DMetadatum) = GloBFP3D_variable_names[data.name]
 
 #####
 ##### Dataset interface
 #####
 
-DataWrangling.default_download_directory(::BuildingFootprints3D) = download_GloBFP3D_cache
+DataWrangling.default_download_directory(::GlobalBuildingFootprints3D) = download_GloBFP3D_cache
 
 # The rasterized regional raster is on a plain lat/lon grid; the native hull is the global
 # lat/lon extent and the shared regrid restricts it to the BoundingBox.
-DataWrangling.longitude_interfaces(::BuildingFootprints3D) = (-180, 180)
-DataWrangling.latitude_interfaces(::BuildingFootprints3D)  = (-90, 90)
+DataWrangling.longitude_interfaces(::GlobalBuildingFootprints3D) = (-180, 180)
+DataWrangling.latitude_interfaces(::GlobalBuildingFootprints3D)  = (-90, 90)
 
-native_resolution(dataset::BuildingFootprints3D) = dataset.resolution
+native_resolution(dataset::GlobalBuildingFootprints3D) = dataset.resolution
 
 # Degree step of a `resolution`-meter arc on the default planet, using the same metric a
 # LatitudeLongitudeGrid does (`meters = radius · deg2rad(degrees)`). The raster uses this step in
@@ -103,19 +103,19 @@ native_resolution(dataset::BuildingFootprints3D) = dataset.resolution
 # a latitude-dependent Δλ would misalign that integer-offset read. Cells are thus ~`resolution` m
 # N–S and ~`resolution`·cos φ m E–W. Ingest has no target grid, so we use the global default
 # radius (a custom-radius grid shifts this by < 0.1%).
-native_cell_size(dataset::BuildingFootprints3D) =
+native_cell_size(dataset::GlobalBuildingFootprints3D) =
     rad2deg(native_resolution(dataset) / Oceananigans.defaults.planet_radius)
 
 # Nominal global native size in EPSG:4326 (only the windowed portion is materialized).
-function Base.size(dataset::BuildingFootprints3D, variable)
+function Base.size(dataset::GlobalBuildingFootprints3D, variable)
     Δ = native_cell_size(dataset)
     Nx = round(Int, 360 / Δ)
     Ny = round(Int, 180 / Δ)
     return (Nx, Ny, 1)
 end
 
-DataWrangling.metadata_filename(dataset::BuildingFootprints3D, name, date, region) =
-    string("BuildingFootprints3D_", dataset.resolution, "m_", region_suffix(region), ".nc")
+DataWrangling.metadata_filename(dataset::GlobalBuildingFootprints3D, name, date, region) =
+    string("GlobalBuildingFootprints3D_", dataset.resolution, "m_", region_suffix(region), ".nc")
 
 region_suffix(::Nothing) = "global"
 
@@ -128,12 +128,12 @@ end
 bound_str(::Nothing) = "nothing"
 bound_str(bounds) = string(bounds[1], "_", bounds[2])
 
-function DataWrangling.validate_dataset_coverage(grid, metadata::BuildingFootprints3DMetadatum)
+function DataWrangling.validate_dataset_coverage(grid, metadata::GlobalBuildingFootprints3DMetadatum)
     region = metadata.region
     if !(region isa BoundingBox) || isnothing(region.longitude) || isnothing(region.latitude)
         error("$(summary(metadata.dataset)) must be used with a bounded region. " *
               "Build the metadatum with a longitude/latitude BoundingBox, e.g.\n" *
-              "    metadatum = Metadatum(:building_height; dataset = BuildingFootprints3D(),\n" *
+              "    metadatum = Metadatum(:building_height; dataset = GlobalBuildingFootprints3D(),\n" *
               "                          region = BoundingBox(longitude = (λ₁, λ₂), latitude = (φ₁, φ₂)))\n" *
               "    Field(metadatum, grid)")
     end
@@ -152,16 +152,16 @@ end
 ##### Metadatum interface
 #####
 
-DataWrangling.is_three_dimensional(::BuildingFootprints3DMetadatum) = false
+DataWrangling.is_three_dimensional(::GlobalBuildingFootprints3DMetadatum) = false
 
 # The regional NetCDF we materialize stores coordinates as "lon"/"lat".
-DataWrangling.longitude_name(::BuildingFootprints3DMetadatum) = "lon"
-DataWrangling.latitude_name(::BuildingFootprints3DMetadatum)  = "lat"
+DataWrangling.longitude_name(::GlobalBuildingFootprints3DMetadatum) = "lon"
+DataWrangling.latitude_name(::GlobalBuildingFootprints3DMetadatum)  = "lat"
 
 # NEVER inpaint: a building height of 0 over non-built land is physical, not a gap.
-DataWrangling.default_inpainting(::BuildingFootprints3DMetadatum) = nothing
+DataWrangling.default_inpainting(::GlobalBuildingFootprints3DMetadatum) = nothing
 
-Oceananigans.Fields.location(::BuildingFootprints3DMetadatum) = (Center, Center, Center)
+Oceananigans.Fields.location(::GlobalBuildingFootprints3DMetadatum) = (Center, Center, Center)
 
 #####
 ##### Native aggregation grid (used by the rasterizing extension)
@@ -295,7 +295,7 @@ function reduce_morphometry(height, longitudes, latitudes, target_grid::Latitude
 end
 
 """
-    building_morphometry(target_grid; dataset = BuildingFootprints3D(), region)
+    building_morphometry(target_grid; dataset = GlobalBuildingFootprints3D(), region)
 
 Per-cell building morphometry on `target_grid` (a `LatitudeLongitudeGrid`, coarser than the
 `dataset` rasterization resolution), aggregated from the fine 3D-GloBFP building-height raster
@@ -304,7 +304,7 @@ over `region`. Returns a NamedTuple of `Field`s (`mean_building_height`, `buildi
 via [`reduce_morphometry`](@ref); see there for the per-variable estimators. Downloading and
 rasterizing the footprints requires `using ArchGDAL`.
 """
-function building_morphometry(target_grid::LatitudeLongitudeGrid; dataset = BuildingFootprints3D(), region)
+function building_morphometry(target_grid::LatitudeLongitudeGrid; dataset = GlobalBuildingFootprints3D(), region)
     metadatum = Metadatum(:building_height; dataset, region)
     Downloads.download(metadatum)
     height = DataWrangling.retrieve_data(metadatum)
@@ -362,7 +362,7 @@ end
 ##### Download (regional footprint tiles → rasterized NetCDF via the ArchGDAL ext)
 #####
 
-function Downloads.download(metadatum::BuildingFootprints3DMetadatum)
+function Downloads.download(metadatum::GlobalBuildingFootprints3DMetadatum)
     DataWrangling.validate_dataset_coverage(nothing, metadatum)
     nc_path = metadata_path(metadatum)
     @root if !isfile(nc_path)

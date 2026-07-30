@@ -1,7 +1,7 @@
 # # 3D-GloBFP building morphometry over Manhattan
 #
 # 3D-GloBFP is a global set of ~1.3 billion individual building footprints, each carrying an
-# estimated height. [`BuildingFootprints3D`](@ref) ingests it by **rasterizing** the footprint
+# estimated height. [`GlobalBuildingFootprints3D`](@ref) ingests it by **rasterizing** the footprint
 # heights onto a fine (3 m) grid — a `:building_height` field, the height of the building
 # covering each cell — which is the accurate common source for building morphometry.
 #
@@ -18,21 +18,16 @@
 # heights are ML-estimated (RMSE 1.9–14.6 m) and biased low.
 
 using NumericalEarth
-using NumericalEarth.DataWrangling: BoundingBox, Metadatum
-using NumericalEarth.DataWrangling.GloBFP3D: BuildingFootprints3D, building_morphometry
 using Oceananigans
-using Oceananigans.Fields: interior
-using Oceananigans.Grids: λnodes, φnodes
 using ArchGDAL                          # activates NumericalEarthArchGDALExt (the OGR read + rasterize)
 using CairoMakie                        # loads Makie → NumericalEarthMakieExt
 using Statistics: quantile, median
 
 region = BoundingBox(longitude = (-74.02, -73.93), latitude = (40.70, 40.82))
-dataset = BuildingFootprints3D(resolution = 3)   # rasterize the footprints at 3 m
+dataset = GlobalBuildingFootprints3D(resolution = 3)   # rasterize the footprints at 3 m
 
 # The fine building-height raster (downloads the tile + rasterizes on first use).
 building_height = Field(Metadatum(:building_height; dataset, region), CPU())
-λf3, φf3 = λnodes(building_height.grid, Center()), φnodes(building_height.grid, Center())
 
 # ## The fine 3 m building-height raster
 #
@@ -55,8 +50,6 @@ target_grid = LatitudeLongitudeGrid(CPU(), Float64; size = (102, 136),
                                     topology = (Bounded, Bounded, Flat))
 m = building_morphometry(target_grid; dataset, region)
 
-λ = range(region.longitude...; length = size(target_grid, 1))
-φ = range(region.latitude...;  length = size(target_grid, 2))
 robust_range(field) = (v = filter(>(0), vec(interior(field))); isempty(v) ? (0, 1) : (0, quantile(v, 0.98)))
 
 # The fine 3 m raster (left) shares a colour range with the mean and maximum height panels,
@@ -77,7 +70,7 @@ Label(fig2[0, 1:2], "3D-GloBFP building morphometry — Manhattan (3 m raster �
 left = fig2[1, 1] = GridLayout()
 ax_bh = Axis(left[1, 1]; title = "building height (rasterized, 3 m)",
              xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-hm_bh = heatmap!(ax_bh, λf3, φf3, interior(building_height)[:, :, 1]; colormap = :viridis, colorrange = height_range)
+hm_bh = heatmap!(ax_bh, building_height; colormap = :viridis, colorrange = height_range)
 Colorbar(left[1, 2], hm_bh; label = "m")
 
 ## Right: the six morphometry fields at 100 m; H and Hmax share the raster's colour range.
@@ -96,16 +89,19 @@ fig2
 # that centroid-binning gives when a 100 m cell catches only one large NYC building.
 
 # ## Where the assumed Kanda ratios are wrong
-Hm = interior(m.mean_building_height)[:, :, 1]
-built = Hm .> 1
-ratio(field) = (r = fill(NaN, size(built)); r[built] .= interior(field)[:, :, 1][built] ./ Hm[built]; r)
+#
+# The ratios are field operations, so unbuilt cells come out as `0/0 = NaN` and drop out (gray).
+Hmax_over_H = compute!(Field(m.maximum_building_height / m.mean_building_height))
+σH_over_H   = compute!(Field(m.building_height_std / m.mean_building_height))
+
+ratios = ((Hmax_over_H, "Hmax / H  (assumed 2.5)", 2.5),
+          (σH_over_H,   "σH / H  (assumed 0.4)",   0.4))
 
 fig3 = Figure(size = (1250, 520))
-for (j, (r, title, assumed)) in enumerate(((ratio(m.maximum_building_height), "Hmax / H  (assumed 2.5)", 2.5),
-                                           (ratio(m.building_height_std),     "σH / H  (assumed 0.4)",   0.4)))
-    vals = filter(isfinite, vec(r))
+for (j, (ratio, title, assumed)) in enumerate(ratios)
+    vals = filter(isfinite, vec(interior(ratio)))
     ax = Axis(fig3[1, 2j - 1]; title, xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-    hm = heatmap!(ax, λ, φ, r; colormap = :balance, nan_color = :gray90, colorrange = (0, 2assumed))
+    hm = heatmap!(ax, ratio; colormap = :balance, nan_color = :gray90, colorrange = (0, 2assumed))
     Colorbar(fig3[1, 2j], hm)
     @info "$title:  median = $(round(median(vals), digits=2)) (assumed $assumed);  " *
           "fraction above assumed = $(round(100 * count(>(assumed), vals) / length(vals)))%"
@@ -115,16 +111,16 @@ save("globfp3d_assumed_ratios.png", fig3)
 fig3
 
 # ## λf departs from the λf ≈ λp assumption
-λp_v = vec(interior(m.built_up_fraction)[:, :, 1])
-λf_v = vec(interior(m.frontal_area_index)[:, :, 1])
-keep = (λp_v .> 0) .& isfinite.(λf_v)
+λp = vec(interior(m.built_up_fraction))
+λf = vec(interior(m.frontal_area_index))
+keep = (λp .> 0) .& isfinite.(λf)
 
 fig4 = Figure(size = (620, 560))
 ax4 = Axis(fig4[1, 1]; title = "frontal-area index vs plan-area fraction",
            xlabel = "λp (plan-area fraction)", ylabel = "λf (frontal-area index)")
-scatter!(ax4, λp_v[keep], λf_v[keep]; markersize = 3, color = (:steelblue, 0.25))
+scatter!(ax4, λp[keep], λf[keep]; markersize = 3, color = (:steelblue, 0.25))
 lines!(ax4, [0, 1], [0, 1]; color = :black, linestyle = :dash, label = "λf = λp (the discarded assumption)")
 axislegend(ax4; position = :lt)
-ylims!(ax4, 0, quantile(λf_v[keep], 0.99))
+ylims!(ax4, 0, quantile(λf[keep], 0.99))
 save("globfp3d_frontal_vs_plan.png", fig4)
 fig4

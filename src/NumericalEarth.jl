@@ -127,6 +127,7 @@ export
     ORCAOne, ORCAQuarter, ORCATwelfth,
     ORCAGrid,
     OpenLandMapSoilDB,
+    GlobalBuildingFootprints3D, building_morphometry,
     first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,
     DatasetRestoring,

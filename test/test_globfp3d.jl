@@ -1,6 +1,5 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.DataWrangling.GloBFP3D
 using NumericalEarth.DataWrangling.GloBFP3D: reduce_morphometry, native_region_grid,
                                              parse_tile_bounds, tile_intersects,
                                              native_cell_size, native_resolution,
@@ -80,7 +79,7 @@ using Oceananigans.Fields: location
 end
 
 @testset "GloBFP3D native aggregation grid" begin
-    dataset = BuildingFootprints3D()
+    dataset = GlobalBuildingFootprints3D()
     region = BoundingBox(longitude = (-74.02, -73.93), latitude = (40.70, 40.82))
     Δ = native_cell_size(dataset)
     g = native_region_grid(region, Δ, Δ)
@@ -116,18 +115,18 @@ end
 @testset "GloBFP3D dataset interface" begin
     region = BoundingBox(longitude = (-74.02, -73.93), latitude = (40.70, 40.82))
 
-    @test BuildingFootprints3D().resolution == 3
-    @test native_resolution(BuildingFootprints3D(resolution = 10)) == 10
-    @test_throws ArgumentError BuildingFootprints3D(resolution = 0)
+    @test GlobalBuildingFootprints3D().resolution == 3
+    @test native_resolution(GlobalBuildingFootprints3D(resolution = 10)) == 10
+    @test_throws ArgumentError GlobalBuildingFootprints3D(resolution = 0)
 
-    dataset = BuildingFootprints3D()
+    dataset = GlobalBuildingFootprints3D()
     @test longitude_interfaces(dataset) == (-180, 180)
     @test latitude_interfaces(dataset)  == (-90, 90)
     Nx, Ny, Nz = size(dataset, :building_height)
     @test Nz == 1 && Nx > Ny > 0
     # A finer resolution gives a proportionally denser native grid.
-    @test size(BuildingFootprints3D(resolution = 3), :building_height)[1] >
-          size(BuildingFootprints3D(resolution = 30), :building_height)[1]
+    @test size(GlobalBuildingFootprints3D(resolution = 3), :building_height)[1] >
+          size(GlobalBuildingFootprints3D(resolution = 30), :building_height)[1]
 
     @test Set(keys(available_variables(dataset))) == Set((:building_height,))
     md = Metadatum(:building_height; dataset, region)
@@ -140,8 +139,8 @@ end
     region_b = BoundingBox(longitude = (2, 3), latitude = (48, 49))
     @test metadata_filename(dataset, :building_height, nothing, region) !=
           metadata_filename(dataset, :building_height, nothing, region_b)
-    @test metadata_filename(BuildingFootprints3D(resolution = 3), :building_height, nothing, region) !=
-          metadata_filename(BuildingFootprints3D(resolution = 30), :building_height, nothing, region)
+    @test metadata_filename(GlobalBuildingFootprints3D(resolution = 3), :building_height, nothing, region) !=
+          metadata_filename(GlobalBuildingFootprints3D(resolution = 30), :building_height, nothing, region)
 end
 
 @testset "GloBFP3D requires a bounded region" begin
@@ -149,21 +148,21 @@ end
                                  longitude = (-0.2, 0.1), latitude = (51.4, 51.6),
                                  topology = (Bounded, Bounded, Flat))
 
-    global_md = Metadatum(:building_height; dataset = BuildingFootprints3D())
+    global_md = Metadatum(:building_height; dataset = GlobalBuildingFootprints3D())
     @test_throws ErrorException validate_dataset_coverage(grid, global_md)
 
     region = BoundingBox(longitude = (-0.2, 0.1), latitude = (51.4, 51.6))
-    region_md = Metadatum(:building_height; dataset = BuildingFootprints3D(), region)
+    region_md = Metadatum(:building_height; dataset = GlobalBuildingFootprints3D(), region)
     @test validate_dataset_coverage(grid, region_md) === nothing
 
     # An antimeridian-crossing region (west > east) is rejected rather than expanded to near-global.
     crossing = BoundingBox(longitude = (179.9, -179.9), latitude = (-17.0, -16.0))
-    crossing_md = Metadatum(:building_height; dataset = BuildingFootprints3D(), region = crossing)
+    crossing_md = Metadatum(:building_height; dataset = GlobalBuildingFootprints3D(), region = crossing)
     @test_throws ErrorException validate_dataset_coverage(grid, crossing_md)
 
     # Swapped latitude bounds are rejected too.
     flipped = BoundingBox(longitude = (-0.2, 0.1), latitude = (51.6, 51.4))
-    flipped_md = Metadatum(:building_height; dataset = BuildingFootprints3D(), region = flipped)
+    flipped_md = Metadatum(:building_height; dataset = GlobalBuildingFootprints3D(), region = flipped)
     @test_throws ErrorException validate_dataset_coverage(grid, flipped_md)
 end
 
@@ -173,7 +172,7 @@ end
 
 @testset "GloBFP3D read is extension-gated" begin
     region = BoundingBox(longitude = (-74.02, -73.93), latitude = (40.70, 40.82))
-    md = Metadatum(:building_height; dataset = BuildingFootprints3D(), region)
+    md = Metadatum(:building_height; dataset = GlobalBuildingFootprints3D(), region)
     if isnothing(Base.get_extension(NumericalEarth, :NumericalEarthArchGDALExt))
         @test_throws ErrorException globfp3d_rasterize_to_netcdf(md, tempname() * ".nc")
     end

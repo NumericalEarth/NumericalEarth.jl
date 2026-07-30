@@ -295,7 +295,7 @@ function globfp3d_rasterize_tile!(height, vsi_path, grid)
 end
 
 function NumericalEarth.DataWrangling.GloBFP3D.globfp3d_rasterize_to_netcdf(
-        metadatum::GloBFP3D.BuildingFootprints3DMetadatum, nc_path)
+        metadatum::GloBFP3D.GlobalBuildingFootprints3DMetadatum, nc_path)
     dataset = metadatum.dataset
     region  = metadatum.region
     (region isa BoundingBox && !isnothing(region.longitude) && !isnothing(region.latitude)) ||
