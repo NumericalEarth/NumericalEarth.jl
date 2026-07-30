@@ -41,7 +41,7 @@ target_grid = LatitudeLongitudeGrid(CPU(), Float64; size = (102, 136),
                                     topology = (Bounded, Bounded, Flat))
 m = building_morphometry(target_grid; dataset, region)
 
-robust_range(field) = (v = filter(>(0), vec(interior(field))); isempty(v) ? (0, 1) : (0, quantile(v, 0.98)))
+robust_range(field) = (v = filter(>(0), interior(field, :, :, 1)); isempty(v) ? (0, 1) : (0, quantile(v, 0.98)))
 
 # The 3 m raster shares a color range with the mean and maximum height panels, so the 100 m
 # aggregation's smoothing of the towers is directly visible.
@@ -90,7 +90,7 @@ ratios = ((Hmax_over_H, "Hmax / H  (assumed 2.5)", 2.5),
 
 fig3 = Figure(size = (1250, 520))
 for (j, (ratio, title, assumed)) in enumerate(ratios)
-    vals = filter(isfinite, vec(interior(ratio)))
+    vals = filter(isfinite, interior(ratio, :, :, 1))
     ax = Axis(fig3[1, 2j - 1]; title, xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
     hm = heatmap!(ax, ratio; colormap = :balance, nan_color = :gray90, colorrange = (0, 2assumed))
     Colorbar(fig3[1, 2j], hm)
@@ -102,8 +102,8 @@ save("globfp3d_assumed_ratios.png", fig3)
 fig3
 
 # ## λf departs from the λf ≈ λp assumption
-λp = vec(interior(m.built_up_fraction))
-λf = vec(interior(m.frontal_area_index))
+λp = interior(m.built_up_fraction, :, :, 1)
+λf = interior(m.frontal_area_index, :, :, 1)
 keep = (λp .> 0) .& isfinite.(λf)
 
 fig4 = Figure(size = (620, 560))
