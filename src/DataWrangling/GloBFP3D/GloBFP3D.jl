@@ -340,7 +340,7 @@ function Downloads.download(metadatum::GlobalBuildingFootprints3DMetadatum)
     return nc_path
 end
 
-# Implemented in ext/NumericalEarthArchGDALExt.jl; this fallback fires when it is not active.
+# Implemented in ext/NumericalEarthArchGDALExt/globfp3d.jl; this fallback fires when it is not active.
 globfp3d_rasterize_to_netcdf(metadatum, nc_path) =
     error("Reading the 3D-GloBFP footprint shapefiles requires the ArchGDAL package " *
           "(for the OGR vector read + rasterization). Load it with `using ArchGDAL`.")
