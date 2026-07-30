@@ -209,7 +209,7 @@ nodata → `NaN`, then apply the band `scale`/`offset`), and return
 `(longitude, latitude, data)` with ascending, cell-center coordinates (latitude
 south-to-north, per CF convention).
 
-Implemented in `ext/NumericalEarthArchGDALExt.jl` when ArchGDAL is loaded; the
+Implemented in `ext/NumericalEarthArchGDALExt/openlandmap.jl` when ArchGDAL is loaded; the
 fallback below fires only when the extension is not active.
 """
 read_cog_window(source, bbox) =
