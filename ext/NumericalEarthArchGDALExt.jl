@@ -1,16 +1,15 @@
 module NumericalEarthArchGDALExt
 
 using ArchGDAL: ArchGDAL
-using Downloads: Downloads
 using NCDatasets: NCDataset, defDim, defVar
 using NumericalEarth: NumericalEarth
 
 using Oceananigans: Center, CPU
 using Oceananigans.Grids: λnodes, φnodes
 
-using NumericalEarth.DataWrangling: BoundingBox, netrc_downloader, native_grid
+using NumericalEarth.DataWrangling: BoundingBox, native_grid,
+                                    cmr_granules, earthdata_download_cached
 using NumericalEarth.DataWrangling.ASTERGED: asterged_short_name, asterged_version,
-                                             asterged_cmr_granules_url,
                                              asterged_decode_emissivity, asterged_decode_uncertainty,
                                              broadband_map, place_tile!,
                                              OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS
@@ -59,6 +58,10 @@ end
 #####
 ##### ASTER GED emissivity ingest (HDF5 tiles on a plain lat/lon grid)
 #####
+##### ASTER GED is the Global Emissivity Dataset from ASTER, the Advanced Spaceborne
+##### Thermal Emission and Reflection Radiometer aboard NASA's Terra satellite:
+##### https://lpdaac.usgs.gov/products/ag100v003/
+#####
 ##### Resolves the 1°×1° HDF5 tiles intersecting the region via NASA CMR, downloads
 ##### them with Earthdata credentials (cached per tile, so overlapping regions and
 ##### both variables reuse them), reads the `/Emissivity/Mean`, `/Emissivity/SDev`
@@ -71,88 +74,6 @@ end
 #####
 ##### Requires GDAL_jll built with the HDF5 driver.
 #####
-
-# Earthdata-authenticated download of a single tile, retried on transient failures.
-# Credentials come from the EARTHDATA_USERNAME / EARTHDATA_PASSWORD env variables.
-function earthdata_download(url, path; attempts = 3)
-    username = get(ENV, "EARTHDATA_USERNAME", nothing)
-    password = get(ENV, "EARTHDATA_PASSWORD", nothing)
-
-    if isnothing(username)
-        error("NASA Earthdata credentials not found: EARTHDATA_USERNAME is not set. " *
-              "Register free at https://urs.earthdata.nasa.gov.")
-    elseif isnothing(password)
-        error("NASA Earthdata credentials not found: EARTHDATA_PASSWORD is not set. " *
-              "Register free at https://urs.earthdata.nasa.gov.")
-    end
-
-    mktempdir() do tmp
-        downloader = netrc_downloader(username, password, "urs.earthdata.nasa.gov", tmp)
-        for attempt in 1:attempts
-            try
-                Downloads.download(url, path; downloader)
-                break
-            catch error
-                rm(path, force = true)
-                attempt == attempts && rethrow()
-                @warn "ASTER GED tile download failed (attempt $attempt of $attempts); retrying..." url error
-                sleep(2attempt)
-            end
-        end
-    end
-    return path
-end
-
-# Persistent per-tile cache: overlapping regions and both variables reuse tiles
-# instead of re-downloading. `basename(url)` is the tile granule name.
-function earthdata_download_cached(url, cache_dir; attempts = 3)
-    path = joinpath(cache_dir, basename(url))
-    isfile(path) && return path
-    return earthdata_download(url, path; attempts)
-end
-
-# Anonymous CMR search request, retried on transient failures.
-function cmr_download(url, path; attempts = 3)
-    for attempt in 1:attempts
-        try
-            Downloads.download(url, path)
-            return path
-        catch error
-            rm(path, force = true)
-            attempt == attempts && rethrow()
-            @warn "CMR granule query failed (attempt $attempt of $attempts); retrying..." url error
-            sleep(2attempt)
-        end
-    end
-end
-
-# Query CMR for the ASTER GED tile `.h5` download URLs intersecting `bbox`, paging
-# until a short page signals the last one, and keeping one download URL per granule
-# (preferring a protected `data`-host endpoint).
-function NumericalEarth.DataWrangling.ASTERGED.earthdata_cmr_granules(short_name, version, bbox::BoundingBox; page_size = 2000)
-    by_granule = Dict{String, String}()
-    mktempdir() do tmp
-        page_num = 1
-        while true
-            url = asterged_cmr_granules_url(short_name, version, bbox; page_size, page_num)
-            json_path = joinpath(tmp, string("cmr_granules_", page_num, ".json"))
-            cmr_download(url, json_path)
-            text = read(json_path, String)
-            granules_on_page = Set{String}()
-            for match in eachmatch(r"https://[^\"]+\.h5", text)
-                u = match.match
-                key = basename(u)
-                push!(granules_on_page, key)
-                if !haskey(by_granule, key) || occursin("protected", u)
-                    by_granule[key] = u
-                end
-            end
-            length(granules_on_page) < page_size && break
-            page_num += 1
-        end
-    end
-    return collect(values(by_granule))
-end
 
 # Open an HDF5 subdataset via GDAL's `HDF5:"file"://path` syntax and return the
 # full raster array. Multi-band datasets come back as `(Nx, Ny, nbands)`.
@@ -189,7 +110,7 @@ function NumericalEarth.DataWrangling.ASTERGED.asterged_tiles_to_netcdf(metadatu
     to_pm180(λ) = rem(λ, 360, RoundNearest)
     query = BoundingBox(longitude = (to_pm180(longitude[1] - Δλ), to_pm180(longitude[end] + Δλ)),
                         latitude  = (latitude[1]  - Δφ, latitude[end]  + Δφ))
-    granule_urls = NumericalEarth.DataWrangling.ASTERGED.earthdata_cmr_granules(short_name, version, query)
+    granule_urls = cmr_granules(short_name, version, query)
     isempty(granule_urls) &&
         error("CMR returned no $(short_name).$(version) tiles for region $(bbox).")
 

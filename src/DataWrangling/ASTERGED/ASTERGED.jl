@@ -3,11 +3,13 @@ module ASTERGED
 export ASTERGEDv3
 
 using Downloads: Downloads
-using Oceananigans: Center
+using Oceananigans: Center, CPU
 using Oceananigans.DistributedComputations: @root
+using Oceananigans.Fields: Field, interior
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
-                       BoundingBox, metadata_path, NearestNeighborInpainting
+                       BoundingBox, metadata_path, native_grid, inpaint_mask!,
+                       NearestNeighborInpainting
 
 import Oceananigans
 
@@ -36,9 +38,10 @@ const OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS = [0.088, 0.053, 0.174, 0.380, 
 """
     ASTERGEDv3 <: AbstractStaticDataset
 
-ASTER Global Emissivity Dataset (GED) v3: a static (2000–2008 clear-sky mean)
-climatology of land-surface emissivity on a plain geographic (WGS84 lat/lon)
-grid, distributed as HDF5 in 1°×1° tiles. Two resolutions are supported:
+Global Emissivity Dataset (GED) v3 from the Advanced Spaceborne Thermal Emission
+and Reflection Radiometer (ASTER) aboard NASA's Terra satellite: a static (2000–2008 clear-sky
+mean) climatology of land-surface emissivity on a plain geographic (WGS84 lat/lon) grid,
+distributed as HDF5 in 1°×1° tiles. Two resolutions are supported:
 
 - `:low_1km` — 1 km (36 arcsec, 100×100 px/tile). Default; matches typical
   Earth-system grids without fetching ~100× the data.
@@ -62,9 +65,9 @@ the gap-filling note below. The finite emissivity `Field` can be passed directly
 
 !!! note "Gap filling"
     Building a `Field` fills every `NaN` gap with the default
-    `NearestNeighborInpainting(Inf)`, so the returned field is finite everywhere. The
-    fill is surface-aware: it reads the tiles' land/water map and inpaints land and
-    water separately.
+    `NearestNeighborInpainting(Inf)`, so the returned field is finite everywhere. A gap
+    over land is filled from land alone, never across the coastline from the water
+    retrievals, using the tiles' land/water map (see `fill_land_gaps`).
 
 Because ASTER GED is a fine regional-window raster, it is read in regional windows
 only: build the `Metadatum` with a longitude/latitude `BoundingBox`, most simply
@@ -92,7 +95,7 @@ struct ASTERGEDv3 <: AbstractStaticDataset
 end
 
 """
-    ASTERGEDv3(; resolution = :low_1km)
+    ASTERGEDv3(resolution = :low_1km)
 
 Construct an [`ASTERGEDv3`](@ref) dataset. `resolution` is `:low_1km` (1 km,
 default) or `:high_100m` (100 m).
@@ -118,12 +121,7 @@ Base.show(io::IO, dataset::ASTERGEDv3) = print(io, summary(dataset))
 
 const ASTERGEDMetadatum = Metadatum{<:ASTERGEDv3}
 
-# Variable name in the regional NetCDF written by the download step (which stores
-# the already-decoded broadband floats — see the ArchGDAL extension).
-const ASTERGED_variable_names = Dict(
-    :emissivity             => "emissivity",
-    :emissivity_uncertainty => "emissivity_uncertainty",
-)
+const ASTERGED_variables = (:emissivity, :emissivity_uncertainty)
 
 #####
 ##### Pure decode / broadband synthesis core (no credentials / IO)
@@ -228,7 +226,7 @@ end
 ##### Dataset interface
 #####
 
-DataWrangling.available_variables(::ASTERGEDv3) = ASTERGED_variable_names
+DataWrangling.available_variables(::ASTERGEDv3) = ASTERGED_variables
 DataWrangling.default_download_directory(::ASTERGEDv3) = download_ASTERGED_cache
 
 # A couple of native 1 km cells of margin for interpolation stencils at the edge.
@@ -288,29 +286,11 @@ DataWrangling.validate_dataset_coverage(grid, metadata::ASTERGEDMetadatum) =
 #####
 
 DataWrangling.is_three_dimensional(::ASTERGEDMetadatum) = false
-DataWrangling.dataset_variable_name(metadata::ASTERGEDMetadatum) =
-    ASTERGED_variable_names[metadata.name]
+DataWrangling.dataset_variable_name(metadata::ASTERGEDMetadatum) = string(metadata.name)
 
-# Clear-sky retrieval gaps (persistent cloud, screened snow) decode to NaN; fill each
-# from the nearest valid cell of the same surface class. `Inf` iterations so no gap is
-# left as the zero a capped inpainting would write. The land/water partition comes from
-# `inpainting_regions` below, so land gaps fill only from land and water only from water.
+# Water gaps left by `fill_land_gaps` are filled here, from any neighbor. `Inf` iterations
+# so no gap is left as the zero a capped inpainting would write.
 DataWrangling.default_inpainting(::ASTERGEDMetadatum) = NearestNeighborInpainting(Inf)
-
-# Land/water partition (0 = land, 1 = water) so inpainting fills land gaps only from
-# land and water gaps only from water.
-function DataWrangling.inpainting_regions(metadata::ASTERGEDMetadatum, field)
-    ds = DataWrangling.Dataset(metadata_path(metadata))
-    lwmap = ds["land_water_map"][:, :]
-    close(ds)
-
-    grid = field.grid
-    arch = Oceananigans.Architectures.architecture(grid)
-    regions = Oceananigans.Fields.Field{Center, Center, Nothing}(grid, Bool)   # true = water
-    water = Oceananigans.Architectures.on_architecture(arch, Array{Bool}(lwmap .== 1))
-    Oceananigans.Fields.interior(regions, :, :, 1) .= water
-    return regions
-end
 
 # The regional NetCDF is variable-independent, so key the inpainted cache on the
 # variable name too (otherwise emissivity and uncertainty would collide).
@@ -327,34 +307,16 @@ DataWrangling.latitude_name(::ASTERGEDMetadatum)  = "lat"
 Oceananigans.Fields.location(::ASTERGEDMetadatum) = (Center, Center, Nothing)
 
 #####
-##### Product identity + CMR granule discovery
+##### Product identity
 #####
 
 # NASA CMR short name / version for the ASTER GED product at each resolution
-# ("AG" abbreviates ASTER GED).
+# ("AG" abbreviates ASTER GED). `DataWrangling.cmr_granules` turns these into the
+# download URLs of the tiles intersecting a region.
 asterged_short_name(dataset::ASTERGEDv3) = asterged_short_name(Val(dataset.resolution))
 asterged_short_name(::Val{:high_100m}) = "AG100"
 asterged_short_name(::Val{:low_1km})   = "AG1KM"
 asterged_version(::ASTERGEDv3) = "003"
-
-"""
-    asterged_cmr_granules_url(short_name, version, bbox; page_size = 2000, page_num = 1)
-
-Build the NASA CMR (Common Metadata Repository) granule-search URL for page
-`page_num` of the ASTER GED product `short_name` / `version` whose 1°×1° HDF5 tiles
-intersect the `bbox` `BoundingBox` (encoded `W,S,E,N`, longitudes in `[-180, 180]`).
-CMR search is anonymous; only the tile download itself needs Earthdata credentials.
-"""
-function asterged_cmr_granules_url(short_name, version, bbox::BoundingBox; page_size = 2000, page_num = 1)
-    west, east = bbox.longitude
-    south, north = bbox.latitude
-    return string("https://cmr.earthdata.nasa.gov/search/granules.json",
-                  "?short_name=", short_name,
-                  "&version=", version,
-                  "&bounding_box=", west, ",", south, ",", east, ",", north,
-                  "&page_size=", page_size,
-                  "&page_num=", page_num)
-end
 
 #####
 ##### Data retrieval — the regional NetCDF already holds the decoded broadband
@@ -366,16 +328,52 @@ end
     retrieve_data(metadata::ASTERGEDMetadatum)
 
 Read the regional broadband `Float32` field for `metadata.name` from the NetCDF
-written by the download step (see `asterged_tiles_to_netcdf`). Clear-sky retrieval
-gaps are `NaN` for the downstream inpainting. Returns a regional `(Nx, Ny)` array.
+written by the download step (see `asterged_tiles_to_netcdf`), and fill its land gaps
+from land (see `fill_land_gaps`). Water gaps are left `NaN` for the downstream
+inpainting. Returns a regional `(Nx, Ny)` array.
 """
 function DataWrangling.retrieve_data(metadata::ASTERGEDMetadatum)
-    haskey(ASTERGED_variable_names, metadata.name) ||
+    metadata.name ∈ ASTERGED_variables ||
         error("ASTERGEDv3 does not provide variable :$(metadata.name); " *
-              "available variables: $(collect(keys(ASTERGED_variable_names)))")
+              "available variables: $(ASTERGED_variables)")
+
     ds = DataWrangling.Dataset(metadata_path(metadata))
     data = ds[DataWrangling.dataset_variable_name(metadata)][:, :]
+    # 0 = land, 1 = water; cells outside every tile are NaN and count as land.
+    water = ds["land_water_map"][:, :] .== 1
     close(ds)
+
+    return fill_land_gaps(data, water, metadata)
+end
+
+"""
+    fill_land_gaps(data, water, metadata)
+
+Fill the clear-sky retrieval gaps over land from land alone. ASTER GED retrieves an
+emissivity over water too (open-ocean broadband ε ≈ 0.98, against 0.94–0.96 over land),
+so a coastal land gap filled from any neighbor inherits the ocean value. Blanking the
+water first denies it that: a `NaN` neighbor never donates, so the surviving donors are
+land. Water keeps its own retrievals, and its gaps stay `NaN` for the ungated inpainting
+that `Field` runs next.
+"""
+function fill_land_gaps(data, water, metadata)
+    land = .!water
+    any(land .& .!isnan.(data)) || return data   # no land donor: leave it to the caller
+
+    blanked = copy(data)
+    blanked[water] .= NaN32
+
+    grid  = native_grid(metadata, CPU())
+    field = Field{Center, Center, Nothing}(grid)
+    mask  = Field{Center, Center, Nothing}(grid, Bool)
+    interior(field, :, :, 1) .= blanked
+    interior(mask, :, :, 1) .= isnan.(blanked)
+
+    inpaint_mask!(field, mask)
+
+    filled = Array(interior(field, :, :, 1))
+    data[land] .= filled[land]
+
     return data
 end
 
@@ -400,10 +398,5 @@ asterged_tiles_to_netcdf(metadata, path) =
           "and NASA Earthdata credentials. Load ArchGDAL with `using ArchGDAL`, and provide " *
           "credentials via EARTHDATA_USERNAME / EARTHDATA_PASSWORD (register free at " *
           "https://urs.earthdata.nasa.gov).")
-
-# Implemented in ext/NumericalEarthArchGDALExt.jl once `ArchGDAL` is loaded.
-earthdata_cmr_granules(short_name, version, bbox) =
-    error("Resolving ASTER GED granule URLs via CMR requires network access; this helper " *
-          "is provided by the ArchGDAL extension. Load it with `using ArchGDAL`.")
 
 end # module ASTERGED

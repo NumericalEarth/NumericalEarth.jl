@@ -9,7 +9,7 @@ using NumericalEarth.DataWrangling.ASTERGED: asterged_decode_emissivity, asterge
 using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces,
     dataset_variable_name, validate_dataset_coverage, metadata_filename,
     is_three_dimensional, default_inpainting, native_grid, default_horizontal_padding,
-    NearestNeighborInpainting, supported_datasets, inpainting_regions
+    NearestNeighborInpainting, supported_datasets, retrieve_data
 using NumericalEarth: stateindex
 
 using Oceananigans.Grids: λnodes, φnodes
@@ -303,23 +303,60 @@ end
         emissivity[water_cols, :] .= 0.99f0
         uncertainty = fill(0.01f0, Nx, Ny)
 
-        # A land gap on the coastline: its east neighbor is water, so a surface-agnostic
-        # fill would pull it toward 0.99.
+        # A land gap on the coastline: its east neighbor is water, so a fill from any
+        # neighbor would pull it toward 0.99.
         gap_i = Nx ÷ 2
         gap_j = Ny ÷ 2
         emissivity[gap_i, gap_j] = NaN32
 
+        # A water gap, which nothing on land is asked to match.
+        water_gap_i = Nx ÷ 2 + 2
+        water_gap_j = Ny ÷ 2
+        emissivity[water_gap_i, water_gap_j] = NaN32
+
         write_synthetic_asterged_netcdf(metadata_path(metadatum), λc, φc, emissivity, uncertainty; land_water_map)
 
-        # `inpainting_regions` returns the water partition as a reduced Bool field.
-        skeleton = Field{Center, Center, Nothing}(native_grid(metadatum, arch))
-        regions = inpainting_regions(metadatum, skeleton)
-        @test location(regions) == (Center, Center, Nothing)
-        @test Array(interior(regions, :, :, 1)) == (land_water_map .== 1)
+        # `fill_land_gaps` blanks the water, so the land gap sees only land donors.
+        # Water keeps its own retrievals and its gap is left for the generic inpainting.
+        retrieved = retrieve_data(metadatum)
+        @test retrieved[gap_i, gap_j] ≈ 0.96f0 atol = 1e-4
+        @test isnan(retrieved[water_gap_i, water_gap_j])
+        @test retrieved[Nx, gap_j] ≈ 0.99f0 atol = 1e-4    # water untouched
 
         field = Field(metadatum, arch)
         values = Array(interior(field, :, :, 1))
         @test all(isfinite, values)
-        @test values[gap_i, gap_j] ≈ 0.96f0 atol = 1e-4   # filled from land, not the 0.99 water
+        @test values[gap_i, gap_j] ≈ 0.96f0 atol = 1e-4       # from land, not the 0.99 water
+        @test values[water_gap_i, water_gap_j] ≈ 0.99f0 atol = 1e-4
+    end
+end
+
+@testset "ASTER GED land gaps with no land donor [$(typeof(arch))]" for arch in test_architectures
+    mktempdir() do dir
+        dataset = ASTERGEDv3()
+        region  = BoundingBox(longitude = (10.0, 10.1), latitude = (45.0, 45.1))
+        metadatum = Metadatum(:emissivity; dataset, region, dir)
+
+        grid_native = native_grid(metadatum, CPU())
+        λc = λnodes(grid_native, Center())
+        φc = φnodes(grid_native, Center())
+        Nx, Ny = length(λc), length(φc)
+
+        # All water except one land cell, which is itself a gap: nothing on land can
+        # donate, so `fill_land_gaps` bails out and the generic inpainting takes over.
+        land_water_map = ones(Float32, Nx, Ny)
+        land_water_map[1, 1] = 0f0
+        emissivity = fill(0.99f0, Nx, Ny)
+        emissivity[1, 1] = NaN32
+        uncertainty = fill(0.01f0, Nx, Ny)
+
+        write_synthetic_asterged_netcdf(metadata_path(metadatum), λc, φc, emissivity, uncertainty; land_water_map)
+
+        @test isnan(retrieve_data(metadatum)[1, 1])
+
+        field = Field(metadatum, arch)
+        values = Array(interior(field, :, :, 1))
+        @test all(isfinite, values)
+        @test values[1, 1] ≈ 0.99f0 atol = 1e-4
     end
 end
