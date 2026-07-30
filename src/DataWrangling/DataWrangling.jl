@@ -269,6 +269,7 @@ include("metadata_field_time_series.jl")
 include("inpainting.jl")
 include("restoring.jl")
 include("earthdata.jl")
+include("figshare.jl")
 
 function metadata_time_step end
 function metadata_epoch end

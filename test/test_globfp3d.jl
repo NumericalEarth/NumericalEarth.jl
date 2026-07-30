@@ -1,10 +1,10 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.DataWrangling.GloBFP3D: reduce_morphometry, globfp3d_native_region_grid,
+using NumericalEarth.DataWrangling.GloBFP3D: reduce_morphometry,
                                              globfp3d_parse_tile_bounds, globfp3d_tile_intersects,
                                              globfp3d_native_cell_size, globfp3d_native_resolution,
                                              globfp3d_rasterize_to_netcdf
-using NumericalEarth.DataWrangling: BoundingBox, Metadatum,
+using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_region_grid,
                                     longitude_interfaces, latitude_interfaces,
                                     dataset_variable_name, validate_dataset_coverage,
                                     metadata_filename, available_variables,
@@ -82,7 +82,7 @@ end
     dataset = GlobalBuildingFootprints3D()
     region = BoundingBox(longitude = (-74.02, -73.93), latitude = (40.70, 40.82))
     Δ = globfp3d_native_cell_size(dataset)
-    g = globfp3d_native_region_grid(region, Δ, Δ)
+    g = native_region_grid(region, Δ, Δ)
     @test g.west ≤ -74.02 && g.west + g.Nx * g.Δλ ≥ -73.93
     @test g.south ≤ 40.70 && g.south + g.Ny * g.Δφ ≥ 40.82
     @test g.Δλ ≈ Δ && g.Δφ ≈ Δ

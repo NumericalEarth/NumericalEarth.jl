@@ -25,7 +25,7 @@ function globfp3d_tile_catalog(cache_dir)
     url_regex    = r"\"download_url\"\s*:\s*\"([^\"]+)\""
     for id in GLOBFP3D_FIGSHARE_ARTICLE_IDS
         json = sprint() do io
-            Downloads.download(globfp3d_figshare_article_url(id), io)
+            Downloads.download(figshare_article_url(id), io)
         end
         for object in eachmatch(object_regex, json)
             name = match(name_regex, object.match)
@@ -149,7 +149,7 @@ function NumericalEarth.DataWrangling.GloBFP3D.globfp3d_rasterize_to_netcdf(
         error("No 3D-GloBFP tiles intersect the requested region $(summary(region)).")
 
     Δ = globfp3d_native_cell_size(dataset)
-    grid = globfp3d_native_region_grid(region, Δ, Δ)
+    grid = native_region_grid(region, Δ, Δ)
     height = zeros(Float64, grid.Nx, grid.Ny)
     for tile in tiles
         vsi_path = globfp3d_download_tile(tile, cache_dir)

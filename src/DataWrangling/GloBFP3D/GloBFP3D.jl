@@ -153,27 +153,6 @@ DataWrangling.default_inpainting(::GlobalBuildingFootprints3DMetadatum) = nothin
 Oceananigans.Fields.location(::GlobalBuildingFootprints3DMetadatum) = (Center, Center, Center)
 
 #####
-##### Native aggregation grid (used by the rasterizing extension)
-#####
-
-"""
-    globfp3d_native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
-
-Regular lat/lon raster of longitude/latitude cell steps `Δλ`/`Δφ` (degrees) covering `region`,
-snapped to the global lattice anchored at `(-180, -90)` and padded by `pad` cells on each side.
-Returns `(; west, south, Δλ, Δφ, Nx, Ny)`.
-"""
-function globfp3d_native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
-    west, east   = region.longitude
-    south, north = region.latitude
-    i₀ = floor(Int, (west  + 180) / Δλ) - pad
-    j₀ = floor(Int, (south +  90) / Δφ) - pad
-    i₁ = ceil(Int,  (east  + 180) / Δλ) + pad
-    j₁ = ceil(Int,  (north +  90) / Δφ) + pad
-    return (; west = -180 + i₀ * Δλ, south = -90 + j₀ * Δφ, Δλ, Δφ, Nx = i₁ - i₀, Ny = j₁ - j₀)
-end
-
-#####
 ##### Per-cell morphometry from the fine building-height raster
 #####
 
@@ -304,9 +283,7 @@ end
 
 # figshare article ids of the ten dataset parts (see the Zenodo record's data_links.txt).
 const GLOBFP3D_FIGSHARE_ARTICLE_IDS = (28879733, 28881749, 28882700, 28889813, 28890593,
-                              28891631, 28903454, 28903853, 28904453, 28906499)
-
-globfp3d_figshare_article_url(id) = string("https://api.figshare.com/v2/articles/", id)
+                                       28891631, 28903454, 28903853, 28904453, 28906499)
 
 """
     globfp3d_parse_tile_bounds(name)
