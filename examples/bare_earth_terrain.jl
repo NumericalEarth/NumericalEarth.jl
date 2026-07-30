@@ -37,8 +37,6 @@
 using NumericalEarth
 using Oceananigans
 using CairoMakie
-using Statistics
-using Oceananigans.Fields: interpolate!
 
 # ## Domain and DSM
 #
@@ -54,7 +52,7 @@ grid = LatitudeLongitudeGrid(CPU(); latitude, longitude, size = (150, 110),
 
 dsm_dataset = ETOPO2022()   # stand-in for GLO30() — see the note above
 
-z_dsm = regrid_topography(grid; dataset = dsm_dataset)
+dsm_elevation = regrid_topography(grid; dataset = dsm_dataset)
 
 # ## Object heights (canopy)
 #
@@ -63,15 +61,13 @@ z_dsm = regrid_topography(grid; dataset = dsm_dataset)
 # full pipeline this field comes from a canopy-height dataset.
 
 λ, φ, _ = nodes(grid, Center(), Center(), Center())
-elevation = Array(interior(z_dsm, :, :, 1))
+elevation = interior(dsm_elevation, :, :, 1)
 
 canopy_height          = 35.0   # m, tall tropical canopy
 terra_firme_elevation  = 30.0   # m, above this is upland forest; below is river floodplain
 
 canopy = Field{Center, Center, Nothing}(grid)
-canopy_data = [elevation[i, j] ≥ terra_firme_elevation ? canopy_height : 0.0
-               for i in eachindex(λ), j in eachindex(φ)]
-set!(canopy, canopy_data)
+set!(canopy, ifelse.(elevation .≥ terra_firme_elevation, canopy_height, 0.0))
 
 # ## Bare-earth terrain
 #
@@ -79,9 +75,9 @@ set!(canopy, canopy_data)
 # level. The DSM-minus-bare-earth difference *is* the removed canopy (where the DSM
 # stands above it) — the signal that belongs to roughness, not terrain.
 
-z_bare = bare_earth_elevation(z_dsm, canopy)
+bare_elevation = bare_earth_elevation(dsm_elevation, canopy)
 
-dsm_minus_bare = z_dsm - z_bare
+removed_object_height = dsm_elevation - bare_elevation
 
 # ## Antialiasing check
 #
@@ -90,10 +86,10 @@ dsm_minus_bare = z_dsm - z_bare
 
 coarse_grid = LatitudeLongitudeGrid(CPU(); latitude, longitude, size = (38, 28),
                                    topology = (Bounded, Bounded, Flat))
-z_coarse_dsm = regrid_topography(coarse_grid; dataset = dsm_dataset)
+coarse_dsm_elevation = regrid_topography(coarse_grid; dataset = dsm_dataset)
 
-@info "Elevation range (m): model grid $(round.(extrema(z_dsm); digits=1)), " *
-      "4× coarser $(round.(extrema(z_coarse_dsm); digits=1))"
+@info "Elevation range (m): model grid $(round.(extrema(dsm_elevation); digits=1)), " *
+      "4× coarser $(round.(extrema(coarse_dsm_elevation); digits=1))"
 
 # ## Feeding the atmosphere elevation correction
 #
@@ -102,17 +98,17 @@ z_coarse_dsm = regrid_topography(coarse_grid; dataset = dsm_dataset)
 # the model's surface elevation and the coarse elevation the atmosphere data assumes.
 # A coarse reference elevation stands in for that atmosphere elevation.
 
-z_reference = Field{Center, Center, Nothing}(grid)
-interpolate!(z_reference, z_coarse_dsm)
+reference_elevation = Field{Center, Center, Nothing}(grid)
+set!(reference_elevation, coarse_dsm_elevation)
 
-Δz_bare = z_bare - z_reference
+elevation_difference = bare_elevation - reference_elevation
 
 # The correction is a one-liner over the bare-earth field. Over this flat basin the
 # terrain relief is only ~100 m, so the ~35 m canopy the subtraction removes is a
 # large fraction of the correction — the piece that belongs to the roughness closure,
 # not the terrain.
 
-correction = ElevationCorrection(z_bare, z_reference)
+correction = ElevationCorrection(bare_elevation, reference_elevation)
 
 # ## Transect across the basin
 #
@@ -121,48 +117,50 @@ correction = ElevationCorrection(z_bare, z_reference)
 # the rivers.
 
 transect_latitude = -3.0
-jrow = searchsortedfirst(φ, transect_latitude)
-transect_dsm  = interior(z_dsm,  :, jrow, 1)
-transect_bare = interior(z_bare, :, jrow, 1)
+transect_index = searchsortedfirst(φ, transect_latitude)
+dsm_transect   = view(dsm_elevation,  :, transect_index, 1)
+bare_transect  = view(bare_elevation, :, transect_index, 1)
 
 # ## Visualization
 
 fig = Figure(size = (1600, 1150), fontsize = 15)
 
-zlim = extrema(z_dsm)
-olim = (0, canopy_height)
+elevation_limits     = extrema(dsm_elevation)
+object_height_limits = (0, canopy_height)
 
-ax_dsm = Axis(fig[1, 1]; title = "DSM elevation (m)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-hm_dsm = heatmap!(ax_dsm, z_dsm; colormap = :terrain, colorrange = zlim)
-Colorbar(fig[1, 2], hm_dsm)
+dsm_axis = Axis(fig[1, 1]; title = "DSM elevation (m)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
+dsm_heatmap = heatmap!(dsm_axis, dsm_elevation; colormap = :terrain, colorrange = elevation_limits)
+Colorbar(fig[1, 2], dsm_heatmap)
 
-ax_bare = Axis(fig[1, 3]; title = "Bare-earth DTM (m)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-hm_bare = heatmap!(ax_bare, z_bare; colormap = :terrain, colorrange = zlim)
-Colorbar(fig[1, 4], hm_bare)
+bare_axis = Axis(fig[1, 3]; title = "Bare-earth DTM (m)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
+bare_heatmap = heatmap!(bare_axis, bare_elevation; colormap = :terrain, colorrange = elevation_limits)
+Colorbar(fig[1, 4], bare_heatmap)
 
-ax_obj = Axis(fig[1, 5]; title = "Synthetic canopy height (m)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-hm_obj = heatmap!(ax_obj, canopy; colormap = :speed, colorrange = olim)
-Colorbar(fig[1, 6], hm_obj)
+canopy_axis = Axis(fig[1, 5]; title = "Synthetic canopy height (m)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
+canopy_heatmap = heatmap!(canopy_axis, canopy; colormap = :speed, colorrange = object_height_limits)
+Colorbar(fig[1, 6], canopy_heatmap)
 
-ax_diff = Axis(fig[2, 1]; title = "DSM − bare-earth (m)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-hm_diff = heatmap!(ax_diff, dsm_minus_bare; colormap = :speed, colorrange = olim)
-Colorbar(fig[2, 2], hm_diff)
+removed_axis = Axis(fig[2, 1]; title = "DSM − bare-earth (m)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
+removed_heatmap = heatmap!(removed_axis, removed_object_height; colormap = :speed, colorrange = object_height_limits)
+Colorbar(fig[2, 2], removed_heatmap)
 
-ax_ref = Axis(fig[2, 3]; title = "Coarse reference elevation (m)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-hm_ref = heatmap!(ax_ref, z_reference; colormap = :terrain, colorrange = zlim)
-Colorbar(fig[2, 4], hm_ref)
+reference_axis = Axis(fig[2, 3]; title = "Coarse reference elevation (m)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
+reference_heatmap = heatmap!(reference_axis, reference_elevation; colormap = :terrain, colorrange = elevation_limits)
+Colorbar(fig[2, 4], reference_heatmap)
 
-Δzmax = maximum(abs, Δz_bare)
-ax_cb = Axis(fig[2, 5]; title = "Elevation correction Δz (m)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-hm_cb = heatmap!(ax_cb, Δz_bare; colormap = :balance, colorrange = (-Δzmax, Δzmax))
-Colorbar(fig[2, 6], hm_cb)
+maximum_elevation_difference = maximum(abs, elevation_difference)
+correction_axis = Axis(fig[2, 5]; title = "Elevation correction Δz (m)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
+correction_heatmap = heatmap!(correction_axis, elevation_difference; colormap = :balance,
+                              colorrange = (-maximum_elevation_difference, maximum_elevation_difference))
+Colorbar(fig[2, 6], correction_heatmap)
 
-ax_t = Axis(fig[3, 1:6]; title = "West–east transect at $(transect_latitude)°N",
-            xlabel = "longitude", ylabel = "elevation (m)")
-band!(ax_t, λ, transect_bare, transect_dsm; color = (:seagreen, 0.35), label = "removed canopy (synthetic)")
-lines!(ax_t, λ, transect_dsm;  color = :black,     label = "DSM")
-lines!(ax_t, λ, transect_bare; color = :firebrick, label = "bare-earth DTM")
-axislegend(ax_t; position = :lt)
+transect_axis = Axis(fig[3, 1:6]; title = "West–east transect at $(transect_latitude)°N",
+                     xlabel = "longitude", ylabel = "elevation (m)")
+band!(transect_axis, λ, vec(interior(bare_transect)), vec(interior(dsm_transect));
+      color = (:seagreen, 0.35), label = "removed canopy (synthetic)")
+lines!(transect_axis, dsm_transect;  color = :black,     label = "DSM")
+lines!(transect_axis, bare_transect; color = :firebrick, label = "bare-earth DTM")
+axislegend(transect_axis; position = :lt)
 
 Label(fig[0, 1:6], rich("Bare-earth terrain over the central Amazon — DSM minus canopy height\n",
                         rich("canopy height is SYNTHETIC (an elevation-gated stand-in, not measured); terrain is real",

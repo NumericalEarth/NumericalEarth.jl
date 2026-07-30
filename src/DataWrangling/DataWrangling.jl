@@ -27,9 +27,11 @@ using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
 using Oceananigans.DistributedComputations: DistributedComputations, @root
 using Oceananigans.Grids: AbstractGrid, Center, Face, Flat, Bounded,
-                          LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes
+                          LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes,
+                          λspacings, φspacings
 using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
 using Oceananigans.Grids: node
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
 using Oceananigans.Utils: launch!, prettytime, prettysummary

@@ -21,13 +21,14 @@ struct BathymetryRegridding
     interpolation_passes :: Int
     major_basins         :: Float64
     dataset              :: String
-    region               :: String
+    region               :: Union{Nothing, String}
 end
 
 # A windowed regrid and a global regrid of the same dataset+grid must not share a cache
-# file, so the region is part of the key.
-region_key(::Nothing) = "global"
-region_key(bbox::BoundingBox) = string(bbox.longitude, "_", bbox.latitude)
+# file, so the region joins the key. Global regrids keep `nothing`, which is left out of
+# the hash so their cache files stay where earlier versions wrote them.
+region_key(::Nothing) = nothing
+region_key(region) = string(region)
 
 function BathymetryRegridding(grid, metadata;
                               height_above_water = nothing,
@@ -86,7 +87,7 @@ function Base.hash(c::BathymetryRegridding, h::UInt)
     h = hash(c.interpolation_passes, h)
     h = hash(c.major_basins, h)
     h = hash(c.dataset, h)
-    h = hash(c.region, h)
+    isnothing(c.region) || (h = hash(c.region, h))
     return h
 end
 
@@ -246,13 +247,17 @@ function _regrid_bathymetry(target_grid, metadata;
 
     arch = architecture(target_grid)
 
+    # TODO: over a global span this grid is Float32 (the dataset's eltype), and Oceananigans
+    # mislocates the interpolation point by ~2.8 cells (~5 km), displacing globally-read
+    # bathymetry by ~280 m in steep terrain: CliMA/Oceananigans.jl#5821. Windowed reads span
+    # too little to be affected.
     bathymetry_native_grid = native_grid(metadata, arch; halo = (10, 10, 1))
     FT = eltype(target_grid)
 
     filepath = metadata_path(metadata)
     dataset = Dataset(filepath, "r")
 
-    z_data = convert(Array{FT}, dataset[dataset_variable_name(metadata)][:, :])
+    z_data = nan_convert_missing.(FT, dataset[dataset_variable_name(metadata)][:, :])
     close(dataset)
 
     if !isnothing(height_above_water)
@@ -264,7 +269,14 @@ function _regrid_bathymetry(target_grid, metadata;
     end
 
     native_z = Field{Center, Center, Nothing}(bathymetry_native_grid)
-    set!(native_z, z_data)
+
+    # Matching file coordinates to the native grid reads a windowed region out of its slice
+    # of the file, whether the file is global (ETOPO) or already the window (GLO-30).
+    set_metadata_field!(native_z, z_data, metadata)
+
+    # No-data cells arrive as NaN. Zero them (no data over water means sea level) before
+    # interpolating, so the passes below cannot smear NaN into neighboring cells.
+    launch!(arch, bathymetry_native_grid, :xyz, _fill_nans!, native_z)
     fill_halo_regions!(native_z)
 
     target_z = interpolate_bathymetry_in_passes(native_z, target_grid;
@@ -283,13 +295,22 @@ function _regrid_bathymetry(target_grid, metadata;
     return target_z
 end
 
+# The grid a regrid actually covers. A distributed grid is regridded whole on one rank, so a
+# dataset window has to come from the global grid rather than the local subdomain.
+regridding_grid(grid) = grid
+regridding_grid(grid::DistributedGrid) = reconstruct_global_grid(grid)
+
 """
-    regrid_bathymetry(target_grid; dataset=ETOPO2022(), cache=true, kw...)
+    regrid_bathymetry(target_grid; dataset = ETOPO2022(),
+                      region = default_region(dataset, target_grid), cache = true, kw...)
 
 Regrid bathymetry from `dataset` onto `target_grid`. Default: `dataset = ETOPO2022()`.
+Datasets that cannot be read whole (e.g. [`GLO30`](@ref)) are windowed to `target_grid`
+by `region`; pass a [`BoundingBox`](@ref) to window explicitly.
 """
 function regrid_bathymetry(target_grid; dataset = ETOPO2022(),
-                           region = default_region(dataset, target_grid), cache = true, kw...)
+                           region = default_region(dataset, regridding_grid(target_grid)),
+                           cache = true, kw...)
     metadatum = Metadatum(:bottom_height; dataset, region)
     return regrid_bathymetry(target_grid, metadatum; cache, kw...)
 end
@@ -313,8 +334,8 @@ end
     regrid_topography(target_grid, metadata; kw...)
 
 Land surface elevation regridded onto `target_grid` from `metadata`, the positive
-counterpart of [`regrid_bathymetry`](@ref). Use this form for region-windowed
-datasets such as `GLO30()`, whose `metadata` carries a `BoundingBox` region.
+counterpart of [`regrid_bathymetry`](@ref). Use this form to control the metadatum
+itself — a download directory, or a region other than the one the grid implies.
 """
 function regrid_topography(target_grid, metadata; kw...)
     elevation = regrid_bathymetry(target_grid, metadata; kw...)
@@ -367,16 +388,16 @@ maximum(z)
 function bare_earth_elevation(surface_elevation::Field, object_heights::Field...)
     grid = surface_elevation.grid
 
-    object_height = Field{Center, Center, Nothing}(grid)
-    for h in object_heights
-        interior(object_height) .= max.(interior(object_height), nan_to_zero.(interior(h)))
+    # Accumulate the per-cell tallest object, then subtract it from the surface in place.
+    bare_elevation = Field{Center, Center, Nothing}(grid)
+    for object_height in object_heights
+        interior(bare_elevation) .= max.(interior(bare_elevation), nan_to_zero.(interior(object_height)))
     end
 
-    z_bare = Field{Center, Center, Nothing}(grid)
-    interior(z_bare) .= max.(nan_to_zero.(interior(surface_elevation)) .- interior(object_height), 0)
-    fill_halo_regions!(z_bare)
+    interior(bare_elevation) .= max.(nan_to_zero.(interior(surface_elevation)) .- interior(bare_elevation), 0)
+    fill_halo_regions!(bare_elevation)
 
-    return z_bare
+    return bare_elevation
 end
 
 """
@@ -406,6 +427,9 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
     global_grid = on_architecture(CPU(), global_grid)
     arch = architecture(target_grid)
     Nx, Ny, _ = size(global_grid)
+
+    # The whole domain is regridded here, so coverage is a property of the global grid.
+    validate_dataset_coverage(global_grid, metadata)
 
     config = BathymetryRegridding(global_grid, metadata;
                                   height_above_water, minimum_depth,

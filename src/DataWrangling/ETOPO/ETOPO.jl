@@ -27,6 +27,9 @@ const ETOPOMetadatum = Metadatum{<:ETOPO2022}
 
 DataWrangling.dataset_variable_name(data::ETOPOMetadatum) = ETOPO_bathymetry_variable_names[data.name]
 
+DataWrangling.longitude_name(::ETOPOMetadatum) = "lon"
+DataWrangling.latitude_name(::ETOPOMetadatum) = "lat"
+
 const ETOPO_url = "https://www.dropbox.com/scl/fi/6pwalcuuzgtpanysn4h6f/" *
     "ETOPO_2022_v1_60s_N90W180_surface.nc?rlkey=2t7890ruyk4nd5t5eov5768lt&st=yfxsy1lu&dl=0"
 

@@ -35,14 +35,17 @@ BoundingBox(grid::AbstractGrid; padding = 0) =
                 latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padding, padding))
 
 # `cells` grid cells of margin (degrees) so boundary target cells interpolate from real
-# source data instead of extrapolating past the window edge.
-function grid_cell_padding(grid; cells = 2)
-    λ = λnodes(grid, Face(), Center(), Center())
-    φ = φnodes(grid, Center(), Face(), Center())
-    Δλ = (last(λ) - first(λ)) / (length(λ) - 1)
-    Δφ = (last(φ) - first(φ)) / (length(φ) - 1)
+# source data instead of extrapolating past the window edge. The widest cell sets the
+# margin, so stretched grids are padded enough at their coarsest end.
+function grid_cell_padding(grid::LatitudeLongitudeGrid; cells = 2)
+    Δλ = maximum(λspacings(grid, Center(), Center(), Center()))
+    Δφ = maximum(φspacings(grid, Center(), Center(), Center()))
     return cells * max(Δλ, Δφ)
 end
+
+# Spacings come from the underlying grid: reductions over an immersed grid skip masked
+# cells, which would shrink the margin (or return `-Inf` if every cell is masked).
+grid_cell_padding(grid::ImmersedBoundaryGrid; kw...) = grid_cell_padding(grid.underlying_grid; kw...)
 
 #####
 ##### Column region and interpolation types
@@ -685,11 +688,17 @@ function default_download_directory end
 
 """
     default_horizontal_padding(dataset)
+    default_horizontal_padding(dataset, grid)
 
 Return the default horizontal padding (degrees) added around a bounding box requested
-from `dataset`, providing margin for interpolation stencils at the boundary.
+from `dataset`, providing margin for interpolation stencils at the boundary. The
+one-argument form is the margin `dataset`'s own cells demand; the two-argument form
+widens it to whichever is larger, that or the margin `grid`'s cells demand, so a window
+serves both the source stencil and the target's boundary cells.
 """
-function default_horizontal_padding end
+default_horizontal_padding(dataset) = 0
+default_horizontal_padding(dataset, grid) =
+    max(default_horizontal_padding(dataset), grid_cell_padding(grid))
 
 """
     default_region(dataset, grid)

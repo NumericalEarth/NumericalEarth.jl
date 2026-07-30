@@ -16,12 +16,15 @@ function compute_bounding_nodes(grid, LH, hnodes)
     return h₁, h₂
 end
 
-# `ε` forgives Float32 to Float64 promotion noise so the slice doesn't lose a
-# cell at each end when grid centers are compared against file centers.
+# `ε` forgives the noise in comparing grid centers against file centers — Float32 nodes,
+# Float64 file coordinates, and the longitude wrap, which together drift by more than a
+# few eps at 180° magnitudes. Half a file cell is the widest tolerance that still cannot
+# skip past a coordinate, so the slice snaps to the nearest cell instead of losing one at
+# each end.
 function compute_bounding_indices(bounds::Tuple, hc)
     h₁, h₂ = bounds
     Nh = length(hc)
-    ε  = eps(Float32) * max(one(eltype(hc)), abs(h₁), abs(h₂))
+    ε  = Nh > 1 ? abs(hc[2] - hc[1]) / 2 : eps(Float32) * max(one(eltype(hc)), abs(h₁), abs(h₂))
     i₁ = max(searchsortedfirst(hc, h₁ - ε),  1)
     i₂ = min( searchsortedlast(hc, h₂ + ε), Nh)
     return i₁, i₂
