@@ -132,9 +132,12 @@ const ASTERGED_variables = (:emissivity, :emissivity_uncertainty)
 
 Decode a raw ASTER GED `/Emissivity/Mean` digital number to a `Float32`
 emissivity: fill value −9999 maps to `NaN`, otherwise scale by **0.001**
-(`ε = 0.001 · DN`).
+(`ε = 0.001 · DN`) and clamp to the physical range `[0, 1]`.
+
+Note: ASTER GED's Temperature/Emissivity Separation retrieval carries no `ε ≤ 1`
+constraint, and the product stores band emissivities well above unity.
 """
-@inline asterged_decode_emissivity(DN) = ifelse(DN == -9999, NaN32, 0.001f0 * DN)
+@inline asterged_decode_emissivity(DN) = ifelse(DN == -9999, NaN32, clamp(0.001f0 * DN, 0, 1))
 
 """
     asterged_decode_uncertainty(DN)
@@ -339,7 +342,8 @@ function DataWrangling.retrieve_data(metadata::ASTERGEDMetadatum)
 
     ds = DataWrangling.Dataset(metadata_path(metadata))
     data = ds[DataWrangling.dataset_variable_name(metadata)][:, :]
-    # 0 = land, 1 = water; cells outside every tile are NaN and count as land.
+    # 0 = land, 1 = water; the map's own −9999 fill and cells outside every tile (NaN)
+    # count as land, so a gap there is filled from land rather than across a coastline.
     water = ds["land_water_map"][:, :] .== 1
     close(ds)
 

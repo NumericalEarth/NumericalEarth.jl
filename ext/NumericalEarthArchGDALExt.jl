@@ -120,7 +120,8 @@ function NumericalEarth.DataWrangling.ASTERGED.asterged_tiles_to_netcdf(metadatu
     emissivity  = fill(NaN32, Nx, Ny)
     uncertainty = fill(NaN32, Nx, Ny)
     # 0 = land, 1 = water (GEE coding on the AG100/AG1KM tiles — not the LP DAAC 1/2
-    # coding). Cells outside every tile stay NaN and are treated as land downstream.
+    # coding), −9999 = fill. Only 1 counts as water downstream, so fill cells and cells
+    # outside every tile (left NaN) are treated as land.
     land_water_map = fill(NaN32, Nx, Ny)
 
     tile_cache = joinpath(dirname(nc_path), string(short_name, "_tiles"))
@@ -137,7 +138,9 @@ function NumericalEarth.DataWrangling.ASTERGED.asterged_tiles_to_netcdf(metadatu
         mean_bands = permutedims(asterged_decode_emissivity.(read_asterged_subdataset(h5, "//Emissivity/Mean")), (3, 1, 2))
         sdev_bands = permutedims(asterged_decode_uncertainty.(read_asterged_subdataset(h5, "//Emissivity/SDev")), (3, 1, 2))
 
-        # LWmap has no fill value, so every cell copies (place_tile! only skips NaN sources).
+        # LWmap carries its own −9999 fill over retrieval gaps; it copies through as-is
+        # (place_tile! only skips NaN sources) and the `== 1` water test downstream puts
+        # those cells on the land side.
         lwmap_tile = Float32.(read_asterged_subdataset(h5, "//Land_Water_Map/LWmap")[:, :, 1])
 
         place_tile!(emissivity,     broadband_map(mean_bands, coefficients), tile_longitude, tile_latitude, longitude, latitude)

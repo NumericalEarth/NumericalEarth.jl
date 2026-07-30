@@ -36,6 +36,26 @@ using Oceananigans.Fields: location
     @test isnan(asterged_decode_uncertainty(-9999))
 end
 
+@testset "ASTER GED decode clamps emissivity to [0, 1]" begin
+    coefficients = OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS
+
+    # The TES retrieval is unconstrained, so the product stores band emissivities above
+    # unity (DN ≈ 4000 over the Congo basin). Values in range are untouched.
+    @test asterged_decode_emissivity(1001) == 1
+    @test asterged_decode_emissivity(4148) == 1
+    @test asterged_decode_emissivity(-5) == 0
+    @test asterged_decode_emissivity(982) ≈ 0.982
+    @test isnan(asterged_decode_emissivity(-9999))
+    @test eltype(asterged_decode_emissivity.(Int16[4148, 950])) == Float32
+
+    # Bounding each band bounds the convex combination.
+    raw = fill(Int16(950), 5, 2, 2)
+    raw[:, 1, 1] .= Int16(4148)
+    ε = broadband_map(asterged_decode_emissivity.(raw), coefficients)
+    @test ε[1, 1] ≈ 1
+    @test all(ε[2:end, :] .≈ 0.95f0)
+end
+
 @testset "ASTER GED broadband synthesis" begin
     coefficients = OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS
 
@@ -328,6 +348,39 @@ end
         @test all(isfinite, values)
         @test values[gap_i, gap_j] ≈ 0.96f0 atol = 1e-4       # from land, not the 0.99 water
         @test values[water_gap_i, water_gap_j] ≈ 0.99f0 atol = 1e-4
+    end
+end
+
+@testset "ASTER GED land/water map fill counts as land [$(typeof(arch))]" for arch in test_architectures
+    mktempdir() do dir
+        dataset = ASTERGEDv3()
+        region  = BoundingBox(longitude = (10.0, 10.1), latitude = (45.0, 45.1))
+        metadatum = Metadatum(:emissivity; dataset, region, dir)
+
+        grid_native = native_grid(metadatum, CPU())
+        λc = λnodes(grid_native, Center())
+        φc = φnodes(grid_native, Center())
+        Nx, Ny = length(λc), length(φc)
+
+        # Water (ε = 0.99) everywhere except one column of land (ε = 0.96) whose
+        # land/water code is the map's own −9999 fill, as the tropical tiles carry over
+        # their retrieval gaps. Only `== 1` is water, so the gap must fill from land.
+        land_water_map = ones(Float32, Nx, Ny)
+        land_water_map[1, :] .= -9999f0
+
+        emissivity = fill(0.99f0, Nx, Ny)
+        emissivity[1, :] .= 0.96f0
+        emissivity[1, Ny ÷ 2] = NaN32
+        uncertainty = fill(0.01f0, Nx, Ny)
+
+        write_synthetic_asterged_netcdf(metadata_path(metadatum), λc, φc, emissivity, uncertainty; land_water_map)
+
+        @test retrieve_data(metadatum)[1, Ny ÷ 2] ≈ 0.96f0 atol = 1e-4
+
+        field = Field(metadatum, arch)
+        values = Array(interior(field, :, :, 1))
+        @test all(isfinite, values)
+        @test values[1, Ny ÷ 2] ≈ 0.96f0 atol = 1e-4
     end
 end
 
