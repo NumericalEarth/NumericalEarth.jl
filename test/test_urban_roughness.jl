@@ -4,10 +4,12 @@ using Test
 
 using NumericalEarth.Lands:
     AbstractUrbanRoughness, MorphometricRoughness,
-    IsotropicFrontalArea, CuboidFrontalArea, UniformHeight, VariableHeight,
+    IsotropicFrontalArea, EmpiricalFrontalArea,
+    UniformHeight, VariableHeight,
     urban_roughness, aerodynamic_parameters, compute_aerodynamic_roughness!, frontal_area_index,
     packing_displacement_ratio, drag_partition_roughness_ratio,
-    maximum_height_displacement, height_spread_roughness
+    maximum_height_displacement, height_spread_roughness,
+    height_spread, maximum_element_height
 
 using Oceananigans.Fields: interior, set!
 
@@ -19,10 +21,11 @@ displacement_at_point(λᵖ, h; closure = MorphometricRoughness()) = aerodynamic
 @testset "Obstacle-array morphometric endpoints" begin
     A = MorphometricRoughness().array_constant
     # Displacement ratio: 0 at λᵖ→0, → cap at λᵖ→1, monotone increasing between.
-    @test packing_displacement_ratio(0.0, A, 0.95) ≈ 0 atol = 1e-12
-    @test packing_displacement_ratio(1.0, A, 0.95) == 0.95   # clamped below the singular limit
-    ratios = [packing_displacement_ratio(λᵖ, A, 0.95) for λᵖ in 0.05:0.05:0.9]
+    @test packing_displacement_ratio(0.0, A, 1.0) ≈ 0 atol = 1e-12
+    @test packing_displacement_ratio(1.0, A, 1.0) ≈ 1     # the array closes into a smooth surface
+    ratios = [packing_displacement_ratio(λᵖ, A, 1.0) for λᵖ in 0.05:0.05:0.9]
     @test issorted(ratios)
+    @test packing_displacement_ratio(1.0, A, 0.9) == 0.9  # an explicit ceiling still binds
 
     # Roughness ratio vanishes with the frontal area (no obstacles → no form drag).
     @test drag_partition_roughness_ratio(0.0, 0.3, 1.2, 0.4, 1.0) == 0
@@ -33,8 +36,16 @@ end
     for closure in (uniform_height_closure(), MorphometricRoughness())
         displacements = [displacement_at_point(λᵖ, h; closure) for λᵖ in 0.02:0.02:0.9]
         @test issorted(displacements)
-        @test all(0 .<= displacements .<= h)   # displacement never exceeds the building height
+        @test all(≥(0), displacements)
     end
+
+    # The uniform-height branch keeps d below roof level; the variable-height branch is
+    # bounded by the tallest element instead.
+    @test all(≤(h), [displacement_at_point(λᵖ, h; closure = uniform_height_closure())
+                     for λᵖ in 0.02:0.02:0.9])
+    distribution = MorphometricRoughness().height_distribution
+    hᵐᵃˣ = maximum_element_height(distribution, h, height_spread(distribution, h))
+    @test all(≤(hᵐᵃˣ), [displacement_at_point(λᵖ, h) for λᵖ in 0.02:0.02:0.9])
 end
 
 @testset "Roughness peaks at intermediate built fraction (isolated → skimming)" begin
@@ -61,10 +72,15 @@ end
     @test ℓᵐ ≈ uniform.bare_soil_roughness   # the floor is a closure-level parameter
     @test d == 0
 
-    # Full coverage: displacement is capped strictly below the building height.
-    _, dense = aerodynamic_parameters(uniform, 1.0, h)
-    @test dense / h < 1
-    @test dense / h ≈ uniform.maximum_displacement_ratio
+    # Full coverage closes the array back into a smooth surface: the displacement reaches
+    # roof level and the roughness collapses onto the bare-soil floor.
+    ℓᶜ, dᶜ = aerodynamic_parameters(uniform, 1.0, h)
+    @test dᶜ / h ≈ uniform.maximum_displacement_ratio ≈ 1
+    @test ℓᶜ ≈ uniform.bare_soil_roughness
+
+    # And ℓᵐ decays monotonically into that limit rather than turning back up.
+    skimming = [aerodynamic_parameters(uniform, λᵖ, h)[1] for λᵖ in 0.7:0.05:1.0]
+    @test issorted(skimming; rev = true)
 
     # Invalid inputs become honest NaN gaps.
     for (λᵖ, hᵢ) in ((NaN, h), (0.3, NaN), (0.3, -5.0))
@@ -73,15 +89,60 @@ end
     end
 end
 
+@testset "Empirical frontal area, height spread and tallest element" begin
+    # λᶠ = 1.42λᵖ² + 0.4λᵖ, and the λᶠ < 2λᵖ envelope observed across real cities.
+    @test frontal_area_index(EmpiricalFrontalArea(), 0.3, 15.0) ≈ 1.42 * 0.09 + 0.4 * 0.3
+    for λᵖ in 0.05:0.05:1.0
+        λᶠ = frontal_area_index(EmpiricalFrontalArea(), λᵖ, 15.0)
+        @test 0 < λᶠ < 2λᵖ
+    end
+    @test frontal_area_index(EmpiricalFrontalArea(), 0.0, 15.0) == 0
+
+    # σʰ = 1.05h − 3.7, floored at zero below the one-storey zero crossing.
+    variable = VariableHeight()
+    @test height_spread(variable, 15.0) ≈ 1.05 * 15 - 3.7
+    @test height_spread(variable, 2.0) == 0
+    @test height_spread(variable, 0.0) == 0
+
+    # hᵐᵃˣ = 12.51·σʰ^0.77, floored at σʰ + h so the displacement parameter stays in [0, 1].
+    σʰ = height_spread(variable, 15.0)
+    @test maximum_element_height(variable, 15.0, σʰ) ≈ 12.51 * σʰ^0.77
+    @test maximum_element_height(variable, 15.0, 0.0) == 15.0
+    for h in 1.0:1.0:60.0
+        s = height_spread(variable, h)
+        @test maximum_element_height(variable, h, s) ≥ s + h   # keeps X ≤ 1
+    end
+end
+
+@testset "Displacement is bounded by the tallest element, not the mean height" begin
+    # Kanda's parametrization exists because d exceeds the mean building height over a
+    # height-heterogeneous city; a d ≤ h cap would clip exactly that.
+    variable = MorphometricRoughness()
+    for h in (10.0, 15.0, 20.0, 25.0)
+        _, d = aerodynamic_parameters(variable, 0.3, h)
+        @test d > h
+        distribution = variable.height_distribution
+        σʰ = height_spread(distribution, h)
+        @test d ≤ maximum_element_height(distribution, h, σʰ)
+    end
+
+    # The uniform-height branch keeps the Macdonald ceiling below roof level.
+    uniform = uniform_height_closure()
+    for h in (10.0, 15.0, 20.0, 25.0)
+        _, d = aerodynamic_parameters(uniform, 0.9, h)
+        @test d < h
+        @test d ≤ uniform.maximum_displacement_ratio * h
+    end
+end
+
 @testset "Frontal-area estimator and height-spread correction" begin
-    # Isotropic λᶠ = λᵖ; cuboid scales with height / building width.
+    # Isotropic λᶠ = λᵖ, exact for cubes.
     @test frontal_area_index(IsotropicFrontalArea(), 0.3, 15.0) == 0.3
-    @test frontal_area_index(CuboidFrontalArea(building_width = 10.0), 0.3, 15.0) ≈ 0.3 * 15.0 / 10.0
 
     # The estimator choice changes the roughness (the dominant drag-partition uncertainty).
     isotropic = uniform_height_closure(frontal_area = IsotropicFrontalArea())
-    cuboid = uniform_height_closure(frontal_area = CuboidFrontalArea(building_width = 10.0))
-    @test aerodynamic_parameters(isotropic, 0.2, 15.0)[1] != aerodynamic_parameters(cuboid, 0.2, 15.0)[1]
+    empirical = uniform_height_closure(frontal_area = EmpiricalFrontalArea())
+    @test aerodynamic_parameters(isotropic, 0.2, 15.0)[1] != aerodynamic_parameters(empirical, 0.2, 15.0)[1]
 
     # The spread correction reduces to a1·(uniform-height ℓᵐ) for σʰ → 0.
     a1 = VariableHeight().roughness_constants[1]
@@ -176,17 +237,17 @@ end
     # Drag-partition parameters and the height distribution are configured side by side,
     # on one flat closure.
     closure = MorphometricRoughness(array_constant = 3.59, bare_soil_roughness = 0.05,
-                                    frontal_area = CuboidFrontalArea(building_width = 12.0),
-                                    height_distribution = VariableHeight(height_variability = 0.6))
+                                    frontal_area = IsotropicFrontalArea(),
+                                    height_distribution = VariableHeight(height_spread_constants = (0.6, 0.0)))
     @test closure.array_constant == 3.59
     @test closure.bare_soil_roughness == 0.05
-    @test closure.frontal_area isa CuboidFrontalArea
-    @test closure.height_distribution.height_variability == 0.6
+    @test closure.frontal_area isa IsotropicFrontalArea
+    @test closure.height_distribution.height_spread_constants == (0.6, 0.0)
 
     # A narrower closure FT converts the sub-closures too.
-    narrow = MorphometricRoughness(Float32; frontal_area = CuboidFrontalArea(building_width = 12.0))
-    @test narrow.frontal_area.building_width isa Float32
-    @test narrow.height_distribution.height_variability isa Float32
+    narrow = MorphometricRoughness(Float32)
+    @test narrow.frontal_area.quadratic_coefficient isa Float32
+    @test eltype(narrow.height_distribution.height_spread_constants) == Float32
 
     grid = LatitudeLongitudeGrid(CPU(), Float64; size = (3, 3),
                                  longitude = (0, 1), latitude = (0, 1),

@@ -62,8 +62,10 @@ end
 # (1) The two height distributions side by side. Top row: the closure inputs (h, λᵖ).
 # Middle rows: ℓᵐ and d from each (same columns → same closure). Bottom row: the anomaly,
 # largest over the dense, height-heterogeneous core.
-roughness_range = (0, 2.5)
-displacement_range = (0, 20)
+## Ranges are the 99th percentile of the variable-height fields, so the bulk of the
+## domain resolves rather than saturating on the few supertall cells.
+roughness_range = (0, 3.5)
+displacement_range = (0, 40)
 fig = Figure(size = (1150, 1500))
 Label(fig[0, 1:4], "GHSL urban morphometry → roughness — Inner London (10 m built fraction)\nvariable-height vs uniform-height distribution"; fontsize = 20, font = :bold)
 panel!(fig, (1, 1), "building height h (m)", h,  (0, 25), :inferno, "m")
@@ -72,8 +74,8 @@ panel!(fig, (2, 1), "ℓᵐ — variable height (m)", variable_height_roughness,
 panel!(fig, (2, 3), "ℓᵐ — uniform height (m)",  uniform_height_roughness,     roughness_range,    :viridis, "m")
 panel!(fig, (3, 1), "d — variable height (m)",  variable_height_displacement, displacement_range, :magma,   "m")
 panel!(fig, (3, 3), "d — uniform height (m)",   uniform_height_displacement,  displacement_range, :magma,   "m")
-panel!(fig, (4, 1), "ℓᵐ anomaly — variable − uniform (m)", variable_height_roughness - uniform_height_roughness, (-1, 1), :balance, "Δm")
-panel!(fig, (4, 3), "d anomaly — variable − uniform (m)", variable_height_displacement - uniform_height_displacement, (-10, 10), :balance, "Δm")
+panel!(fig, (4, 1), "ℓᵐ anomaly — variable − uniform (m)", variable_height_roughness - uniform_height_roughness, (-2.5, 2.5), :balance, "Δm")
+panel!(fig, (4, 3), "d anomaly — variable − uniform (m)", variable_height_displacement - uniform_height_displacement, (-25, 25), :balance, "Δm")
 save(joinpath(output_directory, "fig1_overview.png"), fig)
 
 # (2) The diagnostic curve: ℓᵐ rises then falls with λᵖ (isolated → wake → skimming),
@@ -125,8 +127,16 @@ axislegend(height_axis, [height_line, displacement_line, fraction_line, roughnes
 save(joinpath(output_directory, "fig3_transect.png"), fig)
 
 # ## Sanity check against literature ranges
-# Dense-core ℓᵐ ~1–3 m and d ~10–20 m; the peak is at intermediate λᵖ, not maximum
-# coverage; λᵖ → 0 reduces to a bare-soil roughness (~0.03 m).
+# Dense-core ℓᵐ is order 1 m and peaks at intermediate λᵖ rather than at maximum coverage;
+# λᵖ → 0 reduces to a bare-soil roughness (~0.03 m). Under `VariableHeight` the
+# displacement exceeds the mean building height, since it is referenced to the tallest
+# element rather than to `h`.
+#
+# One caveat on reading these maps: the height-distribution and frontal-area regressions
+# were fitted to 1 km urban districts, while this grid is 10 m. Per-cell `σʰ` and `hᵐᵃˣ`
+# are therefore district statistics attached to street-width pixels, and the derived
+# `hᵐᵃˣ` runs several times the cell's own building height. Aggregate onto a coarser
+# target grid to keep the inputs and the closure at the same scale.
 finite_mean(values) = mean(filter(isfinite, values))
 roughness = interior(variable_height_roughness, :, :, 1)
 displacement = interior(variable_height_displacement, :, :, 1)

@@ -20,7 +20,7 @@ export AbstractLand,
        VariablySaturatedHydrology,
        # Urban aerodynamic roughness closures
        AbstractUrbanRoughness, MorphometricRoughness,
-       IsotropicFrontalArea, CuboidFrontalArea,
+       IsotropicFrontalArea, EmpiricalFrontalArea,
        UniformHeight, VariableHeight,
        urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
        # Atmosphere-facing accessors
