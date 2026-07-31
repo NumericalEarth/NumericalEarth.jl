@@ -289,10 +289,8 @@ end
     return SimilarityScales(momentum, temperature, water_vapor)
 end
 
-# `local_zero_plane_displacement(d, interior_properties)` resolves the zero-plane
-# displacement the same way: a `Number` passes through unchanged, while
-# `LandZeroPlaneDisplacement` reads the per-cell displacement off the interior
-# properties NamedTuple, falling back to 0 where none is provided.
+# Like `local_roughness_length`: a `Number` passes through, `LandZeroPlaneDisplacement`
+# reads the per-cell displacement off the interior properties, defaulting to 0.
 @inline local_zero_plane_displacement(d, interior_properties) = d
 
 @inline function local_zero_plane_displacement(::LandZeroPlaneDisplacement,
@@ -364,8 +362,7 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     ℓq₀ = roughness_length(ℓq, ℓu₀, u★, U, ℂᵃᵗ, Tₛ)
     ℓθ₀ = roughness_length(ℓθ, ℓu₀, u★, U, ℂᵃᵗ, Tₛ)
 
-    # Tall roughness elements (buildings, plant canopy) displace the similarity
-    # profiles upward by the zero-plane displacement `d`.
+    # Tall roughness elements displace the similarity profiles upward by `d`.
     d = local_zero_plane_displacement(flux_formulation.zero_plane_displacement,
                                       interior_properties)
     Δh = displaced_profile_height(Δh, d, ℓu₀)

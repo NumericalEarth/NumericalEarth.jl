@@ -58,9 +58,8 @@ end
     @test length(ghsl_tiles_in_bbox(wide)) >= 2
     @test issorted(ghsl_tiles_in_bbox(wide))
 
-    # Regression: a window spanning many tiles must not silently drop any. Every tile hit
-    # by a dense point sampling of the window must be returned (a fixed-count sampling
-    # skipped whole tile rows once the window spanned more than a handful of tiles).
+    # Regression: a window spanning many tiles must not silently drop any — every tile
+    # hit by a dense point sampling of the window must be returned.
     tall = BoundingBox(longitude = (0.0, 1.0), latitude = (-60.0, 60.0))
     sampled = Set(ghsl_tile_index(λ, φ)
                   for φ in range(-60, 60; length = 400), λ in range(0, 1; length = 20))

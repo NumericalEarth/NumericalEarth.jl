@@ -43,8 +43,8 @@ is masked to `NaN`.
 
 Because it is a global 100 m product on a 1000 km Mollweide tile grid, it is read
 in regional windows only: construct the `Metadatum` with a longitude/latitude
-`BoundingBox`. The windowed tile download + Mollweide→EPSG:4326 warp is performed
-by `ext/NumericalEarthArchGDALExt/ghsl.jl` and requires `using ArchGDAL`.
+`BoundingBox`. The windowed tile download and Mollweide→EPSG:4326 warp require
+`using ArchGDAL`.
 
 Reference: Pesaresi, M. & Politis, P. (2023), *GHS-BUILT-H R2023A*, European
 Commission JRC, doi:10.2905/85005901-3A49-48DD-9D19-6261354F56FE.
@@ -73,8 +73,8 @@ product covers 1975–2030 in 5-year steps. The default `100`/`2020` pairs natur
 with a ~100 m model grid and the epoch-2018 [`GHSBuiltH`](@ref) height; pass
 `resolution = 10` for the finest built fraction (much larger tiles).
 
-Read in regional windows only (see [`GHSBuiltH`](@ref)); the tile download +
-Mollweide→EPSG:4326 warp requires `using ArchGDAL`.
+Read in regional windows only (see [`GHSBuiltH`](@ref)); the tile download and
+Mollweide→EPSG:4326 warp require `using ArchGDAL`.
 
 Reference: Pesaresi, M. & Politis, P. (2023), *GHS-BUILT-S R2023A*, European
 Commission JRC, doi:10.2905/9F06F36F-4B11-47EC-ABB0-4F8B7B1D72EA.
@@ -132,17 +132,16 @@ DataWrangling.dataset_variable_name(data::GHSBuiltSMetadatum) = GHSBuiltS_variab
 
 DataWrangling.default_download_directory(::AbstractGHSLDataset) = download_GHSL_cache
 
-# The reprojected regional raster is on a plain lat/lon grid; the native hull is the
-# global lat/lon extent and the shared regrid restricts it to the BoundingBox.
+# Global extent even though reads are windowed: the regrid restricts to the BoundingBox.
 DataWrangling.longitude_interfaces(::AbstractGHSLDataset) = (-180, 180)
 DataWrangling.latitude_interfaces(::AbstractGHSLDataset)  = (-90, 90)
 
-# Native pixel size of each product in meters (sets the windowed-read target Δ = 360/Nx).
+# Native pixel size in meters.
 native_resolution(::GHSBuiltH) = 100
 native_resolution(dataset::GHSBuiltS) = dataset.resolution
 
-# Nominal global native size in EPSG:4326 (only the windowed portion is materialized);
-# 1° ≈ 111320 m at the equator sets the degree pixel size Δ = resolution / 111320.
+# Nominal global size in EPSG:4326 (only the windowed portion is ever materialized);
+# 1° ≈ 111320 m at the equator sets the degree pixel size.
 function Base.size(dataset::AbstractGHSLDataset, variable)
     Δ = native_resolution(dataset) / 111320
     Nx = round(Int, 360 / Δ)
@@ -191,7 +190,7 @@ DataWrangling.is_three_dimensional(::GHSLMetadatum) = false
 DataWrangling.longitude_name(::GHSLMetadatum) = "lon"
 DataWrangling.latitude_name(::GHSLMetadatum)  = "lat"
 
-# NEVER inpaint: a building height / built fraction of 0 over non-built land is a
+# Never inpaint: a building height / built fraction of 0 over non-built land is a
 # valid value, not a gap. The no-data is masked to NaN in the warp step.
 DataWrangling.default_inpainting(::GHSLMetadatum) = nothing
 
@@ -200,19 +199,14 @@ Oceananigans.Fields.location(::GHSLMetadatum) = (Center, Center, Center)
 #####
 ##### GHSL World-Mollweide (ESRI:54009) tile grid
 #####
-#####
 ##### R2023A tiles a global Mollweide grid of 18 rows × 36 columns of 1000 km
-##### squares, indexed `R{row}_C{col}` from the upper-left (NW) corner. Selecting the
-##### tiles intersecting a lat/lon window needs the forward Mollweide projection and
-##### the tile-index arithmetic below. The tile download + warp itself lives in the
-##### ArchGDAL extension.
+##### squares, indexed `R{row}_C{col}` from the upper-left (NW) corner.
 #####
 
 # ESRI:54009 World Mollweide is defined on a sphere of the WGS84 semi-major radius.
 const MOLLWEIDE_RADIUS = 6378137.0
 
-# GHSL tile grid (verified against the JRC tiling schema): origin at the upper-left
-# corner, 1000 km square tiles, capped at 36 columns / 18 rows.
+# Tile-grid origin (NW corner) and extent, from the JRC tiling schema.
 const GHSL_TILE_SIZE    = 1_000_000.0
 const GHSL_ORIGIN_X     = -18_041_000.0
 const GHSL_ORIGIN_Y     =   9_000_000.0
@@ -266,13 +260,10 @@ end
     ghsl_tiles_in_bbox(region::BoundingBox)
 
 Return the sorted `(row, column)` GHSL tiles whose 1000 km Mollweide cells intersect
-`region`. A lat/lon window maps to a curved quadrilateral in Mollweide, so rather than
-point-sample (which silently skips tiles once a window spans more than a few), take the
-window's Mollweide `(x, y)` bounding box and return every tile in the corresponding index
-range: `y` is monotone in latitude, and `x` is linear in longitude and scales with `cos θ`
-(largest at the equator-most latitude), so the extremes are attained among the corners and
-the equator-most edge. Exact for regional windows; a complete (never-missing) superset for
-any window.
+`region`, from the window's Mollweide `(x, y)` bounding box: `y` is monotone in latitude
+and `|x|` is largest at the equator-most latitude, so the extremes lie among the window's
+corners and its equator-most edge. Exact for regional windows; a complete (never-missing)
+superset for any window.
 """
 function ghsl_tiles_in_bbox(region::BoundingBox)
     λ₁, λ₂ = region.longitude
@@ -327,7 +318,7 @@ downloaded, unzipped, and mosaicked/reprojected by GDAL.
 ghsl_tile_urls(dataset::AbstractGHSLDataset, region::BoundingBox) =
     [ghsl_tile_url(dataset, row, column) for (row, column) in ghsl_tiles_in_bbox(region)]
 
-# GeoTIFF basename inside a tile archive: the stem with the same tile token, `.tif`.
+# GeoTIFF basename inside a tile `.zip` archive.
 ghsl_tile_tif_name(dataset::AbstractGHSLDataset, row, column) =
     string(product_stem(dataset), "_V1_0_R", row, "_C", column, ".tif")
 
@@ -365,9 +356,8 @@ true
 Convert a GHS-BUILT-S built-up `surface` (m² of buildings within a native cell) to
 the plan-area index `λᵖ = surface / cell_area`, clamped to `[0, 1]`. `cell_area` is the
 native cell area in m² (`100 × 100` at 100 m, `10 × 10` at 10 m). GHSL declares its no-data
-as a positive sentinel (`65535` at 100 m, `255` at 10 m) that the warp excludes from the
-bilinear blend and writes as `NaN`, so a non-finite `surface` (or a spurious negative) maps
-to `NaN` without a no-data cell ever contaminating a resampled mean.
+as a positive sentinel (`65535` at 100 m, `255` at 10 m) that the warp has already written
+as `NaN`; a non-finite or negative `surface` maps to `NaN`.
 
 ```jldoctest
 julia> using NumericalEarth.DataWrangling.GHSL: built_surface_to_fraction
@@ -400,9 +390,7 @@ function Downloads.download(metadatum::GHSLMetadatum)
     return nc_path
 end
 
-# Implemented in ext/NumericalEarthArchGDALExt/ghsl.jl once `ArchGDAL` is loaded. The
-# fallback below fires only when the extension is not active (mirrors
-# CopernicusDEM.zarr_to_netcdf / CanopyHeight.canopy_height_cog_to_netcdf).
+# Implemented in the ArchGDAL extension; this fallback fires when it is not loaded.
 ghsl_tiles_to_netcdf(metadatum, nc_path) =
     error("Reading the $(summary(metadatum.dataset)) Mollweide GeoTIFF tiles requires " *
           "the ArchGDAL package (for the ESRI:54009 → EPSG:4326 reprojection). " *

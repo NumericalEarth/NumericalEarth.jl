@@ -1,16 +1,10 @@
 #####
-##### Global Human Settlement Layer (GHSL) built-up raster ingest:
-##### World Mollweide (ESRI:54009) → EPSG:4326.
-#####
-##### Downloads the GHSL R2023A tile archives intersecting a BoundingBox from the JRC
-##### open-data host, reads the Mollweide GeoTIFF inside each `.zip` in place with
-##### GDAL's `/vsizip/`, mosaics + reprojects them to EPSG:4326 clipped to the region,
-##### masks the no-data, converts built-up surface (m²/cell) to a plan-area fraction,
-##### and writes a regional lat/lon NetCDF that `GHSL.retrieve_data` reads back.
+##### GHSL built-up raster ingest: download the R2023A Mollweide tiles intersecting a
+##### BoundingBox, mosaic + warp them to EPSG:4326 (reading inside each `.zip` archive
+##### with GDAL's `/vsizip/`), and write the regional lat/lon NetCDF the read path expects.
 #####
 
-# Cache a GHSL tile archive next to the regional NetCDF, keyed by tile so it is reused
-# across regions. Idempotent.
+# Cache the tile archive keyed by tile, so it is reused across regions.
 function ghsl_download_tile(dataset, row, column, cache_dir)
     mkpath(cache_dir)
     url = ghsl_tile_url(dataset, row, column)
@@ -89,7 +83,6 @@ function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLM
         end
     end
 
-    # Mask no-data and, for built-up surface, convert m²/cell → plan-area fraction.
     if dataset isa GHSBuiltS
         cell_area = resolution_m^2
         field = built_surface_to_fraction.(raw, cell_area)

@@ -1,10 +1,8 @@
 #####
 ##### Urban morphometric roughness closures
 #####
-##### Aerodynamic momentum roughness length ℓᵐ and zero-plane displacement d for the
-##### urban (built-up) surface, from the plan-area index λᵖ and mean building height h.
-##### Each closure is a distinct type dispatched by `aerodynamic_parameters`, tied together by
-##### `AbstractUrbanRoughness`.
+##### Momentum roughness length ℓᵐ and zero-plane displacement d of a built-up surface,
+##### from the plan-area index λᵖ and mean building height h.
 #####
 
 """
@@ -27,10 +25,9 @@ abstract type AbstractUrbanRoughness end
 Supertype of the estimators of the frontal-area index `λᶠ` from the plan-area index `λᵖ`
 and mean height `h`.
 
-The drag partition takes `λᶠ` and `λᵖ` as two independently measured area densities. A
-mean-height dataset supplies only `λᵖ`, so `λᶠ` has to be assumed from a roughness-element
-shape, which is the dominant modeling uncertainty of the route and hence a selectable
-closure field. Where `λᶠ` is measured per cell it should be used directly instead.
+A dataset that supplies only `λᵖ` leaves `λᶠ` to be assumed from a roughness-element
+shape — the dominant uncertainty of the drag partition. Where `λᶠ` is measured per cell
+it should be used directly instead.
 """
 abstract type AbstractFrontalAreaEstimator end
 
@@ -38,8 +35,7 @@ abstract type AbstractFrontalAreaEstimator end
     IsotropicFrontalArea()
 
 Take `λᶠ = λᵖ`, exact for cubical elements, whose frontal and plan area densities are
-equal. This is the shape the array constant `A` of [`MorphometricRoughness`](@ref) was
-fitted to, so it is the self-consistent default; note it makes `λᶠ` independent of `h`.
+equal — the shape the array constant `A` of [`MorphometricRoughness`](@ref) was fitted to.
 """
 struct IsotropicFrontalArea <: AbstractFrontalAreaEstimator end
 
@@ -62,7 +58,6 @@ EmpiricalFrontalArea(FT = Oceananigans.defaults.FloatType;
                      linear_coefficient = 0.4) =
     EmpiricalFrontalArea(convert(FT, quadratic_coefficient), convert(FT, linear_coefficient))
 
-# Match the estimator's eltype to the closure's `FT` (isotropic carries none).
 convert_frontal_area(FT, e::IsotropicFrontalArea) = e
 convert_frontal_area(FT, e::EmpiricalFrontalArea) =
     EmpiricalFrontalArea(convert(FT, e.quadratic_coefficient), convert(FT, e.linear_coefficient))
@@ -156,7 +151,6 @@ function VariableHeight(FT = Oceananigans.defaults.FloatType;
                           convert.(FT, maximum_height_constants))
 end
 
-# Match the distribution's eltype to the closure's `FT` (uniform carries none).
 convert_height_distribution(FT, d::UniformHeight) = d
 convert_height_distribution(FT, d::VariableHeight) =
     VariableHeight(convert.(FT, d.displacement_constants),
@@ -313,8 +307,8 @@ Construct a [`MorphometricRoughness`](@ref) closure.
   [`UniformHeight`](@ref) the square-array fit is 3.59, but it pairs with
   `correction_factor = 0.55`: sheltering is not captured by `A` alone, and 3.59 on its own
   overpredicts `ℓᵐ` by about a factor of two. Leave both at their defaults under
-  [`VariableHeight`](@ref), whose constants were regressed against a `A = 4.43`, `β = 1`
-  base held fixed for either array type.
+  [`VariableHeight`](@ref), whose constants were regressed with `A = 4.43` and `β = 1`
+  held fixed for either array type.
 * `drag_coefficient` (`Cᴰ`) — building drag coefficient. Default 1.2, for a sharp-edged
   cube; rounded or cylindrical elements are lower by up to a factor of two.
 * `correction_factor` (`β`) — lumped drag correction, folding in the velocity-profile
@@ -376,8 +370,6 @@ Base.show(io::IO, c::AbstractUrbanRoughness) = print(io, summary(c))
 ##### Common interface: (λᵖ, h) → (ℓᵐ, d)
 #####
 
-# Clamp to the physical range, floor to bare soil below the built-fraction threshold, and
-# return honest NaN gaps for invalid (NaN / negative-height) inputs. Shared by all closures.
 @inline function finalize_aerodynamic_parameters(ℓᵐ, d, λᵖ, valid, ℓˢᵒⁱˡ, λᵐⁱⁿ)
     ℓˢᵒⁱˡ = oftype(ℓᵐ, ℓˢᵒⁱˡ)  # unify with the computed type so a narrower-FT closure stays Union-free
     bare = λᵖ < λᵐⁱⁿ
@@ -417,8 +409,8 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Shared grid-builder contract: evaluate the closure from a per-cell `cell` NamedTuple,
-reading only this closure's own keys (`plan_area_fraction`, `building_height`).
+Evaluate `closure` from a per-cell `cell` NamedTuple, reading its `plan_area_fraction`
+and `building_height` keys.
 """
 @inline aerodynamic_parameters(c::AbstractUrbanRoughness, cell) =
     aerodynamic_parameters(c, cell.plan_area_fraction, cell.building_height)

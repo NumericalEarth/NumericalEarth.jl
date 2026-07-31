@@ -1,8 +1,5 @@
 #####
-##### Grid builder for the urban closures: sample each cell's inputs from the `properties`
-##### NamedTuple (scalar / array / Field), assemble the `cell`, and evaluate the closure to
-##### the aerodynamic parameters (ℓᵐ, d). Shares the `compute_aerodynamic_roughness!` /
-##### `aerodynamic_parameters(closure, cell)` contract with the canopy roughness closures.
+##### On-grid evaluation of the urban roughness closures: (λᵖ, h) → (ℓᵐ, d) fields.
 #####
 
 @kernel function _compute_urban_aerodynamic_roughness!(ℓᵐ, d, closure, plan_area_fraction, building_height, grid)
@@ -22,9 +19,8 @@ $(TYPEDSIGNATURES)
 
 Fill the momentum roughness length `ℓᵐ` and zero-plane displacement `d` (meters) in place
 by applying an urban `closure` ([`AbstractUrbanRoughness`](@ref)) over every cell of `grid`.
-`properties` is a NamedTuple of the closure's per-cell inputs — scalars, arrays or `Field`s —
-read with `property_value`; the urban closures expect `plan_area_fraction` and
-`building_height`. Shared entry point with the canopy roughness closures.
+`properties` is a NamedTuple of the closure's per-cell inputs — scalars, arrays or `Field`s;
+the urban closures expect `plan_area_fraction` and `building_height`.
 """
 function compute_aerodynamic_roughness!(ℓᵐ, d, closure::AbstractUrbanRoughness, properties, grid)
     arch = architecture(grid)
@@ -37,10 +33,9 @@ end
 $(TYPEDSIGNATURES)
 
 Momentum roughness length `ℓᵐ` and zero-plane displacement `d` (as `Field`s on the grid
-of `h`) for the urban tile, from a mean building-height field `h` and a built-up plan-area
-index field `λᵖ`. Convenience wrapper around [`compute_aerodynamic_roughness!`](@ref);
-pass a `closure` (default [`MorphometricRoughness`](@ref)) to select the morphometry. Where
-`λᵖ → 0` the result reduces to a bare-soil roughness.
+of `h`) from a mean building-height field `h` and a built-up plan-area index field `λᵖ`,
+under `closure` (default [`MorphometricRoughness`](@ref)). Where `λᵖ → 0` the result
+reduces to a bare-soil roughness.
 """
 function urban_roughness(h, λᵖ; closure = MorphometricRoughness(eltype(h.grid)))
     grid = h.grid
