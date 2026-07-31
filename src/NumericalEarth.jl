@@ -113,6 +113,7 @@ export
     ECCOMetadatum,
     EN4Metadatum,
     ETOPO2022,
+    GLO30, GLO90,
     ECCO2Daily, ECCO2Monthly, ECCO4Monthly,
     ECCO2DarwinMonthly, ECCO4DarwinMonthly,
     EN4Monthly,
@@ -278,6 +279,7 @@ using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
 using .DataWrangling.ASTERGED
+using .DataWrangling.CopernicusDEM
 using .DataWrangling.CopernicusLandAlbedo
 using .DataWrangling.OpenLandMap
 

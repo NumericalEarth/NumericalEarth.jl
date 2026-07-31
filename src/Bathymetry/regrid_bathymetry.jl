@@ -24,9 +24,8 @@ struct BathymetryRegridding
     region               :: Union{Nothing, String}
 end
 
-# A windowed regrid and a global regrid of the same dataset+grid must not share a cache
-# file, so the region joins the key. Global regrids keep `nothing`, which is left out of
-# the hash so their cache files stay where earlier versions wrote them.
+# The region joins the cache key so a windowed and a global regrid of the same dataset+grid
+# cannot share a file. Global regrids keep `nothing`.
 region_key(::Nothing) = nothing
 region_key(region) = string(region)
 
@@ -87,7 +86,7 @@ function Base.hash(c::BathymetryRegridding, h::UInt)
     h = hash(c.interpolation_passes, h)
     h = hash(c.major_basins, h)
     h = hash(c.dataset, h)
-    isnothing(c.region) || (h = hash(c.region, h))
+    h = hash(c.region, h)
     return h
 end
 
@@ -247,10 +246,6 @@ function _regrid_bathymetry(target_grid, metadata;
 
     arch = architecture(target_grid)
 
-    # TODO: over a global span this grid is Float32 (the dataset's eltype), and Oceananigans
-    # mislocates the interpolation point by ~2.8 cells (~5 km), displacing globally-read
-    # bathymetry by ~280 m in steep terrain: CliMA/Oceananigans.jl#5821. Windowed reads span
-    # too little to be affected.
     bathymetry_native_grid = native_grid(metadata, arch; halo = (10, 10, 1))
     FT = eltype(target_grid)
 
@@ -270,12 +265,12 @@ function _regrid_bathymetry(target_grid, metadata;
 
     native_z = Field{Center, Center, Nothing}(bathymetry_native_grid)
 
-    # Matching file coordinates to the native grid reads a windowed region out of its slice
-    # of the file, whether the file is global (ETOPO) or already the window (GLO-30).
+    # Matching file coordinates to the native grid reads a windowed region out of its slice of
+    # the file, whether the file is global (ETOPO) or already the window (GLO-30).
     set_metadata_field!(native_z, z_data, metadata)
 
-    # No-data cells arrive as NaN. Zero them (no data over water means sea level) before
-    # interpolating, so the passes below cannot smear NaN into neighboring cells.
+    # No-data means sea level, so zero the NaNs before the interpolation passes smear them
+    # into neighboring cells.
     launch!(arch, bathymetry_native_grid, :xyz, _fill_nans!, native_z)
     fill_halo_regions!(native_z)
 
@@ -295,8 +290,8 @@ function _regrid_bathymetry(target_grid, metadata;
     return target_z
 end
 
-# The grid a regrid actually covers. A distributed grid is regridded whole on one rank, so a
-# dataset window has to come from the global grid rather than the local subdomain.
+# A distributed grid is regridded whole on one rank, so a dataset window has to come from the
+# global grid rather than the local subdomain.
 regridding_grid(grid) = grid
 regridding_grid(grid::DistributedGrid) = reconstruct_global_grid(grid)
 
@@ -304,9 +299,9 @@ regridding_grid(grid::DistributedGrid) = reconstruct_global_grid(grid)
     regrid_bathymetry(target_grid; dataset = ETOPO2022(),
                       region = default_region(dataset, target_grid), cache = true, kw...)
 
-Regrid bathymetry from `dataset` onto `target_grid`. Default: `dataset = ETOPO2022()`.
-Datasets that cannot be read whole (e.g. [`GLO30`](@ref)) are windowed to `target_grid`
-by `region`; pass a [`BoundingBox`](@ref) to window explicitly.
+Regrid bathymetry from `dataset` onto `target_grid`. Datasets that cannot be read whole
+(e.g. [`GLO30`](@ref)) are windowed to `target_grid`; pass a [`BoundingBox`](@ref) as
+`region` to window explicitly.
 """
 function regrid_bathymetry(target_grid; dataset = ETOPO2022(),
                            region = default_region(dataset, regridding_grid(target_grid)),
@@ -348,24 +343,19 @@ end
 """
     bare_earth_elevation(surface_elevation::Field, object_heights::Field...)
 
-Estimate bare-earth land elevation from a Digital Surface Model (DSM) by removing
-sub-grid object heights. A DSM such as [`GLO30`](@ref) measures the top of whatever
-sits on the ground — canopy over forest, roofs over cities — so at resolutions
-where individual trees and buildings are sub-grid it reports the surface *raised*
-by the mean object height. Subtracting the object heights (`object_heights`, e.g. a
-canopy-height field and a building-height field) recovers the ground beneath them,
+Estimate bare-earth land elevation by removing sub-grid object heights from a Digital
+Surface Model. A DSM such as [`GLO30`](@ref) measures the top of whatever sits on the
+ground — canopy over forest, roofs over cities — so where trees and buildings are
+sub-grid it reports the surface *raised* by the mean object height:
 
     z_bare = max(surface_elevation − maxₖ object_heightₖ, 0)
 
-clamped at sea level. The object heights are combined by their per-cell maximum,
-with missing values (`NaN`) contributing zero — so a canopy field that is `NaN` off
-vegetation and a building field that is `NaN` off built-up areas compose into a
-single object-height field. A `NaN` in `surface_elevation` (no-data, e.g. over water)
-is likewise treated as sea level. All inputs must share the same `grid`. The height
-removed here is exactly the displacement the surface-layer roughness closure
-reintroduces as drag, so the object lift is accounted for once.
-
-Returns a `Field{Center, Center, Nothing}`.
+The `object_heights` (e.g. a canopy-height and a building-height field, all on
+`surface_elevation`'s grid) are combined by their per-cell maximum, with `NaN` counting as
+zero, so fields defined only over vegetation or only over built-up areas compose. A `NaN`
+in `surface_elevation` is likewise sea level. The lift removed here is the displacement
+the surface-layer roughness closure reintroduces as drag, so it is counted once. Returns
+a `Field{Center, Center, Nothing}`.
 
 ```jldoctest
 using NumericalEarth
@@ -388,7 +378,7 @@ maximum(z)
 function bare_earth_elevation(surface_elevation::Field, object_heights::Field...)
     grid = surface_elevation.grid
 
-    # Accumulate the per-cell tallest object, then subtract it from the surface in place.
+    # Accumulate the tallest object per cell, then subtract it from the surface in place.
     bare_elevation = Field{Center, Center, Nothing}(grid)
     for object_height in object_heights
         interior(bare_elevation) .= max.(interior(bare_elevation), nan_to_zero.(interior(object_height)))
@@ -403,11 +393,9 @@ end
 """
     bare_earth_elevation(grid::AbstractGrid, object_heights::Field...; dataset = GLO30(), kw...)
 
-Regrid the DSM `dataset` onto `grid` with [`regrid_topography`](@ref) and remove the
-`object_heights`, returning the bare-earth elevation `Field`. `dataset` defaults to
-Copernicus [`GLO30`](@ref). Datasets that must be read in windows are windowed to `grid`
-automatically; keyword arguments (`region`, `interpolation_passes`, `cache`, …) are
-forwarded to `regrid_topography`.
+Regrid the DSM `dataset` onto `grid` with [`regrid_topography`](@ref) — windowing it to
+`grid` when the dataset cannot be read whole — and remove the `object_heights`. Keyword
+arguments (`region`, `interpolation_passes`, `cache`, …) go to `regrid_topography`.
 """
 function bare_earth_elevation(grid::AbstractGrid, object_heights::Field...; dataset = GLO30(), kw...)
     surface_elevation = regrid_topography(grid; dataset, kw...)

@@ -16,11 +16,9 @@ function compute_bounding_nodes(grid, LH, hnodes)
     return h₁, h₂
 end
 
-# `ε` forgives the noise in comparing grid centers against file centers — Float32 nodes,
-# Float64 file coordinates, and the longitude wrap, which together drift by more than a
-# few eps at 180° magnitudes. Half a file cell is the widest tolerance that still cannot
-# skip past a coordinate, so the slice snaps to the nearest cell instead of losing one at
-# each end.
+# Grid centers are Float32, file coordinates Float64, and the longitude wrap adds more drift
+# than a few eps at 180° magnitudes. Half a file cell is the widest `ε` that still cannot skip
+# a coordinate, so the slice snaps to the nearest cell instead of losing one at each end.
 function compute_bounding_indices(bounds::Tuple, hc)
     h₁, h₂ = bounds
     Nh = length(hc)

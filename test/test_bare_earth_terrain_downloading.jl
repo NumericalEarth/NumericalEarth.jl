@@ -29,8 +29,8 @@ end
     for arch in test_architectures
         grid = land_grid(arch)
 
-        # ETOPO reads globally, GLO-30 is windowed to the grid — the only difference is the
-        # region `regrid_topography` auto-derives; the subtraction below is identical for both.
+        # ETOPO reads globally and GLO-30 is windowed to the grid, but that is entirely the
+        # region `regrid_topography` derives; the subtraction below is identical for both.
         object         = height_field(grid, 25.0)
         dsm_elevation  = regrid_topography(grid; dataset = ETOPO2022())
         bare_elevation = bare_earth_elevation(grid, object; dataset = ETOPO2022())
@@ -41,10 +41,10 @@ end
 end
 
 @testset "regrid_topography — windowed region on a global file" begin
-    # ETOPO is one global file, so a windowed region has to read its own slice out of it.
-    # A target grid at the dataset's own 1 arc-minute resolution puts target cell centres on
-    # ETOPO cell centres, so the regridded elevation must reproduce the file values there —
-    # a slice offset by even one cell shows up as hundreds of metres in Alpine terrain.
+    # ETOPO is one global file, so a windowed region has to read its own slice out of it. A
+    # target grid at the dataset's own 1 arc-minute resolution puts target cell centers on
+    # ETOPO cell centers, so the regridded elevation must reproduce the file values there —
+    # a slice offset by even one cell shows up as hundreds of meters in Alpine terrain.
     grid = LatitudeLongitudeGrid(CPU(); size = (240, 180), longitude = (6, 10), latitude = (44, 47),
                                  topology = (Bounded, Bounded, Flat))
     region = BoundingBox(longitude = (5, 11), latitude = (43, 48))

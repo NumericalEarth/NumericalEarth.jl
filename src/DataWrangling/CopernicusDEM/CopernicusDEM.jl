@@ -28,7 +28,7 @@ representing the Earth's surface including buildings, infrastructure, and
 vegetation. Heights are referenced to the EGM2008 geoid; ocean is set to 0.
 
 Because GLO-30 is a global 30 m product (≈ 1.3M × 0.65M cells), it is read in regional
-windows only. [`regrid_topography`](@ref) derives that window from the target grid, so
+windows only. [`regrid_topography`](@ref) derives the window from the target grid, so
 `regrid_topography(grid; dataset = GLO30())` needs no region; pass
 `region = BoundingBox(longitude = (λ₁, λ₂), latitude = (φ₁, φ₂))` to choose one explicitly.
 
@@ -61,8 +61,7 @@ DataWrangling.reversed_vertical_axis(::CopernicusDEMDataset) = false
 DataWrangling.longitude_interfaces(::CopernicusDEMDataset) = (-180, 180)
 DataWrangling.latitude_interfaces(::CopernicusDEMDataset) = (-90, 90)
 
-# The global 30/90 m product cannot be read whole, so window it to the grid, widened so
-# boundary cells interpolate rather than extrapolate past the window edge.
+# The global 30/90 m product cannot be read whole, so window it to the grid.
 DataWrangling.default_region(dataset::CopernicusDEMDataset, grid) =
     BoundingBox(grid; padding = DataWrangling.default_horizontal_padding(dataset, grid))
 

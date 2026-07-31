@@ -76,7 +76,7 @@ end
     end
 end
 
-@testset "regrid_bathymetry — global regrids keep a region-free cache key" begin
+@testset "regrid_bathymetry — a window and a global read get different cache keys" begin
     grid = land_grid(CPU())
 
     global_config = BathymetryRegridding(grid, Metadatum(:bottom_height; dataset = ETOPO2022()))

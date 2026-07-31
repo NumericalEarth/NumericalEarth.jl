@@ -34,17 +34,16 @@ BoundingBox(grid::AbstractGrid; padding = 0) =
     BoundingBox(longitude = extrema(λnodes(grid, Face(), Center(), Center())) .+ (-padding, padding),
                 latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padding, padding))
 
-# `cells` grid cells of margin (degrees) so boundary target cells interpolate from real
-# source data instead of extrapolating past the window edge. The widest cell sets the
-# margin, so stretched grids are padded enough at their coarsest end.
+# A margin of `cells` grid cells (degrees), so boundary target cells interpolate instead of
+# extrapolating past the window edge. The widest cell sets it, covering stretched grids.
 function grid_cell_padding(grid::LatitudeLongitudeGrid; cells = 2)
     Δλ = maximum(λspacings(grid, Center(), Center(), Center()))
     Δφ = maximum(φspacings(grid, Center(), Center(), Center()))
     return cells * max(Δλ, Δφ)
 end
 
-# Spacings come from the underlying grid: reductions over an immersed grid skip masked
-# cells, which would shrink the margin (or return `-Inf` if every cell is masked).
+# Reductions over an immersed grid skip masked cells, shrinking the margin (or returning
+# `-Inf` when every cell is masked), so take the spacings from the underlying grid.
 grid_cell_padding(grid::ImmersedBoundaryGrid; kw...) = grid_cell_padding(grid.underlying_grid; kw...)
 
 #####
@@ -690,11 +689,10 @@ function default_download_directory end
     default_horizontal_padding(dataset)
     default_horizontal_padding(dataset, grid)
 
-Return the default horizontal padding (degrees) added around a bounding box requested
-from `dataset`, providing margin for interpolation stencils at the boundary. The
-one-argument form is the margin `dataset`'s own cells demand; the two-argument form
-widens it to whichever is larger, that or the margin `grid`'s cells demand, so a window
-serves both the source stencil and the target's boundary cells.
+Return the horizontal padding (degrees) added around a bounding box requested from
+`dataset`, giving interpolation stencils margin at the boundary. The one-argument form is
+what `dataset`'s own cells demand; the two-argument form widens it to also cover `grid`'s
+boundary cells.
 """
 default_horizontal_padding(dataset) = 0
 default_horizontal_padding(dataset, grid) =
@@ -703,10 +701,9 @@ default_horizontal_padding(dataset, grid) =
 """
     default_region(dataset, grid)
 
-Return the default `region` to window `dataset` to when regridding onto `grid`, or `nothing`
-to read the dataset globally. Global-file datasets (e.g. ETOPO) default to `nothing`; datasets
-that must be read in windows (e.g. the global 30 m Copernicus DEM) return a `BoundingBox`
-derived from `grid`.
+Return the `region` to window `dataset` to when regridding onto `grid`. Datasets read whole
+(e.g. ETOPO) return `nothing`; datasets that must be read in windows (e.g. the global 30 m
+Copernicus DEM) return a `BoundingBox` derived from `grid`.
 """
 default_region(dataset, grid) = nothing
 
