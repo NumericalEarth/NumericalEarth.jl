@@ -173,3 +173,60 @@ end
 # every cell with 30 m mean height a ~160 m tallest building — the median regressed `ℓᵐ` runs
 # ~4× the measured-input value and `d` ~2×. The measured statistics are per-cell facts, valid
 # at any resolution; only where supertalls actually stand do `σH` and `Hmax` stay this large.
+
+# ## The same comparison at the regressions' fitted 1 km scale
+#
+# If that reading is right, aggregating the morphometry to the ~1 km districts the regressions
+# were fitted on should close much of the gap: a 1 km Manhattan cell really does mix towers
+# with low-rise blocks.
+kilometer_grid = LatitudeLongitudeGrid(CPU(), Float64; size = (8, 13),
+                                       longitude = region.longitude, latitude = region.latitude,
+                                       topology = (Bounded, Bounded, Flat))
+kilometer_morphometry = building_morphometry(kilometer_grid; dataset, region)
+
+kilometer_regressed_roughness, kilometer_regressed_displacement =
+    urban_roughness(kilometer_morphometry.mean_building_height, kilometer_morphometry.built_up_fraction)
+
+kilometer_measured_roughness, kilometer_measured_displacement =
+    urban_roughness(kilometer_morphometry.mean_building_height, kilometer_morphometry.built_up_fraction,
+                    kilometer_morphometry.building_height_std, kilometer_morphometry.maximum_building_height,
+                    kilometer_morphometry.frontal_area_index)
+
+kilometer_built = interior(kilometer_morphometry.built_up_fraction, :, :, 1) .> 0.01
+cell_values(field, mask) = interior(field, :, :, 1)[mask]
+
+fig6 = Figure(size = (1250, 640))
+Label(fig6[0, 1:2], "Measured vs regressed closure inputs, at 100 m and at the fitted 1 km scale", fontsize = 18)
+panels = (("roughness length ℓᵐ (m)", regressed_roughness_length, roughness_length,
+           kilometer_regressed_roughness, kilometer_measured_roughness),
+          ("displacement height d (m)", regressed_displacement_height, displacement_height,
+           kilometer_regressed_displacement, kilometer_measured_displacement))
+for (j, (name, regressed, measured, kilometer_regressed, kilometer_measured)) in enumerate(panels)
+    ax = Axis(fig6[1, j]; xscale = log10, yscale = log10, title = name, aspect = 1,
+              xlabel = "regressed from (H, λp)", ylabel = "measured σH, Hmax, λf")
+    scatter!(ax, cell_values(regressed, built), cell_values(measured, built);
+             markersize = 4, color = (:steelblue, 0.25), label = "100 m cells")
+    scatter!(ax, cell_values(kilometer_regressed, kilometer_built), cell_values(kilometer_measured, kilometer_built);
+             markersize = 11, color = :orangered, strokecolor = :black, strokewidth = 0.5, label = "1 km cells")
+    low, high = extrema(vcat(cell_values(regressed, built), cell_values(measured, built)))
+    lines!(ax, [low, high], [low, high]; color = :black, linestyle = :dash)
+    axislegend(ax; position = :lt)
+end
+save("globfp3d_scale_dependence.png", fig6)
+fig6
+
+kilometer_roughness_ratio = cell_values(kilometer_measured_roughness, kilometer_built) ./
+                            cell_values(kilometer_regressed_roughness, kilometer_built)
+kilometer_height_spread_ratio = cell_values(kilometer_morphometry.building_height_std, kilometer_built) ./
+                                cell_values(kilometer_morphometry.mean_building_height, kilometer_built)
+@info "1 km ℓᵐ measured/regressed: median = $(round(median(kilometer_roughness_ratio), digits = 2)), " *
+      "IQR = $(round.(quantile(kilometer_roughness_ratio, (0.25, 0.75)), digits = 2))"
+@info "1 km measured σH/H: median = $(round(median(kilometer_height_spread_ratio), digits = 2))"
+
+# It does — about half of it. From 100 m to 1 km the measured `σH/H` median rises from 0.09
+# to ~0.34, `Hmax/H` from 1.11 to ~2.05 (toward the assumed 2.5), and the `ℓᵐ` ratio recovers
+# from ~0.27 to ~0.53, with the 1 km cells straddling the 1:1 line. The factor ~2 that remains
+# even at the fitted scale is a city mismatch: Kanda's `σH = 1.05H − 3.7` prescribes
+# `σH/H ≈ 0.95` at Manhattan's 1 km mean heights, three times the heterogeneity its uniform
+# mid- and high-rise districts actually have. The measured morphometry carries neither the
+# fitted scale nor the fitted city.
