@@ -104,10 +104,11 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     return nothing
 end
 
-# Roughness is set on the atmosphere-land flux closure (`atmosphere_land_fluxes`),
-# not the land state — `SlabLand` carries no roughness. The two helpers below
-# dispatch to `(;)` here; a future land model that wants per-cell roughness can
-# override either one for its own land state type.
+# Roughness and zero-plane displacement are set on the atmosphere-land flux
+# closure (`atmosphere_land_fluxes`), not the land state — `SlabLand` carries
+# neither. The two helpers below dispatch to `(;)` here; a future land model that
+# wants per-cell values (`momentum_roughness_length`, `scalar_roughness_length`,
+# `zero_plane_displacement`) can override either one for its own land state type.
 @inline atmosphere_land_surface_properties(land_state) = (;)
 @inline local_atmosphere_land_surface_properties(land_properties, i, j) = (;)
 
