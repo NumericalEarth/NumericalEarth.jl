@@ -12,7 +12,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: default_atmosphere
                                                               atmosphere_ocean_stability_functions,
                                                               EdsonMomentumStabilityFunction,
                                                               SimilarityScales,
-                                                              celsius_to_kelvin
+                                                              celsius_to_kelvin,
+                                                              jimenez_stability_functions
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using Thermodynamics
 
@@ -507,5 +508,59 @@ end
 
         # Larger roughness length increases the surface drag for a fixed wind.
         @test land_flux_response(neutral_skin; ℓ = 0.5).u★ > land_flux_response(neutral_skin; ℓ = 0.05).u★
+    end
+end
+
+@testset "Atmosphere-Land Jiménez (2012) opt-in stability functions" begin
+    for arch in test_architectures
+        Tᵃᵗ = 288
+        qᵃᵗ = 0.003
+        cᵖᵐ = Thermodynamics.cp_m(AtmosphereThermodynamicsParameters(Float64), qᵃᵗ)
+        g   = 9.80665
+        neutral_skin = Tᵃᵗ + 10 / cᵖᵐ * g
+        # Single-column coupled model with the opt-in Jiménez stability functions
+        # (cf. `land_flux_response` above, which uses the Large-Yeager land default).
+        function jimenez_flux_response(T_skin; u = 5)
+            grid = LatitudeLongitudeGrid(arch, Float64;
+                                         size = 1, latitude = 10, longitude = 10,
+                                         z = (-1, 0), topology = (Flat, Flat, Bounded))
+            h = 10.0
+            atmosphere = PrescribedAtmosphere(grid; surface_layer_height = h, boundary_layer_height = 512)
+            @allowscalar begin
+                fill!(parent(atmosphere.temperature),       Tᵃᵗ)
+                fill!(parent(atmosphere.specific_humidity), qᵃᵗ)
+                fill!(parent(atmosphere.velocities.u), u)
+                fill!(parent(atmosphere.velocities.v), 0)
+                fill!(parent(atmosphere.pressure),     101325)
+            end
+            fluxes = SimilarityTheoryFluxes(; momentum_roughness_length    = 0.1,
+                                              temperature_roughness_length = 0.01,
+                                              water_vapor_roughness_length = 0.01,
+                                              stability_functions = jimenez_stability_functions(Float64))
+            land = SlabLand(grid; hydrology = DryLand(), energy = SlabEnergy(eltype(grid)))
+            set!(land; T = T_skin)
+            model = AtmosphereLandModel(atmosphere, land; atmosphere_land_fluxes = fluxes, radiation = nothing)
+            update_state!(model)
+            f = model.interfaces.atmosphere_land_interface.fluxes
+            return (u★ = @allowscalar(f.friction_velocity[1, 1, 1]),
+                    Q  = @allowscalar(f.sensible_heat[1, 1, 1]))
+        end
+
+        warm    = jimenez_flux_response(neutral_skin + 6)
+        neutral = jimenez_flux_response(neutral_skin)
+        cold    = jimenez_flux_response(neutral_skin - 6)
+
+        for r in (warm, neutral, cold)
+            @test isfinite(r.u★)
+            @test isfinite(r.Q)
+        end
+
+        # Sensible-heat sign tracks the surface-air temperature gradient.
+        @test warm.Q > 0
+        @test abs(neutral.Q) < 1e-6
+        @test cold.Q < 0
+
+        # Friction velocity responds to stability: unstable enhances drag, stable suppresses it.
+        @test warm.u★ > neutral.u★ > cold.u★
     end
 end
