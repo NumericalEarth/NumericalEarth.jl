@@ -4,7 +4,7 @@ using ArchGDAL  # activates NumericalEarthArchGDALExt (the Mollweide → EPSG:43
 
 using NumericalEarth.DataWrangling: BoundingBox
 using NumericalEarth.DataWrangling.GHSL: GHSBuiltH, GHSBuiltS
-using NumericalEarth.Lands: urban_roughness, KandaRoughness
+using NumericalEarth.Lands: urban_roughness, MorphometricRoughness
 
 # GHSL needs no credentials, but each tile archive is tens to hundreds of MB.
 # Excluded from CI in runtests.jl; run manually.
@@ -44,13 +44,13 @@ const ghsl_region = BoundingBox(longitude = (-0.11, -0.07), latitude = (51.505, 
 
     # The urban closure consumes the two fields as in the example, returning physical
     # (ℓᵐ, d) wherever both inputs are valid.
-    closure = KandaRoughness(eltype(λᵖ.grid))
+    closure = MorphometricRoughness(eltype(λᵖ.grid))
     ℓᵐ, d = urban_roughness(h, λᵖ; closure)
     roughness = Array(interior(ℓᵐ, :, :, 1))
     displacement = Array(interior(d, :, :, 1))
 
     valid = @. !isnan(built_fraction) & !isnan(building_height)
-    @test all(roughness[valid] .≥ closure.macdonald.bare_soil_roughness)
+    @test all(roughness[valid] .≥ closure.bare_soil_roughness)
     @test all(0 .≤ displacement[valid] .< building_height[valid])   # displacement stays below roof level
     @test maximum(roughness[valid]) > 0.1                           # the built core is aerodynamically rough
 end

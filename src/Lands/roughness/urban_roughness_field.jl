@@ -39,10 +39,10 @@ $(TYPEDSIGNATURES)
 Momentum roughness length `ℓᵐ` and zero-plane displacement `d` (as `Field`s on the grid
 of `h`) for the urban tile, from a mean building-height field `h` and a built-up plan-area
 index field `λᵖ`. Convenience wrapper around [`compute_aerodynamic_roughness!`](@ref);
-pass a `closure` (default [`KandaRoughness`](@ref)) to select the morphometry. Where
+pass a `closure` (default [`MorphometricRoughness`](@ref)) to select the morphometry. Where
 `λᵖ → 0` the result reduces to a bare-soil roughness.
 """
-function urban_roughness(h, λᵖ; closure = KandaRoughness(eltype(h.grid)))
+function urban_roughness(h, λᵖ; closure = MorphometricRoughness(eltype(h.grid)))
     grid = h.grid
     ℓᵐ = Field{Center, Center, Nothing}(grid)
     d  = Field{Center, Center, Nothing}(grid)

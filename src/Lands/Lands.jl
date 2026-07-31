@@ -19,8 +19,9 @@ export AbstractLand,
        NoRunoff, InfiltrationCapacityRunoff,
        VariablySaturatedHydrology,
        # Urban aerodynamic roughness closures
-       AbstractUrbanRoughness, MacdonaldRoughness, KandaRoughness, LookupRoughness,
+       AbstractUrbanRoughness, MorphometricRoughness,
        IsotropicFrontalArea, CuboidFrontalArea,
+       UniformHeight, VariableHeight,
        urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
        # Atmosphere-facing accessors
        surface_temperature, surface_saturation

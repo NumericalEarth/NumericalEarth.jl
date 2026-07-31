@@ -40,10 +40,15 @@ grid = λᵖ.grid
 h    = Field(Metadatum(:building_height; dataset = GHSBuiltH(), region), grid)
 
 # ## Urban roughness closure
-# Kanda (2013) is the default (height-heterogeneity aware); Macdonald (1998) for
-# comparison. Both consume the same `(h, λᵖ)` fields.
-kanda_roughness, kanda_displacement = urban_roughness(h, λᵖ; closure = KandaRoughness(eltype(grid)))
-macdonald_roughness, macdonald_displacement = urban_roughness(h, λᵖ; closure = MacdonaldRoughness(eltype(grid)))
+# One morphometric closure, two height distributions: `VariableHeight` (the default, after
+# Kanda et al. 2013) parameterizes the building-height spread, while `UniformHeight` takes
+# the idealized equal-height obstacle array of Macdonald et al. (1998). Both consume the
+# same `(h, λᵖ)` fields.
+FT = eltype(grid)
+variable_height_roughness, variable_height_displacement =
+    urban_roughness(h, λᵖ; closure = MorphometricRoughness(FT))
+uniform_height_roughness, uniform_height_displacement =
+    urban_roughness(h, λᵖ; closure = MorphometricRoughness(FT, height_distribution = UniformHeight()))
 
 # ## Figures
 function panel!(figure, position, title, field, colorrange, colormap, label)
@@ -54,21 +59,21 @@ function panel!(figure, position, title, field, colorrange, colormap, label)
     return axis
 end
 
-# (1) Kanda and Macdonald side by side. Top row: the closure inputs (h, λᵖ). Middle
-# rows: ℓᵐ and d from each closure (same columns → same closure). Bottom row: the
-# Kanda − Macdonald anomaly, largest over the dense, height-heterogeneous core.
+# (1) The two height distributions side by side. Top row: the closure inputs (h, λᵖ).
+# Middle rows: ℓᵐ and d from each (same columns → same closure). Bottom row: the anomaly,
+# largest over the dense, height-heterogeneous core.
 roughness_range = (0, 2.5)
 displacement_range = (0, 20)
 fig = Figure(size = (1150, 1500))
-Label(fig[0, 1:4], "GHSL urban morphometry → roughness — Inner London (10 m built fraction)\nKanda (2013) vs Macdonald (1998)"; fontsize = 20, font = :bold)
+Label(fig[0, 1:4], "GHSL urban morphometry → roughness — Inner London (10 m built fraction)\nvariable-height vs uniform-height distribution"; fontsize = 20, font = :bold)
 panel!(fig, (1, 1), "building height h (m)", h,  (0, 25), :inferno, "m")
 panel!(fig, (1, 3), "built fraction λᵖ",     λᵖ, (0, 1),  :turbo,   "–")
-panel!(fig, (2, 1), "ℓᵐ — Kanda (m)",      kanda_roughness,        roughness_range,    :viridis, "m")
-panel!(fig, (2, 3), "ℓᵐ — Macdonald (m)",  macdonald_roughness,    roughness_range,    :viridis, "m")
-panel!(fig, (3, 1), "d — Kanda (m)",       kanda_displacement,     displacement_range, :magma,   "m")
-panel!(fig, (3, 3), "d — Macdonald (m)",   macdonald_displacement, displacement_range, :magma,   "m")
-panel!(fig, (4, 1), "ℓᵐ anomaly — Kanda − Macdonald (m)", kanda_roughness - macdonald_roughness, (-1, 1), :balance, "Δm")
-panel!(fig, (4, 3), "d anomaly — Kanda − Macdonald (m)", kanda_displacement - macdonald_displacement, (-10, 10), :balance, "Δm")
+panel!(fig, (2, 1), "ℓᵐ — variable height (m)", variable_height_roughness,    roughness_range,    :viridis, "m")
+panel!(fig, (2, 3), "ℓᵐ — uniform height (m)",  uniform_height_roughness,     roughness_range,    :viridis, "m")
+panel!(fig, (3, 1), "d — variable height (m)",  variable_height_displacement, displacement_range, :magma,   "m")
+panel!(fig, (3, 3), "d — uniform height (m)",   uniform_height_displacement,  displacement_range, :magma,   "m")
+panel!(fig, (4, 1), "ℓᵐ anomaly — variable − uniform (m)", variable_height_roughness - uniform_height_roughness, (-1, 1), :balance, "Δm")
+panel!(fig, (4, 3), "d anomaly — variable − uniform (m)", variable_height_displacement - uniform_height_displacement, (-10, 10), :balance, "Δm")
 save(joinpath(output_directory, "fig1_overview.png"), fig)
 
 # (2) The diagnostic curve: ℓᵐ rises then falls with λᵖ (isolated → wake → skimming),
@@ -88,8 +93,8 @@ end
 fig = Figure(size = (760, 500))
 axis = Axis(fig[1, 1]; xlabel = "built fraction λᵖ", ylabel = "domain-mean ℓᵐ (m)",
             title = "Roughness peaks at intermediate built fraction")
-lines!(axis, centers, binned_mean(kanda_roughness);     linewidth = 3, label = "Kanda")
-lines!(axis, centers, binned_mean(macdonald_roughness); linewidth = 3, label = "Macdonald")
+lines!(axis, centers, binned_mean(variable_height_roughness); linewidth = 3, label = "variable height")
+lines!(axis, centers, binned_mean(uniform_height_roughness);  linewidth = 3, label = "uniform height")
 axislegend(axis; position = :rt)
 save(joinpath(output_directory, "fig2_roughness_vs_built_fraction.png"), fig)
 
@@ -112,9 +117,9 @@ height_axis = Axis(fig[1, 1]; ylabel = "h (m) / d (m)", xlabel = "longitude")
 roughness_axis = Axis(fig[1, 1]; ylabel = "λᵖ / ℓᵐ (m)", yaxisposition = :right)
 hidespines!(roughness_axis); hidexdecorations!(roughness_axis)
 height_line = lines!(height_axis, longitude, band_profile(h); color = :black, linewidth = 2)
-displacement_line = lines!(height_axis, longitude, band_profile(kanda_displacement); color = :firebrick, linewidth = 2)
+displacement_line = lines!(height_axis, longitude, band_profile(variable_height_displacement); color = :firebrick, linewidth = 2)
 fraction_line = lines!(roughness_axis, longitude, band_profile(λᵖ); color = :seagreen, linewidth = 2)
-roughness_line = lines!(roughness_axis, longitude, band_profile(kanda_roughness); color = :navy, linewidth = 2)
+roughness_line = lines!(roughness_axis, longitude, band_profile(variable_height_roughness); color = :navy, linewidth = 2)
 axislegend(height_axis, [height_line, displacement_line, fraction_line, roughness_line],
            ["h", "d", "λᵖ", "ℓᵐ"]; position = :rt)
 save(joinpath(output_directory, "fig3_transect.png"), fig)
@@ -123,8 +128,8 @@ save(joinpath(output_directory, "fig3_transect.png"), fig)
 # Dense-core ℓᵐ ~1–3 m and d ~10–20 m; the peak is at intermediate λᵖ, not maximum
 # coverage; λᵖ → 0 reduces to a bare-soil roughness (~0.03 m).
 finite_mean(values) = mean(filter(isfinite, values))
-roughness = interior(kanda_roughness, :, :, 1)
-displacement = interior(kanda_displacement, :, :, 1)
+roughness = interior(variable_height_roughness, :, :, 1)
+displacement = interior(variable_height_displacement, :, :, 1)
 dense = built_fraction .> 0.4
 bare = built_fraction .< 0.02
 

@@ -104,8 +104,9 @@ export
     NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
     NoRunoff, InfiltrationCapacityRunoff,
     # Urban aerodynamic roughness closures
-    AbstractUrbanRoughness, MacdonaldRoughness, KandaRoughness, LookupRoughness,
+    AbstractUrbanRoughness, MorphometricRoughness,
     IsotropicFrontalArea, CuboidFrontalArea,
+    UniformHeight, VariableHeight,
     urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
     surface_temperature,
     regrid_bathymetry,
