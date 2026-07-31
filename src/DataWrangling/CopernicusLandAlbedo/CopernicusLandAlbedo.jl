@@ -183,8 +183,9 @@ DataWrangling.metadata_filename(dataset::CopernicusAlbedoClimatology, name, date
 #####
 ##### Download
 #####
-##### The dekadal-file download lives in `ext/NumericalEarthCDSAPIExt.jl` (needs
-##### `using CDSAPI`); it fetches the source pair and calls `repack_albedo_pair` below.
+##### The dekadal-file download lives in
+##### `ext/NumericalEarthCDSAPIExt/copernicus_land_albedo.jl` (needs `using CDSAPI`); it
+##### fetches the source pair and calls `repack_albedo_pair` below.
 ##### Everything here is CDS-free: repacking, climatology download, and reading.
 #####
 
