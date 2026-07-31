@@ -25,7 +25,7 @@ using NumericalEarth.DataWrangling.CopernicusLandAlbedo: CopernicusAlbedo,
                                                          albedo_satellite, find_albedo_variable,
                                                          repack_albedo_pair
 
-include("cds_common.jl")
+include("cds_utils.jl")
 include("era5.jl")
 include("glofas.jl")
 include("copernicus_land_albedo.jl")

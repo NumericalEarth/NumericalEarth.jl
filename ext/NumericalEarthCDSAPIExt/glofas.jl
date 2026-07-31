@@ -146,7 +146,7 @@ function download_glofas_month(name, dataset, dates; region, dir, skip_existing,
     @root begin
         glofas_retrieve(glofas_product(dataset), request, tmp_path)
         foreach_nc(tmp_path, dir) do nc_path
-            split_era5_nc_multistep(nc_path, nc_triples, GLOFAS_COORD_VARS, time_dimnames)
+            split_nc_multistep(nc_path, nc_triples, GLOFAS_COORD_VARS, time_dimnames)
         end
         cleanup && rm(tmp_path; force=true)
     end

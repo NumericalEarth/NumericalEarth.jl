@@ -197,7 +197,7 @@ Returned NamedTuple fields:
 - `pending`: subset of `dt_path_pairs` that still need a download.
 - `request`, `tmp_path`, `nc_triples`: `nothing` when `pending` is empty; otherwise the
   CDS request dict, the temporary multi-step NetCDF path, and the per-datetime split
-  triples consumed by `split_era5_nc_multistep`.
+  triples consumed by `split_nc_multistep`.
 """
 function plan_era5_month(name, dataset, dates; region, dir, skip_existing)
     meta_filename = NumericalEarth.DataWrangling.metadata_filename
@@ -244,7 +244,7 @@ function download_era5_month(name, dataset, dates;
     @root begin
         retrieve_with_retries(cds_product(dataset), plan.request, plan.tmp_path)
         foreach_nc(plan.tmp_path, dir) do nc_path
-            split_era5_nc_multistep(nc_path, plan.nc_triples, coord_vars(dataset), time_dimnames)
+            split_nc_multistep(nc_path, plan.nc_triples, coord_vars(dataset), time_dimnames)
         end
         cleanup && rm(plan.tmp_path; force=true)
     end
@@ -412,7 +412,7 @@ Returned NamedTuple fields:
 - `pending`: subset that still needs a download.
 - `request`, `tmp_path`, `nc_triples`: `nothing` when `pending` is empty; otherwise the
   CDS request dict, the temporary multi-step NetCDF path, and the per-(name, time) split
-  triples consumed by `split_era5_nc_multistep`.
+  triples consumed by `split_nc_multistep`.
 """
 function plan_era5_multivar_month(names, dataset, dates; region, dir, skip_existing)
     meta_filename = NumericalEarth.DataWrangling.metadata_filename
@@ -460,7 +460,7 @@ function download_era5_multivar_month(names, dataset, dates;
     @root begin
         retrieve_with_retries(cds_product(dataset), plan.request, plan.tmp_path)
         foreach_nc(plan.tmp_path, dir) do nc_path
-            split_era5_nc_multistep(nc_path, plan.nc_triples, coord_vars(dataset), time_dimnames)
+            split_nc_multistep(nc_path, plan.nc_triples, coord_vars(dataset), time_dimnames)
         end
         cleanup && rm(plan.tmp_path; force=true)
     end

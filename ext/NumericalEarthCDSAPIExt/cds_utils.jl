@@ -75,7 +75,7 @@ end
 #####
 
 """
-    split_era5_nc_multistep(src_path, triples, coord_vars, time_dimnames)
+    split_nc_multistep(src_path, triples, coord_vars, time_dimnames)
 
 Split a multi-timestep NetCDF into individual per-variable, per-timestep files.
 `triples` is a vector of `(nc_varname, datetime, dst_path)`.
@@ -85,7 +85,7 @@ position in the request. CDS expands `day`/`time` into a Cartesian product, so a
 datetimes span more than one day with differing hours (e.g. a window crossing midnight) comes back
 with extra, sorted timesteps that no longer line up positionally with the requested datetimes.
 """
-function split_era5_nc_multistep(src_path, nc_varname_datetime_path_triples, coord_vars, time_dimnames)
+function split_nc_multistep(src_path, nc_varname_datetime_path_triples, coord_vars, time_dimnames)
     NCDatasets.Dataset(src_path, "r") do src
         src_varnames = Set(keys(src))
         unlimited = NCDatasets.unlimited(src)
@@ -93,13 +93,13 @@ function split_era5_nc_multistep(src_path, nc_varname_datetime_path_triples, coo
         # Index this file's timesteps by their valid time (see the note above).
         time_coord = "valid_time" in src_varnames ? "valid_time" :
                      "time"       in src_varnames ? "time"       :
-                     error("split_era5_nc_multistep: no time coordinate variable in $src_path")
+                     error("split_nc_multistep: no time coordinate variable in $src_path")
         tidx_of = Dict(t => i for (i, t) in enumerate(src[time_coord][:]))
 
         for (nc_varname, datetime, dst_path) in nc_varname_datetime_path_triples
             nc_varname in src_varnames || continue
             haskey(tidx_of, datetime) ||
-                error("split_era5_nc_multistep: $datetime absent from $src_path")
+                error("split_nc_multistep: $datetime absent from $src_path")
             tidx = tidx_of[datetime]
             NCDatasets.Dataset(dst_path, "c") do dst
                 for (dname, dlen) in src.dim
