@@ -4,7 +4,7 @@
 # `Tˡᵃ` toward a deep temperature `Tᵈᵉᵉᵖ` — the soil temperature at the depth where diurnal
 # and synoptic variability is damped out. `Tᵈᵉᵉᵖ` sets the mean state the slab relaxes to,
 # so a hand-set constant biases every cell whose true deep temperature differs from it: by
-# ~6.5 K per km of elevation over terrain, since `Tᵈᵉᵉᵖ` tracks the annual-mean surface
+# several K per km of elevation over terrain, since `Tᵈᵉᵉᵖ` tracks the annual-mean surface
 # temperature.
 #
 # This example grabs `Tᵈᵉᵉᵖ` from the [`ERA5MonthlyLand`](@ref) dataset — the monthly-mean
@@ -17,7 +17,8 @@
 #    that the seasonal cycle damps and lags with depth — the textbook signature of downward
 #    heat diffusion;
 # 2. time-average `stl4` into a static `Tᵈᵉᵉᵖ` map and lapse-correct it from ERA5-Land's
-#    ~9 km cell-mean elevation to a ~1 km model grid;
+#    ~9 km cell-mean elevation to a ~1 km model grid, with a ground lapse rate fitted from
+#    the product itself;
 # 3. hand the corrected field to `WaterCoupledEnergy` and run an ERA5-forced `SlabLand`,
 #    against a control run that restores to the hand-set default `Tᵈᵉᵉᵖ = 280` K.
 #
@@ -96,26 +97,41 @@ nothing #hide
 # At 100–289 cm the five-year mean is an excellent estimate of the equilibrium deep
 # temperature, and it is smooth — 9 km resolution loses nothing except *terrain*. The
 # coarse field represents each ERA5-Land cell's mean elevation, so on a ~1 km grid the
-# resolved ridges and valleys need the environmental lapse-rate shift
+# resolved ridges and valleys need the lapse-rate shift
 #
-#     Tᵈᵉᵉᵖ(z_model) = Tᵈᵉᵉᵖ(z_coarse) − Γ (z_model − z_coarse),    Γ = 6.5 K km⁻¹.
+#     Tᵈᵉᵉᵖ(z_model) = Tᵈᵉᵉᵖ(z_coarse) − Γ (z_model − z_coarse).
 #
 # `z_model` is ETOPO 2022 elevation regridded to the model grid; `z_coarse` is the same
 # ETOPO elevation smoothed to ERA5-Land's native 0.1° grid — the elevation the coarse
 # `Tᵈᵉᵉᵖ` "lives at" — and interpolated back. The correction therefore adds exactly the
 # sub-9 km topographic signal.
-
-lapse_rate = 6.5e-3   # K m⁻¹, environmental lapse rate
+#
+# The right `Γ` for a *soil* field is the ground-temperature lapse rate, which is
+# shallower than the free-air 6.5 K km⁻¹ in snowy terrain (the winter snowpack insulates
+# high-altitude soil from the air above). Rather than hard-coding an atmospheric
+# convention, fit `Γ` from the coarse product itself — the regression slope of the
+# native-grid `Tᵈᵉᵉᵖ` against the native-grid elevation. Over this box the fit gives
+# ~4.2 K km⁻¹ with correlation −0.89: elevation alone explains most of the spatial
+# variance of the deep soil temperature.
 
 stl4_metadata = Metadata(:soil_temperature_level_4; dataset, dates = climatology_dates, region)
 stl4_native_grid = native_grid(stl4_metadata, CPU())
+
+Tᵈ_native = time_averaged_field(stl4_metadata, CPU())
+z_native  = regrid_topography(stl4_native_grid; dataset = ETOPO2022())
+
+Tᵈ, z = vec(interior(Tᵈ_native)), vec(interior(z_native))
+ground_lapse_rate = -cov(z, Tᵈ) / var(z)
+
+@printf("Fitted ground lapse rate: %.2f K km⁻¹ (correlation %.2f)\n",
+        1000 * ground_lapse_rate, cor(z, Tᵈ))
 
 function deep_temperature_field(grid)
     Tᵈ_coarse = time_averaged_field(stl4_metadata, grid)
     z_model = regrid_topography(grid; dataset = ETOPO2022())
     z_coarse = Field{Center, Center, Nothing}(grid)
-    interpolate!(z_coarse, regrid_topography(stl4_native_grid; dataset = ETOPO2022()))
-    return compute!(Field(Tᵈ_coarse - lapse_rate * (z_model - z_coarse)))
+    interpolate!(z_coarse, z_native)
+    return compute!(Field(Tᵈ_coarse - ground_lapse_rate * (z_model - z_coarse)))
 end
 
 map_grid = LatitudeLongitudeGrid(CPU(); latitude, longitude,
@@ -175,11 +191,13 @@ start_date = DateTime(2020, 7, 1)
 end_date   = DateTime(2020, 7, 5)
 run_time   = 4days
 
-# The forcing correction between ERA5's own model surface and the resolved terrain:
+# The forcing correction between ERA5's own model surface and the resolved terrain. This
+# one lifts the *air* state, so it keeps `ElevationCorrection`'s default free-air lapse
+# rate (6.5 K km⁻¹) rather than the fitted ground lapse rate:
 
 z_run  = regrid_topography(run_grid; dataset = ETOPO2022())
 z_era5 = Field(Metadatum(:topography; dataset = forcing_dataset, date = start_date, region), run_grid)
-forcing_correction = ElevationCorrection(z_run, z_era5; lapse_rate)
+forcing_correction = ElevationCorrection(z_run, z_era5)
 
 # Both runs share the forcing, hydrology, and initial state `Tˡᵃ = Tᵈᵉᵉᵖ`,
 # `Mˡᵃ = 150 kg m⁻²`; only `deep_temperature` differs.
