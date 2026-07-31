@@ -32,6 +32,8 @@ NumericalEarth currently ships connectors for the following data products:
 | `MultiYearJRA55`   | [Supported variables](@ref dataset-multiyearjra55-vars)   | [JRA-55 Reanalysis](https://www.data.jma.go.jp/jra/html/JRA-55/index_en.html)                      |
 | `ERA5HourlySingleLevel` | surface meteorology, flux, radiation, and wave variables | [ERA5 single levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels?tab=overview) |
 | `ERA5MonthlySingleLevel` | surface meteorology, flux, radiation, and wave variables | [ERA5 single levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels-monthly-means?tab=overview) |
+| `ERA5HourlyLand` | soil temperature and moisture (4 levels), skin temperature, snow, and 2 m state at 0.1° | [ERA5-Land overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land?tab=overview) |
+| `ERA5MonthlyLand` | monthly means of the `ERA5HourlyLand` variables | [ERA5-Land monthly means overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land-monthly-means?tab=overview) |
 | `ERA5HourlyPressureLevels` | pressure-level temperature, winds, humidity, geopotential, and cloud variables | [ERA5 pressure levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels?tab=overview) |
 | `ERA5MonthlyPressureLevels` | pressure-level temperature, winds, humidity, geopotential, and cloud variables | [ERA5 pressure levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels-monthly-means?tab=overview) |
 | **Regional observations** |                                                    |                                                                                                     |

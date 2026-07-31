@@ -15,7 +15,9 @@ using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5Metadata, ERA5Metadatu
                                          ERA5_dataset_variable_names, ERA5_netcdf_variable_names,
                                          ERA5PressureLevelsDataset,
                                          ERA5PressureMetadata, ERA5PressureMetadatum,
-                                         ERA5PL_dataset_variable_names, ERA5PL_netcdf_variable_names
+                                         ERA5PL_dataset_variable_names, ERA5PL_netcdf_variable_names,
+                                         ERA5HourlyLand, ERA5MonthlyLand, ERA5LandDataset,
+                                         ERA5Land_dataset_variable_names, ERA5Land_netcdf_variable_names
 using NumericalEarth.DataWrangling.GloFAS: GloFASDataset, GloFASMetadata, GloFASMetadatum,
                                            GloFAS_netcdf_variable_names
 using NumericalEarth.DataWrangling.CopernicusLandAlbedo: CopernicusAlbedo,
@@ -31,12 +33,16 @@ using NumericalEarth.DataWrangling.CopernicusLandAlbedo: CopernicusAlbedo,
 
 cds_product(::ERA5Dataset)               = "reanalysis-era5-single-levels"
 cds_product(::ERA5PressureLevelsDataset) = "reanalysis-era5-pressure-levels"
+cds_product(::ERA5HourlyLand)            = "reanalysis-era5-land"
+cds_product(::ERA5MonthlyLand)           = "reanalysis-era5-land-monthly-means"
 
 cds_varnames(::ERA5Dataset)               = ERA5_dataset_variable_names
 cds_varnames(::ERA5PressureLevelsDataset) = ERA5PL_dataset_variable_names
+cds_varnames(::ERA5LandDataset)           = ERA5Land_dataset_variable_names
 
 nc_varnames(::ERA5Dataset)               = ERA5_netcdf_variable_names
 nc_varnames(::ERA5PressureLevelsDataset) = ERA5PL_netcdf_variable_names
+nc_varnames(::ERA5LandDataset)           = ERA5Land_netcdf_variable_names
 
 # Coordinate / dimension variables to propagate into each split file
 const ERA5_COORD_VARS = Set(["longitude", "latitude",
@@ -57,6 +63,29 @@ function extra_request_keys!(request, ds::ERA5PressureLevelsDataset)
     request["pressure_level"] = [string(p) for p in p_hPa]
 end
 
+# The `reanalysis-era5-land` catalogue entry is not keyed by product type;
+# sending a `product_type` key is rejected. The monthly-means entry is keyed
+# by its averaging flavor instead of "reanalysis".
+request_product_type!(request, ::ERA5Dataset)     = request["product_type"] = ["reanalysis"]
+request_product_type!(request, ::ERA5LandDataset) = nothing
+request_product_type!(request, ::ERA5MonthlyLand) = request["product_type"] = ["monthly_averaged_reanalysis"]
+
+function request_dates!(request, dataset, dts)
+    request["year"]  = unique(string.(Dates.year.(dts)))
+    request["month"] = unique(lpad.(string.(Dates.month.(dts)), 2, '0'))
+    request["day"]   = unique(lpad.(string.(Dates.day.(dts)), 2, '0'))
+    request["time"]  = unique([lpad(string(Dates.hour(dt)), 2, '0') * ":00" for dt in dts])
+    return request
+end
+
+# Monthly means carry one field per (year, month); `day` is not a request key.
+function request_dates!(request, ::ERA5MonthlyLand, dts)
+    request["year"]  = unique(string.(Dates.year.(dts)))
+    request["month"] = unique(lpad.(string.(Dates.month.(dts)), 2, '0'))
+    request["time"]  = ["00:00"]
+    return request
+end
+
 #####
 ##### CDS request construction — pure, network-free
 #####
@@ -67,9 +96,10 @@ end
 Construct the CDS API request dictionary for one batch of ERA5 data.
 
 `name_or_names` is a `Symbol` or `Vector{Symbol}` of internal variable names.
-`datetimes` is a single `DateTime` or a vector of `DateTime`s; all entries must share
-the same `(year, month)` (CDS interprets `year`/`month`/`day`/`time` as a Cartesian
-product, so mixing months would request the cross product of invalid dates). One
+`datetimes` is a single `DateTime` or a vector of `DateTime`s; all entries must form an
+exact `year`/`month`/`day`/`time` Cartesian product (CDS interprets those keys as a
+product, so e.g. hourly requests mixing months would ask for the cross product of
+invalid dates — batch by calendar month via [`request_date_groups`](@ref)). One
 `day` and one `time` string are emitted per unique day and per unique hour found in
 `datetimes`. `region` is `nothing`, a `BoundingBox`, or a `Column`.
 
@@ -83,22 +113,14 @@ function build_era5_request(name_or_names, dataset, datetimes; region)
 
     dts = datetimes isa AbstractVector ? datetimes : [datetimes]
 
-    years  = unique(string.(Dates.year.(dts)))
-    months = unique(lpad.(string.(Dates.month.(dts)), 2, '0'))
-    days   = unique(lpad.(string.(Dates.day.(dts)), 2, '0'))
-    hours  = unique([lpad(string(Dates.hour(dt)), 2, '0') * ":00" for dt in dts])
-
     request = Dict{String, Any}(
-        "product_type"    => ["reanalysis"],
         "variable"        => cds_vars,
-        "year"            => years,
-        "month"           => months,
-        "day"             => days,
-        "time"            => hours,
         "data_format"     => "netcdf",
         "download_format" => "unarchived",
     )
 
+    request_product_type!(request, dataset)
+    request_dates!(request, dataset, dts)
     extra_request_keys!(request, dataset)
 
     area = era5_request_area(region, dataset, first(names))
@@ -239,6 +261,13 @@ function group_by_calendar_month(datetimes)
                 for k in keys)
 end
 
+# Datetimes that can share one CDS request (whose `year`/`month`/`day`/`time` keys are a
+# Cartesian product): hourly products group by calendar month; the monthly-means product
+# carries one field per month, so a whole year forms an exact product.
+request_date_groups(dataset, datetimes) = group_by_calendar_month(datetimes)
+request_date_groups(::ERA5MonthlyLand, datetimes) =
+    Dict(y => filter(dt -> Dates.year(dt) == y, datetimes) for y in unique(Dates.year.(datetimes)))
+
 """
     max_dts_per_cds_request(dataset, num_vars; max_fields=$(CDS_MAX_FIELDS_PER_REQUEST))
 
@@ -257,19 +286,20 @@ end
     batch_datetimes_for_cds(datetimes, dataset, num_vars; max_fields=$(CDS_MAX_FIELDS_PER_REQUEST))
 
 Split `datetimes` into contiguous batches that each fit in one CDS request:
-each batch shares a `(year, month)` and contains at most
+each batch shares a [`request_date_groups`](@ref) key (a calendar month, or a
+year for monthly-means products) and contains at most
 `max_dts_per_cds_request(dataset, num_vars; max_fields)` datetimes. Batches
 are returned sorted by their first datetime so the caller can iterate in
 chronological order.
 """
 function batch_datetimes_for_cds(datetimes, dataset, num_vars;
                                   max_fields=CDS_MAX_FIELDS_PER_REQUEST)
-    monthly = group_by_calendar_month(datetimes)
+    groups  = request_date_groups(dataset, datetimes)
     max_dts = max_dts_per_cds_request(dataset, num_vars; max_fields)
 
     batches = Vector{Dates.DateTime}[]
-    for key in sort(collect(keys(monthly)))
-        sorted = sort(unique(monthly[key]))
+    for key in sort(collect(keys(groups)))
+        sorted = sort(unique(groups[key]))
         for i in 1:max_dts:length(sorted)
             push!(batches, sorted[i:min(i + max_dts - 1, end)])
         end

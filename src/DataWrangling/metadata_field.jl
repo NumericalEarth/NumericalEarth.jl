@@ -378,6 +378,28 @@ function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw..
     return target_field
 end
 
+"""
+    time_averaged_field(metadata::Metadata, arch_or_grid=CPU(); kw...)
+
+Average `metadata`'s variable over all of `metadata.dates` and return the mean as a
+`Field` — on the dataset's native grid when given an architecture, or interpolated
+onto `arch_or_grid` when given a grid. Keyword arguments are forwarded to
+`Field(metadatum, arch_or_grid; kw...)` (e.g. `inpainting`, `halo`).
+
+Cells the dataset marks missing (`NaN`, e.g. ocean cells of a land-only product)
+stay `NaN` in the mean unless filled with `inpainting`.
+"""
+function time_averaged_field(metadata::Metadata, arch_or_grid=CPU(); kw...)
+    Downloads.download(metadata)
+    accumulated = Field(first(metadata), arch_or_grid; kw...)
+    for metadatum in Iterators.drop(metadata, 1)
+        accumulated .+= Field(metadatum, arch_or_grid; kw...)
+    end
+    accumulated ./= length(metadata)
+    fill_halo_regions!(accumulated)
+    return accumulated
+end
+
 function set_metadata_field!(field, data, metadatum)
     full_data = ndims(data) == 2 ? reshape(data, size(data, 1), size(data, 2), 1) : data
     λc, φc = read_file_coords(metadatum)
