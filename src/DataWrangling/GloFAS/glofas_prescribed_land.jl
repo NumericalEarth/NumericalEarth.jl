@@ -27,16 +27,12 @@ freshwater mass flux that conserves volume (see [`build_river_routing`](@ref)).
 
 Keyword Arguments
 =================
-- `freshwater_density`: density used to convert discharge (m³ s⁻¹) to a mass flux
-  (kg m⁻² s⁻¹). Default: `1000`.
-- `maximum_search_radius`: maximum distance (in `grid` cells) to search for an
-  active ocean cell when placing a river mouth. Default: `5`.
-- `spread_radius`: radius (in degrees) of the plume footprint over which each mouth's
-  discharge is divided equally. Default: `1.2`.
-- `maximum_spread_cells`: cap on the number of cells in that footprint, nearest first.
-  Default: `8`.
+- `freshwater_density`: density converting the discharge (m³ s⁻¹) to a mass flux (kg m⁻² s⁻¹). Default: `1000`.
+- `maximum_search_radius`: search distance in `grid` cells for the ocean cell receiving a mouth. Default: `5`.
+- `spread_radius`: radius in degrees over which each mouth's discharge is divided equally. Default: `1.2`.
+- `maximum_spread_cells`: cap on that footprint, nearest first. Default: `8`.
 
-See also [`JRA55PrescribedLand`](@ref) for the pre-routed JRA55 alternative.
+See also [`JRA55PrescribedLand`](@ref).
 """
 function GloFASPrescribedLand(grid;
                               dataset = GloFASReanalysis(),

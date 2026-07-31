@@ -158,14 +158,8 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Return a `VerticalScalarDiffusivity` that adds a tracer diffusivity `river_mouth_diffusivity` over the
-top `river_mouth_mixing_depth` metres of the ocean cells receiving river discharge, following NEMO's
-`rn_avt_rnf` over `rn_hrnf`. `river_routing` is a `NamedTuple` of
-[`RiverRouting`](@ref), as carried by a routed `PrescribedLand`.
-
-River forcing freshens a coastal cell without any feedback from the ocean onto the discharge, so a
-plume confined to the surface layer can be driven to zero salinity. Mixing it downward over the first
-few metres keeps the surface salinity finite and the isopycnal closures variance-dissipating there.
+A `VerticalScalarDiffusivity` adding `river_mouth_diffusivity` over the top `river_mouth_mixing_depth` metres of the
+cells `river_routing` discharges into, so a fresh plume trapped in the surface layer cannot drive the salinity to zero.
 """
 function river_mouth_vertical_diffusivity(grid, river_routing;
                                           river_mouth_diffusivity = 0.1,
@@ -338,9 +332,7 @@ For multi-column grids:
 By default, `radiative_forcing` is `TwoColorRadiation` scheme.
 
 ### River mouths
-When `river_routing` is supplied, the cells receiving river discharge get an extra vertical tracer
-diffusivity over the top `river_mouth_mixing_depth` metres (see
-[`river_mouth_vertical_diffusivity`](@ref)), which is added to `closure`.
+When `river_routing` is supplied, [`river_mouth_vertical_diffusivity`](@ref) is added to `closure`.
 
 ### Tracers and closures
 - `tracers` defaults to `(:T, :S)`.
@@ -377,10 +369,9 @@ defaults on a per-field basis.
 - `equation_of_state`: Equation of state object. Defaults to TEOS-10 (`TEOS10EquationOfState`).
 - `boundary_conditions`: User-supplied boundary conditions; merged with defaults.
 - `radiative_forcing`: Additional temperature forcing; merged into `forcing`.
-- `river_routing`: `NamedTuple` of [`RiverRouting`](@ref) — typically
-  `land.river_routing` of a routed `PrescribedLand` — marking the ocean cells that receive river
-  discharge. Defaults to `nothing`, which leaves `closure` untouched.
-- `river_mouth_diffusivity`: vertical tracer diffusivity (m² s⁻¹) applied at those cells. Default: `0.1`.
+- `river_routing`: `NamedTuple` of [`RiverRouting`](@ref), typically `land.river_routing`. Defaults to
+  `nothing`, which leaves `closure` untouched.
+- `river_mouth_diffusivity`: vertical tracer diffusivity (m² s⁻¹) at the river mouths. Default: `0.1`.
 - `river_mouth_mixing_depth`: depth (m) over which it is applied. Default: `10`.
 - `warn`: If `true`, warnings are emitted for potentially unintended setups.
 - `verbose`: If `true`, prints additional setup information.

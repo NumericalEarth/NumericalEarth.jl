@@ -87,10 +87,8 @@ end
 """
     ever_positive_mask(flux_time_series, snapshots)
 
-Cells of `flux_time_series` positive in *any* of its first `snapshots` records. A cell dry in the first
-snapshot but discharging later — an intermittent river, or a high-latitude one frozen at the start date —
-would otherwise never enter the routing map and its water would be dropped for the whole run, so the mask
-is taken over a full seasonal cycle rather than a single time.
+Cells of `flux_time_series` positive in *any* of its first `snapshots` records. Scanning a full seasonal
+cycle rather than a single time keeps intermittent and seasonally frozen rivers in the routing map.
 """
 function ever_positive_mask(flux_time_series, snapshots)
     mask = Array(interior(flux_time_series[1]))[:, :, 1] .> 0
@@ -103,8 +101,8 @@ end
 """
     source_cell_areas(grid, outlet_i, outlet_j)
 
-Horizontal areas (m²) of the `grid` cells at the given outlet indices — the
-per-mouth `outlet_weight` for routing a per-area mass flux (kg m⁻² s⁻¹).
+Horizontal areas (m²) of the `grid` cells at the given outlet indices — the `outlet_weight` for routing
+a per-area mass flux (kg m⁻² s⁻¹).
 """
 function source_cell_areas(grid, outlet_i, outlet_j)
     arch = architecture(grid)
@@ -127,21 +125,9 @@ end
     build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
                         maximum_search_radius = 5, spread_radius = 1.2, maximum_spread_cells = nothing)
 
-Map each river mouth at `(outlet_λ, outlet_φ)` onto the active ocean cells of `target_grid` within
-`maximum_search_radius` cells, returning a [`RiverRouting`](@ref). River mouths with no active ocean cell
-in range are dropped (and reported), so the global freshwater budget is conserved up to the dropped
-discharge.
-
-Discharge is divided equally over every wet cell within `spread_radius` degrees of the mouth's landing
-cell, capped at `maximum_spread_cells` (nearest first) when that is not `nothing`. The footprint is set by
-a geographic radius rather than a cell count so the freshwater flux per unit area does not grow as the
-grid refines. Setting `spread_radius = nothing` instead takes the `maximum_spread_cells` cells nearest the
-outlet, a footprint fixed in cell count.
-
-`outlet_weight[n]` is the per-mouth factor that converts the outlet's stored value into a mass discharge
-(kg s⁻¹): the deposited flux is `outlet_weight[n] * value[outlet_n] / Aᵒᶜᵉᵃⁿ`. For a volumetric discharge
-(m³ s⁻¹) it is the freshwater density; for a per-area mass flux (kg m⁻² s⁻¹) it is the source-cell area.
-Both conserve the total mass delivered.
+Map each mouth at `(outlet_λ, outlet_φ)` onto the active ocean cells of `target_grid`, returning a [`RiverRouting`](@ref) that deposits
+`outlet_weight[n] * value[outletₙ] / Aᵒᶜᵉᵃⁿ`. The weight is the freshwater density for a volumetric discharge (m³ s⁻¹), the source-cell
+area for a per-area mass flux (kg m⁻² s⁻¹).
 """
 function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
                              maximum_search_radius = 5,
@@ -216,6 +202,30 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
                         on_architecture(arch, offsets))
 end
 
+"""
+    build_flux_routing(target_grid, flux_time_series;
+                       maximum_search_radius = 5, spread_radius = 1.2,
+                       maximum_spread_cells = nothing, outlet_detection_snapshots = 365)
+
+Route a component stored as a per-area mass flux (kg m⁻² s⁻¹) on coastal cells — the JRA55-do convention — onto `target_grid`. Mouths are
+the cells positive in any of the first `outlet_detection_snapshots` records, weighted by their source-cell area. Remaining keyword arguments
+go to [`build_river_routing`](@ref).
+"""
+function build_flux_routing(target_grid, flux_time_series;
+                            maximum_search_radius = 5,
+                            spread_radius = 1.2,
+                            maximum_spread_cells = nothing,
+                            outlet_detection_snapshots = 365)
+
+    source_grid = flux_time_series.grid
+    outlet_mask = ever_positive_mask(flux_time_series, outlet_detection_snapshots)
+    outlet_i, outlet_j, outlet_λ, outlet_φ = outlet_indices_from_mask(outlet_mask, source_grid)
+    outlet_weight = source_cell_areas(source_grid, outlet_i, outlet_j)
+
+    return build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
+                               maximum_search_radius, spread_radius, maximum_spread_cells)
+end
+
 @kernel function _compute_wet_mask_and_area!(wet, area, grid, kᴺ)
     i, j = @index(Global, NTuple)
     @inbounds begin
@@ -252,12 +262,9 @@ end
 """
     spread_target_cells(wet_i, wet_j, wet_λ, wet_φ, λₒ, φₒ, maximum_degrees, spread_radius, maximum_cells)
 
-Return the ocean cells a mouth at `(λₒ, φₒ)` discharges into: every wet cell within `spread_radius`
-degrees of the mouth's landing cell, nearest first, capped at `maximum_cells` unless that is `nothing`.
-Empty when no wet cell lies within `maximum_degrees` of the mouth.
-
-`spread_radius = nothing` instead takes the `maximum_cells` cells nearest the outlet itself, a footprint
-fixed in cell count rather than in area.
+The ocean cells a mouth at `(λₒ, φₒ)` discharges into: every wet cell within `spread_radius` degrees of
+its landing cell, nearest first, capped at `maximum_cells`. Empty when no wet cell lies within
+`maximum_degrees`. With `spread_radius = nothing`, the `maximum_cells` cells nearest the outlet itself.
 """
 function spread_target_cells(wet_i, wet_j, wet_λ, wet_φ, λₒ, φₒ, maximum_degrees, spread_radius, maximum_cells)
     reach = maximum_degrees^2

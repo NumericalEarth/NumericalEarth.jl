@@ -30,16 +30,13 @@ end
 """
     PrescribedLand(freshwater_flux; clock=nothing, river_routing=nothing)
 
-Return a `PrescribedLand` component from a `NamedTuple` of `FieldTimeSeries`
-representing freshwater fluxes (e.g. rivers, icebergs).
+Return a `PrescribedLand` from a `NamedTuple` of `FieldTimeSeries` freshwater fluxes (e.g. rivers, icebergs).
 
-If `clock` is not provided, defaults to a `Clock` whose time type matches the
-element type of `freshwater_flux`.
-
-When `river_routing` is a `NamedTuple` of [`RiverRouting`](@ref) (one per freshwater
-component), each component is scattered onto coastal ocean cells conserving volume
-(see [`GloFASPrescribedLand`](@ref), [`JRA55PrescribedLand`](@ref)). When it is
-`nothing` (the default), the flux is interpolated pointwise onto the ocean grid.
+Keyword Arguments
+=================
+- `clock`: the component's `Clock`. Default: `nothing`, a `Clock` matching the element type of `freshwater_flux`.
+- `river_routing`: `NamedTuple` of [`RiverRouting`](@ref), one per component, scattering each onto coastal ocean cells conserving volume
+  (see [`GloFASPrescribedLand`](@ref), [`JRA55PrescribedLand`](@ref)). Default: `nothing`, which interpolates the flux pointwise onto the ocean grid.
 """
 function PrescribedLand(freshwater_flux; clock=nothing, river_routing=nothing)
     first_flux = first(freshwater_flux)
