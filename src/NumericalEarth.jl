@@ -120,16 +120,18 @@ export
     ECCO2DarwinMonthly, ECCO4DarwinMonthly,
     EN4Monthly,
     WOAClimatology, WOAAnnual, WOAMonthly,
+    ASTERGEDv3,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
-    ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
+    ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel,
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
     OSPapaHourly,
     JRA55FieldTimeSeries,
     ORCAOne, ORCAQuarter, ORCATwelfth,
     ORCAGrid,
+    OpenLandMapSoilDB,
     first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,
     DatasetRestoring,
@@ -278,7 +280,9 @@ using .DataWrangling.GloFAS
 using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
+using .DataWrangling.ASTERGED
 using .DataWrangling.CopernicusLandAlbedo
+using .DataWrangling.OpenLandMap
 using .DataWrangling.GHSL
 
 using PrecompileTools: @setup_workload, @compile_workload

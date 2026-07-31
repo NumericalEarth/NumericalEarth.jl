@@ -786,9 +786,11 @@ struct MicromolePerLiter end
 struct NanomolePerKilogram end
 struct NanomolePerLiter end
 struct CentigramPerCubicCentimeter end
+struct GramPerCubicCentimeter end
 struct HectogramPerCubicMeter end
 struct GramPerKilogram end
 struct DecigramPerKilogram end
+struct WeightPercent end            # mass fraction in % → kg/kg (soil texture)
 
 struct InverseSign end
 struct InverseGravity end

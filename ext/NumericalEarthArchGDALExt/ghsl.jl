@@ -1,57 +1,6 @@
-module NumericalEarthArchGDALExt
-
-using ArchGDAL: ArchGDAL
-using NCDatasets: NCDataset, defDim, defVar
-using Downloads: Downloads
-using NumericalEarth: NumericalEarth
-
-using NumericalEarth.DataWrangling: BoundingBox, dataset_variable_name
-const GHSL = NumericalEarth.DataWrangling.GHSL
-
-function NumericalEarth.DataWrangling.IBCAO.reproject_ibcao_to_netcdf(tiff_path, nc_path)
-    ArchGDAL.read(tiff_path) do src
-        # Warp from EPSG:3996 (Polar Stereographic) to EPSG:4326 (WGS84)
-        # at 0.01° resolution, clipping to 64–90°N
-        ArchGDAL.gdalwarp([src],
-            ["-t_srs", "EPSG:4326",
-             "-te",    "-180", "64", "180", "90",  # xmin ymin xmax ymax
-             "-tr",    "0.01", "0.01",             # target resolution (degrees)
-             "-r",     "bilinear",                 # resampling method
-             "-ot",    "Float32"]) do warped
-
-            # ArchGDAL returns data as (Nx, Ny) with y from north to south (GDAL convention)
-            data = Float32.(ArchGDAL.read(warped, 1))
-            data = reverse(data, dims=2)
-
-            Nx, Ny = size(data)  # expected: (36000, 2600)
-
-            NCDataset(nc_path, "c") do ds
-                defDim(ds, "lon", Nx)
-                defDim(ds, "lat", Ny)
-
-                lon_var = defVar(ds, "lon", Float64, ("lon",);
-                                attrib = ["units" => "degrees_east",
-                                          "long_name" => "longitude"])
-                lat_var = defVar(ds, "lat", Float64, ("lat",);
-                                attrib = ["units" => "degrees_north",
-                                          "long_name" => "latitude"])
-                z_var   = defVar(ds, "z",   Float32, ("lon", "lat");
-                                attrib = ["long_name" => "elevation",
-                                          "units"     => "m"])
-
-                lon_var[:] = range(-180 + 0.005, 180 - 0.005; length=Nx)
-                lat_var[:] = range(64 + 0.005, 90 - 0.005; length=Ny)
-                z_var[:, :] = data
-            end
-        end
-    end
-
-    return nothing
-end
-
 #####
-##### GHSL built-up raster ingest (World Mollweide ESRI:54009 → EPSG:4326)
-#####
+##### Global Human Settlement Layer (GHSL) built-up raster ingest:
+##### World Mollweide (ESRI:54009) → EPSG:4326.
 #####
 ##### Downloads the GHSL R2023A tile archives intersecting a BoundingBox from the JRC
 ##### open-data host, reads the Mollweide GeoTIFF inside each `.zip` in place with
@@ -64,7 +13,7 @@ end
 # across regions. Idempotent.
 function ghsl_download_tile(dataset, row, column, cache_dir)
     mkpath(cache_dir)
-    url = GHSL.ghsl_tile_url(dataset, row, column)
+    url = ghsl_tile_url(dataset, row, column)
     zip_path = joinpath(cache_dir, basename(url))
     # Download to a staging file and rename on success, so an interrupted transfer
     # never leaves a truncated archive that the `isfile` guard would keep forever.
@@ -77,25 +26,25 @@ function ghsl_download_tile(dataset, row, column, cache_dir)
             rm(staging; force = true)
         end
     end
-    inner_tif = GHSL.ghsl_tile_tif_name(dataset, row, column)
+    inner_tif = ghsl_tile_tif_name(dataset, row, column)
     return string("/vsizip/", zip_path, "/", inner_tif)
 end
 
-function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSL.GHSLMetadatum, nc_path)
+function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLMetadatum, nc_path)
     dataset = metadatum.dataset
     region  = metadatum.region
     (region isa BoundingBox && !isnothing(region.longitude) && !isnothing(region.latitude)) ||
         error("ghsl_tiles_to_netcdf requires a BoundingBox region.")
 
     name = dataset_variable_name(metadatum)
-    resolution_m = GHSL.native_resolution(dataset)
+    resolution_m = native_resolution(dataset)
     Δ = resolution_m / 111320  # target degree pixel size
 
     west, east = region.longitude
     south, north = region.latitude
 
     cache_dir = joinpath(dirname(nc_path), "tiles")
-    tiles = GHSL.ghsl_tiles_in_bbox(region)
+    tiles = ghsl_tiles_in_bbox(region)
 
     # JRC omits all-ocean tiles from the grid, so a coastal window can reference a tile
     # that 404s; skip those and mosaic the land tiles that do exist.
@@ -141,11 +90,11 @@ function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSL.
     end
 
     # Mask no-data and, for built-up surface, convert m²/cell → plan-area fraction.
-    if dataset isa GHSL.GHSBuiltS
+    if dataset isa GHSBuiltS
         cell_area = resolution_m^2
-        field = GHSL.built_surface_to_fraction.(raw, cell_area)
+        field = built_surface_to_fraction.(raw, cell_area)
     else
-        field = GHSL.mask_building_height.(raw)
+        field = mask_building_height.(raw)
     end
 
     NCDataset(nc_path, "c") do ds
@@ -165,5 +114,3 @@ function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSL.
 
     return nothing
 end
-
-end # module NumericalEarthArchGDALExt

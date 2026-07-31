@@ -1,0 +1,28 @@
+module NumericalEarthArchGDALExt
+
+using ArchGDAL: ArchGDAL
+using NCDatasets: NCDataset, defDim, defVar
+using Downloads: Downloads
+using NetworkOptions: NetworkOptions
+using NumericalEarth: NumericalEarth
+
+using Oceananigans: Center, CPU
+using Oceananigans.Grids: λnodes, φnodes
+
+using NumericalEarth.DataWrangling: BoundingBox, native_grid, dataset_variable_name,
+                                    cmr_granules, earthdata_download_cached
+using NumericalEarth.DataWrangling.ASTERGED: asterged_short_name, asterged_version,
+                                             asterged_decode_emissivity, asterged_decode_uncertainty,
+                                             broadband_map, place_tile!,
+                                             OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS
+using NumericalEarth.DataWrangling.GHSL: GHSBuiltS, GHSLMetadatum, native_resolution,
+                                         ghsl_tile_url, ghsl_tile_tif_name, ghsl_tiles_in_bbox,
+                                         built_surface_to_fraction, mask_building_height
+
+include("gdal_utils.jl")
+include("ibcao.jl")
+include("asterged.jl")
+include("ghsl.jl")
+include("openlandmap.jl")
+
+end # module NumericalEarthArchGDALExt

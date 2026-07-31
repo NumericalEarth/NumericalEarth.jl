@@ -25,7 +25,7 @@ end
 
 Supertype for the Global Human Settlement Layer (GHSL) R2023A built-up rasters
 (European Commission JRC). All are distributed in the World Mollweide projection
-(ESRI:54009) and so require a reprojection to EPSG:4326 in the read path. 
+(ESRI:54009) and so require a reprojection to EPSG:4326 in the read path.
 Open access, no authentication.
 
 Data source: https://human-settlement.emergency.copernicus.eu
@@ -44,7 +44,7 @@ is masked to `NaN`.
 Because it is a global 100 m product on a 1000 km Mollweide tile grid, it is read
 in regional windows only: construct the `Metadatum` with a longitude/latitude
 `BoundingBox`. The windowed tile download + Mollweide→EPSG:4326 warp is performed
-by `ext/NumericalEarthArchGDALExt.jl` and requires `using ArchGDAL`.
+by `ext/NumericalEarthArchGDALExt/ghsl.jl` and requires `using ArchGDAL`.
 
 Reference: Pesaresi, M. & Politis, P. (2023), *GHS-BUILT-H R2023A*, European
 Commission JRC, doi:10.2905/85005901-3A49-48DD-9D19-6261354F56FE.
@@ -400,7 +400,7 @@ function Downloads.download(metadatum::GHSLMetadatum)
     return nc_path
 end
 
-# Implemented in ext/NumericalEarthArchGDALExt.jl once `ArchGDAL` is loaded. The
+# Implemented in ext/NumericalEarthArchGDALExt/ghsl.jl once `ArchGDAL` is loaded. The
 # fallback below fires only when the extension is not active (mirrors
 # CopernicusDEM.zarr_to_netcdf / CanopyHeight.canopy_height_cog_to_netcdf).
 ghsl_tiles_to_netcdf(metadatum, nc_path) =
