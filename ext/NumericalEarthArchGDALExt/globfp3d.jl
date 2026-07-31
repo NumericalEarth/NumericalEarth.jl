@@ -144,7 +144,7 @@ function NumericalEarth.DataWrangling.GloBFP3D.globfp3d_rasterize_to_netcdf(
 
     cache_dir = joinpath(dirname(nc_path), "tiles")
     catalog = globfp3d_tile_catalog(cache_dir)
-    tiles = filter(e -> globfp3d_tile_intersects(e, region), catalog)
+    tiles = filter(e -> bounding_box_intersects(e, region), catalog)
     isempty(tiles) &&
         error("No 3D-GloBFP tiles intersect the requested region $(summary(region)).")
 

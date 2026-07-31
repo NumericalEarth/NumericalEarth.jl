@@ -1,11 +1,10 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.DataWrangling.GloBFP3D: reduce_morphometry,
-                                             globfp3d_parse_tile_bounds, globfp3d_tile_intersects,
+using NumericalEarth.DataWrangling.GloBFP3D: reduce_morphometry, globfp3d_parse_tile_bounds,
                                              globfp3d_native_cell_size, globfp3d_native_resolution,
                                              globfp3d_rasterize_to_netcdf
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_region_grid,
-                                    longitude_interfaces, latitude_interfaces,
+                                    bounding_box_intersects, longitude_interfaces, latitude_interfaces,
                                     dataset_variable_name, validate_dataset_coverage,
                                     metadata_filename, available_variables,
                                     is_three_dimensional, default_inpainting
@@ -104,8 +103,8 @@ end
     @test isnothing(globfp3d_parse_tile_bounds("world_grid.zip"))
 
     nyc = BoundingBox(longitude = (-74.02, -73.93), latitude = (40.70, 40.82))
-    @test globfp3d_tile_intersects((; west = -75.0, south = 40.0, east = -73.75, north = 41.25), nyc)
-    @test !globfp3d_tile_intersects((; west = 0.0, south = 51.25, east = 1.25, north = 52.5), nyc)
+    @test bounding_box_intersects((; west = -75.0, south = 40.0, east = -73.75, north = 41.25), nyc)
+    @test !bounding_box_intersects((; west = 0.0, south = 51.25, east = 1.25, north = 52.5), nyc)
 end
 
 #####

@@ -34,6 +34,21 @@ BoundingBox(grid::AbstractGrid; padding = 0) =
     BoundingBox(longitude = extrema(λnodes(grid, Face(), Center(), Center())) .+ (-padding, padding),
                 latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padding, padding))
 
+"""
+    bounding_box_intersects(bounds, bbox::BoundingBox)
+
+Whether `bounds`, anything with `west`, `south`, `east`, and `north` fields, overlaps `bbox`.
+Used to select the files of a tiled dataset that cover a region.
+
+Both boxes must label longitudes in the same convention, with `west < east` — a folded region
+crossing the antimeridian is unsupported, as it is throughout the `BoundingBox` read path.
+"""
+function bounding_box_intersects(bounds, bbox::BoundingBox)
+    λ₁, λ₂ = bbox.longitude
+    φ₁, φ₂ = bbox.latitude
+    return !(bounds.east < λ₁ || bounds.west > λ₂ || bounds.north < φ₁ || bounds.south > φ₂)
+end
+
 #####
 ##### Column region and interpolation types
 #####

@@ -298,12 +298,6 @@ function globfp3d_parse_tile_bounds(name)
     return (; gid = parse(Int, m[1]), west = W, south = S, east = E, north = N)
 end
 
-function globfp3d_tile_intersects(bounds, region::BoundingBox)
-    λ₁, λ₂ = region.longitude
-    φ₁, φ₂ = region.latitude
-    return !(bounds.east < λ₁ || bounds.west > λ₂ || bounds.north < φ₁ || bounds.south > φ₂)
-end
-
 #####
 ##### Download (regional footprint tiles → rasterized NetCDF via the ArchGDAL ext)
 #####
