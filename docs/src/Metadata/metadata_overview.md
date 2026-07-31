@@ -211,4 +211,6 @@ NumericalEarth currently ships connectors for the following data products:
 | `OpenLandMapSoilDB` | 30 m global soil texture (sand, silt, clay) and fine-earth bulk density over 0–100 cm | [OpenLandMap STAC](https://stac.openlandmap.org/) |
 | `CopernicusAlbedo` | `:albedo` — dekadal blue-sky broadband surface albedo on the global 1 km CGLS grid | [CGLS Surface Albedo](https://cds.climate.copernicus.eu/datasets/satellite-albedo) |
 | `CopernicusAlbedoClimatology` | `:albedo` — 12-month climatology of the CGLS blue-sky broadband albedo | [CGLS Surface Albedo](https://cds.climate.copernicus.eu/datasets/satellite-albedo) |
+| `GHSBuiltH`        | `:building_height` — mean net building height (ANBH, 100 m, epoch 2018) over a regional window; reprojected from GHSL World-Mollweide (needs `ArchGDAL`) | [GHSL GHS-BUILT-H](https://human-settlement.emergency.copernicus.eu) |
+| `GHSBuiltS`        | `:built_up_fraction` — plan-area built-up fraction (10 m or 100 m) over a regional window; reprojected from GHSL World-Mollweide (needs `ArchGDAL`) | [GHSL GHS-BUILT-S](https://human-settlement.emergency.copernicus.eu) |
 
