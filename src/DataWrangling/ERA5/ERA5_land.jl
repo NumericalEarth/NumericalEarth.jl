@@ -42,6 +42,7 @@ dataset_name(::ERA5MonthlyLand) = "ERA5MonthlyLand"
 
 const ERA5LandDataset = Union{ERA5HourlyLand, ERA5MonthlyLand}
 const ERA5LandMetadata{D} = Metadata{<:ERA5LandDataset, D}
+const ERA5LandMetadatum = Metadatum{<:ERA5LandDataset}
 
 DataWrangling.all_dates(::ERA5HourlyLand, variable)  = range(DateTime("1950-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
 DataWrangling.all_dates(::ERA5MonthlyLand, variable) = range(DateTime("1950-01-01"), stop=DateTime("2024-12-01"), step=Month(1))
@@ -102,3 +103,47 @@ DataWrangling.dataset_variable_name(metadata::ERA5LandMetadata) = ERA5Land_netcd
 # rather than hourly, so the single-level accumulation conversions must not be inherited
 # if accumulated variables are ever added here.
 DataWrangling.conversion_units(::ERA5LandMetadata) = nothing
+
+#####
+##### Yearly files — like `ERA5YearlySingleLevel` and `MultiYearJRA55`, ERA5-Land is
+##### stored as one file per variable per year. All dates of a year map to the same file
+##### and timesteps are located by matching the file's own time axis.
+#####
+
+function DataWrangling.metadata_filename(dataset::ERA5LandDataset, name, date, region)
+    var = ERA5Land_dataset_variable_names[name]
+    year = Dates.year(date)
+    suffix = region_suffix(region)
+    return string(var, "_", dataset_name(dataset), "_", year, suffix, ".nc")
+end
+
+"""
+    retrieve_data(metadatum::ERA5LandMetadatum)
+
+Read the 2D slice corresponding to `metadatum`'s single date from its yearly ERA5-Land
+file, locating the timestep by matching the file's own time axis.
+"""
+function DataWrangling.retrieve_data(metadatum::ERA5LandMetadatum)
+    path = metadata_path(metadatum)
+    name = dataset_variable_name(metadatum)
+
+    ds = NCDatasets.Dataset(path)
+    time_name = haskey(ds, "valid_time") ? "valid_time" : "time"
+    file_dates = ds[time_name][:]
+    file_idx = findfirst(==(metadatum.dates), file_dates)
+
+    if isnothing(file_idx)
+        close(ds)
+        error("Date $(metadatum.dates) not found in the yearly ERA5-Land file $path. " *
+              "The file contains $(length(file_dates)) timesteps from $(first(file_dates)) " *
+              "to $(last(file_dates)).")
+    end
+
+    data_2d = ds[name][:, :, file_idx]
+    close(ds)
+
+    # Latitude is stored from 90°N → 90°S
+    data_2d = reverse(data_2d, dims=2)
+
+    return reshape(data_2d, size(data_2d, 1), size(data_2d, 2), 1)
+end

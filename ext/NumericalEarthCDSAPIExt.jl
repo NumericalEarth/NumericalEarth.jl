@@ -17,6 +17,7 @@ using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5Metadata, ERA5Metadatu
                                          ERA5PressureMetadata, ERA5PressureMetadatum,
                                          ERA5PL_dataset_variable_names, ERA5PL_netcdf_variable_names,
                                          ERA5HourlyLand, ERA5MonthlyLand, ERA5LandDataset,
+                                         ERA5LandMetadata, ERA5LandMetadatum,
                                          ERA5Land_dataset_variable_names, ERA5Land_netcdf_variable_names
 using NumericalEarth.DataWrangling.GloFAS: GloFASDataset, GloFASMetadata, GloFASMetadatum,
                                            GloFAS_netcdf_variable_names
@@ -99,9 +100,9 @@ Construct the CDS API request dictionary for one batch of ERA5 data.
 `datetimes` is a single `DateTime` or a vector of `DateTime`s; all entries must form an
 exact `year`/`month`/`day`/`time` Cartesian product (CDS interprets those keys as a
 product, so e.g. hourly requests mixing months would ask for the cross product of
-invalid dates — batch by calendar month via [`request_date_groups`](@ref)). One
-`day` and one `time` string are emitted per unique day and per unique hour found in
-`datetimes`. `region` is `nothing`, a `BoundingBox`, or a `Column`.
+invalid dates — batch hourly requests by calendar month). One `day` and one `time`
+string are emitted per unique day and per unique hour found in `datetimes`. `region`
+is `nothing`, a `BoundingBox`, or a `Column`.
 
 The returned dictionary always uses zero-padded month/day/hour strings, sets the `area`
 key only when `region` produces one, and adds dataset-specific extras (e.g.
@@ -261,13 +262,6 @@ function group_by_calendar_month(datetimes)
                 for k in keys)
 end
 
-# Datetimes that can share one CDS request (whose `year`/`month`/`day`/`time` keys are a
-# Cartesian product): hourly products group by calendar month; the monthly-means product
-# carries one field per month, so a whole year forms an exact product.
-request_date_groups(dataset, datetimes) = group_by_calendar_month(datetimes)
-request_date_groups(::ERA5MonthlyLand, datetimes) =
-    Dict(y => filter(dt -> Dates.year(dt) == y, datetimes) for y in unique(Dates.year.(datetimes)))
-
 """
     max_dts_per_cds_request(dataset, num_vars; max_fields=$(CDS_MAX_FIELDS_PER_REQUEST))
 
@@ -286,20 +280,19 @@ end
     batch_datetimes_for_cds(datetimes, dataset, num_vars; max_fields=$(CDS_MAX_FIELDS_PER_REQUEST))
 
 Split `datetimes` into contiguous batches that each fit in one CDS request:
-each batch shares a [`request_date_groups`](@ref) key (a calendar month, or a
-year for monthly-means products) and contains at most
+each batch shares a `(year, month)` and contains at most
 `max_dts_per_cds_request(dataset, num_vars; max_fields)` datetimes. Batches
 are returned sorted by their first datetime so the caller can iterate in
 chronological order.
 """
 function batch_datetimes_for_cds(datetimes, dataset, num_vars;
                                   max_fields=CDS_MAX_FIELDS_PER_REQUEST)
-    groups  = request_date_groups(dataset, datetimes)
+    monthly = group_by_calendar_month(datetimes)
     max_dts = max_dts_per_cds_request(dataset, num_vars; max_fields)
 
     batches = Vector{Dates.DateTime}[]
-    for key in sort(collect(keys(groups)))
-        sorted = sort(unique(groups[key]))
+    for key in sort(collect(keys(monthly)))
+        sorted = sort(unique(monthly[key]))
         for i in 1:max_dts:length(sorted)
             push!(batches, sorted[i:min(i + max_dts - 1, end)])
         end
@@ -593,6 +586,106 @@ function download_era5_multivar_month(names, dataset, dates;
 end
 
 #####
+##### ERA5-Land yearly-file download
+#####
+##### ERA5-Land is stored as one file per (variable, year) — the `ERA5YearlySingleLevel` /
+##### `MultiYearJRA55` layout — with timesteps located by the file's own time axis at read
+##### time. A whole year of monthly means fits in one CDS request (12 fields), fetched for
+##### all requested variables at once; a year of hourly data exceeds the ERA5-Land
+##### per-request cost limit, so it is fetched one variable and calendar month at a time.
+##### Either way the chunks are concatenated locally into the per-variable yearly files.
+#####
+
+# All native dates of `year`, defining the request(s) that fill that year's file.
+function era5_land_year_dates(dataset, name, year)
+    dates = NumericalEarth.DataWrangling.all_dates(dataset, name)
+    return filter(dt -> Dates.year(dt) == year, dates)
+end
+
+# Date batches per CDS request: a monthly-means year in one, hourly by calendar month.
+era5_land_year_batches(::ERA5MonthlyLand, dates) = [dates]
+
+function era5_land_year_batches(::ERA5HourlyLand, dates)
+    monthly = group_by_calendar_month(dates)
+    return [sort(monthly[key]) for key in sort(collect(keys(monthly)))]
+end
+
+# Variables per CDS request: monthly means are cheap enough to bundle; an hourly month
+# is already ~744 fields per variable, so hourly variables get their own requests.
+era5_land_variable_groups(::ERA5MonthlyLand, names) = [names]
+era5_land_variable_groups(::ERA5HourlyLand, names) = [[name] for name in names]
+
+function download_era5_land_year(name_path_pairs, dataset, year; region, dir, cleanup)
+    names = [name for (name, _) in name_path_pairs]
+    dates = era5_land_year_dates(dataset, first(names), year)
+    batches = era5_land_year_batches(dataset, dates)
+
+    mkpath(dir)
+    chunk_paths = [joinpath(dir, "_tmp_$(names[1])_$(year)_$(lpad(b, 2, '0')).nc")
+                   for b in eachindex(batches)]
+    nc_name_path_pairs = [(nc_varnames(dataset)[name], path) for (name, path) in name_path_pairs]
+
+    @root begin
+        for (batch, chunk_path) in zip(batches, chunk_paths)
+            request = build_era5_request(names, dataset, batch; region)
+            retrieve_with_retries(cds_product(dataset), request, chunk_path)
+            # Instantaneous-only variables share one step type, so no ZIP is expected.
+            is_zip(chunk_path) &&
+                error("The CDS returned a ZIP archive for the ERA5-Land request $(request).")
+        end
+        concatenate_era5_nc(chunk_paths, nc_name_path_pairs, coord_vars(dataset),
+                            Set(["time", "valid_time"]))
+        cleanup && foreach(chunk_path -> rm(chunk_path; force=true), chunk_paths)
+    end
+
+    return map(last, name_path_pairs)
+end
+
+"""
+    Downloads.download(names, dataset::ERA5LandDataset, datetimes::AbstractVector; ...)
+
+Download one or more ERA5-Land variables covering `datetimes` into per-variable
+yearly files. Every year touched by `datetimes` is fetched whole, so all dates of a
+year share one canonical file per variable.
+"""
+function Downloads.download(names::Vector{Symbol}, dataset::ERA5LandDataset, datetimes::AbstractVector;
+                            region = nothing,
+                            dir = default_download_directory(dataset),
+                            skip_existing = true,
+                            cleanup = true)
+    meta_filename = NumericalEarth.DataWrangling.metadata_filename
+
+    paths = String[]
+    for year in sort(unique(Dates.year.(datetimes)))
+        for group in era5_land_variable_groups(dataset, names)
+            name_path_pairs = [(name, joinpath(dir, meta_filename(dataset, name, Dates.DateTime(year), region)))
+                               for name in group]
+            append!(paths, map(last, name_path_pairs))
+
+            pending = skip_existing ? filter(name_path -> !isfile(name_path[2]), name_path_pairs) :
+                                      name_path_pairs
+            isempty(pending) && continue
+
+            download_era5_land_year(pending, dataset, year; region, dir, cleanup)
+        end
+    end
+
+    return paths
+end
+
+function Downloads.download(metadata::ERA5LandMetadata; skip_existing=true, cleanup=true)
+    dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
+    return Downloads.download([metadata.name], metadata.dataset, dates;
+                              region = metadata.region, dir = metadata.dir, skip_existing, cleanup)
+end
+
+function Downloads.download(meta::ERA5LandMetadatum; skip_existing=true, cleanup=true)
+    paths = Downloads.download([meta.name], meta.dataset, [meta.dates];
+                               region = meta.region, dir = meta.dir, skip_existing, cleanup)
+    return first(paths)
+end
+
+#####
 ##### NetCDF splitting utilities
 #####
 
@@ -670,6 +763,76 @@ function split_era5_nc_multistep(src_path, nc_varname_datetime_path_triples, coo
             end
         end
     end
+end
+
+"""
+    concatenate_era5_nc(src_paths, nc_name_path_pairs, coord_vars, time_dimnames)
+
+Concatenate NetCDF files holding consecutive time windows of the same variables on the
+same grid into one file per variable, appending along the time dimension. `src_paths`
+must be ordered chronologically; `nc_name_path_pairs` is a vector of
+`(nc_varname, dst_path)` pairs. Non-time coordinate variables are copied from the first
+source.
+"""
+function concatenate_era5_nc(src_paths, nc_name_path_pairs, coord_vars, time_dimnames)
+    srcs = [NCDatasets.Dataset(src_path, "r") for src_path in src_paths]
+    try
+        src1 = first(srcs)
+        src_varnames = Set(keys(src1))
+
+        time_dims = [dname for (dname, _) in src1.dim if dname in time_dimnames]
+        time_dim = isempty(time_dims) ?
+            error("concatenate_era5_nc: no time dimension in $(first(src_paths))") :
+            only(time_dims)
+        total_time = sum(src.dim[time_dim] for src in srcs)
+
+        for (nc_varname, dst_path) in nc_name_path_pairs
+            nc_varname in src_varnames || continue
+            NCDatasets.Dataset(dst_path, "c") do dst
+                for (dname, dlen) in src1.dim
+                    NCDatasets.defDim(dst, dname, dname == time_dim ? total_time : dlen)
+                end
+
+                for (k, v) in src1.attrib
+                    dst.attrib[k] = v
+                end
+
+                for (vname, var) in src1
+                    (vname in coord_vars || vname == nc_varname) || continue
+                    dims     = NCDatasets.dimnames(var)
+                    T        = eltype(var.var)
+                    attribs  = var.attrib
+                    fill_val = haskey(attribs, "_FillValue") ? attribs["_FillValue"] : nothing
+
+                    dst_var = isnothing(fill_val) ?
+                        NCDatasets.defVar(dst, vname, T, dims) :
+                        NCDatasets.defVar(dst, vname, T, dims; fillvalue=fill_val)
+
+                    for (k, v) in attribs
+                        k == "_FillValue" && continue
+                        dst_var.attrib[k] = v
+                    end
+
+                    if time_dim in dims
+                        offset = 0
+                        for src in srcs
+                            n = src.dim[time_dim]
+                            dst_idx = ntuple(i -> dims[i] == time_dim ? (offset+1:offset+n) : Colon(),
+                                             length(dims))
+                            src_idx = ntuple(Returns(Colon()), length(dims))
+                            dst_var.var[dst_idx...] = src[vname].var[src_idx...]
+                            offset += n
+                        end
+                    else
+                        dst_var.var[:] = var.var[:]
+                    end
+                end
+            end
+        end
+    finally
+        foreach(close, srcs)
+    end
+    return nothing
 end
 
 function ncvar_copy!(dst, src_var, vname)

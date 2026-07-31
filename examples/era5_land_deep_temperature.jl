@@ -54,7 +54,9 @@ climatology_dates = DateTime(2020, 1, 1):Month(1):DateTime(2024, 12, 1)
 # ## Download the soil temperature climatology
 #
 # The four ECMWF soil levels span 0–7, 7–28, 28–100, and 100–289 cm. One batched CDS
-# request per calendar year fetches all four variables at once (60 months × 4 levels).
+# request per calendar year fetches all four variables at once (60 months × 4 levels),
+# stored as one file per variable per year — the same layout as `ERA5YearlySingleLevel`
+# and `MultiYearJRA55`, with timesteps located by each file's own time axis.
 
 soil_temperature_names = [:soil_temperature_level_1, :soil_temperature_level_2,
                           :soil_temperature_level_3, :soil_temperature_level_4]

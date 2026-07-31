@@ -7,6 +7,9 @@ using NCDatasets
 const ERA5YearlySingleLevelBackend = DatasetBackend{<:Any, <:Any, <:Any, <:Metadata{<:ERA5YearlySingleLevel}}
 const ERA5NetCDFFTSMultipleYears = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:ERA5YearlySingleLevelBackend}
 
+const ERA5LandBackend = DatasetBackend{<:Any, <:Any, <:Any, <:ERA5LandMetadata}
+const ERA5LandNetCDFFTS = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:ERA5LandBackend}
+
 #####
 ##### Single timestep retrieval from yearly files
 #####
@@ -125,6 +128,75 @@ function Oceananigans.Fields.set!(fts::ERA5NetCDFFTSMultipleYears, backend=fts.b
     DataWrangling.set_region_data!(fts, full_data, λc, φc, metadata)
 
     # Fill halo regions for GPU computations
+    fill_halo_regions!(fts)
+
+    return nothing
+end
+
+#####
+##### Multi-year loading from yearly ERA5-Land files (cf. `MultiYearJRA55`)
+#####
+
+"""
+    set!(fts::ERA5LandNetCDFFTS, backend=fts.backend)
+
+Load the in-memory timesteps of an ERA5-Land `FieldTimeSeries` from its yearly files.
+The window may straddle year boundaries: the needed files are resolved per slot through
+the metadata's datewise filenames, and each file's timesteps are located by matching its
+own time axis.
+"""
+function Oceananigans.Fields.set!(fts::ERA5LandNetCDFFTS, backend=fts.backend)
+    metadata = backend.metadata
+    name = dataset_variable_name(metadata)
+
+    ftsn = collect(time_indices(fts))
+    slot_dates = metadata.dates[ftsn]
+    needed_files = unique(DataWrangling.getfilename(metadata.filename, n) for n in ftsn)
+
+    filled_slots = Int[]
+
+    for file in needed_files
+        ds = NCDatasets.Dataset(joinpath(metadata.dir, file))
+        time_name = haskey(ds, "valid_time") ? "valid_time" : "time"
+        file_dates = ds[time_name][:]
+
+        nn       = Int[]
+        ftsn_loc = Int[]
+        for (loc, slot_date) in enumerate(slot_dates)
+            file_idx = findfirst(==(slot_date), file_dates)
+            if !isnothing(file_idx)
+                push!(nn, file_idx)
+                push!(ftsn_loc, loc)
+            end
+        end
+
+        if !isempty(nn)
+            # DiskArrays requires sorted indices; a cyclic window can wrap past a year boundary.
+            p = sortperm(nn)
+            nn, ftsn_loc = nn[p], ftsn_loc[p]
+
+            λc = ds["longitude"][:]
+            φc = ds["latitude"][:]
+            raw = ds[name][:, :, nn]
+
+            # Latitude is stored from 90°N → 90°S
+            raw = reverse(raw, dims=2)
+            reverse!(φc)
+
+            full_data = reshape(raw, length(λc), length(φc), 1, length(nn))
+            DataWrangling.set_region_data!(fts, full_data, λc, φc, metadata; slot_indices = ftsn_loc)
+            append!(filled_slots, ftsn_loc)
+        end
+        close(ds)
+    end
+
+    # An unmatched slot would otherwise keep its initial zeros and read back as valid data.
+    if length(filled_slots) != length(slot_dates)
+        missing_dates = slot_dates[setdiff(eachindex(slot_dates), filled_slots)]
+        error("$(length(missing_dates)) of $(length(slot_dates)) requested $name timestamps are absent " *
+              "from $(join(needed_files, ", ")); the first is $(first(missing_dates)).")
+    end
+
     fill_halo_regions!(fts)
 
     return nothing
