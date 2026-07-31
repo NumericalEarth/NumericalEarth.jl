@@ -40,8 +40,8 @@ BoundingBox(grid::AbstractGrid; padding = 0) =
 Whether `bounds`, anything with `west`, `south`, `east`, and `north` fields, overlaps `bbox`.
 Used to select the files of a tiled dataset that cover a region.
 
-Both boxes must label longitudes in the same convention, with `west < east` — a folded region
-crossing the antimeridian is unsupported, as it is throughout the `BoundingBox` read path.
+Both boxes must label longitudes in the same convention, with `west < east`; a box folded across
+the antimeridian is not supported.
 """
 function bounding_box_intersects(bounds, bbox::BoundingBox)
     λ₁, λ₂ = bbox.longitude

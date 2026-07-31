@@ -26,24 +26,21 @@ end
 """
     GlobalBuildingFootprints3D(; resolution = 3)
 
-3D-GloBFP building footprints (Che et al. 2024): ~1.3 billion building polygons (LoD1), each
-carrying an estimated height, distributed globally as per-tile shapefiles in EPSG:4326.
+3D-GloBFP building footprints: ~1.3 billion building polygons (LoD1), each carrying an
+estimated height, distributed globally as per-tile shapefiles in EPSG:4326.
 
-The adapter rasterizes the footprint heights onto a fine grid of `resolution` meters, giving a
-single variable `:building_height` (m, `0` where unbuilt). [`building_morphometry`](@ref) reduces
-that raster onto a coarser target grid.
+The heights are rasterized onto a fine grid of `resolution` meters, giving a single variable
+`:building_height` (m, `0` where unbuilt). [`building_morphometry`](@ref) reduces that raster
+onto a coarser target grid.
 
-Because it is a global vector product, it is read in regional windows only: construct the
-`Metadatum` with a longitude/latitude `BoundingBox`. The tile download and rasterization require
-`using ArchGDAL`.
+Being a global vector product, it is read in regional windows only: build the `Metadatum` with
+a longitude/latitude `BoundingBox`. The tile download and rasterization require `using ArchGDAL`.
 
-Heights are ML-estimated (RMSE 1.9–14.6 m) and biased low. They are licensed CC BY 4.0; the
-footprint geometry derives from Microsoft Building Footprints and OpenStreetMap (ODbL) and
-Google–Microsoft Open Buildings (CC BY 4.0).
+Heights are machine-learning estimates (RMSE 1.9–14.6 m) and biased low. The product is licensed
+CC BY 4.0 over footprint geometry from Microsoft Building Footprints, OpenStreetMap (ODbL), and
+Google–Microsoft Open Buildings.
 
-Reference: Che, Y. et al. (2024), *3D-GloBFP: the first global three-dimensional building
-footprint dataset*, Earth Syst. Sci. Data 16:5357–5374, doi:10.5194/essd-16-5357-2024
-(Zenodo 10.5281/zenodo.11319913).
+Reference: Che et al. (2024), https://doi.org/10.5194/essd-16-5357-2024
 
 ```jldoctest
 julia> using NumericalEarth
@@ -83,19 +80,18 @@ DataWrangling.dataset_variable_name(data::GlobalBuildingFootprints3DMetadatum) =
 
 DataWrangling.default_download_directory(::GlobalBuildingFootprints3D) = download_GloBFP3D_cache
 
-# The native hull is global; the shared regrid restricts the read to the metadatum's BoundingBox.
 DataWrangling.longitude_interfaces(::GlobalBuildingFootprints3D) = (-180, 180)
 DataWrangling.latitude_interfaces(::GlobalBuildingFootprints3D)  = (-90, 90)
 
 globfp3d_native_resolution(dataset::GlobalBuildingFootprints3D) = dataset.resolution
 
-# Degree step of a `resolution`-meter arc, used in BOTH longitude and latitude so the raster stays
-# a sub-window of the global lattice the shared `Field(::Metadatum)` read path assumes; a
-# latitude-dependent Δλ would misalign that read. Cells are ~`resolution` m N–S, less E–W.
+# The same degree step in longitude and latitude, so the raster is a sub-window of the global
+# lattice `Field(::Metadatum)` assumes; a latitude-dependent Δλ would misalign that read. Cells
+# are therefore ~`resolution` m N–S and shorter E–W.
 globfp3d_native_cell_size(dataset::GlobalBuildingFootprints3D) =
     rad2deg(globfp3d_native_resolution(dataset) / Oceananigans.defaults.planet_radius)
 
-# Nominal global native size in EPSG:4326 (only the windowed portion is materialized).
+# Nominal global size; only the windowed portion is ever materialized.
 function Base.size(dataset::GlobalBuildingFootprints3D, variable)
     Δ = globfp3d_native_cell_size(dataset)
     Nx = round(Int, 360 / Δ)
@@ -143,7 +139,6 @@ end
 
 DataWrangling.is_three_dimensional(::GlobalBuildingFootprints3DMetadatum) = false
 
-# The regional NetCDF we materialize stores coordinates as "lon"/"lat".
 DataWrangling.longitude_name(::GlobalBuildingFootprints3DMetadatum) = "lon"
 DataWrangling.latitude_name(::GlobalBuildingFootprints3DMetadatum)  = "lat"
 
@@ -157,8 +152,8 @@ Oceananigans.Fields.location(::GlobalBuildingFootprints3DMetadatum) = (Center, C
 #####
 
 # Target cell each fine coordinate falls in, resolved once per fine row/column rather than per
-# cell. `searchsortedlast` returns 0 or `N+1` outside the target hull, filtered by the bounds
-# check in the loop below.
+# cell. Coordinates outside the target hull come back as 0 or `Nx+1`, dropped by the bounds check
+# in the loop below.
 target_index_map(faces, coordinates) = Int[searchsortedlast(faces, c) for c in coordinates]
 
 """
@@ -168,8 +163,7 @@ Reduce the fine building-height raster `height` (m), on the regular grid of cell
 `longitudes`/`latitudes` (degrees), onto `target_grid`. Returns the arrays that
 [`building_morphometry`](@ref) wraps in `Field`s; empty target cells are `0`.
 
-Each fine cell is placed by the target cell faces, so a latitude/longitude-stretched
-`target_grid` works too, with the latitude-varying cell size carried through `dx`/`dy` in `λf`.
+Fine cells are binned by the target cell faces, so a stretched `target_grid` works too.
 """
 function reduce_morphometry(height, longitudes, latitudes, target_grid::LatitudeLongitudeGrid)
     Nx = size(target_grid, 1)
@@ -215,7 +209,7 @@ function reduce_morphometry(height, longitudes, latitudes, target_grid::Latitude
     gross_building_height   = zeros(Float64, Nx, Ny)
     frontal_area_index      = zeros(Float64, Nx, Ny)
 
-    # Fine-cell sizes on the target grid's sphere, as Oceananigans measures them.
+    # Fine-cell side lengths in meters, at each target row's latitude.
     R = target_grid.radius
     for J in 1:Ny
         φc = φcenters[J]
@@ -277,19 +271,18 @@ function building_morphometry(target_grid::LatitudeLongitudeGrid; dataset = Glob
 end
 
 #####
-##### Tile discovery — 3D-GloBFP ships one `.zip` per grid tile, named
-##### `gridID_lon1_lat1_lon2_lat2_region.zip` (SW/NE corners), across ten figshare parts.
+##### Tile discovery — 3D-GloBFP ships one `.zip` per grid tile across ten figshare parts.
 #####
 
-# figshare article ids of the ten dataset parts (see the Zenodo record's data_links.txt).
+# figshare article ids of the ten parts, from the Zenodo record's data_links.txt.
 const GLOBFP3D_FIGSHARE_ARTICLE_IDS = (28879733, 28881749, 28882700, 28889813, 28890593,
                                        28891631, 28903454, 28903853, 28904453, 28906499)
 
 """
     globfp3d_parse_tile_bounds(name)
 
-Parse a 3D-GloBFP tile filename `gridID_lon1_lat1_lon2_lat2_…` into
-`(; gid, west, south, east, north)`, or `nothing` if it does not match.
+Parse a 3D-GloBFP tile filename `gridID_lon1_lat1_lon2_lat2_…`, whose coordinates are the SW and
+NE corners, into `(; gid, west, south, east, north)`. Returns `nothing` if it does not match.
 """
 function globfp3d_parse_tile_bounds(name)
     m = match(r"^(\d+)_(-?\d+\.?\d*)_(-?\d+\.?\d*)_(-?\d+\.?\d*)_(-?\d+\.?\d*)_", name)
@@ -311,7 +304,7 @@ function Downloads.download(metadatum::GlobalBuildingFootprints3DMetadatum)
     return nc_path
 end
 
-# Implemented in ext/NumericalEarthArchGDALExt/globfp3d.jl; this fallback fires when it is not active.
+# Implemented in ext/NumericalEarthArchGDALExt/globfp3d.jl.
 globfp3d_rasterize_to_netcdf(metadatum, nc_path) =
     error("Reading the 3D-GloBFP footprint shapefiles requires the ArchGDAL package " *
           "(for the OGR vector read + rasterization). Load it with `using ArchGDAL`.")

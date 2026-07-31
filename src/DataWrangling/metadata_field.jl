@@ -86,12 +86,12 @@ end
 """
     native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
 
-Regular lat/lon raster of longitude/latitude cell steps `Δλ`/`Δφ` (degrees) covering `region`,
-snapped to the global lattice anchored at `(-180, -90)` and padded by `pad` cells on each side.
-Returns `(; west, south, Δλ, Δφ, Nx, Ny)`.
+Regular lat/lon raster of cell steps `Δλ`/`Δφ` (degrees) covering `region`, snapped to the global
+lattice anchored at `(-180, -90)` and padded by `pad` cells on each side. Returns
+`(; west, south, Δλ, Δφ, Nx, Ny)`.
 
-Datasets distributed as vector or tiled files use this to lay out the raster they burn onto,
-so the result is a sub-window of the global lattice the `Field(::Metadatum)` read path assumes.
+Datasets distributed as vector or tiled files lay out the raster they burn onto with this, so the
+result is a sub-window of the global lattice `Field(::Metadatum)` assumes.
 """
 function native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
     west, east   = region.longitude

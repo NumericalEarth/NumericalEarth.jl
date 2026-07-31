@@ -85,8 +85,7 @@ end
     @test g.west ≤ -74.02 && g.west + g.Nx * g.Δλ ≥ -73.93
     @test g.south ≤ 40.70 && g.south + g.Ny * g.Δφ ≥ 40.82
     @test g.Δλ ≈ Δ && g.Δφ ≈ Δ
-    # Uniform in degrees, so the raster is a sub-window of the global lattice the shared
-    # `Field(::Metadatum)` read path assumes (a latitude-dependent Δλ would misalign it).
+    # Uniform in degrees, so the raster stays a sub-window of the global lattice.
     @test g.Δλ == g.Δφ
 end
 

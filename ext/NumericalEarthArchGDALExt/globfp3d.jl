@@ -7,7 +7,7 @@
 ##### Requires GDAL_jll with the OGR shapefile driver.
 #####
 
-# Tile catalog for the ten figshare parts, cached as a TSV so the API calls happen once per machine.
+# Cached as a TSV so the figshare API calls happen once per machine.
 function globfp3d_tile_catalog(cache_dir)
     catalog_path = joinpath(cache_dir, "tile_catalog.tsv")
     if isfile(catalog_path)
@@ -18,8 +18,8 @@ function globfp3d_tile_catalog(cache_dir)
 
     mkpath(cache_dir)
     entries = NamedTuple[]
-    # figshare file objects are flat JSON (no nested braces), so match each object and read its
-    # `name`/`download_url` independently; a link-only file (null `download_url`) is skipped.
+    # figshare file objects are flat JSON (no nested braces), so each object can be matched whole;
+    # a link-only file, with a null `download_url`, is skipped.
     object_regex = r"\{[^{}]*\}"
     name_regex   = r"\"name\"\s*:\s*\"([^\"]+)\""
     url_regex    = r"\"download_url\"\s*:\s*\"([^\"]+)\""
@@ -50,8 +50,8 @@ function globfp3d_tile_catalog(cache_dir)
     return entries
 end
 
-# Returns `nothing`, so the caller rebuilds, if any line is not the expected six tab-separated
-# fields with parseable coordinates — a truncated write, or a legacy format.
+# Returns `nothing`, so the caller rebuilds, if a line is not six tab-separated fields with
+# parseable coordinates — a truncated write, or a stale format.
 function read_tile_catalog(catalog_path)
     entries = NamedTuple[]
     for line in eachline(catalog_path)
@@ -67,8 +67,8 @@ function read_tile_catalog(catalog_path)
     return isempty(entries) ? nothing : entries
 end
 
-# Download a tile archive (idempotent, staged rename), returning the `/vsizip/` path to the
-# shapefile inside it.
+# Returns the `/vsizip/` path to the shapefile inside the tile archive, downloading it first if
+# it is not already cached.
 function globfp3d_download_tile(entry, cache_dir)
     zip_path = joinpath(cache_dir, entry.name)
     if !isfile(zip_path)
@@ -95,9 +95,8 @@ function globfp3d_vsi_shapefile(zip_path)
     return string(vsi_root, "/", entries[index])
 end
 
-# Burn one tile's footprint `Height`s onto the region raster, over just the window its layer extent
-# covers, which bounds every footprint including ones overhanging the nominal tile edge. Disjoint
-# tiles combine by max.
+# Burn one tile's footprint `Height`s onto the region raster. The window comes from the layer
+# extent rather than the tile's nominal bounds, because footprints can overhang the tile edge.
 function globfp3d_rasterize_tile!(height, vsi_path, grid)
     ArchGDAL.read(vsi_path) do dataset
         layer = ArchGDAL.getlayer(dataset, 0)

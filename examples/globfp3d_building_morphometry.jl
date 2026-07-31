@@ -10,7 +10,7 @@
 # (Kanda et al. 2013) is designed for, in place of the assumed ratios `σH = 0.4 H`, `Hmax = 2.5 H`,
 # `λf ≈ λp` that a mean-height-only product forces. Manhattan makes the point: supertalls in the
 # Financial District and Midtown beside low-rise blocks, with Central Park and the rivers as voids.
-# The heights are ML-estimated (RMSE 1.9–14.6 m) and biased low.
+# The heights are machine-learning estimates (RMSE 1.9–14.6 m) and biased low.
 
 using NumericalEarth
 using Oceananigans
@@ -43,8 +43,8 @@ m = building_morphometry(target_grid; dataset, region)
 
 robust_range(field) = (v = filter(>(0), interior(field, :, :, 1)); isempty(v) ? (0, 1) : (0, quantile(v, 0.98)))
 
-# The 3 m raster shares a color range with the mean and maximum height panels, so the 100 m
-# aggregation's smoothing of the towers is directly visible.
+# Sharing one color range between the 3 m raster and the height panels shows how much the 100 m
+# aggregation smooths the towers.
 height_range = (0, max(robust_range(m.mean_building_height)[2], robust_range(m.maximum_building_height)[2]))
 
 function panel!(layout, i, j, field, title, units; colormap = :viridis, colorrange = robust_range(field))
@@ -57,7 +57,7 @@ end
 fig2 = Figure(size = (2050, 950))
 Label(fig2[0, 1:2], "3D-GloBFP building morphometry — Manhattan (3 m raster → 100 m)", fontsize = 20)
 
-## Left: the fine 3 m building-height raster, spanning both rows.
+## Left: the fine 3 m building-height raster.
 left = fig2[1, 1] = GridLayout()
 ax_bh = Axis(left[1, 1]; title = "building height (rasterized, 3 m)",
              xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())

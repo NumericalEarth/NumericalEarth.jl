@@ -16,7 +16,7 @@ using NumericalEarth.DataWrangling: BoundingBox, Metadatum
     heights = Array(interior(building_height, :, :, 1))
     @test any(>(0), heights)      # footprints were burned into the raster
     @test all(≥(0), heights)
-    @test maximum(heights) < 400  # the City's tallest towers are under 300 m
+    @test maximum(heights) < 400  # comfortably above the City's tallest tower, ~278 m
 
     target_grid = LatitudeLongitudeGrid(CPU(), Float64; size = (4, 4),
                                         longitude = region.longitude, latitude = region.latitude,
