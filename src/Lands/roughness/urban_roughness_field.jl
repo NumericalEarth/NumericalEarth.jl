@@ -1,51 +1,51 @@
 #####
 ##### Grid builder for the urban closures: sample each cell's inputs from the `properties`
 ##### NamedTuple (scalar / array / Field), assemble the `cell`, and evaluate the closure to
-##### the aerodynamic parameters (z0, d0). Shares the `compute_aerodynamic_roughness!` /
+##### the aerodynamic parameters (ℓᵐ, d). Shares the `compute_aerodynamic_roughness!` /
 ##### `aerodynamic_parameters(closure, cell)` contract with the canopy roughness closures.
 #####
 
-@kernel function _compute_urban_aerodynamic_roughness!(z0m, d0, closure, plan_area_fraction, building_height, grid)
+@kernel function _compute_urban_aerodynamic_roughness!(ℓᵐ, d, closure, plan_area_fraction, building_height, grid)
     i, j = @index(Global, NTuple)
     FT = eltype(grid)
-    λp = convert(FT, property_value(plan_area_fraction, i, j))
+    λᵖ = convert(FT, property_value(plan_area_fraction, i, j))
     h  = convert(FT, property_value(building_height, i, j))
     φ  = φnode(i, j, 1, grid, Center(), Center(), Center())
-    cell = (plan_area_fraction = λp, building_height = h, latitude = φ)
-    z0ij, d0ij = aerodynamic_parameters(closure, cell)
-    @inbounds z0m[i, j, 1] = z0ij
-    @inbounds d0[i, j, 1] = d0ij
+    cell = (plan_area_fraction = λᵖ, building_height = h, latitude = φ)
+    ℓᵐᵢⱼ, dᵢⱼ = aerodynamic_parameters(closure, cell)
+    @inbounds ℓᵐ[i, j, 1] = ℓᵐᵢⱼ
+    @inbounds d[i, j, 1] = dᵢⱼ
 end
 
 """
 $(TYPEDSIGNATURES)
 
-Fill `z0m` and `d0` (meters) in place by applying an urban `closure`
-([`AbstractUrbanRoughness`](@ref)) over every cell of `grid`. `properties` is a NamedTuple
-of the closure's per-cell inputs — scalars, arrays or `Field`s — read with `property_value`;
-the urban closures expect `plan_area_fraction` and `building_height`. Shared entry point with
-the canopy roughness closures.
+Fill the momentum roughness length `ℓᵐ` and zero-plane displacement `d` (meters) in place
+by applying an urban `closure` ([`AbstractUrbanRoughness`](@ref)) over every cell of `grid`.
+`properties` is a NamedTuple of the closure's per-cell inputs — scalars, arrays or `Field`s —
+read with `property_value`; the urban closures expect `plan_area_fraction` and
+`building_height`. Shared entry point with the canopy roughness closures.
 """
-function compute_aerodynamic_roughness!(z0m, d0, closure::AbstractUrbanRoughness, properties, grid)
+function compute_aerodynamic_roughness!(ℓᵐ, d, closure::AbstractUrbanRoughness, properties, grid)
     arch = architecture(grid)
     launch!(arch, grid, :xy, _compute_urban_aerodynamic_roughness!,
-            z0m, d0, closure, properties.plan_area_fraction, properties.building_height, grid)
-    return z0m, d0
+            ℓᵐ, d, closure, properties.plan_area_fraction, properties.building_height, grid)
+    return ℓᵐ, d
 end
 
 """
 $(TYPEDSIGNATURES)
 
-Momentum roughness length `z0m` and zero-plane displacement `d0` (as `Field`s on the grid
-of `H`) for the urban tile, from a mean building-height field `H` and a built-up plan-area
-fraction field `λp`. Convenience wrapper around [`compute_aerodynamic_roughness!`](@ref);
+Momentum roughness length `ℓᵐ` and zero-plane displacement `d` (as `Field`s on the grid
+of `h`) for the urban tile, from a mean building-height field `h` and a built-up plan-area
+index field `λᵖ`. Convenience wrapper around [`compute_aerodynamic_roughness!`](@ref);
 pass a `closure` (default [`KandaRoughness`](@ref)) to select the morphometry. Where
-`λp → 0` the result reduces to a bare-soil roughness.
+`λᵖ → 0` the result reduces to a bare-soil roughness.
 """
-function urban_roughness(H, λp; closure = KandaRoughness(eltype(H.grid)))
-    grid = H.grid
-    z0m = Field{Center, Center, Nothing}(grid)
-    d0  = Field{Center, Center, Nothing}(grid)
-    compute_aerodynamic_roughness!(z0m, d0, closure, (; plan_area_fraction = λp, building_height = H), grid)
-    return z0m, d0
+function urban_roughness(h, λᵖ; closure = KandaRoughness(eltype(h.grid)))
+    grid = h.grid
+    ℓᵐ = Field{Center, Center, Nothing}(grid)
+    d  = Field{Center, Center, Nothing}(grid)
+    compute_aerodynamic_roughness!(ℓᵐ, d, closure, (; plan_area_fraction = λᵖ, building_height = h), grid)
+    return ℓᵐ, d
 end

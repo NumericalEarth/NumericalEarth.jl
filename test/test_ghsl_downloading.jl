@@ -25,32 +25,32 @@ const ghsl_region = BoundingBox(longitude = (-0.11, -0.07), latitude = (51.505, 
         @test isfile(metadata_path(metadatum))
     end
 
-    λp = Field(fraction, CPU())
-    H  = Field(height, λp.grid)
+    λᵖ = Field(fraction, CPU())
+    h  = Field(height, λᵖ.grid)
 
-    λpi = Array(interior(λp, :, :, 1))
-    Hi  = Array(interior(H, :, :, 1))
+    built_fraction = Array(interior(λᵖ, :, :, 1))
+    building_height = Array(interior(h, :, :, 1))
 
-    built = filter(!isnan, vec(λpi))
+    built = filter(!isnan, vec(built_fraction))
     @test !isempty(built)
     @test all(x -> 0 ≤ x ≤ 1, built)
     @test length(unique(built)) > 1   # a real window, not a constant fill
     @test maximum(built) > 0.2        # the City of London is densely built
 
-    heights = filter(!isnan, vec(Hi))
+    heights = filter(!isnan, vec(building_height))
     @test !isempty(heights)
     @test all(x -> 0 ≤ x ≤ 500, heights)
     @test maximum(heights) > 10
 
     # The urban closure consumes the two fields as in the example, returning physical
-    # (z₀ₘ, d₀) wherever both inputs are valid.
-    closure = KandaRoughness(eltype(λp.grid))
-    z0m, d0 = urban_roughness(H, λp; closure)
-    z0mi = Array(interior(z0m, :, :, 1))
-    d0i  = Array(interior(d0, :, :, 1))
+    # (ℓᵐ, d) wherever both inputs are valid.
+    closure = KandaRoughness(eltype(λᵖ.grid))
+    ℓᵐ, d = urban_roughness(h, λᵖ; closure)
+    roughness = Array(interior(ℓᵐ, :, :, 1))
+    displacement = Array(interior(d, :, :, 1))
 
-    valid = @. !isnan(λpi) & !isnan(Hi)
-    @test all(z0mi[valid] .≥ closure.macdonald.bare_soil_roughness)
-    @test all(0 .≤ d0i[valid] .< Hi[valid])   # displacement stays below roof level
-    @test maximum(z0mi[valid]) > 0.1          # the built core is aerodynamically rough
+    valid = @. !isnan(built_fraction) & !isnan(building_height)
+    @test all(roughness[valid] .≥ closure.macdonald.bare_soil_roughness)
+    @test all(0 .≤ displacement[valid] .< building_height[valid])   # displacement stays below roof level
+    @test maximum(roughness[valid]) > 0.1                           # the built core is aerodynamically rough
 end

@@ -132,6 +132,7 @@ export
     ORCAOne, ORCAQuarter, ORCATwelfth,
     ORCAGrid,
     OpenLandMapSoilDB,
+    GHSBuiltH, GHSBuiltS,
     first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,
     DatasetRestoring,

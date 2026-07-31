@@ -62,7 +62,7 @@ struct GHSBuiltH <: AbstractGHSLDataset end
     GHSBuiltS(; resolution = 100, epoch = 2020)
 
 GHS-BUILT-S R2023A built-up surface (World Mollweide ESRI:54009). Provides
-`:built_up_fraction` — the plan-area fraction `λp ∈ [0, 1]` of each cell covered by
+`:built_up_fraction` — the plan-area index `λᵖ ∈ [0, 1]` of each cell covered by
 buildings, obtained from the built-up surface (m² per cell) by dividing by the
 native cell area and clamping to `[0, 1]`. A fraction of `0` over non-built land is
 a valid value, not missing.
@@ -363,7 +363,7 @@ true
     built_surface_to_fraction(surface, cell_area)
 
 Convert a GHS-BUILT-S built-up `surface` (m² of buildings within a native cell) to
-the plan-area fraction `λp = surface / cell_area`, clamped to `[0, 1]`. `cell_area` is the
+the plan-area index `λᵖ = surface / cell_area`, clamped to `[0, 1]`. `cell_area` is the
 native cell area in m² (`100 × 100` at 100 m, `10 × 10` at 10 m). GHSL declares its no-data
 as a positive sentinel (`65535` at 100 m, `255` at 10 m) that the warp excludes from the
 bilinear blend and writes as `NaN`, so a non-finite `surface` (or a spurious negative) maps
