@@ -1,8 +1,10 @@
 module NumericalEarthTerrariumExt
 
 using KernelAbstractions
+using Oceananigans: Field
 
 import Terrarium
+import Terrarium.RingGrids
 import NumericalEarth
 import Oceananigans
 
