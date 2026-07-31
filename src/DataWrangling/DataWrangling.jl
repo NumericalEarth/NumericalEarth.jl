@@ -369,6 +369,7 @@ include("IBCAO/IBCAO.jl")
 include("CopernicusDEM/CopernicusDEM.jl")
 include("ASTERGED/ASTERGED.jl")
 include("GloBFP3D/GloBFP3D.jl")
+include("GHSL/GHSL.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
 
 using .ETOPO
@@ -389,6 +390,7 @@ using .IBCAO
 using .CopernicusDEM
 using .ASTERGED
 using .GloBFP3D
+using .GHSL
 using .CopernicusLandAlbedo
 
 function dataset_modules()
