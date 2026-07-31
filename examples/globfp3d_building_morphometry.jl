@@ -27,12 +27,15 @@ building_height = Field(Metadatum(:building_height; dataset, region), CPU())
 # ## The fine 3 m building-height raster
 #
 # Each footprint fills the cells it covers, so Central Park and the rivers read as zeros.
+# The raster is ~3000 cells across, and a heatmap minifies by nearest-neighbor sampling —
+# below one output pixel per cell it drops the thin gaps between buildings and fuses them
+# into streaks. Saving at ≥ 1 pixel per cell keeps every building and street.
 fig1 = Figure(size = (760, 900))
 ax1 = Axis(fig1[1, 1]; title = "3D-GloBFP building height (rasterized, 3 m) — Manhattan",
            xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
 hm1 = heatmap!(ax1, building_height; colormap = :viridis, colorrange = (0, 120))
 Colorbar(fig1[1, 2], hm1; label = "building height (m)")
-save("globfp3d_building_height.png", fig1)
+save("globfp3d_building_height.png", fig1; px_per_unit = 6)
 fig1
 
 # ## Morphometry reduced onto a ~100 m grid
@@ -57,11 +60,17 @@ end
 fig2 = Figure(size = (2050, 950))
 Label(fig2[0, 1:2], "3D-GloBFP building morphometry — Manhattan (3 m raster → 100 m)", fontsize = 20)
 
-## Left: the fine 3 m building-height raster.
+## Left: the fine raster, max-pooled to ~9 m by `building_morphometry` itself so this small
+## panel stays free of the nearest-neighbor minification streaks.
+overview_grid = LatitudeLongitudeGrid(CPU(), Float64; size = size(building_height)[1:2] .÷ 3,
+                                      longitude = region.longitude, latitude = region.latitude,
+                                      topology = (Bounded, Bounded, Flat))
+building_height_overview = building_morphometry(overview_grid; dataset, region).maximum_building_height
+
 left = fig2[1, 1] = GridLayout()
-ax_bh = Axis(left[1, 1]; title = "building height (rasterized, 3 m)",
+ax_bh = Axis(left[1, 1]; title = "building height (9 m max of the 3 m raster)",
              xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-hm_bh = heatmap!(ax_bh, building_height; colormap = :viridis, colorrange = height_range)
+hm_bh = heatmap!(ax_bh, building_height_overview; colormap = :viridis, colorrange = height_range)
 Colorbar(left[1, 2], hm_bh; label = "m")
 
 ## Right: the six morphometry fields at 100 m; H and Hmax share the raster's color range.
@@ -115,3 +124,52 @@ axislegend(ax4; position = :lt)
 ylims!(ax4, 0, quantile(λf[keep], 0.99))
 save("globfp3d_frontal_vs_plan.png", fig4)
 fig4
+
+# ## The roughness closure fed the measured morphometry
+#
+# [`urban_roughness`](@ref) evaluates the Macdonald–Kanda closure per cell. Fed only
+# `(H, λp)` — all a mean-height product supplies — it regresses `σH`, `Hmax` and `λf` from
+# them; fed all five fields, the measured height heterogeneity replaces the regressions and
+# only the drag-partition physics and the Kanda height-spread corrections remain.
+regressed_roughness_length, regressed_displacement_height =
+    urban_roughness(m.mean_building_height, m.built_up_fraction)
+
+roughness_length, displacement_height =
+    urban_roughness(m.mean_building_height, m.built_up_fraction, m.building_height_std,
+                    m.maximum_building_height, m.frontal_area_index)
+
+roughness_ratio = compute!(Field(roughness_length / regressed_roughness_length))
+displacement_shift = compute!(Field(displacement_height - regressed_displacement_height))
+
+fig5 = Figure(size = (1900, 1150))
+Label(fig5[0, 1:6], "Aerodynamic roughness of Manhattan: measured σH, Hmax, λf vs the regressions", fontsize = 20)
+panel!(fig5, 1, 1, roughness_length,               "ℓᵐ, measured morphometry",  "m")
+panel!(fig5, 1, 2, regressed_roughness_length,     "ℓᵐ, regressed from (H, λp)", "m";
+       colorrange = robust_range(roughness_length))
+panel!(fig5, 2, 1, displacement_height,            "d, measured morphometry",   "m")
+panel!(fig5, 2, 2, regressed_displacement_height,  "d, regressed from (H, λp)", "m";
+       colorrange = robust_range(displacement_height))
+
+## The comparison panels: a log₂-scaled ratio (centered on 1) and the displacement shift.
+ax5 = Axis(fig5[1, 5]; title = "ℓᵐ ratio (measured / regressed)",
+           xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
+hm5 = heatmap!(ax5, roughness_ratio; colormap = :balance, colorscale = log2, colorrange = (1/8, 8))
+Colorbar(fig5[1, 6], hm5; label = "–")
+panel!(fig5, 2, 3, displacement_shift,             "d shift (measured − regressed)", "m";
+       colormap = :balance, colorrange = (-100, 100))
+save("globfp3d_urban_roughness.png", fig5)
+fig5
+
+# Over the built cells, the medians quantify what the measured inputs change.
+built = interior(m.built_up_fraction, :, :, 1) .> 0.01
+for (field, name, units) in ((roughness_ratio, "ℓᵐ measured/regressed", ""),
+                             (displacement_shift, "d measured − regressed", " m"))
+    vals = filter(isfinite, interior(field, :, :, 1)[built])
+    @info "$name: median = $(round(median(vals), digits = 2))$units, " *
+          "IQR = $(round.(quantile(vals, (0.25, 0.75)), digits = 2))"
+end
+
+# The regressions were fitted to 1 km Tokyo/Nagoya districts, so on a 100 m grid they hand
+# every cell with 30 m mean height a ~160 m tallest building — the median regressed `ℓᵐ` runs
+# ~4× the measured-input value and `d` ~2×. The measured statistics are per-cell facts, valid
+# at any resolution; only where supertalls actually stand do `σH` and `Hmax` stay this large.

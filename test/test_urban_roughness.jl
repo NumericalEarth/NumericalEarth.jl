@@ -260,6 +260,79 @@ end
     @test all(≈(0.05), interior(ℓᵐ))
 end
 
+@testset "Measured morphometry bypasses the input regressions" begin
+    closure = MorphometricRoughness()
+    λᵖ, h = 0.3, 15.0
+    distribution = closure.height_distribution
+    σʰ = height_spread(distribution, h)
+    hᵐᵃˣ = maximum_element_height(distribution, h, σʰ)
+    λᶠ = frontal_area_index(closure.frontal_area, λᵖ, h)
+
+    # Fed its own regression values, the measured path reproduces the two-argument closure.
+    @test aerodynamic_parameters(closure, λᵖ, h, σʰ, hᵐᵃˣ, λᶠ) == aerodynamic_parameters(closure, λᵖ, h)
+    @test closure(λᵖ, h, σʰ, hᵐᵃˣ, λᶠ) == closure(λᵖ, h)
+
+    # More frontal area → more form drag → rougher; a taller tallest element → deeper d.
+    @test aerodynamic_parameters(closure, λᵖ, h, σʰ, hᵐᵃˣ, 2λᶠ)[1] >
+          aerodynamic_parameters(closure, λᵖ, h, σʰ, hᵐᵃˣ, λᶠ)[1]
+    @test aerodynamic_parameters(closure, λᵖ, h, σʰ, 2hᵐᵃˣ, λᶠ)[2] >
+          aerodynamic_parameters(closure, λᵖ, h, σʰ, hᵐᵃˣ, λᶠ)[2]
+
+    # UniformHeight ignores the height statistics: pure obstacle array with measured λᶠ.
+    uniform = uniform_height_closure()
+    @test aerodynamic_parameters(uniform, λᵖ, h, 9.0, 90.0, λᶠ) ==
+          aerodynamic_parameters(uniform, λᵖ, h, 0.0, h, λᶠ)
+
+    # A low-biased maximum height is floored at the mean, not trusted below it.
+    @test aerodynamic_parameters(closure, λᵖ, h, σʰ, h / 2, λᶠ) ==
+          aerodynamic_parameters(closure, λᵖ, h, σʰ, h, λᶠ)
+
+    # Bare-soil floor and NaN gaps behave as in the two-argument form.
+    ℓᵐ, d = aerodynamic_parameters(closure, 0.0, h, σʰ, hᵐᵃˣ, λᶠ)
+    @test ℓᵐ ≈ closure.bare_soil_roughness && d == 0
+    for arguments in ((NaN, h, σʰ, hᵐᵃˣ, λᶠ), (λᵖ, h, NaN, hᵐᵃˣ, λᶠ),
+                      (λᵖ, h, σʰ, NaN, λᶠ), (λᵖ, h, σʰ, hᵐᵃˣ, NaN))
+        ℓᵐ, d = aerodynamic_parameters(closure, arguments...)
+        @test isnan(ℓᵐ) && isnan(d)
+    end
+
+    # Union-free with a closure FT ≠ input FT (kernel/GPU safety).
+    for FT in (Float32, Float64)
+        ℓᵐ, d = @inferred aerodynamic_parameters(MorphometricRoughness(FT), λᵖ, h, σʰ, hᵐᵃˣ, λᶠ)
+        @test typeof(ℓᵐ) == typeof(d)
+        @test isfinite(ℓᵐ) && isfinite(d)
+    end
+end
+
+@testset "Measured-morphometry grid builder matches the scalar closure" begin
+    grid = LatitudeLongitudeGrid(CPU(), Float64; size = (4, 4),
+                                 longitude = (-74.0, -73.9), latitude = (40.7, 40.8),
+                                 topology = (Bounded, Bounded, Flat))
+    λᵖ   = Field{Center, Center, Nothing}(grid); set!(λᵖ, 0.4)
+    h    = Field{Center, Center, Nothing}(grid); set!(h, 30.0)
+    σʰ   = Field{Center, Center, Nothing}(grid); set!(σʰ, 25.0)
+    hᵐᵃˣ = Field{Center, Center, Nothing}(grid); set!(hᵐᵃˣ, 250.0)
+    λᶠ   = Field{Center, Center, Nothing}(grid); set!(λᶠ, 0.9)
+
+    ℓᵐ, d = urban_roughness(h, λᵖ, σʰ, hᵐᵃˣ, λᶠ)
+    ℓᵐref, dref = aerodynamic_parameters(MorphometricRoughness(), 0.4, 30.0, 25.0, 250.0, 0.9)
+    @test all(≈(ℓᵐref), interior(ℓᵐ))
+    @test all(≈(dref), interior(d))
+
+    # The measured statistics change the answer relative to the regression-fed builder.
+    ℓᵐreg, dreg = urban_roughness(h, λᵖ)
+    @test !(interior(ℓᵐ) ≈ interior(ℓᵐreg))
+    @test !(interior(d) ≈ interior(dreg))
+
+    # Scalar properties sample through property_value like Fields do.
+    compute_aerodynamic_roughness!(ℓᵐ, d, MorphometricRoughness(),
+                                   (; plan_area_fraction = λᵖ, building_height = 30.0,
+                                      height_deviation = 25.0, maximum_height = 250.0,
+                                      frontal_area_index = 0.9), grid)
+    @test all(≈(ℓᵐref), interior(ℓᵐ))
+    @test all(≈(dref), interior(d))
+end
+
 @testset "Cell contract and mixed-type property sampling" begin
     closure = MorphometricRoughness()
     # The cell contract reads only the closure's own keys and matches the scalar form.

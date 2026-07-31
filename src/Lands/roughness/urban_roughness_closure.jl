@@ -270,6 +270,24 @@ plan-area index `λᵖ` and mean height `h`.
     return ℓᵐ, d
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Apply the height `distribution` to the uniform-height parameters `(ℓᵐ, d)` of a cell whose
+height spread `σʰ` and tallest element `hᵐᵃˣ` are measured rather than regressed from `h`.
+"""
+@inline apply_height_distribution(::UniformHeight, ℓᵐ, d, λᵖ, h, σʰ, hᵐᵃˣ) = ℓᵐ, d
+
+@inline function apply_height_distribution(v::VariableHeight, ℓᵐ, d, λᵖ, h, σʰ, hᵐᵃˣ)
+    a0, b0, c0 = v.displacement_constants
+    a1, b1, c1 = v.roughness_constants
+
+    ℓᵐ = height_spread_roughness(ℓᵐ, λᵖ, h, σʰ, a1, b1, c1)
+    d = min(maximum_height_displacement(λᵖ, h, σʰ, hᵐᵃˣ, a0, b0, c0), hᵐᵃˣ)
+
+    return ℓᵐ, d
+end
+
 #####
 ##### Closures
 #####
@@ -414,3 +432,39 @@ and `building_height` keys.
 """
 @inline aerodynamic_parameters(c::AbstractUrbanRoughness, cell) =
     aerodynamic_parameters(c, cell.plan_area_fraction, cell.building_height)
+
+#####
+##### Measured-morphometry interface: (λᵖ, h, σʰ, hᵐᵃˣ, λᶠ) → (ℓᵐ, d)
+#####
+
+"""
+$(TYPEDSIGNATURES)
+
+Momentum roughness length `ℓᵐ` and zero-plane displacement `d` (meters) from **measured**
+per-cell morphometry: the plan-area index `λᵖ`, mean building height `h`, height standard
+deviation `σʰ`, tallest element `hᵐᵃˣ` and frontal-area index `λᶠ`, as a footprint-level
+dataset supplies them. The `frontal_area` estimator and the `σʰ`/`hᵐᵃˣ` regressions of
+[`VariableHeight`](@ref) drop out; the drag partition and the height-spread corrections
+themselves remain. `hᵐᵃˣ` is floored at `h`, and the displacement parameter
+`X = (σʰ + h)/hᵐᵃˣ` keeps its `[0, 1]` clamp, so a low-biased maximum height cannot invert
+the correction. Under [`UniformHeight`](@ref) `σʰ` and `hᵐᵃˣ` are ignored and the result
+is the obstacle-array closure with measured `λᶠ`.
+"""
+@inline function aerodynamic_parameters(c::MorphometricRoughness{FT}, λᵖ, h, σʰ, hᵐᵃˣ, λᶠ) where FT
+    valid = isfinite(λᵖ) & isfinite(h) & isfinite(σʰ) & isfinite(hᵐᵃˣ) & isfinite(λᶠ) & (h >= 0)
+    λᵖ = clamp(λᵖ, zero(FT), one(FT))
+    h = max(h, zero(FT))
+    σʰ = max(σʰ, zero(FT))
+    hᵐᵃˣ = max(hᵐᵃˣ, h)
+    λᶠ = max(λᶠ, zero(FT))
+
+    dʰ = packing_displacement_ratio(λᵖ, c.array_constant, c.maximum_displacement_ratio)
+    ℓᵐ = h * drag_partition_roughness_ratio(λᶠ, dʰ, c.drag_coefficient, c.von_karman_constant, c.correction_factor)
+    d = h * dʰ
+
+    ℓᵐ, d = apply_height_distribution(c.height_distribution, ℓᵐ, d, λᵖ, h, σʰ, hᵐᵃˣ)
+
+    return finalize_aerodynamic_parameters(ℓᵐ, d, λᵖ, valid, c.bare_soil_roughness, c.minimum_built_fraction)
+end
+
+@inline (c::AbstractUrbanRoughness)(λᵖ, h, σʰ, hᵐᵃˣ, λᶠ) = aerodynamic_parameters(c, λᵖ, h, σʰ, hᵐᵃˣ, λᶠ)
