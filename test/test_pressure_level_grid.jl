@@ -177,7 +177,9 @@ for arch in test_architectures
             end
 
             # Column-mean over horizontals matches the grid-level znodes.
-            @test vec(mean(z_field, dims=(1, 2))) ≈ znodes(grid, Center())
+            # `znodes` is already on the host, so the reduction has to come back too.
+            z_column_mean = Array(interior(Field(mean(z_field, dims=(1, 2)))))
+            @test vec(z_column_mean) ≈ znodes(grid, Center())
         end
 
         @testset "znodes(::Field) on horizontally-absent locations → Vector" begin

@@ -45,11 +45,6 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
     VV⁻ = CenterField(grid); ΔVV = Field(cell_volume - VV⁻)
     VS⁻ = CenterField(grid); ΔVS = Field(S * volume  - VS⁻)
 
-    heat_flux_field   = Field(heat_rate)
-    enthalpy_field    = Field(enthalpy_rate)
-    volume_flux_field = Field(volume_rate)
-    radiative_field   = isnothing(radiative_rate) ? nothing : Field(radiative_rate)
-
     set!(VS⁻, S * volume)
     ∫S⁻ = sum(VS⁻)
 
@@ -57,15 +52,10 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
         set!(VT⁻, T * volume)
         set!(VV⁻, cell_volume)
 
-        compute!(heat_flux_field)
-        compute!(enthalpy_field)
-        compute!(volume_flux_field)
-        isnothing(radiative_field) || compute!(radiative_field)
-
-        previous_heat_flux      = @allowscalar first(heat_flux_field)
-        previous_enthalpy       = @allowscalar first(enthalpy_field)
-        previous_volume_flux    = @allowscalar first(volume_flux_field)
-        previous_radiative_rate = isnothing(radiative_field) ? zero(previous_heat_flux) : @allowscalar first(radiative_field)
+        previous_heat_flux      = @allowscalar first(Field(heat_rate))
+        previous_enthalpy       = @allowscalar first(Field(enthalpy_rate))
+        previous_volume_flux    = @allowscalar first(Field(volume_rate))
+        previous_radiative_rate = isnothing(radiative_rate) ? zero(previous_heat_flux) : @allowscalar first(Field(radiative_rate))
 
         time_step!(coupled_model, Δt)
         last_Δt = ocean.model.clock.last_Δt
@@ -95,10 +85,6 @@ end
 
 @testset "Tracer budget closure under surface fluxes" begin
     for arch in test_architectures
-            time_indices_in_memory = 4
-            radiation  = JRA55PrescribedRadiation(arch; time_indices_in_memory)
-            atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory)
-
             for z in (MutableVerticalDiscretization((-100, 0)), ) # TODO: Add a static grid
                 for fold_topology in (RightFaceFolded, RightCenterFolded)
 
@@ -109,9 +95,17 @@ end
                                             halo = (7, 7, 4),
                                             fold_topology)
 
-                bottom_height = analytical_tripolar_bottom_height(underlying_grid)
+                bottom_height = regrid_bathymetry(underlying_grid,
+                                                  Metadatum(:bottom_height, dataset=ETOPO2022());
+                                                  minimum_depth=15,
+                                                  interpolation_passes=1,
+                                                  major_basins=1)
 
                 grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map = true)
+
+                time_indices_in_memory = 4
+                radiation  = JRA55PrescribedRadiation(arch; time_indices_in_memory)
+                atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory)
 
                 # An idealized, stably stratified initial state
                 Tᵢ(λ, φ, z) = 2 + 26 * cosd(φ)^2 * exp(z / 30)
