@@ -98,6 +98,8 @@ function __init__()
     ##### Download JRA55 data
     #####
 
+    download_test_fixtures()
+
     try
         atmosphere = JRA55PrescribedAtmosphere(time_indices_in_memory=2)
         land       = JRA55PrescribedLand(time_indices_in_memory=2)

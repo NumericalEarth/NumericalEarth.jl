@@ -54,12 +54,38 @@ DataWrangling.default_inpainting(::JRA55Metadata) = nothing
 
 # The whole range of dates in the different dataset datasets
 # NOTE! rivers and icebergs have a different frequency! (typical JRA55 data is three-hourly while rivers and icebergs are daily)
-function DataWrangling.all_dates(::RepeatYearJRA55, name)
+function native_repeat_year_JRA55_dates(name)
     if name == :river_freshwater_flux || name == :iceberg_freshwater_flux
         return DateTime(1990, 1, 1) : Day(1) : DateTime(1990, 12, 31)
     else
         return DateTime(1990, 1, 1) : Hour(3) : DateTime(1990, 12, 31, 23, 59, 59)
     end
+end
+
+const repeat_year_JRA55_file_instants = Dict{String, Int}()
+
+function jra55_file_instants(path)
+    return get!(repeat_year_JRA55_file_instants, path) do
+        ds = Dataset(path)
+        instants = ds.dim["time"]
+        close(ds)
+        return instants
+    end
+end
+
+function DataWrangling.all_dates(dataset::RepeatYearJRA55, name)
+    dates = native_repeat_year_JRA55_dates(name)
+
+    directory = DataWrangling.default_download_directory(dataset)
+    filename = DataWrangling.metadata_filename(dataset, name, nothing, nothing)
+    path = joinpath(directory, filename)
+
+    isfile(path) || return dates
+
+    instants = jra55_file_instants(path)
+    instants ≥ length(dates) && return dates
+
+    return dates[1:instants]
 end
 
 DataWrangling.all_dates(::MultiYearJRA55, name) = JRA55_multiple_year_dates[name]

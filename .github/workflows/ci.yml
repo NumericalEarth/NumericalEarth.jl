@@ -33,6 +33,7 @@ env:
   DESTINE_ACCESS_TOKEN: ${{ secrets.DESTINE_ACCESS_TOKEN }}
   DATADEPS_ALWAYS_ACCEPT: true
   JULIA_PKG_SERVER_REGISTRY_PREFERENCE: 'eager'
+  NUMERICALEARTH_TEST_FIXTURES: true
 
 #####
 ##### CPU tests (GitHub-hosted runners)
