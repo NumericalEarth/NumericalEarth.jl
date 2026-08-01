@@ -130,6 +130,16 @@ Called from inside the [`EarthSystemModel`](@ref) constructor before
 materialize_earth_system_radiation!(atmosphere, radiation) = atmosphere
 
 """
+    materialize_sea_ice(sea_ice, ocean)
+
+Return a fully-materialised `sea_ice` component that has access to the ocean's grid.
+Called from inside the [`EarthSystemModel`](@ref) constructor before `ComponentInterfaces`
+is built. Default: no-op, returning `sea_ice` unchanged. Sea ice types that require
+grid-allocated diagnostic fields (e.g. `FreezingLimitedOceanTemperature`) overload this.
+"""
+materialize_sea_ice!(sea_ice, ocean) = sea_ice
+
+"""
     EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                      clock = Clock{Float64}(time=0),
                      ocean_reference_density = reference_density(ocean),
@@ -180,6 +190,7 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                           sea_ice_heat_capacity = heat_capacity(sea_ice),
                           interfaces = nothing,
                           interface_kw...) # e.g. `atmosphere_land_interface_specific_humidity`
+
     if isnothing(radiation) && atmosphere isa AbstractPrescribedComponent
         @warn """
             `EarthSystemModel` was constructed with a `PrescribedAtmosphere` but \
@@ -200,6 +211,13 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
     ocean   isa Simulation && remove_default_stop_callbacks!(ocean)
     sea_ice isa Simulation && remove_default_stop_callbacks!(sea_ice)
 
+    # Enforce a single clock time type across all components
+    radiation  = adopt_clock(radiation, clock)
+    atmosphere = adopt_clock(atmosphere, clock)
+    land       = adopt_clock(land, clock)
+    sea_ice    = adopt_clock(sea_ice, clock)
+    ocean      = adopt_clock(ocean, clock)
+
     if atmosphere isa Simulation
         if !isnothing(atmosphere.callbacks)
             pop!(atmosphere.callbacks, :stop_time_exceeded, nothing)
@@ -213,6 +231,8 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
     # coupled-model radiation. No-op by default; Breeze (or any other
     # atmosphere with an internal radiation handle) overloads this.
     atmosphere = materialize_earth_system_radiation!(atmosphere, radiation)
+
+    sea_ice = materialize_sea_ice!(sea_ice, ocean)
 
     # Contains information about flux contributions: bulk formula, prescribed fluxes, etc.
     if isnothing(interfaces) && !(isnothing(atmosphere) && isnothing(sea_ice))

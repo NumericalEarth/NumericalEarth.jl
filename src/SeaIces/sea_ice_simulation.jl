@@ -25,6 +25,8 @@ end
 
 """
     sea_ice_simulation(grid, ocean=nothing;
+                       clock = Clock(grid),
+                       stop_time = default_stop_time(grid, clock),
                        Δt = 5minutes,
                        ice_salinity = 4, # psu
                        advection = nothing,
@@ -58,6 +60,11 @@ Arguments
 
 Keyword Arguments
 =================
+- `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`. 
+  Pass a `DateTime`-based clock to step the simulation in calendar time (e.g. when coupling).
+- `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or 
+  `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since 
+  Reactant does not support `stop_time`.
 - `Δt`: time step for the sea ice simulation
 - `ice_salinity`: salinity of the sea ice (psu)
 - `advection`: optional advection scheme for the sea ice model; if `nothing` (default), no advection
@@ -82,6 +89,8 @@ Keyword Arguments
                          specified conductivity and prescribed temperature)
 """
 function sea_ice_simulation(grid, ocean=nothing;
+                            clock = Clock(grid),
+                            stop_time = default_stop_time(grid, clock),
                             Δt = 5minutes,
                             ice_salinity = 4, # psu
                             advection = nothing,
@@ -130,6 +139,7 @@ function sea_ice_simulation(grid, ocean=nothing;
 
     # Build the sea ice model
     sea_ice_model = SeaIceModel(grid;
+                                clock,
                                 ice_salinity,
                                 advection,
                                 tracers,
@@ -146,7 +156,7 @@ function sea_ice_simulation(grid, ocean=nothing;
                                 top_heat_flux)
 
     verbose = false
-    sea_ice = Simulation(sea_ice_model; Δt, verbose)
+    sea_ice = Simulation(sea_ice_model; Δt, stop_time, verbose)
 
     return sea_ice
 end
@@ -178,9 +188,13 @@ function sea_ice_dynamics(grid, ocean=nothing;
     sea_ice_ocean_drag_coefficient = convert(FT, sea_ice_ocean_drag_coefficient)
     ρₑ = ocean_reference_density(ocean, FT)
 
+    # Set up boundary conditions
+    x_stress_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
+    y_stress_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
+  
     τo  = SemiImplicitStress(uₑ=SSU, vₑ=SSV, Cᴰ=sea_ice_ocean_drag_coefficient, ρₑ=ρₑ)
-    τua = Field{Face, Center, Nothing}(grid)
-    τva = Field{Center, Face, Nothing}(grid)
+    τua = Field{Face, Center, Nothing}(grid, boundary_conditions = x_stress_bcs)
+    τva = Field{Center, Face, Nothing}(grid, boundary_conditions = y_stress_bcs)
 
     if isnothing(free_drift)
         free_drift = StressBalanceFreeDrift((u=τua, v=τva), τo)
@@ -201,6 +215,7 @@ end
 
 EarthSystemModels.sea_ice_thickness(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_thickness
 EarthSystemModels.sea_ice_concentration(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_concentration
+EarthSystemModels.intercepted_snowfall(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.mass_fluxes.intercepted_snowfall
 
 EarthSystemModels.heat_capacity(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.phase_transitions.heat_capacity
 EarthSystemModels.reference_density(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.phase_transitions.density

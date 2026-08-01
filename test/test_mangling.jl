@@ -20,6 +20,25 @@ using Oceananigans.Fields: location
     @test mangle(2, 2, 1, data, AverageNorthSouth()) ≈ 5.5f0
 end
 
+@testset "mangle clamps out-of-hull indices to the data extent" begin
+    data = reshape(Float32[1 2 3; 4 5 6; 7 8 9], 3, 3, 1)
+
+    # A `BoundingBox` whose edge does not align with a native cell face can make
+    # the target grid one cell larger than the downloaded data, so the read
+    # index runs one past the array. The clamp must read the nearest edge cell
+    # rather than reading past the bounds into uninitialized memory (the bug
+    # fixed in `set_region_data!`); without the clamp the `@inbounds` read
+    # returns garbage (denormal/NaN) at the domain edge.
+    @test mangle(4, 2, 1, data, nothing) == data[3, 2, 1]   # i past east edge
+    @test mangle(2, 4, 1, data, nothing) == data[2, 3, 1]   # j past north edge
+    @test mangle(0, 2, 1, data, nothing) == data[1, 2, 1]   # i below west edge
+    @test mangle(2, 0, 1, data, nothing) == data[2, 1, 1]   # j below south edge
+
+    # The lat-axis remaps must stay in bounds at the far edge too.
+    @test mangle(2, 5, 1, data, ShiftSouth())        == data[2, 3, 1]  # j-1 past north
+    @test mangle(2, 3, 1, data, AverageNorthSouth()) == data[2, 3, 1]  # j+1 past north
+end
+
 @testset "mangling_for size dispatch" begin
     md = Metadatum(:v_velocity; dataset=ECCO4Monthly(), date=start_date)
     _, Ny, _, _ = size(md)

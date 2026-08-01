@@ -1,4 +1,4 @@
-# # Exploring ERA5 reanalysis data
+# # ERA5 and GloFAS reanalysis data
 #
 # This walkthrough covers downloading ERA5 reanalysis fields from the
 # Copernicus Climate Data Store (CDS), with the Rain in Shallow Cumulus Over
@@ -6,6 +6,10 @@
 # unifying case study. We consider both single-level (2-D) and pressure-level
 # (3-D) fields with two subsetting approaches (bounding box and column) that
 # restrict the amount of data requested through the CDS API.
+#
+# The final section turns to **GloFAS** river discharge — ERA5 runoff routed to
+# river mouths by a hydrological model — and shows how `GloFASPrescribedLand`
+# places that freshwater on the ocean coastline.
 #
 # Our focus is on the first four days of the *undisturbed period*
 # (Dec 27 2004 – Jan 2 2005) by [vanZanten2011](@citet), during which a mean
@@ -484,3 +488,119 @@ hideydecorations!(ax_u, grid=false)
 hideydecorations!(ax_v, grid=false)
 
 fig4
+
+# ## §4 River runoff from GloFAS
+#
+# ERA5's own surface runoff is generated locally over the whole land surface and
+# is *not* routed downstream — interpolating it onto an ocean grid and masking
+# land would discard most of the water. The [Global Flood Awareness System
+# (GloFAS)](https://www.globalfloods.eu/) solves this: it forces the LISFLOOD
+# hydrological and channel-routing model with ERA5 runoff to produce **river
+# discharge already accumulated to river mouths** [harrigan2020glofas](@citep) —
+# the ERA5-consistent analogue of JRA55's pre-routed river freshwater flux.
+#
+# GloFAS lives on the Copernicus Early Warning Data Store (EWDS), a separate
+# endpoint from the ERA5 CDS. The download automatically targets the EWDS url
+# (https://ewds.climate.copernicus.eu/api) while reusing the ECMWF token from
+# `~/.cdsapirc` — the same token works across both data stores — so the ERA5
+# sections above and this GloFAS section run in one session without editing
+# `~/.cdsapirc`. You still need to accept the `cems-glofas-historical` licence
+# once on the dataset page (see <https://ewds.climate.copernicus.eu/how-to-api>).
+#
+# We focus on the mouth of the Amazon, the largest freshwater source to the
+# global ocean.
+
+glofas = GloFASReanalysis()
+amazon_region = BoundingBox(latitude = (-2, 5), longitude = (-53, -45))
+nothing #hide
+
+# GloFAS river discharge is a daily volume flux (m³ s⁻¹) on a 0.05° grid, with
+# ocean cells left undefined (`NaN`). We download a single day over the region
+# and load it on its native grid.
+
+discharge_date = DateTime(2004, 12, 27)
+discharge_meta = Metadatum(:river_discharge; dataset = glofas,
+                           date = discharge_date, region = amazon_region)
+discharge = @suppress_out Field(discharge_meta)
+nothing #hide
+
+# Plotting the discharge on a log scale reveals the routed river network feeding
+# the coast — the discharge concentrates into channels that grow downstream and
+# terminate at the river mouths.
+
+λd, φd, _ = nodes(discharge)
+
+## Mask non-positive values so `log10` is well defined for the heatmap.
+discharge_data = interior(discharge, :, :, 1)
+log_discharge = map(q -> (isnan(q) || q ≤ 0) ? NaN : log10(q), discharge_data)
+
+fig5 = Figure(size=(800, 600))
+ax5 = Axis(fig5[1, 1]; title = "GloFAS river discharge — $(Dates.format(discharge_date, "yyyy-mm-dd"))",
+           xlabel = "Longitude (°)", ylabel = "Latitude (°)")
+hm5 = heatmap!(ax5, λd, φd, log_discharge; colormap = :viridis)
+Colorbar(fig5[1, 2], hm5; label = "log₁₀ discharge [m³ s⁻¹]")
+
+fig5
+
+# ### Routing discharge onto the ocean coastline
+#
+# To force an ocean model we need the discharge on the *ocean* grid, located on
+# wet coastal cells. We build a regional ocean grid from ETOPO bathymetry over
+# the same region. The vertical grid needs enough near-surface resolution that
+# shallow shelf cells stay *active* — a single thick level would place every
+# cell center below the coastal seafloor, leaving no wet cells for the routing.
+
+ocean_grid = LatitudeLongitudeGrid(size = (80, 70, 30),
+                                   longitude = amazon_region.longitude,
+                                   latitude  = amazon_region.latitude,
+                                   z = (-200, 0))
+
+bottom_height = regrid_bathymetry(ocean_grid; minimum_depth = 5)
+ocean_grid = ImmersedBoundaryGrid(ocean_grid, GridFittedBottom(bottom_height))
+nothing #hide
+
+# `GloFASPrescribedLand` downloads the discharge, locates the river mouths from
+# the land/ocean boundary, and maps each mouth to the nearest active ocean cell
+# of `ocean_grid` — conserving the total volume of freshwater (see
+# [`build_river_routing`](@ref)).
+
+land = @suppress_out GloFASPrescribedLand(ocean_grid; dataset = glofas,
+                                          start_date = discharge_date,
+                                          end_date = discharge_date + Day(2),
+                                          region = amazon_region,
+                                          maximum_search_radius = 8)
+nothing #hide
+
+# The resulting `RiverRouting` records, for each river mouth, the coastal ocean
+# cell that receives its discharge. We overlay the mouths (on the GloFAS network)
+# and their destination ocean cells (on the coastline) on the discharge map to
+# visualize the relocation.
+
+routing = land.river_routing
+
+λn = λnodes(land.grid, Center(), Center(), Center())
+φn = φnodes(land.grid, Center(), Center(), Center())
+mouth_λ = [λn[i] for i in Array(routing.contribution_outlet_i)]
+mouth_φ = [φn[j] for j in Array(routing.contribution_outlet_j)]
+
+λo = λnodes(ocean_grid, Center(), Center(), Center())
+φo = φnodes(ocean_grid, Center(), Center(), Center())
+target_λ = [λo[i] for i in Array(routing.target_i)]
+target_φ = [φo[j] for j in Array(routing.target_j)]
+
+fig6 = Figure(size=(800, 600))
+ax6 = Axis(fig6[1, 1]; title = "GloFAS river mouths routed to the ocean coastline",
+           xlabel = "Longitude (°)", ylabel = "Latitude (°)")
+hm6 = heatmap!(ax6, λd, φd, log_discharge; colormap = :grays)
+scatter!(ax6, mouth_λ, mouth_φ; color = :dodgerblue, markersize = 4, label = "river mouths")
+scatter!(ax6, target_λ, target_φ; color = :crimson, marker = :xcross,
+         markersize = 8, label = "ocean injection cells")
+Colorbar(fig6[1, 2], hm6; label = "log₁₀ discharge [m³ s⁻¹]")
+axislegend(ax6; position = :rb)
+
+fig6
+
+# The red crosses mark where freshwater enters the ocean — on the coastline,
+# regardless of the (coarser) ocean grid resolution. Passing `land` to a coupled
+# ocean simulation injects this discharge as a conservative surface freshwater
+# flux, lowering coastal sea-surface salinity near the Amazon plume.

@@ -83,6 +83,8 @@ function Oceananigans.Fields.set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.
     slot_dates = metadata.dates[ftsn]
     needed_files = unique(getfilename(metadata.filename, n) for n in ftsn)
 
+    filled_slots = Int[]
+
     for file in needed_files
         ds = Dataset(joinpath(metadata.dir, file))
         file_dates = ds["time"][:]
@@ -103,8 +105,17 @@ function Oceananigans.Fields.set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.
             raw = jra55_read_data(ds, name, :, :, nn)
             full_data = reshape(raw, length(λc), length(φc), 1, length(nn))
             set_region_data!(fts, full_data, λc, φc, metadata; slot_indices = ftsn_loc)
+            append!(filled_slots, ftsn_loc)
         end
         close(ds)
+    end
+
+    # An unmatched slot would otherwise keep its initial zeros and read back as valid data.
+    if length(filled_slots) != length(slot_dates)
+        missing_dates = slot_dates[setdiff(eachindex(slot_dates), filled_slots)]
+        error("$(length(missing_dates)) of $(length(slot_dates)) requested $name timestamps are absent " *
+              "from $(join(needed_files, ", ")); the first is $(first(missing_dates)). The dates that " *
+              "`all_dates` reports for this variable must match the file's `time` axis exactly.")
     end
 
     fill_halo_regions!(fts)
