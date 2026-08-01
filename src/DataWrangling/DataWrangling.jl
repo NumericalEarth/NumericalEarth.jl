@@ -8,6 +8,7 @@ export Metadata, Metadatum, MetadataSet, DatewiseFilename, ECCOMetadatum, EN4Met
 export validate_dataset_coverage, metadata_filename
 export BoundingBox, Column, Linear, Nearest
 export WOAClimatology, WOAAnnual, WOAMonthly
+export AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum
 export metadata_time_step, metadata_epoch
 export supported_datasets
 export LinearlyTaperedPolarMask
@@ -106,9 +107,11 @@ function (d::DownloadProgress)(total, now; filename="")
 end
 
 """
-    netrc_downloader(username, password, machine, dir)
+    netrc_downloader(username, password, machine, dir; verify_ssl = true)
 
 Create a downloader that uses a netrc file to authenticate with the given machine.
+Pass `verify_ssl = false` only for hosts serving an untrusted CA certificate, as
+`ecco.jpl.nasa.gov` does.
 This downloader writes the username and password in a file named `auth.netrc` (for Unix) and
 `auth_netrc` (for Windows), located in the directory `dir`.
 To avoid leaving the password on disk after the downloader has been used,
@@ -124,13 +127,12 @@ mktempdir(dir) do tmp
 end
 ```
 """
-function netrc_downloader(username, password, machine, dir)
+function netrc_downloader(username, password, machine, dir; verify_ssl = true)
     netrc_file = netrc_permission_file(username, password, machine, dir)
     downloader = Downloads.Downloader()
     easy_hook  = (easy, _) -> begin
         Downloads.Curl.setopt(easy, LibCURL.CURLOPT_NETRC_FILE, netrc_file)
-        # Bypass certificate verification because ecco.jpl.nasa.gov is using an untrusted CA certificate
-        Downloads.Curl.setopt(easy, LibCURL.CURLOPT_SSL_VERIFYPEER, false)
+        verify_ssl || Downloads.Curl.setopt(easy, LibCURL.CURLOPT_SSL_VERIFYPEER, false)
     end
     downloader.easy_hook = easy_hook
     return downloader
@@ -266,6 +268,8 @@ include("dataset_backend.jl")
 include("metadata_field_time_series.jl")
 include("inpainting.jl")
 include("restoring.jl")
+include("earthdata.jl")
+include("figshare.jl")
 
 function metadata_time_step end
 function metadata_epoch end
@@ -349,6 +353,7 @@ end
 include("ETOPO/ETOPO.jl")
 include("ECCO/ECCO.jl")
 include("GLORYS/GLORYS.jl")
+include("AVISO/AVISO.jl")
 include("ERA5/ERA5.jl")
 include("EN4/EN4.jl")
 include("ORCA/ORCA.jl")
@@ -357,15 +362,20 @@ include("JRA55/JRA55.jl")
 include("GloFAS/GloFAS.jl")
 include("OSPapa/OSPapa.jl")
 include("SoilGrids/SoilGrids.jl")
+include("OpenLandMap/OpenLandMap.jl")
 include("IBCSO/IBCSO.jl")
 include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
 include("CopernicusDEM/CopernicusDEM.jl")
+include("ASTERGED/ASTERGED.jl")
+include("GloBFP3D/GloBFP3D.jl")
+include("GHSL/GHSL.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
 
 using .ETOPO
 using .ECCO
 using .GLORYS
+using .AVISO
 using .ERA5
 using .EN4
 using .ORCA
@@ -373,10 +383,14 @@ using .WOA
 using .JRA55
 using .GloFAS
 using .OSPapa
+using .OpenLandMap
 using .IBCSO
 using .GEBCO
 using .IBCAO
 using .CopernicusDEM
+using .ASTERGED
+using .GloBFP3D
+using .GHSL
 using .CopernicusLandAlbedo
 
 function dataset_modules()

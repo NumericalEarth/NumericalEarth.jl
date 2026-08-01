@@ -168,10 +168,9 @@ ThreeEquationHeatFlux(::Nothing, FT::DataType = Oceananigans.defaults.FloatType;
 """
     compute_interface_heat_flux(flux::IceBathHeatFlux, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
 
-Compute the heat flux and melt rate at the sea ice-ocean interface using bulk formulation.
-Returns `(Q, q, Tᵦ, Sᵦ)` where:
+Compute the heat flux at the sea ice-ocean interface using bulk formulation.
+Returns `(Q, Tᵦ, Sᵦ)` where:
 - `Q > 0` means heat flux from ocean to ice (ocean cooling)
-- `q > 0` means melting (ice volume loss)
 - `Tᵦ, Sᵦ` are the interface temperature and salinity
 """
 @inline function compute_interface_heat_flux(flux::IceBathHeatFlux,
@@ -191,11 +190,8 @@ Returns `(Q, q, Tᵦ, Sᵦ)` where:
     # Heat flux: Q > 0 means heat flux from ocean to ice (ocean cooling)
     Qᵢₒ = ρᵒᶜ * cᵒᶜ * αₕ * u★ * (Tᵒᶜ - Tₘ) * ℵ
 
-    # Melt rate: q = Q / L (positive for melting)
-    q = Qᵢₒ / ℰ
-
     # For IceBathHeatFlux, interface is at ocean surface values
-    return Qᵢₒ, q, Tₘ, Sᵒᶜ
+    return Qᵢₒ, Tₘ, Sᵒᶜ
 end
 
 const NoInternalFluxTEF{FT} = ThreeEquationHeatFlux{<:Nothing, <:Nothing, FT} where FT
@@ -217,13 +213,12 @@ end
 """
     compute_interface_heat_flux(flux::ThreeEquationHeatFlux, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
 
-Compute the heat flux and melt rate at the sea ice-ocean interface using three-equation formulation.
+Compute the heat flux at the sea ice-ocean interface using three-equation formulation.
 Dispatches to the appropriate `solve_interface_conditions` based on whether the flux has internal
 conductive flux or not.
 
-Returns `(Q, q, Tᵦ, Sᵦ)` where:
+Returns `(Q, Tᵦ, Sᵦ)` where:
 - `Q > 0` means heat flux from ocean to ice (ocean cooling)
-- `q > 0` means melting (ice volume loss)
 - `Tᵦ, Sᵦ` are the interface temperature and salinity
 """
 @inline function compute_interface_heat_flux(flux::ThreeEquationHeatFlux,
@@ -245,10 +240,9 @@ Returns `(Q, q, Tᵦ, Sᵦ)` where:
     T★, S★, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, ℰ, ρᵒᶜ, cᵒᶜ, liquidus)
 
     # Scale by ice concentration
-    q = q * ℵ
-    Qᵢₒ = ℰ * q
+    Qᵢₒ = ℰ * q * ℵ
 
-    return Qᵢₒ, q, T★, S★
+    return Qᵢₒ, T★, S★
 end
 
 # Helper to get conductive flux parameters (κ, Tˢⁱ) - dispatches on flux type

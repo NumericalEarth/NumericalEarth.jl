@@ -47,6 +47,7 @@ temperature_units(ocean) = DegreesCelsius()
 
 sea_ice_thickness(::Nothing) = ZeroField()
 sea_ice_concentration(::Nothing) = ZeroField()
+intercepted_snowfall(::Nothing) = ZeroField()
 function default_sea_ice end
 
 #####
