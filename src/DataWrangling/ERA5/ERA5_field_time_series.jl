@@ -4,7 +4,8 @@ using NCDatasets
 ##### Type aliases for yearly ERA5 FieldTimeSeries
 #####
 
-const ERA5YearlySingleLevelBackend = DatasetBackend{<:Any, <:Any, <:Any, <:Metadata{<:ERA5YearlySingleLevel}}
+const ERA5YearlyFileDataset = Union{ERA5YearlySingleLevel, ERA5HourlyLand, ERA5MonthlyLand}
+const ERA5YearlySingleLevelBackend = DatasetBackend{<:Any, <:Any, <:Any, <:Metadata{<:ERA5YearlyFileDataset}}
 const ERA5NetCDFFTSMultipleYears = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:ERA5YearlySingleLevelBackend}
 
 #####
@@ -12,7 +13,7 @@ const ERA5NetCDFFTSMultipleYears = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:ERA
 #####
 
 """
-    retrieve_data(metadatum::Metadatum{<:ERA5YearlySingleLevel})
+    retrieve_data(metadatum::Metadatum{<:ERA5YearlyFileDataset})
 
 Read a 2D slice from the yearly ERA5 NetCDF file corresponding to the metadatum's date.
 Opens the yearly file, finds the time index matching the date, and extracts that timestep.
@@ -20,7 +21,7 @@ Opens the yearly file, finds the time index matching the date, and extracts that
 The yearly file contains all 8760-8784 hours for one year. This function indexes into
 the time dimension to extract just the requested hour.
 """
-function DataWrangling.retrieve_data(metadatum::Metadatum{<:ERA5YearlySingleLevel})
+function DataWrangling.retrieve_data(metadatum::Metadatum{<:ERA5YearlyFileDataset})
     path = metadata_path(metadatum)
     name = dataset_variable_name(metadatum)
 
