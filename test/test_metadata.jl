@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using NumericalEarth.DataWrangling: Column, Linear, Nearest,
                                     BoundingBox, dataset_location,
                                     restrict_location, native_grid
-using NumericalEarth.DataWrangling: restrict
+using NumericalEarth.DataWrangling: restrict, restrict_longitude, download_cache
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel
 
 using Oceananigans: location
@@ -41,6 +41,10 @@ end
     bbox = BoundingBox(longitude=(0, 10), latitude=(0, 10))
     @test restrict_location((Face, Center, Center), bbox) == (Face, Center, Center)
     @test restrict_location((Center, Center, Center), nothing) == (Center, Center, Center)
+
+    # Restrict location with (0, 360) longitude
+    bbox = BoundingBox(longitude=(0, 360), latitude=(0, 10))
+    @test restrict_longitude(bbox.longitude, (0, 360), 10) == ((0, 360), 10)
 end
 
 @testset "dataset_location fallback" begin
@@ -128,8 +132,9 @@ end
     md_lat = Metadatum(:temperature; dataset=ECCO4Monthly(), region=bbox_lat)
     @test topology(native_grid(md_lat))[1] == Periodic
 
-    # ERA5 uses a 0°..360° native longitude convention. A bbox specified as
-    # -110°..30° crosses that seam after conversion and must keep the full span.
+    # ERA5 uses a 0°..360° native longitude convention. A bbox specified as -110°..30° crosses that
+    # seam; `native_grid` restricts to the enclosing native cells (250°..390°) but relabels the grid
+    # back into the bbox's own convention (-110°..30°), keeping the full 140° span across the seam.
     seam_bbox = BoundingBox(longitude=(-110, 30), latitude=(-25, 35))
     seam_md = Metadatum(:temperature; dataset=ERA5HourlySingleLevel(),
                         date=DateTime(2004, 12, 27), region=seam_bbox)
@@ -137,8 +142,8 @@ end
     seam_λ = λnodes(seam_grid, Center())
 
     @test length(seam_λ) == 561
-    @test first(seam_λ) == 250.0f0
-    @test last(seam_λ) == 390.0f0
+    @test first(seam_λ) == -110.0f0
+    @test last(seam_λ) == 30.0f0
     @test topology(seam_grid)[1] == Bounded
 end
 
@@ -203,4 +208,34 @@ end
     sliced, rN = restrict((120, 240), (0, 360), 360)
     @test sliced == (119, 241)
     @test rN == 122
+end
+
+@testset "download_cache honors NUMERICALEARTH_DATA_DIRECTORY" begin
+    saved = get(ENV, "NUMERICALEARTH_DATA_DIRECTORY", nothing)
+    try
+        # Without the variable, caching falls back to a Scratch.jl space.
+        delete!(ENV, "NUMERICALEARTH_DATA_DIRECTORY")
+        @test occursin("scratchspaces", download_cache("JRA55"))
+
+        # With the variable, data is cached under a per-key subdirectory of it.
+        data_directory = mktempdir()
+        ENV["NUMERICALEARTH_DATA_DIRECTORY"] = data_directory
+        cache = download_cache("JRA55")
+        @test cache == joinpath(data_directory, "JRA55")
+        @test isdir(cache)
+    finally
+        if saved === nothing
+            delete!(ENV, "NUMERICALEARTH_DATA_DIRECTORY")
+        else
+            ENV["NUMERICALEARTH_DATA_DIRECTORY"] = saved
+        end
+    end
+end
+
+@testset "nan_convert_missing" begin
+    @test isnan(DataWrangling.nan_convert_missing(Float32, missing, missing))
+    @test isnan(DataWrangling.nan_convert_missing(Float32, -999, -999))
+    @test DataWrangling.nan_convert_missing(Float32, 1.0, missing) === 1f0
+    @test DataWrangling.nan_convert_missing(Float32, 1.0, -999) === 1f0
+    @test DataWrangling.nan_convert_missing(Float32, Inf, -999) === Inf32
 end

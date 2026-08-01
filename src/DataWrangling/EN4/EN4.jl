@@ -6,7 +6,6 @@ export EN4Monthly
 using Dates: Dates, DateTime, Month
 using Downloads: Downloads
 using Oceananigans.DistributedComputations: @root
-using Scratch: @get_scratch!
 using ZipFile: ZipFile
 
 using ...NumericalEarth: NumericalEarth
@@ -15,8 +14,8 @@ using ..DataWrangling: DataWrangling, Metadata, Metadatum, DownloadProgress, Kel
 
 download_EN4_cache::String = ""
 function __init__()
-    global download_EN4_cache = @get_scratch!("EN4")
     DataWrangling.DataModes.register_dataset!(EN4Monthly, "EN4Monthly")
+    global download_EN4_cache = DataWrangling.download_cache("EN4")
 end
 
 EN4_dataset_variable_names = Dict(

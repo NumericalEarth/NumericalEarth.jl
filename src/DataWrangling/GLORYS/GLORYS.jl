@@ -6,7 +6,6 @@ using Dates: DateTime, Day, Month
 using Oceananigans.Fields: Center
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
-using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path
 
@@ -26,10 +25,10 @@ import ..DataWrangling:
 
 download_GLORYS_cache::String = ""
 function __init__()
-    global download_GLORYS_cache = @get_scratch!("GLORYS")
     DataWrangling.DataModes.register_dataset!(GLORYSStatic, "GLORYSStatic")
     DataWrangling.DataModes.register_dataset!(GLORYSDaily, "GLORYSDaily")
     DataWrangling.DataModes.register_dataset!(GLORYSMonthly, "GLORYSMonthly")
+    global download_GLORYS_cache = DataWrangling.download_cache("GLORYS")
 end
 
 # Datasets

@@ -5,15 +5,14 @@ export GEBCO2024
 using Downloads: Downloads
 using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
-using Scratch: Scratch, @get_scratch!
 using ZipFile: ZipFile
 
 using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
 
 download_GEBCO_cache::String = ""
 function __init__()
-    global download_GEBCO_cache = @get_scratch!("GEBCO")
     DataWrangling.DataModes.register_dataset!(GEBCO2024, "GEBCO2024")
+    global download_GEBCO_cache = DataWrangling.download_cache("GEBCO")
 end
 
 GEBCO_bathymetry_variable_names = Dict(

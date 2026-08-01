@@ -5,7 +5,6 @@ export IBCAOv5
 using Downloads: Downloads
 using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
-using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
 
@@ -18,11 +17,10 @@ import ..DataWrangling:
     reversed_vertical_axis,
     validate_dataset_coverage
 
-
 download_IBCAO_cache::String = ""
 function __init__()
-    global download_IBCAO_cache = @get_scratch!("IBCAO")
     DataWrangling.DataModes.register_dataset!(IBCAOv5, "IBCAOv5")
+    global download_IBCAO_cache = DataWrangling.download_cache("IBCAO")
 end
 
 IBCAO_bathymetry_variable_names = Dict(
@@ -95,7 +93,7 @@ function Downloads.download(metadatum::IBCAOMetadatum)
     return nc_path
 end
 
-# Implemented in ext/NumericalEarthArchGDALExt.jl when ArchGDAL is loaded.
+# Implemented in ext/NumericalEarthArchGDALExt/ibcao.jl when ArchGDAL is loaded.
 function reproject_ibcao_to_netcdf end
 
 end # module

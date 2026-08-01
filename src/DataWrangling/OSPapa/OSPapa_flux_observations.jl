@@ -77,7 +77,7 @@ function download_ospapa_flux(; start_date, end_date, dir=download_OSPapa_cache)
         t0 = Dates.format(start_date, "yyyy-mm-ddTHH:MM:SSZ")
         t1 = Dates.format(end_date, "yyyy-mm-ddTHH:MM:SSZ")
         url = "$(ERDDAP_BASE)/ocs_papa_flux.nc?$(ERDDAP_FLUX_VARS)&time>=$(t0)&time<=$(t1)"
-        @info "Downloading OS Papa flux data from ERDDAP..."
+        @info "Downloading Ocean Station Papa flux data from ERDDAP..."
         Downloads.download(url, filepath; progress=DownloadProgress())
     end
     return filepath
@@ -160,7 +160,7 @@ function retrieve_data(metadata::OSPapaFluxMetadatum)
 
     if isnothing(t_idx)
         close(ds)
-        error("Date $(metadata.dates) not found in OS Papa flux dataset")
+        error("Date $(metadata.dates) not found in Ocean Station Papa flux dataset")
     end
 
     raw = ds[varname][1, 1, 1, t_idx]

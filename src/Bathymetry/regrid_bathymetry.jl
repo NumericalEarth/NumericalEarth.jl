@@ -2,7 +2,7 @@
 # Scratch space for cached regridded bathymetry files
 bathymetry_cache_dir::String = ""
 function __init__()
-    global bathymetry_cache_dir = @get_scratch!("bathymetry_cache")
+    global bathymetry_cache_dir = DataWrangling.download_cache("bathymetry_cache")
 end
 
 #####
@@ -29,7 +29,7 @@ function BathymetryRegridding(grid, metadata;
                               interpolation_passes = 1,
                               major_basins = 1)
 
-    Nx, Ny, _ = size(grid)
+    Nx, Ny, _ = worksize(grid)
     TX, TY, _ = topology(grid)
     lon = x_domain(grid)
     lat = y_domain(grid)
@@ -294,6 +294,19 @@ ocean clamped to sea level (0). Accepts the same regridding keywords
 """
 function regrid_topography(target_grid; dataset = ETOPO2022(), kw...)
     elevation = regrid_bathymetry(target_grid; dataset, kw...)
+    parent(elevation) .= max.(parent(elevation), 0) # land elevation; ocean → 0
+    return elevation
+end
+
+"""
+    regrid_topography(target_grid, metadata; kw...)
+
+Land surface elevation regridded onto `target_grid` from `metadata`, the positive
+counterpart of [`regrid_bathymetry`](@ref). Use this form for region-windowed
+datasets such as `GLO30()`, whose `metadata` carries a `BoundingBox` region.
+"""
+function regrid_topography(target_grid, metadata; kw...)
+    elevation = regrid_bathymetry(target_grid, metadata; kw...)
     parent(elevation) .= max.(parent(elevation), 0) # land elevation; ocean → 0
     return elevation
 end
