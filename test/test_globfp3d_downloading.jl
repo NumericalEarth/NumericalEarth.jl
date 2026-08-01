@@ -9,7 +9,7 @@ using NumericalEarth.DataWrangling: BoundingBox, Metadatum
 @testset "3D-GloBFP tile download and morphometry" begin
     dataset = GlobalBuildingFootprints3D()
     # ~1 km box over the City of London: dense enough that every field is populated,
-    # heterogeneous enough that σH and λf are nonzero.
+    # heterogeneous enough that σʰ and λᶠ are nonzero.
     region = BoundingBox(longitude = (-0.09, -0.08), latitude = (51.51, 51.52))
 
     building_height = Field(Metadatum(:building_height; dataset, region), CPU())
@@ -21,17 +21,17 @@ using NumericalEarth.DataWrangling: BoundingBox, Metadatum
     target_grid = LatitudeLongitudeGrid(CPU(), Float64; size = (4, 4),
                                         longitude = region.longitude, latitude = region.latitude,
                                         topology = (Bounded, Bounded, Flat))
-    m = building_morphometry(target_grid; dataset, region)
+    morphometry = building_morphometry(target_grid; dataset, region)
 
-    λp   = Array(interior(m.built_up_fraction, :, :, 1))
-    H    = Array(interior(m.mean_building_height, :, :, 1))
-    Hmax = Array(interior(m.maximum_building_height, :, :, 1))
-    σH   = Array(interior(m.building_height_std, :, :, 1))
-    λf   = Array(interior(m.frontal_area_index, :, :, 1))
+    λᵖ   = Array(interior(morphometry.plan_area_index, :, :, 1))
+    h    = Array(interior(morphometry.mean_building_height, :, :, 1))
+    hᵐᵃˣ = Array(interior(morphometry.maximum_building_height, :, :, 1))
+    σʰ   = Array(interior(morphometry.building_height_deviation, :, :, 1))
+    λᶠ   = Array(interior(morphometry.frontal_area_index, :, :, 1))
 
-    @test all(0 .< λp .≤ 1)
-    @test all(Hmax .≥ H .> 0)
-    @test any(>(0), σH)
-    @test all(λf .≥ 0)
-    @test Array(interior(m.gross_building_height, :, :, 1)) ≈ λp .* H
+    @test all(0 .< λᵖ .≤ 1)
+    @test all(hᵐᵃˣ .≥ h .> 0)
+    @test any(>(0), σʰ)
+    @test all(λᶠ .≥ 0)
+    @test Array(interior(morphometry.gross_building_height, :, :, 1)) ≈ λᵖ .* h
 end

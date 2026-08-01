@@ -123,9 +123,9 @@ end
 Construct a [`VariableHeight`](@ref) distribution. All four defaults are the Method 1
 regressions of [Kanda et al. (2013)](@cite Kanda2013).
 
-* `displacement_constants` (`a0, b0, c0`) — displacement fit, their eq. 10.
+* `displacement_constants` (`a₀, b₀, c₀`) — displacement fit, their eq. 10.
   Default `(1.29, 0.36, -0.17)`; their Method 2 gives `(0.86, 0.28, -0.18)`.
-* `roughness_constants` (`a1, b1, c1`) — roughness rescaling, their eq. 12.
+* `roughness_constants` (`a₁, b₁, c₁`) — roughness rescaling, their eq. 12.
   Default `(0.71, 20.21, -0.77)`; their Method 2 gives `(0.93, 8.93, 4.68)`.
 * `height_spread_constants` (`s₁, s₀`) — `σʰ = s₁·h + s₀` (m), their eq. 2.
   Default `(1.05, -3.7)`, whose zero crossing near `h = 3.5` m is about one storey.
@@ -201,12 +201,12 @@ $(TYPEDSIGNATURES)
 
 Displacement height `d` (m) referenced to the tallest roughness element `hᵐᵃˣ`, given the
 mean height `h` and the height standard deviation `σʰ`:
-`d/hᵐᵃˣ = c0·X² + (a0·λᵖ^b0 − c0)·X`, with `X = (σʰ + h)/hᵐᵃˣ` in `[0, 1]`
+`d/hᵐᵃˣ = c₀·X² + (a₀·λᵖ^b₀ − c₀)·X`, with `X = (σʰ + h)/hᵐᵃˣ` in `[0, 1]`
 ([Kanda et al. (2013)](@cite Kanda2013)).
 """
-@inline function maximum_height_displacement(λᵖ, h, σʰ, hᵐᵃˣ, a0, b0, c0)
+@inline function maximum_height_displacement(λᵖ, h, σʰ, hᵐᵃˣ, a₀, b₀, c₀)
     X = clamp(ifelse(hᵐᵃˣ > 0, (σʰ + h) / hᵐᵃˣ, zero(h)), zero(h), one(h))
-    ratio = c0 * X^2 + (a0 * λᵖ^b0 - c0) * X
+    ratio = c₀ * X^2 + (a₀ * λᵖ^b₀ - c₀) * X
     return hᵐᵃˣ * max(ratio, zero(ratio))
 end
 
@@ -214,12 +214,12 @@ end
 $(TYPEDSIGNATURES)
 
 Rescale the uniform-height roughness length `ℓᵐ` (m) for the height spread `σʰ` by
-`b1·Y² + c1·Y + a1`, with `Y = λᵖ·σʰ/h` ([Kanda et al. (2013)](@cite Kanda2013)). Reduces
-to `a1·ℓᵐ` for a height-homogeneous canopy (`σʰ → 0`).
+`b₁·Y² + c₁·Y + a₁`, with `Y = λᵖ·σʰ/h` ([Kanda et al. (2013)](@cite Kanda2013)). Reduces
+to `a₁·ℓᵐ` for a height-homogeneous canopy (`σʰ → 0`).
 """
-@inline function height_spread_roughness(ℓᵐ, λᵖ, h, σʰ, a1, b1, c1)
+@inline function height_spread_roughness(ℓᵐ, λᵖ, h, σʰ, a₁, b₁, c₁)
     Y = ifelse(h > 0, λᵖ * σʰ / h, zero(h))
-    ratio = b1 * Y^2 + c1 * Y + a1
+    ratio = b₁ * Y^2 + c₁ * Y + a₁
     return ℓᵐ * max(ratio, zero(ratio))
 end
 
@@ -258,14 +258,14 @@ plan-area index `λᵖ` and mean height `h`.
     σʰ = height_spread(v, h)
     hᵐᵃˣ = maximum_element_height(v, h, σʰ)
 
-    a0, b0, c0 = v.displacement_constants
-    a1, b1, c1 = v.roughness_constants
+    a₀, b₀, c₀ = v.displacement_constants
+    a₁, b₁, c₁ = v.roughness_constants
 
-    ℓᵐ = height_spread_roughness(ℓᵐ, λᵖ, h, σʰ, a1, b1, c1)
+    ℓᵐ = height_spread_roughness(ℓᵐ, λᵖ, h, σʰ, a₁, b₁, c₁)
 
     # `hᵐᵃˣ`, not `h`, bounds the displacement: over a height-heterogeneous city `d`
     # routinely exceeds the mean building height.
-    d = min(maximum_height_displacement(λᵖ, h, σʰ, hᵐᵃˣ, a0, b0, c0), hᵐᵃˣ)
+    d = min(maximum_height_displacement(λᵖ, h, σʰ, hᵐᵃˣ, a₀, b₀, c₀), hᵐᵃˣ)
 
     return ℓᵐ, d
 end
@@ -279,11 +279,11 @@ height spread `σʰ` and tallest element `hᵐᵃˣ` are measured rather than re
 @inline apply_height_distribution(::UniformHeight, ℓᵐ, d, λᵖ, h, σʰ, hᵐᵃˣ) = ℓᵐ, d
 
 @inline function apply_height_distribution(v::VariableHeight, ℓᵐ, d, λᵖ, h, σʰ, hᵐᵃˣ)
-    a0, b0, c0 = v.displacement_constants
-    a1, b1, c1 = v.roughness_constants
+    a₀, b₀, c₀ = v.displacement_constants
+    a₁, b₁, c₁ = v.roughness_constants
 
-    ℓᵐ = height_spread_roughness(ℓᵐ, λᵖ, h, σʰ, a1, b1, c1)
-    d = min(maximum_height_displacement(λᵖ, h, σʰ, hᵐᵃˣ, a0, b0, c0), hᵐᵃˣ)
+    ℓᵐ = height_spread_roughness(ℓᵐ, λᵖ, h, σʰ, a₁, b₁, c₁)
+    d = min(maximum_height_displacement(λᵖ, h, σʰ, hᵐᵃˣ, a₀, b₀, c₀), hᵐᵃˣ)
 
     return ℓᵐ, d
 end
@@ -297,7 +297,7 @@ $(TYPEDEF)
 
 Morphometric roughness closure. Maps `(λᵖ, h)` to `(ℓᵐ, d)` from the plan-area index and
 mean building height alone: `d` from the plan-area packing, `ℓᵐ` from a drag partition over
-the frontal area `λᶠ` estimated by `frontal_area`, both then corrected for the spread of
+the frontal area `λᶠ` estimated by `frontal_area_estimator`, both then corrected for the spread of
 element heights by `height_distribution`. `ℓᵐ` is non-monotonic in `λᵖ` (isolated →
 wake-interference → skimming).
 
@@ -309,7 +309,7 @@ struct MorphometricRoughness{FT, E, H} <: AbstractUrbanRoughness
     drag_coefficient           :: FT
     correction_factor          :: FT
     von_karman_constant        :: FT
-    frontal_area               :: E
+    frontal_area_estimator     :: E
     height_distribution        :: H
     bare_soil_roughness        :: FT
     minimum_built_fraction     :: FT
@@ -333,7 +333,7 @@ Construct a [`MorphometricRoughness`](@ref) closure.
   shape, turbulence intensity and length scale, incidence angle and corner rounding.
   Default 1 reproduces the staggered array; 0.55 is the square-array value.
 * `von_karman_constant` (`ϰ`) — default 0.4.
-* `frontal_area` — frontal-area estimator: [`EmpiricalFrontalArea`](@ref) (default),
+* `frontal_area_estimator` — frontal-area estimator: [`EmpiricalFrontalArea`](@ref) (default),
   [`IsotropicFrontalArea`](@ref) for the idealized cube array.
 * `height_distribution` — height-spread treatment: [`VariableHeight`](@ref) (default) or
   [`UniformHeight`](@ref) for the idealized equal-height array.
@@ -362,7 +362,7 @@ function MorphometricRoughness(FT = Oceananigans.defaults.FloatType;
                                drag_coefficient = 1.2,
                                correction_factor = 1.0,
                                von_karman_constant = 0.4,
-                               frontal_area = EmpiricalFrontalArea(FT),
+                               frontal_area_estimator = EmpiricalFrontalArea(FT),
                                height_distribution = VariableHeight(FT),
                                bare_soil_roughness = 0.03,
                                minimum_built_fraction = 0.01,
@@ -371,7 +371,7 @@ function MorphometricRoughness(FT = Oceananigans.defaults.FloatType;
                                  convert(FT, drag_coefficient),
                                  convert(FT, correction_factor),
                                  convert(FT, von_karman_constant),
-                                 convert_frontal_area(FT, frontal_area),
+                                 convert_frontal_area(FT, frontal_area_estimator),
                                  convert_height_distribution(FT, height_distribution),
                                  convert(FT, bare_soil_roughness),
                                  convert(FT, minimum_built_fraction),
@@ -379,7 +379,7 @@ function MorphometricRoughness(FT = Oceananigans.defaults.FloatType;
 end
 
 Base.summary(c::MorphometricRoughness{FT}) where FT =
-    string("MorphometricRoughness{", FT, "} with ", summary(c.frontal_area),
+    string("MorphometricRoughness{", FT, "} with ", summary(c.frontal_area_estimator),
            " and ", summary(c.height_distribution))
 
 Base.show(io::IO, c::AbstractUrbanRoughness) = print(io, summary(c))
@@ -388,9 +388,9 @@ Base.show(io::IO, c::AbstractUrbanRoughness) = print(io, summary(c))
 ##### Common interface: (λᵖ, h) → (ℓᵐ, d)
 #####
 
-@inline function finalize_aerodynamic_parameters(ℓᵐ, d, λᵖ, valid, ℓˢᵒⁱˡ, λᵐⁱⁿ)
+@inline function finalize_aerodynamic_parameters(ℓᵐ, d, λᵖ, valid, ℓˢᵒⁱˡ, λᵖᵐⁱⁿ)
     ℓˢᵒⁱˡ = oftype(ℓᵐ, ℓˢᵒⁱˡ)  # unify with the computed type so a narrower-FT closure stays Union-free
-    bare = λᵖ < λᵐⁱⁿ
+    bare = λᵖ < λᵖᵐⁱⁿ
     ℓᵐ = ifelse(bare, ℓˢᵒⁱˡ, max(ℓᵐ, ℓˢᵒⁱˡ))
     d = ifelse(bare, zero(d), d)
     gap = oftype(ℓᵐ, NaN)
@@ -413,7 +413,7 @@ than by `h`, and routinely exceeds the mean building height.
     h = max(h, zero(FT))
 
     dʰ = packing_displacement_ratio(λᵖ, c.array_constant, c.maximum_displacement_ratio)
-    λᶠ = frontal_area_index(c.frontal_area, λᵖ, h)
+    λᶠ = frontal_area_index(c.frontal_area_estimator, λᵖ, h)
     ℓᵐ = h * drag_partition_roughness_ratio(λᶠ, dʰ, c.drag_coefficient, c.von_karman_constant, c.correction_factor)
     d = h * dʰ
 
@@ -427,11 +427,11 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Evaluate `closure` from a per-cell `cell` NamedTuple, reading its `plan_area_fraction`
-and `building_height` keys.
+Evaluate `closure` from a per-cell `cell` NamedTuple, reading its `plan_area_index`
+and `mean_building_height` keys.
 """
 @inline aerodynamic_parameters(c::AbstractUrbanRoughness, cell) =
-    aerodynamic_parameters(c, cell.plan_area_fraction, cell.building_height)
+    aerodynamic_parameters(c, cell.plan_area_index, cell.mean_building_height)
 
 #####
 ##### Measured-morphometry interface: (λᵖ, h, σʰ, hᵐᵃˣ, λᶠ) → (ℓᵐ, d)
@@ -443,7 +443,7 @@ $(TYPEDSIGNATURES)
 Momentum roughness length `ℓᵐ` and zero-plane displacement `d` (meters) from **measured**
 per-cell morphometry: the plan-area index `λᵖ`, mean building height `h`, height standard
 deviation `σʰ`, tallest element `hᵐᵃˣ` and frontal-area index `λᶠ`, as a footprint-level
-dataset supplies them. The `frontal_area` estimator and the `σʰ`/`hᵐᵃˣ` regressions of
+dataset supplies them. The `frontal_area_estimator` and the `σʰ`/`hᵐᵃˣ` regressions of
 [`VariableHeight`](@ref) drop out; the drag partition and the height-spread corrections
 themselves remain. `hᵐᵃˣ` is floored at `h`, and the displacement parameter
 `X = (σʰ + h)/hᵐᵃˣ` keeps its `[0, 1]` clamp, so a low-biased maximum height cannot invert

@@ -49,6 +49,25 @@ function bounding_box_intersects(bounds, bbox::BoundingBox)
     return !(bounds.east < λ₁ || bounds.west > λ₂ || bounds.north < φ₁ || bounds.south > φ₂)
 end
 
+"""
+    bounding_box_suffix(region)
+
+Filename suffix identifying the window a regionally-downloaded dataset was cached for:
+`"global"` for `nothing`, and `"lon_<west>_<east>_lat_<south>_<north>"` for a `BoundingBox`,
+so windows of one dataset never collide on disk. Datasets whose products follow a different
+filename convention define their own suffix instead.
+"""
+bounding_box_suffix(::Nothing) = "global"
+
+function bounding_box_suffix(region::BoundingBox)
+    λ = region.longitude
+    φ = region.latitude
+    return string("lon_", bounds_string(λ), "_lat_", bounds_string(φ))
+end
+
+bounds_string(::Nothing) = "nothing"
+bounds_string(bounds) = string(bounds[1], "_", bounds[2])
+
 #####
 ##### Column region and interpolation types
 #####

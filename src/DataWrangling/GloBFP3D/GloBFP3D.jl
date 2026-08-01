@@ -10,7 +10,7 @@ using Oceananigans.Grids: LatitudeLongitudeGrid, λnodes, φnodes
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
-                       metadata_path, BoundingBox
+                       metadata_path, BoundingBox, bounding_box_suffix
 
 import Oceananigans
 
@@ -100,18 +100,7 @@ function Base.size(dataset::GlobalBuildingFootprints3D, variable)
 end
 
 DataWrangling.metadata_filename(dataset::GlobalBuildingFootprints3D, name, date, region) =
-    string("GlobalBuildingFootprints3D_", dataset.resolution, "m_", region_suffix(region), ".nc")
-
-region_suffix(::Nothing) = "global"
-
-function region_suffix(region::BoundingBox)
-    λ = region.longitude
-    φ = region.latitude
-    return string("lon_", bound_str(λ), "_lat_", bound_str(φ))
-end
-
-bound_str(::Nothing) = "nothing"
-bound_str(bounds) = string(bounds[1], "_", bounds[2])
+    string("GlobalBuildingFootprints3D_", dataset.resolution, "m_", bounding_box_suffix(region), ".nc")
 
 function DataWrangling.validate_dataset_coverage(grid, metadata::GlobalBuildingFootprints3DMetadatum)
     region = metadata.region
@@ -173,18 +162,18 @@ function reduce_morphometry(height, longitudes, latitudes, target_grid::Latitude
     φcenters = φnodes(target_grid, Center())
 
     nx, ny = size(height)
-    Δλ_fine = nx > 1 ? longitudes[2] - longitudes[1] : zero(eltype(longitudes))
-    Δφ_fine = ny > 1 ? latitudes[2]  - latitudes[1]  : zero(eltype(latitudes))
+    δλ = nx > 1 ? longitudes[2] - longitudes[1] : zero(eltype(longitudes))
+    δφ = ny > 1 ? latitudes[2]  - latitudes[1]  : zero(eltype(latitudes))
     Imap = target_index_map(λfaces, longitudes)
     Jmap = target_index_map(φfaces, latitudes)
 
-    count_total = zeros(Int, Nx, Ny)
-    count_built = zeros(Int, Nx, Ny)
-    Σheight     = zeros(Float64, Nx, Ny)
-    Σheight²    = zeros(Float64, Nx, Ny)
-    running_max = zeros(Float64, Nx, Ny)
-    Σstep_x     = zeros(Float64, Nx, Ny)
-    Σstep_y     = zeros(Float64, Nx, Ny)
+    count_total     = zeros(Int, Nx, Ny)
+    count_built     = zeros(Int, Nx, Ny)
+    Σh              = zeros(Float64, Nx, Ny)
+    Σh²             = zeros(Float64, Nx, Ny)
+    running_maximum = zeros(Float64, Nx, Ny)
+    Σδhˣ            = zeros(Float64, Nx, Ny)
+    Σδhʸ            = zeros(Float64, Nx, Ny)
 
     @inbounds for j in 1:ny, i in 1:nx
         I = Imap[i]
@@ -194,47 +183,47 @@ function reduce_morphometry(height, longitudes, latitudes, target_grid::Latitude
         count_total[I, J] += 1
         if h > 0
             count_built[I, J] += 1
-            Σheight[I, J]  += h
-            Σheight²[I, J] += h * h
-            running_max[I, J] = max(running_max[I, J], h)
+            Σh[I, J]  += h
+            Σh²[I, J] += h * h
+            running_maximum[I, J] = max(running_maximum[I, J], h)
         end
-        i < nx && (Σstep_x[I, J] += abs(height[i + 1, j] - h))
-        j < ny && (Σstep_y[I, J] += abs(height[i, j + 1] - h))
+        i < nx && (Σδhˣ[I, J] += abs(height[i + 1, j] - h))
+        j < ny && (Σδhʸ[I, J] += abs(height[i, j + 1] - h))
     end
 
-    built_up_fraction       = zeros(Float64, Nx, Ny)
-    mean_building_height    = zeros(Float64, Nx, Ny)
-    building_height_std     = zeros(Float64, Nx, Ny)
-    maximum_building_height = running_max
-    gross_building_height   = zeros(Float64, Nx, Ny)
-    frontal_area_index      = zeros(Float64, Nx, Ny)
+    plan_area_index           = zeros(Float64, Nx, Ny)
+    mean_building_height      = zeros(Float64, Nx, Ny)
+    building_height_deviation = zeros(Float64, Nx, Ny)
+    maximum_building_height   = running_maximum
+    gross_building_height     = zeros(Float64, Nx, Ny)
+    frontal_area_index        = zeros(Float64, Nx, Ny)
 
     # Fine-cell side lengths in meters, at each target row's latitude.
     R = target_grid.radius
     for J in 1:Ny
         φc = φcenters[J]
-        dy = R * deg2rad(Δφ_fine)
-        dx = R * deg2rad(Δλ_fine) * cosd(φc)
+        dy = R * deg2rad(δφ)
+        dx = R * deg2rad(δλ) * cosd(φc)
         for I in 1:Nx
             nt = count_total[I, J]
             nb = count_built[I, J]
             if nt > 0
-                built_up_fraction[I, J]     = nb / nt
-                gross_building_height[I, J] = Σheight[I, J] / nt
+                plan_area_index[I, J]       = nb / nt
+                gross_building_height[I, J] = Σh[I, J] / nt
                 cell_area = nt * dx * dy
                 frontal_area_index[I, J] = cell_area > 0 ?
-                    (Σstep_x[I, J] * dy + Σstep_y[I, J] * dx) / (4 * cell_area) : 0.0
+                    (Σδhˣ[I, J] * dy + Σδhʸ[I, J] * dx) / (4 * cell_area) : 0.0
             end
             if nb > 0
-                m = Σheight[I, J] / nb
-                mean_building_height[I, J] = m
-                building_height_std[I, J]  = sqrt(max(Σheight²[I, J] / nb - m^2, 0.0))
+                h̄ = Σh[I, J] / nb
+                mean_building_height[I, J]      = h̄
+                building_height_deviation[I, J] = sqrt(max(Σh²[I, J] / nb - h̄^2, 0.0))
             end
         end
     end
 
-    return (; mean_building_height, building_height_std, maximum_building_height,
-              built_up_fraction, frontal_area_index, gross_building_height)
+    return (; mean_building_height, building_height_deviation, maximum_building_height,
+              plan_area_index, frontal_area_index, gross_building_height)
 end
 
 """
@@ -244,13 +233,13 @@ Per-cell building morphometry on `target_grid` (a `LatitudeLongitudeGrid`, coars
 `dataset` rasterization resolution), aggregated from the fine 3D-GloBFP building-height raster
 over `region`. Returns a NamedTuple of `Field`s:
 
-- `built_up_fraction` `λp` — fraction of fine cells that are built.
-- `mean_building_height` `H` — mean height over the built fine cells.
-- `building_height_std` `σH` — standard deviation of height over the built fine cells.
-- `maximum_building_height` `Hmax` — maximum height.
-- `gross_building_height` — mean height over all fine cells (`= λp·H`), the digital surface lift.
-- `frontal_area_index` `λf` — windward wall area from height steps, direction-averaged:
-  `(Σₓ|ΔH|·dy + Σᵧ|ΔH|·dx) / (4·A)`.
+- `plan_area_index` `λᵖ` — fraction of fine cells that are built.
+- `mean_building_height` `h` — mean height over the built fine cells.
+- `building_height_deviation` `σʰ` — standard deviation of height over the built fine cells.
+- `maximum_building_height` `hᵐᵃˣ` — maximum height.
+- `gross_building_height` — mean height over all fine cells (`= λᵖ·h`), the digital surface lift.
+- `frontal_area_index` `λᶠ` — windward wall area from height steps, direction-averaged:
+  `(Σₓ|δh|·dy + Σᵧ|δh|·dx) / (4·A)`, with `A` the cell area.
 
 Downloading and rasterizing the footprints requires `using ArchGDAL`.
 """

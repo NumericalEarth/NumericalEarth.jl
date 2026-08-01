@@ -3,12 +3,12 @@
 # 3D-GloBFP is a global set of ~1.3 billion building footprints, each carrying an estimated
 # height. [`GlobalBuildingFootprints3D`](@ref) ingests it by rasterizing those heights onto a
 # fine (3 m) grid, and [`building_morphometry`](@ref) reduces that raster onto a coarser target
-# grid: mean height `H`, height standard deviation `σH`, maximum height `Hmax`, built-up fraction
-# `λp`, frontal-area index `λf`, and the gross building lift `λp·H`.
+# grid: mean height `h`, height standard deviation `σʰ`, maximum height `hᵐᵃˣ`, plan-area index
+# `λᵖ`, frontal-area index `λᶠ`, and the gross building lift `λᵖ·h`.
 #
-# `σH`, `Hmax` and `λf` are the height-heterogeneity inputs an urban aerodynamic-roughness closure
-# (Kanda et al. 2013) is designed for, in place of the assumed ratios `σH = 0.4 H`, `Hmax = 2.5 H`,
-# `λf ≈ λp` that a mean-height-only product forces. Manhattan makes the point: supertalls in the
+# `σʰ`, `hᵐᵃˣ` and `λᶠ` are the height-heterogeneity inputs an urban aerodynamic-roughness closure
+# (Kanda et al. 2013) is designed for, in place of the assumed ratios `σʰ = 0.4 h`, `hᵐᵃˣ = 2.5 h`,
+# `λᶠ ≈ λᵖ` that a mean-height-only product forces. Manhattan makes the point: supertalls in the
 # Financial District and Midtown beside low-rise blocks, with Central Park and the rivers as voids.
 # The heights are machine-learning estimates (RMSE 1.9–14.6 m) and biased low.
 
@@ -42,13 +42,14 @@ fig1
 target_grid = LatitudeLongitudeGrid(CPU(), Float64; size = (102, 136),
                                     longitude = region.longitude, latitude = region.latitude,
                                     topology = (Bounded, Bounded, Flat))
-m = building_morphometry(target_grid; dataset, region)
+morphometry = building_morphometry(target_grid; dataset, region)
 
 robust_range(field) = (v = filter(>(0), interior(field, :, :, 1)); isempty(v) ? (0, 1) : (0, quantile(v, 0.98)))
 
 # Sharing one color range between the 3 m raster and the height panels shows how much the 100 m
 # aggregation smooths the towers.
-height_range = (0, max(robust_range(m.mean_building_height)[2], robust_range(m.maximum_building_height)[2]))
+height_range = (0, max(robust_range(morphometry.mean_building_height)[2],
+                       robust_range(morphometry.maximum_building_height)[2]))
 
 function panel!(layout, i, j, field, title, units; colormap = :viridis, colorrange = robust_range(field))
     ax = Axis(layout[i, 2j - 1]; title, xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
@@ -73,29 +74,29 @@ ax_bh = Axis(left[1, 1]; title = "building height (9 m max of the 3 m raster)",
 hm_bh = heatmap!(ax_bh, building_height_overview; colormap = :viridis, colorrange = height_range)
 Colorbar(left[1, 2], hm_bh; label = "m")
 
-## Right: the six morphometry fields at 100 m; H and Hmax share the raster's color range.
+## Right: the six morphometry fields at 100 m; h and hᵐᵃˣ share the raster's color range.
 right = fig2[1, 2] = GridLayout()
-panel!(right, 1, 1, m.mean_building_height,    "mean height H",         "m"; colorrange = height_range)
-panel!(right, 1, 2, m.maximum_building_height, "maximum height Hmax",   "m"; colorrange = height_range)
-panel!(right, 1, 3, m.building_height_std,     "height std σH",         "m"; colormap = :magma)
-panel!(right, 2, 1, m.built_up_fraction,       "built-up fraction λp",  "–"; colormap = :turbo)
-panel!(right, 2, 2, m.frontal_area_index,      "frontal-area index λf", "–"; colormap = :turbo)
-panel!(right, 2, 3, m.gross_building_height,   "gross building lift",   "m")
+panel!(right, 1, 1, morphometry.mean_building_height,      "mean height h",         "m"; colorrange = height_range)
+panel!(right, 1, 2, morphometry.maximum_building_height,   "maximum height hᵐᵃˣ",   "m"; colorrange = height_range)
+panel!(right, 1, 3, morphometry.building_height_deviation, "height deviation σʰ",   "m"; colormap = :magma)
+panel!(right, 2, 1, morphometry.plan_area_index,           "plan-area index λᵖ",    "–"; colormap = :turbo)
+panel!(right, 2, 2, morphometry.frontal_area_index,        "frontal-area index λᶠ", "–"; colormap = :turbo)
+panel!(right, 2, 3, morphometry.gross_building_height,     "gross building lift",   "m")
 colsize!(fig2.layout, 1, Relative(0.32))
 save("globfp3d_morphometry.png", fig2)
 fig2
 
-# `σH` is bright where towers sit among low-rise blocks — the height heterogeneity a
+# `σʰ` is bright where towers sit among low-rise blocks — the height heterogeneity a
 # mean-height-only product cannot express.
 
 # ## Where the assumed Kanda ratios are wrong
 #
 # The ratios are field operations, so unbuilt cells come out as `0/0 = NaN` and drop out (gray).
-Hmax_over_H = compute!(Field(m.maximum_building_height / m.mean_building_height))
-σH_over_H   = compute!(Field(m.building_height_std / m.mean_building_height))
+maximum_to_mean_height = compute!(Field(morphometry.maximum_building_height / morphometry.mean_building_height))
+spread_to_mean_height  = compute!(Field(morphometry.building_height_deviation / morphometry.mean_building_height))
 
-ratios = ((Hmax_over_H, "Hmax / H  (assumed 2.5)", 2.5),
-          (σH_over_H,   "σH / H  (assumed 0.4)",   0.4))
+ratios = ((maximum_to_mean_height, "hᵐᵃˣ / h  (assumed 2.5)", 2.5),
+          (spread_to_mean_height,  "σʰ / h  (assumed 0.4)",   0.4))
 
 fig3 = Figure(size = (1250, 520))
 for (j, (ratio, title, assumed)) in enumerate(ratios)
@@ -110,44 +111,45 @@ Label(fig3[0, :], "Real height ratios vs the assumed Kanda constants", fontsize 
 save("globfp3d_assumed_ratios.png", fig3)
 fig3
 
-# ## λf departs from the λf ≈ λp assumption
-λp = interior(m.built_up_fraction, :, :, 1)
-λf = interior(m.frontal_area_index, :, :, 1)
-keep = (λp .> 0) .& isfinite.(λf)
+# ## λᶠ departs from the λᶠ ≈ λᵖ assumption
+λᵖ = interior(morphometry.plan_area_index, :, :, 1)
+λᶠ = interior(morphometry.frontal_area_index, :, :, 1)
+keep = (λᵖ .> 0) .& isfinite.(λᶠ)
 
 fig4 = Figure(size = (620, 560))
-ax4 = Axis(fig4[1, 1]; title = "frontal-area index vs plan-area fraction",
-           xlabel = "λp (plan-area fraction)", ylabel = "λf (frontal-area index)")
-scatter!(ax4, λp[keep], λf[keep]; markersize = 3, color = (:steelblue, 0.25))
-lines!(ax4, [0, 1], [0, 1]; color = :black, linestyle = :dash, label = "λf = λp (the assumption)")
+ax4 = Axis(fig4[1, 1]; title = "frontal-area index vs plan-area index",
+           xlabel = "λᵖ (plan-area index)", ylabel = "λᶠ (frontal-area index)")
+scatter!(ax4, λᵖ[keep], λᶠ[keep]; markersize = 3, color = (:steelblue, 0.25))
+lines!(ax4, [0, 1], [0, 1]; color = :black, linestyle = :dash, label = "λᶠ = λᵖ (the assumption)")
 axislegend(ax4; position = :lt)
-ylims!(ax4, 0, quantile(λf[keep], 0.99))
+ylims!(ax4, 0, quantile(λᶠ[keep], 0.99))
 save("globfp3d_frontal_vs_plan.png", fig4)
 fig4
 
 # ## The roughness closure fed the measured morphometry
 #
 # [`urban_roughness`](@ref) evaluates the Macdonald–Kanda closure per cell. Fed only
-# `(H, λp)` — all a mean-height product supplies — it regresses `σH`, `Hmax` and `λf` from
+# `(h, λᵖ)` — all a mean-height product supplies — it regresses `σʰ`, `hᵐᵃˣ` and `λᶠ` from
 # them; fed all five fields, the measured height heterogeneity replaces the regressions and
 # only the drag-partition physics and the Kanda height-spread corrections remain.
 regressed_roughness_length, regressed_displacement_height =
-    urban_roughness(m.mean_building_height, m.built_up_fraction)
+    urban_roughness(morphometry.mean_building_height, morphometry.plan_area_index)
 
 roughness_length, displacement_height =
-    urban_roughness(m.mean_building_height, m.built_up_fraction, m.building_height_std,
-                    m.maximum_building_height, m.frontal_area_index)
+    urban_roughness(morphometry.mean_building_height, morphometry.plan_area_index,
+                    morphometry.building_height_deviation, morphometry.maximum_building_height,
+                    morphometry.frontal_area_index)
 
 roughness_ratio = compute!(Field(roughness_length / regressed_roughness_length))
 displacement_shift = compute!(Field(displacement_height - regressed_displacement_height))
 
 fig5 = Figure(size = (1900, 1150))
-Label(fig5[0, 1:6], "Aerodynamic roughness of Manhattan: measured σH, Hmax, λf vs the regressions", fontsize = 20)
+Label(fig5[0, 1:6], "Aerodynamic roughness of Manhattan: measured σʰ, hᵐᵃˣ, λᶠ vs the regressions", fontsize = 20)
 panel!(fig5, 1, 1, roughness_length,               "ℓᵐ, measured morphometry",  "m")
-panel!(fig5, 1, 2, regressed_roughness_length,     "ℓᵐ, regressed from (H, λp)", "m";
+panel!(fig5, 1, 2, regressed_roughness_length,     "ℓᵐ, regressed from (h, λᵖ)", "m";
        colorrange = robust_range(roughness_length))
 panel!(fig5, 2, 1, displacement_height,            "d, measured morphometry",   "m")
-panel!(fig5, 2, 2, regressed_displacement_height,  "d, regressed from (H, λp)", "m";
+panel!(fig5, 2, 2, regressed_displacement_height,  "d, regressed from (h, λᵖ)", "m";
        colorrange = robust_range(displacement_height))
 
 ## The comparison panels: a log₂-scaled ratio (centered on 1) and the displacement shift.
@@ -161,7 +163,7 @@ save("globfp3d_urban_roughness.png", fig5)
 fig5
 
 # Over the built cells, the medians quantify what the measured inputs change.
-built = interior(m.built_up_fraction, :, :, 1) .> 0.01
+built = interior(morphometry.plan_area_index, :, :, 1) .> 0.01
 for (field, name, units) in ((roughness_ratio, "ℓᵐ measured/regressed", ""),
                              (displacement_shift, "d measured − regressed", " m"))
     vals = filter(isfinite, interior(field, :, :, 1)[built])
@@ -172,7 +174,7 @@ end
 # The regressions were fitted to 1 km Tokyo/Nagoya districts, so on a 100 m grid they hand
 # every cell with 30 m mean height a ~160 m tallest building — the median regressed `ℓᵐ` runs
 # ~4× the measured-input value and `d` ~2×. The measured statistics are per-cell facts, valid
-# at any resolution; only where supertalls actually stand do `σH` and `Hmax` stay this large.
+# at any resolution; only where supertalls actually stand do `σʰ` and `hᵐᵃˣ` stay this large.
 
 # ## The same comparison at the regressions' fitted 1 km scale
 #
@@ -185,14 +187,14 @@ kilometer_grid = LatitudeLongitudeGrid(CPU(), Float64; size = (8, 13),
 kilometer_morphometry = building_morphometry(kilometer_grid; dataset, region)
 
 kilometer_regressed_roughness, kilometer_regressed_displacement =
-    urban_roughness(kilometer_morphometry.mean_building_height, kilometer_morphometry.built_up_fraction)
+    urban_roughness(kilometer_morphometry.mean_building_height, kilometer_morphometry.plan_area_index)
 
 kilometer_measured_roughness, kilometer_measured_displacement =
-    urban_roughness(kilometer_morphometry.mean_building_height, kilometer_morphometry.built_up_fraction,
-                    kilometer_morphometry.building_height_std, kilometer_morphometry.maximum_building_height,
+    urban_roughness(kilometer_morphometry.mean_building_height, kilometer_morphometry.plan_area_index,
+                    kilometer_morphometry.building_height_deviation, kilometer_morphometry.maximum_building_height,
                     kilometer_morphometry.frontal_area_index)
 
-kilometer_built = interior(kilometer_morphometry.built_up_fraction, :, :, 1) .> 0.01
+kilometer_built = interior(kilometer_morphometry.plan_area_index, :, :, 1) .> 0.01
 cell_values(field, mask) = interior(field, :, :, 1)[mask]
 
 fig6 = Figure(size = (1250, 640))
@@ -203,7 +205,7 @@ panels = (("roughness length ℓᵐ (m)", regressed_roughness_length, roughness_
            kilometer_regressed_displacement, kilometer_measured_displacement))
 for (j, (name, regressed, measured, kilometer_regressed, kilometer_measured)) in enumerate(panels)
     ax = Axis(fig6[1, j]; xscale = log10, yscale = log10, title = name, aspect = 1,
-              xlabel = "regressed from (H, λp)", ylabel = "measured σH, Hmax, λf")
+              xlabel = "regressed from (h, λᵖ)", ylabel = "measured σʰ, hᵐᵃˣ, λᶠ")
     scatter!(ax, cell_values(regressed, built), cell_values(measured, built);
              markersize = 4, color = (:steelblue, 0.25), label = "100 m cells")
     scatter!(ax, cell_values(kilometer_regressed, kilometer_built), cell_values(kilometer_measured, kilometer_built);
@@ -217,16 +219,16 @@ fig6
 
 kilometer_roughness_ratio = cell_values(kilometer_measured_roughness, kilometer_built) ./
                             cell_values(kilometer_regressed_roughness, kilometer_built)
-kilometer_height_spread_ratio = cell_values(kilometer_morphometry.building_height_std, kilometer_built) ./
+kilometer_height_spread_ratio = cell_values(kilometer_morphometry.building_height_deviation, kilometer_built) ./
                                 cell_values(kilometer_morphometry.mean_building_height, kilometer_built)
 @info "1 km ℓᵐ measured/regressed: median = $(round(median(kilometer_roughness_ratio), digits = 2)), " *
       "IQR = $(round.(quantile(kilometer_roughness_ratio, (0.25, 0.75)), digits = 2))"
-@info "1 km measured σH/H: median = $(round(median(kilometer_height_spread_ratio), digits = 2))"
+@info "1 km measured σʰ/h: median = $(round(median(kilometer_height_spread_ratio), digits = 2))"
 
-# It does — about half of it. From 100 m to 1 km the measured `σH/H` median rises from 0.09
-# to ~0.34, `Hmax/H` from 1.11 to ~2.05 (toward the assumed 2.5), and the `ℓᵐ` ratio recovers
+# It does — about half of it. From 100 m to 1 km the measured `σʰ/h` median rises from 0.09
+# to ~0.34, `hᵐᵃˣ/h` from 1.11 to ~2.05 (toward the assumed 2.5), and the `ℓᵐ` ratio recovers
 # from ~0.27 to ~0.53, with the 1 km cells straddling the 1:1 line. The factor ~2 that remains
-# even at the fitted scale is a city mismatch: Kanda's `σH = 1.05H − 3.7` prescribes
-# `σH/H ≈ 0.95` at Manhattan's 1 km mean heights, three times the heterogeneity its uniform
+# even at the fitted scale is a city mismatch: Kanda's `σʰ = 1.05h − 3.7` prescribes
+# `σʰ/h ≈ 0.95` at Manhattan's 1 km mean heights, three times the heterogeneity its uniform
 # mid- and high-rise districts actually have. The measured morphometry carries neither the
 # fitted scale nor the fitted city.

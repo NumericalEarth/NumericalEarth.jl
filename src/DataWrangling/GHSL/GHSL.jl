@@ -7,7 +7,7 @@ using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
-                       metadata_path, BoundingBox
+                       metadata_path, BoundingBox, bounding_box_suffix
 
 import Oceananigans
 
@@ -154,18 +154,7 @@ dataset_prefix(dataset::GHSBuiltS) =
     string("GHSBuiltS_", dataset.resolution, "m_", dataset.epoch)
 
 DataWrangling.metadata_filename(dataset::AbstractGHSLDataset, name, date, region) =
-    string(dataset_prefix(dataset), "_", region_suffix(region), ".nc")
-
-region_suffix(::Nothing) = "global"
-
-function region_suffix(region::BoundingBox)
-    λ = region.longitude
-    φ = region.latitude
-    return string("lon_", bound_str(λ), "_lat_", bound_str(φ))
-end
-
-bound_str(::Nothing) = "nothing"
-bound_str(bounds) = string(bounds[1], "_", bounds[2])
+    string(dataset_prefix(dataset), "_", bounding_box_suffix(region), ".nc")
 
 function DataWrangling.validate_dataset_coverage(grid, metadata::GHSLMetadatum)
     region = metadata.region

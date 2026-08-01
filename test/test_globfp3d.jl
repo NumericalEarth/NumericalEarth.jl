@@ -27,21 +27,21 @@ using Oceananigans.Fields: location
                                    topology = (Bounded, Bounded, Flat))
 
     m = reduce_morphometry(height, lon, lat, target)
-    @test m.built_up_fraction[1, 1]       ≈ 9 / 36            # 9 built of 36 cells
+    @test m.plan_area_index[1, 1]       ≈ 9 / 36            # 9 built of 36 cells
     @test m.mean_building_height[1, 1]    ≈ 30                # mean over built cells
-    @test m.building_height_std[1, 1]     ≈ 0                 # uniform height
+    @test m.building_height_deviation[1, 1]     ≈ 0                 # uniform height
     @test m.maximum_building_height[1, 1] ≈ 30
-    @test m.gross_building_height[1, 1]   ≈ 30 * 9 / 36       # mean over all cells = λp·H
-    # λf: an isolated 30 m × 30 m × 30 m block has frontal area 900 m² / 3600 m² plan = 0.25.
+    @test m.gross_building_height[1, 1]   ≈ 30 * 9 / 36       # mean over all cells = λᵖ·h
+    # λᶠ: an isolated 30 m × 30 m × 30 m block has frontal area 900 m² / 3600 m² plan = 0.25.
     @test m.frontal_area_index[1, 1]      ≈ 0.25 rtol = 1e-6
 
-    # Height heterogeneity: eight 10 m cells + one 40 m cell → nonzero σH, Hmax = 40.
+    # Height heterogeneity: eight 10 m cells + one 40 m cell → nonzero σʰ, hᵐᵃˣ = 40.
     h2 = zeros(6, 6); h2[2:4, 2:4] .= 10.0; h2[3, 3] = 40.0
     m2 = reduce_morphometry(h2, lon, lat, target)
-    mean_h = (8 * 10 + 40) / 9
-    @test m2.building_height_std[1, 1]     ≈ sqrt((8 * 100 + 1600) / 9 - mean_h^2)
+    h̄ = (8 * 10 + 40) / 9
+    @test m2.building_height_deviation[1, 1]     ≈ sqrt((8 * 100 + 1600) / 9 - h̄^2)
     @test m2.maximum_building_height[1, 1] ≈ 40
-    @test m2.mean_building_height[1, 1]    ≈ mean_h
+    @test m2.mean_building_height[1, 1]    ≈ h̄
 
     # An empty raster reduces to zero everywhere (a park/river adds no building height).
     m0 = reduce_morphometry(zeros(6, 6), lon, lat, target)
@@ -54,8 +54,8 @@ using Oceananigans.Fields: location
                                  longitude = (0, 6Δ), latitude = (0, 6Δ),
                                  topology = (Bounded, Bounded, Flat))
     mq = reduce_morphometry(height, lon, lat, quad)
-    @test sum(mq.built_up_fraction) > 0
-    @test all(0 .<= mq.built_up_fraction .<= 1)
+    @test sum(mq.plan_area_index) > 0
+    @test all(0 .<= mq.plan_area_index .<= 1)
 
     # A latitude/longitude-stretched target grid bins each fine cell by the target cell faces, so
     # it reduces correctly (one building per quadrant lands in the right cell with distinct values).
@@ -68,12 +68,12 @@ using Oceananigans.Fields: location
     ms = reduce_morphometry(hq, lon, lat, stretched)
     @test ms.mean_building_height    ≈ [10.0 30.0; 20.0 40.0]
     @test ms.maximum_building_height ≈ [10.0 30.0; 20.0 40.0]
-    @test ms.built_up_fraction       ≈ [1/8 1/4; 1/16 1/8]
+    @test ms.plan_area_index       ≈ [1/8 1/4; 1/16 1/8]
 
     # A degenerate 1×1 fine raster has no fine step to difference: return a result, not a crash.
     m1 = reduce_morphometry(fill(20.0, 1, 1), [3Δ], [3Δ], target)
     @test m1.mean_building_height[1, 1]  ≈ 20
-    @test m1.built_up_fraction[1, 1]     ≈ 1
+    @test m1.plan_area_index[1, 1]     ≈ 1
     @test m1.frontal_area_index[1, 1]    == 0
 end
 
