@@ -1,4 +1,4 @@
-using Oceananigans.Grids: topology
+using Oceananigans.Grids: Grids, topology
 using Oceananigans.Fields: set!
 using NumericalEarth: NumericalEarth
 using NumericalEarth.EarthSystemModels: EarthSystemModel, ocean_salinity
@@ -231,6 +231,8 @@ function NumericalEarth.Oceans.ocean_simulation(ocean::Py)
 
     return VerosOceanSimulation(ocean)
 end
+
+Grids.grid(ocean::VerosOceanSimulation) = surface_grid(ocean)
 
 """
     surface_grid(ocean::VerosOceanSimulation)

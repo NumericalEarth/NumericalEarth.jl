@@ -61,8 +61,8 @@ end
 
             ℂᵃᵗ = atmosphere.thermodynamics_parameters
 
-            fill!(parent(atmosphere.tracers.T),    Tᵃᵗ)
-            fill!(parent(atmosphere.tracers.q),    qᵃᵗ)
+            fill!(parent(atmosphere.temperature),       Tᵃᵗ)
+            fill!(parent(atmosphere.specific_humidity), qᵃᵗ)
             fill!(parent(atmosphere.velocities.u), uᵃᵗ)
             fill!(parent(atmosphere.velocities.v), vᵃᵗ)
             fill!(parent(atmosphere.pressure),     pᵃᵗ)
@@ -162,8 +162,7 @@ end
             similarity_theory = SimilarityTheoryFluxes(; momentum_roughness_length = ℓ,
                                                          temperature_roughness_length = ℓ,
                                                          water_vapor_roughness_length = ℓ,
-                                                         gustiness_parameter = 0,
-                                                         minimum_gustiness = 0,
+                                                         subgrid_velocities = nothing,
                                                          stability_functions)
 
             interfaces = ComponentInterfaces(atmosphere, ocean;
@@ -284,7 +283,7 @@ end
             sea_ice = FreezingLimitedOceanTemperature()
 
             # Always cooling!
-            fill!(atmosphere.tracers.T, 273.15 - 20)
+            fill!(atmosphere.temperature, 273.15 - 20)
 
             coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere)
 

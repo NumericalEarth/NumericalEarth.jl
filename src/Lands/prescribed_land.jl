@@ -3,11 +3,13 @@
 # coupling would require additional fields (e.g. albedo, skin temperature); see
 # https://github.com/NumericalEarth/NumericalEarth.jl/issues/30 for the related
 # discussion of moving surface albedo to a radiation component.
-mutable struct PrescribedLand{G, T, F, TI} <: AbstractPrescribedComponent
+mutable struct PrescribedLand{G, T, F, TI, R} <: AbstractPrescribedComponent
     grid :: G
     clock :: Clock{T}
-    freshwater_flux :: F   # NamedTuple, e.g. (rivers=FTS, icebergs=FTS)
+    freshwater_flux :: F     # NamedTuple, e.g. (rivers=FTS, icebergs=FTS)
     times :: TI
+    river_routing :: R       # `nothing`, or a `RiverRouting` mapping native river
+                             # mouths to coastal ocean cells (see river_routing.jl)
 end
 
 function Base.summary(pl::PrescribedLand)
@@ -25,15 +27,21 @@ function Base.show(io::IO, pl::PrescribedLand)
 end
 
 """
-    PrescribedLand(freshwater_flux; clock=nothing)
+    PrescribedLand(freshwater_flux; clock=nothing, river_routing=nothing)
 
 Return a `PrescribedLand` component from a `NamedTuple` of `FieldTimeSeries`
 representing freshwater fluxes (e.g. rivers, icebergs).
 
 If `clock` is not provided, defaults to a `Clock` whose time type matches the
 element type of `freshwater_flux`.
+
+When `river_routing` is a [`RiverRouting`](@ref), the freshwater flux is treated
+as a per-river-mouth volume discharge (m³ s⁻¹) that is scattered onto coastal
+ocean cells conserving volume (see [`GloFASPrescribedLand`](@ref)). When it is
+`nothing` (the default), the flux is a per-area mass flux interpolated pointwise
+onto the ocean grid (see [`JRA55PrescribedLand`](@ref)).
 """
-function PrescribedLand(freshwater_flux; clock=nothing)
+function PrescribedLand(freshwater_flux; clock=nothing, river_routing=nothing)
     first_flux = first(freshwater_flux)
     grid = first_flux.grid
     times = first_flux.times
@@ -42,7 +50,7 @@ function PrescribedLand(freshwater_flux; clock=nothing)
         clock = Clock{eltype(first_flux)}(time=0)
     end
 
-    land = PrescribedLand(grid, clock, freshwater_flux, times)
+    land = PrescribedLand(grid, clock, freshwater_flux, times, river_routing)
     update_state!(land)
     return land
 end

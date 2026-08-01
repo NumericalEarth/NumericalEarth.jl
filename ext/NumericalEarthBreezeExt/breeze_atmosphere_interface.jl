@@ -1,5 +1,6 @@
 using Oceananigans.Grids: Center
-using Breeze.AtmosphereModels: thermodynamic_density
+using Breeze.AtmosphereModels: thermodynamic_density, dynamics_density, surface_pressure
+using GPUArraysCore: @allowscalar
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using NumericalEarth.EarthSystemModels: component_model
 using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
@@ -25,11 +26,13 @@ NumericalEarth.EarthSystemModels.thermodynamics_parameters(atmos::BreezeAtmosphe
 ##### Surface layer and boundary layer height
 #####
 
-# Height of the lowest atmospheric cell center (the "surface layer").
-# Note: for stretched grids on GPU, this may require allowscalar.
+# Height of the lowest atmospheric cell center (the "surface layer"). On a
+# terrain-following grid the vertical spacing is a GPU `OffsetArray` (it depends on
+# the terrain metrics), so `zspacing` scalar-indexes a device array — wrap the single
+# host read in `@allowscalar`. This runs once per `update_state!`, not per cell.
 function NumericalEarth.EarthSystemModels.surface_layer_height(atmosphere::BreezeAtmosphere)
     grid = atmosphere.grid
-    return Oceananigans.zspacing(1, 1, 1, grid, Center(), Center(), Center()) / 2
+    return @allowscalar Oceananigans.zspacing(1, 1, 1, grid, Center(), Center(), Center()) / 2
 end
 
 NumericalEarth.EarthSystemModels.surface_layer_height(atmos::BreezeAtmosphereSim) =
@@ -87,10 +90,14 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     T = atmosphere.temperature
     ρqᵛᵉ = atmosphere.moisture_density
 
-    # Reference state (anelastic dynamics)
-    ref = atmosphere.dynamics.reference_state
-    ρ₀ = ref.density
-    p₀ = ref.surface_pressure
+    # Near-surface density (to convert moisture density ρqᵛ → specific humidity) and
+    # surface pressure, via dynamics-generic accessors so coupling works for *both*
+    # anelastic atmospheres (reference-state density) and compressible terrain-following
+    # atmospheres (prognostic density). Reaching into
+    # `dynamics.reference_state` directly is anelastic-only (it is `nothing` for
+    # `CompressibleDynamics`).
+    ρ₀ = dynamics_density(atmosphere.dynamics)
+    p₀ = surface_pressure(atmosphere.dynamics)
 
     arch = architecture(exchange_grid)
     kernel_parameters = interface_kernel_parameters(exchange_grid)

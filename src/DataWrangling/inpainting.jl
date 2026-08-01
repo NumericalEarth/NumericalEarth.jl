@@ -5,17 +5,21 @@ using KernelAbstractions: @kernel, @index
 
 A structure representing the nearest neighbor inpainting algorithm, where a missing value is
 substituted with the average of the surrounding valid values. This process is repeated a maximum
-of `maxiter` times or until the field is completely inpainted.
+of `maxiter` times, until the field is completely inpainted, or until a pass fills nothing.
 """
 struct NearestNeighborInpainting{M}
     maxiter :: M
 end
 
-propagate_horizontally!(field, ::Nothing, substituting_field=deepcopy(field); kw...) = field
+propagate_horizontally!(::NearestNeighborInpainting, field, ::Nothing, args...; kw...) = field
 
-function propagating(field, mask, iter, inpainting::NearestNeighborInpainting)
-    nans = sum(isnan, field; condition=interior(mask))
-    return nans > 0 && iter < inpainting.maxiter
+remaining_gaps(field, mask) = sum(isnan, field; condition=interior(mask))
+
+# Stop once a sweep fills nothing: no donor is reachable for what is left, and the
+# default `maxiter = Inf` would otherwise never terminate.
+function propagating(field, mask, iter, previous_gaps, inpainting::NearestNeighborInpainting)
+    gaps = remaining_gaps(field, mask)
+    return gaps > 0 && gaps != previous_gaps && iter < inpainting.maxiter
 end
 
 """
@@ -29,7 +33,8 @@ The first argument `inpainting` is the inpainting algorithm to use in the `_prop
 """
 function propagate_horizontally!(inpainting::NearestNeighborInpainting, field, mask,
                                  substituting_field=deepcopy(field))
-    iter  = 0
+    iter = 0
+    previous_gaps = -1
     grid  = field.grid
     arch  = architecture(grid)
 
@@ -39,13 +44,15 @@ function propagate_horizontally!(inpainting::NearestNeighborInpainting, field, m
     # Need temporary field to avoid a race condition
     parent(substituting_field) .= parent(field)
 
-    while propagating(field, mask, iter, inpainting)
+    while propagating(field, mask, iter, previous_gaps, inpainting)
+        previous_gaps = remaining_gaps(field, mask)
+
         launch!(arch, grid, size(field), _propagate_field!, substituting_field, inpainting, field)
         launch!(arch, grid, size(field), _substitute_values!, field, substituting_field)
 
         @debug begin
-            nans = sum(isnan, field; condition=interior(mask))
-            "Propagate pass: $iter, remaining NaNs: $nans"
+            gaps = remaining_gaps(field, mask)
+            "Propagate pass: $iter, remaining NaNs: $gaps"
         end
 
         iter += 1
@@ -106,8 +113,8 @@ end
     inpaint_mask!(field, mask; inpainting=NearestNeighborInpainting(Inf))
 
 Inpaint `field` within `mask`, using values outside `mask`.
-In other words, regions where `mask[i, j, k] == 1` is inpainted
-and regions where `mask[i, j, k] == 0` are preserved.
+In other words, cells where `mask[i, j, k] == true` are inpainted
+and cells where `mask[i, j, k] == false` are preserved.
 
 Arguments
 =========
@@ -115,11 +122,12 @@ Arguments
 - `field`: `Field` to be inpainted.
 
 - `mask`: Boolean-valued `Field`, values where
-          `mask[i, j, k] == true` are inpainted.
+          `mask[i, j, k] == true` are inpainted. `nothing` leaves `field` untouched.
 
 - `inpainting`: The inpainting algorithm to use. The only option is
-                `NearestNeighborInpainting(maxiter)`, where an average
-                of the valid surrounding values is used `maxiter` times.
+                `NearestNeighborInpainting(maxiter)`, which substitutes an average
+                of the valid surrounding values at most `maxiter` times; a bare
+                `Int` is taken as that `maxiter`.
                 Default: `NearestNeighborInpainting(Inf)`.
 """
 function inpaint_mask!(field, mask; inpainting=NearestNeighborInpainting(Inf))
@@ -147,7 +155,7 @@ continue_downwards!(field, ::Nothing) = field
     continue_downwards!(field, mask)
 
 Continue downwards a field with missing values within `mask`.
-Cells where `mask[i, k, k] == false` will be preserved.
+Cells where `mask[i, j, k] == false` will be preserved.
 """
 function continue_downwards!(field, mask)
     arch = architecture(field)
@@ -170,12 +178,13 @@ end
     fill_gaps!(data::AbstractArray; max_gap=6)
     fill_gaps!(data::AbstractVector; max_gap=6)
 
-Fill NaN gaps along the time dimension using linear interpolation. For an
-`AbstractArray`, the last dimension is assumed to be time, and each spatial
-column is filled independently. For a `FieldTimeSeries`, `interior(fts)` is
-copied to the CPU, filled in place, and copied back.
+Fill NaN gaps along the time dimension using linear interpolation, except at the ends
+of the record, where a gap takes the nearest valid value. For an `AbstractArray`, the
+last dimension is assumed to be time, and each spatial column is filled independently.
+For a `FieldTimeSeries`, `interior(fts)` is copied to the CPU, filled in place, and
+copied back.
 
-Gaps longer than `max_gap` points are left as NaN with a warning.
+Interior gaps longer than `max_gap` points are left as NaN with a warning.
 """
 function fill_gaps!(fts::FieldTimeSeries; max_gap=6)
     data_cpu = Array(interior(fts))
@@ -212,7 +221,7 @@ function fill_gaps!(data::AbstractVector; max_gap=6)
                     data[gap_start:gap_end] .= data[gap_start - 1]
                 end
             elseif gap_length > max_gap
-                @warn "Large gap of $gap_length hours at indices $gap_start:$gap_end left unfilled"
+                @warn "Large gap of $gap_length points at indices $gap_start:$gap_end left unfilled"
             else
                 # Linear interpolation
                 v0 = data[gap_start - 1]
