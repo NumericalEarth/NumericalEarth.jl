@@ -9,7 +9,6 @@ using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path
 
 import ..DataWrangling:
     metadata_filename,
-    metadata_url,
     default_download_directory,
     dataset_variable_name,
     longitude_interfaces,
