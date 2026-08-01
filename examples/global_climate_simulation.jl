@@ -27,6 +27,7 @@ using Oceananigans.Units
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Grids: φnode
 using Printf, Statistics, Dates
+using NumericalEarth.Bathymetry: Interpolate
 
 # ## Ocean and sea-ice model configuration
 # The ocean and sea-ice are a simplified versions of the [one-degree ocean-sea ice example](@ref one-degree-ocean-seaice).
@@ -42,7 +43,7 @@ nothing #hide
 
 # We regrid the bathymetry.
 
-bottom_height = regrid_bathymetry(grid; minimum_depth=10, major_basins=2, interpolation_passes=10)
+bottom_height = regrid_bathymetry(grid; minimum_depth=10, major_basins=2, method = Interpolate(10))
 grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
 nothing #hide
 
