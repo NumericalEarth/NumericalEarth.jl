@@ -64,7 +64,7 @@ function Base.:(==)(a::BathymetryRegridding, b::BathymetryRegridding)
            a.longitude            == b.longitude &&
            a.latitude             == b.latitude &&
            a.topology             == b.topology &&
-           a.float_type           == b.float_type &&
+           a.float_type            == b.float_type &&
            a.height_above_water   == b.height_above_water &&
            a.minimum_depth        == b.minimum_depth &&
            a.interpolation_passes == b.interpolation_passes &&
