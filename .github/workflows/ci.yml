@@ -43,7 +43,7 @@ jobs:
     name: (CPU) - Julia 1.12.5
     runs-on: ubuntu-latest
     # The image ships a depot with `test/` already instantiated at `--check-bounds=yes`, which is
-    # exactly how this job runs, so the packages arrive precompiled and no Actions cache is needed. 
+    # exactly how this job runs, so the packages arrive precompiled and no Actions cache is needed.
     container:
       image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
     timeout-minutes: 120
@@ -189,72 +189,14 @@ jobs:
           df -h /
           echo " --> df -a /"
           df -a /
-          
+
   #####
   ##### Specialized tests (GitHub-hosted runners)
   #####
 
-  cds_downloading:
-    name: Data Downloading - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        version:
-          - "1.12.5"
-        os:
-          - ubuntu-latest
-        arch:
-          - default
-        include:
-          - os: macOS-latest
-            arch: aarch64
-            version: "1.12.5"
-    steps:
-      - name: Show available storage before cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-      - name: Free Disk Space
-        if: ${{ runner.os != 'macOS' }}
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          large-packages: false
-      - name: Cleanup /opt
-        if: ${{ runner.os != 'macOS' }}
-        run: |
-          sudo rm -rf /opt/*
-      - name: Show available storage after cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-      - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@v2
-        with:
-          version: ${{ matrix.version }}
-          arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v3
-        with:
-          cache-scratchspaces: false
-      - name: Run tests
-        run: |
-          julia --project --color=yes --check-bounds=yes -e '
-              using Pkg;
-              Pkg.test(; coverage=true,
-                        julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
-                        test_args=["--verbose", "test_cds_downloading", "test_jra55_ecco_en4_etopo_downloading", "test_glorys_downloading", "test_aviso_downloading", "test_copernicus_dem_downloading"])
-          '
-      - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v5
-        with:
-          files: lcov.info
-          token: ${{ secrets.CODECOV_TOKEN }}
+  # The `*_downloading` tests do not live here: they hit external data servers with real
+  # requests, so running them on every push burdens those servers without adding signal.
+  # They run nightly (and on demand) from `.github/workflows/downloading.yml` instead.
 
   reactant:
     name: Reactant extension - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
@@ -319,7 +261,7 @@ jobs:
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
-  
+
   #####
   ##### Distributed MPI tests (GitHub-hosted runners)
   #####
