@@ -56,6 +56,23 @@ test_fields = Dict(
 ##### Test utilities
 #####
 
+function analytical_tripolar_bottom_height(underlying_grid; radius = 5)
+    λp = underlying_grid.conformal_mapping.first_pole_longitude
+    φp = underlying_grid.conformal_mapping.north_poles_latitude
+    φm = underlying_grid.conformal_mapping.southernmost_latitude
+    Lz = underlying_grid.Lz
+
+    function bottom_height(λ, φ)
+        masked = ((abs(λ - λp)       < radius) & (abs(φp - φ) < radius)) |
+                 ((abs(λ - λp - 180) < radius) & (abs(φp - φ) < radius)) |
+                 ((abs(λ - λp - 360) < radius) & (abs(φp - φ) < radius)) |
+                 (φ < φm + radius)
+        return ifelse(masked, zero(Lz), -Lz)
+    end
+
+    return bottom_height
+end
+
 function test_setting_from_metadata(arch, dataset, start_date, inpainting;
                                     loc = (Center, Center, Center),
                                     varnames = (:temperature, :salinity),
