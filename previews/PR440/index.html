@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NumericalEarth.jl — dataset download status</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1a1a1a; --bg: #ffffff; --muted: #666; --line: #e3e3e3; --ok: #1a7f37; --fail: #cf222e; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #e6e6e6; --bg: #0d1117; --muted: #9aa0a6; --line: #30363d; --ok: #3fb950; --fail: #f85149; }
+  }
+  body { margin: 0 auto; padding: 2rem 1rem; max-width: 70rem; background: var(--bg); color: var(--fg);
+         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  .meta { color: var(--muted); font-size: .875rem; margin-bottom: 1.5rem; }
+  .summary { display: inline-block; padding: .35rem .7rem; border-radius: 6px; font-weight: 600;
+             background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+  .summary.bad { background: color-mix(in srgb, var(--fail) 15%, transparent); color: var(--fail); }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-weight: 600; color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; }
+  td.ok { color: var(--ok); font-weight: 600; }
+  td.fail { color: var(--fail); font-weight: 600; }
+  td.msg { white-space: normal; color: var(--muted); font-size: .8rem; max-width: 28rem; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em; }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+<h1>Dataset download status</h1>
+<div class="meta">
+  <a href="https://github.com/NumericalEarth/NumericalEarth.jl">NumericalEarth/NumericalEarth.jl</a> —
+  generated 2026-08-01 13:36 UTC from the nightly
+  <a href="https://github.com/NumericalEarth/NumericalEarth.jl/actions/runs/30699597002">Data downloading</a> run.
+</div>
+<p class="summary bad">4 of 34 dataset checks failed</p>
+<div class="scroll"><table><thead><tr><th>Dataset</th><th>Variable</th>
+<th>macOS-latest</th>
+<th>ubuntu-latest</th>
+<th>Time</th><th>Size</th><th>Error</th></tr></thead><tbody>
+<tr><td><code>CopernicusAlbedo</code></td><td><code>albedo</code></td>
+<td class="ok">pass</td>
+<td class="ok">pass</td>
+<td>408.6 s</td><td>-</td><td class="msg"></td></tr>
+<tr><td><code>CopernicusAlbedoClimatology</code></td><td><code>albedo</code></td>
+<td class="ok">pass</td>
+<td class="ok">pass</td>
+<td>1163.3 s</td><td>1.0 GB</td><td class="msg"></td></tr>
+<tr><td><code>ERA5YearlySingleLevel</code></td><td><code>temperature</code></td>
+<td class="ok">pass</td>
+<td class="ok">pass</td>
+<td>29.8 s</td><td>24.6 KB</td><td class="msg"></td></tr>
+<tr><td><code>GLORYSDaily</code></td><td><code>free_surface</code></td>
+<td class="ok">pass</td>
+<td class="ok">pass</td>
+<td>9.5 s</td><td>21.1 KB</td><td class="msg"></td></tr>
+<tr><td><code>GLORYSDaily</code></td><td><code>salinity</code></td>
+<td class="ok">pass</td>
+<td class="ok">pass</td>
+<td>14.6 s</td><td>106.3 KB</td><td class="msg"></td></tr>
+<tr><td><code>GLORYSDaily</code></td><td><code>temperature</code></td>
+<td class="ok">pass</td>
+<td class="ok">pass</td>
+<td>17.3 s</td><td>106.3 KB</td><td class="msg"></td></tr>
+<tr><td><code>GLORYSDaily</code></td><td><code>u_velocity</code></td>
+<td class="ok">pass</td>
+<td class="ok">pass</td>
+<td>12.4 s</td><td>106.4 KB</td><td class="msg"></td></tr>
+<tr><td><code>GLORYSDaily</code></td><td><code>v_velocity</code></td>
+<td class="ok">pass</td>
+<td class="ok">pass</td>
+<td>12.0 s</td><td>106.4 KB</td><td class="msg"></td></tr>
+<tr><td><code>GLORYSMonthly</code></td><td><code>temperature</code></td>
+<td class="ok">pass</td>
+<td class="ok">pass</td>
+<td>11.9 s</td><td>106.4 KB</td><td class="msg"></td></tr>
+<tr><td><code>GLORYSStatic</code></td><td><code>depth</code></td>
+<td class="ok">pass</td>
+<td class="ok">pass</td>
+<td>10.1 s</td><td>14.5 KB</td><td class="msg"></td></tr>
+<tr><td><code>GloFASReanalysis</code></td><td><code>river_discharge</code></td>
+<td class="fail">fail</td>
+<td class="fail">fail</td>
+<td>22.6 s</td><td>-</td><td class="msg">ArgumentError: The request is in a bad format: Dict{String, Any}(&quot;system_version&quot; =&gt; [&quot;version_4_0&quot;], &quot;hydrological_model&quot; =&gt; [&quot;lisflood&quot;], &quot;hday&quot; =&gt; [&quot;01&quot;], &quot;hyear&quot; =&gt; [&quot;2020&quot;], &quot;area&quot; =&gt; [-0.8, -56.2, -3.2, -53.8], &quot;product_type&quot; =&gt; [&quot;consolidated&quot;], &quot;data_format&quot; =&gt; &quot;netcdf&quot;, &quot;hmonth&quot; =&gt; [&quot;06&quot;], &quot;variable&quot; =&gt; [&quot;river_discharge_in_the_last_24_hours&quot;], &quot;download_format&quot; =&gt; &quot;unarchived&quot;) </td></tr>
+<tr><td><code>OSPapaFluxHourly</code></td><td><code>surface_fluxes</code></td>
+<td class="fail">fail</td>
+<td class="fail">fail</td>
+<td>4.5 s</td><td>-</td><td class="msg">RequestError: HTTP/1.1 400 while requesting https://data.pmel.noaa.gov/pmel/erddap/tabledap/ocs_papa_flux.nc?time,QLAT,QSEN,QNET,LWNET,SWNET,TAU,TAUX,TAUY,RAIN,EVAP,EMP,TSK&amp;time&gt;=2012-10-01T00:00:00Z&amp;time&lt;=2012-10-03T00:00:00Z</td></tr>
+<tr><td><code>OSPapaHourly</code></td><td><code>salinity</code></td>
+<td class="ok">pass</td>
+<td class="ok">pass</td>
+<td>1.2 s</td><td>81.3 MB</td><td class="msg"></td></tr>
+<tr><td><code>OSPapaHourly</code></td><td><code>temperature</code></td>
+<td class="ok">pass</td>
+<td class="ok">pass</td>
+<td>3.6 s</td><td>81.3 MB</td><td class="msg"></td></tr>
+<tr><td><code>OpenLandMapSoilDB</code></td><td><code>bulk_density</code></td>
+<td class="ok">pass</td>
+<td class="ok">pass</td>
+<td>3.9 s</td><td>492.6 KB</td><td class="msg"></td></tr>
+<tr><td><code>OpenLandMapSoilDB</code></td><td><code>clay_fraction</code></td>
+<td class="ok">pass</td>
+<td class="ok">pass</td>
+<td>7.3 s</td><td>492.6 KB</td><td class="msg"></td></tr>
+<tr><td><code>SoilGrids2</code></td><td><code>sand_fraction</code></td>
+<td class="ok">pass</td>
+<td class="ok">pass</td>
+<td>98.0 s</td><td>2.4 GB</td><td class="msg"></td></tr>
+</tbody></table></div>
+</body></html>
