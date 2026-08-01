@@ -3,14 +3,23 @@ using NumericalEarth.DataWrangling
 using NumericalEarth.SoilGrids
 using Oceananigans
 
+include("dataset_status.jl")
+
 import Downloads
 
 @testset "Metadata tests for SoilGrids" begin
     sg_mean = SoilGrids2()
     sg_sand = Metadatum(:sand_fraction, dataset=sg_mean)
-    Downloads.download(sg_sand)
-    # Check that data is successfully downloaded
-    @test isfile(DataWrangling.metadata_path(sg_sand))
+    filepath = DataWrangling.metadata_path(sg_sand)
+
+    @dataset_check "SoilGrids2" "sand_fraction" begin
+        isfile(filepath) && rm(filepath; force=true)
+        Downloads.download(sg_sand)
+        isfile(filepath) || error("SoilGrids2 download produced no file at $(filepath)")
+        filepath
+    end
+
+    @test isfile(filepath)
     for var in keys(SoilGrids.SoilGrids2_dataset_variable_names)
         sgmd = Metadatum(var, dataset=sg_mean)
         field = Field(sgmd)

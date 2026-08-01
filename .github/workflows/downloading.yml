@@ -129,7 +129,8 @@ jobs:
                                    "test_woa",
                                    "test_polar_bathymetry",
                                    "test_orca_grid",
-                                   "test_jra55"])
+                                   "test_jra55",
+                                   "test_soilgrids"])
           '
       # `if: always()` throughout the publishing path: a night where a dataset broke is
       # exactly the night the dashboard has to update.

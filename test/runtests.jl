@@ -46,6 +46,7 @@ if filter_tests!(testsuite, args)
     delete!(testsuite, "test_polar_bathymetry")
     delete!(testsuite, "test_orca_grid")
     delete!(testsuite, "test_jra55")
+    delete!(testsuite, "test_soilgrids")
 
     delete!(testsuite, "test_distributed_utils")
     delete!(testsuite, "reactant/test_reactant")
