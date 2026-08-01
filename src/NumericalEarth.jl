@@ -103,6 +103,11 @@ export
     VanGenuchtenRetention, VanGenuchtenConductivity,
     NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
     NoRunoff, InfiltrationCapacityRunoff,
+    # Urban aerodynamic roughness closures
+    AbstractUrbanRoughness, MorphometricRoughness,
+    IsotropicFrontalArea, EmpiricalFrontalArea,
+    UniformHeight, VariableHeight,
+    urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
     surface_temperature,
     regrid_bathymetry,
     regrid_topography,
@@ -130,6 +135,7 @@ export
     ORCAOne, ORCAQuarter, ORCATwelfth,
     ORCAGrid,
     OpenLandMapSoilDB,
+    GHSBuiltH, GHSBuiltS,
     first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,
     DatasetRestoring,
@@ -282,6 +288,7 @@ using .DataWrangling.ASTERGED
 using .DataWrangling.CopernicusDEM
 using .DataWrangling.CopernicusLandAlbedo
 using .DataWrangling.OpenLandMap
+using .DataWrangling.GHSL
 
 using PrecompileTools: @setup_workload, @compile_workload
 
