@@ -1,11 +1,15 @@
 using Test
 using Reactant
-using Oceananigans: Oceananigans
+using Reactant: @trace
+using Oceananigans: Oceananigans, CPU, interior, set!
 using Oceananigans.Architectures: ReactantState
 using Oceananigans.Grids: Bounded, Flat, LatitudeLongitudeGrid, Periodic
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
+using Oceananigans.TimeSteppers: time_step!, update_state!, first_time_step!
+using Oceananigans.Units: minutes
 using NumericalEarth
 using CUDA
+using Statistics: mean
 
 gpu_test = get(ENV, "GPU_TEST", "false") == "true"
 
@@ -28,9 +32,9 @@ end
     ocean = ocean_simulation(grid; Δt=300, free_surface)
 
     # We use an idealized atmosphere to avoid downloading the whole JRA55 data
-    atmos_grid  = LatitudeLongitudeGrid(arch, Float32; size=(320, 200), 
-                                                       latitude=(-90, 90), 
-                                                       longitude=(0, 360), 
+    atmos_grid  = LatitudeLongitudeGrid(arch, Float32; size=(320, 200),
+                                                       latitude=(-90, 90),
+                                                       longitude=(0, 360),
                                                        topology=(Periodic, Bounded, Flat))
 
     atmos_times = range(0, 360Oceananigans.Units.days, length=10)
@@ -47,4 +51,68 @@ end
 
     # update_state! populates the exchange state with the interpolated air temperature
     @test any(state.T .!= 0)
+end
+
+# A coupled model whose state is `set!` *after* construction must reconcile that state on the
+# first compiled step (issue #403): under `@trace` the `if clock.iteration == 0` guard can't
+# branch on the traced iteration, so the Reactant extension no-ops `maybe_prepare_first_time_step!`
+# and refreshes through `first_time_step!`. Without the fix the first step drifts by tens of K.
+@testset "AtmosphereLandModel first-step reconcile under Reactant (issue #403)" begin
+    IC = NumericalEarth.EarthSystemModels.InterfaceComputations
+
+    make_land_grid(arch) = LatitudeLongitudeGrid(arch; latitude = (0, 1), longitude = (0, 1),
+                                                 size = (1, 1), topology = (Bounded, Bounded, Flat))
+
+    function build_atmosphere_land_model(arch)
+        grid  = make_land_grid(arch)
+        atmos = PrescribedAtmosphere(grid, [0.0, 1.0e8])
+        set!(atmos.velocities.u, 4)
+        set!(atmos.temperature, 290)
+        set!(atmos.specific_humidity, 0.004)
+        set!(atmos.pressure, 101325)
+        update_state!(atmos)
+        land = SlabLand(grid)
+        # Default atmosphere--land fluxes, but with FixedIterations so the flux solver has a fixed
+        # trip count — the default `while`-loop convergence criterion won't trace identically.
+        FT = eltype(grid)
+        fluxes = IC.SimilarityTheoryFluxes(FT;
+                                           stability_functions          = IC.atmosphere_land_stability_functions(FT),
+                                           momentum_roughness_length    = 0.1,
+                                           temperature_roughness_length = 0.01,
+                                           water_vapor_roughness_length = 0.01,
+                                           solver_stop_criteria         = IC.FixedIterations(8))
+        interface = atmosphere_land_interface(grid, atmos, land; fluxes)
+        return AtmosphereLandModel(atmos, land; atmosphere_land_interface = interface)
+    end
+
+    Δt = 10minutes
+    N  = 16
+    skin_temperature = 320
+    land_temperature_mean(model) = mean(interior(model.land.temperature, :, :, 1))
+
+    # Eager CPU reference: `set!` the skin temperature after construction, then step. The first
+    # eager `time_step!` reconciles the flux state from the seeded temperature.
+    cpu_model = build_atmosphere_land_model(CPU())
+    parent(cpu_model.land.temperature) .= skin_temperature
+    for _ in 1:N
+        time_step!(cpu_model, Δt)
+    end
+    T_cpu = land_temperature_mean(cpu_model)
+
+    # Compiled Reactant run: `first_time_step!` refreshes the flux state and advances one step,
+    # then the remaining steps run in a `@trace` loop.
+    function run_reactant(model, Δt, n)
+        parent(model.land.temperature) .= skin_temperature
+        first_time_step!(model, Δt)
+        @trace track_numbers=false for _ in 1:(n - 1)
+            time_step!(model, Δt)
+        end
+        return land_temperature_mean(model)
+    end
+
+    reactant_model = build_atmosphere_land_model(ReactantState())
+    compiled_run = Reactant.@compile raise=true raise_first=true sync=true run_reactant(reactant_model, Δt, N)
+    T_reactant = Reactant.to_number(compiled_run(reactant_model, Δt, N))
+
+    @test T_reactant ≈ T_cpu rtol=1e-4
 end
