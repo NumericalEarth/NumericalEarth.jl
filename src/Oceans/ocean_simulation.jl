@@ -75,21 +75,35 @@ Adapt.adapt_structure(to, f::FreshwaterExchange{name}) where name =
                              Adapt.adapt(to, f.content_flux),
                              Adapt.adapt(to, f.additional))
 
-@inline surface_tracer_value(fields, ::Val{:S}, i, j, k) = @inbounds fields.S[i, j, k]
-@inline surface_tracer_value(fields, ::Val{:T}, i, j, k) = @inbounds fields.T[i, j, k]
+@inline surface_tracer_value(fields, ::Val{name}, i, j, k) where name = @inbounds getproperty(fields, name)[i, j, k]
+
+# The freshwater content subtracted in `carried_tracer_flux` is either a precomputed content-flux
+# field `Σᵢ cᵢ Jʷᵢ` (temperature's source-resolved enthalpy `Jᴴ`, salinity's `ZeroField`) or a
+# freshwater concentration `cᶠ` — a scalar or a `Field` — evaluated live as `cᶠ · carrying`.
+struct FreshwaterConcentration{C}
+    concentration :: C
+end
+
+Adapt.adapt_structure(to, c::FreshwaterConcentration) = FreshwaterConcentration(Adapt.adapt(to, c.concentration))
+
+@inline concentration_value(c::Number, i, j)        = c
+@inline concentration_value(c::AbstractField, i, j) = @inbounds c[i, j, 1]
+
+@inline content_flux_value(content::AbstractField, carrying, i, j) = @inbounds content[i, j, 1]
+@inline content_flux_value(content::FreshwaterConcentration, carrying, i, j) = @inbounds concentration_value(content.concentration, i, j) * carrying[i, j, 1]
 
 @inline (f::FreshwaterExchange{name})(i, j, grid, clock, fields) where name =
     freshwater_exchange_flux(f, Val(name), i, j, grid, fields) + getbc(f.additional, i, j, grid, clock, fields)
 
 @inline carried_tracer_flux(f::FreshwaterExchange, ::Val{name}, i, j, grid, fields) where name =
-    @inbounds surface_tracer_value(fields, Val(name), i, j, grid.Nz) * f.carrying_flux[i, j, 1] - f.content_flux[i, j, 1]
+    @inbounds surface_tracer_value(fields, Val(name), i, j, grid.Nz) * f.carrying_flux[i, j, 1] -
+              content_flux_value(f.content_flux, f.carrying_flux, i, j)
 
-# The temperature carried flux is required only for mutable grids to cancel the volume movement. 
-# On the other hand, it is required always for salinity
-@inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:S}, i, j, grid, fields) = carried_tracer_flux(f, name, i, j, grid, fields)
-@inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:T}, i, j, grid, fields) = zero(grid)
+# A general tracer is diluted by freshwater like salinity, so its carried flux is applied on every
+# grid. Temperature is the exception: its carried flux only cancels the mutable-grid volume movement.
+@inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val, i, j, grid, fields) = carried_tracer_flux(f, name, i, j, grid, fields)
+@inline freshwater_exchange_flux(f::FreshwaterExchange, ::Val{:T}, i, j, grid, fields) = zero(grid)
 @inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:T}, i, j, grid::MutableGridOfSomeKind, fields) = carried_tracer_flux(f, name, i, j, grid, fields)
-
 
 build_tracer_top_bc(Jᶜ, Jʷ, content, additional, name) = FluxBoundaryCondition(MultipleFluxes(Jᶜ, FreshwaterExchange{name}(Jʷ, content, additional)); discrete_form=true)
 
@@ -250,6 +264,8 @@ end
                                  bottom_drag_coefficient = Default(0.003),
                                  forcing = NamedTuple(),
                                  additional_surface_fluxes = NamedTuple(),
+                                 freshwater_tracer_concentration = NamedTuple(),
+                                 tracer_flux_fields = NamedTuple(),
                                  biogeochemistry = nothing,
                                  timestepper = :SplitRungeKutta3,
                                  coriolis = Default(HydrostaticSphericalCoriolis(; rotation_rate)),
@@ -298,8 +314,10 @@ By default, `radiative_forcing` is `TwoColorRadiation` scheme.
   the turbulent kinetic energy `:e` tracer is automatically added while its advection is disabled.
 
 ### Boundary conditions
-Default boundary conditions are constructed for `u`, `v`, `T`, and `S`, including
-surface fluxes and bottom drag. User-provided boundary conditions override the
+Default boundary conditions are constructed for `u`, `v`, and every advected tracer (all of
+`tracers` except the CATKE `:e` variable), including surface fluxes and bottom drag. Every tracer
+receives the freshwater dilution flux `(cᴺ - cᶠ) Jʷ`, where the freshwater concentration `cᶠ` comes
+from `freshwater_tracer_concentration` (default `0`). User-provided boundary conditions override the
 defaults on a per-field basis.
 
 ## Keyword Arguments
@@ -319,6 +337,14 @@ defaults on a per-field basis.
 - `bottom_drag_coefficient`: Bottom drag coefficient. May be a `Default` wrapper.
 - `forcing`: Named tuple of additional forcing(s) for individual fields.
 - `additional_surface_fluxes`: Named tuple of additional top boundary flux conditions (e.g. `(; S=SurfaceFluxRestoring(...))`) for any field (`u`, `v`, `T`, `S`).
+- `freshwater_tracer_concentration`: Named tuple giving the concentration `cᶠ` of a tracer in incoming
+  freshwater, as a scalar or a `Field` (e.g. `(; C=35)`). Every advected tracer (except the CATKE `:e`
+  variable) automatically receives the freshwater dilution flux `(cᴺ - cᶠ) Jʷ`; tracers absent from this
+  tuple default to `cᶠ = 0` (pure dilution, like salinity).
+- `tracer_flux_fields`: Named tuple mapping a tracer name to a 2D `Field` used as its externally-written
+  surface flux — the "coupler flux" that a flux solver, biogeochemical model, or the user updates each
+  step and that is exposed through `net_fluxes`. Defaults to the internal ocean heat/salt flux fields for
+  `T`/`S` and to a `ZeroField` for other tracers; an entry overrides the field for any tracer.
 - `biogeochemistry`: A biogeochemical model or `nothing`.
 - `timestepper`: Time-stepping scheme; options are `:SplitRungeKutta3` (default), or `:QuasiAdamsBashforth2`.
 - `coriolis`: Coriolis object or `Default(...)` wrapper.
@@ -343,6 +369,8 @@ function hydrostatic_ocean_simulation(grid;
                                       bottom_drag_coefficient = Default(0.003),
                                       forcing = NamedTuple(),
                                       additional_surface_fluxes = NamedTuple(),
+                                      freshwater_tracer_concentration = NamedTuple(),
+                                      tracer_flux_fields = NamedTuple(),
                                       biogeochemistry = nothing,
                                       timestepper = :SplitRungeKutta3,
                                       coriolis = Default(HydrostaticSphericalCoriolis(; rotation_rate)),
@@ -441,27 +469,43 @@ function hydrostatic_ocean_simulation(grid;
         forcing = merge(forcing, (; η = Fη))
     end
 
+    # Every advected tracer gets the freshwater dilution flux; the CATKE `:e` variable does not.
+    tracer_names = filter(name -> name !== :e, tracers)
+
     # Merge user-supplied additional fluxes with defaults
-    default_additional_fluxes = (u=nothing, v=nothing, T=nothing, S=nothing)
+    default_additional_fluxes = merge((u = nothing, v = nothing),
+                                      NamedTuple(name => nothing for name in tracer_names))
     additional = merge(default_additional_fluxes, additional_surface_fluxes)
 
-    # Freshwater heat content is `Σᵢ Tᵢ Jʷᵢ`, the Freshwater salinity content is assumed to be 0 for the moment (no salinity for incoming freshwater)
+    # Freshwater heat content is the source-resolved enthalpy `Σᵢ Tᵢ Jʷᵢ`; salinity carries none, and a
+    # general tracer's freshwater content is its concentration `cᶠ` (default 0) times the volume flux.
     freshwater_heat_content = Field{Center, Center, Nothing}(grid)
     freshwater_salt_content = ZeroField()
+
+    freshwater_content(name) = name === :T ? freshwater_heat_content :
+                               name === :S ? freshwater_salt_content :
+                               FreshwaterConcentration(get(freshwater_tracer_concentration, name, 0))
+
+    # The coupler writes T and S surface fluxes into `Jᵀ`/`Jˢ`; a general tracer has none by default.
+    # A user-supplied `tracer_flux_fields` entry overrides the field for any tracer — the flux solver
+    # (or the user) writes into it each step, and it is exposed through `net_fluxes`.
+    coupler_flux(name) = get(tracer_flux_fields, name, name === :T ? Jᵀ :
+                                                       name === :S ? Jˢ : ZeroField())
 
     # Construct ocean boundary conditions including surface forcing and bottom drag
     u_top_bc = build_top_bc(τˣ, additional.u)
     v_top_bc = build_top_bc(τʸ, additional.v)
-    T_top_bc = build_tracer_top_bc(Jᵀ, Jʷ, freshwater_heat_content, additional.T, :T)
-    S_top_bc = build_tracer_top_bc(Jˢ, Jʷ, freshwater_salt_content, additional.S, :S)
 
     u_bot_bc = FluxBoundaryCondition(u_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
     v_bot_bc = FluxBoundaryCondition(v_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
 
-    default_boundary_conditions = (u = FieldBoundaryConditions(top=u_top_bc, bottom=u_bot_bc, immersed=u_immersed_bc),
-                                   v = FieldBoundaryConditions(top=v_top_bc, bottom=v_bot_bc, immersed=v_immersed_bc),
-                                   T = FieldBoundaryConditions(top=T_top_bc),
-                                   S = FieldBoundaryConditions(top=S_top_bc))
+    tracer_boundary_conditions = NamedTuple(name =>
+        FieldBoundaryConditions(top = build_tracer_top_bc(coupler_flux(name), Jʷ, freshwater_content(name), additional[name], name))
+        for name in tracer_names)
+
+    default_boundary_conditions = merge((u = FieldBoundaryConditions(top=u_top_bc, bottom=u_bot_bc, immersed=u_immersed_bc),
+                                         v = FieldBoundaryConditions(top=v_top_bc, bottom=v_bot_bc, immersed=v_immersed_bc)),
+                                        tracer_boundary_conditions)
 
     # Merge boundary conditions side-by-side with preference to user
     merged_boundary_conditions = NamedTuple(name => haskey(default_boundary_conditions, name) ?
