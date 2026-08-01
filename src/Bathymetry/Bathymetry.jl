@@ -2,6 +2,7 @@ module Bathymetry
 
 export regrid_bathymetry, regrid_topography, bare_earth_elevation, ORCAGrid
 
+using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads, download
 using ImageMorphology: ImageMorphology
 using JLD2: JLD2, jldopen
@@ -23,7 +24,7 @@ using Printf: Printf
 using ..DataWrangling: DataWrangling, Metadatum, native_grid, metadata_path,
                        dataset_variable_name, validate_dataset_coverage,
                        default_region, set_metadata_field!, nan_convert_missing,
-                       _fill_nans!
+                       missing_value, reversed_latitude_axis
 using ..DataWrangling.ETOPO: ETOPO2022
 using ..DataWrangling.CopernicusDEM: GLO30
 

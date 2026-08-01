@@ -28,23 +28,33 @@ BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
     BoundingBox(grid; padding = 0)
 
 Create a `BoundingBox` spanning the horizontal extent of `grid`, widened on every
-side by `padding` (degrees).
+side by `padding` (degrees) — a number for both axes, or a `(longitude, latitude)` pair.
 """
-BoundingBox(grid::AbstractGrid; padding = 0) =
-    BoundingBox(longitude = extrema(λnodes(grid, Face(), Center(), Center())) .+ (-padding, padding),
-                latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padding, padding))
-
-# A margin of `cells` grid cells (degrees), so boundary target cells interpolate instead of
-# extrapolating past the window edge. The widest cell sets it, covering stretched grids.
-function grid_cell_padding(grid::LatitudeLongitudeGrid; cells = 2)
-    Δλ = maximum(λspacings(grid, Center(), Center(), Center()))
-    Δφ = maximum(φspacings(grid, Center(), Center(), Center()))
-    return cells * max(Δλ, Δφ)
+function BoundingBox(grid::AbstractGrid; padding = 0)
+    padλ, padφ = axis_padding(padding)
+    return BoundingBox(longitude = extrema(λnodes(grid, Face(), Center(), Center())) .+ (-padλ, padλ),
+                       latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padφ, padφ))
 end
 
-# Reductions over an immersed grid skip masked cells, shrinking the margin (or returning
-# `-Inf` when every cell is masked), so take the spacings from the underlying grid.
+axis_padding(padding) = (padding, padding)
+axis_padding(padding::Tuple) = padding
+
+# `cells` grid cells of margin on each axis (degrees), so target cells at the boundary
+# interpolate instead of extrapolating past the window edge.
+function grid_cell_padding(grid::Union{LatitudeLongitudeGrid, OrthogonalSphericalShellGrid}; cells = 2)
+    Nx, Ny, _ = size(grid)
+    λ₁, λ₂ = extrema(λnodes(grid, Face(), Face(), Center()))
+    φ₁, φ₂ = extrema(φnodes(grid, Face(), Face(), Center()))
+    return cells .* ((λ₂ - λ₁) / Nx, (φ₂ - φ₁) / Ny)
+end
+
+# The immersed boundary carries no coordinates of its own, so dispatch on what does.
 grid_cell_padding(grid::ImmersedBoundaryGrid; kw...) = grid_cell_padding(grid.underlying_grid; kw...)
+
+grid_cell_padding(grid::AbstractGrid; kw...) =
+    throw(ArgumentError("cannot derive a dataset window from $(summary(grid)), which carries no " *
+                        "longitude/latitude coordinates; pass `region = BoundingBox(longitude = (λ₁, λ₂), " *
+                        "latitude = (φ₁, φ₂))` explicitly."))
 
 #####
 ##### Column region and interpolation types
@@ -691,12 +701,13 @@ function default_download_directory end
 
 Return the horizontal padding (degrees) added around a bounding box requested from
 `dataset`, giving interpolation stencils margin at the boundary. The one-argument form is
-what `dataset`'s own cells demand; the two-argument form widens it to also cover `grid`'s
-boundary cells.
+what `dataset`'s own cells demand; the two-argument form widens it per axis to also cover
+`grid`'s boundary cells, returning a `(longitude, latitude)` pair.
 """
-default_horizontal_padding(dataset) = 0
+function default_horizontal_padding end
+
 default_horizontal_padding(dataset, grid) =
-    max(default_horizontal_padding(dataset), grid_cell_padding(grid))
+    max.(default_horizontal_padding(dataset), grid_cell_padding(grid))
 
 """
     default_region(dataset, grid)
@@ -706,6 +717,40 @@ Return the `region` to window `dataset` to when regridding onto `grid`. Datasets
 Copernicus DEM) return a `BoundingBox` derived from `grid`.
 """
 default_region(dataset, grid) = nothing
+
+"""
+    dataset_bounding_box(dataset, grid; padding = default_horizontal_padding(dataset, grid))
+
+Return the window to read `dataset` in when regridding onto `grid`: `grid`'s bounding box
+padded for interpolation stencils and clamped to what `dataset` covers, so a grid reaching
+the edge of the coverage cannot request cells past the end of the file. A grid whose own
+extent leaves the coverage is rejected rather than silently truncated.
+"""
+function dataset_bounding_box(dataset, grid;
+                              padding = default_horizontal_padding(dataset, grid))
+
+    box = BoundingBox(grid)
+    λ₁, λ₂ = longitude_interfaces(dataset)
+    φ₁, φ₂ = latitude_interfaces(dataset)
+
+    # Compare in the dataset's longitude convention, then label the window back in the grid's.
+    λ⁻ = convert_to_λ₀_λ₀_plus360(box.longitude[1], λ₁)
+    λ⁺ = λ⁻ + (box.longitude[2] - box.longitude[1])
+    shift = λ⁻ - box.longitude[1]
+
+    if λ⁺ > λ₂ || box.latitude[1] < φ₁ || box.latitude[2] > φ₂
+        throw(ArgumentError("$(summary(dataset)) covers longitude $((λ₁, λ₂)) and latitude $((φ₁, φ₂)), " *
+                            "but the grid spans longitude $((λ⁻, λ⁺)) and latitude $(box.latitude) in " *
+                            "that convention. Regrid within the dataset's coverage, or pass `region` " *
+                            "explicitly."))
+    end
+
+    padλ, padφ = axis_padding(padding)
+    longitude = (max(λ⁻ - padλ, λ₁) - shift, min(λ⁺ + padλ, λ₂) - shift)
+    latitude  = (max(box.latitude[1] - padφ, φ₁), min(box.latitude[2] + padφ, φ₂))
+
+    return BoundingBox(; longitude, latitude)
+end
 
 """
     matching_single_level_dataset(dataset)

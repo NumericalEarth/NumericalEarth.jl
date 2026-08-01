@@ -40,7 +40,7 @@ using CairoMakie
 #
 # A ~1 km land grid, `Flat` in the vertical: terrain enters as a 2-D elevation field, not
 # grid geometry. `regrid_topography` lands the DSM on it as a positive land-surface
-# elevation, antialiased when it coarsens.
+# elevation.
 
 latitude  = -3.5, -2.4
 longitude = -60.5, -59.0
@@ -77,17 +77,16 @@ bare_elevation = bare_earth_elevation(dsm_elevation, canopy)
 
 removed_object_height = dsm_elevation - bare_elevation
 
-# ## Antialiasing check
+# ## Coarse reference elevation
 #
-# Coarsening a fine surface onto a coarse cell must smooth, not alias. Regridding the
-# same DSM onto a grid four times coarser keeps the elevation range intact.
+# The atmosphere data carries its own, coarser elevation. Regridding the same DSM onto a
+# grid four times coarser stands in for it. Each pass of `regrid_topography` samples
+# pointwise, so `interpolation_passes > 1` is what smooths the descent when the source is
+# much finer than the target.
 
 coarse_grid = LatitudeLongitudeGrid(CPU(); latitude, longitude, size = (38, 28),
                                    topology = (Bounded, Bounded, Flat))
 coarse_dsm_elevation = regrid_topography(coarse_grid; dataset = dsm_dataset)
-
-@info "Elevation range (m): model grid $(round.(extrema(dsm_elevation); digits=1)), " *
-      "4× coarser $(round.(extrema(coarse_dsm_elevation); digits=1))"
 
 # ## Feeding the atmosphere elevation correction
 #

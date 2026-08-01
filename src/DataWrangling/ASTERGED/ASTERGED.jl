@@ -55,9 +55,9 @@ is built, land from land and water from water, so a coastal gap never inherits t
 ocean value.
 
 ASTER GED is read in regional windows only, so build the `Metadatum` with a
-longitude/latitude `BoundingBox`, most simply derived from the model grid,
+longitude/latitude `BoundingBox`, most simply the one the model grid implies,
 
-    region = BoundingBox(grid; padding = default_horizontal_padding(ASTERGEDv3()))
+    region = default_region(ASTERGEDv3(), grid)
 
 Reading the HDF5 tiles requires `ArchGDAL` (with the HDF5 driver) and NASA Earthdata
 credentials (`EARTHDATA_USERNAME` / `EARTHDATA_PASSWORD`).
@@ -204,6 +204,10 @@ DataWrangling.default_download_directory(::ASTERGEDv3) = download_ASTERGED_cache
 # A couple of native 1 km cells of margin for interpolation stencils at the edge.
 DataWrangling.default_horizontal_padding(::ASTERGEDv3) = 0.02
 
+# Tiled 1 km/100 m coverage is read in windows, so window it to the grid.
+DataWrangling.default_region(dataset::ASTERGEDv3, grid) =
+    DataWrangling.dataset_bounding_box(dataset, grid)
+
 DataWrangling.reversed_latitude_axis(::ASTERGEDv3) = false
 
 DataWrangling.longitude_interfaces(::ASTERGEDv3) = (-180, 180)
@@ -236,8 +240,8 @@ function require_bounded_region(metadata::ASTERGEDMetadatum)
     region = metadata.region
     if !(region isa BoundingBox) || isnothing(region.longitude) || isnothing(region.latitude)
         error("ASTERGEDv3() must be used with a bounded region. Derive it from the " *
-              "model grid and the dataset's padding:\n" *
-              "    region = BoundingBox(grid; padding = default_horizontal_padding(ASTERGEDv3()))\n" *
+              "model grid:\n" *
+              "    region = default_region(ASTERGEDv3(), grid)\n" *
               "    metadatum = Metadatum(:emissivity; dataset = ASTERGEDv3(), region)\n" *
               "    Field(metadatum, grid)")
     end

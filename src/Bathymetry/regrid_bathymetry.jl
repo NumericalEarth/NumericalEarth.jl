@@ -24,8 +24,7 @@ struct BathymetryRegridding
     region               :: Union{Nothing, String}
 end
 
-# The region joins the cache key so a windowed and a global regrid of the same dataset+grid
-# cannot share a file. Global regrids keep `nothing`.
+# The region joins the cache key so a window and a global read cannot share a file.
 region_key(::Nothing) = nothing
 region_key(region) = string(region)
 
@@ -252,8 +251,16 @@ function _regrid_bathymetry(target_grid, metadata;
     filepath = metadata_path(metadata)
     dataset = Dataset(filepath, "r")
 
-    z_data = nan_convert_missing.(FT, dataset[dataset_variable_name(metadata)][:, :])
+    # No-data means sea level, so it becomes 0 here rather than reaching the interpolation
+    # passes as NaN, which would smear it into neighboring cells.
+    z_data = nan_to_zero.(nan_convert_missing.(FT, dataset[dataset_variable_name(metadata)][:, :],
+                                               missing_value(metadata)))
     close(dataset)
+
+    # Datasets that store latitude north→south need flipping to match the native grid.
+    if reversed_latitude_axis(metadata.dataset)
+        z_data = reverse(z_data, dims=2)
+    end
 
     if !isnothing(height_above_water)
         # Overwrite the height of cells above water.
@@ -265,13 +272,9 @@ function _regrid_bathymetry(target_grid, metadata;
 
     native_z = Field{Center, Center, Nothing}(bathymetry_native_grid)
 
-    # Matching file coordinates to the native grid reads a windowed region out of its slice of
-    # the file, whether the file is global (ETOPO) or already the window (GLO-30).
+    # Matching file coordinates to the native grid reads the window out of the file, whether
+    # the file is global (ETOPO) or already the window (GLO-30).
     set_metadata_field!(native_z, z_data, metadata)
-
-    # No-data means sea level, so zero the NaNs before the interpolation passes smear them
-    # into neighboring cells.
-    launch!(arch, bathymetry_native_grid, :xyz, _fill_nans!, native_z)
     fill_halo_regions!(native_z)
 
     target_z = interpolate_bathymetry_in_passes(native_z, target_grid;
@@ -290,8 +293,7 @@ function _regrid_bathymetry(target_grid, metadata;
     return target_z
 end
 
-# A distributed grid is regridded whole on one rank, so a dataset window has to come from the
-# global grid rather than the local subdomain.
+# Regridding happens whole on one rank, so the window comes from the global grid.
 regridding_grid(grid) = grid
 regridding_grid(grid::DistributedGrid) = reconstruct_global_grid(grid)
 
@@ -341,7 +343,7 @@ end
 @inline nan_to_zero(x) = ifelse(isnan(x), zero(x), x)
 
 """
-    bare_earth_elevation(surface_elevation::Field, object_heights::Field...)
+$(TYPEDSIGNATURES)
 
 Estimate bare-earth land elevation by removing sub-grid object heights from a Digital
 Surface Model. A DSM such as [`GLO30`](@ref) measures the top of whatever sits on the
@@ -378,7 +380,6 @@ maximum(z)
 function bare_earth_elevation(surface_elevation::Field, object_heights::Field...)
     grid = surface_elevation.grid
 
-    # Accumulate the tallest object per cell, then subtract it from the surface in place.
     bare_elevation = Field{Center, Center, Nothing}(grid)
     for object_height in object_heights
         interior(bare_elevation) .= max.(interior(bare_elevation), nan_to_zero.(interior(object_height)))
@@ -391,7 +392,7 @@ function bare_earth_elevation(surface_elevation::Field, object_heights::Field...
 end
 
 """
-    bare_earth_elevation(grid::AbstractGrid, object_heights::Field...; dataset = GLO30(), kw...)
+$(TYPEDSIGNATURES)
 
 Regrid the DSM `dataset` onto `grid` with [`regrid_topography`](@ref) — windowing it to
 `grid` when the dataset cannot be read whole — and remove the `object_heights`. Keyword

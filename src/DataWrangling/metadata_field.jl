@@ -389,11 +389,18 @@ end
 # by the dataset's `longitude_name` / `latitude_name` traits.
 function read_file_coords(metadatum)
     ds = Dataset(metadata_path(metadatum))
-    λc = ds[longitude_name(metadatum)][:]
-    φc = ds[latitude_name(metadatum)][:]
+    λc = read_file_coordinate(ds, longitude_name(metadatum), metadatum)
+    φc = read_file_coordinate(ds, latitude_name(metadatum), metadatum)
     close(ds)
     reversed_latitude_axis(metadatum.dataset) && reverse!(φc)
     return λc, φc
+end
+
+function read_file_coordinate(ds, name, metadatum)
+    haskey(ds, name) || error("$(metadata_path(metadatum)) has no coordinate variable \"$name\"; " *
+                              "it holds $(keys(ds)). Set `longitude_name`/`latitude_name` for " *
+                              "$(summary(metadatum.dataset)) to the names this file uses.")
+    return ds[name][:]
 end
 
 #####

@@ -2,30 +2,29 @@ using Oceananigans.Utils: launch!
 using Oceananigans.Architectures: AbstractArchitecture, architecture
 using Oceananigans.Grids: AbstractGrid, Periodic, Bounded, λnodes, φnodes
 using Oceananigans.Fields: Field, interior, interpolate!
-using Oceananigans.Fields: convert_to_λ₀_λ₀_plus360
 using GPUArraysCore: @allowscalar
 
 #####
 ##### Region helpers shared across dataset backends
 #####
 
-function compute_bounding_nodes(grid, LH, hnodes)
+function minimum_node(grid, LH, hnodes)
     hg = hnodes(grid, LH())
-    h₁ = @allowscalar minimum(hg)
-    h₂ = @allowscalar maximum(hg)
-    return h₁, h₂
+    return @allowscalar minimum(hg)
 end
 
-# Grid centers are Float32, file coordinates Float64, and the longitude wrap adds more drift
-# than a few eps at 180° magnitudes. Half a file cell is the widest `ε` that still cannot skip
-# a coordinate, so the slice snaps to the nearest cell instead of losing one at each end.
-function compute_bounding_indices(bounds::Tuple, hc)
-    h₁, h₂ = bounds
+# File index of the ascending coordinate cell holding `h`. `hc` labels either cell centers
+# (ETOPO) or cell corners (CGLS albedo), and `h` is a Float32 grid node promoted to Float64, so
+# it drifts off the label by a few Float32 eps. `tol` absorbs that drift, capped at a quarter of
+# the local cell so it can never reach the next coordinate — `eps(Float32) * |h|` alone exceeds
+# half a cell for arc-second axes near 180°. `searchsortedlast` then lands on the same cell under
+# either labeling convention, at any resolution and on stretched axes.
+function file_cell_index(h, hc)
     Nh = length(hc)
-    ε  = Nh > 1 ? abs(hc[2] - hc[1]) / 2 : eps(Float32) * max(one(eltype(hc)), abs(h₁), abs(h₂))
-    i₁ = max(searchsortedfirst(hc, h₁ - ε),  1)
-    i₂ = min( searchsortedlast(hc, h₂ + ε), Nh)
-    return i₁, i₂
+    Nh > 1 || return 1
+    j = clamp(searchsortedlast(hc, h), 1, Nh - 1)
+    tol = min(8 * eps(Float32) * max(one(eltype(hc)), abs(h)), abs(hc[j+1] - hc[j]) / 4)
+    return clamp(searchsortedlast(hc, h + tol), 1, Nh)
 end
 
 # Periodic only when the restricted span equals the full native span.
@@ -91,18 +90,17 @@ end
 region_info(::Nothing, target, λc, φc) = nothing
 
 function region_info(::BoundingBox, target, λc, φc)
-    LX, LY, _  = Oceananigans.Fields.location(target)
-    λmin, λmax = compute_bounding_nodes(target.grid, LX, λnodes)
-    φmin, φmax = compute_bounding_nodes(target.grid, LY, φnodes)
+    LX, LY, _ = Oceananigans.Fields.location(target)
+    λmin = minimum_node(target.grid, LX, λnodes)
+    φmin = minimum_node(target.grid, LY, φnodes)
 
     # Shift the target's longitude into the file's `[λc[1], λc[1]+360)`
     if !isempty(λc)
         λmin = convert_to_λ₀_λ₀_plus360(λmin, λc[1])
-        λmax = convert_to_λ₀_λ₀_plus360(λmax, λc[1])
     end
 
-    i₁, _ = compute_bounding_indices((λmin, λmax), λc)
-    j₁, _ = compute_bounding_indices((φmin, φmax), φc)
+    i₁ = file_cell_index(λmin, λc)
+    j₁ = file_cell_index(φmin, φc)
 
     Nx, Ny, _ = size(target)
     di = clamp(i₁ - 1, 0, max(length(λc) - Nx, 0))
