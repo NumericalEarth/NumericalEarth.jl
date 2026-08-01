@@ -7,7 +7,7 @@ using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling,
-    Dataset, DownloadProgress, AbstractStaticDataset, Metadatum,
+    Dataset, DownloadProgress, atomic_download, AbstractStaticDataset, Metadatum,
     GramPerKilogram, CentigramPerCubicCentimeter, HectogramPerCubicMeter, DecigramPerKilogram,
     metadata_path, metadata_url, dataset_variable_name
 
@@ -95,7 +95,7 @@ function Downloads.download(metadatum::SoilGrids2Metadatum)
 
     @root if !isfile(filepath)
         @info "Downloading SoilGrids2 (~10 km) data: $(metadatum.name) in $(metadatum.dir)..."
-        Downloads.download(fileurl, filepath; progress = DownloadProgress())
+        atomic_download(fileurl, filepath; progress = DownloadProgress())
     end
     return filepath
 end

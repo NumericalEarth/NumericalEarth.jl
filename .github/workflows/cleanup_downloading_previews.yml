@@ -1,0 +1,49 @@
+name: Clean up dataset status previews
+
+# A labelled pull request publishes its dashboard to `previews/PR<number>` on `gh-pages`
+# (see downloading.yml). This removes that directory once the pull request closes, so the
+# branch does not accumulate one preview per pull request forever.
+
+on:
+  pull_request:
+    types: [closed]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove the preview directory
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREVIEW: previews/PR${{ github.event.number }}
+        run: |
+          set -euo pipefail
+
+          repository_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          work=$(mktemp -d)
+
+          # Nothing to clean if the branch was never created.
+          if ! git clone --branch gh-pages --single-branch --depth 1 "${repository_url}" "${work}" 2>/dev/null; then
+              echo "No gh-pages branch; nothing to clean."
+              exit 0
+          fi
+
+          if [ ! -d "${work}/${PREVIEW}" ]; then
+              echo "No preview at ${PREVIEW}; nothing to clean."
+              exit 0
+          fi
+
+          rm -rf "${work:?}/${PREVIEW}"
+
+          git -C "${work}" config user.name "github-actions[bot]"
+          git -C "${work}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "${work}" add -A
+          git -C "${work}" commit -m "Remove dataset status preview for PR #${{ github.event.number }}"
+          git -C "${work}" push origin gh-pages

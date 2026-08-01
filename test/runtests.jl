@@ -21,7 +21,11 @@ delete!(testsuite, "test_ospapa")
 gpu_test = parse(Bool, get(ENV, "GPU_TEST", "false"))
 
 if filter_tests!(testsuite, args)
-    # Always remove tests that are treated separately
+    # Always remove tests that are treated separately.
+    #
+    # The `*_downloading` tests issue real requests to external data servers. They run
+    # nightly from .github/workflows/downloading.yml, not on every push -- see that file
+    # for why.
     delete!(testsuite, "test_jra55_ecco_en4_etopo_downloading")
     delete!(testsuite, "test_cds_downloading")
     delete!(testsuite, "test_glorys_downloading")
@@ -31,8 +35,21 @@ if filter_tests!(testsuite, args)
     delete!(testsuite, "test_asterged_downloading")
     delete!(testsuite, "test_globfp3d_downloading")
     delete!(testsuite, "test_ghsl_downloading")
+    delete!(testsuite, "test_glofas_downloading")
+    delete!(testsuite, "test_openlandmap_downloading")
+    delete!(testsuite, "test_ospapa_downloading")
+
+    # These are not named `*_downloading`, but they are download tests all the same: each
+    # spends most of its runtime pulling from an external server (IBCSO alone is ~1.5 GB).
+    # They moved to the same nightly workflow.
+    delete!(testsuite, "test_woa")
+    delete!(testsuite, "test_polar_bathymetry")
+    delete!(testsuite, "test_orca_grid")
+    delete!(testsuite, "test_jra55")
+    delete!(testsuite, "test_soilgrids")
+
     delete!(testsuite, "test_distributed_utils")
-    delete!(testsuite, "test_reactant")
+    delete!(testsuite, "reactant/test_reactant")
     delete!(testsuite, "test_veros") # Veros seems to have introduce a pypi conflict issue; temporarily removing from CI
 
     if gpu_test
@@ -46,7 +63,6 @@ if filter_tests!(testsuite, args)
         delete!(testsuite, "test_ocean_sea_ice_model")
         delete!(testsuite, "test_diagnostics_1")
         delete!(testsuite, "test_ecco2_daily")
-        delete!(testsuite, "test_orca_grid")
     end
 end
 
@@ -82,6 +98,8 @@ function __init__()
     #####
     ##### Download JRA55 data
     #####
+
+    download_test_fixtures()
 
     try
         atmosphere = JRA55PrescribedAtmosphere(time_indices_in_memory=2)

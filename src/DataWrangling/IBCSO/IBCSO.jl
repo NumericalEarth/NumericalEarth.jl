@@ -6,7 +6,7 @@ using Downloads: Downloads
 using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
 
-using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
+using ..DataWrangling: DataWrangling, DownloadProgress, atomic_download, Metadatum, metadata_path, AbstractStaticBathymetry
 
 import ..DataWrangling:
     metadata_filename,
@@ -75,7 +75,7 @@ function Downloads.download(metadatum::IBCSOMetadatum)
 
     @root if !isfile(filepath)
         @info "Downloading IBCSO data: $(metadatum.name) to $download_dir..."
-        Downloads.download(IBCSO_pangaea_url, filepath; progress=DownloadProgress())
+        atomic_download(IBCSO_pangaea_url, filepath; progress=DownloadProgress())
     end
 
     return filepath

@@ -78,7 +78,7 @@ function download_ospapa_flux(; start_date, end_date, dir=download_OSPapa_cache)
         t1 = Dates.format(end_date, "yyyy-mm-ddTHH:MM:SSZ")
         url = "$(ERDDAP_BASE)/ocs_papa_flux.nc?$(ERDDAP_FLUX_VARS)&time>=$(t0)&time<=$(t1)"
         @info "Downloading Ocean Station Papa flux data from ERDDAP..."
-        Downloads.download(url, filepath; progress=DownloadProgress())
+        atomic_download(url, filepath; progress=DownloadProgress())
     end
     return filepath
 end

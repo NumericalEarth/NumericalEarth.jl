@@ -1,0 +1,196 @@
+name: Data downloading
+
+# The download tests hit external data servers (CDS, Copernicus Marine, ECCO, JMA, AVISO,
+# JRC, PMEL) with real, sizeable requests. Running them on every pull request push hammered
+# those servers for no extra signal: the download code changes far less often than the
+# physics does. They run nightly against `main` instead, plus on demand via
+# `workflow_dispatch` when a PR touches a download path.
+#
+# Each dataset check is recorded by `test/dataset_status.jl` and published as a dashboard
+# at https://numericalearth.github.io/NumericalEarth.jl/ by the `publish` job below.
+#
+# Because `schedule` only fires on the default branch, both the dashboard and the README
+# badge report the state of `main`.
+
+on:
+  schedule:
+    # 05:17 UTC daily -- off the top of the hour, where GitHub's scheduler is busiest.
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+  pull_request:
+    # `labeled` is what makes adding the label start a run; without it the label would only
+    # take effect on the next push.
+    types: [opened, synchronize, reopened, labeled]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  actions: write    # allows julia-actions/cache to delete old caches
+  contents: write   # publish_dataset_status.sh pushes the dashboard to gh-pages
+
+env:
+  ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
+  ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
+  COPERNICUSMARINE_SERVICE_USERNAME: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
+  COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
+  CDSAPI_URL: "https://cds.climate.copernicus.eu/api"
+  CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
+  DESTINE_ACCESS_TOKEN: ${{ secrets.DESTINE_ACCESS_TOKEN }}
+  DATADEPS_ALWAYS_ACCEPT: true
+  JULIA_PKG_SERVER_REGISTRY_PREFERENCE: 'eager'
+
+jobs:
+  downloading:
+    name: Data downloading - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }}
+    # On a pull request this runs only when the `run downloading tests` label is present,
+    # mirroring `build all examples` in docs.yml -- otherwise every push to every PR would
+    # hit the data servers again, which is the thing this workflow exists to stop.
+    #
+    # The label name is spelled out rather than read from `env`: the `env` context is not
+    # available in a job-level `if`.
+    #
+    # Fork pull requests are excluded because they get neither the data-server credentials
+    # nor a writable token, so the run could only fail.
+    if: >-
+      github.event_name != 'pull_request' ||
+      (contains(github.event.pull_request.labels.*.name, 'run downloading tests') &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - "1.12.5"
+        os:
+          - ubuntu-latest
+        arch:
+          - default
+        include:
+          - os: macOS-latest
+            arch: aarch64
+            version: "1.12.5"
+    env:
+      DATASET_STATUS_DIR: ${{ github.workspace }}/dataset-status
+    steps:
+      - name: Show available storage before cleanup
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
+      - name: Free Disk Space
+        if: ${{ runner.os != 'macOS' }}
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: true
+          large-packages: false
+      - name: Cleanup /opt
+        if: ${{ runner.os != 'macOS' }}
+        run: |
+          sudo rm -rf /opt/*
+      - name: Show available storage after cleanup
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+          arch: ${{ matrix.arch }}
+      - uses: julia-actions/cache@v3
+        with:
+          cache-scratchspaces: false
+      # `test_asterged_downloading` is deliberately absent: it needs NASA Earthdata
+      # credentials (EARTHDATA_USERNAME / EARTHDATA_PASSWORD), which this repository has no
+      # secrets for. Add it here once those secrets exist.
+      - name: Run tests
+        run: |
+          julia --project --color=yes --check-bounds=yes -e '
+              using Pkg;
+              Pkg.test(; coverage=true,
+                        julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
+                        test_args=["--verbose",
+                                   "test_cds_downloading",
+                                   "test_jra55_ecco_en4_etopo_downloading",
+                                   "test_glorys_downloading",
+                                   "test_aviso_downloading",
+                                   "test_copernicus_dem_downloading",
+                                   "test_copernicus_albedo_downloading",
+                                   "test_ghsl_downloading",
+                                   "test_globfp3d_downloading",
+                                   "test_glofas_downloading",
+                                   "test_openlandmap_downloading",
+                                   "test_ospapa_downloading",
+                                   "test_woa",
+                                   "test_polar_bathymetry",
+                                   "test_orca_grid",
+                                   "test_jra55",
+                                   "test_soilgrids"])
+          '
+      # `if: always()` throughout the publishing path: a night where a dataset broke is
+      # exactly the night the dashboard has to update.
+      - name: Upload dataset status records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dataset-status-${{ matrix.os }}
+          path: ${{ env.DATASET_STATUS_DIR }}
+          if-no-files-found: warn
+      - uses: julia-actions/julia-processcoverage@v1
+      - uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  publish:
+    name: Publish dataset status dashboard
+    needs: downloading
+    # `always()` so a night where a dataset broke still updates the dashboard -- that is
+    # precisely the night somebody needs to look at it. `!cancelled()` keeps a skipped
+    # `downloading` job (an unlabelled PR) from publishing an empty page.
+    if: ${{ !cancelled() && needs.downloading.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12.5"
+      - name: Collect dataset status records
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dataset-status-*
+          path: dataset-status
+      - name: Render dashboard
+        run: julia --color=yes .github/scripts/build_dataset_status.jl dataset-status site
+      # Production dashboard at the root; every other run lands in a preview directory, so
+      # a labelled PR can never overwrite the published state of `main`.
+      - name: Determine publication target
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+              destination="previews/PR${{ github.event.number }}"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+              destination="."
+          else
+              branch="${{ github.ref_name }}"
+              destination="previews/${branch//\//-}"
+          fi
+          echo "destination=${destination}" | tee -a "${GITHUB_OUTPUT}"
+      - name: Publish to gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .github/scripts/publish_dataset_status.sh site "${{ steps.target.outputs.destination }}"
+      - name: Summarize
+        run: |
+          destination="${{ steps.target.outputs.destination }}"
+          if [ "${destination}" = "." ]; then
+              url="https://numericalearth.github.io/NumericalEarth.jl/"
+          else
+              url="https://numericalearth.github.io/NumericalEarth.jl/${destination}/"
+          fi
+          echo "Dataset status dashboard: ${url}" >> "${GITHUB_STEP_SUMMARY}"
