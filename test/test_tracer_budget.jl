@@ -45,6 +45,11 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
     VV⁻ = CenterField(grid); ΔVV = Field(cell_volume - VV⁻)
     VS⁻ = CenterField(grid); ΔVS = Field(S * volume  - VS⁻)
 
+    heat_flux_field   = Field(heat_rate)
+    enthalpy_field    = Field(enthalpy_rate)
+    volume_flux_field = Field(volume_rate)
+    radiative_field   = isnothing(radiative_rate) ? nothing : Field(radiative_rate)
+
     set!(VS⁻, S * volume)
     ∫S⁻ = sum(VS⁻)
 
@@ -52,10 +57,15 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
         set!(VT⁻, T * volume)
         set!(VV⁻, cell_volume)
 
-        previous_heat_flux      = @allowscalar first(Field(heat_rate))
-        previous_enthalpy       = @allowscalar first(Field(enthalpy_rate))
-        previous_volume_flux    = @allowscalar first(Field(volume_rate))
-        previous_radiative_rate = isnothing(radiative_rate) ? zero(previous_heat_flux) : @allowscalar first(Field(radiative_rate))
+        compute!(heat_flux_field)
+        compute!(enthalpy_field)
+        compute!(volume_flux_field)
+        isnothing(radiative_field) || compute!(radiative_field)
+
+        previous_heat_flux      = @allowscalar first(heat_flux_field)
+        previous_enthalpy       = @allowscalar first(enthalpy_field)
+        previous_volume_flux    = @allowscalar first(volume_flux_field)
+        previous_radiative_rate = isnothing(radiative_field) ? zero(previous_heat_flux) : @allowscalar first(radiative_field)
 
         time_step!(coupled_model, Δt)
         last_Δt = ocean.model.clock.last_Δt
@@ -88,7 +98,7 @@ end
         for z in (MutableVerticalDiscretization((-100, 0)), ) # TODO: Add a static grid
             for fold_topology in (RightFaceFolded,
                                   RightCenterFolded)
-                              
+
             @info ".. on $(typeof(arch)) with $(typeof(z)) and $fold_topology topology"
             underlying_grid = TripolarGrid(arch;
                                            size = (20, 20, 20),
