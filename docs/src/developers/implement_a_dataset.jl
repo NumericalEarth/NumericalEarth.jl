@@ -160,7 +160,7 @@ date = DateTime(2012, 10, 1)
 # `Field(metadatum)` returns the profile on the buoy's own measurement depths; `set!` interpolates that same
 # `metadatum` onto any column grid we choose. We overlay the two for temperature, salinity, and the two
 # velocity components. Each variable gets a target grid spanning its *own* measured depth: the currents reach
-# only the upper tens of metres, while temperature and salinity extend to ~300 m.
+# only the upper tens of meters, while temperature and salinity extend to ~300 m.
 
 fig = Figure(size = (1200, 480))
 axT = Axis(fig[1, 1], xlabel = "Temperature (ᵒC)", ylabel = "z (m)")
