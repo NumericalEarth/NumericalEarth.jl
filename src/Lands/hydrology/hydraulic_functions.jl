@@ -41,19 +41,21 @@ Adapt.adapt_structure(to, r::VanGenuchtenRetention) =
     VanGenuchtenRetention(Adapt.adapt(to, r.inverse_air_entry_head),
                           Adapt.adapt(to, r.n))
 
-@inline van_genuchten_m(n) = 1 - 1/n
+# The second shape parameter of the retention curve. It is not free: Mualem's
+# restriction ties it to the pore-size distribution index as m = 1 - 1/n, which is
+# what makes the conductivity integral analytic.
+@inline mualem_shape_parameter(n) = 1 - 1/n
 
 @inline function pressure_head(i, j, grid, r::VanGenuchtenRetention, 𝒮)
     FT  = eltype(grid)
     α   = convert(FT, property_value(r.inverse_air_entry_head, i, j))
     n   = convert(FT, property_value(r.n, i, j))
-    n⁻¹ = 1 / n
-    m⁻¹ = 1 / (one(FT) - n⁻¹)
+    m   = mualem_shape_parameter(n)
     # Clamp 𝒮 strictly inside (0, 1] to avoid singularities at endpoints.
     𝒮c = clamp(convert(FT, 𝒮), eps(FT), one(FT))
     return ifelse(𝒮c >= one(FT),
                   zero(FT),
-                  -(𝒮c^(-m⁻¹) - one(FT))^n⁻¹ / α)
+                  -(𝒮c^(-1/m) - one(FT))^(1/n) / α)
 end
 
 Base.summary(r::VanGenuchtenRetention) =
@@ -100,11 +102,10 @@ Adapt.adapt_structure(to, c::VanGenuchtenConductivity) =
     Ksat = convert(FT, property_value(c.K_saturated, i, j))
     n    = convert(FT, property_value(c.n, i, j))
     ℓ    = convert(FT, property_value(c.pore_connectivity_exponent, i, j))
-    m    = van_genuchten_m(n)
-    m⁻¹  = 1 / m
+    m    = mualem_shape_parameter(n)
     𝒮c   = clamp(convert(FT, 𝒮), zero(FT), one(FT))
     # K → K_sat as 𝒮 → 1.
-    inner = one(FT) - (one(FT) - 𝒮c^m⁻¹)^m
+    inner = one(FT) - (one(FT) - 𝒮c^(1/m))^m
     return Ksat * 𝒮c^ℓ * inner^2
 end
 
