@@ -1,4 +1,5 @@
-using ...Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant
+using ...Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant,
+                     default_water_emissivity
 
 """
     OSPapaPrescribedRadiation(architecture = CPU(), FT = Float32;
@@ -6,7 +7,7 @@ using ...Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_st
                               end_date = last_date(OSPapaHourly(), :shortwave_radiation),
                               dir = download_OSPapa_cache,
                               max_gap_hours = 72,
-                              ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
+                              ocean_surface = SurfaceRadiationProperties(0.05, default_water_emissivity),
                               sea_ice_surface = nothing,
                               stefan_boltzmann_constant = default_stefan_boltzmann_constant)
 
@@ -18,7 +19,7 @@ function OSPapaPrescribedRadiation(architecture = CPU(), FT = Float32;
                                    end_date = last_date(OSPapaHourly(), :shortwave_radiation),
                                    dir = download_OSPapa_cache,
                                    max_gap_hours = 72,
-                                   ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
+                                   ocean_surface = SurfaceRadiationProperties(0.05, default_water_emissivity),
                                    sea_ice_surface = nothing,
                                    stefan_boltzmann_constant = default_stefan_boltzmann_constant)
 

@@ -1,52 +1,3 @@
-module NumericalEarthArchGDALExt
-
-using ArchGDAL: ArchGDAL
-using NCDatasets: NCDataset, defDim, defVar
-using NumericalEarth: NumericalEarth
-
-const WorldCover = NumericalEarth.DataWrangling.WorldCover
-
-function NumericalEarth.DataWrangling.IBCAO.reproject_ibcao_to_netcdf(tiff_path, nc_path)
-    ArchGDAL.read(tiff_path) do src
-        # Warp from EPSG:3996 (Polar Stereographic) to EPSG:4326 (WGS84)
-        # at 0.01° resolution, clipping to 64–90°N
-        ArchGDAL.gdalwarp([src],
-            ["-t_srs", "EPSG:4326",
-             "-te",    "-180", "64", "180", "90",  # xmin ymin xmax ymax
-             "-tr",    "0.01", "0.01",             # target resolution (degrees)
-             "-r",     "bilinear",                 # resampling method
-             "-ot",    "Float32"]) do warped
-
-            # ArchGDAL returns data as (Nx, Ny) with y from north to south (GDAL convention)
-            data = Float32.(ArchGDAL.read(warped, 1))
-            data = reverse(data, dims=2)
-
-            Nx, Ny = size(data)  # expected: (36000, 2600)
-
-            NCDataset(nc_path, "c") do ds
-                defDim(ds, "lon", Nx)
-                defDim(ds, "lat", Ny)
-
-                lon_var = defVar(ds, "lon", Float64, ("lon",);
-                                attrib = ["units" => "degrees_east",
-                                          "long_name" => "longitude"])
-                lat_var = defVar(ds, "lat", Float64, ("lat",);
-                                attrib = ["units" => "degrees_north",
-                                          "long_name" => "latitude"])
-                z_var   = defVar(ds, "z",   Float32, ("lon", "lat");
-                                attrib = ["long_name" => "elevation",
-                                          "units"     => "m"])
-
-                lon_var[:] = range(-180 + 0.005, 180 - 0.005; length=Nx)
-                lat_var[:] = range(64 + 0.005, 90 - 0.005; length=Ny)
-                z_var[:, :] = data
-            end
-        end
-    end
-
-    return nothing
-end
-
 #####
 ##### ESA WorldCover: anonymous COG tiles → regional NetCDF
 #####
@@ -54,14 +5,14 @@ end
 ##### must never be averaged, so we read the raw 10 m codes windowed to the bbox
 ##### with nearest resampling (which only clips/aligns — it never invents an
 ##### intermediate code), then aggregate onto the coarse lat/lon grid by an
-##### integer factor using `aggregate_landcover` from the WorldCover module. This
-##### keeps the categorical field on its native EPSG:4326 grid — no reprojection.
+##### integer factor using `aggregate_landcover`. This keeps the categorical
+##### field on its native EPSG:4326 grid — no reprojection.
 #####
 
 # S3 key for one 3°×3° tile named by its SW corner (e.g. "N51E006").
 function worldcover_tile_url(dataset, tile)
-    year = WorldCover.version_year(dataset)
-    version = WorldCover.version_string(dataset)
+    year = version_year(dataset)
+    version = version_string(dataset)
     key = string("v", version[2:end], "/", year, "/map/",
                  "ESA_WorldCover_10m_", year, "_", version, "_", tile, "_Map.tif")
     return string("/vsis3/esa-worldcover/", key)
@@ -90,29 +41,16 @@ function worldcover_tiles(longitude_bounds, latitude_bounds)
     return tiles
 end
 
-# GDAL_jll ships its own libcurl, which on some platforms (notably macOS) cannot
-# locate a system CA bundle and then fails TLS verification against the HTTPS S3
-# endpoint ("unable to get local issuer certificate"). If neither variable is
-# already set, point curl at the CA bundle that ships with Julia so the anonymous
-# HTTPS read can verify the endpoint. An explicit user configuration always wins,
-# and TLS verification itself is never disabled.
-function ensure_curl_ca_bundle!()
-    (haskey(ENV, "CURL_CA_BUNDLE") || haskey(ENV, "SSL_CERT_FILE")) && return nothing
-    bundled = normpath(joinpath(Sys.BINDIR, "..", "share", "julia", "cert.pem"))
-    isfile(bundled) && (ENV["CURL_CA_BUNDLE"] = bundled)
-    return nothing
-end
-
-function WorldCover.worldcover_cog_to_netcdf(metadatum::WorldCover.ESAWorldCoverMetadatum, nc_path)
-    ensure_curl_ca_bundle!()
+function NumericalEarth.DataWrangling.WorldCover.worldcover_cog_to_netcdf(metadatum::ESAWorldCoverMetadatum, nc_path)
+    configure_vsicurl!()
 
     dataset = metadatum.dataset
     region  = metadatum.region
 
     factor = dataset.aggregation_factor
-    native_step = WorldCover.ESA_WORLDCOVER_NATIVE_STEP
+    native_step = ESA_WORLDCOVER_NATIVE_STEP
 
-    i₁, i₂, j₁, j₂ = WorldCover.worldcover_window(region.longitude, region.latitude, factor)
+    i₁, i₂, j₁, j₂ = worldcover_window(region.longitude, region.latitude, factor)
     west  = i₁ * native_step
     east  = i₂ * native_step
     south = j₁ * native_step
@@ -162,7 +100,7 @@ function WorldCover.worldcover_cog_to_netcdf(metadatum::WorldCover.ESAWorldCover
     end
 
     # Aggregate onto the coarse lat/lon grid by the integer factor in one pass.
-    aggregated  = WorldCover.aggregate_landcover(codes, factor)
+    aggregated  = aggregate_landcover(codes, factor)
     class_field = aggregated.landcover_class
     vegetation  = aggregated.vegetation_fraction
 
@@ -193,7 +131,7 @@ function WorldCover.worldcover_cog_to_netcdf(metadatum::WorldCover.ESAWorldCover
         vegetation_variable[:, :] = Float32.(vegetation)
 
         for (name, fraction) in pairs(aggregated.class_fractions)
-            band = string(WorldCover.class_fraction_variable_name(name))
+            band = string(class_fraction_variable_name(name))
             fraction_variable = defVar(ds, band, Float32, ("lon", "lat");
                                        attrib = ["long_name" => string(name, " area fraction"),
                                                  "units" => "1"])
@@ -203,5 +141,3 @@ function WorldCover.worldcover_cog_to_netcdf(metadatum::WorldCover.ESAWorldCover
 
     return nothing
 end
-
-end # module NumericalEarthArchGDALExt

@@ -227,6 +227,23 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 Note the case distinction: lowercase ``\psi`` (`ψ`) is the stability
 function, while capital ``\Psi`` (`Ψ`) is the aggregate interface-state object.
 
+## Surface morphometry
+
+Roughness elements — buildings or plant canopy — that set the aerodynamic
+parameters ``\ell^\mathrm{m}`` and ``d`` of a land surface.
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``h`` | `h` | element height | Mean height of the roughness elements (m) |
+| ``h^\mathrm{max}`` | `hᵐᵃˣ` | maximum element height | Tallest roughness element in the cell (m) |
+| ``\sigma^h`` | `σʰ` | height standard deviation | Spread of the roughness-element heights (m) |
+| ``d`` | `d` | zero-plane displacement | Displacement height of the roughness sublayer (m) |
+| ``\lambda^p`` | `λᵖ` | plan-area index | Ground-plan area covered by the elements, per unit ground area (–) |
+| ``\lambda^f`` | `λᶠ` | frontal-area index | Windward face area of the elements, per unit ground area (–) |
+
+The superscripts on ``\lambda^p`` and ``\lambda^f`` distinguish them from the
+longitude ``\lambda``.
+
 ## Radiative fluxes
 
 | Math | Code | Property | Description |
