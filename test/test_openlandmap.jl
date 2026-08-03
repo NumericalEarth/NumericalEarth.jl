@@ -67,11 +67,12 @@ end
     @test validate_dataset_coverage(grid, meta_region) === nothing
 end
 
-# Build a small EPSG:4326 GeoTIFF with known scale/offset/nodata; row 0 is north.
-function write_synthetic_tile(path; nx, ny, x0, y0, dx, dy, scale, offset, nodata, raw)
+# Build a small GeoTIFF with a known CRS/scale/offset/nodata; row 0 is north.
+function write_synthetic_tile(path; nx, ny, x0, y0, dx, dy, scale, offset, nodata, raw, epsg = 4326)
     ArchGDAL.create(path; driver = ArchGDAL.getdriver("GTiff"),
                     width = nx, height = ny, nbands = 1, dtype = UInt8) do ds
         ArchGDAL.setgeotransform!(ds, [x0, dx, 0.0, y0, 0.0, dy])
+        ArchGDAL.setproj!(ds, ArchGDAL.toWKT(ArchGDAL.importEPSG(epsg)))
         band = ArchGDAL.getband(ds, 1)
         ArchGDAL.setnodatavalue!(band, Float64(nodata))
         ArchGDAL.GDAL.gdalsetrasterscale(band.ptr, Float64(scale))
@@ -125,4 +126,18 @@ end
         @test size(data, 3) == 3
         @test isequal(data[:, :, 1], data[:, :, 3])   # isequal: NaN == NaN elementwise
     end
+end
+
+@testset "OpenLandMapSoilDB windowed COG reader rejects a non-EPSG:4326 source" begin
+    dir = mktempdir()
+    nx, ny = 10, 8
+    x0, y0, dx, dy = -5.0, 4.0, 0.1, -0.1
+    raw = UInt8[i for i in 1:nx, j in 1:ny]
+
+    # A source declaring a projected CRS must fail loudly: windowing is done in degrees.
+    tif = write_synthetic_tile(joinpath(dir, "mercator.tif");
+                               nx, ny, x0, y0, dx, dy, scale = 1.0, offset = 0.0,
+                               nodata = 255, raw, epsg = 3857)
+    bbox = BoundingBox(longitude = (x0, x0 + nx * dx), latitude = (y0 + ny * dy, y0))
+    @test_throws ErrorException cog_window_to_netcdf([tif], joinpath(dir, "bad.nc"), "clay", bbox)
 end

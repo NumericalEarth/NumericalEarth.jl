@@ -29,7 +29,7 @@ function BathymetryRegridding(grid, metadata;
                               interpolation_passes = 1,
                               major_basins = 1)
 
-    Nx, Ny, _ = size(grid)
+    Nx, Ny, _ = worksize(grid)
     TX, TY, _ = topology(grid)
     lon = x_domain(grid)
     lat = y_domain(grid)

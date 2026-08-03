@@ -11,7 +11,7 @@
 # This page is split into four stages:
 # 1. A 0D dry-layer slab under idealized analytic forcing;
 # 2. its skin temperature's sensitivity to the rain rate``∂T / ∂𝒫̇`` from a single reverse pass;
-# 3. an ERA5-forced example in Central Borneo example run at ~1 km with downscaled elevation;
+# 3. an ERA5-forced run over Central Borneo at ~1 km with downscaled elevation;
 # 4. a pointwise ``∂T / ∂ν`` porosity-sensitivity map over a 2D sub-patch of that domain.
 #
 # Stages 2 and 4 compile the coupled time step to
@@ -26,11 +26,11 @@
 # saturation `𝒮ᶜ`. Vapor escapes through that layer with a piston velocity
 # `wᵈ = Dᵛ_eff / δᵛ`, so a saturated surface evaporates at the atmospheric-demand
 # limit while a dried-out one is throttled. This two-stage bare-soil drying is
-# explained in detail in [Or et al. (2013)](@cite or2013advances). 
-# In this example, we use a thin slab to demonstrate the different stages over
-# a short roll out for demonstration purposes. A rain pulse on day 2 briefly over-saturates the slab
+# explained in detail in [Or et al. (2013)](@cite or2013advances).
+# In this example, we use a thin slab so the different stages appear within a
+# short rollout. A rain pulse on day 2 briefly over-saturates the slab
 # (`𝒮 = 1`) such that the latent heat flux increases to the wet/saturated regime.
-# Once evaporation draws the slab back down through the dry layer onser`𝒮ᶜ`, the dry layer 
+# Once evaporation draws the slab back down through the dry-layer onset `𝒮ᶜ`, the dry layer
 # reopens and the latent heat collapses again.
 
 # ## Load packages
@@ -54,8 +54,6 @@ using Reactant: @trace
 # The idealized forcings simulate a warm, dry 280–290 K regime that keeps evaporative
 # demand high. A six-hour rain pulse falls on day 2 with amplitude `𝒫̇` (nominally
 # `6e-4 kg m⁻² s⁻¹`, ≈ 13 mm over the six hours)
-
-const day = 1days
 
 air_temperature(t)       = 285 - 5 * cos(2π * t / day)               # K, 280–290 diurnal
 downwelling_shortwave(t) = max(0, 600 * cos(2π * (t - day/2) / day)) # W m⁻², daytime only
@@ -105,13 +103,13 @@ dry_layer_onset_saturation = 0.5   # onset saturation 𝒮ᶜ, read by `make_dry
 # ## The dry-layer slab
 #
 # We build a thin (5 cm) loamy slab, so the daytime evaporative demand dries it back
-# across `𝒮ᶜ` within a few days of the pulse, transitioning between 
+# across `𝒮ᶜ` within a few days of the pulse, transitioning between
 # saturated and arrested evaporation phases. We start *below* `𝒮ᶜ`, so a dry surface layer is
 # already present (`δᵛ > 0`) and evaporation is initially throttled. The pulse amplitude
 # stays below the soil infiltration capacity, so the `InfiltrationCapacityRunoff` model does not
-# shed water. With `NoDeepLiquidFlux` closing the bottom, evaporation is the only water sink. 
-# The pulse drives storage briefly past the saturation value `Mˡᵃ⁺ = ρˡ ν hˡᵃ`. Using the 
-# augmented liquid fraction as the tracer, it can go above saturation, carrying the excess 
+# shed water. With `NoDeepLiquidFlux` closing the bottom, evaporation is the only water sink.
+# The pulse drives storage briefly past the saturation value `Mˡᵃ⁺ = ρˡ ν hˡᵃ`. Using the
+# augmented liquid fraction as the tracer, it can go above saturation, carrying the excess
 # as a positive pressure head (`𝒮` pinned at 1).
 
 porosity              = 0.4
@@ -136,10 +134,10 @@ initial_water_storage =
 # ## Model builders
 
 # `WaterCoupledEnergy` is the slab's energy budget which steps the skin temperature `Tˡᵃ`
-#  with a force-restore balance toward a deep reservoir at `deep_temperature` on the 
-# `deep_time_scale`, and folds the water storage into the areal heat capacity 
-# `C(Mˡᵃ) = C_dry + cˡ Mˡᵃ`, recomputed each step so that a wetter slab carries more 
-# thermal inertia. `dry_heat_capacity` is `C_dry` (depth × density × specific heat of 
+#  with a force-restore balance toward a deep reservoir at `deep_temperature` on the
+# `deep_time_scale`, and folds the water storage into the areal heat capacity
+# `C(Mˡᵃ) = C_dry + cˡ Mˡᵃ`, recomputed each step so that a wetter slab carries more
+# thermal inertia. `dry_heat_capacity` is `C_dry` (depth × density × specific heat of
 # the dry soil), `liquid_heat_capacity` is `cˡ`.
 soil_energy(FT; deep_time_scale) = WaterCoupledEnergy(FT;
     dry_heat_capacity     = 0.1 * 1500 * 1480,
@@ -169,13 +167,13 @@ make_dry_layer_humidity(porosity) = DryLayerHumidity(;
                                                 dry_layer_exponent      = 2),
     vapor_exchange = DryLayerVaporPistonVelocity(minimum_dry_layer_depth = 1e-4,
                                                  molecular_diffusivity   = 2.5e-5,
-                                                 tortuosity_model        = MillingtonQuirk()),
+                                                 tortuosity              = PowerLawTortuosity()),
     thermal_exchange_depth = 0.10,
     porosity)
 
 # Now, we assemble the coupled model used by the *differentiable* stages.
-# For differentiability purposes, the turbulent fluxes use a fixed-iteration Monin–Obukhov solver 
-# (`FixedIterations`) instead of the default tolerance-based `while` loop. 
+# For differentiability purposes, the turbulent fluxes use a fixed-iteration Monin–Obukhov solver
+# (`FixedIterations`) instead of the default tolerance-based `while` loop.
 # This is done because the differentiated pass compiles the coupled
 # time step to XLA, where a data-dependent `while` becomes an XLA op that does not
 # differentiate cheaply. On the other hand, a fixed iteration count unrolls into a static
@@ -209,7 +207,7 @@ end
 
 # ## Integration length
 #
-# We integrate the model for 5.84 days (`41² = 1681` steps). The final time 
+# We integrate the model for 5.84 days (`41² = 1681` steps). The final time
 # skin temperature is differentiated against the rain pulse amplitude `𝒫̇`
 # in order to compute the sensitivity of skin temperature against rain rate.
 # Reverse gradient checkpointing needs a perfect-square step count, hence we chose `41²`.
@@ -260,7 +258,7 @@ for n in 1:Nsteps
     G[n]  = -scalar(land.fluxes.surface_energy_flux)  # storage residual Rₙ − H − LE
 end
 
-# # Differentiating skin temperature against rain rate in the idealized model
+# ## Differentiating skin temperature against rain rate in the idealized model
 #
 # To differentiate through the model, we rebuild the same setup on
 # a `ReactantState` grid so every array is an XLA buffer, wrap the
@@ -268,9 +266,6 @@ end
 # once, and differentiate it with respect to the rain-pulse amplitude.
 
 Reactant.set_default_backend("cpu")
-
-# TODO: remove this line once Reactant has been bumped
-Reactant.LLVM.clopts("-vectorize-slp=false", "-vectorize-loops=false")
 
 grid_ad  = RectilinearGrid(ReactantState(); size = (), topology = (Flat, Flat, Flat))
 model_ad = dry_layer_model(grid_ad, times, nominal_rain_rate)
@@ -428,9 +423,9 @@ nothing #hide
 
 # ![](differentiable_dry_layer_slab_land.png)
 
-# # Scaling up: ERA5-forced slab land over Central Borneo
+# ## Scaling up: ERA5-forced slab land over Central Borneo
 #
-# We now run the same `SlabLand` stack as a high-resolution, land-only simulation over 
+# We now run the same `SlabLand` stack as a high-resolution, land-only simulation over
 # the Central Borneo highlands, forced by ERA5 reanalysis and realistic elevation with
 # ETOPO 2022 topography. The region is equatorial (snow-free), heavy-rainfall, fully inland,
 # and carries ~2 km of relief.
@@ -539,7 +534,7 @@ porosity = Field{Center, Center, Nothing}(land_grid)
 parent(porosity) .= elevation_porosity.(parent(z_land))
 
 # A representative scalar porosity for the humidity closure, which feeds the
-# Millington–Quirk tortuosity (a minor pathway). The dominant porosity dependence
+# power-law tortuosity (a minor pathway). The dominant porosity dependence
 # runs through the hydrology's per-cell field above.
 nominal_porosity = 0.4
 
@@ -697,7 +692,7 @@ nothing #hide
 
 # ![](era5_forced_slab_land.mp4)
 
-# # Differentiating the ERA5 run: a pointwise porosity sensitivity map
+# ## Differentiating the ERA5 run: a pointwise porosity sensitivity map
 #
 # The forward run above is dependent on the land parameters. We now ask a
 # calibration-style question: **how sensitive is the skin temperature to the
@@ -709,8 +704,8 @@ nothing #hide
 #
 # Differentiating across the full 200 × 200 grid is computationally expensive, so we
 # restrict to a 20 × 20 sub-patch in the interior of the same Central Borneo
-# domain (≈ 1 km cells, land only) for demonstration purposes. As beforer, the 
-# **fixed-iteration** Monin–Obukhov solver (`FixedIterations`) replaces the 
+# domain (≈ 1 km cells, land only) for demonstration purposes. As before, the
+# **fixed-iteration** Monin–Obukhov solver (`FixedIterations`) replaces the
 # default tolerance-based `while` loop, for the same XLA reason as the 0D case.
 #
 # The pointwise reading of the map relies on columns being independent: the
@@ -755,7 +750,7 @@ initial_water_storage = 100.0      # kg m⁻²
 #
 # A `DatasetBackend` ERA5 `FieldTimeSeries` does host file I/O and cannot be
 # time-stepped inside a compiled XLA loop, so we load the ERA5 required for
-#  the simulation length once on the CPU and interpolate every hourly slice 
+#  the simulation length once on the CPU and interpolate every hourly slice
 # onto an in-memory `PrescribedAtmosphere` / `PrescribedRadiation` on the patch grid.
 
 # This is done by applying `op!(dst, src)` to every forcing field in turn, pairing a patch-grid
@@ -846,10 +841,10 @@ z_patch      = regrid_topography(cpu_grid; dataset = ETOPO2022())
 cpu_porosity = porosity_field_on(cpu_grid, 0)
 parent(cpu_porosity) .= elevation_porosity.(parent(z_patch))
 
-# The ETOPO surface (`z_patch`) and ERA5's own topography are read on the CPU and 
-# passed as plain arrays, so the correction materializes its exchange-grid `Δz` 
-# through a device-safe array write and runs on either a CPU or a `ReactantState` 
-# grid without host I/O on the XLA buffers. The unmaterialized correction is 
+# The ETOPO surface (`z_patch`) and ERA5's own topography are read on the CPU and
+# passed as plain arrays, so the correction materializes its exchange-grid `Δz`
+# through a device-safe array write and runs on either a CPU or a `ReactantState`
+# grid without host I/O on the XLA buffers. The unmaterialized correction is
 # grid-free.
 
 z_era5_patch         = Field(Metadatum(:topography; dataset, date = patch_start_date, region = patch_region), cpu_grid)
@@ -857,23 +852,21 @@ surface_elevation    = Array(interior(z_patch, :, :, 1))
 atmosphere_elevation = Array(interior(z_era5_patch, :, :, 1))
 patch_correction     = ElevationCorrection(surface_elevation, atmosphere_elevation; lapse_rate = Γ_lapse)
 
-function run_forward(grid, forcing, T₀, porosity_field; collect_series = false)
+function run_forward(grid, forcing, T₀, porosity_field)
     model = era5_slab_land_model(grid, forcing, porosity_field, nominal_porosity;
                                  exchanger_correction = patch_correction)
     parent(model.land.temperature) .= parent(T₀)
     set!(model.land; M = initial_water_storage)
 
-    T_mean = collect_series ? zeros(Nsteps) : Float64[]
-    for n in 1:Nsteps
+    for _ in 1:Nsteps
         time_step!(model, Δt)
-        collect_series && (T_mean[n] = mean(interior(model.land.temperature, :, :, 1)))
     end
     T_final = Array(interior(model.land.temperature, :, :, 1))
-    return (; T_final, T_mean)
+    return (; T_final)
 end
 
 @info "Running forward ERA5 slab-land patch on the CPU..."
-forward = run_forward(cpu_grid, cpu_forcing, T₀_cpu, cpu_porosity; collect_series = true)
+forward = run_forward(cpu_grid, cpu_forcing, T₀_cpu, cpu_porosity)
 @info @sprintf("Forward done: ⟨T(t=%.2f d)⟩ = %.4f K", run_time / 86400, mean(forward.T_final))
 
 # ## Building a differentiable workflow with Reactant and Enzyme
@@ -964,7 +957,7 @@ N           = prod(patch_size)
 # finite difference: perturb *every* cell's porosity by `±δν` (uniformly, so each
 # diagonal entry `∂T(λ,φ)/∂ν(λ,φ)` is recovered under column independence) and read
 # the local skin-temperature response. The adjoint map and the finite-difference map
-# are approximately equal.
+# are similar in magnitude and direction.
 
 δν = 0.001 * nominal_porosity
 ν_plus  = porosity_field_on(cpu_grid, 0); parent(ν_plus)  .= parent(cpu_porosity) .+ δν
@@ -973,8 +966,8 @@ T_plus  = run_forward(cpu_grid, cpu_forcing, T₀_cpu, ν_plus)
 T_minus = run_forward(cpu_grid, cpu_forcing, T₀_cpu, ν_minus)
 fd_map  = (T_plus.T_final .- T_minus.T_final) ./ 2δν
 
-max_abs_error = maximum(abs.(adjoint_map .- fd_map))
-@info @sprintf("Adjoint vs finite-difference map:  max|Δ| = %.3e K", max_abs_error)
+@info @sprintf("Finite diff:  ⟨T(t=%.2f d)⟩ = %.4f K,  ⟨∂T/∂ν⟩ = %+.4e K",
+               run_time / 86400, mean(forward.T_final), mean(fd_map))
 
 # ## Visualization
 

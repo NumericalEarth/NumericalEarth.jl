@@ -11,8 +11,9 @@ NumericalEarth currently ships connectors for the following data products:
 | `IBCAOv5`          | [Supported variables](@ref dataset-ibcaov5-vars)          | [IBCAO overview](https://www.gebco.net/data-products/gridded-bathymetry-data/arctic-ocean)         |
 | `GLO30`            | [Supported variables](@ref dataset-glo30-vars)            | [Copernicus DEM GLO-30 (Earth Data Hub)](https://earthdatahub.destine.eu/collections/copernicus-dem/datasets/GLO-30) |
 | `GLO90`            | [Supported variables](@ref dataset-glo90-vars)            | [Copernicus DEM GLO-90 (Earth Data Hub)](https://earthdatahub.destine.eu/collections/copernicus-dem/datasets/GLO-90) |
-| `ORCA1`            | `:bottom_height`, `:mesh_mask`                            | [ORCA1 mesh and bathymetry (Zenodo)](https://zenodo.org/records/4436658)                           |
-| `ORCA12`           | `:bottom_height`, `:mesh_mask`                            | [ORCA12 mesh and bathymetry (Zenodo)](https://zenodo.org/records/15495870)                         |
+| `ORCAOne`          | `:bottom_height`, `:mesh_mask`                            | [eORCA1 mesh and bathymetry (Zenodo)](https://zenodo.org/records/4436658)                          |
+| `ORCAQuarter`      | `:bottom_height`, `:mesh_mask`                            | [eORCA025 mesh and bathymetry (Zenodo)](https://zenodo.org/records/15494369)                       |
+| `ORCATwelfth`      | `:bottom_height`, `:mesh_mask`                            | [eORCA12 mesh and bathymetry (Zenodo)](https://zenodo.org/records/15495870)                        |
 | `GLORYSStatic`     | `:depth`                                                  | [Copernicus GLORYS static product](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |
 | **Ocean reanalysis and climatology** |                                     |                                                                                                     |
 | `ECCO2Monthly`     | [Supported variables](@ref dataset-ecco2monthly-vars)     | [ECCO2 documentation](https://ecco.jpl.nasa.gov/products/all/)                                     |

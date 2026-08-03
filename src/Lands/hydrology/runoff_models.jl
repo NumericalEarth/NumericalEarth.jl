@@ -3,28 +3,28 @@
 #####
 ##### Two diagnostic categories:
 #####
-##### * `R_sfc`: surface runoff — rejected liquid input. Returned together with
-#####   the actual surface liquid flux `Jˡ_s` because they are coupled (the
+##### * `Rˢᶠᶜ`: surface runoff — rejected liquid input. Returned together with
+#####   the actual surface liquid flux `Jˡˢ` because they are coupled (the
 #####   infiltration-capacity model splits incoming precipitation between the
 #####   two).
-##### * `R_lat`: lateral / subsurface runoff — true storage export. Carries
+##### * `Rˡᵃᵗ`: lateral / subsurface runoff — true storage export. Carries
 #####   internal energy with it.
 #####
 ##### Each closure implements
 #####
 #####     surface_liquid_flux_and_runoff(runoff, Pˡ, M, θˡ, 𝒮, Π, K)
-#####         -> (Jˡ_s, R_sfc)
+#####         -> (Jˡˢ, Rˢᶠᶜ)
 #####
-#####     subsurface_runoff(runoff, M, Π, K) -> R_lat
+#####     subsurface_runoff(runoff, M, Π, K) -> Rˡᵃᵗ
 #####
-##### with the sign convention `Jˡ_s > 0` upward, `Pˡ > 0` downward,
-##### `R_sfc ≥ 0`, `R_lat ≥ 0`.
+##### with the sign convention `Jˡˢ > 0` upward, `Pˡ > 0` downward,
+##### `Rˢᶠᶜ ≥ 0`, `Rˡᵃᵗ ≥ 0`.
 #####
 
 """
     NoRunoff()
 
-No runoff. All precipitation infiltrates (`Jˡ_s = −Pˡ`), no subsurface export.
+No runoff. All precipitation infiltrates (`Jˡˢ = −Pˡ`), no subsurface export.
 """
 struct NoRunoff end
 
@@ -44,7 +44,7 @@ positive magnitude). Any precipitation exceeding the cap becomes surface
 runoff:
 
 ```math
-J^l_s = \\max(-P^l, -J^l_{cap}), \\qquad R^M_{sfc} = J^l_s - (-P^l) \\ge 0.
+J^{ls} = \\max(-P^l, -J^l_{cap}), \\qquad R^{\\mathrm{sfc}} = J^{ls} - (-P^l) \\ge 0.
 ```
 
 No subsurface runoff.

@@ -50,7 +50,7 @@ end
 """
     PrescribedRadiation(downwelling_shortwave, downwelling_longwave;
                         clock = nothing,
-                        ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
+                        ocean_surface = SurfaceRadiationProperties(0.05, default_water_emissivity),
                         sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
                         snow_surface = nothing,
                         land_surface = nothing,
@@ -65,7 +65,7 @@ Pass `*_surface = nothing` to omit that surface from `surface_properties`.
 function PrescribedRadiation(downwelling_shortwave::FieldTimeSeries,
                              downwelling_longwave::FieldTimeSeries;
                              clock = nothing,
-                             ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
+                             ocean_surface = SurfaceRadiationProperties(0.05, default_water_emissivity),
                              sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
                              snow_surface = nothing,
                              land_surface = nothing,
@@ -120,24 +120,12 @@ end
     return nothing
 end
 
-# Prescribed fields are FieldTimeSeries; their data lives in the per-time
-# `Field` slices, so `set!` each slice (which accepts a Number, Field, function,
-# or anything `set!(::Field, ⋅)` does). `nothing` leaves the field untouched.
-set_prescribed_field!(fts, ::Nothing) = nothing
-function set_prescribed_field!(fts, value)
-    for n in 1:length(fts.times)
-        Oceananigans.set!(fts[n], value)
-    end
-    return fts
-end
-
 """
     set!(radiation::PrescribedRadiation; downwelling_shortwave=nothing, downwelling_longwave=nothing)
 
 Set the prescribed downwelling shortwave and longwave radiative fluxes (W m⁻²),
 then refresh the interpolated state. Omitted keywords are left untouched. A
-`Number` sets a constant in space and time; a function or `Field` is forwarded
-to `Oceananigans.set!`.
+`Number` sets a constant in space and time.
 """
 function Oceananigans.set!(radiation::PrescribedRadiation;
                            downwelling_shortwave=nothing, downwelling_longwave=nothing)

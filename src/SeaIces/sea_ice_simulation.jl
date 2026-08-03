@@ -188,9 +188,13 @@ function sea_ice_dynamics(grid, ocean=nothing;
     sea_ice_ocean_drag_coefficient = convert(FT, sea_ice_ocean_drag_coefficient)
     ρₑ = ocean_reference_density(ocean, FT)
 
+    # Set up boundary conditions
+    x_stress_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
+    y_stress_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
+  
     τo  = SemiImplicitStress(uₑ=SSU, vₑ=SSV, Cᴰ=sea_ice_ocean_drag_coefficient, ρₑ=ρₑ)
-    τua = Field{Face, Center, Nothing}(grid)
-    τva = Field{Center, Face, Nothing}(grid)
+    τua = Field{Face, Center, Nothing}(grid, boundary_conditions = x_stress_bcs)
+    τva = Field{Center, Face, Nothing}(grid, boundary_conditions = y_stress_bcs)
 
     if isnothing(free_drift)
         free_drift = StressBalanceFreeDrift((u=τua, v=τva), τo)
@@ -211,6 +215,7 @@ end
 
 EarthSystemModels.sea_ice_thickness(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_thickness
 EarthSystemModels.sea_ice_concentration(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_concentration
+EarthSystemModels.intercepted_snowfall(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.mass_fluxes.intercepted_snowfall
 
 EarthSystemModels.heat_capacity(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.phase_transitions.heat_capacity
 EarthSystemModels.reference_density(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.phase_transitions.density

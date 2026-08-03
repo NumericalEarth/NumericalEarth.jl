@@ -30,7 +30,7 @@ function diffuse_tracers(initial_tracers;
     κz = scale_to_diffusivity(vertical_scale)
 
     # Determine stable time-step
-    Nx, Ny, Nz = size(grid)
+    Nx, Ny, Nz = worksize(grid)
     ϵ = fractional_time_step
     Az = minimum(grid.Azᶜᶜᵃ[1:Ny])
 

@@ -24,7 +24,7 @@
 #     machinery reads directly from the RTM's flux divergence.
 #   * The atmosphere's own `update_state!` drives the RRTMGP solve
 #     through the proxy (honoring the RTM's `schedule`).
-#   * Net surface SW/LW from the RTM feeds the slab's `net_energy_flux`
+#   * Net surface SW/LW from the RTM feeds the slab's `surface_energy_flux`
 #     via `apply_air_land_radiative_fluxes!`, closing the surface
 #     energy balance — no example-level callbacks required.
 
@@ -99,14 +99,10 @@ hydrology = VariablySaturatedHydrology(eltype(land_grid);
 # `C(Mˡᵃ) = C_dry + cˡ Mˡᵃ` and conservative `Tˡᵃ` update — adding or removing
 # water at the slab temperature leaves `Tˡᵃ` unchanged.
 #
-# `deep_temperature` must sit near the surface's radiative–convective
-# equilibrium (~310 K here). With a much colder target (e.g. 290 K) the deep
-# restoring holds the thin, low-heat-capacity dry patches ~30 K below their
-# natural daytime equilibrium, and that cold-surface/warm-air regime is
-# marginally unstable in this convection-resolving, two-way-coupled LES — a
-# chaotic gust trips it into a near-surface 2Δz runaway around day 3. It is the
-# restoring *target*, not the conductance or the timestep (see issue #326 and
-# `docs/src/land/follow_up_roadmap.md`).
+# `deep_temperature` should sit near the surface's radiative–convective
+# equilibrium (~310 K here): a much colder restoring target holds the thin,
+# low-heat-capacity dry patches far below their daytime equilibrium and
+# destabilizes the coupled boundary layer.
 
 energy = WaterCoupledEnergy(eltype(land_grid);
     dry_heat_capacity = 1480 * 1500 * 0.10,
@@ -135,7 +131,7 @@ slab_land = SlabLand(land_grid; hydrology, energy)
 # We initialize `Mˡᵃ` as a Gaussian centered at the domain midpoint.
 
 T₀    = 295 # K
-Mˡᵃ⁺  = slab_land.hydrology.porosity * slab_land.hydrology.slab_depth * 1000   # ρˡ ν D
+Mˡᵃ⁺  = slab_land.hydrology.porosity * slab_land.hydrology.slab_depth * 1000   # ρˡ ν hˡᵃ
 M_wet = 0.95 * Mˡᵃ⁺
 σ_wet = Lx / 8
 
@@ -270,7 +266,7 @@ interface_specific_humidity = DryLayerHumidity(;
     vapor_exchange = DryLayerVaporPistonVelocity(
         minimum_dry_layer_depth = 1e-4,
         molecular_diffusivity = 2.5e-5,
-        tortuosity_model = MillingtonQuirk()),
+        tortuosity = PowerLawTortuosity()),
     thermal_exchange_depth = 0.10,
     porosity = slab_land.hydrology.porosity)
 al_interface = atmosphere_land_interface(slab_land.grid, atmos, slab_land;

@@ -3,13 +3,14 @@ module OpenLandMap
 export OpenLandMapSoilDB
 
 using Downloads: Downloads
+using NCDatasets: NCDataset, defDim, defVar
 using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling,
     AbstractStaticDataset, Metadatum, BoundingBox, Dataset,
     WeightPercent, GramPerCubicCentimeter,
-    metadata_path, dataset_variable_name
+    metadata_path, dataset_variable_name, bounding_box_suffix
 
 import Oceananigans
 
@@ -28,8 +29,7 @@ Delivers static soil texture mass fractions (`:sand_fraction`, `:silt_fraction`,
 `:clay_fraction`, in kg/kg) and fine-earth bulk density (`:bulk_density`, in
 kg/m³) over the three native depth intervals 0–30, 30–60, and 60–100 cm — stored
 as a three-dimensional field whose vertical axis carries the depths (deepest
-first), mirroring [`SoilGrids2`](@ref). Data are plain geographic EPSG:4326 so no
-reprojection is needed.
+first). Data are plain geographic EPSG:4326 so no reprojection is needed.
 
 Because the global grid is ~1.44M × 528k cells, this dataset is read in regional
 windows only: construct the [`Metadatum`](@ref) with a longitude/latitude
@@ -59,9 +59,6 @@ struct OpenLandMapSoilDB <: AbstractStaticDataset end
 
 const OpenLandMapSoilDBMetadatum = Metadatum{<:OpenLandMapSoilDB}
 
-# Variable-name mapping from NumericalEarth names to the short names used inside
-# the regional NetCDF we materialize. These match SoilGrids2's scheme so a future
-# pedotransfer function is source-agnostic.
 OpenLandMap_dataset_variable_names = Dict(
     :sand_fraction => "sand",
     :silt_fraction => "silt",
@@ -80,8 +77,7 @@ OpenLandMap_cog_sources = Dict(
 
 const OpenLandMap_s3_base = "https://s3.opengeohub.org/global-soil"
 
-# Depth intervals, deepest first, so the stacked vertical axis increases upward
-# and matches `z_interfaces`.
+# Depth intervals, deepest first.
 const OpenLandMap_depths = ("b60cm..100cm", "b30cm..60cm", "b0cm..30cm")
 
 const OpenLandMap_date_range = "20200101_20221231"
@@ -131,10 +127,8 @@ end
 
 Oceananigans.Fields.location(::OpenLandMapSoilDBMetadatum) = (Center, Center, Center)
 
-# Masked cells (ice, sand deserts, water, outside −56°–76°) stay NaN by default,
-# mirroring SoilGrids2: shallow nearest-neighbor inpainting would 0-fill masks it
-# cannot reach in a few passes, and 0 is a spurious soil value. Pass an explicit
-# `inpainting = NearestNeighborInpainting(n)` to `Field` to fill them.
+# Masked cells (ice, sand deserts, water, outside −56°–76°) stay NaN by default.
+# Pass an explicit `inpainting = NearestNeighborInpainting(n)` to `Field` to fill them.
 DataWrangling.default_inpainting(::OpenLandMapSoilDBMetadatum) = nothing
 
 DataWrangling.inpainted_metadata_path(metadata::OpenLandMapSoilDBMetadatum) =
@@ -145,18 +139,7 @@ DataWrangling.inpainted_metadata_path(metadata::OpenLandMapSoilDBMetadatum) =
 #####
 
 DataWrangling.metadata_filename(::OpenLandMapSoilDB, name, date, region) =
-    string("OpenLandMap_", name, "_", region_suffix(region), ".nc")
-
-region_suffix(::Nothing) = "global"
-
-function region_suffix(region::BoundingBox)
-    λ = region.longitude
-    φ = region.latitude
-    return string("lon_", bound_str(λ), "_lat_", bound_str(φ))
-end
-
-bound_str(::Nothing) = "nothing"
-bound_str(bounds) = string(bounds[1], "_", bounds[2])
+    string("OpenLandMap_", name, "_", bounding_box_suffix(region), ".nc")
 
 function DataWrangling.validate_dataset_coverage(grid, metadata::OpenLandMapSoilDBMetadatum)
     region = metadata.region
@@ -166,6 +149,13 @@ function DataWrangling.validate_dataset_coverage(grid, metadata::OpenLandMapSoil
               "Build the metadatum with a longitude/latitude BoundingBox, e.g.\n" *
               "    metadatum = Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(),\n" *
               "                          region = BoundingBox(longitude = (λ₁, λ₂), latitude = (φ₁, φ₂)))")
+    end
+
+    # Coverage is latitudes −56° to 76° (longitude is global); reject a box with no overlap.
+    φ_south, φ_north = DataWrangling.latitude_interfaces(metadata.dataset)
+    if region.latitude[2] < φ_south || region.latitude[1] > φ_north
+        error("OpenLandMapSoilDB latitude coverage is $(φ_south)° to $(φ_north)°; " *
+              "requested latitude = $(region.latitude).")
     end
     return nothing
 end
@@ -200,17 +190,58 @@ function DataWrangling.retrieve_data(metadata::OpenLandMapSoilDBMetadatum)
 end
 
 """
-    cog_window_to_netcdf(sources, nc_path, variable_name, bbox)
+    read_cog_window(source, bbox)
 
-Stream a longitude/latitude window from each depth COG in `sources`
-(deepest-first, already `/vsicurl/`-prefixed), decode raw integers to physical
-units (mask nodata → `NaN`, then apply the band `scale`/`offset`), stack into a
-`(lon, lat, depth)` array, and write it to `nc_path` with ascending lon/lat.
+Read the `bbox` longitude/latitude window from a single-band EPSG:4326
+cloud-optimized GeoTIFF `source`, decode raw integers to physical units (mask
+nodata → `NaN`, then apply the band `scale`/`offset`), and return
+`(longitude, latitude, data)` with ascending, cell-center coordinates (latitude
+south-to-north, per CF convention).
 
-Implemented in `ext/NumericalEarthArchGDALExt.jl` when ArchGDAL is loaded; the
+Implemented in `ext/NumericalEarthArchGDALExt/openlandmap.jl` when ArchGDAL is loaded; the
 fallback below fires only when the extension is not active.
 """
-cog_window_to_netcdf(sources, nc_path, variable_name, bbox) =
+read_cog_window(source, bbox) =
     error("Reading OpenLandMap COGs requires the ArchGDAL package. Load it with `using ArchGDAL`.")
+
+# Window each depth COG in `sources` (deepest-first) over `bbox` and stack them
+# into a `(lon, lat, depth)` NetCDF at `nc_path`. All depths share one grid, so
+# the coordinate axes come from the first window.
+function cog_window_to_netcdf(sources, nc_path, variable_name, bbox)
+    windows   = [read_cog_window(source, bbox) for source in sources]
+    longitude = windows[1][1]
+    latitude  = windows[1][2]
+    Nx, Ny, Nz = length(longitude), length(latitude), length(windows)
+
+    data = Array{Float32}(undef, Nx, Ny, Nz)
+    for (k, (_, _, layer)) in enumerate(windows)
+        data[:, :, k] = layer
+    end
+
+    # Interval midpoints (m) from the dataset's depth faces, deepest first.
+    z = DataWrangling.z_interfaces(OpenLandMapSoilDB())
+    depth_centers = Nz == length(z) - 1 ? (z[1:end-1] .+ z[2:end]) ./ 2 : collect(1.0:Nz)
+
+    NCDataset(nc_path, "c") do ds
+        defDim(ds, "lon", Nx)
+        defDim(ds, "lat", Ny)
+        defDim(ds, "depth", Nz)
+
+        lon_var   = defVar(ds, "lon", Float64, ("lon",);
+                           attrib = ["units" => "degrees_east", "long_name" => "longitude"])
+        lat_var   = defVar(ds, "lat", Float64, ("lat",);
+                           attrib = ["units" => "degrees_north", "long_name" => "latitude"])
+        depth_var = defVar(ds, "depth", Float64, ("depth",);
+                           attrib = ["units" => "m", "long_name" => "depth interval midpoint"])
+        data_var  = defVar(ds, variable_name, Float32, ("lon", "lat", "depth"))
+
+        lon_var[:]        = longitude
+        lat_var[:]        = latitude
+        depth_var[:]      = depth_centers
+        data_var[:, :, :] = data
+    end
+
+    return nothing
+end
 
 end # module OpenLandMap

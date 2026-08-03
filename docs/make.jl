@@ -38,7 +38,7 @@ mkpath(OUTPUT_DIR)
 # on pushes to `main`/tags, or when the `build all examples` label is added to a PR.
 examples = [
     Example("Single-column ocean simulation", "single_column_os_papa_simulation", true),
-    Example("Coupled energy and freshwater conservation", "coupled_conservation", true),
+    Example("Coupled conservation on a z-star grid", "coupled_conservation", true),
     Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
     Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
     Example("Global climate simulation", "global_climate_simulation", false),
@@ -46,7 +46,8 @@ examples = [
     Example("Breeze over four oceans", "breeze_over_four_oceans", false),
     Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data", true),
     Example("Breeze over slab land", "breeze_over_slab_land", true),
-    Example("Differentiable ERA5-forced slab land", "era5_forced_slab_land", true),
+    Example("Differentiable ERA5-forced slab land", "era5_forced_slab_land", false),
+    Example("ERA5 downscaling with Breeze", "breeze_downscaling_era5", true),
 ]
 
 # Developer examples from docs/src/developers/ directory
@@ -184,11 +185,6 @@ pages = [
     ],
     "Interface fluxes" => "interface_fluxes.md",
 
-    "Land" => [
-        "SlabLand tutorial" => "land/evaporation_front_slab_land.md",
-        "Follow-up roadmap"  => "land/follow_up_roadmap.md",
-    ],
-
     "Appendix" => [
         "Notation" => "appendix/notation.md",
     ],
@@ -220,6 +216,7 @@ makedocs(; sitename = "NumericalEarth.jl",
          warnonly = [:cross_references, :missing_docs],
          checkdocs = :exports,
          linkcheck = true,
+         linkcheck_timeout = 30, # some hosts (e.g. JMA JRA-55) are slow; the default 10s times out
          linkcheck_ignore = [
              r"^https://ecco\.jpl\.nasa\.gov/.*",
              r"https://www\.ncei\.noaa\.gov/products/etopo-global-relief-model",

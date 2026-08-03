@@ -18,9 +18,11 @@ export AbstractLand,
        NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
        NoRunoff, InfiltrationCapacityRunoff,
        VariablySaturatedHydrology,
-       # Pedotransfer functions + depth-layer combination
-       PedotransferFunction, ContinuousPedotransfer,
-       soil_hydraulic_parameters, soil_hydraulic_properties, layer_weights,
+       # Urban aerodynamic roughness closures
+       AbstractUrbanRoughness, MorphometricRoughness,
+       IsotropicFrontalArea, EmpiricalFrontalArea,
+       UniformHeight, VariableHeight,
+       urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
        # Atmosphere-facing accessors
        surface_temperature, surface_saturation
 
@@ -35,12 +37,13 @@ instead.
 abstract type AbstractLand end
 
 using Adapt: Adapt
+using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
-using Oceananigans.Architectures: architecture, on_architecture
+using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField
-using Oceananigans.Grids: grid_name, Center, Face
+using Oceananigans.Grids: grid_name, Center, Face, φnode
 using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
@@ -55,10 +58,9 @@ include("energy_balance/energy_balance.jl")
 include("hydrology/hydrology.jl")
 include("properties/property_providers.jl")
 
-# Pedotransfer functions (texture → van Genuchten params) + depth-layer combination.
-# Pure setup-time helpers that build the property `Field`s consumed by the closures.
-include("properties/pedotransfer.jl")
-include("properties/soil_hydraulic_properties.jl")
+# Urban aerodynamic roughness closures.
+include("roughness/urban_roughness_closure.jl")
+include("roughness/urban_roughness_field.jl")
 
 # Container.
 include("slab_land.jl")

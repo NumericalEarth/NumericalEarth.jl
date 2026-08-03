@@ -12,46 +12,60 @@ using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove
 using Statistics
 using Test
 
-# Pre-download ORCA1 mesh_mask and bathymetry through the artifacts fallback so
+# Pre-download ORCAOne mesh_mask and bathymetry through the artifacts fallback so
 # subsequent ORCAGrid(...) calls find the files locally even when Zenodo is down.
 for name in (:mesh_mask, :bottom_height)
-    md = Metadatum(name; dataset=ORCA1())
-    download_dataset_with_fallback(metadata_path(md); dataset_name="ORCA1 $name") do
+    md = Metadatum(name; dataset=ORCAOne())
+    download_dataset_with_fallback(metadata_path(md); dataset_name="ORCAOne $name") do
         download(md)
     end
 end
 
-@testset "ORCA1 Metadatum construction" begin
-    bathy_meta = Metadatum(:bottom_height; dataset=ORCA1())
+@testset "ORCAOne Metadatum construction" begin
+    bathy_meta = Metadatum(:bottom_height; dataset=ORCAOne())
     @test bathy_meta.name == :bottom_height
-    @test bathy_meta.dataset isa ORCA1
+    @test bathy_meta.dataset isa ORCAOne
 
-    mesh_meta = Metadatum(:mesh_mask; dataset=ORCA1())
+    mesh_meta = Metadatum(:mesh_mask; dataset=ORCAOne())
     @test mesh_meta.name == :mesh_mask
-    @test mesh_meta.dataset isa ORCA1
+    @test mesh_meta.dataset isa ORCAOne
 end
 
 
-@testset "ORCA12 Metadatum construction" begin
-    bathy_meta = Metadatum(:bottom_height; dataset=ORCA12())
+@testset "ORCATwelfth Metadatum construction" begin
+    bathy_meta = Metadatum(:bottom_height; dataset=ORCATwelfth())
     @test bathy_meta.name == :bottom_height
-    @test bathy_meta.dataset isa ORCA12
+    @test bathy_meta.dataset isa ORCATwelfth
 
-    mesh_meta = Metadatum(:mesh_mask; dataset=ORCA12())
+    mesh_meta = Metadatum(:mesh_mask; dataset=ORCATwelfth())
     @test mesh_meta.name == :mesh_mask
-    @test mesh_meta.dataset isa ORCA12
+    @test mesh_meta.dataset isa ORCATwelfth
 
-    @test default_south_rows_to_remove(ORCA12()) == 0
+    @test default_south_rows_to_remove(ORCATwelfth()) == 460
     @test occursin("eORCA12", metadata_path(mesh_meta))
     @test occursin("eORCA12", metadata_path(bathy_meta))
 end
 
-@testset "ORCAGrid with ORCA1 dataset on $(arch)" for arch in test_architectures
+@testset "ORCAQuarter Metadatum construction" begin
+    bathy_meta = Metadatum(:bottom_height; dataset=ORCAQuarter())
+    @test bathy_meta.name == :bottom_height
+    @test bathy_meta.dataset isa ORCAQuarter
+
+    mesh_meta = Metadatum(:mesh_mask; dataset=ORCAQuarter())
+    @test mesh_meta.name == :mesh_mask
+    @test mesh_meta.dataset isa ORCAQuarter
+
+    @test default_south_rows_to_remove(ORCAQuarter()) == 155
+    @test occursin("eORCA025", metadata_path(mesh_meta))
+    @test occursin("eORCA025", metadata_path(bathy_meta))
+end
+
+@testset "ORCAGrid with ORCAOne dataset on $(arch)" for arch in test_architectures
     south_rows_to_remove = 43
-    grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
+    grid = ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
     @test grid.underlying_grid.Ny == 332 - south_rows_to_remove
 
-    grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove=0)
+    grid = ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove=0)
 
     # Default returns ImmersedBoundaryGrid with bathymetry
     @test grid isa ImmersedBoundaryGrid
@@ -70,21 +84,20 @@ end
 end
 
 @testset "ORCAGrid without bathymetry on $(arch)" for arch in test_architectures
-    grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
+    grid = ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
                     with_bathymetry=false)
 
     @test grid isa Oceananigans.Grids.OrthogonalSphericalShellGrid
     @test grid isa TripolarGrid
     @test !(grid isa ImmersedBoundaryGrid)
     @test grid.Nx == 362
-    @test grid.Ny == 332 - default_south_rows_to_remove(ORCA1())
+    @test grid.Ny == 332 - default_south_rows_to_remove(ORCAOne())
     @test grid.Nz == 5
 end
 
 @testset "ORCAGrid with south_rows_to_remove on $(arch)" for arch in test_architectures
     Nremove = 40
-    grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
-                    south_rows_to_remove=Nremove)
+    grid = ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove=Nremove)
 
     @test grid isa ImmersedBoundaryGrid
     underlying = grid.underlying_grid
@@ -94,7 +107,7 @@ end
 end
 
 @testset "ORCAGrid metric consistency" begin
-    grid = ORCAGrid(CPU(); dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), with_bathymetry=false)
+    grid = ORCAGrid(CPU(); dataset=ORCAOne(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), with_bathymetry=false)
 
     Nx, Ny = grid.Nx, grid.Ny
     Hx, Hy = grid.Hx, grid.Hy
@@ -164,8 +177,44 @@ end
     @test boundary_jump < 10 * interior_variation + 1e-10
 end
 
-@testset "ORCA1 bathymetry retrieval" begin
-    bathy_md = Metadatum(:bottom_height; dataset=ORCA1())
+# The eORCA1 mesh_mask ships both the staggered metrics and the T/F coordinates, so reconstructing it
+# from `glamt/gphit/glamf/gphif` alone and comparing against the shipped `e1`/`e2` exercises the path
+# taken by any mesh that stores coordinates only (eORCA025, eORCA12).
+@testset "ORCA mesh reconstruction agrees with the staggered mesh" begin
+    Bathymetry = NumericalEarth.Bathymetry
+    path = metadata_path(Metadatum(:mesh_mask; dataset=ORCAOne()))
+
+    ds = Dataset(path)
+    staggered = Bathymetry.read_orca_staggered_mesh(ds)
+    Nx, Ny = size(Bathymetry.read_2d_nemo_variable(ds, "glamt"))
+    read_coordinate(name) = Bathymetry.orient_xy(Bathymetry.read_2d_nemo_variable(ds, name), Nx, Ny; name)
+    λCC, φCC = read_coordinate("glamt"), read_coordinate("gphit")
+    λFF, φFF = read_coordinate("glamf"), read_coordinate("gphif")
+    close(ds)
+
+    reconstructed = Bathymetry.reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius = Oceananigans.defaults.planet_radius)
+
+    for name in (:e1t, :e2t, :e1u, :e2u, :e1v, :e2v, :e1f, :e2f, :λFC, :λCF, :λFF, :φFF)
+        @test size(getproperty(reconstructed, name)) == size(getproperty(staggered, name))
+    end
+
+    south = default_south_rows_to_remove(ORCAOne()) + 1
+    for name in (:e1t, :e2t, :e1u, :e2u, :e1v, :e2v, :e1f, :e2f)
+        reference = getproperty(staggered, name)[:, south:end]
+        computed  = getproperty(reconstructed, name)[:, south:end]
+        error     = abs.(computed .- reference) ./ max.(abs.(reference), 1e-6)
+
+        @test median(error) < 1e-3
+        @test count(>(0.01), error) / length(error) < 0.02
+    end
+
+    for name in (:e1t, :e2t, :e1u, :e2u, :e2v)
+        @test count(==(0), getproperty(reconstructed, name)) == 0
+    end
+end
+
+@testset "ORCAOne bathymetry retrieval" begin
+    bathy_md = Metadatum(:bottom_height; dataset=ORCAOne())
     download(bathy_md)
     path = metadata_path(bathy_md)
     @test isfile(path)

@@ -84,6 +84,26 @@ function restrict_longitude(bbox_interfaces, interfaces::NTuple{2,Any}, N)
 end
 
 """
+    native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
+
+Regular lat/lon raster of cell steps `Δλ`/`Δφ` (degrees) covering `region`, snapped to the global
+lattice anchored at `(-180, -90)` and padded by `pad` cells on each side. Returns
+`(; west, south, Δλ, Δφ, Nx, Ny)`.
+
+Datasets distributed as vector or tiled files lay out the raster they burn onto with this, so the
+result is a sub-window of the global lattice `Field(::Metadatum)` assumes.
+"""
+function native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
+    west, east   = region.longitude
+    south, north = region.latitude
+    i₀ = floor(Int, (west  + 180) / Δλ) - pad
+    j₀ = floor(Int, (south +  90) / Δφ) - pad
+    i₁ = ceil(Int,  (east  + 180) / Δλ) + pad
+    j₁ = ceil(Int,  (north +  90) / Δφ) + pad
+    return (; west = -180 + i₀ * Δλ, south = -90 + j₀ * Δφ, Δλ, Δφ, Nx = i₁ - i₀, Ny = j₁ - j₀)
+end
+
+"""
     native_grid(metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
 
 Return the native grid corresponding to `metadata` with `halo` size.
@@ -103,7 +123,7 @@ function construct_native_grid(metadata, ::Nothing, arch; halo)
     if is_three_dimensional(metadata)
         z = z_interfaces(metadata)
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
-                                     halo, longitude, latitude, z)
+                                     halo, longitude, latitude, z = z)
     else
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny),
                                      halo = halo[1:2], longitude, latitude,
@@ -125,10 +145,19 @@ function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
 
     TX = infer_longitudinal_topology(native_longitude, longitude)
 
+    # Relabel the grid longitudes back to the bbox's convention (data is array-indexed, so the
+    # ordering is unchanged). The shift is 0 when the bbox already matches the dataset's native
+    # convention and ±360 when they differ (e.g. a [-180, 180] bbox over ERA5's [0, 360] native
+    # grid), so a `NestedSimulation` child sees a parent grid labeled in its own convention.
+    if !isnothing(bbox.longitude)
+        shift = bbox_lon[1] - bbox.longitude[1]
+        longitude = longitude .- shift
+    end
+
     if is_three_dimensional(metadata)
         z = z_interfaces(metadata)
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
-                                     halo, longitude, latitude, z,
+                                     halo, longitude, latitude, z = z,
                                      topology = (TX, Bounded, Bounded))
     else
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny),
@@ -147,7 +176,7 @@ function construct_native_grid(metadata, col::Column, arch; halo)
         _, _, Nz, _ = size(metadata)
         z = z_interfaces(metadata)
         return RectilinearGrid(arch, FT; size = Nz, halo = halo[3],
-                               x, y, z, topology = (Flat, Flat, Bounded))
+                               x = x, y = y, z = z, topology = (Flat, Flat, Bounded))
     else
         return RectilinearGrid(arch, FT; size = (), halo = (),
                                x, y, topology = (Flat, Flat, Flat))
