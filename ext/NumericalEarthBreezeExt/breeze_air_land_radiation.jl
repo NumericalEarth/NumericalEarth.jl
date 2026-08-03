@@ -5,9 +5,11 @@
 ##### at the surface to the slab's `surface_energy_flux` accumulator, using the "positive
 ##### flux = upward" sign convention (downwelling components are stored negative).
 #####
-##### Longwave is complete in the RTM's fields: `upwelling_longwave_flux` already bakes in
-##### surface emission and reflection (ε σ Tₛ⁴ + (1-ε)·LW↓, from RRTMGP's emissivity
-##### boundary condition), so `ℐˡʷꜛ + ℐˡʷꜜ` is the net upward longwave.
+##### The RTM's downwelling longwave is atmospheric transfer and remains fixed between
+##### scheduled solves. Its upwelling longwave also contains the surface boundary condition
+##### from the last solve, so it cannot be used directly while the surface temperature evolves.
+##### Reconstruct the boundary every coupled step from the live surface temperature and
+##### emissivity: `ℐˡʷꜛ = ε σ Tₛ⁴ - (1-ε) ℐˡʷꜜ`, where downwelling flux is negative.
 #####
 ##### Shortwave is NOT: RRTMGP reflects the surface albedo internally, but Breeze stores
 ##### only the *gross* downwelling shortwave (`downwelling_shortwave_flux = -SW↓`, total
@@ -57,12 +59,13 @@ NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(::Bree
 NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation_properties(::BreezeRTM) =
     (surface_properties = NamedTuple(),)
 
-@kernel function _apply_breeze_air_land_radiative_fluxes!(Es, ℐˡʷꜛ, ℐˡʷꜜ, ℐˢʷꜜ, α)
+@kernel function _apply_breeze_air_land_radiative_fluxes!(Es, Tˢ, ε, σ, ℐˡʷꜜ, ℐˢʷꜜ, α)
     i, j = @index(Global, NTuple)
-    # Longwave is already net (emission + reflection baked into `ℐˡʷꜛ`). `ℐˢʷꜜ` is the
-    # GROSS downwelling shortwave — RRTMGP stores no upwelling-SW field — so keep only the
-    # absorbed fraction `(1 - α)·ℐˢʷꜜ`; the reflected `α·SW↓` is not deposited in the surface.
-    @inbounds Es[i, j, 1] += ℐˡʷꜛ[i, j, 1] + ℐˡʷꜜ[i, j, 1] + (1 - α[i, j, 1]) * ℐˢʷꜜ[i, j, 1]
+    @inbounds begin
+        εᵢⱼ = ε[i, j, 1]
+        ℐˡʷꜛ = εᵢⱼ * σ * Tˢ[i, j, 1]^4 - (1 - εᵢⱼ) * ℐˡʷꜜ[i, j, 1]
+        Es[i, j, 1] += ℐˡʷꜛ + ℐˡʷꜜ[i, j, 1] + (1 - α[i, j, 1]) * ℐˢʷꜜ[i, j, 1]
+    end
 end
 
 # Dispatch on `EarthSystemModel{<:BreezeRTM}`: the existing generic
@@ -85,6 +88,9 @@ function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
     rtm = coupled_model.radiation
     grid = land.grid
     arch = architecture(grid)
+    σ = convert(eltype(grid), NumericalEarth.Radiations.default_stefan_boltzmann_constant)
+    Tˢ = rtm.surface_properties.surface_temperature
+    ε = rtm.surface_properties.surface_emissivity
 
     # RRTMGP applies the surface albedo internally but Breeze stores only the gross
     # downwelling shortwave, so the kernel subtracts the reflected fraction `α·SW↓`.
@@ -96,7 +102,9 @@ function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
     launch!(arch, grid, :xy,
             _apply_breeze_air_land_radiative_fluxes!,
             Es,
-            rtm.upwelling_longwave_flux,
+            Tˢ,
+            ε,
+            σ,
             rtm.downwelling_longwave_flux,
             rtm.downwelling_shortwave_flux,
             α)
