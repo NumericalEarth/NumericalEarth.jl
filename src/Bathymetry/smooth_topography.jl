@@ -1,10 +1,26 @@
 using DocStringExtensions: TYPEDSIGNATURES
 
-@kernel function _smooth_topography!(smoothed, unsmoothed)
+# RightConnected and LeftConnected have physical west and east boundaries, respectively.
+@inline _previous_smoothing_index(i, ::Bounded) = max(1, i - 1)
+@inline _previous_smoothing_index(i, ::RightConnected) = max(1, i - 1)
+@inline _previous_smoothing_index(i, ::Flat) = i
+@inline _previous_smoothing_index(i, topology) = i - 1
+
+@inline _next_smoothing_index(i, N, ::Bounded) = min(N, i + 1)
+@inline _next_smoothing_index(i, N, ::LeftConnected) = min(N, i + 1)
+@inline _next_smoothing_index(i, N, ::Flat) = i
+@inline _next_smoothing_index(i, N, topology) = i + 1
+
+@kernel function _smooth_topography!(smoothed, unsmoothed, grid)
     i, j = @index(Global, NTuple)
-    @inbounds smoothed[i, j, 1] = (unsmoothed[i-1, j-1, 1] + 2 * unsmoothed[i, j-1, 1] + unsmoothed[i+1, j-1, 1]
-                             + 2 * (unsmoothed[i-1, j,  1] + 2 * unsmoothed[i, j,  1] + unsmoothed[i+1, j,  1])
-                                  + unsmoothed[i-1, j+1, 1] + 2 * unsmoothed[i, j+1, 1] + unsmoothed[i+1, j+1, 1]) / 16
+    i⁻ = _previous_smoothing_index(i, topology(grid, 1)())
+    i⁺ = _next_smoothing_index(i, grid.Nx, topology(grid, 1)())
+    j⁻ = _previous_smoothing_index(j, topology(grid, 2)())
+    j⁺ = _next_smoothing_index(j, grid.Ny, topology(grid, 2)())
+
+    @inbounds smoothed[i, j, 1] = (unsmoothed[i⁻, j⁻, 1] + 2 * unsmoothed[i, j⁻, 1] + unsmoothed[i⁺, j⁻, 1]
+                             + 2 * (unsmoothed[i⁻, j,  1] + 2 * unsmoothed[i, j,  1] + unsmoothed[i⁺, j,  1])
+                                  + unsmoothed[i⁻, j⁺, 1] + 2 * unsmoothed[i, j⁺, 1] + unsmoothed[i⁺, j⁺, 1]) / 16
 end
 
 """
@@ -19,6 +35,9 @@ a three-grid-length mode is damped to 1/4 per pass, and well-resolved scales pas
 nearly unchanged. Use it to remove the grid-scale orographic roughness left by point-sampled
 regridding (see [`regrid_topography`](@ref)), which on a terrain-following coordinate otherwise
 excites standing grid-scale noise in the near-surface flow.
+
+At bounded edges, the nearest interior elevation is replicated into the stencil so that smoothing
+does not pull topography toward zero and preserves a constant elevation field.
 
 ```jldoctest
 using Oceananigans
@@ -45,7 +64,7 @@ function smooth_topography!(elevation; passes = 1)
     fill_halo_regions!(elevation)
     for _ in 1:passes
         parent(scratch) .= parent(elevation)
-        launch!(arch, grid, :xy, _smooth_topography!, elevation, scratch)
+        launch!(arch, grid, :xy, _smooth_topography!, elevation, scratch, grid)
         fill_halo_regions!(elevation)
     end
     return elevation

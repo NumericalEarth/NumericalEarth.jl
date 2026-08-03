@@ -13,7 +13,7 @@ using Oceananigans.DistributedComputations: DistributedComputations, Distributed
                                             reconstruct_global_grid, all_reduce
 using Oceananigans.Fields: Field, interior, interpolate!
 using Oceananigans.Grids: x_domain, y_domain, topology, Face, Center,
-                          Flat, Periodic, Bounded,
+                          Flat, Periodic, Bounded, LeftConnected, RightConnected,
                           RectilinearGrid, LatitudeLongitudeGrid, OrthogonalSphericalShellGrid
 using Oceananigans.Utils: launch!, worksize
 using OffsetArrays: OffsetArrays, OffsetArray

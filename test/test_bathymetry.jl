@@ -10,6 +10,21 @@ using NumericalEarth.Bathymetry: remove_minor_basins!,
 using NumericalEarth.DataWrangling.ETOPO
 using Statistics
 
+@testset "Topography smoothing preserves bounded constants" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch, Float32;
+                               size = (8, 8),
+                               extent = (1, 1),
+                               topology = (Bounded, Bounded, Flat))
+
+        elevation = Field{Center, Center, Nothing}(grid)
+        set!(elevation, 1000)
+        smooth_topography!(elevation; passes = 2)
+
+        @test all(==(1000), Array(interior(elevation)))
+    end
+end
+
 @testset "Bathymetry construction and smoothing" begin
     @info "Testing Bathymetry construction and smoothing..."
     for arch in test_architectures
