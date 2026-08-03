@@ -62,12 +62,14 @@ through this function so the two can never disagree about it.
     FT  = eltype(grid)
     α   = convert(FT, property_value(r.inverse_air_entry_head, i, j))
     n   = convert(FT, property_value(r.pore_size_uniformity, i, j))
-    m   = van_genuchten_m(n)
+    # Both exponents enter as reciprocals; `n` itself is never used.
+    n⁻¹ = 1 / n
+    m⁻¹ = 1 / van_genuchten_m(n)
     # Clamp 𝒮 strictly inside (0, 1] to avoid singularities at endpoints.
     𝒮c = clamp(convert(FT, 𝒮), eps(FT), one(FT))
     return ifelse(𝒮c >= one(FT),
                   zero(FT),
-                  -(𝒮c^(-1/m) - one(FT))^(1/n) / α)
+                  -(𝒮c^(-m⁻¹) - one(FT))^n⁻¹ / α)
 end
 
 Base.summary(r::VanGenuchtenRetention) =
@@ -117,9 +119,10 @@ Adapt.adapt_structure(to, c::VanGenuchtenConductivity) =
     n    = convert(FT, property_value(c.pore_size_uniformity, i, j))
     ℓ    = convert(FT, property_value(c.pore_connectivity_exponent, i, j))
     m    = van_genuchten_m(n)
+    m⁻¹  = 1 / m
     𝒮c   = clamp(convert(FT, 𝒮), zero(FT), one(FT))
     # K → K_sat as 𝒮 → 1.
-    inner = one(FT) - (one(FT) - 𝒮c^(1/m))^m
+    inner = one(FT) - (one(FT) - 𝒮c^m⁻¹)^m
     return Ksat * 𝒮c^ℓ * inner^2
 end
 
