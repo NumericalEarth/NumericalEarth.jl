@@ -35,10 +35,14 @@ Environment variables (physics):
                 Default: true.
   KSKEW         Isopycnal skew diffusivity κ_skew (default: per-config; 0 = off;
                 "nemo" = NEMO's Treguier et al. 1997 coefficient, Ro² × baroclinic
-                growth rate, recomputed each step and depth-uniform)
+                growth rate, recomputed each step and depth-uniform;
+                "cesm" = CESM's Danabasoglu & Marshall 2007 coefficient,
+                κ_ref · clamp(N²/N²_ref, 0.1, 1), recomputed each step with
+                full vertical structure)
   KSYMM         Isopycnal symmetric diffusivity κ_symmetric (default: per-config; 0 = off;
                 "nemo" as above, but rising to its reference value in the tropics
-                with a floor of one fifth of it, per NEMO nn_aht_ijk_t = 21)
+                with a floor of one fifth of it, per NEMO nn_aht_ijk_t = 21;
+                "cesm" as above)
   BIHARMONIC    Biharmonic viscosity timescale (default: per-config; "nothing" = off)
   BIHVISC       Constant biharmonic viscosity ν in m^4/s (default: unset).
                 When set, overrides BIHARMONIC and uses ν directly instead of
@@ -245,6 +249,8 @@ KSKEW_JULIA="$KSKEW"; [[ "$KSKEW" == "0" ]] && KSKEW_JULIA="nothing"
 KSYMM_JULIA="$KSYMM"; [[ "$KSYMM" == "0" ]] && KSYMM_JULIA="nothing"
 [[ "$KSKEW" == "nemo" ]] && KSKEW_JULIA=":nemo"
 [[ "$KSYMM" == "nemo" ]] && KSYMM_JULIA=":nemo"
+[[ "$KSKEW" == "cesm" ]] && KSKEW_JULIA=":cesm"
+[[ "$KSYMM" == "cesm" ]] && KSYMM_JULIA=":cesm"
 export KSKEW_JULIA KSYMM_JULIA
 export NZ DT ARCH EXTRA_USING FILE_SPLIT RUN_CMD
 

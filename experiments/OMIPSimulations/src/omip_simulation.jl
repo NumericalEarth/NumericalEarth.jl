@@ -647,9 +647,13 @@ function omip_simulation(config::Symbol = :halfdegree;
     nemo_eddy_coefficients = uses_nemo_eddy_coefficients(κ_skew, κ_symmetric) ?
         NEMOEddyCoefficients(grid) : nothing
 
+    cesm_eddy_coefficients = uses_cesm_eddy_coefficients(κ_skew, κ_symmetric) ?
+        CESMEddyCoefficients(grid) : nothing
+
     ocean = build_ocean(cfg, grid;
                         κ_skew, κ_symmetric, Cᵇ,
                         nemo_eddy_coefficients,
+                        cesm_eddy_coefficients,
                         biharmonic_timescale,
                         biharmonic_viscosity,
                         vertical_closure,
@@ -710,6 +714,12 @@ function omip_simulation(config::Symbol = :halfdegree;
     if !isnothing(nemo_eddy_coefficients)
         compute_nemo_eddy_coefficients!(nemo_eddy_coefficients, ocean.model)
         add_callback!(simulation, RefreshNEMOEddyCoefficients(nemo_eddy_coefficients), IterationInterval(1))
+    end
+
+    # Same for CESM's stratification-dependent coefficient.
+    if !isnothing(cesm_eddy_coefficients)
+        compute_cesm_eddy_coefficients!(cesm_eddy_coefficients, ocean.model)
+        add_callback!(simulation, RefreshCESMEddyCoefficients(cesm_eddy_coefficients), IterationInterval(1))
     end
 
     # Hold the global ocean volume fixed by removing the global mean of the atmospheric freshwater
@@ -1155,6 +1165,7 @@ function build_ocean(config, grid;
                      implicit_vertical_advection = true,
                      skew_flux_formulation = :diffusive,
                      nemo_eddy_coefficients = nothing,
+                     cesm_eddy_coefficients = nothing,
                      restoring_under_sea_ice = true,
                      Cᵂu★ = nothing,
                      normalize_salinity = true,
@@ -1163,6 +1174,8 @@ function build_ocean(config, grid;
 
     κ_skew      = resolve_nemo_coefficient(κ_skew,      nemo_eddy_coefficients, :skew_coefficient)
     κ_symmetric = resolve_nemo_coefficient(κ_symmetric, nemo_eddy_coefficients, :symmetric_coefficient)
+    κ_skew      = resolve_cesm_coefficient(κ_skew,      cesm_eddy_coefficients, :skew_coefficient)
+    κ_symmetric = resolve_cesm_coefficient(κ_symmetric, cesm_eddy_coefficients, :symmetric_coefficient)
 
     additional_surface_fluxes = if piston_velocity == 0
         NamedTuple()
