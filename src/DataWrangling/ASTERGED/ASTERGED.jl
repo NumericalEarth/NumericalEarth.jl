@@ -9,7 +9,7 @@ using Oceananigans.Fields: Field, interior
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
                        BoundingBox, metadata_path, native_grid, inpaint_mask!,
-                       NearestNeighborInpainting
+                       NearestNeighborInpainting, bounding_box_suffix
 
 import Oceananigans
 
@@ -219,18 +219,7 @@ Base.size(dataset::ASTERGEDv3, variable) = size(dataset)
 # Region-keyed but variable-independent: one regional NetCDF holds both the emissivity
 # and its uncertainty, since the tile download produces both at once.
 DataWrangling.metadata_filename(dataset::ASTERGEDv3, name, date, region) =
-    string("ASTERGED_", dataset.resolution, "_", region_suffix(region), ".nc")
-
-region_suffix(::Nothing) = "global"
-
-function region_suffix(region::BoundingBox)
-    λ = region.longitude
-    φ = region.latitude
-    return string("lon_", bound_str(λ), "_lat_", bound_str(φ))
-end
-
-bound_str(::Nothing) = "nothing"
-bound_str(bounds) = string(bounds[1], "_", bounds[2])
+    string("ASTERGED_", dataset.resolution, "_", bounding_box_suffix(region), ".nc")
 
 function require_bounded_region(metadata::ASTERGEDMetadatum)
     region = metadata.region

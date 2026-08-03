@@ -134,6 +134,7 @@ export
     ORCAOne, ORCAQuarter, ORCATwelfth,
     ORCAGrid,
     OpenLandMapSoilDB,
+    GlobalBuildingFootprints3D, building_morphometry,
     GHSBuiltH, GHSBuiltS,
     first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,
@@ -286,6 +287,7 @@ using .DataWrangling.SoilGrids
 using .DataWrangling.ASTERGED
 using .DataWrangling.CopernicusLandAlbedo
 using .DataWrangling.OpenLandMap
+using .DataWrangling.GloBFP3D
 using .DataWrangling.GHSL
 using .DataWrangling.WorldCover
 

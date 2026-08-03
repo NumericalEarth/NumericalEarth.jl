@@ -140,13 +140,13 @@ end
     @test frontal_area_index(IsotropicFrontalArea(), 0.3, 15.0) == 0.3
 
     # The estimator choice changes the roughness (the dominant drag-partition uncertainty).
-    isotropic = uniform_height_closure(frontal_area = IsotropicFrontalArea())
-    empirical = uniform_height_closure(frontal_area = EmpiricalFrontalArea())
+    isotropic = uniform_height_closure(frontal_area_estimator = IsotropicFrontalArea())
+    empirical = uniform_height_closure(frontal_area_estimator = EmpiricalFrontalArea())
     @test aerodynamic_parameters(isotropic, 0.2, 15.0)[1] != aerodynamic_parameters(empirical, 0.2, 15.0)[1]
 
-    # The spread correction reduces to a1·(uniform-height ℓᵐ) for σʰ → 0.
-    a1 = VariableHeight().roughness_constants[1]
-    @test height_spread_roughness(1.3, 0.3, 15.0, 0.0, a1, 20.21, -0.77) ≈ a1 * 1.3
+    # The spread correction reduces to a₁·(uniform-height ℓᵐ) for σʰ → 0.
+    a₁ = VariableHeight().roughness_constants[1]
+    @test height_spread_roughness(1.3, 0.3, 15.0, 0.0, a₁, 20.21, -0.77) ≈ a₁ * 1.3
     # Displacement grows with the assumed height spread.
     narrow_spread = maximum_height_displacement(0.3, 15.0, 3.0,  37.5, 1.29, 0.36, -0.17)
     wide_spread   = maximum_height_displacement(0.3, 15.0, 10.0, 37.5, 1.29, 0.36, -0.17)
@@ -211,14 +211,14 @@ end
     # Non-built patch reduces to bare soil everywhere.
     set!(λᵖ, 0)
     compute_aerodynamic_roughness!(ℓᵐ, d, uniform_height_closure(),
-                                   (; plan_area_fraction = λᵖ, building_height = h), grid)
+                                   (; plan_area_index = λᵖ, mean_building_height = h), grid)
     @test all(≈(MorphometricRoughness().bare_soil_roughness), interior(ℓᵐ))
     @test all(≈(0), interior(d))
 
     # Invalid inputs propagate to NaN gaps.
     set!(λᵖ, 0.3); set!(h, NaN)
     compute_aerodynamic_roughness!(ℓᵐ, d, MorphometricRoughness(),
-                                   (; plan_area_fraction = λᵖ, building_height = h), grid)
+                                   (; plan_area_index = λᵖ, mean_building_height = h), grid)
     @test all(isnan, interior(ℓᵐ))
     @test all(isnan, interior(d))
 end
@@ -237,16 +237,16 @@ end
     # Drag-partition parameters and the height distribution are configured side by side,
     # on one flat closure.
     closure = MorphometricRoughness(array_constant = 3.59, bare_soil_roughness = 0.05,
-                                    frontal_area = IsotropicFrontalArea(),
+                                    frontal_area_estimator = IsotropicFrontalArea(),
                                     height_distribution = VariableHeight(height_spread_constants = (0.6, 0.0)))
     @test closure.array_constant == 3.59
     @test closure.bare_soil_roughness == 0.05
-    @test closure.frontal_area isa IsotropicFrontalArea
+    @test closure.frontal_area_estimator isa IsotropicFrontalArea
     @test closure.height_distribution.height_spread_constants == (0.6, 0.0)
 
     # A narrower closure FT converts the sub-closures too.
     narrow = MorphometricRoughness(Float32)
-    @test narrow.frontal_area.quadratic_coefficient isa Float32
+    @test narrow.frontal_area_estimator.quadratic_coefficient isa Float32
     @test eltype(narrow.height_distribution.height_spread_constants) == Float32
 
     grid = LatitudeLongitudeGrid(CPU(), Float64; size = (3, 3),
@@ -260,10 +260,83 @@ end
     @test all(≈(0.05), interior(ℓᵐ))
 end
 
+@testset "Measured morphometry bypasses the input regressions" begin
+    closure = MorphometricRoughness()
+    λᵖ, h = 0.3, 15.0
+    distribution = closure.height_distribution
+    σʰ = height_spread(distribution, h)
+    hᵐᵃˣ = maximum_element_height(distribution, h, σʰ)
+    λᶠ = frontal_area_index(closure.frontal_area_estimator, λᵖ, h)
+
+    # Fed its own regression values, the measured path reproduces the two-argument closure.
+    @test aerodynamic_parameters(closure, λᵖ, h, σʰ, hᵐᵃˣ, λᶠ) == aerodynamic_parameters(closure, λᵖ, h)
+    @test closure(λᵖ, h, σʰ, hᵐᵃˣ, λᶠ) == closure(λᵖ, h)
+
+    # More frontal area → more form drag → rougher; a taller tallest element → deeper d.
+    @test aerodynamic_parameters(closure, λᵖ, h, σʰ, hᵐᵃˣ, 2λᶠ)[1] >
+          aerodynamic_parameters(closure, λᵖ, h, σʰ, hᵐᵃˣ, λᶠ)[1]
+    @test aerodynamic_parameters(closure, λᵖ, h, σʰ, 2hᵐᵃˣ, λᶠ)[2] >
+          aerodynamic_parameters(closure, λᵖ, h, σʰ, hᵐᵃˣ, λᶠ)[2]
+
+    # UniformHeight ignores the height statistics: pure obstacle array with measured λᶠ.
+    uniform = uniform_height_closure()
+    @test aerodynamic_parameters(uniform, λᵖ, h, 9.0, 90.0, λᶠ) ==
+          aerodynamic_parameters(uniform, λᵖ, h, 0.0, h, λᶠ)
+
+    # A low-biased maximum height is floored at the mean, not trusted below it.
+    @test aerodynamic_parameters(closure, λᵖ, h, σʰ, h / 2, λᶠ) ==
+          aerodynamic_parameters(closure, λᵖ, h, σʰ, h, λᶠ)
+
+    # Bare-soil floor and NaN gaps behave as in the two-argument form.
+    ℓᵐ, d = aerodynamic_parameters(closure, 0.0, h, σʰ, hᵐᵃˣ, λᶠ)
+    @test ℓᵐ ≈ closure.bare_soil_roughness && d == 0
+    for arguments in ((NaN, h, σʰ, hᵐᵃˣ, λᶠ), (λᵖ, h, NaN, hᵐᵃˣ, λᶠ),
+                      (λᵖ, h, σʰ, NaN, λᶠ), (λᵖ, h, σʰ, hᵐᵃˣ, NaN))
+        ℓᵐ, d = aerodynamic_parameters(closure, arguments...)
+        @test isnan(ℓᵐ) && isnan(d)
+    end
+
+    # Union-free with a closure FT ≠ input FT (kernel/GPU safety).
+    for FT in (Float32, Float64)
+        ℓᵐ, d = @inferred aerodynamic_parameters(MorphometricRoughness(FT), λᵖ, h, σʰ, hᵐᵃˣ, λᶠ)
+        @test typeof(ℓᵐ) == typeof(d)
+        @test isfinite(ℓᵐ) && isfinite(d)
+    end
+end
+
+@testset "Measured-morphometry grid builder matches the scalar closure" begin
+    grid = LatitudeLongitudeGrid(CPU(), Float64; size = (4, 4),
+                                 longitude = (-74.0, -73.9), latitude = (40.7, 40.8),
+                                 topology = (Bounded, Bounded, Flat))
+    λᵖ   = Field{Center, Center, Nothing}(grid); set!(λᵖ, 0.4)
+    h    = Field{Center, Center, Nothing}(grid); set!(h, 30.0)
+    σʰ   = Field{Center, Center, Nothing}(grid); set!(σʰ, 25.0)
+    hᵐᵃˣ = Field{Center, Center, Nothing}(grid); set!(hᵐᵃˣ, 250.0)
+    λᶠ   = Field{Center, Center, Nothing}(grid); set!(λᶠ, 0.9)
+
+    ℓᵐ, d = urban_roughness(h, λᵖ, σʰ, hᵐᵃˣ, λᶠ)
+    ℓᵐref, dref = aerodynamic_parameters(MorphometricRoughness(), 0.4, 30.0, 25.0, 250.0, 0.9)
+    @test all(≈(ℓᵐref), interior(ℓᵐ))
+    @test all(≈(dref), interior(d))
+
+    # The measured statistics change the answer relative to the regression-fed builder.
+    ℓᵐreg, dreg = urban_roughness(h, λᵖ)
+    @test !(interior(ℓᵐ) ≈ interior(ℓᵐreg))
+    @test !(interior(d) ≈ interior(dreg))
+
+    # Scalar properties sample through property_value like Fields do.
+    compute_aerodynamic_roughness!(ℓᵐ, d, MorphometricRoughness(),
+                                   (; plan_area_index = λᵖ, mean_building_height = 30.0,
+                                      building_height_deviation = 25.0, maximum_building_height = 250.0,
+                                      frontal_area_index = 0.9), grid)
+    @test all(≈(ℓᵐref), interior(ℓᵐ))
+    @test all(≈(dref), interior(d))
+end
+
 @testset "Cell contract and mixed-type property sampling" begin
     closure = MorphometricRoughness()
     # The cell contract reads only the closure's own keys and matches the scalar form.
-    cell = (; plan_area_fraction = 0.3, building_height = 15.0, latitude = 51.5)
+    cell = (; plan_area_index = 0.3, mean_building_height = 15.0, latitude = 51.5)
     @test aerodynamic_parameters(closure, cell) == aerodynamic_parameters(closure, 0.3, 15.0)
 
     # The shared grid builder samples a Field and a uniform scalar property via property_value.
@@ -274,7 +347,7 @@ end
     d  = Field{Center, Center, Nothing}(grid)
     λᵖ = Field{Center, Center, Nothing}(grid); set!(λᵖ, 0.3)
     compute_aerodynamic_roughness!(ℓᵐ, d, closure,
-                                   (; plan_area_fraction = λᵖ, building_height = 15.0), grid)
+                                   (; plan_area_index = λᵖ, mean_building_height = 15.0), grid)
     ℓᵐref, dref = aerodynamic_parameters(closure, 0.3, 15.0)
     @test all(≈(ℓᵐref), interior(ℓᵐ))
     @test all(≈(dref), interior(d))
