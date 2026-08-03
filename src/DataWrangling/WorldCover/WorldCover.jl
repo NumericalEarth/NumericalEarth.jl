@@ -193,36 +193,37 @@ const ESAWorldCover_dataset_variable_names = build_worldcover_variable_names()
 const ESAWorldCoverMetadatum = Metadatum{<:ESAWorldCover}
 
 #####
-##### Categorical aggregation. These operate on plain arrays of class codes with
-##### no IO: `codes` is a block of fine 10 m pixels covering one coarse cell.
-##### Every product is derived from one histogram over the legend, so no-data
-##### (`0`) and any code outside the legend are excluded from all of them.
+##### Categorical aggregation. These operate on plain arrays of raw class codes
+##### with no IO: `pixels` is the block of 10 m raster pixels covering one
+##### aggregated cell — the data itself, not the legend. Every product comes
+##### from one histogram over the legend, so no-data (`0`) and any code outside
+##### the legend are excluded from all of them.
 #####
 
 """
-    class_counts(codes)
+    class_counts(pixels)
 
-Return the number of pixels of each legend class in `codes`, as a `NamedTuple`
+Return the number of pixels of each legend class in `pixels`, as a `NamedTuple`
 keyed by the verbose class names. Codes outside the legend — including the
 no-data code `0` — are counted by no class, so the sum of the counts is the
 number of valid pixels.
 
 Every aggregated product is derived from these counts.
 """
-class_counts(codes::AbstractArray) =
-    NamedTuple{keys(ESA_WORLDCOVER_CLASS_NAMES)}(map(c -> count(==(c), codes),
+class_counts(pixels::AbstractArray) =
+    NamedTuple{keys(ESA_WORLDCOVER_CLASS_NAMES)}(map(c -> count(==(c), pixels),
                                                      ESA_WORLDCOVER_CLASS_CODES))
 
 """
-    majority_class(codes)
+    majority_class(pixels)
 
-Return the class code covering the most of `codes`, ignoring no-data. Ties break
+Return the class code covering the most of `pixels`, ignoring no-data. Ties break
 toward the smaller code, and an all-no-data block returns `0`.
 
 This is the aggregation used for the categorical `:landcover_class` product —
 class codes are counted, never averaged.
 """
-majority_class(codes::AbstractArray) = majority_class(class_counts(codes))
+majority_class(pixels::AbstractArray) = majority_class(class_counts(pixels))
 
 function majority_class(counts::NamedTuple)
     largest = 0
@@ -237,13 +238,13 @@ function majority_class(counts::NamedTuple)
 end
 
 """
-    class_fractions(codes)
+    class_fractions(pixels)
 
 Return a `NamedTuple` of per-class area fractions (each in `[0, 1]`) over
-`codes`, keyed by the verbose class names. The fractions sum to 1 over valid
+`pixels`, keyed by the verbose class names. The fractions sum to 1 over valid
 pixels, and to 0 when every pixel is no-data.
 """
-class_fractions(codes::AbstractArray) = class_fractions(class_counts(codes))
+class_fractions(pixels::AbstractArray) = class_fractions(class_counts(pixels))
 
 function class_fractions(counts::NamedTuple)
     valid = sum(counts)
@@ -252,13 +253,13 @@ function class_fractions(counts::NamedTuple)
 end
 
 """
-    vegetation_fraction(codes; vegetated_classes = ESA_WORLDCOVER_VEGETATED_CLASSES)
+    vegetation_fraction(pixels; vegetated_classes = ESA_WORLDCOVER_VEGETATED_CLASSES)
 
-Return the area fraction of `codes` belonging to `vegetated_classes` — the
+Return the area fraction of `pixels` belonging to `vegetated_classes` — the
 subgrid `f_veg`. See [`ESA_WORLDCOVER_VEGETATED_CLASSES`](@ref) for the default
 set and why it is a modeling choice.
 """
-vegetation_fraction(codes::AbstractArray; kw...) = vegetation_fraction(class_counts(codes); kw...)
+vegetation_fraction(pixels::AbstractArray; kw...) = vegetation_fraction(class_counts(pixels); kw...)
 
 function vegetation_fraction(counts::NamedTuple; vegetated_classes = ESA_WORLDCOVER_VEGETATED_CLASSES)
     valid = sum(counts)
@@ -269,25 +270,25 @@ function vegetation_fraction(counts::NamedTuple; vegetated_classes = ESA_WORLDCO
 end
 
 """
-    aggregate_blockwise(codes, factor, reduction)
+    aggregate_blockwise(pixels, factor, reduction)
 
-Reduce the fine 2-D `codes` raster onto a coarse grid by an integer `factor`,
+Reduce the fine 2-D `pixels` raster onto a coarse grid by an integer `factor`,
 applying `reduction` (e.g. [`class_counts`](@ref) or [`majority_class`](@ref)) to
 each non-overlapping `factor × factor` block. Integer-factor aggregation keeps
 the coarse-cell boundaries aligned with fine-pixel boundaries — no reprojection
 of the categorical field.
 
-`size(codes)` must be divisible by `factor` in both dimensions.
+`size(pixels)` must be divisible by `factor` in both dimensions.
 """
-function aggregate_blockwise(codes::AbstractMatrix, factor::Integer, reduction)
-    Nx, Ny = size(codes)
+function aggregate_blockwise(pixels::AbstractMatrix, factor::Integer, reduction)
+    Nx, Ny = size(pixels)
     (Nx % factor == 0 && Ny % factor == 0) ||
-        throw(ArgumentError("array size $(size(codes)) is not divisible by the integer factor $factor"))
+        throw(ArgumentError("array size $(size(pixels)) is not divisible by the integer factor $factor"))
 
     nx, ny = Nx ÷ factor, Ny ÷ factor
-    coarse = Array{typeof(reduction(view(codes, 1:factor, 1:factor)))}(undef, nx, ny)
+    coarse = Array{typeof(reduction(view(pixels, 1:factor, 1:factor)))}(undef, nx, ny)
     for j in 1:ny, i in 1:nx
-        block = view(codes, (i - 1) * factor + 1 : i * factor,
+        block = view(pixels, (i - 1) * factor + 1 : i * factor,
                             (j - 1) * factor + 1 : j * factor)
         coarse[i, j] = reduction(block)
     end
@@ -295,17 +296,17 @@ function aggregate_blockwise(codes::AbstractMatrix, factor::Integer, reduction)
 end
 
 """
-    aggregate_landcover(codes, factor; vegetated_classes = ESA_WORLDCOVER_VEGETATED_CLASSES)
+    aggregate_landcover(pixels, factor; vegetated_classes = ESA_WORLDCOVER_VEGETATED_CLASSES)
 
-Reduce the fine `codes` raster onto the coarse grid by an INTEGER `factor`,
+Reduce the fine `pixels` raster onto the coarse grid by an INTEGER `factor`,
 returning `(; landcover_class, vegetation_fraction, class_fractions)`: the
 majority class code, the vegetated area fraction `f_veg`, and a `NamedTuple` of
 per-class area fractions keyed by the verbose class names. Each block is counted
 once, with every product derived from the same [`class_counts`](@ref).
 """
-function aggregate_landcover(codes::AbstractMatrix, factor::Integer;
+function aggregate_landcover(pixels::AbstractMatrix, factor::Integer;
                              vegetated_classes = ESA_WORLDCOVER_VEGETATED_CLASSES)
-    counts = aggregate_blockwise(codes, factor, class_counts)
+    counts = aggregate_blockwise(pixels, factor, class_counts)
     fractions = map(class_fractions, counts)
 
     landcover_class = map(majority_class, counts)

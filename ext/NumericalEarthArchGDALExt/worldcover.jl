@@ -2,7 +2,7 @@
 ##### ESA WorldCover: anonymous COG tiles → regional NetCDF
 #####
 ##### The `Map` band is a UInt8 land-cover class code (no-data = 0). Class codes
-##### must never be averaged, so we read the raw 10 m codes windowed to the bbox
+##### must never be averaged, so we read the raw 10 m pixels windowed to the bbox
 ##### with nearest resampling (which only clips/aligns — it never invents an
 ##### intermediate code), then aggregate onto the coarse lat/lon grid by an
 ##### integer factor using `aggregate_landcover`. This keeps the categorical
@@ -62,8 +62,8 @@ function NumericalEarth.DataWrangling.WorldCover.worldcover_cog_to_netcdf(metada
     # Read the anonymous, unsigned public bucket; `environment` restores any prior
     # AWS/GDAL config afterwards, so a signed `/vsis3` read elsewhere in the same
     # session is not left with signing disabled.
-    codes = ArchGDAL.environment(globalconfig = ["AWS_NO_SIGN_REQUEST" => "YES",
-                                                 "AWS_REGION" => "eu-central-1"]) do
+    pixels = ArchGDAL.environment(globalconfig = ["AWS_NO_SIGN_REQUEST" => "YES",
+                                                  "AWS_REGION" => "eu-central-1"]) do
         # ESA WorldCover only publishes tiles that contain land; a 3° cell that is
         # entirely ocean (or outside coverage) has no tile, so skip a URL that
         # fails to open instead of aborting the whole read.
@@ -80,7 +80,7 @@ function NumericalEarth.DataWrangling.WorldCover.worldcover_cog_to_netcdf(metada
                                   "it may be entirely ocean or outside the product's coverage " *
                                   "(land only, 60°S–84°N).")
 
-        # Build a VRT mosaic over the available tiles, then read the raw codes on
+        # Build a VRT mosaic over the available tiles, then read the raw pixels on
         # the snapped window at native resolution with nearest resampling.
         try
             ArchGDAL.gdalbuildvrt(sources) do mosaic
@@ -100,7 +100,7 @@ function NumericalEarth.DataWrangling.WorldCover.worldcover_cog_to_netcdf(metada
     end
 
     # Aggregate onto the coarse lat/lon grid by the integer factor in one pass.
-    aggregated  = aggregate_landcover(codes, factor)
+    aggregated  = aggregate_landcover(pixels, factor)
     class_field = aggregated.landcover_class
     vegetation  = aggregated.vegetation_fraction
 
