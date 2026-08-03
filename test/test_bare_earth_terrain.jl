@@ -24,8 +24,8 @@ height_field(grid, data) = set!(Field{Center, Center, Nothing}(grid), data)
         building = fill(10.0, Nx, Ny); building[Nx, Ny] = 80.0      # buildings win here
 
         z = bare_earth_elevation(height_field(grid, surface),
-                                 height_field(grid, canopy),
-                                 height_field(grid, building))
+                                 (height_field(grid, canopy),
+                                  height_field(grid, building)))
 
         @test z isa Field{Center, Center, Nothing}
         zi = Array(interior(z, :, :, 1))
@@ -53,8 +53,8 @@ end
         building = fill(NaN, Nx, Ny); building[2, 2] = 20.0
 
         z = bare_earth_elevation(height_field(grid, fill(100.0, Nx, Ny)),
-                                 height_field(grid, canopy),
-                                 height_field(grid, building))
+                                 (height_field(grid, canopy),
+                                  height_field(grid, building)))
         zi = Array(interior(z, :, :, 1))
 
         @test !any(isnan, zi)         # NaN object heights never leak into the terrain

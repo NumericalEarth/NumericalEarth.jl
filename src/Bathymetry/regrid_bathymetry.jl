@@ -349,12 +349,12 @@ sub-grid it reports the surface *raised* by the mean object height:
 
     z_bare = max(surface_elevation − maxₖ object_heightₖ, 0)
 
-The `object_heights` (e.g. a canopy-height and a building-height field, all on
-`surface_elevation`'s grid) are combined by their per-cell maximum, with `NaN` counting as
-zero, so fields defined only over vegetation or only over built-up areas compose. A `NaN`
-in `surface_elevation` is likewise sea level. Removing the lift avoids counting it twice:
-the surface-layer roughness closure already represents it as displacement height. Returns
-a `Field{Center, Center, Nothing}`.
+The `object_heights` (a single `Field` or a tuple of them, e.g. canopy and building
+heights on `surface_elevation`'s grid) are combined by their per-cell maximum, with `NaN`
+counting as zero, so fields defined only over vegetation or only over built-up areas
+compose. A `NaN` in `surface_elevation` is likewise sea level. Removing the lift avoids
+counting it twice: the surface-layer roughness closure already represents it as
+displacement height. Returns a `Field{Center, Center, Nothing}`.
 
 ```jldoctest
 using NumericalEarth
@@ -367,14 +367,14 @@ surface  = set!(Field{Center, Center, Nothing}(grid), 100)  # 100 m DSM
 canopy   = set!(Field{Center, Center, Nothing}(grid), 30)   # 30 m canopy
 building = set!(Field{Center, Center, Nothing}(grid), 10)   # 10 m buildings
 
-z = bare_earth_elevation(surface, canopy, building)
+z = bare_earth_elevation(surface, (canopy, building))
 maximum(z)
 
 # output
 70.0
 ```
 """
-function bare_earth_elevation(surface_elevation::Field, object_heights::Field...)
+function bare_earth_elevation(surface_elevation::Field, object_heights::Tuple{Vararg{Field}} = ())
     grid = surface_elevation.grid
 
     bare_elevation = Field{Center, Center, Nothing}(grid)
@@ -388,6 +388,9 @@ function bare_earth_elevation(surface_elevation::Field, object_heights::Field...
     return bare_elevation
 end
 
+bare_earth_elevation(surface_elevation::Field, object_height::Field) =
+    bare_earth_elevation(surface_elevation, (object_height,))
+
 """
 $(TYPEDSIGNATURES)
 
@@ -395,9 +398,9 @@ Regrid the DSM `dataset` onto `grid` with [`regrid_topography`](@ref) — window
 `grid` when the dataset cannot be read whole — and remove the `object_heights`. Keyword
 arguments (`region`, `interpolation_passes`, `cache`, …) go to `regrid_topography`.
 """
-function bare_earth_elevation(grid::AbstractGrid, object_heights::Field...; dataset = GLO30(), kw...)
+function bare_earth_elevation(grid::AbstractGrid, object_heights = (); dataset = GLO30(), kw...)
     surface_elevation = regrid_topography(grid; dataset, kw...)
-    return bare_earth_elevation(surface_elevation, object_heights...)
+    return bare_earth_elevation(surface_elevation, object_heights)
 end
 
 # Regridding bathymetry for distributed grids, we handle the whole process
