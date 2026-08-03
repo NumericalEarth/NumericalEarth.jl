@@ -13,7 +13,7 @@ using NumericalEarth.DataWrangling.ERA5: ERA5Metadata, ERA5Metadatum,
                                           ERA5YearlySingleLevel, ERA5MonthlySingleLevel,
                                           ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
                                           ERA5HourlyLand, ERA5MonthlyLand, ERA5LandDataset,
-                                          ERA5Land_dataset_variable_names, ERA5Land_netcdf_variable_names
+                                          ERA5Land_dataset_variable_names
 
 """
     Downloads.download(metadata::ERA5Metadata; kwargs...)
@@ -122,7 +122,6 @@ Return the appropriate variable name dictionary for the dataset type.
 """
 variable_name_mapping(::Union{ERA5YearlySingleLevel, ERA5MonthlySingleLevel}) = ERA5_dataset_variable_names
 variable_name_mapping(::Union{ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels}) = ERA5PL_dataset_variable_names
-variable_name_mapping(::Union{ERA5HourlyLand, ERA5MonthlyLand}) = ERA5Land_dataset_variable_names
 
 """
     pressure_levels(dataset)
@@ -131,7 +130,6 @@ Extract pressure levels from dataset if applicable, otherwise return nothing.
 """
 pressure_levels(::Union{ERA5YearlySingleLevel, ERA5MonthlySingleLevel}) = nothing
 pressure_levels(dataset::Union{ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels}) = dataset.pressure_levels
-pressure_levels(::Union{ERA5HourlyLand, ERA5MonthlyLand}) = nothing
 
 """
     date_keywords(dataset, date)
@@ -159,27 +157,14 @@ function date_keywords(::ERA5MonthlyPressureLevels, date)
     return (; year = Dates.year(date), month = Dates.month(date))
 end
 
-function date_keywords(::ERA5HourlyLand, date)
-    return (;
-        startyear = Dates.year(date),
-        months = Dates.month(date),
-        days = Dates.day(date),
-        hours = Dates.hour(date)
-    )
-end
-
-function date_keywords(::ERA5MonthlyLand, date)
-    return (; year = Dates.year(date), month = Dates.month(date))
-end
-
 """
     cds_download_function(dataset)
 
 Select the appropriate CopernicusClimateDataStore download function.
 """
 cds_download_function(::ERA5YearlySingleLevel) = CopernicusClimateDataStore.yearly
-cds_download_function(::Union{ERA5MonthlySingleLevel, ERA5MonthlyPressureLevels, ERA5MonthlyLand}) = CopernicusClimateDataStore.monthly
-cds_download_function(::Union{ERA5HourlyPressureLevels, ERA5HourlyLand}) = CopernicusClimateDataStore.hourly
+cds_download_function(::Union{ERA5MonthlySingleLevel, ERA5MonthlyPressureLevels}) = CopernicusClimateDataStore.monthly
+cds_download_function(::ERA5HourlyPressureLevels) = CopernicusClimateDataStore.hourly
 
 """
     cds_dataset_keyword(dataset)
@@ -190,7 +175,6 @@ and whether `product_type` is included in the request.
 """
 cds_dataset_keyword(::Union{ERA5HourlySingleLevel, ERA5YearlySingleLevel, ERA5MonthlySingleLevel,
                              ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels}) = :era5
-cds_dataset_keyword(::Union{ERA5HourlyLand, ERA5MonthlyLand}) = :era5_land
 
 #####
 ##### Generic download implementation
@@ -290,21 +274,6 @@ end
 cds_land_product(::ERA5HourlyLand)  = "reanalysis-era5-land"
 cds_land_product(::ERA5MonthlyLand) = "reanalysis-era5-land-monthly-means"
 
-# The CDS gateway sometimes wraps ERA5-Land's netcdf output in a zip archive even
-# when format=netcdf is requested; unwrap in place rather than relying on the
-# installed CopernicusClimateDataStore version to do it.
-function unwrap_zip!(path)
-    magic = open(io -> read(io, 2), path, "r")
-    length(magic) == 2 && magic == UInt8[0x50, 0x4b] || return path
-    mktempdir(dirname(path)) do tmp_dir
-        run(`unzip -o -q $path -d $tmp_dir`)
-        extracted = filter(isfile, readdir(tmp_dir; join=true))
-        isempty(extracted) && error("CDS response at $path was a zip archive but contained no files")
-        mv(first(extracted), path; force=true)
-    end
-    return path
-end
-
 function group_by_calendar_month(datetimes)
     keys = unique([(Dates.year(dt), Dates.month(dt)) for dt in datetimes])
     return Dict(k => filter(dt -> (Dates.year(dt), Dates.month(dt)) == k, datetimes) for k in keys)
@@ -324,7 +293,8 @@ function era5_land_request(variable_name, ::ERA5HourlyLand, dts, area)
         "month"    => unique(lpad.(string.(Dates.month.(dts)), 2, '0')),
         "day"      => unique(lpad.(string.(Dates.day.(dts)), 2, '0')),
         "time"     => unique([lpad(string(Dates.hour(dt)), 2, '0') * ":00" for dt in dts]),
-        "format"   => "netcdf",
+        "data_format"     => "netcdf",
+        "download_format" => "unarchived",
     )
     isnothing(area) || (request["area"] = area)
     return request
@@ -337,7 +307,8 @@ function era5_land_request(variable_name, ::ERA5MonthlyLand, dts, area)
         "year"         => unique(string.(Dates.year.(dts))),
         "month"        => unique(lpad.(string.(Dates.month.(dts)), 2, '0')),
         "time"         => ["00:00"],
-        "format"       => "netcdf",
+        "data_format"     => "netcdf",
+        "download_format" => "unarchived",
     )
     isnothing(area) || (request["area"] = area)
     return request
@@ -356,7 +327,7 @@ function retrieve_with_retries(product, request, path; max_retries=3)
 end
 
 # Append single-variable NetCDF chunks along the time dimension into one yearly file.
-function concatenate_era5_nc(src_paths, dst_path, nc_varname)
+function concatenate_era5_nc(src_paths, dst_path)
     srcs = [NCDatasets.Dataset(p, "r") for p in src_paths]
     try
         src1 = first(srcs)
@@ -435,7 +406,6 @@ function Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:ERA5L
 
     dataset = meta.dataset
     variable_name = ERA5Land_dataset_variable_names[meta.name]
-    nc_varname = ERA5Land_netcdf_variable_names[meta.name]
     year = Dates.year(meta.dates)
     year_dates = filter(dt -> Dates.year(dt) == year,
                          NumericalEarth.DataWrangling.all_dates(dataset, meta.name))
@@ -449,10 +419,9 @@ function Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:ERA5L
         for (batch, chunk_path) in zip(batches, chunk_paths)
             request = era5_land_request(variable_name, dataset, batch, area)
             retrieve_with_retries(cds_land_product(dataset), request, chunk_path)
-            unwrap_zip!(chunk_path)
         end
 
-        concatenate_era5_nc(chunk_paths, output_path, nc_varname)
+        concatenate_era5_nc(chunk_paths, output_path)
         rm(tmp_dir; recursive=true, force=true)
     end
 

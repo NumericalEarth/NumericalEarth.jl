@@ -108,5 +108,10 @@ function DataWrangling.metadata_filename(dataset::ERA5LandDataset, name, date, r
     return string(var, "_", dataset_name(dataset), "_", year, suffix, ".nc")
 end
 
-DataWrangling.build_filename(dataset::ERA5LandDataset, name, dates::AbstractArray, region) =
-    DataWrangling.metadata_filename(dataset, name, dates[1], region)
+function DataWrangling.build_filename(dataset::ERA5LandDataset, name, dates::AbstractArray, region)
+    first_year = Dates.year(first(dates))
+    all(d -> Dates.year(d) == first_year, dates) ||
+        error("ERA5-Land FieldTimeSeries requests spanning more than one calendar year are not yet " *
+              "supported (one file is downloaded per variable per year). Split the request by year.")
+    return DataWrangling.metadata_filename(dataset, name, dates[1], region)
+end

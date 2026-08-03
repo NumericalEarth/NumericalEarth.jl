@@ -234,31 +234,62 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
         for dataset in (ERA5HourlyLand(), ERA5MonthlyLand())
             metadatum = Metadatum(:skin_temperature; dataset, date)
             @test hasmethod(Downloads.download, Tuple{typeof(metadatum)})
-
-            @test CDSExt.variable_name_mapping(dataset) === ERA5Land_dataset_variable_names
-            @test isnothing(CDSExt.pressure_levels(dataset))
-            @test CDSExt.cds_dataset_keyword(dataset) == :era5_land
         end
 
-        # ERA5-Land routes through hourly()/monthly() like their non-land counterparts
-        @test CDSExt.cds_download_function(ERA5HourlyLand())  == CopernicusClimateDataStore.hourly
-        @test CDSExt.cds_download_function(ERA5MonthlyLand()) == CopernicusClimateDataStore.monthly
-
-        # Regular (non-land) datasets keep the :era5 keyword
+        # Land datasets have their own yearly-file download method and are NOT
+        # dispatched through the generic single-level/pressure-level helpers.
         @test CDSExt.cds_dataset_keyword(ERA5HourlySingleLevel()) == :era5
         @test CDSExt.cds_dataset_keyword(ERA5HourlyPressureLevels([100000.0])) == :era5
+        @test !hasmethod(CDSExt.cds_dataset_keyword, Tuple{ERA5HourlyLand})
+        @test !hasmethod(CDSExt.variable_name_mapping, Tuple{ERA5HourlyLand})
+        @test !hasmethod(CDSExt.date_keywords, Tuple{ERA5HourlyLand, DateTime})
 
-        # date_keywords: hourly land matches hourly pressure-level shape, monthly land matches monthly shape
-        dt = DateTime(2020, 6, 15, 12)
-        kw_h = CDSExt.date_keywords(ERA5HourlyLand(), dt)
-        @test kw_h.startyear == 2020
-        @test kw_h.months == 6
-        @test kw_h.days == 15
-        @test kw_h.hours == 12
+        # CDS product ids
+        @test CDSExt.cds_land_product(ERA5HourlyLand())  == "reanalysis-era5-land"
+        @test CDSExt.cds_land_product(ERA5MonthlyLand()) == "reanalysis-era5-land-monthly-means"
 
-        kw_m = CDSExt.date_keywords(ERA5MonthlyLand(), dt)
-        @test kw_m.year == 2020
-        @test kw_m.month == 6
+        # era5_land_request: uses the current CDS API v2 keys (not the legacy
+        # "format" key, which is what previously triggered CDS's zip-wrapping bug)
+        dts = [DateTime(2020, 6, 15, 12), DateTime(2020, 6, 15, 18)]
+        req_h = CDSExt.era5_land_request("skin_temperature", ERA5HourlyLand(), dts, nothing)
+        @test req_h["data_format"] == "netcdf"
+        @test req_h["download_format"] == "unarchived"
+        @test req_h["year"] == ["2020"]
+        @test req_h["month"] == ["06"]
+        @test sort(req_h["day"]) == ["15"]
+        @test sort(req_h["time"]) == ["12:00", "18:00"]
+        @test !haskey(req_h, "format")
+
+        req_m = CDSExt.era5_land_request("skin_temperature", ERA5MonthlyLand(), dts, nothing)
+        @test req_m["data_format"] == "netcdf"
+        @test req_m["download_format"] == "unarchived"
+        @test req_m["product_type"] == ["monthly_averaged_reanalysis"]
+        @test !haskey(req_m, "format")
+
+        # era5_land_year_batches: hourly splits a year into calendar-month chunks
+        # (a full year of hourly data exceeds CDS's per-request cost limit);
+        # monthly means fit a whole year in a single request.
+        year_dates = collect(DateTime(2020, 1, 1):Hour(1):DateTime(2020, 3, 1))
+        batches = CDSExt.era5_land_year_batches(ERA5HourlyLand(), year_dates)
+        @test length(batches) == 3
+        @test all(dt -> Dates.month(dt) == 1, batches[1])
+        @test all(dt -> Dates.month(dt) == 2, batches[2])
+
+        monthly_dates = collect(DateTime(2020, 1, 1):Month(1):DateTime(2020, 12, 1))
+        @test CDSExt.era5_land_year_batches(ERA5MonthlyLand(), monthly_dates) == [monthly_dates]
+    end
+
+    @testset "ERA5-Land build_filename multi-year guard" begin
+        # A single-year date range picks the shared file for that year.
+        same_year_dates = [DateTime(2020, 1, 1), DateTime(2020, 6, 15)]
+        filename = NumericalEarth.DataWrangling.build_filename(ERA5HourlyLand(), :skin_temperature, same_year_dates, nothing)
+        @test filename == NumericalEarth.DataWrangling.metadata_filename(ERA5HourlyLand(), :skin_temperature, same_year_dates[1], nothing)
+
+        # ERA5-Land downloads one file per variable per year; a date range spanning
+        # more than one calendar year would silently pick the first year's file and
+        # miss the rest, so this must fail loudly instead.
+        cross_year_dates = [DateTime(2020, 12, 31), DateTime(2021, 1, 1)]
+        @test_throws ErrorException NumericalEarth.DataWrangling.build_filename(ERA5HourlyLand(), :skin_temperature, cross_year_dates, nothing)
     end
 
     @info "✓ CopernicusClimateDataStore extension tests passed"
