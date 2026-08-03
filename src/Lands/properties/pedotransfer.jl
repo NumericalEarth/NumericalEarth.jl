@@ -19,7 +19,8 @@ A pedotransfer function maps basic soil properties (texture, bulk density) to th
 van Genuchten–Mualem hydraulic parameters. Concrete subtypes implement
 
     soil_hydraulic_parameters(ptf, sand, silt, clay, bulk_density)
-        -> (; ν, θʳ, α, n, K_saturated)
+        -> (; porosity, residual_liquid_fraction, inverse_air_entry_head,
+              pore_size_uniformity, K_saturated)
 
 with `sand`, `silt`, `clay` mass fractions (kg/kg), `bulk_density` in kg/m³, and
 outputs in model units (`α` in m⁻¹, `K_saturated` in m s⁻¹). [`ContinuousPedotransfer`](@ref)
@@ -227,9 +228,9 @@ Base.summary(ptf::ContinuousPedotransfer) =
     n  = 1 + exp(nstar)
     Kₛ = exp(Ksstar) * convert(FT, 1//100) / convert(FT, 86400)   # cm day⁻¹ → m s⁻¹
 
-    return (ν = ν,
-            θʳ = θʳ,
-            α = α,
-            n = n,
+    return (porosity = ν,
+            residual_liquid_fraction = θʳ,
+            inverse_air_entry_head = α,
+            pore_size_uniformity = n,
             K_saturated = Kₛ)
 end

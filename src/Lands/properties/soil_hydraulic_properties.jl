@@ -56,10 +56,10 @@ end
         wk = w[k]
         p  = soil_hydraulic_parameters(ptf, sand[i, j, k], silt[i, j, k],
                                        clay[i, j, k], bulk_density[i, j, k])
-        Σν        += wk * p.ν
-        Σθʳ       += wk * p.θʳ
-        Σn        += wk * p.n
-        Σln_α     += wk * log(p.α)
+        Σν        += wk * p.porosity
+        Σθʳ       += wk * p.residual_liquid_fraction
+        Σn        += wk * p.pore_size_uniformity
+        Σln_α     += wk * log(p.inverse_air_entry_head)
         Σw_over_K += wk / p.K_saturated
     end
 

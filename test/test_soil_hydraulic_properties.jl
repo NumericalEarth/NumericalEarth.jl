@@ -15,11 +15,11 @@ sand_soil  = (0.92, 0.05, 0.03, 1600.0)
     ptf = ContinuousPedotransfer()
     for texture in (sandy_loam, silt_loam, clay_soil, sand_soil)
         p = soil_hydraulic_parameters(ptf, texture...)
-        @test 0.3 < p.ν < 0.6              # porosity in a physical range
-        @test p.θʳ < p.ν                   # residual below saturation
-        @test p.n > 1                      # van Genuchten n
-        @test p.α > 0                      # m⁻¹
-        @test p.K_saturated > 0            # m s⁻¹
+        @test 0.3 < p.porosity < 0.6                        # physical range
+        @test p.residual_liquid_fraction < p.porosity       # residual below saturation
+        @test p.pore_size_uniformity > 1                    # van Genuchten n
+        @test p.inverse_air_entry_head > 0                  # m⁻¹
+        @test p.K_saturated > 0                             # m s⁻¹
     end
 
     # Sand drains far faster than clay.
@@ -28,12 +28,12 @@ sand_soil  = (0.92, 0.05, 0.03, 1600.0)
 
     # Pure sand (clay = silt = 0) must not blow up (1/x, ln x terms are floored).
     p_puresand = soil_hydraulic_parameters(ptf, 1.0, 0.0, 0.0, 1600.0)
-    @test isfinite(p_puresand.ν) && isfinite(p_puresand.α) &&
-          isfinite(p_puresand.n) && isfinite(p_puresand.K_saturated)
+    @test isfinite(p_puresand.porosity) && isfinite(p_puresand.inverse_air_entry_head) &&
+          isfinite(p_puresand.pore_size_uniformity) && isfinite(p_puresand.K_saturated)
 
     # Type stability: Float32 inputs / Float32 ptf → Float32 outputs.
     p32 = soil_hydraulic_parameters(ContinuousPedotransfer(Float32), 0.4f0, 0.4f0, 0.2f0, 1400.0f0)
-    @test p32.ν isa Float32
+    @test p32.porosity isa Float32
     @test p32.K_saturated isa Float32
 end
 
@@ -50,7 +50,7 @@ end
     # Same regression either way, to Float32 precision.
     p64 = soil_hydraulic_parameters(ContinuousPedotransfer(Float64), 0.4, 0.4, 0.2, 1400.0)
     p32 = soil_hydraulic_parameters(ptf32, 0.4f0, 0.4f0, 0.2f0, 1400.0f0)
-    @test p32.ν ≈ p64.ν rtol=1e-5
+    @test p32.porosity ≈ p64.porosity rtol=1e-5
     @test p32.K_saturated ≈ p64.K_saturated rtol=1e-5
 
     # A Float32 grid must produce Float32 property fields from the default (Float64) ptf.
@@ -114,7 +114,7 @@ end
                   (0.20, 0.30, 0.50, 1400.0),   # clay
                   (0.90, 0.07, 0.03, 1400.0))   # sand
         Ks_layers = [soil_hydraulic_parameters(ptf, l...).K_saturated for l in layers]
-        α_layers  = [soil_hydraulic_parameters(ptf, l...).α for l in layers]
+        α_layers  = [soil_hydraulic_parameters(ptf, l...).inverse_air_entry_head for l in layers]
 
         Ks_harmonic   = W / sum(w ./ Ks_layers)
         Ks_arithmetic = sum(w .* Ks_layers) / W
@@ -144,9 +144,9 @@ end
         props = soil_hydraulic_properties(sand, silt, clay, bulk_density;
                                           slab_depth = 0.3, z_interfaces = zi)
         top = soil_hydraulic_parameters(ContinuousPedotransfer(), 0.90, 0.07, 0.03, 1400.0)
-        @test Array(interior(props.porosity))[1, 1, 1]    ≈ top.ν
+        @test Array(interior(props.porosity))[1, 1, 1]    ≈ top.porosity
         @test Array(interior(props.K_saturated))[1, 1, 1] ≈ top.K_saturated
-        @test Array(interior(props.inverse_air_entry_head))[1, 1, 1] ≈ top.α
+        @test Array(interior(props.inverse_air_entry_head))[1, 1, 1] ≈ top.inverse_air_entry_head
     end
 end
 
