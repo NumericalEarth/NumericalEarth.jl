@@ -30,7 +30,7 @@ WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 [sources]
 SeawaterPolynomials = {rev = "ss/conversion-functions", url = "https://github.com/CliMA/SeawaterPolynomials.jl.git"}
 Oceananigans = {rev = "ss/for-omip", url = "https://github.com/CliMA/Oceananigans.jl.git"}
-ClimaSeaIce = {rev = "ss/checkpoint-mass-fluxes", url = "https://github.com/CliMA/ClimaSeaIce.jl.git"}
+ClimaSeaIce = {rev = "ss/volume-conserving-advection", url = "https://github.com/CliMA/ClimaSeaIce.jl.git"}
 
 [compat]
 CUDA = "5.11.0, 6"
