@@ -19,8 +19,9 @@ metadata = MetadataSet(:sand_fraction, :silt_fraction, :clay_fraction, :bulk_den
 
 soil = map(m -> Field(m, CPU()), NamedTuple(metadata))
 
-# Wösten HYPRES per depth layer, then upscale each parameter over `slab_depth` with
-# its own law: arithmetic for ν/θʳ/n, harmonic for Kₛ, geometric for α.
+# Wösten HYPRES per depth layer — each layer read as topsoil or subsoil by its depth —
+# then upscale each parameter over `slab_depth` with its own law: arithmetic for ν/θʳ,
+# harmonic for Kₛ, geometric for α, and geometric in n − 1 for n.
 properties = soil_hydraulic_properties(soil.sand_fraction, soil.silt_fraction,
                                        soil.clay_fraction, soil.bulk_density;
                                        slab_depth = 1.0, z_interfaces)

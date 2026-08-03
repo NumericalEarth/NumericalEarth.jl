@@ -31,6 +31,33 @@ sand_soil  = (0.92, 0.05, 0.03, 1600.0)
     @test isfinite(p_puresand.porosity) && isfinite(p_puresand.inverse_air_entry_head) &&
           isfinite(p_puresand.pore_size_uniformity) && isfinite(p_puresand.K_saturated)
 
+    # Extrapolating the regression is what breaks it, so the predictors are held
+    # inside the range it behaves in: without that, texture → 0 pushes θs past 1 and
+    # a peat-like bulk density drives n to exactly 1, where m = 1 - 1/n vanishes and
+    # the retention curve is singular.
+    for (sand, silt, clay, ρᵇ) in ((1.0, 0.0, 0.0, 1500.0),    # texture floor
+                                   (0.5, 0.0, 0.5, 1400.0),    # silt floor
+                                   (0.4, 0.4, 0.2, 100.0),     # peat-like ρᵇ
+                                   (0.4, 0.4, 0.2, 2600.0))    # rock-like ρᵇ
+        p = soil_hydraulic_parameters(ptf, sand, silt, clay, ρᵇ)
+        @test 0 < p.porosity < 1
+        @test p.pore_size_uniformity > 1.01          # clear of the m = 0 singularity
+        @test 1 - 1/p.pore_size_uniformity > 0.01
+        @test 0 < p.inverse_air_entry_head < 1e3
+        @test 0 < p.K_saturated < 1e-2
+    end
+
+    # HYPRES fits its retention curves with θʳ = 0; α and n describe that curve.
+    @test soil_hydraulic_parameters(ptf, sandy_loam...).residual_liquid_fraction == 0
+
+    # Topsoil drains through its aggregate structure, subsoil does not. The flag
+    # comes off the layer depth, and for clay it is worth a factor of several in Kₛ.
+    clay_top  = soil_hydraulic_parameters(ptf, clay_soil..., 0.15)
+    clay_deep = soil_hydraulic_parameters(ptf, clay_soil..., 0.80)
+    @test clay_top.K_saturated > 3 * clay_deep.K_saturated
+    # Omitting the depth reports the surface value.
+    @test soil_hydraulic_parameters(ptf, clay_soil...).K_saturated == clay_top.K_saturated
+
     # Type stability: Float32 inputs / Float32 ptf → Float32 outputs.
     p32 = soil_hydraulic_parameters(ContinuousPedotransfer(Float32), 0.4f0, 0.4f0, 0.2f0, 1400.0f0)
     @test p32.porosity isa Float32
@@ -64,7 +91,7 @@ end
     @test eltype(props.K_saturated) === Float32
 end
 
-@testset "layer_weights" begin
+@testset "layer_weights and layer_depths" begin
     zi = [-1.0, -0.6, -0.3, 0.0]   # OpenLandMap faces: 60-100, 30-60, 0-30 cm
 
     @test layer_weights(zi, 1.0) ≈ [0.4, 0.3, 0.3]     # full column
@@ -72,6 +99,11 @@ end
     @test layer_weights(zi, 0.5) ≈ [0.0, 0.2, 0.3]     # deepest included layer clipped
     @test sum(layer_weights(zi, 0.5)) ≈ 0.5            # weights sum to slab_depth
     @test sum(layer_weights(zi, 2.0)) ≈ 1.0            # clipped to the column depth
+
+    # Faces given downward would otherwise silently produce all-zero weights.
+    @test_throws ArgumentError layer_weights(reverse(zi), 1.0)
+
+    @test layer_depths(zi) ≈ [0.8, 0.45, 0.15]         # midpoints, positive down
 end
 
 @testset "soil_hydraulic_properties reduction" begin
@@ -107,24 +139,62 @@ end
         @test all(n .> 1)
         @test all(Ks .> 0)
 
-        # Per-layer values of the sand-over-clay column (deepest-first).
+        # Per-layer values of the sand-over-clay column (deepest-first), each at its
+        # own depth so the deep layers are read as subsoil.
         ptf = ContinuousPedotransfer()
-        w = layer_weights(zi, 1.0); W = sum(w)
+        w = layer_weights(zi, 1.0); W = sum(w); d = layer_depths(zi)
         layers = ((0.20, 0.30, 0.50, 1400.0),   # clay
                   (0.20, 0.30, 0.50, 1400.0),   # clay
                   (0.90, 0.07, 0.03, 1400.0))   # sand
-        Ks_layers = [soil_hydraulic_parameters(ptf, l...).K_saturated for l in layers]
-        α_layers  = [soil_hydraulic_parameters(ptf, l...).inverse_air_entry_head for l in layers]
+        per_layer = [soil_hydraulic_parameters(ptf, l..., dk) for (l, dk) in zip(layers, d)]
+        Ks_layers = [p.K_saturated for p in per_layer]
+        α_layers  = [p.inverse_air_entry_head for p in per_layer]
+        n_layers  = [p.pore_size_uniformity for p in per_layer]
 
         Ks_harmonic   = W / sum(w ./ Ks_layers)
         Ks_arithmetic = sum(w .* Ks_layers) / W
         α_geometric   = exp(sum(w .* log.(α_layers)) / W)
+        n_geometric   = 1 + exp(sum(w .* log.(n_layers .- 1)) / W)
+        n_arithmetic  = sum(w .* n_layers) / W
 
         # Kₛ upscales harmonically (clay-limited), strictly below the arithmetic mean.
         @test Ks[2] ≈ Ks_harmonic
         @test Ks_harmonic < Ks_arithmetic
         # α upscales geometrically.
         @test α[2] ≈ α_geometric
+        # n upscales geometrically in n - 1: contrasting layers flatten the column's
+        # retention curve, so the effective n falls toward the smaller value.
+        @test n[2] ≈ n_geometric
+        @test n_geometric < n_arithmetic
+    end
+end
+
+@testset "layers outside the slab cannot contaminate a column" begin
+    # Missing data below `slab_depth` arrives as NaN. Those layers carry zero weight,
+    # and `0 * NaN` is NaN, so the mask that drops them is what keeps the column finite.
+    zi = [-1.0, -0.6, -0.3, 0.0]
+    for arch in test_architectures
+        grid = RectilinearGrid(arch; size = (1, 1, 3), x = (0, 1), y = (0, 1), z = zi,
+                               topology = (Bounded, Bounded, Bounded))
+        sand = CenterField(grid); silt = CenterField(grid)
+        clay = CenterField(grid); bulk_density = CenterField(grid)
+        set!(sand, (x, y, z) -> z > -0.3 ? 0.90 : NaN)
+        set!(silt, (x, y, z) -> z > -0.3 ? 0.07 : NaN)
+        set!(clay, (x, y, z) -> z > -0.3 ? 0.03 : NaN)
+        set!(bulk_density, (x, y, z) -> z > -0.3 ? 1400.0 : NaN)
+
+        props = soil_hydraulic_properties(sand, silt, clay, bulk_density;
+                                          slab_depth = 0.3, z_interfaces = zi)
+        top = soil_hydraulic_parameters(ContinuousPedotransfer(), 0.90, 0.07, 0.03, 1400.0,
+                                        layer_depths(zi)[3])
+        @test Array(interior(props.porosity))[1, 1, 1]             ≈ top.porosity
+        @test Array(interior(props.K_saturated))[1, 1, 1]          ≈ top.K_saturated
+        @test Array(interior(props.pore_size_uniformity))[1, 1, 1]  ≈ top.pore_size_uniformity
+
+        # Missing data *inside* the slab must still propagate — it is a real gap.
+        holed = soil_hydraulic_properties(sand, silt, clay, bulk_density;
+                                          slab_depth = 1.0, z_interfaces = zi)
+        @test isnan(Array(interior(holed.porosity))[1, 1, 1])
     end
 end
 
@@ -143,7 +213,8 @@ end
         # slab_depth = 0.3 uses only the 0-30 cm (top) layer.
         props = soil_hydraulic_properties(sand, silt, clay, bulk_density;
                                           slab_depth = 0.3, z_interfaces = zi)
-        top = soil_hydraulic_parameters(ContinuousPedotransfer(), 0.90, 0.07, 0.03, 1400.0)
+        top = soil_hydraulic_parameters(ContinuousPedotransfer(), 0.90, 0.07, 0.03, 1400.0,
+                                        layer_depths(zi)[3])
         @test Array(interior(props.porosity))[1, 1, 1]    ≈ top.porosity
         @test Array(interior(props.K_saturated))[1, 1, 1] ≈ top.K_saturated
         @test Array(interior(props.inverse_air_entry_head))[1, 1, 1] ≈ top.inverse_air_entry_head

@@ -104,7 +104,7 @@ export
     NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
     NoRunoff, InfiltrationCapacityRunoff,
     PedotransferFunction, ContinuousPedotransfer, HYPRESRegression,
-    soil_hydraulic_parameters, soil_hydraulic_properties, layer_weights,
+    soil_hydraulic_parameters, soil_hydraulic_properties, layer_weights, layer_depths,
     # Urban aerodynamic roughness closures
     AbstractUrbanRoughness, MorphometricRoughness,
     IsotropicFrontalArea, EmpiricalFrontalArea,

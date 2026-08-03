@@ -2,11 +2,12 @@
 ##### Pedotransfer functions (PTFs): soil texture + bulk density → van Genuchten
 ##### hydraulic parameters `(ν, θʳ, α, n, Kₛ)`.
 #####
-##### `soil_hydraulic_parameters(ptf, sand, silt, clay, bulk_density)` is a pure,
-##### `@inline`, allocation-free function called per grid point (and per depth
+##### `soil_hydraulic_parameters(ptf, sand, silt, clay, bulk_density, depth)` is a
+##### pure, `@inline`, allocation-free function called per grid point (and per depth
 ##### layer) by the `soil_hydraulic_properties` reduction. Texture is a mass
-##### fraction (kg/kg) and bulk density is kg/m³ — the model-side units delivered
-##### by the DataWrangling soil datasets (e.g. `OpenLandMapSoilDB`, `SoilGrids2`).
+##### fraction (kg/kg), bulk density is kg/m³ — the model-side units delivered by
+##### the DataWrangling soil datasets (e.g. `OpenLandMapSoilDB`, `SoilGrids2`) — and
+##### `depth` is metres below the surface, which selects topsoil or subsoil.
 #####
 ##### The default regressions are fitted to HYPRES, the database of HYdraulic
 ##### PRoperties of European Soils.
@@ -18,13 +19,14 @@
 A pedotransfer function maps basic soil properties (texture, bulk density) to the
 van Genuchten–Mualem hydraulic parameters. Concrete subtypes implement
 
-    soil_hydraulic_parameters(ptf, sand, silt, clay, bulk_density)
+    soil_hydraulic_parameters(ptf, sand, silt, clay, bulk_density, depth)
         -> (; porosity, residual_liquid_fraction, inverse_air_entry_head,
               pore_size_uniformity, K_saturated)
 
-with `sand`, `silt`, `clay` mass fractions (kg/kg), `bulk_density` in kg/m³, and
-outputs in model units (`α` in m⁻¹, `K_saturated` in m s⁻¹). [`ContinuousPedotransfer`](@ref)
-is the analytic default.
+with `sand`, `silt`, `clay` mass fractions (kg/kg), `bulk_density` in kg/m³, `depth`
+the soil layer's depth below the surface (m, positive down), and outputs in model
+units (`α` in m⁻¹, `K_saturated` in m s⁻¹). Called without `depth`, it reports the
+surface value. [`ContinuousPedotransfer`](@ref) is the analytic default.
 
 Subtypes also implement `on_float_type(FT, ptf)`, which rebuilds `ptf` at float type
 `FT`. Devices reject float types they do not support (Metal has no `Float64`), so
@@ -142,8 +144,8 @@ const HYPRES_REGRESSION = HYPRESRegression(
 """
     ContinuousPedotransfer(FT = Oceananigans.defaults.FloatType;
                            organic_matter = 1,
-                           topsoil = true,
-                           residual_liquid_fraction = 0.01,
+                           topsoil_depth = 0.3,
+                           residual_liquid_fraction = 0,
                            pore_connectivity_exponent = 0.5,
                            regression_coefficients = HYPRES_REGRESSION)
 
@@ -156,23 +158,36 @@ organic matter %, bulk density (g/cm³) and a topsoil/subsoil flag. Clay is the
 < 2 μm fraction and silt the 2–50 μm fraction, matching the USDA split the soil
 datasets report.
 
-Organic matter and the topsoil flag are not carried by the 30 m texture datasets,
-so they are uniform defaults here: `organic_matter` (%, a mineral-soil value) and
-`topsoil` (`true`/`false`). The residual water content `residual_liquid_fraction`
-(`θʳ`) and pore-connectivity exponent `pore_connectivity_exponent` (`ℓ`, the Mualem
-exponent) are fixed constants: HYPRES fits no `θʳ` regression, and its `ℓ` fit is
-the weakest of the five (coefficient of determination 12 %, and negative across most
-of the published texture classes), so `ℓ = 0.5` is used by default.
+The regression distinguishes topsoil from subsoil, which it reads off the layer
+`depth` passed to `soil_hydraulic_parameters`: soil shallower than `topsoil_depth`
+is topsoil. The distinction is worth keeping — for a clay-rich soil it moves
+`K_saturated` by a factor of 4 to 7, since a clay topsoil drains through its
+aggregate structure while a clay subsoil does not.
+
+Organic matter is not carried by the 30 m texture datasets, so `organic_matter` (%)
+is a uniform mineral-soil default. The residual water content
+`residual_liquid_fraction` (`θʳ`) and pore-connectivity exponent
+`pore_connectivity_exponent` (`ℓ`, the Mualem exponent) are fixed constants: HYPRES
+fits its retention curves with `θʳ = 0` — so anything else leaves `α` and `n`
+describing a curve that was never fitted — and its `ℓ` fit is the weakest of the five
+(coefficient of determination 12 %, and negative across most of the published texture
+classes), so `ℓ = 0.5` is used by default.
 
 `regression_coefficients` is a [`HYPRESRegression`](@ref); supply your own to swap
 in a different calibration of the same functional form.
 
 Predicted `θs` is returned as the porosity `ν`. Units are converted to model units:
 `α` (cm⁻¹) → m⁻¹, `K_saturated` (cm day⁻¹) → m s⁻¹.
+
+Clay, silt and organic matter enter the regressions as `1/x` and `ln x`, and bulk
+density as `1/D` and `ln D`, so the predictors are held inside the range the fit
+behaves in: texture and organic matter at or above 1 %, bulk density within
+0.5–2.0 g/cm³. Extrapolating past those bounds is not a small error — it drives `θs`
+above 1 and `n` down to 1, where the retention curve is singular.
 """
 struct ContinuousPedotransfer{FT, C} <: PedotransferFunction
     organic_matter             :: FT
-    topsoil                    :: FT
+    topsoil_depth              :: FT
     residual_liquid_fraction   :: FT
     pore_connectivity_exponent :: FT
     regression_coefficients     :: C
@@ -180,39 +195,50 @@ end
 
 ContinuousPedotransfer(FT::Type = Oceananigans.defaults.FloatType;
                        organic_matter = 1,
-                       topsoil = true,
-                       residual_liquid_fraction = 0.01,
+                       topsoil_depth = 0.3,
+                       residual_liquid_fraction = 0,
                        pore_connectivity_exponent = 0.5,
                        regression_coefficients = HYPRES_REGRESSION) =
     ContinuousPedotransfer(convert(FT, organic_matter),
-                           convert(FT, topsoil),
+                           convert(FT, topsoil_depth),
                            convert(FT, residual_liquid_fraction),
                            convert(FT, pore_connectivity_exponent),
                            on_float_type(FT, regression_coefficients))
 
 on_float_type(FT, ptf::ContinuousPedotransfer) =
     ContinuousPedotransfer(FT; organic_matter = ptf.organic_matter,
-                               topsoil = ptf.topsoil,
+                               topsoil_depth = ptf.topsoil_depth,
                                residual_liquid_fraction = ptf.residual_liquid_fraction,
                                pore_connectivity_exponent = ptf.pore_connectivity_exponent,
                                regression_coefficients = ptf.regression_coefficients)
 
 Base.summary(ptf::ContinuousPedotransfer) =
     string("ContinuousPedotransfer(organic_matter=", prettysummary(ptf.organic_matter),
-           ", topsoil=", prettysummary(ptf.topsoil),
+           ", topsoil_depth=", prettysummary(ptf.topsoil_depth),
            ", θʳ=", prettysummary(ptf.residual_liquid_fraction),
            ", ℓ=", prettysummary(ptf.pore_connectivity_exponent), ")")
 
-@inline function soil_hydraulic_parameters(ptf::ContinuousPedotransfer, sand, silt, clay, bulk_density)
-    FT = typeof(clay)
-    lower_bound = convert(FT, 1//10)           # 0.1 %, and 0.1 g/cm³ for ρᵇ
+@inline soil_hydraulic_parameters(ptf::PedotransferFunction, sand, silt, clay, bulk_density) =
+    soil_hydraulic_parameters(ptf, sand, silt, clay, bulk_density, zero(bulk_density))
 
-    # kg/kg → %, kg/m³ → g/cm³; bound 1/x and ln x arguments away from zero.
-    C  = max(100 * clay, lower_bound)
-    S  = max(100 * silt, lower_bound)
-    OM = max(convert(FT, ptf.organic_matter), lower_bound)
-    D  = max(bulk_density / 1000, lower_bound)
-    T  = convert(FT, ptf.topsoil)
+@inline function soil_hydraulic_parameters(ptf::ContinuousPedotransfer,
+                                           sand, silt, clay, bulk_density, depth)
+    FT = typeof(clay)
+
+    # The reciprocal and logarithmic predictors are what break down outside the fit:
+    # as texture → 0 the `1/C` term alone lifts `θs` past 1, and as `ρᵇ` → 0 the
+    # `ln D` term drives `n` to 1, where `m = 1 - 1/n` vanishes and the retention
+    # curve is singular. Hold both inside the range the regression behaves in.
+    minimum_percentage   = convert(FT, 1)
+    minimum_bulk_density = convert(FT, 1//2)     # g/cm³
+    maximum_bulk_density = convert(FT, 2)
+
+    # kg/kg → %, kg/m³ → g/cm³.
+    C  = max(100 * clay, minimum_percentage)
+    S  = max(100 * silt, minimum_percentage)
+    OM = max(convert(FT, ptf.organic_matter), minimum_percentage)
+    D  = clamp(bulk_density / 1000, minimum_bulk_density, maximum_bulk_density)
+    T  = ifelse(convert(FT, depth) < convert(FT, ptf.topsoil_depth), one(FT), zero(FT))
 
     predictors = HYPRES_predictors(C, S, OM, D, T)
 
