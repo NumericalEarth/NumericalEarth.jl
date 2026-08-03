@@ -27,10 +27,10 @@ properties = soil_hydraulic_properties(soil.sand_fraction, soil.silt_fraction,
 
 # θʳ is a fixed constant of the pedotransfer function, so only four parameters vary
 # in space. Kₛ spans orders of magnitude, so it is mapped in log₁₀.
-panels = [("porosity ν",                   "–",             properties.porosity,                 :viridis),
-          ("van Genuchten α",              "m⁻¹",           properties.α,                        :plasma),
-          ("van Genuchten n",              "–",             properties.n,                        :plasma),
-          ("saturated conductivity Kₛ",    "log₁₀(m s⁻¹)",  Field(log10(properties.K_saturated)), :turbo)]
+panels = [("porosity ν",                  "–",            properties.porosity,                  :viridis),
+          ("inverse air-entry head α",    "m⁻¹",          properties.inverse_air_entry_head,     :plasma),
+          ("pore-size index n",           "–",            properties.n,                         :plasma),
+          ("saturated conductivity Kₛ",   "log₁₀(m s⁻¹)", Field(log10(properties.K_saturated)),  :turbo)]
 
 fig = Figure(size = (1150, 980), fontsize = 15)
 Label(fig[0, 1:2], "Soil hydraulic parameters from OpenLandMap-soilDB 30 m — 0–100 cm — Grand Canyon window";

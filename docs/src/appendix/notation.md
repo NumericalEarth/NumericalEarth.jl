@@ -162,6 +162,9 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``h`` | – | hydraulic head | ``h = z + \Pi`` (m) |
 | ``K`` | – | hydraulic conductivity | Darcy conductivity (m s⁻¹) |
 | ``K^{\mathrm{sat}}`` | `K_saturated` | saturated hydraulic conductivity | Darcy conductivity at ``𝒮 = 1`` (m s⁻¹) |
+| ``\alpha^{vG}`` | `inverse_air_entry_head` | inverse air-entry head | van Genuchten retention scale; ``1/\alpha^{vG}`` is the air-entry (bubbling) pressure head (m⁻¹). Distinct from the albedo ``\alpha`` |
+| ``n`` | `n` | pore-size distribution index | van Genuchten retention exponent, ``m = 1 - 1/n`` (–) |
+| ``\ell^{vG}`` | `pore_connectivity_exponent` | pore-connectivity exponent | Mualem exponent on saturation in ``K(\mathcal S)`` (–). Distinct from the roughness length ``\ell`` |
 | ``J^{Es}`` | `surface_energy_flux` | surface energy flux | Signed surface energy flux, positive upward (out of the slab) (W m⁻²) |
 | ``J^{lb}`` | `deep_liquid_flux` | deep-boundary liquid flux | Liquid mass flux across the slab bottom, positive upward (into the slab, capillary rise / groundwater return); drainage is ``J^{lb} < 0`` (kg m⁻² s⁻¹) |
 | ``J^{ls}`` | `surface_liquid_flux` | surface liquid flux | Liquid mass flux at the surface ``J^{ls} = -P^l + R^{\mathrm{sfc}}``, positive upward (out of the slab); infiltration is ``J^{ls} < 0`` (kg m⁻² s⁻¹) |

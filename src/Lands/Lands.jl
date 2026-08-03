@@ -19,7 +19,7 @@ export AbstractLand,
        NoRunoff, InfiltrationCapacityRunoff,
        VariablySaturatedHydrology,
        # Pedotransfer functions + depth-layer combination
-       PedotransferFunction, ContinuousPedotransfer,
+       PedotransferFunction, ContinuousPedotransfer, HYPRESRegression,
        soil_hydraulic_parameters, soil_hydraulic_properties, layer_weights,
        # Urban aerodynamic roughness closures
        AbstractUrbanRoughness, MorphometricRoughness,

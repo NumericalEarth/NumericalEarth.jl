@@ -79,12 +79,13 @@ end
 Reduce the 3-D texture (`sand`, `silt`, `clay`, kg/kg) and `bulk_density` (kg/m³)
 `Field`s to a NamedTuple of 2-D effective van Genuchten properties
 
-    (; porosity, residual_liquid_fraction, α, n, K_saturated)
+    (; porosity, residual_liquid_fraction, inverse_air_entry_head, n, K_saturated)
 
-for [`VariablySaturatedHydrology`](@ref). The pedotransfer function `ptf` is applied
-per depth layer, then each parameter is upscaled over `slab_depth` using its
-per-parameter law (arithmetic `ν`/`θʳ`/`n`, harmonic `K_saturated`, geometric `α`;
-see [`layer_weights`](@ref)).
+whose keys match the keyword arguments of [`VariablySaturatedHydrology`](@ref),
+[`VanGenuchtenRetention`](@ref), and [`VanGenuchtenConductivity`](@ref). The
+pedotransfer function `ptf` is applied per depth layer, then each parameter is
+upscaled over `slab_depth` using its per-parameter law (arithmetic `ν`/`θʳ`/`n`,
+harmonic `K_saturated`, geometric `α`; see [`layer_weights`](@ref)).
 
 Each output is a `Field{Center, Center, Nothing}` on the inputs' grid — a 2-D field
 the slab reads at `[i, j]`. `slab_depth` must be a scalar; `z_interfaces` are the
@@ -125,7 +126,7 @@ function soil_hydraulic_properties(sand, silt, clay, bulk_density;
 
     return (porosity = porosity,
             residual_liquid_fraction = residual,
-            α = α,
+            inverse_air_entry_head = α,
             n = n,
             K_saturated = K_saturated)
 end

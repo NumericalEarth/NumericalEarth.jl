@@ -8,6 +8,9 @@
 ##### fraction (kg/kg) and bulk density is kg/m³ — the model-side units delivered
 ##### by the DataWrangling soil datasets (e.g. `OpenLandMapSoilDB`, `SoilGrids2`).
 #####
+##### The default regressions are fitted to HYPRES, the database of HYdraulic
+##### PRoperties of European Soils.
+#####
 
 """
     abstract type PedotransferFunction
@@ -38,32 +41,70 @@ function on_float_type end
 #####
 ##### Regression basis.
 #####
-##### The four HYPRES regressions are linear in a shared set of predictors built
-##### from clay % `C`, silt % `S`, organic matter % `OM`, bulk density `D`
-##### (g/cm³), and the topsoil flag `T`. Each regression is then a coefficient
-##### tuple in this fixed order:
+##### The HYPRES regressions are all linear in a shared set of predictors built from
+##### clay % `C`, silt % `S`, organic matter % `OM`, bulk density `D` (g/cm³), and the
+##### topsoil flag `T`. Each regression is then a coefficient tuple in this order:
 #####
 #####   1, C, S, OM, D, T, D², C², OM², S², 1/C, 1/S, 1/OM, 1/D,
 #####   ln S, ln OM, ln D, OM·C, D·C, D·S, D·OM, T·C, T·S
 #####
 
-@inline hypres_predictors(C, S, OM, D, T) =
+@inline HYPRES_predictors(C, S, OM, D, T) =
     (one(C), C, S, OM, D, T, D^2, C^2, OM^2, S^2,
      1/C, 1/S, 1/OM, 1/D, log(S), log(OM), log(D),
      OM*C, D*C, D*S, D*OM, T*C, T*S)
 
 @inline apply_regression(coefficients, predictors) = sum(map(*, coefficients, predictors))
 
-# Wösten et al. (1999) HYPRES continuous regressions, Table 4. `porosity` predicts
-# θs directly; the other three predict transformed variables (α*, n*, Kₛ*).
-const HYPRES_COEFFICIENTS = (
+"""
+    HYPRESRegression(; porosity, inverse_air_entry_head, n, K_saturated)
+
+Coefficients of the continuous pedotransfer regressions fitted to HYPRES, the
+database of HYdraulic PRoperties of European Soils. One tuple per predicted
+parameter, each ordered by the shared predictor basis. `porosity` predicts
+`θs` directly; the other three predict the transformed parameters `α* = ln α`,
+`n* = ln(n - 1)`, and `Kₛ* = ln Kₛ`, which the regression uses to enforce `α > 0`,
+`n > 1`, and `Kₛ > 0`.
+
+Construct one to swap in a different calibration of the same functional form;
+[`HYPRES_REGRESSION`](@ref) holds the published fit.
+"""
+struct HYPRESRegression{C}
+    porosity               :: C
+    inverse_air_entry_head :: C
+    n                      :: C
+    K_saturated            :: C
+end
+
+# `float` keeps the tuples homogeneous so integer zeros can be written literally.
+HYPRESRegression(; porosity, inverse_air_entry_head, n, K_saturated) =
+    HYPRESRegression(map(float, porosity),
+                     map(float, inverse_air_entry_head),
+                     map(float, n),
+                     map(float, K_saturated))
+
+on_float_type(FT, r::HYPRESRegression) =
+    HYPRESRegression(convert.(FT, r.porosity),
+                     convert.(FT, r.inverse_air_entry_head),
+                     convert.(FT, r.n),
+                     convert.(FT, r.K_saturated))
+
+"""
+    HYPRES_REGRESSION
+
+The [Wösten et al. (1999)](@cite wosten1999) HYPRES continuous pedotransfer
+regressions, their Table 5. Reported coefficients of determination are `θs` 76 %,
+`α*` 20 %, `n*` 54 %, and `Kₛ*` 19 %.
+"""
+const HYPRES_REGRESSION = HYPRESRegression(
     porosity = (0.7919, 0.001691, 0, 0, -0.29619, 0, 0, 0, 0.0000821, -0.000001491,
                 0.02427, 0.01113, 0, 0, 0.01472, 0, 0,
                 -0.0000733, -0.000619, 0, -0.001183, 0, -0.0001664),
 
-    α = (-14.96, 0.03135, 0.0351, 0.646, 15.29, -0.192, -4.671, -0.000781, -0.00687, 0,
-         0, 0, 0.0449, 0, 0.0663, 0.1482, 0,
-         0, 0, -0.04546, -0.4852, 0.00673, 0),
+    inverse_air_entry_head =
+               (-14.96, 0.03135, 0.0351, 0.646, 15.29, -0.192, -4.671, -0.000781, -0.00687, 0,
+                0, 0, 0.0449, 0, 0.0663, 0.1482, 0,
+                0, 0, -0.04546, -0.4852, 0.00673, 0),
 
     n = (-25.23, -0.02195, 0.0074, -0.1940, 45.5, 0, -7.24, 0.0003658, 0.002885, 0,
          0, -0.1524, -0.01958, -12.81, -0.2876, -0.0709, -44.6,
@@ -79,34 +120,37 @@ const HYPRES_COEFFICIENTS = (
                            topsoil = true,
                            residual_liquid_fraction = 0.01,
                            pore_connectivity_exponent = 0.5,
-                           coefficients = HYPRES_COEFFICIENTS)
+                           coefficients = HYPRES_REGRESSION)
 
 A continuous pedotransfer function: closed-form regressions mapping continuous soil
 texture and bulk density to continuous van Genuchten parameters — as opposed to a
 *class* PTF that bins soil into a few texture classes. Implements the
-[Wösten et al. (1999)](@cite wosten1999) HYPRES functions in clay %, silt %, organic
-matter %, bulk density (g/cm³) and a topsoil/subsoil flag.
+[Wösten et al. (1999)](@cite wosten1999) regressions (their Table 5) fitted to
+HYPRES, the database of HYdraulic PRoperties of European Soils, in clay %, silt %,
+organic matter %, bulk density (g/cm³) and a topsoil/subsoil flag. Clay is the
+< 2 μm fraction and silt the 2–50 μm fraction, matching the USDA split the soil
+datasets report.
 
 Organic matter and the topsoil flag are not carried by the 30 m texture datasets,
 so they are uniform defaults here: `organic_matter` (%, a mineral-soil value) and
 `topsoil` (`true`/`false`). The residual water content `residual_liquid_fraction`
 (`θʳ`) and pore-connectivity exponent `pore_connectivity_exponent` (`ℓ`, the Mualem
-exponent) are fixed constants — the Wösten `ℓ` regression is noisy and can go
-negative, so `ℓ = 0.5` is used by default.
+exponent) are fixed constants: HYPRES fits no `θʳ` regression, and its `ℓ` fit is
+the weakest of the five (coefficient of determination 12 %, and negative across most
+of the published texture classes), so `ℓ = 0.5` is used by default.
 
-`coefficients` holds one tuple per predicted parameter, each ordered by the shared
-regression basis; supply your own to swap in a different calibration of the same
-functional form.
+`coefficients` is a [`HYPRESRegression`](@ref); supply your own to swap in a
+different calibration of the same functional form.
 
 Predicted `θs` is returned as the porosity `ν`. Units are converted to model units:
 `α` (cm⁻¹) → m⁻¹, `K_saturated` (cm day⁻¹) → m s⁻¹.
 """
-struct ContinuousPedotransfer{FT, Coefficients} <: PedotransferFunction
+struct ContinuousPedotransfer{FT, C} <: PedotransferFunction
     organic_matter             :: FT
     topsoil                    :: FT
     residual_liquid_fraction   :: FT
     pore_connectivity_exponent :: FT
-    coefficients               :: Coefficients
+    coefficients               :: C
 end
 
 ContinuousPedotransfer(FT::Type = Oceananigans.defaults.FloatType;
@@ -114,12 +158,12 @@ ContinuousPedotransfer(FT::Type = Oceananigans.defaults.FloatType;
                        topsoil = true,
                        residual_liquid_fraction = 0.01,
                        pore_connectivity_exponent = 0.5,
-                       coefficients = HYPRES_COEFFICIENTS) =
+                       coefficients = HYPRES_REGRESSION) =
     ContinuousPedotransfer(convert(FT, organic_matter),
                            convert(FT, topsoil),
                            convert(FT, residual_liquid_fraction),
                            convert(FT, pore_connectivity_exponent),
-                           map(c -> convert.(FT, c), coefficients))
+                           on_float_type(FT, coefficients))
 
 on_float_type(FT, ptf::ContinuousPedotransfer) =
     ContinuousPedotransfer(FT; organic_matter = ptf.organic_matter,
@@ -145,12 +189,13 @@ Base.summary(ptf::ContinuousPedotransfer) =
     D  = max(bulk_density / 1000, lower_bound)
     T  = convert(FT, ptf.topsoil)
 
-    predictors = hypres_predictors(C, S, OM, D, T)
+    predictors = HYPRES_predictors(C, S, OM, D, T)
 
-    θs     = apply_regression(ptf.coefficients.porosity, predictors)
-    αstar  = apply_regression(ptf.coefficients.α, predictors)
-    nstar  = apply_regression(ptf.coefficients.n, predictors)
-    Ksstar = apply_regression(ptf.coefficients.K_saturated, predictors)
+    c      = ptf.coefficients
+    θs     = apply_regression(c.porosity, predictors)
+    αstar  = apply_regression(c.inverse_air_entry_head, predictors)
+    nstar  = apply_regression(c.n, predictors)
+    Ksstar = apply_regression(c.K_saturated, predictors)
 
     θʳ = convert(FT, ptf.residual_liquid_fraction)
     ν  = clamp(θs, θʳ + convert(FT, 1//100), one(FT) - eps(FT))

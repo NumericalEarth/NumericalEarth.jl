@@ -42,7 +42,9 @@ end
     # Float64 may survive in the pedotransfer function handed to the kernel.
     ptf32 = NumericalEarth.Lands.on_float_type(Float32, ContinuousPedotransfer(Float64))
     @test ptf32 isa ContinuousPedotransfer{Float32}
-    @test all(c -> eltype(c) === Float32, values(ptf32.coefficients))
+    coefficients = ptf32.coefficients
+    @test all(name -> eltype(getfield(coefficients, name)) === Float32,
+              fieldnames(HYPRESRegression))
     @test ptf32.pore_connectivity_exponent isa Float32
 
     # Same regression either way, to Float32 precision.
@@ -96,7 +98,7 @@ end
 
         ν  = Array(interior(props.porosity))[:, 1, 1]
         θʳ = Array(interior(props.residual_liquid_fraction))[:, 1, 1]
-        α  = Array(interior(props.α))[:, 1, 1]
+        α  = Array(interior(props.inverse_air_entry_head))[:, 1, 1]
         n  = Array(interior(props.n))[:, 1, 1]
         Ks = Array(interior(props.K_saturated))[:, 1, 1]
 
@@ -144,7 +146,7 @@ end
         top = soil_hydraulic_parameters(ContinuousPedotransfer(), 0.90, 0.07, 0.03, 1400.0)
         @test Array(interior(props.porosity))[1, 1, 1]    ≈ top.ν
         @test Array(interior(props.K_saturated))[1, 1, 1] ≈ top.K_saturated
-        @test Array(interior(props.α))[1, 1, 1]           ≈ top.α
+        @test Array(interior(props.inverse_air_entry_head))[1, 1, 1] ≈ top.α
     end
 end
 
@@ -154,7 +156,7 @@ end
                                topology = (Bounded, Bounded, Flat))
 
         # Scalar path unchanged: matches the closed-form van Genuchten pressure head.
-        r = VanGenuchtenRetention(α = 2.0, n = 1.4)
+        r = VanGenuchtenRetention(inverse_air_entry_head = 2.0, n = 1.4)
         𝒮 = 0.5
         m = 1 - 1/1.4
         Π_ref = -(𝒮^(-1/m) - 1)^(1/1.4) / 2.0
@@ -170,7 +172,7 @@ end
 
         hydrology = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0, porosity = ν, storage_height = 1000,
-            retention_curve = VanGenuchtenRetention(; α, n),
+            retention_curve = VanGenuchtenRetention(; inverse_air_entry_head = α, n),
             hydraulic_conductivity = VanGenuchtenConductivity(; K_saturated = Ks, n),
             deep_liquid_flux = FreeDrainageFlux(), runoff = NoRunoff())
 
