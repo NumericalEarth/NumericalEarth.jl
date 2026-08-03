@@ -108,10 +108,15 @@ function DataWrangling.metadata_filename(dataset::ERA5LandDataset, name, date, r
     return string(var, "_", dataset_name(dataset), "_", year, suffix, ".nc")
 end
 
+"""
+    build_filename(dataset::ERA5LandDataset, name, dates::AbstractArray, region)
+
+One yearly file covers every date within that year, so a request spanning
+multiple years resolves to multiple (repeated) filenames — one per date,
+naming that date's year file. `set!` for the resulting `FieldTimeSeries`
+groups consecutive same-year dates together and opens each yearly file once
+(see `read_era5_yearly_series` in `ERA5_field_time_series.jl`).
+"""
 function DataWrangling.build_filename(dataset::ERA5LandDataset, name, dates::AbstractArray, region)
-    first_year = Dates.year(first(dates))
-    all(d -> Dates.year(d) == first_year, dates) ||
-        error("ERA5-Land FieldTimeSeries requests spanning more than one calendar year are not yet " *
-              "supported (one file is downloaded per variable per year). Split the request by year.")
-    return DataWrangling.metadata_filename(dataset, name, dates[1], region)
+    return DatewiseFilename([DataWrangling.metadata_filename(dataset, name, d, region) for d in dates])
 end

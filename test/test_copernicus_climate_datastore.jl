@@ -3,6 +3,7 @@ include("runtests_setup.jl")
 using CopernicusClimateDataStore
 using Dates
 import Downloads
+using NCDatasets
 
 using NumericalEarth.DataWrangling.ERA5
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5YearlySingleLevel, ERA5MonthlySingleLevel,
@@ -279,17 +280,116 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
         @test CDSExt.era5_land_year_batches(ERA5MonthlyLand(), monthly_dates) == [monthly_dates]
     end
 
-    @testset "ERA5-Land build_filename multi-year guard" begin
-        # A single-year date range picks the shared file for that year.
-        same_year_dates = [DateTime(2020, 1, 1), DateTime(2020, 6, 15)]
-        filename = NumericalEarth.DataWrangling.build_filename(ERA5HourlyLand(), :skin_temperature, same_year_dates, nothing)
-        @test filename == NumericalEarth.DataWrangling.metadata_filename(ERA5HourlyLand(), :skin_temperature, same_year_dates[1], nothing)
+    @testset "ERA5-Land / ERA5YearlySingleLevel build_filename supports multi-year requests" begin
+        DatewiseFilename = NumericalEarth.DataWrangling.DatewiseFilename
+        build_filename = NumericalEarth.DataWrangling.build_filename
+        metadata_filename = NumericalEarth.DataWrangling.metadata_filename
 
-        # ERA5-Land downloads one file per variable per year; a date range spanning
-        # more than one calendar year would silently pick the first year's file and
-        # miss the rest, so this must fail loudly instead.
-        cross_year_dates = [DateTime(2020, 12, 31), DateTime(2021, 1, 1)]
-        @test_throws ErrorException NumericalEarth.DataWrangling.build_filename(ERA5HourlyLand(), :skin_temperature, cross_year_dates, nothing)
+        for (ds, name) in ((ERA5HourlyLand(), :skin_temperature), (ERA5YearlySingleLevel(), :temperature))
+            # One yearly file covers every date within that year — same-year requests
+            # resolve every date to that one (repeated) filename.
+            same_year_dates = [DateTime(2020, 1, 1), DateTime(2020, 6, 15)]
+            same_year = build_filename(ds, name, same_year_dates, nothing)
+            @test same_year isa DatewiseFilename
+            @test same_year.filenames == fill(metadata_filename(ds, name, same_year_dates[1], nothing), 2)
+
+            # A date range spanning more than one calendar year must resolve each
+            # date to ITS OWN year's file, not silently collapse to the first year's.
+            cross_year_dates = [DateTime(2020, 12, 31), DateTime(2021, 1, 1)]
+            cross_year = build_filename(ds, name, cross_year_dates, nothing)
+            @test cross_year isa DatewiseFilename
+            @test cross_year.filenames[1] == metadata_filename(ds, name, cross_year_dates[1], nothing)
+            @test cross_year.filenames[2] == metadata_filename(ds, name, cross_year_dates[2], nothing)
+            @test cross_year.filenames[1] != cross_year.filenames[2]
+        end
+    end
+
+    @testset "ERA5MonthlySingleLevel build_filename supports multi-month requests" begin
+        DatewiseFilename = NumericalEarth.DataWrangling.DatewiseFilename
+        build_filename = NumericalEarth.DataWrangling.build_filename
+        metadata_filename = NumericalEarth.DataWrangling.metadata_filename
+
+        ds, name = ERA5MonthlySingleLevel(), :temperature
+
+        # One monthly file covers every date within that month — same-month requests
+        # resolve every date to that one (repeated) filename.
+        same_month_dates = [DateTime(2020, 1, 1), DateTime(2020, 1, 15)]
+        same_month = build_filename(ds, name, same_month_dates, nothing)
+        @test same_month isa DatewiseFilename
+        @test same_month.filenames == fill(metadata_filename(ds, name, same_month_dates[1], nothing), 2)
+
+        # A date range spanning more than one month must resolve each date to ITS
+        # OWN month's file, not silently collapse to the first month's.
+        cross_month_dates = [DateTime(2020, 1, 31), DateTime(2020, 2, 1), DateTime(2021, 1, 1)]
+        cross_month = build_filename(ds, name, cross_month_dates, nothing)
+        @test cross_month isa DatewiseFilename
+        @test cross_month.filenames[1] == metadata_filename(ds, name, cross_month_dates[1], nothing)
+        @test cross_month.filenames[2] == metadata_filename(ds, name, cross_month_dates[2], nothing)
+        @test cross_month.filenames[3] == metadata_filename(ds, name, cross_month_dates[3], nothing)
+        @test allunique(cross_month.filenames)
+    end
+
+    @testset "read_era5_yearly_series reads across a year boundary" begin
+        read_era5_yearly_series = NumericalEarth.DataWrangling.ERA5.read_era5_yearly_series
+
+        # Write two small synthetic yearly files, each with distinct marker values
+        # so we can confirm the stitched-together series preserves chronological order.
+        function write_year_file(path, times, marker)
+            NCDatasets.Dataset(path, "c") do ds
+                NCDatasets.defDim(ds, "longitude", 2)
+                NCDatasets.defDim(ds, "latitude", 2)
+                NCDatasets.defDim(ds, "valid_time", length(times))
+                NCDatasets.defVar(ds, "longitude", Float64, ("longitude",))[:] = [-1.0, 1.0]
+                NCDatasets.defVar(ds, "latitude", Float64, ("latitude",))[:] = [40.0, 41.0]
+                tv = NCDatasets.defVar(ds, "valid_time", Float64, ("valid_time",);
+                                       attrib = ["units" => "seconds since 1970-01-01"])
+                tv[:] = times
+                t2m = NCDatasets.defVar(ds, "t2m", Float32, ("longitude", "latitude", "valid_time"))
+                for (k, _) in enumerate(times), j in 1:2, i in 1:2
+                    t2m[i, j, k] = Float32(marker + k)
+                end
+            end
+        end
+
+        mktempdir() do dir
+            path_2020 = joinpath(dir, "t2m_2020.nc")
+            path_2021 = joinpath(dir, "t2m_2021.nc")
+            times_2020 = [DateTime(2020, 12, 31, 22), DateTime(2020, 12, 31, 23)]
+            times_2021 = [DateTime(2021, 1, 1, 0), DateTime(2021, 1, 1, 1)]
+            write_year_file(path_2020, times_2020, 0.0)     # markers 1, 2
+            write_year_file(path_2021, times_2021, 100.0)   # markers 101, 102
+
+            @testset "single file (String path, backward-compatible)" begin
+                raw, λc, φc = read_era5_yearly_series(path_2020, times_2020, "t2m")
+                @test size(raw) == (2, 2, 2)
+                @test length(λc) == 2 && length(φc) == 2
+                @test all(==(1f0), raw[:, :, 1])
+                @test all(==(2f0), raw[:, :, 2])
+            end
+
+            @testset "multiple files spanning a year boundary (Vector of paths)" begin
+                paths = [path_2020, path_2020, path_2021, path_2021]
+                requested_times = vcat(times_2020, times_2021)
+                raw, λc, φc = read_era5_yearly_series(paths, requested_times, "t2m")
+                @test size(raw) == (2, 2, 4)
+                @test all(==(1f0),   raw[:, :, 1])
+                @test all(==(2f0),   raw[:, :, 2])
+                @test all(==(101f0), raw[:, :, 3])
+                @test all(==(102f0), raw[:, :, 4])
+            end
+
+            @testset "requesting a subset within one of the files" begin
+                # Only the second timestep of the 2020 file, then both of 2021 —
+                # exercises the single-index (non-range) read path within a group.
+                paths = [path_2020, path_2021, path_2021]
+                requested_times = [times_2020[2], times_2021[1], times_2021[2]]
+                raw, _, _ = read_era5_yearly_series(paths, requested_times, "t2m")
+                @test size(raw) == (2, 2, 3)
+                @test all(==(2f0),   raw[:, :, 1])
+                @test all(==(101f0), raw[:, :, 2])
+                @test all(==(102f0), raw[:, :, 3])
+            end
+        end
     end
 
     @info "✓ CopernicusClimateDataStore extension tests passed"
