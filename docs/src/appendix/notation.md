@@ -161,6 +161,7 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``\Pi^d`` | `deep_pressure_head` | deep pressure head | Pressure head of the deep reservoir below the slab, passed to the deep-flux closure (m) |
 | ``h`` | – | hydraulic head | ``h = z + \Pi`` (m) |
 | ``K`` | – | hydraulic conductivity | Darcy conductivity (m s⁻¹) |
+| ``K^{\mathrm{sat}}`` | `K_saturated` | saturated hydraulic conductivity | Darcy conductivity at ``𝒮 = 1`` (m s⁻¹) |
 | ``J^{Es}`` | `surface_energy_flux` | surface energy flux | Signed surface energy flux, positive upward (out of the slab) (W m⁻²) |
 | ``J^{lb}`` | `deep_liquid_flux` | deep-boundary liquid flux | Liquid mass flux across the slab bottom, positive upward (into the slab, capillary rise / groundwater return); drainage is ``J^{lb} < 0`` (kg m⁻² s⁻¹) |
 | ``J^{ls}`` | `surface_liquid_flux` | surface liquid flux | Liquid mass flux at the surface ``J^{ls} = -P^l + R^{\mathrm{sfc}}``, positive upward (out of the slab); infiltration is ``J^{ls} < 0`` (kg m⁻² s⁻¹) |
