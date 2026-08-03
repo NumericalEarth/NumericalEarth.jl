@@ -25,9 +25,9 @@ unsaturated soil), following [van Genuchten (1980)](@cite vangenuchten1980):
 a scalar (uniform) or a `Field` that varies grid point by grid point, e.g. from a
 pedotransfer function over a soil-texture map (see [`soil_hydraulic_properties`](@ref)).
 """
-struct VanGenuchtenRetention{A, N}
-    α :: A
-    n :: N
+struct VanGenuchtenRetention{Alpha, Exponent}
+    α :: Alpha
+    n :: Exponent
 end
 
 VanGenuchtenRetention(FT::Type = Oceananigans.defaults.FloatType; α, n) =
@@ -70,10 +70,10 @@ K(\\mathcal S) = K_{sat}\\,\\mathcal S^\\ell\\left[1 - (1 - \\mathcal S^{1/m})^m
 retention `n`, and `ℓ` (–) is the Mualem pore-connectivity exponent (default 0.5).
 Each may be a scalar or a `Field` (see [`soil_hydraulic_properties`](@ref)).
 """
-struct VanGenuchtenConductivity{K, N, L}
-    K_saturated :: K
-    n           :: N
-    ℓ           :: L
+struct VanGenuchtenConductivity{SaturatedConductivity, Exponent, PoreConnectivity}
+    K_saturated :: SaturatedConductivity
+    n           :: Exponent
+    ℓ           :: PoreConnectivity
 end
 
 VanGenuchtenConductivity(FT::Type = Oceananigans.defaults.FloatType;

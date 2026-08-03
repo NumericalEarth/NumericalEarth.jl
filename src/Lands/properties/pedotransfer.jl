@@ -101,12 +101,12 @@ functional form.
 Predicted `θs` is returned as the porosity `ν`. Units are converted to model units:
 `α` (cm⁻¹) → m⁻¹, `K_saturated` (cm day⁻¹) → m s⁻¹.
 """
-struct ContinuousPedotransfer{FT, C} <: PedotransferFunction
+struct ContinuousPedotransfer{FT, Coefficients} <: PedotransferFunction
     organic_matter             :: FT
     topsoil                    :: FT
     residual_liquid_fraction   :: FT
     pore_connectivity_exponent :: FT
-    coefficients               :: C
+    coefficients               :: Coefficients
 end
 
 ContinuousPedotransfer(FT::Type = Oceananigans.defaults.FloatType;
