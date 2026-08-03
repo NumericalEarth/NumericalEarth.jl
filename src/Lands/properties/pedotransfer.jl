@@ -57,7 +57,7 @@ function on_float_type end
 @inline apply_regression(coefficients, predictors) = sum(map(*, coefficients, predictors))
 
 """
-    HYPRESRegression(; porosity, inverse_air_entry_head, n, K_saturated)
+    HYPRESRegression(; porosity, inverse_air_entry_head, pore_size_uniformity, K_saturated)
 
 Coefficients of the continuous pedotransfer regressions fitted to HYPRES, the
 database of HYdraulic PRoperties of European Soils. One tuple per predicted
@@ -72,21 +72,21 @@ Construct one to swap in a different calibration of the same functional form;
 struct HYPRESRegression{C}
     porosity               :: C
     inverse_air_entry_head :: C
-    n                      :: C
+    pore_size_uniformity   :: C
     K_saturated            :: C
 end
 
 # `float` keeps the tuples homogeneous so integer zeros can be written literally.
-HYPRESRegression(; porosity, inverse_air_entry_head, n, K_saturated) =
+HYPRESRegression(; porosity, inverse_air_entry_head, pore_size_uniformity, K_saturated) =
     HYPRESRegression(map(float, porosity),
                      map(float, inverse_air_entry_head),
-                     map(float, n),
+                     map(float, pore_size_uniformity),
                      map(float, K_saturated))
 
 on_float_type(FT, r::HYPRESRegression) =
     HYPRESRegression(convert.(FT, r.porosity),
                      convert.(FT, r.inverse_air_entry_head),
-                     convert.(FT, r.n),
+                     convert.(FT, r.pore_size_uniformity),
                      convert.(FT, r.K_saturated))
 
 """
@@ -100,7 +100,7 @@ Table 5). Each field predicts one parameter:
 |:------|:---------|:------|:---|
 | `porosity` | `θs`, the saturated water content | – | 76 % |
 | `inverse_air_entry_head` | `α* = ln α` | ln(cm⁻¹) | 20 % |
-| `n` | `n* = ln(n - 1)` | – | 54 % |
+| `pore_size_uniformity` | `n* = ln(n - 1)` | – | 54 % |
 | `K_saturated` | `Kₛ* = ln Kₛ` | ln(cm day⁻¹) | 19 % |
 
 The three logarithmic transforms are what enforce `α > 0`, `n > 1`, and `Kₛ > 0`;
@@ -125,7 +125,8 @@ const HYPRES_REGRESSION = HYPRESRegression(
                 0.0663, 0.1482, 0,                                       # ln S, ln OM, ln D
                 0, 0, -0.04546, -0.4852, 0.00673, 0),                    # OM·C, D·C, D·S, D·OM, T·C, T·S
 
-    n = (-25.23, -0.02195, 0.0074, -0.1940, 45.5, 0,                     # 1, C, S, OM, D, T
+    pore_size_uniformity =
+        (-25.23, -0.02195, 0.0074, -0.1940, 45.5, 0,                     # 1, C, S, OM, D, T
          -7.24, 0.0003658, 0.002885, 0,                                  # D², C², OM², S²
          0, -0.1524, -0.01958, -12.81,                                   # 1/C, 1/S, 1/OM, 1/D
          -0.2876, -0.0709, -44.6,                                        # ln S, ln OM, ln D
@@ -217,7 +218,7 @@ Base.summary(ptf::ContinuousPedotransfer) =
     c      = ptf.regression_coefficients
     θs     = apply_regression(c.porosity, predictors)
     αstar  = apply_regression(c.inverse_air_entry_head, predictors)
-    nstar  = apply_regression(c.n, predictors)
+    nstar  = apply_regression(c.pore_size_uniformity, predictors)
     Ksstar = apply_regression(c.K_saturated, predictors)
 
     θʳ = convert(FT, ptf.residual_liquid_fraction)

@@ -79,7 +79,7 @@ end
 Reduce the 3-D texture (`sand`, `silt`, `clay`, kg/kg) and `bulk_density` (kg/m³)
 `Field`s to a NamedTuple of 2-D effective van Genuchten properties
 
-    (; porosity, residual_liquid_fraction, inverse_air_entry_head, n, K_saturated)
+    (; porosity, residual_liquid_fraction, inverse_air_entry_head, pore_size_uniformity, K_saturated)
 
 whose keys match the keyword arguments of [`VariablySaturatedHydrology`](@ref),
 [`VanGenuchtenRetention`](@ref), and [`VanGenuchtenConductivity`](@ref). The
@@ -127,6 +127,6 @@ function soil_hydraulic_properties(sand, silt, clay, bulk_density;
     return (porosity = porosity,
             residual_liquid_fraction = residual,
             inverse_air_entry_head = α,
-            n = n,
+            pore_size_uniformity = n,
             K_saturated = K_saturated)
 end

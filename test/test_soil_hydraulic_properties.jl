@@ -99,7 +99,7 @@ end
         ν  = Array(interior(props.porosity))[:, 1, 1]
         θʳ = Array(interior(props.residual_liquid_fraction))[:, 1, 1]
         α  = Array(interior(props.inverse_air_entry_head))[:, 1, 1]
-        n  = Array(interior(props.n))[:, 1, 1]
+        n  = Array(interior(props.pore_size_uniformity))[:, 1, 1]
         Ks = Array(interior(props.K_saturated))[:, 1, 1]
 
         @test all(0.3 .< ν .< 0.6)
@@ -156,7 +156,7 @@ end
                                topology = (Bounded, Bounded, Flat))
 
         # Scalar path unchanged: matches the closed-form van Genuchten pressure head.
-        r = VanGenuchtenRetention(inverse_air_entry_head = 2.0, n = 1.4)
+        r = VanGenuchtenRetention(inverse_air_entry_head = 2.0, pore_size_uniformity = 1.4)
         𝒮 = 0.5
         m = 1 - 1/1.4
         Π_ref = -(𝒮^(-1/m) - 1)^(1/1.4) / 2.0
@@ -172,8 +172,8 @@ end
 
         hydrology = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0, porosity = ν, storage_height = 1000,
-            retention_curve = VanGenuchtenRetention(; inverse_air_entry_head = α, n),
-            hydraulic_conductivity = VanGenuchtenConductivity(; K_saturated = Ks, n),
+            retention_curve = VanGenuchtenRetention(; inverse_air_entry_head = α, pore_size_uniformity = n),
+            hydraulic_conductivity = VanGenuchtenConductivity(; K_saturated = Ks, pore_size_uniformity = n),
             deep_liquid_flux = FreeDrainageFlux(), runoff = NoRunoff())
 
         land = SlabLand(grid; hydrology)

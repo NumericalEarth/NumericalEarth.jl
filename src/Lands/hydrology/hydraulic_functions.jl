@@ -10,7 +10,7 @@
 #####
 
 """
-    VanGenuchtenRetention(inverse_air_entry_head, n)
+    VanGenuchtenRetention(inverse_air_entry_head, pore_size_uniformity)
 
 Empirical soil-water retention curve mapping liquid pore fraction `θˡ`
 (or saturation `𝒮`) to soil matric pressure head `Π_m` (m, negative in
@@ -23,23 +23,26 @@ unsaturated soil), following [van Genuchten (1980)](@cite vangenuchten1980):
 
 `inverse_air_entry_head` (`α`, m⁻¹) sets the head scale at which the soil drains:
 its reciprocal `1/α` is the air-entry (bubbling) pressure head, the suction at which
-the largest pores begin to empty. `n` (–) is the pore-size distribution index, which
-sets how sharply the curve falls away from saturation. Each may be a scalar (uniform)
-or a `Field` that varies grid point by grid point, e.g. from a pedotransfer function
-over a soil-texture map (see [`soil_hydraulic_properties`](@ref)).
+the largest pores begin to empty. `pore_size_uniformity` (`n`, –) sets how tightly the
+pore sizes cluster: large `n` means near-uniform pores, so the soil empties over a
+narrow band of suctions, while `n → 1` spreads the draining over orders of magnitude
+in head. Each may be a scalar (uniform) or a `Field` that varies grid point by grid
+point, e.g. from a pedotransfer function over a soil-texture map (see
+[`soil_hydraulic_properties`](@ref)).
 """
 struct VanGenuchtenRetention{A, N}
     inverse_air_entry_head :: A
-    n                      :: N
+    pore_size_uniformity   :: N
 end
 
-VanGenuchtenRetention(FT::Type = Oceananigans.defaults.FloatType; inverse_air_entry_head, n) =
+VanGenuchtenRetention(FT::Type = Oceananigans.defaults.FloatType;
+                      inverse_air_entry_head, pore_size_uniformity) =
     VanGenuchtenRetention(normalize_property(FT, inverse_air_entry_head),
-                          normalize_property(FT, n))
+                          normalize_property(FT, pore_size_uniformity))
 
 Adapt.adapt_structure(to, r::VanGenuchtenRetention) =
     VanGenuchtenRetention(Adapt.adapt(to, r.inverse_air_entry_head),
-                          Adapt.adapt(to, r.n))
+                          Adapt.adapt(to, r.pore_size_uniformity))
 
 """
     van_genuchten_m(n)
@@ -58,7 +61,7 @@ through this function so the two can never disagree about it.
 @inline function pressure_head(i, j, grid, r::VanGenuchtenRetention, 𝒮)
     FT  = eltype(grid)
     α   = convert(FT, property_value(r.inverse_air_entry_head, i, j))
-    n   = convert(FT, property_value(r.n, i, j))
+    n   = convert(FT, property_value(r.pore_size_uniformity, i, j))
     m   = van_genuchten_m(n)
     # Clamp 𝒮 strictly inside (0, 1] to avoid singularities at endpoints.
     𝒮c = clamp(convert(FT, 𝒮), eps(FT), one(FT))
@@ -69,10 +72,10 @@ end
 
 Base.summary(r::VanGenuchtenRetention) =
     string("VanGenuchtenRetention(α=", prettysummary(r.inverse_air_entry_head),
-           ", n=", prettysummary(r.n), ")")
+           ", n=", prettysummary(r.pore_size_uniformity), ")")
 
 """
-    VanGenuchtenConductivity(K_saturated, n, pore_connectivity_exponent)
+    VanGenuchtenConductivity(K_saturated, pore_size_uniformity, pore_connectivity_exponent)
 
 Unsaturated hydraulic conductivity as a function of saturation `𝒮`, combining
 the [Mualem (1976)](@cite mualem1976new) pore-bundle model with the
@@ -83,33 +86,35 @@ K(\\mathcal S) = K_{sat}\\,\\mathcal S^\\ell\\left[1 - (1 - \\mathcal S^{1/m})^m
 \\qquad m = 1 - 1/n.
 ```
 
-`K_saturated` (m s⁻¹) is the saturated hydraulic conductivity and `n` matches the
-retention `n`. `pore_connectivity_exponent` (`ℓ`, –, default 0.5) is the Mualem
+`K_saturated` (m s⁻¹) is the saturated hydraulic conductivity and
+`pore_size_uniformity` (`n`) must match the retention curve's.
+`pore_connectivity_exponent` (`ℓ`, –, default 0.5) is the Mualem
 exponent on saturation: it measures how well the water-filled pores stay connected
 as the soil drains, so a larger value throttles conductivity more steeply. Each may
 be a scalar or a `Field` (see [`soil_hydraulic_properties`](@ref)).
 """
 struct VanGenuchtenConductivity{K, N, L}
     K_saturated                :: K
-    n                          :: N
+    pore_size_uniformity       :: N
     pore_connectivity_exponent :: L
 end
 
 VanGenuchtenConductivity(FT::Type = Oceananigans.defaults.FloatType;
-                         K_saturated, n, pore_connectivity_exponent = 0.5) =
+                         K_saturated, pore_size_uniformity,
+                         pore_connectivity_exponent = 0.5) =
     VanGenuchtenConductivity(normalize_property(FT, K_saturated),
-                             normalize_property(FT, n),
+                             normalize_property(FT, pore_size_uniformity),
                              normalize_property(FT, pore_connectivity_exponent))
 
 Adapt.adapt_structure(to, c::VanGenuchtenConductivity) =
     VanGenuchtenConductivity(Adapt.adapt(to, c.K_saturated),
-                             Adapt.adapt(to, c.n),
+                             Adapt.adapt(to, c.pore_size_uniformity),
                              Adapt.adapt(to, c.pore_connectivity_exponent))
 
 @inline function hydraulic_conductivity(i, j, grid, c::VanGenuchtenConductivity, 𝒮)
     FT   = eltype(grid)
     Ksat = convert(FT, property_value(c.K_saturated, i, j))
-    n    = convert(FT, property_value(c.n, i, j))
+    n    = convert(FT, property_value(c.pore_size_uniformity, i, j))
     ℓ    = convert(FT, property_value(c.pore_connectivity_exponent, i, j))
     m    = van_genuchten_m(n)
     𝒮c   = clamp(convert(FT, 𝒮), zero(FT), one(FT))
@@ -120,5 +125,5 @@ end
 
 Base.summary(c::VanGenuchtenConductivity) =
     string("VanGenuchtenConductivity(K_saturated=", prettysummary(c.K_saturated),
-           ", n=", prettysummary(c.n),
+           ", n=", prettysummary(c.pore_size_uniformity),
            ", ℓ=", prettysummary(c.pore_connectivity_exponent), ")")
