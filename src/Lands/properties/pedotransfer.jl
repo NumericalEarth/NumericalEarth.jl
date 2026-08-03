@@ -92,27 +92,50 @@ on_float_type(FT, r::HYPRESRegression) =
 """
     HYPRES_REGRESSION
 
-The [Wösten et al. (1999)](@cite wosten1999) HYPRES continuous pedotransfer
-regressions, their Table 5. Reported coefficients of determination are `θs` 76 %,
-`α*` 20 %, `n*` 54 %, and `Kₛ*` 19 %.
+The [Wösten et al. (1999)](@cite wosten1999) continuous pedotransfer regressions
+fitted to HYPRES, the database of HYdraulic PRoperties of European Soils (their
+Table 5). Each field predicts one parameter:
+
+| field | predicts | units | R² |
+|:------|:---------|:------|:---|
+| `porosity` | `θs`, the saturated water content | – | 76 % |
+| `inverse_air_entry_head` | `α* = ln α` | ln(cm⁻¹) | 20 % |
+| `n` | `n* = ln(n - 1)` | – | 54 % |
+| `K_saturated` | `Kₛ* = ln Kₛ` | ln(cm day⁻¹) | 19 % |
+
+The three logarithmic transforms are what enforce `α > 0`, `n > 1`, and `Kₛ > 0`;
+[`ContinuousPedotransfer`](@ref) inverts them and converts to model units. `θs` is
+predicted directly and needs no transform.
+
+Coefficients follow the `HYPRES_predictors` order, laid out one row per predictor
+family. A zero marks a predictor the paper's subset selection dropped for that
+parameter — no regression uses all 23.
 """
 const HYPRES_REGRESSION = HYPRESRegression(
-    porosity = (0.7919, 0.001691, 0, 0, -0.29619, 0, 0, 0, 0.0000821, -0.000001491,
-                0.02427, 0.01113, 0, 0, 0.01472, 0, 0,
-                -0.0000733, -0.000619, 0, -0.001183, 0, -0.0001664),
+    porosity = (0.7919, 0.001691, 0, 0, -0.29619, 0,                     # 1, C, S, OM, D, T
+                0, 0, 0.0000821, -0.000001491,                           # D², C², OM², S²
+                0.02427, 0.01113, 0, 0,                                  # 1/C, 1/S, 1/OM, 1/D
+                0.01472, 0, 0,                                           # ln S, ln OM, ln D
+                -0.0000733, -0.000619, 0, -0.001183, 0, -0.0001664),     # OM·C, D·C, D·S, D·OM, T·C, T·S
 
     inverse_air_entry_head =
-               (-14.96, 0.03135, 0.0351, 0.646, 15.29, -0.192, -4.671, -0.000781, -0.00687, 0,
-                0, 0, 0.0449, 0, 0.0663, 0.1482, 0,
-                0, 0, -0.04546, -0.4852, 0.00673, 0),
+               (-14.96, 0.03135, 0.0351, 0.646, 15.29, -0.192,           # 1, C, S, OM, D, T
+                -4.671, -0.000781, -0.00687, 0,                          # D², C², OM², S²
+                0, 0, 0.0449, 0,                                         # 1/C, 1/S, 1/OM, 1/D
+                0.0663, 0.1482, 0,                                       # ln S, ln OM, ln D
+                0, 0, -0.04546, -0.4852, 0.00673, 0),                    # OM·C, D·C, D·S, D·OM, T·C, T·S
 
-    n = (-25.23, -0.02195, 0.0074, -0.1940, 45.5, 0, -7.24, 0.0003658, 0.002885, 0,
-         0, -0.1524, -0.01958, -12.81, -0.2876, -0.0709, -44.6,
-         0, -0.02264, 0, 0.0896, 0.00718, 0),
+    n = (-25.23, -0.02195, 0.0074, -0.1940, 45.5, 0,                     # 1, C, S, OM, D, T
+         -7.24, 0.0003658, 0.002885, 0,                                  # D², C², OM², S²
+         0, -0.1524, -0.01958, -12.81,                                   # 1/C, 1/S, 1/OM, 1/D
+         -0.2876, -0.0709, -44.6,                                        # ln S, ln OM, ln D
+         0, -0.02264, 0, 0.0896, 0.00718, 0),                            # OM·C, D·C, D·S, D·OM, T·C, T·S
 
-    K_saturated = (7.755, 0, 0.0352, 0, 0, 0.93, -0.967, -0.000484, 0, -0.000322,
-                   0, 0.001, -0.0748, 0, -0.643, 0, 0,
-                   0, -0.01398, 0, -0.1673, 0.02986, -0.03305))
+    K_saturated = (7.755, 0, 0.0352, 0, 0, 0.93,                         # 1, C, S, OM, D, T
+                   -0.967, -0.000484, 0, -0.000322,                      # D², C², OM², S²
+                   0, 0.001, -0.0748, 0,                                 # 1/C, 1/S, 1/OM, 1/D
+                   -0.643, 0, 0,                                         # ln S, ln OM, ln D
+                   0, -0.01398, 0, -0.1673, 0.02986, -0.03305))          # OM·C, D·C, D·S, D·OM, T·C, T·S
 
 """
     ContinuousPedotransfer(FT = Oceananigans.defaults.FloatType;
@@ -120,7 +143,7 @@ const HYPRES_REGRESSION = HYPRESRegression(
                            topsoil = true,
                            residual_liquid_fraction = 0.01,
                            pore_connectivity_exponent = 0.5,
-                           coefficients = HYPRES_REGRESSION)
+                           regression_coefficients = HYPRES_REGRESSION)
 
 A continuous pedotransfer function: closed-form regressions mapping continuous soil
 texture and bulk density to continuous van Genuchten parameters — as opposed to a
@@ -139,8 +162,8 @@ exponent) are fixed constants: HYPRES fits no `θʳ` regression, and its `ℓ` f
 the weakest of the five (coefficient of determination 12 %, and negative across most
 of the published texture classes), so `ℓ = 0.5` is used by default.
 
-`coefficients` is a [`HYPRESRegression`](@ref); supply your own to swap in a
-different calibration of the same functional form.
+`regression_coefficients` is a [`HYPRESRegression`](@ref); supply your own to swap
+in a different calibration of the same functional form.
 
 Predicted `θs` is returned as the porosity `ν`. Units are converted to model units:
 `α` (cm⁻¹) → m⁻¹, `K_saturated` (cm day⁻¹) → m s⁻¹.
@@ -150,7 +173,7 @@ struct ContinuousPedotransfer{FT, C} <: PedotransferFunction
     topsoil                    :: FT
     residual_liquid_fraction   :: FT
     pore_connectivity_exponent :: FT
-    coefficients               :: C
+    regression_coefficients     :: C
 end
 
 ContinuousPedotransfer(FT::Type = Oceananigans.defaults.FloatType;
@@ -158,19 +181,19 @@ ContinuousPedotransfer(FT::Type = Oceananigans.defaults.FloatType;
                        topsoil = true,
                        residual_liquid_fraction = 0.01,
                        pore_connectivity_exponent = 0.5,
-                       coefficients = HYPRES_REGRESSION) =
+                       regression_coefficients = HYPRES_REGRESSION) =
     ContinuousPedotransfer(convert(FT, organic_matter),
                            convert(FT, topsoil),
                            convert(FT, residual_liquid_fraction),
                            convert(FT, pore_connectivity_exponent),
-                           on_float_type(FT, coefficients))
+                           on_float_type(FT, regression_coefficients))
 
 on_float_type(FT, ptf::ContinuousPedotransfer) =
     ContinuousPedotransfer(FT; organic_matter = ptf.organic_matter,
                                topsoil = ptf.topsoil,
                                residual_liquid_fraction = ptf.residual_liquid_fraction,
                                pore_connectivity_exponent = ptf.pore_connectivity_exponent,
-                               coefficients = ptf.coefficients)
+                               regression_coefficients = ptf.regression_coefficients)
 
 Base.summary(ptf::ContinuousPedotransfer) =
     string("ContinuousPedotransfer(organic_matter=", prettysummary(ptf.organic_matter),
@@ -191,7 +214,7 @@ Base.summary(ptf::ContinuousPedotransfer) =
 
     predictors = HYPRES_predictors(C, S, OM, D, T)
 
-    c      = ptf.coefficients
+    c      = ptf.regression_coefficients
     θs     = apply_regression(c.porosity, predictors)
     αstar  = apply_regression(c.inverse_air_entry_head, predictors)
     nstar  = apply_regression(c.n, predictors)

@@ -42,7 +42,7 @@ end
     # Float64 may survive in the pedotransfer function handed to the kernel.
     ptf32 = NumericalEarth.Lands.on_float_type(Float32, ContinuousPedotransfer(Float64))
     @test ptf32 isa ContinuousPedotransfer{Float32}
-    coefficients = ptf32.coefficients
+    coefficients = ptf32.regression_coefficients
     @test all(name -> eltype(getfield(coefficients, name)) === Float32,
               fieldnames(HYPRESRegression))
     @test ptf32.pore_connectivity_exponent isa Float32
