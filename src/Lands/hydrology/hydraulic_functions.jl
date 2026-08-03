@@ -38,16 +38,17 @@ Adapt.adapt_structure(to, r::VanGenuchtenRetention) =
 
 @inline van_genuchten_m(n) = 1 - 1/n
 
-@inline function pressure_head(r::VanGenuchtenRetention, 𝒮, i, j)
-    FT = typeof(𝒮)
-    α = convert(FT, property_value(r.α, i, j))
-    n = convert(FT, property_value(r.n, i, j))
-    m = van_genuchten_m(n)
+@inline function pressure_head(i, j, grid, r::VanGenuchtenRetention, 𝒮)
+    FT  = eltype(grid)
+    α   = convert(FT, property_value(r.α, i, j))
+    n   = convert(FT, property_value(r.n, i, j))
+    n⁻¹ = 1 / n
+    m⁻¹ = 1 / (one(FT) - n⁻¹)
     # Clamp 𝒮 strictly inside (0, 1] to avoid singularities at endpoints.
-    𝒮c = clamp(𝒮, eps(FT), one(FT))
+    𝒮c = clamp(convert(FT, 𝒮), eps(FT), one(FT))
     return ifelse(𝒮c >= one(FT),
                   zero(FT),
-                  -(𝒮c^(-1/m) - one(FT))^(1/n) / α)
+                  -(𝒮c^(-m⁻¹) - one(FT))^n⁻¹ / α)
 end
 
 Base.summary(r::VanGenuchtenRetention) =
@@ -86,15 +87,16 @@ Adapt.adapt_structure(to, c::VanGenuchtenConductivity) =
                              Adapt.adapt(to, c.n),
                              Adapt.adapt(to, c.ℓ))
 
-@inline function hydraulic_conductivity(c::VanGenuchtenConductivity, 𝒮, i, j)
-    FT = typeof(𝒮)
+@inline function hydraulic_conductivity(i, j, grid, c::VanGenuchtenConductivity, 𝒮)
+    FT   = eltype(grid)
     Ksat = convert(FT, property_value(c.K_saturated, i, j))
-    n = convert(FT, property_value(c.n, i, j))
-    ℓ = convert(FT, property_value(c.ℓ, i, j))
-    m = van_genuchten_m(n)
-    𝒮c = clamp(𝒮, zero(FT), one(FT))
+    n    = convert(FT, property_value(c.n, i, j))
+    ℓ    = convert(FT, property_value(c.ℓ, i, j))
+    m    = van_genuchten_m(n)
+    m⁻¹  = 1 / m
+    𝒮c   = clamp(convert(FT, 𝒮), zero(FT), one(FT))
     # K → K_sat as 𝒮 → 1.
-    inner = one(FT) - (one(FT) - 𝒮c^(1/m))^m
+    inner = one(FT) - (one(FT) - 𝒮c^m⁻¹)^m
     return Ksat * 𝒮c^ℓ * inner^2
 end
 

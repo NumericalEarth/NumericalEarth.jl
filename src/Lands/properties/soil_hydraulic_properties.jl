@@ -89,6 +89,9 @@ see [`layer_weights`](@ref)).
 Each output is a `Field{Center, Center, Nothing}` on the inputs' grid — a 2-D field
 the slab reads at `[i, j]`. `slab_depth` must be a scalar; `z_interfaces` are the
 dataset layer faces (e.g. `DataWrangling.z_interfaces(OpenLandMapSoilDB())`).
+
+`ptf` is rebuilt at the inputs' float type before the kernel launches, since devices
+reject float types they do not support (Metal has no `Float64`).
 """
 function soil_hydraulic_properties(sand, silt, clay, bulk_density;
                                    slab_depth, z_interfaces, ptf = ContinuousPedotransfer())
@@ -118,7 +121,7 @@ function soil_hydraulic_properties(sand, silt, clay, bulk_density;
     launch!(arch, grid, :xy, _soil_hydraulic_properties!,
             porosity, residual, α, n, K_saturated,
             sand, silt, clay, bulk_density,
-            w, convert(FT, W), Nz, ptf)
+            w, convert(FT, W), Nz, on_float_type(FT, ptf))
 
     return (porosity = porosity,
             residual_liquid_fraction = residual,

@@ -37,6 +37,31 @@ sand_soil  = (0.92, 0.05, 0.03, 1600.0)
     @test p32.K_saturated isa Float32
 end
 
+@testset "pedotransfer float type follows the grid" begin
+    # Devices reject unsupported float types outright (Metal has no Float64), so no
+    # Float64 may survive in the pedotransfer function handed to the kernel.
+    ptf32 = NumericalEarth.Lands.on_float_type(Float32, ContinuousPedotransfer(Float64))
+    @test ptf32 isa ContinuousPedotransfer{Float32}
+    @test all(c -> eltype(c) === Float32, values(ptf32.coefficients))
+    @test ptf32.pore_connectivity_exponent isa Float32
+
+    # Same regression either way, to Float32 precision.
+    p64 = soil_hydraulic_parameters(ContinuousPedotransfer(Float64), 0.4, 0.4, 0.2, 1400.0)
+    p32 = soil_hydraulic_parameters(ptf32, 0.4f0, 0.4f0, 0.2f0, 1400.0f0)
+    @test p32.ν ≈ p64.ν rtol=1e-5
+    @test p32.K_saturated ≈ p64.K_saturated rtol=1e-5
+
+    # A Float32 grid must produce Float32 property fields from the default (Float64) ptf.
+    grid = RectilinearGrid(Float32; size = (1, 1, 3), x = (0, 1), y = (0, 1),
+                           z = [-1.0, -0.6, -0.3, 0.0], topology = (Bounded, Bounded, Bounded))
+    texture = map(_ -> CenterField(grid), (1, 2, 3, 4))
+    set!(texture[1], 0.4); set!(texture[2], 0.4); set!(texture[3], 0.2); set!(texture[4], 1400)
+    props = soil_hydraulic_properties(texture...; slab_depth = 1.0,
+                                      z_interfaces = [-1.0, -0.6, -0.3, 0.0])
+    @test eltype(props.porosity) === Float32
+    @test eltype(props.K_saturated) === Float32
+end
+
 @testset "layer_weights" begin
     zi = [-1.0, -0.6, -0.3, 0.0]   # OpenLandMap faces: 60-100, 30-60, 0-30 cm
 
@@ -124,16 +149,16 @@ end
 end
 
 @testset "Field-backed van Genuchten closures" begin
-    # Scalar path unchanged: matches the closed-form van Genuchten pressure head.
-    r = VanGenuchtenRetention(α = 2.0, n = 1.4)
-    𝒮 = 0.5
-    m = 1 - 1/1.4
-    Π_ref = -(𝒮^(-1/m) - 1)^(1/1.4) / 2.0
-    @test NumericalEarth.Lands.pressure_head(r, 𝒮, 1, 1) ≈ Π_ref
-
     for arch in test_architectures
         grid = RectilinearGrid(arch; size = (2, 1), x = (0, 2), y = (0, 1),
                                topology = (Bounded, Bounded, Flat))
+
+        # Scalar path unchanged: matches the closed-form van Genuchten pressure head.
+        r = VanGenuchtenRetention(α = 2.0, n = 1.4)
+        𝒮 = 0.5
+        m = 1 - 1/1.4
+        Π_ref = -(𝒮^(-1/m) - 1)^(1/1.4) / 2.0
+        @test NumericalEarth.Lands.pressure_head(1, 1, grid, r, 𝒮) ≈ Π_ref
 
         # Two columns with different hydraulic parameters (Field-backed α, n, Kₛ, ν).
         makefield(v1, v2) = (f = Field{Center, Center, Nothing}(grid);

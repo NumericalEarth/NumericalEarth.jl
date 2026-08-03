@@ -21,12 +21,65 @@ van Genuchten–Mualem hydraulic parameters. Concrete subtypes implement
 with `sand`, `silt`, `clay` mass fractions (kg/kg), `bulk_density` in kg/m³, and
 outputs in model units (`α` in m⁻¹, `K_saturated` in m s⁻¹). [`ContinuousPedotransfer`](@ref)
 is the analytic default.
+
+Subtypes also implement `on_float_type(FT, ptf)`, which rebuilds `ptf` at float type
+`FT`. Devices reject float types they do not support (Metal has no `Float64`), so
+[`soil_hydraulic_properties`](@ref) converts to the grid's float type before launching.
 """
 abstract type PedotransferFunction end
 
 """
-    ContinuousPedotransfer(FT = Float64; organic_matter = 1, topsoil = true,
-                                         residual_liquid_fraction = 0.01, mualem_exponent = 0.5)
+    on_float_type(FT, ptf)
+
+Rebuild pedotransfer function `ptf` with every parameter at float type `FT`.
+"""
+function on_float_type end
+
+#####
+##### Regression basis.
+#####
+##### The four HYPRES regressions are linear in a shared set of predictors built
+##### from clay % `C`, silt % `S`, organic matter % `OM`, bulk density `D`
+##### (g/cm³), and the topsoil flag `T`. Each regression is then a coefficient
+##### tuple in this fixed order:
+#####
+#####   1, C, S, OM, D, T, D², C², OM², S², 1/C, 1/S, 1/OM, 1/D,
+#####   ln S, ln OM, ln D, OM·C, D·C, D·S, D·OM, T·C, T·S
+#####
+
+@inline hypres_predictors(C, S, OM, D, T) =
+    (one(C), C, S, OM, D, T, D^2, C^2, OM^2, S^2,
+     1/C, 1/S, 1/OM, 1/D, log(S), log(OM), log(D),
+     OM*C, D*C, D*S, D*OM, T*C, T*S)
+
+@inline apply_regression(coefficients, predictors) = sum(map(*, coefficients, predictors))
+
+# Wösten et al. (1999) HYPRES continuous regressions, Table 4. `porosity` predicts
+# θs directly; the other three predict transformed variables (α*, n*, Kₛ*).
+const HYPRES_COEFFICIENTS = (
+    porosity = (0.7919, 0.001691, 0, 0, -0.29619, 0, 0, 0, 0.0000821, -0.000001491,
+                0.02427, 0.01113, 0, 0, 0.01472, 0, 0,
+                -0.0000733, -0.000619, 0, -0.001183, 0, -0.0001664),
+
+    α = (-14.96, 0.03135, 0.0351, 0.646, 15.29, -0.192, -4.671, -0.000781, -0.00687, 0,
+         0, 0, 0.0449, 0, 0.0663, 0.1482, 0,
+         0, 0, -0.04546, -0.4852, 0.00673, 0),
+
+    n = (-25.23, -0.02195, 0.0074, -0.1940, 45.5, 0, -7.24, 0.0003658, 0.002885, 0,
+         0, -0.1524, -0.01958, -12.81, -0.2876, -0.0709, -44.6,
+         0, -0.02264, 0, 0.0896, 0.00718, 0),
+
+    K_saturated = (7.755, 0, 0.0352, 0, 0, 0.93, -0.967, -0.000484, 0, -0.000322,
+                   0, 0.001, -0.0748, 0, -0.643, 0, 0,
+                   0, -0.01398, 0, -0.1673, 0.02986, -0.03305))
+
+"""
+    ContinuousPedotransfer(FT = Oceananigans.defaults.FloatType;
+                           organic_matter = 1,
+                           topsoil = true,
+                           residual_liquid_fraction = 0.01,
+                           pore_connectivity_exponent = 0.5,
+                           coefficients = HYPRES_COEFFICIENTS)
 
 A continuous pedotransfer function: closed-form regressions mapping continuous soil
 texture and bulk density to continuous van Genuchten parameters — as opposed to a
@@ -37,71 +90,77 @@ matter %, bulk density (g/cm³) and a topsoil/subsoil flag.
 Organic matter and the topsoil flag are not carried by the 30 m texture datasets,
 so they are uniform defaults here: `organic_matter` (%, a mineral-soil value) and
 `topsoil` (`true`/`false`). The residual water content `residual_liquid_fraction`
-(`θʳ`) and Mualem exponent `mualem_exponent` (`ℓ`) are fixed constants — the Wösten
-`ℓ` regression is noisy and can go negative, so `ℓ = 0.5` is used by default.
+(`θʳ`) and pore-connectivity exponent `pore_connectivity_exponent` (`ℓ`, the Mualem
+exponent) are fixed constants — the Wösten `ℓ` regression is noisy and can go
+negative, so `ℓ = 0.5` is used by default.
+
+`coefficients` holds one tuple per predicted parameter, each ordered by the shared
+regression basis; supply your own to swap in a different calibration of the same
+functional form.
 
 Predicted `θs` is returned as the porosity `ν`. Units are converted to model units:
 `α` (cm⁻¹) → m⁻¹, `K_saturated` (cm day⁻¹) → m s⁻¹.
 """
-struct ContinuousPedotransfer{FT} <: PedotransferFunction
-    organic_matter           :: FT
-    topsoil                  :: FT
-    residual_liquid_fraction :: FT
-    mualem_exponent          :: FT
+struct ContinuousPedotransfer{FT, C} <: PedotransferFunction
+    organic_matter             :: FT
+    topsoil                    :: FT
+    residual_liquid_fraction   :: FT
+    pore_connectivity_exponent :: FT
+    coefficients               :: C
 end
 
 ContinuousPedotransfer(FT::Type = Oceananigans.defaults.FloatType;
-           organic_matter = 1,
-           topsoil = true,
-           residual_liquid_fraction = 0.01,
-           mualem_exponent = 0.5) =
+                       organic_matter = 1,
+                       topsoil = true,
+                       residual_liquid_fraction = 0.01,
+                       pore_connectivity_exponent = 0.5,
+                       coefficients = HYPRES_COEFFICIENTS) =
     ContinuousPedotransfer(convert(FT, organic_matter),
-               convert(FT, topsoil),
-               convert(FT, residual_liquid_fraction),
-               convert(FT, mualem_exponent))
+                           convert(FT, topsoil),
+                           convert(FT, residual_liquid_fraction),
+                           convert(FT, pore_connectivity_exponent),
+                           map(c -> convert.(FT, c), coefficients))
+
+on_float_type(FT, ptf::ContinuousPedotransfer) =
+    ContinuousPedotransfer(FT; organic_matter = ptf.organic_matter,
+                               topsoil = ptf.topsoil,
+                               residual_liquid_fraction = ptf.residual_liquid_fraction,
+                               pore_connectivity_exponent = ptf.pore_connectivity_exponent,
+                               coefficients = ptf.coefficients)
 
 Base.summary(ptf::ContinuousPedotransfer) =
     string("ContinuousPedotransfer(organic_matter=", prettysummary(ptf.organic_matter),
            ", topsoil=", prettysummary(ptf.topsoil),
            ", θʳ=", prettysummary(ptf.residual_liquid_fraction),
-           ", ℓ=", prettysummary(ptf.mualem_exponent), ")")
+           ", ℓ=", prettysummary(ptf.pore_connectivity_exponent), ")")
 
 @inline function soil_hydraulic_parameters(ptf::ContinuousPedotransfer, sand, silt, clay, bulk_density)
     FT = typeof(clay)
-    floor = convert(FT, 1//10)                 # 0.1 %, and 0.1 g/cm³ for ρᵇ
+    lower_bound = convert(FT, 1//10)           # 0.1 %, and 0.1 g/cm³ for ρᵇ
 
-    # kg/kg → %, kg/m³ → g/cm³; floor 1/x and ln x arguments away from zero.
-    C = max(100 * clay, floor)
-    S = max(100 * silt, floor)
-    OM = max(ptf.organic_matter, floor)
-    D = max(bulk_density / 1000, floor)
-    T = ptf.topsoil
+    # kg/kg → %, kg/m³ → g/cm³; bound 1/x and ln x arguments away from zero.
+    C  = max(100 * clay, lower_bound)
+    S  = max(100 * silt, lower_bound)
+    OM = max(convert(FT, ptf.organic_matter), lower_bound)
+    D  = max(bulk_density / 1000, lower_bound)
+    T  = convert(FT, ptf.topsoil)
 
-    θs = 0.7919 + 0.001691C - 0.29619D - 0.000001491*S^2 + 0.0000821*OM^2 +
-         0.02427/C + 0.01113/S + 0.01472*log(S) - 0.0000733*OM*C -
-         0.000619*D*C - 0.001183*D*OM - 0.0001664*T*S
+    predictors = hypres_predictors(C, S, OM, D, T)
 
-    αstar = -14.96 + 0.03135C + 0.0351S + 0.646OM + 15.29D - 0.192T - 4.671*D^2 -
-            0.000781*C^2 - 0.00687*OM^2 + 0.0449/OM + 0.0663*log(S) + 0.1482*log(OM) -
-            0.04546*D*S - 0.4852*D*OM + 0.00673*T*C
+    θs     = apply_regression(ptf.coefficients.porosity, predictors)
+    αstar  = apply_regression(ptf.coefficients.α, predictors)
+    nstar  = apply_regression(ptf.coefficients.n, predictors)
+    Ksstar = apply_regression(ptf.coefficients.K_saturated, predictors)
 
-    nstar = -25.23 - 0.02195C + 0.0074S - 0.1940OM + 45.5D - 7.24*D^2 + 0.0003658*C^2 +
-            0.002885*OM^2 - 12.81/D - 0.1524/S - 0.01958/OM - 0.2876*log(S) -
-            0.0709*log(OM) - 44.6*log(D) - 0.02264*D*C + 0.0896*D*OM + 0.00718*T*C
-
-    Ksstar = 7.755 + 0.0352S + 0.93T - 0.967*D^2 - 0.000484*C^2 - 0.000322*S^2 +
-             0.001/S - 0.0748/OM - 0.643*log(S) - 0.01398*D*C - 0.1673*D*OM +
-             0.02986*T*C - 0.03305*T*S
-
-    θʳ = ptf.residual_liquid_fraction
+    θʳ = convert(FT, ptf.residual_liquid_fraction)
     ν  = clamp(θs, θʳ + convert(FT, 1//100), one(FT) - eps(FT))
-    α  = 100 * exp(αstar)                          # cm⁻¹ → m⁻¹
+    α  = 100 * exp(αstar)                                    # cm⁻¹ → m⁻¹
     n  = 1 + exp(nstar)
-    Kₛ = exp(Ksstar) * (0.01 / 86400)              # cm day⁻¹ → m s⁻¹
+    Kₛ = exp(Ksstar) * convert(FT, 1//100) / convert(FT, 86400)   # cm day⁻¹ → m s⁻¹
 
-    return (ν = convert(FT, ν),
-            θʳ = convert(FT, θʳ),
-            α = convert(FT, α),
-            n = convert(FT, n),
-            K_saturated = convert(FT, Kₛ))
+    return (ν = ν,
+            θʳ = θʳ,
+            α = α,
+            n = n,
+            K_saturated = Kₛ)
 end
