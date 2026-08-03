@@ -187,6 +187,23 @@ end
             @test Array(interior(ρv_bc)) ≈ Array(interior(al.fluxes.y_momentum))
             @test maximum(abs, interior(ρu_bc)) > 0
         end
+
+        @testset "Cloud condensate is excluded from interface specific humidity on $A" begin
+            model = build_land_test_model(arch)
+            atmosphere = model.atmosphere.model
+
+            # At 280 K, qᵗ = 0.02 produces cloud liquid under the default warm-phase
+            # saturation adjustment. The surface solver must receive vapor only.
+            set!(atmosphere; T = 280, qᵗ = 0.02)
+            update_state!(model)
+
+            qᵛ = Array(interior(specific_humidity(atmosphere), :, :, 1))
+            qˡ = Array(interior(atmosphere.microphysical_fields.qˡ, :, :, 1))
+            q_interface = Array(interior(model.interfaces.exchanger.atmosphere.state.q, :, :, 1))
+
+            @test minimum(qˡ) > 0
+            @test q_interface ≈ qᵛ
+        end
     end
 end
 
