@@ -13,7 +13,7 @@
 function worldcover_tile_url(dataset, tile)
     year = version_year(dataset)
     version = version_string(dataset)
-    key = string("v", version[2:end], "/", year, "/map/",
+    key = string(version, "/", year, "/map/",
                  "ESA_WorldCover_10m_", year, "_", version, "_", tile, "_Map.tif")
     return string("/vsis3/esa-worldcover/", key)
 end

@@ -16,13 +16,25 @@ using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
 
 import Oceananigans
 
-#####
-##### Class legend (LCCS codes). Steps are NON-uniform (…90, 95, 100), so the
-##### codes are enumerated explicitly rather than assuming a regular stride.
-##### No-data is 0 (0 is not a valid class; valid classes start at 10).
-#####
+"""
+    ESA_WORLDCOVER_CLASS_NAMES
 
-# Verbose class name → LCCS code, in ascending order.
+The ESA WorldCover legend: verbose class name → LCCS class code, in ascending
+code order.
+
+| Code | Class                    | Code | Class                    |
+|:-----|:-------------------------|:-----|:-------------------------|
+| 10   | `tree_cover`             | 70   | `snow_and_ice`           |
+| 20   | `shrubland`              | 80   | `permanent_water_bodies` |
+| 30   | `grassland`              | 90   | `herbaceous_wetland`     |
+| 40   | `cropland`               | 95   | `mangroves`              |
+| 50   | `built_up`               | 100  | `moss_and_lichen`        |
+| 60   | `bare_sparse_vegetation` |      |                          |
+
+The step between codes is not uniform (…90, 95, 100), so the codes are
+enumerated rather than derived from a stride. `0` is the no-data code and is not
+a valid class.
+"""
 const ESA_WORLDCOVER_CLASS_NAMES = (tree_cover              = 10,
                                     shrubland               = 20,
                                     grassland               = 30,
@@ -37,24 +49,21 @@ const ESA_WORLDCOVER_CLASS_NAMES = (tree_cover              = 10,
 
 const ESA_WORLDCOVER_CLASS_CODES = values(ESA_WORLDCOVER_CLASS_NAMES)
 
-# Classes counted as vegetated when forming vegetation_fraction. Excluding
-# bare/sparse vegetation (60) and moss/lichen (100) is a modeling choice,
-# overridable via the vegetated_classes argument of vegetation_fraction.
-const ESA_WORLDCOVER_VEGETATED_CLASSES = (10, 20, 30, 40, 90, 95)
+"""
+    ESA_WORLDCOVER_VEGETATED_CLASSES
 
-#####
-##### Native / aggregated grid geometry
-#####
-##### WorldCover is a 10 m (1°/12000) EPSG:4326 raster. Aggregating class codes
-##### bilinearly is meaningless, so the ingest reduces the fine raster onto a
-##### coarser lat/lon grid by an INTEGER factor (keeping pixel boundaries
-##### aligned — no reprojection of the categorical field). That aggregated grid
-##### is the dataset's native grid for the DataWrangling machinery, and the
-##### derived continuous fraction fields ride the normal bilinear regrid onto a
-##### model grid. `aggregation_factor` sets the aggregated resolution; the
-##### default of 12 (~110 m) matches ~100 m regional runs so each aggregated
-##### cell still samples ~144 sub-pixels.
-#####
+The classes summed into the `:vegetation_fraction` variable: tree cover (10),
+shrubland (20), grassland (30), cropland (40), herbaceous wetland (90), and
+mangroves (95).
+
+Which classes count as vegetated is a modeling choice rather than a property of
+the product. Bare/sparse vegetation (60) and moss/lichen (100) are excluded here
+because a land model driven by this fraction treats them as bare ground. A
+different partition needs no new download: every class also has its own
+`:<class>_fraction` variable, so any vegetated set is the sum of the
+corresponding fields.
+"""
+const ESA_WORLDCOVER_VEGETATED_CLASSES = (10, 20, 30, 40, 90, 95)
 
 # 10 m ≈ 1°/12000. The integer pixel-per-degree count is the primitive: window
 # snapping multiplies coordinates by it (exact) rather than dividing by the
@@ -76,18 +85,22 @@ ESA WorldCover global 10 m land-cover classification.
 The two versions use different algorithms and ESA warns they are **not**
 comparable for change detection.
 
-`aggregation_factor` is the integer number of 10 m pixels averaged per side into
-one aggregated cell (`12` → ~110 m, the default; `120` → ~1 km, cheaper for a
-large region). Class codes are never averaged: the fine raster is reduced
+`aggregation_factor` is the integer number of 10 m pixels reduced per side into
+one aggregated cell (`12` → ~110 m, the default, so each aggregated cell still
+samples ~144 sub-pixels at ~100 m model resolution; `120` → ~1 km, cheaper for a
+large region). Class codes are never averaged: the fine raster is counted
 block-wise into a majority class field, a vegetation-fraction field, and one
-per-class area-fraction field.
+per-class area-fraction field. The integer factor keeps the aggregated cell
+boundaries on fine-pixel boundaries, so the categorical field is never
+reprojected.
 
-The `Map` band is a `UInt8` class code (see `ESA_WORLDCOVER_CLASS_NAMES`);
-no-data is `0`. Because the source is a 10 m categorical raster, it is read in
-regional windows only: build the `Metadatum` with a longitude/latitude
-[`BoundingBox`](@ref). Available variables are `:landcover_class` (majority),
-`:vegetation_fraction` (the mosaic weight `f_veg`), and a per-class
-`:<class>_fraction` for each name in `ESA_WORLDCOVER_CLASS_NAMES`
+The `Map` band is a `UInt8` class code (see [`ESA_WORLDCOVER_CLASS_NAMES`](@ref)
+for the legend); no-data is `0`. Because the source is a 10 m categorical
+raster, it is read in regional windows only: build the `Metadatum` with a
+longitude/latitude [`BoundingBox`](@ref). Available variables are
+`:landcover_class` (majority), `:vegetation_fraction` (the mosaic weight
+`f_veg`, summing the classes in [`ESA_WORLDCOVER_VEGETATED_CLASSES`](@ref)), and
+a per-class `:<class>_fraction` for each name in the legend
 (e.g. `:cropland_fraction`).
 
 Reading the anonymous Cloud-Optimized GeoTIFF tiles from the public
@@ -111,15 +124,25 @@ struct ESAWorldCover <: AbstractStaticDataset
     aggregation_factor :: Int
 end
 
-ESAWorldCover(; version = :v200, aggregation_factor = 12) =
-    ESAWorldCover(version, aggregation_factor)
+function ESAWorldCover(; version = :v200, aggregation_factor = 12)
+    version ∈ (:v100, :v200) ||
+        throw(ArgumentError("ESAWorldCover version must be :v100 or :v200, got $(repr(version))"))
+    aggregation_factor ≥ 1 ||
+        throw(ArgumentError("ESAWorldCover aggregation_factor must be a positive number of 10 m " *
+                            "pixels per aggregated cell side, got $aggregation_factor"))
+    return ESAWorldCover(version, aggregation_factor)
+end
 
-Base.show(io::IO, dataset::ESAWorldCover) =
-    print(io, "ESAWorldCover(version = :", dataset.version,
-          ", aggregation_factor = ", dataset.aggregation_factor, ")")
+Base.summary(dataset::ESAWorldCover) =
+    string("ESAWorldCover(version = :", dataset.version,
+           ", aggregation_factor = ", dataset.aggregation_factor, ")")
+
+Base.show(io::IO, dataset::ESAWorldCover) = print(io, summary(dataset))
 
 # Release-specific tokens used to build S3 keys and cache filenames.
-version_year(dataset::ESAWorldCover) = dataset.version === :v100 ? 2020 : 2021
+version_year(dataset::ESAWorldCover) = version_year(Val(dataset.version))
+version_year(::Val{:v100}) = 2020
+version_year(::Val{:v200}) = 2021
 version_string(dataset::ESAWorldCover) = String(dataset.version)
 
 # The aggregated cell size (degrees) for this dataset.
@@ -157,71 +180,78 @@ const ESAWorldCover_dataset_variable_names = build_worldcover_variable_names()
 const ESAWorldCoverMetadatum = Metadatum{<:ESAWorldCover}
 
 #####
-##### Pure aggregation helpers (the main, unit-testable deliverable).
-##### These operate on plain arrays of `UInt8` (or `Integer`) class codes with
-##### no IO. `codes` is a block of fine 10 m pixels covering one coarse cell.
-##### No-data (0) pixels are excluded from every count.
+##### Categorical aggregation. These operate on plain arrays of class codes with
+##### no IO: `codes` is a block of fine 10 m pixels covering one coarse cell.
+##### Every product is derived from one histogram over the legend, so no-data
+##### (`0`) and any code outside the legend are excluded from all of them.
 #####
 
 """
-    mode_aggregate(codes)
+    class_counts(codes)
 
-Return the majority (mode) class code over `codes`, ignoring no-data (`0`)
-pixels. Ties break toward the smaller code (deterministic). Returns `0` when
-every pixel is no-data.
+Return the number of pixels of each legend class in `codes`, as a `NamedTuple`
+keyed by the verbose class names. Codes outside the legend — including the
+no-data code `0` — are counted by no class, so the sum of the counts is the
+number of valid pixels.
+
+Every aggregated product is derived from these counts.
+"""
+class_counts(codes::AbstractArray) =
+    NamedTuple{keys(ESA_WORLDCOVER_CLASS_NAMES)}(map(c -> count(==(c), codes),
+                                                     ESA_WORLDCOVER_CLASS_CODES))
+
+"""
+    majority_class(codes)
+
+Return the class code covering the most of `codes`, ignoring no-data. Ties break
+toward the smaller code, and an all-no-data block returns `0`.
 
 This is the aggregation used for the categorical `:landcover_class` product —
 class codes are counted, never averaged.
 """
-function mode_aggregate(codes)
-    best_code = 0
-    best_count = 0
-    for c in ESA_WORLDCOVER_CLASS_CODES
-        n = count(==(c), codes)
-        if n > best_count
-            best_count = n
-            best_code = c
+majority_class(codes::AbstractArray) = majority_class(class_counts(codes))
+
+function majority_class(counts::NamedTuple)
+    largest = 0
+    class = 0
+    for (code, n) in zip(ESA_WORLDCOVER_CLASS_CODES, values(counts))
+        if n > largest
+            largest = n
+            class = code
         end
     end
-    return best_code
+    return class
 end
 
 """
-    class_fraction(codes, c)
-
-Return the area fraction of class `c` over `codes`, the count of pixels equal to
-`c` divided by the count of valid (non-`0`) pixels. Returns `0.0` when there are
-no valid pixels.
-"""
-function class_fraction(codes, c)
-    valid = count(!=(0), codes)
-    valid == 0 && return 0.0
-    return count(==(c), codes) / valid
-end
-
-"""
-    class_fractions(codes; class_names = ESA_WORLDCOVER_CLASS_NAMES)
+    class_fractions(codes)
 
 Return a `NamedTuple` of per-class area fractions (each in `[0, 1]`) over
-`codes`, keyed by the verbose class names. Over valid (non-`0`) pixels the
-fractions sum to 1 (they sum to 0 when every pixel is no-data).
+`codes`, keyed by the verbose class names. The fractions sum to 1 over valid
+pixels, and to 0 when every pixel is no-data.
 """
-function class_fractions(codes; class_names = ESA_WORLDCOVER_CLASS_NAMES)
-    fractions = map(c -> class_fraction(codes, c), values(class_names))
-    return NamedTuple{keys(class_names)}(fractions)
+class_fractions(codes::AbstractArray) = class_fractions(class_counts(codes))
+
+function class_fractions(counts::NamedTuple)
+    valid = sum(counts)
+    fractions = map(n -> valid == 0 ? 0.0 : n / valid, values(counts))
+    return NamedTuple{keys(ESA_WORLDCOVER_CLASS_NAMES)}(fractions)
 end
 
 """
     vegetation_fraction(codes; vegetated_classes = ESA_WORLDCOVER_VEGETATED_CLASSES)
 
-Return the fraction of valid (non-`0`) pixels in `codes` belonging to the
-`vegetated_classes` set — the subgrid `f_veg`. The vegetated-class set is a
-modeling choice and is passed as an argument so it can be overridden.
+Return the area fraction of `codes` belonging to `vegetated_classes` — the
+subgrid `f_veg`. See [`ESA_WORLDCOVER_VEGETATED_CLASSES`](@ref) for the default
+set and why it is a modeling choice.
 """
-function vegetation_fraction(codes; vegetated_classes = ESA_WORLDCOVER_VEGETATED_CLASSES)
-    valid = count(!=(0), codes)
+vegetation_fraction(codes::AbstractArray; kw...) = vegetation_fraction(class_counts(codes); kw...)
+
+function vegetation_fraction(counts::NamedTuple; vegetated_classes = ESA_WORLDCOVER_VEGETATED_CLASSES)
+    valid = sum(counts)
     valid == 0 && return 0.0
-    vegetated = count(c -> c in vegetated_classes, codes)
+    vegetated = sum(map((code, n) -> ifelse(code in vegetated_classes, n, 0),
+                        ESA_WORLDCOVER_CLASS_CODES, values(counts)))
     return vegetated / valid
 end
 
@@ -229,11 +259,10 @@ end
     aggregate_blockwise(codes, factor, reduction)
 
 Reduce the fine 2-D `codes` raster onto a coarse grid by an integer `factor`,
-applying `reduction` (e.g. `mode_aggregate` or a
-`block -> class_fraction(block, c)` closure) to each non-overlapping
-`factor × factor` block. Integer-factor aggregation keeps the coarse-cell
-boundaries aligned with fine-pixel boundaries — no reprojection of the
-categorical field.
+applying `reduction` (e.g. [`class_counts`](@ref) or [`majority_class`](@ref)) to
+each non-overlapping `factor × factor` block. Integer-factor aggregation keeps
+the coarse-cell boundaries aligned with fine-pixel boundaries — no reprojection
+of the categorical field.
 
 `size(codes)` must be divisible by `factor` in both dimensions.
 """
@@ -252,61 +281,28 @@ function aggregate_blockwise(codes::AbstractMatrix, factor::Integer, reduction)
     return coarse
 end
 
-# Legend index (1-based) of a class code, or 0 for no-data / unknown codes.
-@inline function class_index_of(code)
-    for (k, c) in enumerate(ESA_WORLDCOVER_CLASS_CODES)
-        c == code && return k
-    end
-    return 0
-end
-
-# Majority class, vegetation fraction, and all per-class fractions for one block,
-# counted in a single pass. Equivalent to `mode_aggregate` / `vegetation_fraction`
-# / `class_fraction` (verified in the tests) but ~13× cheaper across the ingest.
-function block_landcover(block, vegetated_classes = ESA_WORLDCOVER_VEGETATED_CLASSES)
-    counts = zeros(Int, length(ESA_WORLDCOVER_CLASS_CODES))
-    for pixel in block
-        k = class_index_of(pixel)
-        k == 0 || (counts[k] += 1)
-    end
-    valid = sum(counts)
-
-    best_index = 0
-    best_count = 0
-    for k in eachindex(counts)
-        counts[k] > best_count && (best_count = counts[k]; best_index = k)
-    end
-    landcover_class = best_index == 0 ? 0 : ESA_WORLDCOVER_CLASS_CODES[best_index]
-
-    fractions = ntuple(k -> valid == 0 ? 0.0 : counts[k] / valid, length(counts))
-
-    vegetated = 0
-    for k in eachindex(counts)
-        ESA_WORLDCOVER_CLASS_CODES[k] in vegetated_classes && (vegetated += counts[k])
-    end
-    vegetation = valid == 0 ? 0.0 : vegetated / valid
-
-    return (; landcover_class, vegetation, fractions)
-end
-
 """
     aggregate_landcover(codes, factor; vegetated_classes = ESA_WORLDCOVER_VEGETATED_CLASSES)
 
-Reduce the fine `codes` raster onto the coarse grid by an INTEGER `factor` in a
-single pass per block, returning `(; landcover_class, vegetation_fraction,
-class_fractions)`: the majority class code, the vegetated area fraction `f_veg`,
-and a `NamedTuple` of per-class area fractions keyed by the verbose class names.
-No-data (`0`) pixels are excluded from every count.
+Reduce the fine `codes` raster onto the coarse grid by an INTEGER `factor`,
+returning `(; landcover_class, vegetation_fraction, class_fractions)`: the
+majority class code, the vegetated area fraction `f_veg`, and a `NamedTuple` of
+per-class area fractions keyed by the verbose class names. Each block is counted
+once, with every product derived from the same [`class_counts`](@ref).
 """
 function aggregate_landcover(codes::AbstractMatrix, factor::Integer;
                              vegetated_classes = ESA_WORLDCOVER_VEGETATED_CLASSES)
-    coarse = aggregate_blockwise(codes, factor, block -> block_landcover(block, vegetated_classes))
-    landcover_class = map(block -> block.landcover_class, coarse)
-    vegetation      = map(block -> block.vegetation, coarse)
-    fraction_arrays = ntuple(k -> map(block -> block.fractions[k], coarse),
-                             length(ESA_WORLDCOVER_CLASS_CODES))
-    class_fractions = NamedTuple{keys(ESA_WORLDCOVER_CLASS_NAMES)}(fraction_arrays)
-    return (; landcover_class, vegetation_fraction = vegetation, class_fractions)
+    counts = aggregate_blockwise(codes, factor, class_counts)
+    fractions = map(class_fractions, counts)
+
+    landcover_class = map(majority_class, counts)
+    vegetation = map(c -> vegetation_fraction(c; vegetated_classes), counts)
+    fraction_arrays = map(name -> map(f -> f[name], fractions),
+                          keys(ESA_WORLDCOVER_CLASS_NAMES))
+    class_fraction_fields = NamedTuple{keys(ESA_WORLDCOVER_CLASS_NAMES)}(fraction_arrays)
+
+    return (; landcover_class, vegetation_fraction = vegetation,
+              class_fractions = class_fraction_fields)
 end
 
 """
@@ -435,7 +431,7 @@ end
 # fields and confined to the legend. Refining rather than coarsening needs no
 # special case — the conservative regrid then reduces to the containing native
 # cell, whose majority class the target inherits. Ties resolve to the lower code,
-# matching `mode_aggregate`, because the classes accumulate in ascending order.
+# matching `majority_class`, because the classes accumulate in ascending order.
 function majority_class_regrid!(target, metadata)
     grid = target.grid
     arch = child_architecture(architecture(grid))

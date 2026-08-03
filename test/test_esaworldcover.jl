@@ -1,7 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth: ESAWorldCover
-using NumericalEarth.DataWrangling.WorldCover: mode_aggregate, class_fraction,
+using NumericalEarth.DataWrangling.WorldCover: class_counts, majority_class,
                                                class_fractions, vegetation_fraction,
                                                aggregate_blockwise, aggregate_landcover,
                                                worldcover_window,
@@ -39,24 +39,41 @@ using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, n
     @test :cropland_fraction in ESA_WORLDCOVER_FRACTION_VARIABLE_NAMES
 end
 
-@testset "mode aggregation of a synthetic patch" begin
+@testset "class counts over a synthetic patch" begin
+    patch = UInt8[10 30 30
+                  30 30 40
+                  30 80 30]
+    counts = class_counts(patch)
+    @test keys(counts) == keys(ESA_WORLDCOVER_CLASS_NAMES)
+    @test sum(counts) == length(patch)
+    @test counts.grassland == 6
+    @test counts.tree_cover == 1
+
+    # No-data and any code outside the legend are counted by no class.
+    @test sum(class_counts(UInt8[0 0; 0 255])) == 0
+end
+
+@testset "majority class of a synthetic patch" begin
     # Majority class (30, grassland) over a 3×3 patch.
     patch = UInt8[10 30 30
                   30 30 40
                   30 80 30]
-    @test mode_aggregate(patch) == 30
+    @test majority_class(patch) == 30
 
     # No-data (0) is ignored, so the majority among valid pixels wins.
     with_nodata = UInt8[0 0 0
                         0 40 0
                         0 40 10]
-    @test mode_aggregate(with_nodata) == 40
+    @test majority_class(with_nodata) == 40
 
     # A patch that is entirely no-data returns 0 (no valid class).
-    @test mode_aggregate(fill(UInt8(0), 4, 4)) == 0
+    @test majority_class(fill(UInt8(0), 4, 4)) == 0
+
+    # Ties break toward the smaller code.
+    @test majority_class(UInt8[10 80]) == 10
 
     # Result is always a valid class code (never an invented intermediate).
-    @test mode_aggregate(patch) in ESA_WORLDCOVER_CLASS_CODES
+    @test majority_class(patch) in ESA_WORLDCOVER_CLASS_CODES
 end
 
 @testset "per-class fractions sum to 1 over valid pixels" begin
@@ -68,9 +85,9 @@ end
     @test fr.cropland   == 1 / 5
     @test sum(values(fr)) ≈ 1.0
 
-    # class_fraction agrees with the NamedTuple entry.
-    @test class_fraction(codes, 10) == fr.tree_cover
-    @test class_fraction(codes, 40) == fr.cropland
+    # The fractions are the counts normalized by the valid-pixel count.
+    counts = class_counts(codes)
+    @test values(fr) == values(counts) ./ sum(counts)
 
     # A uniform patch: one class is 1, the rest are 0.
     uniform = fill(UInt8(20), 5, 5)
@@ -84,12 +101,12 @@ end
     empty = fill(UInt8(0), 3, 3)
     @test all(values(class_fractions(empty)) .== 0)
     @test vegetation_fraction(empty) == 0.0
-    @test class_fraction(empty, 10) == 0.0
+    @test majority_class(empty) == 0
 
     # No-data pixels are excluded from the denominator.
     codes = UInt8[10 0 0
                   0 0 0]  # 1 valid tree pixel out of 6
-    @test class_fraction(codes, 10) == 1.0
+    @test class_fractions(codes).tree_cover == 1.0
 end
 
 @testset "vegetation fraction" begin
@@ -114,16 +131,16 @@ end
                   10 10 20 20
                   30 30 40 40
                   30 30 40 40]
-    coarse = aggregate_blockwise(codes, 2, mode_aggregate)
+    coarse = aggregate_blockwise(codes, 2, majority_class)
     @test size(coarse) == (2, 2)
     @test coarse == [10 20; 30 40]
 
     # Per-class fraction over blocks: block (1,1) is all tree cover.
-    tree = aggregate_blockwise(codes, 2, block -> class_fraction(block, 10))
+    tree = aggregate_blockwise(codes, 2, block -> class_fractions(block).tree_cover)
     @test tree == [1.0 0.0; 0.0 0.0]
 
     # Non-divisible sizes are rejected (no partial blocks / misalignment).
-    @test_throws ArgumentError aggregate_blockwise(codes, 3, mode_aggregate)
+    @test_throws ArgumentError aggregate_blockwise(codes, 3, majority_class)
 end
 
 @testset "ESA WorldCover dataset interface" begin
@@ -132,6 +149,11 @@ end
     @test dataset.aggregation_factor == 12
     @test ESAWorldCover(version = :v100).version == :v100
     @test ESAWorldCover(aggregation_factor = 120).aggregation_factor == 120
+
+    # Unpublished versions and degenerate factors are rejected at construction
+    # rather than at download time.
+    @test_throws ArgumentError ESAWorldCover(version = :v300)
+    @test_throws ArgumentError ESAWorldCover(aggregation_factor = 0)
 
     @test longitude_interfaces(dataset) == (-180, 180)
     @test latitude_interfaces(dataset)  == (-60, 84)
@@ -197,7 +219,7 @@ end
           metadata_filename(ESAWorldCover(aggregation_factor = 120), :vegetation_fraction, nothing, region_a)
 end
 
-@testset "single-pass aggregate_landcover matches the reference helpers" begin
+@testset "aggregate_landcover matches the per-block helpers" begin
     # 4×4 raster with a fully-no-data block (top-left), factor 2 → 2×2 coarse.
     codes = UInt8[ 0  0 40 80
                    0  0 40 80
@@ -206,13 +228,12 @@ end
     factor = 2
     aggregated = aggregate_landcover(codes, factor)
 
-    @test aggregated.landcover_class == aggregate_blockwise(codes, factor, mode_aggregate)
+    @test aggregated.landcover_class == aggregate_blockwise(codes, factor, majority_class)
     @test aggregated.vegetation_fraction ==
-          aggregate_blockwise(codes, factor, block -> vegetation_fraction(block))
+          aggregate_blockwise(codes, factor, vegetation_fraction)
     for name in keys(ESA_WORLDCOVER_CLASS_NAMES)
-        c = ESA_WORLDCOVER_CLASS_NAMES[name]
         @test aggregated.class_fractions[name] ==
-              aggregate_blockwise(codes, factor, block -> class_fraction(block, c))
+              aggregate_blockwise(codes, factor, block -> class_fractions(block)[name])
     end
 
     # Per-class fractions sum to 1 over blocks with valid pixels, 0 over the no-data block.
