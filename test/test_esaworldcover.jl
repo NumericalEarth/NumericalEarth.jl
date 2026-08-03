@@ -1,6 +1,6 @@
 include("runtests_setup.jl")
 
-using NumericalEarth: ESAWorldCover
+using NumericalEarth: ESAWorldCover, WorldCoverVersion, WorldCoverV100, WorldCoverV200
 using NumericalEarth.DataWrangling.WorldCover: class_counts, majority_class,
                                                class_fractions, vegetation_fraction,
                                                aggregate_blockwise, aggregate_landcover,
@@ -10,7 +10,8 @@ using NumericalEarth.DataWrangling.WorldCover: class_counts, majority_class,
                                                ESA_WORLDCOVER_CLASS_NAMES,
                                                ESA_WORLDCOVER_FRACTION_VARIABLE_NAMES,
                                                ESA_WORLDCOVER_VEGETATED_CLASSES,
-                                               ESA_WORLDCOVER_NATIVE_STEP
+                                               ESA_WORLDCOVER_NATIVE_STEP,
+                                               version_year, version_string
 using Oceananigans.Grids: λnodes, φnodes
 using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, native_grid,
                                     dataset_variable_name, validate_dataset_coverage,
@@ -145,15 +146,22 @@ end
 
 @testset "ESA WorldCover dataset interface" begin
     dataset = ESAWorldCover()
-    @test dataset.version == :v200
+    @test dataset.version == WorldCoverV200
     @test dataset.aggregation_factor == 12
-    @test ESAWorldCover(version = :v100).version == :v100
+    @test ESAWorldCover(version = WorldCoverV100).version == WorldCoverV100
     @test ESAWorldCover(aggregation_factor = 120).aggregation_factor == 120
 
-    # Unpublished versions and degenerate factors are rejected at construction
-    # rather than at download time.
-    @test_throws ArgumentError ESAWorldCover(version = :v300)
+    # Only a published release is representable, and a degenerate factor is
+    # rejected at construction rather than at download time.
+    @test_throws MethodError ESAWorldCover(version = :v300)
     @test_throws ArgumentError ESAWorldCover(aggregation_factor = 0)
+
+    # Every published release carries its own year and cache token, so a new
+    # release can't silently inherit another's S3 key.
+    releases = instances(WorldCoverVersion)
+    @test length(releases) == 2
+    @test allunique(version_year(ESAWorldCover(; version)) for version in releases)
+    @test allunique(version_string(ESAWorldCover(; version)) for version in releases)
 
     @test longitude_interfaces(dataset) == (-180, 180)
     @test latitude_interfaces(dataset)  == (-60, 84)

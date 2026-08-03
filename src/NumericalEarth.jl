@@ -123,7 +123,7 @@ export
     WOAClimatology, WOAAnnual, WOAMonthly,
     ASTERGEDv3,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
-    ESAWorldCover,
+    ESAWorldCover, WorldCoverVersion, WorldCoverV100, WorldCoverV200,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,

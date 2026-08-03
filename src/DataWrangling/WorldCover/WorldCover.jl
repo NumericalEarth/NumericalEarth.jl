@@ -1,6 +1,6 @@
 module WorldCover
 
-export ESAWorldCover
+export ESAWorldCover, WorldCoverVersion, WorldCoverV100, WorldCoverV200
 
 using Downloads: Downloads
 using KernelAbstractions: @kernel, @index
@@ -20,16 +20,7 @@ import Oceananigans
     ESA_WORLDCOVER_CLASS_NAMES
 
 The ESA WorldCover legend: verbose class name → LCCS class code, in ascending
-code order.
-
-| Code | Class                    | Code | Class                    |
-|:-----|:-------------------------|:-----|:-------------------------|
-| 10   | `tree_cover`             | 70   | `snow_and_ice`           |
-| 20   | `shrubland`              | 80   | `permanent_water_bodies` |
-| 30   | `grassland`              | 90   | `herbaceous_wetland`     |
-| 40   | `cropland`               | 95   | `mangroves`              |
-| 50   | `built_up`               | 100  | `moss_and_lichen`        |
-| 60   | `bare_sparse_vegetation` |      |                          |
+code order. [`ESAWorldCover`](@ref) tabulates the 11 classes.
 
 The step between codes is not uniform (…90, 95, 100), so the codes are
 enumerated rather than derived from a stride. `0` is the no-data code and is not
@@ -52,9 +43,7 @@ const ESA_WORLDCOVER_CLASS_CODES = values(ESA_WORLDCOVER_CLASS_NAMES)
 """
     ESA_WORLDCOVER_VEGETATED_CLASSES
 
-The classes summed into the `:vegetation_fraction` variable: tree cover (10),
-shrubland (20), grassland (30), cropland (40), herbaceous wetland (90), and
-mangroves (95).
+The classes summed into the `:vegetation_fraction` variable.
 
 Which classes count as vegetated is a modeling choice rather than a property of
 the product. Bare/sparse vegetation (60) and moss/lichen (100) are excluded here
@@ -77,13 +66,30 @@ function __init__()
 end
 
 """
-    ESAWorldCover(; version = :v200, aggregation_factor = 12)
+    WorldCoverVersion
+
+The published ESA WorldCover releases: `WorldCoverV100` (2020) and
+`WorldCoverV200` (2021).
+
+The two use different classification algorithms and ESA warns they are **not**
+comparable for change detection.
+"""
+@enum WorldCoverVersion WorldCoverV100 WorldCoverV200
+
+# The release year and the token appearing in S3 keys and cache filenames.
+function release_tokens(version::WorldCoverVersion)
+    version === WorldCoverV100 && return (year = 2020, tag = "v100")
+    version === WorldCoverV200 && return (year = 2021, tag = "v200")
+    throw(ArgumentError("unhandled ESA WorldCover release $version"))
+end
+
+"""
+    ESAWorldCover(; version = WorldCoverV200, aggregation_factor = 12)
 
 ESA WorldCover global 10 m land-cover classification.
 
-`version` selects the release: `:v200` (2021, the default) or `:v100` (2020).
-The two versions use different algorithms and ESA warns they are **not**
-comparable for change detection.
+`version` selects the release, either `WorldCoverV200` (2021, the default) or
+`WorldCoverV100` (2020); see [`WorldCoverVersion`](@ref).
 
 `aggregation_factor` is the integer number of 10 m pixels reduced per side into
 one aggregated cell (`12` → ~110 m, the default, so each aggregated cell still
@@ -94,14 +100,26 @@ per-class area-fraction field. The integer factor keeps the aggregated cell
 boundaries on fine-pixel boundaries, so the categorical field is never
 reprojected.
 
-The `Map` band is a `UInt8` class code (see [`ESA_WORLDCOVER_CLASS_NAMES`](@ref)
-for the legend); no-data is `0`. Because the source is a 10 m categorical
-raster, it is read in regional windows only: build the `Metadatum` with a
-longitude/latitude [`BoundingBox`](@ref). Available variables are
-`:landcover_class` (majority), `:vegetation_fraction` (the mosaic weight
-`f_veg`, summing the classes in [`ESA_WORLDCOVER_VEGETATED_CLASSES`](@ref)), and
-a per-class `:<class>_fraction` for each name in the legend
-(e.g. `:cropland_fraction`).
+The `Map` band is a `UInt8` class code and `0` is no-data. The legend
+([`ESA_WORLDCOVER_CLASS_NAMES`](@ref)) is
+
+| Code | Class                    | Code | Class                    |
+|:-----|:-------------------------|:-----|:-------------------------|
+| 10   | `tree_cover`             | 70   | `snow_and_ice`           |
+| 20   | `shrubland`              | 80   | `permanent_water_bodies` |
+| 30   | `grassland`              | 90   | `herbaceous_wetland`     |
+| 40   | `cropland`               | 95   | `mangroves`              |
+| 50   | `built_up`               | 100  | `moss_and_lichen`        |
+| 60   | `bare_sparse_vegetation` |      |                          |
+
+Because the source is a 10 m categorical raster, it is read in regional windows
+only: build the `Metadatum` with a longitude/latitude [`BoundingBox`](@ref).
+Available variables are `:landcover_class` (the majority class), a per-class
+`:<class>_fraction` for each name above (e.g. `:cropland_fraction`), and
+`:vegetation_fraction`, the mosaic weight `f_veg` summing tree cover,
+shrubland, grassland, cropland, herbaceous wetland, and mangroves — see
+[`ESA_WORLDCOVER_VEGETATED_CLASSES`](@ref) for why that set is a modeling
+choice.
 
 Reading the anonymous Cloud-Optimized GeoTIFF tiles from the public
 `s3://esa-worldcover/` bucket requires the `ArchGDAL` package to be loaded
@@ -113,20 +131,18 @@ using NumericalEarth
 ESAWorldCover()
 
 # output
-ESAWorldCover(version = :v200, aggregation_factor = 12)
+ESAWorldCover(version = WorldCoverV200, aggregation_factor = 12)
 ```
 
 Data source: https://esa-worldcover.org/en/data-access ;
 DOI v200 `10.5281/zenodo.7254221` (Zanaga et al. 2022), license CC-BY 4.0.
 """
 struct ESAWorldCover <: AbstractStaticDataset
-    version :: Symbol
+    version :: WorldCoverVersion
     aggregation_factor :: Int
 end
 
-function ESAWorldCover(; version = :v200, aggregation_factor = 12)
-    version ∈ (:v100, :v200) ||
-        throw(ArgumentError("ESAWorldCover version must be :v100 or :v200, got $(repr(version))"))
+function ESAWorldCover(; version = WorldCoverV200, aggregation_factor = 12)
     aggregation_factor ≥ 1 ||
         throw(ArgumentError("ESAWorldCover aggregation_factor must be a positive number of 10 m " *
                             "pixels per aggregated cell side, got $aggregation_factor"))
@@ -134,16 +150,13 @@ function ESAWorldCover(; version = :v200, aggregation_factor = 12)
 end
 
 Base.summary(dataset::ESAWorldCover) =
-    string("ESAWorldCover(version = :", dataset.version,
+    string("ESAWorldCover(version = ", dataset.version,
            ", aggregation_factor = ", dataset.aggregation_factor, ")")
 
 Base.show(io::IO, dataset::ESAWorldCover) = print(io, summary(dataset))
 
-# Release-specific tokens used to build S3 keys and cache filenames.
-version_year(dataset::ESAWorldCover) = version_year(Val(dataset.version))
-version_year(::Val{:v100}) = 2020
-version_year(::Val{:v200}) = 2021
-version_string(dataset::ESAWorldCover) = String(dataset.version)
+version_year(dataset::ESAWorldCover) = release_tokens(dataset.version).year
+version_string(dataset::ESAWorldCover) = release_tokens(dataset.version).tag
 
 # The aggregated cell size (degrees) for this dataset.
 aggregated_step(dataset::ESAWorldCover) = ESA_WORLDCOVER_NATIVE_STEP * dataset.aggregation_factor
