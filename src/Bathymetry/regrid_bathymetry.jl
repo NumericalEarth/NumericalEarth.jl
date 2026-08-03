@@ -64,7 +64,7 @@ function Base.:(==)(a::BathymetryRegridding, b::BathymetryRegridding)
            a.longitude            == b.longitude &&
            a.latitude             == b.latitude &&
            a.topology             == b.topology &&
-           a.float_type            == b.float_type &&
+           a.float_type           == b.float_type &&
            a.height_above_water   == b.height_above_water &&
            a.minimum_depth        == b.minimum_depth &&
            a.interpolation_passes == b.interpolation_passes &&
@@ -251,13 +251,11 @@ function _regrid_bathymetry(target_grid, metadata;
     filepath = metadata_path(metadata)
     dataset = Dataset(filepath, "r")
 
-    # No-data means sea level, so it becomes 0 here rather than reaching the interpolation
-    # passes as NaN, which would smear it into neighboring cells.
+    # No-data means sea level; zero it here before the interpolation passes smear NaN into neighbors.
     z_data = nan_to_zero.(nan_convert_missing.(FT, dataset[dataset_variable_name(metadata)][:, :],
                                                missing_value(metadata)))
     close(dataset)
 
-    # Datasets that store latitude north→south need flipping to match the native grid.
     if reversed_latitude_axis(metadata.dataset)
         z_data = reverse(z_data, dims=2)
     end
@@ -272,8 +270,7 @@ function _regrid_bathymetry(target_grid, metadata;
 
     native_z = Field{Center, Center, Nothing}(bathymetry_native_grid)
 
-    # Matching file coordinates to the native grid reads the window out of the file, whether
-    # the file is global (ETOPO) or already the window (GLO-30).
+    # The file may be global (ETOPO) while the native grid is the window; coordinate matching slices it.
     set_metadata_field!(native_z, z_data, metadata)
     fill_halo_regions!(native_z)
 
@@ -355,8 +352,8 @@ sub-grid it reports the surface *raised* by the mean object height:
 The `object_heights` (e.g. a canopy-height and a building-height field, all on
 `surface_elevation`'s grid) are combined by their per-cell maximum, with `NaN` counting as
 zero, so fields defined only over vegetation or only over built-up areas compose. A `NaN`
-in `surface_elevation` is likewise sea level. The lift removed here is the displacement
-the surface-layer roughness closure reintroduces as drag, so it is counted once. Returns
+in `surface_elevation` is likewise sea level. Removing the lift avoids counting it twice:
+the surface-layer roughness closure already represents it as displacement height. Returns
 a `Field{Center, Center, Nothing}`.
 
 ```jldoctest

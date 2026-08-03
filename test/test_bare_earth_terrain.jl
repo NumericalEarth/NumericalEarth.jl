@@ -8,7 +8,6 @@ using NumericalEarth.ETOPO
 # Tests that download a surface-elevation dataset live in
 # test_bare_earth_terrain_downloading.jl.
 
-# A 2-D land grid (Flat in the vertical), matching how terrain fields are built.
 land_grid(arch; size = (8, 8)) =
     LatitudeLongitudeGrid(arch; size, longitude = (6, 10), latitude = (44, 47),
                           topology = (Bounded, Bounded, Flat))

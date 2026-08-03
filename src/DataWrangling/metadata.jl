@@ -39,8 +39,7 @@ end
 axis_padding(padding) = (padding, padding)
 axis_padding(padding::Tuple) = padding
 
-# `cells` grid cells of margin on each axis (degrees), so target cells at the boundary
-# interpolate instead of extrapolating past the window edge.
+# Margin of `cells` grid cells per axis (degrees), so boundary cells interpolate rather than extrapolate.
 function grid_cell_padding(grid::Union{LatitudeLongitudeGrid, OrthogonalSphericalShellGrid}; cells = 2)
     Nx, Ny, _ = size(grid)
     λ₁, λ₂ = extrema(λnodes(grid, Face(), Face(), Center()))
@@ -48,7 +47,6 @@ function grid_cell_padding(grid::Union{LatitudeLongitudeGrid, OrthogonalSpherica
     return cells .* ((λ₂ - λ₁) / Nx, (φ₂ - φ₁) / Ny)
 end
 
-# The immersed boundary carries no coordinates of its own, so dispatch on what does.
 grid_cell_padding(grid::ImmersedBoundaryGrid; kw...) = grid_cell_padding(grid.underlying_grid; kw...)
 
 grid_cell_padding(grid::AbstractGrid; kw...) =
@@ -734,9 +732,9 @@ function default_download_directory end
     default_horizontal_padding(dataset, grid)
 
 Return the horizontal padding (degrees) added around a bounding box requested from
-`dataset`, giving interpolation stencils margin at the boundary. The one-argument form is
-what `dataset`'s own cells demand; the two-argument form widens it per axis to also cover
-`grid`'s boundary cells, returning a `(longitude, latitude)` pair.
+`dataset`, giving interpolation stencils margin at the boundary. The two-argument form
+widens it per axis to also cover `grid`'s boundary cells, returning a
+`(longitude, latitude)` pair.
 """
 function default_horizontal_padding end
 
@@ -755,9 +753,8 @@ default_region(dataset, grid) = nothing
 """
     dataset_bounding_box(dataset, grid; padding = default_horizontal_padding(dataset, grid))
 
-Return the window to read `dataset` in when regridding onto `grid`: `grid`'s bounding box
-padded for interpolation stencils and clamped to what `dataset` covers, so a grid reaching
-the edge of the coverage cannot request cells past the end of the file. A grid whose own
+Return the window to read `dataset` in when regridding onto `grid`: `grid`'s bounding box,
+padded for interpolation stencils and clamped to `dataset`'s coverage. A grid whose own
 extent leaves the coverage is rejected rather than silently truncated.
 """
 function dataset_bounding_box(dataset, grid;

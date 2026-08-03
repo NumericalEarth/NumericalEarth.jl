@@ -61,10 +61,10 @@ DataWrangling.reversed_vertical_axis(::CopernicusDEMDataset) = false
 DataWrangling.longitude_interfaces(::CopernicusDEMDataset) = (-180, 180)
 DataWrangling.latitude_interfaces(::CopernicusDEMDataset) = (-90, 90)
 
-# Two native cells of margin: 1 arc-second for GLO-30, 3 for GLO-90.
+# Two native cells of margin for interpolation stencils at the edge.
 DataWrangling.default_horizontal_padding(dataset::CopernicusDEMDataset) = 2 * 360 / size(dataset)[1]
 
-# The global 30/90 m product cannot be read whole, so window it to the grid.
+# The global 30/90 m product cannot be read whole.
 DataWrangling.default_region(dataset::CopernicusDEMDataset, grid) =
     DataWrangling.dataset_bounding_box(dataset, grid)
 

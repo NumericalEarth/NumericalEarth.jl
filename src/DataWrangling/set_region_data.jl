@@ -13,12 +13,10 @@ function minimum_node(grid, LH, hnodes)
     return @allowscalar minimum(hg)
 end
 
-# File index of the ascending coordinate cell holding `h`. `hc` labels either cell centers
-# (ETOPO) or cell corners (CGLS albedo), and `h` is a Float32 grid node promoted to Float64, so
-# it drifts off the label by a few Float32 eps. `tol` absorbs that drift, capped at a quarter of
-# the local cell so it can never reach the next coordinate — `eps(Float32) * |h|` alone exceeds
-# half a cell for arc-second axes near 180°. `searchsortedlast` then lands on the same cell under
-# either labeling convention, at any resolution and on stretched axes.
+# File index of the ascending coordinate cell holding `h`, whether `hc` labels cell centers
+# (ETOPO) or corners (CGLS albedo). `h` is a Float32 grid node promoted to Float64; `tol` absorbs
+# the promotion drift, capped at a quarter cell because `eps(Float32) * |h|` alone exceeds half
+# a cell on arc-second axes near 180°.
 function file_cell_index(h, hc)
     Nh = length(hc)
     Nh > 1 || return 1

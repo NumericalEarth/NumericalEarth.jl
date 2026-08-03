@@ -204,7 +204,7 @@ DataWrangling.default_download_directory(::ASTERGEDv3) = download_ASTERGED_cache
 # A couple of native 1 km cells of margin for interpolation stencils at the edge.
 DataWrangling.default_horizontal_padding(::ASTERGEDv3) = 0.02
 
-# Tiled 1 km/100 m coverage is read in windows, so window it to the grid.
+# The tiled coverage is read in regional windows only.
 DataWrangling.default_region(dataset::ASTERGEDv3, grid) =
     DataWrangling.dataset_bounding_box(dataset, grid)
 

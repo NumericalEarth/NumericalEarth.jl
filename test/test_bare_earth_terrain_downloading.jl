@@ -29,8 +29,6 @@ end
     for arch in test_architectures
         grid = land_grid(arch)
 
-        # ETOPO reads globally and GLO-30 is windowed to the grid, but that is entirely the
-        # region `regrid_topography` derives; the subtraction below is identical for both.
         object         = height_field(grid, 25.0)
         dsm_elevation  = regrid_topography(grid; dataset = ETOPO2022())
         bare_elevation = bare_earth_elevation(grid, object; dataset = ETOPO2022())
