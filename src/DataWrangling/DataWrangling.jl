@@ -272,6 +272,7 @@ include("metadata_field_time_series.jl")
 include("inpainting.jl")
 include("restoring.jl")
 include("earthdata.jl")
+include("figshare.jl")
 
 function metadata_time_step end
 function metadata_epoch end
@@ -370,6 +371,7 @@ include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
 include("CopernicusDEM/CopernicusDEM.jl")
 include("ASTERGED/ASTERGED.jl")
+include("GloBFP3D/GloBFP3D.jl")
 include("GHSL/GHSL.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
 
@@ -390,6 +392,7 @@ using .GEBCO
 using .IBCAO
 using .CopernicusDEM
 using .ASTERGED
+using .GloBFP3D
 using .GHSL
 using .CopernicusLandAlbedo
 

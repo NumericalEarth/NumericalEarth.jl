@@ -66,6 +66,7 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``\mathrm{sn}`` | `ˢⁿ` | snow | ``J^{\mathrm{sn}}`` (snowfall) |
 | ``S`` | `ˢ` | salinity | ``J^S`` (salinity flux) |
 | ``w`` | `ʷ` | freshwater | ``J^w`` (freshwater volume flux per unit area) |
+| ``h`` | `ʰ` | height (roughness element) | ``\sigma^h`` (height standard deviation) |
 | ``i`` | `ⁱ` | ice | ``\mathcal{L}^i`` (latent heat of sublimation) |
 | ``\ell`` | `ˡ` | liquid | ``\mathcal{L}^\ell`` (latent heat of vaporization) |
 | ``p`` | `ᵖ` | constant pressure | ``c^{pm}`` (moist isobaric heat capacity) |
@@ -237,12 +238,27 @@ parameters ``\ell^\mathrm{m}`` and ``d`` of a land surface.
 | ``h`` | `h` | element height | Mean height of the roughness elements (m) |
 | ``h^\mathrm{max}`` | `hᵐᵃˣ` | maximum element height | Tallest roughness element in the cell (m) |
 | ``\sigma^h`` | `σʰ` | height standard deviation | Spread of the roughness-element heights (m) |
+| ``\lambda^p h`` | `gross_building_height` | gross building height | Mean element height over *all* cells, built or not, ``\lambda^p h`` — the digital-surface lift (m) |
 | ``d`` | `d` | zero-plane displacement | Displacement height of the roughness sublayer (m) |
+| ``d^h`` | `dʰ` | displacement ratio | Packing displacement ``d/h`` of the obstacle-array fit, before the height-spread correction (–) |
 | ``\lambda^p`` | `λᵖ` | plan-area index | Ground-plan area covered by the elements, per unit ground area (–) |
 | ``\lambda^f`` | `λᶠ` | frontal-area index | Windward face area of the elements, per unit ground area (–) |
+| ``\lambda^{p\,\mathrm{min}}`` | `λᵖᵐⁱⁿ` | plan-area index floor | Below this ``\lambda^p`` a cell reduces to bare soil (–) |
+| ``\ell^\mathrm{soil}`` | `ℓˢᵒⁱˡ` | bare-soil roughness length | Momentum roughness length where the plan-area index vanishes (m) |
+| ``A`` | `A` | array constant | Packing constant of the Macdonald displacement fit (–) |
+| ``\beta`` | `β` | drag correction factor | Lumped drag correction of the Macdonald drag partition (–) |
+| ``X`` | `X` | displacement parameter | ``(\sigma^h + h)/h^\mathrm{max} \in [0, 1]``, argument of the Kanda displacement fit (–) |
+| ``Y`` | `Y` | height-spread parameter | ``\lambda^p \sigma^h / h``, argument of the Kanda roughness rescaling (–) |
 
 The superscripts on ``\lambda^p`` and ``\lambda^f`` distinguish them from the
 longitude ``\lambda``.
+
+Two symbols here are shared with other land parameters and mean something
+different. ``\beta`` is the drag correction of the Macdonald drag partition,
+not the moisture availability ``\beta`` of the hydrology and interface-humidity
+models; it keeps the symbol of its source parametrization. Likewise ``d`` is the
+zero-plane displacement, not the `surface_thickness` ``d`` of
+[`SkinHumidity`](@ref).
 
 ## Radiative fluxes
 
@@ -347,6 +363,7 @@ Most symbols can be entered in the Julia REPL and in editors with Julia support 
 | `ᵀ` | `\^T` | Superscript T |
 | `ˢ` | `\^s` | Superscript s |
 | `ʷ` | `\^w` | Superscript w |
+| `ʰ` | `\^h` | Superscript h |
 | `ⁱ` | `\^i` | Superscript i |
 | `ˡ` | `\^l` | Superscript l |
 | `ᵖ` | `\^p` | Superscript p |
