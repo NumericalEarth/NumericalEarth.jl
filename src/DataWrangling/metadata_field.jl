@@ -84,6 +84,26 @@ function restrict_longitude(bbox_interfaces, interfaces::NTuple{2,Any}, N)
 end
 
 """
+    native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
+
+Regular lat/lon raster of cell steps `Δλ`/`Δφ` (degrees) covering `region`, snapped to the global
+lattice anchored at `(-180, -90)` and padded by `pad` cells on each side. Returns
+`(; west, south, Δλ, Δφ, Nx, Ny)`.
+
+Datasets distributed as vector or tiled files lay out the raster they burn onto with this, so the
+result is a sub-window of the global lattice `Field(::Metadatum)` assumes.
+"""
+function native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
+    west, east   = region.longitude
+    south, north = region.latitude
+    i₀ = floor(Int, (west  + 180) / Δλ) - pad
+    j₀ = floor(Int, (south +  90) / Δφ) - pad
+    i₁ = ceil(Int,  (east  + 180) / Δλ) + pad
+    j₁ = ceil(Int,  (north +  90) / Δφ) + pad
+    return (; west = -180 + i₀ * Δλ, south = -90 + j₀ * Δφ, Δλ, Δφ, Nx = i₁ - i₀, Ny = j₁ - j₀)
+end
+
+"""
     native_grid(metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
 
 Return the native grid corresponding to `metadata` with `halo` size.
@@ -464,10 +484,12 @@ end
 # Mass fractions (convert to kg/kg)
 @inline convert_units(χ::FT, ::DecigramPerKilogram) where FT = χ / convert(FT, 1e4)
 @inline convert_units(χ::FT, ::GramPerKilogram) where FT = χ / convert(FT, 1e3)
+@inline convert_units(χ::FT, ::WeightPercent) where FT = χ / convert(FT, 100)
 
 # Densities (convert to kg/m^3)
 @inline convert_units(ρ::FT, ::HectogramPerCubicMeter) where FT = ρ / convert(FT, 10)
 @inline convert_units(ρ::FT, ::CentigramPerCubicCentimeter) where FT = ρ * convert(FT, 10)
+@inline convert_units(ρ::FT, ::GramPerCubicCentimeter) where FT = ρ * convert(FT, 1000)
 
 #####
 ##### Masking data for inpainting
