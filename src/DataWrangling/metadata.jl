@@ -34,6 +34,40 @@ BoundingBox(grid::AbstractGrid; padding = 0) =
     BoundingBox(longitude = extrema(λnodes(grid, Face(), Center(), Center())) .+ (-padding, padding),
                 latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padding, padding))
 
+"""
+    bounding_box_intersects(bounds, bbox::BoundingBox)
+
+Whether `bounds`, anything with `west`, `south`, `east`, and `north` fields, overlaps `bbox`.
+Used to select the files of a tiled dataset that cover a region.
+
+Both boxes must label longitudes in the same convention, with `west < east`; a box folded across
+the antimeridian is not supported.
+"""
+function bounding_box_intersects(bounds, bbox::BoundingBox)
+    λ₁, λ₂ = bbox.longitude
+    φ₁, φ₂ = bbox.latitude
+    return !(bounds.east < λ₁ || bounds.west > λ₂ || bounds.north < φ₁ || bounds.south > φ₂)
+end
+
+"""
+    bounding_box_suffix(region)
+
+Filename suffix identifying the window a regionally-downloaded dataset was cached for:
+`"global"` for `nothing`, and `"lon_<west>_<east>_lat_<south>_<north>"` for a `BoundingBox`,
+so windows of one dataset never collide on disk. Datasets whose products follow a different
+filename convention define their own suffix instead.
+"""
+bounding_box_suffix(::Nothing) = "global"
+
+function bounding_box_suffix(region::BoundingBox)
+    λ = region.longitude
+    φ = region.latitude
+    return string("lon_", bounds_string(λ), "_lat_", bounds_string(φ))
+end
+
+bounds_string(::Nothing) = "nothing"
+bounds_string(bounds) = string(bounds[1], "_", bounds[2])
+
 #####
 ##### Column region and interpolation types
 #####
@@ -786,9 +820,11 @@ struct MicromolePerLiter end
 struct NanomolePerKilogram end
 struct NanomolePerLiter end
 struct CentigramPerCubicCentimeter end
+struct GramPerCubicCentimeter end
 struct HectogramPerCubicMeter end
 struct GramPerKilogram end
 struct DecigramPerKilogram end
+struct WeightPercent end            # mass fraction in % → kg/kg (soil texture)
 
 struct InverseSign end
 struct InverseGravity end

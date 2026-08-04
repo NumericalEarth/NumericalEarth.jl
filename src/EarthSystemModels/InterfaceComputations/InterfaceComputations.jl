@@ -15,6 +15,7 @@ export
     MomentumRoughnessLength,
     ScalarRoughnessLength,
     LandRoughnessLength,
+    LandZeroPlaneDisplacement,
     CoefficientBasedFluxes,
     SimilarityScales,
     PolynomialNeutralDragCoefficient,

@@ -496,12 +496,13 @@ default_al_specific_humidity(::Nothing) = nothing
 default_al_specific_humidity(land) =
     BulkHumidity(AtmosphericThermodynamics.Liquid())
 
-# Default atmosphere--land flux formulation. Aerodynamic roughness lengths are a
-# property of the flux closure, not the land model: the defaults below are
-# uniform constants (0.1 m momentum, 0.01 m scalar). Override per-domain by
-# passing `atmosphere_land_fluxes = SimilarityTheoryFluxes(...)` with explicit
-# roughness lengths (constants, `Field`s, or roughness-length models such as
-# `LandRoughnessLength`) to `ComponentInterfaces` / `AtmosphereLandModel`.
+# Default atmosphere--land flux formulation. Aerodynamic roughness lengths and the
+# zero-plane displacement are properties of the flux closure, not the land model:
+# the defaults below are uniform constants (0.1 m momentum, 0.01 m scalar, no
+# displacement). Override per-domain by passing `atmosphere_land_fluxes =
+# SimilarityTheoryFluxes(...)` with explicit roughness lengths and displacement
+# (constants, or per-cell models such as `LandRoughnessLength` /
+# `LandZeroPlaneDisplacement`) to `ComponentInterfaces` / `AtmosphereLandModel`.
 default_atmosphere_land_fluxes(::Nothing, FT; kw...) = nothing
 
 function default_atmosphere_land_fluxes(land, FT; solver_stop_criteria = nothing)
