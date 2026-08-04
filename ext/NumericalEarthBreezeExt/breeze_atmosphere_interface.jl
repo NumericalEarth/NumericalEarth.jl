@@ -1,6 +1,7 @@
 using Oceananigans.Grids: Center
 using Breeze.AtmosphereModels: thermodynamic_density, dynamics_density, surface_pressure
 using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
+using GPUArraysCore: @allowscalar
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using NumericalEarth.EarthSystemModels: component_model
 using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
@@ -26,38 +27,41 @@ NumericalEarth.EarthSystemModels.thermodynamics_parameters(atmos::BreezeAtmosphe
 ##### Surface layer and boundary layer height
 #####
 
-# The MOST reference height is the lowest cell-center elevation, Δz(i,j,1)/2,
-# filled per column on-device.
-@kernel function _fill_surface_layer_height!(zref, atmos_grid)
+# The MOST reference height is the lowest cell-center elevation above ground, ½·Δz(i,j,1).
+# On a terrain-following grid this varies column-to-column, so fill it on-device; on any
+# other grid it is horizontally uniform. Built once and cached in `interfaces.properties`.
+@kernel function _fill_surface_layer_height!(z₁, atmos_grid)
     i, j = @index(Global, NTuple)
-    @inbounds zref[i, j, 1] = Oceananigans.zspacing(i, j, 1, atmos_grid, Center(), Center(), Center()) / 2
+    @inbounds z₁[i, j, 1] = Oceananigans.zspacing(i, j, 1, atmos_grid, Center(), Center(), Center()) / 2
 end
 
 function NumericalEarth.EarthSystemModels.surface_layer_height(atmosphere::BreezeAtmosphere, exchange_grid)
-    zref = Oceananigans.Field{Center, Center, Nothing}(exchange_grid)
-    arch = architecture(exchange_grid)
-    launch!(arch, exchange_grid, interface_kernel_parameters(exchange_grid),
-            _fill_surface_layer_height!, zref, atmosphere.grid)
-    # Per-column field only where terrain makes it vary; otherwise one uniform value,
-    # read off the device via a bulk host copy (no scalar GPU indexing).
-    if atmosphere.grid isa TerrainFollowingGrid
-        return zref
+    grid = atmosphere.grid
+    if grid isa TerrainFollowingGrid
+        # Terrain makes the AGL first-cell height vary per column → a 2-D field.
+        z₁ = Oceananigans.Field{Center, Center, Nothing}(exchange_grid)
+        launch!(architecture(exchange_grid), exchange_grid, interface_kernel_parameters(exchange_grid),
+                _fill_surface_layer_height!, z₁, grid)
+        return z₁
     else
-        return first(Array(Oceananigans.interior(zref)))
+        # Horizontally uniform → one scalar. Read once here (cached, not per step), so the
+        # single host index into a possibly-stretched device Δz array is fine under @allowscalar.
+        return @allowscalar Oceananigans.zspacing(1, 1, 1, grid, Center(), Center(), Center()) / 2
     end
 end
 
 NumericalEarth.EarthSystemModels.surface_layer_height(atmos::BreezeAtmosphereSim, exchange_grid) =
     NumericalEarth.EarthSystemModels.surface_layer_height(component_model(atmos), exchange_grid)
 
-# The boundary-layer height is diagnosed per column by the turbulence closure
-# at each step when it provides one. Fall back to a 600 m constant otherwise.
-diagnosed_boundary_layer_height(closure_fields) = 600
-diagnosed_boundary_layer_height(closure_fields::NamedTuple{names}) where names =
-    :zi in names ? closure_fields.zi : 600
+# Fallback boundary-layer height for the surface-flux convective gustiness, used when the
+# atmosphere's turbulence closure diagnoses no z_i (e.g. closure = nothing).
+const default_boundary_layer_height = 600 # m
 
+# The boundary-layer height is the per-column z_i diagnosed by the turbulence closure when
+# it provides one (e.g. Breeze's ScaleAdaptiveTKE writes it into its `zi` closure field).
 NumericalEarth.EarthSystemModels.boundary_layer_height(atmosphere::BreezeAtmosphere) =
-    diagnosed_boundary_layer_height(atmosphere.closure_fields)
+    hasproperty(atmosphere.closure_fields, :zi) ? atmosphere.closure_fields.zi :
+                                                  default_boundary_layer_height
 
 NumericalEarth.EarthSystemModels.boundary_layer_height(atmos::BreezeAtmosphereSim) =
     NumericalEarth.EarthSystemModels.boundary_layer_height(component_model(atmos))
