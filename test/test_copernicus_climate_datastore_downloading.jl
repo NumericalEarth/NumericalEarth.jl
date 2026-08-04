@@ -1,6 +1,7 @@
 include("runtests_setup.jl")
 include("download_utils.jl")
 
+using CopernicusClimateDataStore
 using Dates
 using NumericalEarth.DataWrangling: metadata_path, BoundingBox
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlyLand, ERA5YearlySingleLevel, ERA5MonthlySingleLevel
