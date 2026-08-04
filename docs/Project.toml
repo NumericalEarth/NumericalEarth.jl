@@ -34,7 +34,7 @@ Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 NumericalEarth = {path = ".."}
 
 [compat]
-Breeze = "0.7.3"
+Breeze = "0.8"
 CUDA = "6"
 CairoMakie = "0.15"
 ConservativeRegridding = "0.2"
