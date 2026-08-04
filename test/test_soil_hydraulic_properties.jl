@@ -153,19 +153,25 @@ end
 
         Ks_harmonic   = W / sum(w ./ Ks_layers)
         Ks_arithmetic = sum(w .* Ks_layers) / W
-        α_geometric   = exp(sum(w .* log.(α_layers)) / W)
         n_geometric   = 1 + exp(sum(w .* log.(n_layers .- 1)) / W)
         n_arithmetic  = sum(w .* n_layers) / W
+        # Each layer's α weighted by the resistance it contributes, with the column's
+        # own n as the exponent.
+        α_resistance  = (sum(w .* α_layers .^ n_geometric ./ Ks_layers) /
+                         sum(w ./ Ks_layers))^(1/n_geometric)
+        α_geometric   = exp(sum(w .* log.(α_layers)) / W)
 
         # Kₛ upscales harmonically (clay-limited), strictly below the arithmetic mean.
         @test Ks[2] ≈ Ks_harmonic
         @test Ks_harmonic < Ks_arithmetic
-        # α upscales geometrically.
-        @test α[2] ≈ α_geometric
         # n upscales geometrically in n - 1: contrasting layers flatten the column's
         # retention curve, so the effective n falls toward the smaller value.
         @test n[2] ≈ n_geometric
         @test n_geometric < n_arithmetic
+        # α is resistance-weighted. The thin conductive layer carries little
+        # resistance, so it moves α far less than a thickness-weighted mean would.
+        @test α[2] ≈ α_resistance
+        @test α_resistance < α_geometric
     end
 end
 

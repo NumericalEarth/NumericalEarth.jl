@@ -4,15 +4,27 @@
 ##### single-layer `VariablySaturatedHydrology` slab.
 #####
 ##### The PTF is applied per depth layer, then each parameter is upscaled over the
-##### part of the soil column inside `slab_depth` with its physically correct law:
+##### part of the soil column inside `slab_depth` with its own law. Layers in series
+##### add resistance, so writing 1/K(ψ) = Σ (wₖ/W)/Kₖ(ψ) and expanding about
+##### saturation fixes what each law has to be — K/Kₛ depends on α only through αψ,
+##### so the expansion is in (αψ)^n:
 #####   * ν, θʳ     — thickness-weighted arithmetic mean (storage adds in volume)
-#####   * Kₛ        — thickness-weighted harmonic mean (layers in series; a clay
-#####                 horizon throttles vertical drainage)
-#####   * α         — thickness-weighted geometric mean (α spans orders of magnitude)
+#####   * Kₛ        — thickness-weighted harmonic mean, the ψ → 0 limit of the above;
+#####                 a clay horizon throttles vertical drainage
+#####   * α         — resistance-weighted power mean with exponent n, matching the
+#####                 first term of the expansion. Each layer's α is weighted by the
+#####                 resistance wₖ/Kₛₖ it contributes, so the layers that throttle
+#####                 the column set how fast its K collapses. A thickness-weighted
+#####                 geometric mean instead lets a thin coarse layer inflate α.
 #####   * n         — geometric mean of λ = n - 1, the pore-size index the regression
 #####                 is fitted in. Mixing contrasting layers flattens the column's
 #####                 retention curve, so the effective n must fall toward the
 #####                 smaller value; averaging n itself instead biases it high.
+#####
+##### These reproduce the column's *downward* flux, which is the only thing the slab
+##### asks K for. Upward evaporative flux through a layered column cannot be captured
+##### by any single parameter set — the limiting layer moves as the column dries —
+##### and needs the composite curves themselves, not effective parameters.
 #####
 
 """
@@ -79,7 +91,7 @@ layer_depths(z_interfaces) =
     FT = eltype(porosity)
 
     Σν = zero(FT); Σθʳ = zero(FT)
-    Σln_α = zero(FT); Σln_λ = zero(FT); Σw_over_K = zero(FT)
+    Σln_λ = zero(FT); Σw_over_K = zero(FT)
 
     @inbounds for k in 1:Nz
         wk = w[k]
@@ -91,17 +103,32 @@ layer_depths(z_interfaces) =
         inside = wk > 0
         Σν        += ifelse(inside, wk * p.porosity, zero(FT))
         Σθʳ       += ifelse(inside, wk * p.residual_liquid_fraction, zero(FT))
-        Σln_α     += ifelse(inside, wk * log(p.inverse_air_entry_head), zero(FT))
         Σln_λ     += ifelse(inside, wk * log(p.pore_size_uniformity - 1), zero(FT))
         Σw_over_K += ifelse(inside, wk / p.K_saturated, zero(FT))
     end
 
+    νᶜ  = Σν / W
+    θʳᶜ = Σθʳ / W
+    nᶜ  = 1 + exp(Σln_λ / W)          # geometric in λ = n - 1
+    Kᶜ  = W / Σw_over_K               # harmonic
+
+    # α needs the column's n as the exponent, so it takes a second pass.
+    Σα_over_K = zero(FT)
+    @inbounds for k in 1:Nz
+        wk = w[k]
+        p  = soil_hydraulic_parameters(ptf, sand[i, j, k], silt[i, j, k],
+                                       clay[i, j, k], bulk_density[i, j, k], depths[k])
+        Σα_over_K += ifelse(wk > 0,
+                            wk * p.inverse_air_entry_head^nᶜ / p.K_saturated,
+                            zero(FT))
+    end
+
     @inbounds begin
-        porosity[i, j, 1]    = Σν / W
-        residual[i, j, 1]    = Σθʳ / W
-        α[i, j, 1]           = exp(Σln_α / W)         # geometric
-        n[i, j, 1]           = 1 + exp(Σln_λ / W)     # geometric in λ = n - 1
-        K_saturated[i, j, 1] = W / Σw_over_K          # harmonic
+        porosity[i, j, 1]    = νᶜ
+        residual[i, j, 1]    = θʳᶜ
+        n[i, j, 1]           = nᶜ
+        K_saturated[i, j, 1] = Kᶜ
+        α[i, j, 1]           = (Σα_over_K / Σw_over_K)^(1/nᶜ)   # resistance-weighted
     end
 end
 
@@ -118,8 +145,10 @@ whose keys match the keyword arguments of [`VariablySaturatedHydrology`](@ref),
 [`VanGenuchtenRetention`](@ref), and [`VanGenuchtenConductivity`](@ref). The
 pedotransfer function `ptf` is applied per depth layer — reading topsoil or subsoil
 off each layer's depth — then each parameter is upscaled over `slab_depth` using its
-own law: arithmetic `ν`/`θʳ`, harmonic `K_saturated`, geometric `α`, and geometric in
-`n - 1` for `pore_size_uniformity` (see [`layer_weights`](@ref)).
+own law: arithmetic `ν`/`θʳ`, harmonic `K_saturated`, a resistance-weighted power mean
+for `α`, and geometric in `n - 1` for `pore_size_uniformity` (see
+[`layer_weights`](@ref)). Together these reproduce the layered column's downward flux;
+upward evaporative flux is not recoverable from any single set of parameters.
 
 The parameters describe the soil inside `[-slab_depth, 0]` and nothing below it, so
 the slab's storage capacity and pressure head refer to the volume it actually holds.
