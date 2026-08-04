@@ -1,0 +1,17 @@
+include("runtests_setup.jl")
+
+using NumericalEarth.DataWrangling: BoundingBox, cmr_granules_url
+
+# The granule query itself needs network access; the URL it is built from does not.
+@testset "NASA CMR granule-search URL" begin
+    region = BoundingBox(longitude = (-112.8, -111.2), latitude = (35.2, 36.8))
+    url = cmr_granules_url("AG100", "003", region)
+
+    @test startswith(url, "https://cmr.earthdata.nasa.gov/search/granules.json?")
+    @test occursin("short_name=AG100", url)
+    @test occursin("version=003", url)
+    # Bounding box is encoded W,S,E,N.
+    @test occursin("bounding_box=-112.8,35.2,-111.2,36.8", url)
+    @test occursin("page_num=1", url)
+    @test occursin("page_num=3", cmr_granules_url("AG1KM", "003", region; page_num = 3))
+end
