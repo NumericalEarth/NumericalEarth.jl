@@ -102,6 +102,9 @@ function compute_cesm_eddy_coefficients!(coefficients::CESMEddyCoefficients, oce
             coefficients.skew_coefficient, coefficients.symmetric_coefficient, grid,
             ocean_model.buoyancy, fields(ocean_model), coefficients.parameters)
 
+    zero_fold_rows!(coefficients.skew_coefficient, grid)
+    zero_fold_rows!(coefficients.symmetric_coefficient, grid)
+
     # Without this the halos stay zero, so the two cells sharing a face across the periodic seam or the
     # tripolar fold evaluate the isopycnal flux with different κ. The face flux is then not antisymmetric
     # between them, the divergence stops telescoping, and the closure leaks salt at a steady rate.

@@ -102,24 +102,6 @@ build_tracer_top_bc(Jᶜ, Jʷ, content, additional, name) = FluxBoundaryConditio
 #####
 
 
-# Oceananigans builds the materialized ∂x b / ∂y b as anonymous face fields, whose tripolar
-# north-fold halo image is the scalar one (sign +1). Both are horizontal vector components and
-# flip sign across the fold like `u` and `v`; with the scalar image, the stored gradient halos
-# carry the wrong sign on the fold rows, and any closure that weights them with a horizontally
-# varying coefficient (e.g. a `Field`-valued κ_skew) leaks tracer there at a steady rate.
-# Rebuilding the two fields under the velocity names attaches the signed zipper; on non-tripolar
-# grids the regularization reduces to the default. Remove once fixed upstream in Oceananigans.
-# TODO: upstream this into `BuoyancyForce` (see `oceananigans_fold_gradient_sign.patch`).
-function fold_safe_buoyancy_gradients(buoyancy, grid)
-    isnothing(buoyancy.gradients) && return buoyancy
-    u_boundary_conditions = regularize_field_boundary_conditions(FieldBoundaryConditions(), grid, :u)
-    v_boundary_conditions = regularize_field_boundary_conditions(FieldBoundaryConditions(), grid, :v)
-    gradients = (; ∂xᵣ_b = XFaceField(grid, boundary_conditions=u_boundary_conditions),
-                   ∂yᵣ_b = YFaceField(grid, boundary_conditions=v_boundary_conditions),
-                   ∂z_b = buoyancy.gradients.∂z_b)
-    return Oceananigans.BuoyancyFormulations.BuoyancyForce(buoyancy.formulation, buoyancy.gravity_unit_vector, gradients)
-end
-
 default_free_surface(grid) = SplitExplicitFreeSurface(grid; cfl=0.7)
 default_tracer_advection() = WENO(order=5)
 
@@ -492,7 +474,6 @@ function hydrostatic_ocean_simulation(grid;
     boundary_conditions = merge(default_boundary_conditions, merged_boundary_conditions)
     buoyancy = SeawaterBuoyancy(; gravitational_acceleration, equation_of_state)
     buoyancy = Oceananigans.BuoyancyFormulations.BuoyancyForce(grid, buoyancy; materialize_gradients = materialize_buoyancy_gradients)
-    buoyancy = fold_safe_buoyancy_gradients(buoyancy, grid)
    
     if tracer_advection isa NamedTuple
         tracer_advection = with_tracers(tracers, tracer_advection, default_tracer_advection())

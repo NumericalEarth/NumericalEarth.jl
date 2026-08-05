@@ -5,7 +5,7 @@ using Oceananigans.BuoyancyFormulations: ∂z_b
 using Oceananigans.Grids: Center, Face, inactive_node, φnode
 using Oceananigans.Operators: Δzᶜᶜᶠ, ℑxᶜᵃᵃ, ℑyᵃᶜᵃ
 using Oceananigans.TurbulenceClosures: FluxTapering, ϵSxᶠᶜᶠ, ϵSyᶜᶠᶠ
-using Oceananigans.Utils: launch!
+using Oceananigans.Utils: KernelParameters, launch!
 
 # NEMO's `ldf_eiv` / `ldf_tra` with `nn_aei_ijk_t = nn_aht_ijk_t = 21` (Treguier et al. 1997), the
 # setting CMCC's ORCA1 runs for OMIP. The coefficient is the internal Rossby radius squared times the
@@ -108,6 +108,31 @@ end
     end
 end
 
+
+# With distinct, nonzero κ_skew ≠ κ_symmetric fields, the isopycnal fluxes evaluated from the
+# two sides of the tripolar fold differ (the closure's (κ_symmetric − κ_skew) cross-term meets
+# fold halos that are not exact images) and the closure leaks tracer at a steady rate —
+# ~2e-6 of the total salt per year in an idealized closed-basin test, the rate observed in
+# production. Homogenizing the band is NOT sufficient; a shared field or zero coefficients
+# there are. Zeroing the last `rows` interior rows removes every closure flux touching the
+# fold, so no asymmetry can survive, at no physical cost: the band is the central-Arctic rim,
+# where the Treguier coefficient is near zero anyway (deformation radius at its clamp).
+# Harmless on grids without a fold.
+function zero_fold_rows!(coefficient_field, grid; rows = 5)
+    Nz = size(grid, 3)
+    launch!(architecture(grid), grid, KernelParameters((Nz + 1,), (0,)), _zero_fold_rows!, coefficient_field, grid, rows)
+    return nothing
+end
+
+@kernel function _zero_fold_rows!(κ, grid, rows)
+    k = @index(Global)
+    Nx = size(grid, 1)
+    Ny = size(grid, 2)
+    for j in Ny-rows+1:Ny, i in 1:Nx
+        @inbounds κ[i, j, k] = 0
+    end
+end
+
 """
     compute_nemo_eddy_coefficients!(coefficients, ocean_model)
 
@@ -124,6 +149,9 @@ function compute_nemo_eddy_coefficients!(coefficients::NEMOEddyCoefficients, oce
             coefficients.skew_coefficient, coefficients.symmetric_coefficient, grid,
             coefficients.slope_limiter, ocean_model.buoyancy, fields(ocean_model),
             Ω, coefficients.parameters)
+
+    zero_fold_rows!(coefficients.skew_coefficient, grid)
+    zero_fold_rows!(coefficients.symmetric_coefficient, grid)
 
     # Without this the halos stay zero, so the two cells sharing a face across the periodic seam or the
     # tripolar fold evaluate the isopycnal flux with different κ. The face flux is then not antisymmetric
