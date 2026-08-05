@@ -3,7 +3,8 @@ include("runtests_setup.jl")
 using NumericalEarth.Bathymetry: bare_earth_elevation, BathymetryRegridding
 using NumericalEarth.DataWrangling: validate_dataset_coverage, validate_region_covers_grid,
                                     default_region, dataset_bounding_box, native_grid,
-                                    file_cell_index, region_info, file_window, wrapped_i
+                                    file_cell_index, region_info, file_window, wrapped_i,
+                                    set_region_data!
 using NumericalEarth.DataWrangling.CopernicusDEM: GLO30
 using NumericalEarth.ETOPO
 using Oceananigans.Grids: λnodes
@@ -158,6 +159,42 @@ end
     # nothing to offset.
     @test first(longitude_range) == offset.di + 1
     @test region_info(region, field, longitudes[longitude_range], latitudes[latitude_range]).di == 0
+end
+
+@testset "windowed reads — data lands on the coordinates that carry it" begin
+    # Cell centers -0.5 … 4.5: the native grid of a (0, 4) box on a 1° lattice, one cell wider
+    # than the box on each side because `restrict` brackets it with cell centers.
+    grid   = LatitudeLongitudeGrid(CPU(); size = (6, 6), longitude = (-1, 5), latitude = (-1, 5),
+                                   topology = (Bounded, Bounded, Flat))
+    field  = Field{Center, Center, Nothing}(grid)
+    region = BoundingBox(longitude = (0, 4), latitude = (0, 4))
+    metadatum = Metadatum(:bottom_height; dataset = ETOPO2022(), region)
+
+    # A file that is exactly the grid's window: no offset, values stay put.
+    exact = collect(-0.5:1.0:4.5)
+    data  = reshape(Float64[10i + j for i in 1:6, j in 1:6], 6, 6, 1)
+    offset = region_info(region, field, exact, exact)
+    @test (offset.di, offset.dj) == (0, 0)
+    set_region_data!(field, data, exact, exact, metadatum)
+    @test interior(field, :, :, 1) == data[:, :, 1]
+
+    # A file over-fetched by two cells per side: the same values, located by coordinate.
+    padded      = collect(-2.5:1.0:6.5)
+    padded_data = reshape(Float64[10i + j for i in 1:10, j in 1:10], 10, 10, 1)
+    offset = region_info(region, field, padded, padded)
+    @test (offset.di, offset.dj) == (2, 2)
+    set_region_data!(field, padded_data, padded, padded, metadatum)
+    @test interior(field, :, :, 1) == padded_data[3:8, 3:8, 1]
+
+    # A file spanning the region rather than the grid reaches neither edge, and is rejected
+    # instead of writing its values one cell off.
+    short = collect(0.5:1.0:3.5)
+    short_data = reshape(Float64[10i + j for i in 1:4, j in 1:4], 4, 4, 1)
+    @test_throws ArgumentError region_info(region, field, short, short)
+    @test_throws ArgumentError set_region_data!(field, short_data, short, short, metadatum)
+
+    # A file starting north of the grid's first row is rejected as well.
+    @test_throws ArgumentError region_info(region, field, exact, collect(0.5:1.0:7.5))
 end
 
 @testset "windowed reads — guards on region and padding" begin

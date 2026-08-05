@@ -17,13 +17,16 @@ end
 # promoted to Float64; `tolerance` absorbs the promotion drift, capped at a quarter cell because
 # `eps(Float32) * |h|` alone exceeds half a cell on arc-second axes near 180°. On an axis whose
 # labels sit half a cell from the grid's nodes (regional ERA5 latitude), the tie resolves to the
-# label north/east of the node.
+# label north/east of the node. A node more than half a cell before the first label extrapolates to
+# an index below 1, marking a file that begins east/north of where the read starts.
 function file_cell_index(h, hc)
     Nh = length(hc)
     Nh > 1 || return 1
     j = clamp(searchsortedlast(hc, h), 1, Nh - 1)
-    tolerance = min(8 * eps(Float32) * max(1, abs(h)), abs(hc[j+1] - hc[j]) / 4)
-    return clamp(searchsortedfirst(hc, h - tolerance), 1, Nh)
+    Δ = hc[j+1] - hc[j]
+    tolerance = min(8 * eps(Float32) * max(1, abs(h)), abs(Δ) / 4)
+    h ≥ hc[1] && return clamp(searchsortedfirst(hc, h - tolerance), 1, Nh)
+    return 1 + ceil(Int, (h - tolerance - hc[1]) / Δ)
 end
 
 # Periodic only when the restricted span equals the full native span.
@@ -101,20 +104,19 @@ function region_info(::BoundingBox, target, λc, φc)
     # Shift the target's longitude into the file's `[λc[1], λc[1]+360)`, allowing half a cell of
     # slack at the west edge: a Float32 grid node can land a few ulps below `λc[1]`, and wrapping
     # such a node by +360° would place the window at the far end of the file.
-    if length(λc) > 1
-        λmin = convert_to_λ₀_λ₀_plus360(λmin, λc[1] - abs(λc[2] - λc[1]) / 2)
-    end
+    λfile = length(λc) > 1 ? convert_to_λ₀_λ₀_plus360(λmin, λc[1] - abs(λc[2] - λc[1]) / 2) : λmin
 
-    i₁ = file_cell_index(λmin, λc)
-    j₁ = file_cell_index(φmin, φc)
+    di = file_cell_index(λfile, λc) - 1
+    dj = file_cell_index(φmin, φc) - 1
 
     Nx, Ny, _ = size(target)
 
     # A window overhanging the file's east edge continues across the seam when the file spans the
-    # globe; a regional file has no data beyond its edge, so there the window is clamped inside.
+    # globe; a regional file has no data beyond its edge, so its window has to stay inside.
     Nλ = isnothing(infer_longitudinal_period(λc)) ? 0 : length(λc)
-    di = Nλ > 0 ? i₁ - 1 : clamp(i₁ - 1, 0, max(length(λc) - Nx, 0))
-    dj = clamp(j₁ - 1, 0, max(length(φc) - Ny, 0))
+    Nλ > 0 || validate_file_covers_grid(di, Nx, λmin, λc, "longitude")
+    validate_file_covers_grid(dj, Ny, φmin, φc, "latitude")
+
     return BoundingBoxOffset(di, dj, Nλ)
 end
 
@@ -123,6 +125,21 @@ function region_info(col::Column, target, λc, φc)
     j⁻, j⁺, wy = bracket_with_weight(φc, col.latitude)  # latitude is never cyclic
     FT = eltype(target)
     return ColumnInfo(i⁻, i⁺, j⁻, j⁺, FT(wx), FT(wy), col.interpolation)
+end
+
+# Data lands at one fixed offset into the file, so the file has to label every cell it fills.
+# `restrict` builds the native grid by bracketing the region with native cell centers, which
+# reaches one cell past an edge that falls on a cell face — a file materialized on the requested
+# region alone then comes up short, and its values would land on the wrong cells.
+function validate_file_covers_grid(offset, N, hmin, hc, axis)
+    0 ≤ offset && offset + N ≤ length(hc) && return nothing
+
+    Δ = length(hc) > 1 ? hc[2] - hc[1] : zero(eltype(hc))
+    throw(ArgumentError("the file does not cover the native grid in $axis: the read needs $N cells " *
+                        "from $hmin to $(hmin + (N - 1) * Δ), but the file labels $(length(hc)) cells " *
+                        "from $(first(hc)) to $(last(hc)). Materialize the file on " *
+                        "`native_grid(metadatum)`, or fetch a margin of native cells around the " *
+                        "region the way `era5_request_area` does."))
 end
 
 # 360 if `λc` spans the full globe (cyclic), else `nothing`.
