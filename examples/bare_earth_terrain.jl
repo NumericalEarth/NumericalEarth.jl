@@ -42,6 +42,11 @@ using CairoMakie
 # A ~1 km land grid, `Flat` in the vertical: terrain enters as a 2-D elevation field, not
 # grid geometry. `regrid_topography` lands the DSM on it as a positive land-surface
 # elevation.
+#
+# Caveat: coarsening here is 37× from GLO-30's native 30 m, and `regrid_topography` samples
+# rather than cell-averages, so the elevation carries some aliased sub-grid texture;
+# conservative regridding is tracked in
+# [ClimaOcean #253](https://github.com/CliMA/ClimaOcean.jl/issues/253).
 
 latitude  = -3.5, -2.4
 longitude = -60.5, -59.0
