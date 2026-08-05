@@ -240,7 +240,7 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
 
     # Inpainting on a (Flat, Flat, *) column field is meaningless and the
     # iterative algorithm doesn't terminate gracefully without horizontal
-    # neighbours; the NaN-aware bracket-blend in `set_region_data!` handles
+    # neighbors; the NaN-aware bracket-blend in `set_region_data!` handles
     # land cells directly.
     if metadata.region isa Column
         inpainting = nothing
@@ -405,7 +405,7 @@ function set_metadata_field!(field, data, metadatum)
     return nothing
 end
 
-# Read the lon/lat cell centres from the NetCDF file using the names supplied
+# Read the lon/lat cell centers from the NetCDF file using the names supplied
 # by the dataset's `longitude_name` / `latitude_name` traits.
 function read_file_coords(metadatum)
     ds = Dataset(metadata_path(metadatum))

@@ -4,7 +4,7 @@
 ##### GloFAS lives on the Early Warning Data Store (EWDS), a separate Copernicus
 ##### endpoint from the ERA5 CDS. Configure `~/.cdsapirc` with the EWDS API url
 ##### (https://ewds.climate.copernicus.eu/api) and key, and accept the
-##### `cems-glofas-historical` licence, before downloading.
+##### `cems-glofas-historical` license, before downloading.
 #####
 
 glofas_product(::GloFASDataset) = "cems-glofas-historical"

@@ -71,7 +71,7 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height))
 #
 # The model is initialized with temperature and salinity fields from the ECCO dataset,
 # using the function `ECCO_restoring_forcing` to apply restoring forcings for these tracers.
-# This allows us to nudge the model towards realistic temperature and salinity profiles.
+# This allows us to nudge the model toward realistic temperature and salinity profiles.
 
 start_date = DateTime(1993, 1, 1)
 end_date   = DateTime(1993, 12, 1)
