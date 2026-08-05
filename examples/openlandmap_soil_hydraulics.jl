@@ -6,7 +6,7 @@ using CairoMakie
 # Derive van Genuchten hydraulic parameters for a `VariablySaturatedHydrology` slab
 # straight from 30 m soil texture. OpenLandMap-soilDB supplies sand/silt/clay and
 # bulk density over three depth intervals; the pedotransfer function converts each
-# interval to (ν, θʳ, α, n, Kₛ), and the depth-layer combination collapses them to
+# interval to (ν, θʳ, α, n, Kₛ, ℓ), and the depth-layer combination collapses them to
 # one effective column per grid point.
 
 z_interfaces = [-1.0, -0.6, -0.3, 0.0]   # depth faces, deepest-first: 60–100, 30–60, 0–30 cm
@@ -19,21 +19,27 @@ metadata = MetadataSet(:sand_fraction, :silt_fraction, :clay_fraction, :bulk_den
 
 soil = map(m -> Field(m, CPU()), NamedTuple(metadata))
 
-# Wösten HYPRES per depth layer — each layer read as topsoil or subsoil by its depth —
-# then upscale each parameter over `slab_depth` with its own law: arithmetic for ν/θʳ,
-# harmonic for Kₛ, resistance-weighted for α, and geometric in n − 1 for n.
+# Weynants per depth layer, then combined over `slab_depth`: α and n are matched to the
+# thickness-weighted mean retention curve, Kₛ upscales harmonically, the rest arithmetically.
 properties = soil_hydraulic_properties(soil.sand_fraction, soil.silt_fraction,
                                        soil.clay_fraction, soil.bulk_density;
                                        slab_depth = 1.0, z_interfaces)
 
-# θʳ is a fixed constant of the pedotransfer function, so only four parameters vary
-# in space. Kₛ spans orders of magnitude, so it is mapped in log₁₀.
-panels = [("porosity ν",                 "–",            properties.porosity,                 :viridis),
-          ("inverse air-entry head α",   "m⁻¹",          properties.inverse_air_entry_head,    :plasma),
-          ("pore-size uniformity n",     "–",            properties.pore_size_uniformity,     :plasma),
-          ("saturated conductivity Kₛ",  "log₁₀(m s⁻¹)", Field(log10(properties.K_saturated)), :turbo)]
+# θʳ is zero throughout for this pedotransfer function, so five parameters vary in space.
+# Its K₀ is the *matrix* matching point the conductivity closure wants; an infiltration cap
+# wants the macropore-inclusive Cosby Kˢᵃᵗ, mapped alongside it for contrast.
+K₀ = properties.matching_point_conductivity
+infiltration_capacity = Field(3_600_000 * saturated_conductivity(COSBY_CONDUCTIVITY,
+                                                                soil.sand_fraction))
 
-fig = Figure(size = (1150, 980), fontsize = 15)
+panels = [("porosity ν",                    "–",            properties.porosity,                  :viridis),
+          ("inverse air-entry head α",      "m⁻¹",          properties.inverse_air_entry_head,     :plasma),
+          ("pore-size uniformity n",        "–",            properties.pore_size_uniformity,      :plasma),
+          ("pore-connectivity exponent ℓ",  "–",            properties.pore_connectivity_exponent, :managua),
+          ("matching-point K₀",             "log₁₀(m s⁻¹)", Field(log10(K₀)),                      :turbo),
+          ("Cosby saturated Kˢᵃᵗ (0–30 cm)", "mm hour⁻¹",    view(infiltration_capacity, :, :, 3),  :turbo)]
+
+fig = Figure(size = (1150, 1450), fontsize = 15)
 Label(fig[0, 1:2], "Soil hydraulic parameters from OpenLandMap-soilDB 30 m — 0–100 cm — Grand Canyon window";
       fontsize = 18, font = :bold)
 
