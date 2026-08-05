@@ -15,11 +15,15 @@ export AbstractLand,
        BucketHydrology, DryLand, SaturatedSurface,
        # Variably saturated hydrology + sub-closures
        VanGenuchtenRetention, VanGenuchtenConductivity,
+       critical_saturation, WaterViscosity, viscosity_correction,
+       CosbyConductivity, COSBY_CONDUCTIVITY,
+       saturated_conductivity, conductivity_spread,
        NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
        NoRunoff, InfiltrationCapacityRunoff,
        VariablySaturatedHydrology,
        # Pedotransfer functions + depth-layer combination
-       PedotransferFunction, ContinuousPedotransfer, HYPRESRegression,
+       PedotransferFunction, WeynantsPedotransfer, WeynantsRegression,
+       HYPRESPedotransfer, HYPRESRegression,
        soil_hydraulic_parameters, soil_hydraulic_properties, layer_weights, layer_depths,
        # Urban aerodynamic roughness closures
        AbstractUrbanRoughness, MorphometricRoughness,
@@ -61,8 +65,7 @@ include("energy_balance/energy_balance.jl")
 include("hydrology/hydrology.jl")
 include("properties/property_providers.jl")
 
-# Pedotransfer functions (texture → van Genuchten params) + depth-layer combination.
-# Pure setup-time helpers that build the property `Field`s consumed by the closures.
+# Setup-time helpers that build the property `Field`s the closures consume.
 include("properties/pedotransfer.jl")
 include("properties/soil_hydraulic_properties.jl")
 

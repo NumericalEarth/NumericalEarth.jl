@@ -154,7 +154,7 @@ variably_saturated_hydrology(FT, porosity; slab_depth) = VariablySaturatedHydrol
     slab_depth, porosity, residual_liquid_fraction,
     storage_height         = 1000,
     retention_curve        = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
-    hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-7, pore_size_uniformity = 2.0),
+    hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-7, pore_size_uniformity = 2.0),
     deep_liquid_flux       = NoDeepLiquidFlux(),
     runoff                 = InfiltrationCapacityRunoff(infiltration_capacity = 1e-3))
 

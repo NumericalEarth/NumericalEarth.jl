@@ -161,7 +161,8 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``\Pi^d`` | `deep_pressure_head` | deep pressure head | Pressure head of the deep reservoir below the slab, passed to the deep-flux closure (m) |
 | ``h`` | – | hydraulic head | ``h = z + \Pi`` (m) |
 | ``K`` | – | hydraulic conductivity | Darcy conductivity (m s⁻¹) |
-| ``K^{\mathrm{sat}}`` | `K_saturated` | saturated hydraulic conductivity | Darcy conductivity at ``𝒮 = 1`` (m s⁻¹) |
+| ``K_0`` | `matching_point_conductivity` | matching-point conductivity | Conductivity the Mualem–van Genuchten curve reaches at ``𝒮 = 1``; a *matrix* value when it comes from a pedotransfer function, excluding macropore flow (m s⁻¹) |
+| ``K^{\mathrm{sat}}`` | `saturated_conductivity` | saturated hydraulic conductivity | Macropore-inclusive Darcy conductivity of saturated soil, for an infiltration cap (m s⁻¹) |
 | ``\Pi^\mathrm{ae}`` | `inverse_air_entry_head` | air-entry pressure head | Suction at which the largest pores begin to empty; the closure stores its reciprocal ``\alpha = 1/\Pi^\mathrm{ae}`` (m⁻¹) |
 | ``n`` | `pore_size_uniformity` | pore-size uniformity | van Genuchten retention exponent; large ``n`` drains over a narrow band of suctions, ``n \to 1`` over orders of magnitude. Sets ``m = 1 - 1/n`` (–) |
 | ``\eta^K`` | `pore_connectivity_exponent` | pore-connectivity exponent | Mualem exponent on saturation in ``K(\mathcal S)`` (–) |

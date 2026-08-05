@@ -196,7 +196,7 @@ saturation(h::VariablySaturatedHydrology, land) = land.saturation
 
 @kernel function _variably_saturated_step!(M, saturation,
                                            Jˡb_diag, Jˡs_diag, Rsfc_diag, Rlat_diag, dMdt_diag,
-                                           Jv, Pl, h, deep_pressure_head,
+                                           Jv, Pl, T, h, deep_pressure_head,
                                            Δt, grid, time)
     i, j = @index(Global, NTuple)
     @inbounds begin
@@ -209,7 +209,9 @@ saturation(h::VariablySaturatedHydrology, land) = land.saturation
     θˡ = liquid_fraction(i, j, grid, h, Mij)
     𝒮  = liquid_saturation(i, j, grid, h, θˡ)
     Π  = diagnostic_pressure_head(i, j, grid, h, Mij, θˡ, 𝒮)
-    K  = hydraulic_conductivity(i, j, grid, h.hydraulic_conductivity, 𝒮)
+    # Conductivity carries the temperature dependence of the viscosity of water.
+    Tij = @inbounds T[i, j, 1]
+    K   = hydraulic_conductivity(i, j, grid, h.hydraulic_conductivity, 𝒮, Tij)
 
     Jˡs, Rsfc = surface_liquid_flux_and_runoff(h.runoff, Plij, Mij, θˡ, 𝒮, Π, K)
     Jˡb       = deep_liquid_flux(h.deep_liquid_flux, Mij, θˡ, 𝒮, Π, K, Πᵈ, time)
@@ -248,6 +250,7 @@ function time_step!(h::VariablySaturatedHydrology, land, Δt, time)
             land.diagnostics.water_storage_tendency,
             land.fluxes.vapor_flux,
             land.fluxes.liquid_precipitation_flux,
+            land.temperature,
             h, h.deep_pressure_head, Δt, land.grid, time)
     return nothing
 end

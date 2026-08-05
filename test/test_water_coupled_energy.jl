@@ -24,7 +24,7 @@ using Oceananigans.TimeSteppers: time_step!
         hydrology = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0, porosity = 0.4, storage_height = 1000,
             retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
-            hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, pore_size_uniformity = 2.0),
+            hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
             deep_liquid_flux = NoDeepLiquidFlux(), runoff = NoRunoff())
         energy = WaterCoupledEnergy(eltype(grid);
             dry_heat_capacity = Cdry,
@@ -70,7 +70,7 @@ end
         hydrology = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0, porosity = 0.4, storage_height = 1000,
             retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
-            hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, pore_size_uniformity = 2.0),
+            hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
             deep_liquid_flux = LinearReservoirDrainage(drainage_time_scale = 1e6),
             runoff = NoRunoff())
         energy = WaterCoupledEnergy(eltype(grid);
@@ -108,7 +108,7 @@ end
         hydrology = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0, porosity = 0.4, storage_height = 1000,
             retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
-            hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, pore_size_uniformity = 2.0),
+            hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
             deep_liquid_flux = NoDeepLiquidFlux(), runoff = NoRunoff())
 
         # Identical forcing, two arbitrary internal-energy references. The physical
@@ -145,7 +145,7 @@ end
         hydrology = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0, porosity = 0.4, storage_height = 1000,
             retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
-            hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, pore_size_uniformity = 2.0),
+            hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
             deep_liquid_flux = NoDeepLiquidFlux(), runoff = NoRunoff())
 
         # With `advect_surface_liquid_energy = false`, rain enters at the slab
