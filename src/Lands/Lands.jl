@@ -16,7 +16,7 @@ export AbstractLand,
        # Variably saturated hydrology + sub-closures
        VanGenuchtenRetention, VanGenuchtenConductivity,
        critical_saturation, WaterViscosity, viscosity_correction,
-       CosbyConductivity, COSBY_CONDUCTIVITY,
+       CosbyConductivity,
        saturated_conductivity, conductivity_spread,
        NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
        NoRunoff, InfiltrationCapacityRunoff,

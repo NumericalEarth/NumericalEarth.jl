@@ -279,13 +279,21 @@ Saturated hydraulic conductivity from sand, and its within-class spread from sil
 with texture in % and `Kₛ` in inch hour⁻¹. Read with
 [`saturated_conductivity`](@ref) and [`conductivity_spread`](@ref), which take mass
 fractions (kg/kg) and return m s⁻¹ and decades respectively.
-[`COSBY_CONDUCTIVITY`](@ref) holds the published fit; construct your own to calibrate.
 
 Mean and spread live in one object because they are one regression: `spread_intercept` and
 `spread_silt_coefficient` are the width to put on `intercept` and `sand_coefficient` when
 calibrating them, and a width borrowed from a different fit does not bound this one. Cosby
 found the spread of the hydraulic parameters as predictable from texture as their means,
 which is what makes a texture-dependent prior possible at all.
+
+The defaults are the published Table 5 fit, regressed on 1,448 US samples across 11
+texture classes. It is offered for its texture range rather than its accuracy: across the
+texture triangle it spans a factor of 19 and falls monotonically with clay. It is **not
+validated**, and against the laboratory `Kₛ` of GSHP ([Gupta et al. (2022)](@cite
+gupta2022)) it runs `+1.16` high in `log₁₀ cm/day`. Predicting `Kₛ` from texture is
+challenging ([Weynants et al. (2009)](@cite weynants2009) could not exceed `R² = 0.25`
+from any transformation of texture, bulk density and organic carbon), so this should
+likely be treated as a prior to be calibrated against rather than a prediction.
 """
 struct CosbyConductivity{FT}
     intercept               :: FT
@@ -313,22 +321,6 @@ Base.summary(c::CosbyConductivity) =
 Base.show(io::IO, c::CosbyConductivity) = print(io, summary(c))
 
 """
-    COSBY_CONDUCTIVITY
-
-The published [Cosby et al. (1984)](@cite cosby1984) Table 5 conductivity fit, regressed
-on 1,448 US samples across 11 texture classes.
-
-It is offered for its texture range rather than its accuracy: across the texture triangle
-it spans a factor of 19 and falls monotonically with clay. It is **not validated**, and
-against the laboratory `Kₛ` of GSHP ([Gupta et al. (2022)](@cite gupta2022)) it runs
-`+1.16` high in `log₁₀ cm/day`. Predicting `Kₛ`
-from texture is challenging ([Weynants et al. (2009)](@cite weynants2009) could not exceed
-`R² = 0.25` from any transformation of texture, bulk density and organic carbon), so this
-should likely be treated as a prior to be calibrated against rather than a prediction.
-"""
-const COSBY_CONDUCTIVITY = CosbyConductivity()
-
-"""
     saturated_conductivity(c::CosbyConductivity, sand)
 
 Macropore-inclusive saturated hydraulic conductivity (m s⁻¹) from sand mass fraction
@@ -342,7 +334,7 @@ the pedotransfer function's own for [`VanGenuchtenConductivity`](@ref).
 using NumericalEarth
 
 ## sand, loam and clay, in mm hour⁻¹
-Ks = [saturated_conductivity(COSBY_CONDUCTIVITY, sand) for sand in (0.92, 0.43, 0.20)]
+Ks = [saturated_conductivity(CosbyConductivity(), sand) for sand in (0.92, 0.43, 0.20)]
 round.(Ks .* 3.6e6, digits = 1)
 
 # output

@@ -29,8 +29,8 @@ properties = soil_hydraulic_properties(soil.sand_fraction, soil.silt_fraction,
 # Its K₀ is the *matrix* matching point the conductivity closure wants; an infiltration cap
 # wants the macropore-inclusive Cosby Kˢᵃᵗ, mapped alongside it for contrast.
 K₀ = properties.matching_point_conductivity
-infiltration_capacity = Field(3_600_000 * saturated_conductivity(COSBY_CONDUCTIVITY,
-                                                                soil.sand_fraction))
+infiltration_capacity = Field(3_600_000 * saturated_conductivity(CosbyConductivity(),
+                                                                 soil.sand_fraction))
 
 panels = [("porosity ν",                    "–",            properties.porosity,                  :viridis),
           ("inverse air-entry head α",      "m⁻¹",          properties.inverse_air_entry_head,     :plasma),

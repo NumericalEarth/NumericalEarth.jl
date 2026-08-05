@@ -86,7 +86,7 @@ end
     # K₀ is a matrix matching point, so it must sit below a macropore-inclusive Kₛ.
     for t in textures
         @test soil_hydraulic_parameters(ptf, t...).matching_point_conductivity <
-              saturated_conductivity(COSBY_CONDUCTIVITY, t[1])
+              saturated_conductivity(CosbyConductivity(), t[1])
     end
 
     # Organic carbon enters α and Kₛ only, and lowers both.
@@ -398,25 +398,25 @@ end
 
     # Cosby's Kₛ spans the texture triangle far more widely than HYPRES's regression and
     # rises monotonically with sand, which is why it is here at all.
-    Ks = [saturated_conductivity(COSBY_CONDUCTIVITY, s) for s in (0.05, 0.25, 0.45, 0.65, 0.85, 0.95)]
+    Ks = [saturated_conductivity(CosbyConductivity(), s) for s in (0.05, 0.25, 0.45, 0.65, 0.85, 0.95)]
     @test issorted(Ks)
     @test Ks[end] / Ks[1] > 15
-    @test saturated_conductivity(COSBY_CONDUCTIVITY, 0.92) * 3.6e6 ≈ 84.8 atol=0.5    # mm/hr
+    @test saturated_conductivity(CosbyConductivity(), 0.92) * 3.6e6 ≈ 84.8 atol=0.5    # mm/hr
     # The within-class spread is half a decade or more, which bounds any calibration.
-    @test conductivity_spread(COSBY_CONDUCTIVITY, 0.05) ≈ 0.475 atol=0.001
-    @test conductivity_spread(COSBY_CONDUCTIVITY, 0.65) > conductivity_spread(COSBY_CONDUCTIVITY, 0.05)
+    @test conductivity_spread(CosbyConductivity(), 0.05) ≈ 0.475 atol=0.001
+    @test conductivity_spread(CosbyConductivity(), 0.65) > conductivity_spread(CosbyConductivity(), 0.05)
 
     # Float type comes from the constructor, as for every other parameterized closure.
     c32 = CosbyConductivity(Float32)
     @test c32 isa CosbyConductivity{Float32}
     @test saturated_conductivity(c32, 0.2f0) isa Float32
     @test conductivity_spread(c32, 0.2f0) isa Float32
-    @test saturated_conductivity(c32, 0.92f0) ≈ saturated_conductivity(COSBY_CONDUCTIVITY, 0.92) rtol=1e-5
+    @test saturated_conductivity(c32, 0.92f0) ≈ saturated_conductivity(CosbyConductivity(), 0.92) rtol=1e-5
 
     # Recalibrating means constructing a different one, not editing the source.
     steeper = CosbyConductivity(sand_coefficient = 0.02)
-    @test saturated_conductivity(steeper, 0.92) > saturated_conductivity(COSBY_CONDUCTIVITY, 0.92)
-    @test saturated_conductivity(steeper, 0.0) == saturated_conductivity(COSBY_CONDUCTIVITY, 0.0)
+    @test saturated_conductivity(steeper, 0.92) > saturated_conductivity(CosbyConductivity(), 0.92)
+    @test saturated_conductivity(steeper, 0.0) == saturated_conductivity(CosbyConductivity(), 0.0)
 end
 
 @testset "critical saturation and the evaporation shutoff point" begin
