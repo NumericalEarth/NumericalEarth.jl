@@ -2,6 +2,7 @@ module NumericalEarthZarrExt
 
 using Zarr: Zarr, zopen
 using NCDatasets: NCDataset, defDim, defVar
+using Oceananigans.Fields: convert_to_λ₀_λ₀_plus360
 using Oceananigans.Grids: x_domain, y_domain
 using NumericalEarth: NumericalEarth
 using NumericalEarth.DataWrangling: native_grid
@@ -65,11 +66,17 @@ function CopernicusDEM.zarr_to_netcdf(metadatum::CopernicusDEM.CopernicusDEMMeta
 
             Δλ = (λ₂ - λ₁) / Nx
             Δφ = (φ₂ - φ₁) / Ny
-            first_longitude = λ₁ + Δλ / 2
             first_latitude  = φ₁ + Δφ / 2
 
             longitude = store["lon"][:]
             latitude  = store["lat"][:]
+
+            # The store labels longitude in [-180, 180) while the grid carries the region's own
+            # convention, so the window's first node is mapped into the store's before searching.
+            # Half a cell of slack keeps a node a few ulps below the store's first label from
+            # wrapping to the far end of the globe.
+            west = min(longitude[1], longitude[end])
+            first_longitude = convert_to_λ₀_λ₀_plus360(λ₁ + Δλ / 2, west - Δλ / 2)
 
             longitude_range, longitude_ascending = ascending_window(longitude, first_longitude, Nx)
             latitude_range,  latitude_ascending  = ascending_window(latitude,  first_latitude,  Ny)
@@ -102,6 +109,9 @@ function CopernicusDEM.zarr_to_netcdf(metadatum::CopernicusDEM.CopernicusDEMMeta
 
             return nothing
         catch e
+            # Only the gateway's intermittent failures are worth retrying; an impossible window
+            # or an allocation that cannot fit fails the same way every time.
+            (e isa ArgumentError || e isa OutOfMemoryError) && rethrow(e)
             attempt < max_retries || rethrow(e)
             @warn "Copernicus DEM Zarr read attempt $attempt/$max_retries failed; retrying..." exception=(e, catch_backtrace())
             sleep(5.0 * attempt)
@@ -119,7 +129,13 @@ function ascending_window(coordinate, target_first, count)
     ascending_coordinate = ascending ? coordinate : reverse(coordinate)
 
     start = searchsortednearest(ascending_coordinate, target_first)
-    start = clamp(start, 1, n - count + 1)
+
+    # Sliding the block back inside the store would silently return a different window.
+    start + count - 1 ≤ n ||
+        throw(ArgumentError("a $(count)-cell window starting at $(target_first) runs past the store's " *
+                            "$(n) coordinates spanning $((ascending_coordinate[1], ascending_coordinate[end])); " *
+                            "the window leaves the store's coverage or crosses its seam."))
+
     ascending_range = start:(start + count - 1)
 
     storage_range = ascending ? ascending_range :

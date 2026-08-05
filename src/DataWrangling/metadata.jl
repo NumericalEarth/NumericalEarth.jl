@@ -36,8 +36,11 @@ function BoundingBox(grid::AbstractGrid; padding = 0)
                        latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padφ, padφ))
 end
 
-axis_padding(padding) = (padding, padding)
-axis_padding(padding::Tuple) = padding
+axis_padding(padding::Number) = (padding, padding)
+axis_padding(padding::Tuple{Any, Any}) = padding
+
+axis_padding(padding) =
+    throw(ArgumentError("padding has to be a number or a (longitude, latitude) pair, got $padding"))
 
 # Margin of `cells` grid cells per axis (degrees), so boundary cells interpolate rather than extrapolate.
 function grid_cell_padding(grid::Union{LatitudeLongitudeGrid, OrthogonalSphericalShellGrid}; cells = 2)
@@ -751,6 +754,15 @@ Copernicus DEM) return a `BoundingBox` derived from `grid`.
 default_region(dataset, grid) = nothing
 
 """
+    no_data_means_sea_level(dataset)
+
+Whether cells with no data in `dataset` are ocean at sea level (`true`, as for a Digital Surface
+Model like [`GLO30`](@ref)) rather than gaps in coverage (`false`, the default). Gaps stay NaN, so
+a missing survey cannot be mistaken for a coastline at `z = 0`.
+"""
+no_data_means_sea_level(dataset) = false
+
+"""
     dataset_bounding_box(dataset, grid; padding = default_horizontal_padding(dataset, grid))
 
 Return the window to read `dataset` in when regridding onto `grid`: `grid`'s bounding box,
@@ -765,23 +777,60 @@ function dataset_bounding_box(dataset, grid;
     φ₁, φ₂ = latitude_interfaces(dataset)
 
     # Compare in the dataset's longitude convention, then label the window back in the grid's.
-    λ⁻ = convert_to_λ₀_λ₀_plus360(box.longitude[1], λ₁)
-    λ⁺ = λ⁻ + (box.longitude[2] - box.longitude[1])
+    λ⁻, λ⁺ = native_convention_longitude(box.longitude, (λ₁, λ₂))
     shift = λ⁻ - box.longitude[1]
 
-    if λ⁺ > λ₂ || box.latitude[1] < φ₁ || box.latitude[2] > φ₂
+    if λ⁻ > λ₂ || box.latitude[1] < φ₁ || box.latitude[2] > φ₂
         throw(ArgumentError("$(summary(dataset)) covers longitude $((λ₁, λ₂)) and latitude $((φ₁, φ₂)), " *
                             "but the grid spans longitude $((λ⁻, λ⁺)) and latitude $(box.latitude) in " *
-                            "that convention. Regrid within the dataset's coverage, or pass `region` " *
-                            "explicitly."))
+                            "that convention. Regrid within the dataset's coverage."))
+    elseif λ⁺ > λ₂
+        # A window is one contiguous block of the product, so it stops where the coverage is
+        # labeled to end even when the product itself wraps the globe.
+        throw(ArgumentError("a window into $(summary(dataset)) cannot cross longitude $(λ₂), where its " *
+                            "coverage ends: the grid spans longitude $((λ⁻, λ⁺)) in that convention. " *
+                            "Regrid each side of $(λ₂) onto its own grid."))
     end
 
-    padλ, padφ = axis_padding(padding)
-    longitude = (max(λ⁻ - padλ, λ₁) - shift, min(λ⁺ + padλ, λ₂) - shift)
-    latitude  = (max(box.latitude[1] - padφ, φ₁), min(box.latitude[2] + padφ, φ₂))
+    δλ, δφ = axis_padding(padding)
+    longitude = (max(λ⁻ - δλ, λ₁), min(λ⁺ + δλ, λ₂)) .- shift
+    latitude  = (max(box.latitude[1] - δφ, φ₁), min(box.latitude[2] + δφ, φ₂))
 
     return BoundingBox(; longitude, latitude)
 end
+
+# Regridding runs whole on one rank, so the window covers the global grid.
+dataset_bounding_box(dataset, grid::DistributedGrid; kw...) =
+    dataset_bounding_box(dataset, reconstruct_global_grid(grid); kw...)
+
+"""
+    validate_region_covers_grid(grid, region)
+
+Check that `region` contains `grid`'s horizontal extent, so every target cell interpolates from
+data inside the window. Interpolation extrapolates outside the window's hull rather than failing,
+so a `region` that misses the grid would otherwise be filled silently.
+"""
+validate_region_covers_grid(grid, region) = nothing
+
+function validate_region_covers_grid(grid, region::BoundingBox)
+    (isnothing(region.longitude) || isnothing(region.latitude)) && return nothing
+
+    box = BoundingBox(grid)
+    λ⁻, λ⁺ = native_convention_longitude(box.longitude, region.longitude)
+    φ⁻, φ⁺ = box.latitude
+
+    # A millidegree of slack absorbs Float32 grid labeling; the mismatch this catches is degrees wide.
+    tolerance = 1e-3
+    covered = λ⁻ ≥ region.longitude[1] - tolerance && λ⁺ ≤ region.longitude[2] + tolerance &&
+              φ⁻ ≥ region.latitude[1]  - tolerance && φ⁺ ≤ region.latitude[2]  + tolerance
+
+    covered || throw(ArgumentError("$(summary(region)) does not cover the grid, which spans longitude " *
+                                   "$((λ⁻, λ⁺)) and latitude $((φ⁻, φ⁺)) in the region's convention. " *
+                                   "Widen `region`, or omit it to derive the window from the grid."))
+
+    return nothing
+end
+
 
 """
     matching_single_level_dataset(dataset)

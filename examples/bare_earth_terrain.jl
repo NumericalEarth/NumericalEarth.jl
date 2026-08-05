@@ -13,18 +13,17 @@
 # and feeds it to the atmosphere elevation correction.
 #
 # We run across the central Amazon near Manaus (the Rio Negro–Solimões confluence),
-# where the terrain is nearly flat — a ~120 m spread of low terra-firme plateaus
+# where the terrain is nearly flat — a ~160 m spread of low terra-firme plateaus
 # dissected by river floodplains — while the forest canopy stands ~35 m tall. This is
 # the regime bare-earth DTMs like FABDEM were built for: over intact tropical forest a
 # DSM sits roughly a canopy height above true ground, and the flat terrain makes that
 # offset dominate.
 #
-# !!! note "DSM source"
-#     The commercial-use DSM for this workflow is Copernicus GLO-30 (30 m); pass
-#     `dataset = GLO30()` and set `DESTINE_ACCESS_TOKEN` (see [`GLO30`](@ref)) — the
-#     grid-derived window is added automatically. Here we use ETOPO 2022 so the script
-#     runs without a token; ETOPO reads globally while GLO-30 is windowed to the grid,
-#     but the subtraction, the figures, and the correction wiring are identical.
+# !!! note "Access"
+#     The DSM is Copernicus GLO-30 (30 m), read from the DestinE Earth Data Hub: set a
+#     (free) token in `DESTINE_ACCESS_TOKEN` (see [`GLO30`](@ref)) and load `Zarr`.
+#     `regrid_topography` derives the read window from the grid, so only the Amazon block
+#     is fetched, not the globe.
 #
 # !!! note "Object heights"
 #     A canopy-height dataset supplies the object height over vegetation, a
@@ -34,6 +33,8 @@
 
 using NumericalEarth
 using Oceananigans
+using Oceananigans.Fields: interpolate!
+using Zarr          ## GLO-30 Zarr store read
 using CairoMakie
 
 # ## Domain and DSM
@@ -48,7 +49,7 @@ longitude = -60.5, -59.0
 grid = LatitudeLongitudeGrid(CPU(); latitude, longitude, size = (150, 110),
                             topology = (Bounded, Bounded, Flat))
 
-dsm_dataset = ETOPO2022()   # stand-in for GLO30() — see the note above
+dsm_dataset = GLO30()
 
 dsm_elevation = regrid_topography(grid; dataset = dsm_dataset)
 
@@ -79,24 +80,26 @@ removed_object_height = dsm_elevation - bare_elevation
 
 # ## Coarse reference elevation
 #
-# The atmosphere data carries its own, coarser elevation. Regridding the same DSM onto a
-# grid four times coarser stands in for it. Each pass of `regrid_topography` samples
-# pointwise, so `interpolation_passes > 1` is what smooths the descent when the source is
-# much finer than the target.
+# The atmosphere data assumes its own, coarser elevation. With a driving reanalysis in hand
+# that is a dataset read — `Field(Metadatum(:topography; dataset, date, region), grid)` lands
+# ERA5's own orography on the model grid, as the differentiable ERA5-forced slab land example
+# does. Here we stand in for it with the same two-step at ~4 km: `regrid_topography` onto a
+# coarse grid, then interpolated up. The stand-in coarsens the DSM rather than the bare-earth
+# field because a global elevation product carries surface heights, canopy included.
 
-coarse_grid = LatitudeLongitudeGrid(CPU(); latitude, longitude, size = (38, 28),
-                                   topology = (Bounded, Bounded, Flat))
-coarse_dsm_elevation = regrid_topography(coarse_grid; dataset = dsm_dataset)
+atmosphere_grid = LatitudeLongitudeGrid(CPU(); latitude, longitude, size = (37, 27),
+                                        topology = (Bounded, Bounded, Flat))
+
+coarse_elevation = regrid_topography(atmosphere_grid; dataset = dsm_dataset)
+
+reference_elevation = Field{Center, Center, Nothing}(grid)
+interpolate!(reference_elevation, coarse_elevation)
 
 # ## Feeding the atmosphere elevation correction
 #
 # `SlabLand` uses terrain through [`ElevationCorrection`](@ref): the near-surface atmosphere
 # is lapse-corrected over `Δz = z_surface − z_atmosphere`, the gap between the model's
-# surface elevation and the coarse elevation the atmosphere data assumes. The coarse regrid
-# above stands in for that atmosphere elevation.
-
-reference_elevation = Field{Center, Center, Nothing}(grid)
-set!(reference_elevation, coarse_dsm_elevation)
+# surface elevation and the coarse elevation the atmosphere data assumes.
 
 elevation_difference = bare_elevation - reference_elevation
 
@@ -164,9 +167,11 @@ nothing #hide
 #
 # The DSM and bare-earth maps differ over the whole forested basin — everywhere the canopy
 # stands the bare-earth surface drops a full tree height, and the DSM − bare-earth panel
-# reproduces the canopy map exactly. Because the terrain here spans only ~100 m, that ~35 m
-# correction is a large fraction of the relief, and the elevation correction `Δz` shifts
-# visibly wherever forest sits. The transect shows the DSM riding a canopy height above the
-# bare-earth line over terra-firme forest and dropping onto it over the river floodplains.
+# reproduces the canopy map apart from the ~5% of low cells where the DSM is shorter than the
+# canopy the gate assigns and the sea-level clamp truncates the drop. Because the terrain here
+# spans only ~160 m, that ~35 m correction is a large fraction of the relief, and the elevation
+# correction `Δz` shifts visibly wherever forest sits. The transect shows the DSM riding a
+# canopy height above the bare-earth line over terra-firme forest and dropping onto it over
+# the river floodplains.
 
 correction

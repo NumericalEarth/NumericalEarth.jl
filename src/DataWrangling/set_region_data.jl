@@ -13,16 +13,17 @@ function minimum_node(grid, LH, hnodes)
     return @allowscalar minimum(hg)
 end
 
-# File index of the ascending coordinate cell holding `h`, whether `hc` labels cell centers
-# (ETOPO) or corners (CGLS albedo). `h` is a Float32 grid node promoted to Float64; `tol` absorbs
-# the promotion drift, capped at a quarter cell because `eps(Float32) * |h|` alone exceeds half
-# a cell on arc-second axes near 180°.
+# File index of the first ascending coordinate at or after `h`. `h` is a Float32 grid node
+# promoted to Float64; `tolerance` absorbs the promotion drift, capped at a quarter cell because
+# `eps(Float32) * |h|` alone exceeds half a cell on arc-second axes near 180°. On an axis whose
+# labels sit half a cell from the grid's nodes (regional ERA5 latitude), the tie resolves to the
+# label north/east of the node.
 function file_cell_index(h, hc)
     Nh = length(hc)
     Nh > 1 || return 1
     j = clamp(searchsortedlast(hc, h), 1, Nh - 1)
-    tol = min(8 * eps(Float32) * max(one(eltype(hc)), abs(h)), abs(hc[j+1] - hc[j]) / 4)
-    return clamp(searchsortedlast(hc, h + tol), 1, Nh)
+    tolerance = min(8 * eps(Float32) * max(1, abs(h)), abs(hc[j+1] - hc[j]) / 4)
+    return clamp(searchsortedfirst(hc, h - tolerance), 1, Nh)
 end
 
 # Periodic only when the restricted span equals the full native span.
@@ -45,6 +46,10 @@ struct AverageNorthSouth end
 # Clamp indices to avoid out-of-bounds access
 @inline clamp_i(i, data) = clamp(i, 1, size(data, 1))
 @inline clamp_j(j, data) = clamp(j, 1, size(data, 2))
+
+# Longitude index of a window continuing across the seam of a file that spans the globe
+# (`Nλ` columns); `Nλ = 0` marks a regional file, whose indices are clamped instead.
+@inline wrapped_i(i, Nλ) = ifelse(Nλ > 0, mod1(i, max(Nλ, 1)), i)
 @inline mangle(i, j, k, data, ::Nothing) = @inbounds data[clamp_i(i, data), clamp_j(j, data), k]
 @inline mangle(i, j, k, data, ::ShiftSouth) = @inbounds data[clamp_i(i, data), clamp_j(j - 1, data), k]
 @inline mangle(i, j, k, data, ::AverageNorthSouth) =
@@ -61,6 +66,7 @@ struct AverageNorthSouth end
 struct BoundingBoxOffset
     di :: Int
     dj :: Int
+    Nλ :: Int # file longitude count when the file spans the globe, else 0 (no wrapping)
 end
 
 """
@@ -92,18 +98,24 @@ function region_info(::BoundingBox, target, λc, φc)
     λmin = minimum_node(target.grid, LX, λnodes)
     φmin = minimum_node(target.grid, LY, φnodes)
 
-    # Shift the target's longitude into the file's `[λc[1], λc[1]+360)`
-    if !isempty(λc)
-        λmin = convert_to_λ₀_λ₀_plus360(λmin, λc[1])
+    # Shift the target's longitude into the file's `[λc[1], λc[1]+360)`, allowing half a cell of
+    # slack at the west edge: a Float32 grid node can land a few ulps below `λc[1]`, and wrapping
+    # such a node by +360° would place the window at the far end of the file.
+    if length(λc) > 1
+        λmin = convert_to_λ₀_λ₀_plus360(λmin, λc[1] - abs(λc[2] - λc[1]) / 2)
     end
 
     i₁ = file_cell_index(λmin, λc)
     j₁ = file_cell_index(φmin, φc)
 
     Nx, Ny, _ = size(target)
-    di = clamp(i₁ - 1, 0, max(length(λc) - Nx, 0))
+
+    # A window overhanging the file's east edge continues across the seam when the file spans the
+    # globe; a regional file has no data beyond its edge, so there the window is clamped inside.
+    Nλ = isnothing(infer_longitudinal_period(λc)) ? 0 : length(λc)
+    di = Nλ > 0 ? i₁ - 1 : clamp(i₁ - 1, 0, max(length(λc) - Nx, 0))
     dj = clamp(j₁ - 1, 0, max(length(φc) - Ny, 0))
-    return BoundingBoxOffset(di, dj)
+    return BoundingBoxOffset(di, dj, Nλ)
 end
 
 function region_info(col::Column, target, λc, φc)
@@ -157,7 +169,7 @@ end
 # `read_data(data, i, j, k, region, mangling, FT)` returns the file value at
 # the grid's (i, j, k) as `FT`, with `Missing` converted to NaN.
 @inline read_data(data, i, j, k, ::Nothing,     mangling, missing_val, FT) = nan_convert_missing(FT, mangle(i, j, k, data, mangling), missing_val)
-@inline read_data(data, i, j, k, b::BoundingBoxOffset, mangling, missing_val, FT) = nan_convert_missing(FT, mangle(i + b.di, j + b.dj, k, data, mangling), missing_val)
+@inline read_data(data, i, j, k, b::BoundingBoxOffset, mangling, missing_val, FT) = nan_convert_missing(FT, mangle(wrapped_i(i + b.di, b.Nλ), j + b.dj, k, data, mangling), missing_val)
 @inline read_data(data, _, _, k, c::ColumnInfo, mangling, missing_val, FT) = blend(c.ℑ, data, c, k, mangling, missing_val, FT)
 
 # Land cells arrive as NaN through `nan_convert_missing`.

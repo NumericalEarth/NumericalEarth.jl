@@ -112,6 +112,7 @@ export
     regrid_bathymetry,
     regrid_topography,
     bare_earth_elevation,
+    default_region,
     Metadata, Metadatum, MetadataSet,
     BoundingBox,
     Column, Linear, Nearest,

@@ -68,6 +68,9 @@ DataWrangling.default_horizontal_padding(dataset::CopernicusDEMDataset) = 2 * 36
 DataWrangling.default_region(dataset::CopernicusDEMDataset, grid) =
     DataWrangling.dataset_bounding_box(dataset, grid)
 
+# The DSM reports the ocean as no-data rather than as a gap in coverage.
+DataWrangling.no_data_means_sea_level(::CopernicusDEMDataset) = true
+
 # GLO-30 is 1 arc-second (360 * 3600 × 180 * 3600); GLO-90 is 3 arc-second.
 Base.size(::GLO30) = (1296000, 648000, 1)
 Base.size(::GLO90) = (432000, 216000, 1)

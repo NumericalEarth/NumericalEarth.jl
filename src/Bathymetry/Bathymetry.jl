@@ -12,7 +12,7 @@ using Oceananigans.Architectures: architecture, CPU, on_architecture
 using Oceananigans.BoundaryConditions: BoundaryConditions
 using Oceananigans.DistributedComputations: DistributedComputations, DistributedGrid,
                                             reconstruct_global_grid, all_reduce
-using Oceananigans.Fields: Field, interior, interpolate!
+using Oceananigans.Fields: Field, interior, interpolate!, set!
 using Oceananigans.Grids: x_domain, y_domain, topology, Face, Center,
                           Flat, Periodic, Bounded, AbstractGrid,
                           RectilinearGrid, LatitudeLongitudeGrid, OrthogonalSphericalShellGrid
@@ -21,10 +21,11 @@ using OffsetArrays: OffsetArrays, OffsetArray
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf
 
-using ..DataWrangling: DataWrangling, Metadatum, native_grid, metadata_path,
+using ..DataWrangling: DataWrangling, Metadatum, native_grid,
                        dataset_variable_name, validate_dataset_coverage,
-                       default_region, set_metadata_field!, nan_convert_missing,
-                       missing_value, reversed_latitude_axis
+                       validate_region_covers_grid, default_region,
+                       read_windowed_variable, set_region_data!,
+                       no_data_means_sea_level, bounding_box_suffix
 using ..DataWrangling.ETOPO: ETOPO2022
 using ..DataWrangling.CopernicusDEM: GLO30
 

@@ -5,7 +5,7 @@ restoring, or validation.
 module DataWrangling
 
 export Metadata, Metadatum, MetadataSet, DatewiseFilename, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
-export validate_dataset_coverage, metadata_filename
+export validate_dataset_coverage, metadata_filename, default_region
 export BoundingBox, Column, Linear, Nearest
 export WOAClimatology, WOAAnnual, WOAMonthly
 export AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum
@@ -25,7 +25,7 @@ using Oceananigans: Oceananigans, pretty_filesize, location
 using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
                                   on_architecture, child_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
-using Oceananigans.DistributedComputations: DistributedComputations, @root
+using Oceananigans.DistributedComputations: @root, DistributedGrid, reconstruct_global_grid
 using Oceananigans.Grids: AbstractGrid, Center, Face, Flat, Bounded,
                           LatitudeLongitudeGrid, OrthogonalSphericalShellGrid,
                           RectilinearGrid, λnodes, φnodes
