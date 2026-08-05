@@ -209,7 +209,7 @@ saturation(h::VariablySaturatedHydrology, land) = land.saturation
     θˡ = liquid_fraction(i, j, grid, h, Mij)
     𝒮  = liquid_saturation(i, j, grid, h, θˡ)
     Π  = diagnostic_pressure_head(i, j, grid, h, Mij, θˡ, 𝒮)
-    # Conductivity carries the temperature dependence of the viscosity of water.
+    # `K` carries the temperature dependence of the viscosity of water.
     Tij = @inbounds T[i, j, 1]
     K   = hydraulic_conductivity(i, j, grid, h.hydraulic_conductivity, 𝒮, Tij)
 

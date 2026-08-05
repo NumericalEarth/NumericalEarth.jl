@@ -1,10 +1,7 @@
 #####
 ##### Pedotransfer functions (PTFs): soil texture + bulk density → van Genuchten
-##### hydraulic parameters `(ν, θʳ, α, n, K₀, ηᴷ)`.
-#####
-##### `soil_hydraulic_parameters(ptf, sand, silt, clay, bulk_density, depth)` is a pure,
-##### `@inline`, allocation-free function called per grid point and per depth layer by
-##### the `soil_hydraulic_properties` reduction.
+##### hydraulic parameters `(ν, θʳ, α, n, K₀, ηᴷ)`, evaluated per grid point and per depth
+##### layer inside the `soil_hydraulic_properties` reduction.
 #####
 
 """
@@ -39,9 +36,9 @@ Rebuild a parameter set with every field at float type `FT`, returning it unchan
 is already there. Devices reject float types they do not support (Metal has no `Float64`),
 so [`soil_hydraulic_properties`](@ref) converts to the grid's float type before launching.
 
-For a [`PedotransferFunction`](@ref) the regression coefficients are why this is needed
-rather than trusting the kernel: scalar parameters are re-converted per grid point, but a
-`Float64` coefficient tuple would promote the whole regression back to `Float64`.
+For a [`PedotransferFunction`](@ref) it is the regression coefficients that need this: a
+`Float64` coefficient tuple would promote the whole regression back to `Float64`, where
+scalar parameters would simply be re-converted per grid point.
 """
 function convert_eltype end
 
@@ -74,6 +71,7 @@ struct WeynantsRegression{C}
     pore_connectivity_exponent  :: C
 end
 
+# `float` keeps the tuples homogeneous so integer zeros can be written literally.
 WeynantsRegression(; porosity, inverse_air_entry_head, pore_size_uniformity,
                      matching_point_conductivity, pore_connectivity_exponent) =
     WeynantsRegression(map(float, porosity),
@@ -105,24 +103,19 @@ erratum. Each field predicts one parameter:
 | `matching_point_conductivity` | `Kₛ★ = ln K₀` | ln(cm day⁻¹) | sand, `ρᵇ`, OC |
 | `pore_connectivity_exponent` | `ηᴷ` directly | – | clay, sand |
 
-`θʳ` is absent because Weynants fitted it and found it "not significantly different
-from 0", excluding it. [Wösten et al. (1999)](@cite wosten1999) dropped it too, and
-[Schaap et al. (2001)](@cite schaap2001) reach only `R² = 0.094` for it from texture and
-bulk density.
+`θʳ` is absent because Weynants fitted it and found it "not significantly different from 0";
+[Wösten et al. (1999)](@cite wosten1999) dropped it too.
 
-All six parameters come from a single inversion: the coefficients are fitted directly to
-the retention and conductivity measurements *through* the Mualem–van Genuchten model
-rather than per sample and then regressed. The van Genuchten parameters are strongly
-coupled, so members of this set cannot usefully be swapped for another fit's. In
-particular, `ηᴷ` arrives paired with the matching point it was fitted against.
+All six parameters come from a single inversion, fitted *through* the Mualem–van Genuchten
+model rather than per sample and then regressed. They are strongly coupled, so members of
+this set cannot usefully be swapped for another fit's — `ηᴷ` in particular arrives paired
+with the matching point it was fitted against.
 
 The calibration base is 182 horizons from 39 profiles in northern Belgium, with clay
-reaching only 54.5 % and one climate. Weynants restricted their own test set to samples
-inside the training ranges because "the extrapolation capacity of PTFs is generally very
-bad", and [`WeynantsPedotransfer`](@ref) clamps to those ranges for the same reason. Clay
-mineralogy moves `α` by a factor of ten at identical texture
-([Hodnett and Tomasella (2002)](@cite hodnett2002)), so any texture-only pedotransfer
-function returns the mean of whatever mineralogy its calibration set contained.
+reaching only 54.5 % and one climate, and [`WeynantsPedotransfer`](@ref) clamps to those
+ranges as Weynants recommend. Clay mineralogy alone moves `α` by a factor of ten at
+identical texture ([Hodnett and Tomasella (2002)](@cite hodnett2002)), so any texture-only
+pedotransfer function returns the mean of whatever mineralogy its calibration set contained.
 """
 const WEYNANTS_REGRESSION = WeynantsRegression(
     #                            1,        C,       S,      S²,       D,       OC
@@ -150,12 +143,9 @@ uniform default. It enters `α` and `K₀` only, lowering both. 0.58 % is the sa
 [`HYPRESPedotransfer`](@ref)'s 1 % organic matter, under the van Bemmelen convention that
 organic matter is 58 % carbon.
 
-**Organic carbon enters as % by weight, not g/kg** — the whole subject of the
+**Organic carbon enters as % by weight, not g/kg** — the subject of the
 [Weihermüller et al. (2017)](@cite weihermuller2017) erratum, and worth a factor of four:
-entering 10 where 1 % is meant scales `K₀` by 0.24 and `α` by 0.41. Check an
-implementation against the erratum's `K₀`, near 48 cm/day for a sand and 4 cm/day for a
-clay at `ρᵇ` = 1.4 g/cm³ and OC = 1 %, not against its `α` values, whose quoted `%` and
-`g/kg` pairs differ by too little to be that comparison.
+entering 10 where 1 % is meant scales `K₀` by 0.24 and `α` by 0.41.
 
 `regression_coefficients` is a [`WeynantsRegression`](@ref).
 
@@ -163,14 +153,13 @@ Predicted `θs` is returned as the porosity `ν` and `θʳ` is zero. Units are c
 model units: `α` (cm⁻¹) → m⁻¹, `K₀` (cm day⁻¹) → m s⁻¹.
 
 `K₀` is a **matrix** value: the fit excluded measurements wetter than 6 cm suction so that
-macropore flow would stay out of it, and it runs a factor of 3 to 5 below
+macropore flow would stay out of it, and it runs 1.8 to 6 times below
 [`saturated_conductivity`](@ref). Use it for [`VanGenuchtenConductivity`](@ref), where the
 pairing with `ηᴷ` matters, and the Cosby value for an infiltration cap.
 
 Predictors are clamped to the fit's own ranges — clay ≤ 54.5 %, sand 5.6–97.8 %, `ρᵇ`
-0.89–1.77 g/cm³, OC 0.01–6.6 % — since the regression is quadratic in sand and a Belgian
-calibration set has no authority outside them. A soil past those bounds silently gets the
-parameters of the boundary.
+0.89–1.77 g/cm³, OC 0.01–6.6 % — the regression being quadratic in sand. A soil past those
+bounds silently gets the parameters of the boundary.
 """
 struct WeynantsPedotransfer{FT, C} <: PedotransferFunction
     organic_carbon          :: FT
@@ -255,7 +244,6 @@ struct HYPRESRegression{C}
     matching_point_conductivity :: C
 end
 
-# `float` keeps the tuples homogeneous so integer zeros can be written literally.
 HYPRESRegression(; porosity, inverse_air_entry_head, pore_size_uniformity,
                    matching_point_conductivity) =
     HYPRESRegression(map(float, porosity),
@@ -284,10 +272,10 @@ Table 5). Each field predicts one parameter:
 | `pore_size_uniformity` | `n★ = ln(n - 1)` | – | 54 % |
 | `matching_point_conductivity` | `Kₛ★ = ln K₀` | ln(cm day⁻¹) | 19 % |
 
-Wösten publishes a fifth regression, for `ηᴷ`, which is not implemented: at `R² = 12 %`
-it is the weakest of the five, and [Schaap et al. (2001)](@cite schaap2001) find `ηᴷ`
-unpredictable from texture and bulk density in general (`R² = 0.012`). There is no `θʳ`
-regression at all, so [`HYPRESPedotransfer`](@ref) carries both as constants.
+Wösten publishes a fifth regression, for `ηᴷ`, which is not implemented: at `R² = 12 %` it
+is the weakest of the five, and [Schaap et al. (2001)](@cite schaap2001) find `ηᴷ`
+unpredictable from texture and bulk density in general. There is no `θʳ` regression at all,
+so [`HYPRESPedotransfer`](@ref) carries both as constants.
 
 `matching_point_conductivity` is the transformed *model* parameter of Table 5's footnote,
 already the matching point the Mualem–van Genuchten curve wants rather than an independent

@@ -27,7 +27,7 @@ NumericalEarth.Lands.hydraulic_conductivity(i, j, grid, ::ConstantConductivity, 
             @test 0 <= p.residual_liquid_fraction < p.porosity
             @test p.pore_size_uniformity > 1                     # van Genuchten n
             @test p.inverse_air_entry_head > 0                   # m⁻¹
-            @test p.matching_point_conductivity > 0                              # m s⁻¹
+            @test p.matching_point_conductivity > 0               # m s⁻¹
             @test isfinite(p.pore_connectivity_exponent)
         end
 
@@ -91,7 +91,9 @@ end
     @test -1 > ηᴷ(sand_soil) > -3        # -1.64 for a sand
     @test -6 > ηᴷ(clay_soil) > -12       # -8.28 for a 50 % clay
 
-    # K₀ is a matrix matching point, so it must sit below a macropore-inclusive Kˢᵃᵗ.
+    # Weynants' K₀ sits below Cosby's Kˢᵃᵗ across the texture triangle, by 1.8 to 6 times.
+    # An empirical property of this pair of fits, not a law: HYPRES' K₀ exceeds the same
+    # Cosby value over more than half the triangle.
     for t in textures
         @test soil_hydraulic_parameters(ptf, t...).matching_point_conductivity <
               saturated_conductivity(CosbyConductivity(), t[1])
@@ -646,28 +648,36 @@ end
     end
 end
 
-@testset "fallback_texture stands in for missing data" begin
-    loam = (sand = 0.4, silt = 0.4, clay = 0.2, bulk_density = 1400.0)
+@testset "inpainting the texture closes the missing-data gaps" begin
+    # Gaps are filled upstream, on the texture, not patched afterwards on the parameters:
+    # the pedotransfer function is nonlinear, so only the former leaves a filled cell's six
+    # outputs mutually consistent with one texture.
     zi = [-1.0, -0.6, -0.3, 0.0]
-
     for arch in test_architectures
-        grid = RectilinearGrid(arch; size = (1, 1, 3), x = (0, 1), y = (0, 1), z = zi,
+        grid = RectilinearGrid(arch; size = (2, 1, 3), x = (0, 2), y = (0, 1), z = zi,
                                topology = (Bounded, Bounded, Bounded))
-        texture = map(_ -> CenterField(grid), (1, 2, 3, 4))
-        foreach(f -> set!(f, NaN), texture)
+        sand = CenterField(grid); silt = CenterField(grid)
+        clay = CenterField(grid); bulk_density = CenterField(grid)
+        set!(sand, (x, y, z) -> x < 1 ? 0.90 : NaN)
+        set!(silt, (x, y, z) -> x < 1 ? 0.07 : NaN)
+        set!(clay, (x, y, z) -> x < 1 ? 0.03 : NaN)
+        set!(bulk_density, (x, y, z) -> x < 1 ? 1400.0 : NaN)
 
-        # Rock, water and out-of-coverage cells become the fallback soil, so a hydrology
-        # built from these fields has finite parameters everywhere.
-        props = soil_hydraulic_properties(texture...; slab_depth = 1.0,
-                                          fallback_texture = loam)
-        uniform = soil_hydraulic_parameters(WeynantsPedotransfer(), values(loam)...,
-                                            layer_depths(zi)[1])
-        for name in keys(props)
-            @test Array(interior(props[name]))[1, 1, 1] ≈ uniform[name] rtol=1e-8
+        gappy = soil_hydraulic_properties(sand, silt, clay, bulk_density; slab_depth = 1.0)
+        @test isnan(Array(interior(gappy.porosity))[2, 1, 1])
+
+        gaps = Field{Center, Center, Center}(grid, Bool)   # true where the data is missing
+        set!(gaps, (x, y, z) -> x >= 1)
+        for f in (sand, silt, clay, bulk_density)
+            NumericalEarth.DataWrangling.inpaint_mask!(f, gaps;
+                inpainting = NumericalEarth.DataWrangling.NearestNeighborInpainting(5))
         end
 
-        # Omitting it keeps the data's own NaN, which is the default.
-        bare = soil_hydraulic_properties(texture...; slab_depth = 1.0)
-        @test isnan(Array(interior(bare.porosity))[1, 1, 1])
+        filled = soil_hydraulic_properties(sand, silt, clay, bulk_density; slab_depth = 1.0)
+        for name in keys(filled)
+            column = Array(interior(filled[name]))[:, 1, 1]
+            @test all(isfinite, column)
+            @test column[2] ≈ column[1] rtol=1e-6   # filled from its only neighbor
+        end
     end
 end

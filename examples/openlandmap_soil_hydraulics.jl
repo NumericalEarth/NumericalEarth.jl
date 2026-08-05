@@ -2,6 +2,7 @@ using NumericalEarth   # OpenLandMapSoilDB, BoundingBox, MetadataSet, soil_hydra
 using Oceananigans     # Field, CPU, interior
 using ArchGDAL         # activates the windowed cloud-optimized-GeoTIFF reader
 using CairoMakie
+using NumericalEarth.DataWrangling: NearestNeighborInpainting
 
 # Derive van Genuchten hydraulic parameters for a `VariablySaturatedHydrology` slab
 # straight from 30 m soil texture. OpenLandMap-soilDB supplies sand/silt/clay and
@@ -16,18 +17,16 @@ region = BoundingBox(longitude = (-112.2, -112.0), latitude = (36.0, 36.2))
 metadata = MetadataSet(:sand_fraction, :silt_fraction, :clay_fraction, :bulk_density;
                        dataset = OpenLandMapSoilDB(), region)
 
-soil = map(m -> Field(m, CPU()), NamedTuple(metadata))
+# The canyon walls and the river carry no texture, 16 % of this window. Inpainting fills them
+# from neighboring soil before the pedotransfer function runs, which keeps all six parameters
+# of a filled cell mutually consistent.
+soil = map(m -> Field(m, CPU(); inpainting = NearestNeighborInpainting(20)), NamedTuple(metadata))
 
 # Weynants per depth layer, then combined over `slab_depth`: α and n are matched to the
-# thickness-weighted mean retention curve, K₀ upscales harmonically, the rest
-# arithmetically. Rock, water and out-of-coverage cells carry no texture; a nominal loam
-# stands in for them so every cell ends up with a finite parameter set.
+# thickness-weighted mean retention curve, K₀ upscales harmonically.
 properties = soil_hydraulic_properties(soil.sand_fraction, soil.silt_fraction,
                                        soil.clay_fraction, soil.bulk_density;
-                                       slab_depth = 1.0,
-                                       fallback_texture = (sand = 0.4, silt = 0.4,
-                                                           clay = 0.2,
-                                                           bulk_density = 1400.0))
+                                       slab_depth = 1.0)
 
 # The keys are the keyword arguments of the closures they belong to, so the parameter set
 # goes straight into a hydrology.
