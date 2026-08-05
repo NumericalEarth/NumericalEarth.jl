@@ -2,6 +2,7 @@ using NumericalEarth   # OpenLandMapSoilDB, BoundingBox, MetadataSet, soil_hydra
 using Oceananigans     # Field, CPU, interior
 using ArchGDAL         # activates the windowed cloud-optimized-GeoTIFF reader
 using CairoMakie
+using Statistics       # quantile, for robust color limits
 using NumericalEarth.DataWrangling: NearestNeighborInpainting
 
 # Derive van Genuchten hydraulic parameters for a `VariablySaturatedHydrology` slab
@@ -54,9 +55,17 @@ infiltration_capacity = Field(3_600_000 * saturated_conductivity(CosbyConductivi
 panels = [("porosity ν",                     "–",            properties.porosity,                   :viridis),
           ("inverse air-entry head α",       "m⁻¹",          properties.inverse_air_entry_head,      :plasma),
           ("pore-size uniformity n",         "–",            properties.pore_size_uniformity,       :plasma),
-          ("pore-connectivity exponent ηᴷ",  "–",            properties.pore_connectivity_exponent, :managua),
+          ("pore-connectivity exponent ηᴷ",  "–",            properties.pore_connectivity_exponent, :batlow),
           ("matching-point K₀",              "log₁₀(m s⁻¹)", Field(log10(K₀)),                       :turbo),
           ("Cosby saturated Kˢᵃᵗ (0–30 cm)", "mm hour⁻¹",    view(infiltration_capacity, :, :, 3),   :turbo)]
+
+# Every parameter here has a thin tail: for n, the full min-to-max range spends 77 % of the
+# colormap on under 2 % of the cells, which flattens everything else. Span the 1st to 99th
+# percentile instead and let the tails saturate, which the colorbar marks with pointed ends.
+function percentile_range(field, low = 0.01, high = 0.99)
+    values = sort!(filter(isfinite, vec(Array(interior(field)))))
+    return quantile(values, low, sorted=true), quantile(values, high, sorted=true)
+end
 
 fig = Figure(size = (1150, 1450), fontsize = 15)
 Label(fig[0, 1:2], "Soil hydraulic parameters from OpenLandMap-soilDB 30 m — 0–100 cm — Grand Canyon window";
@@ -66,7 +75,8 @@ for (panel_number, (title, unit, field, colormap)) in enumerate(panels)
     row, col = fldmod1(panel_number, 2)
     ax = Axis(fig[row, col]; title, xlabel = "longitude (°)", ylabel = "latitude (°)",
               aspect = DataAspect())
-    hm = heatmap!(ax, field; colormap, colorrange = extrema(filter(isfinite, interior(field))),
+    hm = heatmap!(ax, field; colormap, colorrange = percentile_range(field),
+                  lowclip = :grey25, highclip = :grey85,
                   nan_color = RGBAf(0.85, 0.85, 0.85, 1))
     Colorbar(fig[row, col][1, 2], hm; label = unit)
 end
