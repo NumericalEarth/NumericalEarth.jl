@@ -229,6 +229,15 @@ function add_omip_diagnostics!(simulation;
         field_outputs[:vvolgm] = KernelFunctionOperation{Center, Face, Center}(meridional_volume_flux, grid, vgm)
     end
 
+    # Field-valued (flow-aware) eddy coefficients: write what the closure actually used, so a run
+    # with KSKEW=nemo/cesm can be audited against the offline climatological estimates.
+    closures = ocean.model.closure isa Tuple ? ocean.model.closure : (ocean.model.closure,)
+    n = findfirst(c -> c isa IsopycnalSkewSymmetricDiffusivity, closures)
+    if !isnothing(n)
+        closures[n].κ_skew isa Field      && (field_outputs[:aei] = closures[n].κ_skew)
+        closures[n].κ_symmetric isa Field && (field_outputs[:aht] = closures[n].κ_symmetric)
+    end
+
     simulation.output_writers[:fields] = JLD2Writer(ocean.model, field_outputs;
                                                     schedule = AveragedTimeInterval(field_averaging_interval),
                                                     dir = output_dir,
