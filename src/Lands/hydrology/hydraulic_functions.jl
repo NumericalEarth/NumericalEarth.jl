@@ -5,7 +5,8 @@
 #####
 
 """
-    VanGenuchtenRetention(inverse_air_entry_head, pore_size_uniformity)
+    VanGenuchtenRetention(FT = Oceananigans.defaults.FloatType;
+                          inverse_air_entry_head, pore_size_uniformity)
 
 Empirical soil-water retention curve mapping liquid pore fraction `θˡ`
 (or saturation `𝒮`) to soil matric pressure head `Π_m` (m, negative in
@@ -37,7 +38,7 @@ Adapt.adapt_structure(to, r::VanGenuchtenRetention) =
                           Adapt.adapt(to, r.pore_size_uniformity))
 
 """
-    van_genuchten_m(n)
+$(TYPEDSIGNATURES)
 
 The second shape parameter of the [van Genuchten (1980)](@cite vangenuchten1980)
 retention curve, `m = 1 - 1/n`. [Mualem (1976)](@cite mualem1976new) restricts `m` to
@@ -48,7 +49,7 @@ solution.
 @inline van_genuchten_m(n) = 1 - 1/n
 
 """
-    van_genuchten_saturation(αψ, n)
+$(TYPEDSIGNATURES)
 
 Effective saturation `𝒮 = [1 + (αψ)ⁿ]^(-m)` at dimensionless suction `αψ ≥ 0`, the
 inverse of [`VanGenuchtenRetention`](@ref)'s `pressure_head`.
@@ -56,17 +57,28 @@ inverse of [`VanGenuchtenRetention`](@ref)'s `pressure_head`.
 @inline van_genuchten_saturation(αψ, n) =
     (one(n) + αψ^n)^(-van_genuchten_m(n))
 
+"""
+$(TYPEDSIGNATURES)
+
+`log(eˣ - 1)` for `x > 0`, evaluated as `x + log(1 - e⁻ˣ)` to avoid overflow in `eˣ` 
+for large `x`.
+"""
+@inline logexpm1(x) = x + log(-expm1(-x))
+
 @inline function pressure_head(i, j, grid, r::VanGenuchtenRetention, 𝒮)
-    FT  = eltype(grid)
-    α   = convert(FT, property_value(r.inverse_air_entry_head, i, j))
-    n   = convert(FT, property_value(r.pore_size_uniformity, i, j))
-    n⁻¹ = 1 / n
-    m⁻¹ = 1 / van_genuchten_m(n)
-    # Floor at `eps` rather than 0: 𝒮 = 0 is a pole of `𝒮^(-1/m)`.
-    𝒮c = clamp(convert(FT, 𝒮), eps(FT), one(FT))
-    return ifelse(𝒮c >= one(FT),
-                  zero(FT),
-                  -(𝒮c^(-m⁻¹) - one(FT))^n⁻¹ / α)
+    FT = eltype(grid)
+    α  = convert(FT, property_value(r.inverse_air_entry_head, i, j))
+    n  = convert(FT, property_value(r.pore_size_uniformity, i, j))
+    m  = van_genuchten_m(n)
+    𝒮c = clamp(convert(FT, 𝒮), zero(FT), one(FT))
+
+    # Left alone the pole at 𝒮 = 0 returns `-Inf`, and a Darcy deep flux turns that into
+    # NaN. Bounding the head at `√floatmax` leaves room for the flux arithmetic on top of it
+    # and stays clear of every curve: in `Float64` it is not reached above 𝒮 = 10⁻¹², and the
+    # `Float32` bound at 𝒮 = 0.03 for the steepest clay sits where `K` has already vanished.
+    logΠᵐᵃˣ = log(floatmax(FT)) / 2
+    logΠ    = logexpm1(-log(𝒮c) / m) / n - log(α)
+    return ifelse(𝒮c >= one(FT), zero(FT), -exp(min(logΠ, logΠᵐᵃˣ)))
 end
 
 Base.summary(r::VanGenuchtenRetention) =
@@ -84,25 +96,25 @@ the [Mualem (1976)](@cite mualem1976new) pore-bundle model with the
 [van Genuchten (1980)](@cite vangenuchten1980) retention shape:
 
 ```math
-K(\\mathcal S) = K_{sat}\\,\\mathcal S^\\ell\\left[1 - (1 - \\mathcal S^{1/m})^m\\right]^2,
+K(\\mathcal S) = K_0\\,\\mathcal S^{\\eta^K}\\left[1 - (1 - \\mathcal S^{1/m})^m\\right]^2,
 \\qquad m = 1 - 1/n.
 ```
 
 `matching_point_conductivity` (`K₀`, m s⁻¹) is the conductivity this curve reaches at
 `𝒮 = 1`, `pore_size_uniformity` (`n`) must match the retention curve's, and
-`pore_connectivity_exponent` (`ℓ`, –) is the exponent on saturation: a larger value
+`pore_connectivity_exponent` (`ηᴷ`, –) is the exponent on saturation: a larger value
 throttles conductivity more steeply as the soil drains. Each may be a scalar or a
 `Field` (see [`soil_hydraulic_properties`](@ref)).
 
-`K₀` and `ℓ` have to come from the same fit: [Schaap and Leij (2000)](@cite schaap2000)
-found `ℓ ≈ -1` near-optimal, but only while refitting the matching point alongside it to
-about an eighth of the measured saturated conductivity. The default `ℓ = 1/2` is the value
+`K₀` and `ηᴷ` have to come from the same fit: [Schaap and Leij (2000)](@cite schaap2000)
+found `ηᴷ ≈ -1` near-optimal, but only while refitting the matching point alongside it to
+about an eighth of the measured saturated conductivity. The default `ηᴷ = 1/2` is the value
 that pairs with an unreduced `K₀`; [`WeynantsPedotransfer`](@ref) predicts the two together
 instead. Neither form represents macropore flow, so an infiltration cap wants
 [`saturated_conductivity`](@ref).
 
 `water_viscosity` is a [`WaterViscosity`](@ref), applied when `hydraulic_conductivity` is
-called with a temperature.
+called with a temperature; pass `nothing` for an isothermal conductivity.
 """
 struct VanGenuchtenConductivity{K, N, L, V}
     matching_point_conductivity :: K
@@ -127,16 +139,32 @@ Adapt.adapt_structure(to, c::VanGenuchtenConductivity) =
                              Adapt.adapt(to, c.water_viscosity))
 
 @inline function hydraulic_conductivity(i, j, grid, c::VanGenuchtenConductivity, 𝒮)
-    FT   = eltype(grid)
-    Ksat = convert(FT, property_value(c.matching_point_conductivity, i, j))
-    n    = convert(FT, property_value(c.pore_size_uniformity, i, j))
-    ℓ    = convert(FT, property_value(c.pore_connectivity_exponent, i, j))
-    m    = van_genuchten_m(n)
-    m⁻¹  = 1 / m
-    𝒮c   = clamp(convert(FT, 𝒮), zero(FT), one(FT))
-    inner = one(FT) - (one(FT) - 𝒮c^m⁻¹)^m
-    return Ksat * 𝒮c^ℓ * inner^2
+    FT = eltype(grid)
+    K₀ = convert(FT, property_value(c.matching_point_conductivity, i, j))
+    n  = convert(FT, property_value(c.pore_size_uniformity, i, j))
+    ηᴷ = convert(FT, property_value(c.pore_connectivity_exponent, i, j))
+    m  = van_genuchten_m(n)
+    𝒮c = clamp(convert(FT, 𝒮), zero(FT), one(FT))
+
+    log𝒮 = log(𝒮c)
+    logu = log𝒮 / m
+    u    = exp(logu)
+    # The bracket is `m u` to machine precision once `u` is small, which is also where `u`
+    # underflows: a negative `ηᴷ` then meets `Inf * 0` in the direct product. Summing the
+    # logarithms instead keeps `𝒮^ηᴷ [⋯]²` finite over the whole range.
+    negligible = logu < log(eps(FT))
+    logbracket = ifelse(negligible, log(m) + logu, log(-expm1(m * log1p(-u))))
+    K = K₀ * exp(ηᴷ * log𝒮 + 2 * logbracket)
+    return ifelse(𝒮c == zero(FT), zero(FT), K)
 end
+
+"""
+$(TYPEDSIGNATURES)
+
+Darcy hydraulic conductivity (m s⁻¹) of closure `c` at saturation `𝒮` in cell `(i, j)`.
+
+"""
+@inline hydraulic_conductivity(i, j, grid, c, 𝒮, T) = hydraulic_conductivity(i, j, grid, c, 𝒮)
 
 # Temperature-corrected form, `T` in K.
 @inline hydraulic_conductivity(i, j, grid, c::VanGenuchtenConductivity, 𝒮, T) =
@@ -195,10 +223,11 @@ Base.summary(v::WaterViscosity) =
 Base.show(io::IO, v::WaterViscosity) = print(io, summary(v))
 
 """
-    viscosity_correction(v::WaterViscosity, T)
+$(TYPEDSIGNATURES)
 
 Factor by which [`WaterViscosity`](@ref) scales hydraulic conductivity at temperature `T`
-(K), unity at `v.reference_temperature`.
+(K), unity at `v.reference_temperature`. The arithmetic follows the float type of `T`, so
+a conductivity closure built at the default float type still runs in a `Float32` kernel.
 
 ```jldoctest
 using NumericalEarth
@@ -216,13 +245,15 @@ round.([viscosity_correction(v, T) for T in (275.0, 288.0, 310.0)], digits = 3)
 ```
 """
 @inline function viscosity_correction(v::WaterViscosity, T)
-    FT = typeof(v.pole_temperature)
-    T₁ = v.activation_temperature
-    T₂ = v.pole_temperature
-    Tᵛ = v.reference_temperature
-    Tc = max(convert(FT, T), v.minimum_temperature)
+    FT = float(typeof(T))
+    T₁ = convert(FT, v.activation_temperature)
+    T₂ = convert(FT, v.pole_temperature)
+    Tᵛ = convert(FT, v.reference_temperature)
+    Tc = max(convert(FT, T), convert(FT, v.minimum_temperature))
     return exp(T₁ / (Tᵛ - T₂) - T₁ / (Tc - T₂))
 end
+
+@inline viscosity_correction(::Nothing, T) = one(float(typeof(T)))
 
 convert_eltype(::Type{FT}, v::WaterViscosity{FT}) where FT = v
 convert_eltype(::Type{FT}, v::WaterViscosity) where FT =
@@ -231,8 +262,10 @@ convert_eltype(::Type{FT}, v::WaterViscosity) where FT =
                        reference_temperature = v.reference_temperature,
                        minimum_temperature = v.minimum_temperature)
 
+convert_eltype(::Type, ::Nothing) = nothing
+
 """
-    critical_saturation(n)
+$(TYPEDSIGNATURES)
 
 Effective saturation at which capillary flow paths to an evaporating surface become
 disconnected, `𝒮ᶜ = [1 + ((n-1)/n)^(1-2n)]^(-m)` with `m = 1 - 1/n`.
@@ -244,10 +277,13 @@ parameters. The retention curve depends on the product `α hᶜ`, so the `α⁻�
 it and `𝒮ᶜ` is set by `n` alone. Bare-soil evaporation falls to half its potential rate at
 `θ½ ≈ θʳ + (ν - θʳ) 𝒮ᶜ`.
 
+This is a prediction of the threshold that [`CriticalSaturation`](@ref) takes as a tunable
+`critical_saturation`, from the retention curve rather than by calibration.
+
 ```jldoctest
 using NumericalEarth
 
-round.(critical_saturation.([1.2, 1.5, 3.0]), digits = 3)
+round.(capillary_disconnect_saturation.([1.2, 1.5, 3.0]), digits = 3)
 
 # output
 3-element Vector{Float64}:
@@ -256,7 +292,7 @@ round.(critical_saturation.([1.2, 1.5, 3.0]), digits = 3)
  0.238
 ```
 """
-@inline function critical_saturation(n)
+@inline function capillary_disconnect_saturation(n)
     m = van_genuchten_m(n)
     return (one(n) + ((n - one(n)) / n)^(one(n) - 2n))^(-m)
 end
@@ -276,7 +312,7 @@ Saturated hydraulic conductivity from sand, and its within-class spread from sil
 \\sigma(\\log_{10} K^{sat}) = c + d\\,S^{silt},
 ```
 
-with texture in % and `Kₛ` in inch hour⁻¹. Read with
+with texture in % and `Kˢᵃᵗ` in inch hour⁻¹. Read with
 [`saturated_conductivity`](@ref) and [`conductivity_spread`](@ref), which take mass
 fractions (kg/kg) and return m s⁻¹ and decades respectively.
 
@@ -289,8 +325,8 @@ which is what makes a texture-dependent prior possible at all.
 The defaults are the published Table 5 fit, regressed on 1,448 US samples across 11
 texture classes. It is offered for its texture range rather than its accuracy: across the
 texture triangle it spans a factor of 19 and falls monotonically with clay. It is **not
-validated**, and against the laboratory `Kₛ` of GSHP ([Gupta et al. (2022)](@cite
-gupta2022)) it runs `+1.16` high in `log₁₀ cm/day`. Predicting `Kₛ` from texture is
+validated**, and against the laboratory `Kˢᵃᵗ` of GSHP ([Gupta et al. (2022)](@cite
+gupta2022)) it runs `+1.16` high in `log₁₀ cm/day`. Predicting `Kˢᵃᵗ` from texture is
 challenging ([Weynants et al. (2009)](@cite weynants2009) could not exceed `R² = 0.25`
 from any transformation of texture, bulk density and organic carbon), so this should
 likely be treated as a prior to be calibrated against rather than a prediction.
@@ -321,7 +357,7 @@ Base.summary(c::CosbyConductivity) =
 Base.show(io::IO, c::CosbyConductivity) = print(io, summary(c))
 
 """
-    saturated_conductivity(c::CosbyConductivity, sand)
+$(TYPEDSIGNATURES)
 
 Macropore-inclusive saturated hydraulic conductivity (m s⁻¹) from sand mass fraction
 (kg/kg).
@@ -334,8 +370,8 @@ the pedotransfer function's own for [`VanGenuchtenConductivity`](@ref).
 using NumericalEarth
 
 ## sand, loam and clay, in mm hour⁻¹
-Ks = [saturated_conductivity(CosbyConductivity(), sand) for sand in (0.92, 0.43, 0.20)]
-round.(Ks .* 3.6e6, digits = 1)
+Kˢᵃᵗ = [saturated_conductivity(CosbyConductivity(), sand) for sand in (0.92, 0.43, 0.20)]
+round.(Kˢᵃᵗ .* 3.6e6, digits = 1)
 
 # output
 3-element Vector{Float64}:
@@ -348,18 +384,21 @@ round.(Ks .* 3.6e6, digits = 1)
     (254//36_000_000) * 10^(c.sand_coefficient * 100sand + c.intercept)  # inch hour⁻¹ → m s⁻¹
 
 """
-    conductivity_spread(c::CosbyConductivity, silt)
+$(TYPEDSIGNATURES)
 
-Standard deviation of `log₁₀ Kₛ` within a texture class, from silt mass fraction (kg/kg).
+Standard deviation of `log₁₀ Kˢᵃᵗ` within a texture class, from silt mass fraction (kg/kg).
 
 Half a decade for a sand rising to two thirds of a decade for a silt: any calibration that
-moves `Kₛ` by less than this is inside the noise of its texture class.
+moves `Kˢᵃᵗ` by less than this is inside the noise of its texture class.
 """
 @inline conductivity_spread(c::CosbyConductivity, silt) =
     c.spread_silt_coefficient * 100silt + c.spread_intercept
 
+viscosity_summary(v::WaterViscosity) = string("Tᵛ=", prettysummary(v.reference_temperature))
+viscosity_summary(::Nothing) = "isothermal"
+
 Base.summary(c::VanGenuchtenConductivity) =
     string("VanGenuchtenConductivity(K₀=", prettysummary(c.matching_point_conductivity),
            ", n=", prettysummary(c.pore_size_uniformity),
-           ", ℓ=", prettysummary(c.pore_connectivity_exponent),
-           ", Tᵛ=", prettysummary(c.water_viscosity.reference_temperature), ")")
+           ", ηᴷ=", prettysummary(c.pore_connectivity_exponent),
+           ", ", viscosity_summary(c.water_viscosity), ")")

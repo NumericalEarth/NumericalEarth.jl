@@ -101,7 +101,7 @@ export
     WaterCoupledEnergy,
     VariablySaturatedHydrology,
     VanGenuchtenRetention, VanGenuchtenConductivity,
-    critical_saturation, WaterViscosity, viscosity_correction,
+    capillary_disconnect_saturation, WaterViscosity, viscosity_correction,
     CosbyConductivity,
     saturated_conductivity, conductivity_spread,
     NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,

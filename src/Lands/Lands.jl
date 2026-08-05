@@ -15,7 +15,7 @@ export AbstractLand,
        BucketHydrology, DryLand, SaturatedSurface,
        # Variably saturated hydrology + sub-closures
        VanGenuchtenRetention, VanGenuchtenConductivity,
-       critical_saturation, WaterViscosity, viscosity_correction,
+       capillary_disconnect_saturation, WaterViscosity, viscosity_correction,
        CosbyConductivity,
        saturated_conductivity, conductivity_spread,
        NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
@@ -50,7 +50,7 @@ using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField
-using Oceananigans.Grids: grid_name, Center, Face, φnode
+using Oceananigans.Grids: grid_name, Center, Face, znodes, φnode
 using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time

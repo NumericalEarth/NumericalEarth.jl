@@ -110,15 +110,17 @@ end
             runoff = NoRunoff(),
         )
         land_drain = SlabLand(grid; hydrology = hydrology_drain)
-        set!(land_drain; M = 400.0)  # fully saturated
+        set!(land_drain; T = 293.0, M = 400.0)  # fully saturated, warmer than the reference
         fill!(land_drain.fluxes.vapor_flux, 0)
         fill!(land_drain.fluxes.liquid_precipitation_flux, 0)
-        T = only(Array(interior(land_drain.temperature)))
         viscosity = hydrology_drain.hydraulic_conductivity.water_viscosity
-        Θ = viscosity_correction(viscosity, T)
+        Θ = viscosity_correction(viscosity, 293.0)
         time_step!(land_drain, 100.0)
         expected = 400.0 - 100 * 1000 * 1e-6 * Θ
-        @test only(Array(interior(land_drain.water_storage))) ≈ expected atol = 1e-3
+        @test only(Array(interior(land_drain.water_storage))) ≈ expected atol = 1e-5
+        # 293 K is 13 % less viscous than the reference, so the isothermal 0.1 kg drop is
+        # outside the tolerance above — the temperature really is being read.
+        @test !isapprox(only(Array(interior(land_drain.water_storage))), 399.9, atol = 1e-3)
         # The correction is unity at the reference temperature, and only there.
         @test viscosity_correction(viscosity, viscosity.reference_temperature) == 1
     end
