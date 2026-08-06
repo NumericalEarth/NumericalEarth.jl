@@ -213,4 +213,5 @@ NumericalEarth currently ships connectors for the following data products:
 | `CopernicusAlbedoClimatology` | `:albedo` — 12-month climatology of the CGLS blue-sky broadband albedo | [CGLS Surface Albedo](https://cds.climate.copernicus.eu/datasets/satellite-albedo) |
 | `GHSBuiltH`        | `:building_height` — mean net building height (ANBH, 100 m, epoch 2018) over a regional window; reprojected from GHSL World-Mollweide (needs `ArchGDAL`) | [GHSL GHS-BUILT-H](https://human-settlement.emergency.copernicus.eu) |
 | `GHSBuiltS`        | `:built_up_fraction` — plan-area built-up fraction (10 m or 100 m) over a regional window; reprojected from GHSL World-Mollweide (needs `ArchGDAL`) | [GHSL GHS-BUILT-S](https://human-settlement.emergency.copernicus.eu) |
+| `ESAWorldCover`    | `:landcover_class`, `:vegetation_fraction`, and a per-class `:<class>_fraction` — 10 m land-cover classification aggregated block-wise over a regional window (needs `ArchGDAL`) | [ESA WorldCover](https://esa-worldcover.org/en/data-access) |
 
