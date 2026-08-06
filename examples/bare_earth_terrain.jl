@@ -54,9 +54,7 @@ longitude = -60.5, -59.0
 grid = LatitudeLongitudeGrid(CPU(); latitude, longitude, size = (150, 110),
                             topology = (Bounded, Bounded, Flat))
 
-dsm_dataset = GLO30()
-
-dsm_elevation = regrid_topography(grid; dataset = dsm_dataset)
+dsm_elevation = regrid_topography(grid; dataset = GLO30())
 
 # ## Object heights (canopy)
 #
@@ -64,14 +62,10 @@ dsm_elevation = regrid_topography(grid; dataset = dsm_dataset)
 # bare — 0 height is a valid value, not a gap. In the full pipeline this field comes from
 # a canopy-height dataset.
 
-λ, φ, _ = nodes(grid, Center(), Center(), Center())
-elevation = interior(dsm_elevation, :, :, 1)
+canopy_height         = 35.0   # m, tall tropical canopy
+terra_firme_elevation = 30.0   # m, above this is upland forest; below is river floodplain
 
-canopy_height          = 35.0   # m, tall tropical canopy
-terra_firme_elevation  = 30.0   # m, above this is upland forest; below is river floodplain
-
-canopy = Field{Center, Center, Nothing}(grid)
-set!(canopy, ifelse.(elevation .≥ terra_firme_elevation, canopy_height, 0.0))
+object_height = canopy_height * (dsm_elevation ≥ terra_firme_elevation) |> Field
 
 # ## Bare-earth terrain
 #
@@ -79,8 +73,7 @@ set!(canopy, ifelse.(elevation .≥ terra_firme_elevation, canopy_height, 0.0))
 # The DSM-minus-bare-earth difference *is* the removed canopy — the signal that belongs to
 # roughness, not terrain.
 
-bare_elevation = bare_earth_elevation(dsm_elevation, canopy)
-
+bare_elevation = bare_earth_elevation(dsm_elevation, object_height)
 removed_object_height = dsm_elevation - bare_elevation
 
 # ## Coarse reference elevation
@@ -95,7 +88,7 @@ removed_object_height = dsm_elevation - bare_elevation
 atmosphere_grid = LatitudeLongitudeGrid(CPU(); latitude, longitude, size = (37, 27),
                                         topology = (Bounded, Bounded, Flat))
 
-coarse_elevation = regrid_topography(atmosphere_grid; dataset = dsm_dataset)
+coarse_elevation = regrid_topography(atmosphere_grid; dataset = GLO30())
 
 reference_elevation = Field{Center, Center, Nothing}(grid)
 interpolate!(reference_elevation, coarse_elevation)
@@ -107,12 +100,13 @@ interpolate!(reference_elevation, coarse_elevation)
 # surface elevation and the coarse elevation the atmosphere data assumes.
 
 elevation_difference = bare_elevation - reference_elevation
-
 correction = ElevationCorrection(bare_elevation, reference_elevation)
 
 # ## Transect across the basin
 #
 # A west–east cut crosses both river floodplains and terra-firme forest.
+
+λ, φ, _ = nodes(grid, Center(), Center(), Center())
 
 transect_latitude = -3.0
 transect_index = searchsortedfirst(φ, transect_latitude)
@@ -123,42 +117,32 @@ bare_transect  = view(bare_elevation, :, transect_index, 1)
 
 fig = Figure(size = (1600, 1150), fontsize = 15)
 
-elevation_limits     = extrema(dsm_elevation)
-object_height_limits = (0, canopy_height)
+elevation_limits = extrema(dsm_elevation)
+canopy_limits = (0, canopy_height)
+maximum_difference = maximum(abs, elevation_difference)
+correction_limits = (-maximum_difference, maximum_difference)
 
-dsm_axis = Axis(fig[1, 1]; title = "DSM elevation (m)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-dsm_heatmap = heatmap!(dsm_axis, dsm_elevation; colormap = :terrain, colorrange = elevation_limits)
-Colorbar(fig[1, 2], dsm_heatmap)
+panels = [("DSM elevation (m)",              dsm_elevation,         :terrain, elevation_limits),
+          ("Bare-earth DTM (m)",             bare_elevation,        :terrain, elevation_limits),
+          ("Synthetic canopy height (m)",    object_height,         :speed,   canopy_limits),
+          ("DSM − bare-earth (m)",           removed_object_height, :speed,   canopy_limits),
+          ("Coarse reference elevation (m)", reference_elevation,   :terrain, elevation_limits),
+          ("Elevation correction Δz (m)",    elevation_difference,  :balance, correction_limits)]
 
-bare_axis = Axis(fig[1, 3]; title = "Bare-earth DTM (m)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-bare_heatmap = heatmap!(bare_axis, bare_elevation; colormap = :terrain, colorrange = elevation_limits)
-Colorbar(fig[1, 4], bare_heatmap)
+for (n, (title, field, colormap, colorrange)) in enumerate(panels)
+    i, j = fldmod1(n, 3)
+    ax = Axis(fig[i, 2j-1]; title, xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
+    hm = heatmap!(ax, field; colormap, colorrange)
+    Colorbar(fig[i, 2j], hm)
+end
 
-canopy_axis = Axis(fig[1, 5]; title = "Synthetic canopy height (m)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-canopy_heatmap = heatmap!(canopy_axis, canopy; colormap = :speed, colorrange = object_height_limits)
-Colorbar(fig[1, 6], canopy_heatmap)
-
-removed_axis = Axis(fig[2, 1]; title = "DSM − bare-earth (m)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-removed_heatmap = heatmap!(removed_axis, removed_object_height; colormap = :speed, colorrange = object_height_limits)
-Colorbar(fig[2, 2], removed_heatmap)
-
-reference_axis = Axis(fig[2, 3]; title = "Coarse reference elevation (m)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-reference_heatmap = heatmap!(reference_axis, reference_elevation; colormap = :terrain, colorrange = elevation_limits)
-Colorbar(fig[2, 4], reference_heatmap)
-
-maximum_elevation_difference = maximum(abs, elevation_difference)
-correction_axis = Axis(fig[2, 5]; title = "Elevation correction Δz (m)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-correction_heatmap = heatmap!(correction_axis, elevation_difference; colormap = :balance,
-                              colorrange = (-maximum_elevation_difference, maximum_elevation_difference))
-Colorbar(fig[2, 6], correction_heatmap)
-
-transect_axis = Axis(fig[3, 1:6]; title = "West–east transect at $(transect_latitude)°",
-                     xlabel = "longitude", ylabel = "elevation (m)")
-band!(transect_axis, λ, vec(interior(bare_transect)), vec(interior(dsm_transect));
+ax = Axis(fig[3, 1:6]; title = "West–east transect at $(transect_latitude)°",
+          xlabel = "longitude", ylabel = "elevation (m)")
+band!(ax, λ, vec(interior(bare_transect)), vec(interior(dsm_transect));
       color = (:seagreen, 0.35), label = "removed canopy (synthetic)")
-lines!(transect_axis, dsm_transect;  color = :black,     label = "DSM")
-lines!(transect_axis, bare_transect; color = :firebrick, label = "bare-earth DTM")
-axislegend(transect_axis; position = :lt)
+lines!(ax, dsm_transect;  color = :black,     label = "DSM")
+lines!(ax, bare_transect; color = :firebrick, label = "bare-earth DTM")
+axislegend(ax; position = :lt)
 
 Label(fig[0, 1:6], rich("Bare-earth terrain over the central Amazon — DSM minus canopy height\n",
                         rich("canopy height is SYNTHETIC (an elevation-gated stand-in, not measured); terrain is real",
