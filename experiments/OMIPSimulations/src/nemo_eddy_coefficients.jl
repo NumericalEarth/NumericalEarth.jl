@@ -110,27 +110,26 @@ end
 end
 
 
-# With distinct, nonzero κ_skew ≠ κ_symmetric fields, the isopycnal fluxes evaluated from the
-# two sides of the tripolar fold differ (the closure's (κ_symmetric − κ_skew) cross-term meets
-# fold halos that are not exact images) and the closure leaks tracer at a steady rate —
-# ~2e-6 of the total salt per year in an idealized closed-basin test, the rate observed in
-# production. Homogenizing the band is NOT sufficient; a shared field or zero coefficients
-# there are. Zeroing the last `rows` interior rows removes every closure flux touching the
-# fold, so no asymmetry can survive, at no physical cost: the band is the central-Arctic rim,
-# where the Treguier coefficient is near zero anyway (deformation radius at its clamp).
-# Harmless on grids without a fold.
-function zero_fold_rows!(coefficient_field, grid; rows = 5)
+# With κ_skew ≠ κ_symmetric near the tripolar fold, the closure's (κ_symmetric − κ_skew)
+# cross-term is evaluated through two non-equivalent stencils at the same physical fold face
+# and leaks tracer at a steady rate — ~2e-6 of the total salt per year in an idealized
+# closed-basin test, the rate observed in production. The leading κ∂c terms conserve for any
+# κ with filled halos (the difference stencil is fold-antisymmetric by construction), so
+# setting the symmetric coefficient equal to the skew one over the last `rows` interior rows
+# annihilates the offending cross-term pointwise across every fold stencil while keeping the
+# full spatial structure of the mixing there. Harmless on grids without a fold.
+function match_fold_rows!(symmetric_field, skew_field, grid; rows = 5)
     Nz = size(grid, 3)
-    launch!(architecture(grid), grid, KernelParameters((Nz + 1,), (0,)), _zero_fold_rows!, coefficient_field, grid, rows)
+    launch!(architecture(grid), grid, KernelParameters((Nz + 1,), (0,)), _match_fold_rows!, symmetric_field, skew_field, grid, rows)
     return nothing
 end
 
-@kernel function _zero_fold_rows!(κ, grid, rows)
+@kernel function _match_fold_rows!(κʳ, κˢ, grid, rows)
     k = @index(Global)
     Nx = size(grid, 1)
     Ny = size(grid, 2)
     for j in Ny-rows+1:Ny, i in 1:Nx
-        @inbounds κ[i, j, k] = 0
+        @inbounds κʳ[i, j, k] = κˢ[i, j, k]
     end
 end
 
@@ -140,8 +139,8 @@ end
 # 300/800 leaks ~16× harder than the Treguier fields in the idealized test), because the
 # closure's (κ_symmetric − κ_skew) cross-term meets fold halos that are not exact images.
 # Equal pairs cancel exactly, which is how every historical constant-κ run stayed clean.
-# Promote unequal scalars to static fields with a zeroed fold band; equal pairs and
-# non-tripolar grids pass through untouched.
+# Promote unequal scalars to static fields whose symmetric coefficient matches the skew
+# one over the fold band; equal pairs and non-tripolar grids pass through untouched.
 fold_safe_constant_coefficients(grid, κ_skew, κ_symmetric) = (κ_skew, κ_symmetric)
 
 function fold_safe_constant_coefficients(grid::TripolarGridOfSomeKind, κ_skew::Number, κ_symmetric::Number)
@@ -150,8 +149,7 @@ function fold_safe_constant_coefficients(grid::TripolarGridOfSomeKind, κ_skew::
     symmetric_field = Field{Center, Center, Face}(grid)
     set!(skew_field, κ_skew)
     set!(symmetric_field, κ_symmetric)
-    zero_fold_rows!(skew_field, grid)
-    zero_fold_rows!(symmetric_field, grid)
+    match_fold_rows!(symmetric_field, skew_field, grid)
     fill_halo_regions!(skew_field)
     fill_halo_regions!(symmetric_field)
     return (skew_field, symmetric_field)
@@ -174,8 +172,7 @@ function compute_nemo_eddy_coefficients!(coefficients::NEMOEddyCoefficients, oce
             coefficients.slope_limiter, ocean_model.buoyancy, fields(ocean_model),
             Ω, coefficients.parameters)
 
-    zero_fold_rows!(coefficients.skew_coefficient, grid)
-    zero_fold_rows!(coefficients.symmetric_coefficient, grid)
+    match_fold_rows!(coefficients.symmetric_coefficient, coefficients.skew_coefficient, grid)
 
     # Without this the halos stay zero, so the two cells sharing a face across the periodic seam or the
     # tripolar fold evaluate the isopycnal flux with different κ. The face flux is then not antisymmetric
