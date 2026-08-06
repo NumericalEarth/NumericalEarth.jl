@@ -41,6 +41,11 @@ end
 
 function average_window_edges(bounds, window)
     first_edge, last_edge = DateTime(first(bounds)), DateTime(last(bounds))
+
+    first_edge + window > first_edge ||
+        throw(ArgumentError("time_average tiles the record with `window`, so it has to advance " *
+                            "the clock; got $window."))
+
     edges = [first_edge]
     while last(edges) < last_edge
         push!(edges, min(last(edges) + window, last_edge))

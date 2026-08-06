@@ -704,9 +704,10 @@ DataWrangling.dataset_variable_name(metadata::MODISLandMetadata) =
 ##### [`regional_lattice`](@ref).
 #####
 
-const Δ = 1/240
+const MODIS_LATTICE_SPACING = 1/240
 
-Base.size(::AbstractMODISLandDataset, variable) = (round(Int, 360 / Δ), round(Int, 180 / Δ), 1)
+Base.size(::AbstractMODISLandDataset, variable) =
+    (round(Int, 360 / MODIS_LATTICE_SPACING), round(Int, 180 / MODIS_LATTICE_SPACING), 1)
 
 DataWrangling.longitude_interfaces(::AbstractMODISLandDataset) = (-180, 180)
 DataWrangling.latitude_interfaces(::AbstractMODISLandDataset)  = (-90, 90)
@@ -779,7 +780,7 @@ end
 
 DataWrangling.all_dates(dataset::MODISLAIDataset, variable) =
     modis_composite_dates(first_composite_date(dataset), last_composite_date(dataset),
-                    composite_period_days(dataset))
+                          composite_period_days(dataset))
 
 """
     periods_per_year(dataset)
@@ -789,8 +790,8 @@ compositing period restarts at day-of-year 1 every January, so the last period o
 is short and the count is the same in leap and common years.
 """
 periods_per_year(dataset) = length(modis_composite_dates(climatology_year_start(),
-                                                   climatology_year_end(),
-                                                   composite_period_days(dataset)))
+                                                         climatology_year_end(),
+                                                         composite_period_days(dataset)))
 
 # A common (non-leap) placeholder year carries the climatological stamps, so the period
 # count and the day-of-year of each stamp are the ones every year shares.
@@ -799,7 +800,7 @@ climatology_year_end()   = DateTime(2018, 12, 31)
 
 DataWrangling.all_dates(climatology::MODISLAIClimatology, variable) =
     modis_composite_dates(climatology_year_start(), climatology_year_end(),
-                    composite_period_days(climatology))
+                          composite_period_days(climatology))
 
 # One map per calendar year, stamped on 1 January — not a day-stepped composite cadence.
 DataWrangling.all_dates(dataset::MCD12Q1, variable) =
@@ -944,10 +945,10 @@ function regional_lattice(metadata::MODISLandMetadata)
     icols = native_cell_range(bbox_longitude, native_longitude, Nx)
     jrows = native_cell_range(region.latitude, native_latitude, Ny)
 
-    return (west  = first(native_longitude) + (first(icols) - 1) * Δ,
-            east  = first(native_longitude) + last(icols) * Δ,
-            south = first(native_latitude) + (first(jrows) - 1) * Δ,
-            north = first(native_latitude) + last(jrows) * Δ,
+    return (west  = first(native_longitude) + (first(icols) - 1) * MODIS_LATTICE_SPACING,
+            east  = first(native_longitude) + last(icols) * MODIS_LATTICE_SPACING,
+            south = first(native_latitude) + (first(jrows) - 1) * MODIS_LATTICE_SPACING,
+            north = first(native_latitude) + last(jrows) * MODIS_LATTICE_SPACING,
             Nx = length(icols), Ny = length(jrows))
 end
 
@@ -1064,15 +1065,7 @@ end
 ##### Download
 #####
 
-function Downloads.download(metadata::Metadata{<:MODISLAIDataset})
-    @root for metadatum in metadata
-        path = metadata_path(metadatum)
-        isfile(path) || modis_granules_to_netcdf(metadatum, path)
-    end
-    return metadata_path(metadata)
-end
-
-function Downloads.download(metadata::MODISLandCoverMetadata)
+function Downloads.download(metadata::MODISLandMetadata)
     @root for metadatum in metadata
         path = metadata_path(metadatum)
         isfile(path) || modis_granules_to_netcdf(metadatum, path)

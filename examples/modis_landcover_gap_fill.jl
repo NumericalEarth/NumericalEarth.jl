@@ -225,17 +225,17 @@ retained = Field(retained_retrieval_metadatum(
 # more than one period across green-up puts the ramp in the wrong place — and zero for urban
 # and water, which are never filled at all.
 
-maximum_gap = class_maximum_gap(classes)
+max_gap = class_maximum_gap(classes)
 
 @printf("  class-keyed max_gap : %d–%d periods (a uniform table would use one number)\n",
-        minimum(maximum_gap), maximum(maximum_gap))
+        minimum(max_gap), maximum(max_gap))
 
 # Running the stages cumulatively is what makes the gap-fraction panel below readable: each
 # line is one more stage than the line above it, and each has to sit at or below it.
 
 function run_chain(stages)
     Λ = FieldTimeSeries(metadata; time_indices_in_memory = length(periods))
-    filled = fill_seasonal_gaps!(Λ, classes; cyclic = true, maximum_gap,
+    filled = fill_seasonal_gaps!(Λ, classes; cyclic = true, max_gap,
                                  valid_range = (0, 10),
                                  unfilled_classes = igbp_non_vegetated_classes,
                                  stages)
@@ -477,7 +477,7 @@ anchor_periods = [period_index(date, MCD15A2H()) for date in target.dates]
 # rather than a correction to it.
 
 anchored = fill_seasonal_gaps!(Λ2019, classes; anchor = Λfilled, anchor_periods,
-                               maximum_gap, cyclic = false, valid_range = (0, 10),
+                               max_gap, cyclic = false, valid_range = (0, 10),
                                unfilled_classes = igbp_non_vegetated_classes)
 
 filled_2019 = horizontal(Λ2019)
@@ -592,7 +592,7 @@ nothing #hide
 # because the granules are already cached.
 
 scores = gap_fill_denial(Λfilled, classes; samples_per_class = 100, cyclic = true,
-                         maximum_gap, valid_range = (0, 10),
+                         max_gap, valid_range = (0, 10),
                          unfilled_classes = igbp_non_vegetated_classes)
 
 @printf("\nData denial over the %s climatology\n", climatology.years)

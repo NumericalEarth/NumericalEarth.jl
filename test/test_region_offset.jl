@@ -82,7 +82,7 @@ end
 
 @testset "Bounding index tolerance" begin
     # A node sitting anywhere within a quarter cell of a coordinate resolves to that
-    # coordinate's index, and a node past the half cell resolves to the next one.
+    # coordinate's index; further above it, to the next one.
     Δ = 1/336
     hc = [37.2 + (j - 1) * Δ for j in 1:64]
 

@@ -1,4 +1,4 @@
-using Statistics: mean, std, cov
+using Statistics: mean, cor
 
 #####
 ##### Interpolation along time
@@ -16,7 +16,9 @@ copied to the CPU, filled in place, and copied back.
 
 Gaps longer than `max_gap` points are left as NaN, and one warning summarizes what was
 left behind across the whole call — a gridded series has as many columns as cells, so
-warning per column would bury the result.
+warning per column would bury the result. A gap running to either end of an open series is
+the exception: it is extended with its nearest value whatever `max_gap` says, because
+there is no second value to interpolate towards.
 
 `max_gap` may instead be an array matching the spatial dimensions of `data`, giving each
 column its own tolerance. A uniform bridge cannot be right everywhere: 32 days across an
@@ -441,7 +443,7 @@ same datum as one that reached fifteen, and the reach is how a user tells them a
 Three stages run in order, and each only ever writes where the previous left `NaN` —
 observed values are never rewritten:
 
-1. `:temporal` — [`fill_gaps!`](@ref) along the time axis, with `maximum_gap` free to be a
+1. `:temporal` — [`fill_gaps!`](@ref) along the time axis, with `max_gap` free to be a
    per-cell array.
 2. `:scaled` — a donor's seasonal *shape* scaled to the cell's own level,
    `Λ(i,j,t) = s(i,j) · Λ̄(i,j,t)`, with `s` the ratio of the cell's sum to the donor's over
@@ -460,7 +462,7 @@ Keyword arguments
             curve instead of its neighbors'. Default: `nothing`.
 - `anchor_periods`: the anchor index each time of `series` maps to. Default: cyclic reuse.
 - `cyclic`: treat the time axis as one period of a periodic signal. Default: no `anchor`.
-- `maximum_gap`: scalar or per-cell bridge length for stage 1. Default: `6`.
+- `max_gap`: scalar or per-cell bridge length for stage 1. Default: `6`.
 - `block_size`: cells per side of the donor table's blocks. Default: `32`.
 - `initial_radius`, `maximum_radius`: the donor stencil's half-width in blocks, before and
                                       after growing. Defaults: `1` and `16`.
@@ -482,7 +484,7 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
                              anchor = nothing,
                              anchor_periods = nothing,
                              cyclic = isnothing(anchor),
-                             maximum_gap = 6,
+                             max_gap = 6,
                              block_size = 32,
                              initial_radius = 1,
                              minimum_donors = 20,
@@ -516,7 +518,7 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
     reach = zeros(Int, Nx, Ny)
 
     if :temporal in stages
-        fill_gaps!(Λ; max_gap = maximum_gap, cyclic)
+        fill_gaps!(Λ; max_gap, cyclic)
 
         for t in 1:Nt, j in 1:Ny, i in 1:Nx
             observed[i, j, t] && continue
@@ -613,7 +615,7 @@ reached at all, which is as much of the result as the scores.
 Needs no downloads: it re-uses a series that is already assembled.
 """
 function gap_fill_denial(series, land_cover; samples_per_class = 100, kw...)
-    Λ = seasonal_array(series isa FieldTimeSeries ? Array(interior(series)) : copy(series))
+    Λ = seasonal_array(series isa FieldTimeSeries ? series : copy(series))
     codes = horizontal_array(land_cover)
     Nx, Ny, Nt = size(Λ)
 
@@ -647,12 +649,10 @@ function gap_fill_denial(series, land_cover; samples_per_class = 100, kw...)
             continue
         end
 
-        residual = modeled .- observed
-        rmse = sqrt(mean(abs2, residual))
-        correlation = cov(modeled, observed) / (std(modeled) * std(observed))
+        rmse = sqrt(mean(abs2, modeled .- observed))
 
         push!(rows, (; class, withheld = length(indices), estimated = count(reached),
-                     R² = correlation^2, cv_rmse = rmse / mean(observed)))
+                     R² = cor(modeled, observed)^2, cv_rmse = rmse / mean(observed)))
     end
 
     return rows

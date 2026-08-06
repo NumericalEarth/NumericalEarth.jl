@@ -179,11 +179,13 @@ class field to decide how far and from whom:
 ```julia
 classes = Field(Metadatum(:landcover_class; dataset = MCD12Q1(), region, date = DateTime(2019)))
 
-Λ = FieldTimeSeries(Metadata(:leaf_area_index; dataset = climatology, region))
+metadata = Metadata(:leaf_area_index; dataset = climatology, region)
+
+Λ = FieldTimeSeries(metadata; time_indices_in_memory = length(metadata.dates))
 
 filled = fill_seasonal_gaps!(Λ, classes;
                              cyclic = true,
-                             maximum_gap = class_maximum_gap(classes),
+                             max_gap = class_maximum_gap(classes),
                              valid_range = (0, 10),
                              unfilled_classes = igbp_non_vegetated_classes)
 ```
@@ -208,11 +210,17 @@ cell's own climatological curve, which preserves its seasonal shape too and need
 field. There is no second dataset type:
 
 ```julia
-Λ2019 = FieldTimeSeries(Metadata(:leaf_area_index; dataset = MCD15A2H(), region,
-                                 dates = (DateTime(2019, 1, 1), DateTime(2019, 12, 31))))
+target = Metadata(:leaf_area_index; dataset = MCD15A2H(), region,
+                  dates = (DateTime(2019, 1, 1), DateTime(2019, 12, 31)))
+
+Λ2019 = FieldTimeSeries(target; time_indices_in_memory = length(target.dates))
 
 fill_seasonal_gaps!(Λ2019, classes; anchor = Λ, cyclic = false)
 ```
+
+Both take the whole record at once, so the series has to hold all of its times in memory —
+the sliding window a `FieldTimeSeries` reads with by default is rejected rather than filled
+as if it were the whole record.
 
 `gap_fill_denial` scores any of this by withholding values the chain would otherwise have
 kept and comparing the estimates against them, per class. It needs no new downloads.
@@ -242,7 +250,7 @@ The composites are window averages already and 8-day periods do not nest inside 
 the samples straddling each edge are split by their days of overlap:
 
 ```julia
-Λbimonthly, edges = time_average(Λ2019, metadata, Month(2))
+Λbimonthly, edges = time_average(Λ2019, target, Month(2))
 ```
 
 The metadata closes the last sample's window with the dataset's own compositing rule, which
@@ -270,7 +278,7 @@ climatology = MODISLAIClimatology(years = 2003:2019)
 build_lai_climatology!(climatology; region)
 
 metadata = Metadata(:leaf_area_index; dataset = climatology, region)
-Λ = FieldTimeSeries(metadata, grid)
+Λ = FieldTimeSeries(metadata, grid; time_indices_in_memory = length(metadata.dates))
 
 # Fill what compositing could not, wrapping across the turn of the year
 fill_gaps!(Λ; max_gap = 4, cyclic = true)

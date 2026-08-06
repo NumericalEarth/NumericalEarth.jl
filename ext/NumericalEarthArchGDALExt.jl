@@ -77,17 +77,21 @@ end
 # code 255, which the read path rejects on both the digital numbers and the quality bytes.
 function warp_modis_layer(granule_paths, layer, lattice)
     sources = [ArchGDAL.read(modis_subdataset(path, layer)) for path in granule_paths]
-    warped = ArchGDAL.gdalwarp(sources,
-        ["-t_srs", "EPSG:4326",
-         "-te", string(lattice.west), string(lattice.south),
-                string(lattice.east), string(lattice.north),
-         "-ts", string(lattice.Nx), string(lattice.Ny),
-         "-r", "near",
-         "-ot", "Byte",
-         "-dstnodata", "255"]) do destination
-        ArchGDAL.read(destination, 1)
+
+    warped = try
+        ArchGDAL.gdalwarp(sources,
+            ["-t_srs", "EPSG:4326",
+             "-te", string(lattice.west), string(lattice.south),
+                    string(lattice.east), string(lattice.north),
+             "-ts", string(lattice.Nx), string(lattice.Ny),
+             "-r", "near",
+             "-ot", "Byte",
+             "-dstnodata", "255"]) do destination
+            ArchGDAL.read(destination, 1)
+        end
+    finally
+        foreach(ArchGDAL.destroy, sources)
     end
-    foreach(ArchGDAL.destroy, sources)
 
     # GDAL writes rows north→south; flip to the ascending latitude axis of the stored file.
     return reverse(warped, dims = 2)

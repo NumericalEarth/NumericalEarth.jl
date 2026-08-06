@@ -75,14 +75,14 @@ single = Metadatum(:leaf_area_index; dataset = MCD15A2H(), region, date)
 
 classes = Metadatum(:landcover_code; dataset = MCD15A2H(), region, date)
 
-class_fraction = mean(.!isnan.(Array(interior(Field(classes)))))
+class_code_fraction = mean(.!isnan.(Array(interior(Field(classes)))))
 
 @printf("Single 8-day composite, %s, on the product's own 500 m grid\n",
         Dates.format(date, "yyyy-mm-dd"))
-@printf("  a land-cover class, not a failed retrieval : %.2f%%\n", 100 * class_fraction)
+@printf("  a land-cover class, not a failed retrieval : %.2f%%\n", 100 * class_code_fraction)
 @printf("  total missing                              : %.2f%%\n", 100 * gap_fraction(Λsingle))
 @printf("  → attributable to cloud and quality        : %.2f%%\n",
-        100 * (gap_fraction(Λsingle) - class_fraction))
+        100 * (gap_fraction(Λsingle) - class_code_fraction))
 
 # **The second is cloud, and compositing across years removes it — given enough years.** The
 # same period in another year is usually clear, so the composite's gap collapses onto the
@@ -105,7 +105,7 @@ deep_composite = Metadatum(:leaf_area_index; dataset = deep, region, date = stam
 
 @printf("\n%s composite of the same period\n", deep.years)
 @printf("  total missing : %.2f%%  (the land-cover classes are %.2f%%)\n",
-        100 * gap_fraction(Λdeep), 100 * class_fraction)
+        100 * gap_fraction(Λdeep), 100 * class_code_fraction)
 @printf("  mean Λ        : %.2f m² m⁻²\n", nanmean(Λdeep))
 
 # **The third is the regrid, and it is the one worth knowing about.** Landing a field with
@@ -260,7 +260,7 @@ fill_gaps!(Λfilled; max_gap = 4, cyclic = true)
 filled_gaps = [gap_fraction(Λfilled[n]) for n in periods]
 
 @printf("  still missing after the cyclic fill : mean %.2f%%  (land-cover classes are %.2f%%)\n",
-        100 * mean(filled_gaps), 100 * class_fraction)
+        100 * mean(filled_gaps), 100 * class_code_fraction)
 
 day_of_year = 8 .* (periods .- 1) .+ 1
 
@@ -305,7 +305,7 @@ scatterlines!(ax, day_of_year, 100 .* filled_gaps, color = :steelblue, markersiz
 scatter!(ax, [day_of_year[wettest]], [100 * gap_fraction(Λwettest)],
          color = :firebrick, marker = :star5, markersize = 20,
          label = "cloudiest period, $(deep.years)")
-hlines!(ax, [100 * class_fraction], color = :gray40, linestyle = :dash,
+hlines!(ax, [100 * class_code_fraction], color = :gray40, linestyle = :dash,
         label = "land-cover classes (the floor)")
 axislegend(ax, position = :rt)
 
