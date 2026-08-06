@@ -2,7 +2,7 @@ module CopernicusLandAlbedo
 
 export CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!
 
-using Dates: Dates, DateTime, Month, year, month, daysinmonth
+using Dates: Dates, DateTime, Day, Month, year, month, day, daysinmonth
 using Downloads: Downloads
 using NCDatasets: NCDataset, defVar, nomissing
 using Oceananigans: Center
@@ -166,6 +166,21 @@ DataWrangling.all_dates(::CopernicusAlbedo, variable) = copernicus_albedo_dekada
 
 # 12 climatological months; the year is arbitrary, only the month matters.
 DataWrangling.all_dates(::CopernicusAlbedoClimatology, variable) = [DateTime(2018, m, 1) for m in 1:12]
+
+# A dekad is stamped on its last day, so its window opens on day 1, 11, or 21 and closes the
+# day after the stamp. The third dekad runs to the end of the month, so it is 8 to 11 days long.
+function copernicus_albedo_dekad_window(date)
+    dekad_start = day(date) == 10 ? 1 : day(date) == 20 ? 11 : 21
+    start = DateTime(year(date), month(date), dekad_start)
+    return start, DateTime(date) + Day(1)
+end
+
+DataWrangling.sample_window(metadatum::Metadatum{<:CopernicusAlbedo}) =
+    copernicus_albedo_dekad_window(metadatum.dates)
+
+# A climatological month is the mean of that month's dekads, stamped on the first of the month.
+DataWrangling.sample_window(metadatum::Metadatum{<:CopernicusAlbedoClimatology}) =
+    (DateTime(metadatum.dates), DateTime(metadatum.dates) + Month(1))
 
 #####
 ##### Filenames (date + variable keyed, region-independent — reused across regions)

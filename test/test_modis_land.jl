@@ -730,7 +730,8 @@ end
     @test all(isnan, Λ[2, 1, 4:6])
 end
 
-# No product in the tree stamps a sample at the end of its window, so a stand-in pins the sign.
+# A stand-in for the sign of an end-stamped window (the Copernicus albedo dekads are the real
+# case), so the MODIS tests stay clear of another product's dataset.
 struct EndStampedMetadatum
     dates :: DateTime
 end
@@ -805,6 +806,12 @@ end
     class_map = Metadata(:landcover_class; dataset = MCD12Q1(), region,
                          dates = [DateTime(2015)])
     @test_throws ArgumentError sample_bounds(class_map)
+
+    # Dates that skip composites do not tile time, so the interior bounds would credit each
+    # sample with the skipped period as well.
+    every_other = Metadata(:leaf_area_index; dataset = MCD15A2H(), region,
+                           dates = [DateTime(2019, 1, 1), DateTime(2019, 1, 17)])
+    @test_throws ArgumentError sample_bounds(every_other)
 end
 
 @testset "Zeroing the non-vegetated classes" begin

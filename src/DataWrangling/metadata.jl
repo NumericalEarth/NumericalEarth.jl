@@ -687,9 +687,9 @@ compositing window, and negative for one that labels the end.
 """
 function time_window_offset(metadatum)
     start, stop = sample_window(metadatum)
-    stamp = comparable_datetime(metadatum.dates)
-    start_offset = Dates.value(Dates.Second(comparable_datetime(start) - stamp))
-    stop_offset = Dates.value(Dates.Second(comparable_datetime(stop) - stamp))
+    stamp = metadatum.dates
+    start_offset = Dates.value(Dates.Second(start - stamp))
+    stop_offset = Dates.value(Dates.Second(stop - stamp))
     return (start_offset + stop_offset) / 2
 end
 
@@ -703,25 +703,46 @@ its [`sample_window`](@ref).
 
 Defined only for a product whose samples tile time and whose stamps open their windows. An
 instantaneous product reports a zero-width `sample_window`, so where its samples end is a
-modeling choice rather than a property of the data, and this throws instead of guessing one.
+modeling choice rather than a property of the data, and this throws instead of guessing one. It
+also throws when `metadata` skips dates its cadence has, since the interior bounds would then
+credit each sample with the skipped interval too.
 """
 function sample_bounds(metadata::Metadata)
-    metadatum = last(metadata)
-    window_start, window_stop = sample_window(metadatum)
-    stamp = comparable_datetime(metadatum.dates)
+    Nt = length(metadata)
+    bounds = Vector{DateTime}(undef, Nt + 1)
 
-    comparable_datetime(window_start) < comparable_datetime(window_stop) ||
-        throw(ArgumentError("`sample_bounds` needs a dataset whose samples tile time, and " *
-                            "$(metadata.dataset) reports instantaneous samples. Pass the " *
-                            "bounds explicitly to say what interval each sample stands for."))
+    for (n, metadatum) in enumerate(metadata)
+        window_start, window_stop = sample_window(metadatum)
+        stamp = comparable_datetime(metadatum.dates)
+        start = comparable_datetime(window_start)
+        stop = comparable_datetime(window_stop)
 
-    comparable_datetime(window_start) == stamp ||
-        throw(ArgumentError("`sample_bounds` reads every stamp as the start of the interval " *
-                            "its sample covers, and $(metadata.dataset) stamps a sample at " *
-                            "$stamp for the window opening $(window_start). Pass the bounds " *
-                            "explicitly."))
+        start < stop ||
+            throw(ArgumentError("`sample_bounds` needs a dataset whose samples tile time, and " *
+                                "$(metadata.dataset) reports instantaneous samples. Pass the " *
+                                "bounds explicitly to say what interval each sample stands for."))
 
-    return [comparable_datetime.(metadata.dates); comparable_datetime(window_stop)]
+        start == stamp ||
+            throw(ArgumentError("`sample_bounds` reads every stamp as the start of the interval " *
+                                "its sample covers, and $(metadata.dataset) stamps a sample at " *
+                                "$stamp for the window opening $(window_start). Pass the bounds " *
+                                "explicitly."))
+
+        bounds[n] = stamp
+
+        if n < Nt
+            next_stamp = comparable_datetime(metadata[n + 1].dates)
+            stop == next_stamp ||
+                throw(ArgumentError("`sample_bounds` needs samples that tile time, and the " *
+                                    "$(metadata.dataset) sample stamped $stamp covers up to " *
+                                    "$stop while the next is stamped $next_stamp. Pass every " *
+                                    "date of the cadence, or pass the bounds explicitly."))
+        else
+            bounds[n + 1] = stop
+        end
+    end
+
+    return bounds
 end
 
 ####
@@ -889,6 +910,7 @@ Compute the range of `native_dates` that fall within the specified `start_date` 
 """
 comparable_datetime(date::Dates.AbstractDateTime) = DateTime(date)
 comparable_datetime(date::AbstractCFDateTime) = DateTime(date)
+comparable_datetime(date::Date) = DateTime(date)
 
 function compute_native_date_range(native_dates, start_date, end_date)
     start_datetime = comparable_datetime(start_date)

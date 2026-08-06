@@ -31,7 +31,7 @@ using Oceananigans.Grids: AbstractGrid, Center, Face, Flat, Bounded,
                           LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes
 using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
 using Oceananigans.Grids: node
-using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
+using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Clamp, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
 using Oceananigans.Utils: launch!, prettytime, prettysummary
 using NCDatasets: NCDatasets, Dataset

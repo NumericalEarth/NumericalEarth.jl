@@ -2,6 +2,8 @@ include("runtests_setup.jl")
 
 using NumericalEarth.DataWrangling: fill_gaps!, fill_seasonal_gaps!, gap_fill_provenance,
     gap_fill_denial, time_average
+using Oceananigans.Grids: halo_size
+using Oceananigans.OutputReaders: Cyclical, InMemory
 using Dates: DateTime, Day, Month, Year
 using Statistics: mean
 
@@ -291,9 +293,7 @@ end
 end
 
 # Eight 8-day composites of a ramp, averaged onto calendar months. The windows do not nest, so
-# the samples that straddle an edge have to be split by days of overlap. Averaged where the
-# series lives: no `@allowscalar` anywhere, so a reduction that only ran on the host would fail
-# here on a GPU.
+# the samples that straddle an edge have to be split by days of overlap.
 @testset "Time averaging [$arch]" for arch in test_architectures
     dates = [DateTime(2019, 1, 1) + Day(8 * (n - 1)) for n in 1:8]
     bounds = [dates; dates[end] + Day(8)]
@@ -349,4 +349,45 @@ end
     @test Array(interior(whole_record))[1, 1, 1, 1] ≈ mean(1:8)
 
     @test_throws ArgumentError time_average(ramp, dates, Month(1))
+
+    # Only part of the record in memory cannot be reduced, and the error says so rather than
+    # blaming the bounds.
+    partial = FieldTimeSeries{Center, Center, Center}(grid, Float64.(0:7); backend = InMemory(2))
+    @test_throws ArgumentError time_average(partial, bounds, Month(1))
+end
+
+# The reduced series carries the input's layout, not the bare grid's: its slice, its time
+# indexing, and halos the kernel never writes.
+@testset "Time averaging preserves the series' layout [$arch]" for arch in test_architectures
+    dates = [DateTime(2019, 1, 1) + Day(8 * (n - 1)) for n in 1:8]
+    bounds = [dates; dates[end] + Day(8)]
+
+    grid = LatitudeLongitudeGrid(arch, size = (2, 1, 4), longitude = (0, 1),
+                                 latitude = (0, 1), z = (0, 1))
+
+    # A surface slice averages to the same slice; sizing the reduction from the grid instead
+    # would run the kernel down the whole column and read past the series' own data.
+    surface = FieldTimeSeries{Center, Center, Center}(grid, Float64.(0:7), indices = (:, :, 4))
+    for n in 1:8
+        interior(surface[n]) .= n
+    end
+
+    sliced, _ = time_average(surface, bounds, Month(1))
+    @test sliced.indices == surface.indices
+    @test size(interior(sliced)) == (2, 1, 1, 3)
+    @test Array(interior(sliced))[1, 1, 1, 3] ≈ 8
+
+    # A climatology is usable as cyclic forcing only if its average stays cyclic.
+    cyclic = FieldTimeSeries{Center, Center, Center}(grid, Float64.(0:7), time_indexing = Cyclical())
+    for n in 1:8
+        interior(cyclic[n]) .= n
+    end
+
+    averaged, _ = time_average(cyclic, bounds, Month(1))
+    @test averaged.time_indexing isa Cyclical
+
+    # The last window holds composite 8 alone, so the halo next to the interior carries its
+    # value rather than the zero it was allocated with.
+    Hx, Hy, Hz = halo_size(grid)
+    @test Array(parent(averaged[3]))[1 + Hx, Hy, 1 + Hz] ≈ 8
 end
