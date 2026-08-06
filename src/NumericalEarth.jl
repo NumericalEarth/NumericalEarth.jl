@@ -103,6 +103,11 @@ export
     VanGenuchtenRetention, VanGenuchtenConductivity,
     NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
     NoRunoff, InfiltrationCapacityRunoff,
+    # Urban aerodynamic roughness closures
+    AbstractUrbanRoughness, MorphometricRoughness,
+    IsotropicFrontalArea, EmpiricalFrontalArea,
+    UniformHeight, VariableHeight,
+    urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
     surface_temperature,
     regrid_bathymetry,
     regrid_topography,
@@ -116,7 +121,9 @@ export
     ECCO2DarwinMonthly, ECCO4DarwinMonthly,
     EN4Monthly,
     WOAClimatology, WOAAnnual, WOAMonthly,
+    ASTERGEDv3,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
+    ESAWorldCover, WorldCoverVersion, WorldCoverV100, WorldCoverV200,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
@@ -126,6 +133,9 @@ export
     JRA55FieldTimeSeries,
     ORCAOne, ORCAQuarter, ORCATwelfth,
     ORCAGrid,
+    OpenLandMapSoilDB,
+    GlobalBuildingFootprints3D, building_morphometry,
+    GHSBuiltH, GHSBuiltS,
     first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,
     DatasetRestoring,
@@ -274,7 +284,12 @@ using .DataWrangling.GloFAS
 using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
+using .DataWrangling.ASTERGED
 using .DataWrangling.CopernicusLandAlbedo
+using .DataWrangling.OpenLandMap
+using .DataWrangling.GloBFP3D
+using .DataWrangling.GHSL
+using .DataWrangling.WorldCover
 
 using PrecompileTools: @setup_workload, @compile_workload
 

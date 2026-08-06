@@ -216,6 +216,7 @@ makedocs(; sitename = "NumericalEarth.jl",
          warnonly = [:cross_references, :missing_docs],
          checkdocs = :exports,
          linkcheck = true,
+         linkcheck_timeout = 30, # some hosts (e.g. JMA JRA-55) are slow; the default 10s times out
          linkcheck_ignore = [
              r"^https://ecco\.jpl\.nasa\.gov/.*",
              r"https://www\.ncei\.noaa\.gov/products/etopo-global-relief-model",
