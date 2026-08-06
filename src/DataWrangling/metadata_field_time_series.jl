@@ -39,7 +39,8 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
                                                     time_indices_in_memory = 2,
                                                     time_indexing = Cyclical(),
                                                     inpainting = default_inpainting(metadata),
-                                                    cache_inpainted_data = true)
+                                                    cache_inpainted_data = true,
+                                                    prefetch = false)
 
     Downloads.download(metadata)
 
@@ -47,6 +48,7 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
     # Float32 grid that mismatch makes `interpolate`'s time weight `Float64`, so the interpolated value is
     # `Union{Float32, Float64}` — a type instability that boxes inside GPU tendency/halo kernels.
     times = convert.(eltype(grid), native_times(metadata))
+
 
     # Make sure we do not use more indices then the ones available!
     if length(times) < time_indices_in_memory
@@ -60,10 +62,19 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
     # it whenever — as for any interpolation target — the grid isn't the native one.
     native = native_grid(metadata, architecture(grid))
     on_native_grid = typeof(grid) === typeof(native) && grid == native
-    backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid, inpainting, cache_inpainted_data)
+    inner_backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid, inpainting, cache_inpainted_data)
 
     loc = LX, LY, LZ = location(metadata)
     boundary_conditions = FieldBoundaryConditions(grid, instantiate.(loc))
+
+    if prefetch
+        Threads.nthreads() < 2 && @warn "prefetch=true is a no-op with JULIA_NUM_THREADS=$(Threads.nthreads()); start Julia with ≥ 2 threads."
+        buffer_inner = new_backend(inner_backend, 1, time_indices_in_memory)
+        buffer_fts = FieldTimeSeries{LX, LY, LZ}(grid, times; backend=buffer_inner, time_indexing, boundary_conditions)
+        backend = PrefetchingBackend(inner_backend, buffer_fts)
+    else
+        backend = inner_backend
+    end
 
     fts = FieldTimeSeries{LX, LY, LZ}(grid, times; backend, time_indexing, boundary_conditions)
     set!(fts)
