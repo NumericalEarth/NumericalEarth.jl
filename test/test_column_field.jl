@@ -33,7 +33,7 @@ const test_latitude = -50.0
     @test (i⁻, i⁺) == (3, 4)
     @test w == 1.0
 
-    # On the right-most centre: weight = 1.
+    # On the right-most center: weight = 1.
     i⁻, i⁺, w = bracket_with_weight(coords, 3.5)
     @test (i⁻, i⁺) == (3, 4)
     @test w ≈ 1.0
@@ -47,7 +47,7 @@ const test_latitude = -50.0
 end
 
 @testset "bracket_with_weight (cyclic wrap)" begin
-    coords = collect(0.5:1.0:359.5)  # global 1° centres
+    coords = collect(0.5:1.0:359.5)  # global 1° centers
     n = length(coords)
 
     # Interior point — period is a no-op there.
@@ -74,7 +74,7 @@ end
 end
 
 @testset "NaN-aware blend" begin
-    # 2x2x1 synthetic data; column at the centre point with equal weights.
+    # 2x2x1 synthetic data; column at the center point with equal weights.
     c = ColumnInfo(1, 2, 1, 2, 0.5f0, 0.5f0, Linear())
     FT = Float32
 
@@ -86,9 +86,9 @@ end
     data_nan = fill(NaN32, 2, 2, 1)
     @test isnan(blend(c.ℑ, data_nan, c, 1, nothing, FT))
 
-    # Partial: bottom-right corner is NaN, weights renormalise over the rest.
+    # Partial: bottom-right corner is NaN, weights renormalize over the rest.
     # Weights become (0.25, 0.25, 0.25, 0); Σw = 0.75; sum = 1+2+3 = 6;
-    # result = 6 / 0.75 = 2.0 in 1/2/3 → renormalised mean.
+    # result = 6 / 0.75 = 2.0 in 1/2/3 → renormalized mean.
     data_part = reshape(Float32[1 2; 3 NaN32], 2, 2, 1)
     @test blend(c.ℑ, data_part, c, 1, nothing, FT) ≈ 2.0f0
 
