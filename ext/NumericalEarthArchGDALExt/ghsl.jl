@@ -32,13 +32,16 @@ function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLM
 
     name = dataset_variable_name(metadatum)
     resolution_m = native_resolution(dataset)
-    Δ = resolution_m / 111320  # target degree pixel size
 
-    west, east = region.longitude
-    south, north = region.latitude
+    # Reproject onto the grid the read path indexes the file with, and gather the tiles
+    # covering that window rather than the requested one: it reaches up to a cell beyond
+    # the request, and across a tile boundary that cell would otherwise come back empty.
+    raster = ghsl_regional_raster(metadatum)
+    west, east   = raster.region.longitude
+    south, north = raster.region.latitude
 
     cache_dir = joinpath(dirname(nc_path), "tiles")
-    tiles = ghsl_tiles_in_bbox(region)
+    tiles = ghsl_tiles_in_bbox(raster.region)
 
     # JRC omits all-ocean tiles from the grid, so a coastal window can reference a tile
     # that 404s; skip those and mosaic the land tiles that do exist.
@@ -57,25 +60,19 @@ function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLM
         error("No GHSL tiles are published for the requested region; it may be entirely ocean.")
 
     datasets = [ArchGDAL.read(source) for source in sources]
-    raw, longitude, latitude = try
+    raw = try
         ArchGDAL.gdalwarp(datasets,
+            # `-ts` pins the cell count: with a pixel size, GDAL rounds the extent instead
+            # and the raster comes back short of the grid.
             ["-s_srs", "ESRI:54009",
              "-t_srs", "EPSG:4326",
              "-te",    string(west), string(south), string(east), string(north),
-             "-tr",    string(Δ), string(Δ),
+             "-ts",    string(raster.Nx), string(raster.Ny),
              "-r",     "bilinear",
              "-dstnodata", "nan",  # honor the source no-data: keep it out of the bilinear blend and write NaN for gaps
              "-ot",    "Float32"]) do warped
             data = Float64.(ArchGDAL.read(warped, 1))
-            data = reverse(data, dims = 2)  # GDAL writes y north→south
-            Nx, Ny = size(data)
-            geotransform = ArchGDAL.getgeotransform(warped)
-            Δλ = geotransform[2]
-            Δφ = geotransform[6]  # negative
-            lon = collect(range(geotransform[1] + Δλ / 2; step = Δλ, length = Nx))
-            lat = collect(range(geotransform[4] + Δφ / 2; step = Δφ, length = Ny))
-            reverse!(lat)  # match the reversed data
-            return data, lon, lat
+            return reverse(data, dims = 2)  # GDAL writes y north→south
         end
     finally
         for d in datasets
@@ -91,16 +88,14 @@ function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLM
     end
 
     NCDataset(nc_path, "c") do ds
-        Nx = length(longitude)
-        Ny = length(latitude)
-        defDim(ds, "lon", Nx)
-        defDim(ds, "lat", Ny)
+        defDim(ds, "lon", raster.Nx)
+        defDim(ds, "lat", raster.Ny)
         lon_var = defVar(ds, "lon", Float64, ("lon",);
                          attrib = ["units" => "degrees_east", "long_name" => "longitude"])
         lat_var = defVar(ds, "lat", Float64, ("lat",);
                          attrib = ["units" => "degrees_north", "long_name" => "latitude"])
-        lon_var[:] = longitude
-        lat_var[:] = latitude
+        lon_var[:] = raster.longitude
+        lat_var[:] = raster.latitude
         var = defVar(ds, name, Float64, ("lon", "lat"))
         var[:, :] = field
     end
