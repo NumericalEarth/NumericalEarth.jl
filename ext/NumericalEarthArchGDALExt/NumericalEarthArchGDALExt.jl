@@ -25,6 +25,10 @@ using NumericalEarth.DataWrangling.GloBFP3D: GlobalBuildingFootprints3DMetadatum
 using NumericalEarth.DataWrangling.GHSL: GHSBuiltS, GHSLMetadatum, native_resolution,
                                          ghsl_tile_url, ghsl_tile_tif_name, ghsl_tiles_in_bbox,
                                          built_surface_to_fraction, mask_building_height
+using NumericalEarth.DataWrangling.WorldCover: ESAWorldCoverMetadatum, version_year, version_string,
+                                               worldcover_window, aggregate_landcover,
+                                               class_fraction_variable_name,
+                                               ESA_WORLDCOVER_NATIVE_STEP
 
 include("gdal_utils.jl")
 include("ibcao.jl")
@@ -32,5 +36,6 @@ include("asterged.jl")
 include("globfp3d.jl")
 include("ghsl.jl")
 include("openlandmap.jl")
+include("worldcover.jl")
 
 end # module NumericalEarthArchGDALExt
