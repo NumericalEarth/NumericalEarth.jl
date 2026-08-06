@@ -115,7 +115,7 @@ DataWrangling.metaprefix(::AVISOMetadatum) = "AVISOMetadatum"
 copernicusmarine_dataset_id(::AVISODaily) = get(ENV, "AVISO_DAILY_DATASET_ID", "cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1D")
 copernicusmarine_dataset_id(::AVISOMonthly) = get(ENV, "AVISO_MONTHLY_DATASET_ID", "cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1M-m")
 
-# Pin the catalogue version advertised by the product data-access page. This is
+# Pin the catalog version advertised by the product data-access page. This is
 # important during Copernicus double-distribution transitions, when resolving
 # the bare dataset id can select a version with a different variable table.
 copernicusmarine_dataset_version(::AVISODataset) = get(ENV, "AVISO_DATASET_VERSION", "202411")
