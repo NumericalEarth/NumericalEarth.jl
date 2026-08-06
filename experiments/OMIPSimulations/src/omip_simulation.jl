@@ -1177,6 +1177,10 @@ function build_ocean(config, grid;
     κ_skew      = resolve_cesm_coefficient(κ_skew,      cesm_eddy_coefficients, :skew_coefficient)
     κ_symmetric = resolve_cesm_coefficient(κ_symmetric, cesm_eddy_coefficients, :symmetric_coefficient)
 
+    if !isnothing(κ_skew) && !isnothing(κ_symmetric)
+        κ_skew, κ_symmetric = fold_safe_constant_coefficients(grid, κ_skew, κ_symmetric)
+    end
+
     additional_surface_fluxes = if piston_velocity == 0
         NamedTuple()
     else

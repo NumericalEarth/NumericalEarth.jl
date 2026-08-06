@@ -5,6 +5,7 @@ using Oceananigans.BuoyancyFormulations: ∂z_b
 using Oceananigans.Grids: Center, Face, inactive_node, φnode
 using Oceananigans.Operators: Δzᶜᶜᶠ, ℑxᶜᵃᵃ, ℑyᵃᶜᵃ
 using Oceananigans.TurbulenceClosures: FluxTapering, ϵSxᶠᶜᶠ, ϵSyᶜᶠᶠ
+using Oceananigans.OrthogonalSphericalShellGrids: TripolarGridOfSomeKind
 using Oceananigans.Utils: KernelParameters, launch!
 
 # NEMO's `ldf_eiv` / `ldf_tra` with `nn_aei_ijk_t = nn_aht_ijk_t = 21` (Treguier et al. 1997), the
@@ -131,6 +132,29 @@ end
     for j in Ny-rows+1:Ny, i in 1:Nx
         @inbounds κ[i, j, k] = 0
     end
+end
+
+
+# The fold leak does not need Field-valued coefficients: any κ_skew ≠ κ_symmetric pair —
+# scalars included — leaks on a tripolar grid with materialized buoyancy gradients (constant
+# 300/800 leaks ~16× harder than the Treguier fields in the idealized test), because the
+# closure's (κ_symmetric − κ_skew) cross-term meets fold halos that are not exact images.
+# Equal pairs cancel exactly, which is how every historical constant-κ run stayed clean.
+# Promote unequal scalars to static fields with a zeroed fold band; equal pairs and
+# non-tripolar grids pass through untouched.
+fold_safe_constant_coefficients(grid, κ_skew, κ_symmetric) = (κ_skew, κ_symmetric)
+
+function fold_safe_constant_coefficients(grid::TripolarGridOfSomeKind, κ_skew::Number, κ_symmetric::Number)
+    κ_skew == κ_symmetric && return (κ_skew, κ_symmetric)
+    skew_field      = Field{Center, Center, Face}(grid)
+    symmetric_field = Field{Center, Center, Face}(grid)
+    set!(skew_field, κ_skew)
+    set!(symmetric_field, κ_symmetric)
+    zero_fold_rows!(skew_field, grid)
+    zero_fold_rows!(symmetric_field, grid)
+    fill_halo_regions!(skew_field)
+    fill_halo_regions!(symmetric_field)
+    return (skew_field, symmetric_field)
 end
 
 """

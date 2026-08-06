@@ -97,7 +97,7 @@ end
 
 @kernel function _ocean_state_to_potential_temperature!(Tᵉˣ, Tᵒᶜ, Sᵒᶜ, kᴺ)
     i, j = @index(Global, NTuple)
-    @inbounds Tᵉˣ[i, j, 1] = θᴾ_from_Θ(Sᵒᶜ[i, j, kᴺ], Tᵒᶜ[i, j, kᴺ])
+    @inbounds Tᵉˣ[i, j, 1] = θᴾ_from_Θ(max(0, Sᵒᶜ[i, j, kᴺ]), Tᵒᶜ[i, j, kᴺ])
 end
 
 function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::Simulation{<:HydrostaticFreeSurfaceModel}, coupled_model)
