@@ -24,7 +24,8 @@ using NumericalEarth.DataWrangling.GloBFP3D: GlobalBuildingFootprints3DMetadatum
                                              globfp3d_native_cell_size
 using NumericalEarth.DataWrangling.GHSL: GHSBuiltS, GHSLMetadatum, native_resolution,
                                          ghsl_tile_url, ghsl_tile_tif_name, ghsl_tiles_in_bbox,
-                                         built_surface_to_fraction, mask_building_height
+                                         ghsl_regional_raster, built_surface_to_fraction,
+                                         mask_building_height
 
 include("gdal_utils.jl")
 include("ibcao.jl")
