@@ -106,6 +106,9 @@ NumericalEarth.jl provides infrastructure for running Earth system model compone
 - **Kernels**: may prefix with underscore — `_kernel_function`
 - **Variables**: English long name or unicode from `notation.md`. Add new variables to that table.
 - **Avoid abbreviations**: `latitude` not `lat`, `temperature` not `temp`
+- **American English** in code, comments, docstrings, and docs: `center` not `centre`,
+  `meter` not `metre`, `neighbor` not `neighbour`, `behavior` not `behaviour`, `-ize` not `-ise`.
+  Proper nouns keep their own spelling (European **Centre** for Medium-Range Weather Forecasts).
 
 ## Module Structure
 
