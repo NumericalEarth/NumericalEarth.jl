@@ -5,9 +5,10 @@ export ETHSentinel2CanopyHeight, canopy_height_field
 using Downloads: Downloads
 using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
+using Oceananigans.Grids: x_domain, y_domain, λnodes, φnodes
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
-                       metadata_path, BoundingBox
+                       metadata_path, native_grid, BoundingBox
 
 import Oceananigans
 
@@ -146,7 +147,6 @@ valid heights (including the legitimate non-forest value `0`) are kept unchanged
 # HTTP driver in the ArchGDAL extension.
 const ETH_WEBDAV_HOST = "https://libdrive.ethz.ch/public.php/webdav/3deg_cogs"
 const ETH_LIBDRIVE_TOKEN = "cO8or7iOe5dT2Rt"     # public read-only share token (CC-BY data)
-const ETH_TILE_RESOLUTION = 1 / 12000            # degrees (~9.3 m), the native 10 m grid
 
 """
     eth_tile_token(longitude, latitude)
@@ -203,6 +203,37 @@ intersect `region`, ready to be mosaicked and windowed by GDAL.
 eth_tile_urls(region::BoundingBox, name) =
     ["/vsicurl/" * ETH_WEBDAV_HOST * "/ETH_GlobalCanopyHeight_10m_2020_" *
      token * "_" * eth_layer_suffix(name) * ".tif" for token in eth_tiles_in_bbox(region)]
+
+"""
+    canopy_regional_raster(metadatum)
+
+Geometry of the regional raster materialized for `metadatum`, taken from `native_grid` so the
+file the windowed read writes lands on the cells the read path indexes. Returns the `region`
+to window onto — the native grid's extent, which reaches up to a cell beyond the requested
+window and is therefore also the window whose tiles are needed — with the cell counts `Nx`,
+`Ny` and the cell-center `longitude` and `latitude`.
+
+```jldoctest
+julia> using NumericalEarth.DataWrangling: BoundingBox, Metadatum
+
+julia> using NumericalEarth.DataWrangling.ETHSentinel2Canopy: ETHSentinel2CanopyHeight, canopy_regional_raster
+
+julia> region = BoundingBox(longitude = (-59.6, -59.5), latitude = (-2.9, -2.8));
+
+julia> raster = canopy_regional_raster(Metadatum(:canopy_height; dataset = ETHSentinel2CanopyHeight(), region));
+
+julia> (raster.Nx, raster.Ny)
+(1202, 1202)
+```
+"""
+function canopy_regional_raster(metadatum::ETHSentinel2CanopyHeightMetadatum)
+    grid = native_grid(metadatum)
+    Nx, Ny, _ = size(grid)
+    region = BoundingBox(longitude = x_domain(grid), latitude = y_domain(grid))
+    return (; region, Nx, Ny,
+            longitude = Array(λnodes(grid, Center())),
+            latitude  = Array(φnodes(grid, Center())))
+end
 
 function Downloads.download(metadatum::ETHSentinel2CanopyHeightMetadatum)
     DataWrangling.validate_dataset_coverage(nothing, metadatum)

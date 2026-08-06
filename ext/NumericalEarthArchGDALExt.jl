@@ -168,14 +168,7 @@ function warp_canopy_sources(sources, geometry; resampling, nodata = nothing)
     end
 end
 
-# Window the tiles onto the region bbox at a fixed resolution (native-resolution read).
-warp_canopy_layer(sources, longitude, latitude, resolution; resampling = "near", nodata = nothing) =
-    warp_canopy_sources(sources,
-        String["-te", string(longitude[1]), string(latitude[1]),
-               string(longitude[2]), string(latitude[2]),
-               "-tr", string(resolution), string(resolution)]; resampling, nodata)
-
-# Area-average the tiles onto an explicit (Nx, Ny) grid over the bbox. `-ts` pins the
+# Window the tiles onto an explicit (Nx, Ny) grid over the bbox. `-ts` pins the
 # output to the grid's cell count (so it drops straight into a grid Field) and `-r average`
 # coarse-grains the native pixels within each cell — not point interpolation. `nodata`
 # excludes the product no-data byte from those means (see `warp_canopy_sources`).
@@ -213,26 +206,24 @@ function write_canopy_netcdf(nc_path, longitude, latitude, layers)
     return nothing
 end
 
-# ETH: window the intersecting 3° 10 m COG tiles (libdrive WebDAV) for the requested
-# layer at the native resolution, mask the no-data byte (255) to NaN — keeping non-forest
-# zeros — and write one regional NetCDF. The WebDAV endpoint needs the public read-only
-# share token as basic-auth credentials and honors HTTP range requests, so `/vsicurl/`
-# fetches only the windowed COG blocks rather than whole 415 MB tiles. Nearest-neighbor
-# resampling keeps the categorical 255 no-data byte exact so `mask_eth` catches it
-# (bilinear would blend 255 into a valid neighbor).
+# ETH: window the intersecting 3° 10 m COG tiles (libdrive WebDAV) for the requested layer,
+# mask the no-data byte (255) to NaN — keeping non-forest zeros — and write one regional
+# NetCDF. The WebDAV endpoint needs the public read-only share token as basic-auth credentials
+# and honors HTTP range requests, so `/vsicurl/` fetches only the windowed COG blocks rather
+# than whole 415 MB tiles. Nearest-neighbor resampling keeps the categorical 255 no-data byte
+# exact so `mask_eth` catches it (bilinear would blend 255 into a valid neighbor).
 function ETHSentinel2Canopy.canopy_height_cog_to_netcdf(metadatum::ETHSentinel2Canopy.ETHSentinel2CanopyHeightMetadatum, nc_path)
-    region = metadatum.region
-    resolution = ETHSentinel2Canopy.ETH_TILE_RESOLUTION
-    sources = ETHSentinel2Canopy.eth_tile_urls(region, metadatum.name)
+    raster = ETHSentinel2Canopy.canopy_regional_raster(metadatum)
+    sources = ETHSentinel2Canopy.eth_tile_urls(raster.region, metadatum.name)
 
     warped = with_gdal_config(eth_http_config()) do
-        warp_canopy_layer(sources, region.longitude, region.latitude, resolution;
-                          resampling = "near")
+        warp_canopy_onto_grid(sources, raster.region.longitude, raster.region.latitude,
+                              raster.Nx, raster.Ny; resampling = "near")
     end
 
     layer = NumericalEarth.DataWrangling.dataset_variable_name(metadatum)   # "Map" or "SD"
     layers = Dict(layer => ETHSentinel2Canopy.mask_eth.(warped.data, 255))
-    write_canopy_netcdf(nc_path, warped.longitude, warped.latitude, layers)
+    write_canopy_netcdf(nc_path, raster.longitude, raster.latitude, layers)
     return nothing
 end
 

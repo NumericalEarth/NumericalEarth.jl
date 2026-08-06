@@ -1,8 +1,10 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.DataWrangling: metadata_path
+using NumericalEarth.DataWrangling: metadata_path, native_grid
+using Oceananigans.Grids: λnodes, φnodes
 
 using ArchGDAL   # activates the windowed-COG read path
+using NCDatasets: NCDataset
 
 # Network-gated: windows the ETH 10 m Cloud-Optimized GeoTIFF tiles served from the
 # public libdrive share (no credentials). Excluded from CI in runtests.jl like the
@@ -44,9 +46,22 @@ end
     download(metadatum)
     @test isfile(filepath)
 
+    # The file is written on the grid the read indexes it with: same cell centers, same
+    # counts, so nothing is displaced and no trailing cell repeats an edge.
+    grid = native_grid(metadatum)
+    file_longitude, file_latitude = NCDataset(filepath) do ds
+        Array(ds["lon"][:]), Array(ds["lat"][:])
+    end
+
+    @test length(file_longitude) == size(grid, 1)
+    @test length(file_latitude)  == size(grid, 2)
+    @test file_longitude ≈ Array(λnodes(grid, Center()))
+    @test file_latitude  ≈ Array(φnodes(grid, Center()))
+
     # The regional file is materialized at the native 10 m resolution: ~1200 cells
     # across 0.1°, against the 20 cells of the area-averaged read above.
     native = Field(metadatum)
+    @test size(native)[1:2] == size(grid)[1:2]
     @test size(native, 1) ≥ 1200
     @test size(native, 2) ≥ 1200
 

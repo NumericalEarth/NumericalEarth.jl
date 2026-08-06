@@ -3,13 +3,15 @@ include("runtests_setup.jl")
 using NumericalEarth.DataWrangling.ETHSentinel2Canopy
 using NumericalEarth.DataWrangling.ETHSentinel2Canopy: mask_eth,
                                               eth_tile_token, eth_tiles_in_bbox, eth_tile_urls,
-                                              canopy_height_cog_to_netcdf, canopy_height_field
+                                              canopy_height_cog_to_netcdf, canopy_height_field,
+                                              canopy_regional_raster
 using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces,
                                     dataset_variable_name, validate_dataset_coverage,
                                     metadata_filename, available_variables,
-                                    is_three_dimensional, default_inpainting
+                                    is_three_dimensional, default_inpainting, native_grid
 
 using Oceananigans.Fields: location, interior
+using Oceananigans.Grids: λnodes, φnodes
 using ArchGDAL   # loads NumericalEarthArchGDALExt so the real COG read path is exercised
 
 #####
@@ -99,6 +101,29 @@ end
     region_b = BoundingBox(longitude = (0, 2), latitude = (45, 47))
     @test metadata_filename(dataset, :canopy_height, nothing, region_a) !=
           metadata_filename(dataset, :canopy_height, nothing, region_b)
+end
+
+#####
+##### The regional file's geometry is the native grid's, so the read indexes it without
+##### an offset (no download: the geometry comes from the dataset's lattice and the region).
+#####
+
+@testset "Canopy-height regional raster geometry" begin
+    region = BoundingBox(longitude = (-59.6, -59.5), latitude = (-2.9, -2.8))
+    metadatum = Metadatum(:canopy_height; dataset = ETHSentinel2CanopyHeight(), region)
+
+    raster = canopy_regional_raster(metadatum)
+    grid = native_grid(metadatum)
+
+    @test (raster.Nx, raster.Ny) == size(grid)[1:2]
+    @test raster.longitude ≈ Array(λnodes(grid, Center()))
+    @test raster.latitude  ≈ Array(φnodes(grid, Center()))
+
+    # The native grid brackets the region with cell centers, so it reaches past the request
+    # and its tiles must cover that wider window.
+    @test raster.region.longitude[1] ≤ region.longitude[1]
+    @test raster.region.longitude[2] ≥ region.longitude[2]
+    @test issubset(eth_tiles_in_bbox(region), eth_tiles_in_bbox(raster.region))
 end
 
 #####
