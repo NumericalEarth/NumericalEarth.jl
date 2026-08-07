@@ -39,7 +39,7 @@ start_date = DateTime(2005, 2, 16, 12)
 
         # Download the data (falls back to NumericalEarthArtifacts if CDS is unreachable)
         download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
-            download(metadatum)
+            download_dataset(metadatum)
         end
         @test isfile(filepath)
 
@@ -326,7 +326,7 @@ start_date = DateTime(2005, 2, 16, 12)
             # Download if not present (falls back to NumericalEarthArtifacts if CDS is unreachable)
             filepath = metadata_path(metadatum)
             isfile(filepath) || download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
-                download(metadatum)
+                download_dataset(metadatum)
             end
 
             # Create a Field from the downloaded data
@@ -352,7 +352,7 @@ start_date = DateTime(2005, 2, 16, 12)
             # Download if not present (falls back to NumericalEarthArtifacts if CDS is unreachable)
             filepath = metadata_path(metadatum)
             isfile(filepath) || download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
-                download(metadatum)
+                download_dataset(metadatum)
             end
 
             # Create a target grid matching the bounding box region
@@ -388,7 +388,7 @@ start_date = DateTime(2005, 2, 16, 12)
             filepath = metadata_path(meta)
             isfile(filepath) && rm(filepath; force=true)
 
-            download(meta)
+            download_dataset(meta)
             @test isfile(filepath)
 
             # Verify the NetCDF has a pressure_level dimension and the right variable

@@ -25,6 +25,9 @@ import ..DataWrangling:
 
 download_GLORYS_cache::String = ""
 function __init__()
+    DataWrangling.DataModes.register_dataset!(GLORYSStatic, "GLORYSStatic")
+    DataWrangling.DataModes.register_dataset!(GLORYSDaily, "GLORYSDaily")
+    DataWrangling.DataModes.register_dataset!(GLORYSMonthly, "GLORYSMonthly")
     global download_GLORYS_cache = DataWrangling.download_cache("GLORYS")
 end
 
@@ -154,4 +157,3 @@ function z_interfaces(metadata::GLORYSMetadata)
 end
 
 end # module GLORYS
-

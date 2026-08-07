@@ -55,6 +55,8 @@ const OSPAPA_LATITUDE  = 50.1
 download_OSPapa_cache::String = ""
 
 function __init__()
+    DataWrangling.DataModes.register_dataset!(OSPapaFluxHourly, "OSPapaFluxHourly")
+    DataWrangling.DataModes.register_dataset!(OSPapaHourly, "OSPapaHourly")
     global download_OSPapa_cache = DataWrangling.download_cache("OSPapa")
 end
 

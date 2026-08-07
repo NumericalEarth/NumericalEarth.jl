@@ -14,6 +14,7 @@ using ..DataWrangling: DataWrangling, Metadata, Metadatum, DownloadProgress, Kel
 
 download_EN4_cache::String = ""
 function __init__()
+    DataWrangling.DataModes.register_dataset!(EN4Monthly, "EN4Monthly")
     global download_EN4_cache = DataWrangling.download_cache("EN4")
 end
 

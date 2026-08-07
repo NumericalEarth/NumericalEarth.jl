@@ -23,6 +23,8 @@ import ..DataWrangling:
 download_ORCA_cache::String = ""
 
 function __init__()
+    DataWrangling.DataModes.register_dataset!(ORCA1, "ORCA1")
+    DataWrangling.DataModes.register_dataset!(ORCA12, "ORCA12")
     global download_ORCA_cache = DataWrangling.download_cache("ORCA")
 end
 

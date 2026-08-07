@@ -1,4 +1,3 @@
-using CFTime: CFTime
 using Dates: Dates, DateTime, Day, Hour
 using Downloads: Downloads
 using Oceananigans.DistributedComputations

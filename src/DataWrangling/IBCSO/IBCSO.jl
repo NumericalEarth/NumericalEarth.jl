@@ -19,6 +19,7 @@ import ..DataWrangling:
 
 download_IBCSO_cache::String = ""
 function __init__()
+    DataWrangling.DataModes.register_dataset!(IBCSOv2, "IBCSOv2")
     global download_IBCSO_cache = DataWrangling.download_cache("IBCSO")
 end
 
