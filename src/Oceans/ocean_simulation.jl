@@ -335,6 +335,7 @@ function hydrostatic_ocean_simulation(grid;
                                       stop_time = default_stop_time(grid, clock),
                                       Δt = estimate_maximum_Δt(grid),
                                       closure = default_ocean_closure(),
+                                      clock = Clock(grid),
                                       tracers = (:T, :S),
                                       free_surface = default_free_surface(grid),
                                       reference_density = 1020,
