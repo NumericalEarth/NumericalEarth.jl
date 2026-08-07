@@ -28,7 +28,7 @@ Base.size(::EN4Monthly, variable) = (360, 173, 42)
 DataWrangling.all_dates(::EN4Monthly, variable) = DateTime(1900, 1, 1) : Month(1) : DateTime(2024, 12, 1)
 
 DataWrangling.sample_window(metadatum::Metadatum{<:EN4Monthly}) =
-    (metadatum.dates, metadatum.dates + Month(1))
+    DataWrangling.calendar_month_window(metadatum)
 
 DataWrangling.default_download_directory(::EN4Monthly) = download_EN4_cache
 DataWrangling.reversed_vertical_axis(::EN4Monthly) = true
