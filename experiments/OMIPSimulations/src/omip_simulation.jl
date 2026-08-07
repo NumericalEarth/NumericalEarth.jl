@@ -587,6 +587,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          Cᵂu★ = nothing,
                          with_snow = false,
                          with_ice_dynamics = true,
+                         mixed_layer_tapering = false,
                          normalize_salinity = true,
                          restoring_under_sea_ice = true,
                          normalize_freshwater = false,
@@ -650,10 +651,17 @@ function omip_simulation(config::Symbol = :halfdegree;
     cesm_eddy_coefficients = uses_cesm_eddy_coefficients(κ_skew, κ_symmetric) ?
         CESMEddyCoefficients(grid) : nothing
 
+    hybrid_eddy_coefficients = uses_hybrid_eddy_coefficients(κ_skew, κ_symmetric) ?
+        HybridEddyCoefficients(grid) : nothing
+
+    eddy_slope_limiter = mixed_layer_tapering ? MixedLayerTapering(grid) : nothing
+
     ocean = build_ocean(cfg, grid;
                         κ_skew, κ_symmetric, Cᵇ,
                         nemo_eddy_coefficients,
                         cesm_eddy_coefficients,
+                        hybrid_eddy_coefficients,
+                        eddy_slope_limiter,
                         biharmonic_timescale,
                         biharmonic_viscosity,
                         vertical_closure,
@@ -720,6 +728,18 @@ function omip_simulation(config::Symbol = :halfdegree;
     if !isnothing(cesm_eddy_coefficients)
         compute_cesm_eddy_coefficients!(cesm_eddy_coefficients, ocean.model)
         add_callback!(simulation, RefreshCESMEddyCoefficients(cesm_eddy_coefficients), IterationInterval(1))
+    end
+
+    # Same for the Treguier × Danabasoglu-Marshall hybrid.
+    if !isnothing(hybrid_eddy_coefficients)
+        compute_hybrid_eddy_coefficients!(hybrid_eddy_coefficients, ocean.model)
+        add_callback!(simulation, RefreshHybridEddyCoefficients(hybrid_eddy_coefficients), IterationInterval(1))
+    end
+
+    # The mixed-layer taper reads a depth field refreshed from the model state each step.
+    if !isnothing(eddy_slope_limiter)
+        compute_tapering_mixed_layer_depth!(eddy_slope_limiter, ocean.model)
+        add_callback!(simulation, RefreshMixedLayerTapering(eddy_slope_limiter), IterationInterval(1))
     end
 
     # Hold the global ocean volume fixed by removing the global mean of the atmospheric freshwater
@@ -865,6 +885,7 @@ function omip_closure(vertical_closure::Symbol;
                       biharmonic_timescale,
                       biharmonic_viscosity = nothing,
                       skew_flux_formulation = :diffusive,
+                      eddy_slope_limiter = nothing,
                       Cᵂu★ = nothing)
 
     primary, background = if vertical_closure == :catke
@@ -901,7 +922,8 @@ function omip_closure(vertical_closure::Symbol;
     eddy  = if isnothing(κ_skew) | isnothing(κ_symmetric)
         nothing
     else
-        IsopycnalSkewSymmetricDiffusivity(; κ_skew, κ_symmetric,
+        limiter = isnothing(eddy_slope_limiter) ? FluxTapering(1e-2) : eddy_slope_limiter
+        IsopycnalSkewSymmetricDiffusivity(; κ_skew, κ_symmetric, slope_limiter = limiter,
                                           skew_flux_formulation = gm_skew_flux_formulation(skew_flux_formulation))
     end
 
@@ -1166,6 +1188,8 @@ function build_ocean(config, grid;
                      skew_flux_formulation = :diffusive,
                      nemo_eddy_coefficients = nothing,
                      cesm_eddy_coefficients = nothing,
+                     hybrid_eddy_coefficients = nothing,
+                     eddy_slope_limiter = nothing,
                      restoring_under_sea_ice = true,
                      Cᵂu★ = nothing,
                      normalize_salinity = true,
@@ -1176,6 +1200,8 @@ function build_ocean(config, grid;
     κ_symmetric = resolve_nemo_coefficient(κ_symmetric, nemo_eddy_coefficients, :symmetric_coefficient)
     κ_skew      = resolve_cesm_coefficient(κ_skew,      cesm_eddy_coefficients, :skew_coefficient)
     κ_symmetric = resolve_cesm_coefficient(κ_symmetric, cesm_eddy_coefficients, :symmetric_coefficient)
+    κ_skew      = resolve_hybrid_coefficient(κ_skew,      hybrid_eddy_coefficients, :skew_coefficient)
+    κ_symmetric = resolve_hybrid_coefficient(κ_symmetric, hybrid_eddy_coefficients, :symmetric_coefficient)
 
     if !isnothing(κ_skew) && !isnothing(κ_symmetric)
         κ_skew, κ_symmetric = fold_safe_constant_coefficients(grid, κ_skew, κ_symmetric)
@@ -1194,6 +1220,7 @@ function build_ocean(config, grid;
                            κ_skew, κ_symmetric, Cᵇ,
                            biharmonic_timescale, biharmonic_viscosity,
                            skew_flux_formulation,
+                           eddy_slope_limiter,
                            Cᵂu★)
     closure = isnothing(additional_tracer_closure) ? closure : (closure..., additional_tracer_closure)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())

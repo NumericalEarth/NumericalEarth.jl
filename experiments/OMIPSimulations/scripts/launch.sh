@@ -38,7 +38,9 @@ Environment variables (physics):
                 growth rate, recomputed each step and depth-uniform;
                 "cesm" = CESM's Danabasoglu & Marshall 2007 coefficient,
                 κ_ref · clamp(N²/N²_ref, 0.1, 1), recomputed each step with
-                full vertical structure)
+                full vertical structure;
+                "hybrid" = Treguier horizontal × Danabasoglu-Marshall vertical
+                shape, with the Rossby-radius cap tightened to 20 km)
   KSYMM         Isopycnal symmetric diffusivity κ_symmetric (default: per-config; 0 = off;
                 "nemo" as above, but rising to its reference value in the tropics
                 with a floor of one fifth of it, per NEMO nn_aht_ijk_t = 21;
@@ -64,6 +66,9 @@ Environment variables (physics):
                             Mellor-Blumberg wave penetration + EVD.
                             Vendored in `NEMOTKE/`;
                  all ignore CB)
+  ML_TAPER      Set to "true" to ramp the isopycnal-closure slopes linearly to zero
+                from the mixed-layer base to the surface (Danabasoglu et al. 2008;
+                NEMO ldfslp). Off by default; adds "_mltaper" to the run name.
   WIND_VELOCITY Set to "true" to use absolute wind (Δu = u_atm) in the bulk
                 formula instead of the OMIP-2 default relative wind
                 (Δu = u_atm − u_ocean). For isolating ACC-current feedback.
@@ -251,6 +256,8 @@ KSYMM_JULIA="$KSYMM"; [[ "$KSYMM" == "0" ]] && KSYMM_JULIA="nothing"
 [[ "$KSYMM" == "nemo" ]] && KSYMM_JULIA=":nemo"
 [[ "$KSKEW" == "cesm" ]] && KSKEW_JULIA=":cesm"
 [[ "$KSYMM" == "cesm" ]] && KSYMM_JULIA=":cesm"
+[[ "$KSKEW" == "hybrid" ]] && KSKEW_JULIA=":hybrid"
+[[ "$KSYMM" == "hybrid" ]] && KSYMM_JULIA=":hybrid"
 export KSKEW_JULIA KSYMM_JULIA
 export NZ DT ARCH EXTRA_USING FILE_SPLIT RUN_CMD
 
@@ -266,6 +273,7 @@ RUN_NAME="$CONFIG"
 [[ "${CLOSURE:-catke}" == "kpp"      ]]        && RUN_NAME="${RUN_NAME}_kpp"
 [[ "${CLOSURE:-catke}" == "nemo_tke" ]]        && RUN_NAME="${RUN_NAME}_nemotke"
 [[ "${WIND_VELOCITY:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_wind"
+[[ "${ML_TAPER:-false}" == "true" ]]           && RUN_NAME="${RUN_NAME}_mltaper"
 [[ "${NORMALIZE_SALINITY:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_rawsalt"
 [[ "${RESTORING_UNDER_ICE:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_noicerest"
 case "${NORMALIZE_FRESHWATER:-none}" in
@@ -464,6 +472,9 @@ CLOSURE_KWARG=""
 VELOCITY_KWARG=""
 [[ "${WIND_VELOCITY:-false}" == "true" ]] && VELOCITY_KWARG="velocity_formulation = :wind,"
 
+ML_TAPER_KWARG=""
+[[ "${ML_TAPER:-false}" == "true" ]] && ML_TAPER_KWARG="mixed_layer_tapering = true,"
+
 SNOW_KWARG=""
 [[ "$SNOW" == "true" ]] && SNOW_KWARG="with_snow = true,"
 
@@ -497,6 +508,7 @@ sim = omip_simulation(:${CONFIG};
                       ${FLUX_KWARG}
                       ${CLOSURE_KWARG}
                       ${VELOCITY_KWARG}
+                      ${ML_TAPER_KWARG}
                       ${SNOW_KWARG}
                       ${ICE_DYNAMICS_KWARG}
                       ${DIAGNOSTICS_KWARG}
