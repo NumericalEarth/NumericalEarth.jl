@@ -34,6 +34,9 @@ NumericalEarth currently ships connectors for the following data products:
 | `ERA5MonthlySingleLevel` | surface meteorology, flux, radiation, and wave variables | [ERA5 single levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels-monthly-means?tab=overview) |
 | `ERA5HourlyPressureLevels` | pressure-level temperature, winds, humidity, geopotential, and cloud variables | [ERA5 pressure levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels?tab=overview) |
 | `ERA5MonthlyPressureLevels` | pressure-level temperature, winds, humidity, geopotential, and cloud variables | [ERA5 pressure levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels-monthly-means?tab=overview) |
+| **Land** |                                                    |                                                                                                     |
+| `ERA5HourlyLand`   | [Supported variables](@ref dataset-era5hourlyland-vars)   | [ERA5-Land hourly overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land?tab=overview) |
+| `ERA5MonthlyLand`  | [Supported variables](@ref dataset-era5monthlyland-vars)  | [ERA5-Land monthly overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land-monthly-means?tab=overview) |
 | **Regional observations** |                                                    |                                                                                                     |
 | `OSPapaHourly`     | ocean profiles, near-surface meteorology, and currents    | [Ocean Station Papa dataset](https://www.pmel.noaa.gov/ocs/Papa)                                   |
 | `OSPapaFluxHourly` | air-sea fluxes, stresses, evaporation, precipitation, and skin temperature | [Ocean Station Papa flux dataset](https://www.pmel.noaa.gov/ocs/Papa) |
@@ -149,6 +152,28 @@ NumericalEarth currently ships connectors for the following data products:
 - `:snow_freshwater_flux` - Precipitation flux from snow/ice (kg m⁻² s⁻¹).
 - `:river_freshwater_flux` - River discharge flux (kg m⁻² s⁻¹).
 - `:iceberg_freshwater_flux` - Iceberg calving flux (kg m⁻² s⁻¹).
+
+## [Supported variables for ERA5HourlyLand](@id dataset-era5hourlyland-vars)
+
+- `:skin_temperature` - Skin (surface) temperature (K).
+- `:soil_temperature_level_1` - Soil temperature, layer 1 (0-7 cm) (K).
+- `:soil_temperature_level_2` - Soil temperature, layer 2 (7-28 cm) (K).
+- `:soil_temperature_level_3` - Soil temperature, layer 3 (28-100 cm) (K).
+- `:soil_temperature_level_4` - Soil temperature, layer 4 (100-289 cm) (K).
+- `:volumetric_soil_water_layer_1` - Volumetric soil water, layer 1 (0-7 cm) (m³ m⁻³).
+- `:volumetric_soil_water_layer_2` - Volumetric soil water, layer 2 (7-28 cm) (m³ m⁻³).
+- `:volumetric_soil_water_layer_3` - Volumetric soil water, layer 3 (28-100 cm) (m³ m⁻³).
+- `:volumetric_soil_water_layer_4` - Volumetric soil water, layer 4 (100-289 cm) (m³ m⁻³).
+- `:temperature` - 2 m air temperature (K).
+- `:dewpoint_temperature` - 2 m dewpoint temperature (K).
+- `:snow_water_equivalent` - Snow depth water equivalent (m of water equivalent).
+- `:snow_depth` - Instantaneous snow depth (m).
+
+Ocean cells are masked and never inpainted.
+
+## [Supported variables for ERA5MonthlyLand](@id dataset-era5monthlyland-vars)
+
+Same variables as [ERA5HourlyLand](@ref dataset-era5hourlyland-vars), as monthly means.
 
 ## [Supported variables for IBCSOv2](@id dataset-ibcsov2-vars)
 
