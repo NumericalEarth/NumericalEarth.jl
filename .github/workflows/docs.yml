@@ -2,8 +2,21 @@ name: Documentation
 
 on:
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Build all examples and deploy the dev documentation"
+        type: boolean
+        default: false
+  schedule:
+    # Every other night at 06:00 UTC: the full-examples docs build takes hours
+    # on the GPU runner, so building on every push to main both starved the
+    # runner and (with cancel-in-progress) never finished. A scheduled build of
+    # whatever main is at the time keeps the dev docs at most ~2 days stale.
+    # (*/2 runs on odd days of the month, so 31st -> 1st builds back to back —
+    # a harmless quirk.)
+    - cron: '0 6 */2 * *'
   pull_request:
-    paths: &paths
+    paths:
       - ".github/workflows/docs.yml"
       - "docs/**"
       - "examples/**"
@@ -11,17 +24,14 @@ on:
       - "src/**"
       - "Project.toml"
   push:
-    paths: *paths
-    branches:
-      - main
+    # Releases deploy the stable/versioned docs immediately; pushes to main no
+    # longer trigger builds (see the schedule above).
     tags: '*'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # Cancel superseded runs on pull requests, but let pushes to main queue and
-  # finish: the full-examples docs build takes hours, and cancel-in-progress
-  # meant every new push to main killed the running build before it could
-  # deploy, so the dev docs never updated.
+  # Cancel superseded runs on pull requests, but let scheduled and tag builds
+  # queue and run to completion so they can deploy.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -55,7 +65,7 @@ jobs:
       - name: Set NUMERICAL_EARTH_BUILD_ALL_EXAMPLES
         shell: bash
         run: |
-          if [[ ('${{ github.event_name }}' == 'push' && ('${{ github.ref }}' == 'refs/heads/main' || '${{ github.ref }}' == refs/tags/v*)) || ('${{ github.event_name }}' == 'pull_request' && ${{ contains(github.event.pull_request.labels.*.name, env.NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES) }} == true) ]]; then
+          if [[ ('${{ github.event_name }}' == 'schedule') || ('${{ github.event_name }}' == 'push' && '${{ github.ref }}' == refs/tags/v*) || ('${{ github.event_name }}' == 'workflow_dispatch' && '${{ inputs.deploy }}' == 'true') || ('${{ github.event_name }}' == 'pull_request' && ${{ contains(github.event.pull_request.labels.*.name, env.NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES) }} == true) ]]; then
               NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=true
           else
               NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=false
@@ -93,11 +103,12 @@ jobs:
 
   deploy-docs:
     # We want to deploy docs if:
-    # * it's a push, but only to main
-    # * it's a PR, but not from a fork
-    # * on a release
+    # * it's a scheduled build of main (dev docs)
+    # * it's a manual dispatch with deploy enabled (dev docs)
+    # * on a release (stable/versioned docs)
+    # * it's a PR, but not from a fork (preview)
     needs: build-docs
-    if: ${{ (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) || (github.event_name == 'pull_request' && ! github.event.pull_request.head.repo.fork) }}
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'pull_request' && ! github.event.pull_request.head.repo.fork) }}
     permissions:
       actions: write
       contents: write
