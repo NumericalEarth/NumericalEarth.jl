@@ -113,6 +113,13 @@ and a column `RectilinearGrid` for `Column` regions.
 native_grid(metadata::Metadata, arch=CPU(); halo=(3, 3, 3)) =
     construct_native_grid(metadata, metadata.region, arch; halo)
 
+# A z-restricted download (`BoundingBox`/`Column` with `z`) yields a file with
+# fewer levels than the dataset's full water column. When `z_interfaces` returns
+# an explicit interface vector (read from that file), the vertical size is set by
+# the vector, not by the dataset's hard-coded full-column `Nz`.
+vertical_size(z::AbstractVector, Nz) = length(z) - 1
+vertical_size(z, Nz) = Nz
+
 # 2D-only datasets (surface forcing like JRA55) skip the z dimension.
 function construct_native_grid(metadata, ::Nothing, arch; halo)
     FT = eltype(metadata)
@@ -122,6 +129,7 @@ function construct_native_grid(metadata, ::Nothing, arch; halo)
 
     if is_three_dimensional(metadata)
         z = z_interfaces(metadata)
+        Nz = vertical_size(z, Nz)
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
                                      halo, longitude, latitude, z = z)
     else
@@ -156,6 +164,7 @@ function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
 
     if is_three_dimensional(metadata)
         z = z_interfaces(metadata)
+        Nz = vertical_size(z, Nz)
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
                                      halo, longitude, latitude, z = z,
                                      topology = (TX, Bounded, Bounded))
@@ -175,6 +184,7 @@ function construct_native_grid(metadata, col::Column, arch; halo)
     if is_three_dimensional(metadata)
         _, _, Nz, _ = size(metadata)
         z = z_interfaces(metadata)
+        Nz = vertical_size(z, Nz)
         return RectilinearGrid(arch, FT; size = Nz, halo = halo[3],
                                x = x, y = y, z = z, topology = (Flat, Flat, Bounded))
     else
