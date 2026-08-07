@@ -1,6 +1,6 @@
 # # Leaf area index from MODIS, as a seasonal climatology
 #
-# This example builds a leaf-area-index (``Λ``) boundary condition from MODIS MCD15A2H —
+# This example builds a leaf-area-index (``𝒜``) boundary condition from MODIS MCD15A2H —
 # 500 m combined Terra + Aqua composites, one every eight days since 2002.
 #
 # The region is the central Amazon around the Rio Negro–Solimões confluence, on the same grid
@@ -63,9 +63,9 @@ gap_fraction(field) = mean(isnan.(Array(interior(field))))
 
 date = DateTime(2021, 7, 20)
 
-single = Metadatum(:leaf_area_index; dataset = MCD15A2H(), region, date)
+single_composite = Metadatum(:leaf_area_index; dataset = MCD15A2H(), region, date)
 
-Λsingle = Field(single)
+single_composite_leaf_area_index = Field(single_composite)
 
 # **The first is not missing data at all.** Where the product does not attempt a retrieval it
 # writes a land-cover class instead — water, urban, snow, barren — and the adapter reads those
@@ -73,16 +73,17 @@ single = Metadatum(:leaf_area_index; dataset = MCD15A2H(), region, date)
 # Manaus, so they are permanently unretrievable by design, and reporting them as leaf area of
 # zero would be worse than reporting them as missing.
 
-classes = Metadatum(:landcover_code; dataset = MCD15A2H(), region, date)
+in_band_codes = Metadatum(:landcover_code; dataset = MCD15A2H(), region, date)
 
-class_code_fraction = mean(.!isnan.(Array(interior(Field(classes)))))
+class_code_fraction = mean(.!isnan.(Array(interior(Field(in_band_codes)))))
 
 @printf("Single 8-day composite, %s, on the product's own 500 m grid\n",
         Dates.format(date, "yyyy-mm-dd"))
 @printf("  a land-cover class, not a failed retrieval : %.2f%%\n", 100 * class_code_fraction)
-@printf("  total missing                              : %.2f%%\n", 100 * gap_fraction(Λsingle))
+@printf("  total missing                              : %.2f%%\n",
+        100 * gap_fraction(single_composite_leaf_area_index))
 @printf("  → attributable to cloud and quality        : %.2f%%\n",
-        100 * (gap_fraction(Λsingle) - class_code_fraction))
+        100 * (gap_fraction(single_composite_leaf_area_index) - class_code_fraction))
 
 # **The second is cloud, and compositing across years removes it — given enough years.** The
 # same period in another year is usually clear, so the composite's gap collapses onto the
@@ -101,12 +102,12 @@ stamp = DateTime(2018, 1, 1) + Day(8 * (period - 1))
 
 deep_composite = Metadatum(:leaf_area_index; dataset = deep, region, date = stamp)
 
-Λdeep = Field(deep_composite)
+deep_composite_leaf_area_index = Field(deep_composite)
 
 @printf("\n%s composite of the same period\n", deep.years)
 @printf("  total missing : %.2f%%  (the land-cover classes are %.2f%%)\n",
-        100 * gap_fraction(Λdeep), 100 * class_code_fraction)
-@printf("  mean Λ        : %.2f m² m⁻²\n", nanmean(Λdeep))
+        100 * gap_fraction(deep_composite_leaf_area_index), 100 * class_code_fraction)
+@printf("  mean 𝒜        : %.2f m² m⁻²\n", nanmean(deep_composite_leaf_area_index))
 
 # **The third is the regrid, and it is the one worth knowing about.** Landing a field with
 # scattered gaps on a model grid goes through the shared bilinear interpolation, whose 2×2
@@ -124,8 +125,10 @@ function stencil_dilated(field)
 end
 
 @printf("\nWhat the regrid onto the model grid costs\n")
-@printf("  native 500 m grid            : %.2f%% missing\n", 100 * gap_fraction(Λdeep))
-@printf("  the 2x2 stencil would dilate : %.2f%%\n", 100 * stencil_dilated(Λdeep))
+@printf("  native 500 m grid            : %.2f%% missing\n",
+        100 * gap_fraction(deep_composite_leaf_area_index))
+@printf("  the 2x2 stencil would dilate : %.2f%%\n",
+        100 * stencil_dilated(deep_composite_leaf_area_index))
 @printf("  measured on the model grid   : %.2f%%\n",
         100 * gap_fraction(Field(deep_composite, grid)))
 
@@ -138,21 +141,22 @@ end
 # considerably lower, and the difference is one of definition rather than of quality.
 
 @printf("\nCentral Amazon, %s composite\n", deep.years)
-@printf("  MCD15A2H mean Λ : %.2f m² m⁻²   (closed rainforest is 5-6)\n", nanmean(Λdeep))
+@printf("  MCD15A2H mean 𝒜 : %.2f m² m⁻²   (closed rainforest is 5-6)\n",
+        nanmean(deep_composite_leaf_area_index))
 
 axis_kw = (xlabel = "Longitude (ᵒ)", ylabel = "Latitude (ᵒ)")
-Λrange = (0, 7)
+leaf_area_index_range = (0, 7)
 
 fig = Figure(size = (1500, 900))
 
 ax = Axis(fig[1, 1]; title = "One 8-day composite, $(Dates.format(date, "u dd yyyy"))", axis_kw...)
-heatmap!(ax, Field(single, grid), colormap = :viridis, colorrange = Λrange,
+heatmap!(ax, Field(single_composite, grid), colormap = :viridis, colorrange = leaf_area_index_range,
          nan_color = :midnightblue)
 
 ax = Axis(fig[1, 2]; title = "$(deep.years) composite, same period", axis_kw...)
-plot = heatmap!(ax, Field(deep_composite, grid), colormap = :viridis, colorrange = Λrange,
-                nan_color = :midnightblue)
-Colorbar(fig[1, 3], plot, label = "Λ (m² m⁻²)")
+plot = heatmap!(ax, Field(deep_composite, grid), colormap = :viridis,
+                colorrange = leaf_area_index_range, nan_color = :midnightblue)
+Colorbar(fig[1, 3], plot, label = "𝒜 (m² m⁻²)")
 
 # The classes the product names instead of retrieving. They are the reason the composite's gap
 # does not close further, and their shape — a connected river network, not scattered speckle —
@@ -163,12 +167,13 @@ Colorbar(fig[1, 3], plot, label = "Λ (m² m⁻²)")
 # snow/ice (252) along every riverbank. Continuous fields regrid; categorical ones do not.
 
 ax = Axis(fig[2, 1]; title = "Land-cover code (native 500 m grid)", axis_kw...)
-heatmap!(ax, Field(classes), colormap = cgrad(:tab10, 6, categorical = true),
+heatmap!(ax, Field(in_band_codes), colormap = cgrad(:tab10, 6, categorical = true),
          colorrange = (249.5, 255.5), nan_color = (:seagreen, 0.25))
 
-ax = Axis(fig[2, 2]; xlabel = "Λ (m² m⁻²)", ylabel = "Cells",
+ax = Axis(fig[2, 2]; xlabel = "𝒜 (m² m⁻²)", ylabel = "Cells",
           title = "Distribution over the retained canopy")
-hist!(ax, filter(!isnan, vec(Array(interior(Λdeep)))), bins = 50, color = (:seagreen, 0.8))
+hist!(ax, filter(!isnan, vec(Array(interior(deep_composite_leaf_area_index)))), bins = 50,
+      color = (:seagreen, 0.8))
 
 save("modis_leaf_area_index.png", fig)
 nothing #hide
@@ -199,12 +204,12 @@ metadata = Metadata(:leaf_area_index; dataset = climatology, region)
 # the gap fractions then stay comparable with the numbers above, and the temporal fill below wants
 # it this way — filling before the regrid leaves the 2×2 stencil almost nothing to dilate.
 
-Λclimatology = FieldTimeSeries(metadata; time_indices_in_memory = 4)
+climatology_leaf_area_index = FieldTimeSeries(metadata; time_indices_in_memory = 4)
 
 periods = eachindex(metadata.dates)
 
-seasonal_mean = [nanmean(Λclimatology[n]) for n in periods]
-seasonal_gaps = [gap_fraction(Λclimatology[n]) for n in periods]
+seasonal_mean = [nanmean(climatology_leaf_area_index[n]) for n in periods]
+seasonal_gaps = [gap_fraction(climatology_leaf_area_index[n]) for n in periods]
 
 # A single year of the same 46 periods is the honest comparison: the same cadence, the same
 # screen, one year of observations instead of three.
@@ -212,19 +217,19 @@ seasonal_gaps = [gap_fraction(Λclimatology[n]) for n in periods]
 single_year = Metadata(:leaf_area_index; dataset = MCD15A2H(), region,
                        dates = [DateTime(2019, 1, 1) + Day(8 * (n - 1)) for n in periods])
 
-Λyear = FieldTimeSeries(single_year; time_indices_in_memory = 4)
+single_year_leaf_area_index = FieldTimeSeries(single_year; time_indices_in_memory = 4)
 
-year_mean = [nanmean(Λyear[n]) for n in periods]
-year_gaps = [gap_fraction(Λyear[n]) for n in periods]
+year_mean = [nanmean(single_year_leaf_area_index[n]) for n in periods]
+year_gaps = [gap_fraction(single_year_leaf_area_index[n]) for n in periods]
 
 low_period, peak_period = argmin(seasonal_mean), argmax(seasonal_mean)
 
 period_date(n) = DateTime(2018, 1, 1) + Day(8 * (n - 1))
 
 @printf("\nSeasonal cycle over the 46 periods\n")
-@printf("  annual low : Λ = %.2f  (%s)\n", seasonal_mean[low_period],
+@printf("  annual low : 𝒜 = %.2f  (%s)\n", seasonal_mean[low_period],
         Dates.format(period_date(low_period), "u dd"))
-@printf("  peak       : Λ = %.2f  (%s)\n", seasonal_mean[peak_period],
+@printf("  peak       : 𝒜 = %.2f  (%s)\n", seasonal_mean[peak_period],
         Dates.format(period_date(peak_period), "u dd"))
 @printf("  peak / low : %.2f×  — evergreen canopy holds its leaf area year-round\n",
         seasonal_mean[peak_period] / seasonal_mean[low_period])
@@ -236,14 +241,15 @@ period_date(n) = DateTime(2018, 1, 1) + Day(8 * (n - 1))
 
 build_lai_climatology!(deep; region, periods = low_period:low_period)
 
-Λlow_deep = Field(Metadatum(:leaf_area_index; dataset = deep, region,
+deep_low_period_leaf_area_index = Field(Metadatum(:leaf_area_index; dataset = deep, region,
                             date = period_date(low_period)))
 
-@printf("  the low period at %s : Λ = %.2f over %.0f%% of cells, against %.2f over %.0f%%\n",
-        deep.years, nanmean(Λlow_deep), 100 * (1 - gap_fraction(Λlow_deep)),
+@printf("  the low period at %s : 𝒜 = %.2f over %.0f%% of cells, against %.2f over %.0f%%\n",
+        deep.years, nanmean(deep_low_period_leaf_area_index),
+        100 * (1 - gap_fraction(deep_low_period_leaf_area_index)),
         seasonal_mean[low_period], 100 * (1 - seasonal_gaps[low_period]))
 @printf("  → peak / low on the deeper sample : %.2f×\n",
-        seasonal_mean[peak_period] / nanmean(Λlow_deep))
+        seasonal_mean[peak_period] / nanmean(deep_low_period_leaf_area_index))
 @printf("  gap fraction : one year mean %.1f%% (worst %.1f%%) → composite mean %.1f%%\n",
         100 * mean(year_gaps), 100 * maximum(year_gaps), 100 * mean(seasonal_gaps))
 
@@ -253,11 +259,11 @@ build_lai_climatology!(deep; region, periods = low_period:low_period)
 # at both ends. The rivers stay missing at every period, so the fill cannot close them — and
 # should not.
 
-Λfilled = FieldTimeSeries(metadata; time_indices_in_memory = length(periods))
+filled_leaf_area_index = FieldTimeSeries(metadata; time_indices_in_memory = length(periods))
 
-fill_gaps!(Λfilled; max_gap = 4, cyclic = true)
+fill_gaps!(filled_leaf_area_index; max_gap = 4, cyclic = true)
 
-filled_gaps = [gap_fraction(Λfilled[n]) for n in periods]
+filled_gaps = [gap_fraction(filled_leaf_area_index[n]) for n in periods]
 
 @printf("  still missing after the cyclic fill : mean %.2f%%  (land-cover classes are %.2f%%)\n",
         100 * mean(filled_gaps), 100 * class_code_fraction)
@@ -267,7 +273,7 @@ day_of_year = 8 .* (periods .- 1) .+ 1
 fig = Figure(size = (1400, 1050))
 
 ax = Axis(fig[1, 1:3];
-          xlabel = "Day of year", ylabel = "Λ (m² m⁻²)",
+          xlabel = "Day of year", ylabel = "𝒜 (m² m⁻²)",
           title = "Regional-mean leaf area index")
 scatterlines!(ax, day_of_year, year_mean, color = (:goldenrod, 0.8), markersize = 7,
               label = "2019 alone")
@@ -285,13 +291,13 @@ wettest = argmax(seasonal_gaps)
 
 build_lai_climatology!(deep; region, periods = wettest:wettest)
 
-Λwettest = Field(Metadatum(:leaf_area_index; dataset = deep, region,
+deep_wettest_period_leaf_area_index = Field(Metadatum(:leaf_area_index; dataset = deep, region,
                            date = period_date(wettest)))
 
 @printf("  cloudiest period (%s) : %.1f%% at %s → %.1f%% at %s\n",
         Dates.format(period_date(wettest), "u dd"),
         100 * seasonal_gaps[wettest], climatology.years,
-        100 * gap_fraction(Λwettest), deep.years)
+        100 * gap_fraction(deep_wettest_period_leaf_area_index), deep.years)
 
 ax = Axis(fig[2, 1:3];
           xlabel = "Day of year", ylabel = "Cells with no retrieval (%)",
@@ -302,7 +308,7 @@ scatterlines!(ax, day_of_year, 100 .* seasonal_gaps, color = :seagreen, markersi
               label = "$(climatology.years) composite")
 scatterlines!(ax, day_of_year, 100 .* filled_gaps, color = :steelblue, markersize = 9,
               label = "after the cyclic fill")
-scatter!(ax, [day_of_year[wettest]], [100 * gap_fraction(Λwettest)],
+scatter!(ax, [day_of_year[wettest]], [100 * gap_fraction(deep_wettest_period_leaf_area_index)],
          color = :firebrick, marker = :star5, markersize = 20,
          label = "cloudiest period, $(deep.years)")
 hlines!(ax, [100 * class_code_fraction], color = :gray40, linestyle = :dash,
@@ -329,17 +335,17 @@ end
 @printf("  worst period after the cyclic fill  : %.2f%%  (%d of %d still above 15%%)\n",
         100 * maximum(filled_gaps), count(>(0.15), filled_gaps), length(periods))
 @printf("  on the model grid, after filling then regridding : %.2f%% at the low, %.2f%% at the peak\n",
-        100 * gap_fraction(on_model_grid(Λfilled[low_period])),
-        100 * gap_fraction(on_model_grid(Λfilled[peak_period])))
+        100 * gap_fraction(on_model_grid(filled_leaf_area_index[low_period])),
+        100 * gap_fraction(on_model_grid(filled_leaf_area_index[peak_period])))
 
 ax = Axis(fig[3, 1]; title = "Annual low, $(Dates.format(period_date(low_period), "u dd"))", axis_kw...)
-heatmap!(ax, on_model_grid(Λfilled[low_period]), colormap = :viridis, colorrange = Λrange,
-         nan_color = :midnightblue)
+heatmap!(ax, on_model_grid(filled_leaf_area_index[low_period]), colormap = :viridis,
+         colorrange = leaf_area_index_range, nan_color = :midnightblue)
 
 ax = Axis(fig[3, 2]; title = "Seasonal peak, $(Dates.format(period_date(peak_period), "u dd"))", axis_kw...)
-plot = heatmap!(ax, on_model_grid(Λfilled[peak_period]), colormap = :viridis,
-                colorrange = Λrange, nan_color = :midnightblue)
-Colorbar(fig[3, 3], plot, label = "Λ (m² m⁻²)")
+plot = heatmap!(ax, on_model_grid(filled_leaf_area_index[peak_period]), colormap = :viridis,
+                colorrange = leaf_area_index_range, nan_color = :midnightblue)
+Colorbar(fig[3, 3], plot, label = "𝒜 (m² m⁻²)")
 
 save("modis_leaf_area_index_seasonal.png", fig)
 nothing #hide

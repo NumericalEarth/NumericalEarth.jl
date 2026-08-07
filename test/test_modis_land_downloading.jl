@@ -68,12 +68,12 @@ end
     @test region_info(modis_region, Field{Center, Center, Nothing}(grid), λc, φc) ==
           DataWrangling.BoundingBoxOffset(0, 0)
 
-    Λ = Array(interior(Field(metadatum), :, :, 1))
-    @test size(Λ) == (lattice.Nx, lattice.Ny)
+    𝒜 = Array(interior(Field(metadatum), :, :, 1))
+    @test size(𝒜) == (lattice.Nx, lattice.Ny)
 
-    valid = filter(!isnan, vec(Λ))
+    valid = filter(!isnan, vec(𝒜))
     @test !isempty(valid)
-    @test all(Λ -> 0 ≤ Λ ≤ 10, valid)          # the product's own ceiling, once scaled
+    @test all(𝒜 -> 0 ≤ 𝒜 ≤ 10, valid)          # the product's own ceiling, once scaled
     @test length(unique(valid)) > 1            # a real window, not a constant fill
     @test mean(valid) > 1                      # a closed canopy in July
 
@@ -128,18 +128,18 @@ end
     download(metadatum)
     @test isfile(metadata_path(metadatum))
 
-    Λ = Array(interior(Field(metadatum), :, :, 1))
+    𝒜 = Array(interior(Field(metadatum), :, :, 1))
     retained = Array(interior(Field(retained_retrieval_metadatum(metadatum)), :, :, 1))
-    @test size(retained) == size(Λ)
+    @test size(retained) == size(𝒜)
     @test all(n -> 0 ≤ n ≤ length(climatology.years), vec(retained))
 
     # The count is what makes a gap honest: a cell no year could observe stays NaN.
-    @test all(i -> (retained[i] == 0) == isnan(Λ[i]), eachindex(Λ))
-    @test all(Λ -> 0 ≤ Λ ≤ 10, filter(!isnan, vec(Λ)))
+    @test all(i -> (retained[i] == 0) == isnan(𝒜[i]), eachindex(𝒜))
+    @test all(𝒜 -> 0 ≤ 𝒜 ≤ 10, filter(!isnan, vec(𝒜)))
 
     # One of the composited years is the single date read above, so compositing can only
     # have filled gaps, never opened them.
     single = Metadatum(:leaf_area_index; dataset = MCD15A2H(), region = modis_region,
                        date = modis_composite_date, dir = modis_download_directory)
-    @test count(!isnan, Λ) ≥ count(!isnan, Array(interior(Field(single), :, :, 1)))
+    @test count(!isnan, 𝒜) ≥ count(!isnan, Array(interior(Field(single), :, :, 1)))
 end

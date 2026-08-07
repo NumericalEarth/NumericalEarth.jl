@@ -451,7 +451,7 @@ abstract type MODISLAIDataset <: AbstractMODISLandDataset end
 
 The MODIS MCD15A2H V061 combined Terra + Aqua leaf-area-index / FPAR product: 500 m, 8-day
 composites on the sinusoidal grid, from 2002-07-04 onwards. Provides `:leaf_area_index`
-(``Λ``, one-sided green leaf area per unit *ground* area, m² m⁻²), `:fpar`,
+(``𝒜``, one-sided green leaf area per unit *ground* area, m² m⁻²), `:fpar`,
 `:leaf_area_index_uncertainty`, and `:landcover_code` — the class the product names in place of
 a retrieval, listed under [`mask_lai_landcover`](@ref).
 
@@ -1110,15 +1110,15 @@ function DataWrangling.retrieve_data(metadatum::MODISLAIMetadatum)
         end
 
     return NCDataset(metadata_path(metadatum)) do ds
-        Λ = mask_lai_fill.(ds[variable][:, :])
+        𝒜 = mask_lai_fill.(ds[variable][:, :])
 
         if !iszero(mask)
             qc = ds[lai_quality_variable][:, :]
             extra_qc = ds[lai_extra_quality_variable][:, :]
-            Λ = ifelse.(lai_screened.(qc, extra_qc, mask), NaN32, Λ)
+            𝒜 = ifelse.(lai_screened.(qc, extra_qc, mask), NaN32, 𝒜)
         end
 
-        Λ
+        𝒜
     end
 end
 
@@ -1376,16 +1376,16 @@ a value, so zeroed water would enter the sample as truth the chain reproduces ex
 function zero_non_vegetated!(data::AbstractArray, land_cover;
                              classes = igbp_non_vegetated_classes)
 
-    Λ = DataWrangling.seasonal_array(data)
+    𝒜 = DataWrangling.seasonal_array(data)
     codes = DataWrangling.horizontal_array(land_cover)
 
-    size(codes) == size(Λ)[1:2] ||
+    size(codes) == size(𝒜)[1:2] ||
         throw(ArgumentError("The land-cover array is $(size(codes)) but the series is " *
-                            "$(size(Λ)[1:2]) in space; both must be on the same lattice."))
+                            "$(size(𝒜)[1:2]) in space; both must be on the same lattice."))
 
-    for t in axes(Λ, 3), j in axes(Λ, 2), i in axes(Λ, 1)
+    for t in axes(𝒜, 3), j in axes(𝒜, 2), i in axes(𝒜, 1)
         code = codes[i, j]
-        isfinite(code) && round(Int, code) in classes && (Λ[i, j, t] = 0)
+        isfinite(code) && round(Int, code) in classes && (𝒜[i, j, t] = 0)
     end
 
     return data

@@ -267,10 +267,10 @@ struct BlockDonorTable{S, C}
     curves :: Dict{Tuple{Int, Int, Int}, Tuple{Vector{Float64}, Vector{Int}, Int}}
 end
 
-function block_donor_table(Λ, class_index, Nclasses;
+function block_donor_table(𝒜, class_index, Nclasses;
                            block_size, initial_radius, maximum_radius, minimum_donors)
 
-    Nx, Ny, Nt = size(Λ)
+    Nx, Ny, Nt = size(𝒜)
     Nbx, Nby = cld(Nx, block_size), cld(Ny, block_size)
     Nc = max(Nclasses, 1)
 
@@ -280,7 +280,7 @@ function block_donor_table(Λ, class_index, Nclasses;
     for t in 1:Nt, j in 1:Ny, i in 1:Nx
         c = class_index[i, j]
         c == 0 && continue
-        value = Λ[i, j, t]
+        value = 𝒜[i, j, t]
         isnan(value) && continue
         bi = (i - 1) ÷ block_size + 2
         bj = (j - 1) ÷ block_size + 2
@@ -338,7 +338,7 @@ function block_donor_curve(table, bi, bj, c)
     return sums, counts, radius
 end
 
-function donor_series!(curve, table::BlockDonorTable, Λ, i, j)
+function donor_series!(curve, table::BlockDonorTable, 𝒜, i, j)
     c = table.class_index[i, j]
     if c == 0
         fill!(curve, NaN)
@@ -351,7 +351,7 @@ function donor_series!(curve, table::BlockDonorTable, Λ, i, j)
 
     for t in eachindex(curve)
         total, n = sums[t], counts[t]
-        value = Λ[i, j, t]
+        value = 𝒜[i, j, t]
         if !isnan(value)
             total -= value
             n -= 1
@@ -376,12 +376,12 @@ struct AnchorDonorPool{A}
 end
 
 function anchor_donor_pool(anchor, anchor_periods, Nt, spatial)
-    Λ̄ = seasonal_array(anchor)
-    size(Λ̄)[1:2] == spatial ||
-        throw(ArgumentError("The anchor climatology is $(size(Λ̄)[1:2]) but the series is " *
+    𝒜̄ = seasonal_array(anchor)
+    size(𝒜̄)[1:2] == spatial ||
+        throw(ArgumentError("The anchor climatology is $(size(𝒜̄)[1:2]) but the series is " *
                             "$spatial in space; both must be on the same lattice."))
 
-    Na = size(Λ̄, 3)
+    Na = size(𝒜̄, 3)
     periods = isnothing(anchor_periods) ? [mod1(t, Na) for t in 1:Nt] : collect(anchor_periods)
 
     length(periods) == Nt ||
@@ -390,10 +390,10 @@ function anchor_donor_pool(anchor, anchor_periods, Nt, spatial)
     all(p -> 1 ≤ p ≤ Na, periods) ||
         throw(ArgumentError("anchor_periods must index the anchor's $Na periods."))
 
-    return AnchorDonorPool(Λ̄, periods)
+    return AnchorDonorPool(𝒜̄, periods)
 end
 
-function donor_series!(curve, pool::AnchorDonorPool, Λ, i, j)
+function donor_series!(curve, pool::AnchorDonorPool, 𝒜, i, j)
     for t in eachindex(curve)
         curve[t] = pool.anchor[i, j, pool.periods[t]]
     end
@@ -402,13 +402,13 @@ end
 
 # The ratio of sums, never a mean of ratios: a donor curve that passes near zero at one
 # period would otherwise dominate the estimate at every other one.
-function donor_scaling(Λ, curve, i, j, scaling, minimum_anchor_periods)
+function donor_scaling(𝒜, curve, i, j, scaling, minimum_anchor_periods)
     observed_total = 0.0
     donor_total = 0.0
     anchors = 0
 
     for t in eachindex(curve)
-        value, donor = Λ[i, j, t], curve[t]
+        value, donor = 𝒜[i, j, t], curve[t]
         (isnan(value) || isnan(donor)) && continue
         observed_total += value
         donor_total += donor
@@ -446,7 +446,7 @@ observed values are never rewritten:
 1. `:temporal` — [`fill_gaps!`](@ref) along the time axis, with `max_gap` free to be a
    per-cell array.
 2. `:scaled` — a donor's seasonal *shape* scaled to the cell's own level,
-   `Λ(i,j,t) = s(i,j) · Λ̄(i,j,t)`, with `s` the ratio of the cell's sum to the donor's over
+   `𝒜(i,j,t) = s(i,j) · 𝒜̄(i,j,t)`, with `s` the ratio of the cell's sum to the donor's over
    the periods where both are valid. This keeps the magnitude, which is what varies most in
    space, and borrows only the timing, which is what a class actually determines.
 3. `:class_mean` — the donor curve itself, for cells with no valid period to scale by.
@@ -498,8 +498,8 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
     scaling in (:multiplicative, :additive) ||
         throw(ArgumentError("scaling must be :multiplicative or :additive; got $scaling."))
 
-    Λ = seasonal_array(data)
-    Nx, Ny, Nt = size(Λ)
+    𝒜 = seasonal_array(data)
+    Nx, Ny, Nt = size(𝒜)
 
     codes = horizontal_array(land_cover)
     size(codes) == (Nx, Ny) ||
@@ -512,19 +512,19 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
     class_index, classes_present = class_indices(codes)
     fillable = [!isfinite(code) || !(round(Int, code) in unfilled_classes) for code in codes]
 
-    observed = .!isnan.(Λ)
+    observed = .!isnan.(𝒜)
     provenance = fill(gap_fill_provenance.unfilled, Nx, Ny, Nt)
     provenance[observed] .= gap_fill_provenance.observed
     reach = zeros(Int, Nx, Ny)
 
     if :temporal in stages
-        fill_gaps!(Λ; max_gap, cyclic)
+        fill_gaps!(𝒜; max_gap, cyclic)
 
         for t in 1:Nt, j in 1:Ny, i in 1:Nx
             observed[i, j, t] && continue
             if !fillable[i, j]
-                Λ[i, j, t] = NaN
-            elseif !isnan(Λ[i, j, t])
+                𝒜[i, j, t] = NaN
+            elseif !isnan(𝒜[i, j, t])
                 provenance[i, j, t] = gap_fill_provenance.temporal
             end
         end
@@ -538,7 +538,7 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
     # donor. A phase-locked gap is untouched by that stage, so it contributes nothing and
     # the pool stays honest exactly where it matters.
     pool = isnothing(anchor) ?
-        block_donor_table(Λ, class_index, length(classes_present);
+        block_donor_table(𝒜, class_index, length(classes_present);
                           block_size, initial_radius, maximum_radius, minimum_donors) :
         anchor_donor_pool(anchor, anchor_periods, Nt, (Nx, Ny))
 
@@ -546,22 +546,22 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
 
     for j in 1:Ny, i in 1:Nx
         fillable[i, j] || continue
-        any(t -> isnan(Λ[i, j, t]), 1:Nt) || continue
+        any(t -> isnan(𝒜[i, j, t]), 1:Nt) || continue
 
-        radius = donor_series!(curve, pool, Λ, i, j)
-        scale = donor_scaling(Λ, curve, i, j, scaling, minimum_anchor_periods)
+        radius = donor_series!(curve, pool, 𝒜, i, j)
+        scale = donor_scaling(𝒜, curve, i, j, scaling, minimum_anchor_periods)
         filled = false
 
         for t in 1:Nt
-            isnan(Λ[i, j, t]) || continue
+            isnan(𝒜[i, j, t]) || continue
             donor = curve[t]
             isnan(donor) && continue
 
             if scale_donors && !isnan(scale)
-                Λ[i, j, t] = clamp_to_range(apply_scaling(donor, scale, scaling), valid_range)
+                𝒜[i, j, t] = clamp_to_range(apply_scaling(donor, scale, scaling), valid_range)
                 provenance[i, j, t] = gap_fill_provenance.scaled
             elseif mean_donors
-                Λ[i, j, t] = clamp_to_range(donor, valid_range)
+                𝒜[i, j, t] = clamp_to_range(donor, valid_range)
                 provenance[i, j, t] = gap_fill_provenance.class_mean
             else
                 continue
@@ -615,31 +615,31 @@ reached at all, which is as much of the result as the scores.
 Needs no downloads: it re-uses a series that is already assembled.
 """
 function gap_fill_denial(series, land_cover; samples_per_class = 100, kw...)
-    Λ = seasonal_array(series isa FieldTimeSeries ? series : copy(series))
+    𝒜 = seasonal_array(series isa FieldTimeSeries ? series : copy(series))
     codes = horizontal_array(land_cover)
-    Nx, Ny, Nt = size(Λ)
+    Nx, Ny, Nt = size(𝒜)
 
     candidates = Dict{Int, Vector{CartesianIndex{3}}}()
     for t in 1:Nt, j in 1:Ny, i in 1:Nx
         isfinite(codes[i, j]) || continue
-        isnan(Λ[i, j, t]) && continue
+        isnan(𝒜[i, j, t]) && continue
         class = round(Int, codes[i, j])
         push!(get!(candidates, class, CartesianIndex{3}[]), CartesianIndex(i, j, t))
     end
 
     withheld = Dict(class => strided_sample(indices, samples_per_class)
                     for (class, indices) in candidates)
-    truth = Dict(class => [Λ[I] for I in indices] for (class, indices) in withheld)
+    truth = Dict(class => [𝒜[I] for I in indices] for (class, indices) in withheld)
     for indices in values(withheld), I in indices
-        Λ[I] = NaN
+        𝒜[I] = NaN
     end
 
-    fill_seasonal_gaps!(Λ, codes; kw...)
+    fill_seasonal_gaps!(𝒜, codes; kw...)
 
     rows = NamedTuple[]
     for class in sort!(collect(keys(withheld)))
         indices = withheld[class]
-        estimate = [Λ[I] for I in indices]
+        estimate = [𝒜[I] for I in indices]
         reached = isfinite.(estimate)
         observed, modeled = truth[class][reached], estimate[reached]
 

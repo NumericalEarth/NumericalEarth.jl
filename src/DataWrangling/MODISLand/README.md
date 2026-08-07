@@ -181,9 +181,10 @@ classes = Field(Metadatum(:landcover_class; dataset = MCD12Q1(), region, date = 
 
 metadata = Metadata(:leaf_area_index; dataset = climatology, region)
 
-Λ = FieldTimeSeries(metadata; time_indices_in_memory = length(metadata.dates))
+climatology_leaf_area_index = FieldTimeSeries(metadata;
+                                              time_indices_in_memory = length(metadata.dates))
 
-filled = fill_seasonal_gaps!(Λ, classes;
+filled = fill_seasonal_gaps!(climatology_leaf_area_index, classes;
                              cyclic = true,
                              max_gap = class_maximum_gap(classes),
                              valid_range = (0, 10),
@@ -213,9 +214,10 @@ field. There is no second dataset type:
 target = Metadata(:leaf_area_index; dataset = MCD15A2H(), region,
                   dates = (DateTime(2019, 1, 1), DateTime(2019, 12, 31)))
 
-Λ2019 = FieldTimeSeries(target; time_indices_in_memory = length(target.dates))
+single_year_leaf_area_index = FieldTimeSeries(target; time_indices_in_memory = length(target.dates))
 
-fill_seasonal_gaps!(Λ2019, classes; anchor = Λ, cyclic = false)
+fill_seasonal_gaps!(single_year_leaf_area_index, classes;
+                    anchor = climatology_leaf_area_index, cyclic = false)
 ```
 
 Both take the whole record at once, so the series has to hold all of its times in memory —
@@ -231,7 +233,7 @@ value: leaf area per unit ground area over water or tarmac is zero, and that is 
 write.
 
 ```julia
-zero_non_vegetated!(Λ, classes)     # after the fill, before the regrid
+zero_non_vegetated!(climatology_leaf_area_index, classes)   # after the fill, before the regrid
 ```
 
 Do it in that order. A `NaN` at a shoreline dilates into its neighbors through the
@@ -250,7 +252,7 @@ The composites are window averages already and 8-day periods do not nest inside 
 the samples straddling each edge are split by their days of overlap:
 
 ```julia
-Λbimonthly, edges = time_average(Λ2019, target, Month(2))
+bimonthly_leaf_area_index, edges = time_average(single_year_leaf_area_index, target, Month(2))
 ```
 
 The metadata closes the last sample's window with the dataset's own compositing rule, which
@@ -267,7 +269,7 @@ using Dates
 region = BoundingBox(longitude = (-92.5, -91.5), latitude = (36.5, 37.5))
 
 # One 8-day composite on its native grid
-Λ = Field(Metadatum(:leaf_area_index; dataset = MCD15A2H(), region,
+leaf_area_index = Field(Metadatum(:leaf_area_index; dataset = MCD15A2H(), region,
                     date = DateTime(2020, 7, 3)))
 
 # The 46-period seasonal climatology on a model grid, cyclic in time
@@ -278,10 +280,10 @@ climatology = MODISLAIClimatology(years = 2003:2019)
 build_lai_climatology!(climatology; region)
 
 metadata = Metadata(:leaf_area_index; dataset = climatology, region)
-Λ = FieldTimeSeries(metadata, grid; time_indices_in_memory = length(metadata.dates))
+leaf_area_index = FieldTimeSeries(metadata, grid; time_indices_in_memory = length(metadata.dates))
 
 # Fill what compositing could not, wrapping across the turn of the year
-fill_gaps!(Λ; max_gap = 4, cyclic = true)
+fill_gaps!(leaf_area_index; max_gap = 4, cyclic = true)
 ```
 
 ## Notes

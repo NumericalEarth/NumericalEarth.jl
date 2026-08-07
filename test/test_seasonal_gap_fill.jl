@@ -15,11 +15,11 @@ seasonal_shape(Nt; amplitude = 0.5) =
 # A uniform field of one class carrying `shape`, ready to have gaps punched in it.
 function uniform_series(shape, Nx, Ny)
     Nt = length(shape)
-    Λ = zeros(Float32, Nx, Ny, Nt)
+    𝒜 = zeros(Float32, Nx, Ny, Nt)
     for j in 1:Ny, i in 1:Nx
-        Λ[i, j, :] .= shape
+        𝒜[i, j, :] .= shape
     end
-    return Λ
+    return 𝒜
 end
 
 @testset "Per-column max_gap" begin
@@ -48,24 +48,24 @@ end
 @testset "Seasonal fill: the scaled donor preserves each cell's level" begin
     Nt = 12
     shape = seasonal_shape(Nt)
-    Λ = uniform_series(shape, 8, 8)
+    𝒜 = uniform_series(shape, 8, 8)
 
     # One cell sits at twice its neighbors' level and is missing at one period.
-    Λ[3, 3, :] .= 2 .* shape
-    Λ[3, 3, 5] = NaN32
+    𝒜[3, 3, :] .= 2 .* shape
+    𝒜[3, 3, 5] = NaN32
     classes = fill(Float32(2), 8, 8)
 
-    filled = fill_seasonal_gaps!(Λ, classes; cyclic = true, max_gap = 0,
+    filled = fill_seasonal_gaps!(𝒜, classes; cyclic = true, max_gap = 0,
                                  block_size = 4, minimum_donors = 4)
 
     # The whole claim of the method: the donor supplies the shape, the cell keeps its level.
-    @test Λ[3, 3, 5] ≈ 2 * shape[5] rtol = 1e-6
+    @test 𝒜[3, 3, 5] ≈ 2 * shape[5] rtol = 1e-6
     @test filled.provenance[3, 3, 5] == gap_fill_provenance.scaled
     @test filled.reach[3, 3] == 1
 
     # Nothing that was observed moved.
-    @test Λ[1, 1, :] == shape
-    @test all(t -> t == 5 || Λ[3, 3, t] == 2 * shape[t], 1:Nt)
+    @test 𝒜[1, 1, :] == shape
+    @test all(t -> t == 5 || 𝒜[3, 3, t] == 2 * shape[t], 1:Nt)
     @test all(==(gap_fill_provenance.observed), filled.provenance[1, 1, :])
 end
 
@@ -77,49 +77,49 @@ end
     # period would otherwise dominate every other one.
     near_zero = copy(shape)
     near_zero[4] = 1f-6
-    Λ = uniform_series(near_zero, 8, 8)
-    Λ[3, 3, :] .= 3 .* near_zero
-    Λ[3, 3, 7] = NaN32
+    𝒜 = uniform_series(near_zero, 8, 8)
+    𝒜[3, 3, :] .= 3 .* near_zero
+    𝒜[3, 3, 7] = NaN32
     classes = fill(Float32(2), 8, 8)
 
-    fill_seasonal_gaps!(Λ, classes; cyclic = true, max_gap = 0, block_size = 4,
+    fill_seasonal_gaps!(𝒜, classes; cyclic = true, max_gap = 0, block_size = 4,
                         minimum_donors = 4)
-    @test Λ[3, 3, 7] ≈ 3 * near_zero[7] rtol = 1e-5
+    @test 𝒜[3, 3, 7] ≈ 3 * near_zero[7] rtol = 1e-5
 
     # A cell is excluded from its own donor pool: with the target left in, a cell at twice
     # its neighbors' level would drag the donor toward itself and the scaling toward one.
-    Λ = uniform_series(shape, 4, 4)
-    Λ[2, 2, :] .= 5 .* shape
-    Λ[2, 2, 6] = NaN32
-    fill_seasonal_gaps!(Λ, fill(Float32(2), 4, 4); cyclic = true, max_gap = 0,
+    𝒜 = uniform_series(shape, 4, 4)
+    𝒜[2, 2, :] .= 5 .* shape
+    𝒜[2, 2, 6] = NaN32
+    fill_seasonal_gaps!(𝒜, fill(Float32(2), 4, 4); cyclic = true, max_gap = 0,
                         block_size = 2, minimum_donors = 1)
-    @test Λ[2, 2, 6] ≈ 5 * shape[6] rtol = 1e-5
+    @test 𝒜[2, 2, 6] ≈ 5 * shape[6] rtol = 1e-5
 
     # Too few anchor periods to trust a scaling: fall through to the donor curve itself.
-    Λ = uniform_series(shape, 4, 4)
-    Λ[2, 2, :] .= 4 .* shape
-    Λ[2, 2, 3:Nt] .= NaN32
-    filled = fill_seasonal_gaps!(Λ, fill(Float32(2), 4, 4); cyclic = true, max_gap = 0,
+    𝒜 = uniform_series(shape, 4, 4)
+    𝒜[2, 2, :] .= 4 .* shape
+    𝒜[2, 2, 3:Nt] .= NaN32
+    filled = fill_seasonal_gaps!(𝒜, fill(Float32(2), 4, 4); cyclic = true, max_gap = 0,
                                  block_size = 2, minimum_donors = 1,
                                  minimum_anchor_periods = 6)
-    @test Λ[2, 2, 7] ≈ shape[7] rtol = 1e-5
+    @test 𝒜[2, 2, 7] ≈ shape[7] rtol = 1e-5
     @test filled.provenance[2, 2, 7] == gap_fill_provenance.class_mean
 
     # A cell with no valid period at all has no level to scale by, and reads the class mean.
-    Λ = uniform_series(shape, 4, 4)
-    Λ[2, 2, :] .= NaN32
-    filled = fill_seasonal_gaps!(Λ, fill(Float32(2), 4, 4); cyclic = true, max_gap = 0,
+    𝒜 = uniform_series(shape, 4, 4)
+    𝒜[2, 2, :] .= NaN32
+    filled = fill_seasonal_gaps!(𝒜, fill(Float32(2), 4, 4); cyclic = true, max_gap = 0,
                                  block_size = 2, minimum_donors = 1)
-    @test Λ[2, 2, :] ≈ shape rtol = 1e-5
+    @test 𝒜[2, 2, :] ≈ shape rtol = 1e-5
     @test all(==(gap_fill_provenance.class_mean), filled.provenance[2, 2, :])
 
     # The clamp bounds the estimate at the product's own range.
-    Λ = uniform_series(shape, 4, 4)
-    Λ[2, 2, :] .= 100 .* shape
-    Λ[2, 2, 6] = NaN32
-    fill_seasonal_gaps!(Λ, fill(Float32(2), 4, 4); cyclic = true, max_gap = 0,
+    𝒜 = uniform_series(shape, 4, 4)
+    𝒜[2, 2, :] .= 100 .* shape
+    𝒜[2, 2, 6] = NaN32
+    fill_seasonal_gaps!(𝒜, fill(Float32(2), 4, 4); cyclic = true, max_gap = 0,
                         block_size = 2, minimum_donors = 1, valid_range = (0, 10))
-    @test Λ[2, 2, 6] == 10
+    @test 𝒜[2, 2, 6] == 10
 
     @test_throws ArgumentError fill_seasonal_gaps!(uniform_series(shape, 2, 2),
                                                    fill(Float32(2), 2, 2); scaling = :geometric)
@@ -130,53 +130,53 @@ end
     evergreen = seasonal_shape(Nt; amplitude = 0.1)
     deciduous = seasonal_shape(Nt; amplitude = 0.9)
 
-    Λ = zeros(Float32, 8, 8, Nt)
+    𝒜 = zeros(Float32, 8, 8, Nt)
     classes = zeros(Float32, 8, 8)
     for j in 1:8, i in 1:8
         woody = i ≤ 4
-        Λ[i, j, :] .= woody ? evergreen : deciduous
+        𝒜[i, j, :] .= woody ? evergreen : deciduous
         classes[i, j] = woody ? igbp_class_names.evergreen_broadleaf_forest :
                                 igbp_class_names.deciduous_broadleaf_forest
     end
 
     # A deciduous cell at the class boundary must not be filled from its evergreen
     # neighbors: they are one cell away and carry the wrong seasonal shape entirely.
-    Λ[5, 4, 3] = NaN32
-    fill_seasonal_gaps!(Λ, classes; cyclic = true, max_gap = 0, block_size = 4,
+    𝒜[5, 4, 3] = NaN32
+    fill_seasonal_gaps!(𝒜, classes; cyclic = true, max_gap = 0, block_size = 4,
                         minimum_donors = 4)
 
-    @test Λ[5, 4, 3] ≈ deciduous[3] rtol = 1e-5
-    @test !isapprox(Λ[5, 4, 3], evergreen[3]; rtol = 1e-3)
+    @test 𝒜[5, 4, 3] ≈ deciduous[3] rtol = 1e-5
+    @test !isapprox(𝒜[5, 4, 3], evergreen[3]; rtol = 1e-3)
 end
 
 @testset "Seasonal fill: the stencil grows until it finds donors" begin
     Nt = 8
     shape = seasonal_shape(Nt; amplitude = 0.4)
     block = 4
-    Λ = uniform_series(shape, 32, 32)
+    𝒜 = uniform_series(shape, 32, 32)
 
     # Period 5 is blank across three rings of blocks around block (2, 2) — synoptic overcast,
     # which is exactly the case a fixed neighborhood is empty for.
     for j in 1:32, i in 1:32
         bi, bj = (i - 1) ÷ block + 1, (j - 1) ÷ block + 1
-        (abs(bi - 2) ≤ 2 && abs(bj - 2) ≤ 2) && (Λ[i, j, 5] = NaN32)
+        (abs(bi - 2) ≤ 2 && abs(bj - 2) ≤ 2) && (𝒜[i, j, 5] = NaN32)
     end
 
-    filled = fill_seasonal_gaps!(Λ, fill(Float32(2), 32, 32); cyclic = true, max_gap = 0,
+    filled = fill_seasonal_gaps!(𝒜, fill(Float32(2), 32, 32); cyclic = true, max_gap = 0,
                                  block_size = block, initial_radius = 1, minimum_donors = 4,
                                  maximum_radius = 8)
 
-    @test Λ[5, 5, 5] ≈ shape[5] rtol = 1e-5
+    @test 𝒜[5, 5, 5] ≈ shape[5] rtol = 1e-5
     @test filled.reach[5, 5] == 3
-    @test count(isnan, Λ) == 0
+    @test count(isnan, 𝒜) == 0
 
     # A donor that cannot be reached inside `maximum_radius` leaves the cell alone rather
     # than borrowing from the far side of the region.
-    Λ = uniform_series(shape, 32, 32)
-    Λ[:, :, 5] .= NaN32
-    filled = fill_seasonal_gaps!(Λ, fill(Float32(2), 32, 32); cyclic = true, max_gap = 0,
+    𝒜 = uniform_series(shape, 32, 32)
+    𝒜[:, :, 5] .= NaN32
+    filled = fill_seasonal_gaps!(𝒜, fill(Float32(2), 32, 32); cyclic = true, max_gap = 0,
                                  block_size = block, minimum_donors = 4, maximum_radius = 2)
-    @test all(isnan, Λ[:, :, 5])
+    @test all(isnan, 𝒜[:, :, 5])
     @test all(==(gap_fill_provenance.unfilled), filled.provenance[:, :, 5])
 end
 
@@ -191,8 +191,8 @@ end
     template[2, 2, 5] = NaN32            # a one-period gap, reachable by interpolation
     template[3, 3, 4:7] .= NaN32         # too long to bridge, reachable only by a donor
 
-    Λ = copy(template)
-    filled = fill_seasonal_gaps!(Λ, classes; cyclic = true, max_gap = 2, block_size = 2,
+    𝒜 = copy(template)
+    filled = fill_seasonal_gaps!(𝒜, classes; cyclic = true, max_gap = 2, block_size = 2,
                                  minimum_donors = 1,
                                  unfilled_classes = (igbp_class_names.water,))
 
@@ -201,25 +201,25 @@ end
     @test filled.provenance[2, 2, 1] == gap_fill_provenance.observed
 
     # A class that is never filled stays missing at every period, and says so.
-    @test all(isnan, Λ[1, 1, :])
+    @test all(isnan, 𝒜[1, 1, :])
     @test all(==(gap_fill_provenance.unfilled), filled.provenance[1, 1, :])
 
     # The chain only ever adds: every observed value is bit-identical afterwards.
     observed = .!isnan.(template)
-    @test Λ[observed] == template[observed]
+    @test 𝒜[observed] == template[observed]
 
     # Every stage can be run alone, which is what makes the denial experiment per stage.
-    Λ = copy(template)
-    fill_seasonal_gaps!(Λ, classes; cyclic = true, max_gap = 2, block_size = 2,
+    𝒜 = copy(template)
+    fill_seasonal_gaps!(𝒜, classes; cyclic = true, max_gap = 2, block_size = 2,
                         minimum_donors = 1, stages = (:temporal,))
-    @test !isnan(Λ[2, 2, 5])
-    @test all(isnan, Λ[3, 3, 4:7])
+    @test !isnan(𝒜[2, 2, 5])
+    @test all(isnan, 𝒜[3, 3, 4:7])
 
-    Λ = copy(template)
-    fill_seasonal_gaps!(Λ, classes; cyclic = true, max_gap = 2, block_size = 2,
+    𝒜 = copy(template)
+    fill_seasonal_gaps!(𝒜, classes; cyclic = true, max_gap = 2, block_size = 2,
                         minimum_donors = 1, stages = (:scaled,))
-    @test !isnan(Λ[2, 2, 5])              # the donor reaches it too, without the bridge
-    @test !isnan(Λ[3, 3, 5])
+    @test !isnan(𝒜[2, 2, 5])              # the donor reaches it too, without the bridge
+    @test !isnan(𝒜[3, 3, 5])
 
     # A class array on the wrong lattice is an error, not a silent one-cell offset.
     @test_throws ArgumentError fill_seasonal_gaps!(copy(template), fill(Float32(2), 5, 4))
@@ -227,34 +227,34 @@ end
 
 @testset "Seasonal fill: the anchored donor" begin
     Nt = 12
-    Λ̄ = uniform_series(seasonal_shape(Nt), 4, 4)
-    Λ = 1.5f0 .* Λ̄
-    Λ[2, 2, 7] = NaN32
+    𝒜̄ = uniform_series(seasonal_shape(Nt), 4, 4)
+    𝒜 = 1.5f0 .* 𝒜̄
+    𝒜[2, 2, 7] = NaN32
 
     # With a climatology in hand the donor is the cell's own curve, so no class is needed at
     # all: the fill keeps both the cell's level and its own seasonal shape.
-    filled = fill_seasonal_gaps!(Λ, fill(NaN32, 4, 4); anchor = Λ̄, max_gap = 0)
+    filled = fill_seasonal_gaps!(𝒜, fill(NaN32, 4, 4); anchor = 𝒜̄, max_gap = 0)
 
-    @test Λ[2, 2, 7] ≈ 1.5f0 * Λ̄[2, 2, 7] rtol = 1e-6
+    @test 𝒜[2, 2, 7] ≈ 1.5f0 * 𝒜̄[2, 2, 7] rtol = 1e-6
     @test filled.provenance[2, 2, 7] == gap_fill_provenance.scaled
     @test filled.reach[2, 2] == 0
 
     # The anchor is scaled, never copied: a target year that departs from the climatology
     # must keep its departure.
-    @test !(Λ[2, 2, 7] ≈ Λ̄[2, 2, 7])
+    @test !(𝒜[2, 2, 7] ≈ 𝒜̄[2, 2, 7])
 
     # A shorter anchor is reused cyclically, and an explicit mapping is honoured.
-    Λ̄season = uniform_series(seasonal_shape(4), 4, 4)
-    Λ = zeros(Float32, 4, 4, 8)
+    𝒜̄season = uniform_series(seasonal_shape(4), 4, 4)
+    𝒜 = zeros(Float32, 4, 4, 8)
     for t in 1:8
-        Λ[:, :, t] .= 2 .* Λ̄season[:, :, mod1(t, 4)]
+        𝒜[:, :, t] .= 2 .* 𝒜̄season[:, :, mod1(t, 4)]
     end
-    Λ[1, 1, 3] = NaN32
-    fill_seasonal_gaps!(Λ, fill(NaN32, 4, 4); anchor = Λ̄season, max_gap = 0)
-    @test Λ[1, 1, 3] ≈ 2 * Λ̄season[1, 1, 3] rtol = 1e-6
+    𝒜[1, 1, 3] = NaN32
+    fill_seasonal_gaps!(𝒜, fill(NaN32, 4, 4); anchor = 𝒜̄season, max_gap = 0)
+    @test 𝒜[1, 1, 3] ≈ 2 * 𝒜̄season[1, 1, 3] rtol = 1e-6
 
     @test_throws ArgumentError fill_seasonal_gaps!(zeros(Float32, 4, 4, 8), fill(NaN32, 4, 4);
-                                                   anchor = Λ̄season,
+                                                   anchor = 𝒜̄season,
                                                    anchor_periods = [1, 2, 3])
     @test_throws ArgumentError fill_seasonal_gaps!(zeros(Float32, 4, 4, 8), fill(NaN32, 4, 4);
                                                    anchor = uniform_series(seasonal_shape(4), 5, 4))
@@ -264,11 +264,11 @@ end
     Nt = 12
     shape = seasonal_shape(Nt)
     classes = fill(Float32(igbp_class_names.evergreen_broadleaf_forest), 16, 16)
-    Λ = uniform_series(shape, 16, 16)
+    𝒜 = uniform_series(shape, 16, 16)
 
     # A field the chain reproduces exactly must score a perfect one, or a harness bug could
     # pass for a good result.
-    rows = gap_fill_denial(Λ, classes; samples_per_class = 50, cyclic = true, max_gap = 0,
+    rows = gap_fill_denial(𝒜, classes; samples_per_class = 50, cyclic = true, max_gap = 0,
                            block_size = 4, minimum_donors = 4)
     row = only(rows)
     @test row.class == igbp_class_names.evergreen_broadleaf_forest
@@ -278,14 +278,14 @@ end
     @test row.R² ≈ 1 atol = 1e-4
 
     # It also has to be non-destructive: the series it scores is the caller's.
-    @test count(isnan, Λ) == 0
+    @test count(isnan, 𝒜) == 0
 
     # A per-class breakdown, and a class that cannot be reconstructed scores worse.
     classes[9:16, :] .= igbp_class_names.deciduous_broadleaf_forest
     for j in 1:16, i in 9:16
-        Λ[i, j, :] .= shape .* (1 + 0.1f0 * i)
+        𝒜[i, j, :] .= shape .* (1 + 0.1f0 * i)
     end
-    rows = gap_fill_denial(Λ, classes; samples_per_class = 20, cyclic = true, max_gap = 0,
+    rows = gap_fill_denial(𝒜, classes; samples_per_class = 20, cyclic = true, max_gap = 0,
                            block_size = 4, minimum_donors = 4)
     @test length(rows) == 2
     @test [row.class for row in rows] == sort([igbp_class_names.evergreen_broadleaf_forest,

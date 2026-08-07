@@ -439,10 +439,10 @@ end
 
         # The stored file is the native grid, so the read hands `set_region_data!` exactly as
         # many cells as the grid has and the region offset is zero.
-        Λ = retrieve_data(metadatum)
+        leaf_area_index = retrieve_data(metadatum)
         λc, φc = read_file_coords(metadatum)
         grid = native_grid(metadatum)
-        @test size(Λ) == (Nx, Ny)
+        @test size(leaf_area_index) == (Nx, Ny)
         @test (length(λc), length(φc)) == (Nx, Ny)
         @test region_info(region, Field{Center, Center, Nothing}(grid), λc, φc) ==
               NumericalEarth.DataWrangling.BoundingBoxOffset(0, 0)
@@ -460,36 +460,38 @@ end
         # `retrieve_data` returns raw digital numbers; the scale is applied on the way onto
         # the grid, so a fill can never be scaled into a plausible value.
         for (i, j) in ((1, 1), (3, 2), (Nx, Ny))
-            @test Λ[i, j] ≈ Float32(lai[i, j])
+            @test leaf_area_index[i, j] ≈ Float32(lai[i, j])
         end
 
         # Both out-of-range codes are rejected, and the default screen removes exactly the
         # criteria it names.
-        @test isnan(Λ[2, 3])        # 255, fill
-        @test isnan(Λ[2, 4])        # 254, water
-        @test isnan(Λ[4, 5])        # MODLAND_QC other quality
-        @test isnan(Λ[5, 6])        # back-up algorithm
-        @test isnan(Λ[6, 7])        # significant cloud
-        @test !isnan(Λ[7, 8])       # cloud state undefined, assumed clear
-        @test !isnan(Λ[8, 9])       # dead detector is not in the default screen
-        @test !isnan(Λ[9, 10])      # nor is snow
-        @test count(isnan, Λ) == 5
+        @test isnan(leaf_area_index[2, 3])        # 255, fill
+        @test isnan(leaf_area_index[2, 4])        # 254, water
+        @test isnan(leaf_area_index[4, 5])        # MODLAND_QC other quality
+        @test isnan(leaf_area_index[5, 6])        # back-up algorithm
+        @test isnan(leaf_area_index[6, 7])        # significant cloud
+        @test !isnan(leaf_area_index[7, 8])       # cloud state undefined, assumed clear
+        @test !isnan(leaf_area_index[8, 9])       # dead detector is not in the default screen
+        @test !isnan(leaf_area_index[9, 10])      # nor is snow
+        @test count(isnan, leaf_area_index) == 5
 
         # Screening only ever removes data.
         unscreened = Metadatum(:leaf_area_index; dataset = MCD15A2H(screened_flags = 0x0000),
                                region, date, dir)
-        Λraw = retrieve_data(unscreened)
-        @test count(isnan, Λraw) == 2      # only the two out-of-range codes
-        @test all(i -> isnan(Λ[i]) || Λ[i] == Λraw[i], eachindex(Λ))
+        unscreened_leaf_area_index = retrieve_data(unscreened)
+        @test count(isnan, unscreened_leaf_area_index) == 2      # only the two out-of-range codes
+        @test all(i -> isnan(leaf_area_index[i]) ||
+                       leaf_area_index[i] == unscreened_leaf_area_index[i],
+                  eachindex(leaf_area_index))
 
         # A hand-picked mask screens exactly what it names, and nothing else.
         snow_screened = Metadatum(:leaf_area_index;
                                   dataset = MCD15A2H(screened_flags = lai_screening_mask(:snow_or_ice)),
                                   region, date, dir)
-        Λsnow = retrieve_data(snow_screened)
-        @test isnan(Λsnow[9, 10])
-        @test !isnan(Λsnow[4, 5])
-        @test count(isnan, Λsnow) == 3
+        snow_screened_leaf_area_index = retrieve_data(snow_screened)
+        @test isnan(snow_screened_leaf_area_index[9, 10])
+        @test !isnan(snow_screened_leaf_area_index[4, 5])
+        @test count(isnan, snow_screened_leaf_area_index) == 3
 
         # The land-cover code is the complement of the leaf-area read on the same layer: it
         # carries a class exactly where there is no retrieval, and the retrieval screen does
@@ -685,10 +687,10 @@ end
         write_synthetic_modis_file(joinpath(dir, lai_metadatum.filename),
                                    regional_lattice(lai_metadatum))
 
-        Λ = retrieve_data(lai_metadatum)
+        𝒜 = retrieve_data(lai_metadatum)
         λc, φc = read_file_coords(metadatum)
         λl, φl = read_file_coords(lai_metadatum)
-        @test size(codes) == size(Λ)
+        @test size(codes) == size(𝒜)
         @test λc == λl
         @test φc == φl
         @test region_info(region, Field{Center, Center, Nothing}(native_grid(metadatum)),
@@ -719,15 +721,15 @@ end
     @test class_maximum_gap(classes; default = 2) == [6, 1, 2]
 
     # Two columns, one gap, two answers.
-    Λ = fill(NaN32, 2, 1, 12)
-    Λ[1, 1, :] .= 1f0:12f0
-    Λ[2, 1, :] .= 1f0:12f0
-    Λ[:, :, 4:6] .= NaN32
+    𝒜 = fill(NaN32, 2, 1, 12)
+    𝒜[1, 1, :] .= 1f0:12f0
+    𝒜[2, 1, :] .= 1f0:12f0
+    𝒜[:, :, 4:6] .= NaN32
     pair = Float32[igbp_class_names.evergreen_broadleaf_forest;
                    igbp_class_names.deciduous_broadleaf_forest;;]
-    @test_logs (:warn,) fill_gaps!(Λ; max_gap = class_maximum_gap(pair))
-    @test Λ[1, 1, 4:6] ≈ Float32[4, 5, 6]
-    @test all(isnan, Λ[2, 1, 4:6])
+    @test_logs (:warn,) fill_gaps!(𝒜; max_gap = class_maximum_gap(pair))
+    @test 𝒜[1, 1, 4:6] ≈ Float32[4, 5, 6]
+    @test all(isnan, 𝒜[2, 1, 4:6])
 end
 
 # A stand-in for the sign of an end-stamped window (the Copernicus albedo dekads are the real
@@ -815,25 +817,25 @@ end
 end
 
 @testset "Zeroing the non-vegetated classes" begin
-    Λ = fill(NaN32, 3, 1, 4)
-    Λ[1, 1, :] .= 1f0:4f0                          # forest, observed
-    Λ[3, 1, 2] = 7                                 # a stray retrieval over water
+    𝒜 = fill(NaN32, 3, 1, 4)
+    𝒜[1, 1, :] .= 1f0:4f0                          # forest, observed
+    𝒜[3, 1, 2] = 7                                 # a stray retrieval over water
 
     codes = Float32[igbp_class_names.deciduous_broadleaf_forest;
                     igbp_class_names.water;
                     igbp_class_names.urban;;]
 
-    zero_non_vegetated!(Λ, codes)
+    zero_non_vegetated!(𝒜, codes)
 
     # The two non-vegetated columns carry zero at every period — leaf area per unit ground
     # area over water and tarmac is zero, not unknown.
-    @test all(iszero, Λ[2, 1, :])
-    @test all(iszero, Λ[3, 1, :])
-    @test count(isnan, Λ) == 0
+    @test all(iszero, 𝒜[2, 1, :])
+    @test all(iszero, 𝒜[3, 1, :])
+    @test count(isnan, 𝒜) == 0
 
     # A vegetated column is untouched, and so is a value the product did retrieve over a
     # non-vegetated cell: the class decides, not the presence of a value.
-    @test Λ[1, 1, :] == Float32[1, 2, 3, 4]
+    @test 𝒜[1, 1, :] == Float32[1, 2, 3, 4]
 
     # Cells with no class at all are left alone — nothing says they carry no canopy.
     unclassified = fill(NaN32, 2, 1, 3)
@@ -925,20 +927,20 @@ end
         metadatum = Metadatum(:leaf_area_index; dataset = climatology, region, date = stamp, dir)
         @test basename(only(paths)) == metadatum.filename
 
-        Λ = Array(interior(Field(metadatum), :, :, 1))
+        𝒜 = Array(interior(Field(metadatum), :, :, 1))
         n = Array(interior(Field(retained_retrieval_metadatum(metadatum)), :, :, 1))
 
         # The reduction is the mean of the retained digital numbers, scaled on read.
-        @test Λ[1, 1] ≈ mean((10, 20, 30)) * MODIS_LAI_SCALE
+        @test 𝒜[1, 1] ≈ mean((10, 20, 30)) * MODIS_LAI_SCALE
         @test n[1, 1] == 3
 
         # A cell cloudy in every year has nothing to composite.
-        @test isnan(Λ[2, 2])
+        @test isnan(𝒜[2, 2])
         @test n[2, 2] == 0
 
         # A cell cloudy in one year composites the other two.
         @test n[4, 4] == 2
-        @test !isnan(Λ[4, 4])
+        @test !isnan(𝒜[4, 4])
 
         # An already-built period is skipped, so an interrupted build resumes.
         modified = mtime(only(paths))

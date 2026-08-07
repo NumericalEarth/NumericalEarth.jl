@@ -1,4 +1,4 @@
-using Dates: Dates, DateTime, Millisecond
+using Dates: Dates, DateTime
 using DocStringExtensions: TYPEDSIGNATURES
 
 #####
@@ -9,13 +9,9 @@ using DocStringExtensions: TYPEDSIGNATURES
 ##### Replace this with that when it lands.
 #####
 
-const MILLISECONDS_PER_DAY = Dates.value(Millisecond(Dates.Day(1)))
-
-# Days, rather than the exact millisecond count, so the weights stay small enough to
-# accumulate in the series' own eltype and the kernel needs no Float64.
 @inline function window_overlap(sample_start, sample_stop, window_start, window_stop)
     overlap = min(sample_stop, window_stop) - max(sample_start, window_start)
-    return max(0, Dates.value(Millisecond(overlap)) / MILLISECONDS_PER_DAY)
+    return max(0, Dates.value(Dates.Second(overlap)))
 end
 
 function validate_average_bounds(bounds, Nt)
@@ -107,7 +103,7 @@ Average the `FieldTimeSeries` `fts` onto windows of length `window`, tiling `bou
 first date.
 
 `bounds` gives the `Nt + 1` dates delimiting the samples: sample `n` covers
-`[bounds[n], bounds[n+1])`. Samples are weighted by their days of overlap with each window,
+`[bounds[n], bounds[n+1])`. Samples are weighted by their overlap with each window,
 which a composited product needs: its values are already window means, so integrating an
 interpolation of them double-counts the compositing, and a year-anchored cadence does not nest
 inside a month, so an unweighted mean mis-weights every sample straddling an edge.
@@ -137,7 +133,7 @@ function time_average(fts::FieldTimeSeries, bounds, window)
 
     origin = DateTime(first(bounds))
     centers = [edges[w] + (edges[w + 1] - edges[w]) ÷ 2 for w in 1:Nw]
-    times = [convert(FT, Dates.value(Millisecond(center - origin)) / 1000) for center in centers]
+    times = [convert(FT, Dates.value(Dates.Second(center - origin))) for center in centers]
 
     # A single window leaves `Cyclical()` no interval to infer its period from.
     cannot_cycle = Nw == 1 && fts.time_indexing isa Cyclical{Nothing}

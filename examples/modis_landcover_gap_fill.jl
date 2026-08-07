@@ -53,18 +53,19 @@ gap_fraction(field) = mean(isnan.(Array(interior(field))))
 
 date = DateTime(2019, 7, 4)
 
-single = Metadatum(:leaf_area_index; dataset = MCD15A2H(), region, date)
-codes = Metadatum(:landcover_code; dataset = MCD15A2H(), region, date)
+single_composite = Metadatum(:leaf_area_index; dataset = MCD15A2H(), region, date)
+in_band_codes = Metadatum(:landcover_code; dataset = MCD15A2H(), region, date)
 
-Λsingle = Field(single)
+single_composite_leaf_area_index = Field(single_composite)
 
-in_band_fraction = mean(.!isnan.(Array(interior(Field(codes)))))
+in_band_fraction = mean(.!isnan.(Array(interior(Field(in_band_codes)))))
 
 @printf("Single 8-day composite, %s\n", Dates.format(date, "yyyy-mm-dd"))
 @printf("  a land-cover class, not a failed retrieval : %.2f%%\n", 100 * in_band_fraction)
-@printf("  total missing                              : %.2f%%\n", 100 * gap_fraction(Λsingle))
+@printf("  total missing                              : %.2f%%\n",
+        100 * gap_fraction(single_composite_leaf_area_index))
 @printf("  → attributable to cloud and quality        : %.2f%%\n",
-        100 * (gap_fraction(Λsingle) - in_band_fraction))
+        100 * (gap_fraction(single_composite_leaf_area_index) - in_band_fraction))
 
 # The class field comes from a separate annual product, read on the same lattice. Class
 # *codes* are not interpolable — a bilinear regrid averages urban (13) against water (17)
@@ -133,10 +134,8 @@ end
 # from related land-cover inputs, so they should largely agree, and where they do not the
 # disagreement localizes a geolocation or a vintage difference rather than a bug in either.
 
-in_band_codes = Array(interior(Field(codes), :, :, 1))
-
 non_vegetated = [!isnan(code) && Int(code) in igbp_non_vegetated_classes for code in class_codes]
-in_band = .!isnan.(in_band_codes)
+in_band = .!isnan.(Array(interior(Field(in_band_codes), :, :, 1)))
 
 @printf("\nThe two non-vegetated masks\n")
 @printf("  MCD12Q1 says non-vegetated : %d cells\n", count(non_vegetated))
@@ -145,7 +144,7 @@ in_band = .!isnan.(in_band_codes)
         count(non_vegetated .⊻ in_band), 100 * mean(non_vegetated .⊻ in_band))
 
 axis_kw = (xlabel = "Longitude (ᵒ)", ylabel = "Latitude (ᵒ)")
-Λrange = (0, 6)
+leaf_area_index_range = (0, 6)
 
 ## Only nine of the seventeen IGBP classes occur in this box, so the map is drawn over a
 ## compact index of the ones present and the colorbar spells them out. A 1-17 numeric scale
@@ -157,9 +156,9 @@ class_labels = [replace(String(class_name(code)), "_" => " ") for code in presen
 fig = Figure(size = (1600, 950))
 
 ax = Axis(fig[1, 1]; title = "One 8-day composite, $(Dates.format(date, "u dd yyyy"))", axis_kw...)
-plot = heatmap!(ax, Λsingle, colormap = :viridis, colorrange = Λrange,
-                nan_color = :gray80)
-Colorbar(fig[1, 2], plot, label = "Λ (m² m⁻²)")
+plot = heatmap!(ax, single_composite_leaf_area_index, colormap = :viridis,
+                colorrange = leaf_area_index_range, nan_color = :gray80)
+Colorbar(fig[1, 2], plot, label = "𝒜 (m² m⁻²)")
 
 ax = Axis(fig[1, 3]; title = "MCD12Q1 IGBP class (native 500 m grid)", axis_kw...)
 plot = heatmap!(ax, native_field(class_index),
@@ -201,9 +200,9 @@ period_date(n) = DateTime(2018, 1, 1) + Day(8 * (n - 1))
 # cell. A period whose minimum is zero has cells no year observed, and a period whose mean is
 # far below the number of years is a suspect minimum rather than a measured one.
 
-Λraw = FieldTimeSeries(metadata; time_indices_in_memory = length(periods))
+raw_leaf_area_index = FieldTimeSeries(metadata; time_indices_in_memory = length(periods))
 
-raw_gaps = [gap_fraction(Λraw[n]) for n in periods]
+raw_gaps = [gap_fraction(raw_leaf_area_index[n]) for n in periods]
 worst = argmax(raw_gaps)
 
 retained = Field(retained_retrieval_metadatum(
@@ -234,21 +233,21 @@ max_gap = class_maximum_gap(classes)
 # line is one more stage than the line above it, and each has to sit at or below it.
 
 function run_chain(stages)
-    Λ = FieldTimeSeries(metadata; time_indices_in_memory = length(periods))
-    filled = fill_seasonal_gaps!(Λ, classes; cyclic = true, max_gap,
+    leaf_area_index = FieldTimeSeries(metadata; time_indices_in_memory = length(periods))
+    record = fill_seasonal_gaps!(leaf_area_index, classes; cyclic = true, max_gap,
                                  valid_range = (0, 10),
                                  unfilled_classes = igbp_non_vegetated_classes,
                                  stages)
-    return Λ, filled
+    return leaf_area_index, record
 end
 
-Λtemporal, _ = run_chain((:temporal,))
-Λscaled, _ = run_chain((:temporal, :scaled))
-Λfilled, filled = run_chain((:temporal, :scaled, :class_mean))
+temporally_filled_leaf_area_index, _ = run_chain((:temporal,))
+scaled_donor_leaf_area_index, _ = run_chain((:temporal, :scaled))
+filled_leaf_area_index, fill_record = run_chain((:temporal, :scaled, :class_mean))
 
-temporal_gaps = [gap_fraction(Λtemporal[n]) for n in periods]
-scaled_gaps = [gap_fraction(Λscaled[n]) for n in periods]
-filled_gaps = [gap_fraction(Λfilled[n]) for n in periods]
+temporal_gaps = [gap_fraction(temporally_filled_leaf_area_index[n]) for n in periods]
+scaled_gaps = [gap_fraction(scaled_donor_leaf_area_index[n]) for n in periods]
+filled_gaps = [gap_fraction(filled_leaf_area_index[n]) for n in periods]
 
 non_vegetated_fraction = mean(non_vegetated)
 
@@ -268,8 +267,8 @@ non_vegetated_fraction = mean(non_vegetated)
 ## no use for.
 horizontal(series) = dropdims(Array(interior(series)); dims = 3)
 
-before = horizontal(Λraw)
-after = horizontal(Λfilled)
+before = horizontal(raw_leaf_area_index)
+after = horizontal(filled_leaf_area_index)
 observed = .!isnan.(before)
 
 @printf("\nChecks on the filled series\n")
@@ -277,15 +276,15 @@ observed = .!isnan.(before)
 @printf("  every filled value is within [0, 10]: %s\n",
         all(v -> isnan(v) || 0 ≤ v ≤ 10, after))
 @printf("  provenance accounts for every cell : %s\n",
-        sum(count(==(code), filled.provenance) for code in values(gap_fill_provenance)) ==
-        length(filled.provenance))
+        sum(count(==(code), fill_record.provenance) for code in values(gap_fill_provenance)) ==
+        length(fill_record.provenance))
 
-seasonal_mean = [nanmean(Λfilled[n]) for n in periods]
+seasonal_mean = [nanmean(filled_leaf_area_index[n]) for n in periods]
 low, peak = argmin(seasonal_mean), argmax(seasonal_mean)
 
-@printf("  annual low  : Λ = %.2f  (%s)\n", seasonal_mean[low],
+@printf("  annual low  : 𝒜 = %.2f  (%s)\n", seasonal_mean[low],
         Dates.format(period_date(low), "u dd"))
-@printf("  seasonal peak: Λ = %.2f  (%s)\n", seasonal_mean[peak],
+@printf("  seasonal peak: 𝒜 = %.2f  (%s)\n", seasonal_mean[peak],
         Dates.format(period_date(peak), "u dd"))
 @printf("  peak / low  : %.2f×  — a deciduous box, not an evergreen one\n",
         seasonal_mean[peak] / seasonal_mean[low])
@@ -299,7 +298,7 @@ low, peak = argmin(seasonal_mean), argmax(seasonal_mean)
 # is observed and the donor stages barely fire. That is the favorable case, not the case
 # they exist for. The single year below is where they carry the result.
 
-provenance_share = Dict(name => mean(filled.provenance .== code)
+provenance_share = Dict(name => mean(fill_record.provenance .== code)
                         for (name, code) in pairs(gap_fill_provenance))
 
 @printf("\nHow every cell-period got its value\n")
@@ -307,7 +306,7 @@ for name in keys(gap_fill_provenance)
     @printf("  %-11s : %.2f%%\n", name, 100 * provenance_share[name])
 end
 
-reached = filter(>(0), vec(filled.reach))
+reached = filter(>(0), vec(fill_record.reach))
 if !isempty(reached)
     @printf("  donor reach: median %d blocks, maximum %d of 16 (%.0f km at 32 cells a block)\n",
             round(Int, median(reached)), maximum(reached), 15 * maximum(reached))
@@ -350,16 +349,16 @@ fig = Figure(size = (1500, 900))
 
 ax = Axis(fig[1, 1]; axis_kw...,
           title = "Filled climatology, annual low ($(Dates.format(period_date(low), "u dd")))")
-heatmap!(ax, native_field(after[:, :, low]), colormap = :viridis, colorrange = Λrange,
-         nan_color = :gray80)
+heatmap!(ax, native_field(after[:, :, low]), colormap = :viridis,
+         colorrange = leaf_area_index_range, nan_color = :gray80)
 
 ax = Axis(fig[1, 2]; axis_kw...,
           title = "Filled climatology, seasonal peak ($(Dates.format(period_date(peak), "u dd")))")
 plot = heatmap!(ax, native_field(after[:, :, peak]), colormap = :viridis,
-                colorrange = Λrange, nan_color = :gray80)
-Colorbar(fig[1, 3], plot, label = "Λ (m² m⁻²)")
+                colorrange = leaf_area_index_range, nan_color = :gray80)
+Colorbar(fig[1, 3], plot, label = "𝒜 (m² m⁻²)")
 
-ax = Axis(fig[2, 1]; xlabel = "Day of year", ylabel = "Λ (m² m⁻²)",
+ax = Axis(fig[2, 1]; xlabel = "Day of year", ylabel = "𝒜 (m² m⁻²)",
           title = "Regional-mean seasonal cycle")
 scatterlines!(ax, day_of_year, seasonal_mean, color = :seagreen, markersize = 8)
 scatter!(ax, day_of_year[[low, peak]], seasonal_mean[[low, peak]], color = :firebrick,
@@ -407,7 +406,7 @@ center = size(class_codes) .÷ 2
 deciduous = findall(==(Float32(igbp_class_names.deciduous_broadleaf_forest)), class_codes)
 i, j = Tuple(argmin(cell -> (cell[1] - center[1])^2 + (cell[2] - center[2])^2, deciduous))
 
-times = Λfilled.times
+times = filled_leaf_area_index.times
 
 @printf("\nThe time axis of the 46-period cyclic series\n")
 @printf("  first stamp sits at day %.1f, not day 0 — half a composite period\n",
@@ -418,7 +417,7 @@ times = Λfilled.times
 # Reading at a node returns the node, reading between two returns their mean, and the series
 # is continuous across the turn of the year.
 
-sample(t) = Array(interior(Λfilled[Time(t)], :, :, 1))[i, j]
+sample(t) = Array(interior(filled_leaf_area_index[Time(t)], :, :, 1))[i, j]
 
 @printf("  at a composite's own time   : %.6f vs the composite's %.6f\n",
         sample(times[10]), after[i, j, 10])
@@ -430,7 +429,7 @@ sample(t) = Array(interior(Λfilled[Time(t)], :, :, 1))[i, j]
 green_up = 60:0.5:160
 
 fig = Figure(size = (1200, 450))
-ax = Axis(fig[1, 1]; xlabel = "Day of year", ylabel = "Λ (m² m⁻²)",
+ax = Axis(fig[1, 1]; xlabel = "Day of year", ylabel = "𝒜 (m² m⁻²)",
           title = "Interpolating the series through green-up")
 lines!(ax, collect(green_up), [sample((day - 1) * 86400) for day in green_up],
        color = :seagreen, label = "interpolated")
@@ -454,11 +453,11 @@ nothing #hide
 target = Metadata(:leaf_area_index; dataset = MCD15A2H(), region,
                   dates = (DateTime(2019, 1, 1), DateTime(2019, 12, 31)))
 
-Λ2019 = FieldTimeSeries(target; time_indices_in_memory = length(target.dates))
+single_year_leaf_area_index = FieldTimeSeries(target; time_indices_in_memory = length(target.dates))
 
-raw_2019 = horizontal(Λ2019)
+raw_2019 = horizontal(single_year_leaf_area_index)
 
-single_year_gaps = [gap_fraction(Λ2019[n]) for n in eachindex(target.dates)]
+single_year_gaps = [gap_fraction(single_year_leaf_area_index[n]) for n in eachindex(target.dates)]
 worst_2019 = argmax(single_year_gaps)
 
 # The window expands to the product's own composites and is *bracketed*, so it runs one
@@ -476,11 +475,12 @@ anchor_periods = [period_index(date, MCD15A2H()) for date in target.dates]
 # larger than in the climatology case, and their accuracy becomes the product's accuracy
 # rather than a correction to it.
 
-anchored = fill_seasonal_gaps!(Λ2019, classes; anchor = Λfilled, anchor_periods,
+anchored = fill_seasonal_gaps!(single_year_leaf_area_index, classes;
+                               anchor = filled_leaf_area_index, anchor_periods,
                                max_gap, cyclic = false, valid_range = (0, 10),
                                unfilled_classes = igbp_non_vegetated_classes)
 
-filled_2019 = horizontal(Λ2019)
+filled_2019 = horizontal(single_year_leaf_area_index)
 climatology_2019 = after[:, :, anchor_periods]
 
 departure = filter(!isnan, vec(filled_2019 .- climatology_2019))
@@ -495,14 +495,14 @@ departure = filter(!isnan, vec(filled_2019 .- climatology_2019))
 # samples that straddle each edge have to be split by their days of overlap; the unweighted
 # alternative is worst exactly where the field moves fastest.
 
-Λbimonthly, edges = time_average(Λ2019, target, Month(2))
+bimonthly_leaf_area_index, edges = time_average(single_year_leaf_area_index, target, Month(2))
 
 windows = 1:length(edges)-1
 
 unweighted = [mean(filter(!isnan, vec(filled_2019[:, :, n])))
               for n in eachindex(target.dates)]
 
-bimonthly_mean = [nanmean(Λbimonthly[w]) for w in windows]
+bimonthly_mean = [nanmean(bimonthly_leaf_area_index[w]) for w in windows]
 
 green_up_window = findfirst(w -> Dates.month(edges[w]) == 3, windows)
 green_up_samples = [n for n in eachindex(target.dates)
@@ -514,7 +514,7 @@ green_up_samples = [n for n in eachindex(target.dates)
 
 @printf("\nTwo-month means of the 2019 series\n")
 for w in windows
-    @printf("  %s – %s : Λ = %.3f\n", Dates.format(edges[w], "u dd"),
+    @printf("  %s – %s : 𝒜 = %.3f\n", Dates.format(edges[w], "u dd"),
             Dates.format(edges[w + 1], "u dd"), bimonthly_mean[w])
 end
 @printf("  green-up window, overlap-weighted %.4f vs unweighted %.4f (%.1f%% apart)\n",
@@ -538,19 +538,19 @@ fig = Figure(size = (1600, 1150))
 ax = Axis(fig[1, 1]; axis_kw...,
           title = "2019-$(worst_date) as read ($(round(100 * single_year_gaps[worst_2019], digits = 1))% missing)")
 heatmap!(ax, native_field(raw_2019[:, :, worst_2019]), colormap = :viridis,
-         colorrange = Λrange, nan_color = :gray80)
+         colorrange = leaf_area_index_range, nan_color = :gray80)
 
 ax = Axis(fig[1, 2]; axis_kw..., title = "2019-$worst_date after the chain")
 plot = heatmap!(ax, native_field(filled_2019[:, :, worst_2019]), colormap = :viridis,
-                colorrange = Λrange, nan_color = :gray80)
-Colorbar(fig[1, 3], plot, label = "Λ (m² m⁻²)")
+                colorrange = leaf_area_index_range, nan_color = :gray80)
+Colorbar(fig[1, 3], plot, label = "𝒜 (m² m⁻²)")
 
 ax = Axis(fig[1, 4]; axis_kw..., title = "What produced each cell")
 plot = heatmap!(ax, provenance_map(anchored.provenance[:, :, worst_2019]),
                 colormap = provenance_colors, colorrange = (-0.5, 4.5))
 Colorbar(fig[1, 5], plot, ticks = provenance_ticks)
 
-ax = Axis(fig[2, 1:3]; xlabel = "Days from 1 January 2019", ylabel = "Λ (m² m⁻²)",
+ax = Axis(fig[2, 1:3]; xlabel = "Days from 1 January 2019", ylabel = "𝒜 (m² m⁻²)",
           title = "One deciduous cell: 2019 against the $(climatology.years) climatology")
 lines!(ax, elapsed.(target.dates), climatology_2019[i, j, :], color = :gray40,
        linestyle = :dash, label = "climatology (the anchor)")
@@ -560,14 +560,14 @@ scatter!(ax, elapsed.(target.dates)[isnan.(raw_2019[i, j, :])],
          filled_2019[i, j, isnan.(raw_2019[i, j, :])], color = :goldenrod, markersize = 11,
          label = "periods the chain supplied")
 scatterlines!(ax, [elapsed(edges[w]) for w in windows],
-              [Array(interior(Λbimonthly[w], :, :, 1))[i, j] for w in windows],
+              [Array(interior(bimonthly_leaf_area_index[w], :, :, 1))[i, j] for w in windows],
               color = :firebrick, markersize = 11, label = "two-month means")
 axislegend(ax, position = :lt)
 
 ax = Axis(fig[2, 4:5]; axis_kw..., title = "2019 minus the climatology, seasonal peak")
 plot = heatmap!(ax, native_field(filled_2019[:, :, peak_2019] .- climatology_2019[:, :, peak_2019]),
                 colormap = :balance, colorrange = (-2, 2))
-Colorbar(fig[2, 6], plot, label = "ΔΛ (m² m⁻²)")
+Colorbar(fig[2, 6], plot, label = "Δ𝒜 (m² m⁻²)")
 
 save("modis_landcover_gap_fill_single_year.png", fig)
 nothing #hide
@@ -591,7 +591,7 @@ nothing #hide
 # what was removed turns "good quality" into a per-class score — and needs no new downloads,
 # because the granules are already cached.
 
-scores = gap_fill_denial(Λfilled, classes; samples_per_class = 100, cyclic = true,
+scores = gap_fill_denial(filled_leaf_area_index, classes; samples_per_class = 100, cyclic = true,
                          max_gap, valid_range = (0, 10),
                          unfilled_classes = igbp_non_vegetated_classes)
 
@@ -623,7 +623,8 @@ end
 # Scoring came first on purpose: `gap_fill_denial` samples cells that carry a value, so zeroed
 # water entering the sample as truth the chain reproduces exactly would inflate every score.
 
-for (name, series) in ("climatology" => Λfilled, "2019" => Λ2019)
+for (name, series) in ("climatology" => filled_leaf_area_index,
+                       "2019" => single_year_leaf_area_index)
     left = isnan.(horizontal(series))
     vegetated_left = count(t -> left[t] && !non_vegetated[t[1], t[2]], CartesianIndices(left))
     @printf("\n%s: %.3f%% left unfilled, of which %d cell-periods are vegetated\n",
@@ -639,12 +640,12 @@ end
 # into the cell mean correctly, because leaf area is already per unit *ground* area. A model
 # cell half lake and half forest genuinely carries half the forest's leaf area.
 
-Λmodel = Field{Center, Center, Nothing}(grid)
-Oceananigans.Fields.interpolate!(Λmodel, Λfilled[peak])
+model_grid_leaf_area_index = Field{Center, Center, Nothing}(grid)
+Oceananigans.Fields.interpolate!(model_grid_leaf_area_index, filled_leaf_area_index[peak])
 
 @printf("\nOn the %d x %d model grid at the seasonal peak\n", size(grid, 1), size(grid, 2))
-@printf("  cells with no value : %d\n", count(isnan, Array(interior(Λmodel))))
-@printf("  regional mean Λ     : %.3f m² m⁻²\n", nanmean(Λmodel))
+@printf("  cells with no value : %d\n", count(isnan, Array(interior(model_grid_leaf_area_index))))
+@printf("  regional mean 𝒜     : %.3f m² m⁻²\n", nanmean(model_grid_leaf_area_index))
 
 # The class field has to travel with it. Zero says there is no canopy; it does not say whether
 # the surface is a lake or a car park, and those want roughness lengths four orders of
