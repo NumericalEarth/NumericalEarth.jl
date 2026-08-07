@@ -48,6 +48,9 @@ const GEBCOMetadatum = Metadatum{<:GEBCO2024}
 
 DataWrangling.dataset_variable_name(data::GEBCOMetadatum) = GEBCO_bathymetry_variable_names[data.name]
 
+DataWrangling.longitude_name(::GEBCOMetadatum) = "lon"
+DataWrangling.latitude_name(::GEBCOMetadatum) = "lat"
+
 # GEBCO 2024 download URL from BODC
 # Note: This is a large file (~8 GB zipped, ~22 GB unzipped)
 const GEBCO_zip_url = "https://www.bodc.ac.uk/data/open_download/gebco/gebco_2024/zip/"

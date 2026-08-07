@@ -54,6 +54,10 @@ const IBCAOMetadatum = Metadatum{<:IBCAOv5}
 
 dataset_variable_name(data::IBCAOMetadatum) = IBCAO_bathymetry_variable_names[data.name]
 
+# The NetCDF written by the reprojection names its coordinates "lon"/"lat".
+DataWrangling.longitude_name(::IBCAOMetadatum) = "lon"
+DataWrangling.latitude_name(::IBCAOMetadatum) = "lat"
+
 # CEDA BODC direct download — 100m, with Greenland ice sheet elevation (~25 GB)
 const IBCAO_tiff_url = "https://dap.ceda.ac.uk/bodc/gebco/ibcao/ibcao_v5.1/" *
     "greenland_ice_sheet_elevation_data/100mx100m_grid_cell_spacing/" *
