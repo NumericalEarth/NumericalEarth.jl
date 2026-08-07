@@ -18,7 +18,11 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded runs on pull requests, but let pushes to main queue and
+  # finish: the full-examples docs build takes hours, and cancel-in-progress
+  # meant every new push to main killed the running build before it could
+  # deploy, so the dev docs never updated.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   JULIA_NUM_PRECOMPILE_TASKS: 8
