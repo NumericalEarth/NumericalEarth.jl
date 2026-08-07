@@ -15,9 +15,16 @@ export AbstractLand,
        BucketHydrology, DryLand, SaturatedSurface,
        # Variably saturated hydrology + sub-closures
        VanGenuchtenRetention, VanGenuchtenConductivity,
+       capillary_disconnect_saturation, WaterViscosity, viscosity_correction,
+       CosbyConductivity,
+       saturated_conductivity, conductivity_spread,
        NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
        NoRunoff, InfiltrationCapacityRunoff,
        VariablySaturatedHydrology,
+       # Pedotransfer functions + depth-layer combination
+       PedotransferFunction, WeynantsPedotransfer, WeynantsRegression,
+       HYPRESPedotransfer, HYPRESRegression,
+       soil_hydraulic_parameters, soil_hydraulic_properties, layer_weights, layer_depths,
        # Urban aerodynamic roughness closures
        AbstractUrbanRoughness, MorphometricRoughness,
        IsotropicFrontalArea, EmpiricalFrontalArea,
@@ -40,10 +47,10 @@ using Adapt: Adapt
 using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
-using Oceananigans.Architectures: architecture
+using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField
-using Oceananigans.Grids: grid_name, Center, Face, φnode
+using Oceananigans.Grids: grid_name, Center, Face, znodes, φnode
 using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
@@ -57,6 +64,10 @@ using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, Co
 include("energy_balance/energy_balance.jl")
 include("hydrology/hydrology.jl")
 include("properties/property_providers.jl")
+
+# Setup-time helpers that build the property `Field`s the closures consume.
+include("properties/pedotransfer.jl")
+include("properties/soil_hydraulic_properties.jl")
 
 # Urban aerodynamic roughness closures.
 include("roughness/urban_roughness_closure.jl")
