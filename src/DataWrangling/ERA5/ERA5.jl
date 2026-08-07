@@ -3,6 +3,9 @@ module ERA5
 # 2-D data
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel
 
+# Land data
+export ERA5HourlyLand, ERA5MonthlyLand
+
 # 3-D data
 export ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels, ERA5_all_pressure_levels, pressure_field, hPa
 export standard_atmosphere_z_interfaces, mean_geopotential_z_interfaces
@@ -150,6 +153,7 @@ DataWrangling.inpainted_metadata_path(metadata::ERA5Metadatum) = joinpath(metada
 
 include("ERA5_variables.jl")
 include("ERA5_single_levels.jl")
+include("ERA5_land.jl")
 include("ERA5_field_time_series.jl")  # Yearly file reading (like JRA55)
 include("ERA5_pressure_levels.jl")
 include("ERA5_prescribed_radiation.jl")

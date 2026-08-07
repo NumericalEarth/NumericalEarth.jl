@@ -47,6 +47,7 @@ examples = [
     Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data", true),
     Example("Breeze over slab land", "breeze_over_slab_land", true),
     Example("Differentiable ERA5-forced slab land", "era5_forced_slab_land", false),
+    Example("Deep soil temperature from ERA5-Land", "era5_land_deep_temperature", false),
     Example("ERA5 downscaling with Breeze", "breeze_downscaling_era5", true),
 ]
 

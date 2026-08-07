@@ -30,6 +30,16 @@ function extra_request_keys!(request, ds::ERA5PressureLevelsDataset)
     request["pressure_level"] = [string(p) for p in p_hPa]
 end
 
+request_product_type!(request, ::ERA5Dataset) = request["product_type"] = ["reanalysis"]
+
+function request_dates!(request, dataset, dts)
+    request["year"]  = unique(string.(Dates.year.(dts)))
+    request["month"] = unique(lpad.(string.(Dates.month.(dts)), 2, '0'))
+    request["day"]   = unique(lpad.(string.(Dates.day.(dts)), 2, '0'))
+    request["time"]  = unique([lpad(string(Dates.hour(dt)), 2, '0') * ":00" for dt in dts])
+    return request
+end
+
 #####
 ##### CDS request construction — pure, network-free
 #####
@@ -40,11 +50,12 @@ end
 Construct the CDS API request dictionary for one batch of ERA5 data.
 
 `name_or_names` is a `Symbol` or `Vector{Symbol}` of internal variable names.
-`datetimes` is a single `DateTime` or a vector of `DateTime`s; all entries must share
-the same `(year, month)` (CDS interprets `year`/`month`/`day`/`time` as a Cartesian
-product, so mixing months would request the cross product of invalid dates). One
-`day` and one `time` string are emitted per unique day and per unique hour found in
-`datetimes`. `region` is `nothing`, a `BoundingBox`, or a `Column`.
+`datetimes` is a single `DateTime` or a vector of `DateTime`s; all entries must form an
+exact `year`/`month`/`day`/`time` Cartesian product (CDS interprets those keys as a
+product, so e.g. hourly requests mixing months would ask for the cross product of
+invalid dates — batch hourly requests by calendar month). One `day` and one `time`
+string are emitted per unique day and per unique hour found in `datetimes`. `region`
+is `nothing`, a `BoundingBox`, or a `Column`.
 
 The returned dictionary always uses zero-padded month/day/hour strings, sets the `area`
 key only when `region` produces one, and adds dataset-specific extras (e.g.
@@ -56,22 +67,14 @@ function build_era5_request(name_or_names, dataset, datetimes; region)
 
     dts = datetimes isa AbstractVector ? datetimes : [datetimes]
 
-    years  = unique(string.(Dates.year.(dts)))
-    months = unique(lpad.(string.(Dates.month.(dts)), 2, '0'))
-    days   = unique(lpad.(string.(Dates.day.(dts)), 2, '0'))
-    hours  = unique([lpad(string(Dates.hour(dt)), 2, '0') * ":00" for dt in dts])
-
     request = Dict{String, Any}(
-        "product_type"    => ["reanalysis"],
         "variable"        => cds_vars,
-        "year"            => years,
-        "month"           => months,
-        "day"             => days,
-        "time"            => hours,
         "data_format"     => "netcdf",
         "download_format" => "unarchived",
     )
 
+    request_product_type!(request, dataset)
+    request_dates!(request, dataset, dts)
     extra_request_keys!(request, dataset)
 
     area = era5_request_area(region, dataset, first(names))

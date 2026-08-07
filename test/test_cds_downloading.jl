@@ -10,6 +10,8 @@ using NumericalEarth.DataWrangling: metadata_path, BoundingBox, Column, Linear, 
 using NumericalEarth.DataWrangling.ERA5
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
                                          ERA5_dataset_variable_names, ERA5_netcdf_variable_names
+using NumericalEarth.DataWrangling.ERA5: ERA5HourlyLand, ERA5MonthlyLand,
+                                         ERA5Land_dataset_variable_names, ERA5Land_netcdf_variable_names
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
                                          ERA5_all_pressure_levels, ERA5PL_dataset_variable_names,
                                          ERA5PL_netcdf_variable_names, pressure_field
@@ -1237,6 +1239,187 @@ end
             CDSExt.foreach_nc(p -> push!(received, basename(p)), zip_path, tmp)
 
             @test sort(received) == ["a.nc", "b.nc"]   # readme.txt filtered out
+        end
+    end
+end
+
+@testset "ERA5-Land datasets" begin
+    hourly  = ERA5HourlyLand()
+    monthly = ERA5MonthlyLand()
+    region  = BoundingBox(longitude=(6, 11), latitude=(45, 47.5))
+
+    @testset "Dates, grid, and variable names" begin
+        hourly_dates = NumericalEarth.DataWrangling.all_dates(hourly, :soil_temperature_level_4)
+        @test first(hourly_dates) == DateTime("1950-01-01")
+        @test step(hourly_dates) == Hour(1)
+
+        monthly_dates = NumericalEarth.DataWrangling.all_dates(monthly, :soil_temperature_level_4)
+        @test first(monthly_dates) == DateTime("1950-01-01")
+        @test step(monthly_dates) == Month(1)
+
+        # 0.1° grid — inheriting the single-level (1440, 720) size would silently
+        # build the native grid at the wrong resolution
+        @test size(hourly,  :soil_temperature_level_4) == (3600, 1800, 1)
+        @test size(monthly, :volumetric_soil_water_layer_1) == (3600, 1800, 1)
+
+        md = Metadatum(:soil_temperature_level_4; dataset=monthly, region, date=DateTime(2020, 7, 1))
+        @test NumericalEarth.DataWrangling.longitude_interfaces(md) == (-0.05, 359.95)
+        @test NumericalEarth.DataWrangling.latitude_interfaces(md) == (-90, 90)
+        @test is_three_dimensional(md) == false
+
+        # API-name and netcdf-name dicts cover the same variable set
+        @test keys(ERA5Land_dataset_variable_names) == keys(ERA5Land_netcdf_variable_names)
+        @test NumericalEarth.DataWrangling.available_variables(hourly) === ERA5Land_dataset_variable_names
+        @test NumericalEarth.DataWrangling.dataset_variable_name(md) == "stl4"
+
+        # All ERA5-Land variables are instantaneous states: no unit conversion, no inpainting
+        @test NumericalEarth.DataWrangling.conversion_units(md) === nothing
+        @test NumericalEarth.DataWrangling.default_inpainting(md) === nothing
+    end
+
+    @testset "Native grid restriction at 0.1°" begin
+        md = Metadatum(:soil_temperature_level_4; dataset=monthly, region, date=DateTime(2020, 7, 1))
+        grid = NumericalEarth.DataWrangling.native_grid(md, CPU())
+        Nx, Ny, _ = size(grid)
+        # ~0.1° cells bracketing a 5° × 2.5° box
+        @test 50 ≤ Nx ≤ 54
+        @test 25 ≤ Ny ≤ 29
+    end
+
+    @testset "CDS request construction" begin
+        # `reanalysis-era5-land` is not keyed by product type; sending one is rejected
+        req = CDSExt.build_era5_request(:soil_temperature_level_4, hourly, DateTime(2020, 7, 1, 12); region)
+        @test !haskey(req, "product_type")
+        @test req["variable"] == ["soil_temperature_level_4"]
+        @test req["day"]  == ["01"]
+        @test req["time"] == ["12:00"]
+        # Two native (0.1°) cells of padding
+        @test req["area"] == [47.7, 5.8, 44.8, 11.2]
+
+        # Monthly means: averaging flavor as product type, one field per month, no `day`
+        dts = collect(DateTime(2020, 1, 1):Month(1):DateTime(2020, 12, 1))
+        req = CDSExt.build_era5_request(:soil_temperature_level_4, monthly, dts; region)
+        @test req["product_type"] == ["monthly_averaged_reanalysis"]
+        @test !haskey(req, "day")
+        @test req["time"] == ["00:00"]
+        @test req["year"] == ["2020"]
+        @test length(req["month"]) == 12
+    end
+
+    @testset "Yearly-file layout" begin
+        @test CDSExt.cds_product(hourly)  == "reanalysis-era5-land"
+        @test CDSExt.cds_product(monthly) == "reanalysis-era5-land-monthly-means"
+        @test CDSExt.cds_varnames(hourly) === ERA5Land_dataset_variable_names
+        @test CDSExt.nc_varnames(hourly)  === ERA5Land_netcdf_variable_names
+
+        # One file per (variable, year); all dates of a year share it
+        fname = NumericalEarth.DataWrangling.metadata_filename(monthly, :soil_temperature_level_4,
+                                                               DateTime(2020, 7, 1), region)
+        @test fname == "soil_temperature_level_4_ERA5MonthlyLand_2020_6.0_11.0_45.0_47.5.nc"
+        @test occursin("ERA5HourlyLand_2020",
+                       NumericalEarth.DataWrangling.metadata_filename(hourly, :soil_temperature_level_4,
+                                                                      DateTime(2020, 7, 1, 12), region))
+
+        md = Metadata(:soil_temperature_level_4; dataset=monthly, region,
+                      dates=(DateTime(2020, 6, 1), DateTime(2021, 3, 1)))
+        @test length(unique(md.filename.filenames)) == 2
+
+        # A monthly-means year fits one CDS request; an hourly year exceeds the ERA5-Land
+        # cost limit and is fetched by calendar month, one variable per request
+        dates_m = CDSExt.era5_land_year_dates(monthly, :soil_temperature_level_4, 2020)
+        @test length(dates_m) == 12
+        @test length(CDSExt.era5_land_year_batches(monthly, dates_m)) == 1
+
+        dates_h = CDSExt.era5_land_year_dates(hourly, :soil_temperature_level_4, 2020)
+        @test length(dates_h) == 8784          # leap year
+        @test length.(CDSExt.era5_land_year_batches(hourly, dates_h)) ==
+              [Dates.daysinmonth(2020, m) * 24 for m in 1:12]
+
+        @test CDSExt.era5_land_variable_groups(monthly, [:a, :b]) == [[:a, :b]]
+        @test CDSExt.era5_land_variable_groups(hourly, [:a, :b]) == [[:a], [:b]]
+    end
+
+    @testset "concatenate_era5_nc" begin
+        mktempdir() do dir
+            times = [DateTime(2020, 1, 1), DateTime(2020, 1, 1, 1),
+                     DateTime(2020, 2, 1), DateTime(2020, 2, 1, 1)]
+            src_paths = [joinpath(dir, "chunk1.nc"), joinpath(dir, "chunk2.nc")]
+            for (c, src_path) in enumerate(src_paths)
+                NCDatasets.Dataset(src_path, "c") do ds
+                    NCDatasets.defDim(ds, "longitude", 2)
+                    NCDatasets.defDim(ds, "latitude",  2)
+                    NCDatasets.defDim(ds, "valid_time", 2)
+                    NCDatasets.defVar(ds, "longitude", Float64, ("longitude",))[:] = [11.0, 11.1]
+                    NCDatasets.defVar(ds, "latitude",  Float64, ("latitude",))[:]  = [47.1, 47.0]
+                    tv = NCDatasets.defVar(ds, "valid_time", Float64, ("valid_time",);
+                                           attrib = ["units" => "seconds since 1970-01-01"])
+                    tv[:] = times[2c-1:2c]
+                    u = NCDatasets.defVar(ds, "stl1", Float32, ("longitude", "latitude", "valid_time"))
+                    for k in 1:2, j in 1:2, i in 1:2
+                        u[i, j, k] = Float32(2 * (c - 1) + k)   # marker == global timestep index
+                    end
+                end
+            end
+
+            dst_path = joinpath(dir, "year.nc")
+            CDSExt.concatenate_era5_nc(src_paths, [("stl1", dst_path)],
+                                       Set(["longitude", "latitude", "valid_time"]),
+                                       Set(["time", "valid_time"]))
+
+            NCDatasets.Dataset(dst_path, "r") do dst
+                @test dst["valid_time"][:] == times
+                @test dst["longitude"][:] == [11.0, 11.1]
+                @test all(k -> all(==(Float32(k)), dst["stl1"][:, :, k]), 1:4)
+            end
+        end
+    end
+
+    @testset "Download monthly stl4 and build fields" begin
+        dates = (DateTime(2020, 6, 1), DateTime(2020, 7, 1))
+        metadata = Metadata(:soil_temperature_level_4; dataset=monthly, region, dates)
+
+        filepaths = metadata_path(metadata)
+        # Both months live in the same yearly file
+        @test length(unique(filepaths)) == 1
+        download_dataset_with_fallback(filepaths; dataset_name="ERA5MonthlyLand soil_temperature_level_4") do
+            download(metadata)
+        end
+        @test all(isfile, filepaths)
+
+        ds_nc = NCDataset(filepaths[1])
+        @test haskey(ds_nc, "stl4")
+        @test haskey(ds_nc, "longitude")
+        @test haskey(ds_nc, "latitude")
+        # The yearly file holds all 12 monthly means, located by its own time axis
+        @test size(ds_nc["stl4"], 3) == 12
+        lon = ds_nc["longitude"][:]
+        lat = ds_nc["latitude"][:]
+        # 0.1° spacing, stored north-to-south
+        @test lon[2] - lon[1] ≈ 0.1
+        @test lat[2] - lat[1] ≈ -0.1
+        close(ds_nc)
+
+        # Native field: deep soil temperature in a plausible range over the Alps
+        ψ = Field(first(metadata), CPU())
+        @test ψ isa Field
+        values = filter(!isnan, Array(vec(interior(ψ))))
+        @test all(T -> 230 < T < 320, values)
+
+        # Two-month mean matches the hand-computed average of the two snapshots
+        Td = time_averaged_field(metadata, CPU())
+        ψ1 = Array(interior(Field(first(metadata), CPU())))
+        ψ2 = Array(interior(Field(last(metadata), CPU())))
+        @test Array(interior(Td)) ≈ (ψ1 .+ ψ2) ./ 2
+
+        # Interpolation onto a model grid stays finite over an inland box
+        grid = LatitudeLongitudeGrid(CPU(); size=(20, 10), latitude=(45, 47.5), longitude=(6, 11),
+                                     topology=(Bounded, Bounded, Flat))
+        Td_model = time_averaged_field(metadata, grid)
+        @test size(Td_model)[1:2] == (20, 10)
+        @test !any(isnan, Array(interior(Td_model)))
+
+        for filepath in filepaths
+            rm(filepath; force=true)
         end
     end
 end

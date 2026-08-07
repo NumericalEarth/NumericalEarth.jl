@@ -148,3 +148,73 @@ function ncvar_copy_tslice!(dst, src_var, vname, tidx, time_dimnames)
 
     return nothing
 end
+
+"""
+    concatenate_era5_nc(src_paths, nc_name_path_pairs, coord_vars, time_dimnames)
+
+Concatenate NetCDF files holding consecutive time windows of the same variables on the
+same grid into one file per variable, appending along the time dimension. `src_paths`
+must be ordered chronologically; `nc_name_path_pairs` is a vector of
+`(nc_varname, dst_path)` pairs. Non-time coordinate variables are copied from the first
+source.
+"""
+function concatenate_era5_nc(src_paths, nc_name_path_pairs, coord_vars, time_dimnames)
+    srcs = [NCDatasets.Dataset(src_path, "r") for src_path in src_paths]
+    try
+        src1 = first(srcs)
+        src_varnames = Set(keys(src1))
+
+        time_dims = [dname for (dname, _) in src1.dim if dname in time_dimnames]
+        time_dim = isempty(time_dims) ?
+            error("concatenate_era5_nc: no time dimension in $(first(src_paths))") :
+            only(time_dims)
+        total_time = sum(src.dim[time_dim] for src in srcs)
+
+        for (nc_varname, dst_path) in nc_name_path_pairs
+            nc_varname in src_varnames || continue
+            NCDatasets.Dataset(dst_path, "c") do dst
+                for (dname, dlen) in src1.dim
+                    NCDatasets.defDim(dst, dname, dname == time_dim ? total_time : dlen)
+                end
+
+                for (k, v) in src1.attrib
+                    dst.attrib[k] = v
+                end
+
+                for (vname, var) in src1
+                    (vname in coord_vars || vname == nc_varname) || continue
+                    dims     = NCDatasets.dimnames(var)
+                    T        = eltype(var.var)
+                    attribs  = var.attrib
+                    fill_val = haskey(attribs, "_FillValue") ? attribs["_FillValue"] : nothing
+
+                    dst_var = isnothing(fill_val) ?
+                        NCDatasets.defVar(dst, vname, T, dims) :
+                        NCDatasets.defVar(dst, vname, T, dims; fillvalue=fill_val)
+
+                    for (k, v) in attribs
+                        k == "_FillValue" && continue
+                        dst_var.attrib[k] = v
+                    end
+
+                    if time_dim in dims
+                        offset = 0
+                        for src in srcs
+                            n = src.dim[time_dim]
+                            dst_idx = ntuple(i -> dims[i] == time_dim ? (offset+1:offset+n) : Colon(),
+                                             length(dims))
+                            src_idx = ntuple(Returns(Colon()), length(dims))
+                            dst_var.var[dst_idx...] = src[vname].var[src_idx...]
+                            offset += n
+                        end
+                    else
+                        dst_var.var[:] = var.var[:]
+                    end
+                end
+            end
+        end
+    finally
+        foreach(close, srcs)
+    end
+    return nothing
+end
