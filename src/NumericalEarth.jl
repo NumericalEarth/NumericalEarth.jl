@@ -72,10 +72,6 @@ export
     GloFASReanalysis,
     ERA5PrescribedAtmosphere,
     ERA5PrescribedRadiation,
-    OSPapaPrescribedRadiation,
-    OSPapaPrescribedAtmosphere,
-    os_papa_prescribed_fluxes,
-    os_papa_prescribed_flux_boundary_conditions,
     FreezingLimitedOceanTemperature,
     SurfaceRadiationProperties,
     InterfaceRadiationFlux,
@@ -129,7 +125,6 @@ export
     RepeatYearJRA55, MultiYearJRA55,
     ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel,
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
-    OSPapaHourly,
     JRA55FieldTimeSeries,
     ORCAOne, ORCAQuarter, ORCATwelfth,
     ORCAGrid,
@@ -260,7 +255,7 @@ include("NestedModels/NestedModels.jl")   # last: wraps a parent + a child (any 
 
 using .Grids
 using .DataWrangling
-using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55, OSPapa
+using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55
 using .Bathymetry
 using .InitialConditions
 using .EarthSystemModels
@@ -281,7 +276,6 @@ using .DataWrangling.ORCA
 using .DataWrangling.WOA
 using .DataWrangling.JRA55
 using .DataWrangling.GloFAS
-using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
 using .DataWrangling.ASTERGED
