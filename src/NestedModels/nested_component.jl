@@ -13,6 +13,11 @@ EarthSystemModels.thermodynamics_parameters(nm::NestedModel) =
 EarthSystemModels.surface_layer_height(nm::NestedModel) =
     EarthSystemModels.surface_layer_height(nm.child)
 
+# Forward the grid-aware form too: a child on a terrain-following grid resolves its
+# reference height per column, which the generic scalar fallback cannot express.
+EarthSystemModels.surface_layer_height(nm::NestedModel, exchange_grid) =
+    EarthSystemModels.surface_layer_height(nm.child, exchange_grid)
+
 EarthSystemModels.boundary_layer_height(nm::NestedModel) =
     EarthSystemModels.boundary_layer_height(nm.child)
 
@@ -34,6 +39,9 @@ EarthSystemModels.thermodynamics_parameters(sim::NestedModelSimulation) =
 
 EarthSystemModels.surface_layer_height(sim::NestedModelSimulation) =
     EarthSystemModels.surface_layer_height(component_model(sim))
+
+EarthSystemModels.surface_layer_height(sim::NestedModelSimulation, exchange_grid) =
+    EarthSystemModels.surface_layer_height(component_model(sim), exchange_grid)
 
 EarthSystemModels.boundary_layer_height(sim::NestedModelSimulation) =
     EarthSystemModels.boundary_layer_height(component_model(sim))

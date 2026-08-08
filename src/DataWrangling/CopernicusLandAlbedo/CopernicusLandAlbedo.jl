@@ -57,7 +57,7 @@ and white-sky (`AL_BH_BB`) broadband albedos with diffuse fraction `diffuse_frac
 
 Files are global on a regular 1/112° latitude-longitude grid; build the `Metadata`
 with a lon/lat [`BoundingBox`](@ref) to window a region at read time. Downloads come
-from the C3S `satellite-albedo` catalogue entry and require the CDSAPI backend:
+from the C3S `satellite-albedo` catalog entry and require the CDSAPI backend:
 `using CDSAPI` with `~/.cdsapirc` credentials, the same setup as ERA5 (see this
 module's README).
 
@@ -184,8 +184,9 @@ DataWrangling.metadata_filename(dataset::CopernicusAlbedoClimatology, name, date
 #####
 ##### Download
 #####
-##### The dekadal-file download lives in `ext/NumericalEarthCDSAPIExt.jl` (needs
-##### `using CDSAPI`); it fetches the source pair and calls `repack_albedo_pair` below.
+##### The dekadal-file download lives in
+##### `ext/NumericalEarthCDSAPIExt/copernicus_land_albedo.jl` (needs `using CDSAPI`); it
+##### fetches the source pair and calls `repack_albedo_pair` below.
 ##### Everything here is CDS-free: repacking, climatology download, and reading.
 #####
 
@@ -459,7 +460,7 @@ function write_monthly_mean(filepath, source_paths, variable_names, latitude_chu
 end
 
 #####
-##### Copernicus land surface albedo (C3S `satellite-albedo` catalogue entry)
+##### Copernicus land surface albedo (C3S `satellite-albedo` catalog entry)
 #####
 ##### One CDS request per calendar month fetches the black-sky (`albb_dh`) and
 ##### white-sky (`albb_bh`) products for all of that month's dekads; each dekad's
@@ -556,7 +557,7 @@ Download the dekadal black-sky and white-sky broadband albedo for every date of
 `metadata`, one CDS request per calendar month issued through `retrieve(request, path)`
 (supplied by a CDS backend extension), and repack each dekad's pair into a single
 compact local NetCDF. Requires `~/.cdsapirc` credentials and acceptance of the
-Copernicus Global Land product licence on the CDS portal.
+Copernicus Global Land product license on the CDS portal.
 """
 function download_albedo_dekads!(retrieve, metadata::CopernicusAlbedoDatasetMetadata; skip_existing=true, cleanup=true)
     meta_filename = DataWrangling.metadata_filename

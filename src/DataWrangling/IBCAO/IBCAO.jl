@@ -92,7 +92,7 @@ function Downloads.download(metadatum::IBCAOMetadatum)
     return nc_path
 end
 
-# Implemented in ext/NumericalEarthArchGDALExt.jl when ArchGDAL is loaded.
+# Implemented in ext/NumericalEarthArchGDALExt/ibcao.jl when ArchGDAL is loaded.
 function reproject_ibcao_to_netcdf end
 
 end # module

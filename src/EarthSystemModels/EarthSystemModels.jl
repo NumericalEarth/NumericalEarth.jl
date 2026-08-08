@@ -24,6 +24,7 @@ export
     FixedIterations,
     ConvergenceStopCriteria,
     LandRoughnessLength,
+    LandZeroPlaneDisplacement,
     CoefficientBasedFluxes,
     FreezingLimitedOceanTemperature,
     SkinTemperature,

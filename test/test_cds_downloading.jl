@@ -16,7 +16,8 @@ using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5MonthlyPr
 using NumericalEarth.DataWrangling.ERA5: split_era5_nc_by_datetime, ERA5_COORD_VARS, ERA5_TIME_DIMNAMES
 # ERA5-owned batching / NetCDF helpers are exercised at their owner module, not through the
 # CDS extension (the extension no longer re-imports the ones it does not itself use).
-using NumericalEarth.DataWrangling.ERA5: max_dts_per_cds_request, is_zip, ncvar_copy!, ncvar_copy_tslice!
+using NumericalEarth.DataWrangling.ERA5: max_dts_per_cds_request, is_zip, ncvar_copy!, ncvar_copy_tslice!,
+                                         split_era5_nc_multistep
 
 # Internal extension module — exposes dispatch helpers and NetCDF utilities
 # that are not part of the public API but worth pinning behavior for.
@@ -185,7 +186,7 @@ start_date = DateTime(2005, 2, 16, 12)
         ds = ERA5HourlySingleLevel()
         era5m(name) = Metadatum(name; dataset=ds, date=start_date)
 
-        # Surface geopotential ÷ g → metres; accumulated SW/LW (J/m²) ÷ 3600 → W/m²;
+        # Surface geopotential ÷ g → meters; accumulated SW/LW (J/m²) ÷ 3600 → W/m²;
         # accumulated precip depth (m) × 1000/3600 → kg/m²/s. Others are unconverted.
         @test conversion_units(era5m(:topography)) isa InverseGravity
         @test conversion_units(era5m(:downwelling_shortwave_radiation)) isa Jm²ph
@@ -1171,7 +1172,7 @@ end
             ]
             time_dimnames = Set(["valid_time"])
 
-            CDSExt.split_era5_nc_multistep(src_path, triples, coord_vars, time_dimnames)
+            split_era5_nc_multistep(src_path, triples, coord_vars, time_dimnames)
 
             # The skipped variable produces no output.
             @test !isfile(joinpath(dir, "should_not_exist.nc"))
@@ -1195,7 +1196,7 @@ end
         end
     end
 
-    @testset "split_era5_nc_multistep selects timesteps by valid_time, not request position" begin
+    @testset "split_era5_nc_by_datetime selects timesteps by valid_time, not request position" begin
         # Regression: CDS expands `day × time` into a Cartesian product, so a window that
         # crosses midnight (e.g. requesting [day N 23:00, day N+1 00:00]) comes back with
         # extra, sorted timesteps. The split must key on valid_time; keying on the request
@@ -1224,9 +1225,9 @@ end
             want = [DateTime(2005, 2, 16, 23), DateTime(2005, 2, 17, 0)]
             triples = [("t", want[1], joinpath(dir, "a.nc")),
                        ("t", want[2], joinpath(dir, "b.nc"))]
-            CDSExt.split_era5_nc_multistep(src_path, triples,
-                                           Set(["longitude", "latitude", "valid_time"]),
-                                           Set(["valid_time"]))
+            split_era5_nc_by_datetime(src_path, triples,
+                                      Set(["longitude", "latitude", "valid_time"]),
+                                      Set(["valid_time"]))
 
             # a.nc must hold valid_time 16T23:00 (marker 2), b.nc 17T00:00 (marker 3).
             # The old positional split would have written markers 1 and 2.

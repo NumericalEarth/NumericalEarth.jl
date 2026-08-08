@@ -34,10 +34,10 @@ Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 
 [sources]
 NumericalEarth = {path = ".."}
-Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl.git", rev = "glw/rrtmgp-nested-integration"}
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl.git", rev = "main"}
 
 [compat]
-Breeze = "0.7.3"
+Breeze = "0.7.3, 0.8"
 CUDA = "6"
 CairoMakie = "0.15"
 ConservativeRegridding = "0.2"
@@ -46,4 +46,4 @@ DocumenterCitations = "1.3"
 Enzyme = "0.13.166"
 Literate = "2.2"
 Oceananigans = "0.110"
-Reactant = "0.2.274"
+Reactant = "0.2.278"

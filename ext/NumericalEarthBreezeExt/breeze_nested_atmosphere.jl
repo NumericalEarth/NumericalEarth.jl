@@ -84,7 +84,7 @@ function davies_relaxation_mask(grid, width; ramp = CosineRamp())
     end
 end
 
-# Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` metres of the domain, for the ρw lid sponge.
+# Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` meters of the domain, for the ρw lid sponge.
 # `z_top` is read once host-side under `@allowscalar`: a `znode` on a terrain-following GPU grid
 # indexes the (device) terrain arrays, which is otherwise disallowed. `s` is the normalized distance
 # below the lid (0 at the top), so the shared ramp contract (1 at s=0) puts the strongest damping at
@@ -104,7 +104,7 @@ end
 default_lid_depth(grid) = convert(eltype(grid), grid.Lz / 4)
 
 # Default child dynamics: compressible with split-explicit acoustic substepping, an `UpperSponge`
-# Rayleigh layer over the top `damping_depth` metres at `damping_rate`, and no divergence damping
+# Rayleigh layer over the top `damping_depth` meters at `damping_rate`, and no divergence damping
 # (its (ρθ)′-proxy damper injects a spurious force on an unbalanced cold start). When given,
 # `surface_pressure`/`reference_potential_temperature` anchor the hydrostatic reference and the
 # perturbation-form pressure-gradient reference profile.
@@ -204,7 +204,7 @@ of a binomial filter ([`smooth_topography!`](@ref); `0` disables): point-sampled
 leaves grid-scale orographic roughness that excites standing grid-scale noise in the near-surface flow
 on the terrain-following coordinate. If the parent knows its surface elevation
 ([`surface_elevation`](@ref)), the child elevation is then blended toward the parent's over an outer
-frame of physical width `terrain_blend_length` (metres; converted to a resolution-invariant cell count,
+frame of physical width `terrain_blend_length` (meters; converted to a resolution-invariant cell count,
 or overridden directly with `terrain_blend_width`), so the terrain at the open boundaries matches the
 orography the parent state was produced with — and the blend slope stays fixed across resolutions
 rather than steepening.
@@ -218,7 +218,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     surface_pressure = nothing,
     reference_potential_temperature = nothing,
     terrain = nothing,
-    terrain_blend_length = 60_000,   # metres; physical blend width → resolution-invariant slope
+    terrain_blend_length = 60_000,   # meters; physical blend width → resolution-invariant slope
     terrain_blend_width = nothing,    # explicit cell-count override; derived from length if `nothing`
     terrain_smoothing_passes = 2,     # binomial-filter passes on the child elevation; 0 disables
     bottom_drag_coefficient = nothing,  # constant Cᴰ or a Breeze `PolynomialCoefficient`; `nothing` disables
@@ -299,7 +299,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
         parent_forcings(; variables, rate = relaxation_rate, mask = relax_mask)
     end
 
-    # ρw Rayleigh sponge over BOTH the top `damping_depth` metres AND the lateral relaxation zone. The
+    # ρw Rayleigh sponge over BOTH the top `damping_depth` meters AND the lateral relaxation zone. The
     # horizontal Davies nudging drives a persistent vertical-velocity wave up the (inflow) lateral walls
     # (nudging the horizontal mass/momentum harder makes it worse); `ρw` is otherwise undamped there, so
     # the wave amplifies up the wall column until a top-only sponge catches it too late — at the wall/lid
