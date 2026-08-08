@@ -17,9 +17,9 @@ const ERA5_wave_variables = Set([
 #####
 
 # ERA5 reanalysis data available from 1940 to present (we use a practical range here)
-DataWrangling.all_dates(::ERA5HourlySingleLevel,  var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
-DataWrangling.all_dates(::ERA5MonthlySingleLevel, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-01"), step=Month(1))
-DataWrangling.all_dates(::ERA5YearlySingleLevel, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
+DataWrangling.all_dates(::ERA5HourlySingleLevel,  var) = range(DateTime("1940-01-01"), stop=DateTime("2025-12-31"), step=Hour(1))
+DataWrangling.all_dates(::ERA5MonthlySingleLevel, var) = range(DateTime("1940-01-01"), stop=DateTime("2025-12-01"), step=Month(1))
+DataWrangling.all_dates(::ERA5YearlySingleLevel, var) = range(DateTime("1940-01-01"), stop=DateTime("2025-12-31"), step=Hour(1))
 
 # ERA5 single-level data is a spatially 2-D dataset
 DataWrangling.is_three_dimensional(::ERA5Metadata) = false
@@ -63,6 +63,9 @@ ERA5_dataset_variable_names = Dict(
     :mean_wave_direction             => "mean_wave_direction",
     :geopotential                    => "geopotential",
     :topography                      => "geopotential",
+    :total_column_water_vapor        => "total_column_water_vapour",
+    :vertically_integrated_eastward_water_vapor_flux  => "vertical_integral_of_eastward_water_vapour_flux",
+    :vertically_integrated_northward_water_vapor_flux => "vertical_integral_of_northward_water_vapour_flux",
 )
 
 # NetCDF short variable names (what's actually in the downloaded files)
@@ -95,6 +98,9 @@ ERA5_netcdf_variable_names = Dict(
     :mean_wave_direction             => "mwd",
     :geopotential                    => "z",
     :topography                      => "z",
+    :total_column_water_vapor        => "tcwv",
+    :vertically_integrated_eastward_water_vapor_flux  => "viwve",
+    :vertically_integrated_northward_water_vapor_flux => "viwvn",
 )
 
 # Variables available for download
