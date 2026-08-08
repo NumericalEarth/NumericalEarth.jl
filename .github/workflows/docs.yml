@@ -8,13 +8,11 @@ on:
         type: boolean
         default: false
   schedule:
-    # Every other night at 06:00 UTC: the full-examples docs build takes hours
-    # on the GPU runner, so building on every push to main both starved the
-    # runner and (with cancel-in-progress) never finished. A scheduled build of
-    # whatever main is at the time keeps the dev docs at most ~2 days stale,
-    # and the same run builds the latest release's docs if they have not been
-    # deployed yet (see the plan job). (*/2 runs on odd days of the month, so
-    # 31st -> 1st builds back to back — a harmless quirk.)
+    # Docs build on odd days of the month at 06:00 UTC: the full-examples build
+    # takes hours on the GPU runner, so building on every push to main both
+    # starved the runner and (with cancel-in-progress) never finished. The
+    # scheduled run builds the tip of main and, when the latest release's docs
+    # have not been deployed yet, that release too (see the plan job).
     - cron: '0 6 */2 * *'
   pull_request:
     paths:
