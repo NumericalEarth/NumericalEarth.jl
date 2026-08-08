@@ -56,6 +56,14 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
     kw = (; time_indexing, time_indices_in_memory)
     kw = merge(kw, other_kw)
 
+    # Download every variable up front in one bundle: backends batch a `MetadataSet`
+    # across variables (one CDS request, or one era5cli invocation with concurrent
+    # per-variable requests), so the `FieldTimeSeries` below find their files cached.
+    mset = MetadataSet(:eastward_velocity, :northward_velocity, :temperature,
+                       :dewpoint_temperature, :surface_pressure, :total_precipitation;
+                       dataset, start_date, end_date, dir, region)
+    Downloads.download(mset)
+
     era5_fts(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir, region), architecture; kw...)
 
     u    = era5_fts(:eastward_velocity)
@@ -138,6 +146,17 @@ function ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
     dates = DataWrangling.expand_dates(dataset, :temperature, dates)
     time_indices_in_memory = something(time_indices_in_memory, length(dates))
 
+    # Download every variable up front in one bundle — including the geopotential the
+    # vertical discretization needs: backends batch a `MetadataSet` across variables
+    # (one CDS request, or one era5cli invocation with concurrent per-variable
+    # requests), so the per-variable loads below find their files cached.
+    mset = MetadataSet(:temperature, :eastward_velocity, :northward_velocity,
+                       :specific_humidity, :specific_cloud_liquid_water_content,
+                       :specific_rain_water_content, :specific_cloud_ice_water_content,
+                       :specific_snow_water_content, :geopotential;
+                       dataset, dates, region, dir)
+    Downloads.download(mset)
+
     # One clock drives both the atmosphere's own time and the pressure levels' time-varying
     # geopotential heights. `time_step!(atmosphere, Δt)` advances it, so the grid geometry a child
     # interpolates over follows the reanalysis in time.
@@ -181,4 +200,5 @@ end
 Dataset-dispatched constructor: build an [`ERA5PrescribedAtmosphere`](@ref) over `bounding_box`
 at `dates` on `dataset`'s native grid. Keyword arguments flow to `ERA5PrescribedAtmosphere`.
 """
-Atmospheres.PrescribedAtmosphere(bounding_box::BoundingBox, dates, dataset::ERA5PressureLevelsDataset; kw...) = ERA5PrescribedAtmosphere(bounding_box, dates; dataset, kw...)
+Atmospheres.PrescribedAtmosphere(bounding_box::BoundingBox, dates, dataset::ERA5PressureLevelsDataset; kw...) =
+    ERA5PrescribedAtmosphere(bounding_box, dates; dataset, kw...)

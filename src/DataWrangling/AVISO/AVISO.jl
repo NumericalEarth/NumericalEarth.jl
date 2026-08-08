@@ -46,6 +46,7 @@ const AVISO_dataset_variable_names = Dict(
     :meridional_geostrophic_velocity => "vgos",
 )
 
+# The monthly Multi-Year product only distributes the sea level anomaly.
 const AVISO_monthly_dataset_variable_names = Dict(
     :sea_level_anomaly => "sla",
 )
