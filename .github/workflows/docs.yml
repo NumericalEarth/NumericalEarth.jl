@@ -2,23 +2,32 @@ name: Documentation
 
 on:
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Build all examples and deploy the dev documentation"
+        type: boolean
+        default: false
+  schedule:
+    # Docs build on odd days of the month at 06:00 UTC: the full-examples build
+    # takes hours on the GPU runner, so building on every push to main both
+    # starved the runner and (with cancel-in-progress) never finished. The
+    # scheduled run builds the tip of main and, when the latest release's docs
+    # have not been deployed yet, that release too (see the plan job).
+    - cron: '0 6 */2 * *'
   pull_request:
-    paths: &paths
+    paths:
       - ".github/workflows/docs.yml"
       - "docs/**"
       - "examples/**"
       - "ext/**"
       - "src/**"
       - "Project.toml"
-  push:
-    paths: *paths
-    branches:
-      - main
-    tags: '*'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded runs on pull requests, but let scheduled and dispatched
+  # builds queue and run to completion so they can deploy.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   JULIA_NUM_PRECOMPILE_TASKS: 8
@@ -34,10 +43,43 @@ env:
   JULIA_CUDA_USE_COMPAT: false
 
 jobs:
+  plan:
+    # Decide which refs to build. Every run builds the triggering ref ("" =
+    # the default checkout: the PR merge commit, or the tip of main for
+    # scheduled/dispatched runs). Scheduled and deploying dispatched runs also
+    # build the latest release when its docs are missing from the deploy repo,
+    # so releases don't need their own tag-triggered builds competing for the
+    # GPU runner — they ride along with the next scheduled build.
+    name: Plan builds
+    runs-on: ubuntu-latest
+    outputs:
+      refs: ${{ steps.plan.outputs.refs }}
+    steps:
+      - name: Determine refs to build
+        id: plan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          refs='""'
+          if [[ ('${{ github.event_name }}' == 'schedule') || ('${{ github.event_name }}' == 'workflow_dispatch' && '${{ inputs.deploy }}' == 'true') ]]; then
+              tag=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name 2>/dev/null || true)
+              if [[ -n "${tag}" ]] && ! gh api "repos/NumericalEarth/NumericalEarthDocumentation/contents/${tag}?ref=gh-pages" --silent 2>/dev/null; then
+                  echo "Docs for latest release ${tag} are not deployed yet; adding it to the build."
+                  refs="${refs}, \"${tag}\""
+              fi
+          fi
+          echo "refs=[${refs}]" | tee "${GITHUB_OUTPUT}"
+
   build-docs:
-    name: Build documentation
+    name: Build documentation ${{ matrix.ref != '' && format('({0})', matrix.ref) || '' }}
+    needs: plan
     runs-on: [self-hosted, tartarus, gpu-3]
     timeout-minutes: 1440
+    strategy:
+      fail-fast: false
+      max-parallel: 1   # one GPU: build dev first, then the release leg if any
+      matrix:
+        ref: ${{ fromJSON(needs.plan.outputs.refs) }}
     permissions:
       actions: write
       contents: write
@@ -45,13 +87,15 @@ jobs:
       statuses: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ matrix.ref }}
       - uses: julia-actions/setup-julia@v2
         with:
           version: '1.12.5'
       - name: Set NUMERICAL_EARTH_BUILD_ALL_EXAMPLES
         shell: bash
         run: |
-          if [[ ('${{ github.event_name }}' == 'push' && ('${{ github.ref }}' == 'refs/heads/main' || '${{ github.ref }}' == refs/tags/v*)) || ('${{ github.event_name }}' == 'pull_request' && ${{ contains(github.event.pull_request.labels.*.name, env.NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES) }} == true) ]]; then
+          if [[ ('${{ github.event_name }}' == 'schedule') || ('${{ github.event_name }}' == 'workflow_dispatch' && '${{ inputs.deploy }}' == 'true') || ('${{ github.event_name }}' == 'pull_request' && ${{ contains(github.event.pull_request.labels.*.name, env.NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES) }} == true) ]]; then
               NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=true
           else
               NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=false
@@ -83,17 +127,23 @@ jobs:
         run: julia --project=docs --color=yes docs/make.jl
       - uses: actions/upload-artifact@v6
         with:
-          name: documentation-build
+          name: documentation-build${{ matrix.ref != '' && format('-{0}', matrix.ref) || '' }}
           path: docs/build
           retention-days: 10
 
   deploy-docs:
     # We want to deploy docs if:
-    # * it's a push, but only to main
-    # * it's a PR, but not from a fork
-    # * on a release
-    needs: build-docs
-    if: ${{ (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) || (github.event_name == 'pull_request' && ! github.event.pull_request.head.repo.fork) }}
+    # * it's a scheduled build (dev docs, plus release docs when the plan job
+    #   found an undeployed release)
+    # * it's a manual dispatch with deploy enabled (same as scheduled)
+    # * it's a PR, but not from a fork (preview)
+    needs: [plan, build-docs]
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy) || (github.event_name == 'pull_request' && ! github.event.pull_request.head.repo.fork) }}
+    name: Deploy documentation ${{ matrix.ref != '' && format('({0})', matrix.ref) || '' }}
+    strategy:
+      max-parallel: 1
+      matrix:
+        ref: ${{ fromJSON(needs.plan.outputs.refs) }}
     permissions:
       actions: write
       contents: write
@@ -105,12 +155,14 @@ jobs:
       group: docs-pushing
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ matrix.ref }}
       - uses: julia-actions/setup-julia@v2
         with:
           version: '1.12.5'
       - uses: actions/download-artifact@v7
         with:
-          name: documentation-build
+          name: documentation-build${{ matrix.ref != '' && format('-{0}', matrix.ref) || '' }}
           path: docs/build
       - name: Remove extra files
         # There may be JLD2 files generated during execution of Literate
@@ -121,4 +173,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY: ${{ secrets.NUMERICALEARTHDOCUMENTATION_DOCUMENTER_KEY }}
-        run: julia --color=yes docs/deploy.jl
+          # Documenter decides dev vs. versioned deployment from GITHUB_REF.
+          # The release leg of the matrix runs under a schedule/dispatch event
+          # (GITHUB_REF = refs/heads/main), so point it at the tag instead.
+          DEPLOY_REF: ${{ matrix.ref != '' && format('refs/tags/{0}', matrix.ref) || github.ref }}
+        run: GITHUB_REF="${DEPLOY_REF}" julia --color=yes docs/deploy.jl
