@@ -12,6 +12,12 @@ using Oceananigans.DistributedComputations: @root
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
                        metadata_path, default_download_directory, native_convention_longitude
 
+# `group_by_calendar_month` and `is_zip` are product-agnostic download helpers (calendar batching and
+# CDS ZIP-delivery detection) that happen to live in the ERA5 module.
+# TODO: move them into DataWrangling proper so a dataset module does not reach across into a sibling
+# dataset for generic utilities.
+using ..ERA5: group_by_calendar_month, is_zip
+
 import Oceananigans
 
 download_CopernicusLandAlbedo_cache::String = ""
@@ -474,11 +480,12 @@ const CopernicusAlbedoDatasetMetadata = Metadata{<:CopernicusAlbedo}
 """
 $(TYPEDSIGNATURES)
 
-Construct the CDS request for the 1 km v2 black-sky/white-sky albedo pair covering
-`dates`, which must share a `(year, month)` (CDS interprets `year`/`month`/
-`nominal_day` as a Cartesian product, and the valid nominal days differ by month).
+Construct the CDS request for the 1 km v2 albedo `source_variables` covering `dates`, which must
+share a `(year, month)` (CDS interprets `year`/`month`/`nominal_day` as a Cartesian product, and the
+valid nominal days differ by month). `source_variables` defaults to the full black-sky/white-sky pair,
+but [`download_albedo_dekads!`](@ref) requests one variable at a time — see the note there.
 """
-function build_albedo_request(name, dates)
+function build_albedo_request(name, dates, source_variables = albedo_cds_request_variables[name])
     dts = dates isa AbstractVector ? dates : [dates]
 
     length(unique((Dates.year(dt), Dates.month(dt)) for dt in dts)) == 1 ||
@@ -490,7 +497,7 @@ function build_albedo_request(name, dates)
     satellites = unique([albedo_satellite(dt) for dt in dts])
 
     return Dict{String, Any}(
-        "variable"              => collect(albedo_cds_request_variables[name]),
+        "variable"              => collect(source_variables),
         "satellite"             => satellites,
         "sensor"                => "vgt",   ## the live CDS schema wants a scalar here, unlike every other key
         "product_version"       => ["v2"],
@@ -541,8 +548,17 @@ function repack_albedo_batch(nc_files, batch, path_of, destination_names, expect
     for date in batch
         entry = get(members, date, nothing)
         if isnothing(entry) || !haskey(entry, :blacksky) || !haskey(entry, :whitesky)
-            error("The CDS delivery is missing the black-sky/white-sky albedo pair for $date; ",
-                  "it contained dates $(sort!(collect(keys(members)))).")
+            # Distinguish "no file for this dekad" from "files arrived but one of the pair's
+            # variables was absent" — the latter means a delivery was dropped or renamed upstream,
+            # and reporting only the dates makes it look like a date-matching failure.
+            missing_skies = isnothing(entry) ? ["blacksky", "whitesky"] :
+                            [sky for (sky, key) in (("blacksky", :blacksky), ("whitesky", :whitesky))
+                             if !haskey(entry, key)]
+            error("The CDS delivery for $date is missing the $(join(missing_skies, " and ")) albedo; ",
+                  "delivered dates $(sort!(collect(keys(members)))), ",
+                  "files $(basename.(nc_files)). ",
+                  "Expected one of $(albedo_source_variable_candidates.blacksky) (black-sky) and ",
+                  "$(albedo_source_variable_candidates.whitesky) (white-sky) among their variables.")
         end
         repack_albedo_pair(entry[:blacksky], entry[:whitesky], destination_names,
                            path_of[date], expected_size)
@@ -554,10 +570,14 @@ end
 $(TYPEDSIGNATURES)
 
 Download the dekadal black-sky and white-sky broadband albedo for every date of
-`metadata`, one CDS request per calendar month issued through `retrieve(request, path)`
-(supplied by a CDS backend extension), and repack each dekad's pair into a single
-compact local NetCDF. Requires `~/.cdsapirc` credentials and acceptance of the
-Copernicus Global Land product license on the CDS portal.
+`metadata` through `retrieve(request, path)` (supplied by a CDS backend extension), and repack each
+dekad's pair into a single compact local NetCDF. Requires `~/.cdsapirc` credentials and acceptance of
+the Copernicus Global Land product license on the CDS portal.
+
+Issues one request per source variable per calendar month, rather than one request for the pair: CDS
+answers a multi-variable request with a ZIP of per-variable members, and a backend is free to unwrap
+it to a single file — `CopernicusClimateDataStore` keeps only the first member — which silently drops
+half of the pair and fails the repack below.
 """
 function download_albedo_dekads!(retrieve, metadata::CopernicusAlbedoDatasetMetadata; skip_existing=true, cleanup=true)
     meta_filename = DataWrangling.metadata_filename
@@ -577,17 +597,26 @@ function download_albedo_dekads!(retrieve, metadata::CopernicusAlbedoDatasetMeta
 
     @root for key in sort(collect(keys(monthly)))
         batch = sort(unique(monthly[key]))
-        request = build_albedo_request(metadata.name, batch)
-        tmp_download = joinpath(dir, "_tmp_albedo_$(key[1])$(lpad(key[2], 2, '0')).download")
+        month_tag = "$(key[1])$(lpad(key[2], 2, '0'))"
         extraction_dir = mktempdir(dir)
+        tmp_downloads = String[]
         try
-            retrieve(request, tmp_download)
-            nc_files = extract_albedo_files(tmp_download, extraction_dir)
+            nc_files = String[]
+            for source_variable in albedo_cds_request_variables[metadata.name]
+                request = build_albedo_request(metadata.name, batch, (source_variable,))
+                tmp_download = joinpath(dir, "_tmp_albedo_$(source_variable)_$(month_tag).download")
+                push!(tmp_downloads, tmp_download)
+                retrieve(request, tmp_download)
+                # Each variable extracts into its own subdirectory: a single-NetCDF delivery is
+                # copied to a fixed `albedo.nc`, so a shared directory would overwrite the pair.
+                variable_dir = mkpath(joinpath(extraction_dir, source_variable))
+                append!(nc_files, extract_albedo_files(tmp_download, variable_dir))
+            end
             repack_albedo_batch(nc_files, batch, path_of, destination_names, expected_size)
         finally
-            # Keep both the delivery and its extracted members when cleanup is disabled
+            # Keep both the deliveries and their extracted members when cleanup is disabled
             # so a failed repack can be inspected.
-            cleanup && rm(tmp_download; force=true)
+            cleanup && foreach(path -> rm(path; force=true), tmp_downloads)
             cleanup && rm(extraction_dir; recursive=true, force=true)
         end
     end
