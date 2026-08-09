@@ -60,8 +60,8 @@ end
     aei0, aht0, Romin, Romax, rmin, N²₀ = parameters
     Nz = size(grid, 3)
 
-    # Column integrals: ∫N dz and ∫N²S² dz for the Treguier factor, and the maximum
-    # stratification over the upper `dref` metres for the vertical-shape reference.
+    # Column integrals: ∫N dz and ∫N²S² dz for the Treguier factor. The vertical shape uses a
+    # constant reference N²₀ (see header note), applied pointwise in the second loop.
     zn = zero(grid)
     zah = zero(grid)
     zhw = zero(grid)
