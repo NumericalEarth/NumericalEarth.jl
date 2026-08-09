@@ -587,6 +587,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          Cᵂu★ = nothing,
                          with_snow = false,
                          with_ice_dynamics = true,
+                         partial_cell_bathymetry = false,
                          mixed_layer_tapering = false,
                          normalize_salinity = true,
                          restoring_under_sea_ice = true,
@@ -618,7 +619,7 @@ function omip_simulation(config::Symbol = :halfdegree;
     river_spread_cells   = resolve_config_default(river_spread_cells,   config_river_spread_cells(cfg))
     Δt                   = resolve_config_default(Δt,                   config_Δt(cfg))
 
-    grid = build_grid(cfg, arch, Nz, depth; Δz_top)
+    grid = build_grid(cfg, arch, Nz, depth; Δz_top, partial_cell_bathymetry)
 
     # When staging_dir is provided, JRA55 data is read from fast scratch
     # with symlink fallback to the slow source directory.
@@ -1031,7 +1032,14 @@ end
 exponential_scale(Nz, depth, ::Nothing) = 1300
 exponential_scale(Nz, depth, Δz_top)    = find_exponential_scale(Nz, depth, Δz_top)
 
-function build_grid(config, arch, Nz, depth; Δz_top = nothing)
+# Partial bottom cells resolve sill depths and slopes continuously instead of in full-cell
+# steps: the Greenland-Scotland overflows entrain less at each staircase edge and settle
+# deeper, addressing the too-shallow NADW (zero-crossing ~2900 m vs ~4300 m in RAPID) that
+# every configuration shares regardless of the eddy closure (cf. Barnier et al. 2006).
+bottom_immersed_boundary(bottom_height, partial_cell_bathymetry) =
+    partial_cell_bathymetry ? PartialCellBottom(bottom_height) : GridFittedBottom(bottom_height)
+
+function build_grid(config, arch, Nz, depth; Δz_top = nothing, partial_cell_bathymetry = false)
 
     Nx = config == Val(:halfdegree) ? 720 : throw("Configuration $(config) does not exist")
 
@@ -1050,12 +1058,12 @@ function build_grid(config, arch, Nz, depth; Δz_top = nothing)
                                     major_basins = 1,
                                     interpolation_passes = 25)
 
-    return ImmersedBoundaryGrid(base_grid, GridFittedBottom(bottom_height); active_cells_map = true)
+    return ImmersedBoundaryGrid(base_grid, bottom_immersed_boundary(bottom_height, partial_cell_bathymetry); active_cells_map = true)
 end
 
-build_grid(::Val{:orca}, arch, Nz, depth; Δz_top = nothing)          = build_grid(ORCAOne(),     arch, Nz, depth; Δz_top)
-build_grid(::Val{:quarterdegree}, arch, Nz, depth; Δz_top = nothing) = build_grid(ORCAQuarter(), arch, Nz, depth; Δz_top)
-build_grid(::Val{:twelfthdegree}, arch, Nz, depth; Δz_top = nothing) = build_grid(ORCATwelfth(), arch, Nz, depth; Δz_top)
+build_grid(::Val{:orca}, arch, Nz, depth; Δz_top = nothing, partial_cell_bathymetry = false)          = build_grid(ORCAOne(),     arch, Nz, depth; Δz_top, partial_cell_bathymetry)
+build_grid(::Val{:quarterdegree}, arch, Nz, depth; Δz_top = nothing, partial_cell_bathymetry = false) = build_grid(ORCAQuarter(), arch, Nz, depth; Δz_top, partial_cell_bathymetry)
+build_grid(::Val{:twelfthdegree}, arch, Nz, depth; Δz_top = nothing, partial_cell_bathymetry = false) = build_grid(ORCATwelfth(), arch, Nz, depth; Δz_top, partial_cell_bathymetry)
 
 # The Gulf of Ob and the Yenisei Gulf are ~5 m deep for hundreds of kilometres, so their full river
 # discharge lands in a single 1.5 m top cell with no water column to mix into and the salinity collapses.
@@ -1078,7 +1086,7 @@ const kara_river_closures = ((68.0, 77.0, 66.0, 72.6),   # Gulf of Ob
     @inbounds bottom_height[i, j, 1] = ifelse(closed, oftype(z, 100), z)
 end
 
-function close_shallow_river_regions(grid; regions = kara_river_closures, minimum_depth = 10)
+function close_shallow_river_regions(grid; regions = kara_river_closures, minimum_depth = 10, partial_cell_bathymetry = false)
     arch      = architecture(grid)
     underlying = grid.underlying_grid
     bottom    = bottom_height_field(grid)
@@ -1086,10 +1094,10 @@ function close_shallow_river_regions(grid; regions = kara_river_closures, minimu
             convert(eltype(grid), minimum_depth))
     fill_halo_regions!(bottom)
     remove_minor_basins!(bottom, 1)
-    return ImmersedBoundaryGrid(underlying, GridFittedBottom(bottom); active_cells_map = true)
+    return ImmersedBoundaryGrid(underlying, bottom_immersed_boundary(bottom, partial_cell_bathymetry); active_cells_map = true)
 end
 
-function build_grid(dataset::ORCADataset, arch, Nz, depth; Δz_top = nothing)
+function build_grid(dataset::ORCADataset, arch, Nz, depth; Δz_top = nothing, partial_cell_bathymetry = false)
 
     scale = exponential_scale(Nz, depth, Δz_top)
     z_faces = ExponentialDiscretization(Nz, -depth, 0; scale, mutable=true)
@@ -1108,7 +1116,7 @@ end
 
 # Locally-runnable testing configuration: the NEMO eORCA1 (~1ᵒ) mesh, used to reproduce the
 # quarter-degree spurious high-latitude ice + surface salinity drift at a fraction of the cost.
-build_grid(::Val{:test}, arch, Nz, depth; Δz_top = nothing) = build_grid(Val(:orca), arch, Nz, depth; Δz_top)
+build_grid(::Val{:test}, arch, Nz, depth; Δz_top = nothing, partial_cell_bathymetry = false) = build_grid(Val(:orca), arch, Nz, depth; Δz_top, partial_cell_bathymetry)
 
 #####
 ##### ORCA builder

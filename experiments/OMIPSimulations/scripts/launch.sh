@@ -66,6 +66,10 @@ Environment variables (physics):
                             Mellor-Blumberg wave penetration + EVD.
                             Vendored in `NEMOTKE/`;
                  all ignore CB)
+  PARTIAL_CELLS Set to "true" to use partial bottom cells (PartialCellBottom) instead of
+                full-cell GridFittedBottom bathymetry. Resolves sill depths and slopes
+                continuously; targets the too-shallow NADW from staircased overflows.
+                Adds "_pcells" to the run name.
   ML_TAPER      Set to "true" to ramp the isopycnal-closure slopes linearly to zero
                 from the mixed-layer base to the surface (Danabasoglu et al. 2008;
                 NEMO ldfslp). Off by default; adds "_mltaper" to the run name.
@@ -274,6 +278,7 @@ RUN_NAME="$CONFIG"
 [[ "${CLOSURE:-catke}" == "nemo_tke" ]]        && RUN_NAME="${RUN_NAME}_nemotke"
 [[ "${WIND_VELOCITY:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_wind"
 [[ "${ML_TAPER:-false}" == "true" ]]           && RUN_NAME="${RUN_NAME}_mltaper"
+[[ "${PARTIAL_CELLS:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_pcells"
 [[ "${NORMALIZE_SALINITY:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_rawsalt"
 [[ "${RESTORING_UNDER_ICE:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_noicerest"
 case "${NORMALIZE_FRESHWATER:-none}" in
@@ -475,6 +480,9 @@ VELOCITY_KWARG=""
 ML_TAPER_KWARG=""
 [[ "${ML_TAPER:-false}" == "true" ]] && ML_TAPER_KWARG="mixed_layer_tapering = true,"
 
+PARTIAL_CELLS_KWARG=""
+[[ "${PARTIAL_CELLS:-false}" == "true" ]] && PARTIAL_CELLS_KWARG="partial_cell_bathymetry = true,"
+
 SNOW_KWARG=""
 [[ "$SNOW" == "true" ]] && SNOW_KWARG="with_snow = true,"
 
@@ -509,6 +517,7 @@ sim = omip_simulation(:${CONFIG};
                       ${CLOSURE_KWARG}
                       ${VELOCITY_KWARG}
                       ${ML_TAPER_KWARG}
+                      ${PARTIAL_CELLS_KWARG}
                       ${SNOW_KWARG}
                       ${ICE_DYNAMICS_KWARG}
                       ${DIAGNOSTICS_KWARG}
