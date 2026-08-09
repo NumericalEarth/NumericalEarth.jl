@@ -198,16 +198,12 @@ case "$CONFIG" in
 run!(sim, pickup=:latest)"
         ;;
     quarterdegree)
-        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DEFAULT_DT="5minutes"; DEFAULT_DZ_TOP="1.5"
+        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DEFAULT_DT="20minutes"; DEFAULT_DZ_TOP="1.5"
         DEFAULT_BIHARMONIC="nothing"; ARCH="GPU()"; GPUS_PER_NODE=1
         EXTRA_USING="using Oceananigans.DistributedComputations"
         FILE_SPLIT=""
-        RUN_CMD="sim.stop_time = 365days
-run!(sim)
-
-sim.Δt = 20minutes
-sim.stop_time = 300 * 365days
-run!(sim; pickup = true)"
+        RUN_CMD="sim.stop_time = 300 * 365days
+run!(sim, pickup =:latest)"
         ;;
     orca)
         DEFAULT_KSKEW=800;  DEFAULT_KSYMM=800; NZ=70;  DEFAULT_DT="30minutes"; DEFAULT_DZ_TOP="1.5"
