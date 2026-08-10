@@ -112,8 +112,8 @@ end
     @test all(isfinite, interior(model.velocities.u))
     @test all(isfinite, interior(model.velocities.v))
 
-    # The vortex centre at t=0 sits at (x₀_LO, y₀_LO) = (-0.5, 0). The interior
-    # near the centre should retain a recognisable vortex signature after a
+    # The vortex center at t=0 sits at (x₀_LO, y₀_LO) = (-0.5, 0). The interior
+    # near the center should retain a recognizable vortex signature after a
     # few short timesteps — i.e. max |u| stays well above the background U.
     u_interior = Array(interior(model.velocities.u))
     @test maximum(abs, u_interior) > 1.5 * U_LO
@@ -676,7 +676,7 @@ end
     end
 end
 
-# The parent→child terrain blend is specified as a PHYSICAL length (`terrain_blend_length`, metres) and
+# The parent→child terrain blend is specified as a PHYSICAL length (`terrain_blend_length`, meters) and
 # converted to a cell count per grid. A fixed cell count would steepen the blend slope ~1/Δx as resolution
 # increases (which regenerates spurious vertical momentum aloft at high resolution); deriving cells from a
 # physical length keeps the transition slope resolution-invariant — so a 4×-finer grid gets ~4× the cells.

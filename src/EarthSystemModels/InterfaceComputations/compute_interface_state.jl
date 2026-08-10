@@ -58,9 +58,12 @@ end
 end
 
 # Interface temperature and specific humidity for one iterate. Split formulations
-# compute them in sequence (humidity from the just-updated temperature). A combined
-# formulation (a `CanopyAirSpace` in both interface slots) overrides this to solve the
-# coupled node once and return both, instead of running the inner solve twice.
+# compute them in sequence (humidity from the just-updated temperature): diagnostic
+# formulations (`ImpureSaturationSpecificHumidity`, `BulkHumidity`) evaluate qₛ explicitly,
+# while `SkinHumidity` solves a vapor-flux balance using the previous iterate's turbulent
+# fluxes (analog of `SkinTemperature`). A combined formulation (a `CanopyAirSpace` in both
+# interface slots) overrides this to solve the coupled node once and return both, instead
+# of running the inner solve twice.
 @inline function interface_temperature_and_humidity(temperature_formulation, humidity_formulation,
                                                     Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ)
     Tₛ = compute_interface_temperature(temperature_formulation, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ)

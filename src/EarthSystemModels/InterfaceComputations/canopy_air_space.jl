@@ -154,8 +154,8 @@ Base.show(io::IO, c::CanopyAirSpace) =
     interface_hydrology_state(i, j, grid, c.soil, land_state)
 @inline canopy_air_space_hydrology_state(::CanopyInterception, i, j, grid, c, land_state) =
     merge(interface_hydrology_state(i, j, grid, c.soil, land_state),
-          (canopy_water_storage  = land_field_value(land_state.canopy_water_storage, i, j),
-           canopy_water_capacity = land_field_value(land_state.canopy_water_capacity, i, j)))
+          (canopy_water_storage  = state2dindex(land_state.canopy_water_storage, i, j),
+           canopy_water_capacity = state2dindex(land_state.canopy_water_capacity, i, j)))
 @inline interface_energy_state(i, j, grid, c::CanopyAirSpace, land_state) =
     interface_energy_state(i, j, grid, c.soil, land_state)
 @inline canopy_leaf_area_index(c::CanopyAirSpace) = canopy_leaf_area_index(c.canopy)

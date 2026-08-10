@@ -493,7 +493,7 @@ radiation = ERA5PrescribedRadiation(arch; dataset, start_date, end_date, region,
 # with a moist-environmental lapse-rate shift `T ← T − Γ Δz` (Γ = 6.5 K km⁻¹) and a
 # hydrostatic pressure adjustment, applied by the state exchanger every step
 # (specific humidity `q` conserved through the lift). `z_era5` is ERA5's own model
-# topography (its surface geopotential ÷ g → metres); the gravitational
+# topography (its surface geopotential ÷ g → meters); the gravitational
 # acceleration and gas constant the pressure adjustment needs are pulled from the
 # atmosphere's thermodynamics.
 

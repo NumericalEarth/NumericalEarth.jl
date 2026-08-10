@@ -181,7 +181,7 @@ ocean.output_writers[:jld2] = JLD2Writer(ocean.model, outputs; filename,
 
 run!(simulation)
 
-# Now let's load the saved output and visualise.
+# Now let's load the saved output and visualize.
 
 filename *= ".jld2"
 

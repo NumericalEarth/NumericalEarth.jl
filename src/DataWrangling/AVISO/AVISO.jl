@@ -62,6 +62,10 @@ DataWrangling.longitude_name(::Metadata{<:AVISODataset}) = "longitude"
 DataWrangling.latitude_name(::Metadata{<:AVISODataset}) = "latitude"
 
 coord_spacing(coords) = length(coords) > 1 ? Float64(coords[2] - coords[1]) : 1.0
+function coordinate_interfaces(coords)
+    Δ = coord_spacing(coords)
+    return range(coords[1] - Δ / 2, coords[end] + Δ / 2; length=length(coords) + 1)
+end
 
 function read_coordinate(path, name)
     ds = Dataset(path)
@@ -73,15 +77,13 @@ end
 function DataWrangling.longitude_interfaces(metadata::Metadata{<:AVISODataset})
     path = metadata_path(first(metadata))
     λ = read_coordinate(path, DataWrangling.longitude_name(metadata))
-    Δλ = coord_spacing(λ)
-    return (λ[1] - Δλ / 2, λ[end] + Δλ / 2)
+    return coordinate_interfaces(λ)
 end
 
 function DataWrangling.latitude_interfaces(metadata::Metadata{<:AVISODataset})
     path = metadata_path(first(metadata))
     φ = read_coordinate(path, DataWrangling.latitude_name(metadata))
-    Δφ = coord_spacing(φ)
-    return (φ[1] - Δφ / 2, φ[end] + Δφ / 2)
+    return coordinate_interfaces(φ)
 end
 
 function DataWrangling.metadata_filename(::AVISODaily, name, date, region)
@@ -90,7 +92,7 @@ function DataWrangling.metadata_filename(::AVISODaily, name, date, region)
 end
 
 function DataWrangling.metadata_filename(::AVISOMonthly, name, date, region)
-    var = AVISO_dataset_variable_names[name]
+    var = AVISO_monthly_dataset_variable_names[name]
     return string(var, "_AVISOMonthly_", Dates.format(date, "yyyy-mm-dd"), ".nc")
 end
 
@@ -113,7 +115,7 @@ DataWrangling.metaprefix(::AVISOMetadatum) = "AVISOMetadatum"
 copernicusmarine_dataset_id(::AVISODaily) = get(ENV, "AVISO_DAILY_DATASET_ID", "cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1D")
 copernicusmarine_dataset_id(::AVISOMonthly) = get(ENV, "AVISO_MONTHLY_DATASET_ID", "cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1M-m")
 
-# Pin the catalogue version advertised by the product data-access page. This is
+# Pin the catalog version advertised by the product data-access page. This is
 # important during Copernicus double-distribution transitions, when resolving
 # the bare dataset id can select a version with a different variable table.
 copernicusmarine_dataset_version(::AVISODataset) = get(ENV, "AVISO_DATASET_VERSION", "202411")
