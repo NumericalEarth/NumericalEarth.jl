@@ -2,6 +2,7 @@ module ERA5
 
 # 2-D data
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel
+export ERA5HourlyLand, ERA5MonthlyLand
 
 # 3-D data
 export ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels, ERA5_all_pressure_levels, pressure_field, hPa
@@ -28,7 +29,7 @@ using ..DataWrangling: DataWrangling, Metadata, Metadatum, MetadataSet, Bounding
                        MetersPerHour, JoulesPerSquareMeterPerHour, metadata_path,
                        native_grid, dataset_variable_name, available_variables, retrieve_data,
                        first_date, last_date, native_times, set_metadata_field!, DatasetBackend,
-                       instantiate
+                       instantiate, DatewiseFilename
 using ...Grids: PressureLevelVerticalDiscretization, PressureLevelGrid
 
 download_ERA5_cache::String = ""
@@ -151,6 +152,7 @@ DataWrangling.inpainted_metadata_path(metadata::ERA5Metadatum) = joinpath(metada
 
 include("ERA5_variables.jl")
 include("ERA5_single_levels.jl")
+include("ERA5_land.jl")
 include("ERA5_field_time_series.jl")  # Yearly file reading (like JRA55)
 include("ERA5_pressure_levels.jl")
 include("ERA5_batched_downloads.jl")

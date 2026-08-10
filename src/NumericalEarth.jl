@@ -130,6 +130,7 @@ export
     RepeatYearJRA55, MultiYearJRA55,
     ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel,
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
+    ERA5HourlyLand, ERA5MonthlyLand,
     OSPapaHourly,
     JRA55FieldTimeSeries,
     ORCAOne, ORCAQuarter, ORCATwelfth,
