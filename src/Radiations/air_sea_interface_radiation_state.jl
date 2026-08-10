@@ -21,15 +21,22 @@ end
     return (; σ, α, ϵ, ℐꜜˢʷ, ℐꜜˡʷ)
 end
 
-@inline EarthSystemModels.InterfaceComputations.air_sea_interface_radiation_state(
-        rk, exchanger_state, i, j, k, grid, time) =
-    _surface_radiation_state(rk.surface_properties.ocean,
-                             rk, exchanger_state, i, j, k, grid, time)
+# Ocean/sea-ice radiative properties are optional, like the land ones below: radiation
+# schemes that force the surface themselves (e.g. the Breeze RTM) supply an empty
+# `surface_properties`, and the missing key means no interface radiative forcing.
+@inline function EarthSystemModels.InterfaceComputations.air_sea_interface_radiation_state(
+        rk, exchanger_state, i, j, k, grid, time)
+    haskey(rk.surface_properties, :ocean) || return _zero_radiation_state(grid)
+    return _surface_radiation_state(rk.surface_properties.ocean,
+                                    rk, exchanger_state, i, j, k, grid, time)
+end
 
-@inline EarthSystemModels.InterfaceComputations.air_sea_ice_interface_radiation_state(
-        rk, exchanger_state, i, j, k, grid, time) =
-    _surface_radiation_state(rk.surface_properties.sea_ice,
-                             rk, exchanger_state, i, j, k, grid, time)
+@inline function EarthSystemModels.InterfaceComputations.air_sea_ice_interface_radiation_state(
+        rk, exchanger_state, i, j, k, grid, time)
+    haskey(rk.surface_properties, :sea_ice) || return _zero_radiation_state(grid)
+    return _surface_radiation_state(rk.surface_properties.sea_ice,
+                                    rk, exchanger_state, i, j, k, grid, time)
+end
 
 # Land radiative properties are optional (no `:land` key ⇒ no land
 # radiative forcing); fall back to a zero state in that case. The land variant
