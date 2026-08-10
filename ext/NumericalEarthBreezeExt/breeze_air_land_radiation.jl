@@ -110,3 +110,21 @@ function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
             α)
     return nothing
 end
+
+# The air--sea analog, same dispatch: the generic `apply_air_sea_radiative_fluxes!` reads
+# `PrescribedRadiation`-style `interface_fluxes`, which the RTM does not carry. The RTM's
+# surface fluxes enter the ocean through its net-flux accumulator, so dispatch peels the
+# cases below: no ocean, then an ocean without net fluxes (prescribed SST — the fluxes
+# have nowhere to go). A responsive ocean under a Breeze RTM raises a MethodError here
+# until its radiative heating is implemented.
+NumericalEarth.EarthSystemModels.apply_air_sea_radiative_fluxes!(
+        coupled_model :: NumericalEarth.EarthSystemModels.EarthSystemModel{<:BreezeRTM}) =
+    apply_breeze_air_sea_radiative_fluxes!(coupled_model, coupled_model.ocean)
+
+apply_breeze_air_sea_radiative_fluxes!(coupled_model, ::Nothing) = nothing
+
+apply_breeze_air_sea_radiative_fluxes!(coupled_model, ocean) =
+    apply_breeze_air_sea_radiative_fluxes!(coupled_model, ocean,
+        NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(ocean))
+
+apply_breeze_air_sea_radiative_fluxes!(coupled_model, ocean, ::Nothing) = nothing
