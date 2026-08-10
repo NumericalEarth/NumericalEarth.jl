@@ -219,13 +219,20 @@ using ..EarthSystemModels: DegreesCelsius, temperature_units, exchange_grid,
 Base.summary(crf::ComponentInterfaces) = "ComponentInterfaces"
 Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
 
-# Diagnostic surface (skin) temperature — the atmosphere-land interface field
-# that the atmosphere actually "sees", *not* a prognostic land variable. For
-# skin-temperature closures this differs from `land.temperature`. Returns
-# `nothing` if there is no atmosphere-land interface.
-EarthSystemModels.surface_temperature(al_interface::AtmosphereInterface) = al_interface.temperature
+# Diagnostic surface (skin) temperature — the interface field the atmosphere actually
+# "sees", *not* a prognostic component variable (for skin-temperature closures it differs
+# from `land.temperature`). The land interface wins when present; otherwise the
+# atmosphere-ocean interface temperature; `nothing` when the atmosphere touches neither.
+EarthSystemModels.surface_temperature(interface::AtmosphereInterface) = interface.temperature
 EarthSystemModels.surface_temperature(interfaces::ComponentInterfaces) =
-    EarthSystemModels.surface_temperature(interfaces.atmosphere_land_interface)
+    EarthSystemModels.surface_temperature(interfaces.atmosphere_land_interface,
+                                          interfaces.atmosphere_ocean_interface)
+
+EarthSystemModels.surface_temperature(land_interface::AtmosphereInterface, ocean_interface) =
+    land_interface.temperature
+EarthSystemModels.surface_temperature(::Nothing, ocean_interface::AtmosphereInterface) =
+    ocean_interface.temperature
+EarthSystemModels.surface_temperature(::Nothing, ::Nothing) = nothing
 
 #####
 ##### Atmosphere-Ocean Interface
