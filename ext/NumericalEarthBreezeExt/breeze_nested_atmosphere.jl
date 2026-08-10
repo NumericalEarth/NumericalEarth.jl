@@ -74,16 +74,20 @@ struct SmoothStepRamp end
 
 # Davies mask: 1 at the lateral walls, ramping to 0 over the outermost `width` cells.
 function davies_relaxation_mask(grid, width; ramp = CosineRamp())
-    λ₁, λ₂ = x_domain(grid)
-    φ₁, φ₂ = y_domain(grid)
-    Nx, Ny, _ = size(grid)
     # Local spacing equals global spacing on uniform grids, so `w` comes from local values —
     # but the extents must be the GLOBAL domain's, or partitioned ranks would relax at
     # their artificial seams (`all_reduce` is the identity on serial architectures).
-    w = width * max((λ₂ - λ₁) / Nx, (φ₂ - φ₁) / Ny)
+    # The closure's captures are each assigned exactly once: reassigning a captured
+    # variable boxes it, and a boxed capture is not isbits — GPU kernels reject it.
+    λ₁ˡ, λ₂ˡ = x_domain(grid)
+    φ₁ˡ, φ₂ˡ = y_domain(grid)
+    Nx, Ny, _ = size(grid)
+    w = width * max((λ₂ˡ - λ₁ˡ) / Nx, (φ₂ˡ - φ₁ˡ) / Ny)
     arch = architecture(grid)
-    λ₁, λ₂ = all_reduce(min, λ₁, arch), all_reduce(max, λ₂, arch)
-    φ₁, φ₂ = all_reduce(min, φ₁, arch), all_reduce(max, φ₂, arch)
+    λ₁ = all_reduce(min, λ₁ˡ, arch)
+    λ₂ = all_reduce(max, λ₂ˡ, arch)
+    φ₁ = all_reduce(min, φ₁ˡ, arch)
+    φ₂ = all_reduce(max, φ₂ˡ, arch)
     return (λ, φ, z) -> begin
         d = min(λ - λ₁, λ₂ - λ, φ - φ₁, φ₂ - φ)
         s = clamp(d / w, zero(d), one(d))
