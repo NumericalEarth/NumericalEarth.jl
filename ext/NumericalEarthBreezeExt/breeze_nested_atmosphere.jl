@@ -362,6 +362,7 @@ post-initialization adiabatic (DFI) balance: `true` (default) runs it, `false` s
 function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_dataset; dates,
     dir = default_download_directory(parent_dataset),
     parent_padding = default_horizontal_padding(parent_dataset),
+    parent_time_indices_in_memory = nothing,   # nothing ⇒ every date resident; ≥3 streams a moving window
     surface_pressure = nothing,
     bottom_drag_coefficient = nothing,
     drag_surface_temperature = nothing,
@@ -369,7 +370,9 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
     kw...)
 
     parent_region = BoundingBox(child_grid; padding = parent_padding)
-    parent_atmosphere = PrescribedAtmosphere(parent_region, dates, parent_dataset; architecture = architecture(child_grid), dir)
+    parent_atmosphere = PrescribedAtmosphere(parent_region, dates, parent_dataset;
+                                             architecture = architecture(child_grid), dir,
+                                             time_indices_in_memory = parent_time_indices_in_memory)
 
     if isnothing(surface_pressure)
         surface_pressure = mean_surface_pressure(parent_dataset, child_grid, first(dates), dir)
