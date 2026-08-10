@@ -108,7 +108,7 @@ DataWrangling.dataset_variable_name(md::ERA5Metadata) = ERA5_netcdf_variable_nam
 
 # Unit conversions applied at load time:
 # - `topography` divides the (surface) geopotential by g to give ERA5's model
-#   surface elevation in metres (`geopotential` is left in m² s⁻²);
+#   surface elevation in meters (`geopotential` is left in m² s⁻²);
 # - downwelling SW/LW are hourly-accumulated energy (J/m²) → mean flux (W/m²);
 # - total precipitation is an hourly-accumulated depth (m) → mass flux (kg/m²/s).
 function DataWrangling.conversion_units(md::ERA5Metadata)

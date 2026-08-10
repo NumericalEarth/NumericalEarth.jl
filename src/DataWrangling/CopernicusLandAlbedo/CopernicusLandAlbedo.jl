@@ -56,7 +56,7 @@ and white-sky (`AL_BH_BB`) broadband albedos with diffuse fraction `diffuse_frac
 
 Files are global on a regular 1/112° latitude-longitude grid; build the `Metadata`
 with a lon/lat [`BoundingBox`](@ref) to window a region at read time. Downloads come
-from the C3S `satellite-albedo` catalogue entry and require the CDSAPI backend:
+from the C3S `satellite-albedo` catalog entry and require the CDSAPI backend:
 `using CDSAPI` with `~/.cdsapirc` credentials, the same setup as ERA5 (see this
 module's README).
 
