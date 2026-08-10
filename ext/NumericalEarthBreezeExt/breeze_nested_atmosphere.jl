@@ -32,6 +32,7 @@ using Oceananigans:
     set!
 
 using Oceananigans.Architectures: architecture
+using Oceananigans.DistributedComputations: all_reduce
 using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, interior, interpolate!
 using Oceananigans.Forcings: Relaxation
@@ -76,7 +77,13 @@ function davies_relaxation_mask(grid, width; ramp = CosineRamp())
     λ₁, λ₂ = extrema(λnodes(grid, Face(), Center(), Center()))
     φ₁, φ₂ = extrema(φnodes(grid, Center(), Face(), Center()))
     Nx, Ny, _ = size(grid)
+    # Local spacing equals global spacing on uniform grids, so `w` comes from local values —
+    # but the extents must be the GLOBAL domain's, or partitioned ranks would relax at
+    # their artificial seams (`all_reduce` is the identity on serial architectures).
     w = width * max((λ₂ - λ₁) / Nx, (φ₂ - φ₁) / Ny)
+    arch = architecture(grid)
+    λ₁, λ₂ = all_reduce(min, λ₁, arch), all_reduce(max, λ₂, arch)
+    φ₁, φ₂ = all_reduce(min, φ₁, arch), all_reduce(max, φ₂, arch)
     return (λ, φ, z) -> begin
         d = min(λ - λ₁, λ₂ - λ, φ - φ₁, φ₂ - φ)
         s = clamp(d / w, zero(d), one(d))
@@ -330,7 +337,10 @@ function mean_surface_pressure(dataset, child_grid, date, dir)
     p₀ = Field{Center, Center, Nothing}(child_grid)
     set!(p₀, Metadatum(:surface_pressure; dataset = single_level_dataset, date,
                        region = BoundingBox(child_grid), dir))
-    return sum(interior(p₀)) / length(interior(p₀))
+    # Reduce across ranks so every rank anchors the same hydrostatic reference
+    # (`all_reduce` is the identity on serial architectures).
+    arch = architecture(child_grid)
+    return all_reduce(+, sum(interior(p₀)), arch) / all_reduce(+, length(interior(p₀)), arch)
 end
 
 # Dataset skin temperature at `date`, regridded onto the child grid — the surface temperature

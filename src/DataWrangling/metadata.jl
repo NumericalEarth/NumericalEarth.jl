@@ -28,11 +28,18 @@ BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
     BoundingBox(grid; padding = 0)
 
 Create a `BoundingBox` spanning the horizontal extent of `grid`, widened on every
-side by `padding` (degrees).
+side by `padding` (degrees). For a distributed grid the box spans the *global* domain,
+identically on every rank.
 """
-BoundingBox(grid::AbstractGrid; padding = 0) =
-    BoundingBox(longitude = extrema(λnodes(grid, Face(), Center(), Center())) .+ (-padding, padding),
-                latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padding, padding))
+function BoundingBox(grid::AbstractGrid; padding = 0)
+    # Node extrema are rank-local on distributed grids; reduce to the global extent
+    # (`all_reduce` is the identity on serial architectures).
+    arch = architecture(grid)
+    λ₁, λ₂ = extrema(λnodes(grid, Face(), Center(), Center()))
+    φ₁, φ₂ = extrema(φnodes(grid, Center(), Face(), Center()))
+    return BoundingBox(longitude = (all_reduce(min, λ₁, arch) - padding, all_reduce(max, λ₂, arch) + padding),
+                       latitude  = (all_reduce(min, φ₁, arch) - padding, all_reduce(max, φ₂, arch) + padding))
+end
 
 """
     bounding_box_intersects(bounds, bbox::BoundingBox)
