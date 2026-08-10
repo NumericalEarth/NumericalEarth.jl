@@ -73,7 +73,9 @@ struct SmoothStepRamp end
 @inline (::SmoothStepRamp)(s) = 1 - s^2 * (3 - 2s)
 
 # Davies mask: 1 at the lateral walls, ramping to 0 over the outermost `width` cells.
-function davies_relaxation_mask(grid, width; ramp = CosineRamp())
+# The mask is evaluated per cell per stage inside the forcing kernel, so the default ramp
+# is the smoothstep polynomial (2 multiplies) rather than the ~1%-different raised cosine.
+function davies_relaxation_mask(grid, width; ramp = SmoothStepRamp())
     # Local spacing equals global spacing on uniform grids, so `w` comes from local values —
     # but the extents must be the GLOBAL domain's, or partitioned ranks would relax at
     # their artificial seams (`all_reduce` is the identity on serial architectures).
