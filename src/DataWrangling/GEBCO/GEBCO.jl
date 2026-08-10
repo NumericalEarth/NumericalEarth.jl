@@ -1,6 +1,6 @@
 module GEBCO
 
-export GEBCO
+export GEBCO2026
 
 using Downloads: Downloads
 using Oceananigans.DistributedComputations: @root
@@ -23,30 +23,30 @@ end
 const GEBCO_bathymetry_variable_names = Dict(:bottom_height => "elevation")
 
 """
-    GEBCO
+    GEBCO2026
 
-General Bathymetric Chart of the Oceans (latest release).
+General Bathymetric Chart of the Oceans 2026 release.
 Global bathymetry and topography at 15 arc-second resolution.
 
 Data source: https://www.gebco.net/data_and_products/gridded_bathymetry_data/
 """
-struct GEBCO <: AbstractStaticBathymetry end
+struct GEBCO2026 <: AbstractStaticBathymetry end
 
-const GEBCOMetadatum = Metadatum{<:GEBCO}
+const GEBCOMetadatum = Metadatum{<:GEBCO2026}
 
-default_download_directory(::GEBCO)   = download_GEBCO_cache
-reversed_vertical_axis(::GEBCO)       = false
-longitude_interfaces(::GEBCO)         = (-180, 180)
-latitude_interfaces(::GEBCO)          = (-90, 90)
-Base.size(::GEBCO)                    = (86400, 43200, 1)
+default_download_directory(::GEBCO2026)   = download_GEBCO_cache
+reversed_vertical_axis(::GEBCO2026)       = false
+longitude_interfaces(::GEBCO2026)         = (-180, 180)
+latitude_interfaces(::GEBCO2026)          = (-90, 90)
+Base.size(::GEBCO2026)                    = (86400, 43200, 1)
 
 dataset_variable_name(::GEBCOMetadatum) = GEBCO_bathymetry_variable_names[:bottom_height]
 
 const GEBCO_2026_nc_url      = "https://dap.ceda.ac.uk/bodc/gebco/global/gebco_2026/ice_surface_elevation/netcdf/GEBCO_2026.nc"
 const GEBCO_2026_nc_filename = "GEBCO_2026.nc"
 
-DataWrangling.metadata_url(::GEBCOMetadatum)                        = GEBCO_2026_nc_url
-metadata_filename(::GEBCO, name, date, bounding_box)                = GEBCO_2026_nc_filename
+DataWrangling.metadata_url(::GEBCOMetadatum)                          = GEBCO_2026_nc_url
+metadata_filename(::GEBCO2026, name, date, bounding_box)              = GEBCO_2026_nc_filename
 
 function Downloads.download(metadatum::GEBCOMetadatum)
     filepath = metadata_path(metadatum)
