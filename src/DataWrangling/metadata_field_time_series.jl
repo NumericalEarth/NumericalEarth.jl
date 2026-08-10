@@ -83,17 +83,15 @@ end
 """
     validate_time_coverage(metadata, time_indexing)
 
-Check that `time_indexing` has something defensible to say outside the nodes of a
-window-averaged series.
+Check that `time_indexing` is a valid operation outside the nodes of a window-averaged series.
 
 Nodes sit at [`window_center`](@ref)s, so the first and last half window of the span the data
 covers falls outside them — see [`uncovered_time_gaps`](@ref). `Clamp` holds the end values
-there, which is what it was asked to do; `Cyclical` fills them from the far end of the record,
-which is the cycle itself only if the dates span whole cycles; `Linear` holds the first value
-before the first node but extrapolates without bound past the last, so it alone can leave the
-range of the data.
+there; `Cyclical` fills them from the far end of the record; `Linear` holds the first value
+before the first node but extrapolates without bound past the last, so it can leave the range
+of the data.
 
-A single sample has no far end and nothing to interpolate between — it is constant in time —
+A single sample has no far end and nothing to interpolate between (it is constant in time)
 so it is left alone whatever the scheme.
 """
 validate_time_coverage(metadata, time_indexing) = nothing
