@@ -36,7 +36,7 @@ using Oceananigans.DistributedComputations: all_reduce
 using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, interior, interpolate!
 using Oceananigans.Forcings: Relaxation
-using Oceananigans.Grids: znode, λnodes, φnodes, minimum_xspacing
+using Oceananigans.Grids: znode, λnodes, φnodes, minimum_xspacing, x_domain, y_domain
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 
@@ -74,8 +74,8 @@ struct SmoothStepRamp end
 
 # Davies mask: 1 at the lateral walls, ramping to 0 over the outermost `width` cells.
 function davies_relaxation_mask(grid, width; ramp = CosineRamp())
-    λ₁, λ₂ = extrema(λnodes(grid, Face(), Center(), Center()))
-    φ₁, φ₂ = extrema(φnodes(grid, Center(), Face(), Center()))
+    λ₁, λ₂ = x_domain(grid)
+    φ₁, φ₂ = y_domain(grid)
     Nx, Ny, _ = size(grid)
     # Local spacing equals global spacing on uniform grids, so `w` comes from local values —
     # but the extents must be the GLOBAL domain's, or partitioned ranks would relax at

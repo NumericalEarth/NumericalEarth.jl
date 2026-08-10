@@ -32,11 +32,12 @@ side by `padding` (degrees). For a distributed grid the box spans the *global* d
 identically on every rank.
 """
 function BoundingBox(grid::AbstractGrid; padding = 0)
-    # Node extrema are rank-local on distributed grids; reduce to the global extent
-    # (`all_reduce` is the identity on serial architectures).
+    # Domain endpoints, not node extrema: distributed grids window their node arrays
+    # differently. Rank-local domains reduce to the global extent (`all_reduce` is the
+    # identity on serial architectures).
     arch = architecture(grid)
-    λ₁, λ₂ = extrema(λnodes(grid, Face(), Center(), Center()))
-    φ₁, φ₂ = extrema(φnodes(grid, Center(), Face(), Center()))
+    λ₁, λ₂ = x_domain(grid)
+    φ₁, φ₂ = y_domain(grid)
     return BoundingBox(longitude = (all_reduce(min, λ₁, arch) - padding, all_reduce(max, λ₂, arch) + padding),
                        latitude  = (all_reduce(min, φ₁, arch) - padding, all_reduce(max, φ₂, arch) + padding))
 end
