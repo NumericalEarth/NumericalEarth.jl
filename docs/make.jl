@@ -40,7 +40,8 @@ examples = [
     Example("Single-column ocean simulation", "single_column_os_papa_simulation", true),
     Example("Coupled conservation on a z-star grid", "coupled_conservation", true),
     Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
-    Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
+    # Near-global is the heaviest example; disabled while docs build on the L4 runner
+    # Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
     Example("Global climate simulation", "global_climate_simulation", false),
     Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
     Example("Breeze over four oceans", "breeze_over_four_oceans", false),

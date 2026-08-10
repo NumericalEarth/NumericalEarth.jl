@@ -32,7 +32,6 @@ concurrency:
 env:
   JULIA_NUM_PRECOMPILE_TASKS: 8
   JULIA_NUM_THREADS: 8
-  JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
   NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES: 'build all examples'
   CDSAPI_URL: "https://cds.climate.copernicus.eu/api"
   CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
@@ -73,11 +72,20 @@ jobs:
   build-docs:
     name: Build documentation ${{ matrix.ref != '' && format('({0})', matrix.ref) || '' }}
     needs: plan
-    runs-on: [self-hosted, tartarus, gpu-3]
+    # The tartarus gpu-3 runner is offline; build on the AWS L4 fleet (same
+    # container pattern as the CI GPU tests) until it returns.
+    runs-on: aws-linux-nvidia-gpu-l4
+    container:
+      image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
+      options: --gpus=all
+      volumes:
+        # Mount host directories so that we can delete some stuff to free disk
+        - /opt:/host-opt
+        - /usr/local:/host-usr-local
     timeout-minutes: 1440
     strategy:
       fail-fast: false
-      max-parallel: 1   # one GPU: build dev first, then the release leg if any
+      max-parallel: 1   # build dev first, then the release leg if any
       matrix:
         ref: ${{ fromJSON(needs.plan.outputs.refs) }}
     permissions:
@@ -85,13 +93,32 @@ jobs:
       contents: write
       pull-requests: read
       statuses: write
+    env:
+      # Redirect temp and the depot to the workspace volume (bind-mounted from
+      # the host's EBS disk) to avoid filling the container's overlay
+      # filesystem with large dataset downloads and compiled artifacts.
+      TMPDIR: /__w/_temp
+      JULIA_DEPOT_PATH: '/__w/_temp/depot:/usr/local/share/julia:'
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ matrix.ref }}
-      - uses: julia-actions/setup-julia@v2
-        with:
-          version: '1.12.5'
+      - name: Create workspace temp directories
+        run: mkdir -p "${TMPDIR}"
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory ${PWD}
+      - name: Clean up space on host device
+        # Save storage by deleting CUDA toolkits and other Nvidia tools we don't need
+        run: |
+          rm -rf /host-opt/nvidia/ /host-usr-local/cuda*
+          df -hT
+      - name: Update registry
+        shell: julia --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.Registry.rm("General")
+          Pkg.Registry.add("General")
+          Pkg.Registry.update()
       - name: Set NUMERICAL_EARTH_BUILD_ALL_EXAMPLES
         shell: bash
         run: |
@@ -149,7 +176,7 @@ jobs:
       contents: write
       pull-requests: read
       statuses: write
-    runs-on: [self-hosted, tartarus]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
       group: docs-pushing
@@ -169,6 +196,9 @@ jobs:
         # examples, we don't need them on the website.
         run:
           rm -fv docs/build/literated/*.jld2
+      - name: Install Documenter
+        # deploy.jl runs in the default environment; it only needs Documenter.
+        run: julia --color=yes -e 'using Pkg; Pkg.add(name="Documenter", version="1")'
       - name: Deploy documentation
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
