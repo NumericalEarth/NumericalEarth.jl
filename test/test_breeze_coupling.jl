@@ -1,6 +1,7 @@
 include("runtests_setup.jl")
 
 using Breeze
+using Breeze.TerrainFollowingDiscretization: TerrainFollowingVerticalDiscretization, LinearDecay, materialize_terrain!
 using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
@@ -147,6 +148,102 @@ end
             @test Array(interior(ρu_bc)) ≈ Array(interior(al.fluxes.x_momentum))
             @test Array(interior(ρv_bc)) ≈ Array(interior(al.fluxes.y_momentum))
             @test maximum(abs, interior(ρu_bc)) > 0
+        end
+    end
+end
+
+#####
+##### Surface-layer reference height: per-column and GPU-safe (issue #379)
+#####
+
+@testset "state2dindex accessor" begin
+    IC = NumericalEarth.EarthSystemModels.InterfaceComputations
+    @test IC.state2dindex(3.0, 1, 1) === 3.0            # scalar broadcasts to every column
+    @test IC.state2dindex(600, 5, 2) === 600            # Int (boundary-layer-height fallback)
+    f = CenterField(RectilinearGrid(CPU(), size = (3, 3, 1), extent = (1, 1, 1)))
+    set!(f, (x, y, z) -> 10x + y)
+    @test IC.state2dindex(f, 2, 3) == f[2, 3, 1]        # field read at column (i, j)
+end
+
+@testset "surface_layer_height on a stretched vertical grid (issue #379)" begin
+    for arch in test_architectures
+        A = typeof(arch)
+
+        @testset "builds + steps without host scalar indexing on $A" begin
+            Nz = 24
+            zfaces(k) = 10000 * (1 - cos(π/2 * (k - 1) / Nz))   # near-surface refinement
+            grid = RectilinearGrid(arch, size = (8, 8, Nz), halo = (5, 5, 5),
+                                   x = (-10kilometers, 10kilometers),
+                                   y = (-10kilometers, 10kilometers),
+                                   z = zfaces, topology = (Periodic, Periodic, Bounded))
+
+            θ₀ = 285
+            atmosphere = atmosphere_simulation(grid; potential_temperature = θ₀)
+            set!(atmosphere.model, θ = θ₀, u = 5)   # uniform background θ; the u = 5 shear drives a nonzero surface stress
+
+            land_grid = RectilinearGrid(arch, size = (grid.Nx, grid.Ny), halo = (grid.Hx, grid.Hy),
+                                        x = (-10kilometers, 10kilometers),
+                                        y = (-10kilometers, 10kilometers),
+                                        topology = (Periodic, Periodic, Flat))
+            land = SlabLand(land_grid)
+            set!(land; T = θ₀ + 5)
+
+            model = AtmosphereLandModel(atmosphere, land)
+
+            # A non-terrain grid has a horizontally uniform first-cell height, so the cached
+            # reference height is a scalar equal to ½·Δz(1).
+            slh = model.interfaces.properties.surface_layer_height
+            @test slh isa Number
+            z1 = @allowscalar Oceananigans.zspacing(1, 1, 1, grid, Center(), Center(), Center()) / 2
+            @test slh ≈ z1
+
+            # On GPU the old host read of a device Δz array threw here; now it steps clean.
+            update_state!(model)
+            al = model.interfaces.atmosphere_land_interface
+            @test !any(isnan, Array(interior(al.fluxes.friction_velocity)))
+            @test maximum(abs, interior(al.fluxes.x_momentum)) > 0
+        end
+    end
+end
+
+@testset "surface_layer_height on a terrain-following grid" begin
+    for arch in test_architectures
+        A = typeof(arch)
+
+        @testset "per-column reference height varies over terrain on $A" begin
+            Nx, Nz = 24, 16
+            Lx, Lz = 40kilometers, 5000.0
+            zfaces = TerrainFollowingVerticalDiscretization(collect(range(0, Lz, length = Nz + 1));
+                                                            formulation = LinearDecay())
+            grid = RectilinearGrid(arch; size = (Nx, Nz), halo = (5, 5),
+                                   x = (-Lx/2, Lx/2), z = zfaces,
+                                   topology = (Periodic, Flat, Bounded))
+            h₀, a = 800.0, 4000.0
+            materialize_terrain!(grid, x -> h₀ * exp(-x^2 / a^2))
+
+            θ₀ = 285
+            atmosphere = atmosphere_simulation(grid; potential_temperature = θ₀)
+            set!(atmosphere.model, θ = θ₀, u = 5)   # uniform background θ; the u = 5 shear drives a nonzero surface stress
+
+            land_grid = RectilinearGrid(arch; size = Nx, halo = 5,
+                                        x = (-Lx/2, Lx/2), topology = (Periodic, Flat, Flat))
+            land = SlabLand(land_grid)
+            set!(land; T = θ₀ + 5)
+
+            model = AtmosphereLandModel(atmosphere, land)
+
+            # Terrain makes the first-cell height vary per column → a 2-D field, each
+            # column equal to ½·Δz(i, 1).
+            slh = model.interfaces.properties.surface_layer_height
+            @test slh isa Field
+            slh_h = Array(interior(slh))[:]
+            z_expected = @allowscalar [Oceananigans.zspacing(i, 1, 1, grid, Center(), Center(), Center()) / 2 for i in 1:Nx]
+            @test slh_h ≈ z_expected
+            @test maximum(slh_h) - minimum(slh_h) > 0     # genuinely varies over the hill
+
+            update_state!(model)
+            al = model.interfaces.atmosphere_land_interface
+            @test !any(isnan, Array(interior(al.fluxes.friction_velocity)))
         end
     end
 end

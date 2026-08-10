@@ -121,8 +121,9 @@ export
     ECCO2DarwinMonthly, ECCO4DarwinMonthly,
     EN4Monthly,
     WOAClimatology, WOAAnnual, WOAMonthly,
-    ASTERGEDv3,
+    ASTERGEDv3, ASTERGEDResolution, ASTERGEDHigh100m, ASTERGEDLow1km,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
+    ESAWorldCover, WorldCoverVersion, WorldCoverV100, WorldCoverV200,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
@@ -135,7 +136,7 @@ export
     ORCAGrid,
     OpenLandMapSoilDB,
     GlobalBuildingFootprints3D, building_morphometry,
-    GHSBuiltH, GHSBuiltS,
+    GHSBuiltH, GHSBuiltS, GHSBuiltSResolution, GHSBuiltS10m, GHSBuiltS100m,
     first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,
     DatasetRestoring,
@@ -289,6 +290,7 @@ using .DataWrangling.CopernicusLandAlbedo
 using .DataWrangling.OpenLandMap
 using .DataWrangling.GloBFP3D
 using .DataWrangling.GHSL
+using .DataWrangling.WorldCover
 
 using PrecompileTools: @setup_workload, @compile_workload
 
