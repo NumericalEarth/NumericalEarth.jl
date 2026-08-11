@@ -27,6 +27,10 @@ using NumericalEarth.DataWrangling.GHSL: GHSBuiltS, GHSLMetadatum, native_resolu
                                          built_surface_to_fraction, mask_building_height
 using NumericalEarth.DataWrangling.OpenLandMap: assemble_cog_window, cog_window_indices,
                                                 validate_epsg4326, validate_geographic_northup
+using NumericalEarth.DataWrangling.WorldCover: ESAWorldCoverMetadatum, version_year, version_string,
+                                               worldcover_window, aggregate_landcover,
+                                               class_fraction_variable_name,
+                                               ESA_WORLDCOVER_NATIVE_STEP
 
 include("gdal_utils.jl")
 include("ibcao.jl")
@@ -34,5 +38,6 @@ include("asterged.jl")
 include("globfp3d.jl")
 include("ghsl.jl")
 include("openlandmap.jl")
+include("worldcover.jl")
 
 end # module NumericalEarthArchGDALExt

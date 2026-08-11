@@ -128,7 +128,7 @@ regressions of [Kanda et al. (2013)](@cite Kanda2013).
 * `roughness_constants` (`a₁, b₁, c₁`) — roughness rescaling, their eq. 12.
   Default `(0.71, 20.21, -0.77)`; their Method 2 gives `(0.93, 8.93, 4.68)`.
 * `height_spread_constants` (`s₁, s₀`) — `σʰ = s₁·h + s₀` (m), their eq. 2.
-  Default `(1.05, -3.7)`, whose zero crossing near `h = 3.5` m is about one storey.
+  Default `(1.05, -3.7)`, whose zero crossing near `h = 3.5` m is about one story.
 * `maximum_height_constants` (`m₁, m₂`) — `hᵐᵃˣ = m₁·(σʰ)^m₂` (m), their eq. 3.
   Default `(12.51, 0.77)`. The most scattered of the four, since a city's tallest
   building is often an outlying landmark.
@@ -227,7 +227,7 @@ end
 $(TYPEDSIGNATURES)
 
 Height standard deviation `σʰ` (m) of a cell of mean element height `h`, from the affine
-regression `σʰ = s₁·h + s₀`, floored at zero below its one-storey zero crossing.
+regression `σʰ = s₁·h + s₀`, floored at zero below its one-story zero crossing.
 """
 @inline function height_spread(v::VariableHeight, h)
     s₁, s₀ = v.height_spread_constants
