@@ -68,7 +68,7 @@ function validate_dataset_coverage(grid, ::IBCSOMetadatum)
     if φ_north > -50
         error("IBCSOv2 only covers the Southern Ocean (south of 50°S). " *
               "The grid extends to $(round(φ_north, digits=1))°. " *
-              "Use ETOPO2022() or GEBCO2024() for domains that include latitudes north of 50°S.")
+              "Use ETOPO2022() or GEBCO2026() for domains that include latitudes north of 50°S.")
     end
 end
 
