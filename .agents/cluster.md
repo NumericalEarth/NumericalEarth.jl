@@ -40,3 +40,21 @@ NFS home directories and NVIDIA GPUs. Every rule below was learned from a real f
   separate analysis script that a CPU job (or the login node) can run after the fact.
 - Log progress with wall-clock instrumentation (seconds per iteration, simulated days
   per day) so throughput regressions are visible from the log alone.
+
+## Multi-GPU without CUDA-aware MPI
+
+- **Check GPU topology before touching MPI** (`nvidia-smi topo -m`). If the GPUs share a
+  node, NCCL over NVLink is the natural device-buffer transport and MPI only needs to
+  launch ranks and carry host-side control traffic — a cluster with no CUDA-aware MPI
+  (no UCX, device-pointer `MPI.Isend` segfaults) is NOT a blocker for single-node
+  multi-GPU.
+- Bootstrap NCCL from host MPI: rank 0 creates the NCCL unique ID and broadcasts it;
+  each rank binds its CUDA device, then builds the NCCL communicator.
+- NCCL has no message tags: point-to-point ops match by issue order per peer, so the
+  send/recv issue order must be identical on both ranks.
+- **Always wrap a halo exchange's sends and receives in `ncclGroupStart`/`ncclGroupEnd`**:
+  ungrouped send/recv on a single stream deadlocks (the recv kernel blocks the stream
+  head in front of the matching send).
+- Enqueue NCCL ops on the same CUDA stream as compute so downstream copy-back kernels
+  order after the communication with no host synchronization.
+- Only reach for CUDA-aware MPI (UCX-OpenMPI/HPC-X) when the job spans nodes.
