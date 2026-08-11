@@ -36,7 +36,7 @@ using Oceananigans.DistributedComputations: all_reduce
 using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, interior, interpolate!
 using Oceananigans.Forcings: Relaxation
-using Oceananigans.Grids: znode, λnodes, φnodes, minimum_xspacing, x_domain, y_domain
+using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 
