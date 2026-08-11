@@ -1101,7 +1101,7 @@ end
         end
     end
 
-    @testset "split_era5_nc_multistep produces per-(var,timestep) files" begin
+    @testset "split_nc_multistep produces per-(var,timestep) files" begin
         mktempdir() do dir
             src_path = joinpath(dir, "src.nc")
             write_synthetic_era5_nc(src_path; Nx=2, Ny=2, Nt=3)
@@ -1115,7 +1115,7 @@ end
             ]
             time_dimnames = Set(["valid_time"])
 
-            CDSExt.split_era5_nc_multistep(src_path, triples, coord_vars, time_dimnames)
+            CDSExt.split_nc_multistep(src_path, triples, coord_vars, time_dimnames)
 
             # The skipped variable produces no output.
             @test !isfile(joinpath(dir, "should_not_exist.nc"))
@@ -1139,7 +1139,7 @@ end
         end
     end
 
-    @testset "split_era5_nc_multistep selects timesteps by valid_time, not request position" begin
+    @testset "split_nc_multistep selects timesteps by valid_time, not request position" begin
         # Regression: CDS expands `day × time` into a Cartesian product, so a window that
         # crosses midnight (e.g. requesting [day N 23:00, day N+1 00:00]) comes back with
         # extra, sorted timesteps. The split must key on valid_time; keying on the request
@@ -1168,7 +1168,7 @@ end
             want = [DateTime(2005, 2, 16, 23), DateTime(2005, 2, 17, 0)]
             triples = [("t", want[1], joinpath(dir, "a.nc")),
                        ("t", want[2], joinpath(dir, "b.nc"))]
-            CDSExt.split_era5_nc_multistep(src_path, triples,
+            CDSExt.split_nc_multistep(src_path, triples,
                                            Set(["longitude", "latitude", "valid_time"]),
                                            Set(["valid_time"]))
 
