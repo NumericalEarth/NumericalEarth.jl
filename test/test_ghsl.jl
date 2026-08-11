@@ -111,7 +111,7 @@ end
 @testset "GHSL dataset interface" begin
     region = BoundingBox(longitude = (-0.2, 0.1), latitude = (51.4, 51.6))
 
-    for dataset in (GHSBuiltH(), GHSBuiltS(), GHSBuiltS(resolution = 10))
+    for dataset in (GHSBuiltH(), GHSBuiltS(), GHSBuiltS(resolution = GHSBuiltS10m))
         @test longitude_interfaces(dataset) == (-180, 180)
         @test latitude_interfaces(dataset)  == (-90, 90)
         Nx, Ny, Nz = size(dataset, :building_height)
@@ -121,9 +121,9 @@ end
 
     # Native resolution sets the finer 10 m grid ~10× denser than the 100 m grid.
     @test native_resolution(GHSBuiltH()) == 100
-    @test native_resolution(GHSBuiltS(resolution = 10)) == 10
-    @test size(GHSBuiltS(resolution = 10), :built_up_fraction)[1] ==
-          10 * size(GHSBuiltS(resolution = 100), :built_up_fraction)[1]
+    @test native_resolution(GHSBuiltS(resolution = GHSBuiltS10m)) == 10
+    @test size(GHSBuiltS(resolution = GHSBuiltS10m), :built_up_fraction)[1] ==
+          10 * size(GHSBuiltS(resolution = GHSBuiltS100m), :built_up_fraction)[1]
 
     mdH = Metadatum(:building_height;   dataset = GHSBuiltH(), region)
     mdS = Metadatum(:built_up_fraction; dataset = GHSBuiltS(), region)
@@ -143,21 +143,28 @@ end
     region_b = BoundingBox(longitude = (2, 3), latitude = (48, 49))
     @test metadata_filename(GHSBuiltH(), :building_height, nothing, region) !=
           metadata_filename(GHSBuiltH(), :building_height, nothing, region_b)
-    @test metadata_filename(GHSBuiltS(resolution = 10), :built_up_fraction, nothing, region) !=
-          metadata_filename(GHSBuiltS(resolution = 100), :built_up_fraction, nothing, region)
-    @test occursin("2018", dataset_prefix(GHSBuiltS(resolution = 10)))
+    @test metadata_filename(GHSBuiltS(resolution = GHSBuiltS10m), :built_up_fraction, nothing, region) !=
+          metadata_filename(GHSBuiltS(resolution = GHSBuiltS100m), :built_up_fraction, nothing, region)
+    @test occursin("2018", dataset_prefix(GHSBuiltS(resolution = GHSBuiltS10m)))
+
+    # The resolution appears in the cache filename as its size in meters, so a cached
+    # file stays addressable no matter how the resolution is spelled in the API.
+    @test dataset_prefix(GHSBuiltS(resolution = GHSBuiltS10m))  == "GHSBuiltS_10m_2018"
+    @test dataset_prefix(GHSBuiltS(resolution = GHSBuiltS100m)) == "GHSBuiltS_100m_2020"
 end
 
 @testset "GHSBuiltS constructor" begin
-    @test GHSBuiltS().resolution == 100
+    @test GHSBuiltS().resolution === GHSBuiltS100m
     @test GHSBuiltS().epoch == 2020
-    @test GHSBuiltS(resolution = 10).epoch == 2018
-    @test_throws ArgumentError GHSBuiltS(resolution = 30)
+    @test GHSBuiltS(resolution = GHSBuiltS10m).epoch == 2018
+
+    # Only a published resolution is representable.
+    @test_throws MethodError GHSBuiltS(resolution = 30)
 
     # Epoch must match the published product matrix.
-    @test GHSBuiltS(resolution = 100, epoch = 1975) isa GHSBuiltS   # valid endpoint
-    @test_throws ArgumentError GHSBuiltS(resolution = 10, epoch = 2020)   # 10 m is 2018-only
-    @test_throws ArgumentError GHSBuiltS(resolution = 100, epoch = 1999)  # not a 5-year step
+    @test GHSBuiltS(resolution = GHSBuiltS100m, epoch = 1975) isa GHSBuiltS   # valid endpoint
+    @test_throws ArgumentError GHSBuiltS(resolution = GHSBuiltS10m, epoch = 2020)   # 10 m is 2018-only
+    @test_throws ArgumentError GHSBuiltS(resolution = GHSBuiltS100m, epoch = 1999)  # not a 5-year step
 end
 
 #####
@@ -170,7 +177,7 @@ end
     @test occursin("GHS_BUILT_H_ANBH_E2018_GLOBE_R2023A_54009_100", urlH)
     @test endswith(urlH, "_R3_C19.zip")
 
-    urlS = ghsl_tile_url(GHSBuiltS(resolution = 10), 3, 19)
+    urlS = ghsl_tile_url(GHSBuiltS(resolution = GHSBuiltS10m), 3, 19)
     @test occursin("GHS_BUILT_S_E2018_GLOBE_R2023A_54009_10", urlS)
     @test endswith(urlS, "_R3_C19.zip")
 

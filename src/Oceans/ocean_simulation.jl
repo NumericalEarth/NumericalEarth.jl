@@ -270,7 +270,7 @@ barotropic pressure–gradient forcing, boundary conditions, and optional biogeo
 It then wraps the model into an Oceananigans's `Simulation` with the specified timestepping options.
 
 
-## Behaviour and automatic configuration
+## Behavior and automatic configuration
 
 ### Coriolis
 - On spherical grids, an `Oceananigans.Coriolis.HydrostaticSphericalCoriolis` object

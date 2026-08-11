@@ -181,7 +181,7 @@ start_date = DateTime(2005, 2, 16, 12)
         ds = ERA5HourlySingleLevel()
         era5m(name) = Metadatum(name; dataset=ds, date=start_date)
 
-        # Surface geopotential ÷ g → metres; accumulated SW/LW (J/m²) ÷ 3600 → W/m²;
+        # Surface geopotential ÷ g → meters; accumulated SW/LW (J/m²) ÷ 3600 → W/m²;
         # accumulated precip depth (m) × 1000/3600 → kg/m²/s. Others are unconverted.
         @test conversion_units(era5m(:topography)) isa InverseGravity
         @test conversion_units(era5m(:downwelling_shortwave_radiation)) isa Jm²ph

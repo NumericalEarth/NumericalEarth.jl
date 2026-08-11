@@ -240,7 +240,7 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
 
     # Inpainting on a (Flat, Flat, *) column field is meaningless and the
     # iterative algorithm doesn't terminate gracefully without horizontal
-    # neighbours; the NaN-aware bracket-blend in `set_region_data!` handles
+    # neighbors; the NaN-aware bracket-blend in `set_region_data!` handles
     # land cells directly.
     if metadata.region isa Column
         inpainting = nothing
@@ -359,6 +359,12 @@ function interpolate_physical!(to_field, from_field)
     return to_field
 end
 
+# Regrid the native-grid field onto the target during `Field(metadata, grid)` and
+# `set!`. The default is bilinear `interpolate_physical!`; datasets whose variables
+# need a different scheme (e.g. conservative area-weighting for fractions, or an
+# area-majority vote for categorical codes) extend this metadatum-dispatched method.
+interpolate_physical!(to_field, from_field, metadata) = interpolate_physical!(to_field, from_field)
+
 """
     Field(metadata::Metadatum, grid::AbstractGrid; kw...)
 
@@ -371,7 +377,7 @@ function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid; kw..
     native = Field(metadata, architecture(grid); kw...)
     LX, LY, LZ = location(metadata)
     target = Field{LX, LY, LZ}(grid)
-    interpolate_physical!(target, native)
+    interpolate_physical!(target, native, metadata)
     return target
 end
 
@@ -393,7 +399,7 @@ function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw..
               "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
     end
 
-    interpolate_physical!(target_field, meta_field)
+    interpolate_physical!(target_field, meta_field, metadata)
 
     return target_field
 end
@@ -405,7 +411,7 @@ function set_metadata_field!(field, data, metadatum)
     return nothing
 end
 
-# Read the lon/lat cell centres from the NetCDF file using the names supplied
+# Read the lon/lat cell centers from the NetCDF file using the names supplied
 # by the dataset's `longitude_name` / `latitude_name` traits.
 function read_file_coords(metadatum)
     ds = Dataset(metadata_path(metadatum))

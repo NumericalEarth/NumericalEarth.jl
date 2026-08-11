@@ -157,7 +157,7 @@ end
             e2u[i, 1] = 2 * haversine((λFC[i, 1], φFC[i, 1]), (λFF[i, 1], φFF[i, 1]), radius)
         end
 
-        # The north row reuses the last interior difference rather than copying a neighbour's output.
+        # The north row reuses the last interior difference rather than copying a neighbor's output.
         if j < Ny
             e2v[i, j] = haversine((λCC[i, j], φCC[i, j]), (λCC[i, j+1], φCC[i, j+1]), radius)
             e2f[i, j] = haversine((λFC[i, j], φFC[i, j]), (λFC[i, j+1], φFC[i, j+1]), radius)
