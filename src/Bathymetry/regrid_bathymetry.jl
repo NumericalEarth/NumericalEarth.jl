@@ -332,10 +332,13 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
     # download uses @root internally; all ranks must call it
     download(metadata)
 
-    # Only rank 0 performs cache lookup and computation to avoid OOM
+    # Only rank 0 performs cache lookup and computation to avoid OOM.
+    # Every rank must contribute the same element type to the shared reduction:
+    # mismatched MPI datatypes across ranks corrupt the collective.
+    FT = eltype(global_grid)
     bottom_height = if arch.local_rank == 0
         cached_data = cache ? load_bathymetry_cache(config) : nothing
-        if !isnothing(cached_data)
+        rank_zero_data = if !isnothing(cached_data)
             cached_data
         else
             bottom_field = _regrid_bathymetry(global_grid, metadata;
@@ -347,8 +350,9 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
             end
             bh
         end
+        convert(Matrix{FT}, rank_zero_data)
     else
-        zeros(Nx, Ny)
+        zeros(FT, Nx, Ny)
     end
 
     # Synchronize
