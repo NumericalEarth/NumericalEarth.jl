@@ -357,9 +357,10 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
     # Share the result (can we share SubArrays?)
     bottom_height = all_reduce(+, bottom_height, arch)
 
-    # Partition the result
+    # Partition the result. Distributed `set!` only auto-partitions global-size *host*
+    # arrays (`Array`/`OffsetArray`), so stage the shared result through the CPU.
     local_bottom_height = Field{Center, Center, Nothing}(target_grid)
-    set!(local_bottom_height, bottom_height)
+    set!(local_bottom_height, on_architecture(CPU(), bottom_height))
     fill_halo_regions!(local_bottom_height)
 
     return local_bottom_height
