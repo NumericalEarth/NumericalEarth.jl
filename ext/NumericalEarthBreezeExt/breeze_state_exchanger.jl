@@ -24,6 +24,7 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, AbstractInMemoryBackend,
                                   time_indices, interpolating_time_indices, extract_field_time_series
 using Oceananigans.Units: Time
+using Oceananigans.DistributedComputations: MPI
 import Oceananigans.OutputReaders: new_backend, update_field_time_series!
 import NumericalEarth.NestedModels: exchange_state!, total_density, reconstruct_parent_state
 
@@ -204,6 +205,23 @@ function state_exchanger(parent_atmosphere, pˢᵗ, constants;
     return exchanger
 end
 
+
+# Several ranks reading one NetCDF file at once over NFS intermittently return garbage
+# (a NaN surfacing at the parent window move); serialize the parent's disk reads rank
+# by rank. The window moves once per parent interval, so the barriers are negligible.
+function each_rank_in_turn(f)
+    if !MPI.Initialized() || MPI.Comm_size(MPI.COMM_WORLD) == 1
+        f()
+        return nothing
+    end
+    communicator = MPI.COMM_WORLD
+    for rank in 0:MPI.Comm_size(communicator)-1
+        MPI.Comm_rank(communicator) == rank && f()
+        MPI.Barrier(communicator)
+    end
+    return nothing
+end
+
 # Advance the derived resident window (and the parent's own FTS windows) to bracket `time`, recomputing
 # the derived prognostics only when the bracket moves (`force` fills it once at construction).
 function exchange_state!(ex::StateExchanger, time; force=false)
@@ -227,8 +245,10 @@ function exchange_state!(ex::StateExchanger, time; force=false)
     # n₁ that EXCLUDES the n₁-1 (= start) level the 3-level child window needs, so on a window-move recompute
     # `parent[start]` would be non-resident → garbage → a discrete NaN at the crossing. Bracketing
     # `times[start]` keeps parent levels [start, start+1, start+2] resident (needs time_indices_in_memory ≥ 3).
-    for fts in extract_field_time_series(parent)
-        update_field_time_series!(fts, Time(p.ρᵈ.times[start]))
+    each_rank_in_turn() do
+        for fts in extract_field_time_series(parent)
+            update_field_time_series!(fts, Time(p.ρᵈ.times[start]))
+        end
     end
 
     moved = p.ρᵈ.backend.start != start
