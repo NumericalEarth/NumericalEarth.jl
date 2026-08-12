@@ -18,7 +18,12 @@ NumericalEarth.EarthSystemModels.exchange_grid(atmosphere, ocean::VerosOceanSimu
     T = Field{Center, Center, Nothing}(grid)
     S = Field{Center, Center, Nothing}(grid)
 
-    return (; u, v, T, S)
+    # The flux assembly kernel also fills a freshwater volume flux and its heat
+    # content; Veros does not consume them, but the containers must exist.
+    η = Field{Center, Center, Nothing}(grid)
+    freshwater_heat_content = Field{Center, Center, Nothing}(grid)
+
+    return (; u, v, T, S, η, freshwater_heat_content)
 end
 
 function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, ocean::VerosOceanSimulation, coupled_model)
