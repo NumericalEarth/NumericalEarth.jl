@@ -79,8 +79,8 @@ atmosphere.grid
 
 ua = interior(atmosphere.velocities.u, 1, 1, 1, :)
 va = interior(atmosphere.velocities.v, 1, 1, 1, :)
-Ta = interior(atmosphere.tracers.T, 1, 1, 1, :)
-qa = interior(atmosphere.tracers.q, 1, 1, 1, :)
+Ta = interior(atmosphere.temperature, 1, 1, 1, :)
+qa = interior(atmosphere.specific_humidity, 1, 1, 1, :)
 t_days = atmosphere.times / days
 
 using CairoMakie
@@ -181,7 +181,7 @@ ocean.output_writers[:jld2] = JLD2Writer(ocean.model, outputs; filename,
 
 run!(simulation)
 
-# Now let's load the saved output and visualise.
+# Now let's load the saved output and visualize.
 
 filename *= ".jld2"
 
@@ -205,12 +205,12 @@ times = 𝒬ᵀ.times
 
 ua  = atmosphere.velocities.u
 va  = atmosphere.velocities.v
-Ta  = atmosphere.tracers.T
-qa  = atmosphere.tracers.q
+Ta  = atmosphere.temperature
+qa  = atmosphere.specific_humidity
 ℐꜜˡʷ = radiation.downwelling_longwave
 ℐꜜˢʷ = radiation.downwelling_shortwave
-Pr  = atmosphere.freshwater_flux.rain
-Ps  = atmosphere.freshwater_flux.snow
+Pr  = atmosphere.precipitation_flux.rain
+Ps  = atmosphere.precipitation_flux.snow
 
 Nt   = length(times)
 uat  = zeros(Nt)

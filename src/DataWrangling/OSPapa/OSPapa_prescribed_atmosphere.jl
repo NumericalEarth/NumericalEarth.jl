@@ -77,9 +77,10 @@ function OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
 
     return PrescribedAtmosphere(ua.grid, ua.times;
                                 velocities = (u = ua, v = va),
-                                tracers = (T = Ta, q = qa),
+                                temperature = Ta,
+                                specific_humidity = qa,
                                 pressure = Pa,
-                                freshwater_flux = PrescribedPrecipitationFlux(; rain),
+                                precipitation_flux = PrescribedPrecipitationFlux(; rain),
                                 thermodynamics_parameters = thermo_params,
                                 surface_layer_height = convert(FT, surface_layer_height))
 end

@@ -23,8 +23,8 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
     atmosphere_velocities = (u = atmosphere.velocities.u.data,
                              v = atmosphere.velocities.v.data)
 
-    atmosphere_tracers = (T = atmosphere.tracers.T.data,
-                          q = atmosphere.tracers.q.data)
+    atmosphere_tracers = (T = atmosphere.temperature.data,
+                          q = atmosphere.specific_humidity.data)
 
     rainfall_flux = surface_rainfall_flux(atmosphere)
     snowfall_flux = surface_snowfall_flux(atmosphere)

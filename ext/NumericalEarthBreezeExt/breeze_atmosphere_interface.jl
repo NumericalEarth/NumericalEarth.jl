@@ -1,5 +1,7 @@
 using Oceananigans.Grids: Center
-using Breeze.AtmosphereModels: thermodynamic_density
+using Breeze.AtmosphereModels: thermodynamic_density, dynamics_density, surface_pressure
+using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
+using GPUArraysCore: @allowscalar
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using NumericalEarth.EarthSystemModels: component_model
 using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
@@ -25,18 +27,44 @@ NumericalEarth.EarthSystemModels.thermodynamics_parameters(atmos::BreezeAtmosphe
 ##### Surface layer and boundary layer height
 #####
 
-# Height of the lowest atmospheric cell center (the "surface layer").
-# Note: for stretched grids on GPU, this may require allowscalar.
-function NumericalEarth.EarthSystemModels.surface_layer_height(atmosphere::BreezeAtmosphere)
-    grid = atmosphere.grid
-    return Oceananigans.zspacing(1, 1, 1, grid, Center(), Center(), Center()) / 2
+# The MOST reference height is the lowest cell-center elevation above ground, ½·Δz(i,j,1).
+# On a terrain-following grid this varies column-to-column, so fill it on-device; on any
+# other grid it is horizontally uniform. Built once and cached in `interfaces.properties`.
+@kernel function _fill_surface_layer_height!(z₁, atmos_grid)
+    i, j = @index(Global, NTuple)
+    @inbounds z₁[i, j, 1] = Oceananigans.zspacing(i, j, 1, atmos_grid, Center(), Center(), Center()) / 2
 end
 
-NumericalEarth.EarthSystemModels.surface_layer_height(atmos::BreezeAtmosphereSim) =
-    NumericalEarth.EarthSystemModels.surface_layer_height(component_model(atmos))
+function NumericalEarth.EarthSystemModels.surface_layer_height(atmosphere::BreezeAtmosphere, exchange_grid)
+    grid = atmosphere.grid
+    if grid isa TerrainFollowingGrid
+        # Terrain makes the AGL first-cell height vary per column → a 2-D field.
+        z₁ = Oceananigans.Field{Center, Center, Nothing}(exchange_grid)
+        launch!(architecture(exchange_grid), exchange_grid, interface_kernel_parameters(exchange_grid),
+                _fill_surface_layer_height!, z₁, grid)
+        return z₁
+    else
+        # Horizontally uniform → one scalar. Read once here (cached, not per step), so the
+        # single host index into a possibly-stretched device Δz array is fine under @allowscalar.
+        return @allowscalar Oceananigans.zspacing(1, 1, 1, grid, Center(), Center(), Center()) / 2
+    end
+end
 
-NumericalEarth.EarthSystemModels.boundary_layer_height(::BreezeAtmosphere)    = 600
-NumericalEarth.EarthSystemModels.boundary_layer_height(::BreezeAtmosphereSim) = 600
+NumericalEarth.EarthSystemModels.surface_layer_height(atmos::BreezeAtmosphereSim, exchange_grid) =
+    NumericalEarth.EarthSystemModels.surface_layer_height(component_model(atmos), exchange_grid)
+
+# Fallback boundary-layer height for the surface-flux convective gustiness, used when the
+# atmosphere's turbulence closure diagnoses no z_i (e.g. closure = nothing).
+const default_boundary_layer_height = 600 # m
+
+# The boundary-layer height is the per-column z_i diagnosed by the turbulence closure when
+# it provides one (e.g. Breeze's ScaleAdaptiveTKE writes it into its `zi` closure field).
+NumericalEarth.EarthSystemModels.boundary_layer_height(atmosphere::BreezeAtmosphere) =
+    hasproperty(atmosphere.closure_fields, :zi) ? atmosphere.closure_fields.zi :
+                                                  default_boundary_layer_height
+
+NumericalEarth.EarthSystemModels.boundary_layer_height(atmos::BreezeAtmosphereSim) =
+    NumericalEarth.EarthSystemModels.boundary_layer_height(component_model(atmos))
 
 #####
 ##### ComponentExchanger: state fields for flux computations
@@ -87,10 +115,14 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     T = atmosphere.temperature
     ρqᵛᵉ = atmosphere.moisture_density
 
-    # Reference state (anelastic dynamics)
-    ref = atmosphere.dynamics.reference_state
-    ρ₀ = ref.density
-    p₀ = ref.surface_pressure
+    # Near-surface density (to convert moisture density ρqᵛ → specific humidity) and
+    # surface pressure, via dynamics-generic accessors so coupling works for *both*
+    # anelastic atmospheres (reference-state density) and compressible terrain-following
+    # atmospheres (prognostic density). Reaching into
+    # `dynamics.reference_state` directly is anelastic-only (it is `nothing` for
+    # `CompressibleDynamics`).
+    ρ₀ = dynamics_density(atmosphere.dynamics)
+    p₀ = surface_pressure(atmosphere.dynamics)
 
     arch = architecture(exchange_grid)
     kernel_parameters = interface_kernel_parameters(exchange_grid)

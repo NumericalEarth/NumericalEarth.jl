@@ -1,3 +1,5 @@
+using Oceananigans.Grids: grid
+
 #####
 ##### Temperature units
 #####
@@ -18,8 +20,13 @@ const celsius_to_kelvin = 273.15
 
 # Default: build the exchange grid from the ocean. When the model has no
 # ocean / sea ice, fall back to the land grid (used by AtmosphereLandModel).
-exchange_grid(atmosphere, ocean, sea_ice, land=nothing) = ocean.model.grid
+exchange_grid(atmosphere, ocean, sea_ice, land=nothing) = grid(ocean)
 exchange_grid(atmosphere, ::Nothing, ::Nothing, land) = land.grid
+
+# Prescribed fields are FieldTimeSeries; set a `Number` into every time slice.
+# `nothing` leaves the field untouched.
+set_prescribed_field!(fts, ::Nothing) = nothing
+set_prescribed_field!(fts, value::Number) = Oceananigans.set!(fts, value)
 
 #####
 ##### Functions extended by sea-ice and ocean models
@@ -40,6 +47,7 @@ temperature_units(ocean) = DegreesCelsius()
 
 sea_ice_thickness(::Nothing) = ZeroField()
 sea_ice_concentration(::Nothing) = ZeroField()
+intercepted_snowfall(::Nothing) = ZeroField()
 function default_sea_ice end
 
 #####
@@ -52,6 +60,13 @@ function boundary_layer_height end
 
 surface_layer_height(::Nothing) = 0
 boundary_layer_height(::Nothing) = 0
+
+# Grid-aware surface-layer height, built once and cached in `interfaces.properties`.
+# The generic fallback ignores the exchange grid and returns the scalar height
+# (prescribed atmospheres carry a fixed measurement height); atmosphere models with
+# per-column geometry (e.g. Breeze on a terrain-following grid) override this to
+# materialize a 2-D field on the exchange grid.
+surface_layer_height(atmosphere, exchange_grid) = surface_layer_height(atmosphere)
 
 #####
 ##### Functions extended by all component models

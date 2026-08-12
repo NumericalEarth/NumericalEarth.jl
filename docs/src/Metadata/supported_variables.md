@@ -6,11 +6,14 @@ NumericalEarth currently ships connectors for the following data products:
 |--------------------|-----------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
 | **Bathymetry and static grids** |                                            |                                                                                                     |
 | `ETOPO2022`        | [Supported variables](@ref dataset-etopo2022-vars)        | [NOAA ETOPO 2022 overview](https://www.ncei.noaa.gov/products/etopo-global-relief-model)           |
-| `GEBCO2024`        | [Supported variables](@ref dataset-gebco2024-vars)        | [GEBCO 2024 overview](https://www.gebco.net/data-products/gridded-bathymetry-data)                 |
+| `GEBCO2026`        | [Supported variables](@ref dataset-gebco2024-vars)        | [GEBCO 2024 overview](https://www.gebco.net/data-products/gridded-bathymetry-data)                 |
 | `IBCSOv2`          | [Supported variables](@ref dataset-ibcsov2-vars)          | [IBCSO overview](https://ibcso.org/ibcso-2024-annual-release/)                                     |
 | `IBCAOv5`          | [Supported variables](@ref dataset-ibcaov5-vars)          | [IBCAO overview](https://www.gebco.net/data-products/gridded-bathymetry-data/arctic-ocean)         |
-| `ORCA1`            | `:bottom_height`, `:mesh_mask`                            | [ORCA1 mesh and bathymetry (Zenodo)](https://zenodo.org/records/4436658)                           |
-| `ORCA12`           | `:bottom_height`, `:mesh_mask`                            | [ORCA12 mesh and bathymetry (Zenodo)](https://zenodo.org/records/15495870)                         |
+| `GLO30`            | [Supported variables](@ref dataset-glo30-vars)            | [Copernicus DEM GLO-30 (Earth Data Hub)](https://earthdatahub.destine.eu/collections/copernicus-dem/datasets/GLO-30) |
+| `GLO90`            | [Supported variables](@ref dataset-glo90-vars)            | [Copernicus DEM GLO-90 (Earth Data Hub)](https://earthdatahub.destine.eu/collections/copernicus-dem/datasets/GLO-90) |
+| `ORCAOne`          | `:bottom_height`, `:mesh_mask`                            | [eORCA1 mesh and bathymetry (Zenodo)](https://zenodo.org/records/4436658)                          |
+| `ORCAQuarter`      | `:bottom_height`, `:mesh_mask`                            | [eORCA025 mesh and bathymetry (Zenodo)](https://zenodo.org/records/15494369)                       |
+| `ORCATwelfth`      | `:bottom_height`, `:mesh_mask`                            | [eORCA12 mesh and bathymetry (Zenodo)](https://zenodo.org/records/15495870)                        |
 | `GLORYSStatic`     | `:depth`                                                  | [Copernicus GLORYS static product](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |
 | **Ocean reanalysis and climatology** |                                     |                                                                                                     |
 | `ECCO2Monthly`     | [Supported variables](@ref dataset-ecco2monthly-vars)     | [ECCO2 documentation](https://ecco.jpl.nasa.gov/products/all/)                                     |
@@ -31,6 +34,9 @@ NumericalEarth currently ships connectors for the following data products:
 | `ERA5MonthlySingleLevel` | surface meteorology, flux, radiation, and wave variables | [ERA5 single levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels-monthly-means?tab=overview) |
 | `ERA5HourlyPressureLevels` | pressure-level temperature, winds, humidity, geopotential, and cloud variables | [ERA5 pressure levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels?tab=overview) |
 | `ERA5MonthlyPressureLevels` | pressure-level temperature, winds, humidity, geopotential, and cloud variables | [ERA5 pressure levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels-monthly-means?tab=overview) |
+| **Land** |                                                    |                                                                                                     |
+| `ERA5HourlyLand`   | [Supported variables](@ref dataset-era5hourlyland-vars)   | [ERA5-Land hourly overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land?tab=overview) |
+| `ERA5MonthlyLand`  | [Supported variables](@ref dataset-era5monthlyland-vars)  | [ERA5-Land monthly overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land-monthly-means?tab=overview) |
 | **Regional observations** |                                                    |                                                                                                     |
 | `OSPapaHourly`     | ocean profiles, near-surface meteorology, and currents    | [Ocean Station Papa dataset](https://www.pmel.noaa.gov/ocs/Papa)                                   |
 | `OSPapaFluxHourly` | air-sea fluxes, stresses, evaporation, precipitation, and skin temperature | [Ocean Station Papa flux dataset](https://www.pmel.noaa.gov/ocs/Papa) |
@@ -38,6 +44,17 @@ NumericalEarth currently ships connectors for the following data products:
 ## [Supported variables for ETOPO2022](@id dataset-etopo2022-vars)
 
 - `:bottom_height` - Global bathymetry/topography on a 1 arc-minute grid.
+
+## [Supported variables for GLO30](@id dataset-glo30-vars)
+
+- `:bottom_height` - Surface elevation (Digital Surface Model) on a global 30 m
+  (1 arc-second) grid from the `GLO30` dataset. Read in regional windows only;
+  requires a DestinE access token and `using Zarr`.
+
+## [Supported variables for GLO90](@id dataset-glo90-vars)
+
+- `:bottom_height` - Surface elevation (Digital Surface Model) on a global 90 m
+  (3 arc-second) grid from the `GLO90` dataset; the coarser sibling of GLO-30.
 
 ## [Supported variables for ECCO2Monthly](@id dataset-ecco2monthly-vars)
 
@@ -136,11 +153,33 @@ NumericalEarth currently ships connectors for the following data products:
 - `:river_freshwater_flux` - River discharge flux (kg m⁻² s⁻¹).
 - `:iceberg_freshwater_flux` - Iceberg calving flux (kg m⁻² s⁻¹).
 
+## [Supported variables for ERA5HourlyLand](@id dataset-era5hourlyland-vars)
+
+- `:skin_temperature` - Skin (surface) temperature (K).
+- `:soil_temperature_level_1` - Soil temperature, layer 1 (0-7 cm) (K).
+- `:soil_temperature_level_2` - Soil temperature, layer 2 (7-28 cm) (K).
+- `:soil_temperature_level_3` - Soil temperature, layer 3 (28-100 cm) (K).
+- `:soil_temperature_level_4` - Soil temperature, layer 4 (100-289 cm) (K).
+- `:volumetric_soil_water_layer_1` - Volumetric soil water, layer 1 (0-7 cm) (m³ m⁻³).
+- `:volumetric_soil_water_layer_2` - Volumetric soil water, layer 2 (7-28 cm) (m³ m⁻³).
+- `:volumetric_soil_water_layer_3` - Volumetric soil water, layer 3 (28-100 cm) (m³ m⁻³).
+- `:volumetric_soil_water_layer_4` - Volumetric soil water, layer 4 (100-289 cm) (m³ m⁻³).
+- `:temperature` - 2 m air temperature (K).
+- `:dewpoint_temperature` - 2 m dewpoint temperature (K).
+- `:snow_water_equivalent` - Snow depth water equivalent (m of water equivalent).
+- `:snow_depth` - Instantaneous snow depth (m).
+
+Ocean cells are masked and never inpainted.
+
+## [Supported variables for ERA5MonthlyLand](@id dataset-era5monthlyland-vars)
+
+Same variables as [ERA5HourlyLand](@ref dataset-era5hourlyland-vars), as monthly means.
+
 ## [Supported variables for IBCSOv2](@id dataset-ibcsov2-vars)
 
 - `:bottom_height` - Southern Ocean bathymetry at 500 m resolution, south of 50°S (m).
 
-## [Supported variables for GEBCO2024](@id dataset-gebco2024-vars)
+## [Supported variables for GEBCO2026](@id dataset-gebco2024-vars)
 
 - `:bottom_height` - Global bathymetry and topography at 15 arc-second resolution (m).
 

@@ -4,16 +4,16 @@
 ##### The RTM lives at `coupled_model.radiation`. Its surface-level flux fields
 ##### already bake in albedo and emissivity at the surface (RRTMGP handles
 ##### both reflection of downwelling shortwave and ε σ Tₛ⁴ for upwelling
-##### longwave internally), so we simply add the *net radiative flux into the
-##### surface* to the slab's `net_energy_flux` accumulator. Breeze sign
-##### convention is "positive flux = upward", which makes the net flux into
-##### the land
+##### longwave internally), so we simply add the *net radiative flux* to the
+##### slab's `surface_energy_flux` accumulator. Both use the "positive flux =
+##### upward" sign convention (downwelling components are negative), so the
+##### net upward radiative flux at the surface face `k = 1` is
 #####
-#####    Qᵣₐd_into_land = -(ℐᵤₚ_lw + ℐdn_lw + ℐdn_sw)
+#####    ℐˡʷꜛ + ℐˡʷꜜ + ℐˢʷꜜ
 #####
-##### at the surface face `k = 1`. This runs in `update_state!` after the
-##### turbulent (sensible + latent) flux has been written to
-##### `net_energy_flux`, so the kernel adds the radiative term on top.
+##### This runs in `update_state!` after the turbulent (sensible + latent)
+##### flux has been written to `surface_energy_flux`, so the kernel adds the
+##### radiative term on top.
 #####
 
 const BreezeRTM = Breeze.RadiativeTransferModel
@@ -28,9 +28,9 @@ const BreezeRTM = Breeze.RadiativeTransferModel
 NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation_properties(::BreezeRTM) =
     (surface_properties = NamedTuple(),)
 
-@kernel function _apply_breeze_air_land_radiative_fluxes!(Q, ℐ_lw_up, ℐ_lw_dn, ℐ_sw_dn)
+@kernel function _apply_breeze_air_land_radiative_fluxes!(Es, ℐˡʷꜛ, ℐˡʷꜜ, ℐˢʷꜜ)
     i, j = @index(Global, NTuple)
-    @inbounds Q[i, j, 1] -= (ℐ_lw_up[i, j, 1] + ℐ_lw_dn[i, j, 1] + ℐ_sw_dn[i, j, 1])
+    @inbounds Es[i, j, 1] += ℐˡʷꜛ[i, j, 1] + ℐˡʷꜜ[i, j, 1] + ℐˢʷꜜ[i, j, 1]
 end
 
 # Dispatch on `EarthSystemModel{<:BreezeRTM}`: the existing generic
@@ -47,15 +47,15 @@ function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
     isnothing(al_interface) && return nothing
 
     fluxes = land.fluxes
-    hasproperty(fluxes, :net_energy_flux) || return nothing
-    Q = fluxes.net_energy_flux
+    hasproperty(fluxes, :surface_energy_flux) || return nothing
+    Es = fluxes.surface_energy_flux
 
     rtm = coupled_model.radiation
     grid = land.grid
     arch = architecture(grid)
     launch!(arch, grid, :xy,
             _apply_breeze_air_land_radiative_fluxes!,
-            Q,
+            Es,
             rtm.upwelling_longwave_flux,
             rtm.downwelling_longwave_flux,
             rtm.downwelling_shortwave_flux)

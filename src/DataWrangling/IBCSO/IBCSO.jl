@@ -5,7 +5,6 @@ export IBCSOv2
 using Downloads: Downloads
 using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
-using Scratch: @get_scratch!
 
 using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
 
@@ -18,10 +17,9 @@ import ..DataWrangling:
     reversed_vertical_axis,
     validate_dataset_coverage
 
-
 download_IBCSO_cache::String = ""
 function __init__()
-    global download_IBCSO_cache = @get_scratch!("IBCSO")
+    global download_IBCSO_cache = DataWrangling.download_cache("IBCSO")
 end
 
 IBCSO_bathymetry_variable_names = Dict(
@@ -67,7 +65,7 @@ function validate_dataset_coverage(grid, ::IBCSOMetadatum)
     if φ_north > -50
         error("IBCSOv2 only covers the Southern Ocean (south of 50°S). " *
               "The grid extends to $(round(φ_north, digits=1))°. " *
-              "Use ETOPO2022() or GEBCO2024() for domains that include latitudes north of 50°S.")
+              "Use ETOPO2022() or GEBCO2026() for domains that include latitudes north of 50°S.")
     end
 end
 

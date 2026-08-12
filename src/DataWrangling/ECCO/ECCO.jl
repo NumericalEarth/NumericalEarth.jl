@@ -16,7 +16,6 @@ using Oceananigans.DistributedComputations: @root
 using Oceananigans.Grids: Face, Center
 using Oceananigans.OutputReaders: OutputReaders, Cyclical, FieldTimeSeries
 using NCDatasets: NCDatasets
-using Scratch: Scratch, @get_scratch!
 
 using ...NumericalEarth: NumericalEarth
 using ..DataWrangling: DataWrangling, binary_data_grid, binary_data_size, default_mask_value,
@@ -27,7 +26,7 @@ using ..DataWrangling: DataWrangling, binary_data_grid, binary_data_size, defaul
 
 download_ECCO_cache::String = ""
 function __init__()
-    global download_ECCO_cache = @get_scratch!("ECCO")
+    global download_ECCO_cache = DataWrangling.download_cache("ECCO")
 end
 
 # Datasets
@@ -284,7 +283,7 @@ function Downloads.download(metadata::ECCOMetadata)
     @root mktempdir(dir) do tmp
 
         # Write down the username and password in a .netrc file
-        downloader = netrc_downloader(username, password, "ecco.jpl.nasa.gov", tmp)
+        downloader = netrc_downloader(username, password, "ecco.jpl.nasa.gov", tmp; verify_ssl = false)
         ntasks = Threads.nthreads()
 
         asyncmap(metadata; ntasks) do metadatum # Distribute the download among tasks

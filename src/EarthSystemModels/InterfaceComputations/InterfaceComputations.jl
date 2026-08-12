@@ -10,9 +10,12 @@ using Oceananigans.Utils: KernelParameters, worksize
 export
     ComponentInterfaces,
     SimilarityTheoryFluxes,
+    FixedIterations,
+    ConvergenceStopCriteria,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
     LandRoughnessLength,
+    LandZeroPlaneDisplacement,
     CoefficientBasedFluxes,
     SimilarityScales,
     PolynomialNeutralDragCoefficient,
@@ -22,6 +25,9 @@ export
     BulkTemperature,
     DiffusiveFlux,
     InteriorDiffusivity,
+    ConvectiveGustiness,
+    SubgridVelocityCorrection,
+    mahrt_sun_subgrid_velocity,
     atmosphere_ocean_stability_functions,
     atmosphere_land_stability_functions,
     atmosphere_sea_ice_stability_functions,
@@ -34,6 +40,11 @@ export
     SkinHumidity,
     FractionalHumidity,
     CriticalSaturation,
+    DryLayerHumidity,
+    StorageBasedDryLayerDepth,
+    DryLayerVaporPistonVelocity,
+    ConstantTortuosity,
+    PowerLawTortuosity,
     ElevationCorrection,
     atmosphere_land_interface,
     # Sea ice-ocean heat flux formulations
@@ -48,6 +59,8 @@ using ..EarthSystemModels: EarthSystemModels,
                            thermodynamics_parameters,
                            surface_layer_height,
                            boundary_layer_height
+
+using ...NumericalEarth: stateindex
 
 #####
 ##### Functions extended by component models
@@ -102,9 +115,17 @@ function interface_kernel_parameters(grid)
     return kernel_parameters
 end
 
+# 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1: a scalar
+# (e.g. a prescribed measurement height or the 600 m BL-height fallback) passes through,
+# and a 2-D `Field` (Breeze's per-column surface- or boundary-layer height) is read at
+# column `(i, j)`. Used by the atmosphere–surface flux kernels to consume
+# `surface_layer_height` / `h_bℓ` uniformly.
+@inline state2dindex(a, i, j) = stateindex(a, i, j, 1)
+
 # Turbulent fluxes
 include("roughness_lengths.jl")
 include("interface_states.jl")
+include("dry_layer_humidity.jl")
 include("compute_interface_state.jl")
 include("similarity_theory_turbulent_fluxes.jl")
 include("coefficient_based_turbulent_fluxes.jl")

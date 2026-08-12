@@ -3,10 +3,10 @@
 ##### temperature toward a prescribed deep climatology.
 #####
 ##### The single prognostic variable is the bulk temperature `T`, evolving
-##### under the net surface energy flux plus a restoring term toward a
-##### prescribed deep temperature `Tᵈᵉᵉᵖ`:
+##### under the surface energy flux (positive upward, hence the minus sign)
+##### plus a restoring term toward a prescribed deep temperature `Tᵈᵉᵉᵖ`:
 #####
-#####     ∂T/∂t = Q / C + (Tᵈᵉᵉᵖ − T) / τ
+#####     ∂T/∂t = −Jᴱs / C + (Tᵈᵉᵉᵖ − T) / τ
 #####
 ##### where `C = Cdry + Cl · Mˡᵃ` is the effective areal heat capacity
 ##### (the liquid-water term `Cl · Mˡᵃ` is included when bucket hydrology is
@@ -52,39 +52,36 @@ function ForceRestoreEnergy(FT::Type = Oceananigans.defaults.FloatType;
                               deep_temperature, deep_time_scale)
 end
 
-flux_variables(::ForceRestoreEnergy) = (:net_energy_flux,)
+flux_variables(::ForceRestoreEnergy) = (:surface_energy_flux,)
+
+# The closure rides into `_step_land_temperature!` whole, so Field-valued
+# properties must adapt to their GPU forms.
+Adapt.adapt_structure(to, energy::ForceRestoreEnergy) =
+    ForceRestoreEnergy(Adapt.adapt(to, energy.dry_heat_capacity),
+                       Adapt.adapt(to, energy.liquid_heat_capacity),
+                       Adapt.adapt(to, energy.deep_temperature),
+                       Adapt.adapt(to, energy.deep_time_scale))
 
 # `τᵈ` is the deep-restore time scale (math `τᵈᵉᵉᵖ` in notation.md); not the
 # kinematic momentum flux `τ`. `Tᵈ` is the deep-target temperature.
-@kernel function _force_restore_step!(T, Q, M, Δt, Cdry, Cl, Tᵈ, τᵈ, grid, time)
-    i, j = @index(Global, NTuple)
+# `Jᴱs` is the surface energy flux, positive *upward* (out of the slab), so it
+# enters the budget with a minus sign:
+# ∂T/∂t = −Jᴱs/C + (Tᵈ − T)/τᵈ, with C = Cdry + Cl·max(Mˡᵃ, 0).
+@inline function temperature_tendency(i, j, grid, energy::ForceRestoreEnergy,
+                                      prognostic, fluxes, diagnostics, time)
     @inbounds begin
-        # Effective areal heat capacity (Cdry + Cl·Mˡᵃ); with dry land
-        # (M = 0) this reduces to Cdry.
-        Cdry_ij = property_value(Cdry, i, j, 1)
-        Cl_ij   = property_value(Cl, i, j, 1)
-        C       = Cdry_ij + Cl_ij * max(M[i, j, 1], 0)
-
-        Tᵈ_ij = stateindex(Tᵈ, i, j, 1, grid, time, (Center, Center, Center))
-        Tᵢⱼ   = T[i, j, 1]
-
-        # ∂T/∂t = Q/C + (Tᵈ − T)/τᵈ
-        forcing   = Q[i, j, 1] / C
-        restoring = (Tᵈ_ij - Tᵢⱼ) / τᵈ
-        T[i, j, 1] = Tᵢⱼ + (forcing + restoring) * Δt
+        Tᵢⱼ = prognostic.T[i, j, 1]
+        Mᵢⱼ = prognostic.M[i, j, 1]
+        Jᴱs = fluxes.surface_energy_flux[i, j, 1]
     end
+    Cdry = property_value(energy.dry_heat_capacity, i, j, 1)
+    Cl   = property_value(energy.liquid_heat_capacity, i, j, 1)
+    C    = Cdry + Cl * max(Mᵢⱼ, 0)
+    Tᵈ   = stateindex(energy.deep_temperature, i, j, 1, grid, time, (Center, Center, Center))
+    return -Jᴱs / C + (Tᵈ - Tᵢⱼ) / energy.deep_time_scale
 end
 
-function time_step!(energy::ForceRestoreEnergy, land, Δt, time)
-    grid = land.grid
-    arch = architecture(grid)
-    launch!(arch, grid, :xy, _force_restore_step!,
-            land.temperature, land.fluxes.net_energy_flux, land.water_storage, Δt,
-            energy.dry_heat_capacity, energy.liquid_heat_capacity,
-            energy.deep_temperature, energy.deep_time_scale,
-            grid, time)
-    return nothing
-end
+time_step!(energy::ForceRestoreEnergy, land, Δt, time) = step_land_temperature!(energy, land, Δt, time)
 
 EarthSystemModels.surface_temperature(::ForceRestoreEnergy, land) = land.temperature
 

@@ -24,6 +24,50 @@ Create a bounding box with `latitude`, `longitude`, and `z` bounds on the sphere
 BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
     BoundingBox(longitude, latitude, z)
 
+"""
+    BoundingBox(grid; padding = 0)
+
+Create a `BoundingBox` spanning the horizontal extent of `grid`, widened on every
+side by `padding` (degrees).
+"""
+BoundingBox(grid::AbstractGrid; padding = 0) =
+    BoundingBox(longitude = extrema(λnodes(grid, Face(), Center(), Center())) .+ (-padding, padding),
+                latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padding, padding))
+
+"""
+    bounding_box_intersects(bounds, bbox::BoundingBox)
+
+Whether `bounds`, anything with `west`, `south`, `east`, and `north` fields, overlaps `bbox`.
+Used to select the files of a tiled dataset that cover a region.
+
+Both boxes must label longitudes in the same convention, with `west < east`; a box folded across
+the antimeridian is not supported.
+"""
+function bounding_box_intersects(bounds, bbox::BoundingBox)
+    λ₁, λ₂ = bbox.longitude
+    φ₁, φ₂ = bbox.latitude
+    return !(bounds.east < λ₁ || bounds.west > λ₂ || bounds.north < φ₁ || bounds.south > φ₂)
+end
+
+"""
+    bounding_box_suffix(region)
+
+Filename suffix identifying the window a regionally-downloaded dataset was cached for:
+`"global"` for `nothing`, and `"lon_<west>_<east>_lat_<south>_<north>"` for a `BoundingBox`,
+so windows of one dataset never collide on disk. Datasets whose products follow a different
+filename convention define their own suffix instead.
+"""
+bounding_box_suffix(::Nothing) = "global"
+
+function bounding_box_suffix(region::BoundingBox)
+    λ = region.longitude
+    φ = region.latitude
+    return string("lon_", bounds_string(λ), "_lat_", bounds_string(φ))
+end
+
+bounds_string(::Nothing) = "nothing"
+bounds_string(bounds) = string(bounds[1], "_", bounds[2])
+
 #####
 ##### Column region and interpolation types
 #####
@@ -116,8 +160,9 @@ Keyword Arguments
 - `dataset`: Supported datasets are returned by [`supported_datasets`](@ref).
 
 - `dates`: The dates of the dataset (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`).
-           Note that `dates` can either be a range or a vector of dates, representing a time-series.
-           For a single date, use [`Metadatum`](@ref).
+           Note that `dates` can either be a range or a vector of dates, representing a time-series,
+           or a `(start_date, end_date)` tuple, which expands to the dataset's native dates in that
+           window (the cadence is the dataset's own). For a single date, use [`Metadatum`](@ref).
 
 - `start_date`: If `dates = nothing`, we can prescribe the first date of metadata as a date
                 (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`). If outside the
@@ -146,6 +191,8 @@ function Metadata(variable_name;
                   start_date = nothing,
                   end_date = nothing)
 
+    dates = expand_dates(dataset, variable_name, dates)
+
     # crop dates if _either_ a start date or an end date is provided
     if !isnothing(start_date) || !isnothing(end_date)
 
@@ -166,6 +213,16 @@ end
 
 const AnyDateTime  = Union{AbstractCFDateTime, Dates.AbstractDateTime}
 const Metadatum{V} = Metadata{V, <:Union{AnyDateTime, Nothing}} where V
+
+"""
+    expand_dates(dataset, variable_name, dates)
+
+Return `dates`, expanding a `(start_date, end_date)` tuple to the dataset's native dates
+in that window — the cadence is the dataset's own.
+"""
+expand_dates(dataset, variable_name, dates) = dates
+expand_dates(dataset, variable_name, dates::Tuple{<:AnyDateTime, <:AnyDateTime}) =
+    compute_native_date_range(all_dates(dataset, variable_name), first(dates), last(dates))
 
 function Base.size(metadata::Metadata)
     Nx, Ny, Nz = size(metadata.dataset, metadata.name)
@@ -250,8 +307,16 @@ Base.summary(md::Metadata) = string(metaprefix(md),
                                     "{", datasetstr(md), "} of ",
                                     md.name, " for ", datestr(md))
 
-# If only one date, it's a single element array
+# A Metadatum holds a single date, so it acts as a length-1 collection whose sole element is
+# itself; the generic Metadata methods below index `dates`, which a scalar date cannot support.
 Base.length(metadata::Metadatum) = 1
+@propagate_inbounds function Base.getindex(m::Metadatum, i::Int)
+    @boundscheck i == 1 || throw(BoundsError(m, i))
+    return m
+end
+Base.first(m::Metadatum) = m
+Base.last(m::Metadatum) = m
+Base.iterate(m::Metadatum, i::Int=1) = i == 1 ? (m, 2) : nothing
 
 @propagate_inbounds Base.getindex(m::Metadata, i::Int) =
     Metadata(m.name, m.dataset, m.dates[i], m.region, m.dir, getfilename(m.filename, i))
@@ -269,13 +334,6 @@ Base.length(metadata::Metadatum) = 1
         return nothing
     end
 end
-
-# Implementation for 1 date
-Base.axes(metadata::Metadatum)    = 1
-Base.first(metadata::Metadatum)   = metadata
-Base.last(metadata::Metadatum)    = metadata
-Base.iterate(metadata::Metadatum) = (metadata, nothing)
-Base.iterate(::Metadatum, ::Any)  = nothing
 
 metadata_path(metadata::Metadatum) = joinpath(metadata.dir, metadata.filename)
 
@@ -650,6 +708,22 @@ Return the default directory to which `dataset` is downloaded.
 function default_download_directory end
 
 """
+    default_horizontal_padding(dataset)
+
+Return the default horizontal padding (degrees) added around a bounding box requested
+from `dataset`, providing margin for interpolation stencils at the boundary.
+"""
+function default_horizontal_padding end
+
+"""
+    matching_single_level_dataset(dataset)
+
+Return the single-level (surface) dataset sharing `dataset`'s product family and temporal
+cadence — e.g. the surface companion of a pressure-level reanalysis product.
+"""
+function matching_single_level_dataset end
+
+"""
     dataset_variable_name(metadata)
 
 Return the name used for the variable `metadata.name` in its raw dataset file.
@@ -746,9 +820,11 @@ struct MicromolePerLiter end
 struct NanomolePerKilogram end
 struct NanomolePerLiter end
 struct CentigramPerCubicCentimeter end
+struct GramPerCubicCentimeter end
 struct HectogramPerCubicMeter end
 struct GramPerKilogram end
 struct DecigramPerKilogram end
+struct WeightPercent end            # mass fraction in % → kg/kg (soil texture)
 
 struct InverseSign end
 struct InverseGravity end

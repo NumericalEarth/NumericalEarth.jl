@@ -1,8 +1,7 @@
-module NumericalEarthArchGDALExt
-
-using ArchGDAL: ArchGDAL
-using NCDatasets: NCDataset, defDim, defVar
-using NumericalEarth: NumericalEarth
+#####
+##### International Bathymetric Chart of the Arctic Ocean (IBCAO):
+##### reprojection of the distributed GeoTIFF onto a lon/lat NetCDF.
+#####
 
 function NumericalEarth.DataWrangling.IBCAO.reproject_ibcao_to_netcdf(tiff_path, nc_path)
     ArchGDAL.read(tiff_path) do src
@@ -44,5 +43,3 @@ function NumericalEarth.DataWrangling.IBCAO.reproject_ibcao_to_netcdf(tiff_path,
 
     return nothing
 end
-
-end # module NumericalEarthArchGDALExt

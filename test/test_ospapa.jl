@@ -28,12 +28,12 @@ const OSPAPA_TEST_END   = DateTime(2012, 10, 3)
         # All expected fields are present
         @test haskey(atmosphere.velocities, :u)
         @test haskey(atmosphere.velocities, :v)
-        @test haskey(atmosphere.tracers, :T)
-        @test haskey(atmosphere.tracers, :q)
+        @test atmosphere.temperature isa FieldTimeSeries
+        @test atmosphere.specific_humidity isa FieldTimeSeries
         @test !isnothing(atmosphere.pressure)
-        @test atmosphere.freshwater_flux isa PrescribedPrecipitationFlux
-        @test atmosphere.freshwater_flux.rain isa FieldTimeSeries
-        @test isnothing(atmosphere.freshwater_flux.snow)
+        @test atmosphere.precipitation_flux isa PrescribedPrecipitationFlux
+        @test atmosphere.precipitation_flux.rain isa FieldTimeSeries
+        @test isnothing(atmosphere.precipitation_flux.snow)
 
         # Radiation sanity checks
         ℐꜜˢʷ = radiation.downwelling_shortwave
@@ -50,7 +50,7 @@ const OSPAPA_TEST_END   = DateTime(2012, 10, 3)
             @test maximum(lw_data) > 50               # not all zero
 
             # Air temperature in physical range (K)
-            T_data = interior(atmosphere.tracers.T)
+            T_data = interior(atmosphere.temperature)
             @test all(T_data .≥ 240)
             @test all(T_data .≤ 320)
         end

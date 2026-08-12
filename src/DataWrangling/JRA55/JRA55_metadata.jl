@@ -97,7 +97,7 @@ function DataWrangling.metadata_filename(::MultiYearJRA55, name, date, region)
     end_date = last(JRA55_multiple_year_dates[name])
     end_hour = Hour(end_date)
 
-    if end_hour == Hour(0)
+    if end_hour == Hour(12)
         dates = "$(year)0101-$(year)1231"
     elseif end_hour == Hour(22)
         dates = "$(year)01010130-$(year)12312230"
@@ -157,10 +157,10 @@ JRA55_multiple_year_prefix = Dict(
 )
 
 JRA55_multiple_year_dates = Dict(
-    :river_freshwater_flux           => DateTime(1958, 1, 1)        : Day(1)  : DateTime(2019, 12, 31),
+    :river_freshwater_flux           => DateTime(1958, 1, 1, 12)    : Day(1)  : DateTime(2019, 12, 31, 12),
     :rain_freshwater_flux            => DateTime(1958, 1, 1, 1, 30) : Hour(3) : DateTime(2019, 12, 31, 22, 30),
     :snow_freshwater_flux            => DateTime(1958, 1, 1, 1, 30) : Hour(3) : DateTime(2019, 12, 31, 22, 30),
-    :iceberg_freshwater_flux         => DateTime(1958, 1, 1)        : Day(1)  : DateTime(2019, 12, 31),
+    :iceberg_freshwater_flux         => DateTime(1958, 1, 1, 12)    : Day(1)  : DateTime(2019, 12, 31, 12),
     :specific_humidity               => DateTime(1958, 1, 1)        : Hour(3) : DateTime(2019, 12, 31, 21),
     :sea_level_pressure              => DateTime(1958, 1, 1)        : Hour(3) : DateTime(2019, 12, 31, 21),
     :downwelling_longwave_radiation  => DateTime(1958, 1, 1, 1, 30) : Hour(3) : DateTime(2019, 12, 31, 22, 30),

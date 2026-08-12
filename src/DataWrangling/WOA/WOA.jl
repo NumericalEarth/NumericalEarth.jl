@@ -4,14 +4,13 @@ export WOAClimatology, WOAAnnual, WOAMonthly
 
 using Dates: DateTime, month
 using NCDatasets: Dataset
-using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path,
                        dataset_variable_name, reversed_vertical_axis
 
 download_WOA_cache::String = ""
 function __init__()
-    global download_WOA_cache = @get_scratch!("WOA")
+    global download_WOA_cache = DataWrangling.download_cache("WOA")
 end
 
 WOA_variable_names = Dict(

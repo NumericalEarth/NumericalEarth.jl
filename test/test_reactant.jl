@@ -38,14 +38,13 @@ end
 
     coupled_model = OceanOnlyModel(ocean; atmosphere)
 
-    # Test that Reactant does _not_ initialize in the constructor for EarthSystemModel
+    # reconcile_state! initializes the exchanger regridder at construction (via @jit on Reactant).
     exchanger = coupled_model.interfaces.exchanger.atmosphere
     state     = exchanger.state
     regridder = exchanger.regridder
-    @test all(regridder.i .== 0)
-    @test all(regridder.j .== 0)
+    @test any(regridder.i .!= 0)
+    @test any(regridder.j .!= 0)
 
-    # This tests that update_state! is not called
-    ue = state.u
-    @test all(ue .== 0) # not initialized with Reactant
+    # update_state! populates the exchange state with the interpolated air temperature
+    @test any(state.T .!= 0)
 end

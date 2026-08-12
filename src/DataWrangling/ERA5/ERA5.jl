@@ -1,7 +1,8 @@
 module ERA5
 
 # 2-D data
-export ERA5HourlySingleLevel, ERA5MonthlySingleLevel
+export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel
+export ERA5HourlyLand, ERA5MonthlyLand
 
 # 3-D data
 export ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels, ERA5_all_pressure_levels, pressure_field, hPa
@@ -12,26 +13,28 @@ export ERA5PrescribedAtmosphere, ERA5PrescribedRadiation
 
 using Dates: Dates, DateTime, Month, Hour
 using Downloads: Downloads
+using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: CPU
-using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
 using Oceananigans.DistributedComputations: Distributed, child_architecture
 using Oceananigans.Fields: Field, Center, set!
-using Oceananigans.OutputReaders: Cyclical, FieldTimeSeries
+using Oceananigans.OutputReaders: Cyclical, Linear, FieldTimeSeries, TimeSeriesInterpolation, FlavorOfFTS, time_indices
+using Oceananigans.TimeSteppers: Clock
 using NCDatasets: NCDatasets
 using Printf: Printf, @sprintf
-using Scratch: Scratch, @get_scratch!
 using Statistics: Statistics, mean
 
-using ..DataWrangling: DataWrangling, Metadata, Metadatum, InverseGravity,
+using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox, InverseGravity,
                        MetersPerHour, JoulesPerSquareMeterPerHour, metadata_path,
                        native_grid, dataset_variable_name, available_variables, retrieve_data,
-                       first_date, last_date
-using ...Grids: PressureLevelVerticalDiscretization
+                       first_date, last_date, native_times, set_metadata_field!, DatasetBackend,
+                       instantiate, DatewiseFilename
+using ...Grids: PressureLevelVerticalDiscretization, PressureLevelGrid
 
 download_ERA5_cache::String = ""
 
 function __init__()
-    global download_ERA5_cache = @get_scratch!("ERA5")
+    global download_ERA5_cache = DataWrangling.download_cache("ERA5")
 end
 
 #####
@@ -55,6 +58,7 @@ const ERA5Metadatum = Metadatum{<:ERA5Dataset}
 # ERA5 global coverage: 0-359.75 longitude, -90 to 90 latitude at 0.25 degree resolution
 DataWrangling.longitude_interfaces(::ERA5Metadata) = (-0.125, 359.875)
 DataWrangling.latitude_interfaces(::ERA5Metadata) = (-90, 90)
+DataWrangling.default_horizontal_padding(::ERA5Dataset) = 1/2  # two native (1/4°) cells
 
 # ERA5 single-levels (2-D) data product
 DataWrangling.z_interfaces(::ERA5Metadata) = (0, 1)
@@ -125,6 +129,7 @@ function DataWrangling.metadata_filename(dataset::ERA5Dataset, name, date, regio
     return string(prefix, ".nc")
 end
 
+
 function inpainted_metadata_filename(metadata::ERA5Metadatum)
     without_extension = metadata.filename[1:end-3]
     return without_extension * "_inpainted.jld2"
@@ -133,10 +138,21 @@ end
 DataWrangling.inpainted_metadata_path(metadata::ERA5Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 #####
+##### Pure Julia CDS client (replaces Python era5cli)
+#####
+
+# CDS client is loaded via NumericalEarthCDSClientExt extension when HTTP/JSON3 are available
+# The extension exports: download_era5, read_cds_credentials, cds_variable_name
+# Users need to: using HTTP, JSON3  (or just using HTTP if JSON3 is already loaded)
+
+#####
 ##### Single-level and pressure-level specifics
 #####
 
+include("ERA5_variables.jl")
 include("ERA5_single_levels.jl")
+include("ERA5_land.jl")
+include("ERA5_field_time_series.jl")  # Yearly file reading (like JRA55)
 include("ERA5_pressure_levels.jl")
 include("ERA5_prescribed_radiation.jl")
 include("ERA5_prescribed_atmosphere.jl")
