@@ -1,4 +1,4 @@
-# # ERA5 → 12 km land-coupled hindcast (Breeze + NestedModel + SlabLand)
+# # ERA5 → 12 km land-coupled, convection-permitting hindcast (Breeze + NestedModel + SlabLand)
 #
 # A limited-area model (LAM) example that downscales ERA5 reanalysis to a ~12 km Breeze compressible
 # atmosphere over the U.S. Southern Great Plains, for the Midlatitude Continental Convective Clouds
