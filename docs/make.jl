@@ -39,10 +39,12 @@ mkpath(OUTPUT_DIR)
 examples = [
     Example("Single-column ocean simulation", "single_column_os_papa_simulation", true),
     Example("Coupled conservation on a z-star grid", "coupled_conservation", true),
-    Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
     # Near-global is the heaviest example; disabled while docs build on the L4 runner
     # Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
-    Example("Global climate simulation", "global_climate_simulation", false),
+    # One-degree and global-climate initialize from ECCO; disabled while
+    # ecco.jpl.nasa.gov/drive returns 503 (down since at least 2026-08-10)
+    # Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
+    # Example("Global climate simulation", "global_climate_simulation", false),
     Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
     Example("Breeze over four oceans", "breeze_over_four_oceans", false),
     Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data", true),
