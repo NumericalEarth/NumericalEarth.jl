@@ -45,7 +45,8 @@ examples = [
     # ecco.jpl.nasa.gov/drive returns 503 (down since at least 2026-08-10)
     # Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
     # Example("Global climate simulation", "global_climate_simulation", false),
-    Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
+    # Veros-coupled flux assembly is broken (missing η container); re-enable when #506 merges
+    # Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
     Example("Breeze over four oceans", "breeze_over_four_oceans", false),
     Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data", true),
     Example("Breeze over slab land", "breeze_over_slab_land", true),
