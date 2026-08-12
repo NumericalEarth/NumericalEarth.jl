@@ -168,7 +168,7 @@ nh_sim         = Simulation(nh_model; Δt, stop_time)
 # ## Progress callbacks
 
 function prescribed_progress(sim)
-    atmos = sim.model.atmosphere
+    atmos = sim.model.atmosphere.model
     u, v, w = atmos.velocities
     umax = maximum(abs, u)
     wmax = maximum(abs, w)
@@ -179,7 +179,7 @@ function prescribed_progress(sim)
 end
 
 function slab_progress(sim)
-    atmos = sim.model.atmosphere
+    atmos = sim.model.atmosphere.model
     u, v, w = atmos.velocities
     umax = maximum(abs, u)
     wmax = maximum(abs, w)
@@ -193,7 +193,7 @@ function slab_progress(sim)
 end
 
 function full_progress(sim)
-    atmos = sim.model.atmosphere
+    atmos = sim.model.atmosphere.model
     u, v, w = atmos.velocities
     umax = maximum(abs, u)
     wmax = maximum(abs, w)
@@ -209,7 +209,7 @@ function full_progress(sim)
 end
 
 function nh_progress(sim)
-    atmos = sim.model.atmosphere
+    atmos = sim.model.atmosphere.model
     u, v, w = atmos.velocities
     umax = maximum(abs, u)
     wmax = maximum(abs, w)
