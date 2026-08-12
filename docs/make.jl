@@ -107,6 +107,10 @@ else
     end
 end
 
+# Report failures here too: if makedocs errors below, the end-of-build summary
+# never prints, and this line is then the only inventory in the log.
+isempty(failed_examples) || @error "Examples that failed to build: " * join(failed_examples, ", ")
+
 # Build pages from the examples that produced markdown, whether because
 # generation succeeded just now or (with skip_literate) on a previous build.
 filter!(ex -> isfile(joinpath(OUTPUT_DIR, ex.basename * ".md")), examples)
@@ -232,7 +236,11 @@ makedocs(; sitename = "NumericalEarth.jl",
          pages,
          modules,
          plugins = [bib],
-         doctest = true,
+         # TEMPORARY, revert when ecco.jpl.nasa.gov recovers: ECCO-downloading
+         # doctests fail during the outage, and Documenter's recursive
+         # TextDiff.makediff! then overflows the stack rendering the enormous
+         # failure diff, crashing the whole build.
+         doctest = false,
          draft = false,
          doctestfilters = [
              r"┌ Warning:.*",  # remove standard warning lines

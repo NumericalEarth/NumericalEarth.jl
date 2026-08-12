@@ -67,10 +67,10 @@ nh_ocean_atmos         = atmosphere_simulation(grid; potential_temperature=θᵃ
 reference_state = slab_ocean_atmos.model.dynamics.reference_state
 
 θᵢ(x, z) = reference_state.surface_potential_temperature + 0.1 * randn() * (z < 500)
-set!(prescribed_ocean_atmos, θ=θᵢ, u=U₀)
-set!(slab_ocean_atmos,       θ=θᵢ, u=U₀)
-set!(full_ocean_atmos,       θ=θᵢ, u=U₀)
-set!(nh_ocean_atmos,         θ=θᵢ, u=U₀)
+set!(prescribed_ocean_atmos.model, θ=θᵢ, u=U₀)
+set!(slab_ocean_atmos.model,       θ=θᵢ, u=U₀)
+set!(full_ocean_atmos.model,       θ=θᵢ, u=U₀)
+set!(nh_ocean_atmos.model,         θ=θᵢ, u=U₀)
 
 # ## Prescribed ocean (constant SST)
 #
