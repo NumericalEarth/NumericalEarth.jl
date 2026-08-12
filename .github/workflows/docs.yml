@@ -153,6 +153,9 @@ jobs:
           JULIA_SSL_NO_VERIFY: "**"
         run: julia --project=docs --color=yes docs/make.jl
       - uses: actions/upload-artifact@v6
+        # make.jl fails the step when any example fails, but still builds the
+        # site from the examples that succeeded — upload it for inspection.
+        if: ${{ always() }}
         with:
           name: documentation-build${{ matrix.ref != '' && format('-{0}', matrix.ref) || '' }}
           path: docs/build

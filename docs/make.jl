@@ -45,8 +45,7 @@ examples = [
     # ecco.jpl.nasa.gov/drive returns 503 (down since at least 2026-08-10)
     # Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
     # Example("Global climate simulation", "global_climate_simulation", false),
-    # Veros-coupled flux assembly is broken (missing η container); re-enable when #506 merges
-    # Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
+    Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
     Example("Breeze over four oceans", "breeze_over_four_oceans", false),
     Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data", true),
     Example("Breeze over slab land", "breeze_over_slab_land", true),
@@ -70,23 +69,33 @@ filter!(x -> x.build_always || build_all, developer_examples)
 
 skip_literate = get(ENV, "NUMERICAL_EARTH_SKIP_LITERATE", "false") == "true"
 
+# A failed example does not abort the build: the site is built from the
+# examples that succeeded, and the failures are reported (and fail the build)
+# at the very end, so one broken example cannot block every other page.
+failed_examples = String[]
+
+function generate_example!(example, dir)
+    script_path = joinpath(dir, example.basename * ".jl")
+    try
+        run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
+    catch
+        @error "Example $(example.basename) failed to build; continuing with the remaining examples."
+        push!(failed_examples, example.basename)
+    end
+    CUDA.functional() && CUDA.reclaim()
+end
+
 if skip_literate
     @info "Skipping Literate generation because NUMERICAL_EARTH_SKIP_LITERATE=true."
-    filter!(ex -> isfile(joinpath(OUTPUT_DIR, ex.basename * ".md")), examples)
-    filter!(ex -> isfile(joinpath(OUTPUT_DIR, ex.basename * ".md")), developer_examples)
 else
-    for example in examples
-        script_path = joinpath(EXAMPLES_DIR, example.basename * ".jl")
-        run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
-        CUDA.functional() && CUDA.reclaim()
-    end
-
-    for example in developer_examples
-        script_path = joinpath(DEVELOPERS_DIR, example.basename * ".jl")
-        run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
-        CUDA.functional() && CUDA.reclaim()
-    end
+    foreach(ex -> generate_example!(ex, EXAMPLES_DIR), examples)
+    foreach(ex -> generate_example!(ex, DEVELOPERS_DIR), developer_examples)
 end
+
+# Build pages from the examples that produced markdown, whether because
+# generation succeeded just now or (with skip_literate) on a previous build.
+filter!(ex -> isfile(joinpath(OUTPUT_DIR, ex.basename * ".md")), examples)
+filter!(ex -> isfile(joinpath(OUTPUT_DIR, ex.basename * ".md")), developer_examples)
 
 modules = Module[]
 NumericalEarthBreezeExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt) : NumericalEarth.NumericalEarthBreezeExt
@@ -230,3 +239,9 @@ makedocs(; sitename = "NumericalEarth.jl",
              # they 404 during a PR's CI (the files only land on `main` at merge).
              r"https://github\.com/NumericalEarth/NumericalEarth\.jl/blob/main/test/",
         ],)
+
+# The site above is complete for every example that built; now surface the ones
+# that didn't, and fail the build so CI reports them.
+if !isempty(failed_examples)
+    error("The following examples failed to build: ", join(failed_examples, ", "))
+end
