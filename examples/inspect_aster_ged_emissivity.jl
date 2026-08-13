@@ -4,7 +4,7 @@ using Oceananigans
 using ArchGDAL      # activates the ASTER GED extension
 using CairoMakie
 
-dataset = ASTERGEDv3(resolution = :high_100m)
+dataset = ASTERGEDv3(resolution = ASTERGEDHigh100m)
 
 function emissivity_field(dataset, name, longitude, latitude; size = (512, 512))
     grid = LatitudeLongitudeGrid(CPU(); size, longitude, latitude,

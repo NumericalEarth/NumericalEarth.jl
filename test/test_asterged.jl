@@ -182,7 +182,7 @@ end
 end
 
 @testset "ASTER GED dataset interfaces" begin
-    for resolution in (:high_100m, :low_1km)
+    for resolution in (ASTERGEDHigh100m, ASTERGEDLow1km)
         ds = ASTERGEDv3(; resolution)
         @test longitude_interfaces(ds) == (-180, 180)
         @test latitude_interfaces(ds) == (-90, 90)
@@ -190,8 +190,8 @@ end
 
         Nx, Ny, Nz = size(ds)
         @test Nz == 1
-        @test Nx == (resolution === :high_100m ? 360_000 : 36_000)
-        @test Ny == (resolution === :high_100m ? 180_000 : 18_000)
+        @test Nx == (resolution === ASTERGEDHigh100m ? 360_000 : 36_000)
+        @test Ny == (resolution === ASTERGEDHigh100m ? 180_000 : 18_000)
 
         region = BoundingBox(longitude = (110, 112), latitude = (0, 2))
         meta = Metadatum(:emissivity; dataset = ds, region)
@@ -202,14 +202,19 @@ end
         meta_unc = Metadatum(:emissivity_uncertainty; dataset = ds, region)
         @test dataset_variable_name(meta_unc) == "emissivity_uncertainty"
 
+        # The resolution token in the cache filename is fixed, so a cached file stays
+        # addressable no matter how the resolution is spelled in the API.
+        tag = resolution === ASTERGEDHigh100m ? "high_100m" : "low_1km"
         filename = metadata_filename(ds, :emissivity, nothing, region)
         @test startswith(filename, "ASTERGED_")
-        @test occursin(string(resolution), filename)
+        @test occursin(tag, filename)
         @test endswith(filename, ".nc")
     end
 
-    @test ASTERGEDv3().resolution == :low_1km          # coarse product is the default
-    @test_throws ArgumentError ASTERGEDv3(resolution = :medium_500m)
+    @test ASTERGEDv3().resolution === ASTERGEDLow1km   # coarse product is the default
+
+    # Only a published resolution is representable.
+    @test_throws MethodError ASTERGEDv3(resolution = :medium_500m)
 
     # Non-parametric concrete struct → discoverable by `supported_datasets()`.
     @test ASTERGEDv3 in supported_datasets()

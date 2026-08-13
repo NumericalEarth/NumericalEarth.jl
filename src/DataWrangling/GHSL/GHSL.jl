@@ -1,13 +1,14 @@
 module GHSL
 
-export GHSBuiltH, GHSBuiltS
+export GHSBuiltH, GHSBuiltS, GHSBuiltSResolution, GHSBuiltS10m, GHSBuiltS100m
 
 using Downloads: Downloads
-using Oceananigans: Center
+using Oceananigans: Center, CPU
 using Oceananigans.DistributedComputations: @root
+using Oceananigans.Grids: x_domain, y_domain, λnodes, φnodes
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
-                       metadata_path, BoundingBox, bounding_box_suffix
+                       metadata_path, native_grid, BoundingBox, bounding_box_suffix
 
 import Oceananigans
 
@@ -59,7 +60,26 @@ GHSBuiltH()
 struct GHSBuiltH <: AbstractGHSLDataset end
 
 """
-    GHSBuiltS(; resolution = 100, epoch = 2020)
+    GHSBuiltSResolution
+
+The two published GHS-BUILT-S native pixel sizes: `GHSBuiltS10m` (10 m) and
+`GHSBuiltS100m` (100 m).
+"""
+@enum GHSBuiltSResolution GHSBuiltS10m GHSBuiltS100m
+
+"""
+    resolution_meters(resolution::GHSBuiltSResolution)
+
+The native pixel size in meters of a [`GHSBuiltSResolution`](@ref).
+"""
+function resolution_meters(resolution::GHSBuiltSResolution)
+    resolution === GHSBuiltS10m  && return 10
+    resolution === GHSBuiltS100m && return 100
+    throw(ArgumentError("unhandled GHS-BUILT-S resolution $resolution"))
+end
+
+"""
+    GHSBuiltS(; resolution = GHSBuiltS100m, epoch = 2020)
 
 GHS-BUILT-S R2023A built-up surface (World Mollweide ESRI:54009). Provides
 `:built_up_fraction` — the plan-area index `λᵖ ∈ [0, 1]` of each cell covered by
@@ -67,11 +87,12 @@ buildings, obtained from the built-up surface (m² per cell) by dividing by the
 native cell area and clamping to `[0, 1]`. A fraction of `0` over non-built land is
 a valid value, not missing.
 
-`resolution` selects the native pixel size in meters (`10` or `100`); `epoch` the
-reference year. The 10 m product is only published for `epoch = 2018`; the 100 m
-product covers 1975–2030 in 5-year steps. The default `100`/`2020` pairs naturally
-with a ~100 m model grid and the epoch-2018 [`GHSBuiltH`](@ref) height; pass
-`resolution = 10` for the finest built fraction (much larger tiles).
+`resolution` selects the native pixel size, `GHSBuiltS10m` or `GHSBuiltS100m` (see
+[`GHSBuiltSResolution`](@ref)); `epoch` the reference year. The 10 m product is only
+published for `epoch = 2018`; the 100 m product covers 1975–2030 in 5-year steps.
+The default `GHSBuiltS100m`/`2020` pairs naturally with a ~100 m model grid and the
+epoch-2018 [`GHSBuiltH`](@ref) height; pass `resolution = GHSBuiltS10m` for the
+finest built fraction (much larger tiles).
 
 Read in regional windows only (see [`GHSBuiltH`](@ref)); the tile download and
 Mollweide→EPSG:4326 warp require `using ArchGDAL`.
@@ -83,30 +104,29 @@ Commission JRC, doi:10.2905/9F06F36F-4B11-47EC-ABB0-4F8B7B1D72EA.
 julia> using NumericalEarth.DataWrangling.GHSL
 
 julia> GHSBuiltS()
-GHSBuiltS(resolution = 100 m, epoch = 2020)
+GHSBuiltS(resolution = GHSBuiltS100m, epoch = 2020)
 
-julia> GHSBuiltS(resolution = 10)
-GHSBuiltS(resolution = 10 m, epoch = 2018)
+julia> GHSBuiltS(resolution = GHSBuiltS10m)
+GHSBuiltS(resolution = GHSBuiltS10m, epoch = 2018)
 ```
 """
 struct GHSBuiltS <: AbstractGHSLDataset
-    resolution :: Int
+    resolution :: GHSBuiltSResolution
     epoch :: Int
 end
 
-function GHSBuiltS(; resolution = 100, epoch = resolution == 10 ? 2018 : 2020)
-    resolution ∈ (10, 100) ||
-        throw(ArgumentError("GHSBuiltS resolution must be 10 or 100 meters, got $resolution."))
-    valid_epochs = resolution == 10 ? (2018,) : Tuple(1975:5:2030)
+function GHSBuiltS(; resolution = GHSBuiltS100m,
+                     epoch = resolution === GHSBuiltS10m ? 2018 : 2020)
+    valid_epochs = resolution === GHSBuiltS10m ? (2018,) : Tuple(1975:5:2030)
     epoch ∈ valid_epochs ||
-        throw(ArgumentError("GHSBuiltS at $(resolution) m is only published for epochs " *
-                            "$(valid_epochs), got $epoch."))
+        throw(ArgumentError("GHSBuiltS at $(resolution_meters(resolution)) m is only published " *
+                            "for epochs $(valid_epochs), got $epoch."))
     return GHSBuiltS(resolution, epoch)
 end
 
 Base.summary(::GHSBuiltH) = "GHSBuiltH()"
 Base.summary(dataset::GHSBuiltS) =
-    string("GHSBuiltS(resolution = ", dataset.resolution, " m, epoch = ", dataset.epoch, ")")
+    string("GHSBuiltS(resolution = ", dataset.resolution, ", epoch = ", dataset.epoch, ")")
 Base.show(io::IO, dataset::AbstractGHSLDataset) = print(io, summary(dataset))
 
 const GHSBuiltHMetadatum = Metadatum{<:GHSBuiltH}
@@ -138,7 +158,7 @@ DataWrangling.latitude_interfaces(::AbstractGHSLDataset)  = (-90, 90)
 
 # Native pixel size in meters.
 native_resolution(::GHSBuiltH) = 100
-native_resolution(dataset::GHSBuiltS) = dataset.resolution
+native_resolution(dataset::GHSBuiltS) = resolution_meters(dataset.resolution)
 
 # Nominal global size in EPSG:4326 (only the windowed portion is ever materialized);
 # 1° ≈ 111320 m at the equator sets the degree pixel size.
@@ -151,7 +171,7 @@ end
 
 dataset_prefix(::GHSBuiltH) = "GHSBuiltH"
 dataset_prefix(dataset::GHSBuiltS) =
-    string("GHSBuiltS_", dataset.resolution, "m_", dataset.epoch)
+    string("GHSBuiltS_", native_resolution(dataset), "m_", dataset.epoch)
 
 DataWrangling.metadata_filename(dataset::AbstractGHSLDataset, name, date, region) =
     string(dataset_prefix(dataset), "_", bounding_box_suffix(region), ".nc")
@@ -281,7 +301,7 @@ const GHSL_FTP = "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL"
 # The product-folder / file basename stem shared by a dataset's tiles and mosaic.
 product_stem(::GHSBuiltH) = "GHS_BUILT_H_ANBH_E2018_GLOBE_R2023A_54009_100"
 product_stem(dataset::GHSBuiltS) =
-    string("GHS_BUILT_S_E", dataset.epoch, "_GLOBE_R2023A_54009_", dataset.resolution)
+    string("GHS_BUILT_S_E", dataset.epoch, "_GLOBE_R2023A_54009_", native_resolution(dataset))
 
 product_group(::GHSBuiltH) = "GHS_BUILT_H_GLOBE_R2023A"
 product_group(::GHSBuiltS) = "GHS_BUILT_S_GLOBE_R2023A"
@@ -369,6 +389,40 @@ end
 #####
 ##### Download (regional Mollweide tiles → reprojected NetCDF via the ArchGDAL ext)
 #####
+
+"""
+    ghsl_regional_raster(metadatum)
+
+Geometry of the regional raster materialized for `metadatum`, taken from `native_grid`
+so that the file the reprojection writes lands on the cells the read path indexes.
+Returns the `region` to reproject onto — the native grid's extent, which reaches up to
+a cell beyond the requested window, and so is also the window whose tiles are needed —
+along with the cell counts `Nx`, `Ny` and the cell-center `longitude` and `latitude`.
+
+```jldoctest
+julia> using NumericalEarth.DataWrangling: BoundingBox, Metadatum
+
+julia> using NumericalEarth.DataWrangling.GHSL: GHSBuiltH, ghsl_regional_raster
+
+julia> region = BoundingBox(longitude = (-0.11, -0.07), latitude = (51.505, 51.525));
+
+julia> raster = ghsl_regional_raster(Metadatum(:building_height; dataset = GHSBuiltH(), region));
+
+julia> (raster.Nx, raster.Ny)
+(46, 25)
+```
+"""
+function ghsl_regional_raster(metadatum::GHSLMetadatum)
+    grid = native_grid(metadatum, CPU())
+    λ₁, λ₂ = x_domain(grid)
+    φ₁, φ₂ = y_domain(grid)
+    Nx, Ny, _ = size(grid)
+
+    return (; region = BoundingBox(longitude = (λ₁, λ₂), latitude = (φ₁, φ₂)),
+              Nx, Ny,
+              longitude = collect(λnodes(grid, Center())),
+              latitude  = collect(φnodes(grid, Center())))
+end
 
 function Downloads.download(metadatum::GHSLMetadatum)
     DataWrangling.validate_dataset_coverage(nothing, metadatum)

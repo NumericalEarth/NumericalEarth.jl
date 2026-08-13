@@ -5,7 +5,7 @@
 # `ℓᵐ` and zero-plane displacement `d` per cell with the urban morphometric closure
 # (Macdonald 1998 / Kanda 2013), and render diagnostic maps + profiles.
 #
-# The model runs on the built fraction's native **10 m** grid (`GHSBuiltS(resolution = 10)`),
+# The model runs on the built fraction's native **10 m** grid (`GHSBuiltS(resolution = GHSBuiltS10m)`),
 # so the maps resolve street-block structure. Building height is 100 m (the only resolution
 # GHSL publishes); since `ℓᵐ` and `d` scale with height, the roughness magnitude carries
 # 100 m structure textured by the 10 m coverage.
@@ -35,7 +35,7 @@ region = BoundingBox(longitude = (-0.28, 0.06), latitude = (51.42, 51.56))
 # `λᵖ` — plan-area built fraction from the 10 m built-surface product (m²/cell → fraction),
 # built directly on its native 10 m grid. `h` — mean net building height (ANBH, 100 m),
 # interpolated up onto that grid. Both reprojected from Mollweide in the adapter.
-λᵖ   = Field(Metadatum(:built_up_fraction; dataset = GHSBuiltS(resolution = 10), region), CPU())
+λᵖ   = Field(Metadatum(:built_up_fraction; dataset = GHSBuiltS(resolution = GHSBuiltS10m), region), CPU())
 grid = λᵖ.grid
 h    = Field(Metadatum(:building_height; dataset = GHSBuiltH(), region), grid)
 

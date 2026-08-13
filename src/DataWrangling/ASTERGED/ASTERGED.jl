@@ -1,6 +1,6 @@
 module ASTERGED
 
-export ASTERGEDv3
+export ASTERGEDv3, ASTERGEDResolution, ASTERGEDHigh100m, ASTERGEDLow1km
 
 using Downloads: Downloads
 using Oceananigans: Center, CPU
@@ -32,15 +32,33 @@ const OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS = [0.088, 0.053, 0.174, 0.380, 
 #####
 
 """
+    ASTERGEDResolution
+
+The two published ASTER GED v3 resolutions: `ASTERGEDLow1km` (1 km, 36 arcsec) and
+`ASTERGEDHigh100m` (100 m, 3.6 arcsec).
+"""
+@enum ASTERGEDResolution ASTERGEDHigh100m ASTERGEDLow1km
+
+# The global pixel counts (which set the native resolution Δ), the NASA CMR short name
+# ("AG" abbreviates ASTER GED), and the token appearing in cache filenames.
+function resolution_tokens(resolution::ASTERGEDResolution)
+    resolution === ASTERGEDHigh100m &&
+        return (pixels = (360_000, 180_000, 1), short_name = "AG100", tag = "high_100m")
+    resolution === ASTERGEDLow1km &&
+        return (pixels = (36_000, 18_000, 1), short_name = "AG1KM", tag = "low_1km")
+    throw(ArgumentError("unhandled ASTER GED resolution $resolution"))
+end
+
+"""
     ASTERGEDv3 <: AbstractStaticDataset
 
 Global Emissivity Dataset (GED) v3 from the Advanced Spaceborne Thermal Emission and
 Reflection Radiometer (ASTER) aboard NASA's Terra satellite: a static 2000–2008
 clear-sky mean of land-surface emissivity on a WGS84 lat/lon grid, distributed as HDF5
-in 1°×1° tiles. Two resolutions are supported:
+in 1°×1° tiles. Two resolutions are supported (see [`ASTERGEDResolution`](@ref)):
 
-- `:low_1km` — 1 km (36 arcsec), the default.
-- `:high_100m` — 100 m (3.6 arcsec), for sub-km domains.
+- `ASTERGEDLow1km` — 1 km (36 arcsec), the default.
+- `ASTERGEDHigh100m` — 100 m (3.6 arcsec), for sub-km domains.
 
 ASTER GED provides five narrowband emissivities (TIR bands 10–14). A longwave scheme
 needs a single broadband value, so the download collapses the five bands using the
@@ -72,32 +90,28 @@ Reference: Hulley et al. (2015), https://doi.org/10.1002/2015GL065564
 Data source: https://www.earthdata.nasa.gov/data/catalog/lpcloud-ag100-003
 """
 struct ASTERGEDv3 <: AbstractStaticDataset
-    resolution :: Symbol
+    resolution :: ASTERGEDResolution
 end
 
 """
-    ASTERGEDv3(resolution = :low_1km)
+    ASTERGEDv3(resolution = ASTERGEDLow1km)
 
-Construct an [`ASTERGEDv3`](@ref) dataset. `resolution` is `:low_1km` (1 km,
-default) or `:high_100m` (100 m).
+Construct an [`ASTERGEDv3`](@ref) dataset. `resolution` is `ASTERGEDLow1km` (1 km,
+default) or `ASTERGEDHigh100m` (100 m); see [`ASTERGEDResolution`](@ref).
 
 ```jldoctest
 julia> using NumericalEarth
 
 julia> ASTERGEDv3()
-ASTERGEDv3(resolution = :low_1km)
+ASTERGEDv3(resolution = ASTERGEDLow1km)
 
-julia> ASTERGEDv3(resolution = :high_100m)
-ASTERGEDv3(resolution = :high_100m)
+julia> ASTERGEDv3(resolution = ASTERGEDHigh100m)
+ASTERGEDv3(resolution = ASTERGEDHigh100m)
 ```
 """
-function ASTERGEDv3(; resolution = :low_1km)
-    resolution ∈ (:high_100m, :low_1km) ||
-        throw(ArgumentError("ASTERGEDv3 resolution must be :high_100m or :low_1km, got $(repr(resolution))"))
-    return ASTERGEDv3(resolution)
-end
+ASTERGEDv3(; resolution = ASTERGEDLow1km) = ASTERGEDv3(resolution)
 
-Base.summary(dataset::ASTERGEDv3) = string("ASTERGEDv3(resolution = :", dataset.resolution, ")")
+Base.summary(dataset::ASTERGEDv3) = string("ASTERGEDv3(resolution = ", dataset.resolution, ")")
 Base.show(io::IO, dataset::ASTERGEDv3) = print(io, summary(dataset))
 
 const ASTERGEDMetadatum = Metadatum{<:ASTERGEDv3}
@@ -213,17 +227,15 @@ DataWrangling.reversed_latitude_axis(::ASTERGEDv3) = false
 DataWrangling.longitude_interfaces(::ASTERGEDv3) = (-180, 180)
 DataWrangling.latitude_interfaces(::ASTERGEDv3) = (-90, 90)
 
-# Global pixel counts set the native resolution Δ; the download returns the regional window.
-global_pixels(::Val{:high_100m}) = (360_000, 180_000, 1)
-global_pixels(::Val{:low_1km})   = (36_000, 18_000, 1)
-
-Base.size(dataset::ASTERGEDv3) = global_pixels(Val(dataset.resolution))
+# The global pixel counts set the native resolution Δ; the download returns the regional window.
+Base.size(dataset::ASTERGEDv3) = resolution_tokens(dataset.resolution).pixels
 Base.size(dataset::ASTERGEDv3, variable) = size(dataset)
 
 # Region-keyed but variable-independent: one regional NetCDF holds both the emissivity
 # and its uncertainty, since the tile download produces both at once.
 DataWrangling.metadata_filename(dataset::ASTERGEDv3, name, date, region) =
-    string("ASTERGED_", dataset.resolution, "_", bounding_box_suffix(region), ".nc")
+    string("ASTERGED_", resolution_tokens(dataset.resolution).tag, "_",
+           bounding_box_suffix(region), ".nc")
 
 function require_bounded_region(metadata::ASTERGEDMetadatum)
     region = metadata.region
@@ -268,10 +280,8 @@ Oceananigans.Fields.location(::ASTERGEDMetadatum) = (Center, Center, Nothing)
 ##### Product identity
 #####
 
-# NASA CMR short name and version at each resolution ("AG" abbreviates ASTER GED).
-asterged_short_name(dataset::ASTERGEDv3) = asterged_short_name(Val(dataset.resolution))
-asterged_short_name(::Val{:high_100m}) = "AG100"
-asterged_short_name(::Val{:low_1km})   = "AG1KM"
+# NASA CMR short name and version.
+asterged_short_name(dataset::ASTERGEDv3) = resolution_tokens(dataset.resolution).short_name
 asterged_version(::ASTERGEDv3) = "003"
 
 #####
