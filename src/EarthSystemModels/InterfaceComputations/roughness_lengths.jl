@@ -41,6 +41,18 @@ end
 Base.summary(::LandRoughnessLength{FT}) where FT = "LandRoughnessLength{$FT}"
 Base.show(io::IO, ::LandRoughnessLength{FT}) where FT = print(io, "LandRoughnessLength{$FT}")
 
+"""
+    LandZeroPlaneDisplacement()
+
+Use the local land zero-plane displacement field `zero_plane_displacement` (m) as the
+displacement of the MOST similarity profile. Cells that provide no displacement are
+undisplaced.
+"""
+struct LandZeroPlaneDisplacement end
+
+Base.summary(::LandZeroPlaneDisplacement) = "LandZeroPlaneDisplacement()"
+Base.show(io::IO, ::LandZeroPlaneDisplacement) = print(io, "LandZeroPlaneDisplacement()")
+
 struct WindDependentWaveFormulation{FT}
     Umax :: FT
     ℂ₁ :: FT
