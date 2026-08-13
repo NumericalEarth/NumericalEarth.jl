@@ -5,14 +5,16 @@ using NumericalEarth.DataWrangling.GHSL: ghsl_tile_index, ghsl_tiles_in_bbox,
                                          ghsl_tile_url, ghsl_tile_urls, ghsl_tile_tif_name,
                                          longitude_latitude_to_mollweide,
                                          mask_building_height, built_surface_to_fraction,
-                                         dataset_prefix, native_resolution, ghsl_tiles_to_netcdf
-using NumericalEarth.DataWrangling: BoundingBox, Metadatum,
+                                         dataset_prefix, native_resolution, ghsl_tiles_to_netcdf,
+                                         ghsl_regional_raster
+using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_grid,
                                     longitude_interfaces, latitude_interfaces,
                                     dataset_variable_name, validate_dataset_coverage,
                                     metadata_filename, available_variables,
                                     is_three_dimensional, default_inpainting
 
 using Oceananigans.Fields: location
+using Oceananigans.Grids: x_domain, y_domain, λnodes, φnodes
 
 #####
 ##### World-Mollweide projection + GHSL tile-index arithmetic.
@@ -204,6 +206,34 @@ end
     region = BoundingBox(longitude = (-0.2, 0.1), latitude = (51.4, 51.6))
     meta_region = Metadatum(:building_height; dataset = GHSBuiltH(), region)
     @test validate_dataset_coverage(grid, meta_region) === nothing
+end
+
+#####
+##### The raster the warp materializes is the grid the read path indexes.
+#####
+
+@testset "GHSL regional raster geometry" begin
+    region = BoundingBox(longitude = (-0.11, -0.07), latitude = (51.505, 51.525))
+
+    for (name, dataset) in ((:building_height, GHSBuiltH()), (:built_up_fraction, GHSBuiltS()))
+        metadatum = Metadatum(name; dataset, region)
+        grid = native_grid(metadatum)
+        raster = ghsl_regional_raster(metadatum)
+
+        @test (raster.Nx, raster.Ny) == size(grid)[1:2]
+        @test raster.region.longitude == x_domain(grid)
+        @test raster.region.latitude  == y_domain(grid)
+        @test raster.longitude == collect(λnodes(grid, Center()))
+        @test raster.latitude  == collect(φnodes(grid, Center()))
+
+        # The window covers the request — the native grid brackets it and pads up to a
+        # cell per side — so the tiles it needs include every tile the request touches.
+        @test raster.region.longitude[1] ≤ region.longitude[1]
+        @test raster.region.longitude[2] ≥ region.longitude[2]
+        @test raster.region.latitude[1]  ≤ region.latitude[1]
+        @test raster.region.latitude[2]  ≥ region.latitude[2]
+        @test ghsl_tiles_in_bbox(region) ⊆ ghsl_tiles_in_bbox(raster.region)
+    end
 end
 
 #####
