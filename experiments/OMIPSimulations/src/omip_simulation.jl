@@ -1033,9 +1033,12 @@ exponential_scale(Nz, depth, ::Nothing) = 1300
 exponential_scale(Nz, depth, Δz_top)    = find_exponential_scale(Nz, depth, Δz_top)
 
 # Partial bottom cells resolve sill depths and slopes continuously instead of in full-cell
-# steps: the Greenland-Scotland overflows entrain less at each staircase edge and settle
-# deeper, addressing the too-shallow NADW (zero-crossing ~2900 m vs ~4300 m in RAPID) that
-# every configuration shares regardless of the eddy closure (cf. Barnier et al. 2006).
+# steps. Documented benefits: mean-circulation and boundary-current realism (Gulf Stream
+# separation, NAC path — Barnier et al. 2006) and reduced staircase entrainment of downslope
+# overflows (Winton et al. 1998). They mitigate but do not cure the too-shallow NADW that
+# every configuration shares (zero-crossing ~2900 m vs ~4300 m in RAPID); the documented full
+# fix in z-coordinate models is a dedicated overflow parameterization (Legg et al. 2009;
+# Danabasoglu et al. 2010).
 bottom_immersed_boundary(bottom_height, partial_cell_bathymetry) =
     partial_cell_bathymetry ? PartialCellBottom(bottom_height) : GridFittedBottom(bottom_height)
 
