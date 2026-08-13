@@ -35,8 +35,8 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.DistributedComputations: all_reduce
 using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, interior, interpolate!
-using Oceananigans.Forcings: Relaxation
-using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
+using Oceananigans.Forcings: Relaxation, Forcing, FieldTimeSeriesTarget, evaluate_target
+using Oceananigans.Grids: node, znode, minimum_xspacing, x_domain, y_domain
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 
@@ -95,6 +95,46 @@ function davies_relaxation_mask(grid, width; ramp = SmoothStepRamp())
         s = clamp(d / w, zero(d), one(d))
         return oftype(d, ramp(s))
     end
+end
+
+#####
+##### Davies relaxation of the thermodynamic scalars toward the parent's specific values
+#####
+#
+# The prognostics are density-weighted (`ρθ`, `ρqᵛ`) but the model-facing values are ratios to the mass:
+# `θ = ρθ/ρᵈ`, `qᵛ = ρqᵛ/ρᵈ`. Nudging `ρθ` toward the parent's `ρθ` therefore couples two errors — once
+# the child's near-wall `ρᵈ` has drifted, hitting the target exactly still yields the wrong temperature —
+# and the error is self-reinforcing, since the resulting cold dense air sinks and converges and drives
+# further mass accumulation. Nudging toward `ρᵈ(here, now) · cᵖ` instead relaxes the ratio itself, which
+# breaks the feedback: the mass error stops growing as well as stops being amplified.
+
+# The forced field is named by a `Val`, not a `Symbol`: the child does not exist yet when the forcing is
+# built, so the field cannot be captured, and a `Symbol` is not isbits and cannot cross into a GPU
+# kernel. Wrapped in a `Val` the name lives in the type and `getproperty` resolves at compile time.
+@inline forced_prognostic(model_fields, ::Val{name}) where name = getproperty(model_fields, name)
+
+@inline function relax_to_specific_target(i, j, k, grid, clock, model_fields, p)
+    X = node(i, j, k, grid, Center(), Center(), Center())
+
+    # `evaluate_target` interpolates from the parent's grid and time window, exactly as an
+    # FTS-`Relaxation` would; only the target's construction differs.
+    ρcᵖ = evaluate_target(p.density_weighted_target, i, j, k, X, clock.time)
+    ρᵈᵖ = evaluate_target(p.density_target, i, j, k, X, clock.time)
+    cᵖ = ρcᵖ / ρᵈᵖ
+
+    @inbounds ρᵈ = model_fields.ρᵈ[i, j, k]
+    @inbounds ρc = forced_prognostic(model_fields, p.name)[i, j, k]
+
+    return - p.rate * p.mask(X...) * (ρc - ρᵈ * cᵖ)
+end
+
+function specific_davies_forcing(name, density_weighted_fts, density_fts, rate, mask)
+    density_weighted_target = FieldTimeSeriesTarget(density_weighted_fts, density_weighted_fts.grid)
+    density_target = FieldTimeSeriesTarget(density_fts, density_fts.grid)
+
+    return Forcing(relax_to_specific_target; discrete_form = true,
+                   parameters = (; rate, mask, name = Val(name),
+                                   density_weighted_target, density_target))
 end
 
 # Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` meters of the domain, for the ρw lid sponge.
@@ -298,18 +338,36 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
 
     child_bcs = merge_boundary_conditions(nested_bcs, drag_bcs)
 
-    # Interior Davies relaxation toward the precomputed (density-weighted) prognostics. Oceananigans'
-    # FTS `Relaxation` calls `mask(x, y, z)`, so wrap a scalar mask in a callable. The density `ρᵈ` is
-    # relaxed alongside the momentum/energy/moisture — the mass field, following WRF (nudges dry mass μ)
-    # and MPAS (nudges ρ); without it the un-relaxed near-wall density drives a persistent lateral-wall
-    # residual (ρw creep) that a top sponge cannot damp.
+    # Interior Davies relaxation. Oceananigans' FTS `Relaxation` calls `mask(x, y, z)`, so wrap a scalar
+    # mask in a callable.
+    #
+    # Mass and momentum are nudged toward the parent's own `ρᵈ`, `ρu`, `ρv` — the density following WRF
+    # (nudges dry mass μ) and MPAS (nudges ρ); without it the un-relaxed near-wall density drives a
+    # persistent lateral-wall residual (ρw creep) that a top sponge cannot damp.
+    #
+    # The thermodynamic scalars are nudged toward `ρᵈ(here, now) · cᵖ` rather than the parent's `ρθ` and
+    # `ρqᵛ`, because the model-facing values are ratios: `θ = ρθ/ρᵈ`. Targeting the parent's
+    # density-weighted value couples the two errors — once the child's near-wall `ρᵈ` drifts, hitting
+    # `ρθ = ρθᵖ` exactly still yields the wrong temperature, and the resulting cold dense air sinks and
+    # converges, driving further mass accumulation. Measured at 3 km on the southern inflow wall, that
+    # feedback took `ρᵈ` 8% above target and the diagnosed `θ` at the first interior row from 290 K to
+    # 259 K within 12 minutes, then to NaN inside 20; targeting the specific value holds `θ` to 0.26 K
+    # over an hour, leaves `ρᵈ` 1.4% high and flat, and does not touch the interior.
     relax_mask = relaxation_mask isa Number ? Returns(relaxation_mask) : relaxation_mask
     davies = if isnothing(relaxation_rate)
         NamedTuple()
     else
-        dry_forcing_variables = (ρᵈ = prognostic.ρᵈ, ρθ = prognostic.ρθ, ρu = prognostic.ρu, ρv = prognostic.ρv)
-        variables = merge(dry_forcing_variables, moist_variables)
-        parent_forcings(; variables, rate = relaxation_rate, mask = relax_mask)
+        mass_and_momentum = (ρᵈ = prognostic.ρᵈ, ρu = prognostic.ρu, ρv = prognostic.ρv)
+        density_weighted = parent_forcings(; variables = mass_and_momentum,
+                                            rate = relaxation_rate, mask = relax_mask)
+
+        specific = (; ρθ = specific_davies_forcing(:ρθ, prognostic.ρθ, prognostic.ρᵈ,
+                                                  relaxation_rate, relax_mask),
+                      NamedTuple{tuple(moisture_name)}(tuple(
+                          specific_davies_forcing(moisture_name, prognostic.ρqᵛ, prognostic.ρᵈ,
+                                                  relaxation_rate, relax_mask)))...)
+
+        merge(density_weighted, specific)
     end
 
     # ρw Rayleigh sponge over BOTH the top `damping_depth` meters AND the lateral relaxation zone. The
