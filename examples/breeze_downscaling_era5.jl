@@ -231,7 +231,8 @@ conjure_time_step_wizard!(simulation, IterationInterval(3); cfl=0.5, max_Δt=Δt
 
 child = nest.child
 k_aloft = searchsortedfirst(Array(znodes(grid, Center())), 2000)
-j_section = searchsortedfirst(Array(φnodes(grid, Center(), Center(), Center())), φ₀)
+φ_centers = Array(φnodes(grid, Center(), Center(), Center()))
+j_section = searchsortedfirst(φ_centers, φ₀)
 
 fields = (θᵛ = VirtualPotentialTemperature(child),
           U  = sqrt(child.velocities.u^2 + child.velocities.v^2),
@@ -314,27 +315,36 @@ function parent_slices(t)
                         parent.temperature[Time(t)], parent.specific_humidity[Time(t)],
                         qˡ, qⁱ, parent.pressure)
     u, v = parent.velocities.u[Time(t)], parent.velocities.v[Time(t)]
+    ## `u` and `v` are staggered, so |U| would inherit `u`'s location; force it to centers, where the
+    ## other three frames already live, so every parent panel shares one prototype location.
+    speed = @at((Center, Center, Center), sqrt(u^2 + v^2))
     return (θᵛ = slice(θˡⁱ * (1 + ε * qᵗ),           1),
-            U  = slice(sqrt(u^2 + v^2),              1),
+            U  = slice(speed,                        1),
             w  = slice(-ω_series[Time(t)] / (ρ * g), k_parent),
             qᵛ = slice(qᵗ,                           k_parent))
 end
 parent_frames = [parent_slices(t) for t in times]
 nothing #hide
 
-# One column each: title, colormap, and the child/parent 2-D fields as functions of the frame `n`.
-# `nothing` parent ⇒ blank panel (rain). Fixed, illustrative color ranges (this is a demo, not a
-# tuned figure); `w` alone differs ~10× between parent and child, so it carries a range per row.
+# One column each: title, colormap, the child/parent 2-D fields as functions of the frame `n`, and
+# the parent level `k` those frames are sliced at. `nothing` parent ⇒ blank panel (rain). Fixed,
+# illustrative color ranges (this is a demo, not a tuned figure); `w` alone differs ~10× between
+# parent and child, so it carries a range per row.
 g_per_kg(field) = 1f3 * field
 columns = [(title = "θᵛ′ₛ (K)",       colormap = :balance, child_range = (-6, 6),  parent_range = (-6, 6),
+            k = 1,        child_series = θᵛ_series,
             child = n -> θᵛ_series[n] - θᵛ_series[1], parent = n -> parent_frames[n].θᵛ - parent_frames[1].θᵛ),
            (title = "|U|ₛ (m s⁻¹)",   colormap = :speed,   child_range = (0, 30),  parent_range = (0, 30),
+            k = 1,        child_series = U_series,
             child = n -> U_series[n],                 parent = n -> parent_frames[n].U),
            (title = "w₂ₖₘ (m s⁻¹)",   colormap = :balance, child_range = (-3, 3),  parent_range = (-0.3, 0.3),
+            k = k_parent, child_series = w_series,
             child = n -> w_series[n],                 parent = n -> parent_frames[n].w),
            (title = "qᵛ₂ₖₘ (g kg⁻¹)", colormap = :dense,   child_range = (0, 15),  parent_range = (0, 15),
+            k = k_parent, child_series = qᵛ_series,
             child = n -> g_per_kg(qᵛ_series[n]),      parent = n -> g_per_kg(parent_frames[n].qᵛ)),
            (title = "qʳ₂ₖₘ (g kg⁻¹)", colormap = :dense,   child_range = (0, 2),   parent_range = (0, 2),
+            k = k_parent, child_series = qʳ_series,
             child = n -> g_per_kg(qʳ_series[n]),      parent = n -> nothing)]
 
 boxλ = [λ_west, λ_east, λ_east, λ_west, λ_west]
@@ -343,13 +353,17 @@ boxφ = [φ_south, φ_south, φ_north, φ_north, φ_south]
 fig_cascade = Figure(size = (1500, 700))
 cascade_n = Observable(1)
 
-## Each column's per-frame field is a lazy operation whose concrete type drifts across frames
-## (the parent's pressure-level slices especially), which a `@lift`-typed Observable would reject —
-## hence `Observable{Any}`. `heatmap!` reads each field's own λ/φ and moves it host-side, so the
-## field goes straight in; no manual node arrays or materialization.
-function panel!(ax, field_of, colormap, colorrange)
-    frame = Observable{Any}(field_of(1))
-    on(nn -> frame[] = field_of(nn), cascade_n)
+## Each panel plots one plain field (`similar(prototype)`: the prototype's location, grid and indices,
+## its own data), refilled per frame and handed back as the *same* object. `heatmap!` reads the field's
+## own λ/φ and moves it host-side, so no node arrays and no manual materialization. Reusing one object
+## matters twice: Makie's compute graph otherwise compares successive plot inputs elementwise, which on
+## the parent's GPU fields is scalar indexing, and `heatmap!` calls `compute!` on what it is handed,
+## which on a field carrying an operand would overwrite the frame just copied in.
+function panel!(ax, prototype, field_of, colormap, colorrange)
+    panel = similar(prototype)
+    frame = Observable(panel)
+    on(nn -> (set!(panel, compute!(field_of(nn))); frame[] = panel), cascade_n)
+    set!(panel, compute!(field_of(1)))
     return heatmap!(ax, frame; colormap, colorrange)
 end
 
@@ -361,13 +375,14 @@ for (i, column) in enumerate(columns)
     parent_ax = Axis(fig_cascade[1, i]; title = column.title, aspect = DataAspect())
     child_ax  = Axis(fig_cascade[2, i]; aspect = DataAspect())
 
-    hmc = panel!(child_ax, column.child, column.colormap, column.child_range)
+    hmc = panel!(child_ax, column.child_series[1], column.child, column.colormap, column.child_range)
 
     if isnothing(column.parent(1))
         text!(parent_ax, 0.5, 0.5; text = "no rain", space = :relative, align = (:center, :center), color = :gray)
         Colorbar(fig_cascade[3, i], hmc; vertical = false, flipaxis = false, height = 10)
     else
-        hmp = panel!(parent_ax, column.parent, column.colormap, column.parent_range)
+        parent_prototype = CenterField(parent.grid, indices = (:, :, column.k))
+        hmp = panel!(parent_ax, parent_prototype, column.parent, column.colormap, column.parent_range)
         lines!(parent_ax, boxλ, boxφ; color = :black, linestyle = :dash, linewidth = 1.5)
         if column.parent_range == column.child_range
             Colorbar(fig_cascade[3, i], hmc; vertical = false, flipaxis = false, height = 10)
@@ -402,7 +417,7 @@ U_section  = FieldTimeSeries(section_filename, "U")
 w_section  = FieldTimeSeries(section_filename, "w")
 qᵛ_section = FieldTimeSeries(section_filename, "qᵛ")
 
-φ_section = φnode(j_section, grid, Center())
+φ_section = φ_centers[j_section]
 
 ## Type-erased observables: the per-frame fields' concrete types can differ in hidden
 ## parameters, which a `@lift`-typed Observable rejects at the second frame.
