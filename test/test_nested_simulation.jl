@@ -8,8 +8,10 @@ using Oceananigans.OutputReaders: interpolating_time_indices, memory_index
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
+using Oceananigans.Forcings: MultipleForcings
 using Breeze
-using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics
+using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics,
+              SpecificForcing
 using Test
 
 @testset "PrescribedAtmosphere: grid vertical topology selects surface vs volumetric fields" begin
@@ -295,24 +297,6 @@ end
     @test all(interior(s2.θˡⁱ) .< θ)   # condensate loading lowers θˡⁱ below the dry θ
 end
 
-# Unit test for the Breeze-ext helper that selects the Davies relaxation variable set by parent kind:
-# a prescribed parent relaxes the specific u/v/θ (child-density-weighted via a
-# `SpecificForcing`), while a prognostic parent relaxes the density-weighted ρu/ρv/ρθ.
-@testset "davies_forcing_variables selects intensive vs extensive by parent kind" begin
-    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
-    # sentinel members — the helper only selects members by key, so distinguishable values suffice
-    state = (ρᵈ = :ρᵈ, ρu = :ρu, ρv = :ρv, ρθ = :ρθ, ρqᵛ = :ρqᵛ, θ = :θ, u = :u, v = :v)
-
-    grid = RectilinearGrid(size = (4, 4, 4), x = (0, 1), y = (0, 1), z = (0, 1),
-                           topology = (Bounded, Bounded, Bounded))
-    prescribed = PrescribedAtmosphere(grid, [0.0])
-
-    # Prescribed reference parent → intensive: specific u/v/θ (+ mass ρᵈ)
-    @test ext.davies_forcing_variables(state, prescribed) == (ρᵈ = :ρᵈ, θ = :θ, u = :u, v = :v)
-    # Any non-PrescribedAtmosphere (live prognostic parent) → extensive: density-weighted ρu/ρv/ρθ
-    @test ext.davies_forcing_variables(state, nothing) == (ρᵈ = :ρᵈ, ρθ = :ρθ, ρu = :ρu, ρv = :ρv)
-end
-
 # Unit test that the state exchanger carries the specific members (`θ`, `u`, `v`) consistently with the
 # density-weighted ones — `ρθ = ρᵈ·θ`, `ρu = ρᵈ·u`, `ρv = ρᵈ·v`, and `u`/`v` are verbatim parent copies.
 # This is the invariant the intensive (`SpecificForcing`) Davies relaxation relies on.
@@ -445,6 +429,35 @@ end
     @test length(parent.temperature.times) == length(times)
     @test length(times) > 3
     @test length(nested.exchanger.prognostic.ρᵈ.backend) == 3
+end
+
+# The Davies relaxation is keyed by the density-weighted prognostic and pre-wrapped in `SpecificForcing`,
+# so a caller's own specific-key forcing COMBINES with it rather than replacing it in the constructor's
+# `merge`. Had it been keyed `θ`, the merge would drop it and `forcing.ρθ` would be a lone SpecificForcing.
+@testset "Davies relaxation survives a caller-supplied specific forcing" begin
+    parent_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 4),
+                                        longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),
+                                        z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(parent_grid, collect(0.0:1.0:2.0))
+    set!(parent.temperature,       (x, y, z, t) -> 280.0)
+    set!(parent.specific_humidity, (x, y, z, t) -> 0.005)
+    set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
+    set!(parent.pressure,          (x, y, z, t) -> 9.0e4)
+
+    child_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 8),
+                                       longitude = (-1, 1), latitude = (-1, 1), z = (0, 1000),
+                                       halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+
+    nested = nested_atmosphere_model(parent, child_grid;
+                                     relaxation_rate = 1/300,
+                                     parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing),
+                                     forcing = (θ = Relaxation(rate = 1/600, target = 300.0),))
+
+    ρθ_forcing = nested.child.forcing.ρθ
+    @test ρθ_forcing isa MultipleForcings
+    @test length(ρθ_forcing.forcings) == 2                       # Davies relaxation + the caller's θ forcing
+    @test all(f -> f isa SpecificForcing, ρθ_forcing.forcings)   # both ρᵈ-weighted at kernel time
 end
 
 # The Breeze-ext `StateExchanger` holds the child prognostics as a 3-level FieldTimeSeries bracketing
