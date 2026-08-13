@@ -162,15 +162,36 @@ function in_window(fts; start_time = 0, stop_time = Inf)
     return findall(t -> start_time <= t <= stop_time, fts.times)
 end
 
+# Live simulations write these files while we read them: the newest snapshot's metadata can
+# precede its data (KeyError), and a snapshot mid-flush — or one truncated by a job kill — reads
+# as torn bytes (InvalidDataException). Skip such snapshots with a warning instead of aborting
+# the whole figure; a time mean over N-1 of N snapshots is indistinguishable for our purposes.
+function try_snapshot_interior(fts, n)
+    try
+        return interior(fts[n])
+    catch err
+        if err isa KeyError || err isa JLD2.InvalidDataException
+            @warn "Skipping unreadable snapshot" index=n time=fts.times[n] error=typeof(err)
+            return nothing
+        end
+        rethrow()
+    end
+end
+
 function compute_time_mean(fts; start_time = 0, stop_time = Inf)
     idx = in_window(fts; start_time, stop_time)
     isempty(idx) && error("No snapshots in [$start_time, $stop_time]")
     sz  = size(interior(fts[first(idx)]))
     avg = zeros(sz)
+    count = 0
     for n in idx
-        avg .+= interior(fts[n])
+        data = try_snapshot_interior(fts, n)
+        isnothing(data) && continue
+        avg .+= data
+        count += 1
     end
-    return avg ./ length(idx)
+    count > 0 || error("No readable snapshots in [$start_time, $stop_time]")
+    return avg ./ count
 end
 
 function compute_monthly_means(fts; start_time = 0, stop_time = Inf,
@@ -181,8 +202,10 @@ function compute_monthly_means(fts; start_time = 0, stop_time = Inf,
     sums   = [zeros(sz) for _ in 1:12]
     counts = zeros(Int, 12)
     for n in idx
+        data = try_snapshot_interior(fts, n)
+        isnothing(data) && continue
         m = month(reference_date + Second(round(Int, fts.times[n])))
-        sums[m]  .+= interior(fts[n])
+        sums[m]  .+= data
         counts[m] += 1
     end
     return [counts[m] > 0 ? sums[m] ./ counts[m] : nothing for m in 1:12]
@@ -196,13 +219,18 @@ function compute_mean_and_monthly(fts; start_time = 0, stop_time = Inf,
     total   = zeros(sz)
     monthly = [zeros(sz) for _ in 1:12]
     counts  = zeros(Int, 12)
+    nread = 0
     for n in idx
-        total .+= interior(fts[n])
+        data = try_snapshot_interior(fts, n)
+        isnothing(data) && continue
+        total .+= data
         m = month(reference_date + Second(round(Int, fts.times[n])))
-        monthly[m] .+= interior(fts[n])
+        monthly[m] .+= data
         counts[m]   += 1
+        nread += 1
     end
-    mean_out    = total ./ length(idx)
+    nread > 0 || error("No readable snapshots in [$start_time, $stop_time]")
+    mean_out    = total ./ nread
     monthly_out = [counts[m] > 0 ? monthly[m] ./ counts[m] : nothing for m in 1:12]
     return mean_out, monthly_out
 end
