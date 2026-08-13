@@ -297,7 +297,7 @@ function test_coupled_energy_conservation(grid, atmosphere_grid; ocean_kwargs...
 
     # --- Salt budget ---
     #
-    # On a mutable grid the volume the freshwater adds carries Sᴺ Jʷ back in, cancelling the virtual
+    # On a mutable grid the volume the freshwater adds carries Sᴺ Jʷ back in, canceling the virtual
     # salt flux at every Runge-Kutta stage, so the salt content follows the sea-ice salt alone. A
     # static grid admits no volume and the virtual flux stands: the surface salinity it sees sweeps
     # from Sᴺ[n] to Sᴺ[n+1] across the step while the assembled Jʷ stays frozen, so the trapezoid in

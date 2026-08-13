@@ -69,7 +69,7 @@ function validate_dataset_coverage(grid, ::IBCAOMetadatum)
     if φ_south < 64
         error("IBCAOv5 only covers the Arctic Ocean (north of 64°N). " *
               "The grid extends to $(round(φ_south, digits=1))°N. " *
-              "Use ETOPO2022() or GEBCO2024() for domains that extend south of 64°N.")
+              "Use ETOPO2022() or GEBCO2026() for domains that extend south of 64°N.")
     end
 end
 
@@ -92,7 +92,7 @@ function Downloads.download(metadatum::IBCAOMetadatum)
     return nc_path
 end
 
-# Implemented in ext/NumericalEarthArchGDALExt.jl when ArchGDAL is loaded.
+# Implemented in ext/NumericalEarthArchGDALExt/ibcao.jl when ArchGDAL is loaded.
 function reproject_ibcao_to_netcdf end
 
 end # module
