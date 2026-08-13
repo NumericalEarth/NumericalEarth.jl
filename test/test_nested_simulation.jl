@@ -330,11 +330,11 @@ end
     ex = ext.state_exchanger(parent, 1e5, ThermodynamicConstants();
                              condensates = (qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing))
     es = ex.prognostic
-    @test interior(es.ρθ[1]) ≈ interior(es.ρᵈ[1]) .* interior(es.θ[1])   # ρθ = ρᵈ·θ
-    @test interior(es.ρu[1]) ≈ interior(es.ρᵈ[1]) .* interior(es.u[1])   # ρu = ρᵈ·u
-    @test interior(es.ρv[1]) ≈ interior(es.ρᵈ[1]) .* interior(es.v[1])
-    @test interior(es.u[1])  ≈ interior(parent.velocities.u[1])          # u/v are verbatim parent copies
-    @test interior(es.v[1])  ≈ interior(parent.velocities.v[1])
+    @test es.ρθ[1] ≈ es.ρᵈ[1] .* es.θ[1]   # ρθ = ρᵈ·θ
+    @test es.ρu[1] ≈ es.ρᵈ[1] .* es.u[1]   # ρu = ρᵈ·u
+    @test es.ρv[1] ≈ es.ρᵈ[1] .* es.v[1]
+    @test es.u[1]  ≈ parent.velocities.u[1]          # u/v are verbatim parent copies
+    @test es.v[1]  ≈ parent.velocities.v[1]
 end
 
 # Integration test for the example's production path: a Breeze `AtmosphereModel`
