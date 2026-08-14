@@ -547,6 +547,23 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
      1990; Madec et al. 2017), vendored in `NEMOTKE/`. OMIP-2 ORCAOne preset:
      prognostic e, gradient-limited length scale, Langmuir + Mellor-Blumberg
      wave penetration + EVD on static instability. No `Cᵇ`.
+- `background_vertical_diffusivity`: interior background tracer diffusivity κ added underneath the
+  primary vertical closure (`:catke` and `:rbvd` only — the other closures set their own interior
+  background internally and reject this keyword). Options:
+   * `:henyey` (default) — the latitude-dependent internal-wave scaling of Henyey et al. (1986),
+     κ = max(2×10⁻⁶, 10⁻⁵ |sin φ|), i.e. 2×10⁻⁶ m² s⁻¹ at the equator rising to 10⁻⁵ m² s⁻¹ at the poles.
+   * `:bryan_lewis` — the Bryan & Lewis (1979) depth profile,
+     κ = 0.8×10⁻⁴ + (1.05×10⁻⁴/π) atan[4.5×10⁻³ (|z| − 2500)] m² s⁻¹, i.e. 3×10⁻⁵ in the upper ocean
+     rising to 1.3×10⁻⁴ in the abyss. Buys the deep upwelling without diffusing the thermocline the
+     way a uniform 10⁻⁴ does.
+   * a number — a uniform κ in m² s⁻¹ (e.g. `3e-5`, `1e-4`). The background diffusivity sets the
+     diapycnal upwelling that closes the AMOC's lower limb, so raising it strengthens the
+     overturning (Bryan 1987 gives AMOC ∝ κ^(2/3) in the diffusive limit); it also deepens the
+     thermocline, so watch the tropical SST and mixed-layer depth alongside the AMOC.
+- `background_vertical_viscosity`: the matching background momentum viscosity ν in m² s⁻¹, subject to
+  the same per-closure restriction. `nothing` (default) uses 10⁻⁴ m² s⁻¹ for both `:catke` and
+  `:rbvd`. Set it alongside the diffusivity to hold the background Prandtl number fixed while
+  scanning κ.
 - `implicit_vertical_advection::Bool`: if `true` (default), tracer and momentum vertical advection use
   `AdaptiveVerticallyImplicitDiscretization(cfl=0.5)` (switches the vertical advective flux to implicit
   where the vertical Courant number is large — e.g. in thin near-surface cells). If `false`, fully
@@ -582,6 +599,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                          stop_time = Inf,
                          flux_configuration = :default,
                          vertical_closure = :catke,
+                         background_vertical_diffusivity = :henyey,
+                         background_vertical_viscosity = nothing,
                          implicit_vertical_advection = true,
                          velocity_formulation = :relative,
                          Cᵂu★ = nothing,
@@ -666,6 +685,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                         biharmonic_timescale,
                         biharmonic_viscosity,
                         vertical_closure,
+                        background_vertical_diffusivity,
+                        background_vertical_viscosity,
                         implicit_vertical_advection,
                         skew_flux_formulation,
                         restoring_under_sea_ice,
@@ -861,6 +882,41 @@ end
 # Background tracer diffusivity following Henyey et al. (1986).
 @inline henyey_diffusivity(x, y, z, t) = max(2e-6, 1e-5 * abs(sind(y)))
 
+# Bryan & Lewis (1979) depth-dependent background diffusivity, in the form GFDL models carry:
+# κ = 0.8×10⁻⁴ + (1.05×10⁻⁴/π) atan[4.5×10⁻³ (|z| − 2500)], i.e. 3×10⁻⁵ m² s⁻¹ in the upper ocean
+# rising across a ~2500 m transition to 1.3×10⁻⁴ m² s⁻¹ in the abyss. It buys the deep diapycnal
+# upwelling that a uniform κ only reaches by also diffusing the thermocline.
+@inline bryan_lewis_diffusivity(x, y, z, t) = 0.8e-4 + (1.05e-4 / π) * atan(4.5e-3 * (-z - 2500))
+
+# Resolve the `background_vertical_diffusivity` option into something `VerticalScalarDiffusivity`
+# accepts: `:henyey` keeps the latitude-dependent internal-wave scaling above (2×10⁻⁶ at the
+# equator rising to 10⁻⁵ at the poles), `:bryan_lewis` the depth profile above, and a number sets a
+# uniform interior κ instead. The background is the diapycnal diffusivity that feeds the upwelling
+# closing the AMOC's lower limb, so it is the knob for the Bryan (1987) κ^(2/3) sensitivity test.
+resolve_background_diffusivity(κ::Number) = κ
+resolve_background_diffusivity(κ::Symbol) =
+    κ === :henyey      ? henyey_diffusivity :
+    κ === :bryan_lewis ? bryan_lewis_diffusivity :
+    throw(ArgumentError("background_vertical_diffusivity must be :henyey, :bryan_lewis or a number, got :$κ"))
+
+# Default background momentum viscosity, shared by the closures that carry an explicit background.
+# `nothing` keeps it, a number overrides it.
+const default_background_viscosity = 1e-4
+
+resolve_background_viscosity(ν) = isnothing(ν) ? default_background_viscosity : ν
+
+# The Richardson-number and TKE closures carry their own interior background (NEMO's avtb/avmb,
+# KPP's κⁱʷ/νⁱʷ, NORi's calibrated floor), so an external one would double-count rather than
+# replace it.
+function check_no_background_mixing(κ, ν, vertical_closure)
+    if κ !== :henyey || !isnothing(ν)
+        throw(ArgumentError("background_vertical_diffusivity / background_vertical_viscosity are not \
+                             supported for the :$vertical_closure closure, which sets its own interior \
+                             background internally"))
+    end
+    return nothing
+end
+
 # Step-function background diffusivity for the :simple closure.
 # Strong mixing in the upper 100 m, weak interior diffusivity below.
 @inline ν_step_simple(x, y, z, t) = ifelse(z >= -100, 1e-2, 1e-4)
@@ -887,7 +943,12 @@ function omip_closure(vertical_closure::Symbol;
                       biharmonic_viscosity = nothing,
                       skew_flux_formulation = :diffusive,
                       eddy_slope_limiter = nothing,
+                      background_vertical_diffusivity = :henyey,
+                      background_vertical_viscosity = nothing,
                       Cᵂu★ = nothing)
+
+    background_κ = resolve_background_diffusivity(background_vertical_diffusivity)
+    background_ν = resolve_background_viscosity(background_vertical_viscosity)
 
     primary, background = if vertical_closure == :catke
         mixing_length = CATKEMixingLength(; Cᵇ)
@@ -899,22 +960,26 @@ function omip_closure(vertical_closure::Symbol;
                                          maximum_tke_diffusivity=3,
                                          negative_tke_damping_time_scale=10, # (seconds)
                                          turbulent_kinetic_energy_equation = tke_eq)
-        catke, VerticalScalarDiffusivity(κ=henyey_diffusivity, ν=3e-5)
+        catke, VerticalScalarDiffusivity(κ=background_κ, ν=background_ν)
     elseif vertical_closure == :simple
+        check_no_background_mixing(background_vertical_diffusivity, background_vertical_viscosity, vertical_closure)
         convective = ConvectiveAdjustmentVerticalDiffusivity(VerticallyImplicitTimeDiscretization();
                                                              convective_κz = 1.0,
                                                              convective_νz = 1.0)
         background = VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization(); κ=κ_step_simple, ν=ν_step_simple)
         convective, background
     elseif vertical_closure == :nori
+        check_no_background_mixing(background_vertical_diffusivity, background_vertical_viscosity, vertical_closure)
         NORiBaseVerticalDiffusivity(), nothing
     elseif vertical_closure == :rbvd
         convective = RiBasedVerticalDiffusivity(; horizontal_Ri_filter = Oceananigans.TurbulenceClosures.FivePointHorizontalFilter())
-        background = VerticalScalarDiffusivity(κ=henyey_diffusivity, ν=1e-4)
+        background = VerticalScalarDiffusivity(κ=background_κ, ν=background_ν)
         convective, background
     elseif vertical_closure == :kpp
+        check_no_background_mixing(background_vertical_diffusivity, background_vertical_viscosity, vertical_closure)
         KPPVerticalDiffusivity(), nothing
     elseif vertical_closure == :nemo_tke
+        check_no_background_mixing(background_vertical_diffusivity, background_vertical_viscosity, vertical_closure)
         NEMOTKEVerticalDiffusivity(), nothing
     else
         error("Unknown vertical_closure: $vertical_closure. Options: :catke, :simple, :nori, :rbvd, :kpp, :nemo_tke")
@@ -1201,6 +1266,8 @@ function build_ocean(config, grid;
                      cesm_eddy_coefficients = nothing,
                      hybrid_eddy_coefficients = nothing,
                      eddy_slope_limiter = nothing,
+                     background_vertical_diffusivity = :henyey,
+                     background_vertical_viscosity = nothing,
                      restoring_under_sea_ice = true,
                      Cᵂu★ = nothing,
                      normalize_salinity = true,
@@ -1232,6 +1299,8 @@ function build_ocean(config, grid;
                            biharmonic_timescale, biharmonic_viscosity,
                            skew_flux_formulation,
                            eddy_slope_limiter,
+                           background_vertical_diffusivity,
+                           background_vertical_viscosity,
                            Cᵂu★)
     closure = isnothing(additional_tracer_closure) ? closure : (closure..., additional_tracer_closure)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
