@@ -72,7 +72,7 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     va   = RingGrids.field_view(atmos.variables.grid.v, :, surface_layer, prognostic_step).data
     Ta   = RingGrids.field_view(atmos.variables.grid.temperature, :, surface_layer, prognostic_step).data
     qa   = RingGrids.field_view(atmos.variables.grid.humidity, :, surface_layer, prognostic_step).data
-    pa   = exp.(atmos.variables.grid.pressure.data)
+    pa   = exp.(RingGrids.field_view(atmos.variables.grid.pressure, :, prognostic_step).data)
     ℐꜜˢʷ = atmos.variables.parameterizations.surface_shortwave_down.data
     ℐꜜˡʷ = atmos.variables.parameterizations.surface_longwave_down.data
     Jʳⁿ  = atmos.variables.parameterizations.rain_rate.data

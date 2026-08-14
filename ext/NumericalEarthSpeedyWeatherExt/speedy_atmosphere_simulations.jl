@@ -59,7 +59,7 @@ end
 Return an atmosphere simulation using `SpeedyWeather.PrimitiveWetModel` on `spectral_grid`.
 Output is written when `output_interval` is provided. `time_stepping` controls
 SpeedyWeather's internal timestep (e.g. via its `Δt_at_T31` field); the resulting
-`Δt_sec` must be an integer divisor of the coupled `EarthSystemModel` timestep.
+`Δt` must be an integer divisor of the coupled `EarthSystemModel` timestep.
 
 `stop_time` should match the `stop_time` later passed to the coupled
 `Oceananigans.Simulation`. It only synchronizes SpeedyWeather's internal clock
@@ -108,4 +108,4 @@ function NumericalEarth.Atmospheres.atmosphere_simulation(spectral_grid::SpeedyW
 end
 
 Oceananigans.Simulations.reset_clock!(atmos::SpeedyWeather.Simulation) =
-    SpeedyWeather.initialize!(atmos.prognostic_variables.clock)
+    SpeedyWeather.initialize!(atmos.variables.prognostic.clock)
