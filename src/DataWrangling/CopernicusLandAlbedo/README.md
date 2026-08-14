@@ -7,7 +7,7 @@ PROBA-V (2014–2020) observations.
 
 The files are downloaded from the Copernicus Climate Data Store's
 [`satellite-albedo`](https://cds.climate.copernicus.eu/datasets/satellite-albedo)
-catalogue entry (the C3S redistribution of the CGLS product — the legacy VITO
+catalog entry (the C3S redistribution of the CGLS product — the legacy VITO
 distribution server was retired when CLMS data moved to the Copernicus Data Space
 Ecosystem in September 2025, and the 1 km albedo archive is not served there).
 
@@ -17,7 +17,7 @@ Downloads go through the CDS API, the same setup as ERA5:
 
 1. Create an account at https://cds.climate.copernicus.eu
 2. Put your API key in `~/.cdsapirc` (see https://cds.climate.copernicus.eu/how-to-api)
-3. Accept the *Copernicus Global Land product licence* on the dataset page
+3. Accept the *Copernicus Global Land product license* on the dataset page
 4. Load the backend before downloading: `using CDSAPI`
 
 ## What gets stored locally

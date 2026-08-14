@@ -108,7 +108,7 @@ DataWrangling.dataset_variable_name(md::ERA5Metadata) = ERA5_netcdf_variable_nam
 
 # Unit conversions applied at load time:
 # - `topography` divides the (surface) geopotential by g to give ERA5's model
-#   surface elevation in metres (`geopotential` is left in m² s⁻²);
+#   surface elevation in meters (`geopotential` is left in m² s⁻²);
 # - downwelling SW/LW are hourly-accumulated energy (J/m²) → mean flux (W/m²);
 # - total precipitation is an hourly-accumulated depth (m) → mass flux (kg/m²/s).
 function DataWrangling.conversion_units(md::ERA5Metadata)
@@ -120,6 +120,26 @@ function DataWrangling.conversion_units(md::ERA5Metadata)
 end
 
 DataWrangling.default_inpainting(md::ERA5Metadata) = nothing
+
+# ERA5 accumulations and mean rates cover the hour *ending* at the stamp, so their windows run
+# backwards from it. Every other single-level variable is instantaneous.
+const ERA5_window_averaged_variables = (:total_precipitation,
+                                        :evaporation,
+                                        :mean_evaporation_rate,
+                                        :downwelling_shortwave_radiation,
+                                        :downwelling_longwave_radiation,
+                                        :mean_surface_momentum_flux_x,
+                                        :mean_surface_momentum_flux_y,
+                                        :mean_surface_sensible_heat_flux,
+                                        :mean_surface_latent_heat_flux)
+
+function DataWrangling.sample_window(md::Metadatum{<:Union{ERA5HourlySingleLevel, ERA5YearlySingleLevel}})
+    md.name in ERA5_window_averaged_variables || return (md.dates, md.dates)
+    return (md.dates - Hour(1), md.dates)
+end
+
+# Monthly means span the calendar month, accumulations and instantaneous variables alike.
+DataWrangling.sample_window(md::Metadatum{<:ERA5MonthlySingleLevel}) = DataWrangling.calendar_month_window(md)
 
 """
     retrieve_data(metadata::ERA5Metadatum)
@@ -175,12 +195,12 @@ function DataWrangling.metadata_filename(::ERA5YearlySingleLevel, name, date, re
     return string(var, "_", year, suffix, ".nc")
 end
 
-# For ERA5YearlySingleLevel, all dates in a year use the SAME file
-# So return a single String, not a DatewiseFilename!
+# All dates in a year use the SAME file, but a request can span multiple years,
+# so return one filename per date (repeated within a year) rather than collapsing
+# to a single string. `set!` groups consecutive same-year dates and opens each
+# yearly file once (see `read_era5_yearly_series` in `ERA5_field_time_series.jl`).
 function DataWrangling.build_filename(dataset::ERA5YearlySingleLevel, name, dates::AbstractArray, region)
-    # All dates should be in the same year for now
-    # Return the filename for the first date (which covers all dates in that year)
-    return DataWrangling.metadata_filename(dataset, name, dates[1], region)
+    return DatewiseFilename([DataWrangling.metadata_filename(dataset, name, d, region) for d in dates])
 end
 
 #####
@@ -204,11 +224,12 @@ function DataWrangling.metadata_filename(::ERA5MonthlySingleLevel, name, date, r
     return string(var, "_", year, "_", month_str, suffix, ".nc")
 end
 
-# For ERA5MonthlySingleLevel, all dates in a month use the SAME file
-# So return a single String, not a DatewiseFilename!
+# Each month's file holds a single monthly-mean timestep, but a request can span
+# multiple months, so return one filename per date (repeated within a month) rather
+# than collapsing to a single string. The generic per-file `set!` in
+# `dataset_backend.jl` already opens one file per time index via `getfilename`,
+# so no further changes are needed downstream.
 function DataWrangling.build_filename(dataset::ERA5MonthlySingleLevel, name, dates::AbstractArray, region)
-    # All dates should be in the same month
-    # Return the filename for the first date (which covers all dates in that month)
-    return DataWrangling.metadata_filename(dataset, name, dates[1], region)
+    return DatewiseFilename([DataWrangling.metadata_filename(dataset, name, d, region) for d in dates])
 end
 

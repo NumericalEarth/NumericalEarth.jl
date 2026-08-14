@@ -469,7 +469,13 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     exchanger = StateExchanger(exchange_grid, radiation, atmosphere, land, ocean, sea_ice;
                                atmosphere_correction = exchanger_correction)
 
-    properties = (; gravitational_acceleration)
+    # The surface-layer (MOST reference) height is fixed by the atmosphere grid, so
+    # build it once here rather than per coupled step. Scalar for prescribed
+    # atmospheres; a per-column 2-D field for grid-aware atmospheres (Breeze). The
+    # boundary-layer height is *not* cached here: it evolves with the closure and is
+    # refreshed every step in the flux builders.
+    properties = (; gravitational_acceleration,
+                    surface_layer_height = surface_layer_height(atmosphere, exchange_grid))
 
     return ComponentInterfaces(ao_interface,
                                ai_interface,
@@ -490,12 +496,13 @@ default_al_specific_humidity(::Nothing) = nothing
 default_al_specific_humidity(land) =
     BulkHumidity(AtmosphericThermodynamics.Liquid())
 
-# Default atmosphere--land flux formulation. Aerodynamic roughness lengths are a
-# property of the flux closure, not the land model: the defaults below are
-# uniform constants (0.1 m momentum, 0.01 m scalar). Override per-domain by
-# passing `atmosphere_land_fluxes = SimilarityTheoryFluxes(...)` with explicit
-# roughness lengths (constants, `Field`s, or roughness-length models such as
-# `LandRoughnessLength`) to `ComponentInterfaces` / `AtmosphereLandModel`.
+# Default atmosphere--land flux formulation. Aerodynamic roughness lengths and the
+# zero-plane displacement are properties of the flux closure, not the land model:
+# the defaults below are uniform constants (0.1 m momentum, 0.01 m scalar, no
+# displacement). Override per-domain by passing `atmosphere_land_fluxes =
+# SimilarityTheoryFluxes(...)` with explicit roughness lengths and displacement
+# (constants, or per-cell models such as `LandRoughnessLength` /
+# `LandZeroPlaneDisplacement`) to `ComponentInterfaces` / `AtmosphereLandModel`.
 default_atmosphere_land_fluxes(::Nothing, FT; kw...) = nothing
 
 function default_atmosphere_land_fluxes(land, FT; solver_stop_criteria = nothing)
