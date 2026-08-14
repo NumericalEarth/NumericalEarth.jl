@@ -2,7 +2,8 @@ module NestedModels
 
 export NestedModel, NestedSimulation, nested_atmosphere_model,
        parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
-       exchange_state!, total_density, reconstruct_parent_state
+       exchange_state!, total_density, reconstruct_parent_state,
+       interpolate_from_parent!
 
 # Model-specific extension point (methods defined in the Breeze extension):
 #   `nested_atmosphere_model(parent, child_grid; …)` builds a child atmosphere over `child_grid` driven
@@ -24,14 +25,20 @@ function total_density end
 function reconstruct_parent_state end
 
 using Oceananigans
+using Oceananigans.Architectures: architecture
+using Oceananigans.BoundaryConditions: NormalFlowBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
+using Oceananigans.Fields: instantiated_location, interpolate
 using Oceananigans.Forcings: Relaxation
-using Oceananigans.Grids: AbstractGrid
-using Oceananigans.BoundaryConditions: NormalFlowBoundaryCondition, FieldBoundaryConditions
+using Oceananigans.Grids: AbstractGrid, interior_indices, node
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Units: Time
+using Oceananigans.Utils: launch!, KernelParameters
+using DocStringExtensions: TYPEDSIGNATURES
+using KernelAbstractions: @kernel, @index
 
 include("nested_model.jl")
 include("nested_simulation.jl")
+include("parent_sampling.jl")
 include("interpolated_fts_boundary.jl")
 include("parent_boundary_conditions.jl")
 include("parent_forcings.jl")

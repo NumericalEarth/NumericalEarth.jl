@@ -1,12 +1,14 @@
 include("runtests_setup.jl")
 
 using NumericalEarth
-using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model
+using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model,
+                                   interpolate_from_parent!, query_node
 using Oceananigans
 using Oceananigans: prognostic_fields
 using Oceananigans.OutputReaders: interpolating_time_indices, memory_index
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location
+using Oceananigans.Grids: rnode, znode
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
 using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics
@@ -696,4 +698,37 @@ end
     Δxf = minimum_xspacing(fine,   Center(), Center(), Center())
     @test isapprox(wc * Δxc, 60_000; rtol = 0.2)
     @test isapprox(wf * Δxf, 60_000; rtol = 0.2)
+end
+
+# A child samples its parent wherever `interpolate` locates the vertical: through the source grid's 1-D
+# `znodes`. On a terrain-following grid those are the REFERENCE levels while `node` returns the
+# terrain-deformed height, so a physical-node query into a terrain-following parent is displaced by the
+# terrain elevation. `query_node` dispatches the query coordinate on the source grid to keep the two in
+# the same vertical coordinate.
+@testset "query_node samples a terrain-following source in its own vertical coordinate" begin
+    z = ReferenceToStretchedDiscretization(extent = 12000.0, bias = :left, bias_edge = 0.0,
+                                           constant_spacing = 100.0, constant_spacing_extent = 100.0,
+                                           maximum_spacing = 800.0, stretching = LinearStretching(0.2))
+    plateau = 400.0
+    grid = LatitudeLongitudeGrid(size = (6, 6, length(z)), longitude = (-100, -96), latitude = (34, 38),
+                                 z = TerrainFollowingVerticalDiscretization(z), halo = (5, 5, 5),
+                                 topology = (Bounded, Bounded, Bounded))
+    Breeze.materialize_terrain!(grid, (λ, φ) -> plateau)
+
+    flat_grid = LatitudeLongitudeGrid(size = (6, 6, length(z)), longitude = (-100, -96), latitude = (34, 38),
+                                      z = z, halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+
+    # A terrain-following source is queried at the reference node, a flat one at the physical node.
+    reference = query_node(grid, 3, 3, 1, grid, Center(), Center(), Center())
+    physical  = query_node(flat_grid, 3, 3, 1, grid, Center(), Center(), Center())
+    @test reference[3] ≈ rnode(3, 3, 1, grid, Center(), Center(), Center())
+    @test physical[3]  ≈ znode(3, 3, 1, grid, Center(), Center(), Center())
+    # the displacement the dispatch removes: h·b(r) at the first cell, just under the full height
+    @test physical[3] - reference[3] ≈ plateau rtol = 0.01
+
+    # Regridding a terrain-following source therefore reproduces it exactly on a coincident grid.
+    source = CenterField(grid)
+    set!(source, (λ, φ, z) -> z)             # `set!` evaluates at the physical node
+    target = interpolate_from_parent!(CenterField(grid), source)
+    @test interior(target) ≈ interior(source)
 end

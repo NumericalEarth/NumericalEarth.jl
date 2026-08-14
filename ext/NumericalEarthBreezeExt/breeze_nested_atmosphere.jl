@@ -15,7 +15,7 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding,
                                     matching_single_level_dataset
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings,
-                                   blend_parent_terrain!
+                                   blend_parent_terrain!, interpolate_from_parent!
 using Oceananigans: Oceananigans, WENO
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, NormalFlowBoundaryCondition
@@ -23,13 +23,20 @@ using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, CenterField, Field, XFaceField, YFaceField,
                            compute!, interior, interpolate!, set!
 using Oceananigans.Forcings: Relaxation
-using Oceananigans.Grids: znode, λnodes, φnodes, minimum_xspacing, Center, Face
+using Oceananigans.Grids: znode, ξnode, ηnode, rnode, λnodes, φnodes, minimum_xspacing, Center, Face
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 using GPUArraysCore: @allowscalar
 using Breeze: CompressibleDynamics, SplitExplicitTimeDiscretization, UpperSponge, NoDivergenceDamping,
-              MixedPhaseEquilibrium, materialize_terrain!, moisture_prognostic_name
+              MixedPhaseEquilibrium, TerrainFollowingGrid, materialize_terrain!, moisture_prognostic_name
 using Breeze.AtmosphereModels: prognostic_field_names
+
+# `interpolate` locates the vertical in `znodes`, which here are the REFERENCE levels, while `node`
+# returns the terrain-deformed height. Querying the physical node would displace every sample by h·b(r).
+@inline NumericalEarth.NestedModels.query_node(::TerrainFollowingGrid, i, j, k, grid, ℓx, ℓy, ℓz) =
+    (ξnode(i, j, k, grid, ℓx, ℓy, ℓz),
+     ηnode(i, j, k, grid, ℓx, ℓy, ℓz),
+     rnode(i, j, k, grid, ℓx, ℓy, ℓz))
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
 # saturation-adjustment cloud formation when Breeze's `CloudMicrophysics` extension is loaded,
@@ -329,11 +336,11 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
     t₀ = first(prognostic.ρᵈ.times)
 
     # Interpolate each exchanger prognostic (parent grid, initial time) to the child interior. Using the
-    # SAME parent-derived prognostics that drive the lateral boundaries — via the same `interpolate!` —
-    # makes the interior IC and the prescribed boundary agree at the walls, so there is no standing
-    # density/pressure jump to force spurious vertical velocity. The adiabatic balancer below then spins
-    # up ρw from this consistent state.
-    to_child(fts) = (field = CenterField(child_grid); interpolate!(field, fts[Time(t₀)]); field)
+    # SAME parent-derived prognostics that drive the lateral boundaries makes the interior IC and the
+    # prescribed boundary agree at the walls, so there is no standing density/pressure jump to force
+    # spurious vertical velocity. The adiabatic balancer below then spins up ρw from this consistent
+    # state.
+    to_child(fts) = interpolate_from_parent!(CenterField(child_grid), fts[Time(t₀)])
     ρᵈ  = to_child(prognostic.ρᵈ)
     ρθ  = to_child(prognostic.ρθ)
     ρqᵛ = to_child(prognostic.ρqᵛ)
@@ -345,8 +352,8 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
     ρ   = compute!(Field(ρᵈ + ρqᵛ))
     qᵗ  = compute!(Field(ρqᵛ / ρ))
     θˡⁱ = compute!(Field(ρθ / ρᵈ))
-    u   = XFaceField(child_grid); interpolate!(u, compute!(Field(ρu / ρᵈ)))
-    v   = YFaceField(child_grid); interpolate!(v, compute!(Field(ρv / ρᵈ)))
+    u   = interpolate_from_parent!(XFaceField(child_grid), compute!(Field(ρu / ρᵈ)))
+    v   = interpolate_from_parent!(YFaceField(child_grid), compute!(Field(ρv / ρᵈ)))
 
     set!(nested_model; ρ, u, v, qᵗ, θˡⁱ, compute_reference_state = true)
 
