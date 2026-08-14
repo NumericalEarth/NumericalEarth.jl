@@ -3,11 +3,12 @@ module GHSL
 export GHSBuiltH, GHSBuiltS, GHSBuiltSResolution, GHSBuiltS10m, GHSBuiltS100m
 
 using Downloads: Downloads
-using Oceananigans: Center
+using Oceananigans: Center, CPU
 using Oceananigans.DistributedComputations: @root
+using Oceananigans.Grids: x_domain, y_domain, λnodes, φnodes
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
-                       metadata_path, BoundingBox, bounding_box_suffix
+                       metadata_path, native_grid, BoundingBox, bounding_box_suffix
 
 import Oceananigans
 
@@ -388,6 +389,40 @@ end
 #####
 ##### Download (regional Mollweide tiles → reprojected NetCDF via the ArchGDAL ext)
 #####
+
+"""
+    ghsl_regional_raster(metadatum)
+
+Geometry of the regional raster materialized for `metadatum`, taken from `native_grid`
+so that the file the reprojection writes lands on the cells the read path indexes.
+Returns the `region` to reproject onto — the native grid's extent, which reaches up to
+a cell beyond the requested window, and so is also the window whose tiles are needed —
+along with the cell counts `Nx`, `Ny` and the cell-center `longitude` and `latitude`.
+
+```jldoctest
+julia> using NumericalEarth.DataWrangling: BoundingBox, Metadatum
+
+julia> using NumericalEarth.DataWrangling.GHSL: GHSBuiltH, ghsl_regional_raster
+
+julia> region = BoundingBox(longitude = (-0.11, -0.07), latitude = (51.505, 51.525));
+
+julia> raster = ghsl_regional_raster(Metadatum(:building_height; dataset = GHSBuiltH(), region));
+
+julia> (raster.Nx, raster.Ny)
+(46, 25)
+```
+"""
+function ghsl_regional_raster(metadatum::GHSLMetadatum)
+    grid = native_grid(metadatum, CPU())
+    λ₁, λ₂ = x_domain(grid)
+    φ₁, φ₂ = y_domain(grid)
+    Nx, Ny, _ = size(grid)
+
+    return (; region = BoundingBox(longitude = (λ₁, λ₂), latitude = (φ₁, φ₂)),
+              Nx, Ny,
+              longitude = collect(λnodes(grid, Center())),
+              latitude  = collect(φnodes(grid, Center())))
+end
 
 function Downloads.download(metadatum::GHSLMetadatum)
     DataWrangling.validate_dataset_coverage(nothing, metadatum)

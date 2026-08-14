@@ -49,6 +49,7 @@ using Breeze:
     UpperSponge,
     NoDivergenceDamping,
     MixedPhaseEquilibrium,
+    SpecificForcing,
     materialize_terrain!,
     moisture_prognostic_name
 
@@ -97,7 +98,7 @@ function davies_relaxation_mask(grid, width; ramp = SmoothStepRamp())
     end
 end
 
-# Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` meters of the domain, for the ρw lid sponge.
+# Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` metres of the domain, for the ρw lid sponge.
 # `z_top` is read once host-side under `@allowscalar`: a `znode` on a terrain-following GPU grid
 # indexes the (device) terrain arrays, which is otherwise disallowed. `s` is the normalized distance
 # below the lid (0 at the top), so the shared ramp contract (1 at s=0) puts the strongest damping at
@@ -298,18 +299,25 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
 
     child_bcs = merge_boundary_conditions(nested_bcs, drag_bcs)
 
-    # Interior Davies relaxation toward the precomputed (density-weighted) prognostics. Oceananigans'
-    # FTS `Relaxation` calls `mask(x, y, z)`, so wrap a scalar mask in a callable. The density `ρᵈ` is
-    # relaxed alongside the momentum/energy/moisture — the mass field, following WRF (nudges dry mass μ)
-    # and MPAS (nudges ρ); without it the un-relaxed near-wall density drives a persistent lateral-wall
-    # residual (ρw creep) that a top sponge cannot damp.
+    # Interior Davies relaxation toward the precomputed prognostics. Oceananigans' FTS `Relaxation`
+    # calls `mask(x, y, z)`, so wrap a scalar mask in a callable. Momentum and energy relax toward the
+    # parent's SPECIFIC state, which `SpecificForcing` weights by the child's own `ρᵈ` at kernel time;
+    # relaxing toward the parent's `ρθ`/`ρu`/`ρv` instead equilibrates at `θ = θₚ ρᵈₚ / ρᵈ`, an absolute
+    # error `θ Δρᵈ / ρᵈ` (≈3 K per 1% density mismatch: the lateral-boundary cold rim). `ρᵈ` itself is
+    # absent because Breeze's compressible continuity kernels overwrite `Gⁿ.ρᵈ` with `-∇·m` and never
+    # read `forcing.ρᵈ`, so a mass-nudging entry is silently discarded; were that to change, the
+    # specific form would gain a `θ Δρᵈ / ρᵈ` cross-term and the density-weighted form would be unbiased.
+    # The wrap is explicit and keyed by the density-weighted prognostic rather than left to Breeze's
+    # specific-key dispatch, so a caller's own `θ`/`u`/`v` forcing combines with the relaxation instead
+    # of replacing it in the `merge` below.
     relax_mask = relaxation_mask isa Number ? Returns(relaxation_mask) : relaxation_mask
     davies = if isnothing(relaxation_rate)
         NamedTuple()
     else
-        dry_forcing_variables = (ρᵈ = prognostic.ρᵈ, ρθ = prognostic.ρθ, ρu = prognostic.ρu, ρv = prognostic.ρv)
-        variables = merge(dry_forcing_variables, moist_variables)
-        parent_forcings(; variables, rate = relaxation_rate, mask = relax_mask)
+        specific_targets = (ρθ = prognostic.θ, ρu = prognostic.u, ρv = prognostic.v)
+        specific = parent_forcings(; variables = specific_targets, rate = relaxation_rate, mask = relax_mask)
+        moist = parent_forcings(; variables = moist_variables, rate = relaxation_rate, mask = relax_mask)
+        merge(map(SpecificForcing, specific), moist)
     end
 
     # ρw Rayleigh sponge over BOTH the top `damping_depth` meters AND the lateral relaxation zone. The
