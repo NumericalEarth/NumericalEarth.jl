@@ -125,6 +125,18 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
   CATKE_CWUSTAR `Cᵂu★` of CATKEEquation: surface shear-driven TKE flux
                 coefficient. Higher → more wind-injected TKE → deeper
                 equatorial ML. Default (Oceananigans): 3.179.
+  BACKGROUND_K  Interior background tracer diffusivity κ added underneath CATKE (or RBVD).
+                Either a number in m^2/s (uniform), or "bryan_lewis" for the Bryan & Lewis
+                (1979) depth profile, 3e-5 in the upper ocean rising across ~2500 m to 1.3e-4
+                in the abyss (deep upwelling without diffusing the thermocline).
+                Default: unset, i.e. the Henyey et al. (1986) latitudinal internal-wave
+                scaling κ = max(2e-6, 1e-5 |sin φ|), 2e-6 at the equator to 1e-5 at the poles.
+                Raising it strengthens the diapycnal upwelling that closes the AMOC lower limb
+                (Bryan 1987: AMOC ~ κ^(2/3)). Adds "_bgk<value>" to the run name.
+  BACKGROUND_NU Uniform interior background viscosity ν in m^2/s. Default: unset, i.e. 3e-5
+                for CATKE (1e-4 for RBVD). Adds "_bgnu<value>" to the run name.
+                Both are rejected by the closures that carry their own background
+                (simple/nori/kpp/nemo_tke).
 
 Environment variables (I/O & runtime):
   BACKEND_SIZE  Number of JRA55 time indices kept in memory (default: 240,
@@ -160,6 +172,9 @@ Examples:
   BIHVISC=1e12 ./launch.sh orca               # constant biharmonic viscosity ν=1e12 m^4/s
   DZ_TOP=2 ./launch.sh orca                   # 2 m top cell (scale chosen by bisection)
   CATKE_CWUSTAR=5.0 ./launch.sh orca          # stronger surface TKE injection in CATKE
+  BACKGROUND_K=3e-5 ./launch.sh orca          # uniform background κ = 3e-5 m^2/s (AMOC sensitivity)
+  BACKGROUND_K=1e-4 ./launch.sh orca          # uniform background κ = 1e-4 m^2/s
+  BACKGROUND_K=bryan_lewis ./launch.sh orca   # Bryan-Lewis depth profile, 3e-5 → 1.3e-4
   FORCING_DIR=/other/path/forcing_data STAGING_DIR=/scratch/staged ./launch.sh orca
   PROFILE=true ./launch.sh orca
 USAGE
@@ -293,6 +308,8 @@ esac
 [[ -n "${BIHVISC:-}" ]]                        && RUN_NAME="${RUN_NAME}_bihvisc${BIHVISC}"
 [[ "$DZ_TOP" != "$DEFAULT_DZ_TOP" ]]           && RUN_NAME="${RUN_NAME}_dz${DZ_TOP}"
 [[ -n "${CATKE_CWUSTAR:-}" ]]                  && RUN_NAME="${RUN_NAME}_cwu${CATKE_CWUSTAR}"
+[[ -n "${BACKGROUND_K:-}" ]]                   && RUN_NAME="${RUN_NAME}_bgk${BACKGROUND_K}"
+[[ -n "${BACKGROUND_NU:-}" ]]                  && RUN_NAME="${RUN_NAME}_bgnu${BACKGROUND_NU}"
 [[ -n "${PVEL:-}" ]]                           && RUN_NAME="${RUN_NAME}_pvel${PVEL}"
 
 REPORT_NAME="${REPORT_NAME:-${RUN_NAME}_report}"
@@ -385,6 +402,8 @@ CB="${CB:-}"
 BIHVISC="${BIHVISC:-}"
 DZ_TOP="${DZ_TOP:-}"
 CATKE_CWUSTAR="${CATKE_CWUSTAR:-}"
+BACKGROUND_K="${BACKGROUND_K:-}"
+BACKGROUND_NU="${BACKGROUND_NU:-}"
 BACKEND_SIZE="${BACKEND_SIZE:-}"
 NCAR="${NCAR:-false}"
 CORRECTED="${CORRECTED:-false}"
@@ -412,6 +431,17 @@ DZ_TOP_KWARG=""
 
 CATKE_CWUSTAR_KWARG=""
 [[ -n "$CATKE_CWUSTAR" ]] && CATKE_CWUSTAR_KWARG="Cᵂu★ = ${CATKE_CWUSTAR},"
+
+# A named profile is passed as a Julia Symbol, a number verbatim.
+BACKGROUND_K_KWARG=""
+case "$BACKGROUND_K" in
+    "")                     ;;
+    henyey|bryan_lewis)     BACKGROUND_K_KWARG="background_vertical_diffusivity = :${BACKGROUND_K}," ;;
+    *)                      BACKGROUND_K_KWARG="background_vertical_diffusivity = ${BACKGROUND_K}," ;;
+esac
+
+BACKGROUND_NU_KWARG=""
+[[ -n "$BACKGROUND_NU" ]] && BACKGROUND_NU_KWARG="background_vertical_viscosity = ${BACKGROUND_NU},"
 
 # Pass the value explicitly (default true = conservative restoring) so the Julia-side default
 # never silently overrides a "false" request.
@@ -523,6 +553,8 @@ sim = omip_simulation(:${CONFIG};
                       ${DIAGNOSTICS_KWARG}
                       ${PVELKWARG}
                       ${CATKE_CWUSTAR_KWARG}
+                      ${BACKGROUND_K_KWARG}
+                      ${BACKGROUND_NU_KWARG}
                       ${NORMALIZE_SALINITY_KWARG}
                       ${RESTORING_UNDER_ICE_KWARG}
                       ${NORMALIZE_FRESHWATER_KWARG}

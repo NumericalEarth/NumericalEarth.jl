@@ -7,7 +7,7 @@ using Oceananigans.Grids: Center, Face, inactive_node, znode
 using Oceananigans.Operators: Δzᶜᶜᶜ, ∂x_zᶠᶜᶜ, ∂y_zᶠᶜᶜ, ∂x_zᶜᶠᶜ, ∂y_zᶜᶠᶜ, ∂x_zᶜᶜᶠ, ∂y_zᶜᶜᶠ,
                               ℑxyᶠᶜᵃ, ℑxzᶠᵃᶜ, ℑxyᶜᶠᵃ, ℑyzᵃᶠᶜ, ℑxzᶜᵃᶠ, ℑyzᵃᶜᶠ
 using Oceananigans.TurbulenceClosures: TurbulenceClosures, IsopycnalSkewSymmetricDiffusivity, calc_tapering
-using Oceananigans.Utils: launch!
+using Oceananigans.Utils: KernelParameters, launch!
 
 # Mixed-layer tapering of the isopycnal slopes (Danabasoglu, Ferrari & McWilliams 2008;
 # NEMO's `ldfslp`): on top of the Gerdes et al. (1991) slope clip, the eddy fluxes are ramped
@@ -131,8 +131,34 @@ function compute_tapering_mixed_layer_depth!(limiter::MixedLayerTapering, ocean_
     launch!(architecture(grid), grid, :xy, _compute_tapering_mixed_layer_depth!,
             limiter.mixed_layer_depth, grid, ocean_model.buoyancy.formulation,
             ocean_model.tracers, convert(eltype(grid), Δb))
+
+    # The ramp makes the taper factor depend on the depth at a single column, so the two stencil
+    # representations of a tripolar fold face see different factors and the closure leaks salt
+    # (−0.33 Gt/yr in production — 200× below the old coefficient leak, but nonzero). A zonally
+    # uniform depth across the fold band restores single-valuedness, same argument as
+    # `match_fold_rows!` for the coefficients.
+    homogenize_fold_band!(limiter.mixed_layer_depth, grid)
+
     fill_halo_regions!(limiter.mixed_layer_depth)
     return nothing
+end
+
+homogenize_fold_band!(depth_field, grid; rows = 5) =
+    launch!(architecture(grid), grid, KernelParameters((1,), (0,)),
+            _homogenize_fold_band!, depth_field, grid, rows)
+
+@kernel function _homogenize_fold_band!(h, grid, rows)
+    @index(Global)
+    Nx = size(grid, 1)
+    Ny = size(grid, 2)
+    μ = zero(grid)
+    for i in 1:Nx
+        @inbounds μ += h[i, Ny - rows, 1]
+    end
+    μ = μ / Nx
+    for j in Ny-rows+1:Ny, i in 1:Nx
+        @inbounds h[i, j, 1] = μ
+    end
 end
 
 struct RefreshMixedLayerTapering{L}
