@@ -34,8 +34,8 @@
 ##### `surface_energy_flux` via the interface balance.
 #####
 ##### `Tᵈᵉᵉᵖ` may be a `Number`, `AbstractField`, or any state-indexable
-##### property (e.g. a `FieldTimeSeries`); `Λᵈᵉᵉᵖ` may be a `Number` or
-##### `AbstractField`.
+##### property (e.g. a `FieldTimeSeries`); `Cᵈʳʸ` and `Λᵈᵉᵉᵖ` may be
+##### `Number`s or `AbstractField`s.
 #####
 
 """
@@ -57,13 +57,16 @@ s) to set the deep restoring strength; exactly one must be supplied. With
 `deep_time_scale`, the effective conductance is `C(Mˡᵃ)/τᵈᵉᵉᵖ` (matches
 [`ForceRestoreEnergy`](@ref)).
 
+`dry_heat_capacity` accepts a `Number` (uniform) or a per-cell `AbstractField` —
+for example pavement carrying building thermal mass next to soil that does not.
+
 `reference_temperature` is the reference for internal energy `eˡ(T) = cˡ(T − Tᵣ)`.
 The temperature update is invariant to `Tᵣ`: fluxes whose advective switch is
 disabled enter and leave at the slab temperature, so `Tᵣ` cancels exactly (up
 to the positivity floor on `Mˡᵃ`). A standard choice is the triple point 273.15 K.
 """
-struct WaterCoupledEnergy{FT, TD, ΛD, Tau} <: AbstractEnergyBalance
-    dry_heat_capacity            :: FT
+struct WaterCoupledEnergy{CD, FT, TD, ΛD, Tau} <: AbstractEnergyBalance
+    dry_heat_capacity            :: CD
     liquid_heat_capacity         :: FT
     reference_temperature        :: FT
     deep_temperature             :: TD
@@ -98,7 +101,7 @@ function WaterCoupledEnergy(FT::Type = Oceananigans.defaults.FloatType;
     Λ = isnothing(deep_conductance) ? nothing : normalize_property(FT, deep_conductance)
     τ = isnothing(deep_time_scale)  ? nothing : convert(FT, deep_time_scale)
     Td = deep_temperature isa Number ? convert(FT, deep_temperature) : deep_temperature
-    return WaterCoupledEnergy(convert(FT, dry_heat_capacity),
+    return WaterCoupledEnergy(normalize_property(FT, dry_heat_capacity),
                               convert(FT, liquid_heat_capacity),
                               convert(FT, reference_temperature),
                               Td, Λ, τ,

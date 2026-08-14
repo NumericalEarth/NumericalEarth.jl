@@ -178,3 +178,56 @@ end
         @test isapprox(M₁, 100.0 + 1e-4 * 100 * 100.0; rtol = 1e-12)
     end
 end
+
+@testset "WaterCoupledEnergy per-cell dry heat capacity" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch;
+                               size = (2, 1),
+                               x = (0, 2),
+                               z = (-1, 0),
+                               topology = (Periodic, Flat, Bounded))
+
+        # Two dry columns restoring toward Tᵈ, each at its own rate Λ/Cᵢ.
+        Cdry = Field{Center, Center, Nothing}(grid)
+        set!(Cdry, reshape([1.0e6, 2.0e6], 2, 1, 1))
+
+        Λ     = 5.0
+        Tᵈ    = 280.0
+        T₀    = 290.0
+        Δt    = 100.0
+        steps = 100
+
+        hydrology = VariablySaturatedHydrology(eltype(grid);
+            slab_depth = 1.0, porosity = 0.4, storage_height = 1000,
+            retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
+            hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
+            deep_liquid_flux = NoDeepLiquidFlux(), runoff = NoRunoff())
+        energy = WaterCoupledEnergy(eltype(grid);
+            dry_heat_capacity = Cdry,
+            liquid_heat_capacity = 4186,
+            reference_temperature = 273.15,
+            deep_temperature = Tᵈ,
+            deep_conductance = Λ,
+            advect_deep_liquid_energy = false,
+            advect_surface_liquid_energy = false)
+
+        land = SlabLand(grid; hydrology, energy)
+        set!(land; T = T₀, M = 0.0)
+        fill!(land.fluxes.surface_energy_flux, 0)
+        fill!(land.fluxes.vapor_flux, 0)
+        fill!(land.fluxes.liquid_precipitation_flux, 0)
+        fill!(land.fluxes.liquid_precipitation_temperature, T₀)
+
+        t = 0.0
+        for _ in 1:steps
+            time_step!(land, Δt)
+            t += Δt
+        end
+
+        actual_temperatures = vec(Array(interior(land.temperature)))
+        for (n, Cᵢ) in enumerate((1.0e6, 2.0e6))
+            expected_temperature = Tᵈ + (T₀ - Tᵈ) * exp(-Λ / Cᵢ * t)
+            @test isapprox(actual_temperatures[n], expected_temperature; atol = 1e-3)
+        end
+    end
+end
