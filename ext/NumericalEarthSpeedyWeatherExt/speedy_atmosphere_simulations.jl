@@ -6,7 +6,7 @@ Base.summary(::SpeedySimulation) = "SpeedyWeather.Simulation"
 
 # Take one time-step or more depending on the global timestep
 function Oceananigans.TimeSteppers.time_step!(atmos::SpeedySimulation, Δt)
-    Δt_atmos = atmos.model.time_stepping.Δt_sec
+    Δt_atmos = atmos.model.time_stepping.Δt
     nsteps = ceil(Int, Δt / Δt_atmos)
 
     if (Δt / Δt_atmos) % 1 != 0
