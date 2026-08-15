@@ -1383,34 +1383,59 @@ function strait_config_for(case)
     return nothing
 end
 
-LOADERS[:strait_transports] = c -> begin
-    config = strait_config_for(c.case)
-    if isnothing(config)
-        @warn "Cannot infer strait config for case '$(c.label)' — skipping."
-        return nothing
+# Reading a strait transport costs the whole compressed 3-D velocity history — hundreds of GB per
+# case — to extract a few hundred numbers per snapshot, so it is cached to disk like the other heavy
+# diagnostics and recomputed only when new snapshots land.
+
+# A case whose run is still in flight leaves its last JLD2 part truncated, and JLD2 throws
+# `EOFError` on read. One such case must not take down a render of eleven, so the whole loader is
+# guarded — including the disk-cache key, which counts snapshots and so reads the file too.
+guard_truncated_output(what::AbstractString, loader) = function (c::CaseCache)
+    return try
+        loader(c)
+    catch err
+        err isa EOFError || rethrow()
+        @warn "  $(c.label): output is truncated (run still writing?) — skipping $what."
+        nothing
     end
-    @info "  $(c.label): computing strait transports ($config)..."
-    return strait_transports(config, get_field(c, :fields_file);
-                              start_time = 0,
-                              stop_time  = Inf)
 end
+
+# Reading a strait transport costs the whole compressed 3-D velocity history — hundreds of GB per
+# case — to extract a few hundred numbers per snapshot, so it is cached to disk like the other heavy
+# diagnostics and recomputed only when new snapshots land.
+LOADERS[:strait_transports] = guard_truncated_output("strait transports",
+    disk_cached(:strait_transports; source_fts_syms = (:uo_fts, :vo_fts)) do c
+        config = strait_config_for(c.case)
+        if isnothing(config)
+            @warn "Cannot infer strait config for case '$(c.label)' — skipping."
+            return nothing
+        end
+        @info "  $(c.label): computing strait transports ($config)..."
+        return strait_transports(config, get_field(c, :fields_file);
+                                 start_time = 0,
+                                 stop_time  = Inf)
+    end)
 
 # Arctic freshwater gateways. Only the configurations that carry verified `fram`/`davis` section
 # indices can answer this, so the loader returns `nothing` rather than a wrong number elsewhere.
-LOADERS[:strait_freshwater_transports] = c -> begin
-    config = strait_config_for(c.case)
-    if isnothing(config)
-        @warn "Cannot infer strait config for case '$(c.label)' — skipping."
-        return nothing
-    end
-    if !haskey(strait_sections(config), :fram)
-        @warn "No Fram/Davis sections defined for config '$config' — skipping '$(c.label)'."
-        return nothing
-    end
-    @info "  $(c.label): computing Arctic freshwater transports ($config)..."
-    return strait_freshwater_transports(config,
-                                        get_field(c, :fields_file),
-                                        get_field(c, :surface_file);
-                                        start_time = 0,
-                                        stop_time  = Inf)
-end
+# Restricted to the zonal sections that matter for the Arctic budget: that skips `uo` entirely,
+# leaving two 3-D fields to read instead of three.
+LOADERS[:strait_freshwater_transports] = guard_truncated_output("Arctic freshwater transports",
+    disk_cached(:strait_freshwater_transports; source_fts_syms = (:vo_fts, :so_fts)) do c
+        config = strait_config_for(c.case)
+        if isnothing(config)
+            @warn "Cannot infer strait config for case '$(c.label)' — skipping."
+            return nothing
+        end
+        if !haskey(strait_sections(config), :fram)
+            @warn "No Fram/Davis sections defined for config '$config' — skipping '$(c.label)'."
+            return nothing
+        end
+        @info "  $(c.label): computing Arctic freshwater transports ($config)..."
+        return strait_freshwater_transports(config,
+                                            get_field(c, :fields_file),
+                                            get_field(c, :surface_file);
+                                            sections = (:fram, :davis, :bering),
+                                            start_time = 0,
+                                            stop_time  = Inf)
+    end)

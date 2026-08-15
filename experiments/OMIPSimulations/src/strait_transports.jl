@@ -53,10 +53,27 @@ strait_sections(::Val{:orca}) = (
 
 strait_sections(config::Symbol) = strait_sections(Val(config))
 
+# Restrict `strait_sections(config)` to `names`. Reading a strait transport means decompressing the
+# whole 3-D history to use a few hundred numbers per snapshot, so asking for only the sections you
+# want is the difference between opening two velocity components and one.
+function selected_strait_sections(config::Symbol, names)
+    all_sections = strait_sections(config)
+    for name in names
+        haskey(all_sections, name) ||
+            throw(ArgumentError("no section :$name for config :$config; have $(keys(all_sections))"))
+    end
+    return NamedTuple{Tuple(names)}(map(name -> getproperty(all_sections, name), Tuple(names)))
+end
+
+section_axes(sections) = (any(s -> s.axis == :u, values(sections)),
+                          any(s -> s.axis == :v, values(sections)))
+
 """
     strait_transports(config::Symbol, fields_file::AbstractString;
                       backend = InMemory(10),
-                      start_time = 0, stop_time = Inf)
+                      start_time = 0, stop_time = Inf,
+                      sections = keys(strait_sections(config)),
+                      stride = 1)
 
 Compute time series of volume transport (Sv) through every section
 `strait_sections(config)` defines, from the offline 3-D output
@@ -68,27 +85,37 @@ Dispatches on `config`: `:halfdegree` for the 720x360 TripolarGrid,
 Returns a `NamedTuple` with one `Vector{Float64}` of Sverdrups per
 section, plus `time`. Positive is northward for a `:v` section and
 eastward for a `:u` section.
+
+The 3-D output is Zstd-compressed, so every snapshot must be decompressed
+in full to read a few hundred numbers off one section — the cost is the
+whole velocity history, not the section. `sections` limits which sections
+are computed, and a request for zonal (`:v`) sections alone never opens
+`uo`; `stride` subsamples snapshots, which annual means do not miss.
 """
 function strait_transports(config::Symbol, fields_file::AbstractString;
                            backend = InMemory(10),
                            start_time = 0,
-                           stop_time = Inf)
+                           stop_time = Inf,
+                           sections = keys(strait_sections(config)),
+                           stride = 1)
 
-    sections = strait_sections(config)
+    selected = selected_strait_sections(config, sections)
+    needs_u, needs_v = section_axes(selected)
 
-    u_fts = FieldTimeSeries(fields_file, "uo"; backend = deepcopy(backend))
-    v_fts = FieldTimeSeries(fields_file, "vo"; backend = deepcopy(backend))
-    grid  = u_fts.grid
+    u_fts = needs_u ? FieldTimeSeries(fields_file, "uo"; backend = deepcopy(backend)) : nothing
+    v_fts = needs_v ? FieldTimeSeries(fields_file, "vo"; backend = deepcopy(backend)) : nothing
+    reference = something(u_fts, v_fts)
+    grid = reference.grid
 
-    times = collect(u_fts.times)
-    Nt = length(times)
-    transports = map(_ -> zeros(Nt), sections)
+    snapshots = 1:stride:length(reference.times)
+    times = collect(reference.times)[snapshots]
+    transports = map(_ -> zeros(length(snapshots)), selected)
 
-    for n in 1:Nt
-        u_int = interior(u_fts[n])
-        v_int = interior(v_fts[n])
-        for (name, section) in pairs(sections)
-            transports[name][n] = section_volume_flux(grid, u_int, v_int, section) * 1e-6
+    for (m, n) in enumerate(snapshots)
+        u_int = needs_u ? interior(u_fts[n]) : nothing
+        v_int = needs_v ? interior(v_fts[n]) : nothing
+        for (name, section) in pairs(selected)
+            transports[name][m] = section_volume_flux(grid, u_int, v_int, section) * 1e-6
         end
     end
 
@@ -102,6 +129,8 @@ end
                                  surface_file::AbstractString;
                                  backend = InMemory(10),
                                  start_time = 0, stop_time = Inf,
+                                 sections = keys(strait_sections(config)),
+                                 stride = 1,
                                  reference_salinity = 34.8,
                                  ice_salinity = 4.0,
                                  ice_density = 900.0,
@@ -125,6 +154,10 @@ re-estimate of it.
 *negative*. Observed magnitudes for orientation: Fram ≈ 2000–3000 km³ yr⁻¹ liquid and ≈ 2000
 km³ yr⁻¹ solid, Davis ≈ 3000 km³ yr⁻¹ liquid, all southward.
 
+`sections` and `stride` work as in [`strait_transports`](@ref) and matter more here, since the
+liquid flux needs salinity on top of the velocity. `sections = (:fram, :davis, :bering)` — the
+Arctic gateways and their main source, all zonal — reads two 3-D fields instead of three.
+
 Returns `(; liquid, solid)`, each a `NamedTuple` of per-section vectors plus its own `time`.
 """
 function strait_freshwater_transports(config::Symbol,
@@ -133,31 +166,36 @@ function strait_freshwater_transports(config::Symbol,
                                       backend = InMemory(10),
                                       start_time = 0,
                                       stop_time = Inf,
+                                      sections = keys(strait_sections(config)),
+                                      stride = 1,
                                       reference_salinity = 34.8,
                                       ice_salinity = 4.0,
                                       ice_density = 900.0,
                                       freshwater_density = 1000.0)
 
-    sections = strait_sections(config)
+    selected = selected_strait_sections(config, sections)
+    needs_u, needs_v = section_axes(selected)
 
     #####
-    ##### Liquid, from the 3-D output
+    ##### Liquid, from the 3-D output. Salinity is unavoidable, but a request for zonal sections
+    ##### only — which the Arctic gateways and Bering all are — never opens `uo` at all.
     #####
 
-    u_fts = FieldTimeSeries(fields_file, "uo"; backend = deepcopy(backend))
-    v_fts = FieldTimeSeries(fields_file, "vo"; backend = deepcopy(backend))
+    u_fts = needs_u ? FieldTimeSeries(fields_file, "uo"; backend = deepcopy(backend)) : nothing
+    v_fts = needs_v ? FieldTimeSeries(fields_file, "vo"; backend = deepcopy(backend)) : nothing
     S_fts = FieldTimeSeries(fields_file, "so"; backend = deepcopy(backend))
-    grid  = u_fts.grid
+    grid  = S_fts.grid
 
-    liquid_times = collect(u_fts.times)
-    liquid = map(_ -> zeros(length(liquid_times)), sections)
+    liquid_snapshots = 1:stride:length(S_fts.times)
+    liquid_times = collect(S_fts.times)[liquid_snapshots]
+    liquid = map(_ -> zeros(length(liquid_snapshots)), selected)
 
-    for n in eachindex(liquid_times)
-        u_int = interior(u_fts[n])
-        v_int = interior(v_fts[n])
+    for (m, n) in enumerate(liquid_snapshots)
+        u_int = needs_u ? interior(u_fts[n]) : nothing
+        v_int = needs_v ? interior(v_fts[n]) : nothing
         S_int = interior(S_fts[n])
-        for (name, section) in pairs(sections)
-            liquid[name][n] = section_liquid_freshwater_flux(grid, u_int, v_int, S_int, section,
+        for (name, section) in pairs(selected)
+            liquid[name][m] = section_liquid_freshwater_flux(grid, u_int, v_int, S_int, section,
                                                              reference_salinity) *
                               cubic_kilometers_per_year
         end
@@ -176,16 +214,17 @@ function strait_freshwater_transports(config::Symbol,
     ice_freshwater_fraction = (ice_density / freshwater_density) *
                               (reference_salinity - ice_salinity) / reference_salinity
 
-    solid_times = collect(ui_fts.times)
-    solid = map(_ -> zeros(length(solid_times)), sections)
+    solid_snapshots = 1:stride:length(ui_fts.times)
+    solid_times = collect(ui_fts.times)[solid_snapshots]
+    solid = map(_ -> zeros(length(solid_snapshots)), selected)
 
-    for n in eachindex(solid_times)
+    for (m, n) in enumerate(solid_snapshots)
         ui_int = interior(ui_fts[n])
         vi_int = interior(vi_fts[n])
         ℵ_int  = interior(ℵ_fts[n])
         h_int  = interior(h_fts[n])
-        for (name, section) in pairs(sections)
-            solid[name][n] = section_ice_freshwater_flux(grid, ui_int, vi_int, ℵ_int, h_int,
+        for (name, section) in pairs(selected)
+            solid[name][m] = section_ice_freshwater_flux(grid, ui_int, vi_int, ℵ_int, h_int,
                                                          section, ice_freshwater_fraction) *
                              cubic_kilometers_per_year
         end
