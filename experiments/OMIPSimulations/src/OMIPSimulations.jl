@@ -58,7 +58,8 @@ export omip_simulation,
        woa_salinity_fts_to_teos10!,
        KPPVerticalDiffusivity, KPPParameters,
        NEMOTKEVerticalDiffusivity, NEMOTKEParameters,
-       NORiBaseVerticalDiffusivity
+       NORiBaseVerticalDiffusivity,
+       BoundaryValueTransport
 
 # Patches to Oceananigans
 include("oceananigans_patches.jl")
@@ -78,6 +79,7 @@ include("ke_spectrum_diagnostic.jl")
 include("nemo_eddy_coefficients.jl")
 include("cesm_eddy_coefficients.jl")
 include("hybrid_eddy_coefficients.jl")
+include("boundary_value_transport.jl")
 include("mixed_layer_tapering.jl")
 include("omip_simulation.jl")
 include("report_fields.jl")

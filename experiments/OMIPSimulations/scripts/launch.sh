@@ -96,13 +96,29 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
                             which is comparable in size ("true" also accepted)
                   annual    remove a running mean relaxed over a year; keeps the
                             seasonal cycle, spins up over the first ~2 years
-  SKEW_FORMULATION How the GM skew flux is discretized. Ignored when KSKEW=0.
+  SKEW_FORMULATION How the GM skew transport is applied. Ignored when KSKEW=0.
                   diffusive  add it to the tracer flux (default)
                   advective  build the eddy-induced velocity and advect with it,
                              which also exposes the bolus transport as a model
                              field. Equivalent continuously, not discretely, so
                              the two give different answers run-to-run.
-                Adds "_gmadv" to the run name when set to advective.
+                  boundary_value  the Ferrari, Griffies, Nurser & Vallis (2010)
+                             transport: each column solves
+                             (c d²/dz² - N²) Y = -N² Y_GM with Y = 0 at the
+                             surface and the bottom, low-passing the baroclinic
+                             modes. Satisfies the boundary conditions without
+                             tapering and interpolates through weakly stratified
+                             layers with no floor on N². Applied advectively;
+                             requires a depth-independent KSKEW (a number or
+                             "nemo" -- "cesm"/"hybrid" are rejected).
+                Adds "_gmadv" or "_gmbvp" to the run name.
+  BVP_MODE      Mode number M in the speed c = max(BVP_CMIN, (M pi)^-1 int N dz) that
+                weights the second-order operator. Larger M filters less and gives a
+                larger transport; M=1 is the first baroclinic mode, whose amplitude is
+                about half the truncated GM transport. Default: 2.
+                Only used when SKEW_FORMULATION=boundary_value.
+  BVP_CMIN      Floor c_min on that speed, in m/s. Keeps the transport bounded in
+                weakly stratified columns. Default: 0.1.
   RESTORING_UNDER_ICE Set to "false" to stop the surface-salinity restoring acting under
                 sea ice (weighted by the open-water fraction 1-ℵ, with the zero-mean
                 correction spread over open water only, so no net salt is injected).
@@ -175,6 +191,8 @@ Examples:
   BACKGROUND_K=3e-5 ./launch.sh orca          # uniform background κ = 3e-5 m^2/s (AMOC sensitivity)
   BACKGROUND_K=1e-4 ./launch.sh orca          # uniform background κ = 1e-4 m^2/s
   BACKGROUND_K=bryan_lewis ./launch.sh orca   # Bryan-Lewis depth profile, 3e-5 → 1.3e-4
+  SKEW_FORMULATION=boundary_value ./launch.sh orca            # Ferrari et al. (2010) GM transport
+  SKEW_FORMULATION=boundary_value KSKEW=nemo ./launch.sh orca # ... with the Treguier coefficient
   FORCING_DIR=/other/path/forcing_data STAGING_DIR=/scratch/staged ./launch.sh orca
   PROFILE=true ./launch.sh orca
 USAGE
@@ -296,7 +314,10 @@ case "${NORMALIZE_FRESHWATER:-none}" in
   true|timestep) RUN_NAME="${RUN_NAME}_fwnorm" ;;
   annual)        RUN_NAME="${RUN_NAME}_fwnormann" ;;
 esac
-[[ "${SKEW_FORMULATION:-diffusive}" == "advective" ]] && RUN_NAME="${RUN_NAME}_gmadv"
+[[ "${SKEW_FORMULATION:-diffusive}" == "advective" ]]      && RUN_NAME="${RUN_NAME}_gmadv"
+[[ "${SKEW_FORMULATION:-diffusive}" == "boundary_value" ]] && RUN_NAME="${RUN_NAME}_gmbvp"
+[[ -n "${BVP_MODE:-}" ]]                       && RUN_NAME="${RUN_NAME}_bvpm${BVP_MODE}"
+[[ -n "${BVP_CMIN:-}" ]]                       && RUN_NAME="${RUN_NAME}_bvpc${BVP_CMIN}"
 [[ -n "${CB:-}" ]]                             && RUN_NAME="${RUN_NAME}_cb${CB}"
 [[ "$KSKEW" != "$DEFAULT_KSKEW" ]]             && RUN_NAME="${RUN_NAME}_kskew${KSKEW}"
 [[ "$KSYMM" != "$DEFAULT_KSYMM" ]]             && RUN_NAME="${RUN_NAME}_ksymm${KSYMM}"
@@ -478,10 +499,14 @@ fi
 
 SKEW_FORMULATION="${SKEW_FORMULATION:-diffusive}"
 case "$SKEW_FORMULATION" in
-    diffusive|advective) ;;
-    *) echo "SKEW_FORMULATION must be diffusive|advective, got '$SKEW_FORMULATION'" >&2; exit 1 ;;
+    diffusive|advective|boundary_value) ;;
+    *) echo "SKEW_FORMULATION must be diffusive|advective|boundary_value, got '$SKEW_FORMULATION'" >&2; exit 1 ;;
 esac
 SKEW_FORMULATION_KWARG="skew_flux_formulation = :${SKEW_FORMULATION},"
+
+BVP_KWARG=""
+[[ -n "${BVP_MODE:-}" ]] && BVP_KWARG="${BVP_KWARG}boundary_value_mode_number = ${BVP_MODE},"
+[[ -n "${BVP_CMIN:-}" ]] && BVP_KWARG="${BVP_KWARG}boundary_value_minimum_speed = ${BVP_CMIN},"
 
 BACKEND_KWARG=""
 [[ -n "$BACKEND_SIZE" ]] && BACKEND_KWARG="backend_size = ${BACKEND_SIZE},"
@@ -556,6 +581,7 @@ sim = omip_simulation(:${CONFIG};
                       ${NORMALIZE_FRESHWATER_KWARG}
                       ${RIVER_KWARG}
                       ${SKEW_FORMULATION_KWARG}
+                      ${BVP_KWARG}
                       Δt = ${DT},
                       forcing_dir = \"${FORCING_DIR}\",
                       ${STAGING_KWARG}

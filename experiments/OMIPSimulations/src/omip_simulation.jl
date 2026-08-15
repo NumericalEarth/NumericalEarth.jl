@@ -478,10 +478,21 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   the internal Rossby radius squared times the baroclinic growth rate, recomputed every step and
   held depth-uniform. GM tapers to zero equatorward of 20°, Redi rises to its reference value there
   and carries a floor of one fifth of it. See [`NEMOEddyCoefficients`](@ref).
-- `skew_flux_formulation`: how the GM skew flux is discretized. `:diffusive` (default) adds it to
+- `skew_flux_formulation`: how the GM skew transport is applied. `:diffusive` (default) adds it to
   the tracer flux; `:advective` builds the eddy-induced velocity and advects with it, which also
-  makes the bolus transport available as a model field. Equivalent continuously, not discretely.
+  makes the bolus transport available as a model field. Those two are equivalent continuously, not
+  discretely. `:boundary_value` is a different transport, not a different discretization of the same
+  one: the eddy transport in each column solves the boundary-value problem of Ferrari et al. (2010),
+  `(c² ∂²/∂z² − N²) Υ = −N² Υᴳᴹ` with `Υ = 0` at the surface and the bottom, which low-passes the
+  baroclinic modes, satisfies the boundary conditions without tapering, and interpolates through
+  weakly stratified layers with no floor on `N²`. It is applied advectively and requires a
+  depth-independent `κ_skew` (a number or `:nemo`). See [`BoundaryValueTransport`](@ref).
   Ignored when `κ_skew` is `nothing`.
+- `boundary_value_mode_number`, `boundary_value_minimum_speed`: `M` and `c_min` setting the speed
+  `c = max(c_min, (M π)⁻¹ ∫ N dz)` that weights the second-order operator, used only when
+  `skew_flux_formulation = :boundary_value`. Defaults: `2` and `0.1` m s⁻¹. Larger `M` filters less
+  and gives a larger transport; `M = 1` is the first baroclinic mode, whose amplitude is about half
+  the truncated GM transport.
 - `biharmonic_timescale`: horizontal biharmonic-viscosity timescale. Per-config default: `nothing`
   (no biharmonic viscosity) for `:quarterdegree`/`:twelfthdegree`, `10days` for `:test`, `50days`
   otherwise.
@@ -599,6 +610,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                          stop_time = Inf,
                          flux_configuration = :default,
                          vertical_closure = :catke,
+                         boundary_value_mode_number = 2,
+                         boundary_value_minimum_speed = 0.1,
                          background_vertical_diffusivity = :henyey,
                          background_vertical_viscosity = nothing,
                          implicit_vertical_advection = true,
@@ -637,6 +650,8 @@ function omip_simulation(config::Symbol = :halfdegree;
     river_spread_radius  = resolve_config_default(river_spread_radius,  config_river_spread_radius(cfg))
     river_spread_cells   = resolve_config_default(river_spread_cells,   config_river_spread_cells(cfg))
     Δt                   = resolve_config_default(Δt,                   config_Δt(cfg))
+
+    check_depth_independent_skew_coefficient(κ_skew, skew_flux_formulation)
 
     grid = build_grid(cfg, arch, Nz, depth; Δz_top, partial_cell_bathymetry)
 
@@ -682,6 +697,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                         cesm_eddy_coefficients,
                         hybrid_eddy_coefficients,
                         eddy_slope_limiter,
+                        boundary_value_mode_number,
+                        boundary_value_minimum_speed,
                         biharmonic_timescale,
                         biharmonic_viscosity,
                         vertical_closure,
@@ -925,14 +942,28 @@ end
       z >= -100 ? 1e-2 :
                   1e-5
 
-# GM discretization. The two forms are equivalent continuously but not discretely: `:diffusive`
+# GM discretization. The first two forms are equivalent continuously but not discretely: `:diffusive`
 # adds a skew flux to the tracer equation, `:advective` builds an eddy-induced velocity and advects
 # with it. Only the latter puts the bolus transport into a velocity field the rest of the model
-# (and `bolus_meridional_volume_flux_operation`) can read directly.
+# (and `bolus_meridional_volume_flux_operation`) can read directly. `:boundary_value` is a different
+# transport altogether — see `BoundaryValueTransport` — and is advective for the same reason.
 gm_skew_flux_formulation(formulation::Symbol) =
     formulation === :diffusive ? DiffusiveFormulation() :
     formulation === :advective ? AdvectiveFormulation() :
     throw(ArgumentError("skew_flux_formulation must be :diffusive or :advective, got :$formulation"))
+
+# `κ_skew` must be depth-independent under the boundary-value problem: it parameterizes stirring by
+# the barotropic eddy velocity, and the vertical structure of the transport comes from the column
+# problem instead (Ferrari et al. 2010, Section 4.1). The CESM and hybrid coefficients carry their
+# own vertical shape, which would apply a vertical structure twice.
+function check_depth_independent_skew_coefficient(κ_skew, skew_flux_formulation)
+    if skew_flux_formulation === :boundary_value && (κ_skew === :cesm || κ_skew === :hybrid)
+        throw(ArgumentError("skew_flux_formulation = :boundary_value requires a depth-independent \
+                             κ_skew (a number or :nemo); the :$κ_skew coefficient has vertical \
+                             structure, which the boundary-value problem supplies itself"))
+    end
+    return nothing
+end
 
 # Build a vertical-mixing closure tuple. The eddy and horizontal
 # components are common to every option; the primary vertical closure
@@ -943,6 +974,8 @@ function omip_closure(vertical_closure::Symbol;
                       biharmonic_viscosity = nothing,
                       skew_flux_formulation = :diffusive,
                       eddy_slope_limiter = nothing,
+                      boundary_value_mode_number = 2,
+                      boundary_value_minimum_speed = 0.1,
                       background_vertical_diffusivity = :henyey,
                       background_vertical_viscosity = nothing,
                       Cᵂu★ = nothing)
@@ -985,12 +1018,22 @@ function omip_closure(vertical_closure::Symbol;
         error("Unknown vertical_closure: $vertical_closure. Options: :catke, :simple, :nori, :rbvd, :kpp, :nemo_tke")
     end
 
-    eddy  = if isnothing(κ_skew) | isnothing(κ_symmetric)
-        nothing
+    # The boundary-value problem replaces the skew transport only, so Redi mixing rides along in a
+    # companion closure carrying `κ_symmetric` alone.
+    eddy = if isnothing(κ_skew) | isnothing(κ_symmetric)
+        ()
+    elseif skew_flux_formulation === :boundary_value
+        limiter = isnothing(eddy_slope_limiter) ? FluxTapering(1e-2) : eddy_slope_limiter
+        transport = BoundaryValueTransport(; κ_skew, slope_limiter = limiter,
+                                           mode_number = boundary_value_mode_number,
+                                           minimum_speed = boundary_value_minimum_speed)
+        redi = IsopycnalSkewSymmetricDiffusivity(; κ_skew = nothing, κ_symmetric,
+                                                 slope_limiter = limiter)
+        (transport, redi)
     else
         limiter = isnothing(eddy_slope_limiter) ? FluxTapering(1e-2) : eddy_slope_limiter
-        IsopycnalSkewSymmetricDiffusivity(; κ_skew, κ_symmetric, slope_limiter = limiter,
-                                          skew_flux_formulation = gm_skew_flux_formulation(skew_flux_formulation))
+        (IsopycnalSkewSymmetricDiffusivity(; κ_skew, κ_symmetric, slope_limiter = limiter,
+                                           skew_flux_formulation = gm_skew_flux_formulation(skew_flux_formulation)),)
     end
 
     horizontal_viscosity = if !isnothing(biharmonic_viscosity)
@@ -1003,7 +1046,7 @@ function omip_closure(vertical_closure::Symbol;
         nothing
     end
 
-    return filter(!isnothing, (primary, eddy, horizontal_viscosity, background))
+    return filter(!isnothing, (primary, eddy..., horizontal_viscosity, background))
 end
 
 # Enhanced vertical mixing at river mouths (cf. NEMO `rn_avt_rnf` over `rn_hrnf`): an extra tracer
@@ -1266,6 +1309,8 @@ function build_ocean(config, grid;
                      cesm_eddy_coefficients = nothing,
                      hybrid_eddy_coefficients = nothing,
                      eddy_slope_limiter = nothing,
+                     boundary_value_mode_number = 2,
+                     boundary_value_minimum_speed = 0.1,
                      background_vertical_diffusivity = :henyey,
                      background_vertical_viscosity = nothing,
                      restoring_under_sea_ice = true,
@@ -1299,6 +1344,8 @@ function build_ocean(config, grid;
                            biharmonic_timescale, biharmonic_viscosity,
                            skew_flux_formulation,
                            eddy_slope_limiter,
+                           boundary_value_mode_number,
+                           boundary_value_minimum_speed,
                            background_vertical_diffusivity,
                            background_vertical_viscosity,
                            Cᵂu★)
