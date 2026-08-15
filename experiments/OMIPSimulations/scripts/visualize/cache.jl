@@ -1394,3 +1394,23 @@ LOADERS[:strait_transports] = c -> begin
                               start_time = 0,
                               stop_time  = Inf)
 end
+
+# Arctic freshwater gateways. Only the configurations that carry verified `fram`/`davis` section
+# indices can answer this, so the loader returns `nothing` rather than a wrong number elsewhere.
+LOADERS[:strait_freshwater_transports] = c -> begin
+    config = strait_config_for(c.case)
+    if isnothing(config)
+        @warn "Cannot infer strait config for case '$(c.label)' — skipping."
+        return nothing
+    end
+    if !haskey(strait_sections(config), :fram)
+        @warn "No Fram/Davis sections defined for config '$config' — skipping '$(c.label)'."
+        return nothing
+    end
+    @info "  $(c.label): computing Arctic freshwater transports ($config)..."
+    return strait_freshwater_transports(config,
+                                        get_field(c, :fields_file),
+                                        get_field(c, :surface_file);
+                                        start_time = 0,
+                                        stop_time  = Inf)
+end

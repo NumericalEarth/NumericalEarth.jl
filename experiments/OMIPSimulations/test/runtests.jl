@@ -169,3 +169,64 @@ end
                                                  skew_flux_formulation = :boundary_value)
     @test any(c -> c isa BoundaryValueTransport, closure_tuple)
 end
+
+@testset "Strait freshwater transports" begin
+    # A uniform channel, so every flux has a closed form and sign, units and the salinity
+    # weighting can each be checked against it independently.
+    Nx, Ny, Nz = 8, 8, 4
+    Lx, Ly, Lz = 8e3, 8e3, 400.0
+    grid = RectilinearGrid(CPU(); size = (Nx, Ny, Nz), x = (0, Lx), y = (0, Ly), z = (-Lz, 0),
+                           topology = (Bounded, Bounded, Bounded))
+
+    Δx = Lx / Nx
+    Δz = Lz / Nz
+    section = OMIPSimulations.StraitSection(3:5, 4:4, :v)   # three cells wide
+    area = 3 * Δx * Nz * Δz
+
+    u = zeros(Nx, Ny, Nz)
+    v = fill(0.1, Nx, Ny, Nz)
+    S★ = 34.8
+
+    volume_flux = OMIPSimulations.section_volume_flux(grid, u, v, section)
+    @test volume_flux ≈ 0.1 * area
+
+    liquid(S) = OMIPSimulations.section_liquid_freshwater_flux(grid, u, v, fill(S, Nx, Ny, Nz),
+                                                               section, S★)
+
+    # Water at the reference salinity carries no freshwater anomaly at all.
+    @test liquid(S★) ≈ 0 atol = 1e-12
+
+    # Pure freshwater carries the whole volume flux; half the reference salinity, half of it.
+    @test liquid(0.0)    ≈ volume_flux
+    @test liquid(S★ / 2) ≈ volume_flux / 2
+
+    # Fresher than reference is a positive (northward) freshwater flux; saltier is negative.
+    @test liquid(30.0) > 0
+    @test liquid(36.0) < 0
+
+    # Southward flow reverses the sign — Arctic export through Fram and Davis is negative.
+    @test OMIPSimulations.section_liquid_freshwater_flux(grid, u, -v, fill(30.0, Nx, Ny, Nz),
+                                                        section, S★) ≈ -liquid(30.0)
+
+    # Solid flux: 1 m of ice at full concentration moving at 0.1 m/s across the same width.
+    ice_salinity, ice_density = 4.0, 900.0
+    fraction = (ice_density / 1000) * (S★ - ice_salinity) / S★
+    ui = zeros(Nx, Ny, 1)
+    vi = fill(0.1, Nx, Ny, 1)
+    ℵ  = ones(Nx, Ny, 1)
+    h  = ones(Nx, Ny, 1)
+
+    solid = OMIPSimulations.section_ice_freshwater_flux(grid, ui, vi, ℵ, h, section, fraction)
+    @test solid ≈ 0.1 * 1.0 * 3Δx * fraction
+
+    # Half the concentration carries half the ice, hence half the freshwater.
+    @test OMIPSimulations.section_ice_freshwater_flux(grid, ui, vi, 0.5ℵ, h, section, fraction) ≈ solid / 2
+
+    # km³ yr⁻¹ conversion: 1 m³ s⁻¹ is a bit over 0.03 km³ yr⁻¹.
+    @test OMIPSimulations.cubic_kilometers_per_year ≈ 0.0315360
+
+    # Both Arctic gateways exist on the ORCA mesh and are zonal sections.
+    orca = OMIPSimulations.strait_sections(:orca)
+    @test haskey(orca, :fram) && haskey(orca, :davis)
+    @test orca.fram.axis == :v && orca.davis.axis == :v
+end
