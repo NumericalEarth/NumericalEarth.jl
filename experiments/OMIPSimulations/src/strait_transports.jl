@@ -73,7 +73,7 @@ section_axes(sections) = (any(s -> s.axis == :u, values(sections)),
                       backend = InMemory(10),
                       start_time = 0, stop_time = Inf,
                       sections = keys(strait_sections(config)),
-                      stride = 1)
+                      stride = 2)
 
 Compute time series of volume transport (Sv) through every section
 `strait_sections(config)` defines, from the offline 3-D output
@@ -90,14 +90,16 @@ The 3-D output is Zstd-compressed, so every snapshot must be decompressed
 in full to read a few hundred numbers off one section — the cost is the
 whole velocity history, not the section. `sections` limits which sections
 are computed, and a request for zonal (`:v`) sections alone never opens
-`uo`; `stride` subsamples snapshots, which annual means do not miss.
+`uo`; `stride` subsamples snapshots, halving the read again. The default
+of 2 still leaves 26 samples a year at the usual 15-day output cadence,
+which annual means do not miss — pass `stride = 1` to read every snapshot.
 """
 function strait_transports(config::Symbol, fields_file::AbstractString;
                            backend = InMemory(10),
                            start_time = 0,
                            stop_time = Inf,
                            sections = keys(strait_sections(config)),
-                           stride = 1)
+                           stride = 2)
 
     selected = selected_strait_sections(config, sections)
     needs_u, needs_v = section_axes(selected)
@@ -130,7 +132,7 @@ end
                                  backend = InMemory(10),
                                  start_time = 0, stop_time = Inf,
                                  sections = keys(strait_sections(config)),
-                                 stride = 1,
+                                 stride = 2,
                                  reference_salinity = 34.8,
                                  ice_salinity = 4.0,
                                  ice_density = 900.0,
@@ -156,7 +158,8 @@ km³ yr⁻¹ solid, Davis ≈ 3000 km³ yr⁻¹ liquid, all southward.
 
 `sections` and `stride` work as in [`strait_transports`](@ref) and matter more here, since the
 liquid flux needs salinity on top of the velocity. `sections = (:fram, :davis, :bering)` — the
-Arctic gateways and their main source, all zonal — reads two 3-D fields instead of three.
+Arctic gateways and their main source, all zonal — reads two 3-D fields instead of three, and the
+default `stride = 2` halves the snapshots read on top of that.
 
 Returns `(; liquid, solid)`, each a `NamedTuple` of per-section vectors plus its own `time`.
 """
@@ -167,7 +170,7 @@ function strait_freshwater_transports(config::Symbol,
                                       start_time = 0,
                                       stop_time = Inf,
                                       sections = keys(strait_sections(config)),
-                                      stride = 1,
+                                      stride = 2,
                                       reference_salinity = 34.8,
                                       ice_salinity = 4.0,
                                       ice_density = 900.0,
@@ -238,7 +241,7 @@ function strait_freshwater_transports(config::Symbol,
 end
 
 function section_volume_flux(grid, u_int, v_int, section::StraitSection)
-    Nz = size(u_int, 3)
+    Nz = size(grid, 3)
     total = 0.0
 
     if section.axis == :v
@@ -269,7 +272,7 @@ end
 # Liquid freshwater flux ∫ v (S★ − S)/S★ dA in m³ s⁻¹, positive northward/eastward.
 function section_liquid_freshwater_flux(grid, u_int, v_int, S_int, section::StraitSection,
                                         reference_salinity)
-    Nz = size(u_int, 3)
+    Nz = size(grid, 3)
     total = 0.0
 
     if section.axis == :v
