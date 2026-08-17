@@ -1,5 +1,7 @@
 using Oceananigans.OutputReaders: FieldTimeSeries, InMemory
 using Oceananigans.Fields: interior
+using Oceananigans.Grids: Center
+using Oceananigans.ImmersedBoundaries: inactive_node
 using Oceananigans.Operators: Δxᶜᶠᶜ, Δyᶠᶜᶜ, Δzᶜᶠᶜ, Δzᶠᶜᶜ
 
 # Seconds per year over m³ per km³: converts a volume flux in m³ s⁻¹ to km³ yr⁻¹, the unit every
@@ -67,6 +69,12 @@ end
 
 section_axes(sections) = (any(s -> s.axis == :u, values(sections)),
                           any(s -> s.axis == :v, values(sections)))
+
+# Snapshot indices inside the requested window, decimated by `stride`. Restricting before the read
+# loop rather than after means a snapshot outside the window is never opened, so a run whose last
+# part file was truncated by a killed writer is still readable over the window that survived.
+selected_snapshots(times, stride, start_time, stop_time) =
+    [n for n in 1:stride:length(times) if start_time <= times[n] <= stop_time]
 
 """
     strait_transports(config::Symbol, fields_file::AbstractString;
@@ -189,7 +197,7 @@ function strait_freshwater_transports(config::Symbol,
     S_fts = FieldTimeSeries(fields_file, "so"; backend = deepcopy(backend))
     grid  = S_fts.grid
 
-    liquid_snapshots = 1:stride:length(S_fts.times)
+    liquid_snapshots = selected_snapshots(S_fts.times, stride, start_time, stop_time)
     liquid_times = collect(S_fts.times)[liquid_snapshots]
     liquid = map(_ -> zeros(length(liquid_snapshots)), selected)
 
@@ -217,7 +225,7 @@ function strait_freshwater_transports(config::Symbol,
     ice_freshwater_fraction = (ice_density / freshwater_density) *
                               (reference_salinity - ice_salinity) / reference_salinity
 
-    solid_snapshots = 1:stride:length(ui_fts.times)
+    solid_snapshots = selected_snapshots(ui_fts.times, stride, start_time, stop_time)
     solid_times = collect(ui_fts.times)[solid_snapshots]
     solid = map(_ -> zeros(length(solid_snapshots)), selected)
 
@@ -233,11 +241,8 @@ function strait_freshwater_transports(config::Symbol,
         end
     end
 
-    liquid_window = (liquid_times .>= start_time) .& (liquid_times .<= stop_time)
-    solid_window  = (solid_times  .>= start_time) .& (solid_times  .<= stop_time)
-
-    return (liquid = merge(map(t -> t[liquid_window], liquid), (; time = liquid_times[liquid_window])),
-            solid  = merge(map(t -> t[solid_window],  solid),  (; time = solid_times[solid_window])))
+    return (liquid = merge(liquid, (; time = liquid_times)),
+            solid  = merge(solid,  (; time = solid_times)))
 end
 
 function section_volume_flux(grid, u_int, v_int, section::StraitSection)
@@ -269,6 +274,14 @@ end
 @inline salinity_at_v_face(S_int, i, j, k) = (S_int[i, j, k] + S_int[i, j+1, k]) / 2
 @inline salinity_at_u_face(S_int, i, j, k) = (S_int[i-1, j, k] + S_int[i, j, k]) / 2
 
+# Dry cells are written as zero, so a face with one dry neighbour would halve its salinity and inflate
+# `(S★ − S)/S★` by more than an order of magnitude. Both tracer neighbours must be wet to contribute.
+@inline wet_v_face(grid, i, j, k) = !inactive_node(i, j,   k, grid, Center(), Center(), Center()) &&
+                                    !inactive_node(i, j+1, k, grid, Center(), Center(), Center())
+
+@inline wet_u_face(grid, i, j, k) = !inactive_node(i-1, j, k, grid, Center(), Center(), Center()) &&
+                                    !inactive_node(i,   j, k, grid, Center(), Center(), Center())
+
 # Liquid freshwater flux ∫ v (S★ − S)/S★ dA in m³ s⁻¹, positive northward/eastward.
 function section_liquid_freshwater_flux(grid, u_int, v_int, S_int, section::StraitSection,
                                         reference_salinity)
@@ -277,6 +290,7 @@ function section_liquid_freshwater_flux(grid, u_int, v_int, S_int, section::Stra
 
     if section.axis == :v
         for j in section.j, i in section.i, k in 1:Nz
+            wet_v_face(grid, i, j, k) || continue
             S = salinity_at_v_face(S_int, i, j, k)
             isfinite(S) || continue
             Δx = Δxᶜᶠᶜ(i, j, k, grid)
@@ -285,6 +299,7 @@ function section_liquid_freshwater_flux(grid, u_int, v_int, S_int, section::Stra
         end
     elseif section.axis == :u
         for j in section.j, i in section.i, k in 1:Nz
+            wet_u_face(grid, i, j, k) || continue
             S = salinity_at_u_face(S_int, i, j, k)
             isfinite(S) || continue
             Δy = Δyᶠᶜᶜ(i, j, k, grid)
@@ -308,6 +323,7 @@ function section_ice_freshwater_flux(grid, ui_int, vi_int, ℵ_int, h_int, secti
 
     if section.axis == :v
         for j in section.j, i in section.i
+            wet_v_face(grid, i, j, k_surface) || continue
             ice_volume = (ℵ_int[i, j, 1] * h_int[i, j, 1] + ℵ_int[i, j+1, 1] * h_int[i, j+1, 1]) / 2
             isfinite(ice_volume) || continue
             Δx = Δxᶜᶠᶜ(i, j, k_surface, grid)
@@ -315,6 +331,7 @@ function section_ice_freshwater_flux(grid, ui_int, vi_int, ℵ_int, h_int, secti
         end
     elseif section.axis == :u
         for j in section.j, i in section.i
+            wet_u_face(grid, i, j, k_surface) || continue
             ice_volume = (ℵ_int[i-1, j, 1] * h_int[i-1, j, 1] + ℵ_int[i, j, 1] * h_int[i, j, 1]) / 2
             isfinite(ice_volume) || continue
             Δy = Δyᶠᶜᶜ(i, j, k_surface, grid)
