@@ -12,11 +12,11 @@ meridional heat fluxes or the ocean heat-content tendency.
 When `TendencyMethod()` is used, the registered temperature `BudgetComputation`
 callback is reused. If none is registered, one is created and added to `simulation`.
 
-!!! warning "The flux method does not support orthogonal spherical shell grids"
+!!! warning "The flux method does not support OrthogonalSphericalShell grids"
 
     For an `OrthogonalSphericalShellGrid`, use `TendencyMethod()` and provide a
-    `LatitudeLongitudeGrid` via `destination_grid`. `MeridionalFluxMethod()` also
-    supports idealized domains on `RectilinearGrid`.
+    `destination_grid` that is either a `LatitudeLongitudeGrid` or a `RectilinearGrid`.
+    The `MeridionalFluxMethod()` also supports idealized domains on `RectilinearGrid`.
 
 Arguments
 =========
