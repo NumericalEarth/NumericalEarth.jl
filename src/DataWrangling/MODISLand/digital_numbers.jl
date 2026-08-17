@@ -165,4 +165,3 @@ recommended_lai_screening() =
     lai_screening_mask(:other_quality, :backup_algorithm, :cloudy)
 
 @inline lai_screened(qc, extra_qc, mask) = !iszero(lai_rejection_flags(qc, extra_qc) & mask)
-
