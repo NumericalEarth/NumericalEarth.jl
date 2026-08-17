@@ -88,18 +88,14 @@ Average the `FieldTimeSeries` `fts` onto windows of length `window`, tiling `bou
 first date.
 
 `bounds` gives the `Nt + 1` dates delimiting the samples: sample `n` covers
-`[bounds[n], bounds[n+1])`. Samples are weighted by their overlap with each window, which a
-composited product needs — its values are already window means, and a year-anchored cadence
-does not nest inside a month, so an unweighted mean mis-weights every sample straddling an
-edge.
+`[bounds[n], bounds[n+1])`. Samples are weighted by their overlap with each window.
 
 `NaN` samples are skipped and the remaining weights renormalized, so a window with any valid
 overlap returns a value and one with none returns `NaN`.
 
 Returns `(; series, edges)`: the averaged series, carrying the input's grid, indices, and time
 indexing, and the `Nw + 1` window edges. Its times are the window centers measured from
-`first(bounds)`. The edges come back because the last window is whatever the record leaves
-over, so the centers alone cannot say what interval each value covers.
+`first(bounds)`.
 
 The reduction streams through the record one sample at a time, so `fts` may hold any number
 of its times in memory; a partly-resident series has its window advanced (and left) at the

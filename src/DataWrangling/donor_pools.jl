@@ -1,16 +1,26 @@
 #####
-##### Donor pools for the seasonal gap fill: where a gappy cell borrows its curve from,
-##### and the scaling that adapts the borrowed shape to the cell's own level
+##### Donor pools for the seasonal gap fill. Both pools answer the same question through the
+##### shared `donor_series!` — "give me a reference year-curve for cell (i, j)" — and differ
+##### only in where the curve comes from: `BlockDonorTable` averages same-class neighbors,
+##### `AnchorDonorPool` reads the cell's own climatology. `fill_seasonal_gaps!` then scales
+##### whichever curve to the cell's observations (`donor_scaling`) and writes it into the gaps.
 #####
 
 """
     BlockDonorTable
 
-Per-period sums and counts of the valid values of each class, aggregated over square blocks
-of cells and accumulated into 2-D prefix sums, so the total over any block window costs four
-lookups however wide the window is. That is what makes an *expanding* stencil affordable:
-the search grows its radius until the donor count reaches `minimum_donors`, and growing by
-one ring costs a handful of table lookups rather than thousands of cell visits.
+The neighbor-sourced donor pool: a gappy cropland cell's reference curve is the average of
+the cropland cells around it, period by period. Three precomputations make that affordable
+at any search radius:
+
+1. *Blocks.* Valid values bin into per-(block, class, period) sums and counts, so an areal
+   average is a few additions rather than cell visits.
+2. *Prefix sums.* The block totals accumulate into 2-D running totals, so the total over
+   any rectangle of blocks is a four-corner difference (`window_total`) — an 11×11-block
+   window costs no more than a 3×3.
+3. *Growth.* The stencil widens ring by ring until every period holds `minimum_donors`
+   same-class cells, so it stays narrow where data is dense and reaches far only under
+   the recurrent cloud that made the gap.
 
     ┌───┬───┬───┬───┬───┐
     │ ░ │ ░ │ ░ │ ░ │ ░ │     Blocks of `block_size`² cells. The stencil opens
@@ -141,6 +151,7 @@ function donor_series!(curve, table::BlockDonorTable, 𝒜, i, j)
 
     for t in eachindex(curve)
         total, n = sums[t], counts[t]
+        # Self-exclusion: the cell's own value must not enter its reference curve.
         value = 𝒜[i, j, t]
         if !isnan(value)
             total -= value
@@ -158,6 +169,11 @@ end
 The donor pool of a date-dependent fill: each cell's own climatological curve, read at the
 period each target time falls in — preserving the cell's magnitude and seasonal shape, and
 borrowing nothing spatially.
+
+When a climatology exists, this beats the neighbors: a cell that greens up two weeks before
+the rest of its class carries that quirk in its own record, which no neighbor average can
+supply. The pool itself is a lookup — `anchor[i, j, period]` down the period list — and its
+only real logic is the alignment between the series' times and the anchor's periods.
 
 Built with `AnchorDonorPool(anchor, anchor_periods, Nt, spatial)`: `anchor` is the
 climatology (a `FieldTimeSeries` or an array whose last dimension is its periods), checked
