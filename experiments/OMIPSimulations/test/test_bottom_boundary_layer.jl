@@ -21,7 +21,7 @@ function slope_grid(bottom_height)
 end
 
 # Total tendency-weighted volume, the peak tendency, and the number of cells the scheme touches.
-function tendency_summary(bottom_height, temperature; plume_velocity = 0.1)
+function tendency_summary(bottom_height, temperature; diffusivity = 5000)
     grid = slope_grid(bottom_height)
 
     T = CenterField(grid)
@@ -32,7 +32,7 @@ function tendency_summary(bottom_height, temperature; plume_velocity = 0.1)
     fill_halo_regions!(S)
     fields = (; T, S)
 
-    bbl = BottomBoundaryLayer(grid, TEOS10EquationOfState(); plume_velocity)
+    bbl = BottomBoundaryLayer(grid, TEOS10EquationOfState(); diffusivity)
     update_bottom_boundary_layer!(bbl, grid, fields)
     parameters = (bottom_boundary_layer = bbl, tracer_name = Val(:T))
     clock = Clock(time = 0.0)
@@ -95,9 +95,9 @@ uniform(x, y, z)         = 4.0
     end
 
     @testset "transport magnitude" begin
-        # transport = plume velocity × face area = 0.1 × 10 km × 50 m, spread over one bottom cell.
-        upslope = tendency_summary(deepening, dense_upslope; plume_velocity = 0.1)
-        halved  = tendency_summary(deepening, dense_upslope; plume_velocity = 0.05)
+        # Transport is linear in the coefficient, so halving κ halves the tendency everywhere.
+        upslope = tendency_summary(deepening, dense_upslope; diffusivity = 5000)
+        halved  = tendency_summary(deepening, dense_upslope; diffusivity = 2500)
         @test halved.peak ≈ upslope.peak / 2
     end
 end

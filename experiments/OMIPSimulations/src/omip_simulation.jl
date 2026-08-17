@@ -629,8 +629,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                          river_mixing_depth = 10,
                          river_spread_radius = ConfigDefault(),
                          river_spread_cells = ConfigDefault(),
-                         bbl_plume_velocity = nothing,
                          bbl_diffusivity = nothing,
+                         bbl_transport_coefficient = nothing,
                          diagnostics = true,
                          field_mean_interval = 5days,
                          surface_averaging_interval = 5days,
@@ -693,7 +693,11 @@ function omip_simulation(config::Symbol = :halfdegree;
 
     eddy_slope_limiter = mixed_layer_tapering ? MixedLayerTapering(grid) : nothing
 
-    ocean_forcing, bottom_boundary_layer = bottom_boundary_layer_forcing(grid, bbl_plume_velocity, bbl_diffusivity)
+    diffusive_forcing, bottom_boundary_layer = bottom_boundary_layer_forcing(grid, bbl_diffusivity)
+    advective_forcing, advective_bottom_boundary_layer =
+        advective_bottom_boundary_layer_forcing(grid, bbl_transport_coefficient)
+
+    ocean_forcing = merge_tracer_forcings(diffusive_forcing, advective_forcing)
 
     ocean = build_ocean(cfg, grid;
                         forcing = ocean_forcing,
@@ -773,6 +777,12 @@ function omip_simulation(config::Symbol = :halfdegree;
     if !isnothing(bottom_boundary_layer)
         update_bottom_boundary_layer!(simulation, bottom_boundary_layer)
         add_callback!(simulation, BottomBoundaryLayerUpdate(bottom_boundary_layer), IterationInterval(1))
+    end
+
+    if !isnothing(advective_bottom_boundary_layer)
+        update_advective_bottom_boundary_layer!(simulation, advective_bottom_boundary_layer)
+        add_callback!(simulation, AdvectiveBottomBoundaryLayerUpdate(advective_bottom_boundary_layer),
+                      IterationInterval(1))
     end
 
     # Same for CESM's stratification-dependent coefficient.

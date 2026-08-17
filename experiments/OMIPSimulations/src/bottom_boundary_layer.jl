@@ -21,37 +21,7 @@ using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 using Adapt: Adapt, adapt
 
 """
-    PlumeVelocity(velocity)
-
-Face transport set by a prescribed downslope speed, `transport = velocity * face_area`. Direction aware:
-the gradient length cancels, so an anisotropic grid does not imply a different plume speed per direction.
-"""
-struct PlumeVelocity{FT}
-    velocity :: FT
-end
-
-"""
-    LateralDiffusivity(diffusivity)
-
-Face transport in NEMO's scalar form, `transport = rn_ahtbbl * (face_width / gradient_length) * thickness`.
-Equivalent to a plume speed of `diffusivity / gradient_length`, which differs by direction wherever the
-grid is anisotropic.
-"""
-struct LateralDiffusivity{FT}
-    diffusivity :: FT
-end
-
-@inline face_transport(p::PlumeVelocity, face_width, gradient_length, thickness) =
-    p.velocity * face_width * thickness
-
-@inline face_transport(p::LateralDiffusivity, face_width, gradient_length, thickness) =
-    p.diffusivity * face_width / gradient_length * thickness
-
-Adapt.adapt_structure(to, p::PlumeVelocity)      = PlumeVelocity(adapt(to, p.velocity))
-Adapt.adapt_structure(to, p::LateralDiffusivity) = LateralDiffusivity(adapt(to, p.diffusivity))
-
-"""
-    BottomBoundaryLayer(grid, equation_of_state; plume_velocity, diffusivity)
+    BottomBoundaryLayer(grid, equation_of_state; diffusivity)
 
 Dense water sitting upslope of a deeper neighbour is diffused along the bottom, mimicking a gravity
 current that a z-coordinate model otherwise mixes away over one or two grid cells.
@@ -60,30 +30,26 @@ current that a z-coordinate model otherwise mixes away over one or two grid cell
 that together form the activation criterion — is derived inside the kernel from the same `(i,j)` to
 neighbour pairing, so both flip sign together across the tripolar fold and their product is invariant.
 
-Supply either `plume_velocity` (m s⁻¹) or `diffusivity` (m² s⁻¹, NEMO's `rn_ahtbbl`).
+`diffusivity` is NEMO's `rn_ahtbbl` in m² s⁻¹. Because this is a symmetric exchange it drives the two
+bottom cells to their volume-weighted mean, which caps the density it can deliver downslope regardless of
+`diffusivity`; [`AdvectiveBottomBoundaryLayer`](@ref) has no such cap.
 """
-struct BottomBoundaryLayer{K, T, C, E}
-    bottom_index        :: K
-    transport_x         :: T
-    transport_y         :: T
-    transport_parameter :: C
-    equation_of_state   :: E
+struct BottomBoundaryLayer{K, T, FT, E}
+    bottom_index      :: K
+    transport_x       :: T
+    transport_y       :: T
+    diffusivity       :: FT
+    equation_of_state :: E
 end
 
 Adapt.adapt_structure(to, bbl::BottomBoundaryLayer) =
     BottomBoundaryLayer(adapt(to, bbl.bottom_index),
                         adapt(to, bbl.transport_x),
                         adapt(to, bbl.transport_y),
-                        adapt(to, bbl.transport_parameter),
+                        adapt(to, bbl.diffusivity),
                         adapt(to, bbl.equation_of_state))
 
-function BottomBoundaryLayer(grid, equation_of_state; plume_velocity = nothing, diffusivity = nothing)
-
-    isnothing(plume_velocity) == isnothing(diffusivity) &&
-        throw(ArgumentError("supply exactly one of `plume_velocity` or `diffusivity`"))
-
-    transport_parameter = isnothing(plume_velocity) ? LateralDiffusivity(convert(eltype(grid), diffusivity)) :
-                                                      PlumeVelocity(convert(eltype(grid), plume_velocity))
+function BottomBoundaryLayer(grid, equation_of_state; diffusivity)
 
     bottom_index = Field{Center, Center, Nothing}(grid)
     set!(bottom_index, deepest_wet_level(grid))
@@ -93,7 +59,7 @@ function BottomBoundaryLayer(grid, equation_of_state; plume_velocity = nothing, 
     transport_y = Field{Center, Center, Nothing}(grid)
 
     return BottomBoundaryLayer(bottom_index, transport_x, transport_y,
-                               transport_parameter, equation_of_state)
+                               convert(eltype(grid), diffusivity), equation_of_state)
 end
 
 """
@@ -186,18 +152,18 @@ end
     slope = sign(z - zⁿ)                      # +1 where the bottom deepens toward the neighbour
 
     thickness = min(Δzᶜᶜᶜ(i, j, k⁺, grid), Δzᶜᶜᶜ(iⁿ, jⁿ, kⁿ⁺, grid))
-    Q = face_transport(bbl.transport_parameter, face_width, gradient_length, thickness)
+    Q = bbl.diffusivity * face_width / gradient_length * thickness
 
     return ifelse(wet & (δb * slope > 0), Q, zero(grid))
 end
 
-@inline function x_face_transport(bbl, fields, grid, i, j)
+@inline function x_face_transport(bbl::BottomBoundaryLayer, fields, grid, i, j)
     k = max(bottom_level(bbl, i, j), 1)
     return active_face_transport(bbl, fields, grid, i, j, i+1, j,
                                  Δyᶠᶜᶜ(i+1, j, k, grid), Δxᶠᶜᶜ(i+1, j, k, grid))
 end
 
-@inline function y_face_transport(bbl, fields, grid, i, j)
+@inline function y_face_transport(bbl::BottomBoundaryLayer, fields, grid, i, j)
     k = max(bottom_level(bbl, i, j), 1)
     return active_face_transport(bbl, fields, grid, i, j, i, j+1,
                                  Δxᶜᶠᶜ(i, j+1, k, grid), Δyᶜᶠᶜ(i, j+1, k, grid))
@@ -269,14 +235,14 @@ end
 (u::BottomBoundaryLayerUpdate)(sim) = update_bottom_boundary_layer!(sim, u.bottom_boundary_layer)
 
 """
-    bottom_boundary_layer_forcing(grid, plume_velocity, diffusivity)
+    bottom_boundary_layer_forcing(grid, diffusivity)
 
 Convenience form for `omip_simulation`. Returns `(forcing, bbl)`; the forcing is an empty
-`NamedTuple` and `bbl` is `nothing` when neither parameter is set, so the scheme costs nothing when
+`NamedTuple` and `bbl` is `nothing` when `diffusivity` is not set, so the scheme costs nothing when
 it is off. The caller must register `BottomBoundaryLayerUpdate(bbl)` as a callback.
 """
-function bottom_boundary_layer_forcing(grid, plume_velocity, diffusivity)
-    isnothing(plume_velocity) && isnothing(diffusivity) && return NamedTuple(), nothing
-    bbl = BottomBoundaryLayer(grid, TEOS10EquationOfState(); plume_velocity, diffusivity)
+function bottom_boundary_layer_forcing(grid, diffusivity)
+    isnothing(diffusivity) && return NamedTuple(), nothing
+    bbl = BottomBoundaryLayer(grid, TEOS10EquationOfState(); diffusivity)
     return bottom_boundary_layer_forcing(bbl), bbl
 end

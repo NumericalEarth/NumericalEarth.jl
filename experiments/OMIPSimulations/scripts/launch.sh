@@ -75,10 +75,15 @@ Environment variables (physics):
                 neighbour is diffused along the bottom, mimicking the gravity current a
                 z-coordinate model otherwise mixes away within a grid cell or two.
                 Off by default; adds "_bbl<κ>" to the run name.
-  BBL_VELOCITY  Same scheme parameterised by downslope plume speed in m s⁻¹ instead of κ.
-                Equivalent to BBL_KAPPA = velocity × Δx, but direction aware, so an
-                anisotropic grid does not imply a different plume speed per direction.
-                Mutually exclusive with BBL_KAPPA; adds "_bblu<u>" to the run name.
+  BBL_GAMMA     Advective bottom boundary layer coefficient in seconds (NEMO rn_gambbl,
+                reference value 10; Campin & Goosse 1999, NEMO nn_bbl_adv = 2). Opens an
+                overturning circuit down the step: dense shelf water enters the bottom of
+                the deep column, the water it displaces rises through that column and
+                returns to the shelf. The deep cell is therefore flushed towards the shelf
+                density rather than mixed towards a mean, which is the ceiling BBL_KAPPA
+                cannot pass. Downslope speed is u = γ g Δρ/ρ₀, so the transport shuts off
+                as the contrast is consumed. Combines with BBL_KAPPA; the two act on
+                different failures. Adds "_cg<γ>" to the run name.
   ML_TAPER      Set to "true" to ramp the isopycnal-closure slopes linearly to zero
                 from the mixed-layer base to the surface (Danabasoglu et al. 2008;
                 NEMO ldfslp). Off by default; adds "_mltaper" to the run name.
@@ -318,7 +323,7 @@ RUN_NAME="$CONFIG"
 [[ "${ML_TAPER:-false}" == "true" ]]           && RUN_NAME="${RUN_NAME}_mltaper"
 [[ "${PARTIAL_CELLS:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_pcells"
 [[ -n "${BBL_KAPPA:-}" ]]                      && RUN_NAME="${RUN_NAME}_bbl${BBL_KAPPA}"
-[[ -n "${BBL_VELOCITY:-}" ]]                   && RUN_NAME="${RUN_NAME}_bblu${BBL_VELOCITY}"
+[[ -n "${BBL_GAMMA:-}" ]]                      && RUN_NAME="${RUN_NAME}_cg${BBL_GAMMA}"
 [[ "${NORMALIZE_SALINITY:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_rawsalt"
 [[ "${RESTORING_UNDER_ICE:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_noicerest"
 case "${NORMALIZE_FRESHWATER:-none}" in
@@ -545,14 +550,9 @@ ML_TAPER_KWARG=""
 PARTIAL_CELLS_KWARG=""
 [[ "${PARTIAL_CELLS:-false}" == "true" ]] && PARTIAL_CELLS_KWARG="partial_cell_bathymetry = true,"
 
-if [[ -n "${BBL_KAPPA:-}" && -n "${BBL_VELOCITY:-}" ]]; then
-    echo "Error: set only one of BBL_KAPPA or BBL_VELOCITY." >&2
-    exit 1
-fi
-
 BBL_KWARG=""
-[[ -n "${BBL_KAPPA:-}" ]]    && BBL_KWARG="bbl_diffusivity = ${BBL_KAPPA},"
-[[ -n "${BBL_VELOCITY:-}" ]] && BBL_KWARG="bbl_plume_velocity = ${BBL_VELOCITY},"
+[[ -n "${BBL_KAPPA:-}" ]] && BBL_KWARG="bbl_diffusivity = ${BBL_KAPPA},"
+[[ -n "${BBL_GAMMA:-}" ]] && BBL_KWARG="${BBL_KWARG}bbl_transport_coefficient = ${BBL_GAMMA},"
 
 SNOW_KWARG=""
 [[ "$SNOW" == "true" ]] && SNOW_KWARG="with_snow = true,"
