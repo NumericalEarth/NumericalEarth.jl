@@ -2,6 +2,10 @@ include("runtests_setup.jl")
 
 using NumericalEarth.Diagnostics: Diagnostics
 
+temperature_budgets(simulation) =
+    [callback.func for callback in values(simulation.callbacks)
+     if callback.func isa BudgetComputation && callback.func.tracer_name === :temperature]
+
 struct ConstantAdditionalTemperatureFlux{T}
     value :: T
 end
@@ -174,6 +178,59 @@ for arch in test_architectures
         mht = Field(meridional_heat_transport(simulation, MeridionalFluxMethod()))
         compute!(mht)
 
+        callback_count = length(simulation.callbacks)
+        @test isempty(temperature_budgets(simulation))
+
+        meridional_heat_transport(simulation, TendencyMethod())
+        @test length(simulation.callbacks) == callback_count + 1
+
+        temperature_budget = only(temperature_budgets(simulation))
+        @test simulation.callbacks[:temperature_budget].func === temperature_budget
+
+        meridional_heat_transport(simulation)
+        @test length(simulation.callbacks) == callback_count + 1
+        @test only(temperature_budgets(simulation)) === temperature_budget
+
+        simulation_with_budget = Simulation(esm; Δt = 10, stop_iteration = 1)
+        registered_budget = BudgetComputation(:temperature, esm)
+        add_callback!(simulation_with_budget, registered_budget; name = :custom_temperature_budget)
+        callback_count = length(simulation_with_budget.callbacks)
+
+        meridional_heat_transport(simulation_with_budget, TendencyMethod())
+        @test length(simulation_with_budget.callbacks) == callback_count
+        @test only(temperature_budgets(simulation_with_budget)) === registered_budget
+
+        simulation_with_collision = Simulation(esm; Δt = 10, stop_iteration = 1)
+        add_callback!(simulation_with_collision, simulation -> nothing; name = :temperature_budget)
+        existing_callback = simulation_with_collision.callbacks[:temperature_budget]
+        callback_count = length(simulation_with_collision.callbacks)
+
+        meridional_heat_transport(simulation_with_collision, TendencyMethod())
+        @test simulation_with_collision.callbacks[:temperature_budget] === existing_callback
+        @test length(simulation_with_collision.callbacks) == callback_count + 1
+        @test haskey(simulation_with_collision.callbacks, :temperature_budget_2)
+        @test only(temperature_budgets(simulation_with_collision)) ===
+              simulation_with_collision.callbacks[:temperature_budget_2].func
+
+        simulation_with_duplicate_budgets = Simulation(esm; Δt = 10, stop_iteration = 1)
+        add_callback!(simulation_with_duplicate_budgets, BudgetComputation(:temperature, esm);
+                      name = :first_temperature_budget)
+        add_callback!(simulation_with_duplicate_budgets, BudgetComputation(:temperature, esm);
+                      name = :second_temperature_budget)
+        callback_count = length(simulation_with_duplicate_budgets.callbacks)
+
+        @test_throws ArgumentError meridional_heat_transport(simulation_with_duplicate_budgets,
+                                                              TendencyMethod())
+        @test length(simulation_with_duplicate_budgets.callbacks) == callback_count
+
+        initialized_simulation = Simulation(esm; Δt = 10, stop_iteration = 1, verbose = false)
+        Oceananigans.initialize!(initialized_simulation)
+        meridional_heat_transport(initialized_simulation, TendencyMethod())
+        initialized_budget = only(temperature_budgets(initialized_simulation))
+
+        @test Array(interior(initialized_budget.previous_heat_content)) ==
+              Array(interior(initialized_budget.heat_content))
+
         @allowscalar begin
             @test abs(mht[1, 1,      1]) < 1e8
             @test abs(mht[1, Ny + 1, 1]) < 1e8
@@ -223,10 +280,16 @@ for arch in test_architectures
                 esm = OceanSeaIceModel(ocean, sea_ice)
 
                 simulation = Simulation(esm; Δt = 10, stop_iteration = 4)
-                budget = BudgetComputation(:temperature, esm)
-                @test_throws ArgumentError meridional_heat_transport(simulation; destination_grid=latlon_grid)
-                add_callback!(simulation, budget)
-                @test_throws ArgumentError meridional_heat_transport(budget, TendencyMethod(); destination_grid=latlon_grid)
+                callback_count = length(simulation.callbacks)
+                @test isempty(temperature_budgets(simulation))
+                @test_throws ArgumentError meridional_heat_transport(simulation, TendencyMethod())
+                @test length(simulation.callbacks) == callback_count
+                @test isempty(temperature_budgets(simulation))
+
+                mht = meridional_heat_transport(simulation; destination_grid = latlon_grid)
+                @test length(simulation.callbacks) == callback_count + 1
+
+                budget = only(temperature_budgets(simulation))
 
                 ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
                 cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
@@ -236,7 +299,8 @@ for arch in test_architectures
                 applied_surface_flux = budget.residual - budget.tendency + budget.applied_radiative_heat_flux
                 regridded_residual = RegriddedOperation(budget.residual, latlon_grid)
 
-                mht = Field(meridional_heat_transport(simulation; destination_grid = latlon_grid))
+                meridional_heat_transport(simulation; destination_grid = latlon_grid)
+                @test length(simulation.callbacks) == callback_count + 1
 
                 mktempdir() do dir
                     iteration_filename = joinpath(dir, "iteration_mht.jld2")

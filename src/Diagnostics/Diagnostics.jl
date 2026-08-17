@@ -18,7 +18,7 @@ using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, FieldBoundaryCo
 using Oceananigans.Fields: Field, FieldStatus, ZeroField
 using Oceananigans.Grids: new_data, inactive_cell, znode, Face, Center,
                           LatitudeLongitudeGrid, OrthogonalSphericalShellGrid, RectilinearGrid
-using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, MutableGridOfSomeKind
+using Oceananigans.ImmersedBoundaries: MutableGridOfSomeKind, underlying_grid
 using Oceananigans.Models: buoyancy_operation
 using Oceananigans.Simulations: Callback, Simulation, validate_schedule
 using Oceananigans: TimeStepCallsite

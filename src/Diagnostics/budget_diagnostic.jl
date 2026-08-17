@@ -177,6 +177,9 @@ function Oceananigans.Simulations.add_callback!(simulation::Simulation, budget::
         """
 
         @warn message current_iteration=iteration
+    end
+
+    if simulation.initialized || iteration > 0
         Oceananigans.initialize!(callback, simulation)
     end
 

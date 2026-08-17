@@ -78,10 +78,9 @@ end
 # And add it as a callback to the simulation.
 add_callback!(simulation, progress, IterationInterval(200))
 
-# mht_vT = Field(meridional_heat_transport(simulation, MeridionalFluxMethod())) # This currently is not supported with Othrogonal grids, so we use the OHC method instead.
-temperature_budget = BudgetComputation(:temperature, esm)
-add_callback!(simulation, temperature_budget)
-mht_OHC = Field(meridional_heat_transport(simulation; destination_grid))
+# The direct flux method does not yet support orthogonal spherical shell grids,
+# so use the heat-content tendency method instead.
+mht_OHC = meridional_heat_transport(simulation, TendencyMethod(); destination_grid)
 
 ocean.output_writers[:mht] = JLD2Writer(ocean.model, (; mht_OHC);
                                         schedule = TimeInterval(3hours),

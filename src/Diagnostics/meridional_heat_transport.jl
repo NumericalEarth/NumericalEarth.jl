@@ -1,28 +1,28 @@
-using ..EarthSystemModels: EarthSystemModel, reference_density, heat_capacity
+using DocStringExtensions: TYPEDSIGNATURES
 
 struct MeridionalFluxMethod end
 struct TendencyMethod end
+
 """
-    meridional_heat_transport(simulation::Simulation, method = TendencyMethod();
-                              destination_grid = nothing)
-    meridional_heat_transport(simulation::Simulation, MeridionalFluxMethod();
-                              reference_temperature = 0)
+$(TYPEDSIGNATURES)
 
 Return the meridional heat transport for a coupled `simulation` using either direct
-meridional heat fluxes or the ocean heat-content tendency. A `BudgetComputation` callback
-must be registered on `simulation` before using the default `TendencyMethod()`.
+meridional heat fluxes or the ocean heat-content tendency.
 
-!!! warning "The flux method only works on LatitudeLongitudeGrid"
+When `TendencyMethod()` is used, the registered temperature `BudgetComputation`
+callback is reused. If none is registered, one is created and added to `simulation`.
 
-    `MeridionalFluxMethod()` currently supports only `LatitudeLongitudeGrid`.
+!!! warning "The flux method does not support orthogonal spherical shell grids"
+
     For an `OrthogonalSphericalShellGrid`, use `TendencyMethod()` and provide a
-    `LatitudeLongitudeGrid` via `destination_grid`.
+    `LatitudeLongitudeGrid` via `destination_grid`. `MeridionalFluxMethod()` also
+    supports idealized domains on `RectilinearGrid`.
 
 Arguments
 =========
 
 * `simulation`: A `Simulation` of an `EarthSystemModel`. For `TendencyMethod()`, the
-  simulation must contain exactly one registered `BudgetComputation` callback.
+  registered temperature `BudgetComputation` callback is reused, if present.
 
 * The method for the computation. Available options are: `TendencyMethod()` (default)
   and `MeridionalFluxMethod()`.
@@ -126,9 +126,9 @@ Keyword Arguments
 
 * `reference_temperature`: The reference temperature (in ᵒC) used for `MeridionalFluxMethod()`; default: 0 ᵒC.
 
-* `destination_grid`: A `LatitudeLongitudeGrid` onto which the two-dimensional column
-  heat budget is conservatively regridded before zonal integration. This is required
-  when using `TendencyMethod()` with an `OrthogonalSphericalShellGrid`.
+* `destination_grid`: A `LatitudeLongitudeGrid` or `RectilinearGrid` onto which the
+  two-dimensional column heat budget is conservatively regridded before zonal integration.
+  This is required when using `TendencyMethod()` with an `OrthogonalSphericalShellGrid`.
 
   !!! info "Reference temperature"
 
@@ -142,8 +142,8 @@ Keyword Arguments
 Example
 =======
 
-```julia
-using ..NumericalEarth
+```jldoctest
+using NumericalEarth
 using Oceananigans
 
 grid = RectilinearGrid(size = (4, 5, 2), extent = (1, 1, 1),
@@ -153,7 +153,8 @@ ocean = ocean_simulation(grid;
                          momentum_advection = nothing,
                          tracer_advection = nothing,
                          closure = nothing,
-                         coriolis = nothing)
+                         coriolis = nothing,
+                         warn = false)
 
 sea_ice = sea_ice_simulation(grid, ocean)
 
@@ -161,19 +162,19 @@ atmosphere = PrescribedAtmosphere(grid, [0.0])
 radiation = PrescribedRadiation(grid)
 
 esm = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
-simulation = Simulation(esm; Δt=1)
-budget = BudgetComputation(:temperature, esm)
-add_callback!(simulation, budget)
+simulation = Simulation(esm; Δt=1, stop_iteration=1)
 
-mht = meridional_heat_transport(simulation)
+mht = meridional_heat_transport(simulation);
+simulation.callbacks[:temperature_budget].func
+
+# output
+BudgetComputation(:temperature) on 4×5×2 RectilinearGrid{Float64, Periodic, Bounded, Bounded} on CPU with 3×3×2 halo
 ```
 """
-function meridional_heat_transport(simulation::Simulation,
+function meridional_heat_transport(simulation::Simulation{<:EarthSystemModel},
                                    ::MeridionalFluxMethod;
-                                   reference_temperature=0)
+                                   reference_temperature = 0)
     esm = simulation.model
-    esm isa EarthSystemModel ||
-        throw(ArgumentError("Meridional heat transport requires a Simulation of an EarthSystemModel."))
 
     grid = underlying_grid(esm.ocean.model.grid)
     validate_meridional_flux_grid(grid)
@@ -183,55 +184,51 @@ function meridional_heat_transport(simulation::Simulation,
     return meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
 end
 
-function meridional_heat_transport(simulation::Simulation,
-                                   ::TendencyMethod=TendencyMethod();
-                                   destination_grid=nothing)
-    budgets = [callback.func for callback in values(simulation.callbacks)
-               if callback.func isa BudgetComputation]
+function meridional_heat_transport(simulation::Simulation{<:EarthSystemModel},
+                                   ::TendencyMethod = TendencyMethod();
+                                   destination_grid = nothing)
+    esm = simulation.model
 
-    if isempty(budgets)
-        throw(ArgumentError("TendencyMethod() requires a BudgetComputation callback. " *
-                            "Create a budget and register it with " *
-                            "add_callback!(simulation, budget) first."))
-    elseif length(budgets) > 1
-        throw(ArgumentError("TendencyMethod() requires exactly one BudgetComputation callback, " *
-                            "but the simulation has $(length(budgets))."))
-    end
-
-    budget = only(budgets)
-    grid = underlying_grid(budget.residual.grid)
+    grid = underlying_grid(esm.ocean.model.grid)
     validate_tendency_destination(grid, destination_grid)
+
+    budget = temperature_budget_computation!(simulation)
     return meridional_heat_transport_via_ocean_heat_content(budget; destination_grid)
 end
 
-function meridional_heat_transport(::BudgetComputation, ::TendencyMethod=TendencyMethod(); kwargs...)
-    message = """
-    meridional_heat_transport does not accept a BudgetComputation directly.
+function temperature_budget_computation!(simulation::Simulation{<:EarthSystemModel})
+    budget = nothing
 
-    Add the budget to the simulation as a callback first, then pass the
-    simulation to meridional_heat_transport. For example:
+    for callback in values(simulation.callbacks)
+        candidate_budget = callback.func
 
-        budget = BudgetComputation(:temperature, esm)
-        add_callback!(simulation, budget)
-        mht = meridional_heat_transport(simulation; destination_grid = latlon_grid)
+        if candidate_budget isa BudgetComputation && candidate_budget.tracer_name === :temperature
+            if !isnothing(budget)
+                throw(ArgumentError("TendencyMethod() requires exactly one temperature BudgetComputation callback."))
+            end
 
-    BudgetComputation stores heat-budget history while the simulation runs.
-    The MHT diagnostic needs the simulation so it can find that registered
-    callback and use the completed budget at the right time.
-    """
+            budget = candidate_budget
+        end
+    end
 
-    throw(ArgumentError(message))
+    if isnothing(budget)
+        budget = BudgetComputation(:temperature, simulation.model)
+        name = :temperature_budget
+        suffix = 1
+
+        while haskey(simulation.callbacks, name)
+            suffix += 1
+            name = Symbol(:temperature_budget_, suffix)
+        end
+
+        Oceananigans.Simulations.add_callback!(simulation, budget; name)
+    end
+
+    return budget
 end
-
-function meridional_heat_transport(::Simulation, method; kwargs...)
-    throw(ArgumentError(string("Unknown method ", method, "; choose either MeridionalFluxMethod() or TendencyMethod().")))
-end
-
-underlying_grid(grid::ImmersedBoundaryGrid) = grid.underlying_grid
-underlying_grid(grid) = grid
 
 validate_meridional_flux_grid(::OrthogonalSphericalShellGrid) =
-    throw(ArgumentError("MeridionalFluxMethod() diagnostic does not work on OrthogonalSphericalShellGrid at the moment. Use TendencyMethod() instead."))
+    throw(ArgumentError("MeridionalFluxMethod() does not work on OrthogonalSphericalShellGrid at the moment. Use TendencyMethod() instead."))
 
 validate_meridional_flux_grid(grid) = nothing
 
@@ -258,7 +255,7 @@ function meridional_heat_transport_via_meridional_heat_flux(esm; reference_tempe
     return MHT
 end
 
-function meridional_heat_transport_via_ocean_heat_content(budget; destination_grid=nothing)
+function meridional_heat_transport_via_ocean_heat_content(budget; destination_grid = nothing)
     column_budget = budget.residual
 
     if destination_grid !== nothing
@@ -266,6 +263,6 @@ function meridional_heat_transport_via_ocean_heat_content(budget; destination_gr
     end
 
     zonal_budget = Field(Integral(column_budget, dims=1))
-    MHT = CumulativeIntegral(-zonal_budget, dims=2) |> Field
+    MHT = Field(CumulativeIntegral(-zonal_budget, dims=2))
     return MHT
 end
