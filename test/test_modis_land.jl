@@ -8,7 +8,7 @@ using NumericalEarth.DataWrangling: DataWrangling, BoundingBox, Metadatum, Metad
     retrieve_data, read_file_coords, region_info, fill_gaps!, cmr_granules_url,
     time_window_offset, sample_window, sample_bounds, time_average
 using NumericalEarth.DataWrangling.MODISLand: MODISLand, mask_lai_fill, lai_screening_flags,
-    modis_composite_dates,
+    lai_rejection_flags, modis_composite_dates,
     parse_granule_name, select_granules, regional_lattice,
     periods_per_year, period_index, reduce_retained, stored_granule_layers,
     MODIS_LAI_SCALE, MODIS_FPAR_SCALE, MODIS_LAI_LANDCOVER_CODES,
@@ -863,28 +863,6 @@ end
     @test isnan(grassland[2, 1, 1])
 
     @test_throws ArgumentError zero_non_vegetated!(fill(NaN32, 3, 1, 4), fill(NaN32, 2, 1))
-end
-
-@testset "MODIS land-cover change flag" begin
-    # Two ends that each hold one class, and differ: changed.
-    forest_to_pasture = reshape(Float32[4, 4, 4, 10, 10, 10, 10], 1, 1, 7)
-    @test only(landcover_change_flag(forest_to_pasture))
-
-    # The same class at both ends is not change, whatever happened in between.
-    stable = reshape(Float32[4, 4, 4, 12, 4, 4, 4], 1, 1, 7)
-    @test !only(landcover_change_flag(stable))
-
-    # A single year's label at 500 m is not reliable enough to call a change on, so a
-    # flickering end is "not stable" rather than "changed".
-    flickering = reshape(Float32[4, 12, 4, 10, 10, 10, 10], 1, 1, 7)
-    @test !only(landcover_change_flag(flickering))
-
-    # An unclassified year is not persistence either.
-    with_fill = reshape(Float32[4, NaN, 4, 10, 10, 10, 10], 1, 1, 7)
-    @test !only(landcover_change_flag(with_fill))
-
-    @test size(landcover_change_flag(rand(Float32, 3, 4, 6))) == (3, 4)
-    @test_throws ArgumentError landcover_change_flag(rand(Float32, 2, 2, 5); window = 3)
 end
 
 @testset "MODIS climatology reduction" begin

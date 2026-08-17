@@ -201,36 +201,3 @@ function zero_non_vegetated!(fts::DataWrangling.FieldTimeSeries, land_cover; kw.
     copyto!(DataWrangling.interior(fts), data)
     return fts
 end
-
-"""
-    landcover_change_flag(class_series; window = 3)
-
-Flag the cells whose land cover changed inside a multi-year span, given `class_series` —
-the annual [`MCD12Q1`](@ref) maps of one region stacked along a third dimension, oldest
-first.
-
-A cell that was closed forest at the start of a climatology's span and pasture at its end
-averages into one composite describing neither surface. This is a flag rather than a
-correction: which of the two surfaces a simulation wants is the caller's decision.
-
-A single year's label at 500 m is too noisy for a first-versus-last difference, so the test
-is persistence: a cell is flagged only when one class holds through the first `window`
-years, one class holds through the last `window` years, and the two differ.
-"""
-function landcover_change_flag(class_series; window = 3)
-    Nx, Ny, Nyears = size(class_series)
-    2 * window ≤ Nyears ||
-        throw(ArgumentError("A persistence test over $window years needs at least " *
-                            "$(2 * window) years of land cover; got $Nyears."))
-
-    persistent(years) = all(isfinite, years) && all(==(first(years)), years)
-
-    changed = falses(Nx, Ny)
-    for j in 1:Ny, i in 1:Nx
-        early = view(class_series, i, j, 1:window)
-        late  = view(class_series, i, j, (Nyears - window + 1):Nyears)
-        changed[i, j] = persistent(early) && persistent(late) && first(early) != first(late)
-    end
-
-    return changed
-end

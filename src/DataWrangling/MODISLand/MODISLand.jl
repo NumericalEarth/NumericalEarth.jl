@@ -2,10 +2,10 @@ module MODISLand
 
 export MCD15A2H, MCD12Q1, MODISLAIClimatology, build_lai_climatology!,
        retained_retrieval_metadatum,
-       lai_screening_mask, recommended_lai_screening, lai_rejection_flags,
+       lai_screening_mask, recommended_lai_screening,
        mask_lai_landcover, modis_landcover_class_names,
        landcover_class_names, igbp_class_names, igbp_non_vegetated_classes,
-       class_maximum_gap, landcover_change_flag, zero_non_vegetated!,
+       class_maximum_gap, zero_non_vegetated!,
        period_index, composite_window
 
 using Dates: Dates, DateTime, Day, dayofyear

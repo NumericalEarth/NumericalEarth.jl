@@ -312,25 +312,6 @@ if !isempty(reached)
             round(Int, median(reached)), maximum(reached), 15 * maximum(reached))
 end
 
-# Land cover changed inside the span for some cells, and their composite is then a mean over
-# two surfaces. A single year's label at 500 m is not reliable enough to call that on, so the
-# test is persistence at each end of the span rather than a first-versus-last difference.
-# This is a flag, not a correction: which surface a simulation wants is the caller's call.
-#
-# Five years only leaves room for a two-year window at each end, which is a weak persistence
-# test — much of what it flags here will be label noise rather than change. Read the fraction
-# as an upper bound, and widen the window on a longer span.
-
-annual_classes = stack(Array(interior(Field(Metadatum(:landcover_class; dataset = MCD12Q1(),
-                                                      region, date = DateTime(year))), :, :, 1))
-                       for year in climatology.years)
-
-changed = landcover_change_flag(annual_classes; window = 2)
-
-@printf("\nLand cover over %s\n", climatology.years)
-@printf("  cells whose class is stable at both ends and differs : %.2f%%\n",
-        100 * mean(changed))
-
 ## The unfilled code is 255 so it cannot be mistaken for a stage; give it a plottable slot.
 provenance_map(slice) =
     native_field(ifelse.(slice .== gap_fill_provenance.unfilled, UInt8(4), slice))
