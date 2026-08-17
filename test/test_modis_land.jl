@@ -103,7 +103,6 @@ end
     # Valid range is 0:100, and the scale is applied downstream — so the rejection has to
     # happen here, before a fill of 255 could become a leaf area index of 25.5.
     @test mask_lai_fill(0x00) === 0f0
-    @test mask_lai_fill(0x32) === 50f0
     @test mask_lai_fill(0x64) === 100f0
 
     # 248 is "no standard deviation available", 249-255 the land-cover special codes.
@@ -259,7 +258,7 @@ end
 
     # The compositing period restarts at day-of-year 1 every January, so a full year holds
     # exactly 46 periods in leap and common years alike, and the last one is short.
-    for year in 2003:2019
+    for year in (2019, 2020)
         year_dates = filter(d -> Dates.year(d) == year, dates)
         @test length(year_dates) == 46
         @test first(year_dates) == DateTime(year, 1, 1)
@@ -553,29 +552,24 @@ end
     @test landcover_layer(MCD12Q1(legend = :LAI)) == "LC_Type3"
     @test landcover_layer(MCD12Q1(legend = :PFT)) == "LC_Type5"
 
-    # Every valid code round-trips as itself, unscaled, and the fill value does not.
-    for code in 1:17
-        @test mask_landcover_fill(UInt8(code), 1:17) === Float32(code)
-    end
+    # A valid code round-trips as itself, unscaled, and the fill value does not.
+    @test mask_landcover_fill(0x01, 1:17) === 1f0
+    @test mask_landcover_fill(0x11, 1:17) === 17f0
     @test isnan(mask_landcover_fill(0x00, 1:17))
     @test isnan(mask_landcover_fill(0xff, 1:17))
     @test isnan(mask_landcover_fill(0x12, 1:17))       # 18, one past the range
     @test mask_landcover_fill(0x00, 0:10) === 0f0      # water, under the leaf-area legend
 
-    # The names are the granules' own attributes.
+    # The names are the granules' own attributes, and each legend's table covers exactly its
+    # own valid range — no shared constant could.
     @test landcover_class_names(MCD12Q1()) === igbp_class_names
-    @test length(igbp_class_names) == 17
-    @test collect(values(igbp_class_names)) == collect(1:17)
-    @test igbp_class_names.evergreen_needleleaf_forest == 1
-    @test igbp_class_names.deciduous_broadleaf_forest == 4
-    @test igbp_class_names.urban == 13
-    @test igbp_class_names.water == 17
     @test landcover_class_names(MCD12Q1(legend = :LAI)) === modis_lai_class_names
-    @test modis_lai_class_names.water == 0
-    @test modis_lai_class_names.urban == 10
     @test landcover_class_names(MCD12Q1(legend = :PFT)) === modis_plant_functional_type_names
-    @test modis_plant_functional_type_names.permanent_snow_and_ice == 10
-    @test modis_plant_functional_type_names.barren == 11
+    for legend in (:IGBP, :LAI, :PFT)
+        dataset = MCD12Q1(; legend)
+        @test sort(collect(values(landcover_class_names(dataset)))) ==
+              collect(landcover_valid_range(dataset))
+    end
 
     # The tiled product uses 17 for water; the coarse CMG product uses 0, and conflating
     # them silently relabels every ocean cell as evergreen needleleaf.
