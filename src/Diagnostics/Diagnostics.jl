@@ -1,8 +1,9 @@
 module Diagnostics
 
-export MixedLayerDepthField, MixedLayerDepthOperand, BudgetComputation
-export meridional_heat_transport, MeridionalFluxMethod, TendencyMethod
-export net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux, ocean_freshwater_heat_flux, frazil_heat_flux,
+export MixedLayerDepthField, MixedLayerDepthOperand,
+       BudgetComputation,
+       meridional_heat_transport, MeridionalFluxMethod, TendencyMethod,
+       net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux, ocean_freshwater_heat_flux, frazil_heat_flux,
        net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux
 
 using KernelAbstractions: @index, @kernel
@@ -11,7 +12,7 @@ using ConservativeRegridding: ConservativeRegridding
 # Load OceananigansConservativeRegriddingExt so RegriddedOperation can use it.
 const conservative_regridding_dependency = ConservativeRegridding
 
-using Oceananigans: Oceananigans
+using Oceananigans: Oceananigans, TimeStepCallsite
 using Oceananigans.AbstractOperations: CumulativeIntegral, Integral, KernelFunctionOperation, RegriddedOperation
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, FieldBoundaryConditions, fill_halo_regions!
@@ -20,14 +21,13 @@ using Oceananigans.Grids: new_data, inactive_cell, znode, Face, Center,
                           LatitudeLongitudeGrid, OrthogonalSphericalShellGrid, RectilinearGrid
 using Oceananigans.ImmersedBoundaries: MutableGridOfSomeKind, underlying_grid
 using Oceananigans.Models: buoyancy_operation
-using Oceananigans.Simulations: Callback, Simulation, validate_schedule
-using Oceananigans: TimeStepCallsite
 using Oceananigans.OutputWriters: IterationInterval
+using Oceananigans.Simulations: Callback, Simulation, validate_schedule
 using Oceananigans.Utils: launch!
 
 using ..EarthSystemModels: EarthSystemModel, NoSeaIceInterfaceModel,
-                           NoOceanInterfaceModel, NoInterfaceModel
-using ..EarthSystemModels: reference_density, heat_capacity
+                           NoOceanInterfaceModel, NoInterfaceModel,
+                           reference_density, heat_capacity
 using ..Oceans: MultipleFluxes, get_radiative_forcing
 
 include("mixed_layer_depth.jl")
