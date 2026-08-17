@@ -1,10 +1,10 @@
-using DocStringExtensions: TYPEDSIGNATURES
-
 struct MeridionalFluxMethod end
 struct TendencyMethod end
 
 """
-$(TYPEDSIGNATURES)
+    meridional_heat_transport(simulation::Simulation{<:EarthSystemModel}, method=TendencyMethod();
+                              reference_temperature = 0,
+                              destination_grid = nothing)
 
 Return the meridional heat transport for a coupled `simulation` using either direct
 meridional heat fluxes or the ocean heat-content tendency.
