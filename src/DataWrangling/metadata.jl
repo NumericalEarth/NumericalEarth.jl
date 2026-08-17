@@ -683,17 +683,101 @@ Keyword Argument
 ================
 - `start_time`: The start time for calculating the time difference. Defaults to the first
                 date in the metadata.
+
+Each date is shifted by the dataset's [`time_window_offset`](@ref), which places a
+window-averaged sample at the midpoint of its window rather than at the date its file is
+stamped with.
 """
 function native_times(metadata; start_time=first(metadata).dates)
     times = zeros(length(metadata))
     for (t, data) in enumerate(metadata)
         date = data.dates
         delta = date - start_time
-        delta = Second(delta).value
+        delta = Second(delta).value + time_window_offset(data)
         times[t] = delta
     end
 
     return times
+end
+
+"""
+    sample_window(metadatum)
+
+The `(start, stop)` dates of the averaging window the value in `metadatum` represents.
+Defaults to a zero-width window at the stamp itself, which is an instantaneous sample; a
+product whose files hold window averages extends this with its own averaging period.
+"""
+sample_window(metadatum) = (metadatum.dates, metadatum.dates)
+
+"""
+    calendar_month_window(metadatum)
+
+The [`sample_window`](@ref) of a product whose files hold calendar-month means: the month
+containing the date `metadatum` is stamped with. Independent of where in the month the stamp
+falls, so it also covers products stamped at, say, noon on the first.
+"""
+function calendar_month_window(metadatum)
+    month_start = floor(comparable_datetime(metadatum.dates), Dates.Month)
+    return (month_start, month_start + Dates.Month(1))
+end
+
+"""
+    window_center(metadatum)
+
+The date at the middle of the [`sample_window`](@ref) of `metadatum`, where a window mean
+equals the value of the field itself and so where a linearly interpolating `FieldTimeSeries`
+has to place it. The stamp itself for an instantaneous sample.
+"""
+function window_center(metadatum)
+    window_start, window_stop = sample_window(metadatum)
+    start_datetime = comparable_datetime(window_start)
+    stop_datetime = comparable_datetime(window_stop)
+    half_window = Dates.value(Dates.Millisecond(stop_datetime - start_datetime)) ÷ 2
+    return start_datetime + Dates.Millisecond(half_window)
+end
+
+"""
+    time_window_offset(metadatum)
+
+The offset in seconds from the date a file is stamped with to its [`window_center`](@ref).
+
+Zero for an instantaneous sample, half a period for a stamp that labels the start of an
+averaging window, and negative for one that labels the end.
+"""
+time_window_offset(metadatum) =
+    Dates.value(Dates.Millisecond(window_center(metadatum) - comparable_datetime(metadatum.dates))) / 1000
+
+"""
+    sample_window_span(metadata)
+
+The span in seconds from the start of the first [`sample_window`](@ref) in `metadata` to the
+end of the last, which is the period over which a window-averaged series repeats: its windows
+tile that span without gaps or overlaps. `nothing` for an instantaneous product, whose samples
+are points and so leave the period to be inferred from the node spacing.
+"""
+function sample_window_span(metadata)
+    window_start, window_stop = sample_window(first(metadata))
+    window_start == window_stop && return nothing
+    span = comparable_datetime(last(sample_window(last(metadata)))) - comparable_datetime(window_start)
+    return Dates.value(Dates.Millisecond(span)) / 1000
+end
+
+"""
+    uncovered_time_gaps(metadata)
+
+The `(head, tail)` durations in seconds that the [`sample_window`](@ref)s of `metadata` span
+but its nodes do not: from the start of the first window to the first [`window_center`](@ref),
+and from the last center to the end of the last window. A `FieldTimeSeries` extrapolates over
+both. Zero for an instantaneous product, whose nodes span exactly its samples.
+"""
+function uncovered_time_gaps(metadata)
+    first_metadatum = first(metadata)
+    last_metadatum = last(metadata)
+
+    head = window_center(first_metadatum) - comparable_datetime(first(sample_window(first_metadatum)))
+    tail = comparable_datetime(last(sample_window(last_metadatum))) - window_center(last_metadatum)
+
+    return Dates.value(Dates.Millisecond(head)) / 1000, Dates.value(Dates.Millisecond(tail)) / 1000
 end
 
 ####

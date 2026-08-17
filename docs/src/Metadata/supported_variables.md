@@ -6,7 +6,7 @@ NumericalEarth currently ships connectors for the following data products:
 |--------------------|-----------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
 | **Bathymetry and static grids** |                                            |                                                                                                     |
 | `ETOPO2022`        | [Supported variables](@ref dataset-etopo2022-vars)        | [NOAA ETOPO 2022 overview](https://www.ncei.noaa.gov/products/etopo-global-relief-model)           |
-| `GEBCO2024`        | [Supported variables](@ref dataset-gebco2024-vars)        | [GEBCO 2024 overview](https://www.gebco.net/data-products/gridded-bathymetry-data)                 |
+| `GEBCO2026`        | [Supported variables](@ref dataset-gebco2024-vars)        | [GEBCO 2024 overview](https://www.gebco.net/data-products/gridded-bathymetry-data)                 |
 | `IBCSOv2`          | [Supported variables](@ref dataset-ibcsov2-vars)          | [IBCSO overview](https://ibcso.org/ibcso-2024-annual-release/)                                     |
 | `IBCAOv5`          | [Supported variables](@ref dataset-ibcaov5-vars)          | [IBCAO overview](https://www.gebco.net/data-products/gridded-bathymetry-data/arctic-ocean)         |
 | `GLO30`            | [Supported variables](@ref dataset-glo30-vars)            | [Copernicus DEM GLO-30 (Earth Data Hub)](https://earthdatahub.destine.eu/collections/copernicus-dem/datasets/GLO-30) |
@@ -179,7 +179,7 @@ Same variables as [ERA5HourlyLand](@ref dataset-era5hourlyland-vars), as monthly
 
 - `:bottom_height` - Southern Ocean bathymetry at 500 m resolution, south of 50°S (m).
 
-## [Supported variables for GEBCO2024](@id dataset-gebco2024-vars)
+## [Supported variables for GEBCO2026](@id dataset-gebco2024-vars)
 
 - `:bottom_height` - Global bathymetry and topography at 15 arc-second resolution (m).
 
