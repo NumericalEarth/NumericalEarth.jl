@@ -99,17 +99,17 @@ end
                                z = (-1, 0),
                                topology = (Flat, Flat, Bounded))
 
-        Cdry = CenterField(grid)
-        Cl   = CenterField(grid)
+        cᵈʳʸ = CenterField(grid)
+        cˡ   = CenterField(grid)
         Wmax = CenterField(grid)
 
-        fill!(Cdry, 8)
-        fill!(Cl, 2)
+        fill!(cᵈʳʸ, 8)
+        fill!(cˡ, 2)
         fill!(Wmax, 12)
 
         energy = SlabEnergy(eltype(grid);
-                            dry_heat_capacity = Cdry,
-                            liquid_heat_capacity = Cl)
+                            dry_heat_capacity = cᵈʳʸ,
+                            liquid_heat_capacity = cˡ)
         hydrology = BucketHydrology(eltype(grid); maximum_water_storage = Wmax)
 
         land = SlabLand(grid; energy, hydrology)
