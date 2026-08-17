@@ -70,6 +70,15 @@ Environment variables (physics):
                 full-cell GridFittedBottom bathymetry. Resolves sill depths and slopes
                 continuously; targets the too-shallow NADW from staircased overflows.
                 Adds "_pcells" to the run name.
+  BBL_KAPPA     Diffusive bottom boundary layer coefficient in m² s⁻¹ (NEMO rn_ahtbbl;
+                its ORCA reference value is 1000). Dense water upslope of a deeper
+                neighbour is diffused along the bottom, mimicking the gravity current a
+                z-coordinate model otherwise mixes away within a grid cell or two.
+                Off by default; adds "_bbl<κ>" to the run name.
+  BBL_VELOCITY  Same scheme parameterised by downslope plume speed in m s⁻¹ instead of κ.
+                Equivalent to BBL_KAPPA = velocity × Δx, but direction aware, so an
+                anisotropic grid does not imply a different plume speed per direction.
+                Mutually exclusive with BBL_KAPPA; adds "_bblu<u>" to the run name.
   ML_TAPER      Set to "true" to ramp the isopycnal-closure slopes linearly to zero
                 from the mixed-layer base to the surface (Danabasoglu et al. 2008;
                 NEMO ldfslp). Off by default; adds "_mltaper" to the run name.
@@ -308,6 +317,8 @@ RUN_NAME="$CONFIG"
 [[ "${WIND_VELOCITY:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_wind"
 [[ "${ML_TAPER:-false}" == "true" ]]           && RUN_NAME="${RUN_NAME}_mltaper"
 [[ "${PARTIAL_CELLS:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_pcells"
+[[ -n "${BBL_KAPPA:-}" ]]                      && RUN_NAME="${RUN_NAME}_bbl${BBL_KAPPA}"
+[[ -n "${BBL_VELOCITY:-}" ]]                   && RUN_NAME="${RUN_NAME}_bblu${BBL_VELOCITY}"
 [[ "${NORMALIZE_SALINITY:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_rawsalt"
 [[ "${RESTORING_UNDER_ICE:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_noicerest"
 case "${NORMALIZE_FRESHWATER:-none}" in
@@ -534,6 +545,15 @@ ML_TAPER_KWARG=""
 PARTIAL_CELLS_KWARG=""
 [[ "${PARTIAL_CELLS:-false}" == "true" ]] && PARTIAL_CELLS_KWARG="partial_cell_bathymetry = true,"
 
+if [[ -n "${BBL_KAPPA:-}" && -n "${BBL_VELOCITY:-}" ]]; then
+    echo "Error: set only one of BBL_KAPPA or BBL_VELOCITY." >&2
+    exit 1
+fi
+
+BBL_KWARG=""
+[[ -n "${BBL_KAPPA:-}" ]]    && BBL_KWARG="bbl_diffusivity = ${BBL_KAPPA},"
+[[ -n "${BBL_VELOCITY:-}" ]] && BBL_KWARG="bbl_plume_velocity = ${BBL_VELOCITY},"
+
 SNOW_KWARG=""
 [[ "$SNOW" == "true" ]] && SNOW_KWARG="with_snow = true,"
 
@@ -569,6 +589,7 @@ sim = omip_simulation(:${CONFIG};
                       ${VELOCITY_KWARG}
                       ${ML_TAPER_KWARG}
                       ${PARTIAL_CELLS_KWARG}
+                      ${BBL_KWARG}
                       ${SNOW_KWARG}
                       ${ICE_DYNAMICS_KWARG}
                       ${DIAGNOSTICS_KWARG}
