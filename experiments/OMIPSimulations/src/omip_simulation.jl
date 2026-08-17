@@ -629,6 +629,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                          river_mixing_depth = 10,
                          river_spread_radius = ConfigDefault(),
                          river_spread_cells = ConfigDefault(),
+                         bbl_plume_velocity = nothing,
+                         bbl_diffusivity = nothing,
                          diagnostics = true,
                          field_mean_interval = 5days,
                          surface_averaging_interval = 5days,
@@ -691,7 +693,10 @@ function omip_simulation(config::Symbol = :halfdegree;
 
     eddy_slope_limiter = mixed_layer_tapering ? MixedLayerTapering(grid) : nothing
 
+    ocean_forcing = bottom_boundary_layer_forcing(grid, bbl_plume_velocity, bbl_diffusivity)
+
     ocean = build_ocean(cfg, grid;
+                        forcing = ocean_forcing,
                         κ_skew, κ_symmetric, Cᵇ,
                         nemo_eddy_coefficients,
                         cesm_eddy_coefficients,
@@ -1317,6 +1322,7 @@ function build_ocean(config, grid;
                      Cᵂu★ = nothing,
                      normalize_salinity = true,
                      additional_tracer_closure = nothing,
+                     forcing = NamedTuple(),
                      start_date, end_date)
 
     κ_skew      = resolve_nemo_coefficient(κ_skew,      nemo_eddy_coefficients, :skew_coefficient)
@@ -1365,6 +1371,7 @@ function build_ocean(config, grid;
                              materialize_buoyancy_gradients = config_materialize_buoyancy_gradients(config),
                              free_surface = SplitExplicitFreeSurface(grid; substeps=100),
                              additional_surface_fluxes,
+                             forcing,
                              closure)
 
     # Load WOA Annual T (in-situ, °C) and S (Practical) onto the model grid,

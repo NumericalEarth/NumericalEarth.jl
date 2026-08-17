@@ -271,13 +271,13 @@ end
 # Salinity interpolated from the two tracer cells straddling a velocity face. A velocity face is wet
 # only when both neighbours are, so wherever the velocity is nonzero both salinities are valid ocean
 # values, and dry faces contribute nothing regardless of what the output holds there.
-@inline salinity_at_v_face(S_int, i, j, k) = (S_int[i, j, k] + S_int[i, j+1, k]) / 2
+@inline salinity_at_v_face(S_int, i, j, k) = (S_int[i, j-1, k] + S_int[i, j, k]) / 2
 @inline salinity_at_u_face(S_int, i, j, k) = (S_int[i-1, j, k] + S_int[i, j, k]) / 2
 
 # Dry cells are written as zero, so a face with one dry neighbour would halve its salinity and inflate
 # `(S★ − S)/S★` by more than an order of magnitude. Both tracer neighbours must be wet to contribute.
-@inline wet_v_face(grid, i, j, k) = !inactive_node(i, j,   k, grid, Center(), Center(), Center()) &&
-                                    !inactive_node(i, j+1, k, grid, Center(), Center(), Center())
+@inline wet_v_face(grid, i, j, k) = !inactive_node(i, j-1, k, grid, Center(), Center(), Center()) &&
+                                    !inactive_node(i, j,   k, grid, Center(), Center(), Center())
 
 @inline wet_u_face(grid, i, j, k) = !inactive_node(i-1, j, k, grid, Center(), Center(), Center()) &&
                                     !inactive_node(i,   j, k, grid, Center(), Center(), Center())
@@ -324,7 +324,7 @@ function section_ice_freshwater_flux(grid, ui_int, vi_int, ℵ_int, h_int, secti
     if section.axis == :v
         for j in section.j, i in section.i
             wet_v_face(grid, i, j, k_surface) || continue
-            ice_volume = (ℵ_int[i, j, 1] * h_int[i, j, 1] + ℵ_int[i, j+1, 1] * h_int[i, j+1, 1]) / 2
+            ice_volume = (ℵ_int[i, j-1, 1] * h_int[i, j-1, 1] + ℵ_int[i, j, 1] * h_int[i, j, 1]) / 2
             isfinite(ice_volume) || continue
             Δx = Δxᶜᶠᶜ(i, j, k_surface, grid)
             total += vi_int[i, j, 1] * ice_volume * Δx
