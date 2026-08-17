@@ -20,6 +20,8 @@ export AbstractLand,
        VariablySaturatedHydrology,
        # Canopy interception store
        InterceptingHydrology,
+       # Surface water (pond) store
+       SurfaceWaterStore,
        # Urban aerodynamic roughness closures
        AbstractUrbanRoughness, MorphometricRoughness,
        IsotropicFrontalArea, EmpiricalFrontalArea,
@@ -90,6 +92,11 @@ include("hydrology/variably_saturated_hydrology.jl")
 # Canopy interception store — wraps a soil hydrology (throughfall + wet-canopy
 # evaporation), depends on `merge_unique` from the container above.
 include("hydrology/intercepting_hydrology.jl")
+
+# Surface water store — a prognostic pond that catches rejected infiltration
+# (the soil's `surface_runoff`), drains it to true runoff, and re-offers the
+# remainder to infiltration.
+include("hydrology/surface_water_store.jl")
 
 # Legacy PrescribedLand component (river / iceberg freshwater forcing).
 include("prescribed_land.jl")
