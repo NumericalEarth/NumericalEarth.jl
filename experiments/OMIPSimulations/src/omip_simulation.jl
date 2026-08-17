@@ -693,7 +693,7 @@ function omip_simulation(config::Symbol = :halfdegree;
 
     eddy_slope_limiter = mixed_layer_tapering ? MixedLayerTapering(grid) : nothing
 
-    ocean_forcing = bottom_boundary_layer_forcing(grid, bbl_plume_velocity, bbl_diffusivity)
+    ocean_forcing, bottom_boundary_layer = bottom_boundary_layer_forcing(grid, bbl_plume_velocity, bbl_diffusivity)
 
     ocean = build_ocean(cfg, grid;
                         forcing = ocean_forcing,
@@ -766,6 +766,13 @@ function omip_simulation(config::Symbol = :halfdegree;
     if !isnothing(nemo_eddy_coefficients)
         compute_nemo_eddy_coefficients!(nemo_eddy_coefficients, ocean.model)
         add_callback!(simulation, RefreshNEMOEddyCoefficients(nemo_eddy_coefficients), IterationInterval(1))
+    end
+
+    # The face transports must exist before the first tendency evaluation, so seed them here as well
+    # as refreshing them each step.
+    if !isnothing(bottom_boundary_layer)
+        update_bottom_boundary_layer!(simulation, bottom_boundary_layer)
+        add_callback!(simulation, BottomBoundaryLayerUpdate(bottom_boundary_layer), IterationInterval(1))
     end
 
     # Same for CESM's stratification-dependent coefficient.

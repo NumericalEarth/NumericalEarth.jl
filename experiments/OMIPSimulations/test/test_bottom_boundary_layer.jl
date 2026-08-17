@@ -6,7 +6,8 @@ using Oceananigans.Fields: CenterField, interior
 using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶜᶜᶜ
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 
-using OMIPSimulations: BottomBoundaryLayer, bottom_boundary_layer_tendency, bottom_level
+using OMIPSimulations: BottomBoundaryLayer, bottom_boundary_layer_tendency, bottom_level,
+                       update_bottom_boundary_layer!
 
 const Nx, Ny, Nz = 16, 4, 20
 
@@ -32,6 +33,7 @@ function tendency_summary(bottom_height, temperature; plume_velocity = 0.1)
     fields = (; T, S)
 
     bbl = BottomBoundaryLayer(grid, TEOS10EquationOfState(); plume_velocity)
+    update_bottom_boundary_layer!(bbl, grid, fields)
     parameters = (bottom_boundary_layer = bbl, tracer_name = Val(:T))
     clock = Clock(time = 0.0)
 

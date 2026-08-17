@@ -9,7 +9,9 @@
 # It is not a three-dimensional flux between cells at differing `k`.
 
 using Oceananigans
-using Oceananigans.Architectures: on_architecture
+using Oceananigans.Architectures: architecture, on_architecture
+using Oceananigans.Utils: launch!
+using KernelAbstractions: @index, @kernel
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Grids: Center, znode
 using Oceananigans.ImmersedBoundaries: inactive_node
@@ -60,14 +62,18 @@ neighbour pairing, so both flip sign together across the tripolar fold and their
 
 Supply either `plume_velocity` (m s⁻¹) or `diffusivity` (m² s⁻¹, NEMO's `rn_ahtbbl`).
 """
-struct BottomBoundaryLayer{K, C, E}
+struct BottomBoundaryLayer{K, T, C, E}
     bottom_index        :: K
+    transport_x         :: T
+    transport_y         :: T
     transport_parameter :: C
     equation_of_state   :: E
 end
 
 Adapt.adapt_structure(to, bbl::BottomBoundaryLayer) =
     BottomBoundaryLayer(adapt(to, bbl.bottom_index),
+                        adapt(to, bbl.transport_x),
+                        adapt(to, bbl.transport_y),
                         adapt(to, bbl.transport_parameter),
                         adapt(to, bbl.equation_of_state))
 
@@ -83,7 +89,42 @@ function BottomBoundaryLayer(grid, equation_of_state; plume_velocity = nothing, 
     set!(bottom_index, deepest_wet_level(grid))
     fill_halo_regions!(bottom_index)
 
-    return BottomBoundaryLayer(bottom_index, transport_parameter, equation_of_state)
+    transport_x = Field{Center, Center, Nothing}(grid)
+    transport_y = Field{Center, Center, Nothing}(grid)
+
+    return BottomBoundaryLayer(bottom_index, transport_x, transport_y,
+                               transport_parameter, equation_of_state)
+end
+
+"""
+    update_bottom_boundary_layer!(sim)
+
+Refresh the two face-transport fields from the current ocean state. Called once per step, so the
+activation criterion — which costs four equation-of-state evaluations per face — is paid on the 2D
+bottom surface rather than on every cell of the 3D domain for every tracer.
+"""
+function update_bottom_boundary_layer!(sim, bbl::BottomBoundaryLayer)
+    ocean = sim.model.ocean
+    fields = (T = ocean.model.tracers.T, S = ocean.model.tracers.S)
+    return update_bottom_boundary_layer!(bbl, ocean.model.grid, fields)
+end
+
+function update_bottom_boundary_layer!(bbl::BottomBoundaryLayer, grid, fields)
+    launch!(architecture(grid), grid, :xy, _compute_bottom_boundary_layer_transport!,
+            bbl.transport_x, bbl.transport_y, grid, bbl, fields)
+
+    fill_halo_regions!(bbl.transport_x)
+    fill_halo_regions!(bbl.transport_y)
+
+    return nothing
+end
+
+@kernel function _compute_bottom_boundary_layer_transport!(Qx, Qy, grid, bbl, fields)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        Qx[i, j, 1] = x_face_transport(bbl, fields, grid, i, j)
+        Qy[i, j, 1] = y_face_transport(bbl, fields, grid, i, j)
+    end
 end
 
 # Deepest wet level of every column, zero over land. Built on a CPU copy of the grid because the
@@ -184,10 +225,12 @@ weighted and Oceananigans' is not. `Δz` is evaluated live so the metric follows
 
     cᶜ = bottom_tracer(c, bbl, i, j)
 
-    Qe = x_face_transport(bbl, fields, grid, i,   j)
-    Qw = x_face_transport(bbl, fields, grid, i-1, j)
-    Qn = y_face_transport(bbl, fields, grid, i, j  )
-    Qs = y_face_transport(bbl, fields, grid, i, j-1)
+    @inbounds begin
+        Qe = bbl.transport_x[i,   j,   1]
+        Qw = bbl.transport_x[i-1, j,   1]
+        Qn = bbl.transport_y[i,   j,   1]
+        Qs = bbl.transport_y[i,   j-1, 1]
+    end
 
     divergence = Qe * (bottom_tracer(c, bbl, i+1, j) - cᶜ) +
                  Qw * (bottom_tracer(c, bbl, i-1, j) - cᶜ) +
@@ -215,13 +258,25 @@ function bottom_boundary_layer_forcing(bbl::BottomBoundaryLayer)
 end
 
 """
+    BottomBoundaryLayerUpdate(bbl)
+
+Callable that refreshes the face transports; register once per step with `add_callback!`.
+"""
+struct BottomBoundaryLayerUpdate{B}
+    bottom_boundary_layer :: B
+end
+
+(u::BottomBoundaryLayerUpdate)(sim) = update_bottom_boundary_layer!(sim, u.bottom_boundary_layer)
+
+"""
     bottom_boundary_layer_forcing(grid, plume_velocity, diffusivity)
 
-Convenience form for `omip_simulation`: an empty `NamedTuple` when neither parameter is set, so the
-scheme costs nothing when it is off.
+Convenience form for `omip_simulation`. Returns `(forcing, bbl)`; the forcing is an empty
+`NamedTuple` and `bbl` is `nothing` when neither parameter is set, so the scheme costs nothing when
+it is off. The caller must register `BottomBoundaryLayerUpdate(bbl)` as a callback.
 """
 function bottom_boundary_layer_forcing(grid, plume_velocity, diffusivity)
-    isnothing(plume_velocity) && isnothing(diffusivity) && return NamedTuple()
+    isnothing(plume_velocity) && isnothing(diffusivity) && return NamedTuple(), nothing
     bbl = BottomBoundaryLayer(grid, TEOS10EquationOfState(); plume_velocity, diffusivity)
-    return bottom_boundary_layer_forcing(bbl)
+    return bottom_boundary_layer_forcing(bbl), bbl
 end
