@@ -100,8 +100,6 @@ function write_synthetic_landcover_file(path, lattice, dataset; class_at = Dict(
 end
 
 @testset "MODIS digital-number decode" begin
-    # Valid range is 0:100, and the scale is applied downstream — so the rejection has to
-    # happen here, before a fill of 255 could become a leaf area index of 25.5.
     @test mask_lai_fill(0x00) === 0f0
     @test mask_lai_fill(0x64) === 100f0
 
@@ -142,8 +140,7 @@ end
     @test all(mask -> count_ones(mask) == 1, masks)
     @test length(unique(masks)) == length(masks)
 
-    # The recommended screen is the three criteria the user guide and the roughness
-    # literature agree on, and nothing else.
+    # The recommended screen is exactly these three criteria and nothing else.
     @test recommended_lai_screening() ==
           lai_screening_mask(:other_quality, :backup_algorithm, :cloudy)
     for criterion in (:dead_detector, :snow_or_ice, :high_aerosol, :cirrus,
@@ -500,8 +497,7 @@ end
         @test count(isnan, snow_screened_leaf_area_index) == 3
 
         # The land-cover code is the complement of the leaf-area read on the same layer: it
-        # carries a class exactly where there is no retrieval, and the retrieval screen does
-        # not touch it, because a cloudy urban pixel is still urban.
+        # carries a class exactly where there is no retrieval, untouched by the screen.
         codes = retrieve_data(Metadatum(:landcover_code; dataset, region, date, dir))
         @test size(codes) == (Nx, Ny)
         @test codes[2, 4] == 254        # water, where the leaf area is a gap
@@ -560,8 +556,7 @@ end
     @test isnan(mask_landcover_fill(0x12, 1:17))       # 18, one past the range
     @test mask_landcover_fill(0x00, 0:10) === 0f0      # water, under the leaf-area legend
 
-    # The names are the granules' own attributes, and each legend's table covers exactly its
-    # own valid range — no shared constant could.
+    # Each legend's table covers exactly its own valid range.
     @test landcover_class_names(MCD12Q1()) === igbp_class_names
     @test landcover_class_names(MCD12Q1(legend = :LAI)) === modis_lai_class_names
     @test landcover_class_names(MCD12Q1(legend = :PFT)) === modis_plant_functional_type_names
@@ -681,8 +676,8 @@ end
         @test all(code -> isnan(code) || code == round(code), field)
         @test all(code -> isnan(code) || code in 1:17, field)
 
-        # The whole point of this adapter: the class field lands on exactly the cells the
-        # leaf-area read lands on, so the two pair with no aggregation in between.
+        # The class field lands on exactly the cells the leaf-area read lands on, so the two
+        # pair with no aggregation in between.
         lai_metadatum = Metadatum(:leaf_area_index; dataset = MCD15A2H(), region,
                                   date = DateTime(2019, 7, 4), dir)
         write_synthetic_modis_file(joinpath(dir, lai_metadatum.filename),
@@ -985,11 +980,8 @@ end
 end
 
 @testset "Native-grid FieldTimeSeries reads without interpolating" begin
-    # A series built on the dataset's own grid must reproduce the single-date read exactly. It is
-    # tempting to let the generic path build a native field and interpolate it onto an identical
-    # grid, but that round trip is only the identity where the data is complete: its bilinear
-    # stencil spreads every gap into its neighbors, so a dataset with honest gaps has its gap
-    # fraction silently inflated by the read.
+    # A series built on the dataset's own grid must reproduce the single-date read exactly:
+    # interpolating onto an identical grid spreads every gap into its neighbors.
     mktempdir() do dir
         dataset = MCD15A2H()
         region = BoundingBox(longitude = (-92.5, -92.4), latitude = (36.5, 36.6))

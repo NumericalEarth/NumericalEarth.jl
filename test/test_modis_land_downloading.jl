@@ -106,8 +106,8 @@ end
     @test length(unique(valid)) > 1
     @test !all(code -> code in igbp_non_vegetated_classes, valid)   # a forested window
 
-    # The whole point of the shared lattice: the class field lands on exactly the cells the
-    # leaf-area read lands on, so the two pair with no aggregation in between.
+    # The class field lands on exactly the cells the leaf-area read lands on, so the two
+    # pair with no aggregation in between.
     lai_metadatum = Metadatum(:leaf_area_index; dataset = MCD15A2H(), region = modis_region,
                               date = modis_composite_date, dir = modis_download_directory)
     λc, φc = read_file_coords(metadatum)

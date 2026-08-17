@@ -15,15 +15,10 @@ column is filled independently. For a `FieldTimeSeries`, `interior(fts)` is
 copied to the CPU, filled in place, and copied back.
 
 Gaps longer than `max_gap` points are left as NaN, and one warning summarizes what was
-left behind across the whole call — a gridded series has as many columns as cells, so
-warning per column would bury the result. A gap running to either end of an open series is
-the exception: it is extended with its nearest value whatever `max_gap` says, because
-there is no second value to interpolate towards.
-
-`max_gap` may instead be an array matching the spatial dimensions of `data`, giving each
-column its own tolerance. A uniform bridge cannot be right everywhere: 32 days across an
-evergreen canopy is nearly exact and across a crop invents a green-up ramp with the wrong
-slope. A dataset that knows how fast its field turns over can build that array itself.
+left behind across the whole call. A gap running to either end of an open series is the
+exception: it is extended with its nearest value whatever `max_gap` says, because there
+is no second value to interpolate towards. `max_gap` may instead be an array matching the
+spatial dimensions of `data`, giving each column its own tolerance.
 
 With `cyclic = true` the series is treated as one period of a periodic signal, so a
 gap at either end interpolates across the wrap rather than being extended with its
@@ -90,8 +85,7 @@ function warn_unfilled_gaps(unfilled, max_gap)
     return nothing
 end
 
-# Fills one column and records the gaps it refused to interpolate across as
-# `(first, last)` index pairs, so the caller can report them once.
+# Records the gaps it refused to bridge in `unfilled`, so the caller can warn once.
 function fill_column_gaps!(data::AbstractVector, unfilled; max_gap, cyclic)
     cyclic && return fill_cyclic_column_gaps!(data, unfilled; max_gap)
 
@@ -107,7 +101,6 @@ function fill_column_gaps!(data::AbstractVector, unfilled; max_gap, cyclic)
             gap_length = gap_end - gap_start + 1
 
             if gap_start == 1 || gap_end == N
-                # Edge gap: fill with nearest valid value
                 if gap_start == 1 && gap_end < N
                     data[gap_start:gap_end] .= data[gap_end + 1]
                 elseif gap_end == N && gap_start > 1
@@ -116,7 +109,6 @@ function fill_column_gaps!(data::AbstractVector, unfilled; max_gap, cyclic)
             elseif gap_length > max_gap
                 push!(unfilled, (gap_start, gap_end))
             else
-                # Linear interpolation
                 v0 = data[gap_start - 1]
                 v1 = data[gap_end + 1]
                 for j in gap_start:gap_end
@@ -172,16 +164,10 @@ end
 #####
 ##### Compositing a period across years and interpolating along the seasonal axis both
 ##### assume cloud is quasi-random across years at a given period. Where the gap is
-##### phase-locked — tied to a circulation feature that recurs at the same calendar period
-##### every year, as in the ITCZ, a monsoon, or on a windward slope — neither can see it:
-##### the composite pools cloudy samples, and the neighboring periods are cloudy for the
-##### same reason. What is left needs a donor from elsewhere, and a land-cover class is what
-##### makes borrowing safe. Averaging across a forest/cropland boundary injects a biased
-##### value, and a drag-partition closure downstream sits where more leaf area gives *less*
-##### roughness, so a smeared value there becomes a roughness error of the wrong sign.
-#####
-##### Everything here is host-side: a one-time ingestion step, free to allocate and free to
-##### branch, in the same shape as `fill_gaps!` above.
+##### phase-locked — the ITCZ, a monsoon, a windward slope — neither can see it: what is
+##### left needs a donor from elsewhere, and a land-cover class is what makes borrowing
+##### safe. Everything here is host-side: a one-time ingestion step, free to allocate and
+##### free to branch.
 #####
 
 """
@@ -244,17 +230,13 @@ end
 
 Per-period sums and counts of the valid values of each class, aggregated over square blocks
 of cells and accumulated into 2-D prefix sums, so the total over any block window costs four
-lookups however wide the window is.
+lookups however wide the window is. That is what makes an *expanding* stencil affordable:
+the search grows its radius until the donor count reaches `minimum_donors`, and growing by
+one ring costs a handful of table lookups rather than thousands of cell visits.
 
-That is what makes an *expanding* stencil affordable. A fixed neighborhood a few kilometers
-wide sits entirely inside synoptic overcast, so it is empty exactly when it is needed; the
-search instead grows its radius until the donor count reaches `minimum_donors`, and growing
-by one ring costs a handful of table lookups rather than thousands of cell visits.
-
-The radius that satisfies `minimum_donors` is a property of the block and the class, not of
-the individual cell, so each donor curve is computed once and reused — corrected per cell
-only by removing that cell's own contribution, which would otherwise bias its scaling
-toward one.
+The radius that satisfies `minimum_donors` is a property of the block and the class, so
+each donor curve is computed once and cached — corrected per cell only by removing that
+cell's own contribution, which would otherwise bias its scaling toward one.
 """
 struct BlockDonorTable{S, C}
     sums :: S
@@ -317,8 +299,7 @@ function window_totals!(sums, counts, table, bi, bj, radius, c)
 end
 
 # The radius grows until every period is supported, not only the ones a particular cell is
-# missing: that keeps the curve comparable across periods, and it is what makes the result a
-# property of the block rather than of whichever cell asked for it first.
+# missing — otherwise the cached curve would depend on whichever cell asked first.
 function block_donor_curve(table, bi, bj, c)
     key = (bi, bj, c)
     haskey(table.curves, key) && return table.curves[key]
@@ -366,9 +347,8 @@ end
     AnchorDonorPool
 
 The donor pool of a date-dependent fill: each cell's own climatological curve, read at the
-period each target time falls in. It preserves the cell's magnitude *and* its own seasonal
-shape and borrows nothing spatially, so where a climatology exists it is strictly better
-than pooling same-class neighbors — and it needs no class field at all.
+period each target time falls in — preserving the cell's magnitude and seasonal shape, and
+borrowing nothing spatially.
 """
 struct AnchorDonorPool{A}
     anchor :: A
@@ -444,12 +424,11 @@ end
 Fill what compositing and a temporal interpolation could not, using the land-cover class to
 decide how far each cell may borrow and from whom. `series` is a `FieldTimeSeries` or an
 array whose last dimension is time, `land_cover` a `Field` or array of class codes on the
-same lattice — the same shape, cell for cell, or the pairing is silently off by a neighbor.
+same lattice.
 
 Returns `(; series, provenance, reach)`: the filled series, a `UInt8` code per cell and
 period naming the stage that produced it ([`gap_fill_provenance`](@ref)), and the donor
-radius each cell reached, in blocks. A fill that reached four hundred kilometers is not the
-same datum as one that reached fifteen, and the reach is how a user tells them apart.
+radius each cell reached, in blocks.
 
 Three stages run in order, and each only ever writes where the previous left `NaN` —
 observed values are never rewritten:
@@ -458,8 +437,7 @@ observed values are never rewritten:
    per-cell array.
 2. `:scaled` — a donor's seasonal *shape* scaled to the cell's own level,
    `𝒜(i,j,t) = s(i,j) · 𝒜̄(i,j,t)`, with `s` the ratio of the cell's sum to the donor's over
-   the periods where both are valid. This keeps the magnitude, which is what varies most in
-   space, and borrows only the timing, which is what a class actually determines.
+   the periods where both are valid.
 3. `:class_mean` — the donor curve itself, for cells with no valid period to scale by.
 
 The donor is same-class neighbors over an expanding block stencil, or — with `anchor` set
@@ -473,7 +451,7 @@ Keyword arguments
             curve instead of its neighbors'. Default: `nothing`.
 - `anchor_periods`: the anchor index each time of `series` maps to. Defaults to cyclic reuse,
                     which assumes the series opens the anchor's cycle and covers whole cycles,
-                    and is an error otherwise — a mid-year window must say where it starts.
+                    and is an error otherwise.
 - `cyclic`: treat the time axis as one period of a periodic signal. Default: no `anchor`.
 - `max_gap`: scalar or per-cell bridge length for stage 1. Default: `6`.
 - `block_size`: cells per side of the donor table's blocks. Default: `32`.
@@ -483,9 +461,8 @@ Keyword arguments
                     Default: `20`.
 - `minimum_anchor_periods`: periods a cell needs before its scaling is trusted; below this
                             it falls through to `:class_mean`. Default: `6`.
-- `scaling`: `:multiplicative` for a non-negative ratio-scale field, where leaf-off donors
-             give leaf-off fills and nothing can go negative, or `:additive` for a signed
-             one. Default: `:multiplicative`.
+- `scaling`: `:multiplicative` for a non-negative ratio-scale field, `:additive` for a
+             signed one. Default: `:multiplicative`.
 - `valid_range`: clamp applied to every estimate, e.g. `(0, 10)` for leaf area index.
                  Default: `nothing`.
 - `unfilled_classes`: class codes that are never filled — water, urban, snow, barren.
@@ -547,9 +524,7 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
     mean_donors  = :class_mean in stages
     (scale_donors || mean_donors) || return (; series = data, provenance, reach)
 
-    # Built after the temporal stage, so a neighbor's short bridged gap is available as a
-    # donor. A phase-locked gap is untouched by that stage, so it contributes nothing and
-    # the pool stays honest exactly where it matters.
+    # Built after the temporal stage, so a neighbor's short bridged gap is available as a donor.
     pool = isnothing(anchor) ?
         block_donor_table(𝒜, class_index, length(classes_present);
                           block_size, initial_radius, maximum_radius, minimum_donors) :
@@ -601,9 +576,8 @@ end
 ##### Scoring the fill by data denial
 #####
 
-# Every `stride`-th eligible entry, so the sample spreads over the region instead of
-# clustering, and repeats exactly. A pseudo-random draw would need a seed to be reportable
-# and would buy nothing here.
+# Every `stride`-th eligible entry: spreads the sample over the region and repeats exactly,
+# with no seed to report.
 function strided_sample(candidates, count)
     length(candidates) ≤ count && return candidates
     stride = length(candidates) ÷ count
@@ -619,13 +593,9 @@ on the damaged copy, and the estimates are compared with the values that were re
 remaining keyword arguments are passed to the fill, so `stages` scores each stage alone.
 
 Returns one row per class: `(; class, withheld, estimated, R², cv_rmse)`, where `R²` is the
-squared correlation of estimate against truth — the coefficient of the regression the
-leaf-area-interpolation literature reports — and `cv_rmse` the root-mean-square error about
-the one-to-one line divided by the mean of the withheld truth, so classes with different
-magnitudes are comparable. `estimated` counts how many of the withheld entries the chain
-reached at all, which is as much of the result as the scores.
-
-Needs no downloads: it re-uses a series that is already assembled.
+squared correlation of estimate against truth, `cv_rmse` the root-mean-square error divided
+by the mean of the withheld truth, and `estimated` the number of withheld entries the chain
+reached at all.
 """
 function gap_fill_denial(series, land_cover; samples_per_class = 100, kw...)
     series isa FieldTimeSeries && validate_whole_series(series)

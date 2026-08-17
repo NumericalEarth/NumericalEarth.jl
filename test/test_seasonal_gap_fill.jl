@@ -23,7 +23,6 @@ function uniform_series(shape, Nx, Ny)
 end
 
 @testset "Per-column max_gap" begin
-    # The scalar path is untouched: same results as before, byte for byte.
     scalar = Float32[1, NaN, NaN, 4, 5]
     array = copy(scalar)
     fill_gaps!(scalar; max_gap = 2)

@@ -65,7 +65,7 @@ end
 end
 
 @testset "Region offset on a coarse grid" begin
-    # ERA5's 0.25° lattice: the coarse datasets must be unaffected by the fine-grid fix.
+    # ERA5's 0.25° lattice.
     longitude_interfaces = (-0.125, 359.875)
     latitude_interfaces = (-90, 90)
     Nx_global = 1440

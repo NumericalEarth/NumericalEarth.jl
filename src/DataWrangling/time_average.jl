@@ -103,10 +103,10 @@ Average the `FieldTimeSeries` `fts` onto windows of length `window`, tiling `bou
 first date.
 
 `bounds` gives the `Nt + 1` dates delimiting the samples: sample `n` covers
-`[bounds[n], bounds[n+1])`. Samples are weighted by their overlap with each window,
-which a composited product needs: its values are already window means, so integrating an
-interpolation of them double-counts the compositing, and a year-anchored cadence does not nest
-inside a month, so an unweighted mean mis-weights every sample straddling an edge.
+`[bounds[n], bounds[n+1])`. Samples are weighted by their overlap with each window, which a
+composited product needs — its values are already window means, and a year-anchored cadence
+does not nest inside a month, so an unweighted mean mis-weights every sample straddling an
+edge.
 
 `NaN` samples are skipped and the remaining weights renormalized, so a window with any valid
 overlap returns a value and one with none returns `NaN`.

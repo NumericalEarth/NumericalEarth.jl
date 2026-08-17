@@ -62,7 +62,7 @@ function davies_relaxation_mask(grid, width; ramp = CosineRamp())
     end
 end
 
-# Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` metres of the domain, for the ρw lid sponge.
+# Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` meters of the domain, for the ρw lid sponge.
 # `z_top` is read once host-side under `@allowscalar`: a `znode` on a terrain-following GPU grid
 # indexes the (device) terrain arrays, which is otherwise disallowed. `s` is the normalized distance
 # below the lid (0 at the top), so the shared ramp contract (1 at s=0) puts the strongest damping at
@@ -231,16 +231,13 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
     nested_bcs = parent_boundary_conditions(child_grid; variables = bc_variables, sides, bc_types)
 
     # Interior Davies relaxation toward the precomputed prognostics. Oceananigans' FTS `Relaxation`
-    # calls `mask(x, y, z)`, so wrap a scalar mask in a callable. Momentum and energy relax toward the
-    # parent's SPECIFIC state, which `SpecificForcing` weights by the child's own `ρᵈ` at kernel time;
-    # relaxing toward the parent's `ρθ`/`ρu`/`ρv` instead equilibrates at `θ = θₚ ρᵈₚ / ρᵈ`, an absolute
-    # error `θ Δρᵈ / ρᵈ` (≈3 K per 1% density mismatch: the lateral-boundary cold rim). `ρᵈ` itself is
-    # absent because Breeze's compressible continuity kernels overwrite `Gⁿ.ρᵈ` with `-∇·m` and never
-    # read `forcing.ρᵈ`, so a mass-nudging entry is silently discarded; were that to change, the
-    # specific form would gain a `θ Δρᵈ / ρᵈ` cross-term and the density-weighted form would be unbiased.
-    # The wrap is explicit and keyed by the density-weighted prognostic rather than left to Breeze's
-    # specific-key dispatch, so a caller's own `θ`/`u`/`v` forcing combines with the relaxation instead
-    # of replacing it in the `merge` below.
+    # calls `mask(x, y, z)`, so wrap a scalar mask in a callable. Momentum and energy relax toward
+    # the parent's SPECIFIC state, which `SpecificForcing` weights by the child's own `ρᵈ` at kernel
+    # time; relaxing toward the parent's `ρθ`/`ρu`/`ρv` instead equilibrates at `θ = θₚ ρᵈₚ / ρᵈ`
+    # (≈3 K per 1% density mismatch: the lateral-boundary cold rim). `ρᵈ` itself is absent because
+    # Breeze's continuity kernels overwrite `Gⁿ.ρᵈ` with `-∇·m` and never read `forcing.ρᵈ`. The
+    # wrap is keyed by the density-weighted prognostic so a caller's own `θ`/`u`/`v` forcing
+    # combines with the relaxation in the `merge` below instead of replacing it.
     relax_mask = relaxation_mask isa Number ? Returns(relaxation_mask) : relaxation_mask
     davies = if isnothing(relaxation_rate)
         NamedTuple()

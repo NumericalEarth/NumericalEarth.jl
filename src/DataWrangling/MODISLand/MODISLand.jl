@@ -32,19 +32,11 @@ end
 #####
 ##### Digital-number decode
 #####
-##### MCD15 stores LAI, FPAR, and their standard deviations as `UInt8` digital numbers with
-##### a valid range of 0–100. Codes above 100 are not measurements: 249 is unclassified, 250
-##### urban, 251 wetland, 252 permanent snow/ice, 253 barren, 254 water, 255 fill, and 248
-##### marks a missing standard deviation. They must be rejected *before* the product's scale
-##### factor is applied, or a fill of 255 decodes to a leaf area index of 25.5. The scaling
-##### itself is applied downstream by `conversion_units`.
-#####
 
 const MODIS_LAI_MAXIMUM_VALID = 100
 const MODIS_LAI_SCALE  = 0.1
 const MODIS_FPAR_SCALE = 0.01
 
-# The land-cover codes the product substitutes for a retrieval, and the classes they name.
 const MODIS_LAI_LANDCOVER_CODES = 249:254
 
 const modis_landcover_class_names = (unclassified = 249,
@@ -67,11 +59,9 @@ The product's scale factor is applied downstream, so the rejection has to happen
     mask_lai_landcover(DN)
 
 The complement of [`mask_lai_fill`](@ref): return the digital number `DN` as a `Float32` when
-it is one of the land-cover codes `$(MODIS_LAI_LANDCOVER_CODES)`, and `NaN` otherwise — for a
-valid retrieval, and for the fill value 255, neither of which names a class.
-
-The product substitutes these codes for a retrieval it does not attempt, so they carry the
-non-vegetated classification of the same MODIS land cover the retrieval itself is keyed on:
+it is one of the land-cover codes `$(MODIS_LAI_LANDCOVER_CODES)` the product substitutes for a
+retrieval it does not attempt, and `NaN` otherwise — for a valid retrieval, and for the fill
+value 255, neither of which names a class.
 
 | code | class |
 |---|---|
@@ -82,11 +72,8 @@ non-vegetated classification of the same MODIS land cover the retrieval itself i
 | 253 | barren or sparsely vegetated |
 | 254 | perennial salt or fresh water |
 
-Reading them is how a surface-property closure learns which cells are not vegetated without a
-separate land-cover product. They are **class codes**, so read them on the product's own grid:
-interpolating them onto another grid averages 250 against 254 into 252, which is a different
-class. A finer land-cover product (and a nearest-neighbor regrid) is the right tool once the
-model grid differs.
+These are **class codes**, so read them on the product's own grid: interpolating them onto
+another grid averages 250 against 254 into 252, which is a different class.
 """
 @inline mask_lai_landcover(DN) =
     ifelse((DN ≥ first(MODIS_LAI_LANDCOVER_CODES)) & (DN ≤ last(MODIS_LAI_LANDCOVER_CODES)),
@@ -95,18 +82,12 @@ model grid differs.
 #####
 ##### Land-cover legends
 #####
-##### MCD12Q1 stores every layer as a `UInt8` class code with fill 255, and each legend has
-##### its own valid range: 0 is water in the leaf-area and plant-functional-type schemes but
-##### is not a class at all under IGBP. The names and ranges below are the granules' own
-##### attributes, not a secondary source.
-#####
 
 """
     igbp_class_names
 
 The 17 International Geosphere-Biosphere Programme classes of `LC_Type1`, the default
-legend of [`MCD12Q1`](@ref) — the stratification the aerodynamic-roughness literature keys
-its drag and minimum-stem-area tables on.
+legend of [`MCD12Q1`](@ref).
 
 ```jldoctest
 julia> using NumericalEarth
@@ -137,8 +118,7 @@ const igbp_class_names = (evergreen_needleleaf_forest = 1,
     modis_lai_class_names
 
 The 11 classes of `LC_Type3` — the biome stratification the MCD15 leaf-area retrieval
-itself is keyed on, so it is the legend that matches the record this module composites
-most closely.
+itself is keyed on.
 """
 const modis_lai_class_names = (water = 0,
                                grassland = 1,
@@ -177,11 +157,6 @@ const modis_plant_functional_type_names = (water = 0,
 The IGBP classes a leaf-area gap fill must never write into. They carry no canopy, so any
 value borrowed for them is an invention rather than an estimate — pass them as the
 `unfilled_classes` of [`fill_seasonal_gaps!`](@ref).
-
-They should agree with the codes MCD15A2H writes in place of a retrieval
-([`mask_lai_landcover`](@ref)), which come from a related land-cover input. Where they do
-not, the disagreement localizes a geolocation or a vintage difference between the two
-products and is worth counting rather than reconciling silently.
 """
 const igbp_non_vegetated_classes = (igbp_class_names.urban,
                                     igbp_class_names.permanent_snow_and_ice,
@@ -242,14 +217,8 @@ end
 
 Aggregate a class map onto a lattice `factor` times coarser, as one continuous area-fraction
 field per class: `Dict(class => fraction)`, each `size(codes) .÷ factor`, summing to one over
-cells with any valid code.
-
-This is the safe way to carry a categorical field onto a model grid. The codes themselves
-cannot be interpolated, but their fractions are ordinary continuous fields, and they say more
-than a dominant class does — a cell that is 60% forest and 40% crop is not a forest cell.
-
-`factor` must divide both dimensions, which it does when the coarse lattice is built by
-grouping whole native cells.
+cells with any valid code. `factor` must divide both dimensions, which it does when the
+coarse lattice is built by grouping whole native cells.
 """
 function class_fractions(codes, classes, factor)
     Nx, Ny = size(codes)
@@ -291,9 +260,8 @@ end
 @inline internal_cloud_mask(extra_qc) = (extra_qc >> 0x05) & 0x01
 @inline cloud_shadow(extra_qc)       = (extra_qc >> 0x06) & 0x01
 
-# Each named criterion a pixel can fail. The values are a private bit assignment used to
-# combine criteria into one screening mask; they are unrelated to the product's own bit
-# positions, which the accessors above decode.
+# A private bit assignment used to combine criteria into one screening mask — unrelated to
+# the product's own bit positions, which the accessors above decode.
 const lai_screening_flags = (other_quality    = 0x0001,
                              backup_algorithm = 0x0002,
                              cloudy           = 0x0004,
@@ -374,10 +342,8 @@ under a clear (or assumed-clear) sky. This is the default `screened_flags` of
 [`MCD15A2H`](@ref).
 
 The scene-state detections — snow, aerosol, cirrus, internal cloud, cloud shadow — are
-deliberately left in. Snow in particular is a physical state rather than a retrieval failure:
-it depresses winter leaf area over evergreen needleleaf, which downstream closures may want
-to see and treat explicitly, so screening it out is opt-in via
-[`lai_screening_mask`](@ref).
+deliberately left in: snow in particular is a physical state rather than a retrieval failure,
+and screening it out is opt-in via [`lai_screening_mask`](@ref).
 
 ```jldoctest
 julia> using NumericalEarth
@@ -505,13 +471,7 @@ the reduction — see [`retained_retrieval_metadatum`](@ref).
 
 `years` defaults to 2003–2019, the span over which both Terra and Aqua held their
 equatorial crossing times; Terra began drifting in 2020, which changes the composite's
-sensor characteristics. Extending the range past 2019 is allowed, and worth noting when
-reporting a result.
-
-Carrying `years` on the dataset is a deliberate exception to keeping dates out of dataset
-objects: it is part of the climatology's identity — a different span is a different product
-— and it lets the shared time-series machinery treat the climatology as an ordinary
-time-varying dataset. The monthly albedo climatology sets the same precedent.
+sensor characteristics.
 
 ```jldoctest
 julia> using NumericalEarth
@@ -580,8 +540,7 @@ Base.show(io::IO, dataset::MCD12Q1) = print(io, "MCD12Q1(legend=", repr(dataset.
 """
     landcover_class_names(dataset::MCD12Q1)
 
-The `(class_name = code, …)` table of the dataset's legend, so a class is named rather than
-written as a bare integer.
+The `(class_name = code, …)` table of the dataset's legend.
 
 ```jldoctest
 julia> using NumericalEarth
@@ -623,16 +582,14 @@ modis_version(::AbstractMODISLandDataset) = "061"
 composite_period_days(::MCD15A2H) = 8
 composite_period_days(climatology::MODISLAIClimatology) = composite_period_days(climatology.dataset)
 
-# The product's first composite. Later composites are year-anchored, not a rolling cadence.
 first_composite_date(::MCD15A2H) = DateTime(2002, 7, 4)
 
-# The record is ongoing; this is the conservative end of the range `all_dates` advertises,
-# in the same spirit as the reanalysis datasets. Later composites can still be requested
-# by passing explicit `dates`.
+# Conservative end of the range `all_dates` advertises — the record is ongoing, and later
+# composites can still be requested with explicit `dates`.
 last_composite_date(::MCD15A2H) = DateTime(2025, 12, 31)
 
 # The land-cover map is produced about a year and a half in arrears, so the advertised range
-# lags the leaf-area record. A later year can still be requested with an explicit date.
+# lags the leaf-area record.
 first_landcover_year(::MCD12Q1) = 2001
 last_landcover_year(::MCD12Q1)  = 2024
 
@@ -651,9 +608,8 @@ const MODISLAI_variable_names = Dict(:leaf_area_index             => "Lai_500m",
                                      :leaf_area_index_uncertainty => "LaiStdDev_500m")
 
 # `:landcover_code` is read from the leaf-area layer itself, which substitutes a land-cover
-# code where it has no retrieval. It is readable but not reducible: a class code cannot be
-# averaged, so it is deliberately absent from `MODISLAI_variable_names`, which is the set the
-# climatology composites.
+# code where it has no retrieval. A class code cannot be averaged, so it is absent from
+# `MODISLAI_variable_names`, the set the climatology composites.
 const MODISLAI_readable_variable_names =
     merge(MODISLAI_variable_names, Dict(:landcover_code => "Lai_500m"))
 
@@ -666,11 +622,9 @@ const landcover_water_mask_variable = "LW"
 """
     stored_granule_layers(dataset)
 
-The granule layers copied into the local regional file. One warp per layer serves every
+The granule layers copied into the local regional file. One warp per granule serves every
 variable a read can ask for, so the set is a property of the product rather than of the
-variable requested: the leaf-area product stores its three physical layers plus the two
-quality bytes its screen decodes, and the land-cover product stores the legend's own layer
-plus the classification quality and the land/water mask.
+variable requested.
 """
 stored_granule_layers(::MODISLAIDataset) = ("Lai_500m", "Fpar_500m", "LaiStdDev_500m",
                                             lai_quality_variable, lai_extra_quality_variable)
@@ -679,7 +633,6 @@ stored_granule_layers(dataset::MCD12Q1) = (landcover_layer(dataset),
                                            landcover_quality_variable,
                                            landcover_water_mask_variable)
 
-# The name a climatology file stores its retained-retrieval count under.
 const retained_count_variable = "retained_retrieval_count"
 
 const MODISLAIClimatology_variable_names =
@@ -700,9 +653,8 @@ DataWrangling.dataset_variable_name(metadata::MODISLandMetadata) =
 ##### Grid traits
 #####
 ##### The sinusoidal granules are reprojected to a global 1/240° latitude-longitude lattice
-##### (≈464 m, the 500 m product's actual pixel size) restricted to the requested region,
-##### so the stored file *is* the native grid the shared regrid path expects — see
-##### [`regional_lattice`](@ref).
+##### (≈464 m, the 500 m product's actual pixel size) restricted to the requested region —
+##### see [`regional_lattice`](@ref).
 #####
 
 const MODIS_LATTICE_SPACING = 1/240
@@ -728,17 +680,16 @@ struct MODISFPARScale end
 DataWrangling.convert_units(x::FT, ::MODISLAIScale)  where FT = x * convert(FT, MODIS_LAI_SCALE)
 DataWrangling.convert_units(x::FT, ::MODISFPARScale) where FT = x * convert(FT, MODIS_FPAR_SCALE)
 
-# Files store digital numbers (and the climatology stores their reduction, which is linear
-# in them), so the product's scale factor is applied on the way onto the grid. The retained
-# count is a count.
+# Files store digital numbers (and the climatology their reduction, which is linear in
+# them), so the product's scale factor is applied on the way onto the grid.
 function DataWrangling.conversion_units(metadatum::MODISLandMetadatum)
     metadatum.name === :fpar && return MODISFPARScale()
     metadatum.name in (:retained_retrieval_count, :landcover_code) && return nothing
     return MODISLAIScale()
 end
 
-# Class codes, an enumerated quality flag, and a land/water mask carry no scale factor, and
-# the leaf-area fallthrough above would turn IGBP class 12 into 1.2 without erroring.
+# Class codes carry no scale factor, and the leaf-area fallthrough above would silently
+# turn IGBP class 12 into 1.2.
 DataWrangling.conversion_units(::MODISLandCoverMetadatum) = nothing
 
 #####
@@ -754,9 +705,8 @@ that begins within that year.
 
 MODIS land products restart their compositing period at day-of-year 1 every January, so
 the last period of a year is short (5 days, or 6 in a leap year, for an 8-day product) and
-the sequence is *not* a uniform cadence across a year boundary. Stepping uniformly from the
-first date instead would drift out of phase after one year and request composites that do
-not exist.
+the sequence is *not* a uniform cadence across a year boundary — stepping uniformly from
+the first date would drift out of phase after one year.
 
 ```jldoctest
 julia> using Dates, NumericalEarth.DataWrangling.MODISLand
@@ -786,16 +736,14 @@ DataWrangling.all_dates(dataset::MODISLAIDataset, variable) =
 """
     periods_per_year(dataset)
 
-The number of composites a year of `dataset` holds — 46 for an 8-day product. The
-compositing period restarts at day-of-year 1 every January, so the last period of a year
-is short and the count is the same in leap and common years.
+The number of composites a year of `dataset` holds — 46 for an 8-day product, in leap and
+common years alike, since the cadence restarts every January.
 """
 periods_per_year(dataset) = length(modis_composite_dates(climatology_year_start(),
                                                          climatology_year_end(),
                                                          composite_period_days(dataset)))
 
-# A common (non-leap) placeholder year carries the climatological stamps, so the period
-# count and the day-of-year of each stamp are the ones every year shares.
+# A common (non-leap) placeholder year carries the climatological stamps.
 climatology_year_start() = DateTime(2018, 1, 1)
 climatology_year_end()   = DateTime(2018, 12, 31)
 
@@ -805,7 +753,6 @@ DataWrangling.all_dates(climatology::MODISLAIClimatology, variable) =
 
 DataWrangling.is_seasonal_climatology(::MODISLAIClimatology) = true
 
-# One map per calendar year, stamped on 1 January — not a day-stepped composite cadence.
 DataWrangling.all_dates(dataset::MCD12Q1, variable) =
     [DateTime(year) for year in first_landcover_year(dataset):last_landcover_year(dataset)]
 
@@ -852,9 +799,8 @@ DataWrangling.sample_window(metadatum::Union{MODISLAIMetadatum,
 ##### Filenames
 #####
 ##### Each granule read produces one regional file holding every layer, so the raw filename
-##### is keyed by date and region but not by variable — three variables and both quality
-##### bytes come out of one download. The climatology reduces a single variable, so its
-##### filename carries the variable, the contributing years, and the period.
+##### is keyed by date and region but not by variable. The climatology reduces a single
+##### variable, so its filename carries the variable, the years, and the period.
 #####
 
 date_tag(date) = Dates.format(DateTime(date), "yyyymmdd")
@@ -876,8 +822,7 @@ DataWrangling.metadata_filename(dataset::MODISLAIDataset, name, date, region) =
     string(modis_short_name(dataset), "_", modis_version(dataset), "_",
            date_tag(date), "_", region_tag(region), ".nc")
 
-# One warp per year and region serves every land-cover variable too, but a different legend
-# reads a different layer, so the legend takes the place the variable would otherwise hold.
+# A different legend reads a different layer, so the legend takes the variable's place.
 DataWrangling.metadata_filename(dataset::MCD12Q1, name, date, region) =
     string(modis_short_name(dataset), "_", modis_version(dataset), "_", dataset.legend, "_",
            Dates.year(date), "_", region_tag(region), ".nc")
@@ -894,9 +839,8 @@ end
 
 The companion [`Metadatum`](@ref) for the retained-retrieval count stored beside a
 climatology period's reduction — how many of the contributing years survived screening in
-each cell, so a composite's coverage can be mapped next to its values. It reads the same
-file as `metadatum`, because a count only means anything beside the variable it counts, and
-builds a `Field` through the same path: `Field(retained_retrieval_metadatum(metadatum), grid)`.
+each cell. It reads the same file as `metadatum` and builds a `Field` through the same
+path: `Field(retained_retrieval_metadatum(metadatum), grid)`.
 """
 retained_retrieval_metadatum(metadatum::MODISLAIClimatologyMetadatum) =
     Metadatum(:retained_retrieval_count; dataset = metadatum.dataset, region = metadatum.region,
@@ -964,9 +908,8 @@ end
 
 Raised when the Common Metadata Repository holds no granule for a requested region and
 date. The record has occasional holes where an instrument outage prevented a composite —
-2016-02-18 is one — so this is a distinguishable condition rather than a plain error:
-[`build_lai_climatology!`](@ref) skips a date the archive does not carry and composites the
-rest, while an explicit read of that date still fails, because there is nothing to read.
+2016-02-18 is one — so [`build_lai_climatology!`](@ref) catches this and composites the
+rest, while an explicit read of that date still fails.
 """
 struct MissingGranulesError <: Exception
     message :: String
@@ -1029,9 +972,8 @@ function Downloads.download(metadata::MODISLAIClimatologyMetadata)
     return metadata_path(metadata)
 end
 
-# The retained count is written beside the variable its file composites, so a cold-cache read
-# of the count builds that variable — recovered from the filename, which the companion
-# metadatum of `retained_retrieval_metadatum` shares with the variable it counts.
+# A cold-cache read of the count must build the variable its file composites, recovered
+# from the filename the two metadata share.
 function climatology_build_name(metadatum::MODISLAIClimatologyMetadatum)
     metadatum.name === :retained_retrieval_count || return metadatum.name
 
@@ -1053,10 +995,6 @@ modis_granules_to_netcdf(metadatum, nc_path) =
 
 #####
 ##### Reading
-#####
-##### The stored file holds the whole regional lattice, so the read is a plain slurp: mask
-##### the digital numbers that are not measurements, apply the quality screen, and let the
-##### shared path scale and bracket the result onto the grid.
 #####
 
 function DataWrangling.retrieve_data(metadatum::MODISLAIMetadatum)
@@ -1091,9 +1029,7 @@ function DataWrangling.retrieve_data(metadatum::MODISLAIClimatologyMetadatum)
 end
 
 # `QC` is an enumerated classification outcome (0 good classified land, 10 no data), not a
-# packed bitfield like `FparLai_QC`, so there is nothing to screen against by default and
-# bit-masking it would produce nonsense. Every layer decodes the same way: reject the codes
-# outside the layer's own valid range, and leave the rest as the class they name.
+# packed bitfield like `FparLai_QC` — nothing to screen, and bit-masking it would be nonsense.
 function DataWrangling.retrieve_data(metadatum::MODISLandCoverMetadatum)
     variable = DataWrangling.dataset_variable_name(metadatum)
     valid = metadatum.name === :landcover_class ? landcover_valid_range(metadatum.dataset) :
@@ -1137,17 +1073,11 @@ downloaded and screened, the retained retrievals are combined pixel by pixel wit
 Periods already on disk are skipped, so an interrupted build resumes. Returns the paths of
 the files.
 
-`reducer` acts on the vector of retained values of a pixel: `mean` gives the seasonal mean
-the roughness literature composites, while `maximum` (or a high quantile) gives a
-peak-season field, which is the more useful boundary condition for a simulation spanning
-days rather than a year.
+`reducer` acts on the vector of retained values of a pixel: `mean` gives a seasonal mean,
+while `maximum` (or a high quantile) gives a peak-season field.
 
-Screening happens before the reduction, so the count records retained retrievals and the
-reported retained fraction is the honest one.
-
-A year the archive holds no composite for — the record has a few, where an instrument
-outage interrupted it — is skipped with a warning and costs that period one sample rather
-than aborting the build. Every other failure still raises.
+A year the archive holds no composite for is skipped with a warning and costs that period
+one sample rather than aborting the build. Every other failure still raises.
 """
 function build_lai_climatology!(dataset::MODISLAIClimatology;
                                 name = :leaf_area_index,
@@ -1195,10 +1125,7 @@ function build_lai_climatology!(dataset::MODISLAIClimatology;
     return paths
 end
 
-# The years contributing to one period, minus the ones the archive has no composite for. A
-# multi-year mean is exactly the reduction that tolerates a missing year — it is what the
-# retained-retrieval count records — so a hole in the record costs one sample rather than the
-# whole period. Anything other than a missing granule still raises.
+# The dates contributing to one period, minus the ones the archive has no composite for.
 function materialize_composites(name, source, dates, region, dir)
     available = eltype(dates)[]
 
@@ -1259,13 +1186,10 @@ end
 ##### What the class field contributes to the gap-fill chain
 #####
 
-# How many consecutive 8-day periods a linear bridge across a gap may span, by IGBP class.
-# The number is set by how fast the class's leaf area moves: an evergreen canopy holds its
-# leaf area to within a factor of about 1.4 over the year, so a month-long bridge is nearly
-# exact, while a deciduous stand or a crop swings by close to a factor of five across a
-# green-up that takes three weeks, and a bridge longer than one period fabricates a ramp
-# with the wrong slope and the wrong timing. The non-vegetated classes are zero because
-# nothing should be filled there at all.
+# How many consecutive 8-day periods a linear bridge across a gap may span, by IGBP class,
+# set by how fast the class's leaf area moves: nearly constant over evergreen canopies, a
+# factor of ~5 across a three-week green-up for deciduous stands and crops, and zero for the
+# non-vegetated classes, which must not be filled at all.
 #
 #  1 evergreen needleleaf  6 | 7  open shrubland         3 | 13 urban                    0
 #  2 evergreen broadleaf   6 | 8  woody savanna          3 | 14 cropland/natural mosaic  1
@@ -1316,23 +1240,14 @@ end
 Write a leaf area index of zero into every cell of `series` whose land-cover class is in
 `classes` — water, urban, permanent snow and barren by default. Returns `series`.
 
-These are the cells [`fill_seasonal_gaps!`](@ref) deliberately leaves missing, because the
-product does not retrieve there and borrowing a neighbor's canopy for them would be an
-invention. Zero is not a stand-in for the missing value: it is the value. Leaf area per unit
-ground area over open water is zero.
+These are the cells [`fill_seasonal_gaps!`](@ref) deliberately leaves missing; zero is not
+a stand-in for the missing value but the value itself — leaf area per unit *ground* area
+over open water is zero.
 
-Run it **after** the fill and **before** landing the series on a model grid, which is the
-order that leaves nothing for the regrid's stencil to spread — a `NaN` at a shoreline
-otherwise dilates into its neighbors, while a zero blends into the cell mean correctly,
-since leaf area is already per unit *ground* area.
-
-Keep the class field alongside the result. Zero says there is no canopy; it does not say
-whether the surface is a lake or a car park, and those want roughness lengths four orders of
-magnitude apart. A canopy closure fed this field alone reads a city as smoother than a wheat
-field.
-
-Score a fill before zeroing, never after: [`gap_fill_denial`](@ref) samples cells that carry
-a value, so zeroed water would enter the sample as truth the chain reproduces exactly.
+Run it **after** the fill and **before** landing the series on a model grid: a `NaN` at a
+shoreline dilates into its neighbors under the regrid's stencil, while a zero blends into
+the cell mean correctly. Score a fill ([`gap_fill_denial`](@ref)) before zeroing, never
+after — zeroed water would enter the sample as truth the chain reproduces exactly.
 """
 function zero_non_vegetated!(data::AbstractArray, land_cover;
                              classes = igbp_non_vegetated_classes)
@@ -1368,15 +1283,12 @@ the annual [`MCD12Q1`](@ref) maps of one region stacked along a third dimension,
 first.
 
 A cell that was closed forest at the start of a climatology's span and pasture at its end
-averages into one composite describing neither surface. The annual series is the only way
-to see that, and this is a flag rather than a correction: which of the two surfaces a
-simulation wants is the caller's decision.
+averages into one composite describing neither surface. This is a flag rather than a
+correction: which of the two surfaces a simulation wants is the caller's decision.
 
-A single year's label at 500 m is not reliable enough for a first-versus-last difference —
-the product's user guide says so explicitly — so the test is persistence. A cell is flagged
-only when the same class holds through each of the first `window` years, the same class
-holds through each of the last `window` years, and the two differ. Interannual label noise
-therefore reads as "not stable" rather than as change.
+A single year's label at 500 m is too noisy for a first-versus-last difference, so the test
+is persistence: a cell is flagged only when one class holds through the first `window`
+years, one class holds through the last `window` years, and the two differ.
 """
 function landcover_change_flag(class_series; window = 3)
     Nx, Ny, Nyears = size(class_series)

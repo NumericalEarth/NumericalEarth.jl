@@ -794,7 +794,7 @@ is_seasonal_climatology(dataset) = false
 
 Whether `metadata` covers every period of a seasonal climatology, in which case the half
 window `Cyclical` fills beyond each end node comes from the adjacent phase of the same
-cycle — December's neighbor is January — and wrapping is exact rather than a compromise.
+cycle, and wrapping is exact.
 """
 spans_whole_cycle(metadata) =
     is_seasonal_climatology(metadata.dataset) &&
