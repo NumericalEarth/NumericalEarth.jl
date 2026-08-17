@@ -361,7 +361,25 @@ below the (clipped) surface of a `PressureLevelGrid` source.
     Drop this once Oceananigans' `interpolate!` resolves the target vertical node
     from the physical `znode` for mutable grids.
 """
+# `==` alone compares nodes whenever the grids' wrapper types match, which for a
+# `PressureLevelGrid` reduces the whole geopotential to a column-mean profile
+# (`mean_height_profile`) only to discard it; the exact-type guard short-circuits that.
+same_grid(a, b) = typeof(a) === typeof(b) && a == b
+
+# Whether two fields hold their data at the same points: one grid, one staggered location,
+# one index window.
+same_nodes(a, b) = same_grid(a.grid, b.grid) &&
+                   location(a) === location(b) && a.indices == b.indices
+
 function interpolate_physical!(to_field, from_field)
+    # On the same nodes interpolation is the identity where the data is complete, but its
+    # bilinear stencil spreads each NaN into its neighbors; a copy has no stencil to spread.
+    if same_nodes(to_field, from_field)
+        interior(to_field) .= interior(from_field)
+        fill_halo_regions!(to_field)
+        return to_field
+    end
+
     to_field.grid isa AbstractMutableGrid || return interpolate!(to_field, from_field)
 
     to_grid       = to_field.grid

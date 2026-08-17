@@ -1,5 +1,6 @@
 include("runtests_setup.jl")
 
+using Oceananigans.OutputReaders: Cyclical
 using NumericalEarth.DataWrangling: DataWrangling, BoundingBox, Metadatum, Metadata, native_grid,
     is_three_dimensional, default_inpainting, dataset_variable_name, metadata_filename,
     longitude_name, latitude_name, all_dates, native_times, available_variables,
@@ -334,6 +335,13 @@ end
     metadatum = Metadatum(:leaf_area_index; dataset = climatology, region, date = stamp)
     @test retained_retrieval_metadatum(metadatum).filename == metadatum.filename
     @test retained_retrieval_metadatum(metadatum).name == :retained_retrieval_count
+
+    # A cold-cache read of the count builds the variable behind the shared file; a bare
+    # count metadatum names no file any build writes, so it says so instead of building one.
+    @test MODISLand.climatology_build_name(metadatum) == :leaf_area_index
+    @test MODISLand.climatology_build_name(retained_retrieval_metadatum(metadatum)) == :leaf_area_index
+    @test_throws ArgumentError MODISLand.climatology_build_name(
+        Metadatum(:retained_retrieval_count; dataset = climatology, region, date = stamp))
 end
 
 @testset "MODIS granule selection" begin
@@ -815,6 +823,23 @@ end
     @test_throws ArgumentError sample_bounds(every_other)
 end
 
+@testset "Cyclic coverage of a whole climatology" begin
+    region = BoundingBox(longitude = (-92.5, -91.5), latitude = (36.5, 37.5))
+    climatology = MODISLAIClimatology()
+
+    # All 46 periods wrap onto themselves — December's neighbor is January — so the cyclic
+    # coverage warning stays quiet; a partial slice still warns about its spliced ends.
+    whole = Metadata(:leaf_area_index; dataset = climatology, region)
+    partial = Metadata(:leaf_area_index; dataset = climatology, region,
+                       dates = all_dates(climatology, :leaf_area_index)[1:3])
+
+    @test DataWrangling.spans_whole_cycle(whole)
+    @test !DataWrangling.spans_whole_cycle(partial)
+
+    @test_logs DataWrangling.validate_time_coverage(whole, Cyclical())
+    @test_logs (:warn, r"holds window means") DataWrangling.validate_time_coverage(partial, Cyclical())
+end
+
 @testset "Zeroing the non-vegetated classes" begin
     𝒜 = fill(NaN32, 3, 1, 4)
     𝒜[1, 1, :] .= 1f0:4f0                          # forest, observed
@@ -993,6 +1018,12 @@ end
             @test count(isnan, got) == 2                          # exactly the two seeded codes
             @test all(i -> isnan(got[i]) || got[i] == expected[i], eachindex(got))
         end
+
+        # The single-date regrid takes the same copy path when its target is the native grid.
+        grid = native_grid(metadata, CPU())
+        metadatum = Metadatum(:leaf_area_index; dataset, region, date = dates[1], dir)
+        regridded = Array(interior(Field(metadatum, grid), :, :, 1))
+        @test count(isnan, regridded) == 2
     end
 end
 

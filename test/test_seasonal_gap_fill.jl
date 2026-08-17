@@ -258,6 +258,22 @@ end
                                                    anchor_periods = [1, 2, 3])
     @test_throws ArgumentError fill_seasonal_gaps!(zeros(Float32, 4, 4, 8), fill(NaN32, 4, 4);
                                                    anchor = uniform_series(seasonal_shape(4), 5, 4))
+
+    # A series that is not a whole number of cycles cannot rely on the cyclic default: it
+    # would silently map its first time onto the anchor's first period.
+    @test_throws ArgumentError fill_seasonal_gaps!(zeros(Float32, 4, 4, 6), fill(NaN32, 4, 4);
+                                                   anchor = 𝒜̄season)
+end
+
+# The host-side chain reduces the whole record at once, so a sliding-window series is
+# rejected rather than silently processed as if its resident slice were the record.
+@testset "Whole-series guards" begin
+    grid = LatitudeLongitudeGrid(CPU(), size = (2, 1, 1), longitude = (0, 1),
+                                 latitude = (0, 1), z = (0, 1))
+    windowed = FieldTimeSeries{Center, Center, Center}(grid, Float64.(0:7); backend = InMemory(2))
+
+    @test_throws ArgumentError gap_fill_denial(windowed, fill(1f0, 2, 1))
+    @test_throws ArgumentError zero_non_vegetated!(windowed, fill(1f0, 2, 1))
 end
 
 @testset "Data denial" begin

@@ -5,7 +5,7 @@ using NumericalEarth.DataWrangling: BoundingBox, Metadata, Metadatum, native_gri
     dataset_variable_name, metadata_filename,
     longitude_name, latitude_name, all_dates, native_times,
     longitude_interfaces, latitude_interfaces,
-    sample_window, sample_bounds, time_window_offset
+    sample_window, sample_bounds, time_window_offset, spans_whole_cycle
 using NumericalEarth.DataWrangling.CopernicusLandAlbedo: bluesky_blend, copernicus_albedo_decode,
     copernicus_albedo_dekadal_dates, albedo_satellite,
     albedo_cds_request_variables,
@@ -67,10 +67,11 @@ end
     @test time_window_offset(dekad(DateTime(2019, 7, 20))) == -4 * 86400
     @test time_window_offset(dekad(DateTime(2019, 7, 31))) == -4.5 * 86400
 
-    # The stamps close their windows, so they cannot be read as averaging bounds.
-    @test_throws ArgumentError sample_bounds(Metadata(:albedo; dataset,
-                                                     dates = [DateTime(2019, 7, 10),
-                                                              DateTime(2019, 7, 20)]))
+    # The stamps close their windows, but the windows tile time, so the bounds are the
+    # window edges whatever the stamp convention.
+    @test sample_bounds(Metadata(:albedo; dataset, dates = [DateTime(2019, 7, 10),
+                                                            DateTime(2019, 7, 20)])) ==
+          [DateTime(2019, 7, 1), DateTime(2019, 7, 11), DateTime(2019, 7, 21)]
 
     # A climatological month is the mean of the month it is stamped at the start of, so its
     # value sits mid-month and the twelve stamps tile a year.
@@ -81,6 +82,10 @@ end
 
     months = Metadata(:albedo; dataset = climatology)
     @test sample_bounds(months) == [all_dates(climatology, :albedo); DateTime(2019, 1, 1)]
+
+    # A whole climatology wraps onto itself, so `Cyclical()` needs no coverage warning.
+    @test spans_whole_cycle(months)
+    @test !spans_whole_cycle(Metadata(:albedo; dataset))
 
     times = native_times(months)
     @test times[1] == 15.5 * 86400

@@ -781,26 +781,46 @@ function uncovered_time_gaps(metadata)
 end
 
 """
+    is_seasonal_climatology(dataset)
+
+Whether `dataset`'s whole record is one period of the seasonal cycle, so that `Cyclical`
+wrapping across its ends continues the cycle rather than splicing two unrelated dates.
+`false` by default; climatology datasets extend this.
+"""
+is_seasonal_climatology(dataset) = false
+
+"""
+    spans_whole_cycle(metadata)
+
+Whether `metadata` covers every period of a seasonal climatology, in which case the half
+window `Cyclical` fills beyond each end node comes from the adjacent phase of the same
+cycle — December's neighbor is January — and wrapping is exact rather than a compromise.
+"""
+spans_whole_cycle(metadata) =
+    is_seasonal_climatology(metadata.dataset) &&
+    length(metadata) == length(all_dates(metadata.dataset, metadata.name))
+
+"""
     sample_bounds(metadata)
 
 The `length(metadata) + 1` dates delimiting `metadata`'s samples, in the form
-[`time_average`](@ref) takes: sample `n` covers `[bounds[n], bounds[n+1])`. The interior
-bounds are the stamps themselves, and the last one closes the final sample with the end of
-its [`sample_window`](@ref).
+[`time_average`](@ref) takes: sample `n` covers `[bounds[n], bounds[n+1])`. The bounds are
+the [`sample_window`](@ref) edges themselves — each window's start, closed by the last
+window's end — so they are independent of where in its window a product places its stamp.
 
-Defined only for a product whose samples tile time and whose stamps open their windows. An
-instantaneous product reports a zero-width `sample_window`, so where its samples end is a
-modeling choice rather than a property of the data, and this throws instead of guessing one. It
-also throws when `metadata` skips dates its cadence has, since the interior bounds would then
-credit each sample with the skipped interval too.
+Defined only for a product whose samples tile time. An instantaneous product reports a
+zero-width `sample_window`, so where its samples end is a modeling choice rather than a
+property of the data, and this throws instead of guessing one. It also throws when
+`metadata` skips dates its cadence has, since the bounds would then credit each sample with
+the skipped interval too.
 """
 function sample_bounds(metadata::Metadata)
     Nt = length(metadata)
     bounds = Vector{DateTime}(undef, Nt + 1)
+    previous_stop = nothing
 
     for (n, metadatum) in enumerate(metadata)
         window_start, window_stop = sample_window(metadatum)
-        stamp = comparable_datetime(metadatum.dates)
         start = comparable_datetime(window_start)
         stop = comparable_datetime(window_stop)
 
@@ -809,26 +829,17 @@ function sample_bounds(metadata::Metadata)
                                 "$(metadata.dataset) reports instantaneous samples. Pass the " *
                                 "bounds explicitly to say what interval each sample stands for."))
 
-        start == stamp ||
-            throw(ArgumentError("`sample_bounds` reads every stamp as the start of the interval " *
-                                "its sample covers, and $(metadata.dataset) stamps a sample at " *
-                                "$stamp for the window opening $(window_start). Pass the bounds " *
-                                "explicitly."))
+        isnothing(previous_stop) || previous_stop == start ||
+            throw(ArgumentError("`sample_bounds` needs samples that tile time, and the " *
+                                "$(metadata.dataset) sample covering up to $previous_stop is " *
+                                "followed by one opening at $start. Pass every date of the " *
+                                "cadence, or pass the bounds explicitly."))
 
-        bounds[n] = stamp
-
-        if n < Nt
-            next_stamp = comparable_datetime(metadata[n + 1].dates)
-            stop == next_stamp ||
-                throw(ArgumentError("`sample_bounds` needs samples that tile time, and the " *
-                                    "$(metadata.dataset) sample stamped $stamp covers up to " *
-                                    "$stop while the next is stamped $next_stamp. Pass every " *
-                                    "date of the cadence, or pass the bounds explicitly."))
-        else
-            bounds[n + 1] = stop
-        end
+        bounds[n] = start
+        previous_stop = stop
     end
 
+    bounds[Nt + 1] = previous_stop
     return bounds
 end
 

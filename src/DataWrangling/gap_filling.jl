@@ -382,6 +382,17 @@ function anchor_donor_pool(anchor, anchor_periods, Nt, spatial)
                             "$spatial in space; both must be on the same lattice."))
 
     Na = size(𝒜̄, 3)
+
+    if isnothing(anchor_periods)
+        # Cyclic reuse maps time 1 onto anchor period 1, which is only an alignment when the
+        # series opens the cycle and covers whole cycles: a June-to-December window would
+        # otherwise borrow January's leaf-off curve for July with no error to show for it.
+        mod(Nt, Na) == 0 ||
+            throw(ArgumentError("The series has $Nt times and the anchor $Na periods, so their " *
+                                "alignment cannot be inferred. Pass `anchor_periods`, the anchor " *
+                                "period each time of the series falls in."))
+    end
+
     periods = isnothing(anchor_periods) ? [mod1(t, Na) for t in 1:Nt] : collect(anchor_periods)
 
     length(periods) == Nt ||
@@ -460,7 +471,9 @@ Keyword arguments
 
 - `anchor`: a climatology series on the same lattice, making stage 2's donor the cell's own
             curve instead of its neighbors'. Default: `nothing`.
-- `anchor_periods`: the anchor index each time of `series` maps to. Default: cyclic reuse.
+- `anchor_periods`: the anchor index each time of `series` maps to. Defaults to cyclic reuse,
+                    which assumes the series opens the anchor's cycle and covers whole cycles,
+                    and is an error otherwise — a mid-year window must say where it starts.
 - `cyclic`: treat the time axis as one period of a periodic signal. Default: no `anchor`.
 - `max_gap`: scalar or per-cell bridge length for stage 1. Default: `6`.
 - `block_size`: cells per side of the donor table's blocks. Default: `32`.
@@ -615,6 +628,7 @@ reached at all, which is as much of the result as the scores.
 Needs no downloads: it re-uses a series that is already assembled.
 """
 function gap_fill_denial(series, land_cover; samples_per_class = 100, kw...)
+    series isa FieldTimeSeries && validate_whole_series(series)
     𝒜 = seasonal_array(series isa FieldTimeSeries ? series : copy(series))
     codes = horizontal_array(land_cover)
     Nx, Ny, Nt = size(𝒜)

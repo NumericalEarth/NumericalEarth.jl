@@ -96,6 +96,7 @@ function set!(fts::DatasetFieldTimeSeries, backend=fts.backend)
         # its bilinear stencil spreads each missing cell into its neighbors, inflating the gap
         # fraction. On the native grid, read straight onto the slice instead.
         if on_native_grid(backend) && isnothing(inpainting)
+            isfile(metadata_path(metadatum)) || Downloads.download(metadatum)
             set_metadata_field!(fts[t], retrieve_data(metadatum), metadatum)
         else
             set!(fts[t], metadatum; inpainting, cache_inpainted_data=cache_data)

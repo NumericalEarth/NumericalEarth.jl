@@ -803,6 +803,8 @@ DataWrangling.all_dates(climatology::MODISLAIClimatology, variable) =
     modis_composite_dates(climatology_year_start(), climatology_year_end(),
                           composite_period_days(climatology))
 
+DataWrangling.is_seasonal_climatology(::MODISLAIClimatology) = true
+
 # One map per calendar year, stamped on 1 January — not a day-stepped composite cadence.
 DataWrangling.all_dates(dataset::MCD12Q1, variable) =
     [DateTime(year) for year in first_landcover_year(dataset):last_landcover_year(dataset)]
@@ -1020,11 +1022,27 @@ function Downloads.download(metadata::MODISLAIClimatologyMetadata)
     @root for metadatum in metadata
         isfile(metadata_path(metadatum)) && continue
         period = period_index(metadatum.dates, composite_period_days(metadatum.dataset))
-        build_lai_climatology!(metadatum.dataset; name = metadatum.name,
+        build_lai_climatology!(metadatum.dataset; name = climatology_build_name(metadatum),
                                periods = period:period, region = metadatum.region,
                                dir = metadatum.dir)
     end
     return metadata_path(metadata)
+end
+
+# The retained count is written beside the variable its file composites, so a cold-cache read
+# of the count builds that variable — recovered from the filename, which the companion
+# metadatum of `retained_retrieval_metadatum` shares with the variable it counts.
+function climatology_build_name(metadatum::MODISLAIClimatologyMetadatum)
+    metadatum.name === :retained_retrieval_count || return metadatum.name
+
+    for name in keys(MODISLAI_variable_names)
+        DataWrangling.metadata_filename(metadatum.dataset, name, metadatum.dates,
+                                        metadatum.region) == metadatum.filename && return name
+    end
+
+    throw(ArgumentError("A retained-retrieval count is stored beside the variable it counts, " *
+                        "so it cannot say on its own which climatology to build. Read it with " *
+                        "`retained_retrieval_metadatum` of the composited variable's metadatum."))
 end
 
 # Implemented in ext/NumericalEarthArchGDALExt.jl once `ArchGDAL` is loaded.
@@ -1335,6 +1353,7 @@ function zero_non_vegetated!(data::AbstractArray, land_cover;
 end
 
 function zero_non_vegetated!(fts::DataWrangling.FieldTimeSeries, land_cover; kw...)
+    DataWrangling.validate_whole_series(fts)
     data = Array(DataWrangling.interior(fts))
     zero_non_vegetated!(data, land_cover; kw...)
     copyto!(DataWrangling.interior(fts), data)

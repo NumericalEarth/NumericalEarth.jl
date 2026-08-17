@@ -167,6 +167,8 @@ DataWrangling.all_dates(::CopernicusAlbedo, variable) = copernicus_albedo_dekada
 # 12 climatological months; the year is arbitrary, only the month matters.
 DataWrangling.all_dates(::CopernicusAlbedoClimatology, variable) = [DateTime(2018, m, 1) for m in 1:12]
 
+DataWrangling.is_seasonal_climatology(::CopernicusAlbedoClimatology) = true
+
 # A dekad is stamped on its last day, so its window opens on day 1, 11, or 21 and closes the
 # day after the stamp. The third dekad runs to the end of the month, so it is 8 to 11 days long.
 function copernicus_albedo_dekad_window(date)
