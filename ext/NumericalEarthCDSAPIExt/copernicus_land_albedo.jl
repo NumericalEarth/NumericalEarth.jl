@@ -1,5 +1,5 @@
 #####
-##### Copernicus land surface albedo (C3S `satellite-albedo` catalogue entry)
+##### Copernicus land surface albedo (C3S `satellite-albedo` catalog entry)
 #####
 ##### One CDS request per calendar month fetches the black-sky (`albb_dh`) and
 ##### white-sky (`albb_bh`) products for all of that month's dekads; each dekad's
@@ -93,10 +93,10 @@ end
     download(metadata::Metadata{<:CopernicusAlbedo}; skip_existing=true, cleanup=true)
 
 Download the dekadal black-sky and white-sky broadband albedo for every date of
-`metadata` from the C3S `satellite-albedo` catalogue entry, one CDS request per
+`metadata` from the C3S `satellite-albedo` catalog entry, one CDS request per
 calendar month, and repack each dekad's pair into a single compact local NetCDF.
 Requires `~/.cdsapirc` credentials and acceptance of the Copernicus Global Land
-product licence on the CDS portal.
+product license on the CDS portal.
 """
 function Downloads.download(metadata::AlbedoMetadata; skip_existing=true, cleanup=true)
     meta_filename = NumericalEarth.DataWrangling.metadata_filename
