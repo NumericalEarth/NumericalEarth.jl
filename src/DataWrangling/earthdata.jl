@@ -4,9 +4,7 @@
 ##### `short_name` / `version` passed in, so any Earthdata dataset module can use it.
 #####
 
-# Retry on transient failures, discarding a partial file between attempts. A long job is
-# hundreds of sequential granules, and the archive throttles, so a single stalled transfer
-# would otherwise abort it. An interrupt is never retried.
+# Retry on transient failures, discarding a partial file between attempts.
 function download_with_retries(url, path; attempts = 3, downloader = nothing, description = "Download")
     for attempt in 1:attempts
         try

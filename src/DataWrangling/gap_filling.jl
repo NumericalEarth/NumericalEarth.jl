@@ -163,11 +163,7 @@ end
 ##### Class-aware seasonal gap filling
 #####
 ##### Compositing a period across years and interpolating along the seasonal axis both
-##### assume cloud is quasi-random across years at a given period. Where the gap is
-##### phase-locked — the ITCZ, a monsoon, a windward slope — neither can see it: what is
-##### left needs a donor from elsewhere, and a land-cover class is what makes borrowing
-##### safe. Everything here is host-side: a one-time ingestion step, free to allocate and
-##### free to branch.
+##### assume cloud is quasi-random across years at a given period.
 #####
 
 """
@@ -243,45 +239,56 @@ Returns `(; series, provenance, reach)`: the filled series, a `UInt8` code per c
 period naming the stage that produced it ([`gap_fill_provenance`](@ref)), and the donor
 radius each cell reached, in blocks.
 
-Three stages run in order, and each only ever writes where the previous left `NaN` —
-observed values are never rewritten:
+Three stages run in order, and each only ever writes where the previous left `NaN`s.
+Observed values are never rewritten:
 
 1. `:temporal` — [`fill_gaps!`](@ref) along the time axis, with `max_gap` free to be a
    per-cell array.
-2. `:scaled` — a donor's seasonal *shape* scaled to the cell's own level,
-   `𝒜(i,j,t) = s(i,j) · 𝒜̄(i,j,t)`, with `s` the ratio of the cell's sum to the donor's over
-   the periods where both are valid.
+2. `:scaled` — a donor's seasonal *shape* scaled to the cell's own magnitude. Over the
+   periods where the cell was observed and the donor covers, the cell's sum divided by
+   the donor's sum gives the scale; each missing period then fills with the donor's value
+   at that period multiplied by the scale.
 3. `:class_mean` — the donor curve itself, for cells with no valid period to scale by.
 
-The donor is same-class neighbors over an expanding block stencil, or — with `anchor` set
-to a climatology on the same lattice — the cell's own climatological curve, which preserves
-its seasonal shape too. Both go through the same estimator.
+The donor curve has two sources, and `anchor` chooses between them. By default it is
+the mean cycle of same-class neighbors, pooled over an expanding block stencil. With
+`anchor` set to a climatology on the same lattice it is the cell's *own* climatological
+curve. This is the better donor when one is available, since it preserves the cell's
+individual timing as well as its level.
 
 Keyword arguments
 =================
 
-- `anchor`: a climatology series on the same lattice, making stage 2's donor the cell's own
-            curve instead of its neighbors'. Default: `nothing`.
-- `anchor_periods`: the anchor index each time of `series` maps to. Defaults to cyclic reuse,
-                    which assumes the series opens the anchor's cycle and covers whole cycles,
-                    and is an error otherwise.
-- `cyclic`: treat the time axis as one period of a periodic signal. Default: no `anchor`.
-- `max_gap`: scalar or per-cell bridge length for stage 1. Default: `6`.
-- `block_size`: cells per side of the donor table's blocks. Default: `32`.
+- `anchor`: `nothing`, or a climatology on the same lattice — a `FieldTimeSeries` or an
+            array whose last dimension is its periods — making stage 2's donor the cell's
+            own curve instead of its neighbors'. Default: `nothing`.
+- `anchor_periods`: one integer per time of `series`, the anchor period that time falls in
+                    ([`period_index`](@ref) computes it from a date). Default: cyclic reuse,
+                    which assumes the series opens the anchor's cycle and covers whole
+                    cycles, and is an error otherwise.
+- `cyclic`: `true` to wrap stage 1's interpolation across the ends of the time axis, as one
+            period of a periodic signal. Default: `true` without an `anchor` (a seasonal
+            climatology wraps), `false` with one (a date window does not).
+- `max_gap`: how many consecutive missing periods stage 1 may bridge — one `Int` for every
+             cell, or an array over the spatial dimensions giving each cell its own
+             ([`class_maximum_gap`](@ref) builds one from a class map). Default: `6`.
+- `block_size`: cells per side of the donor table's blocks, an `Int`. Default: `32`.
 - `initial_radius`, `maximum_radius`: the donor stencil's half-width in blocks, before and
-                                      after growing. Defaults: `1` and `16`.
-- `minimum_donors`: valid same-class cells a period needs before the stencil stops growing.
-                    Default: `20`.
-- `minimum_anchor_periods`: periods a cell needs before its scaling is trusted; below this
-                            it falls through to `:class_mean`. Default: `6`.
-- `scaling`: `:multiplicative` for a non-negative ratio-scale field, `:additive` for a
-             signed one. Default: `:multiplicative`.
-- `valid_range`: clamp applied to every estimate, e.g. `(0, 10)` for leaf area index.
-                 Default: `nothing`.
-- `unfilled_classes`: class codes that are never filled — water, urban, snow, barren.
-                      Default: `()`.
-- `stages`: which of `(:temporal, :scaled, :class_mean)` to run, so each can be scored
-            alone. Default: all three.
+                                      after growing, `Int`s. Defaults: `1` and `16`.
+- `minimum_donors`: valid same-class cells every period needs before the stencil stops
+                    growing, an `Int`. Default: `20`.
+- `minimum_anchor_periods`: observed periods a cell must share with its donor before the
+                            scale is trusted, an `Int`; a cell below it falls through to
+                            `:class_mean`. Default: `6`.
+- `scaling`: `:multiplicative` (the ratio of sums, for a non-negative field) or `:additive`
+             (the mean offset, for a field that may be negative). Default: `:multiplicative`.
+- `valid_range`: a `(minimum, maximum)` pair every estimate is clamped to, e.g. `(0, 10)`
+                 for leaf area index, or `nothing` for no clamp. Default: `nothing`.
+- `unfilled_classes`: a collection of class codes never written into;
+                      [`igbp_non_vegetated_classes`](@ref) is the IGBP set (urban, snow,
+                      barren, water). Default: `()`, so every class fills.
+- `stages`: which stages run, any subset of `(:temporal, :scaled, :class_mean)`, so each
+            can be scored alone. Default: all three.
 """
 function fill_seasonal_gaps!(data::AbstractArray, land_cover;
                              anchor = nothing,
