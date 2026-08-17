@@ -70,6 +70,9 @@ DataWrangling.all_dates(dataset::ECCO4Monthly, variable) = metadata_epoch(datase
 DataWrangling.all_dates(dataset::ECCO2Monthly, variable) = metadata_epoch(dataset) : Month(1) : DateTime(2024, 12, 1)
 DataWrangling.all_dates(dataset::ECCO2Daily,   variable) = metadata_epoch(dataset) : Day(1)   : DateTime(2024, 12, 31)
 
+DataWrangling.sample_window(metadatum::Metadatum{<:Union{ECCO2Monthly, ECCO4Monthly}}) =
+    DataWrangling.calendar_month_window(metadatum)
+
 DataWrangling.longitude_interfaces(::ECCODataset) = (0, 360)
 DataWrangling.longitude_interfaces(::ECCO4Monthly) = (-180, 180)
 DataWrangling.latitude_interfaces(::ECCODataset) = (-90, 90)
@@ -283,7 +286,7 @@ function Downloads.download(metadata::ECCOMetadata)
     @root mktempdir(dir) do tmp
 
         # Write down the username and password in a .netrc file
-        downloader = netrc_downloader(username, password, "ecco.jpl.nasa.gov", tmp)
+        downloader = netrc_downloader(username, password, "ecco.jpl.nasa.gov", tmp; verify_ssl = false)
         ntasks = Threads.nthreads()
 
         asyncmap(metadata; ntasks) do metadatum # Distribute the download among tasks

@@ -103,6 +103,26 @@ function restrict_longitude(bbox_interfaces, interfaces::NTuple{2,Any}, N)
 end
 
 """
+    native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
+
+Regular lat/lon raster of cell steps `Δλ`/`Δφ` (degrees) covering `region`, snapped to the global
+lattice anchored at `(-180, -90)` and padded by `pad` cells on each side. Returns
+`(; west, south, Δλ, Δφ, Nx, Ny)`.
+
+Datasets distributed as vector or tiled files lay out the raster they burn onto with this, so the
+result is a sub-window of the global lattice `Field(::Metadatum)` assumes.
+"""
+function native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
+    west, east   = region.longitude
+    south, north = region.latitude
+    i₀ = floor(Int, (west  + 180) / Δλ) - pad
+    j₀ = floor(Int, (south +  90) / Δφ) - pad
+    i₁ = ceil(Int,  (east  + 180) / Δλ) + pad
+    j₁ = ceil(Int,  (north +  90) / Δφ) + pad
+    return (; west = -180 + i₀ * Δλ, south = -90 + j₀ * Δφ, Δλ, Δφ, Nx = i₁ - i₀, Ny = j₁ - j₀)
+end
+
+"""
     native_grid(metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
 
 Return the native grid corresponding to `metadata` with `halo` size.
@@ -239,7 +259,7 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
 
     # Inpainting on a (Flat, Flat, *) column field is meaningless and the
     # iterative algorithm doesn't terminate gracefully without horizontal
-    # neighbours; the NaN-aware bracket-blend in `set_region_data!` handles
+    # neighbors; the NaN-aware bracket-blend in `set_region_data!` handles
     # land cells directly.
     if metadata.region isa Column
         inpainting = nothing
@@ -358,6 +378,12 @@ function interpolate_physical!(to_field, from_field)
     return to_field
 end
 
+# Regrid the native-grid field onto the target during `Field(metadata, grid)` and
+# `set!`. The default is bilinear `interpolate_physical!`; datasets whose variables
+# need a different scheme (e.g. conservative area-weighting for fractions, or an
+# area-majority vote for categorical codes) extend this metadatum-dispatched method.
+interpolate_physical!(to_field, from_field, metadata) = interpolate_physical!(to_field, from_field)
+
 """
     Field(metadata::Metadatum, grid::AbstractGrid; kw...)
 
@@ -370,7 +396,7 @@ function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid; kw..
     native = Field(metadata, architecture(grid); kw...)
     LX, LY, LZ = location(metadata)
     target = Field{LX, LY, LZ}(grid)
-    interpolate_physical!(target, native)
+    interpolate_physical!(target, native, metadata)
     return target
 end
 
@@ -392,7 +418,7 @@ function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw..
               "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
     end
 
-    interpolate_physical!(target_field, meta_field)
+    interpolate_physical!(target_field, meta_field, metadata)
 
     return target_field
 end
@@ -404,7 +430,7 @@ function set_metadata_field!(field, data, metadatum)
     return nothing
 end
 
-# Read the lon/lat cell centres from the NetCDF file using the names supplied
+# Read the lon/lat cell centers from the NetCDF file using the names supplied
 # by the dataset's `longitude_name` / `latitude_name` traits.
 function read_file_coords(metadatum)
     ds = Dataset(metadata_path(metadatum))
@@ -483,10 +509,12 @@ end
 # Mass fractions (convert to kg/kg)
 @inline convert_units(χ::FT, ::DecigramPerKilogram) where FT = χ / convert(FT, 1e4)
 @inline convert_units(χ::FT, ::GramPerKilogram) where FT = χ / convert(FT, 1e3)
+@inline convert_units(χ::FT, ::WeightPercent) where FT = χ / convert(FT, 100)
 
 # Densities (convert to kg/m^3)
 @inline convert_units(ρ::FT, ::HectogramPerCubicMeter) where FT = ρ / convert(FT, 10)
 @inline convert_units(ρ::FT, ::CentigramPerCubicCentimeter) where FT = ρ * convert(FT, 10)
+@inline convert_units(ρ::FT, ::GramPerCubicCentimeter) where FT = ρ * convert(FT, 1000)
 
 #####
 ##### Masking data for inpainting

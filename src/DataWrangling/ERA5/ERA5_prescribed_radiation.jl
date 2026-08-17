@@ -1,4 +1,5 @@
-using ...Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant
+using ...Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant,
+                     default_water_emissivity
 
 ERA5PrescribedRadiation(arch::Distributed; kw...) =
     ERA5PrescribedRadiation(child_architecture(arch); kw...)
@@ -11,7 +12,7 @@ ERA5PrescribedRadiation(arch::Distributed; kw...) =
                             dir = download_ERA5_cache,
                             time_indices_in_memory = 24,
                             time_indexing = Cyclical(),
-                            ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
+                            ocean_surface = SurfaceRadiationProperties(0.05, default_water_emissivity),
                             sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
                             snow_surface = nothing,
                             land_surface = nothing,
@@ -38,7 +39,7 @@ function ERA5PrescribedRadiation(architecture = CPU();
                                  dir = download_ERA5_cache,
                                  time_indices_in_memory = 24,
                                  time_indexing = Cyclical(),
-                                 ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
+                                 ocean_surface = SurfaceRadiationProperties(0.05, default_water_emissivity),
                                  sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
                                  snow_surface = nothing,
                                  land_surface = nothing,

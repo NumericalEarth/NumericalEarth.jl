@@ -177,7 +177,7 @@ NumericalEarth currently ships connectors for the following data products:
 |--------------------|-----------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
 | **Bathymetry and static grids** |                                            |                                                                                                     |
 | `ETOPO2022`        | [Supported variables](@ref dataset-etopo2022-vars)        | [NOAA ETOPO 2022 overview](https://www.ncei.noaa.gov/products/etopo-global-relief-model)           |
-| `GEBCO2024`        | [Supported variables](@ref dataset-gebco2024-vars)        | [GEBCO 2024 overview](https://www.gebco.net/data-products/gridded-bathymetry-data)                 |
+| `GEBCO2026`        | [Supported variables](@ref dataset-gebco2024-vars)        | [GEBCO 2024 overview](https://www.gebco.net/data-products/gridded-bathymetry-data)                 |
 | `IBCSOv2`          | [Supported variables](@ref dataset-ibcsov2-vars)          | [IBCSO overview](https://ibcso.org/ibcso-2024-annual-release/)                                     |
 | `IBCAOv5`          | [Supported variables](@ref dataset-ibcaov5-vars)          | [IBCAO overview](https://www.gebco.net/data-products/gridded-bathymetry-data/arctic-ocean)         |
 | `ORCAOne`          | `:bottom_height`, `:mesh_mask`                            | [eORCA1 mesh and bathymetry (Zenodo)](https://zenodo.org/records/4436658)                          |
@@ -207,9 +207,15 @@ NumericalEarth currently ships connectors for the following data products:
 | `OSPapaHourly`     | ocean profiles, near-surface meteorology, and currents    | [Ocean Station Papa dataset](https://www.pmel.noaa.gov/ocs/Papa)                                   |
 | `OSPapaFluxHourly` | air-sea fluxes, stresses, evaporation, precipitation, and skin temperature | [Ocean Station Papa flux dataset](https://www.pmel.noaa.gov/ocs/Papa) |
 | **Land** |                                                    |                                                                                                     |
+| `ERA5HourlyLand`   | [Supported variables](@ref dataset-era5hourlyland-vars)   | [ERA5-Land hourly overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land?tab=overview) |
+| `ERA5MonthlyLand`  | [Supported variables](@ref dataset-era5monthlyland-vars)  | [ERA5-Land monthly overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land-monthly-means?tab=overview) |
 | `SoilGrids 2.0`     | Global profiles of soil texture, bulk density, and organic content in upper 2 meters  | [SoilGrids documentation](https://docs.isric.org/globaldata/soilgrids/)                                   |
+| `OpenLandMapSoilDB` | 30 m global soil texture (sand, silt, clay) and fine-earth bulk density over 0–100 cm | [OpenLandMap STAC](https://stac.openlandmap.org/) |
 | `CopernicusAlbedo` | `:albedo` — dekadal blue-sky broadband surface albedo on the global 1 km CGLS grid | [CGLS Surface Albedo](https://cds.climate.copernicus.eu/datasets/satellite-albedo) |
 | `CopernicusAlbedoClimatology` | `:albedo` — 12-month climatology of the CGLS blue-sky broadband albedo | [CGLS Surface Albedo](https://cds.climate.copernicus.eu/datasets/satellite-albedo) |
+| `GHSBuiltH`        | `:building_height` — mean net building height (ANBH, 100 m, epoch 2018) over a regional window; reprojected from GHSL World-Mollweide (needs `ArchGDAL`) | [GHSL GHS-BUILT-H](https://human-settlement.emergency.copernicus.eu) |
+| `GHSBuiltS`        | `:built_up_fraction` — plan-area built-up fraction (10 m or 100 m) over a regional window; reprojected from GHSL World-Mollweide (needs `ArchGDAL`) | [GHSL GHS-BUILT-S](https://human-settlement.emergency.copernicus.eu) |
+| `ESAWorldCover`    | `:landcover_class`, `:vegetation_fraction`, and a per-class `:<class>_fraction` — 10 m land-cover classification aggregated block-wise over a regional window (needs `ArchGDAL`) | [ESA WorldCover](https://esa-worldcover.org/en/data-access) |
 | `MCD15A2H` | `:leaf_area_index`, `:fpar`, `:leaf_area_index_uncertainty` — 8-day 500 m MODIS composites | [MCD15A2H V061](https://www.earthdata.nasa.gov/data/catalog/lpcloud-mcd15a2h-061) |
 | `MODISLAIClimatology` | 46-period seasonal climatology of an [`MCD15A2H`](@ref) variable | [MCD15A2H V061](https://www.earthdata.nasa.gov/data/catalog/lpcloud-mcd15a2h-061) |
 | `MCD12Q1` | `:landcover_class`, `:quality_flag`, `:land_water_mask` — annual 500 m land cover on [`MCD15A2H`](@ref)'s lattice | [MCD12Q1 V061](https://www.earthdata.nasa.gov/data/catalog/lpcloud-mcd12q1-061) |

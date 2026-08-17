@@ -18,7 +18,8 @@ using Statistics: mean
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
                        metadata_path, default_download_directory,
-                       native_cell_range, native_convention_longitude, netrc_downloader
+                       native_cell_range, native_convention_longitude,
+                       cmr_granules_url, download_with_retries
 
 import Oceananigans
 
@@ -956,29 +957,6 @@ end
 ##### Granule discovery
 #####
 
-cmr_time(date) = string(Dates.format(DateTime(date), "yyyy-mm-ddTHH:MM:SS"), "Z")
-
-"""
-    cmr_granules_url(short_name, version, region, date; page_size = 200)
-
-The NASA Common Metadata Repository granule-search URL (JSON) for the composites of
-`short_name`/`version` intersecting the lon/lat [`BoundingBox`](@ref) `region` on `date`.
-Pure — it builds the query string only. Metadata search is anonymous; only the granule
-download itself needs Earthdata credentials.
-"""
-function cmr_granules_url(short_name, version, region::BoundingBox, date; page_size = 200)
-    (!isnothing(region.longitude) && !isnothing(region.latitude)) ||
-        throw(ArgumentError("cmr_granules_url requires a bounded (longitude, latitude) BoundingBox."))
-    west, east = region.longitude
-    south, north = region.latitude
-    return string("https://cmr.earthdata.nasa.gov/search/granules.json",
-                  "?short_name=", short_name,
-                  "&version=", version,
-                  "&bounding_box=", west, ",", south, ",", east, ",", north,
-                  "&temporal=", cmr_time(date), ",", cmr_time(DateTime(date) + Day(1)),
-                  "&page_size=", page_size)
-end
-
 """
     MissingGranulesError
 
@@ -1003,12 +981,14 @@ Requires network access, but no credentials.
 """
 function granule_urls(metadatum::MODISLandMetadatum)
     dataset = metadatum.dataset
-    url = cmr_granules_url(modis_short_name(dataset), modis_version(dataset),
-                           metadatum.region, metadatum.dates)
+
+    # One day of one product is a handful of sinusoidal tiles, so a single page always covers it.
+    url = cmr_granules_url(modis_short_name(dataset), modis_version(dataset), metadatum.region;
+                           date = metadatum.dates)
 
     candidates = mktempdir() do tmp
         json = joinpath(tmp, "cmr_granules.json")
-        Downloads.download(url, json)
+        download_with_retries(url, json; description = "CMR granule query")
         text = read(json, String)
         unique(m.match for m in eachmatch(r"https://[^\"]+\.hdf", text))
     end
@@ -1022,43 +1002,6 @@ function granule_urls(metadatum::MODISLandMetadatum)
             "climatology skips them, but a read of that date alone cannot."))
 
     return granules
-end
-
-"""
-    earthdata_download(url, path; max_retries = 3)
-
-Download `url` to `path` through a temporary `.netrc` authenticated against
-`urs.earthdata.nasa.gov` with the `EARTHDATA_USERNAME` / `EARTHDATA_PASSWORD` environment
-variables. Errors when the credentials are unset.
-
-The fetch is retried up to `max_retries` times with a widening pause. A climatology is
-hundreds of sequential granules, so without this a single stalled transfer — the archive
-throttles, and `Downloads` gives up on a connection under one byte per second — aborts a job
-that is otherwise most of an hour in. Interrupts are never retried, and an exhausted retry
-raises rather than leaving a partial granule to be mistaken for data.
-"""
-function earthdata_download(url, path; max_retries = 3)
-    username = get(ENV, "EARTHDATA_USERNAME", nothing)
-    password = get(ENV, "EARTHDATA_PASSWORD", nothing)
-    (isnothing(username) || isnothing(password)) &&
-        error("NASA Earthdata credentials not found. Set EARTHDATA_USERNAME and " *
-              "EARTHDATA_PASSWORD (register free at https://urs.earthdata.nasa.gov). " *
-              "See src/DataWrangling/MODISLand/README.md for instructions.")
-
-    for attempt in 1:max_retries
-        try
-            return mktempdir() do tmp
-                downloader = netrc_downloader(username, password, "urs.earthdata.nasa.gov", tmp)
-                Downloads.download(url, path; downloader)
-            end
-        catch err
-            err isa InterruptException && rethrow(err)
-            attempt < max_retries || rethrow(err)
-            @warn "Earthdata download attempt $attempt/$max_retries failed for " *
-                  "$(basename(url)); retrying..." exception = (err, catch_backtrace())
-            sleep(5 * attempt)
-        end
-    end
 end
 
 #####

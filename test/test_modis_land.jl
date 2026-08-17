@@ -4,11 +4,11 @@ using NumericalEarth.DataWrangling: DataWrangling, BoundingBox, Metadatum, Metad
     is_three_dimensional, default_inpainting, dataset_variable_name, metadata_filename,
     longitude_name, latitude_name, all_dates, native_times, available_variables,
     longitude_interfaces, latitude_interfaces, validate_dataset_coverage,
-    retrieve_data, read_file_coords, region_info, fill_gaps!,
+    retrieve_data, read_file_coords, region_info, fill_gaps!, cmr_granules_url,
     time_window_offset, sample_window, sample_bounds, time_average
 using NumericalEarth.DataWrangling.MODISLand: MODISLand, mask_lai_fill, lai_screening_flags,
     modis_composite_dates,
-    parse_granule_name, select_granules, cmr_granules_url, regional_lattice,
+    parse_granule_name, select_granules, regional_lattice,
     periods_per_year, period_index, reduce_retained, stored_granule_layers,
     MODIS_LAI_SCALE, MODIS_FPAR_SCALE, MODIS_LAI_LANDCOVER_CODES,
     mask_landcover_fill, landcover_valid_range, landcover_layer, composite_window,
@@ -374,12 +374,11 @@ end
     # The search URL carries the region and a one-day window around the composite's start,
     # because a bounding-box search returns whichever composites overlap the day.
     region = BoundingBox(longitude = (-92.5, -91.5), latitude = (36.5, 37.5))
-    query = cmr_granules_url("MCD15A2H", "061", region, wanted)
+    query = cmr_granules_url("MCD15A2H", "061", region; date = wanted)
     @test occursin("short_name=MCD15A2H", query)
     @test occursin("version=061", query)
     @test occursin("bounding_box=-92.5,36.5,-91.5,37.5", query)
     @test occursin("temporal=2020-07-03T00:00:00Z,2020-07-04T00:00:00Z", query)
-    @test_throws ArgumentError cmr_granules_url("MCD15A2H", "061", BoundingBox(), wanted)
 end
 
 @testset "MODIS regional lattice" begin

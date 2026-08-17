@@ -21,7 +21,7 @@ Downloads need a free NASA Earthdata login and GDAL's HDF4 driver:
 
 1. Register at https://urs.earthdata.nasa.gov
 2. Export `EARTHDATA_USERNAME` and `EARTHDATA_PASSWORD` (the variables the `earthaccess`
-   library also honours), or add a `~/.netrc` entry for `urs.earthdata.nasa.gov`
+   library also honors), or add a `~/.netrc` entry for `urs.earthdata.nasa.gov`
 3. Load the backend before downloading: `using ArchGDAL`
 
 Granule *discovery* goes through NASA's Common Metadata Repository and is anonymous; only

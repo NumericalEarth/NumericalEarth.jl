@@ -28,7 +28,7 @@ using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 using GPUArraysCore: @allowscalar
 using Breeze: CompressibleDynamics, SplitExplicitTimeDiscretization, UpperSponge, NoDivergenceDamping,
-              MixedPhaseEquilibrium, materialize_terrain!, moisture_prognostic_name
+              MixedPhaseEquilibrium, SpecificForcing, materialize_terrain!, moisture_prognostic_name
 using Breeze.AtmosphereModels: prognostic_field_names
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
@@ -82,7 +82,7 @@ end
 default_lid_depth(grid) = convert(eltype(grid), grid.Lz / 4)
 
 # Default child dynamics: compressible with split-explicit acoustic substepping, an `UpperSponge`
-# Rayleigh layer over the top `damping_depth` metres at `damping_rate`, and no divergence damping
+# Rayleigh layer over the top `damping_depth` meters at `damping_rate`, and no divergence damping
 # (its (ρθ)′-proxy damper injects a spurious force on an unbalanced cold start). When given,
 # `surface_pressure`/`reference_potential_temperature` anchor the hydrostatic reference and the
 # perturbation-form pressure-gradient reference profile.
@@ -159,7 +159,7 @@ When `terrain` is given — an elevation `Field`, or a topography dataset (e.g. 
 regridded onto the child grid — the child grid's terrain-following coordinate is materialized in place
 before the model is built. If the parent knows its surface elevation ([`surface_elevation`](@ref)), the
 child elevation is first blended toward the parent's over an outer frame of physical width
-`terrain_blend_length` (metres; converted to a resolution-invariant cell count, or overridden directly
+`terrain_blend_length` (meters; converted to a resolution-invariant cell count, or overridden directly
 with `terrain_blend_width`), so the terrain at the open boundaries matches the orography the parent
 state was produced with — and the blend slope stays fixed across resolutions rather than steepening.
 """
@@ -173,7 +173,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
             surface_pressure = nothing,
             reference_potential_temperature = nothing,
             terrain = nothing,
-            terrain_blend_length = 60_000,   # metres; physical blend width → resolution-invariant slope
+            terrain_blend_length = 60_000,   # meters; physical blend width → resolution-invariant slope
             terrain_blend_width = nothing,    # explicit cell-count override; derived from length if `nothing`
             parent_condensates = (qᶜˡ = parent_atmosphere.microphysical_variables.qᶜˡ,
                                   qʳ  = parent_atmosphere.microphysical_variables.qʳ,
@@ -230,21 +230,28 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
 
     nested_bcs = parent_boundary_conditions(child_grid; variables = bc_variables, sides, bc_types)
 
-    # Interior Davies relaxation toward the precomputed (density-weighted) prognostics. Oceananigans'
-    # FTS `Relaxation` calls `mask(x, y, z)`, so wrap a scalar mask in a callable. The density `ρᵈ` is
-    # relaxed alongside the momentum/energy/moisture — the mass field, following WRF (nudges dry mass μ)
-    # and MPAS (nudges ρ); without it the un-relaxed near-wall density drives a persistent lateral-wall
-    # residual (ρw creep) that a top sponge cannot damp.
+    # Interior Davies relaxation toward the precomputed prognostics. Oceananigans' FTS `Relaxation`
+    # calls `mask(x, y, z)`, so wrap a scalar mask in a callable. Momentum and energy relax toward the
+    # parent's SPECIFIC state, which `SpecificForcing` weights by the child's own `ρᵈ` at kernel time;
+    # relaxing toward the parent's `ρθ`/`ρu`/`ρv` instead equilibrates at `θ = θₚ ρᵈₚ / ρᵈ`, an absolute
+    # error `θ Δρᵈ / ρᵈ` (≈3 K per 1% density mismatch: the lateral-boundary cold rim). `ρᵈ` itself is
+    # absent because Breeze's compressible continuity kernels overwrite `Gⁿ.ρᵈ` with `-∇·m` and never
+    # read `forcing.ρᵈ`, so a mass-nudging entry is silently discarded; were that to change, the
+    # specific form would gain a `θ Δρᵈ / ρᵈ` cross-term and the density-weighted form would be unbiased.
+    # The wrap is explicit and keyed by the density-weighted prognostic rather than left to Breeze's
+    # specific-key dispatch, so a caller's own `θ`/`u`/`v` forcing combines with the relaxation instead
+    # of replacing it in the `merge` below.
     relax_mask = relaxation_mask isa Number ? Returns(relaxation_mask) : relaxation_mask
     davies = if isnothing(relaxation_rate)
         NamedTuple()
     else
-        dry_forcing_variables = (ρᵈ = prognostic.ρᵈ, ρθ = prognostic.ρθ, ρu = prognostic.ρu, ρv = prognostic.ρv)
-        variables = merge(dry_forcing_variables, moist_variables)
-        parent_forcings(; variables, rate = relaxation_rate, mask = relax_mask)
+        specific_targets = (ρθ = prognostic.θ, ρu = prognostic.u, ρv = prognostic.v)
+        specific = parent_forcings(; variables = specific_targets, rate = relaxation_rate, mask = relax_mask)
+        moist = parent_forcings(; variables = moist_variables, rate = relaxation_rate, mask = relax_mask)
+        merge(map(SpecificForcing, specific), moist)
     end
 
-    # ρw Rayleigh sponge over BOTH the top `damping_depth` metres AND the lateral relaxation zone. The
+    # ρw Rayleigh sponge over BOTH the top `damping_depth` meters AND the lateral relaxation zone. The
     # horizontal Davies nudging drives a persistent vertical-velocity wave up the (inflow) lateral walls
     # (nudging the horizontal mass/momentum harder makes it worse); `ρw` is otherwise undamped there, so
     # the wave amplifies up the wall column until a top-only sponge catches it too late — at the wall/lid

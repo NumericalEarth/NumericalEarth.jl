@@ -243,7 +243,7 @@ end
     # must keep its departure.
     @test !(𝒜[2, 2, 7] ≈ 𝒜̄[2, 2, 7])
 
-    # A shorter anchor is reused cyclically, and an explicit mapping is honoured.
+    # A shorter anchor is reused cyclically, and an explicit mapping is honored.
     𝒜̄season = uniform_series(seasonal_shape(4), 4, 4)
     𝒜 = zeros(Float32, 4, 4, 8)
     for t in 1:8
