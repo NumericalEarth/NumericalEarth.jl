@@ -272,13 +272,13 @@ Keyword arguments
 - `max_gap`: how many consecutive missing periods stage 1 may bridge — one `Int` for every
              cell, or an array over the spatial dimensions giving each cell its own
              ([`class_maximum_gap`](@ref) builds one from a class map). Default: `6`.
-- `block_size`: cells per side of the donor table's blocks, an `Int`. Default: `32`.
+- `block_size`: cells per side of the donor table's blocks. Default: `32`.
 - `initial_radius`, `maximum_radius`: the donor stencil's half-width in blocks, before and
-                                      after growing, `Int`s. Defaults: `1` and `16`.
+                                      after growing. Defaults: `1` and `16`.
 - `minimum_donors`: valid same-class cells every period needs before the stencil stops
-                    growing, an `Int`. Default: `20`.
+                    growing. Default: `20`.
 - `minimum_anchor_periods`: observed periods a cell must share with its donor before the
-                            scale is trusted, an `Int`; a cell below it falls through to
+                            scale is trusted; a cell below it falls through to
                             `:class_mean`. Default: `6`.
 - `scaling`: `:multiplicative` (the ratio of sums, for a non-negative field) or `:additive`
              (the mean offset, for a field that may be negative). Default: `:multiplicative`.
