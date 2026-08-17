@@ -12,9 +12,9 @@ using Oceananigans.TimeSteppers: time_step!
                                z = (-1, 0),
                                topology = (Flat, Flat, Bounded))
 
-        # Dry slab (M = 0) so C reduces to C_dry. Pure restoration:
-        #     T(t) − Tᵈ = (T₀ − Tᵈ) exp(−(Λ/C) t).
-        Cdry  = 1.0e6
+        # Dry slab (M = 0) so cˡᵃ reduces to cᵈʳʸ. Pure restoration:
+        #     T(t) − Tᵈ = (T₀ − Tᵈ) exp(−(Λ/cˡᵃ) t).
+        cᵈʳʸ  = 1e6
         Λ     = 5.0          # W m⁻² K⁻¹
         Tᵈ    = 280.0
         T₀    = 290.0
@@ -27,7 +27,7 @@ using Oceananigans.TimeSteppers: time_step!
             hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
             deep_liquid_flux = NoDeepLiquidFlux(), runoff = NoRunoff())
         energy = WaterCoupledEnergy(eltype(grid);
-            dry_heat_capacity = Cdry,
+            dry_heat_capacity = cᵈʳʸ,
             liquid_heat_capacity = 4186,
             reference_temperature = 273.15,
             deep_temperature = Tᵈ,
@@ -48,10 +48,10 @@ using Oceananigans.TimeSteppers: time_step!
             t += Δt
         end
 
-        expected_temperature = Tᵈ + (T₀ - Tᵈ) * exp(-Λ / Cdry * t)
+        expected_temperature = Tᵈ + (T₀ - Tᵈ) * exp(-Λ / cᵈʳʸ * t)
         actual_temperature = only(Array(interior(land.temperature)))
         # Forward Euler converges to the analytic solution as Δt → 0; with
-        # ΛΔt/C = 5e-4 the truncation error per step is O(Δt²) ⇒ test tolerance 1e-3 K.
+        # ΛΔt/cˡᵃ = 5e-4 the truncation error per step is O(Δt²) ⇒ test tolerance 1e-3 K.
         @test isapprox(actual_temperature, expected_temperature; atol = 1e-3)
     end
 end
@@ -187,9 +187,10 @@ end
                                z = (-1, 0),
                                topology = (Periodic, Flat, Bounded))
 
-        # Two dry columns restoring toward Tᵈ, each at its own rate Λ/Cᵢ.
-        Cdry = Field{Center, Center, Nothing}(grid)
-        set!(Cdry, reshape([1.0e6, 2.0e6], 2, 1, 1))
+        # Two dry columns (M = 0, so cˡᵃ = cᵈʳʸ) restoring toward Tᵈ, each at
+        # its own rate Λ/cˡᵃ.
+        cᵈʳʸ = Field{Center, Center, Nothing}(grid)
+        set!(cᵈʳʸ, reshape([1e6, 2e6], 2, 1, 1))
 
         Λ     = 5.0
         Tᵈ    = 280.0
@@ -198,12 +199,12 @@ end
         steps = 100
 
         hydrology = VariablySaturatedHydrology(eltype(grid);
-            slab_depth = 1.0, porosity = 0.4, storage_height = 1000,
-            retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
-            hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
+            slab_depth = 1, porosity = 0.4, storage_height = 1000,
+            retention_curve = VanGenuchtenRetention(α = 1, n = 2),
+            hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2),
             deep_liquid_flux = NoDeepLiquidFlux(), runoff = NoRunoff())
         energy = WaterCoupledEnergy(eltype(grid);
-            dry_heat_capacity = Cdry,
+            dry_heat_capacity = cᵈʳʸ,
             liquid_heat_capacity = 4186,
             reference_temperature = 273.15,
             deep_temperature = Tᵈ,
@@ -212,7 +213,7 @@ end
             advect_surface_liquid_energy = false)
 
         land = SlabLand(grid; hydrology, energy)
-        set!(land; T = T₀, M = 0.0)
+        set!(land; T = T₀, M = 0)
         fill!(land.fluxes.surface_energy_flux, 0)
         fill!(land.fluxes.vapor_flux, 0)
         fill!(land.fluxes.liquid_precipitation_flux, 0)
@@ -225,8 +226,8 @@ end
         end
 
         actual_temperatures = vec(Array(interior(land.temperature)))
-        for (n, Cᵢ) in enumerate((1.0e6, 2.0e6))
-            expected_temperature = Tᵈ + (T₀ - Tᵈ) * exp(-Λ / Cᵢ * t)
+        for (n, cˡᵃ) in enumerate((1e6, 2e6))
+            expected_temperature = Tᵈ + (T₀ - Tᵈ) * exp(-Λ / cˡᵃ * t)
             @test isapprox(actual_temperatures[n], expected_temperature; atol = 1e-3)
         end
     end

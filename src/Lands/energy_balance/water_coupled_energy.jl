@@ -6,7 +6,7 @@
 ##### Like `ForceRestoreEnergy`, this closure restores the bulk land temperature
 ##### toward a prescribed deep climatology, but with two refinements:
 #####
-##### 1. The areal heat capacity `C(Mˡᵃ) = C_dry + cˡ Mˡᵃ` is recomputed every
+##### 1. The areal heat capacity `cˡᵃ(Mˡᵃ) = cᵈʳʸ + cˡ Mˡᵃ` is recomputed every
 #####    step, so a wetting/drying slab has the correct thermal inertia.
 ##### 2. The energy budget is written conservatively as
 #####
@@ -15,7 +15,7 @@
 #####    with `eˡ = cˡ(Tˡᵃ − Tᵣ)` the internal energy of slab liquid, and `Tˡᵃ`
 #####    is updated via
 #####
-#####        dTˡᵃ/dt = [dEˡᵃ/dt − eˡ dMˡᵃ/dt] / C(Mˡᵃ),
+#####        dTˡᵃ/dt = [dEˡᵃ/dt − eˡ dMˡᵃ/dt] / cˡᵃ(Mˡᵃ),
 #####
 #####    so adding/removing water *at the slab temperature* leaves `Tˡᵃ`
 #####    unchanged. `dMˡᵃ/dt` is consumed from `land.diagnostics.water_storage_tendency`
@@ -34,7 +34,7 @@
 ##### `surface_energy_flux` via the interface balance.
 #####
 ##### `Tᵈᵉᵉᵖ` may be a `Number`, `AbstractField`, or any state-indexable
-##### property (e.g. a `FieldTimeSeries`); `Cᵈʳʸ` and `Λᵈᵉᵉᵖ` may be
+##### property (e.g. a `FieldTimeSeries`); `cᵈʳʸ` and `Λᵈᵉᵉᵖ` may be
 ##### `Number`s or `AbstractField`s.
 #####
 
@@ -54,7 +54,7 @@ treatment of water-energy advection across the slab boundaries.
 
 Use either `deep_conductance` (`Λᵈᵉᵉᵖ`, W m⁻² K⁻¹) or `deep_time_scale` (`τᵈᵉᵉᵖ`,
 s) to set the deep restoring strength; exactly one must be supplied. With
-`deep_time_scale`, the effective conductance is `C(Mˡᵃ)/τᵈᵉᵉᵖ` (matches
+`deep_time_scale`, the effective conductance is `cˡᵃ(Mˡᵃ)/τᵈᵉᵉᵖ` (matches
 [`ForceRestoreEnergy`](@ref)).
 
 `dry_heat_capacity` accepts a `Number` (uniform) or a per-cell `AbstractField` —
@@ -131,12 +131,12 @@ Adapt.adapt_structure(to, energy::WaterCoupledEnergy) =
 ##### Helpers
 #####
 
-@inline function deep_conductance_value(energy::WaterCoupledEnergy, C, i, j, grid, time)
+@inline function deep_conductance_value(energy::WaterCoupledEnergy, cˡᵃ, i, j, grid, time)
     FT = eltype(grid)
     Λ  = energy.deep_conductance
     τ  = energy.deep_time_scale
     if Λ === nothing
-        return C / convert(FT, τ)
+        return cˡᵃ / convert(FT, τ)
     else
         return property_value(Λ, i, j, 1)
     end
@@ -168,11 +168,11 @@ end
 
     cˡ   = energy.liquid_heat_capacity
     Tᵣ   = energy.reference_temperature
-    Cdry = property_value(energy.dry_heat_capacity, i, j, 1)
-    C    = Cdry + cˡ * max(Mᵢⱼ, 0)
+    cᵈʳʸ = property_value(energy.dry_heat_capacity, i, j, 1)
+    cˡᵃ  = cᵈʳʸ + cˡ * max(Mᵢⱼ, 0)
 
     Tᵈ = stateindex(energy.deep_temperature, i, j, 1, grid, time, (Center, Center, Center))
-    Λᵈ = deep_conductance_value(energy, C, i, j, grid, time)
+    Λᵈ = deep_conductance_value(energy, cˡᵃ, i, j, grid, time)
 
     # Internal energy of slab liquid; the boundary fluxes upwind to it. A flux
     # whose advective switch is off carries eˡ — it exchanges mass but no heat —
@@ -187,7 +187,7 @@ end
     # temperature; the latent heat of evaporation is already inside Jᴱs.
     dEdt = Λᵈ * (Tᵈ - Tᵢⱼ) + eᵇ * Jˡᵇ - eˢ * Jˡˢ - Jᴱs - eˡ * Jᵛ - eˡ * Rˡᵃᵗ
 
-    return (dEdt - eˡ * dMdt) / C
+    return (dEdt - eˡ * dMdt) / cˡᵃ
 end
 
 time_step!(energy::WaterCoupledEnergy, land, Δt, time) = step_land_temperature!(energy, land, Δt, time)
