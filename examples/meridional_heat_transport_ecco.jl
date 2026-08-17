@@ -1,23 +1,24 @@
 using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
+using CUDA
 using Dates
 using Statistics
 using Printf
 
-using CUDA
-
-arch = GPU()
+arch = CPU()
 Nx = 360
 Ny = 180
 Nz = 50
 
 depth = 5000meters
-z = MutableVerticalDiscretization(ExponentialDiscretization(Nz, -depth, 0; scale = depth/4))
+z = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4, mutable = true)
 
-underlying_grid = TripolarGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z)
+# underlying_grid = TripolarGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z)
+# destination_grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z, longitude = (0, 360), latitude = (-89, 89))
 
-destination_grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z, longitude = (0, 360), latitude = (-89, 89))
+underlying_grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z, longitude = (0, 360), latitude = (-75, 75))
+destination_grid = underlying_grid
 
 bottom_height = regrid_bathymetry(underlying_grid;
                                   minimum_depth = 10,
@@ -27,12 +28,12 @@ bottom_height = regrid_bathymetry(underlying_grid;
 grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height);
                             active_cells_map=true)
 
-free_surface       = SplitExplicitFreeSurface(grid; substeps=70)
+free_surface = SplitExplicitFreeSurface(grid; substeps=70)
 momentum_advection = WENOVectorInvariant(order=5)
-tracer_advection   = WENO(order=5)
+tracer_advection = WENO(order=5)
 vertical_mixing = NumericalEarth.Oceans.default_ocean_closure()
 ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surface,
-                         closure=(vertical_mixing,))
+                               closure=(vertical_mixing,))
 sea_ice = sea_ice_simulation(grid, ocean; advection=tracer_advection)
 
 date = DateTime(1993, 1, 1)
@@ -48,7 +49,7 @@ land       = JRA55PrescribedLand(arch)
 radiation  = JRA55PrescribedRadiation(arch)
 esm = OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
 
-simulation = Simulation(esm; Δt=20minutes, stop_time=20days)
+simulation = Simulation(esm; Δt=20minutes, stop_time=30days)
 
 wall_time = Ref(time_ns())
 
@@ -78,11 +79,12 @@ end
 # And add it as a callback to the simulation.
 add_callback!(simulation, progress, IterationInterval(200))
 
-# The direct flux method does not yet support orthogonal spherical shell grids,
-# so use the heat-content tendency method instead.
+mht_vT = meridional_heat_transport(simulation, MeridionalFluxMethod()) # This currently is not supported with Othrogonal grids, so we use the OHC method instead.
+# temperature_budget = BudgetComputation(:temperature, esm)
+# add_callback!(simulation, temperature_budget)
 mht_OHC = meridional_heat_transport(simulation, TendencyMethod(); destination_grid)
 
-ocean.output_writers[:mht] = JLD2Writer(ocean.model, (; mht_OHC);
+ocean.output_writers[:mht] = JLD2Writer(ocean.model, (; mht_OHC, mht_vT);
                                         schedule = TimeInterval(3hours),
                                         filename = "ocean_one_degree_mht",
                                         overwrite_existing = true)
@@ -93,7 +95,7 @@ run!(simulation)
 
 using Oceananigans
 
-# mht_vT  = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_vT"; backend = OnDisk())
+mht_vT  = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_vT"; backend = OnDisk())
 mht_OHC = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_OHC"; backend = OnDisk())
 
 times = mht_OHC.times
@@ -102,17 +104,17 @@ Nt = length(times)
 grid = mht_OHC.grid
 Ny = size(mht_OHC.grid, 2)
 
-# mht_vT_mean  = deepcopy(mht_vT[1][1, :, 1])
-mht_OHC_avg = deepcopy(mht_OHC[1][1, :, 1])
+mht_vT_mean  = deepcopy(mht_vT[1][1, :, 1])
+mht_OHC_mean = deepcopy(mht_OHC[1][1, :, 1])
 
 for iter in 1:Nt
     @info "iteration $iter out of $Nt"
-    # mht_vT_mean  +=  mht_vT[iter][1, :, 1]
-    mht_OHC_avg += mht_OHC[iter][1, :, 1]
+    mht_vT_mean  +=  mht_vT[iter][1, :, 1]
+    mht_OHC_mean += mht_OHC[iter][1, :, 1]
 end
 
-@. mht_OHC_avg = mht_OHC_avg / Nt
-# @. mht_vT_mean = mht_vT_mean / Nt
+@. mht_OHC_mean = mht_OHC_mean / Nt
+@. mht_vT_mean = mht_vT_mean / Nt
 
 using CairoMakie
 
@@ -121,8 +123,8 @@ ax = Axis(fig[1, 1], xlabel="latitude (deg)", ylabel="MHT (PW)")
 
 φ = φnodes(grid, Face())
 
-# lines!(ax, φ, mht_vT_mean[1:Ny+1]  / 1e15, linewidth=4, label="via vT")
-lines!(ax, φ, mht_OHC_avg[1:Ny+1] / 1e15, linewidth=4, label="via OHC")
+lines!(ax, φ, mht_vT_mean[1:Ny+1] / 1e15, linewidth=4, label="via vT")
+lines!(ax, φ, mht_OHC_mean[1:Ny+1] / 1e15, linewidth=4, label="via OHC")
 Legend(fig[2, :], ax, orientation=:horizontal)
 Label(fig[0, :], "Meridional heat transport", fontsize=16, tellwidth=false)
 
