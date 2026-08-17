@@ -365,10 +365,24 @@ end
 
     @test_throws ArgumentError time_average(ramp, dates, Month(1))
 
-    # Only part of the record in memory cannot be reduced, and the error says so rather than
-    # blaming the bounds.
-    partial = FieldTimeSeries{Center, Center, Center}(grid, Float64.(0:7); backend = InMemory(2))
-    @test_throws ArgumentError time_average(partial, bounds, Month(1))
+    # A partly-resident series streams to bit-identical numbers, advancing its two-slot
+    # window through the record as the samples pass.
+    reference = Array(interior(first(time_average(ramp, bounds, Month(1)))))
+
+    path = joinpath(mktempdir(), "ramp.jld2")
+    ondisk = FieldTimeSeries{Center, Center, Center}(grid, Float64.(0:7);
+                                                     backend = OnDisk(), path, name = "ramp")
+    slice = Field{Center, Center, Center}(grid)
+    for n in 1:8
+        set!(slice, n)
+        set!(ondisk, slice, n, ondisk.times[n])
+    end
+
+    windowed = FieldTimeSeries(path, "ramp"; architecture = arch, backend = InMemory(2))
+    @test size(interior(windowed))[end] == 2
+    streamed, streamed_edges = time_average(windowed, bounds, Month(1))
+    @test Array(interior(streamed)) == reference
+    @test streamed_edges == edges
 end
 
 # The reduced series carries the input's layout, not the bare grid's: its slice, its time

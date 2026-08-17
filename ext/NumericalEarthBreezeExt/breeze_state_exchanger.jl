@@ -85,7 +85,10 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
         ρv[i, j, k]  = ρᵈ[i, j, k] * vₚ[i, j, k]
         ρqᵛ[i, j, k] = ρ * qᵛᵢ
 
-        # Intensive copies: the `SpecificForcing` Davies-relaxation targets.
+        # When performing Davies `Relaxation` to a `PrescribedAtmosphere` parent, we construct
+        # `SpecificForcing`s with these intensive quantities
+        #
+        # Note: we can do a memory optimization here for `parent_atmosphere.velocities.*`
         θ[i, j, k] = θᵢ
         u[i, j, k] = uₚ[i, j, k]
         v[i, j, k] = vₚ[i, j, k]

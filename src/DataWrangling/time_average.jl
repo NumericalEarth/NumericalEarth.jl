@@ -22,19 +22,6 @@ function validate_average_bounds(bounds, Nt)
     return nothing
 end
 
-# TODO: stream instead. `overlap_weights` returns the band each window sums over, so only
-# `first_sample[w]:last_sample[w]` has to be resident; what pins the whole record in memory is
-# the kernel indexing the global sample number rather than the resident buffer, which would
-# silently average the wrong slices. The generic fix is the upstream one noted above.
-function validate_average_series(fts, Nt)
-    Nr = size(interior(fts))[end]
-    Nr == Nt ||
-        throw(ArgumentError("time_average reduces the whole record at once, so `fts` has to hold " *
-                            "all $Nt of its times in memory; it holds $Nr. Read it with " *
-                            "`time_indices_in_memory = $Nt`."))
-    return nothing
-end
-
 function average_window_edges(bounds, window)
     first_edge, last_edge = DateTime(first(bounds)), DateTime(last(bounds))
 
@@ -73,27 +60,25 @@ function overlap_weights(FT, bounds, edges)
     return ω, first_sample, last_sample
 end
 
-@kernel function _time_average!(averaged, data, ω, first_sample, last_sample, Nw)
+# Each cell renormalizes over its own valid samples, so a cloudy pixel drops the sample
+# while its neighbor keeps it.
+@kernel function _accumulate_sample!(total, weight, sample, ω)
+    i, j, k = @index(Global, NTuple)
+    FT = eltype(total)
+    @inbounds begin
+        value = sample[i, j, k]
+        counts = !isnan(value)
+        total[i, j, k] += ifelse(counts, ω * value, zero(FT))
+        weight[i, j, k] += ifelse(counts, ω, zero(FT))
+    end
+end
+
+@kernel function _finalize_window!(averaged, total, weight, w)
     i, j, k = @index(Global, NTuple)
     FT = eltype(averaged)
-
-    for w in 1:Nw
-        total = zero(FT)
-        weight = zero(FT)
-
-        @inbounds for n in first_sample[w]:last_sample[w]
-            value = data[i, j, k, n]
-            ωₙ = ω[n, w]
-
-            # Each cell renormalizes over its own valid samples, so a cloudy pixel drops the
-            # sample while its neighbor keeps it.
-            counts = (ωₙ > 0) & !isnan(value)
-            total += ifelse(counts, ωₙ * value, zero(FT))
-            weight += ifelse(counts, ωₙ, zero(FT))
-        end
-
-        @inbounds averaged[i, j, k, w] = ifelse(weight > 0, total / weight, convert(FT, NaN))
-    end
+    @inbounds averaged[i, j, k, w] = ifelse(weight[i, j, k] > 0,
+                                            total[i, j, k] / weight[i, j, k],
+                                            convert(FT, NaN))
 end
 
 """
@@ -116,13 +101,13 @@ indexing, and the `Nw + 1` window edges. Its times are the window centers measur
 `first(bounds)`. The edges come back because the last window is whatever the record leaves
 over, so the centers alone cannot say what interval each value covers.
 
-The whole record reduces at once, so `fts` has to hold all of its times in memory: read it with
-`time_indices_in_memory = length(fts.times)`. The reduction runs on the series' own architecture;
-only the dates resolve to weights on the host.
+The reduction streams through the record one sample at a time, so `fts` may hold any number
+of its times in memory; a partly-resident series has its window advanced (and left) at the
+end of the record. The reduction runs on the series' own architecture; only the dates resolve
+to weights on the host.
 """
 function time_average(fts::FieldTimeSeries, bounds, window)
     Nt = length(fts.times)
-    validate_average_series(fts, Nt)
     validate_average_bounds(bounds, Nt)
 
     edges = average_window_edges(bounds, window)
@@ -150,10 +135,24 @@ function time_average(fts::FieldTimeSeries, bounds, window)
 
     ω, first_sample, last_sample = overlap_weights(FT, bounds, edges)
     averaged = interior(output)
+    spatial_size = size(averaged)[1:3]
+    total = on_architecture(arch, zeros(FT, spatial_size))
+    weight = on_architecture(arch, zeros(FT, spatial_size))
 
-    launch!(arch, grid, size(averaged)[1:3], _time_average!,
-            averaged, interior(fts), on_architecture(arch, ω),
-            on_architecture(arch, first_sample), on_architecture(arch, last_sample), Nw)
+    # Samples ascend within a window and consecutive windows share at most the straddling
+    # sample, so a partly-resident series only ever advances its window forward, one move per
+    # sample at worst — `fts[n]` reads the slice in whatever way its backend provides.
+    for w in 1:Nw
+        fill!(total, 0)
+        fill!(weight, 0)
+
+        for n in first_sample[w]:last_sample[w]
+            launch!(arch, grid, spatial_size, _accumulate_sample!,
+                    total, weight, interior(fts[n]), ω[n, w])
+        end
+
+        launch!(arch, grid, spatial_size, _finalize_window!, averaged, total, weight, w)
+    end
 
     fill_halo_regions!(output)
 
