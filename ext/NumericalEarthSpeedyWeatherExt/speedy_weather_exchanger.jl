@@ -53,13 +53,11 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchang
     return ComponentExchanger(state, regridder, correction)
 end
 
-function regrid_to_field!(field::Oceananigans.Field, regridder::Regridder, data::AbstractArray)
+regrid_to_field!(field::Oceananigans.Field, regridder::Regridder, data::AbstractArray) =
     regrid!(vec(interior(field)), regridder, vec(data))
-end
 
-function regrid_from_field!(data::AbstractArray, regridder::Regridder, field::Oceananigans.Field)
+regrid_from_field!(data::AbstractArray, regridder::Regridder, field::Oceananigans.Field) =
     regrid!(vec(data), regridder, vec(interior(field)))
-end
 
 # Regrid the atmospheric state on the exchange grid
 function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, coupled_model)
