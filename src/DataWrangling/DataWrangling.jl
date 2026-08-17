@@ -17,6 +17,7 @@ export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, 
 export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
 export fill_gaps!, fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial, time_average
+export class_fraction, class_fractions
 
 using Adapt: Adapt
 using Downloads: Downloads
@@ -67,6 +68,21 @@ function download_cache(key)
     else
         return @get_scratch!(key)
     end
+end
+
+"""
+    write_atomically(write!, filepath)
+
+Call `write!(staging_path)` with a staging path unique to this writer in `filepath`'s
+directory, then rename the staged file into place. The staging directory keeps the rename
+on one filesystem, and the unique name keeps concurrent writers of the same file from
+truncating each other's staging file and publishing a half-written result.
+"""
+function write_atomically(write!, filepath)
+    staging_path = tempname(dirname(filepath); cleanup = false) * splitext(filepath)[2]
+    write!(staging_path)
+    mv(staging_path, filepath; force = true)
+    return filepath
 end
 
 mutable struct DownloadProgress <: Function
@@ -271,6 +287,7 @@ include("dataset_backend.jl")
 include("metadata_field_time_series.jl")
 include("inpainting.jl")
 include("gap_filling.jl")
+include("class_fractions.jl")
 include("time_average.jl")
 include("restoring.jl")
 include("earthdata.jl")

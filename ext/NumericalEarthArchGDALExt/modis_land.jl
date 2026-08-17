@@ -53,23 +53,20 @@ function write_modis_netcdf(nc_path, layers, lattice)
     longitude = collect(range(lattice.west + Δλ / 2; step = Δλ, length = lattice.Nx))
     latitude  = collect(range(lattice.south + Δφ / 2; step = Δφ, length = lattice.Ny))
 
-    # A staging name unique per writer, in the destination directory so the rename stays on one
-    # filesystem. A shared `nc_path * ".tmp"` would let two processes materializing the same date
-    # truncate each other's staging file and then rename a half-written result into place.
-    staging_path = tempname(dirname(nc_path); cleanup = false) * ".nc"
-    NCDataset(staging_path, "c") do ds
-        defDim(ds, "lon", lattice.Nx)
-        defDim(ds, "lat", lattice.Ny)
-        defVar(ds, "lon", longitude, ("lon",);
-               attrib = ["units" => "degrees_east", "long_name" => "longitude"])
-        defVar(ds, "lat", latitude, ("lat",);
-               attrib = ["units" => "degrees_north", "long_name" => "latitude"])
-        for (layer, data) in pairs(layers)
-            defVar(ds, String(layer), data, ("lon", "lat");
-                   deflatelevel = 2, shuffle = true)
+    write_atomically(nc_path) do staging_path
+        NCDataset(staging_path, "c") do ds
+            defDim(ds, "lon", lattice.Nx)
+            defDim(ds, "lat", lattice.Ny)
+            defVar(ds, "lon", longitude, ("lon",);
+                   attrib = ["units" => "degrees_east", "long_name" => "longitude"])
+            defVar(ds, "lat", latitude, ("lat",);
+                   attrib = ["units" => "degrees_north", "long_name" => "latitude"])
+            for (layer, data) in pairs(layers)
+                defVar(ds, String(layer), data, ("lon", "lat");
+                       deflatelevel = 2, shuffle = true)
+            end
         end
     end
-    mv(staging_path, nc_path; force = true)
     return nothing
 end
 

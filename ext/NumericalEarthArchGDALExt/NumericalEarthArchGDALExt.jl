@@ -13,7 +13,7 @@ using Oceananigans.Grids: λnodes, φnodes
 using NumericalEarth.DataWrangling: BoundingBox, native_grid, native_region_grid,
                                     dataset_variable_name, bounding_box_intersects,
                                     cmr_granules, earthdata_download, earthdata_download_cached,
-                                    figshare_article_url
+                                    figshare_article_url, write_atomically
 using NumericalEarth.DataWrangling.ASTERGED: asterged_short_name, asterged_version,
                                              asterged_decode_emissivity, asterged_decode_uncertainty,
                                              broadband_map, place_tile!,

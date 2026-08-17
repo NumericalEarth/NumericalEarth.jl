@@ -10,7 +10,7 @@ using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
                        metadata_path, default_download_directory,
-                       native_convention_longitude, native_cell_range
+                       native_convention_longitude, native_cell_range, write_atomically
 
 import Oceananigans
 
@@ -263,25 +263,24 @@ source are preserved.
 function repack_albedo_pair(blacksky, whitesky, destination_names, filepath, expected_size)
     blacksky_path, blacksky_name = blacksky
     whitesky_path, whitesky_name = whitesky
-    staging_path = filepath * ".tmp"
 
-    NCDataset(staging_path, "c") do destination
-        NCDataset(blacksky_path) do source
-            λ = nomissing(source[coordinate_name(source, ("lon", "longitude"))][:])
-            φ = nomissing(source[coordinate_name(source, ("lat", "latitude"))][:])
-            (length(λ), length(φ)) == expected_size ||
-                error("CGLS albedo file grid $((length(λ), length(φ))) does not match ",
-                      "the expected $expected_size; the dataset traits need updating.")
-            defVar(destination, "lon", λ, ("lon",))
-            defVar(destination, "lat", φ, ("lat",))
-            copy_packed_variable!(destination, source, blacksky_name, destination_names[1])
-        end
-        NCDataset(whitesky_path) do source
-            copy_packed_variable!(destination, source, whitesky_name, destination_names[2])
+    write_atomically(filepath) do staging_path
+        NCDataset(staging_path, "c") do destination
+            NCDataset(blacksky_path) do source
+                λ = nomissing(source[coordinate_name(source, ("lon", "longitude"))][:])
+                φ = nomissing(source[coordinate_name(source, ("lat", "latitude"))][:])
+                (length(λ), length(φ)) == expected_size ||
+                    error("CGLS albedo file grid $((length(λ), length(φ))) does not match ",
+                          "the expected $expected_size; the dataset traits need updating.")
+                defVar(destination, "lon", λ, ("lon",))
+                defVar(destination, "lat", φ, ("lat",))
+                copy_packed_variable!(destination, source, blacksky_name, destination_names[1])
+            end
+            NCDataset(whitesky_path) do source
+                copy_packed_variable!(destination, source, whitesky_name, destination_names[2])
+            end
         end
     end
-
-    mv(staging_path, filepath; force = true)
     return nothing
 end
 
@@ -429,35 +428,34 @@ function write_monthly_mean(filepath, source_paths, variable_names, latitude_chu
         nomissing(ds["lon"][:]), nomissing(ds["lat"][:])
     end
     Nx, Ny = length(λ), length(φ)
-    staging_path = filepath * ".tmp"
 
-    NCDataset(staging_path, "c") do destination
-        defVar(destination, "lon", λ, ("lon",))
-        defVar(destination, "lat", φ, ("lat",))
+    write_atomically(filepath) do staging_path
+        NCDataset(staging_path, "c") do destination
+            defVar(destination, "lon", λ, ("lon",))
+            defVar(destination, "lat", φ, ("lat",))
 
-        for variable_name in variable_names
-            monthly_mean = defVar(destination, variable_name, Float32, ("lon", "lat");
-                                  deflatelevel = 2, shuffle = true)
+            for variable_name in variable_names
+                monthly_mean = defVar(destination, variable_name, Float32, ("lon", "lat");
+                                      deflatelevel = 2, shuffle = true)
 
-            for j in 1:latitude_chunk:Ny
-                rows = j:min(j + latitude_chunk - 1, Ny)
-                Σα = zeros(Float32, Nx, length(rows))
-                n = zeros(Int32, Nx, length(rows))
+                for j in 1:latitude_chunk:Ny
+                    rows = j:min(j + latitude_chunk - 1, Ny)
+                    Σα = zeros(Float32, Nx, length(rows))
+                    n = zeros(Int32, Nx, length(rows))
 
-                for path in source_paths
-                    NCDataset(path) do ds
-                        α = copernicus_albedo_decode.(ds[variable_name][:, rows])
-                        @. Σα += ifelse(isnan(α), 0f0, α)
-                        @. n += !isnan(α)
+                    for path in source_paths
+                        NCDataset(path) do ds
+                            α = copernicus_albedo_decode.(ds[variable_name][:, rows])
+                            @. Σα += ifelse(isnan(α), 0f0, α)
+                            @. n += !isnan(α)
+                        end
                     end
-                end
 
-                monthly_mean[:, rows] = @. ifelse(n == 0, NaN32, Σα / n)
+                    monthly_mean[:, rows] = @. ifelse(n == 0, NaN32, Σα / n)
+                end
             end
         end
     end
-
-    mv(staging_path, filepath; force = true)
     return nothing
 end
 
