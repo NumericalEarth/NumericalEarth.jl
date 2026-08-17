@@ -51,7 +51,8 @@ solved inside the Monin–Obukhov fixed point exactly as [`SkinHumidity`](@ref)
 solves a soil-resistance balance. The stomatal conductance `gₛ` comes from the
 `conductance` model driven by the per-cell leaf-to-air VPD, leaf temperature
 (`= Tₛ`, single-source), and absorbed PAR, with the moisture-stress factor `β(𝒮)`
-read from the ground hydrology (`moisture_stress`, a `Number` or
+read from the ground hydrology (`moisture_stress`, a `Number`, a
+[`PlantAvailableWaterStress`](@ref) — the model meant for transpiration — or a
 [`CriticalSaturation`](@ref)). The conductance is either the photosynthesis-coupled
 [`MedlynConductance`](@ref) (needs a `photosynthesis` model) or the empirical
 [`JarvisConductance`](@ref) (needs none). Absorbed PAR is prescribed
@@ -67,7 +68,9 @@ Fields:
 - `leaf_area_index` : bulk LAI (–), upscales leaf `gₛ` to the canopy.
 - `photosynthesis`  : a [`FarquharPhotosynthesis`](@ref), or `nothing` for Jarvis.
 - `conductance`     : a [`MedlynConductance`](@ref) or [`JarvisConductance`](@ref).
-- `moisture_stress` : `β(𝒮)` model — a `Number` or [`CriticalSaturation`](@ref).
+- `moisture_stress` : `β(𝒮)` model — a `Number`, a [`PlantAvailableWaterStress`](@ref)
+  (wilting-point/field-capacity endpoints, the model meant for a transpiring canopy), or
+  a [`CriticalSaturation`](@ref) (the bare-soil evaporation model).
 - `absorbed_par`    : an [`AbstractAbsorbedPAR`](@ref) (a `Number` is wrapped as prescribed).
 - `atmospheric_co2` : prescribed CO₂ partial pressure (Pa).
 - `phase`           : saturation phase (Liquid).

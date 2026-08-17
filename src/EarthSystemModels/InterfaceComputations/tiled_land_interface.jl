@@ -66,11 +66,11 @@ sets the soil↔canopy-air coupling for the bare tile (defaults to the vegetated
 larger value pushes the soil resistance toward the pure-aerodynamic limit).
 """
 function bare_canopy_air_space(c::CanopyAirSpace; undercanopy_conductance = c.undercanopy_conductance)
-    FT = typeof(c.undercanopy_conductance)
+    FT = typeof(c.leaf_albedo)
     return CanopyAirSpace(c.soil, zero_leaf_area_index_canopy(c.canopy), c.soil_skin_flux,
                           c.leaf_albedo, c.ground_albedo, c.canopy_emissivity_max, c.ground_emissivity,
                           c.extinction, c.clumping, c.leaf_boundary_conductance,
-                          convert(FT, undercanopy_conductance),
+                          undercanopy_conductance_model(undercanopy_conductance, FT),
                           c.inner_iterations, c.relaxation, nothing, c.phase)
 end
 

@@ -228,6 +228,7 @@ end
 @inline interface_hydrology_state(i, j, grid, q::FractionalHumidity, land_state) =
     interface_hydrology_state(i, j, grid, q.efficiency, land_state)
 @inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) = land_saturation(i, j, grid, land_state)
+@inline interface_hydrology_state(i, j, grid, ::PlantAvailableWaterStress, land_state) = land_saturation(i, j, grid, land_state)
 @inline interface_hydrology_state(i, j, grid, ::DryLayerHumidity, land_state) =
     land_saturation(i, j, grid, land_state)
 @inline interface_hydrology_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing

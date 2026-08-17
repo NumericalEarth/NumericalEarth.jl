@@ -9,7 +9,9 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     SoilConductiveFlux, SoilSkinTemperature, canopy_air_space_solve, dry_layer_terms,
     compute_interface_temperature, compute_interface_humidity, interface_temperature_and_humidity,
     saturation_specific_humidity, default_dry_air_molar_mass, AtmosphericThermodynamics,
-    AirLandInterfaceState, InterfaceFluxScales, InterfaceVelocities, AirLandRadiationState
+    AirLandInterfaceState, InterfaceFluxScales, InterfaceVelocities, AirLandRadiationState,
+    ConstantUndercanopyConductance, AreaIndexUndercanopyConductance, undercanopy_conductance,
+    bare_canopy_air_space
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, AtmosphereThermodynamicsParameters
 using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
 using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
@@ -247,5 +249,75 @@ end
         Tc, qc = interface_temperature_and_humidity(cas, cas, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ, ℙₐ, ℙₐ)
         @test Tc === Tₛ
         @test qc === qₛ
+    end
+end
+
+# The ground↔canopy-air conductance is a closure: a bare number keeps the constant
+# behavior bit-for-bit, and the area-index closure responds to canopy density and wind.
+@testset "Undercanopy conductance closures" begin
+    for FT in (Float32, Float64)
+        # A bare number wraps into the constant closure.
+        cas = build_canopy_air_space(FT)
+        @test cas.undercanopy_conductance isa ConstantUndercanopyConductance
+        @test undercanopy_conductance(cas.undercanopy_conductance, FT(3), FT(5), FT(0.3)) === FT(0.013)
+
+        u = AreaIndexUndercanopyConductance(FT)
+        g(LAI, Vₐ, u★) = undercanopy_conductance(u, FT(LAI), FT(Vₐ), FT(u★))
+
+        # Denser canopy shields the ground more strongly; stronger wind ventilates it.
+        @test g(0.5, 3, 0.26) > g(5, 3, 0.26)
+        @test g(3, 5, 0.26) > g(3, 1, 0.26)
+
+        # The sparse-canopy limit binds at the shielding floor and the aerodynamic cap,
+        # never producing an infinity.
+        @test isfinite(g(0, 3, 0.26))
+        @test g(0, 3, 0.26) <= FT(0.26)^2 / 3
+
+        # Stems shield like leaves.
+        u_stems = AreaIndexUndercanopyConductance(FT; stem_area_index = 1)
+        @test undercanopy_conductance(u_stems, FT(1), FT(3), FT(0.26)) < g(1, 3, 0.26)
+
+        # Calm air shuts the exchange down.
+        @test g(3, 0, 0.26) == 0
+    end
+
+    # Number-built and closure-built canopies solve identically; the closure survives
+    # `bare_canopy_air_space`, and the whole solve stays inferred.
+    for FT in (Float32, Float64)
+        ℂ  = AtmosphereThermodynamicsParameters(FT)
+        ℙₐ = (thermodynamics_parameters = ℂ, gravitational_acceleration = FT(9.81))
+        Ψₐ = (z = FT(10), u = FT(3), v = FT(0), T = FT(300), p = FT(101325), q = FT(0.008), h_bℓ = FT(600))
+        Ψᵢ = (u = FT(0), v = FT(0), T = FT(298))
+        Ψᵣ = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(600), FT(350))
+        Ψ(LAI) = AirLandInterfaceState(InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3)),
+                                       InterfaceVelocities(FT(0), FT(0)), FT(300), FT(0.012),
+                                       (saturation = FT(0.3),), (temperature = FT(298),),
+                                       (leaf_area_index = FT(LAI),))
+
+        soil = DryLayerHumidity(FT;
+            dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
+                                dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
+            vapor_exchange = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
+                                molecular_diffusivity = 2.4e-5, tortuosity = ConstantTortuosity()),
+            thermal_exchange_depth = 0.05, porosity = 0.4)
+        canopy = CanopyConductanceHumidity(FT; leaf_area_index = 3.0,
+                                moisture_stress = CriticalSaturation(0.5), absorbed_par = InteractiveAbsorbedPAR(FT))
+        with_undercanopy(gᵘᶜ) = CanopyAirSpace(FT; soil, canopy, undercanopy_conductance = gᵘᶜ)
+
+        number_built  = canopy_air_space_solve(with_undercanopy(0.013), Ψ(3), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+        closure_built = canopy_air_space_solve(with_undercanopy(ConstantUndercanopyConductance(FT(0.013))),
+                                               Ψ(3), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+        @test number_built === closure_built
+
+        area_index_cas = with_undercanopy(AreaIndexUndercanopyConductance(FT))
+        @inferred canopy_air_space_solve(area_index_cas, Ψ(3), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+        @test bare_canopy_air_space(area_index_cas).undercanopy_conductance isa AreaIndexUndercanopyConductance
+
+        # Two-source partition responds to canopy density: under identical forcing the
+        # sparse canopy routes a larger share of the total latent flux through the soil.
+        sparse = canopy_air_space_solve(area_index_cas, Ψ(FT(0.5)), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+        closed = canopy_air_space_solve(area_index_cas, Ψ(FT(5)),   Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+        soil_share(sol) = sol.LEᵍ / (sol.LEᵍ + sol.LEᵛ)
+        @test soil_share(sparse) > soil_share(closed)
     end
 end

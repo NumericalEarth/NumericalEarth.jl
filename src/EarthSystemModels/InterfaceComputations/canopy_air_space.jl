@@ -73,6 +73,103 @@ Base.summary(::CanopyInterception) = "CanopyInterception"
                   zero(FT))
 end
 
+#####
+##### Undercanopy conductance closures — the ground ↔ canopy-air sensible/vapor coupling.
+#####
+
+abstract type AbstractUndercanopyConductance end
+
+"""
+    ConstantUndercanopyConductance(conductance)
+
+Constant ground↔canopy-air aerodynamic conductance `gᵘᶜ` (m s⁻¹), independent of canopy
+density and wind. A bare `Number` passed to [`CanopyAirSpace`](@ref)'s
+`undercanopy_conductance` is wrapped in this closure.
+
+```jldoctest
+using NumericalEarth
+
+ConstantUndercanopyConductance(0.013)
+
+# output
+ConstantUndercanopyConductance(gᵘᶜ=0.013)
+```
+"""
+struct ConstantUndercanopyConductance{FT} <: AbstractUndercanopyConductance
+    conductance :: FT
+end
+
+"""
+    AreaIndexUndercanopyConductance(FT = Oceananigans.defaults.FloatType;
+                                    drag_coefficient = 0.006,
+                                    stem_area_index = 0,
+                                    minimum_shielding = 0.1)
+
+Ground↔canopy-air aerodynamic conductance that responds to canopy density and wind
+(the PALADYN form; [Willeit and Ganopolski (2016)](@cite willeit2016)):
+
+```math
+gᵘᶜ = \\frac{C \\, Vₐ}{\\max\\!\\left(1 - e^{-(LAI + SAI)}, ε\\right)},
+```
+
+with `drag_coefficient` `C`, the surface wind speed `Vₐ`, and the canopy shielding
+`1 − e^{−(LAI+SAI)}` (`stem_area_index` `SAI` counts the leafless woody area). A denser
+canopy shields the ground more strongly and decouples it from the canopy air; a sparse
+canopy (`LAI → 0`) leaves the ground ventilating at the aerodynamic limit, so the result
+is capped at the aerodynamic transfer velocity `u★²/Vₐ` — the ground cannot ventilate to
+the canopy air faster than the canopy air ventilates to the atmosphere. `minimum_shielding`
+(`ε`) floors the shielding so the sparse-canopy limit stays finite.
+
+```jldoctest
+using NumericalEarth
+
+AreaIndexUndercanopyConductance()
+
+# output
+AreaIndexUndercanopyConductance(C=0.006, SAI=0.0, ε=0.1)
+```
+"""
+struct AreaIndexUndercanopyConductance{FT} <: AbstractUndercanopyConductance
+    drag_coefficient  :: FT
+    stem_area_index   :: FT
+    minimum_shielding :: FT
+end
+
+AreaIndexUndercanopyConductance(FT::Type = Oceananigans.defaults.FloatType;
+                                drag_coefficient = 0.006,
+                                stem_area_index = 0,
+                                minimum_shielding = 0.1) =
+    AreaIndexUndercanopyConductance(convert(FT, drag_coefficient),
+                                    convert(FT, stem_area_index),
+                                    convert(FT, minimum_shielding))
+
+Base.summary(u::ConstantUndercanopyConductance) =
+    string("ConstantUndercanopyConductance(gᵘᶜ=", prettysummary(u.conductance), ")")
+Base.show(io::IO, u::ConstantUndercanopyConductance) = print(io, summary(u))
+
+Base.summary(u::AreaIndexUndercanopyConductance) =
+    string("AreaIndexUndercanopyConductance(C=", prettysummary(u.drag_coefficient),
+           ", SAI=", prettysummary(u.stem_area_index),
+           ", ε=", prettysummary(u.minimum_shielding), ")")
+Base.show(io::IO, u::AreaIndexUndercanopyConductance) = print(io, summary(u))
+
+@inline undercanopy_conductance(u::ConstantUndercanopyConductance, LAI, Vₐ, u★) =
+    convert(typeof(LAI), u.conductance)
+
+@inline function undercanopy_conductance(u::AreaIndexUndercanopyConductance, LAI, Vₐ, u★)
+    FT = typeof(LAI)
+    C  = convert(FT, u.drag_coefficient)
+    ε  = convert(FT, u.minimum_shielding)
+    Λ  = LAI + convert(FT, u.stem_area_index)
+    gᵘ = C * Vₐ / max(1 - exp(-Λ), ε)
+    gᵃ = u★^2 / max(Vₐ, eps(FT))
+    return min(gᵘ, gᵃ)
+end
+
+# A bare number is the constant closure; a closure passes through.
+undercanopy_conductance_model(x::Number, FT) = ConstantUndercanopyConductance(convert(FT, x))
+undercanopy_conductance_model(x::AbstractUndercanopyConductance, FT) = x
+
 """
     struct CanopyAirSpace
 
@@ -89,13 +186,15 @@ Fields:
 - `canopy_emissivity_max`, `ground_emissivity` : longwave emissivities (`ε_c = ε_max(1 − e^{−LAI})`).
 - `extinction`, `clumping` : Beer–Lambert `K`, `Ω` for the shortwave split.
 - `leaf_boundary_conductance` : per-leaf boundary-layer conductance `gᵇ` (m s⁻¹) → `gˡʰ = ρcₚ·LAI·gᵇ`.
-- `undercanopy_conductance` : ground↔canopy-air conductance (m s⁻¹) → `gᵍʰ = ρcₚ·gᵘᶜ`.
+- `undercanopy_conductance` : ground↔canopy-air conductance closure → `gᵍʰ = ρcₚ·gᵘᶜ`;
+  a `Number` (m s⁻¹, wrapped as [`ConstantUndercanopyConductance`](@ref)) or an
+  [`AreaIndexUndercanopyConductance`](@ref) that responds to canopy density and wind.
 - `inner_iterations`, `relaxation` : damped-Newton settings for the coupled solve.
 - `interception` : wet-canopy vapor branch parameters (a [`CanopyInterception`](@ref)),
   or `nothing` for a dry canopy (the default; recovers the current CAS bit-for-bit).
 - `phase` : saturation phase (Liquid).
 """
-struct CanopyAirSpace{S, C, RF, FT, I, Φ}
+struct CanopyAirSpace{S, C, RF, FT, U, I, Φ}
     soil                      :: S
     canopy                    :: C
     soil_skin_flux            :: RF
@@ -106,7 +205,7 @@ struct CanopyAirSpace{S, C, RF, FT, I, Φ}
     extinction                :: FT
     clumping                  :: FT
     leaf_boundary_conductance :: FT
-    undercanopy_conductance   :: FT
+    undercanopy_conductance   :: U
     inner_iterations          :: Int
     relaxation                :: FT
     interception              :: I
@@ -135,7 +234,7 @@ function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
                           convert(FT, canopy_emissivity_max), convert(FT, ground_emissivity),
                           convert(FT, extinction), convert(FT, clumping),
                           convert(FT, leaf_boundary_conductance),
-                          convert(FT, undercanopy_conductance),
+                          undercanopy_conductance_model(undercanopy_conductance, FT),
                           inner_iterations, convert(FT, relaxation), interception, phase)
 end
 
@@ -197,9 +296,13 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
     𝒬ᵀ, Δθᵃ = atmospheric_sensible_flux(Ψₛ, Ψₐ, θᵃᵗ, ℂᵃᵗ)
     Jᵃ, Δqᵃ = atmospheric_vapor_flux(Ψₛ, Ψₐ, ℂᵃᵗ)
 
+    # Land surface velocities are zero, so the surface wind speed is the atmospheric one.
+    Vₐ  = sqrt(Ψₐ.u^2 + Ψₐ.v^2)
+    gᵘᶜ = undercanopy_conductance(c.undercanopy_conductance, LAI, Vₐ, Ψₛ.fluxes.u★)
+
     gˡʰ = ρᵃᵗ * cᵖ * LAI * c.leaf_boundary_conductance
-    gᵍʰ = ρᵃᵗ * cᵖ * c.undercanopy_conductance
-    gᵍʷ = ρᵃᵗ * c.undercanopy_conductance   # undercanopy vapor conductance (wet-soil limit)
+    gᵍʰ = ρᵃᵗ * cᵖ * gᵘᶜ
+    gᵍʷ = ρᵃᵗ * gᵘᶜ   # undercanopy vapor conductance (wet-soil limit)
     Λ   = convert(FT, skin_conductance(c.soil_skin_flux))
 
     # Wet-canopy vapor branch. `f_wet` (Deardorff 1978) blends the dry stomatal

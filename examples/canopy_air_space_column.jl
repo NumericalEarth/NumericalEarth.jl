@@ -104,10 +104,12 @@ extinction            = 0.5   # Beer–Lambert K
 clumping              = 1.0   # foliage clumping Ω
 stefan_boltzmann      = 5.670374419e-8
 
-# The critical saturation `𝒮ᶜ` sets where the surface becomes water-limited: below it
-# the canopy is moisture-stressed (`β = 𝒮/𝒮ᶜ`) and the soil's dry layer opens. Both
-# branches share it, so `𝒮 < 𝒮ᶜ` is the "dry, hot, stressed" regime and `𝒮 ≥ 𝒮ᶜ` the
-# "wet, cool, unstressed" one — the contrast the rain pulse toggles.
+# The critical saturation `𝒮ᶜ` sets where the *bare-soil* branch becomes water-limited:
+# below it the soil's dry layer opens and throttles ground evaporation. The canopy's
+# moisture stress is keyed to different water — a `PlantAvailableWaterStress` interpolates
+# `β` between the permanent wilting point and field capacity, both evaluated on the same
+# van Genuchten retention curve the soil hydrology uses, so stomata respond to
+# plant-available water rather than to the fast-drying skin.
 
 critical_saturation = 0.5
 
@@ -174,7 +176,8 @@ intercepting_hydrology(leaf_area_index) = InterceptingHydrology(;
 canopy_with_interception(; leaf_area_index, conductance = MedlynConductance()) = CanopyAirSpace(;
     soil   = soil_branch(),
     canopy = CanopyConductanceHumidity(; leaf_area_index, conductance,
-                                       moisture_stress = CriticalSaturation(critical_saturation),
+                                       moisture_stress = PlantAvailableWaterStress(inverse_air_entry_head = soil_retention_α,
+                                                                                   pore_size_uniformity   = soil_retention_n),
                                        absorbed_par    = InteractiveAbsorbedPAR()),
     soil_skin_flux = SoilConductiveFlux(1.5, 0.05),
     leaf_albedo, ground_albedo, canopy_emissivity_max, ground_emissivity,
