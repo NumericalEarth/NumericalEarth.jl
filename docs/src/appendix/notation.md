@@ -137,6 +137,9 @@ component-superscript rule above.
 | ``g^{uc}`` | `undercanopy_conductance` | undercanopy conductance | Ground↔canopy-air aerodynamic conductance of a `CanopyAirSpace` (m s⁻¹) |
 | ``T^{\mathrm{deep}}`` | `deep_temperature` | deep climatological temperature | Prescribed deep/climatological target temperature for force-restore (K) |
 | ``τ^{\mathrm{deep}}`` | `deep_time_scale` | deep-restore time scale | Time scale of surface relaxation toward ``T^{\mathrm{deep}}`` (s) |
+| ``c^{\mathrm{dry}}`` | `dry_heat_capacity` | dry areal heat capacity | Areal heat capacity of the water-free slab; a `Number` or an `AbstractField` (J m⁻² K⁻¹) |
+| ``c^l`` | `liquid_heat_capacity` | liquid heat capacity | Specific heat capacity of slab liquid water (J kg⁻¹ K⁻¹) |
+| ``c^{\mathrm{la}}`` | – | land areal heat capacity | Water-dependent areal heat capacity ``c^{\mathrm{la}} = c^{\mathrm{dry}} + c^l M`` (J m⁻² K⁻¹) |
 | ``d`` | `surface_thickness` | surface thickness | Thickness of the dry surface layer through which soil vapor diffuses, for `SkinHumidity` (m) |
 | ``κ^q`` | `vapor_diffusivity` | soil vapor diffusivity | Vapor mass diffusivity in the surface soil layer, for `SkinHumidity` (kg m⁻¹ s⁻¹) |
 | ``\chi^{\mathrm{sand}}`` | `sand` | soil sand fraction | Mass fraction of sand grains in the mineral (non-organic) solid matrix (kg kg⁻¹)
