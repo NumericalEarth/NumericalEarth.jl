@@ -1,6 +1,6 @@
 module Oceans
 
-export ocean_simulation, SlabOcean, PrescribedOcean
+export ocean_simulation, river_mouth_vertical_diffusivity, SlabOcean, PrescribedOcean
 
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
@@ -13,7 +13,7 @@ using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, set!, interior
 using Oceananigans.Forcings: MultipleForcings, DiscreteForcing
-using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, RectilinearGrid
+using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, znodes, RectilinearGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition, MutableGridOfSomeKind
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
@@ -22,7 +22,7 @@ using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids,
 using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TimeSteppers: Clock
-using Oceananigans.TurbulenceClosures: κzᶜᶜᶠ
+using Oceananigans.TurbulenceClosures: κzᶜᶜᶠ, VerticalScalarDiffusivity
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
                                                                      CATKEEquation

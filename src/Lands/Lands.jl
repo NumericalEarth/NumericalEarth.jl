@@ -4,7 +4,11 @@ export AbstractLand,
        PrescribedLand,
        RiverRouting,
        build_river_routing,
+       build_flux_routing,
        coastal_outlet_indices,
+       ever_positive_mask,
+       outlet_indices_from_mask,
+       source_cell_areas,
        # Composable container
        SlabLand,
        # Energy-balance closures
