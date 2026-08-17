@@ -12,9 +12,28 @@ lookups however wide the window is. That is what makes an *expanding* stencil af
 the search grows its radius until the donor count reaches `minimum_donors`, and growing by
 one ring costs a handful of table lookups rather than thousands of cell visits.
 
+    ┌───┬───┬───┬───┬───┐
+    │ ░ │ ░ │ ░ │ ░ │ ░ │     Blocks of `block_size`² cells. The stencil opens
+    ├───┼───┼───┼───┼───┤     `initial_radius` blocks (▒) around the block holding the
+    │ ░ │ ▒ │ ▒ │ ▒ │ ░ │     target cell ●, and adds a ring (░) whenever some period
+    ├───┼───┼───┼───┼───┤     still holds fewer than `minimum_donors` same-class cells,
+    │ ░ │ ▒ │ ● │ ▒ │ ░ │     up to `maximum_radius`.
+    ├───┼───┼───┼───┼───┤
+    │ ░ │ ▒ │ ▒ │ ▒ │ ░ │
+    ├───┼───┼───┼───┼───┤
+    │ ░ │ ░ │ ░ │ ░ │ ░ │
+    └───┴───┴───┴───┴───┘
+
 The radius that satisfies `minimum_donors` is a property of the block and the class, so
 each donor curve is computed once and cached — corrected per cell only by removing that
 cell's own contribution, which would otherwise bias its scaling toward one.
+
+Built with `BlockDonorTable(𝒜, class_index, Nclasses; ...)` from the series and a matrix
+giving each cell's class index (`0` marks cells in no class, which join no pool): one pass
+bins every valid value into its (block, class, period) slot, and a second turns the block
+totals into prefix sums over the block indices. Both arrays carry a leading row and column
+of zeros so `window_total`'s four-corner difference needs no boundary branch, which puts
+block `(bi, bj)` at array index `(bi + 1, bj + 1)`.
 """
 struct BlockDonorTable{S, C}
     sums :: S
@@ -27,8 +46,8 @@ struct BlockDonorTable{S, C}
     curves :: Dict{Tuple{Int, Int, Int}, Tuple{Vector{Float64}, Vector{Int}, Int}}
 end
 
-function block_donor_table(𝒜, class_index, Nclasses;
-                           block_size, initial_radius, maximum_radius, minimum_donors)
+function BlockDonorTable(𝒜, class_index, Nclasses;
+                         block_size, initial_radius, maximum_radius, minimum_donors)
 
     Nx, Ny, Nt = size(𝒜)
     Nbx, Nby = cld(Nx, block_size), cld(Ny, block_size)
@@ -42,12 +61,14 @@ function block_donor_table(𝒜, class_index, Nclasses;
         c == 0 && continue
         value = 𝒜[i, j, t]
         isnan(value) && continue
+        # +1 for the block index, +1 again past the guard row of zeros at index 1.
         bi = (i - 1) ÷ block_size + 2
         bj = (j - 1) ÷ block_size + 2
         sums[bi, bj, c, t] += value
         counts[bi, bj, c, t] += 1
     end
 
+    # In-place 2-D prefix sums over the block indices, per class and period.
     for t in 1:Nt, c in 1:Nc, bj in 2:(Nby + 1), bi in 2:(Nbx + 1)
         sums[bi, bj, c, t] += sums[bi - 1, bj, c, t] + sums[bi, bj - 1, c, t] -
                               sums[bi - 1, bj - 1, c, t]
@@ -61,6 +82,16 @@ function block_donor_table(𝒜, class_index, Nclasses;
                            maximum_radius, minimum_donors, curves)
 end
 
+# Summed-area lookup: `prefix` accumulates over both block indices, so the total over the
+# window of blocks i₁:i₂ × j₁:j₂ is a four-corner difference, whatever the window's size —
+#
+#            j₁-1        j₂
+#     i₁-1 ───A───────────B
+#             │ ░░░░░░░░░ │        Σ(window) = D − B − C + A
+#             │ ░░░░░░░░░ │
+#     i₂   ───C───────────D
+#
+# with each corner at array index (block index + 1), past the guard row of zeros.
 @inline window_total(prefix, i₁, i₂, j₁, j₂, c, t) =
     @inbounds prefix[i₂ + 1, j₂ + 1, c, t] - prefix[i₁, j₂ + 1, c, t] -
               prefix[i₂ + 1, j₁, c, t] + prefix[i₁, j₁, c, t]
@@ -127,13 +158,26 @@ end
 The donor pool of a date-dependent fill: each cell's own climatological curve, read at the
 period each target time falls in — preserving the cell's magnitude and seasonal shape, and
 borrowing nothing spatially.
+
+Built with `AnchorDonorPool(anchor, anchor_periods, Nt, spatial)`: `anchor` is the
+climatology (a `FieldTimeSeries` or an array whose last dimension is its periods), checked
+against the series' `spatial` size, and `anchor_periods` gives the anchor period each of
+the series' `Nt` times falls in — or `nothing` for cyclic reuse:
+
+    series time    1   2   3   ⋯   46  47  48   ⋯   92     (two years of 8-day composites)
+                   ↓   ↓   ↓        ↓   ↓   ↓         ↓
+    anchor period  1   2   3   ⋯   46   1   2   ⋯   46     (the climatology's cycle)
+
+Cyclic reuse pins series time 1 to anchor period 1, so it is refused unless the series
+covers whole cycles — a series opening mid-year would sit under the wrong periods with no
+error to show for it.
 """
 struct AnchorDonorPool{A}
     anchor :: A
     periods :: Vector{Int}
 end
 
-function anchor_donor_pool(anchor, anchor_periods, Nt, spatial)
+function AnchorDonorPool(anchor, anchor_periods, Nt, spatial)
     𝒜̄ = seasonal_array(anchor)
     size(𝒜̄)[1:2] == spatial ||
         throw(ArgumentError("The anchor climatology is $(size(𝒜̄)[1:2]) but the series is " *
@@ -142,9 +186,6 @@ function anchor_donor_pool(anchor, anchor_periods, Nt, spatial)
     Na = size(𝒜̄, 3)
 
     if isnothing(anchor_periods)
-        # Cyclic reuse maps time 1 onto anchor period 1, which is only an alignment when the
-        # series opens the cycle and covers whole cycles: a June-to-December window would
-        # otherwise borrow January's leaf-off curve for July with no error to show for it.
         mod(Nt, Na) == 0 ||
             throw(ArgumentError("The series has $Nt times and the anchor $Na periods, so their " *
                                 "alignment cannot be inferred. Pass `anchor_periods`, the anchor " *

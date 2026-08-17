@@ -346,9 +346,9 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
 
     # Built after the temporal stage, so a neighbor's short bridged gap is available as a donor.
     pool = isnothing(anchor) ?
-        block_donor_table(𝒜, class_index, length(classes_present);
-                          block_size, initial_radius, maximum_radius, minimum_donors) :
-        anchor_donor_pool(anchor, anchor_periods, Nt, (Nx, Ny))
+        BlockDonorTable(𝒜, class_index, length(classes_present);
+                        block_size, initial_radius, maximum_radius, minimum_donors) :
+        AnchorDonorPool(anchor, anchor_periods, Nt, (Nx, Ny))
 
     curve = zeros(Float64, Nt)
 

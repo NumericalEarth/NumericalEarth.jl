@@ -74,14 +74,20 @@ end
     write_atomically(write!, filepath)
 
 Call `write!(staging_path)` with a staging path unique to this writer in `filepath`'s
-directory, then rename the staged file into place. The staging directory keeps the rename
-on one filesystem, and the unique name keeps concurrent writers of the same file from
-truncating each other's staging file and publishing a half-written result.
+directory, then rename the staged file into place. Readers treat an existing file as a
+complete one, so a file must never appear under `filepath` half-written: the staging
+directory keeps the rename on one filesystem (a true rename, not a copy), the unique name
+keeps concurrent writers of the same file from truncating each other's staging file, and a
+failed `write!` removes its staging file instead of leaving debris in the cache.
 """
 function write_atomically(write!, filepath)
     staging_path = tempname(dirname(filepath); cleanup = false) * splitext(filepath)[2]
-    write!(staging_path)
-    mv(staging_path, filepath; force = true)
+    try
+        write!(staging_path)
+        mv(staging_path, filepath; force = true)
+    finally
+        rm(staging_path; force = true)
+    end
     return filepath
 end
 
