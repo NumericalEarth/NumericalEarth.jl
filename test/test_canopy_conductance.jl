@@ -62,6 +62,10 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
         @test gs_str < gs_ref                    # moisture stress closes stomata
         @test gs_drk ≈ cond.g0 atol=1e-3         # no light → minimum conductance
         @test eltype(gs_ref) == FT
+
+        # The intercellular CO₂ is the closed-form Medlyn optimality ratio.
+        @test ci_ref ≈ ca * cond.g1 / (cond.g1 + sqrt(FT(1000)))
+        @inferred stomatal_conductance(cond, photo, FT(1e-3), FT(1000), Tₗ, ca, P, FT(1))
     end
 end
 

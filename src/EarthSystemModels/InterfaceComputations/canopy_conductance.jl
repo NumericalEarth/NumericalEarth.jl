@@ -5,21 +5,22 @@
 ##### it puts a *canopy (stomatal) conductance* `g_c = LAI · g_s` in series with
 ##### the aerodynamic conductance and solves the same surface vapor-flux balance
 ##### for `qˢ` inside the Monin–Obukhov fixed point. The stomatal conductance
-##### `g_s` is the photosynthesis-coupled optimality conductance of
-##### [Medlyn et al. (2011)](@cite medlyn2011), driven by the net CO₂ assimilation
-##### `Aₙ` of the [Farquhar et al. (1980)](@cite farquhar1980) model — the dominant
-##### lever on the Bowen ratio, the sensible/latent partition an atmosphere-coupled
-##### simulation reads from the land.
+##### `g_s` — the dominant lever on the Bowen ratio, the sensible/latent partition
+##### an atmosphere-coupled simulation reads from the land — comes from a pluggable
+##### model: the empirical Jarvis form (default), or the photosynthesis-coupled
+##### optimality conductance of [Medlyn et al. (2011)](@cite medlyn2011) driven by
+##### the net CO₂ assimilation `Aₙ` of the
+##### [Farquhar et al. (1980)](@cite farquhar1980) model.
 #####
 ##### Grounded in ClimaLand (Deck et al. 2026, JAMES, App. C–E): the series
 ##### resistance network `r_stomata + r_ae` (Eqs E15–E17), the Farquhar
 ##### co-limitation (Eqs C1–C5), and the Medlyn conductance. The whole path is
 ##### Enzyme/Reactant-friendly.
 #####
-##### The stomatal conductance is pluggable: the photosynthesis-coupled
-##### [`MedlynConductance`](@ref) (default) or the empirical, closed-form
-##### [`JarvisConductance`](@ref), both behind `AbstractStomatalConductance`
-##### (see `stomatal_conductance.jl`). The photosynthesis model lives in
+##### The stomatal conductance is pluggable: the empirical, closed-form
+##### [`JarvisConductance`](@ref) (default — needs neither photosynthesis nor CO₂)
+##### or the photosynthesis-coupled [`MedlynConductance`](@ref), both behind
+##### `AbstractStomatalConductance` (see `stomatal_conductance.jl`). The photosynthesis model lives in
 ##### `photosynthesis.jl` and absorbed PAR in `absorbed_par.jl`: either prescribed
 ##### ([`PrescribedAbsorbedPAR`](@ref), the offline default) or recomputed each step
 ##### from the downwelling shortwave ([`InteractiveAbsorbedPAR`](@ref)), so the
@@ -53,9 +54,9 @@ solves a soil-resistance balance. The stomatal conductance `gₛ` comes from the
 (`= Tₛ`, single-source), and absorbed PAR, with the moisture-stress factor `β(𝒮)`
 read from the ground hydrology (`moisture_stress`, a `Number`, a
 [`PlantAvailableWaterStress`](@ref) — the model meant for transpiration — or a
-[`CriticalSaturation`](@ref)). The conductance is either the photosynthesis-coupled
-[`MedlynConductance`](@ref) (needs a `photosynthesis` model) or the empirical
-[`JarvisConductance`](@ref) (needs none). Absorbed PAR is prescribed
+[`CriticalSaturation`](@ref)). The conductance is either the empirical
+[`JarvisConductance`](@ref) (default; needs no `photosynthesis` model) or the
+photosynthesis-coupled [`MedlynConductance`](@ref). Absorbed PAR is prescribed
 ([`PrescribedAbsorbedPAR`](@ref)) or live from the radiation state
 ([`InteractiveAbsorbedPAR`](@ref)); CO₂ is prescribed.
 
@@ -67,7 +68,7 @@ water store — no separate transpiration wiring is needed.
 Fields:
 - `leaf_area_index` : bulk LAI (–), upscales leaf `gₛ` to the canopy.
 - `photosynthesis`  : a [`FarquharPhotosynthesis`](@ref), or `nothing` for Jarvis.
-- `conductance`     : a [`MedlynConductance`](@ref) or [`JarvisConductance`](@ref).
+- `conductance`     : a [`JarvisConductance`](@ref) (default) or [`MedlynConductance`](@ref).
 - `moisture_stress` : `β(𝒮)` model — a `Number`, a [`PlantAvailableWaterStress`](@ref)
   (wilting-point/field-capacity endpoints, the model meant for a transpiring canopy), or
   a [`CriticalSaturation`](@ref) (the bare-soil evaporation model).
@@ -94,7 +95,7 @@ end
 function CanopyConductanceHumidity(FT=Oceananigans.defaults.FloatType;
                                    leaf_area_index = 2,
                                    photosynthesis  = nothing,
-                                   conductance     = MedlynConductance(FT),
+                                   conductance     = JarvisConductance(FT),
                                    moisture_stress = 1,
                                    absorbed_par    = 4e-4,
                                    atmospheric_co2 = 40,

@@ -26,8 +26,8 @@
 #
 # 1. **Leaf-area index** — a bare surface (`LAI = 0`, the smooth bare-ground limit),
 #    a moderate canopy (`LAI = 2`), and a dense one (`LAI = 4`).
-# 2. **Stomatal conductance** — the photosynthesis-coupled [`MedlynConductance`](@ref)
-#    (2011) versus the empirical multiplicative [`JarvisConductance`](@ref) (1976).
+# 2. **Stomatal conductance** — the empirical multiplicative [`JarvisConductance`](@ref)
+#    (1976, the default) versus the photosynthesis-coupled [`MedlynConductance`](@ref) (2011).
 #
 # A final section adds **subgrid tiling** ([`TiledLandInterface`](@ref)), sweeping the
 # bare-soil fraction of a vegetation/bare mosaic that shares the same soil and store.
@@ -173,7 +173,7 @@ intercepting_hydrology(leaf_area_index) = InterceptingHydrology(;
 # branch, moisture stress, PAR, skin flux, and optics, so we build the canopy once and
 # vary only the leaf-area index and the stomatal `conductance`.
 
-canopy_with_interception(; leaf_area_index, conductance = MedlynConductance()) = CanopyAirSpace(;
+canopy_with_interception(; leaf_area_index, conductance = JarvisConductance()) = CanopyAirSpace(;
     soil   = soil_branch(),
     canopy = CanopyConductanceHumidity(; leaf_area_index, conductance,
                                        moisture_stress = PlantAvailableWaterStress(inverse_air_entry_head = soil_retention_α,
@@ -290,16 +290,17 @@ applied_rain(model) = scalar(model.interfaces.exchanger.atmosphere.state.Jʳⁿ)
 Nsteps = 6 * 144                     # 6 days
 times  = range(0, Nsteps * Δt, step = 1hour)
 
-# The bare/moderate/dense sweep runs Medlyn; the dense case is repeated with Jarvis so
-# the two conductance models can be compared at fixed LAI.
+# The bare/moderate/dense sweep runs the default Jarvis conductance; the dense case is
+# repeated with the photosynthesis-coupled Medlyn so the two models can be compared at
+# fixed LAI.
 
 medlyn = MedlynConductance()
 jarvis = JarvisConductance()
 
-bare     = canopy_air_space_column(leaf_area_index = 0.0, conductance = medlyn, label = "bare (LAI 0)")
-moderate = canopy_air_space_column(leaf_area_index = 2.0, conductance = medlyn, label = "moderate (LAI 2)")
-dense    = canopy_air_space_column(leaf_area_index = 4.0, conductance = medlyn, label = "dense (LAI 4)")
-dense_j  = canopy_air_space_column(leaf_area_index = 4.0, conductance = jarvis, label = "dense, Jarvis")
+bare     = canopy_air_space_column(leaf_area_index = 0.0, conductance = jarvis, label = "bare (LAI 0)")
+moderate = canopy_air_space_column(leaf_area_index = 2.0, conductance = jarvis, label = "moderate (LAI 2)")
+dense    = canopy_air_space_column(leaf_area_index = 4.0, conductance = jarvis, label = "dense (LAI 4)")
+dense_m  = canopy_air_space_column(leaf_area_index = 4.0, conductance = medlyn, label = "dense, Medlyn")
 
 # ## Radiation partition (reconstructed from the stored surface temperatures)
 #
@@ -352,7 +353,7 @@ end
 
 # ## Figure 1 — anatomy of the dense canopy through the rain pulse
 #
-# The full component breakdown for the dense (`LAI = 4`, Medlyn) column: how each
+# The full component breakdown for the dense (`LAI = 4`, Jarvis) column: how each
 # temperature, radiative share, turbulent flux, and water variable responds before,
 # during, and after the pulse (shaded band).
 
@@ -452,12 +453,12 @@ linkxaxes!(ax, axP)
 lines!(axP, t, mm_per_day(ref.P); color = :skyblue, linewidth = 2)
 
 ## (5,2) Water state — surface saturation and the storage it tracks; the pulse pins
-## 𝒮 at 1, then evaporation draws it back down through the moisture-stress onset 𝒮ᶜ.
+## 𝒮 at 1, then evaporation draws it back down through the dry-layer onset 𝒮ᶜ.
 ax = Axis(fig[5, 2]; title = "Water state", xlabel = "t (days)",
           ylabel = "saturation 𝒮", ylabelcolor = :darkorange, yticklabelcolor = :darkorange)
 mark_pulse!(ax)
 lines!(ax, t, ref.𝒮; color = :darkorange, linewidth = 2, label = "𝒮")
-hlines!(ax, [critical_saturation]; color = :gray, linestyle = :dash, label = "moisture-stress onset 𝒮ᶜ")
+hlines!(ax, [critical_saturation]; color = :gray, linestyle = :dash, label = "dry-layer onset 𝒮ᶜ")
 ylims!(ax, 0, 1.05)
 axislegend(ax; position = :rc, labelsize = 12)
 axM = twin_axis(fig[5, 2]; ylabel = "soil storage (kg m⁻²)", color = :navy)
@@ -465,7 +466,7 @@ linkxaxes!(ax, axM)
 lines!(axM, t, ref.M; color = :navy, linestyle = :dot)
 ylims!(axM, 0, 1.05 * maximum(ref.M))
 
-Label(fig[0, 1:2], "Canopy-air-space column — dense canopy (LAI 4, Medlyn), rain pulse on day 2", fontsize = 22)
+Label(fig[0, 1:2], "Canopy-air-space column — dense canopy (LAI 4, Jarvis), rain pulse on day 2", fontsize = 22)
 
 save("canopy_air_space_column.png", fig)
 @info "Saved canopy_air_space_column.png"
@@ -476,17 +477,17 @@ nothing #hide
 
 # ## Figure 2 — turning the two knobs
 #
-# The left column sweeps leaf-area index (bare → dense, all Medlyn); the right column
-# fixes `LAI = 4` and swaps Medlyn for Jarvis stomata. The rows follow the two-source
+# The left column sweeps leaf-area index (bare → dense, all Jarvis); the right column
+# fixes `LAI = 4` and swaps Jarvis for Medlyn stomata. The rows follow the two-source
 # partition: leaf temperature, transpiration (the leaf latent share), soil evaporation
 # (the ground latent share), and the surface saturation the drydown reads out. Raising
 # LAI shifts the latent flux from bare-soil evaporation toward transpiration — the total
-# stays energy-limited while its *sources* trade places — and Jarvis transpires
-# differently from Medlyn at the same LAI.
+# stays energy-limited while its *sources* trade places — and Medlyn transpires
+# differently from Jarvis at the same LAI.
 
 lai_cases  = (bare, moderate, dense)
 lai_colors = (:saddlebrown, :seagreen, :darkgreen)
-con_cases  = (dense, dense_j)
+con_cases  = (dense, dense_m)
 con_colors = (:darkgreen, :purple)
 
 fig = Figure(size = (1500, 1500), fontsize = 17)
@@ -502,18 +503,18 @@ function knob_panel(cell, cases, colors, field, title, ylabel; transform = ident
 end
 
 knob_panel(fig[1, 1], lai_cases, lai_colors, :Tᵛ, "Leaf temperature — LAI sweep", "Tᵛ (K)")
-knob_panel(fig[1, 2], con_cases, con_colors, :Tᵛ, "Leaf temperature — Medlyn vs Jarvis", "Tᵛ (K)")
+knob_panel(fig[1, 2], con_cases, con_colors, :Tᵛ, "Leaf temperature — Jarvis vs Medlyn", "Tᵛ (K)")
 
 knob_panel(fig[2, 1], lai_cases, lai_colors, :transpiration, "Transpiration — LAI sweep", "transpiration (W m⁻²)")
-knob_panel(fig[2, 2], con_cases, con_colors, :transpiration, "Transpiration — Medlyn vs Jarvis", "transpiration (W m⁻²)")
+knob_panel(fig[2, 2], con_cases, con_colors, :transpiration, "Transpiration — Jarvis vs Medlyn", "transpiration (W m⁻²)")
 
 knob_panel(fig[3, 1], lai_cases, lai_colors, :LEᵍ, "Soil evaporation — LAI sweep", "LEᵍ (W m⁻²)")
-knob_panel(fig[3, 2], con_cases, con_colors, :LEᵍ, "Soil evaporation — Medlyn vs Jarvis", "LEᵍ (W m⁻²)")
+knob_panel(fig[3, 2], con_cases, con_colors, :LEᵍ, "Soil evaporation — Jarvis vs Medlyn", "LEᵍ (W m⁻²)")
 
 ax = knob_panel(fig[4, 1], lai_cases, lai_colors, :𝒮, "Surface saturation — LAI sweep", "𝒮"; legend = :rc)
 hlines!(ax, [critical_saturation]; color = :gray, linestyle = :dash)
 ylims!(ax, 0, 1.05)
-ax = knob_panel(fig[4, 2], con_cases, con_colors, :𝒮, "Surface saturation — Medlyn vs Jarvis", "𝒮"; legend = :rc)
+ax = knob_panel(fig[4, 2], con_cases, con_colors, :𝒮, "Surface saturation — Jarvis vs Medlyn", "𝒮"; legend = :rc)
 hlines!(ax, [critical_saturation]; color = :gray, linestyle = :dash)
 ylims!(ax, 0, 1.05)
 
