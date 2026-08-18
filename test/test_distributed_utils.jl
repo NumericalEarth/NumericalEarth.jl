@@ -6,6 +6,7 @@ MPI.Init()
 using CFTime
 using Dates
 using NCDatasets
+using NumericalEarth.Bathymetry: Interpolate
 using NumericalEarth.DataWrangling: metadata_path
 using Oceananigans.DistributedComputations
 using Oceananigans.DistributedComputations: reconstruct_global_grid
@@ -75,9 +76,8 @@ end
                                         latitude = (0, 20),
                                         z = (0, 1))
 
-    interpolation_passes = 4
     global_height = regrid_bathymetry(global_grid, TrivialBathymetry_metadata;
-                                      interpolation_passes)
+                                      method = Interpolate(4))
 
     arch_x  = Distributed(CPU(), partition=Partition(4, 1))
     arch_y  = Distributed(CPU(), partition=Partition(1, 4))
@@ -91,7 +91,7 @@ end
                                            z = (0, 1))
 
         local_height = regrid_bathymetry(local_grid, TrivialBathymetry_metadata;
-                                         interpolation_passes)
+                                         method = Interpolate(4))
 
         Nx, Ny, _ = size(local_grid)
         rx, ry, _ = arch.local_index

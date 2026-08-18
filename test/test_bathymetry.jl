@@ -6,7 +6,10 @@ using NumericalEarth.Bathymetry: remove_minor_basins!,
                                  BathymetryRegridding,
                                  cache_filename,
                                  load_bathymetry_cache,
-                                 save_bathymetry_cache
+                                 save_bathymetry_cache,
+                                 Interpolate,
+                                 Averaging,
+                                 MedianAveraging
 using NumericalEarth.DataWrangling.ETOPO
 using Statistics
 
@@ -69,10 +72,15 @@ using Statistics
                                      z = (-6000, 0))
 
         control_bottom_height = regrid_bathymetry(grid)
-        interpolated_bottom_height = regrid_bathymetry(grid; interpolation_passes=10)
+        interpolated_bottom_height = regrid_bathymetry(grid; method=Interpolate(10))
 
         # Testing that multiple passes _do_ change the solution when coarsening the grid
         @test parent(control_bottom_height) != parent(interpolated_bottom_height)
+
+        averaged_bottom_height = regrid_bathymetry(grid; method=Averaging())
+
+        # Testing that averaging does change the solution when coarsening the grid
+        @test parent(control_bottom_height) != parent(averaged_bottom_height)
     end
 end
 
@@ -94,7 +102,7 @@ end
     @test hash(config1) == hash(config2)
 
     # Test that different parameters produce different configs
-    config3 = BathymetryRegridding(grid, metadata; interpolation_passes=5)
+    config3 = BathymetryRegridding(grid, metadata; method=Interpolate(5))
     @test config1 != config3
     @test hash(config1) != hash(config3)
 
@@ -137,7 +145,7 @@ end
     @test parent(result1) == parent(result2)
 
     # Different parameters should produce different results (cache invalidation)
-    result3 = regrid_bathymetry(grid; cache=true, interpolation_passes=5)
+    result3 = regrid_bathymetry(grid; cache=true, method=Interpolate(5))
     @test parent(result1) != parent(result3)
 
     # cache=false should still produce correct results

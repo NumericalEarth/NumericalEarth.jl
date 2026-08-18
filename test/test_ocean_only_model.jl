@@ -1,6 +1,7 @@
 include("runtests_setup.jl")
 
 using CUDA
+using NumericalEarth.Bathymetry: Interpolate
 using Oceananigans.OrthogonalSphericalShellGrids
 
 @testset "OceanOnly Time stepping test" begin
@@ -39,7 +40,7 @@ using Oceananigans.OrthogonalSphericalShellGrids
 
         bottom_height = regrid_bathymetry(grid;
                                           minimum_depth = 10,
-                                          interpolation_passes = 5,
+                                          method = Interpolate(5),
                                           major_basins = 1)
 
         grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
