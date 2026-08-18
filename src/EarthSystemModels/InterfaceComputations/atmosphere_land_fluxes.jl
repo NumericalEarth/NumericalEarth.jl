@@ -39,22 +39,11 @@ end
 # The atmosphere-facing interface temperature. A single field for the ordinary
 # closures; a `CanopyAirSpace` additionally needs the two diagnostic skins, the
 # skin→slab ground heat flux, and the two-source (leaf/ground) sensible and latent
-# shares, so it carries a NamedTuple of fields — the presence of that NamedTuple is
-# the signal downstream (`slab_land.jl`, `apply_air_land_radiative_fluxes.jl`) that the
-# radiation is internalized and the slab is driven by conduction.
+# shares, so it carries a [`CanopyAirSpaceDiagnostics`](@ref) — the type is the signal
+# downstream (`slab_land.jl`, `apply_air_land_radiative_fluxes.jl`) that the radiation
+# is internalized and the slab is driven by conduction.
 @inline build_interface_temperature(temperature_formulation, grid) = Field{Center, Center, Nothing}(grid)
-@inline build_interface_temperature(::CanopyAirSpace, grid) =
-    (interface              = Field{Center, Center, Nothing}(grid),   # canopy-air node Tᵃᶜ (what MOST sees)
-     canopy                 = Field{Center, Center, Nothing}(grid),   # leaf temperature Tᵛ
-     soil_skin              = Field{Center, Center, Nothing}(grid),   # soil-skin temperature Tⁱⁿ
-     effective              = Field{Center, Center, Nothing}(grid),   # radiating (LST) temperature Teff
-     ground_heat_flux        = Field{Center, Center, Nothing}(grid),   # skin→bulk conduction Gcond
-     canopy_latent_heat     = Field{Center, Center, Nothing}(grid),   # leaf transpiration LEᵛ
-     soil_latent_heat       = Field{Center, Center, Nothing}(grid),   # soil evaporation LEᵍ
-     canopy_sensible_heat   = Field{Center, Center, Nothing}(grid),   # leaf sensible Hᵛ
-     soil_sensible_heat     = Field{Center, Center, Nothing}(grid),   # ground sensible Hᵍ
-     canopy_evaporation     = Field{Center, Center, Nothing}(grid),   # wet-canopy evaporation E_wet (kg m⁻² s⁻¹, up)
-     canopy_wet_latent_heat = Field{Center, Center, Nothing}(grid))   # wet-canopy latent heat ℒ·E_wet (W m⁻², up)
+@inline build_interface_temperature(::CanopyAirSpace, grid) = CanopyAirSpaceDiagnostics(grid)
 
 # Store the diagnostic surface temperature(s) from the converged interface state.
 # Ordinary closures write the single skin temperature; a `CanopyAirSpace` re-runs its

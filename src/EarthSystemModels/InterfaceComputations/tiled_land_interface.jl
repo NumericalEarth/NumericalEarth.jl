@@ -39,7 +39,7 @@ Fields:
 - `bare`        : the bare-soil tile, an `AtmosphereInterface` with a canopy-free `CanopyAirSpace`.
 - `fraction`    : `f_veg ∈ [0, 1]` — a `Number`, `Field`, or `FieldTimeSeries`.
 - `fluxes`      : the blended [`AtmosphereSurfaceFluxes`](@ref) the atmosphere/slab read.
-- `temperature` : the blended diagnostic temperatures/fluxes (a `CanopyAirSpace`-shaped NamedTuple).
+- `temperature` : the blended diagnostic temperatures/fluxes (a [`CanopyAirSpaceDiagnostics`](@ref)).
 """
 struct TiledLandInterface{V, B, F, FL, T}
     vegetated   :: V

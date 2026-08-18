@@ -65,14 +65,14 @@ build_diagnostic_accumulators(grid, energy, hydrology) =
     build_closure_fields(diagnostic_variables, initial_diagnostic, grid, energy, hydrology)
 
 """
-    build_extra_prognostics(grid, energy, hydrology)
+    build_closure_prognostics(grid, energy, hydrology)
 
-Allocate the `NamedTuple` of *extra* prognostic `Field`s a closure declares beyond
-the container's hardcoded `temperature`/`water_storage` (e.g. an
+Allocate the `NamedTuple` of closure-declared prognostic `Field`s beyond the
+container's own `temperature`/`water_storage` (e.g. an
 [`InterceptingHydrology`](@ref)'s `canopy_water_storage`), sized from each
 closure's `prognostic_variables`. Empty (`(;)`) when no closure declares any.
 """
-build_extra_prognostics(grid, energy, hydrology) =
+build_closure_prognostics(grid, energy, hydrology) =
     build_closure_fields(prognostic_variables, initial_prognostic, grid, energy, hydrology)
 
 #####
@@ -148,7 +148,7 @@ function SlabLand(grid;
     saturation    = CenterField(grid)
     fluxes        = build_flux_accumulators(grid, energy, hydrology)
     diagnostics   = build_diagnostic_accumulators(grid, energy, hydrology)
-    prognostic    = build_extra_prognostics(grid, energy, hydrology)
+    prognostic    = build_closure_prognostics(grid, energy, hydrology)
     FT            = eltype(grid)
     return SlabLand{FT}(grid, clock, temperature, water_storage, saturation,
                         fluxes, diagnostics, prognostic, energy, hydrology)
@@ -363,10 +363,10 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
 end
 
 @inline ground_heat_flux_field(temperature) = nothing
-@inline ground_heat_flux_field(temperature::NamedTuple) = temperature.ground_heat_flux
+@inline ground_heat_flux_field(temperature::CanopyAirSpaceDiagnostics) = temperature.ground_heat_flux
 
 @inline canopy_evaporation_field(temperature) = nothing
-@inline canopy_evaporation_field(temperature::NamedTuple) = temperature.canopy_evaporation
+@inline canopy_evaporation_field(temperature::CanopyAirSpaceDiagnostics) = temperature.canopy_evaporation
 
 # Additive identity for the no-interception path so `Jᵛ − E_wet` stays `Jᵛ` bit-for-bit.
 @inline canopy_evaporation_value(::Nothing, i, j) = false

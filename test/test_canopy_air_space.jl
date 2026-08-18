@@ -11,7 +11,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     saturation_specific_humidity, default_dry_air_molar_mass, AtmosphericThermodynamics,
     AirLandInterfaceState, InterfaceFluxScales, InterfaceVelocities, AirLandRadiationState,
     ConstantUndercanopyConductance, AreaIndexUndercanopyConductance, undercanopy_conductance,
-    bare_canopy_air_space
+    bare_canopy_air_space, CanopyAirSpaceDiagnostics
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, AtmosphereThermodynamicsParameters
 using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
 using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
@@ -60,8 +60,9 @@ end
         ali = model.interfaces.atmosphere_land_interface
         Ts = ali.temperature
 
-        # The CAS interface carries its diagnostic temperatures as a NamedTuple of fields.
-        @test Ts isa NamedTuple
+        # The CAS interface carries its diagnostic temperatures and flux shares as a
+        # `CanopyAirSpaceDiagnostics` — the type downstream consumers dispatch on.
+        @test Ts isa CanopyAirSpaceDiagnostics
         Tᵃᶜ = Array(interior(Ts.interface))[1, 1, 1]
         Tᵛ  = Array(interior(Ts.canopy))[1, 1, 1]
         Tⁱⁿ = Array(interior(Ts.soil_skin))[1, 1, 1]

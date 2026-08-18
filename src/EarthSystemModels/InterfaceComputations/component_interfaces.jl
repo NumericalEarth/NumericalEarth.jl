@@ -226,7 +226,7 @@ Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
 # A `CanopyAirSpace` interface stores several diagnostic temperature fields as a
 # NamedTuple; the atmosphere-facing surface temperature is the canopy-air node.
 @inline interface_node_temperature(t) = t
-@inline interface_node_temperature(t::NamedTuple) = t.interface
+@inline interface_node_temperature(t::CanopyAirSpaceDiagnostics) = t.interface
 EarthSystemModels.surface_temperature(al_interface::AtmosphereInterface) = interface_node_temperature(al_interface.temperature)
 EarthSystemModels.surface_temperature(interfaces::ComponentInterfaces) =
     EarthSystemModels.surface_temperature(interfaces.atmosphere_land_interface)

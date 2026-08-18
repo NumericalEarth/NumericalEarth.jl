@@ -422,3 +422,36 @@ end
     sol = canopy_air_space_solve(c, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     return sol.Tᵃᶜ, sol.qᵃᶜ
 end
+
+"""
+    struct CanopyAirSpaceDiagnostics
+
+The atmosphere-facing `temperature` slot of a [`CanopyAirSpace`](@ref) interface: the
+canopy-air node temperature the atmosphere sees, the per-source diagnostic temperatures,
+and the two-source flux shares of the coupled solve. Downstream consumers dispatch on
+this type — it signals that radiation is internalized in the soil-skin balance and the
+slab is driven by the skin→bulk conduction (`ground_heat_flux`) rather than by a
+separately added radiative flux.
+"""
+struct CanopyAirSpaceDiagnostics{F}
+    interface              :: F   # canopy-air node Tᵃᶜ (what MOST sees)
+    canopy                 :: F   # leaf temperature Tᵛ
+    soil_skin              :: F   # soil-skin temperature Tⁱⁿ
+    effective              :: F   # radiating (LST) temperature Teff
+    ground_heat_flux       :: F   # skin→bulk conduction Gcond
+    canopy_latent_heat     :: F   # leaf transpiration LEᵛ
+    soil_latent_heat       :: F   # soil evaporation LEᵍ
+    canopy_sensible_heat   :: F   # leaf sensible Hᵛ
+    soil_sensible_heat     :: F   # ground sensible Hᵍ
+    canopy_evaporation     :: F   # wet-canopy evaporation E_wet (kg m⁻² s⁻¹, up)
+    canopy_wet_latent_heat :: F   # wet-canopy latent heat ℒ·E_wet (W m⁻², up)
+end
+
+CanopyAirSpaceDiagnostics(grid) =
+    CanopyAirSpaceDiagnostics(ntuple(_ -> Field{Center, Center, Nothing}(grid),
+                                     Val(fieldcount(CanopyAirSpaceDiagnostics)))...)
+
+Adapt.@adapt_structure CanopyAirSpaceDiagnostics
+
+Base.summary(::CanopyAirSpaceDiagnostics) = "CanopyAirSpaceDiagnostics"
+Base.show(io::IO, d::CanopyAirSpaceDiagnostics) = print(io, summary(d))

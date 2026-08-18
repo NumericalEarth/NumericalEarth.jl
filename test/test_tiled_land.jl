@@ -7,7 +7,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyAirSpace, CanopyConductanceHumidity, DryLayerHumidity, StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity, ConstantTortuosity, CriticalSaturation, InteractiveAbsorbedPAR,
     SoilConductiveFlux, TiledLandInterface, bare_canopy_air_space, leaf_area_index_cover_fraction,
-    SimilarityTheoryFluxes, atmosphere_land_stability_functions
+    SimilarityTheoryFluxes, atmosphere_land_stability_functions, CanopyAirSpaceDiagnostics
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
 using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
@@ -69,7 +69,7 @@ scalar(field) = Array(interior(field))[1, 1, 1]
         # --- Blended output is finite, physical, and drives the slab by conduction. ---
         model = tiled_land_model(arch, cas; fraction = 0.6)
         ti = model.interfaces.atmosphere_land_interface
-        @test ti.temperature isa NamedTuple
+        @test ti.temperature isa CanopyAirSpaceDiagnostics
 
         𝒬ᵀ = scalar(ti.fluxes.sensible_heat)
         𝒬ᵛ = scalar(ti.fluxes.latent_heat)
