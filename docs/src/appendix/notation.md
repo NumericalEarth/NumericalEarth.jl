@@ -259,6 +259,12 @@ because ``\alpha`` is albedo here, and the drag ratio is written out as ``C^R/C^
 | ``\alpha`` | `α` | albedo | Surface reflectivity (–) |
 | ``\epsilon`` | `ϵ` | emissivity | Surface emissivity (–) |
 
+## Vegetation properties
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``𝒜`` | `𝒜` | leaf area index | One-sided leaf area per unit ground area (m² m⁻²) |
+
 ## Similarity theory / surface layer
 
 Monin–Obukhov surface-layer symbols. The default roughness lengths and stability functions

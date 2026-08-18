@@ -35,6 +35,7 @@ if filter_tests!(testsuite, args)
     delete!(testsuite, "test_ghsl_downloading")
     delete!(testsuite, "test_esaworldcover_downloading")
     delete!(testsuite, "test_ethsentinel2canopy_downloading")
+    delete!(testsuite, "test_modis_land_downloading")
     delete!(testsuite, "test_distributed_utils")
     delete!(testsuite, "test_reactant")
     delete!(testsuite, "test_veros") # Veros seems to have introduce a pypi conflict issue; temporarily removing from CI

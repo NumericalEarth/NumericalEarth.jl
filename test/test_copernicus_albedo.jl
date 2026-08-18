@@ -1,10 +1,11 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_grid,
+using NumericalEarth.DataWrangling: BoundingBox, Metadata, Metadatum, native_grid,
     is_three_dimensional, default_inpainting,
     dataset_variable_name, metadata_filename,
-    longitude_name, latitude_name, all_dates,
-    longitude_interfaces, latitude_interfaces
+    longitude_name, latitude_name, all_dates, native_times,
+    longitude_interfaces, latitude_interfaces,
+    sample_window, sample_bounds, time_window_offset, spans_whole_cycle
 using NumericalEarth.DataWrangling.CopernicusLandAlbedo: bluesky_blend, copernicus_albedo_decode,
     copernicus_albedo_dekadal_dates, albedo_satellite,
     albedo_cds_request_variables,
@@ -49,6 +50,46 @@ end
     climatology_dates = all_dates(CopernicusAlbedoClimatology(), :albedo)
     @test length(climatology_dates) == 12
     @test month.(climatology_dates) == 1:12
+end
+
+@testset "Copernicus land albedo sample windows" begin
+    dataset = CopernicusAlbedo()
+    dekad(date) = Metadatum(:albedo; dataset, date)
+
+    # A dekad is stamped on its last day, so its value belongs four days earlier — the first
+    # two dekads of a month are ten days, the third is whatever the month has left.
+    @test sample_window(dekad(DateTime(2019, 7, 10))) == (DateTime(2019, 7, 1), DateTime(2019, 7, 11))
+    @test sample_window(dekad(DateTime(2019, 7, 20))) == (DateTime(2019, 7, 11), DateTime(2019, 7, 21))
+    @test sample_window(dekad(DateTime(2019, 7, 31))) == (DateTime(2019, 7, 21), DateTime(2019, 8, 1))
+    @test sample_window(dekad(DateTime(2019, 2, 28))) == (DateTime(2019, 2, 21), DateTime(2019, 3, 1))
+
+    @test time_window_offset(dekad(DateTime(2019, 7, 10))) == -4 * 86400
+    @test time_window_offset(dekad(DateTime(2019, 7, 20))) == -4 * 86400
+    @test time_window_offset(dekad(DateTime(2019, 7, 31))) == -4.5 * 86400
+
+    # The stamps close their windows, but the windows tile time, so the bounds are the
+    # window edges whatever the stamp convention.
+    @test sample_bounds(Metadata(:albedo; dataset, dates = [DateTime(2019, 7, 10),
+                                                            DateTime(2019, 7, 20)])) ==
+          [DateTime(2019, 7, 1), DateTime(2019, 7, 11), DateTime(2019, 7, 21)]
+
+    # A climatological month is the mean of the month it is stamped at the start of, so its
+    # value sits mid-month and the twelve stamps tile a year.
+    climatology = CopernicusAlbedoClimatology()
+    january = Metadatum(:albedo; dataset = climatology, date = DateTime(2018, 1, 1))
+    @test sample_window(january) == (DateTime(2018, 1, 1), DateTime(2018, 2, 1))
+    @test time_window_offset(january) == 15.5 * 86400
+
+    months = Metadata(:albedo; dataset = climatology)
+    @test sample_bounds(months) == [all_dates(climatology, :albedo); DateTime(2019, 1, 1)]
+
+    # A whole climatology wraps onto itself, so `Cyclical()` needs no coverage warning.
+    @test spans_whole_cycle(months)
+    @test !spans_whole_cycle(Metadata(:albedo; dataset))
+
+    times = native_times(months)
+    @test times[1] == 15.5 * 86400
+    @test times[2] == (31 + 14) * 86400
 end
 
 @testset "Copernicus land albedo interface" begin

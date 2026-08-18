@@ -161,6 +161,14 @@ export
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
     ESAWorldCover, WorldCoverVersion, WorldCoverV100, WorldCoverV200,
     ETHSentinel2CanopyHeight, canopy_height_field,
+    MCD15A2H, MCD12Q1, MODISLAIClimatology, build_lai_climatology!,
+    retained_retrieval_metadatum,
+    lai_screening_mask, recommended_lai_screening,
+    mask_lai_landcover, modis_landcover_class_names,
+    landcover_class_names, igbp_class_names, igbp_non_vegetated_classes,
+    class_fraction, class_fractions,
+    class_maximum_gap, zero_non_vegetated!,
+    period_index, composite_window,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
@@ -193,6 +201,11 @@ export
     meridional_heat_transport,
     location,
     native_grid,
+    fill_gaps!,
+    fill_seasonal_gaps!,
+    gap_fill_provenance,
+    gap_fill_denial,
+    time_average,
     natural_earth_lines,
     surface_elevation,
     exchange_state!,
@@ -329,6 +342,7 @@ using .DataWrangling.CopernicusLandAlbedo
 using .DataWrangling.OpenLandMap
 using .DataWrangling.GloBFP3D
 using .DataWrangling.GHSL
+using .DataWrangling.MODISLand
 using .DataWrangling.WorldCover
 
 using PrecompileTools: @setup_workload, @compile_workload
