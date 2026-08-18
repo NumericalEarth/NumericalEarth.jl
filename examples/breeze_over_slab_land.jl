@@ -90,8 +90,8 @@ hydrology = VariablySaturatedHydrology(eltype(land_grid);
     porosity = 0.4,
     residual_liquid_fraction = 0.05,
     storage_height = 1000,
-    retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
-    hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-7, n = 2.0),
+    retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
+    hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-7, pore_size_uniformity = 2.0),
     deep_liquid_flux = NoDeepLiquidFlux(),
     runoff = InfiltrationCapacityRunoff(infiltration_capacity = 1e-3))
 

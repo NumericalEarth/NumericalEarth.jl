@@ -128,8 +128,14 @@ export
     InterceptingHydrology,
     SurfaceWaterStore,
     VanGenuchtenRetention, VanGenuchtenConductivity,
+    capillary_disconnect_saturation, WaterViscosity, viscosity_correction,
+    CosbyConductivity,
+    saturated_conductivity, conductivity_spread,
     NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
     NoRunoff, InfiltrationCapacityRunoff,
+    PedotransferFunction, WeynantsPedotransfer, WeynantsRegression,
+    HYPRESPedotransfer, HYPRESRegression,
+    soil_hydraulic_parameters, soil_hydraulic_properties, layer_weights, layer_depths,
     # Aerodynamic roughness closures
     compute_aerodynamic_roughness!, aerodynamic_parameters,
     # Canopy (drag partition)

@@ -15,8 +15,8 @@ pond_test_grid(arch, FT) = RectilinearGrid(arch, FT; size = 1, x = (0, 1), y = (
 
 soil_hydrology(FT; infiltration_capacity = 1e-3) = VariablySaturatedHydrology(FT;
     slab_depth = 1.0, porosity = 0.4, storage_height = 1000,
-    retention_curve = VanGenuchtenRetention(FT; α = 1.0, n = 2.0),
-    hydraulic_conductivity = VanGenuchtenConductivity(FT; K_saturated = 1e-6, n = 2.0),
+    retention_curve = VanGenuchtenRetention(FT; inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
+    hydraulic_conductivity = VanGenuchtenConductivity(FT; matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
     deep_liquid_flux = NoDeepLiquidFlux(),
     runoff = InfiltrationCapacityRunoff(FT; infiltration_capacity))
 

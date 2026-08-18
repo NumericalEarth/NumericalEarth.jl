@@ -149,8 +149,8 @@ initial_soil_storage    = (initial_soil_saturation * (soil_porosity - soil_resid
 variably_saturated_soil() = VariablySaturatedHydrology(;
     slab_depth = soil_slab_depth, porosity = soil_porosity,
     residual_liquid_fraction = soil_residual_fraction, storage_height = 1000,
-    retention_curve        = VanGenuchtenRetention(α = soil_retention_α, n = soil_retention_n),
-    hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = soil_conductivity_saturated, n = soil_retention_n),
+    retention_curve        = VanGenuchtenRetention(inverse_air_entry_head = soil_retention_α, pore_size_uniformity = soil_retention_n),
+    hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = soil_conductivity_saturated, pore_size_uniformity = soil_retention_n),
     deep_liquid_flux       = NoDeepLiquidFlux(),
     runoff                 = InfiltrationCapacityRunoff(infiltration_capacity = 5e-4))
 
