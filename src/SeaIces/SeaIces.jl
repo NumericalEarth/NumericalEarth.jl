@@ -1,6 +1,7 @@
 module SeaIces
 
-export sea_ice_simulation, FreezingLimitedOceanTemperature
+export sea_ice_simulation, FreezingLimitedOceanTemperature,
+       LandfastBasalStress, SeaIceBottomStress
 
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: architecture
@@ -10,7 +11,7 @@ using Oceananigans.Fields: Field, ZeroField
 using Oceananigans.Grids: inactive_node, Face, Center
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryCondition
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
-using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
+using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ, Δxᶜᶜᶜ, Δyᶜᶜᶜ
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TimeSteppers: Clock
@@ -23,6 +24,7 @@ using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, Componen
                                                  ThreeEquationHeatFlux
 
 include("freezing_limited_ocean_temperature.jl")
+include("landfast_basal_stress.jl")
 include("sea_ice_simulation.jl")
 include("assemble_net_sea_ice_fluxes.jl")
 

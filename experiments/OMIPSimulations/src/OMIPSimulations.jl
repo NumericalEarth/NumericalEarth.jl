@@ -11,7 +11,7 @@ using NumericalEarth
 using NumericalEarth.Oceans: ocean_simulation, default_ocean_closure
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities:
     CATKEVerticalDiffusivity, CATKEMixingLength, CATKEEquation
-using NumericalEarth.SeaIces: sea_ice_simulation
+using NumericalEarth.SeaIces: sea_ice_simulation, LandfastBasalStress
 using NumericalEarth.EarthSystemModels: OceanSeaIceModel,
     SimilarityTheoryFluxes,
     LinearStableStabilityFunction,
@@ -84,6 +84,7 @@ include("boundary_value_transport.jl")
 include("mixed_layer_tapering.jl")
 include("bottom_boundary_layer.jl")
 include("advective_bottom_boundary_layer.jl")
+include("overflow_restoring.jl")
 include("omip_simulation.jl")
 include("report_fields.jl")
 include("strait_transports.jl")

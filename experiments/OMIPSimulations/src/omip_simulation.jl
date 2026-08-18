@@ -619,6 +619,9 @@ function omip_simulation(config::Symbol = :halfdegree;
                          Cᵂu★ = nothing,
                          with_snow = false,
                          with_ice_dynamics = true,
+                         with_landfast_basal_stress = true,
+                         sea_ice_lateral_boundary_condition = :no_slip,
+                         sea_ice_ocean_drag_coefficient = 5.5e-3,
                          partial_cell_bathymetry = false,
                          mixed_layer_tapering = false,
                          normalize_salinity = true,
@@ -631,6 +634,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          river_spread_cells = ConfigDefault(),
                          bbl_diffusivity = nothing,
                          bbl_transport_coefficient = nothing,
+                         overflow_restoring_timescale = nothing,
                          diagnostics = true,
                          field_mean_interval = 5days,
                          surface_averaging_interval = 5days,
@@ -697,7 +701,10 @@ function omip_simulation(config::Symbol = :halfdegree;
     advective_forcing, advective_bottom_boundary_layer =
         advective_bottom_boundary_layer_forcing(grid, bbl_transport_coefficient)
 
-    ocean_forcing = merge_tracer_forcings(diffusive_forcing, advective_forcing)
+    restoring_forcing = overflow_restoring_forcing(grid, overflow_restoring_timescale)
+
+    ocean_forcing = merge_tracer_forcings(merge_tracer_forcings(diffusive_forcing, advective_forcing),
+                                          restoring_forcing)
 
     ocean = build_ocean(cfg, grid;
                         forcing = ocean_forcing,
@@ -723,7 +730,9 @@ function omip_simulation(config::Symbol = :halfdegree;
                         start_date, end_date)
 
     snow_thermodynamics = with_snow ? NumericalEarth.SeaIces.default_snow_thermodynamics(grid) : nothing
-    sea_ice = build_sea_ice(cfg, grid, ocean; restoring_dir, snow_thermodynamics, with_ice_dynamics)
+    sea_ice = build_sea_ice(cfg, grid, ocean; restoring_dir, snow_thermodynamics, with_ice_dynamics,
+                            with_landfast_basal_stress, sea_ice_lateral_boundary_condition,
+                            sea_ice_ocean_drag_coefficient)
 
     atmosphere, radiation = omip_forcing(arch, sea_ice;
                                          forcing_dir = atmosphere_dir,
@@ -1408,10 +1417,23 @@ end
 ##### Sea Ice builder
 #####
 
-function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics = nothing, with_ice_dynamics = true)
-    dynamics = with_ice_dynamics ? NumericalEarth.SeaIces.sea_ice_dynamics(grid, ocean) : nothing
+function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics = nothing,
+                       with_ice_dynamics = true,
+                       with_landfast_basal_stress = true,
+                       sea_ice_lateral_boundary_condition = :no_slip,
+                       sea_ice_ocean_drag_coefficient = 5.5e-3)
+
+    basal_stress = with_landfast_basal_stress ? LandfastBasalStress(eltype(grid)) : nothing
+
+    dynamics = if with_ice_dynamics
+        NumericalEarth.SeaIces.sea_ice_dynamics(grid, ocean; basal_stress, sea_ice_ocean_drag_coefficient)
+    else
+        nothing
+    end
+
     sea_ice = sea_ice_simulation(grid, ocean;
                                  advection = ClimaSeaIce.IncrementalRemapping(),
+                                 lateral_boundary_condition = sea_ice_lateral_boundary_condition,
                                  dynamics,
                                  snow_thermodynamics)
 

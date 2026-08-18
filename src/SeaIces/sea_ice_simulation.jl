@@ -18,12 +18,51 @@ default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
 ocean_reference_density(ocean::Simulation, FT) = convert(FT, reference_density(ocean))
 ocean_reference_density(::Nothing, FT) = convert(FT, 1026.0)
 
-@inline ϕ²(i, j, k, grid, ϕ)    = @inbounds ϕ[i, j, k]^2
-@inline spᶠᶜᶜ(i, j, k, grid, Φ) = @inbounds sqrt(Φ.u[i, j, k]^2 + ℑxyᶠᶜᵃ(i, j, k, grid, ϕ², Φ.v))
-@inline spᶜᶠᶜ(i, j, k, grid, Φ) = @inbounds sqrt(Φ.v[i, j, k]^2 + ℑxyᶜᶠᵃ(i, j, k, grid, ϕ², Φ.u))
+# Viscous stress at a no-slip lateral wall, σ = -2 η u / Δ, with η = ζ / e² read from the rheology's
+# own auxiliaries. A quadratic drag law cannot stand in for no-slip here: the ice viscosity is
+# O(10⁹) N s m⁻¹, so the viscous wall stress exceeds a Cᴰ u |u| law by roughly eight orders of
+# magnitude. The wall viscosity is capped so the implied damping rate r = 2η/(Δ² mᵢ) satisfies
+# r Δτ ≤ 1/4 with Δτ = Δt / α, because the lateral stress is explicit within the momentum substep.
+@inline function wall_viscosity(i, j, grid, Φ, Δ, p)
+    mᵢ = @inbounds Φ.h[i, j, 1] * Φ.ℵ[i, j, 1] * Φ.ρ[i, j, 1]
+    α  = @inbounds Φ.α[i, j, 1]
+    η  = @inbounds Φ.ζᶜᶜᶜ[i, j, 1] / p.e^2
+    return min(η, Δ^2 * mᵢ * α / (4 * p.Δt))
+end
 
-@inline u_immersed_side_drag(i, j, k, grid, clock, Φ, μ) = @inbounds - μ * Φ.u[i, j, k] * spᶠᶜᶜ(i, j, k, grid, Φ)
-@inline v_immersed_side_drag(i, j, k, grid, clock, Φ, μ) = @inbounds - μ * Φ.v[i, j, k] * spᶜᶠᶜ(i, j, k, grid, Φ)
+@inline function u_immersed_no_slip(i, j, k, grid, clock, Φ, p)
+    Δy = Δyᶜᶜᶜ(i, j, k, grid)
+    η  = wall_viscosity(i, j, grid, Φ, Δy, p)
+    return @inbounds - 2 * η * Φ.u[i, j, k] / Δy
+end
+
+@inline function v_immersed_no_slip(i, j, k, grid, clock, Φ, p)
+    Δx = Δxᶜᶜᶜ(i, j, k, grid)
+    η  = wall_viscosity(i, j, grid, Φ, Δx, p)
+    return @inbounds - 2 * η * Φ.v[i, j, k] / Δx
+end
+
+lateral_boundary_conditions(grid, ::Val{:free_slip}, dynamics, Δt) =
+    (u = correct_tripolar_bcs(grid, FieldBoundaryConditions(grid, (Face(), Center(), nothing))),
+     v = correct_tripolar_bcs(grid, FieldBoundaryConditions(grid, (Center(), Face(), nothing))))
+
+# Without a momentum equation the rheology auxiliaries the no-slip stress reads do not exist.
+lateral_boundary_conditions(grid, ::Val{:no_slip}, ::Nothing, Δt) =
+    lateral_boundary_conditions(grid, Val(:free_slip), nothing, Δt)
+
+function lateral_boundary_conditions(grid, ::Val{:no_slip}, dynamics, Δt)
+    FT = eltype(grid)
+    p = (e = convert(FT, dynamics.rheology.yield_curve_eccentricity), Δt = convert(FT, Δt))
+
+    u_bc = FluxBoundaryCondition(u_immersed_no_slip, discrete_form=true, parameters=p)
+    v_bc = FluxBoundaryCondition(v_immersed_no_slip, discrete_form=true, parameters=p)
+
+    immersed_u_bc = ImmersedBoundaryCondition(south=u_bc, north=u_bc)
+    immersed_v_bc = ImmersedBoundaryCondition(west=v_bc,  east=v_bc)
+
+    return (u = correct_tripolar_bcs(grid, FieldBoundaryConditions(grid, (Face(), Center(), nothing); immersed = immersed_u_bc)),
+            v = correct_tripolar_bcs(grid, FieldBoundaryConditions(grid, (Center(), Face(), nothing); immersed = immersed_v_bc)))
+end
 
 function default_snow_thermodynamics(grid)
     FT = eltype(grid)
@@ -55,6 +94,7 @@ end
                        ice_consolidation_thickness = 0.05, # m
                        sea_ice_density = 900, # kg m⁻³
                        snow_density = 330, # kg m⁻³
+                       lateral_boundary_condition = :no_slip,
                        dynamics = sea_ice_dynamics(grid, ocean),
                        bottom_heat_boundary_condition = nothing,
                        top_heat_boundary_condition = nothing,
@@ -94,6 +134,9 @@ Keyword Arguments
 - `ice_consolidation_thickness`: thickness threshold for sea ice consolidation (m)
 - `sea_ice_density`: density of the sea ice (kg m⁻³)
 - `snow_density`: density of the snow (kg m⁻³)
+- `lateral_boundary_condition`: `:no_slip` (default) applies the viscous wall stress `-2 η u / Δ`
+                                on immersed lateral boundaries, arresting ice against coastlines and
+                                through narrow channels; `:free_slip` leaves them stress-free
 - `dynamics`: sea ice dynamics model to use (default is `sea_ice_dynamics(grid, ocean)`)
 - `bottom_heat_boundary_condition`: heat boundary condition at the ice-ocean interface (default
                                     is `IceWaterThermalEquilibrium` with ocean surface salinity)
@@ -119,7 +162,7 @@ function sea_ice_simulation(grid, ocean=nothing;
                             ice_consolidation_thickness = 0.05, # m
                             sea_ice_density = 900, # kg m⁻³
                             snow_density = 330, # kg m⁻³
-                            side_drag_coefficient = 3e-3,
+                            lateral_boundary_condition = :no_slip,
                             dynamics = sea_ice_dynamics(grid, ocean),
                             bottom_heat_boundary_condition = nothing,
                             top_heat_boundary_condition = nothing,
@@ -158,15 +201,7 @@ function sea_ice_simulation(grid, ocean=nothing;
     top_heat_flux    = Field{Center, Center, Nothing}(grid)
     snowfall         = Field{Center, Center, Nothing}(grid)
 
-    side_drag_coefficient = convert(eltype(grid), side_drag_coefficient)
-    u_bc = FluxBoundaryCondition(u_immersed_side_drag, discrete_form=true, parameters=side_drag_coefficient)
-    v_bc = FluxBoundaryCondition(v_immersed_side_drag, discrete_form=true, parameters=side_drag_coefficient)
-
-    immersed_u_bc = ImmersedBoundaryCondition(south=u_bc, north=u_bc)
-    immersed_v_bc = ImmersedBoundaryCondition(west=v_bc,  east=v_bc)
-
-    u_bcs = correct_tripolar_bcs(grid, FieldBoundaryConditions(grid, (Face(), Center(), nothing); immersed = immersed_u_bc))
-    v_bcs = correct_tripolar_bcs(grid, FieldBoundaryConditions(grid, (Center(), Face(), nothing); immersed = immersed_v_bc))
+    velocity_bcs = lateral_boundary_conditions(grid, Val(lateral_boundary_condition), dynamics, Δt)
 
     # Build the sea ice model
     sea_ice_model = SeaIceModel(grid;
@@ -184,7 +219,7 @@ function sea_ice_simulation(grid, ocean=nothing;
                                 dynamics,
                                 timestepper,
                                 bottom_heat_flux,
-                                boundary_conditions = (u=u_bcs, v=v_bcs),
+                                boundary_conditions = velocity_bcs,
                                 top_heat_flux)
 
     verbose = false
@@ -197,7 +232,8 @@ default_coriolis(ocean::Simulation) = ocean.model.coriolis
 default_coriolis(ocean::Nothing) = HydrostaticSphericalCoriolis(; rotation_rate=default_rotation_rate)
 
 function sea_ice_dynamics(grid, ocean=nothing;
-                          sea_ice_ocean_drag_coefficient = 3.24e-3,
+                          sea_ice_ocean_drag_coefficient = 5.5e-3,
+                          basal_stress = LandfastBasalStress(eltype(grid)),
                           rheology = ElastoViscoPlasticRheology(),
                           coriolis = default_coriolis(ocean),
                           free_drift = nothing,
@@ -208,7 +244,8 @@ function sea_ice_dynamics(grid, ocean=nothing;
     sea_ice_ocean_drag_coefficient = convert(FT, sea_ice_ocean_drag_coefficient)
     ρₑ = ocean_reference_density(ocean, FT)
 
-    τo  = SemiImplicitStress(uₑ=SSU, vₑ=SSV, Cᴰ=sea_ice_ocean_drag_coefficient, ρₑ=ρₑ)
+    τo = SemiImplicitStress(uₑ=SSU, vₑ=SSV, Cᴰ=sea_ice_ocean_drag_coefficient, ρₑ=ρₑ)
+    τb = SeaIceBottomStress(τo, basal_stress)
 
     velocity_grid = maybe_extended_grid(solver, grid)
 
@@ -222,7 +259,7 @@ function sea_ice_dynamics(grid, ocean=nothing;
     return SeaIceMomentumEquation(velocity_grid;
                                   coriolis,
                                   top_momentum_stress = (u=τua, v=τva),
-                                  bottom_momentum_stress = τo,
+                                  bottom_momentum_stress = τb,
                                   rheology,
                                   free_drift,
                                   solver)

@@ -5,18 +5,19 @@
 # Ported from NEMO `src/OCE/TRA/trabbl.F90`, `tra_bbl_adv` with `nn_bbl_adv = 2`.
 #
 # The diffusive scheme in `bottom_boundary_layer.jl` exchanges tracer between the two bottom cells
-# either side of a step. A symmetric exchange drives both cells to their volume-weighted mean, so the
-# density delivered downslope is capped by the volume ratio of the two cells no matter how large the
-# coefficient — on the eORCA1 Denmark Strait the cap is σθ = 27.878 against the 27.902 needed to fill
-# the abyss. This scheme instead closes an overturning circuit, which has no such cap:
+# either side of a step, and sends the deep *bottom* water back up to the shelf in return — so the
+# shelf is progressively contaminated by the abyssal water the scheme has just made. This one closes an
+# overturning circuit instead:
 #
 #   1. dense shelf water enters the *bottom* cell of the deep column,
 #   2. the water it displaces is advected up the deep column, level by level,
 #   3. and returns to the shelf at the shelf's own level.
 #
-# The deep bottom cell therefore relaxes towards the shelf value rather than towards a mean: it is
-# flushed, not mixed. The transport follows Campin & Goosse, `u = γ g (ρˢ - ρᵈ) / ρ₀`, so it is a
-# reduced-gravity plume speed and switches itself off as the contrast is consumed.
+# so the water returning to the shelf is ambient from the shelf's own level, and the displaced abyssal
+# water leaves upward through the deep column. Both schemes relax the deep bottom cell towards the shelf
+# density; they differ in the return path and in the transport law. Campin & Goosse set
+# `u = γ g (ρˢ - ρᵈ) / ρ₀`, a reduced-gravity plume speed that switches itself off as the contrast is
+# consumed, where the diffusive coefficient has no such scaling.
 
 using Oceananigans
 using Oceananigans.Architectures: architecture
@@ -175,32 +176,37 @@ end
 ##### Tendency
 #####
 
-# The three limbs of the overturning circuit, for one step and one cell. Written so the three cases are
-# mutually exclusive and sum to zero over the cells the circuit touches, which is what makes the scheme
-# conservative in the volume integral.
-@inline function overturning_limb(c, Q, iˢ, jˢ, kˢ, iᵈ, jᵈ, kᵈ, i, j, k, grid)
-
-    kˢ⁺ = max(kˢ, 1)
-    kᵈ⁺ = max(kᵈ, 1)
-
-    @inbounds begin
-        cˢ  = c[iˢ, jˢ, kˢ⁺]            # shelf bottom cell, the dense source
-        cᵈˢ = c[iᵈ, jᵈ, kˢ⁺]            # deep column at the shelf's own level, the return water
-        cᵈ  = c[iᵈ, jᵈ, kᵈ⁺]            # deep bottom cell, the destination
-        cᵏ  = c[iᵈ, jᵈ, max(k, 1)]
-        cᵏ⁻ = c[iᵈ, jᵈ, max(k - 1, 1)]  # one level deeper
-    end
+# Every limb of the circuit has the same shape, `Q * (c[source] - c[self])`; only the source index
+# differs. Resolving the three cases as an *index* rather than as three candidate values costs integer
+# arithmetic instead of two discarded tracer reads, which matters because this runs on every cell of the
+# domain for every tracer: five reads per limb becomes one.
+#
+#   shelf bottom  : source is the deep column at the shelf's own level, the return water
+#   deep column   : source is one level deeper, the displaced water rising
+#   deep bottom   : source is the shelf bottom cell, the dense water arriving
+#
+# The three cases are mutually exclusive and, summed over the cells the circuit touches, telescope to
+# zero — which is what makes the scheme conservative in the volume integral.
+@inline function limb_source(iˢ, jˢ, kˢ, iᵈ, jᵈ, kᵈ, i, j, k)
 
     on_shelf  = (i == iˢ) & (j == jˢ) & (k == kˢ)
     in_column = (i == iᵈ) & (j == jᵈ) & (k > kᵈ) & (k <= kˢ)
     on_deep   = (i == iᵈ) & (j == jᵈ) & (k == kᵈ)
 
-    return ifelse(on_shelf,  Q * (cᵈˢ - cˢ),
-           ifelse(in_column, Q * (cᵏ⁻ - cᵏ),
-           ifelse(on_deep,   Q * (cˢ  - cᵈ), zero(grid))))
+    iₛ = ifelse(on_shelf, iᵈ, ifelse(on_deep, iˢ, i))
+    jₛ = ifelse(on_shelf, jᵈ, ifelse(on_deep, jˢ, j))
+    kₛ = ifelse(on_shelf, kˢ, ifelse(on_deep, kˢ, max(k - 1, 1)))
+
+    return on_shelf | in_column | on_deep, iₛ, jₛ, kₛ
 end
 
-@inline function x_overturning_limb(c, bbl, grid, iface, i, j, k)
+@inline function overturning_limb(c, cᶜ, Q, iˢ, jˢ, kˢ, iᵈ, jᵈ, kᵈ, i, j, k, grid)
+    active, iₛ, jₛ, kₛ = limb_source(iˢ, jˢ, kˢ, iᵈ, jᵈ, kᵈ, i, j, k)
+    cₛ = @inbounds c[iₛ, jₛ, kₛ]
+    return ifelse(active, Q * (cₛ - cᶜ), zero(grid))
+end
+
+@inline function x_overturning_limb(c, cᶜ, bbl, grid, iface, i, j, k)
     Q = @inbounds bbl.transport_x[iface, j, 1]
 
     kᴸ = bottom_level(bbl, iface,   j)
@@ -210,10 +216,10 @@ end
     iˢ = ifelse(left_is_shelf, iface,   iface+1)
     iᵈ = ifelse(left_is_shelf, iface+1, iface)
 
-    return overturning_limb(c, Q, iˢ, j, kˢ, iᵈ, j, kᵈ, i, j, k, grid)
+    return overturning_limb(c, cᶜ, Q, iˢ, j, kˢ, iᵈ, j, kᵈ, i, j, k, grid)
 end
 
-@inline function y_overturning_limb(c, bbl, grid, jface, i, j, k)
+@inline function y_overturning_limb(c, cᶜ, bbl, grid, jface, i, j, k)
     Q = @inbounds bbl.transport_y[i, jface, 1]
 
     kᴰ = bottom_level(bbl, i, jface)
@@ -223,7 +229,7 @@ end
     jˢ = ifelse(down_is_shelf, jface,   jface+1)
     jᵈ = ifelse(down_is_shelf, jface+1, jface)
 
-    return overturning_limb(c, Q, i, jˢ, kˢ, i, jᵈ, kᵈ, i, j, k, grid)
+    return overturning_limb(c, cᶜ, Q, i, jˢ, kˢ, i, jᵈ, kᵈ, i, j, k, grid)
 end
 
 """
@@ -239,11 +245,12 @@ weighted and Oceananigans' is not. `Δz` is evaluated live so the metric follows
 
     bbl = parameters.bottom_boundary_layer
     c   = tracer_field(fields, parameters.tracer_name)
+    cᶜ  = @inbounds c[i, j, k]
 
-    transport = x_overturning_limb(c, bbl, grid, i,   i, j, k) +
-                x_overturning_limb(c, bbl, grid, i-1, i, j, k) +
-                y_overturning_limb(c, bbl, grid, j,   i, j, k) +
-                y_overturning_limb(c, bbl, grid, j-1, i, j, k)
+    transport = x_overturning_limb(c, cᶜ, bbl, grid, i,   i, j, k) +
+                x_overturning_limb(c, cᶜ, bbl, grid, i-1, i, j, k) +
+                y_overturning_limb(c, cᶜ, bbl, grid, j,   i, j, k) +
+                y_overturning_limb(c, cᶜ, bbl, grid, j-1, i, j, k)
 
     volume = Azᶜᶜᶜ(i, j, k, grid) * Δzᶜᶜᶜ(i, j, k, grid)
 
@@ -290,21 +297,20 @@ function advective_bottom_boundary_layer_forcing(grid, transport_coefficient)
 end
 
 """
-    merge_tracer_forcings(forcings...)
+    merge_tracer_forcings(first, second)
 
-Combine per-tracer forcing `NamedTuple`s, collecting any tracer named by more than one of them into a
-tuple. Oceananigans materializes a tuple of forcings into `MultipleForcings`, so the two bottom boundary
-layer schemes can run together: the diffusive one suppresses the instability that erodes the plume, the
+Combine two per-tracer forcing `NamedTuple`s, pairing any tracer named by both into a tuple.
+Oceananigans materializes a tuple of forcings into `MultipleForcings`, so the two bottom boundary layer
+schemes can run together: the diffusive one suppresses the instability that erodes the plume, the
 advective one supplies the downslope transport.
+
+Written by dispatch rather than by iterating over `keys`. The result is stored in the model and
+evaluated on every cell of every tracer, so building it from a `Vector` — which gives it `Any`-typed
+fields — costs a dynamic dispatch per call, more than either scheme costs to evaluate.
 """
-function merge_tracer_forcings(forcings...)
-    names = union(keys.(forcings)...)
-    isempty(names) && return NamedTuple()
+merge_tracer_forcings(::NamedTuple{()}, ::NamedTuple{()}) = NamedTuple()
+merge_tracer_forcings(::NamedTuple{()}, second::NamedTuple) = second
+merge_tracer_forcings(first::NamedTuple, ::NamedTuple{()}) = first
 
-    combined = map(names) do name
-        contributions = Tuple(f[name] for f in forcings if haskey(f, name))
-        length(contributions) == 1 ? only(contributions) : contributions
-    end
-
-    return NamedTuple{Tuple(names)}(combined)
-end
+merge_tracer_forcings(first::NamedTuple{names}, second::NamedTuple{names}) where names =
+    NamedTuple{names}(map(tuple, values(first), values(second)))

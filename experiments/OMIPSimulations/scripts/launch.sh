@@ -32,6 +32,13 @@ Environment variables (physics):
   CORRECTED     Set to "true" for corrected COARE 3.6 fluxes
   SNOW          Set to "true" to enable snow thermodynamics
   ICE_DYNAMICS  Set to "false" to disable sea-ice dynamics (thermo-only ice).
+  ICE_LATERAL   Sea-ice lateral boundary condition: "no_slip" (default) applies the viscous
+                wall stress -2 eta u / Delta on coastlines; "free_slip" leaves them stress-free.
+                The old quadratic "side drag" was inert (unit mismatch) and has been removed.
+  ICE_BASAL     Set to "false" to disable the Lemieux et al. (2015) landfast basal stress on
+                grounded keels. Default: "true".
+  ICE_DRAG      Ice-ocean drag coefficient. Default: 5.5e-3 (Hibler/McPhee, also ClimaSeaIce
+                own default). The previous value 3.24e-3 is GFDL SIS2 CDW.
                 Default: true.
   KSKEW         Isopycnal skew diffusivity κ_skew (default: per-config; 0 = off;
                 "nemo" = NEMO's Treguier et al. 1997 coefficient, Ro² × baroclinic
@@ -84,6 +91,15 @@ Environment variables (physics):
                 cannot pass. Downslope speed is u = γ g Δρ/ρ₀, so the transport shuts off
                 as the contrast is consumed. Combines with BBL_KAPPA; the two act on
                 different failures. Adds "_cg<γ>" to the run name.
+  OVERFLOW_RESTORE
+                Diagnostic only, in DAYS. Pins T and S on the East Greenland slope
+                (36-26 W, 62-66.5 N, below 1500 m) to observed Denmark Strait Overflow
+                Water, Θ = 2.0 and Sᴬ = 35.065, σθ = 27.892. This is not a
+                parameterisation: it forces the delivered density so the question "does
+                the overflow deficit set the AMOC?" can be answered without first solving
+                how to get dense water down a staircase. Both BBL schemes left the
+                delivered density unchanged, so neither tested that. Adds "_dsow<days>"
+                to the run name.
   ML_TAPER      Set to "true" to ramp the isopycnal-closure slopes linearly to zero
                 from the mixed-layer base to the surface (Danabasoglu et al. 2008;
                 NEMO ldfslp). Off by default; adds "_mltaper" to the run name.
@@ -314,6 +330,9 @@ RUN_NAME="$CONFIG"
 [[ "${NCAR:-false}" == "true" ]]               && RUN_NAME="${RUN_NAME}_ncar"
 [[ "${SNOW:-false}" == "true" ]]               && RUN_NAME="${RUN_NAME}_snow"
 [[ "${ICE_DYNAMICS:-true}" == "false" ]]       && RUN_NAME="${RUN_NAME}_noicedyn"
+[[ "${ICE_LATERAL:-no_slip}" == "no_slip" ]]   && RUN_NAME="${RUN_NAME}_noslip"
+[[ "${ICE_BASAL:-true}" == "true" ]]           && RUN_NAME="${RUN_NAME}_landfast"
+[[ "${ICE_DRAG:-5.5e-3}" != "3.24e-3" ]]       && RUN_NAME="${RUN_NAME}_cio${ICE_DRAG:-5.5e-3}"
 [[ "${CLOSURE:-catke}" == "simple"   ]]        && RUN_NAME="${RUN_NAME}_simple"
 [[ "${CLOSURE:-catke}" == "nori"     ]]        && RUN_NAME="${RUN_NAME}_nori"
 [[ "${CLOSURE:-catke}" == "rbvd"     ]]        && RUN_NAME="${RUN_NAME}_rbvd"
@@ -324,6 +343,7 @@ RUN_NAME="$CONFIG"
 [[ "${PARTIAL_CELLS:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_pcells"
 [[ -n "${BBL_KAPPA:-}" ]]                      && RUN_NAME="${RUN_NAME}_bbl${BBL_KAPPA}"
 [[ -n "${BBL_GAMMA:-}" ]]                      && RUN_NAME="${RUN_NAME}_cg${BBL_GAMMA}"
+[[ -n "${OVERFLOW_RESTORE:-}" ]]               && RUN_NAME="${RUN_NAME}_dsow${OVERFLOW_RESTORE}"
 [[ "${NORMALIZE_SALINITY:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_rawsalt"
 [[ "${RESTORING_UNDER_ICE:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_noicerest"
 case "${NORMALIZE_FRESHWATER:-none}" in
@@ -553,12 +573,20 @@ PARTIAL_CELLS_KWARG=""
 BBL_KWARG=""
 [[ -n "${BBL_KAPPA:-}" ]] && BBL_KWARG="bbl_diffusivity = ${BBL_KAPPA},"
 [[ -n "${BBL_GAMMA:-}" ]] && BBL_KWARG="${BBL_KWARG}bbl_transport_coefficient = ${BBL_GAMMA},"
+[[ -n "${OVERFLOW_RESTORE:-}" ]] && BBL_KWARG="${BBL_KWARG}overflow_restoring_timescale = ${OVERFLOW_RESTORE}days,"
 
 SNOW_KWARG=""
 [[ "$SNOW" == "true" ]] && SNOW_KWARG="with_snow = true,"
 
 ICE_DYNAMICS_KWARG=""
 [[ "$ICE_DYNAMICS" == "false" ]] && ICE_DYNAMICS_KWARG="with_ice_dynamics = false,"
+
+ICE_LATERAL="${ICE_LATERAL:-no_slip}"
+ICE_BASAL="${ICE_BASAL:-true}"
+ICE_DRAG="${ICE_DRAG:-5.5e-3}"
+SEA_ICE_KWARG="sea_ice_lateral_boundary_condition = :${ICE_LATERAL},"
+SEA_ICE_KWARG="${SEA_ICE_KWARG}sea_ice_ocean_drag_coefficient = ${ICE_DRAG},"
+[[ "$ICE_BASAL" == "false" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}with_landfast_basal_stress = false,"
 
 # Profile runs disable the OMIP diagnostic output writers (Average,
 # JLD2 dumps, checkpoint, KE spectrum). They add per-iteration I/O and
@@ -592,6 +620,7 @@ sim = omip_simulation(:${CONFIG};
                       ${BBL_KWARG}
                       ${SNOW_KWARG}
                       ${ICE_DYNAMICS_KWARG}
+                      ${SEA_ICE_KWARG}
                       ${DIAGNOSTICS_KWARG}
                       ${PVELKWARG}
                       ${CATKE_CWUSTAR_KWARG}

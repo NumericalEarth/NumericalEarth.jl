@@ -5,6 +5,15 @@ using ClimaSeaIce.SeaIceDynamics: x_momentum_stress, y_momentum_stress
 using ..EarthSystemModels: ocean_temperature, ocean_salinity
 
 """
+    ice_ocean_momentum_stress(bottom_momentum_stress)
+
+Return the part of the sea-ice bottom stress that is transmitted to the ocean. Stresses carried by
+the sea floor rather than by the water column, such as the basal stress on grounded keels, are
+excluded. Composite stress types extend this to select their ocean component.
+"""
+@inline ice_ocean_momentum_stress(bottom_momentum_stress) = bottom_momentum_stress
+
+"""
     compute_sea_ice_ocean_fluxes!(coupled_model)
 
 Compute heat, salt, and momentum fluxes at the sea ice-ocean interface.
@@ -61,7 +70,7 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
 
     if !isnothing(dynamics)
         kernel_parameters = interface_kernel_parameters(grid)
-        τₛ = dynamics.external_momentum_stresses.bottom
+        τₛ = ice_ocean_momentum_stress(dynamics.external_momentum_stresses.bottom)
         launch!(arch, grid, kernel_parameters, _compute_sea_ice_ocean_stress!,
                 fluxes, grid, clock, hˢⁱ, ℵ, uˢⁱ, vˢⁱ, τₛ)
     else

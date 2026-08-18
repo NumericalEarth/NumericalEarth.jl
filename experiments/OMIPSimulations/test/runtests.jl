@@ -230,3 +230,7 @@ end
     @test haskey(orca, :fram) && haskey(orca, :davis)
     @test orca.fram.axis == :v && orca.davis.axis == :v
 end
+
+include("test_bottom_boundary_layer.jl")
+include("test_advective_bottom_boundary_layer.jl")
+include("test_overflow_restoring.jl")
