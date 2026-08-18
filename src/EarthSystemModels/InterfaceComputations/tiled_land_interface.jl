@@ -1,11 +1,10 @@
 #####
 ##### `TiledLandInterface` — subgrid vegetation/bare-soil tiling (parallel fluxes).
 #####
-##### At 100 m–1 km a cell is rarely pure canopy or pure bare soil. A `TiledLandInterface`
-##### makes it a **mosaic** of a vegetated fraction `f = f_veg` and a bare-soil fraction
-##### `1 − f`: each tile runs the *same* single-tile interface solve independently against
-##### the *same* atmosphere (different roughness / stability), and the fluxes are
-##### area-weighted into the boundary condition the atmosphere and slab read,
+##### A `TiledLandInterface` makes a **mosaic** of a vegetated fraction `f = f_veg` and a
+##### bare-soil fraction `1 − f`: each tile runs the *same* single-tile interface solve
+##### independently against the *same* atmosphere (different roughness / stability), and
+##### the fluxes are area-weighted into the boundary condition the atmosphere and slab read,
 #####
 #####     𝒬 = f · 𝒬_veg + (1 − f) · 𝒬_bare.
 #####
@@ -17,7 +16,7 @@
 ##### pure bare soil.
 #####
 ##### Both tiles are `CanopyAirSpace` objects so they emit the *same currency* — an
-##### internalized-radiation, conduction-driven slab energy input (`Gcond`) and an
+##### internalized-radiation, conduction-driven slab energy input (`Gᶜ`) and an
 ##### upwelling-longwave (LST) — and the blend is a clean area-weight (no radiation
 ##### double-count; `apply_air_land_radiative_fluxes!` stays a no-op). The bare tile is a
 ##### canopy-free CAS (LAI = 0), derived from the vegetated tile by default. The two tiles
@@ -79,8 +78,8 @@ end
                        vegetated,
                        fraction,
                        bare              = bare_canopy_air_space(vegetated),
-                       vegetated_fluxes  = default_atmosphere_land_fluxes(land, eltype(grid)),
-                       bare_fluxes       = default_atmosphere_land_fluxes(land, eltype(grid)),
+                       vegetated_fluxes   = default_atmosphere_land_fluxes(land, eltype(grid)),
+                       bare_fluxes        = default_atmosphere_land_fluxes(land, eltype(grid)),
                        velocity_difference = RelativeVelocity())
 
 Build a two-tile (vegetated + bare) land interface. `vegetated` is a [`CanopyAirSpace`](@ref);
@@ -99,21 +98,21 @@ function TiledLandInterface(grid, atmosphere, land;
                             vegetated,
                             fraction,
                             bare                = bare_canopy_air_space(vegetated),
-                            vegetated_fluxes    = default_atmosphere_land_fluxes(land, eltype(grid)),
-                            bare_fluxes         = default_atmosphere_land_fluxes(land, eltype(grid)),
+                            vegetated_fluxes     = default_atmosphere_land_fluxes(land, eltype(grid)),
+                            bare_fluxes          = default_atmosphere_land_fluxes(land, eltype(grid)),
                             velocity_difference = RelativeVelocity())
 
     vegetated_interface = atmosphere_land_interface(grid, atmosphere, land;
-                                                    fluxes              = vegetated_fluxes,
+                                                    fluxes               = vegetated_fluxes,
                                                     temperature         = vegetated,
                                                     velocity_difference = velocity_difference,
-                                                    specific_humidity   = vegetated)
+                                                    specific_humidity    = vegetated)
 
     bare_interface = atmosphere_land_interface(grid, atmosphere, land;
-                                               fluxes              = bare_fluxes,
+                                               fluxes               = bare_fluxes,
                                                temperature         = bare,
                                                velocity_difference = velocity_difference,
-                                               specific_humidity   = bare)
+                                               specific_humidity    = bare)
 
     fluxes      = AtmosphereSurfaceFluxes(grid)
     temperature = build_interface_temperature(vegetated, grid)
@@ -198,7 +197,7 @@ end
         blended_temperature.canopy_wet_latent_heat[i, j, 1] = f * veg_temperature.canopy_wet_latent_heat[i, j, 1] + g * bare_temperature.canopy_wet_latent_heat[i, j, 1]
 
         # Effective (LST) temperature: area-weight in radiance (T⁴) space (σ cancels),
-        # σ Teff⁴ = f · LWu_veg + (1−f) · LWu_bare.
+        # σ Teff⁴ = f · LWꜛᵛ + (1−f) · LWꜛᵇ.
         Teffᵛ = veg_temperature.effective[i, j, 1]
         Teffᵇ = bare_temperature.effective[i, j, 1]
         blended_temperature.effective[i, j, 1] = (f * Teffᵛ^4 + g * Teffᵇ^4)^convert(FT, 1//4)

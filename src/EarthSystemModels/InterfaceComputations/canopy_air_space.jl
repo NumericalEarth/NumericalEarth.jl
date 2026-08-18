@@ -14,7 +14,7 @@
 ##### and the paired humidity node `qᵃᶜ`. The leaf sees the *shaded soil skin* `Tᵍ`,
 ##### not the bulk reservoir `Tˡᵃ`; the slab is driven only by the skin conduction.
 #####
-##### Reuse: `canopy_conductance_terms` (leaf vapor conductance `gˡʷ = g_c` and
+##### Reuse: `canopy_conductance_terms` (leaf vapor conductance `gˡʷ = gᶜ` and
 ##### `qᵛ⁺(Tᵛ)`, the Farquhar–Medlyn stomatal path) and `dry_layer_terms` (soil vapor
 ##### conductance `gᵍʷ = Gᵉ` and the front humidity `qᵉ`) are the *same* helpers the
 ##### standalone/composite humidity formulations use — the CAS only adds the sensible
@@ -45,7 +45,7 @@ end
 Marker enabling the wet-canopy (interception) vapor branch of a [`CanopyAirSpace`](@ref). A wet
 canopy evaporates intercepted water at the *potential* (stomata-free) rate through
 the leaf boundary layer only, so the leaf vapor conductance blends the dry
-(stomatal) `g_c` with a wet `g_wet = ρᵃᵗ · LAI · gᵇ` by the wet fraction
+(stomatal) `gᶜ` with a wet `gʷ = ρᵃᵗ · LAI · gᵇ` by the wet fraction
 
 ```math
 f_{wet} = (Wᶜ / Wᶜᵐᵃˣ)^{2/3}, \\qquad Wᶜᵐᵃˣ = c · LAI
@@ -53,14 +53,14 @@ f_{wet} = (Wᶜ / Wᶜᵐᵃˣ)^{2/3}, \\qquad Wᶜᵐᵃˣ = c · LAI
 
 ([Deardorff, 1978](@cite deardorff1978)). The store `Wᶜ` and its capacity `Wᶜᵐᵃˣ = c·LAI`
 are owned by the [`InterceptingHydrology`](@ref) wrapping the soil; the interface reads both
-and normalizes `f_wet` by the store's *own* capacity. The leaf boundary conductance `gᵇ` is the
+and normalizes `fʷ` by the store's *own* capacity. The leaf boundary conductance `gᵇ` is the
 `leaf_boundary_conductance` on the [`CanopyAirSpace`](@ref).
 """
 struct CanopyInterception end
 
 Base.summary(::CanopyInterception) = "CanopyInterception"
 
-# Deardorff (1978) wet fraction f_wet = (Wᶜ/Wᶜᵐᵃˣ)^(2/3), normalized by the store's own
+# Deardorff (1978) wet fraction fʷ = (Wᶜ/Wᶜᵐᵃˣ)^(2/3), normalized by the store's own
 # capacity Wᶜᵐᵃˣ (published by `InterceptingHydrology`). No interception ⇒ 0, recovering the
 # dry CAS bit-for-bit; a zero capacity (no store, or a bare tile) also gives 0.
 @inline wet_canopy_fraction(::Nothing, hydrology, LAI) = zero(LAI)
@@ -183,7 +183,7 @@ Fields:
 - `canopy` : the leaf vapor/photosynthesis branch (a [`CanopyConductanceHumidity`](@ref)).
 - `soil_skin_flux` : skin↔bulk conduction `Λᵍ = κᵀ/ℓᵀ` (a [`SoilConductiveFlux`](@ref)).
 - `leaf_albedo`, `ground_albedo` : broadband shortwave albedos.
-- `canopy_emissivity_max`, `ground_emissivity` : longwave emissivities (`ε_c = ε_max(1 − e^{−LAI})`).
+- `canopy_emissivity_max`, `ground_emissivity` : longwave emissivities (`εᵛ = εᵐᵃˣ(1 − e^{−LAI})`).
 - `extinction`, `clumping` : Beer–Lambert `K`, `Ω` for the shortwave split.
 - `leaf_boundary_conductance` : per-leaf boundary-layer conductance `gᵇ` (m s⁻¹) → `gˡʰ = ρcₚ·LAI·gᵇ`.
 - `undercanopy_conductance` : ground↔canopy-air conductance closure → `gᵍʰ = ρcₚ·gᵘᶜ`;
@@ -246,7 +246,7 @@ Base.show(io::IO, c::CanopyAirSpace) =
 # state carries the soil saturation, bulk temperature, and LAI the branches read.
 @inline interface_phase(c::CanopyAirSpace) = interface_phase(c.soil)
 # The soil branch always publishes the saturation 𝒮; a canopy with interception
-# additionally pulls the prognostic canopy water store Wᶜ (→ f_wet).
+# additionally pulls the prognostic canopy water store Wᶜ (→ fʷ).
 @inline interface_hydrology_state(i, j, grid, c::CanopyAirSpace, land_state) =
     canopy_air_space_hydrology_state(c.interception, i, j, grid, c, land_state)
 @inline canopy_air_space_hydrology_state(::Nothing, i, j, grid, c, land_state) =
@@ -305,47 +305,47 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
     gᵍʷ = ρᵃᵗ * gᵘᶜ   # undercanopy vapor conductance (wet-soil limit)
     Λ   = convert(FT, skin_conductance(c.soil_skin_flux))
 
-    # Wet-canopy vapor branch. `f_wet` (Deardorff 1978) blends the dry stomatal
-    # conductance `g_c` with the stomata-free wet-leaf conductance `g_wet = ρᵃᵗ·LAI·gᵇ`
+    # Wet-canopy vapor branch. `fʷ` (Deardorff 1978) blends the dry stomatal
+    # conductance `gᶜ` with the stomata-free wet-leaf conductance `gʷ = ρᵃᵗ·LAI·gᵇ`
     # (the boundary-layer vapor mass conductance), so intercepted water evaporates at the
-    # potential rate through the leaf boundary layer. `f_wet = 0` (no interception)
+    # potential rate through the leaf boundary layer. `fʷ = 0` (no interception)
     # recovers the dry CAS bit-for-bit.
-    f_wet = wet_canopy_fraction(c.interception, Ψₛ.hydrology, LAI)
-    g_wet = ρᵃᵗ * LAI * c.leaf_boundary_conductance
+    fʷ = wet_canopy_fraction(c.interception, Ψₛ.hydrology, LAI)
+    gʷ = ρᵃᵗ * LAI * c.leaf_boundary_conductance
 
     # Shortwave split + longwave emissivities (broadband).
     σ   = Ψᵣ.σ
     SW  = Ψᵣ.ℐꜜˢʷ
     LWd = Ψᵣ.ℐꜜˡʷ
-    ε_c = c.canopy_emissivity_max * (1 - exp(-LAI))
-    ε_g = c.ground_emissivity
+    εᵛ = c.canopy_emissivity_max * (1 - exp(-LAI))
+    εᵍ = c.ground_emissivity
     ftrans    = exp(-c.extinction * LAI * c.clumping)
-    canopy_SW = (1 - c.leaf_albedo) * (1 - ftrans) * SW
-    ground_SW = ftrans * (1 - c.ground_albedo) * SW
+    SWᵛ = (1 - c.leaf_albedo) * (1 - ftrans) * SW
+    SWᵍ = ftrans * (1 - c.ground_albedo) * SW
 
     Tᵛ  = Tˡᵃ
     Tᵍ = Tˡᵃ
     Tᵃᶜ = Ψₛ.temperature
     qᵃᶜ = Ψₛ.specific_humidity
-    relax  = c.relaxation
+    relaxation  = c.relaxation
     max_ΔT = convert(FT, 25)   # per-iterate step cap: keeps the damped Newton in-range
     Tₗₒ, Tₕᵢ = convert(FT, 180), convert(FT, 340)  # physical band; guards qˢᵃᵗ against transient overshoot
     tiny = eps(FT)
 
     for _ in 1:c.inner_iterations
-        g_c, qᵛ   = canopy_conductance_terms(c.canopy, Tᵛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
-        Gᵉ, qᵉ, f_dry, qᵍ⁺ = dry_layer_terms(c.soil, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
+        gᶜ, qᵛ   = canopy_conductance_terms(c.canopy, Tᵛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
+        Gᵉ, qᵉ, fᵈ, qᵍ⁺ = dry_layer_terms(c.soil, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
 
         # Blend the dry-layer series soil branch (front qᵉ through Gᵉ) with the
         # saturated-skin wet branch (qᵍ⁺ through the undercanopy conductance gᵍʷ),
-        # weight `f_dry` from the soil model.
-        Gᵉ⁺ = f_dry * Gᵉ + (1 - f_dry) * gᵍʷ
-        qᵉ  = ifelse(Gᵉ⁺ > tiny, (f_dry * Gᵉ * qᵉ + (1 - f_dry) * gᵍʷ * qᵍ⁺) / Gᵉ⁺, qᵍ⁺)
+        # weight `fᵈ` from the soil model.
+        Gᵉ⁺ = fᵈ * Gᵉ + (1 - fᵈ) * gᵍʷ
+        qᵉ  = ifelse(Gᵉ⁺ > tiny, (fᵈ * Gᵉ * qᵉ + (1 - fᵈ) * gᵍʷ * qᵍ⁺) / Gᵉ⁺, qᵍ⁺)
         Gᵉ  = Gᵉ⁺
 
-        # Blended leaf vapor conductance: dry (stomatal) g_c over the transpiring
-        # fraction, wet (boundary-layer) g_wet over the wetted fraction f_wet.
-        g_leaf = (1 - f_wet) * g_c + f_wet * g_wet
+        # Blended leaf vapor conductance: dry (stomatal) gᶜ over the transpiring
+        # fraction, wet (boundary-layer) gʷ over the wetted fraction fʷ.
+        gˡʷ = (1 - fʷ) * gᶜ + fʷ * gʷ
 
         # Δ-multiplied Kirchhoff node (as the humidity node in CompositeSurfaceHumidity);
         # guard the transient case where the aerodynamic and surface conductances cancel
@@ -353,56 +353,56 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
         Dᵀ  = (gᵍʰ + gˡʰ) * Δθᵃ + 𝒬ᵀ
         Tᵃᶜ★ = ((gᵍʰ * Tᵍ + gˡʰ * Tᵛ) * Δθᵃ + 𝒬ᵀ * θᵃᵗ) / Dᵀ
         Tᵃᶜ = ifelse((Dᵀ == 0) | !isfinite(Tᵃᶜ★), Tᵃᶜ, Tᵃᶜ★)
-        Dᵠ  = (Gᵉ + g_leaf) * Δqᵃ + Jᵃ
-        qᵃᶜ★ = ((Gᵉ * qᵉ + g_leaf * qᵛ) * Δqᵃ + Jᵃ * qᵃᵗ) / Dᵠ
+        Dᵠ  = (Gᵉ + gˡʷ) * Δqᵃ + Jᵃ
+        qᵃᶜ★ = ((Gᵉ * qᵉ + gˡʷ * qᵛ) * Δqᵃ + Jᵃ * qᵃᵗ) / Dᵠ
         qᵃᶜ = ifelse((Dᵠ == 0) | !isfinite(qᵃᶜ★), qᵃᶜ, qᵃᶜ★)
 
-        LWd_c     = (1 - ε_c) * LWd + ε_c * σ * Tᵛ^4
-        LWu_g     = ε_g * σ * Tᵍ^4 + (1 - ε_g) * LWd_c
-        canopy_lw = ε_c * (LWd + LWu_g) - 2 * ε_c * σ * Tᵛ^4
-        ground_lw = ε_g * (LWd_c - σ * Tᵍ^4)
+        LWꜜᵍ     = (1 - εᵛ) * LWd + εᵛ * σ * Tᵛ^4
+        LWꜛᵍ     = εᵍ * σ * Tᵍ^4 + (1 - εᵍ) * LWꜜᵍ
+        LWᵛ = εᵛ * (LWd + LWꜛᵍ) - 2 * εᵛ * σ * Tᵛ^4
+        LWᵍ = εᵍ * (LWꜜᵍ - σ * Tᵍ^4)
 
-        Rᵥ   = canopy_SW + canopy_lw
-        resᵥ = Rᵥ - gˡʰ * (Tᵛ - Tᵃᶜ) - ℒ * g_leaf * (qᵛ - qᵃᶜ)
-        dRᵥ  = -8 * ε_c * σ * Tᵛ^3 - gˡʰ - ℒ * g_leaf * saturation_humidity_slope(ℂᵃᵗ, Tᵛ, pᵃᵗ, c.phase)
-        Tᵛ   = ifelse(abs(dRᵥ) < tiny, Tᵃᶜ, Tᵛ - clamp(relax * resᵥ / dRᵥ, -max_ΔT, max_ΔT))
+        Rᵥ   = SWᵛ + LWᵛ
+        resᵥ = Rᵥ - gˡʰ * (Tᵛ - Tᵃᶜ) - ℒ * gˡʷ * (qᵛ - qᵃᶜ)
+        dRᵥ  = -8 * εᵛ * σ * Tᵛ^3 - gˡʰ - ℒ * gˡʷ * saturation_humidity_slope(ℂᵃᵗ, Tᵛ, pᵃᵗ, c.phase)
+        Tᵛ   = ifelse(abs(dRᵥ) < tiny, Tᵃᶜ, Tᵛ - clamp(relaxation * resᵥ / dRᵥ, -max_ΔT, max_ΔT))
         Tᵛ   = clamp(Tᵛ, Tₗₒ, Tₕᵢ)
 
-        Rᵍ   = ground_SW + ground_lw
+        Rᵍ   = SWᵍ + LWᵍ
         resᵍ = Rᵍ - gᵍʰ * (Tᵍ - Tᵃᶜ) - ℒ * Gᵉ * (qᵉ - qᵃᶜ) - Λ * (Tᵍ - Tˡᵃ)
-        dRᵍ  = -4 * ε_g * σ * Tᵍ^3 - gᵍʰ - Λ - ℒ * Gᵉ * saturation_humidity_slope(ℂᵃᵗ, Tᵍ, pᵃᵗ, c.phase)
-        Tᵍ  = Tᵍ - clamp(relax * resᵍ / dRᵍ, -max_ΔT, max_ΔT)
+        dRᵍ  = -4 * εᵍ * σ * Tᵍ^3 - gᵍʰ - Λ - ℒ * Gᵉ * saturation_humidity_slope(ℂᵃᵗ, Tᵍ, pᵃᵗ, c.phase)
+        Tᵍ  = Tᵍ - clamp(relaxation * resᵍ / dRᵍ, -max_ΔT, max_ΔT)
         Tᵍ  = clamp(Tᵍ, Tₗₒ, Tₕᵢ)
     end
 
     # Converged diagnostics: per-surface flux shares, the skin→slab conduction, and
-    # the effective radiating (LST) temperature σ T_eff⁴ ≡ LWu (upwelling to space).
-    g_c, qᵛ   = canopy_conductance_terms(c.canopy, Tᵛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
-    Gᵉ, qᵉ, f_dry, qᵍ⁺ = dry_layer_terms(c.soil, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
-    Gᵉ⁺ = f_dry * Gᵉ + (1 - f_dry) * gᵍʷ
-    qᵉ  = ifelse(Gᵉ⁺ > tiny, (f_dry * Gᵉ * qᵉ + (1 - f_dry) * gᵍʷ * qᵍ⁺) / Gᵉ⁺, qᵍ⁺)
+    # the effective radiating (LST) temperature σ Teff⁴ ≡ LWu (upwelling to space).
+    gᶜ, qᵛ   = canopy_conductance_terms(c.canopy, Tᵛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
+    Gᵉ, qᵉ, fᵈ, qᵍ⁺ = dry_layer_terms(c.soil, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
+    Gᵉ⁺ = fᵈ * Gᵉ + (1 - fᵈ) * gᵍʷ
+    qᵉ  = ifelse(Gᵉ⁺ > tiny, (fᵈ * Gᵉ * qᵉ + (1 - fᵈ) * gᵍʷ * qᵍ⁺) / Gᵉ⁺, qᵍ⁺)
     Gᵉ  = Gᵉ⁺
-    g_leaf = (1 - f_wet) * g_c + f_wet * g_wet
-    LWd_c = (1 - ε_c) * LWd + ε_c * σ * Tᵛ^4
-    LWu_g = ε_g * σ * Tᵍ^4 + (1 - ε_g) * LWd_c
-    LWu   = (1 - ε_c) * LWu_g + ε_c * σ * Tᵛ^4
+    gˡʷ = (1 - fʷ) * gᶜ + fʷ * gʷ
+    LWꜜᵍ = (1 - εᵛ) * LWd + εᵛ * σ * Tᵛ^4
+    LWꜛᵍ = εᵍ * σ * Tᵍ^4 + (1 - εᵍ) * LWꜜᵍ
+    LWu   = (1 - εᵛ) * LWꜛᵍ + εᵛ * σ * Tᵛ^4
     Teff  = ifelse(σ > 0, (LWu / σ)^convert(FT, 1//4), Tᵃᶜ)
 
     Hᵛ    = gˡʰ * (Tᵛ - Tᵃᶜ)
     Hᵍ    = gᵍʰ * (Tᵍ - Tᵃᶜ)
-    LEᵛ   = ℒ * g_leaf * (qᵛ - qᵃᶜ)              # total leaf latent (transpiration + wet-canopy)
+    LEᵛ   = ℒ * gˡʷ * (qᵛ - qᵃᶜ)              # total leaf latent (transpiration + wet-canopy)
     LEᵍ   = ℒ * Gᵉ * (qᵉ - qᵃᶜ)
-    Gcond = Λ * (Tᵍ - Tˡᵃ)
-    E_wet = f_wet * g_wet * (qᵛ - qᵃᶜ)           # wet-canopy evaporation, mass flux (kg m⁻² s⁻¹, up)
-    LE_wet = ℒ * E_wet                           # wet-canopy latent heat (W m⁻², up); LEᵛ − LE_wet = transpiration
+    Gᶜ = Λ * (Tᵍ - Tˡᵃ)
+    Eʷ = fʷ * gʷ * (qᵛ - qᵃᶜ)           # wet-canopy evaporation, mass flux (kg m⁻² s⁻¹, up)
+    LEʷ = ℒ * Eʷ                           # wet-canopy latent heat (W m⁻², up); LEᵛ − LEʷ = transpiration
 
     return (; Tᵛ = convert(FT, Tᵛ), Tᵍ = convert(FT, Tᵍ),
               Tᵃᶜ = convert(FT, Tᵃᶜ), qᵃᶜ = convert(FT, qᵃᶜ),
               Teff = convert(FT, Teff),
               Hᵛ = convert(FT, Hᵛ), Hᵍ = convert(FT, Hᵍ),
               LEᵛ = convert(FT, LEᵛ), LEᵍ = convert(FT, LEᵍ),
-              Gcond = convert(FT, Gcond), E_wet = convert(FT, E_wet),
-              LE_wet = convert(FT, LE_wet))
+              Gᶜ = convert(FT, Gᶜ), Eʷ = convert(FT, Eʷ),
+              LEʷ = convert(FT, LEʷ))
 end
 
 @inline compute_interface_temperature(c::CanopyAirSpace,
@@ -438,13 +438,13 @@ struct CanopyAirSpaceDiagnostics{F}
     canopy                 :: F   # leaf temperature Tᵛ
     soil_skin              :: F   # soil-skin temperature Tᵍ
     effective              :: F   # radiating (LST) temperature Teff
-    ground_heat_flux       :: F   # skin→bulk conduction Gcond
+    ground_heat_flux       :: F   # skin→bulk conduction Gᶜ
     canopy_latent_heat     :: F   # leaf transpiration LEᵛ
     soil_latent_heat       :: F   # soil evaporation LEᵍ
     canopy_sensible_heat   :: F   # leaf sensible Hᵛ
     soil_sensible_heat     :: F   # ground sensible Hᵍ
-    canopy_evaporation     :: F   # wet-canopy evaporation E_wet (kg m⁻² s⁻¹, up)
-    canopy_wet_latent_heat :: F   # wet-canopy latent heat ℒ·E_wet (W m⁻², up)
+    canopy_evaporation     :: F   # wet-canopy evaporation Eʷ (kg m⁻² s⁻¹, up)
+    canopy_wet_latent_heat :: F   # wet-canopy latent heat ℒ·Eʷ (W m⁻², up)
 end
 
 CanopyAirSpaceDiagnostics(grid) =

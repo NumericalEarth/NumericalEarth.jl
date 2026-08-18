@@ -2,10 +2,10 @@
 ##### Single-source, resistance-only vegetation surface.
 #####
 ##### A `CanopyConductanceHumidity` is the vegetation analogue of `SkinHumidity`:
-##### it puts a *canopy (stomatal) conductance* `g_c = LAI · g_s` in series with
+##### it puts a *canopy (stomatal) conductance* `gᶜ = LAI · gₛ` in series with
 ##### the aerodynamic conductance and solves the same surface vapor-flux balance
 ##### for `qˢ` inside the Monin–Obukhov fixed point. The stomatal conductance
-##### `g_s` — the dominant lever on the Bowen ratio, the sensible/latent partition
+##### `gₛ` — the dominant lever on the Bowen ratio, the sensible/latent partition
 ##### an atmosphere-coupled simulation reads from the land — comes from a pluggable
 ##### model: the empirical Jarvis form (default), or the photosynthesis-coupled
 ##### optimality conductance of [Medlyn et al. (2011)](@cite medlyn2011) driven by
@@ -47,7 +47,7 @@ end
     struct CanopyConductanceHumidity
 
 Surface specific humidity `qˢ` for a single-source (big-leaf) canopy: the
-canopy conductance `g_c = LAI · gₛ` in series with the aerodynamic conductance,
+canopy conductance `gᶜ = LAI · gₛ` in series with the aerodynamic conductance,
 solved inside the Monin–Obukhov fixed point exactly as [`SkinHumidity`](@ref)
 solves a soil-resistance balance. The stomatal conductance `gₛ` comes from the
 `conductance` model driven by the per-cell leaf-to-air VPD, leaf temperature
@@ -129,7 +129,7 @@ Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
 
 # Canopy flux terms, split off so the standalone formulation and the composite
 # (soil + canopy) share them. Returns the bulk canopy (stomatal) mass conductance
-# `g_c = LAI · gₛ · Mᵈ` (kg m⁻² s⁻¹) and the leaf saturation source `qᵛ⁺(Tₗ)`.
+# `gᶜ = LAI · gₛ · Mᵈ` (kg m⁻² s⁻¹) and the leaf saturation source `qᵛ⁺(Tₗ)`.
 # The canopy (leaf) reservoir is saturated at the leaf temperature (= skin
 # temperature Tₛ, single-source). `Ψᵣ` is the interface radiation state (drives
 # `InteractiveAbsorbedPAR`).
@@ -149,21 +149,21 @@ Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
                                     APAR, VPD, Tₗ, q.atmospheric_co2, pᵃᵗ, β)
 
     # Molar leaf conductance → canopy mass conductance (kg m⁻² s⁻¹).
-    g_c = LAI * gs * oftype(gs, default_dry_air_molar_mass)
+    gᶜ = LAI * gs * oftype(gs, default_dry_air_molar_mass)
 
-    return g_c, qᵛ⁺
+    return gᶜ, qᵛ⁺
 end
 
 @inline function compute_interface_humidity(q::CanopyConductanceHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     FT = eltype(Ψₛ)
-    g_c, qᵛ⁺ = canopy_conductance_terms(q, Tₛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)   # leaf temperature = skin temperature Tₛ
+    gᶜ, qᵛ⁺ = canopy_conductance_terms(q, Tₛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)   # leaf temperature = skin temperature Tₛ
 
     qˢ⁻ = Ψₛ.specific_humidity
     qᵃᵗ = Ψₐ.q
     Jᵃ, Δq = atmospheric_vapor_flux(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
 
-    D  = g_c * Δq + Jᵃ
-    qˢ = (g_c * qᵛ⁺ * Δq + Jᵃ * qᵃᵗ) / D
+    D  = gᶜ * Δq + Jᵃ
+    qˢ = (gᶜ * qᵛ⁺ * Δq + Jᵃ * qᵃᵗ) / D
 
     return convert(FT, ifelse(D == 0, qˢ⁻, qˢ))
 end

@@ -78,7 +78,7 @@ VanGenuchtenConductivity(FT::Type = Oceananigans.defaults.FloatType;
     ℓ = convert(FT, c.ℓ)
     m = van_genuchten_m(n)
     𝒮c = clamp(𝒮, zero(FT), one(FT))
-    # K → K_sat as 𝒮 → 1.
+    # K → Kˢᵃᵗ as 𝒮 → 1.
     inner = one(FT) - (one(FT) - 𝒮c^(1/m))^m
     return Ksat * 𝒮c^ℓ * inner^2
 end

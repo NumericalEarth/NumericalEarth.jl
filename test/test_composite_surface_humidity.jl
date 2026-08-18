@@ -42,7 +42,7 @@ end
     soil   = make_soil()
     canopy = CanopyConductanceHumidity(Float64; leaf_area_index = 2.0)
 
-    # Limit 1: no canopy (g_c = 0) reproduces DryLayerHumidity bit-for-bit.
+    # Limit 1: no canopy (gᶜ = 0) reproduces DryLayerHumidity bit-for-bit.
     comp0 = CompositeSurfaceHumidity(soil, CanopyConductanceHumidity(Float64; leaf_area_index = 0.0))
     _, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(; 𝒮=0.2, leaf_area_index=0.0, st...)
     @test isapprox(compute_interface_humidity(comp0, st.Tᵍ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ),
@@ -59,23 +59,23 @@ end
     # the total flux partitions exactly into soil-evaporation + transpiration.
     comp = CompositeSurfaceHumidity(soil, canopy)
     _, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(; 𝒮=0.05, st...)   # 𝒮 ≪ 𝒮ᶜ ⇒ σ = 1
-    Gᵉ, qᵉ, σ, q_wet = dry_layer_terms(comp.soil, st.Tᵍ, Ψₛ, Ψₐ, ℙₐ)
-    g_c, q_leaf = canopy_conductance_terms(comp.canopy, st.Tᵍ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
+    Gᵉ, qᵉ, σ, qᵍ⁺ = dry_layer_terms(comp.soil, st.Tᵍ, Ψₛ, Ψₐ, ℙₐ)
+    gᶜ, qᵛ⁺ = canopy_conductance_terms(comp.canopy, st.Tᵍ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
     Jᵃ, Δq = atmospheric_vapor_flux(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
-    qˢ = ((Gᵉ * qᵉ + g_c * q_leaf) * Δq + Jᵃ * st.qᵃᵗ) / ((Gᵉ + g_c) * Δq + Jᵃ)
+    qˢ = ((Gᵉ * qᵉ + gᶜ * qᵛ⁺) * Δq + Jᵃ * st.qᵃᵗ) / ((Gᵉ + gᶜ) * Δq + Jᵃ)
     @test σ ≈ 1
     @test compute_interface_humidity(comp, st.Tᵍ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ) ≈ qˢ
 
-    E_total = (Jᵃ / Δq) * (qˢ - st.qᵃᵗ)
-    E_soil  = Gᵉ * (qᵉ - qˢ)
-    E_can   = g_c * (q_leaf - qˢ)
-    @test isapprox(E_total, E_soil + E_can; rtol = 1e-10)
+    E = (Jᵃ / Δq) * (qˢ - st.qᵃᵗ)
+    Eᵍ  = Gᵉ * (qᵉ - qˢ)
+    Eᵛ   = gᶜ * (qᵛ⁺ - qˢ)
+    @test isapprox(E, Eᵍ + Eᵛ; rtol = 1e-10)
 
     # The `evaporation_partition` diagnostic returns exactly this split.
     part = evaporation_partition(comp, qˢ, st.Tᵍ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
-    @test part.soil_evaporation ≈ E_soil
-    @test part.transpiration ≈ E_can
-    @test isapprox(part.soil_evaporation + part.transpiration, E_total; rtol = 1e-10)
+    @test part.soil_evaporation ≈ Eᵍ
+    @test part.transpiration ≈ Eᵛ
+    @test isapprox(part.soil_evaporation + part.transpiration, E; rtol = 1e-10)
 
     # Type stability.
     for FT in (Float32, Float64)

@@ -81,7 +81,7 @@ end
         θᵃᵗ = 300.0
         @test min(Tᵍ, Tᵛ, θᵃᵗ) - 1 ≤ Tᵃᶜ ≤ max(Tᵍ, Tᵛ, θᵃᵗ) + 1
 
-        # Conservation: the slab is driven by the skin→bulk conduction, Es = −Gcond.
+        # Conservation: the slab is driven by the skin→bulk conduction, Es = −Gᶜ.
         Es = Array(interior(model.land.fluxes.surface_energy_flux))[1, 1, 1]
         @test Es ≈ -Gᶜ atol = 1e-6
 
@@ -137,7 +137,7 @@ end
     end
 end
 
-# The wet-canopy vapor mass conductance is g_wet = ρᵃᵗ·LAI·gᵇ. A molar-mass factor (Mᵈ ≈ 0.029)
+# The wet-canopy vapor mass conductance is gʷ = ρᵃᵗ·LAI·gᵇ. A molar-mass factor (Mᵈ ≈ 0.029)
 # in place of the air density (ρᵃᵗ ≈ 1.2) would make it ~40× too small — smaller than the dry
 # stomatal conductance, so a wet leaf would evaporate *slower* than a dry one.
 @testset "Wet-canopy vapor conductance scales with air density" begin
@@ -171,19 +171,19 @@ end
     dry = canopy_air_space_solve(cas, Ψdry, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
 
     @test wet.LEᵛ > dry.LEᵛ        # a wet leaf evaporates faster than the dry (stomatal) leaf
-    @test wet.E_wet > 0
-    @test dry.E_wet == 0
+    @test wet.Eʷ > 0
+    @test dry.Eʷ == 0
 
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
     qᵛ  = saturation_specific_humidity(ℂ, wet.Tᵛ, Ψₐ.p, cas.phase)
     E_ρ = (ρᵃᵗ * LAI * gᵇ) * (qᵛ - wet.qᵃᶜ)                          # correct (air density)
     E_M = (default_dry_air_molar_mass * LAI * gᵇ) * (qᵛ - wet.qᵃᶜ)   # erroneous (molar mass)
-    @test wet.E_wet ≈ E_ρ rtol = 1e-6
-    @test wet.E_wet / E_M ≈ ρᵃᵗ / default_dry_air_molar_mass rtol = 1e-3   # ≈ 40, not 1
+    @test wet.Eʷ ≈ E_ρ rtol = 1e-6
+    @test wet.Eʷ / E_M ≈ ρᵃᵗ / default_dry_air_molar_mass rtol = 1e-3   # ≈ 40, not 1
 end
 
 # The CanopyAirSpace soil branch blends the dry-layer series conductance with the saturated-skin
-# wet branch (weight `f_dry` from the soil model). With a Millington–Quirk (power-law) tortuosity
+# wet branch (weight `fᵈ` from the soil model). With a Millington–Quirk (power-law) tortuosity
 # the raw Gᵉ collapses to ≈ 0 at saturation; the blend must keep the soil evaporating.
 @testset "Saturated soil keeps evaporating (dry-layer wet blend in CanopyAirSpace)" begin
     FT = Float64
@@ -215,12 +215,12 @@ end
     @test all(E .> 50)
     @test issorted(E)
 
-    # Dry limit: at low saturation the dry-branch weight f_dry ≈ 1, so the blended soil
+    # Dry limit: at low saturation the dry-branch weight fᵈ ≈ 1, so the blended soil
     # conductance reduces to the raw dry-layer Gᵉ (the blend is inactive where the soil is dry).
-    Gᵉ, qᵉ, f_dry, qᵍ⁺ = dry_layer_terms(soil, FT(300), Ψ(0.1), Ψₐ, ℙₐ)
+    Gᵉ, qᵉ, fᵈ, qᵍ⁺ = dry_layer_terms(soil, FT(300), Ψ(0.1), Ψₐ, ℙₐ)
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
-    @test f_dry > 0.99
-    @test f_dry * Gᵉ + (1 - f_dry) * (ρᵃᵗ * 0.5) ≈ Gᵉ rtol = 0.02
+    @test fᵈ > 0.99
+    @test fᵈ * Gᵉ + (1 - fᵈ) * (ρᵃᵗ * 0.5) ≈ Gᵉ rtol = 0.02
 end
 
 # A CanopyAirSpace in both interface slots is a combined formulation: one shared solve returns

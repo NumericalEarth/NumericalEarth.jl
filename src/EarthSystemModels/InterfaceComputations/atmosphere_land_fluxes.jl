@@ -60,13 +60,13 @@ end
         Ts.canopy[i, j, 1]                 = sol.Tᵛ
         Ts.soil_skin[i, j, 1]              = sol.Tᵍ
         Ts.effective[i, j, 1]              = sol.Teff
-        Ts.ground_heat_flux[i, j, 1]        = sol.Gcond
+        Ts.ground_heat_flux[i, j, 1]        = sol.Gᶜ
         Ts.canopy_latent_heat[i, j, 1]     = sol.LEᵛ
         Ts.soil_latent_heat[i, j, 1]       = sol.LEᵍ
         Ts.canopy_sensible_heat[i, j, 1]   = sol.Hᵛ
         Ts.soil_sensible_heat[i, j, 1]     = sol.Hᵍ
-        Ts.canopy_evaporation[i, j, 1]     = sol.E_wet
-        Ts.canopy_wet_latent_heat[i, j, 1] = sol.LE_wet
+        Ts.canopy_evaporation[i, j, 1]     = sol.Eʷ
+        Ts.canopy_wet_latent_heat[i, j, 1] = sol.LEʷ
     end
     return nothing
 end

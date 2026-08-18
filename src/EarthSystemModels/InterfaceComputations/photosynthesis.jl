@@ -76,10 +76,10 @@ end
 
 C3 photosynthesis after [Farquhar et al. (1980)](@cite farquhar1980): net CO₂
 assimilation `Aₙ` is the (smoothly) co-limited minimum of the Rubisco-limited
-rate `A_c` and the light (RuBP-regeneration)-limited rate `A_j`, less dark
-respiration `R_d`. Rate parameters are given at 25 °C and scaled to leaf
+rate `Aᶜ` and the light (RuBP-regeneration)-limited rate `Aⱼ`, less dark
+respiration `Rᵈ`. Rate parameters are given at 25 °C and scaled to leaf
 temperature: `Vcmax`/`Jmax` by the peaked Arrhenius factor (ClimaLand Eq C11) so
-they peak near an optimum and roll off at high leaf temperature, `R_d` by the
+they peak near an optimum and roll off at high leaf temperature, `Rᵈ` by the
 Heskel (2016) form (Eq C12), and `Γ*`/`Kc`/`Ko` by plain Arrhenius (Eq C6).
 Defaults follow ClimaLand Table C1 / Kattge & Knorr (2007); `Vcmax25` is the
 C3-grass value used for the ClimaLand US-Var flux-tower run.
@@ -91,7 +91,7 @@ Fields (all at 25 °C unless noted):
 - `quantum_yield`: electrons to PSII per absorbed photon (–).
 - `Γstar25`         : CO₂ compensation point (Pa); `Kc25`, `Ko25`: Michaelis constants (Pa).
 - `O2`           : intercellular O₂ mole fraction (–).
-- `θⱼ`, `θ_colimit` : co-limitation smoothing for `J` and for `min(A_c, A_j)` (–).
+- `θⱼ`, `θ_colimit` : co-limitation smoothing for `J` and for `min(Aᶜ, Aⱼ)` (–).
 - `capacity_response` : `PeakedArrhenius()` (default) or `PlainArrhenius()` — the
   `Vcmax`/`Jmax` temperature response.
 - `ΔHa_*`, `ΔS_*`, `ΔHd_*` : peaked-Arrhenius activation (J mol⁻¹), entropy

@@ -88,7 +88,7 @@ Empirical multiplicative stomatal conductance after Jarvis (1976) / Stewart
 (1988): a maximum conductance reduced by independent environmental stress
 factors,
 
-    gₛ = gₛ,max · f_PAR(APAR) · f_VPD(VPD) · f_T(Tₗ) · β ,
+    gₛ = gₛ,max · fᴾᴬᴿ(APAR) · fⱽᴾᴰ(VPD) · fᵀ(Tₗ) · β ,
 
 with `gₛ`, `gₛ,max` in mol H₂O m⁻² s⁻¹. Unlike [`MedlynConductance`](@ref) it is
 not coupled to photosynthesis, so it is closed-form (no iteration, no Farquhar

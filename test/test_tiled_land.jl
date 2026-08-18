@@ -78,7 +78,7 @@ scalar(field) = Array(interior(field))[1, 1, 1]
         @test all(isfinite, (𝒬ᵀ, 𝒬ᵛ, Gᶜ, Tᵉ))
         @test 285 < scalar(ti.temperature.interface) < 320
 
-        # Slab driven by the blended skin→bulk conduction, Es = −Gcond (radiation
+        # Slab driven by the blended skin→bulk conduction, Es = −Gᶜ (radiation
         # internalized per tile ⇒ apply_air_land_radiative_fluxes! adds nothing).
         Es = scalar(model.land.fluxes.surface_energy_flux)
         @test Es ≈ -Gᶜ atol = 1e-10

@@ -225,9 +225,9 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
     Gᶜ  = zeros(Nsteps)   # skin → bulk ground heat flux
     SW  = zeros(Nsteps)   # incident shortwave
     LW  = zeros(Nsteps)   # incident (downwelling) longwave
-    E   = zeros(Nsteps)   # soil + transpiration vapor flux Jᵛ − E_wet (kg m⁻² s⁻¹, up)
+    E   = zeros(Nsteps)   # soil + transpiration vapor flux Jᵛ − Eʷ (kg m⁻² s⁻¹, up)
     Ewet = zeros(Nsteps)  # wet-canopy evaporation (kg m⁻² s⁻¹, up)
-    LEwet = zeros(Nsteps) # wet-canopy latent heat ℒ·E_wet (W m⁻², up)
+    LEwet = zeros(Nsteps) # wet-canopy latent heat ℒ·Eʷ (W m⁻², up)
     P   = zeros(Nsteps)   # incident rain (kg m⁻² s⁻¹, down)
     Pˡ  = zeros(Nsteps)   # throughfall reaching the soil (kg m⁻² s⁻¹, down)
     𝒮   = zeros(Nsteps)   # surface saturation
@@ -266,7 +266,7 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
     end
 
     ## The leaf latent `LEᵛ` is transpiration + wet-canopy; the model reports the wet share
-    ## `LEwet = ℒ·E_wet` with the *same* `ℒ` as `LEᵛ`, so `transpiration` is the exact
+    ## `LEwet = ℒ·Eʷ` with the *same* `ℒ` as `LEᵛ`, so `transpiration` is the exact
     ## stomatal flux (and stays ≥ 0, unlike a split against a fixed reference `ℒ`).
     transpiration = LEᵛ .- LEwet
 
@@ -312,28 +312,28 @@ dense_m  = canopy_air_space_column(leaf_area_index = 4.0, conductance = medlyn, 
 function radiation_partition(case)
     LAI = case.leaf_area_index
     σ   = stefan_boltzmann
-    ε_c = canopy_emissivity_max * (1 - exp(-LAI))
-    ε_g = ground_emissivity
+    εᵛ = canopy_emissivity_max * (1 - exp(-LAI))
+    εᵍ = ground_emissivity
     ftrans = exp(-extinction * LAI * clumping)
 
     SW, LW, Tᵛ, Tᵍ = case.SW, case.LW, case.Tᵛ, case.Tᵍ
 
     ## Shortwave: the canopy absorbs `(1−α_leaf)(1−f_trans)`, the shaded soil gets the
     ## transmitted remainder `f_trans(1−α_ground)`.
-    canopy_SW = @. (1 - leaf_albedo) * (1 - ftrans) * SW
-    ground_SW = @. ftrans * (1 - ground_albedo) * SW
+    SWᵛ = @. (1 - leaf_albedo) * (1 - ftrans) * SW
+    SWᵍ = @. ftrans * (1 - ground_albedo) * SW
 
     ## Longwave: below-canopy downwelling (reaching the soil), the canopy's own
     ## downward emission, the upwelling above the soil, and the total escaping to space.
-    LWd_c      = @. (1 - ε_c) * LW + ε_c * σ * Tᵛ^4     # reaching soil
-    canopy_emit = @. ε_c * σ * Tᵛ^4                     # canopy emission (one face)
-    LWu_g      = @. ε_g * σ * Tᵍ^4 + (1 - ε_g) * LWd_c # upwelling from ground
-    LWu        = @. (1 - ε_c) * LWu_g + ε_c * σ * Tᵛ^4  # to space
+    LWꜜᵍ      = @. (1 - εᵛ) * LW + εᵛ * σ * Tᵛ^4     # reaching soil
+    canopy_emission = @. εᵛ * σ * Tᵛ^4                     # canopy emission (one face)
+    LWꜛᵍ      = @. εᵍ * σ * Tᵍ^4 + (1 - εᵍ) * LWꜜᵍ # upwelling from ground
+    LWu        = @. (1 - εᵛ) * LWꜛᵍ + εᵛ * σ * Tᵛ^4  # to space
 
     ## Net radiation absorbed by the whole land column (canopy + soil).
-    Rₙ = @. canopy_SW + ground_SW + LW - LWu
+    Rₙ = @. SWᵛ + SWᵍ + LW - LWu
 
-    return (; canopy_SW, ground_SW, LWd_c, canopy_emit, LWu_g, LWu, Rₙ)
+    return (; SWᵛ, SWᵍ, LWꜜᵍ, canopy_emission, LWꜛᵍ, LWu, Rₙ)
 end
 
 # ## Plot helpers
@@ -388,23 +388,23 @@ axislegend(ax; position = :lt, labelsize = 12)
 ax = Axis(fig[2, 1]; title = "Downwelling shortwave partition", xlabel = "t (days)", ylabel = "SW (W m⁻²)")
 mark_pulse!(ax)
 lines!(ax, t, ref.SW;        color = :goldenrod, linewidth = 3, label = "incident on land")
-lines!(ax, t, rad.canopy_SW; color = :seagreen,    label = "absorbed by canopy")
-lines!(ax, t, rad.ground_SW; color = :saddlebrown, label = "reaching soil")
+lines!(ax, t, rad.SWᵛ; color = :seagreen,    label = "absorbed by canopy")
+lines!(ax, t, rad.SWᵍ; color = :saddlebrown, label = "reaching soil")
 axislegend(ax; position = :lt, labelsize = 12)
 
 ## (2,2) Longwave down partition.
 ax = Axis(fig[2, 2]; title = "Downwelling longwave partition", xlabel = "t (days)", ylabel = "LW (W m⁻²)")
 mark_pulse!(ax)
 lines!(ax, t, ref.LW;         color = :black,     linewidth = 3, label = "incident on land")
-lines!(ax, t, rad.LWd_c;      color = :saddlebrown, label = "reaching soil")
-lines!(ax, t, rad.canopy_emit; color = :seagreen,  label = "emitted down by canopy")
+lines!(ax, t, rad.LWꜜᵍ;      color = :saddlebrown, label = "reaching soil")
+lines!(ax, t, rad.canopy_emission; color = :seagreen,  label = "emitted down by canopy")
 axislegend(ax; position = :lt, labelsize = 12)
 
 ## (3,1) Longwave up partition.
 ax = Axis(fig[3, 1]; title = "Upwelling longwave partition", xlabel = "t (days)", ylabel = "LW (W m⁻²)")
 mark_pulse!(ax)
-lines!(ax, t, rad.LWu_g;      color = :saddlebrown, label = "from ground")
-lines!(ax, t, rad.canopy_emit; color = :seagreen,   label = "from canopy")
+lines!(ax, t, rad.LWꜛᵍ;      color = :saddlebrown, label = "from ground")
+lines!(ax, t, rad.canopy_emission; color = :seagreen,   label = "from canopy")
 lines!(ax, t, rad.LWu;        color = :black,        linewidth = 2, label = "to space (LST)")
 axislegend(ax; position = :lt, labelsize = 12)
 
@@ -542,7 +542,7 @@ nothing #hide
 # `LAI_veg`); its canopy-free (LAI = 0) bare counterpart is derived automatically by
 # `TiledLandInterface`. The interception store is a cell-average quantity — LAI `f_veg·LAI_veg`
 # and capacity `c·f_veg·LAI_veg`, set on the land's `InterceptingHydrology` — and the tile's
-# `f_wet` normalizes by *that* store's own capacity, so a full store gives `f_wet → 1` at any
+# `fʷ` normalizes by *that* store's own capacity, so a full store gives `fʷ → 1` at any
 # `f_veg` (and a fully bare cell, `f_veg = 0`, intercepts nothing).
 
 function tiled_intercepting_column(; fraction, label)
@@ -567,7 +567,7 @@ function tiled_intercepting_column(; fraction, label)
     𝒮    = zeros(Nsteps)   # shared-column saturation
     Wᶜ   = zeros(Nsteps)   # canopy water store (mm)
     Ewet = zeros(Nsteps)   # wet-canopy evaporation (mass flux, positive up)
-    LEwet = zeros(Nsteps)  # wet-canopy latent heat ℒ·E_wet (W m⁻², up)
+    LEwet = zeros(Nsteps)  # wet-canopy latent heat ℒ·Eʷ (W m⁻², up)
     LEᵛ  = zeros(Nsteps)   # blended leaf latent (transpiration + wet-canopy)
     LEᵍ  = zeros(Nsteps)   # blended soil latent
     P    = zeros(Nsteps)   # incident rain (mass flux, down)
@@ -623,7 +623,7 @@ end
 frac_panel(fig[1, 1], :LE,   "Latent heat (blended)",        "LE (W m⁻²)")
 frac_panel(fig[1, 2], :H,    "Sensible heat (blended)",      "H (W m⁻²)")
 frac_panel(fig[2, 1], :Teff, "Land-surface temperature",     "Teff (K)")
-frac_panel(fig[2, 2], :Ewet, "Wet-canopy evaporation E_wet", "E_wet (mm day⁻¹)"; transform = mm_per_day)
+frac_panel(fig[2, 2], :Ewet, "Wet-canopy evaporation Eʷ", "Eʷ (mm day⁻¹)"; transform = mm_per_day)
 frac_panel(fig[3, 1], :Wᶜ,   "Canopy water store Wᶜ",         "Wᶜ (mm)"; legend = :rt)
 ax = frac_panel(fig[3, 2], :𝒮, "Shared-column saturation 𝒮",  "𝒮"; legend = :rc)
 hlines!(ax, [critical_saturation]; color = :gray, linestyle = :dash)
@@ -647,7 +647,7 @@ nothing #hide
 
 ref   = full_canopy
 Wᶜᵐᵃˣ = interception_capacity * vegetated_leaf_area_index
-wet_LE           = ref.LEwet             # wet-canopy latent heat ℒ·E_wet (W m⁻²)
+wet_LE           = ref.LEwet             # wet-canopy latent heat ℒ·Eʷ (W m⁻²)
 transpiration_LE = ref.LEᵛ .- ref.LEwet  # dry (stomatal) leaf latent
 
 fig = Figure(size = (1500, 950), fontsize = 17)
@@ -676,11 +676,11 @@ lines!(ax, ref.t, ref.LEᵍ;          color = :saddlebrown, label = "soil evapor
 lines!(ax, ref.t, wet_LE;           color = :steelblue,   label = "wet-canopy evaporation")
 axislegend(ax; position = :lt, labelsize = 12)
 
-## (2,2) The Deardorff wet fraction f_wet = (Wᶜ/Wᶜᵐᵃˣ)^(2/3) driving the wet/dry leaf blend.
-f_wet = @. clamp((max(ref.Wᶜ, 0) / Wᶜᵐᵃˣ)^(2/3), 0, 1)
-ax = Axis(fig[2, 2]; title = "Wet-canopy fraction f_wet", xlabel = "t (days)", ylabel = "f_wet")
+## (2,2) The Deardorff wet fraction fʷ = (Wᶜ/Wᶜᵐᵃˣ)^(2/3) driving the wet/dry leaf blend.
+fʷ = @. clamp((max(ref.Wᶜ, 0) / Wᶜᵐᵃˣ)^(2/3), 0, 1)
+ax = Axis(fig[2, 2]; title = "Wet-canopy fraction fʷ", xlabel = "t (days)", ylabel = "fʷ")
 mark_pulse!(ax)
-lines!(ax, ref.t, f_wet; color = :steelblue, linewidth = 2)
+lines!(ax, ref.t, fʷ; color = :steelblue, linewidth = 2)
 ylims!(ax, 0, 1.05)
 
 Label(fig[0, 1:2], "Interception store anatomy — full canopy (f_veg = 1)", fontsize = 22)
