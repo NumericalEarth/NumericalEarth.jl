@@ -91,7 +91,15 @@ function set!(fts::DatasetFieldTimeSeries, backend=fts.backend)
 
     for t in time_indices(fts)
         metadatum = @inbounds backend.metadata[t]
-        set!(fts[t], metadatum; inpainting, cache_inpainted_data=cache_data)
+
+        # Interpolating onto an identical grid is the identity where the data is complete,
+        # but its bilinear stencil spreads each missing cell into its neighbors.
+        if on_native_grid(backend) && isnothing(inpainting)
+            isfile(metadata_path(metadatum)) || Downloads.download(metadatum)
+            set_metadata_field!(fts[t], retrieve_data(metadatum), metadatum)
+        else
+            set!(fts[t], metadatum; inpainting, cache_inpainted_data=cache_data)
+        end
     end
 
     fill_halo_regions!(fts)

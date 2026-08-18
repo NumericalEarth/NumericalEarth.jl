@@ -16,6 +16,8 @@ export DatasetRestoring, SurfaceFluxRestoring
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
 export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
+export fill_gaps!, fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial, time_average
+export class_fraction, class_fractions
 
 using Adapt: Adapt
 using Downloads: Downloads
@@ -31,7 +33,7 @@ using Oceananigans.Grids: AbstractGrid, Center, Face, Flat, Bounded,
                           LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes
 using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
 using Oceananigans.Grids: node
-using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
+using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Clamp, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
 using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
 using Oceananigans.Utils: launch!, prettytime, prettysummary
@@ -66,6 +68,27 @@ function download_cache(key)
     else
         return @get_scratch!(key)
     end
+end
+
+"""
+    write_atomically(write!, filepath)
+
+Call `write!(staging_path)` with a staging path unique to this writer in `filepath`'s
+directory, then rename the staged file into place. Readers treat an existing file as a
+complete one, so a file must never appear under `filepath` half-written: the staging
+directory keeps the rename on one filesystem (a true rename, not a copy), the unique name
+keeps concurrent writers of the same file from truncating each other's staging file, and a
+failed `write!` removes its staging file instead of leaving debris in the cache.
+"""
+function write_atomically(write!, filepath)
+    staging_path = tempname(dirname(filepath); cleanup = false) * splitext(filepath)[2]
+    try
+        write!(staging_path)
+        mv(staging_path, filepath; force = true)
+    finally
+        rm(staging_path; force = true)
+    end
+    return filepath
 end
 
 mutable struct DownloadProgress <: Function
@@ -269,6 +292,10 @@ include("metadata_field.jl")
 include("dataset_backend.jl")
 include("metadata_field_time_series.jl")
 include("inpainting.jl")
+include("donor_pools.jl")
+include("gap_filling.jl")
+include("class_fractions.jl")
+include("time_average.jl")
 include("restoring.jl")
 include("earthdata.jl")
 include("figshare.jl")
@@ -373,6 +400,7 @@ include("ASTERGED/ASTERGED.jl")
 include("GloBFP3D/GloBFP3D.jl")
 include("GHSL/GHSL.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
+include("MODISLand/MODISLand.jl")
 include("WorldCover/WorldCover.jl")
 
 using .ETOPO
@@ -395,6 +423,7 @@ using .ASTERGED
 using .GloBFP3D
 using .GHSL
 using .CopernicusLandAlbedo
+using .MODISLand
 using .WorldCover
 
 function dataset_modules()

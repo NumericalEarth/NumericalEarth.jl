@@ -297,9 +297,7 @@ end
     @test all(interior(s2.θˡⁱ) .< θ)   # condensate loading lowers θˡⁱ below the dry θ
 end
 
-# Unit test that the state exchanger carries the specific members (`θ`, `u`, `v`) consistently with the
-# density-weighted ones — `ρθ = ρᵈ·θ`, `ρu = ρᵈ·u`, `ρv = ρᵈ·v`, and `u`/`v` are verbatim parent copies.
-# This is the invariant the intensive (`SpecificForcing`) Davies relaxation relies on.
+# The invariant the intensive (`SpecificForcing`) Davies relaxation relies on.
 @testset "state exchanger: specific θ/u/v are the intensive partners of ρθ/ρu/ρv" begin
     ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
     grid = RectilinearGrid(size = (8, 8, 4), x = (-1, 1), y = (-1, 1), z = (0, 1),
@@ -431,9 +429,8 @@ end
     @test length(nested.exchanger.prognostic.ρᵈ.backend) == 3
 end
 
-# The Davies relaxation is keyed by the density-weighted prognostic and pre-wrapped in `SpecificForcing`,
-# so a caller's own specific-key forcing COMBINES with it rather than replacing it in the constructor's
-# `merge`. Had it been keyed `θ`, the merge would drop it and `forcing.ρθ` would be a lone SpecificForcing.
+# The relaxation is keyed by the density-weighted prognostic, so a caller's own specific-key
+# forcing combines with it in the constructor's `merge` instead of replacing it.
 @testset "Davies relaxation survives a caller-supplied specific forcing" begin
     parent_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 4),
                                         longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),

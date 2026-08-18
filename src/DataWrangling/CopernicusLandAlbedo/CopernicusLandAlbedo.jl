@@ -2,14 +2,15 @@ module CopernicusLandAlbedo
 
 export CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!
 
-using Dates: Dates, DateTime, Month, year, month, daysinmonth
+using Dates: Dates, DateTime, Day, Month, year, month, day, daysinmonth
 using Downloads: Downloads
 using NCDatasets: NCDataset, defVar, nomissing
 using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
-                       metadata_path, default_download_directory, native_convention_longitude
+                       metadata_path, default_download_directory,
+                       native_convention_longitude, native_cell_range, write_atomically
 
 import Oceananigans
 
@@ -166,6 +167,23 @@ DataWrangling.all_dates(::CopernicusAlbedo, variable) = copernicus_albedo_dekada
 # 12 climatological months; the year is arbitrary, only the month matters.
 DataWrangling.all_dates(::CopernicusAlbedoClimatology, variable) = [DateTime(2018, m, 1) for m in 1:12]
 
+DataWrangling.is_seasonal_climatology(::CopernicusAlbedoClimatology) = true
+
+# A dekad is stamped on its last day, so its window opens on day 1, 11, or 21 and closes the
+# day after the stamp. The third dekad runs to the end of the month, so it is 8 to 11 days long.
+function copernicus_albedo_dekad_window(date)
+    dekad_start = day(date) == 10 ? 1 : day(date) == 20 ? 11 : 21
+    start = DateTime(year(date), month(date), dekad_start)
+    return start, DateTime(date) + Day(1)
+end
+
+DataWrangling.sample_window(metadatum::Metadatum{<:CopernicusAlbedo}) =
+    copernicus_albedo_dekad_window(metadatum.dates)
+
+# A climatological month is the mean of that month's dekads, stamped on the first of the month.
+DataWrangling.sample_window(metadatum::Metadatum{<:CopernicusAlbedoClimatology}) =
+    (DateTime(metadatum.dates), DateTime(metadatum.dates) + Month(1))
+
 #####
 ##### Filenames (date + variable keyed, region-independent — reused across regions)
 #####
@@ -245,25 +263,24 @@ source are preserved.
 function repack_albedo_pair(blacksky, whitesky, destination_names, filepath, expected_size)
     blacksky_path, blacksky_name = blacksky
     whitesky_path, whitesky_name = whitesky
-    staging_path = filepath * ".tmp"
 
-    NCDataset(staging_path, "c") do destination
-        NCDataset(blacksky_path) do source
-            λ = nomissing(source[coordinate_name(source, ("lon", "longitude"))][:])
-            φ = nomissing(source[coordinate_name(source, ("lat", "latitude"))][:])
-            (length(λ), length(φ)) == expected_size ||
-                error("CGLS albedo file grid $((length(λ), length(φ))) does not match ",
-                      "the expected $expected_size; the dataset traits need updating.")
-            defVar(destination, "lon", λ, ("lon",))
-            defVar(destination, "lat", φ, ("lat",))
-            copy_packed_variable!(destination, source, blacksky_name, destination_names[1])
-        end
-        NCDataset(whitesky_path) do source
-            copy_packed_variable!(destination, source, whitesky_name, destination_names[2])
+    write_atomically(filepath) do staging_path
+        NCDataset(staging_path, "c") do destination
+            NCDataset(blacksky_path) do source
+                λ = nomissing(source[coordinate_name(source, ("lon", "longitude"))][:])
+                φ = nomissing(source[coordinate_name(source, ("lat", "latitude"))][:])
+                (length(λ), length(φ)) == expected_size ||
+                    error("CGLS albedo file grid $((length(λ), length(φ))) does not match ",
+                          "the expected $expected_size; the dataset traits need updating.")
+                defVar(destination, "lon", λ, ("lon",))
+                defVar(destination, "lat", φ, ("lat",))
+                copy_packed_variable!(destination, source, blacksky_name, destination_names[1])
+            end
+            NCDataset(whitesky_path) do source
+                copy_packed_variable!(destination, source, whitesky_name, destination_names[2])
+            end
         end
     end
-
-    mv(staging_path, filepath; force = true)
     return nothing
 end
 
@@ -277,24 +294,9 @@ end
 
 #####
 ##### Reading — blend the black-sky/white-sky pair into the blue-sky array. Regional
-##### reads hyperslab exactly the native-grid cell window off disk with no global
+##### reads take exactly the native-grid cell window off disk with no global
 ##### materialization, so `retrieve_data` and `read_file_coords` must window identically.
 #####
-
-# 1-based native cell range covered by `bbox` on the axis `(left, right)` split into `N`
-# cells — must match `restrict()` in metadata_field.jl (returned count = `i⁺ - i⁻`, so the
-# cell range `(i⁻+1):i⁺` has that same length, pinning the region offset to di = dj = 0).
-function albedo_cell_range(bbox, interfaces, N)
-    left, right = interfaces
-    Δ = (right - left) / N
-    i⁻ = clamp(floor(Int, (bbox[1] - left) / Δ - 1/2), 0, N)
-    i⁺ = clamp(ceil( Int, (bbox[2] - left) / Δ + 1/2), 0, N)
-    if i⁺ ≤ i⁻
-        i⁺ = min(i⁻ + 1, N)
-        i⁻ = max(i⁺ - 1, 0)
-    end
-    return (i⁻ + 1):i⁺
-end
 
 """
     albedo_read_window(metadatum)
@@ -317,8 +319,8 @@ function albedo_read_window(metadatum)
     left, right = native_longitude
     span = bbox_longitude[2] - bbox_longitude[1]
     (span == 360 || (bbox_longitude[1] ≥ left && bbox_longitude[2] > right)) && return nothing
-    icols = albedo_cell_range(bbox_longitude, native_longitude, Nx)
-    jrows = albedo_cell_range(region.latitude, DataWrangling.latitude_interfaces(metadatum), Ny)
+    icols = native_cell_range(bbox_longitude, native_longitude, Nx)
+    jrows = native_cell_range(region.latitude, DataWrangling.latitude_interfaces(metadatum), Ny)
 
     return icols, jrows
 end
@@ -348,7 +350,7 @@ function DataWrangling.retrieve_data(metadatum::CopernicusAlbedoMetadatum)
         icols, jrows = window
         _, Ny, _ = size(metadatum.dataset, metadatum.name)
         # The file stores latitude north→south, so the ascending cells `jrows` sit at file
-        # rows (Ny − last + 1):(Ny − first + 1). Only this hyperslab leaves disk.
+        # rows (Ny − last + 1):(Ny − first + 1). Only this window leaves disk.
         file_rows = (Ny - last(jrows) + 1):(Ny - first(jrows) + 1)
         NCDataset(path) do ds
             α_bs = copernicus_albedo_decode.(ds[blacksky_name][icols, file_rows])
@@ -426,35 +428,34 @@ function write_monthly_mean(filepath, source_paths, variable_names, latitude_chu
         nomissing(ds["lon"][:]), nomissing(ds["lat"][:])
     end
     Nx, Ny = length(λ), length(φ)
-    staging_path = filepath * ".tmp"
 
-    NCDataset(staging_path, "c") do destination
-        defVar(destination, "lon", λ, ("lon",))
-        defVar(destination, "lat", φ, ("lat",))
+    write_atomically(filepath) do staging_path
+        NCDataset(staging_path, "c") do destination
+            defVar(destination, "lon", λ, ("lon",))
+            defVar(destination, "lat", φ, ("lat",))
 
-        for variable_name in variable_names
-            monthly_mean = defVar(destination, variable_name, Float32, ("lon", "lat");
-                                  deflatelevel = 2, shuffle = true)
+            for variable_name in variable_names
+                monthly_mean = defVar(destination, variable_name, Float32, ("lon", "lat");
+                                      deflatelevel = 2, shuffle = true)
 
-            for j in 1:latitude_chunk:Ny
-                rows = j:min(j + latitude_chunk - 1, Ny)
-                Σα = zeros(Float32, Nx, length(rows))
-                n = zeros(Int32, Nx, length(rows))
+                for j in 1:latitude_chunk:Ny
+                    rows = j:min(j + latitude_chunk - 1, Ny)
+                    Σα = zeros(Float32, Nx, length(rows))
+                    n = zeros(Int32, Nx, length(rows))
 
-                for path in source_paths
-                    NCDataset(path) do ds
-                        α = copernicus_albedo_decode.(ds[variable_name][:, rows])
-                        @. Σα += ifelse(isnan(α), 0f0, α)
-                        @. n += !isnan(α)
+                    for path in source_paths
+                        NCDataset(path) do ds
+                            α = copernicus_albedo_decode.(ds[variable_name][:, rows])
+                            @. Σα += ifelse(isnan(α), 0f0, α)
+                            @. n += !isnan(α)
+                        end
                     end
-                end
 
-                monthly_mean[:, rows] = @. ifelse(n == 0, NaN32, Σα / n)
+                    monthly_mean[:, rows] = @. ifelse(n == 0, NaN32, Σα / n)
+                end
             end
         end
     end
-
-    mv(staging_path, filepath; force = true)
     return nothing
 end
 

@@ -25,21 +25,40 @@ restrict(::Nothing, interfaces, N) = interfaces, N
 restrict(::Nothing, interfaces::NTuple{2,Any}, N) = interfaces, N
 restrict(::Nothing, interfaces::AbstractVector, N) = interfaces, N
 
-# Snap so the native cell *centers* bracket the bbox: include the cell whose
-# center is at or below the lower edge and the one whose center is at or above the
-# upper edge. This keeps the bbox inside the center hull so it stays interpolatable
-# at its edges (downscaling clamps outside the hull). Pads by 0 or 1 cell depending
-# on where the edge falls within a native cell (an edge in a cell's first half — or
-# exactly on a face — needs the extra cell; an edge past the center does not).
-function restrict(bbox_interfaces, interfaces::NTuple{2,Any}, N)
+"""
+    native_cell_range(bounds, interfaces, N)
+
+The 1-based native cell range covered by `bounds` on an axis spanning `interfaces` in `N`
+cells — the cells [`restrict`](@ref) keeps, as indices rather than as edges.
+
+Snap so the native cell *centers* bracket `bounds`: include the cell whose center is at or
+below the lower edge and the one whose center is at or above the upper edge. This keeps
+`bounds` inside the center hull so it stays interpolatable at its edges (downscaling clamps
+outside the hull). Pads by 0 or 1 cell depending on where the edge falls within a native cell
+(an edge in a cell's first half — or exactly on a face — needs the extra cell; an edge past
+the center does not).
+
+A dataset that reads this range off disk hands `set_region_data!` exactly as many cells as
+the native grid has, pinning the region offset to zero instead of relying on a float
+comparison between the grid's nodes and the file's coordinates.
+"""
+function native_cell_range(bounds, interfaces, N)
     left, right = interfaces
     Δ = (right - left) / N
-    i⁻ = clamp(floor(Int, (bbox_interfaces[1] - left) / Δ - 1/2), 0, N)
-    i⁺ = clamp(ceil( Int, (bbox_interfaces[2] - left) / Δ + 1/2), 0, N)
+    i⁻ = clamp(floor(Int, (bounds[1] - left) / Δ - 1/2), 0, N)
+    i⁺ = clamp(ceil( Int, (bounds[2] - left) / Δ + 1/2), 0, N)
     if i⁺ ≤ i⁻
         i⁺ = min(i⁻ + 1, N)
         i⁻ = max(i⁺ - 1, 0)
     end
+    return (i⁻ + 1):i⁺
+end
+
+function restrict(bbox_interfaces, interfaces::NTuple{2,Any}, N)
+    left, right = interfaces
+    Δ = (right - left) / N
+    cells = native_cell_range(bbox_interfaces, interfaces, N)
+    i⁻, i⁺ = first(cells) - 1, last(cells)
     return (left + i⁻ * Δ, left + i⁺ * Δ), i⁺ - i⁻
 end
 
@@ -342,7 +361,23 @@ below the (clipped) surface of a `PressureLevelGrid` source.
     Drop this once Oceananigans' `interpolate!` resolves the target vertical node
     from the physical `znode` for mutable grids.
 """
+# `==` alone compares nodes whenever the grids' wrapper types match, which for a
+# `PressureLevelGrid` reduces the whole geopotential to a column-mean profile
+# (`mean_height_profile`) only to discard it; the exact-type guard short-circuits that.
+same_grid(a::AbstractGrid, b::AbstractGrid) = typeof(a) === typeof(b) && a == b
+
+same_nodes(a, b) = same_grid(a.grid, b.grid) &&
+                   location(a) === location(b) && a.indices == b.indices
+
 function interpolate_physical!(to_field, from_field)
+    # On the same nodes interpolation is the identity where the data is complete, but its
+    # bilinear stencil spreads each NaN into its neighbors; a copy has no stencil to spread.
+    if same_nodes(to_field, from_field)
+        interior(to_field) .= interior(from_field)
+        fill_halo_regions!(to_field)
+        return to_field
+    end
+
     to_field.grid isa AbstractMutableGrid || return interpolate!(to_field, from_field)
 
     to_grid       = to_field.grid

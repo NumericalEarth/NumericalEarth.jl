@@ -53,6 +53,7 @@ DataWrangling.last_date(::WOAAnnual, args...) = nothing
 DataWrangling.all_dates(::WOAMonthly, args...) = [DateTime(2018, m, 1) for m in 1:12]
 
 DataWrangling.sample_window(metadatum::Metadatum{<:WOAMonthly}) = DataWrangling.calendar_month_window(metadatum)
+DataWrangling.is_seasonal_climatology(::WOAMonthly) = true
 
 # WOA stores depth as positive values, surface first (0 to 5500m)
 DataWrangling.reversed_vertical_axis(::WOAClimatology) = true

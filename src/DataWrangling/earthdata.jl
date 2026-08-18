@@ -15,6 +15,7 @@ function download_with_retries(url, path; attempts = 3, downloader = nothing, de
             end
             return path
         catch error
+            error isa InterruptException && rethrow()
             rm(path, force = true)
             attempt == attempts && rethrow()
             @warn "$description failed (attempt $attempt of $attempts); retrying..." url error
@@ -64,23 +65,38 @@ function earthdata_download_cached(url, cache_dir; attempts = 3)
 end
 
 """
-    cmr_granules_url(short_name, version, bbox; page_size = 2000, page_num = 1)
+    cmr_granules_url(short_name, version, bbox; date = nothing, page_size = 2000, page_num = 1)
 
 Build the NASA CMR granule-search URL for page `page_num` of the product `short_name` /
 `version` whose granules intersect the `bbox` `BoundingBox` (encoded `W,S,E,N`,
 longitudes in `[-180, 180]`). CMR search is anonymous; only the granule download itself
 needs Earthdata credentials.
+
+A `date` narrows the search to the day it opens, for a product whose granules are dated;
+`nothing` searches the whole record, for one whose tiles are a single static epoch.
 """
-function cmr_granules_url(short_name, version, bbox::BoundingBox; page_size = 2000, page_num = 1)
+function cmr_granules_url(short_name, version, bbox::BoundingBox;
+                          date = nothing, page_size = 2000, page_num = 1)
+
+    (!isnothing(bbox.longitude) && !isnothing(bbox.latitude)) ||
+        throw(ArgumentError("cmr_granules_url requires a bounded (longitude, latitude) BoundingBox."))
     west, east = bbox.longitude
     south, north = bbox.latitude
     return string("https://cmr.earthdata.nasa.gov/search/granules.json",
                   "?short_name=", short_name,
                   "&version=", version,
                   "&bounding_box=", west, ",", south, ",", east, ",", north,
+                  cmr_temporal_query(date),
                   "&page_size=", page_size,
                   "&page_num=", page_num)
 end
+
+cmr_temporal_query(::Nothing) = ""
+
+cmr_temporal_query(date) =
+    string("&temporal=", cmr_time(date), ",", cmr_time(DateTime(date) + Dates.Day(1)))
+
+cmr_time(date) = string(Dates.format(DateTime(date), "yyyy-mm-ddTHH:MM:SS"), "Z")
 
 """
     cmr_granules(short_name, version, bbox; extension = "h5", page_size = 2000, attempts = 3)
