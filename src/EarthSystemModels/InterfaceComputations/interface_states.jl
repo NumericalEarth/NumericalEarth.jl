@@ -5,11 +5,15 @@ using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 ##### Interface properties
 #####
 
-struct InterfaceProperties{Q, T, V}
+struct InterfaceProperties{Q, T, V, S}
     specific_humidity_formulation :: Q
     temperature_formulation :: T
     velocity_formulation :: V
+    surface_properties :: S
 end
+
+InterfaceProperties(specific_humidity_formulation, temperature_formulation, velocity_formulation) =
+    InterfaceProperties(specific_humidity_formulation, temperature_formulation, velocity_formulation, (;))
 
 #####
 ##### Interface specific humidity formulations
