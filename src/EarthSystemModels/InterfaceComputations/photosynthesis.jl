@@ -15,9 +15,9 @@ const physiology_reference_temperature = 298.15 # K (25 °C)
 # Arrhenius temperature scaling `f(T) = exp[ΔH (T − T₂₅) / (T₂₅ R T)]`
 # (ClimaLand Eq C6). Normalized to 1 at `T = T₂₅`.
 @inline function arrhenius_scaling(T, ΔH)
-    T25 = oftype(T, physiology_reference_temperature)
+    T₂₅ = oftype(T, physiology_reference_temperature)
     R   = oftype(T, default_gas_constant)
-    return exp(ΔH * (T - T25) / (T25 * R * T))
+    return exp(ΔH * (T - T₂₅) / (T₂₅ * R * T))
 end
 
 # Deactivation exponent `(ΔS T − ΔHd)/(R T)` of the peaked Arrhenius form.
@@ -32,19 +32,19 @@ end
 # normalizes `f′(T₂₅) = 1`, preserving the meaning of the 25 °C values. Activation
 # `ΔHa`, entropy `ΔS`, deactivation `ΔHd` are the Kattge & Knorr (2007) peaked set.
 @inline function peaked_arrhenius(T, ΔHa, ΔS, ΔHd)
-    T25  = oftype(T, physiology_reference_temperature)
+    T₂₅  = oftype(T, physiology_reference_temperature)
     base = arrhenius_scaling(T, ΔHa)
-    return base * (1 + exp(deactivation_exponent(T25, ΔS, ΔHd))) /
+    return base * (1 + exp(deactivation_exponent(T₂₅, ΔS, ΔHd))) /
                   (1 + exp(deactivation_exponent(T,   ΔS, ΔHd)))
 end
 
 # Heskel et al. (2016) leaf-respiration temperature response (ClimaLand Eq C12),
-# normalized to 1 at 25 °C. Defined in Celsius (`Tc = T − 273.15`): using Kelvin
+# normalized to 1 at 25 °C. Defined in Celsius (`Tᶜ = T − 273.15`): using Kelvin
 # with these coefficients flips the sign and makes `Rd` fall with temperature.
 @inline function heskel_respiration_scaling(T, b, c)
-    Tc   = T - oftype(T, celsius_to_kelvin)
-    T25c = oftype(T, 25)
-    return exp(b * (Tc - T25c) + c * (Tc^2 - T25c^2))
+    Tᶜ   = T - oftype(T, celsius_to_kelvin)
+    T₂₅ᶜ = oftype(T, 25)
+    return exp(b * (Tᶜ - T₂₅ᶜ) + c * (Tᶜ^2 - T₂₅ᶜ^2))
 end
 
 #####

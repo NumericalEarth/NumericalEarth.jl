@@ -75,11 +75,11 @@ end
 
 @testset "Peaked Arrhenius + Heskel respiration" begin
     for FT in (Float32, Float64)
-        T25 = FT(298.15)
+        T₂₅ = FT(298.15)
 
         # Normalization: both scalings are 1 at 25 °C.
-        @test peaked_arrhenius(T25, FT(71513), FT(649), FT(200000)) ≈ 1
-        @test heskel_respiration_scaling(T25, FT(0.1012), FT(-0.0005)) ≈ 1
+        @test peaked_arrhenius(T₂₅, FT(71513), FT(649), FT(200000)) ≈ 1
+        @test heskel_respiration_scaling(T₂₅, FT(0.1012), FT(-0.0005)) ≈ 1
 
         # Vcmax/Jmax rise then fall — interior optimum with high-T rolloff.
         Ts = FT(273):FT(1):FT(323)
@@ -105,8 +105,8 @@ end
         @test argmax(An_peak) < argmax(An_plain)
 
         # 25 °C regression anchor: peaked and plain agree at exactly 25 °C.
-        @test net_assimilation(photo_peak,  FT(28), FT(8e-4), T25, FT(101325), FT(1)) ≈
-              net_assimilation(photo_plain, FT(28), FT(8e-4), T25, FT(101325), FT(1))
+        @test net_assimilation(photo_peak,  FT(28), FT(8e-4), T₂₅, FT(101325), FT(1)) ≈
+              net_assimilation(photo_plain, FT(28), FT(8e-4), T₂₅, FT(101325), FT(1))
 
         # Type stability.
         @test eltype(net_assimilation(photo_peak, FT(28), FT(8e-4), FT(298), FT(101325), FT(1))) == FT
