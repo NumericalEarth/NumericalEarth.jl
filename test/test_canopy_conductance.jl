@@ -57,7 +57,7 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
 
         @test gs_ref > cond.g0
         @test An_ref > 0
-        @test photo.Γstar25 < ci_ref < ca          # intercellular CO₂ in physical band
+        @test photo.Γ★25 < ci_ref < ca          # intercellular CO₂ in physical band
         @test gs_dry < gs_ref                    # higher VPD closes stomata
         @test gs_str < gs_ref                    # moisture stress closes stomata
         @test gs_drk ≈ cond.g0 atol=1e-3         # no light → minimum conductance

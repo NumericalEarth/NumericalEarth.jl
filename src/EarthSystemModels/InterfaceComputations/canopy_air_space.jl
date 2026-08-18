@@ -2,10 +2,8 @@
 ##### `CanopyAirSpace` — a two-source canopy with a diagnostic canopy-air node.
 #####
 ##### The canopy and the soil surface exchange with a massless **canopy-air node**
-##### `(Tᵃᶜ, qᵃᶜ)` that drains to the atmosphere through the aerodynamic conductance,
-##### exactly the network the humidity side already builds in `CompositeSurfaceHumidity`
-##### — now applied symmetrically to temperature. Three diagnostic scalars are solved
-##### inside the Monin–Obukhov fixed point:
+##### `(Tᵃᶜ, qᵃᶜ)` that drains to the atmosphere through the aerodynamic conductance.
+##### Three diagnostic scalars are solved inside the Monin–Obukhov fixed point:
 #####
 #####   Tᵛ  — leaf temperature      (massless leaf: Rₙᵛ = Hᵛ + LEᵛ)
 #####   Tᵍ — soil-skin temperature (Rₙᵍ = Hᵍ + LEᵍ + Λᵍ(Tᵍ − Tˡᵃ), conducts to the bulk)
@@ -17,9 +15,8 @@
 ##### Reuse: `canopy_conductance_terms` (leaf vapor conductance `gˡʷ = gᶜ` and
 ##### `qᵛ⁺(Tᵛ)`, the Farquhar–Medlyn stomatal path) and `dry_layer_terms` (soil vapor
 ##### conductance `gᵍʷ = Gᵉ` and the front humidity `qᵉ`) are the *same* helpers the
-##### standalone/composite humidity formulations use — the CAS only adds the sensible
-##### conductances, the two-face longwave ledger, the Beer–Lambert shortwave split, and
-##### the coupled solve. Grounded in ClimaLand (Deck et al. 2026, App. D2/D5, E3).
+##### standalone/composite humidity formulations use.
+##### Based on ClimaLand (Deck et al. 2026, App. D2/D5, E3).
 #####
 ##### A `CanopyAirSpace` is a *combined* formulation: pass the same object as both
 ##### `atmosphere_land_interface_temperature` and `atmosphere_land_interface_specific_humidity`.

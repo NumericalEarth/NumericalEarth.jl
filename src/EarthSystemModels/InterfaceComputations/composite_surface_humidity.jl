@@ -23,7 +23,7 @@
 ##### The soil branch carries the [`DryLayerHumidity`](@ref) wet-branch blend: at
 ##### high saturation the soil skin itself saturates (`σ → 0`) and pins the
 ##### surface to `qᵛ⁺(Tᵍ)` regardless of the canopy. The blend is applied to the
-##### composite exactly as in the standalone soil model, so the limits are clean:
+##### composite exactly as in the standalone soil model.
 ##### `gᶜ = 0` reproduces [`DryLayerHumidity`](@ref) bit-for-bit, and a fully-dry
 ##### soil (`σ = 1`, `Gᵉ = 0`) reproduces [`CanopyConductanceHumidity`](@ref).
 #####

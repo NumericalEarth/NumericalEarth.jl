@@ -69,6 +69,8 @@ export
     PrescribedAbsorbedPAR,
     InteractiveAbsorbedPAR,
     PlainArrhenius,
+    PeakedArrheniusParameters,
+    HeskelParameters,
     PeakedArrhenius,
     ElevationCorrection,
     atmosphere_land_interface,

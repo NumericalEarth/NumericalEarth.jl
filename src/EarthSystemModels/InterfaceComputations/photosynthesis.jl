@@ -47,6 +47,55 @@ end
     return exp(b * (Tᶜ - T₂₅ᶜ) + c * (Tᶜ^2 - T₂₅ᶜ^2))
 end
 
+"""
+    PeakedArrheniusParameters(FT = Oceananigans.defaults.FloatType;
+                              activation_energy, entropy, deactivation_energy)
+
+Parameters of the peaked Arrhenius temperature response of a photosynthetic
+capacity: `activation_energy` `ΔHᵃ` (J mol⁻¹), `entropy` `ΔS` (J mol⁻¹ K⁻¹),
+and `deactivation_energy` `ΔHᵈ` (J mol⁻¹). The Kattge & Knorr (2007) values for
+`Vcmax`/`Jmax` are the [`FarquharPhotosynthesis`](@ref) defaults.
+"""
+struct PeakedArrheniusParameters{FT}
+    activation_energy   :: FT
+    entropy             :: FT
+    deactivation_energy :: FT
+end
+
+PeakedArrheniusParameters(FT::Type = Oceananigans.defaults.FloatType;
+                          activation_energy, entropy, deactivation_energy) =
+    PeakedArrheniusParameters(convert(FT, activation_energy),
+                              convert(FT, entropy),
+                              convert(FT, deactivation_energy))
+
+Base.summary(p::PeakedArrheniusParameters) =
+    string("PeakedArrheniusParameters(activation_energy=", prettysummary(p.activation_energy),
+           ", entropy=", prettysummary(p.entropy),
+           ", deactivation_energy=", prettysummary(p.deactivation_energy), ")")
+Base.show(io::IO, p::PeakedArrheniusParameters) = print(io, summary(p))
+
+"""
+    HeskelParameters(FT = Oceananigans.defaults.FloatType;
+                     slope = 0.1012, curvature = -0.0005)
+
+Coefficients of the Heskel et al. (2016) leaf-respiration temperature response:
+the linear `slope` (°C⁻¹) and quadratic `curvature` (°C⁻²) of the exponent, in
+Celsius (ClimaLand Eq C12).
+"""
+struct HeskelParameters{FT}
+    slope     :: FT
+    curvature :: FT
+end
+
+HeskelParameters(FT::Type = Oceananigans.defaults.FloatType;
+                 slope = 0.1012, curvature = -0.0005) =
+    HeskelParameters(convert(FT, slope), convert(FT, curvature))
+
+Base.summary(p::HeskelParameters) =
+    string("HeskelParameters(slope=", prettysummary(p.slope),
+           ", curvature=", prettysummary(p.curvature), ")")
+Base.show(io::IO, p::HeskelParameters) = print(io, summary(p))
+
 #####
 ##### Photosynthetic-capacity temperature response (trait). `PeakedArrhenius`
 ##### (default) rolls the capacities off above their optimum; `PlainArrhenius`
@@ -58,8 +107,10 @@ abstract type AbstractCapacityResponse end
 struct PlainArrhenius  <: AbstractCapacityResponse end
 struct PeakedArrhenius <: AbstractCapacityResponse end
 
-@inline capacity_scaling(::PlainArrhenius,  T, ΔHa, ΔS, ΔHd) = arrhenius_scaling(T, ΔHa)
-@inline capacity_scaling(::PeakedArrhenius, T, ΔHa, ΔS, ΔHd) = peaked_arrhenius(T, ΔHa, ΔS, ΔHd)
+@inline capacity_scaling(::PlainArrhenius,  T, p::PeakedArrheniusParameters) =
+    arrhenius_scaling(T, p.activation_energy)
+@inline capacity_scaling(::PeakedArrhenius, T, p::PeakedArrheniusParameters) =
+    peaked_arrhenius(T, p.activation_energy, p.entropy, p.deactivation_energy)
 
 # Smooth (θ-quadratic) minimum of two positive rates — the standard co-limitation
 # smoothing (Collatz/Bonan): the smaller root of `θ x² − (a+b) x + a b = 0`.
@@ -86,77 +137,72 @@ C3-grass value used for the ClimaLand US-Var flux-tower run.
 
 Fields (all at 25 °C unless noted):
 - `Vcmax25`      : maximum carboxylation rate (mol CO₂ m⁻² s⁻¹).
-- `Jmax_to_Vcmax`: ratio `Jmax25 / Vcmax25` (–).
-- `Rd_to_Vcmax`  : ratio `Rd25 / Vcmax25` (–).
+- `jmax_to_vcmax`: ratio `Jmax25 / Vcmax25` (–).
+- `respiration_to_vcmax` : ratio `Rd25 / Vcmax25` (–).
 - `quantum_yield`: electrons to PSII per absorbed photon (–).
-- `Γstar25`         : CO₂ compensation point (Pa); `Kc25`, `Ko25`: Michaelis constants (Pa).
-- `O2`           : intercellular O₂ mole fraction (–).
-- `θⱼ`, `θ_colimit` : co-limitation smoothing for `J` and for `min(Aᶜ, Aⱼ)` (–).
+- `Γ★25`         : CO₂ compensation point (Pa); `Kc25`, `Ko25`: Michaelis constants (Pa).
+- `O₂`           : intercellular O₂ mole fraction (–).
+- `θⱼ`, `θᶜⱼ`    : co-limitation smoothing for `J` and for `min(Aᶜ, Aⱼ)` (–).
 - `capacity_response` : `PeakedArrhenius()` (default) or `PlainArrhenius()` — the
   `Vcmax`/`Jmax` temperature response.
-- `ΔHa_*`, `ΔS_*`, `ΔHd_*` : peaked-Arrhenius activation (J mol⁻¹), entropy
-  (J mol⁻¹ K⁻¹), and deactivation (J mol⁻¹) for `Vcmax`/`Jmax`.
-- `heskel_b`, `heskel_c` : Heskel respiration coefficients (°C⁻¹, °C⁻²).
-- `ΔH_Γstar`, `ΔH_Kc`, `ΔH_Ko` : plain-Arrhenius activation energies (J mol⁻¹).
+- `vcmax_response`, `jmax_response` : the [`PeakedArrheniusParameters`](@ref) of each capacity.
+- `respiration_response` : the [`HeskelParameters`](@ref) of the `Rᵈ` temperature response.
+- `compensation_activation_energy`, `kc_activation_energy`, `ko_activation_energy` :
+  plain-Arrhenius activation energies of `Γ★`, `Kc`, `Ko` (J mol⁻¹).
 """
-struct FarquharPhotosynthesis{FT, K}
-    Vcmax25       :: FT
-    Jmax_to_Vcmax :: FT
-    Rd_to_Vcmax   :: FT
-    quantum_yield :: FT
-    Γstar25       :: FT
-    Kc25          :: FT
-    Ko25          :: FT
-    O2            :: FT
-    θⱼ            :: FT
-    θ_colimit     :: FT
-    capacity_response :: K
-    ΔHa_Vcmax     :: FT
-    ΔS_Vcmax      :: FT
-    ΔHd_Vcmax     :: FT
-    ΔHa_Jmax      :: FT
-    ΔS_Jmax       :: FT
-    ΔHd_Jmax      :: FT
-    heskel_b      :: FT
-    heskel_c      :: FT
-    ΔH_Γstar      :: FT
-    ΔH_Kc         :: FT
-    ΔH_Ko         :: FT
+struct FarquharPhotosynthesis{FT, K, PV, PJ, H}
+    Vcmax25              :: FT
+    jmax_to_vcmax        :: FT
+    respiration_to_vcmax :: FT
+    quantum_yield        :: FT
+    Γ★25                 :: FT
+    Kc25                 :: FT
+    Ko25                 :: FT
+    O₂                   :: FT
+    θⱼ                   :: FT
+    θᶜⱼ                  :: FT
+    capacity_response    :: K
+    vcmax_response       :: PV
+    jmax_response        :: PJ
+    respiration_response :: H
+    compensation_activation_energy :: FT
+    kc_activation_energy :: FT
+    ko_activation_energy :: FT
 end
 
 function FarquharPhotosynthesis(FT=Oceananigans.defaults.FloatType;
-                                Vcmax25       = 5e-5,
-                                Jmax_to_Vcmax = 1.67,
-                                Rd_to_Vcmax   = 0.015,
-                                quantum_yield = 0.425,
-                                Γstar25       = 4.332,
-                                Kc25          = 39.97,
-                                Ko25          = 27480,
-                                O2            = 0.209,
-                                θⱼ            = 0.9,
-                                θ_colimit     = 0.98,
-                                capacity_response = PeakedArrhenius(),
-                                ΔHa_Vcmax     = 71513,
-                                ΔS_Vcmax      = 649,
-                                ΔHd_Vcmax     = 200000,
-                                ΔHa_Jmax      = 49884,
-                                ΔS_Jmax       = 646,
-                                ΔHd_Jmax      = 200000,
-                                heskel_b      = 0.1012,
-                                heskel_c      = -0.0005,
-                                ΔH_Γstar      = 37830,
-                                ΔH_Kc         = 79430,
-                                ΔH_Ko         = 36380)
+                                Vcmax25              = 5e-5,
+                                jmax_to_vcmax        = 1.67,
+                                respiration_to_vcmax = 0.015,
+                                quantum_yield        = 0.425,
+                                Γ★25                 = 4.332,
+                                Kc25                 = 39.97,
+                                Ko25                 = 27480,
+                                O₂                   = 0.209,
+                                θⱼ                   = 0.9,
+                                θᶜⱼ                  = 0.98,
+                                capacity_response    = PeakedArrhenius(),
+                                vcmax_response       = PeakedArrheniusParameters(FT;
+                                                           activation_energy = 71513,
+                                                           entropy = 649,
+                                                           deactivation_energy = 200000),
+                                jmax_response        = PeakedArrheniusParameters(FT;
+                                                           activation_energy = 49884,
+                                                           entropy = 646,
+                                                           deactivation_energy = 200000),
+                                respiration_response = HeskelParameters(FT),
+                                compensation_activation_energy = 37830,
+                                kc_activation_energy = 79430,
+                                ko_activation_energy = 36380)
 
-    return FarquharPhotosynthesis{FT, typeof(capacity_response)}(
-        convert(FT, Vcmax25), convert(FT, Jmax_to_Vcmax), convert(FT, Rd_to_Vcmax),
-        convert(FT, quantum_yield), convert(FT, Γstar25), convert(FT, Kc25),
-        convert(FT, Ko25), convert(FT, O2), convert(FT, θⱼ), convert(FT, θ_colimit),
-        capacity_response,
-        convert(FT, ΔHa_Vcmax), convert(FT, ΔS_Vcmax), convert(FT, ΔHd_Vcmax),
-        convert(FT, ΔHa_Jmax), convert(FT, ΔS_Jmax), convert(FT, ΔHd_Jmax),
-        convert(FT, heskel_b), convert(FT, heskel_c),
-        convert(FT, ΔH_Γstar), convert(FT, ΔH_Kc), convert(FT, ΔH_Ko))
+    return FarquharPhotosynthesis{FT, typeof(capacity_response), typeof(vcmax_response),
+                                  typeof(jmax_response), typeof(respiration_response)}(
+        convert(FT, Vcmax25), convert(FT, jmax_to_vcmax), convert(FT, respiration_to_vcmax),
+        convert(FT, quantum_yield), convert(FT, Γ★25), convert(FT, Kc25),
+        convert(FT, Ko25), convert(FT, O₂), convert(FT, θⱼ), convert(FT, θᶜⱼ),
+        capacity_response, vcmax_response, jmax_response, respiration_response,
+        convert(FT, compensation_activation_energy),
+        convert(FT, kc_activation_energy), convert(FT, ko_activation_energy))
 end
 
 Base.summary(::FarquharPhotosynthesis{FT}) where FT = "FarquharPhotosynthesis{$FT}"
@@ -173,20 +219,21 @@ photosynthetic capacities `Vcmax`, `Jmax` (Egea-type stress), so it propagates t
 both `Aₙ` and — through the Medlyn coupling — the stomatal conductance.
 """
 @inline function net_assimilation(p::FarquharPhotosynthesis, ci, APAR, Tₗ, P, β)
-    Γstar = p.Γstar25 * arrhenius_scaling(Tₗ, p.ΔH_Γstar) * P / oftype(P, 101325)
-    Kc = p.Kc25 * arrhenius_scaling(Tₗ, p.ΔH_Kc)
-    Ko = p.Ko25 * arrhenius_scaling(Tₗ, p.ΔH_Ko)
-    Km = Kc * (1 + p.O2 * P / Ko)
+    Γ★ = p.Γ★25 * arrhenius_scaling(Tₗ, p.compensation_activation_energy) * P / oftype(P, 101325)
+    Kc = p.Kc25 * arrhenius_scaling(Tₗ, p.kc_activation_energy)
+    Ko = p.Ko25 * arrhenius_scaling(Tₗ, p.ko_activation_energy)
+    Km = Kc * (1 + p.O₂ * P / Ko)
 
-    Vcmax = β * p.Vcmax25 * capacity_scaling(p.capacity_response, Tₗ, p.ΔHa_Vcmax, p.ΔS_Vcmax, p.ΔHd_Vcmax)
-    Jmax  = β * p.Jmax_to_Vcmax * p.Vcmax25 * capacity_scaling(p.capacity_response, Tₗ, p.ΔHa_Jmax, p.ΔS_Jmax, p.ΔHd_Jmax)
-    Rd    = p.Rd_to_Vcmax * p.Vcmax25 * heskel_respiration_scaling(Tₗ, p.heskel_b, p.heskel_c)
+    Vcmax = β * p.Vcmax25 * capacity_scaling(p.capacity_response, Tₗ, p.vcmax_response)
+    Jmax  = β * p.jmax_to_vcmax * p.Vcmax25 * capacity_scaling(p.capacity_response, Tₗ, p.jmax_response)
+    Rd    = p.respiration_to_vcmax * p.Vcmax25 *
+            heskel_respiration_scaling(Tₗ, p.respiration_response.slope, p.respiration_response.curvature)
 
     # Electron transport rate: smooth minimum of light supply and Jmax.
     J = smooth_minimum(p.quantum_yield * APAR, Jmax, p.θⱼ)
 
-    Ac = Vcmax * (ci - Γstar) / (ci + Km)      # Rubisco-limited
-    Aj = J / 4 * (ci - Γstar) / (ci + 2Γstar)     # light-limited
-    Ag = smooth_minimum(Ac, Aj, p.θ_colimit)
+    Aᶜ = Vcmax * (ci - Γ★) / (ci + Km)      # Rubisco-limited
+    Aⱼ = J / 4 * (ci - Γ★) / (ci + 2Γ★)     # light-limited
+    Ag = smooth_minimum(Aᶜ, Aⱼ, p.θᶜⱼ)
     return Ag - Rd
 end
