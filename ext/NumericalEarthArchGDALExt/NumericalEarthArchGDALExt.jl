@@ -9,6 +9,7 @@ using NetworkOptions: NetworkOptions
 using NumericalEarth: NumericalEarth
 
 using Oceananigans: Center, CPU
+using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.Fields: Field, interior
 using Oceananigans.Grids: λnodes, φnodes
 
