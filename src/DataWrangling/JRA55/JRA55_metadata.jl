@@ -67,6 +67,29 @@ DataWrangling.all_dates(::MultiYearJRA55, name) = JRA55_multiple_year_dates[name
 # Fallback, if we not provide the name, take the highest frequency
 DataWrangling.all_dates(dataset::JRA55Dataset) = all_dates(dataset, :temperature)
 
+# Fluxes, radiation, and precipitation are means over the interval between stamps; the state
+# variables are instantaneous.
+const JRA55_window_averaged_variables = (:river_freshwater_flux,
+                                         :iceberg_freshwater_flux,
+                                         :rain_freshwater_flux,
+                                         :snow_freshwater_flux,
+                                         :downwelling_longwave_radiation,
+                                         :downwelling_shortwave_radiation)
+
+# The repeat-year files label each mean with the start of its interval, so their windows run
+# forwards from the stamp: the daily river and iceberg fluxes at 00:00, everything else
+# three-hourly. Without this the repeat-year shortwave peaks 1.5 hours before solar noon.
+function DataWrangling.sample_window(md::RepeatYearJRA55Metadatum)
+    md.name in JRA55_window_averaged_variables || return DataWrangling.instantaneous_window(md)
+    span = md.name in (:river_freshwater_flux, :iceberg_freshwater_flux) ? Day(1) : Hour(3)
+    return DataWrangling.leading_window(md, span)
+end
+
+# The multi-year files already label each mean with the center of its interval — the daily
+# river and iceberg fluxes at 12:00, the three-hourly means at 01:30, 04:30, and so on — so
+# every variable sits at its window center as stamped.
+DataWrangling.sample_window(md::MultiYearJRA55Metadatum) = DataWrangling.instantaneous_window(md)
+
 # Valid for all JRA55 datasets
 function JRA55_time_indices(dataset, dates, name)
     all_JRA55_dates = all_dates(dataset, name)
