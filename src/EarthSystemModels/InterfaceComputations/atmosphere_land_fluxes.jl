@@ -58,7 +58,7 @@ end
     @inbounds begin
         Ts.interface[i, j, 1]              = sol.Tᵃᶜ
         Ts.canopy[i, j, 1]                 = sol.Tᵛ
-        Ts.soil_skin[i, j, 1]              = sol.Tⁱⁿ
+        Ts.soil_skin[i, j, 1]              = sol.Tᵍ
         Ts.effective[i, j, 1]              = sol.Teff
         Ts.ground_heat_flux[i, j, 1]        = sol.Gcond
         Ts.canopy_latent_heat[i, j, 1]     = sol.LEᵛ
@@ -157,15 +157,10 @@ end
 @inline local_atmosphere_land_surface_properties(land_properties, i, j) = (;)
 
 #####
-##### Prescribed, possibly time-varying surface inputs — the leaf area index the
-##### canopy conductance reads and the vegetation fraction the tiled interface
-##### blends with (roughness / albedo maps are future consumers).
+##### Prescribed, possibly time-varying surface inputs.
 ##### `surface_field_value` reads the per-cell value from a `Number`, a static
 ##### `Field`, or — for a `FieldTimeSeries` interpolated to the model clock — a
-##### kernel-friendly `PrescribedSurfaceData` bundle. The bundle mirrors the
-##### atmosphere state interpolation: the FTS itself never enters the kernel (its
-##### `adapt_structure` does not preserve `.data`), so `kernel_surface_field`
-##### extracts `.data` + `backend` + `time_indexing` on the host.
+##### kernel-friendly `PrescribedSurfaceData` bundle.
 #####
 
 struct PrescribedSurfaceData{D, B, T}

@@ -3,22 +3,27 @@
 #####
 ##### Net CO₂ assimilation `Aₙ` is the (smoothly) co-limited minimum of the
 ##### Rubisco- and light-limited rates, less dark respiration. Rate parameters are
-##### given at 25 °C and scaled to leaf temperature. Every `√`/division is guarded,
-##### so the whole path is Enzyme/Reactant-friendly. Grounded in ClimaLand
+##### given at 25 °C and scaled to leaf temperature. Grounded in ClimaLand
 ##### (Deck et al. 2026, JAMES, App. C): Farquhar co-limitation (Eqs C1–C5), the
 ##### peaked/plain Arrhenius scalings (Eqs C6, C11), and Heskel respiration (Eq C12).
 #####
 
-# Reference temperature of the photosynthesis rate parameters (the "25" subscript
+# Reference temperature of the photosynthesis rate parameters (the "25" suffix
 # of Vcmax25, etc.) — distinct from the thermodynamic reference (triple point).
-const reference_temperature = 298.15 # K (25 °C)
+const physiology_reference_temperature = 298.15 # K (25 °C)
 
 # Arrhenius temperature scaling `f(T) = exp[ΔH (T − T₂₅) / (T₂₅ R T)]`
 # (ClimaLand Eq C6). Normalized to 1 at `T = T₂₅`.
 @inline function arrhenius_scaling(T, ΔH)
-    T25 = oftype(T, reference_temperature)
+    T25 = oftype(T, physiology_reference_temperature)
     R   = oftype(T, default_gas_constant)
     return exp(ΔH * (T - T25) / (T25 * R * T))
+end
+
+# Deactivation exponent `(ΔS T − ΔHd)/(R T)` of the peaked Arrhenius form.
+@inline function deactivation_exponent(T, ΔS, ΔHd)
+    R = oftype(T, default_gas_constant)
+    return clamp((T * ΔS - ΔHd) / (R * T), oftype(T, -80), oftype(T, 80))
 end
 
 # Peaked Arrhenius for `Vcmax`/`Jmax` (ClimaLand Eq C11): plain Arrhenius times a
@@ -26,15 +31,11 @@ end
 # (low-to-mid 30s °C) and rolls off, rather than climbing without bound. The numerator
 # normalizes `f′(T₂₅) = 1`, preserving the meaning of the 25 °C values. Activation
 # `ΔHa`, entropy `ΔS`, deactivation `ΔHd` are the Kattge & Knorr (2007) peaked set.
-# The deactivation exponent is clamped for Float32 / extreme-`T` autodiff safety;
-# within the physical range it stays small so the clamp is inert.
 @inline function peaked_arrhenius(T, ΔHa, ΔS, ΔHd)
-    T25 = oftype(T, reference_temperature)
-    R   = oftype(T, default_gas_constant)
+    T25  = oftype(T, physiology_reference_temperature)
     base = arrhenius_scaling(T, ΔHa)
-    a25 = clamp((T25 * ΔS - ΔHd) / (R * T25), oftype(T, -80), oftype(T, 80))
-    aT  = clamp((T   * ΔS - ΔHd) / (R * T  ), oftype(T, -80), oftype(T, 80))
-    return base * (1 + exp(a25)) / (1 + exp(aT))
+    return base * (1 + exp(deactivation_exponent(T25, ΔS, ΔHd))) /
+                  (1 + exp(deactivation_exponent(T,   ΔS, ΔHd)))
 end
 
 # Heskel et al. (2016) leaf-respiration temperature response (ClimaLand Eq C12),

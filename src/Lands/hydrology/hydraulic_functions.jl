@@ -31,8 +31,6 @@ end
 VanGenuchtenRetention(FT::Type = Oceananigans.defaults.FloatType; α, n) =
     VanGenuchtenRetention(convert(FT, α), convert(FT, n))
 
-@inline van_genuchten_m(n) = 1 - 1/n
-
 @inline function pressure_head(r::VanGenuchtenRetention, 𝒮)
     FT = typeof(𝒮)
     α = convert(FT, r.α)

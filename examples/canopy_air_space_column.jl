@@ -9,9 +9,9 @@
 # the atmosphere by Monin–Obukhov turbulence:
 #
 #     Tᵛ   leaf         (diagnostic, massless: Rₙᵛ = Hᵛ + LEᵛ)
-#     Tⁱⁿ  soil skin    (diagnostic: Rₙᵍ = Hᵍ + LEᵍ + Λⁱⁿ(Tⁱⁿ − Tˡᵃ))
+#     Tᵍ  soil skin    (diagnostic: Rₙᵍ = Hᵍ + LEᵍ + Λᵍ(Tᵍ − Tˡᵃ))
 #     Tᵃᶜ  canopy air    (diagnostic node; what the atmosphere sees)
-#     Tˡᵃ  bulk slab     (prognostic; driven by the skin→bulk conduction Λⁱⁿ)
+#     Tˡᵃ  bulk slab     (prognostic; driven by the skin→bulk conduction Λᵍ)
 #
 # The canopy shades the soil (Beer–Lambert shortwave split), the leaf transpires
 # (photosynthesis-coupled stomata), the soil evaporates through a dry surface layer
@@ -213,7 +213,7 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
     Tₐ  = zeros(Nsteps)   # air (forcing)
     Tᵛ  = zeros(Nsteps)   # leaf
     Tᵃᶜ = zeros(Nsteps)   # canopy-air node
-    Tⁱⁿ = zeros(Nsteps)   # soil skin
+    Tᵍ = zeros(Nsteps)   # soil skin
     Tˡᵃ = zeros(Nsteps)   # bulk slab
     Tₑ  = zeros(Nsteps)   # effective radiating (LST)
     H   = zeros(Nsteps)   # sensible heat, atmosphere total (positive up)
@@ -243,7 +243,7 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
         Tₐ[n]  = air_temperature(time)
         Tᵛ[n]  = scalar(Ts.canopy)
         Tᵃᶜ[n] = scalar(Ts.interface)
-        Tⁱⁿ[n] = scalar(Ts.soil_skin)
+        Tᵍ[n] = scalar(Ts.soil_skin)
         Tˡᵃ[n] = scalar(land.temperature)
         Tₑ[n]  = scalar(Ts.effective)
         H[n]   = scalar(interface.fluxes.sensible_heat)
@@ -271,7 +271,7 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
     transpiration = LEᵛ .- LEwet
 
     return (; label, leaf_area_index,
-              t = T, Tₐ, Tᵛ, Tᵃᶜ, Tⁱⁿ, Tˡᵃ, Tₑ, H, LE, LEᵛ, transpiration, LEᵍ, Hᵛ, Hᵍ, Gᶜ, SW, LW,
+              t = T, Tₐ, Tᵛ, Tᵃᶜ, Tᵍ, Tˡᵃ, Tₑ, H, LE, LEᵛ, transpiration, LEᵍ, Hᵛ, Hᵍ, Gᶜ, SW, LW,
               E, Ewet, LEwet, P, Pˡ, 𝒮, M, Wᶜ)
 end
 
@@ -307,7 +307,7 @@ dense_m  = canopy_air_space_column(leaf_area_index = 4.0, conductance = medlyn, 
 # The CAS keeps only the surface *temperatures* and the turbulent *totals*; the
 # radiative shares are diagnostic functions of those, so we rebuild them here with the
 # exact solve formulas — the Beer–Lambert shortwave split and the two-face longwave
-# ledger (ClimaLand D13–D17) — using the leaf `Tᵛ` and soil-skin `Tⁱⁿ` each column stored.
+# ledger (ClimaLand D13–D17) — using the leaf `Tᵛ` and soil-skin `Tᵍ` each column stored.
 
 function radiation_partition(case)
     LAI = case.leaf_area_index
@@ -316,7 +316,7 @@ function radiation_partition(case)
     ε_g = ground_emissivity
     ftrans = exp(-extinction * LAI * clumping)
 
-    SW, LW, Tᵛ, Tⁱⁿ = case.SW, case.LW, case.Tᵛ, case.Tⁱⁿ
+    SW, LW, Tᵛ, Tᵍ = case.SW, case.LW, case.Tᵛ, case.Tᵍ
 
     ## Shortwave: the canopy absorbs `(1−α_leaf)(1−f_trans)`, the shaded soil gets the
     ## transmitted remainder `f_trans(1−α_ground)`.
@@ -327,7 +327,7 @@ function radiation_partition(case)
     ## downward emission, the upwelling above the soil, and the total escaping to space.
     LWd_c      = @. (1 - ε_c) * LW + ε_c * σ * Tᵛ^4     # reaching soil
     canopy_emit = @. ε_c * σ * Tᵛ^4                     # canopy emission (one face)
-    LWu_g      = @. ε_g * σ * Tⁱⁿ^4 + (1 - ε_g) * LWd_c # upwelling from ground
+    LWu_g      = @. ε_g * σ * Tᵍ^4 + (1 - ε_g) * LWd_c # upwelling from ground
     LWu        = @. (1 - ε_c) * LWu_g + ε_c * σ * Tᵛ^4  # to space
 
     ## Net radiation absorbed by the whole land column (canopy + soil).
@@ -369,7 +369,7 @@ ax = Axis(fig[1, 1]; title = "Temperatures", xlabel = "t (days)", ylabel = "T (K
 mark_pulse!(ax)
 lines!(ax, t, ref.Tₐ;  color = :gray,        linewidth = 3, label = "air Tₐ")
 lines!(ax, t, ref.Tᵛ;  color = :seagreen,    label = "leaf Tᵛ")
-lines!(ax, t, ref.Tⁱⁿ; color = :saddlebrown, label = "soil skin Tⁱⁿ")
+lines!(ax, t, ref.Tᵍ; color = :saddlebrown, label = "soil skin Tᵍ")
 lines!(ax, t, ref.Tᵃᶜ; color = :steelblue,   linestyle = :dash, label = "canopy air Tᵃᶜ")
 lines!(ax, t, ref.Tˡᵃ; color = :firebrick,   label = "bulk Tˡᵃ")
 lines!(ax, t, ref.Tₑ;  color = :black,       linestyle = :dot, label = "LST Teff")
@@ -379,9 +379,9 @@ axislegend(ax; position = :lt, nbanks = 2, labelsize = 12)
 ax = Axis(fig[1, 2]; title = "Source temperature contrasts", xlabel = "t (days)", ylabel = "ΔT (K)")
 mark_pulse!(ax)
 hlines!(ax, [0]; color = :gray, linestyle = :dash)
-lines!(ax, t, ref.Tᵛ  .- ref.Tⁱⁿ; color = :seagreen,    label = "leaf − soil skin")
+lines!(ax, t, ref.Tᵛ  .- ref.Tᵍ; color = :seagreen,    label = "leaf − soil skin")
 lines!(ax, t, ref.Tᵃᶜ .- ref.Tₐ;  color = :steelblue,   label = "node − air")
-lines!(ax, t, ref.Tⁱⁿ .- ref.Tˡᵃ; color = :saddlebrown, label = "soil skin − bulk")
+lines!(ax, t, ref.Tᵍ .- ref.Tˡᵃ; color = :saddlebrown, label = "soil skin − bulk")
 axislegend(ax; position = :lt, labelsize = 12)
 
 ## (2,1) Shortwave partition — the canopy shades the soil.

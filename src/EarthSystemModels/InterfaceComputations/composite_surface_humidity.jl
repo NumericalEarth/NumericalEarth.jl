@@ -22,7 +22,7 @@
 #####
 ##### The soil branch carries the [`DryLayerHumidity`](@ref) wet-branch blend: at
 ##### high saturation the soil skin itself saturates (`σ → 0`) and pins the
-##### surface to `qᵛ⁺(Tⁱⁿ)` regardless of the canopy. The blend is applied to the
+##### surface to `qᵛ⁺(Tᵍ)` regardless of the canopy. The blend is applied to the
 ##### composite exactly as in the standalone soil model, so the limits are clean:
 ##### `g_c = 0` reproduces [`DryLayerHumidity`](@ref) bit-for-bit, and a fully-dry
 ##### soil (`σ = 1`, `Gᵉ = 0`) reproduces [`CanopyConductanceHumidity`](@ref).
@@ -32,7 +32,7 @@
 ##### the available energy. Shading is an *energy* effect on the soil source
 ##### temperature; with a single skin temperature (leaf = soil = `Tₛ`) it cannot be
 ##### expressed, so both branches share `Tₛ` here. Distinct per-branch source
-##### temperatures (`qᵉ = qᵛ⁺(Tⁱⁿ_soil)`, `qᵛ⁺ = qᵛ⁺(T_canopy)`) would require a
+##### temperatures (`qᵉ = qᵛ⁺(Tᵍ_soil)`, `qᵛ⁺ = qᵛ⁺(T_canopy)`) would require a
 ##### separate soil-skin and leaf temperature.
 #####
 
@@ -89,7 +89,7 @@ Base.show(io::IO, q::CompositeSurfaceHumidity) = print(io, summary(q))
     D      = (Gᵉ + g_c) * Δq + Jᵃ
     qˢ_dry = ifelse(D == 0, qˢ⁻, ((Gᵉ * qᵉ + g_c * q_leaf) * Δq + Jᵃ * qᵃᵗ) / D)
 
-    # Wet-soil limit (σ → 0): the saturated soil skin pins the surface to qᵛ⁺(Tⁱⁿ),
+    # Wet-soil limit (σ → 0): the saturated soil skin pins the surface to qᵛ⁺(Tᵍ),
     # so that with no canopy this reproduces `DryLayerHumidity` bit-for-bit.
     return convert(FT, q_wet + σ * (qˢ_dry - q_wet))
 end

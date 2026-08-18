@@ -26,11 +26,11 @@ make_soil(; molecular_diffusivity = 2.5e-5, tortuosity = ConstantTortuosity()) =
 # Mirror `compute_interface_humidity(formulation, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)`. The
 # radiation state Ψᵣ only drives InteractiveAbsorbedPAR; these cases use the
 # prescribed-PAR default, so it is `nothing`.
-function _make_call_args(; Tˡᵃ, Tⁱⁿ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻, leaf_area_index = 2.0)
+function _make_call_args(; Tˡᵃ, Tᵍ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻, leaf_area_index = 2.0)
     ℂ  = AtmosphereThermodynamicsParameters(Float64)
     Ψₐ = (T = Tᵃᵗ, p = pᵃᵗ, q = qᵃᵗ, u = 1.0, v = 0.0, z = 10.0, h_bℓ = 1000.0)
     Ψₛ = AirLandInterfaceState(InterfaceFluxScales(u★, 0.0, q★), InterfaceVelocities(0.0, 0.0),
-                               Tⁱⁿ, qⁱⁿ⁻, (saturation=𝒮,), (temperature=Tˡᵃ,),
+                               Tᵍ, qⁱⁿ⁻, (saturation=𝒮,), (temperature=Tˡᵃ,),
                                (leaf_area_index=leaf_area_index,))
     Ψᵢ = (T = Tˡᵃ,)
     ℙₐ = (thermodynamics_parameters = ℂ, surface_layer_height = 10.0, gravitational_acceleration = 9.81)
@@ -38,33 +38,33 @@ function _make_call_args(; Tˡᵃ, Tⁱⁿ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u�
 end
 
 @testset "CompositeSurfaceHumidity limits and divider" begin
-    st = (Tˡᵃ=295.0, Tⁱⁿ=300.0, pᵃᵗ=1.0e5, qᵃᵗ=1.0e-2, Tᵃᵗ=295.0, u★=0.3, q★=-2.0e-4, qⁱⁿ⁻=0.008)
+    st = (Tˡᵃ=295.0, Tᵍ=300.0, pᵃᵗ=1.0e5, qᵃᵗ=1.0e-2, Tᵃᵗ=295.0, u★=0.3, q★=-2.0e-4, qⁱⁿ⁻=0.008)
     soil   = make_soil()
     canopy = CanopyConductanceHumidity(Float64; leaf_area_index = 2.0)
 
     # Limit 1: no canopy (g_c = 0) reproduces DryLayerHumidity bit-for-bit.
     comp0 = CompositeSurfaceHumidity(soil, CanopyConductanceHumidity(Float64; leaf_area_index = 0.0))
     _, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(; 𝒮=0.2, leaf_area_index=0.0, st...)
-    @test isapprox(compute_interface_humidity(comp0, st.Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ),
-                   compute_interface_humidity(soil,  st.Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ); atol = 1e-15)
+    @test isapprox(compute_interface_humidity(comp0, st.Tᵍ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ),
+                   compute_interface_humidity(soil,  st.Tᵍ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ); atol = 1e-15)
 
     # Limit 2: negligible soil diffusivity (Gᵉ → 0) with a dry soil (σ = 1)
     # reproduces CanopyConductanceHumidity.
     comp_dry = CompositeSurfaceHumidity(make_soil(molecular_diffusivity = 1e-14), canopy)
     _, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(; 𝒮=0.0, st...)
-    @test isapprox(compute_interface_humidity(comp_dry, st.Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ),
-                   compute_interface_humidity(canopy,   st.Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ); rtol = 1e-6)
+    @test isapprox(compute_interface_humidity(comp_dry, st.Tᵍ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ),
+                   compute_interface_humidity(canopy,   st.Tᵍ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ); rtol = 1e-6)
 
     # Two-source divider matches the analytic conductance-weighted average, and
     # the total flux partitions exactly into soil-evaporation + transpiration.
     comp = CompositeSurfaceHumidity(soil, canopy)
     _, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(; 𝒮=0.05, st...)   # 𝒮 ≪ 𝒮ᶜ ⇒ σ = 1
-    Gᵉ, qᵉ, σ, q_wet = dry_layer_terms(comp.soil, st.Tⁱⁿ, Ψₛ, Ψₐ, ℙₐ)
-    g_c, q_leaf = canopy_conductance_terms(comp.canopy, st.Tⁱⁿ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
+    Gᵉ, qᵉ, σ, q_wet = dry_layer_terms(comp.soil, st.Tᵍ, Ψₛ, Ψₐ, ℙₐ)
+    g_c, q_leaf = canopy_conductance_terms(comp.canopy, st.Tᵍ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
     Jᵃ, Δq = atmospheric_vapor_flux(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
     qˢ = ((Gᵉ * qᵉ + g_c * q_leaf) * Δq + Jᵃ * st.qᵃᵗ) / ((Gᵉ + g_c) * Δq + Jᵃ)
     @test σ ≈ 1
-    @test compute_interface_humidity(comp, st.Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ) ≈ qˢ
+    @test compute_interface_humidity(comp, st.Tᵍ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ) ≈ qˢ
 
     E_total = (Jᵃ / Δq) * (qˢ - st.qᵃᵗ)
     E_soil  = Gᵉ * (qᵉ - qˢ)
@@ -72,7 +72,7 @@ end
     @test isapprox(E_total, E_soil + E_can; rtol = 1e-10)
 
     # The `evaporation_partition` diagnostic returns exactly this split.
-    part = evaporation_partition(comp, qˢ, st.Tⁱⁿ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
+    part = evaporation_partition(comp, qˢ, st.Tᵍ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
     @test part.soil_evaporation ≈ E_soil
     @test part.transpiration ≈ E_can
     @test isapprox(part.soil_evaporation + part.transpiration, E_total; rtol = 1e-10)

@@ -35,17 +35,17 @@
 ##### (flux-balance) form is accurate in both limits.
 #####
 ##### The vapor source is saturated air at the front temperature
-##### `Tᵉ = Tⁱⁿ + χ(Tˡᵃ − Tⁱⁿ)` with `χ = clip(δᵛ/ℓᵀ, 0, 1)`. The wet branch
-##### (`δᵛ ≲ δᵛ_min`) collapses to `qⁱⁿ = qᵛ⁺(Tⁱⁿ)` so the saturated-surface
+##### `Tᵉ = Tᵍ + χ(Tˡᵃ − Tᵍ)` with `χ = clip(δᵛ/ℓᵀ, 0, 1)`. The wet branch
+##### (`δᵛ ≲ δᵛ_min`) collapses to `qⁱⁿ = qᵛ⁺(Tᵍ)` so the saturated-surface
 ##### limit reproduces the existing similarity-theory behavior; it hands over
 ##### to the dry-layer series solution through a smooth logistic blend of
 ##### width `wet_transition_width` (sharp switch when 0).
 #####
 ##### Pair this with `SkinTemperature(SoilConductiveFlux(κᵀ, ℓᵀ))` on the
-##### temperature side: the same `Λⁱⁿ = κᵀ/ℓᵀ` couples the bulk land temperature
-##### `Tˡᵃ` to the skin temperature `Tⁱⁿ`, and the front-temperature interpolation
-##### `Tᵉ = Tⁱⁿ + χ(Tˡᵃ − Tⁱⁿ)` then becomes live (with `BulkTemperature`,
-##### `Tⁱⁿ = Tˡᵃ` and the χ term vanishes).
+##### temperature side: the same `Λᵍ = κᵀ/ℓᵀ` couples the bulk land temperature
+##### `Tˡᵃ` to the skin temperature `Tᵍ`, and the front-temperature interpolation
+##### `Tᵉ = Tᵍ + χ(Tˡᵃ − Tᵍ)` then becomes live (with `BulkTemperature`,
+##### `Tᵍ = Tˡᵃ` and the χ term vanishes).
 #####
 
 using Oceananigans: Oceananigans
@@ -204,7 +204,7 @@ condition when the slab is wet enough (`𝒮 ≥ 𝒮ᶜ`).
   [`DryLayerVaporPistonVelocity`](@ref)).
 * `thermal_exchange_depth` — `ℓᵀ` (m), the same depth used by
   `SkinTemperature(DiffusiveFlux)` on the temperature side. Controls the
-  interpolation `Tᵉ = Tⁱⁿ + χ(Tˡᵃ − Tⁱⁿ)` with `χ = clip(δᵛ/ℓᵀ, 0, 1)`.
+  interpolation `Tᵉ = Tᵍ + χ(Tˡᵃ − Tᵍ)` with `χ = clip(δᵛ/ℓᵀ, 0, 1)`.
 * `porosity` — `ν`, soil porosity (matches the hydrology closure; needed
   for the Millington–Quirk tortuosity).
 
@@ -279,7 +279,7 @@ end
 #####     Jᵉ = Gᵉ (qᵉ - qⁱⁿ),        Gᵉ = ρᵃᵗ Dᵛ_eff / max(δᵛ, δᵛ_min),
 #####
 ##### so a wetter front (qᵉ > qⁱⁿ) drives vapor upward, while above the
-##### interface similarity theory carries vapor away at Jᵃ(Tⁱⁿ, qⁱⁿ). The
+##### interface similarity theory carries vapor away at Jᵃ(Tᵍ, qⁱⁿ). The
 ##### interface stores no vapor, so Jᵉ = Jᵃ — a nonlinear equation for qⁱⁿ.
 #####
 ##### The solver. Over one Picard iteration we linearize the similarity flux
@@ -318,9 +318,9 @@ end
 # Dry-layer flux terms, split off so the standalone formulation and the
 # composite (soil + canopy) share them. Returns the dry-layer conductance `Gᵉ`,
 # the front (dry-branch) source humidity `qᵉ = qᵛ⁺(Tᵉ)`, the wet-branch logistic
-# weight `σ`, and the wet (saturated-skin) humidity `qⁱⁿ⁺ = qᵛ⁺(Tⁱⁿ)`. The full
-# humidity is `(1 − σ) qⁱⁿ⁺ + σ · [Δq-series divider with (Gᵉ, qᵉ)]`.
-@inline function dry_layer_terms(q::DryLayerHumidity, Tⁱⁿ, Ψₛ, Ψₐ, ℙₐ)
+# weight `σ`, and the wet (saturated-skin) humidity `qᵍ⁺ = qᵛ⁺(Tᵍ)`. The full
+# humidity is `(1 − σ) qᵍ⁺ + σ · [Δq-series divider with (Gᵉ, qᵉ)]`.
+@inline function dry_layer_terms(q::DryLayerHumidity, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     FT  = eltype(Ψₛ)
     pᵃᵗ = Ψₐ.p
@@ -337,7 +337,7 @@ end
     δᵛmin = convert(FT, q.vapor_exchange.minimum_dry_layer_depth)
     ℓᵀ    = convert(FT, q.thermal_exchange_depth)
     χ     = clamp(δᵛ / ℓᵀ, zero(FT), one(FT))
-    Tᵉ    = Tⁱⁿ + χ * (Tˡᵃ - Tⁱⁿ)
+    Tᵉ    = Tᵍ + χ * (Tˡᵃ - Tᵍ)
     qᵉ    = saturation_specific_humidity(ℂᵃᵗ, Tᵉ, pᵃᵗ, q.phase)
 
     # Dry-layer conductance. The actual pore liquid fraction is
@@ -351,17 +351,17 @@ end
     # limit is not the δᵛ → 0 limit of the series solution (Millington-Quirk
     # tortuosity closes the Fick path entirely at saturation), so the branches
     # are combined with a smooth logistic weight after Kavetski & Kuczera (2007).
-    qⁱⁿ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tⁱⁿ, pᵃᵗ, q.phase)
+    qᵍ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tᵍ, pᵃᵗ, q.phase)
     δᵛʷ  = convert(FT, q.vapor_exchange.wet_transition_width)
     z    = 10 * (δᵛ - δᵛmin - δᵛʷ / 2) / max(δᵛʷ, eps(FT))
     σ    = 1 / (1 + exp(-z))
 
-    return Gᵉ, qᵉ, σ, qⁱⁿ⁺
+    return Gᵉ, qᵉ, σ, qᵍ⁺
 end
 
 @inline function compute_interface_humidity(q::DryLayerHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     FT = eltype(Ψₛ)
-    Gᵉ, qᵉ, σ, qⁱⁿ⁺ = dry_layer_terms(q, Tₛ, Ψₛ, Ψₐ, ℙₐ)
+    Gᵉ, qᵉ, σ, qᵍ⁺ = dry_layer_terms(q, Tₛ, Ψₛ, Ψₐ, ℙₐ)
 
     qⁱⁿ⁻ = Ψₛ.specific_humidity
     qᵃᵗ  = Ψₐ.q
@@ -372,5 +372,5 @@ end
     D    = Gᵉ * Δq + Jᵃ
     qⁱⁿ★ = ifelse(D == 0, qⁱⁿ⁻, (Gᵉ * qᵉ * Δq + Jᵃ * qᵃᵗ) / D)
 
-    return convert(FT, qⁱⁿ⁺ + σ * (qⁱⁿ★ - qⁱⁿ⁺))
+    return convert(FT, qᵍ⁺ + σ * (qⁱⁿ★ - qᵍ⁺))
 end

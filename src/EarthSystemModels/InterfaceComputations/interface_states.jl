@@ -147,116 +147,6 @@ end
 #####
 
 """
-    struct CriticalSaturation
-
-Evaporation efficiency after [Manabe (1969)](@cite manabe1969climate): the surface is saturated (`β = 1`) above a
-critical saturation `𝒮ᶜ`, and the efficiency falls off linearly below it,
-
-```math
-β(𝒮) = \\min(𝒮 / 𝒮ᶜ, 1),   𝒮 = Mˡᵃ / Mˡᵃ⁺.
-```
-
-Used as the `efficiency` of [`FractionalHumidity`](@ref). The type declares its
-land-state dependency (the saturation `𝒮`); the interface materializes exactly
-that into the land interface state.
-"""
-struct CriticalSaturation{FT}
-    critical_saturation :: FT
-end
-
-@inline function evaporation_efficiency(𝒮ᶜ::CriticalSaturation, hydrology)
-    𝒮 = hydrology.saturation
-    return min(𝒮 / convert(typeof(𝒮), 𝒮ᶜ.critical_saturation), one(𝒮))
-end
-
-# Constant efficiency — a uniformly sub-saturated surface; reads no land state.
-@inline evaporation_efficiency(β::Number, hydrology) = β
-
-# Effective saturation of the van Genuchten (1980) retention curve at dimensionless
-# suction αψ ≥ 0, with m = 1 − 1/n. Matches the retention curve used by
-# `VariablySaturatedHydrology`.
-@inline van_genuchten_saturation(αψ, n) = (1 + αψ^n)^(1/n - 1)
-
-"""
-    PlantAvailableWaterStress(FT = Oceananigans.defaults.FloatType;
-                              inverse_air_entry_head,
-                              pore_size_uniformity,
-                              field_capacity_head = 1,
-                              wilting_point_head = 150)
-
-Transpiration moisture stress from plant-available water: `β` rises linearly from 0 at
-the permanent wilting point to 1 at field capacity,
-
-```math
-β(𝒮) = \\mathrm{clamp}\\left(\\frac{𝒮 - 𝒮ʷᵖ}{𝒮ᶠᶜ - 𝒮ʷᵖ}, 0, 1\\right),
-\\qquad 𝒮ˣ = \\left[1 + (α ψˣ)^n\\right]^{-m}, \\quad m = 1 - 1/n,
-```
-
-with both endpoints evaluated on the van Genuchten (1980) retention curve of the soil
-(`inverse_air_entry_head` `α` in m⁻¹ and `pore_size_uniformity` `n`, which should match
-the hydrology's [`VanGenuchtenRetention`](@ref)). The default heads follow
-[Balsamo et al. (2009)](@cite balsamo2009): `ψᶠᶜ = 1` m and `ψʷᵖ = 150` m of suction.
-Because the stress is a ratio of effective saturations, it needs neither the porosity nor
-the residual fraction and cannot disagree with the hydrology about either.
-
-This is the moisture stress meant for a transpiring canopy
-([`CanopyConductanceHumidity`](@ref)'s `moisture_stress`): unlike
-[`CriticalSaturation`](@ref) — a *bare-soil* evaporation model whose `β` reaches 1 at the
-critical saturation and 0 only at the residual liquid fraction — its endpoints are the
-plant ones, so stomata shut at wilting rather than at oven dryness. The clamp at wilting
-is physical: a wilted plant does not respond to a perturbation.
-
-```jldoctest
-using NumericalEarth
-
-PlantAvailableWaterStress(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0)
-
-# output
-PlantAvailableWaterStress(α=1.0, n=2.0, ψᶠᶜ=1.0, ψʷᵖ=150.0)
-```
-"""
-struct PlantAvailableWaterStress{FT}
-    inverse_air_entry_head :: FT
-    pore_size_uniformity   :: FT
-    field_capacity_head    :: FT
-    wilting_point_head     :: FT
-end
-
-function PlantAvailableWaterStress(FT::Type = Oceananigans.defaults.FloatType;
-                                   inverse_air_entry_head,
-                                   pore_size_uniformity,
-                                   field_capacity_head = 1,
-                                   wilting_point_head = 150)
-    pore_size_uniformity > 1 ||
-        throw(ArgumentError("pore_size_uniformity must exceed 1"))
-    0 < field_capacity_head < wilting_point_head ||
-        throw(ArgumentError("heads must satisfy 0 < field_capacity_head < wilting_point_head"))
-    return PlantAvailableWaterStress(convert(FT, inverse_air_entry_head),
-                                     convert(FT, pore_size_uniformity),
-                                     convert(FT, field_capacity_head),
-                                     convert(FT, wilting_point_head))
-end
-
-@inline function evaporation_efficiency(p::PlantAvailableWaterStress, hydrology)
-    𝒮   = hydrology.saturation
-    FT  = typeof(𝒮)
-    α   = convert(FT, p.inverse_air_entry_head)
-    n   = convert(FT, p.pore_size_uniformity)
-    𝒮ᶠᶜ = van_genuchten_saturation(α * convert(FT, p.field_capacity_head), n)
-    𝒮ʷᵖ = van_genuchten_saturation(α * convert(FT, p.wilting_point_head), n)
-    return clamp((𝒮 - 𝒮ʷᵖ) / (𝒮ᶠᶜ - 𝒮ʷᵖ), zero(FT), one(FT))
-end
-
-Base.summary(p::PlantAvailableWaterStress) =
-    string("PlantAvailableWaterStress",
-           "(α=", prettysummary(p.inverse_air_entry_head),
-           ", n=", prettysummary(p.pore_size_uniformity),
-           ", ψᶠᶜ=", prettysummary(p.field_capacity_head),
-           ", ψʷᵖ=", prettysummary(p.wilting_point_head), ")")
-
-Base.show(io::IO, p::PlantAvailableWaterStress) = print(io, summary(p))
-
-"""
     struct FractionalHumidity
 
 Surface specific humidity as a fraction of saturation at the surface temperature,
@@ -563,19 +453,19 @@ end
 Internal conductive flux for a **land** skin temperature: the radiating skin
 exchanges heat with the bulk slab across a thin surface layer of thermal
 conductivity `κᵀ` (`conductivity`, W m⁻¹ K⁻¹) and thickness `ℓᵀ` (`thickness`, m),
-giving the skin↔bulk conductance `Λⁱⁿ = κᵀ/ℓᵀ` (W m⁻² K⁻¹). Pair with
+giving the skin↔bulk conductance `Λᵍ = κᵀ/ℓᵀ` (W m⁻² K⁻¹). Pair with
 `SkinTemperature(SoilConductiveFlux(...))` on the atmosphere–land interface so the
-radiometric surface temperature `Tⁱⁿ` (what a satellite LST sees, and what sets the
+radiometric surface temperature `Tᵍ` (what a satellite LST sees, and what sets the
 diurnal amplitude of the outgoing longwave and the sensible/latent partition) can
 differ from the bulk slab `Tˡᵃ`.
 
 Unlike the ocean [`DiffusiveFlux`](@ref), whose `κ` is a thermal *diffusivity*
 converted to a conductance through the interior density/heat capacity, this holds
 the physical conductance directly: the diagnostic balance
-`Rₙ(Tⁱⁿ) = H(Tⁱⁿ) + LE(Tⁱⁿ) + Λⁱⁿ(Tⁱⁿ − Tˡᵃ)` is a temperature *root*, so it is
+`Rₙ(Tᵍ) = H(Tᵍ) + LE(Tᵍ) + Λᵍ(Tᵍ − Tˡᵃ)` is a temperature *root*, so it is
 invariant to the overall energy-to-tendency scale and needs no soil `ρ`/`c`.
 
-Reasonable defaults are `conductivity = 1.5`, `thickness = 0.05` ⇒ `Λⁱⁿ = 30`.
+Reasonable defaults are `conductivity = 1.5`, `thickness = 0.05` ⇒ `Λᵍ = 30`.
 The skin is a thin radiometric film on top of the bulk diurnal layer; its
 conductance and the force-restore heat capacity / deep restoring represent distinct
 layers and coexist (no re-tuning of the bulk closure). Moisture-dependent
@@ -589,10 +479,10 @@ end
 @inline skin_conductance(F::SoilConductiveFlux) = F.conductivity / F.thickness
 
 # Land skin balance, the ρc-free equivalent of the `DiffusiveFlux` method above:
-# Rₙ − H − LE − Λⁱⁿ(Tⁱⁿ − Tᵈ) = 0 with the deep endpoint Tᵈ = Ψᵢ.T (bulk slab),
+# Rₙ − H − LE − Λᵍ(Tᵍ − Tᵈ) = 0 with the deep endpoint Tᵈ = Ψᵢ.T (bulk slab),
 # the sensible heat linearized through Ωᵀ = 𝒬ᵀ/ΔT and the balance multiplied by
-# ΔT = Tᵃᵗ − Tⁱⁿ⁻ to stay finite as ΔT → 0. Λⁱⁿ → ∞ recovers `BulkTemperature`
-# (Tⁱⁿ → Tˡᵃ); Λⁱⁿ → 0 fully decouples the skin.
+# ΔT = Tᵃᵗ − Tᵍ⁻ to stay finite as ΔT → 0. Λᵍ → ∞ recovers `BulkTemperature`
+# (Tᵍ → Tˡᵃ); Λᵍ → 0 fully decouples the skin.
 @inline function flux_balance_temperature(st::SkinTemperature{<:SoilConductiveFlux}, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     FT = typeof(Ψₛ.temperature)
     Λ  = convert(FT, skin_conductance(st.internal_flux))
@@ -743,7 +633,7 @@ end
 #### fluxes with `SkinTemperature` through `skin_surface_fluxes`.
 ####
 ####  - `SoilSkin(coupling)` — conducts to the bulk slab through
-####    `G = Λⁱⁿ(Tⁱⁿ − Tˡᵃ)`, `Λⁱⁿ` from a [`SoilConductiveFlux`](@ref); identical
+####    `G = Λᵍ(Tᵍ − Tˡᵃ)`, `Λᵍ` from a [`SoilConductiveFlux`](@ref); identical
 ####    to `SkinTemperature(SoilConductiveFlux(...))`.
 ####
 #### Only `SoilSkin` is implemented. A canopy-leaf kind (a massless leaf,
@@ -763,7 +653,7 @@ Diagnostic interface temperature that closes a surface energy balance
 `Rₙ = H + LE + G` each step. The only `kind` presently implemented is
 [`SoilSkin`](@ref), which conducts to the bulk slab through `coupling`, a
 [`SoilConductiveFlux`](@ref); use the convenience constructor
-[`SoilSkinTemperature`](@ref). `Λⁱⁿ → ∞` recovers [`BulkTemperature`](@ref).
+[`SoilSkinTemperature`](@ref). `Λᵍ → ∞` recovers [`BulkTemperature`](@ref).
 """
 struct EnergyBalanceTemperature{K, C, FT}
     kind     :: K
@@ -777,7 +667,7 @@ EnergyBalanceTemperature(kind, coupling; max_ΔT=50) = EnergyBalanceTemperature(
     SoilSkinTemperature(conductivity, thickness; max_ΔT=50)
 
 A soil-skin [`EnergyBalanceTemperature`](@ref): the skin conducts to the bulk
-slab with conductance `Λⁱⁿ = conductivity/thickness` (W m⁻² K⁻¹). Behaviorally
+slab with conductance `Λᵍ = conductivity/thickness` (W m⁻² K⁻¹). Behaviorally
 identical to `SkinTemperature(SoilConductiveFlux(conductivity, thickness))`.
 """
 SoilSkinTemperature(conductivity, thickness; max_ΔT=50) =
@@ -786,7 +676,7 @@ SoilSkinTemperature(conductivity, thickness; max_ΔT=50) =
 Base.summary(t::EnergyBalanceTemperature) = string("EnergyBalanceTemperature(", summary(t.kind), ")")
 Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
 
-# Skin↔bulk conductance per kind: SoilSkin conducts (Λⁱⁿ = κᵀ/ℓᵀ).
+# Skin↔bulk conductance per kind: SoilSkin conducts (Λᵍ = κᵀ/ℓᵀ).
 @inline balance_conductance(::SoilSkin, coupling) = skin_conductance(coupling)
 
 @inline function compute_interface_temperature(t::EnergyBalanceTemperature,
@@ -808,7 +698,7 @@ Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
     Tᵃᵗ = surface_atmosphere_temperature(atmosphere_state, atmosphere_properties)
     ΔT  = Tᵃᵗ - interface_state.temperature
 
-    # Rₙ − H − LE − Λ(Tⁱⁿ − Tᵈ) = 0, ΔT-multiplied to stay finite as ΔT → 0
+    # Rₙ − H − LE − Λ(Tᵍ − Tᵈ) = 0, ΔT-multiplied to stay finite as ΔT → 0
     # (the same root as `flux_balance_temperature(::SkinTemperature{<:SoilConductiveFlux})`).
     D  = Λ * ΔT - 𝒬ᵀ
     T★ = (Tᵈ * Λ * ΔT - Qa * ΔT - 𝒬ᵀ * Tᵃᵗ) / D

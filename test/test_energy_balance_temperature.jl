@@ -43,7 +43,7 @@ end
                                           Tair=290.0, Tland=300.0, efficiency=1.0)
         @test Tin_ebt == Tin_skinT
 
-        # Λⁱⁿ → ∞ recovers BulkTemperature.
+        # Λᵍ → ∞ recovers BulkTemperature.
         @test isapprox(interface_temperature(arch, SoilSkinTemperature(1e7, 0.05); Tair=290.0, Tland=300.0, efficiency=1.0),
                        300.0; atol=1e-2)
 

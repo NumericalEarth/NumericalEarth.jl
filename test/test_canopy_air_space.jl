@@ -65,21 +65,21 @@ end
         @test Ts isa CanopyAirSpaceDiagnostics
         Tᵃᶜ = Array(interior(Ts.interface))[1, 1, 1]
         Tᵛ  = Array(interior(Ts.canopy))[1, 1, 1]
-        Tⁱⁿ = Array(interior(Ts.soil_skin))[1, 1, 1]
+        Tᵍ = Array(interior(Ts.soil_skin))[1, 1, 1]
         Tₑ  = Array(interior(Ts.effective))[1, 1, 1]
         Gᶜ  = Array(interior(Ts.ground_heat_flux))[1, 1, 1]
         𝒬ᵀ  = Array(interior(ali.fluxes.sensible_heat))[1, 1, 1]
         𝒬ᵛ  = Array(interior(ali.fluxes.latent_heat))[1, 1, 1]
 
         # Finite and physical.
-        @test all(isfinite, (Tᵃᶜ, Tᵛ, Tⁱⁿ, Tₑ, Gᶜ, 𝒬ᵀ, 𝒬ᵛ))
+        @test all(isfinite, (Tᵃᶜ, Tᵛ, Tᵍ, Tₑ, Gᶜ, 𝒬ᵀ, 𝒬ᵛ))
         @test 285 < Tᵃᶜ < 320
 
         # Sunlit: the leaf is warmer than the shaded soil skin, and the node lies between
         # its coolest and warmest sources.
-        @test Tⁱⁿ < Tᵛ
+        @test Tᵍ < Tᵛ
         θᵃᵗ = 300.0
-        @test min(Tⁱⁿ, Tᵛ, θᵃᵗ) - 1 ≤ Tᵃᶜ ≤ max(Tⁱⁿ, Tᵛ, θᵃᵗ) + 1
+        @test min(Tᵍ, Tᵛ, θᵃᵗ) - 1 ≤ Tᵃᶜ ≤ max(Tᵍ, Tᵛ, θᵃᵗ) + 1
 
         # Conservation: the slab is driven by the skin→bulk conduction, Es = −Gcond.
         Es = Array(interior(model.land.fluxes.surface_energy_flux))[1, 1, 1]
@@ -217,7 +217,7 @@ end
 
     # Dry limit: at low saturation the dry-branch weight f_dry ≈ 1, so the blended soil
     # conductance reduces to the raw dry-layer Gᵉ (the blend is inactive where the soil is dry).
-    Gᵉ, qᵉ, f_dry, qⁱⁿ⁺ = dry_layer_terms(soil, FT(300), Ψ(0.1), Ψₐ, ℙₐ)
+    Gᵉ, qᵉ, f_dry, qᵍ⁺ = dry_layer_terms(soil, FT(300), Ψ(0.1), Ψₐ, ℙₐ)
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
     @test f_dry > 0.99
     @test f_dry * Gᵉ + (1 - f_dry) * (ρᵃᵗ * 0.5) ≈ Gᵉ rtol = 0.02

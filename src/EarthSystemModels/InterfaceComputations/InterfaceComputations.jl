@@ -152,6 +152,7 @@ end
 
 # Turbulent fluxes
 include("roughness_lengths.jl")
+include("moisture_stress.jl")
 include("interface_states.jl")
 include("dry_layer_humidity.jl")
 include("photosynthesis.jl")

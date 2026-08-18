@@ -54,7 +54,7 @@ using Oceananigans.Utils: launch!, prettysummary, prettytime
 using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger,
-                                                 CanopyAirSpaceDiagnostics
+                                                 CanopyAirSpaceDiagnostics, van_genuchten_m
 
 # Closure interfaces
 include("energy_balance/energy_balance.jl")

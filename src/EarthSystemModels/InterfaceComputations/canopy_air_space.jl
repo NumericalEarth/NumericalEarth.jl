@@ -8,10 +8,10 @@
 ##### inside the Monin–Obukhov fixed point:
 #####
 #####   Tᵛ  — leaf temperature      (massless leaf: Rₙᵛ = Hᵛ + LEᵛ)
-#####   Tⁱⁿ — soil-skin temperature (Rₙᵍ = Hᵍ + LEᵍ + Λⁱⁿ(Tⁱⁿ − Tˡᵃ), conducts to the bulk)
+#####   Tᵍ — soil-skin temperature (Rₙᵍ = Hᵍ + LEᵍ + Λᵍ(Tᵍ − Tˡᵃ), conducts to the bulk)
 #####   Tᵃᶜ — canopy-air node       (Kirchhoff flux continuity; what MOST sees)
 #####
-##### and the paired humidity node `qᵃᶜ`. The leaf sees the *shaded soil skin* `Tⁱⁿ`,
+##### and the paired humidity node `qᵃᶜ`. The leaf sees the *shaded soil skin* `Tᵍ`,
 ##### not the bulk reservoir `Tˡᵃ`; the slab is driven only by the skin conduction.
 #####
 ##### Reuse: `canopy_conductance_terms` (leaf vapor conductance `gˡʷ = g_c` and
@@ -174,14 +174,14 @@ undercanopy_conductance_model(x::AbstractUndercanopyConductance, FT) = x
     struct CanopyAirSpace
 
 Two-source canopy + soil surface with a diagnostic canopy-air node. Solves the
-leaf temperature `Tᵛ`, the soil-skin temperature `Tⁱⁿ`, and the canopy-air node
+leaf temperature `Tᵛ`, the soil-skin temperature `Tᵍ`, and the canopy-air node
 `(Tᵃᶜ, qᵃᶜ)` inside the Monin–Obukhov fixed point. Use the same object in both the
 temperature and specific-humidity interface slots.
 
 Fields:
 - `soil`   : the soil vapor branch (a [`DryLayerHumidity`](@ref)).
 - `canopy` : the leaf vapor/photosynthesis branch (a [`CanopyConductanceHumidity`](@ref)).
-- `soil_skin_flux` : skin↔bulk conduction `Λⁱⁿ = κᵀ/ℓᵀ` (a [`SoilConductiveFlux`](@ref)).
+- `soil_skin_flux` : skin↔bulk conduction `Λᵍ = κᵀ/ℓᵀ` (a [`SoilConductiveFlux`](@ref)).
 - `leaf_albedo`, `ground_albedo` : broadband shortwave albedos.
 - `canopy_emissivity_max`, `ground_emissivity` : longwave emissivities (`ε_c = ε_max(1 − e^{−LAI})`).
 - `extinction`, `clumping` : Beer–Lambert `K`, `Ω` for the shortwave split.
@@ -272,7 +272,7 @@ end
 """
     canopy_air_space_solve(c::CanopyAirSpace, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
 
-Solve the coupled diagnostic state `(Tᵛ, Tⁱⁿ, Tᵃᶜ, qᵃᶜ)` for one cell. `Ψₛ` is the
+Solve the coupled diagnostic state `(Tᵛ, Tᵍ, Tᵃᶜ, qᵃᶜ)` for one cell. `Ψₛ` is the
 previous fixed-point iterate (carrying the MO scales and the previous node values),
 `Ψᵢ.T` is the bulk reservoir `Tˡᵃ`, and `Ψᵣ` the interface radiation state. A short
 damped-Newton inner loop advances the two skin balances against the node; the node
@@ -324,7 +324,7 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
     ground_SW = ftrans * (1 - c.ground_albedo) * SW
 
     Tᵛ  = Tˡᵃ
-    Tⁱⁿ = Tˡᵃ
+    Tᵍ = Tˡᵃ
     Tᵃᶜ = Ψₛ.temperature
     qᵃᶜ = Ψₛ.specific_humidity
     relax  = c.relaxation
@@ -334,13 +334,13 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
 
     for _ in 1:c.inner_iterations
         g_c, qᵛ   = canopy_conductance_terms(c.canopy, Tᵛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
-        Gᵉ, qᵉ, f_dry, qⁱⁿ⁺ = dry_layer_terms(c.soil, Tⁱⁿ, Ψₛ, Ψₐ, ℙₐ)
+        Gᵉ, qᵉ, f_dry, qᵍ⁺ = dry_layer_terms(c.soil, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
 
         # Blend the dry-layer series soil branch (front qᵉ through Gᵉ) with the
-        # saturated-skin wet branch (qⁱⁿ⁺ through the undercanopy conductance gᵍʷ),
+        # saturated-skin wet branch (qᵍ⁺ through the undercanopy conductance gᵍʷ),
         # weight `f_dry` from the soil model.
         Gᵉ⁺ = f_dry * Gᵉ + (1 - f_dry) * gᵍʷ
-        qᵉ  = ifelse(Gᵉ⁺ > tiny, (f_dry * Gᵉ * qᵉ + (1 - f_dry) * gᵍʷ * qⁱⁿ⁺) / Gᵉ⁺, qⁱⁿ⁺)
+        qᵉ  = ifelse(Gᵉ⁺ > tiny, (f_dry * Gᵉ * qᵉ + (1 - f_dry) * gᵍʷ * qᵍ⁺) / Gᵉ⁺, qᵍ⁺)
         Gᵉ  = Gᵉ⁺
 
         # Blended leaf vapor conductance: dry (stomatal) g_c over the transpiring
@@ -351,16 +351,16 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
         # guard the transient case where the aerodynamic and surface conductances cancel
         # (Dᵀ ≈ 0) before the outer MO loop is consistent, keeping the node finite.
         Dᵀ  = (gᵍʰ + gˡʰ) * Δθᵃ + 𝒬ᵀ
-        Tᵃᶜ★ = ((gᵍʰ * Tⁱⁿ + gˡʰ * Tᵛ) * Δθᵃ + 𝒬ᵀ * θᵃᵗ) / Dᵀ
+        Tᵃᶜ★ = ((gᵍʰ * Tᵍ + gˡʰ * Tᵛ) * Δθᵃ + 𝒬ᵀ * θᵃᵗ) / Dᵀ
         Tᵃᶜ = ifelse((Dᵀ == 0) | !isfinite(Tᵃᶜ★), Tᵃᶜ, Tᵃᶜ★)
         Dᵠ  = (Gᵉ + g_leaf) * Δqᵃ + Jᵃ
         qᵃᶜ★ = ((Gᵉ * qᵉ + g_leaf * qᵛ) * Δqᵃ + Jᵃ * qᵃᵗ) / Dᵠ
         qᵃᶜ = ifelse((Dᵠ == 0) | !isfinite(qᵃᶜ★), qᵃᶜ, qᵃᶜ★)
 
         LWd_c     = (1 - ε_c) * LWd + ε_c * σ * Tᵛ^4
-        LWu_g     = ε_g * σ * Tⁱⁿ^4 + (1 - ε_g) * LWd_c
+        LWu_g     = ε_g * σ * Tᵍ^4 + (1 - ε_g) * LWd_c
         canopy_lw = ε_c * (LWd + LWu_g) - 2 * ε_c * σ * Tᵛ^4
-        ground_lw = ε_g * (LWd_c - σ * Tⁱⁿ^4)
+        ground_lw = ε_g * (LWd_c - σ * Tᵍ^4)
 
         Rᵥ   = canopy_SW + canopy_lw
         resᵥ = Rᵥ - gˡʰ * (Tᵛ - Tᵃᶜ) - ℒ * g_leaf * (qᵛ - qᵃᶜ)
@@ -369,34 +369,34 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
         Tᵛ   = clamp(Tᵛ, Tₗₒ, Tₕᵢ)
 
         Rᵍ   = ground_SW + ground_lw
-        resᵍ = Rᵍ - gᵍʰ * (Tⁱⁿ - Tᵃᶜ) - ℒ * Gᵉ * (qᵉ - qᵃᶜ) - Λ * (Tⁱⁿ - Tˡᵃ)
-        dRᵍ  = -4 * ε_g * σ * Tⁱⁿ^3 - gᵍʰ - Λ - ℒ * Gᵉ * saturation_humidity_slope(ℂᵃᵗ, Tⁱⁿ, pᵃᵗ, c.phase)
-        Tⁱⁿ  = Tⁱⁿ - clamp(relax * resᵍ / dRᵍ, -max_ΔT, max_ΔT)
-        Tⁱⁿ  = clamp(Tⁱⁿ, Tₗₒ, Tₕᵢ)
+        resᵍ = Rᵍ - gᵍʰ * (Tᵍ - Tᵃᶜ) - ℒ * Gᵉ * (qᵉ - qᵃᶜ) - Λ * (Tᵍ - Tˡᵃ)
+        dRᵍ  = -4 * ε_g * σ * Tᵍ^3 - gᵍʰ - Λ - ℒ * Gᵉ * saturation_humidity_slope(ℂᵃᵗ, Tᵍ, pᵃᵗ, c.phase)
+        Tᵍ  = Tᵍ - clamp(relax * resᵍ / dRᵍ, -max_ΔT, max_ΔT)
+        Tᵍ  = clamp(Tᵍ, Tₗₒ, Tₕᵢ)
     end
 
     # Converged diagnostics: per-surface flux shares, the skin→slab conduction, and
     # the effective radiating (LST) temperature σ T_eff⁴ ≡ LWu (upwelling to space).
     g_c, qᵛ   = canopy_conductance_terms(c.canopy, Tᵛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
-    Gᵉ, qᵉ, f_dry, qⁱⁿ⁺ = dry_layer_terms(c.soil, Tⁱⁿ, Ψₛ, Ψₐ, ℙₐ)
+    Gᵉ, qᵉ, f_dry, qᵍ⁺ = dry_layer_terms(c.soil, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
     Gᵉ⁺ = f_dry * Gᵉ + (1 - f_dry) * gᵍʷ
-    qᵉ  = ifelse(Gᵉ⁺ > tiny, (f_dry * Gᵉ * qᵉ + (1 - f_dry) * gᵍʷ * qⁱⁿ⁺) / Gᵉ⁺, qⁱⁿ⁺)
+    qᵉ  = ifelse(Gᵉ⁺ > tiny, (f_dry * Gᵉ * qᵉ + (1 - f_dry) * gᵍʷ * qᵍ⁺) / Gᵉ⁺, qᵍ⁺)
     Gᵉ  = Gᵉ⁺
     g_leaf = (1 - f_wet) * g_c + f_wet * g_wet
     LWd_c = (1 - ε_c) * LWd + ε_c * σ * Tᵛ^4
-    LWu_g = ε_g * σ * Tⁱⁿ^4 + (1 - ε_g) * LWd_c
+    LWu_g = ε_g * σ * Tᵍ^4 + (1 - ε_g) * LWd_c
     LWu   = (1 - ε_c) * LWu_g + ε_c * σ * Tᵛ^4
     Teff  = ifelse(σ > 0, (LWu / σ)^convert(FT, 1//4), Tᵃᶜ)
 
     Hᵛ    = gˡʰ * (Tᵛ - Tᵃᶜ)
-    Hᵍ    = gᵍʰ * (Tⁱⁿ - Tᵃᶜ)
+    Hᵍ    = gᵍʰ * (Tᵍ - Tᵃᶜ)
     LEᵛ   = ℒ * g_leaf * (qᵛ - qᵃᶜ)              # total leaf latent (transpiration + wet-canopy)
     LEᵍ   = ℒ * Gᵉ * (qᵉ - qᵃᶜ)
-    Gcond = Λ * (Tⁱⁿ - Tˡᵃ)
+    Gcond = Λ * (Tᵍ - Tˡᵃ)
     E_wet = f_wet * g_wet * (qᵛ - qᵃᶜ)           # wet-canopy evaporation, mass flux (kg m⁻² s⁻¹, up)
     LE_wet = ℒ * E_wet                           # wet-canopy latent heat (W m⁻², up); LEᵛ − LE_wet = transpiration
 
-    return (; Tᵛ = convert(FT, Tᵛ), Tⁱⁿ = convert(FT, Tⁱⁿ),
+    return (; Tᵛ = convert(FT, Tᵛ), Tᵍ = convert(FT, Tᵍ),
               Tᵃᶜ = convert(FT, Tᵃᶜ), qᵃᶜ = convert(FT, qᵃᶜ),
               Teff = convert(FT, Teff),
               Hᵛ = convert(FT, Hᵛ), Hᵍ = convert(FT, Hᵍ),
@@ -436,7 +436,7 @@ separately added radiative flux.
 struct CanopyAirSpaceDiagnostics{F}
     interface              :: F   # canopy-air node Tᵃᶜ (what MOST sees)
     canopy                 :: F   # leaf temperature Tᵛ
-    soil_skin              :: F   # soil-skin temperature Tⁱⁿ
+    soil_skin              :: F   # soil-skin temperature Tᵍ
     effective              :: F   # radiating (LST) temperature Teff
     ground_heat_flux       :: F   # skin→bulk conduction Gcond
     canopy_latent_heat     :: F   # leaf transpiration LEᵛ
