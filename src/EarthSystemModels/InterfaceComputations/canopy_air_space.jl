@@ -393,15 +393,20 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
     fʷ = wet_canopy_fraction(c.interception, Ψₛ.hydrology, LAI)
     gʷ = ρᵃᵗ * LAI * c.leaf_boundary_conductance
 
-    # Shortwave split + longwave emissivities (broadband).
+    # Shortwave split + longwave emissivities (broadband). Per-cell optics may
+    # override the closure scalars through the interface `surface_properties`
+    # riding on the interior state.
     σ   = Ψᵣ.σ
     SW  = Ψᵣ.ℐꜜˢʷ
     LWd = Ψᵣ.ℐꜜˡʷ
-    εᵛ = c.canopy_emissivity_max * (1 - exp(-LAI))
-    εᵍ = c.ground_emissivity
+    αˡᶠ  = convert(FT, get(Ψᵢ, :leaf_albedo, c.leaf_albedo))
+    αᵍ   = convert(FT, get(Ψᵢ, :ground_albedo, c.ground_albedo))
+    εᵛᵐᵃˣ = convert(FT, get(Ψᵢ, :canopy_emissivity_max, c.canopy_emissivity_max))
+    εᵛ = εᵛᵐᵃˣ * (1 - exp(-LAI))
+    εᵍ = convert(FT, get(Ψᵢ, :ground_emissivity, c.ground_emissivity))
     ftrans    = exp(-c.extinction * LAI * c.clumping)
-    SWᵛ = (1 - c.leaf_albedo) * (1 - ftrans) * SW
-    SWᵍ = ftrans * (1 - c.ground_albedo) * SW
+    SWᵛ = (1 - αˡᶠ) * (1 - ftrans) * SW
+    SWᵍ = ftrans * (1 - αᵍ) * SW
 
     Tᵛ  = Tˡᵃ
     Tᵍ = Tˡᵃ
