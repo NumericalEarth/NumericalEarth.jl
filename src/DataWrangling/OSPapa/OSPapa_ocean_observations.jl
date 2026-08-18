@@ -95,8 +95,8 @@ end
 
 all_dates(::OSPapaHourly, variable) = ospapa_all_times()
 
-# TODO: confirm whether the mooring's hourly records are averages over the hour, in which case
-# their windows are centered on the stamp only if the average is too.
+# The OceanSITES hourly records carry no `cell_methods` and no time bounds, so they are values at
+# the stamp rather than averages over the hour.
 DataWrangling.sample_window(metadatum::OSPapaMetadatum) = DataWrangling.instantaneous_window(metadatum)
 
 # Cache depth arrays per variable
