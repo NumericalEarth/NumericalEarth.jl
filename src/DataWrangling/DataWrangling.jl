@@ -375,6 +375,7 @@ include("CopernicusDEM/CopernicusDEM.jl")
 include("ASTERGED/ASTERGED.jl")
 include("GloBFP3D/GloBFP3D.jl")
 include("GHSL/GHSL.jl")
+include("ETHSentinel2Canopy/ETHSentinel2Canopy.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
 include("WorldCover/WorldCover.jl")
 
@@ -397,6 +398,7 @@ using .CopernicusDEM
 using .ASTERGED
 using .GloBFP3D
 using .GHSL
+using .ETHSentinel2Canopy
 using .CopernicusLandAlbedo
 using .WorldCover
 
