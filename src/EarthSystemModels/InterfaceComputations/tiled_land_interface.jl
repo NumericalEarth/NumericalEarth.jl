@@ -80,12 +80,16 @@ end
                        bare              = bare_canopy_air_space(vegetated),
                        vegetated_fluxes   = default_atmosphere_land_fluxes(land, eltype(grid)),
                        bare_fluxes        = default_atmosphere_land_fluxes(land, eltype(grid)),
+                       vegetated_surface_properties = (;),
+                       bare_surface_properties      = (;),
                        velocity_difference = RelativeVelocity())
 
 Build a two-tile (vegetated + bare) land interface. `vegetated` is a [`CanopyAirSpace`](@ref);
 `bare` defaults to its canopy-free counterpart. `fraction` is `f_veg` (a `Number`, `Field`, or
 `FieldTimeSeries`). Pass `vegetated_fluxes` / `bare_fluxes` to give the tiles a roughness
-contrast (forest z₀ ≫ bare z₀) — a first-order control on inland wind decay.
+contrast (forest z₀ ≫ bare z₀) — a first-order control on inland wind decay — and
+`vegetated_surface_properties` / `bare_surface_properties` to hand each tile per-cell
+aerodynamic fields (see [`atmosphere_land_interface`](@ref)).
 
 ```julia
 model = AtmosphereLandModel(atmosphere, land; radiation,
@@ -100,19 +104,23 @@ function TiledLandInterface(grid, atmosphere, land;
                             bare                = bare_canopy_air_space(vegetated),
                             vegetated_fluxes     = default_atmosphere_land_fluxes(land, eltype(grid)),
                             bare_fluxes          = default_atmosphere_land_fluxes(land, eltype(grid)),
+                            vegetated_surface_properties = (;),
+                            bare_surface_properties      = (;),
                             velocity_difference = RelativeVelocity())
 
     vegetated_interface = atmosphere_land_interface(grid, atmosphere, land;
                                                     fluxes               = vegetated_fluxes,
                                                     temperature         = vegetated,
                                                     velocity_difference = velocity_difference,
-                                                    specific_humidity    = vegetated)
+                                                    specific_humidity    = vegetated,
+                                                    surface_properties   = vegetated_surface_properties)
 
     bare_interface = atmosphere_land_interface(grid, atmosphere, land;
                                                fluxes               = bare_fluxes,
                                                temperature         = bare,
                                                velocity_difference = velocity_difference,
-                                               specific_humidity    = bare)
+                                               specific_humidity    = bare,
+                                               surface_properties   = bare_surface_properties)
 
     fluxes      = AtmosphereSurfaceFluxes(grid)
     temperature = build_interface_temperature(vegetated, grid)
