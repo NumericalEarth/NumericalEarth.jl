@@ -10,6 +10,8 @@ using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path,
 
 download_WOA_cache::String = ""
 function __init__()
+    DataWrangling.DataModes.register_dataset!(WOAAnnual, "WOAAnnual")
+    DataWrangling.DataModes.register_dataset!(WOAMonthly, "WOAMonthly")
     global download_WOA_cache = DataWrangling.download_cache("WOA")
 end
 

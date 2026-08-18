@@ -278,6 +278,7 @@ function per_column_geopotential_discretization(metadata::ERA5PressureMetadata;
     ϕ_meta = Metadata(:geopotential; dataset=static_ds,
                       dates=metadata.dates, region=metadata.region, dir=metadata.dir)
     Nt = length(ϕ_meta)
+    download_dataset(ϕ_meta)
     # `Cyclical{Nothing}` infers the period from `times[end] - times[end-1]`, which
     # requires at least two time steps. With a single snapshot there is nothing to
     # cycle over, so fall back to `Linear()` — the resulting FTS returns a constant
@@ -289,7 +290,7 @@ function per_column_geopotential_discretization(metadata::ERA5PressureMetadata;
     # Surface geopotential is orography × g — static in time — so a single snapshot is the clip source.
     date = first(metadata).dates
     ϕ_sl_datum = Metadatum(:geopotential; dataset=sl_ds, date, region=metadata.region, dir=metadata.dir)
-    Downloads.download(ϕ_sl_datum)
+    download_dataset(ϕ_sl_datum)
     Φ_sfc = Field(ϕ_sl_datum)  # 2-D surface geopotential, m²/s²
 
     return PressureLevelVerticalDiscretization(Φ;

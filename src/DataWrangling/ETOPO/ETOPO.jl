@@ -10,6 +10,7 @@ using ..DataWrangling: DataWrangling, DownloadProgress, AbstractStaticBathymetry
 
 download_ETOPO_cache::String = ""
 function __init__()
+    DataWrangling.DataModes.register_dataset!(ETOPO2022, "ETOPO2022")
     global download_ETOPO_cache = DataWrangling.download_cache("ETOPO")
 end
 

@@ -3,7 +3,6 @@ include("runtests_setup.jl")
 using MPI
 MPI.Init()
 
-using CFTime
 using Dates
 using NCDatasets
 using NumericalEarth.DataWrangling: metadata_path
@@ -57,9 +56,9 @@ latitude_interfaces(::TrivalBathymetry) = (0, 50)
 metadata_filename(::TrivalBathymetry, name, date, region) = "trivial_bathymetry.nc"
 
 @testset "Distributed ECCO download" begin
-    dates = DateTimeProlepticGregorian(1992, 1, 1) : Month(1) : DateTimeProlepticGregorian(1994, 4, 1)
+    dates = DateTime(1992, 1, 1) : Month(1) : DateTime(1994, 4, 1)
     metadata = Metadata(:u_velocity; dataset=ECCO4Monthly(), dates)
-    download(metadata)
+    download_dataset(metadata)
 
     @root for metadatum in metadata
         @test isfile(metadata_path(metadatum))

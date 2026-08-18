@@ -17,6 +17,7 @@ import ..DataWrangling:
 
 download_GEBCO_cache::String = ""
 function __init__()
+    DataWrangling.DataModes.register_dataset!(GEBCO2024, "GEBCO2024")
     global download_GEBCO_cache = DataWrangling.download_cache("GEBCO")
 end
 

@@ -30,7 +30,7 @@ Keyword Arguments
                           Default: `true`.
 """
 function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, arch::AbstractArchitecture=CPU(); kw...)
-    Downloads.download(metadata)
+    download_dataset(metadata)
     grid = native_grid(metadata, arch)
     return FieldTimeSeries(metadata, grid; kw...)
 end
@@ -41,7 +41,7 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
                                                     inpainting = default_inpainting(metadata),
                                                     cache_inpainted_data = true)
 
-    Downloads.download(metadata)
+    download_dataset(metadata)
 
     # Match the time axis to the grid's float type. `native_times` returns `Float64` seconds, but with a
     # Float32 grid that mismatch makes `interpolate`'s time weight `Float64`, so the interpolated value is
