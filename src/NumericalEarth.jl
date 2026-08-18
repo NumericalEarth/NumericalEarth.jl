@@ -103,37 +103,50 @@ export
     VanGenuchtenRetention, VanGenuchtenConductivity,
     NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
     NoRunoff, InfiltrationCapacityRunoff,
-    # Canopy aerodynamic roughness (drag partition)
+    # Aerodynamic roughness closures
+    compute_aerodynamic_roughness!, aerodynamic_parameters,
+    # Canopy (drag partition)
     DragPartitionParameters, DragPartitionRoughness,
     canopy_roughness, canopy_roughness_climatology, canopy_wind_ratio,
-    compute_aerodynamic_roughness!, aerodynamic_parameters,
     canopy_drag_parameters, drag_partition_group,
     representative_canopy_height, nonvegetated_roughness, is_vegetated,
+    # Urban (morphometric)
+    AbstractUrbanRoughness, MorphometricRoughness,
+    IsotropicFrontalArea, EmpiricalFrontalArea,
+    UniformHeight, VariableHeight, urban_roughness,
     surface_temperature,
     regrid_bathymetry,
     regrid_topography,
     bare_earth_elevation,
+    default_region,
     Metadata, Metadatum, MetadataSet,
     BoundingBox,
     Column, Linear, Nearest,
     ECCOMetadatum,
     EN4Metadatum,
     ETOPO2022,
+    GLO30, GLO90,
     ECCO2Daily, ECCO2Monthly, ECCO4Monthly,
     ECCO2DarwinMonthly, ECCO4DarwinMonthly,
     EN4Monthly,
     WOAClimatology, WOAAnnual, WOAMonthly,
+    ASTERGEDv3, ASTERGEDResolution, ASTERGEDHigh100m, ASTERGEDLow1km,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
+    ESAWorldCover, WorldCoverVersion, WorldCoverV100, WorldCoverV200,
     ETHSentinel2CanopyHeight, canopy_height_field,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
-    ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
+    ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel,
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
+    ERA5HourlyLand, ERA5MonthlyLand,
     OSPapaHourly,
     JRA55FieldTimeSeries,
     ORCAOne, ORCAQuarter, ORCATwelfth,
     ORCAGrid,
+    OpenLandMapSoilDB,
+    GlobalBuildingFootprints3D, building_morphometry,
+    GHSBuiltH, GHSBuiltS, GHSBuiltSResolution, GHSBuiltS10m, GHSBuiltS100m,
     first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,
     DatasetRestoring,
@@ -282,8 +295,14 @@ using .DataWrangling.GloFAS
 using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
+using .DataWrangling.ASTERGED
+using .DataWrangling.CopernicusDEM
 using .DataWrangling.ETHSentinel2Canopy
 using .DataWrangling.CopernicusLandAlbedo
+using .DataWrangling.OpenLandMap
+using .DataWrangling.GloBFP3D
+using .DataWrangling.GHSL
+using .DataWrangling.WorldCover
 
 using PrecompileTools: @setup_workload, @compile_workload
 

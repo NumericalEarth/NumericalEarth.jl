@@ -2,7 +2,7 @@ module Diagnostics
 
 export MixedLayerDepthField, MixedLayerDepthOperand
 export meridional_heat_transport
-export net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
+export net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux, frazil_heat_flux,
        net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux
 
 using KernelAbstractions: @index, @kernel

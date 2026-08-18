@@ -8,7 +8,7 @@ using Oceananigans.DistributedComputations: @root
 using Oceananigans.Grids: x_domain, y_domain, λnodes, φnodes
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
-                       metadata_path, native_grid, BoundingBox
+                       metadata_path, native_grid, BoundingBox, bounding_box_suffix
 
 import Oceananigans
 
@@ -39,7 +39,7 @@ explicit no-data code is masked to `NaN`.
 Because it is a global 10 m product, it is read in regional windows only:
 construct the `Metadatum` with a longitude/latitude `BoundingBox`. The windowed
 COG read (`/vsicurl/`, anonymous) is performed by
-`ext/NumericalEarthArchGDALExt.jl` and requires `using ArchGDAL`.
+`ext/NumericalEarthArchGDALExt/ethcanopy.jl` and requires `using ArchGDAL`.
 
 Reference: Lang, N. et al. (2023), *A high-resolution canopy height model of the
 Earth*, Nat. Ecol. Evol. 7:1778–1789, doi:10.1038/s41559-023-02206-6; data DOI
@@ -85,7 +85,7 @@ dataset_prefix(::ETHSentinel2CanopyHeight) = "ETHSentinel2CanopyHeight"
 # (ETH ships separate `_Map` height and `_Map_SD` uncertainty layers).
 DataWrangling.metadata_filename(dataset::ETHSentinel2CanopyHeight, name, date, region) =
     string(dataset_prefix(dataset), "_", string(name), "_",
-           DataWrangling.bounded_region_suffix(region), ".nc")
+           bounding_box_suffix(region), ".nc")
 
 function DataWrangling.validate_dataset_coverage(grid, metadata::ETHSentinel2CanopyHeightMetadatum)
     region = metadata.region
@@ -244,7 +244,7 @@ function Downloads.download(metadatum::ETHSentinel2CanopyHeightMetadatum)
     return nc_path
 end
 
-# Implemented in ext/NumericalEarthArchGDALExt.jl once `ArchGDAL` is loaded. The
+# Implemented in ext/NumericalEarthArchGDALExt/ethcanopy.jl once `ArchGDAL` is loaded. The
 # fallback below fires only when the extension is not active (mirrors
 # CopernicusDEM.zarr_to_netcdf).
 canopy_height_cog_to_netcdf(metadatum, nc_path) =

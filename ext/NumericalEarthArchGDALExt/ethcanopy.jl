@@ -1,112 +1,16 @@
-module NumericalEarthArchGDALExt
-
-using ArchGDAL: ArchGDAL
-using ArchGDAL.GDAL: cplsetconfigoption, cplgetconfigoption
-using NCDatasets: NCDataset, defDim, defVar
-using NetworkOptions: NetworkOptions
-using NumericalEarth: NumericalEarth
-using Oceananigans: Center
-using Oceananigans.Fields: Field, interior
-
-const ETHSentinel2Canopy = NumericalEarth.DataWrangling.ETHSentinel2Canopy
-const BoundingBox = NumericalEarth.DataWrangling.BoundingBox
-
-# Point GDAL's /vsicurl libcurl at a CA bundle, once per session. GDAL_jll's bundled libcurl
-# has no CA store on some platforms (notably macOS), so an https open otherwise fails with
-# "HTTP response code ... : 0" (a transport-layer TLS failure, not a 404). `CURL_CA_BUNDLE`
-# is respected at request time; leave a caller-set value alone. `NetworkOptions.ca_roots_path()`
-# resolves the platform trust store (Julia's bundled `cert.pem`, or `SSL_CERT_FILE` /
-# `JULIA_SSL_CA_ROOTS_PATH`). The HTTP retry options are scoped per-read in `eth_http_config`.
-const vsicurl_configured = Ref(false)
-
-function configure_vsicurl!()
-    vsicurl_configured[] && return nothing
-    if !haskey(ENV, "CURL_CA_BUNDLE")
-        ENV["CURL_CA_BUNDLE"] = NetworkOptions.ca_roots_path()
-    end
-    vsicurl_configured[] = true
-    return nothing
-end
-
-# Sentinel returned by `cplgetconfigoption` when an option is unset, so it can be told
-# apart from an option the caller genuinely set (GDAL forbids embedded NULs, so this is a
-# plain improbable string rather than a NUL-guarded one).
-const GDAL_CONFIG_UNSET = "__numericalearth_gdal_config_unset_sentinel__"
-
-# Set GDAL config `options` (key => value pairs) for the duration of `f`, then restore each
-# to its prior value or unset it afterwards. GDAL config is process-global, so leaving
-# per-host basic-auth credentials (the ETH share token) set would leak them into any later,
-# unrelated `/vsicurl/` read in the same session; scoping keeps them local to the read.
-function with_gdal_config(f, options)
-    saved = map(options) do (key, _)
-        prior = cplgetconfigoption(key, GDAL_CONFIG_UNSET)
-        key => (prior == GDAL_CONFIG_UNSET ? C_NULL : prior)
-    end
-    for (key, value) in options
-        cplsetconfigoption(key, value)
-    end
-    try
-        return f()
-    finally
-        for (key, value) in saved
-            cplsetconfigoption(key, value)
-        end
-    end
-end
+#####
+##### ETH Sentinel-2 canopy-height COGs: window the 3° 10 m tiles served over the libdrive
+##### WebDAV share and either write a regional NetCDF or drop the heights onto a model grid.
+#####
 
 # GDAL config for the ETH libdrive WebDAV read, scoped per-read by `with_gdal_config`: the
-# public read-only share token as basic-auth, /vsicurl directory-listing suppression, and
-# transient-failure retries. Scoping keeps the token from leaking into later unrelated reads.
+# public read-only share token as basic-auth, plus transient-failure retries. Scoping keeps
+# the token from leaking into later unrelated reads. (`configure_vsicurl!` already suppresses
+# /vsicurl directory listing session-wide.)
 eth_http_config() =
-    ["GDAL_HTTP_USERPWD"            => ETHSentinel2Canopy.ETH_LIBDRIVE_TOKEN * ":",
-     "GDAL_DISABLE_READDIR_ON_OPEN" => "EMPTY_DIR",
-     "GDAL_HTTP_MAX_RETRY"          => "3",
-     "GDAL_HTTP_RETRY_DELAY"        => "1"]
-
-function NumericalEarth.DataWrangling.IBCAO.reproject_ibcao_to_netcdf(tiff_path, nc_path)
-    ArchGDAL.read(tiff_path) do src
-        # Warp from EPSG:3996 (Polar Stereographic) to EPSG:4326 (WGS84)
-        # at 0.01° resolution, clipping to 64–90°N
-        ArchGDAL.gdalwarp([src],
-            ["-t_srs", "EPSG:4326",
-             "-te",    "-180", "64", "180", "90",  # xmin ymin xmax ymax
-             "-tr",    "0.01", "0.01",             # target resolution (degrees)
-             "-r",     "bilinear",                 # resampling method
-             "-ot",    "Float32"]) do warped
-
-            # ArchGDAL returns data as (Nx, Ny) with y from north to south (GDAL convention)
-            data = Float32.(ArchGDAL.read(warped, 1))
-            data = reverse(data, dims=2)
-
-            Nx, Ny = size(data)  # expected: (36000, 2600)
-
-            NCDataset(nc_path, "c") do ds
-                defDim(ds, "lon", Nx)
-                defDim(ds, "lat", Ny)
-
-                lon_var = defVar(ds, "lon", Float64, ("lon",);
-                                attrib = ["units" => "degrees_east",
-                                          "long_name" => "longitude"])
-                lat_var = defVar(ds, "lat", Float64, ("lat",);
-                                attrib = ["units" => "degrees_north",
-                                          "long_name" => "latitude"])
-                z_var   = defVar(ds, "z",   Float32, ("lon", "lat");
-                                attrib = ["long_name" => "elevation",
-                                          "units"     => "m"])
-
-                lon_var[:] = range(-180 + 0.005, 180 - 0.005; length=Nx)
-                lat_var[:] = range(64 + 0.005, 90 - 0.005; length=Ny)
-                z_var[:, :] = data
-            end
-        end
-    end
-
-    return nothing
-end
-
-#####
-##### Canopy-height COG (ETH) → regional NetCDF
-#####
+    ["GDAL_HTTP_USERPWD"     => ETH_LIBDRIVE_TOKEN * ":",
+     "GDAL_HTTP_MAX_RETRY"   => "3",
+     "GDAL_HTTP_RETRY_DELAY" => "1"]
 
 # Mosaic + window the intersecting COG tiles under `geometry` (the gdalwarp `-te`/`-tr`
 # or `-te`/`-ts` options), returning `(; data, longitude, latitude)` — the height array in
@@ -212,24 +116,20 @@ end
 # and honors HTTP range requests, so `/vsicurl/` fetches only the windowed COG blocks rather
 # than whole 415 MB tiles. Nearest-neighbor resampling keeps the categorical 255 no-data byte
 # exact so `mask_eth` catches it (bilinear would blend 255 into a valid neighbor).
-function ETHSentinel2Canopy.canopy_height_cog_to_netcdf(metadatum::ETHSentinel2Canopy.ETHSentinel2CanopyHeightMetadatum, nc_path)
-    raster = ETHSentinel2Canopy.canopy_regional_raster(metadatum)
-    sources = ETHSentinel2Canopy.eth_tile_urls(raster.region, metadatum.name)
+function NumericalEarth.DataWrangling.ETHSentinel2Canopy.canopy_height_cog_to_netcdf(metadatum::ETHSentinel2CanopyHeightMetadatum, nc_path)
+    raster = canopy_regional_raster(metadatum)
+    sources = eth_tile_urls(raster.region, metadatum.name)
 
     warped = with_gdal_config(eth_http_config()) do
         warp_canopy_onto_grid(sources, raster.region.longitude, raster.region.latitude,
                               raster.Nx, raster.Ny; resampling = "near")
     end
 
-    layer = NumericalEarth.DataWrangling.dataset_variable_name(metadatum)   # "Map" or "SD"
-    layers = Dict(layer => ETHSentinel2Canopy.mask_eth.(warped.data, 255))
+    layer = dataset_variable_name(metadatum)   # "Map" or "SD"
+    layers = Dict(layer => mask_eth.(warped.data, 255))
     write_canopy_netcdf(nc_path, raster.longitude, raster.latitude, layers)
     return nothing
 end
-
-#####
-##### Direct area-averaged read onto a model grid (coarse-graining, no NetCDF)
-#####
 
 # Drop a masked (Nx, Ny) canopy array straight into a grid Field; `-ts` guarantees the
 # array matches the grid's cell count.
@@ -239,17 +139,18 @@ function canopy_field(grid, data)
     return h
 end
 
-function ETHSentinel2Canopy.canopy_height_field(grid, ::ETHSentinel2Canopy.ETHSentinel2CanopyHeight;
-                                          name = :canopy_height, resampling = "average")
+# Area-averaged read straight onto a model grid, coarse-graining the native pixels within
+# each cell without going through a regional NetCDF.
+function NumericalEarth.DataWrangling.ETHSentinel2Canopy.canopy_height_field(grid, ::ETHSentinel2CanopyHeight;
+                                                                            name = :canopy_height,
+                                                                            resampling = "average")
     region = BoundingBox(grid)
-    sources = ETHSentinel2Canopy.eth_tile_urls(region, name)
+    sources = eth_tile_urls(region, name)
 
     warped = with_gdal_config(eth_http_config()) do
         warp_canopy_onto_grid(sources, region.longitude, region.latitude,
                               size(grid, 1), size(grid, 2); resampling, nodata = 255)
     end
 
-    return canopy_field(grid, ETHSentinel2Canopy.mask_eth.(warped.data, 255))
+    return canopy_field(grid, mask_eth.(warped.data, 255))
 end
-
-end # module NumericalEarthArchGDALExt

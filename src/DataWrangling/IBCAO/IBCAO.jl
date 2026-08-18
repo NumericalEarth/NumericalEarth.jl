@@ -54,6 +54,10 @@ const IBCAOMetadatum = Metadatum{<:IBCAOv5}
 
 dataset_variable_name(data::IBCAOMetadatum) = IBCAO_bathymetry_variable_names[data.name]
 
+# The NetCDF written by the reprojection names its coordinates "lon"/"lat".
+DataWrangling.longitude_name(::IBCAOMetadatum) = "lon"
+DataWrangling.latitude_name(::IBCAOMetadatum) = "lat"
+
 # CEDA BODC direct download — 100m, with Greenland ice sheet elevation (~25 GB)
 const IBCAO_tiff_url = "https://dap.ceda.ac.uk/bodc/gebco/ibcao/ibcao_v5.1/" *
     "greenland_ice_sheet_elevation_data/100mx100m_grid_cell_spacing/" *
@@ -69,7 +73,7 @@ function validate_dataset_coverage(grid, ::IBCAOMetadatum)
     if φ_south < 64
         error("IBCAOv5 only covers the Arctic Ocean (north of 64°N). " *
               "The grid extends to $(round(φ_south, digits=1))°N. " *
-              "Use ETOPO2022() or GEBCO2024() for domains that extend south of 64°N.")
+              "Use ETOPO2022() or GEBCO2026() for domains that extend south of 64°N.")
     end
 end
 
@@ -92,7 +96,7 @@ function Downloads.download(metadatum::IBCAOMetadatum)
     return nc_path
 end
 
-# Implemented in ext/NumericalEarthArchGDALExt.jl when ArchGDAL is loaded.
+# Implemented in ext/NumericalEarthArchGDALExt/ibcao.jl when ArchGDAL is loaded.
 function reproject_ibcao_to_netcdf end
 
 end # module

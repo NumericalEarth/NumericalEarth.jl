@@ -52,6 +52,9 @@ const IBCSOMetadatum = Metadatum{<:IBCSOv2}
 
 dataset_variable_name(data::IBCSOMetadatum) = IBCSO_bathymetry_variable_names[data.name]
 
+DataWrangling.longitude_name(::IBCSOMetadatum) = "lon"
+DataWrangling.latitude_name(::IBCSOMetadatum) = "lat"
+
 const IBCSO_pangaea_url = "https://download.pangaea.de/dataset/937574/files/IBCSO_v2_bed_WGS84.nc"
 
 DataWrangling.metadata_url(::IBCSOMetadatum) = IBCSO_pangaea_url
@@ -65,7 +68,7 @@ function validate_dataset_coverage(grid, ::IBCSOMetadatum)
     if φ_north > -50
         error("IBCSOv2 only covers the Southern Ocean (south of 50°S). " *
               "The grid extends to $(round(φ_north, digits=1))°. " *
-              "Use ETOPO2022() or GEBCO2024() for domains that include latitudes north of 50°S.")
+              "Use ETOPO2022() or GEBCO2026() for domains that include latitudes north of 50°S.")
     end
 end
 

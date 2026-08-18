@@ -28,31 +28,68 @@ BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
     BoundingBox(grid; padding = 0)
 
 Create a `BoundingBox` spanning the horizontal extent of `grid`, widened on every
-side by `padding` (degrees).
+side by `padding` (degrees) — a number for both axes, or a `(longitude, latitude)` pair.
 """
-BoundingBox(grid::AbstractGrid; padding = 0) =
-    BoundingBox(longitude = extrema(λnodes(grid, Face(), Center(), Center())) .+ (-padding, padding),
-                latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padding, padding))
-
-# Filename suffix keying a materialized regional file to its window, e.g.
-# `lon_4_5_lat_51_52`, or `global` for an unbounded (`nothing`) region. Shared by the
-# region-windowed datasets (CopernicusDEM, ETHSentinel2Canopy).
-bounded_region_suffix(::Nothing) = "global"
-bounded_region_suffix(region::BoundingBox) =
-    string("lon_", bound_str(region.longitude), "_lat_", bound_str(region.latitude))
-
-bound_str(::Nothing) = "nothing"
-bound_str(bounds) = string(bounds[1], "_", bounds[2])
-
-# `cells` grid cells of margin (degrees) so boundary target cells interpolate from real
-# source data instead of extrapolating past the window edge.
-function grid_cell_padding(grid; cells = 2)
-    λ = λnodes(grid, Face(), Center(), Center())
-    φ = φnodes(grid, Center(), Face(), Center())
-    Δλ = (last(λ) - first(λ)) / (length(λ) - 1)
-    Δφ = (last(φ) - first(φ)) / (length(φ) - 1)
-    return cells * max(Δλ, Δφ)
+function BoundingBox(grid::AbstractGrid; padding = 0)
+    padλ, padφ = axis_padding(padding)
+    return BoundingBox(longitude = extrema(λnodes(grid, Face(), Center(), Center())) .+ (-padλ, padλ),
+                       latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padφ, padφ))
 end
+
+axis_padding(padding::Number) = (padding, padding)
+axis_padding(padding::Tuple{Any, Any}) = padding
+
+axis_padding(padding) =
+    throw(ArgumentError("padding has to be a number or a (longitude, latitude) pair, got $padding"))
+
+# Margin of `cells` grid cells per axis (degrees), so boundary cells interpolate rather than extrapolate.
+function grid_cell_padding(grid::Union{LatitudeLongitudeGrid, OrthogonalSphericalShellGrid}; cells = 2)
+    Nx, Ny, _ = size(grid)
+    λ₁, λ₂ = extrema(λnodes(grid, Face(), Face(), Center()))
+    φ₁, φ₂ = extrema(φnodes(grid, Face(), Face(), Center()))
+    return cells .* ((λ₂ - λ₁) / Nx, (φ₂ - φ₁) / Ny)
+end
+
+grid_cell_padding(grid::ImmersedBoundaryGrid; kw...) = grid_cell_padding(grid.underlying_grid; kw...)
+
+grid_cell_padding(grid::AbstractGrid; kw...) =
+    throw(ArgumentError("cannot derive a dataset window from $(summary(grid)), which carries no " *
+                        "longitude/latitude coordinates; pass `region = BoundingBox(longitude = (λ₁, λ₂), " *
+                        "latitude = (φ₁, φ₂))` explicitly."))
+
+"""
+    bounding_box_intersects(bounds, bbox::BoundingBox)
+
+Whether `bounds`, anything with `west`, `south`, `east`, and `north` fields, overlaps `bbox`.
+Used to select the files of a tiled dataset that cover a region.
+
+Both boxes must label longitudes in the same convention, with `west < east`; a box folded across
+the antimeridian is not supported.
+"""
+function bounding_box_intersects(bounds, bbox::BoundingBox)
+    λ₁, λ₂ = bbox.longitude
+    φ₁, φ₂ = bbox.latitude
+    return !(bounds.east < λ₁ || bounds.west > λ₂ || bounds.north < φ₁ || bounds.south > φ₂)
+end
+
+"""
+    bounding_box_suffix(region)
+
+Filename suffix identifying the window a regionally-downloaded dataset was cached for:
+`"global"` for `nothing`, and `"lon_<west>_<east>_lat_<south>_<north>"` for a `BoundingBox`,
+so windows of one dataset never collide on disk. Datasets whose products follow a different
+filename convention define their own suffix instead.
+"""
+bounding_box_suffix(::Nothing) = "global"
+
+function bounding_box_suffix(region::BoundingBox)
+    λ = region.longitude
+    φ = region.latitude
+    return string("lon_", bounds_string(λ), "_lat_", bounds_string(φ))
+end
+
+bounds_string(::Nothing) = "nothing"
+bounds_string(bounds) = string(bounds[1], "_", bounds[2])
 
 #####
 ##### Column region and interpolation types
@@ -669,17 +706,101 @@ Keyword Argument
 ================
 - `start_time`: The start time for calculating the time difference. Defaults to the first
                 date in the metadata.
+
+Each date is shifted by the dataset's [`time_window_offset`](@ref), which places a
+window-averaged sample at the midpoint of its window rather than at the date its file is
+stamped with.
 """
 function native_times(metadata; start_time=first(metadata).dates)
     times = zeros(length(metadata))
     for (t, data) in enumerate(metadata)
         date = data.dates
         delta = date - start_time
-        delta = Second(delta).value
+        delta = Second(delta).value + time_window_offset(data)
         times[t] = delta
     end
 
     return times
+end
+
+"""
+    sample_window(metadatum)
+
+The `(start, stop)` dates of the averaging window the value in `metadatum` represents.
+Defaults to a zero-width window at the stamp itself, which is an instantaneous sample; a
+product whose files hold window averages extends this with its own averaging period.
+"""
+sample_window(metadatum) = (metadatum.dates, metadatum.dates)
+
+"""
+    calendar_month_window(metadatum)
+
+The [`sample_window`](@ref) of a product whose files hold calendar-month means: the month
+containing the date `metadatum` is stamped with. Independent of where in the month the stamp
+falls, so it also covers products stamped at, say, noon on the first.
+"""
+function calendar_month_window(metadatum)
+    month_start = floor(comparable_datetime(metadatum.dates), Dates.Month)
+    return (month_start, month_start + Dates.Month(1))
+end
+
+"""
+    window_center(metadatum)
+
+The date at the middle of the [`sample_window`](@ref) of `metadatum`, where a window mean
+equals the value of the field itself and so where a linearly interpolating `FieldTimeSeries`
+has to place it. The stamp itself for an instantaneous sample.
+"""
+function window_center(metadatum)
+    window_start, window_stop = sample_window(metadatum)
+    start_datetime = comparable_datetime(window_start)
+    stop_datetime = comparable_datetime(window_stop)
+    half_window = Dates.value(Dates.Millisecond(stop_datetime - start_datetime)) ÷ 2
+    return start_datetime + Dates.Millisecond(half_window)
+end
+
+"""
+    time_window_offset(metadatum)
+
+The offset in seconds from the date a file is stamped with to its [`window_center`](@ref).
+
+Zero for an instantaneous sample, half a period for a stamp that labels the start of an
+averaging window, and negative for one that labels the end.
+"""
+time_window_offset(metadatum) =
+    Dates.value(Dates.Millisecond(window_center(metadatum) - comparable_datetime(metadatum.dates))) / 1000
+
+"""
+    sample_window_span(metadata)
+
+The span in seconds from the start of the first [`sample_window`](@ref) in `metadata` to the
+end of the last, which is the period over which a window-averaged series repeats: its windows
+tile that span without gaps or overlaps. `nothing` for an instantaneous product, whose samples
+are points and so leave the period to be inferred from the node spacing.
+"""
+function sample_window_span(metadata)
+    window_start, window_stop = sample_window(first(metadata))
+    window_start == window_stop && return nothing
+    span = comparable_datetime(last(sample_window(last(metadata)))) - comparable_datetime(window_start)
+    return Dates.value(Dates.Millisecond(span)) / 1000
+end
+
+"""
+    uncovered_time_gaps(metadata)
+
+The `(head, tail)` durations in seconds that the [`sample_window`](@ref)s of `metadata` span
+but its nodes do not: from the start of the first window to the first [`window_center`](@ref),
+and from the last center to the end of the last window. A `FieldTimeSeries` extrapolates over
+both. Zero for an instantaneous product, whose nodes span exactly its samples.
+"""
+function uncovered_time_gaps(metadata)
+    first_metadatum = first(metadata)
+    last_metadatum = last(metadata)
+
+    head = window_center(first_metadatum) - comparable_datetime(first(sample_window(first_metadatum)))
+    tail = comparable_datetime(last(sample_window(last_metadatum))) - window_center(last_metadatum)
+
+    return Dates.value(Dates.Millisecond(head)) / 1000, Dates.value(Dates.Millisecond(tail)) / 1000
 end
 
 ####
@@ -695,21 +816,105 @@ function default_download_directory end
 
 """
     default_horizontal_padding(dataset)
+    default_horizontal_padding(dataset, grid)
 
-Return the default horizontal padding (degrees) added around a bounding box requested
-from `dataset`, providing margin for interpolation stencils at the boundary.
+Return the horizontal padding (degrees) added around a bounding box requested from
+`dataset`, giving interpolation stencils margin at the boundary. The two-argument form
+widens it per axis to also cover `grid`'s boundary cells, returning a
+`(longitude, latitude)` pair.
 """
 function default_horizontal_padding end
+
+default_horizontal_padding(dataset, grid) =
+    max.(default_horizontal_padding(dataset), grid_cell_padding(grid))
 
 """
     default_region(dataset, grid)
 
-Return the default `region` to window `dataset` to when regridding onto `grid`, or `nothing`
-to read the dataset globally. Global-file datasets (e.g. ETOPO) default to `nothing`; datasets
-that must be read in windows (e.g. the global 30 m Copernicus DEM) return a `BoundingBox`
-derived from `grid`.
+Return the `region` to window `dataset` to when regridding onto `grid`. Datasets read whole
+(e.g. ETOPO) return `nothing`; datasets that must be read in windows (e.g. the global 30 m
+Copernicus DEM) return a `BoundingBox` derived from `grid`.
 """
 default_region(dataset, grid) = nothing
+
+"""
+    no_data_means_sea_level(dataset)
+
+Whether cells with no data in `dataset` are ocean at sea level (`true`, as for a Digital Surface
+Model like [`GLO30`](@ref)) rather than gaps in coverage (`false`, the default). Gaps stay NaN, so
+a missing survey cannot be mistaken for a coastline at `z = 0`.
+"""
+no_data_means_sea_level(dataset) = false
+
+"""
+    dataset_bounding_box(dataset, grid; padding = default_horizontal_padding(dataset, grid))
+
+Return the window to read `dataset` in when regridding onto `grid`: `grid`'s bounding box,
+padded for interpolation stencils and clamped to `dataset`'s coverage. A grid whose own
+extent leaves the coverage is rejected rather than silently truncated.
+"""
+function dataset_bounding_box(dataset, grid;
+                              padding = default_horizontal_padding(dataset, grid))
+
+    box = BoundingBox(grid)
+    λ₁, λ₂ = longitude_interfaces(dataset)
+    φ₁, φ₂ = latitude_interfaces(dataset)
+
+    # Compare in the dataset's longitude convention, then label the window back in the grid's.
+    λ⁻, λ⁺ = native_convention_longitude(box.longitude, (λ₁, λ₂))
+    shift = λ⁻ - box.longitude[1]
+
+    if λ⁻ > λ₂ || box.latitude[1] < φ₁ || box.latitude[2] > φ₂
+        throw(ArgumentError("$(summary(dataset)) covers longitude $((λ₁, λ₂)) and latitude $((φ₁, φ₂)), " *
+                            "but the grid spans longitude $((λ⁻, λ⁺)) and latitude $(box.latitude) in " *
+                            "that convention. Regrid within the dataset's coverage."))
+    elseif λ⁺ > λ₂
+        # A window is one contiguous block of the product, so it stops where the coverage is
+        # labeled to end even when the product itself wraps the globe.
+        throw(ArgumentError("a window into $(summary(dataset)) cannot cross longitude $(λ₂), where its " *
+                            "coverage ends: the grid spans longitude $((λ⁻, λ⁺)) in that convention. " *
+                            "Regrid each side of $(λ₂) onto its own grid."))
+    end
+
+    δλ, δφ = axis_padding(padding)
+    longitude = (max(λ⁻ - δλ, λ₁), min(λ⁺ + δλ, λ₂)) .- shift
+    latitude  = (max(box.latitude[1] - δφ, φ₁), min(box.latitude[2] + δφ, φ₂))
+
+    return BoundingBox(; longitude, latitude)
+end
+
+# Regridding runs whole on one rank, so the window covers the global grid.
+dataset_bounding_box(dataset, grid::DistributedGrid; kw...) =
+    dataset_bounding_box(dataset, reconstruct_global_grid(grid); kw...)
+
+"""
+    validate_region_covers_grid(grid, region)
+
+Check that `region` contains `grid`'s horizontal extent, so every target cell interpolates from
+data inside the window. Interpolation extrapolates outside the window's hull rather than failing,
+so a `region` that misses the grid would otherwise be filled silently.
+"""
+validate_region_covers_grid(grid, region) = nothing
+
+function validate_region_covers_grid(grid, region::BoundingBox)
+    (isnothing(region.longitude) || isnothing(region.latitude)) && return nothing
+
+    box = BoundingBox(grid)
+    λ⁻, λ⁺ = native_convention_longitude(box.longitude, region.longitude)
+    φ⁻, φ⁺ = box.latitude
+
+    # A millidegree of slack absorbs Float32 grid labeling; the mismatch this catches is degrees wide.
+    tolerance = 1e-3
+    covered = λ⁻ ≥ region.longitude[1] - tolerance && λ⁺ ≤ region.longitude[2] + tolerance &&
+              φ⁻ ≥ region.latitude[1]  - tolerance && φ⁺ ≤ region.latitude[2]  + tolerance
+
+    covered || throw(ArgumentError("$(summary(region)) does not cover the grid, which spans longitude " *
+                                   "$((λ⁻, λ⁺)) and latitude $((φ⁻, φ⁺)) in the region's convention. " *
+                                   "Widen `region`, or omit it to derive the window from the grid."))
+
+    return nothing
+end
+
 
 """
     matching_single_level_dataset(dataset)
@@ -816,9 +1021,11 @@ struct MicromolePerLiter end
 struct NanomolePerKilogram end
 struct NanomolePerLiter end
 struct CentigramPerCubicCentimeter end
+struct GramPerCubicCentimeter end
 struct HectogramPerCubicMeter end
 struct GramPerKilogram end
 struct DecigramPerKilogram end
+struct WeightPercent end            # mass fraction in % → kg/kg (soil texture)
 
 struct InverseSign end
 struct InverseGravity end

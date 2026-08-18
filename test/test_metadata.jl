@@ -4,11 +4,18 @@ using NumericalEarth.DataWrangling: Column, Linear, Nearest,
                                     BoundingBox, dataset_location,
                                     restrict_location, native_grid
 using NumericalEarth.DataWrangling: restrict, restrict_longitude, download_cache
-using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel
+using NumericalEarth.DataWrangling: native_times, sample_window, window_center, time_window_offset,
+                                    sample_window_span, uncovered_time_gaps, validate_time_coverage
+using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
+                                         ERA5MonthlyPressureLevels
 
 using Oceananigans: location
 using Oceananigans.Grids: topology, Flat, Bounded, Periodic, RectilinearGrid,
                           LatitudeLongitudeGrid, Center, λnodes
+using Oceananigans.OutputReaders: Clamp, Cyclical
+# `Linear` is a spatial interpolation kind in `DataWrangling` and a time-extrapolation scheme
+# in Oceananigans; both are used below.
+using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
 
 @testset "Column construction" begin
     col = Column(35.1, 50.1)
@@ -230,6 +237,115 @@ end
             ENV["NUMERICALEARTH_DATA_DIRECTORY"] = saved
         end
     end
+end
+
+@testset "Monthly-mean sample windows" begin
+    # The dates these files carry in their own `time` variable: the center of each month,
+    # which is a half day later in a 31-day month than in a 30-day one.
+    en4_centers = (1 => DateTime(2010, 1, 16, 12), 2 => DateTime(2010, 2, 15),
+                   6 => DateTime(2010, 6, 16),     7 => DateTime(2010, 7, 16, 12))
+
+    for (month, center) in en4_centers
+        first_of_month = DateTime(2010, month, 1)
+        metadatum = Metadatum(:temperature; dataset = EN4Monthly(), date = first_of_month)
+        @test sample_window(metadatum) == (first_of_month, first_of_month + Month(1))
+        @test time_window_offset(metadatum) == Dates.value(Second(center - first_of_month))
+    end
+
+    ecco = Metadatum(:v_velocity; dataset = ECCO4Monthly(), date = DateTime(1993, 1, 1))
+    @test sample_window(ecco) == (DateTime(1993, 1, 1), DateTime(1993, 2, 1))
+    @test time_window_offset(ecco) == Dates.value(Second(DateTime(1993, 1, 16, 12) - ecco.dates))
+
+    # A twelve-month axis then reproduces the time coordinates the files themselves carry,
+    # in days from the first of January.
+    metadata = Metadata(:temperature; dataset = EN4Monthly(),
+                        dates = [DateTime(2010, m, 1) for m in 1:12])
+    @test native_times(metadata) ./ 86400 == [15.5, 45.0, 74.5, 105.0, 135.5, 166.0,
+                                              196.5, 227.5, 258.0, 288.5, 319.0, 349.5]
+
+    # An instantaneous product has no window and is left where its stamp puts it.
+    hourly = Metadatum(:temperature; dataset = ERA5HourlySingleLevel(), date = DateTime(2020, 4, 1))
+    @test sample_window(hourly) == (DateTime(2020, 4, 1), DateTime(2020, 4, 1))
+    @test time_window_offset(hourly) == 0
+    @test native_times(Metadata(:temperature; dataset = ERA5HourlySingleLevel(),
+                                dates = [DateTime(2020, 4, 1, h) for h in 0:2])) == [0, 3600, 7200]
+
+    # Every monthly-mean product spans the calendar month its file is named for, whether the
+    # stamp is midnight on the first (most of them) or noon (ECCO Darwin).
+    monthly_datasets = (ECCO2Monthly() => :temperature,
+                        ECCO4Monthly() => :temperature,
+                        ECCO2DarwinMonthly() => :dissolved_inorganic_carbon,
+                        ECCO4DarwinMonthly() => :dissolved_inorganic_carbon,
+                        EN4Monthly() => :temperature,
+                        AVISOMonthly() => :sea_level_anomaly,
+                        GLORYSMonthly() => :temperature,
+                        WOAMonthly() => :temperature,
+                        ERA5MonthlySingleLevel() => :temperature,
+                        ERA5MonthlyPressureLevels() => :temperature)
+
+    for (dataset, name) in monthly_datasets, stamp in (DateTime(2010, 7, 1), DateTime(2010, 7, 1, 12))
+        metadatum = Metadatum(name; dataset, date = stamp)
+        @test sample_window(metadatum) == (DateTime(2010, 7, 1), DateTime(2010, 8, 1))
+        @test window_center(metadatum) == DateTime(2010, 7, 16, 12)
+    end
+end
+
+@testset "ERA5 accumulation windows" begin
+    # ERA5 accumulations and mean rates cover the hour ending at the stamp, so their windows
+    # run backwards from it and their nodes sit half an hour before it.
+    for name in (:total_precipitation, :evaporation, :mean_evaporation_rate,
+                 :downwelling_shortwave_radiation, :downwelling_longwave_radiation,
+                 :mean_surface_momentum_flux_x, :mean_surface_momentum_flux_y,
+                 :mean_surface_sensible_heat_flux, :mean_surface_latent_heat_flux)
+
+        metadatum = Metadatum(name; dataset = ERA5HourlySingleLevel(), date = DateTime(2020, 4, 1, 13))
+        @test sample_window(metadatum) == (DateTime(2020, 4, 1, 12), DateTime(2020, 4, 1, 13))
+        @test time_window_offset(metadatum) == -1800
+    end
+
+    for name in (:temperature, :surface_pressure, :eastward_velocity, :significant_wave_height)
+        metadatum = Metadatum(name; dataset = ERA5HourlySingleLevel(), date = DateTime(2020, 4, 1, 13))
+        @test time_window_offset(metadatum) == 0
+    end
+
+    radiation = Metadata(:downwelling_shortwave_radiation; dataset = ERA5HourlySingleLevel(),
+                         dates = [DateTime(2020, 4, 1, h) for h in 1:3])
+    @test native_times(radiation) == [-1800, 1800, 5400]
+end
+
+@testset "Time coverage of window-averaged series" begin
+    monthly = Metadata(:temperature; dataset = EN4Monthly(),
+                       dates = [DateTime(2010, m, 1) for m in 1:12])
+
+    # Twelve monthly windows tile a year exactly, and the nodes fall half a month inside it.
+    @test sample_window_span(monthly) == Dates.value(Second(DateTime(2011, 1, 1) - DateTime(2010, 1, 1)))
+    @test uncovered_time_gaps(monthly) == (15.5 * 86400, 15.5 * 86400)
+
+    # An instantaneous product covers exactly its own nodes, and leaves the cyclical period
+    # to be inferred from their spacing.
+    hourly = Metadata(:temperature; dataset = ERA5HourlySingleLevel(),
+                      dates = [DateTime(2020, 4, 1, h) for h in 0:2])
+    @test isnothing(sample_window_span(hourly))
+    @test uncovered_time_gaps(hourly) == (0, 0)
+
+    # `Cyclical` fills the gaps by wrapping and says so; `Linear` extrapolates and refuses;
+    # `Clamp` was asked to hold the end values.
+    @test_logs (:warn, r"interpolates only between") validate_time_coverage(monthly, Cyclical(1.0))
+    @test_throws ArgumentError validate_time_coverage(monthly, LinearTimeIndexing())
+    @test isnothing(validate_time_coverage(monthly, Clamp()))
+
+    # None of it applies to a product without windows, or to a single sample, which is
+    # constant in time.
+    @test isnothing(validate_time_coverage(hourly, Cyclical(1.0)))
+    @test isnothing(validate_time_coverage(hourly, LinearTimeIndexing()))
+
+    single = Metadatum(:temperature; dataset = EN4Monthly(), date = DateTime(2010, 7, 1))
+    @test isnothing(validate_time_coverage(single, Cyclical(1.0)))
+    @test isnothing(validate_time_coverage(single, LinearTimeIndexing()))
+
+    # A single window still gives a cyclical period, where the node spacing Oceananigans
+    # would infer does not exist.
+    @test sample_window_span(single) == Dates.value(Second(DateTime(2010, 8, 1) - DateTime(2010, 7, 1)))
 end
 
 @testset "nan_convert_missing" begin
