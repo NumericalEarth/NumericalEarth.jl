@@ -96,6 +96,7 @@ DataWrangling.conversion_units(md::ERA5LandMetadata) = nothing
 DataWrangling.default_inpainting(md::ERA5LandMetadata) = nothing
 
 # Monthly means span the calendar month; ERA5HourlyLand variables are all instantaneous.
+DataWrangling.sample_window(md::Metadatum{<:ERA5HourlyLand}) = DataWrangling.instantaneous_window(md)
 DataWrangling.sample_window(md::Metadatum{<:ERA5MonthlyLand}) = DataWrangling.calendar_month_window(md)
 
 # reversed_latitude_axis and ocean masking (nan_convert_missing) are inherited unchanged from ERA5Dataset.

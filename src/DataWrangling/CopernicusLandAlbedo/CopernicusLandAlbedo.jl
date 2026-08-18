@@ -166,6 +166,15 @@ DataWrangling.all_dates(::CopernicusAlbedo, variable) = copernicus_albedo_dekada
 # 12 climatological months; the year is arbitrary, only the month matters.
 DataWrangling.all_dates(::CopernicusAlbedoClimatology, variable) = [DateTime(2018, m, 1) for m in 1:12]
 
+# Each climatological month averages every dekad falling in it, so it spans the calendar month.
+DataWrangling.sample_window(md::Metadatum{<:CopernicusAlbedoClimatology}) =
+    DataWrangling.calendar_month_window(md)
+
+# A dekadal albedo is a retrieval valid at the date it is stamped with rather than a mean over
+# the preceding dekad, so its window has zero width.
+DataWrangling.sample_window(md::Metadatum{<:CopernicusAlbedo}) =
+    DataWrangling.instantaneous_window(md)
+
 #####
 ##### Filenames (date + variable keyed, region-independent — reused across regions)
 #####

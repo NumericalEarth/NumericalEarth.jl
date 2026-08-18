@@ -95,6 +95,10 @@ end
 
 all_dates(::OSPapaHourly, variable) = ospapa_all_times()
 
+# TODO: confirm whether the mooring's hourly records are averages over the hour, in which case
+# their windows are centered on the stamp only if the average is too.
+DataWrangling.sample_window(metadatum::OSPapaMetadatum) = DataWrangling.instantaneous_window(metadatum)
+
 # Cache depth arrays per variable
 const _ospapa_depths_cache = Dict{Symbol, Vector{Float64}}()
 

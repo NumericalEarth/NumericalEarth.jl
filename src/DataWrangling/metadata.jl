@@ -704,10 +704,39 @@ end
     sample_window(metadatum)
 
 The `(start, stop)` dates of the averaging window the value in `metadatum` represents.
-Defaults to a zero-width window at the stamp itself, which is an instantaneous sample; a
-product whose files hold window averages extends this with its own averaging period.
+
+Every dataset with a time axis must define this: there is no fallback, so an adapter that
+omits it raises a `MethodError` the first time a `FieldTimeSeries` is built from it rather
+than silently placing window averages at their stamps. Build the window with
+[`instantaneous_window`](@ref) for a sample taken at the stamp, and with
+[`calendar_month_window`](@ref), [`leading_window`](@ref), or [`trailing_window`](@ref)
+for a window average.
 """
-sample_window(metadatum) = (metadatum.dates, metadatum.dates)
+function sample_window end
+
+"""
+    instantaneous_window(metadatum)
+
+The [`sample_window`](@ref) of a product whose files hold values at an instant: a zero-width
+window at the stamp itself.
+"""
+instantaneous_window(metadatum) = (metadatum.dates, metadatum.dates)
+
+"""
+    leading_window(metadatum, span)
+
+The [`sample_window`](@ref) of a product stamped at the *start* of the `span` it averages
+over, so the window runs forwards from the stamp.
+"""
+leading_window(metadatum, span) = (metadatum.dates, metadatum.dates + span)
+
+"""
+    trailing_window(metadatum, span)
+
+The [`sample_window`](@ref) of a product stamped at the *end* of the `span` it averages
+over, so the window runs backwards from the stamp.
+"""
+trailing_window(metadatum, span) = (metadatum.dates - span, metadatum.dates)
 
 """
     calendar_month_window(metadatum)
