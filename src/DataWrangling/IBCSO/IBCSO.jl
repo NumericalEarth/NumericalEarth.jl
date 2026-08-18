@@ -52,6 +52,9 @@ const IBCSOMetadatum = Metadatum{<:IBCSOv2}
 
 dataset_variable_name(data::IBCSOMetadatum) = IBCSO_bathymetry_variable_names[data.name]
 
+DataWrangling.longitude_name(::IBCSOMetadatum) = "lon"
+DataWrangling.latitude_name(::IBCSOMetadatum) = "lat"
+
 const IBCSO_pangaea_url = "https://download.pangaea.de/dataset/937574/files/IBCSO_v2_bed_WGS84.nc"
 
 DataWrangling.metadata_url(::IBCSOMetadatum) = IBCSO_pangaea_url

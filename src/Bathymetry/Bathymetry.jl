@@ -1,7 +1,8 @@
 module Bathymetry
 
-export regrid_bathymetry, regrid_topography, ORCAGrid
+export regrid_bathymetry, regrid_topography, bare_earth_elevation, ORCAGrid
 
+using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads, download
 using ImageMorphology: ImageMorphology
 using JLD2: JLD2, jldopen
@@ -11,18 +12,22 @@ using Oceananigans.Architectures: architecture, CPU, on_architecture
 using Oceananigans.BoundaryConditions: BoundaryConditions
 using Oceananigans.DistributedComputations: DistributedComputations, DistributedGrid,
                                             reconstruct_global_grid, all_reduce
-using Oceananigans.Fields: Field, interior, interpolate!
+using Oceananigans.Fields: Field, interior, interpolate!, set!
 using Oceananigans.Grids: x_domain, y_domain, topology, Face, Center,
-                          Flat, Periodic, Bounded,
+                          Flat, Periodic, Bounded, AbstractGrid,
                           RectilinearGrid, LatitudeLongitudeGrid, OrthogonalSphericalShellGrid
 using Oceananigans.Utils: launch!, worksize
 using OffsetArrays: OffsetArrays, OffsetArray
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf
 
-using ..DataWrangling: DataWrangling, Metadatum, native_grid, metadata_path,
-                       dataset_variable_name, validate_dataset_coverage
+using ..DataWrangling: DataWrangling, Metadatum, native_grid,
+                       dataset_variable_name, validate_dataset_coverage,
+                       validate_region_covers_grid, default_region,
+                       read_windowed_variable, set_region_data!,
+                       no_data_means_sea_level, bounding_box_suffix
 using ..DataWrangling.ETOPO: ETOPO2022
+using ..DataWrangling.CopernicusDEM: GLO30
 
 include("regrid_bathymetry.jl")
 include("orca_grid.jl")
