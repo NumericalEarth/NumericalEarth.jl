@@ -242,8 +242,10 @@ end
     uₛ = zero(FT)
     vₛ = zero(FT)
 
-    local_interior_state = (u = uₛ, v = vₛ, T = Tₛ)
+    # The localized surface properties ride on the interior state so every
+    # downstream formulation (humidity, temperature, fluxes) can read them.
     local_land_properties = local_atmosphere_land_surface_properties(land_properties, i, j)
+    local_interior_state = merge((u = uₛ, v = vₛ, T = Tₛ), local_land_properties)
 
     radiation_state = air_land_interface_radiation_state(radiation_kernel_props,
                                                          radiation_exchanger_state,
