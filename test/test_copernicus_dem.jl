@@ -14,8 +14,10 @@ using NumericalEarth.Bathymetry: regrid_bathymetry
 
     @testset "GLO30 metadata" begin
         ds = GLO30()
-        @test longitude_interfaces(ds) == (-180, 180)
-        @test latitude_interfaces(ds) == (-90, 90)
+        # The store's pixels sit on whole arc-seconds, half a cell off (-180, 180) × (-90, 90).
+        Δ = 1 / 3600
+        @test longitude_interfaces(ds) == (-180 - Δ/2, 180 - Δ/2)
+        @test latitude_interfaces(ds) == (-90 + Δ/2, 90 + Δ/2)
         @test z_interfaces(ds) == (0, 1)
         Nx, Ny, Nz = size(ds)
         @test Nx == 1296000   # 360° at 1 arc-second
@@ -38,8 +40,9 @@ using NumericalEarth.Bathymetry: regrid_bathymetry
 
     @testset "GLO90 metadata" begin
         ds = GLO90()
-        @test longitude_interfaces(ds) == (-180, 180)
-        @test latitude_interfaces(ds) == (-90, 90)
+        Δ = 3 / 3600
+        @test longitude_interfaces(ds) == (-180 - Δ/2, 180 - Δ/2)
+        @test latitude_interfaces(ds) == (-90 + Δ/2, 90 + Δ/2)
         Nx, Ny, Nz = size(ds)
         @test Nx == 432000   # 360° at 3 arc-second
         @test Ny == 216000   # 180° at 3 arc-second
