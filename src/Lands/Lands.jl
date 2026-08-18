@@ -18,6 +18,8 @@ export AbstractLand,
        NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
        NoRunoff, InfiltrationCapacityRunoff,
        VariablySaturatedHydrology,
+       # Canopy interception store
+       InterceptingHydrology,
        # Urban aerodynamic roughness closures
        AbstractUrbanRoughness, MorphometricRoughness,
        IsotropicFrontalArea, EmpiricalFrontalArea,
@@ -51,7 +53,8 @@ using Oceananigans.Utils: launch!, prettysummary, prettytime
 
 using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
-using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger
+using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger,
+                                                 CanopyAirSpaceDiagnostics, van_genuchten_m
 
 # Closure interfaces
 include("energy_balance/energy_balance.jl")
@@ -82,6 +85,10 @@ include("hydrology/hydraulic_functions.jl")
 include("hydrology/deep_liquid_fluxes.jl")
 include("hydrology/runoff_models.jl")
 include("hydrology/variably_saturated_hydrology.jl")
+
+# Canopy interception store — wraps a soil hydrology (throughfall + wet-canopy
+# evaporation), depends on `merge_unique` from the container above.
+include("hydrology/intercepting_hydrology.jl")
 
 # Legacy PrescribedLand component (river / iceberg freshwater forcing).
 include("prescribed_land.jl")
