@@ -12,6 +12,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: default_atmosphere
                                                               atmosphere_ocean_stability_functions,
                                                               EdsonMomentumStabilityFunction,
                                                               SimilarityScales,
+                                                              LandRoughnessLength,
                                                               LandZeroPlaneDisplacement,
                                                               local_zero_plane_displacement,
                                                               iterate_interface_fluxes,
@@ -546,6 +547,58 @@ end
     @test per_cell == solved_friction_velocity(similarity_fluxes(4.0), (;))
     @test solved_friction_velocity(similarity_fluxes(LandZeroPlaneDisplacement()), (;)) ==
           solved_friction_velocity(similarity_fluxes(0.0), (;))
+end
+
+@testset "Atmosphere-Land per-cell roughness and displacement fields" begin
+    for arch in test_architectures
+        grid = LatitudeLongitudeGrid(arch, Float64;
+                                     size = (2, 1, 1), latitude = (10, 11), longitude = (10, 12),
+                                     z = (-1, 0), topology = (Bounded, Bounded, Bounded))
+
+        h   = 10.0
+        uᵃᵗ = 5.0
+        ϰ   = 0.4
+
+        atmosphere = PrescribedAtmosphere(grid; surface_layer_height = h, boundary_layer_height = 512)
+        fill!(parent(atmosphere.temperature),       288)
+        fill!(parent(atmosphere.specific_humidity), 0.003)
+        fill!(parent(atmosphere.velocities.u), uᵃᵗ)
+        fill!(parent(atmosphere.velocities.v), 0)
+        fill!(parent(atmosphere.pressure),     101325)
+
+        # Grassland-vs-forest contrast: per-cell momentum roughness and displacement
+        # fields read by the field-aware formulations through `surface_properties`.
+        ℓᵐ¹, ℓᵐ² = 0.03, 1.0
+        d¹,  d²  = 0.0,  4.0
+
+        momentum_roughness_length = Field{Center, Center, Nothing}(grid)
+        zero_plane_displacement   = Field{Center, Center, Nothing}(grid)
+        set!(momentum_roughness_length, (λ, φ) -> ifelse(λ < 11, ℓᵐ¹, ℓᵐ²))
+        set!(zero_plane_displacement,   (λ, φ) -> ifelse(λ < 11, d¹,  d²))
+
+        zero_ψ(ζ) = zero(ζ)
+        fluxes = SimilarityTheoryFluxes(; momentum_roughness_length    = LandRoughnessLength(),
+                                          temperature_roughness_length = LandRoughnessLength(multiplier = 0.1),
+                                          water_vapor_roughness_length = LandRoughnessLength(multiplier = 0.1),
+                                          zero_plane_displacement      = LandZeroPlaneDisplacement(),
+                                          subgrid_velocities = nothing,
+                                          stability_functions = SimilarityScales(zero_ψ, zero_ψ, zero_ψ))
+
+        land = SlabLand(grid; hydrology = DryLand(), energy = SlabEnergy(eltype(grid)))
+        set!(land; T = 288.0)
+
+        interface = atmosphere_land_interface(grid, atmosphere, land; fluxes,
+                                              surface_properties = (; momentum_roughness_length,
+                                                                      zero_plane_displacement))
+        model = AtmosphereLandModel(atmosphere, land;
+                                    atmosphere_land_interface = interface,
+                                    radiation = nothing)
+        update_state!(model)
+
+        u★ = Array(interior(model.interfaces.atmosphere_land_interface.fluxes.friction_velocity))
+        @test u★[1, 1, 1] ≈ ϰ / log(h / ℓᵐ¹) * uᵃᵗ
+        @test u★[2, 1, 1] ≈ ϰ / log((h - d²) / ℓᵐ²) * uᵃᵗ
+    end
 end
 
 @testset "Atmosphere-Land flux stability and roughness response" begin

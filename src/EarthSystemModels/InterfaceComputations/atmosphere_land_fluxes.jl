@@ -17,21 +17,63 @@ atmosphere_land_interface(grid, ::Nothing,  ::Nothing; kw...) = nothing
                               fluxes               = default_atmosphere_land_fluxes(land, eltype(grid)),
                               temperature          = BulkTemperature(),
                               velocity_difference  = RelativeVelocity(),
-                              specific_humidity    = default_al_specific_humidity(land))
+                              specific_humidity    = default_al_specific_humidity(land),
+                              surface_properties   = (;))
 
 Build the atmosphere--land interface on `grid` from `atmosphere` and `land` with
 the given turbulent-flux closure, interface-temperature model, atmosphere-relative
 velocity model, and specific-humidity formulation. Pass the result as
 `atmosphere_land_interface = ...` to `ComponentInterfaces` /
 `AtmosphereLandModel` to override the default.
+
+`surface_properties` is a `NamedTuple` of per-cell land surface properties (each entry a
+`Number` or a `Field` on `grid`) handed to the turbulent-flux closure. The field-aware
+roughness formulations read `momentum_roughness_length` and `scalar_roughness_length`
+([`LandRoughnessLength`](@ref)) and `zero_plane_displacement`
+([`LandZeroPlaneDisplacement`](@ref)), so per-cell aerodynamic parameters — for example
+from [`urban_roughness`](@ref) or a canopy roughness closure — enter the Monin--Obukhov
+solver:
+
+```jldoctest
+using NumericalEarth
+using Oceananigans
+using NumericalEarth.EarthSystemModels.InterfaceComputations: atmosphere_land_stability_functions
+
+grid = LatitudeLongitudeGrid(size = (2, 1, 1), latitude = (10, 11), longitude = (10, 12),
+                             z = (-1, 0), topology = (Bounded, Bounded, Bounded))
+
+atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10, boundary_layer_height = 512)
+land = SlabLand(grid)
+
+ℓᵐ = Field{Center, Center, Nothing}(grid)
+d  = Field{Center, Center, Nothing}(grid)
+set!(ℓᵐ, 0.5)
+set!(d, 4)
+
+fluxes = SimilarityTheoryFluxes(momentum_roughness_length    = LandRoughnessLength(),
+                                temperature_roughness_length = LandRoughnessLength(multiplier = 0.1),
+                                water_vapor_roughness_length = LandRoughnessLength(multiplier = 0.1),
+                                zero_plane_displacement      = LandZeroPlaneDisplacement(),
+                                stability_functions          = atmosphere_land_stability_functions(Float64))
+
+interface = atmosphere_land_interface(grid, atmosphere, land; fluxes,
+                                      surface_properties = (momentum_roughness_length = ℓᵐ,
+                                                            zero_plane_displacement   = d))
+
+summary(interface.properties.surface_properties.momentum_roughness_length)
+
+# output
+"2×1×1 Field{Center, Center, Nothing} reduced over dims = (3,) on LatitudeLongitudeGrid on CPU"
+```
 """
 function atmosphere_land_interface(grid, atmosphere, land;
                                    fluxes              = default_atmosphere_land_fluxes(land, eltype(grid)),
                                    temperature         = BulkTemperature(),
                                    velocity_difference = RelativeVelocity(),
-                                   specific_humidity   = default_al_specific_humidity(land))
+                                   specific_humidity   = default_al_specific_humidity(land),
+                                   surface_properties  = (;))
     al_fluxes = AtmosphereSurfaceFluxes(grid)
-    al_properties = InterfaceProperties(specific_humidity, temperature, velocity_difference)
+    al_properties = InterfaceProperties(specific_humidity, temperature, velocity_difference, surface_properties)
     interface_temperature = Field{Center, Center, Nothing}(grid)
     return AtmosphereInterface(al_fluxes, fluxes, interface_temperature, al_properties)
 end
@@ -72,7 +114,16 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     land_state = (T = land_exchanger_state.T,
                   saturation = land_exchanger_state.saturation)
 
-    land_properties = atmosphere_land_surface_properties(land_exchanger_state)
+    # Per-cell surface properties for the flux closure: whatever the land state
+    # advertises, overridden by the interface's own `surface_properties`. The
+    # fields ride into the kernel as a bare `NamedTuple` argument, so the
+    # (stripped) `InterfaceProperties` stays `isbits`.
+    land_properties = merge(atmosphere_land_surface_properties(land_exchanger_state),
+                            interface_properties.surface_properties)
+
+    interface_properties = InterfaceProperties(interface_properties.specific_humidity_formulation,
+                                               interface_properties.temperature_formulation,
+                                               interface_properties.velocity_formulation)
 
     radiation = coupled_model.radiation
     radiation_kernel_props = kernel_radiation_properties(radiation)
@@ -104,13 +155,16 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     return nothing
 end
 
-# Roughness and zero-plane displacement live on the flux closure
-# (`atmosphere_land_fluxes`), not the land state — `SlabLand` carries neither.
-# A land model that provides per-cell values (`momentum_roughness_length`,
-# `scalar_roughness_length`, `zero_plane_displacement`) overrides these for its
-# own land state type.
+# Per-cell surface properties for the flux closure. `SlabLand`'s exchanger state
+# advertises none; a land model that carries per-cell aerodynamic fields overrides
+# the first method for its own state type. Users supply them per interface through
+# `atmosphere_land_interface(...; surface_properties)`. In the kernel the property
+# `NamedTuple` is localized entrywise, so the flux closure's field-aware
+# formulations (`LandRoughnessLength`, `LandZeroPlaneDisplacement`) read plain
+# per-cell numbers.
 @inline atmosphere_land_surface_properties(land_state) = (;)
-@inline local_atmosphere_land_surface_properties(land_properties, i, j) = (;)
+@inline local_atmosphere_land_surface_properties(land_properties, i, j) =
+    map(ξ -> state2dindex(ξ, i, j), land_properties)
 
 #####
 ##### Land surface state materialized into the interface state.

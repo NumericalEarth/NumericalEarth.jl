@@ -89,6 +89,8 @@ export
     SimilarityScales,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
+    LandRoughnessLength,
+    LandZeroPlaneDisplacement,
     ComponentInterfaces,
     SkinTemperature,
     BulkTemperature,
@@ -271,7 +273,8 @@ using .Radiations
 using .Oceans
 using .SeaIces
 using .Diagnostics
-using .EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
+using .EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength,
+                          LandRoughnessLength, LandZeroPlaneDisplacement, default_sea_ice
 using .NestedModels
 using .NestedModels: NestedModel, NestedSimulation, nested_atmosphere_model, parent_boundary_conditions, parent_forcings
 using .DataWrangling.ETOPO
