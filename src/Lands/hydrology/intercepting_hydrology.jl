@@ -21,7 +21,10 @@
 ##### reads, so ordering within the delegated `time_step!` is interception → soil.
 #####
 ##### Physics: Rutter (1971) running canopy balance, Deardorff (1978) wet fraction,
-##### BATS/CLM `Wᶜᵐᵃˣ = c·LAI` capacity (`c ≈ 0.1 kg m⁻²`), Beer–Lambert cover.
+##### BATS/CLM `Wᶜᵐᵃˣ = c·LAI` capacity (`c ≈ 0.1 kg m⁻²`). The Beer–Lambert caught
+##### fraction is a canopy-cover closure sitting between published rain forms: CLM5
+##### uses `tanh(LAI+SAI)` (more interception at moderate LAI), PALADYN scales the
+##### exponential by 0.2 (less).
 #####
 
 """

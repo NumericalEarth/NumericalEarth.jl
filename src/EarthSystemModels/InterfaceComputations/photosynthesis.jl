@@ -132,12 +132,13 @@ respiration `Rᵈ`. Rate parameters are given at 25 °C and scaled to leaf
 temperature: `Vcmax`/`Jmax` by the peaked Arrhenius factor (ClimaLand Eq C11) so
 they peak near an optimum and roll off at high leaf temperature, `Rᵈ` by the
 Heskel (2016) form (Eq C12), and `Γ*`/`Kc`/`Ko` by plain Arrhenius (Eq C6).
-Defaults follow ClimaLand Table C1 / Kattge & Knorr (2007); `Vcmax25` is the
-C3-grass value used for the ClimaLand US-Var flux-tower run.
+Defaults follow ClimaLand Table C1 / Kattge & Knorr (2007); `Vcmax25 = 5e-5` is
+a generic mid-range C3 value (ClimaLand's US-Var C3-grass run used `2.5e-5`).
 
 Fields (all at 25 °C unless noted):
 - `Vcmax25`      : maximum carboxylation rate (mol CO₂ m⁻² s⁻¹).
-- `jmax_to_vcmax`: ratio `Jmax25 / Vcmax25` (–).
+- `jmax_to_vcmax`: ratio `Jmax25 / Vcmax25` (–); the default 1.67 is the
+  Kattge & Knorr (2007) ratio acclimated to 25 °C growth temperature.
 - `respiration_to_vcmax` : ratio `Rd25 / Vcmax25` (–).
 - `quantum_yield`: electrons to PSII per absorbed photon (–).
 - `Γ★25`         : CO₂ compensation point (Pa); `Kc25`, `Ko25`: Michaelis constants (Pa).

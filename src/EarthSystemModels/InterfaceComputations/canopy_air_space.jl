@@ -12,8 +12,8 @@
 ##### and the paired humidity node `qᵃᶜ`. The leaf sees the *shaded soil skin* `Tᵍ`,
 ##### not the bulk reservoir `Tˡᵃ`; the slab is driven only by the skin conduction.
 #####
-##### Reuse: `canopy_conductance_terms` (leaf vapor conductance `gˡʷ = gᶜ` and
-##### `qᵛ⁺(Tᵛ)`, the Farquhar–Medlyn stomatal path) and `dry_layer_terms` (soil vapor
+##### Reuse: `canopy_conductance_terms` (stomatal conductance `gᶜ`, put in series with
+##### the leaf boundary layer, and `qᵛ⁺(Tᵛ)`) and `dry_layer_terms` (soil vapor
 ##### conductance `gᵍʷ = Gᵉ` and the front humidity `qᵉ`) are the *same* helpers the
 ##### standalone/composite humidity formulations use.
 ##### Based on ClimaLand (Deck et al. 2026, App. D2/D5, E3).
@@ -41,8 +41,9 @@ end
 
 Marker enabling the wet-canopy (interception) vapor branch of a [`CanopyAirSpace`](@ref). A wet
 canopy evaporates intercepted water at the *potential* (stomata-free) rate through
-the leaf boundary layer only, so the leaf vapor conductance blends the dry
-(stomatal) `gᶜ` with a wet `gʷ = ρᵃᵗ · LAI · gᵇ` by the wet fraction
+the leaf boundary layer only, so the leaf vapor conductance blends the dry path
+(stomata in series with the boundary layer) with the wet `gʷ = ρᵃᵗ · LAI · gᵇ`
+by the wet fraction
 
 ```math
 f_{wet} = (Wᶜ / Wᶜᵐᵃˣ)^{2/3}, \\qquad Wᶜᵐᵃˣ = c · LAI
@@ -115,7 +116,9 @@ canopy shields the ground more strongly and decouples it from the canopy air; a 
 canopy (`LAI → 0`) leaves the ground ventilating at the aerodynamic limit, so the result
 is capped at the aerodynamic transfer velocity `u★²/Vₐ` — the ground cannot ventilate to
 the canopy air faster than the canopy air ventilates to the atmosphere. `minimum_shielding`
-(`ε`) floors the shielding so the sparse-canopy limit stays finite.
+(`ε`) floors the shielding so the sparse-canopy limit stays finite. Both guards are
+additions to the PALADYN form, which leaves `gᵘᶜ` unbounded as the canopy vanishes and
+relies on the series aerodynamic resistance instead.
 
 ```jldoctest
 using NumericalEarth
@@ -140,6 +143,57 @@ AreaIndexUndercanopyConductance(FT::Type = Oceananigans.defaults.FloatType;
                                     convert(FT, stem_area_index),
                                     convert(FT, minimum_shielding))
 
+"""
+    FrictionVelocityUndercanopyConductance(FT = Oceananigans.defaults.FloatType;
+                                           dense_canopy_coefficient = 0.004,
+                                           ground_roughness_length = 0.01,
+                                           stem_area_index = 0,
+                                           kinematic_viscosity = 1.5e-5)
+
+Ground↔canopy-air aerodynamic conductance of CLM5, after
+[Zeng et al. (2005)](@cite zeng2005undercanopy): the velocity scale is the friction
+velocity `u★` (canopy-top shear drives the undercanopy turbulence), and the transfer
+coefficient interpolates between a dense-canopy constant and a bare-ground
+roughness-Reynolds-number law,
+
+```math
+gᵘᶜ = Cₛ u★, \\qquad Cₛ = Cₛᵇ W + Cₛᵈ (1 - W), \\qquad W = e^{-(LAI + SAI)},
+\\qquad Cₛᵇ = \\frac{k}{0.13} \\left(\\frac{z₀ᵍ u★}{ν}\\right)^{-0.45},
+```
+
+with the dense-canopy coefficient `Cₛᵈ` (`dense_canopy_coefficient`, 0.004 after
+Dickinson et al. 1993), the ground roughness length `z₀ᵍ` (`ground_roughness_length`, m),
+the kinematic viscosity of air `ν` (`kinematic_viscosity`, m² s⁻¹), and the von Kármán
+constant `k = 0.4` (CLM5 Tech Note Eqs. 2.5.116–2.5.121). Unlike
+[`AreaIndexUndercanopyConductance`](@ref), the sparse-canopy limit is closed physically
+by the bare-ground law rather than floored, and calm air (`u★ → 0`) decouples the ground.
+
+```jldoctest
+using NumericalEarth
+
+FrictionVelocityUndercanopyConductance()
+
+# output
+FrictionVelocityUndercanopyConductance(Cₛᵈ=0.004, z₀ᵍ=0.01, SAI=0.0)
+```
+"""
+struct FrictionVelocityUndercanopyConductance{FT} <: AbstractUndercanopyConductance
+    dense_canopy_coefficient :: FT
+    ground_roughness_length  :: FT
+    stem_area_index          :: FT
+    kinematic_viscosity      :: FT
+end
+
+FrictionVelocityUndercanopyConductance(FT::Type = Oceananigans.defaults.FloatType;
+                                       dense_canopy_coefficient = 0.004,
+                                       ground_roughness_length = 0.01,
+                                       stem_area_index = 0,
+                                       kinematic_viscosity = 1.5e-5) =
+    FrictionVelocityUndercanopyConductance(convert(FT, dense_canopy_coefficient),
+                                           convert(FT, ground_roughness_length),
+                                           convert(FT, stem_area_index),
+                                           convert(FT, kinematic_viscosity))
+
 Base.summary(u::ConstantUndercanopyConductance) =
     string("ConstantUndercanopyConductance(gᵘᶜ=", prettysummary(u.conductance), ")")
 Base.show(io::IO, u::ConstantUndercanopyConductance) = print(io, summary(u))
@@ -149,6 +203,12 @@ Base.summary(u::AreaIndexUndercanopyConductance) =
            ", SAI=", prettysummary(u.stem_area_index),
            ", ε=", prettysummary(u.minimum_shielding), ")")
 Base.show(io::IO, u::AreaIndexUndercanopyConductance) = print(io, summary(u))
+
+Base.summary(u::FrictionVelocityUndercanopyConductance) =
+    string("FrictionVelocityUndercanopyConductance(Cₛᵈ=", prettysummary(u.dense_canopy_coefficient),
+           ", z₀ᵍ=", prettysummary(u.ground_roughness_length),
+           ", SAI=", prettysummary(u.stem_area_index), ")")
+Base.show(io::IO, u::FrictionVelocityUndercanopyConductance) = print(io, summary(u))
 
 @inline undercanopy_conductance(u::ConstantUndercanopyConductance, LAI, Vₐ, u★) =
     convert(typeof(LAI), u.conductance)
@@ -161,6 +221,20 @@ Base.show(io::IO, u::AreaIndexUndercanopyConductance) = print(io, summary(u))
     gᵘ = C * Vₐ / max(1 - exp(-Λ), ε)
     gᵃ = u★^2 / max(Vₐ, eps(FT))
     return min(gᵘ, gᵃ)
+end
+
+@inline function undercanopy_conductance(u::FrictionVelocityUndercanopyConductance, LAI, Vₐ, u★)
+    FT  = typeof(LAI)
+    W   = exp(-(LAI + convert(FT, u.stem_area_index)))
+    Cᵈ  = convert(FT, u.dense_canopy_coefficient)
+    z₀ᵍ = convert(FT, u.ground_roughness_length)
+    ν   = convert(FT, u.kinematic_viscosity)
+    k   = convert(FT, 2//5)
+    a   = convert(FT, 13//100)
+    n   = convert(FT, 9//20)
+    # Cₛᵇ u★ grouped as u★^(1−n) so u★ → 0 gives 0 rather than Inf·0.
+    gᵇ = (k / a) * (z₀ᵍ / ν)^(-n) * u★^(1 - n)
+    return W * gᵇ + (1 - W) * Cᵈ * u★
 end
 
 # A bare number is the constant closure; a closure passes through.
@@ -182,10 +256,13 @@ Fields:
 - `leaf_albedo`, `ground_albedo` : broadband shortwave albedos.
 - `canopy_emissivity_max`, `ground_emissivity` : longwave emissivities (`εᵛ = εᵐᵃˣ(1 − e^{−LAI})`).
 - `extinction`, `clumping` : Beer–Lambert `K`, `Ω` for the shortwave split.
-- `leaf_boundary_conductance` : per-leaf boundary-layer conductance `gᵇ` (m s⁻¹) → `gˡʰ = ρcₚ·LAI·gᵇ`.
+- `leaf_boundary_conductance` : per-leaf boundary-layer conductance `gᵇ` (m s⁻¹) →
+  sensible `gˡʰ = ρcₚ·LAI·gᵇ`, vapor `gʷ = ρ·LAI·gᵇ` (in series with the stomata
+  when dry, alone over the wetted fraction).
 - `undercanopy_conductance` : ground↔canopy-air conductance closure → `gᵍʰ = ρcₚ·gᵘᶜ`;
-  a `Number` (m s⁻¹, wrapped as [`ConstantUndercanopyConductance`](@ref)) or an
-  [`AreaIndexUndercanopyConductance`](@ref) that responds to canopy density and wind.
+  a `Number` (m s⁻¹, wrapped as [`ConstantUndercanopyConductance`](@ref)), an
+  [`AreaIndexUndercanopyConductance`](@ref) (PALADYN: canopy density and wind), or a
+  [`FrictionVelocityUndercanopyConductance`](@ref) (CLM5: canopy density and `u★`).
 - `inner_iterations`, `relaxation` : damped-Newton settings for the coupled solve.
 - `interception` : wet-canopy vapor branch parameters (a [`CanopyInterception`](@ref)),
   or `nothing` for a dry canopy (the default; recovers the current CAS bit-for-bit).
@@ -194,7 +271,7 @@ Fields:
 struct CanopyAirSpace{S, C, RF, FT, U, I, Φ}
     soil                      :: S
     canopy                    :: C
-    soil_skin_flux            :: RF
+    soil_skin_flux             :: RF
     leaf_albedo               :: FT
     ground_albedo             :: FT
     canopy_emissivity_max     :: FT
@@ -212,7 +289,7 @@ end
 function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
                         soil,
                         canopy                    = CanopyConductanceHumidity(FT),
-                        soil_skin_flux            = SoilConductiveFlux(1.5, 0.05),
+                        soil_skin_flux             = SoilConductiveFlux(1.5, 0.05),
                         leaf_albedo               = 0.15,
                         ground_albedo             = 0.15,
                         canopy_emissivity_max     = 0.98,
@@ -258,6 +335,14 @@ Base.show(io::IO, c::CanopyAirSpace) =
 @inline interface_vegetation_state(i, j, grid, c::CanopyAirSpace, vegetation, time_interpolator) =
     interface_vegetation_state(i, j, grid, c.canopy, vegetation, time_interpolator)
 
+# Leaf vapor conductance: on the transpiring fraction the stomata act in series with
+# the leaf boundary layer (ClimaLand Eq E17); the wetted fraction `fʷ` bypasses the
+# stomata and evaporates through the boundary layer alone. `LAI → 0` sends both to zero.
+@inline function leaf_vapor_conductance(gᶜ, gʷ, fʷ)
+    gᵈ = ifelse(gᶜ + gʷ > 0, gᶜ * gʷ / (gᶜ + gʷ), zero(gᶜ))
+    return (1 - fʷ) * gᵈ + fʷ * gʷ
+end
+
 # dqᵛ⁺/dT by centered difference — the Newton derivative of each balance's latent term.
 @inline function saturation_humidity_slope(ℂᵃᵗ, T, pᵃᵗ, phase)
     δ = convert(typeof(T), 1//100)
@@ -302,11 +387,9 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
     gᵍʷ = ρᵃᵗ * gᵘᶜ   # undercanopy vapor conductance (wet-soil limit)
     Λ   = convert(FT, skin_conductance(c.soil_skin_flux))
 
-    # Wet-canopy vapor branch. `fʷ` (Deardorff 1978) blends the dry stomatal
-    # conductance `gᶜ` with the stomata-free wet-leaf conductance `gʷ = ρᵃᵗ·LAI·gᵇ`
-    # (the boundary-layer vapor mass conductance), so intercepted water evaporates at the
-    # potential rate through the leaf boundary layer. `fʷ = 0` (no interception)
-    # recovers the dry CAS bit-for-bit.
+    # Leaf boundary-layer vapor mass conductance `gʷ = ρᵃᵗ·LAI·gᵇ`: in series with the
+    # stomata on the dry (transpiring) fraction, alone on the wetted fraction `fʷ`
+    # (Deardorff 1978), so intercepted water evaporates at the potential rate.
     fʷ = wet_canopy_fraction(c.interception, Ψₛ.hydrology, LAI)
     gʷ = ρᵃᵗ * LAI * c.leaf_boundary_conductance
 
@@ -340,9 +423,7 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
         qᵉ  = ifelse(Gᵉ⁺ > tiny, (fᵈ * Gᵉ * qᵉ + (1 - fᵈ) * gᵍʷ * qᵍ⁺) / Gᵉ⁺, qᵍ⁺)
         Gᵉ  = Gᵉ⁺
 
-        # Blended leaf vapor conductance: dry (stomatal) gᶜ over the transpiring
-        # fraction, wet (boundary-layer) gʷ over the wetted fraction fʷ.
-        gˡʷ = (1 - fʷ) * gᶜ + fʷ * gʷ
+        gˡʷ = leaf_vapor_conductance(gᶜ, gʷ, fʷ)
 
         # Δ-multiplied Kirchhoff node (as the humidity node in CompositeSurfaceHumidity);
         # guard the transient case where the aerodynamic and surface conductances cancel
@@ -379,7 +460,7 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
     Gᵉ⁺ = fᵈ * Gᵉ + (1 - fᵈ) * gᵍʷ
     qᵉ  = ifelse(Gᵉ⁺ > tiny, (fᵈ * Gᵉ * qᵉ + (1 - fᵈ) * gᵍʷ * qᵍ⁺) / Gᵉ⁺, qᵍ⁺)
     Gᵉ  = Gᵉ⁺
-    gˡʷ = (1 - fʷ) * gᶜ + fʷ * gʷ
+    gˡʷ = leaf_vapor_conductance(gᶜ, gʷ, fʷ)
     LWꜜᵍ = (1 - εᵛ) * LWd + εᵛ * σ * Tᵛ^4
     LWꜛᵍ = εᵍ * σ * Tᵍ^4 + (1 - εᵍ) * LWꜜᵍ
     LWu   = (1 - εᵛ) * LWꜛᵍ + εᵛ * σ * Tᵛ^4

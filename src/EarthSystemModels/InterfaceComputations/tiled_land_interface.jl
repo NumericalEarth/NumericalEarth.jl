@@ -9,7 +9,7 @@
 #####     𝒬 = f · 𝒬_veg + (1 − f) · 𝒬_bare.
 #####
 ##### This is the SOTA parallel/tiled-flux scheme (Avissar & Pielke 1989; Koster–Suarez
-##### 1992; Noah-MP `F_veg·veg + (1−F_veg)·bare`; ClimaLand v1 `(1−σ)E_soil + σ·canopy`).
+##### 1992; Noah-MP `F_veg·veg + (1−F_veg)·bare`; ClimaLand v1's parallel fluxes, App. E3).
 ##### It is *complementary* to the `CanopyAirSpace` composite: the vegetated tile is a full
 ##### CAS footprint (canopy over its own shaded soil); the bare tile is open soil talking
 ##### straight to the atmosphere. At `f = 1` the blend reduces to pure CAS; at `f = 0` to

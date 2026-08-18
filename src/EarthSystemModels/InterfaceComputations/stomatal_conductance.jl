@@ -16,7 +16,8 @@ abstract type AbstractStomatalConductance end
     struct MedlynConductance
 
 Photosynthesis-coupled optimality stomatal conductance of
-[Medlyn et al. (2011)](@cite medlyn2011),
+[Medlyn et al. (2011)](@cite medlyn2011), in the corrected form of the
+[2012 corrigendum](@cite medlyn2012corrigendum) (which supplies the 1.6 factor),
 
     gₛ = g₀ + 1.6 (1 + g₁/√VPD) Aₙ / cₐ ,
 
@@ -94,8 +95,10 @@ with `gₛ`, `gₛ,max` in mol H₂O m⁻² s⁻¹. Unlike [`MedlynConductance`]
 not coupled to photosynthesis, so it is closed-form (no iteration, no Farquhar
 call) — cheap and a trivial reverse-mode adjoint, adequate for weather-timescale
 runs. The soil-moisture factor is the same `β(𝒮)` the interface already forms.
-Defaults follow the Noilhan & Planton (1989) / Noah tables (`gₛ,max ≈ 0.4`
-corresponds to a minimum stomatal resistance `Rsmin ≈ 100 s m⁻¹`).
+The temperature factor is Noah's `1 − 0.0016 (298 − T)²` form (after Noilhan &
+Planton 1989). `gₛ,max = 0.4` corresponds to a minimum stomatal resistance
+`Rsmin ≈ 100 s m⁻¹`, Noah's deciduous-forest value; its grass/crop tables use
+`40 s m⁻¹` (≈ 1 mol m⁻² s⁻¹).
 
 Fields:
 - `maximum_conductance`   : unstressed maximum conductance (mol m⁻² s⁻¹).

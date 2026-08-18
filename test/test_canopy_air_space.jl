@@ -10,7 +10,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     compute_interface_temperature, compute_interface_humidity, interface_temperature_and_humidity,
     saturation_specific_humidity, default_dry_air_molar_mass, AtmosphericThermodynamics,
     AirLandInterfaceState, InterfaceFluxScales, InterfaceVelocities, AirLandRadiationState,
-    ConstantUndercanopyConductance, AreaIndexUndercanopyConductance, undercanopy_conductance,
+    ConstantUndercanopyConductance, AreaIndexUndercanopyConductance,
+    FrictionVelocityUndercanopyConductance, undercanopy_conductance,
     bare_canopy_air_space, CanopyAirSpaceDiagnostics
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, AtmosphereThermodynamicsParameters
 using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
@@ -23,7 +24,7 @@ build_canopy_air_space(FT) = CanopyAirSpace(FT;
         vapor_exchange  = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
                                                       molecular_diffusivity = 2.4e-5, tortuosity = ConstantTortuosity()),
         thermal_exchange_depth = 0.05, porosity = 0.4),
-    canopy = CanopyConductanceHumidity(FT; leaf_area_index = 3.0, moisture_stress = CriticalSaturation(0.5),
+    canopy = CanopyConductanceHumidity(FT; leaf_area_index = 4.0, moisture_stress = CriticalSaturation(0.5),
                                        absorbed_par = InteractiveAbsorbedPAR(FT)),
     soil_skin_flux = SoilConductiveFlux(1.5, 0.05))
 
@@ -280,6 +281,31 @@ end
 
         # Calm air shuts the exchange down.
         @test g(3, 0, 0.26) == 0
+
+        # CLM5 closure (Zeng et al. 2005): u★-driven, blending a bare roughness-Reynolds
+        # law with the dense-canopy constant Cₛᵈ·u★.
+        z = FrictionVelocityUndercanopyConductance(FT)
+        gz(LAI, u★) = undercanopy_conductance(z, FT(LAI), FT(3), FT(u★))
+
+        # Dense limit: Cₛᵈ·u★; bare ground ventilates faster than a dense canopy.
+        @test gz(20, 0.3) ≈ FT(0.004) * FT(0.3) rtol = 1e-3
+        @test gz(0, 0.3) > gz(5, 0.3)
+
+        # Bare endpoint follows the roughness-Reynolds law (k/0.13)(z₀ᵍu★/ν)^(−0.45)·u★.
+        Cₛᵇ = (FT(0.4) / FT(0.13)) * (FT(0.01) * FT(0.3) / FT(1.5e-5))^(-FT(0.45))
+        @test gz(0, 0.3) ≈ Cₛᵇ * FT(0.3) rtol = 1e-5
+
+        # Shear drives the exchange: calm air (u★ → 0) decouples the ground, finitely.
+        @test gz(3, 0) == 0
+        @test isfinite(gz(0, 0))
+
+        # A rougher ground slows the bare exchange (thicker interfacial sublayer).
+        z_rough = FrictionVelocityUndercanopyConductance(FT; ground_roughness_length = 0.05)
+        @test undercanopy_conductance(z_rough, FT(0), FT(3), FT(0.3)) < gz(0, 0.3)
+
+        # Stems shield like leaves here too.
+        z_stems = FrictionVelocityUndercanopyConductance(FT; stem_area_index = 1)
+        @test undercanopy_conductance(z_stems, FT(1), FT(3), FT(0.3)) < gz(1, 0.3)
     end
 
     # Number-built and closure-built canopies solve identically; the closure survives
@@ -313,6 +339,10 @@ end
         area_index_cas = with_undercanopy(AreaIndexUndercanopyConductance(FT))
         @inferred canopy_air_space_solve(area_index_cas, Ψ(3), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
         @test bare_canopy_air_space(area_index_cas).undercanopy_conductance isa AreaIndexUndercanopyConductance
+
+        friction_cas = with_undercanopy(FrictionVelocityUndercanopyConductance(FT))
+        @inferred canopy_air_space_solve(friction_cas, Ψ(3), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+        @test bare_canopy_air_space(friction_cas).undercanopy_conductance isa FrictionVelocityUndercanopyConductance
 
         # Two-source partition responds to canopy density: under identical forcing the
         # sparse canopy routes a larger share of the total latent flux through the soil.
