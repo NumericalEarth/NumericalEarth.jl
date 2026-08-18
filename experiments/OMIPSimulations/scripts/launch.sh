@@ -39,6 +39,12 @@ Environment variables (physics):
                 grounded keels. Default: "true".
   ICE_DRAG      Ice-ocean drag coefficient. Default: 5.5e-3 (Hibler/McPhee, also ClimaSeaIce
                 own default). The previous value 3.24e-3 is GFDL SIS2 CDW.
+  ICE_HEAT_TRANSFER
+                Ice-ocean turbulent heat transfer coefficient alpha_h. Default: 0.0057 (McPhee
+                Stanton number, the value consistent with a COMPUTED friction velocity). The
+                previous 0.0095 is calibrated by Shi et al. (2021) against a FIXED u* = 0.002 m/s,
+                so pairing it with the computed u* ~ 0.006 m/s inflated the exchange velocity ~3x.
+                The salt transfer coefficient follows at R = alpha_h / alpha_s = 35.
                 Default: true.
   KSKEW         Isopycnal skew diffusivity κ_skew (default: per-config; 0 = off;
                 "nemo" = NEMO's Treguier et al. 1997 coefficient, Ro² × baroclinic
@@ -333,6 +339,7 @@ RUN_NAME="$CONFIG"
 [[ "${ICE_LATERAL:-no_slip}" == "no_slip" ]]   && RUN_NAME="${RUN_NAME}_noslip"
 [[ "${ICE_BASAL:-true}" == "true" ]]           && RUN_NAME="${RUN_NAME}_landfast"
 [[ "${ICE_DRAG:-5.5e-3}" != "3.24e-3" ]]       && RUN_NAME="${RUN_NAME}_cio${ICE_DRAG:-5.5e-3}"
+[[ "${ICE_HEAT_TRANSFER:-0.0057}" != "0.0095" ]] && RUN_NAME="${RUN_NAME}_ah${ICE_HEAT_TRANSFER:-0.0057}"
 [[ "${CLOSURE:-catke}" == "simple"   ]]        && RUN_NAME="${RUN_NAME}_simple"
 [[ "${CLOSURE:-catke}" == "nori"     ]]        && RUN_NAME="${RUN_NAME}_nori"
 [[ "${CLOSURE:-catke}" == "rbvd"     ]]        && RUN_NAME="${RUN_NAME}_rbvd"
@@ -584,8 +591,10 @@ ICE_DYNAMICS_KWARG=""
 ICE_LATERAL="${ICE_LATERAL:-no_slip}"
 ICE_BASAL="${ICE_BASAL:-true}"
 ICE_DRAG="${ICE_DRAG:-5.5e-3}"
+ICE_HEAT_TRANSFER="${ICE_HEAT_TRANSFER:-0.0057}"
 SEA_ICE_KWARG="sea_ice_lateral_boundary_condition = :${ICE_LATERAL},"
 SEA_ICE_KWARG="${SEA_ICE_KWARG}sea_ice_ocean_drag_coefficient = ${ICE_DRAG},"
+SEA_ICE_KWARG="${SEA_ICE_KWARG}sea_ice_ocean_heat_transfer_coefficient = ${ICE_HEAT_TRANSFER},"
 [[ "$ICE_BASAL" == "false" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}with_landfast_basal_stress = false,"
 
 # Profile runs disable the OMIP diagnostic output writers (Average,

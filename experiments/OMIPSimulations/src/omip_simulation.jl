@@ -82,8 +82,17 @@ corrected_atmosphere_sea_ice_fluxes(FT = Float64) =
 
 Three-equation ice-ocean heat flux with momentum-based friction velocity
 computed from actual ice-ocean stress (McPhee 1992, 2008; SHEBA median u*≈0.01 m/s).
+
+`heat_transfer_coefficient` defaults to McPhee's Stanton number 0.0057, which is the value
+consistent with a *computed* friction velocity. The 0.0095 of Shi et al. (2021) is calibrated
+against a fixed u* = 0.002 m/s; pairing it with u* = sqrt(|tau|/rho), which is ~0.006 m/s under the
+Arctic pack, inflates the exchange velocity alpha_h u* by a factor of three.
+The salt transfer coefficient follows at the standard ratio R = alpha_h / alpha_s = 35.
 """
-corrected_ice_ocean_heat_flux() = ThreeEquationHeatFlux(; friction_velocity = MomentumBasedFrictionVelocity())
+corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = 0.0057) =
+    ThreeEquationHeatFlux(; heat_transfer_coefficient,
+                            salt_transfer_coefficient = heat_transfer_coefficient / 35,
+                            friction_velocity = MomentumBasedFrictionVelocity())
 
 """
     ncar_atmosphere_ocean_fluxes(FT = Float64)
@@ -130,7 +139,8 @@ Options for `flux_configuration`: `:default`, `:corrected`, `:ncar`.
 Options for `velocity_formulation`:  `:relative`, `:wind`
 """
 function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
-                             velocity_formulation::Symbol = :relative)
+                             velocity_formulation::Symbol = :relative,
+                             sea_ice_ocean_heat_transfer_coefficient = 0.0057)
     FT = eltype(ocean.model.grid)
     if flux_configuration == :default
         interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice; radiation, land)
@@ -147,7 +157,7 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
                                          land,
                                          atmosphere_ocean_fluxes   = corrected_atmosphere_ocean_fluxes(FT),
                                          atmosphere_sea_ice_fluxes = corrected_atmosphere_sea_ice_fluxes(FT),
-                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(),
+                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = sea_ice_ocean_heat_transfer_coefficient),
                                          atmosphere_ocean_velocity_difference   = velocity_difference_obj,
                                          atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
     elseif flux_configuration == :ncar
@@ -156,7 +166,7 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
                                          land,
                                          atmosphere_ocean_fluxes   = ncar_atmosphere_ocean_fluxes(FT),
                                          atmosphere_sea_ice_fluxes = ncar_atmosphere_sea_ice_fluxes(FT),
-                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(),
+                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = sea_ice_ocean_heat_transfer_coefficient),
                                          atmosphere_ocean_velocity_difference   = velocity_difference_obj,
                                          atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
     else
@@ -620,6 +630,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          with_snow = false,
                          with_ice_dynamics = true,
                          with_landfast_basal_stress = true,
+                         sea_ice_ocean_heat_transfer_coefficient = 0.0057,
                          sea_ice_lateral_boundary_condition = :no_slip,
                          sea_ice_ocean_drag_coefficient = 5.5e-3,
                          partial_cell_bathymetry = false,
@@ -741,7 +752,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                                          backend_size)
 
     coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
-                                  velocity_formulation)
+                                  velocity_formulation, sea_ice_ocean_heat_transfer_coefficient)
 
     simulation = Simulation(coupled; Δt, stop_time)
 
