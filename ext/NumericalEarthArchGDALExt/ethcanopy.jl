@@ -135,7 +135,7 @@ end
 # array matches the grid's cell count.
 function canopy_field(grid, data)
     h = Field{Center, Center, Nothing}(grid)
-    interior(h, :, :, 1) .= data
+    interior(h) .= on_architecture(architecture(grid), reshape(data, size(data, 1), size(data, 2), 1))
     return h
 end
 
