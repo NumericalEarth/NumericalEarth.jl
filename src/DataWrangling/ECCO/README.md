@@ -38,4 +38,4 @@ This covers `ECCO2Monthly`, `ECCO2Daily`, `ECCO2DarwinMonthly`, and `ECCO4Darwin
 ECCO-Darwin datasets are stored under `files/ECCO2/` whatever grid their name refers to.
 `ECCO4Monthly` reads from `files/Version4/` and is unaffected. Setting the variables above will not
 restore access. Downloads are still attempted, so these datasets will work again if the directory
-returns.
+returns, at which point this note and the check in `ECCO.jl` can go.

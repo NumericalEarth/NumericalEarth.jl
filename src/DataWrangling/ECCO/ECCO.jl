@@ -276,6 +276,9 @@ end
 # The drive stopped serving its `ECCO2` directory, which holds the quarter-degree fields and both
 # ECCO-Darwin datasets whatever grid their name refers to. The download is still attempted in case it
 # returns, but a bare 403 reads as bad credentials, so say what it means instead.
+#
+# TODO: delete this and the note in README.md once the drive serves `ECCO2` again. JPL has announced
+# no timeline, so the check is here until a download succeeds.
 const ECCO2DriveDataset = Union{ECCO2Monthly, ECCO2Daily, ECCO2DarwinMonthly, ECCO4DarwinMonthly}
 
 function ecco_download_error(err, metadatum)
