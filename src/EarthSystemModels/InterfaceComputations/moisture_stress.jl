@@ -56,10 +56,17 @@ the permanent wilting point to 1 at field capacity,
 \\qquad 𝒮ˣ = \\left[1 + (α ψˣ)^n\\right]^{-m}, \\quad m = 1 - 1/n,
 ```
 
-with both endpoints evaluated on the van Genuchten (1980) retention curve of the soil
-(`inverse_air_entry_head` `α` in m⁻¹ and `pore_size_uniformity` `n`, which should match
-the hydrology's [`VanGenuchtenRetention`](@ref)). The default heads follow
-[Balsamo et al. (2009)](@cite balsamo2009): `ψᶠᶜ = 1` m and `ψʷᵖ = 150` m of suction.
+with both endpoints evaluated on a van Genuchten (1980) retention curve
+(`inverse_air_entry_head` `α` in m⁻¹ and `pore_size_uniformity` `n`). The default heads
+follow [Balsamo et al. (2009)](@cite balsamo2009): `ψᶠᶜ = 1` m and `ψʷᵖ = 150` m of suction.
+
+!!! warning "Use texture-class retention parameters"
+    Give `α` and `n` literature values for the soil's texture class (loam: `α = 3.6` m⁻¹,
+    `n = 1.56`; [Carsel and Parrish (1988)](@cite carsel1988)), not parameters fitted by
+    matching moisture at reference heads. Pedotransfer reductions that match at the same
+    field-capacity and wilting heads spanned here push `n` toward 1, and on such a curve
+    every moderate saturation maps deep into stress (`β ≈ 0.15` across a whole domain is
+    the typical symptom).
 Because the stress is a ratio of effective saturations, it needs neither the porosity nor
 the residual fraction and cannot disagree with the hydrology about either.
 
