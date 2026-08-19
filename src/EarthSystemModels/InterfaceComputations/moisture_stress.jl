@@ -41,10 +41,52 @@ end
 @inline van_genuchten_m(n) = 1 - 1/n
 @inline van_genuchten_saturation(αψ, n) = (1 + αψ^n)^(-van_genuchten_m(n))
 
+const CARSEL_PARRISH_RETENTION = (
+    sand            = (inverse_air_entry_head = 14.5, pore_size_uniformity = 2.68),
+    loamy_sand      = (inverse_air_entry_head = 12.4, pore_size_uniformity = 2.28),
+    sandy_loam      = (inverse_air_entry_head = 7.5,  pore_size_uniformity = 1.89),
+    loam            = (inverse_air_entry_head = 3.6,  pore_size_uniformity = 1.56),
+    silt            = (inverse_air_entry_head = 1.6,  pore_size_uniformity = 1.37),
+    silt_loam       = (inverse_air_entry_head = 2.0,  pore_size_uniformity = 1.41),
+    sandy_clay_loam = (inverse_air_entry_head = 5.9,  pore_size_uniformity = 1.48),
+    clay_loam       = (inverse_air_entry_head = 1.9,  pore_size_uniformity = 1.31),
+    silty_clay_loam = (inverse_air_entry_head = 1.0,  pore_size_uniformity = 1.23),
+    sandy_clay      = (inverse_air_entry_head = 2.7,  pore_size_uniformity = 1.23),
+    silty_clay      = (inverse_air_entry_head = 0.5,  pore_size_uniformity = 1.09),
+    clay            = (inverse_air_entry_head = 0.8,  pore_size_uniformity = 1.09))
+
+"""
+    van_genuchten_texture_parameters(texture)
+
+The [Carsel and Parrish (1988)](@cite carsel1988) mean van Genuchten retention parameters
+`(; inverse_air_entry_head, pore_size_uniformity)` (`α` in m⁻¹ and `n`) for a USDA soil
+texture class — the parameter source a plant stress closure wants, as opposed to
+moisture-matched pedotransfer fits. `texture` is one of
+
+    :sand, :loamy_sand, :sandy_loam, :loam, :silt, :silt_loam,
+    :sandy_clay_loam, :clay_loam, :silty_clay_loam, :sandy_clay, :silty_clay, :clay
+
+```jldoctest
+using NumericalEarth
+
+van_genuchten_texture_parameters(:loam)
+
+# output
+(inverse_air_entry_head = 3.6, pore_size_uniformity = 1.56)
+```
+"""
+function van_genuchten_texture_parameters(texture::Symbol)
+    haskey(CARSEL_PARRISH_RETENTION, texture) ||
+        throw(ArgumentError("unknown soil texture class :$texture; expected one of " *
+                            join(string.(":", keys(CARSEL_PARRISH_RETENTION)), ", ")))
+    return CARSEL_PARRISH_RETENTION[texture]
+end
+
 """
     PlantAvailableWaterStress(FT = Oceananigans.defaults.FloatType;
-                              inverse_air_entry_head,
-                              pore_size_uniformity,
+                              texture = nothing,
+                              inverse_air_entry_head = nothing,
+                              pore_size_uniformity = nothing,
                               field_capacity_head = 1,
                               wilting_point_head = 150)
 
@@ -56,17 +98,20 @@ the permanent wilting point to 1 at field capacity,
 \\qquad 𝒮ˣ = \\left[1 + (α ψˣ)^n\\right]^{-m}, \\quad m = 1 - 1/n,
 ```
 
-with both endpoints evaluated on a van Genuchten (1980) retention curve
-(`inverse_air_entry_head` `α` in m⁻¹ and `pore_size_uniformity` `n`). The default heads
-follow [Balsamo et al. (2009)](@cite balsamo2009): `ψᶠᶜ = 1` m and `ψʷᵖ = 150` m of suction.
+with both endpoints evaluated on a van Genuchten (1980) retention curve: either pass a USDA
+`texture` class (`:loam`, `:silt_loam`, … — resolved through
+[`van_genuchten_texture_parameters`](@ref)) or explicit `inverse_air_entry_head` `α` (m⁻¹)
+and `pore_size_uniformity` `n`. The default heads follow
+[Balsamo et al. (2009)](@cite balsamo2009): `ψᶠᶜ = 1` m and `ψʷᵖ = 150` m of suction.
 
 !!! warning "Use texture-class retention parameters"
-    Give `α` and `n` literature values for the soil's texture class (loam: `α = 3.6` m⁻¹,
-    `n = 1.56`; [Carsel and Parrish (1988)](@cite carsel1988)), not parameters fitted by
-    matching moisture at reference heads. Pedotransfer reductions that match at the same
+    Give `α` and `n` texture-class values (the `texture` keyword;
+    [Carsel and Parrish (1988)](@cite carsel1988)), not parameters fitted by matching
+    moisture at reference heads. Pedotransfer reductions that match at the same
     field-capacity and wilting heads spanned here push `n` toward 1, and on such a curve
     every moderate saturation maps deep into stress (`β ≈ 0.15` across a whole domain is
     the typical symptom).
+
 Because the stress is a ratio of effective saturations, it needs neither the porosity nor
 the residual fraction and cannot disagree with the hydrology about either.
 
@@ -80,10 +125,10 @@ is physical: a wilted plant does not respond to a perturbation.
 ```jldoctest
 using NumericalEarth
 
-PlantAvailableWaterStress(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0)
+PlantAvailableWaterStress(texture = :loam)
 
 # output
-PlantAvailableWaterStress(α=1.0, n=2.0, ψᶠᶜ=1.0, ψʷᵖ=150.0)
+PlantAvailableWaterStress(α=3.6, n=1.56, ψᶠᶜ=1.0, ψʷᵖ=150.0)
 ```
 """
 struct PlantAvailableWaterStress{FT}
@@ -94,10 +139,21 @@ struct PlantAvailableWaterStress{FT}
 end
 
 function PlantAvailableWaterStress(FT::Type = Oceananigans.defaults.FloatType;
-                                   inverse_air_entry_head,
-                                   pore_size_uniformity,
+                                   texture = nothing,
+                                   inverse_air_entry_head = nothing,
+                                   pore_size_uniformity = nothing,
                                    field_capacity_head = 1,
                                    wilting_point_head = 150)
+    if isnothing(texture)
+        (isnothing(inverse_air_entry_head) || isnothing(pore_size_uniformity)) &&
+            throw(ArgumentError("supply either a texture class or both " *
+                                "inverse_air_entry_head and pore_size_uniformity"))
+    else
+        (isnothing(inverse_air_entry_head) && isnothing(pore_size_uniformity)) ||
+            throw(ArgumentError("supply either a texture class or explicit retention " *
+                                "parameters, not both"))
+        (; inverse_air_entry_head, pore_size_uniformity) = van_genuchten_texture_parameters(texture)
+    end
     pore_size_uniformity > 1 ||
         throw(ArgumentError("pore_size_uniformity must exceed 1"))
     0 < field_capacity_head < wilting_point_head ||
