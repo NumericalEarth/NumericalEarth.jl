@@ -313,9 +313,8 @@ end
         end
 
         @testset "Child rain reaches the exchanger and the land bucket on $A" begin
-            # Kessler child with rain in the column: after one coupled step the surface rain
-            # flux must be positive and assembled into the land's precipitation accumulator;
-            # the non-precipitating default carries the zero-flux fallback. Kessler requires
+            # After one coupled step the Kessler child's surface rain flux must be positive
+            # and assembled into the land's precipitation accumulator. Kessler requires
             # Tetens saturation constants (Breeze.jl#858).
             model = build_nested_land_test_model(arch;
                 microphysics = DCMIP2016KesslerMicrophysics(),

@@ -146,10 +146,8 @@ function ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
     dates = DataWrangling.expand_dates(dataset, :temperature, dates)
     time_indices_in_memory = something(time_indices_in_memory, length(dates))
 
-    # Download every variable up front in one bundle — including the geopotential the
-    # vertical discretization needs: backends batch a `MetadataSet` across variables
-    # (one CDS request, or one era5cli invocation with concurrent per-variable
-    # requests), so the per-variable loads below find their files cached.
+    # One up-front bundle download (including the geopotential the vertical discretization
+    # needs) so the per-variable loads below find their files cached.
     mset = MetadataSet(:temperature, :eastward_velocity, :northward_velocity,
                        :specific_humidity, :specific_cloud_liquid_water_content,
                        :specific_rain_water_content, :specific_cloud_ice_water_content,

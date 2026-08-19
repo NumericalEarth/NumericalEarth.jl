@@ -22,12 +22,9 @@ using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5PressureLevelsDataset,
 #####
 ##### era5cli credential bootstrap
 #####
-##### era5cli reads CDS credentials ONLY from ~/.config/era5cli/cds_key.txt; it ignores the
-##### CDSAPI_URL/CDSAPI_KEY env vars, and its ~/.cdsapirc fallback needs an interactive TTY, so in a
-##### non-interactive/env-var environment (e.g. CI) it raises InvalidLoginError even when valid CDS
-##### credentials are present. Write era5cli's config file from the CDSAPI_URL/CDSAPI_KEY env vars
-##### (the same variables the CDSAPI backend reads) when it is absent — never overwriting an existing
-##### config. Mirrors what `era5cli config` writes.
+##### era5cli reads credentials only from ~/.config/era5cli/cds_key.txt (its ~/.cdsapirc
+##### fallback needs a TTY), so non-interactive runs fail even with valid CDSAPI_URL/CDSAPI_KEY
+##### env vars. Write its config from those env vars when absent; never overwrite an existing one.
 #####
 
 const ERA5CLI_CONFIG_PATH = joinpath(homedir(), ".config", "era5cli", "cds_key.txt")
@@ -45,12 +42,10 @@ end
 #####
 ##### Batched downloads — same strategy as NumericalEarthCDSAPIExt
 #####
-##### One era5cli invocation per calendar-month batch covers every pending variable and
-##### datetime at once: era5cli submits one CDS request per variable (downloaded with
-##### concurrent threads) and expands `months`/`days`/`hours` into a Cartesian product
-##### server-side. Each returned per-variable multi-step NetCDF is split locally into the
-##### per-datetime files the readers expect; splitting matches datetimes against the file's
-##### own time coordinate, so the product's over-fetch is harmless.
+##### One era5cli invocation per calendar-month batch: one CDS request per variable, expanded
+##### server-side into a `months` × `days` × `hours` product, then split locally into the
+##### per-datetime files the readers expect (matched against the file's own time coordinate,
+##### so the product's over-fetch is harmless).
 #####
 
 """
@@ -143,12 +138,9 @@ function download_era5cli(names, dataset, dates;
     return paths
 end
 
-# era5cli defaults to the single-levels (surface) product unless `--levels` is given — so a
-# pressure-level request without levels silently returns a surface field (e.g. `u10` for
-# `u_component_of_wind`). Pass the dataset's pressure levels for 3-D datasets; disambiguate the
-# single-level `geopotential`/`topography` (surface geopotential, exists on both) with `:surface`;
-# ordinary single-level variables keep era5cli's default (`nothing`). `pressure_levels` is stored
-# in Pa, but the CDS API expects hPa (`[1, …, 1000]`), so convert with `÷ hPa`.
+# era5cli silently returns surface fields unless `--levels` is given, so pass the dataset's
+# pressure levels (stored in Pa; CDS wants hPa) for 3-D datasets, and `:surface` to disambiguate
+# `geopotential`, which exists on both products.
 era5cli_levels(dataset::ERA5PressureLevelsDataset, variable_name) = Int.(dataset.pressure_levels) .÷ hPa
 era5cli_levels(dataset::ERA5Dataset, variable_name) = variable_name == "geopotential" ? :surface : nothing
 
@@ -594,12 +586,9 @@ const BBOX = NumericalEarth.DataWrangling.BoundingBox
 era5cli_request_area(region, dataset, name::Symbol) = era5cli_request_area(region, dataset, [name])
 era5cli_request_area(::Nothing, dataset, names::Vector{Symbol}) = nothing
 
-# The native grid is built by center-bracketing `restrict`, which can reach one cell past a
-# boundary-aligned edge. Fetch two native cells of margin so the downloaded file always covers
-# the grid the data is interpolated onto (cf. `era5_request_area` in NumericalEarthCDSAPIExt);
-# the margin also absorbs era5cli's rounding of area coordinates to two decimals. Over-fetching
-# is harmless: `restrict` selects the exact cells from the larger file. The coarsest native
-# grid among the requested variables sets the padding (wave variables live on 0.5°, the rest 0.25°).
+# Pad by two native cells of the coarsest requested variable (waves live on 0.5°, the rest
+# 0.25°): center-bracketing `restrict` can reach one cell past a boundary-aligned edge, and the
+# margin also absorbs era5cli's two-decimal rounding. Over-fetch is harmless.
 function era5cli_request_area(bbox::BBOX, dataset, names::Vector{Symbol})
     (isnothing(bbox.longitude) || isnothing(bbox.latitude)) && return nothing
     Δλ = maximum(360 / size(dataset, name)[1] for name in names)

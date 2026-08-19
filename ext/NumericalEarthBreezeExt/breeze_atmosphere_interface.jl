@@ -74,9 +74,8 @@ NumericalEarth.EarthSystemModels.boundary_layer_height(atmos::BreezeAtmosphereSi
 
 function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::BreezeAtmosphere, exchange_grid;
                                                                                    correction = nothing)
-    # Breeze's surface rain-flux diagnostic (positive down, kg m⁻² s⁻¹): built once, computed
-    # each `interpolate_state!`. Schemes with no precipitating species define no method —
-    # fall back to an inert zero field.
+    # Breeze's surface rain-flux diagnostic (positive down, kg m⁻² s⁻¹); schemes with no
+    # precipitating species define no method — fall back to an inert zero field.
     # TODO: move the fallback into Breeze; add a snow analog (Jˢⁿ stays zero below).
     Jʳⁿ = if applicable(surface_precipitation_flux, atmosphere, atmosphere.microphysics)
         surface_precipitation_flux(atmosphere)
@@ -126,10 +125,9 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     T = atmosphere.temperature
     qᵛ = specific_humidity(atmosphere)
 
-    # Use Breeze's diagnosed vapor mass fraction rather than its scheme-dependent moisture
-    # prognostic, which is total equilibrium moisture for saturation-adjustment schemes.
-    # `dynamics_pressure` supplies the per-column pressure from which the flux solver rebuilds
-    # air density; `surface_pressure` would be a single scalar and bias fluxes over terrain.
+    # Breeze's diagnosed vapor mass fraction, not the scheme-dependent moisture prognostic;
+    # `dynamics_pressure` gives the per-column pressure (a single scalar `surface_pressure`
+    # would bias fluxes over terrain).
     p = dynamics_pressure(atmosphere.dynamics)
 
     arch = architecture(exchange_grid)

@@ -77,11 +77,10 @@ struct SmoothStepRamp end
 # The mask is evaluated per cell per stage inside the forcing kernel, so the default ramp
 # is the smoothstep polynomial (2 multiplies) rather than the ~1%-different raised cosine.
 function davies_relaxation_mask(grid, width; ramp = SmoothStepRamp())
-    # Local spacing equals global spacing on uniform grids, so `w` comes from local values —
-    # but the extents must be the GLOBAL domain's, or partitioned ranks would relax at
-    # their artificial seams (`all_reduce` is the identity on serial architectures).
-    # The closure's captures are each assigned exactly once: reassigning a captured
-    # variable boxes it, and a boxed capture is not isbits — GPU kernels reject it.
+    # `w` may use local values (spacing is rank-uniform) but the extents must be the GLOBAL
+    # domain's, or partitioned ranks would relax at their seams (`all_reduce` is the identity
+    # on serial architectures). Each capture is assigned exactly once: reassignment boxes it,
+    # and a boxed capture is not isbits — GPU kernels reject it.
     λ₁ˡ, λ₂ˡ = x_domain(grid)
     φ₁ˡ, φ₂ˡ = y_domain(grid)
     Nx, Ny, _ = size(grid)
@@ -144,23 +143,16 @@ function default_nested_scalar_advection(microphysics)
     return merge((ρθ = WENO(order = 5),), NamedTuple{moist_names}(map(_ -> bounded, moist_names)))
 end
 
-# Blend-zone width in CELLS from a PHYSICAL length: `cells = round(blend_length / Δx)`. A fixed cell
-# count spans a shrinking physical distance as resolution increases (5 cells = 60 km at 12 km but 15 km
-# at 3 km), so the parent→child terrain transition steepens ~1/Δx — that steeper σ-surface tilt
-# regenerates contravariant vertical momentum aloft at the boundary corner and destabilizes high-res
-# runs. Deriving the cell count from a physical length keeps the transition slope resolution-invariant.
+# Blend-zone width in cells from a physical length: a fixed cell count steepens the parent→child
+# terrain transition ~1/Δx as resolution increases, and the steeper σ-surface tilt destabilizes
+# high-resolution runs at the boundary corner.
 default_terrain_blend_width(grid, blend_length) =
     max(1, round(Int, blend_length / minimum_xspacing(grid, Center(), Center(), Center())))
 
-# Child terrain for the nested LAM: an elevation `Field` passes through; anything else is treated
-# as a topography dataset and regridded onto the child grid. The elevation is smoothed with
-# `smoothing_passes` binomial-filter passes — point-sampled regridding leaves grid-scale orographic
-# roughness that excites standing grid-scale noise in the near-surface flow on the terrain-following
-# coordinate (σ pressure-gradient truncation is worst at two grid lengths, and nothing in the default
-# configuration damps the mode). When the parent knows its surface elevation (e.g. an ERA5
-# `PressureLevelGrid`), the child elevation is then blended toward it over the outermost `blend_width`
-# cells — smoothing first, so the terrain at the open boundaries stays consistent with the orography
-# the parent state was produced with.
+# Child terrain: an elevation `Field` passes through; anything else is regridded from a
+# topography dataset. Smoothing damps the grid-scale orographic roughness that excites standing
+# near-surface noise on the terrain-following coordinate; blending toward the parent's surface
+# elevation (after smoothing) keeps the open-boundary terrain consistent with the parent state.
 function materialize_nested_terrain!(child_grid, terrain, parent_atmosphere, blend_width, smoothing_passes)
     elevation = terrain isa AbstractField ? terrain : regrid_topography(child_grid; dataset = terrain)
     smoothing_passes > 0 && smooth_topography!(elevation; passes = smoothing_passes)
@@ -286,10 +278,9 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
 
     nested_bcs = parent_boundary_conditions(child_grid; variables = bc_variables, sides, bc_types)
 
-    # Bulk-drag bottom stress on the momentum densities. Breeze's `BulkDrag` reads the dragged
-    # velocity at its own face (so a two-grid-length velocity mode feels the drag, unlike a
-    # center-averaged stress, which is blind to it) and infers the direction from each field's
-    # location at materialization. The same unmaterialized condition serves both components.
+    # Bulk-drag bottom stress on the momentum densities: `BulkDrag` reads the dragged velocity
+    # at its own face (so a two-grid-length mode feels the drag) and infers direction from each
+    # field's location; the same unmaterialized condition serves both components.
     drag_bcs = if isnothing(bottom_drag_coefficient)
         NamedTuple()
     else
@@ -353,6 +344,8 @@ function mean_surface_pressure(dataset, child_grid, date, dir)
                        region = BoundingBox(child_grid), dir))
     # Reduce across ranks so every rank anchors the same hydrostatic reference
     # (`all_reduce` is the identity on serial architectures).
+    # TODO: this belongs in Oceananigans — `sum`/`mean` on a distributed `Field` should
+    # perform the global reduction themselves (Oceananigans.jl's reductions are rank-local).
     arch = architecture(child_grid)
     return all_reduce(+, sum(interior(p₀)), arch) / all_reduce(+, length(interior(p₀)), arch)
 end

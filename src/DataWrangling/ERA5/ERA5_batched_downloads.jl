@@ -1,21 +1,15 @@
 #####
 ##### Shared machinery for batched ERA5 downloads
 #####
-##### Every download backend (CDSAPI.jl, era5cli via CopernicusClimateDataStore.jl) uses the
-##### same strategy: fetch many datetimes in one CDS request per variable — batched by calendar
-##### month and capped by the CDS per-request cost limit — then split the returned multi-step
-##### NetCDF into the per-variable, per-datetime files the readers expect. The batching and
-##### splitting utilities live here; each backend only builds its own request from a batch.
+##### Both backends (CDSAPI.jl, era5cli via CopernicusClimateDataStore.jl) fetch many datetimes
+##### per CDS request — batched by calendar month, capped by the CDS per-request cost limit —
+##### then split the returned multi-step NetCDF into the per-variable, per-datetime files the
+##### readers expect. The batching and splitting utilities live here.
 #####
 
-##### CDS interprets `year`/`month`/`day`/`time` as a Cartesian product, so a
-##### single request can cover many days × hours per call as long as `year`
-##### and `month` stay singletons. The remaining constraint is the per-request
-##### cost limit: roughly `num_vars × num_pressure_levels × num_datetimes`
-##### must stay under ~7500 for pressure-level data (CDS returns HTTP 403
-##### "cost limits exceeded" otherwise). We pick a conservative cap and split
-##### each month into smaller contiguous chunks when needed.
-
+# CDS expands `year`/`month`/`day`/`time` into a Cartesian product, but the request cost
+# (roughly vars × levels × datetimes) must stay under ~7500 or CDS returns HTTP 403,
+# so each month is split into contiguous chunks under a conservative cap.
 const CDS_MAX_FIELDS_PER_REQUEST = 5000
 
 const ERA5_TIME_DIMNAMES = Set(["time", "valid_time"])

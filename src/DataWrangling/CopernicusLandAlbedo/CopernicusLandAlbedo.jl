@@ -12,10 +12,8 @@ using Oceananigans.DistributedComputations: @root
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
                        metadata_path, default_download_directory, native_convention_longitude
 
-# `group_by_calendar_month` and `is_zip` are product-agnostic download helpers (calendar batching and
-# CDS ZIP-delivery detection) that happen to live in the ERA5 module.
-# TODO: move them into DataWrangling proper so a dataset module does not reach across into a sibling
-# dataset for generic utilities.
+# TODO: move `group_by_calendar_month` and `is_zip` (product-agnostic download helpers) from
+# ERA5 into DataWrangling proper, so dataset modules don't reach across siblings.
 using ..ERA5: group_by_calendar_month, is_zip
 
 import Oceananigans

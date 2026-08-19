@@ -1,9 +1,9 @@
 #####
 ##### ESM component interface: a NestedModel couples like its child
 #####
-#
-# The parent enters only through the child's lateral BCs and relaxation, so every
-# surface-coupling call forwards (explicitly, not via getproperty) to the child.
+##### The parent enters only through the child's lateral BCs and relaxation, so every
+##### surface-coupling call forwards (explicitly, not via getproperty) to the child.
+#####
 
 const NestedModelSimulation = Simulation{<:NestedModel}
 
