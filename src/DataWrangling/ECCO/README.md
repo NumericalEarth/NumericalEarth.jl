@@ -29,3 +29,13 @@ or within Julia by
 ENV["ECCO_USERNAME"] = "your_username"
 ENV["ECCO_WEBDAV_PASSWORD"] = "cRaZYpASSwORD"
 ```
+
+## The `ECCO2` collection is currently unavailable
+
+Every path under `https://ecco.jpl.nasa.gov/drive/files/ECCO2/` answers `403 Forbidden`, including
+to an account whose credentials the drive otherwise accepts. This covers `ECCO2Monthly`,
+`ECCO2Daily`, `ECCO2DarwinMonthly`, and `ECCO4DarwinMonthly`. The drive's `Version4` and `Version5`
+collections still serve normally, so `ECCO4Monthly` is unaffected, and NASA's CMR catalog lists no
+replacement for the quarter-degree `cube92` fields.
+
+Setting `ECCO_USERNAME` and `ECCO_WEBDAV_PASSWORD` as above will not restore access.

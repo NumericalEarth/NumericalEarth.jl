@@ -273,6 +273,22 @@ function DataWrangling.metadata_url(m::Metadata{<:ECCO4Monthly})
     return ECCO4_url * dataset_variable_name(m) * "/" * year * "/" * m.filename
 end
 
+# The ECCO drive serves `Version4` and `Version5`, but every path under `ECCO2` — the quarter-degree
+# `cube92` fields and both ECCO-Darwin grids — answers `403 Forbidden` even to a signed-in account.
+# A bare `403` reads as bad credentials, so name the collection instead.
+is_ecco2_url(url) = occursin("/drive/files/ECCO2/", url)
+
+function ecco_download_error(err, metadatum, url)
+    (err isa Downloads.RequestError && err.response.status == 403 && is_ecco2_url(url)) || return err
+
+    return ErrorException("The ECCO drive returned 403 Forbidden for $(metadatum.name) at $url. \
+                           Every path under its `ECCO2` collection is forbidden even to a signed-in \
+                           account, so $(typeof(metadatum.dataset)) cannot currently be downloaded — \
+                           this is not a problem with `ECCO_USERNAME` or `ECCO_WEBDAV_PASSWORD`. \
+                           `ECCO4Monthly` is served from the drive's `Version4` collection and is \
+                           unaffected.")
+end
+
 function Downloads.download(metadata::ECCOMetadata)
     # Skip download if all files already exist
     all(isfile(metadata_path(m)) for m in metadata) && return metadata_path(metadata)
@@ -308,7 +324,11 @@ function Downloads.download(metadata::ECCOMetadata)
                     throw(ArgumentError(msg))
                 end
                 @info "Downloading ECCO data: $(metadatum.name) in $(metadatum.dir)..."
-                Downloads.download(fileurl, filepath; downloader, progress=DownloadProgress())
+                try
+                    Downloads.download(fileurl, filepath; downloader, progress=DownloadProgress())
+                catch err
+                    throw(ecco_download_error(err, metadatum, fileurl))
+                end
             end
         end
     end
