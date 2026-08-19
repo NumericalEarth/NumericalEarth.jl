@@ -73,12 +73,12 @@ DataWrangling.all_dates(dataset::ECCO2Daily,   variable) = metadata_epoch(datase
 DataWrangling.sample_window(metadatum::Metadatum{<:Union{ECCO2Monthly, ECCO4Monthly}}) =
     DataWrangling.calendar_month_window(metadatum)
 
-# ECCO2 stamps the center of each averaging period — the monthly file for January 1993 carries
-# 1993-01-16 — but the daily file named 19930101 carries 1993-01-02, so this node sits at least half a
-# day from the value it labels. Pinning the offset needs the drive, which serves 403 for every ECCO2
-# path, so it stays at the stamp.
+# The cube92 daily files hold means over the day they are named for, so the window runs forwards a day
+# from the stamp. Their own time coordinate is the end of that window — the file named 19930101 carries
+# 1993-01-02 — while the monthly files carry a mid-month date instead, so the two disagree; the daily
+# file matches the 1993-01-01 record of the same series served by APDRC bit for bit.
 DataWrangling.sample_window(metadatum::Metadatum{<:ECCO2Daily}) =
-    DataWrangling.instantaneous_window(metadatum)
+    DataWrangling.leading_window(metadatum, Day(1))
 
 DataWrangling.longitude_interfaces(::ECCODataset) = (0, 360)
 DataWrangling.longitude_interfaces(::ECCO4Monthly) = (-180, 180)

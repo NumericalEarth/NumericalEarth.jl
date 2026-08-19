@@ -366,6 +366,17 @@ end
     @test time_window_offset(aviso) == 0
 end
 
+@testset "ECCO2 daily windows" begin
+    # The cube92 daily files hold means over the day they are named for, so their nodes sit at midday
+    # while the monthly means keep their calendar-month window.
+    daily = Metadatum(:temperature; dataset = ECCO2Daily(), date = DateTime(1993, 1, 1))
+    @test sample_window(daily) == (DateTime(1993, 1, 1), DateTime(1993, 1, 2))
+    @test time_window_offset(daily) == 12 * 3600
+
+    monthly = Metadatum(:temperature; dataset = ECCO2Monthly(), date = DateTime(1993, 1, 1))
+    @test window_center(monthly) == DateTime(1993, 1, 16, 12)
+end
+
 @testset "Every dataset with a time axis declares a sample window" begin
     # `sample_window` has no fallback, so a new adapter that forgets it raises a `MethodError`
     # instead of silently placing window averages at their stamps.
