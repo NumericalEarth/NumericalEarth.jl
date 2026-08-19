@@ -14,6 +14,7 @@ export
     FractionalHumidity,
     CriticalSaturation,
     PlantAvailableWaterStress,
+    van_genuchten_texture_parameters,
     DryLayerHumidity,
     StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity,
