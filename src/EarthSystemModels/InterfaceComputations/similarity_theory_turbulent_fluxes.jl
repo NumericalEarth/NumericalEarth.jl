@@ -253,10 +253,12 @@ end
 end
 
 # Localize the flux closure to cell (i, j) before the index-free MOST iteration:
-# `Field`-valued roughness and displacement slots collapse to their per-cell values,
-# while `Number`s and formulations (e.g. `MomentumRoughnessLength`) pass through.
+# `Field`-valued roughness and displacement slots collapse to their per-cell values
+# via `state2dindex`, while `Number`s and formulations (e.g. `MomentumRoughnessLength`)
+# pass through. Not a `stateindex` method: there a callable means a coordinate function
+# `a(λ, φ, z, time)`, whereas a callable closure slot is a formulation of `u★`.
 @inline local_parameter(ℓ, i, j) = ℓ
-@inline local_parameter(ℓ::AbstractArray, i, j) = @inbounds ℓ[i, j, 1]
+@inline local_parameter(ℓ::AbstractArray, i, j) = state2dindex(ℓ, i, j)
 
 @inline local_flux_formulation(flux_formulation, i, j) = flux_formulation
 
