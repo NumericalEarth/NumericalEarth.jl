@@ -9,8 +9,8 @@ using Oceananigans.Fields: Field, interior
 using Oceananigans.Grids: LatitudeLongitudeGrid, λnodes, φnodes
 using Oceananigans.DistributedComputations: @root
 
-using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
-                       metadata_path, BoundingBox, bounding_box_suffix
+using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum, metadata_path,
+                       BoundingBox, bounding_box_suffix, latitude_summary, native_region_grid
 
 import Oceananigans
 
@@ -226,8 +226,70 @@ function reduce_morphometry(height, longitudes, latitudes, target_grid::Latitude
               plan_area_index, frontal_area_index, gross_building_height)
 end
 
+const morphometry_names = (:mean_building_height, :building_height_deviation, :maximum_building_height,
+                           :plan_area_index, :frontal_area_index, :gross_building_height)
+
+# Download, read, and reduce the fine raster of one `region` onto (the covered rows of) `target_grid`.
+function reduced_morphometry(target_grid, dataset, region)
+    metadatum = Metadatum(:building_height; dataset, region)
+    Downloads.download(metadatum)
+    height = DataWrangling.retrieve_data(metadatum)
+    longitudes, latitudes = DataWrangling.read_file_coords(metadatum)
+    return reduce_morphometry(height, longitudes, latitudes, target_grid)
+end
+
+function morphometry_fields(reduced, target_grid)
+    arch = architecture(target_grid)
+    return map(reduced) do array
+        field = Field{Center, Center, Nothing}(target_grid)
+        interior(field) .= on_architecture(arch, reshape(array, size(array, 1), size(array, 2), 1))
+        field
+    end
+end
+
 """
-    building_morphometry(target_grid; dataset = GlobalBuildingFootprints3D(), region)
+    morphometry_latitude_bands(target_grid, region, Δ, maximum_raster_cells, padding)
+
+Split the rows of `target_grid` covered by `region` into contiguous latitude bands whose native
+rasters (cell size `Δ` degrees) hold at most `maximum_raster_cells` cells each (a band never
+narrower than one row). Returns a vector of `(; rows, region)`: the target-grid row range and the
+`BoundingBox` to rasterize for it — the full `region` longitude, and the rows' latitude interval
+widened by `padding` native cells but clamped to the `region` latitude, so every band raster is a
+sub-window of the single-pass raster and band rows reduce identically to a single pass.
+"""
+function morphometry_latitude_bands(target_grid, region, Δ, maximum_raster_cells, padding)
+    Ny = size(target_grid, 2)
+    φfaces = φnodes(target_grid, Face())
+    south, north = region.latitude
+
+    band_region(j₁, j₂) = BoundingBox(longitude = region.longitude,
+                                      latitude = (max(φfaces[j₁] - padding * Δ, south),
+                                                  min(φfaces[j₂ + 1] + padding * Δ, north)))
+    band_cells(j₁, j₂) = let raster = native_region_grid(band_region(j₁, j₂), Δ, Δ)
+        raster.Nx * raster.Ny
+    end
+
+    # Rows the single-pass raster reaches, including its 2-cell snap pad beyond the region;
+    # rows farther out reduce to zero in a single pass too and are left out of every band.
+    j₁ = findfirst(j -> φfaces[j + 1] > south - 2Δ, 1:Ny)
+    j₊ = findlast(j -> φfaces[j] < north + 2Δ, 1:Ny)
+
+    ranges = UnitRange{Int}[]
+    while !isnothing(j₁) && !isnothing(j₊) && j₁ <= j₊
+        j₂ = j₁
+        while j₂ < j₊ && band_cells(j₁, j₂ + 1) <= maximum_raster_cells
+            j₂ += 1
+        end
+        push!(ranges, j₁:j₂)
+        j₁ = j₂ + 1
+    end
+
+    return [(rows = rows, region = band_region(first(rows), last(rows))) for rows in ranges]
+end
+
+"""
+    building_morphometry(target_grid; dataset = GlobalBuildingFootprints3D(), region,
+                         maximum_raster_cells = 400_000_000)
 
 Per-cell building morphometry on `target_grid` (a `LatitudeLongitudeGrid`, coarser than the
 `dataset` rasterization resolution), aggregated from the fine 3D-GloBFP building-height raster
@@ -241,22 +303,46 @@ over `region`. Returns a NamedTuple of `Field`s:
 - `frontal_area_index` `λᶠ` — windward wall area from height steps, direction-averaged:
   `(Σₓ|δh|·dy + Σᵧ|δh|·dx) / (4·A)`, with `A` the cell area.
 
+A `region` whose native raster exceeds `maximum_raster_cells` (default `400_000_000` cells,
+3.2 GB of `Float64`) is processed in latitude bands sized to the limit, so memory stays bounded
+regardless of the region size.
+
 Downloading and rasterizing the footprints requires `using ArchGDAL`.
 """
-function building_morphometry(target_grid::LatitudeLongitudeGrid; dataset = GlobalBuildingFootprints3D(), region)
-    metadatum = Metadatum(:building_height; dataset, region)
-    Downloads.download(metadatum)
-    height = DataWrangling.retrieve_data(metadatum)
-    longitudes, latitudes = DataWrangling.read_file_coords(metadatum)
+function building_morphometry(target_grid::LatitudeLongitudeGrid; dataset = GlobalBuildingFootprints3D(),
+                              region, maximum_raster_cells = 400_000_000)
+    Δ = globfp3d_native_cell_size(dataset)
+    raster = native_region_grid(region, Δ, Δ)
+    raster.Nx * raster.Ny <= maximum_raster_cells &&
+        return morphometry_fields(reduced_morphometry(target_grid, dataset, region), target_grid)
 
-    reduced = reduce_morphometry(height, longitudes, latitudes, target_grid)
+    # A band bounding box also selects the footprint tiles to burn: pad it by ~200 m of native
+    # cells so buildings overhanging a tile just outside the band still land in the band's rows.
+    padding = cld(200, globfp3d_native_resolution(dataset))
+    bands = morphometry_latitude_bands(target_grid, region, Δ, maximum_raster_cells, padding)
+    @info string(summary(dataset), ": the raster over ", summary(region), " has ",
+                 raster.Nx, " × ", raster.Ny, " cells, above maximum_raster_cells = ",
+                 maximum_raster_cells, "; reducing in ", length(bands), " latitude bands.")
 
-    arch = architecture(target_grid)
-    return map(reduced) do array
-        field = Field{Center, Center, Nothing}(target_grid)
-        interior(field) .= on_architecture(arch, reshape(array, size(array, 1), size(array, 2), 1))
-        field
+    Nx = size(target_grid, 1)
+    Ny = size(target_grid, 2)
+    accumulated = NamedTuple{morphometry_names}(ntuple(_ -> zeros(Float64, Nx, Ny), length(morphometry_names)))
+    for (b, band) in enumerate(bands)
+        @info string("Reducing latitude band ", b, " of ", length(bands),
+                     " (target rows ", band.rows, ", ", latitude_summary(band.region.latitude), ")...")
+        reduced = try
+            reduced_morphometry(target_grid, dataset, band.region)
+        catch exception
+            # An all-water/unbuilt band intersects no tiles and reduces to zero, as in a single pass.
+            (exception isa ErrorException && occursin("No 3D-GloBFP tiles intersect", exception.msg)) || rethrow()
+            continue
+        end
+        for name in morphometry_names
+            accumulated[name][:, band.rows] .= reduced[name][:, band.rows]
+        end
     end
+
+    return morphometry_fields(accumulated, target_grid)
 end
 
 #####

@@ -2,7 +2,8 @@ include("runtests_setup.jl")
 
 using NumericalEarth.DataWrangling.GloBFP3D: reduce_morphometry, globfp3d_parse_tile_bounds,
                                              globfp3d_native_cell_size, globfp3d_native_resolution,
-                                             globfp3d_rasterize_to_netcdf
+                                             globfp3d_rasterize_to_netcdf,
+                                             morphometry_latitude_bands, morphometry_names
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_region_grid,
                                     bounding_box_intersects, longitude_interfaces, latitude_interfaces,
                                     dataset_variable_name, validate_dataset_coverage,
@@ -75,6 +76,56 @@ using Oceananigans.Fields: location
     @test m1.mean_building_height[1, 1]  ≈ 20
     @test m1.plan_area_index[1, 1]     ≈ 1
     @test m1.frontal_area_index[1, 1]    == 0
+end
+
+@testset "GloBFP3D banded morphometry equivalence" begin
+    # A synthetic fine raster on the native lattice stands in for the rasterized footprints:
+    # reducing it band by band with the banding machinery must reproduce the single pass.
+    dataset = GlobalBuildingFootprints3D(resolution = 2000)   # coarse, so the synthetic raster stays small
+    Δ = globfp3d_native_cell_size(dataset)
+    region = BoundingBox(longitude = (-99.35, -95.65), latitude = (35.1, 38.1))
+    raster = native_region_grid(region, Δ, Δ)
+
+    height = [50 * abs(sin(3i + 7j)) * (mod(i + j, 3) > 0) for i in 1:raster.Nx, j in 1:raster.Ny]
+    longitude = [raster.west  + (i - 1/2) * raster.Δλ for i in 1:raster.Nx]
+    latitude  = [raster.south + (j - 1/2) * raster.Δφ for j in 1:raster.Ny]
+
+    target = LatitudeLongitudeGrid(CPU(), Float64; size = (33, 30),
+                                   longitude = (-99.1497, -95.8263), latitude = (35.2730, 37.9410),
+                                   topology = (Bounded, Bounded, Flat))
+
+    single = reduce_morphometry(height, longitude, latitude, target)
+    @test keys(single) == morphometry_names
+
+    maximum_raster_cells = raster.Nx * (raster.Ny ÷ 5)
+    padding = 3
+    bands = morphometry_latitude_bands(target, region, Δ, maximum_raster_cells, padding)
+    @test length(bands) >= 3
+
+    # The grid sits strictly inside the region: the bands partition all its rows contiguously.
+    @test first(first(bands).rows) == 1
+    @test last(last(bands).rows) == size(target, 2)
+    @test all(first(bands[k + 1].rows) == last(bands[k].rows) + 1 for k in 1:length(bands) - 1)
+
+    accumulated = map(zero, single)
+    for band in bands
+        window = native_region_grid(band.region, Δ, Δ)
+        @test window.Nx * window.Ny <= maximum_raster_cells || length(band.rows) == 1
+        i₀ = round(Int, (window.west  - raster.west)  / Δ)
+        j₀ = round(Int, (window.south - raster.south) / Δ)
+        @test i₀ == 0 && window.Nx == raster.Nx      # bands span the full region longitude
+        @test 0 <= j₀ && j₀ + window.Ny <= raster.Ny # each band raster is a sub-window of the single-pass raster
+        band_height   = height[:, j₀ + 1 : j₀ + window.Ny]
+        band_latitude = [window.south + (j - 1/2) * Δ for j in 1:window.Ny]
+        reduced = reduce_morphometry(band_height, longitude, band_latitude, target)
+        for name in morphometry_names
+            accumulated[name][:, band.rows] .= reduced[name][:, band.rows]
+        end
+    end
+
+    for name in morphometry_names
+        @test isapprox(accumulated[name], single[name], rtol = 1e-12, atol = 1e-12)
+    end
 end
 
 @testset "GloBFP3D native aggregation grid" begin
