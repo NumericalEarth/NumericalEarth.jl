@@ -21,9 +21,10 @@ Base.size(::GloFASReanalysis, variable) = (7200, 3000, 1)
 DataWrangling.all_dates(::GloFASReanalysis, variable) =
     range(DateTime("1979-01-01"), stop=DateTime("2024-12-31"), step=Day(1))
 
-# TODO: `river_discharge_in_the_last_24_hours` names a 24-hour mean, so this is likely a
-# one-day `trailing_window`; confirm which day the stamp labels before changing it.
-DataWrangling.sample_window(md::GloFASMetadatum) = DataWrangling.instantaneous_window(md)
+# The discharge is a mean over the day requested, which the store stamps with the end of that window:
+# asking for 10 July 2010 returns a file whose `valid_time` is 11 July. The dates here label the start
+# of the window instead, so it runs forwards a day from the stamp.
+DataWrangling.sample_window(md::GloFASMetadatum) = DataWrangling.leading_window(md, Day(1))
 
 #####
 ##### Variable name mappings

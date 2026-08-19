@@ -377,6 +377,13 @@ end
     @test window_center(monthly) == DateTime(1993, 1, 16, 12)
 end
 
+@testset "GloFAS daily windows" begin
+    # The discharge is a mean over the day the dates label, so its node sits at midday.
+    md = Metadatum(:river_discharge; dataset = GloFASReanalysis(), date = DateTime(2010, 7, 10))
+    @test sample_window(md) == (DateTime(2010, 7, 10), DateTime(2010, 7, 11))
+    @test time_window_offset(md) == 12 * 3600
+end
+
 @testset "Every dataset with a time axis declares a sample window" begin
     # `sample_window` has no fallback, so a new adapter that forgets it raises a `MethodError`
     # instead of silently placing window averages at their stamps.
