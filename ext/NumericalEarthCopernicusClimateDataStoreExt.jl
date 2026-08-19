@@ -76,7 +76,7 @@ function Downloads.download(meta::ERA5Metadatum;
     hour = Dates.hour(date)
 
     # Build area constraint from region
-    area = padded_era5_area(meta.region, meta.dataset, meta.name)
+    area = build_era5_area(meta.region, meta.dataset, meta.name)
 
     # Build output prefix (filename without extension)
     output_prefix = first(splitext(output_filename))
@@ -230,7 +230,7 @@ function Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:Union
     pl_hPa = isnothing(pl) ? nothing : [round(Int, p * 1e-2) for p in pl]
 
     # Build area constraint from region
-    area = padded_era5_area(meta.region, meta.dataset, meta.name)
+    area = build_era5_area(meta.region, meta.dataset, meta.name)
 
     # Build output prefix (filename without extension)
     output_prefix = first(splitext(output_filename))
@@ -409,7 +409,7 @@ function Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:ERA5L
     year = Dates.year(meta.dates)
     year_dates = filter(dt -> Dates.year(dt) == year,
                          NumericalEarth.DataWrangling.all_dates(dataset, meta.name))
-    area = cds_area(padded_era5_area(meta.region, meta.dataset, meta.name))
+    area = cds_area(build_era5_area(meta.region, meta.dataset, meta.name))
     batches = era5_land_year_batches(dataset, year_dates)
 
     @root begin
@@ -439,9 +439,9 @@ const BBOX = NumericalEarth.DataWrangling.BoundingBox
 # Pad the request by two native cells on each side so the delivered file covers every
 # native cell a regional read of `region` needs (the read is rejected otherwise);
 # over-fetching is harmless because the reader selects the exact cells from the file.
-padded_era5_area(::Nothing, dataset, name) = nothing
+build_era5_area(::Nothing, dataset, name) = nothing
 
-function padded_era5_area(region::BBOX, dataset, name)
+function build_era5_area(region::BBOX, dataset, name)
     (isnothing(region.longitude) || isnothing(region.latitude)) && return build_era5_area(region)
     Nx, Ny, _ = size(dataset, name)
     Δλ = 360 / Nx
