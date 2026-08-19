@@ -716,7 +716,7 @@ lines!(ax_spin2, hours_since_start.(times), [land_mean(𝒮_ts, n) for n in each
 vspan!(ax_spin, 144, 156; color = (:gold, 0.2))   ## the case window
 
 case = findall(t -> case_start <= date_of(t) <= end_date, times)
-case_hours = [Dates.value(date_of(times[n]) - case_start) / 3.6e6 - 6 for n in case]   ## CST
+case_hours = [Dates.value(date_of(times[n]) - case_start) / 3.6e6 + 6 for n in case]   ## clock hours CST
 
 ax_flux = Axis(fig[2, 1]; title = "case day at the Central Facility",
                xlabel = "local time (CST)", ylabel = "flux (W m⁻²)")
@@ -811,13 +811,17 @@ LE_outer = FieldTimeSeries(outer_file, "LE"; backend = OnDisk())
 inner_window_i = findall(λ -> minimum(λs) <= λ <= maximum(λs), λo)
 inner_window_j = findall(φ -> minimum(φs) <= φ <= maximum(φs), φo)
 
+static_outer = jldopen("hiscale_outer_300m_static.jld2")
+water_outer = interior(static_outer["water_fraction"], inner_window_i, inner_window_j, 1) .> 0.5
+close(static_outer)
+
 fig = Figure(size = (1400, 700), fontsize = 15)
 axi = Axis(fig[1, 1]; title = "latent heat at 100 m", aspect = DataAspect())
 hmi = heatmap!(axi, λs, φs, mask_water(interior(LE_ts[n1300], :, :, 1));
                colormap = :solar, colorrange = (0, 500), nan_color = :lightsteelblue1)
 axo = Axis(fig[1, 2]; title = "latent heat at 300 m", aspect = DataAspect())
 heatmap!(axo, λo[inner_window_i], φo[inner_window_j],
-         interior(LE_outer[n1300], inner_window_i, inner_window_j, 1);
+         ifelse.(water_outer, NaN, interior(LE_outer[n1300], inner_window_i, inner_window_j, 1));
          colormap = :solar, colorrange = (0, 500), nan_color = :lightsteelblue1)
 Colorbar(fig[1, 3], hmi)
 hidedecorations!.((axi, axo))
