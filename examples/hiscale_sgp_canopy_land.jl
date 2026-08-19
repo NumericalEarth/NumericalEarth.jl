@@ -79,9 +79,11 @@ kilometers_per_degree = 111.32
 half_extents(kilometers) = (kilometers / 2 / (kilometers_per_degree * cosd(centre_latitude)),
                             kilometers / 2 / kilometers_per_degree)
 
+## Float32: the flux solve dominates the cost and Tesla-class cards run Float64
+## at a fraction of their Float32 rate.
 function hiscale_grid(architecture, extent_kilometers, size)
     Δλ, Δφ = half_extents(extent_kilometers)
-    return LatitudeLongitudeGrid(architecture, Float64; size,
+    return LatitudeLongitudeGrid(architecture, Float32; size,
                                  longitude = (centre_longitude - Δλ, centre_longitude + Δλ),
                                  latitude  = (centre_latitude  - Δφ, centre_latitude  + Δφ),
                                  topology  = (Bounded, Bounded, Flat))
@@ -491,14 +493,18 @@ function hiscale_land_model(grid, static, aero, atmosphere, radiation)
         canopy,
         soil_skin_flux = SoilConductiveFlux(1.5, 0.05),
         undercanopy_conductance = FrictionVelocityUndercanopyConductance(FT),
+        inner_iterations = 16,
         interception = CanopyInterception())
 
+    ## Fixed iteration counts keep every GPU thread on the same path; the
+    ## tolerance-based solver leaves whole warps spinning on the slowest cell.
     land_roughness = SimilarityTheoryFluxes(FT;
         momentum_roughness_length    = LandRoughnessLength(FT),
         temperature_roughness_length = LandRoughnessLength(FT),
         water_vapor_roughness_length = LandRoughnessLength(FT),
         zero_plane_displacement      = LandZeroPlaneDisplacement(),
-        stability_functions          = atmosphere_land_stability_functions(FT))
+        stability_functions          = atmosphere_land_stability_functions(FT),
+        solver_stop_criteria         = FixedIterations(8))
 
     interface = TiledLandInterface(grid, atmosphere, land;
         vegetated,

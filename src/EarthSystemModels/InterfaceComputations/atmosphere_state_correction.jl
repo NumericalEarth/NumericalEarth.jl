@@ -100,7 +100,7 @@ function materialize_correction(c::ElevationCorrection, grid, atmosphere)
 
     return ElevationCorrection(c.atmosphere_elevation,
                                c.surface_elevation,
-                               c.lapse_rate,
+                               convert(FT, c.lapse_rate),
                                convert(FT, constants.gravitational_acceleration),
                                convert(FT, constants.dry_air_gas_constant),
                                Δz)
