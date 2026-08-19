@@ -150,16 +150,37 @@ zero_non_vegetated!(case_lai_series, modis_classes)
 
 case_lai = case_lai_series[5]   ## the 28 Aug – 4 Sep composite covering the case day
 
-# ## Soil texture on its native lattice
+# ## Soil texture onto both domains' three-layer lattices
 #
-# The OpenLandMap 30 m texture window is read once here (the heavy part is the
-# native materialization) and interpolated onto each model grid below.
+# Each OpenLandMap 30 m texture window is read once (the heavy part is the native
+# materialization — a few GB per variable) and immediately interpolated onto a
+# three-layer lattice per domain, so no more than one native field is resident.
 
-native_texture = map(NamedTuple(MetadataSet(:sand_fraction, :silt_fraction, :clay_fraction, :bulk_density;
-                                            dataset = OpenLandMapSoilDB(), region))) do metadatum
-    f = Field(metadatum, CPU())
-    interior(f) .= ifelse.(isfinite.(interior(f)), interior(f), 0)
-    f
+function soil_lattice(extent_kilometers, size)
+    Δλ, Δφ = half_extents(extent_kilometers)
+    return LatitudeLongitudeGrid(CPU(), Float64; size = (size[1], size[2], 3),
+                                 longitude = (centre_longitude - Δλ, centre_longitude + Δλ),
+                                 latitude  = (centre_latitude  - Δφ, centre_latitude  + Δφ),
+                                 z = [-1.0, -0.6, -0.3, 0.0],
+                                 topology = (Bounded, Bounded, Bounded))
+end
+
+soil_texture_names = (:sand_fraction, :silt_fraction, :clay_fraction, :bulk_density)
+
+domain_texture = map(domains) do spec
+    lattice = soil_lattice(spec.extent, spec.size)
+    map(name -> Field{Center, Center, Center}(lattice),
+        NamedTuple{soil_texture_names}(soil_texture_names))
+end
+
+for name in soil_texture_names
+    native = Field(Metadatum(name; dataset = OpenLandMapSoilDB(), region), CPU())
+    interior(native) .= ifelse.(isfinite.(interior(native)), interior(native), 0)
+    for texture in domain_texture
+        interpolate!(getproperty(texture, name), native)
+    end
+    native = nothing
+    GC.gc()
 end
 
 # ## Per-domain land surface fields
@@ -199,7 +220,7 @@ function transfer_to(grid, cpu_field)
     return field
 end
 
-function land_surface_fields(grid, footprint_resolution)
+function land_surface_fields(grid, footprint_resolution, texture)
     cpu_grid = on_architecture(CPU(), grid)
 
     ## --- Terrain: GLO-30 DSM decomposed into bare earth + canopy + buildings.
@@ -233,18 +254,6 @@ function land_surface_fields(grid, footprint_resolution)
 
     ## --- Soil hydraulics: OpenLandMap texture → pedotransfer → van Genuchten fields.
     slab_depth = 0.5
-    soil_grid = LatitudeLongitudeGrid(CPU(), Float64;
-                                      size = (size(grid, 1), size(grid, 2), 3),
-                                      longitude = (cpu_grid.λᶠᵃᵃ[1], cpu_grid.λᶠᵃᵃ[size(grid, 1) + 1]),
-                                      latitude  = (cpu_grid.φᵃᶠᵃ[1], cpu_grid.φᵃᶠᵃ[size(grid, 2) + 1]),
-                                      z = [-1.0, -0.6, -0.3, 0.0],
-                                      topology = (Bounded, Bounded, Bounded))
-    texture = map(native_texture) do native
-        f = Field{Center, Center, Center}(soil_grid)
-        interpolate!(f, native)
-        f
-    end
-
     hydraulics = soil_hydraulic_properties(texture.sand_fraction, texture.silt_fraction,
                                            texture.clay_fraction, texture.bulk_density; slab_depth)
 
@@ -515,9 +524,9 @@ end
 # Hourly ERA5 over the padded region forces both domains; the initial skin
 # temperature and 0–50 cm soil water come from ERA5-Land at the spin-up start.
 
-function run_domain!(name, spec)
+function run_domain!(name, spec, texture)
     grid   = hiscale_grid(arch, spec.extent, spec.size)
-    static = land_surface_fields(grid, spec.footprint_resolution)
+    static = land_surface_fields(grid, spec.footprint_resolution, texture)
     aero   = aerodynamic_fields(grid, static)
 
     atmosphere = ERA5PrescribedAtmosphere(arch; dataset = ERA5HourlySingleLevel(),
@@ -608,7 +617,7 @@ function run_domain!(name, spec)
 end
 
 for (name, spec) in pairs(domains)
-    run_domain!(String(name), spec)
+    run_domain!(String(name), spec, domain_texture[name])
     GC.gc(true); CUDA.reclaim()
 end
 
