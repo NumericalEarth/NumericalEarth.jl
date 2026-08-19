@@ -15,9 +15,12 @@ Adapt.adapt_structure(to, b::KPPTopBoundaryConditions) =
 ##### Friction velocity
 #####
 
+# u★ needs the stress the ocean actually feels, so a semi-implicit surface momentum flux must be
+# reconstructed as Fₑ + λ uᵒ rather than read as its explicit part alone.
 @inline function friction_velocity(i, j, grid, clock, fields, top_velocity_bcs, params)
-    τx = getbc(top_velocity_bcs.u, i, j, grid, clock, fields)
-    τy = getbc(top_velocity_bcs.v, i, j, grid, clock, fields)
+    kᴺ = size(grid, 3)
+    τx = total_boundary_flux(top_velocity_bcs.u, i, j, kᴺ, grid, clock, fields, fields.u)
+    τy = total_boundary_flux(top_velocity_bcs.v, i, j, kᴺ, grid, clock, fields, fields.v)
     return max(sqrt(sqrt(τx^2 + τy^2)), params.minimum_friction_velocity)
 end
 

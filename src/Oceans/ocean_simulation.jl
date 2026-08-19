@@ -53,6 +53,14 @@ end
 @inline build_top_bc(flux_field, ::Nothing) = FluxBoundaryCondition(flux_field)
 @inline build_top_bc(flux_field, additional) = FluxBoundaryCondition(MultipleFluxes(flux_field, additional); discrete_form=true)
 
+# Surface momentum carries the ice-ocean drag, which is stiff against a thin top cell, so it is
+# applied as an affine flux J = Fₑ + λ φᵦ with λ embedded in the vertical solver's diagonal.
+@inline build_momentum_top_bc(flux_field, coefficient_field, ::Nothing) =
+    IMEXFluxBoundaryCondition(flux_field, coefficient_field)
+
+@inline build_momentum_top_bc(flux_field, coefficient_field, additional) =
+    IMEXFluxBoundaryCondition(MultipleFluxes(flux_field, additional), coefficient_field; discrete_form=true)
+
 # A freshwater surface tracer exchange. Each freshwater source carries a prescribed concentration `cᵢ` into the tracer
 # (zero salinity for pure water; its own temperature for heat), so the net surface flux is
 #
@@ -425,6 +433,11 @@ function hydrostatic_ocean_simulation(grid;
   
     top_zonal_momentum_flux      = τˣ = Field{Face, Center, Nothing}(grid; boundary_conditions = x_velocity_bcs)
     top_meridional_momentum_flux = τʸ = Field{Center, Face, Nothing}(grid; boundary_conditions = y_velocity_bcs)
+
+    # Implicit drag coefficients λ for the surface momentum flux; zero unless a sea-ice component
+    # fills them through `assemble_net_ocean_fluxes!`.
+    implicit_zonal_momentum_coefficient      = λˣ = Field{Face, Center, Nothing}(grid; boundary_conditions = x_velocity_bcs)
+    implicit_meridional_momentum_coefficient = λʸ = Field{Center, Face, Nothing}(grid; boundary_conditions = y_velocity_bcs)
     top_ocean_heat_flux          = Jᵀ = Field{Center, Center, Nothing}(grid)
     top_salt_flux                = Jˢ = Field{Center, Center, Nothing}(grid)
 
@@ -452,8 +465,8 @@ function hydrostatic_ocean_simulation(grid;
     freshwater_salt_content = ZeroField()
 
     # Construct ocean boundary conditions including surface forcing and bottom drag
-    u_top_bc = build_top_bc(τˣ, additional.u)
-    v_top_bc = build_top_bc(τʸ, additional.v)
+    u_top_bc = build_momentum_top_bc(τˣ, λˣ, additional.u)
+    v_top_bc = build_momentum_top_bc(τʸ, λʸ, additional.v)
     T_top_bc = build_tracer_top_bc(Jᵀ, Jʷ, freshwater_heat_content, additional.T, :T)
     S_top_bc = build_tracer_top_bc(Jˢ, Jʷ, freshwater_salt_content, additional.S, :S)
 
