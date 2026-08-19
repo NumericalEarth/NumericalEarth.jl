@@ -537,9 +537,11 @@ function run_domain!(name, spec)
 
     ν  = static.hydraulic_fields.porosity
     θʳ = static.hydraulic_fields.residual_liquid_fraction
-    θ₀ = compute!(Field(min(static.soil_water, 0.95 * ν)))
-    set!(land.water_storage, compute!(Field(max(θ₀, 1.05 * θʳ) * 1000 * static.slab_depth)))
-    set!(land; canopy_water_storage = 0, surface_water_storage = 0)
+    initial_storage = new_surface_field(grid)
+    parent(initial_storage) .= clamp.(parent(static.soil_water),
+                                      1.05 .* parent(θʳ), 0.95 .* parent(ν)) .*
+                               (1000 * static.slab_depth)
+    set!(land; M = initial_storage, canopy_water_storage = 0, surface_water_storage = 0)
 
     simulation = Simulation(model; Δt = 5minutes, stop_time = Dates.value(end_date - start_date) / 1000)
 
