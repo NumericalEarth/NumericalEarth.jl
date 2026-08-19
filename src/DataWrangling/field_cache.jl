@@ -1,9 +1,9 @@
 #####
-##### Cache for `Field(metadatum, grid)` reads — the dataset-agnostic analog of the
-##### regridded-bathymetry cache. The key covers everything that determines the
-##### result: the dataset (with its parameters), variable, date, region, the target
-##### grid geometry, the forwarded read keywords, and a size/mtime stamp of the
-##### local dataset file so a re-download invalidates the cache.
+##### Keyed disk cache for regridded fields, shared by `Field(metadatum, grid; cache = true)`
+##### and `regrid_bathymetry`. The key covers everything that determines the result: the
+##### dataset (with its parameters), variable, date, region, the target grid geometry, the
+##### forwarded read keywords or processing parameters, and a size/mtime stamp of the local
+##### dataset file so a re-download invalidates the cache.
 #####
 
 struct FieldRegridding
@@ -61,12 +61,12 @@ function FieldRegridding(grid, metadatum, read_keywords)
 end
 
 function Base.:(==)(a::FieldRegridding, b::FieldRegridding)
-    return all(getfield(a, name) == getfield(b, name) for name in fieldnames(FieldRegridding))
+    return all(getfield(a, field_name) == getfield(b, field_name) for field_name in fieldnames(FieldRegridding))
 end
 
 function Base.hash(c::FieldRegridding, h::UInt)
-    for name in fieldnames(FieldRegridding)
-        h = hash(getfield(c, name), h)
+    for field_name in fieldnames(FieldRegridding)
+        h = hash(getfield(c, field_name), h)
     end
     return h
 end

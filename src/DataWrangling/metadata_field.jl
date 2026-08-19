@@ -383,9 +383,9 @@ replacing data upstream.
 """
 function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid; cache = false, kw...)
     LX, LY, LZ = location(metadata)
-    config = cache ? FieldRegridding(grid, metadata, values(kw)) : nothing
 
     if cache
+        config = FieldRegridding(grid, metadata, values(kw))
         data = load_field_cache(config)
         if !isnothing(data)
             target = Field{LX, LY, LZ}(grid)
@@ -398,7 +398,11 @@ function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid; cach
     native = Field(metadata, architecture(grid); kw...)
     target = Field{LX, LY, LZ}(grid)
     interpolate_physical!(target, native, metadata)
-    cache && save_field_cache(config, Array(interior(target)))
+    if cache
+        # rebuild the key: the native read may have just downloaded the dataset file it stamps
+        config = FieldRegridding(grid, metadata, values(kw))
+        save_field_cache(config, Array(interior(target)))
+    end
     return target
 end
 

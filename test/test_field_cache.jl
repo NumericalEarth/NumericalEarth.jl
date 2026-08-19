@@ -50,6 +50,8 @@ end
 
     metadatum = Metadatum(:temperature; dataset = EN4Monthly(), date = start_date)
 
+    # Key the cache only after the dataset file exists — the key stamps it
+    download(metadatum)
     config = FieldRegridding(grid, metadatum, (;))
     rm(field_cache_path(config); force = true)
 
