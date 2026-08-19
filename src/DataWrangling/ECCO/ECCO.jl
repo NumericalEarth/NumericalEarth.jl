@@ -273,20 +273,19 @@ function DataWrangling.metadata_url(m::Metadata{<:ECCO4Monthly})
     return ECCO4_url * dataset_variable_name(m) * "/" * year * "/" * m.filename
 end
 
-# The ECCO drive serves `Version4` and `Version5`, but every path under `ECCO2` — the quarter-degree
-# `cube92` fields and both ECCO-Darwin grids — answers `403 Forbidden` even to a signed-in account.
-# A bare `403` reads as bad credentials, so name the collection instead.
-is_ecco2_url(url) = occursin("/drive/files/ECCO2/", url)
+# The drive stopped serving its `ECCO2` directory, which holds the quarter-degree fields and both
+# ECCO-Darwin datasets whatever grid their name refers to. The download is still attempted in case it
+# returns, but a bare 403 reads as bad credentials, so say what it means instead.
+const ECCO2DriveDataset = Union{ECCO2Monthly, ECCO2Daily, ECCO2DarwinMonthly, ECCO4DarwinMonthly}
 
-function ecco_download_error(err, metadatum, url)
-    (err isa Downloads.RequestError && err.response.status == 403 && is_ecco2_url(url)) || return err
+function ecco_download_error(err, metadatum)
+    refused = err isa Downloads.RequestError && err.response.status == 403
+    (refused && metadatum.dataset isa ECCO2DriveDataset) || return err
 
-    return ErrorException("The ECCO drive returned 403 Forbidden for $(metadatum.name) at $url. \
-                           Every path under its `ECCO2` collection is forbidden even to a signed-in \
-                           account, so $(typeof(metadatum.dataset)) cannot currently be downloaded — \
-                           this is not a problem with `ECCO_USERNAME` or `ECCO_WEBDAV_PASSWORD`. \
-                           `ECCO4Monthly` is served from the drive's `Version4` collection and is \
-                           unaffected.")
+    return ErrorException("The ECCO drive refused $(typeof(metadatum.dataset)), whose files live in \
+                           the `ECCO2` directory it no longer serves. This is not a problem with \
+                           `ECCO_USERNAME` or `ECCO_WEBDAV_PASSWORD`. `ECCO4Monthly` reads from the \
+                           drive's `Version4` directory and is unaffected.")
 end
 
 function Downloads.download(metadata::ECCOMetadata)
@@ -327,7 +326,7 @@ function Downloads.download(metadata::ECCOMetadata)
                 try
                     Downloads.download(fileurl, filepath; downloader, progress=DownloadProgress())
                 catch err
-                    throw(ecco_download_error(err, metadatum, fileurl))
+                    throw(ecco_download_error(err, metadatum))
                 end
             end
         end

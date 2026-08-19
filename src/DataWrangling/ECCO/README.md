@@ -30,12 +30,12 @@ ENV["ECCO_USERNAME"] = "your_username"
 ENV["ECCO_WEBDAV_PASSWORD"] = "cRaZYpASSwORD"
 ```
 
-## The `ECCO2` collection is currently unavailable
+## The `ECCO2` directory is no longer served
 
-Every path under `https://ecco.jpl.nasa.gov/drive/files/ECCO2/` answers `403 Forbidden`, including
-to an account whose credentials the drive otherwise accepts. This covers `ECCO2Monthly`,
-`ECCO2Daily`, `ECCO2DarwinMonthly`, and `ECCO4DarwinMonthly`. The drive's `Version4` and `Version5`
-collections still serve normally, so `ECCO4Monthly` is unaffected, and NASA's CMR catalog lists no
-replacement for the quarter-degree `cube92` fields.
-
-Setting `ECCO_USERNAME` and `ECCO_WEBDAV_PASSWORD` as above will not restore access.
+`https://ecco.jpl.nasa.gov/drive/files` lists only `NearRealTime`, `Version4`, and `Version5`, and
+every path beneath `files/ECCO2/` answers `403 Forbidden` to an account the drive otherwise accepts.
+This covers `ECCO2Monthly`, `ECCO2Daily`, `ECCO2DarwinMonthly`, and `ECCO4DarwinMonthly` — both
+ECCO-Darwin datasets are stored under `files/ECCO2/` whatever grid their name refers to.
+`ECCO4Monthly` reads from `files/Version4/` and is unaffected. Setting the variables above will not
+restore access. Downloads are still attempted, so these datasets will work again if the directory
+returns.
