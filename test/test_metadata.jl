@@ -7,7 +7,7 @@ using NumericalEarth.DataWrangling: restrict, restrict_longitude, download_cache
 using NumericalEarth.DataWrangling: native_times, sample_window, window_center, time_window_offset,
                                     sample_window_span, uncovered_time_gaps, validate_time_coverage
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
-                                         ERA5MonthlyPressureLevels
+                                         ERA5MonthlyPressureLevels, ERA5MonthlyLand
 
 using Oceananigans: location
 using Oceananigans.Grids: topology, Flat, Bounded, Periodic, RectilinearGrid,
@@ -281,13 +281,20 @@ end
                         GLORYSMonthly() => :temperature,
                         WOAMonthly() => :temperature,
                         ERA5MonthlySingleLevel() => :temperature,
-                        ERA5MonthlyPressureLevels() => :temperature)
+                        ERA5MonthlyPressureLevels() => :temperature,
+                        ERA5MonthlyLand() => :temperature)
 
     for (dataset, name) in monthly_datasets, stamp in (DateTime(2010, 7, 1), DateTime(2010, 7, 1, 12))
         metadatum = Metadatum(name; dataset, date = stamp)
         @test sample_window(metadatum) == (DateTime(2010, 7, 1), DateTime(2010, 8, 1))
         @test window_center(metadatum) == DateTime(2010, 7, 16, 12)
     end
+
+    # ERA5-Land monthly nodes sit mid-month, in phase with the single-level product.
+    land = Metadatum(:temperature; dataset = ERA5MonthlyLand(), date = DateTime(2010, 7, 1))
+    single_level = Metadatum(:temperature; dataset = ERA5MonthlySingleLevel(), date = DateTime(2010, 7, 1))
+    @test time_window_offset(land) == 15.5 * 86400
+    @test time_window_offset(land) == time_window_offset(single_level)
 end
 
 @testset "ERA5 accumulation windows" begin
