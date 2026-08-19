@@ -3,7 +3,7 @@ include("download_utils.jl")
 
 using JLD2
 using NumericalEarth.Bathymetry: remove_minor_basins!, bathymetry_regridding_key
-using NumericalEarth.DataWrangling: field_cache_filename
+using NumericalEarth.DataWrangling: field_cache_filename, save_field_cache
 using NumericalEarth.DataWrangling.ETOPO
 using Statistics
 
@@ -147,4 +147,19 @@ end
     # cache=false should still produce correct results
     result4 = regrid_bathymetry(grid; cache=false)
     @test parent(result1) == parent(result4)
+
+    # overwrite_cache=true skips the lookup and refreshes the entry
+    metadata = Metadatum(:bottom_height, dataset=ETOPO2022())
+    config = bathymetry_regridding_key(grid, metadata;
+                                       height_above_water = nothing, minimum_depth = 0,
+                                       interpolation_passes = 1, major_basins = 1)
+    save_field_cache(config, zeros(size(grid, 1), size(grid, 2)))
+    poisoned = regrid_bathymetry(grid; cache=true)
+    @test all(iszero, interior(poisoned))
+
+    result5 = regrid_bathymetry(grid; cache=true, overwrite_cache=true)
+    @test parent(result1) == parent(result5)
+
+    result6 = regrid_bathymetry(grid; cache=true)
+    @test parent(result1) == parent(result6)
 end

@@ -64,5 +64,16 @@ end
     uncached = Field(metadatum, grid)
     @test all(isequal.(parent(first_read), parent(uncached)))
 
+    # overwrite_cache = true skips the lookup and refreshes the entry
+    save_field_cache(config, zeros(size(grid)))
+    poisoned = Field(metadatum, grid; cache = true)
+    @test all(iszero, interior(poisoned))
+
+    refreshed = Field(metadatum, grid; cache = true, overwrite_cache = true)
+    @test all(isequal.(parent(refreshed), parent(first_read)))
+
+    reread = Field(metadatum, grid; cache = true)
+    @test all(isequal.(parent(reread), parent(first_read)))
+
     rm(field_cache_path(config); force = true)
 end

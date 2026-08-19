@@ -20,7 +20,8 @@ end
                       minimum_depth = 0,
                       major_basins = 1,
                       interpolation_passes = 1,
-                      cache = true)
+                      cache = true,
+                      overwrite_cache = false)
 
 Return bathymetry that corresponds to  `metadata` onto `target_grid`.
 
@@ -64,18 +65,23 @@ Keyword Arguments
 
 - `cache`: If `true` (default), caches the regridded bathymetry to disk and reuses it on subsequent
            calls with the same grid, parameters, and dataset file; a re-download of the dataset
-           invalidates the entry. Set to `false` to force recomputation.
+           invalidates the entry. If `false`, the cache is disabled entirely: nothing is read
+           or written.
+
+- `overwrite_cache`: If `true`, skip the cache lookup and overwrite the entry with a freshly
+                     regridded result. Default: `false`.
 """
 function regrid_bathymetry(target_grid, metadata;
                            height_above_water = nothing,
                            minimum_depth = 0,
                            interpolation_passes = 1,
                            major_basins = 1,
-                           cache = true)
+                           cache = true,
+                           overwrite_cache = false)
 
     validate_dataset_coverage(target_grid, metadata)
 
-    if cache
+    if cache && !overwrite_cache
         config = bathymetry_regridding_key(target_grid, metadata;
                                            height_above_water, minimum_depth,
                                            interpolation_passes, major_basins)
@@ -205,7 +211,8 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
                            minimum_depth = 0,
                            interpolation_passes = 1,
                            major_basins = 1,
-                           cache = true)
+                           cache = true,
+                           overwrite_cache = false)
 
     global_grid = reconstruct_global_grid(target_grid)
     global_grid = on_architecture(CPU(), global_grid)
@@ -221,7 +228,7 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
 
     # Only rank 0 performs cache lookup and computation to avoid OOM
     bottom_height = if arch.local_rank == 0
-        cached_data = cache ? load_field_cache(config) : nothing
+        cached_data = cache && !overwrite_cache ? load_field_cache(config) : nothing
         if !isnothing(cached_data)
             cached_data
         else
