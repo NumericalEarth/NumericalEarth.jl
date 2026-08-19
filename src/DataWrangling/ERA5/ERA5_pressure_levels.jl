@@ -338,6 +338,16 @@ function era5_native_pressure_fts(metadata, grid;
                                   time_indices_in_memory = nothing)
     Downloads.download(metadata)
     times = convert.(eltype(grid), native_times(metadata))
+
+    # As in the generic constructor: a window-averaged series repeats over the span its
+    # windows tile, not over the node span Oceananigans would infer.
+    if time_indexing isa Cyclical{Nothing}
+        period = sample_window_span(metadata)
+        isnothing(period) || (time_indexing = Cyclical(convert(eltype(grid), period)))
+    end
+
+    validate_time_coverage(metadata, time_indexing)
+
     Nt = length(times)
     time_indices_in_memory = min(something(time_indices_in_memory, Nt), Nt)
     loc = LX, LY, LZ = location(metadata)

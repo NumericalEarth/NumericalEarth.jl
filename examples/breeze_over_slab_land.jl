@@ -96,7 +96,7 @@ hydrology = VariablySaturatedHydrology(eltype(land_grid);
     runoff = InfiltrationCapacityRunoff(infiltration_capacity = 1e-3))
 
 # Water-mass-coupled energy with a water-mass-dependent areal heat capacity
-# `C(Mˡᵃ) = C_dry + cˡ Mˡᵃ` and conservative `Tˡᵃ` update — adding or removing
+# `cˡᵃ(Mˡᵃ) = cᵈʳʸ + cˡ Mˡᵃ` and conservative `Tˡᵃ` update — adding or removing
 # water at the slab temperature leaves `Tˡᵃ` unchanged.
 #
 # `deep_temperature` should sit near the surface's radiative–convective
