@@ -59,6 +59,7 @@ export
     ConstantUndercanopyConductance,
     AreaIndexUndercanopyConductance,
     FrictionVelocityUndercanopyConductance,
+    SellersSoilResistance,
     TiledLandInterface,
     bare_canopy_air_space,
     leaf_area_index_cover_fraction,
