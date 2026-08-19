@@ -470,13 +470,17 @@ function hiscale_land_model(grid, static, aero, atmosphere, radiation)
 
     land = SlabLand(grid; energy, hydrology)
 
+    ## The dry surface layer grows from saturation down (Swenson & Lawrence 2014):
+    ## with an onset below one, moist soil evaporates as an unresisted free-water
+    ## surface, cools below the air, and its downward sensible heat cancels the
+    ## canopy's upward flux.
     dry_layer_soil = DryLayerHumidity(FT;
-        dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.03,
-                                                    dry_layer_onset_saturation = 0.4,
+        dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.05,
+                                                    dry_layer_onset_saturation = 1.0,
                                                     dry_layer_exponent = 2),
         vapor_exchange = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
                                                      molecular_diffusivity = 2.4e-5,
-                                                     tortuosity = ConstantTortuosity()),
+                                                     tortuosity = PowerLawTortuosity()),
         thermal_exchange_depth = 0.05,
         porosity = static.scalar_porosity)
 
