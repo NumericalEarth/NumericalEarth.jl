@@ -506,12 +506,17 @@ function hiscale_land_model(grid, static, aero, atmosphere, radiation)
         thermal_exchange_depth = 0.05,
         porosity = static.scalar_porosity)
 
+    ## The stress closure gets textbook loam retention parameters, not the
+    ## pedotransfer medians: the two-point matching fits α and n through the very
+    ## suction heads the stress function spans (1 and 150 m), which by construction
+    ## spreads every saturation across the whole stress range and throttles
+    ## transpiration domain-wide.
     canopy = CanopyConductanceHumidity(FT;
         leaf_area_index = aero.tile_leaf_area_index,
         conductance = JarvisConductance(FT),
         moisture_stress = PlantAvailableWaterStress(FT;
-            inverse_air_entry_head = static.scalar_α,
-            pore_size_uniformity   = static.scalar_n),
+            inverse_air_entry_head = 3.6,
+            pore_size_uniformity   = 1.56),
         absorbed_par = InteractiveAbsorbedPAR(FT))
 
     vegetated = CanopyAirSpace(FT;
