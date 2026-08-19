@@ -59,7 +59,7 @@ using CopernicusClimateDataStore   ## ERA5-Land
 using CairoMakie
 using JLD2
 using Printf
-using Statistics: mean, median
+using Statistics: mean, median, quantile
 import Dates
 import Dates: DateTime
 
@@ -729,9 +729,9 @@ nothing #hide
 # day is read against the Fast et al. (2019) context: the ARM flux sites around
 # the Central Facility observed midafternoon latent heat of 250–450 W m⁻² over
 # their grass footprints, while the drier harvested cropland that dominates the
-# Central Facility's own 500 m MODIS pixel runs sensible-heat-dominated. The wet
-# riparian-forest reference cell reaches the observed band; the contrast between
-# the two is the wet/dry heterogeneity the paper's cloud populations respond to.
+# Central Facility's own 500 m MODIS pixel runs sensible-heat-dominated. The
+# domain's 10–90% flux range brackets both regimes; that spread is the wet/dry
+# heterogeneity the paper's cloud populations respond to.
 
 date_of(t) = start_date + Dates.Second(round(Int, t))
 hours_since_start(t) = t / 3600
@@ -757,14 +757,7 @@ jᶜᶠ = argmin(abs.(φs .- centre_latitude))
 at_cf(fts, n) = interior(fts[n], iᶜᶠ, jᶜᶠ, 1)[]
 land_mean(fts, n) = mean(mask_water(interior(fts[n], :, :, 1))[.!water])
 
-## A leafy riparian reference cell: the wet, high-LAI counterpoint to the
-## Central Facility's harvested-cropland pixel.
-static_lai = jldopen("hiscale_inner_100m_static.jld2")
-lai_map = interior(static_lai["leaf_area_index"], :, :, 1)
-close(static_lai)
-green = argmax(ifelse.(water, -1, lai_map))
-iᵍʳ, jᵍʳ = Tuple(green)
-at_green(fts, n) = interior(fts[n], iᵍʳ, jᵍʳ, 1)[]
+land_quantile(fts, n, q) = quantile(interior(fts[n], :, :, 1)[.!water], q)
 
 fig = Figure(size = (1600, 900), fontsize = 15)
 
@@ -779,13 +772,17 @@ vspan!(ax_spin, 144, 156; color = (:gold, 0.2))   ## the case window
 case = findall(t -> case_start <= date_of(t) <= end_date, times)
 case_hours = [Dates.value(date_of(times[n]) - case_start) / 3.6e6 + 6 for n in case]   ## clock hours CST
 
-ax_flux = Axis(fig[2, 1]; title = "case day: dry cropland (Central Facility) vs riparian forest",
+ax_flux = Axis(fig[2, 1]; title = "case-day fluxes: Central Facility pixel over the domain range",
                xlabel = "local time (CST)", ylabel = "flux (W m⁻²)")
+band!(ax_flux, case_hours, [land_quantile(LE_ts, n, 0.1) for n in case],
+                           [land_quantile(LE_ts, n, 0.9) for n in case]; color = (:navy, 0.25),
+      label = "latent, domain 10–90%")
+band!(ax_flux, case_hours, [land_quantile(H_ts, n, 0.1) for n in case],
+                           [land_quantile(H_ts, n, 0.9) for n in case]; color = (:orangered, 0.25),
+      label = "sensible, domain 10–90%")
 lines!(ax_flux, case_hours, [at_cf(LE_ts, n) for n in case]; color = :navy,      label = "latent, CF")
 lines!(ax_flux, case_hours, [at_cf(H_ts,  n) for n in case]; color = :orangered, label = "sensible, CF")
-lines!(ax_flux, case_hours, [at_green(LE_ts, n) for n in case]; color = :navy,      linestyle = :dash, label = "latent, forest")
-lines!(ax_flux, case_hours, [at_green(H_ts,  n) for n in case]; color = :orangered, linestyle = :dash, label = "sensible, forest")
-band!(ax_flux, case_hours, 250, 450; color = (:navy, 0.08))   ## ARM-observed midafternoon LE
+band!(ax_flux, case_hours, 250, 450; color = (:gray, 0.12))   ## ARM-observed midafternoon LE
 axislegend(ax_flux; position = :lt)
 
 ax_T = Axis(fig[2, 2]; title = "case-day temperatures at the Central Facility",
