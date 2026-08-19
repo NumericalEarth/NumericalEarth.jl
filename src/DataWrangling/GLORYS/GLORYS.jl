@@ -51,9 +51,10 @@ all_dates(::GLORYSMonthly, var) = range(DateTime("1993-01-01"), stop=DateTime("2
 # Static variables carry no date, so their window is the `nothing` they are stamped with.
 DataWrangling.sample_window(metadatum::Metadatum{<:GLORYSStatic}) = DataWrangling.instantaneous_window(metadatum)
 
-# TODO: the `P1D-m` product id names a one-day mean, so this is likely a one-day
-# `leading_window`; confirm against the file time axis before changing it.
-DataWrangling.sample_window(metadatum::Metadatum{<:GLORYSDaily}) = DataWrangling.instantaneous_window(metadatum)
+# `P1D-m` is a one-day mean, and Copernicus Marine stamps the start of an averaging period rather
+# than its center — its monthly means for July 2010 carry 2010-07-01 — so the window runs forwards
+# a day from the stamp.
+DataWrangling.sample_window(metadatum::Metadatum{<:GLORYSDaily}) = DataWrangling.leading_window(metadatum, Day(1))
 
 DataWrangling.sample_window(metadatum::Metadatum{<:GLORYSMonthly}) = DataWrangling.calendar_month_window(metadatum)
 

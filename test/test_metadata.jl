@@ -354,6 +354,18 @@ end
     end
 end
 
+@testset "Copernicus Marine daily windows" begin
+    # Copernicus Marine stamps the start of an averaging period, so a `P1D-m` daily mean runs
+    # forwards a day from its stamp and its node sits at midday.
+    glorys = Metadatum(:temperature; dataset = GLORYSDaily(), date = DateTime(2010, 7, 10))
+    @test sample_window(glorys) == (DateTime(2010, 7, 10), DateTime(2010, 7, 11))
+    @test time_window_offset(glorys) == 12 * 3600
+
+    # The daily L4 altimetry maps are analyses valid at the stamp, not means over the day.
+    aviso = Metadatum(:sea_level_anomaly; dataset = AVISODaily(), date = DateTime(2010, 7, 10))
+    @test time_window_offset(aviso) == 0
+end
+
 @testset "Every dataset with a time axis declares a sample window" begin
     # `sample_window` has no fallback, so a new adapter that forgets it raises a `MethodError`
     # instead of silently placing window averages at their stamps.
