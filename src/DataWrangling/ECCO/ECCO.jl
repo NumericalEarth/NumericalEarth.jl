@@ -73,9 +73,10 @@ DataWrangling.all_dates(dataset::ECCO2Daily,   variable) = metadata_epoch(datase
 DataWrangling.sample_window(metadatum::Metadatum{<:Union{ECCO2Monthly, ECCO4Monthly}}) =
     DataWrangling.calendar_month_window(metadatum)
 
-# TODO: ECCO2 stamps the center of each averaging period — the monthly file for January 1993 carries
+# ECCO2 stamps the center of each averaging period — the monthly file for January 1993 carries
 # 1993-01-16 — but the daily file named 19930101 carries 1993-01-02, so this node sits at least half a
-# day from the value it labels. Left at the stamp until that offset is pinned down.
+# day from the value it labels. Pinning the offset needs the drive, which serves 403 for every ECCO2
+# path, so it stays at the stamp.
 DataWrangling.sample_window(metadatum::Metadatum{<:ECCO2Daily}) =
     DataWrangling.instantaneous_window(metadatum)
 
