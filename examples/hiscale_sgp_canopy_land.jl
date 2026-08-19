@@ -108,6 +108,15 @@ start_date = DateTime(2016, 8, 24, 12)
 end_date   = DateTime(2016, 8, 31)
 case_start = DateTime(2016, 8, 30, 12)
 
+# ## The surface-field cache
+#
+# Turning the raw rasters into per-domain model fields costs the better part of an
+# hour; the runs below cache the processed fields per domain and reload them on a
+# rerun, so only the first run pays for ingestion.
+
+surface_cache(name) = "hiscale_$(name)_surface_cache.jld2"
+rebuild_surface_fields = !all(isfile(surface_cache(String(name))) for name in keys(domains))
+
 # ## Leaf area index with a class-aware gap fill
 #
 # MODIS MCD15A2H leaf area index for the composite containing the case day, with
@@ -116,6 +125,11 @@ case_start = DateTime(2016, 8, 30, 12)
 # decide how far a gap may be carried and from whom it may borrow, and
 # non-vegetated classes are zeroed. Everything happens on the MODIS native lattice
 # (≈464 m); the model grids sample it afterwards.
+
+modis_classes = nothing
+case_lai = nothing
+
+if rebuild_surface_fields
 
 modis_classes = Field(Metadatum(:landcover_class; dataset = MCD12Q1(), region, date = DateTime(2016)))
 
@@ -152,6 +166,8 @@ zero_non_vegetated!(case_lai_series, modis_classes)
 
 case_lai = case_lai_series[5]   ## the 28 Aug – 4 Sep composite covering the case day
 
+end #hide
+
 # ## Soil texture onto both domains' three-layer lattices
 #
 # Each OpenLandMap 30 m texture window is read once (the heavy part is the native
@@ -169,6 +185,10 @@ end
 
 soil_texture_names = (:sand_fraction, :silt_fraction, :clay_fraction, :bulk_density)
 
+domain_texture = map(_ -> nothing, domains)
+
+if rebuild_surface_fields
+
 domain_texture = map(domains) do spec
     lattice = soil_lattice(spec.extent, spec.size)
     map(name -> Field{Center, Center, Center}(lattice),
@@ -184,6 +204,8 @@ for name in soil_texture_names
     native = nothing
     GC.gc()
 end
+
+end #hide
 
 # ## Per-domain land surface fields
 #
@@ -534,10 +556,33 @@ end
 # Hourly ERA5 over the padded region forces both domains; the initial skin
 # temperature and 0–50 cm soil water come from ERA5-Land at the spin-up start.
 
+## Cache movers: Fields go to the CPU for saving and back onto the run grid on load.
+on_cpu(x) = x
+on_cpu(f::Field) = on_architecture(CPU(), f)
+on_cpu(t::NamedTuple) = map(on_cpu, t)
+
+on_grid(grid, x) = x
+on_grid(grid, t::NamedTuple) = map(x -> on_grid(grid, x), t)
+function on_grid(grid, f::Field)
+    g = new_surface_field(grid)
+    set!(g, Array(interior(f, :, :, 1)))
+    return g
+end
+
 function run_domain!(name, spec, texture)
-    grid   = hiscale_grid(arch, spec.extent, spec.size)
-    static = land_surface_fields(grid, spec.footprint_resolution, texture)
-    aero   = aerodynamic_fields(grid, static)
+    grid = hiscale_grid(arch, spec.extent, spec.size)
+
+    static, aero = if isfile(surface_cache(name))
+        file = jldopen(surface_cache(name))
+        loaded = (on_grid(grid, file["static"]), on_grid(grid, file["aero"]))
+        close(file)
+        loaded
+    else
+        static = land_surface_fields(grid, spec.footprint_resolution, texture)
+        aero   = aerodynamic_fields(grid, static)
+        jldsave(surface_cache(name); static = on_cpu(static), aero = on_cpu(aero))
+        (static, aero)
+    end
 
     atmosphere = ERA5PrescribedAtmosphere(arch; dataset = ERA5HourlySingleLevel(),
                                           start_date, end_date, region,
