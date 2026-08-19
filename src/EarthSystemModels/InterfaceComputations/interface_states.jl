@@ -15,6 +15,12 @@ end
 InterfaceProperties(specific_humidity_formulation, temperature_formulation, velocity_formulation) =
     InterfaceProperties(specific_humidity_formulation, temperature_formulation, velocity_formulation, (;))
 
+Adapt.adapt_structure(to, p::InterfaceProperties) =
+    InterfaceProperties(adapt(to, p.specific_humidity_formulation),
+                        adapt(to, p.temperature_formulation),
+                        adapt(to, p.velocity_formulation),
+                        adapt(to, p.surface_properties))
+
 #####
 ##### Interface specific humidity formulations
 #####

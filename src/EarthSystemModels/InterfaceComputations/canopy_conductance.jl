@@ -109,6 +109,11 @@ function CanopyConductanceHumidity(FT=Oceananigans.defaults.FloatType;
                                      convert(FT, atmospheric_co2), phase)
 end
 
+Adapt.adapt_structure(to, q::CanopyConductanceHumidity) =
+    CanopyConductanceHumidity(adapt(to, q.leaf_area_index),
+                              q.photosynthesis, q.conductance, q.moisture_stress,
+                              q.absorbed_par, q.atmospheric_co2, q.phase)
+
 Base.summary(::CanopyConductanceHumidity{L, P, C, S, A, Q, Φ}) where {L, P, C, S, A, Q, Φ} =
     string("CanopyConductanceHumidity{", Φ === AtmosphericThermodynamics.Liquid ? "Liquid" : "Ice", "}")
 Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
