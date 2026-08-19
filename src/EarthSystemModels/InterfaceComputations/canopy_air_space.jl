@@ -316,6 +316,13 @@ Base.summary(::CanopyAirSpace) = "CanopyAirSpace"
 Base.show(io::IO, c::CanopyAirSpace) =
     print(io, "CanopyAirSpace(soil=", summary(c.soil), ", canopy=", summary(c.canopy), ")")
 
+Adapt.adapt_structure(to, c::CanopyAirSpace) =
+    CanopyAirSpace(adapt(to, c.soil), adapt(to, c.canopy), c.soil_skin_flux,
+                   c.leaf_albedo, c.ground_albedo, c.canopy_emissivity_max, c.ground_emissivity,
+                   c.extinction, c.clumping, c.leaf_boundary_conductance,
+                   c.undercanopy_conductance, c.inner_iterations, c.relaxation,
+                   c.interception, c.phase)
+
 # Materialization / identity — delegate to the sub-models so the per-cell interface
 # state carries the soil saturation, bulk temperature, and LAI the branches read.
 @inline interface_phase(c::CanopyAirSpace) = interface_phase(c.soil)
