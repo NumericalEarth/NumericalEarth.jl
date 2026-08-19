@@ -160,12 +160,12 @@ Keyword Arguments
 - `stability_functions`: The stability functions. Default: `default_stability_functions(FT)` that follow the
                          formulation of [edson2013exchange](@citet).
 - `roughness_lengths`: The roughness lengths used to calculate the characteristic scales for momentum, temperature and
-                       water vapor. Default: `default_roughness_lengths(FT)`, formulation taken from [edson2013exchange](@citet).
+                       water vapor. Each may be a formulation, a `Number`, or a `Field` of per-cell values.
+                       Default: `default_roughness_lengths(FT)`, formulation taken from [edson2013exchange](@citet).
 - `zero_plane_displacement`: The zero-plane displacement `d` [m] of surfaces with tall roughness
                              elements (buildings, plant canopy): the similarity profiles are evaluated
-                             at the height `Δh - d` above the interface. A `Number`, or
-                             [`LandZeroPlaneDisplacement`](@ref) to read a per-cell land displacement.
-                             Default: 0 (undisplaced).
+                             at the height `Δh - d` above the interface. A `Number`, or a `Field`
+                             of per-cell displacements. Default: 0 (undisplaced).
 - `similarity_form`: The type of similarity profile used to relate the atmospheric state to the
                              interface fluxes / characteristic scales.
 - `solver_tolerance`: The tolerance for convergence. Default: 1e-8.
@@ -252,54 +252,28 @@ end
     return log(h / ℓ) - ψh
 end
 
-# `local_roughness_length(ℓ, interior_properties, ::Val{R})` is the
-# per-surface entry point used by `local_roughness_lengths` below. `R`
-# is `:momentum` or `:scalar` and lets surface-specific formulations
-# (e.g. `LandRoughnessLength`) pick the right field on the interior
-# properties NamedTuple. The default just returns the formulation
-# unchanged, regardless of R or interior_properties — ocean
-# `MomentumRoughnessLength` / `ScalarRoughnessLength` hit this fallback.
-@inline local_roughness_length(ℓ, interior_properties) = ℓ
-@inline local_roughness_length(ℓ, interior_properties, ::Val) = ℓ
+# Localize the flux closure to cell (i, j) before the index-free MOST iteration:
+# `Field`-valued roughness and displacement slots collapse to their per-cell values,
+# while `Number`s and formulations (e.g. `MomentumRoughnessLength`) pass through.
+@inline local_parameter(ℓ, i, j) = ℓ
+@inline local_parameter(ℓ::AbstractArray, i, j) = @inbounds ℓ[i, j, 1]
 
-@inline function local_roughness_length(ℓ::LandRoughnessLength,
-                                        interior_properties::NamedTuple{names, T},
-                                        ::Val{R}) where {names, T, R}
-    candidate = if R === :momentum && hasproperty(interior_properties, :momentum_roughness_length)
-        max(interior_properties.momentum_roughness_length, ℓ.minimum_roughness_length)
-    elseif R === :scalar && hasproperty(interior_properties, :scalar_roughness_length)
-        max(interior_properties.scalar_roughness_length, ℓ.minimum_roughness_length)
-    else
-        ℓ.minimum_roughness_length
-    end
+@inline local_flux_formulation(flux_formulation, i, j) = flux_formulation
 
-    return max(ℓ.multiplier * candidate, ℓ.minimum_roughness_length)
-end
+@inline function local_flux_formulation(fluxes::SimilarityTheoryFluxes, i, j)
+    ℓ = fluxes.roughness_lengths
+    roughness_lengths = SimilarityScales(local_parameter(ℓ.momentum, i, j),
+                                         local_parameter(ℓ.temperature, i, j),
+                                         local_parameter(ℓ.water_vapor, i, j))
 
-@inline function local_roughness_lengths(roughness_lengths, interior_properties)
-    momentum    = local_roughness_length(roughness_lengths.momentum,
-                                          interior_properties,
-                                          Val(:momentum))
-    temperature = local_roughness_length(roughness_lengths.temperature,
-                                          interior_properties,
-                                          Val(:scalar))
-    water_vapor = local_roughness_length(roughness_lengths.water_vapor,
-                                          interior_properties,
-                                          Val(:scalar))
-    return SimilarityScales(momentum, temperature, water_vapor)
-end
-
-# Like `local_roughness_length`: a `Number` passes through, `LandZeroPlaneDisplacement`
-# reads the per-cell displacement off the interior properties, defaulting to 0.
-@inline local_zero_plane_displacement(d, interior_properties) = d
-
-@inline function local_zero_plane_displacement(::LandZeroPlaneDisplacement,
-                                               interior_properties::NamedTuple{names, T}) where {names, T}
-    if hasproperty(interior_properties, :zero_plane_displacement)
-        return interior_properties.zero_plane_displacement
-    else
-        return 0
-    end
+    return SimilarityTheoryFluxes(fluxes.von_karman_constant,
+                                  fluxes.turbulent_prandtl_number,
+                                  fluxes.subgrid_velocities,
+                                  fluxes.stability_functions,
+                                  roughness_lengths,
+                                  local_parameter(fluxes.zero_plane_displacement, i, j),
+                                  fluxes.similarity_form,
+                                  fluxes.solver_stop_criteria)
 end
 
 """
@@ -317,8 +291,7 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
                                   approximate_interface_state,
                                   atmosphere_state,
                                   interface_properties,
-                                  atmosphere_properties,
-                                  interior_properties = nothing)
+                                  atmosphere_properties)
 
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
     g  = atmosphere_properties.gravitational_acceleration
@@ -334,13 +307,11 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     ψθ = flux_formulation.stability_functions.temperature
     ψq = flux_formulation.stability_functions.water_vapor
 
-    # Extract roughness lengths, resolving field-aware land formulations from
-    # local per-cell interior properties.
-    roughness_lengths = local_roughness_lengths(flux_formulation.roughness_lengths,
-                                                interior_properties)
-    ℓu = roughness_lengths.momentum
-    ℓθ = roughness_lengths.temperature
-    ℓq = roughness_lengths.water_vapor
+    # Extract roughness lengths (per-cell `Field` slots have already been
+    # localized to numbers by `local_flux_formulation`)
+    ℓu = flux_formulation.roughness_lengths.momentum
+    ℓθ = flux_formulation.roughness_lengths.temperature
+    ℓq = flux_formulation.roughness_lengths.water_vapor
 
     # Compute Monin--Obukhov length scale depending on a `buoyancy flux`
     b★ = buoyancy_scale(θ★, q★, ℂᵃᵗ, Tₛ, qₛ, g)
@@ -363,8 +334,7 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     ℓθ₀ = roughness_length(ℓθ, ℓu₀, u★, U, ℂᵃᵗ, Tₛ)
 
     # Tall roughness elements displace the similarity profiles upward by `d`.
-    d = local_zero_plane_displacement(flux_formulation.zero_plane_displacement,
-                                      interior_properties)
+    d = flux_formulation.zero_plane_displacement
     Δh = displaced_profile_height(Δh, d, ℓu₀)
 
     # Transfer coefficients at height `h`
@@ -434,6 +404,11 @@ struct SimilarityScales{U, T, Q}
     temperature :: T
     water_vapor :: Q
 end
+
+Adapt.adapt_structure(to, scales::SimilarityScales) =
+    SimilarityScales(adapt(to, scales.momentum),
+                     adapt(to, scales.temperature),
+                     adapt(to, scales.water_vapor))
 
 Base.summary(ss::SimilarityScales) =
     string("SimilarityScales(momentum=", prettysummary(ss.momentum),

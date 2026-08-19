@@ -14,8 +14,6 @@ export
     ConvergenceStopCriteria,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
-    LandRoughnessLength,
-    LandZeroPlaneDisplacement,
     CoefficientBasedFluxes,
     SimilarityScales,
     PolynomialNeutralDragCoefficient,
