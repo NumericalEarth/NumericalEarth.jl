@@ -253,27 +253,23 @@ end
 end
 
 # Localize the flux closure to cell (i, j) before the index-free MOST iteration:
-# `Field`-valued roughness and displacement slots collapse to their per-cell values
-# via `state2dindex`, while `Number`s and formulations (e.g. `MomentumRoughnessLength`)
-# pass through. Not a `stateindex` method: there a callable means a coordinate function
-# `a(λ, φ, z, time)`, whereas a callable closure slot is a formulation of `u★`.
-@inline local_parameter(ℓ, i, j) = ℓ
-@inline local_parameter(ℓ::AbstractArray, i, j) = state2dindex(ℓ, i, j)
-
+# `Field`-valued roughness and displacement slots collapse to their per-cell values,
+# while `Number`s and formulations (e.g. `MomentumRoughnessLength`) pass through
+# `stateindex`'s fallback.
 @inline local_flux_formulation(flux_formulation, i, j) = flux_formulation
 
 @inline function local_flux_formulation(fluxes::SimilarityTheoryFluxes, i, j)
     ℓ = fluxes.roughness_lengths
-    roughness_lengths = SimilarityScales(local_parameter(ℓ.momentum, i, j),
-                                         local_parameter(ℓ.temperature, i, j),
-                                         local_parameter(ℓ.water_vapor, i, j))
+    roughness_lengths = SimilarityScales(state2dindex(ℓ.momentum, i, j),
+                                         state2dindex(ℓ.temperature, i, j),
+                                         state2dindex(ℓ.water_vapor, i, j))
 
     return SimilarityTheoryFluxes(fluxes.von_karman_constant,
                                   fluxes.turbulent_prandtl_number,
                                   fluxes.subgrid_velocities,
                                   fluxes.stability_functions,
                                   roughness_lengths,
-                                  local_parameter(fluxes.zero_plane_displacement, i, j),
+                                  state2dindex(fluxes.zero_plane_displacement, i, j),
                                   fluxes.similarity_form,
                                   fluxes.solver_stop_criteria)
 end

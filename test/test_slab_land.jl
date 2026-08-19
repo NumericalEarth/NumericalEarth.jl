@@ -575,6 +575,11 @@ end
             @test localized.roughness_lengths.momentum == ℓᵐ²
             @test localized.roughness_lengths.temperature == 0.01
             @test localized.zero_plane_displacement == d²
+
+            # Formulation slots (e.g. ocean Charnock) pass through localization untouched.
+            charnock = SimilarityTheoryFluxes(Float64)
+            @test local_flux_formulation(charnock, 1, 1).roughness_lengths.momentum ===
+                  charnock.roughness_lengths.momentum
         end
 
         land = SlabLand(grid; hydrology = DryLand(), energy = SlabEnergy(eltype(grid)))
