@@ -48,6 +48,7 @@ examples = [
     Example("Breeze over slab land", "breeze_over_slab_land", true),
     Example("Differentiable ERA5-forced slab land", "era5_forced_slab_land", false),
     Example("ERA5 downscaling with Breeze", "breeze_downscaling_era5", true),
+    Example("HI-SCALE SGP canopy land", "hiscale_sgp_canopy_land", false),
 ]
 
 # Developer examples from docs/src/developers/ directory
