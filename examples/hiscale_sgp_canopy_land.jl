@@ -725,10 +725,13 @@ nothing #hide
 
 # ## Spin-up and the case-day diurnal cycle
 #
-# Six days of spin-up settle the slab onto a repeating diurnal envelope; the case
-# day is read against the Fast et al. (2019) observations — midafternoon latent
-# heat between 250 and 450 W m⁻² around the Central Facility and a skin
-# temperature peaking near 305–310 K.
+# Six days of spin-up settle the slab onto a repeating diurnal envelope. The case
+# day is read against the Fast et al. (2019) context: the ARM flux sites around
+# the Central Facility observed midafternoon latent heat of 250–450 W m⁻² over
+# their grass footprints, while the drier harvested cropland that dominates the
+# Central Facility's own 500 m MODIS pixel runs sensible-heat-dominated. The wet
+# riparian-forest reference cell reaches the observed band; the contrast between
+# the two is the wet/dry heterogeneity the paper's cloud populations respond to.
 
 date_of(t) = start_date + Dates.Second(round(Int, t))
 hours_since_start(t) = t / 3600
@@ -754,6 +757,15 @@ jᶜᶠ = argmin(abs.(φs .- centre_latitude))
 at_cf(fts, n) = interior(fts[n], iᶜᶠ, jᶜᶠ, 1)[]
 land_mean(fts, n) = mean(mask_water(interior(fts[n], :, :, 1))[.!water])
 
+## A leafy riparian reference cell: the wet, high-LAI counterpoint to the
+## Central Facility's harvested-cropland pixel.
+static_lai = jldopen("hiscale_inner_100m_static.jld2")
+lai_map = interior(static_lai["leaf_area_index"], :, :, 1)
+close(static_lai)
+green = argmax(ifelse.(water, -1, lai_map))
+iᵍʳ, jᵍʳ = Tuple(green)
+at_green(fts, n) = interior(fts[n], iᵍʳ, jᵍʳ, 1)[]
+
 fig = Figure(size = (1600, 900), fontsize = 15)
 
 ax_spin = Axis(fig[1, 1:2]; title = "spin-up: land mean skin temperature and saturation",
@@ -767,12 +779,13 @@ vspan!(ax_spin, 144, 156; color = (:gold, 0.2))   ## the case window
 case = findall(t -> case_start <= date_of(t) <= end_date, times)
 case_hours = [Dates.value(date_of(times[n]) - case_start) / 3.6e6 + 6 for n in case]   ## clock hours CST
 
-ax_flux = Axis(fig[2, 1]; title = "case day at the Central Facility",
+ax_flux = Axis(fig[2, 1]; title = "case day: dry cropland (Central Facility) vs riparian forest",
                xlabel = "local time (CST)", ylabel = "flux (W m⁻²)")
-lines!(ax_flux, case_hours, [at_cf(LE_ts, n) for n in case]; color = :navy,      label = "latent")
-lines!(ax_flux, case_hours, [at_cf(H_ts,  n) for n in case]; color = :orangered, label = "sensible")
-lines!(ax_flux, case_hours, [at_cf(Gᶜ_ts, n) for n in case]; color = :seagreen,  label = "ground")
-band!(ax_flux, case_hours, 250, 450; color = (:navy, 0.08))   ## observed midafternoon LE range
+lines!(ax_flux, case_hours, [at_cf(LE_ts, n) for n in case]; color = :navy,      label = "latent, CF")
+lines!(ax_flux, case_hours, [at_cf(H_ts,  n) for n in case]; color = :orangered, label = "sensible, CF")
+lines!(ax_flux, case_hours, [at_green(LE_ts, n) for n in case]; color = :navy,      linestyle = :dash, label = "latent, forest")
+lines!(ax_flux, case_hours, [at_green(H_ts,  n) for n in case]; color = :orangered, linestyle = :dash, label = "sensible, forest")
+band!(ax_flux, case_hours, 250, 450; color = (:navy, 0.08))   ## ARM-observed midafternoon LE
 axislegend(ax_flux; position = :lt)
 
 ax_T = Axis(fig[2, 2]; title = "case-day temperatures at the Central Facility",
