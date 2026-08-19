@@ -504,6 +504,13 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
         qᵃᶜ★ = ((Gᵉ * qᵉ + gˡʷ * qᵛ) * Δqᵃ + Jᵃ * qᵃᵗ) / Dᵠ
         qᵃᶜ = ifelse((Dᵠ == 0) | !isfinite(qᵃᶜ★), qᵃᶜ, qᵃᶜ★)
 
+        # At the fixed point the node is a conductance-weighted mean of its sources, so
+        # it lies in their hull; the Δ-multiplied transient form loses convexity when
+        # Δqᵃ or Jᵃ flips sign (calm transitions) and can shoot the node far outside
+        # any physical humidity. Bound it by the source states.
+        Tᵃᶜ = clamp(Tᵃᶜ, min(θᵃᵗ, Tᵛ, Tᵍ), max(θᵃᵗ, Tᵛ, Tᵍ))
+        qᵃᶜ = clamp(qᵃᶜ, min(qᵃᵗ, qᵛ, qᵉ), max(qᵃᵗ, qᵛ, qᵉ))
+
         LWꜜᵍ     = (1 - εᵛ) * LWd + εᵛ * σ * Tᵛ^4
         LWꜛᵍ     = εᵍ * σ * Tᵍ^4 + (1 - εᵍ) * LWꜜᵍ
         LWᵛ = εᵛ * (LWd + LWꜛᵍ) - 2 * εᵛ * σ * Tᵛ^4
@@ -540,6 +547,10 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
     Dᵠ  = (Gᵉ + gˡʷ) * Δqᵃ + Jᵃ
     qᵃᶜ★ = ((Gᵉ * qᵉ + gˡʷ * qᵛ) * Δqᵃ + Jᵃ * qᵃᵗ) / Dᵠ
     qᵃᶜ = ifelse((Dᵠ == 0) | !isfinite(qᵃᶜ★), qᵃᶜ, qᵃᶜ★)
+
+    # Same hull bound as in the loop.
+    Tᵃᶜ = clamp(Tᵃᶜ, min(θᵃᵗ, Tᵛ, Tᵍ), max(θᵃᵗ, Tᵛ, Tᵍ))
+    qᵃᶜ = clamp(qᵃᶜ, min(qᵃᵗ, qᵛ, qᵉ), max(qᵃᵗ, qᵛ, qᵉ))
 
     LWꜜᵍ = (1 - εᵛ) * LWd + εᵛ * σ * Tᵛ^4
     LWꜛᵍ = εᵍ * σ * Tᵍ^4 + (1 - εᵍ) * LWꜜᵍ
