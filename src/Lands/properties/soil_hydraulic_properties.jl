@@ -187,6 +187,14 @@ range the slab operates in. 1 m rather than the textbook 3.3 m follows
 capacity for van Genuchten parameters of this family; the choice is worth little averaged
 over contrasting columns, hence a keyword rather than a constant.
 
+!!! warning "The matched parameters are not texture parameters"
+    The fitted `α` and `n` reproduce the mean retention curve between the matching heads
+    and nothing else. Do not hand them to a plant stress closure that spans the same
+    heads (such as the canopy `PlantAvailableWaterStress`): matching at field capacity
+    and wilting pushes `n` toward 1, and on such a curve the stress band swallows the
+    whole moisture range, collapsing the stress factor at moderate saturations. Stress
+    closures want literature texture-class values.
+
 The parameters describe the soil inside `[-slab_depth, 0]` and nothing below it, which
 belongs to the deep-flux closure.
 
