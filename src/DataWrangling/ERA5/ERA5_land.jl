@@ -123,3 +123,48 @@ groups consecutive same-year dates together and opens each yearly file once
 function DataWrangling.build_filename(dataset::ERA5LandDataset, name, dates::AbstractArray, region)
     return DatewiseFilename([DataWrangling.metadata_filename(dataset, name, d, region) for d in dates])
 end
+
+#####
+##### Download interface
+#####
+##### These Land-specific methods are strictly more specific than the generic
+##### `Metadatum{<:ERA5Dataset}` methods defined by the CDS backend extensions,
+##### so ERA5-Land metadata routes here under any extension load order and can
+##### never fall into the single-level request builders (issue #530).
+
+"""
+$(TYPEDSIGNATURES)
+
+Return the path of the yearly ERA5-Land file containing `metadatum`, downloading it
+via [`download_era5_land`](@ref) unless `skip_existing` (default `true`) finds it
+already on disk.
+"""
+function Downloads.download(metadatum::ERA5LandMetadatum; skip_existing = true, kw...)
+    path = metadata_path(metadatum)
+    skip_existing && isfile(path) && return path
+    return download_era5_land(metadatum; skip_existing, kw...)
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Download ERA5-Land data for each date in `metadata`, returning the paths of the
+yearly files (repeated for dates that share a year).
+"""
+function Downloads.download(metadata::ERA5LandMetadata; kw...)
+    return [Downloads.download(metadatum; kw...) for metadatum in metadata]
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Download the yearly ERA5-Land file containing `metadatum` from the Copernicus
+Climate Data Store and return its path.
+
+Implemented in `ext/NumericalEarthCopernicusClimateDataStoreExt.jl` when
+CopernicusClimateDataStore is loaded; the fallback below fires only when the
+extension is not active.
+"""
+download_era5_land(metadatum; kw...) =
+    error("Downloading ERA5-Land requires the CopernicusClimateDataStore package; ",
+          "load it with `using CopernicusClimateDataStore`.")
