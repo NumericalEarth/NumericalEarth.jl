@@ -249,13 +249,15 @@ function land_surface_fields(grid, footprint_resolution)
                                            texture.clay_fraction, texture.bulk_density; slab_depth)
 
     ## Median scalar parameters for the closures that take scalars.
-    finite_median(f) = median(filter(x -> isfinite(x) && x > 0, Array(interior(f))))
-    scalar_porosity = finite_median(hydraulics.porosity)
-    scalar_α        = finite_median(hydraulics.inverse_air_entry_head)
-    scalar_n        = finite_median(hydraulics.pore_size_uniformity)
+    finite_median(f) = median(filter(isfinite, Array(interior(f))))
+    positive_median(f) = median(filter(x -> isfinite(x) && x > 0, Array(interior(f))))
+    scalar_porosity = positive_median(hydraulics.porosity)
+    scalar_α        = positive_median(hydraulics.inverse_air_entry_head)
+    scalar_n        = positive_median(hydraulics.pore_size_uniformity)
 
     ## Macropore-inclusive Cosby conductivity caps infiltration (kg m⁻² s⁻¹ = m s⁻¹ × ρˡ).
-    infiltration_capacity = 1000 * finite_median(saturated_conductivity(CosbyConductivity(), texture.sand_fraction))
+    cosby_conductivity = compute!(Field(saturated_conductivity(CosbyConductivity(), texture.sand_fraction)))
+    infiltration_capacity = 1000 * positive_median(cosby_conductivity)
 
     hydraulic_fields = map(hydraulics) do f
         g = transfer_to(grid, f)
