@@ -552,6 +552,13 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
     Tᵃᶜ = clamp(Tᵃᶜ, min(θᵃᵗ, Tᵛ, Tᵍ), max(θᵃᵗ, Tᵛ, Tᵍ))
     qᵃᶜ = clamp(qᵃᶜ, min(qᵃᵗ, qᵛ, qᵉ), max(qᵃᵗ, qᵛ, qᵉ))
 
+    # Damp the node across outer iterates: the aerodynamic drivers (𝒬ᵀ, Δθᵃ, Jᵃ, Δqᵃ)
+    # are one outer iterate stale, and a node that commits fully to them each pass
+    # sustains a period-2 limit cycle against the MOST scales in the calm
+    # free-convection limit. The converged solution is unchanged.
+    Tᵃᶜ = (1 - relaxation) * Ψₛ.temperature + relaxation * Tᵃᶜ
+    qᵃᶜ = (1 - relaxation) * Ψₛ.specific_humidity + relaxation * qᵃᶜ
+
     LWꜜᵍ = (1 - εᵛ) * LWd + εᵛ * σ * Tᵛ^4
     LWꜛᵍ = εᵍ * σ * Tᵍ^4 + (1 - εᵍ) * LWꜜᵍ
     LWu   = (1 - εᵛ) * LWꜛᵍ + εᵛ * σ * Tᵛ^4
