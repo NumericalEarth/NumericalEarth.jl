@@ -127,10 +127,6 @@ end
 #####
 ##### Download interface
 #####
-##### These Land-specific methods are strictly more specific than the generic
-##### `Metadatum{<:ERA5Dataset}` methods defined by the CDS backend extensions,
-##### so ERA5-Land metadata routes here under any extension load order and can
-##### never fall into the single-level request builders (issue #530).
 
 """
 $(TYPEDSIGNATURES)
