@@ -530,6 +530,17 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
     qᵉ  = ifelse(Gᵉ⁺ > tiny, (fᵈ * Gᵉ * qᵉ + (1 - fᵈ) * gᵍʷ * qᵍ⁺) / Gᵉ⁺, qᵍ⁺)
     Gᵉ  = Gᵉ⁺
     gˡʷ = leaf_vapor_conductance(gᶜ, gʷ, fʷ)
+
+    # Re-solve the node against the final skins: inside the loop the node update
+    # precedes the skin updates, so it exits one iterate stale and the flux shares
+    # below would miss closure against the atmospheric flux.
+    Dᵀ  = (gᵍʰ + gˡʰ) * Δθᵃ + 𝒬ᵀ
+    Tᵃᶜ★ = ((gᵍʰ * Tᵍ + gˡʰ * Tᵛ) * Δθᵃ + 𝒬ᵀ * θᵃᵗ) / Dᵀ
+    Tᵃᶜ = ifelse((Dᵀ == 0) | !isfinite(Tᵃᶜ★), Tᵃᶜ, Tᵃᶜ★)
+    Dᵠ  = (Gᵉ + gˡʷ) * Δqᵃ + Jᵃ
+    qᵃᶜ★ = ((Gᵉ * qᵉ + gˡʷ * qᵛ) * Δqᵃ + Jᵃ * qᵃᵗ) / Dᵠ
+    qᵃᶜ = ifelse((Dᵠ == 0) | !isfinite(qᵃᶜ★), qᵃᶜ, qᵃᶜ★)
+
     LWꜜᵍ = (1 - εᵛ) * LWd + εᵛ * σ * Tᵛ^4
     LWꜛᵍ = εᵍ * σ * Tᵍ^4 + (1 - εᵍ) * LWꜜᵍ
     LWu   = (1 - εᵛ) * LWꜛᵍ + εᵛ * σ * Tᵛ^4
