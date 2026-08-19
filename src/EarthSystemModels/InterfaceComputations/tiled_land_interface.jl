@@ -70,6 +70,7 @@ function bare_canopy_air_space(c::CanopyAirSpace; undercanopy_conductance = c.un
                           c.leaf_albedo, c.ground_albedo, c.canopy_emissivity_max, c.ground_emissivity,
                           c.extinction, c.clumping, c.leaf_boundary_conductance,
                           undercanopy_conductance_model(undercanopy_conductance, FT),
+                          c.wet_soil_resistance,
                           c.inner_iterations, c.relaxation, nothing, c.phase)
 end
 
