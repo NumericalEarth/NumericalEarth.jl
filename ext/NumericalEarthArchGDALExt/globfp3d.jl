@@ -144,7 +144,7 @@ function NumericalEarth.DataWrangling.GloBFP3D.globfp3d_rasterize_to_netcdf(
     cache_dir = joinpath(dirname(nc_path), "tiles")
     catalog = globfp3d_tile_catalog(cache_dir)
     tiles = filter(e -> bounding_box_intersects(e, region), catalog)
-    isempty(tiles) && throw(NoIntersectingTilesError(region))
+    isempty(tiles) && return nothing   # no file: `Downloads.download` reports no intersecting tiles
 
     Δ = globfp3d_native_cell_size(dataset)
     grid = native_region_grid(region, Δ, Δ)

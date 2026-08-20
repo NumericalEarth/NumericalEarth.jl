@@ -229,21 +229,10 @@ end
 const morphometry_names = (:mean_building_height, :building_height_deviation, :maximum_building_height,
                            :plan_area_index, :frontal_area_index, :gross_building_height)
 
-"""
-    NoIntersectingTilesError(region)
-
-No 3D-GloBFP tile intersects `region`: the dataset has no building footprints there.
-"""
-struct NoIntersectingTilesError{R} <: Exception
-    region :: R
-end
-
-Base.showerror(io::IO, error::NoIntersectingTilesError) =
-    print(io, "No 3D-GloBFP tiles intersect the requested region ", summary(error.region), ".")
-
-# Download, read, and reduce the fine raster of one metadatum onto (the covered rows of) `target_grid`.
+# Download, read, and reduce the fine raster of one metadatum onto (the covered rows of)
+# `target_grid`. Returns `nothing` when no tiles intersect the metadatum's region.
 function reduced_morphometry(target_grid, metadatum)
-    Downloads.download(metadatum)
+    isnothing(Downloads.download(metadatum)) && return nothing
     height = DataWrangling.retrieve_data(metadatum)
     longitudes, latitudes = DataWrangling.read_file_coords(metadatum)
     return reduce_morphometry(height, longitudes, latitudes, target_grid)
@@ -298,9 +287,12 @@ function morphometry_latitude_bands(target_grid, region, Δ, maximum_raster_cell
     return [(rows = rows, region = band_region(first(rows), last(rows))) for rows in ranges]
 end
 
+# ~3.2 GB of Float64: the largest raster reduced in one pass unless `single_pass` forces it.
+const maximum_single_pass_cells = 400_000_000
+
 """
     building_morphometry(target_grid; dataset = GlobalBuildingFootprints3D(), region,
-                         maximum_raster_cells = 400_000_000)
+                         single_pass = false)
 
 Per-cell building morphometry on `target_grid` (a `LatitudeLongitudeGrid`, coarser than the
 `dataset` rasterization resolution), aggregated from the fine 3D-GloBFP building-height raster
@@ -314,30 +306,41 @@ over `region`. Returns a NamedTuple of `Field`s:
 - `frontal_area_index` `λᶠ` — windward wall area from height steps, direction-averaged:
   `(Σₓ|δh|·dy + Σᵧ|δh|·dx) / (4·A)`, with `A` the cell area.
 
-A `region` whose native raster exceeds `maximum_raster_cells` (default `400_000_000` cells,
-3.2 GB of `Float64`) is processed in latitude bands sized to the limit, so memory stays bounded
-regardless of the region size. Each band's raster file is deleted once reduced (the downloaded
-footprint tiles stay cached), so disk usage stays bounded too.
+A `region` whose native raster exceeds an internal single-pass budget (400M cells, 3.2 GB of
+`Float64`) is reduced in latitude bands sized to that budget, reproducing the single pass exactly
+while memory stays bounded regardless of the region size; band raster files are deleted once
+reduced (the downloaded footprint tiles stay cached). Pass `single_pass = true` to force one pass
+over the whole `region` regardless of its raster size.
 
 Downloading and rasterizing the footprints requires `using ArchGDAL`.
 """
 function building_morphometry(target_grid::LatitudeLongitudeGrid; dataset = GlobalBuildingFootprints3D(),
-                              region, maximum_raster_cells = 400_000_000)
+                              region, single_pass = false)
     metadatum = Metadatum(:building_height; dataset, region)
     DataWrangling.validate_dataset_coverage(nothing, metadatum)
 
     Δ = globfp3d_native_cell_size(dataset)
     raster = native_region_grid(region, Δ, Δ)
-    raster.Nx * raster.Ny <= maximum_raster_cells &&
-        return morphometry_fields(reduced_morphometry(target_grid, metadatum), target_grid)
+    if single_pass || raster.Nx * raster.Ny <= maximum_single_pass_cells
+        reduced = reduced_morphometry(target_grid, metadatum)
+        isnothing(reduced) &&
+            error("No 3D-GloBFP tiles intersect the requested region $(summary(region)).")
+        return morphometry_fields(reduced, target_grid)
+    end
+
+    return banded_building_morphometry(target_grid, dataset, region, maximum_single_pass_cells)
+end
+
+function banded_building_morphometry(target_grid, dataset, region, maximum_raster_cells)
+    Δ = globfp3d_native_cell_size(dataset)
+    raster = native_region_grid(region, Δ, Δ)
 
     # A band bounding box also selects the footprint tiles to burn: pad it by ~200 m of native
     # cells so buildings overhanging a tile just outside the band still land in the band's rows.
     padding = cld(200, globfp3d_native_resolution(dataset))
     bands = morphometry_latitude_bands(target_grid, region, Δ, maximum_raster_cells, padding)
-    @info string(summary(dataset), ": the raster over ", summary(region), " has ",
-                 raster.Nx, " × ", raster.Ny, " cells, above maximum_raster_cells = ",
-                 maximum_raster_cells, "; reducing in ", length(bands), " latitude bands.")
+    @info string(summary(dataset), ": reducing the ", raster.Nx, " × ", raster.Ny,
+                 " cell raster over ", summary(region), " in ", length(bands), " latitude bands.")
 
     Nx = size(target_grid, 1)
     Ny = size(target_grid, 2)
@@ -347,20 +350,17 @@ function building_morphometry(target_grid::LatitudeLongitudeGrid; dataset = Glob
         @info string("Reducing latitude band ", b, " of ", length(bands),
                      " (target rows ", band.rows, ", ", latitude_summary(band.region.latitude), ")...")
         band_metadatum = Metadatum(:building_height; dataset, region = band.region)
-        reduced = try
-            reduced_morphometry(target_grid, band_metadatum)
-        catch exception
-            # An all-water/unbuilt band intersects no tiles and reduces to zero, as in a single pass.
-            exception isa NoIntersectingTilesError || rethrow()
-            continue
-        end
+        reduced = reduced_morphometry(target_grid, band_metadatum)
+        # An all-water/unbuilt band intersects no tiles and reduces to zero, as in a single pass.
+        isnothing(reduced) && continue
         any_tiles = true
         @root rm(metadata_path(band_metadatum); force = true)
         for name in morphometry_names
             accumulated[name][:, band.rows] .= reduced[name][:, band.rows]
         end
     end
-    any_tiles || throw(NoIntersectingTilesError(region))
+    isempty(bands) || any_tiles ||
+        error("No 3D-GloBFP tiles intersect the requested region $(summary(region)).")
 
     return morphometry_fields(accumulated, target_grid)
 end
@@ -396,7 +396,8 @@ function Downloads.download(metadatum::GlobalBuildingFootprints3DMetadatum)
     @root if !isfile(nc_path)
         globfp3d_rasterize_to_netcdf(metadatum, nc_path)
     end
-    return nc_path
+    # No file after rasterizing means no tiles intersect the region: an all-water/unbuilt window.
+    return isfile(nc_path) ? nc_path : nothing
 end
 
 # Implemented in ext/NumericalEarthArchGDALExt/globfp3d.jl.
