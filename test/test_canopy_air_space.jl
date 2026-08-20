@@ -12,6 +12,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     AirLandInterfaceState, InterfaceFluxScales, InterfaceVelocities, AirLandRadiationState,
     ConstantUndercanopyConductance, AreaIndexUndercanopyConductance,
     FrictionVelocityUndercanopyConductance, undercanopy_conductance,
+    SellersSoilResistance, LitterResistance, soil_surface_resistance, litter_resistance,
     bare_canopy_air_space, CanopyAirSpaceDiagnostics
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, AtmosphereThermodynamicsParameters
 using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
@@ -197,11 +198,12 @@ end
         vapor_exchange = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
                             molecular_diffusivity = 2.4e-5, tortuosity = PowerLawTortuosity()),
         thermal_exchange_depth = 0.05, porosity = 0.4)
-    # Bare soil (LAI = 0) isolates the soil branch from the canopy.
+    # Bare soil (LAI = 0, no litter) isolates the soil branch from the canopy.
     bare(gᵘᶜ) = CanopyAirSpace(FT; soil,
         canopy = CanopyConductanceHumidity(FT; leaf_area_index = 0.0,
                             moisture_stress = CriticalSaturation(0.5), absorbed_par = InteractiveAbsorbedPAR(FT)),
-        soil_skin_flux = SoilConductiveFlux(1.5, 0.05), undercanopy_conductance = gᵘᶜ)
+        soil_skin_flux = SoilConductiveFlux(1.5, 0.05), undercanopy_conductance = gᵘᶜ,
+        litter_resistance = nothing)
 
     Ψₐ  = (z = FT(10), u = FT(3), v = FT(0), T = FT(305), p = FT(101325), q = FT(0.006), h_bℓ = FT(600))
     Ψᵢ  = (u = FT(0), v = FT(0), T = FT(298))
@@ -223,6 +225,74 @@ end
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
     @test fᵈ > 0.99
     @test fᵈ * Gᵉ + (1 - fᵈ) * (ρᵃᵗ * 0.5) ≈ Gᵉ rtol = 0.02
+end
+
+# Ground-surface resistances: the Sakaguchi & Zeng (2009) litter layer sits in series on
+# both ground vapor branches (the default), and the Sellers et al. (1992) FIFE fit is the
+# bundled soil-plus-litter alternative on the moist-soil branch.
+@testset "Ground-surface resistances (litter layer, Sellers fit)" begin
+    for FT in (Float32, Float64)
+        # Sellers et al. (1992), Eq. (19): rˢ = exp(8.206 − 4.255 𝒮), saturation clamped.
+        r = SellersSoilResistance(FT)
+        @test soil_surface_resistance(r, FT(1)) ≈ exp(FT(8.206) - FT(4.255))   # ≈ 52 s m⁻¹
+        @test soil_surface_resistance(r, FT(2)) == soil_surface_resistance(r, FT(1))
+        @test soil_surface_resistance(r, FT(0.4)) > soil_surface_resistance(r, FT(0.7))
+        @test soil_surface_resistance(nothing, FT(0.5)) == 0
+
+        # Sakaguchi & Zeng (2009), Eq. (13): rˡ = (1 − e^{−Lˡ}) / (C u★).
+        l = LitterResistance(FT)
+        @test litter_resistance(l, FT(0.3)) ≈ (1 - exp(-FT(1))) / (FT(0.004) * FT(0.3))  # ≈ 527 s m⁻¹
+        @test litter_resistance(LitterResistance(FT; litter_area_index = 0), FT(0.3)) == 0
+        @test litter_resistance(l, FT(0.1)) > litter_resistance(l, FT(0.3))   # calm air blocks more
+        @test isfinite(litter_resistance(l, FT(0)))
+        @test litter_resistance(nothing, FT(0.3)) == 0
+    end
+
+    FT = Float64
+    ℂ  = AtmosphereThermodynamicsParameters(FT)
+    ℙₐ = (thermodynamics_parameters = ℂ, gravitational_acceleration = FT(9.81))
+    soil = DryLayerHumidity(FT;
+        dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
+                            dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
+        vapor_exchange = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
+                            molecular_diffusivity = 2.4e-5, tortuosity = ConstantTortuosity()),
+        thermal_exchange_depth = 0.05, porosity = 0.4)
+    canopy = CanopyConductanceHumidity(FT; leaf_area_index = 0.0,   # LAI = 0 isolates the ground branch
+                            moisture_stress = CriticalSaturation(0.5), absorbed_par = InteractiveAbsorbedPAR(FT))
+    cas(; kw...) = CanopyAirSpace(FT; soil, canopy, kw...)
+    Ψₐ  = (z = FT(10), u = FT(3), v = FT(0), T = FT(305), p = FT(101325), q = FT(0.006), h_bℓ = FT(600))
+    Ψᵢ  = (u = FT(0), v = FT(0), T = FT(298))
+    Ψᵣ  = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(600), FT(350))
+    flx = InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3)); vel = InterfaceVelocities(FT(0), FT(0))
+    Ψ(𝒮) = AirLandInterfaceState(flx, vel, FT(300), FT(0.012), (saturation = FT(𝒮),),
+            (temperature = FT(300),), (leaf_area_index = FT(0),))
+    LEᵍ(c, 𝒮) = canopy_air_space_solve(c, Ψ(𝒮), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ).LEᵍ
+
+    unresisted = cas(litter_resistance = nothing)
+    sellers    = cas(litter_resistance = nothing, wet_soil_resistance = SellersSoilResistance(FT))
+    litter     = cas()   # the default configuration
+
+    # Each resistance suppresses moist-soil evaporation; at u★ = 0.26 the litter layer
+    # (rˡ ≈ 608 s m⁻¹) blocks more than the Sellers fit (rˢ(0.9) ≈ 113 s m⁻¹).
+    @test LEᵍ(litter, 0.9) < LEᵍ(sellers, 0.9) < LEᵍ(unresisted, 0.9)
+
+    # With the litter + undercanopy path in series on both branches, soil evaporation no
+    # longer rebounds as the soil dries through the wet → dry-layer handoff (the Sellers-only
+    # configuration rebounds because the young dry layer is far more conductive than the fit).
+    E = [LEᵍ(litter, 𝒮) for 𝒮 in 0.50:-0.03:0.14]
+    @test issorted(E, rev = true)
+
+    # The litter layer is vegetated-ground physics: the bare tile drops it and keeps the
+    # override knobs for both ground-surface resistances.
+    @test bare_canopy_air_space(litter).litter_resistance === nothing
+    @test bare_canopy_air_space(litter; litter_resistance = LitterResistance(FT)).litter_resistance isa LitterResistance
+    @test bare_canopy_air_space(sellers).wet_soil_resistance isa SellersSoilResistance
+    @test bare_canopy_air_space(sellers; wet_soil_resistance = nothing).wet_soil_resistance === nothing
+
+    # Every resistance configuration keeps the coupled solve inferred.
+    for c in (unresisted, sellers, litter)
+        @inferred canopy_air_space_solve(c, Ψ(0.5), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    end
 end
 
 # A CanopyAirSpace in both interface slots is a combined formulation: one shared solve returns
