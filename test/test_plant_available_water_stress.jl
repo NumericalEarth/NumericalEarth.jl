@@ -110,6 +110,31 @@ availability(model, 𝒮, curve) =
         @test availability(stress, FT(0.6), clay) == 0
     end
 
+    # Per-cell parameters: a Field-valued curve puts every column on its own endpoints.
+    # `effective_saturation` already reads the curve through `property_value`, so these
+    # pass as soon as `VanGenuchtenRetention` accepts `Field`s; it holds scalars for now.
+    let FT = Float64
+        grid = RectilinearGrid(FT; size = (1, 2), extent = (1, 1),
+                               topology = (Periodic, Periodic, Flat))
+        α = Field{Center, Center, Nothing}(grid)
+        n = Field{Center, Center, Nothing}(grid)
+        set!(α, (x, y) -> y < 0.5 ? 3.6 : 0.8)    # loam column, clay column
+        set!(n, (x, y) -> y < 0.5 ? 1.56 : 1.09)
+
+        stress  = PlantAvailableWaterStress(FT)
+        columns = (VanGenuchtenRetention(FT; α = 3.6, n = 1.56),
+                   VanGenuchtenRetention(FT; α = 0.8, n = 1.09))
+
+        column_availability(j, 𝒮) =
+            evaporation_efficiency(stress,
+                interface_hydrology_state(1, j, grid, stress,
+                                          land_state(𝒮, VanGenuchtenRetention(FT; α, n))))
+
+        for (j, column) in enumerate(columns), 𝒮 in (FT(0.35), FT(0.6))
+            @test_broken column_availability(j, 𝒮) == availability(stress, 𝒮, column)
+        end
+    end
+
     # Head validation.
     @test_throws ArgumentError PlantAvailableWaterStress(field_capacity_head = 200)
     @test_throws ArgumentError PlantAvailableWaterStress(field_capacity_head = 0)
