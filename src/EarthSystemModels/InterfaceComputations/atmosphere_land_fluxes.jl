@@ -228,8 +228,8 @@ end
     FT = typeof(𝒮)
     r  = land_state.retention_curve
     return (saturation = 𝒮,
-            field_capacity_saturation = effective_saturation(r, convert(FT, p.field_capacity_head), i, j),
-            wilting_saturation        = effective_saturation(r, convert(FT, p.wilting_point_head), i, j))
+            field_capacity_saturation = effective_saturation(i, j, grid, r, convert(FT, p.field_capacity_head)),
+            wilting_saturation        = effective_saturation(i, j, grid, r, convert(FT, p.wilting_point_head)))
 end
 @inline interface_hydrology_state(i, j, grid, ::DryLayerHumidity, land_state) =
     land_saturation(i, j, grid, land_state)

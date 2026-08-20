@@ -118,11 +118,12 @@ function surface_retention_curve end
 surface_retention_curve(::Any) = nothing
 
 """
-    effective_saturation(retention_curve, ψ, i, j)
+    effective_saturation(i, j, grid, retention_curve, ψ)
 
-The effective saturation at suction head `ψ` (m, positive) on `retention_curve`,
-evaluated with the curve's parameters at cell `(i, j)` so a curve whose parameters are
-`Field`s follows each column's own soil. Called from flux kernels.
+The effective saturation at suction head `ψ` (m, positive) on `retention_curve`, evaluated
+with the curve's parameters at cell `(i, j)` so a curve whose parameters are `Field`s
+follows each column's own soil. The inverse of the curve's `pressure_head`. Called from
+flux kernels.
 """
 function effective_saturation end
 

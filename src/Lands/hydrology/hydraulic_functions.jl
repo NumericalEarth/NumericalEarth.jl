@@ -50,7 +50,7 @@ inverse of [`VanGenuchtenRetention`](@ref)'s `pressure_head`.
 
 # Per-cell endpoint evaluation for the interface's plant-stress formulations: read the
 # curve's parameters at `(i, j)` — scalar or `Field` — and invert the retention relation.
-@inline function EarthSystemModels.effective_saturation(r::VanGenuchtenRetention, ψ, i, j)
+@inline function EarthSystemModels.effective_saturation(i, j, grid, r::VanGenuchtenRetention, ψ)
     FT = typeof(ψ)
     α  = convert(FT, property_value(r.α, i, j))
     n  = convert(FT, property_value(r.n, i, j))
