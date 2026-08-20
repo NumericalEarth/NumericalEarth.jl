@@ -109,9 +109,12 @@ scalar(field) = Array(interior(field))[1, 1, 1]
         @test scalar(bare.temperature.canopy_latent_heat) == 0
         @test scalar(bare.temperature.canopy_sensible_heat) == 0
 
-        # Sunlit veg tile: shaded soil skin cooler than the leaf; more latent than the bare tile.
+        # Sunlit veg tile: shaded soil skin cooler than the leaf; transpiration dominates the
+        # tile's latent flux; and the shaded, litter-covered ground evaporates far less than
+        # the sunlit bare tile.
         @test scalar(veg.temperature.soil_skin) < scalar(veg.temperature.canopy)
-        @test scalar(veg.fluxes.latent_heat) > scalar(bare.fluxes.latent_heat)
+        @test scalar(veg.temperature.canopy_latent_heat) > scalar(veg.temperature.soil_latent_heat)
+        @test scalar(veg.temperature.soil_latent_heat) < scalar(bare.temperature.soil_latent_heat)
 
         # --- Endpoint reduction: f=1 → veg tile, f=0 → bare tile (bit-for-bit). ---
         m1 = tiled_land_model(arch, cas; fraction = 1.0)

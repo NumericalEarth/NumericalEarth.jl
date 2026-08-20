@@ -245,17 +245,21 @@ undercanopy_conductance_model(x::AbstractUndercanopyConductance, FT) = x
     SellersSoilResistance(FT = Oceananigans.defaults.FloatType;
                           intercept = 8.206, slope = 4.255)
 
-Soil surface resistance for the moist-soil (vanishing dry layer) evaporation branch
-of a [`CanopyAirSpace`](@ref),
+Empirical ground-surface resistance for the moist-soil (vanishing dry layer) evaporation
+branch of a [`CanopyAirSpace`](@ref),
 
 ```math
 rˢ = e^{a - b 𝒮},
 ```
 
-with the surface saturation `𝒮` ([Sellers et al. (1992)](@cite sellers1992)). Even a
-saturated soil surface resists evaporation (`rˢ(1) ≈ 52` s m⁻¹), so the moist branch
-no longer behaves like open water: without it, the saturated-skin branch evaporates
-through the undercanopy aerodynamic conductance alone.
+with the surface saturation `𝒮`, fit by [Sellers et al. (1992)](@cite sellers1992) to the
+FIFE prairie flux stations (`rˢ(1) ≈ 52` s m⁻¹). The FIFE sites carried standing dead
+grass and plant litter, so the moist-soil end of the fit is an *effective* soil-plus-litter
+resistance rather than pore-scale soil physics: chamber measurements of litter-free wet
+soil find near-zero surface resistance, and [Sakaguchi and Zeng (2009)](@cite sakaguchi2009)
+attribute the moist-soil remainder to the litter layer. Use this fit as a bundled
+alternative to an explicit [`LitterResistance`](@ref) (pass `litter_resistance = nothing`);
+combining both double-counts the litter effect.
 
 ```jldoctest
 using NumericalEarth
@@ -289,6 +293,59 @@ Base.show(io::IO, r::SellersSoilResistance) = print(io, summary(r))
 end
 
 """
+    LitterResistance(FT = Oceananigans.defaults.FloatType;
+                     litter_area_index = 1, transfer_coefficient = 0.004)
+
+Plant-litter resistance to ground evaporation
+([Sakaguchi and Zeng (2009)](@cite sakaguchi2009), Eq. 13),
+
+```math
+rˡ = \\frac{1 - e^{-Lˡ}}{C u★},
+```
+
+with the litter area index `Lˡ` (m² m⁻²), a turbulent transfer coefficient `C`, and the
+friction velocity `u★` standing in for the wind speed in the canopy air space. Dead
+leaves and stems blanket the ground under vegetation; the litter is too porous for
+capillary rise to wet its top, so it evaporates little itself while blocking turbulent
+and diffusive vapor exchange with the soil below. The resistance vanishes without litter
+(`Lˡ = 0`) and saturates at `1/(C u★)` under a thick blanket — 500–1200 s m⁻¹ under
+mid-latitude forests, larger in calm air. The default `Lˡ = 1` is the minimum stem-plus-
+litter area of the global surface dataset behind the fit; the snow-burial reduction of
+the original scheme is omitted (no snow model). Applies to vegetated ground: the bare
+tile of a [`TiledLandInterface`](@ref) drops it (see [`bare_canopy_air_space`](@ref)).
+
+```jldoctest
+using NumericalEarth
+
+LitterResistance()
+
+# output
+LitterResistance(Lˡ=1.0, C=0.004)
+```
+"""
+struct LitterResistance{FT}
+    litter_area_index    :: FT
+    transfer_coefficient :: FT
+end
+
+LitterResistance(FT::Type = Oceananigans.defaults.FloatType;
+                 litter_area_index = 1, transfer_coefficient = 0.004) =
+    LitterResistance(convert(FT, litter_area_index), convert(FT, transfer_coefficient))
+
+Base.summary(r::LitterResistance) =
+    string("LitterResistance(Lˡ=", prettysummary(r.litter_area_index),
+           ", C=", prettysummary(r.transfer_coefficient), ")")
+Base.show(io::IO, r::LitterResistance) = print(io, summary(r))
+
+@inline litter_resistance(::Nothing, u★) = zero(u★)
+@inline function litter_resistance(r::LitterResistance, u★)
+    FT = typeof(u★)
+    Lˡ = convert(FT, r.litter_area_index)
+    C  = convert(FT, r.transfer_coefficient)
+    return (1 - exp(-Lˡ)) / max(C * u★, eps(FT))
+end
+
+"""
     struct CanopyAirSpace
 
 Two-source canopy + soil surface with a diagnostic canopy-air node. Solves the
@@ -310,15 +367,19 @@ Fields:
   a `Number` (m s⁻¹, wrapped as [`ConstantUndercanopyConductance`](@ref)), an
   [`AreaIndexUndercanopyConductance`](@ref) (PALADYN: canopy density and wind), or a
   [`FrictionVelocityUndercanopyConductance`](@ref) (CLM5: canopy density and `u★`).
-- `wet_soil_resistance` : soil surface resistance in series with `gᵘᶜ` on the moist-soil
-  (vanishing dry layer) vapor branch (a [`SellersSoilResistance`](@ref), the default), or
-  `nothing` for an unresisted saturated skin.
+- `wet_soil_resistance` : soil surface resistance on the moist-soil (vanishing dry layer)
+  vapor branch (a [`SellersSoilResistance`](@ref)), or `nothing` (the default: above the
+  dry-layer onset the soil itself does not limit evaporation, and the litter layer and
+  undercanopy path carry the resistance).
+- `litter_resistance` : plant-litter resistance in series on both ground vapor branches
+  (a [`LitterResistance`](@ref), the default), or `nothing` for litter-free ground
+  ([`bare_canopy_air_space`](@ref) drops it on the bare tile).
 - `inner_iterations`, `relaxation` : damped-Newton settings for the coupled solve.
 - `interception` : wet-canopy vapor branch parameters (a [`CanopyInterception`](@ref)),
   or `nothing` for a dry canopy (the default; recovers the current CAS bit-for-bit).
 - `phase` : saturation phase (Liquid).
 """
-struct CanopyAirSpace{S, C, RF, FT, U, W, I, Φ}
+struct CanopyAirSpace{S, C, RF, FT, U, W, L, I, Φ}
     soil                      :: S
     canopy                    :: C
     soil_skin_flux             :: RF
@@ -331,6 +392,7 @@ struct CanopyAirSpace{S, C, RF, FT, U, W, I, Φ}
     leaf_boundary_conductance :: FT
     undercanopy_conductance   :: U
     wet_soil_resistance       :: W
+    litter_resistance         :: L
     inner_iterations          :: Int
     relaxation                :: FT
     interception              :: I
@@ -349,7 +411,8 @@ function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
                         clumping                  = 1,
                         leaf_boundary_conductance = 0.02,
                         undercanopy_conductance   = 0.013,
-                        wet_soil_resistance       = SellersSoilResistance(FT),
+                        wet_soil_resistance       = nothing,
+                        litter_resistance         = LitterResistance(FT),
                         inner_iterations          = 40,
                         relaxation                = 1//2,
                         interception              = nothing,
@@ -361,7 +424,7 @@ function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
                           convert(FT, extinction), convert(FT, clumping),
                           convert(FT, leaf_boundary_conductance),
                           undercanopy_conductance_model(undercanopy_conductance, FT),
-                          wet_soil_resistance,
+                          wet_soil_resistance, litter_resistance,
                           inner_iterations, convert(FT, relaxation), interception, phase)
 end
 
@@ -373,7 +436,7 @@ Adapt.adapt_structure(to, c::CanopyAirSpace) =
     CanopyAirSpace(adapt(to, c.soil), adapt(to, c.canopy), c.soil_skin_flux,
                    c.leaf_albedo, c.ground_albedo, c.canopy_emissivity_max, c.ground_emissivity,
                    c.extinction, c.clumping, c.leaf_boundary_conductance,
-                   c.undercanopy_conductance, c.wet_soil_resistance,
+                   c.undercanopy_conductance, c.wet_soil_resistance, c.litter_resistance,
                    c.inner_iterations, c.relaxation,
                    c.interception, c.phase)
 
@@ -414,10 +477,12 @@ end
 end
 
 # Soil vapor conductance and front humidity at the soil-skin temperature `Tᵍ`: the dry-layer
-# series branch (front qᵉ through Gᵉ) blended with the saturated-skin wet branch (qᵍ⁺ through
-# the undercanopy conductance gᵍʷ), weight `fᵈ` from the soil model.
-@inline function soil_vapor_terms(soil, Tᵍ, gᵍʷ, Ψₛ, Ψₐ, ℙₐ)
+# branch (front qᵉ through Gᵉ, in series with the litter + undercanopy path `gᵖ`; Sakaguchi &
+# Zeng 2009, Eq. 18b, matching the sensible path which already crosses gᵘᶜ via gᵍʰ) blended
+# with the saturated-skin wet branch (qᵍ⁺ through gᵍʷ), weight `fᵈ` from the soil model.
+@inline function soil_vapor_terms(soil, Tᵍ, gᵍʷ, gᵖ, Ψₛ, Ψₐ, ℙₐ)
     Gᵉ, qᵉ, fᵈ, qᵍ⁺ = dry_layer_terms(soil, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
+    Gᵉ = Gᵉ * gᵖ / (gᵖ + Gᵉ)
     Gᵉ⁺ = fᵈ * Gᵉ + (1 - fᵈ) * gᵍʷ
     qᵉ⁺ = ifelse(Gᵉ⁺ > eps(eltype(Ψₛ)), (fᵈ * Gᵉ * qᵉ + (1 - fᵈ) * gᵍʷ * qᵍ⁺) / Gᵉ⁺, qᵍ⁺)
     return Gᵉ⁺, qᵉ⁺
@@ -475,10 +540,14 @@ re-solved against the final skins on exit so the returned flux partition closes.
 
     gˡʰ = ρᵃᵗ * cᵖ * LAI * c.leaf_boundary_conductance
     gᵍʰ = ρᵃᵗ * cᵖ * gᵘᶜ
-    # Moist-soil vapor conductance: the undercanopy aerodynamic path in series with the
-    # soil surface resistance, so a vanishing dry layer does not evaporate like open water.
-    rᵍʷ = soil_surface_resistance(c.wet_soil_resistance, Ψₛ.hydrology.saturation)
-    gᵍʷ = ρᵃᵗ * gᵘᶜ / (1 + gᵘᶜ * rᵍʷ)
+    # Ground vapor path (Sakaguchi & Zeng 2009, Eq. 18): the litter resistance rˡ and — on
+    # the moist-soil branch — the soil surface resistance rˢ sit in series with the
+    # undercanopy aerodynamic path, so a vanishing dry layer does not evaporate like open
+    # water. The dry branch crosses the same litter + undercanopy path `gᵖ`.
+    rˡ  = litter_resistance(c.litter_resistance, Ψₛ.fluxes.u★)
+    rˢ  = soil_surface_resistance(c.wet_soil_resistance, Ψₛ.hydrology.saturation)
+    gᵖ  = ρᵃᵗ * gᵘᶜ / (1 + gᵘᶜ * rˡ)
+    gᵍʷ = ρᵃᵗ * gᵘᶜ / (1 + gᵘᶜ * (rˡ + rˢ))
     Λ   = convert(FT, skin_conductance(c.soil_skin_flux))
 
     # Leaf boundary-layer vapor mass conductance `gʷ = ρᵃᵗ·LAI·gᵇ`: in series with the
@@ -508,7 +577,7 @@ re-solved against the final skins on exit so the returned flux partition closes.
 
     for _ in 1:c.inner_iterations
         gˡʷ, qᵛ = leaf_vapor_terms(c.canopy, Tᵛ, gʷ, fʷ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
-        Gᵉ, qᵉ  = soil_vapor_terms(c.soil, Tᵍ, gᵍʷ, Ψₛ, Ψₐ, ℙₐ)
+        Gᵉ, qᵉ  = soil_vapor_terms(c.soil, Tᵍ, gᵍʷ, gᵖ, Ψₛ, Ψₐ, ℙₐ)
 
         Tᵃᶜ = canopy_air_node(gᵍʰ, Tᵍ, gˡʰ, Tᵛ, 𝒬ᵀ, Δθᵃ, θᵃᵗ, Tᵃᶜ)
         qᵃᶜ = canopy_air_node(Gᵉ, qᵉ, gˡʷ, qᵛ, Jᵃ, Δqᵃ, qᵃᵗ, qᵃᶜ)
@@ -536,7 +605,7 @@ re-solved against the final skins on exit so the returned flux partition closes.
     # The node is re-solved against the final skins: inside the loop it updates ahead of
     # them, so the loop exits one iterate stale and the shares below would miss closure.
     gˡʷ, qᵛ = leaf_vapor_terms(c.canopy, Tᵛ, gʷ, fʷ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
-    Gᵉ, qᵉ  = soil_vapor_terms(c.soil, Tᵍ, gᵍʷ, Ψₛ, Ψₐ, ℙₐ)
+    Gᵉ, qᵉ  = soil_vapor_terms(c.soil, Tᵍ, gᵍʷ, gᵖ, Ψₛ, Ψₐ, ℙₐ)
     Tᵃᶜ = canopy_air_node(gᵍʰ, Tᵍ, gˡʰ, Tᵛ, 𝒬ᵀ, Δθᵃ, θᵃᵗ, Tᵃᶜ)
     qᵃᶜ = canopy_air_node(Gᵉ, qᵉ, gˡʷ, qᵛ, Jᵃ, Δqᵃ, qᵃᵗ, qᵃᶜ)
 
