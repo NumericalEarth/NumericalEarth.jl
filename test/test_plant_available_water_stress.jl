@@ -1,7 +1,10 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    PlantAvailableWaterStress, CriticalSaturation, evaporation_efficiency, van_genuchten_saturation
+    PlantAvailableWaterStress, CriticalSaturation, evaporation_efficiency,
+    van_genuchten_saturation, van_genuchten_texture_parameters
+
+using NumericalEarth: VanGenuchtenRetention
 
 β(model, 𝒮) = evaporation_efficiency(model, (saturation = 𝒮,))
 
@@ -74,7 +77,27 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
         @test derivative(1e-3) != 0
     end
 
-    # Constructor validation.
+    # Parameter sources: the hydrology's retention curve and a texture class build the
+    # same closure as the explicit numbers they stand for.
+    let FT = Float64
+        explicit = PlantAvailableWaterStress(FT; inverse_air_entry_head = 1, pore_size_uniformity = 2)
+        shared   = PlantAvailableWaterStress(FT; retention_curve = VanGenuchtenRetention(α = 1, n = 2))
+        @test shared === explicit
+
+        loam = van_genuchten_texture_parameters(:loam)
+        @test loam == (inverse_air_entry_head = 3.6, pore_size_uniformity = 1.56)
+        @test PlantAvailableWaterStress(FT; texture = :loam) ===
+              PlantAvailableWaterStress(FT; inverse_air_entry_head = loam.inverse_air_entry_head,
+                                        pore_size_uniformity = loam.pore_size_uniformity)
+        @test_throws ArgumentError van_genuchten_texture_parameters(:peat)
+    end
+
+    # Constructor validation: exactly one parameter source, physical parameters.
+    @test_throws ArgumentError PlantAvailableWaterStress()
+    @test_throws ArgumentError PlantAvailableWaterStress(inverse_air_entry_head = 1)
+    @test_throws ArgumentError PlantAvailableWaterStress(texture = :loam, pore_size_uniformity = 2)
+    @test_throws ArgumentError PlantAvailableWaterStress(retention_curve = VanGenuchtenRetention(α = 1, n = 2),
+                                                         texture = :loam)
     @test_throws ArgumentError PlantAvailableWaterStress(inverse_air_entry_head = 1, pore_size_uniformity = 1)
     @test_throws ArgumentError PlantAvailableWaterStress(inverse_air_entry_head = 1, pore_size_uniformity = 2,
                                                          field_capacity_head = 200)

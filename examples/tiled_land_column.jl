@@ -92,13 +92,12 @@ soil_branch() = DryLayerHumidity(;
                                                   tortuosity              = ConstantTortuosity()),
     thermal_exchange_depth = 0.05, porosity = 0.4)
 
-# The canopy stress runs on plant-available water (wilting point to field capacity on a
-# nominal loam retention curve — the bucket hydrology below carries none of its own).
+# The canopy stress runs on plant-available water (wilting point to field capacity on the
+# Carsel-Parrish loam retention curve — the bucket hydrology below carries none of its own).
 vegetated_tile() = CanopyAirSpace(;
     soil   = soil_branch(),
     canopy = CanopyConductanceHumidity(; leaf_area_index = 4.0,
-                                       moisture_stress = PlantAvailableWaterStress(inverse_air_entry_head = 1.0,
-                                                                                   pore_size_uniformity   = 2.0),
+                                       moisture_stress = PlantAvailableWaterStress(texture = :loam),
                                        absorbed_par    = InteractiveAbsorbedPAR()),
     soil_skin_flux = SoilConductiveFlux(1.5, 0.05))
 

@@ -60,8 +60,8 @@ const CARSEL_PARRISH_RETENTION = (
 
 The [Carsel and Parrish (1988)](@cite carsel1988) mean van Genuchten retention parameters
 `(; inverse_air_entry_head, pore_size_uniformity)` (`α` in m⁻¹ and `n`) for a USDA soil
-texture class — the parameter source a plant stress closure wants, as opposed to
-moisture-matched pedotransfer fits. `texture` is one of
+texture class — a nominal retention curve for [`PlantAvailableWaterStress`](@ref) when
+the hydrology carries none of its own. `texture` is one of
 
     :sand, :loamy_sand, :sandy_loam, :loam, :silt, :silt_loam,
     :sandy_clay_loam, :clay_loam, :silty_clay_loam, :sandy_clay, :silty_clay, :clay
@@ -84,6 +84,7 @@ end
 
 """
     PlantAvailableWaterStress(FT = Oceananigans.defaults.FloatType;
+                              retention_curve = nothing,
                               texture = nothing,
                               inverse_air_entry_head = nothing,
                               pore_size_uniformity = nothing,
@@ -98,22 +99,31 @@ the permanent wilting point to 1 at field capacity,
 \\qquad 𝒮ˣ = \\left[1 + (α ψˣ)^n\\right]^{-m}, \\quad m = 1 - 1/n,
 ```
 
-with both endpoints evaluated on a van Genuchten (1980) retention curve: either pass a USDA
-`texture` class (`:loam`, `:silt_loam`, … — resolved through
-[`van_genuchten_texture_parameters`](@ref)) or explicit `inverse_air_entry_head` `α` (m⁻¹)
-and `pore_size_uniformity` `n`. The default heads follow
-[Balsamo et al. (2009)](@cite balsamo2009): `ψᶠᶜ = 1` m and `ψʷᵖ = 150` m of suction.
+with both endpoints evaluated on a van Genuchten (1980) retention curve, supplied by
+exactly one of
 
-!!! warning "Use texture-class retention parameters"
-    Give `α` and `n` texture-class values (the `texture` keyword;
-    [Carsel and Parrish (1988)](@cite carsel1988)), not parameters fitted by matching
-    moisture at reference heads. Pedotransfer reductions that match at the same
-    field-capacity and wilting heads spanned here push `n` toward 1, and on such a curve
-    every moderate saturation maps deep into stress (`β ≈ 0.15` across a whole domain is
-    the typical symptom).
+* `retention_curve` — the hydrology's own [`VanGenuchtenRetention`](@ref): pass the same
+  object given to [`VariablySaturatedHydrology`](@ref), so the stress and the hydrology
+  share one curve by construction;
+* `texture` — a USDA texture class (`:loam`, `:silt_loam`, … — resolved through
+  [`van_genuchten_texture_parameters`](@ref)) for a hydrology that carries no retention
+  curve of its own (e.g. [`BucketHydrology`](@ref)), where the stress's curve is a
+  modeling choice;
+* explicit `inverse_air_entry_head` `α` (m⁻¹) and `pore_size_uniformity` `n`.
 
-Because the stress is a ratio of effective saturations, it needs neither the porosity nor
-the residual fraction and cannot disagree with the hydrology about either.
+The default heads follow [Balsamo et al. (2009)](@cite balsamo2009): `ψᶠᶜ = 1` m and
+`ψʷᵖ = 150` m of suction.
+
+!!! warning "Evaluate the endpoints on the hydrology's own curve"
+    `β` compares the hydrology's saturation with endpoints on this curve, and effective
+    saturations on different curves are different quantities: at the wilting head a loam
+    sits near 0.4 of one published curve family and near 0.03 of another. When the
+    hydrology owns a retention curve, share it via `retention_curve`; endpoints from any
+    other source shift the whole stress band and pin `β` high or low regardless of the
+    actual wetness.
+
+Because the stress is a ratio of effective saturations on one shared curve, the porosity
+and the residual fraction cancel; sharing the curve is the whole consistency requirement.
 
 This is the moisture stress meant for a transpiring canopy
 ([`CanopyConductanceHumidity`](@ref)'s `moisture_stress`): unlike
@@ -125,10 +135,12 @@ is physical: a wilted plant does not respond to a perturbation.
 ```jldoctest
 using NumericalEarth
 
-PlantAvailableWaterStress(texture = :loam)
+soil_retention = VanGenuchtenRetention(α = 1.0, n = 2.0)
+
+PlantAvailableWaterStress(retention_curve = soil_retention)
 
 # output
-PlantAvailableWaterStress(α=3.6, n=1.56, ψᶠᶜ=1.0, ψʷᵖ=150.0)
+PlantAvailableWaterStress(α=1.0, n=2.0, ψᶠᶜ=1.0, ψʷᵖ=150.0)
 ```
 """
 struct PlantAvailableWaterStress{FT}
@@ -139,20 +151,25 @@ struct PlantAvailableWaterStress{FT}
 end
 
 function PlantAvailableWaterStress(FT::Type = Oceananigans.defaults.FloatType;
+                                   retention_curve = nothing,
                                    texture = nothing,
                                    inverse_air_entry_head = nothing,
                                    pore_size_uniformity = nothing,
                                    field_capacity_head = 1,
                                    wilting_point_head = 150)
-    if isnothing(texture)
-        (isnothing(inverse_air_entry_head) || isnothing(pore_size_uniformity)) &&
-            throw(ArgumentError("supply either a texture class or both " *
-                                "inverse_air_entry_head and pore_size_uniformity"))
-    else
-        (isnothing(inverse_air_entry_head) && isnothing(pore_size_uniformity)) ||
-            throw(ArgumentError("supply either a texture class or explicit retention " *
-                                "parameters, not both"))
+    explicit = !isnothing(inverse_air_entry_head) || !isnothing(pore_size_uniformity)
+    sum((!isnothing(retention_curve), !isnothing(texture), explicit)) == 1 ||
+        throw(ArgumentError("supply exactly one retention-parameter source: the " *
+                            "hydrology's retention_curve, a texture class, or explicit " *
+                            "inverse_air_entry_head and pore_size_uniformity"))
+    if !isnothing(retention_curve)
+        inverse_air_entry_head = retention_curve.α
+        pore_size_uniformity   = retention_curve.n
+    elseif !isnothing(texture)
         (; inverse_air_entry_head, pore_size_uniformity) = van_genuchten_texture_parameters(texture)
+    else
+        (isnothing(inverse_air_entry_head) || isnothing(pore_size_uniformity)) &&
+            throw(ArgumentError("supply both inverse_air_entry_head and pore_size_uniformity"))
     end
     pore_size_uniformity > 1 ||
         throw(ArgumentError("pore_size_uniformity must exceed 1"))
