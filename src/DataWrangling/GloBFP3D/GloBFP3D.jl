@@ -4,8 +4,7 @@ export GlobalBuildingFootprints3D, building_morphometry
 
 using Downloads: Downloads
 using Oceananigans: Center, Face
-using Oceananigans.Architectures: architecture, on_architecture
-using Oceananigans.Fields: Field, interior
+using Oceananigans.Fields: Field, set!
 using Oceananigans.Grids: LatitudeLongitudeGrid, λnodes, φnodes
 using Oceananigans.DistributedComputations: @root
 
@@ -239,11 +238,10 @@ function reduced_morphometry(target_grid, metadatum)
 end
 
 function morphometry_fields(reduced, target_grid)
-    arch = architecture(target_grid)
     return map(reduced) do array
         field = Field{Center, Center, Nothing}(target_grid)
-        interior(field) .= on_architecture(arch, reshape(array, size(array, 1), size(array, 2), 1))
-        field
+        set!(field, array)
+        return field
     end
 end
 
@@ -265,8 +263,9 @@ function morphometry_latitude_bands(target_grid, region, Δ, maximum_raster_cell
     band_region(j₁, j₂) = BoundingBox(longitude = region.longitude,
                                       latitude = (max(φfaces[j₁] - padding * Δ, south),
                                                   min(φfaces[j₂ + 1] + padding * Δ, north)))
-    band_cells(j₁, j₂) = let raster = native_region_grid(band_region(j₁, j₂), Δ, Δ)
-        raster.Nx * raster.Ny
+    function band_cells(j₁, j₂)
+        raster = native_region_grid(band_region(j₁, j₂), Δ, Δ)
+        return raster.Nx * raster.Ny
     end
 
     # Rows the single-pass raster reaches, including its 2-cell snap pad beyond the region;
@@ -319,13 +318,13 @@ function building_morphometry(target_grid::LatitudeLongitudeGrid; dataset = Glob
     raster = native_region_grid(region, Δ, Δ)
     if raster.Nx * raster.Ny <= maximum_raster_cells
         reduced = reduced_morphometry(target_grid, metadatum)
-        isnothing(reduced) &&
-            error("No 3D-GloBFP tiles intersect the requested region $(summary(region)).")
+        isnothing(reduced) && error("No 3D-GloBFP tiles intersect the requested region $(summary(region)).")
         return morphometry_fields(reduced, target_grid)
     end
 
     # A band bounding box also selects the footprint tiles to burn: pad it by ~200 m of native
-    # cells so buildings overhanging a tile just outside the band still land in the band's rows.
+    # cells (`cld` is ceiling division) so buildings overhanging a tile just outside the band
+    # still land in the band's rows.
     padding = cld(200, globfp3d_native_resolution(dataset))
     bands = morphometry_latitude_bands(target_grid, region, Δ, maximum_raster_cells, padding)
     @info string(summary(dataset), ": reducing the ", raster.Nx, " × ", raster.Ny,
