@@ -87,14 +87,15 @@ end
         @test Es ≈ -Gᶜ atol = 1e-6
 
         # Two-source flux shares: the leaf/ground sensible and latent shares are finite
-        # and sum to the atmosphere-facing totals (node continuity).
+        # and sum to the atmosphere-facing totals (node continuity). The node is re-solved
+        # against the final skins, so the partition closes to the outer fixed-point tolerance.
         Hᵛ  = Array(interior(Ts.canopy_sensible_heat))[1, 1, 1]
         Hᵍ  = Array(interior(Ts.soil_sensible_heat))[1, 1, 1]
         LEᵛ = Array(interior(Ts.canopy_latent_heat))[1, 1, 1]
         LEᵍ = Array(interior(Ts.soil_latent_heat))[1, 1, 1]
         @test all(isfinite, (Hᵛ, Hᵍ, LEᵛ, LEᵍ))
-        @test Hᵛ + Hᵍ ≈ 𝒬ᵀ rtol = 1e-2
-        @test LEᵛ + LEᵍ ≈ 𝒬ᵛ rtol = 1e-2
+        @test Hᵛ + Hᵍ ≈ 𝒬ᵀ rtol = 1e-6
+        @test LEᵛ + LEᵍ ≈ 𝒬ᵛ rtol = 1e-6
         # Sunlit dense canopy: transpiration is the larger latent source.
         @test LEᵛ > LEᵍ
 
