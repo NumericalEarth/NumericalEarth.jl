@@ -112,7 +112,8 @@ availability(model, 𝒮, curve) =
 
     # Per-cell parameters: a Field-valued curve puts every column on its own endpoints.
     # `effective_saturation` already reads the curve through `property_value`, so these
-    # pass as soon as `VanGenuchtenRetention` accepts `Field`s; it holds scalars for now.
+    # pass once `VanGenuchtenRetention` accepts `Field`s; it holds scalars for now, and
+    # building one from fields throws.
     let FT = Float64
         grid = RectilinearGrid(FT; size = (1, 2), extent = (1, 1),
                                topology = (Periodic, Periodic, Flat))
@@ -131,7 +132,7 @@ availability(model, 𝒮, curve) =
                                           land_state(𝒮, VanGenuchtenRetention(FT; α, n))))
 
         for (j, column) in enumerate(columns), 𝒮 in (FT(0.35), FT(0.6))
-            @test_broken column_availability(j, 𝒮) == availability(stress, 𝒮, column)
+            @test column_availability(j, 𝒮) == availability(stress, 𝒮, column)
         end
     end
 
