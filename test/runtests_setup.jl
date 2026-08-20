@@ -56,6 +56,14 @@ test_fields = Dict(
 ##### Test utilities
 #####
 
+# Small Alpine land grid shared by the terrain tests, `Flat` in the vertical: elevation enters as
+# a 2-D field rather than grid geometry.
+land_grid(arch; size = (8, 8)) =
+    LatitudeLongitudeGrid(arch; size, longitude = (6, 10), latitude = (44, 47),
+                          topology = (Bounded, Bounded, Flat))
+
+height_field(grid, data) = set!(Field{Center, Center, Nothing}(grid), data)
+
 function test_setting_from_metadata(arch, dataset, start_date, inpainting;
                                     loc = (Center, Center, Center),
                                     varnames = (:temperature, :salinity),
