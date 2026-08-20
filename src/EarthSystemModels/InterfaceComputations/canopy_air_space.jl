@@ -242,6 +242,53 @@ undercanopy_conductance_model(x::Number, FT) = ConstantUndercanopyConductance(co
 undercanopy_conductance_model(x::AbstractUndercanopyConductance, FT) = x
 
 """
+    SellersSoilResistance(FT = Oceananigans.defaults.FloatType;
+                          intercept = 8.206, slope = 4.255)
+
+Soil surface resistance for the moist-soil (vanishing dry layer) evaporation branch
+of a [`CanopyAirSpace`](@ref),
+
+```math
+rˢ = e^{a - b 𝒮},
+```
+
+with the surface saturation `𝒮` ([Sellers et al. (1992)](@cite sellers1992)). Even a
+saturated soil surface resists evaporation (`rˢ(1) ≈ 52` s m⁻¹), so the moist branch
+no longer behaves like open water: without it, the saturated-skin branch evaporates
+through the undercanopy aerodynamic conductance alone.
+
+```jldoctest
+using NumericalEarth
+
+SellersSoilResistance()
+
+# output
+SellersSoilResistance(a=8.206, b=4.255)
+```
+"""
+struct SellersSoilResistance{FT}
+    intercept :: FT
+    slope     :: FT
+end
+
+SellersSoilResistance(FT::Type = Oceananigans.defaults.FloatType;
+                      intercept = 8.206, slope = 4.255) =
+    SellersSoilResistance(convert(FT, intercept), convert(FT, slope))
+
+Base.summary(r::SellersSoilResistance) =
+    string("SellersSoilResistance(a=", prettysummary(r.intercept),
+           ", b=", prettysummary(r.slope), ")")
+Base.show(io::IO, r::SellersSoilResistance) = print(io, summary(r))
+
+@inline soil_surface_resistance(::Nothing, 𝒮) = zero(𝒮)
+@inline function soil_surface_resistance(r::SellersSoilResistance, 𝒮)
+    FT = typeof(𝒮)
+    a  = convert(FT, r.intercept)
+    b  = convert(FT, r.slope)
+    return exp(a - b * clamp(𝒮, zero(FT), one(FT)))
+end
+
+"""
     struct CanopyAirSpace
 
 Two-source canopy + soil surface with a diagnostic canopy-air node. Solves the
@@ -263,12 +310,15 @@ Fields:
   a `Number` (m s⁻¹, wrapped as [`ConstantUndercanopyConductance`](@ref)), an
   [`AreaIndexUndercanopyConductance`](@ref) (PALADYN: canopy density and wind), or a
   [`FrictionVelocityUndercanopyConductance`](@ref) (CLM5: canopy density and `u★`).
+- `wet_soil_resistance` : soil surface resistance in series with `gᵘᶜ` on the moist-soil
+  (vanishing dry layer) vapor branch (a [`SellersSoilResistance`](@ref), the default), or
+  `nothing` for an unresisted saturated skin.
 - `inner_iterations`, `relaxation` : damped-Newton settings for the coupled solve.
 - `interception` : wet-canopy vapor branch parameters (a [`CanopyInterception`](@ref)),
   or `nothing` for a dry canopy (the default; recovers the current CAS bit-for-bit).
 - `phase` : saturation phase (Liquid).
 """
-struct CanopyAirSpace{S, C, RF, FT, U, I, Φ}
+struct CanopyAirSpace{S, C, RF, FT, U, W, I, Φ}
     soil                      :: S
     canopy                    :: C
     soil_skin_flux             :: RF
@@ -280,6 +330,7 @@ struct CanopyAirSpace{S, C, RF, FT, U, I, Φ}
     clumping                  :: FT
     leaf_boundary_conductance :: FT
     undercanopy_conductance   :: U
+    wet_soil_resistance       :: W
     inner_iterations          :: Int
     relaxation                :: FT
     interception              :: I
@@ -298,6 +349,7 @@ function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
                         clumping                  = 1,
                         leaf_boundary_conductance = 0.02,
                         undercanopy_conductance   = 0.013,
+                        wet_soil_resistance       = SellersSoilResistance(FT),
                         inner_iterations          = 40,
                         relaxation                = 1//2,
                         interception              = nothing,
@@ -309,6 +361,7 @@ function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
                           convert(FT, extinction), convert(FT, clumping),
                           convert(FT, leaf_boundary_conductance),
                           undercanopy_conductance_model(undercanopy_conductance, FT),
+                          wet_soil_resistance,
                           inner_iterations, convert(FT, relaxation), interception, phase)
 end
 
@@ -320,7 +373,8 @@ Adapt.adapt_structure(to, c::CanopyAirSpace) =
     CanopyAirSpace(adapt(to, c.soil), adapt(to, c.canopy), c.soil_skin_flux,
                    c.leaf_albedo, c.ground_albedo, c.canopy_emissivity_max, c.ground_emissivity,
                    c.extinction, c.clumping, c.leaf_boundary_conductance,
-                   c.undercanopy_conductance, c.inner_iterations, c.relaxation,
+                   c.undercanopy_conductance, c.wet_soil_resistance,
+                   c.inner_iterations, c.relaxation,
                    c.interception, c.phase)
 
 # Materialization / identity — delegate to the sub-models so the per-cell interface
@@ -418,7 +472,10 @@ re-solved against the final skins on exit so the returned flux partition closes.
 
     gˡʰ = ρᵃᵗ * cᵖ * LAI * c.leaf_boundary_conductance
     gᵍʰ = ρᵃᵗ * cᵖ * gᵘᶜ
-    gᵍʷ = ρᵃᵗ * gᵘᶜ   # undercanopy vapor conductance (wet-soil limit)
+    # Moist-soil vapor conductance: the undercanopy aerodynamic path in series with the
+    # soil surface resistance, so a vanishing dry layer does not evaporate like open water.
+    rᵍʷ = soil_surface_resistance(c.wet_soil_resistance, Ψₛ.hydrology.saturation)
+    gᵍʷ = ρᵃᵗ * gᵘᶜ / (1 + gᵘᶜ * rᵍʷ)
     Λ   = convert(FT, skin_conductance(c.soil_skin_flux))
 
     # Leaf boundary-layer vapor mass conductance `gʷ = ρᵃᵗ·LAI·gᵇ`: in series with the
