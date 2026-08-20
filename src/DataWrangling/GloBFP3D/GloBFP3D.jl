@@ -287,12 +287,9 @@ function morphometry_latitude_bands(target_grid, region, Δ, maximum_raster_cell
     return [(rows = rows, region = band_region(first(rows), last(rows))) for rows in ranges]
 end
 
-# ~3.2 GB of Float64: the largest raster reduced in one pass unless `single_pass` forces it.
-const maximum_single_pass_cells = 400_000_000
-
 """
     building_morphometry(target_grid; dataset = GlobalBuildingFootprints3D(), region,
-                         single_pass = false)
+                         maximum_raster_cells = 400_000_000)
 
 Per-cell building morphometry on `target_grid` (a `LatitudeLongitudeGrid`, coarser than the
 `dataset` rasterization resolution), aggregated from the fine 3D-GloBFP building-height raster
@@ -306,34 +303,26 @@ over `region`. Returns a NamedTuple of `Field`s:
 - `frontal_area_index` `λᶠ` — windward wall area from height steps, direction-averaged:
   `(Σₓ|δh|·dy + Σᵧ|δh|·dx) / (4·A)`, with `A` the cell area.
 
-A `region` whose native raster exceeds an internal single-pass budget (400M cells, 3.2 GB of
-`Float64`) is reduced in latitude bands sized to that budget, reproducing the single pass exactly
-while memory stays bounded regardless of the region size; band raster files are deleted once
-reduced (the downloaded footprint tiles stay cached). Pass `single_pass = true` to force one pass
-over the whole `region` regardless of its raster size.
+A `region` whose native raster exceeds `maximum_raster_cells` (default `400_000_000` cells,
+3.2 GB of `Float64`) is reduced in latitude bands sized to the limit, reproducing the single
+pass exactly while memory stays bounded regardless of the region size; band raster files are
+deleted once reduced (the downloaded footprint tiles stay cached).
 
 Downloading and rasterizing the footprints requires `using ArchGDAL`.
 """
 function building_morphometry(target_grid::LatitudeLongitudeGrid; dataset = GlobalBuildingFootprints3D(),
-                              region, single_pass = false)
+                              region, maximum_raster_cells = 400_000_000)
     metadatum = Metadatum(:building_height; dataset, region)
     DataWrangling.validate_dataset_coverage(nothing, metadatum)
 
     Δ = globfp3d_native_cell_size(dataset)
     raster = native_region_grid(region, Δ, Δ)
-    if single_pass || raster.Nx * raster.Ny <= maximum_single_pass_cells
+    if raster.Nx * raster.Ny <= maximum_raster_cells
         reduced = reduced_morphometry(target_grid, metadatum)
         isnothing(reduced) &&
             error("No 3D-GloBFP tiles intersect the requested region $(summary(region)).")
         return morphometry_fields(reduced, target_grid)
     end
-
-    return banded_building_morphometry(target_grid, dataset, region, maximum_single_pass_cells)
-end
-
-function banded_building_morphometry(target_grid, dataset, region, maximum_raster_cells)
-    Δ = globfp3d_native_cell_size(dataset)
-    raster = native_region_grid(region, Δ, Δ)
 
     # A band bounding box also selects the footprint tiles to burn: pad it by ~200 m of native
     # cells so buildings overhanging a tile just outside the band still land in the band's rows.
