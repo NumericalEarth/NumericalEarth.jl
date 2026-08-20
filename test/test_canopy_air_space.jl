@@ -163,7 +163,8 @@ end
     Ψₐ  = (z = FT(10), u = FT(3), v = FT(0), T = FT(305), p = FT(101325), q = FT(0.006), h_bℓ = FT(600))  # dry, warm → demand
     Ψᵢ  = (u = FT(0), v = FT(0), T = FT(298))
     Ψᵣ  = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(600), FT(350))
-    flx = InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3)); vel = InterfaceVelocities(FT(0), FT(0))
+    # χθ = χq = 0.1 gives the node a physical aerodynamic branch (gᵃ = ρ u★ χ).
+    flx = InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3), FT(0.1), FT(0.1)); vel = InterfaceVelocities(FT(0), FT(0))
     Wᶜᵐᵃˣ = c * LAI
 
     Ψwet = AirLandInterfaceState(flx, vel, FT(300), FT(0.012),
@@ -208,7 +209,9 @@ end
     Ψₐ  = (z = FT(10), u = FT(3), v = FT(0), T = FT(305), p = FT(101325), q = FT(0.006), h_bℓ = FT(600))
     Ψᵢ  = (u = FT(0), v = FT(0), T = FT(298))
     Ψᵣ  = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(600), FT(350))
-    flx = InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3)); vel = InterfaceVelocities(FT(0), FT(0))
+    # Vapor-coupled (χq) but thermally near-decoupled (χθ = 0) node, so the sweep
+    # isolates the soil↔canopy-air vapor path from the skin-temperature response.
+    flx = InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3), FT(0), FT(1/6)); vel = InterfaceVelocities(FT(0), FT(0))
     Ψ(𝒮) = AirLandInterfaceState(flx, vel, FT(300), FT(0.012), (saturation = FT(𝒮),),
             (temperature = FT(300),), (leaf_area_index = FT(0),))
     LEᵍ(gᵘᶜ, 𝒮) = canopy_air_space_solve(bare(gᵘᶜ), Ψ(𝒮), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ).LEᵍ
@@ -263,7 +266,9 @@ end
     Ψₐ  = (z = FT(10), u = FT(3), v = FT(0), T = FT(305), p = FT(101325), q = FT(0.006), h_bℓ = FT(600))
     Ψᵢ  = (u = FT(0), v = FT(0), T = FT(298))
     Ψᵣ  = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(600), FT(350))
-    flx = InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3)); vel = InterfaceVelocities(FT(0), FT(0))
+    # Vapor-coupled (χq) but thermally near-decoupled (χθ = 0) node, so the
+    # comparison isolates the ground vapor path from the skin-temperature response.
+    flx = InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3), FT(0), FT(1/6)); vel = InterfaceVelocities(FT(0), FT(0))
     Ψ(𝒮) = AirLandInterfaceState(flx, vel, FT(300), FT(0.012), (saturation = FT(𝒮),),
             (temperature = FT(300),), (leaf_area_index = FT(0),))
     LEᵍ(c, 𝒮) = canopy_air_space_solve(c, Ψ(𝒮), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ).LEᵍ
@@ -387,7 +392,7 @@ end
         Ψₐ = (z = FT(10), u = FT(3), v = FT(0), T = FT(300), p = FT(101325), q = FT(0.008), h_bℓ = FT(600))
         Ψᵢ = (u = FT(0), v = FT(0), T = FT(298))
         Ψᵣ = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(600), FT(350))
-        Ψ(LAI) = AirLandInterfaceState(InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3)),
+        Ψ(LAI) = AirLandInterfaceState(InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3), FT(0.1), FT(0.1)),
                                        InterfaceVelocities(FT(0), FT(0)), FT(300), FT(0.012),
                                        (saturation = FT(0.3),), (temperature = FT(298),),
                                        (leaf_area_index = FT(LAI),))

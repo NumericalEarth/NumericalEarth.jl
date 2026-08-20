@@ -165,10 +165,10 @@ end
 
     qˢ⁻ = Ψₛ.specific_humidity
     qᵃᵗ = Ψₐ.q
-    Jᵃ, Δq = atmospheric_vapor_flux(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
+    Gᵃ  = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
 
-    D  = gᶜ * Δq + Jᵃ
-    qˢ = (gᶜ * qᵛ⁺ * Δq + Jᵃ * qᵃᵗ) / D
+    D  = gᶜ + Gᵃ
+    qˢ = ifelse(D > 0, (gᶜ * qᵛ⁺ + Gᵃ * qᵃᵗ) / D, qˢ⁻)
 
-    return convert(FT, ifelse(D == 0, qˢ⁻, qˢ))
+    return convert(FT, qˢ)
 end

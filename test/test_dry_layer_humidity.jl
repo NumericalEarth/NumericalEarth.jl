@@ -16,7 +16,8 @@ function _make_call_args(q; Tˡᵃ, Tᵍ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★,
     FT = Float64
     ℂ  = AtmosphereThermodynamicsParameters(FT)
     Ψₐ = (T = Tᵃᵗ, p = pᵃᵗ, q = qᵃᵗ, u = 1.0, v = 0.0, z = 10.0, h_bℓ = 1000.0)
-    Ψₛ = AirLandInterfaceState(InterfaceFluxScales(u★, 0.0, q★),
+    χq = q★ / (qᵃᵗ - qⁱⁿ⁻)   # transfer coefficient consistent with q★ = χq Δq
+    Ψₛ = AirLandInterfaceState(InterfaceFluxScales(u★, 0.0, q★, 0.0, χq),
                                InterfaceVelocities(0.0, 0.0),
                                Tᵍ, qⁱⁿ⁻, (saturation=𝒮,), (temperature=Tˡᵃ,))
     Ψᵢ = (T = Tˡᵃ,)
@@ -41,7 +42,7 @@ end
     pᵃᵗ = 1.0e5
     ℂ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(q; Tˡᵃ=290.0, Tᵍ=Tᵍ, 𝒮=0.5,
                                           pᵃᵗ=pᵃᵗ, qᵃᵗ=1.0e-2, Tᵃᵗ=295.0,
-                                          u★=0.3, q★=-2.0e-4, qⁱⁿ⁻=0.005)
+                                          u★=0.3, q★=2.0e-4, qⁱⁿ⁻=0.005)
     qⁱⁿ★ = compute_interface_humidity(q, Tᵍ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     qˢᵃᵗ = saturation_specific_humidity(ℂ, Tᵍ, pᵃᵗ, AtmosphericThermodynamics.Liquid())
     @test isapprox(qⁱⁿ★, qˢᵃᵗ; atol = 1e-15)
@@ -59,7 +60,7 @@ end
     # Fully dry: 𝒮 = 0 ⇒ δᵛ = δᵛ_max = 0.05, χ = 0.5 ⇒ Tᵉ = (Tᵍ+Tˡᵃ)/2.
     Tˡᵃ = 290.0; Tᵍ = 300.0
     pᵃᵗ = 1.0e5; qᵃᵗ = 1.0e-2; Tᵃᵗ = 295.0
-    u★ = 0.3;   q★ = -2.0e-4; qⁱⁿ⁻ = 0.005
+    u★ = 0.3;   q★ = 2.0e-4; qⁱⁿ⁻ = 0.005
     ℂ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(q; Tˡᵃ, Tᵍ, 𝒮 = 0.0,
                                           pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
     qⁱⁿ★ = compute_interface_humidity(q, Tᵍ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
@@ -86,7 +87,7 @@ end
     # 𝒮 = 0.25 → δᵛ = 0.025, χ = 0.25
     # 𝒮 = 0.5 → δᵛ = 0, wet branch.
     Tˡᵃ = 290.0; Tᵍ = 310.0; pᵃᵗ = 1.0e5
-    qᵃᵗ = 1.0e-2; Tᵃᵗ = 295.0; u★ = 0.3; q★ = -2.0e-4; qⁱⁿ⁻ = 0.005
+    qᵃᵗ = 1.0e-2; Tᵃᵗ = 295.0; u★ = 0.3; q★ = 2.0e-4; qⁱⁿ⁻ = 0.005
 
     # wet_transition_width = 0 pins the sharp switch so the wet limit is exact.
     q = DryLayerHumidity(;
@@ -124,7 +125,7 @@ end
     Tᵍ = 300.0; pᵃᵗ = 1.0e5; qᵃᵗ = 1.0e-2
     ℂ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(q; Tˡᵃ=290.0, Tᵍ=Tᵍ, 𝒮 = 0.0,
                                           pᵃᵗ=pᵃᵗ, qᵃᵗ=qᵃᵗ, Tᵃᵗ=295.0,
-                                          u★=0.3, q★=-2.0e-4, qⁱⁿ⁻=0.005)
+                                          u★=0.3, q★=2.0e-4, qⁱⁿ⁻=0.005)
     qⁱⁿ★ = compute_interface_humidity(q, Tᵍ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     @test isapprox(qⁱⁿ★, qᵃᵗ; atol = 1e-6)
 end
@@ -143,7 +144,7 @@ end
     blend = make_q(1e-2)
 
     Tˡᵃ = 290.0; Tᵍ = 300.0; pᵃᵗ = 1.0e5
-    qᵃᵗ = 1.0e-2; Tᵃᵗ = 295.0; u★ = 0.3; q★ = -2.0e-4; qⁱⁿ⁻ = 0.005
+    qᵃᵗ = 1.0e-2; Tᵃᵗ = 295.0; u★ = 0.3; q★ = 2.0e-4; qⁱⁿ⁻ = 0.005
     function humidity(q, 𝒮)
         _, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(q; Tˡᵃ, Tᵍ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
         return compute_interface_humidity(q, Tᵍ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)

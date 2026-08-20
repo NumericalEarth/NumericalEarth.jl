@@ -5,7 +5,7 @@
 ##### sum of two flux branches in a conductance network, not an average of two
 ##### humidities: soil and leaf are two saturated sources feeding one surface node
 ##### in parallel, both draining to the atmosphere through the aerodynamic
-##### conductance `Gᵃ = Jᵃ/Δq`.
+##### conductance `Gᵃ = ρᵃᵗ u★ χq` (from the previous similarity iterate).
 #####
 #####                    Atmosphere qᵃᵗ
 #####                         │  Gᵃ
@@ -15,10 +15,13 @@
 #####          Soil (qᵉ)              Leaf (qᵛ⁺)
 #####
 ##### Flux continuity `Gᵉ(qᵉ − qˢ) + gᶜ(qᵛ⁺ − qˢ) = Gᵃ(qˢ − qᵃᵗ)` gives the
-##### conductance-weighted surface humidity, in the same `Δq`-multiplied form the
-##### single-branch formulations use (so it stays finite as `Δq → 0`):
+##### conductance-weighted surface humidity,
 #####
-#####     qˢ = ((Gᵉ qᵉ + gᶜ qᵛ⁺) Δq + Jᵃ qᵃᵗ) / ((Gᵉ + gᶜ) Δq + Jᵃ).
+#####     qˢ = (Gᵉ qᵉ + gᶜ qᵛ⁺ + Gᵃ qᵃᵗ) / (Gᵉ + gᶜ + Gᵃ),
+#####
+##### unconditionally within the hull of its sources (reconstructing `Gᵃ` from the
+##### previous iterate's flux/increment ratio instead is singular as `Δq` crosses
+##### zero at calm transitions).
 #####
 ##### The soil branch carries the [`DryLayerHumidity`](@ref) wet-branch blend: at
 ##### high saturation the soil skin itself saturates (`σ → 0`) and pins the
@@ -86,11 +89,11 @@ Base.show(io::IO, q::CompositeSurfaceHumidity) = print(io, summary(q))
 
     qˢ⁻ = Ψₛ.specific_humidity
     qᵃᵗ = Ψₐ.q
-    Jᵃ, Δq = atmospheric_vapor_flux(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
+    Gᵃ  = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
 
     # Two sources (soil + canopy) in parallel behind the aerodynamic conductance.
-    D      = (Gᵉ + gᶜ) * Δq + Jᵃ
-    qˢ_dry = ifelse(D == 0, qˢ⁻, ((Gᵉ * qᵉ + gᶜ * qᵛ⁺) * Δq + Jᵃ * qᵃᵗ) / D)
+    D      = Gᵉ + gᶜ + Gᵃ
+    qˢ_dry = ifelse(D > 0, (Gᵉ * qᵉ + gᶜ * qᵛ⁺ + Gᵃ * qᵃᵗ) / D, qˢ⁻)
 
     # Wet-soil limit (σ → 0): the saturated soil skin pins the surface to qᵛ⁺(Tᵍ),
     # so that with no canopy this reproduces `DryLayerHumidity` bit-for-bit.

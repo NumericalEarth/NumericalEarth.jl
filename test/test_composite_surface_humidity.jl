@@ -6,7 +6,7 @@ using Oceananigans: set!, interior
 using Oceananigans.TimeSteppers: update_state!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     compute_interface_humidity, AirLandInterfaceState, InterfaceFluxScales, InterfaceVelocities,
-    saturation_specific_humidity, dry_layer_terms, canopy_conductance_terms, atmospheric_vapor_flux,
+    saturation_specific_humidity, dry_layer_terms, canopy_conductance_terms, aerodynamic_vapor_conductance,
     evaporation_partition,
     DryLayerHumidity, StorageBasedDryLayerDepth, DryLayerVaporPistonVelocity,
     ConstantTortuosity,
@@ -29,7 +29,8 @@ make_soil(; molecular_diffusivity = 2.5e-5, tortuosity = ConstantTortuosity()) =
 function _make_call_args(; Tˡᵃ, Tᵍ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻, leaf_area_index = 2.0)
     ℂ  = AtmosphereThermodynamicsParameters(Float64)
     Ψₐ = (T = Tᵃᵗ, p = pᵃᵗ, q = qᵃᵗ, u = 1.0, v = 0.0, z = 10.0, h_bℓ = 1000.0)
-    Ψₛ = AirLandInterfaceState(InterfaceFluxScales(u★, 0.0, q★), InterfaceVelocities(0.0, 0.0),
+    χq = q★ / (qᵃᵗ - qⁱⁿ⁻)   # transfer coefficient consistent with q★ = χq Δq
+    Ψₛ = AirLandInterfaceState(InterfaceFluxScales(u★, 0.0, q★, 0.0, χq), InterfaceVelocities(0.0, 0.0),
                                Tᵍ, qⁱⁿ⁻, (saturation=𝒮,), (temperature=Tˡᵃ,),
                                (leaf_area_index=leaf_area_index,))
     Ψᵢ = (T = Tˡᵃ,)
@@ -38,7 +39,7 @@ function _make_call_args(; Tˡᵃ, Tᵍ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, 
 end
 
 @testset "CompositeSurfaceHumidity limits and divider" begin
-    st = (Tˡᵃ=295.0, Tᵍ=300.0, pᵃᵗ=1.0e5, qᵃᵗ=1.0e-2, Tᵃᵗ=295.0, u★=0.3, q★=-2.0e-4, qⁱⁿ⁻=0.008)
+    st = (Tˡᵃ=295.0, Tᵍ=300.0, pᵃᵗ=1.0e5, qᵃᵗ=1.0e-2, Tᵃᵗ=295.0, u★=0.3, q★=2.0e-4, qⁱⁿ⁻=0.008)
     soil   = make_soil()
     canopy = CanopyConductanceHumidity(Float64; leaf_area_index = 2.0)
 
@@ -61,12 +62,12 @@ end
     _, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(; 𝒮=0.05, st...)   # 𝒮 ≪ 𝒮ᶜ ⇒ σ = 1
     Gᵉ, qᵉ, σ, qᵍ⁺ = dry_layer_terms(comp.soil, st.Tᵍ, Ψₛ, Ψₐ, ℙₐ)
     gᶜ, qᵛ⁺ = canopy_conductance_terms(comp.canopy, st.Tᵍ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
-    Jᵃ, Δq = atmospheric_vapor_flux(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
-    qˢ = ((Gᵉ * qᵉ + gᶜ * qᵛ⁺) * Δq + Jᵃ * st.qᵃᵗ) / ((Gᵉ + gᶜ) * Δq + Jᵃ)
+    Gᵃ = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
+    qˢ = (Gᵉ * qᵉ + gᶜ * qᵛ⁺ + Gᵃ * st.qᵃᵗ) / (Gᵉ + gᶜ + Gᵃ)
     @test σ ≈ 1
     @test compute_interface_humidity(comp, st.Tᵍ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ) ≈ qˢ
 
-    E = (Jᵃ / Δq) * (qˢ - st.qᵃᵗ)
+    E = Gᵃ * (qˢ - st.qᵃᵗ)
     Eᵍ  = Gᵉ * (qᵉ - qˢ)
     Eᵛ   = gᶜ * (qᵛ⁺ - qˢ)
     @test isapprox(E, Eᵍ + Eᵛ; rtol = 1e-10)
@@ -81,7 +82,7 @@ end
     for FT in (Float32, Float64)
         ℂ  = AtmosphereThermodynamicsParameters(FT)
         Ψₐ = (T=FT(295), p=FT(1e5), q=FT(1e-2), u=FT(1), v=FT(0), z=FT(10), h_bℓ=FT(1000))
-        Ψₛ = AirLandInterfaceState(InterfaceFluxScales(FT(0.3), FT(0), FT(-2e-4)),
+        Ψₛ = AirLandInterfaceState(InterfaceFluxScales(FT(0.3), FT(0), FT(2e-4), FT(0), FT(0.1)),
                                    InterfaceVelocities(FT(0), FT(0)),
                                    FT(300), FT(8e-3), (saturation=FT(0.3),), (temperature=FT(295),),
                                    (leaf_area_index=FT(2),))
