@@ -243,6 +243,8 @@ function atmosphere_ocean_interface(grid,
                                     velocity_formulation,
                                     specific_humidity_formulation)
 
+    reject_per_cell_slots(ao_flux_formulation, "atmosphere-ocean")
+
     ao_fluxes = AtmosphereSurfaceFluxes(grid)
 
     ao_properties = InterfaceProperties(specific_humidity_formulation,
@@ -268,6 +270,8 @@ function atmosphere_sea_ice_interface(grid,
                                       ai_flux_formulation,
                                       temperature_formulation,
                                       velocity_formulation)
+
+    reject_per_cell_slots(ai_flux_formulation, "atmosphere-sea ice")
 
     fluxes = AtmosphereSeaIceFluxes(grid)
 

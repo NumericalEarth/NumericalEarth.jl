@@ -27,7 +27,13 @@ velocity model, and specific-humidity formulation. Pass the result as
 
 The roughness-length and zero-plane-displacement slots of the flux closure accept
 per-cell `Field`s — for example from [`urban_roughness`](@ref) or a canopy roughness
-closure — localized to each cell before the Monin--Obukhov solve:
+closure — localized to each cell before the Monin--Obukhov solve. The slots are
+checked here by [`validate_flux_formulation`](@ref), which rejects a layout
+`state2dindex` cannot read per cell and values the similarity profile cannot
+evaluate: non-finite or non-positive roughness, and a displacement that leaves the
+atmosphere surface layer inside the roughness sublayer. Gap-fill a roughness field
+derived from a building dataset before passing it in — [`urban_roughness`](@ref)
+marks cells of invalid morphometry with `NaN` by design.
 
 ```jldoctest
 using NumericalEarth
@@ -53,10 +59,10 @@ fluxes = SimilarityTheoryFluxes(momentum_roughness_length    = ℓᵐ,
 
 interface = atmosphere_land_interface(grid, atmosphere, land; fluxes)
 
-summary(interface.flux_formulation.roughness_lengths.momentum)
+interface.flux_formulation.zero_plane_displacement[2, 1, 1]
 
 # output
-"2×1×1 Field{Center, Center, Nothing} reduced over dims = (3,) on LatitudeLongitudeGrid on CPU"
+4.0
 ```
 """
 function atmosphere_land_interface(grid, atmosphere, land;
@@ -64,6 +70,14 @@ function atmosphere_land_interface(grid, atmosphere, land;
                                    temperature         = BulkTemperature(),
                                    velocity_difference = RelativeVelocity(),
                                    specific_humidity   = default_al_specific_humidity(land))
+    # TODO: `ComponentInterfaces` already caches `surface_layer_height(atmosphere, grid)`
+    # in `interfaces.properties`, but it does so in its body while this constructor runs
+    # as a keyword default, so the value cannot be reused here. For a grid-aware
+    # atmosphere (Breeze) that override builds and fills a 2-D `Field`, so this call
+    # duplicates that work once per model build. Building the interfaces inside the
+    # `ComponentInterfaces` body would let the cached value be passed in.
+    validate_flux_formulation(fluxes, grid, surface_layer_height(atmosphere, grid))
+
     al_fluxes = AtmosphereSurfaceFluxes(grid)
     al_properties = InterfaceProperties(specific_humidity, temperature, velocity_difference)
     interface_temperature = Field{Center, Center, Nothing}(grid)
