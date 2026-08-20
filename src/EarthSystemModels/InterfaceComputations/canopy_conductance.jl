@@ -123,6 +123,7 @@ Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
 @inline interface_hydrology_state(i, j, grid, q::CanopyConductanceHumidity, land_state) =
     merge(land_saturation(i, j, grid, land_state),
           interface_hydrology_state(i, j, grid, q.moisture_stress, land_state))
+@inline requires_retention_curve(q::CanopyConductanceHumidity) = requires_retention_curve(q.moisture_stress)
 
 # The bulk LAI upscales the leaf conductance and shades the absorbed PAR. It is a
 # prescribed vegetation input (constant, static `Field`, or `FieldTimeSeries`),

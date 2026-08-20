@@ -72,6 +72,8 @@ Base.show(io::IO, q::CompositeSurfaceHumidity) = print(io, summary(q))
     merge(land_saturation(i, j, grid, land_state),
           interface_hydrology_state(i, j, grid, q.soil, land_state),
           interface_hydrology_state(i, j, grid, q.canopy, land_state))
+@inline requires_retention_curve(q::CompositeSurfaceHumidity) =
+    requires_retention_curve(q.soil) || requires_retention_curve(q.canopy)
 @inline interface_energy_state(i, j, grid, ::CompositeSurfaceHumidity, land_state) =
     (temperature = state2dindex(land_state.T, i, j),)
 

@@ -448,6 +448,8 @@ Adapt.adapt_structure(to, c::CanopyAirSpace) =
 # store Wᶜ (→ fʷ).
 @inline interface_hydrology_state(i, j, grid, c::CanopyAirSpace, land_state) =
     canopy_air_space_hydrology_state(c.interception, i, j, grid, c, land_state)
+@inline requires_retention_curve(c::CanopyAirSpace) =
+    requires_retention_curve(c.soil) || requires_retention_curve(c.canopy)
 @inline canopy_air_space_hydrology_state(::Nothing, i, j, grid, c, land_state) =
     merge(interface_hydrology_state(i, j, grid, c.soil, land_state),
           interface_hydrology_state(i, j, grid, c.canopy, land_state))

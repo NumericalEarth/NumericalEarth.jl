@@ -31,6 +31,32 @@ end
 VanGenuchtenRetention(FT::Type = Oceananigans.defaults.FloatType; α, n) =
     VanGenuchtenRetention(convert(FT, α), convert(FT, n))
 
+"""
+$(TYPEDSIGNATURES)
+
+The second van Genuchten shape parameter, `m = 1 - 1/n`. [Mualem (1976)](@cite mualem1976new)
+fixes `m` to this relation; left free, the pore-bundle integral behind
+[`VanGenuchtenConductivity`](@ref) has no closed form.
+"""
+@inline van_genuchten_m(n) = 1 - 1/n
+
+"""
+$(TYPEDSIGNATURES)
+
+Effective saturation `𝒮 = [1 + (αψ)ⁿ]^(-m)` at dimensionless suction `αψ ≥ 0`, the
+inverse of [`VanGenuchtenRetention`](@ref)'s `pressure_head`.
+"""
+@inline van_genuchten_saturation(αψ, n) = (1 + αψ^n)^(-van_genuchten_m(n))
+
+# Per-cell endpoint evaluation for the interface's plant-stress formulations: read the
+# curve's parameters at `(i, j)` — scalar or `Field` — and invert the retention relation.
+@inline function EarthSystemModels.effective_saturation(r::VanGenuchtenRetention, ψ, i, j)
+    FT = typeof(ψ)
+    α  = convert(FT, property_value(r.α, i, j))
+    n  = convert(FT, property_value(r.n, i, j))
+    return van_genuchten_saturation(α * ψ, n)
+end
+
 @inline function pressure_head(r::VanGenuchtenRetention, 𝒮)
     FT = typeof(𝒮)
     α = convert(FT, r.α)

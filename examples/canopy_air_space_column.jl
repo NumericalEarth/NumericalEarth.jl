@@ -107,9 +107,9 @@ stefan_boltzmann      = 5.670374419e-8
 # The critical saturation `𝒮ᶜ` sets where the *bare-soil* branch becomes water-limited:
 # below it the soil's dry layer opens and throttles ground evaporation. The canopy's
 # moisture stress is keyed to different water — a `PlantAvailableWaterStress` interpolates
-# `β` between the permanent wilting point and field capacity, both evaluated on the same
-# van Genuchten retention curve the soil hydrology uses, so stomata respond to
-# plant-available water rather than to the fast-drying skin.
+# `β` between the permanent wilting point and field capacity, both evaluated on the soil
+# hydrology's own van Genuchten retention curve, so stomata respond to plant-available
+# water rather than to the fast-drying skin.
 
 critical_saturation = 0.5
 
@@ -177,7 +177,7 @@ intercepting_hydrology(leaf_area_index) = InterceptingHydrology(;
 canopy_with_interception(; leaf_area_index, conductance = JarvisConductance()) = CanopyAirSpace(;
     soil   = soil_branch(),
     canopy = CanopyConductanceHumidity(; leaf_area_index, conductance,
-                                       moisture_stress = PlantAvailableWaterStress(retention_curve = soil_retention),
+                                       moisture_stress = PlantAvailableWaterStress(),
                                        absorbed_par    = InteractiveAbsorbedPAR()),
     soil_skin_flux = SoilConductiveFlux(1.5, 0.05),
     leaf_albedo, ground_albedo, canopy_emissivity_max, ground_emissivity,

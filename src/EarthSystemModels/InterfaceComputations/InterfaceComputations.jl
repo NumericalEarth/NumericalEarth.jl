@@ -46,7 +46,6 @@ export
     FractionalHumidity,
     CriticalSaturation,
     PlantAvailableWaterStress,
-    van_genuchten_texture_parameters,
     DryLayerHumidity,
     StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity,
@@ -85,6 +84,8 @@ export
     MomentumBasedFrictionVelocity
 
 using ..EarthSystemModels: EarthSystemModels,
+                           surface_retention_curve,
+                           effective_saturation,
                            default_gravitational_acceleration,
                            default_freshwater_density,
                            default_gas_constant,

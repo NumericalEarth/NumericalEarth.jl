@@ -1,39 +1,46 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    PlantAvailableWaterStress, CriticalSaturation, evaporation_efficiency,
-    van_genuchten_saturation, van_genuchten_texture_parameters, interface_hydrology_state
+    PlantAvailableWaterStress, CriticalSaturation, CanopyConductanceHumidity,
+    evaporation_efficiency, interface_hydrology_state, requires_retention_curve,
+    atmosphere_land_interface
 
 using NumericalEarth: VanGenuchtenRetention
+using NumericalEarth.Lands: van_genuchten_saturation
 
-# Route through the per-cell materialization, as the flux kernel does.
-β(model, 𝒮) = evaporation_efficiency(model, interface_hydrology_state(1, 1, nothing, model, (saturation = 𝒮,)))
+# Route through the per-cell materialization, as the flux kernel does: the endpoints come
+# off the land's retention curve, not off the closure.
+land_state(𝒮, curve) = (saturation = 𝒮, retention_curve = curve)
+β(model, 𝒮, curve; i = 1, j = 1) =
+    evaporation_efficiency(model, interface_hydrology_state(i, j, nothing, model,
+                                                            land_state(𝒮, curve)))
 
 @testset "PlantAvailableWaterStress" begin
     for FT in (Float32, Float64)
         α = FT(1)
         # Spanning coarse sand-like to clay-like retention shapes.
         for n in (FT(1.2), FT(1.5), FT(3))
-            stress = PlantAvailableWaterStress(FT; inverse_air_entry_head = α, pore_size_uniformity = n)
+            stress = PlantAvailableWaterStress(FT)
+            curve  = VanGenuchtenRetention(FT; α, n)
             𝒮ᶠᶜ = van_genuchten_saturation(α * stress.field_capacity_head, n)
             𝒮ʷᵖ = van_genuchten_saturation(α * stress.wilting_point_head, n)
             @test 0 < 𝒮ʷᵖ < 𝒮ᶠᶜ < 1
 
             # Exact endpoints and clamped tails.
-            @test β(stress, 𝒮ᶠᶜ) == 1
-            @test β(stress, 𝒮ʷᵖ) == 0
-            @test β(stress, one(FT)) == 1
-            @test β(stress, zero(FT)) == 0
+            @test β(stress, 𝒮ᶠᶜ, curve) == 1
+            @test β(stress, 𝒮ʷᵖ, curve) == 0
+            @test β(stress, one(FT), curve) == 1
+            @test β(stress, zero(FT), curve) == 0
 
             # Monotone and bounded on a saturation sweep.
-            values = [β(stress, 𝒮) for 𝒮 in range(zero(FT), one(FT); length = 101)]
+            values = [β(stress, 𝒮, curve) for 𝒮 in range(zero(FT), one(FT); length = 101)]
             @test issorted(values)
             @test all(v -> 0 <= v <= 1, values)
 
             # Linear in the interior with slope 1/(𝒮ᶠᶜ − 𝒮ʷᵖ).
             𝒮₁ = (2𝒮ʷᵖ + 𝒮ᶠᶜ) / 3
             𝒮₂ = (𝒮ʷᵖ + 2𝒮ᶠᶜ) / 3
-            slope = (β(stress, 𝒮₂) - β(stress, 𝒮₁)) / (𝒮₂ - 𝒮₁)
+            slope = (β(stress, 𝒮₂, curve) - β(stress, 𝒮₁, curve)) / (𝒮₂ - 𝒮₁)
             @test slope ≈ 1 / (𝒮ᶠᶜ - 𝒮ʷᵖ) rtol = sqrt(eps(FT))
         end
     end
@@ -42,13 +49,14 @@ using NumericalEarth: VanGenuchtenRetention
     # (θ − θʷᵖ)/(θᶠᶜ − θʷᵖ) is invariant, so β never needs the porosity or the residual.
     let FT = Float64
         α, n = FT(3.6), FT(1.6)
-        stress = PlantAvailableWaterStress(FT; inverse_air_entry_head = α, pore_size_uniformity = n)
+        stress = PlantAvailableWaterStress(FT)
+        curve  = VanGenuchtenRetention(FT; α, n)
         𝒮ᶠᶜ = van_genuchten_saturation(α * stress.field_capacity_head, n)
         𝒮ʷᵖ = van_genuchten_saturation(α * stress.wilting_point_head, n)
         for (ν, θʳ) in ((0.35, 0.0), (0.45, 0.05), (0.6, 0.12)), 𝒮 in (0.05, 0.3, 0.7)
             θ(s) = θʳ + (ν - θʳ) * s
             β_θ = clamp((θ(𝒮) - θ(𝒮ʷᵖ)) / (θ(𝒮ᶠᶜ) - θ(𝒮ʷᵖ)), 0, 1)
-            @test β(stress, 𝒮) ≈ β_θ atol = 4eps(FT)
+            @test β(stress, 𝒮, curve) ≈ β_θ atol = 4eps(FT)
         end
     end
 
@@ -56,67 +64,75 @@ using NumericalEarth: VanGenuchtenRetention
     # saturation), where `CriticalSaturation` still evaporates; and full efficiency is not
     # reached until field capacity.
     let FT = Float64
-        stress = PlantAvailableWaterStress(FT; inverse_air_entry_head = 1, pore_size_uniformity = 2)
+        stress = PlantAvailableWaterStress(FT)
+        curve  = VanGenuchtenRetention(FT; α = 1, n = 2)
         bare = CriticalSaturation(FT(0.5))
         𝒮ʷᵖ = van_genuchten_saturation(FT(150), FT(2))
-        @test β(stress, 𝒮ʷᵖ) == 0
-        @test β(bare, 𝒮ʷᵖ) > 0
-        @test β(stress, 𝒮ʷᵖ / 2) == 0
+        @test β(stress, 𝒮ʷᵖ, curve) == 0
+        @test β(bare, 𝒮ʷᵖ, curve) > 0
+        @test β(stress, 𝒮ʷᵖ / 2, curve) == 0
         𝒮ᶠᶜ = van_genuchten_saturation(FT(1), FT(2))
         𝒮ᵐⁱᵈ = (0.5 + 𝒮ᶠᶜ) / 2
-        @test β(stress, 𝒮ᵐⁱᵈ) < 1
-        @test β(bare, 𝒮ᵐⁱᵈ) == 1
+        @test β(stress, 𝒮ᵐⁱᵈ, curve) < 1
+        @test β(bare, 𝒮ᵐⁱᵈ, curve) == 1
     end
 
     # β is smooth in the wilting-point head: centered differences at two step sizes agree.
     let FT = Float64
-        β_of_ψ(ψ) = β(PlantAvailableWaterStress(FT; inverse_air_entry_head = 1,
-                                                pore_size_uniformity = 2,
-                                                wilting_point_head = ψ), FT(0.3))
+        curve = VanGenuchtenRetention(FT; α = 1, n = 2)
+        β_of_ψ(ψ) = β(PlantAvailableWaterStress(FT; wilting_point_head = ψ), FT(0.3), curve)
         derivative(δ) = (β_of_ψ(150 + δ) - β_of_ψ(150 - δ)) / 2δ
         @test derivative(1e-2) ≈ derivative(1e-3) rtol = 1e-4
         @test derivative(1e-3) != 0
     end
 
-    # Parameter sources: the hydrology's retention curve and a texture class build the
-    # same closure as the explicit numbers they stand for.
+    # The endpoints follow the curve they are handed, not the closure: one stress object
+    # reads two soils and lands on two different stress bands. `effective_saturation`
+    # reads the curve at `(i, j)`, so per-cell `Field` parameters need nothing here.
     let FT = Float64
-        explicit = PlantAvailableWaterStress(FT; inverse_air_entry_head = 1, pore_size_uniformity = 2)
-        shared   = PlantAvailableWaterStress(FT; retention_curve = VanGenuchtenRetention(α = 1, n = 2))
-        @test shared === explicit
+        stress = PlantAvailableWaterStress(FT)
+        loam = VanGenuchtenRetention(FT; α = 3.6, n = 1.56)   # Carsel-Parrish means
+        clay = VanGenuchtenRetention(FT; α = 0.8, n = 1.09)
+        endpoints(curve) = interface_hydrology_state(1, 1, nothing, stress, land_state(FT(0.3), curve))
 
-        loam = van_genuchten_texture_parameters(:loam)
-        @test loam == (inverse_air_entry_head = 3.6, pore_size_uniformity = 1.56)
-        @test PlantAvailableWaterStress(FT; texture = :loam) ===
-              PlantAvailableWaterStress(FT; inverse_air_entry_head = loam.inverse_air_entry_head,
-                                        pore_size_uniformity = loam.pore_size_uniformity)
-        @test_throws ArgumentError van_genuchten_texture_parameters(:peat)
+        @test endpoints(loam).field_capacity_saturation ≈ 0.46628 atol = 1e-5
+        @test endpoints(loam).wilting_saturation        ≈ 0.02950 atol = 1e-5
+        # A clay wilts wetter than a loam is ever field-capacity dry.
+        @test endpoints(clay).wilting_saturation > endpoints(loam).field_capacity_saturation
+        # So the same wetness is unstressed on one soil and wilted on the other.
+        @test β(stress, FT(0.6), loam) == 1
+        @test β(stress, FT(0.6), clay) == 0
     end
 
-    # Per-cell parameters: a Field-valued stress evaluates every column on its own curve.
-    let FT = Float64
-        grid = RectilinearGrid(FT; size = (1, 2), extent = (1, 1),
-                               topology = (Periodic, Periodic, Flat))
-        α = Field{Center, Center, Nothing}(grid)
-        n = Field{Center, Center, Nothing}(grid)
-        set!(α, (x, y) -> y < 0.5 ? 3.6 : 0.8)    # loam column, clay column
-        set!(n, (x, y) -> y < 0.5 ? 1.56 : 1.09)
-        stress = PlantAvailableWaterStress(FT; inverse_air_entry_head = α,
-                                           pore_size_uniformity = n)
-        for (j, texture) in enumerate((:loam, :clay)), 𝒮 in (FT(0.1), FT(0.35), FT(0.6), FT(0.9))
-            columnwise = evaporation_efficiency(stress,
-                interface_hydrology_state(1, j, grid, stress, (saturation = 𝒮,)))
-            @test columnwise == β(PlantAvailableWaterStress(FT; texture), 𝒮)
-        end
-    end
+    # Head validation.
+    @test_throws ArgumentError PlantAvailableWaterStress(field_capacity_head = 200)
+    @test_throws ArgumentError PlantAvailableWaterStress(field_capacity_head = 0)
 
-    # Constructor validation: exactly one parameter source, physical parameters.
-    @test_throws ArgumentError PlantAvailableWaterStress()
-    @test_throws ArgumentError PlantAvailableWaterStress(inverse_air_entry_head = 1)
-    @test_throws ArgumentError PlantAvailableWaterStress(texture = :loam, pore_size_uniformity = 2)
-    @test_throws ArgumentError PlantAvailableWaterStress(retention_curve = VanGenuchtenRetention(α = 1, n = 2),
-                                                         texture = :loam)
-    @test_throws ArgumentError PlantAvailableWaterStress(inverse_air_entry_head = 1, pore_size_uniformity = 1)
-    @test_throws ArgumentError PlantAvailableWaterStress(inverse_air_entry_head = 1, pore_size_uniformity = 2,
-                                                         field_capacity_head = 200)
+    # The requirement is visible to the interface through nested formulations, and a
+    # hydrology carrying no retention curve is rejected where the interface is built.
+    let FT = Float64
+        @test !requires_retention_curve(CriticalSaturation(FT(0.5)))
+        @test requires_retention_curve(PlantAvailableWaterStress(FT))
+        @test requires_retention_curve(CanopyConductanceHumidity(FT; leaf_area_index = 2,
+                                                                 moisture_stress = PlantAvailableWaterStress(FT)))
+
+        grid = RectilinearGrid(FT; size = (), topology = (Flat, Flat, Flat))
+        canopy = CanopyAirSpace(FT; soil = BulkHumidity(),
+                                canopy = CanopyConductanceHumidity(FT; leaf_area_index = 2,
+                                                                   moisture_stress = PlantAvailableWaterStress(FT)))
+        atmosphere = PrescribedAtmosphere(grid, [0.0, 1.0]; surface_layer_height = 10)
+
+        bucket = SlabLand(grid; hydrology = BucketHydrology())
+        @test_throws ArgumentError atmosphere_land_interface(grid, atmosphere, bucket;
+                                                             temperature = canopy,
+                                                             specific_humidity = canopy)
+
+        soil = SlabLand(grid; hydrology = VariablySaturatedHydrology(FT;
+            slab_depth = 0.1, porosity = 0.4, storage_height = 1000,
+            retention_curve = VanGenuchtenRetention(FT; α = 3.6, n = 1.56),
+            hydraulic_conductivity = VanGenuchtenConductivity(FT; K_saturated = 1e-6, n = 1.56)))
+        @test !isnothing(atmosphere_land_interface(grid, atmosphere, soil;
+                                                   temperature = canopy,
+                                                   specific_humidity = canopy))
+    end
 end

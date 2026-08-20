@@ -104,6 +104,29 @@ function surface_temperature end
 surface_temperature(::Any) = nothing
 
 #####
+##### Soil-water retention, published by the land to the interface
+#####
+
+"""
+    surface_retention_curve(land)
+
+The soil-water retention curve the land's hydrology owns, or `nothing` for a hydrology
+that carries none. Surface formulations that measure plant-available water evaluate
+their suction endpoints on this curve, so they read the same one the soil does.
+"""
+function surface_retention_curve end
+surface_retention_curve(::Any) = nothing
+
+"""
+    effective_saturation(retention_curve, ψ, i, j)
+
+The effective saturation at suction head `ψ` (m, positive) on `retention_curve`,
+evaluated with the curve's parameters at cell `(i, j)` so a curve whose parameters are
+`Field`s follows each column's own soil. Called from flux kernels.
+"""
+function effective_saturation end
+
+#####
 ##### Clock type consistency across components
 #####
 

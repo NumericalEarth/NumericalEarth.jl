@@ -82,6 +82,7 @@ end
 # contrast — a rough forest canopy versus a smooth bare surface.
 
 critical_saturation = 0.5
+soil_porosity       = 0.4
 
 soil_branch() = DryLayerHumidity(;
     dry_layer_depth = StorageBasedDryLayerDepth(maximum_dry_layer_depth    = 0.025,
@@ -90,14 +91,14 @@ soil_branch() = DryLayerHumidity(;
     vapor_exchange  = DryLayerVaporPistonVelocity(minimum_dry_layer_depth = 1e-3,
                                                   molecular_diffusivity   = 2.4e-5,
                                                   tortuosity              = ConstantTortuosity()),
-    thermal_exchange_depth = 0.05, porosity = 0.4)
+    thermal_exchange_depth = 0.05, porosity = soil_porosity)
 
-# The canopy stress runs on plant-available water (wilting point to field capacity on the
-# Carsel-Parrish loam retention curve — the bucket hydrology below carries none of its own).
+# The canopy stress runs on plant-available water: `β` ramps from the permanent wilting
+# point to field capacity, both read off the soil column's own retention curve below.
 vegetated_tile() = CanopyAirSpace(;
     soil   = soil_branch(),
     canopy = CanopyConductanceHumidity(; leaf_area_index = 4.0,
-                                       moisture_stress = PlantAvailableWaterStress(texture = :loam),
+                                       moisture_stress = PlantAvailableWaterStress(),
                                        absorbed_par    = InteractiveAbsorbedPAR()),
     soil_skin_flux = SoilConductiveFlux(1.5, 0.05))
 
@@ -110,10 +111,27 @@ land_roughness(z₀m, z₀s) = SimilarityTheoryFluxes(;
 forest_fluxes() = land_roughness(0.8, 0.08)   # rough canopy
 bare_fluxes()   = land_roughness(0.01, 1e-3)  # smooth bare soil
 
-# A shallow bucket, started dry (below `𝒮ᶜ`) so the pulse produces a clear wet/dry contrast.
-maximum_water_storage = 30.0
-initial_water_storage = 0.3 * maximum_water_storage
-initial_temperature   = 288.0
+# A shallow variably saturated column on a loam retention curve
+# ([Carsel and Parrish (1988)](@cite carsel1988) mean `α`, `n`), started dry (below `𝒮ᶜ`)
+# so the pulse produces a clear wet/dry contrast. The canopy stress reads this curve, so
+# its wilting point and field capacity are the same soil's.
+
+soil_slab_depth         = 0.075   # m — capacity ρˡ ν hˡᵃ = 30 kg m⁻²
+soil_residual_fraction  = 0.05
+liquid_density          = 1000.0
+soil_retention          = VanGenuchtenRetention(α = 3.6, n = 1.56)
+initial_soil_saturation = 0.3
+initial_water_storage   = (initial_soil_saturation * (soil_porosity - soil_residual_fraction) +
+                           soil_residual_fraction) * liquid_density * soil_slab_depth
+initial_temperature     = 288.0
+
+variably_saturated_soil() = VariablySaturatedHydrology(;
+    slab_depth = soil_slab_depth, porosity = soil_porosity,
+    residual_liquid_fraction = soil_residual_fraction, storage_height = 1000,
+    retention_curve        = soil_retention,
+    hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 1.56),
+    deep_liquid_flux       = NoDeepLiquidFlux(),
+    runoff                 = InfiltrationCapacityRunoff(infiltration_capacity = 5e-4))
 
 # ## Model builder
 #
@@ -127,7 +145,7 @@ function tiled_land_column(; fraction, label)
     radiation  = forced_radiation(grid, times)
 
     land = SlabLand(grid; energy = SlabEnergy(),
-                    hydrology = BucketHydrology(; maximum_water_storage))
+                    hydrology = variably_saturated_soil())
     set!(land; T = initial_temperature, M = initial_water_storage)
 
     tiled = TiledLandInterface(grid, atmosphere, land;
