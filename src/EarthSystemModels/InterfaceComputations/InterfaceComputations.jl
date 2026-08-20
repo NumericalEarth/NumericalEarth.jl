@@ -2,9 +2,9 @@ module InterfaceComputations
 
 using Adapt: Adapt, adapt
 using Oceananigans: Oceananigans
-using Oceananigans.Fields: AbstractField, Field, Face, Center, FractionalIndices, interpolate
+using Oceananigans.Fields: AbstractField, Field, Face, Center
 using Oceananigans.Grids: Flat, topology
-using Oceananigans.OutputReaders: FieldTimeSeries, cpu_interpolating_time_indices
+using Oceananigans.OutputReaders: FieldTimeSeries, FlavorOfFTS, cpu_interpolating_time_indices
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: KernelParameters, worksize
 
