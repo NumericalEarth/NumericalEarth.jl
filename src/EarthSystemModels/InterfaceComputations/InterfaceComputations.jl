@@ -3,7 +3,7 @@ module InterfaceComputations
 using Adapt: Adapt, adapt
 using Oceananigans: Oceananigans
 using Oceananigans.Fields: AbstractField, Field, Face, Center, FractionalIndices, interpolate
-using Oceananigans.Grids: Flat, topology
+using Oceananigans.Grids: Flat, Periodic, topology
 using Oceananigans.OutputReaders: FieldTimeSeries, cpu_interpolating_time_indices
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: KernelParameters, worksize
@@ -149,6 +149,16 @@ function interface_kernel_parameters(grid)
 
     return kernel_parameters
 end
+
+# Fractional indices of a prescribed component's grid are computed over the exchange grid's
+# halo as well as its interior (`interface_kernel_parameters`). A halo node may fall outside
+# a regional component grid, and because longitude is periodic a node just west of the
+# component's western edge wraps to the far east, giving an index beyond the grid entirely.
+# Clamping non-periodic directions to the component interior gives such cells the nearest
+# prescribed value instead.
+@inline clamp_fractional_index(::Nothing, topo, N) = nothing
+@inline clamp_fractional_index(fractional_index, topo, N) =
+    ifelse(topo isa Periodic, fractional_index, clamp(fractional_index, 1, N))
 
 # 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1: a scalar
 # (e.g. a prescribed measurement height or the 600 m BL-height fallback) passes through,
