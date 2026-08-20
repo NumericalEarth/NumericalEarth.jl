@@ -76,3 +76,15 @@ latent-heat BC reads. May be a `Field`, `ZeroField`, any `AbstractField`,
 or a `Number`.
 """
 function saturation end
+
+"""
+    surface_retention_curve(hydrology::AbstractHydrology)
+
+The soil-water retention curve this closure owns, published to the atmosphere-land
+interface so a surface formulation measuring plant-available water evaluates its
+suction endpoints on the same curve the soil drains on. Defaults to `nothing`: a
+hydrology whose saturation is not a retention-curve saturation (e.g.
+[`BucketHydrology`](@ref), whose `𝒮` is a fill fraction) carries no curve, and the
+formulations that need one reject it at construction.
+"""
+EarthSystemModels.surface_retention_curve(::AbstractHydrology) = nothing
