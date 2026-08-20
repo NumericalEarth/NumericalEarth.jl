@@ -235,6 +235,28 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
         for dataset in (ERA5HourlyLand(), ERA5MonthlyLand())
             metadatum = Metadatum(:skin_temperature; dataset, date)
             @test hasmethod(Downloads.download, Tuple{typeof(metadatum)})
+
+            # Ownership (issue #530): `Downloads.download` for ERA5-Land metadata is the
+            # src method, which outranks any extension's generic `Metadatum{<:ERA5Dataset}`
+            # method under any load order; the CDS backend enters via `download_era5_land`.
+            @test which(Downloads.download, Tuple{typeof(metadatum)}).module ===
+                  NumericalEarth.DataWrangling.ERA5
+
+            metadata = Metadata(:skin_temperature; dataset, dates=[date, DateTime(2020, 6, 1)])
+            @test which(Downloads.download, Tuple{typeof(metadata)}).module ===
+                  NumericalEarth.DataWrangling.ERA5
+
+            # This extension implements the `download_era5_land` stub.
+            @test which(NumericalEarth.DataWrangling.ERA5.download_era5_land,
+                        Tuple{typeof(metadatum)}).module === CDSExt
+        end
+
+        # A file already on disk short-circuits the download without touching any backend.
+        mktempdir() do dir
+            metadatum = Metadatum(:skin_temperature; dataset=ERA5MonthlyLand(), date, dir)
+            path = NumericalEarth.DataWrangling.metadata_path(metadatum)
+            touch(path)
+            @test Downloads.download(metadatum) == path
         end
 
         # Land datasets have their own yearly-file download method and are NOT
