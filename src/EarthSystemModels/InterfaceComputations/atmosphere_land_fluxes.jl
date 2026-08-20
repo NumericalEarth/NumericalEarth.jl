@@ -167,35 +167,44 @@ end
 #####
 ##### Prescribed, possibly time-varying surface inputs.
 ##### `surface_field_value` reads the per-cell value from a `Number`, a static
-##### `Field`, or — for a `FieldTimeSeries` interpolated to the model clock — a
-##### kernel-friendly `PrescribedSurfaceData` bundle.
+##### `Field`, or a `FieldTimeSeries` interpolated to the model clock.
 #####
 
-struct PrescribedSurfaceData{D, B, T}
-    data          :: D
-    backend       :: B
-    time_indexing :: T
+@inline surface_field_value(x, i, j, time_interpolator) = state2dindex(x, i, j)
+
+# `i, j` name an exact cell, so the value is interpolated in time only. Passing them to
+# `interpolate` as spatial fractional indices would also read the neighbor at
+# `(i + 1, j + 1)`, which does not exist in a `Flat` direction or at the last cell.
+#
+# The indices are converted because `time_interpolator` reaches the kernel as an argument,
+# where its scalar fields can arrive as `CuTracedRNumber` rather than `Int`
+# (CliMA/Oceananigans.jl#4230).
+#
+# TODO: drop this blend once Oceananigans accepts a `TimeInterpolator` in `getindex`
+# (CliMA/Oceananigans.jl#5886), leaving `x[i, j, 1, time_interpolator]`. The flux kernels take
+# an interpolator precomputed on the host, as the prescribed-atmosphere path does, because
+# `fts[i, j, k, Time(t)]` recomputes the time indices in every thread; today Oceananigans
+# accepts one only through `interpolate`, which interpolates in space as well.
+@inline function surface_field_value(x::FlavorOfFTS, i, j, time_interpolator)
+    ñ  = time_interpolator.fractional_index
+    n₁ = convert(Int, time_interpolator.first_index)
+    n₂ = convert(Int, time_interpolator.second_index)
+
+    @inbounds ψ₁ = x[i, j, 1, n₁]
+    @inbounds ψ₂ = x[i, j, 1, n₂]
+
+    return ifelse(n₁ == n₂, ψ₁, ψ₂ * ñ + ψ₁ * (1 - ñ))
 end
 
-Adapt.adapt_structure(to, p::PrescribedSurfaceData) =
-    PrescribedSurfaceData(adapt(to, p.data), adapt(to, p.backend), adapt(to, p.time_indexing))
-
-@inline surface_field_value(x, i, j, time_interpolator) = state2dindex(x, i, j)
-@inline surface_field_value(x::PrescribedSurfaceData, i, j, time_interpolator) =
-    interpolate(FractionalIndices(i, j, nothing), time_interpolator, x.data, x.backend, x.time_indexing)
-
-# Host-side: reduce a prescribed-surface spec (LAI, vegetation fraction, …) to a
-# kernel-friendly value plus the time index used to interpolate it. Constants and
-# static fields pass through untouched (`nothing` interpolator); a
-# `FieldTimeSeries` is reduced to its arrays and its time index is precomputed on
-# the host.
+# Host-side: pair a prescribed-surface spec (LAI, vegetation fraction, …) with the time
+# index used to interpolate it. Constants and static fields pass through untouched
+# (`nothing` interpolator); a `FieldTimeSeries` keeps its time index precomputed on the
+# host, so the kernel does not recompute it.
 @inline kernel_surface_field(surface_field, arch, time) = (surface_field, nothing)
 @inline function kernel_surface_field(surface_field::FieldTimeSeries, arch, time)
     time_interpolator = cpu_interpolating_time_indices(arch, surface_field.times,
                                                        surface_field.time_indexing, time)
-    bundle = PrescribedSurfaceData(surface_field.data, surface_field.backend,
-                                   surface_field.time_indexing)
-    return bundle, time_interpolator
+    return surface_field, time_interpolator
 end
 
 # The LAI spec lives on the canopy humidity formulation; other formulations carry
