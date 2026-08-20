@@ -168,11 +168,15 @@ end
 # `interpolate` as spatial fractional indices would also read the neighbor at
 # `(i + 1, j + 1)`, which does not exist in a `Flat` direction or at the last cell.
 #
-# TODO: move this blend into Oceananigans as `getindex(fts, i, j, k, ::TimeInterpolator)`.
-# `fts[i, j, k, Time(t)]` searches `fts.times` once per thread, so the flux kernels take a
-# `TimeInterpolator` precomputed on the host instead (as the prescribed-atmosphere path
-# does). Oceananigans accepts one only through `interpolate`, which interpolates in space
-# as well, so the two-snapshot blend is written out here. See CliMA/Oceananigans.jl#5885.
+# The indices are converted because `time_interpolator` reaches the kernel as an argument,
+# where its scalar fields can arrive as `CuTracedRNumber` rather than `Int`
+# (CliMA/Oceananigans.jl#4230).
+#
+# TODO: drop this blend once Oceananigans accepts a `TimeInterpolator` in `getindex`
+# (CliMA/Oceananigans.jl#5886), leaving `x[i, j, 1, time_interpolator]`. The flux kernels take
+# an interpolator precomputed on the host, as the prescribed-atmosphere path does, because
+# `fts[i, j, k, Time(t)]` recomputes the time indices in every thread; today Oceananigans
+# accepts one only through `interpolate`, which interpolates in space as well.
 @inline function surface_field_value(x::FlavorOfFTS, i, j, time_interpolator)
     ñ  = time_interpolator.fractional_index
     n₁ = convert(Int, time_interpolator.first_index)
@@ -187,7 +191,7 @@ end
 # Host-side: pair a prescribed-surface spec (LAI, vegetation fraction, …) with the time
 # index used to interpolate it. Constants and static fields pass through untouched
 # (`nothing` interpolator); a `FieldTimeSeries` keeps its time index precomputed on the
-# host, so the kernel never searches `times`.
+# host, so the kernel does not recompute it.
 @inline kernel_surface_field(surface_field, arch, time) = (surface_field, nothing)
 @inline function kernel_surface_field(surface_field::FieldTimeSeries, arch, time)
     time_interpolator = cpu_interpolating_time_indices(arch, surface_field.times,
