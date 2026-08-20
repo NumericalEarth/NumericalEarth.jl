@@ -187,13 +187,17 @@ range the slab operates in. 1 m rather than the textbook 3.3 m follows
 capacity for van Genuchten parameters of this family; the choice is worth little averaged
 over contrasting columns, hence a keyword rather than a constant.
 
-!!! warning "The matched parameters are not texture parameters"
-    The fitted `α` and `n` reproduce the mean retention curve between the matching heads
-    and nothing else. Do not hand them to a plant stress closure that spans the same
-    heads (such as the canopy `PlantAvailableWaterStress`): matching at field capacity
-    and wilting pushes `n` toward 1, and on such a curve the stress band swallows the
-    whole moisture range, collapsing the stress factor at moderate saturations. Stress
-    closures want literature texture-class values.
+!!! warning "The matched parameters are per-column and frame-bound"
+    Each column's `(α, n)` pass exactly through the mean water contents at the matching
+    heads, in that column's own `(θʳ, ν)` frame, so a closure that reads the same
+    column's saturation with them — a plant stress evaluated at the same heads, say — is
+    exactly consistent. What breaks is mixing frames: collapsing these fields to one
+    domain-wide scalar while each cell's saturation lives on its own curve, or reading
+    moisture transplanted from another model through these curves (soil moisture is
+    parameter-relative; rescale by plant-available fraction first). The stress window
+    the parameters imply is the pedotransfer family's own — [`WeynantsPedotransfer`](@ref)
+    places the wilting point wetter than lab texture tables — a statement about the
+    soil, not an artifact of the matching.
 
 The parameters describe the soil inside `[-slab_depth, 0]` and nothing below it, which
 belongs to the deep-flux closure.
