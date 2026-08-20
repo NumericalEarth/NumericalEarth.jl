@@ -64,3 +64,32 @@ end
         assert_tripolar_velocity_zipper(field, exchange_grid)
     end
 end
+
+@testset "Regional atmosphere fractional indices stay on the source grid" begin
+    # `initialize!` fills fractional indices over the exchange grid's halo as well as its
+    # interior. Halo nodes of a regional grid lie outside the source domain, and a node west
+    # of λ = 0 wraps to λ ≈ 360 — an index far beyond the source grid unless it is clamped.
+    for arch in test_architectures
+        grid = LatitudeLongitudeGrid(arch; size = (2, 1, 1),
+                                     longitude = (0, 20), latitude = (0, 10),
+                                     z = (-1, 0),
+                                     topology = (Bounded, Bounded, Bounded))
+
+        InterfaceComputations = NumericalEarth.EarthSystemModels.InterfaceComputations
+        atmosphere = PrescribedAtmosphere(grid, [0.0])
+        exchanger = InterfaceComputations.ComponentExchanger(atmosphere, grid)
+        InterfaceComputations.initialize!(exchanger, grid, atmosphere)
+
+        Nx, Ny, _ = size(atmosphere.grid)
+
+        # The atmosphere shares the exchange grid, so interior cells map onto themselves.
+        @test Array(interior(exchanger.regridder.i))[:, 1, 1] ≈ [1, 2]
+        @test Array(interior(exchanger.regridder.j))[:, 1, 1] ≈ [1, 1]
+
+        # Halo cells take the nearest source column instead of an out-of-range index.
+        fi = Array(exchanger.regridder.i.data[0:Nx+1, 0:Ny+1, 1:1])
+        fj = Array(exchanger.regridder.j.data[0:Nx+1, 0:Ny+1, 1:1])
+        @test all(f -> 1 <= f <= Nx, fi)
+        @test all(f -> 1 <= f <= Ny, fj)
+    end
+end

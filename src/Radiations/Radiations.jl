@@ -32,6 +32,7 @@ using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, sea_ice_concentration, set_prescribed_field!
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters,
                                                  ComponentExchanger,
+                                                 clamp_fractional_index,
                                                  kernel_radiation_properties,
                                                  air_sea_interface_radiation_state,
                                                  air_sea_ice_interface_radiation_state,
