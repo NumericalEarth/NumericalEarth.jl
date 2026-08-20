@@ -19,7 +19,7 @@ using NumericalEarth.DataWrangling.ASTERGED: asterged_short_name, asterged_versi
                                              broadband_map, place_tile!,
                                              OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS
 using NumericalEarth.DataWrangling.GloBFP3D: GlobalBuildingFootprints3DMetadatum,
-                                             GLOBFP3D_FIGSHARE_ARTICLE_IDS,
+                                             GLOBFP3D_FIGSHARE_ARTICLE_IDS, NoIntersectingTilesError,
                                              globfp3d_parse_tile_bounds,
                                              globfp3d_native_cell_size
 using NumericalEarth.DataWrangling.GHSL: GHSBuiltS, GHSLMetadatum, native_resolution,

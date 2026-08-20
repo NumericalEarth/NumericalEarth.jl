@@ -3,7 +3,8 @@ include("runtests_setup.jl")
 using NumericalEarth.DataWrangling.GloBFP3D: reduce_morphometry, globfp3d_parse_tile_bounds,
                                              globfp3d_native_cell_size, globfp3d_native_resolution,
                                              globfp3d_rasterize_to_netcdf,
-                                             morphometry_latitude_bands, morphometry_names
+                                             morphometry_latitude_bands, morphometry_names,
+                                             NoIntersectingTilesError
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_region_grid,
                                     bounding_box_intersects, longitude_interfaces, latitude_interfaces,
                                     dataset_variable_name, validate_dataset_coverage,
@@ -126,6 +127,20 @@ end
     for name in morphometry_names
         @test isapprox(accumulated[name], single[name], rtol = 1e-12, atol = 1e-12)
     end
+end
+
+@testset "GloBFP3D error paths" begin
+    dataset = GlobalBuildingFootprints3D()
+    region = BoundingBox(longitude = (-74.02, -73.93), latitude = (40.70, 40.82))
+    message = sprint(showerror, NoIntersectingTilesError(region))
+    @test occursin("No 3D-GloBFP tiles intersect", message)
+    @test occursin(summary(region), message)
+
+    # An unbounded region fails validation before any raster sizing or download.
+    target = LatitudeLongitudeGrid(CPU(), Float64; size = (4, 4),
+                                   longitude = (-74.02, -73.93), latitude = (40.70, 40.82),
+                                   topology = (Bounded, Bounded, Flat))
+    @test_throws "must be used with a bounded region" building_morphometry(target; dataset, region = BoundingBox())
 end
 
 @testset "GloBFP3D native aggregation grid" begin
