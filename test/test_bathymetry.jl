@@ -2,11 +2,8 @@ include("runtests_setup.jl")
 include("download_utils.jl")
 
 using JLD2
-using NumericalEarth.Bathymetry: remove_minor_basins!,
-                                 BathymetryRegridding,
-                                 cache_filename,
-                                 load_bathymetry_cache,
-                                 save_bathymetry_cache
+using NumericalEarth.Bathymetry: remove_minor_basins!, bathymetry_regridding_key
+using NumericalEarth.DataWrangling: field_cache_filename, save_field_cache
 using NumericalEarth.DataWrangling.ETOPO
 using Statistics
 
@@ -76,8 +73,8 @@ using Statistics
     end
 end
 
-@testset "BathymetryRegridding configuration" begin
-    @info "Testing BathymetryRegridding configuration..."
+@testset "Bathymetry cache key" begin
+    @info "Testing bathymetry cache keys..."
 
     grid = LatitudeLongitudeGrid(CPU();
                                  size = (100, 100, 10),
@@ -87,26 +84,33 @@ end
 
     metadata = Metadatum(:bottom_height, dataset=ETOPO2022())
 
+    key(; height_above_water = nothing, minimum_depth = 0, interpolation_passes = 1, major_basins = 1) =
+        bathymetry_regridding_key(grid, metadata; height_above_water, minimum_depth,
+                                  interpolation_passes, major_basins)
+
     # Test construction and equality
-    config1 = BathymetryRegridding(grid, metadata)
-    config2 = BathymetryRegridding(grid, metadata)
+    config1 = key()
+    config2 = key()
     @test config1 == config2
     @test hash(config1) == hash(config2)
 
     # Test that different parameters produce different configs
-    config3 = BathymetryRegridding(grid, metadata; interpolation_passes=5)
+    config3 = key(interpolation_passes = 5)
     @test config1 != config3
     @test hash(config1) != hash(config3)
 
-    config4 = BathymetryRegridding(grid, metadata; minimum_depth=10)
+    config4 = key(minimum_depth = 10)
     @test config1 != config4
 
-    # Test cache filename: same config → same filename
-    @test cache_filename(config1) == cache_filename(config2)
-    # Different config → different filename
-    @test cache_filename(config1) != cache_filename(config3)
+    # Integer and float parameter values key identically
+    @test key(minimum_depth = 10) == key(minimum_depth = 10.0)
 
-    # Test JLD2 round-trip of BathymetryRegridding
+    # Test cache filename: same config → same filename
+    @test field_cache_filename(config1) == field_cache_filename(config2)
+    # Different config → different filename
+    @test field_cache_filename(config1) != field_cache_filename(config3)
+
+    # Test JLD2 round-trip of the key
     tmpfile = tempname() * ".jld2"
     jldopen(tmpfile, "w") do file
         file["config"] = config1
@@ -143,4 +147,19 @@ end
     # cache=false should still produce correct results
     result4 = regrid_bathymetry(grid; cache=false)
     @test parent(result1) == parent(result4)
+
+    # overwrite_cache=true skips the lookup and refreshes the entry
+    metadata = Metadatum(:bottom_height, dataset=ETOPO2022())
+    config = bathymetry_regridding_key(grid, metadata;
+                                       height_above_water = nothing, minimum_depth = 0,
+                                       interpolation_passes = 1, major_basins = 1)
+    save_field_cache(config, zeros(size(grid, 1), size(grid, 2)))
+    poisoned = regrid_bathymetry(grid; cache=true)
+    @test all(iszero, interior(poisoned))
+
+    result5 = regrid_bathymetry(grid; cache=true, overwrite_cache=true)
+    @test parent(result1) == parent(result5)
+
+    result6 = regrid_bathymetry(grid; cache=true)
+    @test parent(result1) == parent(result6)
 end
