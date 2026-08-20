@@ -378,7 +378,7 @@ function Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:Union
     pl_hPa = isnothing(pl) ? nothing : [round(Int, p * 1e-2) for p in pl]
 
     # Build area constraint from region
-    area = build_era5_area(meta.region)
+    area = era5_request_area(meta.region, meta.dataset, meta.name)
 
     # Build output prefix (filename without extension)
     output_prefix = first(splitext(output_filename))
@@ -527,7 +527,7 @@ function concatenate_era5_nc(src_paths, dst_path)
     return dst_path
 end
 
-# CDS expects [north, west, south, east]; build_era5_area returns [south, west, north, east].
+# CDS expects [north, west, south, east]; `era5_request_area` returns [south, west, north, east].
 cds_area(::Nothing) = nothing
 cds_area(area) = [area[3], area[2], area[1], area[4]]
 
@@ -558,7 +558,7 @@ function Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:ERA5L
     year = Dates.year(meta.dates)
     year_dates = filter(dt -> Dates.year(dt) == year,
                          NumericalEarth.DataWrangling.all_dates(dataset, meta.name))
-    area = cds_area(build_era5_area(meta.region))
+    area = cds_area(era5_request_area(meta.region, meta.dataset, meta.name))
     batches = era5_land_year_batches(dataset, year_dates)
 
     @root begin
@@ -583,22 +583,28 @@ end
 
 const BBOX = NumericalEarth.DataWrangling.BoundingBox
 
-era5cli_request_area(region, dataset, name::Symbol) = era5cli_request_area(region, dataset, [name])
-era5cli_request_area(::Nothing, dataset, names::Vector{Symbol}) = nothing
+padded_era5_region(region, dataset, name::Symbol) = padded_era5_region(region, dataset, [name])
+padded_era5_region(::Nothing, dataset, names::Vector{Symbol}) = nothing
 
 # Pad by two native cells of the coarsest requested variable (waves live on 0.5°, the rest
-# 0.25°): center-bracketing `restrict` can reach one cell past a boundary-aligned edge, and the
-# margin also absorbs era5cli's two-decimal rounding. Over-fetch is harmless.
-function era5cli_request_area(bbox::BBOX, dataset, names::Vector{Symbol})
+# 0.25°): center-bracketing `restrict` can reach one cell past a boundary-aligned edge, so an
+# unpadded request comes up a cell short on each edge and the read is rejected. The margin also
+# absorbs era5cli's two-decimal rounding. Over-fetch is harmless because the reader selects the
+# exact cells from the file.
+function padded_era5_region(bbox::BBOX, dataset, names::Vector{Symbol})
     (isnothing(bbox.longitude) || isnothing(bbox.latitude)) && return nothing
     Δλ = maximum(360 / size(dataset, name)[1] for name in names)
     Δφ = maximum(180 / size(dataset, name)[2] for name in names)
     lon = bbox.longitude
     lat = bbox.latitude
-    padded = BBOX(longitude = (lon[1] - 2Δλ, lon[2] + 2Δλ),
-                  latitude  = (max(lat[1] - 2Δφ, -90), min(lat[2] + 2Δφ, 90)))
-    return build_era5cli_area(padded)
+    return BBOX(longitude = (lon[1] - 2Δλ, lon[2] + 2Δλ),
+                latitude  = (max(lat[1] - 2Δφ, -90), min(lat[2] + 2Δφ, 90)))
 end
+
+# `hourly` wants the padded area as (lat, lon) tuples; `monthly`, `yearly`, and the land
+# products want it as a 4-element array.
+era5cli_request_area(region, dataset, names) = build_era5cli_area(padded_era5_region(region, dataset, names))
+era5_request_area(region, dataset, names) = build_era5_area(padded_era5_region(region, dataset, names))
 
 build_era5cli_area(::Nothing) = nothing
 build_era5_area(::Nothing) = nothing
