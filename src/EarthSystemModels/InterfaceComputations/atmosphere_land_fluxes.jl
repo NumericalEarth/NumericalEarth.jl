@@ -30,6 +30,13 @@ function atmosphere_land_interface(grid, atmosphere, land;
                                    temperature         = BulkTemperature(),
                                    velocity_difference = RelativeVelocity(),
                                    specific_humidity   = default_al_specific_humidity(land))
+    if requires_retention_curve(specific_humidity) && isnothing(surface_retention_curve(land))
+        throw(ArgumentError("$(summary(specific_humidity)) measures plant-available water on " *
+                            "the soil's retention curve, but this land's hydrology carries none. " *
+                            "Use a hydrology that owns one (VariablySaturatedHydrology), or a " *
+                            "moisture stress defined on the hydrology's own saturation " *
+                            "(CriticalSaturation)."))
+    end
     al_fluxes = AtmosphereSurfaceFluxes(grid)
     al_properties = InterfaceProperties(specific_humidity, temperature, velocity_difference)
     interface_temperature = build_interface_temperature(temperature, grid)
@@ -107,7 +114,8 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     land_state = (T = land_exchanger_state.T,
                   saturation = land_exchanger_state.saturation,
                   canopy_water_storage = land_exchanger_state.canopy_water_storage,
-                  canopy_water_capacity = land_exchanger_state.canopy_water_capacity)
+                  canopy_water_capacity = land_exchanger_state.canopy_water_capacity,
+                  retention_curve = land_exchanger_state.retention_curve)
 
     land_properties = atmosphere_land_surface_properties(land_exchanger_state)
 
@@ -211,8 +219,18 @@ end
 @inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) = land_saturation(i, j, grid, land_state)
 @inline interface_hydrology_state(i, j, grid, q::FractionalHumidity, land_state) =
     interface_hydrology_state(i, j, grid, q.efficiency, land_state)
+@inline requires_retention_curve(q::FractionalHumidity) = requires_retention_curve(q.efficiency)
 @inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) = land_saturation(i, j, grid, land_state)
-@inline interface_hydrology_state(i, j, grid, ::PlantAvailableWaterStress, land_state) = land_saturation(i, j, grid, land_state)
+# The stress endpoints live on the *land's* retention curve, whose parameters may vary
+# per cell; evaluate them here, once per cell, so the flux solve reads plain scalars.
+@inline function interface_hydrology_state(i, j, grid, p::PlantAvailableWaterStress, land_state)
+    𝒮 = state2dindex(land_state.saturation, i, j)
+    FT = typeof(𝒮)
+    r  = land_state.retention_curve
+    return (saturation = 𝒮,
+            field_capacity_saturation = effective_saturation(i, j, grid, r, convert(FT, p.field_capacity_head)),
+            wilting_saturation        = effective_saturation(i, j, grid, r, convert(FT, p.wilting_point_head)))
+end
 @inline interface_hydrology_state(i, j, grid, ::DryLayerHumidity, land_state) =
     land_saturation(i, j, grid, land_state)
 @inline interface_hydrology_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing

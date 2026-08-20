@@ -443,14 +443,19 @@ Adapt.adapt_structure(to, c::CanopyAirSpace) =
 # Materialization / identity — delegate to the sub-models so the per-cell interface
 # state carries the soil saturation, bulk temperature, and LAI the branches read.
 @inline interface_phase(c::CanopyAirSpace) = interface_phase(c.soil)
-# The soil branch always publishes the saturation 𝒮; a canopy with interception
-# additionally pulls the prognostic canopy water store Wᶜ (→ fʷ).
+# The soil branch always publishes the saturation 𝒮 and the canopy branch its stress
+# state; a canopy with interception additionally pulls the prognostic canopy water
+# store Wᶜ (→ fʷ).
 @inline interface_hydrology_state(i, j, grid, c::CanopyAirSpace, land_state) =
     canopy_air_space_hydrology_state(c.interception, i, j, grid, c, land_state)
+@inline requires_retention_curve(c::CanopyAirSpace) =
+    requires_retention_curve(c.soil) || requires_retention_curve(c.canopy)
 @inline canopy_air_space_hydrology_state(::Nothing, i, j, grid, c, land_state) =
-    interface_hydrology_state(i, j, grid, c.soil, land_state)
+    merge(interface_hydrology_state(i, j, grid, c.soil, land_state),
+          interface_hydrology_state(i, j, grid, c.canopy, land_state))
 @inline canopy_air_space_hydrology_state(::CanopyInterception, i, j, grid, c, land_state) =
     merge(interface_hydrology_state(i, j, grid, c.soil, land_state),
+          interface_hydrology_state(i, j, grid, c.canopy, land_state),
           (canopy_water_storage  = state2dindex(land_state.canopy_water_storage, i, j),
            canopy_water_capacity = state2dindex(land_state.canopy_water_capacity, i, j)))
 @inline interface_energy_state(i, j, grid, c::CanopyAirSpace, land_state) =
