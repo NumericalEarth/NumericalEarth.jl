@@ -109,7 +109,9 @@ exactly one of
   [`van_genuchten_texture_parameters`](@ref)) for a hydrology that carries no retention
   curve of its own (e.g. [`BucketHydrology`](@ref)), where the stress's curve is a
   modeling choice;
-* explicit `inverse_air_entry_head` `α` (m⁻¹) and `pore_size_uniformity` `n`.
+* explicit `inverse_air_entry_head` `α` (m⁻¹) and `pore_size_uniformity` `n`, each a
+  scalar or a per-cell `Field` — hand a heterogeneous hydrology the same parameter
+  fields it reads, and every column's endpoints follow its own curve.
 
 The default heads follow [Balsamo et al. (2009)](@cite balsamo2009): `ψᶠᶜ = 1` m and
 `ψʷᵖ = 150` m of suction.
@@ -118,9 +120,12 @@ The default heads follow [Balsamo et al. (2009)](@cite balsamo2009): `ψᶠᶜ =
     `β` compares the hydrology's saturation with endpoints on this curve, and effective
     saturations on different curves are different quantities: at the wilting head a loam
     sits near 0.4 of one published curve family and near 0.03 of another. When the
-    hydrology owns a retention curve, share it via `retention_curve`; endpoints from any
-    other source shift the whole stress band and pin `β` high or low regardless of the
-    actual wetness.
+    hydrology owns a retention curve, share it — via `retention_curve`, or by handing a
+    per-cell hydrology the same parameter fields it reads; endpoints from any other
+    source shift the whole stress band and pin `β` high or low regardless of the actual
+    wetness. The rule covers the state too: moisture transplanted from another model's
+    parameter space misreads through any curve here, so rescale it by plant-available
+    fraction first.
 
 Because the stress is a ratio of effective saturations on one shared curve, the porosity
 and the residual fraction cancel; sharing the curve is the whole consistency requirement.
@@ -143,12 +148,23 @@ PlantAvailableWaterStress(retention_curve = soil_retention)
 PlantAvailableWaterStress(α=1.0, n=2.0, ψᶠᶜ=1.0, ψʷᵖ=150.0)
 ```
 """
-struct PlantAvailableWaterStress{FT}
-    inverse_air_entry_head :: FT
-    pore_size_uniformity   :: FT
+struct PlantAvailableWaterStress{A, N, FT}
+    inverse_air_entry_head :: A
+    pore_size_uniformity   :: N
     field_capacity_head    :: FT
     wilting_point_head     :: FT
 end
+
+Adapt.adapt_structure(to, p::PlantAvailableWaterStress) =
+    PlantAvailableWaterStress(adapt(to, p.inverse_air_entry_head),
+                              adapt(to, p.pore_size_uniformity),
+                              p.field_capacity_head,
+                              p.wilting_point_head)
+
+# A stress parameter slot holds a uniform scalar (converted to `FT`) or a per-cell
+# `Field`, read at `(i, j)` by `interface_hydrology_state`.
+@inline stress_parameter(FT, x::Number) = convert(FT, x)
+@inline stress_parameter(FT, x) = x
 
 function PlantAvailableWaterStress(FT::Type = Oceananigans.defaults.FloatType;
                                    retention_curve = nothing,
@@ -171,23 +187,25 @@ function PlantAvailableWaterStress(FT::Type = Oceananigans.defaults.FloatType;
         (isnothing(inverse_air_entry_head) || isnothing(pore_size_uniformity)) &&
             throw(ArgumentError("supply both inverse_air_entry_head and pore_size_uniformity"))
     end
-    pore_size_uniformity > 1 ||
-        throw(ArgumentError("pore_size_uniformity must exceed 1"))
+    if pore_size_uniformity isa Number
+        pore_size_uniformity > 1 ||
+            throw(ArgumentError("pore_size_uniformity must exceed 1"))
+    end
     0 < field_capacity_head < wilting_point_head ||
         throw(ArgumentError("heads must satisfy 0 < field_capacity_head < wilting_point_head"))
-    return PlantAvailableWaterStress(convert(FT, inverse_air_entry_head),
-                                     convert(FT, pore_size_uniformity),
+    return PlantAvailableWaterStress(stress_parameter(FT, inverse_air_entry_head),
+                                     stress_parameter(FT, pore_size_uniformity),
                                      convert(FT, field_capacity_head),
                                      convert(FT, wilting_point_head))
 end
 
+# The endpoints arrive precomputed on the closure's (possibly per-cell) curve — see
+# `interface_hydrology_state(i, j, grid, ::PlantAvailableWaterStress, land_state)`.
 @inline function evaporation_efficiency(p::PlantAvailableWaterStress, hydrology)
     𝒮   = hydrology.saturation
     FT  = typeof(𝒮)
-    α   = convert(FT, p.inverse_air_entry_head)
-    n   = convert(FT, p.pore_size_uniformity)
-    𝒮ᶠᶜ = van_genuchten_saturation(α * convert(FT, p.field_capacity_head), n)
-    𝒮ʷᵖ = van_genuchten_saturation(α * convert(FT, p.wilting_point_head), n)
+    𝒮ᶠᶜ = convert(FT, hydrology.field_capacity_saturation)
+    𝒮ʷᵖ = convert(FT, hydrology.wilting_saturation)
     return clamp((𝒮 - 𝒮ʷᵖ) / (𝒮ᶠᶜ - 𝒮ʷᵖ), zero(FT), one(FT))
 end
 

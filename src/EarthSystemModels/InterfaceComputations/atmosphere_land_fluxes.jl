@@ -212,7 +212,19 @@ end
 @inline interface_hydrology_state(i, j, grid, q::FractionalHumidity, land_state) =
     interface_hydrology_state(i, j, grid, q.efficiency, land_state)
 @inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) = land_saturation(i, j, grid, land_state)
-@inline interface_hydrology_state(i, j, grid, ::PlantAvailableWaterStress, land_state) = land_saturation(i, j, grid, land_state)
+# The stress endpoints live on the closure's own retention curve, whose parameters may
+# vary per cell; evaluate them here so the flux solve reads plain scalars.
+@inline function interface_hydrology_state(i, j, grid, p::PlantAvailableWaterStress, land_state)
+    𝒮   = state2dindex(land_state.saturation, i, j)
+    FT  = typeof(𝒮)
+    α   = convert(FT, state2dindex(p.inverse_air_entry_head, i, j))
+    n   = convert(FT, state2dindex(p.pore_size_uniformity, i, j))
+    𝒮ᶠᶜ = van_genuchten_saturation(α * convert(FT, p.field_capacity_head), n)
+    𝒮ʷᵖ = van_genuchten_saturation(α * convert(FT, p.wilting_point_head), n)
+    return (saturation = 𝒮,
+            field_capacity_saturation = 𝒮ᶠᶜ,
+            wilting_saturation = 𝒮ʷᵖ)
+end
 @inline interface_hydrology_state(i, j, grid, ::DryLayerHumidity, land_state) =
     land_saturation(i, j, grid, land_state)
 @inline interface_hydrology_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing

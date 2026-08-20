@@ -2,11 +2,12 @@ include("runtests_setup.jl")
 
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     PlantAvailableWaterStress, CriticalSaturation, evaporation_efficiency,
-    van_genuchten_saturation, van_genuchten_texture_parameters
+    van_genuchten_saturation, van_genuchten_texture_parameters, interface_hydrology_state
 
 using NumericalEarth: VanGenuchtenRetention
 
-β(model, 𝒮) = evaporation_efficiency(model, (saturation = 𝒮,))
+# Route through the per-cell materialization, as the flux kernel does.
+β(model, 𝒮) = evaporation_efficiency(model, interface_hydrology_state(1, 1, nothing, model, (saturation = 𝒮,)))
 
 @testset "PlantAvailableWaterStress" begin
     for FT in (Float32, Float64)
@@ -90,6 +91,23 @@ using NumericalEarth: VanGenuchtenRetention
               PlantAvailableWaterStress(FT; inverse_air_entry_head = loam.inverse_air_entry_head,
                                         pore_size_uniformity = loam.pore_size_uniformity)
         @test_throws ArgumentError van_genuchten_texture_parameters(:peat)
+    end
+
+    # Per-cell parameters: a Field-valued stress evaluates every column on its own curve.
+    let FT = Float64
+        grid = RectilinearGrid(FT; size = (1, 2), extent = (1, 1),
+                               topology = (Periodic, Periodic, Flat))
+        α = Field{Center, Center, Nothing}(grid)
+        n = Field{Center, Center, Nothing}(grid)
+        set!(α, (x, y) -> y < 0.5 ? 3.6 : 0.8)    # loam column, clay column
+        set!(n, (x, y) -> y < 0.5 ? 1.56 : 1.09)
+        stress = PlantAvailableWaterStress(FT; inverse_air_entry_head = α,
+                                           pore_size_uniformity = n)
+        for (j, texture) in enumerate((:loam, :clay)), 𝒮 in (FT(0.1), FT(0.35), FT(0.6), FT(0.9))
+            columnwise = evaporation_efficiency(stress,
+                interface_hydrology_state(1, j, grid, stress, (saturation = 𝒮,)))
+            @test columnwise == β(PlantAvailableWaterStress(FT; texture), 𝒮)
+        end
     end
 
     # Constructor validation: exactly one parameter source, physical parameters.

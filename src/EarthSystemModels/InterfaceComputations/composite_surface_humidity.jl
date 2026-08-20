@@ -66,10 +66,12 @@ Base.show(io::IO, q::CompositeSurfaceHumidity) = print(io, summary(q))
 
 @inline interface_phase(q::CompositeSurfaceHumidity) = interface_phase(q.soil)
 
-# The composite reads both the surface saturation 𝒮 (soil δᵛ, canopy β) and the
-# bulk land temperature (soil front temperature), so it materializes both.
-@inline interface_hydrology_state(i, j, grid, ::CompositeSurfaceHumidity, land_state) =
-    land_saturation(i, j, grid, land_state)
+# The composite reads the surface saturation 𝒮 (soil δᵛ, canopy β), each branch's own
+# hydrology state, and the bulk land temperature (soil front temperature).
+@inline interface_hydrology_state(i, j, grid, q::CompositeSurfaceHumidity, land_state) =
+    merge(land_saturation(i, j, grid, land_state),
+          interface_hydrology_state(i, j, grid, q.soil, land_state),
+          interface_hydrology_state(i, j, grid, q.canopy, land_state))
 @inline interface_energy_state(i, j, grid, ::CompositeSurfaceHumidity, land_state) =
     (temperature = state2dindex(land_state.T, i, j),)
 
