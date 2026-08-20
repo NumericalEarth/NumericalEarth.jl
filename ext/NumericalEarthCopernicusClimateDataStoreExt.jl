@@ -76,7 +76,7 @@ function Downloads.download(meta::ERA5Metadatum;
     hour = Dates.hour(date)
 
     # Build area constraint from region
-    area = build_era5_area(meta.region)
+    area = build_era5_area(meta.region, meta.dataset, meta.name)
 
     # Build output prefix (filename without extension)
     output_prefix = first(splitext(output_filename))
@@ -230,7 +230,7 @@ function Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:Union
     pl_hPa = isnothing(pl) ? nothing : [round(Int, p * 1e-2) for p in pl]
 
     # Build area constraint from region
-    area = build_era5_area(meta.region)
+    area = build_era5_area(meta.region, meta.dataset, meta.name)
 
     # Build output prefix (filename without extension)
     output_prefix = first(splitext(output_filename))
@@ -409,7 +409,7 @@ function Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:ERA5L
     year = Dates.year(meta.dates)
     year_dates = filter(dt -> Dates.year(dt) == year,
                          NumericalEarth.DataWrangling.all_dates(dataset, meta.name))
-    area = cds_area(build_era5_area(meta.region))
+    area = cds_area(build_era5_area(meta.region, meta.dataset, meta.name))
     batches = era5_land_year_batches(dataset, year_dates)
 
     @root begin
@@ -435,6 +435,23 @@ end
 build_era5_area(::Nothing) = nothing
 
 const BBOX = NumericalEarth.DataWrangling.BoundingBox
+
+# Pad the request by two native cells on each side so the delivered file covers every
+# native cell a regional read of `region` needs (the read is rejected otherwise);
+# over-fetching is harmless because the reader selects the exact cells from the file.
+build_era5_area(::Nothing, dataset, name) = nothing
+
+function build_era5_area(region::BBOX, dataset, name)
+    (isnothing(region.longitude) || isnothing(region.latitude)) && return build_era5_area(region)
+    Nx, Ny, _ = size(dataset, name)
+    Δλ = 360 / Nx
+    Δφ = 180 / Ny
+    lon = region.longitude
+    lat = region.latitude
+    padded = BBOX(longitude = (lon[1] - 2Δλ, lon[2] + 2Δλ),
+                  latitude  = (max(lat[1] - 2Δφ, -90), min(lat[2] + 2Δφ, 90)))
+    return build_era5_area(padded)
+end
 
 function build_era5_area(bbox::BBOX)
     # CDS API / yearly() uses [south, west, north, east] ordering (4-element array)
