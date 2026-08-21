@@ -519,9 +519,57 @@ function default_atmosphere_land_fluxes(land, FT; solver_stop_criteria = nothing
 end
 
 #####
-##### Chekpointing (not needed for ComponentInterfaces)
+##### Checkpointing
 #####
+##### The interfaces are derived state except for a prognostic atmosphere-land
+##### formulation, whose temperature container carries model state that must
+##### survive checkpoint/pickup: the canopy-air node `(Tᵃᶜ, qᵃᶜ)` of a
+##### `PrognosticCanopyAir` storage, and the skin temperature of a
+##### `PrognosticSkin` storage. Diagnostic formulations contribute `nothing`,
+##### and older checkpoints without an interface entry restore tolerantly.
 
-Oceananigans.prognostic_state(::ComponentInterfaces) = nothing
-Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, state) = ci
+Oceananigans.prognostic_state(ci::ComponentInterfaces) =
+    (; atmosphere_land_interface = interface_prognostic_state(ci.atmosphere_land_interface))
+
+interface_prognostic_state(::Nothing) = nothing
+interface_prognostic_state(ai::AtmosphereInterface) =
+    interface_prognostic_state(ai.properties.temperature_formulation, ai.temperature)
+
+# Diagnostic formulations carry no interface state.
+interface_prognostic_state(formulation, Ts) = nothing
+
+interface_prognostic_state(::PrognosticCanopyAirSpace, Ts::CanopyAirSpaceDiagnostics) =
+    (; temperature = Oceananigans.prognostic_state(Ts.state.temperature),
+       specific_humidity = Oceananigans.prognostic_state(Ts.state.specific_humidity))
+
+# The prognostic skin's state is the interface-temperature field itself.
+interface_prognostic_state(::PrognosticEnergyBalanceTemperature, Ts) =
+    (; temperature = Oceananigans.prognostic_state(Ts))
+
+function Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, state)
+    if hasproperty(state, :atmosphere_land_interface)
+        restore_interface_state!(ci.atmosphere_land_interface, state.atmosphere_land_interface)
+    end
+    return ci
+end
+
 Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, ::Nothing) = ci
+
+restore_interface_state!(::Nothing, state) = nothing
+restore_interface_state!(ai::AtmosphereInterface, ::Nothing) = nothing
+restore_interface_state!(::Nothing, ::Nothing) = nothing
+restore_interface_state!(ai::AtmosphereInterface, state) =
+    restore_interface_state!(ai.properties.temperature_formulation, ai.temperature, state)
+
+restore_interface_state!(formulation, Ts, state) = nothing
+
+function restore_interface_state!(::PrognosticCanopyAirSpace, Ts::CanopyAirSpaceDiagnostics, state)
+    Oceananigans.restore_prognostic_state!(Ts.state.temperature, state.temperature)
+    Oceananigans.restore_prognostic_state!(Ts.state.specific_humidity, state.specific_humidity)
+    return nothing
+end
+
+function restore_interface_state!(::PrognosticEnergyBalanceTemperature, Ts, state)
+    Oceananigans.restore_prognostic_state!(Ts, state.temperature)
+    return nothing
+end
