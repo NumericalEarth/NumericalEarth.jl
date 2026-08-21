@@ -116,14 +116,17 @@ function interface_kernel_parameters(grid)
 end
 
 # Fractional indices of a prescribed component's grid are computed over the exchange grid's
-# halo as well as its interior (`interface_kernel_parameters`). A halo node may fall outside
-# a regional component grid, and because longitude is periodic a node just west of the
-# component's western edge wraps to the far east, giving an index beyond the grid entirely.
-# Clamping non-periodic directions to the component interior gives such cells the nearest
-# prescribed value instead.
-@inline clamp_fractional_index(::Nothing, topo, N) = nothing
-@inline clamp_fractional_index(fractional_index, topo, N) =
-    ifelse(topo isa Periodic, fractional_index, clamp(fractional_index, 1, N))
+# halo as well as its interior (`interface_kernel_parameters`), so a halo node lands outside a
+# regional component's interior by design: the value there comes from the component's own halo,
+# and therefore from its boundary conditions. Interpolation reads cells `⌊f⌋` and `⌊f⌋ + 1`, so
+# the index only has to stay within `1 - H` and `N + H - 1` for those reads to be in bounds.
+#
+# Clamping to that range leaves the halo reads alone whenever the component grid carries enough
+# halo to hold them, and falls back to the nearest available cell when it does not — a component
+# grid with a single halo cell cannot supply the outermost exchange-grid column.
+@inline clamp_fractional_index(::Nothing, topo, N, H) = nothing
+@inline clamp_fractional_index(fractional_index, topo, N, H) =
+    ifelse(topo isa Periodic, fractional_index, clamp(fractional_index, 1 - H, N + H - 1))
 
 # 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1: a scalar
 # (e.g. a prescribed measurement height or the 600 m BL-height fallback) passes through,
