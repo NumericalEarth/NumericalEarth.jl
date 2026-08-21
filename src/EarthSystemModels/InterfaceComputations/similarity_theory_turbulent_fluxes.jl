@@ -777,14 +777,27 @@ function large_yeager_stability_functions(FT=Oceananigans.defaults.FloatType)
 end
 
 # Land borrows the NCAR/Large–Yeager Businger–Dyer form (Paulson 1970 unstable +
-# linear stable), holding the unstable branch to the Businger–Dyer validity range:
-# over rough land in calm free convection ζ reaches O(-100), where the unbounded ψ
-# exceeds log(h/ℓ) and the transfer coefficients pass through a pole (multi-kW
-# spurious fluxes). TODO: replace with land-tuned stability functions.
+# linear stable), holding both branches to the Businger–Dyer validity range |ζ| ≤ 2:
+#
+#  - unstable: over rough land in calm free convection ζ reaches O(-100), where the
+#    unbounded ψ exceeds log(h/ℓ) and the transfer coefficients pass through a pole
+#    (multi-kW spurious fluxes);
+#  - stable: extrapolating ψ = -5ζ to the Large–Yeager ocean bound ζ ≤ 10 collapses
+#    the transfer coefficients ~10×, creating a spurious fully-decoupled state that
+#    makes calm transitions bistable and drives the interface fixed point into a
+#    limit cycle (CLM5 bounds stable ζ at 0.5, Noah-MP at 1).
+#
+# The two caps only work together: capping the pole alone moves the fixed-point
+# exits onto supply-inconsistent phases, and capping the stable side alone leaves
+# the pole. Ocean and sea-ice defaults are bit-for-bit unchanged.
+# TODO: replace with land-tuned stability functions (free-convection matched
+# unstable form after Zeng et al. 1998; Beljaars–Holtslag 1991 stable form).
 function atmosphere_land_stability_functions(FT=Oceananigans.defaults.FloatType;
-                                             maximum_stability_parameter = 2)
+                                             maximum_stability_parameter = 2,
+                                             stable_maximum_stability_parameter = 2)
     ζᵐᵃˣ = convert(FT, maximum_stability_parameter)
-    stable   = LinearStableStabilityFunction{FT}()
+    stable   = LinearStableStabilityFunction{FT}(coefficient = 5,
+                   maximum_stability_parameter = stable_maximum_stability_parameter)
     momentum = SplitStabilityFunction(stable,
                    PaulsonMomentumStabilityFunction{FT}(; maximum_stability_parameter = ζᵐᵃˣ))
     scalar   = SplitStabilityFunction(stable,
