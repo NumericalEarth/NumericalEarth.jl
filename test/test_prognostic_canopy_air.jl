@@ -13,7 +13,7 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere, AtmosphereThermodynamics
 using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
 using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
 
-prognostic_test_cas(FT; storage) = CanopyAirSpace(FT;
+prognostic_test_cas(FT; kw...) = CanopyAirSpace(FT;
     soil = DryLayerHumidity(FT;
         dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
                                                     dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
@@ -22,7 +22,7 @@ prognostic_test_cas(FT; storage) = CanopyAirSpace(FT;
         thermal_exchange_depth = 0.05, porosity = 0.4),
     canopy = CanopyConductanceHumidity(FT; leaf_area_index = 4.0, moisture_stress = CriticalSaturation(0.5),
                                        absorbed_par = InteractiveAbsorbedPAR(FT)),
-    soil_skin_flux = SoilConductiveFlux(1.5, 0.05), storage)
+    soil_skin_flux = SoilConductiveFlux(1.5, 0.05), kw...)
 
 function prognostic_test_model(arch, cas; shortwave = 600.0, longwave = 350.0,
                                wind = 3.0, Tair = 300.0, qair = 0.008,
@@ -52,6 +52,16 @@ function prognostic_test_model(arch, cas; shortwave = 600.0, longwave = 350.0,
 end
 
 @inline value1(f) = Array(interior(f))[1, 1, 1]
+
+@testset "CanopyAirSpace defaults to a diagnostic node" begin
+    cas = prognostic_test_cas(Float64)
+    @test cas.storage isa DiagnosticCanopyAir
+
+    # A diagnostic node is massless, so it carries no state across time steps and the
+    # flux path stays the one the massless closure has always taken.
+    model = prognostic_test_model(CPU(), cas)
+    @test model.interfaces.atmosphere_land_interface.temperature.state === nothing
+end
 
 @testset "advance_canopy_air" begin
     x, x_eq, Σg, C = 300.0, 305.0, 50.0, 1e4
