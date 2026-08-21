@@ -249,6 +249,8 @@ function atmosphere_ocean_interface(grid,
                                     velocity_formulation,
                                     specific_humidity_formulation)
 
+    reject_per_cell_slots(ao_flux_formulation, "atmosphere-ocean")
+
     ao_fluxes = AtmosphereSurfaceFluxes(grid)
 
     ao_properties = InterfaceProperties(specific_humidity_formulation,
@@ -274,6 +276,8 @@ function atmosphere_sea_ice_interface(grid,
                                       ai_flux_formulation,
                                       temperature_formulation,
                                       velocity_formulation)
+
+    reject_per_cell_slots(ai_flux_formulation, "atmosphere-sea ice")
 
     fluxes = AtmosphereSeaIceFluxes(grid)
 
@@ -507,8 +511,8 @@ default_al_specific_humidity(land) =
 # the defaults below are uniform constants (0.1 m momentum, 0.01 m scalar, no
 # displacement). Override per-domain by passing `atmosphere_land_fluxes =
 # SimilarityTheoryFluxes(...)` with explicit roughness lengths and displacement
-# (constants, or per-cell models such as `LandRoughnessLength` /
-# `LandZeroPlaneDisplacement`) to `ComponentInterfaces` / `AtmosphereLandModel`.
+# (constants, or `Field`s of per-cell values) to `ComponentInterfaces` /
+# `AtmosphereLandModel`.
 default_atmosphere_land_fluxes(::Nothing, FT; kw...) = nothing
 
 function default_atmosphere_land_fluxes(land, FT; solver_stop_criteria = nothing)

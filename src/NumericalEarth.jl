@@ -108,6 +108,7 @@ export
     IsotropicFrontalArea, EmpiricalFrontalArea,
     UniformHeight, VariableHeight,
     urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
+    fill_aerodynamic_roughness_gaps!,
     surface_temperature,
     regrid_bathymetry,
     regrid_topography,
@@ -218,7 +219,9 @@ const SomeKindOfFieldTimeSeries = Union{FieldTimeSeries,
 
 const SKOFTS = SomeKindOfFieldTimeSeries
 
-@inline stateindex(a::Number, i, j, k, args...) = a
+# The fallback covers objects that are uniform over grid points: `Number`s, but also
+# parameter structs such as turbulent flux formulations (e.g. `MomentumRoughnessLength`).
+@inline stateindex(a, i, j, k, args...) = a
 @inline stateindex(a::AbstractArray, i, j, k, args...) = @inbounds a[i, j, k]
 @inline stateindex(a::SKOFTS, i, j, k, grid, time, args...) = @inbounds a[i, j, k, time]
 
