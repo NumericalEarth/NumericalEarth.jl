@@ -44,8 +44,8 @@ end
 # order are assumed here.
 #
 # The gateway intermittently 403s valid requests under concurrent CI load; retry
-# with backoff rather than failing on the first hiccup.
-function CopernicusDEM.zarr_to_netcdf(metadatum::CopernicusDEM.CopernicusDEMMetadatum, nc_path; max_retries = 3)
+# with exponential backoff rather than failing on the first hiccup.
+function CopernicusDEM.zarr_to_netcdf(metadatum::CopernicusDEM.CopernicusDEMMetadatum, nc_path; max_retries = 5)
     token = get(ENV, "DESTINE_ACCESS_TOKEN", nothing)
     isnothing(token) && error(
         "Set the DESTINE_ACCESS_TOKEN environment variable to read Copernicus DEM. " *
@@ -104,7 +104,7 @@ function CopernicusDEM.zarr_to_netcdf(metadatum::CopernicusDEM.CopernicusDEMMeta
         catch e
             attempt < max_retries || rethrow(e)
             @warn "Copernicus DEM Zarr read attempt $attempt/$max_retries failed; retrying..." exception=(e, catch_backtrace())
-            sleep(5.0 * attempt)
+            sleep(min(60, 5.0 * 2^(attempt - 1)))
         end
     end
 end

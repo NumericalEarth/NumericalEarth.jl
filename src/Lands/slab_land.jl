@@ -289,6 +289,8 @@ Oceananigans.restore_prognostic_state!(land::SlabLand, ::Nothing) = land
 
 EarthSystemModels.surface_temperature(land::SlabLand) = surface_temperature(land.energy, land)
 surface_saturation(land::SlabLand) = saturation(land.hydrology, land)
+EarthSystemModels.surface_retention_curve(land::SlabLand) =
+    EarthSystemModels.surface_retention_curve(land.hydrology)
 
 # Prognostic canopy water store `Wᶜ` the interface reads to form the wet fraction
 # `fʷ` (a `CanopyAirSpace` with interception). A `ZeroField` when no closure
@@ -400,15 +402,18 @@ EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabLand, coupled_model)
 """
     ComponentExchanger(land::SlabLand, grid)
 
-Expose the generic atmosphere-facing SlabLand state: skin temperature `T` and
-surface `saturation`. Aerodynamic roughness lengths belong to the atmosphere-land
-flux closure (`atmosphere_land_fluxes`), not the land state.
+Expose the generic atmosphere-facing SlabLand state: skin temperature `T`, surface
+`saturation`, and the hydrology's `retention_curve` (`nothing` when it owns none), which
+the interface's plant-stress formulations evaluate their suction endpoints on. Aerodynamic
+roughness lengths belong to the atmosphere-land flux closure (`atmosphere_land_fluxes`),
+not the land state.
 """
 function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::SlabLand, grid)
     state = (T                     = surface_temperature(land),
              saturation            = surface_saturation(land),
              canopy_water_storage  = surface_canopy_water_storage(land),
-             canopy_water_capacity = surface_canopy_water_capacity(land))
+             canopy_water_capacity = surface_canopy_water_capacity(land),
+             retention_curve       = EarthSystemModels.surface_retention_curve(land))
     return ComponentExchanger(state, nothing)
 end
 
