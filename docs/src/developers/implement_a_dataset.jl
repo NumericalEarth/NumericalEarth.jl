@@ -92,9 +92,7 @@ NumericalEarth.DataWrangling.latitude_name(::OceanStationPapaMetadata) = "LATITU
 NumericalEarth.DataWrangling.default_region(::OceanStationPapa) = Column(-144.9, 50.1)
 
 # A variable is three-dimensional exactly when it has a depth axis; the surface met fields are single-level.
-# Most variables already arrive in the model's units; the few that do not are converted on read — air
-# temperature from ᵒC to K, pressure from mbar to Pa, rain from mm hr⁻¹ to kg m⁻² s⁻¹, and currents from
-# cm s⁻¹ to m s⁻¹.
+# Most variables already arrive in the model's units; the few that do not are converted on read.
 
 NumericalEarth.DataWrangling.is_three_dimensional(md::OceanStationPapaMetadata) = haskey(OSPapa_depth_variable_names, md.name)
 
