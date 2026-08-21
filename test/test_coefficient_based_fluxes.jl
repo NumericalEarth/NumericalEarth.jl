@@ -6,6 +6,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     LargeYeagerTransferCoefficients,
     LinearStableStabilityFunction,
     large_yeager_stability_functions,
+    atmosphere_land_stability_functions,
     SimilarityScales,
     ComponentInterfaces,
     stability_profile,
@@ -54,6 +55,31 @@ end
     # Scalar: same structure
     @test stability_profile(sf.temperature, -1.0) > 0
     @test stability_profile(sf.temperature, 1.0) ≈ -5.0
+end
+
+@testset "atmosphere_land_stability_functions" begin
+    sf = atmosphere_land_stability_functions()
+    @test sf isa SimilarityScales
+
+    # Stable branch bounded at ζ ≤ 2 (ocean large_yeager keeps ζ ≤ 10)
+    @test stability_profile(sf.momentum, 1.0) ≈ -5.0
+    @test stability_profile(sf.momentum, 20.0) ≈ -10.0
+    @test stability_profile(sf.temperature, 20.0) ≈ -10.0
+
+    # Unstable branch bounded at ζ ≥ -2: ψ saturates instead of passing the
+    # similarity denominator through a pole
+    @test stability_profile(sf.momentum, -1.0) > 0
+    @test stability_profile(sf.momentum, -100.0) ≈ stability_profile(sf.momentum, -2.0)
+    @test stability_profile(sf.temperature, -100.0) ≈ stability_profile(sf.temperature, -2.0)
+
+    # Ocean defaults unchanged: unbounded unstable branch keeps growing
+    ly = large_yeager_stability_functions()
+    @test stability_profile(ly.momentum, -100.0) > stability_profile(ly.momentum, -2.0)
+    @test stability_profile(ly.momentum, 20.0) ≈ -50.0
+
+    sf32 = atmosphere_land_stability_functions(Float32)
+    @test stability_profile(sf32.momentum, 20f0) isa Float32
+    @test stability_profile(sf32.momentum, -100f0) isa Float32
 end
 
 @testset "LargeYeagerTransferCoefficients constructor" begin

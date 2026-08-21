@@ -680,15 +680,20 @@ end
 ##### From Paulson (1970), for unstable boundary layers
 #####
 
+# `maximum_stability_parameter` bounds the unstable branch at ζ ≥ -ζmax: unbounded,
+# ψ(ζ → -∞) grows like log(4|ζ|) and can exceed log(h/ℓ), where the similarity
+# transfer coefficients pass through a pole. `Inf` (the default) keeps the classic
+# unbounded form.
 @kwdef struct PaulsonMomentumStabilityFunction{FT} <: AbstractStabilityFunction
     a :: FT = 16.0
     b :: FT = π/2
+    maximum_stability_parameter :: FT = Inf
 end
 
 @inline function stability_profile(ψ::PaulsonMomentumStabilityFunction, ζ)
     a = ψ.a
     b = ψ.b
-    ζ⁻ = min(zero(ζ), ζ)
+    ζ⁻ = min(zero(ζ), max(ζ, -ψ.maximum_stability_parameter))
     z = sqrt(sqrt((1 - a * ζ⁻)))
 
     Ψ₁ = 2 * log((1 + z) / 2)
@@ -700,11 +705,12 @@ end
 
 @kwdef struct PaulsonScalarStabilityFunction{FT} <: AbstractStabilityFunction
     a :: FT = 16.0
+    maximum_stability_parameter :: FT = Inf
 end
 
 @inline function stability_profile(ψ::PaulsonScalarStabilityFunction, ζ)
     a = ψ.a
-    ζ⁻ = min(zero(ζ), ζ)
+    ζ⁻ = min(zero(ζ), max(ζ, -ψ.maximum_stability_parameter))
     z = sqrt(sqrt((1 - a * ζ⁻)))
     return 2 * log((1 + z^2) / 2)
 end
@@ -770,11 +776,34 @@ function large_yeager_stability_functions(FT=Oceananigans.defaults.FloatType)
     return SimilarityScales(momentum, scalar, scalar)
 end
 
-# Land currently borrows the NCAR/Large–Yeager Businger–Dyer form
-# (Paulson 1970 unstable + linear stable). TODO: replace with land-tuned
-# stability functions.
-atmosphere_land_stability_functions(FT=Oceananigans.defaults.FloatType) =
-    large_yeager_stability_functions(FT)
+# Land borrows the NCAR/Large–Yeager Businger–Dyer form (Paulson 1970 unstable +
+# linear stable), holding both branches to the Businger–Dyer validity range |ζ| ≤ 2:
+#
+#  - unstable: over rough land in calm free convection ζ reaches O(-100), where the
+#    unbounded ψ exceeds log(h/ℓ) and the transfer coefficients pass through a pole
+#    (multi-kW spurious fluxes);
+#  - stable: extrapolating ψ = -5ζ to the Large–Yeager ocean bound ζ ≤ 10 collapses
+#    the transfer coefficients ~10×, creating a spurious fully-decoupled state that
+#    makes calm transitions bistable and drives the interface fixed point into a
+#    limit cycle (CLM5 bounds stable ζ at 0.5, Noah-MP at 1).
+#
+# The two caps only work together: capping the pole alone moves the fixed-point
+# exits onto supply-inconsistent phases, and capping the stable side alone leaves
+# the pole. Ocean and sea-ice defaults are bit-for-bit unchanged.
+# TODO: replace with land-tuned stability functions (free-convection matched
+# unstable form after Zeng et al. 1998; Beljaars–Holtslag 1991 stable form).
+function atmosphere_land_stability_functions(FT=Oceananigans.defaults.FloatType;
+                                             maximum_stability_parameter = 2,
+                                             stable_maximum_stability_parameter = 2)
+    ζᵐᵃˣ = convert(FT, maximum_stability_parameter)
+    stable   = LinearStableStabilityFunction{FT}(coefficient = 5,
+                   maximum_stability_parameter = stable_maximum_stability_parameter)
+    momentum = SplitStabilityFunction(stable,
+                   PaulsonMomentumStabilityFunction{FT}(; maximum_stability_parameter = ζᵐᵃˣ))
+    scalar   = SplitStabilityFunction(stable,
+                   PaulsonScalarStabilityFunction{FT}(; maximum_stability_parameter = ζᵐᵃˣ))
+    return SimilarityScales(momentum, scalar, scalar)
+end
 
 function atmosphere_sea_ice_stability_functions(FT=Oceananigans.defaults.FloatType)
     unstable_momentum = PaulsonMomentumStabilityFunction{FT}()
