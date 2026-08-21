@@ -42,12 +42,18 @@ end
 @inline spᶠᶜᶜ(i, j, k, grid, Φ) = @inbounds sqrt(Φ.u[i, j, k]^2 + ℑxyᶠᶜᵃ(i, j, k, grid, ϕ², Φ.v))
 @inline spᶜᶠᶜ(i, j, k, grid, Φ) = @inbounds sqrt(Φ.v[i, j, k]^2 + ℑxyᶜᶠᵃ(i, j, k, grid, ϕ², Φ.u))
 
-@inline u_quadratic_bottom_drag(i, j, grid, c, Φ, μ) = @inbounds - μ * Φ.u[i, j, 1] * spᶠᶜᶜ(i, j, 1, grid, Φ)
-@inline v_quadratic_bottom_drag(i, j, grid, c, Φ, μ) = @inbounds - μ * Φ.v[i, j, 1] * spᶜᶠᶜ(i, j, 1, grid, Φ)
+# A quadratic drag J = -μ |u| u is affine in the boundary-cell velocity with no explicit part, so it
+# is carried entirely by the implicit coefficient λ = -μ |u|. On a thin bottom cell the explicit
+# stability number μ |u| Δt / Δz reaches order 10, which the implicit treatment removes.
+@inline zero_bottom_flux(i, j, grid, c, Φ, μ) = zero(grid)
+@inline zero_immersed_flux(i, j, k, grid, clock, Φ, μ) = zero(grid)
+
+@inline u_quadratic_drag_coefficient(i, j, grid, c, Φ, μ) = - μ * spᶠᶜᶜ(i, j, 1, grid, Φ)
+@inline v_quadratic_drag_coefficient(i, j, grid, c, Φ, μ) = - μ * spᶜᶠᶜ(i, j, 1, grid, Φ)
 
 # Keep a constant linear drag parameter independent on vertical level
-@inline u_immersed_bottom_drag(i, j, k, grid, clock, Φ, μ) = @inbounds - μ * Φ.u[i, j, k] * spᶠᶜᶜ(i, j, k, grid, Φ)
-@inline v_immersed_bottom_drag(i, j, k, grid, clock, Φ, μ) = @inbounds - μ * Φ.v[i, j, k] * spᶜᶠᶜ(i, j, k, grid, Φ)
+@inline u_immersed_drag_coefficient(i, j, k, grid, clock, Φ, μ) = - μ * spᶠᶜᶜ(i, j, k, grid, Φ)
+@inline v_immersed_drag_coefficient(i, j, k, grid, clock, Φ, μ) = - μ * spᶜᶠᶜ(i, j, k, grid, Φ)
 
 # With or without additional fluxes
 @inline build_top_bc(flux_field, ::Nothing) = FluxBoundaryCondition(flux_field)
@@ -400,8 +406,8 @@ function hydrostatic_ocean_simulation(grid;
 
         bottom_drag_coefficient = default_or_override(bottom_drag_coefficient)
 
-        u_immersed_drag = FluxBoundaryCondition(u_immersed_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
-        v_immersed_drag = FluxBoundaryCondition(v_immersed_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
+        u_immersed_drag = IMEXFluxBoundaryCondition(zero_immersed_flux, u_immersed_drag_coefficient, discrete_form=true, parameters=bottom_drag_coefficient)
+        v_immersed_drag = IMEXFluxBoundaryCondition(zero_immersed_flux, v_immersed_drag_coefficient, discrete_form=true, parameters=bottom_drag_coefficient)
 
         u_immersed_bc = ImmersedBoundaryCondition(bottom=u_immersed_drag)
         v_immersed_bc = ImmersedBoundaryCondition(bottom=v_immersed_drag)
@@ -470,8 +476,8 @@ function hydrostatic_ocean_simulation(grid;
     T_top_bc = build_tracer_top_bc(Jᵀ, Jʷ, freshwater_heat_content, additional.T, :T)
     S_top_bc = build_tracer_top_bc(Jˢ, Jʷ, freshwater_salt_content, additional.S, :S)
 
-    u_bot_bc = FluxBoundaryCondition(u_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
-    v_bot_bc = FluxBoundaryCondition(v_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
+    u_bot_bc = IMEXFluxBoundaryCondition(zero_bottom_flux, u_quadratic_drag_coefficient, discrete_form=true, parameters=bottom_drag_coefficient)
+    v_bot_bc = IMEXFluxBoundaryCondition(zero_bottom_flux, v_quadratic_drag_coefficient, discrete_form=true, parameters=bottom_drag_coefficient)
 
     default_boundary_conditions = (u = FieldBoundaryConditions(top=u_top_bc, bottom=u_bot_bc, immersed=u_immersed_bc),
                                    v = FieldBoundaryConditions(top=v_top_bc, bottom=v_bot_bc, immersed=v_immersed_bc),
