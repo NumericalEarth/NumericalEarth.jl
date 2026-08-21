@@ -4,9 +4,42 @@ using ..SeaIces: FreezingLimitedEarthSystemModel
 @inline flux_field(bc::MultipleFluxes) = bc.flux_field
 @inline flux_field(bc::DiscreteBoundaryFunction) = flux_field(bc.func)
 
+@inline additional_temperature_flux(condition) = nothing
+@inline additional_temperature_flux(bc::DiscreteBoundaryFunction) = additional_temperature_flux(bc.func)
+@inline additional_temperature_flux(bc::MultipleFluxes) = bc.additional_fluxes.additional
+
+@inline function evaluate_additional_temperature_flux(i, j, k, grid, clock, fields, additional_flux)
+    return Oceananigans.BoundaryConditions.getbc(additional_flux, i, j, grid, clock, fields)
+end
+
+ocean_additional_temperature_flux(esm, T, ::Nothing) = 0
+
+function ocean_additional_temperature_flux(esm, T, additional_flux)
+    model = esm.ocean.model
+    fields = merge(Oceananigans.fields(model), (; T))
+    return KernelFunctionOperation{Center, Center, Nothing}(evaluate_additional_temperature_flux,
+                                                            model.grid,
+                                                            model.clock,
+                                                            fields,
+                                                            additional_flux)
+end
+
+function ocean_additional_temperature_flux(esm, T)
+    top_condition = esm.ocean.model.tracers.T.boundary_conditions.top.condition
+    additional_flux = additional_temperature_flux(top_condition)
+    return ocean_additional_temperature_flux(esm, T, additional_flux)
+end
+
 const NoSeaIceOceanInterfaceModel = Union{NoSeaIceInterfaceModel,
                                           NoOceanInterfaceModel,
                                           NoInterfaceModel}
+
+ocean_freshwater_temperature_flux(esm, grid) = ZeroField()
+ocean_freshwater_temperature_flux(esm, ::MutableGridOfSomeKind) =
+    esm.interfaces.net_fluxes.ocean.freshwater_heat_content
+
+ocean_freshwater_temperature_flux(esm::EarthSystemModel) =
+    ocean_freshwater_temperature_flux(esm, esm.ocean.model.grid)
 
 ###########################
 ### Temperature fluxes
@@ -34,11 +67,16 @@ end
 """
     net_ocean_temperature_flux(esm::EarthSystemModel)
 
-Return the net temperature flux (K m s⁻¹) at the ocean's surface in a coupled `esm`.
+Return the complete outward-positive temperature flux (K m s⁻¹) for the ocean
+heat inventory. Mutable grids include freshwater heat. User-provided additional
+temperature fluxes are included.
 """
 function net_ocean_temperature_flux(esm::EarthSystemModel)
     Jᵀ = flux_field(esm.ocean.model.tracers.T.boundary_conditions.top.condition)
-    return Jᵀ + frazil_temperature_flux(esm)
+    Jᴴ = ocean_freshwater_temperature_flux(esm)
+    J⁺ = ocean_additional_temperature_flux(esm, esm.ocean.model.tracers.T)
+    J = Jᵀ + J⁺ - Jᴴ
+    return J + frazil_temperature_flux(esm)
 end
 
 
@@ -85,12 +123,27 @@ frazil_heat_flux(::NoSeaIceOceanInterfaceModel) = ZeroField()
 """
     net_ocean_heat_flux(esm::EarthSystemModel)
 
-Return the net heat flux (W m⁻²) at the ocean's surface in a coupled `esm`.
+Return the complete outward-positive heat flux (W m⁻²) at the ocean surface.
+This includes surface exchange, frazil heat, and freshwater heat on a mutable
+grid. It also includes any user-provided additional temperature flux.
 """
 function net_ocean_heat_flux(esm::EarthSystemModel)
     ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
     cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
     return ρᵒᶜ * cᵒᶜ * net_ocean_temperature_flux(esm)
+end
+
+"""
+    ocean_freshwater_heat_flux(esm::EarthSystemModel)
+
+Return the heat carried into the ocean by freshwater at the ocean surface
+temperature (W m⁻²), positive into the ocean.
+"""
+function ocean_freshwater_heat_flux(esm::EarthSystemModel)
+    ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
+    cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
+    Jᴴ = ocean_freshwater_temperature_flux(esm)
+    return ρᵒᶜ * cᵒᶜ * Jᴴ
 end
 
 """
@@ -152,32 +205,73 @@ interface in a coupled `esm`.
 atmosphere_ocean_salinity_flux(esm::EarthSystemModel) =
     net_ocean_salinity_flux(esm) - sea_ice_ocean_salinity_flux(esm)
 
+@inline function surface_salinity_volume_flux(i, j, k, grid, salinity, freshwater_volume_flux)
+    return @inbounds salinity[i, j, grid.Nz] * freshwater_volume_flux[i, j, 1]
+end
+
+function ocean_surface_salinity_volume_flux(esm::EarthSystemModel, freshwater_volume_flux)
+    model = esm.ocean.model
+    salinity = model.tracers.S
+    return KernelFunctionOperation{Center, Center, Nothing}(surface_salinity_volume_flux,
+                                                            model.grid,
+                                                            salinity,
+                                                            freshwater_volume_flux)
+end
+
+ocean_surface_salinity_volume_flux(esm::EarthSystemModel) =
+    ocean_surface_salinity_volume_flux(esm, esm.interfaces.net_fluxes.ocean.η)
+
+
+salinity_budget_surface_flux(esm, ::MutableGridOfSomeKind) = net_ocean_salinity_flux(esm)
+salinity_budget_surface_flux(esm, grid) =
+    net_ocean_salinity_flux(esm) + ocean_surface_salinity_volume_flux(esm)
+
+salinity_budget_surface_flux(esm::EarthSystemModel) =
+    salinity_budget_surface_flux(esm, esm.ocean.model.grid)
+
 
 ###########################
-### Freshwater mass fluxes
+### Freshwater-content fluxes
 ###########################
 
 """
     net_ocean_freshwater_flux(esm::EarthSystemModel)
 
-Return the net freshwater mass flux (kg m⁻² s⁻¹) at the ocean's surface in a coupled `esm`.
+Return the outward-positive freshwater-content flux (kg m⁻² s⁻¹) at the ocean
+surface. On a mutable grid this includes both the explicit freshwater volume
+flux and changes in salt content relative to `reference_salinity`.
 """
 function net_ocean_freshwater_flux(esm::EarthSystemModel; reference_salinity = 35)
     ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
     Sᵒᶜ = convert(typeof(ρᵒᶜ), reference_salinity)
-    return - ρᵒᶜ / Sᵒᶜ * net_ocean_salinity_flux(esm)
+    Jʷ = esm.interfaces.net_fluxes.ocean.η
+    Jˢ = salinity_budget_surface_flux(esm)
+
+    if esm.ocean.model.grid isa MutableGridOfSomeKind
+        return - ρᵒᶜ * Jʷ - ρᵒᶜ / Sᵒᶜ * Jˢ
+    else
+        return - ρᵒᶜ / Sᵒᶜ * Jˢ
+    end
 end
 
 """
     sea_ice_ocean_freshwater_flux(esm::EarthSystemModel)
 
-Return the sea ice-ocean freshwater mass flux (kg m⁻² s⁻¹) at the sea ice-ocean interface
-in a coupled `esm`.
+Return the outward-positive sea ice-ocean freshwater-content flux
+(kg m⁻² s⁻¹) at the sea ice-ocean interface in a coupled `esm`.
 """
 function sea_ice_ocean_freshwater_flux(esm::EarthSystemModel; reference_salinity = 35)
     ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
     Sᵒᶜ = convert(typeof(ρᵒᶜ), reference_salinity)
-    return - ρᵒᶜ / Sᵒᶜ * sea_ice_ocean_salinity_flux(esm)
+    Jʷⁱᵒ = esm.interfaces.sea_ice_ocean_interface.fluxes.freshwater
+    Jˢⁱᵒ = sea_ice_ocean_salinity_flux(esm)
+
+    if esm.ocean.model.grid isa MutableGridOfSomeKind
+        return - ρᵒᶜ * Jʷⁱᵒ - ρᵒᶜ / Sᵒᶜ * Jˢⁱᵒ
+    else
+        Jˢᵛⁱᵒ = ocean_surface_salinity_volume_flux(esm, Jʷⁱᵒ)
+        return - ρᵒᶜ / Sᵒᶜ * (Jˢⁱᵒ + Jˢᵛⁱᵒ)
+    end
 end
 
 sea_ice_ocean_freshwater_flux(::NoSeaIceOceanInterfaceModel; kwargs...) = ZeroField()
@@ -185,11 +279,10 @@ sea_ice_ocean_freshwater_flux(::NoSeaIceOceanInterfaceModel; kwargs...) = ZeroFi
 """
     atmosphere_ocean_freshwater_flux(esm::EarthSystemModel)
 
-Return the atmosphere-ocean freshwater mass flux (kg m⁻² s⁻¹) at the atmosphere-ocean
-interface in a coupled `esm`.
+Return the outward-positive atmosphere-ocean freshwater-content flux
+(kg m⁻² s⁻¹) at the atmosphere-ocean interface in a coupled `esm`.
 """
 function atmosphere_ocean_freshwater_flux(esm::EarthSystemModel; reference_salinity = 35)
-    ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
-    Sᵒᶜ = convert(typeof(ρᵒᶜ), reference_salinity)
-    return - ρᵒᶜ / Sᵒᶜ * atmosphere_ocean_salinity_flux(esm)
+    return net_ocean_freshwater_flux(esm; reference_salinity) -
+           sea_ice_ocean_freshwater_flux(esm; reference_salinity)
 end
