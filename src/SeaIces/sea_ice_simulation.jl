@@ -191,7 +191,7 @@ function sea_ice_dynamics(grid, ocean=nothing;
     # Set up boundary conditions
     x_stress_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
     y_stress_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
-  
+
     τo  = SemiImplicitStress(uₑ=SSU, vₑ=SSV, Cᴰ=sea_ice_ocean_drag_coefficient, ρₑ=ρₑ)
     τua = Field{Face, Center, Nothing}(grid, boundary_conditions = x_stress_bcs)
     τva = Field{Center, Face, Nothing}(grid, boundary_conditions = y_stress_bcs)
