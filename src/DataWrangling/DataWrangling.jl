@@ -27,7 +27,7 @@ using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
                                   on_architecture, child_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
 using Oceananigans.DistributedComputations: DistributedComputations, @root, all_reduce
-using Oceananigans.Grids: AbstractGrid, Center, Face, Flat, Bounded,
+using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
                           LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes,
                           topology, x_domain, y_domain, z_domain
 using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
