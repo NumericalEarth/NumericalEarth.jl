@@ -8,8 +8,7 @@
 # This tutorial works through a deliberately small example: the
 # [Ocean Station Papa](https://www.pmel.noaa.gov/ocs/Papa) mooring (50.1ᵒN, 144.9ᵒW), a single water column
 # of hourly temperature and salinity profiles. Because it is a single point rather than a global grid, it is
-# a good fit for NumericalEarth's `Column` region, and it does *not* belong in the package itself — exactly
-# the kind of dataset this pattern is meant for.
+# a good fit for NumericalEarth's `Column` region.
 #
 # ## The interface
 #
