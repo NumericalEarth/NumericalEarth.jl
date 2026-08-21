@@ -120,12 +120,6 @@ end
 # regional component's interior by design: the value there comes from the component's own halo,
 # and therefore from its boundary conditions. Interpolation reads cells `⌊f⌋` and `⌊f⌋ + 1`, so
 # the index only has to stay within `1 - H` and `N + H - 1` for those reads to be in bounds.
-#
-# Clamping to that range leaves the halo reads alone whenever the component grid carries enough
-# halo to hold them, so a halo column reads the component's halo and hence its boundary
-# conditions. The upper bound is strict — `⌊f⌋ + 1` must not exceed `N + H` — so it is the
-# largest representable index below `N + H` rather than `N + H - 1`, which would give the
-# outermost halo cell zero weight and discard the boundary condition it holds.
 @inline clamp_fractional_index(::Nothing, topo, N, H) = nothing
 
 @inline function clamp_fractional_index(fractional_index, topo, N, H)
