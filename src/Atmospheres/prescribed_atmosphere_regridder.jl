@@ -59,16 +59,17 @@ end
     end
     TX, TY, _ = topology(atmos_grid)
     Nx, Ny, _ = size(atmos_grid)
+    Hx, Hy, _ = halo_size(atmos_grid)
 
     fi = indices_tuple.i
     fj = indices_tuple.j
     @inbounds begin
         if !isnothing(fi)
-            fi[i, j, 1] = clamp_fractional_index(fractional_indices_ij.i, TX(), Nx)
+            fi[i, j, 1] = clamp_fractional_index(fractional_indices_ij.i, TX(), Nx, Hx)
         end
 
         if !isnothing(fj)
-            fj[i, j, 1] = clamp_fractional_index(fractional_indices_ij.j, TY(), Ny)
+            fj[i, j, 1] = clamp_fractional_index(fractional_indices_ij.j, TY(), Ny, Hy)
         end
     end
 end
