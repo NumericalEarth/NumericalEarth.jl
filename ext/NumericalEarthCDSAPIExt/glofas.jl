@@ -46,8 +46,11 @@ const GLOFAS_COORD_VARS = Set(["longitude", "latitude",
     build_glofas_request(dataset, datetimes, region) -> Dict{String, Any}
 
 Construct the EWDS request for a batch of GloFAS dates that share a `(year, month)`.
-GloFAS uses the `hyear`/`hmonth`/`hday` date keys (interpreted as a Cartesian product).
+GloFAS uses `year`/`month`/`day` date keys (interpreted as a Cartesian product).
 A `BoundingBox` `region` is sent as an `area` key so the EWDS subsets server-side.
+
+`timespan = "time_mean"` selects the daily-mean discharge, the quantity the
+pre-2026 form called `river_discharge_in_the_last_24_hours` (`dis24`).
 """
 function build_glofas_request(dataset, datetimes, region)
     dts = datetimes isa AbstractVector ? datetimes : [datetimes]
@@ -60,10 +63,11 @@ function build_glofas_request(dataset, datetimes, region)
         "system_version"     => [dataset.system_version],
         "hydrological_model" => ["lisflood"],
         "product_type"       => ["consolidated"],
-        "variable"           => ["river_discharge_in_the_last_24_hours"],
-        "hyear"              => years,
-        "hmonth"             => months,
-        "hday"               => days,
+        "timespan"           => ["time_mean"],
+        "variable"           => [GloFAS_dataset_variable_names[:river_discharge]],
+        "year"               => years,
+        "month"              => months,
+        "day"                => days,
         "data_format"        => "netcdf",
         "download_format"    => "unarchived",
     )
@@ -140,7 +144,9 @@ function download_glofas_month(name, dataset, dates; region, dir, skip_existing,
     dt0 = first(sorted_dts)
     tmp_path = joinpath(dir, "_tmp_glofas_$(Dates.year(dt0))$(lpad(Dates.month(dt0), 2, '0')).nc")
     nc_varname = GloFAS_netcdf_variable_names[name]
-    nc_triples = [(nc_varname, dt, path) for (dt, path) in pending]
+    # the EWDS stamps each daily mean at the END of its averaging window: the slice for
+    # request day D carries valid_time D+1 00:00 (mean over [D, D+1])
+    nc_triples = [(nc_varname, dt + Dates.Day(1), path) for (dt, path) in pending]
 
     time_dimnames = Set(["time", "valid_time"])
     @root begin

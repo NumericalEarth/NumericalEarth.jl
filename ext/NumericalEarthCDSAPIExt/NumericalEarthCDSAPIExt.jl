@@ -17,7 +17,7 @@ using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5Metadata, ERA5Metadatu
                                          ERA5PressureMetadata, ERA5PressureMetadatum,
                                          ERA5PL_dataset_variable_names, ERA5PL_netcdf_variable_names
 using NumericalEarth.DataWrangling.GloFAS: GloFASDataset, GloFASMetadata, GloFASMetadatum,
-                                           GloFAS_netcdf_variable_names
+                                           GloFAS_dataset_variable_names, GloFAS_netcdf_variable_names
 using NumericalEarth.DataWrangling.CopernicusLandAlbedo: CopernicusAlbedo,
                                                          albedo_cds_request_variables,
                                                          albedo_source_variable_candidates,

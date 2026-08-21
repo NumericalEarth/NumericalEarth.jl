@@ -25,14 +25,17 @@ DataWrangling.all_dates(::GloFASReanalysis, variable) =
 ##### Variable name mappings
 #####
 
-# NumericalEarth name → CDS API variable name.
+# NumericalEarth name → CDS API variable name. The EWDS renamed the variable when it
+# introduced the `timespan` selector; with `timespan = "time_mean"` it is the same
+# daily-mean discharge the pre-2026 form called `river_discharge_in_the_last_24_hours`.
 GloFAS_dataset_variable_names = Dict(
-    :river_discharge => "river_discharge_in_the_last_24_hours",
+    :river_discharge => "average_river_discharge_in_the_last_24_hours",
 )
 
-# NumericalEarth name → NetCDF short variable name (as stored in downloaded files).
+# NumericalEarth name → NetCDF short variable name (as stored in downloaded files;
+# renamed from `dis24` together with the CDS variable).
 GloFAS_netcdf_variable_names = Dict(
-    :river_discharge => "dis24",
+    :river_discharge => "avg_dis",
 )
 
 DataWrangling.available_variables(::GloFASDataset) = GloFAS_dataset_variable_names
