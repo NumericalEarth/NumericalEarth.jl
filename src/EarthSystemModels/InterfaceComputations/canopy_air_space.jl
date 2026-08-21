@@ -333,12 +333,80 @@ Base.show(io::IO, r::LitterResistance) = print(io, summary(r))
     return (1 - exp(-Lˡ)) / max(C * u★, eps(FT))
 end
 
+#####
+##### Canopy-air storage: diagnostic (massless) or prognostic (the node carries the
+##### heat and moisture capacity of the canopy air layer).
+#####
+
+"""
+    DiagnosticCanopyAir()
+
+Massless canopy-air node (the default): `(Tᵃᶜ, qᵃᶜ)` solve the algebraic Kirchhoff
+balance between leaf, ground, and atmosphere every iterate of the Monin–Obukhov
+fixed point. The node has no memory — turbulence, skins, and canopy air are asserted
+to be in mutual equilibrium within each time step.
+"""
+struct DiagnosticCanopyAir end
+
+Base.summary(::DiagnosticCanopyAir) = "DiagnosticCanopyAir"
+Base.show(io::IO, s::DiagnosticCanopyAir) = print(io, summary(s))
+
+"""
+    PrognosticCanopyAir(FT = Oceananigans.defaults.FloatType; layer_depth = 10)
+
+Prognostic canopy-air storage: the node `(Tᵃᶜ, qᵃᶜ)` carries the heat and moisture
+capacity of the canopy air layer of depth ``h_c`` (`layer_depth`, m — a `Number`, or
+a `Field` of canopy heights),
+
+```math
+ρ c^p h_c \\frac{dT^{ac}}{dt} = H^v + H^g - H, \\qquad
+ρ h_c \\frac{dq^{ac}}{dt} = E^v + E^g - E,
+```
+
+integrated with the model time step instead of solved to equilibrium within it. The
+node is **frozen while the similarity scales iterate** — the outer fixed point reduces
+to the well-conditioned ``u_★ ↔ ζ`` bulk solve — and advanced once per step by an
+exact exponential relaxation toward the conductance-weighted equilibrium the
+diagnostic node computes today (see [`advance_canopy_air`](@ref)). The atmosphere
+receives fluxes evaluated at the step-mean node state, so
+``\\mathrm{flux} = \\mathrm{supply} - \\mathrm{storage}`` closes exactly.
+
+`layer_depth → 0` and the first `update_state!` (``Δt = 0``) recover the diagnostic
+equilibrium; daytime, where the relaxation time ``τ = ρ (c^p) h_c / Σg`` is shorter
+than the time step, the node lands on the equilibrium each step and the diagnostic
+physics is unchanged. At calm night the vapor node keeps memory of hours — the
+regime where the massless closure has no steady state (the calm-dusk limit cycle).
+
+```jldoctest
+using NumericalEarth
+
+PrognosticCanopyAir(layer_depth = 12)
+
+# output
+PrognosticCanopyAir(h_c=12.0)
+```
+"""
+struct PrognosticCanopyAir{H}
+    layer_depth :: H
+end
+
+PrognosticCanopyAir(FT::Type = Oceananigans.defaults.FloatType; layer_depth = 10) =
+    PrognosticCanopyAir(layer_depth isa Number ? convert(FT, layer_depth) : layer_depth)
+
+Base.summary(s::PrognosticCanopyAir) =
+    string("PrognosticCanopyAir(h_c=", prettysummary(s.layer_depth), ")")
+Base.show(io::IO, s::PrognosticCanopyAir) = print(io, summary(s))
+
+Adapt.adapt_structure(to, s::PrognosticCanopyAir) = PrognosticCanopyAir(adapt(to, s.layer_depth))
+
 """
     struct CanopyAirSpace
 
-Two-source canopy + soil surface with a diagnostic canopy-air node. Solves the
+Two-source canopy + soil surface with a canopy-air node. Solves the
 leaf temperature `Tᵛ`, the soil-skin temperature `Tᵍ`, and the canopy-air node
-`(Tᵃᶜ, qᵃᶜ)` inside the Monin–Obukhov fixed point. Use the same object in both the
+`(Tᵃᶜ, qᵃᶜ)` inside the Monin–Obukhov fixed point (diagnostic node, the default),
+or advances a prognostic node carrying the canopy-air heat and moisture capacity
+(`storage = PrognosticCanopyAir(...)`). Use the same object in both the
 temperature and specific-humidity interface slots.
 
 Fields:
@@ -366,8 +434,11 @@ Fields:
 - `interception` : wet-canopy vapor branch parameters (a [`CanopyInterception`](@ref)),
   or `nothing` for a dry canopy (the default; recovers the current CAS bit-for-bit).
 - `phase` : saturation phase (Liquid).
+- `storage` : the canopy-air node storage — [`DiagnosticCanopyAir`](@ref) (the default,
+  massless node) or [`PrognosticCanopyAir`](@ref) (the node carries the canopy-air
+  heat and moisture capacity and is advanced with the model time step).
 """
-struct CanopyAirSpace{S, C, RF, FT, U, W, L, I, Φ}
+struct CanopyAirSpace{S, C, RF, FT, U, W, L, I, Φ, ST}
     soil                      :: S
     canopy                    :: C
     soil_skin_flux             :: RF
@@ -385,6 +456,7 @@ struct CanopyAirSpace{S, C, RF, FT, U, W, L, I, Φ}
     relaxation                :: FT
     interception              :: I
     phase                     :: Φ
+    storage                   :: ST
 end
 
 function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
@@ -404,7 +476,8 @@ function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
                         inner_iterations          = 40,
                         relaxation                = 1//2,
                         interception              = nothing,
-                        phase                     = AtmosphericThermodynamics.Liquid())
+                        phase                     = AtmosphericThermodynamics.Liquid(),
+                        storage                   = DiagnosticCanopyAir())
 
     return CanopyAirSpace(soil, canopy, soil_skin_flux,
                           convert(FT, leaf_albedo), convert(FT, ground_albedo),
@@ -413,12 +486,21 @@ function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
                           convert(FT, leaf_boundary_conductance),
                           undercanopy_conductance_model(undercanopy_conductance, FT),
                           wet_soil_resistance, litter_resistance,
-                          inner_iterations, convert(FT, relaxation), interception, phase)
+                          inner_iterations, convert(FT, relaxation), interception, phase,
+                          storage)
 end
+
+# The storage type selects the node treatment inside `canopy_air_space_solve` and
+# the kernel data flow (frozen node + advance for the prognostic variant).
+const DiagnosticCanopyAirSpace = CanopyAirSpace{<:Any, <:Any, <:Any, <:Any, <:Any,
+                                                <:Any, <:Any, <:Any, <:Any, <:DiagnosticCanopyAir}
+const PrognosticCanopyAirSpace = CanopyAirSpace{<:Any, <:Any, <:Any, <:Any, <:Any,
+                                                <:Any, <:Any, <:Any, <:Any, <:PrognosticCanopyAir}
 
 Base.summary(::CanopyAirSpace) = "CanopyAirSpace"
 Base.show(io::IO, c::CanopyAirSpace) =
-    print(io, "CanopyAirSpace(soil=", summary(c.soil), ", canopy=", summary(c.canopy), ")")
+    print(io, "CanopyAirSpace(soil=", summary(c.soil), ", canopy=", summary(c.canopy),
+          ", storage=", summary(c.storage), ")")
 
 Adapt.adapt_structure(to, c::CanopyAirSpace) =
     CanopyAirSpace(adapt(to, c.soil), adapt(to, c.canopy), c.soil_skin_flux,
@@ -426,7 +508,7 @@ Adapt.adapt_structure(to, c::CanopyAirSpace) =
                    c.extinction, c.clumping, c.leaf_boundary_conductance,
                    c.undercanopy_conductance, c.wet_soil_resistance, c.litter_resistance,
                    c.inner_iterations, c.relaxation,
-                   c.interception, c.phase)
+                   c.interception, c.phase, adapt(to, c.storage))
 
 # Materialization / identity — delegate to the sub-models so the per-cell interface
 # state carries the soil saturation, bulk temperature, and LAI the branches read.
@@ -486,6 +568,45 @@ end
 @inline function canopy_air_node(gᵍ, xᵍ, gᵛ, xᵛ, gᵃ, xᵃᵗ, x⁻)
     D = gᵍ + gᵛ + gᵃ
     return ifelse(D > 0, (gᵍ * xᵍ + gᵛ * xᵛ + gᵃ * xᵃᵗ) / D, x⁻)
+end
+
+# Node treatment per storage: the diagnostic node re-balances every iterate; the
+# prognostic node is model state, frozen through the solve (the skins equilibrate
+# against it, and the node advances once per step in `advance_interface_state!`).
+@inline node_value(::DiagnosticCanopyAir, gᵍ, xᵍ, gᵛ, xᵛ, gᵃ, xᵃᵗ, x⁻) =
+    canopy_air_node(gᵍ, xᵍ, gᵛ, xᵛ, gᵃ, xᵃᵗ, x⁻)
+@inline node_value(::PrognosticCanopyAir, gᵍ, xᵍ, gᵛ, xᵛ, gᵃ, xᵃᵗ, x⁻) = x⁻
+
+"""
+    advance_canopy_air(x, x_eq, Σg, C, Δt)
+
+Advance a prognostic canopy-air node value `x` toward its conductance-weighted
+equilibrium `x_eq` over `Δt` — the exact solution of the linearized node ODE
+``C \\, dx/dt = Σg (x_{eq} - x)`` at fixed conductances,
+
+```math
+x ← x_{eq} + (x - x_{eq}) e^{-Δt Σg / C}.
+```
+
+A convex blend of the old node and its equilibrium: unconditionally stable and
+hull-bounded at any `Δt`. `Δt = 0` (the first `update_state!`, before any time
+step) or `C = 0` return the equilibrium — the diagnostic limit.
+"""
+@inline function advance_canopy_air(x, x_eq, Σg, C, Δt)
+    FT = typeof(x)
+    w = ifelse((Δt > 0) & (C > 0), exp(-Δt * Σg / max(C, eps(FT))), zero(FT))
+    return x_eq + (x - x_eq) * w
+end
+
+# Time-mean node value over the step, ⟨x⟩ = x_eq + (x₀ − x_eq) (τ/Δt)(1 − e^{−Δt/τ})
+# with τ = C/Σg. Fluxes are linear in the node, so evaluating them here closes the
+# step budget exactly: flux to the atmosphere = Kirchhoff supply − storage tendency.
+# `expm1` keeps the τ ≫ Δt limit accurate; Δt = 0 or C = 0 return the equilibrium.
+@inline function step_mean_canopy_air(x, x_eq, Σg, C, Δt)
+    FT = typeof(x)
+    τ = C / max(Σg, eps(FT))
+    m = -(τ / max(Δt, eps(FT))) * expm1(-Δt / τ)
+    return ifelse((Δt > 0) & (C > 0), x_eq + (x - x_eq) * m, x_eq)
 end
 
 # dqᵛ⁺/dT by centered difference — the Newton derivative of each balance's latent term.
@@ -575,8 +696,8 @@ closes.
         gˡʷ, qᵛ = leaf_vapor_terms(c.canopy, Tᵛ, gʷ, fʷ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
         Gᵉ, qᵉ  = soil_vapor_terms(c.soil, Tᵍ, gᵍʷ, gᵖ, Ψₛ, Ψₐ, ℙₐ)
 
-        Tᵃᶜ = canopy_air_node(gᵍʰ, Tᵍ, gˡʰ, Tᵛ, gᵃʰ, θᵃᵗ, Tᵃᶜ)
-        qᵃᶜ = canopy_air_node(Gᵉ, qᵉ, gˡʷ, qᵛ, gᵃʷ, qᵃᵗ, qᵃᶜ)
+        Tᵃᶜ = node_value(c.storage, gᵍʰ, Tᵍ, gˡʰ, Tᵛ, gᵃʰ, θᵃᵗ, Tᵃᶜ)
+        qᵃᶜ = node_value(c.storage, Gᵉ, qᵉ, gˡʷ, qᵛ, gᵃʷ, qᵃᵗ, qᵃᶜ)
 
         LWꜜᵍ     = (1 - εᵛ) * LWd + εᵛ * σ * Tᵛ^4
         LWꜛᵍ     = εᵍ * σ * Tᵍ^4 + (1 - εᵍ) * LWꜜᵍ
@@ -598,12 +719,13 @@ closes.
 
     # Converged diagnostics: per-surface flux shares, the skin→slab conduction, and
     # the effective radiating (LST) temperature σ Teff⁴ ≡ LWu (upwelling to space).
-    # The node is re-solved against the final skins: inside the loop it updates ahead of
-    # them, so the loop exits one iterate stale and the shares below would miss closure.
+    # The diagnostic node is re-solved against the final skins: inside the loop it
+    # updates ahead of them, so the loop exits one iterate stale and the shares below
+    # would miss closure. The prognostic node stays frozen.
     gˡʷ, qᵛ = leaf_vapor_terms(c.canopy, Tᵛ, gʷ, fʷ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
     Gᵉ, qᵉ  = soil_vapor_terms(c.soil, Tᵍ, gᵍʷ, gᵖ, Ψₛ, Ψₐ, ℙₐ)
-    Tᵃᶜ = canopy_air_node(gᵍʰ, Tᵍ, gˡʰ, Tᵛ, gᵃʰ, θᵃᵗ, Tᵃᶜ)
-    qᵃᶜ = canopy_air_node(Gᵉ, qᵉ, gˡʷ, qᵛ, gᵃʷ, qᵃᵗ, qᵃᶜ)
+    Tᵃᶜ = node_value(c.storage, gᵍʰ, Tᵍ, gˡʰ, Tᵛ, gᵃʰ, θᵃᵗ, Tᵃᶜ)
+    qᵃᶜ = node_value(c.storage, Gᵉ, qᵉ, gˡʷ, qᵛ, gᵃʷ, qᵃᵗ, qᵃᶜ)
 
     LWꜜᵍ = (1 - εᵛ) * LWd + εᵛ * σ * Tᵛ^4
     LWꜛᵍ = εᵍ * σ * Tᵍ^4 + (1 - εᵍ) * LWꜜᵍ
@@ -618,13 +740,26 @@ closes.
     Eʷ = fʷ * gʷ * (qᵛ - qᵃᶜ)           # wet-canopy evaporation, mass flux (kg m⁻² s⁻¹, up)
     LEʷ = ℒ * Eʷ                           # wet-canopy latent heat (W m⁻², up); LEᵛ − LEʷ = transpiration
 
+    # Node balance ingredients for the prognostic advance: conductance sums per side
+    # and the equilibria the node relaxes toward (the diagnostic node's own values).
+    Σgᵀ = gᵃʰ + gˡʰ + gᵍʰ
+    Σgᵛ = gᵃʷ + gˡʷ + Gᵉ
+    T_eq = canopy_air_node(gᵍʰ, Tᵍ, gˡʰ, Tᵛ, gᵃʰ, θᵃᵗ, Tᵃᶜ)
+    q_eq = canopy_air_node(Gᵉ, qᵉ, gˡʷ, qᵛ, gᵃʷ, qᵃᵗ, qᵃᶜ)
+
     return (; Tᵛ = convert(FT, Tᵛ), Tᵍ = convert(FT, Tᵍ),
               Tᵃᶜ = convert(FT, Tᵃᶜ), qᵃᶜ = convert(FT, qᵃᶜ),
               Teff = convert(FT, Teff),
               Hᵛ = convert(FT, Hᵛ), Hᵍ = convert(FT, Hᵍ),
               LEᵛ = convert(FT, LEᵛ), LEᵍ = convert(FT, LEᵍ),
               Gᶜ = convert(FT, Gᶜ), Eʷ = convert(FT, Eʷ),
-              LEʷ = convert(FT, LEʷ))
+              LEʷ = convert(FT, LEʷ),
+              Σgᵀ = convert(FT, Σgᵀ), Σgᵛ = convert(FT, Σgᵛ),
+              T_eq = convert(FT, T_eq), q_eq = convert(FT, q_eq),
+              gˡʰ = convert(FT, gˡʰ), gᵍʰ = convert(FT, gᵍʰ),
+              gˡʷ = convert(FT, gˡʷ), Gᵉ = convert(FT, Gᵉ),
+              qᵛ = convert(FT, qᵛ), qᵉ = convert(FT, qᵉ),
+              ρᵃᵗ = convert(FT, ρᵃᵗ), cᵖ = convert(FT, cᵖ), ℒ = convert(FT, ℒ))
 end
 
 @inline compute_interface_temperature(c::CanopyAirSpace,
@@ -645,6 +780,40 @@ end
     return sol.Tᵃᶜ, sol.qᵃᶜ
 end
 
+# Prognostic node: the node is model state, frozen through the outer fixed point —
+# the similarity scales iterate against fixed surface values (the well-conditioned
+# u★ ↔ ζ bulk solve), and the skins are solved once per step at exit
+# (`advance_interface_state!`) rather than every iterate.
+@inline interface_temperature_and_humidity(::PrognosticCanopyAirSpace, ::CanopyAirSpace,
+                                           Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ) =
+    (Ψₛ.temperature, Ψₛ.specific_humidity)
+
+"""
+    struct CanopyAirState
+
+Prognostic canopy-air node state of a [`PrognosticCanopyAir`](@ref) storage: the node
+temperature `Tᵃᶜ` and specific humidity `qᵃᶜ` carried across time steps. Model state
+(unlike the pure-output [`CanopyAirSpaceDiagnostics`](@ref) fields): it enters
+checkpointing and is read back as the interface state at the start of each flux
+computation. Initialized to the diagnostic equilibrium on the first `update_state!`
+(`Δt = 0`), so a fresh start degrades gracefully to a diagnostic first step.
+"""
+struct CanopyAirState{F}
+    temperature       :: F   # Tᵃᶜ (Field{Center, Center, Nothing})
+    specific_humidity :: F   # qᵃᶜ
+end
+
+CanopyAirState(grid) = CanopyAirState(Field{Center, Center, Nothing}(grid),
+                                      Field{Center, Center, Nothing}(grid))
+
+Adapt.@adapt_structure CanopyAirState
+
+Base.summary(::CanopyAirState) = "CanopyAirState"
+Base.show(io::IO, s::CanopyAirState) = print(io, summary(s))
+
+@inline build_canopy_air_state(::DiagnosticCanopyAir, grid) = nothing
+@inline build_canopy_air_state(::PrognosticCanopyAir, grid) = CanopyAirState(grid)
+
 """
     struct CanopyAirSpaceDiagnostics
 
@@ -655,7 +824,7 @@ this type — it signals that radiation is internalized in the soil-skin balance
 slab is driven by the skin→bulk conduction (`ground_heat_flux`) rather than by a
 separately added radiative flux.
 """
-struct CanopyAirSpaceDiagnostics{F}
+struct CanopyAirSpaceDiagnostics{F, S}
     interface              :: F   # canopy-air node Tᵃᶜ (what MOST sees)
     canopy                 :: F   # leaf temperature Tᵛ
     soil_skin              :: F   # soil-skin temperature Tᵍ
@@ -667,11 +836,13 @@ struct CanopyAirSpaceDiagnostics{F}
     soil_sensible_heat     :: F   # ground sensible Hᵍ
     canopy_evaporation     :: F   # wet-canopy evaporation Eʷ (kg m⁻² s⁻¹, up)
     canopy_wet_latent_heat :: F   # wet-canopy latent heat ℒ·Eʷ (W m⁻², up)
+    state                  :: S   # prognostic CanopyAirState, or nothing (diagnostic node)
 end
 
-CanopyAirSpaceDiagnostics(grid) =
+CanopyAirSpaceDiagnostics(grid, storage = DiagnosticCanopyAir()) =
     CanopyAirSpaceDiagnostics(ntuple(_ -> Field{Center, Center, Nothing}(grid),
-                                     Val(fieldcount(CanopyAirSpaceDiagnostics)))...)
+                                     Val(fieldcount(CanopyAirSpaceDiagnostics) - 1))...,
+                              build_canopy_air_state(storage, grid))
 
 Adapt.@adapt_structure CanopyAirSpaceDiagnostics
 

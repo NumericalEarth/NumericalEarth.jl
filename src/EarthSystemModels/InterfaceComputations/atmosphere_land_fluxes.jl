@@ -50,7 +50,7 @@ end
 # downstream (`slab_land.jl`, `apply_air_land_radiative_fluxes.jl`) that the radiation
 # is internalized and the slab is driven by conduction.
 @inline build_interface_temperature(temperature_formulation, grid) = Field{Center, Center, Nothing}(grid)
-@inline build_interface_temperature(::CanopyAirSpace, grid) = CanopyAirSpaceDiagnostics(grid)
+@inline build_interface_temperature(cas::CanopyAirSpace, grid) = CanopyAirSpaceDiagnostics(grid, cas.storage)
 
 # Store the diagnostic surface temperature(s) from the converged interface state.
 # Ordinary closures write the single skin temperature; a `CanopyAirSpace` re-runs its
@@ -76,6 +76,87 @@ end
         Ts.canopy_wet_latent_heat[i, j, 1] = sol.LEʷ
     end
     return nothing
+end
+
+# Initial interface values for the fixed point. Diagnostic formulations cold-start
+# from the bulk land temperature and its saturation humidity; a prognostic
+# `CanopyAirSpace` reads the stored node back, except before any time step has run,
+# where the state fields are not yet initialized and the diagnostic guess is used.
+# The `iteration > 0` guard also holds the state through the first-time-step
+# preparation (`maybe_prepare_first_time_step!` re-runs `update_state!` with
+# `last_Δt` already set), so each model step advances the state exactly once.
+@inline clock_has_stepped(clock) =
+    (clock.iteration > 0) & isfinite(clock.last_Δt) & (clock.last_Δt > 0)
+
+@inline initial_interface_values(formulation, Ts, i, j, T₀, q₀, clock) = (T₀, q₀)
+
+@inline function initial_interface_values(::PrognosticCanopyAirSpace, Ts::CanopyAirSpaceDiagnostics,
+                                          i, j, T₀, q₀, clock)
+    stepped = clock_has_stepped(clock)
+    @inbounds T = ifelse(stepped, Ts.state.temperature[i, j, 1], T₀)
+    @inbounds q = ifelse(stepped, Ts.state.specific_humidity[i, j, 1], q₀)
+    return T, q
+end
+
+# Finalize the interface state after the fixed point: store diagnostics and, for
+# prognostic storage, advance the stored state and return the state whose flux
+# scales the kernel exports. The default (all diagnostic formulations) is exactly
+# the previous behavior.
+@inline function advance_interface_state!(Ts, i, j, formulation, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, clock)
+    store_interface_temperature!(Ts, i, j, formulation, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    return Ψₛ
+end
+
+# Prognostic canopy air: the node was frozen through the fixed point, so the skins
+# equilibrate against it once here; the node then advances by the exponential
+# relaxation toward the conductance-weighted equilibrium, and the exported scales
+# are re-evaluated at the step-mean node state, closing the step ledger exactly:
+# flux to the atmosphere = Kirchhoff supply − storage tendency. The stored
+# diagnostics (shares, node) are the step-mean-consistent ones the ledger uses.
+@inline function advance_interface_state!(Ts, i, j, cas::PrognosticCanopyAirSpace,
+                                          Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, clock)
+    sol = canopy_air_space_solve(cas, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)   # node frozen inside
+
+    FT  = eltype(Ψₛ)
+    # Δt = 0 before any time step (including the first-time-step preparation call):
+    # the advance then lands on the equilibrium — the diagnostic initialization.
+    Δt  = ifelse(clock_has_stepped(clock), convert(FT, clock.last_Δt), zero(FT))
+    h_c = convert(FT, state2dindex(cas.storage.layer_depth, i, j))
+    Cᵀ = sol.ρᵃᵗ * sol.cᵖ * h_c
+    Cᵛ = sol.ρᵃᵗ * h_c
+
+    T⁻, q⁻ = Ψₛ.temperature, Ψₛ.specific_humidity
+    T⁺ = advance_canopy_air(T⁻, sol.T_eq, sol.Σgᵀ, Cᵀ, Δt)
+    q⁺ = advance_canopy_air(q⁻, sol.q_eq, sol.Σgᵛ, Cᵛ, Δt)
+    T̄  = step_mean_canopy_air(T⁻, sol.T_eq, sol.Σgᵀ, Cᵀ, Δt)
+    q̄  = step_mean_canopy_air(q⁻, sol.q_eq, sol.Σgᵛ, Cᵛ, Δt)
+
+    @inbounds begin
+        Ts.state.temperature[i, j, 1]       = T⁺
+        Ts.state.specific_humidity[i, j, 1] = q⁺
+        Ts.interface[i, j, 1]              = T⁺
+        Ts.canopy[i, j, 1]                 = sol.Tᵛ
+        Ts.soil_skin[i, j, 1]              = sol.Tᵍ
+        Ts.effective[i, j, 1]              = sol.Teff
+        Ts.ground_heat_flux[i, j, 1]        = sol.Gᶜ
+        Ts.canopy_latent_heat[i, j, 1]     = sol.ℒ * sol.gˡʷ * (sol.qᵛ - q̄)
+        Ts.soil_latent_heat[i, j, 1]       = sol.ℒ * sol.Gᵉ * (sol.qᵉ - q̄)
+        Ts.canopy_sensible_heat[i, j, 1]   = sol.gˡʰ * (sol.Tᵛ - T̄)
+        Ts.soil_sensible_heat[i, j, 1]     = sol.gᵍʰ * (sol.Tᵍ - T̄)
+        Ts.canopy_evaporation[i, j, 1]     = sol.Eʷ
+        Ts.canopy_wet_latent_heat[i, j, 1] = sol.LEʷ
+    end
+
+    # Exported scales at the step-mean node (the same floored transfer coefficients
+    # the node balance uses), so −ρ cᵖ u★ θ★ = gᵃʰ (T̄ − θᵃᵗ) and the vapor analog.
+    θᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
+    χθ⁺ = max(zero(FT), Ψₛ.fluxes.χθ)
+    χq⁺ = max(zero(FT), Ψₛ.fluxes.χq)
+    fluxes = InterfaceFluxScales(Ψₛ.fluxes.u★,
+                                 χθ⁺ * (θᵃᵗ - T̄),
+                                 χq⁺ * (Ψₐ.q - q̄),
+                                 Ψₛ.fluxes.χθ, Ψₛ.fluxes.χq)
+    return rebuild_interface_state(Ψₛ, fluxes, T⁺, q⁺)
 end
 
 #####
@@ -312,9 +393,12 @@ end
                                                          i, j, 1, grid, time)
 
     # Estimate initial interface state. Use the saturated value as the initial
-    # surface humidity guess (the solver recomputes it via the formulation).
+    # surface humidity guess (the solver recomputes it via the formulation);
+    # prognostic formulations read their stored state back instead.
     u★ = convert(FT, 1e-4)
     qₛ = convert(FT, saturation_specific_humidity(ℂᵃᵗ, Tₛ, pᵃᵗ, interface_phase(q_formulation)))
+    Tₛ, qₛ = initial_interface_values(interface_properties.temperature_formulation,
+                                      interface_temperature, i, j, Tₛ, qₛ, clock)
     initial_interface_state = AirLandInterfaceState(i, j, grid,
                                                     InterfaceFluxScales(u★, u★, u★),
                                                     InterfaceVelocities(uₛ, vₛ),
@@ -330,6 +414,16 @@ end
                                               interface_properties,
                                               atmosphere_properties,
                                               local_land_properties)
+
+    # Store diagnostics; prognostic formulations also advance their stored state and
+    # hand back the state whose scales the flux exports below use (step-mean values,
+    # so the step energy/vapor ledger closes against the storage tendency).
+    interface_state = advance_interface_state!(interface_temperature, i, j,
+                                               interface_properties.temperature_formulation,
+                                               interface_state, local_atmosphere_state,
+                                               local_interior_state, radiation_state,
+                                               interface_properties, atmosphere_properties,
+                                               clock)
 
     u★ = interface_state.fluxes.u★
     θ★ = interface_state.fluxes.θ★
@@ -364,9 +458,4 @@ end
         interface_fluxes.temperature_scale[i, j, 1] = θ★
         interface_fluxes.water_vapor_scale[i, j, 1] = q★
     end
-
-    store_interface_temperature!(interface_temperature, i, j,
-                                 interface_properties.temperature_formulation,
-                                 interface_state, local_atmosphere_state, local_interior_state,
-                                 radiation_state, atmosphere_properties)
 end
