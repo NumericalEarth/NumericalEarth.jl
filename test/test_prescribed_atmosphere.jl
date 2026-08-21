@@ -90,15 +90,14 @@ end
 
         fi = Array(exchanger.regridder.i.data[0:Nx+1, 0:Ny+1, 1:1])
         fj = Array(exchanger.regridder.j.data[0:Nx+1, 0:Ny+1, 1:1])
-        @test all(f -> 1 - Hx <= f <= Nx + Hx - 1, fi)
-        @test all(f -> 1 - Hy <= f <= Ny + Hy - 1, fj)
+        @test all(f -> 1 - Hx <= f < Nx + Hx, fi)
+        @test all(f -> 1 - Hy <= f < Ny + Hy, fj)
 
-        # Two halo cells in longitude are enough to hold the eastern halo column, so it is
-        # not clamped onto the interior: the read reaches the atmosphere's halo, and hence
-        # its boundary conditions. Where the atmosphere is one cell deep, as in latitude
-        # here, the outermost column has nowhere to read from and falls back to the nearest
-        # cell. Which index a *western* column lands on is `fractional_x_index`'s business.
-        @test Hx >= 2
+        # Halo columns are not clamped onto the interior, so the read reaches the
+        # atmosphere's halo and hence its boundary conditions — in latitude too, where the
+        # atmosphere is a single cell deep. Which index a *western* column lands on is
+        # `fractional_x_index`'s business.
         @test fi[end, 1, 1] > Nx
+        @test fj[1, end, 1] > Ny
     end
 end

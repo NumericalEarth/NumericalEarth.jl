@@ -122,11 +122,18 @@ end
 # the index only has to stay within `1 - H` and `N + H - 1` for those reads to be in bounds.
 #
 # Clamping to that range leaves the halo reads alone whenever the component grid carries enough
-# halo to hold them, and falls back to the nearest available cell when it does not — a component
-# grid with a single halo cell cannot supply the outermost exchange-grid column.
+# halo to hold them, so a halo column reads the component's halo and hence its boundary
+# conditions. The upper bound is strict — `⌊f⌋ + 1` must not exceed `N + H` — so it is the
+# largest representable index below `N + H` rather than `N + H - 1`, which would give the
+# outermost halo cell zero weight and discard the boundary condition it holds.
 @inline clamp_fractional_index(::Nothing, topo, N, H) = nothing
-@inline clamp_fractional_index(fractional_index, topo, N, H) =
-    ifelse(topo isa Periodic, fractional_index, clamp(fractional_index, 1 - H, N + H - 1))
+
+@inline function clamp_fractional_index(fractional_index, topo, N, H)
+    FT = typeof(fractional_index)
+    westmost = convert(FT, 1 - H)
+    eastmost = prevfloat(convert(FT, N + H))
+    return ifelse(topo isa Periodic, fractional_index, clamp(fractional_index, westmost, eastmost))
+end
 
 # 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1: a scalar
 # (e.g. a prescribed measurement height or the 600 m BL-height fallback) passes through,
