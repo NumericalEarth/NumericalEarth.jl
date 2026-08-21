@@ -122,14 +122,14 @@ end
     # the advance then lands on the equilibrium — the diagnostic initialization.
     Δt  = ifelse(clock_has_stepped(clock), convert(FT, clock.last_Δt), zero(FT))
     h_c = convert(FT, state2dindex(cas.storage.layer_depth, i, j))
-    C_T = sol.ρᵃᵗ * sol.cᵖ * h_c
-    C_q = sol.ρᵃᵗ * h_c
+    Cᵀ = sol.ρᵃᵗ * sol.cᵖ * h_c
+    Cᵛ = sol.ρᵃᵗ * h_c
 
     T⁻, q⁻ = Ψₛ.temperature, Ψₛ.specific_humidity
-    T⁺ = advance_canopy_air(T⁻, sol.T_eq, sol.Σg_T, C_T, Δt)
-    q⁺ = advance_canopy_air(q⁻, sol.q_eq, sol.Σg_q, C_q, Δt)
-    T̄  = step_mean_canopy_air(T⁻, sol.T_eq, sol.Σg_T, C_T, Δt)
-    q̄  = step_mean_canopy_air(q⁻, sol.q_eq, sol.Σg_q, C_q, Δt)
+    T⁺ = advance_canopy_air(T⁻, sol.T_eq, sol.Σgᵀ, Cᵀ, Δt)
+    q⁺ = advance_canopy_air(q⁻, sol.q_eq, sol.Σgᵛ, Cᵛ, Δt)
+    T̄  = step_mean_canopy_air(T⁻, sol.T_eq, sol.Σgᵀ, Cᵀ, Δt)
+    q̄  = step_mean_canopy_air(q⁻, sol.q_eq, sol.Σgᵛ, Cᵛ, Δt)
 
     @inbounds begin
         Ts.state.temperature[i, j, 1]       = T⁺

@@ -118,7 +118,7 @@ end
         @test value1(fp.sensible_heat) ≈ value1(fd.sensible_heat) atol = 2
 
         # --- exact step ledger: flux to the atmosphere = Kirchhoff supply − storage
-        # tendency, with capacities C_T = ρ cᵖ h_c and C_q = ρ h_c.
+        # tendency, with capacities Cᵀ = ρ cᵖ h_c and Cᵛ = ρ h_c.
         T⁻ = value1(Ts.state.temperature)
         q⁻ = value1(Ts.state.specific_humidity)
         Δt = 300.0
@@ -130,14 +130,14 @@ end
         cᵖ = AtmosphericThermodynamics.cp_m(ℂ, 0.008)
         ℒ  = AtmosphericThermodynamics.latent_heat_vapor(ℂ, 300.0)
         h_c = 10.0
-        S_T = ρ * cᵖ * h_c * (T⁺ - T⁻) / Δt
-        S_q = ℒ * ρ * h_c * (q⁺ - q⁻) / Δt
+        Sᵀ = ρ * cᵖ * h_c * (T⁺ - T⁻) / Δt
+        Sᵛ = ℒ * ρ * h_c * (q⁺ - q⁻) / Δt
         Hᵛ  = value1(Ts.canopy_sensible_heat)
         Hᵍ  = value1(Ts.soil_sensible_heat)
         LEᵛ = value1(Ts.canopy_latent_heat)
         LEᵍ = value1(Ts.soil_latent_heat)
-        @test Hᵛ + Hᵍ - value1(fp.sensible_heat) ≈ S_T atol = 1e-6
-        @test LEᵛ + LEᵍ - value1(fp.latent_heat) ≈ S_q atol = 1e-6
+        @test Hᵛ + Hᵍ - value1(fp.sensible_heat) ≈ Sᵀ atol = 1e-6
+        @test LEᵛ + LEᵍ - value1(fp.latent_heat) ≈ Sᵛ atol = 1e-6
 
         # --- the node stays inside the hull of its sources.
         θᵃᵗ = 300.0

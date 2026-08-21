@@ -742,8 +742,8 @@ closes.
 
     # Node balance ingredients for the prognostic advance: conductance sums per side
     # and the equilibria the node relaxes toward (the diagnostic node's own values).
-    Σg_T = gᵃʰ + gˡʰ + gᵍʰ
-    Σg_q = gᵃʷ + gˡʷ + Gᵉ
+    Σgᵀ = gᵃʰ + gˡʰ + gᵍʰ
+    Σgᵛ = gᵃʷ + gˡʷ + Gᵉ
     T_eq = canopy_air_node(gᵍʰ, Tᵍ, gˡʰ, Tᵛ, gᵃʰ, θᵃᵗ, Tᵃᶜ)
     q_eq = canopy_air_node(Gᵉ, qᵉ, gˡʷ, qᵛ, gᵃʷ, qᵃᵗ, qᵃᶜ)
 
@@ -754,7 +754,7 @@ closes.
               LEᵛ = convert(FT, LEᵛ), LEᵍ = convert(FT, LEᵍ),
               Gᶜ = convert(FT, Gᶜ), Eʷ = convert(FT, Eʷ),
               LEʷ = convert(FT, LEʷ),
-              Σg_T = convert(FT, Σg_T), Σg_q = convert(FT, Σg_q),
+              Σgᵀ = convert(FT, Σgᵀ), Σgᵛ = convert(FT, Σgᵛ),
               T_eq = convert(FT, T_eq), q_eq = convert(FT, q_eq),
               gˡʰ = convert(FT, gˡʰ), gᵍʰ = convert(FT, gᵍʰ),
               gˡʷ = convert(FT, gˡʷ), Gᵉ = convert(FT, Gᵉ),
