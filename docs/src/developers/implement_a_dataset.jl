@@ -2,7 +2,7 @@
 #
 # NumericalEarth ships connectors for a number of *global* data products (ECCO, GLORYS, EN4, JRA55, ERA5,
 # ...), all built on the same [`Metadata`](@ref) interface. That interface is public: a dataset you maintain
-# yourself can plug into the very same machinery — `set!`, `Field`, `FieldTimeSeries` — by extending a handful
+# yourself can plug into the very same machinery (`set!`, `Field`, `FieldTimeSeries`) by extending a handful
 # of methods *in your own script*, without modifying the package.
 #
 # This tutorial works through a deliberately small example: the
