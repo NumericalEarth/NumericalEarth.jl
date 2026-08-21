@@ -99,16 +99,19 @@ end
 # composite formulations forward to their soil branch.
 @inline interface_phase(q_formulation) = q_formulation.phase
 
-# Atmospheric vapor flux `Jᵃ = -ρᵃᵗ u★ q★` (positive upward) from the previous
-# similarity iterate, and the humidity increment `Δq = qˢ⁻ - qᵃᵗ`. The series-
-# resistance humidity formulations (`SkinHumidity`, `DryLayerHumidity`,
-# `CanopyConductanceHumidity`, `CompositeSurfaceHumidity`) all close their flux
-# balance against these two quantities.
-@inline function atmospheric_vapor_flux(Ψₛ, Ψₐ, ℂᵃᵗ)
+# Aerodynamic vapor conductance `Gᵃ = ρᵃᵗ u★ χq` (kg m⁻² s⁻¹) of the previous
+# similarity iterate — the bulk linearization `Jᵃ(q) ≈ Gᵃ (q - qᵃᵗ)` of the
+# similarity vapor flux, anchored so that `Jᵃ(qˢ⁻) = -ρᵃᵗ u★ q★` exactly
+# (`q★ = χq Δq`). The series-resistance humidity formulations (`SkinHumidity`,
+# `DryLayerHumidity`, `CanopyConductanceHumidity`, `CompositeSurfaceHumidity`,
+# `CanopyAirSpace`) close their flux balance against it. Reading the conductance
+# off the similarity solution — instead of reconstructing it from the
+# flux/increment ratio `Jᵃ/Δq`, which is singular as `Δq` crosses zero — keeps
+# every humidity divider a convex mean of its sources; the floor guards against
+# transient unphysical profiles.
+@inline function aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
-    Jᵃ  = - ρᵃᵗ * Ψₛ.fluxes.u★ * Ψₛ.fluxes.q★
-    Δq  = Ψₛ.specific_humidity - Ψₐ.q
-    return Jᵃ, Δq
+    return max(0, ρᵃᵗ * Ψₛ.fluxes.u★ * Ψₛ.fluxes.χq)
 end
 
 # `BulkHumidity` — surface specific humidity for a bulk land surface with no
@@ -739,19 +742,11 @@ end
 #     Jˢᵒⁱˡ = gˢ (qᵛ⁺ - qˢ),     gˢ = κ^q / d   (positive upward),
 #
 # which must equal the atmospheric vapor flux carried away by turbulence,
+# linearized as `Jᵃ(q) = Gᵃ (q - qᵃᵗ)` with the previous iterate's aerodynamic
+# conductance `Gᵃ = ρᵃᵗ u★ χq` (see `aerodynamic_vapor_conductance`). The
+# balance gˢ(qᵛ⁺ - qˢ) = Gᵃ(qˢ - qᵃᵗ) gives the series solution
 #
-#     Jᵃ = - ρᵃᵗ u★ q★           (positive upward),
-#
-# evaluated at the previous iterate. Writing Jᵃ = Ωq (qˢ - qᵃᵗ) with the implicit
-# coefficient Ωq = Jᵃ / (qˢ⁻ - qᵃᵗ) (the SkinTemperature trick — no prescribed
-# conductance), the balance gˢ(qᵛ⁺ - qˢ) = Ωq(qˢ - qᵃᵗ) gives
-#
-#     qˢ = (gˢ qᵛ⁺ + Ωq qᵃᵗ) / (gˢ + Ωq).
-#
-# Multiplying through by Δq ≡ qˢ⁻ - qᵃᵗ (so Ωq Δq = Jᵃ) removes the division and
-# stays finite as Δq → 0:
-#
-#     qˢ = (gˢ qᵛ⁺ Δq + Jᵃ qᵃᵗ) / (gˢ Δq + Jᵃ).
+#     qˢ = (gˢ qᵛ⁺ + Gᵃ qᵃᵗ) / (gˢ + Gᵃ).
 #
 # The reservoir is saturated at the *bulk land* temperature `Tᵈ` (the energy
 # component of the interface state), not the skin temperature: the saturated soil
@@ -764,8 +759,6 @@ end
     FT  = eltype(Ψₛ)
     pᵃᵗ = Ψₐ.p
     qᵃᵗ = Ψₐ.q
-    Tᵃᵗ = Ψₐ.T
-    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
 
     Tᵈ  = Ψₛ.energy.temperature # bulk land temperature at the saturation depth `d`
     qᵛ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tᵈ, pᵃᵗ, q.phase)
@@ -774,16 +767,13 @@ end
     κ  = q.vapor_diffusivity
     gˢ = κ / d # soil vapor conductance
 
-    u★  = Ψₛ.fluxes.u★
-    q★  = Ψₛ.fluxes.q★
     qˢ⁻ = Ψₛ.specific_humidity
+    Gᵃ  = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
 
-    Jᵃ = - ρᵃᵗ * u★ * q★ # atmospheric vapor flux (positive upward), previous iterate
-    Δq = qˢ⁻ - qᵃᵗ
-    D  = gˢ * Δq + Jᵃ
-    qˢ = (gˢ * qᵛ⁺ * Δq + Jᵃ * qᵃᵗ) / D
+    D  = gˢ + Gᵃ
+    qˢ = ifelse(D > 0, (gˢ * qᵛ⁺ + Gᵃ * qᵃᵗ) / D, qˢ⁻)
 
-    return convert(FT, ifelse(D == 0, qˢ⁻, qˢ))
+    return convert(FT, qˢ)
 end
 
 ######
@@ -795,13 +785,23 @@ end
 
 The solved similarity-theory characteristic scales at an interface: friction
 velocity `u★`, temperature flux scale `θ★`, and specific-humidity flux scale
-`q★`. Shared by every interface-state type.
+`q★`, together with the transfer coefficients `χθ` and `χq` of the iterate that
+produced them (`θ★ = χθ Δθ`, `q★ = χq Δq`). Formulations that need the
+aerodynamic conductance read it as `ρ cᵖ u★ χθ` (heat) and `ρ u★ χq` (vapor)
+instead of reconstructing it from the flux/increment ratio, which is singular
+as the increment crosses zero. Shared by every interface-state type; the
+three-argument constructor zeroes the transfer coefficients (no aerodynamic
+conductance yet — an initial guess).
 """
 struct InterfaceFluxScales{FT}
     u★ :: FT
     θ★ :: FT
     q★ :: FT
+    χθ :: FT
+    χq :: FT
 end
+
+@inline InterfaceFluxScales(u★, θ★, q★) = InterfaceFluxScales(u★, θ★, q★, zero(u★), zero(u★))
 
 Base.eltype(::InterfaceFluxScales{FT}) where FT = FT
 

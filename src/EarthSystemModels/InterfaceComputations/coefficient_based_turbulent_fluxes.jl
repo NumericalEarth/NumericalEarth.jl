@@ -364,8 +364,10 @@ end
                                        atmosphere_properties)
 
     u★ = sqrt(Cd) * ΔU
-    θ★ = ifelse(Cd == 0, zero(Δθ), Ch / sqrt(Cd) * Δθ)
-    q★ = ifelse(Cd == 0, zero(Δq), Cq / sqrt(Cd) * Δq)
+    χθ = ifelse(Cd == 0, zero(ΔU), Ch / sqrt(Cd))
+    χq = ifelse(Cd == 0, zero(ΔU), Cq / sqrt(Cd))
+    θ★ = χθ * Δθ
+    q★ = χq * Δq
 
-    return u★, θ★, q★
+    return u★, θ★, q★, χθ, χq
 end

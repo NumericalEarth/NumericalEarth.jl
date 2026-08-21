@@ -17,6 +17,13 @@ end
     return !(converged | reached_maxiter) | hasnt_started
 end
 
+"""
+    FixedIterations(iterations)
+
+Stop criteria running the interface fixed point for a fixed number of
+`iterations` — every GPU thread follows the same path, unlike the
+tolerance-based `ConvergenceStopCriteria`.
+"""
 struct FixedIterations{I}
     iterations :: I
 end
@@ -109,15 +116,16 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
     Δθ = θᵃᵗ - Tₛ
     Δh = atmosphere_state.z # Assumption! The surface is at z = 0 -> Δh = zᵃᵗ - 0
 
-    u★, θ★, q★ = iterate_interface_fluxes(flux_formulation,
-                                          Tₛ, qₛ, Δθ, Δq, Δh,
-                                          approximate_interface_state,
-                                          atmosphere_state,
-                                          interface_properties,
-                                          atmosphere_properties,
-                                          interior_properties)
+    u★, θ★, q★, χθ, χq = iterate_interface_fluxes(flux_formulation,
+                                                  Tₛ, qₛ, Δθ, Δq, Δh,
+                                                  approximate_interface_state,
+                                                  atmosphere_state,
+                                                  interface_properties,
+                                                  atmosphere_properties,
+                                                  interior_properties)
 
-    fluxes = InterfaceFluxScales(convert(FT, u★), convert(FT, θ★), convert(FT, q★))
+    fluxes = InterfaceFluxScales(convert(FT, u★), convert(FT, θ★), convert(FT, q★),
+                                 convert(FT, χθ), convert(FT, χq))
 
     return rebuild_interface_state(approximate_interface_state,
                                    fluxes,

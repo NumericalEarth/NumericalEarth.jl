@@ -283,31 +283,27 @@ end
 ##### interface stores no vapor, so Jᵉ = Jᵃ — a nonlinear equation for qⁱⁿ.
 #####
 ##### The solver. Over one Picard iteration we linearize the similarity flux
-##### as a bulk conductance law anchored at the previous iterate qⁱⁿ⁻,
+##### as a bulk conductance law,
 #####
-#####     Jᵃ(q) ≈ Gᵃ (q - qᵃᵗ),      Gᵃ = Jᵃ / Δq,      Δq = qⁱⁿ⁻ - qᵃᵗ,
+#####     Jᵃ(q) ≈ Gᵃ (q - qᵃᵗ),      Gᵃ = ρᵃᵗ u★ χq,
 #####
-##### chosen so that Jᵃ(qⁱⁿ⁻) reproduces the flux the similarity solver
-##### actually returned. The linearized balance then has the
-##### two-conductances-in-series solution
+##### with the friction velocity and vapor transfer coefficient of the previous
+##### similarity iterate, so `Jᵃ(qⁱⁿ⁻)` reproduces the flux `-ρᵃᵗ u★ q★` the
+##### similarity solver actually returned (`q★ = χq Δq`). The linearized balance
+##### then has the two-conductances-in-series solution
 #####
 #####     Gᵉ (qᵉ - qⁱⁿ) = Gᵃ (qⁱⁿ - qᵃᵗ)
 #####
-#####     ⇒  qⁱⁿ = (Gᵉ qᵉ + Gᵃ qᵃᵗ) / (Gᵉ + Gᵃ).
+#####     ⇒  qⁱⁿ = (Gᵉ qᵉ + Gᵃ qᵃᵗ) / (Gᵉ + Gᵃ),
 #####
-##### This is the standard series solution of a surface flux balance —
-##### eq. (12b) of Ye & Pielke (1993) with their pore relative
+##### the form coded below (if every conductance vanishes the previous iterate
+##### is returned unchanged). This is the standard series solution of a surface
+##### flux balance — eq. (12b) of Ye & Pielke (1993) with their pore relative
 ##### humidity hₛ = 1, and the same expression CLM5/ClimaLand evaluate with a
-##### prescribed exchange coefficient in place of Gᵃ. Substituting
-##### Gᵃ = Jᵃ/Δq and multiplying numerator and denominator by Δq removes the
-##### 0/0 ambiguity of Gᵃ as Δq → 0:
-#####
-#####     qⁱⁿ = (Gᵉ qᵉ Δq + Jᵃ qᵃᵗ) / (Gᵉ Δq + Jᵃ),
-#####
-##### the form coded below (denominator `D = Gᵉ Δq + Jᵃ`; if `D == 0` the
-##### previous iterate is returned unchanged). Note Δq → 0 means qⁱⁿ⁻ = qᵃᵗ,
-##### and the update then returns qᵃᵗ — the two statements agree, so the
-##### limit is continuous.
+##### prescribed exchange coefficient in place of Gᵃ. Reading `Gᵃ` off the
+##### similarity solution — instead of reconstructing it from the
+##### flux/increment ratio `Jᵃ/Δq`, which is singular as `Δq` crosses zero —
+##### keeps the divider a convex mean of `qᵉ` and `qᵃᵗ` for any iterate.
 #####
 ##### Limits worth checking: δᵛ → 0 gives Gᵉ → ∞ and qⁱⁿ → qᵉ, the saturated
 ##### skin of the wet branch; a deep front gives Gᵉ → 0 and qⁱⁿ → qᵃᵗ, i.e.
@@ -365,12 +361,11 @@ end
 
     qⁱⁿ⁻ = Ψₛ.specific_humidity
     qᵃᵗ  = Ψₐ.q
-    Jᵃ, Δq = atmospheric_vapor_flux(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
+    Gᵃ   = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
 
-    # Δq-multiplied series solution qⁱⁿ = (Gᵉ qᵉ + Gᵃ qᵃᵗ)/(Gᵉ + Gᵃ);
-    # see the derivation in the banner above.
-    D    = Gᵉ * Δq + Jᵃ
-    qⁱⁿ★ = ifelse(D == 0, qⁱⁿ⁻, (Gᵉ * qᵉ * Δq + Jᵃ * qᵃᵗ) / D)
+    # Series solution qⁱⁿ = (Gᵉ qᵉ + Gᵃ qᵃᵗ)/(Gᵉ + Gᵃ); see the banner above.
+    D    = Gᵉ + Gᵃ
+    qⁱⁿ★ = ifelse(D > 0, (Gᵉ * qᵉ + Gᵃ * qᵃᵗ) / D, qⁱⁿ⁻)
 
     return convert(FT, qᵍ⁺ + σ * (qⁱⁿ★ - qᵍ⁺))
 end

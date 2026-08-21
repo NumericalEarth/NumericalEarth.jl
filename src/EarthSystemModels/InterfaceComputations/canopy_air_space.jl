@@ -24,18 +24,6 @@
 ##### `qᵃᶜ`; both run the shared `canopy_air_space_solve`.
 #####
 
-# Sensible-heat analogue of `atmospheric_vapor_flux`: the atmospheric sensible flux
-# `𝒬ᵀ = -ρᵃᵗ cᵖ u★ θ★` (positive upward) from the previous iterate, and the
-# node-to-air temperature increment `Δθ = Tᵃᶜ⁻ − θᵃᵗ`. Together they close the
-# temperature node in the same `Δ`-multiplied form the humidity node uses.
-@inline function atmospheric_sensible_flux(Ψₛ, Ψₐ, θᵃᵗ, ℂᵃᵗ)
-    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
-    cᵖ  = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, Ψₐ.q)
-    𝒬ᵀ  = - ρᵃᵗ * cᵖ * Ψₛ.fluxes.u★ * Ψₛ.fluxes.θ★
-    Δθ  = Ψₛ.temperature - θᵃᵗ
-    return 𝒬ᵀ, Δθ
-end
-
 """
     struct CanopyInterception
 
@@ -490,14 +478,14 @@ end
     return Gᵉ⁺, qᵉ⁺
 end
 
-# Δ-multiplied Kirchhoff node (as the humidity node in CompositeSurfaceHumidity): the ground
-# branch `(gᵍ, xᵍ)` and the leaf branch `(gᵛ, xᵛ)` in parallel behind the aerodynamic branch
-# `(𝒥, Δ, xᵃᵗ)`. Falls back to the previous iterate `x⁻` where the aerodynamic and surface
-# conductances cancel (`D ≈ 0`) before the outer MO loop is consistent, keeping the node finite.
-@inline function canopy_air_node(gᵍ, xᵍ, gᵛ, xᵛ, 𝒥, Δ, xᵃᵗ, x⁻)
-    D  = (gᵍ + gᵛ) * Δ + 𝒥
-    x★ = ((gᵍ * xᵍ + gᵛ * xᵛ) * Δ + 𝒥 * xᵃᵗ) / D
-    return ifelse((D == 0) | !isfinite(x★), x⁻, x★)
+# Kirchhoff node (as the humidity node in CompositeSurfaceHumidity): the ground branch
+# `(gᵍ, xᵍ)` and the leaf branch `(gᵛ, xᵛ)` in parallel behind the aerodynamic branch
+# `(gᵃ, xᵃᵗ)` — a conductance-weighted mean, within the hull of its sources by
+# construction. The all-decoupled corner (every conductance zero) keeps the previous
+# iterate `x⁻`.
+@inline function canopy_air_node(gᵍ, xᵍ, gᵛ, xᵛ, gᵃ, xᵃᵗ, x⁻)
+    D = gᵍ + gᵛ + gᵃ
+    return ifelse(D > 0, (gᵍ * xᵍ + gᵛ * xᵛ + gᵃ * xᵃᵗ) / D, x⁻)
 end
 
 # dqᵛ⁺/dT by centered difference — the Newton derivative of each balance's latent term.
@@ -515,8 +503,11 @@ Solve the coupled diagnostic state `(Tᵛ, Tᵍ, Tᵃᶜ, qᵃᶜ)` for one cell
 previous fixed-point iterate (carrying the MO scales and the previous node values),
 `Ψᵢ.T` is the bulk reservoir `Tˡᵃ`, and `Ψᵣ` the interface radiation state. A short
 damped-Newton inner loop advances the two skin balances against the node; the node
-uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes, and is
-re-solved against the final skins on exit so the returned flux partition closes.
+is the Kirchhoff conductance-weighted mean of its sources, with the aerodynamic
+branch read off the previous iterate's transfer coefficients (`ρ cᵖ u★ χθ`,
+`ρ u★ χq`), so it stays within the hull of its source states by construction. On
+exit the node is re-solved against the final skins so the returned flux partition
+closes.
 """
 @inline function canopy_air_space_solve(c::CanopyAirSpace, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
@@ -532,13 +523,16 @@ re-solved against the final skins on exit so the returned flux partition closes.
     Tˡᵃ = Ψᵢ.T
     LAI = Ψₛ.vegetation.leaf_area_index
 
-    # Aerodynamic drivers from the previous outer iterate (held fixed through the inner loop).
-    𝒬ᵀ, Δθᵃ = atmospheric_sensible_flux(Ψₛ, Ψₐ, θᵃᵗ, ℂᵃᵗ)
-    Jᵃ, Δqᵃ = atmospheric_vapor_flux(Ψₛ, Ψₐ, ℂᵃᵗ)
+    # Aerodynamic conductances from the previous outer iterate's similarity solution
+    # (held fixed through the inner loop): heat `gᵃʰ = ρ cᵖ u★ χθ` and vapor
+    # `gᵃʷ = ρ u★ χq`, floored at zero against transient unphysical profiles.
+    u★  = Ψₛ.fluxes.u★
+    gᵃʰ = max(0, ρᵃᵗ * cᵖ * u★ * Ψₛ.fluxes.χθ)
+    gᵃʷ = max(0, ρᵃᵗ * u★ * Ψₛ.fluxes.χq)
 
     # Land surface velocities are zero, so the surface wind speed is the atmospheric one.
     Vₐ  = sqrt(Ψₐ.u^2 + Ψₐ.v^2)
-    gᵘᶜ = undercanopy_conductance(c.undercanopy_conductance, LAI, Vₐ, Ψₛ.fluxes.u★)
+    gᵘᶜ = undercanopy_conductance(c.undercanopy_conductance, LAI, Vₐ, u★)
 
     gˡʰ = ρᵃᵗ * cᵖ * LAI * c.leaf_boundary_conductance
     gᵍʰ = ρᵃᵗ * cᵖ * gᵘᶜ
@@ -581,8 +575,8 @@ re-solved against the final skins on exit so the returned flux partition closes.
         gˡʷ, qᵛ = leaf_vapor_terms(c.canopy, Tᵛ, gʷ, fʷ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
         Gᵉ, qᵉ  = soil_vapor_terms(c.soil, Tᵍ, gᵍʷ, gᵖ, Ψₛ, Ψₐ, ℙₐ)
 
-        Tᵃᶜ = canopy_air_node(gᵍʰ, Tᵍ, gˡʰ, Tᵛ, 𝒬ᵀ, Δθᵃ, θᵃᵗ, Tᵃᶜ)
-        qᵃᶜ = canopy_air_node(Gᵉ, qᵉ, gˡʷ, qᵛ, Jᵃ, Δqᵃ, qᵃᵗ, qᵃᶜ)
+        Tᵃᶜ = canopy_air_node(gᵍʰ, Tᵍ, gˡʰ, Tᵛ, gᵃʰ, θᵃᵗ, Tᵃᶜ)
+        qᵃᶜ = canopy_air_node(Gᵉ, qᵉ, gˡʷ, qᵛ, gᵃʷ, qᵃᵗ, qᵃᶜ)
 
         LWꜜᵍ     = (1 - εᵛ) * LWd + εᵛ * σ * Tᵛ^4
         LWꜛᵍ     = εᵍ * σ * Tᵍ^4 + (1 - εᵍ) * LWꜜᵍ
@@ -608,8 +602,8 @@ re-solved against the final skins on exit so the returned flux partition closes.
     # them, so the loop exits one iterate stale and the shares below would miss closure.
     gˡʷ, qᵛ = leaf_vapor_terms(c.canopy, Tᵛ, gʷ, fʷ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
     Gᵉ, qᵉ  = soil_vapor_terms(c.soil, Tᵍ, gᵍʷ, gᵖ, Ψₛ, Ψₐ, ℙₐ)
-    Tᵃᶜ = canopy_air_node(gᵍʰ, Tᵍ, gˡʰ, Tᵛ, 𝒬ᵀ, Δθᵃ, θᵃᵗ, Tᵃᶜ)
-    qᵃᶜ = canopy_air_node(Gᵉ, qᵉ, gˡʷ, qᵛ, Jᵃ, Δqᵃ, qᵃᵗ, qᵃᶜ)
+    Tᵃᶜ = canopy_air_node(gᵍʰ, Tᵍ, gˡʰ, Tᵛ, gᵃʰ, θᵃᵗ, Tᵃᶜ)
+    qᵃᶜ = canopy_air_node(Gᵉ, qᵉ, gˡʷ, qᵛ, gᵃʷ, qᵃᵗ, qᵃᶜ)
 
     LWꜜᵍ = (1 - εᵛ) * LWd + εᵛ * σ * Tᵛ^4
     LWꜛᵍ = εᵍ * σ * Tᵍ^4 + (1 - εᵍ) * LWꜜᵍ

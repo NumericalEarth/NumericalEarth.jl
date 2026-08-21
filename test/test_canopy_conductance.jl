@@ -246,6 +246,6 @@ end
         # the cuticular minimum — far below the prescribed-PAR canopy. This exercises
         # the radiation state reaching `absorbed_par_value` inside the coupled solve.
         LE_dark = latent_heat(CanopyConductanceHumidity(FT; absorbed_par = InteractiveAbsorbedPAR(FT)))
-        @test 0 ≤ LE_dark < LE_canopy
+        @test -1e-10 ≤ LE_dark < LE_canopy   # ≈ 0 up to roundoff
     end
 end
