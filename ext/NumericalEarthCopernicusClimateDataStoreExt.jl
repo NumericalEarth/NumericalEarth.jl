@@ -383,16 +383,19 @@ cds_area(::Nothing) = nothing
 cds_area(area) = [area[3], area[2], area[1], area[4]]
 
 """
-    Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:ERA5LandDataset};
-                       skip_existing=true, additional_kw...)
+    NumericalEarth.DataWrangling.ERA5.download_era5_land(meta::NumericalEarth.DataWrangling.Metadatum{<:ERA5LandDataset};
+                                                         skip_existing=true, additional_kw...)
 
 Download a whole year of ERA5-Land data for one variable into a single yearly file,
 the first time any date within that year is requested; later dates in the same year
 find the file already on disk and skip (see `skip_existing`).
+
+Implements the `download_era5_land` stub declared in `src/DataWrangling/ERA5/ERA5_land.jl`,
+which owns `Downloads.download` for ERA5-Land metadata under any extension load order.
 """
-function Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:ERA5LandDataset};
-                            skip_existing = true,
-                            additional_kw...)
+function NumericalEarth.DataWrangling.ERA5.download_era5_land(meta::NumericalEarth.DataWrangling.Metadatum{<:ERA5LandDataset};
+                                                              skip_existing = true,
+                                                              additional_kw...)
 
     output_directory = meta.dir
     output_filename = NumericalEarth.DataWrangling.metadata_filename(meta)
