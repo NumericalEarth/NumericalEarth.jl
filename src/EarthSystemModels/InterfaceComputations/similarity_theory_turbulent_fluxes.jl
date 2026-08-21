@@ -770,19 +770,11 @@ function large_yeager_stability_functions(FT=Oceananigans.defaults.FloatType)
     return SimilarityScales(momentum, scalar, scalar)
 end
 
-# Land uses the NCAR/Large–Yeager Businger–Dyer form with the stable branch bounded
-# at ζ ≤ 2 rather than 10: ψ = -5ζ extrapolated beyond its fit range collapses the
-# transfer coefficients ~10× and makes calm transitions bistable, so the interface
-# fixed point falls into a limit cycle (CLM5 bounds stable ζ at 0.5, Noah-MP at 1).
-# Ocean defaults are unchanged. TODO: replace with land-tuned stability functions.
-function atmosphere_land_stability_functions(FT=Oceananigans.defaults.FloatType;
-                                             stable_maximum_stability_parameter = 2)
-    stable   = LinearStableStabilityFunction{FT}(coefficient = 5,
-                                                 maximum_stability_parameter = stable_maximum_stability_parameter)
-    momentum = SplitStabilityFunction(stable, PaulsonMomentumStabilityFunction{FT}())
-    scalar   = SplitStabilityFunction(stable, PaulsonScalarStabilityFunction{FT}())
-    return SimilarityScales(momentum, scalar, scalar)
-end
+# Land currently borrows the NCAR/Large–Yeager Businger–Dyer form
+# (Paulson 1970 unstable + linear stable). TODO: replace with land-tuned
+# stability functions.
+atmosphere_land_stability_functions(FT=Oceananigans.defaults.FloatType) =
+    large_yeager_stability_functions(FT)
 
 function atmosphere_sea_ice_stability_functions(FT=Oceananigans.defaults.FloatType)
     unstable_momentum = PaulsonMomentumStabilityFunction{FT}()
