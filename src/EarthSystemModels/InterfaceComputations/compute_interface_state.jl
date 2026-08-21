@@ -18,49 +18,17 @@ end
 end
 
 """
-    FixedIterations(iterations; relaxation = 1)
+    FixedIterations(iterations)
 
 Stop criteria running the interface fixed point for a fixed number of
 `iterations` — every GPU thread follows the same path, unlike the
-tolerance-based `ConvergenceStopCriteria`. `relaxation` under-relaxes
-the characteristic scales across iterates,
-
-```math
-u★ⁿ ← λ u★ⁿ + (1 - λ) u★ⁿ⁻¹,
-```
-
-(likewise `θ★`, `q★`, and the transfer coefficients). The composed
-similarity–surface map is steep at calm stability transitions, where convective
-gustiness switches on and off with the sign of the buoyancy flux and plain
-alternation falls into a limit cycle that exits at arbitrary phase; `λ = 1/2`
-restores contraction there without changing the fixed point. The default
-`λ = 1` keeps plain alternation.
+tolerance-based `ConvergenceStopCriteria`.
 """
-struct FixedIterations{I, FT}
+struct FixedIterations{I}
     iterations :: I
-    relaxation :: FT
 end
-
-FixedIterations(iterations; relaxation = 1) = FixedIterations(iterations, relaxation)
 
 @inline iterating(Ψⁿ, Ψ⁻, iteration, fixed::FixedIterations) = iteration < fixed.iterations
-
-# Under-relaxation of the characteristic scales between iterates (see
-# `FixedIterations`). The tolerance-based criteria keep plain alternation.
-@inline relax_interface_state(stop_criteria, Ψⁿ, Ψ⁻) = Ψⁿ
-
-@inline function relax_interface_state(fixed::FixedIterations, Ψⁿ, Ψ⁻)
-    FT = eltype(Ψⁿ)
-    λ  = convert(FT, fixed.relaxation)
-    fⁿ = Ψⁿ.fluxes
-    f⁻ = Ψ⁻.fluxes
-    fluxes = InterfaceFluxScales(λ * fⁿ.u★ + (1 - λ) * f⁻.u★,
-                                 λ * fⁿ.θ★ + (1 - λ) * f⁻.θ★,
-                                 λ * fⁿ.q★ + (1 - λ) * f⁻.q★,
-                                 λ * fⁿ.χθ + (1 - λ) * f⁻.χθ,
-                                 λ * fⁿ.χq + (1 - λ) * f⁻.χq)
-    return rebuild_interface_state(Ψⁿ, fluxes, Ψⁿ.temperature, Ψⁿ.specific_humidity)
-end
 
 #####
 ##### The solver
@@ -90,7 +58,6 @@ end
                                       interface_properties,
                                       atmosphere_properties,
                                       interior_properties)
-        Ψₛⁿ = relax_interface_state(stop_criteria, Ψₛⁿ, Ψₛ⁻)
         iteration += 1
     end
 
