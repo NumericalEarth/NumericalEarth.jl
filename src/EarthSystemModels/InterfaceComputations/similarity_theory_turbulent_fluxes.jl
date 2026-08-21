@@ -396,9 +396,7 @@ slot_values(slot) = nothing
 # `state2dindex` reads `slot[i, j, 1]`, so a slot must be a horizontally-reduced field on
 # *this* grid: a `(Center, Center, Center)` field would silently contribute its deepest
 # level, and a field from another grid would read the wrong cell — or past the end of the
-# array, since the kernel reads it `@inbounds`. Grid identity subsumes the size and
-# architecture checks and, unlike them, also catches a same-sized field from a different
-# grid (cf. `Oceananigans.Fields.validate_field_grid`).
+# array, since the kernel reads it `@inbounds`.
 function validate_slot_layout(slot::AbstractField, name, grid)
     if location(slot) !== (Center, Center, Nothing)
         LX, LY, LZ = location(slot)
@@ -407,7 +405,10 @@ function validate_slot_layout(slot::AbstractField, name, grid)
                             "Build it with Field{Center, Center, Nothing}(grid)."))
     end
 
-    if slot.grid !== grid
+    # Grids are compared with `==` (topology and node coordinates) rather than `===`:
+    # two references to one grid are not guaranteed to be egal, so identity would reject
+    # a field built on the interface's own grid.
+    if architecture(slot) !== architecture(grid) || slot.grid != grid
         throw(ArgumentError("$name is built on a different grid than the interface " *
                             "($(summary(slot.grid)) vs $(summary(grid))). Per-cell " *
                             "roughness and displacement must be built on the grid the " *

@@ -641,6 +641,15 @@ end
         # Baseline: a well-posed field builds.
         @test !isnothing(build(land_fluxes(momentum_roughness_length)))
 
+        # The grid check is structural, not identity: two references to one grid are not
+        # guaranteed to be egal, so a field built on an identically-discretized grid is
+        # accepted — it indexes the same cells.
+        same_grid = LatitudeLongitudeGrid(arch, Float64;
+                                          size = (2, 1, 1), latitude = (10, 11),
+                                          longitude = (10, 12), z = (-1, 0),
+                                          topology = (Bounded, Bounded, Bounded))
+        @test !isnothing(build(land_fluxes(set!(Field{Center, Center, Nothing}(same_grid), 0.03))))
+
         # `set!` returns the field, so each per-cell slot is one expression.
         cc(v) = set!(Field{Center, Center, Nothing}(grid), v)
 
