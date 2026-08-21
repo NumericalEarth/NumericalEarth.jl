@@ -132,7 +132,7 @@ materialize_earth_system_radiation!(atmosphere, radiation) = atmosphere
 """
     materialize_sea_ice(sea_ice, ocean)
 
-Return a fully-materialised `sea_ice` component that has access to the ocean's grid.
+Return a fully-materialized `sea_ice` component that has access to the ocean's grid.
 Called from inside the [`EarthSystemModel`](@ref) constructor before `ComponentInterfaces`
 is built. Default: no-op, returning `sea_ice` unchanged. Sea ice types that require
 grid-allocated diagnostic fields (e.g. `FreezingLimitedOceanTemperature`) overload this.

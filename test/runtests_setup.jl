@@ -13,7 +13,7 @@ using NumericalEarth.JRA55
 using NumericalEarth.WOA
 
 using Oceananigans.Architectures: architecture, on_architecture
-using Oceananigans.OutputReaders: interpolate!
+using Oceananigans.Fields: interpolate!
 
 using CFTime
 using Dates

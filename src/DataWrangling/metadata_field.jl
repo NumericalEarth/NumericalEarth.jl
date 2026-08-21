@@ -240,7 +240,7 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
 
     # Inpainting on a (Flat, Flat, *) column field is meaningless and the
     # iterative algorithm doesn't terminate gracefully without horizontal
-    # neighbours; the NaN-aware bracket-blend in `set_region_data!` handles
+    # neighbors; the NaN-aware bracket-blend in `set_region_data!` handles
     # land cells directly.
     if metadata.region isa Column
         inpainting = nothing
@@ -364,19 +364,52 @@ function interpolate_physical!(to_field, from_field)
     return to_field
 end
 
+# Regrid the native-grid field onto the target during `Field(metadata, grid)` and
+# `set!`. The default is bilinear `interpolate_physical!`; datasets whose variables
+# need a different scheme (e.g. conservative area-weighting for fractions, or an
+# area-majority vote for categorical codes) extend this metadatum-dispatched method.
+interpolate_physical!(to_field, from_field, metadata) = interpolate_physical!(to_field, from_field)
+
 """
-    Field(metadata::Metadatum, grid::AbstractGrid; kw...)
+    Field(metadata::Metadatum, grid::AbstractGrid; cache = false, overwrite_cache = false, kw...)
 
 Load `metadata` on its native grid and interpolate onto `grid` — the
 `Field` analog of `FieldTimeSeries(metadata, grid)`. Keyword arguments are
 forwarded to the native-grid `Field(metadata, arch; …)` (e.g. `inpainting`,
 `mask`, `halo`, `cache_inpainted_data`).
+
+With `cache = true` the regridded result is cached to disk and reused by later
+reads with the same dataset, variable, date, region, target-grid geometry, and
+read keywords — skipping the native materialization and regrid entirely; with
+`cache = false` (default) the cache is disabled entirely and nothing is read or
+written. The key carries a size/mtime stamp of the local dataset file where one
+exists, so a re-download invalidates the cache. For streaming datasets with no
+local file, pass `overwrite_cache = true` after replacing data upstream: it
+skips the lookup and overwrites the entry with a freshly regridded result.
 """
-function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid; kw...)
-    native = Field(metadata, architecture(grid); kw...)
+function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid;
+                                   cache = false, overwrite_cache = false, kw...)
     LX, LY, LZ = location(metadata)
+
+    if cache && !overwrite_cache
+        config = FieldRegridding(grid, metadata, values(kw))
+        data = load_field_cache(config)
+        if !isnothing(data)
+            target = Field{LX, LY, LZ}(grid)
+            interior(target) .= on_architecture(architecture(grid), data)
+            fill_halo_regions!(target)
+            return target
+        end
+    end
+
+    native = Field(metadata, architecture(grid); kw...)
     target = Field{LX, LY, LZ}(grid)
-    interpolate_physical!(target, native)
+    interpolate_physical!(target, native, metadata)
+    if cache
+        # rebuild the key: the native read may have just downloaded the dataset file it stamps
+        config = FieldRegridding(grid, metadata, values(kw))
+        save_field_cache(config, Array(interior(target)))
+    end
     return target
 end
 
@@ -398,7 +431,7 @@ function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw..
               "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
     end
 
-    interpolate_physical!(target_field, meta_field)
+    interpolate_physical!(target_field, meta_field, metadata)
 
     return target_field
 end
@@ -410,7 +443,7 @@ function set_metadata_field!(field, data, metadatum)
     return nothing
 end
 
-# Read the lon/lat cell centres from the NetCDF file using the names supplied
+# Read the lon/lat cell centers from the NetCDF file using the names supplied
 # by the dataset's `longitude_name` / `latitude_name` traits.
 function read_file_coords(metadatum)
     ds = Dataset(metadata_path(metadatum))

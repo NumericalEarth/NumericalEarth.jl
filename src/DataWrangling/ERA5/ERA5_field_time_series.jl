@@ -4,7 +4,8 @@ using NCDatasets
 ##### Type aliases for yearly ERA5 FieldTimeSeries
 #####
 
-const ERA5YearlySingleLevelBackend = DatasetBackend{<:Any, <:Any, <:Any, <:Metadata{<:ERA5YearlySingleLevel}}
+const ERA5YearlyFileDataset = Union{ERA5YearlySingleLevel, ERA5HourlyLand, ERA5MonthlyLand}
+const ERA5YearlySingleLevelBackend = DatasetBackend{<:Any, <:Any, <:Any, <:Metadata{<:ERA5YearlyFileDataset}}
 const ERA5NetCDFFTSMultipleYears = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:ERA5YearlySingleLevelBackend}
 
 #####
@@ -12,7 +13,7 @@ const ERA5NetCDFFTSMultipleYears = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:ERA
 #####
 
 """
-    retrieve_data(metadatum::Metadatum{<:ERA5YearlySingleLevel})
+    retrieve_data(metadatum::Metadatum{<:ERA5YearlyFileDataset})
 
 Read a 2D slice from the yearly ERA5 NetCDF file corresponding to the metadatum's date.
 Opens the yearly file, finds the time index matching the date, and extracts that timestep.
@@ -20,7 +21,7 @@ Opens the yearly file, finds the time index matching the date, and extracts that
 The yearly file contains all 8760-8784 hours for one year. This function indexes into
 the time dimension to extract just the requested hour.
 """
-function DataWrangling.retrieve_data(metadatum::Metadatum{<:ERA5YearlySingleLevel})
+function DataWrangling.retrieve_data(metadatum::Metadatum{<:ERA5YearlyFileDataset})
     path = metadata_path(metadatum)
     name = dataset_variable_name(metadatum)
 
@@ -56,64 +57,98 @@ end
 #####
 
 """
+    read_era5_yearly_series(paths, requested_times, name)
+
+Read `requested_times` for variable `name` from `paths`, which is either a single
+file path (all requested times live in one file) or a `Vector` with one path per
+requested time (consecutive equal paths — e.g. every hour of the same year — are
+read together in a single, contiguous-when-possible slice, so each underlying
+file is opened at most once).
+
+Returns `(raw, λc, φc)` where `raw` has shape `(Nx, Ny, Nt)` with latitude still
+in on-disk order (not yet reversed to -90→90).
+"""
+function read_era5_yearly_series(paths, requested_times, name)
+    K = length(requested_times)
+    getpath(k) = paths isa AbstractVector ? paths[k] : paths
+
+    λc = φc = nothing
+    chunks = Any[]
+
+    k = 1
+    while k <= K
+        path = getpath(k)
+        k_end = k
+        while k_end < K && getpath(k_end + 1) == path
+            k_end += 1
+        end
+
+        ds = NCDatasets.Dataset(path)
+
+        if isnothing(λc)
+            λc = ds["longitude"][:]
+            φc = ds["latitude"][:]
+        end
+
+        # ERA5 CDS files use "valid_time" as the time dimension name
+        time_var = haskey(ds, "time") ? "time" : "valid_time"
+        file_times = ds[time_var][:]
+
+        group_times = requested_times[k:k_end]
+        file_indices = Vector{Int}(undef, length(group_times))
+        for (m, t) in enumerate(group_times)
+            idx = findfirst(==(t), file_times)
+            if isnothing(idx)
+                close(ds)
+                error("Time $t not found in ERA5 file $path. File contains $(length(file_times)) " *
+                      "timesteps from $(first(file_times)) to $(last(file_times))")
+            end
+            file_indices[m] = idx
+        end
+
+        # Check if indices are contiguous to use efficient range indexing
+        if length(file_indices) > 1 && all(file_indices[m+1] == file_indices[m] + 1 for m in 1:length(file_indices)-1)
+            raw = ds[name][:, :, file_indices[1]:file_indices[end]]
+        elseif length(file_indices) == 1
+            raw = ds[name][:, :, file_indices[1]:file_indices[1]]
+        else
+            raw = cat([ds[name][:, :, m] for m in file_indices]..., dims=3)
+        end
+        close(ds)
+
+        push!(chunks, raw)
+        k = k_end + 1
+    end
+
+    full = length(chunks) == 1 ? chunks[1] : cat(chunks...; dims=3)
+
+    return full, λc, φc
+end
+
+"""
     set!(fts::ERA5NetCDFFTSMultipleYears, backend=fts.backend)
 
-Load multiple timesteps from the yearly ERA5 file into the FieldTimeSeries.
-Reads a time range from the yearly file in one operation (efficient!).
+Load multiple timesteps from the yearly ERA5 file(s) into the FieldTimeSeries.
+Reads a time range from each yearly file in one operation (efficient!); a
+`FieldTimeSeries` spanning more than one calendar year reads from the
+corresponding number of yearly files (see `read_era5_yearly_series`).
 
 This is called by Oceananigans when a FieldTimeSeries needs to load new data from disk.
-Instead of reading files one by one, we read a chunk of timesteps from the yearly file.
 """
 function Oceananigans.Fields.set!(fts::ERA5NetCDFFTSMultipleYears, backend=fts.backend)
     metadata = backend.metadata
-    ds = NCDatasets.Dataset(metadata_path(metadata))
-
-    # Get coordinate arrays
-    λc = ds["longitude"][:]
-    φc = ds["latitude"][:]
+    paths = metadata_path(metadata)
 
     # Get time indices relative to the FieldTimeSeries
     nn = collect(time_indices(fts))
 
-    # Map FTS time indices to file time indices
-    # metadata.dates contains the DateTime range for the simulation
-    # We need to find where those dates are in the yearly file
-    # ERA5 CDS files use "valid_time" as the time dimension name
-    time_var = haskey(ds, "time") ? "time" : "valid_time"
-    file_times = ds[time_var][:]  # All times in the file (8784 for full year)
-
-    # Get the DateTime values for the requested indices from metadata
     # metadata.dates is a StepRange{DateTime} covering the simulation period
     dates_vec = collect(metadata.dates)
     requested_times = dates_vec[nn]
+    requested_paths = paths isa AbstractVector ? paths[nn] : paths
 
-    # Find corresponding indices in the file
-    file_indices = Vector{Int}(undef, length(requested_times))
-    for (i, t) in enumerate(requested_times)
-        idx = findfirst(==(t), file_times)
-        if isnothing(idx)
-            close(ds)
-            error("Time $t not found in yearly file. File contains $(length(file_times)) timesteps from $(first(file_times)) to $(last(file_times))")
-        end
-        file_indices[i] = idx
-    end
-
-    # Get variable name
     name = dataset_variable_name(metadata)
-
-    # Read all requested timesteps at once using FILE indices
-    # Check if indices are contiguous to use efficient range indexing
-    if length(file_indices) > 1 && all(file_indices[i+1] == file_indices[i] + 1 for i in 1:length(file_indices)-1)
-        # Contiguous indices: use range (efficient)
-        raw = ds[name][:, :, file_indices[1]:file_indices[end]]
-    elseif length(file_indices) == 1
-        # Single index
-        raw = ds[name][:, :, file_indices[1]:file_indices[1]]
-    else
-        # Non-contiguous: read individually and stack
-        raw = cat([ds[name][:, :, i] for i in file_indices]..., dims=3)
-    end
-    close(ds)
+    raw, λc, φc = read_era5_yearly_series(requested_paths, requested_times, name)
 
     # Reverse latitude dimension (ERA5 stores 90→-90, we want -90→90)
     raw = reverse(raw, dims=2)
