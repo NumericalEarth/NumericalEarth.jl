@@ -30,6 +30,13 @@ function atmosphere_land_interface(grid, atmosphere, land;
                                    temperature         = BulkTemperature(),
                                    velocity_difference = RelativeVelocity(),
                                    specific_humidity   = default_al_specific_humidity(land))
+    if requires_retention_curve(specific_humidity) && isnothing(surface_retention_curve(land))
+        throw(ArgumentError("$(summary(specific_humidity)) measures plant-available water on " *
+                            "the soil's retention curve, but this land's hydrology carries none. " *
+                            "Use a hydrology that owns one (VariablySaturatedHydrology), or a " *
+                            "moisture stress defined on the hydrology's own saturation " *
+                            "(CriticalSaturation)."))
+    end
     al_fluxes = AtmosphereSurfaceFluxes(grid)
     al_properties = InterfaceProperties(specific_humidity, temperature, velocity_difference)
     interface_temperature = build_interface_temperature(temperature, grid)
@@ -188,7 +195,8 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     land_state = (T = land_exchanger_state.T,
                   saturation = land_exchanger_state.saturation,
                   canopy_water_storage = land_exchanger_state.canopy_water_storage,
-                  canopy_water_capacity = land_exchanger_state.canopy_water_capacity)
+                  canopy_water_capacity = land_exchanger_state.canopy_water_capacity,
+                  retention_curve = land_exchanger_state.retention_curve)
 
     land_properties = atmosphere_land_surface_properties(land_exchanger_state)
 
@@ -240,35 +248,44 @@ end
 #####
 ##### Prescribed, possibly time-varying surface inputs.
 ##### `surface_field_value` reads the per-cell value from a `Number`, a static
-##### `Field`, or — for a `FieldTimeSeries` interpolated to the model clock — a
-##### kernel-friendly `PrescribedSurfaceData` bundle.
+##### `Field`, or a `FieldTimeSeries` interpolated to the model clock.
 #####
 
-struct PrescribedSurfaceData{D, B, T}
-    data          :: D
-    backend       :: B
-    time_indexing :: T
+@inline surface_field_value(x, i, j, time_interpolator) = state2dindex(x, i, j)
+
+# `i, j` name an exact cell, so the value is interpolated in time only. Passing them to
+# `interpolate` as spatial fractional indices would also read the neighbor at
+# `(i + 1, j + 1)`, which does not exist in a `Flat` direction or at the last cell.
+#
+# The indices are converted because `time_interpolator` reaches the kernel as an argument,
+# where its scalar fields can arrive as `CuTracedRNumber` rather than `Int`
+# (CliMA/Oceananigans.jl#4230).
+#
+# TODO: drop this blend once Oceananigans accepts a `TimeInterpolator` in `getindex`
+# (CliMA/Oceananigans.jl#5886), leaving `x[i, j, 1, time_interpolator]`. The flux kernels take
+# an interpolator precomputed on the host, as the prescribed-atmosphere path does, because
+# `fts[i, j, k, Time(t)]` recomputes the time indices in every thread; today Oceananigans
+# accepts one only through `interpolate`, which interpolates in space as well.
+@inline function surface_field_value(x::FlavorOfFTS, i, j, time_interpolator)
+    ñ  = time_interpolator.fractional_index
+    n₁ = convert(Int, time_interpolator.first_index)
+    n₂ = convert(Int, time_interpolator.second_index)
+
+    @inbounds ψ₁ = x[i, j, 1, n₁]
+    @inbounds ψ₂ = x[i, j, 1, n₂]
+
+    return ifelse(n₁ == n₂, ψ₁, ψ₂ * ñ + ψ₁ * (1 - ñ))
 end
 
-Adapt.adapt_structure(to, p::PrescribedSurfaceData) =
-    PrescribedSurfaceData(adapt(to, p.data), adapt(to, p.backend), adapt(to, p.time_indexing))
-
-@inline surface_field_value(x, i, j, time_interpolator) = state2dindex(x, i, j)
-@inline surface_field_value(x::PrescribedSurfaceData, i, j, time_interpolator) =
-    interpolate(FractionalIndices(i, j, nothing), time_interpolator, x.data, x.backend, x.time_indexing)
-
-# Host-side: reduce a prescribed-surface spec (LAI, vegetation fraction, …) to a
-# kernel-friendly value plus the time index used to interpolate it. Constants and
-# static fields pass through untouched (`nothing` interpolator); a
-# `FieldTimeSeries` is reduced to its arrays and its time index is precomputed on
-# the host.
+# Host-side: pair a prescribed-surface spec (LAI, vegetation fraction, …) with the time
+# index used to interpolate it. Constants and static fields pass through untouched
+# (`nothing` interpolator); a `FieldTimeSeries` keeps its time index precomputed on the
+# host, so the kernel does not recompute it.
 @inline kernel_surface_field(surface_field, arch, time) = (surface_field, nothing)
 @inline function kernel_surface_field(surface_field::FieldTimeSeries, arch, time)
     time_interpolator = cpu_interpolating_time_indices(arch, surface_field.times,
                                                        surface_field.time_indexing, time)
-    bundle = PrescribedSurfaceData(surface_field.data, surface_field.backend,
-                                   surface_field.time_indexing)
-    return bundle, time_interpolator
+    return surface_field, time_interpolator
 end
 
 # The LAI spec lives on the canopy humidity formulation; other formulations carry
@@ -292,8 +309,18 @@ end
 @inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) = land_saturation(i, j, grid, land_state)
 @inline interface_hydrology_state(i, j, grid, q::FractionalHumidity, land_state) =
     interface_hydrology_state(i, j, grid, q.efficiency, land_state)
+@inline requires_retention_curve(q::FractionalHumidity) = requires_retention_curve(q.efficiency)
 @inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) = land_saturation(i, j, grid, land_state)
-@inline interface_hydrology_state(i, j, grid, ::PlantAvailableWaterStress, land_state) = land_saturation(i, j, grid, land_state)
+# The stress endpoints live on the *land's* retention curve, whose parameters may vary
+# per cell; evaluate them here, once per cell, so the flux solve reads plain scalars.
+@inline function interface_hydrology_state(i, j, grid, p::PlantAvailableWaterStress, land_state)
+    𝒮 = state2dindex(land_state.saturation, i, j)
+    FT = typeof(𝒮)
+    r  = land_state.retention_curve
+    return (saturation = 𝒮,
+            field_capacity_saturation = effective_saturation(i, j, grid, r, convert(FT, p.field_capacity_head)),
+            wilting_saturation        = effective_saturation(i, j, grid, r, convert(FT, p.wilting_point_head)))
+end
 @inline interface_hydrology_state(i, j, grid, ::DryLayerHumidity, land_state) =
     land_saturation(i, j, grid, land_state)
 @inline interface_hydrology_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
