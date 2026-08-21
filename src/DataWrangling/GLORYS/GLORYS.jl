@@ -48,6 +48,8 @@ all_dates(::GLORYSStatic, var) = [nothing]
 all_dates(::GLORYSDaily, var) = range(DateTime("1993-01-01"), stop=DateTime("2021-06-30"), step=Day(1))
 all_dates(::GLORYSMonthly, var) = range(DateTime("1993-01-01"), stop=DateTime("2021-06-01"), step=Month(1))
 
+DataWrangling.sample_window(metadatum::Metadatum{<:GLORYSMonthly}) = DataWrangling.calendar_month_window(metadatum)
+
 copernicusmarine_dataset_id(::GLORYSStatic) = "cmems_mod_glo_phy_my_0.083deg_static"
 copernicusmarine_dataset_id(::GLORYSDaily) = "cmems_mod_glo_phy_my_0.083deg_P1D-m"
 copernicusmarine_dataset_id(::GLORYSMonthly) = "cmems_mod_glo_phy_my_0.083deg_P1M-m"
