@@ -64,3 +64,40 @@ end
         assert_tripolar_velocity_zipper(field, exchange_grid)
     end
 end
+
+@testset "Regional atmosphere fractional indices stay readable" begin
+    # `initialize!` fills fractional indices over the exchange grid's halo as well as its
+    # interior, so halo columns index into the atmosphere's own halo — which is where its
+    # boundary conditions live. Interpolation reads `⌊f⌋` and `⌊f⌋ + 1`, so an index is
+    # readable while it lies within `1 - H` and `N + H - 1`.
+    for arch in test_architectures
+        grid = LatitudeLongitudeGrid(arch; size = (2, 1, 1),
+                                     longitude = (0, 20), latitude = (0, 10),
+                                     z = (-1, 0),
+                                     topology = (Bounded, Bounded, Bounded))
+
+        InterfaceComputations = NumericalEarth.EarthSystemModels.InterfaceComputations
+        atmosphere = PrescribedAtmosphere(grid, [0.0])
+        exchanger = InterfaceComputations.ComponentExchanger(atmosphere, grid)
+        InterfaceComputations.initialize!(exchanger, grid, atmosphere)
+
+        Nx, Ny, _ = size(atmosphere.grid)
+        Hx, Hy, _ = halo_size(atmosphere.grid)
+
+        # The atmosphere shares the exchange grid, so interior cells map onto themselves.
+        @test Array(interior(exchanger.regridder.i))[:, 1, 1] ≈ [1, 2]
+        @test Array(interior(exchanger.regridder.j))[:, 1, 1] ≈ [1, 1]
+
+        fi = Array(exchanger.regridder.i.data[0:Nx+1, 0:Ny+1, 1:1])
+        fj = Array(exchanger.regridder.j.data[0:Nx+1, 0:Ny+1, 1:1])
+        @test all(f -> 1 - Hx <= f < Nx + Hx, fi)
+        @test all(f -> 1 - Hy <= f < Ny + Hy, fj)
+
+        # Halo columns are not clamped onto the interior, so the read reaches the
+        # atmosphere's halo and hence its boundary conditions — in latitude too, where the
+        # atmosphere is a single cell deep. Which index a *western* column lands on is
+        # `fractional_x_index`'s business.
+        @test fi[end, 1, 1] > Nx
+        @test fj[1, end, 1] > Ny
+    end
+end

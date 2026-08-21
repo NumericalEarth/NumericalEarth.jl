@@ -222,7 +222,12 @@ Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
 # Diagnostic surface (skin) temperature — what the atmosphere "sees"; for skin-temperature
 # closures it differs from `land.temperature`. The land interface wins; then the
 # atmosphere-ocean interface; `nothing` when the atmosphere touches neither.
-EarthSystemModels.surface_temperature(interface::AtmosphereInterface) = interface.temperature
+# A `CanopyAirSpace` interface holds several diagnostic temperatures; the atmosphere-facing
+# one is the canopy-air node.
+@inline interface_node_temperature(t) = t
+@inline interface_node_temperature(t::CanopyAirSpaceDiagnostics) = t.interface
+EarthSystemModels.surface_temperature(interface::AtmosphereInterface) =
+    interface_node_temperature(interface.temperature)
 EarthSystemModels.surface_temperature(interfaces::ComponentInterfaces) =
     EarthSystemModels.surface_temperature(interfaces.atmosphere_land_interface,
                                           interfaces.atmosphere_ocean_interface)

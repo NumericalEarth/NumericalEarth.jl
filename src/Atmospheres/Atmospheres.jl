@@ -10,8 +10,8 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids
 using Oceananigans.Fields: Field, Face, Center
-using Oceananigans.Grids: grid_name, topology, Bounded, Flat, LatitudeLongitudeGrid, λnodes, φnodes,
-                          minimum_xspacing, minimum_yspacing
+using Oceananigans.Grids: grid_name, halo_size, topology, Bounded, Flat, LatitudeLongitudeGrid,
+                          λnodes, φnodes, minimum_xspacing, minimum_yspacing
 using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time, meters, second
@@ -19,8 +19,10 @@ using Oceananigans.Utils: Utils, prettysummary, launch!
 using Thermodynamics.Parameters: AbstractThermodynamicsParameters
 
 using ...NumericalEarth: NumericalEarth
-using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, set_prescribed_field!
-using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger
+using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, set_prescribed_field!,
+                           default_gas_constant, default_dry_air_molar_mass
+using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger,
+                                                 clamp_fractional_index
 
 # Can be extended by atmosphere models. `atmosphere_model` builds the model; `atmosphere_simulation`
 # wraps it in a `Simulation`.
