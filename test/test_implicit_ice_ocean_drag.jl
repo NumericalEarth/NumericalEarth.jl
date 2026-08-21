@@ -63,8 +63,9 @@ end
 end
 
 @testset "Ocean surface momentum uses a semi-implicit flux" begin
-    grid = RectilinearGrid(size = (4, 4, 4), x = (0, 1), y = (0, 1), z = (-1, 0),
-                           topology = (Periodic, Periodic, Bounded))
+    # `ocean_simulation` defaults to WENO advection, which needs a halo of at least 6.
+    grid = RectilinearGrid(size = (8, 8, 8), x = (0, 1), y = (0, 1), z = (-1, 0),
+                           halo = (7, 7, 7), topology = (Periodic, Periodic, Bounded))
     ocean = ocean_simulation(grid)
 
     u_top = ocean.model.velocities.u.boundary_conditions.top.condition

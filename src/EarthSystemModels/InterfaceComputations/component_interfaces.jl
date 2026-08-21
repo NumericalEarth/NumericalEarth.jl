@@ -161,8 +161,8 @@ function SeaIceOceanFluxes(grid)
     return SeaIceOceanFluxes(C(grid), C(grid), C(grid), C(grid),
                              Field{Face, Center, Nothing}(grid; boundary_conditions = x_velocity_bcs),
                              Field{Center, Face, Nothing}(grid; boundary_conditions = y_velocity_bcs),
-                             Field{Face, Center, Nothing}(grid; boundary_conditions = x_velocity_bcs),
-                             Field{Center, Face, Nothing}(grid; boundary_conditions = y_velocity_bcs))
+                             Field{Face, Center, Nothing}(grid),
+                             Field{Center, Face, Nothing}(grid))
 end
 
 SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes(ntuple(_ -> ZeroField(), 8)...)

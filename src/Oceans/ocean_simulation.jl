@@ -434,10 +434,10 @@ function hydrostatic_ocean_simulation(grid;
     top_zonal_momentum_flux      = τˣ = Field{Face, Center, Nothing}(grid; boundary_conditions = x_velocity_bcs)
     top_meridional_momentum_flux = τʸ = Field{Center, Face, Nothing}(grid; boundary_conditions = y_velocity_bcs)
 
-    # Implicit drag coefficients λ for the surface momentum flux; zero unless a sea-ice component
-    # fills them through `assemble_net_ocean_fluxes!`.
-    implicit_zonal_momentum_coefficient      = λˣ = Field{Face, Center, Nothing}(grid; boundary_conditions = x_velocity_bcs)
-    implicit_meridional_momentum_coefficient = λʸ = Field{Center, Face, Nothing}(grid; boundary_conditions = y_velocity_bcs)
+    # Implicit drag coefficients λ for the surface momentum flux; 
+    # zero unless a sea-ice component fills them through `assemble_net_ocean_fluxes!`.
+    implicit_zonal_momentum_coefficient      = λˣ = Field{Face, Center, Nothing}(grid)
+    implicit_meridional_momentum_coefficient = λʸ = Field{Center, Face, Nothing}(grid)
     top_ocean_heat_flux          = Jᵀ = Field{Center, Center, Nothing}(grid)
     top_salt_flux                = Jˢ = Field{Center, Center, Nothing}(grid)
 
