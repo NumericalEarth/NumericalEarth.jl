@@ -22,6 +22,8 @@ export
     CanopyConductanceHumidity,
     CompositeSurfaceHumidity,
     CanopyAirSpace,
+    DiagnosticCanopyAir,
+    PrognosticCanopyAir,
     CanopyInterception,
     AbstractUndercanopyConductance,
     ConstantUndercanopyConductance,
