@@ -655,31 +655,94 @@ struct SoilSkin end
 Base.summary(::SoilSkin) = "SoilSkin"
 
 """
-    EnergyBalanceTemperature(kind, coupling; max_ΔT=50)
+    DiagnosticSkin()
 
-Diagnostic interface temperature that closes a surface energy balance
-`Rₙ = H + LE + G` each step. The only `kind` presently implemented is
-[`SoilSkin`](@ref), which conducts to the bulk slab through `coupling`, a
-[`SoilConductiveFlux`](@ref); use the convenience constructor
-[`SoilSkinTemperature`](@ref). `Λᵍ → ∞` recovers [`BulkTemperature`](@ref).
+Massless skin (the default): the energy-balance temperature is solved to
+equilibrium inside the Monin–Obukhov fixed point, with the excursion from the
+bulk slab clamped at `max_ΔT` (the clamp keeps the massless solve conditioned,
+at the price of silently absorbing the imbalance when the coupled system has
+no equilibrium — the calm moist-transition regime).
 """
-struct EnergyBalanceTemperature{K, C, FT}
+struct DiagnosticSkin end
+
+Base.summary(::DiagnosticSkin) = "DiagnosticSkin"
+Base.show(io::IO, s::DiagnosticSkin) = print(io, summary(s))
+
+"""
+    PrognosticSkin(FT = Oceananigans.defaults.FloatType; heat_capacity = 1e5)
+
+Prognostic skin storage: the skin carries an areal `heat_capacity` ``C``
+(J m⁻² K⁻¹) and integrates
+
+```math
+C \\frac{dT_s}{dt} = R_n(T_s) + G(T_s) - H(T_s) - LE(T_s),
+```
+
+frozen through the Monin–Obukhov fixed point (only ``u_★ ↔ ζ`` iterates) and
+advanced once per step by a Newton-refined backward-Euler update. The `max_ΔT`
+clamp does not apply on this path — a skin with capacity is rate-limited
+physically — so the surface energy balance is honest: the imbalance lands in
+the storage tendency instead of vanishing. The default
+`heat_capacity = 10⁵ ≈ (ρc)_soil × 0.05 m` (5 cm of moist soil) gives a 30–40
+minute skin timescale at calm night while daytime remains effectively
+diagnostic. The skin humidity carries no storage of its own: it stays slaved
+to the skin temperature and the (already prognostic) soil moisture.
+
+```jldoctest
+using NumericalEarth
+
+PrognosticSkin()
+
+# output
+PrognosticSkin(C=100000.0)
+```
+"""
+struct PrognosticSkin{FT}
+    heat_capacity :: FT
+end
+
+PrognosticSkin(FT::Type = Oceananigans.defaults.FloatType; heat_capacity = 1e5) =
+    PrognosticSkin(convert(FT, heat_capacity))
+
+Base.summary(s::PrognosticSkin) = string("PrognosticSkin(C=", prettysummary(s.heat_capacity), ")")
+Base.show(io::IO, s::PrognosticSkin) = print(io, summary(s))
+
+"""
+    EnergyBalanceTemperature(kind, coupling; max_ΔT=50, storage=DiagnosticSkin())
+
+Interface temperature that closes a surface energy balance `Rₙ = H + LE + G`.
+The only `kind` presently implemented is [`SoilSkin`](@ref), which conducts to the
+bulk slab through `coupling`, a [`SoilConductiveFlux`](@ref); use the convenience
+constructor [`SoilSkinTemperature`](@ref). `Λᵍ → ∞` recovers [`BulkTemperature`](@ref).
+
+`storage` selects the skin treatment: [`DiagnosticSkin`](@ref) (the default,
+massless — today's behavior bit-for-bit) or [`PrognosticSkin`](@ref) (the skin
+carries its physical heat capacity and is advanced with the model time step).
+"""
+struct EnergyBalanceTemperature{K, C, FT, ST}
     kind     :: K
     coupling :: C
     max_ΔT   :: FT
+    storage  :: ST
 end
 
-EnergyBalanceTemperature(kind, coupling; max_ΔT=50) = EnergyBalanceTemperature(kind, coupling, max_ΔT)
+EnergyBalanceTemperature(kind, coupling; max_ΔT=50, storage=DiagnosticSkin()) =
+    EnergyBalanceTemperature(kind, coupling, max_ΔT, storage)
+
+const PrognosticEnergyBalanceTemperature = EnergyBalanceTemperature{<:Any, <:Any, <:Any, <:PrognosticSkin}
 
 """
-    SoilSkinTemperature(conductivity, thickness; max_ΔT=50)
+    SoilSkinTemperature(conductivity, thickness; max_ΔT=50, storage=DiagnosticSkin())
 
 A soil-skin [`EnergyBalanceTemperature`](@ref): the skin conducts to the bulk
-slab with conductance `Λᵍ = conductivity/thickness` (W m⁻² K⁻¹). Behaviorally
-identical to `SkinTemperature(SoilConductiveFlux(conductivity, thickness))`.
+slab with conductance `Λᵍ = conductivity/thickness` (W m⁻² K⁻¹). With the default
+[`DiagnosticSkin`](@ref) storage it is behaviorally identical to
+`SkinTemperature(SoilConductiveFlux(conductivity, thickness))`;
+`storage = PrognosticSkin(heat_capacity = ...)` makes the skin prognostic and
+retires the `max_ΔT` clamp.
 """
-SoilSkinTemperature(conductivity, thickness; max_ΔT=50) =
-    EnergyBalanceTemperature(SoilSkin(), SoilConductiveFlux(conductivity, thickness), max_ΔT)
+SoilSkinTemperature(conductivity, thickness; max_ΔT=50, storage=DiagnosticSkin()) =
+    EnergyBalanceTemperature(SoilSkin(), SoilConductiveFlux(conductivity, thickness), max_ΔT, storage)
 
 Base.summary(t::EnergyBalanceTemperature) = string("EnergyBalanceTemperature(", summary(t.kind), ")")
 Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
@@ -714,6 +777,17 @@ Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
     max_ΔT = convert(FT, t.max_ΔT)
     return Tᵈ + clamp(T★ - Tᵈ, -max_ΔT, max_ΔT)
 end
+
+# A prognostic skin is model state: frozen through the fixed point (only the
+# similarity scales iterate) and advanced once per step in `advance_interface_state!`.
+@inline compute_interface_temperature(::PrognosticEnergyBalanceTemperature,
+                                      interface_state,
+                                      atmosphere_state,
+                                      interior_state,
+                                      radiation_state,
+                                      interface_properties,
+                                      atmosphere_properties,
+                                      interior_properties) = interface_state.temperature
 
 ####
 #### Interface specific humidity
