@@ -694,7 +694,7 @@ diagnostic. The first `update_state!` (``Δt = 0``) lands on the equilibrium roo
 at the converged similarity scales, so the skin starts near the massless answer
 rather than at the bulk temperature it is seeded from — not exactly on it, since
 the massless root iterates ``T_s`` jointly with ``u_★``. The skin humidity carries
-no storage of its own: it stays slaved to the skin temperature and the (already
+no storage of its own: it is determined by the skin temperature and the (already
 prognostic) soil moisture.
 
 ```jldoctest
