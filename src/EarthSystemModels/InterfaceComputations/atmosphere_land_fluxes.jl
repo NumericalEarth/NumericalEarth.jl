@@ -159,6 +159,56 @@ end
     return rebuild_interface_state(Ψₛ, fluxes, T⁺, q⁺)
 end
 
+# A prognostic energy-balance skin reads its stored temperature back from the
+# interface-temperature field; before any time step it starts from the bulk guess,
+# and the advance then initializes the field at the equilibrium root.
+@inline function initial_interface_values(::PrognosticEnergyBalanceTemperature, Ts,
+                                          i, j, T₀, q₀, clock)
+    stepped = clock_has_stepped(clock)
+    @inbounds T = ifelse(stepped, Ts[i, j, 1], T₀)
+    return T, q₀
+end
+
+# Prognostic energy-balance skin: frozen through the fixed point, advanced once per
+# step by a backward-Euler update of C dTₛ/dt = Rₙ + G − H − LE, solved by a fixed
+# three-iteration Newton on R(T) = C (T − Tₛ)/Δt − F(T) (re-linearizing the radiative
+# and vapor curvature each iterate, so violent adjustment steps stay energy-consistent).
+# The imbalance the massless solve has to dissipate instantly lands in the storage
+# tendency instead. Exported scales are re-evaluated at the end-of-step skin.
+@inline function advance_interface_state!(Ts, i, j, t::PrognosticEnergyBalanceTemperature,
+                                          Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, clock)
+    FT = eltype(Ψₛ)
+    Tₛ = Ψₛ.temperature
+    C  = convert(FT, state2dindex(t.storage.heat_capacity, i, j))
+    stepped = clock_has_stepped(clock)
+    # Δt⁻¹ = 0 before any time step (including the first-time-step preparation call):
+    # the Newton then lands on the equilibrium root — the diagnostic initialization,
+    # as the prognostic canopy-air node does.
+    Δt⁻¹ = ifelse(stepped, 1 / convert(FT, clock.last_Δt), zero(FT))
+
+    T⁺ = Tₛ
+    for _ in 1:3
+        F, Σλ = skin_energy_imbalance(T⁺, t, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ)
+        R  = C * (T⁺ - Tₛ) * Δt⁻¹ - F
+        dR = C * Δt⁻¹ + Σλ
+        # dR = 0 only before the first step (Δt⁻¹ = 0) on a skin with no restoring
+        # conductance at all — no conduction, no radiative feedback, no turbulent
+        # exchange. F is then independent of T and there is no root to step toward.
+        T⁺ = ifelse(dR > 0, T⁺ - R / dR, T⁺)
+    end
+
+    @inbounds Ts[i, j, 1] = T⁺
+
+    u★  = Ψₛ.fluxes.u★
+    χθ⁺ = max(zero(FT), Ψₛ.fluxes.χθ)
+    χq⁺ = max(zero(FT), Ψₛ.fluxes.χq)
+    Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
+    q⁺  = compute_interface_humidity(ℙₛ.specific_humidity_formulation, T⁺, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    fluxes = InterfaceFluxScales(u★, χθ⁺ * (Tᵃᵗ - T⁺), χq⁺ * (Ψₐ.q - q⁺),
+                                 Ψₛ.fluxes.χθ, Ψₛ.fluxes.χq)
+    return rebuild_interface_state(Ψₛ, fluxes, convert(FT, T⁺), convert(FT, q⁺))
+end
+
 #####
 ##### Flux compute driver
 #####
