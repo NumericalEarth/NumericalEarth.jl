@@ -747,6 +747,12 @@ EnergyBalanceTemperature(kind, coupling; storage=PrognosticSkin()) =
 
 const PrognosticEnergyBalanceTemperature = EnergyBalanceTemperature{<:Any, <:Any, <:PrognosticSkin}
 
+# Needed so a Field-valued `storage` reaches the device: Adapt's fallback returns
+# structs untouched, which is invisible on the CPU and leaves host memory in the
+# kernel on the GPU.
+Adapt.adapt_structure(to, t::EnergyBalanceTemperature) =
+    EnergyBalanceTemperature(adapt(to, t.kind), adapt(to, t.coupling), adapt(to, t.storage))
+
 """
     SoilSkinTemperature(conductivity, thickness; storage=PrognosticSkin())
 

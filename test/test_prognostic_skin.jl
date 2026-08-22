@@ -3,8 +3,10 @@ include("runtests_setup.jl")
 using Oceananigans
 using Oceananigans: set!, interior
 using Oceananigans.TimeSteppers: update_state!, time_step!
+using Oceananigans.Architectures: Adapt
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     SoilSkinTemperature, EnergyBalanceTemperature, SkinTemperature, SoilConductiveFlux, SoilSkin,
+    InterfaceProperties,
     DiagnosticSkin, PrognosticSkin,
     DryLayerHumidity, StorageBasedDryLayerDepth, DryLayerVaporPistonVelocity, ConstantTortuosity
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
@@ -191,4 +193,21 @@ end
             @test isfinite(value1(ai.fluxes.sensible_heat))
         end
     end
+end
+
+# Adapt's fallback returns structs untouched, so a missing `adapt_structure` anywhere on
+# the path to a Field-valued property is invisible on the CPU and hands the kernel host
+# memory on the GPU. Assert the whole chain reaches the leaf, which CPU CI can check.
+@testset "Field-valued capacity survives adapt" begin
+    grid = bare_soil_pair(CPU())
+    C = Field{Center, Center, Nothing}(grid)
+    leaf = typeof(Adapt.adapt(Array, PrognosticSkin(heat_capacity = C)).heat_capacity)
+
+    t = SoilSkinTemperature(1.5, 0.05; storage = PrognosticSkin(heat_capacity = C))
+    @test typeof(Adapt.adapt(Array, t).storage.heat_capacity) == leaf
+
+    # ...and through the container the flux kernel actually receives.
+    properties = InterfaceProperties(nothing, t, nothing)
+    adapted = Adapt.adapt(Array, properties).temperature_formulation
+    @test typeof(adapted.storage.heat_capacity) == leaf
 end
