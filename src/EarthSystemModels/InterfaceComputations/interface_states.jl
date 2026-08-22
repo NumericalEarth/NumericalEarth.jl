@@ -541,10 +541,12 @@ end
     T★ = ifelse(D == 0, Tₛ⁻, T★)
     T★ = ifelse(isnan(T★), Tₛ⁻, T★)
 
-    # Cap the temperature step for iteration stability
+    # Damped-Newton trust region: cap how far the skin moves in one iterate. Note this
+    # is a *step* cap, not the excursion bound the `DiffusiveFlux` and `SoilConductiveFlux`
+    # methods above apply to the answer — the two read `st.max_ΔT` but mean different things.
     ΔT★ = T★ - Tₛ⁻
-    max_ΔT = convert(typeof(T★), st.max_ΔT)
-    Tₛ⁺ = Tₛ⁻ + clamp(ΔT★, -max_ΔT, max_ΔT)
+    max_temperature_step = convert(typeof(T★), st.max_ΔT)
+    Tₛ⁺ = Tₛ⁻ + clamp(ΔT★, -max_temperature_step, max_temperature_step)
 
     # Cap at melting temperature
     Tₘ = ℙᵢ.liquidus.freshwater_melting_temperature
@@ -814,7 +816,11 @@ end
     T = interface_state.temperature
     F, Σλ = skin_energy_imbalance(T, t, interface_state, atmosphere_state, interior_state,
                                   radiation_state, interface_properties, atmosphere_properties)
-    return T + F / Σλ
+    # Σλ = 0 only if the skin has no restoring conductance at all: no conduction
+    # (Λᵍ → 0 decouples it), no radiative feedback (ϵ = 0), and no turbulent exchange.
+    # F is then independent of T, the balance has no root, and holding the skin is the
+    # answer — not a bounded step toward a root that does not exist.
+    return ifelse(Σλ > 0, T + F / Σλ, T)
 end
 
 # A prognostic skin is model state: frozen through the fixed point (only the

@@ -190,7 +190,11 @@ end
     for _ in 1:3
         F, Σλ = skin_energy_imbalance(T⁺, t, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ)
         R  = C * (T⁺ - Tₛ) * Δt⁻¹ - F
-        T⁺ = T⁺ - R / (C * Δt⁻¹ + Σλ)
+        dR = C * Δt⁻¹ + Σλ
+        # dR = 0 only before the first step (Δt⁻¹ = 0) on a skin with no restoring
+        # conductance at all — no conduction, no radiative feedback, no turbulent
+        # exchange. F is then independent of T and there is no root to step toward.
+        T⁺ = ifelse(dR > 0, T⁺ - R / dR, T⁺)
     end
 
     @inbounds Ts[i, j, 1] = T⁺

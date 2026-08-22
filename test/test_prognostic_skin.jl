@@ -172,3 +172,23 @@ end
         @test !isapprox(Tl[1], Th[1]; atol = 1e-3)   # ...and the capacities are distinguishable
     end
 end
+
+# Λᵍ = 0 fully decouples the skin, and `radiation = nothing` zeroes ϵ, so with calm air
+# the conductance sum Σλ has no term left. There is then no root to solve for, and both
+# storage paths must hold the skin rather than divide by zero.
+@testset "Fully decoupled skin stays finite" begin
+    for arch in test_architectures
+        for storage in (DiagnosticSkin(), PrognosticSkin(heat_capacity = 1e5))
+            model = bare_soil_model(arch, SoilSkinTemperature(0, 0.05; storage);
+                                    shortwave = 0.0, longwave = 0.0, wind = 0.0, ϵ = 0)
+            @test isfinite(value1(model.interfaces.atmosphere_land_interface.temperature))
+            for _ in 1:3
+                time_step!(model, 300.0)
+            end
+            ai = model.interfaces.atmosphere_land_interface
+            @test isfinite(value1(ai.temperature))
+            @test isfinite(value1(ai.fluxes.latent_heat))
+            @test isfinite(value1(ai.fluxes.sensible_heat))
+        end
+    end
+end
