@@ -771,10 +771,7 @@ Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
 # its tangent at the previous skin.
 #
 # Σλ = 4ϵσT³ + Λ + ρ u★ (cᵖ χθ⁺ + ℒ χq⁺ dq/dT) is a sum of non-negative conductances
-# with Σλ ≥ Λ > 0, so dividing by it is always safe. This is why neither skin path
-# carries an excursion clamp: the older closed form multiplied through by ΔT and so
-# acquired a denominator Λ ΔT − 𝒬ᵀ that vanishes when the sensible flux balances the
-# conduction, and the clamp existed only to hide that removable singularity.
+# with Σλ ≥ Λ > 0, so dividing by it is always safe.
 @inline function skin_energy_imbalance(T, t, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ)
     FT  = eltype(Ψₛ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
