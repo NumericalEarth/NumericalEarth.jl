@@ -1439,3 +1439,24 @@ LOADERS[:strait_freshwater_transports] = guard_truncated_output("Arctic freshwat
                                             start_time = 0,
                                             stop_time  = Inf)
     end)
+
+# Denmark Strait overflow: the southward transport of water denser than σθ = 27.8, which is the
+# density class the observational estimate (~3.2 Sv) is quoted for. Needs `to` and `so` on top of
+# `vo`, so it is keyed on all three and disk-cached like the other section diagnostics.
+LOADERS[:denmark_overflow] = guard_truncated_output("Denmark Strait overflow",
+    disk_cached(:denmark_overflow; source_fts_syms = (:vo_fts, :to_fts, :so_fts)) do c
+        config = strait_config_for(c.case)
+        if isnothing(config)
+            @warn "Cannot infer strait config for case '$(c.label)' — skipping."
+            return nothing
+        end
+        if !haskey(strait_sections(config), :denmark)
+            @warn "No Denmark Strait section for config '$config' — skipping '$(c.label)'."
+            return nothing
+        end
+        @info "  $(c.label): computing Denmark Strait overflow ($config)..."
+        return strait_overflow_transports(config, get_field(c, :fields_file);
+                                          sections = (:denmark,),
+                                          start_time = 0,
+                                          stop_time  = Inf)
+    end)

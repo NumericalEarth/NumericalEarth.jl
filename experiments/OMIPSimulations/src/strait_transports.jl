@@ -3,6 +3,8 @@ using Oceananigans.Fields: interior
 using Oceananigans.Grids: Center
 using Oceananigans.ImmersedBoundaries: inactive_node
 using Oceananigans.Operators: Δxᶜᶠᶜ, Δyᶠᶜᶜ, Δzᶜᶠᶜ, Δzᶠᶜᶜ
+using SeawaterPolynomials
+using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 
 # Seconds per year over m³ per km³: converts a volume flux in m³ s⁻¹ to km³ yr⁻¹, the unit every
 # published Arctic freshwater transport is quoted in.
@@ -38,6 +40,12 @@ strait_sections(::Val{:halfdegree}) = (
     itf    = StraitSection( 83:122, 154:154, :v),
 )
 
+# Denmark Strait carries the densest overflow feeding North Atlantic Deep Water. Its row closes
+# land-to-land like the Arctic gateways: j=250 runs 35.6°W..24.0°W at 66.0°N..66.3°N, bounded by
+# Greenland at i=254 and Iceland at i=265. Its deepest cell is 690 m against an observed sill of
+# ~620 m, which is the check that the row sits on the sill rather than in the Irminger Basin — the
+# row one to the south reaches 816 m and does not.
+#
 # Fram and Davis are the Arctic freshwater gateways. Both are complete land-to-land transects on the
 # ORCA mesh — the wet cells listed form a single unbroken run bounded by Greenland to one side and by
 # Svalbard (Fram) or Baffin Island (Davis) to the other, so their flux is the total exchange:
@@ -51,6 +59,7 @@ strait_sections(::Val{:orca}) = (
     itf    = StraitSection( 39:58,  130:130, :v),
     fram   = StraitSection(268:278, 275:275, :v),
     davis  = StraitSection(234:241, 254:254, :v),
+    denmark = StraitSection(255:264, 250:250, :v),
 )
 
 strait_sections(config::Symbol) = strait_sections(Val(config))
@@ -131,6 +140,129 @@ function strait_transports(config::Symbol, fields_file::AbstractString;
 
     in_window = (times .>= start_time) .& (times .<= stop_time)
     return merge(map(t -> t[in_window], transports), (; time = times[in_window]))
+end
+
+
+#####
+##### Dense overflow across a sill
+#####
+
+# An overflow is defined by a density class, not by a depth: the dense plume spills over the sill and
+# fills whatever part of the section it reaches. The Denmark Strait Overflow Water transport — the
+# southward flux of water with `σθ > 27.8` — is the standard metric, observed at about 3.2 Sv
+# ([Jochumsen et al. (2017)](https://doi.org/10.1002/2017JC012803)).
+#
+# `to` and `so` carry TEOS-10 Conservative Temperature and Absolute Salinity, so `σθ` comes from the
+# same equation of state the model integrates, referenced to the surface. Θ and Sᴬ are averaged onto
+# the velocity face before the density is evaluated, matching `salinity_at_v_face`; both tracer
+# neighbours must be wet, since a dry cell is written as zero and would otherwise fabricate a very
+# dense face.
+const OVERFLOW_DENSITY_ANOMALY = 27.8
+
+@inline temperature_at_v_face(T_int, i, j, k) = (T_int[i, j-1, k] + T_int[i, j, k]) / 2
+@inline temperature_at_u_face(T_int, i, j, k) = (T_int[i-1, j, k] + T_int[i, j, k]) / 2
+
+@inline potential_density_anomaly(Θ, Sᴬ, eos) = SeawaterPolynomials.ρ(Θ, Sᴬ, 0, eos) - 1000
+
+# Returns `(net, outflow)` in m³ s⁻¹ over the cells denser than `σ_threshold`: `net` is signed with
+# the section convention (positive northward/eastward), `outflow` is the magnitude of the part
+# flowing the other way, which is what an overflow transport quotes.
+function section_overflow_transport(grid, u_int, v_int, T_int, S_int, section::StraitSection,
+                                    eos, σ_threshold)
+    Nz = size(grid, 3)
+    net = 0.0
+    outflow = 0.0
+
+    if section.axis == :v
+        for j in section.j, i in section.i, k in 1:Nz
+            wet_v_face(grid, i, j, k) || continue
+            Θ = temperature_at_v_face(T_int, i, j, k)
+            S = salinity_at_v_face(S_int, i, j, k)
+            (isfinite(Θ) && isfinite(S)) || continue
+            potential_density_anomaly(Θ, S, eos) > σ_threshold || continue
+            flux = v_int[i, j, k] * Δxᶜᶠᶜ(i, j, k, grid) * Δzᶜᶠᶜ(i, j, k, grid)
+            net += flux
+            flux < 0 && (outflow -= flux)
+        end
+    elseif section.axis == :u
+        for j in section.j, i in section.i, k in 1:Nz
+            wet_u_face(grid, i, j, k) || continue
+            Θ = temperature_at_u_face(T_int, i, j, k)
+            S = salinity_at_u_face(S_int, i, j, k)
+            (isfinite(Θ) && isfinite(S)) || continue
+            potential_density_anomaly(Θ, S, eos) > σ_threshold || continue
+            flux = u_int[i, j, k] * Δyᶠᶜᶜ(i, j, k, grid) * Δzᶠᶜᶜ(i, j, k, grid)
+            net += flux
+            flux < 0 && (outflow -= flux)
+        end
+    else
+        throw(ArgumentError("section.axis must be :u or :v, got $(section.axis)"))
+    end
+
+    return net, outflow
+end
+
+"""
+    strait_overflow_transports(config::Symbol, fields_file::AbstractString;
+                               backend = InMemory(10),
+                               start_time = 0, stop_time = Inf,
+                               sections = (:denmark,),
+                               stride = 2,
+                               σ_threshold = OVERFLOW_DENSITY_ANOMALY)
+
+Time series of dense-overflow transport (Sv) across each of `sections`, counting only water with
+potential density anomaly greater than `σ_threshold`.
+
+Returns a `NamedTuple` with `time` and, per section, `(net = ..., outflow = ...)`. `net` follows the
+section convention (positive northward for a `:v` section); `outflow` is the magnitude of the
+opposing branch, which is the number quoted for an overflow — for Denmark Strait, observations give
+about 3.2 Sv at `σθ > 27.8`.
+
+Reads `to`, `so` and the relevant velocity component from the 3-D `fields_file`. As with
+[`strait_transports`](@ref) the cost is the whole compressed history rather than the section, so
+`sections` and `stride` are the levers that matter.
+"""
+function strait_overflow_transports(config::Symbol, fields_file::AbstractString;
+                                    backend = InMemory(10),
+                                    start_time = 0,
+                                    stop_time = Inf,
+                                    sections = (:denmark,),
+                                    stride = 2,
+                                    σ_threshold = OVERFLOW_DENSITY_ANOMALY)
+
+    selected = selected_strait_sections(config, sections)
+    needs_u, needs_v = section_axes(selected)
+
+    u_fts = needs_u ? FieldTimeSeries(fields_file, "uo"; backend = deepcopy(backend)) : nothing
+    v_fts = needs_v ? FieldTimeSeries(fields_file, "vo"; backend = deepcopy(backend)) : nothing
+    T_fts = FieldTimeSeries(fields_file, "to"; backend = deepcopy(backend))
+    S_fts = FieldTimeSeries(fields_file, "so"; backend = deepcopy(backend))
+
+    reference = something(u_fts, v_fts)
+    grid = reference.grid
+    eos = TEOS10EquationOfState()
+
+    snapshots = 1:stride:length(reference.times)
+    times = collect(reference.times)[snapshots]
+    net     = map(_ -> zeros(length(snapshots)), selected)
+    outflow = map(_ -> zeros(length(snapshots)), selected)
+
+    for (m, n) in enumerate(snapshots)
+        u_int = needs_u ? interior(u_fts[n]) : nothing
+        v_int = needs_v ? interior(v_fts[n]) : nothing
+        T_int = interior(T_fts[n])
+        S_int = interior(S_fts[n])
+        for (name, section) in pairs(selected)
+            a, b = section_overflow_transport(grid, u_int, v_int, T_int, S_int, section, eos, σ_threshold)
+            net[name][m]     = a * 1e-6
+            outflow[name][m] = b * 1e-6
+        end
+    end
+
+    in_window = (times .>= start_time) .& (times .<= stop_time)
+    per_section = map(names -> (net = net[names][in_window], outflow = outflow[names][in_window]),
+                      NamedTuple{keys(selected)}(keys(selected)))
+    return merge(per_section, (; time = times[in_window]))
 end
 
 """

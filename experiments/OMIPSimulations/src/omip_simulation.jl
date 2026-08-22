@@ -577,6 +577,10 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
      κ = 0.8×10⁻⁴ + (1.05×10⁻⁴/π) atan[4.5×10⁻³ (|z| − 2500)] m² s⁻¹, i.e. 3×10⁻⁵ in the upper ocean
      rising to 1.3×10⁻⁴ in the abyss. Buys the deep upwelling without diffusing the thermocline the
      way a uniform 10⁻⁴ does.
+   * `:abyssal_henyey` — `:henyey` in the thermocline plus an arctangent enhancement reaching
+     5×10⁻⁵ m² s⁻¹ by 5000 m, so κ ≈ 2×10⁻⁶ at the equatorial surface and ≈ 5×10⁻⁵ in the abyss.
+     The upper-ocean value sets the global heat uptake and the abyssal value the deep ventilation;
+     this holds the former at Henyey and raises only the latter.
    * a number — a uniform κ in m² s⁻¹ (e.g. `3e-5`, `1e-4`). The background diffusivity sets the
      diapycnal upwelling that closes the AMOC's lower limb, so raising it strengthens the
      overturning (Bryan 1987 gives AMOC ∝ κ^(2/3) in the diffusive limit); it also deepens the
@@ -643,6 +647,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          river_mixing_depth = 10,
                          river_spread_radius = ConfigDefault(),
                          river_spread_cells = ConfigDefault(),
+                         barotropic_substeps = 100,
                          bbl_diffusivity = nothing,
                          bbl_transport_coefficient = nothing,
                          overflow_restoring_timescale = nothing,
@@ -720,6 +725,7 @@ function omip_simulation(config::Symbol = :halfdegree;
     ocean = build_ocean(cfg, grid;
                         forcing = ocean_forcing,
                         κ_skew, κ_symmetric, Cᵇ,
+                        barotropic_substeps,
                         nemo_eddy_coefficients,
                         cesm_eddy_coefficients,
                         hybrid_eddy_coefficients,
@@ -952,11 +958,32 @@ end
 # equator rising to 10⁻⁵ at the poles), `:bryan_lewis` the depth profile above, and a number sets a
 # uniform interior κ instead. The background is the diapycnal diffusivity that feeds the upwelling
 # closing the AMOC's lower limb, so it is the knob for the Bryan (1987) κ^(2/3) sensitivity test.
+# Henyey in the thermocline, enhanced in the abyss. The two roles of the background diffusivity
+# separate cleanly by depth: the *upper-ocean* value sets the global heat uptake — a uniform 3×10⁻⁵
+# and Bryan & Lewis, which share that value but differ fourfold in the abyss, drift identically —
+# while the *abyssal* value sets the diapycnal upwelling that keeps bottom water ventilated. Holding
+# the thermocline at Henyey and raising only the abyss buys the second without paying for the first.
+#
+# The shape is Bryan & Lewis's arctangent, shifted to vanish at the surface and normalized so the
+# enhancement reaches `ABYSSAL_ENHANCEMENT` at 5000 m.
+const ABYSSAL_TRANSITION_DEPTH = 2500     # m, the Bryan & Lewis (1979) inflection
+const ABYSSAL_TRANSITION_SCALE = 4.5e-3   # m⁻¹
+const ABYSSAL_ENHANCEMENT = 5e-5          # m² s⁻¹ added to Henyey by 5000 m
+
+@inline function abyssal_enhancement(z)
+    shape = atan(ABYSSAL_TRANSITION_SCALE * (-z - ABYSSAL_TRANSITION_DEPTH)) +
+            atan(ABYSSAL_TRANSITION_SCALE *       ABYSSAL_TRANSITION_DEPTH)
+    return ABYSSAL_ENHANCEMENT * shape / 2atan(ABYSSAL_TRANSITION_SCALE * ABYSSAL_TRANSITION_DEPTH)
+end
+
+@inline abyssal_henyey_diffusivity(x, y, z, t) = henyey_diffusivity(x, y, z, t) + abyssal_enhancement(z)
+
 resolve_background_diffusivity(κ::Number) = κ
 resolve_background_diffusivity(κ::Symbol) =
-    κ === :henyey      ? henyey_diffusivity :
-    κ === :bryan_lewis ? bryan_lewis_diffusivity :
-    throw(ArgumentError("background_vertical_diffusivity must be :henyey, :bryan_lewis or a number, got :$κ"))
+    κ === :henyey         ? henyey_diffusivity :
+    κ === :bryan_lewis    ? bryan_lewis_diffusivity :
+    κ === :abyssal_henyey ? abyssal_henyey_diffusivity :
+    throw(ArgumentError("background_vertical_diffusivity must be :henyey, :bryan_lewis, :abyssal_henyey or a number, got :$κ"))
 
 # Default background momentum viscosity, shared by the closures that carry an explicit background.
 # `nothing` keeps it, a number overrides it.
@@ -1341,6 +1368,7 @@ config_materialize_buoyancy_gradients(::Val{:test})          = false
 
 function build_ocean(config, grid;
                      κ_skew, κ_symmetric, Cᵇ = 0.28,
+                     barotropic_substeps = 100,
                      restoring_dir, piston_velocity,
                      biharmonic_timescale,
                      biharmonic_viscosity = nothing,
@@ -1406,7 +1434,7 @@ function build_ocean(config, grid;
                              coriolis,
                              timestepper = :SplitRungeKutta3,
                              materialize_buoyancy_gradients = config_materialize_buoyancy_gradients(config),
-                             free_surface = SplitExplicitFreeSurface(grid; substeps=100),
+                             free_surface = SplitExplicitFreeSurface(grid; substeps=barotropic_substeps),
                              additional_surface_fluxes,
                              forcing,
                              closure)
