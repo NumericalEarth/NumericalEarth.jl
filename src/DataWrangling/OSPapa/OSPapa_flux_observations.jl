@@ -52,6 +52,10 @@ const OSPAPA_FLUX_ALL_DATES = DateTime(2007, 6, 8):Hour(1):DateTime(2022, 2, 24)
 
 all_dates(::OSPapaFluxHourly, variable) = OSPAPA_FLUX_ALL_DATES
 
+# Like the mooring records, the hourly fluxes carry no `cell_methods` and no time bounds, and their
+# shortwave peaks at solar noon rather than half an hour after it, so they are values at the stamp.
+DataWrangling.sample_window(metadatum::OSPapaFluxMetadatum) = DataWrangling.instantaneous_window(metadatum)
+
 #####
 ##### Grid construction
 #####

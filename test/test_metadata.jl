@@ -320,6 +320,99 @@ end
     @test native_times(radiation) == [-1800, 1800, 5400]
 end
 
+@testset "JRA55 sample windows" begin
+    # The repeat-year files label each mean with the start of its interval: the three-hourly
+    # fluxes, radiation, and precipitation run forwards three hours from the stamp, the daily
+    # river and iceberg fluxes forwards a day.
+    for name in (:rain_freshwater_flux, :snow_freshwater_flux,
+                 :downwelling_longwave_radiation, :downwelling_shortwave_radiation)
+
+        metadatum = Metadatum(name; dataset = RepeatYearJRA55(), date = DateTime(1990, 4, 1, 12))
+        @test sample_window(metadatum) == (DateTime(1990, 4, 1, 12), DateTime(1990, 4, 1, 15))
+        @test time_window_offset(metadatum) == 1.5 * 3600
+    end
+
+    for name in (:river_freshwater_flux, :iceberg_freshwater_flux)
+        metadatum = Metadatum(name; dataset = RepeatYearJRA55(), date = DateTime(1990, 4, 1))
+        @test sample_window(metadatum) == (DateTime(1990, 4, 1), DateTime(1990, 4, 2))
+        @test time_window_offset(metadatum) == 12 * 3600
+    end
+
+    # The state variables are instantaneous in both products.
+    for dataset in (RepeatYearJRA55(), MultiYearJRA55()),
+        name in (:temperature, :specific_humidity, :eastward_velocity, :sea_level_pressure)
+
+        metadatum = Metadatum(name; dataset, date = DateTime(1990, 4, 1, 12))
+        @test time_window_offset(metadatum) == 0
+    end
+
+    # The multi-year files already stamp their means at the window center, so every variable
+    # sits at its node as labelled.
+    for name in (:rain_freshwater_flux, :downwelling_shortwave_radiation, :river_freshwater_flux)
+        metadatum = Metadatum(name; dataset = MultiYearJRA55(), date = DateTime(1990, 4, 1, 1, 30))
+        @test time_window_offset(metadatum) == 0
+    end
+end
+
+@testset "Copernicus Marine daily windows" begin
+    # Copernicus Marine stamps the start of an averaging period, so a `P1D-m` daily mean runs
+    # forwards a day from its stamp and its node sits at midday.
+    glorys = Metadatum(:temperature; dataset = GLORYSDaily(), date = DateTime(2010, 7, 10))
+    @test sample_window(glorys) == (DateTime(2010, 7, 10), DateTime(2010, 7, 11))
+    @test time_window_offset(glorys) == 12 * 3600
+
+    # The daily L4 altimetry maps are analyses valid at the stamp, not means over the day.
+    aviso = Metadatum(:sea_level_anomaly; dataset = AVISODaily(), date = DateTime(2010, 7, 10))
+    @test time_window_offset(aviso) == 0
+end
+
+@testset "ECCO2 daily windows" begin
+    # The cube92 daily files hold means over the day they are named for, so their nodes sit at midday
+    # while the monthly means keep their calendar-month window.
+    daily = Metadatum(:temperature; dataset = ECCO2Daily(), date = DateTime(1993, 1, 1))
+    @test sample_window(daily) == (DateTime(1993, 1, 1), DateTime(1993, 1, 2))
+    @test time_window_offset(daily) == 12 * 3600
+
+    monthly = Metadatum(:temperature; dataset = ECCO2Monthly(), date = DateTime(1993, 1, 1))
+    @test window_center(monthly) == DateTime(1993, 1, 16, 12)
+end
+
+@testset "GloFAS daily windows" begin
+    # The discharge is a mean over the day the dates label, so its node sits at midday.
+    md = Metadatum(:river_discharge; dataset = GloFASReanalysis(), date = DateTime(2010, 7, 10))
+    @test sample_window(md) == (DateTime(2010, 7, 10), DateTime(2010, 7, 11))
+    @test time_window_offset(md) == 12 * 3600
+end
+
+@testset "Every dataset with a time axis declares a sample window" begin
+    # `sample_window` has no fallback, so a new adapter that forgets it raises a `MethodError`
+    # instead of silently placing window averages at their stamps.
+    @test !hasmethod(sample_window, Tuple{Any})
+
+    datasets = Dict(AVISODaily() => :sea_level_anomaly,
+                    AVISOMonthly() => :sea_level_anomaly,
+                    ECCO2Daily() => :temperature,
+                    ECCO2Monthly() => :temperature,
+                    ECCO4Monthly() => :temperature,
+                    EN4Monthly() => :temperature,
+                    ERA5HourlySingleLevel() => :temperature,
+                    ERA5MonthlySingleLevel() => :temperature,
+                    ERA5HourlyPressureLevels() => :temperature,
+                    ERA5MonthlyPressureLevels() => :temperature,
+                    ERA5HourlyLand() => :temperature,
+                    ERA5MonthlyLand() => :temperature,
+                    GLORYSDaily() => :temperature,
+                    GLORYSMonthly() => :temperature,
+                    RepeatYearJRA55() => :temperature,
+                    MultiYearJRA55() => :temperature,
+                    WOAMonthly() => :temperature)
+
+    for (dataset, name) in datasets
+        metadatum = Metadatum(name; dataset, date = DateTime(2010, 7, 1))
+        @test hasmethod(sample_window, Tuple{typeof(metadatum)})
+    end
+end
+
 @testset "Time coverage of window-averaged series" begin
     monthly = Metadata(:temperature; dataset = EN4Monthly(),
                        dates = [DateTime(2010, m, 1) for m in 1:12])

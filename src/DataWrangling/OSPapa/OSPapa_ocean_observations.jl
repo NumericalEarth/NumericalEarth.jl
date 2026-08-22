@@ -95,6 +95,10 @@ end
 
 all_dates(::OSPapaHourly, variable) = ospapa_all_times()
 
+# The OceanSITES hourly records carry no `cell_methods` and no time bounds, so they are values at
+# the stamp rather than averages over the hour.
+DataWrangling.sample_window(metadatum::OSPapaMetadatum) = DataWrangling.instantaneous_window(metadatum)
+
 # Cache depth arrays per variable
 const _ospapa_depths_cache = Dict{Symbol, Vector{Float64}}()
 
