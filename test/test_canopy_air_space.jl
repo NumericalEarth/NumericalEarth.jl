@@ -13,7 +13,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     ConstantUndercanopyConductance, AreaIndexUndercanopyConductance,
     FrictionVelocityUndercanopyConductance, undercanopy_conductance,
     SellersSoilResistance, LitterResistance, soil_surface_resistance, litter_resistance,
-    bare_canopy_air_space, CanopyAirSpaceDiagnostics
+    bare_canopy_air_space, CanopyAirSpaceDiagnostics, DiagnosticSkin
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, AtmosphereThermodynamicsParameters
 using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
 using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
@@ -118,7 +118,7 @@ end
         land = SlabLand(grid; hydrology = BucketHydrology(FT; maximum_water_storage = 150.0), energy = SlabEnergy(FT))
         set!(land; T = 300.0); fill!(parent(land.water_storage), 90.0)
         model = AtmosphereLandModel(atmosphere, land; radiation = nothing,
-                    atmosphere_land_interface_temperature = SoilSkinTemperature(1.5, 0.05))
+                    atmosphere_land_interface_temperature = SoilSkinTemperature(1.5, 0.05; storage = DiagnosticSkin()))
         update_state!(model.land); update_state!(model)
         T = model.interfaces.atmosphere_land_interface.temperature
         @test T isa Oceananigans.Fields.Field

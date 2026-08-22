@@ -4,7 +4,7 @@ using Oceananigans
 using Oceananigans: set!, interior
 using Oceananigans.TimeSteppers: update_state!, time_step!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    SoilSkinTemperature, EnergyBalanceTemperature, SkinTemperature, SoilConductiveFlux,
+    SoilSkinTemperature, EnergyBalanceTemperature, SkinTemperature, SoilConductiveFlux, SoilSkin,
     DiagnosticSkin, PrognosticSkin,
     DryLayerHumidity, StorageBasedDryLayerDepth, DryLayerVaporPistonVelocity, ConstantTortuosity
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
@@ -19,12 +19,20 @@ bare_soil_humidity(FT) = DryLayerHumidity(FT;
                                                   molecular_diffusivity = 2.4e-5, tortuosity = ConstantTortuosity()),
     thermal_exchange_depth = 0.05, porosity = 0.4)
 
-function bare_soil_model(arch, temperature; shortwave = 600.0, longwave = 350.0,
+bare_soil_column(arch, FT = Float64) =
+    LatitudeLongitudeGrid(arch, FT; size = 1, latitude = 10, longitude = 10,
+                          z = (-1, 0), topology = (Flat, Flat, Bounded))
+
+# Two independent columns side by side, for per-cell (Field-valued) properties.
+bare_soil_pair(arch, FT = Float64) =
+    LatitudeLongitudeGrid(arch, FT; size = (2, 1, 1), longitude = (10, 12), latitude = (10, 11),
+                          z = (-1, 0), topology = (Bounded, Bounded, Bounded))
+
+function bare_soil_model(arch, temperature; grid = bare_soil_column(arch),
+                         shortwave = 600.0, longwave = 350.0,
                          wind = 5.0, Tair = 300.0, qair = 0.008,
                          Tland = 298.0, water = 90.0, α = 0.2, ϵ = 0.95)
     FT = Float64
-    grid = LatitudeLongitudeGrid(arch, FT; size = 1, latitude = 10, longitude = 10,
-                                 z = (-1, 0), topology = (Flat, Flat, Bounded))
     atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10, boundary_layer_height = 512)
     fill!(parent(atmosphere.temperature), Tair)
     fill!(parent(atmosphere.specific_humidity), qair)
@@ -64,17 +72,20 @@ end
 
 @testset "Prognostic energy-balance skin" begin
     for arch in test_architectures
-        # --- diagnostic default: DiagnosticSkin() keeps the massless root,
-        # behaviorally identical to SkinTemperature(SoilConductiveFlux).
-        m_ebt = bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05; max_ΔT = 50))
+        # --- opt-in DiagnosticSkin() solves the same massless balance as
+        # SkinTemperature(SoilConductiveFlux), so the two land in the same place. Not
+        # bit-for-bit: the skin here Newtons the residual (carrying the radiative and
+        # vapor feedbacks in Σλ), while SkinTemperature still takes the Picard step of
+        # the ΔT-multiplied closed form and clamps the excursion.
+        m_ebt = bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05; storage = DiagnosticSkin()))
         m_st  = bare_soil_model(arch, SkinTemperature(SoilConductiveFlux(1.5, 0.05); max_ΔT = 50))
         @test value1(m_ebt.interfaces.atmosphere_land_interface.temperature) ≈
-              value1(m_st.interfaces.atmosphere_land_interface.temperature) atol = 1e-8
+              value1(m_st.interfaces.atmosphere_land_interface.temperature) atol = 0.5
 
         # --- windy daytime: the prognostic skin relaxes onto the diagnostic answer.
         Tform = SoilSkinTemperature(1.5, 0.05; storage = PrognosticSkin(heat_capacity = 1e5))
         mp = bare_soil_model(arch, Tform)
-        md = bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05; max_ΔT = 50))
+        md = bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05; storage = DiagnosticSkin()))
         for _ in 1:36
             time_step!(mp, 300.0)
             time_step!(md, 300.0)
@@ -105,5 +116,59 @@ end
             @test abs(value1(ai.fluxes.latent_heat)) < 2000
         end
         @test worst < 15
+    end
+end
+
+@testset "PrognosticSkin is the default storage" begin
+    @test SoilSkinTemperature(1.5, 0.05).storage isa PrognosticSkin
+    @test EnergyBalanceTemperature(SoilSkin(), SoilConductiveFlux(1.5, 0.05)).storage isa PrognosticSkin
+    @test SoilSkinTemperature(1.5, 0.05; storage = DiagnosticSkin()).storage isa DiagnosticSkin
+
+    for FT in (Float32, Float64)
+        @test eltype(PrognosticSkin(FT).heat_capacity) == FT
+    end
+
+    # The first `update_state!` (Δt = 0) lands on the energy-balance root at the
+    # converged similarity scales, so the default prognostic skin starts near the
+    # massless answer rather than at the bulk temperature it is seeded from. It is
+    # not identical: the massless root iterates Tₛ jointly with u★, while the
+    # prognostic skin is frozen through the fixed point by construction.
+    for arch in test_architectures
+        Tbulk = 298.0
+        Tp = value1(bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05)).interfaces.atmosphere_land_interface.temperature)
+        Td = value1(bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05; storage = DiagnosticSkin())).interfaces.atmosphere_land_interface.temperature)
+        @test Tp ≈ Td atol = 1
+        @test abs(Tp - Td) < abs(Tbulk - Td)
+    end
+end
+
+@testset "Field-valued skin heat capacity" begin
+    for arch in test_architectures
+        # A `Field` of capacities must reproduce, cell by cell, the scalar runs it
+        # interpolates between. Same grid and same forcing throughout, so the only
+        # difference between the three models is C.
+        skin(C) = SoilSkinTemperature(1.5, 0.05; storage = PrognosticSkin(heat_capacity = C))
+        calm = (; shortwave = 50.0, wind = 0.2, Tair = 304.0, Tland = 310.0, water = 135.0)
+
+        grid = bare_soil_pair(arch)
+        Cfield = Field{Center, Center, Nothing}(grid)
+        set!(Cfield, reshape([1e4, 1e6], 2, 1, 1))
+
+        mixed = bare_soil_model(arch, skin(Cfield); grid, calm...)
+        light = bare_soil_model(arch, skin(1e4);    grid, calm...)
+        heavy = bare_soil_model(arch, skin(1e6);    grid, calm...)
+        for _ in 1:12
+            time_step!(mixed, 300.0)
+            time_step!(light, 300.0)
+            time_step!(heavy, 300.0)
+        end
+
+        surface(m) = Array(interior(m.interfaces.atmosphere_land_interface.temperature))[:, 1, 1]
+        Tm, Tl, Th = surface(mixed), surface(light), surface(heavy)
+
+        @test all(isfinite, Tm)
+        @test Tm[1] ≈ Tl[1] atol = 1e-10   # light cell tracks the C = 1e4 run
+        @test Tm[2] ≈ Th[2] atol = 1e-10   # heavy cell tracks the C = 1e6 run
+        @test !isapprox(Tl[1], Th[1]; atol = 1e-3)   # ...and the capacities are distinguishable
     end
 end

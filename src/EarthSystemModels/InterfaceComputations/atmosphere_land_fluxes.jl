@@ -160,8 +160,8 @@ end
 end
 
 # A prognostic energy-balance skin reads its stored temperature back from the
-# interface-temperature field; before any time step it falls through to the bulk
-# guess (the first solve then initializes the field at the diagnostic root).
+# interface-temperature field; before any time step it starts from the bulk guess,
+# and the advance then initializes the field at the equilibrium root.
 @inline function initial_interface_values(::PrognosticEnergyBalanceTemperature, Ts,
                                           i, j, T₀, q₀, clock)
     stepped = clock_has_stepped(clock)
@@ -169,58 +169,27 @@ end
     return T, q₀
 end
 
-# The surface energy imbalance F(T) = Rₙ(T) + G(T) − H(T) − LE(T) and its linearized
-# feedback Σλ(T) at skin temperature T, with the similarity scales frozen (u★, χ from
-# the converged fixed point). The humidity is re-diagnosed at T through the (nonlinear)
-# humidity formulation, so the Newton solve below converges the true balance, not its
-# tangent at the start-of-step skin.
-@inline function skin_energy_imbalance(T, t, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ)
-    FT  = eltype(Ψₛ)
-    ℂᵃᵗ = ℙₐ.thermodynamics_parameters
-    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
-    cᵖ  = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, Ψₐ.q)
-    ℒ   = interface_latent_heat(ℂᵃᵗ, Ψₐ.T, Ψₛ)
-    u★  = Ψₛ.fluxes.u★
-    χθ⁺ = max(zero(FT), Ψₛ.fluxes.χθ)
-    χq⁺ = max(zero(FT), Ψₛ.fluxes.χq)
-    Λ   = convert(FT, balance_conductance(t.kind, t.coupling))
-    Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
-
-    q  = compute_interface_humidity(ℙₛ.specific_humidity_formulation, T, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
-    Rn = (1 - Ψᵣ.α) * Ψᵣ.ℐꜜˢʷ + Ψᵣ.ϵ * (Ψᵣ.ℐꜜˡʷ - Ψᵣ.σ * T^4)
-    G  = Λ * (Ψᵢ.T - T)
-    H  = ρᵃᵗ * cᵖ * u★ * χθ⁺ * (T - Tᵃᵗ)
-    LE = ℒ * ρᵃᵗ * u★ * χq⁺ * (q - Ψₐ.q)
-    F  = Rn + G - H - LE
-
-    dq = saturation_humidity_slope(ℂᵃᵗ, T, Ψₐ.p, interface_phase(ℙₛ.specific_humidity_formulation))
-    Σλ = 4 * Ψᵣ.ϵ * Ψᵣ.σ * T^3 + Λ + ρᵃᵗ * u★ * (cᵖ * χθ⁺ + ℒ * χq⁺ * dq)
-    return F, Σλ, q
-end
-
 # Prognostic energy-balance skin: frozen through the fixed point, advanced once per
 # step by a backward-Euler update of C dTₛ/dt = Rₙ + G − H − LE, solved by a fixed
 # three-iteration Newton on R(T) = C (T − Tₛ)/Δt − F(T) (re-linearizing the radiative
 # and vapor curvature each iterate, so violent adjustment steps stay energy-consistent).
-# No `max_ΔT` clamp on this path — the capacity rate-limits the skin physically, and
-# the imbalance the clamped massless solve silently absorbed lands in the storage
+# The imbalance the massless solve has to dissipate instantly lands in the storage
 # tendency instead. Exported scales are re-evaluated at the end-of-step skin.
 @inline function advance_interface_state!(Ts, i, j, t::PrognosticEnergyBalanceTemperature,
                                           Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, clock)
     FT = eltype(Ψₛ)
     Tₛ = Ψₛ.temperature
-    C  = convert(FT, t.storage.heat_capacity)
-    Δt = convert(FT, clock.last_Δt)
+    C  = convert(FT, state2dindex(t.storage.heat_capacity, i, j))
     stepped = clock_has_stepped(clock)
-    # Before any time step the skin holds its initial value (the bulk-slab guess).
-    Δt⁻¹ = ifelse(stepped, 1 / Δt, convert(FT, Inf))
+    # Δt⁻¹ = 0 before any time step (including the first-time-step preparation call):
+    # the Newton then lands on the equilibrium root — the diagnostic initialization,
+    # as the prognostic canopy-air node does.
+    Δt⁻¹ = ifelse(stepped, 1 / convert(FT, clock.last_Δt), zero(FT))
 
     T⁺ = Tₛ
-    q⁺ = Ψₛ.specific_humidity
     for _ in 1:3
-        F, Σλ, q⁺ = skin_energy_imbalance(T⁺, t, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ)
+        F, Σλ = skin_energy_imbalance(T⁺, t, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ)
         R  = C * (T⁺ - Tₛ) * Δt⁻¹ - F
-        R  = ifelse(isfinite(R), R, zero(FT))          # Δt⁻¹ = Inf ⇒ hold the initial value
         T⁺ = T⁺ - R / (C * Δt⁻¹ + Σλ)
     end
 
