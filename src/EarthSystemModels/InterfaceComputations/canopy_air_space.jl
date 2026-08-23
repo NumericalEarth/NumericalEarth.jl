@@ -688,7 +688,7 @@ closes.
     Tᵃᶜ = Ψₛ.temperature
     qᵃᶜ = Ψₛ.specific_humidity
     relaxation  = c.relaxation
-    max_ΔT = convert(FT, 25)   # per-iterate step cap: keeps the damped Newton in-range
+    max_temperature_step = convert(FT, 25)   # damped-Newton trust region, per iterate
     Tₗₒ, Tₕᵢ = convert(FT, 180), convert(FT, 340)  # physical band; guards qˢᵃᵗ against transient overshoot
     tiny = eps(FT)
 
@@ -707,13 +707,13 @@ closes.
         Rᵥ   = SWᵛ + LWᵛ
         resᵥ = Rᵥ - gˡʰ * (Tᵛ - Tᵃᶜ) - ℒ * gˡʷ * (qᵛ - qᵃᶜ)
         dRᵥ  = -8 * εᵛ * σ * Tᵛ^3 - gˡʰ - ℒ * gˡʷ * saturation_humidity_slope(ℂᵃᵗ, Tᵛ, pᵃᵗ, c.phase)
-        Tᵛ   = ifelse(abs(dRᵥ) < tiny, Tᵃᶜ, Tᵛ - clamp(relaxation * resᵥ / dRᵥ, -max_ΔT, max_ΔT))
+        Tᵛ   = ifelse(abs(dRᵥ) < tiny, Tᵃᶜ, Tᵛ - clamp(relaxation * resᵥ / dRᵥ, -max_temperature_step, max_temperature_step))
         Tᵛ   = clamp(Tᵛ, Tₗₒ, Tₕᵢ)
 
         Rᵍ   = SWᵍ + LWᵍ
         resᵍ = Rᵍ - gᵍʰ * (Tᵍ - Tᵃᶜ) - ℒ * Gᵉ * (qᵉ - qᵃᶜ) - Λ * (Tᵍ - Tˡᵃ)
         dRᵍ  = -4 * εᵍ * σ * Tᵍ^3 - gᵍʰ - Λ - ℒ * Gᵉ * saturation_humidity_slope(ℂᵃᵗ, Tᵍ, pᵃᵗ, c.phase)
-        Tᵍ  = Tᵍ - clamp(relaxation * resᵍ / dRᵍ, -max_ΔT, max_ΔT)
+        Tᵍ  = Tᵍ - clamp(relaxation * resᵍ / dRᵍ, -max_temperature_step, max_temperature_step)
         Tᵍ  = clamp(Tᵍ, Tₗₒ, Tₕᵢ)
     end
 

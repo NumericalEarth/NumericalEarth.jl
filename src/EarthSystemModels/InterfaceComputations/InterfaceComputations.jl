@@ -56,6 +56,8 @@ export
     CanopyAirSpace,
     DiagnosticCanopyAir,
     PrognosticCanopyAir,
+    DiagnosticSkin,
+    PrognosticSkin,
     CanopyInterception,
     AbstractUndercanopyConductance,
     ConstantUndercanopyConductance,
