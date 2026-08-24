@@ -7,6 +7,7 @@ using NumericalEarth.Lands: SlabLand, SlabEnergy, VariablySaturatedHydrology,
     InterceptingHydrology, SurfaceWaterStore,
     VanGenuchtenRetention, VanGenuchtenConductivity,
     NoDeepLiquidFlux, InfiltrationCapacityRunoff
+using NumericalEarth.EarthSystemModels: surface_retention_curve
 
 scalar(field) = Array(interior(field))[1, 1, 1]
 
@@ -148,6 +149,18 @@ end
         @test scalar(land2.prognostic.surface_water_storage) == 3.5
         @test scalar(land2.water_storage) == 120.0
         @test scalar(land2.temperature) == 290.0
+    end
+end
+
+@testset "Retention curve forwards through the pond" begin
+    FT = Float64
+    grid = pond_test_grid(CPU(), FT)
+    soil    = soil_hydrology(FT)
+    ponded  = SurfaceWaterStore(FT; soil)
+    wrapped = InterceptingHydrology(FT; soil = ponded, leaf_area_index = 3.0)
+    for hydrology in (ponded, wrapped)
+        land = SlabLand(grid; energy = SlabEnergy(FT), hydrology)
+        @test surface_retention_curve(land) === soil.retention_curve
     end
 end
 
