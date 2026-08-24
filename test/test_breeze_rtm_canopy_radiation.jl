@@ -36,10 +36,8 @@ build_canopy_air_space(FT) = CanopyAirSpace(FT;
                                        absorbed_par = InteractiveAbsorbedPAR(FT)),
     soil_skin_flux = SoilConductiveFlux(1.5, 0.05))
 
-# Tiny coupled Breeze + gray-optics RTM + SlabLand for CI. `hour` sets the solar epoch at
-# longitude 0, so `hour = 12` is local noon and `hour = 0` local midnight. Gray optics needs
-# no lookup tables, and the RTM is built without a `surface_temperature` so the coupler binds
-# the interface's radiating temperature.
+# `hour` is the solar epoch at longitude 0, so 12 is local noon and 0 local midnight. Gray
+# optics needs no lookup tables, and omitting `surface_temperature` lets the coupler bind it.
 function build_rtm_land_model(arch; hour = 12, canopy = true)
     FT = Float64
 
@@ -85,19 +83,15 @@ end
             rtm = model.radiation
             interface = model.interfaces.atmosphere_land_interface
 
-            # The RTM radiates from the canopy's two-source blend, not the canopy-air node.
             @test rtm.surface_properties.surface_temperature === interface.temperature.effective
 
-            # The RTM publishes the land's radiative properties and an exchanger state, so the
-            # canopy solve reads the same contract it reads under a `PrescribedRadiation`.
             exchanger = model.interfaces.exchanger.radiation
             @test !isnothing(exchanger)
             @test haskey(kernel_radiation_properties(rtm).surface_properties, :land)
 
             time_step!(model, 1.0)
 
-            # Downwelling fluxes reach the interface as positive-down magnitudes (Breeze stores
-            # them negative, positive-up).
+            # Breeze stores downwelling negative; the interface wants positive-down magnitudes.
             ℐꜜˢʷ = Array(interior(exchanger.state.ℐꜜˢʷ))
             ℐꜜˡʷ = Array(interior(exchanger.state.ℐꜜˡʷ))
             @test all(ℐꜜˢʷ .> 0)
@@ -105,14 +99,11 @@ end
             @test ℐꜜˢʷ ≈ -Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
             @test ℐꜜˡʷ ≈ -Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
 
-            # Radiation is internalized in the canopy solve, so the slab is driven by the
-            # skin→bulk conduction alone — no radiative flux added on top.
+            # Radiation is internalized in the canopy solve, so no flux is added on top.
             Jᴱs = Array(interior(model.land.fluxes.surface_energy_flux))
             Gᶜ = Array(interior(interface.temperature.ground_heat_flux))
             @test Jᴱs ≈ -Gᶜ
 
-            # The two-source shares still reconcile with the interface fluxes the atmosphere
-            # and slab read, now that the radiation driving them comes from the RTM.
             Hᵛ = Array(interior(interface.temperature.canopy_sensible_heat))
             Hᵍ = Array(interior(interface.temperature.soil_sensible_heat))
             LEᵛ = Array(interior(interface.temperature.canopy_latent_heat))
@@ -120,9 +111,7 @@ end
             @test Hᵛ .+ Hᵍ ≈ Array(interior(interface.fluxes.sensible_heat))
             @test LEᵛ .+ LEᵍ ≈ Array(interior(interface.fluxes.latent_heat))
 
-            # Sunlit leaves run warmer than the shaded ground, and the radiating temperature
-            # separates from the canopy-air node — with a zero radiation state the two skins and
-            # `Teff` all collapse onto the node.
+            # Under a zero radiation state both skins and `Teff` collapse onto the node.
             Tᵃᶜ = Array(interior(interface.temperature.interface))
             Tᵛ = Array(interior(interface.temperature.canopy))
             Tᵍ = Array(interior(interface.temperature.soil_skin))
@@ -138,8 +127,6 @@ end
             @test all(Array(interior(night.interfaces.exchanger.radiation.state.ℐꜜˢʷ)) .== 0)
             @test all(Array(interior(night.interfaces.exchanger.radiation.state.ℐꜜˡʷ)) .> 0)
 
-            # A nocturnal canopy cools below the daytime one — the solve responds to the
-            # shortwave it now receives.
             day = build_rtm_land_model(arch)
             time_step!(day, 1.0)
             Tᵛ_day = Array(interior(day.interfaces.atmosphere_land_interface.temperature.canopy))
@@ -151,7 +138,6 @@ end
             model = build_rtm_land_model(arch; canopy = false)
             interface = model.interfaces.atmosphere_land_interface
 
-            # No canopy: the atmosphere-facing temperature is also the radiating one.
             @test model.radiation.surface_properties.surface_temperature === interface.temperature
 
             time_step!(model, 1.0)
@@ -169,7 +155,7 @@ end
             𝒬 = Array(interior(interface.fluxes.sensible_heat)) .+
                 Array(interior(interface.fluxes.latent_heat))
 
-            # `surface_energy_flux` is positive upward: turbulent plus net upward radiative.
+            # Positive upward: turbulent plus net upward radiative.
             Jᴱs = Array(interior(model.land.fluxes.surface_energy_flux))
             @test Jᴱs ≈ 𝒬 .+ ℐˡʷꜛ .+ ℐˡʷꜜ .+ (1 - α) .* ℐˢʷꜜ
         end
@@ -180,8 +166,6 @@ end
             tiled = TiledLandInterface(model.land.grid, model.atmosphere, model.land;
                                       vegetated = cas, fraction = 0.5)
 
-            # The mosaic radiates from its radiance-weighted blend, and the same
-            # `CanopyAirSpaceDiagnostics` signal keeps `apply_air_land_radiative_fluxes!` a no-op.
             @test radiating_temperature(tiled) === tiled.temperature.effective
             @test surface_temperature(tiled) === tiled.temperature.interface
         end

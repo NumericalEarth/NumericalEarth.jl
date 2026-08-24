@@ -1,26 +1,9 @@
 #####
-##### Surface radiation coupling for the Breeze RRTMGP `RadiativeTransferModel`.
-#####
-##### The RTM's surface-face downwelling fluxes are published to the interface radiation
-##### state every step, so every atmosphere-land formulation — bulk, skin, canopy-air-space —
-##### reads the same `(σ, α, ε, SW↓, LW↓)` contract it reads under a `PrescribedRadiation`.
-##### Breeze stores fluxes positive-up (downwelling components negative) while the interface
-##### contract wants positive-down magnitudes, so the exchange negates them.
-#####
-##### Formulations that do not internalize radiation (bulk, skin) then take the net upward
-##### surface radiative flux into the slab's `surface_energy_flux`,
-#####
-#####     ℐˡʷꜛ + ℐˡʷꜜ + (1 - α) ℐˢʷꜜ,
-#####
-##### with ℐˡʷꜛ = ε σ Tₛ⁴ - (1 - ε) ℐˡʷꜜ rebuilt from the live surface state, since the RTM's
-##### own upwelling longwave is stale between scheduled solves. Shortwave keeps only the
-##### absorbed fraction (1 - α): Breeze stores gross SW↓ with no upwelling field to read back.
-##### Exact for coincident direct/diffuse albedos — the coupled configuration.
+##### Surface radiation coupling for the Breeze RRTMGP `RadiativeTransferModel`. The RTM
+##### publishes its surface downwelling fluxes into the same interface radiation state a
+##### `PrescribedRadiation` fills. Breeze stores fluxes positive-up, so its downwelling
+##### components are negative where the interface contract wants positive-down magnitudes.
 ##### TODO: distinct direct/diffuse albedos need Breeze to expose the direct/diffuse SW↓ split.
-#####
-##### A `CanopyAirSpace` (or `TiledLandInterface`) internalizes the two-face split in its own
-##### solve and drives the slab through the skin→bulk conduction `Gᶜ`, so the add is a no-op
-##### there — the radiation reaches the land through the interface state alone.
 #####
 
 using Oceananigans.Fields: Center, Field
@@ -30,13 +13,9 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: CanopyAirSpaceDiag
 
 const BreezeRTM = Breeze.RadiativeTransferModel
 
-# Bind the interfaces' radiating temperature — the one whose ε σ T⁴ closes the surface
-# upwelling longwave, equal to the atmosphere-facing node only for single-source
-# formulations — into an RTM constructed without one. Explicit construction wins; with no
-# land interface, Breeze errors at first solve.
-# TODO: a canopy-air space folds the (1 - εᵛ) ground reflection into its `Teff`, so an RTM
-# emissivity below one double-counts reflected longwave by ~(1 - ε). Exact once Breeze takes
-# a per-surface emissivity, or a prescribed upwelling longwave, from the coupler.
+# Binds `Teff` for a canopy, not the canopy-air node the atmosphere ventilates into.
+# TODO: `Teff` already carries the ground reflection, so an RTM emissivity below one re-applies
+# it and over-counts by ~(1 - ε). Needs Breeze to accept a prescribed upwelling longwave.
 function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_temperature(rtm::BreezeRTM, interfaces)
     isnothing(rtm.surface_properties.surface_temperature) || return rtm
     Tˢ = radiating_temperature(interfaces)
@@ -44,9 +23,8 @@ function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_tempe
     return @set rtm.surface_properties.surface_temperature = Tˢ
 end
 
-# Exchange only the two downwelling fluxes the interface contract reads: passing the RTM's
-# solver internals into the flux kernel (what the generic two-argument `ComponentExchanger`
-# would do) cannot compile on GPU.
+# Without this method the two-argument `ComponentExchanger(state, regridder)` convenience
+# swallows the call and stores the RTM itself as exchange state.
 function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(::BreezeRTM, exchange_grid; kw...)
     state = (; ℐꜜˢʷ = Field{Center, Center, Nothing}(exchange_grid),
                ℐꜜˡʷ = Field{Center, Center, Nothing}(exchange_grid))
@@ -61,11 +39,8 @@ end
     end
 end
 
-# The atmosphere grid is index-identical horizontally to the exchange grid under the Breeze
-# coupling, so the surface faces `k = 1` copy straight across. Interior cells only, matching
-# the atmosphere-land flux kernel's own `:xy` launch — RRTMGP leaves its flux halos unfilled.
-# The first coupled `update_state!` runs before the atmosphere has ever solved, so the state
-# it publishes is dark; the first `time_step!` fills it.
+# The atmosphere grid is horizontally index-identical to the exchange grid under the Breeze
+# coupling, so the surface faces copy straight across.
 function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, rtm::BreezeRTM, coupled_model)
     launch!(architecture(exchange_grid), exchange_grid, :xy,
             _interpolate_breeze_radiation_state!,
@@ -75,9 +50,6 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     return nothing
 end
 
-# The RTM's own surface optics become the land's radiative properties, so a bulk or skin
-# solve closes its budget against exactly what RRTMGP used. A `CanopyAirSpace` supplies its
-# own per-source optics and reads only `σ` and the downwelling fluxes from here.
 function NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation_properties(rtm::BreezeRTM)
     FT = eltype(rtm.downwelling_shortwave_flux)
     ε = rtm.surface_properties.surface_emissivity
@@ -87,6 +59,9 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation
             surface_properties = (; land = SurfaceRadiationProperties(α, ε)))
 end
 
+# ℐˡʷꜛ is rebuilt from the live surface state: the RTM's own upwelling field is stale between
+# scheduled solves. Shortwave keeps only the absorbed fraction — Breeze stores gross SW↓ with
+# no upwelling field to read back.
 @kernel function _apply_breeze_air_land_radiative_fluxes!(Es, Tˢ, ε, σ, ℐˡʷꜜ, ℐˢʷꜜ, α)
     i, j = @index(Global, NTuple)
     @inbounds begin
@@ -107,10 +82,7 @@ function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
     al_interface = coupled_model.interfaces.atmosphere_land_interface
     isnothing(al_interface) && return nothing
 
-    # A canopy-air-space interface (single or tiled) internalizes the two-face longwave and
-    # shortwave split in its soil-skin balance — the slab is driven by the skin→bulk
-    # conduction, so no separate radiative contribution is added here. Mirrors the guard in
-    # the generic `apply_air_land_radiative_fluxes!`.
+    # A canopy (single or tiled) absorbs radiation inside its own solve; nothing is added here.
     al_interface.temperature isa CanopyAirSpaceDiagnostics && return nothing
 
     fluxes = land.fluxes

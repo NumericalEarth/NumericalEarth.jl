@@ -140,8 +140,7 @@ EarthSystemModels.surface_temperature(ti::TiledLandInterface) = interface_node_t
 EarthSystemModels.surface_temperature(ti::TiledLandInterface, ::Nothing) =
     EarthSystemModels.surface_temperature(ti)
 
-# Both tiles emit an LST, so the mosaic's radiating temperature is their radiance-weighted
-# blend (`_blend_tiled_land_fluxes!` forms it in T⁴ space).
+# The tiles' blend, formed in radiance space by `_blend_tiled_land_fluxes!`.
 EarthSystemModels.radiating_temperature(ti::TiledLandInterface) =
     interface_radiating_temperature(ti.temperature)
 EarthSystemModels.radiating_temperature(ti::TiledLandInterface, ::Nothing) =
