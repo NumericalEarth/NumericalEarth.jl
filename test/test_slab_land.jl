@@ -597,7 +597,7 @@ end
 @testset "Atmosphere-Land per-cell roughness and displacement fields" begin
     for arch in test_architectures
         grid = LatitudeLongitudeGrid(arch, Float64;
-                                     size = (2, 1, 1), latitude = (10, 11), longitude = (10, 12),
+                                     size = (2, 2, 1), latitude = (10, 11), longitude = (10, 12),
                                      z = (-1, 0), topology = (Bounded, Bounded, Bounded))
 
         h   = 10.0
@@ -699,7 +699,7 @@ end
         # guaranteed to be egal, so a field built on an identically-discretized grid is
         # accepted — it indexes the same cells.
         same_grid = LatitudeLongitudeGrid(arch, Float64;
-                                          size = (2, 1, 1), latitude = (10, 11),
+                                          size = (2, 2, 1), latitude = (10, 11),
                                           longitude = (10, 12), z = (-1, 0),
                                           topology = (Bounded, Bounded, Bounded))
         @test !isnothing(build(land_fluxes(set!(Field{Center, Center, Nothing}(same_grid), 0.03))))
