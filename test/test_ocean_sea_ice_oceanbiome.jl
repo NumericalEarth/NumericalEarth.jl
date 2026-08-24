@@ -31,18 +31,11 @@ using OceanBioME
         
         coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 
-        Oceananigans.TimeSteppers.update_state!(coupled_model)
-
-        # its getting set
         @test maximum(biogeochemistry.light_attenuation.surface_PAR.surface_shortwave) > 0
 
         set!(sea_ice.model, ℵ = 1, h = 10)
-
-        # for some reason we have to call this twice for it to work?
-        Oceananigans.TimeSteppers.update_state!(coupled_model)
         Oceananigans.TimeSteppers.update_state!(coupled_model)
 
-        # its post-ice masking
         @test maximum(biogeochemistry.light_attenuation.surface_PAR.surface_shortwave) == 0
     end
 end
