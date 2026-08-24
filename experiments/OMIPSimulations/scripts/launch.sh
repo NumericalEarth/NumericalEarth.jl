@@ -194,11 +194,13 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
                 for CATKE (1e-4 for RBVD). Adds "_bgnu<value>" to the run name.
                 Both are rejected by the closures that carry their own background
                 (simple/nori/kpp/nemo_tke).
-  IMEX_BCS      Whether the surface momentum flux and the bottom/immersed quadratic drag are
-                applied semi-implicitly (J = Fe + lambda * u_b, lambda in the vertical solver's
-                diagonal). Default: true. "false" applies all three explicitly, which is the
-                treatment the semi-implicit one replaced, and adds "_explicitbcs" to the run
-                name. The two differ most in shallow fast cells such as narrow straits.
+  IMEX_DRAG     Whether the bottom and immersed quadratic drag are applied semi-implicitly
+                (J = lambda * u_b with lambda = -mu |u| in the vertical solver's diagonal).
+                Default: true. "false" applies both explicitly, the treatment this replaced,
+                and adds "_explicitdrag" to the run name. The two differ most in shallow fast
+                cells such as narrow straits, where mu |u| dt / dz is order ten. This is the
+                change bisected to commit 3c60be3b. The surface momentum flux is always
+                semi-implicit and is not affected.
   BAROTROPIC_SUBSTEPS
                 Split-explicit substeps the free surface takes per DT. Default: unset, i.e. 200
                 for quarterdegree/twelfthdegree and 100 otherwise. The barotropic gravity wave
@@ -387,7 +389,7 @@ esac
 [[ -n "${BACKGROUND_K:-}" ]]                   && RUN_NAME="${RUN_NAME}_bgk${BACKGROUND_K}"
 [[ -n "${BACKGROUND_NU:-}" ]]                  && RUN_NAME="${RUN_NAME}_bgnu${BACKGROUND_NU}"
 [[ "${CHLOROPHYLL:-seawifs}" != "seawifs" ]]   && RUN_NAME="${RUN_NAME}_chl${CHLOROPHYLL}"
-[[ "${IMEX_BCS:-true}" == "false" ]]            && RUN_NAME="${RUN_NAME}_explicitbcs"
+[[ "${IMEX_DRAG:-true}" == "false" ]]            && RUN_NAME="${RUN_NAME}_explicitdrag"
 [[ -n "${PVEL:-}" ]]                           && RUN_NAME="${RUN_NAME}_pvel${PVEL}"
 
 REPORT_NAME="${REPORT_NAME:-${RUN_NAME}_report}"
@@ -483,7 +485,7 @@ CATKE_CWUSTAR="${CATKE_CWUSTAR:-}"
 BACKGROUND_K="${BACKGROUND_K:-}"
 BACKGROUND_NU="${BACKGROUND_NU:-}"
 BAROTROPIC_SUBSTEPS="${BAROTROPIC_SUBSTEPS:-}"
-IMEX_BCS="${IMEX_BCS:-true}"
+IMEX_DRAG="${IMEX_DRAG:-true}"
 CHLOROPHYLL="${CHLOROPHYLL:-seawifs}"
 BACKEND_SIZE="${BACKEND_SIZE:-}"
 NCAR="${NCAR:-false}"
@@ -526,8 +528,8 @@ BACKGROUND_NU_KWARG=""
 
 # The split-explicit free surface needs the barotropic gravity wave to stay inside a substep. The
 # per-config default is sized for the config default DT; raising DT needs proportionally more.
-IMEX_BCS_KWARG=""
-[[ "$IMEX_BCS" == "false" ]] && IMEX_BCS_KWARG="implicit_boundary_fluxes = false,"
+IMEX_DRAG_KWARG=""
+[[ "$IMEX_DRAG" == "false" ]] && IMEX_DRAG_KWARG="implicit_bottom_drag = false,"
 
 BAROTROPIC_SUBSTEPS_KWARG=""
 [[ -n "$BAROTROPIC_SUBSTEPS" ]] && BAROTROPIC_SUBSTEPS_KWARG="barotropic_substeps = ${BAROTROPIC_SUBSTEPS},"
@@ -668,7 +670,7 @@ sim = omip_simulation(:${CONFIG};
                       ${BACKGROUND_K_KWARG}
                       ${BACKGROUND_NU_KWARG}
                       ${BAROTROPIC_SUBSTEPS_KWARG}
-                      ${IMEX_BCS_KWARG}
+                      ${IMEX_DRAG_KWARG}
                       ${CHLOROPHYLL_KWARG}
                       ${NORMALIZE_SALINITY_KWARG}
                       ${RESTORING_UNDER_ICE_KWARG}

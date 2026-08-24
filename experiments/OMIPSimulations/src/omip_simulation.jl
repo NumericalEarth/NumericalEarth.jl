@@ -547,9 +547,10 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `Δt`: simulation time step. Per-config default: `5minutes` for `:twelfthdegree`, `20minutes` for
   `:quarterdegree`, `30minutes` otherwise.
 - `stop_time`: stop time for the wrapping `Simulation`. Default: `Inf`.
-- `implicit_boundary_fluxes::Bool`: if `true` (default), the surface momentum flux and the bottom and
-  immersed quadratic drag are affine fluxes `J = Fₑ + λ φᵦ` with `λ` in the vertical solver's diagonal.
-  `false` applies all three explicitly, the treatment this replaced, so the pair can be A/B'd.
+- `implicit_bottom_drag::Bool`: if `true` (default), the bottom and immersed quadratic drag are affine
+  fluxes `J = λ φᵦ` with `λ = -μ |u|` in the vertical solver's diagonal. `false` applies both
+  explicitly, the treatment this replaced, so the pair can be A/B'd. The two differ most in shallow
+  fast cells such as narrow straits, where the explicit stability number `μ |u| Δt / Δz` is order ten.
 - `barotropic_substeps`: number of split-explicit substeps the free surface takes per `Δt`. The
   barotropic gravity wave must stay inside a substep, so a refined grid or a longer `Δt` needs more;
   too few blows the free surface up on the first step. Per-config default: `200` for
@@ -636,7 +637,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          background_vertical_diffusivity = :henyey,
                          background_vertical_viscosity = nothing,
                          implicit_vertical_advection = true,
-                         implicit_boundary_fluxes = true,
+                         implicit_bottom_drag = true,
                          velocity_formulation = :relative,
                          Cᵂu★ = nothing,
                          with_snow = false,
@@ -749,7 +750,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                         background_vertical_diffusivity,
                         background_vertical_viscosity,
                         implicit_vertical_advection,
-                        implicit_boundary_fluxes,
+                        implicit_bottom_drag,
                         skew_flux_formulation,
                         restoring_under_sea_ice,
                         Cᵂu★,
@@ -1448,7 +1449,7 @@ function build_ocean(config, grid;
                      biharmonic_viscosity = nothing,
                      vertical_closure = :catke,
                      implicit_vertical_advection = true,
-                     implicit_boundary_fluxes = true,
+                     implicit_bottom_drag = true,
                      skew_flux_formulation = :diffusive,
                      nemo_eddy_coefficients = nothing,
                      cesm_eddy_coefficients = nothing,
@@ -1508,7 +1509,7 @@ function build_ocean(config, grid;
                              momentum_advection,
                              tracer_advection = WENO(order=7; minimum_buffer_upwind_order=3, time_discretization),
                              coriolis,
-                             implicit_boundary_fluxes,
+                             implicit_bottom_drag,
                              timestepper = :SplitRungeKutta3,
                              materialize_buoyancy_gradients = config_materialize_buoyancy_gradients(config),
                              free_surface = barotropic_free_surface(grid, barotropic_substeps, Δt),
