@@ -816,6 +816,42 @@ cadence — e.g. the surface companion of a pressure-level reanalysis product.
 function matching_single_level_dataset end
 
 """
+    minimum_horizontal_spacing(grid)
+
+Return the smallest horizontal cell spacing of `grid` in degrees — the finest scale a dataset
+has to resolve to fill every cell of `grid`. For a distributed grid the result is the global
+minimum, identically on every rank.
+"""
+function minimum_horizontal_spacing(grid)
+    Δλ = minimum(λspacings(grid, Center(), Center(), Center()))
+    Δφ = minimum(φspacings(grid, Center(), Center(), Center()))
+    return all_reduce(min, min(Δλ, Δφ), architecture(grid))
+end
+
+"""
+    matching_resolution_dataset(dataset, grid)
+
+Return the variant of `dataset` read at the coarsest resolution that still resolves `grid`, used
+by `Field(metadatum, grid)` to size the read to the target. Products distributed as very
+high-resolution rasters extend this so a continental window costs a decimated read rather than
+hundreds of gigabytes of native pixels; the default returns `dataset` unchanged, keeping the
+full-resolution read.
+
+Coarsening averages, so only continuous fields may extend this — a [`categorical`](@ref) dataset
+is refused.
+"""
+matching_resolution_dataset(dataset, grid) = dataset
+
+"""
+    categorical(dataset)
+
+Whether `dataset` stores class codes rather than continuous quantities. Averaging class codes is
+meaningless, so a categorical dataset is never read at a coarsened resolution: it is aggregated
+by counting instead, over its native pixels.
+"""
+categorical(dataset) = false
+
+"""
     dataset_variable_name(metadata)
 
 Return the name used for the variable `metadata.name` in its raw dataset file.

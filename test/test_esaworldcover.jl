@@ -16,7 +16,7 @@ using Oceananigans.Grids: λnodes, φnodes
 using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, native_grid,
                                     dataset_variable_name, validate_dataset_coverage,
                                     metadata_filename, is_three_dimensional,
-                                    missing_value, available_variables
+                                    missing_value, available_variables, categorical
 
 # The real COG read needs ArchGDAL, the anonymous S3 bucket, and network access,
 # so only the dataset-interface logic and the pure categorical-aggregation
@@ -155,6 +155,9 @@ end
     # rejected at construction rather than at download time.
     @test_throws MethodError ESAWorldCover(version = :v300)
     @test_throws ArgumentError ESAWorldCover(aggregation_factor = 0)
+
+    # Class codes are counted, never averaged, so the dataset refuses a coarsened read.
+    @test categorical(dataset)
 
     # Every published release carries its own year and cache token, so a new
     # release can't silently inherit another's S3 key.

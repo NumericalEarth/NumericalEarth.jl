@@ -347,6 +347,10 @@ end
 
 DataWrangling.available_variables(::ESAWorldCover) = ESAWorldCover_dataset_variable_names
 DataWrangling.default_download_directory(dataset::ESAWorldCover) = download_ESAWorldCover_cache
+
+# Every product here comes from counting class codes over the native pixels, the fractions
+# included, so no variable of this dataset may be read off an averaged lattice.
+DataWrangling.categorical(::ESAWorldCover) = true
 DataWrangling.longitude_interfaces(::ESAWorldCover) = (-180, 180)
 # WorldCover covers all land except Antarctica; northern limit ≈ 84°N.
 DataWrangling.latitude_interfaces(::ESAWorldCover)  = (-60, 84)

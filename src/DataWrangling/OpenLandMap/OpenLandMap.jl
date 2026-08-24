@@ -20,7 +20,7 @@ function __init__()
 end
 
 """
-    OpenLandMapSoilDB <: AbstractStaticDataset
+    OpenLandMapSoilDB(; aggregation_factor = nothing)
 
 OpenLandMap-soilDB global soil properties at 30 m (Hengl et al., 2026), predicted
 from spatiotemporal machine learning over Landsat/MODIS/Sentinel covariates.
@@ -30,6 +30,15 @@ Delivers static soil texture mass fractions (`:sand_fraction`, `:silt_fraction`,
 kg/m³) over the three native depth intervals 0–30, 30–60, and 60–100 cm — stored
 as a three-dimensional field whose vertical axis carries the depths (deepest
 first). Data are plain geographic EPSG:4326 so no reprojection is needed.
+
+`aggregation_factor` is the integer number of 30 m pixels reduced per side into one read cell.
+The default `nothing` sizes the read to the target: `Field(metadatum, grid)` picks the coarsest
+lattice that still oversamples `grid` twofold, and `Field(metadatum, arch)`, which has no target,
+reads at full resolution. An explicit factor pins the read lattice for both. Coarse reads come
+from the cloud-optimized GeoTIFFs' own average-resampled overview pyramid, so a continental
+window costs megabytes rather than the hundreds of gigabytes of 30 m pixels underneath it. Those
+levels are stored as bytes and built one from the next, so a coarse cell sits within a few
+percent of an exact mean of the 30 m pixels it covers rather than on it exactly.
 
 Because the global grid is ~1.44M × 528k cells, this dataset is read in regional
 windows only: construct the [`Metadatum`](@ref) with a longitude/latitude
@@ -55,9 +64,35 @@ metadatum.filename
 "OpenLandMap_clay_fraction_lon_-112.3_-111.9_lat_36.0_36.4.nc"
 ```
 """
-struct OpenLandMapSoilDB <: AbstractStaticDataset end
+struct OpenLandMapSoilDB{F} <: AbstractStaticDataset
+    aggregation_factor :: F
+end
+
+function OpenLandMapSoilDB(; aggregation_factor = nothing)
+    if !isnothing(aggregation_factor) && aggregation_factor < 1
+        throw(ArgumentError("OpenLandMapSoilDB aggregation_factor must be a positive number of " *
+                            "30 m pixels per read cell side, got $aggregation_factor"))
+    end
+    return OpenLandMapSoilDB(aggregation_factor)
+end
+
+Base.summary(::OpenLandMapSoilDB{Nothing}) = "OpenLandMapSoilDB()"
+Base.summary(dataset::OpenLandMapSoilDB) =
+    string("OpenLandMapSoilDB(aggregation_factor = ", dataset.aggregation_factor, ")")
+
+Base.show(io::IO, dataset::OpenLandMapSoilDB) = print(io, summary(dataset))
 
 const OpenLandMapSoilDBMetadatum = Metadatum{<:OpenLandMapSoilDB}
+
+"""
+    aggregation_factor(dataset)
+
+The number of native 30 m pixels reduced per side into one read cell. An unpinned dataset reads
+at full resolution unless [`DataWrangling.matching_resolution_dataset`](@ref) has matched it to a
+target grid.
+"""
+aggregation_factor(::OpenLandMapSoilDB{Nothing}) = 1
+aggregation_factor(dataset::OpenLandMapSoilDB) = dataset.aggregation_factor
 
 OpenLandMap_dataset_variable_names = Dict(
     :sand_fraction => "sand",
@@ -95,9 +130,46 @@ DataWrangling.default_download_directory(::OpenLandMapSoilDB) = download_OpenLan
 
 # True COG extent (EPSG:4326 cell faces); Δλ = Δφ = 0.00025°. Coverage is
 # latitudes −56° to 76°, not the full globe.
-Base.size(::OpenLandMapSoilDB, variable) = (1440004, 528004, 3)
-DataWrangling.longitude_interfaces(::OpenLandMapSoilDB) = (-180.0005, 180.0005)
-DataWrangling.latitude_interfaces(::OpenLandMapSoilDB)  = (-56.0005, 76.0005)
+const OpenLandMap_native_step = 0.00025
+const OpenLandMap_native_size = (1440004, 528004)
+const OpenLandMap_longitude_interfaces = (-180.0005, 180.0005)
+const OpenLandMap_latitude_interfaces = (-56.0005, 76.0005)
+
+"""
+    read_step(dataset)
+
+The cell size (degrees) `dataset` is read at: the 30 m native step times the aggregation factor.
+"""
+read_step(dataset::OpenLandMapSoilDB) = OpenLandMap_native_step * aggregation_factor(dataset)
+
+# A factor that does not divide the native cell count leaves a remainder too small to fill a read
+# cell. Blocks tile from the file origin, and the COGs run west-to-east and north-to-south, so
+# the remainder has to fall at the east and the south — hence the interfaces kept below.
+read_size(dataset::OpenLandMapSoilDB) = map(N -> fld(N, aggregation_factor(dataset)), OpenLandMap_native_size)
+
+Base.size(dataset::OpenLandMapSoilDB, variable) = (read_size(dataset)..., 3)
+
+function DataWrangling.longitude_interfaces(dataset::OpenLandMapSoilDB)
+    west, east = OpenLandMap_longitude_interfaces
+    aggregation_factor(dataset) == 1 && return (west, east)
+    return (west, west + read_size(dataset)[1] * read_step(dataset))
+end
+
+function DataWrangling.latitude_interfaces(dataset::OpenLandMapSoilDB)
+    south, north = OpenLandMap_latitude_interfaces
+    aggregation_factor(dataset) == 1 && return (south, north)
+    return (north - read_size(dataset)[2] * read_step(dataset), north)
+end
+
+# The coarsest lattice that still oversamples the target twofold — a bilinear regrid onto a 12 km
+# cell gains nothing from 30 m pixels, and the window shrinks with the square of the factor.
+# Powers of two land on the COGs' own pyramid, so the read copies the publisher's
+# average-resampled levels rather than resampling them again.
+function DataWrangling.matching_resolution_dataset(dataset::OpenLandMapSoilDB{Nothing}, grid)
+    pixels = DataWrangling.minimum_horizontal_spacing(grid) / (2 * OpenLandMap_native_step)
+    factor = pixels < 2 ? 1 : prevpow(2, floor(Int, pixels))
+    return OpenLandMapSoilDB(factor)
+end
 
 # Faces of the 60–100 / 30–60 / 0–30 cm intervals, increasing upward (m).
 DataWrangling.z_interfaces(::OpenLandMapSoilDB) = [-1.0, -0.6, -0.3, 0.0]
@@ -135,11 +207,15 @@ DataWrangling.inpainted_metadata_path(metadata::OpenLandMapSoilDBMetadatum) =
     joinpath(metadata.dir, replace(metadata.filename, ".nc" => "_inpainted.jld2"))
 
 #####
-##### Regional-window filename (variable + region)
+##### Regional-window filename (variable + aggregation factor + region)
 #####
 
-DataWrangling.metadata_filename(::OpenLandMapSoilDB, name, date, region) =
-    string("OpenLandMap_", name, "_", bounding_box_suffix(region), ".nc")
+# A full-resolution read carries no token, keeping the name it has always had.
+aggregation_suffix(dataset::OpenLandMapSoilDB) =
+    aggregation_factor(dataset) == 1 ? "" : string("_f", aggregation_factor(dataset))
+
+DataWrangling.metadata_filename(dataset::OpenLandMapSoilDB, name, date, region) =
+    string("OpenLandMap_", name, aggregation_suffix(dataset), "_", bounding_box_suffix(region), ".nc")
 
 function DataWrangling.validate_dataset_coverage(grid, metadata::OpenLandMapSoilDBMetadatum)
     region = metadata.region
@@ -169,11 +245,13 @@ function Downloads.download(metadatum::OpenLandMapSoilDBMetadatum)
 
     nc_path = metadata_path(metadatum)
     @root if !isfile(nc_path)
+        dataset = metadatum.dataset
         source = OpenLandMap_cog_sources[metadatum.name]
         sources = ["/vsicurl/" * cog_url(source, depth) for depth in OpenLandMap_depths]
         name = dataset_variable_name(metadatum)
-        @info "Downloading OpenLandMap-soilDB (30 m) $(metadatum.name) over $(summary(metadatum.region))..."
-        cog_window_to_netcdf(sources, nc_path, name, metadatum.region)
+        resolution = string(30 * aggregation_factor(dataset), " m")
+        @info "Downloading OpenLandMap-soilDB ($resolution) $(metadatum.name) over $(summary(metadatum.region))..."
+        cog_window_to_netcdf(sources, nc_path, name, metadatum.region, aggregation_factor(dataset))
     end
     return nc_path
 end
@@ -190,7 +268,7 @@ function DataWrangling.retrieve_data(metadata::OpenLandMapSoilDBMetadatum)
 end
 
 """
-    read_cog_window(source, bbox)
+    read_cog_window(source, bbox, factor = 1)
 
 Read the `bbox` longitude/latitude window from a single-band EPSG:4326
 cloud-optimized GeoTIFF `source`, decode raw integers to physical units (mask
@@ -198,48 +276,56 @@ nodata → `NaN`, then apply the band `scale`/`offset`), and return
 `(longitude, latitude, data)` with ascending, cell-center coordinates (latitude
 south-to-north, per CF convention).
 
+`factor` is the number of native pixels reduced per side into one returned cell. Above `1` the
+window is snapped to whole `factor`-pixel blocks and served from the COG's overview pyramid, so
+the values are averages of the underlying pixels and the read costs a fraction of the bytes.
+Averages only make sense for continuous fields — never read a class-code raster this way.
+
 Implemented in `ext/NumericalEarthArchGDALExt/openlandmap.jl` when ArchGDAL is loaded; the
 fallback below fires only when the extension is not active.
 """
-read_cog_window(source, bbox) =
+read_cog_window(source, bbox, factor = 1) =
     error("Reading OpenLandMap COGs requires the ArchGDAL package. Load it with `using ArchGDAL`.")
 
-# Window each depth COG in `sources` (deepest-first) over `bbox` and stack them
-# into a `(lon, lat, depth)` NetCDF at `nc_path`. All depths share one grid, so
-# the coordinate axes come from the first window.
-function cog_window_to_netcdf(sources, nc_path, variable_name, bbox)
-    windows   = [read_cog_window(source, bbox) for source in sources]
-    longitude = windows[1][1]
-    latitude  = windows[1][2]
-    Nx, Ny, Nz = length(longitude), length(latitude), length(windows)
-
-    data = Array{Float32}(undef, Nx, Ny, Nz)
-    for (k, (_, _, layer)) in enumerate(windows)
-        data[:, :, k] = layer
-    end
+# Window each depth COG in `sources` (deepest-first) over `bbox` and stack them into a
+# `(lon, lat, depth)` NetCDF at `nc_path`. All depths share one grid, so the coordinate axes come
+# from the first window. Layers are read and written one at a time, so the peak memory is one
+# window rather than every depth at once.
+function cog_window_to_netcdf(sources, nc_path, variable_name, bbox, factor = 1)
+    Nz = length(sources)
 
     # Interval midpoints (m) from the dataset's depth faces, deepest first.
     z = DataWrangling.z_interfaces(OpenLandMapSoilDB())
     depth_centers = Nz == length(z) - 1 ? (z[1:end-1] .+ z[2:end]) ./ 2 : collect(1.0:Nz)
 
     NCDataset(nc_path, "c") do ds
-        defDim(ds, "lon", Nx)
-        defDim(ds, "lat", Ny)
-        defDim(ds, "depth", Nz)
-
-        lon_var   = defVar(ds, "lon", Float64, ("lon",);
-                           attrib = ["units" => "degrees_east", "long_name" => "longitude"])
-        lat_var   = defVar(ds, "lat", Float64, ("lat",);
-                           attrib = ["units" => "degrees_north", "long_name" => "latitude"])
-        depth_var = defVar(ds, "depth", Float64, ("depth",);
-                           attrib = ["units" => "m", "long_name" => "depth interval midpoint"])
-        data_var  = defVar(ds, variable_name, Float32, ("lon", "lat", "depth"))
-
-        lon_var[:]        = longitude
-        lat_var[:]        = latitude
-        depth_var[:]      = depth_centers
-        data_var[:, :, :] = data
+        for (k, source) in enumerate(sources)
+            longitude, latitude, layer = read_cog_window(source, bbox, factor)
+            k == 1 && define_window_variables!(ds, variable_name, longitude, latitude, depth_centers)
+            ds[variable_name][:, :, k] = layer
+        end
     end
+
+    return nothing
+end
+
+# Lay out the (lon, lat, depth) axes and the data variable, and write the coordinates.
+function define_window_variables!(ds, variable_name, longitude, latitude, depth_centers)
+    defDim(ds, "lon", length(longitude))
+    defDim(ds, "lat", length(latitude))
+    defDim(ds, "depth", length(depth_centers))
+
+    lon_var   = defVar(ds, "lon", Float64, ("lon",);
+                       attrib = ["units" => "degrees_east", "long_name" => "longitude"])
+    lat_var   = defVar(ds, "lat", Float64, ("lat",);
+                       attrib = ["units" => "degrees_north", "long_name" => "latitude"])
+    depth_var = defVar(ds, "depth", Float64, ("depth",);
+                       attrib = ["units" => "m", "long_name" => "depth interval midpoint"])
+    defVar(ds, variable_name, Float32, ("lon", "lat", "depth"))
+
+    lon_var[:]   = longitude
+    lat_var[:]   = latitude
+    depth_var[:] = depth_centers
 
     return nothing
 end
