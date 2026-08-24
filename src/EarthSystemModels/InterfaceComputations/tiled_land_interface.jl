@@ -73,7 +73,7 @@ function bare_canopy_air_space(c::CanopyAirSpace; undercanopy_conductance = c.un
                                litter_resistance = nothing)
     FT = typeof(c.leaf_albedo)
     return CanopyAirSpace(c.soil, zero_leaf_area_index_canopy(c.canopy), c.soil_skin_flux,
-                          c.leaf_albedo, c.ground_albedo, c.canopy_emissivity_max, c.ground_emissivity,
+                          c.leaf_albedo, c.ground_albedo, c.max_canopy_emissivity, c.ground_emissivity,
                           c.extinction, c.clumping, c.leaf_boundary_conductance,
                           undercanopy_conductance_model(undercanopy_conductance, FT),
                           wet_soil_resistance, litter_resistance,

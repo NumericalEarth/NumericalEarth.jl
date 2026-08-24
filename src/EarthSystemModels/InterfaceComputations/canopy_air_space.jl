@@ -414,7 +414,7 @@ Fields:
 - `canopy` : the leaf vapor/photosynthesis branch (a [`CanopyConductanceHumidity`](@ref)).
 - `soil_skin_flux` : skin↔bulk conduction `Λᵍ = κᵀ/ℓᵀ` (a [`SoilConductiveFlux`](@ref)).
 - `leaf_albedo`, `ground_albedo` : broadband shortwave albedos.
-- `canopy_emissivity_max`, `ground_emissivity` : longwave emissivities (`εᵛ = εᵐᵃˣ(1 − e^{−LAI})`).
+- `max_canopy_emissivity`, `ground_emissivity` : longwave emissivities (`εᵛ = εᵐᵃˣ(1 − e^{−LAI})`).
 - `extinction`, `clumping` : Beer–Lambert `K`, `Ω` for the shortwave split.
 - `leaf_boundary_conductance` : per-leaf boundary-layer conductance `gᵇ` (m s⁻¹) →
   sensible `gˡʰ = ρcₚ·LAI·gᵇ`, vapor `gʷ = ρ·LAI·gᵇ` (in series with the stomata
@@ -444,7 +444,7 @@ struct CanopyAirSpace{S, C, RF, FT, U, W, L, I, Φ, ST}
     soil_skin_flux             :: RF
     leaf_albedo               :: FT
     ground_albedo             :: FT
-    canopy_emissivity_max     :: FT
+    max_canopy_emissivity     :: FT
     ground_emissivity         :: FT
     extinction                :: FT
     clumping                  :: FT
@@ -465,7 +465,7 @@ function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
                         soil_skin_flux             = SoilConductiveFlux(1.5, 0.05),
                         leaf_albedo               = 0.15,
                         ground_albedo             = 0.15,
-                        canopy_emissivity_max     = 0.98,
+                        max_canopy_emissivity     = 0.98,
                         ground_emissivity         = 0.96,
                         extinction                = 0.5,
                         clumping                  = 1,
@@ -481,7 +481,7 @@ function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
 
     return CanopyAirSpace(soil, canopy, soil_skin_flux,
                           convert(FT, leaf_albedo), convert(FT, ground_albedo),
-                          convert(FT, canopy_emissivity_max), convert(FT, ground_emissivity),
+                          convert(FT, max_canopy_emissivity), convert(FT, ground_emissivity),
                           convert(FT, extinction), convert(FT, clumping),
                           convert(FT, leaf_boundary_conductance),
                           undercanopy_conductance_model(undercanopy_conductance, FT),
@@ -504,7 +504,7 @@ Base.show(io::IO, c::CanopyAirSpace) =
 
 Adapt.adapt_structure(to, c::CanopyAirSpace) =
     CanopyAirSpace(adapt(to, c.soil), adapt(to, c.canopy), c.soil_skin_flux,
-                   c.leaf_albedo, c.ground_albedo, c.canopy_emissivity_max, c.ground_emissivity,
+                   c.leaf_albedo, c.ground_albedo, c.max_canopy_emissivity, c.ground_emissivity,
                    c.extinction, c.clumping, c.leaf_boundary_conductance,
                    c.undercanopy_conductance, c.wet_soil_resistance, c.litter_resistance,
                    c.inner_iterations, c.relaxation,
@@ -677,7 +677,7 @@ closes.
     σ   = Ψᵣ.σ
     SW  = Ψᵣ.ℐꜜˢʷ
     LWd = Ψᵣ.ℐꜜˡʷ
-    εᵛ = c.canopy_emissivity_max * (1 - exp(-LAI))
+    εᵛ = c.max_canopy_emissivity * (1 - exp(-LAI))
     εᵍ = c.ground_emissivity
     ftrans    = exp(-c.extinction * LAI * c.clumping)
     SWᵛ = (1 - c.leaf_albedo) * (1 - ftrans) * SW
