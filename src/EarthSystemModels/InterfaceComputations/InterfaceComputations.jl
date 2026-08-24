@@ -22,6 +22,8 @@ export
     PolynomialNeutralDragCoefficient,
     LargeYeagerTransferCoefficients,
     LinearStableStabilityFunction,
+    FreeConvectionMomentumStabilityFunction,
+    FreeConvectionScalarStabilityFunction,
     SkinTemperature,
     BulkTemperature,
     DiffusiveFlux,
