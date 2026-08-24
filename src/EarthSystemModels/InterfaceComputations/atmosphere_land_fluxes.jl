@@ -149,14 +149,16 @@ end
 
     # Exported scales at the step-mean node (the same floored transfer coefficients
     # the node balance uses), so −ρ cᵖ u★ θ★ = gᵃʰ (T̄ − θᵃᵗ) and the vapor analog.
-    θᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
+    # `InterfaceFluxScales` fields share one type: convert, since the thermodynamic
+    # constants (and hence θᵃᵗ) may carry a wider float type than the state.
+    θᵃᵗ = convert(FT, surface_atmosphere_temperature(Ψₐ, ℙₐ))
     χθ⁺ = max(zero(FT), Ψₛ.fluxes.χθ)
     χq⁺ = max(zero(FT), Ψₛ.fluxes.χq)
     fluxes = InterfaceFluxScales(Ψₛ.fluxes.u★,
-                                 χθ⁺ * (θᵃᵗ - T̄),
-                                 χq⁺ * (Ψₐ.q - q̄),
+                                 convert(FT, χθ⁺ * (θᵃᵗ - T̄)),
+                                 convert(FT, χq⁺ * (Ψₐ.q - q̄)),
                                  Ψₛ.fluxes.χθ, Ψₛ.fluxes.χq)
-    return rebuild_interface_state(Ψₛ, fluxes, T⁺, q⁺)
+    return rebuild_interface_state(Ψₛ, fluxes, convert(FT, T⁺), convert(FT, q⁺))
 end
 
 # A prognostic energy-balance skin reads its stored temperature back from the
@@ -202,9 +204,9 @@ end
     u★  = Ψₛ.fluxes.u★
     χθ⁺ = max(zero(FT), Ψₛ.fluxes.χθ)
     χq⁺ = max(zero(FT), Ψₛ.fluxes.χq)
-    Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
+    Tᵃᵗ = convert(FT, surface_atmosphere_temperature(Ψₐ, ℙₐ))
     q⁺  = compute_interface_humidity(ℙₛ.specific_humidity_formulation, T⁺, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
-    fluxes = InterfaceFluxScales(u★, χθ⁺ * (Tᵃᵗ - T⁺), χq⁺ * (Ψₐ.q - q⁺),
+    fluxes = InterfaceFluxScales(u★, convert(FT, χθ⁺ * (Tᵃᵗ - T⁺)), convert(FT, χq⁺ * (Ψₐ.q - q⁺)),
                                  Ψₛ.fluxes.χθ, Ψₛ.fluxes.χq)
     return rebuild_interface_state(Ψₛ, fluxes, convert(FT, T⁺), convert(FT, q⁺))
 end
