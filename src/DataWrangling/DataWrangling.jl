@@ -26,9 +26,10 @@ using Oceananigans: Oceananigans, pretty_filesize, location
 using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
                                   on_architecture, child_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
-using Oceananigans.DistributedComputations: DistributedComputations, @root
-using Oceananigans.Grids: AbstractGrid, Center, Face, Flat, Bounded,
-                          LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes
+using Oceananigans.DistributedComputations: DistributedComputations, @root, all_reduce
+using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
+                          LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes,
+                          topology, x_domain, y_domain, z_domain
 using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
 using Oceananigans.Grids: node
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
@@ -265,6 +266,7 @@ Base.size(dataset::AbstractStaticBathymetry, variable) = size(dataset)
 # Fundamentals
 include("metadata.jl")
 include("set_region_data.jl")
+include("field_cache.jl")
 include("metadata_field.jl")
 include("dataset_backend.jl")
 include("metadata_field_time_series.jl")

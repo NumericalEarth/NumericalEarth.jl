@@ -151,19 +151,19 @@ end
 
         # Off the clamp boundaries: a partially-full store draining/filling.
         set!(land; canopy_water_storage = 0.5 * c * LAI)
-        update_state!(model)   # refresh E_wet with the reset store
+        update_state!(model)   # refresh Eʷ with the reset store
 
         rain          = scalar(land.fluxes.liquid_precipitation_flux)   # raw rain the step will read
-        Ewet_demanded = scalar(land.fluxes.canopy_evaporation)          # interface E_wet the step will consume
+        Ewet_demanded = scalar(land.fluxes.canopy_evaporation)          # interface Eʷ the step will consume
 
         time_step!(model, Δt)
 
         dWcdt    = scalar(land.diagnostics.canopy_water_storage_tendency)
         throughf = scalar(land.diagnostics.throughfall)
         Ewet     = scalar(land.diagnostics.wet_canopy_evaporation)   # *realized* store loss
-        # Exact canopy water budget: rain = dWᶜ/dt + E_wet + throughfall (any regime, any Δt).
+        # Exact canopy water budget: rain = dWᶜ/dt + Eʷ + throughfall (any regime, any Δt).
         @test rain ≈ dWcdt + Ewet + throughf atol=1e-14
-        # No over-drain here ⇒ realized loss equals the interface-demanded E_wet (read pre-step,
+        # No over-drain here ⇒ realized loss equals the interface-demanded Eʷ (read pre-step,
         # since update_net_fluxes! refreshes the accumulator with the new Wᶜ afterward).
         @test Ewet ≈ Ewet_demanded atol=1e-14
         # Interception caught a positive fraction ⇒ less than the raw rain reaches the soil.
@@ -175,7 +175,7 @@ end
     for arch in test_architectures
         FT = Float64
         LAI = 3.0; c = 0.1
-        # No rain, large step: the lagged interface E_wet can demand more than the store holds.
+        # No rain, large step: the lagged interface Eʷ can demand more than the store holds.
         model = interception_model(arch, FT; leaf_area_index = LAI, capacity = c, rain = 0.0)
         land = model.land
         set!(land; canopy_water_storage = 0.8 * c * LAI)
@@ -225,23 +225,23 @@ end
 end
 
 @testset "Smoothed drainage is C¹ across the drip onset" begin
-    Δt = 600.0; Wᶜᵐᵃˣ = 0.3; f_int = 1 - exp(-0.5 * 3 * 1)
+    Δt = 600.0; Wᶜᵐᵃˣ = 0.3; fⁱⁿᵗ = 1 - exp(-0.5 * 3 * 1)
     store = NumericalEarth.Lands.canopy_store_update
     Wᶜ = 0.28                                   # near capacity so a rain sweep crosses the cap
-    rain_star = (Wᶜᵐᵃˣ - Wᶜ) / (Δt * f_int)     # rain that just fills the canopy
+    rain★ = (Wᶜᵐᵃˣ - Wᶜ) / (Δt * fⁱⁿᵗ)     # rain that just fills the canopy
 
     # One-sided finite-difference derivatives of Wᶜⁿ⁺¹ w.r.t. rain, just below/above onset.
     δ = 1e-7
-    dWc(rain, w) = (store(Wᶜ, rain + δ, 6e-6, Wᶜᵐᵃˣ, f_int, w, Δt)[1] -
-                    store(Wᶜ, rain - δ, 6e-6, Wᶜᵐᵃˣ, f_int, w, Δt)[1]) / 2δ
+    dWc(rain, w) = (store(Wᶜ, rain + δ, 6e-6, Wᶜᵐᵃˣ, fⁱⁿᵗ, w, Δt)[1] -
+                    store(Wᶜ, rain - δ, 6e-6, Wᶜᵐᵃˣ, fⁱⁿᵗ, w, Δt)[1]) / 2δ
 
-    jump_hard   = abs(dWc(rain_star + 1e-5, 0.0)  - dWc(rain_star - 1e-5, 0.0))
-    jump_smooth = abs(dWc(rain_star + 1e-5, 0.03) - dWc(rain_star - 1e-5, 0.03))
+    jump_hard   = abs(dWc(rain★ + 1e-5, 0.0)  - dWc(rain★ - 1e-5, 0.0))
+    jump_smooth = abs(dWc(rain★ + 1e-5, 0.03) - dWc(rain★ - 1e-5, 0.03))
 
     @test jump_hard > 100                        # sharp cap: derivative discontinuous at onset
     @test jump_smooth < 0.25 * jump_hard         # width 0.03 tames it → continuous adjoint
     # Sanity: both are conservative and bounded.
-    Wn, _, _, _ = store(Wᶜ, 5rain_star, 6e-6, Wᶜᵐᵃˣ, f_int, 0.03, Δt)
+    Wn, _, _, _ = store(Wᶜ, 5rain★, 6e-6, Wᶜᵐᵃˣ, fⁱⁿᵗ, 0.03, Δt)
     @test 0 ≤ Wn ≤ Wᶜᵐᵃˣ
 end
 

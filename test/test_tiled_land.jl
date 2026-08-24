@@ -7,7 +7,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyAirSpace, CanopyConductanceHumidity, DryLayerHumidity, StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity, ConstantTortuosity, CriticalSaturation, InteractiveAbsorbedPAR,
     SoilConductiveFlux, TiledLandInterface, bare_canopy_air_space, leaf_area_index_cover_fraction,
-    SimilarityTheoryFluxes, atmosphere_land_stability_functions
+    SimilarityTheoryFluxes, atmosphere_land_stability_functions, CanopyAirSpaceDiagnostics
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
 using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
@@ -69,7 +69,7 @@ scalar(field) = Array(interior(field))[1, 1, 1]
         # --- Blended output is finite, physical, and drives the slab by conduction. ---
         model = tiled_land_model(arch, cas; fraction = 0.6)
         ti = model.interfaces.atmosphere_land_interface
-        @test ti.temperature isa NamedTuple
+        @test ti.temperature isa CanopyAirSpaceDiagnostics
 
         𝒬ᵀ = scalar(ti.fluxes.sensible_heat)
         𝒬ᵛ = scalar(ti.fluxes.latent_heat)
@@ -78,7 +78,7 @@ scalar(field) = Array(interior(field))[1, 1, 1]
         @test all(isfinite, (𝒬ᵀ, 𝒬ᵛ, Gᶜ, Tᵉ))
         @test 285 < scalar(ti.temperature.interface) < 320
 
-        # Slab driven by the blended skin→bulk conduction, Es = −Gcond (radiation
+        # Slab driven by the blended skin→bulk conduction, Es = −Gᶜ (radiation
         # internalized per tile ⇒ apply_air_land_radiative_fluxes! adds nothing).
         Es = scalar(model.land.fluxes.surface_energy_flux)
         @test Es ≈ -Gᶜ atol = 1e-10
@@ -109,9 +109,12 @@ scalar(field) = Array(interior(field))[1, 1, 1]
         @test scalar(bare.temperature.canopy_latent_heat) == 0
         @test scalar(bare.temperature.canopy_sensible_heat) == 0
 
-        # Sunlit veg tile: shaded soil skin cooler than the leaf; more latent than the bare tile.
+        # Sunlit veg tile: shaded soil skin cooler than the leaf; transpiration dominates the
+        # tile's latent flux; and the shaded, litter-covered ground evaporates far less than
+        # the sunlit bare tile.
         @test scalar(veg.temperature.soil_skin) < scalar(veg.temperature.canopy)
-        @test scalar(veg.fluxes.latent_heat) > scalar(bare.fluxes.latent_heat)
+        @test scalar(veg.temperature.canopy_latent_heat) > scalar(veg.temperature.soil_latent_heat)
+        @test scalar(veg.temperature.soil_latent_heat) < scalar(bare.temperature.soil_latent_heat)
 
         # --- Endpoint reduction: f=1 → veg tile, f=0 → bare tile (bit-for-bit). ---
         m1 = tiled_land_model(arch, cas; fraction = 1.0)

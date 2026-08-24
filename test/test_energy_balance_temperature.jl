@@ -5,7 +5,7 @@ using Oceananigans
 using Oceananigans: set!, interior
 using Oceananigans.TimeSteppers: update_state!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    EnergyBalanceTemperature, SoilSkin, SoilSkinTemperature, SkinTemperature,
+    EnergyBalanceTemperature, SoilSkin, SoilSkinTemperature, SkinTemperature, DiagnosticSkin,
     BulkTemperature, SoilConductiveFlux, FractionalHumidity,
     balance_conductance, compute_interface_temperature,
     AirLandInterfaceState, InterfaceFluxScales, InterfaceVelocities
@@ -36,25 +36,27 @@ end
 
 @testset "EnergyBalanceTemperature (SoilSkin)" begin
     for arch in test_architectures
-        # The SoilSkin instance is behaviorally identical to the equivalent
-        # SkinTemperature(SoilConductiveFlux(...)), bit-for-bit.
-        Tin_ebt   = interface_temperature(arch, SoilSkinTemperature(1.5, 0.05); Tair=290.0, Tland=300.0, efficiency=1.0)
+        # With DiagnosticSkin storage the SoilSkin instance closes the same massless
+        # balance as the equivalent SkinTemperature(SoilConductiveFlux(...)). Not
+        # bit-for-bit: this path Newtons the residual, carrying the radiative and vapor
+        # feedbacks the other's Picard step freezes at the previous iterate.
+        Tin_ebt   = interface_temperature(arch, SoilSkinTemperature(1.5, 0.05; storage=DiagnosticSkin()); Tair=290.0, Tland=300.0, efficiency=1.0)
         Tin_skinT = interface_temperature(arch, SkinTemperature(SoilConductiveFlux(1.5, 0.05); max_ΔT=50.0);
                                           Tair=290.0, Tland=300.0, efficiency=1.0)
-        @test Tin_ebt == Tin_skinT
+        @test Tin_ebt ≈ Tin_skinT atol=1e-4
 
-        # Λⁱⁿ → ∞ recovers BulkTemperature.
-        @test isapprox(interface_temperature(arch, SoilSkinTemperature(1e7, 0.05); Tair=290.0, Tland=300.0, efficiency=1.0),
+        # Λᵍ → ∞ recovers BulkTemperature.
+        @test isapprox(interface_temperature(arch, SoilSkinTemperature(1e7, 0.05; storage=DiagnosticSkin()); Tair=290.0, Tland=300.0, efficiency=1.0),
                        300.0; atol=1e-2)
 
         # Evaporating surface: skin cooler than the bulk.
-        @test interface_temperature(arch, SoilSkinTemperature(1.5, 0.05); Tair=290.0, Tland=300.0, efficiency=1.0) < 300.0
+        @test interface_temperature(arch, SoilSkinTemperature(1.5, 0.05; storage=DiagnosticSkin()); Tair=290.0, Tland=300.0, efficiency=1.0) < 300.0
     end
 
     # Conductance accessor and type stability.
     for FT in (Float32, Float64)
         @test balance_conductance(SoilSkin(), SoilConductiveFlux(FT(1.5), FT(0.05))) == FT(30)
-        t = SoilSkinTemperature(FT(1.5), FT(0.05))
+        t = SoilSkinTemperature(FT(1.5), FT(0.05); storage=DiagnosticSkin())
         Ψₛ = AirLandInterfaceState(InterfaceFluxScales(FT(0.3), FT(0.1), FT(-2e-4)),
                                    InterfaceVelocities(FT(0), FT(0)),
                                    FT(300), FT(8e-3), (saturation=FT(0.6),), (temperature=FT(300),))
@@ -62,8 +64,10 @@ end
         Ψₐ = (T=FT(290), p=FT(1e5), q=FT(6e-3), z=FT(10))
         ℙₐ = (thermodynamics_parameters=AtmosphereThermodynamicsParameters(FT), gravitational_acceleration=FT(9.81))
         rad = (σ=FT(0), α=FT(0), ϵ=FT(0), ℐꜜˢʷ=FT(0), ℐꜜˡʷ=FT(0))
-        T★ = compute_interface_temperature(t, Ψₛ, Ψₐ, Ψᵢ, rad, (;), ℙₐ, (;))
+        q_form = FractionalHumidity(AtmosphericThermodynamics.Liquid(); efficiency=FT(1))
+        ℙₛ = (specific_humidity_formulation=q_form,)
+        T★ = compute_interface_temperature(t, Ψₛ, Ψₐ, Ψᵢ, rad, ℙₛ, ℙₐ, (;))
         @test eltype(T★) == FT
-        @inferred compute_interface_temperature(t, Ψₛ, Ψₐ, Ψᵢ, rad, (;), ℙₐ, (;))
+        @inferred compute_interface_temperature(t, Ψₛ, Ψₐ, Ψᵢ, rad, ℙₛ, ℙₐ, (;))
     end
 end

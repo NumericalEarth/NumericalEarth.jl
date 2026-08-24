@@ -14,8 +14,8 @@ using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 # Build a coupled single-column model, solve the interface, and return the skin
 # (interface) temperature together with the turbulent flux sum and the conductive
-# flux Λⁱⁿ(Tˡᵃ − Tⁱⁿ). With radiation off the diagnostic skin balance reduces to
-# Λⁱⁿ(Tˡᵃ − Tⁱⁿ) = 𝒬ᵀ + 𝒬ᵛ, so the two must agree at convergence.
+# flux Λᵍ(Tˡᵃ − Tᵍ). With radiation off the diagnostic skin balance reduces to
+# Λᵍ(Tˡᵃ − Tᵍ) = 𝒬ᵀ + 𝒬ᵛ, so the two must agree at convergence.
 function skin_column(arch; temperature, Tair, Tland, efficiency, conductivity=1.5, thickness=0.05)
     FT = Float64
     grid = LatitudeLongitudeGrid(arch, FT; size=1, latitude=10, longitude=10,
@@ -49,7 +49,7 @@ end
         Tin_bulk, _, _ = skin_column(arch; temperature=BulkTemperature(), Tair=290.0, Tland=300.0, efficiency=1.0)
         @test Tin_bulk ≈ 300.0
 
-        # Λⁱⁿ → ∞ recovers BulkTemperature (skin pinned to the bulk).
+        # Λᵍ → ∞ recovers BulkTemperature (skin pinned to the bulk).
         Tin_stiff, _, _ = skin_column(arch; temperature=skin(1e7), Tair=290.0, Tland=300.0, efficiency=1.0)
         @test isapprox(Tin_stiff, 300.0; atol=1e-2)
 

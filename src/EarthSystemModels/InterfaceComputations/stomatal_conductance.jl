@@ -1,8 +1,9 @@
 #####
-##### Stomatal conductance models, behind one dispatch seam. `MedlynConductance`
-##### (default) is photosynthesis-coupled and solved iteratively;
-##### `JarvisConductance` is a closed-form empirical multiplicative form that needs
-##### no photosynthesis. `stomatal_conductance` dispatches on the model.
+##### Stomatal conductance models, behind one dispatch seam. `JarvisConductance`
+##### (default) is a closed-form empirical multiplicative form that needs no
+##### photosynthesis; `MedlynConductance` is photosynthesis-coupled, with the
+##### intercellular CO₂ given in closed form by its own optimality ratio.
+##### `stomatal_conductance` dispatches on the model.
 #####
 
 abstract type AbstractStomatalConductance end
@@ -15,7 +16,8 @@ abstract type AbstractStomatalConductance end
     struct MedlynConductance
 
 Photosynthesis-coupled optimality stomatal conductance of
-[Medlyn et al. (2011)](@cite medlyn2011),
+[Medlyn et al. (2011)](@cite medlyn2011), in the corrected form of the
+[2012 corrigendum](@cite medlyn2012corrigendum) (which supplies the 1.6 factor),
 
     gₛ = g₀ + 1.6 (1 + g₁/√VPD) Aₙ / cₐ ,
 
@@ -52,36 +54,27 @@ conductance `g₀` rather than driving `gₛ` negative.
 end
 
 """
-    stomatal_conductance(conductance, photosynthesis, APAR, VPD, Tₗ, ca, P, β; iterations=12)
+    stomatal_conductance(conductance, photosynthesis, APAR, VPD, Tₗ, ca, P, β)
 
 Leaf stomatal conductance `gₛ` (mol H₂O m⁻² s⁻¹), dispatched on the conductance
-model. For [`MedlynConductance`](@ref) this solves the coupled Farquhar–Medlyn
-system: photosynthesis sets `Aₙ(ci)`, Medlyn sets `gₛ(Aₙ)`, and CO₂ diffusion
-closes the loop, `ci = cₐ − 1.6 Aₙ/gₛ`. A short damped fixed-point on `ci` (fixed
-iteration count — allocation-free, GPU- and AD-safe) is used instead of an
-implicit solve; it converges in a few iterations for the physiological range. For
-[`JarvisConductance`](@ref) `gₛ` is a closed-form product of environmental
-factors, `photosynthesis` is unused, and no iteration runs. `ca` is the
+model. For [`MedlynConductance`](@ref) the Farquhar–Medlyn system closes in one
+pass: substituting the Medlyn `gₛ` into the CO₂ diffusion relation
+`ci = cₐ − 1.6 Aₙ/gₛ` cancels the assimilation, leaving the optimality ratio
+
+    ci / cₐ = g₁ / (g₁ + √VPD) ,
+
+so photosynthesis is evaluated once at that `ci` — no fixed point, exact up to
+the cuticular minimum `g₀`. For [`JarvisConductance`](@ref) `gₛ` is a closed-form
+product of environmental factors and `photosynthesis` is unused. `ca` is the
 atmospheric CO₂ partial pressure (Pa) and `P` the air pressure (Pa). Returns
 `(gₛ, Aₙ, ci)` (`Aₙ = ci = 0` for Jarvis).
 """
 @inline function stomatal_conductance(c::MedlynConductance, photosynthesis,
-                                      APAR, VPD, Tₗ, ca, P, β; iterations=12)
-    χa      = ca / P                # ambient CO₂ mole fraction
-    ci      = oftype(ca, 0.7) * ca  # initial intercellular CO₂ (Pa)
-    damping = oftype(ca, 0.5)
-    An      = zero(ca)
-    gs      = c.g0
-
-    for _ in 1:iterations
-        An = net_assimilation(photosynthesis, ci, APAR, Tₗ, P, β)
-        gs = medlyn_conductance(c, An, VPD, χa)
-        χi★ = χa - c.diffusivity_ratio * An / gs
-        # Keep ci in the physical band (Γstar-ish floor, ≤ cₐ) and damp the update.
-        ci★ = clamp(χi★, oftype(ca, 1e-6), χa) * P
-        ci = ci + damping * (ci★ - ci)
-    end
-
+                                      APAR, VPD, Tₗ, ca, P, β)
+    χa = ca / P                        # ambient CO₂ mole fraction
+    ci = ca * c.g1 / (c.g1 + sqrt(VPD))
+    An = net_assimilation(photosynthesis, ci, APAR, Tₗ, P, β)
+    gs = medlyn_conductance(c, An, VPD, χa)
     return gs, An, ci
 end
 
@@ -96,14 +89,16 @@ Empirical multiplicative stomatal conductance after Jarvis (1976) / Stewart
 (1988): a maximum conductance reduced by independent environmental stress
 factors,
 
-    gₛ = gₛ,max · f_PAR(APAR) · f_VPD(VPD) · f_T(Tₗ) · β ,
+    gₛ = gₛ,max · fᴾᴬᴿ(APAR) · fⱽᴾᴰ(VPD) · fᵀ(Tₗ) · β ,
 
 with `gₛ`, `gₛ,max` in mol H₂O m⁻² s⁻¹. Unlike [`MedlynConductance`](@ref) it is
 not coupled to photosynthesis, so it is closed-form (no iteration, no Farquhar
 call) — cheap and a trivial reverse-mode adjoint, adequate for weather-timescale
 runs. The soil-moisture factor is the same `β(𝒮)` the interface already forms.
-Defaults follow the Noilhan & Planton (1989) / Noah tables (`gₛ,max ≈ 0.4`
-corresponds to a minimum stomatal resistance `Rsmin ≈ 100 s m⁻¹`).
+The temperature factor is Noah's `1 − 0.0016 (298 − T)²` form (after Noilhan &
+Planton 1989). `gₛ,max = 0.4` corresponds to a minimum stomatal resistance
+`Rsmin ≈ 100 s m⁻¹`, Noah's deciduous-forest value; its grass/crop tables use
+`40 s m⁻¹` (≈ 1 mol m⁻² s⁻¹).
 
 Fields:
 - `maximum_conductance`   : unstressed maximum conductance (mol m⁻² s⁻¹).
@@ -148,7 +143,7 @@ Base.show(io::IO, c::JarvisConductance) = print(io, summary(c),
 end
 
 @inline function stomatal_conductance(c::JarvisConductance, photosynthesis,
-                                      APAR, VPD, Tₗ, ca, P, β; kw...)
+                                      APAR, VPD, Tₗ, ca, P, β)
     fPAR = jarvis_light_factor(c, APAR)
     fVPD = jarvis_vpd_factor(c, VPD)
     fT   = jarvis_temperature_factor(c, Tₗ)

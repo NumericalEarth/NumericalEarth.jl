@@ -99,17 +99,17 @@ end
                                z = (-1, 0),
                                topology = (Flat, Flat, Bounded))
 
-        Cdry = CenterField(grid)
-        Cl   = CenterField(grid)
+        cᵈʳʸ = CenterField(grid)
+        cˡ   = CenterField(grid)
         Wmax = CenterField(grid)
 
-        fill!(Cdry, 8)
-        fill!(Cl, 2)
+        fill!(cᵈʳʸ, 8)
+        fill!(cˡ, 2)
         fill!(Wmax, 12)
 
         energy = SlabEnergy(eltype(grid);
-                            dry_heat_capacity = Cdry,
-                            liquid_heat_capacity = Cl)
+                            dry_heat_capacity = cᵈʳʸ,
+                            liquid_heat_capacity = cˡ)
         hydrology = BucketHydrology(eltype(grid); maximum_water_storage = Wmax)
 
         land = SlabLand(grid; energy, hydrology)
@@ -396,6 +396,60 @@ end
 
         # Restoring from `nothing` is a no-op that returns the land.
         @test restore_prognostic_state!(land, nothing) === land
+    end
+end
+
+@testset "SlabLand coupled checkpoint round-trip" begin
+    # The coupler-written forcing fields (`land.fluxes`) are computed at the end
+    # of each coupled step and consumed by the next `time_step!(land, Δt)`, so a
+    # restored model must carry them to be step-for-step identical to the
+    # uninterrupted run.
+    using Oceananigans.TimeSteppers: time_step!
+    using NumericalEarth.Atmospheres: PrescribedAtmosphere
+    using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
+    using NumericalEarth.Lands: BucketHydrology, SlabEnergy
+
+    function coupled_slab_model(arch)
+        grid = LatitudeLongitudeGrid(arch, Float64; size = 1, latitude = 10, longitude = 10,
+                                     z = (-1, 0), topology = (Flat, Flat, Bounded))
+        atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10, boundary_layer_height = 512)
+        fill!(parent(atmosphere.temperature), 300.0)
+        fill!(parent(atmosphere.specific_humidity), 0.008)
+        fill!(parent(atmosphere.velocities.u), 3.0)
+        fill!(parent(atmosphere.pressure), 101325.0)
+        land = SlabLand(grid; hydrology = BucketHydrology(Float64; maximum_water_storage = 150.0),
+                        energy = SlabEnergy(Float64))
+        set!(land; T = 298.0)
+        fill!(parent(land.water_storage), 90.0)
+        radiation = PrescribedRadiation(grid; ocean_surface = nothing, sea_ice_surface = nothing,
+                                        land_surface = SurfaceRadiationProperties(0.2, 0.95))
+        fill!(parent(radiation.downwelling_shortwave), 600.0)
+        fill!(parent(radiation.downwelling_longwave), 350.0)
+        update_state!(radiation)
+        model = AtmosphereLandModel(atmosphere, land; radiation)
+        update_state!(model.land)
+        update_state!(model)
+        return model
+    end
+
+    for arch in test_architectures
+        m1 = coupled_slab_model(arch)
+        m2 = coupled_slab_model(arch)
+        for _ in 1:6
+            time_step!(m1, 300.0)
+        end
+        restore_prognostic_state!(m2, deepcopy(prognostic_state(m1)))
+        for _ in 1:6
+            time_step!(m1, 300.0)
+            time_step!(m2, 300.0)
+        end
+        v(f) = Array(interior(f))[1, 1, 1]
+        @test v(m2.land.temperature) ≈ v(m1.land.temperature)
+        @test v(m2.land.water_storage) ≈ v(m1.land.water_storage)
+        @test v(m2.interfaces.atmosphere_land_interface.fluxes.latent_heat) ≈
+              v(m1.interfaces.atmosphere_land_interface.fluxes.latent_heat)
+        @test v(m2.interfaces.atmosphere_land_interface.fluxes.sensible_heat) ≈
+              v(m1.interfaces.atmosphere_land_interface.fluxes.sensible_heat)
     end
 end
 

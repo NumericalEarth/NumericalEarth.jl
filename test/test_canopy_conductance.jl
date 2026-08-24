@@ -57,11 +57,15 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
 
         @test gs_ref > cond.g0
         @test An_ref > 0
-        @test photo.Γstar25 < ci_ref < ca          # intercellular CO₂ in physical band
+        @test photo.Γ★25 < ci_ref < ca          # intercellular CO₂ in physical band
         @test gs_dry < gs_ref                    # higher VPD closes stomata
         @test gs_str < gs_ref                    # moisture stress closes stomata
         @test gs_drk ≈ cond.g0 atol=1e-3         # no light → minimum conductance
         @test eltype(gs_ref) == FT
+
+        # The intercellular CO₂ is the closed-form Medlyn optimality ratio.
+        @test ci_ref ≈ ca * cond.g1 / (cond.g1 + sqrt(FT(1000)))
+        @inferred stomatal_conductance(cond, photo, FT(1e-3), FT(1000), Tₗ, ca, P, FT(1))
     end
 end
 
@@ -71,11 +75,11 @@ end
 
 @testset "Peaked Arrhenius + Heskel respiration" begin
     for FT in (Float32, Float64)
-        T25 = FT(298.15)
+        T₂₅ = FT(298.15)
 
         # Normalization: both scalings are 1 at 25 °C.
-        @test peaked_arrhenius(T25, FT(71513), FT(649), FT(200000)) ≈ 1
-        @test heskel_respiration_scaling(T25, FT(0.1012), FT(-0.0005)) ≈ 1
+        @test peaked_arrhenius(T₂₅, FT(71513), FT(649), FT(200000)) ≈ 1
+        @test heskel_respiration_scaling(T₂₅, FT(0.1012), FT(-0.0005)) ≈ 1
 
         # Vcmax/Jmax rise then fall — interior optimum with high-T rolloff.
         Ts = FT(273):FT(1):FT(323)
@@ -101,8 +105,8 @@ end
         @test argmax(An_peak) < argmax(An_plain)
 
         # 25 °C regression anchor: peaked and plain agree at exactly 25 °C.
-        @test net_assimilation(photo_peak,  FT(28), FT(8e-4), T25, FT(101325), FT(1)) ≈
-              net_assimilation(photo_plain, FT(28), FT(8e-4), T25, FT(101325), FT(1))
+        @test net_assimilation(photo_peak,  FT(28), FT(8e-4), T₂₅, FT(101325), FT(1)) ≈
+              net_assimilation(photo_plain, FT(28), FT(8e-4), T₂₅, FT(101325), FT(1))
 
         # Type stability.
         @test eltype(net_assimilation(photo_peak, FT(28), FT(8e-4), FT(298), FT(101325), FT(1))) == FT
@@ -242,6 +246,6 @@ end
         # the cuticular minimum — far below the prescribed-PAR canopy. This exercises
         # the radiation state reaching `absorbed_par_value` inside the coupled solve.
         LE_dark = latent_heat(CanopyConductanceHumidity(FT; absorbed_par = InteractiveAbsorbedPAR(FT)))
-        @test 0 ≤ LE_dark < LE_canopy
+        @test -1e-10 ≤ LE_dark < LE_canopy   # ≈ 0 up to roundoff
     end
 end
