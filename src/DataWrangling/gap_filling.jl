@@ -227,6 +227,58 @@ end
 @inline clamp_to_range(value, ::Nothing) = value
 @inline clamp_to_range(value, range) = clamp(value, first(range), last(range))
 
+#####
+##### Caching a filled series
+#####
+##### The chain is expensive over a continental lattice and deterministic in its inputs and
+##### its parameters, while the target grids that read its result are no part of it: every
+##### resolution built on the same native series wants the same fill.
+#####
+
+# An argument reduced to something storable beside the result: a scalar stands for itself,
+# an array for its shape and the sum of its finite entries, which no change of region,
+# window, or product leaves alone.
+fill_signature(parameter) = parameter
+fill_signature(parameter::AbstractArray) =
+    (size(parameter), sum(value -> isfinite(value) ? Float64(value) : 0.0, parameter; init = 0.0))
+fill_signature(fts::FieldTimeSeries) = fill_signature(Array(interior(fts)))
+
+seasonal_fill_key(; parameters...) = map(fill_signature, NamedTuple(parameters))
+
+cached_seasonal_fill(::Nothing, key, 𝒜) = nothing
+
+function cached_seasonal_fill(cache, key, 𝒜)
+    isfile(cache) || return nothing
+
+    try
+        return jldopen(cache, "r") do file
+            haskey(file, "key") && file["key"] == key || return nothing
+            copyto!(𝒜, file["series"])
+            (provenance = file["provenance"], reach = file["reach"])
+        end
+    catch err
+        @warn "Could not read the cached seasonal fill at $cache; filling again..." exception=err
+        rm(cache, force = true)
+        return nothing
+    end
+end
+
+cache_seasonal_fill!(::Nothing, key, 𝒜, provenance, reach) = nothing
+
+function cache_seasonal_fill!(cache, key, 𝒜, provenance, reach)
+    @root begin
+        write_atomically(cache) do staging_path
+            jldopen(staging_path, "w") do file
+                file["key"] = key
+                file["series"] = 𝒜
+                file["provenance"] = provenance
+                file["reach"] = reach
+            end
+        end
+    end
+    return nothing
+end
+
 """
     fill_seasonal_gaps!(series, land_cover; kw...)
 
@@ -266,6 +318,11 @@ Keyword arguments
                     ([`period_index`](@ref) computes it from a date). Default: cyclic reuse,
                     which assumes the series opens the anchor's cycle and covers whole
                     cycles, and is an error otherwise.
+- `cache`: path of a JLD2 file holding the filled series with its provenance and reach, so
+           the chain runs once for a native lattice however many model grids read it. The
+           file is written when the fill completes and read back when the inputs and the
+           parameters below still match what produced it; otherwise it is rewritten.
+           Default: `nothing`, no cache.
 - `cyclic`: `true` to wrap stage 1's interpolation across the ends of the time axis, as one
             period of a periodic signal. Default: `true` without an `anchor` (a seasonal
             climatology wraps), `false` with one (a date window does not).
@@ -293,6 +350,7 @@ Keyword arguments
 function fill_seasonal_gaps!(data::AbstractArray, land_cover;
                              anchor = nothing,
                              anchor_periods = nothing,
+                             cache = nothing,
                              cyclic = isnothing(anchor),
                              max_gap = 6,
                              block_size = 32,
@@ -319,6 +377,13 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
                             "which is worse than an error because the result still looks " *
                             "like a map."))
 
+    key = seasonal_fill_key(; series = 𝒜, land_cover = codes, anchor, anchor_periods, cyclic,
+                            max_gap, block_size, initial_radius, minimum_donors, maximum_radius,
+                            minimum_anchor_periods, scaling, valid_range, unfilled_classes, stages)
+
+    cached = cached_seasonal_fill(cache, key, 𝒜)
+    isnothing(cached) || return (; series = data, cached.provenance, cached.reach)
+
     class_index, classes_present = class_indices(codes)
     fillable = [!isfinite(code) || !(round(Int, code) in unfilled_classes) for code in codes]
 
@@ -342,7 +407,11 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
 
     scale_donors = :scaled in stages
     mean_donors  = :class_mean in stages
-    (scale_donors || mean_donors) || return (; series = data, provenance, reach)
+
+    if !(scale_donors || mean_donors)
+        cache_seasonal_fill!(cache, key, 𝒜, provenance, reach)
+        return (; series = data, provenance, reach)
+    end
 
     # Built after the temporal stage, so a neighbor's short bridged gap is available as a donor.
     pool = isnothing(anchor) ?
@@ -380,6 +449,8 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
 
         filled && (reach[i, j] = radius)
     end
+
+    cache_seasonal_fill!(cache, key, 𝒜, provenance, reach)
 
     return (; series = data, provenance, reach)
 end
