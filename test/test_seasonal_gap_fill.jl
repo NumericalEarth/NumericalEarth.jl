@@ -5,6 +5,7 @@ using NumericalEarth.DataWrangling: fill_gaps!, fill_seasonal_gaps!, gap_fill_pr
 using Oceananigans.Grids: halo_size
 using Oceananigans.OutputReaders: Cyclical, InMemory
 using Dates: DateTime, Day, Month, Year
+using JLD2: jldopen
 using Statistics: mean
 
 # A seasonal shape both the donor and the target share, so a fill that preserves shape is
@@ -66,6 +67,58 @@ end
     @test 𝒜[1, 1, :] == shape
     @test all(t -> t == 5 || 𝒜[3, 3, t] == 2 * shape[t], 1:Nt)
     @test all(==(gap_fill_provenance.observed), filled.provenance[1, 1, :])
+end
+
+# Overwrite the cached values, keeping the key that names the inputs they came from.
+function overwrite_cached_series!(cache, series)
+    key, provenance, reach = jldopen(cache, "r") do file
+        file["key"], file["provenance"], file["reach"]
+    end
+
+    jldopen(cache, "w") do file
+        file["key"] = key
+        file["series"] = series
+        file["provenance"] = provenance
+        file["reach"] = reach
+    end
+
+    return nothing
+end
+
+@testset "Seasonal fill: a cached fill is read back" begin
+    Nt = 12
+    shape = seasonal_shape(Nt)
+    𝒜 = uniform_series(shape, 8, 8)
+    𝒜[3, 3, :] .= 2 .* shape
+    𝒜[3, 3, 5] = NaN32
+    classes = fill(Float32(2), 8, 8)
+
+    cache = joinpath(mktempdir(), "seasonal_fill.jld2")
+    parameters = (; cyclic = true, max_gap = 0, block_size = 4, minimum_donors = 4)
+
+    expected = fill_seasonal_gaps!(copy(𝒜), classes; parameters...)
+    filled = fill_seasonal_gaps!(copy(𝒜), classes; cache, parameters...)
+
+    @test isfile(cache)
+    @test filled.series == expected.series
+    @test filled.provenance == expected.provenance
+    @test filled.reach == expected.reach
+
+    # A value no fill would produce: a call that returns it read the file rather than
+    # filling again.
+    marker = fill(7f0, size(𝒜))
+    overwrite_cached_series!(cache, marker)
+    @test fill_seasonal_gaps!(copy(𝒜), classes; cache, parameters...).series == marker
+
+    # A parameter the fill depends on, and the series itself, are both part of what the
+    # cache is keyed on, so neither reads the marker back.
+    strict = merge(parameters, (; max_gap = 3))
+    @test fill_seasonal_gaps!(copy(𝒜), classes; cache, strict...).series != marker
+
+    overwrite_cached_series!(cache, marker)
+    ℬ = copy(𝒜)
+    ℬ[4, 4, 2] = NaN32
+    @test fill_seasonal_gaps!(ℬ, classes; cache, parameters...).series != marker
 end
 
 @testset "Seasonal fill: the estimator's guards" begin
