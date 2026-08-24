@@ -547,6 +547,12 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `Δt`: simulation time step. Per-config default: `5minutes` for `:twelfthdegree`, `20minutes` for
   `:quarterdegree`, `30minutes` otherwise.
 - `stop_time`: stop time for the wrapping `Simulation`. Default: `Inf`.
+- `thickness_categories`: number of equal-area sub-grid ice thickness categories used for the
+  effective conductivity of [Fichefet and Morales Maqueda (1997)](@cite fichefet1997sensitivity).
+  Conducting through the cell-mean thickness underestimates growth because the conductive flux goes
+  as ``1/h``; placing `N` categories at ``(2i-1) h / N`` multiplies the conductivity by
+  ``\\sum_i 1/(2i-1)`` — 1.53 for `N = 3`, 1.79 for `N = 5`. Default: `1`, which conducts through
+  the mean and applies no enhancement.
 - `implicit_bottom_drag::Bool`: if `true` (default), the bottom and immersed quadratic drag are affine
   fluxes `J = λ φᵦ` with `λ = -μ |u|` in the vertical solver's diagonal. `false` applies both
   explicitly, the treatment this replaced, so the pair can be A/B'd. The two differ most in shallow

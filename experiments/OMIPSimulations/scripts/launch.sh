@@ -46,6 +46,13 @@ Environment variables (physics):
                 so pairing it with the computed u* ~ 0.006 m/s inflated the exchange velocity ~3x.
                 The salt transfer coefficient follows at R = alpha_h / alpha_s = 35.
                 Default: true.
+  ICE_CATEGORIES
+                Number of equal-area sub-grid ice thickness categories used for the effective
+                conductivity (Fichefet & Morales Maqueda 1997). Conduction through the cell-mean
+                thickness underestimates growth because the flux is ~1/h; N categories placed at
+                (2i-1)h/N raise the effective conductivity by sum(1/(2i-1)), i.e. 1.53 for N=3 and
+                1.79 for N=5. Default: 1 (conduct through the mean, no enhancement). Adds
+                "_ncat<value>" to the run name.
   KSKEW         Isopycnal skew diffusivity κ_skew (default: per-config; 0 = off;
                 "nemo" = NEMO's Treguier et al. 1997 coefficient, Ro² × baroclinic
                 growth rate, recomputed each step and depth-uniform;
@@ -358,6 +365,7 @@ RUN_NAME="$CONFIG"
 [[ "${ICE_BASAL:-true}" == "true" ]]           && RUN_NAME="${RUN_NAME}_landfast"
 [[ "${ICE_DRAG:-5.5e-3}" != "3.24e-3" ]]       && RUN_NAME="${RUN_NAME}_cio${ICE_DRAG:-5.5e-3}"
 [[ "${ICE_HEAT_TRANSFER:-0.0057}" != "0.0095" ]] && RUN_NAME="${RUN_NAME}_ah${ICE_HEAT_TRANSFER:-0.0057}"
+[[ "${ICE_CATEGORIES:-1}" != "1" ]]              && RUN_NAME="${RUN_NAME}_ncat${ICE_CATEGORIES}"
 [[ "${CLOSURE:-catke}" == "simple"   ]]        && RUN_NAME="${RUN_NAME}_simple"
 [[ "${CLOSURE:-catke}" == "nori"     ]]        && RUN_NAME="${RUN_NAME}_nori"
 [[ "${CLOSURE:-catke}" == "rbvd"     ]]        && RUN_NAME="${RUN_NAME}_rbvd"
@@ -626,10 +634,12 @@ ICE_LATERAL="${ICE_LATERAL:-no_slip}"
 ICE_BASAL="${ICE_BASAL:-true}"
 ICE_DRAG="${ICE_DRAG:-5.5e-3}"
 ICE_HEAT_TRANSFER="${ICE_HEAT_TRANSFER:-0.0057}"
+ICE_CATEGORIES="${ICE_CATEGORIES:-1}"
 SEA_ICE_KWARG="sea_ice_lateral_boundary_condition = :${ICE_LATERAL},"
 SEA_ICE_KWARG="${SEA_ICE_KWARG}sea_ice_ocean_drag_coefficient = ${ICE_DRAG},"
 SEA_ICE_KWARG="${SEA_ICE_KWARG}sea_ice_ocean_heat_transfer_coefficient = ${ICE_HEAT_TRANSFER},"
 [[ "$ICE_BASAL" == "false" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}with_landfast_basal_stress = false,"
+[[ "$ICE_CATEGORIES" != "1" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}thickness_categories = ${ICE_CATEGORIES},"
 
 # Profile runs disable the OMIP diagnostic output writers (Average,
 # JLD2 dumps, checkpoint, KE spectrum). They add per-iteration I/O and
