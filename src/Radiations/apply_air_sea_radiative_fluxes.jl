@@ -56,8 +56,12 @@ function EarthSystemModels.apply_air_sea_radiative_fluxes!(coupled_model::EarthS
             interface_temperature,
             ocean_properties)
 
+    apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model)
+
     return nothing
 end
+
+apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model) = nothing
 
 @kernel function _apply_air_sea_radiative_fluxes!(net_ocean_fluxes,
                                                   interface_radiative_flux,
