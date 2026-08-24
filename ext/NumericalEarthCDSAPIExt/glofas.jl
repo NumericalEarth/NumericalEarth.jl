@@ -142,11 +142,10 @@ function download_glofas_month(name, dataset, dates; region, dir, skip_existing,
     nc_varname = GloFAS_netcdf_variable_names[name]
     nc_triples = [(nc_varname, dt, path) for (dt, path) in pending]
 
-    time_dimnames = Set(["time", "valid_time"])
     @root begin
         glofas_retrieve(glofas_product(dataset), request, tmp_path)
         foreach_nc(tmp_path, dir) do nc_path
-            split_nc_multistep(nc_path, nc_triples, GLOFAS_COORD_VARS, time_dimnames)
+            split_era5_nc_by_datetime(nc_path, nc_triples, GLOFAS_COORD_VARS, ERA5_TIME_DIMNAMES)
         end
         cleanup && rm(tmp_path; force=true)
     end

@@ -118,10 +118,12 @@ Base.summary(::CanopyConductanceHumidity{L, P, C, S, A, Q, Φ}) where {L, P, C, 
     string("CanopyConductanceHumidity{", Φ === AtmosphericThermodynamics.Liquid ? "Liquid" : "Ice", "}")
 Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
 
-# The canopy stress reads the ground saturation 𝒮 (as `CriticalSaturation` does),
-# so the interface materializes it into the per-cell land state.
-@inline interface_hydrology_state(i, j, grid, ::CanopyConductanceHumidity, land_state) =
-    land_saturation(i, j, grid, land_state)
+# The canopy stress reads the ground saturation 𝒮 and, for a `PlantAvailableWaterStress`,
+# its per-cell stress endpoints, so the interface materializes the stress's own state.
+@inline interface_hydrology_state(i, j, grid, q::CanopyConductanceHumidity, land_state) =
+    merge(land_saturation(i, j, grid, land_state),
+          interface_hydrology_state(i, j, grid, q.moisture_stress, land_state))
+@inline requires_retention_curve(q::CanopyConductanceHumidity) = requires_retention_curve(q.moisture_stress)
 
 # The bulk LAI upscales the leaf conductance and shades the absorbed PAR. It is a
 # prescribed vegetation input (constant, static `Field`, or `FieldTimeSeries`),
@@ -165,10 +167,10 @@ end
 
     qˢ⁻ = Ψₛ.specific_humidity
     qᵃᵗ = Ψₐ.q
-    Jᵃ, Δq = atmospheric_vapor_flux(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
+    Gᵃ  = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
 
-    D  = gᶜ * Δq + Jᵃ
-    qˢ = (gᶜ * qᵛ⁺ * Δq + Jᵃ * qᵃᵗ) / D
+    D  = gᶜ + Gᵃ
+    qˢ = ifelse(D > 0, (gᶜ * qᵛ⁺ + Gᵃ * qᵃᵗ) / D, qˢ⁻)
 
-    return convert(FT, ifelse(D == 0, qˢ⁻, qˢ))
+    return convert(FT, qˢ)
 end

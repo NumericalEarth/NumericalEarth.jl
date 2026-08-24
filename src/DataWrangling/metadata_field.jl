@@ -404,18 +404,45 @@ end
 interpolate_physical!(to_field, from_field, metadata) = interpolate_physical!(to_field, from_field)
 
 """
-    Field(metadata::Metadatum, grid::AbstractGrid; kw...)
+    Field(metadata::Metadatum, grid::AbstractGrid; cache = false, overwrite_cache = false, kw...)
 
 Load `metadata` on its native grid and interpolate onto `grid` — the
 `Field` analog of `FieldTimeSeries(metadata, grid)`. Keyword arguments are
 forwarded to the native-grid `Field(metadata, arch; …)` (e.g. `inpainting`,
 `mask`, `halo`, `cache_inpainted_data`).
+
+With `cache = true` the regridded result is cached to disk and reused by later
+reads with the same dataset, variable, date, region, target-grid geometry, and
+read keywords — skipping the native materialization and regrid entirely; with
+`cache = false` (default) the cache is disabled entirely and nothing is read or
+written. The key carries a size/mtime stamp of the local dataset file where one
+exists, so a re-download invalidates the cache. For streaming datasets with no
+local file, pass `overwrite_cache = true` after replacing data upstream: it
+skips the lookup and overwrites the entry with a freshly regridded result.
 """
-function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid; kw...)
-    native = Field(metadata, architecture(grid); kw...)
+function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid;
+                                   cache = false, overwrite_cache = false, kw...)
     LX, LY, LZ = location(metadata)
+
+    if cache && !overwrite_cache
+        config = FieldRegridding(grid, metadata, values(kw))
+        data = load_field_cache(config)
+        if !isnothing(data)
+            target = Field{LX, LY, LZ}(grid)
+            interior(target) .= on_architecture(architecture(grid), data)
+            fill_halo_regions!(target)
+            return target
+        end
+    end
+
+    native = Field(metadata, architecture(grid); kw...)
     target = Field{LX, LY, LZ}(grid)
     interpolate_physical!(target, native, metadata)
+    if cache
+        # rebuild the key: the native read may have just downloaded the dataset file it stamps
+        config = FieldRegridding(grid, metadata, values(kw))
+        save_field_cache(config, Array(interior(target)))
+    end
     return target
 end
 

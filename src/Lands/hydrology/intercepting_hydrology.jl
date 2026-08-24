@@ -199,6 +199,9 @@ end
 
 saturation(h::InterceptingHydrology, land) = saturation(h.soil, land)
 
+EarthSystemModels.surface_retention_curve(h::InterceptingHydrology) =
+    EarthSystemModels.surface_retention_curve(h.soil)
+
 Base.summary(h::InterceptingHydrology) =
     string("InterceptingHydrology(soil=", summary(h.soil),
            ", c=", prettysummary(h.capacity_per_leaf_area), ")")

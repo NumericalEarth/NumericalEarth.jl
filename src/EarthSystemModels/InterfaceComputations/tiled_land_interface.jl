@@ -55,23 +55,29 @@ zero_leaf_area_index_canopy(q::CanopyConductanceHumidity) =
                               q.moisture_stress, q.absorbed_par, q.atmospheric_co2, q.phase)
 
 """
-    bare_canopy_air_space(vegetated::CanopyAirSpace; undercanopy_conductance)
+    bare_canopy_air_space(vegetated::CanopyAirSpace;
+                          undercanopy_conductance, wet_soil_resistance, litter_resistance)
 
 Derive the bare-soil tile from the vegetated `CanopyAirSpace`: the same soil vapor branch,
 skin conduction, albedos, emissivities, and optics, but with a canopy-free (LAI = 0) leaf
-branch and no interception. The soil then talks straight to the atmosphere (all shortwave
-reaches the ground, the ground sees the sky, no transpiration). `undercanopy_conductance`
-sets the soil↔canopy-air coupling for the bare tile (defaults to the vegetated value; a
-larger value pushes the soil resistance toward the pure-aerodynamic limit).
+branch, no interception, and no litter (litter blankets vegetated ground only, so
+`litter_resistance` defaults to `nothing` here). The soil then talks straight to the
+atmosphere (all shortwave reaches the ground, the ground sees the sky, no transpiration).
+`undercanopy_conductance` sets the soil↔canopy-air coupling for the bare tile (defaults to
+the vegetated value; a larger value pushes the soil resistance toward the pure-aerodynamic
+limit), and `wet_soil_resistance` the moist-soil surface resistance (defaults to the
+vegetated value).
 """
-function bare_canopy_air_space(c::CanopyAirSpace; undercanopy_conductance = c.undercanopy_conductance)
+function bare_canopy_air_space(c::CanopyAirSpace; undercanopy_conductance = c.undercanopy_conductance,
+                               wet_soil_resistance = c.wet_soil_resistance,
+                               litter_resistance = nothing)
     FT = typeof(c.leaf_albedo)
     return CanopyAirSpace(c.soil, zero_leaf_area_index_canopy(c.canopy), c.soil_skin_flux,
                           c.leaf_albedo, c.ground_albedo, c.canopy_emissivity_max, c.ground_emissivity,
                           c.extinction, c.clumping, c.leaf_boundary_conductance,
                           undercanopy_conductance_model(undercanopy_conductance, FT),
-                          c.wet_soil_resistance,
-                          c.inner_iterations, c.relaxation, nothing, c.phase)
+                          wet_soil_resistance, litter_resistance,
+                          c.inner_iterations, c.relaxation, nothing, c.phase, c.storage)
 end
 
 """

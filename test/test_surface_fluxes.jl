@@ -19,6 +19,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterface
                                                               CriticalSaturation,
                                                               evaporation_efficiency,
                                                               AirLandInterfaceState,
+                                                              InterfaceFluxScales,
+                                                              InterfaceVelocities,
                                                               compute_interface_humidity,
                                                               saturation_specific_humidity
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
@@ -354,9 +356,10 @@ end
     qᵛ⁺ = saturation_specific_humidity(ℂ, Tᵈ, pᵃᵗ, Thermodynamics.Liquid())
     @test qᵛ⁺ > qᵃᵗ # reservoir saturation exceeds the sub-saturated air
 
-    # AirLandInterfaceState with an upward moisture flux (q★ < 0 ⟹ qˢ > qᵃᵗ);
+    # AirLandInterfaceState with a fixed aerodynamic conductance Gᵃ = ρ u★ χq;
     # bulk reservoir temperature carried in the energy component.
-    mkΨₛ(q) = AirLandInterfaceState(0.3, -0.01, -1e-4, 0.0, 0.0, Tₛ, q,
+    mkΨₛ(q) = AirLandInterfaceState(InterfaceFluxScales(0.3, -0.01, -1e-4, 0.0, 0.2),
+                                    InterfaceVelocities(0.0, 0.0), Tₛ, q,
                                     (saturation = 1.0,), (temperature = Tᵈ,))
 
     # Drive the fixed point to convergence for a few saturation depths

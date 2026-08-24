@@ -54,6 +54,16 @@ inverse of [`VanGenuchtenRetention`](@ref)'s `pressure_head`.
 @inline van_genuchten_saturation(αψ, n) =
     (one(n) + αψ^n)^(-van_genuchten_m(n))
 
+# Per-cell endpoint evaluation for the interface's plant-stress formulations: read the
+# curve's parameters at `(i, j)` — scalar or `Field` — and invert the retention relation.
+@inline function EarthSystemModels.effective_saturation(i, j, grid, r::VanGenuchtenRetention, ψ)
+    FT = typeof(ψ)
+    α  = convert(FT, property_value(r.inverse_air_entry_head, i, j))
+    n  = convert(FT, property_value(r.pore_size_uniformity, i, j))
+    return van_genuchten_saturation(α * ψ, n)
+end
+
+
 """
 $(TYPEDSIGNATURES)
 

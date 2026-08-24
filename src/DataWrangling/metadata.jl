@@ -29,11 +29,18 @@ BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
 
 Create a `BoundingBox` spanning the horizontal extent of `grid`, widened on every
 side by `padding` (degrees) — a number for both axes, or a `(longitude, latitude)` pair.
+For a distributed grid the box spans the *global* domain, identically on every rank.
 """
 function BoundingBox(grid::AbstractGrid; padding = 0)
     padλ, padφ = axis_padding(padding)
-    return BoundingBox(longitude = extrema(λnodes(grid, Face(), Center(), Center())) .+ (-padλ, padλ),
-                       latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padφ, padφ))
+    # Domain endpoints, not node extrema: distributed grids window their node arrays
+    # differently. Rank-local domains reduce to the global extent (`all_reduce` is the
+    # identity on serial architectures).
+    arch = architecture(grid)
+    λ₁, λ₂ = x_domain(grid)
+    φ₁, φ₂ = y_domain(grid)
+    return BoundingBox(longitude = (all_reduce(min, λ₁, arch) - padλ, all_reduce(max, λ₂, arch) + padλ),
+                       latitude  = (all_reduce(min, φ₁, arch) - padφ, all_reduce(max, φ₂, arch) + padφ))
 end
 
 axis_padding(padding::Number) = (padding, padding)

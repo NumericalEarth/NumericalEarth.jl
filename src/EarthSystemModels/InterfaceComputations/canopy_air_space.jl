@@ -24,18 +24,6 @@
 ##### `qᵃᶜ`; both run the shared `canopy_air_space_solve`.
 #####
 
-# Sensible-heat analogue of `atmospheric_vapor_flux`: the atmospheric sensible flux
-# `𝒬ᵀ = -ρᵃᵗ cᵖ u★ θ★` (positive upward) from the previous iterate, and the
-# node-to-air temperature increment `Δθ = Tᵃᶜ⁻ − θᵃᵗ`. Together they close the
-# temperature node in the same `Δ`-multiplied form the humidity node uses.
-@inline function atmospheric_sensible_flux(Ψₛ, Ψₐ, θᵃᵗ, ℂᵃᵗ)
-    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
-    cᵖ  = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, Ψₐ.q)
-    𝒬ᵀ  = - ρᵃᵗ * cᵖ * Ψₛ.fluxes.u★ * Ψₛ.fluxes.θ★
-    Δθ  = Ψₛ.temperature - θᵃᵗ
-    return 𝒬ᵀ, Δθ
-end
-
 """
     struct CanopyInterception
 
@@ -245,17 +233,21 @@ undercanopy_conductance_model(x::AbstractUndercanopyConductance, FT) = x
     SellersSoilResistance(FT = Oceananigans.defaults.FloatType;
                           intercept = 8.206, slope = 4.255)
 
-Soil surface resistance for the moist-soil (vanishing dry layer) evaporation branch
-of a [`CanopyAirSpace`](@ref),
+Empirical ground-surface resistance for the moist-soil (vanishing dry layer) evaporation
+branch of a [`CanopyAirSpace`](@ref),
 
 ```math
 rˢ = e^{a - b 𝒮},
 ```
 
-with the surface saturation `𝒮` ([Sellers et al. (1992)](@cite sellers1992)). Even a
-saturated soil surface resists evaporation (`rˢ(1) ≈ 52` s m⁻¹), so the moist branch
-no longer behaves like open water: without it, the saturated-skin branch evaporates
-through the undercanopy aerodynamic conductance alone.
+with the surface saturation `𝒮`, fit by [Sellers et al. (1992)](@cite sellers1992) to the
+FIFE prairie flux stations (`rˢ(1) ≈ 52` s m⁻¹). The FIFE sites carried standing dead
+grass and plant litter, so the moist-soil end of the fit is an *effective* soil-plus-litter
+resistance rather than pore-scale soil physics: chamber measurements of litter-free wet
+soil find near-zero surface resistance, and [Sakaguchi and Zeng (2009)](@cite sakaguchi2009)
+attribute the moist-soil remainder to the litter layer. Use this fit as a bundled
+alternative to an explicit [`LitterResistance`](@ref) (pass `litter_resistance = nothing`);
+combining both double-counts the litter effect.
 
 ```jldoctest
 using NumericalEarth
@@ -289,11 +281,132 @@ Base.show(io::IO, r::SellersSoilResistance) = print(io, summary(r))
 end
 
 """
+    LitterResistance(FT = Oceananigans.defaults.FloatType;
+                     litter_area_index = 1, transfer_coefficient = 0.004)
+
+Plant-litter resistance to ground evaporation
+([Sakaguchi and Zeng (2009)](@cite sakaguchi2009), Eq. 13),
+
+```math
+rˡ = \\frac{1 - e^{-Lˡ}}{C u★},
+```
+
+with the litter area index `Lˡ` (m² m⁻²), a turbulent transfer coefficient `C`, and the
+friction velocity `u★` standing in for the wind speed in the canopy air space. Dead
+leaves and stems blanket the ground under vegetation; the litter is too porous for
+capillary rise to wet its top, so it evaporates little itself while blocking turbulent
+and diffusive vapor exchange with the soil below. The resistance vanishes without litter
+(`Lˡ = 0`) and saturates at `1/(C u★)` under a thick blanket — 500–1200 s m⁻¹ under
+mid-latitude forests, larger in calm air. The default `Lˡ = 1` is the minimum stem-plus-
+litter area of the global surface dataset behind the fit; the snow-burial reduction of
+the original scheme is omitted (no snow model). Applies to vegetated ground: the bare
+tile of a [`TiledLandInterface`](@ref) drops it (see [`bare_canopy_air_space`](@ref)).
+
+```jldoctest
+using NumericalEarth
+
+LitterResistance()
+
+# output
+LitterResistance(Lˡ=1.0, C=0.004)
+```
+"""
+struct LitterResistance{FT}
+    litter_area_index    :: FT
+    transfer_coefficient :: FT
+end
+
+LitterResistance(FT::Type = Oceananigans.defaults.FloatType;
+                 litter_area_index = 1, transfer_coefficient = 0.004) =
+    LitterResistance(convert(FT, litter_area_index), convert(FT, transfer_coefficient))
+
+Base.summary(r::LitterResistance) =
+    string("LitterResistance(Lˡ=", prettysummary(r.litter_area_index),
+           ", C=", prettysummary(r.transfer_coefficient), ")")
+Base.show(io::IO, r::LitterResistance) = print(io, summary(r))
+
+@inline litter_resistance(::Nothing, u★) = zero(u★)
+@inline function litter_resistance(r::LitterResistance, u★)
+    FT = typeof(u★)
+    Lˡ = convert(FT, r.litter_area_index)
+    C  = convert(FT, r.transfer_coefficient)
+    return (1 - exp(-Lˡ)) / max(C * u★, eps(FT))
+end
+
+#####
+##### Canopy-air storage: diagnostic (massless) or prognostic (the node carries the
+##### heat and moisture capacity of the canopy air layer).
+#####
+
+"""
+    DiagnosticCanopyAir()
+
+Massless canopy-air node (the default): `(Tᵃᶜ, qᵃᶜ)` solve the algebraic Kirchhoff
+balance between leaf, ground, and atmosphere every iterate of the Monin–Obukhov
+fixed point. The node has no memory — turbulence, skins, and canopy air are asserted
+to be in mutual equilibrium within each time step.
+"""
+struct DiagnosticCanopyAir end
+
+Base.summary(::DiagnosticCanopyAir) = "DiagnosticCanopyAir"
+Base.show(io::IO, s::DiagnosticCanopyAir) = print(io, summary(s))
+
+"""
+    PrognosticCanopyAir(FT = Oceananigans.defaults.FloatType; layer_depth = 10)
+
+Prognostic canopy-air storage: the node `(Tᵃᶜ, qᵃᶜ)` carries the heat and moisture
+capacity of the canopy air layer of depth ``h_c`` (`layer_depth`, m — a `Number`, or
+a `Field` of canopy heights),
+
+```math
+ρ c^p h_c \\frac{dT^{ac}}{dt} = H^v + H^g - H, \\qquad
+ρ h_c \\frac{dq^{ac}}{dt} = E^v + E^g - E,
+```
+
+integrated with the model time step instead of solved to equilibrium within it. The
+node is **frozen while the similarity scales iterate** — the outer fixed point reduces
+to the well-conditioned ``u_★ ↔ ζ`` bulk solve — and advanced once per step by an
+exact exponential relaxation toward the conductance-weighted equilibrium the
+diagnostic node computes today (see [`advance_canopy_air`](@ref)). The atmosphere
+receives fluxes evaluated at the step-mean node state, so
+``\\mathrm{flux} = \\mathrm{supply} - \\mathrm{storage}`` closes exactly.
+
+`layer_depth → 0` and the first `update_state!` (``Δt = 0``) recover the diagnostic
+equilibrium; daytime, where the relaxation time ``τ = ρ (c^p) h_c / Σg`` is shorter
+than the time step, the node lands on the equilibrium each step and the diagnostic
+physics is unchanged. At calm night the vapor node keeps memory of hours — the
+regime where the massless closure has no steady state (the calm-dusk limit cycle).
+
+```jldoctest
+using NumericalEarth
+
+PrognosticCanopyAir(layer_depth = 12)
+
+# output
+PrognosticCanopyAir(h_c=12.0)
+```
+"""
+struct PrognosticCanopyAir{H}
+    layer_depth :: H
+end
+
+PrognosticCanopyAir(FT::Type = Oceananigans.defaults.FloatType; layer_depth = 10) =
+    PrognosticCanopyAir(layer_depth isa Number ? convert(FT, layer_depth) : layer_depth)
+
+Base.summary(s::PrognosticCanopyAir) =
+    string("PrognosticCanopyAir(h_c=", prettysummary(s.layer_depth), ")")
+Base.show(io::IO, s::PrognosticCanopyAir) = print(io, summary(s))
+
+Adapt.adapt_structure(to, s::PrognosticCanopyAir) = PrognosticCanopyAir(adapt(to, s.layer_depth))
+
+"""
     struct CanopyAirSpace
 
-Two-source canopy + soil surface with a diagnostic canopy-air node. Solves the
+Two-source canopy + soil surface with a canopy-air node. Solves the
 leaf temperature `Tᵛ`, the soil-skin temperature `Tᵍ`, and the canopy-air node
-`(Tᵃᶜ, qᵃᶜ)` inside the Monin–Obukhov fixed point. Use the same object in both the
+`(Tᵃᶜ, qᵃᶜ)` inside the Monin–Obukhov fixed point (diagnostic node, the default),
+or advances a prognostic node carrying the canopy-air heat and moisture capacity
+(`storage = PrognosticCanopyAir(...)`). Use the same object in both the
 temperature and specific-humidity interface slots.
 
 Fields:
@@ -310,15 +423,22 @@ Fields:
   a `Number` (m s⁻¹, wrapped as [`ConstantUndercanopyConductance`](@ref)), an
   [`AreaIndexUndercanopyConductance`](@ref) (PALADYN: canopy density and wind), or a
   [`FrictionVelocityUndercanopyConductance`](@ref) (CLM5: canopy density and `u★`).
-- `wet_soil_resistance` : soil surface resistance in series with `gᵘᶜ` on the moist-soil
-  (vanishing dry layer) vapor branch (a [`SellersSoilResistance`](@ref), the default), or
-  `nothing` for an unresisted saturated skin.
+- `wet_soil_resistance` : soil surface resistance on the moist-soil (vanishing dry layer)
+  vapor branch (a [`SellersSoilResistance`](@ref)), or `nothing` (the default: above the
+  dry-layer onset the soil itself does not limit evaporation, and the litter layer and
+  undercanopy path carry the resistance).
+- `litter_resistance` : plant-litter resistance in series on both ground vapor branches
+  (a [`LitterResistance`](@ref), the default), or `nothing` for litter-free ground
+  ([`bare_canopy_air_space`](@ref) drops it on the bare tile).
 - `inner_iterations`, `relaxation` : damped-Newton settings for the coupled solve.
 - `interception` : wet-canopy vapor branch parameters (a [`CanopyInterception`](@ref)),
   or `nothing` for a dry canopy (the default; recovers the current CAS bit-for-bit).
 - `phase` : saturation phase (Liquid).
+- `storage` : the canopy-air node storage — [`DiagnosticCanopyAir`](@ref) (the default,
+  massless node) or [`PrognosticCanopyAir`](@ref) (the node carries the canopy-air
+  heat and moisture capacity and is advanced with the model time step).
 """
-struct CanopyAirSpace{S, C, RF, FT, U, W, I, Φ}
+struct CanopyAirSpace{S, C, RF, FT, U, W, L, I, Φ, ST}
     soil                      :: S
     canopy                    :: C
     soil_skin_flux             :: RF
@@ -331,10 +451,12 @@ struct CanopyAirSpace{S, C, RF, FT, U, W, I, Φ}
     leaf_boundary_conductance :: FT
     undercanopy_conductance   :: U
     wet_soil_resistance       :: W
+    litter_resistance         :: L
     inner_iterations          :: Int
     relaxation                :: FT
     interception              :: I
     phase                     :: Φ
+    storage                   :: ST
 end
 
 function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
@@ -349,11 +471,13 @@ function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
                         clumping                  = 1,
                         leaf_boundary_conductance = 0.02,
                         undercanopy_conductance   = 0.013,
-                        wet_soil_resistance       = SellersSoilResistance(FT),
+                        wet_soil_resistance       = nothing,
+                        litter_resistance         = LitterResistance(FT),
                         inner_iterations          = 40,
                         relaxation                = 1//2,
                         interception              = nothing,
-                        phase                     = AtmosphericThermodynamics.Liquid())
+                        phase                     = AtmosphericThermodynamics.Liquid(),
+                        storage                   = DiagnosticCanopyAir())
 
     return CanopyAirSpace(soil, canopy, soil_skin_flux,
                           convert(FT, leaf_albedo), convert(FT, ground_albedo),
@@ -361,33 +485,47 @@ function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
                           convert(FT, extinction), convert(FT, clumping),
                           convert(FT, leaf_boundary_conductance),
                           undercanopy_conductance_model(undercanopy_conductance, FT),
-                          wet_soil_resistance,
-                          inner_iterations, convert(FT, relaxation), interception, phase)
+                          wet_soil_resistance, litter_resistance,
+                          inner_iterations, convert(FT, relaxation), interception, phase,
+                          storage)
 end
+
+# The storage type selects the node treatment inside `canopy_air_space_solve` and
+# the kernel data flow (frozen node + advance for the prognostic variant).
+const DiagnosticCanopyAirSpace = CanopyAirSpace{<:Any, <:Any, <:Any, <:Any, <:Any,
+                                                <:Any, <:Any, <:Any, <:Any, <:DiagnosticCanopyAir}
+const PrognosticCanopyAirSpace = CanopyAirSpace{<:Any, <:Any, <:Any, <:Any, <:Any,
+                                                <:Any, <:Any, <:Any, <:Any, <:PrognosticCanopyAir}
 
 Base.summary(::CanopyAirSpace) = "CanopyAirSpace"
 Base.show(io::IO, c::CanopyAirSpace) =
-    print(io, "CanopyAirSpace(soil=", summary(c.soil), ", canopy=", summary(c.canopy), ")")
+    print(io, "CanopyAirSpace(soil=", summary(c.soil), ", canopy=", summary(c.canopy),
+          ", storage=", summary(c.storage), ")")
 
 Adapt.adapt_structure(to, c::CanopyAirSpace) =
     CanopyAirSpace(adapt(to, c.soil), adapt(to, c.canopy), c.soil_skin_flux,
                    c.leaf_albedo, c.ground_albedo, c.canopy_emissivity_max, c.ground_emissivity,
                    c.extinction, c.clumping, c.leaf_boundary_conductance,
-                   c.undercanopy_conductance, c.wet_soil_resistance,
+                   c.undercanopy_conductance, c.wet_soil_resistance, c.litter_resistance,
                    c.inner_iterations, c.relaxation,
-                   c.interception, c.phase)
+                   c.interception, c.phase, adapt(to, c.storage))
 
 # Materialization / identity — delegate to the sub-models so the per-cell interface
 # state carries the soil saturation, bulk temperature, and LAI the branches read.
 @inline interface_phase(c::CanopyAirSpace) = interface_phase(c.soil)
-# The soil branch always publishes the saturation 𝒮; a canopy with interception
-# additionally pulls the prognostic canopy water store Wᶜ (→ fʷ).
+# The soil branch always publishes the saturation 𝒮 and the canopy branch its stress
+# state; a canopy with interception additionally pulls the prognostic canopy water
+# store Wᶜ (→ fʷ).
 @inline interface_hydrology_state(i, j, grid, c::CanopyAirSpace, land_state) =
     canopy_air_space_hydrology_state(c.interception, i, j, grid, c, land_state)
+@inline requires_retention_curve(c::CanopyAirSpace) =
+    requires_retention_curve(c.soil) || requires_retention_curve(c.canopy)
 @inline canopy_air_space_hydrology_state(::Nothing, i, j, grid, c, land_state) =
-    interface_hydrology_state(i, j, grid, c.soil, land_state)
+    merge(interface_hydrology_state(i, j, grid, c.soil, land_state),
+          interface_hydrology_state(i, j, grid, c.canopy, land_state))
 @inline canopy_air_space_hydrology_state(::CanopyInterception, i, j, grid, c, land_state) =
     merge(interface_hydrology_state(i, j, grid, c.soil, land_state),
+          interface_hydrology_state(i, j, grid, c.canopy, land_state),
           (canopy_water_storage  = state2dindex(land_state.canopy_water_storage, i, j),
            canopy_water_capacity = state2dindex(land_state.canopy_water_capacity, i, j)))
 @inline interface_energy_state(i, j, grid, c::CanopyAirSpace, land_state) =
@@ -402,6 +540,73 @@ Adapt.adapt_structure(to, c::CanopyAirSpace) =
 @inline function leaf_vapor_conductance(gᶜ, gʷ, fʷ)
     gᵈ = ifelse(gᶜ + gʷ > 0, gᶜ * gʷ / (gᶜ + gʷ), zero(gᶜ))
     return (1 - fʷ) * gᵈ + fʷ * gʷ
+end
+
+# Leaf vapor conductance `gˡʷ` and leaf-saturated humidity `qᵛ` at the leaf temperature `Tᵛ`.
+@inline function leaf_vapor_terms(canopy, Tᵛ, gʷ, fʷ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
+    gᶜ, qᵛ = canopy_conductance_terms(canopy, Tᵛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
+    return leaf_vapor_conductance(gᶜ, gʷ, fʷ), qᵛ
+end
+
+# Soil vapor conductance and front humidity at the soil-skin temperature `Tᵍ`: the dry-layer
+# branch (front qᵉ through Gᵉ, in series with the litter + undercanopy path `gᵖ`; Sakaguchi &
+# Zeng 2009, Eq. 18b, matching the sensible path which already crosses gᵘᶜ via gᵍʰ) blended
+# with the saturated-skin wet branch (qᵍ⁺ through gᵍʷ), weight `fᵈ` from the soil model.
+@inline function soil_vapor_terms(soil, Tᵍ, gᵍʷ, gᵖ, Ψₛ, Ψₐ, ℙₐ)
+    Gᵉ, qᵉ, fᵈ, qᵍ⁺ = dry_layer_terms(soil, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
+    Gᵉ = Gᵉ * gᵖ / (gᵖ + Gᵉ)
+    Gᵉ⁺ = fᵈ * Gᵉ + (1 - fᵈ) * gᵍʷ
+    qᵉ⁺ = ifelse(Gᵉ⁺ > eps(eltype(Ψₛ)), (fᵈ * Gᵉ * qᵉ + (1 - fᵈ) * gᵍʷ * qᵍ⁺) / Gᵉ⁺, qᵍ⁺)
+    return Gᵉ⁺, qᵉ⁺
+end
+
+# Kirchhoff node (as the humidity node in CompositeSurfaceHumidity): the ground branch
+# `(gᵍ, xᵍ)` and the leaf branch `(gᵛ, xᵛ)` in parallel behind the aerodynamic branch
+# `(gᵃ, xᵃᵗ)` — a conductance-weighted mean, within the hull of its sources by
+# construction. The all-decoupled corner (every conductance zero) keeps the previous
+# iterate `x⁻`.
+@inline function canopy_air_node(gᵍ, xᵍ, gᵛ, xᵛ, gᵃ, xᵃᵗ, x⁻)
+    D = gᵍ + gᵛ + gᵃ
+    return ifelse(D > 0, (gᵍ * xᵍ + gᵛ * xᵛ + gᵃ * xᵃᵗ) / D, x⁻)
+end
+
+# Node treatment per storage: the diagnostic node re-balances every iterate; the
+# prognostic node is model state, frozen through the solve (the skins equilibrate
+# against it, and the node advances once per step in `advance_interface_state!`).
+@inline node_value(::DiagnosticCanopyAir, gᵍ, xᵍ, gᵛ, xᵛ, gᵃ, xᵃᵗ, x⁻) =
+    canopy_air_node(gᵍ, xᵍ, gᵛ, xᵛ, gᵃ, xᵃᵗ, x⁻)
+@inline node_value(::PrognosticCanopyAir, gᵍ, xᵍ, gᵛ, xᵛ, gᵃ, xᵃᵗ, x⁻) = x⁻
+
+"""
+    advance_canopy_air(x, x_eq, Σg, C, Δt)
+
+Advance a prognostic canopy-air node value `x` toward its conductance-weighted
+equilibrium `x_eq` over `Δt` — the exact solution of the linearized node ODE
+``C \\, dx/dt = Σg (x_{eq} - x)`` at fixed conductances,
+
+```math
+x ← x_{eq} + (x - x_{eq}) e^{-Δt Σg / C}.
+```
+
+A convex blend of the old node and its equilibrium: unconditionally stable and
+hull-bounded at any `Δt`. `Δt = 0` (the first `update_state!`, before any time
+step) or `C = 0` return the equilibrium — the diagnostic limit.
+"""
+@inline function advance_canopy_air(x, x_eq, Σg, C, Δt)
+    FT = typeof(x)
+    w = ifelse((Δt > 0) & (C > 0), exp(-Δt * Σg / max(C, eps(FT))), zero(FT))
+    return x_eq + (x - x_eq) * w
+end
+
+# Time-mean node value over the step, ⟨x⟩ = x_eq + (x₀ − x_eq) (τ/Δt)(1 − e^{−Δt/τ})
+# with τ = C/Σg. Fluxes are linear in the node, so evaluating them here closes the
+# step budget exactly: flux to the atmosphere = Kirchhoff supply − storage tendency.
+# `expm1` keeps the τ ≫ Δt limit accurate; Δt = 0 or C = 0 return the equilibrium.
+@inline function step_mean_canopy_air(x, x_eq, Σg, C, Δt)
+    FT = typeof(x)
+    τ = C / max(Σg, eps(FT))
+    m = -(τ / max(Δt, eps(FT))) * expm1(-Δt / τ)
+    return ifelse((Δt > 0) & (C > 0), x_eq + (x - x_eq) * m, x_eq)
 end
 
 # dqᵛ⁺/dT by centered difference — the Newton derivative of each balance's latent term.
@@ -419,7 +624,11 @@ Solve the coupled diagnostic state `(Tᵛ, Tᵍ, Tᵃᶜ, qᵃᶜ)` for one cell
 previous fixed-point iterate (carrying the MO scales and the previous node values),
 `Ψᵢ.T` is the bulk reservoir `Tˡᵃ`, and `Ψᵣ` the interface radiation state. A short
 damped-Newton inner loop advances the two skin balances against the node; the node
-uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
+is the Kirchhoff conductance-weighted mean of its sources, with the aerodynamic
+branch read off the previous iterate's transfer coefficients (`ρ cᵖ u★ χθ`,
+`ρ u★ χq`), so it stays within the hull of its source states by construction. On
+exit the node is re-solved against the final skins so the returned flux partition
+closes.
 """
 @inline function canopy_air_space_solve(c::CanopyAirSpace, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
@@ -435,20 +644,27 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
     Tˡᵃ = Ψᵢ.T
     LAI = Ψₛ.vegetation.leaf_area_index
 
-    # Aerodynamic drivers from the previous outer iterate (held fixed through the inner loop).
-    𝒬ᵀ, Δθᵃ = atmospheric_sensible_flux(Ψₛ, Ψₐ, θᵃᵗ, ℂᵃᵗ)
-    Jᵃ, Δqᵃ = atmospheric_vapor_flux(Ψₛ, Ψₐ, ℂᵃᵗ)
+    # Aerodynamic conductances from the previous outer iterate's similarity solution
+    # (held fixed through the inner loop): heat `gᵃʰ = ρ cᵖ u★ χθ` and vapor
+    # `gᵃʷ = ρ u★ χq`, floored at zero against transient unphysical profiles.
+    u★  = Ψₛ.fluxes.u★
+    gᵃʰ = max(0, ρᵃᵗ * cᵖ * u★ * Ψₛ.fluxes.χθ)
+    gᵃʷ = max(0, ρᵃᵗ * u★ * Ψₛ.fluxes.χq)
 
     # Land surface velocities are zero, so the surface wind speed is the atmospheric one.
     Vₐ  = sqrt(Ψₐ.u^2 + Ψₐ.v^2)
-    gᵘᶜ = undercanopy_conductance(c.undercanopy_conductance, LAI, Vₐ, Ψₛ.fluxes.u★)
+    gᵘᶜ = undercanopy_conductance(c.undercanopy_conductance, LAI, Vₐ, u★)
 
     gˡʰ = ρᵃᵗ * cᵖ * LAI * c.leaf_boundary_conductance
     gᵍʰ = ρᵃᵗ * cᵖ * gᵘᶜ
-    # Moist-soil vapor conductance: the undercanopy aerodynamic path in series with the
-    # soil surface resistance, so a vanishing dry layer does not evaporate like open water.
-    rᵍʷ = soil_surface_resistance(c.wet_soil_resistance, Ψₛ.hydrology.saturation)
-    gᵍʷ = ρᵃᵗ * gᵘᶜ / (1 + gᵘᶜ * rᵍʷ)
+    # Ground vapor path (Sakaguchi & Zeng 2009, Eq. 18): the litter resistance rˡ and — on
+    # the moist-soil branch — the soil surface resistance rˢ sit in series with the
+    # undercanopy aerodynamic path, so a vanishing dry layer does not evaporate like open
+    # water. The dry branch crosses the same litter + undercanopy path `gᵖ`.
+    rˡ  = litter_resistance(c.litter_resistance, Ψₛ.fluxes.u★)
+    rˢ  = soil_surface_resistance(c.wet_soil_resistance, Ψₛ.hydrology.saturation)
+    gᵖ  = ρᵃᵗ * gᵘᶜ / (1 + gᵘᶜ * rˡ)
+    gᵍʷ = ρᵃᵗ * gᵘᶜ / (1 + gᵘᶜ * (rˡ + rˢ))
     Λ   = convert(FT, skin_conductance(c.soil_skin_flux))
 
     # Leaf boundary-layer vapor mass conductance `gʷ = ρᵃᵗ·LAI·gᵇ`: in series with the
@@ -477,39 +693,16 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
     Tᵃᶜ = Ψₛ.temperature
     qᵃᶜ = Ψₛ.specific_humidity
     relaxation  = c.relaxation
-    max_ΔT = convert(FT, 25)   # per-iterate step cap: keeps the damped Newton in-range
+    max_temperature_step = convert(FT, 25)   # damped-Newton trust region, per iterate
     Tₗₒ, Tₕᵢ = convert(FT, 180), convert(FT, 340)  # physical band; guards qˢᵃᵗ against transient overshoot
     tiny = eps(FT)
 
     for _ in 1:c.inner_iterations
-        gᶜ, qᵛ   = canopy_conductance_terms(c.canopy, Tᵛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
-        Gᵉ, qᵉ, fᵈ, qᵍ⁺ = dry_layer_terms(c.soil, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
+        gˡʷ, qᵛ = leaf_vapor_terms(c.canopy, Tᵛ, gʷ, fʷ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
+        Gᵉ, qᵉ  = soil_vapor_terms(c.soil, Tᵍ, gᵍʷ, gᵖ, Ψₛ, Ψₐ, ℙₐ)
 
-        # Blend the dry-layer series soil branch (front qᵉ through Gᵉ) with the
-        # saturated-skin wet branch (qᵍ⁺ through the undercanopy conductance gᵍʷ),
-        # weight `fᵈ` from the soil model.
-        Gᵉ⁺ = fᵈ * Gᵉ + (1 - fᵈ) * gᵍʷ
-        qᵉ  = ifelse(Gᵉ⁺ > tiny, (fᵈ * Gᵉ * qᵉ + (1 - fᵈ) * gᵍʷ * qᵍ⁺) / Gᵉ⁺, qᵍ⁺)
-        Gᵉ  = Gᵉ⁺
-
-        gˡʷ = leaf_vapor_conductance(gᶜ, gʷ, fʷ)
-
-        # Δ-multiplied Kirchhoff node (as the humidity node in CompositeSurfaceHumidity);
-        # guard the transient case where the aerodynamic and surface conductances cancel
-        # (Dᵀ ≈ 0) before the outer MO loop is consistent, keeping the node finite.
-        Dᵀ  = (gᵍʰ + gˡʰ) * Δθᵃ + 𝒬ᵀ
-        Tᵃᶜ★ = ((gᵍʰ * Tᵍ + gˡʰ * Tᵛ) * Δθᵃ + 𝒬ᵀ * θᵃᵗ) / Dᵀ
-        Tᵃᶜ = ifelse((Dᵀ == 0) | !isfinite(Tᵃᶜ★), Tᵃᶜ, Tᵃᶜ★)
-        Dᵠ  = (Gᵉ + gˡʷ) * Δqᵃ + Jᵃ
-        qᵃᶜ★ = ((Gᵉ * qᵉ + gˡʷ * qᵛ) * Δqᵃ + Jᵃ * qᵃᵗ) / Dᵠ
-        qᵃᶜ = ifelse((Dᵠ == 0) | !isfinite(qᵃᶜ★), qᵃᶜ, qᵃᶜ★)
-
-        # At the fixed point the node is a conductance-weighted mean of its sources, so
-        # it lies in their hull; the Δ-multiplied transient form loses convexity when
-        # Δqᵃ or Jᵃ flips sign (calm transitions) and can shoot the node far outside
-        # any physical humidity. Bound it by the source states.
-        Tᵃᶜ = clamp(Tᵃᶜ, min(θᵃᵗ, Tᵛ, Tᵍ), max(θᵃᵗ, Tᵛ, Tᵍ))
-        qᵃᶜ = clamp(qᵃᶜ, min(qᵃᵗ, qᵛ, qᵉ), max(qᵃᵗ, qᵛ, qᵉ))
+        Tᵃᶜ = node_value(c.storage, gᵍʰ, Tᵍ, gˡʰ, Tᵛ, gᵃʰ, θᵃᵗ, Tᵃᶜ)
+        qᵃᶜ = node_value(c.storage, Gᵉ, qᵉ, gˡʷ, qᵛ, gᵃʷ, qᵃᵗ, qᵃᶜ)
 
         LWꜜᵍ     = (1 - εᵛ) * LWd + εᵛ * σ * Tᵛ^4
         LWꜛᵍ     = εᵍ * σ * Tᵍ^4 + (1 - εᵍ) * LWꜜᵍ
@@ -519,38 +712,25 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
         Rᵥ   = SWᵛ + LWᵛ
         resᵥ = Rᵥ - gˡʰ * (Tᵛ - Tᵃᶜ) - ℒ * gˡʷ * (qᵛ - qᵃᶜ)
         dRᵥ  = -8 * εᵛ * σ * Tᵛ^3 - gˡʰ - ℒ * gˡʷ * saturation_humidity_slope(ℂᵃᵗ, Tᵛ, pᵃᵗ, c.phase)
-        Tᵛ   = ifelse(abs(dRᵥ) < tiny, Tᵃᶜ, Tᵛ - clamp(relaxation * resᵥ / dRᵥ, -max_ΔT, max_ΔT))
+        Tᵛ   = ifelse(abs(dRᵥ) < tiny, Tᵃᶜ, Tᵛ - clamp(relaxation * resᵥ / dRᵥ, -max_temperature_step, max_temperature_step))
         Tᵛ   = clamp(Tᵛ, Tₗₒ, Tₕᵢ)
 
         Rᵍ   = SWᵍ + LWᵍ
         resᵍ = Rᵍ - gᵍʰ * (Tᵍ - Tᵃᶜ) - ℒ * Gᵉ * (qᵉ - qᵃᶜ) - Λ * (Tᵍ - Tˡᵃ)
         dRᵍ  = -4 * εᵍ * σ * Tᵍ^3 - gᵍʰ - Λ - ℒ * Gᵉ * saturation_humidity_slope(ℂᵃᵗ, Tᵍ, pᵃᵗ, c.phase)
-        Tᵍ  = Tᵍ - clamp(relaxation * resᵍ / dRᵍ, -max_ΔT, max_ΔT)
+        Tᵍ  = Tᵍ - clamp(relaxation * resᵍ / dRᵍ, -max_temperature_step, max_temperature_step)
         Tᵍ  = clamp(Tᵍ, Tₗₒ, Tₕᵢ)
     end
 
     # Converged diagnostics: per-surface flux shares, the skin→slab conduction, and
     # the effective radiating (LST) temperature σ Teff⁴ ≡ LWu (upwelling to space).
-    gᶜ, qᵛ   = canopy_conductance_terms(c.canopy, Tᵛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
-    Gᵉ, qᵉ, fᵈ, qᵍ⁺ = dry_layer_terms(c.soil, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
-    Gᵉ⁺ = fᵈ * Gᵉ + (1 - fᵈ) * gᵍʷ
-    qᵉ  = ifelse(Gᵉ⁺ > tiny, (fᵈ * Gᵉ * qᵉ + (1 - fᵈ) * gᵍʷ * qᵍ⁺) / Gᵉ⁺, qᵍ⁺)
-    Gᵉ  = Gᵉ⁺
-    gˡʷ = leaf_vapor_conductance(gᶜ, gʷ, fʷ)
-
-    # Re-solve the node against the final skins: inside the loop the node update
-    # precedes the skin updates, so it exits one iterate stale and the flux shares
-    # below would miss closure against the atmospheric flux.
-    Dᵀ  = (gᵍʰ + gˡʰ) * Δθᵃ + 𝒬ᵀ
-    Tᵃᶜ★ = ((gᵍʰ * Tᵍ + gˡʰ * Tᵛ) * Δθᵃ + 𝒬ᵀ * θᵃᵗ) / Dᵀ
-    Tᵃᶜ = ifelse((Dᵀ == 0) | !isfinite(Tᵃᶜ★), Tᵃᶜ, Tᵃᶜ★)
-    Dᵠ  = (Gᵉ + gˡʷ) * Δqᵃ + Jᵃ
-    qᵃᶜ★ = ((Gᵉ * qᵉ + gˡʷ * qᵛ) * Δqᵃ + Jᵃ * qᵃᵗ) / Dᵠ
-    qᵃᶜ = ifelse((Dᵠ == 0) | !isfinite(qᵃᶜ★), qᵃᶜ, qᵃᶜ★)
-
-    # Same hull bound as in the loop.
-    Tᵃᶜ = clamp(Tᵃᶜ, min(θᵃᵗ, Tᵛ, Tᵍ), max(θᵃᵗ, Tᵛ, Tᵍ))
-    qᵃᶜ = clamp(qᵃᶜ, min(qᵃᵗ, qᵛ, qᵉ), max(qᵃᵗ, qᵛ, qᵉ))
+    # The diagnostic node is re-solved against the final skins: inside the loop it
+    # updates ahead of them, so the loop exits one iterate stale and the shares below
+    # would miss closure. The prognostic node stays frozen.
+    gˡʷ, qᵛ = leaf_vapor_terms(c.canopy, Tᵛ, gʷ, fʷ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
+    Gᵉ, qᵉ  = soil_vapor_terms(c.soil, Tᵍ, gᵍʷ, gᵖ, Ψₛ, Ψₐ, ℙₐ)
+    Tᵃᶜ = node_value(c.storage, gᵍʰ, Tᵍ, gˡʰ, Tᵛ, gᵃʰ, θᵃᵗ, Tᵃᶜ)
+    qᵃᶜ = node_value(c.storage, Gᵉ, qᵉ, gˡʷ, qᵛ, gᵃʷ, qᵃᵗ, qᵃᶜ)
 
     LWꜜᵍ = (1 - εᵛ) * LWd + εᵛ * σ * Tᵛ^4
     LWꜛᵍ = εᵍ * σ * Tᵍ^4 + (1 - εᵍ) * LWꜜᵍ
@@ -565,13 +745,26 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
     Eʷ = fʷ * gʷ * (qᵛ - qᵃᶜ)           # wet-canopy evaporation, mass flux (kg m⁻² s⁻¹, up)
     LEʷ = ℒ * Eʷ                           # wet-canopy latent heat (W m⁻², up); LEᵛ − LEʷ = transpiration
 
+    # Node balance ingredients for the prognostic advance: conductance sums per side
+    # and the equilibria the node relaxes toward (the diagnostic node's own values).
+    Σgᵀ = gᵃʰ + gˡʰ + gᵍʰ
+    Σgᵛ = gᵃʷ + gˡʷ + Gᵉ
+    T_eq = canopy_air_node(gᵍʰ, Tᵍ, gˡʰ, Tᵛ, gᵃʰ, θᵃᵗ, Tᵃᶜ)
+    q_eq = canopy_air_node(Gᵉ, qᵉ, gˡʷ, qᵛ, gᵃʷ, qᵃᵗ, qᵃᶜ)
+
     return (; Tᵛ = convert(FT, Tᵛ), Tᵍ = convert(FT, Tᵍ),
               Tᵃᶜ = convert(FT, Tᵃᶜ), qᵃᶜ = convert(FT, qᵃᶜ),
               Teff = convert(FT, Teff),
               Hᵛ = convert(FT, Hᵛ), Hᵍ = convert(FT, Hᵍ),
               LEᵛ = convert(FT, LEᵛ), LEᵍ = convert(FT, LEᵍ),
               Gᶜ = convert(FT, Gᶜ), Eʷ = convert(FT, Eʷ),
-              LEʷ = convert(FT, LEʷ))
+              LEʷ = convert(FT, LEʷ),
+              Σgᵀ = convert(FT, Σgᵀ), Σgᵛ = convert(FT, Σgᵛ),
+              T_eq = convert(FT, T_eq), q_eq = convert(FT, q_eq),
+              gˡʰ = convert(FT, gˡʰ), gᵍʰ = convert(FT, gᵍʰ),
+              gˡʷ = convert(FT, gˡʷ), Gᵉ = convert(FT, Gᵉ),
+              qᵛ = convert(FT, qᵛ), qᵉ = convert(FT, qᵉ),
+              ρᵃᵗ = convert(FT, ρᵃᵗ), cᵖ = convert(FT, cᵖ), ℒ = convert(FT, ℒ))
 end
 
 @inline compute_interface_temperature(c::CanopyAirSpace,
@@ -592,6 +785,40 @@ end
     return sol.Tᵃᶜ, sol.qᵃᶜ
 end
 
+# Prognostic node: the node is model state, frozen through the outer fixed point —
+# the similarity scales iterate against fixed surface values (the well-conditioned
+# u★ ↔ ζ bulk solve), and the skins are solved once per step at exit
+# (`advance_interface_state!`) rather than every iterate.
+@inline interface_temperature_and_humidity(::PrognosticCanopyAirSpace, ::CanopyAirSpace,
+                                           Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ) =
+    (Ψₛ.temperature, Ψₛ.specific_humidity)
+
+"""
+    struct CanopyAirState
+
+Prognostic canopy-air node state of a [`PrognosticCanopyAir`](@ref) storage: the node
+temperature `Tᵃᶜ` and specific humidity `qᵃᶜ` carried across time steps. Model state
+(unlike the pure-output [`CanopyAirSpaceDiagnostics`](@ref) fields): it enters
+checkpointing and is read back as the interface state at the start of each flux
+computation. Initialized to the diagnostic equilibrium on the first `update_state!`
+(`Δt = 0`), so a fresh start degrades gracefully to a diagnostic first step.
+"""
+struct CanopyAirState{F}
+    temperature       :: F   # Tᵃᶜ (Field{Center, Center, Nothing})
+    specific_humidity :: F   # qᵃᶜ
+end
+
+CanopyAirState(grid) = CanopyAirState(Field{Center, Center, Nothing}(grid),
+                                      Field{Center, Center, Nothing}(grid))
+
+Adapt.@adapt_structure CanopyAirState
+
+Base.summary(::CanopyAirState) = "CanopyAirState"
+Base.show(io::IO, s::CanopyAirState) = print(io, summary(s))
+
+@inline build_canopy_air_state(::DiagnosticCanopyAir, grid) = nothing
+@inline build_canopy_air_state(::PrognosticCanopyAir, grid) = CanopyAirState(grid)
+
 """
     struct CanopyAirSpaceDiagnostics
 
@@ -602,7 +829,7 @@ this type — it signals that radiation is internalized in the soil-skin balance
 slab is driven by the skin→bulk conduction (`ground_heat_flux`) rather than by a
 separately added radiative flux.
 """
-struct CanopyAirSpaceDiagnostics{F}
+struct CanopyAirSpaceDiagnostics{F, S}
     interface              :: F   # canopy-air node Tᵃᶜ (what MOST sees)
     canopy                 :: F   # leaf temperature Tᵛ
     soil_skin              :: F   # soil-skin temperature Tᵍ
@@ -614,11 +841,13 @@ struct CanopyAirSpaceDiagnostics{F}
     soil_sensible_heat     :: F   # ground sensible Hᵍ
     canopy_evaporation     :: F   # wet-canopy evaporation Eʷ (kg m⁻² s⁻¹, up)
     canopy_wet_latent_heat :: F   # wet-canopy latent heat ℒ·Eʷ (W m⁻², up)
+    state                  :: S   # prognostic CanopyAirState, or nothing (diagnostic node)
 end
 
-CanopyAirSpaceDiagnostics(grid) =
+CanopyAirSpaceDiagnostics(grid, storage = DiagnosticCanopyAir()) =
     CanopyAirSpaceDiagnostics(ntuple(_ -> Field{Center, Center, Nothing}(grid),
-                                     Val(fieldcount(CanopyAirSpaceDiagnostics)))...)
+                                     Val(fieldcount(CanopyAirSpaceDiagnostics) - 1))...,
+                              build_canopy_air_state(storage, grid))
 
 Adapt.@adapt_structure CanopyAirSpaceDiagnostics
 

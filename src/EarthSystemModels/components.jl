@@ -24,9 +24,16 @@ exchange_grid(atmosphere, ocean, sea_ice, land=nothing) = grid(ocean)
 exchange_grid(atmosphere, ::Nothing, ::Nothing, land) = land.grid
 
 # Prescribed fields are FieldTimeSeries; set a `Number` into every time slice.
-# `nothing` leaves the field untouched.
+# `nothing` leaves the field untouched. Halos are filled because the exchanger interpolates
+# into them: a dataset-backed series has them filled as snapshots are paged in, so do the
+# same here.
 set_prescribed_field!(fts, ::Nothing) = nothing
-set_prescribed_field!(fts, value::Number) = Oceananigans.set!(fts, value)
+
+function set_prescribed_field!(fts, value::Number)
+    Oceananigans.set!(fts, value)
+    fill_halo_regions!(fts)
+    return nothing
+end
 
 #####
 ##### Functions extended by sea-ice and ocean models
@@ -102,6 +109,30 @@ apply_air_land_radiative_fluxes!(::Any) = nothing
 
 function surface_temperature end
 surface_temperature(::Any) = nothing
+
+#####
+##### Soil-water retention, published by the land to the interface
+#####
+
+"""
+    surface_retention_curve(land)
+
+The soil-water retention curve the land's hydrology owns, or `nothing` for a hydrology
+that carries none. Surface formulations that measure plant-available water evaluate
+their suction endpoints on this curve, so they read the same one the soil does.
+"""
+function surface_retention_curve end
+surface_retention_curve(::Any) = nothing
+
+"""
+    effective_saturation(i, j, grid, retention_curve, ψ)
+
+The effective saturation at suction head `ψ` (m, positive) on `retention_curve`, evaluated
+with the curve's parameters at cell `(i, j)` so a curve whose parameters are `Field`s
+follows each column's own soil. The inverse of the curve's `pressure_head`. Called from
+flux kernels.
+"""
+function effective_saturation end
 
 #####
 ##### Clock type consistency across components

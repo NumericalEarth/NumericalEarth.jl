@@ -72,6 +72,13 @@ function atmosphere_land_interface(grid, atmosphere, land;
                                    velocity_difference = RelativeVelocity(),
                                    specific_humidity   = default_al_specific_humidity(land),
                                    surface_properties  = (;))
+    if requires_retention_curve(specific_humidity) && isnothing(surface_retention_curve(land))
+        throw(ArgumentError("$(summary(specific_humidity)) measures plant-available water on " *
+                            "the soil's retention curve, but this land's hydrology carries none. " *
+                            "Use a hydrology that owns one (VariablySaturatedHydrology), a " *
+                            "moisture stress carrying its own texture-class curve, or one defined " *
+                            "on the hydrology's own saturation (CriticalSaturation)."))
+    end
     al_fluxes = AtmosphereSurfaceFluxes(grid)
     al_properties = InterfaceProperties(specific_humidity, temperature, velocity_difference, surface_properties)
     interface_temperature = build_interface_temperature(temperature, grid)
@@ -85,7 +92,7 @@ end
 # downstream (`slab_land.jl`, `apply_air_land_radiative_fluxes.jl`) that the radiation
 # is internalized and the slab is driven by conduction.
 @inline build_interface_temperature(temperature_formulation, grid) = Field{Center, Center, Nothing}(grid)
-@inline build_interface_temperature(::CanopyAirSpace, grid) = CanopyAirSpaceDiagnostics(grid)
+@inline build_interface_temperature(cas::CanopyAirSpace, grid) = CanopyAirSpaceDiagnostics(grid, cas.storage)
 
 # Store the diagnostic surface temperature(s) from the converged interface state.
 # Ordinary closures write the single skin temperature; a `CanopyAirSpace` re-runs its
@@ -111,6 +118,137 @@ end
         Ts.canopy_wet_latent_heat[i, j, 1] = sol.LEʷ
     end
     return nothing
+end
+
+# Initial interface values for the fixed point. Diagnostic formulations cold-start
+# from the bulk land temperature and its saturation humidity; a prognostic
+# `CanopyAirSpace` reads the stored node back, except before any time step has run,
+# where the state fields are not yet initialized and the diagnostic guess is used.
+# The `iteration > 0` guard also holds the state through the first-time-step
+# preparation (`maybe_prepare_first_time_step!` re-runs `update_state!` with
+# `last_Δt` already set), so each model step advances the state exactly once.
+@inline clock_has_stepped(clock) =
+    (clock.iteration > 0) & isfinite(clock.last_Δt) & (clock.last_Δt > 0)
+
+@inline initial_interface_values(formulation, Ts, i, j, T₀, q₀, clock) = (T₀, q₀)
+
+@inline function initial_interface_values(::PrognosticCanopyAirSpace, Ts::CanopyAirSpaceDiagnostics,
+                                          i, j, T₀, q₀, clock)
+    stepped = clock_has_stepped(clock)
+    @inbounds T = ifelse(stepped, Ts.state.temperature[i, j, 1], T₀)
+    @inbounds q = ifelse(stepped, Ts.state.specific_humidity[i, j, 1], q₀)
+    return T, q
+end
+
+# Finalize the interface state after the fixed point: store diagnostics and, for
+# prognostic storage, advance the stored state and return the state whose flux
+# scales the kernel exports. The default (all diagnostic formulations) is exactly
+# the previous behavior.
+@inline function advance_interface_state!(Ts, i, j, formulation, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, clock)
+    store_interface_temperature!(Ts, i, j, formulation, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    return Ψₛ
+end
+
+# Prognostic canopy air: the node was frozen through the fixed point, so the skins
+# equilibrate against it once here; the node then advances by the exponential
+# relaxation toward the conductance-weighted equilibrium, and the exported scales
+# are re-evaluated at the step-mean node state, closing the step ledger exactly:
+# flux to the atmosphere = Kirchhoff supply − storage tendency. The stored
+# diagnostics (shares, node) are the step-mean-consistent ones the ledger uses.
+@inline function advance_interface_state!(Ts, i, j, cas::PrognosticCanopyAirSpace,
+                                          Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, clock)
+    sol = canopy_air_space_solve(cas, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)   # node frozen inside
+
+    FT  = eltype(Ψₛ)
+    # Δt = 0 before any time step (including the first-time-step preparation call):
+    # the advance then lands on the equilibrium — the diagnostic initialization.
+    Δt  = ifelse(clock_has_stepped(clock), convert(FT, clock.last_Δt), zero(FT))
+    h_c = convert(FT, state2dindex(cas.storage.layer_depth, i, j))
+    Cᵀ = sol.ρᵃᵗ * sol.cᵖ * h_c
+    Cᵛ = sol.ρᵃᵗ * h_c
+
+    T⁻, q⁻ = Ψₛ.temperature, Ψₛ.specific_humidity
+    T⁺ = advance_canopy_air(T⁻, sol.T_eq, sol.Σgᵀ, Cᵀ, Δt)
+    q⁺ = advance_canopy_air(q⁻, sol.q_eq, sol.Σgᵛ, Cᵛ, Δt)
+    T̄  = step_mean_canopy_air(T⁻, sol.T_eq, sol.Σgᵀ, Cᵀ, Δt)
+    q̄  = step_mean_canopy_air(q⁻, sol.q_eq, sol.Σgᵛ, Cᵛ, Δt)
+
+    @inbounds begin
+        Ts.state.temperature[i, j, 1]       = T⁺
+        Ts.state.specific_humidity[i, j, 1] = q⁺
+        Ts.interface[i, j, 1]              = T⁺
+        Ts.canopy[i, j, 1]                 = sol.Tᵛ
+        Ts.soil_skin[i, j, 1]              = sol.Tᵍ
+        Ts.effective[i, j, 1]              = sol.Teff
+        Ts.ground_heat_flux[i, j, 1]        = sol.Gᶜ
+        Ts.canopy_latent_heat[i, j, 1]     = sol.ℒ * sol.gˡʷ * (sol.qᵛ - q̄)
+        Ts.soil_latent_heat[i, j, 1]       = sol.ℒ * sol.Gᵉ * (sol.qᵉ - q̄)
+        Ts.canopy_sensible_heat[i, j, 1]   = sol.gˡʰ * (sol.Tᵛ - T̄)
+        Ts.soil_sensible_heat[i, j, 1]     = sol.gᵍʰ * (sol.Tᵍ - T̄)
+        Ts.canopy_evaporation[i, j, 1]     = sol.Eʷ
+        Ts.canopy_wet_latent_heat[i, j, 1] = sol.LEʷ
+    end
+
+    # Exported scales at the step-mean node (the same floored transfer coefficients
+    # the node balance uses), so −ρ cᵖ u★ θ★ = gᵃʰ (T̄ − θᵃᵗ) and the vapor analog.
+    θᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
+    χθ⁺ = max(zero(FT), Ψₛ.fluxes.χθ)
+    χq⁺ = max(zero(FT), Ψₛ.fluxes.χq)
+    fluxes = InterfaceFluxScales(Ψₛ.fluxes.u★,
+                                 χθ⁺ * (θᵃᵗ - T̄),
+                                 χq⁺ * (Ψₐ.q - q̄),
+                                 Ψₛ.fluxes.χθ, Ψₛ.fluxes.χq)
+    return rebuild_interface_state(Ψₛ, fluxes, T⁺, q⁺)
+end
+
+# A prognostic energy-balance skin reads its stored temperature back from the
+# interface-temperature field; before any time step it starts from the bulk guess,
+# and the advance then initializes the field at the equilibrium root.
+@inline function initial_interface_values(::PrognosticEnergyBalanceTemperature, Ts,
+                                          i, j, T₀, q₀, clock)
+    stepped = clock_has_stepped(clock)
+    @inbounds T = ifelse(stepped, Ts[i, j, 1], T₀)
+    return T, q₀
+end
+
+# Prognostic energy-balance skin: frozen through the fixed point, advanced once per
+# step by a backward-Euler update of C dTₛ/dt = Rₙ + G − H − LE, solved by a fixed
+# three-iteration Newton on R(T) = C (T − Tₛ)/Δt − F(T) (re-linearizing the radiative
+# and vapor curvature each iterate, so violent adjustment steps stay energy-consistent).
+# The imbalance the massless solve has to dissipate instantly lands in the storage
+# tendency instead. Exported scales are re-evaluated at the end-of-step skin.
+@inline function advance_interface_state!(Ts, i, j, t::PrognosticEnergyBalanceTemperature,
+                                          Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, clock)
+    FT = eltype(Ψₛ)
+    Tₛ = Ψₛ.temperature
+    C  = convert(FT, state2dindex(t.storage.heat_capacity, i, j))
+    stepped = clock_has_stepped(clock)
+    # Δt⁻¹ = 0 before any time step (including the first-time-step preparation call):
+    # the Newton then lands on the equilibrium root — the diagnostic initialization,
+    # as the prognostic canopy-air node does.
+    Δt⁻¹ = ifelse(stepped, 1 / convert(FT, clock.last_Δt), zero(FT))
+
+    T⁺ = Tₛ
+    for _ in 1:3
+        F, Σλ = skin_energy_imbalance(T⁺, t, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ)
+        R  = C * (T⁺ - Tₛ) * Δt⁻¹ - F
+        dR = C * Δt⁻¹ + Σλ
+        # dR = 0 only before the first step (Δt⁻¹ = 0) on a skin with no restoring
+        # conductance at all — no conduction, no radiative feedback, no turbulent
+        # exchange. F is then independent of T and there is no root to step toward.
+        T⁺ = ifelse(dR > 0, T⁺ - R / dR, T⁺)
+    end
+
+    @inbounds Ts[i, j, 1] = T⁺
+
+    u★  = Ψₛ.fluxes.u★
+    χθ⁺ = max(zero(FT), Ψₛ.fluxes.χθ)
+    χq⁺ = max(zero(FT), Ψₛ.fluxes.χq)
+    Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
+    q⁺  = compute_interface_humidity(ℙₛ.specific_humidity_formulation, T⁺, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    fluxes = InterfaceFluxScales(u★, χθ⁺ * (Tᵃᵗ - T⁺), χq⁺ * (Ψₐ.q - q⁺),
+                                 Ψₛ.fluxes.χθ, Ψₛ.fluxes.χq)
+    return rebuild_interface_state(Ψₛ, fluxes, convert(FT, T⁺), convert(FT, q⁺))
 end
 
 #####
@@ -149,7 +287,8 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     land_state = (T = land_exchanger_state.T,
                   saturation = land_exchanger_state.saturation,
                   canopy_water_storage = land_exchanger_state.canopy_water_storage,
-                  canopy_water_capacity = land_exchanger_state.canopy_water_capacity)
+                  canopy_water_capacity = land_exchanger_state.canopy_water_capacity,
+                  retention_curve = land_exchanger_state.retention_curve)
 
     # Per-cell surface properties for the flux closure: whatever the land state
     # advertises, overridden by the interface's own `surface_properties`. The
@@ -213,35 +352,44 @@ end
 #####
 ##### Prescribed, possibly time-varying surface inputs.
 ##### `surface_field_value` reads the per-cell value from a `Number`, a static
-##### `Field`, or — for a `FieldTimeSeries` interpolated to the model clock — a
-##### kernel-friendly `PrescribedSurfaceData` bundle.
+##### `Field`, or a `FieldTimeSeries` interpolated to the model clock.
 #####
 
-struct PrescribedSurfaceData{D, B, T}
-    data          :: D
-    backend       :: B
-    time_indexing :: T
+@inline surface_field_value(x, i, j, time_interpolator) = state2dindex(x, i, j)
+
+# `i, j` name an exact cell, so the value is interpolated in time only. Passing them to
+# `interpolate` as spatial fractional indices would also read the neighbor at
+# `(i + 1, j + 1)`, which does not exist in a `Flat` direction or at the last cell.
+#
+# The indices are converted because `time_interpolator` reaches the kernel as an argument,
+# where its scalar fields can arrive as `CuTracedRNumber` rather than `Int`
+# (CliMA/Oceananigans.jl#4230).
+#
+# TODO: drop this blend once Oceananigans accepts a `TimeInterpolator` in `getindex`
+# (CliMA/Oceananigans.jl#5886), leaving `x[i, j, 1, time_interpolator]`. The flux kernels take
+# an interpolator precomputed on the host, as the prescribed-atmosphere path does, because
+# `fts[i, j, k, Time(t)]` recomputes the time indices in every thread; today Oceananigans
+# accepts one only through `interpolate`, which interpolates in space as well.
+@inline function surface_field_value(x::FlavorOfFTS, i, j, time_interpolator)
+    ñ  = time_interpolator.fractional_index
+    n₁ = convert(Int, time_interpolator.first_index)
+    n₂ = convert(Int, time_interpolator.second_index)
+
+    @inbounds ψ₁ = x[i, j, 1, n₁]
+    @inbounds ψ₂ = x[i, j, 1, n₂]
+
+    return ifelse(n₁ == n₂, ψ₁, ψ₂ * ñ + ψ₁ * (1 - ñ))
 end
 
-Adapt.adapt_structure(to, p::PrescribedSurfaceData) =
-    PrescribedSurfaceData(adapt(to, p.data), adapt(to, p.backend), adapt(to, p.time_indexing))
-
-@inline surface_field_value(x, i, j, time_interpolator) = state2dindex(x, i, j)
-@inline surface_field_value(x::PrescribedSurfaceData, i, j, time_interpolator) =
-    interpolate(FractionalIndices(i, j, nothing), time_interpolator, x.data, x.backend, x.time_indexing)
-
-# Host-side: reduce a prescribed-surface spec (LAI, vegetation fraction, …) to a
-# kernel-friendly value plus the time index used to interpolate it. Constants and
-# static fields pass through untouched (`nothing` interpolator); a
-# `FieldTimeSeries` is reduced to its arrays and its time index is precomputed on
-# the host.
+# Host-side: pair a prescribed-surface spec (LAI, vegetation fraction, …) with the time
+# index used to interpolate it. Constants and static fields pass through untouched
+# (`nothing` interpolator); a `FieldTimeSeries` keeps its time index precomputed on the
+# host, so the kernel does not recompute it.
 @inline kernel_surface_field(surface_field, arch, time) = (surface_field, nothing)
 @inline function kernel_surface_field(surface_field::FieldTimeSeries, arch, time)
     time_interpolator = cpu_interpolating_time_indices(arch, surface_field.times,
                                                        surface_field.time_indexing, time)
-    bundle = PrescribedSurfaceData(surface_field.data, surface_field.backend,
-                                   surface_field.time_indexing)
-    return bundle, time_interpolator
+    return surface_field, time_interpolator
 end
 
 # The LAI spec lives on the canopy humidity formulation; other formulations carry
@@ -265,8 +413,28 @@ end
 @inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) = land_saturation(i, j, grid, land_state)
 @inline interface_hydrology_state(i, j, grid, q::FractionalHumidity, land_state) =
     interface_hydrology_state(i, j, grid, q.efficiency, land_state)
+@inline requires_retention_curve(q::FractionalHumidity) = requires_retention_curve(q.efficiency)
 @inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) = land_saturation(i, j, grid, land_state)
-@inline interface_hydrology_state(i, j, grid, ::PlantAvailableWaterStress, land_state) = land_saturation(i, j, grid, land_state)
+# The stress endpoints live on a retention curve — the closure's own texture-class curve
+# when it carries one, otherwise the *land's* curve, whose parameters may vary per cell;
+# evaluate them here, once per cell, so the flux solve reads plain scalars.
+@inline stress_endpoint_saturation(i, j, grid, ::HydrologyCurveWaterStress, land_state, ψ) =
+    effective_saturation(i, j, grid, land_state.retention_curve, ψ)
+
+@inline function stress_endpoint_saturation(i, j, grid, p::PlantAvailableWaterStress, land_state, ψ)
+    FT = typeof(ψ)
+    α = convert(FT, p.inverse_air_entry_head)
+    n = convert(FT, p.pore_size_uniformity)
+    return van_genuchten_saturation(α * ψ, n)
+end
+
+@inline function interface_hydrology_state(i, j, grid, p::PlantAvailableWaterStress, land_state)
+    𝒮 = state2dindex(land_state.saturation, i, j)
+    FT = typeof(𝒮)
+    return (saturation = 𝒮,
+            field_capacity_saturation = stress_endpoint_saturation(i, j, grid, p, land_state, convert(FT, p.field_capacity_head)),
+            wilting_saturation        = stress_endpoint_saturation(i, j, grid, p, land_state, convert(FT, p.wilting_point_head)))
+end
 @inline interface_hydrology_state(i, j, grid, ::DryLayerHumidity, land_state) =
     land_saturation(i, j, grid, land_state)
 @inline interface_hydrology_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
@@ -341,9 +509,12 @@ end
                                                          i, j, 1, grid, time)
 
     # Estimate initial interface state. Use the saturated value as the initial
-    # surface humidity guess (the solver recomputes it via the formulation).
+    # surface humidity guess (the solver recomputes it via the formulation);
+    # prognostic formulations read their stored state back instead.
     u★ = convert(FT, 1e-4)
     qₛ = convert(FT, saturation_specific_humidity(ℂᵃᵗ, Tₛ, pᵃᵗ, interface_phase(q_formulation)))
+    Tₛ, qₛ = initial_interface_values(interface_properties.temperature_formulation,
+                                      interface_temperature, i, j, Tₛ, qₛ, clock)
     initial_interface_state = AirLandInterfaceState(i, j, grid,
                                                     InterfaceFluxScales(u★, u★, u★),
                                                     InterfaceVelocities(uₛ, vₛ),
@@ -359,6 +530,16 @@ end
                                               interface_properties,
                                               atmosphere_properties,
                                               local_land_properties)
+
+    # Store diagnostics; prognostic formulations also advance their stored state and
+    # hand back the state whose scales the flux exports below use (step-mean values,
+    # so the step energy/vapor ledger closes against the storage tendency).
+    interface_state = advance_interface_state!(interface_temperature, i, j,
+                                               interface_properties.temperature_formulation,
+                                               interface_state, local_atmosphere_state,
+                                               local_interior_state, radiation_state,
+                                               interface_properties, atmosphere_properties,
+                                               clock)
 
     u★ = interface_state.fluxes.u★
     θ★ = interface_state.fluxes.θ★
@@ -393,9 +574,4 @@ end
         interface_fluxes.temperature_scale[i, j, 1] = θ★
         interface_fluxes.water_vapor_scale[i, j, 1] = q★
     end
-
-    store_interface_temperature!(interface_temperature, i, j,
-                                 interface_properties.temperature_formulation,
-                                 interface_state, local_atmosphere_state, local_interior_state,
-                                 radiation_state, atmosphere_properties)
 end

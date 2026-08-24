@@ -190,6 +190,8 @@ end
 
 saturation(h::VariablySaturatedHydrology, land) = land.saturation
 
+EarthSystemModels.surface_retention_curve(h::VariablySaturatedHydrology) = h.retention_curve
+
 #####
 ##### Time-step kernel.
 #####
