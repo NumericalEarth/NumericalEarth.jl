@@ -14,8 +14,9 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: CanopyAirSpaceDiag
 const BreezeRTM = Breeze.RadiativeTransferModel
 
 # Binds `Teff` for a canopy, not the canopy-air node the atmosphere ventilates into.
-# TODO: `Teff` already carries the ground reflection, so an RTM emissivity below one re-applies
-# it and over-counts by ~(1 - ε). Needs Breeze to accept a prescribed upwelling longwave.
+# TODO: `Teff` already carries the reflected downwelling, so an RTM emissivity below one
+# re-applies it — RRTMGP emits ε σ Teff⁴ + (1 - ε) ℐꜜˡʷ, short of σ Teff⁴ by (1 - ε)(LWu - ℐꜜˡʷ).
+# Needs Breeze to accept a prescribed upwelling longwave.
 function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_temperature(rtm::BreezeRTM, interfaces)
     isnothing(rtm.surface_properties.surface_temperature) || return rtm
     Tˢ = radiating_temperature(interfaces)
