@@ -233,7 +233,7 @@ EarthSystemModels.surface_temperature(interfaces::ComponentInterfaces) =
                                           interfaces.atmosphere_ocean_interface)
 
 EarthSystemModels.surface_temperature(land_interface::AtmosphereInterface, ocean_interface) =
-    land_interface.temperature
+    interface_node_temperature(land_interface.temperature)
 EarthSystemModels.surface_temperature(::Nothing, ocean_interface::AtmosphereInterface) =
     ocean_interface.temperature
 EarthSystemModels.surface_temperature(::Nothing, ::Nothing) = nothing

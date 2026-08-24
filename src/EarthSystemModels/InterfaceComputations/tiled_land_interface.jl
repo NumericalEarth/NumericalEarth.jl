@@ -137,6 +137,22 @@ Base.show(io::IO, ti::TiledLandInterface) =
 # The atmosphere-facing surface temperature is the blended canopy-air node (the same
 # NamedTuple signal a single CanopyAirSpace uses).
 EarthSystemModels.surface_temperature(ti::TiledLandInterface) = interface_node_temperature(ti.temperature)
+EarthSystemModels.surface_temperature(ti::TiledLandInterface, ::Nothing) =
+    EarthSystemModels.surface_temperature(ti)
+
+# Checkpointing: each tile is an ordinary `AtmosphereInterface`, so its prognostic
+# interface state (canopy-air node, prognostic skin) round-trips tile by tile.
+interface_prognostic_state(ti::TiledLandInterface) =
+    (; vegetated = interface_prognostic_state(ti.vegetated),
+       bare      = interface_prognostic_state(ti.bare))
+
+restore_interface_state!(ti::TiledLandInterface, ::Nothing) = nothing
+
+function restore_interface_state!(ti::TiledLandInterface, state)
+    restore_interface_state!(ti.vegetated, state.vegetated)
+    restore_interface_state!(ti.bare, state.bare)
+    return nothing
+end
 
 """
     leaf_area_index_cover_fraction(leaf_area_index; extinction=0.5, clumping=1)
