@@ -83,7 +83,8 @@ end
             rtm = model.radiation
             interface = model.interfaces.atmosphere_land_interface
 
-            @test rtm.surface_properties.surface_temperature === interface.temperature.effective
+            # The coupler owns the bound field for a canopy; it is not `Teff` itself.
+            @test rtm.surface_properties.surface_temperature !== interface.temperature.effective
 
             exchanger = model.interfaces.exchanger.radiation
             @test !isnothing(exchanger)
@@ -110,6 +111,14 @@ end
             LEᵍ = Array(interior(interface.temperature.soil_latent_heat))
             @test Hᵛ .+ Hᵍ ≈ Array(interior(interface.fluxes.sensible_heat))
             @test LEᵛ .+ LEᵍ ≈ Array(interior(interface.fluxes.latent_heat))
+
+            # The bound temperature is the one that makes RRTMGP's own surface boundary
+            # condition reproduce the canopy's upwelling longwave.
+            σ = default_stefan_boltzmann_constant
+            Tʳ = Array(interior(rtm.surface_properties.surface_temperature))
+            Teff_field = Array(interior(interface.temperature.effective))
+            @test rtm_emissivity .* σ .* Tʳ .^ 4 .+ (1 - rtm_emissivity) .* ℐꜜˡʷ ≈
+                  σ .* Teff_field .^ 4
 
             # Under a zero radiation state both skins and `Teff` collapse onto the node.
             Tᵃᶜ = Array(interior(interface.temperature.interface))
