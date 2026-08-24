@@ -245,15 +245,15 @@ fill_signature(fts::FieldTimeSeries) = fill_signature(Array(interior(fts)))
 
 seasonal_fill_key(; parameters...) = map(fill_signature, NamedTuple(parameters))
 
-cached_seasonal_fill(::Nothing, key, 𝒜) = nothing
+cached_seasonal_fill(::Nothing, key, series) = nothing
 
-function cached_seasonal_fill(cache, key, 𝒜)
+function cached_seasonal_fill(cache, key, series)
     isfile(cache) || return nothing
 
     try
         return jldopen(cache, "r") do file
             haskey(file, "key") && file["key"] == key || return nothing
-            copyto!(𝒜, file["series"])
+            copyto!(series, file["series"])
             (provenance = file["provenance"], reach = file["reach"])
         end
     catch err
@@ -263,14 +263,14 @@ function cached_seasonal_fill(cache, key, 𝒜)
     end
 end
 
-cache_seasonal_fill!(::Nothing, key, 𝒜, provenance, reach) = nothing
+cache_seasonal_fill!(::Nothing, key, series, provenance, reach) = nothing
 
-function cache_seasonal_fill!(cache, key, 𝒜, provenance, reach)
+function cache_seasonal_fill!(cache, key, series, provenance, reach)
     @root begin
         write_atomically(cache) do staging_path
             jldopen(staging_path, "w") do file
                 file["key"] = key
-                file["series"] = 𝒜
+                file["series"] = series
                 file["provenance"] = provenance
                 file["reach"] = reach
             end
