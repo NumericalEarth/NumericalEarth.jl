@@ -24,6 +24,9 @@ the given turbulent-flux closure, interface-temperature model, atmosphere-relati
 velocity model, and specific-humidity formulation. Pass the result as
 `atmosphere_land_interface = ...` to `ComponentInterfaces` /
 `AtmosphereLandModel` to override the default.
+
+A [`CanopyAirSpace`](@ref) temperature formulation may carry per-cell `Field` optics; they
+are checked here by [`validate_canopy_optics`](@ref) and localized in the flux kernel.
 """
 function atmosphere_land_interface(grid, atmosphere, land;
                                    fluxes              = default_atmosphere_land_fluxes(land, eltype(grid)),
@@ -37,6 +40,8 @@ function atmosphere_land_interface(grid, atmosphere, land;
                             "moisture stress defined on the hydrology's own saturation " *
                             "(CriticalSaturation)."))
     end
+    validate_canopy_optics(temperature, grid)
+
     al_fluxes = AtmosphereSurfaceFluxes(grid)
     al_properties = InterfaceProperties(specific_humidity, temperature, velocity_difference)
     interface_temperature = build_interface_temperature(temperature, grid)
@@ -416,7 +421,13 @@ end
         qᵃᵗ = atmosphere_state.q[i, j, 1]
     end
 
-    q_formulation = interface_properties.specific_humidity_formulation
+    # `CanopyAirSpace` optics slots may be per-cell `Field`s; collapse them to this cell's
+    # values before the index-free solve.
+    temperature_formulation = local_interface_formulation(interface_properties.temperature_formulation, i, j)
+    q_formulation           = local_interface_formulation(interface_properties.specific_humidity_formulation, i, j)
+
+    local_interface_properties = InterfaceProperties(q_formulation, temperature_formulation,
+                                                     interface_properties.velocity_formulation)
 
     # Bulk land temperature serves as the initial skin-temperature guess.
     Tₛ = state2dindex(land_state.T, i, j)
@@ -449,7 +460,7 @@ end
     # prognostic formulations read their stored state back instead.
     u★ = convert(FT, 1e-4)
     qₛ = convert(FT, saturation_specific_humidity(ℂᵃᵗ, Tₛ, pᵃᵗ, interface_phase(q_formulation)))
-    Tₛ, qₛ = initial_interface_values(interface_properties.temperature_formulation,
+    Tₛ, qₛ = initial_interface_values(temperature_formulation,
                                       interface_temperature, i, j, Tₛ, qₛ, clock)
     initial_interface_state = AirLandInterfaceState(i, j, grid,
                                                     InterfaceFluxScales(u★, u★, u★),
@@ -463,7 +474,7 @@ end
                                               local_atmosphere_state,
                                               local_interior_state,
                                               radiation_state,
-                                              interface_properties,
+                                              local_interface_properties,
                                               atmosphere_properties,
                                               local_land_properties)
 
@@ -471,10 +482,10 @@ end
     # hand back the state whose scales the flux exports below use (step-mean values,
     # so the step energy/vapor ledger closes against the storage tendency).
     interface_state = advance_interface_state!(interface_temperature, i, j,
-                                               interface_properties.temperature_formulation,
+                                               temperature_formulation,
                                                interface_state, local_atmosphere_state,
                                                local_interior_state, radiation_state,
-                                               interface_properties, atmosphere_properties,
+                                               local_interface_properties, atmosphere_properties,
                                                clock)
 
     u★ = interface_state.fluxes.u★
@@ -483,7 +494,7 @@ end
 
     Ψₛ = interface_state
     Ψₐ = local_atmosphere_state
-    Δu, Δv = velocity_difference(interface_properties.velocity_formulation, Ψₐ, Ψₛ)
+    Δu, Δv = velocity_difference(local_interface_properties.velocity_formulation, Ψₐ, Ψₛ)
     ΔU = sqrt(Δu^2 + Δv^2)
 
     τˣ = ifelse(ΔU == 0, zero(grid), - u★^2 * Δu / ΔU)
