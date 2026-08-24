@@ -140,6 +140,13 @@ EarthSystemModels.surface_temperature(ti::TiledLandInterface) = interface_node_t
 EarthSystemModels.surface_temperature(ti::TiledLandInterface, ::Nothing) =
     EarthSystemModels.surface_temperature(ti)
 
+# Both tiles emit an LST, so the mosaic's radiating temperature is their radiance-weighted
+# blend (`_blend_tiled_land_fluxes!` forms it in T⁴ space).
+EarthSystemModels.radiating_temperature(ti::TiledLandInterface) =
+    interface_radiating_temperature(ti.temperature)
+EarthSystemModels.radiating_temperature(ti::TiledLandInterface, ::Nothing) =
+    EarthSystemModels.radiating_temperature(ti)
+
 # Checkpointing: each tile is an ordinary `AtmosphereInterface`, so its prognostic
 # interface state (canopy-air node, prognostic skin) round-trips tile by tile.
 interface_prognostic_state(ti::TiledLandInterface) =
