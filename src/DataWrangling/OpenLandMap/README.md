@@ -32,6 +32,11 @@ A few things are specific to this dataset:
    `OpenLandMapSoilDB(aggregation_factor = n)` pins the lattice at `n` native pixels per cell
    side. Each lattice is cached under its own filename.
 
+5. **Large windows regrid in tiles.** The window is read and interpolated a tile at a time, so
+   peak memory follows the tile rather than the window and a model domain can exceed what the
+   dataset would occupy at native resolution. `tile_bytes` sets the budget per tile; a window
+   small enough for one tile is regridded in a single pass, unchanged.
+
 ## Usage
 
 ```julia
