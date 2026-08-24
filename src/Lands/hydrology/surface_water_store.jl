@@ -100,6 +100,11 @@ end
     end
 end
 
+# The pond wraps the soil without changing its water-retention physics, so the
+# surface retention curve is the wrapped soil's.
+EarthSystemModels.surface_retention_curve(h::SurfaceWaterStore) =
+    EarthSystemModels.surface_retention_curve(h.soil)
+
 function time_step!(h::SurfaceWaterStore, land, Δt, time)
     arch = architecture(land.grid)
     launch!(arch, land.grid, :xy, _surface_water_drain!,
