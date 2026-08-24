@@ -825,6 +825,10 @@ closes.
     SWᵛ = (1 - αˡᶠ) * (1 - ftrans) * SW
     SWᵍ = ftrans * (1 - αᵍ) * SW
 
+    # What the column reflects, so an atmosphere reflecting on its own behalf can be given the
+    # same number the two-source split absorbs against.
+    αeff = 1 - ((1 - αˡᶠ) * (1 - ftrans) + ftrans * (1 - αᵍ))
+
     Tᵛ  = Tˡᵃ
     Tᵍ = Tˡᵃ
     Tᵃᶜ = Ψₛ.temperature
@@ -891,7 +895,7 @@ closes.
 
     return (; Tᵛ = convert(FT, Tᵛ), Tᵍ = convert(FT, Tᵍ),
               Tᵃᶜ = convert(FT, Tᵃᶜ), qᵃᶜ = convert(FT, qᵃᶜ),
-              Teff = convert(FT, Teff),
+              Teff = convert(FT, Teff), αeff = convert(FT, αeff),
               Hᵛ = convert(FT, Hᵛ), Hᵍ = convert(FT, Hᵍ),
               LEᵛ = convert(FT, LEᵛ), LEᵍ = convert(FT, LEᵍ),
               Gᶜ = convert(FT, Gᶜ), Eʷ = convert(FT, Eʷ),
@@ -971,6 +975,7 @@ struct CanopyAirSpaceDiagnostics{F, S}
     canopy                 :: F   # leaf temperature Tᵛ
     soil_skin              :: F   # soil-skin temperature Tᵍ
     effective              :: F   # radiating (LST) temperature Teff
+    effective_albedo       :: F   # broadband shortwave albedo of the canopy + ground column
     ground_heat_flux       :: F   # skin→bulk conduction Gᶜ
     canopy_latent_heat     :: F   # leaf transpiration LEᵛ
     soil_latent_heat       :: F   # soil evaporation LEᵍ

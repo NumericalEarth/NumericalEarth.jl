@@ -230,5 +230,10 @@ end
         Teffᵛ = veg_temperature.effective[i, j, 1]
         Teffᵇ = bare_temperature.effective[i, j, 1]
         blended_temperature.effective[i, j, 1] = (f * Teffᵛ^4 + g * Teffᵇ^4)^convert(FT, 1//4)
+
+        # Both tiles reflect the same incident shortwave, so the mosaic's albedo is the plain
+        # area weight of theirs.
+        blended_temperature.effective_albedo[i, j, 1] =
+            f * veg_temperature.effective_albedo[i, j, 1] + g * bare_temperature.effective_albedo[i, j, 1]
     end
 end

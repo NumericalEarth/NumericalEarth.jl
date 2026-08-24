@@ -83,8 +83,9 @@ end
             rtm = model.radiation
             interface = model.interfaces.atmosphere_land_interface
 
-            # The coupler owns the bound field for a canopy; it is not `Teff` itself.
+            # The coupler owns the bound fields for a canopy; neither is the diagnostic itself.
             @test rtm.surface_properties.surface_temperature !== interface.temperature.effective
+            @test rtm.surface_properties.direct_surface_albedo === rtm.surface_properties.diffuse_surface_albedo
 
             exchanger = model.interfaces.exchanger.radiation
             @test !isnothing(exchanger)
@@ -111,6 +112,14 @@ end
             LEᵍ = Array(interior(interface.temperature.soil_latent_heat))
             @test Hᵛ .+ Hᵍ ≈ Array(interior(interface.fluxes.sensible_heat))
             @test LEᵛ .+ LEᵍ ≈ Array(interior(interface.fluxes.latent_heat))
+
+            # Shortwave closes: what RRTMGP reflects plus what the canopy absorbs is the
+            # incident flux, so no energy is created at the surface.
+            αʳ = Array(interior(rtm.surface_properties.direct_surface_albedo))
+            αᶜ = Array(interior(interface.temperature.effective_albedo))
+            @test αʳ ≈ αᶜ
+            @test αʳ .* ℐꜜˢʷ .+ (1 .- αᶜ) .* ℐꜜˢʷ ≈ ℐꜜˢʷ
+            @test all(0 .< αʳ .< 1)
 
             # The bound temperature is the one that makes RRTMGP's own surface boundary
             # condition reproduce the canopy's upwelling longwave.

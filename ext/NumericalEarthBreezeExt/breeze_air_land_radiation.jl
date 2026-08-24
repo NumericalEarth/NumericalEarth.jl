@@ -13,28 +13,34 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: CanopyAirSpaceDiag
 
 const BreezeRTM = Breeze.RadiativeTransferModel
 
-function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_temperature(rtm::BreezeRTM, interfaces)
+function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_properties(rtm::BreezeRTM, interfaces)
     Tˢ = radiating_temperature(interfaces)
     isnothing(Tˢ) && return rtm
-    Tʳ = bind_radiating_temperature(rtm, Tˢ, land_interface_temperature(interfaces),
-                                    interfaces.exchanger.grid)
-    isnothing(Tʳ) && return rtm
-    return @set rtm.surface_properties.surface_temperature = Tʳ
+    return bind_surface_properties(rtm, Tˢ, land_interface_temperature(interfaces),
+                                   interfaces.exchanger.grid)
 end
 
 land_interface_temperature(interfaces) = interface_temperature(interfaces.atmosphere_land_interface)
 interface_temperature(::Nothing) = nothing
 interface_temperature(interface) = interface.temperature
 
-# A single-source surface emits with the same ε the RTM applies, so its own field is already
-# exact; an explicitly constructed `surface_temperature` wins.
-bind_radiating_temperature(rtm, Tˢ, temperature, grid) =
-    isnothing(rtm.surface_properties.surface_temperature) ? Tˢ : nothing
+# A single-source surface emits and reflects with the same ε and α the RTM applies, so its own
+# fields are already exact; an explicitly constructed `surface_temperature` wins.
+function bind_surface_properties(rtm, Tˢ, temperature, grid)
+    isnothing(rtm.surface_properties.surface_temperature) || return rtm
+    return @set rtm.surface_properties.surface_temperature = Tˢ
+end
 
-# A canopy needs the per-step inversion below, so the coupler owns the field it writes into,
-# overriding any explicitly constructed one: with a canopy the surface temperature is a result.
-bind_radiating_temperature(rtm, Tˢ, ::CanopyAirSpaceDiagnostics, grid) =
-    Field{Center, Center, Nothing}(grid)
+# A canopy carries its own optics, so both what it radiates and what it reflects are results of
+# its solve rather than configuration. The coupler owns the fields it republishes each step,
+# overriding explicitly constructed ones. One albedo field feeds both the direct and diffuse
+# slots: the two-source split is broadband.
+function bind_surface_properties(rtm, Tˢ, ::CanopyAirSpaceDiagnostics, grid)
+    α = Field{Center, Center, Nothing}(grid)
+    rtm = @set rtm.surface_properties.surface_temperature = Field{Center, Center, Nothing}(grid)
+    rtm = @set rtm.surface_properties.direct_surface_albedo = α
+    return @set rtm.surface_properties.diffuse_surface_albedo = α
+end
 
 # RRTMGP emits ε σ T⁴ + (1 - ε) ℐꜜˡʷ, but a canopy's `Teff` already carries the reflected
 # downwelling, so binding it directly would apply the reflection twice. Bind instead the
@@ -43,8 +49,9 @@ bind_radiating_temperature(rtm, Tˢ, ::CanopyAirSpaceDiagnostics, grid) =
 #     ε σ Tʳ⁴ + (1 - ε) ℐꜜˡʷ = σ Teff⁴.
 #
 # `ℐꜜˡʷ` is the previous solve's, so what survives is (1 - ε) times its change between solves
-# rather than (1 - ε) times the full surface-to-sky contrast.
-@kernel function _invert_canopy_radiating_temperature!(Tʳ, Teff, ℐꜜˡʷ, ε, σ)
+# rather than (1 - ε) times the full surface-to-sky contrast. The albedo needs no inversion:
+# RRTMGP reflects α ℐꜜˢʷ, which is exactly what the canopy leaves unabsorbed once α is its own.
+@kernel function _publish_canopy_radiative_properties!(Tʳ, α, Teff, αeff, ℐꜜˡʷ, ε, σ)
     i, j = @index(Global, NTuple)
     @inbounds begin
         Tᵉ = Teff[i, j, 1]
@@ -52,22 +59,25 @@ bind_radiating_temperature(rtm, Tˢ, ::CanopyAirSpaceDiagnostics, grid) =
         source = (σ * Tᵉ^4 - (1 - εᵢⱼ) * ℐꜜˡʷ[i, j, 1]) / εᵢⱼ
         invertible = (Tᵉ > 0) & (εᵢⱼ > 0) & (source > 0)
         Tʳ[i, j, 1] = ifelse(invertible, sqrt(sqrt(max(source, zero(source)) / σ)), Tᵉ)
+        α[i, j, 1] = αeff[i, j, 1]
     end
 end
 
 NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, rtm::BreezeRTM) =
-    update_radiating_temperature!(rtm, coupled_model,
-                                  land_interface_temperature(coupled_model.interfaces))
+    update_radiative_properties!(rtm, coupled_model,
+                                 land_interface_temperature(coupled_model.interfaces))
 
-update_radiating_temperature!(rtm, coupled_model, temperature) = nothing
+update_radiative_properties!(rtm, coupled_model, temperature) = nothing
 
-function update_radiating_temperature!(rtm, coupled_model, temperature::CanopyAirSpaceDiagnostics)
+function update_radiative_properties!(rtm, coupled_model, temperature::CanopyAirSpaceDiagnostics)
     exchanger = coupled_model.interfaces.exchanger
     grid = exchanger.grid
     launch!(architecture(grid), grid, :xy,
-            _invert_canopy_radiating_temperature!,
+            _publish_canopy_radiative_properties!,
             rtm.surface_properties.surface_temperature,
+            rtm.surface_properties.direct_surface_albedo,
             temperature.effective,
+            temperature.effective_albedo,
             exchanger.radiation.state.ℐꜜˡʷ,
             rtm.surface_properties.surface_emissivity,
             convert(eltype(grid), default_stefan_boltzmann_constant))
