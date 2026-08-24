@@ -57,11 +57,18 @@ end
 Download the granule at `url` into `cache_dir` unless it is already there, and return
 its path. Keyed on the granule name, so overlapping regions and sibling variables
 reuse a granule instead of re-downloading it.
+
+The download is staged and renamed into place, since a granule already in `cache_dir` is
+skipped on sight: an interrupted download must not leave a truncated file behind where a
+later call expects a complete one.
 """
 function earthdata_download_cached(url, cache_dir; attempts = 3)
     path = joinpath(cache_dir, basename(url))
     isfile(path) && return path
-    return earthdata_download(url, path; attempts)
+    write_atomically(path) do staging_path
+        earthdata_download(url, staging_path; attempts)
+    end
+    return path
 end
 
 """
@@ -99,15 +106,17 @@ cmr_temporal_query(date) =
 cmr_time(date) = string(Dates.format(DateTime(date), "yyyy-mm-ddTHH:MM:SS"), "Z")
 
 """
-    cmr_granules(short_name, version, bbox; extension = "h5", page_size = 2000, attempts = 3)
+    cmr_granules(short_name, version, bbox; extension = "h5", date = nothing,
+                 page_size = 2000, attempts = 3)
 
 Return the download URLs of the `short_name` / `version` granules whose footprints
 intersect `bbox`, querying NASA CMR page by page until a short page signals the last
 one. Only URLs ending in `extension` are collected, and one URL is kept per granule
-name (preferring a protected `data`-host endpoint).
+name (preferring a protected `data`-host endpoint). A `date` narrows the search to the
+day it opens, for a product whose granules are dated.
 """
 function cmr_granules(short_name, version, bbox::BoundingBox;
-                      extension = "h5", page_size = 2000, attempts = 3)
+                      extension = "h5", date = nothing, page_size = 2000, attempts = 3)
 
     granule_url_pattern = Regex(string("https://[^\"]+\\.", extension))
     by_granule = Dict{String, String}()
@@ -115,7 +124,7 @@ function cmr_granules(short_name, version, bbox::BoundingBox;
     mktempdir() do tmp
         page_num = 1
         while true
-            url = cmr_granules_url(short_name, version, bbox; page_size, page_num)
+            url = cmr_granules_url(short_name, version, bbox; date, page_size, page_num)
             json_path = joinpath(tmp, string("cmr_granules_", page_num, ".json"))
             download_with_retries(url, json_path; attempts, description = "CMR granule query")
             text = read(json_path, String)
