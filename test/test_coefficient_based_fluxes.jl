@@ -7,9 +7,16 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     LinearStableStabilityFunction,
     large_yeager_stability_functions,
     atmosphere_land_stability_functions,
+    ZengMomentumStabilityFunction,
+    ZengScalarStabilityFunction,
+    LogarithmicSimilarityProfile,
+    similarity_profile,
     SimilarityScales,
     ComponentInterfaces,
     stability_profile,
+    inner_stability_profile,
+    PaulsonMomentumStabilityFunction,
+    PaulsonScalarStabilityFunction,
     FixedIterations
 
 using NumericalEarth.DataWrangling: all_dates
@@ -57,6 +64,41 @@ end
     @test stability_profile(sf.temperature, 1.0) ≈ -5.0
 end
 
+@testset "Zeng free-convection matched stability functions" begin
+    ψu = ZengMomentumStabilityFunction{Float64}()
+    ψc = ZengScalarStabilityFunction{Float64}()
+
+    # Matched below its matching point to the Businger-Dyer form it extends
+    pu = PaulsonMomentumStabilityFunction{Float64}()
+    pc = PaulsonScalarStabilityFunction{Float64}()
+    for ζ in (-1.0, -0.4, -0.01, 0.0)
+        @test stability_profile(ψu, ζ) ≈ stability_profile(pu, ζ)
+    end
+    @test stability_profile(ψc, -0.4) ≈ stability_profile(pc, -0.4)
+
+    # Continuously differentiable across the match
+    for (ψ, ζm) in ((ψu, -1.574), (ψc, -0.465))
+        ϵ = 1e-6
+        @test abs(stability_profile(ψ, ζm - ϵ) - stability_profile(ψ, ζm + ϵ)) < 10ϵ
+        left  = (stability_profile(ψ, ζm - ϵ) - stability_profile(ψ, ζm - 2ϵ)) / ϵ
+        right = (stability_profile(ψ, ζm + 2ϵ) - stability_profile(ψ, ζm + ϵ)) / ϵ
+        @test left ≈ right rtol=1e-4
+    end
+
+    # The roughness-height evaluation keeps the unmatched Businger-Dyer form
+    @test inner_stability_profile(ψu, -100.0) == stability_profile(pu, -100.0)
+    @test inner_stability_profile(ψc, -100.0) == stability_profile(pc, -100.0)
+
+    # Beyond the match the matched profile turns over (the free-convection term
+    # outgrows the log), while the unmatched Businger-Dyer form keeps growing
+    @test stability_profile(ψu, -50.0) < stability_profile(pu, -50.0)
+    ψu∞ = ZengMomentumStabilityFunction{Float64}(maximum_stability_parameter = Inf)
+    @test stability_profile(ψu∞, -1e3) < stability_profile(ψu∞, -100.0)
+
+    # `maximum_stability_parameter` freezes the profile beyond its bound
+    @test stability_profile(ψu, -1e3) == stability_profile(ψu, -100.0)
+end
+
 @testset "atmosphere_land_stability_functions" begin
     sf = atmosphere_land_stability_functions()
     @test sf isa SimilarityScales
@@ -66,20 +108,30 @@ end
     @test stability_profile(sf.momentum, 20.0) ≈ -10.0
     @test stability_profile(sf.temperature, 20.0) ≈ -10.0
 
-    # Unstable branch bounded at ζ ≥ -2: ψ saturates instead of passing the
-    # similarity denominator through a pole
-    @test stability_profile(sf.momentum, -1.0) > 0
-    @test stability_profile(sf.momentum, -100.0) ≈ stability_profile(sf.momentum, -2.0)
-    @test stability_profile(sf.temperature, -100.0) ≈ stability_profile(sf.temperature, -2.0)
-
-    # Ocean defaults unchanged: unbounded unstable branch keeps growing
+    # The invariant that matters: the similarity profile stays bounded away from
+    # zero as ζ → -∞, so the transfer coefficients ϰ / Π stay finite. Unmatched
+    # Businger-Dyer (the ocean form) collapses instead.
+    form = LogarithmicSimilarityProfile()
     ly = large_yeager_stability_functions()
-    @test stability_profile(ly.momentum, -100.0) > stability_profile(ly.momentum, -2.0)
+    for (h, ℓ) in ((10.0, 0.1), (10.0, 0.01), (10.0, 5.0))
+        Πⁿ = log(h / ℓ)
+        for ζ in (-1e2, -1e4, -1e8)
+            L = h / ζ
+            Π = similarity_profile(form, sf.momentum, h, ℓ, L)
+            @test Π ≥ Πⁿ / 3
+            @test Π > similarity_profile(form, ly.momentum, h, ℓ, L)
+            @test similarity_profile(form, sf.temperature, h, ℓ, L) ≥ Πⁿ / 25
+        end
+    end
+
+    # Ocean defaults untouched by the land form
+    @test stability_profile(ly.momentum, -100.0) ≈ stability_profile(PaulsonMomentumStabilityFunction{Float64}(), -100.0)
     @test stability_profile(ly.momentum, 20.0) ≈ -50.0
 
     sf32 = atmosphere_land_stability_functions(Float32)
     @test stability_profile(sf32.momentum, 20f0) isa Float32
     @test stability_profile(sf32.momentum, -100f0) isa Float32
+    @test similarity_profile(LogarithmicSimilarityProfile(), sf32.momentum, 10f0, 0.1f0, -1f0) isa Float32
 end
 
 @testset "LargeYeagerTransferCoefficients constructor" begin
