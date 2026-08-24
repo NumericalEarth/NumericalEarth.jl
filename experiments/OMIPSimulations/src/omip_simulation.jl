@@ -547,6 +547,13 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `Δt`: simulation time step. Per-config default: `5minutes` for `:twelfthdegree`, `20minutes` for
   `:quarterdegree`, `30minutes` otherwise.
 - `stop_time`: stop time for the wrapping `Simulation`. Default: `Inf`.
+- `implicit_boundary_fluxes::Bool`: if `true` (default), the surface momentum flux and the bottom and
+  immersed quadratic drag are affine fluxes `J = Fₑ + λ φᵦ` with `λ` in the vertical solver's diagonal.
+  `false` applies all three explicitly, the treatment this replaced, so the pair can be A/B'd.
+- `barotropic_substeps`: number of split-explicit substeps the free surface takes per `Δt`. The
+  barotropic gravity wave must stay inside a substep, so a refined grid or a longer `Δt` needs more;
+  too few blows the free surface up on the first step. Per-config default: `200` for
+  `:quarterdegree`/`:twelfthdegree`, `100` otherwise. A warning names the count the grid needs.
 - `flux_configuration`: surface flux formulation. Options:
    * `:default` — current defaults (Edson/COARE with constant Charnock 0.02)
    * `:corrected` — COARE 3.6 with wind-dependent Charnock, fixed ice roughness, momentum-based u*
@@ -629,6 +636,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          background_vertical_diffusivity = :henyey,
                          background_vertical_viscosity = nothing,
                          implicit_vertical_advection = true,
+                         implicit_boundary_fluxes = true,
                          velocity_formulation = :relative,
                          Cᵂu★ = nothing,
                          with_snow = false,
@@ -647,7 +655,9 @@ function omip_simulation(config::Symbol = :halfdegree;
                          river_mixing_depth = 10,
                          river_spread_radius = ConfigDefault(),
                          river_spread_cells = ConfigDefault(),
-                         barotropic_substeps = 100,
+                         barotropic_substeps = ConfigDefault(),
+                         chlorophyll = :seawifs,
+                         thickness_categories = 1,
                          bbl_diffusivity = nothing,
                          bbl_transport_coefficient = nothing,
                          overflow_restoring_timescale = nothing,
@@ -671,6 +681,7 @@ function omip_simulation(config::Symbol = :halfdegree;
     biharmonic_timescale = resolve_config_default(biharmonic_timescale, config_biharmonic_timescale(cfg))
     river_spread_radius  = resolve_config_default(river_spread_radius,  config_river_spread_radius(cfg))
     river_spread_cells   = resolve_config_default(river_spread_cells,   config_river_spread_cells(cfg))
+    barotropic_substeps  = resolve_config_default(barotropic_substeps,  config_barotropic_substeps(cfg))
     Δt                   = resolve_config_default(Δt,                   config_Δt(cfg))
 
     check_depth_independent_skew_coefficient(κ_skew, skew_flux_formulation)
@@ -725,7 +736,7 @@ function omip_simulation(config::Symbol = :halfdegree;
     ocean = build_ocean(cfg, grid;
                         forcing = ocean_forcing,
                         κ_skew, κ_symmetric, Cᵇ,
-                        barotropic_substeps,
+                        barotropic_substeps, Δt,
                         nemo_eddy_coefficients,
                         cesm_eddy_coefficients,
                         hybrid_eddy_coefficients,
@@ -738,18 +749,20 @@ function omip_simulation(config::Symbol = :halfdegree;
                         background_vertical_diffusivity,
                         background_vertical_viscosity,
                         implicit_vertical_advection,
+                        implicit_boundary_fluxes,
                         skew_flux_formulation,
                         restoring_under_sea_ice,
                         Cᵂu★,
-                        restoring_dir, piston_velocity,
+                        restoring_dir, piston_velocity, chlorophyll,
                         normalize_salinity,
                         additional_tracer_closure = river_κ,
                         start_date, end_date)
 
-    snow_thermodynamics = with_snow ? NumericalEarth.SeaIces.default_snow_thermodynamics(grid) : nothing
+    snow_thermodynamics = with_snow ?
+        NumericalEarth.SeaIces.default_snow_thermodynamics(grid; thickness_categories) : nothing
     sea_ice = build_sea_ice(cfg, grid, ocean; restoring_dir, snow_thermodynamics, with_ice_dynamics,
                             with_landfast_basal_stress, sea_ice_lateral_boundary_condition,
-                            sea_ice_ocean_drag_coefficient)
+                            sea_ice_ocean_drag_coefficient, thickness_categories)
 
     atmosphere, radiation = omip_forcing(arch, sea_ice;
                                          forcing_dir = atmosphere_dir,
@@ -1344,6 +1357,15 @@ config_river_spread_cells(::Val)                 = nothing
 config_river_spread_cells(::Val{:orca})          = 8
 config_river_spread_cells(::Val{:test})          = 8
 
+# Split-explicit barotropic substeps. The free surface is stable only while the barotropic gravity
+# wave stays inside a substep, √(gH) Δτ ≲ 0.7 Δx with Δτ ∝ Δt / substeps, so the count a grid needs
+# grows as it is refined: eORCA025 carries a CFL of 0.92 at Δt = 20 minutes with 100, and 1.38 — 30 000
+# cells past unity, and a first-step blow-up — at Δt = 30 minutes. `validate_barotropic_substeps`
+# reports the count the configuration actually needs.
+config_barotropic_substeps(::Val)                 = 100
+config_barotropic_substeps(::Val{:quarterdegree}) = 200
+config_barotropic_substeps(::Val{:twelfthdegree}) = 200
+
 config_biharmonic_timescale(::Val)                 = 50days
 config_biharmonic_timescale(::Val{:quarterdegree}) = nothing
 config_biharmonic_timescale(::Val{:twelfthdegree}) = nothing
@@ -1366,14 +1388,67 @@ config_materialize_buoyancy_gradients(::Val{:quarterdegree}) = false
 config_materialize_buoyancy_gradients(::Val{:twelfthdegree}) = false
 config_materialize_buoyancy_gradients(::Val{:test})          = false
 
+
+"""
+    omip_radiative_forcing(grid, chlorophyll, restoring_dir)
+
+Return the `TwoColorRadiation` the ocean is forced with. `chlorophyll` is `:seawifs` for the SeaWiFS
+monthly climatology, cycled every year, or anything `TwoColorRadiation` accepts directly — a number for
+globally uniform optics, a surface `Field`, or a `FieldTimeSeries`.
+"""
+function omip_radiative_forcing(grid, chlorophyll, restoring_dir)
+    if chlorophyll === :seawifs
+        dates = (DateTime(2000, 1, 1), DateTime(2000, 12, 1))
+        metadata = Metadata(:chlorophyll; dataset = SeaWiFSMonthly(), dates, dir = restoring_dir)
+        chlorophyll = FieldTimeSeries(metadata, grid)
+    end
+
+    return TwoColorRadiation(grid; chlorophyll)
+end
+
+@inline function barotropic_courant_number(i, j, k, grid, Δτ, g)
+    H  = static_column_depthᶜᶜᵃ(i, j, grid)
+    Δx = Δxᶜᶜᶜ(i, j, k, grid)
+    Δy = Δyᶜᶜᶜ(i, j, k, grid)
+    return sqrt(g * max(0, H)) * Δτ * sqrt(1 / Δx^2 + 1 / Δy^2)
+end
+
+# The free surface is stable only while the barotropic gravity wave stays inside a substep. A fixed
+# substep count silently violates that when `Δt` is raised or the grid is refined, and the free surface
+# then blows up on the very first step with nothing to show for it but a NaN. eORCA025 at Δt = 30 minutes
+# with 100 substeps carries 1.38 in the Ross Sea and 30 000 cells past unity. The Courant number is taken
+# cell by cell, because the grid's finest spacing and its greatest depth are nowhere near each other and
+# pairing them condemns configurations that run.
+function barotropic_free_surface(grid, substeps, Δt; cfl = 0.7)
+    free_surface = SplitExplicitFreeSurface(grid; substeps)
+    Δτ = free_surface.substepping.fractional_step_size * Δt
+    g  = free_surface.gravitational_acceleration
+
+    courant = KernelFunctionOperation{Center, Center, Center}(barotropic_courant_number, grid, Δτ, g)
+    maximum_courant_number = maximum(courant)
+
+    if maximum_courant_number > cfl
+        needed = ceil(Int, substeps * maximum_courant_number / cfl)
+        @warn string(substeps, " barotropic substeps carry a gravity-wave Courant number of ",
+                     round(maximum_courant_number, digits=2), " at Δt = ", prettytime(Δt),
+                     ", above ", cfl, "; this grid needs ", needed,
+                     ". Raise `barotropic_substeps` or lower `Δt`.")
+    end
+
+    return free_surface
+end
+
 function build_ocean(config, grid;
                      κ_skew, κ_symmetric, Cᵇ = 0.28,
                      barotropic_substeps = 100,
+                     Δt,
                      restoring_dir, piston_velocity,
+                     chlorophyll = :seawifs,
                      biharmonic_timescale,
                      biharmonic_viscosity = nothing,
                      vertical_closure = :catke,
                      implicit_vertical_advection = true,
+                     implicit_boundary_fluxes = true,
                      skew_flux_formulation = :diffusive,
                      nemo_eddy_coefficients = nothing,
                      cesm_eddy_coefficients = nothing,
@@ -1429,12 +1504,14 @@ function build_ocean(config, grid;
 
     ocean = ocean_simulation(grid;
                              Δt = 1minutes,
+                             radiative_forcing = omip_radiative_forcing(grid, chlorophyll, restoring_dir),
                              momentum_advection,
                              tracer_advection = WENO(order=7; minimum_buffer_upwind_order=3, time_discretization),
                              coriolis,
+                             implicit_boundary_fluxes,
                              timestepper = :SplitRungeKutta3,
                              materialize_buoyancy_gradients = config_materialize_buoyancy_gradients(config),
-                             free_surface = SplitExplicitFreeSurface(grid; substeps=barotropic_substeps),
+                             free_surface = barotropic_free_surface(grid, barotropic_substeps, Δt),
                              additional_surface_fluxes,
                              forcing,
                              closure)
@@ -1460,7 +1537,8 @@ function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics =
                        with_ice_dynamics = true,
                        with_landfast_basal_stress = true,
                        sea_ice_lateral_boundary_condition = :no_slip,
-                       sea_ice_ocean_drag_coefficient = 5.5e-3)
+                       sea_ice_ocean_drag_coefficient = 5.5e-3,
+                       thickness_categories = 1)
 
     basal_stress = with_landfast_basal_stress ? LandfastBasalStress(eltype(grid)) : nothing
 
@@ -1474,6 +1552,7 @@ function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics =
                                  advection = ClimaSeaIce.IncrementalRemapping(),
                                  lateral_boundary_condition = sea_ice_lateral_boundary_condition,
                                  dynamics,
+                                 thickness_categories,
                                  snow_thermodynamics)
 
     set!(sea_ice.model,

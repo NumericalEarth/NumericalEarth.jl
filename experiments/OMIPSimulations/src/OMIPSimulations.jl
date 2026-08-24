@@ -2,13 +2,14 @@ module OMIPSimulations
 
 using Oceananigans
 using Oceananigans.Units
-using Oceananigans.Grids: znode, Face
+using Oceananigans.Grids: znode, Face, static_column_depthᶜᶜᵃ
+using Oceananigans.Operators: Δxᶜᶜᶜ, Δyᶜᶜᶜ
 using Dates
 using NCDatasets
 using CUDA
 
 using NumericalEarth
-using NumericalEarth.Oceans: ocean_simulation, default_ocean_closure
+using NumericalEarth.Oceans: ocean_simulation, default_ocean_closure, TwoColorRadiation
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities:
     CATKEVerticalDiffusivity, CATKEMixingLength, CATKEEquation
 using NumericalEarth.SeaIces: sea_ice_simulation, LandfastBasalStress
@@ -35,6 +36,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
 using NumericalEarth.Radiations: SeaIceAlbedo, SurfaceRadiationProperties
 
 using NumericalEarth.Bathymetry: regrid_bathymetry, ORCAGrid
+using NumericalEarth.DataWrangling.SeaWiFS: SeaWiFSMonthly
 using NumericalEarth.DataWrangling: Metadatum, Metadata, DatasetRestoring,
                                     SurfaceFluxRestoring,
                                     EN4Monthly, ECCO4Monthly

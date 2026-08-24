@@ -1,25 +1,116 @@
 using Adapt: Adapt
 using Oceananigans.Grids: inactive_cell
 using Oceananigans.Operators: ∂zᶜᶜᶜ
+using Oceananigans.Units: Time
 
-struct TwoColorRadiation{FT, J}
-    first_color_fraction :: FT
-    first_absorption_coefficient :: FT
-    second_absorption_coefficient :: FT
+using ..NumericalEarth: stateindex
+
+"""
+    ChlorophyllOptics(FT = Oceananigans.defaults.FloatType;
+                      clear_water_attenuation = 0.0232,
+                      chlorophyll_scaling = 0.074,
+                      chlorophyll_exponent = 0.674)
+
+Parameters relating the blue-green absorption coefficient of sea water to its chlorophyll
+concentration, following [Manizza et al. (2005)](@cite manizza2005bio). Defaults are the values
+given there. See [`absorption_coefficient`](@ref).
+"""
+struct ChlorophyllOptics{FT}
+    clear_water_attenuation :: FT
+    chlorophyll_scaling :: FT
+    chlorophyll_exponent :: FT
+end
+
+function ChlorophyllOptics(FT = Oceananigans.defaults.FloatType;
+                           clear_water_attenuation = 0.0232,
+                           chlorophyll_scaling = 0.074,
+                           chlorophyll_exponent = 0.674)
+    return ChlorophyllOptics(convert(FT, clear_water_attenuation),
+                             convert(FT, chlorophyll_scaling),
+                             convert(FT, chlorophyll_exponent))
+end
+
+Adapt.adapt_structure(to, optics::ChlorophyllOptics) =
+    ChlorophyllOptics(adapt(to, optics.clear_water_attenuation),
+                      adapt(to, optics.chlorophyll_scaling),
+                      adapt(to, optics.chlorophyll_exponent))
+
+"""
+    absorption_coefficient(optics::ChlorophyllOptics, chlorophyll)
+
+Return the blue-green absorption coefficient in m⁻¹ implied by a `chlorophyll` concentration in
+mg m⁻³,
+
+```math
+κ = a + b \\, C^{n}
+```
+
+with ``a`` the clear-water attenuation and ``b``, ``n`` the chlorophyll scaling and exponent of
+`optics`. Clear subtropical water, ``C ≈ 0.05``, decays over about 30 m; a subpolar bloom,
+``C ≈ 1``, over about 10 m. [`equivalent_chlorophyll`](@ref) inverts the relation.
+
+```jldoctest
+using NumericalEarth
+
+round(1 / absorption_coefficient(ChlorophyllOptics(), 1.0), digits=1)
+
+# output
+
+10.3
+```
+"""
+@inline function absorption_coefficient(optics::ChlorophyllOptics, chlorophyll)
+    κw = optics.clear_water_attenuation
+    Cs = optics.chlorophyll_scaling
+    Ce = optics.chlorophyll_exponent
+    return κw + Cs * max(0, chlorophyll)^Ce
+end
+
+"""
+    equivalent_chlorophyll(optics::ChlorophyllOptics, absorption_coefficient)
+
+Return the chlorophyll concentration in mg m⁻³ whose blue-green absorption coefficient is
+`absorption_coefficient`, the inverse of [`absorption_coefficient`](@ref). Use it to express a
+Jerlov water type, whose optics are quoted as a decay scale, as a chlorophyll.
+
+```jldoctest
+using NumericalEarth
+
+round(equivalent_chlorophyll(ChlorophyllOptics(), 1 / 23), digits=3)
+
+# output
+
+0.147
+```
+"""
+@inline function equivalent_chlorophyll(optics::ChlorophyllOptics, absorption_coefficient)
+    κ  = absorption_coefficient
+    κw = optics.clear_water_attenuation
+    Cs = optics.chlorophyll_scaling
+    Ce = 1 / optics.chlorophyll_exponent 
+    return ((κ - κw) / Cs)^Ce 
+end
+
+struct TwoColorRadiation{E, K, O, C, J}
+    first_color_fraction :: E
+    first_absorption_coefficient :: K
+    chlorophyll_optics :: O
+    chlorophyll :: C
     surface_flux :: J
 end
 
 Adapt.adapt_structure(to, R::TwoColorRadiation) =
     TwoColorRadiation(adapt(to, R.first_color_fraction),
                       adapt(to, R.first_absorption_coefficient),
-                      adapt(to, R.second_absorption_coefficient),
+                      adapt(to, R.chlorophyll_optics),
+                      adapt(to, R.chlorophyll),
                       adapt(to, R.surface_flux))
 
 """
-    TwoColorRadiation(grid;
-                      first_color_fraction,
-                      first_absorption_coefficient,
-                      second_absorption_coefficient)
+    TwoColorRadiation(grid; first_color_fraction = 0.58,
+                            first_decay_scale = 0.35,
+                            chlorophyll_optics = ChlorophyllOptics(eltype(grid)),
+                            chlorophyll = equivalent_chlorophyll(chlorophyll_optics, 1 / 23))
 
 Return `TwoColorRadiation` that computes the radiative flux divergence associated with
 a two-color radiation flux that decays according to Beer's law,
@@ -28,19 +119,59 @@ a two-color radiation flux that decays according to Beer's law,
 I(z) = ϵ₁ I₀ \\exp(κ₁ z) + (1 - ϵ₁) I₀ \\exp(κ₂ z)
 ```
 
-where ``I₀`` is the surface flux, ``ϵ₁`` is the "first color" fraction of the total radiation,
-and ``κ₁`` and ``κ₂`` are the absorption coefficients for the two colors.
+where ``I₀`` is the surface flux, ``ϵ₁`` is the `first_color_fraction`, and ``κ₁``, ``κ₂`` are the
+absorption coefficients of the two colors. The first color is red and is absorbed within
+`first_decay_scale` of the surface; the second is blue-green and its absorption coefficient ``κ₂``
+follows the water's `chlorophyll` through [`absorption_coefficient`](@ref).
+
+`chlorophyll` is anything `stateindex` resolves: a number for globally uniform optics, a surface
+`Field` or array for a fixed spatial pattern, a function of `(λ, φ, z, t)`, or a `FieldTimeSeries`,
+which is interpolated in time and so carries a seasonal cycle. `Cyclical` time indexing turns a
+twelve-month climatology, such as
+[`SeaWiFSMonthly`](@ref NumericalEarth.DataWrangling.SeaWiFS.SeaWiFSMonthly), into optics
+that repeat every year.
+
+The defaults are the red band of Manizza et al. (2005) and the chlorophyll whose decay scale is
+23 m, which is the Jerlov Type I value of
+[Paulson and Simpson (1977)](@cite paulson1977irradiance) for the clearest open-ocean water.
+
+```jldoctest
+using NumericalEarth
+using Oceananigans
+
+grid = LatitudeLongitudeGrid(size=(4, 4, 4), longitude=(0, 360), latitude=(-60, 60), z=(-100, 0))
+
+TwoColorRadiation(grid)
+
+# output
+
+TwoColorRadiation with red fraction 0.58 decaying over 0.35 m
+└── blue-green chlorophyll: 0.147 mg m⁻³, decaying over 23.0 m
+```
 """
 function TwoColorRadiation(grid;
-                           first_color_fraction,
-                           first_absorption_coefficient,
-                           second_absorption_coefficient)
+                           first_color_fraction = 0.58,
+                           first_decay_scale = 0.35,
+                           chlorophyll_optics = ChlorophyllOptics(eltype(grid)),
+                           chlorophyll = equivalent_chlorophyll(chlorophyll_optics, 1 / 23))
     FT = eltype(grid)
     surface_flux = Field{Center, Center, Nothing}(grid)
     return TwoColorRadiation(convert(FT, first_color_fraction),
-                             convert(FT, first_absorption_coefficient),
-                             convert(FT, second_absorption_coefficient),
+                             convert(FT, 1 / first_decay_scale),
+                             chlorophyll_optics,
+                             chlorophyll isa Number ? convert(FT, chlorophyll) : chlorophyll,
                              surface_flux)
+end
+
+function Base.show(io::IO, R::TwoColorRadiation)
+    blue_green = R.chlorophyll isa Number ?
+        string(round(R.chlorophyll, digits=3), " mg m⁻³, decaying over ",
+               round(1 / absorption_coefficient(R.chlorophyll_optics, R.chlorophyll), digits=1), " m") :
+        summary(R.chlorophyll)
+
+    print(io, "TwoColorRadiation with red fraction ", R.first_color_fraction,
+              " decaying over ", round(1 / R.first_absorption_coefficient, digits=2), " m", '\n',
+              "└── blue-green chlorophyll: ", blue_green)
 end
 
 const c = Center()
@@ -59,8 +190,10 @@ end
 @inline function (R::TwoColorRadiation)(i, j, k, grid, clock, fields)
     J₀ = @inbounds R.surface_flux[i, j, 1]
     κ₁ = R.first_absorption_coefficient
-    κ₂ = R.second_absorption_coefficient
     ϵ₁ = R.first_color_fraction
+
+    C  = stateindex(R.chlorophyll, i, j, 1, grid, Time(clock.time), (Center, Center, Nothing))
+    κ₂ = absorption_coefficient(R.chlorophyll_optics, C)
 
     # Radiation flux divergences
     dJ₁dz = ∂zᶜᶜᶜ(i, j, k, grid, beers_law_radiation, J₀, κ₁)
@@ -68,17 +201,6 @@ end
 
     # Net radiation flux divergence
     return ϵ₁ * dJ₁dz + (1 - ϵ₁) * dJ₂dz
-end
-
-compute_radiative_forcing!(T_forcing, downwelling_shortwave_radiation, coupled_model) = nothing # fallback
-
-function compute_radiative_forcing!(tcr::TwoColorRadiation, downwelling_shortwave_radiation, coupled_model)
-    ρᵒᶜ = coupled_model.interfaces.ocean_properties.reference_density
-    cᵒᶜ = coupled_model.interfaces.ocean_properties.heat_capacity
-    J⁰ = tcr.surface_flux
-    ℐꜜˢʷ = downwelling_shortwave_radiation
-    parent(J⁰) .= - parent(ℐꜜˢʷ) ./ (ρᵒᶜ * cᵒᶜ)
-    return nothing
 end
 
 @inline shortwave_radiative_forcing(i, j, grid, Fᵀ, ℐₜˢʷ, ocean_properties) = ℐₜˢʷ

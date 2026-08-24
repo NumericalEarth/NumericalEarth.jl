@@ -34,12 +34,19 @@ function sea_ice_velocity_boundary_conditions(grid, lateral_boundary_condition)
     return (; u, v)
 end
 
-function default_snow_thermodynamics(grid)
+# `thickness_categories` requires a ClimaSeaIce that supports the sub-grid effective conductivity, so
+# it is forwarded only when it differs from the mean-thickness default.
+subgrid_conductivity_keyword(thickness_categories) =
+    thickness_categories == 1 ? NamedTuple() : (; thickness_categories)
+
+function default_snow_thermodynamics(grid; thickness_categories = 1)
     FT = eltype(grid)
     snow_conductivity = FT(0.31)
     snow_surface_temperature = Field{Center, Center, Nothing}(grid)
     top_heat_boundary_condition = PrescribedTemperature(snow_surface_temperature.data)
-    return snow_slab_thermodynamics(grid; conductivity = snow_conductivity, top_heat_boundary_condition)
+    return snow_slab_thermodynamics(grid; conductivity = snow_conductivity,
+                                    subgrid_conductivity_keyword(thickness_categories)...,
+                                    top_heat_boundary_condition)
 end
 
 correct_tripolar_bcs(grid, bcs) = bcs
@@ -73,8 +80,9 @@ end
                                                             heat_capacity=ice_heat_capacity,
                                                             density=sea_ice_density),
                        conductivity = 2, # W m⁻¹ K⁻¹
-                       internal_heat_flux = ConductiveFlux(; conductivity),
-                       snow_thermodynamics = default_snow_thermodynamics(grid))
+                       thickness_categories = 1,
+                       internal_heat_flux = ConductiveFlux(; conductivity, subgrid_conductivity_keyword(thickness_categories)...),
+                       snow_thermodynamics = default_snow_thermodynamics(grid; thickness_categories))
 
 Construct a sea ice simulation with the given grid and optional ocean simulation.
 The sea ice model is configured with a slab thermodynamics, Elasto-Visco-Plastic rheology,
@@ -141,8 +149,9 @@ function sea_ice_simulation(grid, ocean=nothing;
                                                                  heat_capacity=ice_heat_capacity,
                                                                  density=sea_ice_density),
                             conductivity = 2, # W m⁻¹ K⁻¹
-                            internal_heat_flux = ConductiveFlux(; conductivity),
-                            snow_thermodynamics = default_snow_thermodynamics(grid))
+                            thickness_categories = 1,
+                            internal_heat_flux = ConductiveFlux(; conductivity, subgrid_conductivity_keyword(thickness_categories)...),
+                            snow_thermodynamics = default_snow_thermodynamics(grid; thickness_categories))
 
     # Build consistent boundary conditions for the ice model:
     # - bottom -> flux boundary condition

@@ -1,6 +1,7 @@
 module Oceans
 
-export ocean_simulation, SlabOcean, PrescribedOcean
+export ocean_simulation, SlabOcean, PrescribedOcean,
+       TwoColorRadiation, ChlorophyllOptics, absorption_coefficient, equivalent_chlorophyll
 
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index

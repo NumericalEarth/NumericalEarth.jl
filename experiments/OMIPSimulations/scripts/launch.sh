@@ -185,10 +185,26 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
                 scaling κ = max(2e-6, 1e-5 |sin φ|), 2e-6 at the equator to 1e-5 at the poles.
                 Raising it strengthens the diapycnal upwelling that closes the AMOC lower limb
                 (Bryan 1987: AMOC ~ κ^(2/3)). Adds "_bgk<value>" to the run name.
+  CHLOROPHYLL   Optics for the penetrating shortwave. "seawifs" (default) uses the SeaWiFS monthly
+                climatology, cycled annually, so the decay scale varies in space and season. A number
+                gives globally uniform optics with that chlorophyll in mg/m^3; 0.147 reproduces the
+                Jerlov Type I 23 m scale that was the default before the climatology landed.
+                Adds "_chl<value>" to the run name unless it is "seawifs".
   BACKGROUND_NU Uniform interior background viscosity ν in m^2/s. Default: unset, i.e. 3e-5
                 for CATKE (1e-4 for RBVD). Adds "_bgnu<value>" to the run name.
                 Both are rejected by the closures that carry their own background
                 (simple/nori/kpp/nemo_tke).
+  IMEX_BCS      Whether the surface momentum flux and the bottom/immersed quadratic drag are
+                applied semi-implicitly (J = Fe + lambda * u_b, lambda in the vertical solver's
+                diagonal). Default: true. "false" applies all three explicitly, which is the
+                treatment the semi-implicit one replaced, and adds "_explicitbcs" to the run
+                name. The two differ most in shallow fast cells such as narrow straits.
+  BAROTROPIC_SUBSTEPS
+                Split-explicit substeps the free surface takes per DT. Default: unset, i.e. 200
+                for quarterdegree/twelfthdegree and 100 otherwise. The barotropic gravity wave
+                must stay inside a substep, so raising DT above the config default needs
+                proportionally more; too few blows the free surface up on the first step. The
+                run warns with the count the grid needs.
 
 Environment variables (I/O & runtime):
   BACKEND_SIZE  Number of JRA55 time indices kept in memory (default: 240,
@@ -370,6 +386,8 @@ esac
 [[ -n "${CATKE_CWUSTAR:-}" ]]                  && RUN_NAME="${RUN_NAME}_cwu${CATKE_CWUSTAR}"
 [[ -n "${BACKGROUND_K:-}" ]]                   && RUN_NAME="${RUN_NAME}_bgk${BACKGROUND_K}"
 [[ -n "${BACKGROUND_NU:-}" ]]                  && RUN_NAME="${RUN_NAME}_bgnu${BACKGROUND_NU}"
+[[ "${CHLOROPHYLL:-seawifs}" != "seawifs" ]]   && RUN_NAME="${RUN_NAME}_chl${CHLOROPHYLL}"
+[[ "${IMEX_BCS:-true}" == "false" ]]            && RUN_NAME="${RUN_NAME}_explicitbcs"
 [[ -n "${PVEL:-}" ]]                           && RUN_NAME="${RUN_NAME}_pvel${PVEL}"
 
 REPORT_NAME="${REPORT_NAME:-${RUN_NAME}_report}"
@@ -464,6 +482,9 @@ DZ_TOP="${DZ_TOP:-}"
 CATKE_CWUSTAR="${CATKE_CWUSTAR:-}"
 BACKGROUND_K="${BACKGROUND_K:-}"
 BACKGROUND_NU="${BACKGROUND_NU:-}"
+BAROTROPIC_SUBSTEPS="${BAROTROPIC_SUBSTEPS:-}"
+IMEX_BCS="${IMEX_BCS:-true}"
+CHLOROPHYLL="${CHLOROPHYLL:-seawifs}"
 BACKEND_SIZE="${BACKEND_SIZE:-}"
 NCAR="${NCAR:-false}"
 CORRECTED="${CORRECTED:-false}"
@@ -502,6 +523,17 @@ esac
 
 BACKGROUND_NU_KWARG=""
 [[ -n "$BACKGROUND_NU" ]] && BACKGROUND_NU_KWARG="background_vertical_viscosity = ${BACKGROUND_NU},"
+
+# The split-explicit free surface needs the barotropic gravity wave to stay inside a substep. The
+# per-config default is sized for the config default DT; raising DT needs proportionally more.
+IMEX_BCS_KWARG=""
+[[ "$IMEX_BCS" == "false" ]] && IMEX_BCS_KWARG="implicit_boundary_fluxes = false,"
+
+BAROTROPIC_SUBSTEPS_KWARG=""
+[[ -n "$BAROTROPIC_SUBSTEPS" ]] && BAROTROPIC_SUBSTEPS_KWARG="barotropic_substeps = ${BAROTROPIC_SUBSTEPS},"
+
+CHLOROPHYLL_KWARG="chlorophyll = :seawifs,"
+[[ "$CHLOROPHYLL" != "seawifs" ]] && CHLOROPHYLL_KWARG="chlorophyll = ${CHLOROPHYLL},"
 
 # Pass the value explicitly (default true = conservative restoring) so the Julia-side default
 # never silently overrides a "false" request.
@@ -635,6 +667,9 @@ sim = omip_simulation(:${CONFIG};
                       ${CATKE_CWUSTAR_KWARG}
                       ${BACKGROUND_K_KWARG}
                       ${BACKGROUND_NU_KWARG}
+                      ${BAROTROPIC_SUBSTEPS_KWARG}
+                      ${IMEX_BCS_KWARG}
+                      ${CHLOROPHYLL_KWARG}
                       ${NORMALIZE_SALINITY_KWARG}
                       ${RESTORING_UNDER_ICE_KWARG}
                       ${NORMALIZE_FRESHWATER_KWARG}
