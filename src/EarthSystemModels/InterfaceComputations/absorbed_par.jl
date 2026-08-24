@@ -52,8 +52,9 @@ Fields:
 - `par_fraction`     : PAR/shortwave by energy (≈ 0.45).
 - `photon_per_joule` : mol photons per J in the PAR band (≈ 4.57e-6).
 - `leaf_albedo_par`  : leaf albedo in the PAR band.
-- `extinction`       : canopy extinction coefficient `K`.
-- `clumping`         : foliage clumping index `Ω`.
+- `extinction`       : canopy extinction coefficient `K`. Overridden by the canopy's own
+                       value inside a [`CanopyAirSpace`](@ref), which owns the geometry.
+- `clumping`         : foliage clumping index `Ω`. Overridden as `extinction` is.
 - `lai_min`          : floor on `LAI` in the per-leaf division.
 """
 struct InteractiveAbsorbedPAR{FT} <: AbstractAbsorbedPAR
@@ -74,6 +75,17 @@ InteractiveAbsorbedPAR(FT=Oceananigans.defaults.FloatType;
                        lai_min          = 0.1) =
     InteractiveAbsorbedPAR{FT}(par_fraction, photon_per_joule, leaf_albedo_par,
                                extinction, clumping, lai_min)
+
+# Canopy geometry is waveband-independent, so inside a `CanopyAirSpace` the PAR closure takes
+# the canopy's `extinction` and `clumping` rather than keeping a second copy that can disagree
+# with the shortwave split driving the energy balance. `par_fraction` and `leaf_albedo_par` are
+# band properties and stay.
+inherit_canopy_geometry(par, extinction, clumping) = par
+
+function inherit_canopy_geometry(par::InteractiveAbsorbedPAR{FT}, extinction, clumping) where FT
+    return InteractiveAbsorbedPAR{FT}(par.par_fraction, par.photon_per_joule, par.leaf_albedo_par,
+                                      convert(FT, extinction), convert(FT, clumping), par.lai_min)
+end
 
 Base.summary(::InteractiveAbsorbedPAR{FT}) where FT = "InteractiveAbsorbedPAR{$FT}"
 Base.show(io::IO, p::InteractiveAbsorbedPAR) = print(io, summary(p),

@@ -6,6 +6,7 @@ using Oceananigans.TimeSteppers: update_state!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyAirSpace, CanopyConductanceHumidity, CanopyInterception, DryLayerHumidity, StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity, ConstantTortuosity, PowerLawTortuosity, CriticalSaturation, InteractiveAbsorbedPAR,
+    PrescribedAbsorbedPAR,
     SoilConductiveFlux, SoilSkinTemperature, canopy_air_space_solve, dry_layer_terms,
     compute_interface_temperature, compute_interface_humidity, interface_temperature_and_humidity,
     saturation_specific_humidity, default_dry_air_molar_mass, AtmosphericThermodynamics,
@@ -187,6 +188,36 @@ end
 
     # A scalar slot keeps the closure's float type rather than widening the solve.
     @test build_canopy_air_space(Float32).leaf_albedo isa Float32
+end
+
+@testset "Absorbed PAR inherits the canopy's geometry" begin
+    FT = Float64
+    soil = DryLayerHumidity(FT;
+        dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
+                                                    dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
+        vapor_exchange  = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
+                                                      molecular_diffusivity = 2.4e-5,
+                                                      tortuosity = ConstantTortuosity()),
+        thermal_exchange_depth = 0.05, porosity = 0.4)
+
+    # A PAR closure built with geometry that disagrees with the canopy's.
+    par = InteractiveAbsorbedPAR(FT; extinction = 0.9, clumping = 0.4, leaf_albedo_par = 0.08)
+    canopy = CanopyConductanceHumidity(FT; leaf_area_index = 3.0, absorbed_par = par)
+    cas = CanopyAirSpace(FT; soil, canopy, extinction = 0.55, clumping = 0.75)
+
+    inherited = cas.canopy.absorbed_par
+    @test inherited.extinction == cas.extinction
+    @test inherited.clumping == cas.clumping
+
+    # Band properties are the closure's own and survive.
+    @test inherited.leaf_albedo_par == par.leaf_albedo_par
+    @test inherited.par_fraction == par.par_fraction
+    @test inherited.lai_min == par.lai_min
+
+    # A prescribed closure carries no geometry and passes through untouched.
+    prescribed = PrescribedAbsorbedPAR(FT(5e-4))
+    canopy_p = CanopyConductanceHumidity(FT; leaf_area_index = 3.0, absorbed_par = prescribed)
+    @test CanopyAirSpace(FT; soil, canopy = canopy_p).canopy.absorbed_par === prescribed
 end
 
 @testset "Canopy optics validation" begin

@@ -114,6 +114,11 @@ Adapt.adapt_structure(to, q::CanopyConductanceHumidity) =
                               q.photosynthesis, q.conductance, q.moisture_stress,
                               q.absorbed_par, q.atmospheric_co2, q.phase)
 
+inherit_canopy_geometry(q::CanopyConductanceHumidity, extinction, clumping) =
+    CanopyConductanceHumidity(q.leaf_area_index, q.photosynthesis, q.conductance, q.moisture_stress,
+                              inherit_canopy_geometry(q.absorbed_par, extinction, clumping),
+                              q.atmospheric_co2, q.phase)
+
 Base.summary(::CanopyConductanceHumidity{L, P, C, S, A, Q, Φ}) where {L, P, C, S, A, Q, Φ} =
     string("CanopyConductanceHumidity{", Φ === AtmosphericThermodynamics.Liquid ? "Liquid" : "Ice", "}")
 Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))

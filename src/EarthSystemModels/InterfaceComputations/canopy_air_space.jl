@@ -518,7 +518,7 @@ function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
 
     # Convert only a scalar optics slot; a `Field` passes through and is materialized
     # per cell in the flux kernel.
-    return CanopyAirSpace(soil, canopy, soil_skin_flux,
+    return CanopyAirSpace(soil, inherit_canopy_geometry(canopy, extinction, clumping), soil_skin_flux,
                           convert_if_number(FT, leaf_albedo),
                           convert_if_number(FT, ground_albedo),
                           convert_if_number(FT, max_canopy_emissivity),
