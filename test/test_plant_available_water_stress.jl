@@ -171,4 +171,43 @@ availability(model, 𝒮, curve) =
                                                               K_saturated = 1e-6, n = 1.56)))
         @test !isnothing(interface(soil))
     end
+
+    # A stress carrying its own texture-class curve computes its endpoints without the
+    # land's retention curve, so it pairs with a curve-less hydrology — and its β is set
+    # by the texture class, not by whatever curve the hydrology was fitted with.
+    let FT = Float64
+        loam = PlantAvailableWaterStress(FT; texture = :loam)
+        @test loam.inverse_air_entry_head == FT(3.6)
+        @test loam.pore_size_uniformity == FT(1.56)
+        @test !requires_retention_curve(loam)
+        @test_throws ArgumentError PlantAvailableWaterStress(FT; texture = :loam,
+                                                             inverse_air_entry_head = 1)
+        @test_throws ArgumentError PlantAvailableWaterStress(FT; texture = :peaty_gravel)
+        @test_throws ArgumentError PlantAvailableWaterStress(FT; inverse_air_entry_head = 1)
+
+        (; inverse_air_entry_head, pore_size_uniformity) = van_genuchten_texture_parameters(:clay)
+        @test inverse_air_entry_head == 0.8
+
+        # Endpoints from the closure's own curve: the land curve in the state is unused,
+        # so the availability matches the explicit-parameter evaluation on the loam curve.
+        explicit = PlantAvailableWaterStress(FT; inverse_air_entry_head = 3.6,
+                                             pore_size_uniformity = 1.56)
+        clay_curve = VanGenuchtenRetention(FT; α = 0.8, n = 1.09)
+        for 𝒮 in (FT(0.3), FT(0.6), FT(0.9))
+            @test availability(loam, 𝒮, clay_curve) == availability(explicit, 𝒮, clay_curve)
+            @test availability(loam, 𝒮, clay_curve) ==
+                  availability(PlantAvailableWaterStress(FT), 𝒮,
+                               VanGenuchtenRetention(FT; α = 3.6, n = 1.56))
+        end
+
+        # And it constructs against a hydrology with no retention curve at all.
+        transpiring = CanopyConductanceHumidity(FT; leaf_area_index = 2, moisture_stress = loam)
+        canopy = CanopyAirSpace(FT; soil = BulkHumidity(), canopy = transpiring)
+        grid = RectilinearGrid(FT; size = (), topology = (Flat, Flat, Flat))
+        atmosphere = PrescribedAtmosphere(grid, [0.0, 1.0]; surface_layer_height = 10)
+        bucket = SlabLand(grid; hydrology = BucketHydrology())
+        @test !isnothing(atmosphere_land_interface(grid, atmosphere, bucket;
+                                                   temperature = canopy,
+                                                   specific_humidity = canopy))
+    end
 end
