@@ -1,3 +1,7 @@
+using DocStringExtensions: TYPEDSIGNATURES
+using Oceananigans.Architectures: architecture
+using Oceananigans.Fields: interior, location
+
 #####
 ##### `CanopyAirSpace` — a two-source canopy with a diagnostic canopy-air node.
 #####
@@ -413,8 +417,10 @@ Fields:
 - `soil`   : the soil vapor branch (a [`DryLayerHumidity`](@ref)).
 - `canopy` : the leaf vapor/photosynthesis branch (a [`CanopyConductanceHumidity`](@ref)).
 - `soil_skin_flux` : skin↔bulk conduction `Λᵍ = κᵀ/ℓᵀ` (a [`SoilConductiveFlux`](@ref)).
-- `leaf_albedo`, `ground_albedo` : broadband shortwave albedos.
-- `max_canopy_emissivity`, `ground_emissivity` : longwave emissivities (`εᵛ = εᵐᵃˣ(1 − e^{−LAI})`).
+- `leaf_albedo`, `ground_albedo` : broadband shortwave albedos. A `Number`, or a
+  `Field{Center, Center, Nothing}` of per-cell values (see [`atmosphere_land_interface`](@ref)).
+- `max_canopy_emissivity`, `ground_emissivity` : longwave emissivities (`εᵛ = εᵐᵃˣ(1 − e^{−LAI})`),
+  each a `Number` or a per-cell `Field`.
 - `extinction`, `clumping` : Beer–Lambert `K`, `Ω` for the shortwave split.
 - `leaf_boundary_conductance` : per-leaf boundary-layer conductance `gᵇ` (m s⁻¹) →
   sensible `gˡʰ = ρcₚ·LAI·gᵇ`, vapor `gʷ = ρ·LAI·gᵇ` (in series with the stomata
@@ -437,15 +443,46 @@ Fields:
 - `storage` : the canopy-air node storage — [`DiagnosticCanopyAir`](@ref) (the default,
   massless node) or [`PrognosticCanopyAir`](@ref) (the node carries the canopy-air
   heat and moisture capacity and is advanced with the model time step).
+
+The four optics slots accept a per-cell `Field{Center, Center, Nothing}` alongside a
+`Number`, so a satellite albedo product reaches the two-source radiation balance cell by
+cell. The land flux kernel localizes them before the canopy solve; the interface
+constructor checks them with [`validate_canopy_optics`](@ref).
+
+```jldoctest
+using NumericalEarth
+using Oceananigans
+using NumericalEarth.EarthSystemModels.InterfaceComputations: local_interface_formulation
+
+grid = LatitudeLongitudeGrid(size = (2, 1, 1), latitude = (10, 11), longitude = (10, 12),
+                             z = (-1, 0), topology = (Bounded, Bounded, Bounded))
+
+soil = DryLayerHumidity(Float64;
+                        dry_layer_depth = StorageBasedDryLayerDepth(Float64;
+                            maximum_dry_layer_depth = 0.015, dry_layer_onset_saturation = 0.5),
+                        vapor_exchange = DryLayerVaporPistonVelocity(Float64;
+                            minimum_dry_layer_depth = 1e-3, molecular_diffusivity = 2.4e-5),
+                        thermal_exchange_depth = 0.05, porosity = 0.4)
+
+leaf_albedo = Field{Center, Center, Nothing}(grid)
+set!(leaf_albedo, (λ, φ) -> ifelse(λ < 11, 0.12, 0.35))
+
+canopy = CanopyAirSpace(Float64; soil, leaf_albedo)
+
+local_interface_formulation(canopy, 2, 1).leaf_albedo
+
+# output
+0.35
+```
 """
-struct CanopyAirSpace{S, C, RF, FT, U, W, L, I, Φ, ST}
+struct CanopyAirSpace{S, C, RF, LA, GA, CE, GE, FT, U, W, L, I, Φ, ST}
     soil                      :: S
     canopy                    :: C
     soil_skin_flux             :: RF
-    leaf_albedo               :: FT
-    ground_albedo             :: FT
-    max_canopy_emissivity     :: FT
-    ground_emissivity         :: FT
+    leaf_albedo               :: LA
+    ground_albedo             :: GA
+    max_canopy_emissivity     :: CE
+    ground_emissivity         :: GE
     extinction                :: FT
     clumping                  :: FT
     leaf_boundary_conductance :: FT
@@ -479,9 +516,13 @@ function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
                         phase                     = AtmosphericThermodynamics.Liquid(),
                         storage                   = DiagnosticCanopyAir())
 
+    # Convert only a scalar optics slot; a `Field` passes through and is materialized
+    # per cell in the flux kernel.
     return CanopyAirSpace(soil, canopy, soil_skin_flux,
-                          convert(FT, leaf_albedo), convert(FT, ground_albedo),
-                          convert(FT, max_canopy_emissivity), convert(FT, ground_emissivity),
+                          convert_if_number(FT, leaf_albedo),
+                          convert_if_number(FT, ground_albedo),
+                          convert_if_number(FT, max_canopy_emissivity),
+                          convert_if_number(FT, ground_emissivity),
                           convert(FT, extinction), convert(FT, clumping),
                           convert(FT, leaf_boundary_conductance),
                           undercanopy_conductance_model(undercanopy_conductance, FT),
@@ -492,23 +533,122 @@ end
 
 # The storage type selects the node treatment inside `canopy_air_space_solve` and
 # the kernel data flow (frozen node + advance for the prognostic variant).
-const DiagnosticCanopyAirSpace = CanopyAirSpace{<:Any, <:Any, <:Any, <:Any, <:Any,
-                                                <:Any, <:Any, <:Any, <:Any, <:DiagnosticCanopyAir}
-const PrognosticCanopyAirSpace = CanopyAirSpace{<:Any, <:Any, <:Any, <:Any, <:Any,
-                                                <:Any, <:Any, <:Any, <:Any, <:PrognosticCanopyAir}
+const DiagnosticCanopyAirSpace = CanopyAirSpace{<:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:Any,
+                                                <:Any, <:Any, <:Any, <:Any, <:Any, <:Any,
+                                                <:DiagnosticCanopyAir}
+const PrognosticCanopyAirSpace = CanopyAirSpace{<:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:Any,
+                                                <:Any, <:Any, <:Any, <:Any, <:Any, <:Any,
+                                                <:PrognosticCanopyAir}
+
+#####
+##### Per-cell optics: localization (kernel) and validation (setup)
+#####
+
+# Collapse `Field`-valued optics slots to cell (i, j) before the index-free canopy solve;
+# `state2dindex` returns a `Number` slot unchanged.
+@inline local_interface_formulation(formulation, i, j) = formulation
+
+@inline local_interface_formulation(c::CanopyAirSpace, i, j) =
+    CanopyAirSpace(c.soil, c.canopy, c.soil_skin_flux,
+                   state2dindex(c.leaf_albedo, i, j),
+                   state2dindex(c.ground_albedo, i, j),
+                   state2dindex(c.max_canopy_emissivity, i, j),
+                   state2dindex(c.ground_emissivity, i, j),
+                   c.extinction, c.clumping, c.leaf_boundary_conductance,
+                   c.undercanopy_conductance, c.wet_soil_resistance, c.litter_resistance,
+                   c.inner_iterations, c.relaxation, c.interception, c.phase, c.storage)
+
+@inline evaluable_albedo(α) = isfinite(α) & (α ≥ 0) & (α < 1)
+@inline evaluable_emissivity(ε) = isfinite(ε) & (ε > 0) & (ε ≤ 1)
+
+# The four slots that may carry per-cell values, each with the predicate its values must
+# satisfy and the requirement to quote when they do not.
+@inline canopy_optics_slots(c::CanopyAirSpace) =
+    (("leaf_albedo",           c.leaf_albedo,           evaluable_albedo,     "in [0, 1)"),
+     ("ground_albedo",         c.ground_albedo,         evaluable_albedo,     "in [0, 1)"),
+     ("max_canopy_emissivity", c.max_canopy_emissivity, evaluable_emissivity, "in (0, 1]"),
+     ("ground_emissivity",     c.ground_emissivity,     evaluable_emissivity, "in (0, 1]"))
+
+# Setup-time only, so the host copy is fine.
+optics_slot_values(slot::Number) = (slot,)
+optics_slot_values(slot::AbstractField) = Array(interior(slot))
+
+# `state2dindex` reads `slot[i, j, 1]`, so a slot must be a horizontally-reduced field on
+# *this* grid: a `(Center, Center, Center)` field would silently contribute its deepest
+# level, and a field from another grid would read the wrong cell — the kernel reads it
+# `@inbounds`.
+function validate_optics_slot_layout(slot::AbstractField, name, grid)
+    if location(slot) !== (Center, Center, Nothing)
+        LX, LY, LZ = location(slot)
+        throw(ArgumentError("$name must be a horizontally-reduced Field at " *
+                            "(Center, Center, Nothing), got ($LX, $LY, $LZ). " *
+                            "Build it with Field{Center, Center, Nothing}(grid)."))
+    end
+
+    # Grids compare with `==` (topology and nodes): two references to one grid are not
+    # guaranteed to be egal, so identity would reject a field built on the interface's grid.
+    if architecture(slot) !== architecture(grid) || slot.grid != grid
+        throw(ArgumentError("$name is built on a different grid than the interface " *
+                            "($(summary(slot.grid)) vs $(summary(grid))). Per-cell canopy " *
+                            "optics must be built on the grid the interface is constructed " *
+                            "with, or they index the wrong cell."))
+    end
+
+    return nothing
+end
+
+validate_optics_slot_layout(slot::Number, name, grid) = nothing
+
+# A bare array carries no location or grid, so nothing pins its rows and columns to the
+# exchange grid's cells; require a Field so the layout above can be checked. Anything else
+# has no per-cell values for `optics_slot_values` to read.
+validate_optics_slot_layout(slot, name, grid) =
+    throw(ArgumentError("$name must be a Number or a Field, got a $(summary(slot)). " *
+                        "Wrap per-cell values in a Field{Center, Center, Nothing}(grid)."))
+
+"""
+$(TYPEDSIGNATURES)
+
+Check that the optics slots of `formulation` can be localized on `grid` and evaluated by
+the canopy radiation balance, and throw an `ArgumentError` naming the offending slot
+otherwise.
+
+Kernels can neither throw nor report, so the conditions the two-source radiation balance
+depends on are checked here: a `Field` slot is horizontally reduced and sized to `grid`,
+every albedo lies in `[0, 1)` so the absorbed shortwave `(1 - α) SW` is a real fraction,
+and every emissivity lies in `(0, 1]` so the longwave balance stays invertible. A gap in
+a satellite albedo product would otherwise propagate `NaN` through the leaf and ground
+skin temperatures into the coupled state.
+"""
+function validate_canopy_optics(c::CanopyAirSpace, grid)
+    for (name, slot, evaluable, requirement) in canopy_optics_slots(c)
+        validate_optics_slot_layout(slot, name, grid)
+
+        values = optics_slot_values(slot)
+        all(evaluable, values) && continue
+
+        throw(ArgumentError("$name has $(count(!evaluable, values)) cells that are not " *
+                            "$requirement (minimum $(minimum(values)), maximum " *
+                            "$(maximum(values))). A bad cell propagates NaN through the " *
+                            "leaf and ground skin temperatures into the coupled state. " *
+                            "Gap-fill the field first."))
+    end
+
+    return nothing
+end
+
+validate_canopy_optics(formulation, grid) = nothing
 
 Base.summary(::CanopyAirSpace) = "CanopyAirSpace"
 Base.show(io::IO, c::CanopyAirSpace) =
     print(io, "CanopyAirSpace(soil=", summary(c.soil), ", canopy=", summary(c.canopy),
           ", storage=", summary(c.storage), ")")
 
-Adapt.adapt_structure(to, c::CanopyAirSpace) =
-    CanopyAirSpace(adapt(to, c.soil), adapt(to, c.canopy), c.soil_skin_flux,
-                   c.leaf_albedo, c.ground_albedo, c.max_canopy_emissivity, c.ground_emissivity,
-                   c.extinction, c.clumping, c.leaf_boundary_conductance,
-                   c.undercanopy_conductance, c.wet_soil_resistance, c.litter_resistance,
-                   c.inner_iterations, c.relaxation,
-                   c.interception, c.phase, adapt(to, c.storage))
+# `local_interface_formulation` rebuilds this struct positionally inside a kernel, where a
+# name-keyed rebuild would not be type-stable, so a reordered or inserted field would
+# silently mis-wire the closure rather than fail to compile. `test_canopy_air_space.jl`
+# pins the field order.
+Adapt.@adapt_structure CanopyAirSpace
 
 # Materialization / identity — delegate to the sub-models so the per-cell interface
 # state carries the soil saturation, bulk temperature, and LAI the branches read.
@@ -677,11 +817,13 @@ closes.
     σ   = Ψᵣ.σ
     SW  = Ψᵣ.ℐꜜˢʷ
     LWd = Ψᵣ.ℐꜜˡʷ
-    εᵛ = c.max_canopy_emissivity * (1 - exp(-LAI))
-    εᵍ = c.ground_emissivity
+    αˡᶠ = convert(FT, c.leaf_albedo)
+    αᵍ  = convert(FT, c.ground_albedo)
+    εᵛ = convert(FT, c.max_canopy_emissivity) * (1 - exp(-LAI))
+    εᵍ = convert(FT, c.ground_emissivity)
     ftrans    = exp(-c.extinction * LAI * c.clumping)
-    SWᵛ = (1 - c.leaf_albedo) * (1 - ftrans) * SW
-    SWᵍ = ftrans * (1 - c.ground_albedo) * SW
+    SWᵛ = (1 - αˡᶠ) * (1 - ftrans) * SW
+    SWᵍ = ftrans * (1 - αᵍ) * SW
 
     Tᵛ  = Tˡᵃ
     Tᵍ = Tˡᵃ

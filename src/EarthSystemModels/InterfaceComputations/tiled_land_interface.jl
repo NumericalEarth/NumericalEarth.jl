@@ -71,7 +71,7 @@ vegetated value).
 function bare_canopy_air_space(c::CanopyAirSpace; undercanopy_conductance = c.undercanopy_conductance,
                                wet_soil_resistance = c.wet_soil_resistance,
                                litter_resistance = nothing)
-    FT = typeof(c.leaf_albedo)
+    FT = typeof(c.extinction)
     return CanopyAirSpace(c.soil, zero_leaf_area_index_canopy(c.canopy), c.soil_skin_flux,
                           c.leaf_albedo, c.ground_albedo, c.max_canopy_emissivity, c.ground_emissivity,
                           c.extinction, c.clumping, c.leaf_boundary_conductance,
