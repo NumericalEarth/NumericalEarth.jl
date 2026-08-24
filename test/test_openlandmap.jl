@@ -284,9 +284,9 @@ end
                                nx, ny, x0, y0, dx, dy, scale = 1.0, offset = 0.0,
                                nodata = -1.0, raw, dtype = Float32, overviews = Cint[2, 4, 8, 16])
 
-    # 0.008° cells: half of that is 16 native pixels, so the read is matched at factor 16.
+    # 0.01° cells: half of that is 20 native pixels, so the read is matched at factor 16.
     grid = LatitudeLongitudeGrid(CPU(); size = (10, 10, 3),
-                                 longitude = (-111.98, -111.90), latitude = (35.912, 35.992),
+                                 longitude = (-111.98, -111.88), latitude = (35.89, 35.99),
                                  z = [-1.0, -0.6, -0.3, 0.0])
     region = BoundingBox(grid)
 
