@@ -150,7 +150,7 @@ end
                                           :soil_skin_flux,
                                           :leaf_albedo,
                                           :ground_albedo,
-                                          :canopy_emissivity_max,
+                                          :max_canopy_emissivity,
                                           :ground_emissivity,
                                           :extinction,
                                           :clumping,

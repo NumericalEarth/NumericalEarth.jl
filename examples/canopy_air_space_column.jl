@@ -98,7 +98,7 @@ end
 
 leaf_albedo           = 0.15
 ground_albedo         = 0.15
-canopy_emissivity_max = 0.98
+max_canopy_emissivity = 0.98
 ground_emissivity     = 0.96
 extinction            = 0.5   # Beer–Lambert K
 clumping              = 1.0   # foliage clumping Ω
@@ -180,7 +180,7 @@ canopy_with_interception(; leaf_area_index, conductance = JarvisConductance()) =
                                        moisture_stress = PlantAvailableWaterStress(),
                                        absorbed_par    = InteractiveAbsorbedPAR()),
     soil_skin_flux = SoilConductiveFlux(1.5, 0.05),
-    leaf_albedo, ground_albedo, canopy_emissivity_max, ground_emissivity,
+    leaf_albedo, ground_albedo, max_canopy_emissivity, ground_emissivity,
     extinction, clumping,
     interception = CanopyInterception())
 
@@ -312,7 +312,7 @@ dense_m  = canopy_air_space_column(leaf_area_index = 4.0, conductance = medlyn, 
 function radiation_partition(case)
     LAI = case.leaf_area_index
     σ   = stefan_boltzmann
-    εᵛ = canopy_emissivity_max * (1 - exp(-LAI))
+    εᵛ = max_canopy_emissivity * (1 - exp(-LAI))
     εᵍ = ground_emissivity
     ftrans = exp(-extinction * LAI * clumping)
 
