@@ -78,13 +78,18 @@ function MODISLand.modis_granules_to_netcdf(metadatum::MODISLand.MODISLandMetada
     lattice = regional_lattice(metadatum)
     urls = granule_urls(metadatum)
 
-    mktempdir() do tmp
-        @info string("Fetching ", length(urls), " MODIS granules for ", metadatum.dates, "...")
-        granule_paths = [earthdata_download(url, joinpath(tmp, basename(url))) for url in urls]
-        layers = Dict(layer => warp_modis_layer(granule_paths, layer, lattice)
-                      for layer in stored_granule_layers(metadatum.dataset))
-        write_modis_netcdf(nc_path, layers, lattice)
-    end
+    # A sinusoidal tile spans 10° and carries every layer of the product, so the same
+    # granules serve neighboring regions, sibling variables, and every year a climatology
+    # composites. Keeping them beside the warped files makes those warps a local operation.
+    granule_cache = mkpath(joinpath(dirname(nc_path), "granules"))
+    fetched = count(url -> !isfile(joinpath(granule_cache, basename(url))), urls)
+    fetched > 0 && @info string("Fetching ", fetched, " of ", length(urls),
+                                " MODIS granules for ", metadatum.dates, "...")
+
+    granule_paths = [earthdata_download_cached(url, granule_cache) for url in urls]
+    layers = Dict(layer => warp_modis_layer(granule_paths, layer, lattice)
+                  for layer in stored_granule_layers(metadatum.dataset))
+    write_modis_netcdf(nc_path, layers, lattice)
 
     return nothing
 end

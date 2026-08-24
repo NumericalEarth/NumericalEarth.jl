@@ -110,16 +110,8 @@ Requires network access, but no credentials.
 function granule_urls(metadatum::MODISLandMetadatum)
     dataset = metadatum.dataset
 
-    # One day of one product is a handful of sinusoidal tiles, so a single page always covers it.
-    url = cmr_granules_url(modis_short_name(dataset), modis_version(dataset), metadatum.region;
-                           date = metadatum.dates)
-
-    candidates = mktempdir() do tmp
-        json = joinpath(tmp, "cmr_granules.json")
-        download_with_retries(url, json; description = "CMR granule query")
-        text = read(json, String)
-        unique(m.match for m in eachmatch(r"https://[^\"]+\.hdf", text))
-    end
+    candidates = cmr_granules(modis_short_name(dataset), modis_version(dataset),
+                              metadatum.region; extension = "hdf", date = metadatum.dates)
 
     granules = select_granules(candidates, metadatum.dates)
     isempty(granules) &&
