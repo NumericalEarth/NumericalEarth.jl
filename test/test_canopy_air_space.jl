@@ -13,12 +13,13 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     ConstantUndercanopyConductance, AreaIndexUndercanopyConductance,
     FrictionVelocityUndercanopyConductance, undercanopy_conductance,
     SellersSoilResistance, LitterResistance, soil_surface_resistance, litter_resistance,
-    bare_canopy_air_space, CanopyAirSpaceDiagnostics, DiagnosticSkin
+    bare_canopy_air_space, CanopyAirSpaceDiagnostics, DiagnosticSkin,
+    default_atmosphere_land_fluxes, local_interface_formulation, validate_canopy_optics
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, AtmosphereThermodynamicsParameters
 using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
 using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
 
-build_canopy_air_space(FT) = CanopyAirSpace(FT;
+build_canopy_air_space(FT; optics...) = CanopyAirSpace(FT;
     soil = DryLayerHumidity(FT;
         dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
                                                     dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
@@ -27,7 +28,7 @@ build_canopy_air_space(FT) = CanopyAirSpace(FT;
         thermal_exchange_depth = 0.05, porosity = 0.4),
     canopy = CanopyConductanceHumidity(FT; leaf_area_index = 4.0, moisture_stress = CriticalSaturation(0.5),
                                        absorbed_par = InteractiveAbsorbedPAR(FT)),
-    soil_skin_flux = SoilConductiveFlux(1.5, 0.05))
+    soil_skin_flux = SoilConductiveFlux(1.5, 0.05), optics...)
 
 # Coupled single-column model with the CanopyAirSpace in both interface slots.
 function canopy_air_space_model(arch, cas; shortwave = 600.0)
@@ -137,6 +138,144 @@ end
         Ψᵢ = (u = FT(0), v = FT(0), T = FT(298))
         Ψᵣ = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(600), FT(350))
         @inferred canopy_air_space_solve(cas, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    end
+end
+
+@testset "CanopyAirSpace field order and optics localization" begin
+    # `local_interface_formulation` rebuilds the closure positionally inside a kernel, and
+    # every optics slot is a free type parameter, so a reordered or inserted field would
+    # silently mis-wire it instead of failing to compile. Pin the order.
+    @test fieldnames(CanopyAirSpace) === (:soil,
+                                          :canopy,
+                                          :soil_skin_flux,
+                                          :leaf_albedo,
+                                          :ground_albedo,
+                                          :canopy_emissivity_max,
+                                          :ground_emissivity,
+                                          :extinction,
+                                          :clumping,
+                                          :leaf_boundary_conductance,
+                                          :undercanopy_conductance,
+                                          :wet_soil_resistance,
+                                          :litter_resistance,
+                                          :inner_iterations,
+                                          :relaxation,
+                                          :interception,
+                                          :phase,
+                                          :storage)
+
+    FT = Float64
+    grid = LatitudeLongitudeGrid(CPU(), FT; size = (2, 1, 1), latitude = (10, 11),
+                                 longitude = (10, 12), z = (-1, 0),
+                                 topology = (Bounded, Bounded, Bounded))
+
+    leaf_albedo = Field{Center, Center, Nothing}(grid)
+    set!(leaf_albedo, (λ, φ) -> ifelse(λ < 11, 0.12, 0.35))
+    cas = build_canopy_air_space(FT; leaf_albedo)
+
+    # A `Field` slot collapses per cell; the untouched scalar slots pass through.
+    @test local_interface_formulation(cas, 1, 1).leaf_albedo == 0.12
+    @test local_interface_formulation(cas, 2, 1).leaf_albedo == 0.35
+    @test local_interface_formulation(cas, 2, 1).ground_albedo == cas.ground_albedo
+    @test local_interface_formulation(cas, 2, 1).storage === cas.storage
+
+    # Localization is the identity for a closure with no per-cell slots, and for the
+    # non-canopy formulations that share the kernel path.
+    scalar_cas = build_canopy_air_space(FT)
+    @test local_interface_formulation(scalar_cas, 2, 1).leaf_albedo == scalar_cas.leaf_albedo
+    @test local_interface_formulation(BulkTemperature(), 2, 1) === BulkTemperature()
+
+    # A scalar slot keeps the closure's float type rather than widening the solve.
+    @test build_canopy_air_space(Float32).leaf_albedo isa Float32
+end
+
+@testset "Canopy optics validation" begin
+    FT = Float64
+    grid = LatitudeLongitudeGrid(CPU(), FT; size = (2, 1, 1), latitude = (10, 11),
+                                 longitude = (10, 12), z = (-1, 0),
+                                 topology = (Bounded, Bounded, Bounded))
+
+    @test validate_canopy_optics(build_canopy_air_space(FT), grid) === nothing
+    @test validate_canopy_optics(BulkTemperature(), grid) === nothing
+
+    # A gap or an out-of-range value would propagate NaN into the coupled state.
+    for bad in (NaN, -0.1, 1.0)
+        α = Field{Center, Center, Nothing}(grid)
+        set!(α, (λ, φ) -> ifelse(λ < 11, 0.15, bad))
+        @test_throws ArgumentError validate_canopy_optics(build_canopy_air_space(FT; leaf_albedo = α), grid)
+    end
+
+    for bad in (NaN, 0.0, 1.5)
+        ε = Field{Center, Center, Nothing}(grid)
+        set!(ε, (λ, φ) -> ifelse(λ < 11, 0.96, bad))
+        @test_throws ArgumentError validate_canopy_optics(build_canopy_air_space(FT; ground_emissivity = ε), grid)
+    end
+
+    # A slot `state2dindex` cannot read per cell is rejected by layout, not by value.
+    volume_field = Field{Center, Center, Center}(grid)
+    set!(volume_field, 0.15)
+    @test_throws ArgumentError validate_canopy_optics(build_canopy_air_space(FT; leaf_albedo = volume_field), grid)
+
+    @test_throws ArgumentError validate_canopy_optics(build_canopy_air_space(FT; leaf_albedo = [0.1, 0.2]), grid)
+
+    other_grid = LatitudeLongitudeGrid(CPU(), FT; size = (2, 1, 1), latitude = (40, 41),
+                                       longitude = (10, 12), z = (-1, 0),
+                                       topology = (Bounded, Bounded, Bounded))
+    stray = Field{Center, Center, Nothing}(other_grid)
+    set!(stray, 0.15)
+    @test_throws ArgumentError validate_canopy_optics(build_canopy_air_space(FT; leaf_albedo = stray), grid)
+end
+
+# Per-cell optics reach the coupled solve: two cells sharing a canopy closure but differing
+# in leaf albedo end up with different canopy temperatures, and a cell whose field matches
+# the scalar the closure would otherwise carry is unchanged.
+@testset "Coupled per-cell canopy optics" begin
+    for arch in test_architectures
+        FT = Float64
+        grid = LatitudeLongitudeGrid(arch, FT; size = (2, 1, 1), latitude = (10, 11),
+                                     longitude = (10, 12), z = (-1, 0),
+                                     topology = (Bounded, Bounded, Bounded))
+        atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10, boundary_layer_height = 512)
+        fill!(parent(atmosphere.temperature), 300.0)
+        fill!(parent(atmosphere.specific_humidity), 0.008)
+        fill!(parent(atmosphere.velocities.u), 3.0)
+        fill!(parent(atmosphere.pressure), 101325.0)
+        land = SlabLand(grid; hydrology = BucketHydrology(FT; maximum_water_storage = 150.0), energy = SlabEnergy(FT))
+        set!(land; T = 298.0)
+        fill!(parent(land.water_storage), 45.0)
+        radiation = PrescribedRadiation(grid; ocean_surface = nothing, sea_ice_surface = nothing,
+                                        land_surface = SurfaceRadiationProperties(0.2, 0.95))
+        fill!(parent(radiation.downwelling_shortwave), 600.0)
+        fill!(parent(radiation.downwelling_longwave), 350.0)
+        update_state!(radiation)
+
+        scalar_cas = build_canopy_air_space(FT)
+
+        # Cell 1 keeps the closure's own leaf albedo, cell 2 is a bright leaf.
+        leaf_albedo = Field{Center, Center, Nothing}(grid)
+        set!(leaf_albedo, (λ, φ) -> ifelse(λ < 11, scalar_cas.leaf_albedo, 0.6))
+
+        function canopy_model(cas)
+            interface = atmosphere_land_interface(grid, atmosphere, land;
+                                                  fluxes = default_atmosphere_land_fluxes(land, FT),
+                                                  temperature = cas, specific_humidity = cas)
+            model = AtmosphereLandModel(atmosphere, land; radiation,
+                                        atmosphere_land_interface = interface)
+            update_state!(model.land)
+            update_state!(model)
+            return model
+        end
+
+        model = canopy_model(build_canopy_air_space(FT; leaf_albedo))
+        Tᵛ = Array(interior(model.interfaces.atmosphere_land_interface.temperature.canopy))
+
+        # The bright leaf absorbs less shortwave and runs cooler.
+        @test Tᵛ[2, 1, 1] < Tᵛ[1, 1, 1]
+
+        # The cell carrying the closure's own albedo is bit-identical to the scalar run,
+        # so a configuration with no per-cell optics is unchanged.
+        Tᵛ_scalar = Array(interior(canopy_model(scalar_cas).interfaces.atmosphere_land_interface.temperature.canopy))
+        @test Tᵛ[1, 1, 1] == Tᵛ_scalar[1, 1, 1]
     end
 end
 
