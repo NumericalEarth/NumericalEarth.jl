@@ -64,6 +64,8 @@ end
 # The atmosphere grid is index-identical horizontally to the exchange grid under the Breeze
 # coupling, so the surface faces `k = 1` copy straight across. Interior cells only, matching
 # the atmosphere-land flux kernel's own `:xy` launch — RRTMGP leaves its flux halos unfilled.
+# The first coupled `update_state!` runs before the atmosphere has ever solved, so the state
+# it publishes is dark; the first `time_step!` fills it.
 function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, rtm::BreezeRTM, coupled_model)
     launch!(architecture(exchange_grid), exchange_grid, :xy,
             _interpolate_breeze_radiation_state!,

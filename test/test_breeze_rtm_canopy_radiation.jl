@@ -111,6 +111,15 @@ end
             Gᶜ = Array(interior(interface.temperature.ground_heat_flux))
             @test Jᴱs ≈ -Gᶜ
 
+            # The two-source shares still reconcile with the interface fluxes the atmosphere
+            # and slab read, now that the radiation driving them comes from the RTM.
+            Hᵛ = Array(interior(interface.temperature.canopy_sensible_heat))
+            Hᵍ = Array(interior(interface.temperature.soil_sensible_heat))
+            LEᵛ = Array(interior(interface.temperature.canopy_latent_heat))
+            LEᵍ = Array(interior(interface.temperature.soil_latent_heat))
+            @test Hᵛ .+ Hᵍ ≈ Array(interior(interface.fluxes.sensible_heat))
+            @test LEᵛ .+ LEᵍ ≈ Array(interior(interface.fluxes.latent_heat))
+
             # Sunlit leaves run warmer than the shaded ground, and the radiating temperature
             # separates from the canopy-air node — with a zero radiation state the two skins and
             # `Teff` all collapse onto the node.
