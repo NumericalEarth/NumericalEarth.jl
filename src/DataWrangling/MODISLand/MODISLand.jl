@@ -18,7 +18,7 @@ using Statistics: mean
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
                        metadata_path, default_download_directory,
                        native_cell_range, native_convention_longitude,
-                       cmr_granules_url, download_with_retries, write_atomically
+                       cmr_granules, write_atomically
 
 import Oceananigans
 

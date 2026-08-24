@@ -34,6 +34,9 @@ lattice — one NetCDF per date and region holding every layer as raw digital nu
 Decoding (fill rejection, scale factors, quality screening) happens at read time. A
 lon/lat `BoundingBox` region is required; a global read is rejected.
 
+The granules themselves are kept under `granules/` beside the reprojected files, keyed by
+granule name, so a new region or date over the same tiles warps from local files.
+
 ## Usage
 
 ```julia
@@ -68,8 +71,9 @@ compositing leaves behind — see their docstrings and `examples/modis_landcover
 - A longitude window straddling the ±180° seam is rejected; split it into two requests.
 - Whole tiles are downloaded (HDF4 defeats GDAL's windowed reads), and a climatology
   multiplies quickly: 46 periods × `length(years)` × tiles — a 1° box over five years is
-  ~230 granules and tens of minutes. Per-date files are cached and shared across periods
-  and variables; build only the periods you need with the `periods` keyword while iterating.
+  ~230 granules and tens of minutes. Per-date files and the granules behind them are cached
+  and shared across periods and variables; build only the periods you need with the
+  `periods` keyword while iterating.
 - The record has outage holes (2016-02-18 is one): a climatology skips them with a warning,
   a single-date read raises `MissingGranulesError`.
 - `years` defaults to 2003–2019, the span over which Terra and Aqua held their equatorial

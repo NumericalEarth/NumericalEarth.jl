@@ -89,6 +89,26 @@ end
     @test all(f -> 0 ≤ f ≤ 1, fpar)
 end
 
+@testset "Warping a second region from cached granules" begin
+    granule_cache = joinpath(modis_download_directory, "granules")
+    granules = sort!(readdir(granule_cache))
+    @test !isempty(granules)
+    @test all(endswith(".hdf"), granules)
+
+    stamps = [mtime(joinpath(granule_cache, granule)) for granule in granules]
+
+    # A window inside the one just warped is served by the same granules, so the second
+    # warp is local: the cache neither grows nor is rewritten.
+    inner = BoundingBox(longitude = (-92.45, -92.35), latitude = (36.55, 36.65))
+    metadatum = Metadatum(:leaf_area_index; dataset = MCD15A2H(), region = inner,
+                          date = modis_composite_date, dir = modis_download_directory)
+    download(metadatum)
+    @test isfile(metadata_path(metadatum))
+
+    @test sort!(readdir(granule_cache)) == granules
+    @test [mtime(joinpath(granule_cache, granule)) for granule in granules] == stamps
+end
+
 @testset "Downloading a MCD12Q1 land-cover map" begin
     dataset = MCD12Q1()
     metadatum = Metadatum(:landcover_class; dataset, region = modis_region,
