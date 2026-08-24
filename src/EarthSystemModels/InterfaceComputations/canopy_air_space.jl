@@ -516,13 +516,13 @@ function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
                         phase                     = AtmosphericThermodynamics.Liquid(),
                         storage                   = DiagnosticCanopyAir())
 
-    # A `Field` optics slot carries its own eltype; a scalar converts to `FT` so the
-    # solve is not widened by a stray Float64 literal.
-    to_FT(x) = x isa Number ? convert(FT, x) : x
-
+    # Convert only a scalar optics slot; a `Field` passes through and is materialized
+    # per cell in the flux kernel.
     return CanopyAirSpace(soil, canopy, soil_skin_flux,
-                          to_FT(leaf_albedo), to_FT(ground_albedo),
-                          to_FT(canopy_emissivity_max), to_FT(ground_emissivity),
+                          convert_if_number(FT, leaf_albedo),
+                          convert_if_number(FT, ground_albedo),
+                          convert_if_number(FT, canopy_emissivity_max),
+                          convert_if_number(FT, ground_emissivity),
                           convert(FT, extinction), convert(FT, clumping),
                           convert(FT, leaf_boundary_conductance),
                           undercanopy_conductance_model(undercanopy_conductance, FT),
@@ -545,18 +545,15 @@ const PrognosticCanopyAirSpace = CanopyAirSpace{<:Any, <:Any, <:Any, <:Any, <:An
 #####
 
 # Collapse `Field`-valued optics slots to cell (i, j) before the index-free canopy solve;
-# `Number`s pass through `stateindex`'s fallback.
-@inline local_optical_property(x, i, j) = x
-@inline local_optical_property(x::AbstractArray, i, j) = state2dindex(x, i, j)
-
+# `state2dindex` returns a `Number` slot unchanged.
 @inline local_interface_formulation(formulation, i, j) = formulation
 
 @inline local_interface_formulation(c::CanopyAirSpace, i, j) =
     CanopyAirSpace(c.soil, c.canopy, c.soil_skin_flux,
-                   local_optical_property(c.leaf_albedo, i, j),
-                   local_optical_property(c.ground_albedo, i, j),
-                   local_optical_property(c.canopy_emissivity_max, i, j),
-                   local_optical_property(c.ground_emissivity, i, j),
+                   state2dindex(c.leaf_albedo, i, j),
+                   state2dindex(c.ground_albedo, i, j),
+                   state2dindex(c.canopy_emissivity_max, i, j),
+                   state2dindex(c.ground_emissivity, i, j),
                    c.extinction, c.clumping, c.leaf_boundary_conductance,
                    c.undercanopy_conductance, c.wet_soil_resistance, c.litter_resistance,
                    c.inner_iterations, c.relaxation, c.interception, c.phase, c.storage)
