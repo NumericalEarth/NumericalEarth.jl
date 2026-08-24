@@ -7,8 +7,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     LinearStableStabilityFunction,
     large_yeager_stability_functions,
     atmosphere_land_stability_functions,
-    ZengMomentumStabilityFunction,
-    ZengScalarStabilityFunction,
+    FreeConvectionMomentumStabilityFunction,
+    FreeConvectionScalarStabilityFunction,
     LogarithmicSimilarityProfile,
     similarity_profile,
     SimilarityScales,
@@ -65,8 +65,8 @@ end
 end
 
 @testset "Zeng free-convection matched stability functions" begin
-    ψu = ZengMomentumStabilityFunction{Float64}()
-    ψc = ZengScalarStabilityFunction{Float64}()
+    ψu = FreeConvectionMomentumStabilityFunction{Float64}()
+    ψc = FreeConvectionScalarStabilityFunction{Float64}()
 
     # Matched below its matching point to the Businger-Dyer form it extends
     pu = PaulsonMomentumStabilityFunction{Float64}()
@@ -92,7 +92,7 @@ end
     # Beyond the match the matched profile turns over (the free-convection term
     # outgrows the log), while the unmatched Businger-Dyer form keeps growing
     @test stability_profile(ψu, -50.0) < stability_profile(pu, -50.0)
-    ψu∞ = ZengMomentumStabilityFunction{Float64}(maximum_stability_parameter = Inf)
+    ψu∞ = FreeConvectionMomentumStabilityFunction{Float64}(maximum_stability_parameter = Inf)
     @test stability_profile(ψu∞, -1e3) < stability_profile(ψu∞, -100.0)
 
     # `maximum_stability_parameter` freezes the profile beyond its bound
