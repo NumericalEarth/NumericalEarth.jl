@@ -557,6 +557,11 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   fluxes `J = λ φᵦ` with `λ = -μ |u|` in the vertical solver's diagonal. `false` applies both
   explicitly, the treatment this replaced, so the pair can be A/B'd. The two differ most in shallow
   fast cells such as narrow straits, where the explicit stability number `μ |u| Δt / Δz` is order ten.
+- `bottom_drag_background_velocity`: unresolved velocity `uᵦ` added in quadrature to the resolved speed
+  in the quadratic bottom drag, `τ = μ u √(uᵦ² + |u|²)`, standing for tides and other motions the grid
+  does not carry. It only bites where the resolved flow is weak: at `|u| = 1 cm/s` and `uᵦ = 10 cm/s`
+  the stress is ten times the resolved one, at `50 cm/s` within a percent of it. Default `0`; GFDL's
+  OM4 uses `0.1`.
 - `barotropic_substeps`: number of split-explicit substeps the free surface takes per `Δt`. The
   barotropic gravity wave must stay inside a substep, so a refined grid or a longer `Δt` needs more;
   too few blows the free surface up on the first step. Per-config default: `200` for
@@ -644,6 +649,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          background_vertical_viscosity = nothing,
                          implicit_vertical_advection = true,
                          implicit_bottom_drag = true,
+                         bottom_drag_background_velocity = 0,
                          velocity_formulation = :relative,
                          Cᵂu★ = nothing,
                          with_snow = false,
@@ -757,6 +763,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                         background_vertical_viscosity,
                         implicit_vertical_advection,
                         implicit_bottom_drag,
+                        bottom_drag_background_velocity,
                         skew_flux_formulation,
                         restoring_under_sea_ice,
                         Cᵂu★,
@@ -1456,6 +1463,7 @@ function build_ocean(config, grid;
                      vertical_closure = :catke,
                      implicit_vertical_advection = true,
                      implicit_bottom_drag = true,
+                     bottom_drag_background_velocity = 0,
                      skew_flux_formulation = :diffusive,
                      nemo_eddy_coefficients = nothing,
                      cesm_eddy_coefficients = nothing,
@@ -1516,6 +1524,7 @@ function build_ocean(config, grid;
                              tracer_advection = WENO(order=7; minimum_buffer_upwind_order=3, time_discretization),
                              coriolis,
                              implicit_bottom_drag,
+                             bottom_drag_background_velocity,
                              timestepper = :SplitRungeKutta3,
                              materialize_buoyancy_gradients = config_materialize_buoyancy_gradients(config),
                              free_surface = barotropic_free_surface(grid, barotropic_substeps, Δt),

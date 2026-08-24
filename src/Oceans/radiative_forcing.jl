@@ -1,7 +1,7 @@
 using Adapt: Adapt
+using DocStringExtensions: TYPEDSIGNATURES
 using Oceananigans.Grids: inactive_cell
 using Oceananigans.Operators: ∂zᶜᶜᶜ
-using Oceananigans.Units: Time
 
 using ..NumericalEarth: stateindex
 
@@ -91,9 +91,10 @@ round(equivalent_chlorophyll(ChlorophyllOptics(), 1 / 23), digits=3)
     return ((κ - κw) / Cs)^Ce 
 end
 
-struct TwoColorRadiation{E, K, O, C, J}
+struct TwoColorRadiation{E, K, A, O, C, J}
     first_color_fraction :: E
     first_absorption_coefficient :: K
+    second_absorption_coefficient :: A
     chlorophyll_optics :: O
     chlorophyll :: C
     surface_flux :: J
@@ -102,6 +103,7 @@ end
 Adapt.adapt_structure(to, R::TwoColorRadiation) =
     TwoColorRadiation(adapt(to, R.first_color_fraction),
                       adapt(to, R.first_absorption_coefficient),
+                      adapt(to, R.second_absorption_coefficient),
                       adapt(to, R.chlorophyll_optics),
                       adapt(to, R.chlorophyll),
                       adapt(to, R.surface_flux))
@@ -135,6 +137,9 @@ The defaults are the red band of Manizza et al. (2005) and the chlorophyll whose
 23 m, which is the Jerlov Type I value of
 [Paulson and Simpson (1977)](@cite paulson1977irradiance) for the clearest open-ocean water.
 
+Uniform `chlorophyll` gives a scalar ``κ₂``; anything else gives a surface field that
+`compute_absorption_coefficient!` refreshes once per column each step.
+
 ```jldoctest
 using NumericalEarth
 using Oceananigans
@@ -156,10 +161,17 @@ function TwoColorRadiation(grid;
                            chlorophyll = equivalent_chlorophyll(chlorophyll_optics, 1 / 23))
     FT = eltype(grid)
     surface_flux = Field{Center, Center, Nothing}(grid)
+    chlorophyll = chlorophyll isa Number ? convert(FT, chlorophyll) : chlorophyll
+
+    second_absorption_coefficient = chlorophyll isa Number ?
+        absorption_coefficient(chlorophyll_optics, chlorophyll) :
+        Field{Center, Center, Nothing}(grid)
+
     return TwoColorRadiation(convert(FT, first_color_fraction),
                              convert(FT, 1 / first_decay_scale),
+                             second_absorption_coefficient,
                              chlorophyll_optics,
-                             chlorophyll isa Number ? convert(FT, chlorophyll) : chlorophyll,
+                             chlorophyll,
                              surface_flux)
 end
 
@@ -187,13 +199,49 @@ const f = Face()
     return ifelse(inactive_cell(i, j, k - 1, grid), zero(J), J)
 end
 
+@inline blue_green_absorption_coefficient(κ₂::Number, i, j) = κ₂
+@inline blue_green_absorption_coefficient(κ₂, i, j) = @inbounds κ₂[i, j, 1]
+
+"""
+$(TYPEDSIGNATURES)
+
+Refresh the blue-green absorption coefficient of `radiation` from its chlorophyll at `time`, and
+return `nothing`. Chlorophyll reaches the optics through a power law and, for a `FieldTimeSeries`,
+an interpolation in time; both depend on the column alone, so evaluating them once per column here
+keeps them out of the flux divergence, which is evaluated at every level. Uniform chlorophyll
+carries its coefficient as a scalar and there is nothing to refresh.
+"""
+compute_absorption_coefficient!(radiation, time) = nothing
+
+compute_absorption_coefficient!(R::TwoColorRadiation, time) =
+    compute_absorption_coefficient!(R.second_absorption_coefficient, R.chlorophyll, R.chlorophyll_optics, time)
+
+compute_absorption_coefficient!(κ₂::Number, chlorophyll, optics, time) = nothing
+
+function compute_absorption_coefficient!(κ₂, chlorophyll, optics, time)
+    grid = κ₂.grid
+    launch!(architecture(grid), grid, :xy, _compute_absorption_coefficient!, κ₂, grid, chlorophyll, optics, time)
+    return nothing
+end
+
+@inline surface_stateindex(a, i, j, grid, time) = stateindex(a, i, j, 1, grid, time, (Center, Center, Nothing))
+
+# A `Nothing` vertical location leaves `_node` a two-tuple, which a function of `(λ, φ, z, t)` cannot
+# destructure, so functions are resolved at the topmost center instead.
+@inline surface_stateindex(a::Function, i, j, grid, time) =
+    stateindex(a, i, j, size(grid, 3), grid, time, (Center, Center, Center))
+
+@kernel function _compute_absorption_coefficient!(κ₂, grid, chlorophyll, optics, time)
+    i, j = @index(Global, NTuple)
+    C = surface_stateindex(chlorophyll, i, j, grid, time)
+    @inbounds κ₂[i, j, 1] = absorption_coefficient(optics, C)
+end
+
 @inline function (R::TwoColorRadiation)(i, j, k, grid, clock, fields)
     J₀ = @inbounds R.surface_flux[i, j, 1]
     κ₁ = R.first_absorption_coefficient
+    κ₂ = blue_green_absorption_coefficient(R.second_absorption_coefficient, i, j)
     ϵ₁ = R.first_color_fraction
-
-    C  = stateindex(R.chlorophyll, i, j, 1, grid, Time(clock.time), (Center, Center, Nothing))
-    κ₂ = absorption_coefficient(R.chlorophyll_optics, C)
 
     # Radiation flux divergences
     dJ₁dz = ∂zᶜᶜᶜ(i, j, k, grid, beers_law_radiation, J₀, κ₁)

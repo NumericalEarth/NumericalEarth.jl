@@ -208,6 +208,12 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
                 cells such as narrow straits, where mu |u| dt / dz is order ten. This is the
                 change bisected to commit 3c60be3b. The surface momentum flux is always
                 semi-implicit and is not affected.
+  DRAG_UB       Unresolved velocity u_b in m/s added in quadrature to the resolved speed in the
+                quadratic bottom drag, tau = mu u sqrt(u_b^2 + |u|^2), standing for tides and
+                other motions the grid does not carry. Default: 0, the purely resolved drag.
+                Adds "_ub<value>" to the run name. It bites where the flow is slow: at |u| =
+                1 cm/s and u_b = 0.1 the stress is ten times the resolved one, at 50 cm/s it is
+                within a percent of it. GFDL's OM4 uses 0.1.
   BAROTROPIC_SUBSTEPS
                 Split-explicit substeps the free surface takes per DT. Default: unset, i.e. 200
                 for quarterdegree/twelfthdegree and 100 otherwise. The barotropic gravity wave
@@ -398,6 +404,7 @@ esac
 [[ -n "${BACKGROUND_NU:-}" ]]                  && RUN_NAME="${RUN_NAME}_bgnu${BACKGROUND_NU}"
 [[ "${CHLOROPHYLL:-seawifs}" != "seawifs" ]]   && RUN_NAME="${RUN_NAME}_chl${CHLOROPHYLL}"
 [[ "${IMEX_DRAG:-true}" == "false" ]]            && RUN_NAME="${RUN_NAME}_explicitdrag"
+[[ -n "${DRAG_UB:-}" && "${DRAG_UB:-0}" != "0" ]] && RUN_NAME="${RUN_NAME}_ub${DRAG_UB}"
 [[ -n "${PVEL:-}" ]]                           && RUN_NAME="${RUN_NAME}_pvel${PVEL}"
 
 REPORT_NAME="${REPORT_NAME:-${RUN_NAME}_report}"
@@ -494,6 +501,7 @@ BACKGROUND_K="${BACKGROUND_K:-}"
 BACKGROUND_NU="${BACKGROUND_NU:-}"
 BAROTROPIC_SUBSTEPS="${BAROTROPIC_SUBSTEPS:-}"
 IMEX_DRAG="${IMEX_DRAG:-true}"
+DRAG_UB="${DRAG_UB:-}"
 CHLOROPHYLL="${CHLOROPHYLL:-seawifs}"
 BACKEND_SIZE="${BACKEND_SIZE:-}"
 NCAR="${NCAR:-false}"
@@ -538,6 +546,9 @@ BACKGROUND_NU_KWARG=""
 # per-config default is sized for the config default DT; raising DT needs proportionally more.
 IMEX_DRAG_KWARG=""
 [[ "$IMEX_DRAG" == "false" ]] && IMEX_DRAG_KWARG="implicit_bottom_drag = false,"
+
+DRAG_UB_KWARG=""
+[[ -n "$DRAG_UB" ]] && DRAG_UB_KWARG="bottom_drag_background_velocity = $DRAG_UB,"
 
 BAROTROPIC_SUBSTEPS_KWARG=""
 [[ -n "$BAROTROPIC_SUBSTEPS" ]] && BAROTROPIC_SUBSTEPS_KWARG="barotropic_substeps = ${BAROTROPIC_SUBSTEPS},"
@@ -681,6 +692,7 @@ sim = omip_simulation(:${CONFIG};
                       ${BACKGROUND_NU_KWARG}
                       ${BAROTROPIC_SUBSTEPS_KWARG}
                       ${IMEX_DRAG_KWARG}
+                      ${DRAG_UB_KWARG}
                       ${CHLOROPHYLL_KWARG}
                       ${NORMALIZE_SALINITY_KWARG}
                       ${RESTORING_UNDER_ICE_KWARG}

@@ -35,13 +35,13 @@ end
 ##### Two-band SW penetration: fraction remaining at d, integrated buoyancy gain.
 #####
 
-@inline shortwave_fraction(d, ::Nothing) = zero(d)
+@inline shortwave_fraction(i, j, d, ::Nothing) = zero(d)
 
-@inline function shortwave_fraction(d, radiation)
+@inline function shortwave_fraction(i, j, d, radiation)
     FT = typeof(d)
     ϵ₁ = radiation.first_color_fraction
     κ₁ = radiation.first_absorption_coefficient
-    κ₂ = radiation.second_absorption_coefficient
+    κ₂ = blue_green_absorption_coefficient(radiation.second_absorption_coefficient, i, j)
     return ϵ₁ * exp(- κ₁ * d) + (one(FT) - ϵ₁) * exp(- κ₂ * d)
 end
 
@@ -50,7 +50,7 @@ end
 @inline function solar_buoyancy_above(i, j, d, radiation, α, g)
     FT = typeof(d)
     J₀ = @inbounds radiation.surface_flux[i, j, 1]
-    return - g * α * J₀ * (one(FT) - shortwave_fraction(d, radiation))
+    return - g * α * J₀ * (one(FT) - shortwave_fraction(i, j, d, radiation))
 end
 
 @inline buoyancy_forcing_above(i, j, d, Bo, radiation, α, g) =

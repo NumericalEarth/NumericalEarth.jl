@@ -33,7 +33,7 @@ import Oceananigans.TurbulenceClosures: viscosity, diffusivity,
                                         compute_closure_fields!, build_closure_fields,
                                         diffusive_flux_z
 
-using NumericalEarth.Oceans: get_radiative_forcing
+using NumericalEarth.Oceans: get_radiative_forcing, blue_green_absorption_coefficient
 
 const VITD = VerticallyImplicitTimeDiscretization
 
