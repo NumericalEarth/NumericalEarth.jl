@@ -267,6 +267,23 @@ function DataWrangling.retrieve_data(metadata::OpenLandMapSoilDBMetadatum)
     return data
 end
 
+# The windowed regional file is the one dataset here big enough that regridding it whole is the
+# constraint, so it reads by window: NetCDF serves the hyperslab without the rest of the variable
+# ever being touched.
+DataWrangling.windowed_retrieval(::OpenLandMapSoilDB) = true
+
+function DataWrangling.retrieve_window(metadata::OpenLandMapSoilDBMetadatum,
+                                       longitude_indices, latitude_indices)
+    path = metadata_path(metadata)
+    name = dataset_variable_name(metadata)
+    return Dataset(path) do ds
+        data = Array(ds[name][longitude_indices, latitude_indices, :])
+        λ = Array(ds[DataWrangling.longitude_name(metadata)][longitude_indices])
+        φ = Array(ds[DataWrangling.latitude_name(metadata)][latitude_indices])
+        (data, λ, φ)
+    end
+end
+
 """
     read_cog_window(source, bbox, factor = 1)
 
@@ -321,7 +338,11 @@ function define_window_variables!(ds, variable_name, longitude, latitude, depth_
                        attrib = ["units" => "degrees_north", "long_name" => "latitude"])
     depth_var = defVar(ds, "depth", Float64, ("depth",);
                        attrib = ["units" => "m", "long_name" => "depth interval midpoint"])
-    defVar(ds, variable_name, Float32, ("lon", "lat", "depth"))
+
+    # Chunk the variable so a regional window can be read as a hyperslab without striding across
+    # the whole record; a contiguous layout would make a tiled read scan the entire variable.
+    chunk = (min(512, length(longitude)), min(512, length(latitude)), length(depth_centers))
+    defVar(ds, variable_name, Float32, ("lon", "lat", "depth"); chunksizes = collect(chunk))
 
     lon_var[:]   = longitude
     lat_var[:]   = latitude

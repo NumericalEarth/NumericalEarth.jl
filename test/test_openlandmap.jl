@@ -311,3 +311,82 @@ end
         @test interior(field, :, :, k) ≈ expected rtol = 1e-4
     end
 end
+
+@testset "OpenLandMapSoilDB tiled regrid reproduces the whole-window regrid" begin
+    dir = mktempdir()
+
+    # A tile on the dataset's global lattice, carrying structure at every scale so that a
+    # misregistered tile boundary could not hide in a smooth field.
+    nx, ny = 512, 512
+    x0, y0, dx, dy = -112.0005, 36.0005, 0.00025, -0.00025
+    raw = Float32[30 + 10 * sinpi(i / 64) * cospi(j / 48) + (i % 7) for i in 1:nx, j in 1:ny]
+    raw[100:140, 60:90] .= -1.0   # a masked patch straddling tile interiors
+
+    tif = write_synthetic_tile(joinpath(dir, "tiled.tif");
+                               nx, ny, x0, y0, dx, dy, scale = 1.0, offset = 0.0,
+                               nodata = -1.0, raw, dtype = Float32, overviews = Cint[2, 4, 8, 16])
+
+    grid = LatitudeLongitudeGrid(CPU(); size = (10, 10, 3),
+                                 longitude = (-111.98, -111.88), latitude = (35.89, 35.99),
+                                 z = [-1.0, -0.6, -0.3, 0.0])
+    region = BoundingBox(grid)
+
+    metadatum = Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region, dir)
+    matched = target_matched_metadata(metadatum, grid)
+    cog_window_to_netcdf(fill(tif, 3), metadata_path(matched), "clay", region,
+                         aggregation_factor(matched.dataset))
+
+    # The path the regrid took before tiling: materialize the whole window, then interpolate.
+    native = Field(matched, CPU())
+    untiled = Field{Center, Center, Center}(grid)
+    NumericalEarth.DataWrangling.interpolate_physical!(untiled, native, matched)
+
+    @test NumericalEarth.DataWrangling.windowed_retrieval(matched.dataset)
+    @test !isnothing(NumericalEarth.DataWrangling.tiled_native_grid(untiled, matched, nothing))
+
+    # A budget that calls for one tile must leave the answer untouched: no sub-grid is built, so
+    # the whole-window path runs and the result is bitwise identical.
+    whole = Field(metadatum, grid; tile_bytes = typemax(Int))
+    @test isequal(Array(interior(whole)), Array(interior(untiled)))
+
+    # Splitting the target must not put a tile boundary into the answer. A tile carries a
+    # sub-range of the native grid, whose centers re-round by up to one Float32 ulp, so the
+    # agreement is to node precision rather than bitwise — bounded here against the field's range.
+    reference = Array(interior(untiled))
+    finite = filter(isfinite, reference)
+    range_of_field = maximum(finite) - minimum(finite)
+
+    for tile_bytes in (1_000_000, 10_000, 512)
+        tiled = Array(interior(Field(metadatum, grid; tile_bytes)))
+        @test size(tiled) == size(reference)
+        @test isequal(isnan.(tiled), isnan.(reference))
+        valid = .!isnan.(reference)
+        @test maximum(abs.(tiled[valid] .- reference[valid])) < 1e-3 * range_of_field
+    end
+
+    # The budgets above really do split the target, otherwise the loop proves nothing.
+    tile_count = NumericalEarth.DataWrangling.tile_count
+    @test tile_count(size(native.grid)[1:2], 3, typemax(Int)) == 1
+    @test tile_count(size(native.grid)[1:2], 3, 512) > 1
+end
+
+@testset "tiled regrid declines where it would not be equivalent" begin
+    grid = LatitudeLongitudeGrid(CPU(); size = (10, 10, 3),
+                                 longitude = (-111.98, -111.88), latitude = (35.89, 35.99),
+                                 z = [-1.0, -0.6, -0.3, 0.0])
+    field = Field{Center, Center, Center}(grid)
+    region = BoundingBox(grid)
+    tiled_native_grid = NumericalEarth.DataWrangling.tiled_native_grid
+
+    matched = target_matched_metadata(Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region), grid)
+    @test !isnothing(tiled_native_grid(field, matched, nothing))
+
+    # Inpainting is an iterative fill over the whole field; no tiling of it reproduces that.
+    @test isnothing(tiled_native_grid(field, matched,
+                                      NumericalEarth.DataWrangling.NearestNeighborInpainting(2)))
+
+    # A dataset that cannot read a window would re-read the whole file per tile.
+    unwindowed = Metadatum(:temperature; dataset = ECCO4Monthly(),
+                           date = DateTime(1993, 1, 1), region)
+    @test isnothing(tiled_native_grid(field, unwindowed, nothing))
+end
