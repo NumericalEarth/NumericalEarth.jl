@@ -151,6 +151,17 @@ end
     end
 end
 
+@testset "Retention curve forwards through the pond" begin
+    FT = Float64
+    grid = pond_test_grid(CPU(), FT)
+    ponded  = SurfaceWaterStore(FT; soil = soil_hydrology(FT))
+    wrapped = InterceptingHydrology(FT; soil = ponded, leaf_area_index = 3.0)
+    for hydrology in (ponded, wrapped)
+        land = SlabLand(grid; energy = SlabEnergy(FT), hydrology)
+        @test !isnothing(NumericalEarth.EarthSystemModels.surface_retention_curve(land))
+    end
+end
+
 @testset "Composition with InterceptingHydrology" begin
     for arch in test_architectures
         FT = Float64
