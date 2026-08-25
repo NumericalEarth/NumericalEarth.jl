@@ -365,7 +365,6 @@ include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
 include("GloFAS/GloFAS.jl")
-include("OSPapa/OSPapa.jl")
 include("SoilGrids/SoilGrids.jl")
 include("OpenLandMap/OpenLandMap.jl")
 include("IBCSO/IBCSO.jl")
@@ -388,7 +387,6 @@ using .ORCA
 using .WOA
 using .JRA55
 using .GloFAS
-using .OSPapa
 using .OpenLandMap
 using .IBCSO
 using .GEBCO
