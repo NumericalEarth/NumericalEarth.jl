@@ -18,6 +18,11 @@ effect**, and they outrank any instinct toward completeness.
 > **The test behind every rule below:** could a reviewer who knows the physics read this hunk once, in order,
 > and say yes?
 
+**They apply to existing code too.** Every rule below is also a license to delete: when you are already editing
+a file and a rule catches something that is *already there*, removing it is in scope, not scope creep. What is
+out of scope is going looking — do not open unrelated files to hunt for violations, and keep a cleanup that
+grows past the change it started from to its own PR.
+
 ## Rule 1 — The feature is the diff; everything else is scope creep
 
 Before opening a PR, ask what the smallest diff is that delivers the stated change. That diff is the PR.
@@ -66,7 +71,10 @@ A **loud failure is better than a silent fallback.** A `NaN` that reaches the co
 first output; a roughness silently floored at `1e-5` produces plausible wrong fluxes forever.
 
 - If a guard's own docstring has to say *"this is a guard, not a physical parameter"* — delete the guard.
-- Never grow a struct, a keyword argument, or a `show` line to hold a value that is not physics.
+- A keyword argument must express **physics or numerics** — a rate, a length, a tolerance, an iteration
+  cap, a search radius. What it must not express is a defense: a floor, a clamp, or a fallback whose
+  only job is to keep malformed input from reaching the solver. Never grow a struct or a `show` line
+  for one either.
 
 ❌ `minimum_roughness_length` — a new public keyword, struct field, `FT` conversion and `show` row, existing
    only so a field mutated after validation cannot produce `NaN`.
@@ -228,6 +236,7 @@ Any **yes** means cut before presenting.
 9. Is any error message longer than one sentence?
 10. Does any test pin an internal helper, a field order, or a fallback value?
 11. Does any identifier carry an invented sub/superscript, or mix math with English?
-12. Is there a new public keyword argument that the docs describe as non-physical?
+12. Is there a new public keyword argument that is neither physics nor numerics — a floor, clamp, or
+    fallback guarding against malformed input?
 13. Does the diff contain anything a reader would not expect from the title — including another
     branch merged into the head?

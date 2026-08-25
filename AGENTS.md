@@ -151,6 +151,8 @@ remove trailing whitespace, remove trailing blank lines, ensure file ends with e
 
 ## Agent Behavior
 
+- **Before presenting any change, run the checklist in `.claude/rules/restraint-rules.md` over your own
+  `git diff` and cut what it catches.** Report the result in one line. This is mandatory for every edit.
 - Prioritize type stability and GPU compatibility
 - Follow established patterns in existing code
 - Add tests for new functionality; update exports when adding public API
