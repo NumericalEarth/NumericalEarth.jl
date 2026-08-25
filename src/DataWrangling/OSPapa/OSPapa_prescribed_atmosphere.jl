@@ -51,7 +51,8 @@ function OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
                                     end_date = last_date(OSPapaHourly(), :air_temperature),
                                     dir = download_OSPapa_cache,
                                     surface_layer_height = 2.5,
-                                    max_gap_hours = 72)
+                                    max_gap_hours = 72,
+                                    tracers = NamedTuple())
 
     mdkw = (; dataset = OSPapaHourly(), start_date, end_date, dir)
 
@@ -82,5 +83,6 @@ function OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
                                 pressure = Pa,
                                 precipitation_flux = PrescribedPrecipitationFlux(; rain),
                                 thermodynamics_parameters = thermo_params,
-                                surface_layer_height = convert(FT, surface_layer_height))
+                                surface_layer_height = convert(FT, surface_layer_height),
+                                tracers = NamedTuple())
 end
