@@ -69,8 +69,7 @@ end
 
 # The generic method reads `PrescribedRadiation`-style `interface_fluxes`;
 # a Breeze RTM carries its surface flux fields directly on the model.
-# TODO: read the downwelling fluxes from the radiation exchanger state, so the positive-down
-# copy is the only representation.
+# TODO: read the downwelling fluxes from the radiation exchanger state for a single source of truth
 function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
         coupled_model :: NumericalEarth.EarthSystemModels.EarthSystemModel{<:BreezeRTM})
 
