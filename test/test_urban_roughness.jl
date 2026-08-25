@@ -368,15 +368,15 @@ end
     ℓᵐ, d = urban_roughness(h, λᵖ; closure)
     @test any(isnan, interior(ℓᵐ))
 
-    ℓᵐbuilt, dbuilt = aerodynamic_parameters(closure, 0.3, 15.0)
+    built_roughness, built_displacement = aerodynamic_parameters(closure, 0.3, 15.0)
     ℓˢᵒⁱˡ, dˢᵒⁱˡ = aerodynamic_parameters(closure, 0, 0)
 
     fill_aerodynamic_roughness_gaps!(ℓᵐ, d, closure)
 
     @test all(isfinite, interior(ℓᵐ))
     @test all(isfinite, interior(d))
-    @test ℓᵐ[1, 1, 1] ≈ ℓᵐbuilt      # built cells are untouched
-    @test d[1, 1, 1] ≈ dbuilt
+    @test ℓᵐ[1, 1, 1] ≈ built_roughness      # built cells are untouched
+    @test d[1, 1, 1] ≈ built_displacement
     @test ℓᵐ[4, 1, 1] ≈ ℓˢᵒⁱˡ        # the gap becomes unbuilt surface
     @test d[4, 1, 1] ≈ dˢᵒⁱˡ
 end
