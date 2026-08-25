@@ -215,7 +215,7 @@ The protocol:
 4. **Report the result in one line.** State that the checklist ran and what it caught, e.g.
    *"Self-review: cut the `minimum_roughness_length` guard (Q3) and two forwarding methods (Q5); 41 lines
    removed."* If it caught nothing, say *"Self-review: clean."* Never claim clean without having read the diff.
-5. **Never delete a rule to pass the checklist.** If a rule seems wrong for the case at hand, say so to Simone
+5. **Never delete a rule to pass the checklist.** If a rule seems wrong for the case at hand, say so to the PR author
    and let him decide. Editing `restraint-rules.md` to accommodate your own diff is the one forbidden move.
 
 For a three-line edit this takes seconds. For a large one it is the difference between review and no review.
