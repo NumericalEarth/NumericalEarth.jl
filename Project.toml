@@ -38,6 +38,7 @@ ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
 [weakdeps]
 ArchGDAL = "c9ce4bd3-c3d5-55b8-8973-c0e20141b8c3"
 Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
+CDSAPI = "8a7b9de3-9c00-473e-88b4-7eccd7ef2fea"
 CondaPkg = "992eb4ea-22a4-4c89-a5bb-47a3300528ab"
 ConservativeRegridding = "8e50ac2c-eb48-49bc-a402-07c87b949343"
 CopernicusClimateDataStore = "bce3f73f-acea-4481-bd86-df89ecc2cb46"
