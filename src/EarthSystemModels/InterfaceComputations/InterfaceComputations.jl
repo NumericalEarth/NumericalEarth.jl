@@ -115,18 +115,19 @@ function interface_kernel_parameters(grid)
     return kernel_parameters
 end
 
-# Fractional indices of a prescribed component's grid are computed over the exchange grid's
-# halo as well as its interior (`interface_kernel_parameters`), so a halo node lands outside a
-# regional component's interior by design: the value there comes from the component's own halo,
-# and therefore from its boundary conditions. Interpolation reads cells `⌊f⌋` and `⌊f⌋ + 1`, so
-# the index only has to stay within `1 - H` and `N + H - 1` for those reads to be in bounds.
-@inline clamp_fractional_index(::Nothing, topo, N, H) = nothing
+# A halo column of the exchange grid indexes outside a regional component's interior by design:
+# the value there comes from the component's own halo, and so from its boundary conditions.
+# Interpolation reads cells `⌊f⌋` and `⌊f⌋ + 1`, so a halo column is held within `1 - H` and
+# `N + H`. Interior columns are never clamped, so a component that does not cover the exchange
+# grid fails instead of being interpolated over.
+@inline clamp_fractional_index(::Nothing, topo, N, H, halo_column) = nothing
 
-@inline function clamp_fractional_index(fractional_index, topo, N, H)
+@inline function clamp_fractional_index(fractional_index, topo, N, H, halo_column)
     FT = typeof(fractional_index)
-    westmost = convert(FT, 1 - H)
-    eastmost = prevfloat(convert(FT, N + H))
-    return ifelse(topo isa Periodic, fractional_index, clamp(fractional_index, westmost, eastmost))
+    lowest = convert(FT, 1 - H)
+    highest = prevfloat(convert(FT, N + H))
+    clamped = halo_column & !(topo isa Periodic)
+    return ifelse(clamped, clamp(fractional_index, lowest, highest), fractional_index)
 end
 
 # 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1: a scalar
