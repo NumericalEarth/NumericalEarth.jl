@@ -17,11 +17,15 @@ struct SimilarityTheoryFluxes{FT, UF, R, D, B, S, SV}
     solver_stop_criteria :: S        # stop criteria for compute_interface_state
 end
 
-# `local_flux_formulation` rebuilds this struct positionally inside a kernel, where a
+# `Adapt.@adapt_structure` writes the `adapt_structure` method that used to be spelled
+# out here field by field: rebuild the struct with `adapt` applied to every field, which
+# is what moves a `Field`-valued roughness or displacement onto the device when the
+# closure is passed to a GPU kernel.
+#
+# `local_flux_formulation` rebuilds the same struct positionally inside a kernel, where a
 # name-keyed rebuild would not be type-stable, so a reordered or inserted field would
 # silently mis-wire the closure rather than fail to compile: every slot is a free type
-# parameter. `test_slab_land.jl` pins the field order. The host-side `adapt_structure`
-# needs no hand-written list.
+# parameter. `test_slab_land.jl` pins the field order.
 Adapt.@adapt_structure SimilarityTheoryFluxes
 
 #####
@@ -292,7 +296,7 @@ stay finite) when the displacement approaches the atmosphere surface layer heigh
 @inline displaced_profile_height(Δh, d, ℓ) = max(Δh - d, 2ℓ)
 
 #####
-##### Setup-time validation of the per-cell roughness and displacement slots
+##### Setup-time validation of `Field`-valued roughness and displacement slots
 #####
 
 """
@@ -309,12 +313,12 @@ inside a GPU kernel. Those kernels also iterate the halo (`0:N+1`), so localizin
 would additionally depend on the slot's halos being filled and kept fresh. Fail here
 instead, where the message can say so.
 """
-function reject_per_cell_slots(flux_formulation::SimilarityTheoryFluxes, interface)
+function reject_field_valued_slots(flux_formulation::SimilarityTheoryFluxes, interface)
     for (name, slot, _, _) in flux_formulation_slots(flux_formulation)
-        is_per_cell(slot) || continue
-        throw(ArgumentError("$name is a $(summary(slot)), but per-cell roughness " *
-                            "and displacement fields are only supported at the " *
-                            "atmosphere-land interface, not at the $interface " *
+        is_field_valued(slot) || continue
+        throw(ArgumentError("$name is a $(summary(slot)), but a Field-valued " *
+                            "roughness length or displacement is only supported at " *
+                            "the atmosphere-land interface, not at the $interface " *
                             "interface. Pass a Number or a roughness formulation " *
                             "such as MomentumRoughnessLength here."))
     end
@@ -322,10 +326,10 @@ function reject_per_cell_slots(flux_formulation::SimilarityTheoryFluxes, interfa
     return nothing
 end
 
-reject_per_cell_slots(flux_formulation, interface) = nothing
+reject_field_valued_slots(flux_formulation, interface) = nothing
 
-# The four slots that may carry per-cell values, each with the predicate its values must
-# satisfy and the requirement to quote when they do not. `reject_per_cell_slots` and
+# The four slots that may be `Field`-valued, each with the predicate its values must
+# satisfy and the requirement to quote when they do not. `reject_field_valued_slots` and
 # `validate_flux_formulation` both walk this table, so adding a slot is one edit.
 @inline flux_formulation_slots(f::SimilarityTheoryFluxes) =
     (("momentum_roughness_length",    f.roughness_lengths.momentum,
@@ -337,8 +341,9 @@ reject_per_cell_slots(flux_formulation, interface) = nothing
      ("zero_plane_displacement",      f.zero_plane_displacement,
       evaluable_zero_plane_displacement, "finite and non-negative (displacement raises the surface)"))
 
-# Only an array slot varies per cell.
-@inline is_per_cell(slot) = slot isa AbstractArray
+# An array-valued slot carries one value per cell. A bare array is refused by
+# `validate_slot_layout`, so in practice this is a `Field`.
+@inline is_field_valued(slot) = slot isa AbstractArray
 
 # Per-cell values of a slot, or `nothing` for a state-dependent formulation
 # (`MomentumRoughnessLength`, `ScalarRoughnessLength`) whose values are only known

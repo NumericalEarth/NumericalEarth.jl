@@ -14,7 +14,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: default_atmosphere
                                                               SimilarityScales,
                                                               local_flux_formulation,
                                                               validate_flux_formulation,
-                                                              reject_per_cell_slots,
+                                                              reject_field_valued_slots,
                                                               iterate_interface_fluxes,
                                                               RelativeVelocity,
                                                               celsius_to_kelvin
@@ -742,18 +742,18 @@ end
     field_fluxes = SimilarityTheoryFluxes(; momentum_roughness_length = ℓᵐ)
     scalar_fluxes = SimilarityTheoryFluxes(; momentum_roughness_length = 0.1)
 
-    @test_throws ArgumentError reject_per_cell_slots(field_fluxes, "atmosphere-ocean")
-    @test isnothing(reject_per_cell_slots(scalar_fluxes, "atmosphere-ocean"))
+    @test_throws ArgumentError reject_field_valued_slots(field_fluxes, "atmosphere-ocean")
+    @test isnothing(reject_field_valued_slots(scalar_fluxes, "atmosphere-ocean"))
 
     # Formulation slots (the ocean default) are untouched.
-    @test isnothing(reject_per_cell_slots(SimilarityTheoryFluxes(Float64), "atmosphere-ocean"))
+    @test isnothing(reject_field_valued_slots(SimilarityTheoryFluxes(Float64), "atmosphere-ocean"))
 
     # A displacement field is refused on the same grounds.
     d = Field{Center, Center, Nothing}(grid)
     set!(d, 1)
     displaced = SimilarityTheoryFluxes(; momentum_roughness_length = 0.1,
                                          zero_plane_displacement = d)
-    @test_throws ArgumentError reject_per_cell_slots(displaced, "atmosphere-sea ice")
+    @test_throws ArgumentError reject_field_valued_slots(displaced, "atmosphere-sea ice")
 end
 
 @testset "Atmosphere-Land flux stability and roughness response" begin
