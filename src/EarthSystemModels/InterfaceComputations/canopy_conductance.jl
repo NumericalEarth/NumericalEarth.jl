@@ -134,11 +134,6 @@ Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
 @inline interface_vegetation_state(i, j, grid, ::CanopyConductanceHumidity, vegetation, time_interpolator) =
     (leaf_area_index = convert(eltype(grid), surface_field_value(vegetation, i, j, time_interpolator)),)
 
-# A formulation with no vertical canopy structure is one leaf layer: nothing passes it, so the
-# absorbed fraction is the band's `1 - α`. A `CanopyAirSpace` passes its own Beer-Lambert
-# transmittance instead, so PAR absorbs on the structure its shortwave split already used.
-@inline big_leaf_transmittance(Ψₛ) = zero(eltype(Ψₛ))
-
 # Canopy flux terms, split off so the standalone formulation and the composite
 # (soil + canopy) share them. Returns the bulk canopy (stomatal) mass conductance
 # `gᶜ = LAI · gₛ · Mᵈ` (kg m⁻² s⁻¹) and the leaf saturation source `qᵛ⁺(Tₗ)`.
@@ -169,7 +164,7 @@ end
 
 @inline function compute_interface_humidity(q::CanopyConductanceHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     FT = eltype(Ψₛ)
-    gᶜ, qᵛ⁺ = canopy_conductance_terms(q, Tₛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, big_leaf_transmittance(Ψₛ))
+    gᶜ, qᵛ⁺ = canopy_conductance_terms(q, Tₛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, nothing)
 
     qˢ⁻ = Ψₛ.specific_humidity
     qᵃᵗ = Ψₐ.q

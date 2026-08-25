@@ -192,23 +192,29 @@ end
 
 @testset "Absorbed PAR absorbs on the canopy's own structure" begin
     FT = Float64
-    par = InteractiveAbsorbedPAR(FT; leaf_albedo_par = 0.08)
-
-    # The closure carries band properties only: geometry is the canopy's to supply.
-    @test !hasfield(typeof(par), :extinction)
-    @test !hasfield(typeof(par), :clumping)
-
+    par = InteractiveAbsorbedPAR(FT; leaf_albedo_par = 0.08, extinction = 0.5, clumping = 1)
     Ψᵣ = AirLandRadiationState(FT(5.67e-8), FT(0.2), FT(0.95), FT(800), FT(350))
     LAI = FT(3)
+    incident = par.par_fraction * Ψᵣ.ℐꜜˢʷ * par.photon_per_joule
 
-    # Absorbed PAR follows the transmittance it is handed, and is the band's `1 - α` of the
-    # incident PAR when nothing is transmitted past the leaves.
-    dense = absorbed_par_value(par, Ψᵣ, LAI, FT(0))
-    sparse = absorbed_par_value(par, Ψᵣ, LAI, FT(0.6))
-    @test dense > sparse
-    @test dense ≈ (1 - par.leaf_albedo_par) * par.par_fraction * Ψᵣ.ℐꜜˢʷ * par.photon_per_joule / LAI
+    # With no canopy to supply one, the closure builds the transmittance from its own geometry.
+    own = exp(-par.extinction * LAI * par.clumping)
+    @test absorbed_par_value(par, Ψᵣ, LAI, nothing) ≈
+          (1 - par.leaf_albedo_par) * (1 - own) * incident / LAI
 
-    # A canopy hands down `exp(-K Ω LAI)`, so PAR and the shortwave split share one geometry.
+    # A sparse canopy intercepts little, so the vanishing absorbed fraction cancels the per-leaf
+    # division and a leaf never receives more than the flux falling on it.
+    @test absorbed_par_value(par, Ψᵣ, par.lai_min, nothing) < incident
+    @test absorbed_par_value(par, Ψᵣ, FT(1e-3), nothing) < incident
+
+    # A supplied transmittance wins, and the closure's own geometry is not consulted.
+    ftrans = FT(0.4)
+    supplied = absorbed_par_value(par, Ψᵣ, LAI, ftrans)
+    @test supplied ≈ (1 - par.leaf_albedo_par) * (1 - ftrans) * incident / LAI
+    @test absorbed_par_value(InteractiveAbsorbedPAR(FT; leaf_albedo_par = 0.08, extinction = 0.9),
+                             Ψᵣ, LAI, ftrans) ≈ supplied
+
+    # A canopy hands down the transmittance its own shortwave split uses.
     cas = CanopyAirSpace(FT; soil = DryLayerHumidity(FT;
                              dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
                                                                          dry_layer_onset_saturation = 0.5,
@@ -219,12 +225,8 @@ end
                              thermal_exchange_depth = 0.05, porosity = 0.4),
                          canopy = CanopyConductanceHumidity(FT; leaf_area_index = LAI, absorbed_par = par),
                          extinction = 0.55, clumping = 0.75)
+    @test exp(-cas.extinction * LAI * cas.clumping) != own
 
-    ftrans = exp(-cas.extinction * LAI * cas.clumping)
-    @test absorbed_par_value(cas.canopy.absorbed_par, Ψᵣ, LAI, ftrans) ≈
-          (1 - par.leaf_albedo_par) * (1 - ftrans) * par.par_fraction * Ψᵣ.ℐꜜˢʷ * par.photon_per_joule / LAI
-
-    # A prescribed closure ignores the geometry entirely.
     @test absorbed_par_value(PrescribedAbsorbedPAR(FT(5e-4)), Ψᵣ, LAI, FT(0.3)) == FT(5e-4)
 end
 
