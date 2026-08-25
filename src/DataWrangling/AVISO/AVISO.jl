@@ -39,6 +39,8 @@ Base.size(::AVISODataset, variable) = (2880, 1440, 1)
 DataWrangling.all_dates(::AVISODaily, variable) = AVISO_FIRST_DATE : Day(1) : AVISO_DAILY_LAST_DATE
 DataWrangling.all_dates(::AVISOMonthly, variable) = AVISO_FIRST_DATE : Month(1) : AVISO_MONTHLY_LAST_DATE
 
+DataWrangling.sample_window(metadatum::Metadatum{<:AVISOMonthly}) = DataWrangling.calendar_month_window(metadatum)
+
 const AVISO_dataset_variable_names = Dict(
     :free_surface => "adt",
     :sea_level_anomaly => "sla",
@@ -46,6 +48,7 @@ const AVISO_dataset_variable_names = Dict(
     :meridional_geostrophic_velocity => "vgos",
 )
 
+# The monthly Multi-Year product only distributes the sea level anomaly.
 const AVISO_monthly_dataset_variable_names = Dict(
     :sea_level_anomaly => "sla",
 )
@@ -115,7 +118,7 @@ DataWrangling.metaprefix(::AVISOMetadatum) = "AVISOMetadatum"
 copernicusmarine_dataset_id(::AVISODaily) = get(ENV, "AVISO_DAILY_DATASET_ID", "cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1D")
 copernicusmarine_dataset_id(::AVISOMonthly) = get(ENV, "AVISO_MONTHLY_DATASET_ID", "cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1M-m")
 
-# Pin the catalogue version advertised by the product data-access page. This is
+# Pin the catalog version advertised by the product data-access page. This is
 # important during Copernicus double-distribution transitions, when resolving
 # the bare dataset id can select a version with a different variable table.
 copernicusmarine_dataset_version(::AVISODataset) = get(ENV, "AVISO_DATASET_VERSION", "202411")

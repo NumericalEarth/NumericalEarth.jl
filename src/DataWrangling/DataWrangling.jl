@@ -14,6 +14,7 @@ export supported_datasets
 export LinearlyTaperedPolarMask
 export DatasetRestoring, SurfaceFluxRestoring
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
+export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
 
 using Adapt: Adapt
@@ -25,13 +26,15 @@ using Oceananigans: Oceananigans, pretty_filesize, location
 using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
                                   on_architecture, child_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
-using Oceananigans.DistributedComputations: DistributedComputations, @root
-using Oceananigans.Grids: AbstractGrid, Center, Face, Flat, Bounded,
-                          LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes
+using Oceananigans.DistributedComputations: DistributedComputations, @root, all_reduce
+using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
+                          LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes,
+                          topology, x_domain, y_domain, z_domain
 using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
 using Oceananigans.Grids: node
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
+using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
 using Oceananigans.Utils: launch!, prettytime, prettysummary
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
@@ -263,6 +266,7 @@ Base.size(dataset::AbstractStaticBathymetry, variable) = size(dataset)
 # Fundamentals
 include("metadata.jl")
 include("set_region_data.jl")
+include("field_cache.jl")
 include("metadata_field.jl")
 include("dataset_backend.jl")
 include("metadata_field_time_series.jl")
@@ -360,7 +364,6 @@ include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
 include("GloFAS/GloFAS.jl")
-include("OSPapa/OSPapa.jl")
 include("SoilGrids/SoilGrids.jl")
 include("OpenLandMap/OpenLandMap.jl")
 include("IBCSO/IBCSO.jl")
@@ -371,6 +374,7 @@ include("ASTERGED/ASTERGED.jl")
 include("GloBFP3D/GloBFP3D.jl")
 include("GHSL/GHSL.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
+include("WorldCover/WorldCover.jl")
 
 using .ETOPO
 using .ECCO
@@ -382,7 +386,6 @@ using .ORCA
 using .WOA
 using .JRA55
 using .GloFAS
-using .OSPapa
 using .OpenLandMap
 using .IBCSO
 using .GEBCO
@@ -392,6 +395,7 @@ using .ASTERGED
 using .GloBFP3D
 using .GHSL
 using .CopernicusLandAlbedo
+using .WorldCover
 
 function dataset_modules()
     modules = Module[]

@@ -8,22 +8,6 @@ cds_product(::ERA5PressureLevelsDataset) = "reanalysis-era5-pressure-levels"
 cds_varnames(::ERA5Dataset)               = ERA5_dataset_variable_names
 cds_varnames(::ERA5PressureLevelsDataset) = ERA5PL_dataset_variable_names
 
-nc_varnames(::ERA5Dataset)               = ERA5_netcdf_variable_names
-nc_varnames(::ERA5PressureLevelsDataset) = ERA5PL_netcdf_variable_names
-
-# Coordinate / dimension variables to propagate into each split file
-const ERA5_COORD_VARS = Set(["longitude", "latitude",
-                              "time", "valid_time",
-                              "expver", "number"])
-
-const ERA5PL_COORD_VARS = Set(["longitude", "latitude",
-                               "pressure_level", "level",
-                               "time", "valid_time",
-                               "expver", "number"])
-
-coord_vars(::ERA5Dataset)               = ERA5_COORD_VARS
-coord_vars(::ERA5PressureLevelsDataset) = ERA5PL_COORD_VARS
-
 extra_request_keys!(request, ::ERA5Dataset) = nothing
 function extra_request_keys!(request, ds::ERA5PressureLevelsDataset)
     p_hPa = [round(Int, p * 1e-2) for p in ds.pressure_levels]
@@ -117,17 +101,9 @@ end
 
 #####
 ##### Multi-date download — batches by calendar month, capped by CDS cost
+##### (batching and NetCDF splitting machinery shared with the other backends
+##### in `src/DataWrangling/ERA5/ERA5_batched_downloads.jl`)
 #####
-##### CDS interprets `year`/`month`/`day`/`time` as a Cartesian product, so a
-##### single request can cover many days × hours per call as long as `year`
-##### and `month` stay singletons. The remaining constraint is the per-request
-##### cost limit: roughly `num_vars × num_pressure_levels × num_datetimes`
-##### must stay under ~7500 for pressure-level data (CDS returns HTTP 403
-##### "cost limits exceeded" otherwise). We pick a conservative cap and split
-##### each month into smaller contiguous chunks when needed.
-#####
-
-const CDS_MAX_FIELDS_PER_REQUEST = 5000
 
 function Downloads.download(metadata::ERA5Metadata; skip_existing=true, cleanup=true)
     dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
@@ -146,44 +122,6 @@ function Downloads.download(metadata::ERA5Metadata; skip_existing=true, cleanup=
 end
 
 """
-    max_dts_per_cds_request(dataset, num_vars; max_fields=$(CDS_MAX_FIELDS_PER_REQUEST))
-
-Maximum number of datetimes that can share a single CDS request before the
-per-request cost limit is hit. Pressure-level datasets multiply by the number
-of selected pressure levels; single-level datasets count as one level. Falls
-back to `1` when a single datetime already exceeds the cap (which would force
-the caller's single-datetime download path).
-"""
-function max_dts_per_cds_request(dataset, num_vars; max_fields=CDS_MAX_FIELDS_PER_REQUEST)
-    levels = dataset isa ERA5PressureLevelsDataset ? length(dataset.pressure_levels) : 1
-    return max(1, fld(max_fields, num_vars * levels))
-end
-
-"""
-    batch_datetimes_for_cds(datetimes, dataset, num_vars; max_fields=$(CDS_MAX_FIELDS_PER_REQUEST))
-
-Split `datetimes` into contiguous batches that each fit in one CDS request:
-each batch shares a `(year, month)` and contains at most
-`max_dts_per_cds_request(dataset, num_vars; max_fields)` datetimes. Batches
-are returned sorted by their first datetime so the caller can iterate in
-chronological order.
-"""
-function batch_datetimes_for_cds(datetimes, dataset, num_vars;
-                                  max_fields=CDS_MAX_FIELDS_PER_REQUEST)
-    monthly = group_by_calendar_month(datetimes)
-    max_dts = max_dts_per_cds_request(dataset, num_vars; max_fields)
-
-    batches = Vector{Dates.DateTime}[]
-    for key in sort(collect(keys(monthly)))
-        sorted = sort(unique(monthly[key]))
-        for i in 1:max_dts:length(sorted)
-            push!(batches, sorted[i:min(i + max_dts - 1, end)])
-        end
-    end
-    return batches
-end
-
-"""
     plan_era5_month(name, dataset, dates; region, dir, skip_existing) -> NamedTuple
 
 Pure planner for a single-variable ERA5 download whose `dates` all share the
@@ -197,7 +135,7 @@ Returned NamedTuple fields:
 - `pending`: subset of `dt_path_pairs` that still need a download.
 - `request`, `tmp_path`, `nc_triples`: `nothing` when `pending` is empty; otherwise the
   CDS request dict, the temporary multi-step NetCDF path, and the per-datetime split
-  triples consumed by `split_nc_multistep`.
+  triples consumed by `split_era5_nc_by_datetime`.
 """
 function plan_era5_month(name, dataset, dates; region, dir, skip_existing)
     meta_filename = NumericalEarth.DataWrangling.metadata_filename
@@ -239,12 +177,11 @@ function download_era5_month(name, dataset, dates;
     isempty(plan.pending) && return map(dt_path -> dt_path[2], plan.dt_path_pairs)
 
     mkpath(dir)
-    time_dimnames = Set(["time", "valid_time"])
 
     @root begin
         retrieve_with_retries(cds_product(dataset), plan.request, plan.tmp_path)
         foreach_nc(plan.tmp_path, dir) do nc_path
-            split_nc_multistep(nc_path, plan.nc_triples, coord_vars(dataset), time_dimnames)
+            split_era5_nc_by_datetime(nc_path, plan.nc_triples, coord_vars(dataset), ERA5_TIME_DIMNAMES)
         end
         cleanup && rm(plan.tmp_path; force=true)
     end
@@ -257,42 +194,36 @@ end
 #####
 
 """
-    Downloads.download(names::Vector{Symbol}, metadata::ERA5PressureMetadata; kwargs...)
+    Downloads.download(names::Vector{Symbol}, metadata::ERA5Metadata; kwargs...)
 
-Download multiple ERA5 pressure-level variables for each date in `metadata`.
+Download multiple ERA5 variables for every date in `metadata`, bundling variables
+and datetimes into month-batched CDS requests.
 """
-function Downloads.download(names::Vector{Symbol}, metadata::ERA5PressureMetadata; kwargs...)
-    paths = String[]
-    for metadatum in metadata
-        append!(paths, Downloads.download(names, metadatum; kwargs...))
-    end
-    return paths
+function Downloads.download(names::Vector{Symbol}, metadata::ERA5Metadata; kwargs...)
+    dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
+    return Downloads.download(names, metadata.dataset, dates;
+                              region = metadata.region,
+                              dir = metadata.dir,
+                              kwargs...)
 end
 
 """
-    Downloads.download(mset::MetadataSet{<:ERA5PressureLevelsDataset}; kwargs...)
+    Downloads.download(mset::MetadataSet{<:ERA5Dataset}; kwargs...)
 
-Route a `MetadataSet` of ERA5 pressure-level variables through the existing
-multi-variable batched CDS path, instead of falling back to per-variable
-requests via the default `Downloads.download(::MetadataSet)`. Each calendar day's
-variables are bundled into one CDS API request.
+Route a `MetadataSet` of ERA5 variables through the multi-variable batched CDS
+path, instead of falling back to per-variable requests via the default
+`Downloads.download(::MetadataSet)`: each calendar-month batch of variables ×
+datetimes is bundled into one CDS API request (capped by the CDS cost limit).
 """
-function Downloads.download(mset::MetadataSet{<:ERA5PressureLevelsDataset}; kwargs...)
+function Downloads.download(mset::MetadataSet{<:ERA5Dataset}; kwargs...)
     names = collect(getfield(mset, :names))
+    dates = getfield(mset, :dates)
+    dates = dates isa AbstractVector ? dates : [dates]
 
-    # Build a representative ERA5PressureMetadata at the shared scope. The
-    # batched method only consults its `dataset`, `dates`, `region`, `dir` —
-    # the per-variable filename(s) are recomputed internally per (name, date).
-    representative = NumericalEarth.DataWrangling.Metadata(
-        first(names),
-        getfield(mset, :dataset),
-        getfield(mset, :dates),
-        getfield(mset, :region),
-        getfield(mset, :dir),
-        nothing,
-    )
-
-    return Downloads.download(names, representative; kwargs...)
+    return Downloads.download(names, getfield(mset, :dataset), dates;
+                              region = getfield(mset, :region),
+                              dir = getfield(mset, :dir),
+                              kwargs...)
 end
 
 """
@@ -412,7 +343,7 @@ Returned NamedTuple fields:
 - `pending`: subset that still needs a download.
 - `request`, `tmp_path`, `nc_triples`: `nothing` when `pending` is empty; otherwise the
   CDS request dict, the temporary multi-step NetCDF path, and the per-(name, time) split
-  triples consumed by `split_nc_multistep`.
+  triples consumed by `split_era5_nc_by_datetime`.
 """
 function plan_era5_multivar_month(names, dataset, dates; region, dir, skip_existing)
     meta_filename = NumericalEarth.DataWrangling.metadata_filename
@@ -455,69 +386,16 @@ function download_era5_multivar_month(names, dataset, dates;
     isempty(plan.pending) && return map(name_dt_path -> name_dt_path[3], plan.name_dt_paths)
 
     mkpath(dir)
-    time_dimnames = Set(["time", "valid_time"])
 
     @root begin
         retrieve_with_retries(cds_product(dataset), plan.request, plan.tmp_path)
         foreach_nc(plan.tmp_path, dir) do nc_path
-            split_nc_multistep(nc_path, plan.nc_triples, coord_vars(dataset), time_dimnames)
+            split_era5_nc_by_datetime(nc_path, plan.nc_triples, coord_vars(dataset), ERA5_TIME_DIMNAMES)
         end
         cleanup && rm(plan.tmp_path; force=true)
     end
 
     return map(name_dt_path -> name_dt_path[3], plan.name_dt_paths)
-end
-
-#####
-##### NetCDF splitting utilities
-#####
-
-"""
-    split_era5_nc(src_path, nc_name_path_pairs, coord_vars)
-
-Split a multi-variable NetCDF into individual per-variable files (single time step).
-"""
-function split_era5_nc(src_path, nc_name_path_pairs, coord_vars)
-    NCDatasets.Dataset(src_path, "r") do src
-        src_varnames = Set(keys(src))
-        for (nc_varname, dst_path) in nc_name_path_pairs
-            nc_varname in src_varnames || continue
-            NCDatasets.Dataset(dst_path, "c") do dst
-                unlimited = NCDatasets.unlimited(src)
-                for (dname, dlen) in src.dim
-                    NCDatasets.defDim(dst, dname, dname in unlimited ? Inf : dlen)
-                end
-
-                for (k, v) in src.attrib
-                    dst.attrib[k] = v
-                end
-
-                for (vname, var) in src
-                    (vname in coord_vars || vname == nc_varname) || continue
-                    ncvar_copy!(dst, var, vname)
-                end
-            end
-        end
-    end
-end
-
-function ncvar_copy!(dst, src_var, vname)
-    dims     = NCDatasets.dimnames(src_var)
-    T        = eltype(src_var.var)
-    attribs  = src_var.attrib
-    fill_val = haskey(attribs, "_FillValue") ? attribs["_FillValue"] : nothing
-
-    dst_var = isnothing(fill_val) ?
-        NCDatasets.defVar(dst, vname, T, dims) :
-        NCDatasets.defVar(dst, vname, T, dims; fillvalue=fill_val)
-
-    for (k, v) in attribs
-        k == "_FillValue" && continue
-        dst_var.attrib[k] = v
-    end
-
-    dst_var.var[:] = src_var.var[:]
-    return nothing
 end
 
 #####
