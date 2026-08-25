@@ -28,11 +28,19 @@ BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
     BoundingBox(grid; padding = 0)
 
 Create a `BoundingBox` spanning the horizontal extent of `grid`, widened on every
-side by `padding` (degrees).
+side by `padding` (degrees). For a distributed grid the box spans the *global* domain,
+identically on every rank.
 """
-BoundingBox(grid::AbstractGrid; padding = 0) =
-    BoundingBox(longitude = extrema(λnodes(grid, Face(), Center(), Center())) .+ (-padding, padding),
-                latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padding, padding))
+function BoundingBox(grid::AbstractGrid; padding = 0)
+    # Domain endpoints, not node extrema: distributed grids window their node arrays
+    # differently. Rank-local domains reduce to the global extent (`all_reduce` is the
+    # identity on serial architectures).
+    arch = architecture(grid)
+    λ₁, λ₂ = x_domain(grid)
+    φ₁, φ₂ = y_domain(grid)
+    return BoundingBox(longitude = (all_reduce(min, λ₁, arch) - padding, all_reduce(max, λ₂, arch) + padding),
+                       latitude  = (all_reduce(min, φ₁, arch) - padding, all_reduce(max, φ₂, arch) + padding))
+end
 
 """
     bounding_box_intersects(bounds, bbox::BoundingBox)
@@ -142,7 +150,7 @@ latitude_interfaces(md::Metadata) = latitude_interfaces(md.dataset)
              dataset,
              dates = all_dates(dataset, variable_name),
              dir = default_download_directory(dataset),
-             region = nothing,
+             region = default_region(dataset),
              filename = nothing,
              start_date = nothing,
              end_date = nothing)
@@ -186,7 +194,7 @@ function Metadata(variable_name;
                   dataset,
                   dates = all_dates(dataset, variable_name),
                   dir = default_download_directory(dataset),
-                  region = nothing,
+                  region = default_region(dataset),
                   filename = nothing,
                   start_date = nothing,
                   end_date = nothing)
@@ -238,7 +246,7 @@ end
 """
     Metadatum(variable_name;
               dataset,
-              region = nothing,
+              region = default_region(dataset),
               date = first_date(dataset, variable_name),
               filename = nothing,
               dir = default_download_directory(dataset))
@@ -247,7 +255,7 @@ A specialized constructor for a [`Metadata`](@ref) object with a single date, re
 """
 function Metadatum(variable_name;
                    dataset,
-                   region = nothing,
+                   region = default_region(dataset),
                    date = first_date(dataset, variable_name),
                    filename = nothing,
                    dir = default_download_directory(dataset))
@@ -372,7 +380,7 @@ end
                 dates = all_dates(dataset, first(variable_names)),
                 date = nothing,
                 dir = default_download_directory(dataset),
-                region = nothing,
+                region = default_region(dataset),
                 filenames = nothing,
                 start_date = nothing,
                 end_date = nothing)
@@ -438,7 +446,7 @@ function MetadataSet(variable_names::Symbol...;
                      dates = nothing,
                      date = nothing,
                      dir = default_download_directory(dataset),
-                     region = nothing,
+                     region = default_region(dataset),
                      filenames = nothing,
                      start_date = nothing,
                      end_date = nothing)
@@ -832,6 +840,16 @@ Return the native field location `(LX, LY, LZ)` for `variable_name` in
 staggered variables (e.g., ECCO velocity fields) need to extend this.
 """
 dataset_location(dataset, variable_name) = (Center, Center, Center)
+
+"""
+    default_region(dataset)
+
+Return the default `region` used when constructing `Metadata`/`Metadatum` for
+`dataset`. Defaults to `nothing` (full domain). Single-location datasets (e.g. a
+moored buoy) can override this to embed their fixed [`Column`](@ref) so callers
+need not repeat the coordinates.
+"""
+default_region(dataset) = nothing
 
 # Note: all_dates needs to be extended for any new dataset.
 """

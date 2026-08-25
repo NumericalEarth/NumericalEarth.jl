@@ -226,10 +226,13 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
                                                height_above_water, minimum_depth,
                                                interpolation_passes, major_basins) : nothing
 
-    # Only rank 0 performs cache lookup and computation to avoid OOM
+    # Only rank 0 performs cache lookup and computation to avoid OOM.
+    # Every rank must contribute the same element type to the shared reduction:
+    # mismatched MPI datatypes across ranks corrupt the collective.
+    FT = eltype(global_grid)
     bottom_height = if arch.local_rank == 0
         cached_data = cache && !overwrite_cache ? load_field_cache(config) : nothing
-        if !isnothing(cached_data)
+        rank_zero_data = if !isnothing(cached_data)
             cached_data
         else
             bottom_field = _regrid_bathymetry(global_grid, metadata;
@@ -241,8 +244,9 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
             end
             bh
         end
+        convert(Matrix{FT}, rank_zero_data)
     else
-        zeros(Nx, Ny)
+        zeros(FT, Nx, Ny)
     end
 
     # Synchronize
@@ -251,9 +255,10 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
     # Share the result (can we share SubArrays?)
     bottom_height = all_reduce(+, bottom_height, arch)
 
-    # Partition the result
+    # Partition the result. Distributed `set!` only auto-partitions global-size *host*
+    # arrays (`Array`/`OffsetArray`), so stage the shared result through the CPU.
     local_bottom_height = Field{Center, Center, Nothing}(target_grid)
-    set!(local_bottom_height, bottom_height)
+    set!(local_bottom_height, on_architecture(CPU(), bottom_height))
     fill_halo_regions!(local_bottom_height)
 
     return local_bottom_height
