@@ -177,6 +177,8 @@ Rules in `.claude/rules/` load automatically when you touch matching files:
 - `testing-rules.md` — test writing and running (test/)
 - `docs-rules.md` — documentation building and style (docs/)
 - `examples-rules.md` — Literate.jl example conventions (examples/)
+- `restraint-rules.md` — **keeping the code human-written**: diff size, one invariant one mechanism,
+  no guards for unreachable states, comments that describe only this code (src/, test/, examples/)
 
 ### Skills (slash commands)
 
