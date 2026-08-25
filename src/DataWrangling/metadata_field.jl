@@ -518,31 +518,6 @@ function bracketing_indices(coordinates, lo, hi; margin = 1)
     return i₁:i₂
 end
 
-# The native grid restricted to `longitude_cells` × `latitude_cells`. Cut from the native grid's
-# own faces rather than rebuilt from the file's coordinates: the two describe the same lattice in
-# exact arithmetic, but a grid carries `Float32` nodes, and rounding the same lattice from two
-# different inputs moves the cells by a fraction of a percent of a cell — enough to shift the
-# interpolation weights and make a tiled regrid disagree with an untiled one.
-function native_subgrid(native, metadata, longitude_cells, latitude_cells, arch; halo)
-    FT = eltype(metadata)
-    λf = λnodes(native, Face(), Center(), Center())
-    φf = φnodes(native, Center(), Face(), Center())
-
-    longitude = (λf[first(longitude_cells)], λf[last(longitude_cells) + 1])
-    latitude  = (φf[first(latitude_cells)],  φf[last(latitude_cells) + 1])
-    Nx, Ny = length(longitude_cells), length(latitude_cells)
-
-    if is_three_dimensional(metadata)
-        z = z_interfaces(metadata)
-        return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, length(z) - 1),
-                                     halo, longitude, latitude, z,
-                                     topology = (Bounded, Bounded, Bounded))
-    else
-        return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny), halo = halo[1:2],
-                                     longitude, latitude, topology = (Bounded, Bounded, Flat))
-    end
-end
-
 # Split `N` target cells into `n` contiguous ranges.
 function tile_range(N, n, k)
     first_index = 1 + ((k - 1) * N) ÷ n
@@ -557,22 +532,22 @@ function tile_count(source_cells, vertical_cells, tile_bytes)
 end
 
 """
-    regrid_in_tiles!(target, metadata, native, tiles; halo)
+    regrid_in_tiles!(target, metadata, native, tile_bytes)
 
-Fill `target` from `metadata` in `tiles` × `tiles` pieces, reading only the window each piece
-needs. Peak residency is one tile's source plus `target`, so neither the dataset's native window
+Fill `target` from `metadata` in pieces sized to hold at most `tile_bytes` of source each,
+reading only the window each piece needs. Peak residency is one tile's source plus `target`, so neither the dataset's native window
 nor a field on it is ever materialized whole — which is what lets a model domain exceed the
 memory its forcing dataset would occupy at native resolution.
 
 Each tile widens its window by a cell beyond the target points it covers, so the interpolation
 stencil stays inside the window and no target cell is served by an edge-clamped source.
 
-The result matches an untiled regrid to within the grid's node precision rather than exactly: a
-tile carries a sub-range of the native grid, and rebuilding those cells re-rounds their centers
-by up to one `Float32` ulp, perturbing the interpolation weights by a fraction of a percent of a
-cell. `regrid_from_metadata!` therefore tiles only when more than one tile is called for.
+Each tile's source is a windowed `Field` over the native grid rather than a grid rebuilt around
+the window, so every tile interpolates from the same node coordinates the whole field would
+have carried: the result is bitwise identical to an untiled regrid, whatever the tiling. Only
+where the data comes from changes, never the arithmetic done on it.
 """
-function regrid_in_tiles!(target, metadata, native, tiles; halo = (3, 3, 3))
+function regrid_in_tiles!(target, metadata, native, tile_bytes = default_tile_bytes())
     grid = target.grid
     # The source window is never partitioned across ranks, so it is built on the local device.
     arch = child_architecture(grid)
@@ -596,6 +571,7 @@ function regrid_in_tiles!(target, metadata, native, tiles; halo = (3, 3, 3))
     offset_j = native_file_offset(φ, φn)
     Nx, Ny, Nz = size(grid)
 
+    tiles = tile_count(size(native)[1:2], Nz, tile_bytes)
     ni = min(tiles, Nx)
     nj = min(tiles, Ny)
 
@@ -610,10 +586,14 @@ function regrid_in_tiles!(target, metadata, native, tiles; halo = (3, 3, 3))
         window_i = (first(source_i) + offset_i):(last(source_i) + offset_i)
         window_j = (first(source_j) + offset_j):(last(source_j) + offset_j)
 
+        # The tile's source is a window *of the native grid itself*, not a grid rebuilt around
+        # the window: it shares `native`, so its nodes are the same numbers and the regrid does
+        # the same arithmetic it would have done on the whole field. Only the array is smaller.
         data, λw, φw = retrieve_window(metadata, window_i, window_j)
-        source = Field{LX, LY, LZ}(native_subgrid(native, metadata, source_i, source_j, arch; halo))
-        set_region_data!(source, data, λw, φw, metadata; mangling)
-        fill_halo_regions!(source)
+        source = Field{LX, LY, LZ}(native; indices = (source_i, source_j, :))
+        set_region_data!(source, data, λw, φw, metadata; mangling,
+                         region = BoundingBoxOffset(1 - first(source_i), 1 - first(source_j)),
+                         parameters = KernelParameters(source_i, source_j, 1:Nz))
 
         interpolate_physical!(target, source, metadata,
                               KernelParameters(target_i, target_j, 1:size(target, 3)))
@@ -672,13 +652,8 @@ function regrid_from_metadata!(target, metadata; tile_bytes = default_tile_bytes
     Downloads.download(metadata)
     native = tiled_native_grid(target, metadata, inpainting; halo)
 
-    # Tile only when it buys something. One tile would rebuild the native grid from a sub-range
-    # of its own faces, which at `Float32` node precision moves the cells by a fraction of a
-    # percent of one — a perturbation worth taking to bound memory, but not for nothing.
-    if !isnothing(native)
-        tiles = tile_count(size(native)[1:2], size(metadata)[3], tile_bytes)
-        tiles > 1 && return regrid_in_tiles!(target, metadata, native, tiles; halo)
-    end
+    isnothing(native) ||
+        return regrid_in_tiles!(target, metadata, native, tile_bytes)
 
     return interpolate_physical!(target, Field(metadata, architecture(target.grid); kw...), metadata)
 end

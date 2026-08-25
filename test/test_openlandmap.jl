@@ -344,24 +344,15 @@ end
     @test NumericalEarth.DataWrangling.windowed_retrieval(matched.dataset)
     @test !isnothing(NumericalEarth.DataWrangling.tiled_native_grid(untiled, matched, nothing))
 
-    # A budget that calls for one tile must leave the answer untouched: no sub-grid is built, so
-    # the whole-window path runs and the result is bitwise identical.
-    whole = Field(metadatum, grid; tile_bytes = typemax(Int))
-    @test isequal(Array(interior(whole)), Array(interior(untiled)))
-
-    # Splitting the target must not put a tile boundary into the answer. A tile carries a
-    # sub-range of the native grid, whose centers re-round by up to one Float32 ulp, so the
-    # agreement is to node precision rather than bitwise — bounded here against the field's range.
+    # Tiling changes where the data comes from, never the arithmetic done on it: each tile is a
+    # windowed field over the native grid, so it interpolates from the same node coordinates the
+    # whole field carries. Every budget must therefore reproduce the untiled answer bitwise.
     reference = Array(interior(untiled))
-    finite = filter(isfinite, reference)
-    range_of_field = maximum(finite) - minimum(finite)
 
-    for tile_bytes in (1_000_000, 10_000, 512)
+    for tile_bytes in (typemax(Int), 1_000_000, 10_000, 512)
         tiled = Array(interior(Field(metadatum, grid; tile_bytes)))
         @test size(tiled) == size(reference)
-        @test isequal(isnan.(tiled), isnan.(reference))
-        valid = .!isnan.(reference)
-        @test maximum(abs.(tiled[valid] .- reference[valid])) < 1e-3 * range_of_field
+        @test isequal(tiled, reference)
     end
 
     # The budgets above really do split the target, otherwise the loop proves nothing.
