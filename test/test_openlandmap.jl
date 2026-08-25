@@ -5,10 +5,11 @@ using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, z
                                     dataset_variable_name, validate_dataset_coverage,
                                     metadata_filename, conversion_units, convert_units,
                                     default_inpainting, is_three_dimensional,
-                                    matching_resolution_dataset, minimum_horizontal_spacing,
+                                    matching_resolution_dataset,
                                     target_matched_metadata,
                                     WeightPercent, GramPerCubicCentimeter
-using NumericalEarth.DataWrangling.OpenLandMap: cog_window_to_netcdf, aggregation_factor, read_step
+using NumericalEarth.DataWrangling.OpenLandMap: cog_window_to_netcdf, aggregation_factor, read_step,
+                                                minimum_horizontal_spacing
 
 using ArchGDAL
 using NCDatasets: NCDataset

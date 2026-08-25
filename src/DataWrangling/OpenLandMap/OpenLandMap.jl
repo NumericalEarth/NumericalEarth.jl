@@ -5,7 +5,9 @@ export OpenLandMapSoilDB
 using Downloads: Downloads
 using NCDatasets: NCDataset, defDim, defVar
 using Oceananigans: Center
-using Oceananigans.DistributedComputations: @root
+using Oceananigans.Architectures: architecture
+using Oceananigans.DistributedComputations: @root, all_reduce
+using Oceananigans.Grids: λspacings, φspacings
 
 using ..DataWrangling: DataWrangling,
     AbstractStaticDataset, Metadatum, BoundingBox, Dataset,
@@ -153,10 +155,21 @@ function DataWrangling.latitude_interfaces(dataset::OpenLandMapSoilDB)
     return (north - read_size(dataset)[2] * read_step(dataset), north)
 end
 
+"""
+    minimum_horizontal_spacing(grid)
+
+Return the smallest horizontal cell spacing of `grid` in degrees.
+"""
+function minimum_horizontal_spacing(grid)
+    Δλ = minimum(λspacings(grid, Center(), Center(), Center()))
+    Δφ = minimum(φspacings(grid, Center(), Center(), Center()))
+    return all_reduce(min, min(Δλ, Δφ), architecture(grid))
+end
+
 # Twofold oversampling of the target, rounded down to a power of two so the read lands on a
 # pyramid level.
 function DataWrangling.matching_resolution_dataset(dataset::OpenLandMapSoilDB{Nothing}, grid)
-    pixels = DataWrangling.minimum_horizontal_spacing(grid) / (2 * OpenLandMap_native_step)
+    pixels = minimum_horizontal_spacing(grid) / (2 * OpenLandMap_native_step)
     factor = pixels < 2 ? 1 : prevpow(2, floor(Int, pixels))
     return OpenLandMapSoilDB(factor)
 end

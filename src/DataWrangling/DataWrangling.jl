@@ -29,7 +29,6 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditio
 using Oceananigans.DistributedComputations: DistributedComputations, @root, all_reduce
 using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
                           LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes,
-                          λspacings, φspacings,
                           topology, x_domain, y_domain, z_domain
 using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
 using Oceananigans.Grids: node

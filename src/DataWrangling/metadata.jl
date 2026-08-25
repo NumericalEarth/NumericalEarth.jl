@@ -816,17 +816,6 @@ cadence — e.g. the surface companion of a pressure-level reanalysis product.
 function matching_single_level_dataset end
 
 """
-    minimum_horizontal_spacing(grid)
-
-Return the smallest horizontal cell spacing of `grid` in degrees.
-"""
-function minimum_horizontal_spacing(grid)
-    Δλ = minimum(λspacings(grid, Center(), Center(), Center()))
-    Δφ = minimum(φspacings(grid, Center(), Center(), Center()))
-    return all_reduce(min, min(Δλ, Δφ), architecture(grid))
-end
-
-"""
     matching_resolution_dataset(dataset, grid)
 
 Return the variant of `dataset` read at the coarsest resolution that still resolves `grid`.
