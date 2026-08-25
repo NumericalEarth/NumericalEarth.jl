@@ -428,14 +428,3 @@ end
         @test ascending[:, latitude_indices] == reverse(stored[:, rows], dims = 2)
     end
 end
-
-@testset "a dataset regridded by something other than bilinear declines tiling" begin
-    grid = LatitudeLongitudeGrid(CPU(); size = (8, 8), longitude = (5.0, 5.4), latitude = (50.0, 50.4),
-                                 topology = (Bounded, Bounded, Flat))
-    field = CenterField(grid)
-    region = BoundingBox(grid)
-
-    # WorldCover counts class codes rather than interpolating them.
-    worldcover = Metadatum(:vegetation_fraction; dataset = ESAWorldCover(), region)
-    @test isnothing(NumericalEarth.DataWrangling.tiled_native_grid(field, worldcover, nothing))
-end

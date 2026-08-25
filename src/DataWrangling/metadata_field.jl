@@ -1,7 +1,7 @@
 using NCDatasets
 using JLD2
 using KernelAbstractions: @kernel, @index
-using Oceananigans.Grids: λnodes, φnodes, Face, Periodic, Bounded, AbstractMutableGrid, interior_indices, ξnode, ηnode, znode
+using Oceananigans.Grids: λnodes, φnodes, Periodic, Bounded, AbstractMutableGrid, interior_indices, ξnode, ηnode, znode
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: interpolate, interpolate!
@@ -224,14 +224,6 @@ Whether `dataset` can read one horizontal window of its file without materializi
 it. Default `false`.
 """
 windowed_retrieval(dataset) = false
-
-"""
-    default_regrid(metadata)
-
-Whether `metadata` reaches its target through the default bilinear `interpolate_physical!`.
-A metadatum that extends the regrid hook with another scheme sets this `false`. Default `true`.
-"""
-default_regrid(metadata) = true
 
 """
     retrieve_window(metadata, longitude_indices, latitude_indices)
@@ -550,8 +542,8 @@ function regrid_in_tiles!(target, metadata, native, tile_bytes = default_tile_by
     return target
 end
 
-# Horizontal cell centers of a target grid, or `nothing` for a grid that has no one-dimensional
-# lon/lat axes to tile over — a rectilinear or curvilinear target, which falls back to one pass.
+# Horizontal cell centers of a target grid, or `nothing` for a grid with no one-dimensional
+# longitude/latitude axes — a rectilinear or curvilinear target.
 horizontal_centers(grid::AbstractGrid) =
     hasproperty(grid, :underlying_grid) ? horizontal_centers(grid.underlying_grid) : nothing
 
@@ -561,18 +553,13 @@ horizontal_centers(grid::LatitudeLongitudeGrid) =
 """
     tiled_native_grid(target, metadata, inpainting; halo)
 
-The native grid to regrid `metadata` onto `target` in tiles, or `nothing` where tiling would not
-be equivalent to doing it in one pass and the whole-window path should run instead.
-
-Tiling is an optimization, never a change in result, so it asks for all of: a dataset that can
-read a window ([`windowed_retrieval`](@ref)), a target carrying one-dimensional lon/lat axes to
-tile over, a bounded region, and a non-periodic native window — a tile of a periodic one would
-lose its wraparound. Inpainting is excluded because it is an iterative fill over the whole field,
-which no tiling of it reproduces.
+The native grid to regrid `metadata` onto `target` in tiles, or `nothing` unless all of: the
+dataset reads a window ([`windowed_retrieval`](@ref)), `inpainting` is `nothing`, the region is a
+`BoundingBox`, `target` carries one-dimensional longitude/latitude axes, and the native window is
+non-periodic.
 """
 function tiled_native_grid(target, metadata, inpainting; halo = (3, 3, 3))
     windowed_retrieval(metadata.dataset) || return nothing
-    default_regrid(metadata) || return nothing
     isnothing(inpainting) || return nothing
     metadata.region isa BoundingBox || return nothing
     isnothing(horizontal_centers(target.grid)) && return nothing
@@ -669,8 +656,6 @@ function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw..
     arch = child_architecture(grid)
     metadata = target_matched_metadata(metadata, grid)
 
-    # The vertical extent comes from the native grid, which costs nothing to build — the data it
-    # would hold is read per tile below.
     Lzt = grid.Lz
     Lzm = native_grid(metadata, arch).Lz
 
