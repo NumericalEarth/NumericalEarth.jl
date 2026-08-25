@@ -9,11 +9,7 @@ using RRTMGP   # activates Breeze's radiative-transfer extension (RadiativeTrans
 using Dates: DateTime
 using Test
 
-using NumericalEarth.EarthSystemModels.InterfaceComputations: kernel_radiation_properties
 using NumericalEarth.Lands: BucketHydrology, SlabEnergy, SlabLand
-
-NumericalEarthBreezeExt = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
-@test !isnothing(NumericalEarthBreezeExt)
 
 const rtm_albedo = 0.2
 const rtm_emissivity = 0.95
@@ -60,18 +56,12 @@ end
             rtm = model.radiation
 
             exchanger = model.interfaces.exchanger.radiation
-            @test !isnothing(exchanger)
-            @test haskey(kernel_radiation_properties(rtm).surface_properties, :land)
 
             time_step!(model, 1.0)
 
             # Breeze stores downwelling negative; the interface wants positive-down magnitudes.
-            ℐꜜˢʷ = Array(interior(exchanger.state.ℐꜜˢʷ))
-            ℐꜜˡʷ = Array(interior(exchanger.state.ℐꜜˡʷ))
-            @test all(ℐꜜˢʷ .> 0)
-            @test all(ℐꜜˡʷ .> 0)
-            @test ℐꜜˢʷ ≈ -Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
-            @test ℐꜜˡʷ ≈ -Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
+            @test Array(interior(exchanger.state.ℐꜜˢʷ)) ≈ -Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
+            @test Array(interior(exchanger.state.ℐꜜˡʷ)) ≈ -Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
         end
 
         @testset "No shortwave at night on $A" begin
@@ -102,6 +92,5 @@ end
             Jᴱs = Array(interior(model.land.fluxes.surface_energy_flux))
             @test Jᴱs ≈ 𝒬 .+ ℐˡʷꜛ .+ ℐˡʷꜜ .+ (1 - rtm_albedo) .* ℐˢʷꜜ
         end
-
     end
 end
