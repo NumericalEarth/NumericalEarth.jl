@@ -85,6 +85,13 @@ const CopernicusDEMMetadatum = Metadatum{<:CopernicusDEMDataset}
 DataWrangling.dataset_variable_name(data::CopernicusDEMMetadatum) =
     CopernicusDEM_bathymetry_variable_names[data.name]
 
+# The downloaded window names its axes "lon"/"lat".
+DataWrangling.longitude_name(::CopernicusDEMMetadatum) = "lon"
+DataWrangling.latitude_name(::CopernicusDEMMetadatum)  = "lat"
+
+# The DEM covers every cell of its window, with ocean set to 0, so there is nothing to fill.
+DataWrangling.default_inpainting(::CopernicusDEMMetadatum) = nothing
+
 DataWrangling.metadata_filename(dataset::CopernicusDEMDataset, name, date, region) =
     string(dataset_prefix(dataset), "_", bounding_box_suffix(region), ".nc")
 
