@@ -44,6 +44,11 @@ export
     NestedModel,
     NestedSimulation,
     nested_atmosphere_model,
+    nested_ocean_model,
+    nested_ocean_grid,
+    bathymetry_from_missing_values,
+    ocean_model,
+    underlying_ocean_model,
     parent_boundary_conditions,
     parent_forcings,
     # Atmosphere-land interface closures
@@ -248,6 +253,7 @@ end
 
 include("Grids/Grids.jl")
 include("EarthSystemModels/EarthSystemModels.jl")
+include("NestedModels/NestedModels.jl")   # generic nesting core: depends only on Oceananigans
 include("Oceans/Oceans.jl")
 include("Atmospheres/Atmospheres.jl")
 include("Lands/Lands.jl")
@@ -257,7 +263,7 @@ include("InitialConditions/InitialConditions.jl")
 include("DataWrangling/DataWrangling.jl")
 include("Bathymetry/Bathymetry.jl")
 include("Diagnostics/Diagnostics.jl")
-include("NestedModels/NestedModels.jl")   # last: wraps a parent + a child (any component) model
+include("NestedOceans/NestedOceans.jl")   # last: the ocean child of a nest, over Oceans + DataWrangling
 
 using .Grids
 using .DataWrangling
@@ -273,7 +279,9 @@ using .SeaIces
 using .Diagnostics
 using .EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
 using .NestedModels
-using .NestedModels: NestedModel, NestedSimulation, nested_atmosphere_model, parent_boundary_conditions, parent_forcings
+using .NestedModels: NestedModel, NestedSimulation, nested_atmosphere_model, nested_ocean_model,
+                     parent_boundary_conditions, parent_forcings
+using .NestedOceans
 using .DataWrangling.ETOPO
 using .DataWrangling.ECCO
 using .DataWrangling.GLORYS

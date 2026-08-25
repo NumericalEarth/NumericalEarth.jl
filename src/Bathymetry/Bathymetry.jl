@@ -1,6 +1,6 @@
 module Bathymetry
 
-export regrid_bathymetry, regrid_topography, ORCAGrid
+export regrid_bathymetry, regrid_topography, bathymetry_from_missing_values, ORCAGrid
 
 using Downloads: Downloads, download
 using ImageMorphology: ImageMorphology
@@ -11,8 +11,9 @@ using Oceananigans.Architectures: architecture, CPU, on_architecture
 using Oceananigans.BoundaryConditions: BoundaryConditions
 using Oceananigans.DistributedComputations: DistributedComputations, DistributedGrid,
                                             reconstruct_global_grid, all_reduce
+using DocStringExtensions: TYPEDSIGNATURES
 using Oceananigans.Fields: Field, interior, interpolate!
-using Oceananigans.Grids: x_domain, y_domain, topology, Face, Center,
+using Oceananigans.Grids: x_domain, y_domain, topology, znode, Face, Center,
                           Flat, Periodic, Bounded,
                           RectilinearGrid, LatitudeLongitudeGrid, OrthogonalSphericalShellGrid
 using Oceananigans.Utils: launch!, worksize
@@ -25,6 +26,7 @@ using ..DataWrangling: DataWrangling, Metadatum, native_grid, metadata_path,
 using ..DataWrangling.ETOPO: ETOPO2022
 
 include("regrid_bathymetry.jl")
+include("bathymetry_from_missing_values.jl")
 include("orca_grid.jl")
 
 end # module

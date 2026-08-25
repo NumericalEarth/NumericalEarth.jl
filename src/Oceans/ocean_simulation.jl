@@ -237,11 +237,27 @@ function ocean_simulation(grid; model::Symbol = :hydrostatic, kwargs...)
 end
 
 """
-    hydrostatic_ocean_simulation(grid;
-                                 clock = Clock(grid),
-                                 stop_time = default_stop_time(grid, clock),
-                                 Δt = estimate_maximum_Δt(grid),
-                                 closure = default_ocean_closure(),
+$(TYPEDSIGNATURES)
+
+Build the ocean `AbstractModel` that [`ocean_simulation`](@ref) wraps, without the `Simulation` around
+it. Use this where a bare model is needed — most notably as the child of a
+[`nested_ocean_model`](@ref).
+"""
+function ocean_model(grid; model::Symbol = :hydrostatic, kwargs...)
+    if model === :hydrostatic
+        return hydrostatic_ocean_model(grid; kwargs...)
+    elseif model === :nonhydrostatic
+        return nonhydrostatic_ocean_model(grid; kwargs...)
+    else
+        throw(ArgumentError("ocean_model: unknown model $(repr(model)); " *
+                            "use :hydrostatic (default) or :nonhydrostatic."))
+    end
+end
+
+"""
+    hydrostatic_ocean_model(grid;
+                            clock = Clock(grid),
+                            closure = default_ocean_closure(),
                                  tracers = (:T, :S),
                                  free_surface = default_free_surface(grid),
                                  reference_density = 1020,
@@ -306,10 +322,6 @@ defaults on a per-field basis.
 
 - `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`. 
   Pass a `DateTime`-based clock to step the simulation in calendar time (e.g. when coupling).
-- `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or 
-  `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since 
-  Reactant does not support `stop_time`.
-- `Δt`: Timestep used by the `Simulation`. Defaults to the maximum stable timestep estimated from the `grid`.
 - `closure`: A turbulence or mixing closure. Defaults to `default_ocean_closure()`.
 - `tracers`: Tuple of tracer names. Defaults to `(:T, :S)`.
 - `free_surface`: Free–surface solver. Defaults to `default_free_surface(grid)`.
@@ -330,29 +342,27 @@ defaults on a per-field basis.
 - `warn`: If `true`, warnings are emitted for potentially unintended setups.
 - `verbose`: If `true`, prints additional setup information.
 """
-function hydrostatic_ocean_simulation(grid;
-                                      clock = Clock(grid),
-                                      stop_time = default_stop_time(grid, clock),
-                                      Δt = estimate_maximum_Δt(grid),
-                                      closure = default_ocean_closure(),
-                                      tracers = (:T, :S),
-                                      free_surface = default_free_surface(grid),
-                                      reference_density = 1020,
-                                      rotation_rate = default_planet_rotation_rate,
-                                      gravitational_acceleration = default_gravitational_acceleration,
-                                      bottom_drag_coefficient = Default(0.003),
-                                      forcing = NamedTuple(),
-                                      additional_surface_fluxes = NamedTuple(),
-                                      biogeochemistry = nothing,
-                                      timestepper = :SplitRungeKutta3,
-                                      coriolis = Default(HydrostaticSphericalCoriolis(; rotation_rate)),
-                                      momentum_advection = WENOVectorInvariant(time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
-                                      tracer_advection = WENO(order=7, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
-                                      equation_of_state = TEOS10EquationOfState(; reference_density),
-                                      boundary_conditions::NamedTuple = NamedTuple(),
-                                      radiative_forcing = default_radiative_forcing(grid),
-                                      warn = true,
-                                      verbose = false)
+function hydrostatic_ocean_model(grid;
+                                 clock = Clock(grid),
+                                 closure = default_ocean_closure(),
+                                 tracers = (:T, :S),
+                                 free_surface = default_free_surface(grid),
+                                 reference_density = 1020,
+                                 rotation_rate = default_planet_rotation_rate,
+                                 gravitational_acceleration = default_gravitational_acceleration,
+                                 bottom_drag_coefficient = Default(0.003),
+                                 forcing = NamedTuple(),
+                                 additional_surface_fluxes = NamedTuple(),
+                                 biogeochemistry = nothing,
+                                 timestepper = :SplitRungeKutta3,
+                                 coriolis = Default(HydrostaticSphericalCoriolis(; rotation_rate)),
+                                 momentum_advection = WENOVectorInvariant(time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
+                                 tracer_advection = WENO(order=7, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
+                                 equation_of_state = TEOS10EquationOfState(; reference_density),
+                                 boundary_conditions::NamedTuple = NamedTuple(),
+                                 radiative_forcing = default_radiative_forcing(grid),
+                                 warn = true,
+                                 verbose = false)
 
     FT = eltype(grid)
 
@@ -498,20 +508,48 @@ function hydrostatic_ocean_simulation(grid;
                                               forcing,
                                               boundary_conditions)
 
-    ocean = Simulation(ocean_model; Δt, stop_time, verbose)
+    return ocean_model
+end
 
-    return ocean
+"""
+$(TYPEDSIGNATURES)
+
+Wrap [`hydrostatic_ocean_model`](@ref) in a `Simulation`. `Δt`, `stop_time` and `verbose` configure the
+simulation; every other keyword argument flows to the model constructor.
+"""
+function hydrostatic_ocean_simulation(grid;
+                                      clock = Clock(grid),
+                                      stop_time = default_stop_time(grid, clock),
+                                      Δt = estimate_maximum_Δt(grid),
+                                      verbose = false,
+                                      kwargs...)
+
+    ocean_model = hydrostatic_ocean_model(grid; clock, verbose, kwargs...)
+
+    return Simulation(ocean_model; Δt, stop_time, verbose)
 end
 
 hasclosure(closure, ClosureType) = closure isa ClosureType
 hasclosure(closure_tuple::Tuple, ClosureType) = any(hasclosure(c, ClosureType) for c in closure_tuple)
 
+const OceananigansOceanModels = Union{HydrostaticFreeSurfaceModel, NonhydrostaticModel}
+
 const OceananigansModelSimulations = Union{
-    Simulation{<:HydrostaticFreeSurfaceModel},
-    Simulation{<:NonhydrostaticModel}
+    Simulation{<:OceananigansOceanModels},
+    Simulation{<:NestedModel{<:Any, <:OceananigansOceanModels}}
 }
 
-Grids.grid(ocean::OceananigansModelSimulations) = ocean.model.grid
+"""
+$(TYPEDSIGNATURES)
+
+Return the Oceananigans model underlying an ocean component. A nested ocean carries its prognostic
+state on the child, so the coupled interface reaches through the `NestedModel` wrapper to it.
+"""
+underlying_ocean_model(ocean::Simulation) = underlying_ocean_model(ocean.model)
+underlying_ocean_model(model::OceananigansOceanModels) = model
+underlying_ocean_model(nested::NestedModel) = underlying_ocean_model(nested.child)
+
+Grids.grid(ocean::OceananigansModelSimulations) = underlying_ocean_model(ocean).grid
 
 #####
 ##### Extending NumericalEarth interface
@@ -519,9 +557,9 @@ Grids.grid(ocean::OceananigansModelSimulations) = ocean.model.grid
 
 EarthSystemModels.reference_density(eos::TEOS10EquationOfState) = eos.reference_density
 EarthSystemModels.reference_density(buoyancy_formulation::SeawaterBuoyancy) = EarthSystemModels.reference_density(buoyancy_formulation.equation_of_state)
-EarthSystemModels.reference_density(ocean::OceananigansModelSimulations) = EarthSystemModels.reference_density(ocean.model.buoyancy.formulation)
+EarthSystemModels.reference_density(ocean::OceananigansModelSimulations) = EarthSystemModels.reference_density(underlying_ocean_model(ocean).buoyancy.formulation)
 
-EarthSystemModels.heat_capacity(ocean::OceananigansModelSimulations) = heat_capacity(ocean.model.buoyancy.formulation)
+EarthSystemModels.heat_capacity(ocean::OceananigansModelSimulations) = heat_capacity(underlying_ocean_model(ocean).buoyancy.formulation)
 EarthSystemModels.heat_capacity(buoyancy_formulation::SeawaterBuoyancy) = heat_capacity(buoyancy_formulation.equation_of_state)
 
 function EarthSystemModels.heat_capacity(::TEOS10EquationOfState{FT}) where FT

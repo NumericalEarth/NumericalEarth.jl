@@ -14,7 +14,7 @@ using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 EarthSystemModels.update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel, NoInterfaceModel}, ocean::OceananigansModelSimulations) = nothing
 
 EarthSystemModels.update_net_fluxes!(coupled_model, ocean::OceananigansModelSimulations) =
-    update_net_ocean_fluxes!(coupled_model, ocean, ocean.model.grid)
+    update_net_ocean_fluxes!(coupled_model, ocean, underlying_ocean_model(ocean).grid)
 
 rainfall_flux(coupled_model::NoAtmosInterfaceModel) = ZeroField(eltype(coupled_model))
 rainfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state.Jʳⁿ.data

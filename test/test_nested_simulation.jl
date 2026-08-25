@@ -7,7 +7,8 @@ using Oceananigans: prognostic_fields
 using Oceananigans.OutputReaders: interpolating_time_indices, memory_index
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location
-using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
+using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, NormalRadiation,
+                                       fill_halo_regions!
 using Oceananigans.Forcings: MultipleForcings
 using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics,
@@ -147,13 +148,19 @@ end
         @test getproperty(bcs.T, side).classification isa Oceananigans.BoundaryConditions.Value
     end
 
-    # Passing `schemes` for a non-NormalFlowBC field must error.
-    @test_throws ArgumentError parent_boundary_conditions(
-        child_grid;
-        variables = (T = T_fts,),
-        sides     = (:west, :east),
-        schemes   = (T = nothing,),
-        bc_types  = (T = ValueBoundaryCondition,))
+    # A scheme is carried by the classification, so it reaches a `ValueBoundaryCondition` field too —
+    # the tracer side of an open-boundary radiation condition.
+    radiating = parent_boundary_conditions(child_grid;
+                                           variables = (T = T_fts,),
+                                           sides     = (:west, :east),
+                                           schemes   = (T = NormalRadiation(),),
+                                           bc_types  = (T = ValueBoundaryCondition,))
+
+    for side in (:west, :east)
+        classification = getproperty(radiating.T, side).classification
+        @test classification isa Oceananigans.BoundaryConditions.Value
+        @test classification.scheme isa NormalRadiation
+    end
 end
 
 # Regression for the GPU `InvalidIRError` in the prognostic-parent path: a LIVE model

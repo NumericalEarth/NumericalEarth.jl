@@ -35,10 +35,10 @@ Arguments
 - `sides`: a tuple of `Symbol`s naming which boundaries to drive. Choices are
   `:west, :east, :south, :north, :bottom, :top`.
 
-- `schemes`: optional `NamedTuple` keyed by child field name giving the
-  `NormalFlowBoundaryCondition` scheme (e.g. a `PerturbationAdvection`). Fields not
-  listed default to `scheme = nothing` (stiff Dirichlet). Only consulted when
-  the BC type for that field is `NormalFlowBoundaryCondition`.
+- `schemes`: optional `NamedTuple` keyed by child field name giving the open-boundary scheme (e.g. a
+  `PerturbationAdvection` or a `NormalRadiation`). Fields not listed default to `scheme = nothing`
+  (stiff Dirichlet). The scheme is carried by the boundary condition's classification, so it applies
+  to whichever BC type that field uses.
 
 - `bc_types`: optional `NamedTuple` keyed by child field name giving the BC
   constructor to use for that field. Each entry is either a single BC constructor
@@ -62,18 +62,11 @@ function parent_boundary_conditions(grid;
         scheme    = haskey(schemes, child_name) ? getproperty(schemes, child_name) : nothing
         condition = Interpolated(fts)
 
-        # `spec` is either one BC constructor for all sides or a per-side NamedTuple; `scheme`
-        # (e.g. PerturbationAdvection) is consulted only where the chosen type is NormalFlow.
+        # `spec` is either one BC constructor for all sides or a per-side NamedTuple. An open-boundary
+        # `scheme` is carried by the classification, so it reaches `NormalFlowBoundaryCondition` (normal
+        # velocities) and `ValueBoundaryCondition` (tracers, tangential velocities) alike.
         bc_type(side) = spec isa NamedTuple ? getproperty(spec, side) : spec
-        bc_at(side)   = bc_type(side) === NormalFlowBoundaryCondition ?
-                            NormalFlowBoundaryCondition(condition; scheme) : bc_type(side)(condition)
-
-        # A `scheme` only takes effect on NormalFlow sides; requesting one for a field that is
-        # NormalFlow on no side means it would be silently ignored — flag that as a user error.
-        if haskey(schemes, child_name) && !any(side -> bc_type(side) === NormalFlowBoundaryCondition, sides)
-            throw(ArgumentError("`schemes` was given for :$child_name, but none of its sides use a " *
-                                "NormalFlowBoundaryCondition, so the scheme would be ignored."))
-        end
+        bc_at(side)   = isnothing(scheme) ? bc_type(side)(condition) : bc_type(side)(condition; scheme)
 
         side_pairs = [side => bc_at(side) for side in sides]
         push!(field_pairs, child_name => FieldBoundaryConditions(; side_pairs...))

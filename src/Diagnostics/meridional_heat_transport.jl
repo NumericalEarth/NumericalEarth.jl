@@ -75,7 +75,7 @@ Integral of BinaryOperation at (Center, Face, Center) over dims (1, 3)
 """
 function meridional_heat_transport(esm::EarthSystemModel; reference_temperature=0)
 
-    grid = esm.ocean.model.grid
+    grid = underlying_ocean_model(esm.ocean).grid
 
     validation_grid = grid isa ImmersedBoundaryGrid ? grid.underlying_grid : grid
 
@@ -88,8 +88,8 @@ function meridional_heat_transport(esm::EarthSystemModel; reference_temperature=
     ρᵒᶜ = reference_density(esm.ocean)
     cᵒᶜ = heat_capacity(esm.ocean)
 
-    T = esm.ocean.model.tracers.T
-    v = esm.ocean.model.velocities.v
+    T = underlying_ocean_model(esm.ocean).tracers.T
+    v = underlying_ocean_model(esm.ocean).velocities.v
 
     MHT = Integral(ρᵒᶜ * cᵒᶜ * v * (T - reference_temperature), dims=(1, 3))
     return MHT

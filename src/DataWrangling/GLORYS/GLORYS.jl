@@ -64,6 +64,10 @@ Base.size(::GLORYSMetadatum) = (4320, 2040, 50, 1)
 
 reversed_vertical_axis(::GLORYSDataset) = true
 
+# Two native (1/12°) cells of margin, so a nested child's lateral-boundary interpolation stencils
+# stay inside the parent region.
+DataWrangling.default_horizontal_padding(::GLORYSDataset) = 1/6
+
 available_variables(::GLORYSDataset) = GLORYS_dataset_variable_names
 
 GLORYS_dataset_variable_names = Dict(

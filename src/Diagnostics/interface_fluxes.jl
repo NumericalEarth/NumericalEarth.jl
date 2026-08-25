@@ -37,7 +37,7 @@ end
 Return the net temperature flux (K m s⁻¹) at the ocean's surface in a coupled `esm`.
 """
 function net_ocean_temperature_flux(esm::EarthSystemModel)
-    Jᵀ = flux_field(esm.ocean.model.tracers.T.boundary_conditions.top.condition)
+    Jᵀ = flux_field(underlying_ocean_model(esm.ocean).tracers.T.boundary_conditions.top.condition)
     return Jᵀ + frazil_temperature_flux(esm)
 end
 
@@ -129,7 +129,7 @@ end
 Return the net salinity flux (g/kg m s⁻¹) at the ocean's surface in a coupled `esm`.
 """
 net_ocean_salinity_flux(esm::EarthSystemModel) =
-    flux_field(esm.ocean.model.tracers.S.boundary_conditions.top.condition)
+    flux_field(underlying_ocean_model(esm.ocean).tracers.S.boundary_conditions.top.condition)
 
 
 """

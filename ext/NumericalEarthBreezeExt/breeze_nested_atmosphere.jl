@@ -15,7 +15,7 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding,
                                     matching_single_level_dataset
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings,
-                                   blend_parent_terrain!
+                                   blend_parent_terrain!, davies_relaxation_mask, SmoothStepRamp
 using Oceananigans: Oceananigans, WENO
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, NormalFlowBoundaryCondition
@@ -23,7 +23,7 @@ using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, CenterField, Field, XFaceField, YFaceField,
                            compute!, interior, interpolate!, set!
 using Oceananigans.Forcings: Relaxation
-using Oceananigans.Grids: znode, λnodes, φnodes, minimum_xspacing, Center, Face
+using Oceananigans.Grids: znode, minimum_xspacing, Center, Face
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 using GPUArraysCore: @allowscalar
@@ -39,27 +39,6 @@ function default_nested_microphysics()
     ext = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
     isnothing(ext) && return SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())
     return ext.OneMomentCloudMicrophysics(cloud_formation = SaturationAdjustment(equilibrium = MixedPhaseEquilibrium()))
-end
-
-# Ramp shapes (isbits callables) for a nudging zone: weight vs. normalized distance from the wall, s ∈ [0, 1].
-# Contract: ramp(0)=1, ramp(1)=0, monotone between.
-struct CosineRamp end
-struct SmoothStepRamp end
-
-@inline (::CosineRamp)(s)     = (1 + cos(π * s)) / 2
-@inline (::SmoothStepRamp)(s) = 1 - s^2 * (3 - 2s)
-
-# Davies mask: 1 at the lateral walls, ramping to 0 over the outermost `width` cells.
-function davies_relaxation_mask(grid, width; ramp = CosineRamp())
-    λ₁, λ₂ = extrema(λnodes(grid, Face(), Center(), Center()))
-    φ₁, φ₂ = extrema(φnodes(grid, Center(), Face(), Center()))
-    Nx, Ny, _ = size(grid)
-    w = width * max((λ₂ - λ₁) / Nx, (φ₂ - φ₁) / Ny)
-    return (λ, φ, z) -> begin
-        d = min(λ - λ₁, λ₂ - λ, φ - φ₁, φ₂ - φ)
-        s = clamp(d / w, zero(d), one(d))
-        return oftype(d, ramp(s))
-    end
 end
 
 # Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` metres of the domain, for the ρw lid sponge.

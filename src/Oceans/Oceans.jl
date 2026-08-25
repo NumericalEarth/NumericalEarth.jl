@@ -1,6 +1,6 @@
 module Oceans
 
-export ocean_simulation, SlabOcean, PrescribedOcean
+export ocean_simulation, ocean_model, underlying_ocean_model, SlabOcean, PrescribedOcean
 
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
@@ -38,6 +38,8 @@ using ..EarthSystemModels: EarthSystemModels,
                            default_stop_time,
                            heat_capacity
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger
+using ..Grids: is_three_dimensional
+using ..NestedModels: NestedModel
 
 default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate
@@ -77,22 +79,22 @@ include("assemble_net_ocean_fluxes.jl")
 # args in the convenience constructors (e.g. `OceanSeaIceModel`).
 EarthSystemModels.is_sea_ice_component(::OceananigansModelSimulations) = false
 
-EarthSystemModels.ocean_salinity(ocean::OceananigansModelSimulations)    = ocean.model.tracers.S
-EarthSystemModels.ocean_temperature(ocean::OceananigansModelSimulations) = ocean.model.tracers.T
+EarthSystemModels.ocean_salinity(ocean::OceananigansModelSimulations)    = underlying_ocean_model(ocean).tracers.S
+EarthSystemModels.ocean_temperature(ocean::OceananigansModelSimulations) = underlying_ocean_model(ocean).tracers.T
 
 function EarthSystemModels.ocean_surface_salinity(ocean::OceananigansModelSimulations)
-    kᴺ = size(ocean.model.grid, 3)
-    return view(ocean.model.tracers.S.data, :, :, kᴺ:kᴺ)
+    kᴺ = size(underlying_ocean_model(ocean).grid, 3)
+    return view(underlying_ocean_model(ocean).tracers.S.data, :, :, kᴺ:kᴺ)
 end
 
 function EarthSystemModels.ocean_surface_temperature(ocean::OceananigansModelSimulations)
-    kᴺ = size(ocean.model.grid, 3)
-    return view(ocean.model.tracers.T.data, :, :, kᴺ:kᴺ)
+    kᴺ = size(underlying_ocean_model(ocean).grid, 3)
+    return view(underlying_ocean_model(ocean).tracers.T.data, :, :, kᴺ:kᴺ)
 end
 
 function EarthSystemModels.ocean_surface_velocities(ocean::OceananigansModelSimulations)
-    kᴺ = size(ocean.model.grid, 3)
-    return view(ocean.model.velocities.u, :, :, kᴺ), view(ocean.model.velocities.v, :, :, kᴺ)
+    kᴺ = size(underlying_ocean_model(ocean).grid, 3)
+    return view(underlying_ocean_model(ocean).velocities.u, :, :, kᴺ), view(underlying_ocean_model(ocean).velocities.v, :, :, kᴺ)
 end
 
 # When using an Oceananigans simulation, we assume that the exchange grid is the ocean grid
@@ -100,13 +102,13 @@ end
 EarthSystemModels.interpolate_state!(exchanger, grid, ::OceananigansModelSimulations, coupled_model) = nothing
 
 function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::OceananigansModelSimulations, grid)
-    ocean_grid = ocean.model.grid
+    ocean_grid = underlying_ocean_model(ocean).grid
 
     if ocean_grid == grid
-        u = ocean.model.velocities.u
-        v = ocean.model.velocities.v
-        T = ocean.model.tracers.T
-        S = ocean.model.tracers.S
+        u = underlying_ocean_model(ocean).velocities.u
+        v = underlying_ocean_model(ocean).velocities.v
+        T = underlying_ocean_model(ocean).tracers.T
+        S = underlying_ocean_model(ocean).tracers.S
     else
         u = Field{Center, Center, Nothing}(grid)
         v = Field{Center, Center, Nothing}(grid)
@@ -116,7 +118,7 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::Ocean
 
     # Near-surface vertical tracer diffusivity, evaluated lazily inside the
     # interface flux kernel by formulations that consume it (`InteriorDiffusivity`).
-    model = ocean.model
+    model = underlying_ocean_model(ocean)
     temperature_index = findfirst(name -> name === :T, collect(keys(model.tracers)))
     κ = KernelFunctionOperation{Center, Center, Nothing}(Σκzᴺ,
                                                          ocean_grid,
@@ -173,15 +175,15 @@ end
 
 function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::OceananigansModelSimulations)
     # TODO: Generalize this to work with any ocean model
-    τˣ = net_flux(ocean.model.velocities.u.boundary_conditions.top.condition)
-    τʸ = net_flux(ocean.model.velocities.v.boundary_conditions.top.condition)
+    τˣ = net_flux(underlying_ocean_model(ocean).velocities.u.boundary_conditions.top.condition)
+    τʸ = net_flux(underlying_ocean_model(ocean).velocities.v.boundary_conditions.top.condition)
     net_ocean_surface_fluxes = (; u=τˣ, v=τʸ)
 
-    tracers = ocean.model.tracers
+    tracers = underlying_ocean_model(ocean).tracers
     ocean_surface_tracer_fluxes = NamedTuple(name => net_flux(tracers[name].boundary_conditions.top.condition) for name in keys(tracers))
 
-    freshwater_volume_flux = extract_freshwater_flux(ocean.model.tracers.S.boundary_conditions.top.condition)
-    heat_exchange = freshwater_exchange(ocean.model.tracers.T.boundary_conditions.top.condition)
+    freshwater_volume_flux = extract_freshwater_flux(underlying_ocean_model(ocean).tracers.S.boundary_conditions.top.condition)
+    heat_exchange = freshwater_exchange(underlying_ocean_model(ocean).tracers.T.boundary_conditions.top.condition)
 
     fluxes = merge(ocean_surface_tracer_fluxes, net_ocean_surface_fluxes,
                    (; η = freshwater_volume_flux,
