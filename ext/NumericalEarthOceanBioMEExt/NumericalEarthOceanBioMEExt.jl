@@ -7,8 +7,10 @@ using OceanBioME
 using KernelAbstractions: KernelAbstractions, @index, @kernel
 using Oceananigans.Architectures: architecture
 using Oceananigans.Utils: launch!
-using OceanBioME: CompleteBiogeochemistry
 
+using OceanBioME: GasExchange, NutrientsPlanktonDetritus, CompleteBiogeochemistry, DiscreteBiogeochemistry
+using OceanBioME.Models.NutrientsPlanktonDetritusModels.OxygenModels: Oxygen
+using OceanBioME.Models.NutrientsPlanktonDetritusModels.InorganicCarbonModels: AbstractInorganicCarbon
 using OceanBioME.Light: 
     AbstractPhotosyntheticallyActiveRadiation, 
     surface_PAR,
@@ -16,7 +18,13 @@ using OceanBioME.Light:
 
 import Adapt: adapt_structure
 
+import NumericalEarth.EarthSystemModels.InterfaceComputations: biogeochemical_interface
+import NumericalEarth.Radiations: apply_air_sea_biogeochemical_radiative_fluxes!
+import NumericalEarth.Oceans: update_net_ocean_biogeochemical_fluxes!, biogeochemistry_surface_exchanged_tracers
+
 include("state_exchange_interface.jl")
 include("assemble_net_fluxes.jl")
+include("surface_values.jl")
+include("biogeochemical_interface.jl")
 
 end # module NumericalEarthOceanBioMEExt
