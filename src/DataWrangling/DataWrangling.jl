@@ -215,7 +215,7 @@ Arguments
 
     within julia. More detailed instructions for obtaining WebDAV credentials are at:
 
-        https://github.com/CliMA/NumericalEarth.jl/blob/main/src/DataWrangling/ECCO/README.md
+        https://github.com/NumericalEarth/NumericalEarth.jl/blob/main/src/DataWrangling/ECCO/README.md
 """
 # `download(::Metadata)` extends `Downloads.download` (the modern stdlib function,
 # not `Base.download` which is a 1.0-era shim). Per-dataset methods are added
