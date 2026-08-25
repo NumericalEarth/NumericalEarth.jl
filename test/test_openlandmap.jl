@@ -458,3 +458,17 @@ end
 
     @test default_regrid(Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region))
 end
+
+@testset "the native grid's place in the file is resolved once, not per tile" begin
+    native_file_offset = NumericalEarth.DataWrangling.native_file_offset
+    Δ = 0.032
+    native = collect(-125.0085 .+ Δ .* (0:9))
+
+    # A file that starts where the native grid does holds native cell 1 at file index 1.
+    @test native_file_offset(collect(-125.0085 .+ Δ .* (0:12)), native) == 0
+
+    # A file padded to the west holds it further in — the offset every tile must inherit rather
+    # than search for, since a per-tile search that lands a cell off shifts that whole tile.
+    @test native_file_offset(collect(-125.0085 - Δ .+ Δ .* (0:12)), native) == 1
+    @test native_file_offset(collect(-125.0085 - 2Δ .+ Δ .* (0:13)), native) == 2
+end

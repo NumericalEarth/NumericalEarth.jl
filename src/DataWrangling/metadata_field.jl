@@ -480,6 +480,13 @@ end
 ##### Tiled regridding — bounding what is resident by the tile, not by the window
 #####
 
+# Index of the file cell holding native cell 1, resolved the way `set_region_data!` resolves it
+# for a whole window. Zero when the file and the native grid start together.
+function native_file_offset(coordinates, native_centers)
+    i₁, _ = compute_bounding_indices((native_centers[1], native_centers[end]), coordinates)
+    return i₁ - 1
+end
+
 """
     regrid_stencil_width(metadata)
 
@@ -580,6 +587,13 @@ function regrid_in_tiles!(target, metadata, native, tiles; halo = (3, 3, 3))
     λn = λnodes(native, Center(), Center(), Center())
     φn = φnodes(native, Center(), Center(), Center())
     λt, φt = horizontal_centers(grid)
+
+    # Where the native grid sits in the file, resolved once over the whole grid. A tile then
+    # indexes the file by construction: searching per tile can land a cell off, and a window the
+    # same length as its sub-grid leaves `set_region_data!` no slack to correct it — the whole
+    # tile shifts by a cell instead, which at a coastline swaps land for ocean.
+    offset_i = native_file_offset(λ, λn)
+    offset_j = native_file_offset(φ, φn)
     Nx, Ny, Nz = size(grid)
 
     ni = min(tiles, Nx)
@@ -593,8 +607,8 @@ function regrid_in_tiles!(target, metadata, native, tiles; halo = (3, 3, 3))
         source_i = bracketing_indices(λn, λt[first(target_i)], λt[last(target_i)]; margin = stencil)
         source_j = bracketing_indices(φn, φt[first(target_j)], φt[last(target_j)]; margin = stencil)
 
-        window_i = bracketing_indices(λ, λn[first(source_i)], λn[last(source_i)]; margin = 0)
-        window_j = bracketing_indices(φ, φn[first(source_j)], φn[last(source_j)]; margin = 0)
+        window_i = (first(source_i) + offset_i):(last(source_i) + offset_i)
+        window_j = (first(source_j) + offset_j):(last(source_j) + offset_j)
 
         data, λw, φw = retrieve_window(metadata, window_i, window_j)
         source = Field{LX, LY, LZ}(native_subgrid(native, metadata, source_i, source_j, arch; halo))
