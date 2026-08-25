@@ -12,7 +12,6 @@ struct SimilarityTheoryFluxes{FT, UF, R, D, B, S, SV}
     subgrid_velocities :: SV         # empirical velocity enhancements of the bulk wind
     stability_functions :: UF        # functions for turbulent fluxes
     roughness_lengths :: R           # parameterization for turbulent fluxes
-    minimum_roughness_length :: FT   # floor applied to a per-cell roughness length
     zero_plane_displacement :: D     # displacement of the similarity profile
     similarity_form :: B             # similarity profile relating atmosphere to interface state
     solver_stop_criteria :: S        # stop criteria for compute_interface_state
@@ -124,7 +123,6 @@ function Base.show(io::IO, fluxes::SimilarityTheoryFluxes)
           "├── subgrid_velocities: ",         summary(fluxes.subgrid_velocities), '\n',
           "├── stability_functions: ",        summary(fluxes.stability_functions), '\n',
           "├── roughness_lengths: ",          summary(fluxes.roughness_lengths), '\n',
-          "├── minimum_roughness_length: ",   prettysummary(fluxes.minimum_roughness_length), '\n',
           "├── zero_plane_displacement: ",    prettysummary(fluxes.zero_plane_displacement), '\n',
           "├── similarity_form: ",            summary(fluxes.similarity_form), '\n',
           "└── solver_stop_criteria: ",       summary(fluxes.solver_stop_criteria))
@@ -164,24 +162,9 @@ Keyword Arguments
                        per-cell values, strictly positive and finite everywhere (see
                        [`atmosphere_land_interface`](@ref)).
                        Default: `default_roughness_lengths(FT)`, formulation taken from [edson2013exchange](@citet).
-- `minimum_roughness_length`: Floor [m] applied to a per-cell roughness length that the
-                              similarity profile cannot evaluate — non-finite, not
-                              strictly positive, or too large for the displaced profile
-                              height after setup validation. This is a guard, not a physical
-                              parameter: it exists only so that a slot mutated after
-                              [`validate_flux_formulation`](@ref) has run cannot make
-                              ``\\log(Δh / ℓ)`` infinite and propagate `NaN` through the
-                              coupled state. Any small positive value serves; the default
-                              `1e-5` is the same order as the smooth-wall limit
-                              ``ℂ_ν ν / u_★`` of [`MomentumRoughnessLength`](@ref) at
-                              moderate `u★`, but is not derived from it. Raise it to make
-                              the fallback surface rougher, or lower it to make a mutated
-                              slot show up as a near-zero flux instead.
 - `zero_plane_displacement`: The zero-plane displacement `d` [m] of surfaces with tall roughness
                              elements (buildings, plant canopy): the similarity profiles are evaluated
-                             at the height `Δh - d` above the interface, which must clear the
-                             roughness sublayer (`Δh - d ≥ 2ℓᵐᵃˣ`, where `ℓᵐᵃˣ` is the
-                             largest roughness length). A `Number`, or — at the
+                             at the height `Δh - d` above the interface. A `Number`, or — at the
                              atmosphere--land interface only — a `Field{Center, Center, Nothing}`
                              of per-cell displacements. Default: 0 (undisplaced).
 - `similarity_form`: The type of similarity profile used to relate the atmospheric state to the
@@ -197,23 +180,19 @@ function SimilarityTheoryFluxes(FT::DataType = Oceananigans.defaults.FloatType;
                                 momentum_roughness_length = MomentumRoughnessLength(FT),
                                 temperature_roughness_length = ScalarRoughnessLength(FT),
                                 water_vapor_roughness_length = ScalarRoughnessLength(FT),
-                                minimum_roughness_length = 1e-5,
                                 zero_plane_displacement = 0,
                                 similarity_form = LogarithmicSimilarityProfile(),
                                 solver_stop_criteria = nothing,
                                 solver_tolerance = 1e-8,
                                 solver_maxiter = 100)
 
-    # Convert scalar slots to `FT` so the kernel does not promote the whole MOST chain to
-    # a wider type (nor hit an `InexactError` flooring an integer roughness). Fields carry
-    # their own eltype and formulations were already built with `FT`.
-    to_FT(x) = x isa Number ? convert(FT, x) : x
+    roughness_lengths = SimilarityScales(momentum_roughness_length,
+                                         temperature_roughness_length,
+                                         water_vapor_roughness_length)
 
-    roughness_lengths = SimilarityScales(to_FT(momentum_roughness_length),
-                                         to_FT(temperature_roughness_length),
-                                         to_FT(water_vapor_roughness_length))
-
-    zero_plane_displacement = to_FT(zero_plane_displacement)
+    if zero_plane_displacement isa Number
+        zero_plane_displacement = convert(FT, zero_plane_displacement)
+    end
 
     if isnothing(solver_stop_criteria)
         solver_tolerance = convert(FT, solver_tolerance)
@@ -230,7 +209,6 @@ function SimilarityTheoryFluxes(FT::DataType = Oceananigans.defaults.FloatType;
                                   subgrid_velocities,
                                   stability_functions,
                                   roughness_lengths,
-                                  convert(FT, minimum_roughness_length),
                                   zero_plane_displacement,
                                   similarity_form,
                                   solver_stop_criteria)
@@ -280,79 +258,25 @@ end
 # while `Number`s and formulations (e.g. `MomentumRoughnessLength`) pass through
 # `stateindex`'s fallback.
 @inline local_flux_formulation(flux_formulation, i, j) = flux_formulation
-@inline local_flux_formulation(flux_formulation, i, j, zᵃᵗ) = local_flux_formulation(flux_formulation, i, j)
 
 # "The similarity profile can evaluate this value": `log(Δh / ℓ)` needs ℓ > 0, and a
-# displacement raises the surface so d ≥ 0. `validate_flux_formulation` (setup),
-# `local_*` below (kernel) and `fill_aerodynamic_roughness_gaps!` (Lands) all decide the
-# same contract, so they share these two predicates rather than restating them.
+# displacement raises the surface so d ≥ 0. `validate_flux_formulation` decides both
+# when the interface is built, so the kernel localizes without re-deciding them.
 @inline evaluable_roughness_length(ℓ) = isfinite(ℓ) & (ℓ > 0)
 @inline evaluable_zero_plane_displacement(d) = isfinite(d) & (d ≥ 0)
 
-# Only an `AbstractArray` slot can change after `validate_flux_formulation` has run. Its
-# localized value falls back in the kernel when it is no longer evaluable or no longer
-# clears the displaced profile height. Numbers and formulations pass through untouched.
-@inline local_roughness_length(ℓ, ℓmin, i, j) = ℓ
-
-@inline function local_roughness_length(ℓ::AbstractArray, ℓmin, i, j)
-    ℓᵢⱼ = state2dindex(ℓ, i, j)
-    return ifelse(evaluable_roughness_length(ℓᵢⱼ), ℓᵢⱼ, convert(typeof(ℓᵢⱼ), ℓmin))
-end
-
-@inline local_zero_plane_displacement(d, i, j) = d
-
-@inline function local_zero_plane_displacement(d::AbstractArray, i, j)
-    dᵢⱼ = state2dindex(d, i, j)
-    return ifelse(evaluable_zero_plane_displacement(dᵢⱼ), dᵢⱼ, zero(dᵢⱼ))
-end
-
-@inline clearance_roughness_length(slot, ℓ) = 0
-@inline clearance_roughness_length(slot::Number, ℓ) = ℓ
-@inline clearance_roughness_length(slot::AbstractArray, ℓ) = ℓ
-
-@inline guard_local_zero_plane_displacement(slot, d, zᵃᵗ, ℓᵐᵃˣ) = d
-@inline guard_local_zero_plane_displacement(slot::AbstractArray, d, ::Nothing, ℓᵐᵃˣ) = d
-
-@inline function guard_local_zero_plane_displacement(slot::AbstractArray, d, zᵃᵗ, ℓᵐᵃˣ)
-    return ifelse(zᵃᵗ - d ≥ 2ℓᵐᵃˣ, d, zero(d))
-end
-
-@inline guard_local_roughness_length(slot, ℓ, ℓmin, zᵃᵗ, d) = ℓ
-@inline guard_local_roughness_length(slot::AbstractArray, ℓ, ℓmin, ::Nothing, d) = ℓ
-
-@inline function guard_local_roughness_length(slot::AbstractArray, ℓ, ℓmin, zᵃᵗ, d)
-    return ifelse(zᵃᵗ - d ≥ 2ℓ, ℓ, convert(typeof(ℓ), ℓmin))
-end
-
-@inline local_flux_formulation(fluxes::SimilarityTheoryFluxes, i, j) =
-    local_flux_formulation(fluxes, i, j, nothing)
-
-@inline function local_flux_formulation(fluxes::SimilarityTheoryFluxes, i, j, zᵃᵗ)
+@inline function local_flux_formulation(fluxes::SimilarityTheoryFluxes, i, j)
     ℓ = fluxes.roughness_lengths
-    ℓmin = fluxes.minimum_roughness_length
-    ℓu = local_roughness_length(ℓ.momentum, ℓmin, i, j)
-    ℓθ = local_roughness_length(ℓ.temperature, ℓmin, i, j)
-    ℓq = local_roughness_length(ℓ.water_vapor, ℓmin, i, j)
-    d = local_zero_plane_displacement(fluxes.zero_plane_displacement, i, j)
-
-    ℓuᶜ = clearance_roughness_length(ℓ.momentum, ℓu)
-    ℓθᶜ = clearance_roughness_length(ℓ.temperature, ℓθ)
-    ℓqᶜ = clearance_roughness_length(ℓ.water_vapor, ℓq)
-    ℓᵐᵃˣ = max(ℓuᶜ, ℓθᶜ, ℓqᶜ)
-
-    d = guard_local_zero_plane_displacement(fluxes.zero_plane_displacement, d, zᵃᵗ, ℓᵐᵃˣ)
-    ℓu = guard_local_roughness_length(ℓ.momentum, ℓu, ℓmin, zᵃᵗ, d)
-    ℓθ = guard_local_roughness_length(ℓ.temperature, ℓθ, ℓmin, zᵃᵗ, d)
-    ℓq = guard_local_roughness_length(ℓ.water_vapor, ℓq, ℓmin, zᵃᵗ, d)
-    roughness_lengths = SimilarityScales(ℓu, ℓθ, ℓq)
+    roughness_lengths = SimilarityScales(state2dindex(ℓ.momentum, i, j),
+                                         state2dindex(ℓ.temperature, i, j),
+                                         state2dindex(ℓ.water_vapor, i, j))
 
     return SimilarityTheoryFluxes(fluxes.von_karman_constant,
                                   fluxes.turbulent_prandtl_number,
                                   fluxes.subgrid_velocities,
                                   fluxes.stability_functions,
                                   roughness_lengths,
-                                  ℓmin,
-                                  d,
+                                  state2dindex(fluxes.zero_plane_displacement, i, j),
                                   fluxes.similarity_form,
                                   fluxes.solver_stop_criteria)
 end
@@ -361,19 +285,11 @@ end
 $(TYPEDSIGNATURES)
 
 Height `Δh - d` at which the similarity profiles of a surface with zero-plane
-displacement `d` are evaluated, floored at twice the largest momentum, temperature,
-or water-vapor roughness length `ℓᵐᵃˣ` so the profile stays above every roughness
-sublayer (and the transfer coefficients stay finite) when the displacement approaches
-the atmosphere surface layer height.
-
-The floor is a backstop, not a supported regime: it caps the transfer coefficients at
-``ϰ² / \\log(2)² ≈ 0.33``, two orders of magnitude above any surface.
-[`validate_flux_formulation`](@ref) rejects known roughness and displacement values
-that would make it bind when the interface is built, while [`local_flux_formulation`](@ref)
-substitutes safe values if a mutable slot violates the same clearance later. The floor
-still guards state-dependent roughness formulations whose values are known only here.
+displacement `d` are evaluated, floored at twice the momentum roughness length `ℓ`
+so the profile stays above the roughness sublayer (and the transfer coefficients
+stay finite) when the displacement approaches the atmosphere surface layer height.
 """
-@inline displaced_profile_height(Δh, d, ℓᵐᵃˣ) = max(Δh - d, 2ℓᵐᵃˣ)
+@inline displaced_profile_height(Δh, d, ℓ) = max(Δh - d, 2ℓ)
 
 #####
 ##### Setup-time validation of the per-cell roughness and displacement slots
@@ -421,7 +337,7 @@ reject_per_cell_slots(flux_formulation, interface) = nothing
      ("zero_plane_displacement",      f.zero_plane_displacement,
       evaluable_zero_plane_displacement, "finite and non-negative (displacement raises the surface)"))
 
-# Only an array slot varies per cell, and only it can change after validation.
+# Only an array slot varies per cell.
 @inline is_per_cell(slot) = slot isa AbstractArray
 
 # Per-cell values of a slot, or `nothing` for a state-dependent formulation
@@ -469,11 +385,11 @@ validate_slot_layout(slot, name, grid) = nothing
 $(TYPEDSIGNATURES)
 
 Check that the roughness-length and zero-plane-displacement slots of `flux_formulation`
-can be localized on `grid` and evaluated at the atmosphere surface-layer height `zᵃᵗ`,
-and throw an `ArgumentError` naming the offending slot otherwise.
+can be localized on `grid`, and throw an `ArgumentError` naming the offending slot
+otherwise.
 
-Kernels can neither throw nor report, so every condition the Monin--Obukhov solve
-depends on is checked here:
+Kernels can neither throw nor report, so the conditions the Monin--Obukhov solve
+depends on are checked here:
 
 - a `Field` slot is horizontally reduced and sized to `grid`, so `state2dindex` reads
   the surface value of the intended cell;
@@ -482,45 +398,22 @@ depends on is checked here:
   the coupled state, and a zero would silently zero every turbulent flux. Note that
   [`urban_roughness`](@ref) marks cells of invalid morphometry with `NaN` by design,
   so a roughness field derived from a building dataset must be gap-filled first;
-- every displacement is finite, non-negative, and leaves ``zᵃᵗ - d ≥ 2ℓᵐᵃˣ``, where
-  `ℓᵐᵃˣ` is the largest momentum, temperature, or water-vapor roughness length, so
-  every similarity profile stays above its roughness sublayer and
-  [`displaced_profile_height`](@ref)'s floor never binds for setup-time known values.
+- every displacement is finite and non-negative, since a displacement raises the
+  surface the similarity profiles are evaluated above.
 
 State-dependent formulations such as [`MomentumRoughnessLength`](@ref) carry no
-setup-time value. Their realized roughness lengths remain protected by
-[`displaced_profile_height`](@ref)'s runtime floor.
+setup-time value, so they are not checked here.
 """
-function validate_flux_formulation(flux_formulation::SimilarityTheoryFluxes, grid, zᵃᵗ)
-    ℓmin = flux_formulation.minimum_roughness_length
-
-    # The floor is what keeps `log(Δh / ℓ)` finite when a slot is mutated after this
-    # check; a non-positive floor would defeat it.
-    if !evaluable_roughness_length(ℓmin)
-        throw(ArgumentError("minimum_roughness_length is $ℓmin but must be finite and " *
-                            "strictly positive: it is the floor that keeps " *
-                            "log(Δh / ℓ) finite for a roughness slot mutated after " *
-                            "the interface is built."))
-    end
-
-    slots = flux_formulation_slots(flux_formulation)
-
-    # Resolve each slot's values once: for a `Field` this is a device-to-host copy, and
-    # all three roughness lengths are needed again by the clearance check below.
-    values = map(slot -> slot_values(slot[2]), slots)
-
-    for (n, (name, slot, evaluable, requirement)) in enumerate(slots)
+function validate_flux_formulation(flux_formulation::SimilarityTheoryFluxes, grid)
+    for (name, slot, evaluable, requirement) in flux_formulation_slots(flux_formulation)
         validate_slot_layout(slot, name, grid)
-        check_slot_values(name, values[n], evaluable, requirement)
+        check_slot_values(name, slot_values(slot), evaluable, requirement)
     end
-
-    ℓuᵛ, ℓθᵛ, ℓqᵛ, dᵛ = values
-    validate_displacement_clearance(dᵛ, (ℓuᵛ, ℓθᵛ, ℓqᵛ), zᵃᵗ)
 
     return nothing
 end
 
-validate_flux_formulation(flux_formulation, grid, zᵃᵗ) = nothing
+validate_flux_formulation(flux_formulation, grid) = nothing
 
 # One pass: `all` short-circuits, and the `count`/`minimum` diagnostics only run once a
 # bad cell is known to exist.
@@ -532,46 +425,9 @@ function check_slot_values(name, values, evaluable, requirement)
                         "$requirement (minimum $(minimum(values))). A bad cell either " *
                         "propagates NaN through u★, θ★ and q★ into the coupled state or " *
                         "silently zeroes every turbulent flux there. Fill the gaps " *
-                        "first, e.g. with fill_aerodynamic_roughness_gaps!."))
+                        "before passing the field to the flux closure."))
 end
 
-# The similarity profile is evaluated at `zᵃᵗ - d`, which must clear the roughness
-# sublayer by the same margin `displaced_profile_height` falls back to. Takes values
-# already resolved by `validate_flux_formulation`.
-function validate_displacement_clearance(dᵛ, ℓᵛ, zᵃᵗ)
-    isnothing(dᵛ) && return nothing
-
-    zᵛ = slot_values(zᵃᵗ)
-
-    # A land model with no atmosphere carries no surface layer
-    # (`surface_layer_height(::Nothing) = 0`); there is no height to clear.
-    maximum(zᵛ) > 0 || return nothing
-
-    # A state-dependent roughness has no per-cell value here, so it contributes zero to
-    # setup-time clearance; `displaced_profile_height` guards its realized value later.
-    ℓᵛ = map(x -> isnothing(x) ? (zero(eltype(dᵛ)),) : x, ℓᵛ)
-    ℓᵐᵃˣᵛ = broadcast(max, ℓᵛ...)
-
-    # Per cell wherever the slots are per-cell — a uniform slot broadcasts. Comparing
-    # the extremes independently would reject a domain that pairs its tallest
-    # displacement with its smoothest cell.
-    margin = minimum(zᵛ .- dᵛ .- 2 .* ℓᵐᵃˣᵛ)
-
-    if margin < 0
-        throw(ArgumentError("roughness and zero_plane_displacement leave as little as " *
-                            "$margin m of " *
-                            "clearance. The similarity profile is evaluated at " *
-                            "zᵃᵗ - d and must stay at least 2ℓᵐᵃˣ above the surface, but " *
-                            "the atmosphere surface layer reaches down to " *
-                            "$(minimum(zᵛ)) m while the displacement reaches " *
-                            "$(maximum(dᵛ)) m and the largest roughness " *
-                            "$(maximum(ℓᵐᵃˣᵛ)) m. Raise the atmosphere " *
-                            "surface_layer_height above d + 2ℓᵐᵃˣ, or lower the " *
-                            "displacement or roughness."))
-    end
-
-    return nothing
-end
 
 function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
                                   Tₛ, qₛ, Δθ, Δq, Δh,
@@ -622,8 +478,7 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
 
     # Tall roughness elements displace the similarity profiles upward by `d`.
     d = flux_formulation.zero_plane_displacement
-    ℓᵐᵃˣ = max(ℓu₀, ℓθ₀, ℓq₀)
-    Δh = displaced_profile_height(Δh, d, ℓᵐᵃˣ)
+    Δh = displaced_profile_height(Δh, d, ℓu₀)
 
     # Transfer coefficients at height `h`
     ϰ = flux_formulation.von_karman_constant

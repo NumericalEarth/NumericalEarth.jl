@@ -23,7 +23,6 @@ export AbstractLand,
        IsotropicFrontalArea, EmpiricalFrontalArea,
        UniformHeight, VariableHeight,
        urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
-       fill_aerodynamic_roughness_gaps!,
        # Atmosphere-facing accessors
        surface_temperature, surface_saturation
 
@@ -52,9 +51,7 @@ using Oceananigans.Utils: launch!, prettysummary, prettytime
 
 using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
-using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger,
-                                                 evaluable_roughness_length,
-                                                 evaluable_zero_plane_displacement
+using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger
 
 # Closure interfaces
 include("energy_balance/energy_balance.jl")

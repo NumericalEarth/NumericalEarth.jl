@@ -30,10 +30,10 @@ per-cell `Field`s — for example from [`urban_roughness`](@ref) or a canopy rou
 closure — localized to each cell before the Monin--Obukhov solve. The slots are
 checked here by [`validate_flux_formulation`](@ref), which rejects a layout
 `state2dindex` cannot read per cell and values the similarity profile cannot
-evaluate: non-finite or non-positive roughness, and a displacement that leaves the
-atmosphere surface layer inside the roughness sublayer. Gap-fill a roughness field
-derived from a building dataset before passing it in — [`urban_roughness`](@ref)
-marks cells of invalid morphometry with `NaN` by design.
+evaluate: non-finite or non-positive roughness, and a non-finite or negative
+displacement. Gap-fill a roughness field derived from a building dataset before
+passing it in — [`urban_roughness`](@ref) marks cells of invalid morphometry with
+`NaN` by design.
 
 ```jldoctest
 using NumericalEarth
@@ -70,13 +70,7 @@ function atmosphere_land_interface(grid, atmosphere, land;
                                    temperature         = BulkTemperature(),
                                    velocity_difference = RelativeVelocity(),
                                    specific_humidity   = default_al_specific_humidity(land))
-    # TODO: `ComponentInterfaces` already caches `surface_layer_height(atmosphere, grid)`
-    # in `interfaces.properties`, but it does so in its body while this constructor runs
-    # as a keyword default, so the value cannot be reused here. For a grid-aware
-    # atmosphere (Breeze) that override builds and fills a 2-D `Field`, so this call
-    # duplicates that work once per model build. Building the interfaces inside the
-    # `ComponentInterfaces` body would let the cached value be passed in.
-    validate_flux_formulation(fluxes, grid, surface_layer_height(atmosphere, grid))
+    validate_flux_formulation(fluxes, grid)
 
     al_fluxes = AtmosphereSurfaceFluxes(grid)
     al_properties = InterfaceProperties(specific_humidity, temperature, velocity_difference)
@@ -212,8 +206,8 @@ end
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
     zᵃᵗ = state2dindex(atmosphere_properties.surface_layer_height, i, j)
 
-    # Localize per-cell slots and enforce their clearance at this cell's profile height.
-    local_turbulent_flux_formulation = local_flux_formulation(turbulent_flux_formulation, i, j, zᵃᵗ)
+    # Collapse per-cell slots to this cell's values before the index-free solve.
+    local_turbulent_flux_formulation = local_flux_formulation(turbulent_flux_formulation, i, j)
 
     local_atmosphere_state = (z = zᵃᵗ,
                               u = uᵃᵗ,
