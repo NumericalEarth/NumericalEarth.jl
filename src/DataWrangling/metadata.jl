@@ -831,25 +831,13 @@ end
 """
     matching_resolution_dataset(dataset, grid)
 
-Return the variant of `dataset` read at the coarsest resolution that still resolves `grid`, used
-by `Field(metadatum, grid)` to size the read to the target. Products distributed as very
-high-resolution rasters extend this so a continental window costs a decimated read rather than
-hundreds of gigabytes of native pixels; the default returns `dataset` unchanged, keeping the
-full-resolution read.
+Return the variant of `dataset` read at the coarsest resolution that still resolves `grid`.
+High-resolution rasters extend this so a large window costs a decimated read; the default
+returns `dataset` unchanged.
 
-Coarsening averages, so only continuous fields may extend this — a [`categorical`](@ref) dataset
-is refused.
+Coarsening averages, so only continuous fields may extend this.
 """
 matching_resolution_dataset(dataset, grid) = dataset
-
-"""
-    categorical(dataset)
-
-Whether `dataset` stores class codes rather than continuous quantities. Averaging class codes is
-meaningless, so a categorical dataset is never read at a coarsened resolution: it is aggregated
-by counting instead, over its native pixels.
-"""
-categorical(dataset) = false
 
 """
     dataset_variable_name(metadata)

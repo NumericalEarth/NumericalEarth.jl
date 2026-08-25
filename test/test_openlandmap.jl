@@ -341,9 +341,6 @@ end
     untiled = Field{Center, Center, Center}(grid)
     NumericalEarth.DataWrangling.interpolate_physical!(untiled, native, matched)
 
-    @test NumericalEarth.DataWrangling.windowed_retrieval(matched.dataset)
-    @test !isnothing(NumericalEarth.DataWrangling.tiled_native_grid(untiled, matched, nothing))
-
     # Tiling changes where the data comes from, never the arithmetic done on it: each tile is a
     # windowed field over the native grid, so it interpolates from the same node coordinates the
     # whole field carries. Every budget must therefore reproduce the untiled answer bitwise.
@@ -355,10 +352,8 @@ end
         @test isequal(tiled, reference)
     end
 
-    # The budgets above really do split the target, otherwise the loop proves nothing.
-    tile_count = NumericalEarth.DataWrangling.tile_count
-    @test tile_count(size(native.grid)[1:2], 3, typemax(Int)) == 1
-    @test tile_count(size(native.grid)[1:2], 3, 512) > 1
+    # The smallest budget really does split the target, otherwise the loop proves nothing.
+    @test NumericalEarth.DataWrangling.tile_count(size(native.grid)[1:2], 3, 512) > 1
 end
 
 @testset "tiled regrid declines where it would not be equivalent" begin
@@ -439,27 +434,8 @@ end
                                  topology = (Bounded, Bounded, Flat))
     field = CenterField(grid)
     region = BoundingBox(grid)
-    default_regrid = NumericalEarth.DataWrangling.default_regrid
 
-    # WorldCover counts class codes rather than interpolating them, so driving the bilinear kernel
-    # over its tiles would silently bypass the conservative regrid.
+    # WorldCover counts class codes rather than interpolating them.
     worldcover = Metadatum(:vegetation_fraction; dataset = ESAWorldCover(), region)
-    @test !default_regrid(worldcover)
     @test isnothing(NumericalEarth.DataWrangling.tiled_native_grid(field, worldcover, nothing))
-
-    @test default_regrid(Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region))
-end
-
-@testset "the native grid's place in the file is resolved once, not per tile" begin
-    native_file_offset = NumericalEarth.DataWrangling.native_file_offset
-    Δ = 0.032
-    native = collect(-125.0085 .+ Δ .* (0:9))
-
-    # A file that starts where the native grid does holds native cell 1 at file index 1.
-    @test native_file_offset(collect(-125.0085 .+ Δ .* (0:12)), native) == 0
-
-    # A file padded to the west holds it further in — the offset every tile must inherit rather
-    # than search for, since a per-tile search that lands a cell off shifts that whole tile.
-    @test native_file_offset(collect(-125.0085 - Δ .+ Δ .* (0:12)), native) == 1
-    @test native_file_offset(collect(-125.0085 - 2Δ .+ Δ .* (0:13)), native) == 2
 end

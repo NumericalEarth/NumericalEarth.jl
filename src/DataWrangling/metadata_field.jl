@@ -220,10 +220,8 @@ end
 """
     windowed_retrieval(dataset)
 
-Whether [`retrieve_window`](@ref) can read one horizontal window of `dataset`'s file without
-materializing the whole of it. Datasets large enough that the distinction matters extend this
-together with `retrieve_window`; the default is `false`, and `Field(metadatum, grid)` then
-regrids the window in a single pass.
+Whether `dataset` can read one horizontal window of its file without materializing the whole of
+it. Default `false`.
 """
 windowed_retrieval(dataset) = false
 
@@ -231,9 +229,7 @@ windowed_retrieval(dataset) = false
     default_regrid(metadata)
 
 Whether `metadata` reaches its target through the default bilinear `interpolate_physical!`.
-A metadatum that extends the regrid hook with another scheme — a conservative area weighting, an
-area-majority vote — sets this `false`: tiling drives the bilinear kernel over each tile directly
-and would otherwise bypass the override silently.
+A metadatum that extends the regrid hook with another scheme sets this `false`. Default `true`.
 """
 default_regrid(metadata) = true
 
@@ -241,12 +237,8 @@ default_regrid(metadata) = true
     retrieve_window(metadata, longitude_indices, latitude_indices)
 
 Return `(data, λ, φ)` for one horizontal window of `metadata`'s file: the data, oriented as
-[`retrieve_data`](@ref) orients it and always three-dimensional, together with the cell centers
-the window spans.
-
-The default reads the whole file and views into it — correct for every dataset, but it saves
-nothing. Datasets that flag [`windowed_retrieval`](@ref) extend this to read only the window,
-which is what lets `Field(metadatum, grid)` regrid in tiles.
+`retrieve_data` orients it and always three-dimensional, together with the cell centers the
+window spans. The default reads the whole file and views into it.
 """
 function retrieve_window(metadata::Metadatum, longitude_indices, latitude_indices)
     data = retrieve_data(metadata)
@@ -260,9 +252,8 @@ end
 """
     file_latitude_rows(latitude_count, latitude_indices, reversed)
 
-Rows of a file holding the ascending `latitude_indices` a window asks for. `retrieve_data` flips
-a north-first file (`reversed`) after reading it whole, so a window has to map its rows back into
-the file's own ordering before slicing and flip just those.
+Rows of a file holding the ascending `latitude_indices` a window asks for. A `reversed`
+(north-first) file stores them mirrored.
 """
 function file_latitude_rows(latitude_count, latitude_indices, reversed)
     reversed || return latitude_indices
@@ -272,13 +263,8 @@ end
 """
     netcdf_retrieve_window(metadata, longitude_indices, latitude_indices)
 
-[`retrieve_window`](@ref) for a dataset whose file is the plain lon/lat NetCDF the default
-[`retrieve_data`](@ref) reads, serving the hyperslab without the rest of the variable being
-touched. A dataset large enough to want windowed reads opts in with
-
-    DataWrangling.windowed_retrieval(::MyDataset) = true
-    DataWrangling.retrieve_window(metadata::MyMetadatum, longitude_indices, latitude_indices) =
-        DataWrangling.netcdf_retrieve_window(metadata, longitude_indices, latitude_indices)
+`retrieve_window` for a dataset whose file is the plain lon/lat NetCDF `retrieve_data` reads,
+serving the hyperslab without the rest of the variable being touched.
 """
 function netcdf_retrieve_window(metadata, longitude_indices, latitude_indices)
     path = metadata_path(metadata)
@@ -460,9 +446,7 @@ end
 # area-majority vote for categorical codes) extend this metadatum-dispatched method.
 interpolate_physical!(to_field, from_field, metadata) = interpolate_physical!(to_field, from_field)
 
-# Regrid into one rectangle of the target instead of all of it. `_interpolate_physical!` samples
-# the source at each target node, so restricting the launch restricts which target cells are
-# written; halos are filled once, after the last tile.
+# Regrid into one rectangle of the target instead of all of it.
 function interpolate_physical!(to_field, from_field, metadata, params::KernelParameters)
     to_grid = to_field.grid
     from_grid = from_field.grid
@@ -480,35 +464,17 @@ end
 ##### Tiled regridding — bounding what is resident by the tile, not by the window
 #####
 
-# Index of the file cell holding native cell 1, resolved the way `set_region_data!` resolves it
-# for a whole window. Zero when the file and the native grid start together.
+# Index of the file cell holding native cell 1; zero when file and native grid start together.
 function native_file_offset(coordinates, native_centers)
     i₁, _ = compute_bounding_indices((native_centers[1], native_centers[end]), coordinates)
     return i₁ - 1
 end
 
-"""
-    regrid_stencil_width(metadata)
+# Source data one tile may hold.
+const default_tile_bytes = 64 * 1024^2
 
-Source cells a tile must carry beyond the target points it covers, so the regrid never reaches
-outside its window. One suffices for the bilinear `interpolate_physical!` every dataset uses by
-default; a metadatum whose regrid reads a wider stencil has to widen this to match, or its tiles
-will be served edge-clamped values where a whole-window regrid would have real ones.
-"""
-regrid_stencil_width(metadata) = 1
-
-"""
-    default_tile_bytes()
-
-Bytes of source data one tile of a tiled regrid is allowed to hold. Reading a dataset window in
-tiles of this size keeps the resident source bounded by the tile rather than by the window, so a
-model domain can exceed what its forcing dataset would occupy at native resolution.
-"""
-default_tile_bytes() = 64 * 1024^2
-
-# Cells of an ascending coordinate vector whose centers bracket `[lo, hi]`, widened by `margin`
-# so that every target point a tile covers is strictly inside the window's center hull and the
-# interpolation never has to clamp — which is what makes a tiled regrid agree with a whole one.
+# Cells whose centers bracket `[lo, hi]`, widened by `margin` so bilinear interpolation of any
+# point inside stays within them.
 function bracketing_indices(coordinates, lo, hi; margin = 1)
     n = length(coordinates)
     n < 2 && return 1:n
@@ -535,38 +501,22 @@ end
     regrid_in_tiles!(target, metadata, native, tile_bytes)
 
 Fill `target` from `metadata` in pieces sized to hold at most `tile_bytes` of source each,
-reading only the window each piece needs. Peak residency is one tile's source plus `target`, so neither the dataset's native window
-nor a field on it is ever materialized whole — which is what lets a model domain exceed the
-memory its forcing dataset would occupy at native resolution.
-
-Each tile widens its window by a cell beyond the target points it covers, so the interpolation
-stencil stays inside the window and no target cell is served by an edge-clamped source.
-
-Each tile's source is a windowed `Field` over the native grid rather than a grid rebuilt around
-the window, so every tile interpolates from the same node coordinates the whole field would
-have carried: the result is bitwise identical to an untiled regrid, whatever the tiling. Only
-where the data comes from changes, never the arithmetic done on it.
+reading only the window each piece needs, so peak residency is one tile rather than the whole
+window. Each tile's source is a windowed `Field` over `native`, so the result is bitwise
+identical to an untiled regrid at any tiling.
 """
-function regrid_in_tiles!(target, metadata, native, tile_bytes = default_tile_bytes())
+function regrid_in_tiles!(target, metadata, native, tile_bytes = default_tile_bytes)
     grid = target.grid
-    # The source window is never partitioned across ranks, so it is built on the local device.
     arch = child_architecture(grid)
     LX, LY, LZ = location(metadata)
 
     λ, φ = read_file_coords(metadata)
-    # The staggering trait compares the file's latitude count against the dataset's, so it has to
-    # be resolved on the whole file and carried into each tile.
     mangling = mangling_for(metadata, length(φ))
 
-    stencil = regrid_stencil_width(metadata)
     λn = λnodes(native, Center(), Center(), Center())
     φn = φnodes(native, Center(), Center(), Center())
     λt, φt = horizontal_centers(grid)
 
-    # Where the native grid sits in the file, resolved once over the whole grid. A tile then
-    # indexes the file by construction: searching per tile can land a cell off, and a window the
-    # same length as its sub-grid leaves `set_region_data!` no slack to correct it — the whole
-    # tile shifts by a cell instead, which at a coastline swaps land for ocean.
     offset_i = native_file_offset(λ, λn)
     offset_j = native_file_offset(φ, φn)
     Nx, Ny, Nz = size(grid)
@@ -579,16 +529,12 @@ function regrid_in_tiles!(target, metadata, native, tile_bytes = default_tile_by
         target_i = tile_range(Nx, ni, it)
         target_j = tile_range(Ny, nj, jt)
 
-        # Native cells the tile's target points need, then the file cells those sit on.
-        source_i = bracketing_indices(λn, λt[first(target_i)], λt[last(target_i)]; margin = stencil)
-        source_j = bracketing_indices(φn, φt[first(target_j)], φt[last(target_j)]; margin = stencil)
+        source_i = bracketing_indices(λn, λt[first(target_i)], λt[last(target_i)])
+        source_j = bracketing_indices(φn, φt[first(target_j)], φt[last(target_j)])
 
         window_i = (first(source_i) + offset_i):(last(source_i) + offset_i)
         window_j = (first(source_j) + offset_j):(last(source_j) + offset_j)
 
-        # The tile's source is a window *of the native grid itself*, not a grid rebuilt around
-        # the window: it shares `native`, so its nodes are the same numbers and the regrid does
-        # the same arithmetic it would have done on the whole field. Only the array is smaller.
         data, λw, φw = retrieve_window(metadata, window_i, window_j)
         source = Field{LX, LY, LZ}(native; indices = (source_i, source_j, :))
         set_region_data!(source, data, λw, φw, metadata; mangling,
@@ -638,13 +584,12 @@ function tiled_native_grid(target, metadata, inpainting; halo = (3, 3, 3))
 end
 
 """
-    regrid_from_metadata!(target, metadata; tile_bytes = default_tile_bytes(), kw...)
+    regrid_from_metadata!(target, metadata; tile_bytes = default_tile_bytes, kw...)
 
-Fill `target` from `metadata`, regridding in tiles where that is both possible and exactly
-equivalent (see [`regrid_in_tiles!`](@ref)) and in a single pass otherwise. Keyword arguments
-other than `tile_bytes` go to the native-grid `Field(metadata, arch; …)`.
+Fill `target` from `metadata`, regridding in tiles where possible and in a single pass
+otherwise. Keyword arguments other than `tile_bytes` go to `Field(metadata, arch; …)`.
 """
-function regrid_from_metadata!(target, metadata; tile_bytes = default_tile_bytes(), kw...)
+function regrid_from_metadata!(target, metadata; tile_bytes = default_tile_bytes, kw...)
     options = values(kw)
     inpainting = get(options, :inpainting, default_inpainting(metadata))
     halo = get(options, :halo, (3, 3, 3))
@@ -661,17 +606,12 @@ end
 """
     target_matched_metadata(metadatum, grid)
 
-Return `metadatum` rebuilt on the dataset variant [`matching_resolution_dataset`](@ref) selects
-for `grid`. The rebuild re-derives the filename, so a read matched to a coarse target and a
-full-resolution read of the same window never share a cached file.
+Return `metadatum` rebuilt on the dataset variant `matching_resolution_dataset` selects for
+`grid`. The rebuild re-derives the filename, so each lattice caches separately.
 """
 function target_matched_metadata(metadatum::Metadatum, grid)
     dataset = matching_resolution_dataset(metadatum.dataset, grid)
     dataset === metadatum.dataset && return metadatum
-
-    categorical(dataset) &&
-        throw(ArgumentError("$(summary(dataset)) stores class codes, which cannot be averaged " *
-                            "onto a coarser read lattice; aggregate its native pixels instead."))
 
     return Metadatum(metadatum.name; dataset, region = metadatum.region,
                      date = metadatum.dates, dir = metadatum.dir)
@@ -699,7 +639,7 @@ skips the lookup and overwrites the entry with a freshly regridded result.
 """
 function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid;
                                    cache = false, overwrite_cache = false,
-                                   tile_bytes = default_tile_bytes(), kw...)
+                                   tile_bytes = default_tile_bytes, kw...)
     metadata = target_matched_metadata(metadata, grid)
     LX, LY, LZ = location(metadata)
 
