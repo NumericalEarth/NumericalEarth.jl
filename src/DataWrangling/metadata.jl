@@ -818,9 +818,8 @@ function matching_single_level_dataset end
 """
     minimum_horizontal_spacing(grid)
 
-Return the smallest horizontal cell spacing of `grid` in degrees — the finest scale a dataset
-has to resolve to fill every cell of `grid`. For a distributed grid the result is the global
-minimum, identically on every rank.
+Return the smallest horizontal cell spacing of `grid` in degrees. For a distributed grid the
+result is the global minimum, identically on every rank.
 """
 function minimum_horizontal_spacing(grid)
     Δλ = minimum(λspacings(grid, Center(), Center(), Center()))
