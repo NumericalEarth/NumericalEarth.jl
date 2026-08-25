@@ -11,13 +11,12 @@
 #####
 
 using Oceananigans.Fields: Center, Field
-using NumericalEarth.EarthSystemModels: radiating_temperature
 using NumericalEarth.EarthSystemModels.InterfaceComputations: CanopyAirSpaceDiagnostics
 
 const BreezeRTM = Breeze.RadiativeTransferModel
 
 function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_properties(rtm::BreezeRTM, interfaces)
-    Tˢ = radiating_temperature(interfaces)
+    Tˢ = NumericalEarth.EarthSystemModels.surface_temperature(interfaces)
     isnothing(Tˢ) && return rtm
     return bind_surface_properties(rtm, Tˢ, land_interface_temperature(interfaces),
                                    interfaces.exchanger.grid)
@@ -27,17 +26,13 @@ land_interface_temperature(interfaces) = interface_temperature(interfaces.atmosp
 interface_temperature(::Nothing) = nothing
 interface_temperature(interface) = interface.temperature
 
-# A single-source surface emits and reflects with the same ε and α the RTM applies, so its own
-# fields are already exact; an explicitly constructed `surface_temperature` wins.
 function bind_surface_properties(rtm, Tˢ, temperature, grid)
     isnothing(rtm.surface_properties.surface_temperature) || return rtm
     return @set rtm.surface_properties.surface_temperature = Tˢ
 end
 
-# A canopy carries its own optics, so both what it radiates and what it reflects are results of
-# its solve rather than configuration. The coupler owns the fields it republishes each step,
-# overriding explicitly constructed ones. One albedo field feeds both the direct and diffuse
-# slots: the two-source split is broadband.
+# The coupler owns and republishes both fields for a canopy. One albedo field feeds the direct
+# and diffuse slots alike: the two-source split is broadband.
 function bind_surface_properties(rtm, Tˢ, ::CanopyAirSpaceDiagnostics, grid)
     α = Field{Center, Center, Nothing}(grid)
     rtm = @set rtm.surface_properties.surface_temperature = Field{Center, Center, Nothing}(grid)
@@ -45,23 +40,13 @@ function bind_surface_properties(rtm, Tˢ, ::CanopyAirSpaceDiagnostics, grid)
     return @set rtm.surface_properties.diffuse_surface_albedo = α
 end
 
-# RRTMGP emits ε σ T⁴ + (1 - ε) ℐꜜˡʷ, but a canopy's `Teff` already carries the reflected
-# downwelling, so binding it directly would apply the reflection twice. Bind instead the
-# temperature that makes RRTMGP reproduce the canopy's upwelling exactly,
-#
-#     ε σ Tʳ⁴ + (1 - ε) ℐꜜˡʷ = σ Teff⁴.
-#
-# `ℐꜜˡʷ` is the previous solve's, so what survives is (1 - ε) times its change between solves
-# rather than (1 - ε) times the full surface-to-sky contrast. The albedo needs no inversion:
-# RRTMGP reflects α ℐꜜˢʷ, which is exactly what the canopy leaves unabsorbed once α is its own.
-@kernel function _publish_canopy_radiative_properties!(Tʳ, α, Teff, αeff, ℐꜜˡʷ, ε, σ)
+# The canopy's upwelling σ Teff⁴ already carries the reflected downwelling, so RRTMGP is given
+# the temperature that reproduces it: ε σ Tˢ⁴ + (1 - ε) ℐꜜˡʷ = σ Teff⁴.
+@kernel function _publish_canopy_radiative_properties!(Tˢ, α, Teff, αeff, ℐꜜˡʷ, ε, σ)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        Tᵉ = Teff[i, j, 1]
         εᵢⱼ = ε[i, j, 1]
-        source = (σ * Tᵉ^4 - (1 - εᵢⱼ) * ℐꜜˡʷ[i, j, 1]) / εᵢⱼ
-        invertible = (Tᵉ > 0) & (εᵢⱼ > 0) & (source > 0)
-        Tʳ[i, j, 1] = ifelse(invertible, sqrt(sqrt(max(source, zero(source)) / σ)), Tᵉ)
+        Tˢ[i, j, 1] = sqrt(sqrt((σ * Teff[i, j, 1]^4 - (1 - εᵢⱼ) * ℐꜜˡʷ[i, j, 1]) / (εᵢⱼ * σ)))
         α[i, j, 1] = αeff[i, j, 1]
     end
 end

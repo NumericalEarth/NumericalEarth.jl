@@ -825,8 +825,7 @@ closes.
     SWᵛ = (1 - αˡᶠ) * (1 - ftrans) * SW
     SWᵍ = ftrans * (1 - αᵍ) * SW
 
-    # What the column reflects, so an atmosphere reflecting on its own behalf can be given the
-    # same number the two-source split absorbs against.
+    # The column's shortwave albedo: the complement of what the two-source split absorbs.
     αeff = 1 - ((1 - αˡᶠ) * (1 - ftrans) + ftrans * (1 - αᵍ))
 
     Tᵛ  = Tˡᵃ

@@ -141,7 +141,6 @@ export
     UniformHeight, VariableHeight,
     urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
     surface_temperature,
-    radiating_temperature,
     regrid_bathymetry,
     regrid_topography,
     smooth_topography!,

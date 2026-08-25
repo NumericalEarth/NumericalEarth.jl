@@ -238,23 +238,6 @@ EarthSystemModels.surface_temperature(::Nothing, ocean_interface::AtmosphereInte
     ocean_interface.temperature
 EarthSystemModels.surface_temperature(::Nothing, ::Nothing) = nothing
 
-# A `CanopyAirSpace` radiates from its two-source blend (σ Teff⁴ ≡ the canopy + ground
-# upwelling), which is neither the node it exposes to the atmosphere nor either skin.
-@inline interface_radiating_temperature(t) = interface_node_temperature(t)
-@inline interface_radiating_temperature(t::CanopyAirSpaceDiagnostics) = t.effective
-
-EarthSystemModels.radiating_temperature(interface::AtmosphereInterface) =
-    interface_radiating_temperature(interface.temperature)
-EarthSystemModels.radiating_temperature(interfaces::ComponentInterfaces) =
-    EarthSystemModels.radiating_temperature(interfaces.atmosphere_land_interface,
-                                            interfaces.atmosphere_ocean_interface)
-
-EarthSystemModels.radiating_temperature(land_interface::AtmosphereInterface, ocean_interface) =
-    interface_radiating_temperature(land_interface.temperature)
-EarthSystemModels.radiating_temperature(::Nothing, ocean_interface::AtmosphereInterface) =
-    ocean_interface.temperature
-EarthSystemModels.radiating_temperature(::Nothing, ::Nothing) = nothing
-
 #####
 ##### Atmosphere-Ocean Interface
 #####

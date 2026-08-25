@@ -140,12 +140,6 @@ EarthSystemModels.surface_temperature(ti::TiledLandInterface) = interface_node_t
 EarthSystemModels.surface_temperature(ti::TiledLandInterface, ::Nothing) =
     EarthSystemModels.surface_temperature(ti)
 
-# The tiles' blend, formed in radiance space by `_blend_tiled_land_fluxes!`.
-EarthSystemModels.radiating_temperature(ti::TiledLandInterface) =
-    interface_radiating_temperature(ti.temperature)
-EarthSystemModels.radiating_temperature(ti::TiledLandInterface, ::Nothing) =
-    EarthSystemModels.radiating_temperature(ti)
-
 # Checkpointing: each tile is an ordinary `AtmosphereInterface`, so its prognostic
 # interface state (canopy-air node, prognostic skin) round-trips tile by tile.
 interface_prognostic_state(ti::TiledLandInterface) =
@@ -231,8 +225,7 @@ end
         Teffᵇ = bare_temperature.effective[i, j, 1]
         blended_temperature.effective[i, j, 1] = (f * Teffᵛ^4 + g * Teffᵇ^4)^convert(FT, 1//4)
 
-        # Both tiles reflect the same incident shortwave, so the mosaic's albedo is the plain
-        # area weight of theirs.
+        # Both tiles see the same incident shortwave, so the mosaic albedo is their area weight.
         blended_temperature.effective_albedo[i, j, 1] =
             f * veg_temperature.effective_albedo[i, j, 1] + g * bare_temperature.effective_albedo[i, j, 1]
     end

@@ -70,7 +70,6 @@ export
     ThreeEquationHeatFlux,
     # Friction velocity formulations
     MomentumBasedFrictionVelocity,
-    radiating_temperature,
     default_stop_time
 
 import Dates

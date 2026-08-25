@@ -110,16 +110,6 @@ apply_air_land_radiative_fluxes!(::Any) = nothing
 function surface_temperature end
 surface_temperature(::Any) = nothing
 
-"""
-    radiating_temperature(interfaces)
-
-The surface temperature whose `ε σ T⁴` closes the upwelling longwave. Equal to
-`surface_temperature` except for a canopy, which radiates from its canopy/ground blend
-rather than from the canopy-air node.
-"""
-function radiating_temperature end
-radiating_temperature(::Any) = nothing
-
 #####
 ##### Soil-water retention, published by the land to the interface
 #####

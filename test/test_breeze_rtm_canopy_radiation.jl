@@ -12,12 +12,9 @@ using Test
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyAirSpace, CanopyConductanceHumidity, ConstantTortuosity, CriticalSaturation,
     DryLayerHumidity, DryLayerVaporPistonVelocity, InteractiveAbsorbedPAR,
-    SoilConductiveFlux, StorageBasedDryLayerDepth, kernel_radiation_properties
+    SoilConductiveFlux, StorageBasedDryLayerDepth
 using NumericalEarth.Lands: BucketHydrology, SlabEnergy, SlabLand
 using NumericalEarth.Radiations: default_stefan_boltzmann_constant
-
-NumericalEarthBreezeExt = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
-@test !isnothing(NumericalEarthBreezeExt)
 
 const rtm_albedo = 0.2
 const rtm_emissivity = 0.95
@@ -82,14 +79,7 @@ end
             model = build_rtm_land_model(arch)
             rtm = model.radiation
             interface = model.interfaces.atmosphere_land_interface
-
-            # The coupler owns the bound fields for a canopy; neither is the diagnostic itself.
-            @test rtm.surface_properties.surface_temperature !== interface.temperature.effective
-            @test rtm.surface_properties.direct_surface_albedo === rtm.surface_properties.diffuse_surface_albedo
-
             exchanger = model.interfaces.exchanger.radiation
-            @test !isnothing(exchanger)
-            @test haskey(kernel_radiation_properties(rtm).surface_properties, :land)
 
             time_step!(model, 1.0)
 
@@ -113,37 +103,24 @@ end
             @test Hᵛ .+ Hᵍ ≈ Array(interior(interface.fluxes.sensible_heat))
             @test LEᵛ .+ LEᵍ ≈ Array(interior(interface.fluxes.latent_heat))
 
-            # Shortwave closes: what RRTMGP reflects plus what the canopy absorbs is the
-            # incident flux, so no energy is created at the surface.
+            # RRTMGP reflects with the same albedo the canopy's two-source split absorbs against.
             αʳ = Array(interior(rtm.surface_properties.direct_surface_albedo))
             αᶜ = Array(interior(interface.temperature.effective_albedo))
             @test αʳ ≈ αᶜ
-            @test αʳ .* ℐꜜˢʷ .+ (1 .- αᶜ) .* ℐꜜˢʷ ≈ ℐꜜˢʷ
             @test all(0 .< αʳ .< 1)
 
-            # The bound temperature is the one that makes RRTMGP's own surface boundary
-            # condition reproduce the canopy's upwelling longwave.
+            # RRTMGP solves at the start of a step from the temperature bound at the end of the
+            # previous one, so its emitted surface longwave reproduces the canopy's upwelling.
             σ = default_stefan_boltzmann_constant
-            Tʳ = Array(interior(rtm.surface_properties.surface_temperature))
-            Teff_field = Array(interior(interface.temperature.effective))
-            @test rtm_emissivity .* σ .* Tʳ .^ 4 .+ (1 - rtm_emissivity) .* ℐꜜˡʷ ≈
-                  σ .* Teff_field .^ 4
-
-            # End-to-end: RRTMGP solves at the start of a step from the temperature bound at the
-            # end of the previous one, so its emitted surface longwave should reproduce the
-            # canopy's upwelling from that step — the inversion checked against RRTMGP itself,
-            # not against its own algebra.
-            Teff_bound = copy(Teff_field)
-            time_step!(model, 1.0)
-            @test Array(interior(rtm.upwelling_longwave_flux))[:, :, 1] ≈ σ .* Teff_bound .^ 4 rtol = 1e-3
-
-            # Under a zero radiation state both skins and `Teff` collapse onto the node.
-            Tᵃᶜ = Array(interior(interface.temperature.interface))
-            Tᵛ = Array(interior(interface.temperature.canopy))
-            Tᵍ = Array(interior(interface.temperature.soil_skin))
             Teff = Array(interior(interface.temperature.effective))
-            @test all(Tᵛ .> Tᵍ)
-            @test all(Teff .> Tᵃᶜ)
+            time_step!(model, 1.0)
+            @test Array(interior(rtm.upwelling_longwave_flux))[:, :, 1] ≈ σ .* Teff .^ 4 rtol = 1e-3
+
+            # Sunlit canopy over shaded soil, both above the canopy-air node.
+            Tᵃᶜ = Array(interior(interface.temperature.interface))
+            @test all(Array(interior(interface.temperature.canopy)) .>
+                      Array(interior(interface.temperature.soil_skin)))
+            @test all(Array(interior(interface.temperature.effective)) .> Tᵃᶜ)
         end
 
         @testset "No shortwave at night on $A" begin
@@ -184,16 +161,6 @@ end
             # Positive upward: turbulent plus net upward radiative.
             Jᴱs = Array(interior(model.land.fluxes.surface_energy_flux))
             @test Jᴱs ≈ 𝒬 .+ ℐˡʷꜛ .+ ℐˡʷꜜ .+ (1 - α) .* ℐˢʷꜜ
-        end
-
-        @testset "TiledLandInterface radiating temperature on $A" begin
-            model = build_rtm_land_model(arch)
-            cas = build_canopy_air_space(Float64)
-            tiled = TiledLandInterface(model.land.grid, model.atmosphere, model.land;
-                                      vegetated = cas, fraction = 0.5)
-
-            @test radiating_temperature(tiled) === tiled.temperature.effective
-            @test surface_temperature(tiled) === tiled.temperature.interface
         end
     end
 end

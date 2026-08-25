@@ -213,7 +213,9 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 |:----:|:----:|:---------|:------------|
 | ``\sigma`` | `σ` | Stefan–Boltzmann constant | (W m⁻² K⁻⁴) |
 | ``\alpha`` | `α` | albedo | Surface reflectivity (–) |
+| ``\alpha^{\mathrm{eff}}`` | `αeff` | column albedo | Broadband shortwave albedo of the canopy + ground column (–) |
 | ``\epsilon`` | `ϵ` | emissivity | Surface emissivity (–) |
+| ``T^{\mathrm{eff}}`` | `Teff` | radiating temperature | Two-source blend whose ``\sigma (T^{\mathrm{eff}})^4`` is the canopy + ground upwelling longwave (K) |
 
 ## Similarity theory / surface layer
 
