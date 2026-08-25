@@ -67,19 +67,6 @@ DataWrangling.all_dates(::MultiYearJRA55, name) = JRA55_multiple_year_dates[name
 # Fallback, if we not provide the name, take the highest frequency
 DataWrangling.all_dates(dataset::JRA55Dataset) = all_dates(dataset, :temperature)
 
-# Valid for all JRA55 datasets
-function JRA55_time_indices(dataset, dates, name)
-    all_JRA55_dates = all_dates(dataset, name)
-    indices = Int[]
-
-    for date in dates
-        index = findfirst(x -> x == date, all_JRA55_dates)
-        !isnothing(index) && push!(indices, index)
-    end
-
-    return indices
-end
-
 # File name generation specific to each Dataset dataset
 # Note that `RepeatYearJRA55` has only one file associated, so the filename
 # is independent of the date. Override the multi-date fallback to return a plain String.

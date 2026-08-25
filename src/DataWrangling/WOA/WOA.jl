@@ -135,13 +135,9 @@ DataWrangling.dataset_variable_name(data::WOAMetadata) = WOA_variable_names[data
 
 DataWrangling.is_three_dimensional(::WOAMetadata) = true
 
-function inpainted_metadata_filename(metadata::WOAMetadatum)
-    without_extension = metadata.filename[1:end-3]
-    var = string(metadata.name)
-    return without_extension * "_" * var * "_inpainted.jld2"
-end
+DataWrangling.inpainted_metadata_filename(metadata::WOAMetadatum) =
+    metadata.filename[1:end-3] * "_" * string(metadata.name) * "_inpainted.jld2"
 
-DataWrangling.inpainted_metadata_path(metadata::WOAMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 # Custom retrieve_data: WOA NetCDF files contain Missing values (from _FillValue)
 # which must be converted to NaN before the GPU kernel in set_metadata_field!.

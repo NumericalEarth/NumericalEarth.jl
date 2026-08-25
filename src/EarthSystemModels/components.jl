@@ -128,11 +128,8 @@ adopt_clock(::Nothing, clock) = nothing
 
 function adopt_clock(simulation::Simulation, clock)
     same_time_type(simulation.model.clock.time, clock.time) && return simulation
-    throw(ArgumentError(string(
-        "the simulation clock tracks time as ", typeof(simulation.model.clock.time),
-        " but the EarthSystemModel clock uses ", typeof(clock.time), ". A Simulation's clock type ",
-        "follows its grid and cannot be coerced; rebuild the simulation on a grid ",
-        "with float type ", typeof(clock.time), ", or construct the EarthSystemModel with a matching `clock`.")))
+    throw(ArgumentError(string("the simulation clock tracks time as ", typeof(simulation.model.clock.time),
+                               " but the EarthSystemModel clock uses ", typeof(clock.time))))
 end
 
 same_time_type(::TT, ::ST) where {TT, ST} = ST === TT

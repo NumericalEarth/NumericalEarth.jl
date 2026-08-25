@@ -99,13 +99,9 @@ end
 const EN4_url_pre2021  = "http://www.metoffice.gov.uk/hadobs/en4/data/en4-2-1/EN.4.2.2/EN.4.2.2.analyses.g10."
 const EN4_url_post2021 = "http://www.metoffice.gov.uk/hadobs/en4/data/en4-2-1/EN.4.2.2.analyses.g10."
 
-function inpainted_metadata_filename(metadata::EN4Metadatum)
-    without_extension = metadata.filename[1:end-3]
-    var = string(metadata.name)
-    return without_extension * "_" * var *"_inpainted.jld2"
-end
+DataWrangling.inpainted_metadata_filename(metadata::EN4Metadatum) =
+    metadata.filename[1:end-3] * "_" * string(metadata.name) * "_inpainted.jld2"
 
-DataWrangling.inpainted_metadata_path(metadata::EN4Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 """
     EN4Metadatum(name;

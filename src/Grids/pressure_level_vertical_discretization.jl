@@ -299,13 +299,8 @@ end
     kk = ifelse(z_hi == z_lo, oftype(z, low),
                 (high - low) / (z_hi - z_lo) * (z - z_lo) + low)
     FT = eltype(grid)
-    # Clamp to a valid, above-ground fractional index. The lower bound is the first above-ground level
-    # (not 1): `clip_subsurface!` fixes column monotonicity but leaves the raw ERA5 sub-surface data on
-    # the clipped levels, so a target near/below high terrain must snap to the lowest above-ground level
-    # rather than blend that data. The upper bound guards a target above the column top. (An unclamped
-    # `kk` outside [1, Nz] also drives the downstream `@inbounds` interpolator read out of bounds —
-    # finite-but-clamped on the CPU, but uninitialized garbage on the GPU, which NaN'd the
-    # terrain-following ERA5 initial state.)
+    # Clamp to the first above-ground level rather than 1: the clipped levels still carry raw
+    # sub-surface data, and an index outside [1, Nz] reads the interpolator out of bounds.
     k_sfc = first_above_surface_level(i, j, grid)
     return clamp(convert(FT, kk), convert(FT, k_sfc), convert(FT, grid.Nz))
 end

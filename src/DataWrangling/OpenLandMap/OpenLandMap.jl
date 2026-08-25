@@ -16,7 +16,7 @@ import Oceananigans
 
 download_OpenLandMap_cache::String = ""
 function __init__()
-    return global download_OpenLandMap_cache = DataWrangling.download_cache("OpenLandMap")
+    global download_OpenLandMap_cache = DataWrangling.download_cache("OpenLandMap")
 end
 
 """
@@ -131,8 +131,6 @@ Oceananigans.Fields.location(::OpenLandMapSoilDBMetadatum) = (Center, Center, Ce
 # Pass an explicit `inpainting = NearestNeighborInpainting(n)` to `Field` to fill them.
 DataWrangling.default_inpainting(::OpenLandMapSoilDBMetadatum) = nothing
 
-DataWrangling.inpainted_metadata_path(metadata::OpenLandMapSoilDBMetadatum) =
-    joinpath(metadata.dir, replace(metadata.filename, ".nc" => "_inpainted.jld2"))
 
 #####
 ##### Regional-window filename (variable + region)

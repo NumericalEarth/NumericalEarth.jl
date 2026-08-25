@@ -94,47 +94,24 @@ end
     kᴺ   = size(grid, 3) # index of the top ocean cell
     time = Time(clock.time)
 
-    @inbounds begin
-        uᵃᵗ = atmosphere_state.u[i, j, 1]
-        vᵃᵗ = atmosphere_state.v[i, j, 1]
-        Tᵃᵗ = atmosphere_state.T[i, j, 1]
-        pᵃᵗ = atmosphere_state.p[i, j, 1]
-        qᵃᵗ = atmosphere_state.q[i, j, 1]
-    end
-
-    # Build thermodynamic and dynamic states in the atmosphere and interface.
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
-    zᵃᵗ = state2dindex(atmosphere_properties.surface_layer_height, i, j) # elevation of atmos variables relative to interface
+    Ψₐ  = local_atmosphere_state(i, j, atmosphere_state, atmosphere_properties)
 
-    local_atmosphere_state = (z = zᵃᵗ,
-                              u = uᵃᵗ,
-                              v = vᵃᵗ,
-                              T = Tᵃᵗ,
-                              p = pᵃᵗ,
-                              q = qᵃᵗ,
-                              h_bℓ = state2dindex(atmosphere_state.h_bℓ, i, j))
+    interior = assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, interface_properties.temperature_formulation)
+    Tᵒᶜ = interior.T
+    Sᵒᶜ = interior.S
 
-    local_interior_state = assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, interface_properties.temperature_formulation)
-
-    uᵒᶜ = local_interior_state.u
-    vᵒᶜ = local_interior_state.v
-    Tᵒᶜ = local_interior_state.T
-    Sᵒᶜ = local_interior_state.S
-
-    # Local radiative state at this cell. Returns zero-valued state when
-    # radiation is off.
     radiation_state = air_sea_interface_radiation_state(radiation_kernel_props,
                                                         radiation_exchanger_state,
                                                         i, j, kᴺ, grid, time)
 
-    # Estimate initial interface state
     FT = typeof(Tᵒᶜ)
     u★ = convert(FT, 1e-4)
 
     # Estimate interface specific humidity using interior temperature
     q_formulation = interface_properties.specific_humidity_formulation
-    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tᵒᶜ, Sᵒᶜ)
-    initial_interface_state = AirSeaInterfaceState(u★, u★, u★, uᵒᶜ, vᵒᶜ, Tᵒᶜ, Sᵒᶜ, qₛ)
+    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Ψₐ.p, Tᵒᶜ, Sᵒᶜ)
+    initial_interface_state = AirSeaInterfaceState(u★, u★, u★, interior.u, interior.v, Tᵒᶜ, Sᵒᶜ, qₛ)
 
     # Don't use convergence criteria in an inactive cell
     stop_criteria = turbulent_flux_formulation.solver_stop_criteria
@@ -146,8 +123,8 @@ end
     else
         interface_state = compute_interface_state(turbulent_flux_formulation,
                                                   initial_interface_state,
-                                                  local_atmosphere_state,
-                                                  local_interior_state,
+                                                  Ψₐ,
+                                                  interior,
                                                   radiation_state,
                                                   interface_properties,
                                                   atmosphere_properties,
@@ -155,43 +132,10 @@ end
     end
 
     # In the case of FixedIterations, make sure interface state is zero'd
-    interface_state = ifelse(not_water, zero_interface_state(FT), interface_state)
+    Ψₛ = ifelse(not_water, zero_interface_state(FT), interface_state)
+    ℒˡ = AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, Ψₐ.T)
+    Tₛ = convert_from_kelvin(ocean_properties.temperature_units, Ψₛ.temperature)
 
-    u★ = interface_state.fluxes.u★
-    θ★ = interface_state.fluxes.θ★
-    q★ = interface_state.fluxes.q★
-
-    Ψₛ = interface_state
-    Ψₐ = local_atmosphere_state
-    Δu, Δv = velocity_difference(interface_properties.velocity_formulation, Ψₐ, Ψₛ)
-    ΔU = sqrt(Δu^2 + Δv^2)
-
-    τˣ = ifelse(ΔU == 0, zero(grid), - u★^2 * Δu / ΔU)
-    τʸ = ifelse(ΔU == 0, zero(grid), - u★^2 * Δv / ΔU)
-
-    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
-    cᵖᵐ = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, qᵃᵗ) # moist heat capacity
-    ℒˡ = AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, Tᵃᵗ)
-
-    # Store fluxes
-    𝒬ᵛ  = interface_fluxes.latent_heat
-    𝒬ᵀ  = interface_fluxes.sensible_heat
-    Jᵛ  = interface_fluxes.water_vapor
-    ρτˣ = interface_fluxes.x_momentum
-    ρτʸ = interface_fluxes.y_momentum
-    Ts  = interface_temperature
-
-    @inbounds begin
-        # +0: cooling, -0: heating
-        𝒬ᵛ[i, j, 1]  = - ρᵃᵗ * ℒˡ * u★ * q★
-        𝒬ᵀ[i, j, 1]  = - ρᵃᵗ * cᵖᵐ * u★ * θ★
-        Jᵛ[i, j, 1]  = - ρᵃᵗ * u★ * q★
-        ρτˣ[i, j, 1] = + ρᵃᵗ * τˣ
-        ρτʸ[i, j, 1] = + ρᵃᵗ * τʸ
-        Ts[i, j, 1]  = convert_from_kelvin(ocean_properties.temperature_units, Ψₛ.temperature)
-
-        interface_fluxes.friction_velocity[i, j, 1] = u★
-        interface_fluxes.temperature_scale[i, j, 1] = θ★
-        interface_fluxes.water_vapor_scale[i, j, 1] = q★
-    end
+    store_interface_fluxes!(interface_fluxes, interface_temperature, i, j, Ψₛ, Ψₐ, ℂᵃᵗ, ℒˡ, Tₛ, interface_properties)
+    store_interface_scales!(interface_fluxes, i, j, Ψₛ)
 end

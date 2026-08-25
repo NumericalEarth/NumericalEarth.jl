@@ -25,7 +25,7 @@ using NCDatasets: NCDatasets
 using Printf: Printf, @sprintf
 using Statistics: Statistics, mean
 
-using ..DataWrangling: DataWrangling, Metadata, Metadatum, MetadataSet, BoundingBox, InverseGravity,
+using ..DataWrangling: DataWrangling, Metadata, Metadatum, MetadataSet, BoundingBox, InverseGravity, prescribed_radiation,
                        MetersPerHour, JoulesPerSquareMeterPerHour, metadata_path,
                        native_grid, dataset_variable_name, available_variables, retrieve_data,
                        first_date, last_date, native_times, set_metadata_field!, DatasetBackend,
@@ -131,26 +131,20 @@ function DataWrangling.metadata_filename(dataset::ERA5Dataset, name, date, regio
 end
 
 
-function inpainted_metadata_filename(metadata::ERA5Metadatum)
-    without_extension = metadata.filename[1:end-3]
-    return without_extension * "_inpainted.jld2"
-end
 
-DataWrangling.inpainted_metadata_path(metadata::ERA5Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 #####
 ##### Pure Julia CDS client (replaces Python era5cli)
 #####
 
 # CDS client is loaded via NumericalEarthCDSClientExt extension when HTTP/JSON3 are available
-# The extension exports: download_era5, read_cds_credentials, cds_variable_name
+# The extension exports: download_era5, read_cds_credentials
 # Users need to: using HTTP, JSON3  (or just using HTTP if JSON3 is already loaded)
 
 #####
 ##### Single-level and pressure-level specifics
 #####
 
-include("ERA5_variables.jl")
 include("ERA5_single_levels.jl")
 include("ERA5_land.jl")
 include("ERA5_field_time_series.jl")  # Yearly file reading (like JRA55)

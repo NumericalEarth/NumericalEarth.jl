@@ -260,9 +260,8 @@ DataWrangling.default_inpainting(::ASTERGEDMetadatum) = NearestNeighborInpaintin
 
 # The regional NetCDF is variable-independent, so key the inpainted cache on the
 # variable name too; otherwise emissivity and uncertainty would collide.
-DataWrangling.inpainted_metadata_path(metadata::ASTERGEDMetadatum) =
-    joinpath(metadata.dir,
-             string("inpainted_", metadata.name, "_", replace(metadata.filename, ".nc" => ".jld2")))
+DataWrangling.inpainted_metadata_filename(metadata::ASTERGEDMetadatum) =
+    string("inpainted_", metadata.name, "_", replace(metadata.filename, ".nc" => ".jld2"))
 
 # Coordinate variable names in the regional NetCDF written by the download step.
 DataWrangling.longitude_name(::ASTERGEDMetadatum) = "lon"

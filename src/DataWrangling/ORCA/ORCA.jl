@@ -41,8 +41,6 @@ all_dates(::ORCADataset, args...) = nothing
 first_date(::ORCADataset, args...) = nothing
 last_date(::ORCADataset, args...) = nothing
 
-const ORCAOneMetadatum = Metadatum{<:ORCAOne}
-const ORCAQuarterMetadatum = Metadatum{<:ORCAQuarter}
 const ORCATwelfthMetadatum = Metadatum{<:ORCATwelfth}
 const ORCAMetadatum = Metadatum{<:ORCADataset}
 

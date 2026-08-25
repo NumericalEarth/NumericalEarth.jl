@@ -54,8 +54,7 @@ end
 
 flux_variables(::ForceRestoreEnergy) = (:surface_energy_flux,)
 
-# The closure rides into `_step_land_temperature!` whole, so Field-valued
-# properties must adapt to their GPU forms.
+# Field-valued properties must adapt to their GPU forms.
 Adapt.adapt_structure(to, energy::ForceRestoreEnergy) =
     ForceRestoreEnergy(Adapt.adapt(to, energy.dry_heat_capacity),
                        Adapt.adapt(to, energy.liquid_heat_capacity),

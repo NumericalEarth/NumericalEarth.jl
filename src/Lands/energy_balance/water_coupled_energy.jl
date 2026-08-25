@@ -90,13 +90,8 @@ function WaterCoupledEnergy(FT::Type = Oceananigans.defaults.FloatType;
             "WaterCoupledEnergy requires exactly one of " *
             "`deep_conductance` (Λᵈᵉᵉᵖ, W m⁻² K⁻¹) or `deep_time_scale` (τᵈᵉᵉᵖ, s)."))
     end
-    # The surface-advective term needs the temperature of incoming liquid
-    # precipitation, which the atmosphere–land flux assembly does not write.
     if advect_surface_liquid_energy
-        throw(ArgumentError(
-            "advect_surface_liquid_energy=true is not yet supported: the " *
-            "atmosphere–land flux assembly does not write " *
-            "`land.fluxes.liquid_precipitation_temperature`."))
+        throw(ArgumentError("advect_surface_liquid_energy requires `land.fluxes.liquid_precipitation_temperature`, which is unset"))
     end
     Λ = isnothing(deep_conductance) ? nothing : normalize_property(FT, deep_conductance)
     τ = isnothing(deep_time_scale)  ? nothing : convert(FT, deep_time_scale)

@@ -5,14 +5,13 @@ export AVISOMetadata, AVISOMetadatum, AVISODaily, AVISOMonthly
 using Dates: Dates, DateTime, Day, Month
 using Oceananigans.Fields: Center
 using NCDatasets: Dataset
-using Scratch: @get_scratch!
 
 using ...NumericalEarth: NumericalEarth
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path, first_date
 
 download_AVISO_cache::String = ""
 function __init__()
-    global download_AVISO_cache = @get_scratch!("AVISO")
+    global download_AVISO_cache = DataWrangling.download_cache("AVISO")
 end
 
 abstract type AVISODataset end
@@ -99,11 +98,6 @@ function DataWrangling.metadata_filename(::AVISOMonthly, name, date, region)
     return string(var, "_AVISOMonthly_", Dates.format(date, "yyyy-mm-dd"), ".nc")
 end
 
-function inpainted_metadata_filename(metadata::Metadatum{<:AVISODataset})
-    return replace(metadata.filename, ".nc" => "_inpainted.jld2")
-end
-
-DataWrangling.inpainted_metadata_path(metadata::Metadatum{<:AVISODataset}) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 const AVISOMetadata{D} = Metadata{<:AVISODataset, D}
 const AVISOMetadatum = Metadatum{<:AVISODataset}

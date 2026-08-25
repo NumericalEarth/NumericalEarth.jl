@@ -197,11 +197,10 @@ start_date = DateTime(2005, 2, 16, 12)
         @test convert_units(3600, Jm²ph()) ≈ 1               # 3600 J/m²/hr → 1 W/m²
         @test convert_units(3.6, MetersPerHour()) ≈ 1        # 3.6 m/hr → 1 kg/m²/s
 
-        # The regional hindcast prescribed components are first-class, top-level API.
-        # `ERA5PrescribedAtmosphere` is a `PrescribedAtmosphere{<:ERA5Dataset}` type alias
-        # (dispatch on provenance) with constructor methods; `ERA5PrescribedRadiation` is a function.
-        @test ERA5PrescribedAtmosphere isa Type
-        @test ERA5PrescribedRadiation  isa Function
+        # `ERA5PrescribedAtmosphere` is a type alias dispatching on provenance;
+        # `ERA5PrescribedRadiation` is a function.
+        @test ERA5PrescribedAtmosphere <: PrescribedAtmosphere
+        @test ERA5PrescribedRadiation isa Function
     end
 
     @testset "ERA5 single-level metadata_prefix" begin
