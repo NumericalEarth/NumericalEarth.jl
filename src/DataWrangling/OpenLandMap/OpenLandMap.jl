@@ -200,7 +200,7 @@ DataWrangling.inpainted_metadata_path(metadata::OpenLandMapSoilDBMetadatum) =
 ##### Regional-window filename (variable + aggregation factor + region)
 #####
 
-# A full-resolution read carries no factor token, keeping the name it has always had.
+# A full-resolution read carries no factor token.
 function DataWrangling.metadata_filename(dataset::OpenLandMapSoilDB, name, date, region)
     factor = aggregation_factor(dataset)
     suffix = factor == 1 ? "" : string("_f", factor)
