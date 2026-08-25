@@ -129,6 +129,14 @@ end
             @test rtm_emissivity .* σ .* Tʳ .^ 4 .+ (1 - rtm_emissivity) .* ℐꜜˡʷ ≈
                   σ .* Teff_field .^ 4
 
+            # End-to-end: RRTMGP solves at the start of a step from the temperature bound at the
+            # end of the previous one, so its emitted surface longwave should reproduce the
+            # canopy's upwelling from that step — the inversion checked against RRTMGP itself,
+            # not against its own algebra.
+            Teff_bound = copy(Teff_field)
+            time_step!(model, 1.0)
+            @test Array(interior(rtm.upwelling_longwave_flux))[:, :, 1] ≈ σ .* Teff_bound .^ 4 rtol = 1e-3
+
             # Under a zero radiation state both skins and `Teff` collapse onto the node.
             Tᵃᶜ = Array(interior(interface.temperature.interface))
             Tᵛ = Array(interior(interface.temperature.canopy))
