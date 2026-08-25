@@ -12,7 +12,7 @@ using NumericalEarth.Bathymetry: remove_minor_basins!,
                                  Basin,
                                  atlantic_ocean_basin,
                                  meridional_barrier,
-                                 ATLANTIC_OCEAN_BARRIERS
+                                 atlantic_ocean_barriers
 using NumericalEarth.DataWrangling: BoundingBox
 using NumericalEarth.Bathymetry: remove_minor_basins!, bathymetry_regridding_key
 using NumericalEarth.DataWrangling: field_cache_filename, save_field_cache
@@ -194,25 +194,10 @@ end
 @testset "Barrier geometry" begin
     @info "Testing barrier geometry utilities..."
 
-    # A barrier is a `BoundingBox` whose horizontal extent defines the rectangle
-    # to be treated as land during connected-component labeling.
-    barrier = BoundingBox(longitude=(-10, 10), latitude=(-5, 5))
-    @test barrier.longitude == (-10, 10)
-    @test barrier.latitude  == (-5, 5)
-
-    # Test meridional_barrier constructor (longitude, south, north)
     meridional = meridional_barrier(20, -36, -30)
-    @test meridional.longitude == (19, 21)   # 20 ± 2/2
+    @test meridional.longitude == (19, 21)   # 20 ± width/2
     @test meridional.latitude  == (-36, -30)
-
-    # Test meridional_barrier with custom width
-    meridional_wide = meridional_barrier(20, -36, -30; width=4)
-    @test meridional_wide.longitude == (18, 22)
-
-    # Latitude band covering the full longitude range
-    band = BoundingBox(longitude=(-180, 180), latitude=(-60, -55))
-    @test band.longitude == (-180, 180)
-    @test band.latitude  == (-60, -55)
+    @test meridional_barrier(20, -36, -30; width=4).longitude == (18, 22)
 end
 
 @testset "Ocean basin labeling with barriers" begin
@@ -226,29 +211,17 @@ end
                                      latitude = (-90, 90),
                                      z = (-6000, 0))
 
-        # Regrid real bathymetry onto this grid
         bottom_height = regrid_bathymetry(grid)
         ibg = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height))
 
-        # Test labeling without barriers - all oceans should have the same label
-        # (they're connected via the Southern Ocean)
-        labels_no_barrier = label_ocean_basins(ibg)
+        # Unbarriered, the Atlantic and Pacific are one basin: they connect via the Southern Ocean.
+        labels = label_ocean_basins(ibg)
+        atlantic_label = find_label_at_point(labels, ibg, -30.0, 0.0)
+        @test atlantic_label > 0
+        @test atlantic_label == find_label_at_point(labels, ibg, -170.0, 0.0)
 
-        # Find labels at Atlantic and Pacific seed points
-        atlantic_label = find_label_at_point(labels_no_barrier, ibg, -30.0, 0.0)
-        pacific_label = find_label_at_point(labels_no_barrier, ibg, -170.0, 0.0)
-
-        # Without barriers, Atlantic and Pacific should have the same label
-        # (connected via Southern Ocean)
-        @test atlantic_label == pacific_label
-        @test atlantic_label > 0  # Should find a valid basin
-
-        # Test labeling with barriers - oceans should be separated
-        labels_with_barrier = label_ocean_basins(ibg; barriers=ATLANTIC_OCEAN_BARRIERS)
-
-        # With barriers, Atlantic should still be found
-        atlantic_label_with_barrier = find_label_at_point(labels_with_barrier, ibg, -30.0, 0.0)
-        @test atlantic_label_with_barrier > 0
+        barriered = label_ocean_basins(ibg; barriers=atlantic_ocean_barriers)
+        @test find_label_at_point(barriered, ibg, -30.0, 0.0) > 0
     end
 end
 
@@ -267,20 +240,14 @@ end
         bottom_height = regrid_bathymetry(grid)
         ibg = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height))
 
-        # Test atlantic_ocean_basin creation
         atlantic = atlantic_ocean_basin(ibg)
         @test atlantic isa Basin
-        @test sum(interior(atlantic.mask)) > 0  # Should have some ocean cells
+        @test sum(interior(atlantic.mask)) > 0
 
+        # The Atlantic mask must exclude the Pacific.
         mask = on_architecture(CPU(), atlantic.mask)
-
-        # Test that the mask is properly bounded
-        # Atlantic mask should not include cells in the Pacific
-        # (seed point at -170°, 0° should be 0)
-        pacific_point_i = findfirst(i -> -175 < i < -165, range(-180, 180, length=360))
-        equator_j = 90  # equator for 180 latitude points
-        if !isnothing(pacific_point_i)
-            @test mask[pacific_point_i, equator_j, 1] == 0
-        end
+        pacific_i = findfirst(λ -> -175 < λ < -165, range(-180, 180, length=360))
+        @test !isnothing(pacific_i)
+        @test mask[pacific_i, 90, 1] == 0
     end
 end

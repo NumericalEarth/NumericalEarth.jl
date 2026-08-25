@@ -128,43 +128,43 @@ end
 ##### Some useful Basin seeds and barriers
 #####
 
-const SOUTHERN_OCEAN_SEPARATION_BARRIER = BoundingBox(longitude=(-180, 180), latitude=(-56, -54))
+const southern_ocean_separation_barrier = BoundingBox(longitude=(-180, 180), latitude=(-56, -54))
 
-const ATLANTIC_OCEAN_BARRIERS = [
+const atlantic_ocean_barriers = [
     meridional_barrier(20,  -90, -30),   # Cape Agulhas
     meridional_barrier(289, -90, -30),   # Drake Passage
 ]
 
-const INDIAN_OCEAN_BARRIERS = [
+const indian_ocean_barriers = [
     meridional_barrier(141, -90, -3),                           # Indonesian side
     meridional_barrier(20,  -90, -30),                          # Cape Agulhas
     BoundingBox(longitude=(105, 141), latitude=(-4, -3)),       # Indonesian/Asian seas (zonal barrier at 3.5ᵒ S)
 ]
 
-const SOUTHERN_OCEAN_BARRIERS = [SOUTHERN_OCEAN_SEPARATION_BARRIER]
+const southern_ocean_barriers = [southern_ocean_separation_barrier]
 
-const PACIFIC_OCEAN_BARRIERS = [
+const pacific_ocean_barriers = [
     meridional_barrier(141, -90, -3),                           # Indonesian side
     meridional_barrier(20,  -90, -30),                          # Cape Agulhas
     BoundingBox(longitude=(105, 141), latitude=(-4, -3)),       # Indonesian/Asian seas (zonal barrier at 3.5ᵒ S)
 ]
 
 # Seed points for Atlantic Ocean (definitely in the Atlantic)
-const ATLANTIC_SEED_POINTS = [
+const atlantic_seed_points = [
     (-30, 0),    # Central equatorial Atlantic
     (-40, 30),   # North Atlantic
     (-25, -20),  # South Atlantic
 ]
 
 # Seed points for Indian Ocean
-const INDIAN_SEED_POINTS = [
+const indian_seed_points = [
     (70, -10),   # Central Indian Ocean
     (60, 10),    # Arabian Sea region
     (90, -20),   # Eastern Indian Ocean
 ]
 
 # Seed points for Southern Ocean
-const SOUTHERN_SEED_POINTS = [
+const southern_seed_points = [
     (0,   -60),   # South Atlantic sector
     (90,  -60),   # Indian Ocean sector
     (180, -60),   # Pacific sector (date line)
@@ -172,7 +172,7 @@ const SOUTHERN_SEED_POINTS = [
 ]
 
 # Seed points for Pacific Ocean
-const PACIFIC_SEED_POINTS = [
+const pacific_seed_points = [
     (180,  0),      # Central equatorial Pacific (dateline)
     (-150, 20),     # North Pacific (Hawaii region)
     (-120, -20),    # South Pacific
@@ -279,117 +279,55 @@ end
 #####
 
 """
-    atlantic_ocean_basin(grid; include_southern_ocean=false, kw...)
+$(TYPEDSIGNATURES)
 
-Build a `Basin` for Earth's Atlantic Ocean with predefined barriers and seed points.
+Build a [`Basin`](@ref) from a basin's predefined `barriers` and `seed_points`.
 
-Keyword Arguments
-=================
-- `include_southern_ocean`: If `true`, extends the Atlantic basin into the Southern Ocean
-                            sector below the standard separation latitude (~55°S). Default: `false`.
-- `south_boundary`: Southern latitude limit. Default: -50.0 (or -90.0 if `include_southern_ocean=true`)
-- `north_boundary`: Northern latitude limit. Default: 65.0
-- Other keyword arguments are passed to `Basin`.
+`include_southern_ocean = false` closes the basin at the standard separation latitude (~55°S) instead of
+extending it to the pole. Remaining keyword arguments go to [`Basin`](@ref).
 """
-function atlantic_ocean_basin(grid;
-                              include_southern_ocean = true,
-                              south_boundary = include_southern_ocean ? -90 : -50,
-                              north_boundary = 65,
-                              barriers = ATLANTIC_OCEAN_BARRIERS,
-                              seed_points = ATLANTIC_SEED_POINTS,
-                              kw...)
+function ocean_basin(grid, barriers, seed_points;
+                     include_southern_ocean = true,
+                     south_boundary = include_southern_ocean ? -90 : -50,
+                     north_boundary,
+                     kw...)
 
-    if !include_southern_ocean
-        barriers = [barriers..., SOUTHERN_OCEAN_SEPARATION_BARRIER]
-    end
+    include_southern_ocean || (barriers = add_barrier(barriers, southern_ocean_separation_barrier))
 
     return Basin(grid; south_boundary, north_boundary, barriers, seed_points, kw...)
 end
 
 """
-    indian_ocean_basin(grid; include_southern_ocean=false, kw...)
+$(TYPEDSIGNATURES)
 
-Build a `Basin` for Earth's Indian Ocean with predefined barriers and seed points.
-
-Keyword Arguments
-=================
-- `include_southern_ocean`: If `true`, extends the Indian basin into the Southern Ocean
-                            sector below the standard separation latitude (~55°S). Default: `false`.
-- `south_boundary`: Southern latitude limit. Default: -50.0 (or -90.0 if `include_southern_ocean=true`)
-- `north_boundary`: Northern latitude limit. Default: 30.0
-- Other keyword arguments are passed to `Basin`.
+Earth's Atlantic Ocean. Keyword arguments go to `ocean_basin`.
 """
-function indian_ocean_basin(grid;
-                            include_southern_ocean = true,
-                            south_boundary = include_southern_ocean ? -90 : -50,
-                            north_boundary = 30,
-                            barriers = INDIAN_OCEAN_BARRIERS,
-                            seed_points = INDIAN_SEED_POINTS,
-                            kw...)
-
-    if !include_southern_ocean
-        barriers = [barriers..., SOUTHERN_OCEAN_SEPARATION_BARRIER]
-    end
-
-    return Basin(grid; south_boundary, north_boundary, barriers, seed_points, kw...)
-end
+atlantic_ocean_basin(grid; kw...) = ocean_basin(grid, atlantic_ocean_barriers, atlantic_seed_points; north_boundary = 65, kw...)
 
 """
-    southern_ocean_basin(grid; kw...)
+$(TYPEDSIGNATURES)
 
-Build a `Basin` for Earth's Southern Ocean with predefined barriers and seed points.
-Default boundaries: south=-90.0, north=-35.0
+Earth's Indian Ocean. Keyword arguments go to `ocean_basin`.
 """
-function southern_ocean_basin(grid;
-                              south_boundary = -90,
-                              north_boundary = -35,
-                              barriers = SOUTHERN_OCEAN_BARRIERS,
-                              seed_points = SOUTHERN_SEED_POINTS,
-                              kw...)
-    return Basin(grid; south_boundary, north_boundary, barriers, seed_points, kw...)
-end
+indian_ocean_basin(grid; kw...) = ocean_basin(grid, indian_ocean_barriers, indian_seed_points; north_boundary = 30, kw...)
 
 """
-    pacific_ocean_basin(grid; include_southern_ocean=false, kw...)
+$(TYPEDSIGNATURES)
 
-Build a `Basin` for Earth's Pacific Ocean with predefined barriers and seed points.
-
-Keyword Arguments
-=================
-- `include_southern_ocean`: If `true`, extends the Pacific basin into the Southern Ocean
-                            sector below the standard separation latitude (~55°S). Default: `false`.
-- `south_boundary`: Southern latitude limit. Default: -50.0 (or -90.0 if `include_southern_ocean=true`)
-- `north_boundary`: Northern latitude limit. Default: 65.0
-- Other keyword arguments are passed to `Basin`.
+Earth's Pacific Ocean. Keyword arguments go to `ocean_basin`.
 """
-function pacific_ocean_basin(grid;
-                             include_southern_ocean = true,
-                             south_boundary = include_southern_ocean ? -90 : -50,
-                             north_boundary = 65,
-                             barriers = PACIFIC_OCEAN_BARRIERS,
-                             seed_points = PACIFIC_SEED_POINTS,
-                             kw...)
-
-    if !include_southern_ocean
-        barriers = [barriers..., SOUTHERN_OCEAN_SEPARATION_BARRIER]
-    end
-
-    return Basin(grid; south_boundary, north_boundary, barriers, seed_points, kw...)
-end
+pacific_ocean_basin(grid; kw...) = ocean_basin(grid, pacific_ocean_barriers, pacific_seed_points; north_boundary = 65, kw...)
 
 """
-    arctic_ocean_basin(grid; kw...)
+$(TYPEDSIGNATURES)
 
-Build a `Basin` for Earth's Arctic Ocean with predefined seed points.
-Default boundaries: south=65.0, north=91.0
+Earth's Southern Ocean. Keyword arguments go to `ocean_basin`.
 """
-function arctic_ocean_basin(grid;
-                            include_southern_ocean = true,
-                            south_boundary = 65,
-                            north_boundary = 91,
-                            barriers = nothing,
-                            seed_points = [(nothing, 90)],
-                            kw...)
+southern_ocean_basin(grid; kw...) = ocean_basin(grid, southern_ocean_barriers, southern_seed_points; south_boundary = -90, north_boundary = -35, kw...)
 
-    return Basin(grid; south_boundary, north_boundary, barriers, seed_points, kw...)
-end
+"""
+$(TYPEDSIGNATURES)
+
+Earth's Arctic Ocean. Keyword arguments go to `ocean_basin`.
+"""
+arctic_ocean_basin(grid; kw...) = ocean_basin(grid, nothing, [(nothing, 90)]; south_boundary = 65, north_boundary = 91, kw...)
