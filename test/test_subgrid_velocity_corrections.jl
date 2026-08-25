@@ -110,8 +110,8 @@ end
     @test slots.zero_plane_displacement === 4f0
 
     # Formulations are already built with FT and pass through untouched
-    ℓᵐ = MomentumRoughnessLength(Float32)
-    @test SimilarityTheoryFluxes(Float32; momentum_roughness_length = ℓᵐ).roughness_lengths.momentum === ℓᵐ
+    formulation = MomentumRoughnessLength(Float32)
+    @test SimilarityTheoryFluxes(Float32; momentum_roughness_length = formulation).roughness_lengths.momentum === formulation
 end
 
 @testset "Coupled single-column: mesoscale velocity increases calm-wind u★" begin
