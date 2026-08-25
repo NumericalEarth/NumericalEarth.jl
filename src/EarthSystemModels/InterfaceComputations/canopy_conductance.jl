@@ -114,11 +114,6 @@ Adapt.adapt_structure(to, q::CanopyConductanceHumidity) =
                               q.photosynthesis, q.conductance, q.moisture_stress,
                               q.absorbed_par, q.atmospheric_co2, q.phase)
 
-inherit_canopy_geometry(q::CanopyConductanceHumidity, extinction, clumping) =
-    CanopyConductanceHumidity(q.leaf_area_index, q.photosynthesis, q.conductance, q.moisture_stress,
-                              inherit_canopy_geometry(q.absorbed_par, extinction, clumping),
-                              q.atmospheric_co2, q.phase)
-
 Base.summary(::CanopyConductanceHumidity{L, P, C, S, A, Q, Φ}) where {L, P, C, S, A, Q, Φ} =
     string("CanopyConductanceHumidity{", Φ === AtmosphericThermodynamics.Liquid ? "Liquid" : "Ice", "}")
 Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
@@ -139,13 +134,19 @@ Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
 @inline interface_vegetation_state(i, j, grid, ::CanopyConductanceHumidity, vegetation, time_interpolator) =
     (leaf_area_index = convert(eltype(grid), surface_field_value(vegetation, i, j, time_interpolator)),)
 
+# A formulation with no vertical canopy structure is one leaf layer: nothing passes it, so the
+# absorbed fraction is the band's `1 - α`. A `CanopyAirSpace` passes its own Beer-Lambert
+# transmittance instead, so PAR absorbs on the structure its shortwave split already used.
+@inline big_leaf_transmittance(Ψₛ) = zero(eltype(Ψₛ))
+
 # Canopy flux terms, split off so the standalone formulation and the composite
 # (soil + canopy) share them. Returns the bulk canopy (stomatal) mass conductance
 # `gᶜ = LAI · gₛ · Mᵈ` (kg m⁻² s⁻¹) and the leaf saturation source `qᵛ⁺(Tₗ)`.
 # The canopy (leaf) reservoir is saturated at the leaf temperature (= skin
 # temperature Tₛ, single-source). `Ψᵣ` is the interface radiation state (drives
 # `InteractiveAbsorbedPAR`).
-@inline function canopy_conductance_terms(q::CanopyConductanceHumidity, Tₗ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
+@inline function canopy_conductance_terms(q::CanopyConductanceHumidity, Tₗ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ,
+                                          canopy_transmittance)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     pᵃᵗ = Ψₐ.p
     qᵃᵗ = Ψₐ.q
@@ -155,7 +156,7 @@ Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
     qᵛ⁺  = saturation_specific_humidity(ℂᵃᵗ, Tₗ, pᵃᵗ, q.phase)
     VPD  = vapor_pressure_deficit(ℂᵃᵗ, Tₗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, q.phase)
     β    = evaporation_efficiency(q.moisture_stress, Ψₛ.hydrology)
-    APAR = absorbed_par_value(q.absorbed_par, Ψᵣ, LAI)
+    APAR = absorbed_par_value(q.absorbed_par, Ψᵣ, LAI, canopy_transmittance)
 
     gs, _, _ = stomatal_conductance(q.conductance, q.photosynthesis,
                                     APAR, VPD, Tₗ, q.atmospheric_co2, pᵃᵗ, β)
@@ -168,7 +169,7 @@ end
 
 @inline function compute_interface_humidity(q::CanopyConductanceHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     FT = eltype(Ψₛ)
-    gᶜ, qᵛ⁺ = canopy_conductance_terms(q, Tₛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)   # leaf temperature = skin temperature Tₛ
+    gᶜ, qᵛ⁺ = canopy_conductance_terms(q, Tₛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, big_leaf_transmittance(Ψₛ))
 
     qˢ⁻ = Ψₛ.specific_humidity
     qᵃᵗ = Ψₐ.q

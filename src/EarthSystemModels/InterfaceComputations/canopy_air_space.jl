@@ -518,7 +518,7 @@ function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
 
     # Convert only a scalar optics slot; a `Field` passes through and is materialized
     # per cell in the flux kernel.
-    return CanopyAirSpace(soil, inherit_canopy_geometry(canopy, extinction, clumping), soil_skin_flux,
+    return CanopyAirSpace(soil, canopy, soil_skin_flux,
                           convert_if_number(FT, leaf_albedo),
                           convert_if_number(FT, ground_albedo),
                           convert_if_number(FT, max_canopy_emissivity),
@@ -683,8 +683,8 @@ Adapt.@adapt_structure CanopyAirSpace
 end
 
 # Leaf vapor conductance `gˡʷ` and leaf-saturated humidity `qᵛ` at the leaf temperature `Tᵛ`.
-@inline function leaf_vapor_terms(canopy, Tᵛ, gʷ, fʷ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
-    gᶜ, qᵛ = canopy_conductance_terms(canopy, Tᵛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
+@inline function leaf_vapor_terms(canopy, Tᵛ, gʷ, fʷ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, ftrans)
+    gᶜ, qᵛ = canopy_conductance_terms(canopy, Tᵛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, ftrans)
     return leaf_vapor_conductance(gᶜ, gʷ, fʷ), qᵛ
 end
 
@@ -835,7 +835,7 @@ closes.
     tiny = eps(FT)
 
     for _ in 1:c.inner_iterations
-        gˡʷ, qᵛ = leaf_vapor_terms(c.canopy, Tᵛ, gʷ, fʷ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
+        gˡʷ, qᵛ = leaf_vapor_terms(c.canopy, Tᵛ, gʷ, fʷ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, ftrans)
         Gᵉ, qᵉ  = soil_vapor_terms(c.soil, Tᵍ, gᵍʷ, gᵖ, Ψₛ, Ψₐ, ℙₐ)
 
         Tᵃᶜ = node_value(c.storage, gᵍʰ, Tᵍ, gˡʰ, Tᵛ, gᵃʰ, θᵃᵗ, Tᵃᶜ)
@@ -864,7 +864,7 @@ closes.
     # The diagnostic node is re-solved against the final skins: inside the loop it
     # updates ahead of them, so the loop exits one iterate stale and the shares below
     # would miss closure. The prognostic node stays frozen.
-    gˡʷ, qᵛ = leaf_vapor_terms(c.canopy, Tᵛ, gʷ, fʷ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
+    gˡʷ, qᵛ = leaf_vapor_terms(c.canopy, Tᵛ, gʷ, fʷ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, ftrans)
     Gᵉ, qᵉ  = soil_vapor_terms(c.soil, Tᵍ, gᵍʷ, gᵖ, Ψₛ, Ψₐ, ℙₐ)
     Tᵃᶜ = node_value(c.storage, gᵍʰ, Tᵍ, gˡʰ, Tᵛ, gᵃʰ, θᵃᵗ, Tᵃᶜ)
     qᵃᶜ = node_value(c.storage, Gᵉ, qᵉ, gˡʷ, qᵛ, gᵃʷ, qᵃᵗ, qᵃᶜ)

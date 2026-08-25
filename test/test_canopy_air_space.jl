@@ -6,7 +6,7 @@ using Oceananigans.TimeSteppers: update_state!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyAirSpace, CanopyConductanceHumidity, CanopyInterception, DryLayerHumidity, StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity, ConstantTortuosity, PowerLawTortuosity, CriticalSaturation, InteractiveAbsorbedPAR,
-    PrescribedAbsorbedPAR,
+    PrescribedAbsorbedPAR, absorbed_par_value,
     SoilConductiveFlux, SoilSkinTemperature, canopy_air_space_solve, dry_layer_terms,
     compute_interface_temperature, compute_interface_humidity, interface_temperature_and_humidity,
     saturation_specific_humidity, default_dry_air_molar_mass, AtmosphericThermodynamics,
@@ -190,34 +190,42 @@ end
     @test build_canopy_air_space(Float32).leaf_albedo isa Float32
 end
 
-@testset "Absorbed PAR inherits the canopy's geometry" begin
+@testset "Absorbed PAR absorbs on the canopy's own structure" begin
     FT = Float64
-    soil = DryLayerHumidity(FT;
-        dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
-                                                    dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
-        vapor_exchange  = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
-                                                      molecular_diffusivity = 2.4e-5,
-                                                      tortuosity = ConstantTortuosity()),
-        thermal_exchange_depth = 0.05, porosity = 0.4)
+    par = InteractiveAbsorbedPAR(FT; leaf_albedo_par = 0.08)
 
-    # A PAR closure built with geometry that disagrees with the canopy's.
-    par = InteractiveAbsorbedPAR(FT; extinction = 0.9, clumping = 0.4, leaf_albedo_par = 0.08)
-    canopy = CanopyConductanceHumidity(FT; leaf_area_index = 3.0, absorbed_par = par)
-    cas = CanopyAirSpace(FT; soil, canopy, extinction = 0.55, clumping = 0.75)
+    # The closure carries band properties only: geometry is the canopy's to supply.
+    @test !hasfield(typeof(par), :extinction)
+    @test !hasfield(typeof(par), :clumping)
 
-    inherited = cas.canopy.absorbed_par
-    @test inherited.extinction == cas.extinction
-    @test inherited.clumping == cas.clumping
+    Ψᵣ = AirLandRadiationState(FT(5.67e-8), FT(0.2), FT(0.95), FT(800), FT(350))
+    LAI = FT(3)
 
-    # Band properties are the closure's own and survive.
-    @test inherited.leaf_albedo_par == par.leaf_albedo_par
-    @test inherited.par_fraction == par.par_fraction
-    @test inherited.lai_min == par.lai_min
+    # Absorbed PAR follows the transmittance it is handed, and is the band's `1 - α` of the
+    # incident PAR when nothing is transmitted past the leaves.
+    dense = absorbed_par_value(par, Ψᵣ, LAI, FT(0))
+    sparse = absorbed_par_value(par, Ψᵣ, LAI, FT(0.6))
+    @test dense > sparse
+    @test dense ≈ (1 - par.leaf_albedo_par) * par.par_fraction * Ψᵣ.ℐꜜˢʷ * par.photon_per_joule / LAI
 
-    # A prescribed closure carries no geometry and passes through untouched.
-    prescribed = PrescribedAbsorbedPAR(FT(5e-4))
-    canopy_p = CanopyConductanceHumidity(FT; leaf_area_index = 3.0, absorbed_par = prescribed)
-    @test CanopyAirSpace(FT; soil, canopy = canopy_p).canopy.absorbed_par === prescribed
+    # A canopy hands down `exp(-K Ω LAI)`, so PAR and the shortwave split share one geometry.
+    cas = CanopyAirSpace(FT; soil = DryLayerHumidity(FT;
+                             dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
+                                                                         dry_layer_onset_saturation = 0.5,
+                                                                         dry_layer_exponent = 2),
+                             vapor_exchange  = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
+                                                                           molecular_diffusivity = 2.4e-5,
+                                                                           tortuosity = ConstantTortuosity()),
+                             thermal_exchange_depth = 0.05, porosity = 0.4),
+                         canopy = CanopyConductanceHumidity(FT; leaf_area_index = LAI, absorbed_par = par),
+                         extinction = 0.55, clumping = 0.75)
+
+    ftrans = exp(-cas.extinction * LAI * cas.clumping)
+    @test absorbed_par_value(cas.canopy.absorbed_par, Ψᵣ, LAI, ftrans) ≈
+          (1 - par.leaf_albedo_par) * (1 - ftrans) * par.par_fraction * Ψᵣ.ℐꜜˢʷ * par.photon_per_joule / LAI
+
+    # A prescribed closure ignores the geometry entirely.
+    @test absorbed_par_value(PrescribedAbsorbedPAR(FT(5e-4)), Ψᵣ, LAI, FT(0.3)) == FT(5e-4)
 end
 
 @testset "Canopy optics validation" begin

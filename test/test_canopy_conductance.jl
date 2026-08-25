@@ -170,23 +170,23 @@ end
 
         # Prescribed reproduces its value, ignoring the radiation state.
         pre = PrescribedAbsorbedPAR(FT(4e-4))
-        @test absorbed_par_value(pre, nothing, LAI) == FT(4e-4)
+        @test absorbed_par_value(pre, nothing, LAI, 0) == FT(4e-4)
 
         inter = InteractiveAbsorbedPAR(FT)
         rad(SW) = (; ℐꜜˢʷ = FT(SW))
 
         # Night: no shortwave ⇒ no absorbed PAR.
-        @test absorbed_par_value(inter, rad(0), LAI) == 0
+        @test absorbed_par_value(inter, rad(0), LAI, 0) == 0
 
         # APAR is linear in the downwelling shortwave, and per-leaf O(1e-4) at a
         # representative midday flux — same order as the prescribed default (4e-4).
-        apar_noon = absorbed_par_value(inter, rad(500), LAI)
+        apar_noon = absorbed_par_value(inter, rad(500), LAI, 0)
         @test apar_noon > 0
         @test 1e-4 < apar_noon < 1e-3
-        @test absorbed_par_value(inter, rad(1000), LAI) ≈ 2 * apar_noon
+        @test absorbed_par_value(inter, rad(1000), LAI, 0) ≈ 2 * apar_noon
 
-        @test eltype(absorbed_par_value(inter, rad(500), LAI)) == FT
-        @inferred absorbed_par_value(inter, rad(500), LAI)
+        @test eltype(absorbed_par_value(inter, rad(500), LAI, 0)) == FT
+        @inferred absorbed_par_value(inter, rad(500), LAI, 0)
     end
 end
 
