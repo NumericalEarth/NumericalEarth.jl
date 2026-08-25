@@ -226,6 +226,14 @@ it. Default `false`.
 windowed_retrieval(dataset) = false
 
 """
+    default_regrid(metadata)
+
+Whether `metadata` reaches its target through the default bilinear `interpolate_physical!`.
+A metadatum that extends the regrid hook with another scheme sets this `false`. Default `true`.
+"""
+default_regrid(metadata) = true
+
+"""
     retrieve_window(metadata, longitude_indices, latitude_indices)
 
 Return `(data, λ, φ)` for one horizontal window of `metadata`'s file: the data, oriented as
@@ -564,6 +572,7 @@ which no tiling of it reproduces.
 """
 function tiled_native_grid(target, metadata, inpainting; halo = (3, 3, 3))
     windowed_retrieval(metadata.dataset) || return nothing
+    default_regrid(metadata) || return nothing
     isnothing(inpainting) || return nothing
     metadata.region isa BoundingBox || return nothing
     isnothing(horizontal_centers(target.grid)) && return nothing

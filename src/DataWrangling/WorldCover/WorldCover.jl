@@ -431,6 +431,8 @@ Oceananigans.Fields.location(::ESAWorldCoverMetadatum) = (Center, Center, Center
 ##### hook, dispatched on the metadatum.
 #####
 
+DataWrangling.default_regrid(::ESAWorldCoverMetadatum) = false
+
 function DataWrangling.interpolate_physical!(target, native, metadata::ESAWorldCoverMetadatum)
     if metadata.name === :landcover_class
         majority_class_regrid!(target, metadata)
