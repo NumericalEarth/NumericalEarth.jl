@@ -97,6 +97,21 @@ end
     # The correction survives an `adapt` roundtrip (GPU struct integrity)
     adapted = adapt(Array, fluxes)
     @test adapted.subgrid_velocities === fluxes.subgrid_velocities
+
+    # Numeric roughness and displacement slots join the closure's float type
+    slots = SimilarityTheoryFluxes(Float32; momentum_roughness_length = 0.1,
+                                            temperature_roughness_length = 1,
+                                            water_vapor_roughness_length = 0.01,
+                                            zero_plane_displacement = 4)
+
+    @test slots.roughness_lengths.momentum === 0.1f0
+    @test slots.roughness_lengths.temperature === 1f0
+    @test slots.roughness_lengths.water_vapor === 0.01f0
+    @test slots.zero_plane_displacement === 4f0
+
+    # Formulations are already built with FT and pass through untouched
+    ℓᵐ = MomentumRoughnessLength(Float32)
+    @test SimilarityTheoryFluxes(Float32; momentum_roughness_length = ℓᵐ).roughness_lengths.momentum === ℓᵐ
 end
 
 @testset "Coupled single-column: mesoscale velocity increases calm-wind u★" begin
