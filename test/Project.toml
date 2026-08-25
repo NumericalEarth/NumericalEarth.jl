@@ -34,7 +34,7 @@ WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 
 [sources]
-NumericalEarth = {path = ".."}
+NumericalEarth = {path = "/private/tmp/claude-502/-Users-xklee-numericalearth-land/bded07f1-21e2-4bad-985d-922f504fae7b/scratchpad/ten-day"}
 
 [compat]
 ArchGDAL = "0.10"

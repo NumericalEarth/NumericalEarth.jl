@@ -3,8 +3,8 @@ using NumericalEarth.DataWrangling: DataWrangling, Metadatum
 using Oceananigans.Fields: interior
 
 # `surface_albedo = CopernicusAlbedo()` in a RadiativeTransferModel: CGLS blue-sky albedo
-# on the model grid at the dekad nearest the solar epoch; water/missing pixels (NaN in the
-# land product) become open-water albedo.
+# on the model grid at the ten-day date nearest the solar epoch; water/missing pixels
+# (NaN in the land product) become open-water albedo.
 
 albedo_epoch(solar_position::Breeze.ApparentSolarPosition) = solar_position.epoch
 albedo_epoch(solar_position) = nothing
