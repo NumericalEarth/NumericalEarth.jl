@@ -133,6 +133,13 @@ const GHSBuiltHMetadatum = Metadatum{<:GHSBuiltH}
 const GHSBuiltSMetadatum = Metadatum{<:GHSBuiltS}
 const GHSLMetadatum      = Metadatum{<:AbstractGHSLDataset}
 
+# The 10 m built-up rasters are large enough that a regional window is read and regridded by
+# window rather than whole.
+DataWrangling.windowed_retrieval(::AbstractGHSLDataset) = true
+
+DataWrangling.retrieve_window(metadata::GHSLMetadatum, longitude_indices, latitude_indices) =
+    DataWrangling.netcdf_retrieve_window(metadata, longitude_indices, latitude_indices)
+
 #####
 ##### Variables
 #####

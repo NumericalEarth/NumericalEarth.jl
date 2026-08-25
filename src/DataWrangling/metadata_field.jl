@@ -228,6 +228,16 @@ regrids the window in a single pass.
 windowed_retrieval(dataset) = false
 
 """
+    default_regrid(metadata)
+
+Whether `metadata` reaches its target through the default bilinear `interpolate_physical!`.
+A metadatum that extends the regrid hook with another scheme — a conservative area weighting, an
+area-majority vote — sets this `false`: tiling drives the bilinear kernel over each tile directly
+and would otherwise bypass the override silently.
+"""
+default_regrid(metadata) = true
+
+"""
     retrieve_window(metadata, longitude_indices, latitude_indices)
 
 Return `(data, λ, φ)` for one horizontal window of `metadata`'s file: the data, oriented as
@@ -245,6 +255,61 @@ function retrieve_window(metadata::Metadatum, longitude_indices, latitude_indice
     return (view(data, longitude_indices, latitude_indices, :),
             view(λ, longitude_indices),
             view(φ, latitude_indices))
+end
+
+"""
+    file_latitude_rows(latitude_count, latitude_indices, reversed)
+
+Rows of a file holding the ascending `latitude_indices` a window asks for. `retrieve_data` flips
+a north-first file (`reversed`) after reading it whole, so a window has to map its rows back into
+the file's own ordering before slicing and flip just those.
+"""
+function file_latitude_rows(latitude_count, latitude_indices, reversed)
+    reversed || return latitude_indices
+    return (latitude_count - last(latitude_indices) + 1):(latitude_count - first(latitude_indices) + 1)
+end
+
+"""
+    netcdf_retrieve_window(metadata, longitude_indices, latitude_indices)
+
+[`retrieve_window`](@ref) for a dataset whose file is the plain lon/lat NetCDF the default
+[`retrieve_data`](@ref) reads, serving the hyperslab without the rest of the variable being
+touched. A dataset large enough to want windowed reads opts in with
+
+    DataWrangling.windowed_retrieval(::MyDataset) = true
+    DataWrangling.retrieve_window(metadata::MyMetadatum, longitude_indices, latitude_indices) =
+        DataWrangling.netcdf_retrieve_window(metadata, longitude_indices, latitude_indices)
+"""
+function netcdf_retrieve_window(metadata, longitude_indices, latitude_indices)
+    path = metadata_path(metadata)
+    name = dataset_variable_name(metadata)
+    reversed = reversed_latitude_axis(metadata.dataset)
+
+    return Dataset(path) do ds
+        λ = ds[longitude_name(metadata)][:]
+        φ = ds[latitude_name(metadata)][:]
+
+        file_rows = file_latitude_rows(length(φ), latitude_indices, reversed)
+
+        data = if is_three_dimensional(metadata)
+            ds[name][longitude_indices, file_rows, :, 1]
+        else
+            ds[name][longitude_indices, file_rows, 1]
+        end
+
+        data = ndims(data) == 2 ? reshape(data, size(data, 1), size(data, 2), 1) : data
+
+        if is_three_dimensional(metadata) && reversed_vertical_axis(metadata.dataset)
+            data = reverse(data, dims = 3)
+        end
+
+        if reversed
+            data = reverse(data, dims = 2)
+            reverse!(φ)
+        end
+
+        return (data, λ[longitude_indices], φ[latitude_indices])
+    end
 end
 
 """
@@ -416,6 +481,16 @@ end
 #####
 
 """
+    regrid_stencil_width(metadata)
+
+Source cells a tile must carry beyond the target points it covers, so the regrid never reaches
+outside its window. One suffices for the bilinear `interpolate_physical!` every dataset uses by
+default; a metadatum whose regrid reads a wider stencil has to widen this to match, or its tiles
+will be served edge-clamped values where a whole-window regrid would have real ones.
+"""
+regrid_stencil_width(metadata) = 1
+
+"""
     default_tile_bytes()
 
 Bytes of source data one tile of a tiled regrid is allowed to hold. Reading a dataset window in
@@ -501,6 +576,7 @@ function regrid_in_tiles!(target, metadata, native, tiles; halo = (3, 3, 3))
     # be resolved on the whole file and carried into each tile.
     mangling = mangling_for(metadata, length(φ))
 
+    stencil = regrid_stencil_width(metadata)
     λn = λnodes(native, Center(), Center(), Center())
     φn = φnodes(native, Center(), Center(), Center())
     λt, φt = horizontal_centers(grid)
@@ -514,8 +590,8 @@ function regrid_in_tiles!(target, metadata, native, tiles; halo = (3, 3, 3))
         target_j = tile_range(Ny, nj, jt)
 
         # Native cells the tile's target points need, then the file cells those sit on.
-        source_i = bracketing_indices(λn, λt[first(target_i)], λt[last(target_i)])
-        source_j = bracketing_indices(φn, φt[first(target_j)], φt[last(target_j)])
+        source_i = bracketing_indices(λn, λt[first(target_i)], λt[last(target_i)]; margin = stencil)
+        source_j = bracketing_indices(φn, φt[first(target_j)], φt[last(target_j)]; margin = stencil)
 
         window_i = bracketing_indices(λ, λn[first(source_i)], λn[last(source_i)]; margin = 0)
         window_j = bracketing_indices(φ, φn[first(source_j)], φn[last(source_j)]; margin = 0)
@@ -556,6 +632,7 @@ which no tiling of it reproduces.
 """
 function tiled_native_grid(target, metadata, inpainting; halo = (3, 3, 3))
     windowed_retrieval(metadata.dataset) || return nothing
+    default_regrid(metadata) || return nothing
     isnothing(inpainting) || return nothing
     metadata.region isa BoundingBox || return nothing
     isnothing(horizontal_centers(target.grid)) && return nothing

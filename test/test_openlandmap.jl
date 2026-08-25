@@ -390,3 +390,71 @@ end
                            date = DateTime(1993, 1, 1), region)
     @test isnothing(tiled_native_grid(field, unwindowed, nothing))
 end
+
+@testset "windowed NetCDF retrieval matches the whole-file read" begin
+    dir = mktempdir()
+    nx, ny = 256, 256
+    x0, y0, dx, dy = -112.0005, 36.0005, 0.00025, -0.00025
+    raw = Float32[(i % 11) + 3 * (j % 5) for i in 1:nx, j in 1:ny]
+
+    tif = write_synthetic_tile(joinpath(dir, "window.tif");
+                               nx, ny, x0, y0, dx, dy, scale = 1.0, offset = 0.0,
+                               nodata = -1.0, raw, dtype = Float32, overviews = Cint[2, 4])
+
+    region = BoundingBox(longitude = (x0 + 0.01, x0 + 0.05), latitude = (y0 - 0.05, y0 - 0.01))
+    metadatum = Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(aggregation_factor = 4),
+                          region, dir)
+    cog_window_to_netcdf(fill(tif, 3), metadata_path(metadatum), "clay", region, 4)
+
+    whole = NumericalEarth.DataWrangling.retrieve_data(metadatum)
+    λ, φ = NumericalEarth.DataWrangling.read_file_coords(metadatum)
+
+    # Both the dataset's own hyperslab reader and the shared NetCDF one must reproduce a view of
+    # the whole-file read, coordinates included.
+    for reader in (NumericalEarth.DataWrangling.retrieve_window,
+                   NumericalEarth.DataWrangling.netcdf_retrieve_window)
+        for (longitude_indices, latitude_indices) in ((1:3, 1:4), (2:5, 3:6), (1:size(whole, 1), 1:size(whole, 2)))
+            data, λw, φw = reader(metadatum, longitude_indices, latitude_indices)
+            @test isequal(Array(data), whole[longitude_indices, latitude_indices, :])
+            @test Array(λw) ≈ λ[longitude_indices]
+            @test Array(φw) ≈ φ[latitude_indices]
+        end
+    end
+end
+
+@testset "north-first files map their window rows back before slicing" begin
+    file_latitude_rows = NumericalEarth.DataWrangling.file_latitude_rows
+
+    # An ascending file passes its rows through untouched.
+    @test file_latitude_rows(10, 3:5, false) === 3:5
+
+    # A north-first file of n rows holds ascending row j at file row n - j + 1, so a window maps
+    # to the mirrored range and is flipped after slicing.
+    @test file_latitude_rows(10, 3:5, true) == 6:8
+    @test file_latitude_rows(10, 1:10, true) == 1:10
+
+    # The mapping must satisfy: reversing the whole file then slicing equals slicing the mirrored
+    # rows then reversing — the identity the windowed reader relies on.
+    stored = [10i + j for i in 1:4, j in 1:10]
+    ascending = reverse(stored, dims = 2)
+    for latitude_indices in (1:3, 4:7, 2:2, 1:10)
+        rows = file_latitude_rows(10, latitude_indices, true)
+        @test ascending[:, latitude_indices] == reverse(stored[:, rows], dims = 2)
+    end
+end
+
+@testset "a dataset regridded by something other than bilinear declines tiling" begin
+    grid = LatitudeLongitudeGrid(CPU(); size = (8, 8), longitude = (5.0, 5.4), latitude = (50.0, 50.4),
+                                 topology = (Bounded, Bounded, Flat))
+    field = CenterField(grid)
+    region = BoundingBox(grid)
+    default_regrid = NumericalEarth.DataWrangling.default_regrid
+
+    # WorldCover counts class codes rather than interpolating them, so driving the bilinear kernel
+    # over its tiles would silently bypass the conservative regrid.
+    worldcover = Metadatum(:vegetation_fraction; dataset = ESAWorldCover(), region)
+    @test !default_regrid(worldcover)
+    @test isnothing(NumericalEarth.DataWrangling.tiled_native_grid(field, worldcover, nothing))
+
+    @test default_regrid(Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region))
+end
