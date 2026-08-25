@@ -76,19 +76,13 @@ const JRA55_window_averaged_variables = (:river_freshwater_flux,
                                          :downwelling_longwave_radiation,
                                          :downwelling_shortwave_radiation)
 
-# The repeat-year files label each mean with the start of its interval, so their windows run
-# forwards from the stamp: the daily river and iceberg fluxes at 00:00, everything else
-# three-hourly. Without this the repeat-year shortwave peaks 1.5 hours before solar noon.
-function DataWrangling.sample_window(md::RepeatYearJRA55Metadatum)
-    md.name in JRA55_window_averaged_variables || return DataWrangling.instantaneous_window(md)
+# The repeat-year files label each mean with the start of its interval; the multi-year files label
+# it with the center.
+function DataWrangling.averaging_window(md::RepeatYearJRA55Metadatum)
+    md.name in JRA55_window_averaged_variables || return (md.dates, md.dates)
     span = md.name in (:river_freshwater_flux, :iceberg_freshwater_flux) ? Day(1) : Hour(3)
-    return DataWrangling.leading_window(md, span)
+    return (md.dates, md.dates + span)
 end
-
-# The multi-year files already label each mean with the center of its interval — the daily
-# river and iceberg fluxes at 12:00, the three-hourly means at 01:30, 04:30, and so on — so
-# every variable sits at its window center as stamped.
-DataWrangling.sample_window(md::MultiYearJRA55Metadatum) = DataWrangling.instantaneous_window(md)
 
 # Valid for all JRA55 datasets
 function JRA55_time_indices(dataset, dates, name)

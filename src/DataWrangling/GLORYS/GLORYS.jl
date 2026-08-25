@@ -48,15 +48,12 @@ all_dates(::GLORYSStatic, var) = [nothing]
 all_dates(::GLORYSDaily, var) = range(DateTime("1993-01-01"), stop=DateTime("2021-06-30"), step=Day(1))
 all_dates(::GLORYSMonthly, var) = range(DateTime("1993-01-01"), stop=DateTime("2021-06-01"), step=Month(1))
 
-# Static variables carry no date, so their window is the `nothing` they are stamped with.
-DataWrangling.sample_window(metadatum::Metadatum{<:GLORYSStatic}) = DataWrangling.instantaneous_window(metadatum)
-
 # `P1D-m` is a one-day mean, and Copernicus Marine stamps the start of an averaging period rather
-# than its center — its monthly means for July 2010 carry 2010-07-01 — so the window runs forwards
-# a day from the stamp.
-DataWrangling.sample_window(metadatum::Metadatum{<:GLORYSDaily}) = DataWrangling.leading_window(metadatum, Day(1))
+# than its center: its monthly means for July 2010 carry 2010-07-01.
+DataWrangling.averaging_window(metadatum::Metadatum{<:GLORYSDaily}) =
+    (metadatum.dates, metadatum.dates + Day(1))
 
-DataWrangling.sample_window(metadatum::Metadatum{<:GLORYSMonthly}) = DataWrangling.calendar_month_window(metadatum)
+DataWrangling.averaging_window(metadatum::Metadatum{<:GLORYSMonthly}) = DataWrangling.calendar_month_window(metadatum)
 
 copernicusmarine_dataset_id(::GLORYSStatic) = "cmems_mod_glo_phy_my_0.083deg_static"
 copernicusmarine_dataset_id(::GLORYSDaily) = "cmems_mod_glo_phy_my_0.083deg_P1D-m"
