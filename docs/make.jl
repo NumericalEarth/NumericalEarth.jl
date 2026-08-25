@@ -38,7 +38,7 @@ mkpath(OUTPUT_DIR)
 
 # Examples from examples/ directory.
 # Set `build_always = false` for long-running examples that should only be built
-# on pushes to `main`/tags, or when the `build all examples` label is added to a PR.
+# by the scheduled build, or when the `build all examples` label is added to a PR.
 examples = [
     Example("Single-column ocean simulation", "single_column_os_papa_simulation"; build_always=true, gpu=false),
     Example("Coupled conservation on a z-star grid", "coupled_conservation"; build_always=true, gpu=false),
