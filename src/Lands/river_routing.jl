@@ -1,6 +1,6 @@
 using Oceananigans.Grids: inactive_node, λnodes, φnodes
 using Oceananigans.Operators: Azᶜᶜᶜ
-using Oceananigans.Architectures: on_architecture
+using Oceananigans.Architectures: on_architecture, CPU
 using Oceananigans.Fields: interior
 
 #####
@@ -84,39 +84,6 @@ function outlet_indices_from_mask(outlet_mask, grid)
     return outlet_i, outlet_j, first.(nodes), last.(nodes)
 end
 
-"""
-    ever_positive_mask(flux_time_series, snapshots)
-
-Cells of `flux_time_series` positive in *any* of its first `snapshots` records. Scanning a full seasonal
-cycle rather than a single time keeps intermittent and seasonally frozen rivers in the routing map.
-"""
-function ever_positive_mask(flux_time_series, snapshots)
-    mask = Array(interior(flux_time_series[1]))[:, :, 1] .> 0
-    for n in 2:min(snapshots, length(flux_time_series.times))
-        mask .|= Array(interior(flux_time_series[n]))[:, :, 1] .> 0
-    end
-    return mask
-end
-
-"""
-    source_cell_areas(grid, outlet_i, outlet_j)
-
-Horizontal areas (m²) of the `grid` cells at the given outlet indices — the `outlet_weight` for routing
-a per-area mass flux (kg m⁻² s⁻¹).
-"""
-function source_cell_areas(grid, outlet_i, outlet_j)
-    arch = architecture(grid)
-    area_field = Field{Center, Center, Nothing}(grid)
-    launch!(arch, grid, :xy, _compute_source_area!, area_field, grid, size(grid, 3))
-    area = Array(interior(area_field))[:, :, 1]
-    return [area[outlet_i[n], outlet_j[n]] for n in eachindex(outlet_i)]
-end
-
-@kernel function _compute_source_area!(area, grid, kᴺ)
-    i, j = @index(Global, NTuple)
-    @inbounds area[i, j, 1] = Azᶜᶜᶜ(i, j, kᴺ, grid)
-end
-
 #####
 ##### Building the routing map (construction-time, on CPU)
 #####
@@ -150,7 +117,7 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     φc = Array(φnodes(target_grid, Center(), Center(), Center()))
 
     Nx, Ny = size(wet)
-    wet_i, wet_j, wet_λ, wet_φ = wet_cells(wet, λc, φc)
+    ocean_cells = wet_cells(wet, λc, φc)
     maximum_degrees = maximum_search_radius * (360 / Nx + 180 / Ny) / 2
 
     # Split each mouth's discharge equally over its plume footprint so no single coastal cell receives
@@ -158,7 +125,7 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     contributions = Dict{Tuple{Int, Int}, Vector{Tuple{Int, Int, FT}}}()
     dropped = 0
     for n in eachindex(outlet_i)
-        targets = spread_target_cells(wet_i, wet_j, wet_λ, wet_φ, outlet_λ[n], outlet_φ[n],
+        targets = spread_target_cells(ocean_cells, outlet_λ[n], outlet_φ[n],
                                       maximum_degrees, spread_radius, maximum_spread_cells)
         if isempty(targets)
             dropped += 1
@@ -217,10 +184,17 @@ function build_flux_routing(target_grid, flux_time_series;
                             maximum_spread_cells = nothing,
                             outlet_detection_snapshots = 365)
 
-    source_grid = flux_time_series.grid
-    outlet_mask = ever_positive_mask(flux_time_series, outlet_detection_snapshots)
+    source_grid = on_architecture(CPU(), flux_time_series.grid)
+    kᴺ = size(source_grid, 3)
+
+    # Scan a full seasonal cycle so intermittent and seasonally frozen rivers stay in the map.
+    outlet_mask = Array(interior(flux_time_series[1]))[:, :, 1] .> 0
+    for n in 2:min(outlet_detection_snapshots, length(flux_time_series.times))
+        outlet_mask .|= Array(interior(flux_time_series[n]))[:, :, 1] .> 0
+    end
+
     outlet_i, outlet_j, outlet_λ, outlet_φ = outlet_indices_from_mask(outlet_mask, source_grid)
-    outlet_weight = source_cell_areas(source_grid, outlet_i, outlet_j)
+    outlet_weight = [Azᶜᶜᶜ(outlet_i[n], outlet_j[n], kᴺ, source_grid) for n in eachindex(outlet_i)]
 
     return build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
                                maximum_search_radius, spread_radius, maximum_spread_cells)
@@ -256,44 +230,40 @@ function wet_cells(wet, λc, φc)
         push!(wet_i, i); push!(wet_j, j)
         push!(wet_λ, λ); push!(wet_φ, φ)
     end
-    return wet_i, wet_j, wet_λ, wet_φ
+    return (i = wet_i, j = wet_j, λ = wet_λ, φ = wet_φ)
 end
 
 """
-    spread_target_cells(wet_i, wet_j, wet_λ, wet_φ, λₒ, φₒ, maximum_degrees, spread_radius, maximum_cells)
+    spread_target_cells(wet, λₒ, φₒ, maximum_degrees, spread_radius, maximum_cells)
 
-The ocean cells a mouth at `(λₒ, φₒ)` discharges into: every wet cell within `spread_radius` degrees of
-its landing cell, nearest first, capped at `maximum_cells`. Empty when no wet cell lies within
-`maximum_degrees`. With `spread_radius = nothing`, the `maximum_cells` cells nearest the outlet itself.
+The ocean cells a mouth at `(λₒ, φₒ)` discharges into: the wet cells within `spread_radius` degrees of its
+landing cell, nearest first, capped at `maximum_cells`. `spread_radius = nothing` spreads over the whole
+`maximum_degrees` reach. Empty when no wet cell lies within `maximum_degrees`.
 """
-function spread_target_cells(wet_i, wet_j, wet_λ, wet_φ, λₒ, φₒ, maximum_degrees, spread_radius, maximum_cells)
+function spread_target_cells(wet, λₒ, φₒ, maximum_degrees, spread_radius, maximum_cells)
     reach = maximum_degrees^2
     nearest = 0
     nearest_distance = Inf
-    reachable = Tuple{Float64, Int}[]
-    for n in eachindex(wet_i)
+    reachable = Int[]
+    for n in eachindex(wet.i)
         # Cells further than `maximum_degrees` in latitude alone are out of reach, so skip the metric.
-        abs(wet_φ[n] - φₒ) < maximum_degrees || continue
-        d = squared_distance(λₒ, φₒ, wet_λ[n], wet_φ[n])
+        abs(wet.φ[n] - φₒ) < maximum_degrees || continue
+        d = squared_distance(λₒ, φₒ, wet.λ[n], wet.φ[n])
         d < nearest_distance && (nearest_distance = d; nearest = n)
-        d < reach && push!(reachable, (d, n))
+        d < reach && push!(reachable, n)
     end
     nearest_distance < reach || return Tuple{Int, Int}[]
 
-    targets = if isnothing(spread_radius)
-        sort!(reachable; by = first)
-    else
-        # Spread around the landing cell rather than the outlet, so mouths relocated onto the shelf
-        # (the Ob and Yenisei move 2-3°) still get a full footprint instead of collapsing onto one cell.
-        λ★, φ★ = wet_λ[nearest], wet_φ[nearest]
-        footprint = spread_radius^2
-        centred = [(squared_distance(λ★, φ★, wet_λ[n], wet_φ[n]), n) for (_, n) in reachable]
-        filter!(t -> first(t) <= footprint, centred)
-        sort!(centred; by = first)
-    end
+    # The footprint is centered on the landing cell, so mouths relocated onto the shelf (the Ob and
+    # Yenisei move 2-3°) keep a full footprint.
+    λ★, φ★ = wet.λ[nearest], wet.φ[nearest]
+    footprint = isnothing(spread_radius) ? reach : spread_radius^2
+    targets = [(squared_distance(λ★, φ★, wet.λ[n], wet.φ[n]), n) for n in reachable]
+    filter!(t -> first(t) ≤ footprint, targets)
+    sort!(targets; by = first)
 
-    nkeep = isnothing(maximum_cells) ? length(targets) : min(maximum_cells, length(targets))
-    return [(wet_i[targets[m][2]], wet_j[targets[m][2]]) for m in 1:nkeep]
+    number_of_targets = isnothing(maximum_cells) ? length(targets) : min(maximum_cells, length(targets))
+    return [(wet.i[targets[m][2]], wet.j[targets[m][2]]) for m in 1:number_of_targets]
 end
 
 #####

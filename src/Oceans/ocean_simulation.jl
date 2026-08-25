@@ -185,10 +185,6 @@ function river_mouth_vertical_diffusivity(grid, river_routing;
                                      loc = (Center, Center, Center), parameters = mask)
 end
 
-add_closure(closure::Tuple, additional) = (closure..., additional)
-add_closure(closure, additional) = (closure, additional)
-add_closure(::Nothing, additional) = additional
-
 # Two-band shortwave penetration in the Paulson & Simpson (1977) form,
 # Defaults are Jerlov Type I (clearest open-ocean water)
 function default_radiative_forcing(grid)
@@ -409,7 +405,8 @@ function hydrostatic_ocean_simulation(grid;
         river_mixing = river_mouth_vertical_diffusivity(grid, river_routing;
                                                         river_mouth_diffusivity,
                                                         river_mouth_mixing_depth)
-        closure = add_closure(closure, river_mixing)
+        closure = isnothing(closure) ? river_mixing :
+                  closure isa Tuple  ? (closure..., river_mixing) : (closure, river_mixing)
     end
 
     if grid isa RectilinearGrid # turn off Coriolis unless user-supplied
