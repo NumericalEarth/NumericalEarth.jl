@@ -61,7 +61,7 @@ end
     comp = CompositeSurfaceHumidity(soil, canopy)
     _, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(; 𝒮=0.05, st...)   # 𝒮 ≪ 𝒮ᶜ ⇒ σ = 1
     Gᵉ, qᵉ, σ, qᵍ⁺ = dry_layer_terms(comp.soil, st.Tᵍ, Ψₛ, Ψₐ, ℙₐ)
-    gᶜ, qᵛ⁺ = canopy_conductance_terms(comp.canopy, st.Tᵍ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
+    gᶜ, qᵛ⁺ = canopy_conductance_terms(comp.canopy, st.Tᵍ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, nothing)
     Gᵃ = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
     qˢ = (Gᵉ * qᵉ + gᶜ * qᵛ⁺ + Gᵃ * st.qᵃᵗ) / (Gᵉ + gᶜ + Gᵃ)
     @test σ ≈ 1

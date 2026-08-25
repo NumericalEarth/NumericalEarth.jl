@@ -6,6 +6,7 @@ using Oceananigans.TimeSteppers: update_state!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyAirSpace, CanopyConductanceHumidity, CanopyInterception, DryLayerHumidity, StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity, ConstantTortuosity, PowerLawTortuosity, CriticalSaturation, InteractiveAbsorbedPAR,
+    PrescribedAbsorbedPAR, absorbed_par_value,
     SoilConductiveFlux, SoilSkinTemperature, canopy_air_space_solve, dry_layer_terms,
     compute_interface_temperature, compute_interface_humidity, interface_temperature_and_humidity,
     saturation_specific_humidity, default_dry_air_molar_mass, AtmosphericThermodynamics,
@@ -187,6 +188,46 @@ end
 
     # A scalar slot keeps the closure's float type rather than widening the solve.
     @test build_canopy_air_space(Float32).leaf_albedo isa Float32
+end
+
+@testset "Absorbed PAR absorbs on the canopy's own structure" begin
+    FT = Float64
+    par = InteractiveAbsorbedPAR(FT; leaf_albedo_par = 0.08, extinction = 0.5, clumping = 1)
+    Ψᵣ = AirLandRadiationState(FT(5.67e-8), FT(0.2), FT(0.95), FT(800), FT(350))
+    LAI = FT(3)
+    incident = par.par_fraction * Ψᵣ.ℐꜜˢʷ * par.photon_per_joule
+
+    # With no canopy to supply one, the closure builds the transmittance from its own geometry.
+    own = exp(-par.extinction * LAI * par.clumping)
+    @test absorbed_par_value(par, Ψᵣ, LAI, nothing) ≈
+          (1 - par.leaf_albedo_par) * (1 - own) * incident / LAI
+
+    # A sparse canopy intercepts little, so the vanishing absorbed fraction cancels the per-leaf
+    # division and a leaf never receives more than the flux falling on it.
+    @test absorbed_par_value(par, Ψᵣ, par.lai_min, nothing) < incident
+    @test absorbed_par_value(par, Ψᵣ, FT(1e-3), nothing) < incident
+
+    # A supplied transmittance wins, and the closure's own geometry is not consulted.
+    ftrans = FT(0.4)
+    supplied = absorbed_par_value(par, Ψᵣ, LAI, ftrans)
+    @test supplied ≈ (1 - par.leaf_albedo_par) * (1 - ftrans) * incident / LAI
+    @test absorbed_par_value(InteractiveAbsorbedPAR(FT; leaf_albedo_par = 0.08, extinction = 0.9),
+                             Ψᵣ, LAI, ftrans) ≈ supplied
+
+    # A canopy hands down the transmittance its own shortwave split uses.
+    cas = CanopyAirSpace(FT; soil = DryLayerHumidity(FT;
+                             dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
+                                                                         dry_layer_onset_saturation = 0.5,
+                                                                         dry_layer_exponent = 2),
+                             vapor_exchange  = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
+                                                                           molecular_diffusivity = 2.4e-5,
+                                                                           tortuosity = ConstantTortuosity()),
+                             thermal_exchange_depth = 0.05, porosity = 0.4),
+                         canopy = CanopyConductanceHumidity(FT; leaf_area_index = LAI, absorbed_par = par),
+                         extinction = 0.55, clumping = 0.75)
+    @test exp(-cas.extinction * LAI * cas.clumping) != own
+
+    @test absorbed_par_value(PrescribedAbsorbedPAR(FT(5e-4)), Ψᵣ, LAI, FT(0.3)) == FT(5e-4)
 end
 
 @testset "Canopy optics validation" begin
