@@ -112,6 +112,14 @@ jobs:
         run: |
           rm -rf /host-opt/nvidia/ /host-usr-local/cuda*
           df -hT
+      - name: Install unzip
+        # The Copernicus albedo and ERA5 batched downloads extract their
+        # archives with `unzip`, which the container image does not carry.
+        run: |
+          if ! command -v unzip > /dev/null; then
+              apt-get update && apt-get install -y --no-install-recommends unzip
+          fi
+          unzip -v | head -1
       - name: Update registry
         shell: julia --color=yes {0}
         run: |
