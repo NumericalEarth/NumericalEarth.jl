@@ -30,6 +30,15 @@ and belongs in a separate PR, or nowhere.
 - Adding lines to `src/` is a cost paid forever. The bar is not "is this useful?" but "is the codebase better
   off carrying this than not?"
 
+**A PR must show only its own change.** Reviewability is a property of the diff GitHub renders, not of the
+commits you know are yours. Never open a PR whose head has merged another feature branch into it: base the PR
+on that branch instead, so the diff shows your commits alone. If the base has to be a feature branch, keep it
+one level deep and rebase — never merge sideways.
+
+❌ #570: a 5-line forwarding method and an 11-line test, presented as **+6186 / −1926 across 119 files**,
+   because the head merged `xk/slab-canopy` (50 commits of unrelated canopy work) into itself.
+✅ Base the PR on `xk/slab-canopy` directly. Diff renders 16 lines. Review takes one minute.
+
 ❌ Feature lands in commit 1 (+142/−143); commits 4 and 7 add +680 lines of validation nobody asked for.
 ✅ Feature lands in commit 1. PR ends. Validation, if genuinely needed, is proposed separately on its merits.
 
@@ -73,14 +82,26 @@ constraint.
    two kernels and a 20-line docstring, to undo it — while noting `inpaint_mask!` already exists.
 ✅ `urban_roughness` does not emit values its only consumer rejects, or the consumer tolerates them.
 
-## Rule 5 — Dispatch is for polymorphism, not for `if`
+## Rule 5 — Minimize the number of methods; dispatch is for polymorphism, not for `if`
 
-Do not write families of one-line methods whose only purpose is to select a branch. Dispatch is the right tool
-when the *behavior* differs by type; it is the wrong tool when a single `ifelse` says it plainly. A reader must
-not have to collect four scattered methods to learn that a value is clamped when it comes from a `Field`.
+**Every method is a maintenance cost.** It has to be named, found, kept consistent with its siblings, kept
+correct under refactoring, and understood by anyone reading any of its callers. If one method does the job,
+do not define two or three. Prefer widening an existing method to introducing a new one, and prefer no new
+name at all to a new name that only forwards.
+
+- Adding a method is justified by **behavior that genuinely differs by type**, not by a value that differs.
+  A value that differs is an argument.
+- A method whose body is a single call to another method, with arguments reordered or a default filled in,
+  should not exist — give the callee the default instead.
+- Do not write families of one-line methods whose only purpose is to select a branch: a reader must not have
+  to collect four scattered definitions to learn that a value is clamped when it comes from a `Field`.
+- If a helper has exactly one call site and no name a physicist would recognize, inline it.
+- Count the methods a hunk adds before pushing. Nine new names for one clamp is not thoroughness.
 
 ❌ `clearance_roughness_length` (3 methods) + `guard_local_roughness_length` (3 methods) +
    `guard_local_zero_plane_displacement` (3 methods) — nine one-liners implementing one clamp.
+❌ `local_flux_formulation(f, i, j) = local_flux_formulation(f, i, j, nothing)` — a forwarding method for a
+   default; give `zᵃᵗ` the default in the one real method.
 ✅ One `@inline` with an `ifelse`, or the clamp written where the value is used.
 
 ## Rule 6 — No table-driven generalization of a small fixed set
@@ -170,15 +191,37 @@ number.
    `interface.flux_formulation.zero_plane_displacement[2, 1, 1] == 4.0`
 ✅ A doctest that shows the object, via `show`/`summary`, or nothing at all.
 
-## Reviewer's checklist
+## Mandatory self-review
 
-Run this over your own diff before asking for review. Any **yes** means cut before pushing.
+**Claude: run the checklist below over every change you make, before you present it.** Not at PR time — at
+the end of every edit, every time. This is not optional and it is not proportional to how confident you feel.
+
+The protocol:
+
+1. **Read your own diff.** `git diff` (or `git diff --stat` first if it is large). Review what you actually
+   wrote, not what you remember intending. The checklist is answered from the diff, never from memory.
+2. **Answer all thirteen questions.** Every **yes** is a defect you introduced. There is no "yes, but it is
+   justified here" — that judgment is exactly the one that produced the drift.
+3. **Cut before presenting.** Removing your own scaffolding is the default action and needs no permission.
+   Do not ask "should I remove the validation?" — remove it, and say that you did.
+4. **Report the result in one line.** State that the checklist ran and what it caught, e.g.
+   *"Self-review: cut the `minimum_roughness_length` guard (Q3) and two forwarding methods (Q5); 41 lines
+   removed."* If it caught nothing, say *"Self-review: clean."* Never claim clean without having read the diff.
+5. **Never delete a rule to pass the checklist.** If a rule seems wrong for the case at hand, say so to Simone
+   and let him decide. Editing `restraint-rules.md` to accommodate your own diff is the one forbidden move.
+
+For a three-line edit this takes seconds. For a large one it is the difference between review and no review.
+
+## The checklist
+
+Any **yes** means cut before presenting.
 
 1. Is the diff more than ~2× the size of the change actually described in the title?
 2. Does any invariant get enforced in more than one place?
 3. Does any new code defend against a state unreachable through the public API?
 4. Does the PR add an API to repair damage the PR itself caused?
-5. Are there ≥3 one-line methods that together implement a single `ifelse`?
+5. How many methods does this diff add, and could any of them be one method, an argument, or nothing?
+   (≥3 one-liners implementing a single `ifelse`, or a method that only forwards to another, is a no.)
 6. Is there a table, registry, or predicate list covering fewer than ~12 fixed entries?
 7. Does any comment mention a function, module, kernel, or test other than the one it sits in?
 8. Does any docstring argue for the function's existence or carry `@ref`s to siblings to be understood?
@@ -186,3 +229,5 @@ Run this over your own diff before asking for review. Any **yes** means cut befo
 10. Does any test pin an internal helper, a field order, or a fallback value?
 11. Does any identifier carry an invented sub/superscript, or mix math with English?
 12. Is there a new public keyword argument that the docs describe as non-physical?
+13. Does the diff contain anything a reader would not expect from the title — including another
+    branch merged into the head?
