@@ -25,7 +25,10 @@ struct Example
     title::String
     basename::String
     build_always::Bool
+    gpu::Bool
 end
+
+Example(title, basename; build_always, gpu) = Example(title, basename, build_always, gpu)
 
 const EXAMPLES_DIR   = joinpath(@__DIR__, "..", "examples")
 const OUTPUT_DIR     = joinpath(@__DIR__, "src/literated")
@@ -37,23 +40,25 @@ mkpath(OUTPUT_DIR)
 # Set `build_always = false` for long-running examples that should only be built
 # on pushes to `main`/tags, or when the `build all examples` label is added to a PR.
 examples = [
-    Example("Single-column ocean simulation", "single_column_os_papa_simulation", true),
-    Example("Coupled conservation on a z-star grid", "coupled_conservation", true),
-    Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
-    Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
-    Example("Global climate simulation", "global_climate_simulation", false),
-    Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
-    Example("Breeze over four oceans", "breeze_over_four_oceans", false),
-    Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data", true),
-    Example("Breeze over slab land", "breeze_over_slab_land", true),
-    Example("Differentiable ERA5-forced slab land", "era5_forced_slab_land", false),
-    Example("ERA5 downscaling with Breeze", "breeze_downscaling_era5", true),
+    Example("Single-column ocean simulation", "single_column_os_papa_simulation"; build_always=true, gpu=false),
+    Example("Coupled conservation on a z-star grid", "coupled_conservation"; build_always=true, gpu=false),
+    Example("One-degree ocean--sea ice simulation", "one_degree_simulation"; build_always=false, gpu=true),
+    # Near-global is the heaviest example (¼°, ~35M cells); disabled while the
+    # docs build on the ephemeral, cold-cache L4 runner.
+    # Example("Near-global ocean simulation", "near_global_ocean_simulation"; build_always=false, gpu=true),
+    Example("Global climate simulation", "global_climate_simulation"; build_always=false, gpu=true),
+    Example("Veros ocean simulation", "veros_ocean_forced_simulation"; build_always=false, gpu=false),
+    Example("Breeze over four oceans", "breeze_over_four_oceans"; build_always=false, gpu=false),
+    Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data"; build_always=true, gpu=false),
+    Example("Breeze over slab land", "breeze_over_slab_land"; build_always=true, gpu=false),
+    Example("Differentiable ERA5-forced slab land", "era5_forced_slab_land"; build_always=false, gpu=false),
+    Example("ERA5 downscaling with Breeze", "breeze_downscaling_era5"; build_always=true, gpu=true),
 ]
 
 # Developer examples from docs/src/developers/ directory
 developer_examples = [
-    Example("Implementing a new dataset", "implement_a_dataset", true),
-    # Example("EarthSystemModel interface", "slab_ocean", false),
+    Example("Implementing a new dataset", "implement_a_dataset"; build_always=true, gpu=false),
+    # Example("EarthSystemModel interface", "slab_ocean"; build_always=false, gpu=false),
 ]
 
 # Filter out long-running examples unless NUMERICAL_EARTH_BUILD_ALL_EXAMPLES is set
@@ -67,23 +72,49 @@ filter!(x -> x.build_always || build_all, developer_examples)
 
 skip_literate = get(ENV, "NUMERICAL_EARTH_SKIP_LITERATE", "false") == "true"
 
-if skip_literate
-    @info "Skipping Literate generation because NUMERICAL_EARTH_SKIP_LITERATE=true."
-    filter!(ex -> isfile(joinpath(OUTPUT_DIR, ex.basename * ".md")), examples)
-    filter!(ex -> isfile(joinpath(OUTPUT_DIR, ex.basename * ".md")), developer_examples)
-else
-    for example in examples
-        script_path = joinpath(EXAMPLES_DIR, example.basename * ".jl")
-        run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
-        CUDA.functional() && CUDA.reclaim()
-    end
+# A failed example does not abort the build: the site is built from the
+# examples that succeeded, and the failures are reported (and fail the build)
+# at the very end, so one broken example cannot block every other page.
+failed_examples = String[]
+failure_lock = ReentrantLock()
 
-    for example in developer_examples
-        script_path = joinpath(DEVELOPERS_DIR, example.basename * ".jl")
-        run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
-        CUDA.functional() && CUDA.reclaim()
+# Each example is an independent subprocess and `run` yields while it executes,
+# so tasks overlap them: GPU examples serialize on the single device while CPU
+# examples run alongside, a couple at a time (each subprocess loads the full
+# package stack, so memory — not cores — bounds CPU concurrency).
+cpu_semaphore = Base.Semaphore(2)
+gpu_semaphore = Base.Semaphore(1)
+
+function generate_example!(example, dir)
+    script_path = joinpath(dir, example.basename * ".jl")
+    Base.acquire(example.gpu ? gpu_semaphore : cpu_semaphore) do
+        try
+            run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
+        catch
+            @error "Example $(example.basename) failed to build; continuing with the remaining examples."
+            lock(() -> push!(failed_examples, example.basename), failure_lock)
+        end
+        example.gpu && CUDA.functional() && CUDA.reclaim()
     end
 end
+
+if skip_literate
+    @info "Skipping Literate generation because NUMERICAL_EARTH_SKIP_LITERATE=true."
+else
+    @time "Example generation" @sync begin
+        foreach(ex -> @async(generate_example!(ex, EXAMPLES_DIR)), examples)
+        foreach(ex -> @async(generate_example!(ex, DEVELOPERS_DIR)), developer_examples)
+    end
+end
+
+# Report failures here too: if makedocs errors below, the end-of-build summary
+# never prints, and this line is then the only inventory in the log.
+isempty(failed_examples) || @error "Examples that failed to build: " * join(failed_examples, ", ")
+
+# Build pages from the examples that produced markdown, whether because
+# generation succeeded just now or (with skip_literate) on a previous build.
+filter!(ex -> isfile(joinpath(OUTPUT_DIR, ex.basename * ".md")), examples)
+filter!(ex -> isfile(joinpath(OUTPUT_DIR, ex.basename * ".md")), developer_examples)
 
 modules = Module[]
 NumericalEarthBreezeExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt) : NumericalEarth.NumericalEarthBreezeExt
@@ -214,7 +245,11 @@ makedocs(; sitename = "NumericalEarth.jl",
              r"(?s)(└── dir:).*" => s"\1",
          ],
          clean = true,
-         warnonly = [:cross_references, :missing_docs],
+         # `:linkcheck` warns rather than errors: the nightly build reaches
+         # dozens of external hosts, and one of them moving a page or rate
+         # limiting should not throw away hours of example builds. Broken
+         # links still show up as warnings in the build log.
+         warnonly = [:cross_references, :missing_docs, :linkcheck],
          checkdocs = :exports,
          linkcheck = true,
          linkcheck_timeout = 30, # some hosts (e.g. JMA JRA-55) are slow; the default 10s times out
@@ -227,3 +262,9 @@ makedocs(; sitename = "NumericalEarth.jl",
              # they 404 during a PR's CI (the files only land on `main` at merge).
              r"https://github\.com/NumericalEarth/NumericalEarth\.jl/blob/main/test/",
         ],)
+
+# The site above is complete for every example that built; now surface the ones
+# that didn't, and fail the build so CI reports them.
+if !isempty(failed_examples)
+    error("The following examples failed to build: ", join(failed_examples, ", "))
+end
