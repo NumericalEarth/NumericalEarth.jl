@@ -35,13 +35,46 @@ $(TYPEDSIGNATURES)
 Momentum roughness length `ℓᵐ` and zero-plane displacement `d` (as `Field`s on the grid
 of `h`) from a mean building-height field `h` and a plan-area index field `λᵖ`,
 under `closure` (default [`MorphometricRoughness`](@ref)). Where `λᵖ → 0` the result
-reduces to a bare-soil roughness.
+reduces to a bare-soil roughness, and cells of invalid morphometry are `NaN`; fill them
+with [`fill_aerodynamic_roughness_gaps!`](@ref) before passing the pair to a flux closure.
 """
 function urban_roughness(h, λᵖ; closure = MorphometricRoughness(eltype(h.grid)))
     grid = h.grid
     ℓᵐ = Field{Center, Center, Nothing}(grid)
     d  = Field{Center, Center, Nothing}(grid)
     compute_aerodynamic_roughness!(ℓᵐ, d, closure, (; plan_area_index = λᵖ, mean_building_height = h), grid)
+    return ℓᵐ, d
+end
+
+@kernel function _fill_aerodynamic_roughness_gaps!(ℓᵐ, d, ℓˢᵒⁱˡ, dˢᵒⁱˡ)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        ℓᵐᵢⱼ = ℓᵐ[i, j, 1]
+        dᵢⱼ  = d[i, j, 1]
+        gap  = !isfinite(ℓᵐᵢⱼ) | !isfinite(dᵢⱼ)
+        ℓᵐ[i, j, 1] = ifelse(gap, ℓˢᵒⁱˡ, ℓᵐᵢⱼ)
+        d[i, j, 1]  = ifelse(gap, dˢᵒⁱˡ, dᵢⱼ)
+    end
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Replace the gaps `closure` marks at cells of invalid morphometry with its own bare-soil
+endpoint `aerodynamic_parameters(closure, 0, 0)`, in place. The roughness length `ℓᵐ` and
+zero-plane displacement `d` are filled together, so a gap in either becomes unbuilt
+surface in both.
+
+Where the morphometry that produced `ℓᵐ` and `d` is still to hand, inpainting `λᵖ` and `h`
+with `DataWrangling.inpaint_mask!` before evaluating the closure fills from horizontal
+neighbors instead, and a hole in a city stays a city.
+"""
+function fill_aerodynamic_roughness_gaps!(ℓᵐ, d, closure::AbstractUrbanRoughness)
+    grid = ℓᵐ.grid
+    FT = eltype(ℓᵐ)
+    ℓˢᵒⁱˡ, dˢᵒⁱˡ = aerodynamic_parameters(closure, 0, 0)
+    launch!(architecture(grid), grid, :xy, _fill_aerodynamic_roughness_gaps!,
+            ℓᵐ, d, convert(FT, ℓˢᵒⁱˡ), convert(FT, dˢᵒⁱˡ))
     return ℓᵐ, d
 end
 
