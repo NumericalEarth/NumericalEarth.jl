@@ -1,4 +1,4 @@
-using Oceananigans.Grids: inactive_node, λnodes, φnodes
+using Oceananigans.Grids: inactive_node, λnodes, φnodes, topology, Flat
 using Oceananigans.Operators: Azᶜᶜᶜ
 using Oceananigans.Architectures: on_architecture, CPU
 using Oceananigans.Fields: interior
@@ -32,6 +32,13 @@ end
 # A routed land carries a `NamedTuple` of `RiverRouting`, one per freshwater component
 # (e.g. `(; rivers, icebergs)`), so each component scatters through its own mouth map.
 const RoutedPrescribedLand = PrescribedLand{<:Any, <:Any, <:Any, <:Any, <:NamedTuple}
+
+"""
+$(TYPEDSIGNATURES)
+
+Whether `grid` has a coastline to route river mouths onto.
+"""
+routable_grid(grid) = !(topology(grid, 1) === Flat && topology(grid, 2) === Flat)
 
 #####
 ##### Outlet (river-mouth) detection

@@ -61,10 +61,11 @@ function GloFASPrescribedLand(grid;
     outlet_i, outlet_j, outlet_λ, outlet_φ = coastal_outlet_indices(snapshot)
 
     outlet_weight = fill(convert(eltype(grid), freshwater_density), length(outlet_i))
-    routing = build_river_routing(grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
-                                  maximum_search_radius, spread_radius, maximum_spread_cells)
+    river_routing = routable_grid(grid) ?
+        (; rivers = build_river_routing(grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
+                                        maximum_search_radius, spread_radius, maximum_spread_cells)) : nothing
 
     freshwater_flux = (; rivers = discharge)
 
-    return PrescribedLand(freshwater_flux; river_routing = (; rivers = routing))
+    return PrescribedLand(freshwater_flux; river_routing)
 end

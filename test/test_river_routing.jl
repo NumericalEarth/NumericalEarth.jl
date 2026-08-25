@@ -1,10 +1,10 @@
 include("runtests_setup.jl")
 
-using Oceananigans.Grids: Center, Face, λnodes, φnodes
+using Oceananigans.Grids: Center, Face, Flat, λnodes, φnodes
 using Oceananigans.Operators: Azᶜᶜᶜ
 using Oceananigans.ImmersedBoundaries: inactive_node
 using Oceananigans.Units: Time
-using NumericalEarth.Lands: RiverRouting, build_river_routing, coastal_outlet_indices
+using NumericalEarth.Lands: RiverRouting, build_river_routing, coastal_outlet_indices, routable_grid
 using NumericalEarth.EarthSystemModels: interpolate_state!
 using NumericalEarth.Oceans: river_mouth_vertical_diffusivity
 using Oceananigans.TurbulenceClosures: VerticalScalarDiffusivity
@@ -61,6 +61,12 @@ function integrated_mass_flux(flux, cpu_grid)
     return total
 end
 
+function routing_for(discharge, target_grid, ρ; kw...)
+    outlets = coastal_outlet_indices(discharge)
+    outlet_weight = fill(ρ, length(outlets[1]))
+    return build_river_routing(target_grid, outlets..., outlet_weight; maximum_search_radius = 5, kw...)
+end
+
 # Rebuild the flux a `RiverRouting` deposits, on the CPU.
 function scattered_flux(routing, discharge, cpu_grid)
     ti  = Array(routing.target_i)
@@ -81,71 +87,40 @@ function scattered_flux(routing, discharge, cpu_grid)
     return flux, ti, tj
 end
 
-@testset "River routing conservation [$arch]" for arch in test_architectures
+@testset "River routing conservation and spreading [$arch]" for arch in test_architectures
     Q₀ = 1234.0          # m³ s⁻¹
     ρ = 1000.0           # kg m⁻³
 
     discharge = synthetic_discharge_field(arch, Q₀)
     target_grid = half_land_ocean_grid(arch)
-
-    outlet_i, outlet_j, outlet_λ, outlet_φ = coastal_outlet_indices(discharge)
-    @test length(outlet_i) > 0
-
-    outlet_weight = fill(ρ, length(outlet_i))
-    routing = build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
-                                  maximum_search_radius = 5, spread_radius = 1.2)
-
-    # Scalar metric/mask queries run on a CPU copy of the grid (GPU-safe).
-    cpu_grid = on_architecture(CPU(), target_grid)
+    cpu_grid = on_architecture(CPU(), target_grid)   # scalar metric/mask queries are GPU-unsafe
     kᴺ = size(cpu_grid, 3)
-
     discharge_cpu = Array(interior(discharge))[:, :, 1]
-    flux, ti, tj = scattered_flux(routing, discharge_cpu, cpu_grid)
 
-    # Every destination must be an active (wet) ocean cell.
+    concentrated = routing_for(discharge, target_grid, ρ; spread_radius = nothing, maximum_spread_cells = 1)
+    spread       = routing_for(discharge, target_grid, ρ; spread_radius = 1.2)
+    capped       = routing_for(discharge, target_grid, ρ; spread_radius = 1.2, maximum_spread_cells = 3)
+
+    flux, ti, tj = scattered_flux(spread, discharge_cpu, cpu_grid)
+    @test length(ti) > 0
     for c in eachindex(ti)
         @test !inactive_node(ti[c], tj[c], kᴺ, cpu_grid, Center(), Center(), Center())
     end
 
-    # The deposited mass flux integrates to ρ × total discharge (volume conservation).
     total_discharge = sum(q for q in discharge_cpu if !isnan(q))
-    @test integrated_mass_flux(flux, cpu_grid) ≈ ρ * total_discharge rtol = 1e-5
     @test total_discharge ≈ Q₀
-end
 
-@testset "River spreading footprint [$arch]" for arch in test_architectures
-    Q₀ = 1234.0
-    ρ = 1000.0
-
-    discharge = synthetic_discharge_field(arch, Q₀)
-    target_grid = half_land_ocean_grid(arch)
-    cpu_grid = on_architecture(CPU(), target_grid)
-    discharge_cpu = Array(interior(discharge))[:, :, 1]
-
-    outlets = coastal_outlet_indices(discharge)
-    outlet_weight = fill(ρ, length(outlets[1]))
-
-    build(; kw...) = build_river_routing(target_grid, outlets..., outlet_weight;
-                                         maximum_search_radius = 5, kw...)
-
-    # A single landing cell when the footprint is one cell wide, many when it is a degree wide.
-    concentrated = build(spread_radius = nothing, maximum_spread_cells = 1)
-    spread       = build(spread_radius = 1.2)
-    capped       = build(spread_radius = 1.2, maximum_spread_cells = 3)
-
-    wet_cells_reached(routing) = count(>(0), scattered_flux(routing, discharge_cpu, cpu_grid)[1])
-
-    @test wet_cells_reached(concentrated) == 1
-    @test wet_cells_reached(spread) > wet_cells_reached(capped)
-    @test wet_cells_reached(capped) == 3
-
-    # Spreading only redistributes: all three conserve the same total mass.
+    # Spreading only redistributes: every footprint deposits ρ × total discharge.
     for routing in (concentrated, spread, capped)
-        flux, _, _ = scattered_flux(routing, discharge_cpu, cpu_grid)
-        @test integrated_mass_flux(flux, cpu_grid) ≈ ρ * Q₀ rtol = 1e-5
+        deposited, _, _ = scattered_flux(routing, discharge_cpu, cpu_grid)
+        @test integrated_mass_flux(deposited, cpu_grid) ≈ ρ * total_discharge rtol = 1e-5
     end
 
-    # The peak flux is diluted by the number of cells receiving the discharge.
+    wet_cells_reached(routing) = count(>(0), scattered_flux(routing, discharge_cpu, cpu_grid)[1])
+    @test wet_cells_reached(concentrated) == 1
+    @test wet_cells_reached(capped) == 3
+    @test wet_cells_reached(spread) > wet_cells_reached(capped)
+
     peak(routing) = maximum(scattered_flux(routing, discharge_cpu, cpu_grid)[1])
     @test peak(spread) < peak(capped) < peak(concentrated)
 end
@@ -159,43 +134,33 @@ end
     iceberg_snapshot = synthetic_discharge_field(arch, Q₁)
     target_grid = half_land_ocean_grid(arch)
 
-    # Two-snapshot FieldTimeSeries holding the same discharge at both times.
     function constant_time_series(snapshot)
-        times = [0.0, 86400.0]
-        fts = FieldTimeSeries{Center, Center, Nothing}(snapshot.grid, times)
+        fts = FieldTimeSeries{Center, Center, Nothing}(snapshot.grid, [0.0, 86400.0])
         parent(fts[1]) .= parent(snapshot)
         parent(fts[2]) .= parent(snapshot)
         return fts
     end
 
-    outlets = coastal_outlet_indices(river_snapshot)
-    outlet_weight = fill(ρ, length(outlets[1]))
-    routing = build_river_routing(target_grid, outlets..., outlet_weight; maximum_search_radius = 5)
-
+    routing = routing_for(river_snapshot, target_grid, ρ)
     freshwater_flux = (rivers = constant_time_series(river_snapshot),
                        icebergs = constant_time_series(iceberg_snapshot))
-
     land = PrescribedLand(freshwater_flux; river_routing = (rivers = routing, icebergs = routing))
 
     exchanger = (; state = (; freshwater_flux = Field{Center, Center, Nothing}(target_grid)))
-    coupled_model = (; clock = Clock(time = 0.0))
-
-    interpolate_state!(exchanger, target_grid, land, coupled_model)
+    interpolate_state!(exchanger, target_grid, land, (; clock = Clock(time = 0.0)))
 
     flux = Array(interior(exchanger.state.freshwater_flux))[:, :, 1]
-    cpu_grid = on_architecture(CPU(), target_grid)
 
     # Both components accumulate into the same freshwater flux.
-    @test integrated_mass_flux(flux, cpu_grid) ≈ ρ * (Q₀ + Q₁) rtol = 1e-5
+    @test integrated_mass_flux(flux, on_architecture(CPU(), target_grid)) ≈ ρ * (Q₀ + Q₁) rtol = 1e-5
 end
 
 @testset "River mouth vertical mixing [$arch]" for arch in test_architectures
-    Q₀ = 1234.0
     ρ = 1000.0
     κʳ = 0.25
     mixing_depth = 25
 
-    discharge = synthetic_discharge_field(arch, Q₀)
+    discharge = synthetic_discharge_field(arch, 1234.0)
 
     underlying = LatitudeLongitudeGrid(arch;
                                        size = (20, 20, 4),
@@ -206,11 +171,7 @@ end
 
     bottom_height(λ, φ) = ifelse(λ < 0, -100, 10)
     target_grid = ImmersedBoundaryGrid(underlying, GridFittedBottom(bottom_height))
-
-    outlets = coastal_outlet_indices(discharge)
-    outlet_weight = fill(ρ, length(outlets[1]))
-    routing = build_river_routing(target_grid, outlets..., outlet_weight; maximum_search_radius = 5)
-    river_routing = (; rivers = routing)
+    river_routing = (; rivers = routing_for(discharge, target_grid, ρ))
 
     river_mixing = river_mouth_vertical_diffusivity(target_grid, river_routing;
                                                     river_mouth_diffusivity = κʳ,
@@ -226,12 +187,19 @@ end
     # The extra diffusivity is confined to the mixing depth and to the cells receiving discharge.
     @test all(iszero, mask[:, :, deep])
     @test maximum(mask) == κʳ
-    @test count(>(0), mask[:, :, first(shallow)]) == length(Array(routing.target_i))
+    @test count(>(0), mask[:, :, first(shallow)]) == length(Array(river_routing.rivers.target_i))
 
-    # `ocean_simulation` appends the extra diffusivity to the closure it is given.
     ocean = ocean_simulation(target_grid; closure = nothing, river_routing,
                              river_mouth_diffusivity = κʳ, river_mouth_mixing_depth = mixing_depth)
 
     @test ocean.model.closure isa VerticalScalarDiffusivity
     @test isnothing(ocean_simulation(target_grid; closure = nothing).model.closure)
+end
+
+@testset "Single-column grids carry no routing" begin
+    column = LatitudeLongitudeGrid(CPU(); size = 1, latitude = 10, longitude = 10,
+                                   z = (-1, 0), topology = (Flat, Flat, Bounded))
+
+    @test !routable_grid(column)
+    @test routable_grid(half_land_ocean_grid(CPU()))
 end

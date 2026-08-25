@@ -1,4 +1,4 @@
-using ...Lands: PrescribedLand, build_flux_routing
+using ...Lands: PrescribedLand, build_flux_routing, routable_grid
 
 """
     JRA55PrescribedLand(grid;
@@ -51,9 +51,10 @@ function JRA55PrescribedLand(grid;
     Fic = JRA55FieldTimeSeries(:iceberg_freshwater_flux)
 
     freshwater_flux = (; rivers = Fri, icebergs = Fic)
-    river_routing = map(fts -> build_flux_routing(grid, fts; maximum_search_radius, spread_radius,
-                                                  maximum_spread_cells, outlet_detection_snapshots),
-                        freshwater_flux)
+    river_routing = routable_grid(grid) ?
+        map(fts -> build_flux_routing(grid, fts; maximum_search_radius, spread_radius,
+                                      maximum_spread_cells, outlet_detection_snapshots),
+            freshwater_flux) : nothing
 
     return PrescribedLand(freshwater_flux; river_routing)
 end

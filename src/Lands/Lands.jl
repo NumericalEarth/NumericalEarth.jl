@@ -6,6 +6,7 @@ export AbstractLand,
        build_river_routing,
        build_flux_routing,
        coastal_outlet_indices,
+       routable_grid,
        # Composable container
        SlabLand,
        # Energy-balance closures
@@ -33,6 +34,7 @@ instead.
 abstract type AbstractLand end
 
 using Adapt: Adapt
+using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture

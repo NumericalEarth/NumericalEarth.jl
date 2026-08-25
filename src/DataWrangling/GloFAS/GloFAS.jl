@@ -12,7 +12,7 @@ using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum,
                        available_variables, first_date, last_date
-using ...Lands: PrescribedLand, build_river_routing, coastal_outlet_indices
+using ...Lands: PrescribedLand, build_river_routing, coastal_outlet_indices, routable_grid
 
 download_GloFAS_cache::String = ""
 
