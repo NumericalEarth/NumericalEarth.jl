@@ -572,10 +572,13 @@ end
     Δh = 10.0
     U  = 5.0
     zero_ψ(ζ) = zero(ζ)
-    similarity_fluxes(zero_plane_displacement) =
-        SimilarityTheoryFluxes(; momentum_roughness_length    = ℓ,
-                                 temperature_roughness_length = ℓ,
-                                 water_vapor_roughness_length = ℓ,
+    similarity_fluxes(zero_plane_displacement;
+                      momentum_roughness_length = ℓ,
+                      temperature_roughness_length = ℓ,
+                      water_vapor_roughness_length = ℓ) =
+        SimilarityTheoryFluxes(; momentum_roughness_length,
+                                 temperature_roughness_length,
+                                 water_vapor_roughness_length,
                                  zero_plane_displacement,
                                  subgrid_velocities = nothing,
                                  stability_functions = SimilarityScales(zero_ψ, zero_ψ, zero_ψ))
@@ -586,12 +589,26 @@ end
     atmosphere_properties = (; thermodynamics_parameters = AtmosphereThermodynamicsParameters(Float64),
                                gravitational_acceleration = 9.81)
 
-    solved_friction_velocity(fluxes) =
+    solved_scales(fluxes) =
         iterate_interface_fluxes(fluxes, 290.0, 0.01, -2.0, 0.001, Δh,
                                  approximate_state, atmosphere_state,
-                                 interface_properties, atmosphere_properties)[1]
+                                 interface_properties, atmosphere_properties)
 
-    @test solved_friction_velocity(similarity_fluxes(4.0)) ≈ 0.4 / log((Δh - 4) / ℓ) * U
+    @test first(solved_scales(similarity_fluxes(4.0))) ≈ 0.4 / log((Δh - 4) / ℓ) * U
+
+    # Setup rejects this known configuration, but the runtime floor also protects a
+    # per-cell slot that grows after validation. The largest scalar roughness controls
+    # the effective height, keeping every logarithmic profile positive.
+    ℓu, ℓθ, ℓq = 0.01, 2.0, 5.0
+    guarded_fluxes = similarity_fluxes(9.0;
+                                       momentum_roughness_length = ℓu,
+                                       temperature_roughness_length = ℓθ,
+                                       water_vapor_roughness_length = ℓq)
+    u★, θ★, q★ = solved_scales(guarded_fluxes)
+    guarded_height = 2ℓq
+    @test u★ ≈ 0.4 / log(guarded_height / ℓu) * U
+    @test θ★ ≈ 0.4 / log(guarded_height / ℓθ) * -2
+    @test q★ ≈ 0.4 / log(guarded_height / ℓq) * 0.001
 end
 
 @testset "Atmosphere-Land per-cell roughness and displacement fields" begin
@@ -632,14 +649,14 @@ end
         # `local_flux_formulation` collapses `Field` slots to the cell's values and
         # passes numbers through.
         if arch isa CPU
-            localized = local_flux_formulation(fluxes, 2, 1)
+            localized = local_flux_formulation(fluxes, 2, 1, h)
             @test localized.roughness_lengths.momentum == ℓᵐ²
             @test localized.roughness_lengths.temperature == 0.01
             @test localized.zero_plane_displacement == d²
 
             # Formulation slots (e.g. ocean Charnock) pass through localization untouched.
             charnock = SimilarityTheoryFluxes(Float64)
-            @test local_flux_formulation(charnock, 1, 1).roughness_lengths.momentum ===
+            @test local_flux_formulation(charnock, 1, 1, h).roughness_lengths.momentum ===
                   charnock.roughness_lengths.momentum
         end
 
@@ -682,10 +699,10 @@ end
         # similarity profile cannot evaluate, is rejected when the interface is built:
         # kernels can neither throw nor report, so a bad slot would otherwise surface
         # as NaN fluxes, silently zero fluxes, or an out-of-bounds read.
-        land_fluxes(ℓᵐ; d = 0) =
+        land_fluxes(ℓᵐ; ℓθ = 0.01, ℓq = 0.01, d = 0) =
             SimilarityTheoryFluxes(; momentum_roughness_length = ℓᵐ,
-                                     temperature_roughness_length = 0.01,
-                                     water_vapor_roughness_length = 0.01,
+                                     temperature_roughness_length = ℓθ,
+                                     water_vapor_roughness_length = ℓq,
                                      zero_plane_displacement = d,
                                      subgrid_velocities = nothing,
                                      stability_functions = SimilarityScales(zero_ψ, zero_ψ, zero_ψ))
@@ -725,10 +742,13 @@ end
             ("volumetric field",          land_fluxes(set!(CenterField(grid), 0.03))),
             ("field from another grid",   land_fluxes(set!(Field{Center, Center, Nothing}(other_grid), 0.03))),
             ("bare array",                land_fluxes(fill(0.03, size(grid, 1), size(grid, 2), 1))),
-            # P3: a displacement that pushes the profile into the roughness sublayer, and
-            # a negative displacement, which would lower rather than raise the surface.
-            ("displacement in sublayer",  land_fluxes(momentum_roughness_length; d = cc(9.95))),
-            ("negative displacement",     land_fluxes(momentum_roughness_length; d = cc(-1.0))),
+            # P3: every similarity profile must clear its own roughness sublayer.
+            ("momentum roughness in sublayer", land_fluxes(momentum_roughness_length; d = cc(9.95))),
+            ("scalar roughness in sublayer",   land_fluxes(0.01; ℓθ = 5.0, ℓq = 5.0, d = 9.0)),
+            ("temperature roughness above layer", land_fluxes(0.01; ℓθ = 20.0)),
+            ("water-vapor roughness above layer", land_fluxes(0.01; ℓq = 20.0)),
+            # A negative displacement would lower rather than raise the surface.
+            ("negative displacement", land_fluxes(momentum_roughness_length; d = cc(-1.0))),
         )
 
         for (label, fluxes) in rejected
@@ -762,6 +782,34 @@ end
         crowded = cc((λ, φ) -> ifelse(λ < 11, 9.99, 0.0))
         @test_throws ArgumentError validate_flux_formulation(land_fluxes(smooth_then_rough;
                                                                         d = crowded), grid, h)
+
+        # Mutable slots can violate the validated clearance after construction. The
+        # kernel restores an oversized displacement to zero rather than entering the
+        # `2ℓ` profile-height backstop and its maximum drag coefficient.
+        set!(zero_plane_displacement, 500)
+        update_state!(model)
+        u★ᵈ = Array(interior(model.interfaces.atmosphere_land_interface.fluxes.friction_velocity))
+        @test u★ᵈ[1, 1, 1] ≈ ϰ / log(h / ℓᵐ¹) * uᵃᵗ
+        @test u★ᵈ[2, 1, 1] ≈ ϰ / log(h / ℓᵐ²) * uᵃᵗ
+
+        # An oversized mutable roughness falls back to `minimum_roughness_length`, so it
+        # cannot raise the shared profile height and amplify the scalar fluxes.
+        set!(zero_plane_displacement, 0)
+        set!(momentum_roughness_length, 50)
+        update_state!(model)
+
+        ℓmin = fluxes.minimum_roughness_length
+        u★ᶠ = ϰ / log(h / ℓmin) * uᵃᵗ
+        ℂᵃᵗ = atmosphere.thermodynamics_parameters
+        cᵖᵐ = Thermodynamics.cp_m(ℂᵃᵗ, 0.003)
+        ρᵃᵗ = Thermodynamics.air_density(ℂᵃᵗ, 288.0, 101325.0, 0.003)
+        g = model.interfaces.properties.gravitational_acceleration
+        θ★ᶠ = ϰ / log(h / 0.01) * (h / cᵖᵐ * g)
+        𝒬ᵀᶠ = - ρᵃᵗ * cᵖᵐ * u★ᶠ * θ★ᶠ
+
+        guarded_fluxes = model.interfaces.atmosphere_land_interface.fluxes
+        @test all(isapprox.(Array(interior(guarded_fluxes.friction_velocity)), u★ᶠ))
+        @test all(isapprox.(Array(interior(guarded_fluxes.sensible_heat)), 𝒬ᵀᶠ))
     end
 end
 

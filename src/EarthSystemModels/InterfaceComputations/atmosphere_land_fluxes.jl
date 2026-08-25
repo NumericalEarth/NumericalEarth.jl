@@ -195,9 +195,6 @@ end
     i, j = @index(Global, NTuple)
     time = Time(clock.time)
 
-    # Collapse per-cell `Field` roughness and displacement slots to this cell's values.
-    local_turbulent_flux_formulation = local_flux_formulation(turbulent_flux_formulation, i, j)
-
     @inbounds begin
         uᵃᵗ = atmosphere_state.u[i, j, 1]
         vᵃᵗ = atmosphere_state.v[i, j, 1]
@@ -214,6 +211,9 @@ end
 
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
     zᵃᵗ = state2dindex(atmosphere_properties.surface_layer_height, i, j)
+
+    # Localize per-cell slots and enforce their clearance at this cell's profile height.
+    local_turbulent_flux_formulation = local_flux_formulation(turbulent_flux_formulation, i, j, zᵃᵗ)
 
     local_atmosphere_state = (z = zᵃᵗ,
                               u = uᵃᵗ,
