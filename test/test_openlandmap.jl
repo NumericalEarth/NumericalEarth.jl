@@ -193,17 +193,22 @@ end
 @testset "OpenLandMapSoilDB matches the read resolution to the target grid" begin
     z = [-1.0, -0.6, -0.3, 0.0]
 
+    unpinned = OpenLandMapSoilDB(aggregation_factor = nothing)
+
     # A 0.08° target needs nothing finer than half a cell — 160 native pixels — so the read
     # drops to the largest power of two below that, 128.
     coarse_grid = LatitudeLongitudeGrid(CPU(); size = (10, 10, 3),
                                         longitude = (-112.4, -111.6), latitude = (36.0, 36.8), z)
     @test minimum_horizontal_spacing(coarse_grid) ≈ 0.08
-    @test aggregation_factor(matching_resolution_dataset(OpenLandMapSoilDB(), coarse_grid)) == 128
+    @test aggregation_factor(matching_resolution_dataset(unpinned, coarse_grid)) == 128
+
+    # The default reads at full resolution; sizing to the target is opt-in.
+    @test aggregation_factor(matching_resolution_dataset(OpenLandMapSoilDB(), coarse_grid)) == 1
 
     # A target finer than twice the native step reads at full resolution.
     fine_grid = LatitudeLongitudeGrid(CPU(); size = (10, 10, 3),
                                       longitude = (-112.002, -111.998), latitude = (36.0, 36.004), z)
-    @test aggregation_factor(matching_resolution_dataset(OpenLandMapSoilDB(), fine_grid)) == 1
+    @test aggregation_factor(matching_resolution_dataset(unpinned, fine_grid)) == 1
 
     # An explicit factor pins the read lattice and the target does not override it.
     pinned = OpenLandMapSoilDB(aggregation_factor = 4)
@@ -218,7 +223,7 @@ end
           "OpenLandMap_clay_fraction_f128_lon_-112.3_-111.9_lat_36.0_36.4.nc"
 
     # The metadatum a target rebuilds carries the matched dataset and its own cache file.
-    metadatum = Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region)
+    metadatum = Metadatum(:clay_fraction; dataset = unpinned, region)
     matched = target_matched_metadata(metadatum, coarse_grid)
     @test aggregation_factor(matched.dataset) == 128
     @test matched.filename == filename(OpenLandMapSoilDB(aggregation_factor = 128))
@@ -291,7 +296,8 @@ end
                                  z = [-1.0, -0.6, -0.3, 0.0])
     region = BoundingBox(grid)
 
-    metadatum = Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region, dir)
+    metadatum = Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(aggregation_factor = nothing),
+                          region, dir)
     matched = target_matched_metadata(metadatum, grid)
     @test aggregation_factor(matched.dataset) == 16
 
@@ -312,4 +318,3 @@ end
         @test interior(field, :, :, k) ≈ expected rtol = 1e-4
     end
 end
-

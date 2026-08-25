@@ -34,10 +34,10 @@ as a three-dimensional field whose vertical axis carries the depths (deepest
 first). Data are plain geographic EPSG:4326 so no reprojection is needed.
 
 `aggregation_factor` is the integer number of 30 m pixels reduced per side into one read cell.
-The default `nothing` sizes the read to the target: `Field(metadatum, grid)` picks the coarsest
-lattice that still oversamples `grid` twofold, and `Field(metadatum, arch)`, which has no target,
-reads at full resolution. An explicit factor pins the read lattice for both. Coarse reads
-come from the GeoTIFFs' average-resampled overview pyramid.
+The default `1` reads at full resolution. Pass `nothing` to size the read to the target instead:
+`Field(metadatum, grid)` then picks the coarsest lattice that still oversamples `grid` twofold,
+while `Field(metadatum, arch)`, which has no target, still reads at full resolution. Coarse reads
+come from the GeoTIFFs' average-resampled overview pyramid, so they average rather than sample.
 
 Because the global grid is ~1.44M × 528k cells, this dataset is read in regional
 windows only: construct the [`Metadatum`](@ref) with a longitude/latitude
@@ -67,7 +67,7 @@ struct OpenLandMapSoilDB{F} <: AbstractStaticDataset
     aggregation_factor :: F
 end
 
-function OpenLandMapSoilDB(; aggregation_factor = nothing)
+function OpenLandMapSoilDB(; aggregation_factor = 1)
     if !isnothing(aggregation_factor) && aggregation_factor < 1
         throw(ArgumentError("OpenLandMapSoilDB aggregation_factor must be a positive number of " *
                             "30 m pixels per read cell side, got $aggregation_factor"))
@@ -85,7 +85,7 @@ const OpenLandMapSoilDBMetadatum = Metadatum{<:OpenLandMapSoilDB}
 """
     aggregation_factor(dataset)
 
-Native 30 m pixels reduced per side into one read cell; `1` when unpinned.
+Native 30 m pixels reduced per side into one read cell; `1` when sized to a target.
 """
 aggregation_factor(dataset::OpenLandMapSoilDB) = something(dataset.aggregation_factor, 1)
 
