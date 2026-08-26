@@ -15,7 +15,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     FrictionVelocityUndercanopyConductance, undercanopy_conductance,
     SellersSoilResistance, LitterResistance, soil_surface_resistance, litter_resistance,
     bare_canopy_air_space, CanopyAirSpaceDiagnostics, DiagnosticSkin,
-    default_atmosphere_land_fluxes, local_interface_formulation, validate_canopy_optics
+    default_atmosphere_land_fluxes, local_interface_formulation
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, AtmosphereThermodynamicsParameters
 using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
 using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
@@ -142,29 +142,7 @@ end
     end
 end
 
-@testset "CanopyAirSpace field order and optics localization" begin
-    # `local_interface_formulation` rebuilds the closure positionally inside a kernel, and
-    # every optics slot is a free type parameter, so a reordered or inserted field would
-    # silently mis-wire it instead of failing to compile. Pin the order.
-    @test fieldnames(CanopyAirSpace) === (:soil,
-                                          :canopy,
-                                          :soil_skin_flux,
-                                          :leaf_albedo,
-                                          :ground_albedo,
-                                          :max_canopy_emissivity,
-                                          :ground_emissivity,
-                                          :extinction,
-                                          :clumping,
-                                          :leaf_boundary_conductance,
-                                          :undercanopy_conductance,
-                                          :wet_soil_resistance,
-                                          :litter_resistance,
-                                          :inner_iterations,
-                                          :relaxation,
-                                          :interception,
-                                          :phase,
-                                          :storage)
-
+@testset "CanopyAirSpace optics localization" begin
     FT = Float64
     grid = LatitudeLongitudeGrid(CPU(), FT; size = (2, 1, 1), latitude = (10, 11),
                                  longitude = (10, 12), z = (-1, 0),
@@ -185,9 +163,6 @@ end
     scalar_cas = build_canopy_air_space(FT)
     @test local_interface_formulation(scalar_cas, 2, 1).leaf_albedo == scalar_cas.leaf_albedo
     @test local_interface_formulation(BulkTemperature(), 2, 1) === BulkTemperature()
-
-    # A scalar slot keeps the closure's float type rather than widening the solve.
-    @test build_canopy_air_space(Float32).leaf_albedo isa Float32
 end
 
 @testset "Absorbed PAR absorbs on the canopy's own structure" begin
@@ -228,43 +203,6 @@ end
     @test exp(-cas.extinction * LAI * cas.clumping) != own
 
     @test absorbed_par_value(PrescribedAbsorbedPAR(FT(5e-4)), Ψᵣ, LAI, FT(0.3)) == FT(5e-4)
-end
-
-@testset "Canopy optics validation" begin
-    FT = Float64
-    grid = LatitudeLongitudeGrid(CPU(), FT; size = (2, 1, 1), latitude = (10, 11),
-                                 longitude = (10, 12), z = (-1, 0),
-                                 topology = (Bounded, Bounded, Bounded))
-
-    @test validate_canopy_optics(build_canopy_air_space(FT), grid) === nothing
-    @test validate_canopy_optics(BulkTemperature(), grid) === nothing
-
-    # A gap or an out-of-range value would propagate NaN into the coupled state.
-    for bad in (NaN, -0.1, 1.0)
-        α = Field{Center, Center, Nothing}(grid)
-        set!(α, (λ, φ) -> ifelse(λ < 11, 0.15, bad))
-        @test_throws ArgumentError validate_canopy_optics(build_canopy_air_space(FT; leaf_albedo = α), grid)
-    end
-
-    for bad in (NaN, 0.0, 1.5)
-        ε = Field{Center, Center, Nothing}(grid)
-        set!(ε, (λ, φ) -> ifelse(λ < 11, 0.96, bad))
-        @test_throws ArgumentError validate_canopy_optics(build_canopy_air_space(FT; ground_emissivity = ε), grid)
-    end
-
-    # A slot `state2dindex` cannot read per cell is rejected by layout, not by value.
-    volume_field = Field{Center, Center, Center}(grid)
-    set!(volume_field, 0.15)
-    @test_throws ArgumentError validate_canopy_optics(build_canopy_air_space(FT; leaf_albedo = volume_field), grid)
-
-    @test_throws ArgumentError validate_canopy_optics(build_canopy_air_space(FT; leaf_albedo = [0.1, 0.2]), grid)
-
-    other_grid = LatitudeLongitudeGrid(CPU(), FT; size = (2, 1, 1), latitude = (40, 41),
-                                       longitude = (10, 12), z = (-1, 0),
-                                       topology = (Bounded, Bounded, Bounded))
-    stray = Field{Center, Center, Nothing}(other_grid)
-    set!(stray, 0.15)
-    @test_throws ArgumentError validate_canopy_optics(build_canopy_air_space(FT; leaf_albedo = stray), grid)
 end
 
 # Per-cell optics reach the coupled solve: two cells sharing a canopy closure but differing

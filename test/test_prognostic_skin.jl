@@ -5,7 +5,7 @@ using Oceananigans: set!, interior
 using Oceananigans.TimeSteppers: update_state!, time_step!
 using Oceananigans.Architectures: Adapt
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    SoilSkinTemperature, EnergyBalanceTemperature, SkinTemperature, SoilConductiveFlux, SoilSkin,
+    SoilSkinTemperature, EnergyBalanceTemperature, SoilConductiveFlux,
     InterfaceProperties,
     DiagnosticSkin, PrognosticSkin,
     DryLayerHumidity, StorageBasedDryLayerDepth, DryLayerVaporPistonVelocity, ConstantTortuosity
@@ -74,16 +74,6 @@ end
 
 @testset "Prognostic energy-balance skin" begin
     for arch in test_architectures
-        # --- opt-in DiagnosticSkin() solves the same massless balance as
-        # SkinTemperature(SoilConductiveFlux), so the two land in the same place. Not
-        # bit-for-bit: the skin here Newtons the residual (carrying the radiative and
-        # vapor feedbacks in Σλ), while SkinTemperature still takes the Picard step of
-        # the ΔT-multiplied closed form and clamps the excursion.
-        m_ebt = bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05; storage = DiagnosticSkin()))
-        m_st  = bare_soil_model(arch, SkinTemperature(SoilConductiveFlux(1.5, 0.05); max_ΔT = 50))
-        @test value1(m_ebt.interfaces.atmosphere_land_interface.temperature) ≈
-              value1(m_st.interfaces.atmosphere_land_interface.temperature) atol = 0.5
-
         # --- windy daytime: the prognostic skin relaxes onto the diagnostic answer.
         Tform = SoilSkinTemperature(1.5, 0.05; storage = PrognosticSkin(heat_capacity = 1e5))
         mp = bare_soil_model(arch, Tform)
@@ -123,7 +113,7 @@ end
 
 @testset "PrognosticSkin is the default storage" begin
     @test SoilSkinTemperature(1.5, 0.05).storage isa PrognosticSkin
-    @test EnergyBalanceTemperature(SoilSkin(), SoilConductiveFlux(1.5, 0.05)).storage isa PrognosticSkin
+    @test EnergyBalanceTemperature(SoilConductiveFlux(1.5, 0.05)).storage isa PrognosticSkin
     @test SoilSkinTemperature(1.5, 0.05; storage = DiagnosticSkin()).storage isa DiagnosticSkin
 
     for FT in (Float32, Float64)
@@ -195,9 +185,7 @@ end
     end
 end
 
-# Adapt's fallback returns structs untouched, so a missing `adapt_structure` anywhere on
-# the path to a Field-valued property is invisible on the CPU and hands the kernel host
-# memory on the GPU. Assert the whole chain reaches the leaf, which CPU CI can check.
+# A Field-valued heat capacity must reach the device through every wrapper on the path.
 @testset "Field-valued capacity survives adapt" begin
     grid = bare_soil_pair(CPU())
     C = Field{Center, Center, Nothing}(grid)
@@ -206,7 +194,6 @@ end
     t = SoilSkinTemperature(1.5, 0.05; storage = PrognosticSkin(heat_capacity = C))
     @test typeof(Adapt.adapt(Array, t).storage.heat_capacity) == leaf
 
-    # ...and through the container the flux kernel actually receives.
     properties = InterfaceProperties(nothing, t, nothing)
     adapted = Adapt.adapt(Array, properties).temperature_formulation
     @test typeof(adapted.storage.heat_capacity) == leaf

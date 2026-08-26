@@ -85,11 +85,14 @@ Base.show(io::IO, p::InteractiveAbsorbedPAR) = print(io, summary(p),
 @inline absorbed_par_spec(x::AbstractAbsorbedPAR, FT) = x
 @inline absorbed_par_spec(x::Number, FT) = PrescribedAbsorbedPAR(convert(FT, x))
 
-# A canopy hands down the transmittance its own shortwave split used, so PAR absorbs on that
-# structure rather than rebuilding it. `nothing` means no canopy supplied one — the closure's own
-# `extinction` and `clumping` are the fallback, and are read in no other case.
+# Beer–Lambert transmittance through a canopy of leaf area index `LAI`, extinction
+# coefficient `K` and clumping `Ω`.
+@inline canopy_transmittance(K, Ω, leaf_area_index) = exp(-K * Ω * leaf_area_index)
+
+# A canopy hands down the transmittance its own shortwave split used; `nothing` means no
+# canopy supplied one, and the closure falls back on its own `extinction` and `clumping`.
 @inline canopy_transmittance(p::InteractiveAbsorbedPAR, leaf_area_index, ::Nothing) =
-    exp(-p.extinction * leaf_area_index * p.clumping)
+    canopy_transmittance(p.extinction, p.clumping, leaf_area_index)
 @inline canopy_transmittance(p::InteractiveAbsorbedPAR, leaf_area_index, ftrans) = ftrans
 
 @inline absorbed_par_value(p::PrescribedAbsorbedPAR, radiation, leaf_area_index, ftrans) = p.value

@@ -150,7 +150,7 @@ end
     # a `Number`/`Field` LAI ignores the time argument.
     LAI   = convert(FT, stateindex(h.leaf_area_index, i, j, 1, grid, Time(time), (Center, Center, Center)))
     Wcᵐᵃˣ = h.capacity_per_leaf_area * LAI
-    fⁱⁿᵗ = 1 - exp(-h.extinction * LAI * h.clumping)
+    fⁱⁿᵗ = 1 - canopy_transmittance(h.extinction, h.clumping, LAI)
 
     Wcⁿ⁺¹, _, Pˡ, Eʷᵣ = canopy_store_update(Wcⁿ, rain, Eʷ, Wcᵐᵃˣ, fⁱⁿᵗ,
                                                 h.drainage_smoothing_width, Δt)

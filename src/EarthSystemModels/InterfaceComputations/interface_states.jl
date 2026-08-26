@@ -94,6 +94,14 @@ end
     return εᵈᵛ⁻¹ * pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) * pᵛ⁺)
 end
 
+# dqᵛ⁺/dT by centered difference — the Newton derivative of each balance's latent term.
+@inline function saturation_humidity_slope(ℂᵃᵗ, T, pᵃᵗ, phase)
+    δ = convert(typeof(T), 1//100)
+    q⁺ = saturation_specific_humidity(ℂᵃᵗ, T + δ, pᵃᵗ, phase)
+    q⁻ = saturation_specific_humidity(ℂᵃᵗ, T - δ, pᵃᵗ, phase)
+    return (q⁺ - q⁻) / 2δ
+end
+
 # Saturation phase of a humidity formulation, used only for the initial surface-
 # humidity guess in the flux kernel. Most formulations store it directly;
 # composite formulations forward to their soil branch.
@@ -458,26 +466,11 @@ end
 """
     SoilConductiveFlux(conductivity, thickness)
 
-Internal conductive flux for a **land** skin temperature: the radiating skin
-exchanges heat with the bulk slab across a thin surface layer of thermal
-conductivity `κᵀ` (`conductivity`, W m⁻¹ K⁻¹) and thickness `ℓᵀ` (`thickness`, m),
-giving the skin↔bulk conductance `Λᵍ = κᵀ/ℓᵀ` (W m⁻² K⁻¹). Pair with
-`SkinTemperature(SoilConductiveFlux(...))` on the atmosphere–land interface so the
-radiometric surface temperature `Tᵍ` (what a satellite LST sees, and what sets the
-diurnal amplitude of the outgoing longwave and the sensible/latent partition) can
-differ from the bulk slab `Tˡᵃ`.
-
-Unlike the ocean [`DiffusiveFlux`](@ref), whose `κ` is a thermal *diffusivity*
-converted to a conductance through the interior density/heat capacity, this holds
-the physical conductance directly: the diagnostic balance
-`Rₙ(Tᵍ) = H(Tᵍ) + LE(Tᵍ) + Λᵍ(Tᵍ − Tˡᵃ)` is a temperature *root*, so it is
-invariant to the overall energy-to-tendency scale and needs no soil `ρ`/`c`.
-
-Reasonable defaults are `conductivity = 1.5`, `thickness = 0.05` ⇒ `Λᵍ = 30`.
-The skin is a thin radiometric film on top of the bulk diurnal layer; its
-conductance and the force-restore heat capacity / deep restoring represent distinct
-layers and coexist (no re-tuning of the bulk closure). Moisture-dependent
-conductivity `κᵀ(𝒮)` (wet soil conducts better) is a natural learnable extension.
+Conductive coupling between a land skin temperature and the bulk slab across a
+surface layer of thermal conductivity `κᵀ` (`conductivity`, W m⁻¹ K⁻¹) and
+thickness `ℓᵀ` (`thickness`, m), giving the skin↔bulk conductance
+`Λᵍ = κᵀ/ℓᵀ` (W m⁻² K⁻¹). Use it through [`SoilSkinTemperature`](@ref);
+`conductivity = 1.5`, `thickness = 0.05` ⇒ `Λᵍ = 30` is a reasonable first cut.
 """
 struct SoilConductiveFlux{K, Z}
     conductivity :: K   # κᵀ, W m⁻¹ K⁻¹
@@ -485,26 +478,6 @@ struct SoilConductiveFlux{K, Z}
 end
 
 @inline skin_conductance(F::SoilConductiveFlux) = F.conductivity / F.thickness
-
-# Land skin balance, the ρc-free equivalent of the `DiffusiveFlux` method above:
-# Rₙ − H − LE − Λᵍ(Tᵍ − Tᵈ) = 0 with the deep endpoint Tᵈ = Ψᵢ.T (bulk slab),
-# the sensible heat linearized through Ωᵀ = 𝒬ᵀ/ΔT and the balance multiplied by
-# ΔT = Tᵃᵗ − Tᵍ⁻ to stay finite as ΔT → 0. Λᵍ → ∞ recovers `BulkTemperature`
-# (Tᵍ → Tˡᵃ); Λᵍ → 0 fully decouples the skin.
-@inline function flux_balance_temperature(st::SkinTemperature{<:SoilConductiveFlux}, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
-    FT = typeof(Ψₛ.temperature)
-    Λ  = convert(FT, skin_conductance(st.internal_flux))
-    Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd   # net non-sensible flux, positive up
-
-    Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
-    ΔT  = Tᵃᵗ - Ψₛ.temperature
-
-    D  = Λ * ΔT - 𝒬ᵀ
-    T★ = (Ψᵢ.T * Λ * ΔT - Qa * ΔT - 𝒬ᵀ * Tᵃᵗ) / D
-    T★ = ifelse(D == 0, Ψₛ.temperature, T★)
-    max_ΔT = convert(FT, st.max_ΔT)
-    return Ψᵢ.T + clamp(T★ - Ψᵢ.T, -max_ΔT, max_ΔT)
-end
 
 # Solve the surface flux balance equation:
 #   Qa(Tₛ) + Ωc (Tᵃᵗ - Tₛ) + (Tₛ - Tᵦ) / R = 0
@@ -541,9 +514,7 @@ end
     T★ = ifelse(D == 0, Tₛ⁻, T★)
     T★ = ifelse(isnan(T★), Tₛ⁻, T★)
 
-    # Damped-Newton trust region: cap how far the skin moves in one iterate. Note this
-    # is a *step* cap, not the excursion bound the `DiffusiveFlux` and `SoilConductiveFlux`
-    # methods above apply to the answer — the two read `st.max_ΔT` but mean different things.
+    # Damped-Newton trust region: cap how far the skin moves in one iterate.
     ΔT★ = T★ - Tₛ⁻
     max_temperature_step = convert(typeof(T★), st.max_ΔT)
     Tₛ⁺ = Tₛ⁻ + clamp(ΔT★, -max_temperature_step, max_temperature_step)
@@ -631,41 +602,13 @@ end
                                     atmosphere_properties)
 end
 
-####
-#### EnergyBalanceTemperature — a diagnostic surface-energy-balance temperature,
-#### generalizing the land soil skin toward a shared soil-skin / canopy-leaf type.
-####
-#### A land soil skin and a canopy leaf are the same capability from two
-#### directions: each is a second temperature obtained by closing a surface
-#### energy balance `Rₙ = H + LE + G` inside the interface fixed point, differing
-#### only in the coupling `G` to the bulk slab. `EnergyBalanceTemperature` carries
-#### the `kind` and solves it with one (ρc-free) root, sharing the MO-consistent
-#### fluxes with `SkinTemperature` through `skin_surface_fluxes`.
-####
-####  - `SoilSkin(coupling)` — conducts to the bulk slab through
-####    `G = Λᵍ(Tᵍ − Tˡᵃ)`, `Λᵍ` from a [`SoilConductiveFlux`](@ref); identical
-####    to `SkinTemperature(SoilConductiveFlux(...))`.
-####
-#### Only `SoilSkin` is implemented. A canopy-leaf kind (a massless leaf,
-#### `Rₙ = H + LE`, no soil conduction) is not included: a robust `G = 0` leaf
-#### balance needs the outgoing-longwave `T⁴` term (a two-face canopy longwave
-#### ledger) or a small prognostic leaf heat capacity to stay conditioned as the
-#### sensible flux vanishes, and it needs the canopy/ground shortwave split carried
-#### to the temperature call site.
-
-struct SoilSkin end
-Base.summary(::SoilSkin) = "SoilSkin"
-
 """
     DiagnosticSkin()
 
 Massless skin: the energy-balance temperature is solved to equilibrium inside the
 Monin–Obukhov fixed point, one Newton step per iterate, so the skin and the
-similarity scales converge jointly. The skin has no memory — turbulence, surface,
-and radiation are asserted to be in mutual equilibrium within each time step — so
-in the regime where the coupled system has no steady state at all (calm moist
-transitions) there is no equilibrium to find. Prefer [`PrognosticSkin`](@ref), the
-default, whose capacity gives that imbalance somewhere physical to go.
+similarity scales converge jointly. The skin has no memory, so turbulence, surface,
+and radiation are in mutual equilibrium within every time step.
 """
 struct DiagnosticSkin end
 
@@ -684,18 +627,13 @@ C \\frac{dT_s}{dt} = R_n(T_s) + G(T_s) - H(T_s) - LE(T_s),
 ```
 
 frozen through the Monin–Obukhov fixed point (only ``u_★ ↔ ζ`` iterates) and
-advanced once per step by a Newton-refined backward-Euler update. The capacity
-rate-limits the skin physically, so the surface energy balance stays honest: the
-imbalance a massless skin would have to dissipate instantly lands in the storage
-tendency instead. The default
-`heat_capacity = 10⁵ ≈ (ρc)_soil × 0.05 m` (5 cm of moist soil) gives a 30–40
-minute skin timescale at calm night while daytime remains effectively
-diagnostic. The first `update_state!` (``Δt = 0``) lands on the equilibrium root
-at the converged similarity scales, so the skin starts near the massless answer
-rather than at the bulk temperature it is seeded from — not exactly on it, since
-the massless root iterates ``T_s`` jointly with ``u_★``. The skin humidity carries
-no storage of its own: it is determined by the skin temperature and the (already
-prognostic) soil moisture.
+advanced once per step by a Newton-refined backward-Euler update, so the imbalance a
+massless skin would dissipate instantly lands in the storage tendency instead. The
+default `heat_capacity = 10⁵ ≈ (ρc)_soil × 0.05 m` (5 cm of moist soil) gives a
+30–40 minute skin timescale at calm night while daytime remains effectively
+diagnostic. At ``Δt = 0`` the update lands on the equilibrium root. The skin
+humidity carries no storage of its own: it follows the skin temperature and the
+(already prognostic) soil moisture.
 
 ```jldoctest
 using NumericalEarth
@@ -719,39 +657,31 @@ Base.show(io::IO, s::PrognosticSkin) = print(io, summary(s))
 Adapt.adapt_structure(to, s::PrognosticSkin) = PrognosticSkin(adapt(to, s.heat_capacity))
 
 """
-    EnergyBalanceTemperature(kind, coupling; storage=PrognosticSkin())
+    EnergyBalanceTemperature(coupling; storage=PrognosticSkin())
 
-Interface temperature that closes a surface energy balance `Rₙ = H + LE + G`.
-The only `kind` presently implemented is [`SoilSkin`](@ref), which conducts to the
-bulk slab through `coupling`, a [`SoilConductiveFlux`](@ref); use the convenience
-constructor [`SoilSkinTemperature`](@ref). `Λᵍ → ∞` recovers [`BulkTemperature`](@ref).
-
-`storage` selects the skin treatment: [`PrognosticSkin`](@ref) (the default — the
-skin carries its physical heat capacity and is advanced with the model time step)
-or [`DiagnosticSkin`](@ref) (massless — the same balance at equilibrium).
-
-Both paths solve the residual `F(Tₛ) = Rₙ + G − H − LE` by Newton on the surface
-conductance sum `Σλ = 4ϵσTₛ³ + Λ + ρ u★ (cᵖ χθ + ℒ χq dq/dT)`, which is a sum of
-non-negative conductances bounded below by `Λ > 0`. There is no excursion clamp
-on either path: the solve has no denominator that can vanish, so nothing needs
-bounding to stay conditioned.
+Interface temperature that closes the surface energy balance
+`F(Tₛ) = Rₙ + G − H − LE = 0` by Newton on the conductance sum
+`Σλ = 4ϵσTₛ³ + Λ + ρ u★ (cᵖ χθ + ℒ χq dq/dT)`. `coupling` is a
+[`SoilConductiveFlux`](@ref) carrying `G = Λᵍ(Tₛ − Tˡᵃ)`; `storage` is
+[`PrognosticSkin`](@ref) (the default, the skin carries its heat capacity) or
+[`DiagnosticSkin`](@ref) (massless). `Λᵍ → ∞` recovers [`BulkTemperature`](@ref).
+Construct one with [`SoilSkinTemperature`](@ref).
 """
-struct EnergyBalanceTemperature{K, C, ST}
-    kind     :: K
+struct EnergyBalanceTemperature{C, ST}
     coupling :: C
     storage  :: ST
 end
 
-EnergyBalanceTemperature(kind, coupling; storage=PrognosticSkin()) =
-    EnergyBalanceTemperature(kind, coupling, storage)
+EnergyBalanceTemperature(coupling; storage=PrognosticSkin()) =
+    EnergyBalanceTemperature(coupling, storage)
 
-const PrognosticEnergyBalanceTemperature = EnergyBalanceTemperature{<:Any, <:Any, <:PrognosticSkin}
+const PrognosticEnergyBalanceTemperature = EnergyBalanceTemperature{<:Any, <:PrognosticSkin}
 
 # Needed so a Field-valued `storage` reaches the device: Adapt's fallback returns
 # structs untouched, which is invisible on the CPU and leaves host memory in the
 # kernel on the GPU.
 Adapt.adapt_structure(to, t::EnergyBalanceTemperature) =
-    EnergyBalanceTemperature(adapt(to, t.kind), adapt(to, t.coupling), adapt(to, t.storage))
+    EnergyBalanceTemperature(adapt(to, t.coupling), adapt(to, t.storage))
 
 """
     SoilSkinTemperature(conductivity, thickness; storage=PrognosticSkin())
@@ -762,13 +692,10 @@ slab with conductance `Λᵍ = conductivity/thickness` (W m⁻² K⁻¹). The de
 DiagnosticSkin()` recovers the massless equilibrium of the same balance.
 """
 SoilSkinTemperature(conductivity, thickness; storage=PrognosticSkin()) =
-    EnergyBalanceTemperature(SoilSkin(), SoilConductiveFlux(conductivity, thickness), storage)
+    EnergyBalanceTemperature(SoilConductiveFlux(conductivity, thickness), storage)
 
-Base.summary(t::EnergyBalanceTemperature) = string("EnergyBalanceTemperature(", summary(t.kind), ")")
+Base.summary(t::EnergyBalanceTemperature) = string("EnergyBalanceTemperature(Λ=", prettysummary(skin_conductance(t.coupling)), ")")
 Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
-
-# Skin↔bulk conductance per kind: SoilSkin conducts (Λᵍ = κᵀ/ℓᵀ).
-@inline balance_conductance(::SoilSkin, coupling) = skin_conductance(coupling)
 
 # The surface energy imbalance F(T) = Rₙ(T) + G(T) − H(T) − LE(T) and the conductance
 # sum Σλ = −dF/dT at skin temperature T, with the similarity scales frozen at the
@@ -787,7 +714,7 @@ Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
     u★  = Ψₛ.fluxes.u★
     χθ⁺ = max(zero(FT), Ψₛ.fluxes.χθ)
     χq⁺ = max(zero(FT), Ψₛ.fluxes.χq)
-    Λ   = convert(FT, balance_conductance(t.kind, t.coupling))
+    Λ   = convert(FT, skin_conductance(t.coupling))
     Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
 
     q  = compute_interface_humidity(ℙₛ.specific_humidity_formulation, T, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)

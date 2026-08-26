@@ -1,7 +1,3 @@
-using DocStringExtensions: TYPEDSIGNATURES
-using Oceananigans.Architectures: architecture
-using Oceananigans.Fields: interior, location
-
 #####
 ##### `CanopyAirSpace` — a two-source canopy with a diagnostic canopy-air node.
 #####
@@ -92,8 +88,7 @@ end
 """
     AreaIndexUndercanopyConductance(FT = Oceananigans.defaults.FloatType;
                                     drag_coefficient = 0.006,
-                                    stem_area_index = 0,
-                                    minimum_shielding = 0.1)
+                                    stem_area_index = 0)
 
 Ground↔canopy-air aerodynamic conductance that responds to canopy density and wind
 (the PALADYN form; [Willeit and Ganopolski (2016)](@cite willeit2016)):
@@ -107,10 +102,7 @@ with `drag_coefficient` `C`, the surface wind speed `Vₐ`, and the canopy shiel
 canopy shields the ground more strongly and decouples it from the canopy air; a sparse
 canopy (`LAI → 0`) leaves the ground ventilating at the aerodynamic limit, so the result
 is capped at the aerodynamic transfer velocity `u★²/Vₐ` — the ground cannot ventilate to
-the canopy air faster than the canopy air ventilates to the atmosphere. `minimum_shielding`
-(`ε`) floors the shielding so the sparse-canopy limit stays finite. Both guards are
-additions to the PALADYN form, which leaves `gᵘᶜ` unbounded as the canopy vanishes and
-relies on the series aerodynamic resistance instead.
+the canopy air faster than the canopy air ventilates to the atmosphere.
 
 ```jldoctest
 using NumericalEarth
@@ -118,22 +110,19 @@ using NumericalEarth
 AreaIndexUndercanopyConductance()
 
 # output
-AreaIndexUndercanopyConductance(C=0.006, SAI=0.0, ε=0.1)
+AreaIndexUndercanopyConductance(C=0.006, SAI=0.0)
 ```
 """
 struct AreaIndexUndercanopyConductance{FT} <: AbstractUndercanopyConductance
-    drag_coefficient  :: FT
-    stem_area_index   :: FT
-    minimum_shielding :: FT
+    drag_coefficient :: FT
+    stem_area_index  :: FT
 end
 
 AreaIndexUndercanopyConductance(FT::Type = Oceananigans.defaults.FloatType;
                                 drag_coefficient = 0.006,
-                                stem_area_index = 0,
-                                minimum_shielding = 0.1) =
+                                stem_area_index = 0) =
     AreaIndexUndercanopyConductance(convert(FT, drag_coefficient),
-                                    convert(FT, stem_area_index),
-                                    convert(FT, minimum_shielding))
+                                    convert(FT, stem_area_index))
 
 """
     FrictionVelocityUndercanopyConductance(FT = Oceananigans.defaults.FloatType;
@@ -192,8 +181,7 @@ Base.show(io::IO, u::ConstantUndercanopyConductance) = print(io, summary(u))
 
 Base.summary(u::AreaIndexUndercanopyConductance) =
     string("AreaIndexUndercanopyConductance(C=", prettysummary(u.drag_coefficient),
-           ", SAI=", prettysummary(u.stem_area_index),
-           ", ε=", prettysummary(u.minimum_shielding), ")")
+           ", SAI=", prettysummary(u.stem_area_index), ")")
 Base.show(io::IO, u::AreaIndexUndercanopyConductance) = print(io, summary(u))
 
 Base.summary(u::FrictionVelocityUndercanopyConductance) =
@@ -208,9 +196,8 @@ Base.show(io::IO, u::FrictionVelocityUndercanopyConductance) = print(io, summary
 @inline function undercanopy_conductance(u::AreaIndexUndercanopyConductance, LAI, Vₐ, u★)
     FT = typeof(LAI)
     C  = convert(FT, u.drag_coefficient)
-    ε  = convert(FT, u.minimum_shielding)
     Λ  = LAI + convert(FT, u.stem_area_index)
-    gᵘ = C * Vₐ / max(1 - exp(-Λ), ε)
+    gᵘ = C * Vₐ / max(1 - exp(-Λ), eps(FT))
     gᵃ = u★^2 / max(Vₐ, eps(FT))
     return min(gᵘ, gᵃ)
 end
@@ -245,13 +232,9 @@ rˢ = e^{a - b 𝒮},
 ```
 
 with the surface saturation `𝒮`, fit by [Sellers et al. (1992)](@cite sellers1992) to the
-FIFE prairie flux stations (`rˢ(1) ≈ 52` s m⁻¹). The FIFE sites carried standing dead
-grass and plant litter, so the moist-soil end of the fit is an *effective* soil-plus-litter
-resistance rather than pore-scale soil physics: chamber measurements of litter-free wet
-soil find near-zero surface resistance, and [Sakaguchi and Zeng (2009)](@cite sakaguchi2009)
-attribute the moist-soil remainder to the litter layer. Use this fit as a bundled
-alternative to an explicit [`LitterResistance`](@ref) (pass `litter_resistance = nothing`);
-combining both double-counts the litter effect.
+FIFE prairie flux stations (`rˢ(1) ≈ 52` s m⁻¹). Those sites carried litter, so the fit is
+an effective soil-plus-litter resistance: use it as an alternative to an explicit
+[`LitterResistance`](@ref) (pass `litter_resistance = nothing`), not alongside one.
 
 ```jldoctest
 using NumericalEarth
@@ -446,8 +429,7 @@ Fields:
 
 The four optics slots accept a per-cell `Field{Center, Center, Nothing}` alongside a
 `Number`, so a satellite albedo product reaches the two-source radiation balance cell by
-cell. The land flux kernel localizes them before the canopy solve; the interface
-constructor checks them with [`validate_canopy_optics`](@ref).
+cell. The land flux kernel localizes them before the canopy solve.
 
 ```jldoctest
 using NumericalEarth
@@ -541,7 +523,7 @@ const PrognosticCanopyAirSpace = CanopyAirSpace{<:Any, <:Any, <:Any, <:Any, <:An
                                                 <:PrognosticCanopyAir}
 
 #####
-##### Per-cell optics: localization (kernel) and validation (setup)
+##### Per-cell optics: localization
 #####
 
 # Collapse `Field`-valued optics slots to cell (i, j) before the index-free canopy solve;
@@ -558,96 +540,11 @@ const PrognosticCanopyAirSpace = CanopyAirSpace{<:Any, <:Any, <:Any, <:Any, <:An
                    c.undercanopy_conductance, c.wet_soil_resistance, c.litter_resistance,
                    c.inner_iterations, c.relaxation, c.interception, c.phase, c.storage)
 
-@inline evaluable_albedo(α) = isfinite(α) & (α ≥ 0) & (α < 1)
-@inline evaluable_emissivity(ε) = isfinite(ε) & (ε > 0) & (ε ≤ 1)
-
-# The four slots that may carry per-cell values, each with the predicate its values must
-# satisfy and the requirement to quote when they do not.
-@inline canopy_optics_slots(c::CanopyAirSpace) =
-    (("leaf_albedo",           c.leaf_albedo,           evaluable_albedo,     "in [0, 1)"),
-     ("ground_albedo",         c.ground_albedo,         evaluable_albedo,     "in [0, 1)"),
-     ("max_canopy_emissivity", c.max_canopy_emissivity, evaluable_emissivity, "in (0, 1]"),
-     ("ground_emissivity",     c.ground_emissivity,     evaluable_emissivity, "in (0, 1]"))
-
-# Setup-time only, so the host copy is fine.
-optics_slot_values(slot::Number) = (slot,)
-optics_slot_values(slot::AbstractField) = Array(interior(slot))
-
-# `state2dindex` reads `slot[i, j, 1]`, so a slot must be a horizontally-reduced field on
-# *this* grid: a `(Center, Center, Center)` field would silently contribute its deepest
-# level, and a field from another grid would read the wrong cell — the kernel reads it
-# `@inbounds`.
-function validate_optics_slot_layout(slot::AbstractField, name, grid)
-    if location(slot) !== (Center, Center, Nothing)
-        LX, LY, LZ = location(slot)
-        throw(ArgumentError("$name must be a horizontally-reduced Field at " *
-                            "(Center, Center, Nothing), got ($LX, $LY, $LZ). " *
-                            "Build it with Field{Center, Center, Nothing}(grid)."))
-    end
-
-    # Grids compare with `==` (topology and nodes): two references to one grid are not
-    # guaranteed to be egal, so identity would reject a field built on the interface's grid.
-    if architecture(slot) !== architecture(grid) || slot.grid != grid
-        throw(ArgumentError("$name is built on a different grid than the interface " *
-                            "($(summary(slot.grid)) vs $(summary(grid))). Per-cell canopy " *
-                            "optics must be built on the grid the interface is constructed " *
-                            "with, or they index the wrong cell."))
-    end
-
-    return nothing
-end
-
-validate_optics_slot_layout(slot::Number, name, grid) = nothing
-
-# A bare array carries no location or grid, so nothing pins its rows and columns to the
-# exchange grid's cells; require a Field so the layout above can be checked. Anything else
-# has no per-cell values for `optics_slot_values` to read.
-validate_optics_slot_layout(slot, name, grid) =
-    throw(ArgumentError("$name must be a Number or a Field, got a $(summary(slot)). " *
-                        "Wrap per-cell values in a Field{Center, Center, Nothing}(grid)."))
-
-"""
-$(TYPEDSIGNATURES)
-
-Check that the optics slots of `formulation` can be localized on `grid` and evaluated by
-the canopy radiation balance, and throw an `ArgumentError` naming the offending slot
-otherwise.
-
-Kernels can neither throw nor report, so the conditions the two-source radiation balance
-depends on are checked here: a `Field` slot is horizontally reduced and sized to `grid`,
-every albedo lies in `[0, 1)` so the absorbed shortwave `(1 - α) SW` is a real fraction,
-and every emissivity lies in `(0, 1]` so the longwave balance stays invertible. A gap in
-a satellite albedo product would otherwise propagate `NaN` through the leaf and ground
-skin temperatures into the coupled state.
-"""
-function validate_canopy_optics(c::CanopyAirSpace, grid)
-    for (name, slot, evaluable, requirement) in canopy_optics_slots(c)
-        validate_optics_slot_layout(slot, name, grid)
-
-        values = optics_slot_values(slot)
-        all(evaluable, values) && continue
-
-        throw(ArgumentError("$name has $(count(!evaluable, values)) cells that are not " *
-                            "$requirement (minimum $(minimum(values)), maximum " *
-                            "$(maximum(values))). A bad cell propagates NaN through the " *
-                            "leaf and ground skin temperatures into the coupled state. " *
-                            "Gap-fill the field first."))
-    end
-
-    return nothing
-end
-
-validate_canopy_optics(formulation, grid) = nothing
-
 Base.summary(::CanopyAirSpace) = "CanopyAirSpace"
 Base.show(io::IO, c::CanopyAirSpace) =
     print(io, "CanopyAirSpace(soil=", summary(c.soil), ", canopy=", summary(c.canopy),
           ", storage=", summary(c.storage), ")")
 
-# `local_interface_formulation` rebuilds this struct positionally inside a kernel, where a
-# name-keyed rebuild would not be type-stable, so a reordered or inserted field would
-# silently mis-wire the closure rather than fail to compile. `test_canopy_air_space.jl`
-# pins the field order.
 Adapt.@adapt_structure CanopyAirSpace
 
 # Materialization / identity — delegate to the sub-models so the per-cell interface
@@ -749,14 +646,6 @@ end
     return ifelse((Δt > 0) & (C > 0), x_eq + (x - x_eq) * m, x_eq)
 end
 
-# dqᵛ⁺/dT by centered difference — the Newton derivative of each balance's latent term.
-@inline function saturation_humidity_slope(ℂᵃᵗ, T, pᵃᵗ, phase)
-    δ = convert(typeof(T), 1//100)
-    q⁺ = saturation_specific_humidity(ℂᵃᵗ, T + δ, pᵃᵗ, phase)
-    q⁻ = saturation_specific_humidity(ℂᵃᵗ, T - δ, pᵃᵗ, phase)
-    return (q⁺ - q⁻) / 2δ
-end
-
 """
     canopy_air_space_solve(c::CanopyAirSpace, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
 
@@ -821,7 +710,7 @@ closes.
     αᵍ  = convert(FT, c.ground_albedo)
     εᵛ = convert(FT, c.max_canopy_emissivity) * (1 - exp(-LAI))
     εᵍ = convert(FT, c.ground_emissivity)
-    ftrans    = exp(-c.extinction * LAI * c.clumping)
+    ftrans = canopy_transmittance(c.extinction, c.clumping, LAI)
     SWᵛ = (1 - αˡᶠ) * (1 - ftrans) * SW
     SWᵍ = ftrans * (1 - αᵍ) * SW
 

@@ -106,7 +106,6 @@ Fields:
 - `vpd_sensitivity`       : VPD stress coefficient (Pa⁻¹).
 - `optimal_temperature`   : optimal leaf temperature (K).
 - `temperature_curvature` : temperature-factor curvature (K⁻²).
-- `factor_floor`          : lower clamp on each factor (numerical safety).
 """
 struct JarvisConductance{FT} <: AbstractStomatalConductance
     maximum_conductance   :: FT
@@ -114,7 +113,6 @@ struct JarvisConductance{FT} <: AbstractStomatalConductance
     vpd_sensitivity       :: FT
     optimal_temperature   :: FT
     temperature_curvature :: FT
-    factor_floor          :: FT
 end
 
 JarvisConductance(FT=Oceananigans.defaults.FloatType;
@@ -122,10 +120,9 @@ JarvisConductance(FT=Oceananigans.defaults.FloatType;
                   par_half_saturation   = 1e-4,
                   vpd_sensitivity       = 4e-4,
                   optimal_temperature   = 298.15,
-                  temperature_curvature = 1.6e-3,
-                  factor_floor          = 1e-3) =
+                  temperature_curvature = 1.6e-3) =
     JarvisConductance{FT}(maximum_conductance, par_half_saturation, vpd_sensitivity,
-                          optimal_temperature, temperature_curvature, factor_floor)
+                          optimal_temperature, temperature_curvature)
 
 Base.summary(::JarvisConductance{FT}) where FT = "JarvisConductance{$FT}"
 Base.show(io::IO, c::JarvisConductance) = print(io, summary(c),
@@ -139,7 +136,7 @@ Base.show(io::IO, c::JarvisConductance) = print(io, summary(c),
 
 @inline function jarvis_temperature_factor(c::JarvisConductance, T)
     f = 1 - c.temperature_curvature * (c.optimal_temperature - T)^2
-    return clamp(f, c.factor_floor, one(f))
+    return clamp(f, 0, one(f))
 end
 
 @inline function stomatal_conductance(c::JarvisConductance, photosynthesis,

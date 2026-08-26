@@ -41,7 +41,7 @@
 ##### to the dry-layer series solution through a smooth logistic blend of
 ##### width `wet_transition_width` (sharp switch when 0).
 #####
-##### Pair this with `SkinTemperature(SoilConductiveFlux(κᵀ, ℓᵀ))` on the
+##### Pair this with `SoilSkinTemperature(κᵀ, ℓᵀ)` on the
 ##### temperature side: the same `Λᵍ = κᵀ/ℓᵀ` couples the bulk land temperature
 ##### `Tˡᵃ` to the skin temperature `Tᵍ`, and the front-temperature interpolation
 ##### `Tᵉ = Tᵍ + χ(Tˡᵃ − Tᵍ)` then becomes live (with `BulkTemperature`,

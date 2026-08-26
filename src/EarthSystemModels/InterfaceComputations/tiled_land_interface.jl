@@ -162,7 +162,7 @@ cell shaded by foliage, and Noah-MP's `1 − gap`. A data-free default for the t
 `fraction` (the same relation the `CanopyAirSpace` uses for its canopy shortwave split).
 """
 @inline leaf_area_index_cover_fraction(leaf_area_index; extinction = 0.5, clumping = 1) =
-    1 - exp(-extinction * clumping * leaf_area_index)
+    1 - canopy_transmittance(extinction, clumping, leaf_area_index)
 
 #####
 ##### Two-pass parallel fluxes: run each tile's existing single-tile solve, then blend.

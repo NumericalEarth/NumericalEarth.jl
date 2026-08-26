@@ -37,12 +37,6 @@
     return max(eₛ - eₐ, oftype(Tₗ, 1))                              # ≥ 1 Pa
 end
 
-# Convert only a scalar LAI; a `Field` (static map) or `FieldTimeSeries` (monthly
-# data interpolated to the clock) passes through so the canopy conductance can
-# vary in space and time. The per-cell value is materialized in the flux kernel.
-@inline leaf_area_index_property(x::Number, FT) = convert(FT, x)
-@inline leaf_area_index_property(x, FT) = x
-
 """
     struct CanopyConductanceHumidity
 
@@ -90,7 +84,6 @@ end
 # conductance type when the user leaves it unset (`nothing`).
 @inline default_photosynthesis(photosynthesis, conductance, FT) = photosynthesis
 @inline default_photosynthesis(::Nothing, ::MedlynConductance, FT) = FarquharPhotosynthesis(FT)
-@inline default_photosynthesis(::Nothing, ::JarvisConductance, FT) = nothing
 
 function CanopyConductanceHumidity(FT=Oceananigans.defaults.FloatType;
                                    leaf_area_index = 2,
@@ -103,7 +96,7 @@ function CanopyConductanceHumidity(FT=Oceananigans.defaults.FloatType;
 
     photosynthesis = default_photosynthesis(photosynthesis, conductance, FT)
 
-    return CanopyConductanceHumidity(leaf_area_index_property(leaf_area_index, FT),
+    return CanopyConductanceHumidity(convert_if_number(FT, leaf_area_index),
                                      photosynthesis, conductance, moisture_stress,
                                      absorbed_par_spec(absorbed_par, FT),
                                      convert(FT, atmospheric_co2), phase)

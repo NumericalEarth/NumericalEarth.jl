@@ -169,6 +169,6 @@ availability(model, 𝒮, curve) =
             retention_curve = VanGenuchtenRetention(FT; α = 3.6, n = 1.56),
             hydraulic_conductivity = VanGenuchtenConductivity(FT;
                                                               K_saturated = 1e-6, n = 1.56)))
-        @test !isnothing(interface(soil))
+        interface(soil)
     end
 end

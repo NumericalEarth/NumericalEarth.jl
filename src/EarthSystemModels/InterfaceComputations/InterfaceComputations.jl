@@ -29,7 +29,6 @@ export
     DiffusiveFlux,
     SoilConductiveFlux,
     EnergyBalanceTemperature,
-    SoilSkin,
     SoilSkinTemperature,
     InteriorDiffusivity,
     ConvectiveGustiness,

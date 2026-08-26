@@ -24,9 +24,6 @@ the given turbulent-flux closure, interface-temperature model, atmosphere-relati
 velocity model, and specific-humidity formulation. Pass the result as
 `atmosphere_land_interface = ...` to `ComponentInterfaces` /
 `AtmosphereLandModel` to override the default.
-
-A [`CanopyAirSpace`](@ref) temperature formulation may carry per-cell `Field` optics; they
-are checked here by [`validate_canopy_optics`](@ref) and localized in the flux kernel.
 """
 function atmosphere_land_interface(grid, atmosphere, land;
                                    fluxes              = default_atmosphere_land_fluxes(land, eltype(grid)),
@@ -34,13 +31,9 @@ function atmosphere_land_interface(grid, atmosphere, land;
                                    velocity_difference = RelativeVelocity(),
                                    specific_humidity   = default_al_specific_humidity(land))
     if requires_retention_curve(specific_humidity) && isnothing(surface_retention_curve(land))
-        throw(ArgumentError("$(summary(specific_humidity)) measures plant-available water on " *
-                            "the soil's retention curve, but this land's hydrology carries none. " *
-                            "Use a hydrology that owns one (VariablySaturatedHydrology), or a " *
-                            "moisture stress defined on the hydrology's own saturation " *
-                            "(CriticalSaturation)."))
+        throw(ArgumentError("$(summary(specific_humidity)) needs a soil retention curve, " *
+                            "which $(summary(land)) does not carry"))
     end
-    validate_canopy_optics(temperature, grid)
 
     al_fluxes = AtmosphereSurfaceFluxes(grid)
     al_properties = InterfaceProperties(specific_humidity, temperature, velocity_difference)
@@ -48,20 +41,13 @@ function atmosphere_land_interface(grid, atmosphere, land;
     return AtmosphereInterface(al_fluxes, fluxes, interface_temperature, al_properties)
 end
 
-# The atmosphere-facing interface temperature. A single field for the ordinary
-# closures; a `CanopyAirSpace` additionally needs the two diagnostic skins, the
-# skin→slab ground heat flux, and the two-source (leaf/ground) sensible and latent
-# shares, so it carries a [`CanopyAirSpaceDiagnostics`](@ref) — the type is the signal
-# downstream (`slab_land.jl`, `apply_air_land_radiative_fluxes.jl`) that the radiation
-# is internalized and the slab is driven by conduction.
+# The atmosphere-facing interface temperature: a single field, or a
+# `CanopyAirSpaceDiagnostics` carrying the two skins, the ground heat flux, and the
+# per-source sensible and latent shares.
 @inline build_interface_temperature(temperature_formulation, grid) = Field{Center, Center, Nothing}(grid)
 @inline build_interface_temperature(cas::CanopyAirSpace, grid) = CanopyAirSpaceDiagnostics(grid, cas.storage)
 
 # Store the diagnostic surface temperature(s) from the converged interface state.
-# Ordinary closures write the single skin temperature; a `CanopyAirSpace` re-runs its
-# (cheap, converged) solve to recover the leaf/soil-skin temperatures, the ground heat
-# flux, and the two-source (leaf/ground) sensible and latent shares — the atmosphere-facing
-# `interface.fluxes` carry only their sums.
 @inline store_interface_temperature!(Ts, i, j, formulation, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ) =
     (@inbounds Ts[i, j, 1] = Ψₛ.temperature; nothing)
 
@@ -83,13 +69,9 @@ end
     return nothing
 end
 
-# Initial interface values for the fixed point. Diagnostic formulations cold-start
-# from the bulk land temperature and its saturation humidity; a prognostic
-# `CanopyAirSpace` reads the stored node back, except before any time step has run,
-# where the state fields are not yet initialized and the diagnostic guess is used.
-# The `iteration > 0` guard also holds the state through the first-time-step
-# preparation (`maybe_prepare_first_time_step!` re-runs `update_state!` with
-# `last_Δt` already set), so each model step advances the state exactly once.
+# Initial interface values for the fixed point. Diagnostic formulations cold-start from
+# the bulk land temperature and its saturation humidity; a prognostic `CanopyAirSpace`
+# reads the stored node back once the clock has taken a step.
 @inline clock_has_stepped(clock) =
     (clock.iteration > 0) & isfinite(clock.last_Δt) & (clock.last_Δt > 0)
 

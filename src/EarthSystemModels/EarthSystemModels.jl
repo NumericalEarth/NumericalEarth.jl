@@ -59,7 +59,6 @@ export
     DiffusiveFlux,
     SoilConductiveFlux,
     EnergyBalanceTemperature,
-    SoilSkin,
     SoilSkinTemperature,
     InteriorDiffusivity,
     compute_atmosphere_ocean_fluxes!,
