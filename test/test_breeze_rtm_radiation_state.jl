@@ -59,7 +59,6 @@ end
 
             time_step!(model, 1.0)
 
-            # Breeze stores downwelling negative; the interface wants positive-down magnitudes.
             @test Array(interior(exchanger.state.ℐꜜˢʷ)) ≈ -Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
             @test Array(interior(exchanger.state.ℐꜜˡʷ)) ≈ -Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
         end
@@ -72,9 +71,7 @@ end
             @test all(Array(interior(night.interfaces.exchanger.radiation.state.ℐꜜˡʷ)) .> 0)
         end
 
-        @testset "Bulk land is unchanged on $A" begin
-            # Nothing on the land side reads the interface radiation state yet, so publishing it
-            # must leave the existing budget alone: turbulent plus net upward radiative.
+        @testset "Bulk surface energy budget on $A" begin
             model = build_rtm_land_model(arch)
             interface = model.interfaces.atmosphere_land_interface
             time_step!(model, 1.0)
@@ -89,6 +86,7 @@ end
             𝒬 = Array(interior(interface.fluxes.sensible_heat)) .+
                 Array(interior(interface.fluxes.latent_heat))
 
+            # Positive upward: turbulent plus net upward radiative.
             Jᴱs = Array(interior(model.land.fluxes.surface_energy_flux))
             @test Jᴱs ≈ 𝒬 .+ ℐˡʷꜛ .+ ℐˡʷꜜ .+ (1 - rtm_albedo) .* ℐˢʷꜜ
         end
