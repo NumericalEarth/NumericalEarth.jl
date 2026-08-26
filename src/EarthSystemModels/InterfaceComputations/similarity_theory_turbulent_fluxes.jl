@@ -367,16 +367,16 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     # Tall roughness elements displace the similarity profiles upward by `d`.
     d = local_zero_plane_displacement(flux_formulation.zero_plane_displacement,
                                       interior_properties)
-    Δh = Δh - d
+    Δhᵈ = Δh - d
 
     # Transfer coefficients at height `h`
     ϰ = flux_formulation.von_karman_constant
     L★ = ifelse(b★ == 0, Inf, u★^2 / (ϰ * b★))
     form = flux_formulation.similarity_form
 
-    χu = ϰ / similarity_profile(form, ψu, Δh, ℓu₀, L★)
-    χθ = ϰ / similarity_profile(form, ψθ, Δh, ℓθ₀, L★)
-    χq = ϰ / similarity_profile(form, ψq, Δh, ℓq₀, L★)
+    χu = ϰ / similarity_profile(form, ψu, Δhᵈ, ℓu₀, L★)
+    χθ = ϰ / similarity_profile(form, ψθ, Δhᵈ, ℓθ₀, L★)
+    χq = ϰ / similarity_profile(form, ψq, Δhᵈ, ℓq₀, L★)
 
     # Recompute
     u★ = χu * U
