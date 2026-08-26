@@ -22,9 +22,7 @@ import NumericalEarth.EarthSystemModels.InterfaceComputations: biogeochemical_in
 import NumericalEarth.Radiations: apply_air_sea_biogeochemical_radiative_fluxes!
 import NumericalEarth.Oceans: update_net_ocean_biogeochemical_fluxes!, biogeochemistry_surface_exchanged_tracers
 
-include("state_exchange_interface.jl")
-include("assemble_net_fluxes.jl")
-include("surface_values.jl")
-include("biogeochemical_interface.jl")
+include("radiation.jl")
+include("gas_exchange.jl")
 
 end # module NumericalEarthOceanBioMEExt

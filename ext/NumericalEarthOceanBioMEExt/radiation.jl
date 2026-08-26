@@ -1,6 +1,16 @@
-#####
-##### radiation from atmosphere blocked by sea ice
-#####
+using Oceananigans.Biogeochemistry: required_biogeochemical_tracers
+using Oceananigans.Grids: AbstractGrid
+using OceanBioME.Models.NutrientsPlanktonDetritusModels.InorganicCarbonModels: CarbonateSystem
+
+import OceanBioME.Light: PARFromShortwave
+
+function PARFromShortwave(grid::AbstractGrid;
+                          photosynthetic_fraction_of_shortwave = 0.43)
+
+    surface_PAR = Field{Center, Center, Nothing}(grid)
+
+    return PARFromShortwave(surface_PAR; photosynthetic_fraction_of_shortwave)
+end
 
 apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}) = 
     apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, biogeochemistry.light_attenuation)
