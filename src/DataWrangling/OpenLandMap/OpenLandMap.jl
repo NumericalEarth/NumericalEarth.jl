@@ -10,7 +10,7 @@ using Oceananigans.DistributedComputations: @root
 using ..DataWrangling: DataWrangling,
     AbstractStaticDataset, Metadatum, BoundingBox, Dataset,
     WeightPercent, GramPerCubicCentimeter,
-    metadata_path, dataset_variable_name
+    metadata_path, dataset_variable_name, bounding_box_suffix
 
 import Oceananigans
 
@@ -139,18 +139,7 @@ DataWrangling.inpainted_metadata_path(metadata::OpenLandMapSoilDBMetadatum) =
 #####
 
 DataWrangling.metadata_filename(::OpenLandMapSoilDB, name, date, region) =
-    string("OpenLandMap_", name, "_", region_suffix(region), ".nc")
-
-region_suffix(::Nothing) = "global"
-
-function region_suffix(region::BoundingBox)
-    λ = region.longitude
-    φ = region.latitude
-    return string("lon_", bound_str(λ), "_lat_", bound_str(φ))
-end
-
-bound_str(::Nothing) = "nothing"
-bound_str(bounds) = string(bounds[1], "_", bounds[2])
+    string("OpenLandMap_", name, "_", bounding_box_suffix(region), ".nc")
 
 function DataWrangling.validate_dataset_coverage(grid, metadata::OpenLandMapSoilDBMetadatum)
     region = metadata.region

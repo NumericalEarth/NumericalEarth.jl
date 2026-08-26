@@ -4,7 +4,7 @@
 # example, then demonstrating a more realistic case with ERA5 forcing on realistic topography.
 # We use a `SlabLand` composed of
 #
-#     energy    = WaterCoupledEnergy(...)          # C(Mˡᵃ) = C_dry + cˡ Mˡᵃ, conservative dTˡᵃ/dt
+#     energy    = WaterCoupledEnergy(...)          # cˡᵃ(Mˡᵃ) = cᵈʳʸ + cˡ Mˡᵃ, conservative dTˡᵃ/dt
 #     hydrology = VariablySaturatedHydrology(...)  # augmented-storage ϑˡ budget
 #     humidity  = DryLayerHumidity(...)            # qⁱⁿ from a dry-layer vapor-flux balance
 #
@@ -136,8 +136,8 @@ initial_water_storage =
 # `WaterCoupledEnergy` is the slab's energy budget which steps the skin temperature `Tˡᵃ`
 #  with a force-restore balance toward a deep reservoir at `deep_temperature` on the
 # `deep_time_scale`, and folds the water storage into the areal heat capacity
-# `C(Mˡᵃ) = C_dry + cˡ Mˡᵃ`, recomputed each step so that a wetter slab carries more
-# thermal inertia. `dry_heat_capacity` is `C_dry` (depth × density × specific heat of
+# `cˡᵃ(Mˡᵃ) = cᵈʳʸ + cˡ Mˡᵃ`, recomputed each step so that a wetter slab carries more
+# thermal inertia. `dry_heat_capacity` is `cᵈʳʸ` (depth × density × specific heat of
 # the dry soil), `liquid_heat_capacity` is `cˡ`.
 soil_energy(FT; deep_time_scale) = WaterCoupledEnergy(FT;
     dry_heat_capacity     = 0.1 * 1500 * 1480,
@@ -493,7 +493,7 @@ radiation = ERA5PrescribedRadiation(arch; dataset, start_date, end_date, region,
 # with a moist-environmental lapse-rate shift `T ← T − Γ Δz` (Γ = 6.5 K km⁻¹) and a
 # hydrostatic pressure adjustment, applied by the state exchanger every step
 # (specific humidity `q` conserved through the lift). `z_era5` is ERA5's own model
-# topography (its surface geopotential ÷ g → metres); the gravitational
+# topography (its surface geopotential ÷ g → meters); the gravitational
 # acceleration and gas constant the pressure adjustment needs are pulled from the
 # atmosphere's thermodynamics.
 

@@ -27,7 +27,7 @@ end
 # The GloFAS (Global Flood Awareness System) river-discharge reanalysis is produced
 # by routing ERA5-forced LISFLOOD runoff through a channel-routing model. It provides
 # river discharge already accumulated downstream to river mouths — the ERA5-consistent
-# analogue of JRA55's pre-routed `river_freshwater_flux`. See Harrigan et al. (2020),
+# analog of JRA55's pre-routed `river_freshwater_flux`. See Harrigan et al. (2020),
 # https://essd.copernicus.org/articles/12/2043/2020/.
 abstract type GloFASDataset end
 

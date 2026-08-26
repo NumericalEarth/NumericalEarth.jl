@@ -497,14 +497,14 @@ fig4
 # (GloFAS)](https://www.globalfloods.eu/) solves this: it forces the LISFLOOD
 # hydrological and channel-routing model with ERA5 runoff to produce **river
 # discharge already accumulated to river mouths** [harrigan2020glofas](@citep) —
-# the ERA5-consistent analogue of JRA55's pre-routed river freshwater flux.
+# the ERA5-consistent analog of JRA55's pre-routed river freshwater flux.
 #
 # GloFAS lives on the Copernicus Early Warning Data Store (EWDS), a separate
 # endpoint from the ERA5 CDS. The download automatically targets the EWDS url
 # (https://ewds.climate.copernicus.eu/api) while reusing the ECMWF token from
 # `~/.cdsapirc` — the same token works across both data stores — so the ERA5
 # sections above and this GloFAS section run in one session without editing
-# `~/.cdsapirc`. You still need to accept the `cems-glofas-historical` licence
+# `~/.cdsapirc`. You still need to accept the `cems-glofas-historical` license
 # once on the dataset page (see <https://ewds.climate.copernicus.eu/how-to-api>).
 #
 # We focus on the mouth of the Amazon, the largest freshwater source to the
