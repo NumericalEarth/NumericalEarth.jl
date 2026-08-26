@@ -245,26 +245,23 @@ end
     return log(h / ℓ) - ψh
 end
 
-# Localize the flux closure to cell (i, j) before the index-free MOST iteration.
+# Localize the flux closure to cell (i, j) before the index-free MOST iteration:
+# `Field`-valued roughness lengths and displacement collapse to the cell's values,
+# `Number`s and formulations pass through.
 @inline local_flux_formulation(flux_formulation, i, j) = flux_formulation
-
-# A `Field`-valued slot collapses to the cell's value; `Number`s and state-dependent
-# formulations localize to themselves.
-@inline local_slot(slot, i, j) = slot
-@inline local_slot(slot::AbstractField, i, j) = state2dindex(slot, i, j)
 
 @inline function local_flux_formulation(fluxes::SimilarityTheoryFluxes, i, j)
     ℓ = fluxes.roughness_lengths
-    roughness_lengths = SimilarityScales(local_slot(ℓ.momentum, i, j),
-                                         local_slot(ℓ.temperature, i, j),
-                                         local_slot(ℓ.water_vapor, i, j))
+    roughness_lengths = SimilarityScales(state2dindex(ℓ.momentum, i, j),
+                                         state2dindex(ℓ.temperature, i, j),
+                                         state2dindex(ℓ.water_vapor, i, j))
 
     return SimilarityTheoryFluxes(fluxes.von_karman_constant,
                                   fluxes.turbulent_prandtl_number,
                                   fluxes.subgrid_velocities,
                                   fluxes.stability_functions,
                                   roughness_lengths,
-                                  local_slot(fluxes.zero_plane_displacement, i, j),
+                                  state2dindex(fluxes.zero_plane_displacement, i, j),
                                   fluxes.similarity_form,
                                   fluxes.solver_stop_criteria)
 end
@@ -280,33 +277,33 @@ stay finite) when the displacement approaches the atmosphere surface layer heigh
 @inline displaced_profile_height(Δh, d, ℓ) = max(Δh - d, 2ℓ)
 
 #####
-##### Layout of `Field`-valued roughness and displacement slots
+##### Layout of `Field`-valued roughness lengths and displacement
 #####
 
-function validate_slot(slot::AbstractField, name, grid)
-    location(slot) === (Center, Center, Nothing) &&
-        architecture(slot) === architecture(grid) && slot.grid == grid ||
-        throw(ArgumentError("$name must be a Field{Center, Center, Nothing} on the interface grid, got $(summary(slot))"))
+function validate_interface_field(f::AbstractField, name, grid)
+    location(f) === (Center, Center, Nothing) &&
+        architecture(f) === architecture(grid) && f.grid == grid ||
+        throw(ArgumentError("$name must be a Field{Center, Center, Nothing} on the interface grid, got $(summary(f))"))
 
     return nothing
 end
 
-validate_slot(slot, name, grid) = nothing
+validate_interface_field(f, name, grid) = nothing
 
 """
 $(TYPEDSIGNATURES)
 
-Check that the roughness-length and zero-plane-displacement slots of `flux_formulation`
-are laid out so the flux kernel can read them per cell on `grid`, and throw an
-`ArgumentError` naming the offending slot otherwise.
+Check that any `Field`-valued roughness length or zero-plane displacement of
+`flux_formulation` is laid out so the flux kernel can read it per cell on `grid`,
+and throw an `ArgumentError` naming the offending field otherwise.
 """
 function validate_flux_formulation(fluxes::SimilarityTheoryFluxes, grid)
     ℓ = fluxes.roughness_lengths
 
-    validate_slot(ℓ.momentum,    "momentum_roughness_length",    grid)
-    validate_slot(ℓ.temperature, "temperature_roughness_length", grid)
-    validate_slot(ℓ.water_vapor, "water_vapor_roughness_length", grid)
-    validate_slot(fluxes.zero_plane_displacement, "zero_plane_displacement", grid)
+    validate_interface_field(ℓ.momentum,    "momentum_roughness_length",    grid)
+    validate_interface_field(ℓ.temperature, "temperature_roughness_length", grid)
+    validate_interface_field(ℓ.water_vapor, "water_vapor_roughness_length", grid)
+    validate_interface_field(fluxes.zero_plane_displacement, "zero_plane_displacement", grid)
 
     return nothing
 end
@@ -430,10 +427,7 @@ struct SimilarityScales{U, T, Q}
     water_vapor :: Q
 end
 
-Adapt.adapt_structure(to, scales::SimilarityScales) =
-    SimilarityScales(adapt(to, scales.momentum),
-                     adapt(to, scales.temperature),
-                     adapt(to, scales.water_vapor))
+Adapt.@adapt_structure SimilarityScales
 
 Base.summary(ss::SimilarityScales) =
     string("SimilarityScales(momentum=", prettysummary(ss.momentum),

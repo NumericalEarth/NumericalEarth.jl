@@ -25,8 +25,8 @@ velocity model, and specific-humidity formulation. Pass the result as
 `atmosphere_land_interface = ...` to `ComponentInterfaces` /
 `AtmosphereLandModel` to override the default.
 
-The roughness-length and zero-plane-displacement slots of the flux closure accept
-per-cell `Field`s at `(Center, Center, Nothing)` on `grid` — for example from
+The flux closure's roughness lengths and zero-plane displacement may be per-cell
+`Field`s at `(Center, Center, Nothing)` on `grid` — for example from
 `urban_roughness` or a canopy roughness closure — localized to each cell before the
 Monin--Obukhov solve.
 """
@@ -171,7 +171,7 @@ end
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
     zᵃᵗ = state2dindex(atmosphere_properties.surface_layer_height, i, j)
 
-    # Collapse per-cell slots to this cell's values before the index-free solve.
+    # Collapse Field-valued roughness lengths and displacement to this cell's values.
     local_turbulent_flux_formulation = local_flux_formulation(turbulent_flux_formulation, i, j)
 
     local_atmosphere_state = (z = zᵃᵗ,
