@@ -19,8 +19,9 @@ using Oceananigans.Fields: interior
         initializers = (temperature = (x, z) -> 5.0 - 0.02 * z,
                         saturation_water_ice = (x, z) -> 0.5))
 
-    # Atmosphere on the exchange grid (= land grid; 1:1, no regridding).
-    exchange_grid = land.grid
+    # Atmosphere on the exchange grid (= land's flattened field grid; 1:1, no regridding).
+    # `land` is an Oceananigans `Simulation` wrapping the Terrarium `ModelIntegrator`.
+    exchange_grid = land.model.grid
     atmosphere = NumericalEarth.PrescribedAtmosphere(exchange_grid;
                                                      surface_layer_height = 10,
                                                      boundary_layer_height = 512)
@@ -42,7 +43,7 @@ using Oceananigans.Fields: interior
     @test all(interior(ex.state.saturation) .≈ 0.5)
 
     # The MO scheme produced finite turbulent fluxes, pushed into Terrarium's inputs.
-    state = land.integrator.state
+    state = land.model.state
     @test all(isfinite.(interior(state.sensible_heat_flux)))
     @test all(isfinite.(interior(state.latent_heat_flux)))
     @test all(interior(state.windspeed) .≈ 3)
