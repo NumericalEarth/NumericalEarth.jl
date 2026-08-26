@@ -27,9 +27,8 @@ A few things are specific to this dataset:
 
 4. **Reads can be sized to the target grid.** `OpenLandMapSoilDB(aggregation_factor = nothing)`
    makes `Field(metadatum, grid)` read the coarsest lattice that still oversamples `grid`
-   twofold, served from the GeoTIFFs' own average-resampled overview pyramid — a continental
-   window costs megabytes instead of the hundreds of gigabytes of 30 m pixels underneath it.
-   The default reads at full resolution, as does `Field(metadatum)`, which has no target;
+   twofold, served from the GeoTIFFs' average-resampled overview pyramid. The default reads at
+   full resolution, as does `Field(metadatum)`, which has no target;
    `OpenLandMapSoilDB(aggregation_factor = n)` pins the lattice at `n` native pixels per cell
    side. Each lattice is cached under its own filename.
 

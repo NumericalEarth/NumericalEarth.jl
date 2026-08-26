@@ -818,11 +818,9 @@ function matching_single_level_dataset end
 """
     matching_resolution_dataset(dataset, grid)
 
-Return the variant of `dataset` read at the coarsest resolution that still resolves `grid`.
-High-resolution rasters extend this so a large window costs a decimated read; the default
-returns `dataset` unchanged.
-
-Coarsening averages, so only continuous fields may extend this.
+Return the variant of `dataset` read at the coarsest resolution that still resolves `grid`; the
+default returns `dataset` unchanged. Coarsening averages, so only continuous fields may extend
+this.
 """
 matching_resolution_dataset(dataset, grid) = dataset
 

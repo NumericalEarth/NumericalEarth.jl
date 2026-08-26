@@ -36,10 +36,7 @@ Pixel window and output lattice for reading `bbox` from a north-up EPSG:4326 ras
 `(; xoff, yoff, xsize, ysize, nx, ny, factor, longitude, latitude)`.
 
 The window is snapped outward to whole `factor`-pixel blocks of the raster's own lattice and
-padded by one block on each side, so every output cell is an exact block of native pixels — the
-lattice a `factor`-decimated read of the whole raster would produce, which is what lets the
-framework's coarsened native grid and the window agree cell for cell. The padding keeps the
-window a strict superset of that grid, whose center-bracketing can reach one cell past `bbox`.
+padded by one block on each side, so every output cell is an exact block of native pixels.
 
 `longitude` and `latitude` are output cell centers, ascending; GDAL returns rows north-first, so
 the data still has to be reversed to match `latitude`.
@@ -47,7 +44,6 @@ the data still has to be reversed to match `latitude`.
 function cog_window(geotransform, raster_size, bbox, factor = 1)
     x0, dx, _, y0, _, dy = geotransform
     width, height = raster_size
-    factor = clamp(factor, 1, min(width, height))
 
     W, E = bbox.longitude
     S, N = bbox.latitude
@@ -68,18 +64,17 @@ end
 # along an axis of `n` pixels, padded by one `factor`-pixel block on each side and trimmed to
 # whole blocks. The trim drops the `n % factor` pixels at the far edge that cannot fill a block.
 function block_aligned_range(first_coordinate, last_coordinate, origin, spacing, n, factor)
-    i⁻ = factor * (fld(floor(Int, (first_coordinate - origin) / spacing), factor) - 1)
-    i⁺ = factor * (cld(ceil( Int, (last_coordinate  - origin) / spacing), factor) + 1)
-    last_face = factor * fld(n, factor)
-    i⁻ = clamp(i⁻, 0, last_face - factor)
-    i⁺ = clamp(i⁺, i⁻ + factor, last_face)
-    return i⁻, i⁺ - i⁻
+    first_pixel = factor * (fld(floor(Int, (first_coordinate - origin) / spacing), factor) - 1)
+    last_pixel  = factor * (cld(ceil( Int, (last_coordinate  - origin) / spacing), factor) + 1)
+    last_face   = factor * fld(n, factor)
+    first_pixel = clamp(first_pixel, 0, last_face - factor)
+    last_pixel  = clamp(last_pixel, first_pixel + factor, last_face)
+    return first_pixel, last_pixel - first_pixel
 end
 
-# Read one band over `window`. Above `factor` 1 the destination buffer is smaller than the
-# window, and that mismatch is what makes GDAL serve the read from the coarsest overview level
-# that still resolves it instead of from full-resolution pixels. `AVERAGE` keeps the values means
-# of the pixels underneath even when the factor falls between two levels of the pyramid.
+# Read one band over `window`. A destination buffer smaller than the window makes GDAL serve the
+# read from the coarsest overview level that resolves it; `AVERAGE` keeps the values means of the
+# pixels underneath even when the factor falls between two levels of the pyramid.
 function read_cog_band(dataset, band_index, window)
     window.factor == 1 &&
         return ArchGDAL.read(dataset, band_index, window.xoff, window.yoff, window.xsize, window.ysize)
