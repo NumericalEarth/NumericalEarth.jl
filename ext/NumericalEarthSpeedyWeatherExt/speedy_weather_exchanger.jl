@@ -64,12 +64,13 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     from_atmosphere = exchanger.regridder.from_atmosphere
     exchange_state  = exchanger.state
     surface_layer   = atmos.model.spectral_grid.nlayers
+    prognostic_step = SpeedyWeather.which_prognostic_step(atmos.variables.grid.u, atmos.model.time_stepping, SpeedyWeather.DummyParameterization())
 
-    ua   = RingGrids.field_view(atmos.variables.grid.u, :, surface_layer).data
-    va   = RingGrids.field_view(atmos.variables.grid.v, :, surface_layer).data
-    Ta   = RingGrids.field_view(atmos.variables.grid.temperature, :, surface_layer).data
-    qa   = RingGrids.field_view(atmos.variables.grid.humidity, :, surface_layer).data
-    pa   = exp.(atmos.variables.grid.pressure.data)
+    ua   = RingGrids.field_view(atmos.variables.grid.u, :, surface_layer, prognostic_step).data
+    va   = RingGrids.field_view(atmos.variables.grid.v, :, surface_layer, prognostic_step).data
+    Ta   = RingGrids.field_view(atmos.variables.grid.temperature, :, surface_layer, prognostic_step).data
+    qa   = RingGrids.field_view(atmos.variables.grid.humidity, :, surface_layer, prognostic_step).data
+    pa   = exp.(RingGrids.field_view(atmos.variables.grid.pressure, :, prognostic_step).data)
     ℐꜜˢʷ = atmos.variables.parameterizations.surface_shortwave_down.data
     ℐꜜˡʷ = atmos.variables.parameterizations.surface_longwave_down.data
     Jʳⁿ  = atmos.variables.parameterizations.rain_rate.data

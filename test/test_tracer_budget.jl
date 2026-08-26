@@ -88,7 +88,7 @@ end
         for z in (MutableVerticalDiscretization((-100, 0)), ) # TODO: Add a static grid
             for fold_topology in (RightFaceFolded,
                                   RightCenterFolded)
-                              
+
             @info ".. on $(typeof(arch)) with $(typeof(z)) and $fold_topology topology"
             underlying_grid = TripolarGrid(arch;
                                            size = (20, 20, 20),
