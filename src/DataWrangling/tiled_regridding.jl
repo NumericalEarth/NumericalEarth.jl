@@ -173,11 +173,11 @@ function tiled_native_grid(target, metadata, inpainting, halo)
     return native
 end
 
-# Up to 1% mismatch is allowed for pressure-level datasets with time-varying geopotential heights,
-# whose per-timestep vertical extent can be slightly smaller than the temporal-mean extent used
-# for the target grid.
+# A dataset with one vertical level carries a placeholder vertical extent, so only a resolved
+# vertical axis is compared. The 1% slack covers pressure-level data whose per-timestep extent
+# dips just below the temporal mean used for the target grid.
 function validate_vertical_extent(target_grid, native, metadata)
-    is_three_dimensional(metadata) && target_grid.Lz > native.Lz * (1 + 1e-2) &&
+    size(native, 3) > 1 && target_grid.Lz > native.Lz * (1 + 1e-2) &&
         throw("The vertical range of the $(metadata.dataset) dataset ($(native.Lz) m) is smaller " *
               "than the target grid ($(target_grid.Lz) m)")
     return nothing
