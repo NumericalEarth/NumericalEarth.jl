@@ -22,7 +22,7 @@ function __init__()
 end
 
 """
-    OpenLandMapSoilDB(; aggregation_factor = nothing)
+    OpenLandMapSoilDB(; aggregation_factor = 1)
 
 OpenLandMap-soilDB global soil properties at 30 m (Hengl et al., 2026), predicted
 from spatiotemporal machine learning over Landsat/MODIS/Sentinel covariates.
