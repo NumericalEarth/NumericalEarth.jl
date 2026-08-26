@@ -1616,6 +1616,7 @@ function omip_progress_callback(wall_time)
     previous_collections    = Ref(Int64(initial_gc.pause))
     previous_full_sweeps    = Ref(Int64(initial_gc.full_sweep))
     previous_safepoint_time = Ref(safepoint_time_ns(initial_gc))
+    previous_allocated      = Ref(Int64(Base.gc_bytes()))
 
     function progress(sim)
         sea_ice = sim.model.sea_ice
@@ -1647,13 +1648,15 @@ function omip_progress_callback(wall_time)
             gc = Base.gc_num()
             gc_time = Int64(Base.gc_time_ns())
             safepoint_time = safepoint_time_ns(gc)
+            allocated = Int64(Base.gc_bytes())
 
-            probe = @sprintf("PROBE iter=%d step=%.3fs gc=%.3fs pauses=%d full=%d safepoint=%.3fs live=%.2fGiB host_free=%.2fGiB",
+            probe = @sprintf("PROBE iter=%d step=%.3fs gc=%.3fs pauses=%d full=%d safepoint=%.3fs allocd=%.3fGiB live=%.2fGiB host_free=%.2fGiB",
                              iteration(sim), step_time,
                              1e-9 * (gc_time - previous_gc_time[]),
                              gc.pause - previous_collections[],
                              gc.full_sweep - previous_full_sweeps[],
                              1e-9 * (safepoint_time - previous_safepoint_time[]),
+                             (allocated - previous_allocated[]) / 2^30,
                              Base.gc_live_bytes() / 2^30,
                              Sys.free_memory() / 2^30)
 
@@ -1670,6 +1673,7 @@ function omip_progress_callback(wall_time)
             previous_collections[]    = gc.pause
             previous_full_sweeps[]    = gc.full_sweep
             previous_safepoint_time[] = safepoint_time
+            previous_allocated[]      = allocated
         end
 
         # Determinism probe: hash the prognostic state at a few iterations.
