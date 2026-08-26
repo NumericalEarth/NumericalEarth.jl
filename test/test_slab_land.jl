@@ -556,9 +556,9 @@ end
         # Displacement thins the effective surface layer, raising the drag.
         @test displaced_friction_velocity(6.0) > displaced_friction_velocity(3.0) > displaced_friction_velocity(0.0)
 
-        # A displacement at or above the surface-layer height stays finite: the
-        # profile height is floored at twice the momentum roughness length.
-        @test displaced_friction_velocity(2h) ≈ ϰ / log(2) * uᵃᵗ
+        # A displacement at or above the surface layer height leaves no room for the
+        # similarity profiles and is rejected when the interface is built.
+        @test_throws ArgumentError displaced_friction_velocity(2h)
     end
 
     # Per-cell resolution: `LandZeroPlaneDisplacement` reads the displacement a land
@@ -600,6 +600,7 @@ end
     @test per_cell == solved_friction_velocity(similarity_fluxes(4.0), (;))
     @test solved_friction_velocity(similarity_fluxes(LandZeroPlaneDisplacement()), (;)) ==
           solved_friction_velocity(similarity_fluxes(0.0), (;))
+
 end
 
 @testset "Atmosphere-Land flux stability and roughness response" begin
