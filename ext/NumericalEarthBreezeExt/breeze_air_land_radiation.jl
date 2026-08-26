@@ -18,7 +18,16 @@ const BreezeRTM = Breeze.RadiativeTransferModel
 function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_properties(rtm::BreezeRTM, interfaces)
     al_interface = interfaces.atmosphere_land_interface
     temperature = isnothing(al_interface) ? nothing : al_interface.temperature
-    temperature isa CanopyAirSpaceDiagnostics && return bind_canopy_surface_properties(rtm, temperature)
+
+    # A canopy owns its surface optics, overriding configured properties: σ Tᵉᶠᶠ⁴ is the
+    # column's total upwelling longwave — emission plus reflected downwelling — so a blackbody
+    # at Tᵉᶠᶠ (ε = 1) reproduces it exactly, one broadband albedo in both shortwave slots.
+    if temperature isa CanopyAirSpaceDiagnostics
+        rtm = @set rtm.surface_properties.surface_temperature = temperature.effective
+        rtm = @set rtm.surface_properties.surface_emissivity = ConstantField(one(eltype(temperature.effective)))
+        rtm = @set rtm.surface_properties.direct_surface_albedo = temperature.effective_albedo
+        return @set rtm.surface_properties.diffuse_surface_albedo = temperature.effective_albedo
+    end
 
     Tˢ = NumericalEarth.EarthSystemModels.surface_temperature(interfaces)
     isnothing(Tˢ) && return rtm
@@ -26,19 +35,8 @@ function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_prope
     return @set rtm.surface_properties.surface_temperature = Tˢ
 end
 
-# A canopy owns its surface optics, overriding configured properties: σ Teff⁴ is the column's
-# total upwelling longwave — emission plus reflected downwelling — so a blackbody at Teff
-# (ε = 1) reproduces it exactly. One broadband albedo feeds the direct and diffuse slots.
-function bind_canopy_surface_properties(rtm, temperature)
-    rtm = @set rtm.surface_properties.surface_temperature = temperature.effective
-    rtm = @set rtm.surface_properties.surface_emissivity = ConstantField(one(eltype(temperature.effective)))
-    rtm = @set rtm.surface_properties.direct_surface_albedo = temperature.effective_albedo
-    return @set rtm.surface_properties.diffuse_surface_albedo = temperature.effective_albedo
-end
-
 # RRTMGP copies scalar surface optics into its solver boundary conditions at construction
-# only, so field-valued emissivity and albedo are republished each coupled step; the bound
-# temperature needs no copy because RRTMGP reads it per solve.
+# only, so field-valued emissivity and albedo are republished each coupled step.
 @kernel function _update_rrtmgp_surface_optics!(sfc_emis, sfc_alb_direct, sfc_alb_diffuse,
                                                 emissivity, direct_albedo, diffuse_albedo, Nx)
     i, j = @index(Global, NTuple)

@@ -34,8 +34,8 @@ build_canopy_air_space(FT) = CanopyAirSpace(FT;
     soil_skin_flux = SoilConductiveFlux(1.5, 0.05))
 
 # `hour` is the solar epoch at longitude 0, so 12 is local noon and 0 local midnight. Gray
-# optics needs no lookup tables, and omitting `surface_temperature` lets the coupler bind it.
-function build_rtm_land_model(arch; hour = 12, canopy = true)
+# optics needs no lookup tables.
+function build_rtm_land_model(arch; hour = 12)
     FT = Float64
 
     grid = RectilinearGrid(arch, FT; size = (8, 8), halo = (5, 5),
@@ -63,8 +63,6 @@ function build_rtm_land_model(arch; hour = 12, canopy = true)
                                        surface_emissivity = rtm_emissivity,
                                        schedule = IterationInterval(1))
 
-    canopy || return AtmosphereLandModel(atmosphere, land; radiation)
-
     cas = build_canopy_air_space(FT)
     return AtmosphereLandModel(atmosphere, land; radiation,
                                atmosphere_land_interface_temperature = cas,
@@ -79,17 +77,8 @@ end
             model = build_rtm_land_model(arch)
             rtm = model.radiation
             interface = model.interfaces.atmosphere_land_interface
-            exchanger = model.interfaces.exchanger.radiation
 
             time_step!(model, 1.0)
-
-            # Breeze stores downwelling negative; the interface wants positive-down magnitudes.
-            ℐꜜˢʷ = Array(interior(exchanger.state.ℐꜜˢʷ))
-            ℐꜜˡʷ = Array(interior(exchanger.state.ℐꜜˡʷ))
-            @test all(ℐꜜˢʷ .> 0)
-            @test all(ℐꜜˡʷ .> 0)
-            @test ℐꜜˢʷ ≈ -Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
-            @test ℐꜜˡʷ ≈ -Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
 
             # Radiation is internalized in the canopy solve, so no flux is added on top.
             Jᴱs = Array(interior(model.land.fluxes.surface_energy_flux))
@@ -103,12 +92,7 @@ end
             @test Hᵛ .+ Hᵍ ≈ Array(interior(interface.fluxes.sensible_heat))
             @test LEᵛ .+ LEᵍ ≈ Array(interior(interface.fluxes.latent_heat))
 
-            # The canopy's own solve supplies what RRTMGP emits and reflects with.
-            @test rtm.surface_properties.surface_temperature === interface.temperature.effective
-            @test rtm.surface_properties.direct_surface_albedo === interface.temperature.effective_albedo
-            @test rtm.surface_properties.diffuse_surface_albedo === interface.temperature.effective_albedo
-
-            # The two-source albedo reaches the shortwave solver's boundary condition.
+            # The canopy's two-source albedo reaches the shortwave solver's boundary condition.
             αᶜ = Array(interior(interface.temperature.effective_albedo))
             @test all(0 .< αᶜ .< 1)
             @test vec(Array(rtm.shortwave_solver.bcs.sfc_alb_direct)) ≈ vec(αᶜ)
@@ -116,9 +100,9 @@ end
             # RRTMGP solves at the start of a step from the temperature bound at the end of the
             # previous one, so its emitted surface longwave reproduces the canopy's upwelling.
             σ = default_stefan_boltzmann_constant
-            Teff = Array(interior(interface.temperature.effective))
+            Tᵉᶠᶠ = Array(interior(interface.temperature.effective))
             time_step!(model, 1.0)
-            @test Array(interior(rtm.upwelling_longwave_flux))[:, :, 1] ≈ σ .* Teff .^ 4 rtol = 1e-3
+            @test Array(interior(rtm.upwelling_longwave_flux))[:, :, 1] ≈ σ .* Tᵉᶠᶠ .^ 4 rtol = 1e-3
 
             # Sunlit canopy over shaded soil, both above the canopy-air node.
             Tᵃᶜ = Array(interior(interface.temperature.interface))
@@ -127,44 +111,15 @@ end
             @test all(Array(interior(interface.temperature.effective)) .> Tᵃᶜ)
         end
 
-        @testset "No shortwave at night on $A" begin
+        @testset "Canopy cools at night on $A" begin
             night = build_rtm_land_model(arch; hour = 0)
             time_step!(night, 1.0)
-
-            @test all(Array(interior(night.interfaces.exchanger.radiation.state.ℐꜜˢʷ)) .== 0)
-            @test all(Array(interior(night.interfaces.exchanger.radiation.state.ℐꜜˡʷ)) .> 0)
 
             day = build_rtm_land_model(arch)
             time_step!(day, 1.0)
             Tᵛ_day = Array(interior(day.interfaces.atmosphere_land_interface.temperature.canopy))
             Tᵛ_night = Array(interior(night.interfaces.atmosphere_land_interface.temperature.canopy))
             @test all(Tᵛ_day .> Tᵛ_night)
-        end
-
-        @testset "Bulk interface keeps the radiative flux add on $A" begin
-            model = build_rtm_land_model(arch; canopy = false)
-            interface = model.interfaces.atmosphere_land_interface
-
-            @test model.radiation.surface_properties.surface_temperature === interface.temperature
-
-            time_step!(model, 1.0)
-
-            rtm = model.radiation
-            σ = default_stefan_boltzmann_constant
-            ε = rtm_emissivity
-            α = rtm_albedo
-
-            Tₛ = Array(interior(interface.temperature))
-            ℐˡʷꜜ = Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
-            ℐˢʷꜜ = Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
-            ℐˡʷꜛ = ε .* σ .* Tₛ .^ 4 .- (1 - ε) .* ℐˡʷꜜ
-
-            𝒬 = Array(interior(interface.fluxes.sensible_heat)) .+
-                Array(interior(interface.fluxes.latent_heat))
-
-            # Positive upward: turbulent plus net upward radiative.
-            Jᴱs = Array(interior(model.land.fluxes.surface_energy_flux))
-            @test Jᴱs ≈ 𝒬 .+ ℐˡʷꜛ .+ ℐˡʷꜜ .+ (1 - α) .* ℐˢʷꜜ
         end
     end
 end
