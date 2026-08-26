@@ -207,7 +207,7 @@ while true; do
     done
 
     echo ""
-    echo "Sleeping for 1 hour"
-    sleep 3600
+    echo "Sleeping for 10 minutes"
+    sleep 600
 done
 EOF

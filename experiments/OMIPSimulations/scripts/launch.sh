@@ -313,12 +313,7 @@ run!(sim, pickup =:latest)"
         DEFAULT_KSKEW=800;  DEFAULT_KSYMM=800; NZ=70;  DEFAULT_DT="30minutes"; DEFAULT_DZ_TOP="1.5"
         DEFAULT_BIHARMONIC="50days"; ARCH="GPU()"; GPUS_PER_NODE=1
         EXTRA_USING=""; FILE_SPLIT=""
-        RUN_CMD="sim.stop_time = 720day
-run!(sim; pickup = :latest)
-
-sim.stop_time = 300 * 365days
-sim.Δt = 30minutes
-
+        RUN_CMD="sim.stop_time = 300 * 365days
 run!(sim; pickup = :latest)
 "
         ;;
@@ -397,6 +392,7 @@ esac
 [[ "$KSKEW" != "$DEFAULT_KSKEW" ]]             && RUN_NAME="${RUN_NAME}_kskew${KSKEW}"
 [[ "$KSYMM" != "$DEFAULT_KSYMM" ]]             && RUN_NAME="${RUN_NAME}_ksymm${KSYMM}"
 [[ "$BIHARMONIC" != "$DEFAULT_BIHARMONIC" ]]   && RUN_NAME="${RUN_NAME}_bih${BIHARMONIC}"
+[[ "$DT" != "$DEFAULT_DT" ]]                   && RUN_NAME="${RUN_NAME}_dt${DT}"
 [[ -n "${BIHVISC:-}" ]]                        && RUN_NAME="${RUN_NAME}_bihvisc${BIHVISC}"
 [[ "$DZ_TOP" != "$DEFAULT_DZ_TOP" ]]           && RUN_NAME="${RUN_NAME}_dz${DZ_TOP}"
 [[ -n "${CATKE_CWUSTAR:-}" ]]                  && RUN_NAME="${RUN_NAME}_cwu${CATKE_CWUSTAR}"
