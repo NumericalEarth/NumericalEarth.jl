@@ -215,6 +215,23 @@ number.
    `interface.flux_formulation.zero_plane_displacement[2, 1, 1] == 4.0`
 ✅ A doctest that shows the object, via `show`/`summary`, or nothing at all.
 
+## Rule 13 — Search before you write; do not reinvent what exists
+
+Before adding a function, search Oceananigans and NumericalEarth for one that already does the job. Reuse it,
+extend it, or dispatch on it. A second implementation of an existing capability is the most expensive kind of
+scope creep: the duplicate is correct on the day it lands and diverges from the original forever after.
+
+- If an existing function is close but not exact, **widen it** — a new method, a keyword argument, a relaxed
+  type annotation. A near-copy under a new name is never the answer.
+- If you cannot find it, say where you looked. "I searched `Oceananigans/src/Fields` and `DataWrangling` for a
+  masked fill and found none" is a reviewable claim; silence is not.
+- The same holds for patterns, not just functions: grid construction, the `launch!` idiom, `Adapt` rules,
+  `show` methods, dataset hooks — follow the way the codebase already does it.
+
+❌ A new `fill_gaps!` writing a fresh flood-fill kernel while `inpaint_mask!` sits in `DataWrangling`.
+❌ A hand-rolled bilinear interpolation in an example, next to `Oceananigans.Fields.interpolate`.
+✅ `NumericalEarth.DataWrangling.inpaint_mask!(field, mask)`, or a new method on it.
+
 ## Mandatory self-review
 
 **Claude: run the checklist below over every change you make, before you present it.** Not at PR time — at
@@ -224,7 +241,7 @@ The protocol:
 
 1. **Read your own diff.** `git diff` (or `git diff --stat` first if it is large). Review what you actually
    wrote, not what you remember intending. The checklist is answered from the diff, never from memory.
-2. **Answer all thirteen questions.** Every **yes** is a defect you introduced. There is no "yes, but it is
+2. **Answer all fourteen questions.** Every **yes** is a defect you introduced. There is no "yes, but it is
    justified here" — that judgment is exactly the one that produced the drift.
 3. **Cut before presenting.** Removing your own scaffolding is the default action and needs no permission.
    Do not ask "should I remove the validation?" — remove it, and say that you did.
@@ -256,3 +273,5 @@ Any **yes** means cut before presenting.
     fallback guarding against malformed input?
 13. Does the diff contain anything a reader would not expect from the title — including another
     branch merged into the head?
+14. Does the diff reimplement something that already exists in Oceananigans or NumericalEarth, or add a
+    new name where a new method on an existing function would do?
