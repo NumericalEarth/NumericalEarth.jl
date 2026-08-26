@@ -1582,7 +1582,41 @@ end
 ##### Progress callback
 #####
 
+# Per-step resource probe, on unless `OMIP_PROBE=0`. It separates the candidate causes of the
+# multi-second stalls that appear part-way through a run while the timestep cost itself stays flat:
+# a Julia heap at its ceiling shows up as `gc`/`pauses`, CUDA.jl's reclaim path forces a `full` sweep on
+# every allocation it cannot serve, a background thread parked inside a blocking NetCDF read shows up as
+# `safepoint`, and a filling device pool shows up as `gpu_free` falling with `gpu_pool` pinned at `gpu_total`.
+const resource_probe_enabled = get(ENV, "OMIP_PROBE", "1") == "1"
+
+# `total_time_to_safepoint` postdates some supported Julia versions; resolved once so the per-step read
+# stays a plain field access.
+const gc_reports_safepoint_time = hasfield(Base.GC_Num, :total_time_to_safepoint)
+
+@inline safepoint_time_ns(gc) =
+    gc_reports_safepoint_time ? Int64(getfield(gc, :total_time_to_safepoint)) : zero(Int64)
+
+device_memory_report(arch) = nothing
+
+function device_memory_report(::GPU)
+    CUDA.functional() || return nothing
+    try
+        reserved = CUDA.cached_memory()
+        return (; free = CUDA.free_memory(),
+                  total = CUDA.total_memory(),
+                  reserved = reserved === missing ? 0 : Int(reserved))
+    catch
+        return nothing
+    end
+end
+
 function omip_progress_callback(wall_time)
+    initial_gc = Base.gc_num()
+    previous_gc_time        = Ref(Int64(Base.gc_time_ns()))
+    previous_collections    = Ref(Int64(initial_gc.pause))
+    previous_full_sweeps    = Ref(Int64(initial_gc.full_sweep))
+    previous_safepoint_time = Ref(safepoint_time_ns(initial_gc))
+
     function progress(sim)
         sea_ice = sim.model.sea_ice
         ocean   = sim.model.ocean
@@ -1608,6 +1642,35 @@ function omip_progress_callback(wall_time)
         msg5 = @sprintf("wall time: %s", prettytime(step_time))
 
         @info msg1 * msg2 * msg3 * msg4 * msg5
+
+        if resource_probe_enabled
+            gc = Base.gc_num()
+            gc_time = Int64(Base.gc_time_ns())
+            safepoint_time = safepoint_time_ns(gc)
+
+            probe = @sprintf("PROBE iter=%d step=%.3fs gc=%.3fs pauses=%d full=%d safepoint=%.3fs live=%.2fGiB host_free=%.2fGiB",
+                             iteration(sim), step_time,
+                             1e-9 * (gc_time - previous_gc_time[]),
+                             gc.pause - previous_collections[],
+                             gc.full_sweep - previous_full_sweeps[],
+                             1e-9 * (safepoint_time - previous_safepoint_time[]),
+                             Base.gc_live_bytes() / 2^30,
+                             Sys.free_memory() / 2^30)
+
+            device = device_memory_report(architecture(ocean.model.grid))
+
+            if !isnothing(device)
+                probe *= @sprintf(" gpu_free=%.2fGiB gpu_total=%.2fGiB gpu_pool=%.2fGiB",
+                                  device.free / 2^30, device.total / 2^30, device.reserved / 2^30)
+            end
+
+            @info probe
+
+            previous_gc_time[]        = gc_time
+            previous_collections[]    = gc.pause
+            previous_full_sweeps[]    = gc.full_sweep
+            previous_safepoint_time[] = safepoint_time
+        end
 
         # Determinism probe: hash the prognostic state at a few iterations.
         # Compare these hashes between two pickup-from-same-checkpoint runs:
