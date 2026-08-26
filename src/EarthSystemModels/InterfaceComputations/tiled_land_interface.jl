@@ -220,10 +220,10 @@ end
         blended_temperature.canopy_wet_latent_heat[i, j, 1] = f * veg_temperature.canopy_wet_latent_heat[i, j, 1] + g * bare_temperature.canopy_wet_latent_heat[i, j, 1]
 
         # Effective (LST) temperature: area-weight in radiance (T⁴) space (σ cancels),
-        # σ Teff⁴ = f · LWꜛᵛ + (1−f) · LWꜛᵇ.
-        Teffᵛ = veg_temperature.effective[i, j, 1]
-        Teffᵇ = bare_temperature.effective[i, j, 1]
-        blended_temperature.effective[i, j, 1] = (f * Teffᵛ^4 + g * Teffᵇ^4)^convert(FT, 1//4)
+        # σ Tᵉᶠᶠ⁴ = f · LWꜛᵛ + (1−f) · LWꜛᵇ.
+        Tᵉᶠᶠᵛ = veg_temperature.effective[i, j, 1]
+        Tᵉᶠᶠᵇ = bare_temperature.effective[i, j, 1]
+        blended_temperature.effective[i, j, 1] = (f * Tᵉᶠᶠᵛ^4 + g * Tᵉᶠᶠᵇ^4)^convert(FT, 1//4)
 
         # Both tiles see the same incident shortwave, so the mosaic albedo is their area weight.
         blended_temperature.effective_albedo[i, j, 1] =

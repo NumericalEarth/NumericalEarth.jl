@@ -372,7 +372,7 @@ lines!(ax, t, ref.Tᵛ;  color = :seagreen,    label = "leaf Tᵛ")
 lines!(ax, t, ref.Tᵍ; color = :saddlebrown, label = "soil skin Tᵍ")
 lines!(ax, t, ref.Tᵃᶜ; color = :steelblue,   linestyle = :dash, label = "canopy air Tᵃᶜ")
 lines!(ax, t, ref.Tˡᵃ; color = :firebrick,   label = "bulk Tˡᵃ")
-lines!(ax, t, ref.Tₑ;  color = :black,       linestyle = :dot, label = "LST Teff")
+lines!(ax, t, ref.Tₑ;  color = :black,       linestyle = :dot, label = "LST Tᵉᶠᶠ")
 axislegend(ax; position = :lt, nbanks = 2, labelsize = 12)
 
 ## (1,2) Two-source temperature contrasts.
@@ -563,7 +563,7 @@ function tiled_intercepting_column(; fraction, label)
     T    = zeros(Nsteps)   # time (days)
     H    = zeros(Nsteps)   # blended sensible heat
     LE   = zeros(Nsteps)   # blended latent heat
-    Teff = zeros(Nsteps)   # land-surface (radiometric) temperature
+    Tᵉᶠᶠ = zeros(Nsteps)   # land-surface (radiometric) temperature
     𝒮    = zeros(Nsteps)   # shared-column saturation
     Wᶜ   = zeros(Nsteps)   # canopy water store (mm)
     Ewet = zeros(Nsteps)   # wet-canopy evaporation (mass flux, positive up)
@@ -580,7 +580,7 @@ function tiled_intercepting_column(; fraction, label)
         T[n]    = time / day
         H[n]    = scalar(interface.fluxes.sensible_heat)
         LE[n]   = scalar(interface.fluxes.latent_heat)
-        Teff[n] = scalar(interface.temperature.effective)
+        Tᵉᶠᶠ[n] = scalar(interface.temperature.effective)
         𝒮[n]    = scalar(land.saturation)
         Wᶜ[n]   = scalar(land.prognostic.canopy_water_storage)
         Ewet[n]  = scalar(interface.temperature.canopy_evaporation)
@@ -591,7 +591,7 @@ function tiled_intercepting_column(; fraction, label)
         Pˡ[n]    = scalar(land.diagnostics.throughfall)
     end
 
-    return (; label, fraction, t = T, H, LE, Teff, 𝒮, Wᶜ, Ewet, LEwet, LEᵛ, LEᵍ, P, Pˡ)
+    return (; label, fraction, t = T, H, LE, Tᵉᶠᶠ, 𝒮, Wᶜ, Ewet, LEwet, LEᵛ, LEᵍ, P, Pˡ)
 end
 
 # ## The bare-soil-fraction sweep
@@ -622,7 +622,7 @@ end
 
 frac_panel(fig[1, 1], :LE,   "Latent heat (blended)",        "LE (W m⁻²)")
 frac_panel(fig[1, 2], :H,    "Sensible heat (blended)",      "H (W m⁻²)")
-frac_panel(fig[2, 1], :Teff, "Land-surface temperature",     "Teff (K)")
+frac_panel(fig[2, 1], :Tᵉᶠᶠ, "Land-surface temperature",     "Tᵉᶠᶠ (K)")
 frac_panel(fig[2, 2], :Ewet, "Wet-canopy evaporation Eʷ", "Eʷ (mm day⁻¹)"; transform = mm_per_day)
 frac_panel(fig[3, 1], :Wᶜ,   "Canopy water store Wᶜ",         "Wᶜ (mm)"; legend = :rt)
 ax = frac_panel(fig[3, 2], :𝒮, "Shared-column saturation 𝒮",  "𝒮"; legend = :rc)

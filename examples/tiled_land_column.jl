@@ -160,7 +160,7 @@ function tiled_land_column(; fraction, label)
     T    = zeros(Nsteps)   # time (days)
     H    = zeros(Nsteps)   # sensible heat, blended (positive up)
     LE   = zeros(Nsteps)   # latent heat, blended (positive up)
-    Teff = zeros(Nsteps)   # land-surface (radiometric) temperature
+    Tᵉᶠᶠ = zeros(Nsteps)   # land-surface (radiometric) temperature
     Gᶜ   = zeros(Nsteps)   # skin → bulk ground heat flux (into slab)
     𝒮    = zeros(Nsteps)   # shared-column surface saturation
     LEᵥ  = zeros(Nsteps)   # vegetated-tile latent (weighted contribution)
@@ -175,7 +175,7 @@ function tiled_land_column(; fraction, label)
         T[n]    = time / day
         H[n]    = scalar(interface.fluxes.sensible_heat)
         LE[n]   = scalar(interface.fluxes.latent_heat)
-        Teff[n] = scalar(interface.temperature.effective)
+        Tᵉᶠᶠ[n] = scalar(interface.temperature.effective)
         Gᶜ[n]   = scalar(interface.temperature.ground_heat_flux)
         𝒮[n]    = scalar(land.saturation)
         LEᵥ[n]  = fraction       * scalar(interface.vegetated.fluxes.latent_heat)
@@ -184,7 +184,7 @@ function tiled_land_column(; fraction, label)
         u★ᵦ[n]  = scalar(interface.bare.fluxes.friction_velocity)
     end
 
-    return (; label, fraction, t = T, H, LE, Teff, Gᶜ, 𝒮, LEᵥ, LEᵦ, u★ᵥ, u★ᵦ)
+    return (; label, fraction, t = T, H, LE, Tᵉᶠᶠ, Gᶜ, 𝒮, LEᵥ, LEᵦ, u★ᵥ, u★ᵦ)
 end
 
 scalar(field) = first(interior(field))
@@ -226,7 +226,7 @@ end
 
 sweep_panel(fig[1, 1], :H,    "Sensible heat (blended)",  "H (W m⁻²)")
 sweep_panel(fig[1, 2], :LE,   "Latent heat (blended)",    "LE (W m⁻²)")
-sweep_panel(fig[2, 1], :Teff, "Land-surface temperature", "Teff (K)")
+sweep_panel(fig[2, 1], :Tᵉᶠᶠ, "Land-surface temperature", "Tᵉᶠᶠ (K)")
 
 ## Bowen ratio H/LE: the drier bare endpoint runs a much higher Bowen ratio.
 ax = Axis(fig[2, 2]; title = "Midday Bowen ratio H/LE", xlabel = "t (days)", ylabel = "H / LE")

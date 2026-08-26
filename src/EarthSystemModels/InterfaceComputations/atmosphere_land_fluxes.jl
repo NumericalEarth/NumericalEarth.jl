@@ -71,8 +71,8 @@ end
         Ts.interface[i, j, 1]              = sol.Tᵃᶜ
         Ts.canopy[i, j, 1]                 = sol.Tᵛ
         Ts.soil_skin[i, j, 1]              = sol.Tᵍ
-        Ts.effective[i, j, 1]              = sol.Teff
-        Ts.effective_albedo[i, j, 1]       = sol.αeff
+        Ts.effective[i, j, 1]              = sol.Tᵉᶠᶠ
+        Ts.effective_albedo[i, j, 1]       = sol.αᵉᶠᶠ
         Ts.ground_heat_flux[i, j, 1]        = sol.Gᶜ
         Ts.canopy_latent_heat[i, j, 1]     = sol.LEᵛ
         Ts.soil_latent_heat[i, j, 1]       = sol.LEᵍ
@@ -143,8 +143,8 @@ end
         Ts.interface[i, j, 1]              = T⁺
         Ts.canopy[i, j, 1]                 = sol.Tᵛ
         Ts.soil_skin[i, j, 1]              = sol.Tᵍ
-        Ts.effective[i, j, 1]              = sol.Teff
-        Ts.effective_albedo[i, j, 1]       = sol.αeff
+        Ts.effective[i, j, 1]              = sol.Tᵉᶠᶠ
+        Ts.effective_albedo[i, j, 1]       = sol.αᵉᶠᶠ
         Ts.ground_heat_flux[i, j, 1]        = sol.Gᶜ
         Ts.canopy_latent_heat[i, j, 1]     = sol.ℒ * sol.gˡʷ * (sol.qᵛ - q̄)
         Ts.soil_latent_heat[i, j, 1]       = sol.ℒ * sol.Gᵉ * (sol.qᵉ - q̄)

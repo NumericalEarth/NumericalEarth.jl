@@ -826,7 +826,7 @@ closes.
     SWᵍ = ftrans * (1 - αᵍ) * SW
 
     # The column's shortwave albedo: the complement of what the two-source split absorbs.
-    αeff = 1 - ((1 - αˡᶠ) * (1 - ftrans) + ftrans * (1 - αᵍ))
+    αᵉᶠᶠ = 1 - ((1 - αˡᶠ) * (1 - ftrans) + ftrans * (1 - αᵍ))
 
     Tᵛ  = Tˡᵃ
     Tᵍ = Tˡᵃ
@@ -863,7 +863,7 @@ closes.
     end
 
     # Converged diagnostics: per-surface flux shares, the skin→slab conduction, and
-    # the effective radiating (LST) temperature σ Teff⁴ ≡ LWu (upwelling to space).
+    # the effective radiating (LST) temperature σ Tᵉᶠᶠ⁴ ≡ LWu (upwelling to space).
     # The diagnostic node is re-solved against the final skins: inside the loop it
     # updates ahead of them, so the loop exits one iterate stale and the shares below
     # would miss closure. The prognostic node stays frozen.
@@ -875,7 +875,7 @@ closes.
     LWꜜᵍ = (1 - εᵛ) * LWd + εᵛ * σ * Tᵛ^4
     LWꜛᵍ = εᵍ * σ * Tᵍ^4 + (1 - εᵍ) * LWꜜᵍ
     LWu   = (1 - εᵛ) * LWꜛᵍ + εᵛ * σ * Tᵛ^4
-    Teff  = ifelse(σ > 0, (LWu / σ)^convert(FT, 1//4), Tᵃᶜ)
+    Tᵉᶠᶠ  = ifelse(σ > 0, (LWu / σ)^convert(FT, 1//4), Tᵃᶜ)
 
     Hᵛ    = gˡʰ * (Tᵛ - Tᵃᶜ)
     Hᵍ    = gᵍʰ * (Tᵍ - Tᵃᶜ)
@@ -894,7 +894,7 @@ closes.
 
     return (; Tᵛ = convert(FT, Tᵛ), Tᵍ = convert(FT, Tᵍ),
               Tᵃᶜ = convert(FT, Tᵃᶜ), qᵃᶜ = convert(FT, qᵃᶜ),
-              Teff = convert(FT, Teff), αeff = convert(FT, αeff),
+              Tᵉᶠᶠ = convert(FT, Tᵉᶠᶠ), αᵉᶠᶠ = convert(FT, αᵉᶠᶠ),
               Hᵛ = convert(FT, Hᵛ), Hᵍ = convert(FT, Hᵍ),
               LEᵛ = convert(FT, LEᵛ), LEᵍ = convert(FT, LEᵍ),
               Gᶜ = convert(FT, Gᶜ), Eʷ = convert(FT, Eʷ),
@@ -973,7 +973,7 @@ struct CanopyAirSpaceDiagnostics{F, S}
     interface              :: F   # canopy-air node Tᵃᶜ (what MOST sees)
     canopy                 :: F   # leaf temperature Tᵛ
     soil_skin              :: F   # soil-skin temperature Tᵍ
-    effective              :: F   # radiating (LST) temperature Teff
+    effective              :: F   # radiating (LST) temperature Tᵉᶠᶠ
     effective_albedo       :: F   # broadband shortwave albedo of the canopy + ground column
     ground_heat_flux       :: F   # skin→bulk conduction Gᶜ
     canopy_latent_heat     :: F   # leaf transpiration LEᵛ
