@@ -18,12 +18,19 @@ using Oceananigans: Field, Center, architecture
 using Oceananigans.Fields: ZeroField
 using Oceananigans.Utils: launch!
 
-import NumericalEarth.EarthSystemModels: interpolate_state!, update_net_fluxes!
+import NumericalEarth.EarthSystemModels: interpolate_state!, update_net_fluxes!, exchange_grid
 import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
+
+# The exchange grid is the Terrarium land's (flattened) Oceananigans field grid, on which all
+# state/flux `Field`s live. `land` is an Oceananigans `Simulation` wrapping the `ModelIntegrator`
+# (`land.model`), which forwards `.grid` to the underlying field grid; the generic
+# `exchange_grid(..., land) = land.grid` accessor does not resolve on a bare `Simulation`, so
+# specialize it here.
+exchange_grid(atmosphere, ::Nothing, ::Nothing, land::TerrariumSimulation) = land.model.grid
 
 # Land exchanger: expose skin temperature `T` (K) and surface `saturation`, the two
 # fields the atmosphere-land flux kernel reads. No regridder (exchange grid == land grid).
-function ComponentExchanger(land::TerrariumLand, exchange_grid)
+function ComponentExchanger(land::TerrariumSimulation, exchange_grid)
     state = (T          = Field{Center, Center, Nothing}(exchange_grid),
              saturation = Field{Center, Center, Nothing}(exchange_grid))
     return ComponentExchanger(state, nothing)
@@ -42,8 +49,8 @@ end
     end
 end
 
-function interpolate_state!(exchanger, exchange_grid, land::TerrariumLand, coupled_model)
-    state = land.integrator.state
+function interpolate_state!(exchanger, exchange_grid, land::TerrariumSimulation, coupled_model)
+    state = land.model.state
     arch = architecture(exchange_grid)
     Nz = size(exchange_grid, 3)
     T₀ = convert(eltype(exchange_grid), 273.15)
@@ -93,12 +100,12 @@ end
     end
 end
 
-function update_net_fluxes!(coupled_model, land::TerrariumLand)
+function update_net_fluxes!(coupled_model, land::TerrariumSimulation)
     al_interface = coupled_model.interfaces.atmosphere_land_interface
     isnothing(al_interface) && return nothing
 
-    state = land.integrator.state
-    grid = land.grid
+    state = land.model.state
+    grid = land.model.grid
     arch = architecture(grid)
     T₀ = convert(eltype(grid), 273.15)
 
