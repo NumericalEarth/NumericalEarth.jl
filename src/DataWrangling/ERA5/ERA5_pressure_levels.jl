@@ -334,7 +334,7 @@ function era5_native_pressure_fts(metadata, grid;
                                   time_indexing = Cyclical(),
                                   time_indices_in_memory = nothing)
     Downloads.download(metadata)
-    times = convert.(eltype(grid), native_times(metadata))
+    times = native_times(metadata)     # Float64, matching the model clock — see `metadata_field_time_series.jl`
     Nt = length(times)
     time_indices_in_memory = min(something(time_indices_in_memory, Nt), Nt)
     loc = LX, LY, LZ = location(metadata)
