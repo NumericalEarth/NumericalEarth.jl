@@ -25,13 +25,13 @@ A few things are specific to this dataset:
    dataset must be read through a longitude/latitude `BoundingBox` — constructing
    a `Metadatum` without a bounded `region` errors.
 
-4. **Reads are sized to the target grid.** `Field(metadatum, grid)` reads the coarsest lattice
-   that still oversamples `grid` twofold, served from the GeoTIFFs' own average-resampled
-   overview pyramid — a continental window costs megabytes instead of the hundreds of gigabytes
-   of 30 m pixels underneath it. `Field(metadatum)` has no target and reads at full resolution;
+4. **Reads can be sized to the target grid.** `OpenLandMapSoilDB(aggregation_factor = nothing)`
+   makes `Field(metadatum, grid)` read the coarsest lattice that still oversamples `grid`
+   twofold, served from the GeoTIFFs' own average-resampled overview pyramid — a continental
+   window costs megabytes instead of the hundreds of gigabytes of 30 m pixels underneath it.
+   The default reads at full resolution, as does `Field(metadatum)`, which has no target;
    `OpenLandMapSoilDB(aggregation_factor = n)` pins the lattice at `n` native pixels per cell
    side. Each lattice is cached under its own filename.
-
 
 ## Usage
 
@@ -44,11 +44,12 @@ region = BoundingBox(longitude = (-112.3, -111.9), latitude = (36.0, 36.4))
 # Native 30 m field: horizontal window × three depth intervals
 clay = Field(Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region))
 
-# Materializing on a grid reads the lattice matched to it, not the full 30 m window
+# Match the read to a grid rather than the full 30 m window
 grid = LatitudeLongitudeGrid(size = (400, 400, 3),
                              longitude = region.longitude, latitude = region.latitude,
                              z = [-1.0, -0.6, -0.3, 0.0], halo = (3, 3, 3))
-clay_on_grid = Field(Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region), grid)
+matched = OpenLandMapSoilDB(aggregation_factor = nothing)
+clay_on_grid = Field(Metadatum(:clay_fraction; dataset = matched, region), grid)
 
 # Pin the read lattice instead: 8 native pixels per cell side, ~240 m
 coarse = OpenLandMapSoilDB(aggregation_factor = 8)
