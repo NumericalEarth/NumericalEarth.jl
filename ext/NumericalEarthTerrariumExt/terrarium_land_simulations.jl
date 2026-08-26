@@ -30,7 +30,11 @@ function NumericalEarth.Lands.land_simulation(
     ) where {NF}
     model = land_model(grid; kwargs...)
     integrator = Terrarium.initialize(model; initializers, inputs)
-    return Simulation(integrator; Δt, verbose = false)
+    simulation = Simulation(integrator; Δt, verbose = false)
+    # Adaptive diffusive time step for the soil column (inert while the coupler forces `Δt`,
+    # active when the land `Simulation` is stepped on its own).
+    conjure_time_step_wizard!(simulation; show_progress = false)
+    return simulation
 end
 
 """

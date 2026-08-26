@@ -6,6 +6,7 @@ using Oceananigans.Architectures
 using Oceananigans.Fields: Field, ZeroField
 using Oceananigans.Grids: AbstractGrid
 using Oceananigans.Utils: launch!
+using Oceananigans.Simulations: conjure_time_step_wizard!
 
 import Terrarium
 import Terrarium.RingGrids
