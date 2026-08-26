@@ -89,7 +89,7 @@ Base.show(io::IO, q::CompositeSurfaceHumidity) = print(io, summary(q))
     FT = eltype(Ψₛ)
 
     Gᵉ, qᵉ, σ, qᵍ⁺ = dry_layer_terms(q.soil, Tₛ, Ψₛ, Ψₐ, ℙₐ)          # soil branch (+ wet-blend)
-    gᶜ, qᵛ⁺      = canopy_conductance_terms(q.canopy, Tₛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)  # canopy branch
+    gᶜ, qᵛ⁺      = canopy_conductance_terms(q.canopy, Tₛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, nothing)  # canopy branch
 
     qˢ⁻ = Ψₛ.specific_humidity
     qᵃᵗ = Ψₐ.q
@@ -120,7 +120,7 @@ dry (`σ = 1`). Returns `(; soil_evaporation, transpiration)`.
 """
 @inline function evaporation_partition(q::CompositeSurfaceHumidity, qˢ, Tₛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
     Gᵉ, qᵉ, σ, qᵍ⁺ = dry_layer_terms(q.soil, Tₛ, Ψₛ, Ψₐ, ℙₐ)
-    gᶜ, qᵛ⁺      = canopy_conductance_terms(q.canopy, Tₛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
+    gᶜ, qᵛ⁺      = canopy_conductance_terms(q.canopy, Tₛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, nothing)
     soil_evaporation = Gᵉ * (qᵉ - qˢ)
     transpiration    = gᶜ * (qᵛ⁺ - qˢ)
     return (; soil_evaporation, transpiration)
