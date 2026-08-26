@@ -84,7 +84,7 @@ end
 @inline get_fractional_index(i, j, frac) = @inbounds frac[i, j, 1]
 
 @inline underlying_data(f) = f.data
-@inline underlying_data(::ConstantField) = nothing
+@inline underlying_data(c::ConstantField) = c
 
 @kernel function _interpolate_primary_atmospheric_state!(surface_atmos_state,
                                                          space_fractional_indices,
@@ -130,7 +130,7 @@ end
     end
 
     for (tn, tv) in pairs(atmos_tracers)
-        update_tracer_state!(i, j, surface_atmos_state[tn], tv, atmos_args, t_itp)
+        @inbounds update_tracer_state!(i, j, surface_atmos_state[tn], tv, atmos_args, t_itp)
     end
 end
 

@@ -1,6 +1,7 @@
 #####
 ##### radiation from atmosphere blocked by sea ice
 #####
+
 apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}) = 
     apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, biogeochemistry.light_attenuation)
 
