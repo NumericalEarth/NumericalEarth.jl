@@ -42,8 +42,8 @@ end
 
 Surface energy balance in which the skin temperature and the turbulent (sensible/latent)
 fluxes are prescribed by the coupler while Terrarium owns albedo and radiation. The ground
-heat flux is closed as the residual `R_net + H_s + H_l` (see Terrarium's
-`solve_surface_energy_balance!` for `PrescribedSkinTemperature`).
+heat flux is calculated internal from the prescribed fluxes (see `solve_surface_energy_balance!`
+for `PrescribedSkinTemperature`).
 """
 deferred_surface_energy_balance(NF) =
     Terrarium.SurfaceEnergyBalance(NF;
