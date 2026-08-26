@@ -103,11 +103,15 @@ end
             @test Hᵛ .+ Hᵍ ≈ Array(interior(interface.fluxes.sensible_heat))
             @test LEᵛ .+ LEᵍ ≈ Array(interior(interface.fluxes.latent_heat))
 
-            # RRTMGP reflects with the same albedo the canopy's two-source split absorbs against.
-            αʳ = Array(interior(rtm.surface_properties.direct_surface_albedo))
+            # The canopy's own solve supplies what RRTMGP emits and reflects with.
+            @test rtm.surface_properties.surface_temperature === interface.temperature.effective
+            @test rtm.surface_properties.direct_surface_albedo === interface.temperature.effective_albedo
+            @test rtm.surface_properties.diffuse_surface_albedo === interface.temperature.effective_albedo
+
+            # The two-source albedo reaches the shortwave solver's boundary condition.
             αᶜ = Array(interior(interface.temperature.effective_albedo))
-            @test αʳ ≈ αᶜ
-            @test all(0 .< αʳ .< 1)
+            @test all(0 .< αᶜ .< 1)
+            @test vec(Array(rtm.shortwave_solver.bcs.sfc_alb_direct)) ≈ vec(αᶜ)
 
             # RRTMGP solves at the start of a step from the temperature bound at the end of the
             # previous one, so its emitted surface longwave reproduces the canopy's upwelling.
