@@ -818,26 +818,48 @@ end
 # ══════════════════════════════════════════════════════════════
 # Observational sea-ice climatologies (NSIDC, PIOMAS) — global cache.
 # ══════════════════════════════════════════════════════════════
+#
+# Both records run from 1979 to the present day, and the Arctic trend
+# over that span is large enough that the averaging window is part of
+# the reference: a full-record mean mixes 1980s ice with 2020s ice and
+# matches neither. Every accessor therefore takes an explicit
+# `(start_year, end_year)` window, which the sea-ice figures set from
+# the model averaging window (see `observation_year_window`).
 
-function load_piomas_monthly()
+# Passive-microwave era. Neither record has a fixed end — both are
+# reissued as new months land — so an unrequested upper bound is
+# `typemax(Int)` and the returned `last_year` reports whatever the
+# downloaded file actually reaches.
+const NSIDC_FIRST_YEAR  = 1979
+const PIOMAS_FIRST_YEAR = 1979
+
+function load_piomas_monthly(; start_year = PIOMAS_FIRST_YEAR,
+                               end_year   = typemax(Int))
     url   = "https://psc.apl.uw.edu/wordpress/wp-content/uploads/schweiger/ice_volume/PIOMAS.monthly.Current.v2.1.csv"
     raw   = readdlm(cached_download(url), ','; skipstart=1)
-    vol   = Float64.(raw[:, 2:13])
+    yrs   = Int.(raw[:, 1])
+    keep  = findall(y -> start_year <= y <= end_year, yrs)
+    isempty(keep) && error("PIOMAS: no years in [$start_year, $end_year]")
+    vol   = Float64.(raw[keep, 2:13])
     vol[vol .== -1] .= NaN
+    first_year, last_year = extrema(yrs[keep])
     volume_monthly     = vec(mapslices(x -> mean(filter(!isnan, x)), vol; dims=1))
     volume_monthly_std = vec(mapslices(vol; dims=1) do x
         y = filter(!isnan, x)
         length(y) > 1 ? std(y) : 0.0
     end)
-    return (; volume_monthly, volume_monthly_std)
+    return (; volume_monthly, volume_monthly_std, first_year, last_year)
 end
 
-function load_nsidc(hemisphere)
+function load_nsidc(hemisphere; start_year = NSIDC_FIRST_YEAR,
+                                end_year   = typemax(Int))
     prefix = hemisphere == "north" ? "N" : "S"
     extent_monthly     = zeros(12)
     extent_monthly_std = zeros(12)
     area_monthly       = zeros(12)
     area_monthly_std   = zeros(12)
+    first_year         = typemax(Int)
+    last_year          = typemin(Int)
     for m in 1:12
         url = "https://noaadata.apps.nsidc.org/NOAA/G02135/$(hemisphere)/monthly/data/$(prefix)_$(lpad(m, 2, '0'))_extent_v4.0.csv"
         raw = readlines(cached_download(url))
@@ -845,28 +867,37 @@ function load_nsidc(hemisphere)
         for line in raw
             parts = split(line, ',')
             length(parts) >= 6 || continue
+            yr  = tryparse(Int, strip(parts[1]))
             ext = tryparse(Float64, strip(parts[5]))
             ar  = tryparse(Float64, strip(parts[6]))
+            isnothing(yr) && continue
+            (start_year <= yr <= end_year) || continue
             (isnothing(ext) || ext == -9999) && continue
             (isnothing(ar)  || ar  == -9999) && continue
             push!(extents, ext); push!(areas, ar)
+            first_year = min(first_year, yr)
+            last_year  = max(last_year,  yr)
         end
+        isempty(extents) && error("NSIDC ($hemisphere): no month-$m data in [$start_year, $end_year]")
         extent_monthly[m]     = mean(extents)
         extent_monthly_std[m] = length(extents) > 1 ? std(extents) : 0.0
         area_monthly[m]       = mean(areas)
         area_monthly_std[m]   = length(areas) > 1 ? std(areas) : 0.0
     end
-    return (; extent_monthly, extent_monthly_std, area_monthly, area_monthly_std)
+    return (; extent_monthly, extent_monthly_std, area_monthly, area_monthly_std,
+              first_year, last_year)
 end
 
 # Global per-process cache for observational climatologies. Each
 # accessor returns `nothing` if the download fails (mirrors the dBM /
 # NCEP convention) so figures degrade gracefully to a model-only plot.
 # Sentinel `:download_failed` distinguishes "download failed once,
-# don't retry this session" from "not yet attempted".
-const NSIDC_NORTH_REF = Ref{Any}(nothing)
-const NSIDC_SOUTH_REF = Ref{Any}(nothing)
-const PIOMAS_REF      = Ref{Any}(nothing)
+# don't retry this session" from "not yet attempted". The sea-ice
+# records are keyed by averaging window, since one session can plot
+# cases with different windows.
+const NSIDC_NORTH_REF = Dict{Tuple{Int, Int}, Any}()
+const NSIDC_SOUTH_REF = Dict{Tuple{Int, Int}, Any}()
+const PIOMAS_REF      = Dict{Tuple{Int, Int}, Any}()
 
 function try_load(ref, label, builder)
     ref[] === :download_failed && return nothing
@@ -881,9 +912,40 @@ function try_load(ref, label, builder)
     return ref[]
 end
 
-nsidc_arctic()    = try_load(NSIDC_NORTH_REF, "NSIDC (north)", () -> load_nsidc("north"))
-nsidc_antarctic() = try_load(NSIDC_SOUTH_REF, "NSIDC (south)", () -> load_nsidc("south"))
-piomas_monthly()  = try_load(PIOMAS_REF,      "PIOMAS",        load_piomas_monthly)
+function try_load_window(cache, key, label, builder)
+    stored = get(cache, key, nothing)
+    stored === :download_failed && return nothing
+    isnothing(stored) || return stored
+    try
+        cache[key] = builder()
+    catch err
+        @warn "$label download failed — skipping reference line." error = sprint(showerror, err)
+        cache[key] = :download_failed
+        return nothing
+    end
+    return cache[key]
+end
+
+function nsidc_arctic(; start_year = NSIDC_FIRST_YEAR, end_year = typemax(Int))
+    return try_load_window(NSIDC_NORTH_REF, (start_year, end_year),
+                           "NSIDC (north) $(start_year)–$(end_year)",
+                           () -> load_nsidc("north"; start_year, end_year))
+end
+
+function nsidc_antarctic(; start_year = NSIDC_FIRST_YEAR, end_year = typemax(Int))
+    return try_load_window(NSIDC_SOUTH_REF, (start_year, end_year),
+                           "NSIDC (south) $(start_year)–$(end_year)",
+                           () -> load_nsidc("south"; start_year, end_year))
+end
+
+function piomas_monthly(; start_year = PIOMAS_FIRST_YEAR, end_year = typemax(Int))
+    return try_load_window(PIOMAS_REF, (start_year, end_year),
+                           "PIOMAS $(start_year)–$(end_year)",
+                           () -> load_piomas_monthly(; start_year, end_year))
+end
+
+# Label suffix that makes the reference window visible on the figure.
+window_label(obs) = "$(obs.first_year)–$(obs.last_year)"
 
 # ══════════════════════════════════════════════════════════════
 # HadISST1 sea-ice concentration climatology (Met Office Hadley Centre)
@@ -905,6 +967,8 @@ piomas_monthly()  = try_load(PIOMAS_REF,      "PIOMAS",        load_piomas_month
 const HADISST_SIC_URL = get(ENV, "HADISST_SIC_URL",
     "https://www.metoffice.gov.uk/hadobs/hadisst/data/HadISST_ice.nc.gz")
 
+const HADISST_CLIMATOLOGY_YEARS = (1979, 2007)
+
 function gunzip_to_sibling(path_gz::AbstractString)
     endswith(path_gz, ".gz") || return path_gz
     out = path_gz[1:end-3]
@@ -917,8 +981,9 @@ function gunzip_to_sibling(path_gz::AbstractString)
     return out
 end
 
-function load_hadisst_sic_climatology(; start_year = 1979, end_year = 2007,
-                                       cache_dir = obs_cache_dir)
+function load_hadisst_sic_climatology(; start_year = HADISST_CLIMATOLOGY_YEARS[1],
+                                       end_year   = HADISST_CLIMATOLOGY_YEARS[2],
+                                       cache_dir  = obs_cache_dir)
     cache_file = joinpath(cache_dir, "sic_hadisst_$(start_year)_$(end_year).jld2")
     if isfile(cache_file)
         return JLD2.load(cache_file, "monthly")

@@ -791,6 +791,60 @@ LOADERS[:sea_ice_diagnostics] = disk_cached(:sea_ice_diagnostics; source_fts_sym
                             stop_time  = c.stop_time)
 end
 
+# JRA55-do span the OMIP runs are forced with. The forcing is `Cyclical`,
+# so a run that outlives the span keeps going on a folded calendar: O0's
+# model year 2037 is being forced by JRA55 1977. Override per case with a
+# `forcing_years` field in the `cases` entry.
+const OMIP_FORCING_YEARS = (1958, 2018)
+
+case_forcing_years(case_cache::CaseCache) = get(case_cache.case, :forcing_years, OMIP_FORCING_YEARS)
+
+"""
+    forcing_year(date, forcing_years) -> Int
+
+Calendar year of the forcing a model `date` actually sees, folding the
+model clock back onto the `Cyclical` JRA55 span.
+"""
+function forcing_year(date, forcing_years)
+    first_year, last_year = forcing_years
+    return first_year + mod(year(date) - first_year, last_year - first_year)
+end
+
+"""
+    observation_year_window(caches, labels; record_first_year) -> (start_year, end_year)
+
+Forcing years sampled by the plotted cases' averaging windows, clipped at
+the start of an observational record. NSIDC and PIOMAS both extend to the
+present day, so a full-record climatology is a mean over four decades of
+Arctic decline and is not the right reference for a run averaged over
+three years of the 1960s — the reference has to be built over the years
+the model is actually forced with.
+
+The model clock is not a calendar: the forcing is cyclical, so a long run
+keeps counting past 2018 while being forced by JRA55 all over again. The
+window therefore comes from `forcing_year`, not from the raw snapshot
+dates.
+
+Falls back to the record's first decade when the forcing window predates
+the satellite era, which is the closest the observations can get to a
+pre-1979 averaging window. The window ends up in the legend either way,
+so the figure always states which years it compares against.
+"""
+function observation_year_window(caches, labels; record_first_year)
+    years = Int[]
+    for lab in labels
+        dates = get_field(caches[lab], :sea_ice_diagnostics).snapshot_dates
+        append!(years, forcing_year.(dates, Ref(case_forcing_years(caches[lab]))))
+    end
+    model_first, model_last = extrema(years)
+    if model_last < record_first_year
+        @warn "Forcing window $(model_first)–$(model_last) predates the observational record " *
+              "($record_first_year onwards) — referencing its first decade instead."
+        return (record_first_year, record_first_year + 9)
+    end
+    return (max(model_first, record_first_year), model_last)
+end
+
 #####
 ##### Time-series scalars + horizontal-mean profiles
 #####

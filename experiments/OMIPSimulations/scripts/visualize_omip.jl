@@ -50,18 +50,11 @@
 # ══════════════════════════════════════════════════════════════
 
 cases = [
-(prefix = "orca_corrected_snow_fwnorm_pvel0.254", label = "O0", years_from_end = 5),
-(prefix = "orca_corrected_snow_mltaper_fwnorm_pvel0.254", label = "O1", years_from_end = 5),
-(prefix = "orca_corrected_snow_fwnormann_kskewnemo_ksymmnemo_pvel0.254", label = "O2", years_from_end = 5),
-(prefix = "orca_corrected_snow_fwnormann_kskewcesm_ksymmcesm_pvel0.254", label = "O3", years_from_end = 5),
-(prefix = "orca_corrected_snow_fwnorm_kskewhybrid_ksymmhybrid_pvel0.254", label = "O4", years_from_end = 5),
-(prefix = "orca_corrected_snow_mltaper_fwnorm_kskewhybrid_ksymmhybrid_pvel0.254", label = "O5", years_from_end = 5),
-(prefix =             "orca_corrected_snow_pcells_fwnorm_pvel0.254", label = "O6", years_from_end = 5), 
-(prefix =          "orca_corrected_snow_noicerest_fwnorm_pvel0.254", label = "O7", years_from_end = 5), 
- (prefix = "orca_corrected_snow_fwnorm_bgk0.0001_pvel0.254", label = "k1e-4", years_from_end = 5),
- (prefix = "orca_corrected_snow_fwnorm_bgkbryan_lewis_pvel0.254", label = "kbl", years_from_end = 5), 
- (prefix = "orca_corrected_snow_fwnorm_bgk0.00003_pvel0.254", label = "k3e-5", years_from_end = 5), 
-# (prefix = "quarterdegree_corrected_snow_fwnorm_pvel0.254", label = "QD", years_from_end = 2),
+(prefix = "orca_corrected_snow_fwnorm_pvel0.254", label = "O0", years_from_end = 10),
+(prefix = "orca_corrected_snow_noslip_landfast_cio5.5e-3_ah0.0057_ncat4_fwnorm_cb0.01_bgnu3e-5_pvel0.254",        label = "cb0.01",        years_from_end = 3),
+(prefix = "orca_corrected_snow_noslip_landfast_cio5.5e-3_ah0.0057_ncat4_fwnorm_cb0.1_bgnu3e-5_pvel0.254",         label = "cb0.1",         years_from_end = 3),
+(prefix = "orca_corrected_snow_noslip_landfast_cio5.5e-3_ah0.0057_ncat4_dsow10_fwnorm_cb0.01_bgnu3e-5_pvel0.254", label = "dsow10",        years_from_end = 3),
+(prefix = "orca_corrected_snow_noslip_landfast_cio5.5e-3_ah0.0057_ncat4_dsow10_fwnorm_cb0.01_dt5400_bgnu3e-5_pvel0.254", label = "dsow10-dt5400", years_from_end = 3),
 ]
 
 output_dir = length(ARGS) >= 1 ? ARGS[1] : "figures"
