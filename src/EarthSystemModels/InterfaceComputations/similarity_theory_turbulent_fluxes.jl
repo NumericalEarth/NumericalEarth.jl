@@ -1,4 +1,3 @@
-using DocStringExtensions: TYPEDSIGNATURES
 using Oceananigans.Utils: prettysummary
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 

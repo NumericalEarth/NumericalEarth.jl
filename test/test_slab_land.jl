@@ -600,7 +600,6 @@ end
     @test per_cell == solved_friction_velocity(similarity_fluxes(4.0), (;))
     @test solved_friction_velocity(similarity_fluxes(LandZeroPlaneDisplacement()), (;)) ==
           solved_friction_velocity(similarity_fluxes(0.0), (;))
-
 end
 
 @testset "Atmosphere-Land flux stability and roughness response" begin
