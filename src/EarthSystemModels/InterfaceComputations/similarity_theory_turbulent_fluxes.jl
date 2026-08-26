@@ -306,11 +306,10 @@ end
 $(TYPEDSIGNATURES)
 
 Height `Δh - d` at which the similarity profiles of a surface with zero-plane
-displacement `d` are evaluated, floored at twice the momentum roughness length `ℓ`
-so the profile stays above the roughness sublayer (and the transfer coefficients
-stay finite) when the displacement approaches the atmosphere surface layer height.
+displacement `d` are evaluated, floored at twice the largest of the three roughness
+lengths `ℓᵐᵃˣ` so every profile stays above its own roughness sublayer.
 """
-@inline displaced_profile_height(Δh, d, ℓ) = max(Δh - d, 2ℓ)
+@inline displaced_profile_height(Δh, d, ℓᵐᵃˣ) = max(Δh - d, 2ℓᵐᵃˣ)
 
 function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
                                   Tₛ, qₛ, Δθ, Δq, Δh,
@@ -365,7 +364,7 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     # Tall roughness elements displace the similarity profiles upward by `d`.
     d = local_zero_plane_displacement(flux_formulation.zero_plane_displacement,
                                       interior_properties)
-    Δh = displaced_profile_height(Δh, d, ℓu₀)
+    Δh = displaced_profile_height(Δh, d, max(ℓu₀, ℓθ₀, ℓq₀))
 
     # Transfer coefficients at height `h`
     ϰ = flux_formulation.von_karman_constant

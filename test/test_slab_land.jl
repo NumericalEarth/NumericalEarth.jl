@@ -557,8 +557,9 @@ end
         @test displaced_friction_velocity(6.0) > displaced_friction_velocity(3.0) > displaced_friction_velocity(0.0)
 
         # A displacement at or above the surface-layer height stays finite: the
-        # profile height is floored at twice the momentum roughness length.
+        # profile height is floored at twice the largest roughness length.
         @test displaced_friction_velocity(2h) ≈ ϰ / log(2) * uᵃᵗ
+
     end
 
     # Per-cell resolution: `LandZeroPlaneDisplacement` reads the displacement a land
@@ -600,6 +601,24 @@ end
     @test per_cell == solved_friction_velocity(similarity_fluxes(4.0), (;))
     @test solved_friction_velocity(similarity_fluxes(LandZeroPlaneDisplacement()), (;)) ==
           solved_friction_velocity(similarity_fluxes(0.0), (;))
+
+    # The floor is twice the largest of the three roughness lengths. Δh - d = 0.05
+    # clears 2ℓu = 0.02, so a floor on ℓu alone would not bind and the temperature
+    # profile would be evaluated below its own sublayer, where log(h / ℓθ) < 0 and the
+    # heat flux runs backwards.
+    crowded = SimilarityTheoryFluxes(; momentum_roughness_length    = 0.01,
+                                       temperature_roughness_length = 0.1,
+                                       water_vapor_roughness_length = 0.1,
+                                       zero_plane_displacement      = 9.95,
+                                       subgrid_velocities = nothing,
+                                       stability_functions = SimilarityScales(zero_ψ, zero_ψ, zero_ψ))
+
+    u★, θ★, q★ = iterate_interface_fluxes(crowded, 290.0, 0.01, -2.0, 0.001, Δh,
+                                          approximate_state, atmosphere_state,
+                                          interface_properties, atmosphere_properties, (;))
+
+    @test u★ > 0
+    @test θ★ < 0   # Δθ = -2 K, so heat flows toward the atmosphere
 end
 
 @testset "Atmosphere-Land flux stability and roughness response" begin
