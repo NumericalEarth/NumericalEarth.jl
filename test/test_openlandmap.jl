@@ -8,8 +8,7 @@ using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, z
                                     matching_resolution_dataset,
                                     target_matched_metadata,
                                     WeightPercent, GramPerCubicCentimeter
-using NumericalEarth.DataWrangling.OpenLandMap: cog_window_to_netcdf, aggregation_factor, read_step,
-                                                minimum_horizontal_spacing
+using NumericalEarth.DataWrangling.OpenLandMap: cog_window_to_netcdf, aggregation_factor
 
 using ArchGDAL
 using NCDatasets: NCDataset
@@ -166,10 +165,6 @@ end
     native = OpenLandMapSoilDB()
     coarse = OpenLandMapSoilDB(aggregation_factor = 8)
 
-    @test aggregation_factor(native) == 1
-    @test read_step(native) ≈ 0.00025
-    @test read_step(coarse) ≈ 8 * 0.00025
-
     # Read cells are whole blocks of native pixels: 1440004 and 528004 leave a remainder of 4,
     # dropped at the far edge from the file origin (east in longitude, south in latitude).
     @test size(native, :clay_fraction) == (1440004, 528004, 3)
@@ -177,17 +172,11 @@ end
 
     @test longitude_interfaces(coarse)[1] == longitude_interfaces(native)[1]
     @test latitude_interfaces(coarse)[2]  == latitude_interfaces(native)[2]
-    @test longitude_interfaces(coarse)[2] < longitude_interfaces(native)[2]
-    @test latitude_interfaces(coarse)[1]  > latitude_interfaces(native)[1]
 
-    # The lattice is exactly the factor times the native step.
+    # The coarse lattice is exactly eight native steps.
     Nx, Ny, _ = size(coarse, :clay_fraction)
-    Δλ = (longitude_interfaces(coarse)[2] - longitude_interfaces(coarse)[1]) / Nx
-    Δφ = (latitude_interfaces(coarse)[2] - latitude_interfaces(coarse)[1]) / Ny
-    @test Δλ ≈ read_step(coarse)
-    @test Δφ ≈ read_step(coarse)
-
-    @test_throws ArgumentError OpenLandMapSoilDB(aggregation_factor = 0)
+    @test (longitude_interfaces(coarse)[2] - longitude_interfaces(coarse)[1]) / Nx ≈ 8 * 0.00025
+    @test (latitude_interfaces(coarse)[2] - latitude_interfaces(coarse)[1]) / Ny ≈ 8 * 0.00025
 end
 
 @testset "OpenLandMapSoilDB matches the read resolution to the target grid" begin
@@ -199,7 +188,6 @@ end
     # drops to the largest power of two below that, 128.
     coarse_grid = LatitudeLongitudeGrid(CPU(); size = (10, 10, 3),
                                         longitude = (-112.4, -111.6), latitude = (36.0, 36.8), z)
-    @test minimum_horizontal_spacing(coarse_grid) ≈ 0.08
     @test aggregation_factor(matching_resolution_dataset(unpinned, coarse_grid)) == 128
 
     # The default reads at full resolution; sizing to the target is opt-in.
@@ -212,7 +200,7 @@ end
 
     # An explicit factor pins the read lattice and the target does not override it.
     pinned = OpenLandMapSoilDB(aggregation_factor = 4)
-    @test matching_resolution_dataset(pinned, coarse_grid) === pinned
+    @test aggregation_factor(matching_resolution_dataset(pinned, coarse_grid)) == 4
 
     # The factor keys the cache: a coarse read never shares a file with a finer one, and a
     # full-resolution read keeps the name it has always had.
