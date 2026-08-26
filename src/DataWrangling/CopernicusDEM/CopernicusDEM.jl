@@ -85,7 +85,6 @@ const CopernicusDEMMetadatum = Metadatum{<:CopernicusDEMDataset}
 DataWrangling.dataset_variable_name(data::CopernicusDEMMetadatum) =
     CopernicusDEM_bathymetry_variable_names[data.name]
 
-# The downloaded window names its axes "lon"/"lat".
 DataWrangling.longitude_name(::CopernicusDEMMetadatum) = "lon"
 DataWrangling.latitude_name(::CopernicusDEMMetadatum)  = "lat"
 
