@@ -373,11 +373,11 @@ interpolate_physical!(to_field, from_field, metadata) = interpolate_physical!(to
 """
     target_matched_metadata(metadatum, grid)
 
-Return `metadatum` rebuilt on the dataset variant `matching_resolution_dataset` selects for
+Return `metadatum` rebuilt on the dataset variant `coarsest_resolving_dataset` selects for
 `grid`, re-deriving the filename so each lattice caches separately.
 """
 function target_matched_metadata(metadatum::Metadatum, grid)
-    dataset = matching_resolution_dataset(metadatum.dataset, grid)
+    dataset = coarsest_resolving_dataset(metadatum.dataset, grid)
     dataset === metadatum.dataset && return metadatum
 
     # A filename the user pinned is kept; a derived one follows the new lattice.
@@ -396,8 +396,8 @@ Load `metadata` on its native grid and interpolate onto `grid` — the
 forwarded to the native-grid `Field(metadata, arch; …)` (e.g. `inpainting`,
 `mask`, `halo`, `cache_inpainted_data`).
 
-A dataset that supports it is read at a resolution matched to `grid` rather than at full
-resolution; see [`matching_resolution_dataset`](@ref).
+A dataset that comes at more than one resolution is read at the coarsest that resolves `grid`
+rather than at its finest; see [`coarsest_resolving_dataset`](@ref).
 
 With `cache = true` the regridded result is cached to disk and reused by later
 reads with the same dataset, variable, date, region, target-grid geometry, and

@@ -816,13 +816,13 @@ cadence — e.g. the surface companion of a pressure-level reanalysis product.
 function matching_single_level_dataset end
 
 """
-    matching_resolution_dataset(dataset, grid)
+    coarsest_resolving_dataset(dataset, grid)
 
-Return the variant of `dataset` read at the coarsest resolution that still resolves `grid`; the
-default returns `dataset` unchanged. Coarsening averages, so only continuous fields may extend
-this.
+Return the coarsest variant of `dataset` whose cells still resolve `grid`, the one a read should
+come from. A dataset with a single resolution is its own coarsest, which is what the default
+returns. Coarsening averages, so only continuous fields may extend this.
 """
-matching_resolution_dataset(dataset, grid) = dataset
+coarsest_resolving_dataset(dataset, grid) = dataset
 
 """
     dataset_variable_name(metadata)

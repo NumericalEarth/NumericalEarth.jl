@@ -168,7 +168,7 @@ end
 
 # Twofold oversampling of the target, rounded down to a power of two so the read lands on a
 # pyramid level.
-function DataWrangling.matching_resolution_dataset(dataset::OpenLandMapSoilDB{Nothing}, grid)
+function DataWrangling.coarsest_resolving_dataset(dataset::OpenLandMapSoilDB{Nothing}, grid)
     pixels = minimum_horizontal_spacing(grid) / (2 * OpenLandMap_native_step)
     factor = pixels < 2 ? 1 : prevpow(2, floor(Int, pixels))
     return OpenLandMapSoilDB(factor)

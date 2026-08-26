@@ -5,7 +5,7 @@ using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, z
                                     dataset_variable_name, validate_dataset_coverage,
                                     metadata_filename, conversion_units, convert_units,
                                     default_inpainting, is_three_dimensional,
-                                    matching_resolution_dataset,
+                                    coarsest_resolving_dataset,
                                     target_matched_metadata,
                                     WeightPercent, GramPerCubicCentimeter
 using NumericalEarth.DataWrangling.OpenLandMap: cog_window_to_netcdf, aggregation_factor
@@ -188,19 +188,19 @@ end
     # drops to the largest power of two below that, 128.
     coarse_grid = LatitudeLongitudeGrid(CPU(); size = (10, 10, 3),
                                         longitude = (-112.4, -111.6), latitude = (36.0, 36.8), z)
-    @test aggregation_factor(matching_resolution_dataset(unpinned, coarse_grid)) == 128
+    @test aggregation_factor(coarsest_resolving_dataset(unpinned, coarse_grid)) == 128
 
     # The default reads at full resolution; sizing to the target is opt-in.
-    @test aggregation_factor(matching_resolution_dataset(OpenLandMapSoilDB(), coarse_grid)) == 1
+    @test aggregation_factor(coarsest_resolving_dataset(OpenLandMapSoilDB(), coarse_grid)) == 1
 
     # A target finer than twice the native step reads at full resolution.
     fine_grid = LatitudeLongitudeGrid(CPU(); size = (10, 10, 3),
                                       longitude = (-112.002, -111.998), latitude = (36.0, 36.004), z)
-    @test aggregation_factor(matching_resolution_dataset(unpinned, fine_grid)) == 1
+    @test aggregation_factor(coarsest_resolving_dataset(unpinned, fine_grid)) == 1
 
     # An explicit factor pins the read lattice and the target does not override it.
     pinned = OpenLandMapSoilDB(aggregation_factor = 4)
-    @test aggregation_factor(matching_resolution_dataset(pinned, coarse_grid)) == 4
+    @test aggregation_factor(coarsest_resolving_dataset(pinned, coarse_grid)) == 4
 
     # The factor keys the cache: a coarse read never shares a file with a finer one, and a
     # full-resolution read keeps the name it has always had.
