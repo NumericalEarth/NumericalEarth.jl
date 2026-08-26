@@ -83,11 +83,8 @@ zarr_host_path(::GLO90) = "api.earthdatahub.destine.eu/copernicus-dem/GLO-90-v0.
 const CopernicusDEMMetadatum = Metadatum{<:CopernicusDEMDataset}
 
 # GLO30 is 1296000 x 648000 cells globally, so a regional window is read and regridded by window
-# rather than whole; the file is the plain lon/lat NetCDF the default `retrieve_data` reads.
+# rather than whole.
 DataWrangling.windowed_retrieval(::CopernicusDEMDataset) = true
-
-DataWrangling.retrieve_window(metadata::CopernicusDEMMetadatum, longitude_indices, latitude_indices) =
-    DataWrangling.netcdf_retrieve_window(metadata, longitude_indices, latitude_indices)
 
 DataWrangling.dataset_variable_name(data::CopernicusDEMMetadatum) =
     CopernicusDEM_bathymetry_variable_names[data.name]

@@ -137,9 +137,6 @@ const GHSLMetadatum      = Metadatum{<:AbstractGHSLDataset}
 # window rather than whole.
 DataWrangling.windowed_retrieval(::AbstractGHSLDataset) = true
 
-DataWrangling.retrieve_window(metadata::GHSLMetadatum, longitude_indices, latitude_indices) =
-    DataWrangling.netcdf_retrieve_window(metadata, longitude_indices, latitude_indices)
-
 #####
 ##### Variables
 #####

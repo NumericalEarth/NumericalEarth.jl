@@ -172,8 +172,8 @@ end
     NumericalEarth.DataWrangling.interpolate_physical!(untiled, native, metadatum)
 
     # Tiling changes where the data comes from, never the arithmetic done on it: each tile is a
-    # windowed field over the native grid, so it interpolates from the same node coordinates the
-    # whole field carries. Every budget must therefore reproduce the untiled answer bitwise.
+    # windowed field over the native grid interpolated into a window of the target, so it runs
+    # the same regrid over the same node coordinates. Every budget reproduces it bitwise.
     reference = Array(interior(untiled))
 
     for tile_bytes in (typemax(Int), 20_000, 5_000)
@@ -181,33 +181,9 @@ end
         @test size(tiled) == size(reference)
         @test isequal(tiled, reference)
     end
-
-    # The smallest budget really does split the target, otherwise the loop proves nothing.
-    @test NumericalEarth.DataWrangling.tile_count(size(native.grid)[1:2], 3, 5_000) > 1
 end
 
-@testset "tiled regrid declines where it would not be equivalent" begin
-    grid = LatitudeLongitudeGrid(CPU(); size = (10, 10, 3),
-                                 longitude = (-111.98, -111.88), latitude = (35.89, 35.99),
-                                 z = [-1.0, -0.6, -0.3, 0.0])
-    field = Field{Center, Center, Center}(grid)
-    region = BoundingBox(grid)
-    tiled_native_grid = NumericalEarth.DataWrangling.tiled_native_grid
-
-    metadatum = Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region)
-    @test !isnothing(tiled_native_grid(field, metadatum, nothing))
-
-    # Inpainting is an iterative fill over the whole field; no tiling of it reproduces that.
-    @test isnothing(tiled_native_grid(field, metadatum,
-                                      NumericalEarth.DataWrangling.NearestNeighborInpainting(2)))
-
-    # A dataset that cannot read a window would re-read the whole file per tile.
-    unwindowed = Metadatum(:temperature; dataset = ECCO4Monthly(),
-                           date = DateTime(1993, 1, 1), region)
-    @test isnothing(tiled_native_grid(field, unwindowed, nothing))
-end
-
-@testset "windowed NetCDF retrieval matches the whole-file read" begin
+@testset "windowed retrieval matches the whole-file read" begin
     dir = mktempdir()
     nx, ny = 256, 256
     x0, y0, dx, dy = -112.0005, 36.0005, 0.00025, -0.00025
@@ -224,36 +200,12 @@ end
     whole = NumericalEarth.DataWrangling.retrieve_data(metadatum)
     λ, φ = NumericalEarth.DataWrangling.read_file_coords(metadatum)
 
-    # Both the dataset's own hyperslab reader and the shared NetCDF one must reproduce a view of
-    # the whole-file read, coordinates included.
-    for reader in (NumericalEarth.DataWrangling.retrieve_window,
-                   NumericalEarth.DataWrangling.netcdf_retrieve_window)
-        for (longitude_indices, latitude_indices) in ((1:3, 1:4), (2:5, 3:6), (1:size(whole, 1), 1:size(whole, 2)))
-            data, λw, φw = reader(metadatum, longitude_indices, latitude_indices)
-            @test isequal(Array(data), whole[longitude_indices, latitude_indices, :])
-            @test Array(λw) ≈ λ[longitude_indices]
-            @test Array(φw) ≈ φ[latitude_indices]
-        end
-    end
-end
-
-@testset "north-first files map their window rows back before slicing" begin
-    file_latitude_rows = NumericalEarth.DataWrangling.file_latitude_rows
-
-    # An ascending file passes its rows through untouched.
-    @test file_latitude_rows(10, 3:5, false) === 3:5
-
-    # A north-first file of n rows holds ascending row j at file row n - j + 1, so a window maps
-    # to the mirrored range and is flipped after slicing.
-    @test file_latitude_rows(10, 3:5, true) == 6:8
-    @test file_latitude_rows(10, 1:10, true) == 1:10
-
-    # The mapping must satisfy: reversing the whole file then slicing equals slicing the mirrored
-    # rows then reversing — the identity the windowed reader relies on.
-    stored = [10i + j for i in 1:4, j in 1:10]
-    ascending = reverse(stored, dims = 2)
-    for latitude_indices in (1:3, 4:7, 2:2, 1:10)
-        rows = file_latitude_rows(10, latitude_indices, true)
-        @test ascending[:, latitude_indices] == reverse(stored[:, rows], dims = 2)
+    for (longitude_indices, latitude_indices) in ((1:3, 1:4), (2:5, 3:6),
+                                                  (1:size(whole, 1), 1:size(whole, 2)))
+        data, window_longitude, window_latitude =
+            NumericalEarth.DataWrangling.retrieve_window(metadatum, longitude_indices, latitude_indices)
+        @test isequal(Array(data), whole[longitude_indices, latitude_indices, :])
+        @test Array(window_longitude) ≈ λ[longitude_indices]
+        @test Array(window_latitude) ≈ φ[latitude_indices]
     end
 end

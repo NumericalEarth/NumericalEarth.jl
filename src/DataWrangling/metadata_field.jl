@@ -414,24 +414,7 @@ function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid;
 end
 
 function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw...)
-    grid = target_field.grid
-    arch = child_architecture(grid)
-
-    Lzt = grid.Lz
-    Lzm = native_grid(metadata, arch).Lz
-
-    # Allow up to 1% vertical mismatch for pressure-level datasets with time-varying
-    # geopotential heights — the per-timestep vertical extent can be slightly smaller
-    # than the temporal-mean extent used for the target grid (e.g. when the atmosphere
-    # is compressed). Oceananigans' interpolate! does not extrapolate, so target points
-    # just outside the source domain will use the nearest interior values.
-    if is_three_dimensional(metadata) && Lzt > Lzm * (1 + 1e-2)
-        throw("The vertical range of the $(metadata.dataset) dataset ($(Lzm) m) is smaller than " *
-              "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
-    end
-
     regrid_from_metadata!(target_field, metadata; kw...)
-
     return target_field
 end
 

@@ -189,22 +189,9 @@ function DataWrangling.retrieve_data(metadata::OpenLandMapSoilDBMetadatum)
     return data
 end
 
-# The windowed regional file is the one dataset here big enough that regridding it whole is the
-# constraint, so it reads by window: NetCDF serves the hyperslab without the rest of the variable
-# ever being touched.
+# The 30 m regional window is large enough that it is read and regridded by window rather than
+# whole.
 DataWrangling.windowed_retrieval(::OpenLandMapSoilDB) = true
-
-function DataWrangling.retrieve_window(metadata::OpenLandMapSoilDBMetadatum,
-                                       longitude_indices, latitude_indices)
-    path = metadata_path(metadata)
-    name = dataset_variable_name(metadata)
-    return Dataset(path) do ds
-        data = Array(ds[name][longitude_indices, latitude_indices, :])
-        λ = Array(ds[DataWrangling.longitude_name(metadata)][longitude_indices])
-        φ = Array(ds[DataWrangling.latitude_name(metadata)][latitude_indices])
-        (data, λ, φ)
-    end
-end
 
 """
     read_cog_window(source, bbox)

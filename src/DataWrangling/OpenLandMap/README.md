@@ -26,8 +26,7 @@ A few things are specific to this dataset:
    a `Metadatum` without a bounded `region` errors.
 
 4. **Large windows regrid in tiles.** The window is read and interpolated a tile at a time, so
-   peak memory follows the tile rather than the window and a model domain can exceed what the
-   dataset would occupy at native resolution. `tile_bytes` sets the budget per tile.
+   peak memory follows the tile rather than the window. `tile_bytes` sets the budget per tile.
 
 ## Usage
 
