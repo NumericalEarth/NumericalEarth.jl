@@ -185,13 +185,11 @@ function SimilarityTheoryFluxes(FT::DataType = Oceananigans.defaults.FloatType;
                                 solver_tolerance = 1e-8,
                                 solver_maxiter = 100)
 
-    roughness_lengths = SimilarityScales(momentum_roughness_length,
-                                         temperature_roughness_length,
-                                         water_vapor_roughness_length)
+    roughness_lengths = SimilarityScales(convert_if_number(FT, momentum_roughness_length),
+                                         convert_if_number(FT, temperature_roughness_length),
+                                         convert_if_number(FT, water_vapor_roughness_length))
 
-    if zero_plane_displacement isa Number
-        zero_plane_displacement = convert(FT, zero_plane_displacement)
-    end
+    zero_plane_displacement = convert_if_number(FT, zero_plane_displacement)
 
     if isnothing(solver_stop_criteria)
         solver_tolerance = convert(FT, solver_tolerance)
