@@ -189,6 +189,23 @@ function DataWrangling.retrieve_data(metadata::OpenLandMapSoilDBMetadatum)
     return data
 end
 
+# The windowed regional file is the one dataset here big enough that regridding it whole is the
+# constraint, so it reads by window: NetCDF serves the hyperslab without the rest of the variable
+# ever being touched.
+DataWrangling.windowed_retrieval(::OpenLandMapSoilDB) = true
+
+function DataWrangling.retrieve_window(metadata::OpenLandMapSoilDBMetadatum,
+                                       longitude_indices, latitude_indices)
+    path = metadata_path(metadata)
+    name = dataset_variable_name(metadata)
+    return Dataset(path) do ds
+        data = Array(ds[name][longitude_indices, latitude_indices, :])
+        λ = Array(ds[DataWrangling.longitude_name(metadata)][longitude_indices])
+        φ = Array(ds[DataWrangling.latitude_name(metadata)][latitude_indices])
+        (data, λ, φ)
+    end
+end
+
 """
     read_cog_window(source, bbox)
 
@@ -233,7 +250,8 @@ function cog_window_to_netcdf(sources, nc_path, variable_name, bbox)
                            attrib = ["units" => "degrees_north", "long_name" => "latitude"])
         depth_var = defVar(ds, "depth", Float64, ("depth",);
                            attrib = ["units" => "m", "long_name" => "depth interval midpoint"])
-        data_var  = defVar(ds, variable_name, Float32, ("lon", "lat", "depth"))
+        chunk     = [min(512, Nx), min(512, Ny), Nz]
+        data_var  = defVar(ds, variable_name, Float32, ("lon", "lat", "depth"); chunksizes = chunk)
 
         lon_var[:]        = longitude
         lat_var[:]        = latitude

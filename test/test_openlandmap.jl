@@ -68,9 +68,10 @@ end
 end
 
 # Build a small GeoTIFF with a known CRS/scale/offset/nodata; row 0 is north.
-function write_synthetic_tile(path; nx, ny, x0, y0, dx, dy, scale, offset, nodata, raw, epsg = 4326)
+function write_synthetic_tile(path; nx, ny, x0, y0, dx, dy, scale, offset, nodata, raw,
+                              epsg = 4326, dtype = UInt8)
     ArchGDAL.create(path; driver = ArchGDAL.getdriver("GTiff"),
-                    width = nx, height = ny, nbands = 1, dtype = UInt8) do ds
+                    width = nx, height = ny, nbands = 1, dtype) do ds
         ArchGDAL.setgeotransform!(ds, [x0, dx, 0.0, y0, 0.0, dy])
         ArchGDAL.setproj!(ds, ArchGDAL.toWKT(ArchGDAL.importEPSG(epsg)))
         band = ArchGDAL.getband(ds, 1)
@@ -140,4 +141,119 @@ end
                                nodata = 255, raw, epsg = 3857)
     bbox = BoundingBox(longitude = (x0, x0 + nx * dx), latitude = (y0 + ny * dy, y0))
     @test_throws ErrorException cog_window_to_netcdf([tif], joinpath(dir, "bad.nc"), "clay", bbox)
+end
+
+@testset "OpenLandMapSoilDB tiled regrid reproduces the whole-window regrid" begin
+    dir = mktempdir()
+
+    # A tile on the dataset's global lattice, carrying structure at every scale so that a
+    # misregistered tile boundary could not hide in a smooth field.
+    nx, ny = 512, 512
+    x0, y0, dx, dy = -112.0005, 36.0005, 0.00025, -0.00025
+    raw = Float32[30 + 10 * sinpi(i / 64) * cospi(j / 48) + (i % 7) for i in 1:nx, j in 1:ny]
+    raw[100:140, 60:90] .= -1.0   # a masked patch straddling tile interiors
+
+    tif = write_synthetic_tile(joinpath(dir, "tiled.tif");
+                               nx, ny, x0, y0, dx, dy, scale = 1.0, offset = 0.0,
+                               nodata = -1.0, raw, dtype = Float32)
+
+    # The window spans the masked patch, so tile interiors have to straddle it.
+    grid = LatitudeLongitudeGrid(CPU(); size = (10, 10, 3),
+                                 longitude = (-111.98, -111.96), latitude = (35.97, 35.99),
+                                 z = [-1.0, -0.6, -0.3, 0.0])
+    region = BoundingBox(grid)
+
+    metadatum = Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region, dir)
+    cog_window_to_netcdf(fill(tif, 3), metadata_path(metadatum), "clay", region)
+
+    # The path the regrid took before tiling: materialize the whole window, then interpolate.
+    native = Field(metadatum, CPU())
+    untiled = Field{Center, Center, Center}(grid)
+    NumericalEarth.DataWrangling.interpolate_physical!(untiled, native, metadatum)
+
+    # Tiling changes where the data comes from, never the arithmetic done on it: each tile is a
+    # windowed field over the native grid, so it interpolates from the same node coordinates the
+    # whole field carries. Every budget must therefore reproduce the untiled answer bitwise.
+    reference = Array(interior(untiled))
+
+    for tile_bytes in (typemax(Int), 20_000, 5_000)
+        tiled = Array(interior(Field(metadatum, grid; tile_bytes)))
+        @test size(tiled) == size(reference)
+        @test isequal(tiled, reference)
+    end
+
+    # The smallest budget really does split the target, otherwise the loop proves nothing.
+    @test NumericalEarth.DataWrangling.tile_count(size(native.grid)[1:2], 3, 5_000) > 1
+end
+
+@testset "tiled regrid declines where it would not be equivalent" begin
+    grid = LatitudeLongitudeGrid(CPU(); size = (10, 10, 3),
+                                 longitude = (-111.98, -111.88), latitude = (35.89, 35.99),
+                                 z = [-1.0, -0.6, -0.3, 0.0])
+    field = Field{Center, Center, Center}(grid)
+    region = BoundingBox(grid)
+    tiled_native_grid = NumericalEarth.DataWrangling.tiled_native_grid
+
+    metadatum = Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region)
+    @test !isnothing(tiled_native_grid(field, metadatum, nothing))
+
+    # Inpainting is an iterative fill over the whole field; no tiling of it reproduces that.
+    @test isnothing(tiled_native_grid(field, metadatum,
+                                      NumericalEarth.DataWrangling.NearestNeighborInpainting(2)))
+
+    # A dataset that cannot read a window would re-read the whole file per tile.
+    unwindowed = Metadatum(:temperature; dataset = ECCO4Monthly(),
+                           date = DateTime(1993, 1, 1), region)
+    @test isnothing(tiled_native_grid(field, unwindowed, nothing))
+end
+
+@testset "windowed NetCDF retrieval matches the whole-file read" begin
+    dir = mktempdir()
+    nx, ny = 256, 256
+    x0, y0, dx, dy = -112.0005, 36.0005, 0.00025, -0.00025
+    raw = Float32[(i % 11) + 3 * (j % 5) for i in 1:nx, j in 1:ny]
+
+    tif = write_synthetic_tile(joinpath(dir, "window.tif");
+                               nx, ny, x0, y0, dx, dy, scale = 1.0, offset = 0.0,
+                               nodata = -1.0, raw, dtype = Float32)
+
+    region = BoundingBox(longitude = (x0 + 0.01, x0 + 0.05), latitude = (y0 - 0.05, y0 - 0.01))
+    metadatum = Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region, dir)
+    cog_window_to_netcdf(fill(tif, 3), metadata_path(metadatum), "clay", region)
+
+    whole = NumericalEarth.DataWrangling.retrieve_data(metadatum)
+    λ, φ = NumericalEarth.DataWrangling.read_file_coords(metadatum)
+
+    # Both the dataset's own hyperslab reader and the shared NetCDF one must reproduce a view of
+    # the whole-file read, coordinates included.
+    for reader in (NumericalEarth.DataWrangling.retrieve_window,
+                   NumericalEarth.DataWrangling.netcdf_retrieve_window)
+        for (longitude_indices, latitude_indices) in ((1:3, 1:4), (2:5, 3:6), (1:size(whole, 1), 1:size(whole, 2)))
+            data, λw, φw = reader(metadatum, longitude_indices, latitude_indices)
+            @test isequal(Array(data), whole[longitude_indices, latitude_indices, :])
+            @test Array(λw) ≈ λ[longitude_indices]
+            @test Array(φw) ≈ φ[latitude_indices]
+        end
+    end
+end
+
+@testset "north-first files map their window rows back before slicing" begin
+    file_latitude_rows = NumericalEarth.DataWrangling.file_latitude_rows
+
+    # An ascending file passes its rows through untouched.
+    @test file_latitude_rows(10, 3:5, false) === 3:5
+
+    # A north-first file of n rows holds ascending row j at file row n - j + 1, so a window maps
+    # to the mirrored range and is flipped after slicing.
+    @test file_latitude_rows(10, 3:5, true) == 6:8
+    @test file_latitude_rows(10, 1:10, true) == 1:10
+
+    # The mapping must satisfy: reversing the whole file then slicing equals slicing the mirrored
+    # rows then reversing — the identity the windowed reader relies on.
+    stored = [10i + j for i in 1:4, j in 1:10]
+    ascending = reverse(stored, dims = 2)
+    for latitude_indices in (1:3, 4:7, 2:2, 1:10)
+        rows = file_latitude_rows(10, latitude_indices, true)
+        @test ascending[:, latitude_indices] == reverse(stored[:, rows], dims = 2)
+    end
 end

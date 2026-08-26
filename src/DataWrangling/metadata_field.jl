@@ -388,7 +388,8 @@ local file, pass `overwrite_cache = true` after replacing data upstream: it
 skips the lookup and overwrites the entry with a freshly regridded result.
 """
 function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid;
-                                   cache = false, overwrite_cache = false, kw...)
+                                   cache = false, overwrite_cache = false,
+                                   tile_bytes = default_tile_bytes, kw...)
     LX, LY, LZ = location(metadata)
 
     if cache && !overwrite_cache
@@ -402,9 +403,8 @@ function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid;
         end
     end
 
-    native = Field(metadata, architecture(grid); kw...)
     target = Field{LX, LY, LZ}(grid)
-    interpolate_physical!(target, native, metadata)
+    regrid_from_metadata!(target, metadata; tile_bytes, kw...)
     if cache
         # rebuild the key: the native read may have just downloaded the dataset file it stamps
         config = FieldRegridding(grid, metadata, values(kw))
@@ -416,10 +416,9 @@ end
 function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw...)
     grid = target_field.grid
     arch = child_architecture(grid)
-    meta_field = Field(metadata, arch; kw...)
 
     Lzt = grid.Lz
-    Lzm = meta_field.grid.Lz
+    Lzm = native_grid(metadata, arch).Lz
 
     # Allow up to 1% vertical mismatch for pressure-level datasets with time-varying
     # geopotential heights — the per-timestep vertical extent can be slightly smaller
@@ -431,7 +430,7 @@ function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw..
               "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
     end
 
-    interpolate_physical!(target_field, meta_field, metadata)
+    regrid_from_metadata!(target_field, metadata; kw...)
 
     return target_field
 end
