@@ -26,44 +26,9 @@ velocity model, and specific-humidity formulation. Pass the result as
 `AtmosphereLandModel` to override the default.
 
 The roughness-length and zero-plane-displacement slots of the flux closure accept
-per-cell `Field`s — for example from [`urban_roughness`](@ref) or a canopy roughness
-closure — localized to each cell before the Monin--Obukhov solve. The slots are
-checked here by [`validate_flux_formulation`](@ref), which rejects a layout
-`state2dindex` cannot read per cell and values the similarity profile cannot
-evaluate: non-finite or non-positive roughness, and a non-finite or negative
-displacement. Gap-fill a roughness field derived from a building dataset before
-passing it in — [`urban_roughness`](@ref) marks cells of invalid morphometry with
-`NaN` by design.
-
-```jldoctest
-using NumericalEarth
-using Oceananigans
-using NumericalEarth.EarthSystemModels.InterfaceComputations: atmosphere_land_stability_functions
-
-grid = LatitudeLongitudeGrid(size = (2, 1, 1), latitude = (10, 11), longitude = (10, 12),
-                             z = (-1, 0), topology = (Bounded, Bounded, Bounded))
-
-atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10, boundary_layer_height = 512)
-land = SlabLand(grid)
-
-ℓᵐ = Field{Center, Center, Nothing}(grid)
-d  = Field{Center, Center, Nothing}(grid)
-set!(ℓᵐ, 0.5)
-set!(d, 4)
-
-fluxes = SimilarityTheoryFluxes(momentum_roughness_length    = ℓᵐ,
-                                temperature_roughness_length = 0.05,
-                                water_vapor_roughness_length = 0.05,
-                                zero_plane_displacement      = d,
-                                stability_functions          = atmosphere_land_stability_functions(Float64))
-
-interface = atmosphere_land_interface(grid, atmosphere, land; fluxes)
-
-interface.flux_formulation.zero_plane_displacement[2, 1, 1]
-
-# output
-4.0
-```
+per-cell `Field`s at `(Center, Center, Nothing)` on `grid` — for example from
+`urban_roughness` or a canopy roughness closure — localized to each cell before the
+Monin--Obukhov solve.
 """
 function atmosphere_land_interface(grid, atmosphere, land;
                                    fluxes              = default_atmosphere_land_fluxes(land, eltype(grid)),

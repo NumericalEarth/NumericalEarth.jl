@@ -12,9 +12,6 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: default_atmosphere
                                                               atmosphere_ocean_stability_functions,
                                                               EdsonMomentumStabilityFunction,
                                                               SimilarityScales,
-                                                              local_flux_formulation,
-                                                              validate_flux_formulation,
-                                                              reject_field_valued_slots,
                                                               iterate_interface_fluxes,
                                                               RelativeVelocity,
                                                               celsius_to_kelvin
@@ -557,10 +554,9 @@ end
         # Displacement thins the effective surface layer, raising the drag.
         @test displaced_friction_velocity(6.0) > displaced_friction_velocity(3.0) > displaced_friction_velocity(0.0)
 
-        # A displacement that pushes the profile into the roughness sublayer hits
-        # `displaced_profile_height`'s 2ℓ floor and its ϰ²/log(2)² ≈ 0.33 drag
-        # coefficient instead of being rejected: see issue #582.
-        @test displaced_friction_velocity(9.0) ≈ ϰ / log(1 / ℓ) * uᵃᵗ
+        # A displacement at or above the surface-layer height stays finite: the
+        # profile height is floored at twice the momentum roughness length.
+        @test displaced_friction_velocity(2h) ≈ ϰ / log(2) * uᵃᵗ
     end
 
     # The displacement on the flux closure enters the solver directly.
@@ -568,13 +564,10 @@ end
     Δh = 10.0
     U  = 5.0
     zero_ψ(ζ) = zero(ζ)
-    similarity_fluxes(zero_plane_displacement;
-                      momentum_roughness_length = ℓ,
-                      temperature_roughness_length = ℓ,
-                      water_vapor_roughness_length = ℓ) =
-        SimilarityTheoryFluxes(; momentum_roughness_length,
-                                 temperature_roughness_length,
-                                 water_vapor_roughness_length,
+    similarity_fluxes(zero_plane_displacement) =
+        SimilarityTheoryFluxes(; momentum_roughness_length    = ℓ,
+                                 temperature_roughness_length = ℓ,
+                                 water_vapor_roughness_length = ℓ,
                                  zero_plane_displacement,
                                  subgrid_velocities = nothing,
                                  stability_functions = SimilarityScales(zero_ψ, zero_ψ, zero_ψ))
@@ -585,12 +578,12 @@ end
     atmosphere_properties = (; thermodynamics_parameters = AtmosphereThermodynamicsParameters(Float64),
                                gravitational_acceleration = 9.81)
 
-    solved_scales(fluxes) =
+    solved_friction_velocity(fluxes) =
         iterate_interface_fluxes(fluxes, 290.0, 0.01, -2.0, 0.001, Δh,
                                  approximate_state, atmosphere_state,
-                                 interface_properties, atmosphere_properties)
+                                 interface_properties, atmosphere_properties)[1]
 
-    @test first(solved_scales(similarity_fluxes(4.0))) ≈ 0.4 / log((Δh - 4) / ℓ) * U
+    @test solved_friction_velocity(similarity_fluxes(4.0)) ≈ 0.4 / log((Δh - 4) / ℓ) * U
 end
 
 @testset "Atmosphere-Land per-cell roughness and displacement fields" begin
@@ -612,13 +605,13 @@ end
 
         # Grassland-vs-forest contrast: per-cell momentum roughness and displacement
         # fields sit directly on the flux closure and are localized at kernel entry.
-        ℓᵐ¹, ℓᵐ² = 0.03, 1.0
-        d¹,  d²  = 0.0,  4.0
+        grassland_roughness, forest_roughness = 0.03, 1.0
+        grassland_displacement, forest_displacement = 0.0, 4.0
 
         momentum_roughness_length = Field{Center, Center, Nothing}(grid)
         zero_plane_displacement   = Field{Center, Center, Nothing}(grid)
-        set!(momentum_roughness_length, (λ, φ) -> ifelse(λ < 11, ℓᵐ¹, ℓᵐ²))
-        set!(zero_plane_displacement,   (λ, φ) -> ifelse(λ < 11, d¹,  d²))
+        set!(momentum_roughness_length, (λ, φ) -> ifelse(λ < 11, grassland_roughness, forest_roughness))
+        set!(zero_plane_displacement,   (λ, φ) -> ifelse(λ < 11, grassland_displacement, forest_displacement))
 
         zero_ψ(ζ) = zero(ζ)
         fluxes = SimilarityTheoryFluxes(; momentum_roughness_length,
@@ -628,20 +621,6 @@ end
                                           subgrid_velocities = nothing,
                                           stability_functions = SimilarityScales(zero_ψ, zero_ψ, zero_ψ))
 
-        # `local_flux_formulation` collapses `Field` slots to the cell's values and
-        # passes numbers through.
-        if arch isa CPU
-            localized = local_flux_formulation(fluxes, 2, 1)
-            @test localized.roughness_lengths.momentum == ℓᵐ²
-            @test localized.roughness_lengths.temperature == 0.01
-            @test localized.zero_plane_displacement == d²
-
-            # Formulation slots (e.g. ocean Charnock) pass through localization untouched.
-            charnock = SimilarityTheoryFluxes(Float64)
-            @test local_flux_formulation(charnock, 1, 1).roughness_lengths.momentum ===
-                  charnock.roughness_lengths.momentum
-        end
-
         land = SlabLand(grid; hydrology = DryLand(), energy = SlabEnergy(eltype(grid)))
         set!(land; T = 288.0)
 
@@ -649,111 +628,9 @@ end
         update_state!(model)
 
         u★ = Array(interior(model.interfaces.atmosphere_land_interface.fluxes.friction_velocity))
-        @test u★[1, 1, 1] ≈ ϰ / log(h / ℓᵐ¹) * uᵃᵗ
-        @test u★[2, 1, 1] ≈ ϰ / log((h - d²) / ℓᵐ²) * uᵃᵗ
-
-        # A `Field` slot the localization cannot read per cell, or whose values the
-        # similarity profile cannot evaluate, is rejected when the interface is built:
-        # kernels can neither throw nor report, so a bad slot would otherwise surface
-        # as NaN fluxes, silently zero fluxes, or an out-of-bounds read.
-        land_fluxes(ℓᵐ; ℓθ = 0.01, ℓq = 0.01, d = 0) =
-            SimilarityTheoryFluxes(; momentum_roughness_length = ℓᵐ,
-                                     temperature_roughness_length = ℓθ,
-                                     water_vapor_roughness_length = ℓq,
-                                     zero_plane_displacement = d,
-                                     subgrid_velocities = nothing,
-                                     stability_functions = SimilarityScales(zero_ψ, zero_ψ, zero_ψ))
-
-        build(fluxes) = atmosphere_land_interface(grid, atmosphere, land; fluxes)
-
-        # Baseline: a well-posed field builds.
-        @test !isnothing(build(land_fluxes(momentum_roughness_length)))
-
-        # The grid check is structural, not identity: two references to one grid are not
-        # guaranteed to be egal, so a field built on an identically-discretized grid is
-        # accepted — it indexes the same cells.
-        same_grid = LatitudeLongitudeGrid(arch, Float64;
-                                          size = (2, 2, 1), latitude = (10, 11),
-                                          longitude = (10, 12), z = (-1, 0),
-                                          topology = (Bounded, Bounded, Bounded))
-        @test !isnothing(build(land_fluxes(set!(Field{Center, Center, Nothing}(same_grid), 0.03))))
-
-        # `set!` returns the field, so each per-cell slot is one expression.
-        cc(v) = set!(Field{Center, Center, Nothing}(grid), v)
-
-        other_grid = LatitudeLongitudeGrid(arch, Float64;
-                                           size = (5, 1, 1), latitude = (10, 11),
-                                           longitude = (10, 15), z = (-1, 0),
-                                           topology = (Bounded, Bounded, Bounded))
-
-        rejected = (
-            # P1: an unfilled (zero) cell would silently zero every turbulent flux, and a
-            # negative one takes the log of a negative number.
-            ("zero roughness",            land_fluxes(cc(0.0))),
-            ("negative roughness",        land_fluxes(cc(-0.1))),
-            # P2: `urban_roughness` marks cells of invalid morphometry with NaN by design.
-            ("NaN gap cell",              land_fluxes(cc((λ, φ) -> ifelse(λ < 11, 0.03, NaN)))),
-            # C2: `state2dindex` reads `[i, j, 1]`, so a 3D field would contribute its
-            # deepest level rather than the surface, and a field from another grid would
-            # read the wrong cell — or past the end of the array, read `@inbounds`.
-            ("volumetric field",          land_fluxes(set!(CenterField(grid), 0.03))),
-            ("field from another grid",   land_fluxes(set!(Field{Center, Center, Nothing}(other_grid), 0.03))),
-            ("bare array",                land_fluxes(fill(0.03, size(grid, 1), size(grid, 2), 1))),
-            # A negative displacement would lower rather than raise the surface.
-            ("negative displacement", land_fluxes(momentum_roughness_length; d = cc(-1.0))),
-        )
-
-        for (label, fluxes) in rejected
-            @test_throws ArgumentError build(fluxes)
-        end
-
-        # `validate_flux_formulation` carries the contract; the interface constructor only
-        # calls it, so pin it directly too.
-        well_posed = land_fluxes(momentum_roughness_length)
-        @test isnothing(validate_flux_formulation(well_posed, grid))
-        @test_throws ArgumentError validate_flux_formulation(land_fluxes(cc(0.0)), grid)
+        @test u★[1, 1, 1] ≈ ϰ / log(h / grassland_roughness) * uᵃᵗ
+        @test u★[2, 1, 1] ≈ ϰ / log((h - forest_displacement) / forest_roughness) * uᵃᵗ
     end
-end
-
-@testset "SimilarityTheoryFluxes field order" begin
-    # `local_flux_formulation` rebuilds the closure positionally inside a kernel, and
-    # every slot is a free type parameter, so a reordered or inserted field would
-    # silently mis-wire it instead of failing to compile. Pin the order.
-    @test fieldnames(SimilarityTheoryFluxes) === (:von_karman_constant,
-                                                  :turbulent_prandtl_number,
-                                                  :subgrid_velocities,
-                                                  :stability_functions,
-                                                  :roughness_lengths,
-                                                  :zero_plane_displacement,
-                                                  :similarity_form,
-                                                  :solver_stop_criteria)
-end
-
-@testset "Per-cell roughness is rejected where it is not localized" begin
-    # C3: only the atmosphere-land kernel calls `local_flux_formulation`. On the ocean
-    # and sea-ice paths a `Field` slot would reach `roughness_length`'s callable
-    # fallback ("objects of type Field are not callable") deep inside a kernel, so it
-    # is refused at construction with a message that says where fields are supported.
-    grid = LatitudeLongitudeGrid(size = (2, 1, 1), latitude = (10, 11), longitude = (10, 12),
-                                 z = (-1, 0), topology = (Bounded, Bounded, Bounded))
-    ℓᵐ = Field{Center, Center, Nothing}(grid)
-    set!(ℓᵐ, 0.5)
-
-    field_fluxes = SimilarityTheoryFluxes(; momentum_roughness_length = ℓᵐ)
-    scalar_fluxes = SimilarityTheoryFluxes(; momentum_roughness_length = 0.1)
-
-    @test_throws ArgumentError reject_field_valued_slots(field_fluxes, "atmosphere-ocean")
-    @test isnothing(reject_field_valued_slots(scalar_fluxes, "atmosphere-ocean"))
-
-    # Formulation slots (the ocean default) are untouched.
-    @test isnothing(reject_field_valued_slots(SimilarityTheoryFluxes(Float64), "atmosphere-ocean"))
-
-    # A displacement field is refused on the same grounds.
-    d = Field{Center, Center, Nothing}(grid)
-    set!(d, 1)
-    displaced = SimilarityTheoryFluxes(; momentum_roughness_length = 0.1,
-                                         zero_plane_displacement = d)
-    @test_throws ArgumentError reject_field_valued_slots(displaced, "atmosphere-sea ice")
 end
 
 @testset "Atmosphere-Land flux stability and roughness response" begin

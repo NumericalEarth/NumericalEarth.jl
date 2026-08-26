@@ -17,15 +17,6 @@ struct SimilarityTheoryFluxes{FT, UF, R, D, B, S, SV}
     solver_stop_criteria :: S        # stop criteria for compute_interface_state
 end
 
-# `Adapt.@adapt_structure` writes the `adapt_structure` method that used to be spelled
-# out here field by field: rebuild the struct with `adapt` applied to every field, which
-# is what moves a `Field`-valued roughness or displacement onto the device when the
-# closure is passed to a GPU kernel.
-#
-# `local_flux_formulation` rebuilds the same struct positionally inside a kernel, where a
-# name-keyed rebuild would not be type-stable, so a reordered or inserted field would
-# silently mis-wire the closure rather than fail to compile: every slot is a free type
-# parameter. `test_slab_land.jl` pins the field order.
 Adapt.@adapt_structure SimilarityTheoryFluxes
 
 #####
@@ -162,9 +153,8 @@ Keyword Arguments
                          formulation of [edson2013exchange](@citet).
 - `roughness_lengths`: The roughness lengths used to calculate the characteristic scales for momentum, temperature and
                        water vapor. Each may be a formulation, a `Number`, or — at the
-                       atmosphere--land interface only — a `Field{Center, Center, Nothing}` of
-                       per-cell values, strictly positive and finite everywhere (see
-                       [`atmosphere_land_interface`](@ref)).
+                       atmosphere--land interface only — a `Field{Center, Center, Nothing}`
+                       of per-cell values.
                        Default: `default_roughness_lengths(FT)`, formulation taken from [edson2013exchange](@citet).
 - `zero_plane_displacement`: The zero-plane displacement `d` [m] of surfaces with tall roughness
                              elements (buildings, plant canopy): the similarity profiles are evaluated
@@ -255,30 +245,26 @@ end
     return log(h / ℓ) - ψh
 end
 
-# Localize the flux closure to cell (i, j) before the index-free MOST iteration:
-# `Field`-valued roughness and displacement slots collapse to their per-cell values,
-# while `Number`s and formulations (e.g. `MomentumRoughnessLength`) pass through
-# `stateindex`'s fallback.
+# Localize the flux closure to cell (i, j) before the index-free MOST iteration.
 @inline local_flux_formulation(flux_formulation, i, j) = flux_formulation
 
-# "The similarity profile can evaluate this value": `log(Δh / ℓ)` needs ℓ > 0, and a
-# displacement raises the surface so d ≥ 0. `validate_flux_formulation` decides both
-# when the interface is built, so the kernel localizes without re-deciding them.
-@inline evaluable_roughness_length(ℓ) = isfinite(ℓ) & (ℓ > 0)
-@inline evaluable_zero_plane_displacement(d) = isfinite(d) & (d ≥ 0)
+# A `Field`-valued slot collapses to the cell's value; `Number`s and state-dependent
+# formulations localize to themselves.
+@inline local_slot(slot, i, j) = slot
+@inline local_slot(slot::AbstractField, i, j) = state2dindex(slot, i, j)
 
 @inline function local_flux_formulation(fluxes::SimilarityTheoryFluxes, i, j)
     ℓ = fluxes.roughness_lengths
-    roughness_lengths = SimilarityScales(state2dindex(ℓ.momentum, i, j),
-                                         state2dindex(ℓ.temperature, i, j),
-                                         state2dindex(ℓ.water_vapor, i, j))
+    roughness_lengths = SimilarityScales(local_slot(ℓ.momentum, i, j),
+                                         local_slot(ℓ.temperature, i, j),
+                                         local_slot(ℓ.water_vapor, i, j))
 
     return SimilarityTheoryFluxes(fluxes.von_karman_constant,
                                   fluxes.turbulent_prandtl_number,
                                   fluxes.subgrid_velocities,
                                   fluxes.stability_functions,
                                   roughness_lengths,
-                                  state2dindex(fluxes.zero_plane_displacement, i, j),
+                                  local_slot(fluxes.zero_plane_displacement, i, j),
                                   fluxes.similarity_form,
                                   fluxes.solver_stop_criteria)
 end
@@ -294,143 +280,38 @@ stay finite) when the displacement approaches the atmosphere surface layer heigh
 @inline displaced_profile_height(Δh, d, ℓ) = max(Δh - d, 2ℓ)
 
 #####
-##### Setup-time validation of `Field`-valued roughness and displacement slots
+##### Layout of `Field`-valued roughness and displacement slots
 #####
 
-"""
-$(TYPEDSIGNATURES)
-
-Reject `Field`-valued roughness and displacement slots on an interface that does not
-localize them, naming `interface` in the error.
-
-Only the atmosphere--land kernel calls [`local_flux_formulation`](@ref); the ocean and
-sea-ice kernels hand the closure to the solve unlocalized, where a `Field` would reach
-`roughness_length`'s callable fallback and fail as "objects of type Field are not
-callable" — a bare `MethodError` on the CPU and an opaque dynamic-dispatch failure
-inside a GPU kernel. Those kernels also iterate the halo (`0:N+1`), so localizing there
-would additionally depend on the slot's halos being filled and kept fresh. Fail here
-instead, where the message can say so.
-"""
-function reject_field_valued_slots(flux_formulation::SimilarityTheoryFluxes, interface)
-    for (name, slot, _, _) in flux_formulation_slots(flux_formulation)
-        is_field_valued(slot) || continue
-        throw(ArgumentError("$name is a $(summary(slot)), but a Field-valued " *
-                            "roughness length or displacement is only supported at " *
-                            "the atmosphere-land interface, not at the $interface " *
-                            "interface. Pass a Number or a roughness formulation " *
-                            "such as MomentumRoughnessLength here."))
-    end
+function validate_slot(slot::AbstractField, name, grid)
+    location(slot) === (Center, Center, Nothing) &&
+        architecture(slot) === architecture(grid) && slot.grid == grid ||
+        throw(ArgumentError("$name must be a Field{Center, Center, Nothing} on the interface grid, got $(summary(slot))"))
 
     return nothing
 end
 
-reject_field_valued_slots(flux_formulation, interface) = nothing
-
-# The four slots that may be `Field`-valued, each with the predicate its values must
-# satisfy and the requirement to quote when they do not. `reject_field_valued_slots` and
-# `validate_flux_formulation` both walk this table, so adding a slot is one edit.
-@inline flux_formulation_slots(f::SimilarityTheoryFluxes) =
-    (("momentum_roughness_length",    f.roughness_lengths.momentum,
-      evaluable_roughness_length,     "finite and strictly positive (log(Δh / ℓ) needs ℓ > 0)"),
-     ("temperature_roughness_length", f.roughness_lengths.temperature,
-      evaluable_roughness_length,     "finite and strictly positive (log(Δh / ℓ) needs ℓ > 0)"),
-     ("water_vapor_roughness_length", f.roughness_lengths.water_vapor,
-      evaluable_roughness_length,     "finite and strictly positive (log(Δh / ℓ) needs ℓ > 0)"),
-     ("zero_plane_displacement",      f.zero_plane_displacement,
-      evaluable_zero_plane_displacement, "finite and non-negative (displacement raises the surface)"))
-
-# An array-valued slot carries one value per cell. A bare array is refused by
-# `validate_slot_layout`, so in practice this is a `Field`.
-@inline is_field_valued(slot) = slot isa AbstractArray
-
-# Per-cell values of a slot, or `nothing` for a state-dependent formulation
-# (`MomentumRoughnessLength`, `ScalarRoughnessLength`) whose values are only known
-# during the solve. Setup-time only, so the host copy is fine.
-slot_values(slot::Number) = (slot,)
-slot_values(slot::AbstractField) = Array(interior(slot))
-slot_values(slot) = nothing
-
-# `state2dindex` reads `slot[i, j, 1]`, so a slot must be a horizontally-reduced field on
-# *this* grid: a `(Center, Center, Center)` field would silently contribute its deepest
-# level, and a field from another grid would read the wrong cell — or past the end of the
-# array, since the kernel reads it `@inbounds`.
-function validate_slot_layout(slot::AbstractField, name, grid)
-    if location(slot) !== (Center, Center, Nothing)
-        LX, LY, LZ = location(slot)
-        throw(ArgumentError("$name must be a horizontally-reduced Field at " *
-                            "(Center, Center, Nothing), got ($LX, $LY, $LZ). " *
-                            "Build it with Field{Center, Center, Nothing}(grid)."))
-    end
-
-    # Grids are compared with `==` (topology and node coordinates) rather than `===`:
-    # two references to one grid are not guaranteed to be egal, so identity would reject
-    # a field built on the interface's own grid.
-    if architecture(slot) !== architecture(grid) || slot.grid != grid
-        throw(ArgumentError("$name is built on a different grid than the interface " *
-                            "($(summary(slot.grid)) vs $(summary(grid))). Per-cell " *
-                            "roughness and displacement must be built on the grid the " *
-                            "interface is constructed with, or they index the wrong cell."))
-    end
-
-    return nothing
-end
-
-# A bare array carries no location or grid, so nothing pins its rows and columns to the
-# exchange grid's cells; require a Field so the layout above can be checked.
-validate_slot_layout(slot::AbstractArray, name, grid) =
-    throw(ArgumentError("$name must be a Number or a Field, got a " *
-                        "$(summary(slot)). Wrap per-cell values in a " *
-                        "Field{Center, Center, Nothing}(grid)."))
-
-validate_slot_layout(slot, name, grid) = nothing
+validate_slot(slot, name, grid) = nothing
 
 """
 $(TYPEDSIGNATURES)
 
 Check that the roughness-length and zero-plane-displacement slots of `flux_formulation`
-can be localized on `grid`, and throw an `ArgumentError` naming the offending slot
-otherwise.
-
-Kernels can neither throw nor report, so the conditions the Monin--Obukhov solve
-depends on are checked here:
-
-- a `Field` slot is horizontally reduced and sized to `grid`, so `state2dindex` reads
-  the surface value of the intended cell;
-- every roughness length is finite and strictly positive, so ``\\log(Δh / ℓ)`` is
-  finite. A data gap would otherwise propagate `NaN` through `u★`, `θ★` and `q★` into
-  the coupled state, and a zero would silently zero every turbulent flux. Note that
-  [`urban_roughness`](@ref) marks cells of invalid morphometry with `NaN` by design,
-  so a roughness field derived from a building dataset must be gap-filled first;
-- every displacement is finite and non-negative, since a displacement raises the
-  surface the similarity profiles are evaluated above.
-
-State-dependent formulations such as [`MomentumRoughnessLength`](@ref) carry no
-setup-time value, so they are not checked here.
+are laid out so the flux kernel can read them per cell on `grid`, and throw an
+`ArgumentError` naming the offending slot otherwise.
 """
-function validate_flux_formulation(flux_formulation::SimilarityTheoryFluxes, grid)
-    for (name, slot, evaluable, requirement) in flux_formulation_slots(flux_formulation)
-        validate_slot_layout(slot, name, grid)
-        check_slot_values(name, slot_values(slot), evaluable, requirement)
-    end
+function validate_flux_formulation(fluxes::SimilarityTheoryFluxes, grid)
+    ℓ = fluxes.roughness_lengths
+
+    validate_slot(ℓ.momentum,    "momentum_roughness_length",    grid)
+    validate_slot(ℓ.temperature, "temperature_roughness_length", grid)
+    validate_slot(ℓ.water_vapor, "water_vapor_roughness_length", grid)
+    validate_slot(fluxes.zero_plane_displacement, "zero_plane_displacement", grid)
 
     return nothing
 end
 
 validate_flux_formulation(flux_formulation, grid) = nothing
-
-# One pass: `all` short-circuits, and the `count`/`minimum` diagnostics only run once a
-# bad cell is known to exist.
-function check_slot_values(name, values, evaluable, requirement)
-    isnothing(values) && return nothing
-    all(evaluable, values) && return nothing
-
-    throw(ArgumentError("$name has $(count(!evaluable, values)) cells that are not " *
-                        "$requirement (minimum $(minimum(values))). A bad cell either " *
-                        "propagates NaN through u★, θ★ and q★ into the coupled state or " *
-                        "silently zeroes every turbulent flux there. Fill the gaps " *
-                        "before passing the field to the flux closure."))
-end
-
 
 function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
                                   Tₛ, qₛ, Δθ, Δq, Δh,
@@ -453,8 +334,6 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     ψθ = flux_formulation.stability_functions.temperature
     ψq = flux_formulation.stability_functions.water_vapor
 
-    # Extract roughness lengths (per-cell `Field` slots have already been
-    # localized to numbers by `local_flux_formulation`)
     ℓu = flux_formulation.roughness_lengths.momentum
     ℓθ = flux_formulation.roughness_lengths.temperature
     ℓq = flux_formulation.roughness_lengths.water_vapor

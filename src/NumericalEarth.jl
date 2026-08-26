@@ -214,9 +214,7 @@ const SomeKindOfFieldTimeSeries = Union{FieldTimeSeries,
 
 const SKOFTS = SomeKindOfFieldTimeSeries
 
-# The fallback covers objects that are uniform over grid points: `Number`s, but also
-# parameter structs such as turbulent flux formulations (e.g. `MomentumRoughnessLength`).
-@inline stateindex(a, i, j, k, args...) = a
+@inline stateindex(a::Number, i, j, k, args...) = a
 @inline stateindex(a::AbstractArray, i, j, k, args...) = @inbounds a[i, j, k]
 @inline stateindex(a::SKOFTS, i, j, k, grid, time, args...) = @inbounds a[i, j, k, time]
 
