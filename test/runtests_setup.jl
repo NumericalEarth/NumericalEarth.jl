@@ -25,9 +25,9 @@ test_architectures = gpu_test ? [GPU()] : [CPU()]
 
 start_date = DateTimeProlepticGregorian(1993, 1, 1)
 
-test_datasets = (ECCO2Monthly(), 
-                 ECCO2Daily(), 
-                 ECCO4Monthly(), 
+test_datasets = (ECCO2Monthly(),
+                 ECCO2Daily(),
+                 ECCO4Monthly(),
                  ECCO2DarwinMonthly(),
                  ECCO4DarwinMonthly(),
                  EN4Monthly(),
@@ -291,7 +291,7 @@ function test_cycling_dataset_restoring(arch, dataset, dates, inpainting;
         mod1.(Tuple(range(length(times), length=time_indices_in_memory)), length(times))
 end
 
-function test_inpainting_algorithm(arch, dataset, start_date, inpainting; 
+function test_inpainting_algorithm(arch, dataset, start_date, inpainting;
                                    varnames = (:temperature, :salinity),
                                   )
     for name in varnames

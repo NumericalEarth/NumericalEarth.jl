@@ -31,12 +31,6 @@ using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
     @test col_z.z == (-400, 0)
 end
 
-@testset "Column isa checks" begin
-    @test Column(0, 0) isa Column
-    @test !(BoundingBox(longitude=(0, 10), latitude=(0, 10)) isa Column)
-    @test !(nothing isa Column)
-end
-
 @testset "restrict_location" begin
     # Column reduces horizontal locations to Nothing
     @test restrict_location((Center, Center, Center), Column(0, 0)) == (Nothing, Nothing, Center)

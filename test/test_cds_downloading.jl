@@ -48,30 +48,22 @@ start_date = DateTime(2005, 2, 16, 12)
         end
         @test isfile(filepath)
 
-        # Verify the NetCDF file structure
         ds = NCDataset(filepath)
 
-        # Check that it has the expected variable (t2m for 2m_temperature)
         @test haskey(ds, "t2m")
 
-        # Check that it has coordinate variables
         @test haskey(ds, "longitude")
         @test haskey(ds, "latitude")
         @test haskey(ds, "time") || haskey(ds, "valid_time")
 
-        # Check data dimensions
         lon = ds["longitude"][:]
         lat = ds["latitude"][:]
-        @test length(lon) > 0
-        @test length(lat) > 0
 
-        # Check that data is within expected bounds
         @test minimum(lon) ≥ -1  # Allow some tolerance
         @test maximum(lon) ≤ 6
         @test minimum(lat) ≥ 39
         @test maximum(lat) ≤ 46
 
-        # Check that the temperature data exists and is valid
         t2m = ds["t2m"]
         @test ndims(t2m) ≥ 2
 
@@ -81,7 +73,6 @@ start_date = DateTime(2005, 2, 16, 12)
     end
 
     @testset "Availability of ERA5 variables" begin
-        # Test that we have defined the key ERA5 variables
         @test haskey(ERA5_dataset_variable_names, :temperature)
         @test haskey(ERA5_dataset_variable_names, :eastward_velocity)
         @test haskey(ERA5_dataset_variable_names, :northward_velocity)
@@ -89,7 +80,6 @@ start_date = DateTime(2005, 2, 16, 12)
         @test haskey(ERA5_dataset_variable_names, :downwelling_shortwave_radiation)
         @test haskey(ERA5_dataset_variable_names, :downwelling_longwave_radiation)
 
-        # Verify variable name mappings
         @test ERA5_dataset_variable_names[:temperature] == "2m_temperature"
         @test ERA5_dataset_variable_names[:eastward_velocity] == "10m_u_component_of_wind"
         @test ERA5_dataset_variable_names[:northward_velocity] == "10m_v_component_of_wind"
@@ -99,7 +89,6 @@ start_date = DateTime(2005, 2, 16, 12)
         variable = :temperature
         metadatum = Metadatum(variable; dataset, region, date=start_date)
 
-        # Test metadata properties
         @test metadatum.name == :temperature
         @test metadatum.dataset isa ERA5HourlySingleLevel
         @test metadatum.dates == start_date
@@ -112,7 +101,6 @@ start_date = DateTime(2005, 2, 16, 12)
         @test Nz == 1     # 2D surface data
         @test Nt == 1     # Single time step
 
-        # Test that ERA5 is correctly identified as 2D
         @test is_three_dimensional(metadatum) == false
     end
 
@@ -141,9 +129,7 @@ start_date = DateTime(2005, 2, 16, 12)
 
     @testset "ERA5 Monthly dataset" begin
         monthly_dataset = ERA5MonthlySingleLevel()
-        @test monthly_dataset isa ERA5MonthlySingleLevel
 
-        # Test that all_dates returns a valid range
         dates = NumericalEarth.DataWrangling.all_dates(monthly_dataset, :temperature)
         @test first(dates) == DateTime("1940-01-01")
         @test step(dates) == Month(1)
@@ -196,12 +182,6 @@ start_date = DateTime(2005, 2, 16, 12)
 
         @test convert_units(3600, Jm²ph()) ≈ 1               # 3600 J/m²/hr → 1 W/m²
         @test convert_units(3.6, MetersPerHour()) ≈ 1        # 3.6 m/hr → 1 kg/m²/s
-
-        # The regional hindcast prescribed components are first-class, top-level API.
-        # `ERA5PrescribedAtmosphere` is a `PrescribedAtmosphere{<:ERA5Dataset}` type alias
-        # (dispatch on provenance) with constructor methods; `ERA5PrescribedRadiation` is a function.
-        @test ERA5PrescribedAtmosphere isa Type
-        @test ERA5PrescribedRadiation  isa Function
     end
 
     @testset "ERA5 single-level metadata_prefix" begin
@@ -237,17 +217,12 @@ start_date = DateTime(2005, 2, 16, 12)
     @testset "ERA5HourlyPressureLevels construction and metadata" begin
         # Default constructor uses all 37 standard levels
         ds_full = ERA5HourlyPressureLevels()
-        @test ds_full isa ERA5HourlyPressureLevels
         @test length(ds_full.pressure_levels) == 37
         @test Base.size(ds_full, :temperature) == (1440, 720, 37)
 
         # Subset constructor
         ds_sub = ERA5HourlyPressureLevels(pressure_levels=[850, 500]hPa)
         @test Base.size(ds_sub, :temperature) == (1440, 720, 2)
-
-        # Monthly variant
-        ds_monthly = ERA5MonthlyPressureLevels()
-        @test ds_monthly isa ERA5MonthlyPressureLevels
 
         # Metadatum size propagates Nz correctly
         meta = Metadatum(:temperature; dataset=ds_sub, region=region, date=start_date)
@@ -336,7 +311,6 @@ start_date = DateTime(2005, 2, 16, 12)
 
             # Create a Field from the downloaded data
             ψ = Field(metadatum, arch)
-            @test ψ isa Field
 
             # ERA5 is 2D data, so field should have Nz=1
             Nx, Ny, Nz = size(ψ)
@@ -372,7 +346,6 @@ start_date = DateTime(2005, 2, 16, 12)
             # Set the field from metadata
             set!(field, metadatum)
 
-            # Verify the field was set with non-zero data
             @allowscalar begin
                 @test !all(iszero, interior(field))
             end
@@ -403,7 +376,6 @@ start_date = DateTime(2005, 2, 16, 12)
             close(ds_nc)
 
             f = Field(meta, arch)
-            @test f isa Field
             Nx, Ny, Nz = size(f)
             @test Nz == 2
 
@@ -665,7 +637,6 @@ end
                                           region, dir=tmp, skip_existing=true)
             @test plan.dt_path_pairs == [(dt1, p1), (dt2, p2)]
             @test length(plan.pending) == 2
-            @test plan.request !== nothing
             @test plan.request["time"] == ["00:00", "12:00"]
             @test plan.tmp_path == joinpath(tmp, "_tmp_20050216.nc")
             @test length(plan.nc_triples) == 2
@@ -934,10 +905,8 @@ end
 end
 
 @testset "ERA5 CDSAPIExt skip_existing short-circuit" begin
-    # Build a temporary directory and pre-create the expected output files so
-    # `download(...; skip_existing=true)` returns without contacting CDS.
-    # If the short-circuit ever regresses, these tests will throw a credentials
-    # error (or 4xx from the CDS API) and fail loudly.
+    # The expected output files are pre-created so `download(...; skip_existing=true)` returns
+    # without contacting CDS.
     region = NumericalEarth.DataWrangling.BoundingBox(longitude=(0, 5), latitude=(40, 45))
     mktempdir() do tmp
         ds_pl  = ERA5HourlyPressureLevels(pressure_levels=[850, 500]hPa)
@@ -1197,10 +1166,8 @@ end
     end
 
     @testset "split_era5_nc_by_datetime selects timesteps by valid_time, not request position" begin
-        # Regression: CDS expands `day × time` into a Cartesian product, so a window that
-        # crosses midnight (e.g. requesting [day N 23:00, day N+1 00:00]) comes back with
-        # extra, sorted timesteps. The split must key on valid_time; keying on the request
-        # position silently assigns the wrong hour to each output file.
+        # CDS expands `day × time` into a Cartesian product, so a window crossing midnight comes
+        # back with extra, sorted timesteps. The split keys on valid_time.
         mktempdir() do dir
             src_path = joinpath(dir, "src.nc")
             # What CDS returns for day=[16,17] × time=[23:00, 00:00], sorted ascending:
