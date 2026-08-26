@@ -1,6 +1,5 @@
 using Oceananigans.Biogeochemistry: required_biogeochemical_tracers
 using Oceananigans.Fields: ZeroField
-using Oceananigans.Grids: AbstractGrid
 using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ
 
 using OceanBioME: CarbonDioxideGasExchangeBoundaryCondition,
@@ -9,9 +8,9 @@ using OceanBioME: CarbonDioxideGasExchangeBoundaryCondition,
 using OceanBioME.Models.CarbonChemistryModel: silicate_concentration, phosphate_concentration
 using OceanBioME.Models.GasExchangeModel: PartiallySolubleGas, CarbonDioxideConcentration
 
-#####
-##### gas exchange
-#####
+import NumericalEarth.EarthSystemModels.InterfaceComputations: biogeochemical_interface
+import NumericalEarth.Oceans: update_net_ocean_biogeochemical_fluxes!, biogeochemistry_surface_exchanged_tracers
+
 biogeochemistry_surface_exchanged_tracers(biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}) = 
     (biogeochemistry_surface_exchanged_tracers(biogeochemistry.underlying_biogeochemistry.nutrients)...,
      biogeochemistry_surface_exchanged_tracers(biogeochemistry.underlying_biogeochemistry.plankton)...,

@@ -1,8 +1,5 @@
-using Oceananigans.Biogeochemistry: required_biogeochemical_tracers
-using Oceananigans.Grids: AbstractGrid
-using OceanBioME.Models.NutrientsPlanktonDetritusModels.InorganicCarbonModels: CarbonateSystem
-
 import OceanBioME.Light: PARFromShortwave
+import NumericalEarth.Radiations: apply_air_sea_biogeochemical_radiative_fluxes!
 
 function PARFromShortwave(grid::AbstractGrid;
                           photosynthetic_fraction_of_shortwave = 0.43)
