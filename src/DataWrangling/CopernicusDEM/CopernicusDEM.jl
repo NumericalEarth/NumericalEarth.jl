@@ -89,6 +89,11 @@ DataWrangling.windowed_retrieval(::CopernicusDEMDataset) = true
 DataWrangling.dataset_variable_name(data::CopernicusDEMMetadatum) =
     CopernicusDEM_bathymetry_variable_names[data.name]
 
+DataWrangling.longitude_name(::CopernicusDEMMetadatum) = "lon"
+DataWrangling.latitude_name(::CopernicusDEMMetadatum)  = "lat"
+
+DataWrangling.default_inpainting(::CopernicusDEMMetadatum) = nothing
+
 DataWrangling.metadata_filename(dataset::CopernicusDEMDataset, name, date, region) =
     string(dataset_prefix(dataset), "_", bounding_box_suffix(region), ".nc")
 
