@@ -94,12 +94,21 @@ end
     return εᵈᵛ⁻¹ * pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) * pᵛ⁺)
 end
 
-# dqᵛ⁺/dT by centered difference — the Newton derivative of each balance's latent term.
-@inline function saturation_humidity_slope(ℂᵃᵗ, T, pᵃᵗ, phase)
-    δ = convert(typeof(T), 1//100)
-    q⁺ = saturation_specific_humidity(ℂᵃᵗ, T + δ, pᵃᵗ, phase)
-    q⁻ = saturation_specific_humidity(ℂᵃᵗ, T - δ, pᵃᵗ, phase)
-    return (q⁺ - q⁻) / 2δ
+# dqᵛ⁺/dT at fixed pressure — the Newton derivative of each balance's latent term.
+# Clausius-Clapeyron gives d(ln pᵛ⁺)/dT = ℒ(T)/(Rᵛ T²), and differentiating
+# qᵛ⁺ = εᵈᵛ⁻¹ pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) pᵛ⁺) at fixed p leaves
+#
+#     dqᵛ⁺/dT = qᵛ⁺ (1 + (1 - εᵈᵛ⁻¹) qᵛ⁺/εᵈᵛ⁻¹) ℒ(T) / (Rᵛ T²) .
+@inline function saturation_humidity_slope(ℂᵃᵗ, Tₛ, pᵃᵗ, phase)
+    CT    = eltype(ℂᵃᵗ)
+    T     = convert(CT, Tₛ)
+    qᵛ⁺   = saturation_specific_humidity(ℂᵃᵗ, T, pᵃᵗ, phase)
+    εᵈᵛ⁻¹ = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
+    Rᵛ    = AtmosphericThermodynamics.Parameters.R_v(ℂᵃᵗ)
+    ℒ     = ifelse(phase isa AtmosphericThermodynamics.Liquid,
+                   AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, T),
+                   AtmosphericThermodynamics.latent_heat_sublim(ℂᵃᵗ, T))
+    return qᵛ⁺ * (1 + (1 - εᵈᵛ⁻¹) * qᵛ⁺ / εᵈᵛ⁻¹) * ℒ / (Rᵛ * T^2)
 end
 
 # Saturation phase of a humidity formulation, used only for the initial surface-
