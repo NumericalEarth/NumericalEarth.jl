@@ -65,9 +65,12 @@ endpoint `aerodynamic_parameters(closure, 0, 0)`, in place. The roughness length
 zero-plane displacement `d` are filled together, so a gap in either becomes unbuilt
 surface in both.
 
-Where the morphometry that produced `ℓᵐ` and `d` is still to hand, inpainting `λᵖ` and `h`
-with `DataWrangling.inpaint_mask!` before evaluating the closure fills from horizontal
-neighbors instead, and a hole in a city stays a city.
+Gaps arise where a region reaches past a dataset's published coverage — GHSL omits its
+all-ocean Mollweide tiles, so a coastal window can straddle one. The bare-soil endpoint is
+what those cells would have carried had the tile been published, since open water reads as
+unbuilt. For a dataset whose gaps fall inside built-up land, inpaint `λᵖ` and `h` with
+`DataWrangling.inpaint_mask!` before evaluating the closure instead, so the fill comes from
+horizontal neighbors.
 """
 function fill_aerodynamic_roughness_gaps!(ℓᵐ, d, closure::AbstractUrbanRoughness)
     grid = ℓᵐ.grid
