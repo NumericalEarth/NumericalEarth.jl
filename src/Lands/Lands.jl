@@ -56,6 +56,7 @@ using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surfa
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger
 
 # Extended by external land models
+function land_model end
 function land_simulation end
 
 # Closure interfaces
