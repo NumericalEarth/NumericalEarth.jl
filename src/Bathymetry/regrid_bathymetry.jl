@@ -329,17 +329,16 @@ function interpolate_bathymetry_in_passes(native_z, target_grid;
 end
 
 """
-    remove_minor_basins!(z_data, keep_major_basins)
+$(TYPEDSIGNATURES)
 
-Remove independent basins from the bathymetry data stored in `z_data` by identifying connected regions
-below sea level. Basins are removed from smallest to largest until only `keep_major_basins` remain.
+Remove independent basins from the bathymetry stored in `zb` by identifying connected regions below sea level.
+Basins are removed from smallest to largest until only `keep_major_basins` remain.
 
 Arguments
 =========
 
-- `z_data`: A 2D array representing the bathymetry data.
+- `zb`: A 2D `Field` representing the bottom height.
 - `keep_major_basins`: The maximum number of connected regions to keep.
-                       If `Inf` is provided then all connected regions are kept.
 
 """
 function remove_minor_basins!(zb::Field, keep_major_basins)
@@ -351,62 +350,26 @@ function remove_minor_basins!(zb::Field, keep_major_basins)
         throw(ArgumentError("keep_major_basins must be larger than 0."))
     end
 
-    zb_cpu    = on_architecture(CPU(), zb)
-    TX, TY, _ = topology(zb_cpu.grid)
+    zb_cpu = on_architecture(CPU(), zb)
+    Nx, Ny, _ = size(zb_cpu.grid)
 
-    Nx = Base.length(Center(), TX(), zb_cpu.grid.Nx)
-    Ny = Base.length(Center(), TY(), zb_cpu.grid.Ny)
+    labels = label_ocean_basins(zb_cpu)
+    basin_sizes = [count(==(label), labels) for label in 1:maximum(labels)]
 
-    # Get labels for the core region (extension is handled internally by label_ocean_basins)
-    labels = label_ocean_basins(zb_cpu, TX, (Nx, Ny))
-    nlabels = maximum(labels)
+    # Basin labels are ranked by area, keeping at most `keep_major_basins` of the ones that exist
+    nbasins = min(floor(Int, keep_major_basins), count(>(0), basin_sizes))
+    major_basins = sortperm(basin_sizes, rev=true)[1:nbasins]
 
-    if nlabels == 0
-        return zb  # No basins found
-    end
-
-    # Rank labels by the number of elements they occupy
-    total_elements = zeros(nlabels)
-    label_elements = zeros(Int, nlabels)
-
-    for e in 1:nlabels
-        cnt = count(==(e), labels)
-        total_elements[e] = cnt
-        label_elements[e] = e
-    end
-
-    # Find valid basins (those with at least one cell)
-    valid = findall(>(0), total_elements)
-
-    major_basins = Int[]  # indices of major basins to keep
-    m = 1
-
-    # We add basin indexes until we reach the specified number (m == keep_major_basins) or
-    # we run out of basins to keep -> isempty(valid)
-    while (m ≤ keep_major_basins) && !isempty(valid)
-        # Among the remaining valid labels, find the one with the largest core area.
-        _, idx = findmax(total_elements[valid])
-        next_label = label_elements[valid[idx]]
-        push!(major_basins, next_label)
-        deleteat!(valid, idx)
-        m += 1
-    end
-
-    # Modify the bathymetry: set minor basin cells to 0 (land)
-    # Work on interior view which directly modifies the underlying data
     zb_data = interior(zb_cpu, :, :, 1)
 
     for j in 1:Ny, i in 1:Nx
         label = labels[i, j]
         if label > 0 && !(label in major_basins)
-            @inbounds zb_data[i, j] = 0  # Flatten this cell (make it land)
+            @inbounds zb_data[i, j] = 0
         end
     end
 
-    # If original field was on a different architecture, copy back
-    if zb !== zb_cpu
-        set!(zb, zb_cpu)
-    end
+    set!(zb, zb_cpu)
 
     return zb
 end

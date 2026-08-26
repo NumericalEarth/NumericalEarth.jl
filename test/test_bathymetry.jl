@@ -2,19 +2,8 @@ include("runtests_setup.jl")
 include("download_utils.jl")
 
 using JLD2
-using NumericalEarth.Bathymetry: remove_minor_basins!,
-                                 BathymetryRegridding,
-                                 cache_filename,
-                                 load_bathymetry_cache,
-                                 save_bathymetry_cache,
-                                 label_ocean_basins,
-                                 find_label_at_point,
-                                 Basin,
-                                 atlantic_ocean_basin,
-                                 meridional_barrier,
-                                 atlantic_ocean_barriers
-using NumericalEarth.DataWrangling: BoundingBox
-using NumericalEarth.Bathymetry: remove_minor_basins!, bathymetry_regridding_key
+using NumericalEarth.Bathymetry: remove_minor_basins!, bathymetry_regridding_key,
+                                 label_ocean_basins, find_label_at_point, atlantic_ocean_barriers
 using NumericalEarth.DataWrangling: field_cache_filename, save_field_cache
 using NumericalEarth.DataWrangling.ETOPO
 using Statistics
@@ -241,13 +230,11 @@ end
         ibg = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height))
 
         atlantic = atlantic_ocean_basin(ibg)
-        @test atlantic isa Basin
         @test sum(interior(atlantic.mask)) > 0
 
         # The Atlantic mask must exclude the Pacific.
         mask = on_architecture(CPU(), atlantic.mask)
-        pacific_i = findfirst(λ -> -175 < λ < -165, range(-180, 180, length=360))
-        @test !isnothing(pacific_i)
+        pacific_i = findfirst(λ -> -175 < λ < -165, λnodes(grid, Center()))
         @test mask[pacific_i, 90, 1] == 0
     end
 end

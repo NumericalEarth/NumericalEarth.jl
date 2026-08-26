@@ -16,12 +16,11 @@ using Oceananigans.BoundaryConditions: BoundaryConditions
 using Oceananigans.DistributedComputations: DistributedComputations, DistributedGrid,
                                             reconstruct_global_grid, all_reduce
 using Oceananigans.Fields: Field, interior, interpolate!
-using Oceananigans.Grids: x_domain, y_domain, topology, AbstractGrid, Face, Center,
+using Oceananigans.Grids: x_domain, y_domain, topology, Face, Center,
                           Flat, Periodic, Bounded, LeftConnected, RightConnected,
                           RectilinearGrid, LatitudeLongitudeGrid, OrthogonalSphericalShellGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
-using Oceananigans.Utils: launch!, worksize
-using OffsetArrays: OffsetArrays, OffsetArray
+using Oceananigans.Utils: launch!
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf
 

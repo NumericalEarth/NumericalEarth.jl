@@ -4,206 +4,114 @@ using Oceananigans.Fields: convert_to_0_360
 using ..DataWrangling: BoundingBox
 
 #####
-##### Barrier application functions
+##### Barriers
 #####
 
-# A barrier is a `BoundingBox` whose horizontal extent defines a rectangular
-# region to be temporarily marked as land during connected-component labeling.
-# The `z` field of the `BoundingBox` is ignored: the flood-fill operates on
-# the 2D bathymetry slice, and barriers act at every depth.
-
 """
-    meridional_barrier(longitude, south, north; width=2)
+$(TYPEDSIGNATURES)
 
-Create a narrow meridional `BoundingBox` centered at `longitude` with meridional
-extent `[south, north]` and zonal width `width` degrees. Useful for closing
-straits like Cape Agulhas or Indonesian passages during basin labeling.
+Return a narrow meridional `BoundingBox` centered at `longitude`, with zonal width `width` degrees and
+meridional extent `[south, north]`, which closes straits such as Cape Agulhas or the Indonesian passages.
 """
 meridional_barrier(longitude, south, north; width=2) = BoundingBox(longitude=(longitude - width/2, longitude + width/2), latitude=(south, north))
 
-"""
-    apply_barrier!(zb, grid, barrier::BoundingBox)
+add_barrier(barriers, barrier) = isnothing(barriers) ? [barrier] : vcat(barriers, barrier)
 
-Mark all cells within the barrier's horizontal region as land (z = 0).
-"""
-apply_barrier!(zb, grid, barrier::BoundingBox) = launch!(architecture(grid), grid, :xy, _apply_barrier!, zb, grid, barrier)
-
-apply_barrier!(zb, grid, barriers::Nothing) = zb
-
-function apply_barrier!(zb, grid, barriers::AbstractVector)
-    for barrier in barriers
-        apply_barrier!(zb, grid, barrier)
-    end
-    return zb
-end
-
+# A barrier's vertical extent is ignored: the labeling operates on the two-dimensional bathymetry.
 @kernel function _apply_barrier!(zb, grid, barrier::BoundingBox)
     i, j = @index(Global, NTuple)
 
-    in_lon = if isnothing(barrier.longitude) || (barrier.longitude[2] - barrier.longitude[1] >= 360)
+    inside_longitude = if isnothing(barrier.longitude) || (barrier.longitude[2] - barrier.longitude[1] >= 360)
         true
     else
-        bw = convert_to_0_360(barrier.longitude[1])
-        be = convert_to_0_360(barrier.longitude[2])
-        λ = λnode(i, j, 1, grid, Center(), Center(), Center())
-        λ = convert_to_0_360(λ)
-        (bw <= λ <= be)
+        λ = convert_to_0_360(λnode(i, j, 1, grid, Center(), Center(), Center()))
+        convert_to_0_360(barrier.longitude[1]) <= λ <= convert_to_0_360(barrier.longitude[2])
     end
 
-    in_lat = if isnothing(barrier.latitude)
+    inside_latitude = if isnothing(barrier.latitude)
         true
     else
         φ = φnode(i, j, 1, grid, Center(), Center(), Center())
         barrier.latitude[1] <= φ <= barrier.latitude[2]
     end
 
-    @inbounds zb[i, j, 1] = ifelse(in_lon & in_lat, zero(grid), zb[i, j, 1])
+    @inbounds zb[i, j, 1] = ifelse(inside_longitude & inside_latitude, zero(grid), zb[i, j, 1])
 end
 
-# Since the strel algorithm in `label_components` does not recognize periodic boundaries,
-# before labeling connected regions we copy half the longitude extent on each side so that
-# water cells near the boundary are correctly identified as connected.
-function copy_periodic_longitude(zb_cpu::Field, ::Periodic)
-    Nλ = size(zb_cpu, 1)
-    half = Nλ ÷ 2
+#####
+##### Connected component labeling
+#####
 
-    # 2D slice of the bathymetry at the bottom level.
-    zb_data   = zb_cpu.data[1:Nλ, :, 1]
-    zb_parent = parent(zb_data)
-
-    # Concatenate a copy of the eastern half on the left and the western half on the right.
-    # This is an O(Nλ × Nφ) CPU allocation, acceptable for the serial labeling step.
-    concatenated_zb = vcat(zb_parent[half:Nλ, :], zb_parent, zb_parent[1:half, :])
-
-    # Offsets so that index 1 maps back to the original domain start
-    xoffset = - half - 1
-    yoffset = zb_cpu.data.offsets[2]
-
-    return OffsetArray(concatenated_zb, xoffset, yoffset)
-end
-
-copy_periodic_longitude(zb_cpu::Field, tx) = interior(zb_cpu, :, :, 1)
-
-"""
-    label_ocean_basins(zb_field, TX, core_size)
-
-Creates a matrix with a unique label for each connected basin. Useful for inpainting the bathymetry and
-computing the masks for oceanic basins.
-
-Handles periodic boundary extension internally and returns labels for the core region only.
-"""
-function label_ocean_basins(zb_field, TX, size)
-    zb = copy_periodic_longitude(zb_field, TX()) # Outputs a 2D AbstractArray
-
-    water = zb .< 0
-
-    connectivity = ImageMorphology.strel(water)
-    labels = ImageMorphology.label_components(connectivity)
-
-    Nx, Ny = size[1], size[2]
-    core_labels = labels[1:Nx, 1:Ny]
-
-    # Enforce periodicity: merge labels that should be connected across
-    # the periodic boundaries. This handles cases where a barrier (e.g., blocking
-    # the Southern Ocean) prevents the extended domain from connecting basins
-    # that are actually periodic neighbors.
-    enforce_periodic_labels!(core_labels, TX())
-    enforce_tripolar_labels!(core_labels, zb_field.grid)
-
-    return core_labels
-end
-
-"""
-    enforce_periodic_labels!(labels, ::Periodic)
-
-Merge labels that should be connected due to periodic boundary conditions.
-For each latitude, if the westernmost and easternmost cells are both water
-(non-zero labels), they are periodic neighbors and must have the same label.
-"""
+# Cells (1, j) and (Nx, j) are neighbors across the periodic longitude seam.
 function enforce_periodic_labels!(labels, ::Periodic)
-    Nx, Ny = Base.size(labels)
+    Nx, Ny = size(labels)
 
     for j in 1:Ny
-        label_west = labels[1, j]
-        label_east = labels[Nx, j]
+        west = labels[1, j]
+        east = labels[Nx, j]
 
-        # Both cells are water and have different labels: merge them
-        if label_west != 0 && label_east != 0 && label_west != label_east
-            # Replace all occurrences of label_east with label_west
-            replace!(labels, label_east => label_west)
+        if west != 0 && east != 0 && west != east
+            replace!(labels, east => west)
         end
     end
 
     return labels
 end
 
-# No-op for non-periodic domains
 enforce_periodic_labels!(labels, tx) = labels
 
-"""
-    enforce_tripolar_labels!(labels, ::TripolarGridOfSomeKind)
-
-Merge labels that should be connected due to zipper boundary conditions.
-For each longitude, if cells reflected across the fold (Nx÷2) are water
-(non-zero labels), they are periodic neighbors and must have the same label.
-"""
+# Cells (i, Ny) and (Nx-i+1, Ny) are neighbors across the tripolar fold.
 function enforce_tripolar_labels!(labels, ::TripolarGridOfSomeKind)
-    Nx, Ny = Base.size(labels)
+    Nx, Ny = size(labels)
 
     for i in 1:Nx÷2
-        label_west = labels[i,      Ny]
-        label_east = labels[Nx-i+1, Ny]
+        label = labels[i, Ny]
+        folded_label = labels[Nx-i+1, Ny]
 
-        # Both cells are water and have different labels: merge them
-        if label_west != 0 && label_east != 0 && label_west != label_east
-            # Replace all occurrences of label_east with label_west
-            replace!(labels, label_east => label_west)
+        if label != 0 && folded_label != 0 && label != folded_label
+            replace!(labels, folded_label => label)
         end
     end
 
     return labels
 end
 
-# No-op for non-tripolar grids
 enforce_tripolar_labels!(labels, grid) = labels
 
-# Utilities to label ocean basins passing only the grid
-function label_ocean_basins(grid::AbstractGrid; barriers=nothing)
-    @warn "The grid is not immersed, there is only one ocean basin!"
-    Nx, Ny, Nz = size(grid)
-    return zeros(Int, Nx, Ny)
-end
-
 """
-    label_ocean_basins(grid::ImmersedBoundaryGrid; barriers=nothing)
+$(TYPEDSIGNATURES)
 
-Label connected ocean basins in an ImmersedBoundaryGrid.
+Label the connected water regions of the bottom height `zb`, returning a matrix carrying a unique integer per
+basin and zero on land. Useful for inpainting the bathymetry and for computing the masks of oceanic basins.
 
 Keyword Arguments
 =================
-- `barriers`: Collection of `BoundingBox`es applied before labeling. Each barrier
-              temporarily marks its horizontal rectangle as land, allowing separation
-              of connected ocean basins (e.g., separating Atlantic from Pacific via
-              the Southern Ocean).
+- `barriers`: a vector of `BoundingBox`es marked as land before labeling, so that basins connected in the
+              bathymetry are separated (closing Drake Passage separates the Atlantic from the Pacific).
 """
-function label_ocean_basins(grid::ImmersedBoundaryGrid; barriers=nothing)
+function label_ocean_basins(zb::Field; barriers=nothing)
 
-    # The labelling algorithm works only on CPUs
-    cpu_grid = on_architecture(CPU(), grid)
+    # The labeling is two-dimensional and serial, so it is performed on the CPU
+    zb = on_architecture(CPU(), zb)
+    grid = zb.grid
 
-    TX = topology(cpu_grid, 1)
-    zb = bottom_height_field(cpu_grid)
-
-    # If barriers are specified, apply them to a copy of the bathymetry.
-    # Using `similar(zb)` preserves the field type, which allows for future
-    # bathymetry representations beyond plain 2D `GridFittedBottom` fields.
     if !isnothing(barriers)
-        zb_modified = similar(zb)
-        parent(zb_modified) .= parent(zb)
-        apply_barrier!(zb_modified, cpu_grid, barriers)
-    else
-        zb_modified = zb
+        zb = set!(similar(zb), zb) # barriers are applied to a copy, `set!` returns its destination
+
+        for barrier in barriers
+            launch!(CPU(), grid, :xy, _apply_barrier!, zb, grid, barrier)
+        end
     end
 
-    return label_ocean_basins(zb_modified, TX, size(cpu_grid))
+    water = interior(zb, :, :, 1) .< 0
+    labels = ImageMorphology.label_components(ImageMorphology.strel(water))
+
+    # `label_components` connects cells that share a face within the array, so cells that are neighbors across
+    # the periodic longitude seam or across the tripolar fold are merged afterwards
+    enforce_periodic_labels!(labels, topology(grid, 1)())
+    enforce_tripolar_labels!(labels, grid)
+
+    return labels
 end
+
+label_ocean_basins(grid::ImmersedBoundaryGrid; barriers=nothing) = label_ocean_basins(bottom_height_field(grid); barriers)
