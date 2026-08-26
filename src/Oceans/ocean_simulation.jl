@@ -459,6 +459,7 @@ function hydrostatic_ocean_simulation(grid;
     default_additional_fluxes = merge((u=nothing, v=nothing), NamedTuple(name => nothing for name in tracers))
     additional = merge(default_additional_fluxes, additional_surface_fluxes)
 
+    # Freshwater heat content is `Σᵢ Tᵢ Jʷᵢ`, the Freshwater salinity content is assumed to be 0 for the moment (no salinity for incoming freshwater)
     freshwater_heat_content = Field{Center, Center, Nothing}(grid)
     default_freshwater_tracer_content = NamedTuple(name => name === :T ? freshwater_heat_content : ZeroField()
                                                     for name in tracers)
