@@ -11,13 +11,14 @@ NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
 Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 RRTMGP = "a01a1ee8-cea4-48fc-987c-fc7878d79da1"
+Terrarium = "80418d68-07fa-499d-ae2b-c12e531f5cd8"
 
 [sources]
 NumericalEarth = {path = ".."}
 
 [compat]
 Breeze = "0.9"
-CopernicusClimateDataStore = "0.2"
 CUDA = "6"
 CairoMakie = "0.15"
+CopernicusClimateDataStore = "0.2"
 Oceananigans = "0.110"
