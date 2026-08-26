@@ -375,8 +375,12 @@ function target_matched_metadata(metadatum::Metadatum, grid)
     dataset = matching_resolution_dataset(metadatum.dataset, grid)
     dataset === metadatum.dataset && return metadatum
 
+    # A filename the user pinned is kept; a derived one follows the new lattice.
+    derived = metadata_filename(metadatum.dataset, metadatum.name, metadatum.dates, metadatum.region)
+    filename = metadatum.filename == derived ? nothing : metadatum.filename
+
     return Metadatum(metadatum.name; dataset, region = metadatum.region,
-                     date = metadatum.dates, dir = metadatum.dir)
+                     date = metadatum.dates, dir = metadatum.dir, filename)
 end
 
 """

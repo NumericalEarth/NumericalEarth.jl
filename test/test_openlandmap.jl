@@ -216,6 +216,10 @@ end
     @test aggregation_factor(matched.dataset) == 128
     @test matched.filename == filename(OpenLandMapSoilDB(aggregation_factor = 128))
     @test matched.name == metadatum.name && matched.region === metadatum.region
+
+    # A filename the user pinned survives the rebuild.
+    pinned_name = Metadatum(:clay_fraction; dataset = unpinned, region, filename = "mine.nc")
+    @test target_matched_metadata(pinned_name, coarse_grid).filename == "mine.nc"
 end
 
 @testset "OpenLandMapSoilDB windowed COG reader at an aggregation factor" begin
