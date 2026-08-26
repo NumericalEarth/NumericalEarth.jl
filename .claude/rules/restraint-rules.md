@@ -18,6 +18,10 @@ effect**, and they outrank any instinct toward completeness.
 > **The test behind every rule below:** could a reviewer who knows the physics read this hunk once, in order,
 > and say yes?
 
+**If you carry away only four, carry these:** the diff is the feature and nothing else (Rule 1); an invariant is
+enforced in one place (Rule 2); a comment describes the code that is there (Rule 7); an error message is one
+sentence (Rule 9). The rest are corollaries of those four, and the checklist at the end is how they are applied.
+
 **They apply to existing code too.** Every rule below is also a license to delete: when you are already editing
 a file and a rule catches something that is *already there*, removing it is in scope, not scope creep. What is
 out of scope is going looking — do not open unrelated files to hunt for violations, and keep a cleanup that
@@ -51,7 +55,7 @@ one level deep and rebase — never merge sideways.
 
 An invariant is enforced in exactly one place. Enforcing it at setup *and* in the kernel *and* through a
 fallback *and* in a gap-filler does not make it four times as safe — it makes it impossible to tell which
-mechanism is load-bearing, and guarantees the four drift apart.
+mechanism actually does the work, and guarantees the four drift apart.
 
 Before adding a check, find where the invariant is already enforced. If a runtime floor already exists,
 setup-time validation is redundant; if setup-time validation is added, the runtime floor should be deleted.
@@ -63,9 +67,13 @@ setup-time validation is redundant; if setup-time validation is added, the runti
 
 ## Rule 3 — No guards for states the code cannot reach
 
-Never add machinery to defend against a state that is unreachable through the public API. "A user might mutate
-this field after construction" and "a downstream package might pass a wrong type" are hypotheticals, not
-requirements. Code written against hypotheticals is permanent; the hypothetical usually never arrives.
+The shape to watch for: an inner function that checks for input its only caller cannot produce, or a branch
+that repeats a rejection the public constructor already performed. The check is technically correct, and it
+never runs.
+
+"A user might mutate this field after construction" and "a downstream package might pass a wrong type" are
+hypotheticals, not requirements. The guard written against one outlives the hypothetical, which usually never
+arrives — and because such a guard is bloat rather than a bug, nothing ever forces it out again.
 
 A **loud failure is better than a silent fallback.** A `NaN` that reaches the coupled state is visible in the
 first output; a roughness silently floored at `1e-5` produces plausible wrong fluxes forever.
@@ -134,12 +142,20 @@ Reinforces the comment rules in `style-rules.md`, which this codebase violates m
 - teach the language (`==` vs `===`, how `@inbounds` works, why `Adapt` needs field order);
 - carry a multi-line design memo or `TODO` about a different module's construction order.
 
+History belongs in the commit message, which has both the code before and the code after the change in view. A
+comment has only the code that is there now, so a comment about what the code used to do — or what it does not
+do — cannot be read: the reader has no access to the thing being contrasted, and the contrast ages into a lie
+the first time either side moves. Avoid "no longer", "previously", "used to", "instead of", and "now" in the
+sense of "now does X". A docstring reading `Returns (Q, Tᵦ, Sᵦ)` is complete; adding "the melt rate is no
+longer returned" only leaves the reader hunting for a melt rate.
+
 If the reasoning genuinely cannot be dropped, it belongs in the PR description — which reviewers read once and
 which does not age in the source tree.
 
 ❌ Five lines above `Adapt.@adapt_structure SimilarityTheoryFluxes` explaining that a positional rebuild
    elsewhere would mis-wire the struct and that a test pins the field order.
 ❌ `# Grids are compared with `==` … rather than `===`: two references to one grid are not guaranteed to be egal`
+❌ `# the melt rate is no longer returned; callers derive it from the mass change instead`
 ✅ `# ifelse, not ?:, so the kernel stays branch-free on GPU`
 
 ## Rule 8 — Docstrings describe, they do not argue
@@ -169,7 +185,7 @@ six lines each is fifty lines of string literal in `src/`.
 ## Rule 10 — Test behavior, not scaffolding
 
 Tests pin the physics and the public contract. A test that asserts an internal helper's return type, a struct's
-field order, or the exact value a fallback produces makes the scaffolding **load-bearing**: it can no longer be
+field order, or the exact value a fallback produces makes that scaffolding **permanent**: it can no longer be
 deleted without "breaking tests", which is precisely how machine-written scaffolding becomes permanent.
 
 - Never write a test whose only purpose is to lock in a guard added by the same PR.
