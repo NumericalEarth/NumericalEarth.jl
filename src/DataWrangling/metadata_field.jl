@@ -371,12 +371,33 @@ end
 interpolate_physical!(to_field, from_field, metadata) = interpolate_physical!(to_field, from_field)
 
 """
+    target_matched_metadata(metadatum, grid)
+
+Return `metadatum` rebuilt on the dataset variant `coarsest_resolving_dataset` selects for
+`grid`, re-deriving the filename so each lattice caches separately.
+"""
+function target_matched_metadata(metadatum::Metadatum, grid)
+    dataset = coarsest_resolving_dataset(metadatum.dataset, grid)
+    dataset === metadatum.dataset && return metadatum
+
+    # A filename the user pinned is kept; a derived one follows the new lattice.
+    derived = metadata_filename(metadatum.dataset, metadatum.name, metadatum.dates, metadatum.region)
+    filename = metadatum.filename == derived ? nothing : metadatum.filename
+
+    return Metadatum(metadatum.name; dataset, region = metadatum.region,
+                     date = metadatum.dates, dir = metadatum.dir, filename)
+end
+
+"""
     Field(metadata::Metadatum, grid::AbstractGrid; cache = false, overwrite_cache = false, kw...)
 
 Load `metadata` on its native grid and interpolate onto `grid` — the
 `Field` analog of `FieldTimeSeries(metadata, grid)`. Keyword arguments are
 forwarded to the native-grid `Field(metadata, arch; …)` (e.g. `inpainting`,
 `mask`, `halo`, `cache_inpainted_data`).
+
+A dataset that comes at more than one resolution is read at the coarsest that resolves `grid`
+rather than at its finest; see [`coarsest_resolving_dataset`](@ref).
 
 With `cache = true` the regridded result is cached to disk and reused by later
 reads with the same dataset, variable, date, region, target-grid geometry, and
@@ -389,6 +410,7 @@ skips the lookup and overwrites the entry with a freshly regridded result.
 """
 function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid;
                                    cache = false, overwrite_cache = false, kw...)
+    metadata = target_matched_metadata(metadata, grid)
     LX, LY, LZ = location(metadata)
 
     if cache && !overwrite_cache
@@ -416,6 +438,8 @@ end
 function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw...)
     grid = target_field.grid
     arch = child_architecture(grid)
+    metadata = target_matched_metadata(metadata, grid)
+
     meta_field = Field(metadata, arch; kw...)
 
     Lzt = grid.Lz
