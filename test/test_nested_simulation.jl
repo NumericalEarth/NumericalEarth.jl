@@ -11,9 +11,11 @@ using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryCond
 using Oceananigans.Forcings: MultipleForcings
 using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics,
-              SpecificForcing
+              SpecificForcing, SaturationAdjustment, WarmPhaseEquilibrium, moisture_prognostic_name,
+              adjustment_saturation_specific_humidity
 using Breeze.Thermodynamics: MoistureMassFractions, LiquidIcePotentialTemperatureState, temperature,
                              with_temperature
+using Breeze.Microphysics: compute_temperature
 using Test
 
 @testset "PrescribedAtmosphere: grid vertical topology selects surface vs volumetric fields" begin
@@ -303,6 +305,93 @@ end
     @test es.v[1]  ≈ parent.velocities.v[1]
 end
 
+# The exchanger's moisture slot holds what `moisture_prognostic_name` binds: `:ρqᵛ` is true vapor,
+# `:ρqᵉ` is vapor + cloud condensate (qᵗ less precipitation).
+@testset "state exchanger: the moisture slot matches the child's moisture_prognostic_name" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    constants = ThermodynamicConstants()
+    pˢᵗ, T₀, p₀ = 1e5, 283.15, 9e4
+    qᵛ₀, qᶜˡ₀, qᶜⁱ₀, qʳ₀, qˢ₀ = 8.0e-3, 5.0e-4, 1.0e-4, 2.0e-4, 5.0e-5
+
+    grid = RectilinearGrid(size = (4, 4, 4), x = (-1, 1), y = (-1, 1), z = (0, 1),
+                           topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(grid, [0.0, 1.0, 2.0])
+    set!(parent.temperature,       (x, y, z, t) -> T₀)
+    set!(parent.specific_humidity, (x, y, z, t) -> qᵛ₀)
+    set!(parent.pressure,          (x, y, z, t) -> p₀)
+    set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
+    uniform(v) = (f = CenterField(grid); set!(f, (x, y, z) -> v); f)
+    condensates = (qᶜˡ = uniform(qᶜˡ₀), qʳ = uniform(qʳ₀), qᶜⁱ = uniform(qᶜⁱ₀), qˢ = uniform(qˢ₀))
+
+    # Every hydrometeor loads the mixture.
+    Rᵈ, Rᵛ = dry_air_gas_constant(constants), vapor_gas_constant(constants)
+    qᵗ = qᵛ₀ + qᶜˡ₀ + qʳ₀ + qᶜⁱ₀ + qˢ₀
+    ρ  = p₀ / (((1 - qᵗ) * Rᵈ + qᵛ₀ * Rᵛ) * T₀)
+
+    # `:ρqᵛ` ⇒ true vapor only.
+    exᵛ = ext.state_exchanger(parent, pˢᵗ, constants; condensates, moisture_name = :ρqᵛ)
+    @test all(isapprox.(interior(exᵛ.prognostic.ρqᵛᵉ[1]), ρ * qᵛ₀; rtol = 1e-12))
+
+    # `:ρqᵉ` ⇒ vapor + CLOUD condensate; precipitation stays out (qᵉ = qᵗ − qʳ − qˢ).
+    exᵉ = ext.state_exchanger(parent, pˢᵗ, constants; condensates, moisture_name = :ρqᵉ)
+    @test all(isapprox.(interior(exᵉ.prognostic.ρqᵛᵉ[1]), ρ * (qᵛ₀ + qᶜˡ₀ + qᶜⁱ₀); rtol = 1e-12))
+
+    # The two differ by exactly the cloud condensate the vapor-only write drops.
+    @test all(isapprox.(interior(exᵉ.prognostic.ρqᵛᵉ[1]) .- interior(exᵛ.prognostic.ρqᵛᵉ[1]),
+                        ρ * (qᶜˡ₀ + qᶜⁱ₀); rtol = 1e-12))
+
+    # Saturation adjustment is the default nesting path, so it must land on `:ρqᵉ`.
+    @test moisture_prognostic_name(SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())) == :ρqᵉ
+end
+
+# End-to-end closure of the handoff: invert the emitted (θˡⁱ, qᵛᵉ) pair with the child's own saturation
+# adjustment and recover the temperature the parent sent.
+@testset "state exchanger: the child recovers the parent temperature it was sent" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    constants = ThermodynamicConstants()
+    microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())
+    pˢᵗ, T₀, p₀, qᶜˡ₀ = 1e5, 283.15, 9e4, 5.0e-4
+
+    # Saturate with the adjustment's own qsat, so the state is one it leaves alone.
+    qᵛ₀ = 8.0e-3
+    for _ in 1:80
+        qᵛ₀ = adjustment_saturation_specific_humidity(T₀, p₀, qᵛ₀ + qᶜˡ₀, constants, WarmPhaseEquilibrium())
+    end
+
+    grid = RectilinearGrid(size = (4, 4, 4), x = (-1, 1), y = (-1, 1), z = (0, 1),
+                           topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(grid, [0.0, 1.0, 2.0])
+    set!(parent.temperature,       (x, y, z, t) -> T₀)
+    set!(parent.specific_humidity, (x, y, z, t) -> qᵛ₀)
+    set!(parent.pressure,          (x, y, z, t) -> p₀)
+    set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
+    uniform(v) = (f = CenterField(grid); set!(f, (x, y, z) -> v); f)
+    # No precipitation: qʳ/qˢ carry latent heat into θˡⁱ that `qᵉ` cannot give back, since the child
+    # has no rain/snow prognostic. That is a separate defect.
+    condensates = (qᶜˡ = uniform(qᶜˡ₀), qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing)
+
+    Rᵈ, Rᵛ = dry_air_gas_constant(constants), vapor_gas_constant(constants)
+    ρ = p₀ / (((1 - qᵛ₀ - qᶜˡ₀) * Rᵈ + qᵛ₀ * Rᵛ) * T₀)
+
+    recovered(name) = begin
+        ex = ext.state_exchanger(parent, pˢᵗ, constants; condensates, moisture_name = name)
+        at(f) = Array(interior(f))[1, 1, 1]
+        θˡⁱ = at(ex.prognostic.ρθ[1]) / at(ex.prognostic.ρᵈ[1])
+        qᵛᵉ = at(ex.prognostic.ρqᵛᵉ[1]) / ρ
+        𝒰   = LiquidIcePotentialTemperatureState(θˡⁱ, MoistureMassFractions(qᵛᵉ), pˢᵗ, p₀)
+        compute_temperature(𝒰, microphysics, constants)
+    end
+
+    # With the pair the child's scheme expects, the handoff closes to solver tolerance.
+    @test recovered(:ρqᵉ) ≈ T₀ atol = 1e-3
+
+    # Vapor-only into an equilibrium slot loses a damped ℒqᶜˡ/cᵖ, ≈ 0.5 K here.
+    @test T₀ - recovered(:ρqᵛ) > 0.4
+    @test T₀ - recovered(:ρqᵛ) < 0.7
+end
+
 @testset "Breeze AtmosphereModel as a NestedSimulation child on $(arch)" for arch in test_architectures
     # Parent: a 3D PrescribedAtmosphere strictly bracketing the child,
     # holding a uniform state. Velocity slots carry momentum (ρu, ρv) per the
@@ -582,7 +671,7 @@ end
     full = ext.state_exchanger(parent_for_exchanger_equivalence(), 1.0e5, constants; condensates,
                                time_indices_in_memory = 7)
     exchange = NumericalEarth.NestedModels.exchange_state!
-    field_names = (:ρᵈ, :ρθ, :ρqᵛ, :ρu, :ρv)
+    field_names = (:ρᵈ, :ρθ, :ρqᵛᵉ, :ρu, :ρv)
     indices = ((1, 1, 1), (2, 2, 2), (8, 8, 4))
 
     for step_end_time in (0.5, 1.1, 2.1, 3.1, 4.1, 5.1)

@@ -3,7 +3,7 @@
 #####
 #
 # The child (Breeze `CompressibleDynamics`) prognostic variables — dry density `ρᵈ`, momentum densities
-# `ρu`/`ρv`, potential-temperature density `ρθ`, and vapor density `ρqᵛ` — are computed from the raw
+# `ρu`/`ρv`, potential-temperature density `ρθ`, and moisture density `ρqᵛᵉ` — are computed from the raw
 # parent (ERA5) specific state *on the parent grid* and stored as a `FieldTimeSeries` holding the
 # resident time window that brackets the child's clock (memory-O(1) in time for streaming parents, full
 # memory when the parent is full-memory). A downstream child boundary condition / forcing then
@@ -17,7 +17,10 @@
 #   qᵗ  = qᵛ + qˡ + qⁱ,   qˡ = qᶜˡ + qʳ (all liquid), qⁱ = qᶜⁱ + qˢ (all ice)
 #   ρᵈ  = ρ (1 − qᵗ)                                    ← the prognostic (dry) density
 #   ρθ  = ρᵈ · θˡⁱ,   ρu = ρᵈ · u,   ρv = ρᵈ · v         ← DRY-weighted (energy + momentum)
-#   ρqᵛ = ρ · qᵛ                                         ← TOTAL-weighted (moisture mass density)
+#   ρqᵛᵉ = ρ · qᵛᵉ                                      ← TOTAL-weighted (moisture mass density)
+#
+# `qᵛᵉ` is the scheme-dependent moisture the child binds under `moisture_prognostic_name`: true vapor
+# for `:ρqᵛ`, vapor + cloud condensate for `:ρqᵉ` (saturation adjustment).
 
 using Oceananigans.Fields: Center, ZeroField, AbstractField
 using Oceananigans.BoundaryConditions: fill_halo_regions!
@@ -64,16 +67,18 @@ end
 const PrognosticStateFTS = FieldTimeSeries{<:Any, <:Any, <:Any, <:Any, <:PrognosticStateBackend}
 update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
 
-@kernel function _compute_child_prognostics!(ρᵈ, ρu, ρv, ρθ, ρqᵛ, θ, u, v,
+@kernel function _compute_child_prognostics!(ρᵈ, ρu, ρv, ρθ, ρqᵛᵉ, θ, u, v,
                                              T, qᵛ, qᶜˡ, qʳ, qᶜⁱ, qˢ, p, uₚ, vₚ,
-                                             pˢᵗ, constants)
+                                             pˢᵗ, constants, equilibrium_moisture)
     i, j, k = @index(Global, NTuple)
     @inbounds begin
-        Tᵢ  = T[i, j, k]
-        qᵛᵢ = qᵛ[i, j, k]
-        qˡ  = qᶜˡ[i, j, k] + qʳ[i, j, k]
-        qⁱ  = qᶜⁱ[i, j, k] + qˢ[i, j, k]
-        pᵢ  = p[i, j, k]
+        Tᵢ   = T[i, j, k]
+        qᵛᵢ  = qᵛ[i, j, k]
+        qᶜˡᵢ = qᶜˡ[i, j, k]
+        qᶜⁱᵢ = qᶜⁱ[i, j, k]
+        qˡ   = qᶜˡᵢ + qʳ[i, j, k]
+        qⁱ   = qᶜⁱᵢ + qˢ[i, j, k]
+        pᵢ   = p[i, j, k]
 
         Rᵈ = dry_air_gas_constant(constants)
         Rᵛ = vapor_gas_constant(constants)
@@ -82,11 +87,14 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
         qᵗ = qᵛᵢ + qˡ + qⁱ
         θᵢ = liquid_ice_potential_temperature(Tᵢ, qᵛᵢ, qˡ, qⁱ, pᵢ, pˢᵗ, constants)
 
-        ρᵈ[i, j, k]  = ρ * (1 - qᵗ)
-        ρθ[i, j, k]  = ρᵈ[i, j, k] * θᵢ
-        ρu[i, j, k]  = ρᵈ[i, j, k] * uₚ[i, j, k]
-        ρv[i, j, k]  = ρᵈ[i, j, k] * vₚ[i, j, k]
-        ρqᵛ[i, j, k] = ρ * qᵛᵢ
+        # `qᵉ = qᵗ − qʳ − qˢ`: precipitation is excluded from both conventions.
+        qᵛᵉ = ifelse(equilibrium_moisture, qᵛᵢ + qᶜˡᵢ + qᶜⁱᵢ, qᵛᵢ)
+
+        ρᵈ[i, j, k]   = ρ * (1 - qᵗ)
+        ρθ[i, j, k]   = ρᵈ[i, j, k] * θᵢ
+        ρu[i, j, k]   = ρᵈ[i, j, k] * uₚ[i, j, k]
+        ρv[i, j, k]   = ρᵈ[i, j, k] * vₚ[i, j, k]
+        ρqᵛᵉ[i, j, k] = ρ * qᵛᵉ
 
         # When performing Davies `Relaxation` to a `PrescribedAtmosphere` parent, we construct
         # `SpecificForcing`s with these intensive quantities
@@ -127,24 +135,26 @@ function child_prognostic_field_time_series(parent_atmosphere; time_indices_in_m
     build() = FieldTimeSeries{Center, Center, Center}(grid, times;
                                                       backend = PrognosticStateBackend(1, window),
                                                       time_indexing = Cyclical())
-    return (ρᵈ = build(), ρu = build(), ρv = build(), ρθ = build(), ρqᵛ = build(), θ = build(), u = build(), v = build())
+    return (ρᵈ = build(), ρu = build(), ρv = build(), ρθ = build(), ρqᵛᵉ = build(), θ = build(), u = build(), v = build())
 end
 
 # Fill the derived FTS's resident window with one fused
 # `launch!` per level, reading the parent at the matching resident time index.
-function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, constants, condensates)
+function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, constants, condensates, moisture_name)
     grid = parent_atmosphere.temperature.grid
     arch = architecture(grid)
 
+    equilibrium_moisture = moisture_name === :ρqᵉ   # host-side, so the kernel takes an isbits `Bool`
+
     for n in time_indices(prognostic.ρᵈ)
         launch!(arch, grid, :xyz, _compute_child_prognostics!,
-                prognostic.ρᵈ[n], prognostic.ρu[n], prognostic.ρv[n], prognostic.ρθ[n], prognostic.ρqᵛ[n], prognostic.θ[n], prognostic.u[n], prognostic.v[n],
+                prognostic.ρᵈ[n], prognostic.ρu[n], prognostic.ρv[n], prognostic.ρθ[n], prognostic.ρqᵛᵉ[n], prognostic.θ[n], prognostic.u[n], prognostic.v[n],
                 parent_atmosphere.temperature[n], parent_atmosphere.specific_humidity[n],
                 source_snapshot(condensates.qᶜˡ, n), source_snapshot(condensates.qʳ, n),
                 source_snapshot(condensates.qᶜⁱ, n), source_snapshot(condensates.qˢ, n),
                 source_snapshot(parent_atmosphere.pressure, n),   # static Field (ERA5) or FTS: both handled
                 parent_atmosphere.velocities.u[n], parent_atmosphere.velocities.v[n],
-                pˢᵗ, constants)
+                pˢᵗ, constants, equilibrium_moisture)
     end
 
     for fts in prognostic
@@ -164,18 +174,20 @@ end
 # window forward and recomputes it. The name is direction-neutral for eventual two-way nesting.
 
 struct StateExchanger{P, Pr, C, S, Q}
-    parent       :: P    # the parent PrescribedAtmosphere (raw ERA5 state)
-    prognostic   :: Pr   # NamedTuple of derived child-prognostic FTS on the parent grid
-    constants    :: C
-    pˢᵗ          :: S
-    condensates  :: Q    # NamedTuple (qᶜˡ, qʳ, qᶜⁱ, qˢ); entries may be `nothing` (⇒ `ZeroField`)
+    parent        :: P    # the parent PrescribedAtmosphere (raw ERA5 state)
+    prognostic    :: Pr   # NamedTuple of derived child-prognostic FTS on the parent grid
+    constants     :: C
+    pˢᵗ           :: S
+    condensates   :: Q    # NamedTuple (qᶜˡ, qʳ, qᶜⁱ, qˢ); entries may be `nothing` (⇒ `ZeroField`)
+    moisture_name :: Symbol  # the child's `moisture_prognostic_name`: what `ρqᵛᵉ` must hold
 end
 
 # Diagnostics on the exchanger's density-weighted prognostics at time index `n`, as lazy operations.
 # Momentum/energy are dry-weighted (recover ÷ρᵈ); moisture is a partial density (recover ÷ρ). The
 # total density ρ = ρᵈ + Σρqˣ sums the dry density with every moisture/condensate partial density the
-# exchanger carries — currently just ρqᵛ, so it stays correct when condensate densities are added.
-total_density(ex::StateExchanger, n=1) = ex.prognostic.ρᵈ[n] + ex.prognostic.ρqᵛ[n]
+# exchanger carries — currently just ρqᵛᵉ, so it stays correct when condensate densities are added.
+# It omits the parent's precipitation, which the child has no prognostic to hold.
+total_density(ex::StateExchanger, n=1) = ex.prognostic.ρᵈ[n] + ex.prognostic.ρqᵛᵉ[n]
 
 # Reconstruct the child prognostic state (ρ, θˡⁱ, qᵗ) at `time` from the parent's FULL-memory raw fields
 # via `breeze_prognostic_state`, using the exchanger's stored constants / pˢᵗ / condensate sources. Unlike
@@ -196,14 +208,15 @@ function state_exchanger(parent_atmosphere, pˢᵗ, constants;
                                         qʳ  = parent_atmosphere.microphysical_variables.qʳ,
                                         qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ,
                                         qˢ  = parent_atmosphere.microphysical_variables.qˢ),
-                         time_indices_in_memory = 3)
+                         time_indices_in_memory = 3,
+                         moisture_name = :ρqᵛ)
 
     # Fill any hydrometeor a caller-supplied `condensates` omits with `nothing` (⇒ ZeroField), so the
     # 4-species contract (qᶜˡ, qʳ, qᶜⁱ, qˢ) holds regardless of how many species the source carries.
     condensates = merge((qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing), condensates)
 
     prognostic = child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory)
-    exchanger  = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates)
+    exchanger  = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates, moisture_name)
     exchange_state!(exchanger, first(parent_atmosphere.temperature.times); force=true)   # fill the initial window
     return exchanger
 end
@@ -246,6 +259,6 @@ function exchange_state!(ex::StateExchanger, time; force=false)
     # when the bracket moves; on every intra-interval child step the recompute would reproduce identical
     # values. Skip it unless the bracket moved (or this is the initial fill) to spare the hot path two
     # parent-grid kernels + halo fills per step.
-    (moved || force) && compute_child_prognostics!(p, parent, ex.pˢᵗ, ex.constants, ex.condensates)
+    (moved || force) && compute_child_prognostics!(p, parent, ex.pˢᵗ, ex.constants, ex.condensates, ex.moisture_name)
     return nothing
 end
