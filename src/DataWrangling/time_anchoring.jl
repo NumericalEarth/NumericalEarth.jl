@@ -79,9 +79,9 @@ a leap year becomes 28 February.
 """
 function substitute_year(date, target_year)
     month(date) == 2 && day(date) == 29 && !isleapyear(target_year) &&
-        return DateTime(target_year, 2, 28, hour(date), minute(date), second(date))
+        return DateTime(target_year, 2, 28, hour(date), minute(date), second(date), Dates.millisecond(date))
 
-    return DateTime(target_year, month(date), day(date), hour(date), minute(date), second(date))
+    return DateTime(target_year, month(date), day(date), hour(date), minute(date), second(date), Dates.millisecond(date))
 end
 
 """
