@@ -134,6 +134,9 @@ end
 # cannot.
 @inline full_snapshot(fts::FieldTimeSeries, time) = fts[Time(time)]
 @inline full_snapshot(field::AbstractField, time) = field
+# A bare `0`, not a `ZeroField`: these compose into AbstractOperations, whose `validate_grid` needs a
+# grid that a gridless `ZeroField` cannot supply. The kernel-side `source_snapshot` only ever indexes,
+# so it can return one.
 @inline full_snapshot(::Nothing, time) = 0
 
 # Allocate the child-prognostic `FieldTimeSeries` NamedTuple on the *parent* grid: Center-located, over

@@ -26,7 +26,12 @@ using Breeze.Thermodynamics: MoistureMassFractions, LiquidIcePotentialTemperatur
 @inline air_density(T, qᵛ, qˡ, qⁱ, p, Rᵈ, Rᵛ) = p / (((1 - qᵛ - qˡ - qⁱ) * Rᵈ + qᵛ * Rᵛ) * T)
 
 # `with_temperature` is the exact inverse of the `temperature` the child reconstructs with, so θˡⁱ is
-# taken from it rather than restated here. `qᵛ` enters through `Rᵐ` and `cᵖᵐ`; `pˢᵗ` is the caller's
+# taken from it rather than restated here.
+#
+# `qᵛ` has no latent-heat term of its own, but it sets the answer twice. It fixes the mixture gas constant
+# `Rᵐ = qᵈRᵈ + qᵛRᵛ` and the mixture heat capacity `cᵖᵐ = qᵈcᵖᵈ + qᵛcᵖᵛ + qˡcˡ + qⁱcⁱ` (both through
+# `qᵈ = 1 − qᵛ − qˡ − qⁱ` as well), whose ratio is the Exner exponent in `Π = (p/pˢᵗ)^(Rᵐ/cᵖᵐ)`; and `cᵖᵐ`
+# divides the latent term again in `θˡⁱ = (T − (ℒˡqˡ + ℒⁱqⁱ)/cᵖᵐ)/Π`. `pˢᵗ` is the caller's
 # `standard_pressure`, never hardcoded.
 @inline function liquid_ice_potential_temperature(T, qᵛ, qˡ, qⁱ, p, pˢᵗ, constants)
     FT = typeof(T)
@@ -35,15 +40,15 @@ using Breeze.Thermodynamics: MoistureMassFractions, LiquidIcePotentialTemperatur
     return with_temperature(𝒰, T, constants).potential_temperature
 end
 
-# An absent species arrives as the scalar `0` (`full_snapshot(::Nothing, t)`), not as a field.
-@inline node_value(q, i, j, k) = @inbounds q[i, j, k]
-@inline node_value(q::Number, i, j, k) = q
+# An absent species arrives as the scalar `0` from `full_snapshot(::Nothing, t)`, so accept a number
+# alongside anything indexable. The arithmetic maps get this from broadcasting.
+@inline value_at(q, i, j, k) = @inbounds q[i, j, k]
+@inline value_at(q::Number, i, j, k) = q
 
-@inline function liquid_ice_potential_temperature_node(i, j, k, grid, T, qᵛ, qˡ, qⁱ, p, pˢᵗ, constants)
-    return liquid_ice_potential_temperature(node_value(T, i, j, k), node_value(qᵛ, i, j, k),
-                                            node_value(qˡ, i, j, k), node_value(qⁱ, i, j, k),
-                                            node_value(p, i, j, k), pˢᵗ, constants)
-end
+# `KernelFunctionOperation` form of the same map.
+@inline liquid_ice_potential_temperature(i, j, k, grid, T, qᵛ, qˡ, qⁱ, p, pˢᵗ, constants) =
+    liquid_ice_potential_temperature(value_at(T, i, j, k), value_at(qᵛ, i, j, k), value_at(qˡ, i, j, k),
+                                     value_at(qⁱ, i, j, k), value_at(p, i, j, k), pˢᵗ, constants)
 
 @inline total_water_specific_humidity(qᵛ, qˡ, qⁱ) = qᵛ + qˡ + qⁱ
 
@@ -81,7 +86,7 @@ function NumericalEarth.Atmospheres.breeze_prognostic_state(constants::Thermodyn
     qᵗ  = Field(total_water_specific_humidity(qᵛ, qˡ, qⁱ))
 
     LX, LY, LZ = location(T)
-    θˡⁱ = Field(KernelFunctionOperation{LX, LY, LZ}(liquid_ice_potential_temperature_node, T.grid,
+    θˡⁱ = Field(KernelFunctionOperation{LX, LY, LZ}(liquid_ice_potential_temperature, T.grid,
                                                     T, qᵛ, qˡ, qⁱ, p, pˢᵗ, constants))
 
     compute!(ρ)
