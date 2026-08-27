@@ -3,7 +3,7 @@ const SpeedyEarthSystemModel = NumericalEarth.EarthSystemModel{<:Any, <:SpeedySi
 const SpeedyNoSeaIceEarthSystemModel = NumericalEarth.EarthSystemModel{<:Union{Nothing, NumericalEarth.SeaIces.FreezingLimitedOceanTemperature}, <:SpeedySimulation}
 
 # SpeedyWeather models contain no FieldTimeSeries objects.
-extract_field_time_series(::SpeedyWeather.PrimitiveWetModel) = ()
+Oceananigans.OutputReaders.extract_field_time_series(::SpeedyWeather.PrimitiveWetModel) = ()
 
 Base.summary(::SpeedySimulation) = "SpeedyWeather.Simulation"
 
