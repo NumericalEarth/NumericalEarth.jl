@@ -23,8 +23,8 @@ window_indices(::Colon, coordinates) = eachindex(coordinates)
 
 Return `(data, λ, φ)` for one horizontal window of `metadata`'s file: the data, always
 three-dimensional and ascending in latitude and height, together with the cell centers the window
-spans. `Colon` indices span the file. Serves the hyperslab of a plain lon/lat NetCDF, north-first
-files included; datasets stored otherwise extend this.
+spans. Indices are ranges, or `Colon` to span the whole file axis. Serves the hyperslab of a plain
+lon/lat NetCDF, north-first files included; datasets stored otherwise extend this.
 """
 function retrieve_window(metadata::Metadatum, longitude_indices, latitude_indices)
     path = metadata_path(metadata)
