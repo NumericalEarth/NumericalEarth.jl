@@ -86,6 +86,7 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``\mathrm{ac}`` | `ᵃᶜ` | canopy air | ``T^{\mathrm{ac}}`` (canopy-air temperature) |
 | ``\mathrm{lb}`` | `ˡᵇ` | leaf boundary layer | ``g^{\mathrm{lb}}`` (leaf boundary-layer conductance) |
 | ``\mathrm{wet}`` | `ʷᵉᵗ` | wet (intercepted) canopy water | ``E^{\mathrm{wet}}`` (wet-canopy evaporation) |
+| ``\mathrm{eff}`` | `ᵉᶠᶠ` | effective (radiating) | ``T^{\mathrm{eff}}`` (effective radiating temperature) |
 | ``\mathrm{ao}`` | `ᵃᵒ` | atmosphere–ocean interface | ``\mathcal{Q}^{\mathrm{ao}}`` (atm–ocean heat flux) |
 | ``\mathrm{ai}`` | `ᵃⁱ` | atmosphere–ice interface | ``\mathcal{Q}^{\mathrm{ai}}`` (atm–ice heat flux) |
 | ``\mathrm{io}`` | `ⁱᵒ` | ice–ocean interface | ``\mathcal{Q}^{\mathrm{io}}`` (ice–ocean heat flux) |
@@ -205,6 +206,7 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyAirSpace`](@r
 | ``\Omega`` | `clumping` | clumping index | Foliage clumping in the Beer-Lambert transmittance ``e^{-K \Omega L}`` (–) |
 | ``T^{\mathrm{leaf}}`` | – | leaf temperature | Diagnostic temperature of the massless leaf, ``R_n^{\mathrm{leaf}} = H^{\mathrm{leaf}} + LE^{\mathrm{leaf}}`` (K) |
 | ``T^{\mathrm{ac}}``, ``q^{\mathrm{ac}}`` | – | canopy-air node | Temperature (K) and specific humidity (kg kg⁻¹) of the canopy air the atmosphere exchanges with |
+| ``T^{\mathrm{eff}}`` | `effective_temperature` | effective radiating temperature | Satellite-comparable land-surface temperature of a two-source cell, defined by ``\sigma (T^{\mathrm{eff}})^4 = \mathscr{I}``ꜛ``{}^{\mathrm{lw}}`` (K) |
 | ``\mathcal{Q}^{g}`` | `ground_heat_flux` | ground heat flux | Skin→bulk conduction ``\mathcal{Q}^{g} = \Lambda^{g}(T^{g} - T^{\mathrm{la}})``, positive down (W m⁻²) |
 | ``H^{\mathrm{leaf}}``, ``H^{g}`` | – | per-source sensible heat | Leaf and ground sensible heat into the canopy air, positive up (W m⁻²) |
 | ``LE^{\mathrm{leaf}}``, ``LE^{g}`` | – | per-source latent heat | Leaf and ground latent heat into the canopy air, positive up (W m⁻²) |
