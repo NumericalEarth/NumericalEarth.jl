@@ -333,4 +333,87 @@ function cog_window_to_netcdf(sources, nc_path, variable_name, bbox, factor = 1)
     return nothing
 end
 
+#####
+##### Windowing and decoding, independent of the GDAL reader
+#####
+
+# The windowing math and the north→south row reversal below assume a north-up,
+# axis-aligned geographic (EPSG:4326, degrees) grid.
+function validate_geographic_northup(geotransform)
+    _, dx, rx, _, ry, dy = geotransform
+    (rx == 0 && ry == 0) ||
+        error("Windowed COG reader requires an axis-aligned grid (no rotation/shear); " *
+              "got geotransform $geotransform.")
+    (dx > 0 && dy < 0) ||
+        error("Windowed COG reader assumes west→east (Δλ > 0) and north→south (Δφ < 0) " *
+              "pixel order; got Δλ = $dx, Δφ = $dy.")
+    return nothing
+end
+
+# The windowing is done in degrees, so a projected grid would silently land the
+# window in the wrong place. `epsg` is `nothing` when the source declares no CRS,
+# or a WKT without an EPSG authority tag; then the geometry checks are all we have.
+function validate_epsg4326(epsg)
+    isnothing(epsg) || epsg == 4326 ||
+        error("Windowed COG reader expects EPSG:4326 lon/lat in degrees; " *
+              "the source declares EPSG:$epsg.")
+    return nothing
+end
+
+"""
+    cog_window(geotransform, raster_size, bbox, factor = 1)
+
+Pixel window and output lattice for reading `bbox` from a north-up EPSG:4326 raster of
+`raster_size` pixels at `factor` native pixels per output cell side, returned as
+`(; xoff, yoff, xsize, ysize, nx, ny, factor, longitude, latitude)`.
+
+The window is snapped outward to whole `factor`-pixel blocks of the raster's own lattice and
+padded by one block on each side, so every output cell is an exact block of native pixels.
+
+`longitude` and `latitude` are output cell centers, ascending; GDAL returns rows north-first, so
+the data still has to be reversed to match `latitude`.
+"""
+function cog_window(geotransform, raster_size, bbox, factor = 1)
+    x0, dx, _, y0, _, dy = geotransform
+    width, height = raster_size
+
+    W, E = bbox.longitude
+    S, N = bbox.latitude
+
+    xoff, xsize = block_aligned_range(W, E, x0, dx, width, factor)
+    yoff, ysize = block_aligned_range(N, S, y0, dy, height, factor)  # Δφ < 0: north comes first
+    nx, ny = xsize ÷ factor, ysize ÷ factor
+
+    # The origin is the outer face of pixel 0, so output cell i starts at pixel
+    # xoff + (i - 1) * factor and its center sits half a block further in.
+    longitude = [x0 + (xoff + (i - 0.5) * factor) * dx for i in 1:nx]
+    latitude  = reverse([y0 + (yoff + (j - 0.5) * factor) * dy for j in 1:ny])
+
+    return (; xoff, yoff, xsize, ysize, nx, ny, factor, longitude, latitude)
+end
+
+# Pixel range `[offset, offset + size)` spanning `first_coordinate` through `last_coordinate`
+# along an axis of `n` pixels, padded by one `factor`-pixel block on each side and trimmed to
+# whole blocks. The trim drops the `n % factor` pixels at the far edge that cannot fill a block.
+function block_aligned_range(first_coordinate, last_coordinate, origin, spacing, n, factor)
+    first_pixel = factor * (fld(floor(Int, (first_coordinate - origin) / spacing), factor) - 1)
+    last_pixel  = factor * (cld(ceil( Int, (last_coordinate  - origin) / spacing), factor) + 1)
+    last_face   = factor * fld(n, factor)
+    first_pixel = clamp(first_pixel, 0, last_face - factor)
+    last_pixel  = clamp(last_pixel, first_pixel + factor, last_face)
+    return first_pixel, last_pixel - first_pixel
+end
+
+# Decode raw COG integers to Float32 physical values. Order matters: mask nodata
+# to NaN first, then apply the band scale/offset (a scaled fill is a spurious value).
+function decode_cog_window(raw, scale, offset, nodata)
+    decoded = Array{Float32}(undef, size(raw))
+    @inbounds for idx in eachindex(raw)
+        value = Float64(raw[idx])
+        is_nodata = !isnothing(nodata) && isequal(value, nodata)
+        decoded[idx] = is_nodata ? NaN32 : Float32(value * scale + offset)
+    end
+    return decoded
+end
+
 end # module OpenLandMap

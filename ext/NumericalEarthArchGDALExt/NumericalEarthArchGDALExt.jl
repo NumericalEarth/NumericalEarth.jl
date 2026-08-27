@@ -33,8 +33,11 @@ using NumericalEarth.DataWrangling.GHSL: GHSBuiltS, GHSLMetadatum, native_resolu
                                          ghsl_tile_url, ghsl_tile_tif_name, ghsl_tiles_in_bbox,
                                          ghsl_regional_raster, built_surface_to_fraction,
                                          mask_building_height
+                                         built_surface_to_fraction, mask_building_height
 using NumericalEarth.DataWrangling.MODISLand: MODISLand, granule_urls, regional_lattice,
                                               stored_granule_layers
+using NumericalEarth.DataWrangling.OpenLandMap: cog_window, decode_cog_window,
+                                                validate_epsg4326, validate_geographic_northup
 using NumericalEarth.DataWrangling.WorldCover: ESAWorldCoverMetadatum, version_year, version_string,
                                                worldcover_window, aggregate_landcover,
                                                class_fraction_variable_name,

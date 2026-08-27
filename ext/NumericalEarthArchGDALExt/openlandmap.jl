@@ -7,7 +7,8 @@ function NumericalEarth.DataWrangling.OpenLandMap.read_cog_window(source, bbox::
 
     return ArchGDAL.read(source) do ds
         geotransform = ArchGDAL.getgeotransform(ds)  # [x₀, Δλ, 0, y₀, 0, Δφ]
-        validate_geographic_northup(ds, geotransform)
+        validate_geographic_northup(geotransform)
+        validate_epsg4326(source_epsg(ds))
         window = cog_window(geotransform, (ArchGDAL.width(ds), ArchGDAL.height(ds)), bbox, factor)
 
         band   = ArchGDAL.getband(ds, 1)
