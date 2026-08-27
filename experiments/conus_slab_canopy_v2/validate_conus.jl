@@ -85,7 +85,7 @@ excess = [quantile(vec((field(Tᵛ, n) .- field(Tᵃᶜ, n))[land_cells]), 0.999
 acc(fts; sgn = 1) = sum(sgn * lmean(fts, n) * Δts[n - 1] for n in 2:Nt)
 rain = acc(Jʳⁿ); evap = acc(E); wet_canopy = acc(Eʷ); runoff = acc(R); drainage = acc(D; sgn = -1)
 storage = (lmean(W, Nt) - lmean(W, 1)) + (lmean(Wᶜ, Nt) - lmean(Wᶜ, 1)) + (lmean(Wᵖ, Nt) - lmean(Wᵖ, 1))
-println("\n== land water budget over 96 h (land-mean, kg/m²):")
+println("\n== land water budget over the run (land-mean, kg/m²):")
 @printf("  rain in %.2f | evap %.2f + wet-canopy %.2f + runoff %.2f + drainage %.2f | Δstorage %.2f\n", rain, evap, wet_canopy, runoff, drainage, storage)
 residual = rain - (evap + wet_canopy + runoff + drainage) - storage
 @printf("  residual (rain − losses − Δstorage): %.3f kg/m² (%.1f%% of rain)\n", residual, 100 * abs(residual) / max(rain, 1e-9))
