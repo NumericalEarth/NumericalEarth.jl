@@ -5,8 +5,10 @@ using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, z
                                     dataset_variable_name, validate_dataset_coverage,
                                     metadata_filename, conversion_units, convert_units,
                                     default_inpainting, is_three_dimensional,
+                                    coarsest_resolving_dataset,
+                                    target_matched_metadata,
                                     WeightPercent, GramPerCubicCentimeter
-using NumericalEarth.DataWrangling.OpenLandMap: cog_window_to_netcdf
+using NumericalEarth.DataWrangling.OpenLandMap: cog_window_to_netcdf, aggregation_factor
 
 using ArchGDAL
 using NCDatasets: NCDataset
@@ -68,10 +70,13 @@ end
 end
 
 # Build a small GeoTIFF with a known CRS/scale/offset/nodata; row 0 is north.
+# `overviews` builds an average-resampled pyramid at the given decimation levels, the way the
+# published cloud-optimized GeoTIFFs ship.
 function write_synthetic_tile(path; nx, ny, x0, y0, dx, dy, scale, offset, nodata, raw,
-                              epsg = 4326, dtype = UInt8)
+                              epsg = 4326, dtype = UInt8, overviews = Cint[])
     ArchGDAL.create(path; driver = ArchGDAL.getdriver("GTiff"),
-                    width = nx, height = ny, nbands = 1, dtype) do ds
+                    width = nx, height = ny, nbands = 1, dtype,
+                    options = ["TILED=YES", "BLOCKXSIZE=16", "BLOCKYSIZE=16"]) do ds
         ArchGDAL.setgeotransform!(ds, [x0, dx, 0.0, y0, 0.0, dy])
         ArchGDAL.setproj!(ds, ArchGDAL.toWKT(ArchGDAL.importEPSG(epsg)))
         band = ArchGDAL.getband(ds, 1)
@@ -80,8 +85,21 @@ function write_synthetic_tile(path; nx, ny, x0, y0, dx, dy, scale, offset, nodat
         ArchGDAL.GDAL.gdalsetrasteroffset(band.ptr, Float64(offset))
         ArchGDAL.write!(band, raw)
     end
+
+    if !isempty(overviews)
+        ArchGDAL.read(path, flags = ArchGDAL.OF_UPDATE) do ds
+            ArchGDAL.GDAL.gdalbuildoverviews(ds.ptr, "AVERAGE", length(overviews), overviews,
+                                             0, C_NULL, C_NULL, C_NULL)
+        end
+    end
+
     return path
 end
+
+# Mean of every `factor × factor` block of `raw`, the value a decimated read returns.
+block_means(raw, factor) =
+    [sum(Float64.(raw[factor*(i-1)+1 : factor*i, factor*(j-1)+1 : factor*j])) / factor^2
+     for i in 1:size(raw, 1) ÷ factor, j in 1:size(raw, 2) ÷ factor]
 
 @testset "OpenLandMapSoilDB windowed COG reader (synthetic tile)" begin
     dir = mktempdir()
@@ -207,5 +225,155 @@ end
         @test isequal(Array(data), whole[longitude_indices, latitude_indices, :])
         @test Array(window_longitude) ≈ λ[longitude_indices]
         @test Array(window_latitude) ≈ φ[latitude_indices]
+    end
+end
+
+@testset "OpenLandMapSoilDB read lattice at an aggregation factor" begin
+    native = OpenLandMapSoilDB()
+    coarse = OpenLandMapSoilDB(aggregation_factor = 8)
+
+    # Read cells are whole blocks of native pixels: 1440004 and 528004 leave a remainder of 4,
+    # dropped at the far edge from the file origin (east in longitude, south in latitude).
+    @test size(native, :clay_fraction) == (1440004, 528004, 3)
+    @test size(coarse, :clay_fraction) == (180000, 66000, 3)
+
+    @test longitude_interfaces(coarse)[1] == longitude_interfaces(native)[1]
+    @test latitude_interfaces(coarse)[2]  == latitude_interfaces(native)[2]
+
+    # The coarse lattice is exactly eight native steps.
+    Nx, Ny, _ = size(coarse, :clay_fraction)
+    @test (longitude_interfaces(coarse)[2] - longitude_interfaces(coarse)[1]) / Nx ≈ 8 * 0.00025
+    @test (latitude_interfaces(coarse)[2] - latitude_interfaces(coarse)[1]) / Ny ≈ 8 * 0.00025
+end
+
+@testset "OpenLandMapSoilDB matches the read resolution to the target grid" begin
+    z = [-1.0, -0.6, -0.3, 0.0]
+
+    unpinned = OpenLandMapSoilDB(aggregation_factor = nothing)
+
+    # A 0.08° target needs nothing finer than half a cell — 160 native pixels — so the read
+    # drops to the largest power of two below that, 128.
+    coarse_grid = LatitudeLongitudeGrid(CPU(); size = (10, 10, 3),
+                                        longitude = (-112.4, -111.6), latitude = (36.0, 36.8), z)
+    @test aggregation_factor(coarsest_resolving_dataset(unpinned, coarse_grid)) == 128
+
+    # The default reads at full resolution; sizing to the target is opt-in.
+    @test aggregation_factor(coarsest_resolving_dataset(OpenLandMapSoilDB(), coarse_grid)) == 1
+
+    # A target finer than twice the native step reads at full resolution.
+    fine_grid = LatitudeLongitudeGrid(CPU(); size = (10, 10, 3),
+                                      longitude = (-112.002, -111.998), latitude = (36.0, 36.004), z)
+    @test aggregation_factor(coarsest_resolving_dataset(unpinned, fine_grid)) == 1
+
+    # An explicit factor pins the read lattice and the target does not override it.
+    pinned = OpenLandMapSoilDB(aggregation_factor = 4)
+    @test aggregation_factor(coarsest_resolving_dataset(pinned, coarse_grid)) == 4
+
+    # The factor keys the cache: a coarse read never shares a file with a finer one, and a
+    # full-resolution read keeps the name it has always had.
+    region = BoundingBox(longitude = (-112.3, -111.9), latitude = (36.0, 36.4))
+    filename(dataset) = metadata_filename(dataset, :clay_fraction, nothing, region)
+    @test filename(OpenLandMapSoilDB()) == filename(OpenLandMapSoilDB(aggregation_factor = 1))
+    @test filename(OpenLandMapSoilDB(aggregation_factor = 128)) ==
+          "OpenLandMap_clay_fraction_f128_lon_-112.3_-111.9_lat_36.0_36.4.nc"
+
+    # The metadatum a target rebuilds carries the matched dataset and its own cache file.
+    metadatum = Metadatum(:clay_fraction; dataset = unpinned, region)
+    matched = target_matched_metadata(metadatum, coarse_grid)
+    @test aggregation_factor(matched.dataset) == 128
+    @test matched.filename == filename(OpenLandMapSoilDB(aggregation_factor = 128))
+    @test matched.name == metadatum.name && matched.region === metadatum.region
+
+    # A filename the user pinned survives the rebuild.
+    pinned_name = Metadatum(:clay_fraction; dataset = unpinned, region, filename = "mine.nc")
+    @test target_matched_metadata(pinned_name, coarse_grid).filename == "mine.nc"
+end
+
+@testset "OpenLandMapSoilDB windowed COG reader at an aggregation factor" begin
+    dir = mktempdir()
+    nx, ny = 64, 64
+    x0, y0, dx, dy = -112.0005, 36.0005, 0.00025, -0.00025
+    scale, offset, nodata = 1.0, 0.0, -1.0
+
+    raw = Float32[(i % 13) + 2 * (j % 7) for i in 1:nx, j in 1:ny]
+    raw[1:4, 1:4] .= nodata   # one whole read cell of no-data at the north-west corner
+
+    factor = 4
+    bbox = BoundingBox(longitude = (x0, x0 + nx * dx), latitude = (y0 + ny * dy, y0))
+    expected = reverse(block_means(raw, factor), dims = 2)  # file rows are north-first
+
+    # With and without a pyramid: GDAL serves the read from the overviews when they exist and
+    # decimates the full-resolution pixels when they do not, and both are block means.
+    for (label, overviews) in ("with overviews" => Cint[2, 4], "without overviews" => Cint[])
+        @testset "$label" begin
+            tif = write_synthetic_tile(joinpath(dir, "tile_$(length(overviews)).tif");
+                                       nx, ny, x0, y0, dx, dy, scale, offset, nodata, raw,
+                                       dtype = Float32, overviews)
+
+            nc = joinpath(dir, "window_$(length(overviews)).nc")
+            cog_window_to_netcdf([tif], nc, "clay", bbox, factor)
+
+            NCDataset(nc) do ds
+                lon = ds["lon"][:]
+                lat = ds["lat"][:]
+                data = ds["clay"][:, :, 1]
+
+                @test size(data) == (nx ÷ factor, ny ÷ factor)
+
+                # Coordinates are the centers of the coarsened cells, ascending in both axes.
+                @test lon[1] ≈ x0 + factor * dx / 2
+                @test lat[end] ≈ y0 + factor * dy / 2
+                @test lon[2] - lon[1] ≈ factor * dx
+                @test issorted(lon) && issorted(lat)
+
+                # A cell entirely of no-data stays masked; the rest are means of their blocks.
+                @test isnan(data[1, end])
+                valid = .!isnan.(data)
+                @test count(valid) == length(data) - 1
+                @test data[valid] ≈ expected[valid]
+            end
+        end
+    end
+end
+
+@testset "OpenLandMapSoilDB regrids a target-matched read onto the target grid" begin
+    dir = mktempdir()
+
+    # A tile on the dataset's own global lattice, so its read blocks coincide with the cells of
+    # the coarsened native grid. Values ramp linearly with the pixel indices, a field that
+    # survives both block-averaging and bilinear interpolation exactly.
+    nx, ny = 512, 512
+    x0, y0, dx, dy = -112.0005, 36.0005, 0.00025, -0.00025
+    raw = Float32[(i - 0.5) + (j - 0.5) for i in 1:nx, j in 1:ny]
+    tif = write_synthetic_tile(joinpath(dir, "ramp.tif");
+                               nx, ny, x0, y0, dx, dy, scale = 1.0, offset = 0.0,
+                               nodata = -1.0, raw, dtype = Float32, overviews = Cint[2, 4, 8, 16])
+
+    # 0.01° cells: half of that is 20 native pixels, so the read is matched at factor 16.
+    grid = LatitudeLongitudeGrid(CPU(); size = (10, 10, 3),
+                                 longitude = (-111.98, -111.88), latitude = (35.89, 35.99),
+                                 z = [-1.0, -0.6, -0.3, 0.0])
+    region = BoundingBox(grid)
+
+    metadatum = Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(aggregation_factor = nothing),
+                          region, dir)
+    matched = target_matched_metadata(metadatum, grid)
+    @test aggregation_factor(matched.dataset) == 16
+
+    # Materialize the window the matched metadatum names, so `Field` reads it instead of
+    # downloading. All three depths carry the same ramp.
+    cog_window_to_netcdf(fill(tif, 3), metadata_path(matched), "clay", region,
+                         aggregation_factor(matched.dataset))
+
+    field = Field(metadatum, grid)
+
+    # `:clay_fraction` is a weight percent, so the stored ramp comes back divided by 100.
+    λ = λnodes(grid, Center())
+    φ = φnodes(grid, Center())
+    expected = [((λ[i] - x0) / dx + (y0 - φ[j]) / abs(dy)) / 100 for i in 1:10, j in 1:10]
+
+    @test !any(isnan, interior(field))
+    for k in 1:3
+        @test interior(field, :, :, k) ≈ expected rtol = 1e-4
     end
 end

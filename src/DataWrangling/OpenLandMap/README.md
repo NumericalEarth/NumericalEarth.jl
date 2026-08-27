@@ -28,6 +28,13 @@ A few things are specific to this dataset:
 4. **Large windows regrid in tiles.** The window is read and interpolated a tile at a time, so
    peak memory follows the tile rather than the window. `tile_bytes` sets the budget per tile.
 
+5. **Reads can be sized to the target grid.** `OpenLandMapSoilDB(aggregation_factor = nothing)`
+   makes `Field(metadatum, grid)` read the coarsest lattice that still oversamples `grid`
+   twofold, served from the GeoTIFFs' average-resampled overview pyramid. The default reads at
+   full resolution, as does `Field(metadatum)`, which has no target;
+   `OpenLandMapSoilDB(aggregation_factor = n)` pins the lattice at `n` native pixels per cell
+   side. Each lattice is cached under its own filename.
+
 ## Usage
 
 ```julia
@@ -39,11 +46,16 @@ region = BoundingBox(longitude = (-112.3, -111.9), latitude = (36.0, 36.4))
 # Native 30 m field: horizontal window × three depth intervals
 clay = Field(Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region))
 
-# Interpolate onto your own grid by materializing on it directly
+# Match the read to a grid rather than the full 30 m window
 grid = LatitudeLongitudeGrid(size = (400, 400, 3),
                              longitude = region.longitude, latitude = region.latitude,
                              z = [-1.0, -0.6, -0.3, 0.0], halo = (3, 3, 3))
-clay_on_grid = Field(Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region), grid)
+matched = OpenLandMapSoilDB(aggregation_factor = nothing)
+clay_on_grid = Field(Metadatum(:clay_fraction; dataset = matched, region), grid)
+
+# Pin the read lattice instead: 8 native pixels per cell side, ~240 m
+coarse = OpenLandMapSoilDB(aggregation_factor = 8)
+clay_240m = Field(Metadatum(:clay_fraction; dataset = coarse, region), grid)
 ```
 
 ## Notes
