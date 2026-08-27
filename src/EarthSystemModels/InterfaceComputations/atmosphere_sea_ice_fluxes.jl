@@ -99,7 +99,7 @@ end
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
     Ψₐ  = local_atmosphere_state(i, j, atmosphere_state, atmosphere_properties)
 
-    interior = (u=uˢⁱ, v=vˢⁱ, T=Tᵒᶜ, S=Sᵒᶜ, hi=hˢⁱ, hs=hˢⁿ, hc=hc)
+    local_interior_state = (u=uˢⁱ, v=vˢⁱ, T=Tᵒᶜ, S=Sᵒᶜ, hi=hˢⁱ, hs=hˢⁿ, hc=hc)
 
     radiation_state = air_sea_ice_interface_radiation_state(radiation_kernel_props,
                                                             radiation_exchanger_state,
@@ -125,7 +125,7 @@ end
         Ψₛ = compute_interface_state(turbulent_flux_formulation,
                                      initial_interface_state,
                                      Ψₐ,
-                                     interior,
+                                     local_interior_state,
                                      radiation_state,
                                      interface_properties,
                                      atmosphere_properties,
@@ -136,5 +136,4 @@ end
     Tᵢ = convert_from_kelvin(sea_ice_properties.temperature_units, Ψₛ.temperature)
 
     store_interface_fluxes!(interface_fluxes, interface_temperature, i, j, Ψₛ, Ψₐ, ℂᵃᵗ, ℒⁱ, Tᵢ, interface_properties)
-    store_interface_scales!(interface_fluxes, i, j, Ψₛ)
 end

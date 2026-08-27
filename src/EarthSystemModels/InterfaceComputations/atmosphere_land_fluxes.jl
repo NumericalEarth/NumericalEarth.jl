@@ -162,7 +162,7 @@ end
     uₛ = zero(FT)
     vₛ = zero(FT)
 
-    interior = (u = uₛ, v = vₛ, T = Tₛ)
+    local_interior_state = (u = uₛ, v = vₛ, T = Tₛ)
     local_land_properties = local_atmosphere_land_surface_properties(land_properties, i, j)
 
     radiation_state = air_land_interface_radiation_state(radiation_kernel_props,
@@ -181,7 +181,7 @@ end
     Ψₛ = compute_interface_state(turbulent_flux_formulation,
                                  initial_interface_state,
                                  Ψₐ,
-                                 interior,
+                                 local_interior_state,
                                  radiation_state,
                                  interface_properties,
                                  atmosphere_properties,
@@ -190,5 +190,4 @@ end
     ℒˡ = AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, Ψₐ.T)
 
     store_interface_fluxes!(interface_fluxes, interface_temperature, i, j, Ψₛ, Ψₐ, ℂᵃᵗ, ℒˡ, Ψₛ.temperature, interface_properties)
-    store_interface_scales!(interface_fluxes, i, j, Ψₛ)
 end

@@ -131,7 +131,6 @@ Oceananigans.Fields.location(::OpenLandMapSoilDBMetadatum) = (Center, Center, Ce
 # Pass an explicit `inpainting = NearestNeighborInpainting(n)` to `Field` to fill them.
 DataWrangling.default_inpainting(::OpenLandMapSoilDBMetadatum) = nothing
 
-
 #####
 ##### Regional-window filename (variable + region)
 #####

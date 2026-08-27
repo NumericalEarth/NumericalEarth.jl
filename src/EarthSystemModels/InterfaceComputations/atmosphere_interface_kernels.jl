@@ -29,9 +29,9 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Write the turbulent fluxes carried by the converged interface state `Ψₛ` into `interface_fluxes` at cell
-`(i, j)`, and the interface temperature `Tₛ` into `interface_temperature`. `ℒ` is the latent heat of the
-phase change at this interface — vaporization over water and land, sublimation over ice.
+Write the turbulent fluxes and characteristic scales carried by the converged interface state `Ψₛ` into
+`interface_fluxes` at cell `(i, j)`, and the interface temperature `Tₛ` into `interface_temperature`. `ℒ` is
+the latent heat of the phase change at this interface — vaporization over water and land, sublimation over ice.
 
 The sign convention is `+` for cooling of the interface and `-` for heating.
 """
@@ -58,22 +58,10 @@ The sign convention is `+` for cooling of the interface and `-` for heating.
         interface_fluxes.x_momentum[i, j, 1]    = + ρᵃᵗ * τˣ
         interface_fluxes.y_momentum[i, j, 1]    = + ρᵃᵗ * τʸ
         interface_temperature[i, j, 1]          = Tₛ
-    end
 
-    return nothing
-end
-
-"""
-$(TYPEDSIGNATURES)
-
-Write the characteristic scales of the converged interface state `Ψₛ` into the diagnostic slots of
-`interface_fluxes`.
-"""
-@inline function store_interface_scales!(interface_fluxes, i, j, Ψₛ)
-    @inbounds begin
-        interface_fluxes.friction_velocity[i, j, 1] = Ψₛ.fluxes.u★
-        interface_fluxes.temperature_scale[i, j, 1] = Ψₛ.fluxes.θ★
-        interface_fluxes.water_vapor_scale[i, j, 1] = Ψₛ.fluxes.q★
+        interface_fluxes.friction_velocity[i, j, 1] = u★
+        interface_fluxes.temperature_scale[i, j, 1] = θ★
+        interface_fluxes.water_vapor_scale[i, j, 1] = q★
     end
 
     return nothing

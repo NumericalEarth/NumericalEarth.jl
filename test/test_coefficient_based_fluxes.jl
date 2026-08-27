@@ -94,40 +94,17 @@ function coefficient_based_fluxes(arch, flux_formulation)
     return coupled_model.interfaces.atmosphere_ocean_interface.fluxes
 end
 
-@testset "CoefficientBasedFluxes with constant coefficients" begin
-    for arch in test_architectures
-        constant_fluxes = CoefficientBasedFluxes(transfer_coefficients = SimilarityScales(2e-3, 2e-3, 2e-3))
-        fluxes = coefficient_based_fluxes(arch, constant_fluxes)
+@testset "CoefficientBasedFluxes" begin
+    poly_drag = PolynomialNeutralDragCoefficient()
 
-        CUDA.@allowscalar begin
-            @test isfinite(fluxes.sensible_heat[1, 1, 1])
-            @test isfinite(fluxes.latent_heat[1, 1, 1])
-            @test isfinite(fluxes.water_vapor[1, 1, 1])
-        end
-    end
-end
+    formulations = ("constant coefficients"            => CoefficientBasedFluxes(transfer_coefficients = SimilarityScales(2e-3, 2e-3, 2e-3)),
+                    "PolynomialNeutralDragCoefficient" => CoefficientBasedFluxes(transfer_coefficients = SimilarityScales(poly_drag, 1e-3, 1e-3)),
+                    "LargeYeagerTransferCoefficients"  => CoefficientBasedFluxes(transfer_coefficients = LargeYeagerTransferCoefficients(),
+                                                                                 solver_stop_criteria = FixedIterations(5)))
 
-@testset "CoefficientBasedFluxes with PolynomialNeutralDragCoefficient" begin
-    for arch in test_architectures
-        poly_drag = PolynomialNeutralDragCoefficient()
-        poly_fluxes = CoefficientBasedFluxes(transfer_coefficients = SimilarityScales(poly_drag, 1e-3, 1e-3))
-        fluxes = coefficient_based_fluxes(arch, poly_fluxes)
-
-        CUDA.@allowscalar begin
-            @test isfinite(fluxes.sensible_heat[1, 1, 1])
-            @test isfinite(fluxes.latent_heat[1, 1, 1])
-            @test isfinite(fluxes.water_vapor[1, 1, 1])
-            @test fluxes.friction_velocity[1, 1, 1] > 0
-        end
-    end
-end
-
-@testset "CoefficientBasedFluxes with LargeYeagerTransferCoefficients" begin
-    for arch in test_architectures
-        ly = LargeYeagerTransferCoefficients()
-        ly_fluxes = CoefficientBasedFluxes(transfer_coefficients = ly,
-                                           solver_stop_criteria = FixedIterations(5))
-        fluxes = coefficient_based_fluxes(arch, ly_fluxes)
+    for arch in test_architectures, (name, flux_formulation) in formulations
+        @info "Testing CoefficientBasedFluxes with $name..."
+        fluxes = coefficient_based_fluxes(arch, flux_formulation)
 
         CUDA.@allowscalar begin
             @test isfinite(fluxes.sensible_heat[1, 1, 1])

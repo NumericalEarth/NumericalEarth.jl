@@ -98,7 +98,6 @@ function DataWrangling.metadata_filename(::AVISOMonthly, name, date, region)
     return string(var, "_AVISOMonthly_", Dates.format(date, "yyyy-mm-dd"), ".nc")
 end
 
-
 const AVISOMetadata{D} = Metadata{<:AVISODataset, D}
 const AVISOMetadatum = Metadatum{<:AVISODataset}
 

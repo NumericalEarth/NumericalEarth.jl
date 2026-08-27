@@ -97,9 +97,9 @@ end
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
     Ψₐ  = local_atmosphere_state(i, j, atmosphere_state, atmosphere_properties)
 
-    interior = assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, interface_properties.temperature_formulation)
-    Tᵒᶜ = interior.T
-    Sᵒᶜ = interior.S
+    local_interior_state = assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, interface_properties.temperature_formulation)
+    Tᵒᶜ = local_interior_state.T
+    Sᵒᶜ = local_interior_state.S
 
     radiation_state = air_sea_interface_radiation_state(radiation_kernel_props,
                                                         radiation_exchanger_state,
@@ -111,7 +111,7 @@ end
     # Estimate interface specific humidity using interior temperature
     q_formulation = interface_properties.specific_humidity_formulation
     qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Ψₐ.p, Tᵒᶜ, Sᵒᶜ)
-    initial_interface_state = AirSeaInterfaceState(u★, u★, u★, interior.u, interior.v, Tᵒᶜ, Sᵒᶜ, qₛ)
+    initial_interface_state = AirSeaInterfaceState(u★, u★, u★, local_interior_state.u, local_interior_state.v, Tᵒᶜ, Sᵒᶜ, qₛ)
 
     # Don't use convergence criteria in an inactive cell
     stop_criteria = turbulent_flux_formulation.solver_stop_criteria
@@ -124,7 +124,7 @@ end
         interface_state = compute_interface_state(turbulent_flux_formulation,
                                                   initial_interface_state,
                                                   Ψₐ,
-                                                  interior,
+                                                  local_interior_state,
                                                   radiation_state,
                                                   interface_properties,
                                                   atmosphere_properties,
@@ -137,5 +137,4 @@ end
     Tₛ = convert_from_kelvin(ocean_properties.temperature_units, Ψₛ.temperature)
 
     store_interface_fluxes!(interface_fluxes, interface_temperature, i, j, Ψₛ, Ψₐ, ℂᵃᵗ, ℒˡ, Tₛ, interface_properties)
-    store_interface_scales!(interface_fluxes, i, j, Ψₛ)
 end

@@ -58,7 +58,6 @@ DataWrangling.default_mask_value(::ECCO2DarwinMonthly) = 0
 
 DataWrangling.dataset_variable_name(data::ECCODarwinMetadata) = ECCO_darwin_dataset_variable_names[data.name]
 
-
 ECCO_darwin_dataset_variable_names = Dict(
     :temperature                    => "THETA",
     :salinity                       => "SALTanom",

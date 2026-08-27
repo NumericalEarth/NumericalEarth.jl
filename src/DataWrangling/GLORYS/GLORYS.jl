@@ -126,7 +126,6 @@ end
 DataWrangling.inpainted_metadata_filename(metadata::GLORYSMetadatum) =
     string(metadata_prefix(metadata.dataset, metadata.name, metadata.dates, metadata.region), "_inpainted.jld2")
 
-
 function dataset_location(::GLORYSDataset, name)
     name == :free_surface && return (Center, Center, Nothing)
     return (Center, Center, Center)

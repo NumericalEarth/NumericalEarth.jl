@@ -102,7 +102,6 @@ const EN4_url_post2021 = "http://www.metoffice.gov.uk/hadobs/en4/data/en4-2-1/EN
 DataWrangling.inpainted_metadata_filename(metadata::EN4Metadatum) =
     metadata.filename[1:end-3] * "_" * string(metadata.name) * "_inpainted.jld2"
 
-
 """
     EN4Metadatum(name;
                  date = first_date(EN4Monthly()),

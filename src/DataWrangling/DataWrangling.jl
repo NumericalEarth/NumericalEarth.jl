@@ -17,8 +17,8 @@ export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, 
 export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
 
-using DocStringExtensions: TYPEDSIGNATURES
 using Adapt: Adapt
+using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using LibCURL: LibCURL
 using JLD2: JLD2, jldopen
@@ -222,7 +222,6 @@ Arguments
 # not `Base.download` which is a 1.0-era shim). Per-dataset methods are added
 # within each dataset module via `Downloads.download(metadata::FooMetadata) = ...`.
 
-
 """
     z_interfaces(dataset)
 
@@ -353,13 +352,13 @@ function default_inpainting(metadata)
     end
 end
 
+include("prescribed_radiation.jl")
+
 # Datasets
 include("ETOPO/ETOPO.jl")
 include("ECCO/ECCO.jl")
 include("GLORYS/GLORYS.jl")
 include("AVISO/AVISO.jl")
-include("prescribed_radiation.jl")
-
 include("ERA5/ERA5.jl")
 include("EN4/EN4.jl")
 include("ORCA/ORCA.jl")
