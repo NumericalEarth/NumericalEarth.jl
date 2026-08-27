@@ -187,13 +187,14 @@ end
 # height is the built-area-weighted mean (building volume over built area). The roughness
 # closure is evaluated there, then reduced to the land grid: the built-up land fraction, the
 # log-mean roughness of the built pixels, and the mean building height.
-function ingest_urban(grid; fine = 30, coarse = 10, box = (2700, 2160))
+function ingest_urban(grid; fine = 30, coarse = 10, box_degrees = (10, 8))
     Nx, Ny = size(grid)
     domain = BoundingBox(grid)
     λ₁, λ₂ = domain.longitude
     φ₁, φ₂ = domain.latitude
     nx, ny = fine * Nx, fine * Ny
     δλ, δφ = (λ₂ - λ₁) / nx, (φ₂ - φ₁) / ny
+    box = (round(Int, box_degrees[1] / δλ), round(Int, box_degrees[2] / δφ))   # same boxes at every refinement
 
     n = fine ÷ coarse
     Δλ, Δφ = n * δλ, n * δφ
