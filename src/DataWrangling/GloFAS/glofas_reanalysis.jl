@@ -21,6 +21,10 @@ Base.size(::GloFASReanalysis, variable) = (7200, 3000, 1)
 DataWrangling.all_dates(::GloFASReanalysis, variable) =
     range(DateTime("1979-01-01"), stop=DateTime("2024-12-31"), step=Day(1))
 
+# The discharge is a mean over the day the dates label, which the store stamps with the end of that
+# window: asking for 10 July 2010 returns a file whose `valid_time` is 11 July.
+DataWrangling.averaging_window(md::GloFASMetadatum) = (md.dates, md.dates + Day(1))
+
 #####
 ##### Variable name mappings
 #####
