@@ -180,10 +180,12 @@ end
 
 ##### GHSL urban morphometry → roughness
 
-# Building height and built fraction are read in sub-boxes onto a lattice 30× finer than the
-# land grid (~400 m), averaged to ~1.2 km (the scale of the morphometric regressions) where
-# the roughness closure is evaluated, then reduced to the land grid: the built-up land
-# fraction, the log-mean roughness of the built pixels, and the mean building height.
+# Building height and built fraction are read in sub-boxes at their native 100 m and binned
+# onto a lattice 10× finer than the land grid (~1.2 km, the scale of the morphometric
+# regressions): the plan-area index is the pixel mean of the built fraction and the building
+# height is the built-area-weighted mean (building volume over built area). The roughness
+# closure is evaluated there, then reduced to the land grid: the built-up land fraction, the
+# log-mean roughness of the built pixels, and the mean building height.
 function ingest_urban(grid; fine = 30, coarse = 10, box = (2700, 2160))
     Nx, Ny = size(grid)
     domain = BoundingBox(grid)
@@ -192,25 +194,38 @@ function ingest_urban(grid; fine = 30, coarse = 10, box = (2700, 2160))
     nx, ny = fine * Nx, fine * Ny
     δλ, δφ = (λ₂ - λ₁) / nx, (φ₂ - φ₁) / ny
 
-    height = fill(NaN32, nx, ny)
-    built  = fill(NaN32, nx, ny)
+    n = fine ÷ coarse
+    Δλ, Δφ = n * δλ, n * δφ
+    volume = zeros(Float64, nx ÷ n, ny ÷ n)
+    area   = zeros(Float64, nx ÷ n, ny ÷ n)
+    pixels = zeros(Int, nx ÷ n, ny ÷ n)
     for j in Iterators.partition(1:ny, box[2]), i in Iterators.partition(1:nx, box[1])
         longitude = (λ₁ + (first(i) - 1) * δλ, λ₁ + last(i) * δλ)
         latitude  = (φ₁ + (first(j) - 1) * δφ, φ₁ + last(j) * δφ)
-        subgrid = flat_grid((length(i), length(j)), longitude, latitude)
-        box_region = BoundingBox(subgrid; padding = 0.01)
-        h  = Field(Metadatum(:building_height;   dataset = GHSBuiltH(), region = box_region), subgrid)
-        λᵖ = Field(Metadatum(:built_up_fraction; dataset = GHSBuiltS(), region = box_region), subgrid)
-        height[i, j] .= interior(h, :, :, 1)
-        built[i, j]  .= interior(λᵖ, :, :, 1)
+        box_region = BoundingBox(flat_grid((length(i), length(j)), longitude, latitude); padding = 0.01)
+        h  = Field(Metadatum(:building_height;   dataset = GHSBuiltH(), region = box_region), CPU())
+        λᵖ = Field(Metadatum(:built_up_fraction; dataset = GHSBuiltS(), region = box_region), CPU())
+        size(h) == size(λᵖ) || error("GHSL height and built-fraction rasters differ in size for $box_region")
+        λn = λnodes(h.grid, Center()); φn = φnodes(h.grid, Center())
+        heights = interior(h, :, :, 1); fractions = interior(λᵖ, :, :, 1)
+        for b in eachindex(φn), a in eachindex(λn)
+            longitude[1] <= λn[a] < longitude[2] && latitude[1] <= φn[b] < latitude[2] || continue
+            f = fractions[a, b]
+            isfinite(f) || continue
+            ic = floor(Int, (λn[a] - λ₁) / Δλ) + 1
+            jc = floor(Int, (φn[b] - φ₁) / Δφ) + 1
+            pixels[ic, jc] += 1
+            area[ic, jc] += f
+            volume[ic, jc] += ifelse(isfinite(heights[a, b]), f * heights[a, b], 0)
+        end
         @info "GHSL box λ ∈ $longitude, φ ∈ $latitude done"
+        h = λᵖ = nothing
         GC.gc()
     end
 
-    n = fine ÷ coarse
     km_grid = flat_grid((nx ÷ n, ny ÷ n), domain.longitude, domain.latitude)
-    height_km  = surface_field(km_grid); interior(height_km, :, :, 1)  .= block_reduce(finite_mean, height, n)
-    built_km = surface_field(km_grid); interior(built_km, :, :, 1) .= block_reduce(finite_mean, built, n)
+    height_km = surface_field(km_grid); interior(height_km, :, :, 1) .= volume ./ area
+    built_km  = surface_field(km_grid); interior(built_km, :, :, 1)  .= ifelse.(pixels .> 0, area ./ pixels, NaN)
 
     closure = MorphometricRoughness(eltype(km_grid))
     ℓᵐ, d = urban_roughness(height_km, built_km; closure)
