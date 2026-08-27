@@ -26,6 +26,9 @@ mutable struct AtmosphereInterface{J, F, ST, P}
     properties :: P
 end
 
+validate_zero_plane_displacement(interface::AtmosphereInterface, zᵃᵗ) =
+    validate_zero_plane_displacement(interface.flux_formulation, zᵃᵗ)
+
 """
     SeaIceOceanInterface{J, F, T, S, P}
 
@@ -488,7 +491,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     zᵃᵗ = surface_layer_height(atmosphere, exchange_grid)
 
     for interface in (ao_interface, ai_interface, al_interface)
-        isnothing(interface) || validate_zero_plane_displacement(interface.flux_formulation, zᵃᵗ)
+        validate_zero_plane_displacement(interface, zᵃᵗ)
     end
 
     properties = (; gravitational_acceleration, surface_layer_height = zᵃᵗ)

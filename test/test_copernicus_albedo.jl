@@ -5,7 +5,7 @@ using NumericalEarth.DataWrangling: BoundingBox, Metadata, Metadatum, native_gri
     dataset_variable_name, metadata_filename,
     longitude_name, latitude_name, all_dates, native_times,
     longitude_interfaces, latitude_interfaces,
-    averaging_window, sample_bounds, time_window_offset, spans_whole_cycle
+    averaging_window, window_center, sample_bounds, spans_whole_cycle
 using NumericalEarth.DataWrangling.CopernicusLandAlbedo: bluesky_blend, copernicus_albedo_decode,
     copernicus_albedo_ten_day_dates, albedo_satellite,
     albedo_cds_request_variables,
@@ -63,9 +63,9 @@ end
     @test averaging_window(ten_day(DateTime(2019, 7, 31))) == (DateTime(2019, 7, 21), DateTime(2019, 8, 1))
     @test averaging_window(ten_day(DateTime(2019, 2, 28))) == (DateTime(2019, 2, 21), DateTime(2019, 3, 1))
 
-    @test time_window_offset(ten_day(DateTime(2019, 7, 10))) == -4 * 86400
-    @test time_window_offset(ten_day(DateTime(2019, 7, 20))) == -4 * 86400
-    @test time_window_offset(ten_day(DateTime(2019, 7, 31))) == -4.5 * 86400
+    @test window_center(ten_day(DateTime(2019, 7, 10))) == DateTime(2019, 7, 6)
+    @test window_center(ten_day(DateTime(2019, 7, 20))) == DateTime(2019, 7, 16)
+    @test window_center(ten_day(DateTime(2019, 7, 31))) == DateTime(2019, 7, 26, 12)
 
     # The stamps close their windows, but the windows tile time, so the bounds are the
     # window edges whatever the stamp convention.
@@ -78,7 +78,7 @@ end
     climatology = CopernicusAlbedoClimatology()
     january = Metadatum(:albedo; dataset = climatology, date = DateTime(2018, 1, 1))
     @test averaging_window(january) == (DateTime(2018, 1, 1), DateTime(2018, 2, 1))
-    @test time_window_offset(january) == 15.5 * 86400
+    @test window_center(january) == DateTime(2018, 1, 16, 12)
 
     months = Metadata(:albedo; dataset = climatology)
     @test sample_bounds(months) == [all_dates(climatology, :albedo); DateTime(2019, 1, 1)]

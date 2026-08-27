@@ -147,7 +147,7 @@ function regrid_in_tiles!(target, metadata, native, tile_bytes = default_tile_by
 
         source = Field{LX, LY, LZ}(native; indices = (source_i, source_j, :))
         set_region_data!(source, data, window_longitude, window_latitude, metadata; mangling,
-                         region = BoundingBoxOffset(1 - first(source_i), 1 - first(source_j)),
+                         region = BoundingBoxOffset(1 - first(source_i), 1 - first(source_j), 0),
                          parameters = KernelParameters(interior_indices(source)))
 
         interpolate_physical!(view(target, target_i, target_j, :), source, metadata)

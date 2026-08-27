@@ -238,4 +238,3 @@ end
 function DataWrangling.build_filename(dataset::ERA5MonthlySingleLevel, name, dates::AbstractArray, region)
     return DatewiseFilename([DataWrangling.metadata_filename(dataset, name, d, region) for d in dates])
 end
-

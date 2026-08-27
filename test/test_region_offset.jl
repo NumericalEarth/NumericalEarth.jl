@@ -43,25 +43,25 @@ end
     for before in 0:3, after in 0:3
         @test lattice_offset(bbox, longitude_interfaces, latitude_interfaces,
                              Nx_global, Ny_global, before, after) ==
-              BoundingBoxOffset(before, before)
+              BoundingBoxOffset(before, before, 0)
     end
 
     # The shape a server-side subset actually delivers: no margin on the west/south side,
     # spare cells only on the east/north. The offset is zero and must not drift into the
     # slack the trailing cells create.
     @test lattice_offset(bbox, longitude_interfaces, latitude_interfaces,
-                         Nx_global, Ny_global, 0, 10) == BoundingBoxOffset(0, 0)
+                         Nx_global, Ny_global, 0, 10) == BoundingBoxOffset(0, 0, 0)
 
     # A Float64 grid must land on the same answer.
     @test lattice_offset(bbox, longitude_interfaces, latitude_interfaces,
                          Nx_global, Ny_global, 2, 2; FT = Float64) ==
-          BoundingBoxOffset(2, 2)
+          BoundingBoxOffset(2, 2, 0)
 
     # Away from the prime meridian the longitude wrap has to map [0, 360] onto the file's
     # convention without losing the cell.
     east = BoundingBox(longitude = (268.4, 268.8), latitude = (37.2, 37.6))
     @test lattice_offset(east, longitude_interfaces, latitude_interfaces,
-                         Nx_global, Ny_global, 2, 2) == BoundingBoxOffset(2, 2)
+                         Nx_global, Ny_global, 2, 2) == BoundingBoxOffset(2, 2, 0)
 end
 
 @testset "Region offset on a coarse grid" begin
@@ -76,7 +76,7 @@ end
     for before in 0:2, after in 0:2
         @test lattice_offset(bbox, longitude_interfaces, latitude_interfaces,
                              Nx_global, Ny_global, before, after) ==
-              BoundingBoxOffset(before, before)
+              BoundingBoxOffset(before, before, 0)
     end
 end
 

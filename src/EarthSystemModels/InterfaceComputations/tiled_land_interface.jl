@@ -231,3 +231,10 @@ end
             f * veg_temperature.effective_albedo[i, j, 1] + g * bare_temperature.effective_albedo[i, j, 1]
     end
 end
+
+# A tiled interface carries one flux formulation per tile.
+function validate_zero_plane_displacement(interface::TiledLandInterface, zᵃᵗ)
+    validate_zero_plane_displacement(interface.vegetated, zᵃᵗ)
+    validate_zero_plane_displacement(interface.bare, zᵃᵗ)
+    return nothing
+end

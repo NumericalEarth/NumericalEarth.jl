@@ -6,7 +6,7 @@ using NumericalEarth.DataWrangling: DataWrangling, BoundingBox, Metadatum, Metad
     longitude_name, latitude_name, all_dates, native_times, available_variables,
     longitude_interfaces, latitude_interfaces, validate_dataset_coverage,
     retrieve_data, read_file_coords, region_info, fill_gaps!, cmr_granules_url,
-    time_window_offset, averaging_window, sample_bounds, time_average
+    window_center, averaging_window, sample_bounds, time_average
 using NumericalEarth.DataWrangling.MODISLand: MODISLand, mask_lai_fill, lai_screening_flags,
     lai_rejection_flags, modis_composite_dates,
     parse_granule_name, select_granules, regional_lattice,
@@ -448,7 +448,7 @@ end
         @test size(leaf_area_index) == (Nx, Ny)
         @test (length(λc), length(φc)) == (Nx, Ny)
         @test region_info(region, Field{Center, Center, Nothing}(grid), λc, φc) ==
-              NumericalEarth.DataWrangling.BoundingBoxOffset(0, 0)
+              NumericalEarth.DataWrangling.BoundingBoxOffset(0, 0, 0)
 
         node_atol = Δᵛ / 20
         gλ = Array(λnodes(grid, Center(), Center(), Center()))
@@ -690,7 +690,7 @@ end
         @test λc == λl
         @test φc == φl
         @test region_info(region, Field{Center, Center, Nothing}(native_grid(metadatum)),
-                          λc, φc) == NumericalEarth.DataWrangling.BoundingBoxOffset(0, 0)
+                          λc, φc) == NumericalEarth.DataWrangling.BoundingBoxOffset(0, 0, 0)
 
         # `QC` is enumerated, not bit-packed, so it decodes as a class too.
         quality = retrieve_data(Metadatum(:quality_flag; dataset, region, date, dir))
@@ -752,16 +752,16 @@ DataWrangling.averaging_window(metadatum::EndStampedMetadatum) =
     region = BoundingBox(longitude = (-92.5, -91.5), latitude = (36.5, 37.5))
     metadatum = Metadatum(:leaf_area_index; dataset, region, date = DateTime(2018, 1, 1))
     @test averaging_window(metadatum) == (DateTime(2018, 1, 1), DateTime(2018, 1, 9))
-    @test time_window_offset(metadatum) == 4 * 86400
+    @test window_center(metadatum) == DateTime(2018, 1, 5)
 
-    # A class map is not a temporal composite, so its window is a point and its offset zero.
+    # A class map is not a temporal composite, so its window is a point at the stamp.
     class_metadatum = Metadatum(:landcover_class; dataset = MCD12Q1(), region,
                                 date = DateTime(2015))
     @test averaging_window(class_metadatum) == (DateTime(2015), DateTime(2015))
-    @test time_window_offset(class_metadatum) == 0
+    @test window_center(class_metadatum) == DateTime(2015)
 
     # A stamp that closes its window instead puts the value half a period earlier.
-    @test time_window_offset(EndStampedMetadatum(DateTime(2018, 1, 9))) == -4 * 86400
+    @test window_center(EndStampedMetadatum(DateTime(2018, 1, 9))) == DateTime(2018, 1, 5)
 
     # The 46 climatological stamps then span exactly one year rather than 46 × 8 = 368 days,
     # which is what a cyclic series has to wrap on.

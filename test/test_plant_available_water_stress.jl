@@ -131,10 +131,8 @@ availability(model, 𝒮, curve) =
                 interface_hydrology_state(1, j, grid, stress,
                                           land_state(𝒮, VanGenuchtenRetention(FT; inverse_air_entry_head = α, pore_size_uniformity = n))))
 
-        # Broken until `VanGenuchtenRetention` accepts `Field`s: building one from fields
-        # throws, so the per-cell endpoints cannot be assembled yet.
         for (j, column) in enumerate(columns), 𝒮 in (FT(0.35), FT(0.6))
-            @test_broken column_availability(j, 𝒮) == availability(stress, 𝒮, column)
+            @test column_availability(j, 𝒮) == availability(stress, 𝒮, column)
         end
     end
 

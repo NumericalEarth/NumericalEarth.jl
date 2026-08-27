@@ -222,4 +222,3 @@ NumericalEarth currently ships connectors for the following data products:
 | `ASTERGEDv3`       | `:emissivity`, `:emissivity_uncertainty` — clear-sky mean land-surface emissivity (1 km or 100 m), broadband-synthesized from the five ASTER TIR bands over a regional window (needs `ArchGDAL` and Earthdata credentials) | [ASTER GED AG100 v003](https://www.earthdata.nasa.gov/data/catalog/lpcloud-ag100-003) |
 | `GlobalBuildingFootprints3D` | `:building_height` — LoD1 building-polygon heights rasterized at meter scale over a regional window; `building_morphometry` reduces them onto a model grid (needs `ArchGDAL`) | [3D-GloBFP (Che et al. 2024)](https://doi.org/10.5194/essd-16-5357-2024) |
 | `ETHSentinel2CanopyHeight` | `:canopy_height`, `:canopy_height_uncertainty` — 10 m Sentinel-2 canopy height (epoch 2020) windowed from the 3° cloud-optimized GeoTIFF tiles (needs `ArchGDAL`) | [ETH Global Canopy Height](https://langnico.github.io/globalcanopyheight/) |
-

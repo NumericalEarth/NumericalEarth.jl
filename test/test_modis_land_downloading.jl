@@ -66,7 +66,7 @@ end
     λc, φc = read_file_coords(metadatum)
     @test (length(λc), length(φc)) == (size(grid, 1), size(grid, 2))
     @test region_info(modis_region, Field{Center, Center, Nothing}(grid), λc, φc) ==
-          DataWrangling.BoundingBoxOffset(0, 0)
+          DataWrangling.BoundingBoxOffset(0, 0, 0)
 
     𝒜 = Array(interior(Field(metadatum), :, :, 1))
     @test size(𝒜) == (lattice.Nx, lattice.Ny)

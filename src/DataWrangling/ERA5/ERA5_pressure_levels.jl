@@ -396,4 +396,3 @@ function pressure_field(metadata::ERA5PressureMetadatum, arch=CPU(); halo=(3,3,3
     fill_halo_regions!(field)
     return field
 end
-
