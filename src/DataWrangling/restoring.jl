@@ -1,4 +1,3 @@
-using Dates: Second
 using JLD2
 using Oceananigans: location, instantiated_location
 using Oceananigans.Architectures: AbstractArchitecture, on_architecture, architecture

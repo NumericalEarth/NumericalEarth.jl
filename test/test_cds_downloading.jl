@@ -14,6 +14,7 @@ using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5MonthlyPr
                                          ERA5_all_pressure_levels, ERA5PL_dataset_variable_names,
                                          ERA5PL_netcdf_variable_names, pressure_field
 using NumericalEarth.DataWrangling.ERA5: split_era5_nc_by_datetime, ERA5_COORD_VARS, ERA5_TIME_DIMNAMES
+using NumericalEarth.DataWrangling.GloFAS: GloFASReanalysis, GloFAS_dataset_variable_names
 # ERA5-owned batching / NetCDF helpers are exercised at their owner module, not through the
 # CDS extension (the extension no longer re-imports the ones it does not itself use).
 using NumericalEarth.DataWrangling.ERA5: max_dts_per_cds_request, is_zip, ncvar_copy!, ncvar_copy_tslice!,
@@ -1295,5 +1296,52 @@ end
 
             @test sort(received) == ["a.nc", "b.nc"]   # readme.txt filtered out
         end
+    end
+end
+
+#####
+##### GloFAS
+#####
+
+@testset "GloFAS CDSAPIExt build_glofas_request" begin
+    dataset = GloFASReanalysis()
+    bbox    = BoundingBox(longitude=(-62.0, -61.0), latitude=(-3.0, -2.0))
+    dt      = DateTime(2020, 1, 15)
+
+    @testset "Single date" begin
+        req = CDSExt.build_glofas_request(dataset, dt, nothing)
+
+        @test req["year"]     == ["2020"]
+        @test req["month"]    == ["01"]
+        @test req["day"]      == ["15"]
+        @test req["timespan"] == ["time_mean"]
+        @test req["variable"] == [GloFAS_dataset_variable_names[:river_discharge]]
+
+        @test req["system_version"]     == [dataset.system_version]
+        @test req["hydrological_model"] == ["lisflood"]
+        @test req["product_type"]       == ["consolidated"]
+        @test req["data_format"]        == "netcdf"
+        @test req["download_format"]    == "unarchived"
+
+        @test !haskey(req, "area")
+    end
+
+    @testset "Dates in one month collapse to a Cartesian product" begin
+        dts = [DateTime(2020, 1, 15), DateTime(2020, 1, 16), DateTime(2020, 1, 16)]
+        req = CDSExt.build_glofas_request(dataset, dts, nothing)
+
+        @test req["year"]  == ["2020"]
+        @test req["month"] == ["01"]
+        @test req["day"]   == ["15", "16"]
+    end
+
+    @testset "BoundingBox region is sent as area in [N, W, S, E] order" begin
+        req = CDSExt.build_glofas_request(dataset, dt, bbox)
+        @test req["area"] == [-1.8, -62.2, -3.2, -60.8]
+    end
+
+    @testset "Metadatum resolves the NetCDF short name" begin
+        metadatum = Metadatum(:river_discharge; dataset, date=dt)
+        @test NumericalEarth.DataWrangling.dataset_variable_name(metadatum) == "avg_dis"
     end
 end
