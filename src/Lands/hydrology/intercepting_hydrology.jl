@@ -92,7 +92,8 @@ Adapt.adapt_structure(to, h::InterceptingHydrology) =
 # extra prognostic; `canopy_evaporation` (Eʷᵉᵗ) is the extra flux the coupler writes;
 # `liquid_precipitation_flux` is guaranteed present (the interception step overwrites it
 # with throughfall). Throughfall and the store tendency are published for diagnostics.
-prognostic_variables(::InterceptingHydrology) = (:canopy_water_storage,)
+prognostic_variables(h::InterceptingHydrology) =
+    merge_unique(prognostic_variables(h.soil), (:canopy_water_storage,))
 
 flux_variables(h::InterceptingHydrology) =
     merge_unique(flux_variables(h.soil), (:liquid_precipitation_flux, :canopy_evaporation))
