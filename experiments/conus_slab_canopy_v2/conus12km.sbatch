@@ -9,7 +9,7 @@
 set -uo pipefail
 
 RUNDIR=/shared/home/xklee/numericalearth_land_scratch_plans/conus_v2_run
-SCRIPT=/shared/home/xklee/numericalearth_land/.claude/worktrees/conus-v2/experiments/conus_slab_canopy_v2/conus_slab_canopy_v2.jl
+SCRIPT=${SCRIPT:-/shared/home/xklee/numericalearth_land/.claude/worktrees/conus-v2/experiments/conus_slab_canopy_v2/conus_slab_canopy_v2.jl}
 PROJECT=/shared/home/xklee/numericalearth_land/.claude/worktrees/conus-v2/docs
 JULIA=/shared/home/xklee/.juliaup/bin/julia
 
