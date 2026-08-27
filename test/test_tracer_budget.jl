@@ -68,7 +68,10 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
         # the freshwater's own enthalpy Σᵢ Tᵢ Jʷᵢ is what remains.
         heat_content_tendency = sum(ρᵒᶜ * cᵒᶜ * ΔVT)
         expected_heat_content_tendency = (previous_radiative_rate - previous_heat_flux + previous_enthalpy) * last_Δt
-        @test isapprox(heat_content_tendency, expected_heat_content_tendency; rtol=heat_rtol)
+
+        # The tendency is recovered by differencing the heat content, so the residual cannot fall below
+        # one ulp of that content however small Δt is. Floor the comparison there.
+        @test isapprox(heat_content_tendency, expected_heat_content_tendency; rtol=heat_rtol, atol=eps(sum(ρᵒᶜ * cᵒᶜ * VT⁻)))
 
         # Volume grows by exactly the surface-integrated freshwater volume flux.
         volume_tendency = sum(ΔVV)
