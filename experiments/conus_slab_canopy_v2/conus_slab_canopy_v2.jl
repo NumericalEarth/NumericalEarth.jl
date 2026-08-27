@@ -156,10 +156,13 @@ if isnothing(worldcover)
     water_cover = array(modis.fractions.water)
     urban_cover = array(modis.fractions.urban)
 else
+    ## WorldCover maps land only: the unmapped share of a cell (no-data pixels inside a
+    ## tile, or a 3° cell with no published tile) is sea.
+    mapped = sum(array(worldcover[class]) for class in keys(worldcover) if class != :vegetation_fraction)
     vegetated_cover = array(worldcover.vegetation_fraction)
-    water_cover = array(worldcover.permanent_water_bodies)
+    water_cover = array(worldcover.permanent_water_bodies) .+ (1 .- mapped)
     urban_cover = array(worldcover.built_up)
-    unmapped = .!isfinite.(vegetated_cover)   # 3° cells with no published tile are open ocean
+    unmapped = .!isfinite.(mapped)
     vegetated_cover[unmapped] .= 0; water_cover[unmapped] .= 1; urban_cover[unmapped] .= 0
 end
 water = water_cover .> 0.5
