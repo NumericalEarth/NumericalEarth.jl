@@ -118,9 +118,13 @@ end
 # 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1: a scalar
 # (e.g. a prescribed measurement height or the 600 m BL-height fallback) passes through,
 # and a 2-D `Field` (Breeze's per-column surface- or boundary-layer height) is read at
-# column `(i, j)`. Used by the atmosphere–surface flux kernels to consume
-# `surface_layer_height` / `h_bℓ` uniformly.
+# column `(i, j)`. The five-argument form also resolves functions of `(λ, φ, z, t)` and
+# time series, which need the grid and the time.
 @inline state2dindex(a, i, j) = stateindex(a, i, j, 1)
+@inline state2dindex(a, i, j, grid, time) = stateindex(a, i, j, 1, grid, time, (Center, Center, Nothing))
+
+# Functions are resolved at the topmost center: a `Nothing` vertical location yields a two-tuple node.
+@inline state2dindex(a::Function, i, j, grid, time) = stateindex(a, i, j, size(grid, 3), grid, time, (Center, Center, Center))
 
 # Turbulent fluxes
 include("roughness_lengths.jl")
