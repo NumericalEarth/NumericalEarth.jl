@@ -443,15 +443,10 @@ residual = array(soil.hydraulic_fields.residual_liquid_fraction)
 if land_source == :canopy
     set!(land; M = to_field(θ₀ .* (1000 * slab_depth)), canopy_water_storage = 0, surface_water_storage = 0)
 else
-    ## The bucket starts from ERA5-Land's 0–7 cm water at the start date, relative to a 0.45 m³ m⁻³
-    ## saturation; water pixels (NaN in the land product) start saturated.
-    bucket_water = similar(land.temperature)
-    set!(bucket_water, Metadatum(:volumetric_soil_water_layer_1; dataset = ERA5HourlyLand(), date = start_date,
-                                 region = BoundingBox(land_grid), dir = era5_datadir))
+    ## The bucket starts from the same ERA5-Land soil water as the canopy runs, relative to a
+    ## 0.45 m³ m⁻³ saturation; water cells start saturated.
     capacity = land.hydrology.maximum_water_storage
-    interior(bucket_water) .= ifelse.(isnan.(interior(bucket_water)), capacity,
-                                      clamp.(interior(bucket_water) ./ 0.45, 0, 1) .* capacity)
-    set!(land; M = bucket_water)
+    set!(land; M = to_field(ifelse.(water, capacity, clamp.(array(era5_land.soil_water) ./ 0.45, 0, 1) .* capacity)))
 end
 
 @info @sprintf("initial soil wetness 𝒮 ∈ [%.3f, %.3f], mean %.3f",
