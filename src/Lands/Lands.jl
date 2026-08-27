@@ -50,8 +50,7 @@ using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!, prettysummary, prettytime
 
 using ..NumericalEarth: NumericalEarth, stateindex
-using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
-using ...EarthSystemModels: default_component_clock
+using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature, default_component_clock
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger
 
 # Closure interfaces
