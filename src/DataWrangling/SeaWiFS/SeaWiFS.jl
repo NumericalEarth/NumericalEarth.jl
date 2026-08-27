@@ -28,16 +28,6 @@ The native product is mapped at 1/12°; `resolution` is the degree spacing actua
 
 A `FieldTimeSeries` built over a twelve-month window of `Metadata(:chlorophyll; dataset=SeaWiFSMonthly(), dates)` drives a run of any length with a repeating seasonal cycle, under
 the default `Cyclical()` time indexing.
-
-```jldoctest
-using NumericalEarth.DataWrangling.SeaWiFS
-
-SeaWiFSMonthly()
-
-# output
-
-SeaWiFSMonthly chlorophyll at 1° resolution
-```
 """
 struct SeaWiFSMonthly
     resolution :: Int
