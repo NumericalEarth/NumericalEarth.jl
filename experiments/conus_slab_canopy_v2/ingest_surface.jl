@@ -231,15 +231,17 @@ function ingest_urban(grid; fine = 30, coarse = 10, box = (2700, 2160))
     ℓᵐ, d = urban_roughness(height_km, built_km; closure)
     fill_aerodynamic_roughness_gaps!(ℓᵐ, d, closure)
 
+    ## Built-area-weighted means over each land cell, so the dense core sets the roughness
+    ## and the height rather than the many sparsely built pixels around it.
     plan_area = Array(interior(built_km, :, :, 1))
     urban = plan_area .>= 0.01
-    log_roughness = ifelse.(urban, log.(Array(interior(ℓᵐ, :, :, 1))), NaN32)
-    heights = ifelse.(urban, Array(interior(height_km, :, :, 1)), NaN32)
+    weights = ifelse.(urban, plan_area, 0)
+    weighted_mean(a) = block_reduce(sum, ifelse.(isfinite.(a), a .* weights, 0), coarse) ./ block_reduce(sum, weights, coarse)
 
     to_field(a) = (f = surface_field(grid); interior(f, :, :, 1) .= a; f)
     return (; urban_fraction   = to_field(block_reduce(mean, urban, coarse)),
-              urban_roughness  = to_field(exp.(block_reduce(finite_mean, log_roughness, coarse))),
-              building_height  = to_field(block_reduce(finite_mean, heights, coarse)),
+              urban_roughness  = to_field(exp.(weighted_mean(log.(Array(interior(ℓᵐ, :, :, 1)))))),
+              building_height  = to_field(weighted_mean(Array(interior(height_km, :, :, 1)))),
               plan_area_index  = to_field(block_reduce(finite_mean, plan_area, coarse)))
 end
 
