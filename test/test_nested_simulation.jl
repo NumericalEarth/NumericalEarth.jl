@@ -392,14 +392,14 @@ end
     end
 end
 
-# A child that carries `ρqʳ`/`ρqˢ` adds their latent heat back when it inverts θˡⁱ
-# (`moisture_fractions` folds precipitation into `qˡ`/`qⁱ`), so θˡⁱ must give it up. A child without
-# those prognostics never can, so θˡⁱ must not. `prognostic_field_names`, not the moisture slot, decides.
-@testset "state exchanger: θˡⁱ tracks the condensate the child can represent" begin
+# The child makes its own precipitation, at its own resolution and dynamics, so the parent's `qʳ`/`qˢ`
+# cross neither channel: not the moisture slot, and not θˡⁱ. A parent that rains hands over the same
+# state as one that does not, so the child recovers the parent's temperature from the pair it was given.
+@testset "state exchanger: the parent's precipitation crosses neither channel" begin
     ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
     constants = ThermodynamicConstants()
     pˢᵗ, T₀, p₀ = 1e5, 283.15, 9e4
-    qᵛ₀, qᶜˡ₀, qʳ₀, qᶜⁱ₀, qˢ₀ = 8.0e-3, 5.0e-4, 2.0e-4, 1.0e-4, 5.0e-5
+    qᵛ₀, qᶜˡ₀, qᶜⁱ₀ = 8.0e-3, 5.0e-4, 1.0e-4
 
     grid = RectilinearGrid(size = (4, 4, 4), x = (-1, 1), y = (-1, 1), z = (0, 1),
                            topology = (Bounded, Bounded, Bounded))
@@ -410,42 +410,33 @@ end
     set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
     set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
     uniform(v) = (f = CenterField(grid); set!(f, (x, y, z) -> v); f)
-    condensates = (qᶜˡ = uniform(qᶜˡ₀), qʳ = uniform(qʳ₀), qᶜⁱ = uniform(qᶜⁱ₀), qˢ = uniform(qˢ₀))
 
-    θˡⁱ_of(; moisture_name, child_prognostics) = begin
-        ex = ext.state_exchanger(parent, pˢᵗ, constants; condensates, moisture_name, child_prognostics)
+    emitted(moisture_name, qʳ₀, qˢ₀) = begin
+        condensates = (qᶜˡ = uniform(qᶜˡ₀), qʳ = uniform(qʳ₀), qᶜⁱ = uniform(qᶜⁱ₀), qˢ = uniform(qˢ₀))
+        ex = ext.state_exchanger(parent, pˢᵗ, constants; condensates, moisture_name)
         at(f) = Array(interior(f))[1, 1, 1]
-        at(ex.prognostic.ρθ[1]) / at(ex.prognostic.ρᵈ[1])
+        (θˡⁱ = at(ex.prognostic.ρθ[1]) / at(ex.prognostic.ρᵈ[1]), ρqᵛᵉ = at(ex.prognostic.ρqᵛᵉ[1]))
     end
 
-    # θˡⁱ is `with_temperature` on exactly the condensate the child can represent, so build the
-    # expectation the same way and vary only which species are included.
+    # θˡⁱ is `with_temperature` on the condensate the moisture slot carries, and on nothing else.
     expected(qˡ, qⁱ) = ext.liquid_ice_potential_temperature(T₀, qᵛ₀, qˡ, qⁱ, p₀, pˢᵗ, constants)
 
-    # Bare saturation adjustment: cloud via `qᵉ`, no precipitation prognostics.
-    @test θˡⁱ_of(moisture_name = :ρqᵉ, child_prognostics = ()) ≈ expected(qᶜˡ₀, qᶜⁱ₀) rtol = 1e-12
+    dry, wet = emitted(:ρqᵉ, 0.0, 0.0), emitted(:ρqᵉ, 2.0e-4, 5.0e-5)
+    @test dry.θˡⁱ ≈ expected(qᶜˡ₀, qᶜⁱ₀) rtol = 1e-12
+    @test wet.θˡⁱ ≈ expected(qᶜˡ₀, qᶜⁱ₀) rtol = 1e-12   # the parent's rain changes nothing
 
-    # The production default (`OneMomentCloudMicrophysics` with saturation-adjustment cloud): cloud via
-    # `qᵉ` and rain/snow of its own, so every species belongs in θˡⁱ.
-    @test θˡⁱ_of(moisture_name = :ρqᵉ, child_prognostics = (:ρqʳ, :ρqˢ)) ≈
-          expected(qᶜˡ₀ + qʳ₀, qᶜⁱ₀ + qˢ₀) rtol = 1e-12
+    # ρᵈ does carry every species, so the two parents differ there — θˡⁱ's invariance is not an artifact
+    # of the rain being ignored everywhere.
+    @test wet.ρqᵛᵉ != dry.ρqᵛᵉ
 
-    # Warm 1-moment: rain but no snow prognostic, so `qˢ` stays out.
-    @test θˡⁱ_of(moisture_name = :ρqᵉ, child_prognostics = (:ρqʳ,)) ≈
-          expected(qᶜˡ₀ + qʳ₀, qᶜⁱ₀) rtol = 1e-12
+    dryᵛ, wetᵛ = emitted(:ρqᵛ, 0.0, 0.0), emitted(:ρqᵛ, 2.0e-4, 5.0e-5)
+    @test dryᵛ.θˡⁱ ≈ expected(0.0, 0.0) rtol = 1e-12
+    @test wetᵛ.θˡⁱ ≈ expected(0.0, 0.0) rtol = 1e-12
 
-    # Non-equilibrium 1-moment: vapor-only slot, but it carries its own cloud liquid and rain.
-    @test θˡⁱ_of(moisture_name = :ρqᵛ, child_prognostics = (:ρqᶜˡ, :ρqʳ)) ≈
-          expected(qᶜˡ₀ + qʳ₀, 0.0) rtol = 1e-12
-
-    # Vapor-only with nothing of its own: no latent term at all.
-    @test θˡⁱ_of(moisture_name = :ρqᵛ, child_prognostics = ()) ≈ expected(0.0, 0.0) rtol = 1e-12
-
-    # The default nesting path resolves to a precipitating child whenever CloudMicrophysics is loaded,
-    # so the two cases above are not hypothetical.
+    # The default nested child carries `ρqʳ`/`ρqˢ` when CloudMicrophysics is loaded; it still receives
+    # precipitation-free air and spins its own precipitation up.
     μ = ext.default_nested_microphysics()
     @test moisture_prognostic_name(μ) == :ρqᵉ
-    @test isempty(prognostic_field_names(μ)) || :ρqʳ ∈ prognostic_field_names(μ)
 end
 
 @testset "Breeze AtmosphereModel as a NestedSimulation child on $(arch)" for arch in test_architectures
