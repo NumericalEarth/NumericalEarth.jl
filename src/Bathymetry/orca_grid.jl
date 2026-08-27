@@ -5,7 +5,7 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!, FPivotZipperBoundaryC
                                        NoFluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Fields: set!, convert_to_0_360
 using Oceananigans.Grids: RightFaceFolded, generate_coordinate
-using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom, PartialCellBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar
 
 using ..DataWrangling: dataset_variable_name, default_download_directory
@@ -382,7 +382,8 @@ coordinates are available (`glamt/gphit/glamf/gphif`), staggered coordinates and
 metrics are reconstructed approximately using Tripolar-style spherical assumptions.
 
 When `with_bathymetry = true` (the default), the bathymetry is also downloaded
-and the grid is returned as an `ImmersedBoundaryGrid` with a `GridFittedBottom`.
+and the grid is returned as an `ImmersedBoundaryGrid` with a `GridFittedBottom`,
+or with a `PartialCellBottom` when `partial_cell_bathymetry = true`.
 
 Positional Arguments
 ====================
@@ -402,6 +403,9 @@ Keyword Arguments
 - `radius`: Planet radius. Default: `Oceananigans.defaults.planet_radius`.
 - `with_bathymetry`: If `true`, download the bathymetry and return an `ImmersedBoundaryGrid` with
                      `GridFittedBottom`. Default: `true`.
+- `partial_cell_bathymetry`: If `true` and `with_bathymetry = true`, use a `PartialCellBottom`, which
+                             resolves sill depths and slopes continuously rather than in full-cell
+                             steps. Default: `false`.
 - `active_cells_map`: If `true` and `with_bathymetry = true`, build an active cells map
                       for efficient kernel execution over wet cells only. Default: `true`.
 - `major_basins`: Number of independent connected ocean basins to retain via
@@ -420,6 +424,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   Nz = 50,
                   radius = Oceananigans.defaults.planet_radius,
                   with_bathymetry = true,
+                  partial_cell_bathymetry = false,
                   active_cells_map = true,
                   major_basins = Inf,
                   south_rows_to_remove = default_south_rows_to_remove(dataset),
@@ -523,5 +528,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
         remove_minor_basins!(bottom_field, major_basins)
     end
 
-    return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_field); active_cells_map)
+    bottom = partial_cell_bathymetry ? PartialCellBottom(bottom_field) : GridFittedBottom(bottom_field)
+
+    return ImmersedBoundaryGrid(underlying_grid, bottom; active_cells_map)
 end
