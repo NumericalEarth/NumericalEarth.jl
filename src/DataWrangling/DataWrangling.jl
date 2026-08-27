@@ -359,6 +359,7 @@ include("ECCO/ECCO.jl")
 include("GLORYS/GLORYS.jl")
 include("AVISO/AVISO.jl")
 include("ERA5/ERA5.jl")
+include("SeaWiFS/SeaWiFS.jl")
 include("EN4/EN4.jl")
 include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
@@ -381,6 +382,7 @@ using .ECCO
 using .GLORYS
 using .AVISO
 using .ERA5
+using .SeaWiFS
 using .EN4
 using .ORCA
 using .WOA
