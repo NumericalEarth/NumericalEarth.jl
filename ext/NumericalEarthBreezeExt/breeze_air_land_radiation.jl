@@ -1,16 +1,17 @@
 #####
 ##### Surface energy balance coupling for the Breeze RRTMGP `RadiativeTransferModel`.
 #####
-##### Each coupled step adds the net upward surface radiative flux, ℐˡʷꜛ + ℐˡʷꜜ + (1 - α) ℐˢʷꜜ,
-##### to the slab's `surface_energy_flux` (positive = upward; downwelling stored negative).
-##### Longwave up is rebuilt from the live surface state, ℐˡʷꜛ = ε σ Tₛ⁴ - (1 - ε) ℐˡʷꜜ, since
-##### the RTM's own upwelling longwave is stale between scheduled solves. Shortwave keeps only
-##### the absorbed fraction (1 - α): Breeze stores gross SW↓ with no upwelling field to read
-##### back. Exact for coincident direct/diffuse albedos — the coupled configuration.
+##### Each coupled step adds the net upward surface radiative flux, ℐˡʷꜛ - ℐꜜˡʷ - (1 - α) ℐꜜˢʷ,
+##### to the slab's `surface_energy_flux` (positive = upward), reading the downwelling fluxes
+##### the radiation exchanger publishes. Longwave up is rebuilt from the live surface state,
+##### ℐˡʷꜛ = ε σ Tₛ⁴ + (1 - ε) ℐꜜˡʷ, since the RTM's own upwelling longwave is stale between
+##### scheduled solves. Shortwave keeps only the absorbed fraction (1 - α): Breeze stores gross
+##### SW↓ with no upwelling field to read back. Exact for coincident direct/diffuse albedos —
+##### the coupled configuration.
 ##### TODO: distinct direct/diffuse albedos need Breeze to expose the direct/diffuse SW↓ split.
-#####
 
-using Oceananigans.Fields: ConstantField
+using Oceananigans.Fields: Center, ConstantField, Field
+using NumericalEarth.Radiations: SurfaceRadiationProperties, default_stefan_boltzmann_constant
 using NumericalEarth.EarthSystemModels.InterfaceComputations: CanopyAirSpaceDiagnostics
 
 const BreezeRTM = Breeze.RadiativeTransferModel
@@ -67,26 +68,49 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, rtm:
     return nothing
 end
 
-# A Breeze RTM needs no exchange state; without this method the generic constructor
-# would pass the RTM's solver internals into the flux kernel, which cannot compile on GPU.
-NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(::BreezeRTM, exchange_grid; kw...) = nothing
+function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(::BreezeRTM, exchange_grid; kw...)
+    state = (; ℐꜜˢʷ = Field{Center, Center, Nothing}(exchange_grid),
+               ℐꜜˡʷ = Field{Center, Center, Nothing}(exchange_grid))
+    return ComponentExchanger(state, nothing)
+end
 
-# Empty `surface_properties` keeps radiation out of the turbulent-flux kernel:
-# with a Breeze RTM the radiative term enters via `apply_air_land_radiative_fluxes!` below.
-NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation_properties(::BreezeRTM) =
-    (surface_properties = NamedTuple(),)
-
-@kernel function _apply_breeze_air_land_radiative_fluxes!(Es, Tˢ, ε, σ, ℐˡʷꜜ, ℐˢʷꜜ, α)
+# Breeze stores fluxes positive-up; the interface state holds positive-down magnitudes.
+@kernel function _interpolate_breeze_radiation_state!(state, ℐꜜˢʷ, ℐꜜˡʷ)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        εᵢⱼ = ε[i, j, 1]
-        ℐˡʷꜛ = εᵢⱼ * σ * Tˢ[i, j, 1]^4 - (1 - εᵢⱼ) * ℐˡʷꜜ[i, j, 1]
-        Es[i, j, 1] += ℐˡʷꜛ + ℐˡʷꜜ[i, j, 1] + (1 - α[i, j, 1]) * ℐˢʷꜜ[i, j, 1]
+        state.ℐꜜˢʷ[i, j, 1] = -ℐꜜˢʷ[i, j, 1]
+        state.ℐꜜˡʷ[i, j, 1] = -ℐꜜˡʷ[i, j, 1]
     end
 end
 
-# The generic method reads `PrescribedRadiation`-style `interface_fluxes`;
-# a Breeze RTM carries its surface flux fields directly on the model.
+# The atmosphere and exchange grids are horizontally index-identical under the Breeze coupling.
+function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, rtm::BreezeRTM, coupled_model)
+    launch!(architecture(exchange_grid), exchange_grid, :xy,
+            _interpolate_breeze_radiation_state!,
+            exchanger.state,
+            rtm.downwelling_shortwave_flux,
+            rtm.downwelling_longwave_flux)
+    return nothing
+end
+
+function NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation_properties(rtm::BreezeRTM)
+    FT = eltype(rtm.downwelling_shortwave_flux)
+    ε = rtm.surface_properties.surface_emissivity
+    α = rtm.surface_properties.direct_surface_albedo
+    return (σ = convert(FT, default_stefan_boltzmann_constant),
+            surface_properties = (; land = SurfaceRadiationProperties(α, ε)))
+end
+
+@kernel function _apply_breeze_air_land_radiative_fluxes!(Es, Tˢ, ε, σ, ℐꜜˡʷ, ℐꜜˢʷ, α)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        εᵢⱼ = ε[i, j, 1]
+        ℐˡʷꜛ = εᵢⱼ * σ * Tˢ[i, j, 1]^4 + (1 - εᵢⱼ) * ℐꜜˡʷ[i, j, 1]
+        Es[i, j, 1] += ℐˡʷꜛ - ℐꜜˡʷ[i, j, 1] - (1 - α[i, j, 1]) * ℐꜜˢʷ[i, j, 1]
+    end
+end
+
+# Downwelling comes from the radiation exchanger; emissivity, albedo and Tˢ from the RTM.
 function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
         coupled_model :: NumericalEarth.EarthSystemModels.EarthSystemModel{<:BreezeRTM})
 
@@ -113,14 +137,16 @@ function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
     # Equals `diffuse_surface_albedo` in the coupled configuration; always indexable.
     α = rtm.surface_properties.direct_surface_albedo
 
+    state = coupled_model.interfaces.exchanger.radiation.state
+
     launch!(arch, grid, :xy,
             _apply_breeze_air_land_radiative_fluxes!,
             Es,
             Tˢ,
             ε,
             σ,
-            rtm.downwelling_longwave_flux,
-            rtm.downwelling_shortwave_flux,
+            state.ℐꜜˡʷ,
+            state.ℐꜜˢʷ,
             α)
     return nothing
 end
