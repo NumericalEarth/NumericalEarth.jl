@@ -10,13 +10,16 @@ using Statistics: mean, median, quantile
 tag = isempty(ARGS) ? "conus12km_v2" : ARGS[1]
 series(name) = FieldTimeSeries("$(tag)_land.jld2", name; backend = OnDisk())
 
-LST = series("LST"); 𝒮 = series("𝒮"); T = series("Tˡᵃ")
-Tᵛ = series("Tᵛ"); Tᵍ = series("Tᵍ"); Tᵃᶜ = series("Tᵃᶜ")
-LE = series("LE"); H = series("H"); Gᶜ = series("Gᶜ"); u★ = series("u★")
-W = series("W"); Wᶜ = series("Wᶜ"); Wᵖ = series("Wᵖ")
-P = series("P"); E = series("E"); R = series("R"); D = series("D")
-Jʳⁿ = series("Jʳⁿ"); Eʷ = series("Eʷ"); α = series("αᵉᶠᶠ")
-SW = series("ℐꜜˢʷ"); LW = series("ℐꜜˡʷ")
+canopy = jldopen(f -> haskey(f["timeseries"], "Tᵛ"), "$(tag)_land.jld2")
+𝒮 = series("𝒮"); T = series("Tˡᵃ"); LE = series("LE"); H = series("H"); u★ = series("u★")
+W = series("W"); Jʳⁿ = series("Jʳⁿ"); SW = series("ℐꜜˢʷ"); LW = series("ℐꜜˡʷ")
+if canopy
+    LST = series("LST"); Tᵛ = series("Tᵛ"); Tᵍ = series("Tᵍ"); Tᵃᶜ = series("Tᵃᶜ"); Gᶜ = series("Gᶜ")
+    Wᶜ = series("Wᶜ"); Wᵖ = series("Wᵖ"); P = series("P"); E = series("E"); R = series("R"); D = series("D")
+    Eʷ = series("Eʷ"); α = series("αᵉᶠᶠ")
+else
+    LST = T
+end
 
 times = LST.times
 Nt = length(times)
@@ -64,6 +67,8 @@ for (name, cells) in (("urban", urban_cells), ("rural", rural_cells))
     @printf("  %-5s %6d cells: LST %.1f K  H %.0f  LE %.0f W/m²  u★ %.2f m/s  ℓᵐ(bare) %.3f m\n", name, count(cells),
             mean(LST13[cells]), mean(H13[cells]), mean(LE13[cells]), mean(u13[cells]), exp(mean(log.(static["momentum_roughness_bare"][cells]))))
 end
+
+canopy || exit(0)   # the bucket runs stop at the common checks above
 
 println("\n== extremes:")
 Tᵛ13 = field(Tᵛ, n13); imax = argmax(Tᵛ13)

@@ -26,18 +26,24 @@ hours_of(t) = t / 3600
 series(file, name) = FieldTimeSeries(file, name; backend = OnDisk())
 
 land_file = "$(tag)_land.jld2"
-LST_ts = series(land_file, "LST"); 𝒮_ts  = series(land_file, "𝒮")
-T_ts   = series(land_file, "Tˡᵃ"); Tᵛ_ts = series(land_file, "Tᵛ")
-Tᵍ_ts  = series(land_file, "Tᵍ");  Tᵃᶜ_ts = series(land_file, "Tᵃᶜ")
+canopy = jldopen(f -> haskey(f["timeseries"], "Tᵛ"), land_file)   # bucket runs write the common fields only
+𝒮_ts   = series(land_file, "𝒮");   T_ts  = series(land_file, "Tˡᵃ")
 LE_ts  = series(land_file, "LE");  H_ts  = series(land_file, "H")
-LEᶜ_ts = series(land_file, "LEᶜ"); LEᵍ_ts = series(land_file, "LEᵍ")
-Eʷ_ts  = series(land_file, "Eʷ");  Gᶜ_ts = series(land_file, "Gᶜ")
-W_ts   = series(land_file, "W");   Wᶜ_ts = series(land_file, "Wᶜ")
-Wᵖ_ts  = series(land_file, "Wᵖ");  P_ts  = series(land_file, "P")
-E_ts   = series(land_file, "E");   R_ts  = series(land_file, "R")
-D_ts   = series(land_file, "D");   Jʳⁿ_ts = series(land_file, "Jʳⁿ")
+W_ts   = series(land_file, "W");   Jʳⁿ_ts = series(land_file, "Jʳⁿ")
 SW_ts  = series(land_file, "ℐꜜˢʷ"); LW_ts = series(land_file, "ℐꜜˡʷ")
-α_ts   = series(land_file, "αᵉᶠᶠ"); u★_ts = series(land_file, "u★")
+u★_ts  = series(land_file, "u★")
+if canopy
+    LST_ts = series(land_file, "LST"); Tᵛ_ts = series(land_file, "Tᵛ")
+    Tᵍ_ts  = series(land_file, "Tᵍ");  Tᵃᶜ_ts = series(land_file, "Tᵃᶜ")
+    LEᶜ_ts = series(land_file, "LEᶜ"); LEᵍ_ts = series(land_file, "LEᵍ")
+    Eʷ_ts  = series(land_file, "Eʷ");  Gᶜ_ts = series(land_file, "Gᶜ")
+    Wᶜ_ts  = series(land_file, "Wᶜ");  Wᵖ_ts = series(land_file, "Wᵖ")
+    P_ts   = series(land_file, "P");   E_ts  = series(land_file, "E")
+    R_ts   = series(land_file, "R");   D_ts  = series(land_file, "D")
+    α_ts   = series(land_file, "αᵉᶠᶠ")
+else
+    LST_ts = T_ts
+end
 
 times = LST_ts.times
 Nt = length(times)
@@ -151,6 +157,7 @@ end
 # ## Spin-up: the land settles onto a repeating diurnal envelope
 
 hours = hours_of.(times)
+if canopy
 fig = Figure(size = (1600, 1000), fontsize = 15)
 
 ax1 = Axis(fig[1, 1]; title = "land-mean surface temperatures", xlabel = "hours since 17 May 00 UTC", ylabel = "T (K)")
@@ -297,6 +304,17 @@ save("$(tag)_water_budget.png", fig)
 @info @sprintf("water budget over %.0f h: rain %.2f = evap %.2f + wet canopy %.2f + runoff %.2f + drainage %.2f + Δstorage %.2f, residual %.2f kg m⁻²",
                hours[end], rain_in[end], evap_out[end], canopy_out[end], runoff_out[end], drain_out[end], storage[end],
                rain_in[end] - losses[end] - storage[end])
+else
+fig = Figure(size = (1600, 500), fontsize = 15)
+ax1 = Axis(fig[1, 1]; title = "land-mean slab temperature", xlabel = "hours since 17 May 00 UTC", ylabel = "T (K)")
+lines!(ax1, hours, [land_mean(T_ts, n) for n in 1:Nt]; color = :firebrick)
+ax2 = Axis(fig[1, 2]; title = "land-mean turbulent fluxes and rain", xlabel = "hours", ylabel = "W m⁻²")
+lines!(ax2, hours, [land_mean(LE_ts, n) for n in 1:Nt]; color = :navy, label = "LE")
+lines!(ax2, hours, [land_mean(H_ts, n) for n in 1:Nt]; color = :orangered, label = "H")
+lines!(ax2, hours, [3600 * 100 * land_mean(Jʳⁿ_ts, n) for n in 1:Nt]; color = :steelblue, label = "rain × 100 (mm hr⁻¹)")
+axislegend(ax2; position = :lt)
+save("$(tag)_spinup.png", fig)
+end
 
 # ## Case-day land animation
 
