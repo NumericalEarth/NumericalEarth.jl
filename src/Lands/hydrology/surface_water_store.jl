@@ -38,8 +38,8 @@ heat capacity), so pond drainage advects no heat yet.
 julia> using NumericalEarth
 
 julia> soil = VariablySaturatedHydrology(slab_depth = 1, porosity = 0.4, storage_height = 0.1,
-                                         retention_curve = VanGenuchtenRetention(α = 2, n = 1.5),
-                                         hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 1.5),
+                                         retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 2, pore_size_uniformity = 1.5),
+                                         hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 1.5),
                                          runoff = InfiltrationCapacityRunoff(infiltration_capacity = 1e-3));
 
 julia> summary(SurfaceWaterStore(soil = soil))

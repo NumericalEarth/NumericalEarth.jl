@@ -119,7 +119,7 @@ bare_fluxes()   = land_roughness(0.01, 1e-3)  # smooth bare soil
 soil_slab_depth         = 0.075   # m — capacity ρˡ ν hˡᵃ = 30 kg m⁻²
 soil_residual_fraction  = 0.05
 liquid_density          = 1000.0
-soil_retention          = VanGenuchtenRetention(α = 3.6, n = 1.56)
+soil_retention          = VanGenuchtenRetention(inverse_air_entry_head = 3.6, pore_size_uniformity = 1.56)
 initial_soil_saturation = 0.3
 initial_water_storage   = (initial_soil_saturation * (soil_porosity - soil_residual_fraction) +
                            soil_residual_fraction) * liquid_density * soil_slab_depth
@@ -129,7 +129,7 @@ variably_saturated_soil() = VariablySaturatedHydrology(;
     slab_depth = soil_slab_depth, porosity = soil_porosity,
     residual_liquid_fraction = soil_residual_fraction, storage_height = 1000,
     retention_curve        = soil_retention,
-    hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 1.56),
+    hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 1.56),
     deep_liquid_flux       = NoDeepLiquidFlux(),
     runoff                 = InfiltrationCapacityRunoff(infiltration_capacity = 5e-4))
 

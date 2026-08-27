@@ -138,7 +138,7 @@ soil_residual_fraction      = 0.05
 liquid_density              = 1000.0
 soil_retention_α            = 1.0     # van Genuchten inverse air-entry (m⁻¹)
 soil_retention_n            = 2.0     # van Genuchten pore-size shape
-soil_retention              = VanGenuchtenRetention(α = soil_retention_α, n = soil_retention_n)
+soil_retention              = VanGenuchtenRetention(inverse_air_entry_head = soil_retention_α, pore_size_uniformity = soil_retention_n)
 soil_conductivity_saturated = 1e-6    # K_sat (m s⁻¹)
 interception_capacity       = 0.1     # c — canopy water capacity per unit LAI (kg m⁻², BATS/CLM)
 
@@ -151,7 +151,7 @@ variably_saturated_soil() = VariablySaturatedHydrology(;
     slab_depth = soil_slab_depth, porosity = soil_porosity,
     residual_liquid_fraction = soil_residual_fraction, storage_height = 1000,
     retention_curve        = soil_retention,
-    hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = soil_conductivity_saturated, n = soil_retention_n),
+    hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = soil_conductivity_saturated, pore_size_uniformity = soil_retention_n),
     deep_liquid_flux       = NoDeepLiquidFlux(),
     runoff                 = InfiltrationCapacityRunoff(infiltration_capacity = 5e-4))
 

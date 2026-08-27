@@ -23,8 +23,8 @@ soil_humidity_branch(FT) = DryLayerHumidity(FT;
 
 soil_hydrology(FT) = VariablySaturatedHydrology(FT;
     slab_depth = 1.0, porosity = 0.4, storage_height = 0.1,
-    retention_curve = VanGenuchtenRetention(FT; α = 2.0, n = 1.5),
-    hydraulic_conductivity = VanGenuchtenConductivity(FT; K_saturated = 1e-6, n = 1.5))
+    retention_curve = VanGenuchtenRetention(FT; inverse_air_entry_head = 2.0, pore_size_uniformity = 1.5),
+    hydraulic_conductivity = VanGenuchtenConductivity(FT; matching_point_conductivity = 1e-6, pore_size_uniformity = 1.5))
 
 # Coupled single-column model. `interception = true` wraps the soil hydrology in an
 # `InterceptingHydrology` and hands the CAS a matching `CanopyInterception`.

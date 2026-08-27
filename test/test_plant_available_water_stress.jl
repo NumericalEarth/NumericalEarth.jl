@@ -23,7 +23,7 @@ availability(model, 𝒮, curve) =
         # Spanning coarse sand-like to clay-like retention shapes.
         for n in (FT(1.2), FT(1.5), FT(3))
             stress = PlantAvailableWaterStress(FT)
-            curve  = VanGenuchtenRetention(FT; α, n)
+            curve  = VanGenuchtenRetention(FT; inverse_air_entry_head = α, pore_size_uniformity = n)
             𝒮ᶠᶜ = van_genuchten_saturation(α * stress.field_capacity_head, n)
             𝒮ʷᵖ = van_genuchten_saturation(α * stress.wilting_point_head, n)
             @test 0 < 𝒮ʷᵖ < 𝒮ᶠᶜ < 1
@@ -54,7 +54,7 @@ availability(model, 𝒮, curve) =
     let FT = Float64
         α, n = FT(3.6), FT(1.6)
         stress = PlantAvailableWaterStress(FT)
-        curve  = VanGenuchtenRetention(FT; α, n)
+        curve  = VanGenuchtenRetention(FT; inverse_air_entry_head = α, pore_size_uniformity = n)
         𝒮ᶠᶜ = van_genuchten_saturation(α * stress.field_capacity_head, n)
         𝒮ʷᵖ = van_genuchten_saturation(α * stress.wilting_point_head, n)
         for (ν, θʳ) in ((0.35, 0.0), (0.45, 0.05), (0.6, 0.12)), 𝒮 in (0.05, 0.3, 0.7)
@@ -69,7 +69,7 @@ availability(model, 𝒮, curve) =
     # reached until field capacity.
     let FT = Float64
         stress = PlantAvailableWaterStress(FT)
-        curve  = VanGenuchtenRetention(FT; α = 1, n = 2)
+        curve  = VanGenuchtenRetention(FT; inverse_air_entry_head = 1, pore_size_uniformity = 2)
         bare = CriticalSaturation(FT(0.5))
         𝒮ʷᵖ = van_genuchten_saturation(FT(150), FT(2))
         @test availability(stress, 𝒮ʷᵖ, curve) == 0
@@ -83,7 +83,7 @@ availability(model, 𝒮, curve) =
 
     # β is smooth in the wilting-point head: centered differences at two step sizes agree.
     let FT = Float64
-        curve = VanGenuchtenRetention(FT; α = 1, n = 2)
+        curve = VanGenuchtenRetention(FT; inverse_air_entry_head = 1, pore_size_uniformity = 2)
         efficiency_of_ψ(ψ) =
             availability(PlantAvailableWaterStress(FT; wilting_point_head = ψ), FT(0.3), curve)
         derivative(δ) = (efficiency_of_ψ(150 + δ) - efficiency_of_ψ(150 - δ)) / 2δ
@@ -96,8 +96,8 @@ availability(model, 𝒮, curve) =
     # reads the curve at `(i, j)`, so per-cell `Field` parameters need nothing here.
     let FT = Float64
         stress = PlantAvailableWaterStress(FT)
-        loam = VanGenuchtenRetention(FT; α = 3.6, n = 1.56)   # Carsel-Parrish means
-        clay = VanGenuchtenRetention(FT; α = 0.8, n = 1.09)
+        loam = VanGenuchtenRetention(FT; inverse_air_entry_head = 3.6, pore_size_uniformity = 1.56)   # Carsel-Parrish means
+        clay = VanGenuchtenRetention(FT; inverse_air_entry_head = 0.8, pore_size_uniformity = 1.09)
         endpoints(curve) =
             interface_hydrology_state(1, 1, nothing, stress, land_state(FT(0.3), curve))
 
@@ -123,13 +123,13 @@ availability(model, 𝒮, curve) =
         set!(n, (x, y) -> y < 0.5 ? 1.56 : 1.09)
 
         stress  = PlantAvailableWaterStress(FT)
-        columns = (VanGenuchtenRetention(FT; α = 3.6, n = 1.56),
-                   VanGenuchtenRetention(FT; α = 0.8, n = 1.09))
+        columns = (VanGenuchtenRetention(FT; inverse_air_entry_head = 3.6, pore_size_uniformity = 1.56),
+                   VanGenuchtenRetention(FT; inverse_air_entry_head = 0.8, pore_size_uniformity = 1.09))
 
         column_availability(j, 𝒮) =
             evaporation_efficiency(stress,
                 interface_hydrology_state(1, j, grid, stress,
-                                          land_state(𝒮, VanGenuchtenRetention(FT; α, n))))
+                                          land_state(𝒮, VanGenuchtenRetention(FT; inverse_air_entry_head = α, pore_size_uniformity = n))))
 
         # Broken until `VanGenuchtenRetention` accepts `Field`s: building one from fields
         # throws, so the per-cell endpoints cannot be assembled yet.
@@ -166,9 +166,9 @@ availability(model, 𝒮, curve) =
 
         soil = SlabLand(grid; hydrology = VariablySaturatedHydrology(FT;
             slab_depth = 0.1, porosity = 0.4, storage_height = 1000,
-            retention_curve = VanGenuchtenRetention(FT; α = 3.6, n = 1.56),
+            retention_curve = VanGenuchtenRetention(FT; inverse_air_entry_head = 3.6, pore_size_uniformity = 1.56),
             hydraulic_conductivity = VanGenuchtenConductivity(FT;
-                                                              K_saturated = 1e-6, n = 1.56)))
+                                                              matching_point_conductivity = 1e-6, pore_size_uniformity = 1.56)))
         interface(soil)
     end
 end
