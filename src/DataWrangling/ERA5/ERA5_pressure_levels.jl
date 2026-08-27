@@ -52,7 +52,7 @@ DataWrangling.all_dates(::ERA5HourlyPressureLevels, var) = range(DateTime("1940-
 DataWrangling.all_dates(::ERA5MonthlyPressureLevels, var) = range(DateTime("1940-01-01"), stop=DateTime("2025-12-01"), step=Month(1))
 
 # Pressure-level variables are all instantaneous, so only the monthly means carry a window.
-DataWrangling.sample_window(md::Metadatum{<:ERA5MonthlyPressureLevels}) = DataWrangling.calendar_month_window(md)
+DataWrangling.averaging_window(md::Metadatum{<:ERA5MonthlyPressureLevels}) = DataWrangling.calendar_month_window(md)
 
 # ERA5 pressure-level data is a spatially 3-D dataset
 DataWrangling.is_three_dimensional(::ERA5PressureMetadata) = true
@@ -342,7 +342,7 @@ function era5_native_pressure_fts(metadata, grid;
     # As in the generic constructor: a window-averaged series repeats over the span its
     # windows tile, not over the node span Oceananigans would infer.
     if time_indexing isa Cyclical{Nothing}
-        period = sample_window_span(metadata)
+        period = window_span(metadata)
         isnothing(period) || (time_indexing = Cyclical(convert(eltype(grid), period)))
     end
 
