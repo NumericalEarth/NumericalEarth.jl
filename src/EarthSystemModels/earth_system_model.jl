@@ -29,10 +29,6 @@ function validate_time_axes(components, clock)
         isnothing(component) && continue
         model = component isa Simulation ? component.model : component
 
-        # extract_field_time_series is designed for Oceananigans AbstractModel objects;
-        # calling it on other model types (e.g. SpeedyWeather) causes a StackOverflowError.
-        model isa AbstractModel || continue
-
         for fts in extract_field_time_series(model)
             eltype(fts.times) === clock_time_type || throw(ArgumentError(
                 "$(summary(component)) has a $(eltype(fts.times)) time axis but the clock keeps time as $clock_time_type"))
