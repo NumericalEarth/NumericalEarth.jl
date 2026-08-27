@@ -69,7 +69,7 @@ end
     # `initialize!` fills fractional indices over the exchange grid's halo as well as its
     # interior, so halo columns index into the atmosphere's own halo — which is where its
     # boundary conditions live. Interpolation reads `⌊f⌋` and `⌊f⌋ + 1`, so an index is
-    # readable while it lies within `1 - H` and `N + H - 1`.
+    # readable while it lies within `1 - H` and `N + H`.
     for arch in test_architectures
         grid = LatitudeLongitudeGrid(arch; size = (2, 1, 1),
                                      longitude = (0, 20), latitude = (0, 10),
@@ -99,5 +99,18 @@ end
         # `fractional_x_index`'s business.
         @test fi[end, 1, 1] > Nx
         @test fj[1, end, 1] > Ny
+
+        # Interior columns are never clamped, so an exchange grid the atmosphere does not
+        # cover keeps its out-of-range index rather than silently reading the nearest cell.
+        wide_grid = LatitudeLongitudeGrid(arch; size = (4, 1, 1),
+                                          longitude = (-60, 80), latitude = (0, 10),
+                                          z = (-1, 0),
+                                          topology = (Bounded, Bounded, Bounded))
+
+        wide_exchanger = InterfaceComputations.ComponentExchanger(atmosphere, wide_grid)
+        InterfaceComputations.initialize!(wide_exchanger, wide_grid, atmosphere)
+        wide_fi = Array(interior(wide_exchanger.regridder.i))[:, 1, 1]
+        @test wide_fi[1] < 1 - Hx
+        @test wide_fi[end] > Nx + Hx
     end
 end
