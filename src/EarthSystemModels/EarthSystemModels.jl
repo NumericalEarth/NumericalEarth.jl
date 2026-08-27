@@ -13,11 +13,38 @@ export
     SkinHumidity,
     FractionalHumidity,
     CriticalSaturation,
+    PlantAvailableWaterStress,
     DryLayerHumidity,
     StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     PowerLawTortuosity,
+    CanopyConductanceHumidity,
+    CompositeSurfaceHumidity,
+    CanopyAirSpace,
+    DiagnosticCanopyAir,
+    PrognosticCanopyAir,
+    DiagnosticSkin,
+    PrognosticSkin,
+    CanopyInterception,
+    AbstractUndercanopyConductance,
+    ConstantUndercanopyConductance,
+    AreaIndexUndercanopyConductance,
+    FrictionVelocityUndercanopyConductance,
+    SellersSoilResistance,
+    LitterResistance,
+    TiledLandInterface,
+    bare_canopy_air_space,
+    leaf_area_index_cover_fraction,
+    FarquharPhotosynthesis,
+    MedlynConductance,
+    JarvisConductance,
+    PrescribedAbsorbedPAR,
+    InteractiveAbsorbedPAR,
+    PlainArrhenius,
+    PeakedArrheniusParameters,
+    HeskelParameters,
+    PeakedArrhenius,
     ElevationCorrection,
     atmosphere_land_interface,
     SimilarityTheoryFluxes,
@@ -30,6 +57,9 @@ export
     SkinTemperature,
     BulkTemperature,
     DiffusiveFlux,
+    SoilConductiveFlux,
+    EnergyBalanceTemperature,
+    SoilSkinTemperature,
     InteriorDiffusivity,
     compute_atmosphere_ocean_fluxes!,
     compute_atmosphere_sea_ice_fluxes!,
@@ -50,6 +80,7 @@ using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 using Oceananigans: Oceananigans, AbstractModel, initialize!,
                     prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture, AbstractArchitecture, ReactantState
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Diagnostics: NaNChecker
 using Oceananigans.Fields: ZeroField
 using Oceananigans.Simulations: reset_clock!, Simulation
@@ -69,6 +100,8 @@ include("components.jl")
 
 const default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 const default_freshwater_density = 1000 # kg m⁻³
+const default_gas_constant = 8.3144598 # J mol⁻¹ K⁻¹ (universal gas constant)
+const default_dry_air_molar_mass = 0.02897 # kg mol⁻¹
 
 include("InterfaceComputations/InterfaceComputations.jl")
 

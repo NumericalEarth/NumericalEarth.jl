@@ -11,6 +11,11 @@ struct InterfaceProperties{Q, T, V}
     velocity_formulation :: V
 end
 
+Adapt.adapt_structure(to, p::InterfaceProperties) =
+    InterfaceProperties(adapt(to, p.specific_humidity_formulation),
+                        adapt(to, p.temperature_formulation),
+                        adapt(to, p.velocity_formulation))
+
 #####
 ##### Interface specific humidity formulations
 #####
@@ -47,7 +52,7 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
 @inline compute_water_mole_fraction(x_H₂O::Number, salinity) = x_H₂O
 
 # COARE 3.6 / Edson (2013) pressure-based saturation specific humidity:
-#   qₛ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − εᵈᵛ⁻¹) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵥ
+#   qₛ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − εᵈᵛ⁻¹) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵛ
 # Direct evaluation at the atmospheric pressure p. The 6th positional
 # argument `qᵃᵗ` is accepted (and ignored) so the same call site can
 # dispatch on either `ImpureSaturationSpecificHumidity` or
@@ -74,7 +79,7 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
 end
 
 # Pressure-based saturation specific humidity qᵛ⁺ (COARE / Edson 2013):
-#   qᵛ⁺ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − εᵈᵛ⁻¹) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵥ.
+#   qᵛ⁺ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − εᵈᵛ⁻¹) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵛ.
 # Shared by `BulkHumidity` and `SkinHumidity`.
 @inline function saturation_specific_humidity(ℂᵃᵗ, Tₛ, pᵃᵗ, phase)
     CT = eltype(ℂᵃᵗ)
@@ -87,6 +92,43 @@ end
     # inert in the physical regime pᵛ⁺ ≪ p.
     pᵛ⁺   = min(pᵛ⁺, convert(CT, 0.999) * p)
     return εᵈᵛ⁻¹ * pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) * pᵛ⁺)
+end
+
+# dqᵛ⁺/dT at fixed pressure — the Newton derivative of each balance's latent term.
+# Clausius-Clapeyron gives d(ln pᵛ⁺)/dT = ℒ(T)/(Rᵛ T²), and differentiating
+# qᵛ⁺ = εᵈᵛ⁻¹ pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) pᵛ⁺) at fixed p leaves
+#
+#     dqᵛ⁺/dT = qᵛ⁺ (1 + (1 - εᵈᵛ⁻¹) qᵛ⁺/εᵈᵛ⁻¹) ℒ(T) / (Rᵛ T²) .
+@inline function saturation_humidity_slope(ℂᵃᵗ, Tₛ, pᵃᵗ, phase)
+    CT    = eltype(ℂᵃᵗ)
+    T     = convert(CT, Tₛ)
+    qᵛ⁺   = saturation_specific_humidity(ℂᵃᵗ, T, pᵃᵗ, phase)
+    εᵈᵛ⁻¹ = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
+    Rᵛ    = AtmosphericThermodynamics.Parameters.R_v(ℂᵃᵗ)
+    ℒ     = ifelse(phase isa AtmosphericThermodynamics.Liquid,
+                   AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, T),
+                   AtmosphericThermodynamics.latent_heat_sublim(ℂᵃᵗ, T))
+    return qᵛ⁺ * (1 + (1 - εᵈᵛ⁻¹) * qᵛ⁺ / εᵈᵛ⁻¹) * ℒ / (Rᵛ * T^2)
+end
+
+# Saturation phase of a humidity formulation, used only for the initial surface-
+# humidity guess in the flux kernel. Most formulations store it directly;
+# composite formulations forward to their soil branch.
+@inline interface_phase(q_formulation) = q_formulation.phase
+
+# Aerodynamic vapor conductance `Gᵃ = ρᵃᵗ u★ χq` (kg m⁻² s⁻¹) of the previous
+# similarity iterate — the bulk linearization `Jᵃ(q) ≈ Gᵃ (q - qᵃᵗ)` of the
+# similarity vapor flux, anchored so that `Jᵃ(qˢ⁻) = -ρᵃᵗ u★ q★` exactly
+# (`q★ = χq Δq`). The series-resistance humidity formulations (`SkinHumidity`,
+# `DryLayerHumidity`, `CanopyConductanceHumidity`, `CompositeSurfaceHumidity`,
+# `CanopyAirSpace`) close their flux balance against it. Reading the conductance
+# off the similarity solution — instead of reconstructing it from the
+# flux/increment ratio `Jᵃ/Δq`, which is singular as `Δq` crosses zero — keeps
+# every humidity divider a convex mean of its sources; the floor guards against
+# transient unphysical profiles.
+@inline function aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
+    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
+    return max(0, ρᵃᵗ * Ψₛ.fluxes.u★ * Ψₛ.fluxes.χq)
 end
 
 # `BulkHumidity` — surface specific humidity for a bulk land surface with no
@@ -128,32 +170,6 @@ end
 #####
 ##### FractionalHumidity — saturation scaled by an evaporation efficiency
 #####
-
-"""
-    struct CriticalSaturation
-
-Evaporation efficiency after [Manabe (1969)](@cite manabe1969climate): the surface is saturated (`β = 1`) above a
-critical saturation `𝒮ᶜ`, and the efficiency falls off linearly below it,
-
-```math
-β(𝒮) = \\min(𝒮 / 𝒮ᶜ, 1),   𝒮 = Mˡᵃ / Mˡᵃ⁺.
-```
-
-Used as the `efficiency` of [`FractionalHumidity`](@ref). The type declares its
-land-state dependency (the saturation `𝒮`); the interface materializes exactly
-that into the land interface state.
-"""
-struct CriticalSaturation{FT}
-    critical_saturation :: FT
-end
-
-@inline function evaporation_efficiency(𝒮ᶜ::CriticalSaturation, hydrology)
-    𝒮 = hydrology.saturation
-    return min(𝒮 / convert(typeof(𝒮), 𝒮ᶜ.critical_saturation), one(𝒮))
-end
-
-# Constant efficiency — a uniformly sub-saturated surface; reads no land state.
-@inline evaporation_efficiency(β::Number, hydrology) = β
 
 """
     struct FractionalHumidity
@@ -456,6 +472,22 @@ assemble_interior_fields(state, temperature_formulation::IDST) = state
     return Ψᵢ.T + clamp(T★ - Ψᵢ.T, -max_ΔT, max_ΔT)
 end
 
+"""
+    SoilConductiveFlux(conductivity, thickness)
+
+Conductive coupling between a land skin temperature and the bulk slab across a
+surface layer of thermal conductivity `κᵀ` (`conductivity`, W m⁻¹ K⁻¹) and
+thickness `ℓᵀ` (`thickness`, m), giving the skin↔bulk conductance
+`Λᵍ = κᵀ/ℓᵀ` (W m⁻² K⁻¹). Use it through [`SoilSkinTemperature`](@ref);
+`conductivity = 1.5`, `thickness = 0.05` ⇒ `Λᵍ = 30` is a reasonable first cut.
+"""
+struct SoilConductiveFlux{K, Z}
+    conductivity :: K   # κᵀ, W m⁻¹ K⁻¹
+    thickness    :: Z   # ℓᵀ, m
+end
+
+@inline skin_conductance(F::SoilConductiveFlux) = F.conductivity / F.thickness
+
 # Solve the surface flux balance equation:
 #   Qa(Tₛ) + Ωc (Tᵃᵗ - Tₛ) + (Tₛ - Tᵦ) / R = 0
 # where R is the total thermal resistance (h/k for bare ice, hₛ/kₛ + hᵢ/kᵢ with snow),
@@ -491,10 +523,10 @@ end
     T★ = ifelse(D == 0, Tₛ⁻, T★)
     T★ = ifelse(isnan(T★), Tₛ⁻, T★)
 
-    # Cap the temperature step for iteration stability
+    # Damped-Newton trust region: cap how far the skin moves in one iterate.
     ΔT★ = T★ - Tₛ⁻
-    max_ΔT = convert(typeof(T★), st.max_ΔT)
-    Tₛ⁺ = Tₛ⁻ + clamp(ΔT★, -max_ΔT, max_ΔT)
+    max_temperature_step = convert(typeof(T★), st.max_ΔT)
+    Tₛ⁺ = Tₛ⁻ + clamp(ΔT★, -max_temperature_step, max_temperature_step)
 
     # Cap at melting temperature
     Tₘ = ℙᵢ.liquidus.freshwater_melting_temperature
@@ -523,34 +555,24 @@ end
     return conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
 end
 
-@inline function compute_interface_temperature(st::SkinTemperature,
-                                               interface_state,
-                                               atmosphere_state,
-                                               interior_state,
-                                               radiation_state,
-                                               interface_properties,
-                                               atmosphere_properties,
-                                               interior_properties)
-
+# Turbulent (sensible + latent, positive up) and radiative (upwelling longwave
+# `ℐꜛˡʷ`, and the net-downward non-turbulent term `Qd`) fluxes at the previous
+# iterate. Shared by the `SkinTemperature` and `EnergyBalanceTemperature`
+# diagnostic temperature solves. `radiation_state` carries zero-valued σ/α/ϵ/SW/LW
+# when radiation is off.
+@inline function skin_surface_fluxes(interface_state, atmosphere_state, radiation_state, atmosphere_properties)
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
     Tᵃᵗ = atmosphere_state.T
     pᵃᵗ = atmosphere_state.p
     qᵃᵗ = atmosphere_state.q
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
     cᵃᵗ = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, qᵃᵗ) # moist heat capacity
+    ℒⁱ  = interface_latent_heat(ℂᵃᵗ, Tᵃᵗ, interface_state)
 
-    # TODO: this depends on the phase of the interface
-    #ℰv = 0 #AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, Tᵃᵗ)
-    ℒⁱ = AtmosphericThermodynamics.latent_heat_sublim(ℂᵃᵗ, Tᵃᵗ)
-
-    # upwelling radiation is calculated explicitly. radiation_state is
-    # produced by `air_sea_interface_radiation_state` (or its sea-ice
-    # variant) and contains zero-valued σ/α/ϵ/SW/LW when radiation is off.
-    Tₛ⁻ = interface_state.temperature # approximate interface temperature from previous iteration
+    Tₛ⁻ = interface_state.temperature
     σ = radiation_state.σ
     ϵ = radiation_state.ϵ
     α = radiation_state.α
-
     ℐꜜˢʷ = radiation_state.ℐꜜˢʷ
     ℐꜜˡʷ = radiation_state.ℐꜜˡʷ
     ℐꜛˡʷ = σ * ϵ * Tₛ⁻^4
@@ -560,21 +582,196 @@ end
     θ★ = interface_state.fluxes.θ★
     q★ = interface_state.fluxes.q★
 
-    # Turbulent heat fluxes, sensible + latent (positive out of the ocean)
-    𝒬ᵀ = - ρᵃᵗ * cᵃᵗ * u★ * θ★ # = - ρᵃᵗ cᵃᵗ u★ Ch / sqrt(Cd) * (θᵃᵗ - Tₛ)
+    # Turbulent heat fluxes, sensible + latent (positive out of the surface)
+    𝒬ᵀ = - ρᵃᵗ * cᵃᵗ * u★ * θ★
     𝒬ᵛ = - ρᵃᵗ * ℒⁱ * u★ * q★
 
-    Tₛ = flux_balance_temperature(st,
-                                  interface_state,
-                                  interface_properties,
-                                  𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd,
-                                  interior_state,
-                                  interior_properties,
-                                  atmosphere_state,
-                                  atmosphere_properties)
-
-    return Tₛ
+    return 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd
 end
+
+@inline function compute_interface_temperature(st::SkinTemperature,
+                                               interface_state,
+                                               atmosphere_state,
+                                               interior_state,
+                                               radiation_state,
+                                               interface_properties,
+                                               atmosphere_properties,
+                                               interior_properties)
+
+    𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd = skin_surface_fluxes(interface_state, atmosphere_state,
+                                            radiation_state, atmosphere_properties)
+
+    return flux_balance_temperature(st,
+                                    interface_state,
+                                    interface_properties,
+                                    𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd,
+                                    interior_state,
+                                    interior_properties,
+                                    atmosphere_state,
+                                    atmosphere_properties)
+end
+
+"""
+    DiagnosticSkin()
+
+Massless skin: the energy-balance temperature is solved to equilibrium inside the
+Monin–Obukhov fixed point, one Newton step per iterate, so the skin and the
+similarity scales converge jointly. The skin has no memory, so turbulence, surface,
+and radiation are in mutual equilibrium within every time step.
+"""
+struct DiagnosticSkin end
+
+Base.summary(::DiagnosticSkin) = "DiagnosticSkin"
+Base.show(io::IO, s::DiagnosticSkin) = print(io, summary(s))
+
+"""
+    PrognosticSkin(FT = Oceananigans.defaults.FloatType; heat_capacity = 1e5)
+
+Prognostic skin storage (the default): the skin carries an areal `heat_capacity`
+``C`` (J m⁻² K⁻¹ — a `Number`, or a `Field` when the capacity varies by cell with
+soil texture, wetness, or surface type) and integrates
+
+```math
+C \\frac{dT_s}{dt} = R_n(T_s) + G(T_s) - H(T_s) - LE(T_s),
+```
+
+frozen through the Monin–Obukhov fixed point (only ``u_★ ↔ ζ`` iterates) and
+advanced once per step by a Newton-refined backward-Euler update, so the imbalance a
+massless skin would dissipate instantly lands in the storage tendency instead. The
+default `heat_capacity = 10⁵ ≈ (ρc)_soil × 0.05 m` (5 cm of moist soil) gives a
+30–40 minute skin timescale at calm night while daytime remains effectively
+diagnostic. At ``Δt = 0`` the update lands on the equilibrium root. The skin
+humidity carries no storage of its own: it follows the skin temperature and the
+(already prognostic) soil moisture.
+
+```jldoctest
+using NumericalEarth
+
+PrognosticSkin()
+
+# output
+PrognosticSkin(C=100000.0)
+```
+"""
+struct PrognosticSkin{C}
+    heat_capacity :: C
+end
+
+PrognosticSkin(FT::Type = Oceananigans.defaults.FloatType; heat_capacity = 1e5) =
+    PrognosticSkin(heat_capacity isa Number ? convert(FT, heat_capacity) : heat_capacity)
+
+Base.summary(s::PrognosticSkin) = string("PrognosticSkin(C=", prettysummary(s.heat_capacity), ")")
+Base.show(io::IO, s::PrognosticSkin) = print(io, summary(s))
+
+Adapt.adapt_structure(to, s::PrognosticSkin) = PrognosticSkin(adapt(to, s.heat_capacity))
+
+"""
+    EnergyBalanceTemperature(coupling; storage=PrognosticSkin())
+
+Interface temperature that closes the surface energy balance
+`F(Tₛ) = Rₙ + G − H − LE = 0` by Newton on the conductance sum
+`Σλ = 4ϵσTₛ³ + Λ + ρ u★ (cᵖ χθ + ℒ χq dq/dT)`. `coupling` is a
+[`SoilConductiveFlux`](@ref) carrying `G = Λᵍ(Tₛ − Tˡᵃ)`; `storage` is
+[`PrognosticSkin`](@ref) (the default, the skin carries its heat capacity) or
+[`DiagnosticSkin`](@ref) (massless). `Λᵍ → ∞` recovers [`BulkTemperature`](@ref).
+Construct one with [`SoilSkinTemperature`](@ref).
+"""
+struct EnergyBalanceTemperature{C, ST}
+    coupling :: C
+    storage  :: ST
+end
+
+EnergyBalanceTemperature(coupling; storage=PrognosticSkin()) =
+    EnergyBalanceTemperature(coupling, storage)
+
+const PrognosticEnergyBalanceTemperature = EnergyBalanceTemperature{<:Any, <:PrognosticSkin}
+
+# Needed so a Field-valued `storage` reaches the device: Adapt's fallback returns
+# structs untouched, which is invisible on the CPU and leaves host memory in the
+# kernel on the GPU.
+Adapt.adapt_structure(to, t::EnergyBalanceTemperature) =
+    EnergyBalanceTemperature(adapt(to, t.coupling), adapt(to, t.storage))
+
+"""
+    SoilSkinTemperature(conductivity, thickness; storage=PrognosticSkin())
+
+A soil-skin [`EnergyBalanceTemperature`](@ref): the skin conducts to the bulk
+slab with conductance `Λᵍ = conductivity/thickness` (W m⁻² K⁻¹). The default
+[`PrognosticSkin`](@ref) storage carries the skin's heat capacity; `storage =
+DiagnosticSkin()` recovers the massless equilibrium of the same balance.
+"""
+SoilSkinTemperature(conductivity, thickness; storage=PrognosticSkin()) =
+    EnergyBalanceTemperature(SoilConductiveFlux(conductivity, thickness), storage)
+
+Base.summary(t::EnergyBalanceTemperature) = string("EnergyBalanceTemperature(Λ=", prettysummary(skin_conductance(t.coupling)), ")")
+Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
+
+# The surface energy imbalance F(T) = Rₙ(T) + G(T) − H(T) − LE(T) and the conductance
+# sum Σλ = −dF/dT at skin temperature T, with the similarity scales frozen at the
+# current iterate (u★, χ). The humidity is re-diagnosed at T through the (nonlinear)
+# humidity formulation, so a Newton step on F converges the true balance rather than
+# its tangent at the previous skin.
+#
+# Σλ = 4ϵσT³ + Λ + ρ u★ (cᵖ χθ⁺ + ℒ χq⁺ dq/dT) is a sum of non-negative conductances
+# with Σλ ≥ Λ > 0, so dividing by it is always safe.
+@inline function skin_energy_imbalance(T, t, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ)
+    FT  = eltype(Ψₛ)
+    ℂᵃᵗ = ℙₐ.thermodynamics_parameters
+    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
+    cᵖ  = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, Ψₐ.q)
+    ℒ   = interface_latent_heat(ℂᵃᵗ, Ψₐ.T, Ψₛ)
+    u★  = Ψₛ.fluxes.u★
+    χθ⁺ = max(zero(FT), Ψₛ.fluxes.χθ)
+    χq⁺ = max(zero(FT), Ψₛ.fluxes.χq)
+    Λ   = convert(FT, skin_conductance(t.coupling))
+    Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
+
+    q  = compute_interface_humidity(ℙₛ.specific_humidity_formulation, T, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    Rn = (1 - Ψᵣ.α) * Ψᵣ.ℐꜜˢʷ + Ψᵣ.ϵ * (Ψᵣ.ℐꜜˡʷ - Ψᵣ.σ * T^4)
+    G  = Λ * (Ψᵢ.T - T)
+    H  = ρᵃᵗ * cᵖ * u★ * χθ⁺ * (T - Tᵃᵗ)
+    LE = ℒ * ρᵃᵗ * u★ * χq⁺ * (q - Ψₐ.q)
+    F  = Rn + G - H - LE
+
+    dq = saturation_humidity_slope(ℂᵃᵗ, T, Ψₐ.p, interface_phase(ℙₛ.specific_humidity_formulation))
+    Σλ = 4 * Ψᵣ.ϵ * Ψᵣ.σ * T^3 + Λ + ρᵃᵗ * u★ * (cᵖ * χθ⁺ + ℒ * χq⁺ * dq)
+    return F, Σλ
+end
+
+# A massless skin equilibrates within the step: one Newton step per iterate of the
+# Monin–Obukhov fixed point, so the skin and the similarity scales converge jointly
+# on F(Tₛ) = 0. Newton (rather than the previous Picard step, which froze the
+# upwelling longwave and the surface humidity at the previous iterate) carries the
+# radiative and vapor feedbacks in Σλ, so it converges faster and needs no clamp.
+@inline function compute_interface_temperature(t::EnergyBalanceTemperature,
+                                               interface_state,
+                                               atmosphere_state,
+                                               interior_state,
+                                               radiation_state,
+                                               interface_properties,
+                                               atmosphere_properties,
+                                               interior_properties)
+
+    T = interface_state.temperature
+    F, Σλ = skin_energy_imbalance(T, t, interface_state, atmosphere_state, interior_state,
+                                  radiation_state, interface_properties, atmosphere_properties)
+    # Σλ = 0 only if the skin has no restoring conductance at all: no conduction
+    # (Λᵍ → 0 decouples it), no radiative feedback (ϵ = 0), and no turbulent exchange.
+    # F is then independent of T, the balance has no root, and holding the skin is the
+    # answer — not a bounded step toward a root that does not exist.
+    return ifelse(Σλ > 0, T + F / Σλ, T)
+end
+
+# A prognostic skin is model state: frozen through the fixed point (only the
+# similarity scales iterate) and advanced once per step in `advance_interface_state!`.
+@inline compute_interface_temperature(::PrognosticEnergyBalanceTemperature,
+                                      interface_state,
+                                      atmosphere_state,
+                                      interior_state,
+                                      radiation_state,
+                                      interface_properties,
+                                      atmosphere_properties,
+                                      interior_properties) = interface_state.temperature
 
 ####
 #### Interface specific humidity
@@ -583,13 +780,13 @@ end
 # Diagnostic formulations (`ImpureSaturationSpecificHumidity`, `BulkHumidity`):
 # qˢ is an explicit function of the interface temperature `Tₛ` and the surface
 # scalar (salinity / saturation `𝒮`) from `humidity_surface_scalar`. The interior
-# state `Ψᵢ` is ignored.
-@inline compute_interface_humidity(q_formulation, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ) =
+# state `Ψᵢ` and radiation state `Ψᵣ` are ignored.
+@inline compute_interface_humidity(q_formulation, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ) =
     surface_specific_humidity(q_formulation, ℙₐ.thermodynamics_parameters, Ψₐ.p, Tₛ, humidity_surface_scalar(Ψₛ), Ψₐ.q)
 
 # `FractionalHumidity`: qˢ = β · qᵛ⁺(Tₛ) at the skin temperature, with the
 # evaporation efficiency β derived from the materialized hydrology state.
-@inline function compute_interface_humidity(q::FractionalHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+@inline function compute_interface_humidity(q::FractionalHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     FT  = eltype(Ψₛ)
     β   = evaporation_efficiency(q.efficiency, Ψₛ.hydrology)
@@ -603,19 +800,11 @@ end
 #     Jˢᵒⁱˡ = gˢ (qᵛ⁺ - qˢ),     gˢ = κ^q / d   (positive upward),
 #
 # which must equal the atmospheric vapor flux carried away by turbulence,
+# linearized as `Jᵃ(q) = Gᵃ (q - qᵃᵗ)` with the previous iterate's aerodynamic
+# conductance `Gᵃ = ρᵃᵗ u★ χq` (see `aerodynamic_vapor_conductance`). The
+# balance gˢ(qᵛ⁺ - qˢ) = Gᵃ(qˢ - qᵃᵗ) gives the series solution
 #
-#     Jᵃ = - ρᵃᵗ u★ q★           (positive upward),
-#
-# evaluated at the previous iterate. Writing Jᵃ = Ωq (qˢ - qᵃᵗ) with the implicit
-# coefficient Ωq = Jᵃ / (qˢ⁻ - qᵃᵗ) (the SkinTemperature trick — no prescribed
-# conductance), the balance gˢ(qᵛ⁺ - qˢ) = Ωq(qˢ - qᵃᵗ) gives
-#
-#     qˢ = (gˢ qᵛ⁺ + Ωq qᵃᵗ) / (gˢ + Ωq).
-#
-# Multiplying through by Δq ≡ qˢ⁻ - qᵃᵗ (so Ωq Δq = Jᵃ) removes the division and
-# stays finite as Δq → 0:
-#
-#     qˢ = (gˢ qᵛ⁺ Δq + Jᵃ qᵃᵗ) / (gˢ Δq + Jᵃ).
+#     qˢ = (gˢ qᵛ⁺ + Gᵃ qᵃᵗ) / (gˢ + Gᵃ).
 #
 # The reservoir is saturated at the *bulk land* temperature `Tᵈ` (the energy
 # component of the interface state), not the skin temperature: the saturated soil
@@ -623,13 +812,11 @@ end
 # temperature — the same deep endpoint the conductive heat flux uses. `Tₛ` is
 # therefore unused here (`qˢ` is decoupled from the skin temperature, as a dry
 # skin implies).
-@inline function compute_interface_humidity(q::SkinHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+@inline function compute_interface_humidity(q::SkinHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     FT  = eltype(Ψₛ)
     pᵃᵗ = Ψₐ.p
     qᵃᵗ = Ψₐ.q
-    Tᵃᵗ = Ψₐ.T
-    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
 
     Tᵈ  = Ψₛ.energy.temperature # bulk land temperature at the saturation depth `d`
     qᵛ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tᵈ, pᵃᵗ, q.phase)
@@ -638,16 +825,13 @@ end
     κ  = q.vapor_diffusivity
     gˢ = κ / d # soil vapor conductance
 
-    u★  = Ψₛ.fluxes.u★
-    q★  = Ψₛ.fluxes.q★
     qˢ⁻ = Ψₛ.specific_humidity
+    Gᵃ  = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
 
-    Jᵃ = - ρᵃᵗ * u★ * q★ # atmospheric vapor flux (positive upward), previous iterate
-    Δq = qˢ⁻ - qᵃᵗ
-    D  = gˢ * Δq + Jᵃ
-    qˢ = (gˢ * qᵛ⁺ * Δq + Jᵃ * qᵃᵗ) / D
+    D  = gˢ + Gᵃ
+    qˢ = ifelse(D > 0, (gˢ * qᵛ⁺ + Gᵃ * qᵃᵗ) / D, qˢ⁻)
 
-    return convert(FT, ifelse(D == 0, qˢ⁻, qˢ))
+    return convert(FT, qˢ)
 end
 
 ######
@@ -659,13 +843,23 @@ end
 
 The solved similarity-theory characteristic scales at an interface: friction
 velocity `u★`, temperature flux scale `θ★`, and specific-humidity flux scale
-`q★`. Shared by every interface-state type.
+`q★`, together with the transfer coefficients `χθ` and `χq` of the iterate that
+produced them (`θ★ = χθ Δθ`, `q★ = χq Δq`). Formulations that need the
+aerodynamic conductance read it as `ρ cᵖ u★ χθ` (heat) and `ρ u★ χq` (vapor)
+instead of reconstructing it from the flux/increment ratio, which is singular
+as the increment crosses zero. Shared by every interface-state type; the
+three-argument constructor zeroes the transfer coefficients (no aerodynamic
+conductance yet — an initial guess).
 """
 struct InterfaceFluxScales{FT}
     u★ :: FT
     θ★ :: FT
     q★ :: FT
+    χθ :: FT
+    χq :: FT
 end
+
+@inline InterfaceFluxScales(u★, θ★, q★) = InterfaceFluxScales(u★, θ★, q★, zero(u★), zero(u★))
 
 Base.eltype(::InterfaceFluxScales{FT}) where FT = FT
 
@@ -737,44 +931,64 @@ end
 @inline humidity_surface_scalar(Ψ::AirIceInterfaceState) = zero(eltype(Ψ))
 
 """
-    AirLandInterfaceState{FT, H, E}
+    AirLandInterfaceState{FT, H, E, V}
 
 Air–land interface state. In place of salinity it carries the land's `hydrology`
 and `energy` surface state (e.g. `(saturation = 𝒮,)` and `(temperature = Tᵢ,)`),
-from which the surface humidity models derive what they need — the moisture
-availability `β`, the reservoir temperature, etc. `β` is *not* stored: it is
+together with any prescribed `vegetation` surface state (e.g.
+`(leaf_area_index = LAI,)`), from which the surface humidity models derive what
+they need — the moisture availability `β`, the reservoir temperature, the canopy
+conductance, etc. `β` is *not* stored: it is
 `evaporation_efficiency(efficiency, saturation)`, computed by the formulation.
 """
-struct AirLandInterfaceState{FT, H, E} <: AbstractInterfaceState{FT}
+struct AirLandInterfaceState{FT, H, E, V} <: AbstractInterfaceState{FT}
     fluxes            :: InterfaceFluxScales{FT}
     velocities        :: InterfaceVelocities{FT}
     temperature       :: FT
     specific_humidity :: FT
     hydrology         :: H
     energy            :: E
+    vegetation        :: V
 end
 
-@inline AirLandInterfaceState(u★, θ★, q★, u, v, T, q, hydrology, energy) =
-    AirLandInterfaceState(InterfaceFluxScales(u★, θ★, q★), InterfaceVelocities(u, v), T, q, hydrology, energy)
+# Convenience constructors defaulting `vegetation` to an empty substate — every
+# non-canopy formulation ignores it, so their call sites stay unchanged.
+@inline AirLandInterfaceState(fluxes::InterfaceFluxScales, velocities::InterfaceVelocities, T, q, hydrology, energy) =
+    AirLandInterfaceState(fluxes, velocities, T, q, hydrology, energy, (;))
+
+@inline AirLandInterfaceState(u★, θ★, q★, u, v, T, q, hydrology, energy, vegetation=(;)) =
+    AirLandInterfaceState(InterfaceFluxScales(u★, θ★, q★), InterfaceVelocities(u, v), T, q, hydrology, energy, vegetation)
 
 # (i, j, grid)-first convenience constructor — pulls the per-cell land
-# energy/hydrology substate from `land_state` via the humidity formulation, so
-# the kernel call site stays compact. `Tₛ` and `qₛ` are passed in because they
-# typically share computation with the atmosphere thermodynamics at the call
-# site (e.g. the saturation humidity needs `Tₛ`, `pᵃᵗ`, and `ℂᵃᵗ`).
+# energy/hydrology/vegetation substate from `land_state`/`vegetation` via the
+# humidity formulation, so the kernel call site stays compact. `Tₛ` and `qₛ` are
+# passed in because they typically share computation with the atmosphere
+# thermodynamics at the call site (e.g. the saturation humidity needs `Tₛ`,
+# `pᵃᵗ`, and `ℂᵃᵗ`). `time_interpolator` is the host-side time index used to
+# interpolate a `FieldTimeSeries` vegetation input (`nothing` when static).
 @inline function AirLandInterfaceState(i, j, grid,
                                        fluxes::InterfaceFluxScales,
                                        velocities::InterfaceVelocities,
                                        q_formulation,
                                        land_state,
+                                       vegetation,
+                                       time_interpolator,
                                        Tₛ, qₛ)
     FT  = typeof(Tₛ)
-    energy    = interface_energy_state(i, j, grid, q_formulation, land_state)
-    hydrology = interface_hydrology_state(i, j, grid, q_formulation, land_state)
-    return AirLandInterfaceState(fluxes, velocities, convert(FT, Tₛ), convert(FT, qₛ), hydrology, energy)
+    energy           = interface_energy_state(i, j, grid, q_formulation, land_state)
+    hydrology        = interface_hydrology_state(i, j, grid, q_formulation, land_state)
+    vegetation_state = interface_vegetation_state(i, j, grid, q_formulation, vegetation, time_interpolator)
+    return AirLandInterfaceState(fluxes, velocities, convert(FT, Tₛ), convert(FT, qₛ),
+                                 hydrology, energy, vegetation_state)
 end
 
 @inline humidity_surface_scalar(Ψ::AirLandInterfaceState) = Ψ.hydrology.saturation
+
+# Latent heat of the surface vapor flux entering the `SkinTemperature` energy
+# balance. Land evaporates liquid water (vaporization); ocean and sea ice keep
+# the existing sublimation value so their skin solves are unchanged.
+@inline interface_latent_heat(ℂ, T, ::AbstractInterfaceState) = AtmosphericThermodynamics.latent_heat_sublim(ℂ, T)
+@inline interface_latent_heat(ℂ, T, ::AirLandInterfaceState)  = AtmosphericThermodynamics.latent_heat_vapor(ℂ, T)
 
 # Rebuild the next iterate, carrying the fixed per-surface state forward.
 @inline rebuild_interface_state(Ψ⁻::AirSeaInterfaceState, fluxes, T, q) =
@@ -784,7 +998,7 @@ end
     AirIceInterfaceState(fluxes, Ψ⁻.velocities, T, q)
 
 @inline rebuild_interface_state(Ψ⁻::AirLandInterfaceState, fluxes, T, q) =
-    AirLandInterfaceState(fluxes, Ψ⁻.velocities, T, q, Ψ⁻.hydrology, Ψ⁻.energy)
+    AirLandInterfaceState(fluxes, Ψ⁻.velocities, T, q, Ψ⁻.hydrology, Ψ⁻.energy, Ψ⁻.vegetation)
 
 function Base.show(io::IO, Ψ::AbstractInterfaceState)
     print(io, nameof(typeof(Ψ)), "(",

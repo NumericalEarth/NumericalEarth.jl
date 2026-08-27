@@ -81,6 +81,12 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``\mathrm{oc}`` | `ᵒᶜ` | ocean | ``\rho^{\mathrm{oc}}`` (ocean reference density) |
 | ``\mathrm{si}`` | `ˢⁱ` | sea ice | ``h^{\mathrm{si}}`` (sea ice thickness) |
 | ``\mathrm{la}`` | `ˡᵃ` | land | ``M^{\mathrm{la}}`` (land water mass per area) |
+| ``\mathrm{leaf}`` | `ˡᵉᵃᶠ` | canopy leaf | ``T^{\mathrm{leaf}}`` (leaf temperature) |
+| ``g`` | `ᵍ` | ground (soil skin, below the canopy) | ``T^{g}`` (soil-skin temperature) |
+| ``\mathrm{ac}`` | `ᵃᶜ` | canopy air | ``T^{\mathrm{ac}}`` (canopy-air temperature) |
+| ``\mathrm{lb}`` | `ˡᵇ` | leaf boundary layer | ``g^{\mathrm{lb}}`` (leaf boundary-layer conductance) |
+| ``\mathrm{wet}`` | `ʷᵉᵗ` | wet (intercepted) canopy water | ``E^{\mathrm{wet}}`` (wet-canopy evaporation) |
+| ``\mathrm{eff}`` | `ᵉᶠᶠ` | effective (radiating) | ``T^{\mathrm{eff}}`` (effective radiating temperature) |
 | ``\mathrm{ao}`` | `ᵃᵒ` | atmosphere–ocean interface | ``\mathcal{Q}^{\mathrm{ao}}`` (atm–ocean heat flux) |
 | ``\mathrm{ai}`` | `ᵃⁱ` | atmosphere–ice interface | ``\mathcal{Q}^{\mathrm{ai}}`` (atm–ice heat flux) |
 | ``\mathrm{io}`` | `ⁱᵒ` | ice–ocean interface | ``\mathcal{Q}^{\mathrm{io}}`` (ice–ocean heat flux) |
@@ -132,6 +138,11 @@ component-superscript rule above.
 | ``𝒮`` | `saturation` | surface saturation | Continuous land surface saturation ``\mathrm{clamp}(M/M⁺, 0, 1)``; the interface humidity models derive their availability ``β`` from it (–) |
 | ``𝒮ᶜ`` | `critical_saturation` | critical saturation | Saturation above which the surface evaporates at full efficiency, for `CriticalSaturation` (–) |
 | ``𝒮ᶜ`` | `dry_layer_onset_saturation` | dry-layer onset saturation | Saturation below which a dry surface layer forms, for `StorageBasedDryLayerDepth`; shares the symbol ``𝒮ᶜ`` with `critical_saturation` above (–) |
+| ``T^{g}`` | `soil_skin` | soil-skin temperature | Diagnostic ground-surface (skin) temperature of the land skin balance and the canopy-air-space two-source solve (K) |
+| ``Λ^{g}`` | `soil_skin_flux` | soil-skin conductance | Skin↔bulk conduction coefficient ``Λ^{g} = κ^T/ℓ^T`` of a `SoilConductiveFlux` (W m⁻² K⁻¹) |
+| ``ψ^{fc}`` | `field_capacity_head` | field-capacity suction head | Suction at which transpiration becomes unstressed (``β = 1``), for `PlantAvailableWaterStress` (m) |
+| ``ψ^{wp}`` | `wilting_point_head` | wilting-point suction head | Suction at which transpiration ceases (``β = 0``), for `PlantAvailableWaterStress` (m) |
+| ``g^{uc}`` | `undercanopy_conductance` | undercanopy conductance | Ground↔canopy-air aerodynamic conductance of a `CanopyAirSpace` (m s⁻¹) |
 | ``T^{\mathrm{deep}}`` | `deep_temperature` | deep climatological temperature | Prescribed deep/climatological target temperature for force-restore (K) |
 | ``τ^{\mathrm{deep}}`` | `deep_time_scale` | deep-restore time scale | Time scale of surface relaxation toward ``T^{\mathrm{deep}}`` (s) |
 | ``c^{\mathrm{dry}}`` | `dry_heat_capacity` | dry areal heat capacity | Areal heat capacity of the water-free slab; a `Number` or an `AbstractField` (J m⁻² K⁻¹) |
@@ -182,6 +193,44 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``\ell^T`` | `thermal_exchange_depth`, `exchange_depth` | thermal exchange depth | Depth over which ``\Lambda^{\mathrm{in}} = \kappa^T/\ell^T`` couples ``T^{\mathrm{la}}`` to ``T^{\mathrm{in}}`` (m) |
 | ``D^v`` | `molecular_diffusivity` | vapor diffusivity in air | Molecular vapor diffusivity in air (m² s⁻¹) |
 | ``w^d`` | – | dry-layer piston velocity | ``w^d = D^v_{eff}/\max(\delta^v, \delta^v_{min})`` (m s⁻¹) |
+
+### Canopy and canopy air space
+
+Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyAirSpace`](@ref),
+[`InterceptingHydrology`](@ref), and [`TiledLandInterface`](@ref).
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``L`` | `leaf_area_index` | leaf area index | One-sided leaf area per unit ground area (m² m⁻²) |
+| ``K`` | `extinction` | extinction coefficient | Beer-Lambert extinction of the canopy shortwave split (–) |
+| ``\Omega`` | `clumping` | clumping index | Foliage clumping in the Beer-Lambert transmittance ``e^{-K \Omega L}`` (–) |
+| ``T^{\mathrm{leaf}}`` | – | leaf temperature | Diagnostic temperature of the massless leaf, ``R_n^{\mathrm{leaf}} = H^{\mathrm{leaf}} + LE^{\mathrm{leaf}}`` (K) |
+| ``T^{\mathrm{ac}}``, ``q^{\mathrm{ac}}`` | – | canopy-air node | Temperature (K) and specific humidity (kg kg⁻¹) of the canopy air the atmosphere exchanges with |
+| ``T^{\mathrm{eff}}`` | `effective_temperature` | effective radiating temperature | Satellite-comparable land-surface temperature of a two-source cell, defined by ``\sigma (T^{\mathrm{eff}})^4 = \mathscr{I}``ꜛ``{}^{\mathrm{lw}}`` (K) |
+| ``\mathcal{Q}^{g}`` | `ground_heat_flux` | ground heat flux | Skin→bulk conduction ``\mathcal{Q}^{g} = \Lambda^{g}(T^{g} - T^{\mathrm{la}})``, positive down (W m⁻²) |
+| ``H^{\mathrm{leaf}}``, ``H^{g}`` | – | per-source sensible heat | Leaf and ground sensible heat into the canopy air, positive up (W m⁻²) |
+| ``LE^{\mathrm{leaf}}``, ``LE^{g}`` | – | per-source latent heat | Leaf and ground latent heat into the canopy air, positive up (W m⁻²) |
+| ``g_s`` | – | stomatal conductance | Leaf stomatal conductance from the [`AbstractStomatalConductance`](@ref) model (mol m⁻² s⁻¹) |
+| ``g^c`` | – | canopy conductance | Bulk stomatal conductance ``g^c = L g_s``, mass units (kg m⁻² s⁻¹) |
+| ``g^b`` | `leaf_boundary_conductance` | leaf boundary conductance | Per-leaf-area boundary-layer conductance (m s⁻¹) |
+| ``g^{\mathrm{lb}}`` | – | leaf boundary-layer mass conductance | ``g^{\mathrm{lb}} = \rho^{\mathrm{at}} L g^b``; the stomata-free wet-leaf vapor path (kg m⁻² s⁻¹) |
+| ``g^{\mathrm{leaf}\,T}``, ``g^{\mathrm{leaf}\,v}`` | – | leaf conductances | Leaf sensible-heat and vapor conductance to the canopy air (W m⁻² K⁻¹, kg m⁻² s⁻¹) |
+| ``g^{gT}``, ``g^{gv}`` | – | ground conductances | Ground sensible-heat and vapor conductance to the canopy air (W m⁻² K⁻¹, kg m⁻² s⁻¹) |
+| ``g^{aT}``, ``g^{av}`` | – | aerodynamic conductances | Canopy-air↔atmosphere sensible-heat and vapor conductance of the similarity solution (W m⁻² K⁻¹, kg m⁻² s⁻¹) |
+| ``G^a`` | – | aerodynamic vapor conductance | ``G^a = \rho^{\mathrm{at}} u_\star \chi^q``, the divider every humidity formulation closes against (kg m⁻² s⁻¹) |
+| ``G^e`` | – | dry-layer vapor conductance | Soil vapor conductance of [`DryLayerHumidity`](@ref) (kg m⁻² s⁻¹) |
+| ``\Sigma g^T``, ``\Sigma g^v`` | – | node conductance sums | Sums over the three branches feeding the canopy-air node, per side |
+| ``\epsilon^{\mathrm{leaf}}``, ``\epsilon^{g}`` | `max_canopy_emissivity`, `ground_emissivity` | emissivities | Longwave emissivity of the canopy (``\epsilon^{\mathrm{leaf}} = \epsilon^{max}(1 - e^{-L})``) and of the ground (–) |
+| ``\alpha^{\mathrm{leaf}}``, ``\alpha^{g}`` | `leaf_albedo`, `ground_albedo` | albedos | Shortwave albedo of the canopy and of the ground below it (–) |
+| ``r^s`` | – | soil surface resistance | Moist-soil evaporation resistance of a [`SellersSoilResistance`](@ref) (s m⁻¹) |
+| ``r^l``, ``L^l`` | `litter_area_index` | litter resistance, litter area index | Ground evaporation resistance of a [`LitterResistance`](@ref) (s m⁻¹) and its area index (m² m⁻²) |
+| ``W^c``, ``W^{c\,max}`` | `canopy_water_storage` | canopy water store | Intercepted water on the foliage and its capacity ``W^{c\,max} = c L`` (kg m⁻²) |
+| ``f^{\mathrm{int}}`` | – | interception fraction | Caught fraction of rain, ``1 - e^{-K \Omega L}`` (–) |
+| ``f^{\mathrm{wet}}`` | – | wet-canopy fraction | Deardorff wetted-leaf fraction ``(W^c/W^{c\,max})^{2/3}`` (–) |
+| ``E^{\mathrm{wet}}``, ``LE^{\mathrm{wet}}`` | – | wet-canopy evaporation | Evaporation of intercepted water (kg m⁻² s⁻¹) and its latent heat (W m⁻²) |
+| ``A_n`` | – | net assimilation | Net CO₂ assimilation of [`FarquharPhotosynthesis`](@ref) (mol m⁻² s⁻¹) |
+| ``V_a`` | – | surface wind speed | Wind speed at the surface-layer reference height (m s⁻¹) |
+| ``R^v`` | – | vapor gas constant | Specific gas constant of water vapor (J kg⁻¹ K⁻¹) |
 
 ## Ocean state variables
 

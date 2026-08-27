@@ -35,16 +35,17 @@
 ##### (flux-balance) form is accurate in both limits.
 #####
 ##### The vapor source is saturated air at the front temperature
-##### `Tᵉ = Tⁱⁿ + χ(Tˡᵃ − Tⁱⁿ)` with `χ = clip(δᵛ/ℓᵀ, 0, 1)`. The wet branch
-##### (`δᵛ ≲ δᵛ_min`) collapses to `qⁱⁿ = qᵛ⁺(Tⁱⁿ)` so the saturated-surface
+##### `Tᵉ = Tᵍ + χ(Tˡᵃ − Tᵍ)` with `χ = clip(δᵛ/ℓᵀ, 0, 1)`. The wet branch
+##### (`δᵛ ≲ δᵛ_min`) collapses to `qⁱⁿ = qᵛ⁺(Tᵍ)` so the saturated-surface
 ##### limit reproduces the existing similarity-theory behavior; it hands over
 ##### to the dry-layer series solution through a smooth logistic blend of
 ##### width `wet_transition_width` (sharp switch when 0).
 #####
-##### Pair this with `SkinTemperature(DiffusiveFlux(δ=ℓᵀ, κ=κᵀ))` on the
-##### temperature side: the same `Λⁱⁿ = κᵀ/ℓᵀ` couples the bulk land temperature
-##### `Tˡᵃ` to the skin temperature `Tⁱⁿ` and the energy fluxes
-##### (`𝒬ᴿ + 𝒬ᵀ + 𝒬ᵛ`) — no separate temperature formulation is needed.
+##### Pair this with `SoilSkinTemperature(κᵀ, ℓᵀ)` on the
+##### temperature side: the same `Λᵍ = κᵀ/ℓᵀ` couples the bulk land temperature
+##### `Tˡᵃ` to the skin temperature `Tᵍ`, and the front-temperature interpolation
+##### `Tᵉ = Tᵍ + χ(Tˡᵃ − Tᵍ)` then becomes live (with `BulkTemperature`,
+##### `Tᵍ = Tˡᵃ` and the χ term vanishes).
 #####
 
 using Oceananigans: Oceananigans
@@ -203,7 +204,7 @@ condition when the slab is wet enough (`𝒮 ≥ 𝒮ᶜ`).
   [`DryLayerVaporPistonVelocity`](@ref)).
 * `thermal_exchange_depth` — `ℓᵀ` (m), the same depth used by
   `SkinTemperature(DiffusiveFlux)` on the temperature side. Controls the
-  interpolation `Tᵉ = Tⁱⁿ + χ(Tˡᵃ − Tⁱⁿ)` with `χ = clip(δᵛ/ℓᵀ, 0, 1)`.
+  interpolation `Tᵉ = Tᵍ + χ(Tˡᵃ − Tᵍ)` with `χ = clip(δᵛ/ℓᵀ, 0, 1)`.
 * `porosity` — `ν`, soil porosity (matches the hydrology closure; needed
   for the Millington–Quirk tortuosity).
 
@@ -278,35 +279,31 @@ end
 #####     Jᵉ = Gᵉ (qᵉ - qⁱⁿ),        Gᵉ = ρᵃᵗ Dᵛ_eff / max(δᵛ, δᵛ_min),
 #####
 ##### so a wetter front (qᵉ > qⁱⁿ) drives vapor upward, while above the
-##### interface similarity theory carries vapor away at Jᵃ(Tⁱⁿ, qⁱⁿ). The
+##### interface similarity theory carries vapor away at Jᵃ(Tᵍ, qⁱⁿ). The
 ##### interface stores no vapor, so Jᵉ = Jᵃ — a nonlinear equation for qⁱⁿ.
 #####
 ##### The solver. Over one Picard iteration we linearize the similarity flux
-##### as a bulk conductance law anchored at the previous iterate qⁱⁿ⁻,
+##### as a bulk conductance law,
 #####
-#####     Jᵃ(q) ≈ Gᵃ (q - qᵃᵗ),      Gᵃ = Jᵃ / Δq,      Δq = qⁱⁿ⁻ - qᵃᵗ,
+#####     Jᵃ(q) ≈ Gᵃ (q - qᵃᵗ),      Gᵃ = ρᵃᵗ u★ χq,
 #####
-##### chosen so that Jᵃ(qⁱⁿ⁻) reproduces the flux the similarity solver
-##### actually returned. The linearized balance then has the
-##### two-conductances-in-series solution
+##### with the friction velocity and vapor transfer coefficient of the previous
+##### similarity iterate, so `Jᵃ(qⁱⁿ⁻)` reproduces the flux `-ρᵃᵗ u★ q★` the
+##### similarity solver actually returned (`q★ = χq Δq`). The linearized balance
+##### then has the two-conductances-in-series solution
 #####
 #####     Gᵉ (qᵉ - qⁱⁿ) = Gᵃ (qⁱⁿ - qᵃᵗ)
 #####
-#####     ⇒  qⁱⁿ = (Gᵉ qᵉ + Gᵃ qᵃᵗ) / (Gᵉ + Gᵃ).
+#####     ⇒  qⁱⁿ = (Gᵉ qᵉ + Gᵃ qᵃᵗ) / (Gᵉ + Gᵃ),
 #####
-##### This is the standard series solution of a surface flux balance —
-##### eq. (12b) of Ye & Pielke (1993) with their pore relative
+##### the form coded below (if every conductance vanishes the previous iterate
+##### is returned unchanged). This is the standard series solution of a surface
+##### flux balance — eq. (12b) of Ye & Pielke (1993) with their pore relative
 ##### humidity hₛ = 1, and the same expression CLM5/ClimaLand evaluate with a
-##### prescribed exchange coefficient in place of Gᵃ. Substituting
-##### Gᵃ = Jᵃ/Δq and multiplying numerator and denominator by Δq removes the
-##### 0/0 ambiguity of Gᵃ as Δq → 0:
-#####
-#####     qⁱⁿ = (Gᵉ qᵉ Δq + Jᵃ qᵃᵗ) / (Gᵉ Δq + Jᵃ),
-#####
-##### the form coded below (denominator `D = Gᵉ Δq + Jᵃ`; if `D == 0` the
-##### previous iterate is returned unchanged). Note Δq → 0 means qⁱⁿ⁻ = qᵃᵗ,
-##### and the update then returns qᵃᵗ — the two statements agree, so the
-##### limit is continuous.
+##### prescribed exchange coefficient in place of Gᵃ. Reading `Gᵃ` off the
+##### similarity solution — instead of reconstructing it from the
+##### flux/increment ratio `Jᵃ/Δq`, which is singular as `Δq` crosses zero —
+##### keeps the divider a convex mean of `qᵉ` and `qᵃᵗ` for any iterate.
 #####
 ##### Limits worth checking: δᵛ → 0 gives Gᵉ → ∞ and qⁱⁿ → qᵉ, the saturated
 ##### skin of the wet branch; a deep front gives Gᵉ → 0 and qⁱⁿ → qᵃᵗ, i.e.
@@ -314,17 +311,21 @@ end
 ##### linearization is exact, so the converged humidity satisfies the true
 ##### nonlinear balance Gᵉ (qᵉ - qⁱⁿ) = -ρᵃᵗ u★ q★(qⁱⁿ).
 #####
-@inline function compute_interface_humidity(q::DryLayerHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+# Dry-layer flux terms, split off so the standalone formulation and the
+# composite (soil + canopy) share them. Returns the dry-layer conductance `Gᵉ`,
+# the front (dry-branch) source humidity `qᵉ = qᵛ⁺(Tᵉ)`, the wet-branch logistic
+# weight `σ`, and the wet (saturated-skin) humidity `qᵍ⁺ = qᵛ⁺(Tᵍ)`. The full
+# humidity is `(1 − σ) qᵍ⁺ + σ · [Δq-series divider with (Gᵉ, qᵉ)]`.
+@inline function dry_layer_terms(q::DryLayerHumidity, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     FT  = eltype(Ψₛ)
     pᵃᵗ = Ψₐ.p
-    qᵃᵗ = Ψₐ.q
     Tᵃᵗ = Ψₐ.T
+    qᵃᵗ = Ψₐ.q
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
 
     Tˡᵃ = Ψₛ.energy.temperature       # bulk land
     𝒮   = Ψₛ.hydrology.saturation     # surface saturation
-    Tⁱⁿ = Tₛ                           # current iterate of the skin temp
 
     # Dry-layer depth, front temperature, and front (source) humidity
     # qᵉ = qᵛ⁺(Tᵉ) — the saturation specific humidity at the front.
@@ -332,7 +333,7 @@ end
     δᵛmin = convert(FT, q.vapor_exchange.minimum_dry_layer_depth)
     ℓᵀ    = convert(FT, q.thermal_exchange_depth)
     χ     = clamp(δᵛ / ℓᵀ, zero(FT), one(FT))
-    Tᵉ    = Tⁱⁿ + χ * (Tˡᵃ - Tⁱⁿ)
+    Tᵉ    = Tᵍ + χ * (Tˡᵃ - Tᵍ)
     qᵉ    = saturation_specific_humidity(ℂᵃᵗ, Tᵉ, pᵃᵗ, q.phase)
 
     # Dry-layer conductance. The actual pore liquid fraction is
@@ -342,25 +343,29 @@ end
     Dᵛ  = effective_vapor_diffusivity(q.vapor_exchange, q.porosity, θˡ)
     Gᵉ  = ρᵃᵗ * Dᵛ / max(δᵛ, δᵛmin)
 
-    # Atmospheric flux from previous iterate.
-    u★  = Ψₛ.fluxes.u★
-    q★  = Ψₛ.fluxes.q★
-    qⁱⁿ⁻ = Ψₛ.specific_humidity
-    Jᵃ   = -ρᵃᵗ * u★ * q★               # positive upward
-    Δq   = qⁱⁿ⁻ - qᵃᵗ
-
-    # Δq-multiplied series solution qⁱⁿ = (Gᵉ qᵉ + Gᵃ qᵃᵗ)/(Gᵉ + Gᵃ);
-    # see the derivation in the banner above.
-    D    = Gᵉ * Δq + Jᵃ
-    qⁱⁿ★ = ifelse(D == 0, qⁱⁿ⁻, (Gᵉ * qᵉ * Δq + Jᵃ * qᵃᵗ) / D)
-
     # Wet branch: the front co-locates with the skin, which saturates. The wet
     # limit is not the δᵛ → 0 limit of the series solution (Millington-Quirk
     # tortuosity closes the Fick path entirely at saturation), so the branches
     # are combined with a smooth logistic weight after Kavetski & Kuczera (2007).
-    qⁱⁿ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tⁱⁿ, pᵃᵗ, q.phase)
+    qᵍ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tᵍ, pᵃᵗ, q.phase)
     δᵛʷ  = convert(FT, q.vapor_exchange.wet_transition_width)
     z    = 10 * (δᵛ - δᵛmin - δᵛʷ / 2) / max(δᵛʷ, eps(FT))
     σ    = 1 / (1 + exp(-z))
-    return convert(FT, qⁱⁿ⁺ + σ * (qⁱⁿ★ - qⁱⁿ⁺))
+
+    return Gᵉ, qᵉ, σ, qᵍ⁺
+end
+
+@inline function compute_interface_humidity(q::DryLayerHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    FT = eltype(Ψₛ)
+    Gᵉ, qᵉ, σ, qᵍ⁺ = dry_layer_terms(q, Tₛ, Ψₛ, Ψₐ, ℙₐ)
+
+    qⁱⁿ⁻ = Ψₛ.specific_humidity
+    qᵃᵗ  = Ψₐ.q
+    Gᵃ   = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
+
+    # Series solution qⁱⁿ = (Gᵉ qᵉ + Gᵃ qᵃᵗ)/(Gᵉ + Gᵃ); see the banner above.
+    D    = Gᵉ + Gᵃ
+    qⁱⁿ★ = ifelse(D > 0, (Gᵉ * qᵉ + Gᵃ * qᵃᵗ) / D, qⁱⁿ⁻)
+
+    return convert(FT, qᵍ⁺ + σ * (qⁱⁿ★ - qᵍ⁺))
 end
