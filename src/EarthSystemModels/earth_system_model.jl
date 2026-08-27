@@ -1,6 +1,7 @@
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using Oceananigans
 using Oceananigans.TimeSteppers: Clock
+using Oceananigans.OutputReaders: extract_field_time_series
 using KernelAbstractions: @kernel, @index
 
 mutable struct EarthSystemModel{R, A, L, I, O, F, C, Arch} <: AbstractModel{Nothing, Arch}
@@ -15,6 +16,27 @@ mutable struct EarthSystemModel{R, A, L, I, O, F, C, Arch} <: AbstractModel{Noth
 end
 
 const ESM = EarthSystemModel
+
+"""
+    validate_time_axes(components, clock)
+
+Throw if a component holds a `FieldTimeSeries` whose time axis does not share the clock's time type.
+"""
+function validate_time_axes(components, clock)
+    clock_time_type = typeof(clock.time)
+
+    for component in components
+        isnothing(component) && continue
+        model = component isa Simulation ? component.model : component
+
+        for fts in extract_field_time_series(model)
+            eltype(fts.times) === clock_time_type || throw(ArgumentError(
+                "$(summary(component)) has a $(eltype(fts.times)) time axis but the clock keeps time as $clock_time_type"))
+        end
+    end
+
+    return nothing
+end
 
 function Base.summary(model::ESM)
     A = nameof(typeof(architecture(model)))
@@ -148,12 +170,23 @@ $(TYPEDSIGNATURES)
 
 Return the coupled model's default clock. A `Simulation` atmosphere's clock type is fixed
 by its grid and cannot be coerced, so the coupled clock adopts it (e.g. a `Float32`
-atmosphere gets a `Float32` coupled clock). Otherwise the clock defaults to `Float64`:
-prescribed atmospheres carry a coercible clock, so `adopt_clock` reconciles them to the
-authoritative model clock rather than the other way around.
+atmosphere gets a `Float32` coupled clock). An atmosphere carrying its own clock hands over
+both its time type and its starting time; with no atmosphere the clock is `Float64` at zero.
 """
 default_earth_system_clock(atmosphere::Simulation) = Clock{typeof(component_model(atmosphere).clock.time)}(time = 0)
-default_earth_system_clock(atmosphere) = Clock{Float64}(time = 0)
+
+function default_earth_system_clock(atmosphere)
+    hasproperty(atmosphere, :clock) || return Clock{Float64}(time = 0)
+    return Clock{typeof(atmosphere.clock.time)}(time = atmosphere.clock.time)
+end
+
+"""
+    default_component_clock(times)
+
+A `Clock` keeping time in the same type as `times`, started at the first sample.
+"""
+default_component_clock(times) = Clock{Float64}(time = 0)
+default_component_clock(times::AbstractArray{<:Dates.AbstractTime}) = Clock{eltype(times)}(time = first(times))
 
 """
     materialize_sea_ice(sea_ice, ocean)
@@ -244,6 +277,8 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
     land       = adopt_clock(land, clock)
     sea_ice    = adopt_clock(sea_ice, clock)
     ocean      = adopt_clock(ocean, clock)
+
+    validate_time_axes((radiation, atmosphere, land, sea_ice, ocean), clock)
 
     if atmosphere isa Simulation
         if !isnothing(atmosphere.callbacks)

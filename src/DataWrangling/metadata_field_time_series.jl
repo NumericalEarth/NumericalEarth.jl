@@ -1,7 +1,7 @@
 """
     FieldTimeSeries(metadata::Metadata [, arch_or_grid=CPU() ];
                     time_indices_in_memory = 2,
-                    time_indexing = Cyclical(),
+                    time_indexing = default_time_indexing(metadata.dataset),
                     inpainting = nothing,
                     cache_inpainted_data = true)
 
@@ -37,21 +37,19 @@ end
 
 function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
                                                     time_indices_in_memory = 2,
-                                                    time_indexing = Cyclical(),
+                                                    time_indexing = default_time_indexing(metadata.dataset),
                                                     inpainting = default_inpainting(metadata),
                                                     cache_inpainted_data = true)
 
     Downloads.download(metadata)
 
-    # Match the time axis to the grid's float type. `native_times` returns `Float64` seconds, but with a
-    # Float32 grid that mismatch makes `interpolate`'s time weight `Float64`, so the interpolated value is
-    # `Union{Float32, Float64}` — a type instability that boxes inside GPU tendency/halo kernels.
-    times = convert.(eltype(grid), native_times(metadata))
+    # The time axis matches the clock that queries it, not the grid.
+    times = native_times(metadata)
 
     # A window-averaged series repeats over the span its windows tile, not over the span of its
     # nodes, which sit half a window inside it at each end. Oceananigans infers the latter.
     if time_indexing isa Cyclical{Nothing}
-        period = sample_window_span(metadata)
+        period = window_span(metadata)
         isnothing(period) || (time_indexing = Cyclical(convert(eltype(grid), period)))
     end
 

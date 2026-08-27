@@ -4,6 +4,6 @@
 #####
 
 Downloads.download(metadata::CopernicusAlbedoDatasetMetadata; kwargs...) =
-    download_albedo_dekads!(metadata; kwargs...) do request, path
+    download_ten_day_albedo!(metadata; kwargs...) do request, path
         retrieve_with_retries(ALBEDO_CDS_PRODUCT, request, path)
     end
