@@ -229,8 +229,7 @@ function set_region_data!(target::Field, data, λc, φc, metadata;
     arch        = architecture(grid)
     data        = architecture_ready(arch, data)
     missing_val = missing_value(metadata)
-    # `target` rather than `interior(target)`: the two index identically over the interior, and a
-    # windowed field is then filled over its own indices.
+    # With `parameters`, a windowed field is then filled over its own indices.
     launch!(arch, grid, parameters, _set_region_kernel!, target, data, region, mangling, conversion, missing_val, FT)
     return nothing
 end
