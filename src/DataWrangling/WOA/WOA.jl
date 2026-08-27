@@ -52,6 +52,8 @@ DataWrangling.last_date(::WOAAnnual, args...) = nothing
 # Monthly: 12 climatological months (year is arbitrary, month matters)
 DataWrangling.all_dates(::WOAMonthly, args...) = [DateTime(2018, m, 1) for m in 1:12]
 
+DataWrangling.default_time_anchor(::WOAMonthly) = DataWrangling.CalendarPhase()
+
 DataWrangling.sample_window(metadatum::Metadatum{<:WOAMonthly}) = DataWrangling.calendar_month_window(metadatum)
 
 # WOA stores depth as positive values, surface first (0 to 5500m)

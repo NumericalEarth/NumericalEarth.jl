@@ -171,6 +171,8 @@ DataWrangling.all_dates(::CopernicusAlbedo, variable) = copernicus_albedo_dekada
 # 12 climatological months; the year is arbitrary, only the month matters.
 DataWrangling.all_dates(::CopernicusAlbedoClimatology, variable) = [DateTime(2018, m, 1) for m in 1:12]
 
+DataWrangling.default_time_anchor(::CopernicusAlbedoClimatology) = DataWrangling.CalendarPhase()
+
 #####
 ##### Filenames (date + variable keyed, region-independent — reused across regions)
 #####

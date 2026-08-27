@@ -16,6 +16,8 @@ export DatasetRestoring, SurfaceFluxRestoring
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
 export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
+export CalendarDate, CalendarPhase, SimulationStart
+export default_time_anchor
 
 using Adapt: Adapt
 using Downloads: Downloads
@@ -264,6 +266,7 @@ z_interfaces(::AbstractStaticBathymetry) = (0, 1)
 Base.size(dataset::AbstractStaticBathymetry, variable) = size(dataset)
 
 # Fundamentals
+include("time_anchoring.jl")
 include("metadata.jl")
 include("set_region_data.jl")
 include("field_cache.jl")

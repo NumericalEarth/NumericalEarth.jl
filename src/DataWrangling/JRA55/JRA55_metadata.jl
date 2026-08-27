@@ -64,6 +64,8 @@ end
 
 DataWrangling.all_dates(::MultiYearJRA55, name) = JRA55_multiple_year_dates[name]
 
+DataWrangling.default_time_anchor(::RepeatYearJRA55) = DataWrangling.CalendarPhase()
+
 # Fallback, if we not provide the name, take the highest frequency
 DataWrangling.all_dates(dataset::JRA55Dataset) = all_dates(dataset, :temperature)
 
