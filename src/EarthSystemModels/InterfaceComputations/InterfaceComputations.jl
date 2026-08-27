@@ -1,6 +1,6 @@
 module InterfaceComputations
 
-using Adapt: Adapt
+using Adapt: Adapt, adapt
 using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: AbstractField, Field, Face, Center
