@@ -46,12 +46,10 @@ const SeaWiFS_variable_names = Dict(:chlorophyll => "chlorophyll")
 const SeaWiFS_native_resolution = 1/12
 const SeaWiFS_erddap_server = "https://coastwatch.pfeg.noaa.gov/erddap/griddap"
 const SeaWiFS_erddap_dataset = "erdSW2018chlamday"
-const SeaWiFS_first_date = DateTime(1997, 9, 1)
-const SeaWiFS_last_date = DateTime(2010, 12, 1)
 
 DataWrangling.default_download_directory(::SeaWiFSMonthly) = download_SeaWiFS_cache
 
-DataWrangling.all_dates(::SeaWiFSMonthly, args...) = SeaWiFS_first_date : Month(1) : SeaWiFS_last_date
+DataWrangling.all_dates(::SeaWiFSMonthly, args...) = DateTime(1997, 9, 1) : Month(1) : DateTime(2010, 12, 1)
 
 DataWrangling.available_variables(::SeaWiFSMonthly) = SeaWiFS_variable_names
 DataWrangling.dataset_variable_name(metadata::SeaWiFSMetadata) = SeaWiFS_variable_names[metadata.name]
