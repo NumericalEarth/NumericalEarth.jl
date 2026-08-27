@@ -70,7 +70,7 @@ end
 # ## The ingested land surface: vegetation, soil, urban, radiative properties
 
 panels = (("leaf area index (MODIS)",        static["leaf_area_index"],                    :algae,   (0, 5)),
-          ("vegetated fraction ($(static["landcover_source"]))", static["vegetation_fraction"], :speed, (0, 1)),
+          ("vegetation-class fraction ($(static["landcover_source"]))", static["vegetation_fraction"], :speed, (0, 1)),
           ("canopy height (m, log scale)",   static["canopy_height"],                      :speed,   (1, 30)),
           ("canopy roughness ℓᵐ (m)",        static["momentum_roughness_vegetated"],       :turbid,  (0, 1.5)),
           ("built-up land fraction",         static["urban_cover"],                        :amp,     (0, 0.5)),
