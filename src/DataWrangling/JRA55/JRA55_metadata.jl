@@ -67,14 +67,25 @@ DataWrangling.all_dates(::MultiYearJRA55, name) = JRA55_multiple_year_dates[name
 # Fallback, if we not provide the name, take the highest frequency
 DataWrangling.all_dates(dataset::JRA55Dataset) = all_dates(dataset, :temperature)
 
-# File name generation specific to each Dataset dataset
-# Note that `RepeatYearJRA55` has only one file associated, so the filename
-# is independent of the date. Override the multi-date fallback to return a plain String.
-DataWrangling.metadata_filename(::RepeatYearJRA55, name, date, region) =
-    "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
+# Fluxes, radiation, and precipitation are means over the interval between stamps; the state
+# variables are instantaneous.
+const JRA55_window_averaged_variables = (:river_freshwater_flux,
+                                         :iceberg_freshwater_flux,
+                                         :rain_freshwater_flux,
+                                         :snow_freshwater_flux,
+                                         :downwelling_longwave_radiation,
+                                         :downwelling_shortwave_radiation)
 
-DataWrangling.build_filename(::RepeatYearJRA55, name, dates::AbstractArray, region) =
-    "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
+# The repeat-year files label each mean with the start of its interval; the multi-year files label
+# it with the center.
+function DataWrangling.averaging_window(md::RepeatYearJRA55Metadatum)
+    md.name in JRA55_window_averaged_variables || return (md.dates, md.dates)
+    span = md.name in (:river_freshwater_flux, :iceberg_freshwater_flux) ? Day(1) : Hour(3)
+    return (md.dates, md.dates + span)
+end
+
+DataWrangling.metadata_filename(::RepeatYearJRA55, name, date, region) =  "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
+DataWrangling.build_filename(::RepeatYearJRA55, name, dates::AbstractArray, region) = "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
 
 function DataWrangling.metadata_filename(::MultiYearJRA55, name, date, region)
     shortname = JRA55_dataset_variable_names[name]
