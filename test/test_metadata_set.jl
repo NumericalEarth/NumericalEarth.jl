@@ -3,11 +3,8 @@ include("runtests_setup.jl")
 using NumericalEarth.DataWrangling: MetadataSet, Metadata, Metadatum,
                                     BoundingBox, variable_glossary, metadata_path
 
-# `MetadataSet` is a pure DataWrangling concept: no downloads, no field
-# construction. These tests exercise construction, accessors, iteration,
-# and the global verbose→short glossary. Downstream `set!(model, mset)`,
-# `Field(::MetadataSet)`, and the `download` rename live in their own tests
-# once those land.
+# `MetadataSet` is a pure DataWrangling concept: no downloads, no field construction. These tests
+# cover construction, accessors, iteration, and the verbose→short glossary.
 
 snapshot_date = DateTime(1993, 1, 1)
 date_range    = DateTime(1993, 1, 1):Month(1):DateTime(1993, 4, 1)
@@ -124,7 +121,6 @@ end
                        date    = snapshot_date)
 
     nt = NamedTuple(mset)
-    @test nt isa NamedTuple
     @test keys(nt) === (:temperature, :salinity)
     @test nt.temperature.name == :temperature
     @test nt.salinity.name    == :salinity
@@ -296,10 +292,7 @@ end
 end
 
 @testset "Field(::MetadataSet) rejects multi-date sets" begin
-    # Field(mset) only makes sense for a single snapshot per variable.
-    # A multi-date mset should error pointing the user at a per-variable
-    # FieldTimeSeries comprehension rather than failing deep in
-    # `Field(::Metadata)` with a MethodError.
+    # Field(mset) only makes sense for a single snapshot per variable, so a multi-date mset errors.
     mts = MetadataSet(:temperature, :salinity;
                       dataset = ECCO4Monthly(),
                       dates   = date_range)

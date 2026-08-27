@@ -56,7 +56,6 @@ end
         @test z_interfaces(md) === (-1.0, 0.0)
 
         source = Field(md, arch; inpainting=nothing)
-        @test source isa Field
         @test size(interior(source), 3) == 1
 
         target_grid = LatitudeLongitudeGrid(arch;
