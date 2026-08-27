@@ -358,17 +358,17 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     atmos_state = coupled_model.interfaces.exchanger.atmosphere.state
     Jʳⁿ = hasproperty(atmos_state, :Jʳⁿ) ? atmos_state.Jʳⁿ : ZeroField()
 
-    # A CanopyAirSpace interface carries the skin→bulk ground heat flux `Gᵍ`; the
-    # slab is then driven by conduction (`Jᴱs = −Gᵍ`) rather than by the total
+    # A CanopyAirSpace interface carries the skin→bulk ground heat flux `𝒬ᵍ`; the
+    # slab is then driven by conduction (`Jᴱs = −𝒬ᵍ`) rather than by the total
     # turbulent flux, and radiation is internalized (no separate radiative add). Other
     # closures pass `nothing` and keep the turbulent `𝒬ᵀ + 𝒬ᵛ` budget. A CAS with
     # interception also carries the wet-canopy evaporation `Eʷᵉᵗ`, which is split off
     # from the soil vapor sink (`Jᵛ → Jᵛ − Eʷᵉᵗ`) and routed to the canopy store.
-    Gᵍ = ground_heat_flux_field(al_interface.temperature)
+    𝒬ᵍ = ground_heat_flux_field(al_interface.temperature)
     Ew = canopy_evaporation_field(al_interface.temperature)
 
     launch!(arch, grid, :xy, _assemble_slab_land_fluxes!,
-            P, E, Jv, Es, Pl, Cev, interface_fluxes, Jʳⁿ, Gᵍ, Ew)
+            P, E, Jv, Es, Pl, Cev, interface_fluxes, Jʳⁿ, 𝒬ᵍ, Ew)
     return nothing
 end
 
@@ -383,12 +383,12 @@ end
 @inline canopy_evaporation_value(Ew, i, j) = @inbounds Ew[i, j, 1]
 
 @inline slab_energy_flux(::Nothing, 𝒬ᵀ, 𝒬ᵛ, i, j) = 𝒬ᵀ + 𝒬ᵛ
-@inline slab_energy_flux(Gᵍ, 𝒬ᵀ, 𝒬ᵛ, i, j) = @inbounds -Gᵍ[i, j, 1]
+@inline slab_energy_flux(𝒬ᵍ, 𝒬ᵀ, 𝒬ᵛ, i, j) = @inbounds -𝒬ᵍ[i, j, 1]
 
 @inline _maybe_write!(::Nothing, i, j, value) = nothing
 @inline _maybe_write!(field, i, j, value) = @inbounds field[i, j, 1] = value
 
-@kernel function _assemble_slab_land_fluxes!(P, E, Jv, Es, Pl, Cev, interface_fluxes, Jʳⁿ, Gᵍ, Ew)
+@kernel function _assemble_slab_land_fluxes!(P, E, Jv, Es, Pl, Cev, interface_fluxes, Jʳⁿ, 𝒬ᵍ, Ew)
     i, j = @index(Global, NTuple)
     @inbounds begin
         𝒬ᵀ = interface_fluxes.sensible_heat[i, j, 1]
@@ -397,7 +397,7 @@ end
         rain = Jʳⁿ[i, j, 1]
     end
     Eʷᵉᵗ = canopy_evaporation_value(Ew, i, j)
-    _maybe_write!(Es,  i, j, slab_energy_flux(Gᵍ, 𝒬ᵀ, 𝒬ᵛ, i, j))
+    _maybe_write!(Es,  i, j, slab_energy_flux(𝒬ᵍ, 𝒬ᵀ, 𝒬ᵛ, i, j))
     _maybe_write!(P,   i, j, rain + max(zero(Jᵛ), -Jᵛ))
     _maybe_write!(E,   i, j, max(zero(Jᵛ),  Jᵛ))
     _maybe_write!(Jv,  i, j, Jᵛ - Eʷᵉᵗ)    # soil evaporation + transpiration → Mˡᵃ sink

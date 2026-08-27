@@ -161,7 +161,7 @@ function tiled_land_column(; fraction, label)
     H    = zeros(Nsteps)   # sensible heat, blended (positive up)
     LE   = zeros(Nsteps)   # latent heat, blended (positive up)
     effective_temperature = zeros(Nsteps)   # land-surface (radiometric) temperature
-    Gᵍ   = zeros(Nsteps)   # skin → bulk ground heat flux (into slab)
+    𝒬ᵍ   = zeros(Nsteps)   # skin → bulk ground heat flux (into slab)
     𝒮    = zeros(Nsteps)   # shared-column surface saturation
     latent_heat_vegetated  = zeros(Nsteps)   # vegetated-tile latent (weighted contribution)
     latent_heat_bare  = zeros(Nsteps)   # bare-tile latent (weighted contribution)
@@ -176,7 +176,7 @@ function tiled_land_column(; fraction, label)
         H[n]    = scalar(interface.fluxes.sensible_heat)
         LE[n]   = scalar(interface.fluxes.latent_heat)
         effective_temperature[n] = scalar(interface.temperature.effective)
-        Gᵍ[n]   = scalar(interface.temperature.ground_heat_flux)
+        𝒬ᵍ[n]   = scalar(interface.temperature.ground_heat_flux)
         𝒮[n]    = scalar(land.saturation)
         latent_heat_vegetated[n]  = fraction       * scalar(interface.vegetated.fluxes.latent_heat)
         latent_heat_bare[n]  = (1 - fraction) * scalar(interface.bare.fluxes.latent_heat)
@@ -184,7 +184,7 @@ function tiled_land_column(; fraction, label)
         friction_velocity_bare[n]  = scalar(interface.bare.fluxes.friction_velocity)
     end
 
-    return (; label, fraction, t = T, H, LE, effective_temperature, Gᵍ, 𝒮, latent_heat_vegetated, latent_heat_bare, friction_velocity_vegetated, friction_velocity_bare)
+    return (; label, fraction, t = T, H, LE, effective_temperature, 𝒬ᵍ, 𝒮, latent_heat_vegetated, latent_heat_bare, friction_velocity_vegetated, friction_velocity_bare)
 end
 
 scalar(field) = first(interior(field))
@@ -241,7 +241,7 @@ axislegend(ax; position = :lt, labelsize = 11)
 ax = sweep_panel(fig[3, 1], :𝒮, "Shared-column saturation 𝒮", "𝒮"; legend = :rc)
 hlines!(ax, [critical_saturation]; color = :gray, linestyle = :dash)
 ylims!(ax, 0, 1.05)
-sweep_panel(fig[3, 2], :Gᵍ, "Ground heat flux (into slab)", "Gᵍ (W m⁻²)")
+sweep_panel(fig[3, 2], :𝒬ᵍ, "Ground heat flux (into slab)", "𝒬ᵍ (W m⁻²)")
 
 Label(fig[0, 1:2], "Tiled land column — sweeping the vegetation fraction f_veg", fontsize = 21)
 

@@ -73,15 +73,15 @@ scalar(field) = Array(interior(field))[1, 1, 1]
 
         𝒬ᵀ = scalar(ti.fluxes.sensible_heat)
         𝒬ᵛ = scalar(ti.fluxes.latent_heat)
-        Gᵍ = scalar(ti.temperature.ground_heat_flux)
+        𝒬ᵍ = scalar(ti.temperature.ground_heat_flux)
         Tᵉ = scalar(ti.temperature.effective)
-        @test all(isfinite, (𝒬ᵀ, 𝒬ᵛ, Gᵍ, Tᵉ))
+        @test all(isfinite, (𝒬ᵀ, 𝒬ᵛ, 𝒬ᵍ, Tᵉ))
         @test 285 < scalar(ti.temperature.interface) < 320
 
-        # Slab driven by the blended skin→bulk conduction, Es = −Gᵍ (radiation
+        # Slab driven by the blended skin→bulk conduction, Es = −𝒬ᵍ (radiation
         # internalized per tile ⇒ apply_air_land_radiative_fluxes! adds nothing).
         Es = scalar(model.land.fluxes.surface_energy_flux)
-        @test Es ≈ -Gᵍ atol = 1e-10
+        @test Es ≈ -𝒬ᵍ atol = 1e-10
 
         # --- Linearity: blended == f·veg + (1−f)·bare from the sub-tile buffers. ---
         f = 0.6

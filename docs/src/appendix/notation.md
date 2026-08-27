@@ -205,7 +205,7 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyAirSpace`](@r
 | ``\Omega`` | `clumping` | clumping index | Foliage clumping in the Beer-Lambert transmittance ``e^{-K \Omega L}`` (–) |
 | ``T^{\mathrm{leaf}}`` | – | leaf temperature | Diagnostic temperature of the massless leaf, ``R_n^{\mathrm{leaf}} = H^{\mathrm{leaf}} + LE^{\mathrm{leaf}}`` (K) |
 | ``T^{\mathrm{ac}}``, ``q^{\mathrm{ac}}`` | – | canopy-air node | Temperature (K) and specific humidity (kg kg⁻¹) of the canopy air the atmosphere exchanges with |
-| ``G^{g}`` | `ground_heat_flux` | ground heat flux | Skin→bulk conduction ``G^{g} = \Lambda^{g}(T^{g} - T^{\mathrm{la}})``, positive down (W m⁻²) |
+| ``\mathcal{Q}^{g}`` | `ground_heat_flux` | ground heat flux | Skin→bulk conduction ``\mathcal{Q}^{g} = \Lambda^{g}(T^{g} - T^{\mathrm{la}})``, positive down (W m⁻²) |
 | ``H^{\mathrm{leaf}}``, ``H^{g}`` | – | per-source sensible heat | Leaf and ground sensible heat into the canopy air, positive up (W m⁻²) |
 | ``LE^{\mathrm{leaf}}``, ``LE^{g}`` | – | per-source latent heat | Leaf and ground latent heat into the canopy air, positive up (W m⁻²) |
 | ``g_s`` | – | stomatal conductance | Leaf stomatal conductance from the [`AbstractStomatalConductance`](@ref) model (mol m⁻² s⁻¹) |

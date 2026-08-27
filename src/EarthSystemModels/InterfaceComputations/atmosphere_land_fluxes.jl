@@ -58,7 +58,7 @@ end
         Ts.canopy[i, j, 1]                 = sol.Tˡᵉᵃᶠ
         Ts.soil_skin[i, j, 1]              = sol.Tᵍ
         Ts.effective[i, j, 1]              = sol.effective_temperature
-        Ts.ground_heat_flux[i, j, 1]        = sol.Gᵍ
+        Ts.ground_heat_flux[i, j, 1]        = sol.𝒬ᵍ
         Ts.canopy_latent_heat[i, j, 1]     = sol.LEˡᵉᵃᶠ
         Ts.soil_latent_heat[i, j, 1]       = sol.LEᵍ
         Ts.canopy_sensible_heat[i, j, 1]   = sol.Hˡᵉᵃᶠ
@@ -125,7 +125,7 @@ end
         Ts.canopy[i, j, 1]                 = sol.Tˡᵉᵃᶠ
         Ts.soil_skin[i, j, 1]              = sol.Tᵍ
         Ts.effective[i, j, 1]              = sol.effective_temperature
-        Ts.ground_heat_flux[i, j, 1]        = sol.Gᵍ
+        Ts.ground_heat_flux[i, j, 1]        = sol.𝒬ᵍ
         Ts.canopy_latent_heat[i, j, 1]     = sol.ℒ * sol.gˡᵉᵃᶠᵛ * (sol.qˡᵉᵃᶠ - q̄)
         Ts.soil_latent_heat[i, j, 1]       = sol.ℒ * sol.Gᵉ * (sol.qᵉ - q̄)
         Ts.canopy_sensible_heat[i, j, 1]   = sol.gˡᵉᵃᶠᵀ * (sol.Tˡᵉᵃᶠ - T̄)

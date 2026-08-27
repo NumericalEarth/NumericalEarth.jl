@@ -767,7 +767,7 @@ closes.
     Hᵍ    = gᵍᵀ * (Tᵍ - Tᵃᶜ)
     LEˡᵉᵃᶠ   = ℒ * gˡᵉᵃᶠᵛ * (qˡᵉᵃᶠ - qᵃᶜ)              # total leaf latent (transpiration + wet-canopy)
     LEᵍ   = ℒ * Gᵉ * (qᵉ - qᵃᶜ)
-    Gᵍ = Λ * (Tᵍ - Tˡᵃ)
+    𝒬ᵍ = Λ * (Tᵍ - Tˡᵃ)
     Eʷᵉᵗ = fʷᵉᵗ * gˡᵇ * (qˡᵉᵃᶠ - qᵃᶜ)           # wet-canopy evaporation, mass flux (kg m⁻² s⁻¹, up)
     LEʷᵉᵗ = ℒ * Eʷᵉᵗ                           # wet-canopy latent heat (W m⁻², up); LEˡᵉᵃᶠ − LEʷᵉᵗ = transpiration
 
@@ -783,7 +783,7 @@ closes.
               effective_temperature = convert(FT, effective_temperature),
               Hˡᵉᵃᶠ = convert(FT, Hˡᵉᵃᶠ), Hᵍ = convert(FT, Hᵍ),
               LEˡᵉᵃᶠ = convert(FT, LEˡᵉᵃᶠ), LEᵍ = convert(FT, LEᵍ),
-              Gᵍ = convert(FT, Gᵍ), Eʷᵉᵗ = convert(FT, Eʷᵉᵗ),
+              𝒬ᵍ = convert(FT, 𝒬ᵍ), Eʷᵉᵗ = convert(FT, Eʷᵉᵗ),
               LEʷᵉᵗ = convert(FT, LEʷᵉᵗ),
               Σgᵀ = convert(FT, Σgᵀ), Σgᵛ = convert(FT, Σgᵛ),
               T_eq = convert(FT, T_eq), q_eq = convert(FT, q_eq),
@@ -860,7 +860,7 @@ struct CanopyAirSpaceDiagnostics{F, S}
     canopy                 :: F   # leaf temperature Tˡᵉᵃᶠ
     soil_skin              :: F   # soil-skin temperature Tᵍ
     effective              :: F   # radiating (LST) temperature effective_temperature
-    ground_heat_flux       :: F   # skin→bulk conduction Gᵍ
+    ground_heat_flux       :: F   # skin→bulk conduction 𝒬ᵍ
     canopy_latent_heat     :: F   # leaf transpiration LEˡᵉᵃᶠ
     soil_latent_heat       :: F   # soil evaporation LEᵍ
     canopy_sensible_heat   :: F   # leaf sensible Hˡᵉᵃᶠ

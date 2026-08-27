@@ -222,7 +222,7 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
     LEᵍ = zeros(Nsteps)   # soil evaporation — ground latent share (positive up)
     Hˡᵉᵃᶠ  = zeros(Nsteps)   # leaf sensible share
     Hᵍ  = zeros(Nsteps)   # ground sensible share
-    Gᵍ  = zeros(Nsteps)   # skin → bulk ground heat flux
+    𝒬ᵍ  = zeros(Nsteps)   # skin → bulk ground heat flux
     SW  = zeros(Nsteps)   # incident shortwave
     LW  = zeros(Nsteps)   # incident (downwelling) longwave
     E   = zeros(Nsteps)   # soil + transpiration vapor flux Jᵛ − Eʷᵉᵗ (kg m⁻² s⁻¹, up)
@@ -252,7 +252,7 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
         LEᵍ[n] = scalar(Ts.soil_latent_heat)
         Hˡᵉᵃᶠ[n]  = scalar(Ts.canopy_sensible_heat)
         Hᵍ[n]  = scalar(Ts.soil_sensible_heat)
-        Gᵍ[n]  = scalar(Ts.ground_heat_flux)
+        𝒬ᵍ[n]  = scalar(Ts.ground_heat_flux)
         SW[n]  = downwelling_shortwave(time)
         LW[n]  = downwelling_longwave(time)
         E[n]     = scalar(land.fluxes.vapor_flux)
@@ -271,7 +271,7 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
     transpiration = LEˡᵉᵃᶠ .- LEwet
 
     return (; label, leaf_area_index,
-              t = T, Tₐ, Tˡᵉᵃᶠ, Tᵃᶜ, Tᵍ, Tˡᵃ, Tₑ, H, LE, LEˡᵉᵃᶠ, transpiration, LEᵍ, Hˡᵉᵃᶠ, Hᵍ, Gᵍ, SW, LW,
+              t = T, Tₐ, Tˡᵉᵃᶠ, Tᵃᶜ, Tᵍ, Tˡᵃ, Tₑ, H, LE, LEˡᵉᵃᶠ, transpiration, LEᵍ, Hˡᵉᵃᶠ, Hᵍ, 𝒬ᵍ, SW, LW,
               E, Ewet, LEwet, P, Pˡ, 𝒮, M, Wᶜ)
 end
 
@@ -410,14 +410,14 @@ axislegend(ax; position = :lt, labelsize = 12)
 
 ## (3,2) Surface energy balance — net radiation into the land splits into turbulent
 ## sensible + latent to the atmosphere and conduction into the slab.
-ax = Axis(fig[3, 2]; title = "Surface energy fluxes\n(positive: surface → atmosphere; Gᵍ into slab)",
+ax = Axis(fig[3, 2]; title = "Surface energy fluxes\n(positive: surface → atmosphere; 𝒬ᵍ into slab)",
           xlabel = "t (days)", ylabel = "flux (W m⁻²)")
 mark_pulse!(ax)
 hlines!(ax, [0]; color = :gray, linestyle = :dash)
 lines!(ax, t, rad.Rₙ;  color = :black,     linewidth = 2, label = "net radiation Rₙ")
 lines!(ax, t, ref.LE;  color = :navy,      label = "latent H₂O (LE)")
 lines!(ax, t, ref.H;   color = :orange,    label = "sensible (H)")
-lines!(ax, t, ref.Gᵍ;  color = :seagreen,  linestyle = :dash, label = "ground heat Gᵍ")
+lines!(ax, t, ref.𝒬ᵍ;  color = :seagreen,  linestyle = :dash, label = "ground heat 𝒬ᵍ")
 axislegend(ax; position = :lt, labelsize = 12)
 
 ## (4,1) Latent-heat pathways — the atmosphere feels only the total LE, but the CAS

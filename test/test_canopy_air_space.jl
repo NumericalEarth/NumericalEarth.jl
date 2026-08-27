@@ -71,12 +71,12 @@ end
         Tˡᵉᵃᶠ  = Array(interior(Ts.canopy))[1, 1, 1]
         Tᵍ = Array(interior(Ts.soil_skin))[1, 1, 1]
         Tₑ  = Array(interior(Ts.effective))[1, 1, 1]
-        Gᵍ  = Array(interior(Ts.ground_heat_flux))[1, 1, 1]
+        𝒬ᵍ  = Array(interior(Ts.ground_heat_flux))[1, 1, 1]
         𝒬ᵀ  = Array(interior(ali.fluxes.sensible_heat))[1, 1, 1]
         𝒬ᵛ  = Array(interior(ali.fluxes.latent_heat))[1, 1, 1]
 
         # Finite and physical.
-        @test all(isfinite, (Tᵃᶜ, Tˡᵉᵃᶠ, Tᵍ, Tₑ, Gᵍ, 𝒬ᵀ, 𝒬ᵛ))
+        @test all(isfinite, (Tᵃᶜ, Tˡᵉᵃᶠ, Tᵍ, Tₑ, 𝒬ᵍ, 𝒬ᵀ, 𝒬ᵛ))
         @test 285 < Tᵃᶜ < 320
 
         # Sunlit: the leaf is warmer than the shaded soil skin, and the node lies between
@@ -85,9 +85,9 @@ end
         θᵃᵗ = 300.0
         @test min(Tᵍ, Tˡᵉᵃᶠ, θᵃᵗ) - 1 ≤ Tᵃᶜ ≤ max(Tᵍ, Tˡᵉᵃᶠ, θᵃᵗ) + 1
 
-        # Conservation: the slab is driven by the skin→bulk conduction, Es = −Gᵍ.
+        # Conservation: the slab is driven by the skin→bulk conduction, Es = −𝒬ᵍ.
         Es = Array(interior(model.land.fluxes.surface_energy_flux))[1, 1, 1]
-        @test Es ≈ -Gᵍ atol = 1e-6
+        @test Es ≈ -𝒬ᵍ atol = 1e-6
 
         # Two-source flux shares: the leaf/ground sensible and latent shares are finite
         # and sum to the atmosphere-facing totals (node continuity). The node is re-solved

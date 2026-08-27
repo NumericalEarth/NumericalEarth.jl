@@ -16,7 +16,7 @@
 ##### pure bare soil.
 #####
 ##### Both tiles are `CanopyAirSpace` objects so they emit the *same currency* — an
-##### internalized-radiation, conduction-driven slab energy input (`Gᵍ`) and an
+##### internalized-radiation, conduction-driven slab energy input (`𝒬ᵍ`) and an
 ##### upwelling-longwave (LST) — and the blend is a clean area-weight (no radiation
 ##### double-count; `apply_air_land_radiative_fluxes!` stays a no-op). The bare tile is a
 ##### canopy-free CAS (LAI = 0), derived from the vegetated tile by default. The two tiles
