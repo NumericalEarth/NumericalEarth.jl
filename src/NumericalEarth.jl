@@ -83,7 +83,7 @@ export
     PeakedArrheniusParameters,
     HeskelParameters,
     PeakedArrhenius,
-    ElevationCorrection,
+    AltitudeCorrection,
     atmosphere_land_interface,
     SlabOcean,
     PrescribedOcean,

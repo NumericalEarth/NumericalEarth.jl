@@ -79,7 +79,7 @@ export
     PeakedArrheniusParameters,
     HeskelParameters,
     PeakedArrhenius,
-    ElevationCorrection,
+    AltitudeCorrection,
     atmosphere_land_interface,
     # Sea ice-ocean heat flux formulations
     IceBathHeatFlux,

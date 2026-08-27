@@ -684,3 +684,53 @@ end
         @test land_flux_response(neutral_skin; ℓ = 0.5).u★ > land_flux_response(neutral_skin; ℓ = 0.05).u★
     end
 end
+
+@testset "Atmosphere-Land altitude correction" begin
+    for arch in test_architectures, FT in (Float32, Float64)
+        grid = LatitudeLongitudeGrid(arch, FT;
+                                    size = 1,
+                                    latitude = 10,
+                                    longitude = 10,
+                                    z = (-1, 0),
+                                    topology = (Flat, Flat, Bounded))
+
+        atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10,
+                                              boundary_layer_height = 512)
+        land = SlabLand(grid; hydrology = DryLand(), energy = SlabEnergy(eltype(grid)))
+
+        Γ  = 6.5e-3 # K m⁻¹
+        Δz = 50     # the surface sits above the elevation the atmosphere data assumes
+        correction = AltitudeCorrection(300, 250; lapse_rate = Γ)
+        model = AtmosphereLandModel(atmosphere, land; radiation = nothing,
+                                    exchanger_correction = correction)
+
+        # The correction shares a single float type with the exchange grid, so it
+        # materializes on a `Float32` grid too.
+        materialized = model.interfaces.exchanger.atmosphere.correction
+        @test materialized.lapse_rate isa FT
+        @test materialized.gravitational_acceleration isa FT
+        @test materialized.dry_air_gas_constant isa FT
+        @test eltype(materialized.elevation_difference) == FT
+
+        Tᵃ = 300
+        pᵃ = 101_325
+        qᵃ = 0.005
+        fill!(parent(model.atmosphere.velocities.u), 1)
+        fill!(parent(model.atmosphere.velocities.v), 0)
+        fill!(parent(model.atmosphere.temperature), Tᵃ)
+        fill!(parent(model.atmosphere.pressure), pᵃ)
+        fill!(parent(model.atmosphere.specific_humidity), qᵃ)
+        fill!(model.land.temperature, Tᵃ)
+
+        update_state!(model)
+
+        g  = materialized.gravitational_acceleration
+        Rᵈ = materialized.dry_air_gas_constant
+        T̄  = Tᵃ - Γ * Δz / 2
+
+        state = model.interfaces.exchanger.atmosphere.state
+        @test only(Array(interior(state.T))) ≈ Tᵃ - Γ * Δz
+        @test only(Array(interior(state.p))) ≈ pᵃ * exp(-g * Δz / (Rᵈ * T̄))
+        @test only(Array(interior(state.q))) ≈ qᵃ # adiabatic lifting conserves q
+    end
+end
