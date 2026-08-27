@@ -21,6 +21,8 @@ cd "$RUNDIR"
 echo "=== node: $(hostname)  start: $(date) ==="
 TAG=${TAG:-conus12km_v2}
 PREVIOUS_STATIC=${PREVIOUS_STATIC:-/shared/home/xklee/numericalearth_land_scratch_plans/conus_veg_run/conus12km_vegfix_static.jld2}
+$JULIA --project="$PROJECT" --color=no "$(dirname "$SCRIPT")/validate_conus.jl" "$TAG" > "validate_${TAG}.txt" 2>&1
+echo "VALIDATE_EXIT=$?"
 $JULIA --project="$PROJECT" --color=no "$SCRIPT" "$TAG" "$PREVIOUS_STATIC" > "render_${TAG}.log" 2>&1
 echo "RENDER_EXIT=$?"
 echo "=== done: $(date) ==="
