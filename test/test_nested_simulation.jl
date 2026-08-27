@@ -305,8 +305,6 @@ end
     @test es.v[1]  ≈ parent.velocities.v[1]
 end
 
-# The exchanger's moisture slot holds what `moisture_prognostic_name` binds: `:ρqᵛ` is true vapor,
-# `:ρqᵉ` is vapor + cloud condensate (qᵗ less precipitation).
 @testset "state exchanger: the moisture slot matches the child's moisture_prognostic_name" begin
     ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
     constants = ThermodynamicConstants()
@@ -329,15 +327,13 @@ end
     qᵗ = qᵛ₀ + qᶜˡ₀ + qʳ₀ + qᶜⁱ₀ + qˢ₀
     ρ  = p₀ / (((1 - qᵗ) * Rᵈ + qᵛ₀ * Rᵛ) * T₀)
 
-    # `:ρqᵛ` ⇒ true vapor only.
     exᵛ = ext.state_exchanger(parent, pˢᵗ, constants; condensates, moisture_name = :ρqᵛ)
     @test all(isapprox.(interior(exᵛ.prognostic.ρqᵛᵉ[1]), ρ * qᵛ₀; rtol = 1e-12))
 
-    # `:ρqᵉ` ⇒ vapor + CLOUD condensate; precipitation stays out (qᵉ = qᵗ − qʳ − qˢ).
+    # qᵉ = qᵗ − qʳ − qˢ.
     exᵉ = ext.state_exchanger(parent, pˢᵗ, constants; condensates, moisture_name = :ρqᵉ)
     @test all(isapprox.(interior(exᵉ.prognostic.ρqᵛᵉ[1]), ρ * (qᵛ₀ + qᶜˡ₀ + qᶜⁱ₀); rtol = 1e-12))
 
-    # The two differ by exactly the cloud condensate the vapor-only write drops.
     @test all(isapprox.(interior(exᵉ.prognostic.ρqᵛᵉ[1]) .- interior(exᵛ.prognostic.ρqᵛᵉ[1]),
                         ρ * (qᶜˡ₀ + qᶜⁱ₀); rtol = 1e-12))
 
@@ -345,8 +341,6 @@ end
     @test moisture_prognostic_name(SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())) == :ρqᵉ
 end
 
-# End-to-end closure of the handoff: invert the emitted (θˡⁱ, qᵛᵉ) pair with the child's own saturation
-# adjustment and recover the temperature the parent sent.
 @testset "state exchanger: the child recovers the parent temperature it was sent" begin
     ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
     constants = ThermodynamicConstants()
@@ -368,28 +362,33 @@ end
     set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
     set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
     uniform(v) = (f = CenterField(grid); set!(f, (x, y, z) -> v); f)
-    # No precipitation: qʳ/qˢ carry latent heat into θˡⁱ that `qᵉ` cannot give back, since the child
-    # has no rain/snow prognostic. That is a separate defect.
-    condensates = (qᶜˡ = uniform(qᶜˡ₀), qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing)
 
-    Rᵈ, Rᵛ = dry_air_gas_constant(constants), vapor_gas_constant(constants)
-    ρ = p₀ / (((1 - qᵛ₀ - qᶜˡ₀) * Rᵈ + qᵛ₀ * Rᵛ) * T₀)
-
-    recovered(name) = begin
+    # `qʳ` is deliberately varied: θˡⁱ must not remove latent heat for precipitation, which `qᵉ`
+    # excludes and the child has no prognostic to hold, so the round trip must be insensitive to it.
+    emitted(name; qʳ₀ = 0.0) = begin
+        condensates = (qᶜˡ = uniform(qᶜˡ₀), qʳ = uniform(qʳ₀), qᶜⁱ = nothing, qˢ = nothing)
         ex = ext.state_exchanger(parent, pˢᵗ, constants; condensates, moisture_name = name)
+        Rᵈ, Rᵛ = dry_air_gas_constant(constants), vapor_gas_constant(constants)
+        ρ = p₀ / (((1 - qᵛ₀ - qᶜˡ₀ - qʳ₀) * Rᵈ + qᵛ₀ * Rᵛ) * T₀)
         at(f) = Array(interior(f))[1, 1, 1]
-        θˡⁱ = at(ex.prognostic.ρθ[1]) / at(ex.prognostic.ρᵈ[1])
-        qᵛᵉ = at(ex.prognostic.ρqᵛᵉ[1]) / ρ
-        𝒰   = LiquidIcePotentialTemperatureState(θˡⁱ, MoistureMassFractions(qᵛᵉ), pˢᵗ, p₀)
-        compute_temperature(𝒰, microphysics, constants)
+        (θˡⁱ = at(ex.prognostic.ρθ[1]) / at(ex.prognostic.ρᵈ[1]),
+         qᵛᵉ = at(ex.prognostic.ρqᵛᵉ[1]) / ρ)
     end
 
-    # With the pair the child's scheme expects, the handoff closes to solver tolerance.
-    @test recovered(:ρqᵉ) ≈ T₀ atol = 1e-3
+    invert(θˡⁱ, q) = compute_temperature(
+        LiquidIcePotentialTemperatureState(θˡⁱ, MoistureMassFractions(q), pˢᵗ, p₀), microphysics, constants)
 
-    # Vapor-only into an equilibrium slot loses a damped ℒqᶜˡ/cᵖ, ≈ 0.5 K here.
-    @test T₀ - recovered(:ρqᵛ) > 0.4
-    @test T₀ - recovered(:ρqᵛ) < 0.7
+    for name in (:ρqᵉ, :ρqᵛ), qʳ₀ in (0.0, 2.0e-4, 1.0e-3)
+        e = emitted(name; qʳ₀)
+        @test invert(e.θˡⁱ, e.qᵛᵉ) ≈ T₀ atol = 1e-3
+    end
+
+    # Regression on the moisture write: pairing that same θˡⁱ with vapor alone loses a damped ℒqᶜˡ/cᵖ,
+    # ≈ 0.5 K here, and worsens as the air cools.
+    let e = emitted(:ρqᵉ)
+        @test T₀ - invert(e.θˡⁱ, qᵛ₀) > 0.4
+        @test T₀ - invert(e.θˡⁱ, qᵛ₀) < 0.7
+    end
 end
 
 @testset "Breeze AtmosphereModel as a NestedSimulation child on $(arch)" for arch in test_architectures

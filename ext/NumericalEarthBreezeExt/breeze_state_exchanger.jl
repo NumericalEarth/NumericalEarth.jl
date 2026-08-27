@@ -17,6 +17,8 @@
 #   qᵗ  = qᵛ + qˡ + qⁱ,   qˡ = qᶜˡ + qʳ (all liquid), qⁱ = qᶜⁱ + qˢ (all ice)
 #   ρᵈ  = ρ (1 − qᵗ)                                    ← the prognostic (dry) density
 #   ρθ  = ρᵈ · θˡⁱ,   ρu = ρᵈ · u,   ρv = ρᵈ · v         ← DRY-weighted (energy + momentum)
+#                                                        θˡⁱ removes latent heat only for the condensate
+#                                                        the child holds, never for precipitation
 #   ρqᵛᵉ = ρ · qᵛᵉ                                      ← TOTAL-weighted (moisture mass density)
 #
 # `qᵛᵉ` is the scheme-dependent moisture the child binds under `moisture_prognostic_name`: true vapor
@@ -83,12 +85,18 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
         Rᵈ = dry_air_gas_constant(constants)
         Rᵛ = vapor_gas_constant(constants)
 
+        # Density and dry density carry every species: all condensate is mass that is not dry gas.
         ρ  = air_density(Tᵢ, qᵛᵢ, qˡ, qⁱ, pᵢ, Rᵈ, Rᵛ)
         qᵗ = qᵛᵢ + qˡ + qⁱ
-        θᵢ = liquid_ice_potential_temperature(Tᵢ, qᵛᵢ, qˡ, qⁱ, pᵢ, pˢᵗ, constants)
 
-        # `qᵉ = qᵗ − qʳ − qˢ`: precipitation is excluded from both conventions.
-        qᵛᵉ = ifelse(equilibrium_moisture, qᵛᵢ + qᶜˡᵢ + qᶜⁱᵢ, qᵛᵢ)
+        # θˡⁱ and the moisture slot carry only what the child holds: an equilibrium scheme diagnoses
+        # cloud from `qᵉ = qᵗ − qʳ − qˢ`, a vapor-only scheme holds no condensate at all. The child has no
+        # prognostic for precipitation, so removing its latent heat here would never be given back.
+        qᶜˡᶜ = ifelse(equilibrium_moisture, qᶜˡᵢ, zero(qᶜˡᵢ))
+        qᶜⁱᶜ = ifelse(equilibrium_moisture, qᶜⁱᵢ, zero(qᶜⁱᵢ))
+        qᵛᵉ  = qᵛᵢ + qᶜˡᶜ + qᶜⁱᶜ
+
+        θᵢ = liquid_ice_potential_temperature(Tᵢ, qᵛᵢ, qᶜˡᶜ, qᶜⁱᶜ, pᵢ, pˢᵗ, constants)
 
         ρᵈ[i, j, k]   = ρ * (1 - qᵗ)
         ρθ[i, j, k]   = ρᵈ[i, j, k] * θᵢ
