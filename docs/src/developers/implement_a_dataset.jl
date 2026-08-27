@@ -203,14 +203,13 @@ nothing #hide
 # materializes as a `FieldTimeSeries`. Keeping every snapshot in memory lets us draw the whole record at
 # once as a Hovmöller diagram (depth versus time):
 
-using Oceananigans.Units: days
-
 dates = DateTime(2012, 10, 1):Day(1):DateTime(2012, 12, 1)
 
 temperature = Metadata(:temperature; dataset = OceanStationPapa(), dates)
 Tt = FieldTimeSeries(temperature; time_indices_in_memory = length(dates))
 
-t = Tt.times ./ days
+## The time axis carries dates, so the elapsed days come from differences against the first one.
+t = (Tt.times .- first(dates)) ./ Day(1)
 z = znodes(Tt)
 hovmoller = Array(interior(Tt, 1, 1, :, :))
 

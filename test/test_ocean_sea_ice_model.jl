@@ -41,9 +41,9 @@ using ClimaSeaIce.Rheologies
             initial_state = MetadataSet(:temperature, :salinity;
                                         dataset, date=start_date)
 
-            ocean = ocean_simulation(grid; free_surface)
+            ocean = ocean_simulation(grid; start_date=jra55_start_date, free_surface)
 
-            sea_ice  = sea_ice_simulation(grid, ocean; advection=WENO(order=7))
+            sea_ice  = sea_ice_simulation(grid, ocean; start_date=jra55_start_date, advection=WENO(order=7))
             liquidus = sea_ice.model.phase_transitions.liquidus
 
             # Set the ocean temperature and salinity
@@ -74,9 +74,10 @@ using ClimaSeaIce.Rheologies
             land = JRA55PrescribedLand(arch; end_date=land_dates[2])
 
             @test begin
-                ocean_with_land = ocean_simulation(grid; free_surface)
+                ocean_with_land = ocean_simulation(grid; start_date=jra55_start_date, free_surface)
                 set!(ocean_with_land.model, initial_state)
-                sea_ice_with_land = sea_ice_simulation(grid, ocean_with_land; advection=WENO(order=7))
+                sea_ice_with_land = sea_ice_simulation(grid, ocean_with_land;
+                                                       start_date=jra55_start_date, advection=WENO(order=7))
                 above_freezing_ocean_temperature!(ocean_with_land, grid, sea_ice_with_land)
 
                 coupled_model = OceanSeaIceModel(ocean_with_land, sea_ice_with_land; atmosphere, land, radiation)

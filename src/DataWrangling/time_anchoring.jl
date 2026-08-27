@@ -1,5 +1,7 @@
-using Dates: Dates, DateTime, Millisecond, year, month, day, hour, minute, second, isleapyear
-using Oceananigans.OutputReaders: find_time_index
+using Dates: Dates, DateTime, Millisecond, UTInstant, year, isleapyear
+using Oceananigans.OutputReaders: Cyclical, PartlyInMemory, find_time_index, memory_index, time_index
+
+const MILLISECONDS_PER_DAY = 86_400_000
 
 """
     AbstractTimeAnchor
@@ -8,7 +10,12 @@ Supertype for the `time_indexing` rules that map a model date onto a dataset's o
 """
 abstract type AbstractTimeAnchor end
 
-Oceananigans.OutputReaders.interpolating_time_indices(anchor::AbstractTimeAnchor, times, t) = find_time_index(times, lookup_date(anchor, t, times))
+@inline Oceananigans.OutputReaders.interpolating_time_indices(anchor::AbstractTimeAnchor, times, t) =
+    find_time_index(times, lookup_date(anchor, t, times))
+
+# An anchor folds a model date back into the record, so a chunked backend wraps the way `Cyclical` does.
+@inline Oceananigans.OutputReaders.time_index(backend::PartlyInMemory, ::AbstractTimeAnchor, Nt, m) = time_index(backend, Cyclical(), Nt, m)
+@inline Oceananigans.OutputReaders.memory_index(backend::PartlyInMemory, ::AbstractTimeAnchor, Nt, n) = memory_index(backend, Cyclical(), Nt, n)
 
 """
     CalendarDate()
@@ -43,7 +50,7 @@ The date at which a dataset stamped at `dates` is read for a model at `model_dat
 """
 function lookup_date end
 
-function lookup_date(::CalendarDate, model_date, dates)
+@inline function lookup_date(::CalendarDate, model_date, dates)
     first_stamp, last_stamp = first(dates), last(dates)
     first_stamp <= model_date <= last_stamp && return model_date
 
@@ -61,9 +68,9 @@ function lookup_date(::CalendarDate, model_date, dates)
     return folded
 end
 
-lookup_date(::CalendarPhase, model_date, dates) = substitute_year(model_date, year(first(dates)))
+@inline lookup_date(::CalendarPhase, model_date, dates) = substitute_year(model_date, year(first(dates)))
 
-function lookup_date(anchor::SimulationStart, model_date, dates)
+@inline function lookup_date(anchor::SimulationStart, model_date, dates)
     elapsed = Dates.value(Millisecond(model_date - anchor.start_date))
     # The record runs to the end of the interval its final stamp stands for, so a repeat year ending 31 December
     # 21:00 at 3-hourly spacing spans 365 days rather than 364 days 21 hours.
@@ -77,11 +84,13 @@ end
 `date` moved into `target_year`, keeping month, day and time of day. A 29 February moved into a year that is not
 a leap year becomes 28 February.
 """
-function substitute_year(date, target_year)
-    month(date) == 2 && day(date) == 29 && !isleapyear(target_year) &&
-        return DateTime(target_year, 2, 28, hour(date), minute(date), second(date), Dates.millisecond(date))
+@inline function substitute_year(date, target_year)
+    y, m, d = Dates.yearmonthday(date)
+    # Day counts, not the validating `DateTime` constructor: its error string does not compile for the GPU.
+    milliseconds_in_day = Dates.value(date) - MILLISECONDS_PER_DAY * Dates.totaldays(y, m, d)
+    d = ifelse(m == 2 && d == 29 && !isleapyear(target_year), 28, d)
 
-    return DateTime(target_year, month(date), day(date), hour(date), minute(date), second(date), Dates.millisecond(date))
+    return DateTime(UTInstant(Millisecond(MILLISECONDS_PER_DAY * Dates.totaldays(target_year, m, d) + milliseconds_in_day)))
 end
 
 """
@@ -98,7 +107,7 @@ default_time_indexing(dataset) = CalendarDate()
 Throw if the `(name, anchor)` pairs in `anchored_series` cannot hold a common phase.
 """
 function validate_time_anchors(anchored_series)
-    unanchored = [name for (name, anchor) in anchored_series if anchor isa SimulationStart]
+    unanchored = [series_name for (series_name, anchor) in anchored_series if anchor isa SimulationStart]
 
     isempty(unanchored) && return nothing
     length(unanchored) == 1 && length(anchored_series) == 1 && return nothing

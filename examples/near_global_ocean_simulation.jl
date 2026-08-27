@@ -73,15 +73,15 @@ nothing #hide
 #
 # We build our ocean model using `ocean_simulation`,
 
-ocean = ocean_simulation(grid)
+start_date = DateTime(1992, 1, 1)
+ocean = ocean_simulation(grid; start_date)
 
 # which uses the default `ocean.model`,
 
 ocean.model
 
-# We initialize the ocean model with ECCO4 temperature and salinity for January 1, 1992.
-date = DateTime(1992, 1, 1)
-set!(ocean.model, MetadataSet(:temperature, :salinity; dataset=ECCO4Monthly(), date))
+# We initialize the ocean model with ECCO4 temperature and salinity for the date the run opens at.
+set!(ocean.model, MetadataSet(:temperature, :salinity; dataset=ECCO4Monthly(), date=start_date))
 
 # ### Prescribed atmosphere and radiation
 #
@@ -102,7 +102,7 @@ coupled_model = OceanOnlyModel(ocean; atmosphere, land, radiation)
 
 # We then create a coupled simulation.
 
-simulation = Simulation(coupled_model; Δt=25minutes, stop_time=60days)
+simulation = Simulation(coupled_model; Δt=25minutes, stop_time=start_date + Day(60))
 
 # We define a callback function to monitor the simulation's progress,
 
@@ -131,7 +131,7 @@ function progress(sim)
     wall_time[] = time_ns()
 end
 
-simulation.callbacks[:progress] = Callback(progress, TimeInterval(5days))
+simulation.callbacks[:progress] = Callback(progress, TimeInterval(Day(5)))
 
 # ### Set up output writers
 #
@@ -142,7 +142,7 @@ simulation.callbacks[:progress] = Callback(progress, TimeInterval(5days))
 
 outputs = merge(ocean.model.tracers, ocean.model.velocities)
 ocean.output_writers[:surface] = JLD2Writer(ocean.model, outputs;
-                                            schedule = TimeInterval(1days),
+                                            schedule = TimeInterval(Day(1)),
                                             including = [:grid],
                                             filename = "near_global_surface_fields",
                                             indices = (:, :, grid.Nz),
@@ -199,7 +199,7 @@ sn = @lift begin
 end
 
 title = @lift string("Near-global 1/4 degree ocean simulation after ",
-                     prettytime(times[$n] - times[1]))
+                     prettytime((times[$n] - times[1]) / Second(1)))
 
 λ, φ, _ = nodes(T) # T, e, and s all live on the same grid locations
 

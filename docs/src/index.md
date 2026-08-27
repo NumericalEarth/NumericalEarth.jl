@@ -63,8 +63,8 @@ bathymetry = NumericalEarth.regrid_bathymetry(grid) # builds gridded bathymetry 
 grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bathymetry))
 
 # Build an ocean simulation initialized to the ECCO state estimate version 2 on Jan 1, 1993
-ocean = NumericalEarth.ocean_simulation(grid)
 start_date = DateTime(1993, 1, 1)
+ocean = NumericalEarth.ocean_simulation(grid; start_date)
 set!(ocean.model,
      NumericalEarth.MetadataSet(:temperature, :salinity;
                                 dataset = NumericalEarth.ECCO2Daily(),
@@ -73,7 +73,7 @@ set!(ocean.model,
 # Build and run an EarthSystemModel (with no sea ice component) forced by JRA55 reanalysis
 atmosphere = NumericalEarth.JRA55PrescribedAtmosphere(arch)
 coupled_model = NumericalEarth.OceanOnlyModel(ocean; atmosphere)
-simulation = Simulation(coupled_model, Δt=20minutes, stop_time=30days)
+simulation = Simulation(coupled_model; Δt=20minutes, stop_time=start_date + Day(30))
 run!(simulation)
 ```
 

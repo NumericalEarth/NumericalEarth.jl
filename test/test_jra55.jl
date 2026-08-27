@@ -158,7 +158,7 @@ using NumericalEarth.JRA55: download_JRA55_cache
         pressure_times = atmosphere.pressure.times
         @test rivers_times != pressure_times
         @test length(rivers_times) != length(pressure_times)
-        @test rivers_times[2] - rivers_times[1] == 86400
+        @test rivers_times[2] - rivers_times[1] == Day(1)
 
         @info "Testing MultiYearJRA55 data on $A..."
         dataset = JRA55.MultiYearJRA55()
@@ -185,7 +185,7 @@ using NumericalEarth.JRA55: download_JRA55_cache
         river_flux = download_dataset_with_fallback(filepaths; dataset_name="MultiYearJRA55 $multiyear_name") do
             FieldTimeSeries(metadata, arch; time_indices_in_memory=10)
         end
-        @test Second(end_date - start_date).value ≈ river_flux.times[end] - river_flux.times[1]
+        @test river_flux.times[end] - river_flux.times[1] == end_date - start_date
 
         # Test we can access all the data
         for t in eachindex(river_flux.times)

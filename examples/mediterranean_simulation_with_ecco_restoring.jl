@@ -84,7 +84,7 @@ FS = ECCO_restoring_forcing(:salinity;    start_date, end_date, architecture = G
 # We construct an ocean simulation that evolves two tracers, temperature (:T), salinity (:S)
 # and we pass the previously defined forcing that nudge these tracers.
 
-ocean = ocean_simulation(grid; forcing = (T = FT, S = FS))
+ocean = ocean_simulation(grid; start_date, forcing = (T = FT, S = FS))
 
 # Initializing the model
 #
@@ -138,11 +138,11 @@ ocean.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
 
 # Let's reset the maximum number of iterations
 ocean.stop_iteration = Inf
-ocean.stop_time = 200days
+ocean.stop_time = start_date + Day(200)
 
 ocean.output_writers[:surface_fields] = JLD2Writer(ocean.model, merge(model.velocities, model.tracers);
                                                    indices = (:, :, Nz),
-                                                   schedule = TimeInterval(1days),
+                                                   schedule = TimeInterval(Day(1)),
                                                    overwrite_existing = true,
                                                    including = [:grid],
                                                    filename = "med_surface_field")

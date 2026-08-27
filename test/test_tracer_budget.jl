@@ -123,7 +123,7 @@ end
 
             # Without shortwave penetration
             @testset "Surface-only fluxes" begin
-                ocean = ocean_simulation(deepcopy(grid); free_surface, radiative_forcing=nothing)
+                ocean = ocean_simulation(deepcopy(grid); start_date=jra55_start_date, free_surface, radiative_forcing=nothing)
                 set!(ocean.model, T=Tᵢ, S=Sᵢ)
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
                 test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; heat_rtol=1e-11, freshwater_rtol=√eps(eltype(grid)))
@@ -131,7 +131,7 @@ end
 
             # With penetrative shortwave radiation
             @testset "Surface fluxes + Penetrating shortwave radiation" begin
-                ocean = ocean_simulation(deepcopy(grid); free_surface)
+                ocean = ocean_simulation(deepcopy(grid); start_date=jra55_start_date, free_surface)
                 set!(ocean.model, T=Tᵢ, S=Sᵢ)
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
                 test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; heat_rtol=1e-11, freshwater_rtol=√eps(eltype(grid)))
@@ -140,8 +140,8 @@ end
             @testset "Surface fluxes + penetrating shortwave radiation + Sea ice" begin
                 @info "    .. Surface fluxes + penetrating shortwave radiation + Sea ice"
                 new_grid = deepcopy(grid) # because the grid is mutable
-                ocean = ocean_simulation(new_grid; free_surface)
-                sea_ice = sea_ice_simulation(new_grid, ocean; dynamics=nothing)
+                ocean = ocean_simulation(new_grid; start_date=jra55_start_date, free_surface)
+                sea_ice = sea_ice_simulation(new_grid, ocean; start_date=jra55_start_date, dynamics=nothing)
                 set!(ocean.model, T=Tᵢ, S=Sᵢ)
                 set!(sea_ice.model, h=hᵢ, ℵ=ℵᵢ)
                 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)

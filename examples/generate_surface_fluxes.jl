@@ -48,7 +48,7 @@ save("ECCO_continents.png", fig)
 # (at 00:00 AM and 03:00 AM), by using `time_indices_in_memory = 2`.
 
 atmosphere = JRA55PrescribedAtmosphere(; time_indices_in_memory = 2)
-ocean = ocean_simulation(grid, closure=nothing)
+ocean = ocean_simulation(grid; start_date = atmosphere.clock.time, closure = nothing)
 
 # Now that we have an atmosphere and ocean, we `set!` the ocean temperature and salinity
 # to the ECCO2 data by first creating T, S metadata objects,

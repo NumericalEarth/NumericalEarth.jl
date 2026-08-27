@@ -13,7 +13,7 @@ using Oceananigans.OrthogonalSphericalShellGrids
         grid = RectilinearGrid(arch, size = 200, x = λ★, y = φ★,
                                 z = (-400, 0), topology = (Flat, Flat, Bounded))
 
-        ocean = ocean_simulation(grid)
+        ocean = ocean_simulation(grid; start_date=jra55_start_date)
         data = Int[]
         pushdata(sim) = push!(data, iteration(sim))
         add_callback!(ocean, pushdata)
@@ -45,7 +45,7 @@ using Oceananigans.OrthogonalSphericalShellGrids
         grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
 
         free_surface = SplitExplicitFreeSurface(grid; substeps=20)
-        ocean = ocean_simulation(grid; free_surface)
+        ocean = ocean_simulation(grid; start_date=jra55_start_date, free_surface)
 
         @test NumericalEarth.Oceans.get_radiative_forcing(ocean) isa NumericalEarth.Oceans.TwoColorRadiation
         
@@ -68,7 +68,7 @@ using Oceananigans.OrthogonalSphericalShellGrids
         land = JRA55PrescribedLand(arch; end_date=land_dates[2])
 
         @test begin
-            ocean_with_land = ocean_simulation(grid; free_surface)
+            ocean_with_land = ocean_simulation(grid; start_date=jra55_start_date, free_surface)
             coupled_model = OceanOnlyModel(ocean_with_land; atmosphere, land, radiation)
 
             # Verify land exchanger is present

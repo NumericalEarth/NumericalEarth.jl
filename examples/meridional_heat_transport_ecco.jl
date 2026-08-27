@@ -28,14 +28,15 @@ free_surface       = SplitExplicitFreeSurface(grid; substeps=70)
 momentum_advection = WENOVectorInvariant(order=5)
 tracer_advection   = WENO(order=5)
 vertical_mixing = NumericalEarth.Oceans.default_ocean_closure()
-ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surface,
-                         closure=(vertical_mixing,))
-sea_ice = sea_ice_simulation(grid, ocean; advection=tracer_advection)
+start_date = DateTime(1993, 1, 1)
 
-date = DateTime(1993, 1, 1)
+ocean = ocean_simulation(grid; start_date, momentum_advection, tracer_advection, free_surface,
+                         closure=(vertical_mixing,))
+sea_ice = sea_ice_simulation(grid, ocean; start_date, advection=tracer_advection)
+
 ecco_set = MetadataSet(:temperature, :salinity,
                        :sea_ice_thickness, :sea_ice_concentration;
-                       dataset = ECCO4Monthly(), date)
+                       dataset = ECCO4Monthly(), date = start_date)
 
 set!(ocean.model,   ecco_set)   # T, S
 set!(sea_ice.model, ecco_set)   # h, ℵ
@@ -45,7 +46,7 @@ land       = JRA55PrescribedLand(arch)
 radiation  = JRA55PrescribedRadiation(arch)
 esm = OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
 
-simulation = Simulation(esm; Δt=20minutes, stop_time=5*365days)
+simulation = Simulation(esm; Δt=20minutes, stop_time=start_date + Year(5))
 
 wall_time = Ref(time_ns())
 
@@ -78,7 +79,7 @@ add_callback!(simulation, progress, IterationInterval(200))
 mht = Field(meridional_heat_transport(esm))
 
 ocean.output_writers[:mth] = JLD2Writer(ocean.model, (; mht);
-                                        schedule = TimeInterval(3hours),
+                                        schedule = TimeInterval(Hour(3)),
                                         filename = "ocean_one_degree_mht",
                                         overwrite_existing = true)
 

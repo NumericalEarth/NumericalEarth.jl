@@ -11,6 +11,7 @@ using NumericalEarth
 using PythonCall
 using Oceananigans, Oceananigans.Units
 using CairoMakie
+using Dates
 using Printf
 
 # We import the Veros 4 degree ocean simulation setup, which consists of a near-global ocean
@@ -80,8 +81,9 @@ radiation = JRA55PrescribedRadiation()
 
 # The coupled ocean--atmosphere model. We do not couple an ice model for simplicity.
 
+start_date = atmos.clock.time
 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere=atmos, radiation)
-simulation = Simulation(coupled_model; Δt = 30minutes, stop_time = 60days)
+simulation = Simulation(coupled_model; Δt = 30minutes, stop_time = start_date + Day(60))
 
 # We set up a progress callback that will print the current time, iteration, and maximum velocities
 # every 10days. We also set up another callback that collects the surface prognostic variables
@@ -116,7 +118,7 @@ function save_variables(sim)
     push!(v, deepcopy(sim.model.interfaces.exchanger.ocean.state.v))
 end
 
-add_callback!(simulation, progress, TimeInterval(10days))
+add_callback!(simulation, progress, TimeInterval(Day(10)))
 add_callback!(simulation, save_variables, IterationInterval(10))
 
 # Let's run the simulation!

@@ -5,13 +5,16 @@ using Oceananigans.OutputWriters: Checkpointer
 using Oceananigans.TimeSteppers: reset!
 using NumericalEarth.EarthSystemModels: components
 
+# An iteration-driven run on a calendar clock declares a date it will never reach.
+const coupled_stop_time = DateTime(9999, 12, 31)
+
 function make_coupled_model(grid)
     @inline hi(λ, φ) = φ > 70 || φ < -70
 
-    ocean = ocean_simulation(grid, closure=nothing)
+    ocean = ocean_simulation(grid; start_date=jra55_start_date, closure=nothing)
     set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
 
-    sea_ice = sea_ice_simulation(grid, ocean)
+    sea_ice = sea_ice_simulation(grid, ocean; start_date=jra55_start_date)
     set!(sea_ice.model, h=hi, ℵ=hi)
 
     arch = architecture(grid)
@@ -24,16 +27,14 @@ end
 
 function test_clock_time_and_iteration(simulation, expected_iteration)
     Δt = simulation.Δt
+    expected_time = jra55_start_date + Second(expected_iteration * Δt)
+
     @test simulation.model.clock.iteration == expected_iteration
-    @test simulation.model.clock.time == expected_iteration * Δt
+    @test simulation.model.clock.time == expected_time
     for component in components(simulation.model)
-        if component isa AbstractPrescribedComponent
-            @test component.clock.iteration == expected_iteration
-            @test component.clock.time == expected_iteration * Δt
-        else
-            @test component.model.clock.iteration == expected_iteration
-            @test component.model.clock.time == expected_iteration * Δt
-        end
+        clock = component isa AbstractPrescribedComponent ? component.clock : component.model.clock
+        @test clock.iteration == expected_iteration
+        @test clock.time == expected_time
     end
 end
 
@@ -54,11 +55,11 @@ end
         # (This matches the checkpointed workflow where we create a new Simulation
         # after iteration 3, which is what happens during checkpoint restore)
         model = make_coupled_model(grid)
-        simulation = Simulation(model, Δt=60, stop_iteration=3, verbose=false)
+        simulation = Simulation(model; Δt=60, stop_iteration=3, stop_time=coupled_stop_time, verbose=false)
         run!(simulation)
 
         # Continue on the same model (simulates what happens after checkpoint restore)
-        simulation = Simulation(model, Δt=60, stop_iteration=6, verbose=false)
+        simulation = Simulation(model; Δt=60, stop_iteration=6, stop_time=coupled_stop_time, verbose=false)
         run!(simulation)
 
         # Store reference states at iteration 6
@@ -74,7 +75,7 @@ end
 
         # Checkpointed run: 3 iterations, then checkpoint
         model = make_coupled_model(grid)
-        simulation = Simulation(model, Δt=60, stop_iteration=3, verbose=false)
+        simulation = Simulation(model; Δt=60, stop_iteration=3, stop_time=coupled_stop_time, verbose=false)
 
         prefix = "osm_checkpointer_test_$(typeof(arch))"
         simulation.output_writers[:checkpointer] = Checkpointer(simulation.model;
@@ -87,7 +88,7 @@ end
 
         # Create new model and restore from checkpoint
         model = make_coupled_model(grid)
-        simulation = Simulation(model, Δt=60, stop_iteration=6, verbose=false)
+        simulation = Simulation(model; Δt=60, stop_iteration=6, stop_time=coupled_stop_time, verbose=false)
 
         simulation.output_writers[:checkpointer] = Checkpointer(model;
                                                                 schedule = IterationInterval(3),
@@ -143,7 +144,7 @@ end
                                      halo = (6, 6, 6))
 
         model = make_coupled_model(grid)
-        simulation = Simulation(model; Δt=60, stop_iteration=3, verbose=false)
+        simulation = Simulation(model; Δt=60, stop_iteration=3, stop_time=coupled_stop_time, verbose=false)
 
         # check that clock stops when intended
         @test model.atmosphere isa AbstractPrescribedComponent
