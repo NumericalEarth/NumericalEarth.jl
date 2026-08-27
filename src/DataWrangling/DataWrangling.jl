@@ -5,7 +5,7 @@ restoring, or validation.
 module DataWrangling
 
 export Metadata, Metadatum, MetadataSet, DatewiseFilename, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
-export validate_dataset_coverage, metadata_filename
+export validate_dataset_coverage, metadata_filename, default_region
 export BoundingBox, Column, Linear, Nearest
 export WOAClimatology, WOAAnnual, WOAMonthly
 export AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum
@@ -28,12 +28,16 @@ using Oceananigans: Oceananigans, pretty_filesize, location
 using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
                                   on_architecture, child_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
-using Oceananigans.DistributedComputations: DistributedComputations, @root, all_reduce
-using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
-                          LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes,
+using Oceananigans.DistributedComputations: DistributedComputations, @root, all_reduce,
+                                            DistributedGrid, reconstruct_global_grid
+using Oceananigans.Grids: AbstractGrid, Center, Face, Flat, Bounded,
+                          LatitudeLongitudeGrid, OrthogonalSphericalShellGrid,
+                          RectilinearGrid, λnodes, φnodes,
                           topology, x_domain, y_domain, z_domain
-using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
+using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!,
+                           convert_to_λ₀_λ₀_plus360
 using Oceananigans.Grids: node
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Clamp, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
 using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
@@ -401,6 +405,7 @@ include("CopernicusDEM/CopernicusDEM.jl")
 include("ASTERGED/ASTERGED.jl")
 include("GloBFP3D/GloBFP3D.jl")
 include("GHSL/GHSL.jl")
+include("ETHSentinel2Canopy/ETHSentinel2Canopy.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
 include("MODISLand/MODISLand.jl")
 include("WorldCover/WorldCover.jl")
@@ -423,6 +428,7 @@ using .CopernicusDEM
 using .ASTERGED
 using .GloBFP3D
 using .GHSL
+using .ETHSentinel2Canopy
 using .CopernicusLandAlbedo
 using .MODISLand
 using .WorldCover

@@ -48,6 +48,10 @@ const GEBCO_2026_nc_filename = "GEBCO_2026.nc"
 DataWrangling.metadata_url(::GEBCOMetadatum)                          = GEBCO_2026_nc_url
 metadata_filename(::GEBCO2026, name, date, bounding_box)              = GEBCO_2026_nc_filename
 
+# The GEBCO NetCDF labels its coordinates "lon"/"lat", which the windowed read matches.
+DataWrangling.longitude_name(::GEBCOMetadatum) = "lon"
+DataWrangling.latitude_name(::GEBCOMetadatum) = "lat"
+
 function Downloads.download(metadatum::GEBCOMetadatum)
     filepath = metadata_path(metadatum)
 

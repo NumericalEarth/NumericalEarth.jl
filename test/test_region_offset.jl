@@ -1,7 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.DataWrangling: BoundingBox, BoundingBoxOffset, region_info, restrict,
-    compute_bounding_indices
+    file_cell_index
 using Oceananigans.Grids: Bounded, Flat
 
 # Build the native grid of `bbox` on a global lattice, the way `construct_native_grid` does,
@@ -80,17 +80,20 @@ end
     end
 end
 
-@testset "Bounding index tolerance" begin
-    # A node sitting anywhere within a quarter cell of a coordinate resolves to that
-    # coordinate's index; further above it, to the next one.
+@testset "File cell index tolerance" begin
+    # A Float32 node promoted to Float64 lands a few ulps off the label it should match; the
+    # index must not slip a cell. Half a cell past a label belongs to the next one.
     Δ = 1/336
     hc = [37.2 + (j - 1) * Δ for j in 1:64]
 
-    @test compute_bounding_indices((hc[10], hc[20]), hc) == (10, 20)
-    @test compute_bounding_indices((hc[10] + Δ/8, hc[20]), hc)[1] == 10
-    @test compute_bounding_indices((hc[10] - Δ/8, hc[20]), hc)[1] == 10
-    @test compute_bounding_indices((hc[10] + 3Δ/4, hc[20]), hc)[1] == 11
+    @test file_cell_index(hc[10], hc) == 10
+    @test file_cell_index(Float64(Float32(hc[10])), hc) == 10
+    @test file_cell_index(prevfloat(hc[10], 4), hc) == 10
+    @test file_cell_index(hc[10] + Δ/2, hc) == 11
 
     # A single coordinate has no spacing to scale by, and must not error.
-    @test compute_bounding_indices((37.2, 37.2), [37.2]) == (1, 1)
+    @test file_cell_index(37.2, [37.2]) == 1
+
+    # A node before the first label reports an index below 1: the file starts east of the read.
+    @test file_cell_index(hc[1] - 2Δ, hc) == -1
 end

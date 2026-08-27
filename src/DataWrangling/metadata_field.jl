@@ -162,6 +162,9 @@ function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
     longitude, Nx = restrict_longitude(bbox_lon, native_longitude, Nx)
     latitude,  Ny = restrict(bbox.latitude,  native_latitude,  Ny)
 
+    # A window narrower than the requested halo cannot carry it.
+    halo = (min(halo[1], Nx), min(halo[2], Ny), halo[3])
+
     TX = infer_longitudinal_topology(native_longitude, longitude)
 
     # Relabel the grid longitudes back to the bbox's convention (data is array-indexed, so the
@@ -487,11 +490,100 @@ end
 # by the dataset's `longitude_name` / `latitude_name` traits.
 function read_file_coords(metadatum)
     ds = Dataset(metadata_path(metadatum))
-    λc = ds[longitude_name(metadatum)][:]
-    φc = ds[latitude_name(metadatum)][:]
+    λc = read_file_coordinate(ds, longitude_name(metadatum), metadatum)
+    φc = read_file_coordinate(ds, latitude_name(metadatum), metadatum)
     close(ds)
     reversed_latitude_axis(metadatum.dataset) && reverse!(φc)
     return λc, φc
+end
+
+function read_file_coordinate(ds, name, metadatum)
+    haskey(ds, name) || error("$(metadata_path(metadatum)) has no coordinate variable \"$name\"; " *
+                              "it holds $(keys(ds)). Set `longitude_name`/`latitude_name` for " *
+                              "$(summary(metadatum.dataset)) to the names this file uses.")
+    return ds[name][:]
+end
+
+"""
+    read_windowed_variable(metadatum, field, FT)
+
+Read `metadatum`'s variable as `FT` with no-data cells NaN and both axes ascending, together with
+the file coordinates of what was read, ready for [`set_region_data!`](@ref).
+
+Only the block of the variable covering `field`'s grid is read when `metadatum.region` windows a
+larger file, so windowing a global product does not pull in the globe.
+"""
+function read_windowed_variable(metadatum, field, FT)
+    reversed = reversed_latitude_axis(metadatum.dataset)
+
+    data, λc, φc = Dataset(metadata_path(metadatum), "r") do ds
+        λc = read_file_coordinate(ds, longitude_name(metadatum), metadatum)
+        φc = read_file_coordinate(ds, latitude_name(metadatum), metadatum)
+        variable = ds[dataset_variable_name(metadatum)]
+
+        validate_file_variable_size(variable, λc, φc, metadatum)
+
+        # A descending latitude axis is flipped below, which a block read would have to undo, so
+        # those files are read whole.
+        window = reversed ? nothing : file_window(metadatum.region, field, λc, φc)
+
+        if isnothing(window)
+            validate_whole_file_read(variable, metadatum)
+            nan_convert_missing.(FT, variable[:, :], missing_value(metadatum)), λc, φc
+        else
+            longitude_range, latitude_range = window
+            (nan_convert_missing.(FT, variable[longitude_range, latitude_range], missing_value(metadatum)),
+             λc[longitude_range], φc[latitude_range])
+        end
+    end
+
+    if reversed
+        data = reverse(data, dims=2)
+        reverse!(φc)
+    end
+
+    return data, λc, φc
+end
+
+# A read that is not sliced to a window must span the dataset's declared size (the latitude axis
+# may be staggered by one row; see `mangling_for`), or the fill kernel would clamp the mismatch
+# into silently wrong data.
+function validate_whole_file_read(variable, metadatum)
+    Nx, Ny = size(metadatum)[1:2]
+    size(variable, 1) == Nx && abs(size(variable, 2) - Ny) ≤ 1 && return nothing
+
+    throw(ArgumentError("$(metadata_path(metadatum)) holds \"$(dataset_variable_name(metadatum))\" " *
+                        "with size $(size(variable)[1:2]), but $(summary(metadatum.dataset)) declares " *
+                        "$((Nx, Ny)). The file is from a different product version or truncated; " *
+                        "delete it to download again."))
+end
+
+# The fill kernel clamps out-of-range file indices, so a variable disagreeing with its own
+# coordinates would be filled from the file edge rather than failing.
+function validate_file_variable_size(variable, λc, φc, metadatum)
+    size(variable)[1:2] == (length(λc), length(φc)) && return nothing
+
+    throw(ArgumentError("$(metadata_path(metadatum)) holds \"$(dataset_variable_name(metadatum))\" " *
+                        "with size $(size(variable)[1:2]), but $(length(λc)) longitude and " *
+                        "$(length(φc)) latitude coordinates. The file is truncated or its " *
+                        "coordinate names point at the wrong variables."))
+end
+
+# The contiguous file block covering `field`'s grid, or `nothing` when the whole variable is needed:
+# a global read, or a window continuing across the seam of a file that spans the globe.
+file_window(::Nothing, field, λc, φc) = nothing
+
+function file_window(region::BoundingBox, field, λc, φc)
+    offset = region_info(region, field, λc, φc)
+    Nx, Ny, _ = size(field)
+
+    longitude_range = (offset.di + 1):(offset.di + Nx)
+    latitude_range  = (offset.dj + 1):(offset.dj + Ny)
+
+    last(longitude_range) ≤ length(λc) || return nothing
+    last(latitude_range)  ≤ length(φc) || return nothing
+
+    return longitude_range, latitude_range
 end
 
 #####

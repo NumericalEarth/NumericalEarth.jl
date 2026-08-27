@@ -67,8 +67,7 @@ const default_tile_bytes = 64 * 1024^2
 
 # Index of the file cell holding native cell 1; zero when file and native grid start together.
 function native_file_offset(coordinates, native_centers)
-    i₁, _ = compute_bounding_indices((native_centers[1], native_centers[end]), coordinates)
-    return i₁ - 1
+    return file_cell_index(native_centers[1], coordinates) - 1
 end
 
 # Cells whose centers bracket `[lo, hi]`, widened by `margin` so bilinear interpolation of any

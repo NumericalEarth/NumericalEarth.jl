@@ -27,9 +27,10 @@ Copernicus DEM GLO-30: global 30 m (1 arc-second) Digital Surface Model (DSM),
 representing the Earth's surface including buildings, infrastructure, and
 vegetation. Heights are referenced to the EGM2008 geoid; ocean is set to 0.
 
-Because GLO-30 is a global 30 m product (≈ 1.3M × 0.65M cells), it is read in
-regional windows only: construct the `Metadatum` with a longitude/latitude
-`BoundingBox` and use it with [`regrid_topography`](@ref).
+Because GLO-30 is a global 30 m product (≈ 1.3M × 0.65M cells), it is read in regional
+windows only. [`regrid_topography`](@ref) derives the window from the target grid, so
+`regrid_topography(grid; dataset = GLO30())` needs no region; pass
+`region = BoundingBox(longitude = (λ₁, λ₂), latitude = (φ₁, φ₂))` to choose one explicitly.
 
 Data is read from the Earth Data Hub Zarr store, which requires a (free) DestinE
 personal access token in the `DESTINE_ACCESS_TOKEN` environment variable. Register
@@ -68,6 +69,16 @@ DataWrangling.longitude_interfaces(dataset::CopernicusDEMDataset) =
 DataWrangling.latitude_interfaces(dataset::CopernicusDEMDataset) =
     (-90 + native_cell_width(dataset) / 2, 90 + native_cell_width(dataset) / 2)
 
+# Two native cells of margin for interpolation stencils at the edge.
+DataWrangling.default_horizontal_padding(dataset::CopernicusDEMDataset) = 2 * 360 / size(dataset)[1]
+
+# The global 30/90 m product cannot be read whole.
+DataWrangling.default_region(dataset::CopernicusDEMDataset, grid) =
+    DataWrangling.dataset_bounding_box(dataset, grid)
+
+# The DSM reports the ocean as no-data rather than as a gap in coverage.
+DataWrangling.no_data_means_sea_level(::CopernicusDEMDataset) = true
+
 # GLO-30 is 1 arc-second (360 * 3600 × 180 * 3600); GLO-90 is 3 arc-second.
 Base.size(::GLO30) = (1296000, 648000, 1)
 Base.size(::GLO90) = (432000, 216000, 1)
@@ -89,6 +100,7 @@ DataWrangling.windowed_retrieval(::CopernicusDEMDataset) = true
 DataWrangling.dataset_variable_name(data::CopernicusDEMMetadatum) =
     CopernicusDEM_bathymetry_variable_names[data.name]
 
+# The NetCDF materialized from the Zarr store names its coordinates "lon"/"lat".
 DataWrangling.longitude_name(::CopernicusDEMMetadatum) = "lon"
 DataWrangling.latitude_name(::CopernicusDEMMetadatum)  = "lat"
 
@@ -101,7 +113,9 @@ function DataWrangling.validate_dataset_coverage(grid, metadata::CopernicusDEMMe
     region = metadata.region
     if !(region isa BoundingBox) || isnothing(region.longitude) || isnothing(region.latitude)
         error("$(dataset_prefix(metadata.dataset))() must be used with a bounded region. " *
-              "Build the metadatum with a longitude/latitude BoundingBox, e.g.\n" *
+              "Regrid from the grid, which derives the window automatically:\n" *
+              "    regrid_topography(grid; dataset = $(dataset_prefix(metadata.dataset))())\n" *
+              "or give the metadatum a longitude/latitude BoundingBox:\n" *
               "    metadatum = Metadatum(:bottom_height; dataset = $(dataset_prefix(metadata.dataset))(),\n" *
               "                          region = BoundingBox(longitude = (λ₁, λ₂), latitude = (φ₁, φ₂)))\n" *
               "    regrid_topography(grid, metadatum)")

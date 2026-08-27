@@ -80,6 +80,7 @@ function regrid_bathymetry(target_grid, metadata;
                            overwrite_cache = false)
 
     validate_dataset_coverage(target_grid, metadata)
+    validate_region_covers_grid(target_grid, metadata.region)
 
     if cache && !overwrite_cache
         config = bathymetry_regridding_key(target_grid, metadata;
@@ -132,11 +133,16 @@ function _regrid_bathymetry(target_grid, metadata;
     bathymetry_native_grid = native_grid(metadata, arch; halo = (10, 10, 1))
     FT = eltype(target_grid)
 
-    filepath = metadata_path(metadata)
-    dataset = Dataset(filepath, "r")
+    native_z = Field{Center, Center, Nothing}(bathymetry_native_grid)
 
-    z_data = convert(Array{FT}, dataset[dataset_variable_name(metadata)][:, :])
-    close(dataset)
+    # The file may be global (ETOPO) while the native grid is the window, in which case only the
+    # window's block of the file is read.
+    z_data, λc, φc = read_windowed_variable(metadata, native_z, FT)
+
+    if no_data_means_sea_level(metadata.dataset)
+        # Zero the ocean before the interpolation passes smear NaN into its neighbors.
+        z_data = nan_to_zero.(z_data)
+    end
 
     if !isnothing(height_above_water)
         # Overwrite the height of cells above water.
@@ -146,8 +152,7 @@ function _regrid_bathymetry(target_grid, metadata;
         z_data[land] .= height_above_water
     end
 
-    native_z = Field{Center, Center, Nothing}(bathymetry_native_grid)
-    set!(native_z, z_data)
+    set_region_data!(native_z, reshape(z_data, size(z_data)..., 1), λc, φc, metadata)
     fill_halo_regions!(native_z)
 
     target_z = interpolate_bathymetry_in_passes(native_z, target_grid;
@@ -167,12 +172,17 @@ function _regrid_bathymetry(target_grid, metadata;
 end
 
 """
-    regrid_bathymetry(target_grid; dataset=ETOPO2022(), cache=true, kw...)
+    regrid_bathymetry(target_grid; dataset = ETOPO2022(),
+                      region = default_region(dataset, target_grid), cache = true, kw...)
 
-Regrid bathymetry from `dataset` onto `target_grid`. Default: `dataset = ETOPO2022()`.
+Regrid bathymetry from `dataset` onto `target_grid`. Datasets that cannot be read whole
+(e.g. [`GLO30`](@ref)) are windowed to `target_grid`; pass a [`BoundingBox`](@ref) as
+`region` to window explicitly.
 """
-function regrid_bathymetry(target_grid; dataset = ETOPO2022(), cache = true, kw...)
-    metadatum = Metadatum(:bottom_height; dataset)
+function regrid_bathymetry(target_grid; dataset = ETOPO2022(),
+                           region = default_region(dataset, target_grid),
+                           cache = true, kw...)
+    metadatum = Metadatum(:bottom_height; dataset, region)
     return regrid_bathymetry(target_grid, metadatum; cache, kw...)
 end
 
@@ -195,13 +205,79 @@ end
     regrid_topography(target_grid, metadata; kw...)
 
 Land surface elevation regridded onto `target_grid` from `metadata`, the positive
-counterpart of [`regrid_bathymetry`](@ref). Use this form for region-windowed
-datasets such as `GLO30()`, whose `metadata` carries a `BoundingBox` region.
+counterpart of [`regrid_bathymetry`](@ref). Use this form to control the metadatum
+itself — a download directory, or a region other than the one the grid implies.
 """
 function regrid_topography(target_grid, metadata; kw...)
     elevation = regrid_bathymetry(target_grid, metadata; kw...)
     parent(elevation) .= max.(parent(elevation), 0) # land elevation; ocean → 0
     return elevation
+end
+
+@inline nan_to_zero(x) = ifelse(isnan(x), zero(x), x)
+
+"""
+$(TYPEDSIGNATURES)
+
+Estimate bare-earth land elevation by removing sub-grid object heights from a Digital
+Surface Model. A DSM such as [`GLO30`](@ref) measures the top of whatever sits on the
+ground — canopy over forest, roofs over cities — so where trees and buildings are
+sub-grid it reports the surface *raised* by the mean object height:
+
+    z_bare = max(surface_elevation − maxₖ object_heightₖ, 0)
+
+The `object_heights` (a single `Field` or a tuple of them, e.g. canopy and building
+heights on `surface_elevation`'s grid) are combined by their per-cell maximum, with `NaN`
+counting as zero, so fields defined only over vegetation or only over built-up areas
+compose. A `NaN` in `surface_elevation` is likewise sea level. Removing the lift avoids
+counting it twice: the surface-layer roughness closure already represents it as
+displacement height. Returns a `Field{Center, Center, Nothing}`.
+
+```jldoctest
+using NumericalEarth
+using Oceananigans
+
+grid = LatitudeLongitudeGrid(size = (4, 4), longitude = (0, 1), latitude = (0, 1),
+                             topology = (Bounded, Bounded, Flat))
+
+surface  = set!(Field{Center, Center, Nothing}(grid), 100)  # 100 m DSM
+canopy   = set!(Field{Center, Center, Nothing}(grid), 30)   # 30 m canopy
+building = set!(Field{Center, Center, Nothing}(grid), 10)   # 10 m buildings
+
+z = bare_earth_elevation(surface, (canopy, building))
+maximum(z)
+
+# output
+70.0
+```
+"""
+function bare_earth_elevation(surface_elevation::Field, object_heights::Tuple{Vararg{Field}})
+    grid = surface_elevation.grid
+
+    bare_elevation = Field{Center, Center, Nothing}(grid)
+    for object_height in object_heights
+        interior(bare_elevation) .= max.(interior(bare_elevation), nan_to_zero.(interior(object_height)))
+    end
+
+    interior(bare_elevation) .= max.(nan_to_zero.(interior(surface_elevation)) .- interior(bare_elevation), 0)
+    fill_halo_regions!(bare_elevation)
+
+    return bare_elevation
+end
+
+bare_earth_elevation(surface_elevation::Field, object_height::Field) =
+    bare_earth_elevation(surface_elevation, (object_height,))
+
+"""
+$(TYPEDSIGNATURES)
+
+Regrid the DSM `dataset` onto `grid` with [`regrid_topography`](@ref) — windowing it to
+`grid` when the dataset cannot be read whole — and remove the `object_heights`. Keyword
+arguments (`region`, `interpolation_passes`, `cache`, …) go to `regrid_topography`.
+"""
+function bare_earth_elevation(grid::AbstractGrid, object_heights; dataset = GLO30(), kw...)
+    surface_elevation = regrid_topography(grid; dataset, kw...)
+    return bare_earth_elevation(surface_elevation, object_heights)
 end
 
 # Regridding bathymetry for distributed grids, we handle the whole process
@@ -218,6 +294,10 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
     global_grid = on_architecture(CPU(), global_grid)
     arch = architecture(target_grid)
     Nx, Ny, _ = size(global_grid)
+
+    # The whole domain is regridded here, so coverage is a property of the global grid.
+    validate_dataset_coverage(global_grid, metadata)
+    validate_region_covers_grid(global_grid, metadata.region)
 
     # download uses @root internally; all ranks must call it
     download(metadata)
