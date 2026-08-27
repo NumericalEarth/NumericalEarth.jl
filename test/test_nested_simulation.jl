@@ -12,6 +12,8 @@ using Oceananigans.Forcings: MultipleForcings
 using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics,
               SpecificForcing
+using Breeze.Thermodynamics: MoistureMassFractions, LiquidIcePotentialTemperatureState, temperature,
+                             with_temperature
 using Test
 
 @testset "PrescribedAtmosphere: grid vertical topology selects surface vs volumetric fields" begin
@@ -247,7 +249,6 @@ end
     cₚᵈ  = constants.dry_air.heat_capacity
     Lᵥ   = constants.liquid.reference_latent_heat
     Lₛ   = constants.ice.reference_latent_heat
-    κ    = Rᵈ / cₚᵈ
     pˢᵗ  = 1e5
 
     grid = RectilinearGrid(size = (2, 2, 2), x = (0, 1), y = (0, 1), z = (0, 1),
@@ -262,15 +263,22 @@ end
     @test all(isapprox.(interior(s.θˡⁱ), 300.0; rtol = 1e-12))
     @test all(isapprox.(interior(s.ρ), pˢᵗ / (Rᵈ * 300.0); rtol = 1e-12))
 
-    # Moist + condensate, p ≠ pˢᵗ ⇒ check against the documented formulas.
+    # Moist + condensate, p ≠ pˢᵗ: `temperature` must return T exactly.
     set!(T, 290.0); set!(qᵛ, 0.01); set!(qᶜ, 1e-3); set!(qⁱ, 5e-4); set!(p, 9e4)
     s2 = breeze_prognostic_state(constants, pˢᵗ, T, qᵛ, qᶜ, qⁱ, p)
     Rᵐ = (1 - 0.01 - 1e-3 - 5e-4) * Rᵈ + 0.01 * Rᵛ   # mixture gas constant: condensate loads the mixture
-    θ  = 290.0 * (pˢᵗ / 9e4)^κ
     @test all(isapprox.(interior(s2.qᵗ), 0.01 + 1e-3 + 5e-4; rtol = 1e-12))
     @test all(isapprox.(interior(s2.ρ), 9e4 / (Rᵐ * 290.0); rtol = 1e-10))
-    @test all(isapprox.(interior(s2.θˡⁱ), θ * (1 - (Lᵥ * 1e-3 + Lₛ * 5e-4) / (cₚᵈ * 290.0)); rtol = 1e-10))
-    @test all(interior(s2.θˡⁱ) .< θ)   # condensate loading lowers θˡⁱ below the dry θ
+
+    q  = MoistureMassFractions(0.01, 1e-3, 5e-4)
+    θˡⁱ = Array(interior(s2.θˡⁱ))[1, 1, 1]
+    @test temperature(LiquidIcePotentialTemperatureState(θˡⁱ, q, pˢᵗ, 9e4), constants) ≈ 290.0 rtol = 1e-12
+    @test all(interior(s2.θˡⁱ) .< 290.0 * (pˢᵗ / 9e4)^(Rᵈ / cₚᵈ))   # condensate lowers θˡⁱ below the dry θ
+
+    # A dry-κ formula does not invert here; guards against a revert to a hand-rolled definition.
+    θdry = 290.0 * (pˢᵗ / 9e4)^(Rᵈ / cₚᵈ) * (1 - (Lᵥ * 1e-3 + Lₛ * 5e-4) / (cₚᵈ * 290.0))
+    @test !isapprox(temperature(LiquidIcePotentialTemperatureState(θdry, q, pˢᵗ, 9e4), constants), 290.0;
+                    atol = 1e-3)
 end
 
 # The specific members (`θ`, `u`, `v`) are the intensive partners of the density-weighted ones.
@@ -461,14 +469,17 @@ end
 
     # reconstruct_parent_state reads the parent's FULL-memory fields, not the windowed levels: with the
     # window parked forward, a reconstruction at t = 0 still recovers the parent's t = 0 state
-    # (θˡⁱ = T (pˢᵗ/p)^κ with T = 280 + t, condensate-free), proving no residency aliasing.
+    # (T = 280 + t, condensate-free), proving no residency aliasing.
+    #
+    # Condensate-free is not dry: qᵛ = 0.005 makes Rᵐ/cᵖᵐ differ from Rᵈ/cᵖᵈ by ≈0.02 K here.
     reconstruct = NumericalEarth.NestedModels.reconstruct_parent_state
-    κ = dry_air_gas_constant(constants) / constants.dry_air.heat_capacity
+    θˡⁱ_of(T) = with_temperature(LiquidIcePotentialTemperatureState(0.0, MoistureMassFractions(0.005),
+                                                                    1e5, 9.0e4), T, constants).potential_temperature
     exchange(exchanger, 2.5)                                    # park the window forward
     θ₀ = Array(interior(reconstruct(exchanger, 0.0).θˡⁱ))
     θ₃ = Array(interior(reconstruct(exchanger, 3.0).θˡⁱ))
-    @test all(θ₀ .≈ 280 * (1e5 / 9e4)^κ)
-    @test all(θ₃ .≈ 283 * (1e5 / 9e4)^κ)
+    @test all(θ₀ .≈ θˡⁱ_of(280.0))
+    @test all(θ₃ .≈ θˡⁱ_of(283.0))
 end
 
 # Every liquid and ice hydrometeor the parent carries — cloud liquid and rain, cloud ice and snow —
@@ -613,8 +624,10 @@ end
     exchanger = ext.state_exchanger(parent, 1.0e5, constants; condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
     prog      = exchanger.prognostic
     exchange  = NumericalEarth.NestedModels.exchange_state!
-    κ = dry_air_gas_constant(constants) / constants.dry_air.heat_capacity
-    θtrue(t) = (280 + 5t) * (1e5 / 9e4)^κ
+    # Condensate-free but moist (qᵛ = 0.005): θˡⁱ carries the mixture exponent Rᵐ/cᵖᵐ.
+    θtrue(t) = with_temperature(LiquidIcePotentialTemperatureState(0.0, MoistureMassFractions(0.005),
+                                                                   1e5, 9.0e4),
+                                280 + 5t, constants).potential_temperature
 
     # Baseline: an in-window query is correct.
     exchange(exchanger, 0.5)                                    # bracket n₁ = 1 ⇒ start = 1 (levels 1,2,3)
