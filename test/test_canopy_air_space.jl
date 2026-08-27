@@ -68,44 +68,44 @@ end
         # `CanopyAirSpaceDiagnostics` — the type downstream consumers dispatch on.
         @test Ts isa CanopyAirSpaceDiagnostics
         Tᵃᶜ = Array(interior(Ts.interface))[1, 1, 1]
-        Tᵛ  = Array(interior(Ts.canopy))[1, 1, 1]
+        Tˡᵉᵃᶠ  = Array(interior(Ts.canopy))[1, 1, 1]
         Tᵍ = Array(interior(Ts.soil_skin))[1, 1, 1]
         Tₑ  = Array(interior(Ts.effective))[1, 1, 1]
-        Gᶜ  = Array(interior(Ts.ground_heat_flux))[1, 1, 1]
+        Gᵍ  = Array(interior(Ts.ground_heat_flux))[1, 1, 1]
         𝒬ᵀ  = Array(interior(ali.fluxes.sensible_heat))[1, 1, 1]
         𝒬ᵛ  = Array(interior(ali.fluxes.latent_heat))[1, 1, 1]
 
         # Finite and physical.
-        @test all(isfinite, (Tᵃᶜ, Tᵛ, Tᵍ, Tₑ, Gᶜ, 𝒬ᵀ, 𝒬ᵛ))
+        @test all(isfinite, (Tᵃᶜ, Tˡᵉᵃᶠ, Tᵍ, Tₑ, Gᵍ, 𝒬ᵀ, 𝒬ᵛ))
         @test 285 < Tᵃᶜ < 320
 
         # Sunlit: the leaf is warmer than the shaded soil skin, and the node lies between
         # its coolest and warmest sources.
-        @test Tᵍ < Tᵛ
+        @test Tᵍ < Tˡᵉᵃᶠ
         θᵃᵗ = 300.0
-        @test min(Tᵍ, Tᵛ, θᵃᵗ) - 1 ≤ Tᵃᶜ ≤ max(Tᵍ, Tᵛ, θᵃᵗ) + 1
+        @test min(Tᵍ, Tˡᵉᵃᶠ, θᵃᵗ) - 1 ≤ Tᵃᶜ ≤ max(Tᵍ, Tˡᵉᵃᶠ, θᵃᵗ) + 1
 
-        # Conservation: the slab is driven by the skin→bulk conduction, Es = −Gᶜ.
+        # Conservation: the slab is driven by the skin→bulk conduction, Es = −Gᵍ.
         Es = Array(interior(model.land.fluxes.surface_energy_flux))[1, 1, 1]
-        @test Es ≈ -Gᶜ atol = 1e-6
+        @test Es ≈ -Gᵍ atol = 1e-6
 
         # Two-source flux shares: the leaf/ground sensible and latent shares are finite
         # and sum to the atmosphere-facing totals (node continuity). The node is re-solved
         # against the final skins, so the partition closes to the outer fixed-point tolerance.
-        Hᵛ  = Array(interior(Ts.canopy_sensible_heat))[1, 1, 1]
+        Hˡᵉᵃᶠ  = Array(interior(Ts.canopy_sensible_heat))[1, 1, 1]
         Hᵍ  = Array(interior(Ts.soil_sensible_heat))[1, 1, 1]
-        LEᵛ = Array(interior(Ts.canopy_latent_heat))[1, 1, 1]
+        LEˡᵉᵃᶠ = Array(interior(Ts.canopy_latent_heat))[1, 1, 1]
         LEᵍ = Array(interior(Ts.soil_latent_heat))[1, 1, 1]
-        @test all(isfinite, (Hᵛ, Hᵍ, LEᵛ, LEᵍ))
-        @test Hᵛ + Hᵍ ≈ 𝒬ᵀ rtol = 1e-6
-        @test LEᵛ + LEᵍ ≈ 𝒬ᵛ rtol = 1e-6
+        @test all(isfinite, (Hˡᵉᵃᶠ, Hᵍ, LEˡᵉᵃᶠ, LEᵍ))
+        @test Hˡᵉᵃᶠ + Hᵍ ≈ 𝒬ᵀ rtol = 1e-6
+        @test LEˡᵉᵃᶠ + LEᵍ ≈ 𝒬ᵛ rtol = 1e-6
         # Sunlit dense canopy: transpiration is the larger latent source.
-        @test LEᵛ > LEᵍ
+        @test LEˡᵉᵃᶠ > LEᵍ
 
         # A brighter sun warms the leaf.
         model_dark = canopy_air_space_model(arch, cas; shortwave = 0.0)
-        Tᵛ_dark = Array(interior(model_dark.interfaces.atmosphere_land_interface.temperature.canopy))[1, 1, 1]
-        @test Tᵛ > Tᵛ_dark
+        Tˡᵉᵃᶠ_dark = Array(interior(model_dark.interfaces.atmosphere_land_interface.temperature.canopy))[1, 1, 1]
+        @test Tˡᵉᵃᶠ > Tˡᵉᵃᶠ_dark
     end
 
     # Non-CAS regression: an ordinary temperature closure keeps a plain-Field interface
@@ -179,15 +179,15 @@ end
 
     # A sparse canopy intercepts little, so the vanishing absorbed fraction cancels the per-leaf
     # division and a leaf never receives more than the flux falling on it.
-    @test absorbed_par_value(par, Ψᵣ, par.lai_min, nothing) < incident
+    @test absorbed_par_value(par, Ψᵣ, par.minimum_leaf_area_index, nothing) < incident
     @test absorbed_par_value(par, Ψᵣ, FT(1e-3), nothing) < incident
 
     # A supplied transmittance wins, and the closure's own geometry is not consulted.
-    ftrans = FT(0.4)
-    supplied = absorbed_par_value(par, Ψᵣ, LAI, ftrans)
-    @test supplied ≈ (1 - par.leaf_albedo_par) * (1 - ftrans) * incident / LAI
+    transmittance = FT(0.4)
+    supplied = absorbed_par_value(par, Ψᵣ, LAI, transmittance)
+    @test supplied ≈ (1 - par.leaf_albedo_par) * (1 - transmittance) * incident / LAI
     @test absorbed_par_value(InteractiveAbsorbedPAR(FT; leaf_albedo_par = 0.08, extinction = 0.9),
-                             Ψᵣ, LAI, ftrans) ≈ supplied
+                             Ψᵣ, LAI, transmittance) ≈ supplied
 
     # A canopy hands down the transmittance its own shortwave split uses.
     cas = CanopyAirSpace(FT; soil = DryLayerHumidity(FT;
@@ -246,19 +246,19 @@ end
         end
 
         model = canopy_model(build_canopy_air_space(FT; leaf_albedo))
-        Tᵛ = Array(interior(model.interfaces.atmosphere_land_interface.temperature.canopy))
+        Tˡᵉᵃᶠ = Array(interior(model.interfaces.atmosphere_land_interface.temperature.canopy))
 
         # The bright leaf absorbs less shortwave and runs cooler.
-        @test Tᵛ[2, 1, 1] < Tᵛ[1, 1, 1]
+        @test Tˡᵉᵃᶠ[2, 1, 1] < Tˡᵉᵃᶠ[1, 1, 1]
 
         # The cell carrying the closure's own albedo is bit-identical to the scalar run,
         # so a configuration with no per-cell optics is unchanged.
-        Tᵛ_scalar = Array(interior(canopy_model(scalar_cas).interfaces.atmosphere_land_interface.temperature.canopy))
-        @test Tᵛ[1, 1, 1] == Tᵛ_scalar[1, 1, 1]
+        Tˡᵉᵃᶠ_scalar = Array(interior(canopy_model(scalar_cas).interfaces.atmosphere_land_interface.temperature.canopy))
+        @test Tˡᵉᵃᶠ[1, 1, 1] == Tˡᵉᵃᶠ_scalar[1, 1, 1]
     end
 end
 
-# The wet-canopy vapor mass conductance is gʷ = ρᵃᵗ·LAI·gᵇ. A molar-mass factor (Mᵈ ≈ 0.029)
+# The wet-canopy vapor mass conductance is gˡᵇ = ρᵃᵗ·LAI·gᵇ. A molar-mass factor (Mᵈ ≈ 0.029)
 # in place of the air density (ρᵃᵗ ≈ 1.2) would make it ~40× too small — smaller than the dry
 # stomatal conductance, so a wet leaf would evaporate *slower* than a dry one.
 @testset "Wet-canopy vapor conductance scales with air density" begin
@@ -292,16 +292,16 @@ end
     wet = canopy_air_space_solve(cas, Ψwet, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     dry = canopy_air_space_solve(cas, Ψdry, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
 
-    @test wet.LEᵛ > dry.LEᵛ        # a wet leaf evaporates faster than the dry (stomatal) leaf
-    @test wet.Eʷ > 0
-    @test dry.Eʷ == 0
+    @test wet.LEˡᵉᵃᶠ > dry.LEˡᵉᵃᶠ        # a wet leaf evaporates faster than the dry (stomatal) leaf
+    @test wet.Eʷᵉᵗ > 0
+    @test dry.Eʷᵉᵗ == 0
 
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
-    qᵛ  = saturation_specific_humidity(ℂ, wet.Tᵛ, Ψₐ.p, cas.phase)
-    E_ρ = (ρᵃᵗ * LAI * gᵇ) * (qᵛ - wet.qᵃᶜ)                          # correct (air density)
-    E_M = (default_dry_air_molar_mass * LAI * gᵇ) * (qᵛ - wet.qᵃᶜ)   # erroneous (molar mass)
-    @test wet.Eʷ ≈ E_ρ rtol = 1e-6
-    @test wet.Eʷ / E_M ≈ ρᵃᵗ / default_dry_air_molar_mass rtol = 1e-3   # ≈ 40, not 1
+    qˡᵉᵃᶠ  = saturation_specific_humidity(ℂ, wet.Tˡᵉᵃᶠ, Ψₐ.p, cas.phase)
+    E_ρ = (ρᵃᵗ * LAI * gᵇ) * (qˡᵉᵃᶠ - wet.qᵃᶜ)                          # correct (air density)
+    E_M = (default_dry_air_molar_mass * LAI * gᵇ) * (qˡᵉᵃᶠ - wet.qᵃᶜ)   # erroneous (molar mass)
+    @test wet.Eʷᵉᵗ ≈ E_ρ rtol = 1e-6
+    @test wet.Eʷᵉᵗ / E_M ≈ ρᵃᵗ / default_dry_air_molar_mass rtol = 1e-3   # ≈ 40, not 1
 end
 
 # The CanopyAirSpace soil branch blends the dry-layer series conductance with the saturated-skin
@@ -542,7 +542,7 @@ end
         # sparse canopy routes a larger share of the total latent flux through the soil.
         sparse = canopy_air_space_solve(area_index_cas, Ψ(FT(0.5)), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
         closed = canopy_air_space_solve(area_index_cas, Ψ(FT(5)),   Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
-        soil_share(sol) = sol.LEᵍ / (sol.LEᵍ + sol.LEᵛ)
+        soil_share(sol) = sol.LEᵍ / (sol.LEᵍ + sol.LEˡᵉᵃᶠ)
         @test soil_share(sparse) > soil_share(closed)
     end
 end

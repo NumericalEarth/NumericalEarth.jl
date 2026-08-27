@@ -55,16 +55,16 @@ end
     sol = canopy_air_space_solve(cas, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     @inbounds begin
         Ts.interface[i, j, 1]              = sol.Tᵃᶜ
-        Ts.canopy[i, j, 1]                 = sol.Tᵛ
+        Ts.canopy[i, j, 1]                 = sol.Tˡᵉᵃᶠ
         Ts.soil_skin[i, j, 1]              = sol.Tᵍ
-        Ts.effective[i, j, 1]              = sol.Teff
-        Ts.ground_heat_flux[i, j, 1]        = sol.Gᶜ
-        Ts.canopy_latent_heat[i, j, 1]     = sol.LEᵛ
+        Ts.effective[i, j, 1]              = sol.effective_temperature
+        Ts.ground_heat_flux[i, j, 1]        = sol.Gᵍ
+        Ts.canopy_latent_heat[i, j, 1]     = sol.LEˡᵉᵃᶠ
         Ts.soil_latent_heat[i, j, 1]       = sol.LEᵍ
-        Ts.canopy_sensible_heat[i, j, 1]   = sol.Hᵛ
+        Ts.canopy_sensible_heat[i, j, 1]   = sol.Hˡᵉᵃᶠ
         Ts.soil_sensible_heat[i, j, 1]     = sol.Hᵍ
-        Ts.canopy_evaporation[i, j, 1]     = sol.Eʷ
-        Ts.canopy_wet_latent_heat[i, j, 1] = sol.LEʷ
+        Ts.canopy_evaporation[i, j, 1]     = sol.Eʷᵉᵗ
+        Ts.canopy_wet_latent_heat[i, j, 1] = sol.LEʷᵉᵗ
     end
     return nothing
 end
@@ -122,20 +122,20 @@ end
         Ts.state.temperature[i, j, 1]       = T⁺
         Ts.state.specific_humidity[i, j, 1] = q⁺
         Ts.interface[i, j, 1]              = T⁺
-        Ts.canopy[i, j, 1]                 = sol.Tᵛ
+        Ts.canopy[i, j, 1]                 = sol.Tˡᵉᵃᶠ
         Ts.soil_skin[i, j, 1]              = sol.Tᵍ
-        Ts.effective[i, j, 1]              = sol.Teff
-        Ts.ground_heat_flux[i, j, 1]        = sol.Gᶜ
-        Ts.canopy_latent_heat[i, j, 1]     = sol.ℒ * sol.gˡʷ * (sol.qᵛ - q̄)
+        Ts.effective[i, j, 1]              = sol.effective_temperature
+        Ts.ground_heat_flux[i, j, 1]        = sol.Gᵍ
+        Ts.canopy_latent_heat[i, j, 1]     = sol.ℒ * sol.gˡᵉᵃᶠᵛ * (sol.qˡᵉᵃᶠ - q̄)
         Ts.soil_latent_heat[i, j, 1]       = sol.ℒ * sol.Gᵉ * (sol.qᵉ - q̄)
-        Ts.canopy_sensible_heat[i, j, 1]   = sol.gˡʰ * (sol.Tᵛ - T̄)
-        Ts.soil_sensible_heat[i, j, 1]     = sol.gᵍʰ * (sol.Tᵍ - T̄)
-        Ts.canopy_evaporation[i, j, 1]     = sol.Eʷ
-        Ts.canopy_wet_latent_heat[i, j, 1] = sol.LEʷ
+        Ts.canopy_sensible_heat[i, j, 1]   = sol.gˡᵉᵃᶠᵀ * (sol.Tˡᵉᵃᶠ - T̄)
+        Ts.soil_sensible_heat[i, j, 1]     = sol.gᵍᵀ * (sol.Tᵍ - T̄)
+        Ts.canopy_evaporation[i, j, 1]     = sol.Eʷᵉᵗ
+        Ts.canopy_wet_latent_heat[i, j, 1] = sol.LEʷᵉᵗ
     end
 
     # Exported scales at the step-mean node (the same floored transfer coefficients
-    # the node balance uses), so −ρ cᵖ u★ θ★ = gᵃʰ (T̄ − θᵃᵗ) and the vapor analog.
+    # the node balance uses), so −ρ cᵖ u★ θ★ = gᵃᵀ (T̄ − θᵃᵗ) and the vapor analog.
     # `InterfaceFluxScales` fields share one type: convert, since the thermodynamic
     # constants (and hence θᵃᵗ) may carry a wider float type than the state.
     θᵃᵗ = convert(FT, surface_atmosphere_temperature(Ψₐ, ℙₐ))

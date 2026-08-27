@@ -16,7 +16,7 @@
 ##### pure bare soil.
 #####
 ##### Both tiles are `CanopyAirSpace` objects so they emit the *same currency* — an
-##### internalized-radiation, conduction-driven slab energy input (`Gᶜ`) and an
+##### internalized-radiation, conduction-driven slab energy input (`Gᵍ`) and an
 ##### upwelling-longwave (LST) — and the blend is a clean area-weight (no radiation
 ##### double-count; `apply_air_land_radiative_fluxes!` stays a no-op). The bare tile is a
 ##### canopy-free CAS (LAI = 0), derived from the vegetated tile by default. The two tiles
@@ -49,7 +49,7 @@ struct TiledLandInterface{V, B, F, FL, T}
 end
 
 # A canopy-free canopy: LAI = 0 collapses the leaf branch (no transpiration, no canopy
-# shortwave/longwave, `gˡʰ = 0`), leaving the soil-skin balance the bare tile needs.
+# shortwave/longwave, `gˡᵉᵃᶠᵀ = 0`), leaving the soil-skin balance the bare tile needs.
 zero_leaf_area_index_canopy(q::CanopyConductanceHumidity) =
     CanopyConductanceHumidity(zero(q.atmospheric_co2), q.photosynthesis, q.conductance,
                               q.moisture_stress, q.absorbed_par, q.atmospheric_co2, q.phase)
@@ -220,9 +220,10 @@ end
         blended_temperature.canopy_wet_latent_heat[i, j, 1] = f * veg_temperature.canopy_wet_latent_heat[i, j, 1] + g * bare_temperature.canopy_wet_latent_heat[i, j, 1]
 
         # Effective (LST) temperature: area-weight in radiance (T⁴) space (σ cancels),
-        # σ Teff⁴ = f · LWꜛᵛ + (1−f) · LWꜛᵇ.
-        Teffᵛ = veg_temperature.effective[i, j, 1]
-        Teffᵇ = bare_temperature.effective[i, j, 1]
-        blended_temperature.effective[i, j, 1] = (f * Teffᵛ^4 + g * Teffᵇ^4)^convert(FT, 1//4)
+        # σ T⁴ = f · LWꜛ(vegetated) + (1 − f) · LWꜛ(bare).
+        vegetated_temperature = veg_temperature.effective[i, j, 1]
+        bare_effective_temperature = bare_temperature.effective[i, j, 1]
+        blended_temperature.effective[i, j, 1] =
+            (f * vegetated_temperature^4 + g * bare_effective_temperature^4)^convert(FT, 1//4)
     end
 end

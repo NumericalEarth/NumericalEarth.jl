@@ -301,7 +301,7 @@ EarthSystemModels.surface_retention_curve(land::SlabLand) =
     EarthSystemModels.surface_retention_curve(land.hydrology)
 
 # Prognostic canopy water store `Wᶜ` the interface reads to form the wet fraction
-# `fʷ` (a `CanopyAirSpace` with interception). A `ZeroField` when no closure
+# `fʷᵉᵗ` (a `CanopyAirSpace` with interception). A `ZeroField` when no closure
 # declares a store, so a dry canopy reads `Wᶜ = 0` and the interface reduces to the
 # ordinary CAS.
 surface_canopy_water_storage(land::SlabLand) =
@@ -358,17 +358,17 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     atmos_state = coupled_model.interfaces.exchanger.atmosphere.state
     Jʳⁿ = hasproperty(atmos_state, :Jʳⁿ) ? atmos_state.Jʳⁿ : ZeroField()
 
-    # A CanopyAirSpace interface carries the skin→bulk ground heat flux `Gᶜ`; the
-    # slab is then driven by conduction (`Jᴱs = −Gᶜ`) rather than by the total
+    # A CanopyAirSpace interface carries the skin→bulk ground heat flux `Gᵍ`; the
+    # slab is then driven by conduction (`Jᴱs = −Gᵍ`) rather than by the total
     # turbulent flux, and radiation is internalized (no separate radiative add). Other
     # closures pass `nothing` and keep the turbulent `𝒬ᵀ + 𝒬ᵛ` budget. A CAS with
-    # interception also carries the wet-canopy evaporation `Eʷ`, which is split off
-    # from the soil vapor sink (`Jᵛ → Jᵛ − Eʷ`) and routed to the canopy store.
-    Gᶜ = ground_heat_flux_field(al_interface.temperature)
+    # interception also carries the wet-canopy evaporation `Eʷᵉᵗ`, which is split off
+    # from the soil vapor sink (`Jᵛ → Jᵛ − Eʷᵉᵗ`) and routed to the canopy store.
+    Gᵍ = ground_heat_flux_field(al_interface.temperature)
     Ew = canopy_evaporation_field(al_interface.temperature)
 
     launch!(arch, grid, :xy, _assemble_slab_land_fluxes!,
-            P, E, Jv, Es, Pl, Cev, interface_fluxes, Jʳⁿ, Gᶜ, Ew)
+            P, E, Jv, Es, Pl, Cev, interface_fluxes, Jʳⁿ, Gᵍ, Ew)
     return nothing
 end
 
@@ -378,17 +378,17 @@ end
 @inline canopy_evaporation_field(temperature) = nothing
 @inline canopy_evaporation_field(temperature::CanopyAirSpaceDiagnostics) = temperature.canopy_evaporation
 
-# Additive identity for the no-interception path so `Jᵛ − Eʷ` stays `Jᵛ` bit-for-bit.
+# Additive identity for the no-interception path so `Jᵛ − Eʷᵉᵗ` stays `Jᵛ` bit-for-bit.
 @inline canopy_evaporation_value(::Nothing, i, j) = false
 @inline canopy_evaporation_value(Ew, i, j) = @inbounds Ew[i, j, 1]
 
 @inline slab_energy_flux(::Nothing, 𝒬ᵀ, 𝒬ᵛ, i, j) = 𝒬ᵀ + 𝒬ᵛ
-@inline slab_energy_flux(Gᶜ, 𝒬ᵀ, 𝒬ᵛ, i, j) = @inbounds -Gᶜ[i, j, 1]
+@inline slab_energy_flux(Gᵍ, 𝒬ᵀ, 𝒬ᵛ, i, j) = @inbounds -Gᵍ[i, j, 1]
 
 @inline _maybe_write!(::Nothing, i, j, value) = nothing
 @inline _maybe_write!(field, i, j, value) = @inbounds field[i, j, 1] = value
 
-@kernel function _assemble_slab_land_fluxes!(P, E, Jv, Es, Pl, Cev, interface_fluxes, Jʳⁿ, Gᶜ, Ew)
+@kernel function _assemble_slab_land_fluxes!(P, E, Jv, Es, Pl, Cev, interface_fluxes, Jʳⁿ, Gᵍ, Ew)
     i, j = @index(Global, NTuple)
     @inbounds begin
         𝒬ᵀ = interface_fluxes.sensible_heat[i, j, 1]
@@ -396,12 +396,12 @@ end
         Jᵛ = interface_fluxes.water_vapor[i, j, 1]
         rain = Jʳⁿ[i, j, 1]
     end
-    Eʷ = canopy_evaporation_value(Ew, i, j)
-    _maybe_write!(Es,  i, j, slab_energy_flux(Gᶜ, 𝒬ᵀ, 𝒬ᵛ, i, j))
+    Eʷᵉᵗ = canopy_evaporation_value(Ew, i, j)
+    _maybe_write!(Es,  i, j, slab_energy_flux(Gᵍ, 𝒬ᵀ, 𝒬ᵛ, i, j))
     _maybe_write!(P,   i, j, rain + max(zero(Jᵛ), -Jᵛ))
     _maybe_write!(E,   i, j, max(zero(Jᵛ),  Jᵛ))
-    _maybe_write!(Jv,  i, j, Jᵛ - Eʷ)    # soil evaporation + transpiration → Mˡᵃ sink
-    _maybe_write!(Cev, i, j, Eʷ)         # wet-canopy evaporation → Wᶜ sink (interception step)
+    _maybe_write!(Jv,  i, j, Jᵛ - Eʷᵉᵗ)    # soil evaporation + transpiration → Mˡᵃ sink
+    _maybe_write!(Cev, i, j, Eʷᵉᵗ)         # wet-canopy evaporation → Wᶜ sink (interception step)
     _maybe_write!(Pl,  i, j, rain)          # raw rain; interception step overwrites with throughfall
 end
 

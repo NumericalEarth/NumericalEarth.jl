@@ -160,13 +160,13 @@ function tiled_land_column(; fraction, label)
     T    = zeros(Nsteps)   # time (days)
     H    = zeros(Nsteps)   # sensible heat, blended (positive up)
     LE   = zeros(Nsteps)   # latent heat, blended (positive up)
-    Teff = zeros(Nsteps)   # land-surface (radiometric) temperature
-    Gᶜ   = zeros(Nsteps)   # skin → bulk ground heat flux (into slab)
+    effective_temperature = zeros(Nsteps)   # land-surface (radiometric) temperature
+    Gᵍ   = zeros(Nsteps)   # skin → bulk ground heat flux (into slab)
     𝒮    = zeros(Nsteps)   # shared-column surface saturation
-    LEᵥ  = zeros(Nsteps)   # vegetated-tile latent (weighted contribution)
-    LEᵦ  = zeros(Nsteps)   # bare-tile latent (weighted contribution)
-    u★ᵥ  = zeros(Nsteps)   # vegetated-tile friction velocity
-    u★ᵦ  = zeros(Nsteps)   # bare-tile friction velocity
+    latent_heat_vegetated  = zeros(Nsteps)   # vegetated-tile latent (weighted contribution)
+    latent_heat_bare  = zeros(Nsteps)   # bare-tile latent (weighted contribution)
+    friction_velocity_vegetated  = zeros(Nsteps)   # vegetated-tile friction velocity
+    friction_velocity_bare  = zeros(Nsteps)   # bare-tile friction velocity
 
     @info "Running tiled land column: $label ..."
     for n in 1:Nsteps
@@ -175,16 +175,16 @@ function tiled_land_column(; fraction, label)
         T[n]    = time / day
         H[n]    = scalar(interface.fluxes.sensible_heat)
         LE[n]   = scalar(interface.fluxes.latent_heat)
-        Teff[n] = scalar(interface.temperature.effective)
-        Gᶜ[n]   = scalar(interface.temperature.ground_heat_flux)
+        effective_temperature[n] = scalar(interface.temperature.effective)
+        Gᵍ[n]   = scalar(interface.temperature.ground_heat_flux)
         𝒮[n]    = scalar(land.saturation)
-        LEᵥ[n]  = fraction       * scalar(interface.vegetated.fluxes.latent_heat)
-        LEᵦ[n]  = (1 - fraction) * scalar(interface.bare.fluxes.latent_heat)
-        u★ᵥ[n]  = scalar(interface.vegetated.fluxes.friction_velocity)
-        u★ᵦ[n]  = scalar(interface.bare.fluxes.friction_velocity)
+        latent_heat_vegetated[n]  = fraction       * scalar(interface.vegetated.fluxes.latent_heat)
+        latent_heat_bare[n]  = (1 - fraction) * scalar(interface.bare.fluxes.latent_heat)
+        friction_velocity_vegetated[n]  = scalar(interface.vegetated.fluxes.friction_velocity)
+        friction_velocity_bare[n]  = scalar(interface.bare.fluxes.friction_velocity)
     end
 
-    return (; label, fraction, t = T, H, LE, Teff, Gᶜ, 𝒮, LEᵥ, LEᵦ, u★ᵥ, u★ᵦ)
+    return (; label, fraction, t = T, H, LE, effective_temperature, Gᵍ, 𝒮, latent_heat_vegetated, latent_heat_bare, friction_velocity_vegetated, friction_velocity_bare)
 end
 
 scalar(field) = first(interior(field))
@@ -226,7 +226,7 @@ end
 
 sweep_panel(fig[1, 1], :H,    "Sensible heat (blended)",  "H (W m⁻²)")
 sweep_panel(fig[1, 2], :LE,   "Latent heat (blended)",    "LE (W m⁻²)")
-sweep_panel(fig[2, 1], :Teff, "Land-surface temperature", "Teff (K)")
+sweep_panel(fig[2, 1], :effective_temperature, "Land-surface temperature", "effective_temperature (K)")
 
 ## Bowen ratio H/LE: the drier bare endpoint runs a much higher Bowen ratio.
 ax = Axis(fig[2, 2]; title = "Midday Bowen ratio H/LE", xlabel = "t (days)", ylabel = "H / LE")
@@ -241,7 +241,7 @@ axislegend(ax; position = :lt, labelsize = 11)
 ax = sweep_panel(fig[3, 1], :𝒮, "Shared-column saturation 𝒮", "𝒮"; legend = :rc)
 hlines!(ax, [critical_saturation]; color = :gray, linestyle = :dash)
 ylims!(ax, 0, 1.05)
-sweep_panel(fig[3, 2], :Gᶜ, "Ground heat flux (into slab)", "Gᶜ (W m⁻²)")
+sweep_panel(fig[3, 2], :Gᵍ, "Ground heat flux (into slab)", "Gᵍ (W m⁻²)")
 
 Label(fig[0, 1:2], "Tiled land column — sweeping the vegetation fraction f_veg", fontsize = 21)
 
@@ -263,15 +263,15 @@ ax = Axis(fig2[1, 1]; title = "Latent heat: blended = veg + bare contributions (
           xlabel = "t (days)", ylabel = "LE (W m⁻²)")
 mark_pulse!(ax)
 lines!(ax, mosaic.t, mosaic.LE;  color = :black,       linewidth = 2, label = "blended")
-lines!(ax, mosaic.t, mosaic.LEᵥ; color = :seagreen,    label = "vegetated (f·LE_veg)")
-lines!(ax, mosaic.t, mosaic.LEᵦ; color = :saddlebrown, label = "bare ((1−f)·LE_bare)")
+lines!(ax, mosaic.t, mosaic.latent_heat_vegetated; color = :seagreen,    label = "vegetated (f·LE_veg)")
+lines!(ax, mosaic.t, mosaic.latent_heat_bare; color = :saddlebrown, label = "bare ((1−f)·LE_bare)")
 axislegend(ax; position = :lt, labelsize = 11)
 
 ax = Axis(fig2[1, 2]; title = "Per-tile friction velocity (roughness contrast)",
           xlabel = "t (days)", ylabel = "u★ (m s⁻¹)")
 mark_pulse!(ax)
-lines!(ax, mosaic.t, mosaic.u★ᵥ; color = :seagreen,    label = "vegetated tile (rough)")
-lines!(ax, mosaic.t, mosaic.u★ᵦ; color = :saddlebrown, label = "bare tile (smooth)")
+lines!(ax, mosaic.t, mosaic.friction_velocity_vegetated; color = :seagreen,    label = "vegetated tile (rough)")
+lines!(ax, mosaic.t, mosaic.friction_velocity_bare; color = :saddlebrown, label = "bare tile (smooth)")
 axislegend(ax; position = :lt, labelsize = 11)
 
 Label(fig2[0, 1:2], "Two-tile decomposition of the mosaic", fontsize = 21)

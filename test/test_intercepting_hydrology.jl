@@ -151,19 +151,19 @@ end
 
         # Off the clamp boundaries: a partially-full store draining/filling.
         set!(land; canopy_water_storage = 0.5 * c * LAI)
-        update_state!(model)   # refresh Eʷ with the reset store
+        update_state!(model)   # refresh Eʷᵉᵗ with the reset store
 
         rain          = scalar(land.fluxes.liquid_precipitation_flux)   # raw rain the step will read
-        Ewet_demanded = scalar(land.fluxes.canopy_evaporation)          # interface Eʷ the step will consume
+        Ewet_demanded = scalar(land.fluxes.canopy_evaporation)          # interface Eʷᵉᵗ the step will consume
 
         time_step!(model, Δt)
 
         dWcdt    = scalar(land.diagnostics.canopy_water_storage_tendency)
         throughf = scalar(land.diagnostics.throughfall)
         Ewet     = scalar(land.diagnostics.wet_canopy_evaporation)   # *realized* store loss
-        # Exact canopy water budget: rain = dWᶜ/dt + Eʷ + throughfall (any regime, any Δt).
+        # Exact canopy water budget: rain = dWᶜ/dt + Eʷᵉᵗ + throughfall (any regime, any Δt).
         @test rain ≈ dWcdt + Ewet + throughf atol=1e-14
-        # No over-drain here ⇒ realized loss equals the interface-demanded Eʷ (read pre-step,
+        # No over-drain here ⇒ realized loss equals the interface-demanded Eʷᵉᵗ (read pre-step,
         # since update_net_fluxes! refreshes the accumulator with the new Wᶜ afterward).
         @test Ewet ≈ Ewet_demanded atol=1e-14
         # Interception caught a positive fraction ⇒ less than the raw rain reaches the soil.
@@ -175,7 +175,7 @@ end
     for arch in test_architectures
         FT = Float64
         LAI = 3.0; c = 0.1
-        # No rain, large step: the lagged interface Eʷ can demand more than the store holds.
+        # No rain, large step: the lagged interface Eʷᵉᵗ can demand more than the store holds.
         model = interception_model(arch, FT; leaf_area_index = LAI, capacity = c, rain = 0.0)
         land = model.land
         set!(land; canopy_water_storage = 0.8 * c * LAI)

@@ -211,24 +211,24 @@ Base.show(io::IO, p::FarquharPhotosynthesis) = print(io, summary(p),
     "(Vcmax25=", prettysummary(p.Vcmax25), ")")
 
 """
-    net_assimilation(photosynthesis, ci, APAR, Tₗ, P, β)
+    net_assimilation(photosynthesis, ci, APAR, Tˡᵉᵃᶠ, P, β)
 
 Net CO₂ assimilation `Aₙ` (mol CO₂ m⁻² s⁻¹) at intercellular CO₂ partial pressure
-`ci` (Pa), absorbed PAR `APAR` (mol photon m⁻² s⁻¹), leaf temperature `Tₗ` (K),
+`ci` (Pa), absorbed PAR `APAR` (mol photon m⁻² s⁻¹), leaf temperature `Tˡᵉᵃᶠ` (K),
 air pressure `P` (Pa), and moisture-stress factor `β ∈ [0, 1]`. `β` multiplies the
 photosynthetic capacities `Vcmax`, `Jmax` (Egea-type stress), so it propagates to
 both `Aₙ` and — through the Medlyn coupling — the stomatal conductance.
 """
-@inline function net_assimilation(p::FarquharPhotosynthesis, ci, APAR, Tₗ, P, β)
-    Γ★ = p.Γ★25 * arrhenius_scaling(Tₗ, p.compensation_activation_energy) * P / oftype(P, 101325)
-    Kc = p.Kc25 * arrhenius_scaling(Tₗ, p.kc_activation_energy)
-    Ko = p.Ko25 * arrhenius_scaling(Tₗ, p.ko_activation_energy)
+@inline function net_assimilation(p::FarquharPhotosynthesis, ci, APAR, Tˡᵉᵃᶠ, P, β)
+    Γ★ = p.Γ★25 * arrhenius_scaling(Tˡᵉᵃᶠ, p.compensation_activation_energy) * P / oftype(P, 101325)
+    Kc = p.Kc25 * arrhenius_scaling(Tˡᵉᵃᶠ, p.kc_activation_energy)
+    Ko = p.Ko25 * arrhenius_scaling(Tˡᵉᵃᶠ, p.ko_activation_energy)
     Km = Kc * (1 + p.O₂ * P / Ko)
 
-    Vcmax = β * p.Vcmax25 * capacity_scaling(p.capacity_response, Tₗ, p.vcmax_response)
-    Jmax  = β * p.jmax_to_vcmax * p.Vcmax25 * capacity_scaling(p.capacity_response, Tₗ, p.jmax_response)
+    Vcmax = β * p.Vcmax25 * capacity_scaling(p.capacity_response, Tˡᵉᵃᶠ, p.vcmax_response)
+    Jmax  = β * p.jmax_to_vcmax * p.Vcmax25 * capacity_scaling(p.capacity_response, Tˡᵉᵃᶠ, p.jmax_response)
     Rd    = p.respiration_to_vcmax * p.Vcmax25 *
-            heskel_respiration_scaling(Tₗ, p.respiration_response.slope, p.respiration_response.curvature)
+            heskel_respiration_scaling(Tˡᵉᵃᶠ, p.respiration_response.slope, p.respiration_response.curvature)
 
     # Electron transport rate: smooth minimum of light supply and Jmax.
     J = smooth_minimum(p.quantum_yield * APAR, Jmax, p.θⱼ)

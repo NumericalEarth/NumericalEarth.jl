@@ -8,7 +8,7 @@
 # massless **canopy-air node** `(Tᵃᶜ, qᵃᶜ)` that both surfaces feed and that drains to
 # the atmosphere by Monin–Obukhov turbulence:
 #
-#     Tᵛ   leaf         (diagnostic, massless: Rₙᵛ = Hᵛ + LEᵛ)
+#     Tˡᵉᵃᶠ   leaf         (diagnostic, massless: Rₙˡᵉᵃᶠ = Hˡᵉᵃᶠ + LEˡᵉᵃᶠ)
 #     Tᵍ  soil skin    (diagnostic: Rₙᵍ = Hᵍ + LEᵍ + Λᵍ(Tᵍ − Tˡᵃ))
 #     Tᵃᶜ  canopy air    (diagnostic node; what the atmosphere sees)
 #     Tˡᵃ  bulk slab     (prognostic; driven by the skin→bulk conduction Λᵍ)
@@ -211,23 +211,23 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
 
     T   = zeros(Nsteps)   # time (days)
     Tₐ  = zeros(Nsteps)   # air (forcing)
-    Tᵛ  = zeros(Nsteps)   # leaf
+    Tˡᵉᵃᶠ  = zeros(Nsteps)   # leaf
     Tᵃᶜ = zeros(Nsteps)   # canopy-air node
     Tᵍ = zeros(Nsteps)   # soil skin
     Tˡᵃ = zeros(Nsteps)   # bulk slab
     Tₑ  = zeros(Nsteps)   # effective radiating (LST)
     H   = zeros(Nsteps)   # sensible heat, atmosphere total (positive up)
     LE  = zeros(Nsteps)   # latent heat, atmosphere total (positive up)
-    LEᵛ = zeros(Nsteps)   # leaf latent (transpiration + wet-canopy, positive up)
+    LEˡᵉᵃᶠ = zeros(Nsteps)   # leaf latent (transpiration + wet-canopy, positive up)
     LEᵍ = zeros(Nsteps)   # soil evaporation — ground latent share (positive up)
-    Hᵛ  = zeros(Nsteps)   # leaf sensible share
+    Hˡᵉᵃᶠ  = zeros(Nsteps)   # leaf sensible share
     Hᵍ  = zeros(Nsteps)   # ground sensible share
-    Gᶜ  = zeros(Nsteps)   # skin → bulk ground heat flux
+    Gᵍ  = zeros(Nsteps)   # skin → bulk ground heat flux
     SW  = zeros(Nsteps)   # incident shortwave
     LW  = zeros(Nsteps)   # incident (downwelling) longwave
-    E   = zeros(Nsteps)   # soil + transpiration vapor flux Jᵛ − Eʷ (kg m⁻² s⁻¹, up)
+    E   = zeros(Nsteps)   # soil + transpiration vapor flux Jᵛ − Eʷᵉᵗ (kg m⁻² s⁻¹, up)
     Ewet = zeros(Nsteps)  # wet-canopy evaporation (kg m⁻² s⁻¹, up)
-    LEwet = zeros(Nsteps) # wet-canopy latent heat ℒ·Eʷ (W m⁻², up)
+    LEwet = zeros(Nsteps) # wet-canopy latent heat ℒ·Eʷᵉᵗ (W m⁻², up)
     P   = zeros(Nsteps)   # incident rain (kg m⁻² s⁻¹, down)
     Pˡ  = zeros(Nsteps)   # throughfall reaching the soil (kg m⁻² s⁻¹, down)
     𝒮   = zeros(Nsteps)   # surface saturation
@@ -241,18 +241,18 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
         time = model.clock.time
         T[n]   = time / day
         Tₐ[n]  = air_temperature(time)
-        Tᵛ[n]  = scalar(Ts.canopy)
+        Tˡᵉᵃᶠ[n]  = scalar(Ts.canopy)
         Tᵃᶜ[n] = scalar(Ts.interface)
         Tᵍ[n] = scalar(Ts.soil_skin)
         Tˡᵃ[n] = scalar(land.temperature)
         Tₑ[n]  = scalar(Ts.effective)
         H[n]   = scalar(interface.fluxes.sensible_heat)
         LE[n]  = scalar(interface.fluxes.latent_heat)
-        LEᵛ[n] = scalar(Ts.canopy_latent_heat)
+        LEˡᵉᵃᶠ[n] = scalar(Ts.canopy_latent_heat)
         LEᵍ[n] = scalar(Ts.soil_latent_heat)
-        Hᵛ[n]  = scalar(Ts.canopy_sensible_heat)
+        Hˡᵉᵃᶠ[n]  = scalar(Ts.canopy_sensible_heat)
         Hᵍ[n]  = scalar(Ts.soil_sensible_heat)
-        Gᶜ[n]  = scalar(Ts.ground_heat_flux)
+        Gᵍ[n]  = scalar(Ts.ground_heat_flux)
         SW[n]  = downwelling_shortwave(time)
         LW[n]  = downwelling_longwave(time)
         E[n]     = scalar(land.fluxes.vapor_flux)
@@ -265,13 +265,13 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
         Wᶜ[n]  = scalar(land.prognostic.canopy_water_storage)
     end
 
-    ## The leaf latent `LEᵛ` is transpiration + wet-canopy; the model reports the wet share
-    ## `LEwet = ℒ·Eʷ` with the *same* `ℒ` as `LEᵛ`, so `transpiration` is the exact
+    ## The leaf latent `LEˡᵉᵃᶠ` is transpiration + wet-canopy; the model reports the wet share
+    ## `LEwet = ℒ·Eʷᵉᵗ` with the *same* `ℒ` as `LEˡᵉᵃᶠ`, so `transpiration` is the exact
     ## stomatal flux (and stays ≥ 0, unlike a split against a fixed reference `ℒ`).
-    transpiration = LEᵛ .- LEwet
+    transpiration = LEˡᵉᵃᶠ .- LEwet
 
     return (; label, leaf_area_index,
-              t = T, Tₐ, Tᵛ, Tᵃᶜ, Tᵍ, Tˡᵃ, Tₑ, H, LE, LEᵛ, transpiration, LEᵍ, Hᵛ, Hᵍ, Gᶜ, SW, LW,
+              t = T, Tₐ, Tˡᵉᵃᶠ, Tᵃᶜ, Tᵍ, Tˡᵃ, Tₑ, H, LE, LEˡᵉᵃᶠ, transpiration, LEᵍ, Hˡᵉᵃᶠ, Hᵍ, Gᵍ, SW, LW,
               E, Ewet, LEwet, P, Pˡ, 𝒮, M, Wᶜ)
 end
 
@@ -307,33 +307,33 @@ dense_m  = canopy_air_space_column(leaf_area_index = 4.0, conductance = medlyn, 
 # The CAS keeps only the surface *temperatures* and the turbulent *totals*; the
 # radiative shares are diagnostic functions of those, so we rebuild them here with the
 # exact solve formulas — the Beer–Lambert shortwave split and the two-face longwave
-# ledger (ClimaLand D13–D17) — using the leaf `Tᵛ` and soil-skin `Tᵍ` each column stored.
+# ledger (ClimaLand D13–D17) — using the leaf `Tˡᵉᵃᶠ` and soil-skin `Tᵍ` each column stored.
 
 function radiation_partition(case)
     LAI = case.leaf_area_index
     σ   = stefan_boltzmann
-    εᵛ = max_canopy_emissivity * (1 - exp(-LAI))
+    εˡᵉᵃᶠ = max_canopy_emissivity * (1 - exp(-LAI))
     εᵍ = ground_emissivity
-    ftrans = exp(-extinction * LAI * clumping)
+    transmittance = exp(-extinction * LAI * clumping)
 
-    SW, LW, Tᵛ, Tᵍ = case.SW, case.LW, case.Tᵛ, case.Tᵍ
+    SW, LW, Tˡᵉᵃᶠ, Tᵍ = case.SW, case.LW, case.Tˡᵉᵃᶠ, case.Tᵍ
 
     ## Shortwave: the canopy absorbs `(1−α_leaf)(1−f_trans)`, the shaded soil gets the
     ## transmitted remainder `f_trans(1−α_ground)`.
-    SWᵛ = @. (1 - leaf_albedo) * (1 - ftrans) * SW
-    SWᵍ = @. ftrans * (1 - ground_albedo) * SW
+    SWˡᵉᵃᶠ = @. (1 - leaf_albedo) * (1 - transmittance) * SW
+    SWᵍ = @. transmittance * (1 - ground_albedo) * SW
 
     ## Longwave: below-canopy downwelling (reaching the soil), the canopy's own
     ## downward emission, the upwelling above the soil, and the total escaping to space.
-    LWꜜᵍ      = @. (1 - εᵛ) * LW + εᵛ * σ * Tᵛ^4     # reaching soil
-    canopy_emission = @. εᵛ * σ * Tᵛ^4                     # canopy emission (one face)
+    LWꜜᵍ      = @. (1 - εˡᵉᵃᶠ) * LW + εˡᵉᵃᶠ * σ * Tˡᵉᵃᶠ^4     # reaching soil
+    canopy_emission = @. εˡᵉᵃᶠ * σ * Tˡᵉᵃᶠ^4                     # canopy emission (one face)
     LWꜛᵍ      = @. εᵍ * σ * Tᵍ^4 + (1 - εᵍ) * LWꜜᵍ # upwelling from ground
-    LWu        = @. (1 - εᵛ) * LWꜛᵍ + εᵛ * σ * Tᵛ^4  # to space
+    LWu        = @. (1 - εˡᵉᵃᶠ) * LWꜛᵍ + εˡᵉᵃᶠ * σ * Tˡᵉᵃᶠ^4  # to space
 
     ## Net radiation absorbed by the whole land column (canopy + soil).
-    Rₙ = @. SWᵛ + SWᵍ + LW - LWu
+    Rₙ = @. SWˡᵉᵃᶠ + SWᵍ + LW - LWu
 
-    return (; SWᵛ, SWᵍ, LWꜜᵍ, canopy_emission, LWꜛᵍ, LWu, Rₙ)
+    return (; SWˡᵉᵃᶠ, SWᵍ, LWꜜᵍ, canopy_emission, LWꜛᵍ, LWu, Rₙ)
 end
 
 # ## Plot helpers
@@ -368,18 +368,18 @@ fig = Figure(size = (1700, 1850), fontsize = 17)
 ax = Axis(fig[1, 1]; title = "Temperatures", xlabel = "t (days)", ylabel = "T (K)")
 mark_pulse!(ax)
 lines!(ax, t, ref.Tₐ;  color = :gray,        linewidth = 3, label = "air Tₐ")
-lines!(ax, t, ref.Tᵛ;  color = :seagreen,    label = "leaf Tᵛ")
+lines!(ax, t, ref.Tˡᵉᵃᶠ;  color = :seagreen,    label = "leaf Tˡᵉᵃᶠ")
 lines!(ax, t, ref.Tᵍ; color = :saddlebrown, label = "soil skin Tᵍ")
 lines!(ax, t, ref.Tᵃᶜ; color = :steelblue,   linestyle = :dash, label = "canopy air Tᵃᶜ")
 lines!(ax, t, ref.Tˡᵃ; color = :firebrick,   label = "bulk Tˡᵃ")
-lines!(ax, t, ref.Tₑ;  color = :black,       linestyle = :dot, label = "LST Teff")
+lines!(ax, t, ref.Tₑ;  color = :black,       linestyle = :dot, label = "LST effective_temperature")
 axislegend(ax; position = :lt, nbanks = 2, labelsize = 12)
 
 ## (1,2) Two-source temperature contrasts.
 ax = Axis(fig[1, 2]; title = "Source temperature contrasts", xlabel = "t (days)", ylabel = "ΔT (K)")
 mark_pulse!(ax)
 hlines!(ax, [0]; color = :gray, linestyle = :dash)
-lines!(ax, t, ref.Tᵛ  .- ref.Tᵍ; color = :seagreen,    label = "leaf − soil skin")
+lines!(ax, t, ref.Tˡᵉᵃᶠ  .- ref.Tᵍ; color = :seagreen,    label = "leaf − soil skin")
 lines!(ax, t, ref.Tᵃᶜ .- ref.Tₐ;  color = :steelblue,   label = "node − air")
 lines!(ax, t, ref.Tᵍ .- ref.Tˡᵃ; color = :saddlebrown, label = "soil skin − bulk")
 axislegend(ax; position = :lt, labelsize = 12)
@@ -388,7 +388,7 @@ axislegend(ax; position = :lt, labelsize = 12)
 ax = Axis(fig[2, 1]; title = "Downwelling shortwave partition", xlabel = "t (days)", ylabel = "SW (W m⁻²)")
 mark_pulse!(ax)
 lines!(ax, t, ref.SW;        color = :goldenrod, linewidth = 3, label = "incident on land")
-lines!(ax, t, rad.SWᵛ; color = :seagreen,    label = "absorbed by canopy")
+lines!(ax, t, rad.SWˡᵉᵃᶠ; color = :seagreen,    label = "absorbed by canopy")
 lines!(ax, t, rad.SWᵍ; color = :saddlebrown, label = "reaching soil")
 axislegend(ax; position = :lt, labelsize = 12)
 
@@ -410,14 +410,14 @@ axislegend(ax; position = :lt, labelsize = 12)
 
 ## (3,2) Surface energy balance — net radiation into the land splits into turbulent
 ## sensible + latent to the atmosphere and conduction into the slab.
-ax = Axis(fig[3, 2]; title = "Surface energy fluxes\n(positive: surface → atmosphere; Gᶜ into slab)",
+ax = Axis(fig[3, 2]; title = "Surface energy fluxes\n(positive: surface → atmosphere; Gᵍ into slab)",
           xlabel = "t (days)", ylabel = "flux (W m⁻²)")
 mark_pulse!(ax)
 hlines!(ax, [0]; color = :gray, linestyle = :dash)
 lines!(ax, t, rad.Rₙ;  color = :black,     linewidth = 2, label = "net radiation Rₙ")
 lines!(ax, t, ref.LE;  color = :navy,      label = "latent H₂O (LE)")
 lines!(ax, t, ref.H;   color = :orange,    label = "sensible (H)")
-lines!(ax, t, ref.Gᶜ;  color = :seagreen,  linestyle = :dash, label = "ground heat Gᶜ")
+lines!(ax, t, ref.Gᵍ;  color = :seagreen,  linestyle = :dash, label = "ground heat Gᵍ")
 axislegend(ax; position = :lt, labelsize = 12)
 
 ## (4,1) Latent-heat pathways — the atmosphere feels only the total LE, but the CAS
@@ -437,7 +437,7 @@ ax = Axis(fig[4, 2]; title = "Two-source sensible heat", xlabel = "t (days)", yl
 mark_pulse!(ax)
 hlines!(ax, [0]; color = :gray, linestyle = :dash)
 lines!(ax, t, ref.H;  color = :orange,      linewidth = 2, label = "total H")
-lines!(ax, t, ref.Hᵛ; color = :seagreen,    label = "leaf")
+lines!(ax, t, ref.Hˡᵉᵃᶠ; color = :seagreen,    label = "leaf")
 lines!(ax, t, ref.Hᵍ; color = :saddlebrown, label = "ground")
 axislegend(ax; position = :lt, labelsize = 12)
 
@@ -502,8 +502,8 @@ function knob_panel(cell, cases, colors, field, title, ylabel; transform = ident
     return ax
 end
 
-knob_panel(fig[1, 1], lai_cases, lai_colors, :Tᵛ, "Leaf temperature — LAI sweep", "Tᵛ (K)")
-knob_panel(fig[1, 2], con_cases, con_colors, :Tᵛ, "Leaf temperature — Jarvis vs Medlyn", "Tᵛ (K)")
+knob_panel(fig[1, 1], lai_cases, lai_colors, :Tˡᵉᵃᶠ, "Leaf temperature — LAI sweep", "Tˡᵉᵃᶠ (K)")
+knob_panel(fig[1, 2], con_cases, con_colors, :Tˡᵉᵃᶠ, "Leaf temperature — Jarvis vs Medlyn", "Tˡᵉᵃᶠ (K)")
 
 knob_panel(fig[2, 1], lai_cases, lai_colors, :transpiration, "Transpiration — LAI sweep", "transpiration (W m⁻²)")
 knob_panel(fig[2, 2], con_cases, con_colors, :transpiration, "Transpiration — Jarvis vs Medlyn", "transpiration (W m⁻²)")
@@ -542,7 +542,7 @@ nothing #hide
 # `LAI_veg`); its canopy-free (LAI = 0) bare counterpart is derived automatically by
 # `TiledLandInterface`. The interception store is a cell-average quantity — LAI `f_veg·LAI_veg`
 # and capacity `c·f_veg·LAI_veg`, set on the land's `InterceptingHydrology` — and the tile's
-# `fʷ` normalizes by *that* store's own capacity, so a full store gives `fʷ → 1` at any
+# `fʷᵉᵗ` normalizes by *that* store's own capacity, so a full store gives `fʷᵉᵗ → 1` at any
 # `f_veg` (and a fully bare cell, `f_veg = 0`, intercepts nothing).
 
 function tiled_intercepting_column(; fraction, label)
@@ -563,12 +563,12 @@ function tiled_intercepting_column(; fraction, label)
     T    = zeros(Nsteps)   # time (days)
     H    = zeros(Nsteps)   # blended sensible heat
     LE   = zeros(Nsteps)   # blended latent heat
-    Teff = zeros(Nsteps)   # land-surface (radiometric) temperature
+    effective_temperature = zeros(Nsteps)   # land-surface (radiometric) temperature
     𝒮    = zeros(Nsteps)   # shared-column saturation
     Wᶜ   = zeros(Nsteps)   # canopy water store (mm)
     Ewet = zeros(Nsteps)   # wet-canopy evaporation (mass flux, positive up)
-    LEwet = zeros(Nsteps)  # wet-canopy latent heat ℒ·Eʷ (W m⁻², up)
-    LEᵛ  = zeros(Nsteps)   # blended leaf latent (transpiration + wet-canopy)
+    LEwet = zeros(Nsteps)  # wet-canopy latent heat ℒ·Eʷᵉᵗ (W m⁻², up)
+    LEˡᵉᵃᶠ  = zeros(Nsteps)   # blended leaf latent (transpiration + wet-canopy)
     LEᵍ  = zeros(Nsteps)   # blended soil latent
     P    = zeros(Nsteps)   # incident rain (mass flux, down)
     Pˡ   = zeros(Nsteps)   # throughfall reaching the soil (mass flux, down)
@@ -580,18 +580,18 @@ function tiled_intercepting_column(; fraction, label)
         T[n]    = time / day
         H[n]    = scalar(interface.fluxes.sensible_heat)
         LE[n]   = scalar(interface.fluxes.latent_heat)
-        Teff[n] = scalar(interface.temperature.effective)
+        effective_temperature[n] = scalar(interface.temperature.effective)
         𝒮[n]    = scalar(land.saturation)
         Wᶜ[n]   = scalar(land.prognostic.canopy_water_storage)
         Ewet[n]  = scalar(interface.temperature.canopy_evaporation)
         LEwet[n] = scalar(interface.temperature.canopy_wet_latent_heat)
-        LEᵛ[n]   = scalar(interface.temperature.canopy_latent_heat)
+        LEˡᵉᵃᶠ[n]   = scalar(interface.temperature.canopy_latent_heat)
         LEᵍ[n]   = scalar(interface.temperature.soil_latent_heat)
         P[n]     = applied_rain(model)
         Pˡ[n]    = scalar(land.diagnostics.throughfall)
     end
 
-    return (; label, fraction, t = T, H, LE, Teff, 𝒮, Wᶜ, Ewet, LEwet, LEᵛ, LEᵍ, P, Pˡ)
+    return (; label, fraction, t = T, H, LE, effective_temperature, 𝒮, Wᶜ, Ewet, LEwet, LEˡᵉᵃᶠ, LEᵍ, P, Pˡ)
 end
 
 # ## The bare-soil-fraction sweep
@@ -622,8 +622,8 @@ end
 
 frac_panel(fig[1, 1], :LE,   "Latent heat (blended)",        "LE (W m⁻²)")
 frac_panel(fig[1, 2], :H,    "Sensible heat (blended)",      "H (W m⁻²)")
-frac_panel(fig[2, 1], :Teff, "Land-surface temperature",     "Teff (K)")
-frac_panel(fig[2, 2], :Ewet, "Wet-canopy evaporation Eʷ", "Eʷ (mm day⁻¹)"; transform = mm_per_day)
+frac_panel(fig[2, 1], :effective_temperature, "Land-surface temperature",     "effective_temperature (K)")
+frac_panel(fig[2, 2], :Ewet, "Wet-canopy evaporation Eʷᵉᵗ", "Eʷᵉᵗ (mm day⁻¹)"; transform = mm_per_day)
 frac_panel(fig[3, 1], :Wᶜ,   "Canopy water store Wᶜ",         "Wᶜ (mm)"; legend = :rt)
 ax = frac_panel(fig[3, 2], :𝒮, "Shared-column saturation 𝒮",  "𝒮"; legend = :rc)
 hlines!(ax, [critical_saturation]; color = :gray, linestyle = :dash)
@@ -647,8 +647,8 @@ nothing #hide
 
 ref   = full_canopy
 Wᶜᵐᵃˣ = interception_capacity * vegetated_leaf_area_index
-wet_LE           = ref.LEwet             # wet-canopy latent heat ℒ·Eʷ (W m⁻²)
-transpiration_LE = ref.LEᵛ .- ref.LEwet  # dry (stomatal) leaf latent
+wet_LE           = ref.LEwet             # wet-canopy latent heat ℒ·Eʷᵉᵗ (W m⁻²)
+transpiration_LE = ref.LEˡᵉᵃᶠ .- ref.LEwet  # dry (stomatal) leaf latent
 
 fig = Figure(size = (1500, 950), fontsize = 17)
 
@@ -676,11 +676,11 @@ lines!(ax, ref.t, ref.LEᵍ;          color = :saddlebrown, label = "soil evapor
 lines!(ax, ref.t, wet_LE;           color = :steelblue,   label = "wet-canopy evaporation")
 axislegend(ax; position = :lt, labelsize = 12)
 
-## (2,2) The Deardorff wet fraction fʷ = (Wᶜ/Wᶜᵐᵃˣ)^(2/3) driving the wet/dry leaf blend.
-fʷ = @. clamp((max(ref.Wᶜ, 0) / Wᶜᵐᵃˣ)^(2/3), 0, 1)
-ax = Axis(fig[2, 2]; title = "Wet-canopy fraction fʷ", xlabel = "t (days)", ylabel = "fʷ")
+## (2,2) The Deardorff wet fraction fʷᵉᵗ = (Wᶜ/Wᶜᵐᵃˣ)^(2/3) driving the wet/dry leaf blend.
+fʷᵉᵗ = @. clamp((max(ref.Wᶜ, 0) / Wᶜᵐᵃˣ)^(2/3), 0, 1)
+ax = Axis(fig[2, 2]; title = "Wet-canopy fraction fʷᵉᵗ", xlabel = "t (days)", ylabel = "fʷᵉᵗ")
 mark_pulse!(ax)
-lines!(ax, ref.t, fʷ; color = :steelblue, linewidth = 2)
+lines!(ax, ref.t, fʷᵉᵗ; color = :steelblue, linewidth = 2)
 ylims!(ax, 0, 1.05)
 
 Label(fig[0, 1:2], "Interception store anatomy — full canopy (f_veg = 1)", fontsize = 22)

@@ -35,7 +35,7 @@
 ##### the available energy. Shading is an *energy* effect on the soil source
 ##### temperature; with a single skin temperature (leaf = soil = `Tₛ`) it cannot be
 ##### expressed, so both branches share `Tₛ` here. Distinct per-branch source
-##### temperatures (`qᵉ = qᵛ⁺(Tᵍ)`, `qᵛ⁺ = qᵛ⁺(Tᵛ)`) would require a
+##### temperatures (`qᵉ = qᵛ⁺(Tᵍ)`, `qᵛ⁺ = qᵛ⁺(Tˡᵉᵃᶠ)`) would require a
 ##### separate soil-skin and leaf temperature.
 #####
 

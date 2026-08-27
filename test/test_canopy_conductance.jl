@@ -25,23 +25,23 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
         photo = FarquharPhotosynthesis(FT)
         cond  = MedlynConductance(FT)
 
-        Tₗ   = FT(298)      # leaf temperature (K)
+        Tˡᵉᵃᶠ   = FT(298)      # leaf temperature (K)
         P    = FT(101325)   # air pressure (Pa)
         ca   = FT(40)       # CO₂ partial pressure (Pa)
         ci   = FT(28)       # intercellular CO₂ (Pa)
         β    = FT(1)
 
         # Net assimilation rises with absorbed PAR and saturates (light limitation).
-        A_dim   = net_assimilation(photo, ci, FT(1e-4), Tₗ, P, β)
-        A_light = net_assimilation(photo, ci, FT(1e-3), Tₗ, P, β)
-        A_sat   = net_assimilation(photo, ci, FT(1e-2), Tₗ, P, β)
+        A_dim   = net_assimilation(photo, ci, FT(1e-4), Tˡᵉᵃᶠ, P, β)
+        A_light = net_assimilation(photo, ci, FT(1e-3), Tˡᵉᵃᶠ, P, β)
+        A_sat   = net_assimilation(photo, ci, FT(1e-2), Tˡᵉᵃᶠ, P, β)
         @test A_light > A_dim
         @test A_sat ≥ A_light
         @test A_sat - A_light < A_light - A_dim   # saturating, not linear
 
         # ... and rises with intercellular CO₂.
-        @test net_assimilation(photo, FT(35), FT(1e-3), Tₗ, P, β) >
-              net_assimilation(photo, FT(15), FT(1e-3), Tₗ, P, β)
+        @test net_assimilation(photo, FT(35), FT(1e-3), Tˡᵉᵃᶠ, P, β) >
+              net_assimilation(photo, FT(15), FT(1e-3), Tˡᵉᵃᶠ, P, β)
 
         # Medlyn conductance decreases with VPD and never falls below g₀.
         An = FT(1e-5)
@@ -50,10 +50,10 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
         @test medlyn_conductance(cond, FT(-1e-6), FT(1000), ca / P) ≈ cond.g0
 
         # Coupled solve: light drives conductance up, VPD and moisture stress down.
-        gs_ref, An_ref, ci_ref = stomatal_conductance(cond, photo, FT(1e-3), FT(1000), Tₗ, ca, P, FT(1))
-        gs_dry, _, _           = stomatal_conductance(cond, photo, FT(1e-3), FT(3000), Tₗ, ca, P, FT(1))
-        gs_str, _, _           = stomatal_conductance(cond, photo, FT(1e-3), FT(1000), Tₗ, ca, P, FT(0.3))
-        gs_drk, _, _           = stomatal_conductance(cond, photo, FT(0),    FT(1000), Tₗ, ca, P, FT(1))
+        gs_ref, An_ref, ci_ref = stomatal_conductance(cond, photo, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(1))
+        gs_dry, _, _           = stomatal_conductance(cond, photo, FT(1e-3), FT(3000), Tˡᵉᵃᶠ, ca, P, FT(1))
+        gs_str, _, _           = stomatal_conductance(cond, photo, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(0.3))
+        gs_drk, _, _           = stomatal_conductance(cond, photo, FT(0),    FT(1000), Tˡᵉᵃᶠ, ca, P, FT(1))
 
         @test gs_ref > cond.g0
         @test An_ref > 0
@@ -65,7 +65,7 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
 
         # The intercellular CO₂ is the closed-form Medlyn optimality ratio.
         @test ci_ref ≈ ca * cond.g1 / (cond.g1 + sqrt(FT(1000)))
-        @inferred stomatal_conductance(cond, photo, FT(1e-3), FT(1000), Tₗ, ca, P, FT(1))
+        @inferred stomatal_conductance(cond, photo, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(1))
     end
 end
 
@@ -96,7 +96,7 @@ end
         photo_peak  = FarquharPhotosynthesis(FT)                                 # PeakedArrhenius default
         photo_plain = FarquharPhotosynthesis(FT; capacity_response = PlainArrhenius())
 
-        # The point of the change: peaked Aₙ(Tₗ) reaches an interior maximum and
+        # The point of the change: peaked Aₙ(Tˡᵉᵃᶠ) reaches an interior maximum and
         # rolls off, and turns over at a lower temperature than the plain form.
         Tl = FT(273):FT(1):FT(318)
         An_peak  = [net_assimilation(photo_peak,  FT(28), FT(8e-4), T, FT(101325), FT(1)) for T in Tl]
@@ -128,10 +128,10 @@ end
 @testset "Jarvis stomatal conductance" begin
     for FT in (Float32, Float64)
         jarv = JarvisConductance(FT)
-        Tₗ = FT(298.15); ca = FT(40); P = FT(101325)
+        Tˡᵉᵃᶠ = FT(298.15); ca = FT(40); P = FT(101325)
 
         # Runs with no photosynthesis model (no Farquhar call, no iteration).
-        gs, An, ci = stomatal_conductance(jarv, nothing, FT(2e-4), FT(1000), Tₗ, ca, P, FT(1))
+        gs, An, ci = stomatal_conductance(jarv, nothing, FT(2e-4), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(1))
         @test gs > 0
         @test An == 0 && ci == 0
         @test eltype(gs) == FT
@@ -145,18 +145,18 @@ end
         @test jarvis_temperature_factor(jarv, jarv.optimal_temperature - FT(15)) < 1
 
         # gₛ rises and saturates with APAR, falls with VPD.
-        gs_dim = stomatal_conductance(jarv, nothing, FT(1e-5), FT(1000), Tₗ, ca, P, FT(1))[1]
-        gs_lit = stomatal_conductance(jarv, nothing, FT(1e-3), FT(1000), Tₗ, ca, P, FT(1))[1]
-        gs_dry = stomatal_conductance(jarv, nothing, FT(1e-3), FT(3000), Tₗ, ca, P, FT(1))[1]
+        gs_dim = stomatal_conductance(jarv, nothing, FT(1e-5), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(1))[1]
+        gs_lit = stomatal_conductance(jarv, nothing, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(1))[1]
+        gs_dry = stomatal_conductance(jarv, nothing, FT(1e-3), FT(3000), Tˡᵉᵃᶠ, ca, P, FT(1))[1]
         @test gs_lit > gs_dim
         @test gs_dry < gs_lit
 
         # Scales linearly with the moisture-stress factor β and vanishes at β = 0.
-        gs_half = stomatal_conductance(jarv, nothing, FT(1e-3), FT(1000), Tₗ, ca, P, FT(0.5))[1]
+        gs_half = stomatal_conductance(jarv, nothing, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(0.5))[1]
         @test gs_half ≈ gs_lit / 2
-        @test stomatal_conductance(jarv, nothing, FT(1e-3), FT(1000), Tₗ, ca, P, FT(0))[1] == 0
+        @test stomatal_conductance(jarv, nothing, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(0))[1] == 0
 
-        @inferred stomatal_conductance(jarv, nothing, FT(1e-3), FT(1000), Tₗ, ca, P, FT(1))
+        @inferred stomatal_conductance(jarv, nothing, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(1))
     end
 end
 

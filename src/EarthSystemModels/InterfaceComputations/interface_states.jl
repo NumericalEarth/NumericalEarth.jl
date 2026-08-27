@@ -52,7 +52,7 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
 @inline compute_water_mole_fraction(x_H₂O::Number, salinity) = x_H₂O
 
 # COARE 3.6 / Edson (2013) pressure-based saturation specific humidity:
-#   qₛ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − εᵈᵛ⁻¹) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵥ
+#   qₛ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − εᵈᵛ⁻¹) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵛ
 # Direct evaluation at the atmospheric pressure p. The 6th positional
 # argument `qᵃᵗ` is accepted (and ignored) so the same call site can
 # dispatch on either `ImpureSaturationSpecificHumidity` or
@@ -79,7 +79,7 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
 end
 
 # Pressure-based saturation specific humidity qᵛ⁺ (COARE / Edson 2013):
-#   qᵛ⁺ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − εᵈᵛ⁻¹) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵥ.
+#   qᵛ⁺ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − εᵈᵛ⁻¹) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵛ.
 # Shared by `BulkHumidity` and `SkinHumidity`.
 @inline function saturation_specific_humidity(ℂᵃᵗ, Tₛ, pᵃᵗ, phase)
     CT = eltype(ℂᵃᵗ)

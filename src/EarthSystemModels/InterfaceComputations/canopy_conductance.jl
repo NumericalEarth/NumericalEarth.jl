@@ -30,11 +30,11 @@
 
 # Leaf-to-air vapor pressure deficit (Pa), floored to a small positive value so
 # the Medlyn `√VPD` stays finite and differentiable at saturation.
-@inline function vapor_pressure_deficit(ℂᵃᵗ, Tₗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, phase)
-    eₛ = AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, Tₗ, phase)
-    ε  = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)   # Rᵈ/Rᵥ ≈ 0.622
+@inline function vapor_pressure_deficit(ℂᵃᵗ, Tˡᵉᵃᶠ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, phase)
+    eₛ = AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, Tˡᵉᵃᶠ, phase)
+    ε  = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)   # Rᵈ/Rᵛ ≈ 0.622
     eₐ = pᵃᵗ * qᵃᵗ / (ε + (1 - ε) * qᵃᵗ)                            # air vapor pressure
-    return max(eₛ - eₐ, oftype(Tₗ, 1))                              # ≥ 1 Pa
+    return max(eₛ - eₐ, oftype(Tˡᵉᵃᶠ, 1))                              # ≥ 1 Pa
 end
 
 """
@@ -129,11 +129,11 @@ Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
 
 # Canopy flux terms, split off so the standalone formulation and the composite
 # (soil + canopy) share them. Returns the bulk canopy (stomatal) mass conductance
-# `gᶜ = LAI · gₛ · Mᵈ` (kg m⁻² s⁻¹) and the leaf saturation source `qᵛ⁺(Tₗ)`.
+# `gᶜ = LAI · gₛ · Mᵈ` (kg m⁻² s⁻¹) and the leaf saturation source `qᵛ⁺(Tˡᵉᵃᶠ)`.
 # The canopy (leaf) reservoir is saturated at the leaf temperature (= skin
 # temperature Tₛ, single-source). `Ψᵣ` is the interface radiation state (drives
 # `InteractiveAbsorbedPAR`).
-@inline function canopy_conductance_terms(q::CanopyConductanceHumidity, Tₗ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ,
+@inline function canopy_conductance_terms(q::CanopyConductanceHumidity, Tˡᵉᵃᶠ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ,
                                           canopy_transmittance)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     pᵃᵗ = Ψₐ.p
@@ -141,16 +141,16 @@ Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
     Tᵃᵗ = Ψₐ.T
 
     LAI  = Ψₛ.vegetation.leaf_area_index               # materialized per-cell (constant, Field, or FTS)
-    qᵛ⁺  = saturation_specific_humidity(ℂᵃᵗ, Tₗ, pᵃᵗ, q.phase)
-    VPD  = vapor_pressure_deficit(ℂᵃᵗ, Tₗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, q.phase)
+    qᵛ⁺  = saturation_specific_humidity(ℂᵃᵗ, Tˡᵉᵃᶠ, pᵃᵗ, q.phase)
+    VPD  = vapor_pressure_deficit(ℂᵃᵗ, Tˡᵉᵃᶠ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, q.phase)
     β    = evaporation_efficiency(q.moisture_stress, Ψₛ.hydrology)
     APAR = absorbed_par_value(q.absorbed_par, Ψᵣ, LAI, canopy_transmittance)
 
-    gs, _, _ = stomatal_conductance(q.conductance, q.photosynthesis,
-                                    APAR, VPD, Tₗ, q.atmospheric_co2, pᵃᵗ, β)
+    gₛ, _, _ = stomatal_conductance(q.conductance, q.photosynthesis,
+                                    APAR, VPD, Tˡᵉᵃᶠ, q.atmospheric_co2, pᵃᵗ, β)
 
     # Molar leaf conductance → canopy mass conductance (kg m⁻² s⁻¹).
-    gᶜ = LAI * gs * oftype(gs, default_dry_air_molar_mass)
+    gᶜ = LAI * gₛ * oftype(gₛ, default_dry_air_molar_mass)
 
     return gᶜ, qᵛ⁺
 end

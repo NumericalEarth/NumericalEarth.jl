@@ -9,7 +9,7 @@
 """
     beer_lambert_absorbed_fraction(leaf_albedo, canopy_transmittance)
 
-Fraction of incident shortwave a bulk canopy absorbs, `fᵃᵇˢ = (1 − α)(1 − ftrans)`
+Fraction of incident shortwave a bulk canopy absorbs, `fᵃᵇˢ = (1 − α)(1 − transmittance)`
 (ClimaLand Eq D11). `canopy_transmittance` is the Beer–Lambert `e^{−K·LAI·Ω}` of whatever
 owns the canopy geometry, so a band absorbs on the same structure the shortwave split uses.
 """
@@ -33,7 +33,7 @@ Base.show(io::IO, p::PrescribedAbsorbedPAR) = print(io, summary(p))
 
 """
     InteractiveAbsorbedPAR(FT = Float64; par_fraction, photon_per_joule,
-                           leaf_albedo_par, extinction, clumping, lai_min)
+                           leaf_albedo_par, extinction, clumping, minimum_leaf_area_index)
 
 Per-leaf absorbed PAR recomputed each step from the downwelling shortwave `ℐꜜˢʷ`
 (W m⁻²) in the radiation state,
@@ -56,7 +56,7 @@ Fields:
 - `extinction`       : canopy extinction coefficient `K`, used only when no canopy supplies a
                        transmittance. A [`CanopyAirSpace`](@ref) always does.
 - `clumping`         : foliage clumping index `Ω`, used as `extinction` is.
-- `lai_min`          : floor on `LAI` in the per-leaf division.
+- `minimum_leaf_area_index`          : floor on `LAI` in the per-leaf division.
 """
 struct InteractiveAbsorbedPAR{FT} <: AbstractAbsorbedPAR
     par_fraction     :: FT
@@ -64,7 +64,7 @@ struct InteractiveAbsorbedPAR{FT} <: AbstractAbsorbedPAR
     leaf_albedo_par  :: FT
     extinction       :: FT
     clumping         :: FT
-    lai_min          :: FT
+    minimum_leaf_area_index          :: FT
 end
 
 InteractiveAbsorbedPAR(FT=Oceananigans.defaults.FloatType;
@@ -73,9 +73,9 @@ InteractiveAbsorbedPAR(FT=Oceananigans.defaults.FloatType;
                        leaf_albedo_par  = 0.1,
                        extinction       = 0.5,
                        clumping         = 1,
-                       lai_min          = 0.1) =
+                       minimum_leaf_area_index          = 0.1) =
     InteractiveAbsorbedPAR{FT}(par_fraction, photon_per_joule, leaf_albedo_par,
-                               extinction, clumping, lai_min)
+                               extinction, clumping, minimum_leaf_area_index)
 
 Base.summary(::InteractiveAbsorbedPAR{FT}) where FT = "InteractiveAbsorbedPAR{$FT}"
 Base.show(io::IO, p::InteractiveAbsorbedPAR) = print(io, summary(p),
@@ -93,14 +93,14 @@ Base.show(io::IO, p::InteractiveAbsorbedPAR) = print(io, summary(p),
 # canopy supplied one, and the closure falls back on its own `extinction` and `clumping`.
 @inline canopy_transmittance(p::InteractiveAbsorbedPAR, leaf_area_index, ::Nothing) =
     canopy_transmittance(p.extinction, p.clumping, leaf_area_index)
-@inline canopy_transmittance(p::InteractiveAbsorbedPAR, leaf_area_index, ftrans) = ftrans
+@inline canopy_transmittance(p::InteractiveAbsorbedPAR, leaf_area_index, transmittance) = transmittance
 
-@inline absorbed_par_value(p::PrescribedAbsorbedPAR, radiation, leaf_area_index, ftrans) = p.value
+@inline absorbed_par_value(p::PrescribedAbsorbedPAR, radiation, leaf_area_index, transmittance) = p.value
 
-@inline function absorbed_par_value(p::InteractiveAbsorbedPAR, radiation, leaf_area_index, ftrans)
+@inline function absorbed_par_value(p::InteractiveAbsorbedPAR, radiation, leaf_area_index, transmittance)
     SW   = radiation.ℐꜜˢʷ                                      # downwelling shortwave (W m⁻²)
     parQ = p.par_fraction * SW * p.photon_per_joule            # canopy-incident PAR photon flux
     fᵃᵇˢ = beer_lambert_absorbed_fraction(p.leaf_albedo_par,
-                                          canopy_transmittance(p, leaf_area_index, ftrans))
-    return fᵃᵇˢ * parQ / max(leaf_area_index, p.lai_min)       # per-leaf
+                                          canopy_transmittance(p, leaf_area_index, transmittance))
+    return fᵃᵇˢ * parQ / max(leaf_area_index, p.minimum_leaf_area_index)       # per-leaf
 end
