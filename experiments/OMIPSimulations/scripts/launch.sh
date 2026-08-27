@@ -119,6 +119,9 @@ Environment variables (physics):
   WIND_VELOCITY Set to "true" to use absolute wind (Δu = u_atm) in the bulk
                 formula instead of the OMIP-2 default relative wind
                 (Δu = u_atm − u_ocean). For isolating ACC-current feedback.
+  NZ            Number of vertical levels. Default: per config (70 for orca, 100 for
+                quarter/twelfth degree). Adds "_nz<N>" to the run name when overridden.
+
   DZ_TOP        Target thickness of the top (surface) cell in meters. If set,
                 the ExponentialDiscretization scale is found by bisection so
                 that Δz of the surface level matches DZ_TOP within ~0.1%.
@@ -295,14 +298,14 @@ esac
 #                     KSKEW  KSYMM  NZ   DT          BIHARMONIC  ARCH                                             GPUS  EXTRA_USING                              FILE_SPLIT  RUN_CMD
 case "$CONFIG" in
     halfdegree)
-        DEFAULT_KSKEW=250;  DEFAULT_KSYMM=100; NZ=70;  DEFAULT_DT="30minutes"; DEFAULT_DZ_TOP="2.0"
+        DEFAULT_KSKEW=250;  DEFAULT_KSYMM=100; DEFAULT_NZ=70;  DEFAULT_DT="30minutes"; DEFAULT_DZ_TOP="2.0"
         DEFAULT_BIHARMONIC="40days"; ARCH="GPU()"; GPUS_PER_NODE=1
         EXTRA_USING=""; FILE_SPLIT=""
         RUN_CMD="sim.stop_time = 300 * 365days
 run!(sim, pickup=:latest)"
         ;;
     quarterdegree)
-        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DEFAULT_DT="20minutes"; DEFAULT_DZ_TOP="1.5"
+        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   DEFAULT_NZ=100; DEFAULT_DT="20minutes"; DEFAULT_DZ_TOP="1.5"
         DEFAULT_BIHARMONIC="nothing"; ARCH="GPU()"; GPUS_PER_NODE=1
         EXTRA_USING="using Oceananigans.DistributedComputations"
         FILE_SPLIT=""
@@ -310,7 +313,7 @@ run!(sim, pickup=:latest)"
 run!(sim, pickup =:latest)"
         ;;
     orca)
-        DEFAULT_KSKEW=800;  DEFAULT_KSYMM=800; NZ=70;  DEFAULT_DT="30minutes"; DEFAULT_DZ_TOP="1.5"
+        DEFAULT_KSKEW=800;  DEFAULT_KSYMM=800; DEFAULT_NZ=70;  DEFAULT_DT="30minutes"; DEFAULT_DZ_TOP="1.5"
         DEFAULT_BIHARMONIC="50days"; ARCH="GPU()"; GPUS_PER_NODE=1
         EXTRA_USING=""; FILE_SPLIT=""
         RUN_CMD="sim.stop_time = 300 * 365days
@@ -318,7 +321,7 @@ run!(sim; pickup = :latest)
 "
         ;;
     twelfthdegree)
-        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DEFAULT_DT="6minutes";  DEFAULT_DZ_TOP="1.5"
+        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   DEFAULT_NZ=100; DEFAULT_DT="6minutes";  DEFAULT_DZ_TOP="1.5"
         DEFAULT_BIHARMONIC="nothing"; ARCH="Distributed(GPU(), partition=Partition(1, 4))"; GPUS_PER_NODE=4
         EXTRA_USING="using Oceananigans.DistributedComputations"
         FILE_SPLIT="file_splitting_interval = 180days,"
@@ -344,6 +347,7 @@ export KSKEW="${KSKEW:-$DEFAULT_KSKEW}"
 export KSYMM="${KSYMM:-$DEFAULT_KSYMM}"
 export DT="${DT:-$DEFAULT_DT}"
 export DZ_TOP="${DZ_TOP:-$DEFAULT_DZ_TOP}"
+export NZ="${NZ:-$DEFAULT_NZ}"
 export BIHARMONIC="${BIHARMONIC:-$DEFAULT_BIHARMONIC}"
 KSKEW_JULIA="$KSKEW"; [[ "$KSKEW" == "0" ]] && KSKEW_JULIA="nothing"
 KSYMM_JULIA="$KSYMM"; [[ "$KSYMM" == "0" ]] && KSYMM_JULIA="nothing"
@@ -395,6 +399,7 @@ esac
 [[ "$DT" != "$DEFAULT_DT" ]]                   && RUN_NAME="${RUN_NAME}_dt${DT}"
 [[ -n "${BIHVISC:-}" ]]                        && RUN_NAME="${RUN_NAME}_bihvisc${BIHVISC}"
 [[ "$DZ_TOP" != "$DEFAULT_DZ_TOP" ]]           && RUN_NAME="${RUN_NAME}_dz${DZ_TOP}"
+[[ "$NZ" != "$DEFAULT_NZ" ]]                    && RUN_NAME="${RUN_NAME}_nz${NZ}"
 [[ -n "${CATKE_CWUSTAR:-}" ]]                  && RUN_NAME="${RUN_NAME}_cwu${CATKE_CWUSTAR}"
 [[ -n "${BACKGROUND_K:-}" ]]                   && RUN_NAME="${RUN_NAME}_bgk${BACKGROUND_K}"
 [[ -n "${BACKGROUND_NU:-}" ]]                  && RUN_NAME="${RUN_NAME}_bgnu${BACKGROUND_NU}"
