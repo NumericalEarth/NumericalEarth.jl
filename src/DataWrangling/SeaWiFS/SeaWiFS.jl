@@ -54,6 +54,7 @@ DataWrangling.all_dates(::SeaWiFSMonthly, args...) = DateTime(1997, 9, 1) : Mont
 DataWrangling.available_variables(::SeaWiFSMonthly) = SeaWiFS_variable_names
 DataWrangling.dataset_variable_name(metadata::SeaWiFSMetadata) = SeaWiFS_variable_names[metadata.name]
 DataWrangling.dataset_location(::SeaWiFSMonthly, name) = (Center, Center, Nothing)
+DataWrangling.averaging_window(metadatum::SeaWiFSMetadatum) = DataWrangling.calendar_month_window(metadatum)
 DataWrangling.is_three_dimensional(::SeaWiFSMetadata) = false
 DataWrangling.longitude_name(::SeaWiFSMetadata) = "longitude"
 DataWrangling.latitude_name(::SeaWiFSMetadata) = "latitude"
