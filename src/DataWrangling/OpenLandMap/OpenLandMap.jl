@@ -189,6 +189,10 @@ function DataWrangling.retrieve_data(metadata::OpenLandMapSoilDBMetadatum)
     return data
 end
 
+# The 30 m regional window is large enough that it is read and regridded by window rather than
+# whole.
+DataWrangling.windowed_retrieval(::OpenLandMapSoilDB) = true
+
 """
     read_cog_window(source, bbox)
 
@@ -233,7 +237,8 @@ function cog_window_to_netcdf(sources, nc_path, variable_name, bbox)
                            attrib = ["units" => "degrees_north", "long_name" => "latitude"])
         depth_var = defVar(ds, "depth", Float64, ("depth",);
                            attrib = ["units" => "m", "long_name" => "depth interval midpoint"])
-        data_var  = defVar(ds, variable_name, Float32, ("lon", "lat", "depth"))
+        chunk     = [min(512, Nx), min(512, Ny), Nz]
+        data_var  = defVar(ds, variable_name, Float32, ("lon", "lat", "depth"); chunksizes = chunk)
 
         lon_var[:]        = longitude
         lat_var[:]        = latitude
