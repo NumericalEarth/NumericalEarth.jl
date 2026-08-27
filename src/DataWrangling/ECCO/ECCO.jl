@@ -70,8 +70,12 @@ DataWrangling.all_dates(dataset::ECCO4Monthly, variable) = metadata_epoch(datase
 DataWrangling.all_dates(dataset::ECCO2Monthly, variable) = metadata_epoch(dataset) : Month(1) : DateTime(2024, 12, 1)
 DataWrangling.all_dates(dataset::ECCO2Daily,   variable) = metadata_epoch(dataset) : Day(1)   : DateTime(2024, 12, 31)
 
-DataWrangling.sample_window(metadatum::Metadatum{<:Union{ECCO2Monthly, ECCO4Monthly}}) =
+DataWrangling.averaging_window(metadatum::Metadatum{<:Union{ECCO2Monthly, ECCO4Monthly}}) =
     DataWrangling.calendar_month_window(metadatum)
+
+# The cube92 daily files hold means over the day they are named for.
+DataWrangling.averaging_window(metadatum::Metadatum{<:ECCO2Daily}) =
+    (metadatum.dates, metadatum.dates + Day(1))
 
 DataWrangling.longitude_interfaces(::ECCODataset) = (0, 360)
 DataWrangling.longitude_interfaces(::ECCO4Monthly) = (-180, 180)
