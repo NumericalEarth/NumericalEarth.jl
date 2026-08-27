@@ -407,7 +407,7 @@ function hydrostatic_ocean_simulation(grid;
 
         bottom_drag_coefficient = default_or_override(bottom_drag_coefficient)
 
-        drag_parameters = (μ = bottom_drag_coefficient, uᵦ = bottom_drag_background_velocity)
+        drag_parameters = (μ = convert(FT, bottom_drag_coefficient), uᵦ = convert(FT, bottom_drag_background_velocity))
 
         u_immersed_bc = ImmersedBoundaryCondition(bottom = bottom_drag_bc(u_immersed_drag_coefficient, u_immersed_bottom_drag, drag_parameters, implicit_bottom_drag))
         v_immersed_bc = ImmersedBoundaryCondition(bottom = bottom_drag_bc(v_immersed_drag_coefficient, v_immersed_bottom_drag, drag_parameters, implicit_bottom_drag))
