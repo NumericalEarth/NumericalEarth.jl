@@ -164,9 +164,9 @@ else
 end
 water = water_cover .> 0.5
 
-vegetation_fraction = ifelse.(leaf_area_index .> 0.1, vegetated_cover, 0)
+vegetation_fraction = FT.(ifelse.(leaf_area_index .> 0.1, vegetated_cover, 0))
 vegetation_fraction[water] .= 0
-tile_lai = clamp.(leaf_area_index ./ max.(vegetation_fraction, 0.05), 0.1, 8)
+tile_lai = FT.(clamp.(leaf_area_index ./ max.(vegetation_fraction, 0.05), 0.1, 8))
 
 vegetated_stack = cat((array(modis.fractions[class]) for class in vegetated_igbp_classes)...; dims = 3)
 canopy_class = [vegetated_igbp_classes[argmax(view(vegetated_stack, i, j, :))]
