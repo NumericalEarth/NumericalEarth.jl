@@ -14,6 +14,7 @@
 
 using Oceananigans.Fields: Field, compute!, location
 using Oceananigans.AbstractOperations: KernelFunctionOperation
+using Oceananigans.Operators: getvalue
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant
 using Breeze.Thermodynamics: MoistureMassFractions, LiquidIcePotentialTemperatureState, with_temperature
 
@@ -40,15 +41,12 @@ using Breeze.Thermodynamics: MoistureMassFractions, LiquidIcePotentialTemperatur
     return with_temperature(𝒰, T, constants).potential_temperature
 end
 
-# An absent species arrives as the scalar `0` from `full_snapshot(::Nothing, t)`, so accept a number
-# alongside anything indexable. The arithmetic maps get this from broadcasting.
-@inline value_at(q, i, j, k) = @inbounds q[i, j, k]
-@inline value_at(q::Number, i, j, k) = q
-
-# `KernelFunctionOperation` form of the same map.
+# `KernelFunctionOperation` form of the same map. `getvalue` indexes a `Field` or `AbstractOperation` and
+# passes a number through, which an absent species needs: `full_snapshot(::Nothing, t)` yields a bare `0`.
 @inline liquid_ice_potential_temperature(i, j, k, grid, T, qᵛ, qˡ, qⁱ, p, pˢᵗ, constants) =
-    liquid_ice_potential_temperature(value_at(T, i, j, k), value_at(qᵛ, i, j, k), value_at(qˡ, i, j, k),
-                                     value_at(qⁱ, i, j, k), value_at(p, i, j, k), pˢᵗ, constants)
+    liquid_ice_potential_temperature(getvalue(T, i, j, k, grid), getvalue(qᵛ, i, j, k, grid),
+                                     getvalue(qˡ, i, j, k, grid), getvalue(qⁱ, i, j, k, grid),
+                                     getvalue(p, i, j, k, grid), pˢᵗ, constants)
 
 @inline total_water_specific_humidity(qᵛ, qˡ, qⁱ) = qᵛ + qˡ + qⁱ
 
