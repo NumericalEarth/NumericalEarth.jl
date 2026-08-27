@@ -68,7 +68,6 @@ using ClimaSeaIce.Rheologies
                 true
             end
 
-            # Test with land component
             @info "Testing OceanSeaIceModel with land on $A..."
             land_dates = all_dates(RepeatYearJRA55(), :river_freshwater_flux)
             land = JRA55PrescribedLand(arch; end_date=land_dates[2])

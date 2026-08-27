@@ -1,4 +1,3 @@
-using DocStringExtensions: TYPEDSIGNATURES
 using Oceananigans.Utils: prettysummary
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
@@ -300,15 +299,17 @@ end
     end
 end
 
-"""
-$(TYPEDSIGNATURES)
+# A zero-plane displacement at or above the surface layer height leaves no room
+# for the similarity profiles.
+validate_zero_plane_displacement(flux_formulation, zᵃᵗ) = nothing
 
-Height `Δh - d` at which the similarity profiles of a surface with zero-plane
-displacement `d` are evaluated, floored at twice the momentum roughness length `ℓ`
-so the profile stays above the roughness sublayer (and the transfer coefficients
-stay finite) when the displacement approaches the atmosphere surface layer height.
-"""
-@inline displaced_profile_height(Δh, d, ℓ) = max(Δh - d, 2ℓ)
+function validate_zero_plane_displacement(fluxes::SimilarityTheoryFluxes, zᵃᵗ)
+    d = fluxes.zero_plane_displacement
+    d isa Number || return nothing
+    zᵐⁱⁿ = minimum(zᵃᵗ)
+    d < zᵐⁱⁿ || throw(ArgumentError("zero_plane_displacement ($d m) must be below the surface layer height ($zᵐⁱⁿ m)"))
+    return nothing
+end
 
 function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
                                   Tₛ, qₛ, Δθ, Δq, Δh,
@@ -363,16 +364,16 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     # Tall roughness elements displace the similarity profiles upward by `d`.
     d = local_zero_plane_displacement(flux_formulation.zero_plane_displacement,
                                       interior_properties)
-    Δh = displaced_profile_height(Δh, d, ℓu₀)
+    Δhᵈ = Δh - d
 
     # Transfer coefficients at height `h`
     ϰ = flux_formulation.von_karman_constant
     L★ = ifelse(b★ == 0, Inf, u★^2 / (ϰ * b★))
     form = flux_formulation.similarity_form
 
-    χu = ϰ / similarity_profile(form, ψu, Δh, ℓu₀, L★)
-    χθ = ϰ / similarity_profile(form, ψθ, Δh, ℓθ₀, L★)
-    χq = ϰ / similarity_profile(form, ψq, Δh, ℓq₀, L★)
+    χu = ϰ / similarity_profile(form, ψu, Δhᵈ, ℓu₀, L★)
+    χθ = ϰ / similarity_profile(form, ψθ, Δhᵈ, ℓθ₀, L★)
+    χq = ϰ / similarity_profile(form, ψq, Δhᵈ, ℓq₀, L★)
 
     # Recompute
     u★ = χu * U
