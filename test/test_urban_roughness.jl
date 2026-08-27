@@ -352,3 +352,31 @@ end
     @test all(≈(ℓᵐref), interior(ℓᵐ))
     @test all(≈(dref), interior(d))
 end
+
+@testset "Gap filling to the closure's bare-soil endpoint" begin
+    closure = MorphometricRoughness()
+    grid = LatitudeLongitudeGrid(CPU(), Float64; size = (4, 4),
+                                 longitude = (-0.1, 0.1), latitude = (51.4, 51.6),
+                                 topology = (Bounded, Bounded, Flat))
+
+    # A building dataset with a missing tile: the closure marks it NaN by design.
+    λᵖ = Field{Center, Center, Nothing}(grid)
+    h  = Field{Center, Center, Nothing}(grid)
+    set!(λᵖ, (λ, φ) -> ifelse(λ < 0, 0.3, NaN))
+    set!(h,  (λ, φ) -> ifelse(λ < 0, 15.0, NaN))
+
+    ℓᵐ, d = urban_roughness(h, λᵖ; closure)
+    @test any(isnan, interior(ℓᵐ))
+
+    built_roughness, built_displacement = aerodynamic_parameters(closure, 0.3, 15.0)
+    ℓˢᵒⁱˡ, dˢᵒⁱˡ = aerodynamic_parameters(closure, 0, 0)
+
+    fill_aerodynamic_roughness_gaps!(ℓᵐ, d, closure)
+
+    @test all(isfinite, interior(ℓᵐ))
+    @test all(isfinite, interior(d))
+    @test ℓᵐ[1, 1, 1] ≈ built_roughness      # built cells are untouched
+    @test d[1, 1, 1] ≈ built_displacement
+    @test ℓᵐ[4, 1, 1] ≈ ℓˢᵒⁱˡ        # the gap becomes unbuilt surface
+    @test d[4, 1, 1] ≈ dˢᵒⁱˡ
+end

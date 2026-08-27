@@ -27,6 +27,7 @@ export AbstractLand,
        IsotropicFrontalArea, EmpiricalFrontalArea,
        UniformHeight, VariableHeight,
        urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
+       fill_aerodynamic_roughness_gaps!,
        # Atmosphere-facing accessors
        surface_temperature, surface_saturation
 

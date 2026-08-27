@@ -35,13 +35,49 @@ $(TYPEDSIGNATURES)
 Momentum roughness length `ℓᵐ` and zero-plane displacement `d` (as `Field`s on the grid
 of `h`) from a mean building-height field `h` and a plan-area index field `λᵖ`,
 under `closure` (default [`MorphometricRoughness`](@ref)). Where `λᵖ → 0` the result
-reduces to a bare-soil roughness.
+reduces to a bare-soil roughness, and cells of invalid morphometry are `NaN`; fill them
+with [`fill_aerodynamic_roughness_gaps!`](@ref) before passing the pair to a flux closure.
 """
 function urban_roughness(h, λᵖ; closure = MorphometricRoughness(eltype(h.grid)))
     grid = h.grid
     ℓᵐ = Field{Center, Center, Nothing}(grid)
     d  = Field{Center, Center, Nothing}(grid)
     compute_aerodynamic_roughness!(ℓᵐ, d, closure, (; plan_area_index = λᵖ, mean_building_height = h), grid)
+    return ℓᵐ, d
+end
+
+@kernel function _fill_aerodynamic_roughness_gaps!(ℓᵐ, d, ℓˢᵒⁱˡ, dˢᵒⁱˡ)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        ℓᵐᵢⱼ = ℓᵐ[i, j, 1]
+        dᵢⱼ  = d[i, j, 1]
+        gap  = !isfinite(ℓᵐᵢⱼ) | !isfinite(dᵢⱼ)
+        ℓᵐ[i, j, 1] = ifelse(gap, ℓˢᵒⁱˡ, ℓᵐᵢⱼ)
+        d[i, j, 1]  = ifelse(gap, dˢᵒⁱˡ, dᵢⱼ)
+    end
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Replace the gaps `closure` marks at cells of invalid morphometry with its own bare-soil
+endpoint `aerodynamic_parameters(closure, 0, 0)`, in place. The roughness length `ℓᵐ` and
+zero-plane displacement `d` are filled together, so a gap in either becomes unbuilt
+surface in both.
+
+Gaps are the open ocean of a domain that extends offshore: GHSL omits its all-ocean
+Mollweide tiles and marks open water no-data inside the tiles it does publish, so a
+coastal window can be half gaps. Those cells carry no land, and the bare-soil endpoint
+keeps them evaluable. For gaps that fall inside built-up land, inpaint `λᵖ` and `h` with
+`DataWrangling.inpaint_mask!` before evaluating the closure instead, so the fill comes
+from horizontal neighbors.
+"""
+function fill_aerodynamic_roughness_gaps!(ℓᵐ, d, closure::AbstractUrbanRoughness)
+    grid = ℓᵐ.grid
+    FT = eltype(ℓᵐ)
+    ℓˢᵒⁱˡ, dˢᵒⁱˡ = aerodynamic_parameters(closure, 0, 0)
+    launch!(architecture(grid), grid, :xy, _fill_aerodynamic_roughness_gaps!,
+            ℓᵐ, d, convert(FT, ℓˢᵒⁱˡ), convert(FT, dˢᵒⁱˡ))
     return ℓᵐ, d
 end
 
