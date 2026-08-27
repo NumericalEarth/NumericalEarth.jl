@@ -22,7 +22,7 @@ using NumericalEarth.DataWrangling.GloFAS: GloFASDataset, GloFASMetadata, GloFAS
                                            GloFAS_dataset_variable_names, GloFAS_netcdf_variable_names
 using NumericalEarth.DataWrangling.CopernicusLandAlbedo: ALBEDO_CDS_PRODUCT,
                                                          CopernicusAlbedoDatasetMetadata,
-                                                         download_albedo_dekads!
+                                                         download_ten_day_albedo!
 
 include("cds_utils.jl")
 include("era5.jl")
