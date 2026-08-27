@@ -201,7 +201,8 @@ end
     λ, φ = NumericalEarth.DataWrangling.read_file_coords(metadatum)
 
     for (longitude_indices, latitude_indices) in ((1:3, 1:4), (2:5, 3:6),
-                                                  (1:size(whole, 1), 1:size(whole, 2)))
+                                                  (1:size(whole, 1), 1:size(whole, 2)),
+                                                  (:, :))
         data, window_longitude, window_latitude =
             NumericalEarth.DataWrangling.retrieve_window(metadatum, longitude_indices, latitude_indices)
         @test isequal(Array(data), whole[longitude_indices, latitude_indices, :])

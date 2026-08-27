@@ -8,54 +8,56 @@ using Oceananigans.Utils: KernelParameters
 """
     windowed_retrieval(dataset)
 
-Whether `dataset` reads one horizontal window of its file through `retrieve_window`, which lets
+Whether `dataset` serves a horizontal subwindow of its file through `retrieve_window`, which lets
 `Field(metadatum, grid)` regrid it in tiles. A dataset that overrides `interpolate_physical!`
 regrids by its own scheme and leaves this `false`. Default `false`.
 """
 windowed_retrieval(dataset) = false
 
+# The cells a window spans; `:` spans the whole axis.
+window_indices(indices, coordinates) = indices
+window_indices(::Colon, coordinates) = eachindex(coordinates)
+
 """
     retrieve_window(metadata, longitude_indices, latitude_indices)
 
-Return `(data, λ, φ)` for one horizontal window of `metadata`'s file: the data, oriented as
-`retrieve_data` orients it and always three-dimensional, together with the cell centers the
-window spans. Serves the hyperslab of a plain lon/lat NetCDF, north-first files included;
-datasets stored otherwise extend this.
+Return `(data, λ, φ)` for one horizontal window of `metadata`'s file: the data, always
+three-dimensional and ascending in latitude and height, together with the cell centers the window
+spans. `Colon` indices span the file. Serves the hyperslab of a plain lon/lat NetCDF, north-first
+files included; datasets stored otherwise extend this.
 """
 function retrieve_window(metadata::Metadatum, longitude_indices, latitude_indices)
     path = metadata_path(metadata)
     name = dataset_variable_name(metadata)
     reversed = reversed_latitude_axis(metadata.dataset)
+    λ, φ = read_file_coords(metadata)
 
-    return Dataset(path) do ds
-        λ = ds[longitude_name(metadata)][:]
-        φ = ds[latitude_name(metadata)][:]
+    # A north-first file stores ascending row j at row length(φ) - j + 1.
+    rows = latitude_indices
+    if reversed
+        ascending = window_indices(latitude_indices, φ)
+        rows = (length(φ) - last(ascending) + 1):(length(φ) - first(ascending) + 1)
+    end
 
-        # A north-first file stores ascending row j at row length(φ) - j + 1.
-        rows = latitude_indices
-        if reversed
-            rows = (length(φ) - last(rows) + 1):(length(φ) - first(rows) + 1)
-        end
-
-        data = if is_three_dimensional(metadata)
+    data = Dataset(path) do ds
+        if is_three_dimensional(metadata)
             ds[name][longitude_indices, rows, :, 1]
         else
             ds[name][longitude_indices, rows, 1]
         end
-
-        data = ndims(data) == 2 ? reshape(data, size(data, 1), size(data, 2), 1) : data
-
-        if is_three_dimensional(metadata) && reversed_vertical_axis(metadata.dataset)
-            data = reverse(data, dims = 3)
-        end
-
-        if reversed
-            data = reverse(data, dims = 2)
-            reverse!(φ)
-        end
-
-        return (data, λ[longitude_indices], φ[latitude_indices])
     end
+
+    data = ndims(data) == 2 ? reshape(data, size(data, 1), size(data, 2), 1) : data
+
+    if is_three_dimensional(metadata) && reversed_vertical_axis(metadata.dataset)
+        data = reverse(data, dims = 3)
+    end
+
+    if reversed
+        data = reverse(data, dims = 2)
+    end
+
+    return (data, λ[longitude_indices], φ[latitude_indices])
 end
 
 #####

@@ -189,32 +189,8 @@ end
 Retrieve data from netcdf file according to `metadata`.
 """
 function retrieve_data(metadata::Metadatum)
-    path = metadata_path(metadata)
-    name = dataset_variable_name(metadata)
-
-    # NetCDF shenanigans
-    ds = Dataset(path)
-
-    if is_three_dimensional(metadata)
-        data = ds[name][:, :, :, 1]
-
-        # Many ocean datasets use a "depth convention" for their vertical axis
-        if reversed_vertical_axis(metadata.dataset)
-            data = reverse(data, dims=3)
-        end
-    else
-        data = ds[name][:, :, 1]
-    end
-
-    close(ds)
-
-    # ERA5 (and some other datasets) store latitude north-to-south;
-    # flip to south-to-north to match the grid.
-    if reversed_latitude_axis(metadata.dataset)
-        data = reverse(data, dims=2)
-    end
-
-    return data
+    data, _, _ = retrieve_window(metadata, :, :)
+    return is_three_dimensional(metadata) ? data : dropdims(data, dims=3)
 end
 
 """
