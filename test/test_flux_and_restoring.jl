@@ -39,8 +39,10 @@ end
             @test S_top.condition.func.additional_fluxes.additional === nothing
             @test T_top.condition.func.additional_fluxes.additional === nothing
 
-            # Momentum carries no freshwater exchange: a plain FluxBoundaryCondition over a writable Field
-            @test u_top.condition isa Field
+            # Momentum carries no freshwater exchange: an affine flux whose explicit part is a writable
+            # Field and whose implicit part carries the ice-ocean drag coefficient.
+            @test u_top.condition.explicit_flux isa Field
+            @test u_top.condition.implicit_coefficient isa Field
 
             # net_fluxes unwraps to the writable flux fields the coupled solver writes into
             nf = net_fluxes(ocean)
@@ -48,7 +50,8 @@ end
             @test nf.T isa Field
             @test nf.S === S_top.condition.func.flux_field
             @test nf.T === T_top.condition.func.flux_field
-            @test nf.u === u_top.condition
+            @test nf.u === u_top.condition.explicit_flux
+            @test nf.u_coefficient === u_top.condition.implicit_coefficient
         end
 
         @testset "wrapped path: salinity restoring" begin

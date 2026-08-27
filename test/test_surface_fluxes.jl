@@ -329,10 +329,16 @@ end
 
         τˣ = earth.interfaces.sea_ice_ocean_interface.fluxes.x_momentum
         τʸ = earth.interfaces.sea_ice_ocean_interface.fluxes.y_momentum
+        λˣ = earth.interfaces.sea_ice_ocean_interface.fluxes.x_momentum_coefficient
+        λʸ = earth.interfaces.sea_ice_ocean_interface.fluxes.y_momentum_coefficient
 
+        # The drag is split as Fₑ + λ uᵒ with λ = ρₑ Cᴰ |Δu|; the ice is at rest, so Fₑ vanishes and
+        # λ uᵒ carries the whole stress.
         @allowscalar begin
-            @test τˣ[1, 1, 1] == sqrt(0.1^2 + 0.2^2) * 0.1
-            @test τʸ[1, 1, 1] == sqrt(0.1^2 + 0.2^2) * 0.2
+            @test λˣ[1, 1, 1] == sqrt(0.1^2 + 0.2^2)
+            @test λʸ[1, 1, 1] == sqrt(0.1^2 + 0.2^2)
+            @test τˣ[1, 1, 1] + λˣ[1, 1, 1] * 0.1 == sqrt(0.1^2 + 0.2^2) * 0.1
+            @test τʸ[1, 1, 1] + λʸ[1, 1, 1] * 0.2 == sqrt(0.1^2 + 0.2^2) * 0.2
         end
     end
 end
