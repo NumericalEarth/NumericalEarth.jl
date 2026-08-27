@@ -1,7 +1,8 @@
 module InterfaceComputations
 
-using Adapt: Adapt, adapt
-using Oceananigans: Oceananigans
+using Adapt: Adapt
+using Oceananigans: Oceananigans, location
+using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: AbstractField, Field, Face, Center
 using Oceananigans.Grids: Flat, Periodic, topology
 using Oceananigans.OutputReaders: FieldTimeSeries, FlavorOfFTS, cpu_interpolating_time_indices
@@ -15,8 +16,6 @@ export
     ConvergenceStopCriteria,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
-    LandRoughnessLength,
-    LandZeroPlaneDisplacement,
     CoefficientBasedFluxes,
     SimilarityScales,
     PolynomialNeutralDragCoefficient,
@@ -175,12 +174,13 @@ end
     return ifelse(topo isa Periodic, fractional_index, clamp(fractional_index, westmost, eastmost))
 end
 
-# 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1: a scalar
-# (e.g. a prescribed measurement height or the 600 m BL-height fallback) passes through,
-# and a 2-D `Field` (Breeze's per-column surface- or boundary-layer height) is read at
-# column `(i, j)`. Used by the atmosphere–surface flux kernels to consume
-# `surface_layer_height` / `h_bℓ` uniformly.
-@inline state2dindex(a, i, j) = stateindex(a, i, j, 1)
+# 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1: a 2-D
+# `Field` (Breeze's per-column surface- or boundary-layer height, a per-cell roughness
+# length) is read at column `(i, j)`, and anything uniform over grid points — a scalar
+# height, a flux formulation such as `MomentumRoughnessLength` — passes through.
+# Used by the atmosphere–surface flux kernels.
+@inline state2dindex(a, i, j) = a
+@inline state2dindex(a::AbstractArray, i, j) = stateindex(a, i, j, 1)
 
 # Turbulent fluxes
 include("roughness_lengths.jl")
