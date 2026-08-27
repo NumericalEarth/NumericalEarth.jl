@@ -21,18 +21,22 @@ Base.size(::GloFASReanalysis, variable) = (7200, 3000, 1)
 DataWrangling.all_dates(::GloFASReanalysis, variable) =
     range(DateTime("1979-01-01"), stop=DateTime("2024-12-31"), step=Day(1))
 
+# The discharge is a mean over the day the dates label, which the store stamps with the end of that
+# window: asking for 10 July 2010 returns a file whose `valid_time` is 11 July.
+DataWrangling.averaging_window(md::GloFASMetadatum) = (md.dates, md.dates + Day(1))
+
 #####
 ##### Variable name mappings
 #####
 
 # NumericalEarth name → CDS API variable name.
 GloFAS_dataset_variable_names = Dict(
-    :river_discharge => "river_discharge_in_the_last_24_hours",
+    :river_discharge => "average_river_discharge_in_the_last_24_hours",
 )
 
-# NumericalEarth name → NetCDF short variable name (as stored in downloaded files).
+# NumericalEarth name → NetCDF short variable name.
 GloFAS_netcdf_variable_names = Dict(
-    :river_discharge => "dis24",
+    :river_discharge => "avg_dis",
 )
 
 DataWrangling.available_variables(::GloFASDataset) = GloFAS_dataset_variable_names
