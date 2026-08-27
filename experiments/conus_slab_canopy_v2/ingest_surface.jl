@@ -21,6 +21,7 @@ import Dates
 import Dates: DateTime
 
 include(joinpath(@__DIR__, "worldcover_tiles.jl"))
+include(joinpath(@__DIR__, "eth_canopy_tiles.jl"))
 
 surface_field(grid) = Field{Center, Center, Nothing}(grid)
 
@@ -282,4 +283,34 @@ function ingest_era5_land(grid, region, dir)
     deep_temperature = land_field(:soil_temperature_level_3, 288)
 
     return (; soil_water, deep_temperature)
+end
+
+##### ETH canopy height, stitched from the cached 0.01° tiles
+
+# Cell-mean tree height (pixels without trees count as 0 m, no-data is excluded) and the
+# share of the cell's ~1 km lattice cells whose mean canopy stands at least 2 m tall.
+function ingest_canopy_height(grid, region)
+    corners = worldcover_tile_corners(region.longitude, region.latitude)
+    available = filter(c -> isfile(eth_canopy_tile_path(c)), corners)
+    @info "ETH canopy: $(length(available)) of $(length(corners)) tiles cached (the rest are ocean or missing)"
+    isempty(available) && return nothing
+
+    Δ = eth_canopy_lattice_step
+    λ₀, φ₀ = minimum(first, corners), minimum(last, corners)
+    nλ = round(Int, (maximum(first, corners) + 3 - λ₀) / Δ)
+    nφ = round(Int, (maximum(last, corners) + 3 - φ₀) / Δ)
+    lattice = flat_grid((nλ, nφ), (λ₀, λ₀ + nλ * Δ), (φ₀, φ₀ + nφ * Δ))
+    height = surface_field(lattice); parent(height) .= NaN
+    for corner in available
+        tile = jldopen(f -> f["height"], eth_canopy_tile_path(corner))
+        i₀ = round(Int, (corner[1] - λ₀) / Δ); j₀ = round(Int, (corner[2] - φ₀) / Δ)
+        interior(height, (i₀ + 1):(i₀ + size(tile, 1)), (j₀ + 1):(j₀ + size(tile, 2)), 1) .= tile
+    end
+
+    tall = surface_field(lattice)
+    interior(tall, :, :, 1) .= ifelse.(isfinite.(interior(height, :, :, 1)), interior(height, :, :, 1) .>= 2, NaN)
+
+    eth_canopy_height = surface_field(grid); masked_regrid!(eth_canopy_height, height)
+    tall_canopy_fraction = surface_field(grid); masked_regrid!(tall_canopy_fraction, tall)
+    return (; eth_canopy_height, tall_canopy_fraction)
 end

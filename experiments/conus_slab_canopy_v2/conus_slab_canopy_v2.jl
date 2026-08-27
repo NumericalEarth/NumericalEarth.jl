@@ -25,6 +25,8 @@
 # SST-restoring, water-roughness surface.
 #
 # `REFINEMENT` scales resolution at fixed extent: 1 → ~12 km, 2 → ~6 km.
+# `CANOPY_HEIGHT=eth` replaces the IGBP class canopy heights by the ETH Sentinel-2 10 m
+# product (area-averaged per cell, class height as the floor where it sees no trees).
 # `INGEST_ONLY=1` builds the surface caches on a CPU node and exits.
 # `SMOKE=1` stops after 20 simulated minutes to exercise the full pipeline first.
 
@@ -60,6 +62,7 @@ SMOKE = get(ENV, "SMOKE", "0") == "1"
 INGEST_ONLY = get(ENV, "INGEST_ONLY", "0") == "1"
 refinement = parse(Int, get(ENV, "REFINEMENT", "1"))
 landcover_source = Symbol(get(ENV, "LANDCOVER", "modis"))
+canopy_height_source = Symbol(get(ENV, "CANOPY_HEIGHT", "class"))
 
 arch = INGEST_ONLY ? CPU() : GPU(CUDA.CUDABackend(always_inline = true))
 
@@ -126,6 +129,9 @@ end
 worldcover = landcover_source == :worldcover ? cached(cache_file("worldcover")) do
     ingest_worldcover(cpu_land_grid, ingest_region)
 end : nothing
+eth = canopy_height_source == :eth ? cached(cache_file("eth_canopy")) do
+    ingest_canopy_height(cpu_land_grid, ingest_region)
+end : nothing
 
 if INGEST_ONLY
     @info "Surface caches written to $(abspath(cache_directory)); exiting."
@@ -174,7 +180,16 @@ tile_lai = FT.(clamp.(leaf_area_index ./ max.(vegetation_fraction, 0.05), 0.1, 8
 vegetated_stack = cat((array(modis.fractions[class]) for class in vegetated_igbp_classes)...; dims = 3)
 canopy_class = [vegetated_igbp_classes[argmax(view(vegetated_stack, i, j, :))]
                 for i in axes(vegetated_stack, 1), j in axes(vegetated_stack, 2)]
-canopy_height = [representative_canopy_height(FT, roughness_class(class)) for class in canopy_class]
+class_canopy_height = [representative_canopy_height(FT, roughness_class(class)) for class in canopy_class]
+
+# With the measured ETH height, the class height stays as the floor where the product sees
+# no trees (crops, grass, shrubs), so herbaceous cover keeps its roughness.
+if isnothing(eth)
+    canopy_height = class_canopy_height
+else
+    eth_canopy_height = array(eth.eth_canopy_height)
+    canopy_height = FT.(max.(ifelse.(isfinite.(eth_canopy_height), eth_canopy_height, 0), min.(class_canopy_height, 1.6)))
+end
 
 # Vegetated tile: Raupach drag-partition roughness of each cell's canopy type at the tile
 # leaf area and the class's representative height (displacement discarded: d = 0).
@@ -501,7 +516,9 @@ simulation.output_writers[:isobaric] = JLD2Writer(model, isobaric.slices; schedu
 
 # Static surface fields, saved once for the figure scripts.
 jldsave("$(resolution_tag)_static.jld2";
-        leaf_area_index, tile_lai, vegetation_fraction, canopy_height, canopy_class,
+        leaf_area_index, tile_lai, vegetation_fraction, canopy_height, canopy_class, class_canopy_height,
+        eth_canopy_height = isnothing(eth) ? nothing : array(eth.eth_canopy_height),
+        tall_canopy_fraction = isnothing(eth) ? nothing : array(eth.tall_canopy_fraction),
         vegetated_cover, water_cover, urban_cover, water,
         momentum_roughness_vegetated = vegetated_roughness_length, momentum_roughness_bare = bare_roughness_length,
         urban_roughness = array(urban.urban_roughness),

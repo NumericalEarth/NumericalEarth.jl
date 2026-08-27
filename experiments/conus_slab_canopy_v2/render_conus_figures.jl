@@ -61,7 +61,8 @@ function map_panels!(fig, panels; ncolumns = 4)
         row, column = fldmod1(k, ncolumns)
         ax = Axis(fig[row, 2column - 1]; title, aspect = DataAspect())
         hidedecorations!(ax)
-        hm = heatmap!(ax, λ, φ, mask_water(data); colormap, colorrange, nan_color = :lightsteelblue1)
+        colorscale = occursin("log scale", title) ? log10 : identity
+        hm = heatmap!(ax, λ, φ, mask_water(data); colormap, colorrange, colorscale, nan_color = :lightsteelblue1)
         Colorbar(fig[row, 2column], hm)
     end
 end
@@ -70,7 +71,7 @@ end
 
 panels = (("leaf area index (MODIS)",        static["leaf_area_index"],                    :algae,   (0, 5)),
           ("vegetated fraction ($(static["landcover_source"]))", static["vegetation_fraction"], :speed, (0, 1)),
-          ("canopy height (m, IGBP class)",  static["canopy_height"],                      :speed,   (0, 20)),
+          ("canopy height (m, log scale)",   static["canopy_height"],                      :speed,   (1, 30)),
           ("canopy roughness ℓᵐ (m)",        static["momentum_roughness_vegetated"],       :turbid,  (0, 1.5)),
           ("built-up land fraction",         static["urban_cover"],                        :amp,     (0, 0.5)),
           ("GHSL building height (m)",       static["building_height"],                    :inferno, (0, 15)),
@@ -90,6 +91,21 @@ map_panels!(fig, panels)
 Label(fig[0, 1:8], "CONUS $(tag) — the ingested land surface", fontsize = 20)
 save("$(tag)_ingestion.png", fig)
 @info "Saved $(tag)_ingestion.png"
+
+# ## Measured vs class canopy height (ETH run only)
+
+if haskey(static, "eth_canopy_height") && !isnothing(static["eth_canopy_height"])
+    fig = Figure(size = (1800, 900), fontsize = 15)
+    map_panels!(fig, (("ETH cell-mean tree height (m, log scale)", max.(static["eth_canopy_height"], 0.1), :speed, (0.1, 30)),
+                      ("tall-canopy (≥ 2 m) area fraction",         static["tall_canopy_fraction"],           :algae, (0, 1)),
+                      ("IGBP class height (m, log scale)",           static["class_canopy_height"],            :speed, (1, 30)),
+                      ("canopy height used (m, log scale)",          static["canopy_height"],                  :speed, (1, 30)),
+                      ("used − class (m)",                           static["canopy_height"] .- static["class_canopy_height"], :balance, (-10, 10)),
+                      ("canopy roughness ℓᵐ (m, log scale)",         static["momentum_roughness_vegetated"],   :turbid, (0.01, 3))); ncolumns = 3)
+    Label(fig[0, 1:6], "ETH Sentinel-2 canopy height against the IGBP class heights", fontsize = 18)
+    save("$(tag)_canopy_height.png", fig)
+    @info "Saved $(tag)_canopy_height.png"
+end
 
 # ## Urban detail: the GHSL roughness around the largest metropolitan areas
 
