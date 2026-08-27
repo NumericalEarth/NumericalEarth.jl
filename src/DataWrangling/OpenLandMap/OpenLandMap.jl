@@ -189,8 +189,7 @@ function DataWrangling.retrieve_data(metadata::OpenLandMapSoilDBMetadatum)
     return data
 end
 
-# The 30 m regional window is large enough that it is read and regridded by window rather than
-# whole.
+# The 30 m regional window is large and regridded by window.
 DataWrangling.windowed_retrieval(::OpenLandMapSoilDB) = true
 
 """
