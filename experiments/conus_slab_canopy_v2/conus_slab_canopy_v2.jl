@@ -26,7 +26,8 @@
 #
 # `REFINEMENT` scales resolution at fixed extent: 1 → ~12 km, 2 → ~6 km.
 # `CANOPY_HEIGHT=eth` replaces the IGBP class canopy heights by the ETH Sentinel-2 10 m
-# product (area-averaged per cell, class height as the floor where it sees no trees).
+# product (area-averaged per cell, class height as the floor where it sees no trees);
+# `CANOPY_HEIGHT=eth_trees` does so only where the MODIS class is a tree type.
 # `LAND=bucket` runs the pre-vegetation bucket `SlabLand` (Manabe evaporation efficiency,
 # constant roughness) in place of the tiled canopy; `RADIATION=rtm` runs all-sky RRTMGP in the
 # nest in place of the ERA5 prescribed fluxes; `STOP_DATE` extends the window (default 21 May 00Z).
@@ -135,7 +136,7 @@ end
 worldcover = landcover_source == :worldcover ? cached(cache_file("worldcover")) do
     ingest_worldcover(cpu_land_grid, ingest_region)
 end : nothing
-eth = canopy_height_source == :eth ? cached(cache_file("eth_canopy")) do
+eth = canopy_height_source in (:eth, :eth_trees) ? cached(cache_file("eth_canopy")) do
     ingest_canopy_height(cpu_land_grid, ingest_region)
 end : nothing
 
@@ -189,12 +190,18 @@ canopy_class = [vegetated_igbp_classes[argmax(view(vegetated_stack, i, j, :))]
 class_canopy_height = [representative_canopy_height(FT, roughness_class(class)) for class in canopy_class]
 
 # With the measured ETH height, the class height stays as the floor where the product sees
-# no trees (crops, grass, shrubs), so herbaceous cover keeps its roughness.
+# no trees (crops, grass, shrubs), so herbaceous cover keeps its roughness. `eth_trees` trusts
+# the product only where the MODIS class is a tree type, since it reads several meters over
+# crops and grass.
+tree_classes = (:evergreen_needleleaf_forest, :evergreen_broadleaf_forest, :deciduous_needleleaf_forest,
+                :deciduous_broadleaf_forest, :mixed_forest, :woody_savanna, :savanna, :permanent_wetland)
 if isnothing(eth)
     canopy_height = class_canopy_height
 else
     eth_canopy_height = array(eth.eth_canopy_height)
-    canopy_height = FT.(max.(ifelse.(isfinite.(eth_canopy_height), eth_canopy_height, 0), min.(class_canopy_height, 1.6)))
+    measured = FT.(max.(ifelse.(isfinite.(eth_canopy_height), eth_canopy_height, 0), min.(class_canopy_height, 1.6)))
+    trees = map(class -> class in tree_classes, canopy_class)
+    canopy_height = canopy_height_source == :eth_trees ? ifelse.(trees, measured, class_canopy_height) : measured
 end
 
 # Vegetated tile: Raupach drag-partition roughness of each cell's canopy type at the tile
