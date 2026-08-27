@@ -22,15 +22,11 @@ end
     SeaWiFSMonthly(; resolution = 1)
 
 Monthly composites of near-surface chlorophyll-a from SeaWiFS, reprocessing R2018.0, covering the
-mission record September 1997 to December 2010. Provides `:chlorophyll` in mg m⁻³, the input
-`TwoColorRadiation` needs to set how deep shortwave radiation penetrates.
+mission record September 1997 to December 2010. Provides `:chlorophyll` in mg m⁻³.
 
-The native product is mapped at 1/12°; `resolution` is the degree spacing actually requested, since
-a global monthly record at full resolution is several gigabytes. Files come from the NOAA CoastWatch
-ERDDAP server, which needs no credentials.
+The native product is mapped at 1/12°; `resolution` is the degree spacing actually requested. Files come from the NOAA CoastWatch ERDDAP server, which needs no credentials.
 
-A `FieldTimeSeries` built over a twelve-month window of `Metadata(:chlorophyll;
-dataset=SeaWiFSMonthly(), dates)` drives a run of any length with a repeating seasonal cycle, under
+A `FieldTimeSeries` built over a twelve-month window of `Metadata(:chlorophyll; dataset=SeaWiFSMonthly(), dates)` drives a run of any length with a repeating seasonal cycle, under
 the default `Cyclical()` time indexing.
 
 ```jldoctest
