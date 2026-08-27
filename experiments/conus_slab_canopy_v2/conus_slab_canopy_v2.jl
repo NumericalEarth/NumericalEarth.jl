@@ -27,6 +27,9 @@
 # `REFINEMENT` scales resolution at fixed extent: 1 → ~12 km, 2 → ~6 km.
 # `CANOPY_HEIGHT=eth` replaces the IGBP class canopy heights by the ETH Sentinel-2 10 m
 # product (area-averaged per cell, class height as the floor where it sees no trees).
+# `LAND=bucket` runs the pre-vegetation bucket `SlabLand` (Manabe evaporation efficiency,
+# constant roughness) in place of the tiled canopy; `RADIATION=rtm` runs all-sky RRTMGP in the
+# nest in place of the ERA5 prescribed fluxes; `STOP_DATE` extends the window (default 21 May 00Z).
 # `INGEST_ONLY=1` builds the surface caches on a CPU node and exits.
 # `SMOKE=1` stops after 20 simulated minutes to exercise the full pipeline first.
 
@@ -41,6 +44,7 @@ using ArchGDAL                     # COG / GeoTIFF / HDF readers for the surface
 using CairoMakie                   # NumericalEarthMakieExt (visualize_nested_domain)
 using NaturalEarth                 # NumericalEarthNaturalEarthExt (state/country lines)
 using CUDA
+using RRTMGP                       # Breeze RadiativeTransferModel (RADIATION=rtm)
 using JLD2
 using Printf
 using Statistics: mean, median
@@ -63,6 +67,8 @@ INGEST_ONLY = get(ENV, "INGEST_ONLY", "0") == "1"
 refinement = parse(Int, get(ENV, "REFINEMENT", "1"))
 landcover_source = Symbol(get(ENV, "LANDCOVER", "modis"))
 canopy_height_source = Symbol(get(ENV, "CANOPY_HEIGHT", "class"))
+land_source = Symbol(get(ENV, "LAND", "canopy"))
+radiation_source = Symbol(get(ENV, "RADIATION", "prescribed"))
 
 arch = INGEST_ONLY ? CPU() : GPU(CUDA.CUDABackend(always_inline = true))
 
@@ -72,7 +78,7 @@ resolution_tag = get(ENV, "TAG", "conus$(resolution_km)km_v2")
 
 φ₀, λ₀ = 37.0, -97.5                        # HRRR CONUS center
 start_date = DateTime(2011, 5, 17, 0)       # three diurnal cycles of spin-up...
-stop_date  = DateTime(2011, 5, 21, 0)       # ...then the MC3E squall-line day
+stop_date  = DateTime(get(ENV, "STOP_DATE", "2011-05-21T00:00:00"))   # ...then the MC3E squall-line day
 dates = (start_date, stop_date)
 
 Δλ = Δφ = 1 / (9 * refinement)
@@ -246,6 +252,11 @@ static = (; leaf_area_index = to_field(leaf_area_index),
             deep_temperature = to_field(array(era5_land.deep_temperature)))
 
 # ## The land model
+#
+# `LAND=bucket` is the pre-vegetation configuration of the first CONUS radiation runs: the
+# default bucket `SlabLand` with Manabe evaporation efficiency and constant roughness.
+
+if land_source == :canopy
 
 soil_hydrology = VariablySaturatedHydrology(FT;
     slab_depth,
@@ -317,6 +328,10 @@ land_fluxes(ℓᵐ, ℓˢ) = SimilarityTheoryFluxes(FT;
     stability_functions          = atmosphere_land_stability_functions(FT),
     solver_stop_criteria         = FixedIterations(8))
 
+else
+    land = SlabLand(land_grid)
+end
+
 # ## Atmosphere grid and nest
 
 z = ReferenceToStretchedDiscretization(extent = 19525.0,
@@ -375,21 +390,35 @@ save("$(resolution_tag)_domains.png", fig)
 
 # ## Radiation and coupling
 
-radiation = ERA5PrescribedRadiation(arch;
-                                    dataset = ERA5HourlySingleLevel(),
-                                    start_date, end_date = stop_date,
-                                    region = era5_forcing_region,
-                                    dir = era5_datadir,
-                                    land_surface = SurfaceRadiationProperties(static.albedo, static.emissivity),
-                                    ocean_surface = nothing, sea_ice_surface = nothing)
+# Prescribed: ERA5 downwelling fluxes drive the land, the atmosphere has no radiative transfer.
+# RTM: all-sky RRTMGP on the child grid, hourly solves, interior heating on the nest's own clouds;
+# the land interface binds its skin temperature and (for the canopy) its effective albedo.
+radiation = if radiation_source == :rtm
+    RadiativeTransferModel(grid, AllSkyOptics(), nest.child.thermodynamic_constants;
+                           solar_position = ApparentSolarPosition(epoch = start_date),
+                           surface_albedo = CopernicusAlbedo(),
+                           schedule = TimeInterval(1hour))
+else
+    ERA5PrescribedRadiation(arch;
+                            dataset = ERA5HourlySingleLevel(),
+                            start_date, end_date = stop_date,
+                            region = era5_forcing_region,
+                            dir = era5_datadir,
+                            land_surface = SurfaceRadiationProperties(static.albedo, static.emissivity),
+                            ocean_surface = nothing, sea_ice_surface = nothing)
+end
 
 atmosphere = Simulation(nest; Δt)   ## the coupled model manages Δt; this sets the initial value
 
-interface = TiledLandInterface(land_grid, atmosphere, land;
-    vegetated,
-    fraction = static.vegetation_fraction,
-    vegetated_fluxes = land_fluxes(static.vegetated_roughness_length, static.vegetated_scalar_roughness_length),
-    bare_fluxes      = land_fluxes(static.bare_roughness_length, static.bare_scalar_roughness_length))
+interface_kw = if land_source == :canopy
+    (; atmosphere_land_interface = TiledLandInterface(land_grid, atmosphere, land;
+           vegetated,
+           fraction = static.vegetation_fraction,
+           vegetated_fluxes = land_fluxes(static.vegetated_roughness_length, static.vegetated_scalar_roughness_length),
+           bare_fluxes      = land_fluxes(static.bare_roughness_length, static.bare_scalar_roughness_length)))
+else
+    (; atmosphere_land_interface_specific_humidity = FractionalHumidity(efficiency = CriticalSaturation(0.75)))
+end
 
 # ## Initial state
 #
@@ -404,17 +433,31 @@ porosity = array(soil.hydraulic_fields.porosity)
 residual = array(soil.hydraulic_fields.residual_liquid_fraction)
 θ₀ = clamp.(array(era5_land.soil_water), 1.05 .* residual, 0.95 .* porosity)
 θ₀[water] .= porosity[water]
-set!(land; M = to_field(θ₀ .* (1000 * slab_depth)), canopy_water_storage = 0, surface_water_storage = 0)
+if land_source == :canopy
+    set!(land; M = to_field(θ₀ .* (1000 * slab_depth)), canopy_water_storage = 0, surface_water_storage = 0)
+else
+    ## The bucket starts from ERA5-Land's 0–7 cm water at the start date, relative to a 0.45 m³ m⁻³
+    ## saturation; water pixels (NaN in the land product) start saturated.
+    bucket_water = similar(land.temperature)
+    set!(bucket_water, Metadatum(:volumetric_soil_water_layer_1; dataset = ERA5HourlyLand(), date = start_date,
+                                 region = BoundingBox(land_grid), dir = era5_datadir))
+    capacity = land.hydrology.maximum_water_storage
+    interior(bucket_water) .= ifelse.(isnan.(interior(bucket_water)), capacity,
+                                      clamp.(interior(bucket_water) ./ 0.45, 0, 1) .* capacity)
+    set!(land; M = bucket_water)
+end
 
 @info @sprintf("initial soil wetness 𝒮 ∈ [%.3f, %.3f], mean %.3f",
                minimum(land.saturation), maximum(land.saturation), mean(land.saturation))
 
-model = AtmosphereLandModel(atmosphere, land; radiation,
-                            atmosphere_land_interface = interface)
+model = AtmosphereLandModel(atmosphere, land; radiation, interface_kw...)
 
+# Materializing the radiation rebuilds the nest around the child; diagnose against the objects
+# the simulation steps.
 child = model.atmosphere.model.child
+interface = model.interfaces.atmosphere_land_interface
 
-stop_time = parse(Float64, get(ENV, "STOP_TIME", SMOKE ? "1200" : "345600"))   # 96 h
+stop_time = parse(Float64, get(ENV, "STOP_TIME", SMOKE ? "1200" : string(Dates.value(stop_date - start_date) / 1000)))
 simulation = Simulation(model; Δt, stop_time)
 
 conjure_time_step_wizard!(simulation, IterationInterval(1); cfl = 0.7,
@@ -437,6 +480,10 @@ surface_fields = (θᵥ = VirtualPotentialTemperature(child),
                   U  = sqrt(child.velocities.u^2 + child.velocities.v^2),
                   qᵛ = qᵛ,
                   pₛ = surface_pressure)
+if radiation_source == :rtm   ## ZFaceFields: the (:, :, 1) slice is the surface face, positive up
+    surface_fields = merge(surface_fields, (ℐꜛˡʷ = model.radiation.upwelling_longwave_flux,
+                                            ℐꜛˢʷ = model.radiation.upwelling_shortwave_flux))
+end
 
 aloft_fields = (w  = child.velocities.w,
                 qᵛ = qᵛ,
@@ -456,7 +503,18 @@ simulation.output_writers[:aloft] = JLD2Writer(model, aloft_fields; schedule,
 
 # Land + canopy diagnostics: the blended fluxes the atmosphere sees, the two-source
 # temperatures, the per-branch latent heat, and every water reservoir.
-land_fields = (Tˡᵃ = land.temperature,
+land_fields = if land_source == :bucket
+    (Tˡᵃ = land.temperature,
+     𝒮   = land.saturation,
+     W   = land.water_storage,
+     LE  = interface.fluxes.latent_heat,
+     H   = interface.fluxes.sensible_heat,
+     u★  = interface.fluxes.friction_velocity,
+     Jʳⁿ = model.interfaces.exchanger.atmosphere.state.Jʳⁿ,
+     ℐꜜˢʷ = model.interfaces.exchanger.radiation.state.ℐꜜˢʷ,
+     ℐꜜˡʷ = model.interfaces.exchanger.radiation.state.ℐꜜˡʷ)
+else
+    (Tˡᵃ = land.temperature,
                𝒮   = land.saturation,
                W   = land.water_storage,
                Wᶜ  = land.prognostic.canopy_water_storage,
@@ -482,6 +540,7 @@ land_fields = (Tˡᵃ = land.temperature,
                Jʳⁿ = model.interfaces.exchanger.atmosphere.state.Jʳⁿ,
                ℐꜜˢʷ = model.interfaces.exchanger.radiation.state.ℐꜜˢʷ,
                ℐꜜˡʷ = model.interfaces.exchanger.radiation.state.ℐꜜˡʷ)
+end
 
 simulation.output_writers[:land] = JLD2Writer(model, land_fields; schedule,
                                               filename = "$(resolution_tag)_land.jld2",
