@@ -16,15 +16,23 @@ function compute_bounding_nodes(grid, LH, hnodes)
     return h₁, h₂
 end
 
-# `ε` forgives Float32 to Float64 promotion noise so the slice doesn't lose a
-# cell at each end when grid centers are compared against file centers.
 function compute_bounding_indices(bounds::Tuple, hc)
     h₁, h₂ = bounds
     Nh = length(hc)
-    ε  = eps(Float32) * max(one(eltype(hc)), abs(h₁), abs(h₂))
-    i₁ = max(searchsortedfirst(hc, h₁ - ε),  1)
-    i₂ = min( searchsortedlast(hc, h₂ + ε), Nh)
+    i₁ = max(searchsortedfirst(hc, h₁ - bounding_index_tolerance(hc, h₁)),  1)
+    i₂ = min(searchsortedlast(hc, h₂ + bounding_index_tolerance(hc, h₂)), Nh)
     return i₁, i₂
+end
+
+# A Float32 node accumulated from a spacing can sit several units in the last place (ULPs) from
+# the file coordinate it should match, which shifts an exact search by a whole cell. That noise
+# outgrows an eps-scaled tolerance on a fine grid, so tolerate a quarter of the local spacing:
+# above the node noise, below the half spacing that decides which cell a coordinate belongs to.
+function bounding_index_tolerance(hc, h)
+    float_noise = eps(Float32) * max(one(eltype(hc)), abs(h))
+    length(hc) < 2 && return float_noise
+    i = clamp(searchsortedfirst(hc, h), 2, length(hc))
+    return max(float_noise, abs(hc[i] - hc[i-1]) / 4)
 end
 
 # Periodic only when the restricted span equals the full native span.
@@ -94,10 +102,13 @@ function region_info(::BoundingBox, target, λc, φc)
     λmin, λmax = compute_bounding_nodes(target.grid, LX, λnodes)
     φmin, φmax = compute_bounding_nodes(target.grid, LY, φnodes)
 
-    # Shift the target's longitude into the file's `[λc[1], λc[1]+360)`
+    # Shift the target's longitude into the file's `[λc[1], λc[1]+360)`, in double
+    # precision: the conversion takes a modulo against 360, and handing it a Float32 node
+    # runs that in Float32, whose spacing at 360 is 3e-5° — enough on its own to move the
+    # index a cell on a fine grid.
     if !isempty(λc)
-        λmin = convert_to_λ₀_λ₀_plus360(λmin, λc[1])
-        λmax = convert_to_λ₀_λ₀_plus360(λmax, λc[1])
+        λmin = convert_to_λ₀_λ₀_plus360(Float64(λmin), Float64(λc[1]))
+        λmax = convert_to_λ₀_λ₀_plus360(Float64(λmax), Float64(λc[1]))
     end
 
     i₁, _ = compute_bounding_indices((λmin, λmax), λc)

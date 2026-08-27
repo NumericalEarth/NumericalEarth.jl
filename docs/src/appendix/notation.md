@@ -260,6 +260,12 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyAirSpace`](@r
 | ``\alpha^{\mathrm{eff}}`` | `effective_albedo` | column albedo | Broadband shortwave albedo of the canopy + ground column (–) |
 | ``\epsilon`` | `ϵ` | emissivity | Surface emissivity (–) |
 
+## Vegetation properties
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``𝒜`` | `𝒜` | leaf area index | One-sided leaf area per unit ground area (m² m⁻²) |
+
 ## Similarity theory / surface layer
 
 | Math | Code | Property | Description |
@@ -402,6 +408,7 @@ Most symbols can be entered in the Julia REPL and in editors with Julia support 
 | `𝒬` | `\scrQ` | Script Q (heat flux) |
 | `ℐ` | `\scrI` | Script I (radiative intensity) |
 | `ℒ` | `\scrL` | Script L (latent heat) |
+| `𝒜` | `\scrA` | Script A (area index) |
 | `τ` | `\tau` | Tau (kinematic stress) |
 | `ρ` | `\rho` | Rho (density) |
 | `σ` | `\sigma` | Sigma (Stefan–Boltzmann constant) |
