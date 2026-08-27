@@ -3,6 +3,7 @@ module NumericalEarthSpeedyWeatherExt
 using GPUArraysCore: @allowscalar
 using KernelAbstractions: KernelAbstractions, @index, @kernel
 using Oceananigans: Oceananigans
+using Oceananigans.OutputReaders: extract_field_time_series
 using Oceananigans.Grids: Center
 using Oceananigans.Fields: Field, interior
 using NumericalEarth: NumericalEarth
