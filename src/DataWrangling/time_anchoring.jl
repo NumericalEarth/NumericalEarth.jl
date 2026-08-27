@@ -1,11 +1,14 @@
 using Dates: Dates, DateTime, Millisecond, year, month, day, hour, minute, second, isleapyear
+using Oceananigans.OutputReaders: find_time_index
 
 """
     AbstractTimeAnchor
 
-Supertype for the rules mapping a model date onto a dataset's own time stamps.
+Supertype for the `time_indexing` rules that map a model date onto a dataset's own time stamps.
 """
 abstract type AbstractTimeAnchor end
+
+Oceananigans.OutputReaders.interpolating_time_indices(anchor::AbstractTimeAnchor, times, t) = find_time_index(times, lookup_date(anchor, t, times))
 
 """
     CalendarDate()
@@ -49,10 +52,10 @@ function lookup_date(::CalendarDate, model_date, dates)
 
     folded = model_date
     while folded > last_stamp
-        folded = shift_years(folded, -cycle_years)
+        folded = substitute_year(folded, year(folded) - cycle_years)
     end
     while folded < first_stamp
-        folded = shift_years(folded, cycle_years)
+        folded = substitute_year(folded, year(folded) + cycle_years)
     end
 
     return folded
@@ -82,19 +85,12 @@ function substitute_year(date, target_year)
 end
 
 """
-    shift_years(date, n)
+    default_time_indexing(dataset)
 
-`date` shifted by `n` whole calendar years.
+The `time_indexing` `dataset` uses unless the caller overrides it. Climatologies, whose nominal year carries no
+meaning, extend this with `CalendarPhase()`.
 """
-shift_years(date, n) = substitute_year(date, year(date) + n)
-
-"""
-    default_time_anchor(dataset)
-
-The anchor `dataset` uses unless the caller overrides it. Climatologies, whose nominal year carries no meaning,
-extend this with `CalendarPhase()`.
-"""
-default_time_anchor(dataset) = CalendarDate()
+default_time_indexing(dataset) = CalendarDate()
 
 """
     validate_time_anchors(anchored_series)

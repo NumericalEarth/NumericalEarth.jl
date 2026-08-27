@@ -1,7 +1,7 @@
 """
     FieldTimeSeries(metadata::Metadata [, arch_or_grid=CPU() ];
                     time_indices_in_memory = 2,
-                    time_indexing = Cyclical(),
+                    time_indexing = default_time_indexing(metadata.dataset),
                     inpainting = nothing,
                     cache_inpainted_data = true)
 
@@ -37,7 +37,7 @@ end
 
 function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
                                                     time_indices_in_memory = 2,
-                                                    time_indexing = Cyclical(),
+                                                    time_indexing = default_time_indexing(metadata.dataset),
                                                     inpainting = default_inpainting(metadata),
                                                     cache_inpainted_data = true)
 

@@ -170,12 +170,23 @@ $(TYPEDSIGNATURES)
 
 Return the coupled model's default clock. A `Simulation` atmosphere's clock type is fixed
 by its grid and cannot be coerced, so the coupled clock adopts it (e.g. a `Float32`
-atmosphere gets a `Float32` coupled clock). Otherwise the clock defaults to `Float64`:
-prescribed atmospheres carry a coercible clock, so `adopt_clock` reconciles them to the
-authoritative model clock rather than the other way around.
+atmosphere gets a `Float32` coupled clock). An atmosphere carrying its own clock hands over
+both its time type and its starting time; with no atmosphere the clock is `Float64` at zero.
 """
 default_earth_system_clock(atmosphere::Simulation) = Clock{typeof(component_model(atmosphere).clock.time)}(time = 0)
-default_earth_system_clock(atmosphere) = Clock{Float64}(time = 0)
+
+function default_earth_system_clock(atmosphere)
+    hasproperty(atmosphere, :clock) || return Clock{Float64}(time = 0)
+    return Clock{typeof(atmosphere.clock.time)}(time = atmosphere.clock.time)
+end
+
+"""
+    default_component_clock(times)
+
+A `Clock` keeping time in the same type as `times`, started at the first sample.
+"""
+default_component_clock(times) = Clock{Float64}(time = 0)
+default_component_clock(times::AbstractArray{<:Dates.AbstractTime}) = Clock{eltype(times)}(time = first(times))
 
 """
     materialize_sea_ice(sea_ice, ocean)

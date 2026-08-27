@@ -47,7 +47,7 @@ function PrescribedLand(freshwater_flux; clock=nothing, river_routing=nothing)
     times = first_flux.times
 
     if isnothing(clock)
-        clock = Clock{eltype(first_flux)}(time=0)
+        clock = default_component_clock(times)
     end
 
     land = PrescribedLand(grid, clock, freshwater_flux, times, river_routing)

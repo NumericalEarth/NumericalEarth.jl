@@ -256,19 +256,23 @@ end
     @test averaging_window(ecco) == (DateTime(1993, 1, 1), DateTime(1993, 2, 1))
     @test window_center(ecco) == DateTime(1993, 1, 16, 12)
 
-    # A twelve-month axis then reproduces the time coordinates the files themselves carry,
-    # in days from the first of January.
+    # A twelve-month axis then carries each month's mid-point.
     metadata = Metadata(:temperature; dataset = EN4Monthly(),
                         dates = [DateTime(2010, m, 1) for m in 1:12])
-    @test native_times(metadata) ./ 86400 == [15.5, 45.0, 74.5, 105.0, 135.5, 166.0,
-                                              196.5, 227.5, 258.0, 288.5, 319.0, 349.5]
+    @test native_times(metadata) == [DateTime(2010, 1, 16, 12), DateTime(2010, 2, 15),
+                                     DateTime(2010, 3, 16, 12), DateTime(2010, 4, 16),
+                                     DateTime(2010, 5, 16, 12), DateTime(2010, 6, 16),
+                                     DateTime(2010, 7, 16, 12), DateTime(2010, 8, 16, 12),
+                                     DateTime(2010, 9, 16),     DateTime(2010, 10, 16, 12),
+                                     DateTime(2010, 11, 16),    DateTime(2010, 12, 16, 12)]
 
     # A product of values at an instant has no window and is left where its stamp puts it.
     hourly = Metadatum(:temperature; dataset = ERA5HourlySingleLevel(), date = DateTime(2020, 4, 1))
     @test averaging_window(hourly) == (DateTime(2020, 4, 1), DateTime(2020, 4, 1))
     @test window_center(hourly) == DateTime(2020, 4, 1)
     @test native_times(Metadata(:temperature; dataset = ERA5HourlySingleLevel(),
-                                dates = [DateTime(2020, 4, 1, h) for h in 0:2])) == [0, 3600, 7200]
+                                dates = [DateTime(2020, 4, 1, h) for h in 0:2])) ==
+          [DateTime(2020, 4, 1, h) for h in 0:2]
 
     # Every monthly-mean product spans the calendar month its file is named for, whether the
     # stamp is midnight on the first (most of them) or noon (ECCO Darwin).
@@ -317,7 +321,8 @@ end
 
     radiation = Metadata(:downwelling_shortwave_radiation; dataset = ERA5HourlySingleLevel(),
                          dates = [DateTime(2020, 4, 1, h) for h in 1:3])
-    @test native_times(radiation) == [-1800, 1800, 5400]
+    @test native_times(radiation) == [DateTime(2020, 4, 1, 0, 30), DateTime(2020, 4, 1, 1, 30),
+                                     DateTime(2020, 4, 1, 2, 30)]
 end
 
 @testset "JRA55 averaging windows" begin

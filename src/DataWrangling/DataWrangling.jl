@@ -17,7 +17,7 @@ export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, 
 export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
 export CalendarDate, CalendarPhase, SimulationStart
-export default_time_anchor
+export default_time_indexing
 
 using Adapt: Adapt
 using Downloads: Downloads

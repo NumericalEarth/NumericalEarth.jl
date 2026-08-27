@@ -2,7 +2,7 @@ include("runtests_setup.jl")
 
 using Dates
 using NumericalEarth.DataWrangling: CalendarDate, CalendarPhase, SimulationStart,
-                                    lookup_date, default_time_anchor, validate_time_anchors
+                                    lookup_date, default_time_indexing, validate_time_anchors
 
 multi_year  = DateTime(1958, 1, 1) : Hour(3) : DateTime(2018, 1, 1)
 repeat_year = DateTime(1990, 1, 1) : Hour(3) : DateTime(1990, 12, 31, 21)
@@ -67,13 +67,13 @@ climatology = [DateTime(2018, m, 1) for m in 1:12]
     end
 
     @testset "Anchors in one model" begin
-        @test default_time_anchor(MultiYearJRA55()) isa CalendarDate
-        @test default_time_anchor(RepeatYearJRA55()) isa CalendarPhase
-        @test default_time_anchor(WOAMonthly()) isa CalendarPhase
+        @test default_time_indexing(MultiYearJRA55()) isa CalendarDate
+        @test default_time_indexing(RepeatYearJRA55()) isa CalendarPhase
+        @test default_time_indexing(WOAMonthly()) isa CalendarPhase
 
         # A reanalysis with a climatological restoring is the common case and holds phase.
-        @test isnothing(validate_time_anchors([(:temperature, default_time_anchor(MultiYearJRA55())),
-                                               (:salinity, default_time_anchor(WOAMonthly()))]))
+        @test isnothing(validate_time_anchors([(:temperature, default_time_indexing(MultiYearJRA55())),
+                                               (:salinity, default_time_indexing(WOAMonthly()))]))
 
         start = SimulationStart(DateTime(1958, 1, 1))
         @test isnothing(validate_time_anchors([(:temperature, start)]))
