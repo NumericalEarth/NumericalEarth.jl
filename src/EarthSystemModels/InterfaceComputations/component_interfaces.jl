@@ -190,22 +190,24 @@ Oceananigans.Architectures.on_architecture(arch, fluxes::SeaIceOceanFluxes) =
 struct ZeroFluxes{Z}
     # Atmosphere-ocean and atmosphere-sea-ice flux fields (turbulent only;
     # radiative diagnostic fields live on the radiation component)
-    latent_heat           :: Z
-    sensible_heat         :: Z
-    water_vapor           :: Z
-    x_momentum            :: Z
-    y_momentum            :: Z
-    friction_velocity     :: Z
-    temperature_scale     :: Z
-    water_vapor_scale     :: Z
+    latent_heat            :: Z
+    sensible_heat          :: Z
+    water_vapor            :: Z
+    x_momentum             :: Z
+    y_momentum             :: Z
+    friction_velocity      :: Z
+    temperature_scale      :: Z
+    water_vapor_scale      :: Z
     # Sea ice-ocean flux fields
-    interface_heat        :: Z
-    frazil_heat           :: Z
-    salt                  :: Z
-    freshwater            :: Z
+    interface_heat         :: Z
+    frazil_heat            :: Z
+    salt                   :: Z
+    freshwater             :: Z    
+    x_momentum_coefficient :: Z
+    y_momentum_coefficient :: Z
 end
 
-ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 12)...)
+ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 14)...)
 
 @inline computed_fluxes(::Nothing) = ZeroFluxes()
 
