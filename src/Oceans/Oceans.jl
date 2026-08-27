@@ -8,7 +8,8 @@ using Oceananigans: Oceananigans
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Advection: WENO, WENOVectorInvariant
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
-                                       FieldBoundaryConditions, FluxBoundaryCondition, getbc
+                                       FieldBoundaryConditions, FluxBoundaryCondition,
+                                       IMEXFluxBoundaryCondition, getbc
 using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, set!, interior
