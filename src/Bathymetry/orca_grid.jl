@@ -293,7 +293,7 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
         return reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
     end
 
-    throw(ArgumentError("Unsupported ORCA mesh format. Missing either full staggered variables $(metrics) or T/F variables $(coords)."))
+    throw(ArgumentError("unsupported ORCA mesh: needs staggered variables $(metrics) or T/F variables $(coords)"))
 end
 
 function periodic_overlap_index(λCC)

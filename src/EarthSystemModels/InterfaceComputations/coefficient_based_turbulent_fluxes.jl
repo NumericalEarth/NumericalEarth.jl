@@ -236,10 +236,7 @@ function validate_coefficients(FT, nt::NamedTuple)
     missing = filter(k -> !haskey(nt, k), required)
 
     if !isempty(missing)
-        throw(ArgumentError(
-            "Transfer coefficients NamedTuple must contain keys $(required). " *
-            "Missing keys: $(missing). Received: $(keys(nt))"
-        ))
+        throw(ArgumentError("transfer coefficients must contain keys $(required), missing $(missing)"))
     end
 
     return convert_transfer_coefficients(FT, nt)
@@ -247,11 +244,7 @@ end
 
 function validate_coefficients(FT, tc::Tuple)
     if length(tc) != 3
-        throw(ArgumentError(
-            "Transfer coefficients must be a tuple of length 3: " *
-            "(momentum, temperature, water_vapor). " *
-            "Got length $(length(tc)) with value $(tc)."
-        ))
+        throw(ArgumentError("transfer coefficients must be a 3-tuple (momentum, temperature, water_vapor), got $(length(tc))"))
     end
 
     return convert_transfer_coefficients(FT, tc)

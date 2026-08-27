@@ -18,7 +18,6 @@ import ..DataWrangling:
     latitude_interfaces,
     z_interfaces,
     metadata_filename,
-    inpainted_metadata_path,
     reversed_vertical_axis,
     available_variables,
     is_three_dimensional
@@ -129,12 +128,8 @@ function metadata_filename(dataset::GLORYSDataset, name, date, region)
     return string(prefix, ".nc")
 end
 
-function inpainted_metadata_filename(metadata::GLORYSMetadatum)
-    prefix = metadata_prefix(metadata.dataset, metadata.name, metadata.dates, metadata.region)
-    return string(prefix, "_inpainted.jld2")
-end
-
-inpainted_metadata_path(metadata::GLORYSMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+DataWrangling.inpainted_metadata_filename(metadata::GLORYSMetadatum) =
+    string(metadata_prefix(metadata.dataset, metadata.name, metadata.dates, metadata.region), "_inpainted.jld2")
 
 function dataset_location(::GLORYSDataset, name)
     name == :free_surface && return (Center, Center, Nothing)

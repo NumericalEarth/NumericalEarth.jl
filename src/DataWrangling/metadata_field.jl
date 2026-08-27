@@ -586,10 +586,7 @@ multi-date sets, build a `NamedTuple` of `FieldTimeSeries` per variable, e.g.
 function Oceananigans.Fields.Field(mset::MetadataSet, arch=CPU(); kw...)
     dates = getfield(mset, :dates)
     if !(dates isa AnyDateTime)
-        throw(ArgumentError(
-            "Field(::MetadataSet) requires a scalar `date`, but this `MetadataSet` carries a multi-date axis. " *
-            "For multi-date sets build a NamedTuple of FieldTimeSeries per variable, e.g. " *
-            "`NamedTuple(name => FieldTimeSeries(mset[name], grid) for name in mset.names)`."))
+        throw(ArgumentError("Field(::MetadataSet) requires a scalar `date`, got a multi-date axis"))
     end
     names = getfield(mset, :names)
     return NamedTuple{names}(map(n -> Field(mset[n], arch; kw...), names))

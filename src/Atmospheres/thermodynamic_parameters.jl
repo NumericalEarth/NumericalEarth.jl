@@ -254,5 +254,4 @@ const ATP = AtmosphereThermodynamicsParameters
 
 @inline kappa_d(p::ATP)        = kappa_d(p.heat_capacity)
 @inline cp_d(p::ATP)           = R_d(p) / kappa_d(p)
-@inline cv_d(p::ATP)           = cp_d(p) - R_d(p)
 @inline cv_v(p::ATP)           = cp_v(p) - R_v(p)

@@ -257,17 +257,7 @@ plan-area index `λᵖ` and mean height `h`.
 @inline function apply_height_distribution(v::VariableHeight, ℓᵐ, d, λᵖ, h)
     σʰ = height_spread(v, h)
     hᵐᵃˣ = maximum_element_height(v, h, σʰ)
-
-    a₀, b₀, c₀ = v.displacement_constants
-    a₁, b₁, c₁ = v.roughness_constants
-
-    ℓᵐ = height_spread_roughness(ℓᵐ, λᵖ, h, σʰ, a₁, b₁, c₁)
-
-    # `hᵐᵃˣ`, not `h`, bounds the displacement: over a height-heterogeneous city `d`
-    # routinely exceeds the mean building height.
-    d = min(maximum_height_displacement(λᵖ, h, σʰ, hᵐᵃˣ, a₀, b₀, c₀), hᵐᵃˣ)
-
-    return ℓᵐ, d
+    return apply_height_distribution(v, ℓᵐ, d, λᵖ, h, σʰ, hᵐᵃˣ)
 end
 
 """
@@ -283,6 +273,9 @@ height spread `σʰ` and tallest element `hᵐᵃˣ` are measured rather than re
     a₁, b₁, c₁ = v.roughness_constants
 
     ℓᵐ = height_spread_roughness(ℓᵐ, λᵖ, h, σʰ, a₁, b₁, c₁)
+
+    # `hᵐᵃˣ`, not `h`, bounds the displacement: over a height-heterogeneous city `d`
+    # routinely exceeds the mean building height.
     d = min(maximum_height_displacement(λᵖ, h, σʰ, hᵐᵃˣ, a₀, b₀, c₀), hᵐᵃˣ)
 
     return ℓᵐ, d

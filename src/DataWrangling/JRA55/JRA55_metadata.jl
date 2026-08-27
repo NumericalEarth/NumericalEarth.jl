@@ -84,27 +84,8 @@ function DataWrangling.averaging_window(md::RepeatYearJRA55Metadatum)
     return (md.dates, md.dates + span)
 end
 
-# Valid for all JRA55 datasets
-function JRA55_time_indices(dataset, dates, name)
-    all_JRA55_dates = all_dates(dataset, name)
-    indices = Int[]
-
-    for date in dates
-        index = findfirst(x -> x == date, all_JRA55_dates)
-        !isnothing(index) && push!(indices, index)
-    end
-
-    return indices
-end
-
-# File name generation specific to each Dataset dataset
-# Note that `RepeatYearJRA55` has only one file associated, so the filename
-# is independent of the date. Override the multi-date fallback to return a plain String.
-DataWrangling.metadata_filename(::RepeatYearJRA55, name, date, region) =
-    "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
-
-DataWrangling.build_filename(::RepeatYearJRA55, name, dates::AbstractArray, region) =
-    "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
+DataWrangling.metadata_filename(::RepeatYearJRA55, name, date, region) =  "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
+DataWrangling.build_filename(::RepeatYearJRA55, name, dates::AbstractArray, region) = "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
 
 function DataWrangling.metadata_filename(::MultiYearJRA55, name, date, region)
     shortname = JRA55_dataset_variable_names[name]

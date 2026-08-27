@@ -19,7 +19,7 @@ using Oceananigans.OutputReaders: Cyclical, time_indices, FieldTimeSeries, Flavo
 using Oceananigans.Units: Units
 using NCDatasets: NCDatasets, Dataset
 
-using ..DataWrangling: DataWrangling, Metadatum, first_date, last_date, all_dates, set_region_data!
+using ..DataWrangling: DataWrangling, Metadatum, first_date, last_date, all_dates, set_region_data!, prescribed_radiation
 using ...NumericalEarth: NumericalEarth
 
 download_JRA55_cache::String = ""
