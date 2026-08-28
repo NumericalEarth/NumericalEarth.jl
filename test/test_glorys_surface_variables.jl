@@ -2,7 +2,7 @@ include("runtests_setup.jl")
 
 using NumericalEarth
 using NumericalEarth.DataWrangling: BoundingBox, is_three_dimensional, z_interfaces
-using NumericalEarth.DataWrangling.GLORYS: GLORYS_SURFACE_VARIABLES, dataset_location, GLORYSMonthly, GLORYSDaily
+using NumericalEarth.DataWrangling.GLORYS: GLORYS_surface_variables, dataset_location, GLORYSMonthly, GLORYSDaily
 
 const GLORYS_TEST_DIR = mktempdir()
 
@@ -48,12 +48,12 @@ end
     end
 end
 
-@testset "GLORYS_SURFACE_VARIABLES contains expected variables" begin
-    @test :free_surface           ∈ GLORYS_SURFACE_VARIABLES
-    @test :sea_ice_thickness      ∈ GLORYS_SURFACE_VARIABLES
-    @test :sea_ice_concentration  ∈ GLORYS_SURFACE_VARIABLES
-    @test :sea_ice_u_velocity     ∈ GLORYS_SURFACE_VARIABLES
-    @test :sea_ice_v_velocity     ∈ GLORYS_SURFACE_VARIABLES
-    @test :temperature            ∉ GLORYS_SURFACE_VARIABLES
-    @test :salinity               ∉ GLORYS_SURFACE_VARIABLES
+@testset "GLORYS_surface_variables contains expected variables" begin
+    @test :free_surface           ∈ GLORYS_surface_variables
+    @test :sea_ice_thickness      ∈ GLORYS_surface_variables
+    @test :sea_ice_concentration  ∈ GLORYS_surface_variables
+    @test :sea_ice_u_velocity     ∈ GLORYS_surface_variables
+    @test :sea_ice_v_velocity     ∈ GLORYS_surface_variables
+    @test :temperature            ∉ GLORYS_surface_variables
+    @test :salinity               ∉ GLORYS_surface_variables
 end
