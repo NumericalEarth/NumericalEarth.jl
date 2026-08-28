@@ -269,6 +269,7 @@ include("set_region_data.jl")
 include("field_cache.jl")
 include("metadata_field.jl")
 include("dataset_backend.jl")
+include("prefetching_backend.jl")
 include("metadata_field_time_series.jl")
 include("inpainting.jl")
 include("restoring.jl")
@@ -374,6 +375,7 @@ include("ASTERGED/ASTERGED.jl")
 include("GloBFP3D/GloBFP3D.jl")
 include("GHSL/GHSL.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
+include("SeaWiFS/SeaWiFS.jl")
 include("WorldCover/WorldCover.jl")
 
 using .ETOPO
@@ -395,6 +397,7 @@ using .ASTERGED
 using .GloBFP3D
 using .GHSL
 using .CopernicusLandAlbedo
+using .SeaWiFS
 using .WorldCover
 
 function dataset_modules()

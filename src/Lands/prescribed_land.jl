@@ -35,11 +35,10 @@ representing freshwater fluxes (e.g. rivers, icebergs).
 If `clock` is not provided, defaults to a `Clock` whose time type matches the
 element type of `freshwater_flux`.
 
-When `river_routing` is a [`RiverRouting`](@ref), the freshwater flux is treated
-as a per-river-mouth volume discharge (m³ s⁻¹) that is scattered onto coastal
-ocean cells conserving volume (see [`GloFASPrescribedLand`](@ref)). When it is
-`nothing` (the default), the flux is a per-area mass flux interpolated pointwise
-onto the ocean grid (see [`JRA55PrescribedLand`](@ref)).
+When `river_routing` is a `NamedTuple` of [`RiverRouting`](@ref) (one per freshwater
+component), each component is scattered onto coastal ocean cells conserving volume
+(see [`GloFASPrescribedLand`](@ref), [`JRA55PrescribedLand`](@ref)). When it is
+`nothing` (the default), the flux is interpolated pointwise onto the ocean grid.
 """
 function PrescribedLand(freshwater_flux; clock=nothing, river_routing=nothing)
     first_flux = first(freshwater_flux)

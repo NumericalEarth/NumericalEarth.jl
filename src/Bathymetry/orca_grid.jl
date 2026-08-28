@@ -5,7 +5,7 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!, FPivotZipperBoundaryC
                                        NoFluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Fields: set!, convert_to_0_360
 using Oceananigans.Grids: RightFaceFolded, generate_coordinate
-using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom, PartialCellBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar
 
 using ..DataWrangling: dataset_variable_name, default_download_directory
@@ -31,7 +31,11 @@ using ..DataWrangling.ORCA: ORCAOne, default_south_rows_to_remove
 #
 # `read_orca_staggered_mesh` supports two read paths: a full staggered NEMO mesh used directly, or T/F
 # coordinates only, with U/V coordinates and all `e1`/`e2`/`Az` metrics reconstructed from spherical
-# midpoints, haversine distances, and spherical quadrilateral areas. Bathymetry (when
+# midpoints, haversine distances, and spherical quadrilateral areas. Both paths return arrays of size
+# `(Nx, Ny)` shifted in x but not in y, so the mapping above applies once to either. The reconstruction
+# resolves spacings down to the coordinate precision of the file: near the two tripolar north poles the
+# true spacing falls below Float32 resolution, so a file storing Float32 `glamt`/`gphit` without `e1`/`e2`
+# yields coincident points and zero spacings there. Bathymetry (when
 # `with_bathymetry = true`): NEMO stores positive depth, so we negate it and map land (depth ≤ 0 or
 # missing) to +100 so `GridFittedBottom` masks it. `major_basins` optionally drops smaller disconnected
 # basins via `remove_minor_basins!`.
@@ -117,9 +121,15 @@ end
     return spherical_area_quadrilateral(a, b, c, d; radius = 1)
 end
 
+# The duplicated east-edge columns (`periodic_overlap_index`) alias the west edge: column `i` and column
+# `Nx - overlap + i` hold the same point. Wrapping to `1`/`Nx` would therefore land on a copy of the
+# starting column and yield a zero spacing, so the wrap skips the duplicates.
 @inline east_idx(i, Nx, overlap) = ifelse(i == Nx, overlap + 1, i + 1)
 @inline west_idx(i, Nx, overlap) = ifelse(i == 1, Nx - overlap, i - 1)
 
+# `λFF`/`φFF` are shifted in x only, matching the staggered read path: `FF[i, j]` is the north-west
+# corner of `T[i, j]` and `CF[i, j]` its north face, both in NEMO's y-indexing. `halo_filled_data`
+# applies the single +1 y-shift to the Face-y quantities once the mesh is assembled.
 @kernel function _reconstruct_λFC_φFC_λCF_φCF!(λFC, φFC, λCF, φCF, λCC, φCC, λFF, φFF, Nx, Ny, overlap)
     i, j = @index(Global, NTuple)
     iE = east_idx(i, Nx, overlap)
@@ -132,6 +142,8 @@ end
     φCF[i, j] = φm₂
 end
 
+# Every metric is a distance between points written by `_reconstruct_λFC_φFC_λCF_φCF!` in a prior launch,
+# so no thread reads a value another thread produces in this launch.
 @kernel function _reconstruct_e1_e2_metrics!(e1u, e1v, e1f, e1t, e2u, e2v, e2f, e2t, λCC, φCC, λFF, φFF, λFC, φFC, λCF, φCF, radius, Nx, Ny, overlap)
     i, j = @index(Global, NTuple)
     iE = east_idx(i, Nx, overlap)
@@ -266,6 +278,7 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
     orcaread(data, name) = orient_xy(read_2d_nemo_variable(data, name), Nx, Ny; name)
     shift_x(data) = shift_face_x(data, overlap)
 
+    # Face-y: no pre-shift here; halo_filled_data does the +1 y-shift after chop.
     if has_all_variables(ds, metrics)
         λCC, λFC, λCF, λFF = orcaread(ds, "glamt"), shift_x(orcaread(ds, "glamu")), orcaread(ds, "glamv"), shift_x(orcaread(ds, "glamf"))
         φCC, φFC, φCF, φFF = orcaread(ds, "gphit"), shift_x(orcaread(ds, "gphiu")), orcaread(ds, "gphiv"), shift_x(orcaread(ds, "gphif"))
@@ -369,7 +382,8 @@ coordinates are available (`glamt/gphit/glamf/gphif`), staggered coordinates and
 metrics are reconstructed approximately using Tripolar-style spherical assumptions.
 
 When `with_bathymetry = true` (the default), the bathymetry is also downloaded
-and the grid is returned as an `ImmersedBoundaryGrid` with a `GridFittedBottom`.
+and the grid is returned as an `ImmersedBoundaryGrid` with a `GridFittedBottom`,
+or with a `PartialCellBottom` when `partial_cell_bathymetry = true`.
 
 Positional Arguments
 ====================
@@ -389,6 +403,9 @@ Keyword Arguments
 - `radius`: Planet radius. Default: `Oceananigans.defaults.planet_radius`.
 - `with_bathymetry`: If `true`, download the bathymetry and return an `ImmersedBoundaryGrid` with
                      `GridFittedBottom`. Default: `true`.
+- `partial_cell_bathymetry`: If `true` and `with_bathymetry = true`, use a `PartialCellBottom`, which
+                             resolves sill depths and slopes continuously rather than in full-cell
+                             steps. Default: `false`.
 - `active_cells_map`: If `true` and `with_bathymetry = true`, build an active cells map
                       for efficient kernel execution over wet cells only. Default: `true`.
 - `major_basins`: Number of independent connected ocean basins to retain via
@@ -407,6 +424,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   Nz = 50,
                   radius = Oceananigans.defaults.planet_radius,
                   with_bathymetry = true,
+                  partial_cell_bathymetry = false,
                   active_cells_map = true,
                   major_basins = Inf,
                   south_rows_to_remove = default_south_rows_to_remove(dataset),
@@ -510,5 +528,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
         remove_minor_basins!(bottom_field, major_basins)
     end
 
-    return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_field); active_cells_map)
+    bottom = partial_cell_bathymetry ? PartialCellBottom(bottom_field) : GridFittedBottom(bottom_field)
+
+    return ImmersedBoundaryGrid(underlying_grid, bottom; active_cells_map)
 end
