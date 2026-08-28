@@ -451,7 +451,7 @@ function budget_column!(fig, col, name, unit, stores, Δ, ∫F;
     end
     axislegend(axs, position = :lt, framevisible = false)
 
-    # The two curves sit on top of each other, so the flux gets sparse markers to stay visible under the line.
+    ## The two curves sit on top of each other, so the flux gets sparse markers to stay visible under the line.
     axc = Axis(fig[2, col], ylabel = "Cumulative ($unit)")
     marked = 1:(length(τ) ÷ 25):length(τ)
     lines!(axc, τ, Δ, label = "Δ total", color = :black)

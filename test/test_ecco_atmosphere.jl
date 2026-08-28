@@ -7,10 +7,8 @@ using NumericalEarth.Radiations: PrescribedRadiation
 using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCOPrescribedRadiation, ECCO4Monthly
 using NumericalEarth.DataWrangling: metadata_path, higher_bound
 
-# Pre-download ECCO4Monthly atmospheric forcing variables through the artifacts
-# fallback so ECCOPrescribedAtmosphere(...) finds the files locally even when
-# the ECCO drive is down. The variable list mirrors the metadata constructed
-# inside ECCOPrescribedAtmosphere, and the dates match the testset window.
+# Pre-download the ECCO4Monthly forcing variables through the artifacts fallback, so the testset
+# finds them locally even when the ECCO drive is down.
 let dates = DateTime(1992, 1, 1):Month(1):DateTime(1992, 3, 1)
     for name in NumericalEarth.ECCO.ECCO_atmosphere_variables
         md = Metadata(name; dataset=ECCO4Monthly(), dates)
@@ -44,17 +42,14 @@ end
         @test atmosphere isa PrescribedAtmosphere
         @test radiation isa PrescribedRadiation
 
-        # Test that all expected fields are present
         @test haskey(atmosphere.velocities, :u)
         @test haskey(atmosphere.velocities, :v)
         @test atmosphere.temperature isa FieldTimeSeries
         @test atmosphere.specific_humidity isa FieldTimeSeries
-        @test !isnothing(atmosphere.pressure)
         @test atmosphere.precipitation_flux isa PrescribedPrecipitationFlux
         @test atmosphere.precipitation_flux.rain isa FieldTimeSeries
         @test isnothing(atmosphere.precipitation_flux.snow)
 
-        # Test downwelling radiation components
         ℐꜜˢʷ = radiation.downwelling_shortwave
         ℐꜜˡʷ = radiation.downwelling_longwave
 
@@ -89,7 +84,6 @@ end
         @test higher_bound(pa_metadata, Val(:sea_level_pressure)) == 1f10
         @test higher_bound(other_metadata, Val(:temperature)) == 1f5  # default
 
-        # Verify pressure field contains physically reasonable values
         CUDA.@allowscalar begin
             pa_data = interior(atmosphere.pressure)
             valid = pa_data[pa_data .!= 0]
@@ -98,7 +92,6 @@ end
             @test median(valid) < 1.1f5 # typical sea level pressure is lower than 1.1e5 Pa
         end
 
-        # Test grid consistency
         @test atmosphere.velocities.u.grid isa LatitudeLongitudeGrid
         @test atmosphere.velocities.u.grid == atmosphere.velocities.v.grid
         @test atmosphere.velocities.u.grid == atmosphere.temperature.grid

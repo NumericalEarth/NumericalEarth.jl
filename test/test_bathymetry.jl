@@ -2,20 +2,25 @@ include("runtests_setup.jl")
 include("download_utils.jl")
 
 using JLD2
-using NumericalEarth.Bathymetry: remove_minor_basins!,
-                                 BathymetryRegridding,
-                                 cache_filename,
-                                 load_bathymetry_cache,
-                                 save_bathymetry_cache,
-                                 label_ocean_basins,
-                                 find_label_at_point,
-                                 Basin,
-                                 atlantic_ocean_basin,
-                                 meridional_barrier,
-                                 ATLANTIC_OCEAN_BARRIERS
-using NumericalEarth.DataWrangling: BoundingBox
+using NumericalEarth.Bathymetry: remove_minor_basins!, bathymetry_regridding_key
+using NumericalEarth.DataWrangling: field_cache_filename, save_field_cache
 using NumericalEarth.DataWrangling.ETOPO
 using Statistics
+
+@testset "Topography smoothing preserves bounded constants" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch, Float32;
+                               size = (8, 8),
+                               extent = (1, 1),
+                               topology = (Bounded, Bounded, Flat))
+
+        elevation = Field{Center, Center, Nothing}(grid)
+        set!(elevation, 1000)
+        smooth_topography!(elevation; passes = 2)
+
+        @test all(==(1000), Array(interior(elevation)))
+    end
+end
 
 @testset "Bathymetry construction and smoothing" begin
     @info "Testing Bathymetry construction and smoothing..."
@@ -35,7 +40,6 @@ using Statistics
                                      latitude = (0, 50),
                                      z = (-6000, 0))
 
-        # Test that remove_minor_basins!(Z, Inf) does nothing
         control_bottom_height = regrid_bathymetry(grid, ETOPOmetadata)
         bottom_height = deepcopy(control_bottom_height)
         @test_throws ArgumentError remove_minor_basins!(bottom_height, Inf)
@@ -83,8 +87,8 @@ using Statistics
     end
 end
 
-@testset "BathymetryRegridding configuration" begin
-    @info "Testing BathymetryRegridding configuration..."
+@testset "Bathymetry cache key" begin
+    @info "Testing bathymetry cache keys..."
 
     grid = LatitudeLongitudeGrid(CPU();
                                  size = (100, 100, 10),
@@ -94,26 +98,31 @@ end
 
     metadata = Metadatum(:bottom_height, dataset=ETOPO2022())
 
+    key(; height_above_water = nothing, minimum_depth = 0, interpolation_passes = 1, major_basins = 1) =
+        bathymetry_regridding_key(grid, metadata; height_above_water, minimum_depth,
+                                  interpolation_passes, major_basins)
+
     # Test construction and equality
-    config1 = BathymetryRegridding(grid, metadata)
-    config2 = BathymetryRegridding(grid, metadata)
+    config1 = key()
+    config2 = key()
     @test config1 == config2
     @test hash(config1) == hash(config2)
 
     # Test that different parameters produce different configs
-    config3 = BathymetryRegridding(grid, metadata; interpolation_passes=5)
+    config3 = key(interpolation_passes = 5)
     @test config1 != config3
     @test hash(config1) != hash(config3)
 
-    config4 = BathymetryRegridding(grid, metadata; minimum_depth=10)
+    config4 = key(minimum_depth = 10)
     @test config1 != config4
 
-    # Test cache filename: same config → same filename
-    @test cache_filename(config1) == cache_filename(config2)
-    # Different config → different filename
-    @test cache_filename(config1) != cache_filename(config3)
+    # Integer and float parameter values key identically
+    @test key(minimum_depth = 10) == key(minimum_depth = 10.0)
 
-    # Test JLD2 round-trip of BathymetryRegridding
+    @test field_cache_filename(config1) == field_cache_filename(config2)
+    @test field_cache_filename(config1) != field_cache_filename(config3)
+
+    # Test JLD2 round-trip of the key
     tmpfile = tempname() * ".jld2"
     jldopen(tmpfile, "w") do file
         file["config"] = config1
@@ -150,98 +159,19 @@ end
     # cache=false should still produce correct results
     result4 = regrid_bathymetry(grid; cache=false)
     @test parent(result1) == parent(result4)
-end
 
-@testset "Barrier geometry" begin
-    @info "Testing barrier geometry utilities..."
+    # overwrite_cache=true skips the lookup and refreshes the entry
+    metadata = Metadatum(:bottom_height, dataset=ETOPO2022())
+    config = bathymetry_regridding_key(grid, metadata;
+                                       height_above_water = nothing, minimum_depth = 0,
+                                       interpolation_passes = 1, major_basins = 1)
+    save_field_cache(config, zeros(size(grid, 1), size(grid, 2)))
+    poisoned = regrid_bathymetry(grid; cache=true)
+    @test all(iszero, interior(poisoned))
 
-    # A barrier is a `BoundingBox` whose horizontal extent defines the rectangle
-    # to be treated as land during connected-component labeling.
-    barrier = BoundingBox(longitude=(-10, 10), latitude=(-5, 5))
-    @test barrier.longitude == (-10, 10)
-    @test barrier.latitude  == (-5, 5)
+    result5 = regrid_bathymetry(grid; cache=true, overwrite_cache=true)
+    @test parent(result1) == parent(result5)
 
-    # Test meridional_barrier constructor (longitude, south, north)
-    meridional = meridional_barrier(20, -36, -30)
-    @test meridional.longitude == (19, 21)   # 20 ± 2/2
-    @test meridional.latitude  == (-36, -30)
-
-    # Test meridional_barrier with custom width
-    meridional_wide = meridional_barrier(20, -36, -30; width=4)
-    @test meridional_wide.longitude == (18, 22)
-
-    # Latitude band covering the full longitude range
-    band = BoundingBox(longitude=(-180, 180), latitude=(-60, -55))
-    @test band.longitude == (-180, 180)
-    @test band.latitude  == (-60, -55)
-end
-
-@testset "Ocean basin labeling with barriers" begin
-    @info "Testing ocean basin labeling with barriers..."
-
-    for arch in test_architectures
-        # Create a global grid
-        grid = LatitudeLongitudeGrid(arch;
-                                     size = (90, 45, 10),
-                                     longitude = (-180, 180),
-                                     latitude = (-90, 90),
-                                     z = (-6000, 0))
-
-        # Regrid real bathymetry onto this grid
-        bottom_height = regrid_bathymetry(grid)
-        ibg = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height))
-
-        # Test labeling without barriers - all oceans should have the same label
-        # (they're connected via the Southern Ocean)
-        labels_no_barrier = label_ocean_basins(ibg)
-
-        # Find labels at Atlantic and Pacific seed points
-        atlantic_label = find_label_at_point(labels_no_barrier, ibg, -30.0, 0.0)
-        pacific_label = find_label_at_point(labels_no_barrier, ibg, -170.0, 0.0)
-
-        # Without barriers, Atlantic and Pacific should have the same label
-        # (connected via Southern Ocean)
-        @test atlantic_label == pacific_label
-        @test atlantic_label > 0  # Should find a valid basin
-
-        # Test labeling with barriers - oceans should be separated
-        labels_with_barrier = label_ocean_basins(ibg; barriers=ATLANTIC_OCEAN_BARRIERS)
-
-        # With barriers, Atlantic should still be found
-        atlantic_label_with_barrier = find_label_at_point(labels_with_barrier, ibg, -30.0, 0.0)
-        @test atlantic_label_with_barrier > 0
-    end
-end
-
-@testset "Basin creation" begin
-    @info "Testing Basin creation..."
-
-    for arch in test_architectures
-        # Create a global grid at 1° resolution (needed to properly resolve
-        # Central America and separate Atlantic from Pacific)
-        grid = LatitudeLongitudeGrid(arch;
-                                     size = (360, 180, 10),
-                                     longitude = (-180, 180),
-                                     latitude = (-90, 90),
-                                     z = (-6000, 0))
-
-        bottom_height = regrid_bathymetry(grid)
-        ibg = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height))
-
-        # Test atlantic_ocean_basin creation
-        atlantic = atlantic_ocean_basin(ibg)
-        @test atlantic isa Basin
-        @test sum(interior(atlantic.mask)) > 0  # Should have some ocean cells
-
-        mask = on_architecture(CPU(), atlantic.mask)
-
-        # Test that the mask is properly bounded
-        # Atlantic mask should not include cells in the Pacific
-        # (seed point at -170°, 0° should be 0)
-        pacific_point_i = findfirst(i -> -175 < i < -165, range(-180, 180, length=360))
-        equator_j = 90  # equator for 180 latitude points
-        if !isnothing(pacific_point_i)
-            @test mask[pacific_point_i, equator_j, 1] == 0
-        end
-    end
+    result6 = regrid_bathymetry(grid; cache=true)
+    @test parent(result1) == parent(result6)
 end

@@ -1315,6 +1315,7 @@ function build_grid(dataset::ORCADataset, arch, Nz, depth; Δz_top = nothing, pa
                     z = z_faces,
                     halo = (8, 8, 8),
                     with_bathymetry = true,
+                    partial_cell_bathymetry,
                     major_basins = 1,
                     active_cells_map = true)
 
@@ -1409,8 +1410,16 @@ config_materialize_buoyancy_gradients(::Val{:test})          = false
 Return the `TwoColorRadiation` the ocean is forced with. `chlorophyll` is `:seawifs` for the SeaWiFS
 monthly climatology, cycled every year, or anything `TwoColorRadiation` accepts directly — a number for
 globally uniform optics, a surface `Field`, or a `FieldTimeSeries`.
+
+`:none` returns `nothing`, which routes the whole shortwave into the surface heat flux instead of the
+interior: `shortwave_radiative_forcing` falls back to returning the flux to the boundary condition
+rather than stashing it for a penetrating scheme. The vertical closure's surface buoyancy flux is
+built from the tracer boundary conditions, so this is also the only setting under which it sees the
+shortwave at all.
 """
 function omip_radiative_forcing(grid, chlorophyll, restoring_dir)
+    chlorophyll === :none && return nothing
+
     if chlorophyll === :seawifs
         dates = (DateTime(2000, 1, 1), DateTime(2000, 12, 1))
         metadata = Metadata(:chlorophyll; dataset = SeaWiFSMonthly(), dates, dir = restoring_dir)

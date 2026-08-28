@@ -1,9 +1,8 @@
 using Adapt: Adapt
 using DocStringExtensions: TYPEDSIGNATURES
 using Oceananigans.Grids: inactive_cell
-using Oceananigans.Operators: ∂zᶜᶜᶜ
+using Oceananigans.Operators: ∂zᶜᶜᶜ, Δzᶜᶜᶜ
 
-using ..NumericalEarth: stateindex
 
 """
     ChlorophyllOptics(FT = Oceananigans.defaults.FloatType;
@@ -87,13 +86,13 @@ round(equivalent_chlorophyll(ChlorophyllOptics(), 1 / 23), digits=3)
     κ  = absorption_coefficient
     κw = optics.clear_water_attenuation
     Cs = optics.chlorophyll_scaling
-    Ce = 1 / optics.chlorophyll_exponent 
-    return ((κ - κw) / Cs)^Ce 
+    Ce = 1 / optics.chlorophyll_exponent
+    return ((κ - κw) / Cs)^Ce
 end
 
-struct TwoColorRadiation{E, K, A, O, C, J}
-    first_color_fraction :: E
-    first_absorption_coefficient :: K
+struct TwoColorRadiation{FT, A, O, C, J}
+    first_color_fraction :: FT
+    first_absorption_coefficient :: FT
     second_absorption_coefficient :: A
     chlorophyll_optics :: O
     chlorophyll :: C
@@ -136,9 +135,6 @@ that repeat every year.
 The defaults are the red band of Manizza et al. (2005) and the chlorophyll whose decay scale is
 23 m, which is the Jerlov Type I value of
 [Paulson and Simpson (1977)](@cite paulson1977irradiance) for the clearest open-ocean water.
-
-Uniform `chlorophyll` gives a scalar ``κ₂``; anything else gives a surface field that
-`compute_absorption_coefficient!` refreshes once per column each step.
 
 ```jldoctest
 using NumericalEarth
@@ -205,40 +201,28 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Refresh the blue-green absorption coefficient of `radiation` from its chlorophyll at `time`, and
-return `nothing`. Chlorophyll reaches the optics through a power law and, for a `FieldTimeSeries`,
-an interpolation in time; both depend on the column alone, so evaluating them once per column here
-keeps them out of the flux divergence, which is evaluated at every level. Uniform chlorophyll
-carries its coefficient as a scalar and there is nothing to refresh.
+Refresh the blue-green absorption coefficient of `radiation` from its chlorophyll at `time`.
+Uniform chlorophyll carries its coefficient as a scalar and there is nothing to refresh.
 """
 compute_absorption_coefficient!(radiation, time) = nothing
 
-compute_absorption_coefficient!(R::TwoColorRadiation, time) =
-    compute_absorption_coefficient!(R.second_absorption_coefficient, R.chlorophyll, R.chlorophyll_optics, time)
-
-compute_absorption_coefficient!(κ₂::Number, chlorophyll, optics, time) = nothing
-
-function compute_absorption_coefficient!(κ₂, chlorophyll, optics, time)
+function compute_absorption_coefficient!(R::TwoColorRadiation{<:Any, <:Field}, time)
+    κ₂ = R.second_absorption_coefficient
     grid = κ₂.grid
-    launch!(architecture(grid), grid, :xy, _compute_absorption_coefficient!, κ₂, grid, chlorophyll, optics, time)
+    launch!(architecture(grid), grid, :xy, _compute_absorption_coefficient!,
+            κ₂, grid, R.chlorophyll, R.chlorophyll_optics, time)
     return nothing
 end
 
-@inline surface_stateindex(a, i, j, grid, time) = stateindex(a, i, j, 1, grid, time, (Center, Center, Nothing))
-
-# A `Nothing` vertical location leaves `_node` a two-tuple, which a function of `(λ, φ, z, t)` cannot
-# destructure, so functions are resolved at the topmost center instead.
-@inline surface_stateindex(a::Function, i, j, grid, time) =
-    stateindex(a, i, j, size(grid, 3), grid, time, (Center, Center, Center))
-
 @kernel function _compute_absorption_coefficient!(κ₂, grid, chlorophyll, optics, time)
     i, j = @index(Global, NTuple)
-    C = surface_stateindex(chlorophyll, i, j, grid, time)
+    C = state2dindex(chlorophyll, i, j, grid, time)
     @inbounds κ₂[i, j, 1] = absorption_coefficient(optics, C)
 end
 
 @inline function (R::TwoColorRadiation)(i, j, k, grid, clock, fields)
     J₀ = @inbounds R.surface_flux[i, j, 1]
+    Nz = size(grid, 3)
     κ₁ = R.first_absorption_coefficient
     κ₂ = blue_green_absorption_coefficient(R.second_absorption_coefficient, i, j)
     ϵ₁ = R.first_color_fraction
@@ -248,17 +232,36 @@ end
     dJ₂dz = ∂zᶜᶜᶜ(i, j, k, grid, beers_law_radiation, J₀, κ₂)
 
     # Net radiation flux divergence
-    return ϵ₁ * dJ₁dz + (1 - ϵ₁) * dJ₂dz
+    dJdz = ϵ₁ * dJ₁dz + (1 - ϵ₁) * dJ₂dz
+
+    # The surface cell's share is delivered through the temperature boundary condition instead
+    surface_share = surface_absorbed_fraction(i, j, grid, R) * J₀ / Δzᶜᶜᶜ(i, j, Nz, grid)
+    return dJdz - ifelse(k == Nz, surface_share, zero(dJdz))
 end
 
 @inline shortwave_radiative_forcing(i, j, grid, Fᵀ, ℐₜˢʷ, ocean_properties) = ℐₜˢʷ
+
+"""
+$(TYPEDSIGNATURES)
+
+Fraction of the net shortwave absorbed within the surface cell, from Beer's law on both colors.
+Vertical closures build their surface buoyancy flux from the tracer boundary conditions, so this
+part of the shortwave has to arrive there rather than as an interior source.
+"""
+@inline function surface_absorbed_fraction(i, j, grid, tcr::TwoColorRadiation)
+    Δz = Δzᶜᶜᶜ(i, j, size(grid, 3), grid)
+    ϵ₁ = tcr.first_color_fraction
+    κ₁ = tcr.first_absorption_coefficient
+    κ₂ = blue_green_absorption_coefficient(tcr.second_absorption_coefficient, i, j)
+    return ϵ₁ * (1 - exp(-κ₁ * Δz)) + (1 - ϵ₁) * (1 - exp(-κ₂ * Δz))
+end
 
 @inline function shortwave_radiative_forcing(i, j, grid, tcr::TwoColorRadiation, Iˢʷ, ocean_properties)
     ρᵒᶜ = ocean_properties.reference_density
     cᵒᶜ = ocean_properties.heat_capacity
     J₀ = tcr.surface_flux
     @inbounds J₀[i, j,  1] = - Iˢʷ / (ρᵒᶜ * cᵒᶜ)
-    return zero(Iˢʷ)
+    return surface_absorbed_fraction(i, j, grid, tcr) * Iˢʷ
 end
 
 get_radiative_forcing(something) = nothing

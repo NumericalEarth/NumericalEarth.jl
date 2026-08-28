@@ -13,7 +13,7 @@ using NumericalEarth.JRA55
 using NumericalEarth.WOA
 
 using Oceananigans.Architectures: architecture, on_architecture
-using Oceananigans.OutputReaders: interpolate!
+using Oceananigans.Fields: interpolate!
 
 using CFTime
 using Dates
@@ -25,9 +25,9 @@ test_architectures = gpu_test ? [GPU()] : [CPU()]
 
 start_date = DateTimeProlepticGregorian(1993, 1, 1)
 
-test_datasets = (ECCO2Monthly(), 
-                 ECCO2Daily(), 
-                 ECCO4Monthly(), 
+test_datasets = (ECCO2Monthly(),
+                 ECCO2Daily(),
+                 ECCO4Monthly(),
                  ECCO2DarwinMonthly(),
                  ECCO4DarwinMonthly(),
                  EN4Monthly(),
@@ -183,7 +183,9 @@ function test_dataset_restoring(arch, dataset, dates, inpainting;
         fill!(var_restoring.field_time_series[2], 1.0)
 
         field = NamedTuple{fldnames}(ntuple(i->CenterField(grid), length(fldnames)))
-        clock  = Clock(; time = 0)
+
+        # A window-averaged product has no node at its first date: the first sits half a window later.
+        clock = Clock(; time = first(var_restoring.field_time_series.times))
 
         @allowscalar begin
             @test var_restoring(1, 1,   10, grid, clock, field) == var_restoring.rate
@@ -291,7 +293,7 @@ function test_cycling_dataset_restoring(arch, dataset, dates, inpainting;
         mod1.(Tuple(range(length(times), length=time_indices_in_memory)), length(times))
 end
 
-function test_inpainting_algorithm(arch, dataset, start_date, inpainting; 
+function test_inpainting_algorithm(arch, dataset, start_date, inpainting;
                                    varnames = (:temperature, :salinity),
                                   )
     for name in varnames
