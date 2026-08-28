@@ -27,7 +27,8 @@ function stage(f, name)
     return result
 end
 
-atmosphere_grid(arch) = RectilinearGrid(arch, FT; size = (8, 8), halo = (5, 5), x = (-1kilometer, 1kilometer), z = (0, 1kilometer),
+breeze_size = parse(Int, get(ENV, "BREEZE_N", "8"))
+atmosphere_grid(arch) = RectilinearGrid(arch, FT; size = (breeze_size, breeze_size), halo = (5, 5), x = (-1kilometer, 1kilometer), z = (0, 1kilometer),
                                         topology = (Periodic, Flat, Bounded))
 land_grid_of(grid) = RectilinearGrid(architecture(grid), FT; size = grid.Nx, halo = grid.Hx, x = (-1kilometer, 1kilometer),
                                      topology = (Periodic, Flat, Flat))
