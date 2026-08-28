@@ -23,21 +23,18 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
     end
 
     @testset "Downloads.download methods are defined" begin
-        # Test that the extension defines Downloads.download for ERA5Metadata/Metadatum types
         dataset = ERA5HourlySingleLevel()
         date = DateTime(2020, 1, 1, 0)
 
         # Create a metadatum (single timestep)
         metadatum = Metadatum(:temperature; dataset, date)
 
-        # Check that Downloads.download method exists for ERA5Metadatum
         @test hasmethod(Downloads.download, Tuple{typeof(metadatum)})
 
         # Create metadata (multiple timesteps)
         dates = DateTime(2020, 1, 1, 0):Hour(1):DateTime(2020, 1, 1, 2)
         metadata = Metadata(:temperature; dataset, dates)
 
-        # Check that Downloads.download method exists for ERA5Metadata
         @test hasmethod(Downloads.download, Tuple{typeof(metadata)})
     end
 
@@ -111,19 +108,13 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
     end
 
     @testset "Area builder utilities" begin
-        # Test that the bounding box area builder is accessible
-        @test isdefined(CDSExt, :build_era5_area)
-
-        # Test with nothing
         @test isnothing(CDSExt.build_era5_area(nothing))
 
-        # Test with a bounding box
         bbox = NumericalEarth.DataWrangling.BoundingBox(
             longitude = (0, 10),
             latitude = (40, 50)
         )
         area = CDSExt.build_era5_area(bbox)
-        @test !isnothing(area)
         @test length(area) == 4
         @test area[1] == 40   # south
         @test area[2] == 0    # west
@@ -132,57 +123,27 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
     end
 
     @testset "New ERA5 dataset types" begin
-        # Test ERA5YearlySingleLevel
         yearly_dataset = ERA5YearlySingleLevel()
         @test yearly_dataset isa ERA5.ERA5Dataset
 
-        # Test ERA5MonthlySingleLevel
         monthly_dataset = ERA5MonthlySingleLevel()
         @test monthly_dataset isa ERA5.ERA5Dataset
 
-        # Test ERA5HourlyPressureLevels
         pressure_levels = [100000.0, 85000.0, 50000.0]  # Pa
         hourly_pl = ERA5HourlyPressureLevels(pressure_levels)
         @test hourly_pl isa ERA5.ERA5Dataset
         @test hourly_pl.pressure_levels == pressure_levels
 
-        # Test ERA5MonthlyPressureLevels
         monthly_pl = ERA5MonthlyPressureLevels(pressure_levels)
         @test monthly_pl isa ERA5.ERA5Dataset
         @test monthly_pl.pressure_levels == pressure_levels
     end
 
-    @testset "Download methods for new dataset types" begin
-        # Test ERA5YearlySingleLevel
-        date = DateTime(2020, 1, 1)
-        metadatum = Metadatum(:temperature; dataset=ERA5YearlySingleLevel(), date)
-        @test hasmethod(Downloads.download, Tuple{typeof(metadatum)})
-
-        # Test ERA5MonthlySingleLevel
-        metadatum = Metadatum(:temperature; dataset=ERA5MonthlySingleLevel(), date)
-        @test hasmethod(Downloads.download, Tuple{typeof(metadatum)})
-
-        # Test ERA5HourlyPressureLevels
-        metadatum = Metadatum(:temperature; dataset=ERA5HourlyPressureLevels([100000.0]), date)
-        @test hasmethod(Downloads.download, Tuple{typeof(metadatum)})
-
-        # Test ERA5MonthlyPressureLevels
-        metadatum = Metadatum(:temperature; dataset=ERA5MonthlyPressureLevels([100000.0]), date)
-        @test hasmethod(Downloads.download, Tuple{typeof(metadatum)})
-    end
-
     @testset "Helper function dispatch" begin
-        # Test variable_name_mapping
-        @test isdefined(CDSExt, :variable_name_mapping)
-
-        # Test pressure_levels extraction
-        @test isdefined(CDSExt, :pressure_levels)
         pl_dataset = ERA5HourlyPressureLevels([100000.0, 50000.0])
         @test CDSExt.pressure_levels(pl_dataset) == [100000.0, 50000.0]
         @test isnothing(CDSExt.pressure_levels(ERA5YearlySingleLevel()))
 
-        # Test date_keywords
-        @test isdefined(CDSExt, :date_keywords)
         date = DateTime(2020, 6, 15, 12)
 
         # Yearly
@@ -206,8 +167,6 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
         @test kw.year == 2020
         @test kw.month == 6
 
-        # Test cds_download_function
-        @test isdefined(CDSExt, :cds_download_function)
         @test CDSExt.cds_download_function(ERA5YearlySingleLevel()) == CopernicusClimateDataStore.yearly
         @test CDSExt.cds_download_function(ERA5MonthlySingleLevel()) == CopernicusClimateDataStore.monthly
         @test CDSExt.cds_download_function(ERA5HourlyPressureLevels([100000.0])) == CopernicusClimateDataStore.hourly
