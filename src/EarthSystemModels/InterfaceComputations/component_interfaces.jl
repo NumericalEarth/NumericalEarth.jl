@@ -1,6 +1,6 @@
 using KernelAbstractions: @kernel, @index
 using Oceananigans: initialize!
-using Oceananigans.Architectures: architecture
+using Oceananigans.Architectures: architecture, on_architecture, CPU
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions
 using Oceananigans.Units: Time
 using Oceananigans.Grids: inactive_node, topology
