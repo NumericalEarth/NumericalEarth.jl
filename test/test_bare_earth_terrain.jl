@@ -115,6 +115,13 @@ end
     # wrap by 360° and select the far end of the file.
     west = BoundingBox(longitude = (-180, -174), latitude = (0, 4))
     @test region_info(west, window_field(west), longitudes, etopo_latitudes()).di == 0
+
+    # Near the prime meridian the wrap through 360° costs a Float32 node more precision than the
+    # match allows, and the window would start a whole cell east of the node it labels.
+    meridian = BoundingBox(longitude = (0, 6), latitude = (0, 4))
+    field = window_field(meridian)
+    di = region_info(meridian, field, longitudes, etopo_latitudes()).di
+    @test abs(longitudes[di + 1] - minimum(λnodes(field.grid, Center()))) < 1/120
 end
 
 @testset "windowed reads — a window across the seam continues into the file" begin
