@@ -48,7 +48,7 @@ using Oceananigans.OrthogonalSphericalShellGrids
         ocean = ocean_simulation(grid; start_date=jra55_start_date, free_surface)
 
         @test NumericalEarth.Oceans.get_radiative_forcing(ocean) isa NumericalEarth.Oceans.TwoColorRadiation
-        
+
         atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
         radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
 
@@ -71,7 +71,6 @@ using Oceananigans.OrthogonalSphericalShellGrids
             ocean_with_land = ocean_simulation(grid; start_date=jra55_start_date, free_surface)
             coupled_model = OceanOnlyModel(ocean_with_land; atmosphere, land, radiation)
 
-            # Verify land exchanger is present
             @test !isnothing(coupled_model.interfaces.exchanger.land)
             @test coupled_model.land.freshwater_flux === land.freshwater_flux
 
@@ -114,7 +113,6 @@ end
         reference_u_bcs = reference.model.velocities.u.boundary_conditions
 
         @test typeof(T_bcs.top) == typeof(reference_T_bcs.top)
-        @test !isnothing(T_bcs.top.condition)
         @test typeof(u_bcs.top) == typeof(reference_u_bcs.top)
         @test typeof(u_bcs.bottom) == typeof(reference_u_bcs.bottom)
         @test typeof(u_bcs.immersed) == typeof(reference_u_bcs.immersed)

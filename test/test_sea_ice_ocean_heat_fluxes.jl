@@ -46,7 +46,6 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
     end
 
     @testset "solve_interface_conditions" begin
-        # Test parameters
         liquidus = LinearLiquidus(Float64)
         αₕ = 0.0095  # Heat transfer coefficient
         αₛ = αₕ / 35  # Salt transfer coefficient (R = 35)
@@ -240,13 +239,8 @@ end
 end
 
 @testset "Salt flux unit consistency" begin
-    # The salt flux Jˢ = Eᵢ Sˢⁱ / ρᵒᶜ must come out in psu m s⁻¹, consistent with the
-    # atmosphere-ocean salinity flux:
-    # - Eᵢ is a mass flux (kg m⁻² s⁻¹)
-    # - dividing by ρᵒᶜ (kg m⁻³) gives a volume flux (m s⁻¹)
-    # - multiplying by the ice salinity (psu) gives psu m s⁻¹
-    #
-    # Missing the density conversion would make the flux ~1000× too large and destabilize the ocean.
+    # The salt flux Jˢ = Eᵢ Sˢⁱ / ρᵒᶜ comes out in psu m s⁻¹: Eᵢ is a mass flux (kg m⁻² s⁻¹),
+    # dividing by ρᵒᶜ (kg m⁻³) gives a volume flux (m s⁻¹), and the ice salinity (psu) scales it.
 
     for arch in test_architectures
         A = typeof(arch)
@@ -289,11 +283,8 @@ end
                 @test all(𝒬ⁱⁿ_cpu .> 0)
                 @test all(𝒬ⁱⁿ_cpu .< 1e5)  # Should not be unreasonably large
 
-                # Salt flux (in psu × m/s) should be small: typical values O(1e-7 to 1e-5)
-                # Before the fix, salt flux was ~1000× too large
-                # The salt flux magnitude should be comparable to:
-                # Jˢ ~ (Q / (ρ * c * L)) * ΔS ~ (1000 / (1025 * 4000 * 3e5)) * 30 ~ 2e-7 psu m/s
-                @test all(abs.(Jˢ_cpu) .< 1e-3)  # Should not be unreasonably large (was ~1 before fix)
+                # Jˢ ~ (Q / (ρᵒᶜ c ℰ)) ΔS ~ (1000 / (1025 · 4000 · 3e5)) · 30 ~ 2e-7 psu m s⁻¹
+                @test all(abs.(Jˢ_cpu) .< 1e-3)
                 @test all(abs.(Jˢ_cpu) .> 1e-10) # Should not be zero
             end
         end
@@ -387,10 +378,7 @@ end
 end
 
 @testset "Frazil ice formation and salt flux" begin
-    # Test that frazil ice formation is handled correctly and contributes
-    # to the salt flux with proper density conversion.
-    # When ocean temperature drops below freezing, frazil ice forms and
-    # the salt flux includes the frazil contribution.
+    # When the ocean drops below freezing, frazil forms and its contribution enters the salt flux.
 
     for arch in test_architectures
         A = typeof(arch)
@@ -478,7 +466,6 @@ end
             flux_form isa IceBathHeatFlux
         end
 
-        # Test time stepping with each formulation
         for sea_ice_ocean_heat_flux in [IceBathHeatFlux(),
                                         ThreeEquationHeatFlux()]
 
