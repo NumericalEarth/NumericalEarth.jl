@@ -149,7 +149,7 @@ function soil_water_loss(model, h, θ₀, T₀, q₀, θ_target, Δt, nsteps)
     L = sum(zero(parent(h)))
     @trace mincut=true checkpointing=true track_numbers=false for n in 1:nsteps
         time_step!(model, Δt)
-        L += sum((soil_water(model, h) .- θ_target[n]).^2)
+        L += sum((soil_water(model, h) .- θ_target[n, :, :, :]).^2)
     end
     return L / nsteps
 end
@@ -167,7 +167,7 @@ end
 grid_ad = RectilinearGrid(ReactantState(), FT; size = (), topology = (Flat, Flat, Flat))
 h_ad = surface_field(grid_ad); parent(h_ad) .= h₀
 dh_ad = Enzyme.make_zero(h_ad)
-θ_target_ad = Reactant.to_rarray(θ_target)
+θ_target_ad = Reactant.to_rarray(reshape(θ_target, Nsteps, 1, 1, 1))
 model_ad = borneo_coupled_model(grid_ad, FT, column, parameters; slab_depth = surface_field(grid_ad),
                                 surface_layer_height, boundary_layer_height, inner_iterations, similarity_iterations)
 Oceananigans.initialize!(model_ad)
