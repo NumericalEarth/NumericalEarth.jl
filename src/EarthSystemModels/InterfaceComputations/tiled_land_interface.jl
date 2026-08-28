@@ -195,7 +195,7 @@ end
                                            fraction, fraction_time_interpolator, grid)
     i, j = @index(Global, NTuple)
     FT = eltype(grid)
-    f = clamp(convert(FT, surface_field_value(fraction, i, j, fraction_time_interpolator)), zero(FT), one(FT))
+    f = clamp(convert(FT, surface_field_value(fraction, i, j, fraction_time_interpolator)), 0, 1)
     g = one(FT) - f
 
     @inbounds begin
