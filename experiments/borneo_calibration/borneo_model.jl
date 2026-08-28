@@ -84,7 +84,7 @@ end
 
 # The two-tile canopy interface. Fixed iteration counts keep the Monin–Obukhov solve a
 # static graph for Reactant (and every GPU thread on the same path).
-function borneo_interface(grid, FT, atmosphere, land, s)
+function borneo_interface(grid, FT, atmosphere, land, s; inner_iterations = 16, similarity_iterations = 8)
     dry_layer_soil = DryLayerHumidity(FT;
         dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.05,
                                                     dry_layer_onset_saturation = 1.0,
@@ -106,7 +106,7 @@ function borneo_interface(grid, FT, atmosphere, land, s)
         canopy,
         soil_skin_flux = SoilConductiveFlux(FT(1.5), FT(0.05)),
         undercanopy_conductance = FrictionVelocityUndercanopyConductance(FT),
-        inner_iterations = 16,
+        inner_iterations,
         interception = CanopyInterception(),
         storage = PrognosticCanopyAir(layer_depth = s.canopy_height),
         leaf_albedo = s.albedo,
@@ -118,7 +118,7 @@ function borneo_interface(grid, FT, atmosphere, land, s)
         temperature_roughness_length = ℓˢ,
         water_vapor_roughness_length = ℓˢ,
         stability_functions          = atmosphere_land_stability_functions(FT),
-        solver_stop_criteria         = FixedIterations(8))
+        solver_stop_criteria         = FixedIterations(similarity_iterations))
 
     return TiledLandInterface(grid, atmosphere, land;
         vegetated,
@@ -128,11 +128,12 @@ function borneo_interface(grid, FT, atmosphere, land, s)
 end
 
 function borneo_coupled_model(grid, FT, forcing, s; slab_depth, exchanger_correction = nothing,
-                              surface_layer_height = 10, boundary_layer_height = 800)
+                              surface_layer_height = 10, boundary_layer_height = 800,
+                              inner_iterations = 16, similarity_iterations = 8)
     land_surface = SurfaceRadiationProperties(s.albedo, s.emissivity)
     atmosphere, radiation = forcing_on(grid, forcing; land_surface, surface_layer_height, boundary_layer_height)
     land = borneo_land(grid, FT, s; slab_depth)
-    interface = borneo_interface(grid, FT, atmosphere, land, s)
+    interface = borneo_interface(grid, FT, atmosphere, land, s; inner_iterations, similarity_iterations)
     return AtmosphereLandModel(atmosphere, land; radiation,
                                atmosphere_land_interface = interface,
                                exchanger_correction,

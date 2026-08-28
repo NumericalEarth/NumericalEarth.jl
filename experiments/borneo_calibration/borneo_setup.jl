@@ -152,7 +152,7 @@ function ingest_forcing(grid, region, dates)
 
     skin_temperature = Field(Metadatum(:skin_temperature; dataset, date = start_date, region), grid)
     era5_elevation   = Field(Metadatum(:topography; dataset, date = start_date, region), grid)
-    land_elevation   = regrid_topography(grid; dataset = ETOPO2022())
+    land_elevation   = regrid_topography(grid; dataset = ETOPO2022(), interpolation_passes = 5)
     return merge(forcing, (; skin_temperature = Array(interior(skin_temperature, :, :, 1)),
                              era5_elevation   = Array(interior(era5_elevation, :, :, 1)),
                              land_elevation   = Array(interior(land_elevation, :, :, 1))))

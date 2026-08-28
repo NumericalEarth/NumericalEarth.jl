@@ -30,10 +30,20 @@ using Statistics
 using Printf
 @info "queue server ready on $queue"
 
+# A console logger that flushes after every message, so the log is readable while the
+# main thread is busy compiling.
+struct FlushingLogger{L} <: Logging.AbstractLogger
+    logger :: L
+end
+Logging.handle_message(l::FlushingLogger, args...; kw...) = (Logging.handle_message(l.logger, args...; kw...); flush(l.logger.stream))
+Logging.shouldlog(l::FlushingLogger, args...) = Logging.shouldlog(l.logger, args...)
+Logging.min_enabled_level(l::FlushingLogger) = Logging.min_enabled_level(l.logger)
+Logging.catch_exceptions(l::FlushingLogger) = Logging.catch_exceptions(l.logger)
+
 function run_script(path)
     name = splitext(basename(path))[1]
     open(joinpath(logs, "$name.log"), "w") do io
-        with_logger(ConsoleLogger(io)) do
+        with_logger(FlushingLogger(ConsoleLogger(io))) do
             redirect_stdout(io) do
                 redirect_stderr(io) do
                     @info "start $(Dates.now())"
