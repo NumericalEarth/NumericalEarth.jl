@@ -328,8 +328,8 @@ defaults on a per-field basis.
 - `rotation_rate`: Planetary rotation rate used for Coriolis forcing.
 - `gravitational_acceleration`: Gravitational acceleration, passed to buoyancy.
 - `bottom_drag_coefficient`: Bottom drag coefficient. May be a `Default` wrapper.
-- `bottom_drag_background_velocity`: unresolved velocity added in quadrature to the resolved speed in the
-  quadratic drag, `τ = -μ u √(uᵦ² + |u|²)`, representing tides and other motions the grid does not carry.
+- `bottom_drag_background_velocity`: unresolved velocity `uᵦ` added in quadrature to the resolved speed in the
+  quadratic drag, `𝛕 = - μ 𝐮 √(uᵦ² + |𝐮|²)`, representing tides and other motions the grid does not carry.
 - `implicit_bottom_drag`: whether the bottom and immersed quadratic drag are applied as affine fluxes
   with the drag coefficient carried in the vertical solver's diagonal. Default: `true`.
 - `forcing`: Named tuple of additional forcing(s) for individual fields.
