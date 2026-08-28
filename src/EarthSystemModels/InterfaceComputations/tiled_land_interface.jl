@@ -184,7 +184,7 @@ function compute_atmosphere_land_fluxes!(coupled_model, ti::TiledLandInterface)
             ti.fluxes, ti.temperature,
             ti.vegetated.fluxes, ti.vegetated.temperature,
             ti.bare.fluxes, ti.bare.temperature,
-            fraction, fraction_time_interpolator, grid)
+            fraction, fraction_time_interpolator)
 
     return nothing
 end
@@ -192,11 +192,10 @@ end
 @kernel function _blend_tiled_land_fluxes!(blended_fluxes, blended_temperature,
                                            veg_fluxes, veg_temperature,
                                            bare_fluxes, bare_temperature,
-                                           fraction, fraction_time_interpolator, grid)
+                                           fraction, fraction_time_interpolator)
     i, j = @index(Global, NTuple)
-    FT = eltype(grid)
-    f = clamp(convert(FT, surface_field_value(fraction, i, j, fraction_time_interpolator)), zero(FT), one(FT))
-    g = one(FT) - f
+    f = clamp(surface_field_value(fraction, i, j, fraction_time_interpolator), 0, 1)
+    g = 1 - f
 
     @inbounds begin
         blended_fluxes.latent_heat[i, j, 1]       = f * veg_fluxes.latent_heat[i, j, 1]       + g * bare_fluxes.latent_heat[i, j, 1]
@@ -224,6 +223,6 @@ end
         vegetated_temperature = veg_temperature.effective[i, j, 1]
         bare_effective_temperature = bare_temperature.effective[i, j, 1]
         blended_temperature.effective[i, j, 1] =
-            (f * vegetated_temperature^4 + g * bare_effective_temperature^4)^convert(FT, 1//4)
+            sqrt(sqrt(f * vegetated_temperature^4 + g * bare_effective_temperature^4))
     end
 end
