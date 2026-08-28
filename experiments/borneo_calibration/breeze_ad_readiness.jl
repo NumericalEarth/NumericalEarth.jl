@@ -46,17 +46,29 @@ parameters = (; porosity = 0.45, residual_liquid_fraction = 0.06, inverse_air_en
                 albedo = 0.13, emissivity = 0.97, dry_heat_capacity = 840 * 0.15 * 1200.0,
                 deep_temperature = 295.0, infiltration_capacity = 2e-3, scalar_porosity = 0.45)
 
+# A timed series (a single-slice series scalar-indexes under Reactant) holding constant fluxes.
+function constant_radiation(land_grid)
+    radiation = PrescribedRadiation(land_grid, 0:3600:7200; ocean_surface = nothing, sea_ice_surface = nothing,
+                                    land_surface = SurfaceRadiationProperties(0.2, 0.95))
+    for n in 1:3
+        parent(radiation.downwelling_shortwave[n]) .= 600
+        parent(radiation.downwelling_longwave[n]) .= 350
+    end
+    update_state!(radiation)
+    return radiation
+end
+
 function bare_coupled_model(grid)
     atmosphere = breeze_atmosphere(grid)
     land_grid = land_grid_of(grid)
-    land = borneo_land(land_grid, FT, parameters; slab_depth = 0.5)
+    land = borneo_land(land_grid, FT, parameters; slab_depth = (h = surface_field(land_grid); parent(h) .= 0.5; h))
     humidity = DryLayerHumidity(FT; dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 1.0),
                                 vapor_exchange = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3, molecular_diffusivity = 2.4e-5),
                                 thermal_exchange_depth = 0.05, porosity = 0.45)
     fluxes = SimilarityTheoryFluxes(FT; momentum_roughness_length = 0.1, temperature_roughness_length = 0.01, water_vapor_roughness_length = 0.01,
                                     stability_functions = atmosphere_land_stability_functions(FT), solver_stop_criteria = FixedIterations(4))
     interface = atmosphere_land_interface(land_grid, atmosphere, land; specific_humidity = humidity, fluxes)
-    radiation = PrescribedRadiation(land_grid; ocean_surface = nothing, sea_ice_surface = nothing, land_surface = SurfaceRadiationProperties(0.2, 0.95))
+    radiation = constant_radiation(land_grid)
     model = AtmosphereLandModel(atmosphere, land; atmosphere_land_interface = interface, radiation, clock = Clock(grid))
     return model
 end
@@ -64,9 +76,9 @@ end
 function canopy_coupled_model(grid)
     atmosphere = breeze_atmosphere(grid)
     land_grid = land_grid_of(grid)
-    land = borneo_land(land_grid, FT, parameters; slab_depth = 0.5)
+    land = borneo_land(land_grid, FT, parameters; slab_depth = (h = surface_field(land_grid); parent(h) .= 0.5; h))
     interface = borneo_interface(land_grid, FT, atmosphere, land, parameters; inner_iterations = 4, similarity_iterations = 4)
-    radiation = PrescribedRadiation(land_grid; ocean_surface = nothing, sea_ice_surface = nothing, land_surface = SurfaceRadiationProperties(0.2, 0.95))
+    radiation = constant_radiation(land_grid)
     return AtmosphereLandModel(atmosphere, land; atmosphere_land_interface = interface, radiation, clock = Clock(grid))
 end
 
