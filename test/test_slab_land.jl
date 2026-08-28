@@ -400,10 +400,8 @@ end
 end
 
 @testset "SlabLand coupled checkpoint round-trip" begin
-    # The coupler-written forcing fields (`land.fluxes`) are computed at the end
-    # of each coupled step and consumed by the next `time_step!(land, Δt)`, so a
-    # restored model must carry them to be step-for-step identical to the
-    # uninterrupted run.
+    # The coupler-written forcing fields (`land.fluxes`) are consumed by the next
+    # `time_step!(land, Δt)`, so a restored model must carry them to reproduce the uninterrupted run.
     using Oceananigans.TimeSteppers: time_step!
     using NumericalEarth.Atmospheres: PrescribedAtmosphere
     using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
@@ -556,9 +554,9 @@ end
         # Displacement thins the effective surface layer, raising the drag.
         @test displaced_friction_velocity(6.0) > displaced_friction_velocity(3.0) > displaced_friction_velocity(0.0)
 
-        # A displacement at or above the surface-layer height stays finite: the
-        # profile height is floored at twice the momentum roughness length.
-        @test displaced_friction_velocity(2h) ≈ ϰ / log(2) * uᵃᵗ
+        # A displacement at or above the surface layer height leaves no room for the
+        # similarity profiles and is rejected when the interface is built.
+        @test_throws ArgumentError displaced_friction_velocity(2h)
     end
 
     # Per-cell resolution: `LandZeroPlaneDisplacement` reads the displacement a land
