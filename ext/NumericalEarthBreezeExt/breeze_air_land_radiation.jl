@@ -53,6 +53,8 @@ end
 end
 
 function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, rtm::BreezeRTM)
+    # The all-sky and clear-sky solvers re-read the surface properties at every solve themselves.
+    hasproperty(rtm.longwave_solver, :bcs) || return nothing
     grid = coupled_model.interfaces.exchanger.grid
     properties = rtm.surface_properties
     launch!(architecture(grid), grid, :xy,
