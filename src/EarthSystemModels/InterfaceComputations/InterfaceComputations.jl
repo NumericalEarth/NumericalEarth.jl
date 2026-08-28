@@ -114,11 +114,7 @@ function interface_kernel_parameters(grid)
     return kernel_parameters
 end
 
-# 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1: a 2-D
-# `Field` (Breeze's per-column surface- or boundary-layer height, a per-cell roughness
-# length) is read at column `(i, j)`, and anything uniform over grid points — a scalar
-# height, a flux formulation such as `MomentumRoughnessLength` — passes through.
-# Used by the atmosphere–surface flux kernels.
+# 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1
 @inline state2dindex(a, i, j) = a
 @inline state2dindex(a::AbstractArray, i, j) = stateindex(a, i, j, 1)
 
