@@ -137,7 +137,8 @@ loss(series) = (series.θ[end] - θ_target)^2
 
 # ## The compiled reverse pass
 
-Reactant.set_default_backend("cpu")
+backend = get(ENV, "ARCH", "cpu")
+Reactant.set_default_backend(backend)
 
 function soil_water_loss(model, h, θ₀, T₀, q₀, θ_target, Δt, nsteps)
     initialize_column!(model, h, θ₀, T₀, q₀)
