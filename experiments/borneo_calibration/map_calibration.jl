@@ -26,6 +26,8 @@ Nsteps = parse(Int, get(ENV, "NSTEPS", "900"))       # 150 h = 6.25 days; a perf
 run_hours = Nsteps * Δt / 3600
 h₀ = 0.28
 lapse_rate = 6.5e-3
+inner_iterations = parse(Int, get(ENV, "INNER_ITERATIONS", "6"))         # canopy Newton iterations per step
+similarity_iterations = parse(Int, get(ENV, "SIMILARITY_ITERATIONS", "4"))  # Monin–Obukhov iterates per step
 backend = get(ENV, "ARCH", "cpu")
 tag = "map_calibration_r$(refinement)_$(backend)"
 
@@ -56,6 +58,7 @@ function initialize_map!(model, h, θ₀, T₀, q₀)
         parent(tile.temperature.state.temperature) .= parent(T₀)
         parent(tile.temperature.state.specific_humidity) .= parent(q₀)
     end
+    update_state!(model)   # fluxes consistent with the reset state
     return nothing
 end
 
@@ -79,7 +82,8 @@ function forward_map(depth; record = false)
     fields = map_fields(cpu_grid, depth)
     s = surface_parameters(static, cpu_grid, FT)
     model = borneo_coupled_model(cpu_grid, FT, forcing, s; slab_depth = surface_field(cpu_grid),
-                                 exchanger_correction = correction, surface_layer_height, boundary_layer_height)
+                                 exchanger_correction = correction, surface_layer_height, boundary_layer_height,
+                                 inner_iterations, similarity_iterations)
     initialize_map!(model, fields.h, fields.θ₀, fields.T₀, fields.q₀)
     interface = model.interfaces.atmosphere_land_interface
     land = model.land
@@ -140,7 +144,8 @@ fields_ad = map_fields(grid_ad, fill(h₀, Nx, Ny))
 dh_ad = Enzyme.make_zero(fields_ad.h)
 s_ad = surface_parameters(static, grid_ad, FT)
 model_ad = borneo_coupled_model(grid_ad, FT, forcing, s_ad; slab_depth = surface_field(grid_ad),
-                                exchanger_correction = correction, surface_layer_height, boundary_layer_height)
+                                exchanger_correction = correction, surface_layer_height, boundary_layer_height,
+                                inner_iterations, similarity_iterations)
 Oceananigans.initialize!(model_ad)
 dmodel = Enzyme.make_zero(model_ad)
 

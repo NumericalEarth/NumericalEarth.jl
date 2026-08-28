@@ -25,6 +25,8 @@ Nsteps = 30^2                          # 150 h = 6.25 days; a perfect square for
 run_hours = Nsteps * Δt / 3600
 h₀ = 0.28                              # the ERA5-Land 0–28 cm column the target is built from
 lapse_rate = 6.5e-3
+inner_iterations = parse(Int, get(ENV, "INNER_ITERATIONS", "6"))         # canopy Newton iterations per step
+similarity_iterations = parse(Int, get(ENV, "SIMILARITY_ITERATIONS", "4"))  # Monin–Obukhov iterates per step
 
 static    = load_static()
 forcing   = load_forcing = load_cache("forcing")
@@ -79,6 +81,7 @@ function initialize_column!(model, h, θ₀, T₀, q₀)
         parent(tile.temperature.state.temperature) .= T₀
         parent(tile.temperature.state.specific_humidity) .= q₀
     end
+    update_state!(model)   # fluxes consistent with the reset state
     return nothing
 end
 
@@ -93,7 +96,7 @@ function forward_column(depth)
     grid = RectilinearGrid(CPU(), FT; size = (), topology = (Flat, Flat, Flat))
     h = surface_field(grid); parent(h) .= depth
     model = borneo_coupled_model(grid, FT, column, parameters; slab_depth = surface_field(grid),
-                                 surface_layer_height, boundary_layer_height)
+                                 surface_layer_height, boundary_layer_height, inner_iterations, similarity_iterations)
     initialize_column!(model, h, θ₀, T₀, q₀)
     interface = model.interfaces.atmosphere_land_interface
     land = model.land
@@ -158,7 +161,7 @@ grid_ad = RectilinearGrid(ReactantState(), FT; size = (), topology = (Flat, Flat
 h_ad = surface_field(grid_ad); parent(h_ad) .= h₀
 dh_ad = Enzyme.make_zero(h_ad)
 model_ad = borneo_coupled_model(grid_ad, FT, column, parameters; slab_depth = surface_field(grid_ad),
-                                surface_layer_height, boundary_layer_height)
+                                surface_layer_height, boundary_layer_height, inner_iterations, similarity_iterations)
 Oceananigans.initialize!(model_ad)
 dmodel = Enzyme.make_zero(model_ad)
 
