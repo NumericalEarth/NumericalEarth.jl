@@ -1,5 +1,7 @@
 include("runtests_setup.jl")
 
+using Oceananigans.Grids: MutableVerticalDiscretization
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: update_grid_scaling!
 using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.Units: Time
 using NumericalEarth.Oceans: TwoColorRadiation, absorption_coefficient, compute_absorption_coefficient!,
@@ -58,4 +60,22 @@ end
 
     # The greener column absorbs more of the blue-green band within the surface cell
     @test surface_absorbed_fraction(2, 1, grid, radiation) > surface_absorbed_fraction(1, 1, grid, radiation)
+
+    # A moving vertical coordinate stretches the surface cell between the coupled step that sets the
+    # boundary condition and the substeps that evaluate the interior source, so the two have to close
+    # against a surface fraction that the free surface leaves alone.
+    grid = RectilinearGrid(size=(1, 1, 20), x=(0, 1), y=(0, 1),
+                           z=MutableVerticalDiscretization((-100, 0)),
+                           topology=(Periodic, Periodic, Bounded))
+
+    radiation = TwoColorRadiation(grid)
+    surface, _ = absorbed_shortwave(1, 1, grid, radiation)
+    J₀ = radiation.surface_flux[1, 1, 1]
+
+    for η in (0.01, 0.1, 1.0)
+        grid.z.ηⁿ[1, 1, 1] = η
+        update_grid_scaling!(grid.z, 1, 1, grid)
+        interior = sum(radiation(1, 1, k, grid, nothing, nothing) * Δzᶜᶜᶜ(1, 1, k, grid) for k in 1:size(grid, 3))
+        @test isapprox(surface + interior, J₀, rtol=1e-12)
+    end
 end
