@@ -271,10 +271,9 @@ end
 validate_zero_plane_displacement(flux_formulation, zᵃᵗ) = nothing
 
 function validate_zero_plane_displacement(fluxes::SimilarityTheoryFluxes, zᵃᵗ)
-    d = fluxes.zero_plane_displacement
-    d isa Number || return nothing
+    dᵐᵃˣ = maximum(fluxes.zero_plane_displacement)
     zᵐⁱⁿ = minimum(zᵃᵗ)
-    d < zᵐⁱⁿ || throw(ArgumentError("zero_plane_displacement ($d m) must be below the surface layer height ($zᵐⁱⁿ m)"))
+    dᵐᵃˣ < zᵐⁱⁿ || throw(ArgumentError("zero_plane_displacement must be below the surface layer height ($zᵐⁱⁿ m), found $dᵐᵃˣ m"))
     return nothing
 end
 
