@@ -135,7 +135,7 @@ diagnostic_variables(::VariablySaturatedHydrology) =
 #####
 
 @inline function augmented_liquid_fraction(i, j, grid, h, M)
-    FT  = eltype(grid)
+    FT  = typeof(M)
     hˡᵃ = convert(FT, property_value(h.slab_depth, i, j))
     return M / (convert(FT, h.liquid_density) * hˡᵃ)
 end
@@ -147,7 +147,7 @@ end
 end
 
 @inline function liquid_saturation(i, j, grid, h, θˡ)
-    FT  = eltype(grid)
+    FT  = typeof(θˡ)
     ν   = convert(FT, property_value(h.porosity, i, j))
     θʳ  = convert(FT, property_value(h.residual_liquid_fraction, i, j))
     Δ   = ν - θʳ
@@ -155,7 +155,7 @@ end
 end
 
 @inline function diagnostic_pressure_head(i, j, grid, h, M, θˡ, 𝒮)
-    FT  = eltype(grid)
+    FT  = typeof(M)
     ν   = convert(FT, property_value(h.porosity, i, j))
     ρˡ  = convert(FT, h.liquid_density)
     hˡᵃ = convert(FT, property_value(h.slab_depth, i, j))

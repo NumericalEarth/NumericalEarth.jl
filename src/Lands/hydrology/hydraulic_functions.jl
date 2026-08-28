@@ -64,14 +64,14 @@ $(TYPEDSIGNATURES)
 # Per-cell endpoint evaluation for the interface's plant-stress formulations: read the
 # curve's parameters at `(i, j)` — scalar or `Field` — and invert the retention relation.
 @inline function EarthSystemModels.effective_saturation(i, j, grid, r::VanGenuchtenRetention, ψ)
-    FT = eltype(grid)
+    FT = typeof(ψ)
     α  = convert(FT, property_value(r.inverse_air_entry_head, i, j))
     n  = convert(FT, property_value(r.pore_size_uniformity, i, j))
     return van_genuchten_saturation(α * convert(FT, ψ), n)
 end
 
 @inline function pressure_head(i, j, grid, r::VanGenuchtenRetention, 𝒮)
-    FT = eltype(grid)
+    FT = typeof(𝒮)
     α  = convert(FT, property_value(r.inverse_air_entry_head, i, j))
     n  = convert(FT, property_value(r.pore_size_uniformity, i, j))
     m  = van_genuchten_m(n)
@@ -142,7 +142,7 @@ Adapt.adapt_structure(to, c::VanGenuchtenConductivity) =
                              Adapt.adapt(to, c.water_viscosity))
 
 @inline function hydraulic_conductivity(i, j, grid, c::VanGenuchtenConductivity, 𝒮)
-    FT = eltype(grid)
+    FT = typeof(𝒮)
     K₀ = convert(FT, property_value(c.matching_point_conductivity, i, j))
     n  = convert(FT, property_value(c.pore_size_uniformity, i, j))
     ηᴷ = convert(FT, property_value(c.pore_connectivity_exponent, i, j))

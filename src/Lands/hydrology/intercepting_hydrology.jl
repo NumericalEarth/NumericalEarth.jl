@@ -146,7 +146,7 @@ end
         rain  = Pl[i, j, 1]       # raw rain, positive down
         Eʷᵉᵗ = Cev[i, j, 1]      # interface-demanded wet-canopy evaporation, positive up
     end
-    FT    = eltype(grid)
+    FT    = typeof(Wcⁿ)
     # `Time(time)` so a time-varying (`FieldTimeSeries`) LAI interpolates to the clock;
     # a `Number`/`Field` LAI ignores the time argument.
     LAI   = convert(FT, stateindex(h.leaf_area_index, i, j, 1, grid, Time(time), (Center, Center, Center)))
@@ -192,7 +192,7 @@ end
 
 @kernel function _canopy_capacity!(capacity, h, grid, time)
     i, j = @index(Global, NTuple)
-    FT  = eltype(grid)
+    FT  = eltype(capacity)
     LAI = convert(FT, stateindex(h.leaf_area_index, i, j, 1, grid, Time(time), (Center, Center, Center)))
     @inbounds capacity[i, j, 1] = h.capacity_per_leaf_area * LAI
 end
