@@ -5,7 +5,7 @@
 
 include(joinpath(@__DIR__, "borneo_config.jl"))
 using CairoMakie
-using Statistics: mean
+using Statistics: mean, quantile
 using Printf
 
 tag = get(ENV, "TAG", "map_calibration_r$(refinement)_cpu")
@@ -38,7 +38,7 @@ function panel!(pos, data, ttl, label; colormap, colorrange)
 end
 panel!((1, 1), frame(:θ), "slab soil water θ", "m³ m⁻³"; colormap = :tempo, colorrange = θlim)
 panel!((1, 3), θ_obs, "ERA5-Land θ (0–28 cm)", "m³ m⁻³"; colormap = :tempo, colorrange = θlim)
-panel!((1, 5), frame(:rain) .|> x -> x .* 3600, "ERA5 rain", "mm h⁻¹"; colormap = :dense, colorrange = rainlim)
+panel!((1, 5), @lift(mask(snapshots[:rain][$n, :, :]) .* 3600), "ERA5 rain", "mm h⁻¹"; colormap = :dense, colorrange = rainlim)
 panel!((1, 7), frame(:Wᶜ), "canopy water Wᶜ", "kg m⁻²"; colormap = :YlGn, colorrange = (0, 1.5))
 panel!((2, 1), frame(:LE), "latent heat LE", "W m⁻²"; colormap = :viridis, colorrange = LElim)
 panel!((2, 3), frame(:LEᶜ), "LE canopy (transpiration + wet canopy)", "W m⁻²"; colormap = :viridis, colorrange = LElim)
