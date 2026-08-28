@@ -446,7 +446,7 @@ else
     ## The bucket starts from the same ERA5-Land soil water as the canopy runs, relative to a
     ## 0.45 m³ m⁻³ saturation; water cells start saturated.
     capacity = land.hydrology.maximum_water_storage
-    set!(land; M = to_field(ifelse.(water, capacity, clamp.(array(era5_land.soil_water) ./ 0.45, 0, 1) .* capacity)))
+    set!(land; M = to_field(FT.(ifelse.(water, capacity, clamp.(array(era5_land.soil_water) ./ 0.45, 0, 1) .* capacity))))
 end
 
 @info @sprintf("initial soil wetness 𝒮 ∈ [%.3f, %.3f], mean %.3f",
