@@ -400,10 +400,8 @@ end
 end
 
 @testset "SlabLand coupled checkpoint round-trip" begin
-    # The coupler-written forcing fields (`land.fluxes`) are computed at the end
-    # of each coupled step and consumed by the next `time_step!(land, Δt)`, so a
-    # restored model must carry them to be step-for-step identical to the
-    # uninterrupted run.
+    # The coupler-written forcing fields (`land.fluxes`) are consumed by the next
+    # `time_step!(land, Δt)`, so a restored model must carry them to reproduce the uninterrupted run.
     using Oceananigans.TimeSteppers: time_step!
     using NumericalEarth.Atmospheres: PrescribedAtmosphere
     using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
