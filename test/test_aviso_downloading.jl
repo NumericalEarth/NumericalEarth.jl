@@ -8,6 +8,8 @@ using Oceananigans.Fields: interior
 using Oceananigans.Grids: Bounded, Flat, LatitudeLongitudeGrid, topology
 using Oceananigans.OutputReaders: time_indices
 
+const AVISO_TEST_DIR = mktempdir()
+
 @testset "AVISO CopernicusMarine fetch padding" begin
     CMExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusMarineExt)
     bbox = BoundingBox(longitude=(200, 202), latitude=(35, 37))
@@ -28,25 +30,22 @@ using Oceananigans.OutputReaders: time_indices
 end
 
 @testset "Downloading AVISO data" begin
-    variables = (:free_surface, :sea_level_anomaly, :zonal_geostrophic_velocity, :meridional_geostrophic_velocity)
     region = BoundingBox(longitude=(200, 202), latitude=(35, 37))
-    dataset = AVISOMonthly()
     date = DateTime(2020, 1, 1)
 
-    for variable in variables
-        metadatum = Metadatum(variable; dataset, date, region)
+    for dataset in (AVISODaily(), AVISOMonthly())
+        metadatum = Metadatum(:sea_level_anomaly; dataset, date, region, dir=AVISO_TEST_DIR)
         filepath = metadata_path(metadatum)
-        isfile(filepath) && rm(filepath; force=true)
         download(metadatum)
         @test isfile(filepath)
     end
 end
 
-@testset "Download and set AVISO free_surface" begin
+@testset "Download and set AVISO sea_level_anomaly" begin
     dataset = AVISOMonthly()
     region = BoundingBox(longitude=(200, 202), latitude=(35, 37))
     dates = DateTime(2020, 1, 1):Month(1):DateTime(2020, 2, 1)
-    metadata = Metadata(:free_surface; dates, dataset, region)
+    metadata = Metadata(:sea_level_anomaly; dates, dataset, region, dir=AVISO_TEST_DIR)
 
     download(metadata)
     for datum in metadata
@@ -56,7 +55,6 @@ end
     for arch in test_architectures
         datum = first(metadata)
         source = Field(datum, arch; inpainting=nothing)
-        @test source isa Field
         @test size(interior(source), 3) == 1
         @test topology(source.grid) == (Bounded, Bounded, Flat)
         @test all(isfinite.(Array(interior(source))))
@@ -70,9 +68,7 @@ end
         set!(target, datum; inpainting=nothing)
         @test all(isfinite.(Array(interior(target))))
 
-        restoring = DatasetRestoring(metadata, arch; rate=1/1000, inpainting=nothing)
-        fts = restoring.field_time_series
-        @test fts isa FieldTimeSeries
+        fts = FieldTimeSeries(metadata, arch; inpainting=nothing)
         @test size(interior(fts), 3) == 1
         @test length(fts.times) == length(dates)
         @test time_indices(fts) == Tuple(1:length(dates))

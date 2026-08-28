@@ -166,7 +166,7 @@ end
 # Land cells arrive as NaN through `nan_convert_missing`.
 # A naive bilinear average of four corners would propagate that NaN into the
 # interior, biasing every column whose stencil touches a coast. Instead we drop
-# any NaN corner and renormalise the weights over the surviving wet corners,
+# any NaN corner and renormalize the weights over the surviving wet corners,
 # returning NaN only when all four are land.
 @inline function blend(::Linear, data, c, k, mangling, missing_val, FT)
     d00 = nan_convert_missing(FT, mangle(c.i⁻, c.j⁻, k, data, mangling), missing_val)

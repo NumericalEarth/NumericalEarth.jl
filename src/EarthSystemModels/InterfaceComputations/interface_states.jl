@@ -194,7 +194,7 @@ Base.show(io::IO, q::FractionalHumidity) = print(io, summary(q))
     struct SkinHumidity
 
 Surface specific humidity `qˢ` solved from a vapor-flux balance at the land
-surface, the humidity analogue of [`SkinTemperature`](@ref).
+surface, the humidity analog of [`SkinTemperature`](@ref).
 
 Vapor reaches the surface by diffusing up from saturated soil at the saturation
 depth `d` (the `surface_thickness`), where the soil air is saturated at `qᵛ⁺(Tᵢ)` —
