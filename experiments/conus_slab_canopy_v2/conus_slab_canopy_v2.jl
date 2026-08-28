@@ -33,6 +33,7 @@
 # nest in place of the ERA5 prescribed fluxes; `STOP_DATE` extends the window (default 21 May 00Z).
 # `INGEST_ONLY=1` builds the surface caches on a CPU node and exits.
 # `SMOKE=1` stops after 20 simulated minutes to exercise the full pipeline first.
+# `OUTPUT_MINUTES` sets the output cadence (default 15); `ISOBARIC=0` skips the isobaric stream.
 
 using NumericalEarth
 using Oceananigans
@@ -471,7 +472,7 @@ conjure_time_step_wizard!(simulation, IterationInterval(1); cfl = 0.7,
 # height above ground near the surface, so `k_aloft` is the level nearest 2 km.
 
 k_aloft = searchsortedfirst(Array(znodes(grid, Center())), 2000)
-schedule = TimeInterval(15minutes)
+schedule = TimeInterval(parse(Int, get(ENV, "OUTPUT_MINUTES", "15")) * minutes)
 
 include(joinpath(@__DIR__, "pressure_diagnostics.jl"))
 
@@ -562,18 +563,21 @@ isobaric_variables = (u = @at((Center, Center, Center), child.velocities.u),
 
 pressure_levels_hPa = (1000, 850, 700, 500, 300, 200)
 isobaric = PressureLevelDiagnostics(child, pressure_levels_hPa, isobaric_variables)
+write_isobaric = get(ENV, "ISOBARIC", "1") == "1"   ## the largest output stream; off for the 6 km runs
 
 function fill_diagnostics!(sim)
     fill_surface_pressure!(surface_pressure, child)
-    fill_pressure_levels!(isobaric, child)
+    write_isobaric && fill_pressure_levels!(isobaric, child)
     return nothing
 end
 add_callback!(simulation, fill_diagnostics!, schedule)
 
-simulation.output_writers[:isobaric] = JLD2Writer(model, isobaric.slices; schedule,
-                                                  filename = "$(resolution_tag)_isobaric.jld2",
-                                                  array_type = Array{Float32},
-                                                  overwrite_existing = true)
+if write_isobaric
+    simulation.output_writers[:isobaric] = JLD2Writer(model, isobaric.slices; schedule,
+                                                      filename = "$(resolution_tag)_isobaric.jld2",
+                                                      array_type = Array{Float32},
+                                                      overwrite_existing = true)
+end
 
 # Static surface fields, saved once for the figure scripts.
 jldsave("$(resolution_tag)_static.jld2";
