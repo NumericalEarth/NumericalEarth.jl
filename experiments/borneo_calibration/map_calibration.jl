@@ -41,7 +41,7 @@ n_end = round(Int, run_hours) + 1
 weight = FT.(.!static.water)
 θ₀ = FT.(static.initial_soil_water)
 T₀ = FT.(forcing.skin_temperature)
-correction = ElevationCorrection(forcing.land_elevation, forcing.era5_elevation; lapse_rate)
+correction = AltitudeCorrection(forcing.land_elevation, forcing.era5_elevation; lapse_rate)
 
 # ## State initialization shared by every run (parent-level, so it traces on any backend)
 

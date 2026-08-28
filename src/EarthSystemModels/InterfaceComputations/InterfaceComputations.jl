@@ -2,7 +2,7 @@ module InterfaceComputations
 
 using Adapt: Adapt, adapt
 using Oceananigans: Oceananigans, location
-using Oceananigans.Architectures: architecture
+using Oceananigans.Architectures: architecture, on_architecture, CPU
 using Oceananigans.Fields: AbstractField, Field, Face, Center
 using Oceananigans.Grids: Flat, Periodic, topology
 using Oceananigans.OutputReaders: FieldTimeSeries, FlavorOfFTS, cpu_interpolating_time_indices
