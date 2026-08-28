@@ -628,6 +628,18 @@ end
         u★ = Array(interior(model.interfaces.atmosphere_land_interface.fluxes.friction_velocity))
         @test u★[1, 1, 1] ≈ ϰ / log(h / grassland_roughness) * uᵃᵗ
         @test u★[2, 1, 1] ≈ ϰ / log((h - forest_displacement) / forest_roughness) * uᵃᵗ
+
+        # A displacement field reaching the surface layer height anywhere is rejected at
+        # construction, as a scalar one is.
+        tall_displacement = Field{Center, Center, Nothing}(grid)
+        set!(tall_displacement, (λ, φ) -> ifelse(λ < 11, grassland_displacement, h))
+        tall_fluxes = SimilarityTheoryFluxes(; momentum_roughness_length,
+                                               temperature_roughness_length = 0.01,
+                                               water_vapor_roughness_length = 0.01,
+                                               zero_plane_displacement = tall_displacement,
+                                               subgrid_velocities = nothing,
+                                               stability_functions = SimilarityScales(zero_ψ, zero_ψ, zero_ψ))
+        @test_throws ArgumentError AtmosphereLandModel(atmosphere, land; atmosphere_land_fluxes = tall_fluxes, radiation = nothing)
     end
 end
 
