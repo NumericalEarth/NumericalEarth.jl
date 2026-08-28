@@ -20,8 +20,8 @@ const ReactantESM{R, A, L, I, O, F, C} = Union{
 }
 
 function reconcile_state!(model::ReactantESM)
-    @jit Oceananigans.initialize!(model.interfaces.exchanger, model)
-    @jit Oceananigans.TimeSteppers.update_state!(model)
+    @jit raise=true raise_first=true Oceananigans.initialize!(model.interfaces.exchanger, model)
+    @jit raise=true raise_first=true Oceananigans.TimeSteppers.update_state!(model)
     return nothing
 end
 

@@ -1,11 +1,12 @@
 # One Central Borneo forest column: the vegetated slab land forced by ERA5, compared with
-# ERA5-Land soil water, then differentiated. The soil-water mismatch at the end of the run,
+# ERA5-Land soil water, then differentiated. The soil-water mismatch over the run,
 #
-#     L(h) = (θ(t_end; h) − θᴱᴿᴬ⁵ᴸ(t_end))²,        θ = Mˡᵃ / (ρˡ h),
+#     L(h) = (1/N) Σₙ (θ(tₙ; h) − θᴱᴿᴬ⁵ᴸ(tₙ))²,        θ = Mˡᵃ / (ρˡ h),
 #
 # is differentiated with respect to the slab depth `h` by Enzyme reverse mode through the
-# Reactant-compiled coupled time step, checked against a finite difference, and one
-# Gauss–Newton step `h ← h − 2L / (dL/dh)` is taken and re-run.
+# Reactant-compiled coupled time step (the sum is accumulated inside the traced loop),
+# checked against a finite difference, and one gradient step with a line search along
+# −dL/dh is taken and re-run.
 #
 #   REFINEMENT=1 CELL=9,9 julia --project=docs column_calibration.jl
 
@@ -63,8 +64,11 @@ column = merge(column, (; T = column.T .- lapse_rate * Δz,
 θ₀ = FT(static.initial_soil_water[i, j])
 T₀ = FT(forcing.skin_temperature[i, j])
 q₀ = FT(column.q[1])
-n_end = round(Int, run_hours) + 1
-θ_target = FT(θ_obs[n_end])
+
+# The hourly ERA5-Land target interpolated to every model step.
+step_times = (1:Nsteps) .* Δt
+θ_target = [begin k = clamp(floor(Int, t / 3600) + 1, 1, length(θ_obs) - 1); a = t / 3600 - (k - 1)
+                  FT((1 - a) * θ_obs[k] + a * θ_obs[k + 1]) end for t in step_times]
 
 # ## State initialization shared by every run
 
@@ -132,8 +136,8 @@ end
 
 @info "forward run at h = $h₀ m"
 forward = forward_column(h₀)
-loss(series) = (series.θ[end] - θ_target)^2
-@info @sprintf("θ(t_end) = %.4f vs ERA5-Land %.4f  →  L = %.3e", forward.θ[end], θ_target, loss(forward))
+loss(series) = mean((series.θ .- θ_target).^2)
+@info @sprintf("run-mean (θ − θᴱᴿᴬ⁵ᴸ)² = %.4e (RMS %.4f);  θ(t_end) = %.4f vs %.4f", loss(forward), sqrt(loss(forward)), forward.θ[end], θ_target[end])
 
 # ## The compiled reverse pass
 
@@ -142,10 +146,12 @@ Reactant.set_default_backend(backend)
 
 function soil_water_loss(model, h, θ₀, T₀, q₀, θ_target, Δt, nsteps)
     initialize_column!(model, h, θ₀, T₀, q₀)
-    @trace mincut=true checkpointing=true track_numbers=false for _ in 1:nsteps
+    L = sum(zero(parent(h)))
+    @trace mincut=true checkpointing=true track_numbers=false for n in 1:nsteps
         time_step!(model, Δt)
+        L += sum((soil_water(model, h) .- θ_target[n]).^2)
     end
-    return sum((soil_water(model, h) .- θ_target).^2)
+    return L / nsteps
 end
 
 function grad_soil_water_loss(model, dmodel, h, dh, θ₀, T₀, q₀, θ_target, Δt, nsteps)
@@ -161,6 +167,7 @@ end
 grid_ad = RectilinearGrid(ReactantState(), FT; size = (), topology = (Flat, Flat, Flat))
 h_ad = surface_field(grid_ad); parent(h_ad) .= h₀
 dh_ad = Enzyme.make_zero(h_ad)
+θ_target_ad = Reactant.to_rarray(θ_target)
 model_ad = borneo_coupled_model(grid_ad, FT, column, parameters; slab_depth = surface_field(grid_ad),
                                 surface_layer_height, boundary_layer_height, inner_iterations, similarity_iterations)
 Oceananigans.initialize!(model_ad)
@@ -168,26 +175,33 @@ dmodel = Enzyme.make_zero(model_ad)
 
 @info "compiling the reverse pass over $Nsteps steps..."
 compile_seconds = @elapsed compiled = Reactant.@compile raise=true raise_first=true sync=true grad_soil_water_loss(
-    model_ad, dmodel, h_ad, dh_ad, θ₀, T₀, q₀, θ_target, Δt, Nsteps)
-run_seconds = @elapsed dh_out, L_ad = compiled(model_ad, dmodel, h_ad, dh_ad, θ₀, T₀, q₀, θ_target, Δt, Nsteps)
+    model_ad, dmodel, h_ad, dh_ad, θ₀, T₀, q₀, θ_target_ad, Δt, Nsteps)
+run_seconds = @elapsed dh_out, L_ad = compiled(model_ad, dmodel, h_ad, dh_ad, θ₀, T₀, q₀, θ_target_ad, Δt, Nsteps)
 dL_dh = first(Array(parent(dh_out)))
 L_compiled = Reactant.to_number(L_ad)
 @info @sprintf("adjoint: L = %.6e (eager %.6e), dL/dh = %.6e m⁻¹  [compile %.0f s, run %.1f s]",
                L_compiled, loss(forward), dL_dh, compile_seconds, run_seconds)
 
-# ## Finite-difference check and one Gauss–Newton step
+# ## Finite-difference check and one gradient step with a line search
 
 δ = 1e-3 * h₀
 fd = (loss(forward_column(h₀ + δ)) - loss(forward_column(h₀ - δ))) / 2δ
 @info @sprintf("finite difference dL/dh = %.6e m⁻¹ (adjoint / FD = %.4f)", fd, dL_dh / fd)
 
-Δh = clamp(-2 * L_compiled / dL_dh, -0.5h₀, 0.5h₀)
-h₁ = h₀ + Δh
-calibrated = forward_column(h₁)
-@info @sprintf("Gauss–Newton step: h %.3f → %.3f m;  θ(t_end) %.4f → %.4f (target %.4f);  L %.3e → %.3e",
-               h₀, h₁, forward.θ[end], calibrated.θ[end], θ_target, loss(forward), loss(calibrated))
+# Descend along −dL/dh: the step length is picked by a backtracking line search over
+# eager forward runs (a run costs a few seconds), the depth kept within [0.02, 5] m.
+direction = -sign(dL_dh)
+trial_depths = [clamp(h₀ + direction * s, 0.02, 5.0) for s in h₀ .* (2.0 .^ (2:-1:-4))]
+trials = [(depth = d, series = forward_column(d)) for d in trial_depths]
+best = argmin([loss(t.series) for t in trials])
+h₁, calibrated = trials[best].depth, trials[best].series
+@info "line search: " * join([@sprintf("h = %.3f → L = %.3e", t.depth, loss(t.series)) for t in trials], ";  ")
+@info @sprintf("gradient step: h %.3f → %.3f m;  L %.4e → %.4e (RMS %.4f → %.4f);  θ(t_end) %.4f → %.4f (target %.4f)",
+               h₀, h₁, loss(forward), loss(calibrated), sqrt(loss(forward)), sqrt(loss(calibrated)),
+               forward.θ[end], calibrated.θ[end], θ_target[end])
 
 jldsave("column_calibration_r$(refinement)_i$(i)_j$(j).jld2"; cell, λ, φ, h₀, h₁, θ_target, θ_obs, θ_obs_layer_1,
+        trial_depths, trial_losses = [loss(t.series) for t in trials],
         forward = Dict(pairs(forward)), calibrated = Dict(pairs(calibrated)), dL_dh, fd, L_compiled,
         compile_seconds, run_seconds, parameters = Dict(pairs(parameters)))
 
@@ -209,9 +223,8 @@ lines!(ax2, t, forward.sw; color = :orange)
 ax = Axis(fig[1, 2]; title = "Soil water: slab vs ERA5-Land", xlabel = "t (h)", ylabel = "θ (m³ m⁻³)")
 lines!(ax, t_obs, θ_obs; color = :black, linewidth = 2, label = "ERA5-Land 0–28 cm")
 lines!(ax, t_obs, θ_obs_layer_1; color = :gray, linestyle = :dash, label = "ERA5-Land 0–7 cm")
-lines!(ax, t, forward.θ; color = :firebrick, linewidth = 2, label = @sprintf("slab, h = %.2f m", h₀))
-lines!(ax, t, calibrated.θ; color = :seagreen, linewidth = 2, label = @sprintf("slab, h = %.2f m (one step)", h₁))
-vlines!(ax, [run_hours]; color = :black, linestyle = :dot)
+lines!(ax, t, forward.θ; color = :firebrick, linewidth = 2, label = @sprintf("slab, h = %.2f m (RMS %.3f)", h₀, sqrt(loss(forward))))
+lines!(ax, t, calibrated.θ; color = :seagreen, linewidth = 2, label = @sprintf("slab, h = %.2f m after one step (RMS %.3f)", h₁, sqrt(loss(calibrated))))
 axislegend(ax; position = :lt)
 
 ax = Axis(fig[1, 3]; title = "Temperatures", xlabel = "t (h)", ylabel = "T (K)")
