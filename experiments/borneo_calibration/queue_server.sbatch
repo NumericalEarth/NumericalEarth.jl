@@ -32,6 +32,13 @@ cd "$RUNDIR"
 rm -f "$QUEUE/STOP"
 echo "=== node: $(hostname)  partition: $SLURM_JOB_PARTITION  queue: $QUEUE  start: $(date) ==="
 nvidia-smi --query-gpu=name,memory.total --format=csv 2>/dev/null || true
-$JULIA -t ${JULIA_THREADS:-4} --project="$PROJECT" --color=no "$WORKTREE/experiments/borneo_calibration/queue_server.jl" "$QUEUE"
+$JULIA -t ${JULIA_THREADS:-4} --project="$PROJECT" --color=no "$WORKTREE/experiments/borneo_calibration/queue_server.jl" "$QUEUE" &
+JULIA_PID=$!
+# Sample the session's memory every minute: heavy XLA compiles have taken whole nodes down.
+while kill -0 $JULIA_PID 2>/dev/null; do
+    echo "$(date -u +%FT%T) rss_gb=$(awk -v r="$(ps -o rss= -p $JULIA_PID)" 'BEGIN{printf "%.1f", r/1048576}') free_gb=$(awk '/MemAvailable/{printf "%.1f", $2/1048576}' /proc/meminfo)" >> "$RUNDIR/logs/mem_${SLURM_JOB_ID}.log"
+    sleep 60
+done
+wait $JULIA_PID
 echo "QUEUE_EXIT=$?"
 echo "=== done: $(date) ==="
