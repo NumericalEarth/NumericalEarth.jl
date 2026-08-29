@@ -128,6 +128,28 @@ skip_breeze_alone || stage("A1 Breeze compiled step on ReactantState") do
     atmosphere
 end
 
+# ## Stage A2: reverse pass through one Breeze step alone (no land, no exchanger)
+
+function atmosphere_energy_loss(model, Δt)
+    time_step!(model, Δt)
+    return sum(parent(model.velocities.u))
+end
+
+function grad_atmosphere_energy(model, dmodel, Δt)
+    _, L = Enzyme.autodiff(Enzyme.set_strong_zero(Enzyme.ReverseWithPrimal), atmosphere_energy_loss, Enzyme.Active,
+                           Enzyme.Duplicated(model, dmodel), Enzyme.Const(Δt))
+    return L
+end
+
+get(ENV, "BREEZE_ALONE_REVERSE", "0") == "1" && stage("A2 Breeze alone: reverse pass through one step") do
+    atmosphere = breeze_atmosphere(atmosphere_grid(ReactantState()))
+    dmodel = Enzyme.make_zero(atmosphere.model)
+    compiled = Reactant.@compile raise=true raise_first=true sync=true grad_atmosphere_energy(atmosphere.model, dmodel, Δt)
+    L = compiled(atmosphere.model, dmodel, Δt)
+    @info @sprintf("[A2] L = %.4f", Reactant.to_number(L))
+    atmosphere
+end
+
 # ## Stage B: Breeze + bare slab, eager then compiled
 
 only_reverse || stage("B0 coupled bare slab eager CPU step") do
