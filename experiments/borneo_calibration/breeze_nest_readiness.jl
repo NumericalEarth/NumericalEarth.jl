@@ -46,7 +46,8 @@ z = ReferenceToStretchedDiscretization(extent = 10000.0, bias = :left, bias_edge
                                        constant_spacing = 200.0, constant_spacing_extent = 200.0,
                                        maximum_spacing = 1000.0, stretching = LinearStretching(0.2))
 
-child_grid(arch) = LatitudeLongitudeGrid(arch, FT; longitude, latitude, z = TerrainFollowingVerticalDiscretization(z),
+terrain_following = get(ENV, "NEST_TERRAIN_FOLLOWING", "1") == "1"
+child_grid(arch) = LatitudeLongitudeGrid(arch, FT; longitude, latitude, z = terrain_following ? TerrainFollowingVerticalDiscretization(z) : z,
                                          size = (N, N, length(z)), halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
 nest_land_grid(arch) = LatitudeLongitudeGrid(arch, FT; longitude, latitude, size = (N, N), halo = (5, 5),
                                              topology = (Bounded, Bounded, Flat))
