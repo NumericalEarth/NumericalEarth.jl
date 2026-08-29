@@ -34,10 +34,17 @@ echo "=== node: $(hostname)  partition: $SLURM_JOB_PARTITION  queue: $QUEUE  sta
 nvidia-smi --query-gpu=name,memory.total --format=csv 2>/dev/null || true
 $JULIA -t ${JULIA_THREADS:-4} --project="$PROJECT" --color=no "$WORKTREE/experiments/borneo_calibration/queue_server.jl" "$QUEUE" &
 JULIA_PID=$!
-# Sample the session's memory every minute: heavy XLA compiles have taken whole nodes down.
+# Sample the session's memory every minute and kill it at 90 % of the node's RAM: runaway XLA
+# compiles have taken whole nodes down (slurmd stops responding and the job is requeued).
+TOTAL_KB=$(awk '/MemTotal/{print $2}' /proc/meminfo)
 while kill -0 $JULIA_PID 2>/dev/null; do
-    echo "$(date -u +%FT%T) rss_gb=$(awk -v r="$(ps -o rss= -p $JULIA_PID)" 'BEGIN{printf "%.1f", r/1048576}') free_gb=$(awk '/MemAvailable/{printf "%.1f", $2/1048576}' /proc/meminfo)" >> "$RUNDIR/logs/mem_${SLURM_JOB_ID}.log"
-    sleep 60
+    RSS_KB=$(ps -o rss= -p $JULIA_PID | tr -d ' ')
+    echo "$(date -u +%FT%T) rss_gb=$(awk -v r="$RSS_KB" 'BEGIN{printf "%.1f", r/1048576}') free_gb=$(awk '/MemAvailable/{printf "%.1f", $2/1048576}' /proc/meminfo)" >> "$RUNDIR/logs/mem_${SLURM_JOB_ID}.log"
+    if [ -n "$RSS_KB" ] && [ "$RSS_KB" -gt $(( TOTAL_KB * 9 / 10 )) ]; then
+        echo "$(date -u +%FT%T) killing the session: rss ${RSS_KB} kB exceeds 90 % of ${TOTAL_KB} kB" >> "$RUNDIR/logs/mem_${SLURM_JOB_ID}.log"
+        kill -TERM $JULIA_PID
+    fi
+    sleep 30
 done
 wait $JULIA_PID
 echo "QUEUE_EXIT=$?"

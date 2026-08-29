@@ -114,6 +114,7 @@ end
 
 skip_breeze_alone = get(ENV, "SKIP_BREEZE_ALONE", "0") == "1"
 only_reverse = get(ENV, "ONLY_REVERSE", "0") == "1"      # build the coupled models and run stage D only
+skip_coupled = get(ENV, "SKIP_COUPLED", "0") == "1"      # Breeze-alone stages only
 
 skip_breeze_alone || stage("A0 Breeze eager CPU step") do
     atmosphere = breeze_atmosphere(atmosphere_grid(CPU()))
@@ -152,14 +153,14 @@ end
 
 # ## Stage B: Breeze + bare slab, eager then compiled
 
-only_reverse || stage("B0 coupled bare slab eager CPU step") do
+only_reverse || skip_coupled || stage("B0 coupled bare slab eager CPU step") do
     model = bare_coupled_model(atmosphere_grid(CPU()))
     initialize_land!(model)
     time_step!(model, Δt)
     model
 end
 
-model_b = stage("B1 coupled bare slab construction on ReactantState") do
+model_b = skip_coupled ? nothing : stage("B1 coupled bare slab construction on ReactantState") do
     model = bare_coupled_model(atmosphere_grid(ReactantState()))
     Oceananigans.initialize!(model)
     model
@@ -173,7 +174,7 @@ end
 
 # ## Stage C: Breeze + two-tile canopy
 
-model_c = stage("C1 coupled canopy construction on ReactantState") do
+model_c = skip_coupled ? nothing : stage("C1 coupled canopy construction on ReactantState") do
     model = canopy_coupled_model(atmosphere_grid(ReactantState()))
     Oceananigans.initialize!(model)
     model
