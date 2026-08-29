@@ -158,6 +158,10 @@ end
     for fts in ftses
         update_field_time_series!(fts, time)
     end
+
+    # A no-op unless the grid's vertical is a time-varying geopotential.
+    NumericalEarth.Grids.materialize_geopotential!(atmos.grid)
+
     return nothing
 end
 

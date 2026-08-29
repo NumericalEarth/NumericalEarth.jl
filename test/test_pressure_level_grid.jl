@@ -1,13 +1,16 @@
 include("runtests_setup.jl")
 
 using Oceananigans
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: instantiated_location
 using Oceananigans.Grids: Flat, Bounded, topology
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
+using Oceananigans.TimeSteppers: time_step!
 using Statistics
 
 using NumericalEarth.Grids: PressureLevelGrid, PressureLevelVerticalDiscretization,
-                            column_fractional_z_index
+                            column_fractional_z_index, materialize_geopotential!,
+                            surface_elevation
 
 # Build a small static-Field-backed `PressureLevelVerticalDiscretization` from
 # a per-cell geopotential array. Returns the (Φ, Φ_sfc, plvd) triple.
@@ -218,7 +221,8 @@ end
             Φ_fts[2][i, j, k] = 5000.0 * k * g     # heights {5, 10, 15, 20} km
         end
 
-        tsi  = TimeSeriesInterpolation(Φ_fts, Φ_fts.grid; clock = Clock(time = 0.0))
+        clock = Clock(time = 0.0)
+        tsi  = TimeSeriesInterpolation(Φ_fts, Φ_fts.grid; clock)
         plvd = PressureLevelVerticalDiscretization(tsi; gravitational_acceleration = g)
         grid = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz),
                                      longitude=(0, 1), latitude=(0, 1), z=plvd)
@@ -226,11 +230,17 @@ end
         @test znodes(grid, Center()) ≈ [3000.0, 6000.0, 9000.0, 12000.0]
         # Lz = max - min = 20*1000 - 1*1000 = 19000.
         @test grid.Lz ≈ 19000.0
+
+        # Regression: reading `interior` of the snapshot instead of forwarding through
+        # `.operand` would collapse the column mean onto the last materialized time.
+        clock.time = 1.0
+        materialize_geopotential!(grid)
+        @test znodes(grid, Center()) ≈ [3000.0, 6000.0, 9000.0, 12000.0]
     end
 
     @testset "TimeSeriesInterpolation-backed Φ heights follow the clock" begin
-        # The whole point of the FTS-backed vertical: `rnode` must return
-        # different per-cell heights as the shared clock advances.
+        # `rnode` must return different per-cell heights as the shared clock advances — but
+        # only at each `materialize_geopotential!`, holding still in between.
         Nx, Ny, Nz = 2, 2, 3
         Φ_grid = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz),
                                        longitude=(0, 1), latitude=(0, 1), z=(0, 1))
@@ -251,8 +261,209 @@ end
 
         @test rnode(1, 1, 2, grid, ℓ...) ≈ 2000.0    # k=2 at t=0 → 2 km
         clock.time = 10.0
+        @test rnode(1, 1, 2, grid, ℓ...) ≈ 2000.0    # stale: the snapshot has not been refreshed
+        materialize_geopotential!(grid)
         @test rnode(1, 1, 2, grid, ℓ...) ≈ 4000.0    # same grid, later snapshot → 4 km
         clock.time = 5.0
+        materialize_geopotential!(grid)
         @test rnode(1, 1, 2, grid, ℓ...) ≈ 3000.0    # linear-in-time between snapshots
+    end
+
+    @testset "materialized Φ reproduces the interpolated-in-time Φ" begin
+        # Regression: the materialized snapshot must match, column by column, a static-`Field`
+        # discretization built from Φ blended to the same time by hand. Terrain cuts a different
+        # number of levels out of each column, so the clip / first-above-ground path is covered too.
+        Nx, Ny, Nz = 4, 3, 6
+        times = [0.0, 100.0, 200.0]
+        stretch = [1.0, 1.1, 1.2]           # level heights rise with time
+        raw_height(i, j, k, n) = 500.0 * (i + j) + 900.0 * k * stretch[n]
+        surface_height(i, j)   = 500.0 * (i + j) + 900.0 * (i - 0.5)   # clips k < i - 0.5
+
+        Φ_grid = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz),
+                                       longitude=(0, 1), latitude=(0, 1), z=(0, 1))
+        Φ_fts = FieldTimeSeries{Center, Center, Center}(Φ_grid, times)
+        for n in eachindex(times), i in 1:Nx, j in 1:Ny, k in 1:Nz
+            Φ_fts[n][i, j, k] = raw_height(i, j, k, n) * g
+        end
+        fill_halo_regions!(Φ_fts)
+
+        Φ_sfc_grid = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, 1),
+                                           longitude=(0, 1), latitude=(0, 1), z=(0, 1))
+        Φ_sfc = CenterField(Φ_sfc_grid)
+        interior(Φ_sfc) .= [surface_height(i, j) * g for i in 1:Nx, j in 1:Ny, k in 1:1]
+
+        clock = Clock(time = 0.0)
+        tsi   = TimeSeriesInterpolation(Φ_fts, Φ_fts.grid; clock)
+        plvd  = PressureLevelVerticalDiscretization(tsi; gravitational_acceleration = g,
+                                                    surface_geopotential = Φ_sfc)
+        grid  = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz), longitude=(0, 1), latitude=(0, 1),
+                                      z=plvd, topology=(Bounded, Bounded, Bounded))
+
+        # Blended from the two bracketing snapshots *after* each is clipped, matching the order
+        # `clip_subsurface!` and materialization impose.
+        function reference_grid(t)
+            n₁ = searchsortedlast(times, t)
+            n₂ = min(n₁ + 1, length(times))
+            w = n₂ == n₁ ? 0.0 : (t - times[n₁]) / (times[n₂] - times[n₁])
+            Φ = CenterField(Φ_grid)
+            interior(Φ) .= [(1 - w) * max(raw_height(i, j, k, n₁), surface_height(i, j)) * g +
+                                  w  * max(raw_height(i, j, k, n₂), surface_height(i, j)) * g
+                            for i in 1:Nx, j in 1:Ny, k in 1:Nz]
+            reference = PressureLevelVerticalDiscretization(Φ; gravitational_acceleration = g,
+                                                            surface_geopotential = Φ_sfc)
+            return LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz), longitude=(0, 1), latitude=(0, 1),
+                                         z=reference, topology=(Bounded, Bounded, Bounded))
+        end
+
+        rnode = Oceananigans.Grids.rnode
+        ℓ = (Center(), Center(), Center())
+
+        for t in (0.0, 37.0, 100.0, 155.5, 200.0)
+            clock.time = t
+            materialize_geopotential!(grid)
+            reference = reference_grid(t)
+
+            for i in 1:Nx, j in 1:Ny
+                for k in 1:Nz
+                    @test rnode(i, j, k, grid, ℓ...) ≈ rnode(i, j, k, reference, ℓ...)
+                end
+                # Targets spanning below the terrain to above the column top.
+                for z in range(surface_height(i, j) - 2000, raw_height(i, j, Nz, 3) + 2000, length=17)
+                    @test column_fractional_z_index(z, float(i), float(j), grid) ≈
+                          column_fractional_z_index(z, float(i), float(j), reference)
+                end
+            end
+        end
+    end
+
+    @testset "materialize_geopotential! is a no-op on a static-Field Φ" begin
+        grid, Φ, _, plvd = make_plg()
+
+        @test plvd.geopotential === Φ           # no copy, no wrapper on the static path
+        materialize_geopotential!(grid)         # warm up
+        @test (@allocated materialize_geopotential!(grid)) == 0
+    end
+
+    @testset "update_state! refreshes the materialized Φ" begin
+        # Regression: `update_state!` is the only hook that refreshes the snapshot, so dropping
+        # the call would leave a stepped atmosphere reading Φ at its initial time forever.
+        Nx, Ny, Nz = 2, 2, 3
+        Φ_grid = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz),
+                                       longitude=(0, 1), latitude=(0, 1), z=(0, 1))
+        Φ_fts = FieldTimeSeries{Center, Center, Center}(Φ_grid, [0.0, 10.0])
+        for i in 1:Nx, j in 1:Ny, k in 1:Nz
+            Φ_fts[1][i, j, k] = 1000.0 * k * g
+            Φ_fts[2][i, j, k] = 2000.0 * k * g
+        end
+        fill_halo_regions!(Φ_fts)
+
+        clock = Clock(time = 0.0)
+        tsi   = TimeSeriesInterpolation(Φ_fts, Φ_fts.grid; clock)
+        plvd  = PressureLevelVerticalDiscretization(tsi; gravitational_acceleration = g)
+        grid  = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz),
+                                      longitude=(0, 1), latitude=(0, 1), z=plvd)
+
+        atmosphere = PrescribedAtmosphere(grid, [0.0, 10.0]; clock)
+        rnode = Oceananigans.Grids.rnode
+        ℓ = (Center(), Center(), Center())
+
+        time_step!(atmosphere, 5.0)
+        @test atmosphere.clock.time == 5.0
+        @test rnode(1, 1, 2, grid, ℓ...) ≈ 3000.0
+    end
+
+    @testset "materialized Φ follows the series' time extrapolation" begin
+        # Regression: on a node and past either end of the window, the snapshot must reproduce the
+        # series' own `Clamp()` extrapolation rather than clamp or skip the refresh itself.
+        Nx, Ny, Nz = 2, 2, 3
+        Φ_grid = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz),
+                                       longitude=(0, 1), latitude=(0, 1), z=(0, 1))
+        Φ_fts = FieldTimeSeries{Center, Center, Center}(Φ_grid, [0.0, 10.0])
+        for i in 1:Nx, j in 1:Ny, k in 1:Nz
+            Φ_fts[1][i, j, k] = 1000.0 * k * g
+            Φ_fts[2][i, j, k] = 2000.0 * k * g
+        end
+        fill_halo_regions!(Φ_fts)
+
+        clock = Clock(time = 0.0)
+        tsi   = TimeSeriesInterpolation(Φ_fts, Φ_fts.grid; clock)
+        plvd  = PressureLevelVerticalDiscretization(tsi; gravitational_acceleration = g)
+        grid  = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz),
+                                      longitude=(0, 1), latitude=(0, 1), z=plvd)
+
+        rnode = Oceananigans.Grids.rnode
+        ℓ = (Center(), Center(), Center())
+
+        for (t, height) in ((10.0, 4000.0),   # exactly on the last node
+                            (25.0, 4000.0),   # past the end: clamped to the last snapshot
+                            (-5.0, 2000.0),   # before the start: clamped to the first
+                            ( 0.0, 2000.0))   # exactly on the first node
+            clock.time = t
+            materialize_geopotential!(grid)
+            @test rnode(1, 1, 2, grid, ℓ...) ≈ height
+        end
+    end
+
+    @testset "single-snapshot TimeSeriesInterpolation" begin
+        # Regression: with one time level there is no interval to blend across, and no
+        # `surface_geopotential` to clip against — both edges of the construction path.
+        Nx, Ny, Nz = 2, 2, 3
+        Φ_grid = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz),
+                                       longitude=(0, 1), latitude=(0, 1), z=(0, 1))
+        Φ_fts = FieldTimeSeries{Center, Center, Center}(Φ_grid, [0.0])
+        for i in 1:Nx, j in 1:Ny, k in 1:Nz
+            Φ_fts[1][i, j, k] = 1000.0 * k * g
+        end
+        fill_halo_regions!(Φ_fts)
+
+        clock = Clock(time = 0.0)
+        tsi   = TimeSeriesInterpolation(Φ_fts, Φ_fts.grid; clock)
+        plvd  = PressureLevelVerticalDiscretization(tsi; gravitational_acceleration = g)
+        grid  = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz), longitude=(0, 1), latitude=(0, 1),
+                                      z=plvd, topology=(Bounded, Bounded, Bounded))
+
+        rnode = Oceananigans.Grids.rnode
+        ℓ = (Center(), Center(), Center())
+
+        @test znodes(grid, Center()) ≈ [1000.0, 2000.0, 3000.0]
+        @test grid.Lz ≈ 2000.0
+        @test rnode(1, 1, 2, grid, ℓ...) ≈ 2000.0
+
+        clock.time = 500.0
+        materialize_geopotential!(grid)
+        @test rnode(1, 1, 2, grid, ℓ...) ≈ 2000.0    # one snapshot: nowhere else to go
+
+        @test surface_elevation(grid) === nothing
+        @test column_fractional_z_index(0.0, 1.0, 1.0, grid) == 1   # no clip ⇒ no plateau to skip
+    end
+
+    @testset "materialize_geopotential! refills the snapshot's halos" begin
+        # Regression: a refresh that wrote the interior without refilling halos would strand
+        # halo Φ on the previous snapshot.
+        Nx, Ny, Nz = 4, 4, 4
+        Φ_grid = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz),
+                                       longitude=(0, 1), latitude=(0, 1), z=(0, 1))
+        Φ_fts = FieldTimeSeries{Center, Center, Center}(Φ_grid, [0.0, 10.0])
+        for i in 1:Nx, j in 1:Ny, k in 1:Nz
+            Φ_fts[1][i, j, k] = 1000.0 * k * g
+            Φ_fts[2][i, j, k] = 2000.0 * k * g
+        end
+        fill_halo_regions!(Φ_fts)
+
+        clock = Clock(time = 0.0)
+        tsi   = TimeSeriesInterpolation(Φ_fts, Φ_fts.grid; clock)
+        plvd  = PressureLevelVerticalDiscretization(tsi; gravitational_acceleration = g)
+        grid  = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz),
+                                      longitude=(0, 1), latitude=(0, 1), z=plvd)
+
+        clock.time = 2.5                            # quarter of the way between snapshots
+        materialize_geopotential!(grid)
+
+        # Same values on the same grid with the same default boundary conditions, so the halos
+        # have to match as well as the interior.
+        Φ_reference = CenterField(Φ_grid)
+        interior(Φ_reference) .= [1250.0 * k * g for i in 1:Nx, j in 1:Ny, k in 1:Nz]
+        fill_halo_regions!(Φ_reference)
+        @test parent(grid.z.geopotential) ≈ parent(Φ_reference)
     end
 end
