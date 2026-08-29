@@ -144,6 +144,7 @@ export
     hydrostatic_pressure_from_surface,
     density_from_pressure,
     ocean_simulation,
+    area_scaled_biharmonic_viscosity,
     sea_ice_simulation,
     default_sea_ice,
     sea_ice_dynamics,

@@ -55,11 +55,7 @@ tracer_advection   = WENO(order=5)
 free_surface       = SplitExplicitFreeSurface(grid; substeps=70)
 catke_closure      = NumericalEarth.Oceans.default_ocean_closure()
 eddy_closure       = Oceananigans.TurbulenceClosures.IsopycnalSkewSymmetricDiffusivity(κ_skew=500, κ_symmetric=200)
-
-@inline νhb(i, j, k, grid, timescale) = Oceananigans.Operators.Azᶜᶜᶜ(i, j, k, grid)^2 / timescale
-ν = Oceananigans.Field{Center, Center, Center}(grid)
-Oceananigans.set!(ν, KernelFunctionOperation{Center, Center, Center}(νhb, grid, 15days))
-horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(; ν)
+viscous_closure    = area_scaled_biharmonic_viscosity()
 
 νz = 1e-5
 ## κz(φ) = max(2e-6, 3e-5 * |sin(φ)|)
@@ -68,7 +64,7 @@ horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(; ν)
 Oceananigans.set!(κz, KernelFunctionOperation{Center, Center, Center}(henyey_diffusivity, grid))
 vertical_diffusivity = VerticalScalarDiffusivity(ν=νz, κ=κz)
 
-closures = (catke_closure, eddy_closure, horizontal_viscosity, vertical_diffusivity)
+closures = (catke_closure, eddy_closure, viscous_closure, vertical_diffusivity)
 nothing #hide
 
 # The ocean simulation, complete with initial conditions for temperature and salinity from ECCO on Jan 1st, 1992.

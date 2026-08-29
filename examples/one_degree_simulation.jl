@@ -48,12 +48,13 @@ grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height);
 # ### Closures
 #
 # We include a Gent-McWilliams isopycnal diffusivity as a parameterization for the mesoscale
-# eddy fluxes. For vertical mixing at the upper-ocean boundary layer we include the CATKE
-# parameterization.
+# eddy fluxes, an area-scaled biharmonic viscosity for grid-scale dissipation, and the CATKE
+# parameterization for vertical mixing at the upper-ocean boundary layer.
 
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, AdvectiveFormulation
 
 eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3, skew_flux_formulation=AdvectiveFormulation())
+horizontal_viscosity = area_scaled_biharmonic_viscosity()
 vertical_mixing = NumericalEarth.Oceans.default_ocean_closure()
 
 # ### Ocean simulation
@@ -65,7 +66,7 @@ momentum_advection = WENOVectorInvariant(order=5)
 tracer_advection   = WENO(order=5)
 
 ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surface,
-                         closure=(eddy_closure, vertical_mixing))
+                         closure=(eddy_closure, horizontal_viscosity, vertical_mixing))
 
 @info "We've built an ocean simulation with model:"
 @show ocean.model
