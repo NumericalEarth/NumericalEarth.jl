@@ -32,7 +32,7 @@ using Oceananigans:
     set!
 
 using Oceananigans.Architectures: architecture
-using Oceananigans.DistributedComputations: all_reduce
+using Oceananigans.DistributedComputations: all_reduce, child_architecture
 using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, interior, interpolate!
 using Oceananigans.Forcings: Relaxation
@@ -387,8 +387,10 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
     kw...)
 
     parent_region = BoundingBox(child_grid; padding = parent_padding)
+    # The parent must cover each rank's subdomain plus halo, so it is not partitioned with the
+    # child. `child_architecture` is the identity on a serial grid. Live parent: #634.
     parent_atmosphere = PrescribedAtmosphere(parent_region, dates, parent_dataset;
-                                             architecture = architecture(child_grid), dir,
+                                             architecture = child_architecture(child_grid), dir,
                                              time_indices_in_memory = parent_time_indices_in_memory)
 
     if isnothing(surface_pressure)
