@@ -70,7 +70,7 @@ using ClimaSeaIce.Rheologies
 
             @info "Testing OceanSeaIceModel with land on $A..."
             land_dates = all_dates(RepeatYearJRA55(), :river_freshwater_flux)
-            land = JRA55PrescribedLand(arch; end_date=land_dates[2])
+            land = JRA55PrescribedLand(grid; end_date=land_dates[2])
 
             @test begin
                 ocean_with_land = ocean_simulation(grid; free_surface)

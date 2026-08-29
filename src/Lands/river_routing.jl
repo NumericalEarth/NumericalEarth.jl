@@ -1,6 +1,6 @@
-using Oceananigans.Grids: inactive_node, λnodes, φnodes
+using Oceananigans.Grids: inactive_node, λnodes, φnodes, topology, Flat
 using Oceananigans.Operators: Azᶜᶜᶜ
-using Oceananigans.Architectures: on_architecture
+using Oceananigans.Architectures: on_architecture, CPU
 using Oceananigans.Fields: interior
 
 #####
@@ -11,14 +11,14 @@ using Oceananigans.Fields: interior
     RiverRouting
 
 A static map from river-mouth cells on a forcing dataset's native grid to the
-active (wet) cells of a target ocean grid, used to deposit volumetric river
-discharge (m³ s⁻¹) as a conservative freshwater mass flux (kg m⁻² s⁻¹).
+active (wet) cells of a target ocean grid, used to deposit river discharge as a
+conservative freshwater mass flux (kg m⁻² s⁻¹).
 
 Contributions are grouped by destination ocean cell so the scatter writes each
 ocean cell exactly once (no atomics). For destination cell `c`, the contributing
 river mouths are `contribution_outlet_{i,j}[offsets[c]:offsets[c+1]-1]` with
-`contribution_weight = ρ_freshwater / Aᵒᶜᵉᵃⁿ`, chosen so the area integral of
-the deposited flux equals the total discharge times the freshwater density.
+`contribution_weight = outlet_weight / Aᵒᶜᵉᵃⁿ` (see [`build_river_routing`](@ref)),
+chosen so the area integral of the deposited flux equals the total mass delivered.
 """
 struct RiverRouting{I, W}
     contribution_outlet_i :: I
@@ -29,7 +29,16 @@ struct RiverRouting{I, W}
     offsets  :: I
 end
 
-const RoutedPrescribedLand = PrescribedLand{<:Any, <:Any, <:Any, <:Any, <:RiverRouting}
+# A routed land carries a `NamedTuple` of `RiverRouting`, one per freshwater component
+# (e.g. `(; rivers, icebergs)`), so each component scatters through its own mouth map.
+const RoutedPrescribedLand = PrescribedLand{<:Any, <:Any, <:Any, <:Any, <:NamedTuple}
+
+"""
+$(TYPEDSIGNATURES)
+
+Whether `grid` has a coastline to route river mouths onto.
+"""
+routable_grid(grid) = !(topology(grid, 1) === Flat && topology(grid, 2) === Flat)
 
 #####
 ##### Outlet (river-mouth) detection
@@ -51,18 +60,7 @@ function coastal_outlet_indices(discharge)
     fill!(outlet, false)
     launch!(arch, grid, :xy, _mark_coastal_outlets!, outlet, discharge)
 
-    outlet_mask = Array(interior(outlet))[:, :, 1]
-    indices = findall(outlet_mask)
-
-    outlet_i = [I[1] for I in indices]
-    outlet_j = [I[2] for I in indices]
-
-    λc = Array(λnodes(grid, Center(), Center(), Center()))
-    φc = Array(φnodes(grid, Center(), Center(), Center()))
-    outlet_λ = [λc[i] for i in outlet_i]
-    outlet_φ = [φc[j] for j in outlet_j]
-
-    return outlet_i, outlet_j, outlet_λ, outlet_φ
+    return outlet_indices_from_mask(Array(interior(outlet))[:, :, 1], grid)
 end
 
 @kernel function _mark_coastal_outlets!(outlet, discharge)
@@ -75,24 +73,40 @@ end
     end
 end
 
+"""
+    outlet_indices_from_mask(outlet_mask, grid)
+
+Return `(outlet_i, outlet_j, outlet_λ, outlet_φ)` for the `true` cells of a 2-D `outlet_mask` on `grid`.
+"""
+function outlet_indices_from_mask(outlet_mask, grid)
+    indices = findall(outlet_mask)
+
+    outlet_i = [I[1] for I in indices]
+    outlet_j = [I[2] for I in indices]
+
+    λc = Array(λnodes(grid, Center(), Center(), Center()))
+    φc = Array(φnodes(grid, Center(), Center(), Center()))
+    nodes = [node_λφ(λc, φc, outlet_i[n], outlet_j[n]) for n in eachindex(outlet_i)]
+
+    return outlet_i, outlet_j, first.(nodes), last.(nodes)
+end
+
 #####
 ##### Building the routing map (construction-time, on CPU)
 #####
 
 """
-    build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ;
-                        freshwater_density = 1000,
-                        maximum_search_radius = 5)
+    build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
+                        maximum_search_radius = 5, spread_radius = 1.2, maximum_spread_cells = nothing)
 
-Map each river mouth at `(outlet_λ, outlet_φ)` to the nearest active ocean cell
-of `target_grid` within `maximum_search_radius` cells, returning a
-[`RiverRouting`](@ref). River mouths with no active ocean cell in range are
-dropped (and reported), so the global freshwater budget is conserved up to the
-dropped discharge.
+Map each mouth at `(outlet_λ, outlet_φ)` onto the active ocean cells of `target_grid`, returning a [`RiverRouting`](@ref) that deposits
+`outlet_weight[n] * value[outletₙ] / Aᵒᶜᵉᵃⁿ`. The weight is the freshwater density for a volumetric discharge (m³ s⁻¹), the source-cell
+area for a per-area mass flux (kg m⁻² s⁻¹).
 """
-function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ;
-                             freshwater_density = 1000,
-                             maximum_search_radius = 5)
+function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
+                             maximum_search_radius = 5,
+                             spread_radius = 1.2,
+                             maximum_spread_cells = nothing)
 
     arch = architecture(target_grid)
     FT = eltype(target_grid)
@@ -109,21 +123,30 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     λc = Array(λnodes(target_grid, Center(), Center(), Center()))
     φc = Array(φnodes(target_grid, Center(), Center(), Center()))
 
-    # Group contributing river mouths by destination ocean cell.
-    contributions = Dict{Tuple{Int, Int}, Vector{Tuple{Int, Int}}}()
+    Nx, Ny = size(wet)
+    ocean_cells = wet_cells(wet, λc, φc)
+    maximum_degrees = maximum_search_radius * (360 / Nx + 180 / Ny) / 2
+
+    # Split each mouth's discharge equally over its plume footprint so no single coastal cell receives
+    # a runaway freshwater flux (which drives salinity to zero and crashes the run).
+    contributions = Dict{Tuple{Int, Int}, Vector{Tuple{Int, Int, FT}}}()
     dropped = 0
     for n in eachindex(outlet_i)
-        i★, j★ = nearest_active_cell(wet, λc, φc, outlet_λ[n], outlet_φ[n], maximum_search_radius)
-        if i★ == 0
+        targets = spread_target_cells(ocean_cells, outlet_λ[n], outlet_φ[n],
+                                      maximum_degrees, spread_radius, maximum_spread_cells)
+        if isempty(targets)
             dropped += 1
             continue
         end
-        push!(get!(contributions, (i★, j★), Tuple{Int, Int}[]), (outlet_i[n], outlet_j[n]))
+        w = convert(FT, outlet_weight[n]) / length(targets)
+        for (i★, j★) in targets
+            push!(get!(contributions, (i★, j★), Tuple{Int, Int, FT}[]), (outlet_i[n], outlet_j[n], w))
+        end
     end
 
     if dropped > 0
         @warn string(dropped, " of ", length(outlet_i), " river mouths had no active ocean ",
-                     "cell within ", maximum_search_radius, " cells and were dropped.")
+                     "cell in range and were dropped.")
     end
 
     target_i = Int[]
@@ -136,11 +159,11 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     for ((i★, j★), mouths) in contributions
         push!(target_i, i★)
         push!(target_j, j★)
-        w = convert(FT, freshwater_density) / convert(FT, area[i★, j★])
-        for (oi, oj) in mouths
+        A = convert(FT, area[i★, j★])
+        for (oi, oj, w) in mouths
             push!(contribution_outlet_i, oi)
             push!(contribution_outlet_j, oj)
-            push!(contribution_weight, w)
+            push!(contribution_weight, w / A)
         end
         push!(offsets, length(contribution_outlet_i) + 1)
     end
@@ -153,6 +176,37 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
                         on_architecture(arch, offsets))
 end
 
+"""
+    build_flux_routing(target_grid, flux_time_series;
+                       maximum_search_radius = 5, spread_radius = 1.2,
+                       maximum_spread_cells = nothing, outlet_detection_snapshots = 365)
+
+Route a component stored as a per-area mass flux (kg m⁻² s⁻¹) on coastal cells — the JRA55-do convention — onto `target_grid`. Mouths are
+the cells positive in any of the first `outlet_detection_snapshots` records, weighted by their source-cell area. Remaining keyword arguments
+go to [`build_river_routing`](@ref).
+"""
+function build_flux_routing(target_grid, flux_time_series;
+                            maximum_search_radius = 5,
+                            spread_radius = 1.2,
+                            maximum_spread_cells = nothing,
+                            outlet_detection_snapshots = 365)
+
+    source_grid = on_architecture(CPU(), flux_time_series.grid)
+    kᴺ = size(source_grid, 3)
+
+    # Scan a full seasonal cycle so intermittent and seasonally frozen rivers stay in the map.
+    outlet_mask = Array(interior(flux_time_series[1]))[:, :, 1] .> 0
+    for n in 2:min(outlet_detection_snapshots, length(flux_time_series.times))
+        outlet_mask .|= Array(interior(flux_time_series[n]))[:, :, 1] .> 0
+    end
+
+    outlet_i, outlet_j, outlet_λ, outlet_φ = outlet_indices_from_mask(outlet_mask, source_grid)
+    outlet_weight = [Azᶜᶜᶜ(outlet_i[n], outlet_j[n], kᴺ, source_grid) for n in eachindex(outlet_i)]
+
+    return build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
+                               maximum_search_radius, spread_radius, maximum_spread_cells)
+end
+
 @kernel function _compute_wet_mask_and_area!(wet, area, grid, kᴺ)
     i, j = @index(Global, NTuple)
     @inbounds begin
@@ -161,67 +215,87 @@ end
     end
 end
 
-# Index of the entry of sorted vector `a` closest to `x`.
-function searchsortednearest(a, x)
-    i = searchsortedfirst(a, x)
-    i == 1 && return 1
-    i > length(a) && return length(a)
-    return abs(a[i-1] - x) ≤ abs(a[i] - x) ? i - 1 : i
-end
+node_λφ(λc::AbstractVector, φc::AbstractVector, i, j) = (λc[i], φc[j])
+node_λφ(λc::AbstractMatrix, φc::AbstractMatrix, i, j) = (λc[i, j], φc[i, j])
+
+wrap180(λ) = λ - 360 * floor((λ + 180) / 360)
 
 # Approximate squared distance on the sphere (equirectangular, degrees).
 function squared_distance(λ₁, φ₁, λ₂, φ₂)
-    Δλ = (λ₂ - λ₁) * cosd((φ₁ + φ₂) / 2)
+    Δλ = wrap180(λ₂ - λ₁) * cosd((φ₁ + φ₂) / 2)
     Δφ = φ₂ - φ₁
     return Δλ^2 + Δφ^2
 end
 
-# Spiral search outward from the target cell containing (λₒ, φₒ) for the nearest
-# active ocean cell within `R` cells (Chebyshev), ranked by metric distance.
-function nearest_active_cell(wet, λc, φc, λₒ, φₒ, R)
+function wet_cells(wet, λc, φc)
     Nx, Ny = size(wet)
-    i₀ = clamp(searchsortednearest(λc, λₒ), 1, Nx)
-    j₀ = clamp(searchsortednearest(φc, φₒ), 1, Ny)
-
-    best_i = 0
-    best_j = 0
-    best_d = Inf
-
-    for r in 0:R, di in -r:r, dj in -r:r
-        max(abs(di), abs(dj)) == r || continue
-        i = i₀ + di
-        j = j₀ + dj
-        (1 ≤ i ≤ Nx && 1 ≤ j ≤ Ny) || continue
+    wet_i = Int[]; wet_j = Int[]
+    wet_λ = Float64[]; wet_φ = Float64[]
+    for j in 1:Ny, i in 1:Nx
         wet[i, j] || continue
-        d = squared_distance(λₒ, φₒ, λc[i], φc[j])
-        if d < best_d
-            best_d = d
-            best_i = i
-            best_j = j
-        end
+        λ, φ = node_λφ(λc, φc, i, j)
+        push!(wet_i, i); push!(wet_j, j)
+        push!(wet_λ, λ); push!(wet_φ, φ)
     end
+    return (i = wet_i, j = wet_j, λ = wet_λ, φ = wet_φ)
+end
 
-    return best_i, best_j
+"""
+    spread_target_cells(wet, λₒ, φₒ, maximum_degrees, spread_radius, maximum_cells)
+
+The ocean cells a mouth at `(λₒ, φₒ)` discharges into: the wet cells within `spread_radius` degrees of its
+landing cell, nearest first, capped at `maximum_cells`. `spread_radius = nothing` spreads over the whole
+`maximum_degrees` reach. Empty when no wet cell lies within `maximum_degrees`.
+"""
+function spread_target_cells(wet, λₒ, φₒ, maximum_degrees, spread_radius, maximum_cells)
+    reach = maximum_degrees^2
+    nearest = 0
+    nearest_distance = Inf
+    reachable = Int[]
+    for n in eachindex(wet.i)
+        # Cells further than `maximum_degrees` in latitude alone are out of reach, so skip the metric.
+        abs(wet.φ[n] - φₒ) < maximum_degrees || continue
+        d = squared_distance(λₒ, φₒ, wet.λ[n], wet.φ[n])
+        d < nearest_distance && (nearest_distance = d; nearest = n)
+        d < reach && push!(reachable, n)
+    end
+    nearest_distance < reach || return Tuple{Int, Int}[]
+
+    # The footprint is centered on the landing cell, so mouths relocated onto the shelf (the Ob and
+    # Yenisei move 2-3°) keep a full footprint.
+    λ★, φ★ = wet.λ[nearest], wet.φ[nearest]
+    footprint = isnothing(spread_radius) ? reach : spread_radius^2
+    targets = [(squared_distance(λ★, φ★, wet.λ[n], wet.φ[n]), n) for n in reachable]
+    filter!(t -> first(t) ≤ footprint, targets)
+    sort!(targets; by = first)
+
+    number_of_targets = isnothing(maximum_cells) ? length(targets) : min(maximum_cells, length(targets))
+    return [(wet.i[targets[m][2]], wet.j[targets[m][2]]) for m in 1:number_of_targets]
 end
 
 #####
 ##### Conservative scatter of river discharge onto the ocean grid
 #####
 
-"""Scatter prescribed river-mouth discharge onto coastal ocean cells, conserving volume."""
+"""Scatter each prescribed freshwater component onto coastal ocean cells, conserving volume."""
 function EarthSystemModels.interpolate_state!(exchanger, grid, land::RoutedPrescribedLand, coupled_model)
     arch = architecture(grid)
-    clock = coupled_model.clock
     land_freshwater_flux = exchanger.state.freshwater_flux
+    time = Time(coupled_model.clock.time)
 
     fill!(land_freshwater_flux, 0)
 
-    routing = land.river_routing
+    for name in keys(land.freshwater_flux)
+        scatter_freshwater_flux!(land_freshwater_flux, land.freshwater_flux[name],
+                                 land.river_routing[name], arch, grid, time)
+    end
+
+    return nothing
+end
+
+function scatter_freshwater_flux!(land_freshwater_flux, discharge, routing, arch, grid, time)
     n_targets = length(routing.target_i)
     n_targets == 0 && return nothing
-
-    discharge = first(land.freshwater_flux)
-    time = Time(clock.time)
 
     launch!(arch, grid, (n_targets,),
             _scatter_river_discharge!,
@@ -238,8 +312,8 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, land::RoutedPresc
     return nothing
 end
 
-# One thread per destination ocean cell sums all river mouths routed to it, so
-# each cell is written exactly once — no atomics needed.
+# One thread per destination ocean cell sums all mouths routed to it (written exactly
+# once within a launch); components accumulate across launches, so the write is `+=`.
 @kernel function _scatter_river_discharge!(flux, discharge, time,
                                            contribution_outlet_i,
                                            contribution_outlet_j,
@@ -255,6 +329,6 @@ end
             Q = ifelse(isnan(Q), zero(Q), Q)
             accumulated += contribution_weight[k] * Q
         end
-        flux[target_i[c], target_j[c], 1] = accumulated
+        flux[target_i[c], target_j[c], 1] += accumulated
     end
 end

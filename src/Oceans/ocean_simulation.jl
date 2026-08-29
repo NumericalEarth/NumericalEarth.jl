@@ -153,6 +153,38 @@ function default_ocean_closure(FT=Oceananigans.defaults.FloatType)
     return CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization(), FT; mixing_length, turbulent_kinetic_energy_equation)
 end
 
+@inline masked_river_mouth_diffusivity(i, j, k, grid, clock, fields, mask) = @inbounds mask[i, j, k]
+
+"""
+$(TYPEDSIGNATURES)
+
+A `VerticalScalarDiffusivity` adding `river_mouth_diffusivity` over the top `river_mouth_mixing_depth` metres of the
+cells `river_routing` discharges into, so a fresh plume trapped in the surface layer cannot drive the salinity to zero.
+"""
+function river_mouth_vertical_diffusivity(grid, river_routing;
+                                          river_mouth_diffusivity = 0.1,
+                                          river_mouth_mixing_depth = 10)
+
+    zᶜ = Array(znodes(grid, Center()))
+    Nz = size(grid, 3)
+    mask_data = zeros(eltype(grid), size(grid)...)
+
+    for routing in values(river_routing)
+        target_i = Array(routing.target_i)
+        target_j = Array(routing.target_j)
+        for n in eachindex(target_i), k in 1:Nz
+            zᶜ[k] > -river_mouth_mixing_depth && (mask_data[target_i[n], target_j[n], k] = river_mouth_diffusivity)
+        end
+    end
+
+    mask = CenterField(grid)
+    set!(mask, mask_data)
+
+    return VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization();
+                                     κ = masked_river_mouth_diffusivity, discrete_form = true,
+                                     loc = (Center, Center, Center), parameters = mask)
+end
+
 # Two-band shortwave penetration in the Paulson & Simpson (1977) form,
 # Defaults are Jerlov Type I (clearest open-ocean water)
 function default_radiative_forcing(grid)
@@ -258,6 +290,9 @@ end
                                  equation_of_state = TEOS10EquationOfState(; reference_density),
                                  boundary_conditions::NamedTuple = NamedTuple(),
                                  radiative_forcing = default_radiative_forcing(grid),
+                                 river_routing = nothing,
+                                 river_mouth_diffusivity = 0.1,
+                                 river_mouth_mixing_depth = 10,
                                  warn = true,
                                  verbose = false)
 
@@ -291,6 +326,9 @@ For multi-column grids:
 
 ### Radiative forcing
 By default, `radiative_forcing` is `TwoColorRadiation` scheme.
+
+### River mouths
+When `river_routing` is supplied, [`river_mouth_vertical_diffusivity`](@ref) is added to `closure`.
 
 ### Tracers and closures
 - `tracers` defaults to `(:T, :S)`.
@@ -327,6 +365,10 @@ defaults on a per-field basis.
 - `equation_of_state`: Equation of state object. Defaults to TEOS-10 (`TEOS10EquationOfState`).
 - `boundary_conditions`: User-supplied boundary conditions; merged with defaults.
 - `radiative_forcing`: Additional temperature forcing; merged into `forcing`.
+- `river_routing`: `NamedTuple` of [`RiverRouting`](@ref), typically `land.river_routing`. Defaults to
+  `nothing`, which leaves `closure` untouched.
+- `river_mouth_diffusivity`: vertical tracer diffusivity (m² s⁻¹) at the river mouths. Default: `0.1`.
+- `river_mouth_mixing_depth`: depth (m) over which it is applied. Default: `10`.
 - `warn`: If `true`, warnings are emitted for potentially unintended setups.
 - `verbose`: If `true`, prints additional setup information.
 """
@@ -351,10 +393,21 @@ function hydrostatic_ocean_simulation(grid;
                                       equation_of_state = TEOS10EquationOfState(; reference_density),
                                       boundary_conditions::NamedTuple = NamedTuple(),
                                       radiative_forcing = default_radiative_forcing(grid),
+                                      river_routing = nothing,
+                                      river_mouth_diffusivity = 0.1,
+                                      river_mouth_mixing_depth = 10,
                                       warn = true,
                                       verbose = false)
 
     FT = eltype(grid)
+
+    if !isnothing(river_routing)
+        river_mixing = river_mouth_vertical_diffusivity(grid, river_routing;
+                                                        river_mouth_diffusivity,
+                                                        river_mouth_mixing_depth)
+        closure = isnothing(closure) ? river_mixing :
+                  closure isa Tuple  ? (closure..., river_mixing) : (closure, river_mixing)
+    end
 
     if grid isa RectilinearGrid # turn off Coriolis unless user-supplied
         coriolis = default_or_override(coriolis, nothing)
