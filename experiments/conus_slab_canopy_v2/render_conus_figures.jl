@@ -378,6 +378,7 @@ end
 # ## 500 hPa height + vertical velocity through the case day
 
 iso_file = "$(tag)_isobaric.jld2"
+if isfile(iso_file)
 Z500_ts = series(iso_file, "Z_500"); w500_ts = series(iso_file, "w_500")
 
 fig = Figure(size = (1500, 650), fontsize = 14)
@@ -395,6 +396,7 @@ CairoMakie.record(fig, "$(tag)_500hPa.mp4", case; framerate = 6) do nn
     label3.text = "500 hPa — " * Dates.format(date_of(times[nn]), "dd u yyyy HH:MM") * " UTC"
 end
 @info "Saved $(tag)_500hPa.mp4"
+end
 
 close(static)
 @info "All figures rendered for $(tag)."
