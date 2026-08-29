@@ -141,6 +141,7 @@ if !isempty(previous_static) && isfile(previous_static)
     old_porosity = interior(previous["porosity"], :, :, 1)
     old_conductivity = interior(previous["conductivity"], :, :, 1)
     close(previous)
+    if size(old_porosity) == size(static["porosity"])
     fig = Figure(size = (1800, 900), fontsize = 15)
     map_panels!(fig, (("porosity — OpenLandMap 30 m (overview read)", static["porosity"], :viridis, (0.3, 0.55)),
                       ("porosity — SoilGrids 2.0 (10 km)",            old_porosity,       :viridis, (0.3, 0.55)),
@@ -152,6 +153,7 @@ if !isempty(previous_static) && isfile(previous_static)
     Label(fig[0, 1:6], "Weynants pedotransfer parameters from two texture products", fontsize = 18)
     save("$(tag)_soil_comparison.png", fig)
     @info "Saved $(tag)_soil_comparison.png"
+    end
 end
 
 # ## Spin-up: the land settles onto a repeating diurnal envelope
