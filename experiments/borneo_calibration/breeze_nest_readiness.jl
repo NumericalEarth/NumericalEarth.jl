@@ -25,7 +25,7 @@ N = parse(Int, get(ENV, "NEST_N", "16"))
 stages = split(get(ENV, "NEST_STAGES", "N0,N0t,N1,N2,N3,N4"), ",")
 
 function stage(f, name)
-    name in stages || return nothing
+    first(split(name)) in stages || return nothing
     wall = @elapsed result = try
         f()
     catch err
