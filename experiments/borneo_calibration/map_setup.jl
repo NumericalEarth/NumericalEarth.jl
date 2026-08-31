@@ -77,12 +77,13 @@ end
 
 snapshot_names = (:θ, :T, :LST, :𝒮, :Wᶜ, :LE, :LEᶜ, :LEᵍ, :H, :rain, :E)
 
-function forward_map(depth; record = false)
+function forward_map(depth; record = false, modify! = nothing)
     fields = map_fields(cpu_grid, depth)
     s = surface_parameters(static, cpu_grid, FT)
     model = borneo_coupled_model(cpu_grid, FT, forcing, s; slab_depth = surface_field(cpu_grid),
                                  exchanger_correction = correction, surface_layer_height, boundary_layer_height,
                                  inner_iterations, similarity_iterations)
+    isnothing(modify!) || modify!(model)
     initialize_map!(model, fields.h, fields.θ₀, fields.T₀, fields.q₀)
     interface = model.interfaces.atmosphere_land_interface
     land = model.land
