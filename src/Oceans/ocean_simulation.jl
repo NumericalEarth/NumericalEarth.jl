@@ -162,18 +162,7 @@ function default_ocean_closure(FT=Oceananigans.defaults.FloatType)
     return CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization(), FT; mixing_length, turbulent_kinetic_energy_equation)
 end
 
-# Two-band shortwave penetration in the Paulson & Simpson (1977) form,
-# Defaults are Jerlov Type I (clearest open-ocean water)
-function default_radiative_forcing(grid)
-    surface_fraction = 0.58  # Paulson & Simpson 1977, Table 2, Type I
-    surface_scale    = 0.35  # [m]
-    deep_scale       = 23    # [m]
-    forcing = TwoColorRadiation(grid;
-                                first_color_fraction          = surface_fraction,
-                                first_absorption_coefficient  = 1 / surface_scale,
-                                second_absorption_coefficient = 1 / deep_scale)
-    return forcing
-end
+default_radiative_forcing(grid) = TwoColorRadiation(grid)
 
 # TODO: Specify the grid to a grid on the sphere; otherwise we can provide a different
 # function that requires latitude and longitude etc for computing coriolis=FPlane...
