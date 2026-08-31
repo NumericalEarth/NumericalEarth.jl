@@ -236,6 +236,7 @@ end
             launch!(arch, grid, :xy,
                     NumericalEarthBreezeExt._apply_breeze_air_land_radiative_fluxes!,
                     surface_energy_flux,
+                    grid,
                     surface_temperature,
                     surface_emissivity,
                     stefan_boltzmann_constant,

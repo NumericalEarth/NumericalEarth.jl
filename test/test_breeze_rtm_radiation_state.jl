@@ -9,8 +9,11 @@ using RRTMGP   # activates Breeze's radiative-transfer extension (RadiativeTrans
 using Dates: DateTime
 using Test
 
+using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
 using NumericalEarth.Lands: BucketHydrology, SlabEnergy, SlabLand
 
+const rtm_Nx = 8
+const rtm_Hx = 5
 const rtm_albedo = 0.2
 const rtm_emissivity = 0.95
 
@@ -19,7 +22,7 @@ const rtm_emissivity = 0.95
 function build_rtm_land_model(arch; hour = 12)
     FT = Float64
 
-    grid = RectilinearGrid(arch, FT; size = (8, 8), halo = (5, 5),
+    grid = RectilinearGrid(arch, FT; size = (rtm_Nx, rtm_Nx), halo = (rtm_Hx, rtm_Hx),
                            x = (-1kilometer, 1kilometer), z = (0, 1kilometer),
                            topology = (Periodic, Flat, Bounded))
 
@@ -61,6 +64,11 @@ end
 
             @test Array(interior(exchanger.state.ℐꜜˢʷ)) ≈ -Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
             @test Array(interior(exchanger.state.ℐꜜˡʷ)) ≈ -Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
+
+            # Halos wrap, so a consumer iterating past the interior reads radiation, not zeros.
+            ℐꜜˢʷ = Array(parent(exchanger.state.ℐꜜˢʷ))
+            @test ℐꜜˢʷ[rtm_Hx, 1, 1] == ℐꜜˢʷ[rtm_Hx + rtm_Nx, 1, 1]
+            @test ℐꜜˢʷ[rtm_Hx + rtm_Nx + 1, 1, 1] == ℐꜜˢʷ[rtm_Hx + 1, 1, 1]
         end
 
         @testset "No shortwave at night on $A" begin
@@ -89,6 +97,15 @@ end
             # Positive upward: turbulent plus net upward radiative.
             Jᴱs = Array(interior(model.land.fluxes.surface_energy_flux))
             @test Jᴱs ≈ 𝒬 .+ ℐˡʷꜛ .+ ℐˡʷꜜ .+ (1 - rtm_albedo) .* ℐˢʷꜜ
+        end
+
+        @testset "Exchange grid must match the radiation grid on $A" begin
+            model = build_rtm_land_model(arch)
+            mismatched = RectilinearGrid(arch, Float64; size = 2 * rtm_Nx, halo = rtm_Hx,
+                                         x = (-1kilometer, 1kilometer),
+                                         topology = (Periodic, Flat, Flat))
+
+            @test_throws ArgumentError ComponentExchanger(model.radiation, mismatched)
         end
     end
 end
