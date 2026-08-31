@@ -4,13 +4,12 @@ export GlobalBuildingFootprints3D, building_morphometry
 
 using Downloads: Downloads
 using Oceananigans: Center, Face
-using Oceananigans.Architectures: architecture, on_architecture
-using Oceananigans.Fields: Field, interior
+using Oceananigans.Fields: Field, set!
 using Oceananigans.Grids: LatitudeLongitudeGrid, λnodes, φnodes
 using Oceananigans.DistributedComputations: @root
 
-using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
-                       metadata_path, BoundingBox, bounding_box_suffix
+using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum, metadata_path,
+                       BoundingBox, bounding_box_suffix, latitude_summary, native_region_grid
 
 import Oceananigans
 
@@ -226,8 +225,70 @@ function reduce_morphometry(height, longitudes, latitudes, target_grid::Latitude
               plan_area_index, frontal_area_index, gross_building_height)
 end
 
+const morphometry_names = (:mean_building_height, :building_height_deviation, :maximum_building_height,
+                           :plan_area_index, :frontal_area_index, :gross_building_height)
+
+# Download, read, and reduce the fine raster of one metadatum onto (the covered rows of)
+# `target_grid`. Returns `nothing` when no tiles intersect the metadatum's region.
+function reduced_morphometry(target_grid, metadatum)
+    isnothing(Downloads.download(metadatum)) && return nothing
+    height = DataWrangling.retrieve_data(metadatum)
+    longitudes, latitudes = DataWrangling.read_file_coords(metadatum)
+    return reduce_morphometry(height, longitudes, latitudes, target_grid)
+end
+
+function morphometry_fields(reduced, target_grid)
+    return map(reduced) do array
+        field = Field{Center, Center, Nothing}(target_grid)
+        set!(field, array)
+        return field
+    end
+end
+
 """
-    building_morphometry(target_grid; dataset = GlobalBuildingFootprints3D(), region)
+    morphometry_latitude_bands(target_grid, region, Δ, maximum_raster_cells, padding)
+
+Split the rows of `target_grid` covered by `region` into contiguous latitude bands whose native
+rasters (cell size `Δ` degrees) hold at most `maximum_raster_cells` cells each (a band never
+narrower than one row). Returns a vector of `(; rows, region)`: the target-grid row range and the
+`BoundingBox` to rasterize for it — the full `region` longitude, and the rows' latitude interval
+widened by `padding` native cells but clamped to the `region` latitude, so every band raster is a
+sub-window of the single-pass raster and band rows reduce identically to a single pass.
+"""
+function morphometry_latitude_bands(target_grid, region, Δ, maximum_raster_cells, padding)
+    Ny = size(target_grid, 2)
+    φfaces = φnodes(target_grid, Face())
+    south, north = region.latitude
+
+    band_region(j₁, j₂) = BoundingBox(longitude = region.longitude,
+                                      latitude = (max(φfaces[j₁] - padding * Δ, south),
+                                                  min(φfaces[j₂ + 1] + padding * Δ, north)))
+    function band_cells(j₁, j₂)
+        raster = native_region_grid(band_region(j₁, j₂), Δ, Δ)
+        return raster.Nx * raster.Ny
+    end
+
+    # Rows the single-pass raster reaches, including its 2-cell snap pad beyond the region;
+    # rows farther out reduce to zero in a single pass too and are left out of every band.
+    j₁ = findfirst(j -> φfaces[j + 1] > south - 2Δ, 1:Ny)
+    j₊ = findlast(j -> φfaces[j] < north + 2Δ, 1:Ny)
+
+    ranges = UnitRange{Int}[]
+    while !isnothing(j₁) && !isnothing(j₊) && j₁ <= j₊
+        j₂ = j₁
+        while j₂ < j₊ && band_cells(j₁, j₂ + 1) <= maximum_raster_cells
+            j₂ += 1
+        end
+        push!(ranges, j₁:j₂)
+        j₁ = j₂ + 1
+    end
+
+    return [(rows = rows, region = band_region(first(rows), last(rows))) for rows in ranges]
+end
+
+"""
+    building_morphometry(target_grid; dataset = GlobalBuildingFootprints3D(), region,
+                         maximum_raster_cells = 400_000_000)
 
 Per-cell building morphometry on `target_grid` (a `LatitudeLongitudeGrid`, coarser than the
 `dataset` rasterization resolution), aggregated from the fine 3D-GloBFP building-height raster
@@ -241,22 +302,55 @@ over `region`. Returns a NamedTuple of `Field`s:
 - `frontal_area_index` `λᶠ` — windward wall area from height steps, direction-averaged:
   `(Σₓ|δh|·dy + Σᵧ|δh|·dx) / (4·A)`, with `A` the cell area.
 
+A `region` whose native raster exceeds `maximum_raster_cells` (default `400_000_000` cells,
+3.2 GB of `Float64`) is reduced in latitude bands sized to the limit, reproducing the single
+pass exactly while memory stays bounded regardless of the region size; band raster files are
+deleted once reduced (the downloaded footprint tiles stay cached).
+
 Downloading and rasterizing the footprints requires `using ArchGDAL`.
 """
-function building_morphometry(target_grid::LatitudeLongitudeGrid; dataset = GlobalBuildingFootprints3D(), region)
+function building_morphometry(target_grid::LatitudeLongitudeGrid; dataset = GlobalBuildingFootprints3D(),
+                              region, maximum_raster_cells = 400_000_000)
     metadatum = Metadatum(:building_height; dataset, region)
-    Downloads.download(metadatum)
-    height = DataWrangling.retrieve_data(metadatum)
-    longitudes, latitudes = DataWrangling.read_file_coords(metadatum)
+    DataWrangling.validate_dataset_coverage(nothing, metadatum)
 
-    reduced = reduce_morphometry(height, longitudes, latitudes, target_grid)
-
-    arch = architecture(target_grid)
-    return map(reduced) do array
-        field = Field{Center, Center, Nothing}(target_grid)
-        interior(field) .= on_architecture(arch, reshape(array, size(array, 1), size(array, 2), 1))
-        field
+    Δ = globfp3d_native_cell_size(dataset)
+    raster = native_region_grid(region, Δ, Δ)
+    if raster.Nx * raster.Ny <= maximum_raster_cells
+        reduced = reduced_morphometry(target_grid, metadatum)
+        isnothing(reduced) && error("No 3D-GloBFP tiles intersect the requested region $(summary(region)).")
+        return morphometry_fields(reduced, target_grid)
     end
+
+    # A band bounding box also selects the footprint tiles to burn: pad it by ~200 m of native
+    # cells (`cld` is ceiling division) so buildings overhanging a tile just outside the band
+    # still land in the band's rows.
+    padding = cld(200, globfp3d_native_resolution(dataset))
+    bands = morphometry_latitude_bands(target_grid, region, Δ, maximum_raster_cells, padding)
+    @info string(summary(dataset), ": reducing the ", raster.Nx, " × ", raster.Ny,
+                 " cell raster over ", summary(region), " in ", length(bands), " latitude bands.")
+
+    Nx = size(target_grid, 1)
+    Ny = size(target_grid, 2)
+    accumulated = NamedTuple{morphometry_names}(ntuple(_ -> zeros(Float64, Nx, Ny), length(morphometry_names)))
+    any_tiles = false
+    for (b, band) in enumerate(bands)
+        @info string("Reducing latitude band ", b, " of ", length(bands),
+                     " (target rows ", band.rows, ", ", latitude_summary(band.region.latitude), ")...")
+        band_metadatum = Metadatum(:building_height; dataset, region = band.region)
+        reduced = reduced_morphometry(target_grid, band_metadatum)
+        # An all-water/unbuilt band intersects no tiles and reduces to zero, as in a single pass.
+        isnothing(reduced) && continue
+        any_tiles = true
+        @root rm(metadata_path(band_metadatum); force = true)
+        for name in morphometry_names
+            accumulated[name][:, band.rows] .= reduced[name][:, band.rows]
+        end
+    end
+    isempty(bands) || any_tiles ||
+        error("No 3D-GloBFP tiles intersect the requested region $(summary(region)).")
+
+    return morphometry_fields(accumulated, target_grid)
 end
 
 #####
@@ -290,7 +384,8 @@ function Downloads.download(metadatum::GlobalBuildingFootprints3DMetadatum)
     @root if !isfile(nc_path)
         globfp3d_rasterize_to_netcdf(metadatum, nc_path)
     end
-    return nc_path
+    # No file after rasterizing means no tiles intersect the region: an all-water/unbuilt window.
+    return isfile(nc_path) ? nc_path : nothing
 end
 
 # Implemented in ext/NumericalEarthArchGDALExt/globfp3d.jl.

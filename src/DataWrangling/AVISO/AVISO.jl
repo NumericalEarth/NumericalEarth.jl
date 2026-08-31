@@ -39,6 +39,8 @@ Base.size(::AVISODataset, variable) = (2880, 1440, 1)
 DataWrangling.all_dates(::AVISODaily, variable) = AVISO_FIRST_DATE : Day(1) : AVISO_DAILY_LAST_DATE
 DataWrangling.all_dates(::AVISOMonthly, variable) = AVISO_FIRST_DATE : Month(1) : AVISO_MONTHLY_LAST_DATE
 
+DataWrangling.averaging_window(metadatum::Metadatum{<:AVISOMonthly}) = DataWrangling.calendar_month_window(metadatum)
+
 const AVISO_dataset_variable_names = Dict(
     :free_surface => "adt",
     :sea_level_anomaly => "sla",
@@ -46,6 +48,7 @@ const AVISO_dataset_variable_names = Dict(
     :meridional_geostrophic_velocity => "vgos",
 )
 
+# The monthly Multi-Year product only distributes the sea level anomaly.
 const AVISO_monthly_dataset_variable_names = Dict(
     :sea_level_anomaly => "sla",
 )

@@ -219,13 +219,19 @@ using ..EarthSystemModels: DegreesCelsius, temperature_units, exchange_grid,
 Base.summary(crf::ComponentInterfaces) = "ComponentInterfaces"
 Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
 
-# Diagnostic surface (skin) temperature — the atmosphere-land interface field
-# that the atmosphere actually "sees", *not* a prognostic land variable. For
-# skin-temperature closures this differs from `land.temperature`. Returns
-# `nothing` if there is no atmosphere-land interface.
-EarthSystemModels.surface_temperature(al_interface::AtmosphereInterface) = al_interface.temperature
+# Diagnostic surface (skin) temperature — what the atmosphere "sees"; for skin-temperature
+# closures it differs from `land.temperature`. The land interface wins; then the
+# atmosphere-ocean interface; `nothing` when the atmosphere touches neither.
+EarthSystemModels.surface_temperature(interface::AtmosphereInterface) = interface.temperature
 EarthSystemModels.surface_temperature(interfaces::ComponentInterfaces) =
-    EarthSystemModels.surface_temperature(interfaces.atmosphere_land_interface)
+    EarthSystemModels.surface_temperature(interfaces.atmosphere_land_interface,
+                                          interfaces.atmosphere_ocean_interface)
+
+EarthSystemModels.surface_temperature(land_interface::AtmosphereInterface, ocean_interface) =
+    land_interface.temperature
+EarthSystemModels.surface_temperature(::Nothing, ocean_interface::AtmosphereInterface) =
+    ocean_interface.temperature
+EarthSystemModels.surface_temperature(::Nothing, ::Nothing) = nothing
 
 #####
 ##### Atmosphere-Ocean Interface
@@ -474,8 +480,13 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     # atmospheres; a per-column 2-D field for grid-aware atmospheres (Breeze). The
     # boundary-layer height is *not* cached here: it evolves with the closure and is
     # refreshed every step in the flux builders.
-    properties = (; gravitational_acceleration,
-                    surface_layer_height = surface_layer_height(atmosphere, exchange_grid))
+    zᵃᵗ = surface_layer_height(atmosphere, exchange_grid)
+
+    for interface in (ao_interface, ai_interface, al_interface)
+        isnothing(interface) || validate_zero_plane_displacement(interface.flux_formulation, zᵃᵗ)
+    end
+
+    properties = (; gravitational_acceleration, surface_layer_height = zᵃᵗ)
 
     return ComponentInterfaces(ao_interface,
                                ai_interface,
@@ -501,8 +512,8 @@ default_al_specific_humidity(land) =
 # the defaults below are uniform constants (0.1 m momentum, 0.01 m scalar, no
 # displacement). Override per-domain by passing `atmosphere_land_fluxes =
 # SimilarityTheoryFluxes(...)` with explicit roughness lengths and displacement
-# (constants, or per-cell models such as `LandRoughnessLength` /
-# `LandZeroPlaneDisplacement`) to `ComponentInterfaces` / `AtmosphereLandModel`.
+# (constants, or `Field`s of per-cell values) to `ComponentInterfaces` /
+# `AtmosphereLandModel`.
 default_atmosphere_land_fluxes(::Nothing, FT; kw...) = nothing
 
 function default_atmosphere_land_fluxes(land, FT; solver_stop_criteria = nothing)
