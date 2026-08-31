@@ -103,8 +103,9 @@ function region_info(::BoundingBox, target, λc, φc)
 
     # Shift the target's longitude into the file's `[λc[1], λc[1]+360)`, allowing half a cell of
     # slack at the west edge: a Float32 grid node can land a few ulps below `λc[1]`, and wrapping
-    # such a node by +360° would place the window at the far end of the file.
-    λfile = length(λc) > 1 ? convert_to_λ₀_λ₀_plus360(λmin, λc[1] - abs(λc[2] - λc[1]) / 2) : λmin
+    # such a node by +360° would place the window at the far end of the file. The wrap round-trips
+    # through `360 + λ`, which in Float32 costs four decimal digits, so the node is widened first.
+    λfile = length(λc) > 1 ? convert_to_λ₀_λ₀_plus360(Float64(λmin), λc[1] - abs(λc[2] - λc[1]) / 2) : λmin
 
     di = file_cell_index(λfile, λc) - 1
     dj = file_cell_index(φmin, φc) - 1
