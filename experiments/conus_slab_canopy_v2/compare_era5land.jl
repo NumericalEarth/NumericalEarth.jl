@@ -129,10 +129,11 @@ end
 sgp = (argmin(abs.(λ .+ 97.485)), argmin(abs.(φ .- 36.605)))
 
 open("$(out)_stats.txt", "w") do io
-    for (label, M) in (("canopy LST", T_A), ("bucket skin", T_C))
-        println(io, "$label vs ERA5 skin temperature (19Z ≈ 1300 CST):")
-        for day in 17:22
-            n = findfirst(==(DateTime(2011, 5, day, 19)), dates)
+    for (label, M) in (("canopy LST", T_A), ("bucket skin", T_C)),
+        (hour, when, days) in ((19, "19Z ≈ 1300 CST", 17:22), (9, "09Z ≈ 0300 CST", 18:22))
+        println(io, "$label vs ERA5 skin temperature ($when):")
+        for day in days
+            n = findfirst(==(DateTime(2011, 5, day, hour)), dates)
             b, r, c = pattern_stats(M, T_E, n)
             @printf(io, "  May %2d  bias %+6.2f K  rmse %5.2f K  r %5.3f\n", day, b, r, c)
         end
