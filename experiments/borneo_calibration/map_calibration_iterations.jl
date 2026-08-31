@@ -18,7 +18,8 @@ using CairoMakie
 using Printf
 
 Niter = parse(Int, get(ENV, "NITER", "8"))
-tag = "map_iterations_r$(refinement)_$(backend)"
+two_sided = get(ENV, "LINE_SEARCH", "adjoint_sign") == "two_sided"
+tag = "map_iterations_r$(refinement)_$(backend)" * (two_sided ? "_two_sided" : "")
 
 # ## The compiled objective: clock and state reset inside, so it is re-callable
 
@@ -88,10 +89,15 @@ for iteration in 1:Niter
     g = Array(interior(dh_out, :, :, 1))
     L = Reactant.to_number(L_ad)
 
+    # The adjoint gives the local direction; a two-sided search also tests the opposite branch,
+    # which rescues cells whose per-cell loss is bimodal in h (thin slabs track drying dips,
+    # deep slabs hold the initial value — the local gradient can point into the worse basin).
     direction = -sign.(g)
-    trial_losses = [forward_map(clamp.(depths .* (1 .+ direction .* s), 0.02, 5.0)).losses for s in trial_scales]
-    best = [argmin([trial_losses[k][i, j] for k in eachindex(trial_scales)]) for i in 1:Nx, j in 1:Ny]
-    new_depths = [land[i, j] ? clamp(depths[i, j] * (1 + direction[i, j] * trial_scales[best[i, j]]), 0.02, 5.0) : depths[i, j]
+    factors = two_sided ? vcat([(1 .+ direction .* s) for s in trial_scales], [(1 .- direction .* s) for s in trial_scales[1:end-1]]) :
+                          [(1 .+ direction .* s) for s in trial_scales]
+    trial_losses = [forward_map(clamp.(depths .* f, 0.02, 5.0)).losses for f in factors]
+    best = [argmin([trial_losses[k][i, j] for k in eachindex(factors)]) for i in 1:Nx, j in 1:Ny]
+    new_depths = [land[i, j] ? clamp(depths[i, j] * factors[best[i, j]][i, j], 0.02, 5.0) : depths[i, j]
                   for i in 1:Nx, j in 1:Ny]
     moved = count((new_depths .!= depths)[land])
     push!(history, (; iteration, L, depths = copy(depths), gradient = g))
