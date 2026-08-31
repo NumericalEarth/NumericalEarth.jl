@@ -4,11 +4,14 @@
 #
 #   julia --project=docs render_success_animation.jl
 
-include(joinpath(@__DIR__, "borneo_config.jl"))
 using CairoMakie
+using JLD2
 using Statistics: median, quantile
 using Printf
-using Dates: Hour
+using Dates: DateTime, Hour
+
+refinement = parse(Int, get(ENV, "REFINEMENT", "1"))
+start_date = DateTime(2020, 4, 1)
 
 tag = get(ENV, "TAG", "map_joint_r$(refinement)_gpu")
 run = jldopen(f -> Dict(k => f[k] for k in keys(f)), "$(tag).jld2")
