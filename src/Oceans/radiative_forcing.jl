@@ -234,9 +234,7 @@ end
     # Net radiation flux divergence
     dJdz = ϵ₁ * dJ₁dz + (1 - ϵ₁) * dJ₂dz
 
-    # The surface cell's share is delivered through the temperature boundary condition instead. That
-    # condition carries the fraction absorbed over Δr, so what stays here is Beer's law over the
-    # moving Δz minus it, and the cell is heated by its true Δz share either way.
+    # The surface cell's share is delivered through the temperature boundary condition instead. 
     surface_share = surface_absorbed_fraction(i, j, grid, R) * J₀ / Δzᶜᶜᶜ(i, j, Nz, grid)
     return dJdz - ifelse(k == Nz, surface_share, zero(dJdz))
 end
