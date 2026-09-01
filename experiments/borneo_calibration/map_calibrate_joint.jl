@@ -21,7 +21,7 @@ using CairoMakie
 using Printf
 
 Niter = parse(Int, get(ENV, "NITER", "8"))
-tag = "map_joint_r$(refinement)_$(backend)"
+tag = "map_joint_r$(refinement)_$(backend)" * get(ENV, "TAG_SUFFIX", "")
 
 q_pedotransfer = log10.(max.(static.matching_point_conductivity, 1e-9))
 q_low, q_high = q_pedotransfer .- 1, q_pedotransfer .+ 4

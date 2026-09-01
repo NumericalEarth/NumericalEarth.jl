@@ -4,19 +4,21 @@
 # ERA5-Land per window, beside the uncalibrated model. Requires caches ingested with an
 # extended window, e.g. END_DATE=2020-04-22.
 #
-#   REFINEMENT=1 NSTEPS=2880 END_DATE=2020-04-22 julia --project=docs map_validation.jl
+#   REFINEMENT=1 NSTEPS=2880 END_DATE=2020-04-22 CALIBRATION=map_joint_r1_gpu CALIBRATION_STEPS=900 julia --project=docs map_validation.jl
 
 include(joinpath(@__DIR__, "map_setup.jl"))
 using Statistics: std
 
-calibration_steps = 900
-tag = "map_validation_r$(refinement)"
+calibration = get(ENV, "CALIBRATION", "map_joint_r$(refinement)_gpu")
+calibration_steps = parse(Int, get(ENV, "CALIBRATION_STEPS", "900"))
+tag = "validation_of_$(calibration)"
 steps_per_hour = round(Int, 3600 / Δt)
 Nh = Nsteps ÷ steps_per_hour + 1
 length(era5_land.times) ≥ Nh || error("era5_land cache holds $(length(era5_land.times)) hours, need $Nh; re-ingest with a later END_DATE")
 
-it = jldopen(f -> Dict(k => f[k] for k in keys(f)), "map_joint_r$(refinement)_gpu.jld2")
+it = jldopen(f -> Dict(k => f[k] for k in keys(f)), "$(calibration).jld2")
 calibrated_depths, q = it["depths"], it["q"]
+q_conductivity_only = jldopen(f -> f["q"], "map_logK_r$(refinement)_gpu.jld2")
 
 conductivity_field(model) = model.land.hydrology.soil.soil.hydraulic_conductivity.matching_point_conductivity
 cpu_scratch = surface_field(land_grid(CPU(), FT))
@@ -30,6 +32,7 @@ q_fill = median(q[land])
 with_conductivity(qv) = model -> (set_cells!(conductivity_field(model), exp10.(qv), exp10(q_fill)); nothing)
 
 calibrated   = forward_map(calibrated_depths; record = true, modify! = with_conductivity(q))
+conductivity_only = forward_map(fill(h₀, Nx, Ny); record = true, modify! = with_conductivity(q_conductivity_only))
 uncalibrated = forward_map(fill(h₀, Nx, Ny); record = true)
 
 # ## Window-split scores on the hourly series
@@ -54,7 +57,7 @@ function window_scores(result, hours)
                           for i in 1:Nx, j in 1:Ny])
 end
 
-for (name, result) in (("calibrated (h, K₀)", calibrated), ("uncalibrated", uncalibrated))
+for (name, result) in (("calibrated (h, K₀)", calibrated), ("K₀ only, h = h₀", conductivity_only), ("uncalibrated", uncalibrated))
     fit, held = window_scores(result, calibration_hours), window_scores(result, validation_hours)
     @info @sprintf("%-18s fitting window: RMS %.4f, median r %.3f, σ ratio %.2f;  held out (%.1f days): RMS %.4f, median r %.3f, σ ratio %.2f",
                    name, fit.rms, fit.median_r, fit.median_σratio, (Nh - last(calibration_hours)) / 24,
@@ -85,6 +88,7 @@ days = (0:Nh-1) ./ 24
 vspan!(ax, t_split, (Nh - 1) / 24; color = (:seagreen, 0.08))
 lines!(ax, days, med(θ_obs); color = :black, linewidth = 2, label = "ERA5-Land")
 lines!(ax, days, med(uncalibrated.snapshots.θ); color = :steelblue, linewidth = 2, label = "uncalibrated")
+lines!(ax, days, med(conductivity_only.snapshots.θ); color = :darkorange, linewidth = 2, label = "K₀ only, h = h₀")
 lines!(ax, days, med(calibrated.snapshots.θ); color = :firebrick, linewidth = 2, label = "calibrated (h, K₀)")
 vlines!(ax, [t_split]; color = :gray30, linestyle = :dash)
 text!(ax, t_split + 0.15, 0.0; text = "held out →", space = :relative, align = (:left, :bottom), color = :gray30)
