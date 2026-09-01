@@ -13,8 +13,12 @@ using Printf
 using Dates: DateTime, Hour
 
 start_date = DateTime(2020, 4, 1)
-short = jldopen(f -> Dict(k => f[k] for k in keys(f)), "validation_of_map_joint_r1_gpu.jld2")
-long  = jldopen(f -> Dict(k => f[k] for k in keys(f)), "validation_of_map_joint_r1_gpu_12d.jld2")
+# Any two validation runs; defaults compare the wet-week and 12.25-day joint calibrations.
+short = jldopen(f -> Dict(k => f[k] for k in keys(f)), get(ENV, "VALIDATION_A", "validation_of_map_joint_r1_gpu.jld2"))
+long  = jldopen(f -> Dict(k => f[k] for k in keys(f)), get(ENV, "VALIDATION_B", "validation_of_map_joint_r1_gpu_12d.jld2"))
+label_a = get(ENV, "LABEL_A", "calibrated on days 0–6.25")
+label_b = get(ENV, "LABEL_B", "calibrated on days 0–12.25")
+output = get(ENV, "OUTPUT", "validation_comparison_r1")
 θ_obs = short["θ_obs"]
 θ_unc = short["snapshots_uncalibrated"][:θ]
 θ_6d, θ_12d = short["snapshots"][:θ], long["snapshots"][:θ]
@@ -29,8 +33,8 @@ split_6d, split_12d = short["calibration_steps"] ÷ 6 + 1, long["calibration_ste
 
 # ## Scores on identical windows
 
-windows = ("days 0–6.25" => 1:split_6d, "days 6.25–12.25" => split_6d:split_12d, "days 12.25–20" => split_12d:Nh)
-configs = ("uncalibrated" => θ_unc, "calibrated on 6.25 d" => θ_6d, "calibrated on 12.25 d" => θ_12d)
+windows = ("days 0–6.25" => 1:151, "days 6.25–12.25" => 151:295, "days 12.25–20" => 295:Nh)
+configs = ("uncalibrated" => θ_unc, label_a => θ_6d, label_b => θ_12d)
 function scores(θm, hours)
     r = Float64[]; σ = Float64[]; mse = Float64[]
     for c in cells
@@ -72,25 +76,25 @@ function panel!(pos, data, ttl, label; colormap, colorrange)
 end
 panel!((1, 1), @lift(mask(θ_obs[$n, :, :])), "ERA5-Land θ (0–28 cm)", "m³ m⁻³"; colormap = :tempo, colorrange = θlim)
 panel!((1, 3), @lift(mask(θ_unc[$n, :, :])), "uncalibrated", "m³ m⁻³"; colormap = :tempo, colorrange = θlim)
-panel!((1, 5), @lift(mask(θ_6d[$n, :, :])), "calibrated on days 0–6.25", "m³ m⁻³"; colormap = :tempo, colorrange = θlim)
-panel!((1, 7), @lift(mask(θ_12d[$n, :, :])), "calibrated on days 0–12.25", "m³ m⁻³"; colormap = :tempo, colorrange = θlim)
+panel!((1, 5), @lift(mask(θ_6d[$n, :, :])), label_a, "m³ m⁻³"; colormap = :tempo, colorrange = θlim)
+panel!((1, 7), @lift(mask(θ_12d[$n, :, :])), label_b, "m³ m⁻³"; colormap = :tempo, colorrange = θlim)
 panel!((1, 9), @lift(mask(rain[$n, :, :]) .* 3600), "ERA5 rain", "mm h⁻¹"; colormap = :dense, colorrange = rainlim)
-panel!((2, 1), @lift(mask(abs.(θ_6d[$n, :, :] .- θ_obs[$n, :, :]))), "|mismatch|, 6.25-day calibration", "m³ m⁻³"; colormap = :amp, colorrange = mlim)
-panel!((2, 3), @lift(mask(abs.(θ_12d[$n, :, :] .- θ_obs[$n, :, :]))), "|mismatch|, 12.25-day calibration", "m³ m⁻³"; colormap = :amp, colorrange = mlim)
+panel!((2, 1), @lift(mask(abs.(θ_6d[$n, :, :] .- θ_obs[$n, :, :]))), "|mismatch|, " * label_a, "m³ m⁻³"; colormap = :amp, colorrange = mlim)
+panel!((2, 3), @lift(mask(abs.(θ_12d[$n, :, :] .- θ_obs[$n, :, :]))), "|mismatch|, " * label_b, "m³ m⁻³"; colormap = :amp, colorrange = mlim)
 
 ax = Axis(fig[2, 5:10]; title = "domain-median θ(t)", xlabel = "day", ylabel = "θ (m³ m⁻³)")
 vspan!(ax, 0, (split_6d - 1) / 24; color = (:firebrick, 0.07))
 vspan!(ax, 0, (split_12d - 1) / 24; color = (:darkorange, 0.07))
 lines!(ax, days, med(θ_obs); color = :black, linewidth = 2, label = "ERA5-Land")
 lines!(ax, days, med(θ_unc); color = :steelblue, linewidth = 2, label = "uncalibrated")
-lines!(ax, days, med(θ_6d); color = :firebrick, linewidth = 2, label = "calibrated on days 0–6.25")
-lines!(ax, days, med(θ_12d); color = :darkorange, linewidth = 2, label = "calibrated on days 0–12.25")
+lines!(ax, days, med(θ_6d); color = :firebrick, linewidth = 2, label = label_a)
+lines!(ax, days, med(θ_12d); color = :darkorange, linewidth = 2, label = label_b)
 vlines!(ax, [(split_6d - 1) / 24, (split_12d - 1) / 24]; color = :gray40, linestyle = :dash)
 vlines!(ax, @lift([($n - 1) / 24]); color = :gray20)
 axislegend(ax; position = :rt)
 
 stride = parse(Int, get(ENV, "FRAME_STRIDE", "1"))   # hours per frame; 2 keeps the file small enough to embed
-name = stride == 1 ? "validation_comparison_r1.mp4" : "validation_comparison_r1_$(stride)h.mp4"
+name = stride == 1 ? "$(output).mp4" : "$(output)_$(stride)h.mp4"
 CairoMakie.record(fig, name, 1:stride:Nh; framerate = 12 ÷ stride, compression = 28) do k
     n[] = k
 end
