@@ -483,8 +483,13 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     # atmospheres; a per-column 2-D field for grid-aware atmospheres (Breeze). The
     # boundary-layer height is *not* cached here: it evolves with the closure and is
     # refreshed every step in the flux builders.
-    properties = merge((; gravitational_acceleration,
-                          surface_layer_height = surface_layer_height(atmosphere, exchange_grid)),
+    zᵃᵗ = surface_layer_height(atmosphere, exchange_grid)
+
+    for interface in (ao_interface, ai_interface, al_interface)
+        isnothing(interface) || validate_zero_plane_displacement(interface.flux_formulation, zᵃᵗ)
+    end
+
+    properties = merge((; gravitational_acceleration, surface_layer_height = zᵃᵗ),
                        biogeochemical_interface(atmosphere, ocean))
 
     return ComponentInterfaces(ao_interface,
@@ -511,8 +516,8 @@ default_al_specific_humidity(land) =
 # the defaults below are uniform constants (0.1 m momentum, 0.01 m scalar, no
 # displacement). Override per-domain by passing `atmosphere_land_fluxes =
 # SimilarityTheoryFluxes(...)` with explicit roughness lengths and displacement
-# (constants, or per-cell models such as `LandRoughnessLength` /
-# `LandZeroPlaneDisplacement`) to `ComponentInterfaces` / `AtmosphereLandModel`.
+# (constants, or `Field`s of per-cell values) to `ComponentInterfaces` /
+# `AtmosphereLandModel`.
 default_atmosphere_land_fluxes(::Nothing, FT; kw...) = nothing
 
 function default_atmosphere_land_fluxes(land, FT; solver_stop_criteria = nothing)

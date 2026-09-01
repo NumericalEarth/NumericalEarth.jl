@@ -41,10 +41,7 @@ const era5_land_region = BoundingBox(longitude=(12.5, 13.0), latitude=(42.8, 43.
 end
 
 @testset "ERA5YearlySingleLevel FieldTimeSeries spans a year boundary" begin
-    # Before the fix, build_filename collapsed every requested date to the FIRST
-    # date's year file — reading Jan 1's timestamp from the 2020 file would find
-    # no matching time and error() loudly. This confirms the real fix reads each
-    # date from its own (correct) yearly file with real downloaded data.
+    # Each requested date is read from its own yearly file, with real downloaded data.
     dataset = ERA5YearlySingleLevel()
     variable = :temperature
     dates = [DateTime(2020, 12, 31, 22), DateTime(2020, 12, 31, 23),
@@ -65,10 +62,8 @@ end
 end
 
 @testset "ERA5MonthlySingleLevel FieldTimeSeries spans a year boundary" begin
-    # The dangerous variant: each monthly file holds a SINGLE timestep, so the
-    # pre-fix collapse silently returned December's data for January too (no
-    # error — retrieve_data just reads the only timestep in whatever file it's
-    # given). The `v1 != v2` check below is the direct regression guard.
+    # Each monthly file holds a single timestep, so collapsing two dates onto one file would return
+    # the same data twice without erroring. The `v1 != v2` check below is the guard.
     dataset = ERA5MonthlySingleLevel()
     variable = :temperature
     dates = [DateTime(2020, 12, 1), DateTime(2021, 1, 1)]
