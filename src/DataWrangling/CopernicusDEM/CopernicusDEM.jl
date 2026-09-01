@@ -13,9 +13,8 @@ function __init__()
     global download_CopernicusDEM_cache = DataWrangling.download_cache("CopernicusDEM")
 end
 
-# Variable name in the regional NetCDF we materialize from the Zarr store; this is
-# what `_regrid_bathymetry` reads back. The name inside the Zarr store itself is
-# `dataset_zarr_variable_name`, read within the Zarr extension.
+# Variable name in the regional NetCDF that `download(metadatum)` materializes from the
+# Zarr store. The name inside the Zarr store itself is `dataset_zarr_variable_name`.
 CopernicusDEM_bathymetry_variable_names = Dict(:bottom_height => "z")
 
 const dataset_zarr_variable_name = "dsm"
@@ -29,7 +28,10 @@ vegetation. Heights are referenced to the EGM2008 geoid; ocean is set to 0.
 
 Because GLO-30 is a global 30 m product (≈ 1.3M × 0.65M cells), it is read in
 regional windows only: construct the `Metadatum` with a longitude/latitude
-`BoundingBox` and use it with [`regrid_topography`](@ref).
+`BoundingBox` and use it with [`regrid_topography`](@ref). The window is streamed
+from the store one longitude/latitude tile at a time and regridded by an
+area-weighted average of the cells falling in each target cell, so memory is
+bounded by the tile rather than the window.
 
 Data is read from the Earth Data Hub Zarr store, which requires a (free) DestinE
 personal access token in the `DESTINE_ACCESS_TOKEN` environment variable. Register
