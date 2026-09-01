@@ -89,7 +89,9 @@ vlines!(ax, [(split_6d - 1) / 24, (split_12d - 1) / 24]; color = :gray40, linest
 vlines!(ax, @lift([($n - 1) / 24]); color = :gray20)
 axislegend(ax; position = :rt)
 
-CairoMakie.record(fig, "validation_comparison_r1.mp4", 1:Nh; framerate = 12, compression = 28) do k
+stride = parse(Int, get(ENV, "FRAME_STRIDE", "1"))   # hours per frame; 2 keeps the file small enough to embed
+name = stride == 1 ? "validation_comparison_r1.mp4" : "validation_comparison_r1_$(stride)h.mp4"
+CairoMakie.record(fig, name, 1:stride:Nh; framerate = 12 ÷ stride, compression = 28) do k
     n[] = k
 end
-@info "saved validation_comparison_r1.mp4 ($(round(filesize("validation_comparison_r1.mp4") / 1e6, digits = 1)) MB)"
+@info "saved $name ($(round(filesize(name) / 1e6, digits = 1)) MB)"
