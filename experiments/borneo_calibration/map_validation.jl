@@ -18,7 +18,7 @@ length(era5_land.times) ≥ Nh || error("era5_land cache holds $(length(era5_lan
 
 it = jldopen(f -> Dict(k => f[k] for k in keys(f)), "$(calibration).jld2")
 calibrated_depths, q = it["depths"], it["q"]
-q_conductivity_only = jldopen(f -> f["q"], "map_logK_r$(refinement)_gpu.jld2")
+q_conductivity_only = jldopen(f -> f["q"], get(ENV, "CONDUCTIVITY_ONLY", "map_logK_r$(refinement)_gpu$(tag_suffix).jld2"))
 
 conductivity_field(model) = model.land.hydrology.soil.soil.hydraulic_conductivity.matching_point_conductivity
 cpu_scratch = surface_field(land_grid(CPU(), FT))

@@ -21,7 +21,7 @@ using CairoMakie
 using Printf
 
 Niter = parse(Int, get(ENV, "NITER", "10"))
-tag = "map_logK_r$(refinement)_$(backend)"
+tag = "map_logK_r$(refinement)_$(backend)$(tag_suffix)"
 
 q_pedotransfer = log10.(max.(static.matching_point_conductivity, 1e-9))
 q_low, q_high = q_pedotransfer .- 1, q_pedotransfer .+ 4
@@ -66,7 +66,7 @@ dk_ad = Enzyme.make_zero(k_ad)
 s_ad = surface_parameters(static, grid_ad, FT)
 model_ad = borneo_coupled_model(grid_ad, FT, forcing, s_ad; slab_depth = surface_field(grid_ad),
                                 exchanger_correction = correction, surface_layer_height, boundary_layer_height,
-                                inner_iterations, similarity_iterations)
+                                inner_iterations, similarity_iterations, hydrology_options(grid_ad)...)
 Oceananigans.initialize!(model_ad)
 
 dmodel₀ = Enzyme.make_zero(model_ad)

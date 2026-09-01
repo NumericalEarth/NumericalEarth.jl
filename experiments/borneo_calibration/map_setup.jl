@@ -9,6 +9,7 @@ using Enzyme
 using Reactant: @trace
 using CairoMakie
 using Statistics: mean, median, cor, std
+using Oceananigans.OutputReaders: FieldTimeSeries
 using Printf
 
 FT = Float64
@@ -20,7 +21,10 @@ lapse_rate = 6.5e-3
 inner_iterations = parse(Int, get(ENV, "INNER_ITERATIONS", "6"))         # canopy Newton iterations per step
 similarity_iterations = parse(Int, get(ENV, "SIMILARITY_ITERATIONS", "4"))  # Monin–Obukhov iterates per step
 backend = get(ENV, "ARCH", "cpu")
-tag = "map_calibration_r$(refinement)_$(backend)"
+deep_flux = get(ENV, "DEEP_FLUX", "free")                       # "free" drainage or "darcy" exchange
+exchange_length = parse(Float64, get(ENV, "EXCHANGE_LENGTH", "0.36"))   # m, slab bottom to the deep reservoir
+tag_suffix = get(ENV, "TAG_SUFFIX", "")
+tag = "map_calibration_r$(refinement)_$(backend)$(tag_suffix)"
 
 static    = load_static()
 forcing   = load_cache("forcing")
@@ -42,6 +46,29 @@ weight = FT.(.!static.water)
 θ₀ = FT.(static.initial_soil_water)
 T₀ = FT.(forcing.skin_temperature)
 correction = AltitudeCorrection(forcing.land_elevation, forcing.era5_elevation; lapse_rate)
+
+# ## The bottom boundary: free drainage, or Darcy exchange with a deep reservoir held at the
+# head of ERA5-Land's 28–100 cm layer through each cell's own van Genuchten curve
+
+function deep_head(θ, α, n, ν, θʳ)
+    𝒮 = clamp((θ - θʳ) / (ν - θʳ), 1e-6, 1)
+    m = 1 - 1 / n
+    return 𝒮 ≥ 1 ? 0.0 : -(𝒮^(-1 / m) - 1)^(1 / n) / α
+end
+
+function deep_pressure_head_series(grid)
+    Πᵈ = FieldTimeSeries{Center, Center, Nothing}(grid, era5_land.times)
+    slice = zeros(FT, Nx + 2Hx, Ny + 2Hy, 1)
+    for k in eachindex(era5_land.times)
+        slice[1 + Hx:Nx + Hx, 1 + Hy:Ny + Hy, 1] .= deep_head.(era5_land.layer_3[k, :, :], static.inverse_air_entry_head,
+                                                              static.pore_size_uniformity, static.porosity, static.residual_liquid_fraction)
+        parent(Πᵈ[k]) .= slice
+    end
+    return Πᵈ
+end
+
+hydrology_options(grid) = deep_flux == "darcy" ?
+    (; deep_liquid_flux = DarcyDeepLiquidFlux(FT; exchange_length), deep_pressure_head = deep_pressure_head_series(grid)) : (;)
 
 # ## State initialization shared by every run (parent-level, so it traces on any backend)
 
@@ -82,7 +109,7 @@ function forward_map(depth; record = false, modify! = nothing, hydrology...)
     s = surface_parameters(static, cpu_grid, FT)
     model = borneo_coupled_model(cpu_grid, FT, forcing, s; slab_depth = surface_field(cpu_grid),
                                  exchanger_correction = correction, surface_layer_height, boundary_layer_height,
-                                 inner_iterations, similarity_iterations, hydrology...)
+                                 inner_iterations, similarity_iterations, merge(hydrology_options(cpu_grid), hydrology)...)
     isnothing(modify!) || modify!(model)
     initialize_map!(model, fields.h, fields.θ₀, fields.T₀, fields.q₀)
     interface = model.interfaces.atmosphere_land_interface

@@ -21,13 +21,13 @@ using CairoMakie
 using Printf
 
 Niter = parse(Int, get(ENV, "NITER", "8"))
-tag = "map_joint_r$(refinement)_$(backend)" * get(ENV, "TAG_SUFFIX", "")
+tag = "map_joint_r$(refinement)_$(backend)$(tag_suffix)"
 
 q_pedotransfer = log10.(max.(static.matching_point_conductivity, 1e-9))
 q_low, q_high = q_pedotransfer .- 1, q_pedotransfer .+ 4
 q_fill = median(q_pedotransfer[weight .> 0])
-q_start = isfile("map_logK_r$(refinement)_$(backend).jld2") ?
-          jldopen(f -> f["q"], "map_logK_r$(refinement)_$(backend).jld2") : copy(q_pedotransfer)
+warm_start = get(ENV, "WARM_START", "map_logK_r$(refinement)_$(backend)$(tag_suffix).jld2")
+q_start = isfile(warm_start) ? jldopen(f -> f["q"], warm_start) : copy(q_pedotransfer)
 
 conductivity_field(model) = model.land.hydrology.soil.soil.hydraulic_conductivity.matching_point_conductivity
 
@@ -70,7 +70,7 @@ dk_ad = Enzyme.make_zero(k_ad)
 s_ad = surface_parameters(static, grid_ad, FT)
 model_ad = borneo_coupled_model(grid_ad, FT, forcing, s_ad; slab_depth = surface_field(grid_ad),
                                 exchanger_correction = correction, surface_layer_height, boundary_layer_height,
-                                inner_iterations, similarity_iterations)
+                                inner_iterations, similarity_iterations, hydrology_options(grid_ad)...)
 Oceananigans.initialize!(model_ad)
 
 dmodel₀ = Enzyme.make_zero(model_ad)
