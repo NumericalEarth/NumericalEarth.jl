@@ -39,6 +39,9 @@ Environment variables (physics):
                 grounded keels. Default: "true".
   ICE_DRAG      Ice-ocean drag coefficient. Default: 5.5e-3 (Hibler/McPhee, also ClimaSeaIce
                 own default). The previous value 3.24e-3 is GFDL SIS2 CDW.
+  ICE_PSTAR     Ice compressive strength P* in N/m^2, the EVP rheology's strength parameter.
+                Default: 27500 (CICE/ClimaSeaIce). Raising it stiffens the pack and slows the
+                export; the literature range is roughly 20000-45000.
   ICE_HEAT_TRANSFER
                 Ice-ocean turbulent heat transfer coefficient alpha_h. Default: 0.0057 (McPhee
                 Stanton number, the value consistent with a COMPUTED friction velocity). The
@@ -69,7 +72,31 @@ Environment variables (physics):
   BIHVISC       Constant biharmonic viscosity ν in m^4/s (default: unset).
                 When set, overrides BIHARMONIC and uses ν directly instead of
                 the grid-area-scaled νhb = Az^2 / λ form.
-  CB            CATKE buoyancy mixing length parameter Cᵇ (default: 0.28)
+  CB            CATKE bottom-distance coefficient for the shear length scale Cᵇ (default: 0.28).
+                It enters as min(Cˢ*depth, Cᵇ*height_above_bottom, ℓᴺ), so it caps the stable
+                mixing length through the whole column, not only near the bottom.
+  CP            CATKE convective penetration length coefficient for tracers Cᵉc (default: 0.112).
+                Sets how far a convective plume entrains below the unstable layer.
+  ICE_FW        Fraction of the sea ice-ocean mass exchange delivered to the ocean, volume and salt
+                alike (default: 1). The withheld water leaves the ocean+ice+snow total and
+                NORMALIZE_FRESHWATER returns it globally through the free surface, so the global
+                budget still closes while the local delivery is scaled.
+                Adds "_icefw<value>" to the run name.
+  ICE_MELT_MIX  Set to "true" for extra vertical tracer diffusivity where the sea ice is melting into
+                the ocean, the same device river runoff already gets. The ice-ocean exchange lands in
+                the surface cell, so a melt event leaves a one-cell lid the closure must erode; in
+                reality it is stirred through the ice-ocean boundary layer under keels of 1-3 m.
+                Adds "_icemix" to the run name.
+  ICE_MELT_K    That diffusivity in m^2/s (default: 5e-4). NOT the river value of 0.1, which mixes
+                sqrt(2*k*t) ~ 131 m in a day and is convective adjustment rather than boundary-layer
+                stirring; 5e-4 gives ~9 m/day.
+  ICE_MELT_DEPTH      Depth over which it is applied, in m (default: 10).
+  ICE_MELT_THRESHOLD  Melt rate below which it stays off, in m/s (default: 1e-9, about 0.03 m/yr),
+                so a column near no net exchange does not flicker it on and off between steps.
+  ICE_VSF       Set to "true" to deliver that exchange as a virtual salt flux at fixed ocean volume
+                instead of as a real volume flux, isolating the volume pathway from the freshwater
+                amount. Does not conserve total salt. Overrides ICE_FW.
+                Adds "_icevsf" to the run name.
   CLOSURE       Ocean vertical closure: "catke" (default), "simple", "nori", "rbvd",
                 "kpp", or "nemo_tke"
                 ("simple" = ConvectiveAdjustment + depth-stepped background κ/ν;
@@ -180,6 +207,10 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
   RIVER_SPREAD_CELLS  Cells in that footprint, nearest first: a cap when RIVER_SPREAD is
                 a radius, the footprint itself when it is "none". Per-config default:
                 unset (uncapped) for the refined grids, 8 for orca/test.
+  RIVER_DIVERSION  Fraction (0-1) of the river and iceberg discharge landing in the Atlantic
+                that is delivered to the Pacific instead, at the latitude it was diverted from.
+                The global freshwater input is unchanged; only the basin receiving it is.
+                Adds "_divert<value>" to the run name. Default: 0.
   RIVER_MIXING  Set to "false" to disable the extra vertical diffusivity applied over
                 the spread footprint. Default: true.
   RIVER_MIXING_K      That diffusivity in m^2/s (default: 0.1).
@@ -199,6 +230,8 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
                 climatology, cycled annually, so the decay scale varies in space and season. A number
                 gives globally uniform optics with that chlorophyll in mg/m^3; 0.147 reproduces the
                 Jerlov Type I 23 m scale that was the default before the climatology landed.
+                "none" removes the penetrating scheme, so the whole shortwave is applied to the
+                surface heat flux and the vertical closure's surface buoyancy flux sees it.
                 Adds "_chl<value>" to the run name unless it is "seawifs".
   BACKGROUND_NU Uniform interior background viscosity ν in m^2/s. Default: unset, i.e. 3e-5
                 for CATKE (1e-4 for RBVD). Adds "_bgnu<value>" to the run name.
@@ -370,6 +403,7 @@ RUN_NAME="$CONFIG"
 [[ "${ICE_BASAL:-true}" == "true" ]]           && RUN_NAME="${RUN_NAME}_landfast"
 [[ "${ICE_DRAG:-5.5e-3}" != "3.24e-3" ]]       && RUN_NAME="${RUN_NAME}_cio${ICE_DRAG:-5.5e-3}"
 [[ "${ICE_HEAT_TRANSFER:-0.0057}" != "0.0095" ]] && RUN_NAME="${RUN_NAME}_ah${ICE_HEAT_TRANSFER:-0.0057}"
+[[ -n "${ICE_PSTAR:-}" ]]                        && RUN_NAME="${RUN_NAME}_pstar${ICE_PSTAR}"
 [[ "${ICE_CATEGORIES:-1}" != "1" ]]              && RUN_NAME="${RUN_NAME}_ncat${ICE_CATEGORIES}"
 [[ "${CLOSURE:-catke}" == "simple"   ]]        && RUN_NAME="${RUN_NAME}_simple"
 [[ "${CLOSURE:-catke}" == "nori"     ]]        && RUN_NAME="${RUN_NAME}_nori"
@@ -388,11 +422,18 @@ case "${NORMALIZE_FRESHWATER:-none}" in
   true|timestep) RUN_NAME="${RUN_NAME}_fwnorm" ;;
   annual)        RUN_NAME="${RUN_NAME}_fwnormann" ;;
 esac
+[[ -n "${RIVER_DIVERSION:-}" ]]                && RUN_NAME="${RUN_NAME}_divert${RIVER_DIVERSION}"
 [[ "${SKEW_FORMULATION:-diffusive}" == "advective" ]]      && RUN_NAME="${RUN_NAME}_gmadv"
 [[ "${SKEW_FORMULATION:-diffusive}" == "boundary_value" ]] && RUN_NAME="${RUN_NAME}_gmbvp"
 [[ -n "${BVP_MODE:-}" ]]                       && RUN_NAME="${RUN_NAME}_bvpm${BVP_MODE}"
 [[ -n "${BVP_CMIN:-}" ]]                       && RUN_NAME="${RUN_NAME}_bvpc${BVP_CMIN}"
 [[ -n "${CB:-}" ]]                             && RUN_NAME="${RUN_NAME}_cb${CB}"
+[[ -n "${CP:-}" ]]                             && RUN_NAME="${RUN_NAME}_cp${CP}"
+[[ -n "${ICE_FW:-}" ]]                         && RUN_NAME="${RUN_NAME}_icefw${ICE_FW}"
+[[ "${ICE_VSF:-false}" == "true" ]]            && RUN_NAME="${RUN_NAME}_icevsf"
+[[ "${ICE_MELT_MIX:-false}" == "true" ]]       && RUN_NAME="${RUN_NAME}_icemix"
+[[ -n "${ICE_MELT_K:-}" ]]                     && RUN_NAME="${RUN_NAME}k${ICE_MELT_K}"
+[[ -n "${ICE_MELT_DEPTH:-}" ]]                 && RUN_NAME="${RUN_NAME}d${ICE_MELT_DEPTH}"
 [[ "$KSKEW" != "$DEFAULT_KSKEW" ]]             && RUN_NAME="${RUN_NAME}_kskew${KSKEW}"
 [[ "$KSYMM" != "$DEFAULT_KSYMM" ]]             && RUN_NAME="${RUN_NAME}_ksymm${KSYMM}"
 [[ "$BIHARMONIC" != "$DEFAULT_BIHARMONIC" ]]   && RUN_NAME="${RUN_NAME}_bih${BIHARMONIC}"
@@ -495,6 +536,13 @@ JULIA="${JULIA:-$HOME/julia-1.12.5/bin/julia}"
 FORCING_DIR="${FORCING_DIR:-${DATA}forcing_data}"
 STAGING_DIR="${STAGING_DIR:-./staged_data}"
 CB="${CB:-}"
+CP="${CP:-}"
+ICE_FW="${ICE_FW:-}"
+ICE_VSF="${ICE_VSF:-false}"
+ICE_MELT_MIX="${ICE_MELT_MIX:-false}"
+ICE_MELT_K="${ICE_MELT_K:-}"
+ICE_MELT_DEPTH="${ICE_MELT_DEPTH:-}"
+ICE_MELT_THRESHOLD="${ICE_MELT_THRESHOLD:-}"
 BIHVISC="${BIHVISC:-}"
 DZ_TOP="${DZ_TOP:-}"
 CATKE_CWUSTAR="${CATKE_CWUSTAR:-}"
@@ -522,6 +570,19 @@ fi
 
 CB_KWARG=""
 [[ -n "$CB" ]] && CB_KWARG="Cᵇ = ${CB},"
+
+CP_KWARG=""
+[[ -n "$CP" ]] && CP_KWARG="Cᵉc = ${CP},"
+
+ICE_FW_KWARG=""
+[[ -n "$ICE_FW" ]] && ICE_FW_KWARG="ice_freshwater_fraction = ${ICE_FW},"
+[[ "$ICE_VSF" == "true" ]] && ICE_FW_KWARG="${ICE_FW_KWARG}ice_virtual_salt_flux = true,"
+
+ICE_MELT_KWARG=""
+[[ "$ICE_MELT_MIX" == "true" ]]     && ICE_MELT_KWARG="ice_melt_mixing = true,"
+[[ -n "$ICE_MELT_K" ]]              && ICE_MELT_KWARG="${ICE_MELT_KWARG}ice_melt_mixing_κ = ${ICE_MELT_K},"
+[[ -n "$ICE_MELT_DEPTH" ]]          && ICE_MELT_KWARG="${ICE_MELT_KWARG}ice_melt_mixing_depth = ${ICE_MELT_DEPTH},"
+[[ -n "$ICE_MELT_THRESHOLD" ]]      && ICE_MELT_KWARG="${ICE_MELT_KWARG}ice_melt_mixing_threshold = ${ICE_MELT_THRESHOLD},"
 
 BIHVISC_KWARG=""
 [[ -n "$BIHVISC" ]] && BIHVISC_KWARG="biharmonic_viscosity = ${BIHVISC},"
@@ -556,6 +617,7 @@ BAROTROPIC_SUBSTEPS_KWARG=""
 
 CHLOROPHYLL_KWARG="chlorophyll = :seawifs,"
 [[ "$CHLOROPHYLL" != "seawifs" ]] && CHLOROPHYLL_KWARG="chlorophyll = ${CHLOROPHYLL},"
+[[ "$CHLOROPHYLL" == "none" ]]    && CHLOROPHYLL_KWARG="chlorophyll = :none,"
 
 # Pass the value explicitly (default true = conservative restoring) so the Julia-side default
 # never silently overrides a "false" request.
@@ -593,6 +655,7 @@ fi
 [[ -n "${RIVER_MIXING_K:-}" ]]      && RIVER_KWARG="${RIVER_KWARG}river_mixing_κ = ${RIVER_MIXING_K},"
 [[ -n "${RIVER_MIXING_DEPTH:-}" ]]  && RIVER_KWARG="${RIVER_KWARG}river_mixing_depth = ${RIVER_MIXING_DEPTH},"
 [[ "${RIVER_MIXING:-true}" == "false" ]] && RIVER_KWARG="${RIVER_KWARG}river_mixing = false,"
+[[ -n "${RIVER_DIVERSION:-}" ]]     && RIVER_KWARG="${RIVER_KWARG}atlantic_runoff_diversion = ${RIVER_DIVERSION},"
 
 SKEW_FORMULATION="${SKEW_FORMULATION:-diffusive}"
 case "$SKEW_FORMULATION" in
@@ -646,12 +709,14 @@ ICE_LATERAL="${ICE_LATERAL:-no_slip}"
 ICE_BASAL="${ICE_BASAL:-true}"
 ICE_DRAG="${ICE_DRAG:-5.5e-3}"
 ICE_HEAT_TRANSFER="${ICE_HEAT_TRANSFER:-0.0057}"
+ICE_PSTAR="${ICE_PSTAR:-}"
 ICE_CATEGORIES="${ICE_CATEGORIES:-1}"
 SEA_ICE_KWARG="sea_ice_lateral_boundary_condition = :${ICE_LATERAL},"
 SEA_ICE_KWARG="${SEA_ICE_KWARG}sea_ice_ocean_drag_coefficient = ${ICE_DRAG},"
 SEA_ICE_KWARG="${SEA_ICE_KWARG}sea_ice_ocean_heat_transfer_coefficient = ${ICE_HEAT_TRANSFER},"
 [[ "$ICE_BASAL" == "false" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}with_landfast_basal_stress = false,"
 [[ "$ICE_CATEGORIES" != "1" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}thickness_categories = ${ICE_CATEGORIES},"
+[[ -n "$ICE_PSTAR" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}ice_compressive_strength = ${ICE_PSTAR},"
 
 # Profile runs disable the OMIP diagnostic output writers (Average,
 # JLD2 dumps, checkpoint, KE spectrum). They add per-iteration I/O and
@@ -677,6 +742,9 @@ sim = omip_simulation(:${CONFIG};
                       biharmonic_timescale = ${BIHARMONIC},
                       ${BIHVISC_KWARG}
                       ${CB_KWARG}
+                      ${CP_KWARG}
+                      ${ICE_FW_KWARG}
+                      ${ICE_MELT_KWARG}
                       ${FLUX_KWARG}
                       ${CLOSURE_KWARG}
                       ${VELOCITY_KWARG}
