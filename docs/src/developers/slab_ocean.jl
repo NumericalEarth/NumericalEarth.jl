@@ -135,15 +135,16 @@ slab_ocean = SlabOcean(grid)
 set!(slab_ocean.temperature, Metadatum(:temperature, dataset=ECCO4Monthly()))
 
 atmosphere = NumericalEarth.JRA55PrescribedAtmosphere(arch)
+start_date = atmosphere.clock.time
 
-sea_ice = NumericalEarth.sea_ice_simulation(grid, slab_ocean, advection=WENO(order=7))
+sea_ice = NumericalEarth.sea_ice_simulation(grid, slab_ocean; start_date, advection=WENO(order=7))
 set!(sea_ice.model, h=Metadatum(:sea_ice_thickness,     dataset=ECCO4Monthly()),
                     ℵ=Metadatum(:sea_ice_concentration, dataset=ECCO4Monthly()))
 
 interfaces = ComponentInterfaces(atmosphere, slab_ocean, sea_ice; exchange_grid=grid)
 coupled_model = NumericalEarth.EarthSystemModel(; atmosphere, sea_ice, ocean=slab_ocean, interfaces)
 
-simulation = Simulation(coupled_model, Δt=60minutes, stop_time=120days)
+simulation = Simulation(coupled_model; Δt=60minutes, stop_time=start_date + Day(120))
 run!(simulation)
 
 # And now visualize.

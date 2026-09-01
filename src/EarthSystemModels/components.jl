@@ -137,11 +137,11 @@ end
 
 same_time_type(::TT, ::ST) where {TT, ST} = ST === TT
 
-# Return a clock matching `clock`'s time type (or nothing if clocks are the same)
+# Return a clock reading the same time, in the same type, as `clock` (or nothing if the component's already does)
 function matching_clock(old::Clock, clock)
-    same_time_type(old.time, clock.time) && return nothing
+    same_time_type(old.time, clock.time) && old.time == clock.time && return nothing
     TT = typeof(clock.time)
-    return Clock{TT}(time = convert(TT, old.time),
+    return Clock{TT}(time = clock.time,
                      last_Δt = old.last_Δt,
                      last_stage_Δt = old.last_stage_Δt,
                      iteration = old.iteration,
@@ -155,7 +155,7 @@ warn_clock_coercion(component, new_clock) = @warn string(summary(component), " t
 function reclock(component, clock)
     new_clock = matching_clock(component.clock, clock)
     isnothing(new_clock) && return component
-    warn_clock_coercion(component, new_clock)
+    same_time_type(component.clock.time, new_clock.time) || warn_clock_coercion(component, new_clock)
     names = fieldnames(typeof(component))
     args = ntuple(i -> names[i] === :clock ? new_clock : getfield(component, i), length(names))
     return typeof(component).name.wrapper(args...)

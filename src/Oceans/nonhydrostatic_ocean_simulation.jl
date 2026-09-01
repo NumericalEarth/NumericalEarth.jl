@@ -2,7 +2,8 @@ using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 
 """
     nonhydrostatic_ocean_simulation(grid;
-                                    clock = Clock(grid),
+                                    start_date = nothing,
+                                    clock = default_simulation_clock(grid, start_date),
                                     stop_time = default_stop_time(grid, clock),
                                     Δt = 1,
                                     closure = nothing,
@@ -25,8 +26,9 @@ timestepping is needed.
 
 ## Keyword Arguments
 
-- `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`. 
-  Pass a `DateTime`-based clock to step the simulation in calendar time (e.g. when coupling).
+- `start_date`: Date the simulation opens at. Defaults to `nothing`, a numeric clock starting at `time = 0`.
+  Pass a date to step the simulation in calendar time, which a coupled model driven by dated data requires.
+- `clock`: Clock for the underlying model. Defaults to the clock `start_date` asks for.
 - `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or 
   `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since 
   Reactant does not support `stop_time`.
@@ -43,7 +45,8 @@ timestepping is needed.
 - `verbose`: If `true`, prints additional setup information.
 """
 function nonhydrostatic_ocean_simulation(grid;
-                                         clock = Clock(grid),
+                                         start_date = nothing,
+                                         clock = default_simulation_clock(grid, start_date),
                                          stop_time = default_stop_time(grid, clock),
                                          Δt = 1,
                                          closure = nothing,

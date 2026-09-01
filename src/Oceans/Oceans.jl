@@ -36,6 +36,7 @@ using ..EarthSystemModels: EarthSystemModels,
                            ocean_surface_velocities,
                            ocean_surface_salinity,
                            DegreesKelvin,
+                           default_simulation_clock,
                            default_stop_time,
                            heat_capacity
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger, state2dindex

@@ -41,6 +41,7 @@ end
                                      topology = (Flat, Flat, Bounded))
 
         ocean = ocean_simulation(grid;
+                                 start_date = jra55_start_date,
                                  momentum_advection = nothing,
                                  tracer_advection = nothing,
                                  closure = nothing,
@@ -120,6 +121,7 @@ end
 
             closure = (VerticalScalarDiffusivity(κ=1e-3), VerticalScalarDiffusivity(κ=2e-3))
             diffusive_ocean = ocean_simulation(column_grid;
+                                               start_date = jra55_start_date,
                                                momentum_advection = nothing,
                                                tracer_advection = nothing,
                                                closure,
@@ -215,6 +217,7 @@ end
 
         # Test that fluxes work with and without land
         ocean_no_land = ocean_simulation(grid;
+                                         start_date = jra55_start_date,
                                          momentum_advection = nothing,
                                          tracer_advection = nothing,
                                          closure = nothing,
@@ -224,6 +227,7 @@ end
         model_no_land = OceanOnlyModel(ocean_no_land; atmosphere)
 
         ocean_with_land = ocean_simulation(grid;
+                                           start_date = jra55_start_date,
                                            momentum_advection = nothing,
                                            tracer_advection = nothing,
                                            closure = nothing,
@@ -262,7 +266,8 @@ end
                                        z = (-1, 0),
                                 topology = (Bounded, Bounded, Bounded))
 
-        ocean = ocean_simulation(grid; momentum_advection = nothing,
+        ocean = ocean_simulation(grid; start_date = jra55_start_date,
+                                       momentum_advection = nothing,
                                          tracer_advection = nothing,
                                                  coriolis = nothing,
                                                   closure = nothing,
@@ -296,7 +301,8 @@ end
                              extent = (1, 1, 1),
                            topology = (Periodic, Periodic, Bounded))
 
-        ocean = ocean_simulation(grid; momentum_advection = nothing,
+        ocean = ocean_simulation(grid; start_date = jra55_start_date,
+                                       momentum_advection = nothing,
                                          tracer_advection = nothing,
                                                  coriolis = nothing,
                                                   closure = nothing,
@@ -315,7 +321,7 @@ end
                                           rheology = nothing,
                                           solver = ExplicitSolver())
 
-        sea_ice = sea_ice_simulation(grid; dynamics, advection=Centered())
+        sea_ice = sea_ice_simulation(grid; start_date = jra55_start_date, dynamics, advection=Centered())
 
         # Set a velocity for the ocean
         fill!(ocean.model.velocities.u, 0.1)
@@ -439,7 +445,8 @@ end
         closure  = nothing
         coriolis = nothing
 
-        ocean = ocean_simulation(grid; momentum_advection, tracer_advection, closure, tracers, coriolis)
+        ocean = ocean_simulation(grid; start_date = jra55_start_date,
+                                       momentum_advection, tracer_advection, closure, tracers, coriolis)
 
         date = DateTimeProlepticGregorian(1993, 1, 1)
         dataset = ECCO4Monthly()

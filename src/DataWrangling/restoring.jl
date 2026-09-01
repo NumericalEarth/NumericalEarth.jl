@@ -126,7 +126,7 @@ default_time_indices_in_memory(::Metadatum) = 1
                      rate,
                      mask = 1,
                      time_indices_in_memory = 2, # Not more than this if we want to use GPU!
-                     time_indexing = Cyclical(),
+                     time_indexing = default_time_indexing(metadata.dataset),
                      inpainting = NearestNeighborInpainting(Inf),
                      cache_inpainted_data = true)
 
@@ -177,7 +177,8 @@ Keyword Arguments
                             a trade-off between increased performance (more indices in memory) and reduced
                             memory footprint (fewer indices in memory). Default: 2.
 
-- `time_indexing`: The time indexing scheme for the field time series. Default: `Cyclical()`.
+- `time_indexing`: The time indexing scheme for the field time series. Default: the anchor the dataset
+                   asks for through [`default_time_indexing`](@ref).
 
 - `inpainting`: inpainting algorithm, see [`inpaint_mask!`](@ref). Default: `NearestNeighborInpainting(Inf)`.
 
@@ -189,7 +190,7 @@ function DatasetRestoring(metadata::Metadata,
                           rate,
                           mask = 1,
                           time_indices_in_memory = default_time_indices_in_memory(metadata),
-                          time_indexing = Cyclical(),
+                          time_indexing = default_time_indexing(metadata.dataset),
                           inpainting = NearestNeighborInpainting(Inf),
                           cache_inpainted_data = true,
 						  field_name = oceananigans_fieldnames[metadata.name])

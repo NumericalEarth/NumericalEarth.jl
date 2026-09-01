@@ -19,7 +19,7 @@ using Oceananigans.Utils: Utils, prettysummary, launch!
 using Thermodynamics.Parameters: AbstractThermodynamicsParameters
 
 using ...NumericalEarth: NumericalEarth
-using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, set_prescribed_field!
+using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, set_prescribed_field!, default_component_clock
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger
 
 # Can be extended by atmosphere models. `atmosphere_model` builds the model; `atmosphere_simulation`

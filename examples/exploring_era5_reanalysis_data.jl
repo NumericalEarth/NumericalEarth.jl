@@ -296,7 +296,10 @@ ax2 = Axis(fig2[1, 1],
            ylabel = "Precipitation [W m⁻²]",
            xticks = (day_ticks, day_labels))
 
-lines!(ax2, precip_col_series.times, precip_W_m2; color=:steelblue, label="ERA5 hourly data")
+## The time axis carries dates; the ticks below count seconds from the first one.
+elapsed_seconds(times) = (times .- first(dates)) ./ Second(1)
+
+lines!(ax2, elapsed_seconds(precip_col_series.times), precip_W_m2; color=:steelblue, label="ERA5 hourly data")
 hlines!(ax2, [21.0]; color=:black, linestyle=:dash, label="van Zanten mean (21 W m⁻²)")
 
 axislegend(ax2; position=:rt)
@@ -382,8 +385,8 @@ ax_qr = Axis(fig3[2, 1],
              ylabel = "Height [m]",
              xticks = (day_ticks, day_labels))
 
-hm_qc = heatmap!(ax_qc, qᶜ_col_series.times, z_col, qᶜ_data; colormap=:Blues)
-hm_qr = heatmap!(ax_qr, qʳ_col_series.times, z_col, qʳ_data; colormap=:Blues)
+hm_qc = heatmap!(ax_qc, elapsed_seconds(qᶜ_col_series.times), z_col, qᶜ_data; colormap=:Blues)
+hm_qr = heatmap!(ax_qr, elapsed_seconds(qʳ_col_series.times), z_col, qʳ_data; colormap=:Blues)
 
 Colorbar(fig3[1, 2], hm_qc, label="qᶜˡ [g kg⁻¹]")
 Colorbar(fig3[2, 2], hm_qr, label="qʳ [g kg⁻¹]")

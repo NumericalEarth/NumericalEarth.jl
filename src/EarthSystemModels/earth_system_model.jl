@@ -4,9 +4,10 @@ using Oceananigans.TimeSteppers: Clock
 using Oceananigans.OutputReaders: extract_field_time_series
 using KernelAbstractions: @kernel, @index
 
-mutable struct EarthSystemModel{R, A, L, I, O, F, C, Arch} <: AbstractModel{Nothing, Arch}
+mutable struct EarthSystemModel{R, A, L, I, O, F, C, T, Arch} <: AbstractModel{Nothing, Arch}
     architecture :: Arch
     clock :: C
+    start_time :: T
     radiation :: R
     atmosphere :: A
     land :: L
@@ -79,16 +80,21 @@ Oceananigans.OutputWriters.default_included_properties(::ESM) = tuple()
 Oceananigans.Utils.prettytime(model::ESM) = prettytime(model.clock.time)
 default_clock(TT) = Clock{TT}(0, 0, 1)
 
-Oceananigans.Simulations.reset_clock!(::Nothing) = nothing
 Oceananigans.TimeSteppers.update_state!(::Nothing) = nothing
-Oceananigans.Simulations.reset_clock!(component::Simulation) = reset_clock!(component.model)
-Oceananigans.Simulations.reset_clock!(component) = reset!(getproperty(component, :clock))
+
+# A clock on a calendar has no zero to rewind to, so the coupled model hands every clock the date it opened at.
+# TODO: an Oceananigans `Clock` could carry its own starting time, which would make this a plain `reset!`.
+function rewind_clock!(clock, start_time)
+    reset!(clock)
+    clock.time = start_time
+    return nothing
+end
 
 function Oceananigans.Simulations.reset_clock!(model::ESM)
-    reset!(model.clock)
+    rewind_clock!(model.clock, model.start_time)
 
     for component in components(model)
-        reset_clock!(component)
+        rewind_clock!(component_model(component).clock, model.start_time)
     end
 
     # Keep prescribed atmospheric forcing synchronized during component resets.
@@ -170,12 +176,26 @@ $(TYPEDSIGNATURES)
 
 Return the coupled model's default clock. A `Simulation` atmosphere's clock type is fixed
 by its grid and cannot be coerced, so the coupled clock adopts it (e.g. a `Float32`
-atmosphere gets a `Float32` coupled clock). Otherwise the clock defaults to `Float64`:
-prescribed atmospheres carry a coercible clock, so `adopt_clock` reconciles them to the
-authoritative model clock rather than the other way around.
+atmosphere gets a `Float32` coupled clock). An atmosphere on a calendar hands over both its
+time type and its starting date, so the coupled model opens where the atmospheric record
+does. Anything else gives `Float64` at zero.
 """
 default_earth_system_clock(atmosphere::Simulation) = Clock{typeof(component_model(atmosphere).clock.time)}(time = 0)
-default_earth_system_clock(atmosphere) = Clock{Float64}(time = 0)
+
+function default_earth_system_clock(atmosphere)
+    hasproperty(atmosphere, :clock) || return Clock{Float64}(time = 0)
+    atmosphere_time = atmosphere.clock.time
+    return atmosphere_time isa Dates.AbstractTime ? Clock{typeof(atmosphere_time)}(time = atmosphere_time) :
+                                                    Clock{Float64}(time = 0)
+end
+
+"""
+    default_component_clock(times)
+
+A `Clock` keeping time in the same type as `times`, started at the first sample.
+"""
+default_component_clock(times) = Clock{Float64}(time = 0)
+default_component_clock(times::AbstractArray{<:Dates.AbstractTime}) = Clock{eltype(times)}(time = @allowscalar first(times))
 
 """
     materialize_sea_ice(sea_ice, ocean)
@@ -306,6 +326,7 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
 
     earth_system_model = EarthSystemModel(arch,
                                           clock,
+                                          clock.time,
                                           radiation,
                                           atmosphere,
                                           land,

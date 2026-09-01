@@ -11,12 +11,11 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceMo
 using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids
 using Oceananigans.Simulations: Simulation
-using Oceananigans.TimeSteppers: Clock
 using Oceananigans.Units: minutes
 using Oceananigans.Utils: launch!
 using KernelAbstractions: @kernel, @index
 
-using ..EarthSystemModels: EarthSystemModels, default_stop_time
+using ..EarthSystemModels: EarthSystemModels, default_simulation_clock, default_stop_time
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger,
                                                  ThreeEquationHeatFlux
 

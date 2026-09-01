@@ -25,9 +25,13 @@ test_architectures = gpu_test ? [GPU()] : [CPU()]
 
 start_date = DateTimeProlepticGregorian(1993, 1, 1)
 
-test_datasets = (ECCO2Monthly(),
-                 ECCO2Daily(),
-                 ECCO4Monthly(),
+# A coupled model puts its clock on the atmosphere's calendar, and a `Simulation`'s clock type is fixed when its
+# model is built: ocean and sea ice open on the same date as the JRA55 forcing that drives them.
+jra55_start_date = first_date(JRA55.RepeatYearJRA55(), :temperature)
+
+test_datasets = (ECCO2Monthly(), 
+                 ECCO2Daily(), 
+                 ECCO4Monthly(), 
                  ECCO2DarwinMonthly(),
                  ECCO4DarwinMonthly(),
                  EN4Monthly(),
@@ -185,7 +189,7 @@ function test_dataset_restoring(arch, dataset, dates, inpainting;
         field = NamedTuple{fldnames}(ntuple(i->CenterField(grid), length(fldnames)))
 
         # A window-averaged product has no node at its first date: the first sits half a window later.
-        clock = Clock(; time = first(var_restoring.field_time_series.times))
+        clock = @allowscalar Clock(; time = first(var_restoring.field_time_series.times))
 
         @allowscalar begin
             @test var_restoring(1, 1,   10, grid, clock, field) == var_restoring.rate
@@ -222,7 +226,10 @@ function test_timestepping_with_dataset_restoring(arch, dataset, dates, inpainti
     end
     restoring = DatasetRestoring(metadata, arch; inpainting, rate=1/1000)
     forcing = NamedTuple{tuple(fldnames[end])}(tuple(restoring))
-    ocean = ocean_simulation(grid; tracers=fldnames, forcing, verbose=false)
+
+    # The restored series is stamped with dates, so the ocean keeps time on the same calendar.
+    restoring_start_date = @allowscalar first(restoring.field_time_series.times)
+    ocean = ocean_simulation(grid; start_date=restoring_start_date, tracers=fldnames, forcing, verbose=false)
     set!(ocean.model, T=20, S=35)
 
     @test begin
@@ -260,12 +267,12 @@ function test_cycling_dataset_restoring(arch, dataset, dates, inpainting;
             )
 
     times = native_times(forcing[1].field_time_series.backend.metadata)
-    ocean = ocean_simulation(grid, tracers=fldnames, forcing=forcing)
+    ocean = ocean_simulation(grid; start_date=first(times), tracers=fldnames, forcing=forcing)
     set!(ocean.model, T=20, S=35)
 
     # start a bit after time_index
     time_index = 3
-    time_interval = dataset isa ECCO2Daily ? Units.hour : Units.day
+    time_interval = dataset isa ECCO2Daily ? Hour(1) : Day(1)
     ocean.model.clock.time = times[time_index] + 2 * time_interval
     update_state!(ocean.model)
 

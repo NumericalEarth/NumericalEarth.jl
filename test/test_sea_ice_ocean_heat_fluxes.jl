@@ -196,8 +196,9 @@ end
                                      longitude = (0, 10),
                                      z = (-100, 0))
 
-        ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
-        sea_ice = sea_ice_simulation(grid, ocean)
+        ocean = ocean_simulation(grid; start_date=jra55_start_date,
+                                 momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
+        sea_ice = sea_ice_simulation(grid, ocean; start_date=jra55_start_date)
 
         atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
         radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
@@ -251,8 +252,9 @@ end
                                      longitude = (0, 10),
                                      z = (-100, 0))
 
-        ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
-        sea_ice = sea_ice_simulation(grid, ocean)
+        ocean = ocean_simulation(grid; start_date=jra55_start_date,
+                                 momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
+        sea_ice = sea_ice_simulation(grid, ocean; start_date=jra55_start_date)
 
         atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
         radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
@@ -388,8 +390,9 @@ end
                                      longitude = (0, 10),
                                      z = (-400, 0))
 
-        ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
-        sea_ice = sea_ice_simulation(grid, ocean)
+        ocean = ocean_simulation(grid; start_date=jra55_start_date,
+                                 momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
+        sea_ice = sea_ice_simulation(grid, ocean; start_date=jra55_start_date)
 
         atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
         radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
@@ -438,8 +441,9 @@ end
                                      longitude = (0, 10),
                                      z = (-400, 0))
 
-        ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
-        sea_ice = sea_ice_simulation(grid, ocean)
+        ocean = ocean_simulation(grid; start_date=jra55_start_date,
+                                 momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
+        sea_ice = sea_ice_simulation(grid, ocean; start_date=jra55_start_date)
 
         atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
         radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)

@@ -678,34 +678,11 @@ function Downloads.download(mset::MetadataSet; kwargs...)
 end
 
 """
-    native_times(metadata; start_time=first(metadata).dates)
+    native_times(metadata)
 
-Extract the time values from the given `metadata`, calculate the time difference
-from the `start_time`, and return an array of time differences in seconds.
-
-Argument
-========
-- `metadata`: The metadata containing the date information.
-
-Keyword Argument
-================
-- `start_time`: The start time for calculating the time difference. Defaults to the first
-                date in the metadata.
-
-Times are measured to each sample's [`window_center`](@ref), which for a time average is the
-midpoint of its [`averaging_window`](@ref) rather than the date its file is stamped with.
+The date of each sample in `metadata`, taken at its [`window_center`](@ref).
 """
-function native_times(metadata; start_time=first(metadata).dates)
-    times = zeros(length(metadata))
-    reference = comparable_datetime(start_time)
-
-    for (t, data) in enumerate(metadata)
-        delta = window_center(data) - reference
-        times[t] = Dates.value(Dates.Millisecond(delta)) / 1000
-    end
-
-    return times
-end
+native_times(metadata) = [window_center(datum) for datum in metadata]
 
 """
     averaging_window(metadatum)

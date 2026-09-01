@@ -43,7 +43,10 @@ grid = RectilinearGrid(size = 200,
 # Next, we use NumericalEarth's `ocean_simulation` constructor to build a realistic
 # ocean simulation on the single-column grid,
 
-ocean = ocean_simulation(grid; Δt=10minutes, coriolis=FPlane(latitude = φ★))
+start_date = DateTime(1990, 1, 1)
+stop_date  = DateTime(1990, 1, 31) # Last day of the simulation
+
+ocean = ocean_simulation(grid; start_date, Δt=10minutes, coriolis=FPlane(latitude = φ★))
 
 # which wraps around the ocean model
 
@@ -64,11 +67,11 @@ set!(ocean.model, T=Metadatum(:temperature, dataset=GLORYSMonthly(), region=col)
 # which is based on the JRA55 reanalysis.
 
 atmosphere = JRA55PrescribedAtmosphere(region   = Column(λ★, φ★),
-                                       end_date = DateTime(1990, 1, 31), # Last day of the simulation
+                                       end_date = stop_date,
                                        time_indices_in_memory = 1000)
 
 radiation = JRA55PrescribedRadiation(region   = Column(λ★, φ★),
-                                     end_date = DateTime(1990, 1, 31),
+                                     end_date = stop_date,
                                      time_indices_in_memory = 1000)
 
 # This builds a representation of the atmosphere on the small grid
@@ -81,7 +84,7 @@ ua = interior(atmosphere.velocities.u, 1, 1, 1, :)
 va = interior(atmosphere.velocities.v, 1, 1, 1, :)
 Ta = interior(atmosphere.temperature, 1, 1, 1, :)
 qa = interior(atmosphere.specific_humidity, 1, 1, 1, :)
-t_days = atmosphere.times / days
+t_days = (atmosphere.times .- start_date) ./ Day(1)
 
 using CairoMakie
 
@@ -105,7 +108,7 @@ current_figure()
 
 # We continue constructing a simulation.
 coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
-simulation = Simulation(coupled_model, Δt=ocean.Δt, stop_time=30days)
+simulation = Simulation(coupled_model; Δt=ocean.Δt, stop_time=stop_date)
 
 wall_clock = Ref(time_ns())
 
@@ -253,7 +256,7 @@ Label(fig[0, 1:6], title)
 
 n = Observable(1)
 
-times = (times .- times[1]) ./days
+times = (times .- times[1]) ./ Day(1)
 Nt = length(times)
 tn = @lift times[$n]
 

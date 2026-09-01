@@ -37,11 +37,13 @@ export
     ThreeEquationHeatFlux,
     # Friction velocity formulations
     MomentumBasedFrictionVelocity,
+    default_simulation_clock,
     default_stop_time
 
 import Dates
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using DocStringExtensions: TYPEDSIGNATURES
+using GPUArraysCore: @allowscalar
 using KernelAbstractions: @kernel, @index
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
@@ -53,6 +55,15 @@ using Oceananigans.Fields: ZeroField
 using Oceananigans.Simulations: reset_clock!, Simulation
 using Oceananigans.TimeSteppers: Clock, reset!, tick!, time_step!, update_state!, reconcile_state!
 using Oceananigans.Utils: launch!, prettytime
+
+"""
+$(TYPEDSIGNATURES)
+
+The clock a component `Simulation` keeps time with: numeric and starting at zero without a `start_date`, on the
+calendar with one.
+"""
+default_simulation_clock(grid, start_date) = Clock(time = start_date)
+default_simulation_clock(grid, ::Nothing) = Clock(grid)
 
 # Reactant does not support `stop_time`; it must stay `nothing` there.
 default_stop_time(grid, clock) = default_stop_time(architecture(grid), clock)

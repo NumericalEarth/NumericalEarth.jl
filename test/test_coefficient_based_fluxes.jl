@@ -79,6 +79,7 @@ end
                                      topology = (Flat, Flat, Bounded))
 
         ocean = ocean_simulation(grid;
+                                 start_date = jra55_start_date,
                                  momentum_advection = nothing,
                                  tracer_advection = nothing,
                                  closure = nothing,
@@ -112,6 +113,7 @@ end
                                      topology = (Flat, Flat, Bounded))
 
         ocean = ocean_simulation(grid;
+                                 start_date = jra55_start_date,
                                  momentum_advection = nothing,
                                  tracer_advection = nothing,
                                  closure = nothing,
@@ -149,6 +151,7 @@ end
                                      topology = (Flat, Flat, Bounded))
 
         ocean = ocean_simulation(grid;
+                                 start_date = jra55_start_date,
                                  momentum_advection = nothing,
                                  tracer_advection = nothing,
                                  closure = nothing,

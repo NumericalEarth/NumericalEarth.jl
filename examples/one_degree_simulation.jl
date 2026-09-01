@@ -64,7 +64,9 @@ free_surface       = SplitExplicitFreeSurface(grid; substeps=70)
 momentum_advection = WENOVectorInvariant(order=5)
 tracer_advection   = WENO(order=5)
 
-ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surface,
+start_date = DateTime(1993, 1, 1)
+
+ocean = ocean_simulation(grid; start_date, momentum_advection, tracer_advection, free_surface,
                          closure=(eddy_closure, vertical_mixing))
 
 @info "We've built an ocean simulation with model:"
@@ -76,15 +78,14 @@ ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surfac
 # EVP rheology and a zero-layer thermodynamic model that advances thickness
 # and concentration.
 
-sea_ice = sea_ice_simulation(grid, ocean; advection=tracer_advection)
+sea_ice = sea_ice_simulation(grid, ocean; start_date, advection=tracer_advection)
 
 # ### Initial condition
 
 # We initialize the ocean and sea ice models with data from the ECCO state estimate.
 
-date = DateTime(1993, 1, 1)
 ecco_variables = (:temperature, :salinity, :sea_ice_thickness, :sea_ice_concentration)
-ecco_set = MetadataSet(ecco_variables; dataset = ECCO4Monthly(), date)
+ecco_set = MetadataSet(ecco_variables; dataset = ECCO4Monthly(), date = start_date)
 
 # A single MetadataSet drives both components; variables not in
 # `variable_glossary` for a given model fall through silently.
@@ -114,7 +115,7 @@ radiation = JRA55PrescribedRadiation(arch; ocean_surface)
 # With Runge-Kutta 3rd order time-stepping we can safely use a timestep of 20 minutes.
 
 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
-simulation = Simulation(coupled_model; Δt=20minutes, stop_time=90days)
+simulation = Simulation(coupled_model; Δt=20minutes, stop_time=start_date + Day(90))
 
 # ### A progress messenger
 #
@@ -147,7 +148,7 @@ function progress(sim)
 end
 
 # And add it as a callback to the simulation.
-add_callback!(simulation, progress, TimeInterval(5days))
+add_callback!(simulation, progress, TimeInterval(Day(5)))
 
 # ### Output
 #
@@ -164,18 +165,18 @@ sea_ice_outputs = merge((h = sea_ice.model.ice_thickness,
                          sea_ice.model.velocities)
 
 ocean.output_writers[:surface] = JLD2Writer(ocean.model, ocean_outputs;
-                                            schedule = TimeInterval(1days),
+                                            schedule = TimeInterval(Day(1)),
                                             filename = "ocean_one_degree_surface_fields",
                                             indices = (:, :, grid.Nz),
                                             overwrite_existing = true)
 
 ocean.output_writers[:free_surface] = JLD2Writer(ocean.model, (; η = free_surface);
-                                                 schedule = TimeInterval(1days),
+                                                 schedule = TimeInterval(Day(1)),
                                                  filename = "ocean_one_degree_free_surface",
                                                  overwrite_existing = true)
 
 sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
-                                              schedule = TimeInterval(1days),
+                                              schedule = TimeInterval(Day(1)),
                                               filename = "sea_ice_one_degree_surface_fields",
                                               overwrite_existing = true)
 
@@ -274,7 +275,7 @@ end
 # sea ice speed and the effective sea ice thickness.
 fig = Figure(size=(900, 750))
 
-title = @lift string("Global 1ᵒ ocean simulation after ", prettytime(times[$n] - times[1]))
+title = @lift string("Global 1ᵒ ocean simulation after ", prettytime((times[$n] - times[1]) / Second(1)))
 
 axso = Axis(fig[1, 1])
 axηo = Axis(fig[1, 3])
