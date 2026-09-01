@@ -8,7 +8,7 @@ using Reactant
 using Enzyme
 using Reactant: @trace
 using CairoMakie
-using Statistics: mean, median, cor
+using Statistics: mean, median, cor, std
 using Printf
 
 FT = Float64
@@ -77,12 +77,12 @@ end
 
 snapshot_names = (:θ, :T, :LST, :𝒮, :Wᶜ, :LE, :LEᶜ, :LEᵍ, :H, :rain, :E)
 
-function forward_map(depth; record = false, modify! = nothing)
+function forward_map(depth; record = false, modify! = nothing, hydrology...)
     fields = map_fields(cpu_grid, depth)
     s = surface_parameters(static, cpu_grid, FT)
     model = borneo_coupled_model(cpu_grid, FT, forcing, s; slab_depth = surface_field(cpu_grid),
                                  exchanger_correction = correction, surface_layer_height, boundary_layer_height,
-                                 inner_iterations, similarity_iterations)
+                                 inner_iterations, similarity_iterations, hydrology...)
     isnothing(modify!) || modify!(model)
     initialize_map!(model, fields.h, fields.θ₀, fields.T₀, fields.q₀)
     interface = model.interfaces.atmosphere_land_interface
@@ -102,17 +102,49 @@ function forward_map(depth; record = false, modify! = nothing)
                 snapshots.E[k, :, :]   .= interior(land.fluxes.vapor_flux, :, :, 1))
     record && take!(1)
     losses = zeros(FT, size(parent(fields.h)))
+    Σθ, Σθ² = zero(losses), zero(losses)
     wall = time_ns()
     for n in 1:Nsteps
         time_step!(model, Δt)
         losses .+= cell_loss(model, fields.h, fields.w, view(θ_target, n, :, :, :))
+        θ = soil_water(model, fields.h)
+        Σθ .+= θ
+        Σθ² .+= θ .^ 2
         record && n % steps_per_hour == 0 && take!(n ÷ steps_per_hour + 1)
     end
     @info @sprintf("eager forward (%d × %d, %d steps) in %.1f s", Nx, Ny, Nsteps, 1e-9 * (time_ns() - wall))
-    losses = losses[1 + Hx:Nx + Hx, 1 + Hy:Ny + Hy, 1] ./ Nsteps
+    inner(a) = a[1 + Hx:Nx + Hx, 1 + Hy:Ny + Hy, 1] ./ Nsteps
+    losses, θ_mean, θ² = inner(losses), inner(Σθ), inner(Σθ²)
     θ_end = interior(land.water_storage, :, :, 1) ./ (1000 .* interior(fields.h, :, :, 1))
-    return (; losses, θ_end = Array(θ_end), snapshots)
+    return (; losses, θ_end = Array(θ_end), snapshots, θ_mean, θ_variance = θ² .- θ_mean .^ 2)
 end
 
 land = weight .> 0
 rms(losses) = sqrt(sum(losses) / count(land))
+
+# ## Writing calibrated per-cell fields into a model (eager or traced) through their parents
+
+conductivity_field(model) = model.land.hydrology.soil.soil.hydraulic_conductivity.matching_point_conductivity
+cpu_scratch = surface_field(cpu_grid)
+function set_cells!(field, values, fill_value)
+    set!(cpu_scratch, values)
+    parent(cpu_scratch) .= ifelse.(parent(cpu_scratch) .== 0, fill_value, parent(cpu_scratch))
+    parent(field) .= parent(cpu_scratch)
+    return field
+end
+with_conductivity(q) = model -> (set_cells!(conductivity_field(model), exp10.(q), exp10(median(q[land]))); nothing)
+
+# ## Hourly ERA5-Land series and per-window tracking scores of a recorded run
+
+hourly_observations() = permutedims(cat([era5_land_soil_water(era5_land, m) for m in 1:(Nsteps ÷ round(Int, 3600 / Δt) + 1)]...; dims = 3), (3, 1, 2))
+
+function window_scores(θ_model, θ_obs, hours)
+    r = Float64[]; σratio = Float64[]; mse = Float64[]
+    for c in findall(land)
+        m, o = θ_model[hours, c], θ_obs[hours, c]
+        push!(mse, sum(abs2, m .- o) / length(hours))
+        push!(σratio, std(m) / std(o))
+        std(m) > 0 && push!(r, cor(m, o))
+    end
+    return (; rms = sqrt(mean(mse)), r = median(r), σ = median(σratio))
+end

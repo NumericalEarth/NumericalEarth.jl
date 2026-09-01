@@ -51,7 +51,8 @@ function forcing_on(grid, forcing; land_surface, surface_layer_height, boundary_
 end
 
 # The land: `s` holds the per-cell surface parameters (numbers or fields on `grid`).
-function borneo_land(grid, FT, s; slab_depth)
+function borneo_land(grid, FT, s; slab_depth, deep_liquid_flux = FreeDrainageFlux(), deep_pressure_head = 0,
+                     infiltration_capacity = s.infiltration_capacity)
     soil = VariablySaturatedHydrology(FT;
         slab_depth,
         storage_height = 1000,
@@ -64,8 +65,8 @@ function borneo_land(grid, FT, s; slab_depth)
             matching_point_conductivity = s.matching_point_conductivity,
             pore_size_uniformity        = s.pore_size_uniformity,
             pore_connectivity_exponent  = s.pore_connectivity_exponent),
-        deep_liquid_flux = FreeDrainageFlux(),
-        runoff = InfiltrationCapacityRunoff(FT; infiltration_capacity = s.infiltration_capacity))
+        deep_liquid_flux, deep_pressure_head,
+        runoff = InfiltrationCapacityRunoff(FT; infiltration_capacity))
 
     hydrology = InterceptingHydrology(FT;
         soil = SurfaceWaterStore(FT; soil, drainage_timescale = 1hour),
@@ -129,10 +130,12 @@ end
 
 function borneo_coupled_model(grid, FT, forcing, s; slab_depth, exchanger_correction = nothing,
                               surface_layer_height = 10, boundary_layer_height = 800,
-                              inner_iterations = 16, similarity_iterations = 8)
+                              inner_iterations = 16, similarity_iterations = 8,
+                              deep_liquid_flux = FreeDrainageFlux(), deep_pressure_head = 0,
+                              infiltration_capacity = s.infiltration_capacity)
     land_surface = SurfaceRadiationProperties(s.albedo, s.emissivity)
     atmosphere, radiation = forcing_on(grid, forcing; land_surface, surface_layer_height, boundary_layer_height)
-    land = borneo_land(grid, FT, s; slab_depth)
+    land = borneo_land(grid, FT, s; slab_depth, deep_liquid_flux, deep_pressure_head, infiltration_capacity)
     interface = borneo_interface(grid, FT, atmosphere, land, s; inner_iterations, similarity_iterations)
     return AtmosphereLandModel(atmosphere, land; radiation,
                                atmosphere_land_interface = interface,
