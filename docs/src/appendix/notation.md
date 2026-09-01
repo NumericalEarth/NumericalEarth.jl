@@ -101,7 +101,7 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``t`` | `ₜ` | transmitted | ``\mathscr{I}_{t}^{\mathrm{sw}}`` (transmitted shortwave) |
 | ``a`` | `ₐ` | absorbed | ``\mathscr{I}_{a}^{\mathrm{lw}}`` (absorbed longwave) |
 | ``\star`` | `★` | similarity theory scale | ``u_\star`` (friction velocity) |
-| ``b`` | `ᵦ` | background (unresolved by the grid) | ``u_b`` (background bottom velocity) |
+| ``\beta`` | `ᵦ` | background (unresolved by the grid) | ``u_\beta`` (background bottom velocity) |
 
 ## Atmosphere state variables
 
