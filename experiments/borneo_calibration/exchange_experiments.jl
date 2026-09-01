@@ -57,8 +57,8 @@ med(x) = [median(x[k, :, :][land]) for k in 1:Nh]
 days = (0:Nh-1) ./ 24
 fig = Figure(size = (1600, 900), fontsize = 15)
 Label(fig[0, 1], "Structural alternatives at h = 0.28 m with calibrated K₀, 20 days against ERA5-Land"; fontsize = 18)
-for (row, family, palette) in ((1, "Darcy exchange", Makie.categorical_colors(:viridis, 5)),
-                               (2, "infiltration", Makie.categorical_colors(:plasma, 4)))
+for (row, family, palette) in ((1, "Darcy exchange", (:mediumpurple, :dodgerblue, :seagreen, :darkorange)),
+                               (2, "infiltration", (:lightskyblue, :royalblue, :navy)))
     ax = Axis(fig[row, 1]; title = family, xlabel = "day", ylabel = "θ (m³ m⁻³)")
     vspan!(ax, 0, 6.25; color = (:gray, 0.08))
     lines!(ax, days, med(θ_obs); color = :black, linewidth = 2.5, label = "ERA5-Land")
