@@ -168,7 +168,8 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
                              maximum_search_radius = 5,
                              spread_radius = 1.2,
                              n_spread_cells = nothing,
-                             maximum_weighting_depth = 50)
+                             maximum_weighting_depth = 50,
+                             flux_diversion = nothing)
 
     arch = architecture(target_grid)
     FT = eltype(target_grid)
@@ -194,6 +195,16 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     # Split each mouth's discharge over its plume footprint, each cell weighted by its column depth
     # (capped at `maximum_weighting_depth`), so no single coastal cell — and in particular no thin
     # estuary cell — receives a runaway freshwater flux that drives its salinity to zero.
+    diverting = !isnothing(flux_diversion) && flux_diversion.fraction > 0
+    if diverting
+        receiver_i, receiver_j, receiver_λ, receiver_φ = masked_wet_cells(flux_diversion.to, wet, λc, φc)
+        isempty(receiver_i) && error("The diversion destination mask holds no wet cell of the target grid.")
+        # Mouths at similar latitudes relocate to similar places, so a diverted footprint the size of a
+        # river's own would stack several mouths onto the same cells. A wider one keeps the flux per
+        # unit area at or below what the receiving basin's own rivers already deliver.
+        n_receivers = get(flux_diversion, :spread_cells, 8 * something(n_spread_cells, 8))
+    end
+
     contributions = Dict{Tuple{Int, Int}, Vector{Tuple{Int, Int, FT}}}()
     dropped = 0
     for n in eachindex(outlet_i)
@@ -206,9 +217,26 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
         shares = [min(depth[i★, j★], maximum_weighting_depth) for (i★, j★) in targets]
         total_share = sum(shares)
         total_share > 0 || (shares = ones(FT, length(targets)); total_share = length(targets))
+        diverted = zero(FT)
         for (m, (i★, j★)) in enumerate(targets)
             w = convert(FT, outlet_weight[n] * shares[m] / total_share)
-            push!(get!(contributions, (i★, j★), Tuple{Int, Int, FT}[]), (outlet_i[n], outlet_j[n], w))
+            if diverting && flux_diversion.from[i★, j★]
+                diverted += w * convert(FT, flux_diversion.fraction)
+                w *= convert(FT, 1 - flux_diversion.fraction)
+            end
+            w > 0 && push!(get!(contributions, (i★, j★), Tuple{Int, Int, FT}[]), (outlet_i[n], outlet_j[n], w))
+        end
+        diverted > 0 || continue
+        receivers = diversion_target_cells(receiver_i, receiver_j, receiver_λ, receiver_φ,
+                                           outlet_λ[n], outlet_φ[n],
+                                           max_degrees, spread_radius, n_receivers)
+        receiver_shares = [min(depth[i★, j★], maximum_weighting_depth) for (i★, j★) in receivers]
+        total_receiver_share = sum(receiver_shares)
+        total_receiver_share > 0 ||
+            (receiver_shares = ones(FT, length(receivers)); total_receiver_share = length(receivers))
+        for (m, (i★, j★)) in enumerate(receivers)
+            w = convert(FT, diverted * receiver_shares[m] / total_receiver_share)
+            w > 0 && push!(get!(contributions, (i★, j★), Tuple{Int, Int, FT}[]), (outlet_i[n], outlet_j[n], w))
         end
     end
 
@@ -267,6 +295,47 @@ function squared_distance(λ₁, φ₁, λ₂, φ₂)
     Δλ = wrap180(λ₂ - λ₁) * cosd((φ₁ + φ₂) / 2)
     Δφ = φ₂ - φ₁
     return Δλ^2 + Δφ^2
+end
+
+"""
+    masked_wet_cells(mask, wet, λc, φc)
+
+Wet cells of the target grid that lie inside `mask`, as `(i, j, λ, φ)` vectors.
+"""
+function masked_wet_cells(mask, wet, λc, φc)
+    Nx, Ny = size(wet)
+    is = Int[]; js = Int[]; λs = Float64[]; φs = Float64[]
+    for j in 1:Ny, i in 1:Nx
+        (wet[i, j] && mask[i, j]) || continue
+        λ, φ = node_λφ(λc, φc, i, j)
+        push!(is, i); push!(js, j); push!(λs, λ); push!(φs, φ)
+    end
+    return is, js, λs, φs
+end
+
+"""
+    diversion_target_cells(receiver_i, receiver_j, receiver_λ, receiver_φ, λₒ, φₒ,
+                           max_degrees, spread_radius, n_spread_cells; longitude_shift = 130)
+
+The cells that receive water diverted away from a mouth at `(λₒ, φₒ)`. The mouth is relocated to its
+counterpart in the destination basin — same latitude, `longitude_shift` degrees west — and the
+discharge is then spread with the same footprint a real river gets, so each mouth lands in its own
+place and the flux per unit area stays in the range the ocean already handles. Selecting by latitude
+alone instead would funnel every mouth in a band onto one footprint. The caller weights the returned
+cells by column depth exactly as it weights a mouth's own footprint.
+"""
+function diversion_target_cells(receiver_i, receiver_j, receiver_λ, receiver_φ, λₒ, φₒ,
+                                max_degrees, spread_radius, n_spread_cells; longitude_shift = 130)
+    λ★ = wrap180(λₒ - longitude_shift)
+    targets = spread_target_cells(receiver_i, receiver_j, receiver_λ, receiver_φ, λ★, φₒ,
+                                  max_degrees, spread_radius, n_spread_cells)
+    isempty(targets) || return targets
+    # No destination cell within reach of the counterpart position — the basins do not face each other
+    # at every latitude. Fall back to the nearest cells, still a footprint: a single cell would take a
+    # whole mouth's discharge and drive its salinity to zero on the first step.
+    order = sortperm([squared_distance(λ★, φₒ, receiver_λ[m], receiver_φ[m]) for m in eachindex(receiver_λ)])
+    keep = order[1:min(n_spread_cells isa Number ? n_spread_cells : 8, length(order))]
+    return [(receiver_i[m], receiver_j[m]) for m in keep]
 end
 
 function wet_cells(wet, λc, φc)

@@ -1,6 +1,7 @@
 module InterfaceComputations
 
 using Adapt: Adapt, adapt
+using DocStringExtensions: TYPEDSIGNATURES
 using Oceananigans: Oceananigans
 using Oceananigans.Fields: AbstractField, Field, Face, Center
 using Oceananigans.Grids: Flat, topology
@@ -9,6 +10,9 @@ using Oceananigans.Utils: KernelParameters, worksize
 
 export
     ComponentInterfaces,
+    ConservativeIceFreshwater,
+    ScaledIceFreshwater,
+    VirtualSaltFluxIceFreshwater,
     SimilarityTheoryFluxes,
     FixedIterations,
     ConvergenceStopCriteria,

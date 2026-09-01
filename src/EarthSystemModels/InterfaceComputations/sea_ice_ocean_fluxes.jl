@@ -6,6 +6,60 @@ using ClimaSeaIce.SeaIceDynamics: x_momentum_stress, y_momentum_stress,
 
 using ..EarthSystemModels: ocean_temperature, ocean_salinity
 
+#####
+##### How the ice-ocean mass exchange reaches the ocean
+#####
+
+"""
+    ConservativeIceFreshwater()
+
+Hand the ocean the mass the sea ice actually exchanged: the volume flux `−(Eᵢ + Eₛ)/ρᵒᶜ` and the salt
+held in the ice, `Eᵢ Sˢⁱ/ρᵒᶜ`. The `Sᴺ`-weighted dilution rides on the volume flux in the salinity
+boundary condition, so melting ice of salinity `Sˢⁱ` adds exactly its own volume and its own salt.
+"""
+struct ConservativeIceFreshwater end
+
+"""
+    ScaledIceFreshwater(fraction)
+
+Deliver `fraction` of the exchange, volume and salt alike. The withheld water leaves the ocean-ice-snow
+total, which `normalize_freshwater` returns globally by moving the free surface, so the global budget
+still closes while the *local* delivery is scaled. A diagnostic knob for how sensitive a basin is to
+the freshwater the ice puts into it; `fraction = 1` is [`ConservativeIceFreshwater`](@ref).
+"""
+struct ScaledIceFreshwater{FT}
+    fraction :: FT
+end
+
+"""
+    VirtualSaltFluxIceFreshwater()
+
+Deliver the exchange as a salt flux at fixed ocean volume — the classical virtual salt flux,
+`Jˢ = Jʷ (Sᴺ − Sˢⁱ)` with `Jʷ = 0` — instead of as a real volume flux. Isolates the volume pathway
+from the freshwater amount. ⚠ This is an approximation, exact only for `Sᴺ` uniform over the column,
+and it does not conserve total salt; the drift is measurable in the ocean + ice + snow budget.
+"""
+struct VirtualSaltFluxIceFreshwater end
+
+"""
+$(TYPEDSIGNATURES)
+
+The ocean-side volume and salt fluxes `(Jʷ, Jˢ)` for an ice-ocean mass exchange of `Eᵢ` ice and `Eₛ`
+snow, against ocean surface salinity `Sᴺ` and ice salinity `Sˢⁱ`.
+"""
+@inline ice_freshwater_and_salt(::ConservativeIceFreshwater, Eᵢ, Eₛ, Sᴺ, Sˢⁱ, ρᵒᶜ) =
+    (- (Eᵢ + Eₛ) / ρᵒᶜ, Eᵢ * Sˢⁱ / ρᵒᶜ)
+
+@inline function ice_freshwater_and_salt(delivery::ScaledIceFreshwater, Eᵢ, Eₛ, Sᴺ, Sˢⁱ, ρᵒᶜ)
+    α = delivery.fraction
+    return (- α * (Eᵢ + Eₛ) / ρᵒᶜ, α * Eᵢ * Sˢⁱ / ρᵒᶜ)
+end
+
+@inline function ice_freshwater_and_salt(::VirtualSaltFluxIceFreshwater, Eᵢ, Eₛ, Sᴺ, Sˢⁱ, ρᵒᶜ)
+    Jʷ = - (Eᵢ + Eₛ) / ρᵒᶜ
+    return (zero(Jʷ), Jʷ * (Sᴺ - Sˢⁱ))
+end
+
 """
     compute_sea_ice_ocean_fluxes!(coupled_model)
 
@@ -73,7 +127,8 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     launch!(arch, grid, :xy, _compute_sea_ice_ocean_fluxes!,
             flux_formulation, fluxes, Tˢⁱ, Sˢⁱ, grid, clock,
             hˢⁱ, hc, ℵ, Sⁱ, Tᵒᶜ, Sᵒᶜ, uˢⁱ, vˢⁱ, τₛ,
-            liquidus, ocean_properties, L, Δt, mass_fluxes.ice, mass_fluxes.snow)
+            liquidus, ocean_properties, L, Δt, mass_fluxes.ice, mass_fluxes.snow,
+            interface.freshwater_delivery)
 
     return nothing
 end
@@ -134,7 +189,8 @@ end
                                                 latent_heat,
                                                 Δt,
                                                 ice_ocean_mass_flux,
-                                                snow_ocean_mass_flux)
+                                                snow_ocean_mass_flux,
+                                                freshwater_delivery)
 
     i, j = @index(Global, NTuple)
 
@@ -231,7 +287,9 @@ end
     @inbounds begin
         Eᵢ = ice_ocean_mass_flux[i, j, 1]
         Eₛ = snow_ocean_mass_flux[i, j, 1]
-        Jʷ[i, j, 1] = - (Eᵢ + Eₛ) / ρᵒᶜ
-        Jˢ[i, j, 1] = Eᵢ * Sˢⁱ / ρᵒᶜ # the snow term Sˢⁿ * Eₛ drops since Sˢⁿ == 0
+        # the snow term Sˢⁿ * Eₛ drops from the salt flux since Sˢⁿ == 0
+        Jʷⁱᵒ, Jˢⁱᵒ = ice_freshwater_and_salt(freshwater_delivery, Eᵢ, Eₛ, Sᴺ, Sˢⁱ, ρᵒᶜ)
+        Jʷ[i, j, 1] = Jʷⁱᵒ
+        Jˢ[i, j, 1] = Jˢⁱᵒ
     end
 end
