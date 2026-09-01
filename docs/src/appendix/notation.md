@@ -192,7 +192,7 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``S`` | `S` | salinity | Practical salinity (g kg⁻¹) |
 | ``u`` | `u` | zonal velocity | Eastward ocean velocity (m s⁻¹) |
 | ``v`` | `v` | meridional velocity | Northward ocean velocity (m s⁻¹) |
-| ``u_b`` | `uᵦ` | background bottom velocity | Unresolved velocity, mostly tidal, added in quadrature to the resolved speed in the bottom drag (m s⁻¹) |
+| ``u_\beta`` | `uᵦ` | background bottom velocity | Unresolved velocity, mostly tidal, added in quadrature to the resolved speed in the bottom drag (m s⁻¹) |
 | ``\rho^{\mathrm{oc}}`` | `ρᵒᶜ` | reference density | Ocean reference density (kg m⁻³) |
 | ``c^{\mathrm{oc}}`` | `cᵒᶜ` | heat capacity | Ocean heat capacity (J kg⁻¹ K⁻¹) |
 
