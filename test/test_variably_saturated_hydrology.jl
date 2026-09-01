@@ -145,12 +145,13 @@ end
             )
             land = SlabLand(grid; hydrology)
             set!(land; M = 300.0)
-            land.clock.time = 100.0
+            land.clock.time = 90.0
             time_step!(land, 10.0)
             only(Array(interior(land.water_storage)))
         end
 
-        # The series interpolates to −2 m at t = 100 s, so it steps like the constant head −2 m.
+        # The clock ticks before the hydrology step, so the series is read at t = 100 s,
+        # where it interpolates to −2 m: the step must match the constant head −2 m.
         @test storage(Πᵈ) ≈ storage(-2.0)
         @test storage(Πᵈ) != storage(-1.0)
     end
