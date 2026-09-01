@@ -6,7 +6,8 @@ using NumericalEarth.DataWrangling.GHSL: ghsl_tile_index, ghsl_tiles_in_bbox,
                                          longitude_latitude_to_mollweide,
                                          mask_building_height, built_surface_to_fraction,
                                          dataset_prefix, native_resolution, ghsl_tiles_to_netcdf,
-                                         ghsl_regional_raster
+                                         ghsl_regional_raster, bin_built_pixels!, binned_urban_roughness
+using NumericalEarth.Lands: MorphometricRoughness, aerodynamic_parameters
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_grid,
                                     longitude_interfaces, latitude_interfaces,
                                     dataset_variable_name, validate_dataset_coverage,
@@ -234,6 +235,100 @@ end
         @test raster.region.latitude[2]  ≥ region.latitude[2]
         @test ghsl_tiles_in_bbox(region) ⊆ ghsl_tiles_in_bbox(raster.region)
     end
+end
+
+#####
+##### Native-pixel binning and built-area-weighted reduction to a model grid.
+#####
+
+@testset "GHSL binning onto the evaluation lattice" begin
+    domain = BoundingBox(longitude = (0, 1), latitude = (0, 1))
+    raster_grid = LatitudeLongitudeGrid(CPU(); size = (40, 40),
+                                        longitude = (0, 1), latitude = (0, 1),
+                                        topology = (Bounded, Bounded, Flat))
+    height = Field{Center, Center, Nothing}(raster_grid)
+    built = Field{Center, Center, Nothing}(raster_grid)
+
+    # 10 × 10 pixels per cell of the 4 × 4 lattice. Lattice cell (1, 1) is uniformly
+    # built; cell (2, 1) mixes two densities, so its height must be built-area-weighted,
+    # (0.2·10 + 0.6·30) / 0.8 = 25, not the plain pixel mean 20.
+    interior(built, 1:10, 1:10, 1) .= 0.5
+    interior(height, 1:10, 1:10, 1) .= 20
+    interior(built, 11:15, 1:10, 1) .= 0.2
+    interior(height, 11:15, 1:10, 1) .= 10
+    interior(built, 16:20, 1:10, 1) .= 0.6
+    interior(height, 16:20, 1:10, 1) .= 30
+
+    # In lattice cell (3, 1): an unknown height adds area but no volume, and an unknown
+    # built fraction drops its pixel.
+    built[21, 1, 1] = 0.4
+    height[21, 1, 1] = NaN
+    built[22, 1, 1] = NaN
+
+    volume = zeros(4, 4)
+    area = zeros(4, 4)
+    pixels = zeros(Int, 4, 4)
+    bin_built_pixels!(volume, area, pixels, height, built, domain, domain)
+
+    @test pixels[1, 1] == 100
+    @test area[1, 1] ≈ 50
+    @test volume[1, 1] ≈ 1000
+    @test volume[2, 1] / area[2, 1] ≈ 25
+    @test pixels[3, 1] == 99
+    @test area[3, 1] ≈ 0.4
+    @test volume[3, 1] == 0
+    @test pixels[4, 4] == 100
+    @test area[4, 4] == 0
+
+    # Two abutting half-open windows bin every pixel exactly once.
+    split_volume = zeros(4, 4)
+    split_area = zeros(4, 4)
+    split_pixels = zeros(Int, 4, 4)
+    for window in (BoundingBox(longitude = (0, 0.5), latitude = (0, 1)),
+                   BoundingBox(longitude = (0.5, 1), latitude = (0, 1)))
+        bin_built_pixels!(split_volume, split_area, split_pixels, height, built, window, domain)
+    end
+    @test split_pixels == pixels
+    @test split_area == area
+    @test split_volume == volume
+end
+
+@testset "GHSL reduction: a dense core sets its cell's roughness" begin
+    grid = LatitudeLongitudeGrid(CPU(); size = (2, 2),
+                                 longitude = (0, 2), latitude = (0, 2),
+                                 topology = (Bounded, Bounded, Flat))
+    closure = MorphometricRoughness(eltype(grid))
+
+    # A 4× finer lattice: grid cell (1, 1) holds a single dense 20 m core among 15 empty
+    # lattice cells; grid cell (2, 2) is uniformly built at the same density and height.
+    volume = zeros(8, 8)
+    area = zeros(8, 8)
+    pixels = ones(Int, 8, 8)
+    area[2, 2] = 0.5
+    volume[2, 2] = 10
+    area[5:8, 5:8] .= 0.5
+    volume[5:8, 5:8] .= 10
+
+    core_roughness, core_displacement = aerodynamic_parameters(closure, 0.5, 20.0)
+    fields = binned_urban_roughness(grid, volume, area, pixels, closure)
+    @test keys(fields) == (:ℓᵐ, :d, :urban_fraction, :building_height)
+
+    # The core sets the cell's parameters — a plain cell mean would dilute h to 1.25 m.
+    @test fields.ℓᵐ[1, 1, 1] ≈ core_roughness
+    @test fields.d[1, 1, 1] ≈ core_displacement
+    @test fields.building_height[1, 1, 1] ≈ 20
+    @test fields.urban_fraction[1, 1, 1] ≈ 1 / 16
+
+    # A uniformly built cell matches the direct closure evaluation.
+    @test fields.ℓᵐ[2, 2, 1] ≈ core_roughness
+    @test fields.d[2, 2, 1] ≈ core_displacement
+    @test fields.urban_fraction[2, 2, 1] == 1
+
+    # Cells with no built lattice cell reduce to the closure's bare-soil limit.
+    @test fields.ℓᵐ[1, 2, 1] == closure.bare_soil_roughness
+    @test fields.d[1, 2, 1] == 0
+    @test fields.urban_fraction[1, 2, 1] == 0
+    @test fields.building_height[1, 2, 1] == 0
 end
 
 #####
