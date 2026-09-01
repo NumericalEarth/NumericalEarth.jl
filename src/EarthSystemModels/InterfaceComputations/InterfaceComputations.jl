@@ -115,8 +115,11 @@ function interface_kernel_parameters(grid)
 end
 
 # 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1
-@inline state2dindex(a, i, j) = a
-@inline state2dindex(a::AbstractArray, i, j) = stateindex(a, i, j, 1)
+@inline state2dindex(a, i, j) = stateindex(a, i, j, 1)
+@inline state2dindex(a, i, j, grid, time) = stateindex(a, i, j, 1, grid, time, (Center, Center, Nothing))
+
+# Functions are resolved at the topmost center: a `Nothing` vertical location yields a two-tuple node.
+@inline state2dindex(a::Function, i, j, grid, time) = stateindex(a, i, j, size(grid, 3), grid, time, (Center, Center, Center))
 
 # Turbulent fluxes
 include("roughness_lengths.jl")
