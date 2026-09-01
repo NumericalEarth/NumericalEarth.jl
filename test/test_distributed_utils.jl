@@ -106,7 +106,7 @@ end
 end
 
 @testset "Distributed terrain blending" begin
-    Nx, Ny = 150, 90 # 150 over 4 ranks splits 37/37/37/39: a uniform rank offset would be wrong
+    Nx, Ny = 150, 90 # over 4 ranks these split 37/37/37/39 and 22/22/22/24: uneven in both directions
     width = 6
 
     child_terrain(x, y) = 1000 + 2x + 3y
@@ -126,8 +126,9 @@ end
     reference = Array(interior(blended_elevation(CPU()), :, :, 1))
 
     # Rank-local sizes would blend a frame around each rank's own subdomain, banding parent orography
-    # along every interior seam: three bands in x under Partition(4, 1), a cross under Partition(2, 2).
-    for partition in (Partition(4, 1), Partition(2, 2))
+    # along every interior seam: bands in x under Partition(4, 1), in y under Partition(1, 4), and a
+    # cross under Partition(2, 2), which is the only case with an even split in both directions.
+    for partition in (Partition(4, 1), Partition(1, 4), Partition(2, 2))
         blended = blended_elevation(Distributed(CPU(); partition))
         @test Array(interior(blended, :, :, 1)) == reference
     end
