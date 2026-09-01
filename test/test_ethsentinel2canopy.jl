@@ -160,6 +160,7 @@ end
     if isnothing(Base.get_extension(NumericalEarth, :NumericalEarthArchGDALExt))
         @test_throws ErrorException canopy_height_cog_to_netcdf(meta, tempname() * ".nc")
         @test_throws ErrorException canopy_height_field(grid, ETHSentinel2CanopyHeight())
+        @test_throws ErrorException tall_canopy_fraction_field(grid, ETHSentinel2CanopyHeight())
     end
 end
 
@@ -213,4 +214,81 @@ end
     @test size(H) == (nx, ny, 1)
     @test H[1, 1, 1] ≈ 50                      # south
     @test isnan(H[1, ny, 1])                   # north-west gap
+end
+
+#####
+##### Multi-tile stitching onto the shared coarse lattice, on synthetic local tiles
+##### (no network): adjacent tiles mosaic without seams, no-data stays NaN, treeless
+##### pixels pull the cell mean down, and never-covered cells land as NaN.
+#####
+
+@testset "Stitched multi-tile lattice" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthArchGDALExt)
+    @test !isnothing(ext)
+
+    # Two adjacent 0.1° × 0.1° EPSG:4326 Byte tiles at 0.002° pixels (5×5 pixels per 0.01°
+    # lattice cell), meeting on the lattice line λ = 0.1 like the product's 3° tiles do.
+    Δ = 0.002
+    nx = ny = 50
+    function synthetic_tile(λ₀, band)
+        tif = tempname() * ".tif"
+        ArchGDAL.create(tif; driver = ArchGDAL.getdriver("GTiff"),
+                        width = nx, height = ny, nbands = 1, dtype = UInt8) do ds
+            ArchGDAL.setgeotransform!(ds, [λ₀, Δ, 0.0, 50.1, 0.0, -Δ])
+            ArchGDAL.setproj!(ds, ArchGDAL.toWKT(ArchGDAL.importEPSG(4326)))
+            ArchGDAL.write!(ArchGDAL.getband(ds, 1), band)
+        end
+        return tif
+    end
+
+    # West tile: 10 m canopy, with three patched lattice cells in row j = 9 (rows 6:10):
+    # (2, 9) all no-data, (3, 9) 25 m trees over a fifth of the cell and treeless elsewhere,
+    # (4, 9) fully treeless — valid zeros, not gaps.
+    west = fill(UInt8(10), nx, ny)
+    west[6:10, 6:10]  .= 255
+    west[11:15, 6:10] .= 0
+    west[11, 6:10]    .= 25
+    west[16:20, 6:10] .= 0
+    east = fill(UInt8(30), nx, ny)
+
+    sources = [synthetic_tile(0.0, west), synthetic_tile(0.1, east)]
+
+    # The region reaches to 0.3°E, one tile width past the published tiles.
+    region = BoundingBox(longitude = (0.0, 0.3), latitude = (50.0, 50.1))
+    lattice, heights = ext.canopy_lattice(sources, region)
+
+    @test size(heights) == (30, 10)
+    @test size(lattice) == (30, 10, 1)
+
+    # Seam-free: per-tile cell means change exactly at the tile boundary, nothing blends.
+    @test all(heights[10, :] .≈ 10)
+    @test all(heights[11, :] .≈ 30)
+    @test all(h -> isnan(h) || any(v -> abs(h - v) < 1e-4, (0, 5, 10, 30)), heights)
+
+    # No-data stays NaN; its valid neighbor is untouched; treeless pixels pull the mean down.
+    @test isnan(heights[2, 9])
+    @test heights[1, 9] ≈ 10
+    @test heights[3, 9] ≈ 5
+    @test heights[4, 9] ≈ 0 atol = 1e-4
+
+    # No tile covers λ > 0.2°: never-covered lattice cells stay NaN.
+    @test all(isnan, heights[21:30, :])
+
+    # Landing on a model grid: area-weighted mean of the valid lattice cells under each grid
+    # cell (the no-data cell is excluded, the treeless cells count); cells the product never
+    # covers stay NaN.
+    grid = LatitudeLongitudeGrid(CPU(); size = (3, 1), longitude = (0, 0.3), latitude = (50, 50.1),
+                                 topology = (Bounded, Bounded, Flat))
+    H = Array(interior(ext.landed_canopy_field(grid, lattice, heights), :, :, 1))
+    @test H[1] ≈ (97 * 10 + 5 + 0) / 99 atol = 0.01
+    @test H[2] ≈ 30
+    @test isnan(H[3])
+
+    # A thresholded lattice lands as the tall-canopy fraction: 98 of the west cell's 99
+    # valid lattice cells stand at least 2 m tall.
+    tall = ifelse.(isnan.(heights), heights, Float32.(heights .>= 2))
+    F = Array(interior(ext.landed_canopy_field(grid, lattice, tall), :, :, 1))
+    @test F[1] ≈ 98 / 99 atol = 0.001
+    @test F[2] ≈ 1
+    @test isnan(F[3])
 end

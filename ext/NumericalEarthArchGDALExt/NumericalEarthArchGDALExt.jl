@@ -8,9 +8,9 @@ using Downloads: Downloads
 using NetworkOptions: NetworkOptions
 using NumericalEarth: NumericalEarth
 
-using Oceananigans: Center, CPU
+using Oceananigans: Bounded, Center, CPU, Face, Flat, LatitudeLongitudeGrid
 using Oceananigans.Architectures: architecture, on_architecture
-using Oceananigans.Fields: Field, interior
+using Oceananigans.Fields: Field, interior, regrid!
 using Oceananigans.Grids: λnodes, φnodes
 
 using NumericalEarth.DataWrangling: BoundingBox, native_grid, native_region_grid,

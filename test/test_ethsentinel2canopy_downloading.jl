@@ -39,6 +39,14 @@ const canopy_height = canopy_height_field(canopy_grid, ETHSentinel2CanopyHeight(
     @test all(0 .< sd .< h)
 end
 
+@testset "Tall-canopy fraction over closed forest" begin
+    fraction = tall_canopy_fraction_field(canopy_grid, ETHSentinel2CanopyHeight())
+    f = Array(interior(fraction, :, :, 1))
+
+    # Closed evergreen canopy: every ~1 km lattice cell stands at least 2 m tall.
+    @test all(f .≈ 1)
+end
+
 @testset "Downloading the ETH regional canopy-height file" begin
     metadatum = Metadatum(:canopy_height; dataset = ETHSentinel2CanopyHeight(), region = canopy_region)
     filepath = metadata_path(metadatum)

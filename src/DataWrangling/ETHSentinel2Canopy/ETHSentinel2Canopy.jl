@@ -1,6 +1,6 @@
 module ETHSentinel2Canopy
 
-export ETHSentinel2CanopyHeight, canopy_height_field
+export ETHSentinel2CanopyHeight, canopy_height_field, tall_canopy_fraction_field
 
 using Downloads: Downloads
 using Oceananigans: Center
@@ -34,7 +34,9 @@ raster distributed in 3°×3° tiles. Two layers per tile:
 
 Canopy height over non-forest is a legitimate value of `0` m (not missing), so
 these fields are **not inpainted** and zeros are kept — only the product's
-explicit no-data code is masked to `NaN`.
+explicit no-data code is masked to `NaN`. The retrieval reads several meters of
+canopy over cropland and grassland, so mask by land-cover class where tree
+heights are wanted.
 
 Because it is a global 10 m product, it is read in regional windows only:
 construct the `Metadatum` with a longitude/latitude `BoundingBox`. The windowed
@@ -254,17 +256,32 @@ canopy_height_cog_to_netcdf(metadatum, nc_path) =
 """
     canopy_height_field(grid, dataset; name = :canopy_height, resampling = "average")
 
-Read `dataset` canopy height directly onto `grid`, area-averaging (`-r average`, with the
-no-data byte excluded from each cell mean) the native COG pixels within each grid cell —
+Read `dataset` canopy height onto `grid`, area-averaging (`-r average`, with the no-data
+byte excluded from each cell mean) the native COG pixels within each grid cell —
 coarse-graining rather than point interpolation, the correct reduction from a 10 m raster
-onto a coarse model cell. Only the windowed COG blocks are read (anonymous `/vsicurl/`), so
-no full-resolution regional file is materialized.
+onto a coarse model cell. Grids finer than the ~1 km aggregation lattice are read in one
+windowed mosaic straight onto their cells; coarser grids — up to continental — go through
+the shared 0.01° lattice the intersecting 3° tiles are aggregated onto, landed with a
+conservative regrid. Only the windowed COG blocks are read (anonymous `/vsicurl/`), so no
+full-resolution regional file is materialized.
 
 Returns a `Field{Center, Center, Nothing}(grid)`: canopy height over non-forest is a valid
-`0`, tiles absent over ocean are skipped, and the product no-data code is masked to `NaN`.
+`0`, tiles absent over ocean are skipped, and cells the product never covers are `NaN`.
 Requires the `ArchGDAL` package (`using ArchGDAL`).
 """
 canopy_height_field(grid, dataset; kw...) =
+    error("Reading a canopy-height Cloud-Optimized GeoTIFF onto a grid requires the " *
+          "ArchGDAL package. Load it with `using ArchGDAL`.")
+
+"""
+    tall_canopy_fraction_field(grid, dataset; threshold = 2)
+
+Fraction of each grid cell standing under tall canopy: the share of the cell's ~1 km
+aggregation-lattice cells whose mean `dataset` canopy height is at least `threshold`
+meters. Cells the product never covers are `NaN`. Requires the `ArchGDAL` package
+(`using ArchGDAL`).
+"""
+tall_canopy_fraction_field(grid, dataset; kw...) =
     error("Reading a canopy-height Cloud-Optimized GeoTIFF onto a grid requires the " *
           "ArchGDAL package. Load it with `using ArchGDAL`.")
 
