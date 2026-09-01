@@ -112,8 +112,9 @@ keyed on it. `:LAI` is the stratification the MCD15 retrieval itself uses, which
 the closer match when the class field is there to pool leaf-area donors.
 
 Class codes are **not** interpolable: read them on the product's own grid, where
-`Field(metadatum)` lands them, and take [`class_fraction`](@ref) if a model grid is wanted.
-A bilinear regrid averages urban (13) against water (17) into permanent snow (15).
+`Field(metadatum)` lands them, and take [`class_fractions`](@ref)`(grid, dataset)` if a
+model grid is wanted. A bilinear regrid averages urban (13) against water (17) into
+permanent snow (15).
 
 Granules are HDF-EOS2 tiles discovered through NASA's Common Metadata Repository, so a
 lon/lat [`BoundingBox`](@ref) is required, `ArchGDAL` must be loaded, and a NASA Earthdata
@@ -351,4 +352,48 @@ function DataWrangling.validate_dataset_coverage(grid, metadata::MODISLandMetada
               "                        region = BoundingBox(longitude = (λ₁, λ₂), latitude = (φ₁, φ₂)))")
     end
     return nothing
+end
+
+#####
+##### The class map on a model grid
+#####
+
+"""
+    class_fractions(grid, dataset::MCD12Q1; date,
+                    region = BoundingBox(grid),
+                    dir = default_download_directory(dataset))
+
+Land the MCD12Q1 class map of `date` on `grid` as per-class area fractions:
+`(; fractions, majority_class)`, where `fractions` holds one fraction `Field` per legend
+class name and `majority_class` is the `Field` of the class code covering the largest
+fraction of each cell (ties resolve to the lower code).
+
+The class map is read on its native lattice over `region`, no-data cells are counted as
+water, and each class's indicator rides the conservative `regrid!`, so every cell's
+fractions sum to one.
+"""
+function DataWrangling.class_fractions(grid, dataset::MCD12Q1;
+                                       date,
+                                       region = BoundingBox(grid),
+                                       dir = default_download_directory(dataset))
+    metadatum = Metadatum(:landcover_class; dataset, region, date, dir)
+    classes = Field(metadatum, child_architecture(grid))
+    codes = interior(classes)
+    codes .= ifelse.(isfinite.(codes), codes, landcover_class_names(dataset).water)
+
+    indicator = Field{Center, Center, Nothing}(classes.grid)
+    majority_class = Field{Center, Center, Nothing}(grid)
+    largest_fraction = Field{Center, Center, Nothing}(grid)
+
+    fractions = map(landcover_class_names(dataset)) do code
+        interior(indicator) .= codes .== code
+        fraction = Field{Center, Center, Nothing}(grid)
+        regrid!(fraction, indicator)
+        interior(majority_class) .= ifelse.(interior(fraction) .> interior(largest_fraction),
+                                            code, interior(majority_class))
+        interior(largest_fraction) .= max.(interior(largest_fraction), interior(fraction))
+        return fraction
+    end
+
+    return (; fractions, majority_class)
 end

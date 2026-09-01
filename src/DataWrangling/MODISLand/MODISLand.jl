@@ -12,7 +12,9 @@ using Dates: Dates, DateTime, Day, dayofyear
 using Downloads: Downloads
 using NCDatasets: NCDataset, defDim, defVar
 using Oceananigans: Center
+using Oceananigans.Architectures: child_architecture
 using Oceananigans.DistributedComputations: @root
+using Oceananigans.Fields: Field, interior, regrid!
 using Statistics: mean
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
