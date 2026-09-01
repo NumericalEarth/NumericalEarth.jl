@@ -38,6 +38,44 @@ function Solvers.BatchedTridiagonalSolver(grid::FTG;
 end
 
 #####
+##### Tupled closures with six or more members
+#####
+#
+# Oceananigans `src/TurbulenceClosures/closure_tuples.jl` (rev `ss/for-omip`, ~line 63) unrolls the
+# tupled-closure dispatch explicitly for one to five closures and handles longer tuples by induction.
+# The induction step interpolates `$f` where it means `$outer_f`, and `f` is the `const f = Face()`
+# defined earlier in the module, so a tuple of six or more closures lowers to `Face()(i, j, k, grid, ...)`
+# and the tendency kernels die at GPU compile time with
+# `unsupported call to an unknown function (call to jl_f_throw_methoderror)`.
+#
+# The OMIP closure is `omip_closure` (four members) plus the optional river-mouth and ice-melt vertical
+# diffusivities, so enabling both crosses the boundary. The methods below re-state the induction step
+# correctly; they are strictly more specific than the upstream `closures::Tuple` fallback, so no upstream
+# method is overwritten. Remove once the typo is fixed upstream.
+
+const outer_closure_functions = [:∂ⱼ_τ₁ⱼ, :∂ⱼ_τ₂ⱼ, :∂ⱼ_τ₃ⱼ, :∇_dot_qᶜ,
+                                 :_ivd_upper_diagonal, :_ivd_lower_diagonal, :_implicit_linear_coefficient,
+                                 :diffusive_flux_x, :diffusive_flux_y, :diffusive_flux_z,
+                                 :viscous_flux_ux, :viscous_flux_uy, :viscous_flux_uz,
+                                 :viscous_flux_vx, :viscous_flux_vy, :viscous_flux_vz,
+                                 :viscous_flux_wx, :viscous_flux_wy, :viscous_flux_wz]
+
+const inner_closure_functions = [:∂ⱼ_τ₁ⱼ, :∂ⱼ_τ₂ⱼ, :∂ⱼ_τ₃ⱼ, :∇_dot_qᶜ,
+                                 :ivd_upper_diagonal, :ivd_lower_diagonal, :implicit_linear_coefficient,
+                                 :diffusive_flux_x, :diffusive_flux_y, :diffusive_flux_z,
+                                 :viscous_flux_ux, :viscous_flux_uy, :viscous_flux_uz,
+                                 :viscous_flux_vx, :viscous_flux_vy, :viscous_flux_vz,
+                                 :viscous_flux_wx, :viscous_flux_wy, :viscous_flux_wz]
+
+const SixOrMoreClosures = Tuple{<:Any, <:Any, <:Any, <:Any, <:Any, <:Any, Vararg{Any}}
+
+for (outer_function, inner_function) in zip(outer_closure_functions, inner_closure_functions)
+    @eval @inline Oceananigans.TurbulenceClosures.$outer_function(i, j, k, grid, closures::SixOrMoreClosures, Ks, args...) = (
+              Oceananigans.TurbulenceClosures.$inner_function(i, j, k, grid, closures[1], Ks[1], args...)
+            + Oceananigans.TurbulenceClosures.$outer_function(i, j, k, grid, closures[2:end], Ks[2:end], args...))
+end
+
+#####
 ##### InMemory FieldTimeSeries split-file (`..._partN.jld2`) support
 #####
 #

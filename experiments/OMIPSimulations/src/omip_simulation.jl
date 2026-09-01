@@ -10,9 +10,13 @@ using Oceananigans.ImmersedBoundaries: bottom_height_field, mask_immersed_field!
 using Oceananigans.Utils: launch!
 using Adapt: Adapt
 using ClimaSeaIce
-using NumericalEarth.Bathymetry: remove_minor_basins!
+using ClimaSeaIce.Rheologies: ElastoViscoPlasticRheology
+using NumericalEarth.Bathymetry: remove_minor_basins!, atlantic_ocean_basin, pacific_ocean_basin
 using NumericalEarth.Oceans: MultipleFluxes, FreshwaterExchange, extract_freshwater_flux, freshwater_exchange
-using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes
+using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes,
+                                                              ConservativeIceFreshwater,
+                                                              ScaledIceFreshwater,
+                                                              VirtualSaltFluxIceFreshwater
 using SeawaterPolynomials.TEOS10: Sᴬ_from_Sᴾ, Θ_from_T
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity,
                                        ConvectiveAdjustmentVerticalDiffusivity,
@@ -140,10 +144,12 @@ Options for `velocity_formulation`:  `:relative`, `:wind`
 """
 function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
                              velocity_formulation::Symbol = :relative,
-                             sea_ice_ocean_heat_transfer_coefficient = 0.0057)
+                             sea_ice_ocean_heat_transfer_coefficient = 0.0057,
+                             ice_freshwater_delivery = ConservativeIceFreshwater())
     FT = eltype(ocean.model.grid)
     if flux_configuration == :default
-        interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice; radiation, land)
+        interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice; radiation, land,
+                                         ice_freshwater_delivery)
         return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, land, interfaces)
     end
 
@@ -158,6 +164,7 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
                                          atmosphere_ocean_fluxes   = corrected_atmosphere_ocean_fluxes(FT),
                                          atmosphere_sea_ice_fluxes = corrected_atmosphere_sea_ice_fluxes(FT),
                                          sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = sea_ice_ocean_heat_transfer_coefficient),
+                                         ice_freshwater_delivery,
                                          atmosphere_ocean_velocity_difference   = velocity_difference_obj,
                                          atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
     elseif flux_configuration == :ncar
@@ -167,6 +174,7 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
                                          atmosphere_ocean_fluxes   = ncar_atmosphere_ocean_fluxes(FT),
                                          atmosphere_sea_ice_fluxes = ncar_atmosphere_sea_ice_fluxes(FT),
                                          sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = sea_ice_ocean_heat_transfer_coefficient),
+                                         ice_freshwater_delivery,
                                          atmosphere_ocean_velocity_difference   = velocity_difference_obj,
                                          atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
     else
@@ -540,6 +548,25 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `river_spread_cells`: number of cells in that footprint, nearest first — a cap when
   `river_spread_radius` is set, and the footprint itself when it is `nothing`. Per-config default:
   `nothing` (uncapped) for the refined grids, `8` for `:orca`/`:test`.
+- `atlantic_runoff_diversion`: fraction of the river and iceberg discharge landing in the Atlantic
+  that is delivered to the Pacific instead, at the latitude it was diverted from. Conserves the
+  global freshwater input. Default: 0.
+- `ice_freshwater_fraction`: the fraction of the sea ice-ocean mass exchange delivered to the ocean,
+  volume and salt alike. The withheld water leaves the ocean + ice + snow total and
+  `normalize_freshwater` returns it globally through the free surface, so the global budget closes
+  while the local delivery is scaled. Default: `1`, the full exchange.
+- `ice_melt_mixing`, `ice_melt_mixing_κ`, `ice_melt_mixing_depth`, `ice_melt_mixing_threshold`: extra
+  vertical tracer diffusivity over the top `ice_melt_mixing_depth` metres wherever the sea ice is
+  melting into the ocean faster than `ice_melt_mixing_threshold` (m s⁻¹). The ice-ocean exchange is
+  delivered to the surface cell, so a melt event leaves a lid one cell thick that the vertical closure
+  must erode; in reality it is stirred through the ice-ocean boundary layer under keels of 1–3 m. Same
+  device as `river_mixing`, and unlike it the footprint follows the melt from step to step. ⚠ `κ` is
+  *not* the river value — 0.1 m² s⁻¹ would mix ≈131 m in a day, which is convective adjustment, while
+  5e-4 gives ≈9 m day⁻¹. Defaults: `false`, `5e-4` m² s⁻¹, `10` m, `1e-9` m s⁻¹.
+- `ice_virtual_salt_flux`: deliver that exchange as a salt flux at fixed ocean volume — the classical
+  virtual salt flux `Jˢ = Jʷ (Sᴺ − Sˢⁱ)` — instead of as a real volume flux, which isolates the volume
+  pathway from the freshwater amount. Exact only for `Sᴺ` uniform over the column, and it does not
+  conserve total salt. Overrides `ice_freshwater_fraction`. Default: `false`.
 - `river_mixing`, `river_mixing_κ`, `river_mixing_depth`: extra vertical tracer diffusivity applied over
   the whole spread footprint (cf. NEMO `rn_avt_rnf` over `rn_hrnf`). Defaults: `true`, `0.1` m² s⁻¹,
   `10` m.
@@ -630,6 +657,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          κ_symmetric = ConfigDefault(),
                          skew_flux_formulation = :diffusive,
                          Cᵇ = 0.28,
+                         Cᵉc = 0.112,
                          biharmonic_timescale = ConfigDefault(),
                          biharmonic_viscosity = nothing,
                          forcing_dir = joinpath(get(ENV, "DATA", ""), "forcing_data"),
@@ -658,6 +686,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          sea_ice_ocean_heat_transfer_coefficient = 0.0057,
                          sea_ice_lateral_boundary_condition = :no_slip,
                          sea_ice_ocean_drag_coefficient = 5.5e-3,
+                         ice_compressive_strength = 27500,
                          partial_cell_bathymetry = false,
                          mixed_layer_tapering = false,
                          normalize_salinity = true,
@@ -668,6 +697,13 @@ function omip_simulation(config::Symbol = :halfdegree;
                          river_mixing_depth = 10,
                          river_spread_radius = ConfigDefault(),
                          river_spread_cells = ConfigDefault(),
+                         atlantic_runoff_diversion = 0,
+                         ice_freshwater_fraction = 1,
+                         ice_virtual_salt_flux = false,
+                         ice_melt_mixing = false,
+                         ice_melt_mixing_κ = 5e-4,
+                         ice_melt_mixing_depth = 10,
+                         ice_melt_mixing_threshold = 1e-9,
                          barotropic_substeps = ConfigDefault(),
                          chlorophyll = :seawifs,
                          thickness_categories = 1,
@@ -716,11 +752,31 @@ function omip_simulation(config::Symbol = :halfdegree;
     # so the routing search must reach that far. A fixed geographic reach keeps it resolution-independent.
     Nx, Ny, _ = size(grid)
     maximum_search_radius = max(5, ceil(Int, 3 / ((360 / Nx + 180 / Ny) / 2)))
+    # Basin masks are only needed when discharge is being moved between them, and the flood fill
+    # behind them is serial, so build them on request.
+    flux_diversion = if atlantic_runoff_diversion > 0
+        basin_mask(basin) = Bool.(dropdims(Array(interior(basin.mask)); dims = 3))
+        (; fraction = atlantic_runoff_diversion,
+           from = basin_mask(atlantic_ocean_basin(grid)),
+           to   = basin_mask(pacific_ocean_basin(grid)))
+    else
+        nothing
+    end
+
     land = JRA55PrescribedLand(grid; dir = atmosphere_dir, dataset = MultiYearJRA55(),
                                start_date, end_date, time_indices_in_memory = backend_size, prefetch = true,
                                maximum_search_radius,
                                spread_radius = river_spread_radius,
-                               n_spread_cells = river_spread_cells)
+                               n_spread_cells = river_spread_cells,
+                               flux_diversion)
+
+    # Built here because the ocean closure is constructed before the coupled model that owns the real
+    # ice-ocean flux; `RefreshIceMeltDiffusivity` fills this field once the simulation exists.
+    ice_melt_diffusivity = ice_melt_mixing ? CenterField(grid) : nothing
+    ice_melt_mask = ice_melt_mixing ?
+        ice_melt_mixing_mask(grid; κ = ice_melt_mixing_κ, mixing_depth = ice_melt_mixing_depth) :
+        nothing
+    ice_melt_κ_closure = ice_melt_mixing ? ice_melt_vertical_diffusivity(ice_melt_diffusivity) : nothing
 
     river_κ = river_mixing ?
         river_mouth_vertical_diffusivity(grid, land.river_routing; κ = river_mixing_κ, mixing_depth = river_mixing_depth) :
@@ -748,7 +804,7 @@ function omip_simulation(config::Symbol = :halfdegree;
 
     ocean = build_ocean(cfg, grid;
                         forcing = ocean_forcing,
-                        κ_skew, κ_symmetric, Cᵇ,
+                        κ_skew, κ_symmetric, Cᵇ, Cᵉc,
                         barotropic_substeps, Δt,
                         nemo_eddy_coefficients,
                         cesm_eddy_coefficients,
@@ -769,14 +825,14 @@ function omip_simulation(config::Symbol = :halfdegree;
                         Cᵂu★,
                         restoring_dir, piston_velocity, chlorophyll,
                         normalize_salinity,
-                        additional_tracer_closure = river_κ,
+                        additional_tracer_closure = filter(!isnothing, (river_κ, ice_melt_κ_closure)),
                         start_date, end_date)
 
     snow_thermodynamics = with_snow ?
         NumericalEarth.SeaIces.default_snow_thermodynamics(grid; thickness_categories) : nothing
     sea_ice = build_sea_ice(cfg, grid, ocean; restoring_dir, snow_thermodynamics, with_ice_dynamics,
                             with_landfast_basal_stress, sea_ice_lateral_boundary_condition,
-                            sea_ice_ocean_drag_coefficient, thickness_categories)
+                            sea_ice_ocean_drag_coefficient, ice_compressive_strength, thickness_categories)
 
     atmosphere, radiation = omip_forcing(arch, sea_ice;
                                          forcing_dir = atmosphere_dir,
@@ -784,8 +840,17 @@ function omip_simulation(config::Symbol = :halfdegree;
                                          end_date,
                                          backend_size)
 
+    ice_freshwater_delivery = if ice_virtual_salt_flux
+        VirtualSaltFluxIceFreshwater()
+    elseif ice_freshwater_fraction == 1
+        ConservativeIceFreshwater()
+    else
+        ScaledIceFreshwater(convert(eltype(grid), ice_freshwater_fraction))
+    end
+
     coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
-                                  velocity_formulation, sea_ice_ocean_heat_transfer_coefficient)
+                                  velocity_formulation, sea_ice_ocean_heat_transfer_coefficient,
+                                  ice_freshwater_delivery)
 
     simulation = Simulation(coupled; Δt, stop_time)
 
@@ -816,6 +881,15 @@ function omip_simulation(config::Symbol = :halfdegree;
         refresh_restoring = RefreshSalinityRestoring(salt_restoring, !restoring_under_sea_ice)
         refresh_restoring(simulation)
         add_callback!(simulation, refresh_restoring, IterationInterval(1))
+    end
+
+    # The ice-melt diffusivity is rebuilt from the ice-ocean freshwater flux each step; prime it so the
+    # first step already sees the real field rather than zeros.
+    if !isnothing(ice_melt_diffusivity)
+        refresh_ice_melt = RefreshIceMeltDiffusivity(ice_melt_diffusivity, ice_melt_mask,
+                                                     convert(eltype(grid), ice_melt_mixing_threshold))
+        refresh_ice_melt(simulation)
+        add_callback!(simulation, refresh_ice_melt, IterationInterval(1))
     end
 
     # NEMO recomputes its Treguier coefficient every step from the current stratification. Primed here
@@ -1065,7 +1139,9 @@ end
 # components are common to every option; the primary vertical closure
 # and any background κ/ν are selected by `vertical_closure`.
 function omip_closure(vertical_closure::Symbol;
-                      κ_skew, κ_symmetric, Cᵇ = 0.28,
+                      κ_skew, κ_symmetric, 
+                      Cᵇ = 0.28, 
+                      Cᵉc = 0.112,
                       biharmonic_timescale,
                       biharmonic_viscosity = nothing,
                       skew_flux_formulation = :diffusive,
@@ -1080,7 +1156,7 @@ function omip_closure(vertical_closure::Symbol;
     background_ν = resolve_background_viscosity(background_vertical_viscosity)
 
     primary, background = if vertical_closure == :catke
-        mixing_length = CATKEMixingLength(; Cᵇ)
+        mixing_length = CATKEMixingLength(; Cᵇ, Cᵉc)
         tke_eq = isnothing(Cᵂu★) ? CATKEEquation() : CATKEEquation(; Cᵂu★)
         catke = CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization();
                                          mixing_length,
@@ -1149,6 +1225,71 @@ end
 # diffusivity `κ` over the top `mixing_depth` metres at the routed river-mouth cells, mixing the
 # fresh plume downward so a coastal surface cell cannot be freshened to zero. Added to the closure.
 @inline river_mouth_κ(i, j, k, grid, clock, fields, mask) = @inbounds mask[i, j, k]
+
+# The same idea as `river_mouth_κ`, applied where the sea ice is *melting* into the ocean. The ice-ocean
+# freshwater flux is delivered to the top cell, so a melt event freshens one 1.5 m cell and CATKE has to
+# erode the resulting lid; in reality the meltwater is stirred through the ice-ocean boundary layer under
+# keels of 1-3 m. The melt condition is dynamic, but the kernel stays a bare lookup and the melt test is
+# applied on the host by `RefreshIceMeltDiffusivity`, which rewrites the field every step. A compound
+# parameter here (the flux, a mask and a threshold) widens the tendency kernel's argument types far
+# enough that inference gives up on unrelated arguments and the GPU compile fails.
+@inline ice_melt_κ(i, j, k, grid, clock, fields, κ) = @inbounds κ[i, j, k]
+
+"""
+    ice_melt_mixing_mask(grid; κ = 5e-4, mixing_depth = 10)
+
+The depth taper of the ice-melt diffusivity: `κ` over the top `mixing_depth` metres and zero below.
+`RefreshIceMeltDiffusivity` copies it into the live diffusivity wherever the ice is melting.
+
+⚠ `κ` is **not** the river value: 0.1 m² s⁻¹ mixes √(2κt) ≈ 131 m in a day, which is convective
+adjustment rather than boundary-layer stirring. The default 5e-4 gives ≈9 m day⁻¹, reaching the
+default `mixing_depth` in about ten days — the right order for an under-ice boundary layer.
+"""
+function ice_melt_mixing_mask(grid; κ = 5e-4, mixing_depth = 10)
+    zc = Array(znodes(grid, Center()))
+    Nz = size(grid, 3)
+    mask_data = zeros(eltype(grid), size(grid)...)
+    for k in 1:Nz
+        zc[k] > -mixing_depth && (mask_data[:, :, k] .= κ)
+    end
+
+    mask = CenterField(grid)
+    set!(mask, mask_data)
+
+    return mask
+end
+
+"""
+    ice_melt_vertical_diffusivity(diffusivity)
+
+Extra vertical tracer diffusivity read from the live `diffusivity` field, which
+`RefreshIceMeltDiffusivity` rewrites each step from the ice-ocean freshwater flux.
+"""
+ice_melt_vertical_diffusivity(diffusivity) =
+    VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization();
+                              κ = ice_melt_κ, discrete_form = true,
+                              loc = (Center, Center, Center), parameters = diffusivity)
+
+"""
+The ocean closure is built before the coupled model exists, so the ice-melt diffusivity is given its own
+field and this callback rewrites it each step: the depth taper wherever the ice-ocean freshwater flux
+exceeds `threshold`, zero elsewhere. The test is against a small positive `threshold` rather than zero so
+a column hovering near no net exchange does not flicker the diffusivity on and off between steps;
+`threshold` is in m s⁻¹, and 1e-9 is about 0.03 m yr⁻¹ of meltwater.
+"""
+struct RefreshIceMeltDiffusivity{K, M, FT}
+    diffusivity :: K
+    mask :: M
+    threshold :: FT
+end
+
+function (r::RefreshIceMeltDiffusivity)(sim)
+    io = sim.model.interfaces.sea_ice_ocean_interface
+    isnothing(io) && return nothing
+    Jʷ = parent(io.fluxes.freshwater)
+    parent(r.diffusivity) .= ifelse.(Jʷ .> r.threshold, parent(r.mask), 0)
+    return nothing
+end
 
 function river_mouth_vertical_diffusivity(grid, river_routing; κ = 0.1, mixing_depth = 10)
     zc = Array(znodes(grid, Center()))
@@ -1462,7 +1603,7 @@ function barotropic_free_surface(grid, substeps, Δt; cfl = 0.7)
 end
 
 function build_ocean(config, grid;
-                     κ_skew, κ_symmetric, Cᵇ = 0.28,
+                     κ_skew, κ_symmetric, Cᵇ = 0.28, Cᵉc = 0.112,
                      barotropic_substeps = 100,
                      Δt,
                      restoring_dir, piston_velocity,
@@ -1510,7 +1651,7 @@ function build_ocean(config, grid;
     end
 
     closure = omip_closure(vertical_closure;
-                           κ_skew, κ_symmetric, Cᵇ,
+                           κ_skew, κ_symmetric, Cᵇ, Cᵉc,
                            biharmonic_timescale, biharmonic_viscosity,
                            skew_flux_formulation,
                            eddy_slope_limiter,
@@ -1519,7 +1660,9 @@ function build_ocean(config, grid;
                            background_vertical_diffusivity,
                            background_vertical_viscosity,
                            Cᵂu★)
-    closure = isnothing(additional_tracer_closure) ? closure : (closure..., additional_tracer_closure)
+    extra_closures = additional_tracer_closure isa Tuple ? additional_tracer_closure :
+                     isnothing(additional_tracer_closure) ? () : (additional_tracer_closure,)
+    closure = (closure..., extra_closures...)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
 
     time_discretization = implicit_vertical_advection ?
@@ -1563,12 +1706,14 @@ function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics =
                        with_landfast_basal_stress = true,
                        sea_ice_lateral_boundary_condition = :no_slip,
                        sea_ice_ocean_drag_coefficient = 5.5e-3,
+                       ice_compressive_strength = 27500,
                        thickness_categories = 1)
 
     basal_stress = with_landfast_basal_stress ? LandfastBasalStress(eltype(grid)) : nothing
 
     dynamics = if with_ice_dynamics
-        NumericalEarth.SeaIces.sea_ice_dynamics(grid, ocean; basal_stress, sea_ice_ocean_drag_coefficient)
+        rheology = ElastoViscoPlasticRheology(eltype(grid); ice_compressive_strength)
+        NumericalEarth.SeaIces.sea_ice_dynamics(grid, ocean; basal_stress, sea_ice_ocean_drag_coefficient, rheology)
     else
         nothing
     end
