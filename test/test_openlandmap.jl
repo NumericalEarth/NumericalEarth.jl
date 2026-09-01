@@ -5,11 +5,12 @@ using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, z
                                     dataset_variable_name, validate_dataset_coverage,
                                     metadata_filename, conversion_units, convert_units,
                                     default_inpainting, is_three_dimensional,
-                                    WeightPercent, GramPerCubicCentimeter
+                                    WeightPercent, GramPerCubicCentimeter,
+                                    metadata_path, native_grid
 using NumericalEarth.DataWrangling.OpenLandMap: cog_window_to_netcdf
 
 using ArchGDAL
-using NCDatasets: NCDataset
+using NCDatasets: NCDataset, defDim, defVar
 
 # The real /vsicurl reads require network access, so they are exercised manually /
 # in the docs build. Here we test the dataset-interface, unit-conversion, and
@@ -140,4 +141,52 @@ end
                                nodata = 255, raw, epsg = 3857)
     bbox = BoundingBox(longitude = (x0, x0 + nx * dx), latitude = (y0 + ny * dy, y0))
     @test_throws ErrorException cog_window_to_netcdf([tif], joinpath(dir, "bad.nc"), "clay", bbox)
+end
+
+@testset "soil_hydraulic_properties from OpenLandMapSoilDB" begin
+    dataset = OpenLandMapSoilDB()
+    dir = mktempdir()
+
+    grid = LatitudeLongitudeGrid(CPU(); size = (4, 3),
+                                 longitude = (0.0, 0.02), latitude = (40.0, 40.015),
+                                 topology = (Bounded, Bounded, Flat))
+
+    # The regional files a download would leave behind: uniform texture in the raw
+    # units (percent, g/cm3), with a NaN hole under the south-west grid cell.
+    values = (sand_fraction = 40.0f0, silt_fraction = 35.0f0,
+              clay_fraction = 25.0f0, bulk_density = 1.4f0)
+    for (name, value) in pairs(values)
+        metadatum = Metadatum(name; dataset, region = BoundingBox(grid), dir)
+        native = native_grid(metadatum, CPU())
+        Nx, Ny, Nz = size(native)
+        data = fill(value, Nx, Ny, Nz)
+        name == :sand_fraction && (data[1:Nx÷4, 1:Ny÷3, :] .= NaN32)
+        NCDataset(metadata_path(metadatum), "c") do ds
+            defDim(ds, "lon", Nx); defDim(ds, "lat", Ny); defDim(ds, "depth", Nz)
+            defVar(ds, "lon", Array(λnodes(native, Center())), ("lon",))
+            defVar(ds, "lat", Array(φnodes(native, Center())), ("lat",))
+            defVar(ds, dataset_variable_name(metadatum), data, ("lon", "lat", "depth"))
+        end
+    end
+
+    hydraulics = soil_hydraulic_properties(grid, dataset; slab_depth = 0.5, dir)
+
+    # Uniform texture reduces to the same parameters as hand-built lattice fields,
+    # with the hole inpainted from its (identical) neighbors.
+    lattice = LatitudeLongitudeGrid(CPU(); size = (4, 3, 3),
+                                    longitude = (0.0, 0.02), latitude = (40.0, 40.015),
+                                    z = [-1.0, -0.6, -0.3, 0.0],
+                                    topology = (Bounded, Bounded, Bounded))
+    texture = map((0.4f0, 0.35f0, 0.25f0, 1400.0f0)) do value
+        field = CenterField(lattice)
+        set!(field, value)
+        return field
+    end
+    reference = soil_hydraulic_properties(texture...; slab_depth = 0.5)
+
+    for name in keys(reference)
+        parameter = hydraulics[name]
+        @test parameter.grid === grid
+        @test interior(parameter, :, :, 1) ≈ interior(reference[name], :, :, 1) rtol=1e-6
+    end
 end
