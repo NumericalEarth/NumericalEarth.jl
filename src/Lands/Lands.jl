@@ -31,7 +31,8 @@ export AbstractLand,
        fill_aerodynamic_roughness_gaps!,
        # Atmosphere-facing accessors
        surface_temperature, surface_saturation,
-       # Land simulations
+       # Land model and simulations
+       land_model,
        land_simulation
 
 """
