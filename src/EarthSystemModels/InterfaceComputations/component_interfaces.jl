@@ -349,6 +349,8 @@ end
 #####
 
 default_ai_temperature(::Nothing) = nothing
+biogeochemical_interface(atmosphere, ocean) = biogeochemical_interface(atmosphere, ocean, ocean.model.biogeochemistry)
+biogeochemical_interface(atmosphere, ocean::Nothing) = NamedTuple()
 biogeochemical_interface(atmosphere, ocean, biogeochemistry) = NamedTuple()
 
 function default_ao_specific_humidity(ocean)
@@ -483,7 +485,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     # refreshed every step in the flux builders.
     properties = merge((; gravitational_acceleration,
                           surface_layer_height = surface_layer_height(atmosphere, exchange_grid)),
-                       biogeochemical_interface(atmosphere, ocean, ocean.model.biogeochemistry))
+                       biogeochemical_interface(atmosphere, ocean))
 
     return ComponentInterfaces(ao_interface,
                                ai_interface,
