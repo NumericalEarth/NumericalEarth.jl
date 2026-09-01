@@ -12,7 +12,7 @@ longitude = (113.0, 115.0)
 Nx = Ny = 18 * refinement
 
 start_date = DateTime(2020, 4, 1)
-end_date   = DateTime(2020, 4, 8)       # forcing window; runs stop before it
+end_date   = DateTime(get(ENV, "END_DATE", "2020-04-08"))   # forcing window; runs stop before it
 landcover_year = 2020
 
 surface_layer_height  = 10
