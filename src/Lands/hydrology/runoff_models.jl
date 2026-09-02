@@ -6,7 +6,8 @@
 ##### * `Rˢᶠᶜ`: surface runoff — rejected liquid input. Returned together with
 #####   the actual surface liquid flux `Jˡˢ` because they are coupled (the
 #####   infiltration-capacity model splits incoming precipitation between the
-#####   two).
+#####   two). The hydrology adds saturation excess (input the remaining pore
+#####   volume cannot hold) to `Rˢᶠᶜ` outside the closure.
 ##### * `Rˡᵃᵗ`: lateral / subsurface runoff — true storage export. Carries
 #####   internal energy with it.
 #####
@@ -24,7 +25,8 @@
 """
     NoRunoff()
 
-No runoff. All precipitation infiltrates (`Jˡˢ = −Pˡ`), no subsurface export.
+No runoff from the closure. All precipitation infiltrates (`Jˡˢ = −Pˡ`) up to
+the pore volume the column has left; no subsurface export.
 """
 struct NoRunoff end
 

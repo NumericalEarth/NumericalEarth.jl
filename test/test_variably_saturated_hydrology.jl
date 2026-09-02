@@ -136,5 +136,28 @@ end
         time_step!(land_drain, 100.0)
         # Expect M to decrease by 100 * 1e-3 = 0.1
         @test only(Array(interior(land_drain.water_storage))) ≈ 399.9 atol = 1e-3
+
+        # Rain on a column at pore capacity runs off: M stays at M⁺ less one step
+        # of drainage, and the runoff is the rain minus the drainage ρˡ K₀ = 1e-3.
+        hydrology_saturating = VariablySaturatedHydrology(eltype(grid);
+            slab_depth = 1.0,
+            porosity = 0.4,
+            storage_height = 1000,
+            retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
+            hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
+            deep_liquid_flux = FreeDrainageFlux(),
+            runoff = InfiltrationCapacityRunoff(infiltration_capacity = 7.0),
+        )
+        land_saturating = SlabLand(grid; hydrology = hydrology_saturating)
+        set!(land_saturating; M = 399.0)
+        fill!(land_saturating.fluxes.vapor_flux, 0)
+        fill!(land_saturating.fluxes.liquid_precipitation_flux, 5.0)  # below capacity 7
+        for _ in 1:20
+            time_step!(land_saturating, 1.0)
+        end
+        M = only(Array(interior(land_saturating.water_storage)))
+        @test M ≤ 400.0
+        @test M ≈ 400.0 - 1e-3 atol = 1e-2
+        @test only(Array(interior(land_saturating.diagnostics.surface_runoff))) ≈ 5.0 - 1e-3 atol = 1e-2
     end
 end
