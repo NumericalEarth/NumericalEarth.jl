@@ -115,8 +115,7 @@ function Downloads.download(metadatum::CopernicusDEMMetadatum)
     return nc_path
 end
 
-# Implemented in ext/NumericalEarthZarrExt.jl once `Zarr` is loaded. The fallback
-# below fires only when the extension is not active.
+# The Zarr extension implements this; the fallback below fires only when it is not loaded.
 zarr_to_netcdf(metadatum, nc_path) =
     error("Reading the Copernicus DEM Zarr store requires the Zarr package. " *
           "Load it with `using Zarr` and set the DESTINE_ACCESS_TOKEN environment variable.")
