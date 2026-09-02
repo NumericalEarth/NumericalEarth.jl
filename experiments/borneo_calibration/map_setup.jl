@@ -68,10 +68,22 @@ function deep_pressure_head_series(grid)
 end
 
 exchange_field = get(ENV, "EXCHANGE_FIELD", "0") == "1"     # carry ℓ as a per-cell Field (calibratable)
+deep_head_mode = get(ENV, "DEEP_HEAD", "series")             # "series": ERA5-Land 28–100 cm through the retention curve;
+deep_head_value = parse(Float64, get(ENV, "DEEP_HEAD_VALUE", "-1.0"))   # "mean": its per-cell time mean; "constant": this value (m), as a Field
+
+function deep_pressure_head_on(grid)
+    deep_head_mode == "series" && return deep_pressure_head_series(grid)
+    head = deep_head_mode == "mean" ?
+        dropdims(mean(deep_head.(era5_land.layer_3, reshape(static.inverse_air_entry_head, 1, Nx, Ny),
+                                 reshape(static.pore_size_uniformity, 1, Nx, Ny), reshape(static.porosity, 1, Nx, Ny),
+                                 reshape(static.residual_liquid_fraction, 1, Nx, Ny)); dims = 1); dims = 1) :
+        fill(FT(deep_head_value), Nx, Ny)
+    return surface_property(grid, FT.(head))
+end
 exchange_length_on(grid) = exchange_field ? surface_property(grid, fill(FT(exchange_length), Nx, Ny)) : exchange_length
 hydrology_options(grid) = deep_flux == "darcy" ?
     (; deep_liquid_flux = DarcyDeepLiquidFlux(FT; exchange_length = exchange_length_on(grid)),
-       deep_pressure_head = deep_pressure_head_series(grid)) : (;)
+       deep_pressure_head = deep_pressure_head_on(grid)) : (;)
 
 # ## State initialization shared by every run (parent-level, so it traces on any backend)
 
@@ -186,6 +198,7 @@ end
 # parameter α slaved so the curve keeps its pedotransfer saturation at the matching head ψ★ = 1 m.
 
 exchange_length_field(model) = model.land.hydrology.soil.soil.deep_liquid_flux.exchange_length
+deep_pressure_head_field(model) = model.land.hydrology.soil.soil.deep_pressure_head
 air_entry_field(model) = model.land.hydrology.soil.soil.retention_curve.inverse_air_entry_head
 pore_size_uniformity_fields(model) = (model.land.hydrology.soil.soil.retention_curve.pore_size_uniformity,
                                       model.land.hydrology.soil.soil.hydraulic_conductivity.pore_size_uniformity)
@@ -200,6 +213,8 @@ function with_calibration(cal)
         haskey(cal, "q") && set_cells!(conductivity_field(model), exp10.(cal["q"]), exp10(median(cal["q"][land])))
         haskey(cal, "log_exchange_length") &&
             set_cells!(exchange_length_field(model), exp.(cal["log_exchange_length"]), exchange_length)
+        haskey(cal, "log_deep_suction") &&
+            set_cells!(deep_pressure_head_field(model), -exp.(cal["log_deep_suction"]), -exp(median(cal["log_deep_suction"][land])))
         if haskey(cal, "log_n_minus_1")
             n = 1 .+ exp.(cal["log_n_minus_1"])
             foreach(f -> set_cells!(f, n, median(n[land])), pore_size_uniformity_fields(model))

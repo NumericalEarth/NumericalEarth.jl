@@ -5,6 +5,8 @@
 #   exchange   λ = log ℓ, the Darcy exchange length to the deep reservoir
 #   retention  ν = log(n − 1), the van Genuchten exponent, with α slaved so the retention curve
 #              keeps its pedotransfer saturation at ψ★ = 1 m
+#   deephead   δ = log ψᵈ, the (time-constant) suction of the deep reservoir, Πᵈ = −ψᵈ; needs
+#              DEEP_HEAD=constant so the head is a per-cell Field rather than the reanalysis series
 #
 #     L = (1/N) Σₙ Σᵢⱼ wᵢⱼ (θᵢⱼ(tₙ; q, λ, ν) − θᵢⱼᴱᴿᴬ⁵ᴸ(tₙ))²,      θ = Mˡᵃ / (ρˡ h₀).
 #
@@ -26,6 +28,8 @@ using Reactant: @trace
 exchange_field || error("set EXCHANGE_FIELD=1 so the model carries the exchange length as a Field")
 Niter = parse(Int, get(ENV, "NITER", "8"))
 active = Symbol.(split(get(ENV, "FIELDS", "K0,exchange"), ","))
+:deephead in active && deep_head_mode == "series" && error("calibrating the deep head needs DEEP_HEAD=constant or mean")
+constant_deep_head = deep_head_mode != "series"
 tag = "map_hydrology_" * join(string.(active), "_") * "_r$(refinement)_$(backend)$(tag_suffix)"
 
 # ## Start values, bounds and characteristic steps
@@ -36,12 +40,14 @@ q = isfile(warm_start) ? jldopen(f -> f["q"], warm_start) : copy(q_pedotransfer)
 λ = fill(log(exchange_length), Nx, Ny)
 ν = log.(static.pore_size_uniformity .- 1)
 ν_pedotransfer = copy(ν)
+δ = constant_deep_head ? log.(-Array(interior(deep_pressure_head_on(cpu_grid), :, :, 1))) : fill(log(1.0), Nx, Ny)
 
 bounds = (; K0 = (q_pedotransfer .- 1, q_pedotransfer .+ 4),
             exchange = (fill(log(0.1), Nx, Ny), fill(log(3.0), Nx, Ny)),
-            retention = (ν_pedotransfer .- 0.5, ν_pedotransfer .+ 0.7))
-steps = (; K0 = 0.25, exchange = 0.25, retention = 0.1)
-fills = (; K0 = median(q[land]), exchange = log(exchange_length), retention = median(ν[land]))
+            retention = (ν_pedotransfer .- 0.5, ν_pedotransfer .+ 0.7),
+            deephead = (fill(log(0.3), Nx, Ny), fill(log(30.0), Nx, Ny)))
+steps = (; K0 = 0.25, exchange = 0.25, retention = 0.1, deephead = 0.25)
+fills = (; K0 = median(q[land]), exchange = log(exchange_length), retention = median(ν[land]), deephead = median(δ[land]))
 𝒮★ = saturation_at_matching_head
 
 # ## The compiled objective: every field set inside the trace
@@ -58,11 +64,12 @@ function set_retention!(model, ν, 𝒮★)
     return nothing
 end
 
-function hydrology_loss(model, k, l, ν, 𝒮★, h, θ₀, T₀, q₀, w, θᵗ, Δt, nsteps)
+function hydrology_loss(model, k, l, ν, d, 𝒮★, h, θ₀, T₀, q₀, w, θᵗ, Δt, nsteps)
     reset_clock!(model.clock)
     reset_clock!(model.land.clock)
     parent(conductivity_field(model)) .= exp.(log(10) .* parent(k))
     parent(exchange_length_field(model)) .= exp.(parent(l))
+    constant_deep_head && (parent(deep_pressure_head_field(model)) .= -exp.(parent(d)))
     set_retention!(model, ν, 𝒮★)
     initialize_map!(model, h, θ₀, T₀, q₀)
     L = sum(zero(parent(h)))
@@ -73,24 +80,25 @@ function hydrology_loss(model, k, l, ν, 𝒮★, h, θ₀, T₀, q₀, w, θᵗ
     return L / nsteps
 end
 
-function grad_hydrology_loss(model, dmodel, k, dk, l, dl, ν, dν, 𝒮★, h, θ₀, T₀, q₀, w, θᵗ, Δt, nsteps)
+function grad_hydrology_loss(model, dmodel, k, dk, l, dl, ν, dν, d, dd, 𝒮★, h, θ₀, T₀, q₀, w, θᵗ, Δt, nsteps)
     parent(dk) .= 0
     parent(dl) .= 0
     parent(dν) .= 0
+    parent(dd) .= 0
     _, L = Enzyme.autodiff(Enzyme.set_strong_zero(Enzyme.ReverseWithPrimal),
                            hydrology_loss, Enzyme.Active,
                            Enzyme.Duplicated(model, dmodel), Enzyme.Duplicated(k, dk), Enzyme.Duplicated(l, dl),
-                           Enzyme.Duplicated(ν, dν), Enzyme.Const(𝒮★), Enzyme.Const(h),
+                           Enzyme.Duplicated(ν, dν), Enzyme.Duplicated(d, dd), Enzyme.Const(𝒮★), Enzyme.Const(h),
                            Enzyme.Const(θ₀), Enzyme.Const(T₀), Enzyme.Const(q₀), Enzyme.Const(w), Enzyme.Const(θᵗ),
                            Enzyme.Const(Δt), Enzyme.Const(nsteps))
-    return dk, dl, dν, L
+    return dk, dl, dν, dd, L
 end
 
 Reactant.set_default_backend(backend)
 grid_ad = land_grid(ReactantState(), FT)
 fields_ad = map_fields(grid_ad, fill(h₀, Nx, Ny))
-k_ad, l_ad, ν_ad = surface_property(grid_ad, q), surface_property(grid_ad, λ), surface_property(grid_ad, ν)
-dk_ad, dl_ad, dν_ad = Enzyme.make_zero(k_ad), Enzyme.make_zero(l_ad), Enzyme.make_zero(ν_ad)
+k_ad, l_ad, ν_ad, d_ad = surface_property(grid_ad, q), surface_property(grid_ad, λ), surface_property(grid_ad, ν), surface_property(grid_ad, δ)
+dk_ad, dl_ad, dν_ad, dd_ad = Enzyme.make_zero(k_ad), Enzyme.make_zero(l_ad), Enzyme.make_zero(ν_ad), Enzyme.make_zero(d_ad)
 𝒮★_ad = Reactant.to_rarray(parent(set_cells!(surface_field(cpu_grid), 𝒮★, median(𝒮★[land]))))
 θ_target_ad = Reactant.to_rarray(θ_target)
 s_ad = surface_parameters(static, grid_ad, FT)
@@ -101,14 +109,15 @@ Oceananigans.initialize!(model_ad)
 
 @info "compiling the reverse pass over $Nsteps steps on the $backend backend..."
 compile_seconds = @elapsed compiled = Reactant.@compile raise=true raise_first=true sync=true grad_hydrology_loss(
-    model_ad, Enzyme.make_zero(model_ad), k_ad, dk_ad, l_ad, dl_ad, ν_ad, dν_ad, 𝒮★_ad, fields_ad.h,
+    model_ad, Enzyme.make_zero(model_ad), k_ad, dk_ad, l_ad, dl_ad, ν_ad, dν_ad, d_ad, dd_ad, 𝒮★_ad, fields_ad.h,
     fields_ad.θ₀, fields_ad.T₀, fields_ad.q₀, fields_ad.w, θ_target_ad, Δt, Nsteps)
 @info @sprintf("compiled in %.0f s", compile_seconds)
 
 # ## Descent: preconditioned adjoint direction, per-cell backtracking over eager runs
 
-parameters = Dict(:K0 => q, :exchange => λ, :retention => ν)
-calibration(v) = Dict("q" => v[:K0], "log_exchange_length" => v[:exchange], "log_n_minus_1" => v[:retention])
+parameters = Dict(:K0 => q, :exchange => λ, :retention => ν, :deephead => δ)
+calibration(v) = merge(Dict("q" => v[:K0], "log_exchange_length" => v[:exchange], "log_n_minus_1" => v[:retention]),
+                       constant_deep_head ? Dict("log_deep_suction" => v[:deephead]) : Dict{String, Any}())
 factors = [1.0, 0.5, 0.25, 0.125, -0.25, 0.0]
 history = []
 
@@ -116,12 +125,13 @@ for iteration in 1:Niter
     set_cells!(k_ad, parameters[:K0], fills.K0)
     set_cells!(l_ad, parameters[:exchange], fills.exchange)
     set_cells!(ν_ad, parameters[:retention], fills.retention)
+    set_cells!(d_ad, parameters[:deephead], fills.deephead)
     dmodel = Enzyme.make_zero(model_ad)
-    t = @elapsed dk_out, dl_out, dν_out, L_ad = compiled(model_ad, dmodel, k_ad, dk_ad, l_ad, dl_ad, ν_ad, dν_ad, 𝒮★_ad,
-                                                          fields_ad.h, fields_ad.θ₀, fields_ad.T₀, fields_ad.q₀,
-                                                          fields_ad.w, θ_target_ad, Δt, Nsteps)
+    t = @elapsed dk_out, dl_out, dν_out, dd_out, L_ad = compiled(model_ad, dmodel, k_ad, dk_ad, l_ad, dl_ad, ν_ad, dν_ad, d_ad, dd_ad,
+                                                                  𝒮★_ad, fields_ad.h, fields_ad.θ₀, fields_ad.T₀, fields_ad.q₀,
+                                                                  fields_ad.w, θ_target_ad, Δt, Nsteps)
     gradients = Dict(:K0 => Array(interior(dk_out, :, :, 1)), :exchange => Array(interior(dl_out, :, :, 1)),
-                     :retention => Array(interior(dν_out, :, :, 1)))
+                     :retention => Array(interior(dν_out, :, :, 1)), :deephead => Array(interior(dd_out, :, :, 1)))
     L = Reactant.to_number(L_ad)
 
     # Each active field moves along its adjoint, scaled to its characteristic step and capped at 4 steps.
@@ -149,13 +159,15 @@ initial = forward_map(fill(h₀, Nx, Ny); record = true)
 θ_obs = hourly_observations()
 fit = 1:(Nsteps ÷ round(Int, 3600 / Δt) + 1)
 s0, s1 = window_scores(initial.snapshots.θ, θ_obs, fit), window_scores(final.snapshots.θ, θ_obs, fit)
-@info @sprintf("calibration (%s): run-RMS %.4f → %.4f;  median r %.3f → %.3f;  median σ ratio %.2f → %.2f;  Δq median %.2f;  ℓ ∈ [%.2f, %.2f] m (median %.2f);  n ∈ [%.3f, %.3f] (median %.3f)",
+@info @sprintf("calibration (%s): run-RMS %.4f → %.4f;  median r %.3f → %.3f;  median σ ratio %.2f → %.2f;  Δq median %.2f;  ℓ ∈ [%.2f, %.2f] m (median %.2f);  n ∈ [%.3f, %.3f] (median %.3f);  deep suction ∈ [%.2f, %.2f] m (median %.2f)",
                join(string.(active), ", "), s0.rms, s1.rms, s0.r, s1.r, s0.σ, s1.σ, median((parameters[:K0] .- q_pedotransfer)[land]),
                extrema(exp.(parameters[:exchange][land]))..., median(exp.(parameters[:exchange][land])),
-               extrema(1 .+ exp.(parameters[:retention][land]))..., median(1 .+ exp.(parameters[:retention][land])))
+               extrema(1 .+ exp.(parameters[:retention][land]))..., median(1 .+ exp.(parameters[:retention][land])),
+               extrema(exp.(parameters[:deephead][land]))..., median(exp.(parameters[:deephead][land])))
 
 jldsave("$(tag).jld2"; h₀, q = parameters[:K0], log_exchange_length = parameters[:exchange], log_n_minus_1 = parameters[:retention],
-        active = string.(active), q_pedotransfer, ν_pedotransfer, weight,
+        (constant_deep_head ? (; log_deep_suction = parameters[:deephead]) : (;))...,
+        active = string.(active), q_pedotransfer, ν_pedotransfer, weight, deep_head_mode,
         history = [(h.iteration, h.L, h.parameters, h.gradients) for h in history], compile_seconds,
         initial_losses = initial.losses, final_losses = final.losses,
         snapshots = Dict(pairs(final.snapshots)), snapshots_initial = Dict(pairs(initial.snapshots)),
@@ -186,7 +198,7 @@ lines!(ax2, 0:Nh-1, med(final.snapshots.θ); color = :firebrick, label = "calibr
 axislegend(ax2; position = :rb)
 panel!((2, 1), mask(exp.(parameters[:exchange])), "calibrated exchange length ℓ", "m")
 panel!((2, 3), mask(1 .+ exp.(parameters[:retention])), "calibrated retention exponent n", "–")
-panel!((2, 5), mask(matched_air_entry.(1 .+ exp.(parameters[:retention]), 𝒮★)), "matched air-entry α", "m⁻¹")
+panel!((2, 5), mask(exp.(parameters[:deephead])), "deep suction ψᵈ (constant head)", "m")
 rlim = (0, maximum(sqrt.(initial.losses[land])))
 panel!((3, 1), mask(sqrt.(initial.losses)), "run-RMS mismatch, start", "m³ m⁻³"; colormap = :amp, colorrange = rlim)
 panel!((3, 3), mask(sqrt.(final.losses)), "run-RMS mismatch, calibrated", "m³ m⁻³"; colormap = :amp, colorrange = rlim)

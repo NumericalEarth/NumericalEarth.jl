@@ -11,7 +11,7 @@ using Statistics: std
 
 calibration = get(ENV, "CALIBRATION", "map_joint_r$(refinement)_gpu")
 calibration_steps = parse(Int, get(ENV, "CALIBRATION_STEPS", "900"))
-tag = "validation_of_$(calibration)"
+tag = "validation_of_$(calibration)" * get(ENV, "VALIDATION_SUFFIX", "")
 steps_per_hour = round(Int, 3600 / Δt)
 Nh = Nsteps ÷ steps_per_hour + 1
 length(era5_land.times) ≥ Nh || error("era5_land cache holds $(length(era5_land.times)) hours, need $Nh; re-ingest with a later END_DATE")
