@@ -47,7 +47,7 @@ using Adapt: Adapt
 using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
-using Oceananigans.Architectures: architecture, on_architecture
+using Oceananigans.Architectures: CPU, architecture, on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField
 using Oceananigans.Grids: grid_name, Center, Face, znodes, φnode

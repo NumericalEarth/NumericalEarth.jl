@@ -200,8 +200,8 @@ end
 
         hydrology = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1, porosity = 0.4, storage_height = 1000,
-            retention_curve = VanGenuchtenRetention(α = 1, n = 2),
-            hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2),
+            retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1, pore_size_uniformity = 2),
+            hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2),
             deep_liquid_flux = NoDeepLiquidFlux(), runoff = NoRunoff())
         energy = WaterCoupledEnergy(eltype(grid);
             dry_heat_capacity = cᵈʳʸ,

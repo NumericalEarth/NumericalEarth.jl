@@ -223,7 +223,7 @@ function soil_hydraulic_properties(sand, silt, clay, bulk_density;
                                 "share one grid"))
     end
 
-    z_interfaces = znodes(grid, Face())
+    z_interfaces = on_architecture(CPU(), znodes(grid, Face()))
 
     ψ¹, ψ² = matching_heads
     0 < ψ¹ < ψ² ||
