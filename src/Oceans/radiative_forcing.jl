@@ -1,7 +1,7 @@
 using Adapt: Adapt
 using DocStringExtensions: TYPEDSIGNATURES
 using Oceananigans.Grids: inactive_cell
-using Oceananigans.Operators: ∂zᶜᶜᶜ
+using Oceananigans.Operators: ∂zᶜᶜᶜ, Δzᶜᶜᶜ, Δrᶜᶜᶜ
 
 
 """
@@ -222,6 +222,7 @@ end
 
 @inline function (R::TwoColorRadiation)(i, j, k, grid, clock, fields)
     J₀ = @inbounds R.surface_flux[i, j, 1]
+    Nz = size(grid, 3)
     κ₁ = R.first_absorption_coefficient
     κ₂ = blue_green_absorption_coefficient(R.second_absorption_coefficient, i, j)
     ϵ₁ = R.first_color_fraction
@@ -231,17 +232,39 @@ end
     dJ₂dz = ∂zᶜᶜᶜ(i, j, k, grid, beers_law_radiation, J₀, κ₂)
 
     # Net radiation flux divergence
-    return ϵ₁ * dJ₁dz + (1 - ϵ₁) * dJ₂dz
+    dJdz = ϵ₁ * dJ₁dz + (1 - ϵ₁) * dJ₂dz
+
+    # The surface cell's share is delivered through the temperature boundary condition instead. 
+    surface_share = surface_absorbed_fraction(i, j, grid, R) * J₀ / Δzᶜᶜᶜ(i, j, Nz, grid)
+    return dJdz - ifelse(k == Nz, surface_share, zero(dJdz))
 end
 
 @inline shortwave_radiative_forcing(i, j, grid, Fᵀ, ℐₜˢʷ, ocean_properties) = ℐₜˢʷ
+
+"""
+$(TYPEDSIGNATURES)
+
+Fraction of the net shortwave absorbed within the surface cell, from Beer's law on both colors.
+Vertical closures build their surface buoyancy flux from the tracer boundary conditions, so this
+part of the shortwave has to arrive there rather than as an interior source. Beer's law is evaluated
+on the reference thickness `Δr`, which a moving vertical coordinate leaves alone: the condition is
+set once per coupled step while the interior source is evaluated at every substep, and the column
+closes on the incoming shortwave only if the two read the same fraction.
+"""
+@inline function surface_absorbed_fraction(i, j, grid, tcr::TwoColorRadiation)
+    Δr = Δrᶜᶜᶜ(i, j, size(grid, 3), grid)
+    ϵ₁ = tcr.first_color_fraction
+    κ₁ = tcr.first_absorption_coefficient
+    κ₂ = blue_green_absorption_coefficient(tcr.second_absorption_coefficient, i, j)
+    return ϵ₁ * (1 - exp(-κ₁ * Δr)) + (1 - ϵ₁) * (1 - exp(-κ₂ * Δr))
+end
 
 @inline function shortwave_radiative_forcing(i, j, grid, tcr::TwoColorRadiation, Iˢʷ, ocean_properties)
     ρᵒᶜ = ocean_properties.reference_density
     cᵒᶜ = ocean_properties.heat_capacity
     J₀ = tcr.surface_flux
     @inbounds J₀[i, j,  1] = - Iˢʷ / (ρᵒᶜ * cᵒᶜ)
-    return zero(Iˢʷ)
+    return surface_absorbed_fraction(i, j, grid, tcr) * Iˢʷ
 end
 
 get_radiative_forcing(something) = nothing
