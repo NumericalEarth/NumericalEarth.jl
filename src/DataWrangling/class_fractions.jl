@@ -50,3 +50,52 @@ function class_fractions(codes, classes, factor)
 
     return fractions
 end
+
+#####
+##### The majority class of regridded fractions
+#####
+
+"""
+    majority_class!(majority_class, fractions, codes)
+
+Set each cell of `majority_class` to the entry of `codes` whose `Field` in `fractions`
+covers the largest fraction of it, ties going to the earlier entry. Cells whose fractions
+sum below one half are `NaN`.
+"""
+function majority_class!(majority_class, fractions, codes)
+    grid = majority_class.grid
+    arch = child_architecture(architecture(grid))
+    LX, LY, LZ = location(majority_class)
+    largest_fraction = Field{LX, LY, LZ}(grid)
+    total_fraction = Field{LX, LY, LZ}(grid)
+
+    fill!(majority_class, 0)
+    for (fraction, code) in zip(fractions, codes)
+        launch!(arch, grid, :xyz, _accumulate_majority_class!,
+                majority_class, largest_fraction, total_fraction, fraction, code)
+    end
+
+    launch!(arch, grid, :xyz, _mask_uncovered_class!, majority_class, total_fraction)
+    fill_halo_regions!(majority_class)
+    return majority_class
+end
+
+@kernel function _accumulate_majority_class!(target, largest_fraction, total_fraction, fraction, code)
+    i, j, k = @index(Global, NTuple)
+    @inbounds begin
+        f = fraction[i, j, k]
+        larger = f > largest_fraction[i, j, k]
+        largest_fraction[i, j, k] = ifelse(larger, f, largest_fraction[i, j, k])
+        target[i, j, k] = ifelse(larger, convert(eltype(target), code), target[i, j, k])
+        total_fraction[i, j, k] += f
+    end
+end
+
+# Cells outside the product's coverage have no valid pixels, so every fraction is
+# zero and no class holds a majority.
+@kernel function _mask_uncovered_class!(target, total_fraction)
+    i, j, k = @index(Global, NTuple)
+    FT = eltype(target)
+    @inbounds covered = total_fraction[i, j, k] > convert(FT, 1//2)
+    @inbounds target[i, j, k] = ifelse(covered, target[i, j, k], convert(FT, NaN))
+end

@@ -742,6 +742,7 @@ end
         majority = landed(majority_class)
         @test all(majority[1, :] .== igbp_class_names.grassland)
         @test all(majority[2, :] .== igbp_class_names.water)
+        @test landed(Field(metadatum, grid)) == majority
     end
 end
 
