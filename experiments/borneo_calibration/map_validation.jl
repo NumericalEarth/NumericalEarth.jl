@@ -31,7 +31,7 @@ end
 q_fill = median(q[land])
 with_conductivity(qv) = model -> (set_cells!(conductivity_field(model), exp10.(qv), exp10(q_fill)); nothing)
 
-calibrated   = forward_map(calibrated_depths; record = true, modify! = with_conductivity(q))
+calibrated   = forward_map(calibrated_depths; record = true, modify! = with_calibration(it))
 conductivity_only = forward_map(fill(h₀, Nx, Ny); record = true, modify! = with_conductivity(q_conductivity_only))
 uncalibrated = forward_map(fill(h₀, Nx, Ny); record = true)
 

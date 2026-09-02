@@ -67,8 +67,11 @@ function deep_pressure_head_series(grid)
     return Πᵈ
 end
 
+exchange_field = get(ENV, "EXCHANGE_FIELD", "0") == "1"     # carry ℓ as a per-cell Field (calibratable)
+exchange_length_on(grid) = exchange_field ? surface_property(grid, fill(FT(exchange_length), Nx, Ny)) : exchange_length
 hydrology_options(grid) = deep_flux == "darcy" ?
-    (; deep_liquid_flux = DarcyDeepLiquidFlux(FT; exchange_length), deep_pressure_head = deep_pressure_head_series(grid)) : (;)
+    (; deep_liquid_flux = DarcyDeepLiquidFlux(FT; exchange_length = exchange_length_on(grid)),
+       deep_pressure_head = deep_pressure_head_series(grid)) : (;)
 
 # ## State initialization shared by every run (parent-level, so it traces on any backend)
 
@@ -174,4 +177,35 @@ function window_scores(θ_model, θ_obs, hours)
         std(m) > 0 && push!(r, cor(m, o))
     end
     return (; rms = sqrt(mean(mse)), r = median(r), σ = median(σratio))
+end
+
+# ## Applying a saved calibration to a model: whichever fields the file carries
+#
+# `q` is log₁₀K₀; `log_exchange_length` the Darcy exchange length (needs EXCHANGE_FIELD=1 so the
+# model carries it as a Field); `log_n_minus_1` the retention exponent, with the air-entry
+# parameter α slaved so the curve keeps its pedotransfer saturation at the matching head ψ★ = 1 m.
+
+exchange_length_field(model) = model.land.hydrology.soil.soil.deep_liquid_flux.exchange_length
+air_entry_field(model) = model.land.hydrology.soil.soil.retention_curve.inverse_air_entry_head
+pore_size_uniformity_fields(model) = (model.land.hydrology.soil.soil.retention_curve.pore_size_uniformity,
+                                      model.land.hydrology.soil.soil.hydraulic_conductivity.pore_size_uniformity)
+
+matching_head = 1.0
+van_genuchten_saturation(α, n, ψ) = (1 + (α * ψ)^n)^(-(1 - 1 / n))
+matched_air_entry(n, 𝒮★) = (𝒮★^(-1 / (1 - 1 / n)) - 1)^(1 / n) / matching_head
+saturation_at_matching_head = van_genuchten_saturation.(static.inverse_air_entry_head, static.pore_size_uniformity, matching_head)
+
+function with_calibration(cal)
+    return function (model)
+        haskey(cal, "q") && set_cells!(conductivity_field(model), exp10.(cal["q"]), exp10(median(cal["q"][land])))
+        haskey(cal, "log_exchange_length") &&
+            set_cells!(exchange_length_field(model), exp.(cal["log_exchange_length"]), exchange_length)
+        if haskey(cal, "log_n_minus_1")
+            n = 1 .+ exp.(cal["log_n_minus_1"])
+            foreach(f -> set_cells!(f, n, median(n[land])), pore_size_uniformity_fields(model))
+            α = matched_air_entry.(n, saturation_at_matching_head)
+            set_cells!(air_entry_field(model), α, median(α[land]))
+        end
+        return nothing
+    end
 end
