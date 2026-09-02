@@ -3,7 +3,7 @@
 #####
 ##### Each closure implements
 #####
-#####     deep_liquid_flux(closure, M, θˡ, 𝒮, Π, K, Πᵈ, time) -> Jˡᵇ  (kg m⁻² s⁻¹)
+#####     deep_liquid_flux(i, j, grid, closure, M, θˡ, 𝒮, Π, K, Πᵈ, time) -> Jˡᵇ  (kg m⁻² s⁻¹)
 #####
 ##### with `Jˡᵇ` positive upward (capillary rise / groundwater return) and
 ##### negative downward (drainage). All scalars are per-cell; the kernel
@@ -17,7 +17,7 @@ Zero deep liquid flux. The slab is closed at the bottom.
 """
 struct NoDeepLiquidFlux end
 
-@inline deep_liquid_flux(::NoDeepLiquidFlux, M, θˡ, 𝒮, Π, K, Πᵈ, time) = zero(M)
+@inline deep_liquid_flux(i, j, grid, ::NoDeepLiquidFlux, M, θˡ, 𝒮, Π, K, Πᵈ, time) = zero(M)
 
 Base.summary(::NoDeepLiquidFlux) = "NoDeepLiquidFlux"
 
@@ -34,7 +34,7 @@ end
 FreeDrainageFlux(FT::Type = Oceananigans.defaults.FloatType; liquid_density = 1000) =
     FreeDrainageFlux(convert(FT, liquid_density))
 
-@inline deep_liquid_flux(c::FreeDrainageFlux, M, θˡ, 𝒮, Π, K, Πᵈ, time) =
+@inline deep_liquid_flux(i, j, grid, c::FreeDrainageFlux, M, θˡ, 𝒮, Π, K, Πᵈ, time) =
     -convert(typeof(M), c.liquid_density) * K
 
 Base.summary(c::FreeDrainageFlux) =
@@ -45,7 +45,7 @@ Base.summary(c::FreeDrainageFlux) =
 
 Darcy exchange between the slab bottom and a deep reservoir held at pressure
 head `Πᵈ`, set via `VariablySaturatedHydrology(deep_pressure_head = …)`. The
-exchange length `ℓ_l` (m) separates the slab bottom from the deep reservoir;
+exchange length `ℓ_l` (m, a scalar or a per-cell `Field`) separates the slab bottom from the deep reservoir;
 the deep height is `z_D = z_b − ℓ_l`. With hydraulic heads `h_b = z_b + Π_b`
 and `h_D = z_D + Πᵈ`,
 
@@ -53,19 +53,22 @@ and `h_D = z_D + Πᵈ`,
 J^{lb} = \\rho^l K_b\\,\\frac{h_D - h_b}{\\ell_l}.
 ```
 """
-struct DarcyDeepLiquidFlux{FT}
-    exchange_length :: FT
+struct DarcyDeepLiquidFlux{L, FT}
+    exchange_length :: L
     liquid_density  :: FT
 end
 
 DarcyDeepLiquidFlux(FT::Type = Oceananigans.defaults.FloatType;
                     exchange_length, liquid_density = 1000) =
-    DarcyDeepLiquidFlux(convert(FT, exchange_length),
+    DarcyDeepLiquidFlux(normalize_property(FT, exchange_length),
                         convert(FT, liquid_density))
 
-@inline function deep_liquid_flux(c::DarcyDeepLiquidFlux, M, θˡ, 𝒮, Π, K, Πᵈ, time)
+Adapt.adapt_structure(to, c::DarcyDeepLiquidFlux) =
+    DarcyDeepLiquidFlux(Adapt.adapt(to, c.exchange_length), c.liquid_density)
+
+@inline function deep_liquid_flux(i, j, grid, c::DarcyDeepLiquidFlux, M, θˡ, 𝒮, Π, K, Πᵈ, time)
     FT = typeof(M)
-    ℓ  = convert(FT, c.exchange_length)
+    ℓ  = convert(FT, property_value(c.exchange_length, i, j))
     ρˡ = convert(FT, c.liquid_density)
     # h_D − h_b = (z_D + Πᵈ) − (z_b + Π) = -ℓ + Πᵈ − Π
     return ρˡ * K * (Πᵈ - Π - ℓ) / ℓ
@@ -96,7 +99,7 @@ LinearReservoirDrainage(FT::Type = Oceananigans.defaults.FloatType;
     LinearReservoirDrainage(convert(FT, drainage_time_scale),
                             convert(FT, equilibrium_storage))
 
-@inline function deep_liquid_flux(c::LinearReservoirDrainage, M, θˡ, 𝒮, Π, K, Πᵈ, time)
+@inline function deep_liquid_flux(i, j, grid, c::LinearReservoirDrainage, M, θˡ, 𝒮, Π, K, Πᵈ, time)
     FT = typeof(M)
     return -max(M - convert(FT, c.equilibrium_storage), 0) / convert(FT, c.drainage_time_scale)
 end
