@@ -88,7 +88,7 @@ end
 
 # Δz is formed on the host and copied through the parent: broadcasting into an `interior`
 # view scalar-indexes GPU and Reactant buffers.
-function materialize_correction(c::ElevationCorrection, grid, atmosphere)
+function materialize_correction(c::AltitudeCorrection, grid, atmosphere)
     cpu_grid = on_architecture(CPU(), grid)
     zᵃ = Field{Center, Center, Nothing}(cpu_grid)
     zˢ = Field{Center, Center, Nothing}(cpu_grid)
