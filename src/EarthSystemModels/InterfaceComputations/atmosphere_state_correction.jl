@@ -86,8 +86,8 @@ end
 @inline materialize_elevation!(field, elevation::AbstractArray) =
     (Oceananigans.interior(field, :, :, 1) .= elevation; field)
 
-# Δz is formed on the host and copied through the parent: broadcasting into an `interior`
-# view scalar-indexes GPU and Reactant buffers.
+# Δz is formed on the host: subtracting `interior` views scalar-indexes GPU and Reactant
+# buffers.
 function materialize_correction(c::AltitudeCorrection, grid, atmosphere)
     cpu_grid = on_architecture(CPU(), grid)
     zᵃ = Field{Center, Center, Nothing}(cpu_grid)
@@ -97,7 +97,7 @@ function materialize_correction(c::AltitudeCorrection, grid, atmosphere)
     Oceananigans.interior(zˢ) .-= Oceananigans.interior(zᵃ)
 
     Δz = Field{Center, Center, Nothing}(grid)
-    parent(Δz) .= parent(zˢ)
+    Oceananigans.set!(Δz, zˢ)
 
     FT = eltype(grid)
     constants = thermodynamic_constants(atmosphere)
