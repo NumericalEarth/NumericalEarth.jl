@@ -168,6 +168,7 @@ Detailed reference docs are in `.agents/` — read on demand:
 | `.agents/documentation.md` | Building docs, fast builds, Literate.jl examples, doctest details |
 | `.agents/validation.md` | Reproducing paper results, common issues, TC genesis |
 | `.agents/physics-debugging.md` | Thermodynamic variables, diagnose-before-fix, model architecture |
+| `.agents/cluster.md` | Slurm/GPU clusters: precompilation, MPI launches, job health, sysimages |
 
 ### Auto-loading Rules
 
