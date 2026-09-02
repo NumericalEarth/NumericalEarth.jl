@@ -61,7 +61,9 @@ for (label, s) in table
     @printf("%-44s", label); foreach(x -> @printf("   %.4f · %.2f · %.2f   ", x.rms, x.r, x.σ), s); println()
 end
 jldsave("suite_scorecard_r1.jld2"; labels = first.(table), windows = first.(windows),
-        rms = [x.rms for (_, s) in table, x in s], r = [x.r for (_, s) in table, x in s], σ = [x.σ for (_, s) in table, x in s])
+        rms = [table[i][2][w].rms for i in eachindex(table), w in eachindex(windows)],
+        r = [table[i][2][w].r for i in eachindex(table), w in eachindex(windows)],
+        σ = [table[i][2][w].σ for i in eachindex(table), w in eachindex(windows)])
 
 med(x) = [median(x[k, :, :][land]) for k in 1:Nh]
 mask(a) = ifelse.(land, a, NaN)
