@@ -17,7 +17,7 @@ Nh = Nsteps ÷ steps_per_hour + 1
 length(era5_land.times) ≥ Nh || error("era5_land cache holds $(length(era5_land.times)) hours, need $Nh; re-ingest with a later END_DATE")
 
 it = jldopen(f -> Dict(k => f[k] for k in keys(f)), "$(calibration).jld2")
-calibrated_depths, q = it["depths"], it["q"]
+calibrated_depths, q = haskey(it, "depths") ? it["depths"] : fill(FT(it["h₀"]), Nx, Ny), it["q"]
 q_conductivity_only = jldopen(f -> f["q"], get(ENV, "CONDUCTIVITY_ONLY", "map_logK_r$(refinement)_gpu$(tag_suffix).jld2"))
 
 conductivity_field(model) = model.land.hydrology.soil.soil.hydraulic_conductivity.matching_point_conductivity
