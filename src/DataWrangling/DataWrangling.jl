@@ -268,6 +268,7 @@ include("metadata.jl")
 include("set_region_data.jl")
 include("field_cache.jl")
 include("metadata_field.jl")
+include("tiled_regridding.jl")
 include("dataset_backend.jl")
 include("metadata_field_time_series.jl")
 include("inpainting.jl")
@@ -359,6 +360,7 @@ include("ECCO/ECCO.jl")
 include("GLORYS/GLORYS.jl")
 include("AVISO/AVISO.jl")
 include("ERA5/ERA5.jl")
+include("SeaWiFS/SeaWiFS.jl")
 include("EN4/EN4.jl")
 include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
@@ -381,6 +383,7 @@ using .ECCO
 using .GLORYS
 using .AVISO
 using .ERA5
+using .SeaWiFS
 using .EN4
 using .ORCA
 using .WOA

@@ -23,8 +23,6 @@ export
     SimilarityTheoryFluxes,
     FixedIterations,
     ConvergenceStopCriteria,
-    LandRoughnessLength,
-    LandZeroPlaneDisplacement,
     CoefficientBasedFluxes,
     FreezingLimitedOceanTemperature,
     SkinTemperature,

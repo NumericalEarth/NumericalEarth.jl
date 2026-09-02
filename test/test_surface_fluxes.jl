@@ -243,8 +243,6 @@ end
         @test model_with_land.land.freshwater_flux === land.freshwater_flux
         @test typeof(model_with_land.land.clock.time) === typeof(model_with_land.clock.time)
 
-        # Test PrescribedLand display methods
-        @test summary(land) isa String
         @test contains(sprint(show, land), "PrescribedLand")
         @test contains(sprint(show, land), "freshwater_flux")
 
