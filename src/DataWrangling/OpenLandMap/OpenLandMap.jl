@@ -3,14 +3,21 @@ module OpenLandMap
 export OpenLandMapSoilDB
 
 using Downloads: Downloads
+using DocStringExtensions: TYPEDSIGNATURES
 using NCDatasets: NCDataset, defDim, defVar
-using Oceananigans: Center
+using Oceananigans: Bounded, Center, Face, LatitudeLongitudeGrid
+using Oceananigans.Architectures: architecture
 using Oceananigans.DistributedComputations: @root
+using Oceananigans.Fields: Field, interior
+using Oceananigans.Grids: λnodes, φnodes
 
 using ..DataWrangling: DataWrangling,
     AbstractStaticDataset, Metadatum, BoundingBox, Dataset,
     WeightPercent, GramPerCubicCentimeter,
-    metadata_path, dataset_variable_name, bounding_box_suffix
+    metadata_path, dataset_variable_name, bounding_box_suffix,
+    default_download_directory, inpaint_mask!
+
+using ...Lands: Lands
 
 import Oceananigans
 
@@ -242,6 +249,52 @@ function cog_window_to_netcdf(sources, nc_path, variable_name, bbox)
     end
 
     return nothing
+end
+
+#####
+##### Hydraulic parameters straight from the dataset
+#####
+
+"""
+$(TYPEDSIGNATURES)
+
+Effective van Genuchten parameter fields for `grid` computed from `dataset`: the four
+texture variables (`:sand_fraction`, `:silt_fraction`, `:clay_fraction`, `:bulk_density`)
+are read over `region` onto a lattice with `grid`'s horizontal cells and the dataset's
+depth layers, their gaps are inpainted, and the per-layer pedotransfer reduction runs
+over `slab_depth`. Returns the reduction's NamedTuple with each parameter as a
+`Field{Center, Center, Nothing}` on `grid`. `dir` is the download directory; remaining
+keyword arguments (`ptf`, `matching_heads`) pass to the reduction.
+"""
+function Lands.soil_hydraulic_properties(grid, dataset::OpenLandMapSoilDB;
+                                         slab_depth,
+                                         region = BoundingBox(grid),
+                                         dir = default_download_directory(dataset),
+                                         kw...)
+    z = DataWrangling.z_interfaces(dataset)
+    Nx, Ny, _ = size(grid)
+    lattice = LatitudeLongitudeGrid(architecture(grid), eltype(grid);
+                                    size = (Nx, Ny, length(z) - 1),
+                                    longitude = λnodes(grid, Face(), Center(), Center()),
+                                    latitude = φnodes(grid, Center(), Face(), Center()),
+                                    z,
+                                    topology = (Bounded, Bounded, Bounded))
+
+    texture = map((:sand_fraction, :silt_fraction, :clay_fraction, :bulk_density)) do name
+        field = Field(Metadatum(name; dataset, region, dir), lattice)
+        gaps  = Field{Center, Center, Center}(lattice, Bool)
+        interior(gaps) .= .!isfinite.(interior(field))
+        inpaint_mask!(field, gaps)
+        return field
+    end
+
+    layered = Lands.soil_hydraulic_properties(texture...; slab_depth, kw...)
+
+    return map(layered) do parameter
+        surface = Field{Center, Center, Nothing}(grid)
+        interior(surface, :, :, 1) .= interior(parameter, :, :, 1)
+        return surface
+    end
 end
 
 end # module OpenLandMap
