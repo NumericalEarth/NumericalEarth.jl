@@ -136,6 +136,11 @@ function netrc_downloader(username, password, machine, dir; verify_ssl = true)
     easy_hook  = (easy, _) -> begin
         Downloads.Curl.setopt(easy, LibCURL.CURLOPT_NETRC_FILE, netrc_file)
         verify_ssl || Downloads.Curl.setopt(easy, LibCURL.CURLOPT_SSL_VERIFYPEER, false)
+
+        # Some hosts run a flaky HTTP/2 server that resets
+        # streams under concurrent load ("HTTP/2 stream ... INTERNAL_ERROR"). Forcing
+        # HTTP/1.1 avoids multiplexed streams altogether and is far more reliable here.
+        Downloads.Curl.setopt(easy, Downloads.Curl.CURLOPT_HTTP_VERSION, Downloads.Curl.CURL_HTTP_VERSION_1_1)
     end
     downloader.easy_hook = easy_hook
     return downloader

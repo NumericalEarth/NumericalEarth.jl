@@ -53,12 +53,13 @@ function DataWrangling.metadata_filename(dataset::ECCODarwin, name, date, region
 end
 
 # Convenience functions
-DataWrangling.default_mask_value(::ECCO4DarwinMonthly) = 0
-DataWrangling.default_mask_value(::ECCO2DarwinMonthly) = 0
-
 DataWrangling.dataset_variable_name(data::ECCODarwinMetadata) = ECCO_darwin_dataset_variable_names[data.name]
-
-variable_is_three_dimensional(::ECCODarwinMetadata) = true
+DataWrangling.longitude_name(           ::ECCODarwinMetadata) = "longitude"
+DataWrangling.latitude_name(            ::ECCODarwinMetadata) = "latitude"
+DataWrangling.default_mask_value(       ::ECCODarwinMetadata) = NaN
+DataWrangling.missing_value(            ::ECCODarwinMetadata) = NaN
+DataWrangling.is_three_dimensional(     ::ECCODarwinMetadata) = true
+variable_is_three_dimensional(          ::ECCODarwinMetadata) = true
 
 ECCO_darwin_dataset_variable_names = Dict(
     :temperature                    => "THETA",
@@ -74,18 +75,18 @@ ECCO_darwin_dataset_variable_names = Dict(
     :dissolved_oxygen               => "O2",
 )
 
-DataWrangling.is_three_dimensional(data::ECCODarwinMetadata) = true
-
 """
     conversion_units(metadatum::Metadatum{<:ECCODarwin})
 
 Set up conversion from the ECCODarwin output data to standard units
   -  salinity = SALTanom + 35
-  -  biogeochemical tracer concentrations are in uL => umol/L in the output files from Darwin
+  -  biogeochemical tracer concentrations are in umol => umol/L in the output files from Darwin
 """
 function DataWrangling.conversion_units(metadatum::Union{ECCODarwinMetadata, ECCODarwinMetadatum})
     if dataset_variable_name(metadatum) == "SALTanom"
         return GramPerKilogramMinus35()
+    elseif dataset_variable_name(metadatum) != "THETA"
+        return MicromolePerLiter() # or mmol/m3, but we choose the more conventional oceanographic units for biogeochemical tracers converted with a factor of 1000 to mol/m3
     else
         return nothing
     end
@@ -113,9 +114,9 @@ DataWrangling.binary_data_size(::ECCO2DarwinMonthly) = (270, 3510, 50)
 DataWrangling.longitude_interfaces(::ECCO4DarwinMonthly) = (-180, 180)
 
 """
-    retrieve_data(metadata::Metadatum{<:ECCO4DarwinMonthly})
+    retrieve_data(metadata::Metadatum{<:Union{ECCO4DarwinMonthly, ECCO2DarwinMonthly}})
 
-Read a ECCO4DarwinMonthly data file and regrid using MeshArrays on to regular lat-lon grid
+Read an ECCO Darwin data file and regrid using MeshArrays onto a regular lat-lon grid.
 """
 function DataWrangling.retrieve_data(metadata::Metadatum{<:Union{ECCO4DarwinMonthly, ECCO2DarwinMonthly}})
     native_size = binary_data_size(metadata.dataset)
@@ -133,58 +134,33 @@ function DataWrangling.retrieve_data(metadata::Metadatum{<:Union{ECCO4DarwinMont
     # Download the native grid data from MeshArrays repo (only if not in already in datadeps)
     native_grid_coords = GridLoad(native_grid; option="full")
 
-    # Check if the interpolation coefficients are already calculated
-    interp_file = joinpath(dirname(metadata_path(metadata)), "native_interp_coeffs.jld2")
-    if !isfile(interp_file)
-        # Calculate coefficients to interpolate from native grid to regular lat-lon grid (as in the ECCO netcdf files)
-        resolution_X = 360/Nx
-        resolution_Y = 180/Ny
+    # We can download interpolation weights for LLC90 and LLC270 grids to 1 or 
+    #  0.5 degree lat-lon grids from the MeshArrays Artifacts list (since MeshArrays v0.5.7)
+    coeffs = interpolation_setup(native_grid)
 
-        # Regular lat-lon grid
-        longitudes = longitude_interfaces(metadata.dataset)
-        latitudes  = latitude_interfaces(metadata.dataset)
-        lon = [i for i = longitudes[1]+resolution_X/2:resolution_X:longitudes[2]-resolution_X/2,
-                     j = latitudes[1]+resolution_Y/2:resolution_Y:latitudes[2]-resolution_Y/2]
-        lat = [j for i = longitudes[1]+resolution_X/2:resolution_X:longitudes[2]-resolution_X/2,
-                     j = latitudes[1]+resolution_Y/2:resolution_Y:latitudes[2]-resolution_Y/2]
-
-        # Interpolation factors for the native grid (writes out to a file "interp_file" for later use)
-        coeffs = interpolation_setup(; Γ=native_grid_coords, lat, lon, filename=interp_file)
-    else
-        # Read the coefficients from the file that was previously calculated
-        coeffs = interpolation_setup(interp_file)
-    end
-
-    # Read continental mask on the native model grid
+    # Read continental mask on the native model grid (1 on ocean, NaN on land)
     native_grid_fac_center = GridLoadVar("hFacC", native_grid)
 
-    # Interpolate each masked layer on to the native lat lon grid
+    # Mask land as NaN on the native grid *before* interpolating: MeshArrays.Interpolate
+    # excludes NaN neighbors from its weighted average, so this prevents land values
+    # from contaminating coastal ocean cells during interpolation.
     for k in 1:Nz
-        # mash immersed values
-        meshed_data_k = meshed_data[:, k]
-        land_mask_k = land_mask(native_grid_fac_center[:, k])
-        for p in 1:size(meshed_data_k, 1)
-            meshed_data_k[p][isnan.(land_mask_k[p])] .= NaN
-        end
-
-        i, j, c = MeshArrays.Interpolate(
-            meshed_data_k,
-            coeffs,
-        )
+        masked_layer = meshed_data[:, k] .* land_mask(native_grid_fac_center[:, k])
+        i, j, c = MeshArrays.Interpolate(masked_layer, coeffs)
         data[:, :, k] = c
-        i, j, c = MeshArrays.Interpolate(
-            land_mask_k,
-            coeffs,
-        )
-        mask[:, :, k] = c
     end
 
     # Reverse the z-axis
     data = reverse(data, dims=3)
-    mask = reverse(mask, dims=3)
 
-    # Fill NaNs in Antarctica with zeros
+    if metadata.name ∉ (:THETA, :SALTanom)
+       # Negative values are unphysical for concentration data; treat them as missing so
+       # they get inpainted
+       data[data .<= 0] .= NaN
+    end
+
+    # Cells with no valid ocean neighbor stay NaN; mark them so compute_mask detects them
     data[isnan.(data)] .= default_mask_value(metadata.dataset)
 
-    return data .* mask
+    return data
 end
