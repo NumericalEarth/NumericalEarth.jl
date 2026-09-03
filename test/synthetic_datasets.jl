@@ -66,8 +66,10 @@ function synthetic_value(::SyntheticAtmosphere, name, λ, φ, z)
         300 * cosd(φ)
     elseif name == :downwelling_longwave_radiation
         250
-    else # freshwater fluxes
+    elseif name in (:rain_freshwater_flux, :snow_freshwater_flux, :river_freshwater_flux, :iceberg_freshwater_flux)
         1e-5
+    else
+        error("SyntheticAtmosphere has no variable $name")
     end
 end
 
