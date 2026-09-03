@@ -155,6 +155,8 @@ remove trailing whitespace, remove trailing blank lines, ensure file ends with e
 - Follow established patterns in existing code
 - Add tests for new functionality; update exports when adding public API
 - Reference physics equations in comments when implementing dynamics
+- If the workspace patch helper cannot start because its sandbox namespace is unavailable,
+  use a narrowly scoped in-place text rewrite instead and immediately verify the resulting diff.
 - When unsure: study working examples first (BOMEX, RICO, etc.), look at similar
   Oceananigans implementations, review tests for usage patterns
 
