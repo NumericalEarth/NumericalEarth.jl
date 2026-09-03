@@ -12,13 +12,15 @@ using Dates: Dates, DateTime, Day, dayofyear
 using Downloads: Downloads
 using NCDatasets: NCDataset, defDim, defVar
 using Oceananigans: Center
+using Oceananigans.Architectures: child_architecture
 using Oceananigans.DistributedComputations: @root
+using Oceananigans.Fields: Field, interior, regrid!
 using Statistics: mean
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
                        metadata_path, default_download_directory,
                        native_cell_range, native_convention_longitude,
-                       cmr_granules, write_atomically
+                       cmr_granules, write_atomically, class_fractions, majority_class!
 
 import Oceananigans
 

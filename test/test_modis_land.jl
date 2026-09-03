@@ -699,6 +699,53 @@ end
     end
 end
 
+@testset "MODIS class fractions on a model grid" begin
+    mktempdir() do dir
+        region = BoundingBox(longitude = (-92.5, -92.4), latitude = (36.5, 36.6))
+        date = DateTime(2015)
+        dataset = MCD12Q1()
+        metadatum = Metadatum(:landcover_class; dataset, region, date, dir)
+        lattice = regional_lattice(metadatum)
+
+        # Longitude stripes, uniform in latitude, splitting each of the two target cells
+        # 7:5 so the fractions are exact column counts: grassland then cropland west of
+        # -92.45, fill (read as no-data, counted as water) then urban east of it.
+        function stripe_class(λ)
+            λ < -92.5 + 7Δᵛ  && return 0x0a  # grassland
+            λ < -92.45       && return 0x0c  # cropland
+            λ < -92.45 + 7Δᵛ && return 0xff  # fill
+            return 0x0d                      # urban
+        end
+
+        class_at = Dict((i, j) => stripe_class(lattice.west + (i - 1/2) * Δᵛ)
+                        for i in 1:lattice.Nx, j in 1:lattice.Ny)
+        write_synthetic_landcover_file(joinpath(dir, metadatum.filename), lattice, dataset;
+                                       class_at)
+
+        grid = LatitudeLongitudeGrid(CPU(); size = (2, 2),
+                                     longitude = (-92.5, -92.4), latitude = (36.5, 36.6),
+                                     topology = (Bounded, Bounded, Flat))
+
+        (; fractions, majority_class) = class_fractions(grid, dataset; date, region, dir)
+        @test keys(fractions) == keys(igbp_class_names)
+
+        landed(field) = Array(interior(field, :, :, 1))
+        @test all(isapprox.(landed(fractions.grassland)[1, :], 7/12, atol = 1e-3))
+        @test all(isapprox.(landed(fractions.cropland)[1, :],  5/12, atol = 1e-3))
+        @test all(isapprox.(landed(fractions.water)[2, :],     7/12, atol = 1e-3))
+        @test all(isapprox.(landed(fractions.urban)[2, :],     5/12, atol = 1e-3))
+        @test all(iszero, landed(fractions.mixed_forest))
+
+        total = sum(landed(fraction) for fraction in fractions)
+        @test all(isapprox.(total, 1, atol = 1e-3))
+
+        majority = landed(majority_class)
+        @test all(majority[1, :] .== igbp_class_names.grassland)
+        @test all(majority[2, :] .== igbp_class_names.water)
+        @test landed(Field(metadatum, grid)) == majority
+    end
+end
+
 @testset "MODIS class-keyed temporal tolerance" begin
     # A month-long bridge is nearly exact over an evergreen canopy and fabricates a green-up
     # ramp over a crop, so the two cannot share a tolerance.
