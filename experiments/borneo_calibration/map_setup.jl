@@ -103,7 +103,8 @@ deep_store_drainage = get(ENV, "DEEP_STORE_DRAINAGE", "free")                   
 deep_initial_soil_water = FT.(era5_land.layer_3[1, :, :])
 
 deep_store_options(grid) = (; thickness = surface_property(grid, fill(FT(deep_store_thickness), Nx, Ny)),
-                              drainage = deep_store_drainage == "free" ? FreeDrainageFlux(FT) : NoDeepLiquidFlux())
+                              drainage = deep_store_drainage == "free" ? FreeDrainageFlux(FT) : NoDeepLiquidFlux(),
+                              conductivity = surface_property(grid, FT.(static.matching_point_conductivity)))
 hydrology_options(grid) = deep_flux == "darcy" ?
     (; deep_liquid_flux = DarcyDeepLiquidFlux(FT; exchange_length = exchange_length_on(grid)),
        deep_pressure_head = deep_store ? surface_property(grid, zeros(FT, Nx, Ny)) : deep_pressure_head_on(grid),
@@ -111,10 +112,9 @@ hydrology_options(grid) = deep_flux == "darcy" ?
 
 # ## Reaching the closures inside InterceptingHydrology(SurfaceWaterStore([DeepWaterStore(]soil[)]))
 
-soil_hydrology(h) = h isa VariablySaturatedHydrology ? h : soil_hydrology(h.soil)
-soil_hydrology(model::AtmosphereLandModel) = soil_hydrology(model.land.hydrology)
-deep_water_store(h) = h isa DeepWaterStore ? h : deep_water_store(h.soil)
-deep_water_store(model::AtmosphereLandModel) = deep_water_store(model.land.hydrology)
+unwrap(h, T) = h isa T ? h : unwrap(h.soil, T)
+soil_hydrology(model) = unwrap(model.land.hydrology, VariablySaturatedHydrology)
+deep_water_store(model) = unwrap(model.land.hydrology, DeepWaterStore)
 
 # ## State initialization shared by every run (parent-level, so it traces on any backend)
 
@@ -239,6 +239,7 @@ end
 exchange_length_field(model) = soil_hydrology(model).deep_liquid_flux.exchange_length
 deep_pressure_head_field(model) = soil_hydrology(model).deep_pressure_head
 thickness_field(model) = deep_water_store(model).thickness
+deep_conductivity_field(model) = deep_water_store(model).hydraulic_conductivity.matching_point_conductivity
 air_entry_field(model) = soil_hydrology(model).retention_curve.inverse_air_entry_head
 pore_size_uniformity_fields(model) = (soil_hydrology(model).retention_curve.pore_size_uniformity,
                                       soil_hydrology(model).hydraulic_conductivity.pore_size_uniformity)
@@ -257,6 +258,8 @@ function with_calibration(cal)
             set_cells!(deep_pressure_head_field(model), -exp.(cal["log_deep_suction"]), -exp(median(cal["log_deep_suction"][land])))
         haskey(cal, "log_thickness") &&
             set_cells!(thickness_field(model), exp.(cal["log_thickness"]), deep_store_thickness)
+        haskey(cal, "q_deep") &&
+            set_cells!(deep_conductivity_field(model), exp10.(cal["q_deep"]), exp10(median(cal["q_deep"][land])))
         if haskey(cal, "log_n_minus_1")
             n = 1 .+ exp.(cal["log_n_minus_1"])
             foreach(f -> set_cells!(f, n, median(n[land])), pore_size_uniformity_fields(model))

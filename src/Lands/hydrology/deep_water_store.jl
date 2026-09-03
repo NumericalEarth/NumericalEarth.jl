@@ -13,16 +13,18 @@
 #####   Jᵈ      = deep_liquid_flux(drainage, Mᵈ, θᵈ, 𝒮ᵈ, Πᵈ, K(𝒮ᵈ), 0)      # the store's own bottom
 #####   Mᵈⁿ⁺¹   = Mᵈ + Δt (Jᵈ − Jˡᵇ)
 #####
-##### The store shares the soil's porosity, residual fraction, retention curve and
-##### conductivity curve, so the exchange timescale is set by parameters the soil
-##### already carries: linearized, τ ≈ ℓ hᵈ C / K with C = dθ/dΠ.
+##### The store shares the soil's porosity, residual fraction and retention curve, so
+##### the exchange timescale is set by parameters the soil already carries: linearized,
+##### τ ≈ ℓ hᵈ C / K with C = dθ/dΠ. Its own conductivity curve, the soil's by default,
+##### sets how fast it drains.
 #####
 
 """
     DeepWaterStore(FT = Oceananigans.defaults.FloatType;
                    soil,
                    thickness,
-                   drainage = FreeDrainageFlux(FT))
+                   drainage = FreeDrainageFlux(FT),
+                   hydraulic_conductivity = soil.hydraulic_conductivity)
 
 Prognostic deep reservoir `Mᵈ` (kg m⁻²) of thickness `thickness` (`hᵈ`, m; a scalar or a
 per-cell `Field`) under a soil hydrology `soil` — a [`VariablySaturatedHydrology`](@ref)
@@ -31,8 +33,8 @@ is a `Field`, which this closure overwrites every step with the reservoir's head
 `Π(𝒮ᵈ)` from the soil's retention curve. The reservoir gains what the soil drains into it,
 gives back capillary rise, and loses water through `drainage`, any deep-flux closure
 ([`FreeDrainageFlux`](@ref), [`LinearReservoirDrainage`](@ref), [`NoDeepLiquidFlux`](@ref))
-evaluated at the reservoir's own saturation; that flux is published as
-`deep_drainage_flux`.
+evaluated at the reservoir's own saturation with its own `hydraulic_conductivity` curve;
+that flux is published as `deep_drainage_flux`.
 
 ```jldoctest
 julia> using Oceananigans, NumericalEarth
@@ -49,23 +51,26 @@ julia> summary(DeepWaterStore(soil = soil, thickness = 0.7))
 "DeepWaterStore(soil=VariablySaturatedHydrology(slab_depth=0.3, porosity=0.4, retention=VanGenuchtenRetention(α=2.0, n=1.5), deep=DarcyDeepLiquidFlux(exchange_length=0.5, liquid_density=1000.0), runoff=NoRunoff), thickness=0.7, drainage=FreeDrainageFlux(liquid_density=1000.0))"
 ```
 """
-struct DeepWaterStore{S, H, D} <: AbstractHydrology
-    soil      :: S
-    thickness :: H
-    drainage  :: D
+struct DeepWaterStore{S, H, D, C} <: AbstractHydrology
+    soil                   :: S
+    thickness              :: H
+    drainage               :: D
+    hydraulic_conductivity :: C
 end
 
 function DeepWaterStore(FT::Type = Oceananigans.defaults.FloatType;
                         soil,
                         thickness,
-                        drainage = FreeDrainageFlux(FT))
+                        drainage = FreeDrainageFlux(FT),
+                        hydraulic_conductivity = soil.hydraulic_conductivity)
     soil.deep_pressure_head isa AbstractField ||
         throw(ArgumentError("DeepWaterStore needs a soil whose deep_pressure_head is a Field"))
-    return DeepWaterStore(soil, normalize_property(FT, thickness), drainage)
+    return DeepWaterStore(soil, normalize_property(FT, thickness), drainage, hydraulic_conductivity)
 end
 
 Adapt.adapt_structure(to, h::DeepWaterStore) =
-    DeepWaterStore(Adapt.adapt(to, h.soil), Adapt.adapt(to, h.thickness), Adapt.adapt(to, h.drainage))
+    DeepWaterStore(Adapt.adapt(to, h.soil), Adapt.adapt(to, h.thickness),
+                   Adapt.adapt(to, h.drainage), Adapt.adapt(to, h.hydraulic_conductivity))
 
 prognostic_variables(h::DeepWaterStore) =
     merge_unique(prognostic_variables(h.soil), (:deep_water_storage,))
@@ -107,7 +112,7 @@ end
         θᵈ  = deep_liquid_fraction(i, j, h, Mij)
         𝒮ᵈ  = liquid_saturation(i, j, grid, h.soil, θᵈ)
         Πᵈ  = pressure_head(i, j, grid, h.soil.retention_curve, 𝒮ᵈ)
-        Kᵈ  = hydraulic_conductivity(i, j, grid, h.soil.hydraulic_conductivity, 𝒮ᵈ)
+        Kᵈ  = hydraulic_conductivity(i, j, grid, h.hydraulic_conductivity, 𝒮ᵈ)
         Jᵈ  = deep_liquid_flux(i, j, grid, h.drainage, Mij, θᵈ, 𝒮ᵈ, Πᵈ, Kᵈ, zero(Mij), time)
         Mᵈ[i, j, 1]      = Mij + Δt * (Jᵈ - Jˡᵇ[i, j, 1])
         Jᵈ_diag[i, j, 1] = Jᵈ

@@ -67,7 +67,13 @@ function borneo_land(grid, FT, s; slab_depth, deep_liquid_flux = FreeDrainageFlu
             pore_connectivity_exponent  = s.pore_connectivity_exponent),
         deep_liquid_flux, deep_pressure_head,
         runoff = InfiltrationCapacityRunoff(FT; infiltration_capacity))
-    isnothing(deep_store) || (soil = DeepWaterStore(FT; soil, deep_store...))
+    if !isnothing(deep_store)
+        deep_conductivity = VanGenuchtenConductivity(FT;
+            matching_point_conductivity = deep_store.conductivity,
+            pore_size_uniformity        = s.pore_size_uniformity,
+            pore_connectivity_exponent  = s.pore_connectivity_exponent)
+        soil = DeepWaterStore(FT; soil, deep_store.thickness, deep_store.drainage, hydraulic_conductivity = deep_conductivity)
+    end
 
     hydrology = InterceptingHydrology(FT;
         soil = SurfaceWaterStore(FT; soil, drainage_timescale = 1hour),
