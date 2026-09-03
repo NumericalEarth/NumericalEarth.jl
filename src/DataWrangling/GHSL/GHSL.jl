@@ -3,14 +3,15 @@ module GHSL
 export GHSBuiltH, GHSBuiltS, GHSBuiltSResolution, GHSBuiltS10m, GHSBuiltS100m
 
 using Downloads: Downloads
-using Oceananigans: Bounded, Center, CPU, Field, Flat, LatitudeLongitudeGrid, interior, set!
+using Oceananigans: Bounded, Center, CPU, Face, Field, Flat, LatitudeLongitudeGrid, interior, set!
+using Oceananigans.Fields: regrid!
 using Oceananigans.DistributedComputations: @root
 using Oceananigans.Grids: x_domain, y_domain, λnodes, φnodes
 
 using NumericalEarth.Lands: Lands, MorphometricRoughness, aerodynamic_parameters, urban_roughness
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
-                       metadata_path, native_grid, BoundingBox, bounding_box_suffix
+                       metadata_path, native_grid, BoundingBox, bounding_box_suffix, tile_indices
 
 using DocStringExtensions: TYPEDSIGNATURES
 
@@ -447,105 +448,106 @@ ghsl_tiles_to_netcdf(metadatum, nc_path) =
           "Load it with `using ArchGDAL`.")
 
 #####
-##### Urban roughness on a model grid: bin the native pixels onto a neighborhood-scale
-##### evaluation lattice, apply the morphometric closure there, reduce with built-area
-##### weighting.
+##### Urban roughness on a model grid: conservative pixel means on a neighborhood-scale
+##### lattice, the morphometric closure evaluated there, reduced to the grid over the
+##### urban lattice cells.
 #####
 
-"""
-$(TYPEDSIGNATURES)
-
-Accumulate the native `building_height` and `built_up_fraction` rasters onto the
-evaluation lattice dividing `domain` into `size(pixels)` cells: `pixels` counts each
-lattice cell's raster pixels of known built fraction, `area` sums their built fraction,
-and `volume` sums their built fraction times height (a pixel of unknown height adds area
-but no volume). Only pixels whose centers fall in `window` — half-open in both
-coordinates, so abutting windows never double count — are binned.
-"""
-function bin_built_pixels!(volume, area, pixels, building_height, built_up_fraction, window, domain)
-    size(building_height) == size(built_up_fraction) ||
-        throw(ArgumentError("the building-height and built-up-fraction rasters differ in size, " *
-                            "$(size(building_height)) vs $(size(built_up_fraction))"))
-
-    λ₁, λ₂ = domain.longitude
-    φ₁, φ₂ = domain.latitude
-    Δλ = (λ₂ - λ₁) / size(pixels, 1)
-    Δφ = (φ₂ - φ₁) / size(pixels, 2)
-
-    λ = λnodes(built_up_fraction.grid, Center())
-    φ = φnodes(built_up_fraction.grid, Center())
-    heights = interior(building_height, :, :, 1)
-    fractions = interior(built_up_fraction, :, :, 1)
-
-    for b in eachindex(φ), a in eachindex(λ)
-        window.longitude[1] <= λ[a] < window.longitude[2] &&
-            window.latitude[1] <= φ[b] < window.latitude[2] || continue
-        λᵖ = fractions[a, b]
-        isfinite(λᵖ) || continue
-        i = floor(Int, (λ[a] - λ₁) / Δλ) + 1
-        j = floor(Int, (φ[b] - φ₁) / Δφ) + 1
-        pixels[i, j] += 1
-        area[i, j] += λᵖ
-        isfinite(heights[a, b]) && (volume[i, j] += λᵖ * heights[a, b])
-    end
-    return nothing
+# Regrid in latitude, then in longitude, through a grid sharing the source's longitudes
+# and the target's latitudes.
+function conservative_regrid(target_grid, source)
+    FT = eltype(target_grid)
+    intermediate_grid = LatitudeLongitudeGrid(CPU(), FT; size = (size(source, 1), size(target_grid, 2)),
+                                              longitude = x_domain(source.grid),
+                                              latitude = φnodes(target_grid, Face()),
+                                              topology = (Bounded, Bounded, Flat))
+    intermediate = Field{Center, Center, Nothing}(intermediate_grid)
+    target = Field{Center, Center, Nothing}(target_grid)
+    regrid!(intermediate, source)
+    regrid!(target, intermediate)
+    return target
 end
 
+# Sums over the `refinement × refinement` blocks of a lattice array.
+block_sum(a, refinement) =
+    dropdims(sum(reshape(a, refinement, size(a, 1) ÷ refinement, refinement, size(a, 2) ÷ refinement); dims = (1, 3)); dims = (1, 3))
+
 """
 $(TYPEDSIGNATURES)
 
-Aerodynamic parameters on `grid` from the binned `volume` (Σ λᵖh), `area` (Σ λᵖ) and
-`pixels` accumulators of its evaluation lattice: `closure` maps each lattice cell's
-plan-area index `area / pixels` and built-area-weighted height `volume / area` to
-`(ℓᵐ, d)`, which then reduce to each grid cell over its built lattice cells (plan-area
-index at least the closure's `minimum_built_fraction`), weighted by built area — the
-log-mean `ℓᵐ` and the mean `d` and building height. A grid cell with no built lattice
-cell takes the closure's bare-soil limit. Returns the NamedTuple of `Field`s
-`(; ℓᵐ, d, urban_fraction, building_height)`, where `urban_fraction` is the built
-share of each cell's lattice.
-"""
-function binned_urban_roughness(grid, volume, area, pixels, closure)
-    FT = eltype(grid)
-    nx, ny = size(pixels)
-    domain = BoundingBox(grid)
-    lattice = LatitudeLongitudeGrid(CPU(), FT; size = (nx, ny),
-                                    longitude = domain.longitude, latitude = domain.latitude,
-                                    topology = (Bounded, Bounded, Flat))
+Momentum roughness length `ℓᵐ` and zero-plane displacement `d` (m) of the built-up
+surface on `grid` from the GHSL building-height and built-up rasters, with the
+`urban_fraction` of each cell and its built-area-weighted mean `building_height` (m),
+as a NamedTuple of `Field`s `(; ℓᵐ, d, urban_fraction, building_height)`.
 
-    h  = Field{Center, Center, Nothing}(lattice)
+The rasters are averaged conservatively onto a lattice `refinement` times finer than
+`grid`: the plan-area index `λᵖ` is the pixel mean of the built fraction and the
+building height the built-area-weighted pixel mean, no-data pixels counting as unbuilt.
+`closure` maps both to `(ℓᵐ, d)` on the lattice. Each grid cell then takes the
+built-area-weighted log-mean `ℓᵐ`, mean `d` and mean height of its urban lattice cells,
+those with `λᵖ` at least the closure's `minimum_built_fraction`, and `urban_fraction`
+is their share of the cell; a cell without urban lattice cells takes the closure's
+bare-soil limit. The rasters are read in windows of at most `window_degrees` a side.
+"""
+function Lands.urban_roughness(grid, height_dataset::GHSBuiltH, built_dataset::GHSBuiltS;
+                               closure = MorphometricRoughness(eltype(grid)),
+                               refinement = 10,
+                               window_degrees = 5)
+    FT = eltype(grid)
+    Nx, Ny, _ = size(grid)
+    λᶠ = λnodes(grid, Face())
+    φᶠ = φnodes(grid, Face())
+
+    lattice_faces(faces) = [[faces[i] + (faces[i + 1] - faces[i]) * k / refinement
+                             for i in 1:length(faces) - 1 for k in 0:refinement - 1]; faces[end]]
+    λ = lattice_faces(λᶠ)
+    φ = lattice_faces(φᶠ)
+    lattice = LatitudeLongitudeGrid(CPU(), FT; size = (refinement * Nx, refinement * Ny),
+                                    longitude = λ, latitude = φ, topology = (Bounded, Bounded, Flat))
     λᵖ = Field{Center, Center, Nothing}(lattice)
-    interior(h, :, :, 1)  .= ifelse.(area .> 0, volume ./ area, 0)
-    interior(λᵖ, :, :, 1) .= ifelse.(pixels .> 0, area ./ pixels, NaN)
+    h  = Field{Center, Center, Nothing}(lattice)
+
+    windows_x = min(ceil(Int, (λᶠ[end] - λᶠ[1]) / window_degrees), Nx)
+    windows_y = min(ceil(Int, (φᶠ[end] - φᶠ[1]) / window_degrees), Ny)
+    for n in 1:windows_y, m in 1:windows_x
+        I = tile_indices(Nx, windows_x, m)
+        J = tile_indices(Ny, windows_y, n)
+        window = BoundingBox(longitude = (λᶠ[first(I)], λᶠ[last(I) + 1]),
+                             latitude  = (φᶠ[first(J)], φᶠ[last(J) + 1]))
+        a = (refinement * (first(I) - 1) + 1):(refinement * last(I))
+        b = (refinement * (first(J) - 1) + 1):(refinement * last(J))
+        window_lattice = LatitudeLongitudeGrid(CPU(), FT; size = (length(a), length(b)),
+                                               longitude = λ[first(a):last(a) + 1],
+                                               latitude  = φ[first(b):last(b) + 1],
+                                               topology = (Bounded, Bounded, Flat))
+
+        built_fraction  = Field(Metadatum(:built_up_fraction; dataset = built_dataset, region = window), CPU())
+        building_height = Field(Metadatum(:building_height; dataset = height_dataset, region = window), CPU())
+        replace!(interior(built_fraction), NaN => 0)
+        replace!(interior(building_height), NaN => 0)
+        if built_fraction.grid != building_height.grid  # the 10 m built-up product
+            built_fraction = conservative_regrid(building_height.grid, built_fraction)
+        end
+        interior(building_height) .*= interior(built_fraction)  # building volume per pixel area
+
+        interior(λᵖ, a, b, 1) .= interior(conservative_regrid(window_lattice, built_fraction), :, :, 1)
+        interior(h,  a, b, 1) .= interior(conservative_regrid(window_lattice, building_height), :, :, 1)
+    end
+    interior(h) .= ifelse.(interior(λᵖ) .> 0, interior(h) ./ interior(λᵖ), 0)
+
     ℓᵐ, d = urban_roughness(h, λᵖ; closure)
 
-    Nx, Ny, _ = size(grid)
-    rx, ry = nx ÷ Nx, ny ÷ Ny
-    λᵖᵐⁱⁿ = closure.minimum_built_fraction
+    # Built-area weights of the urban lattice cells
+    w = interior(λᵖ, :, :, 1)
+    w = ifelse.(w .>= closure.minimum_built_fraction, w, 0)
+    Σw = block_sum(w, refinement)
+    urban = Σw .> 0
     bare_roughness, bare_displacement = aerodynamic_parameters(closure, 0, 0)
 
-    roughness = zeros(FT, Nx, Ny)
-    displacement = zeros(FT, Nx, Ny)
-    urban_fraction = zeros(FT, Nx, Ny)
-    mean_height = zeros(FT, Nx, Ny)
-
-    for j in 1:Ny, i in 1:Nx
-        Σλᵖ = Σlogℓ = Σd = Σh = zero(FT)
-        urban = 0
-        for b in (ry * (j - 1) + 1):(ry * j), a in (rx * (i - 1) + 1):(rx * i)
-            w = λᵖ[a, b, 1]
-            w >= λᵖᵐⁱⁿ || continue
-            Σλᵖ += w
-            Σlogℓ += w * log(ℓᵐ[a, b, 1])
-            Σd += w * d[a, b, 1]
-            Σh += w * h[a, b, 1]
-            urban += 1
-        end
-        urban_fraction[i, j] = urban / (rx * ry)
-        built = Σλᵖ > 0
-        roughness[i, j] = built ? exp(Σlogℓ / Σλᵖ) : bare_roughness
-        displacement[i, j] = built ? Σd / Σλᵖ : bare_displacement
-        mean_height[i, j] = built ? Σh / Σλᵖ : 0
-    end
+    roughness      = ifelse.(urban, exp.(block_sum(w .* log.(interior(ℓᵐ, :, :, 1)), refinement) ./ Σw), bare_roughness)
+    displacement   = ifelse.(urban, block_sum(w .* interior(d, :, :, 1), refinement) ./ Σw, bare_displacement)
+    mean_height    = ifelse.(urban, block_sum(w .* interior(h, :, :, 1), refinement) ./ Σw, 0)
+    urban_fraction = block_sum(w .> 0, refinement) ./ refinement^2
 
     fields = map((roughness, displacement, urban_fraction, mean_height)) do data
         field = Field{Center, Center, Nothing}(grid)
@@ -553,53 +555,6 @@ function binned_urban_roughness(grid, volume, area, pixels, closure)
         return field
     end
     return NamedTuple{(:ℓᵐ, :d, :urban_fraction, :building_height)}(fields)
-end
-
-"""
-$(TYPEDSIGNATURES)
-
-Aerodynamic parameters of the built-up surface on `grid` from the native GHSL rasters,
-as the NamedTuple of `Field`s `(; ℓᵐ, d, urban_fraction, building_height)`: the momentum
-roughness length and zero-plane displacement (m), the built-up fraction of each cell, and
-the built-area-weighted mean building height (m).
-
-The rasters are read natively in windows of `window_degrees` (longitude, latitude) and
-binned onto an evaluation lattice `refinement` times finer than `grid`, near the
-neighborhood scale at which the morphometric regressions hold: the plan-area index is
-the pixel mean of the built fraction, and the building height is the built-area-weighted
-pixel mean (building volume over built area). `closure` maps both to `(ℓᵐ, d)` on the
-lattice, and the lattice values reduce to each grid cell over its built lattice cells
-weighted by built area — so a dense urban core sets its cell's roughness rather than
-being diluted into the open land around it. A cell with no built lattice cell takes the
-closure's bare-soil limit.
-"""
-function Lands.urban_roughness(grid, height_dataset::GHSBuiltH, built_dataset::GHSBuiltS;
-                               closure = MorphometricRoughness(eltype(grid)),
-                               refinement = 10,
-                               window_degrees = (10, 8))
-    Nx, Ny, _ = size(grid)
-    nx, ny = refinement * Nx, refinement * Ny
-    volume = zeros(nx, ny)
-    area = zeros(nx, ny)
-    pixels = zeros(Int, nx, ny)
-
-    domain = BoundingBox(grid)
-    λ₁, λ₂ = domain.longitude
-    φ₁, φ₂ = domain.latitude
-    λedges = range(λ₁, λ₂; length = ceil(Int, (λ₂ - λ₁) / window_degrees[1]) + 1)
-    φedges = range(φ₁, φ₂; length = ceil(Int, (φ₂ - φ₁) / window_degrees[2]) + 1)
-
-    for n in 1:(length(φedges) - 1), m in 1:(length(λedges) - 1)
-        window = BoundingBox(longitude = (λedges[m], λedges[m + 1]),
-                             latitude  = (φedges[n], φedges[n + 1]))
-        building_height = Field(Metadatum(:building_height; dataset = height_dataset, region = window), CPU())
-        built_up_fraction = Field(Metadatum(:built_up_fraction; dataset = built_dataset, region = window), CPU())
-        bin_built_pixels!(volume, area, pixels, building_height, built_up_fraction, window, domain)
-        building_height = built_up_fraction = nothing
-        GC.gc()
-    end
-
-    return binned_urban_roughness(grid, volume, area, pixels, closure)
 end
 
 end # module GHSL

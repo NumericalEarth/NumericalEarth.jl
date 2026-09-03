@@ -6,13 +6,15 @@ using NumericalEarth.DataWrangling.GHSL: ghsl_tile_index, ghsl_tiles_in_bbox,
                                          longitude_latitude_to_mollweide,
                                          mask_building_height, built_surface_to_fraction,
                                          dataset_prefix, native_resolution, ghsl_tiles_to_netcdf,
-                                         ghsl_regional_raster, bin_built_pixels!, binned_urban_roughness
-using NumericalEarth.Lands: MorphometricRoughness, aerodynamic_parameters
+                                         ghsl_regional_raster
+using NumericalEarth.Lands: MorphometricRoughness, aerodynamic_parameters, urban_roughness
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_grid,
                                     longitude_interfaces, latitude_interfaces,
                                     dataset_variable_name, validate_dataset_coverage,
-                                    metadata_filename, available_variables,
+                                    metadata_filename, metadata_path, available_variables,
                                     is_three_dimensional, default_inpainting
+
+using NCDatasets: NCDataset, defDim, defVar
 
 using Oceananigans.Fields: location
 using Oceananigans.Grids: x_domain, y_domain, λnodes, φnodes
@@ -238,97 +240,103 @@ end
 end
 
 #####
-##### Native-pixel binning and built-area-weighted reduction to a model grid.
+##### Urban roughness on a model grid, from synthetic rasters in the GHSL cache layout.
 #####
 
-@testset "GHSL binning onto the evaluation lattice" begin
-    domain = BoundingBox(longitude = (0, 1), latitude = (0, 1))
-    raster_grid = LatitudeLongitudeGrid(CPU(); size = (40, 40),
-                                        longitude = (0, 1), latitude = (0, 1),
-                                        topology = (Bounded, Bounded, Flat))
-    height = Field{Center, Center, Nothing}(raster_grid)
-    built = Field{Center, Center, Nothing}(raster_grid)
-
-    # 10 × 10 pixels per cell of the 4 × 4 lattice. Lattice cell (1, 1) is uniformly
-    # built; cell (2, 1) mixes two densities, so its height must be built-area-weighted,
-    # (0.2·10 + 0.6·30) / 0.8 = 25, not the plain pixel mean 20.
-    interior(built, 1:10, 1:10, 1) .= 0.5
-    interior(height, 1:10, 1:10, 1) .= 20
-    interior(built, 11:15, 1:10, 1) .= 0.2
-    interior(height, 11:15, 1:10, 1) .= 10
-    interior(built, 16:20, 1:10, 1) .= 0.6
-    interior(height, 16:20, 1:10, 1) .= 30
-
-    # In lattice cell (3, 1): an unknown height adds area but no volume, and an unknown
-    # built fraction drops its pixel.
-    built[21, 1, 1] = 0.4
-    height[21, 1, 1] = NaN
-    built[22, 1, 1] = NaN
-
-    volume = zeros(4, 4)
-    area = zeros(4, 4)
-    pixels = zeros(Int, 4, 4)
-    bin_built_pixels!(volume, area, pixels, height, built, domain, domain)
-
-    @test pixels[1, 1] == 100
-    @test area[1, 1] ≈ 50
-    @test volume[1, 1] ≈ 1000
-    @test volume[2, 1] / area[2, 1] ≈ 25
-    @test pixels[3, 1] == 99
-    @test area[3, 1] ≈ 0.4
-    @test volume[3, 1] == 0
-    @test pixels[4, 4] == 100
-    @test area[4, 4] == 0
-
-    # Two abutting half-open windows bin every pixel exactly once.
-    split_volume = zeros(4, 4)
-    split_area = zeros(4, 4)
-    split_pixels = zeros(Int, 4, 4)
-    for window in (BoundingBox(longitude = (0, 0.5), latitude = (0, 1)),
-                   BoundingBox(longitude = (0.5, 1), latitude = (0, 1)))
-        bin_built_pixels!(split_volume, split_area, split_pixels, height, built, window, domain)
+function write_ghsl_raster(metadatum, values)
+    raster = ghsl_regional_raster(metadatum)
+    NCDataset(metadata_path(metadatum), "c") do ds
+        defDim(ds, "lon", raster.Nx)
+        defDim(ds, "lat", raster.Ny)
+        defVar(ds, "lon", Float64, ("lon",))[:] = raster.longitude
+        defVar(ds, "lat", Float64, ("lat",))[:] = raster.latitude
+        defVar(ds, dataset_variable_name(metadatum), Float64, ("lon", "lat"))[:, :] =
+            [values(λ, φ) for λ in raster.longitude, φ in raster.latitude]
     end
-    @test split_pixels == pixels
-    @test split_area == area
-    @test split_volume == volume
+    return nothing
 end
 
-@testset "GHSL reduction: a dense core sets its cell's roughness" begin
+@testset "GHSL urban roughness on a grid" begin
+    # A 2 × 2 grid whose 4× lattice cells hold 24 × 24 native pixels each, aligned with the
+    # pixel faces so the conservative means are exact.
+    Nλ, Nφ, _ = size(GHSBuiltH(), :building_height)
+    Δλ, Δφ = 360 / Nλ, 180 / Nφ
+    refinement, pixels = 4, 24
+    λ₁ = -180 + 200_000Δλ
+    φ₁ = -90 + 150_000Δφ
     grid = LatitudeLongitudeGrid(CPU(); size = (2, 2),
-                                 longitude = (0, 2), latitude = (0, 2),
+                                 longitude = (λ₁, λ₁ + 2refinement * pixels * Δλ),
+                                 latitude  = (φ₁, φ₁ + 2refinement * pixels * Δφ),
                                  topology = (Bounded, Bounded, Flat))
-    closure = MorphometricRoughness(eltype(grid))
+    lattice_cell(λ, φ) = (floor(Int, (λ - λ₁) / (pixels * Δλ)) + 1,
+                          floor(Int, (φ - φ₁) / (pixels * Δφ)) + 1)
+    odd_column(λ) = isodd(floor(Int, (λ - λ₁) / Δλ))
 
-    # A 4× finer lattice: grid cell (1, 1) holds a single dense 20 m core among 15 empty
-    # lattice cells; grid cell (2, 2) is uniformly built at the same density and height.
-    volume = zeros(8, 8)
-    area = zeros(8, 8)
-    pixels = ones(Int, 8, 8)
-    area[2, 2] = 0.5
-    volume[2, 2] = 10
-    area[5:8, 5:8] .= 0.5
-    volume[5:8, 5:8] .= 10
+    # Lattice cell (2, 2) is a dense core in an otherwise empty grid cell (1, 1); grid cell
+    # (2, 2) is uniformly built; lattice cell (2, 6) alternates two densities by pixel
+    # column; grid cell (2, 1) is no-data.
+    function built_fraction(λ, φ)
+        a, b = lattice_cell(λ, φ)
+        (a, b) == (2, 2) && return 0.5
+        (a, b) == (2, 6) && return odd_column(λ) ? 0.2 : 0.6
+        a > 4 && return b > 4 ? 0.5 : NaN
+        return 0.0
+    end
+    function building_height(λ, φ)
+        a, b = lattice_cell(λ, φ)
+        (a, b) == (2, 6) && return odd_column(λ) ? 10.0 : 30.0
+        a > 4 && b <= 4 && return NaN
+        return 20.0
+    end
 
-    core_roughness, core_displacement = aerodynamic_parameters(closure, 0.5, 20.0)
-    fields = binned_urban_roughness(grid, volume, area, pixels, closure)
-    @test keys(fields) == (:ℓᵐ, :d, :urban_fraction, :building_height)
+    default_cache = GHSL.download_GHSL_cache
+    setglobal!(GHSL, :download_GHSL_cache, mktempdir())
+    try
+        region = BoundingBox(grid)
+        write_ghsl_raster(Metadatum(:built_up_fraction; dataset = GHSBuiltS(), region), built_fraction)
+        write_ghsl_raster(Metadatum(:building_height; dataset = GHSBuiltH(), region), building_height)
 
-    # The core sets the cell's parameters — a plain cell mean would dilute h to 1.25 m.
-    @test fields.ℓᵐ[1, 1, 1] ≈ core_roughness
-    @test fields.d[1, 1, 1] ≈ core_displacement
-    @test fields.building_height[1, 1, 1] ≈ 20
-    @test fields.urban_fraction[1, 1, 1] ≈ 1 / 16
+        closure = MorphometricRoughness()
+        fields = urban_roughness(grid, GHSBuiltH(), GHSBuiltS(); closure, refinement)
+        @test keys(fields) == (:ℓᵐ, :d, :urban_fraction, :building_height)
 
-    # A uniformly built cell matches the direct closure evaluation.
-    @test fields.ℓᵐ[2, 2, 1] ≈ core_roughness
-    @test fields.d[2, 2, 1] ≈ core_displacement
-    @test fields.urban_fraction[2, 2, 1] == 1
+        # The core alone sets its cell's roughness.
+        core_roughness, core_displacement = aerodynamic_parameters(closure, 0.5, 20.0)
+        @test fields.ℓᵐ[1, 1, 1] ≈ core_roughness rtol = 1e-4
+        @test fields.d[1, 1, 1] ≈ core_displacement rtol = 1e-4
+        @test fields.building_height[1, 1, 1] ≈ 20 rtol = 1e-4
+        @test fields.urban_fraction[1, 1, 1] == 1 / 16
 
-    # Cells with no built lattice cell reduce to the closure's bare-soil limit.
-    @test fields.ℓᵐ[1, 2, 1] == closure.bare_soil_roughness
-    @test fields.d[1, 2, 1] == 0
-    @test fields.urban_fraction[1, 2, 1] == 0
-    @test fields.building_height[1, 2, 1] == 0
+        @test fields.ℓᵐ[2, 2, 1] ≈ core_roughness rtol = 1e-4
+        @test fields.d[2, 2, 1] ≈ core_displacement rtol = 1e-4
+        @test fields.building_height[2, 2, 1] ≈ 20 rtol = 1e-4
+        @test fields.urban_fraction[2, 2, 1] == 1
+
+        # Built-area-weighted height, (0.2 · 10 + 0.6 · 30) / 0.8, at plan-area index 0.4.
+        mixed_roughness, mixed_displacement = aerodynamic_parameters(closure, 0.4, 25.0)
+        @test fields.building_height[1, 2, 1] ≈ 25 rtol = 1e-4
+        @test fields.ℓᵐ[1, 2, 1] ≈ mixed_roughness rtol = 1e-4
+        @test fields.d[1, 2, 1] ≈ mixed_displacement rtol = 1e-4
+        @test fields.urban_fraction[1, 2, 1] == 1 / 16
+
+        # No-data pixels count as unbuilt.
+        bare_roughness, _ = aerodynamic_parameters(closure, 0, 0)
+        @test fields.ℓᵐ[2, 1, 1] == bare_roughness
+        @test fields.d[2, 1, 1] == 0
+        @test fields.urban_fraction[2, 1, 1] == 0
+        @test fields.building_height[2, 1, 1] == 0
+
+        # The 10 m built-up product regrids onto the 100 m height pixels.
+        fine = GHSBuiltS(resolution = GHSBuiltS10m)
+        write_ghsl_raster(Metadatum(:built_up_fraction; dataset = fine, region), built_fraction)
+        fields = urban_roughness(grid, GHSBuiltH(), fine; closure, refinement)
+        @test fields.ℓᵐ[2, 2, 1] ≈ core_roughness rtol = 1e-4
+        @test fields.building_height[1, 1, 1] ≈ 20 rtol = 1e-4
+        @test fields.urban_fraction[1, 1, 1] == 1 / 16
+        @test fields.ℓᵐ[2, 1, 1] == bare_roughness
+    finally
+        setglobal!(GHSL, :download_GHSL_cache, default_cache)
+    end
 end
 
 #####
