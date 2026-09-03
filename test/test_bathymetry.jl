@@ -2,7 +2,8 @@ include("runtests_setup.jl")
 include("download_utils.jl")
 
 using JLD2
-using NumericalEarth.Bathymetry: remove_minor_basins!, bathymetry_regridding_key
+using NumericalEarth.Bathymetry: remove_minor_basins!, bathymetry_regridding_key,
+                                 label_ocean_basins, find_label_at_point, atlantic_ocean_barriers
 using NumericalEarth.DataWrangling: field_cache_filename, save_field_cache
 using NumericalEarth.DataWrangling.ETOPO
 using Statistics
@@ -174,4 +175,63 @@ end
 
     result6 = regrid_bathymetry(grid; cache=true)
     @test parent(result1) == parent(result6)
+end
+
+@testset "Barrier geometry" begin
+    @info "Testing barrier geometry utilities..."
+
+    meridional = meridional_barrier(20, -36, -30)
+    @test meridional.longitude == (19, 21)   # 20 ± width/2
+    @test meridional.latitude  == (-36, -30)
+    @test meridional_barrier(20, -36, -30; width=4).longitude == (18, 22)
+end
+
+@testset "Ocean basin labeling with barriers" begin
+    @info "Testing ocean basin labeling with barriers..."
+
+    for arch in test_architectures
+        # Create a global grid
+        grid = LatitudeLongitudeGrid(arch;
+                                     size = (90, 45, 10),
+                                     longitude = (-180, 180),
+                                     latitude = (-90, 90),
+                                     z = (-6000, 0))
+
+        bottom_height = regrid_bathymetry(grid)
+        ibg = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height))
+
+        # Unbarriered, the Atlantic and Pacific are one basin: they connect via the Southern Ocean.
+        labels = label_ocean_basins(ibg)
+        atlantic_label = find_label_at_point(labels, ibg, -30.0, 0.0)
+        @test atlantic_label > 0
+        @test atlantic_label == find_label_at_point(labels, ibg, -170.0, 0.0)
+
+        barriered = label_ocean_basins(ibg; barriers=atlantic_ocean_barriers)
+        @test find_label_at_point(barriered, ibg, -30.0, 0.0) > 0
+    end
+end
+
+@testset "Basin creation" begin
+    @info "Testing Basin creation..."
+
+    for arch in test_architectures
+        # Create a global grid at 1° resolution (needed to properly resolve
+        # Central America and separate Atlantic from Pacific)
+        grid = LatitudeLongitudeGrid(arch;
+                                     size = (360, 180, 10),
+                                     longitude = (-180, 180),
+                                     latitude = (-90, 90),
+                                     z = (-6000, 0))
+
+        bottom_height = regrid_bathymetry(grid)
+        ibg = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height))
+
+        atlantic = atlantic_ocean_basin(ibg)
+        @test sum(interior(atlantic.mask)) > 0
+
+        # The Atlantic mask must exclude the Pacific.
+        mask = on_architecture(CPU(), atlantic.mask)
+        pacific_i = findfirst(λ -> -175 < λ < -165, λnodes(grid, Center()))
+        @test mask[pacific_i, 90, 1] == 0
+    end
 end
