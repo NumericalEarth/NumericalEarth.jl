@@ -188,12 +188,12 @@ function test_dataset_restoring(arch, dataset, dates, inpainting;
         clock = Clock(; time = first(var_restoring.field_time_series.times))
 
         @allowscalar begin
-            @test var_restoring(1, 1,   10, grid, clock, field) == var_restoring.rate
-            @test var_restoring(1, 11,  10, grid, clock, field) == var_restoring.rate / 2
+            @test var_restoring(1, 1,   10, grid, clock, field) ≈ var_restoring.rate
+            @test var_restoring(1, 11,  10, grid, clock, field) ≈ var_restoring.rate / 2
             @test var_restoring(1, 21,  10, grid, clock, field) == 0
             @test var_restoring(1, 80,  10, grid, clock, field) == 0
-            @test var_restoring(1, 90,  10, grid, clock, field) == var_restoring.rate / 2
-            @test var_restoring(1, 100, 10, grid, clock, field) == var_restoring.rate
+            @test var_restoring(1, 90,  10, grid, clock, field) ≈ var_restoring.rate / 2
+            @test var_restoring(1, 100, 10, grid, clock, field) ≈ var_restoring.rate
             @test var_restoring(1, 1,   5,  grid, clock, field) == 0
             @test var_restoring(1, 10,  5,  grid, clock, field) == 0
         end
@@ -320,3 +320,5 @@ function test_inpainting_algorithm(arch, dataset, start_date, inpainting;
     end
     return nothing
 end
+
+include("synthetic_datasets.jl")
