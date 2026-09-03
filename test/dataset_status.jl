@@ -31,8 +31,8 @@ function record_dataset_status(dataset_name, variable_name, succeeded, message, 
     isempty(directory) && return nothing
     mkpath(directory)
 
-    # One file per process. ParallelTestRunner runs its workers concurrently and appends
-    # from several of them to a single file interleave partial lines.
+    # One file per process: ParallelTestRunner runs its workers concurrently, and appending to a
+    # single file from several of them would interleave partial lines.
     filepath = joinpath(directory, string("status-", getpid(), ".tsv"))
 
     open(filepath, "a") do io
@@ -51,12 +51,8 @@ end
     @dataset_check dataset_name variable_name expr
 
 Run `expr` as the download check for `dataset_name`/`variable_name`, record whether it
-succeeded, and assert it with `@test`. Returns whatever `expr` returned, or `nothing` if it
-threw.
-
-A throwing `expr` is caught rather than propagated so that the record is written and the
-remaining datasets still get checked: one dead server should not hide the state of every
-dataset behind it. The `@test` keeps the run red.
+succeeded, and assert it with `@test`. A throwing `expr` is caught, recorded and reported as a
+failed `@test`. Returns whatever `expr` returned, or `nothing` if it threw.
 """
 macro dataset_check(dataset_name, variable_name, expr)
     quote

@@ -113,13 +113,8 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Download `url` to `filepath`, and only put it there once it has arrived in full.
-
-`Downloads.download` streams straight into its destination, so an interrupted transfer leaves a
-truncated file behind. Every dataset here guards its download with `isfile(filepath)`, so such a
-file is then accepted forever: no retry, no error, just a short read that surfaces as zeros
-somewhere far away. Downloading beside the destination and renaming makes the arrival atomic —
-`filepath` either does not exist or is complete.
+Download `url` to `filepath`, which either does not exist or holds the complete file: the transfer
+lands beside the destination and is renamed into place once it has arrived in full.
 
 Extra keyword arguments are forwarded to `Downloads.download` (`progress`, `downloader`, ...).
 """

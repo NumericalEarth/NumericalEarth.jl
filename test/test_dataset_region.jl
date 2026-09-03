@@ -27,8 +27,8 @@ for arch in test_architectures
             @test maximum(φg) ≤  30 + 1.0
             @test any(!iszero, Array(interior(f)))
 
-            # The reference value at (0°, 0°, surface), read straight from the NetCDF file, must
-            # match the bbox-restricted field at the same physical point.
+            # The reference value at (0°, 0°, surface), read straight from the NetCDF file, must match the
+            # bbox-restricted field at the same physical point.
             path = metadata_path(md)
             ds = Dataset(path)
             # ECCO4 surface is k=1 in the raw file (Z=-5 m). After
