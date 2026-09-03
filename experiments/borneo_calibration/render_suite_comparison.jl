@@ -21,7 +21,9 @@ V = Dict(
     :darcy_k      => validation("map_logK_r1_gpu_darcy_12d"),
     :darcy_joint  => validation("map_joint_r1_gpu_darcy_12d"),
     :darcy_kl     => validation("map_hydrology_K0_exchange_r1_gpu_darcy_12d"),
-    :darcy_kln    => validation("map_hydrology_K0_exchange_retention_r1_gpu_darcy_12d"))
+    :darcy_kln    => validation("map_hydrology_K0_exchange_retention_r1_gpu_darcy_12d"),
+    :darcy_mean   => validation("map_logK_r1_gpu_darcy_12d_meanhead"),
+    :darcy_fc     => validation("map_hydrology_K0_deephead_r1_gpu_darcy_fc_12d"))
 
 θ_obs = V[:free_joint6]["θ_obs"]
 land = V[:free_joint6]["weight"] .> 0
@@ -44,6 +46,8 @@ suites = [
     ("Darcy: joint (h, K₀) (12.25 d)",           V[:darcy_joint]["snapshots"][:θ],              :darcy, 12.25),
     ("Darcy: K₀ + exchange length (12.25 d)",    V[:darcy_kl]["snapshots"][:θ],                 :darcy, 12.25),
     ("Darcy: K₀ + ℓ + retention n (12.25 d)",    V[:darcy_kln]["snapshots"][:θ],                :darcy, 12.25),
+    ("Darcy: suite-8 K₀, deep head frozen to its mean", V[:darcy_mean]["snapshots"][:θ],         :fair,  12.25),
+    ("Darcy, no deep data: K₀ + calibrated constant head (12.25 d)", V[:darcy_fc]["snapshots"][:θ], :fair, 12.25),
 ]
 
 function scores(θm, hours)
@@ -69,13 +73,15 @@ med(x) = [median(x[k, :, :][land]) for k in 1:Nh]
 mask(a) = ifelse.(land, a, NaN)
 free_colors  = Makie.wong_colors()[1:6]
 darcy_colors = (:gray40, :firebrick, :darkorange, :seagreen, :mediumpurple)
+fair_colors  = (:sienna, :navy)
 
 # ## Trajectories
 
-fig = Figure(size = (1700, 1000), fontsize = 15)
+fig = Figure(size = (1700, 1450), fontsize = 15)
 Label(fig[0, 1], "Domain-median soil water, every calibration suite, against ERA5-Land over 20 days"; fontsize = 19)
 for (row, family, title, colors) in ((1, :free, "free drainage (the original bottom boundary)", free_colors),
-                                     (2, :darcy, "Darcy exchange to ERA5-Land's 28–100 cm head", darcy_colors))
+                                     (2, :darcy, "Darcy exchange to ERA5-Land's 28–100 cm head", darcy_colors),
+                                     (3, :fair, "Darcy exchange without the reanalysis deep layer", fair_colors))
     ax = Axis(fig[row, 1]; title, xlabel = "day", ylabel = "θ (m³ m⁻³)")
     vlines!(ax, [6.25, 12.25]; color = :gray60, linestyle = :dash)
     lines!(ax, days, med(θ_obs); color = :black, linewidth = 2.6, label = "ERA5-Land")
@@ -88,7 +94,7 @@ save("suite_trajectories_r1.png", fig)
 
 # ## Scorecard
 
-fig = Figure(size = (1700, 900), fontsize = 14)
+fig = Figure(size = (1800, 950), fontsize = 14)
 Label(fig[0, 1:3], "Per-window scores of every suite (RMS in m³ m⁻³, median per-cell correlation, median amplitude ratio)"; fontsize = 18)
 labels = first.(table)
 xs = 1:length(labels)
@@ -146,7 +152,7 @@ held = last(windows)[2]
 cell_rms(θm) = [sqrt(sum(abs2, θm[held, i, j] .- θ_obs[held, i, j]) / length(held)) for i in axes(θm, 2), j in axes(θm, 3)]
 fig = Figure(size = (1900, 1000), fontsize = 14)
 Label(fig[0, 1:8], "Held-out RMS (days 12.25–20, unseen by every calibration), shared scale"; fontsize = 19)
-picks = [1, 2, 3, 5, 7, 8, 10, 9]
+picks = [1, 3, 5, 7, 8, 10, 12, 13]
 for (k, idx) in enumerate(picks)
     label, θm, _, _ = suites[idx]
     row, col = divrem(k - 1, 4)
