@@ -480,11 +480,11 @@ atmosphere = ERA5PrescribedAtmosphere(arch; dataset, start_date, end_date, regio
 radiation = ERA5PrescribedRadiation(arch; dataset, start_date, end_date, region,
                                     land_surface = SurfaceRadiationProperties(0.18, 0.95))
 
-# ## Elevation correction and downscaling
+# ## Altitude correction and downscaling
 #
 # `SlabLand` itself has no terrain knowledge, and ERA5's near-surface fields
 # correspond to ERA5's own ~28 km grid-cell mean elevation. To make the 1 km grid
-# show elevation-driven temperature contrasts, [`ElevationCorrection`](@ref) lifts
+# show elevation-driven temperature contrasts, [`AltitudeCorrection`](@ref) lifts
 # the regridded atmosphere from that elevation (`z_era5`) to the 1 km ETOPO surface
 # (`z_land`) over the elevation difference
 #
@@ -503,7 +503,7 @@ z_era5 = Field(z_meta, land_grid)
 Δz = z_land - z_era5
 
 Γ_lapse    = 6.5e-3 # K m⁻¹, environmental lapse rate
-correction = ElevationCorrection(z_land, z_era5; lapse_rate = Γ_lapse)
+correction = AltitudeCorrection(z_land, z_era5; lapse_rate = Γ_lapse)
 
 # ## Slab land
 #
@@ -850,7 +850,7 @@ parent(cpu_porosity) .= elevation_porosity.(parent(z_patch))
 z_era5_patch         = Field(Metadatum(:topography; dataset, date = patch_start_date, region = patch_region), cpu_grid)
 surface_elevation    = Array(interior(z_patch, :, :, 1))
 atmosphere_elevation = Array(interior(z_era5_patch, :, :, 1))
-patch_correction     = ElevationCorrection(surface_elevation, atmosphere_elevation; lapse_rate = Γ_lapse)
+patch_correction     = AltitudeCorrection(surface_elevation, atmosphere_elevation; lapse_rate = Γ_lapse)
 
 function run_forward(grid, forcing, T₀, porosity_field)
     model = era5_slab_land_model(grid, forcing, porosity_field, nominal_porosity;

@@ -57,8 +57,16 @@ const CopernicusDEMDataset = Union{GLO30, GLO90}
 
 DataWrangling.default_download_directory(::CopernicusDEMDataset) = download_CopernicusDEM_cache
 DataWrangling.reversed_vertical_axis(::CopernicusDEMDataset) = false
-DataWrangling.longitude_interfaces(::CopernicusDEMDataset) = (-180, 180)
-DataWrangling.latitude_interfaces(::CopernicusDEMDataset) = (-90, 90)
+
+# The store's pixel centers sit on whole arc-seconds (the last latitude row at exactly
+# 90), so its grid is shifted half a cell from (-180, 180) × (-90, 90). Declaring the
+# shifted box puts the computed native centers exactly on the store's pixels.
+native_cell_width(dataset::CopernicusDEMDataset) = 360 / size(dataset)[1]
+
+DataWrangling.longitude_interfaces(dataset::CopernicusDEMDataset) =
+    (-180 - native_cell_width(dataset) / 2, 180 - native_cell_width(dataset) / 2)
+DataWrangling.latitude_interfaces(dataset::CopernicusDEMDataset) =
+    (-90 + native_cell_width(dataset) / 2, 90 + native_cell_width(dataset) / 2)
 
 # GLO-30 is 1 arc-second (360 * 3600 × 180 * 3600); GLO-90 is 3 arc-second.
 Base.size(::GLO30) = (1296000, 648000, 1)
@@ -76,6 +84,11 @@ const CopernicusDEMMetadatum = Metadatum{<:CopernicusDEMDataset}
 
 DataWrangling.dataset_variable_name(data::CopernicusDEMMetadatum) =
     CopernicusDEM_bathymetry_variable_names[data.name]
+
+DataWrangling.longitude_name(::CopernicusDEMMetadatum) = "lon"
+DataWrangling.latitude_name(::CopernicusDEMMetadatum)  = "lat"
+
+DataWrangling.default_inpainting(::CopernicusDEMMetadatum) = nothing
 
 DataWrangling.metadata_filename(dataset::CopernicusDEMDataset, name, date, region) =
     string(dataset_prefix(dataset), "_", bounding_box_suffix(region), ".nc")
