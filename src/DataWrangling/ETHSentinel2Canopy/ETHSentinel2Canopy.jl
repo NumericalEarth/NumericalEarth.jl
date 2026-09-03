@@ -253,9 +253,6 @@ canopy_height_cog_to_netcdf(metadatum, nc_path) =
     error("Reading the $(dataset_prefix(metadatum.dataset)) Cloud-Optimized GeoTIFF " *
           "requires the ArchGDAL package. Load it with `using ArchGDAL`.")
 
-const ARCHGDAL_REQUIRED = "Reading a canopy-height Cloud-Optimized GeoTIFF onto a grid " *
-                         "requires the ArchGDAL package. Load it with `using ArchGDAL`."
-
 """
     canopy_height_field(grid, dataset; name = :canopy_height, resampling = "average")
 
@@ -269,7 +266,9 @@ Returns a `Field{Center, Center, Nothing}(grid)`: canopy height over non-forest 
 `0`, tiles absent over ocean are skipped, and the product no-data code is masked to `NaN`.
 Requires the `ArchGDAL` package (`using ArchGDAL`).
 """
-canopy_height_field(grid, dataset; kw...) = error(ARCHGDAL_REQUIRED)
+canopy_height_field(grid, dataset; kw...) =
+    error("Reading a canopy-height Cloud-Optimized GeoTIFF onto a grid requires the " *
+          "ArchGDAL package. Load it with `using ArchGDAL`.")
 
 """
     tall_canopy_fraction_field(grid, dataset; threshold = 2)
@@ -280,6 +279,8 @@ grid cell is subdivided into ten aggregation cells per side (never finer than th
 reaches `threshold`. Cells the product never covers are `NaN`. Requires the `ArchGDAL`
 package (`using ArchGDAL`).
 """
-tall_canopy_fraction_field(grid, dataset; kw...) = error(ARCHGDAL_REQUIRED)
+tall_canopy_fraction_field(grid, dataset; kw...) =
+    error("Reading a canopy-height Cloud-Optimized GeoTIFF onto a grid requires the " *
+          "ArchGDAL package. Load it with `using ArchGDAL`.")
 
 end # module ETHSentinel2Canopy
