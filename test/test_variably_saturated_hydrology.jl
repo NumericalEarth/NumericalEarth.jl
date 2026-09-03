@@ -118,3 +118,65 @@ end
         @test only(Array(interior(land_drain.water_storage))) ≈ 399.9 atol = 1e-3
     end
 end
+
+@testset "VariablySaturatedHydrology surface water store" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch;
+                               size = 1,
+                               x = (0, 1),
+                               y = (0, 1),
+                               z = (-1, 0),
+                               topology = (Flat, Flat, Bounded))
+
+        ponded_hydrology(drainage_timescale; infiltration_capacity = 1e-3) =
+            VariablySaturatedHydrology(eltype(grid);
+                slab_depth = 1.0,
+                porosity = 0.4,
+                storage_height = 1000,
+                retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
+                hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
+                runoff = InfiltrationCapacityRunoff(; infiltration_capacity, drainage_timescale))
+
+        value(field) = only(Array(interior(field)))
+
+        # Rain at five times the capacity: infiltration runs at the cap, the excess ponds,
+        # and rain = infiltration + storage + runoff to machine precision.
+        land = SlabLand(grid; hydrology = ponded_hydrology(3600))
+        set!(land; M = 100.0)
+        fill!(land.fluxes.vapor_flux, 0)
+        fill!(land.fluxes.liquid_precipitation_flux, 5e-3)
+        Δt = 60.0
+        ∫R = 0.0
+        for _ in 1:200
+            time_step!(land, Δt)
+            ∫R += value(land.diagnostics.surface_runoff) * Δt
+        end
+        ΔM = value(land.water_storage) - 100
+        S  = value(land.prognostic.surface_water_storage)
+        @test ΔM ≈ 200 * Δt * 1e-3
+        @test S > 0
+        @test 200 * Δt * 5e-3 ≈ ΔM + S + ∫R rtol=1e-12
+
+        # Zero capacity and no rain: the store drains as S₀ e^{−t/τ}.
+        land = SlabLand(grid; hydrology = ponded_hydrology(1800; infiltration_capacity = 0))
+        set!(land; M = 100.0, surface_water_storage = 10.0)
+        fill!(land.fluxes.vapor_flux, 0)
+        fill!(land.fluxes.liquid_precipitation_flux, 0)
+        for _ in 1:12
+            time_step!(land, 150.0)
+        end
+        @test value(land.prognostic.surface_water_storage) ≈ 10 * exp(-1)
+        @test value(land.water_storage) == 100
+
+        # Under a canopy interception store, over-capacity throughfall still ponds.
+        hydrology = InterceptingHydrology(eltype(grid); soil = ponded_hydrology(3600), leaf_area_index = 3.0)
+        land = SlabLand(grid; hydrology)
+        set!(land; M = 100.0)
+        for _ in 1:20
+            fill!(land.fluxes.liquid_precipitation_flux, 5e-3)
+            time_step!(land, Δt)
+        end
+        @test value(land.prognostic.canopy_water_storage) > 0
+        @test value(land.prognostic.surface_water_storage) > 0
+    end
+end
