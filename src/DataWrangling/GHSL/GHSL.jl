@@ -1,6 +1,6 @@
 module GHSL
 
-export GHSBuiltH, GHSBuiltS, GHSBuiltSResolution, GHSBuiltS10m, GHSBuiltS100m
+export GHSBuiltH, GHSBuiltS, GHSBuiltSResolution, GHSBuiltS10m, GHSBuiltS100m, GHSBuilt
 
 using Downloads: Downloads
 using Oceananigans: Bounded, Center, CPU, Face, Field, Flat, LatitudeLongitudeGrid, interior
@@ -13,7 +13,7 @@ using NumericalEarth.Lands: Lands
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
                        metadata_path, native_grid, BoundingBox, bounding_box_suffix, tile_indices
 
-using DocStringExtensions: TYPEDSIGNATURES
+using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
 
 import Oceananigans
 
@@ -133,6 +133,32 @@ Base.summary(::GHSBuiltH) = "GHSBuiltH()"
 Base.summary(dataset::GHSBuiltS) =
     string("GHSBuiltS(resolution = ", dataset.resolution, ", epoch = ", dataset.epoch, ")")
 Base.show(io::IO, dataset::AbstractGHSLDataset) = print(io, summary(dataset))
+
+"""
+$(TYPEDEF)
+
+The GHSL built-up pair that [`building_morphometry`](@ref) reads together: the built-up
+`surface` ([`GHSBuiltS`](@ref)) and the building `height` ([`GHSBuiltH`](@ref)).
+
+```jldoctest
+julia> using NumericalEarth
+
+julia> GHSBuilt()
+GHSBuilt(GHSBuiltS(resolution = GHSBuiltS100m, epoch = 2020), GHSBuiltH())
+
+julia> GHSBuilt(surface = GHSBuiltS(resolution = GHSBuiltS10m))
+GHSBuilt(GHSBuiltS(resolution = GHSBuiltS10m, epoch = 2018), GHSBuiltH())
+```
+"""
+struct GHSBuilt
+    surface :: GHSBuiltS
+    height  :: GHSBuiltH
+end
+
+GHSBuilt(; surface = GHSBuiltS(), height = GHSBuiltH()) = GHSBuilt(surface, height)
+
+Base.summary(dataset::GHSBuilt) = string("GHSBuilt(", summary(dataset.surface), ", ", summary(dataset.height), ")")
+Base.show(io::IO, dataset::GHSBuilt) = print(io, summary(dataset))
 
 const GHSBuiltHMetadatum = Metadatum{<:GHSBuiltH}
 const GHSBuiltSMetadatum = Metadatum{<:GHSBuiltS}
@@ -455,20 +481,23 @@ ghsl_tiles_to_netcdf(metadatum, nc_path) =
 $(TYPEDSIGNATURES)
 
 Plan-area index and built-area-weighted mean building height (m) on `grid` from the GHSL
-built-up fraction and building-height rasters, as the NamedTuple of `Field`s
+built-up surface and building-height rasters of `dataset`, as the NamedTuple of `Field`s
 `(; plan_area_index, mean_building_height)`: the pixel mean of the built fraction and the
 building volume over the built area of each cell, no-data pixels counting as unbuilt. The
-rasters are read in windows of at most `window_degrees` a side.
+rasters are read in windows of at most `maximum_raster_cells` native pixels.
 """
-function Lands.building_morphometry(grid, height_dataset::GHSBuiltH, built_dataset::GHSBuiltS; window_degrees = 5)
+function Lands.building_morphometry(grid, dataset::GHSBuilt; maximum_raster_cells = 100_000_000)
     Nx, Ny, _ = size(grid)
     λᶠ = λnodes(grid, Face())
     φᶠ = φnodes(grid, Face())
     λᵖ = Field{Center, Center, Nothing}(grid)
     h  = Field{Center, Center, Nothing}(grid)
 
-    windows_x = min(ceil(Int, (λᶠ[end] - λᶠ[1]) / window_degrees), Nx)
-    windows_y = min(ceil(Int, (φᶠ[end] - φᶠ[1]) / window_degrees), Ny)
+    Nλ, Nφ, _ = size(dataset.surface, :built_up_fraction)
+    pixels = (λᶠ[end] - λᶠ[1]) * Nλ / 360 * (φᶠ[end] - φᶠ[1]) * Nφ / 180
+    windows = ceil(Int, sqrt(pixels / maximum_raster_cells))
+    windows_x = min(windows, Nx)
+    windows_y = min(windows, Ny)
     for n in 1:windows_y, m in 1:windows_x
         I = tile_indices(Nx, windows_x, m)
         J = tile_indices(Ny, windows_y, n)
@@ -479,8 +508,8 @@ function Lands.building_morphometry(grid, height_dataset::GHSBuiltH, built_datas
                                             latitude  = φᶠ[first(J):last(J) + 1],
                                             topology = (Bounded, Bounded, Flat))
 
-        built_fraction  = Field(Metadatum(:built_up_fraction; dataset = built_dataset, region = window), CPU())
-        building_height = Field(Metadatum(:building_height; dataset = height_dataset, region = window), CPU())
+        built_fraction  = Field(Metadatum(:built_up_fraction; dataset = dataset.surface, region = window), CPU())
+        building_height = Field(Metadatum(:building_height; dataset = dataset.height, region = window), CPU())
         replace!(interior(built_fraction), NaN => 0)
         replace!(interior(building_height), NaN => 0)
         if built_fraction.grid != building_height.grid  # the 10 m built-up product

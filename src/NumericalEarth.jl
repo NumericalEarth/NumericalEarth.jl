@@ -137,7 +137,7 @@ export
     ORCAGrid,
     OpenLandMapSoilDB,
     GlobalBuildingFootprints3D, building_morphometry,
-    GHSBuiltH, GHSBuiltS, GHSBuiltSResolution, GHSBuiltS10m, GHSBuiltS100m,
+    GHSBuiltH, GHSBuiltS, GHSBuiltSResolution, GHSBuiltS10m, GHSBuiltS100m, GHSBuilt,
     first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,
     DatasetRestoring,

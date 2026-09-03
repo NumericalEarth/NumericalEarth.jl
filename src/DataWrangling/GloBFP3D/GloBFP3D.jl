@@ -295,7 +295,7 @@ $(TYPEDSIGNATURES)
 
 Per-cell building morphometry on `target_grid` (a `LatitudeLongitudeGrid`, coarser than the
 `dataset` rasterization resolution), aggregated from the fine 3D-GloBFP building-height raster
-over `region`, by default the extent of `target_grid`. Returns a NamedTuple of `Field`s:
+over the extent of `target_grid`. Returns a NamedTuple of `Field`s:
 
 - `plan_area_index` `λᵖ` — fraction of fine cells that are built.
 - `mean_building_height` `h` — mean height over the built fine cells.
@@ -305,7 +305,7 @@ over `region`, by default the extent of `target_grid`. Returns a NamedTuple of `
 - `frontal_area_index` `λᶠ` — windward wall area from height steps, direction-averaged:
   `(Σₓ|δh|·dy + Σᵧ|δh|·dx) / (4·A)`, with `A` the cell area.
 
-A `region` whose native raster exceeds `maximum_raster_cells` (default `400_000_000` cells,
+A grid whose native raster exceeds `maximum_raster_cells` (default `400_000_000` cells,
 3.2 GB of `Float64`) is reduced in latitude bands sized to the limit, reproducing the single
 pass exactly while memory stays bounded regardless of the region size; band raster files are
 deleted once reduced (the downloaded footprint tiles stay cached).
@@ -313,7 +313,8 @@ deleted once reduced (the downloaded footprint tiles stay cached).
 Downloading and rasterizing the footprints requires `using ArchGDAL`.
 """
 function Lands.building_morphometry(target_grid::LatitudeLongitudeGrid, dataset::GlobalBuildingFootprints3D;
-                                    region = BoundingBox(target_grid), maximum_raster_cells = 400_000_000)
+                                    maximum_raster_cells = 400_000_000)
+    region = BoundingBox(target_grid)
     metadatum = Metadatum(:building_height; dataset, region)
     DataWrangling.validate_dataset_coverage(nothing, metadatum)
 

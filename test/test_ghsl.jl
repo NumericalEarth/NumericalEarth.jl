@@ -297,7 +297,7 @@ end
         write_ghsl_raster(Metadatum(:building_height; dataset = GHSBuiltH(), region), building_height)
 
         closure = MorphometricRoughness()
-        fields = urban_roughness(grid, GHSBuiltH(), GHSBuiltS(); closure, neighborhood = 2400)
+        fields = urban_roughness(grid, GHSBuilt(); closure, neighborhood = 2400)
         @test keys(fields) == (:momentum_roughness_length, :zero_plane_displacement, :urban_fraction, :building_height)
 
         # The core alone sets its cell's roughness.
@@ -329,7 +329,7 @@ end
         # The 10 m built-up product regrids onto the 100 m height pixels.
         fine = GHSBuiltS(resolution = GHSBuiltS10m)
         write_ghsl_raster(Metadatum(:built_up_fraction; dataset = fine, region), built_fraction)
-        fields = urban_roughness(grid, GHSBuiltH(), fine; closure, neighborhood = 2400)
+        fields = urban_roughness(grid, GHSBuilt(surface = fine); closure, neighborhood = 2400)
         @test fields.momentum_roughness_length[2, 2, 1] ≈ core_roughness rtol = 1e-4
         @test fields.building_height[1, 1, 1] ≈ 20 rtol = 1e-4
         @test fields.urban_fraction[1, 1, 1] == 1 / 16

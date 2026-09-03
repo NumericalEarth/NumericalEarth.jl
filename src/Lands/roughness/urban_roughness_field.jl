@@ -116,7 +116,7 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Per-cell building morphometry on `grid` from building `datasets`, as a NamedTuple of `Field`s
+Per-cell building morphometry on `grid` from a building `dataset`, as a NamedTuple of `Field`s
 named after the closure inputs: `plan_area_index` and `mean_building_height` (m), and, where
 the dataset measures them, `building_height_deviation` (m), `maximum_building_height` (m) and
 `frontal_area_index`. Dataset modules add methods for their products.
@@ -131,7 +131,7 @@ block_sum(a, rx, ry) =
 $(TYPEDSIGNATURES)
 
 Momentum roughness length and zero-plane displacement (m) of the built-up surface on `grid`
-from building `datasets`, as the NamedTuple of `Field`s
+from a building `dataset`, as the NamedTuple of `Field`s
 `(; momentum_roughness_length, zero_plane_displacement, urban_fraction, building_height)`.
 
 The closure is evaluated on a lattice of cells about `neighborhood` (m) wide subdividing each
@@ -142,7 +142,7 @@ height of its urban lattice cells, those with plan-area index at least the closu
 lattice cells takes the closure's bare-soil limit. A grid cell narrower than `neighborhood` is
 its own lattice cell. Remaining keyword arguments pass to `building_morphometry`.
 """
-function urban_roughness(grid, datasets...; closure = MorphometricRoughness(eltype(grid)),
+function urban_roughness(grid, dataset; closure = MorphometricRoughness(eltype(grid)),
                          neighborhood = 1000, kw...)
     FT = eltype(grid)
     Nx, Ny, _ = size(grid)
@@ -157,7 +157,7 @@ function urban_roughness(grid, datasets...; closure = MorphometricRoughness(elty
                                     latitude  = lattice_faces(φnodes(grid, Face()), ry),
                                     topology = (Bounded, Bounded, Flat))
 
-    properties = building_morphometry(lattice, datasets...; kw...)
+    properties = building_morphometry(lattice, dataset; kw...)
     measured = (:plan_area_index, :mean_building_height,
                 :building_height_deviation, :maximum_building_height, :frontal_area_index)
     closure_inputs = hasproperty(properties, :frontal_area_index) ? properties[measured] : properties[measured[1:2]]
