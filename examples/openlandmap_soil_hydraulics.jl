@@ -31,33 +31,34 @@ properties = soil_hydraulic_properties(soil.sand_fraction, soil.silt_fraction,
 
 # The keys are the keyword arguments of the closures they belong to, so the parameter set
 # goes straight into a hydrology.
-hydrology = VariablySaturatedHydrology(
-    slab_depth = 1.0,
-    storage_height = 1000,
-    porosity = properties.porosity,
-    residual_liquid_fraction = properties.residual_liquid_fraction,
-    retention_curve = VanGenuchtenRetention(
-        inverse_air_entry_head = properties.inverse_air_entry_head,
-        pore_size_uniformity = properties.pore_size_uniformity),
-    hydraulic_conductivity = VanGenuchtenConductivity(
-        matching_point_conductivity = properties.matching_point_conductivity,
-        pore_size_uniformity = properties.pore_size_uniformity,
-        pore_connectivity_exponent = properties.pore_connectivity_exponent),
-    deep_liquid_flux = FreeDrainageFlux())
+retention_curve = VanGenuchtenRetention(inverse_air_entry_head = properties.inverse_air_entry_head,
+                                        pore_size_uniformity = properties.pore_size_uniformity)
+
+hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = properties.matching_point_conductivity,
+                                                  pore_size_uniformity = properties.pore_size_uniformity,
+                                                  pore_connectivity_exponent = properties.pore_connectivity_exponent)
+
+hydrology = VariablySaturatedHydrology(slab_depth = 1.0,
+                                       storage_height = 1000,
+                                       porosity = properties.porosity,
+                                       residual_liquid_fraction = properties.residual_liquid_fraction,
+                                       retention_curve,
+                                       hydraulic_conductivity,
+                                       deep_liquid_flux = FreeDrainageFlux())
 
 # θʳ is zero throughout for this pedotransfer function, so five parameters vary in space.
 # Its K₀ is the *matrix* matching point the conductivity closure wants; an infiltration cap
-# wants the macropore-inclusive Cosby Kˢᵃᵗ, mapped alongside it for contrast.
+# wants the macropore-inclusive Cosby K⁺, mapped alongside it for contrast.
 K₀ = properties.matching_point_conductivity
 infiltration_capacity = Field(3_600_000 * saturated_conductivity(CosbyConductivity(),
                                                                  soil.sand_fraction))
 
-panels = [("porosity ν",                     "–",            properties.porosity,                   :viridis),
-          ("inverse air-entry head α",       "m⁻¹",          properties.inverse_air_entry_head,      :plasma),
-          ("pore-size uniformity n",         "–",            properties.pore_size_uniformity,       :plasma),
-          ("pore-connectivity exponent ηᴷ",  "–",            properties.pore_connectivity_exponent, :batlow),
-          ("matching-point K₀",              "log₁₀(m s⁻¹)", Field(log10(K₀)),                       :turbo),
-          ("Cosby saturated Kˢᵃᵗ (0–30 cm)", "mm hour⁻¹",    view(infiltration_capacity, :, :, 3),   :turbo)]
+panels = [("porosity ν",                    "–",            properties.porosity,                   :viridis),
+          ("inverse air-entry head α",      "m⁻¹",          properties.inverse_air_entry_head,     :plasma),
+          ("pore-size uniformity n",        "–",            properties.pore_size_uniformity,       :plasma),
+          ("pore-connectivity exponent ηᴷ", "–",            properties.pore_connectivity_exponent, :batlow),
+          ("matching-point K₀",             "log₁₀(m s⁻¹)", Field(log10(K₀)),                      :turbo),
+          ("Cosby saturated K⁺ (0–30 cm)",  "mm hour⁻¹",    view(infiltration_capacity, :, :, 3),  :turbo)]
 
 # Every parameter here has a thin tail: for n, the full min-to-max range spends 77 % of the
 # colormap on under 2 % of the cells, which flattens everything else. Span the 1st to 99th

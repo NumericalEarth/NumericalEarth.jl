@@ -1,17 +1,15 @@
 #####
-##### Depth-layer combination: reduce 3-D texture + bulk-density fields to one effective set
-##### of van Genuchten parameters per horizontal column, for the single-layer
-##### `VariablySaturatedHydrology` slab. The pedotransfer function is applied per depth
-##### layer and the layers are then combined — see `soil_hydraulic_properties`.
+##### Depth-layer combination: 3-D texture and bulk density → one effective set of van
+##### Genuchten parameters per column, for the single-layer `VariablySaturatedHydrology` slab.
 #####
 
 """
 $(TYPEDSIGNATURES)
 
-Per-layer thicknesses (m), deepest-first to match the dataset vertical axis, clipped to
-the soil column `[-slab_depth, 0]`. `z_interfaces` are the layer faces increasing upward
-(e.g. `[-1.0, -0.6, -0.3, 0.0]`); layer `k` spans `[z_interfaces[k], z_interfaces[k+1]]`.
-Layers outside the column get zero weight.
+Per-layer thicknesses (m) inside the soil column `[-slab_depth, 0]`, deepest-first to match
+the dataset vertical axis. `z_interfaces` are the layer faces increasing upward
+(e.g. `[-1.0, -0.6, -0.3, 0.0]`); layer `k` spans `[z_interfaces[k], z_interfaces[k+1]]`,
+and layers outside the column get zero weight.
 
 ```jldoctest
 using NumericalEarth
@@ -26,25 +24,17 @@ layer_weights([-1.0, -0.6, -0.3, 0.0], 0.3)
 ```
 """
 function layer_weights(z_interfaces, slab_depth)
-    slab_depth isa Number ||
-        throw(ArgumentError("layer_weights requires a scalar slab_depth; got $(typeof(slab_depth))"))
-    issorted(z_interfaces) ||
-        throw(ArgumentError("z_interfaces must increase upward, deepest face first; " *
-                            "got $z_interfaces"))
     D  = float(slab_depth)
     FT = typeof(D)
-    Nz = length(z_interfaces) - 1
-    return FT[max(zero(FT),
-                  min(FT(z_interfaces[k+1]), zero(FT)) - max(FT(z_interfaces[k]), -D))
-              for k in 1:Nz]
+    return FT[max(0, min(FT(z_interfaces[k+1]), 0) - max(FT(z_interfaces[k]), -D))
+              for k in 1:length(z_interfaces)-1]
 end
 
 """
 $(TYPEDSIGNATURES)
 
 Depth below the surface of each layer's midpoint (m, positive down), deepest-first
-to match [`layer_weights`](@ref). The pedotransfer function reads topsoil or subsoil
-off these.
+to match [`layer_weights`](@ref).
 
 ```jldoctest
 using NumericalEarth
@@ -69,38 +59,29 @@ layer_depths(z_interfaces) =
 $(TYPEDSIGNATURES)
 
 The `(α, n)` whose van Genuchten curve passes through water contents `θ¹` and `θ²` at
-suction heads `ψ¹` and `ψ²`, given `θʳ` and `ν`.
-
-Eliminating `α` between the two constraints leaves one equation in `n`,
+suction heads `ψ¹` and `ψ²`, given `θʳ` and `ν`. Eliminating `α` leaves one equation in `n`,
 
     log[(𝒮¹^(-1/m) - 1) / (𝒮²^(-1/m) - 1)] = n log(ψ¹/ψ²),   m = 1 - 1/n,
 
-whose residual rises monotonically from `-∞` as `n → 1` to `+∞` as `n → ∞`. One sign change
-across the search bracket `1.01 ≤ n ≤ 12` therefore locates the single root, and `α` follows
-from either constraint.
-
-The bracket holds every root the shipped pedotransfer functions reach, whose per-layer `n`
-spans 1.05 to 2.25. A root outside it comes back as `NaN` rather than as the bracket end, as
-does a pair of water contents that determines no root at all.
+whose residual increases monotonically in `n`; it is bisected over `1.01 ≤ n ≤ 12`, and
+`α` follows from the first constraint. A root outside that bracket, or a pair of water
+contents that determines none, returns `NaN`.
 """
 @inline function matched_retention_parameters(θ¹, θ², θʳ, ν, ψ¹, ψ²)
     FT = typeof(θ¹)
     Δ  = ν - θʳ
     ϵ  = convert(FT, 1//1_000_000)
-    # Only the wet end needs a margin: `logexpm1` keeps the dry branch representable down to
-    # `θ = θʳ`, where the residual turns non-finite and the sign test reads it as missing data.
-    𝒮¹ = clamp((θ¹ - θʳ) / Δ, zero(FT), one(FT) - ϵ)
-    𝒮² = clamp((θ² - θʳ) / Δ, zero(FT), one(FT) - ϵ)
+    𝒮¹ = clamp((θ¹ - θʳ) / Δ, 0, 1 - ϵ)
+    𝒮² = clamp((θ² - θʳ) / Δ, 0, 1 - ϵ)
     logψ = log(ψ¹ / ψ²)
 
     lo = convert(FT, 101//100)
     hi = convert(FT, 12)
-    # The residual is monotone, so one sign change is the whole test; a non-finite one fails
-    # it, since `NaN < 0` is false.
+    # a non-finite residual fails the sign test, since `NaN < 0` is false
     bracketed = (retention_residual(lo, 𝒮¹, 𝒮², logψ) < 0) &
                 (retention_residual(hi, 𝒮¹, 𝒮², logψ) > 0)
 
-    for _ in 1:40                                    # accuracy plateaus at 34
+    for _ in 1:40
         n  = (lo + hi) / 2
         up = retention_residual(n, 𝒮¹, 𝒮², logψ) > 0
         hi = ifelse(up, n, hi)
@@ -114,96 +95,67 @@ does a pair of water contents that determines no root at all.
            ifelse(bracketed, n, convert(FT, NaN))
 end
 
-@kernel function _soil_hydraulic_properties!(porosity, residual, α, n, K₀, ηᴷ,
+@kernel function _soil_hydraulic_properties!(ν, θʳ, α, n, K₀, ηᴷ,
                                             sand, silt, clay, bulk_density,
-                                            w, depths, W, Nz, ψ¹, ψ², ptf)
+                                            Δz, depths, ΣΔz, Nz, ψ¹, ψ², ptf)
     i, j = @index(Global, NTuple)
-    FT = eltype(porosity)
+    FT = eltype(ν)
 
     Σν = zero(FT); Σθʳ = zero(FT); Σθ¹ = zero(FT); Σθ² = zero(FT)
     Σηᴷ = zero(FT); ΣR = zero(FT)
 
     @inbounds for k in 1:Nz
-        wk  = w[k]
+        Δzk = Δz[k]
         p   = soil_hydraulic_parameters(ptf, sand[i, j, k], silt[i, j, k],
                                         clay[i, j, k], bulk_density[i, j, k], depths[k])
         νk  = p.porosity
         θʳk = p.residual_liquid_fraction
-        Δk  = νk - θʳk
         nk  = p.pore_size_uniformity
-        θ¹  = θʳk + Δk * van_genuchten_saturation(p.inverse_air_entry_head * ψ¹, nk)
-        θ²  = θʳk + Δk * van_genuchten_saturation(p.inverse_air_entry_head * ψ², nk)
-        # `0 * NaN` is NaN, so zero weight alone would not drop an out-of-column layer.
-        inside = wk > 0
-        Σν  += ifelse(inside, wk * νk, zero(FT))
-        Σθʳ += ifelse(inside, wk * θʳk, zero(FT))
-        Σθ¹ += ifelse(inside, wk * θ¹, zero(FT))
-        Σθ² += ifelse(inside, wk * θ², zero(FT))
-        Σηᴷ += ifelse(inside, wk * p.pore_connectivity_exponent, zero(FT))
-        # Layers in series add resistance R = w/K, hence a harmonic mean for K₀.
-        ΣR  += ifelse(inside, wk / p.matching_point_conductivity, zero(FT))
+        θ¹  = θʳk + (νk - θʳk) * van_genuchten_saturation(p.inverse_air_entry_head * ψ¹, nk)
+        θ²  = θʳk + (νk - θʳk) * van_genuchten_saturation(p.inverse_air_entry_head * ψ², nk)
+        # `0 * NaN` is NaN, so zero weight alone would not drop an out-of-column layer
+        inside = Δzk > 0
+        Σν  += ifelse(inside, Δzk * νk, zero(FT))
+        Σθʳ += ifelse(inside, Δzk * θʳk, zero(FT))
+        Σθ¹ += ifelse(inside, Δzk * θ¹, zero(FT))
+        Σθ² += ifelse(inside, Δzk * θ², zero(FT))
+        Σηᴷ += ifelse(inside, Δzk * p.pore_connectivity_exponent, zero(FT))
+        # layers in series add resistance Δz / K, hence a harmonic mean for K₀
+        ΣR  += ifelse(inside, Δzk / p.matching_point_conductivity, zero(FT))
     end
 
-    νᶜ  = Σν / W
-    θʳᶜ = Σθʳ / W
-    αᶜ, nᶜ = matched_retention_parameters(Σθ¹ / W, Σθ² / W, θʳᶜ, νᶜ, ψ¹, ψ²)
-
     @inbounds begin
-        porosity[i, j, 1] = νᶜ
-        residual[i, j, 1] = θʳᶜ
-        α[i, j, 1]        = αᶜ
-        n[i, j, 1]        = nᶜ
-        K₀[i, j, 1]       = W / ΣR
-        ηᴷ[i, j, 1]       = Σηᴷ / W
+        ν[i, j, 1]  = Σν / ΣΔz
+        θʳ[i, j, 1] = Σθʳ / ΣΔz
+        α[i, j, 1], n[i, j, 1] = matched_retention_parameters(Σθ¹ / ΣΔz, Σθ² / ΣΔz,
+                                                              Σθʳ / ΣΔz, Σν / ΣΔz, ψ¹, ψ²)
+        K₀[i, j, 1] = ΣΔz / ΣR
+        ηᴷ[i, j, 1] = Σηᴷ / ΣΔz
     end
 end
 
 """
 $(TYPEDSIGNATURES)
 
-Reduce the 3-D texture (`sand`, `silt`, `clay`, kg/kg) and `bulk_density` (kg/m³)
-`Field`s to a NamedTuple of 2-D effective van Genuchten properties
+Reduce the 3-D texture (`sand`, `silt`, `clay`, kg/kg) and `bulk_density` (kg/m³) `Field`s
+to a NamedTuple of 2-D `Field{Center, Center, Nothing}` van Genuchten properties
 
     (; porosity, residual_liquid_fraction, inverse_air_entry_head,
        pore_size_uniformity, matching_point_conductivity, pore_connectivity_exponent)
 
 whose keys match the keyword arguments of [`VariablySaturatedHydrology`](@ref),
-[`VanGenuchtenRetention`](@ref), and [`VanGenuchtenConductivity`](@ref). The
-pedotransfer function `ptf` is applied per depth layer — reading topsoil or subsoil
-off each layer's depth — and the layers are then combined over `slab_depth`.
+[`VanGenuchtenRetention`](@ref) and [`VanGenuchtenConductivity`](@ref).
 
-Because the slab carries one storage variable at one pressure head, the object to reproduce
-is the thickness-weighted mean retention curve. `ν` and `θʳ` are arithmetic means, exact at
-`ψ = 0` and `ψ → ∞`, and `α` and `n` are then solved for so the effective curve also passes
-through the mean curve at `matching_heads` (m). `K₀` is a harmonic mean, since layers in
-series add resistance, and `ηᴷ` is an arithmetic one. Against a sand-over-clay column the
-reduced retention curve tracks the mean to 0.002 in `θ`, and the reduced `K`, exact at
-saturation, stays within a factor of 4 of the column's series resistance. The layer faces
-come from the inputs' own grid; see [`layer_weights`](@ref).
+The pedotransfer function `ptf` is applied to each depth layer of the inputs' grid, at that
+layer's depth, and the layers inside `[-slab_depth, 0]` are combined so that the slab
+reproduces the thickness-weighted mean retention curve of the column: `ν`, `θʳ` and `ηᴷ`
+are thickness-weighted arithmetic means, `K₀` is the harmonic mean of layers in series, and
+`α` and `n` are solved so the effective curve passes through the mean curve at the two
+suction heads `matching_heads` (m). The defaults are field capacity and the permanent
+wilting point, with field capacity at 1 m after [Balsamo et al. (2009)](@cite balsamo2009).
 
-The default heads are field capacity and the permanent wilting point, which bracket the
-range the slab operates in. 1 m rather than the textbook 3.3 m follows
-[Balsamo et al. (2009)](@cite balsamo2009), who measured `-0.10` bar as the better field
-capacity for van Genuchten parameters of this family; the choice is worth little averaged
-over contrasting columns, hence a keyword rather than a constant.
-
-The parameters describe the soil inside `[-slab_depth, 0]` and nothing below it, which
-belongs to the deep-flux closure.
-
-Rock, water and out-of-coverage cells arrive as `NaN` and propagate to every *predicted*
-output. Fill them before reducing, with `Field(metadatum; inpainting =
-NearestNeighborInpainting(n))`: inpainting the texture rather than the parameters keeps a
-filled cell's six outputs mutually consistent, the pedotransfer function being nonlinear.
-Parameters a pedotransfer function holds constant never read the data and come back as that
-constant regardless (`θʳ` for [`WeynantsPedotransfer`](@ref), `θʳ` and `ηᴷ` for
-[`HYPRESPedotransfer`](@ref)), so build a missing-data mask from a predicted output.
-
-`matching_point_conductivity` inherits whatever `ptf` means by it, which for
-[`WeynantsPedotransfer`](@ref) is a matrix matching point rather than the value an
-infiltration cap wants (see [`saturated_conductivity`](@ref)).
-
-Each output is a `Field{Center, Center, Nothing}` on the inputs' grid, read by the slab at
-`[i, j]`. `slab_depth` must be a scalar.
+A cell that is `NaN` in any input is `NaN` in every predicted output; fill the texture
+first, e.g. with `Field(metadatum; inpainting = NearestNeighborInpainting(n))`.
 """
 function soil_hydraulic_properties(sand, silt, clay, bulk_density;
                                    slab_depth,
@@ -212,48 +164,32 @@ function soil_hydraulic_properties(sand, silt, clay, bulk_density;
     grid = sand.grid
     arch = architecture(grid)
     FT   = eltype(sand)
-    Nz   = size(sand, 3)
 
-    # Grid equality catches a field read over a different region; `size` catches a windowed
-    # view, whose grid is its parent's.
-    for (name, field) in pairs((; silt, clay, bulk_density))
-        (field.grid == grid && size(field) == size(sand)) ||
-            throw(ArgumentError("$name is $(size(field)) on $(summary(field.grid)) but sand " *
-                                "is $(size(sand)) on $(summary(grid)); the four inputs must " *
-                                "share one grid"))
-    end
-
-    z_interfaces = on_architecture(CPU(), znodes(grid, Face()))
+    all(f -> f.grid == grid && size(f) == size(sand), (silt, clay, bulk_density)) ||
+        throw(ArgumentError("sand, silt, clay and bulk_density must share one grid"))
 
     ψ¹, ψ² = matching_heads
     0 < ψ¹ < ψ² ||
-        throw(ArgumentError("matching_heads must be two increasing positive suction " *
-                            "heads (m); got $matching_heads"))
+        throw(ArgumentError("matching_heads must be two increasing positive suction heads, found $matching_heads"))
 
-    weights = layer_weights(z_interfaces, slab_depth)
-    W = sum(weights)
-    W > 0 ||
-        throw(ArgumentError("slab_depth = $slab_depth does not overlap the soil column " *
-                            "spanned by the grid's z interfaces $(collect(z_interfaces))"))
+    z_interfaces = on_architecture(CPU(), znodes(grid, Face()))
+    Δz  = layer_weights(z_interfaces, slab_depth)
+    ΣΔz = sum(Δz)
+    ΣΔz > 0 ||
+        throw(ArgumentError("slab_depth = $slab_depth does not overlap the soil column $(extrema(z_interfaces))"))
 
-    w      = on_architecture(arch, convert.(FT, weights))
-    depths = on_architecture(arch, convert.(FT, layer_depths(z_interfaces)))
-
-    porosity = Field{Center, Center, Nothing}(grid)
-    residual = Field{Center, Center, Nothing}(grid)
-    α        = Field{Center, Center, Nothing}(grid)
-    n        = Field{Center, Center, Nothing}(grid)
-    K₀       = Field{Center, Center, Nothing}(grid)
-    ηᴷ       = Field{Center, Center, Nothing}(grid)
+    ν, θʳ, α, n, K₀, ηᴷ = ntuple(_ -> Field{Center, Center, Nothing}(grid), 6)
 
     launch!(arch, grid, :xy, _soil_hydraulic_properties!,
-            porosity, residual, α, n, K₀, ηᴷ,
+            ν, θʳ, α, n, K₀, ηᴷ,
             sand, silt, clay, bulk_density,
-            w, depths, convert(FT, W), Nz, convert(FT, ψ¹), convert(FT, ψ²),
+            on_architecture(arch, convert.(FT, Δz)),
+            on_architecture(arch, convert.(FT, layer_depths(z_interfaces))),
+            convert(FT, ΣΔz), size(sand, 3), convert(FT, ψ¹), convert(FT, ψ²),
             convert_eltype(FT, ptf))
 
-    return (porosity = porosity,
-            residual_liquid_fraction = residual,
+    return (porosity = ν,
+            residual_liquid_fraction = θʳ,
             inverse_air_entry_head = α,
             pore_size_uniformity = n,
             matching_point_conductivity = K₀,
