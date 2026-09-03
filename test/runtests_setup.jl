@@ -185,7 +185,7 @@ function test_dataset_restoring(arch, dataset, dates, inpainting;
         field = NamedTuple{fldnames}(ntuple(i->CenterField(grid), length(fldnames)))
 
         # A window-averaged product has no node at its first date: the first sits half a window later.
-        clock = Clock(; time = first(var_restoring.field_time_series.times))
+        clock = Clock(; time = first(on_architecture(CPU(), var_restoring.field_time_series.times)))
 
         @allowscalar begin
             @test var_restoring(1, 1,   10, grid, clock, field) ≈ var_restoring.rate

@@ -21,9 +21,10 @@ for arch in test_architectures
             datum = Metadatum(:temperature; dataset)
             field = Field(datum, arch; inpainting = nothing)
             values = Array(interior(field))
-            λ = λnodes(field.grid, Center())
-            φ = φnodes(field.grid, Center())
-            z = znodes(field.grid, Center())
+            grid = on_architecture(CPU(), field.grid)
+            λ = λnodes(grid, Center())
+            φ = φnodes(grid, Center())
+            z = znodes(grid, Center())
             expected = [synthetic_value(dataset, :temperature, λ[i], φ[j], z[k])
                         for i in eachindex(λ), j in eachindex(φ), k in eachindex(z)]
             @test all(isequal.(values, Float32.(expected)))
@@ -63,8 +64,9 @@ for arch in test_architectures
         grid = LatitudeLongitudeGrid(arch; size = (36, 18, 1), longitude = (-180, 180), latitude = (-90, 90), z = (0, 1))
         bottom_height = synthetic_bottom_height(grid; major_basins = Inf)
         values = Array(interior(bottom_height, :, :, 1))
-        λ = λnodes(grid, Center())
-        φ = φnodes(grid, Center())
+        cpu_grid = on_architecture(CPU(), grid)
+        λ = λnodes(cpu_grid, Center())
+        φ = φnodes(cpu_grid, Center())
         expected = [synthetic_value(SyntheticBathymetry(), :bottom_height, λ[i], φ[j], 0) for i in eachindex(λ), j in eachindex(φ)]
         @test values == expected
     end
