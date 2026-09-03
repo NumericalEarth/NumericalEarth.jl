@@ -53,13 +53,11 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchang
     return ComponentExchanger(state, regridder, correction)
 end
 
-function ConservativeRegridding.regrid!(field::Oceananigans.Field, regridder::Regridder, data::AbstractArray)
+regrid_to_field!(field::Oceananigans.Field, regridder::Regridder, data::AbstractArray) =
     regrid!(vec(interior(field)), regridder, vec(data))
-end
 
-function ConservativeRegridding.regrid!(data::AbstractArray, regridder::Regridder, field::Oceananigans.Field)
+regrid_from_field!(data::AbstractArray, regridder::Regridder, field::Oceananigans.Field) =
     regrid!(vec(data), regridder, vec(interior(field)))
-end
 
 # Regrid the atmospheric state on the exchange grid
 function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, coupled_model)
@@ -82,15 +80,15 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     Jˢⁿ = haskey(atmos.variables.parameterizations, :snow_rate) ?
           atmos.variables.parameterizations.snow_rate.data : nothing
 
-    regrid!(exchange_state.u,     from_atmosphere, ua)
-    regrid!(exchange_state.v,     from_atmosphere, va)
-    regrid!(exchange_state.T,     from_atmosphere, Ta)
-    regrid!(exchange_state.q,     from_atmosphere, qa)
-    regrid!(exchange_state.p,     from_atmosphere, pa)
-    regrid!(exchange_state.ℐꜜˢʷ,  from_atmosphere, ℐꜜˢʷ)
-    regrid!(exchange_state.ℐꜜˡʷ,  from_atmosphere, ℐꜜˡʷ)
-    regrid!(exchange_state.Jʳⁿ,   from_atmosphere, Jʳⁿ)
-    isnothing(Jˢⁿ) || regrid!(exchange_state.Jˢⁿ, from_atmosphere, Jˢⁿ)
+    regrid_to_field!(exchange_state.u,     from_atmosphere, ua)
+    regrid_to_field!(exchange_state.v,     from_atmosphere, va)
+    regrid_to_field!(exchange_state.T,     from_atmosphere, Ta)
+    regrid_to_field!(exchange_state.q,     from_atmosphere, qa)
+    regrid_to_field!(exchange_state.p,     from_atmosphere, pa)
+    regrid_to_field!(exchange_state.ℐꜜˢʷ,  from_atmosphere, ℐꜜˢʷ)
+    regrid_to_field!(exchange_state.ℐꜜˡʷ,  from_atmosphere, ℐꜜˡʷ)
+    regrid_to_field!(exchange_state.Jʳⁿ,   from_atmosphere, Jʳⁿ)
+    isnothing(Jˢⁿ) || regrid_to_field!(exchange_state.Jˢⁿ, from_atmosphere, Jˢⁿ)
 
     arch = architecture(exchange_grid)
 
@@ -144,11 +142,11 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmo
     # TODO: Figure out how we are going to deal with upwelling radiation
     # TODO: regrid longwave rather than a mixed surface temperature
     tmp .= 𝒬ᵀᵃᵒ * (1 - ℵ) + ℵ * 𝒬ᵀᵃⁱ
-    regrid!(𝒬ᵀ_speedy, to_atmosphere, tmp)
+    regrid_from_field!(𝒬ᵀ_speedy, to_atmosphere, tmp)
     tmp .= Jᵛᵃᵒ * (1 - ℵ) + ℵ * Jᵛᵃⁱ
-    regrid!(Jᵛ_speedy, to_atmosphere, tmp)
+    regrid_from_field!(Jᵛ_speedy, to_atmosphere, tmp)
     tmp .= To * (1 - ℵ) + ℵ * Ti + 273.15
-    regrid!(sst, to_atmosphere, tmp)
+    regrid_from_field!(sst, to_atmosphere, tmp)
 
     return nothing
 end
@@ -168,10 +166,10 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model::Spee
     To  = coupled_model.interfaces.atmosphere_ocean_interface.temperature
 
     # TODO: Figure out how we are going to deal with upwelling radiation
-    regrid!(𝒬ᵀ_speedy, to_atmosphere, 𝒬ᵀᵃᵒ)
-    regrid!(Jᵛ_speedy, to_atmosphere, Jᵛᵃᵒ)
+    regrid_from_field!(𝒬ᵀ_speedy, to_atmosphere, 𝒬ᵀᵃᵒ)
+    regrid_from_field!(Jᵛ_speedy, to_atmosphere, Jᵛᵃᵒ)
     tmp .= To .+ 273.15
-    regrid!(sst, to_atmosphere, tmp)
+    regrid_from_field!(sst, to_atmosphere, tmp)
 
     return nothing
 end
