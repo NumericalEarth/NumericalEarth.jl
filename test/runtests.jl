@@ -1,3 +1,9 @@
+# The default run is offline: the data directory is a fresh temporary directory, and any file
+# that lands there is an accidental download. Set `NUMERICALEARTH_TEST_REMOTE_DATA=true` to
+# also run the tests that need real remote datasets, in the regular data directory.
+remote_data = parse(Bool, get(ENV, "NUMERICALEARTH_TEST_REMOTE_DATA", "false"))
+remote_data || (ENV["NUMERICALEARTH_DATA_DIRECTORY"] = mktempdir())
+
 # Common test setup file to make stand-alone tests easy
 include("runtests_setup.jl")
 include("download_utils.jl")
@@ -12,7 +18,7 @@ testsuite = find_tests(@__DIR__)
 # Parse arguments
 args = parse_args(ARGS)
 
-# download_utils and runtests_setup are not tests!
+# download_utils, runtests_setup and synthetic_datasets are not tests!
 delete!(testsuite, "runtests_setup")
 delete!(testsuite, "download_utils")
 delete!(testsuite, "synthetic_datasets")
@@ -20,26 +26,48 @@ delete!(testsuite, "test_distributed_utils")
 
 gpu_test = parse(Bool, get(ENV, "GPU_TEST", "false"))
 
+# Tests that need real remote datasets
+remote_data_tests = ["test_bathymetry",
+                     "test_polar_bathymetry",
+                     "test_jra55",
+                     "test_jra55_region",
+                     "test_ecco2_monthly",
+                     "test_ecco2_daily",
+                     "test_ecco4_en4",
+                     "test_ecco_atmosphere",
+                     "test_woa",
+                     "test_orca_grid",
+                     "test_soilgrids",
+                     "test_dataset_region",
+                     "test_diagnostics_1",
+                     # Use real data only as forcing or initial condition; to be moved onto the synthetic datasets
+                     "test_coefficient_based_fluxes",
+                     "test_surface_fluxes",
+                     "test_sea_ice_ocean_heat_fluxes",
+                     "test_ocean_only_model",
+                     "test_ocean_sea_ice_model",
+                     "test_tracer_budget",
+                     "test_column_field",
+                     "test_speedy_coupling",
+                     "test_mangling"]
+
 if filter_tests!(testsuite, args)
-    # Always remove tests that are treated separately
-    delete!(testsuite, "test_jra55_ecco_en4_etopo_downloading")
-    delete!(testsuite, "test_cds_downloading")
-    delete!(testsuite, "test_glorys_downloading")
-    delete!(testsuite, "test_aviso_downloading")
-    delete!(testsuite, "test_copernicus_dem_downloading")
-    delete!(testsuite, "test_copernicus_albedo_downloading")
-    delete!(testsuite, "test_copernicus_climate_datastore_downloading")
-    delete!(testsuite, "test_asterged_downloading")
-    delete!(testsuite, "test_globfp3d_downloading")
-    delete!(testsuite, "test_ghsl_downloading")
-    delete!(testsuite, "test_esaworldcover_downloading")
-    delete!(testsuite, "test_distributed_utils")
+    # Network probes run only from the DataDownload workflow, which names them explicitly
+    for name in filter(endswith("_downloading"), collect(keys(testsuite)))
+        delete!(testsuite, name)
+    end
+
+    if !remote_data
+        for name in remote_data_tests
+            delete!(testsuite, name)
+        end
+    end
+
     delete!(testsuite, "test_reactant")
     delete!(testsuite, "test_veros") # Veros seems to have introduce a pypi conflict issue; temporarily removing from CI
 
     if gpu_test
         # Remove CPU-only tests when testing on GPUs
-        delete!(testsuite, "test_veros")
         delete!(testsuite, "test_speedy_coupling")
     else
         # Remove the slowest tests from CPU CI to keep total runtime
@@ -65,74 +93,18 @@ function delete_inpainted_files(dir)
     end
 end
 
-function __init__()
-    #####
-    ##### Delete inpainted files
-    #####
-
+if remote_data
     delete_inpainted_files(@get_scratch!("."))
-
-    #####
-    ##### Download bathymetry data
-    #####
-
-    ETOPOmetadata = Metadatum(:bottom_height, dataset=NumericalEarth.ETOPO.ETOPO2022())
-    download_dataset_with_fallback(metadata_path(ETOPOmetadata); dataset_name="ETOPO2022") do
-        download(ETOPOmetadata)
-    end
-
-    #####
-    ##### Download JRA55 data
-    #####
-
-    try
-        atmosphere = JRA55PrescribedAtmosphere(time_indices_in_memory=2)
-        land       = JRA55PrescribedLand(time_indices_in_memory=2)
-        # Touch the radiation variables (rlds/rsds) too, so a corrupted cached
-        # download is caught by the same fallback path.
-        radiation = JRA55PrescribedRadiation(time_indices_in_memory=2)
-    catch e
-        @warn "Original JRA55 download failed, trying NumericalEarthArtifacts fallback..." exception=(e, catch_backtrace())
-        emit_ci_warning("Broken JRA55 download", "Original source failed during init")
-        for name in NumericalEarth.DataWrangling.JRA55.JRA55_variable_names
-            datum = Metadatum(name; dataset=JRA55.RepeatYearJRA55())
-            download_from_artifacts(metadata_path(datum))
-        end
-        atmosphere = JRA55PrescribedAtmosphere(time_indices_in_memory=2)
-        land       = JRA55PrescribedLand(time_indices_in_memory=2)
-        radiation  = JRA55PrescribedRadiation(time_indices_in_memory=2)
-    end
-
-    #####
-    ##### Download Dataset data
-    #####
-
-    # Download few datasets for tests
-    for dataset in test_datasets
-        time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
-        end_date = start_date + 1 * time_resolution
-        dates = start_date:time_resolution:end_date
-
-        ts_set = MetadataSet(:temperature, :salinity; dataset, dates)
-
-        for md in ts_set
-            download_dataset_with_fallback(metadata_path(md); dataset_name="$(typeof(dataset)) $(md.name)") do
-                download(md)
-            end
-        end
-
-        if dataset isa Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}
-            PO₄_metadata = Metadata(:phosphate; dataset, dates)
-            download_dataset_with_fallback(metadata_path(PO₄_metadata); dataset_name="$(typeof(dataset)) phosphate") do
-                download(PO₄_metadata)
-            end
-        end
-    end
+    download_test_data()
 end
-
-# Initialize and download required datasets
-__init__()
 
 runtests(NumericalEarth, args; testsuite)
 
-delete_inpainted_files(@get_scratch!("."))
+if remote_data
+    delete_inpainted_files(@get_scratch!("."))
+else
+    # The regridding cache lives here too, so only a dataset file is an accidental download
+    downloaded = [joinpath(root, file) for (root, _, files) in walkdir(ENV["NUMERICALEARTH_DATA_DIRECTORY"])
+                  for file in files if basename(root) != "field_cache"]
+    isempty(downloaded) || error("The offline test run downloaded data: ", join(downloaded, ", "))
+end
