@@ -20,8 +20,6 @@ export AbstractLand,
        VariablySaturatedHydrology,
        # Canopy interception store
        InterceptingHydrology,
-       # Deep water store (prognostic reservoir under the soil)
-       DeepWaterStore,
        # Urban aerodynamic roughness closures
        AbstractUrbanRoughness, MorphometricRoughness,
        IsotropicFrontalArea, EmpiricalFrontalArea,
@@ -92,10 +90,6 @@ include("hydrology/variably_saturated_hydrology.jl")
 # Canopy interception store — wraps a soil hydrology (throughfall + wet-canopy
 # evaporation), depends on `merge_unique` from the container above.
 include("hydrology/intercepting_hydrology.jl")
-
-# Deep water store — a prognostic reservoir under the soil, fed by the soil's Darcy
-# exchange and drained by its own bottom closure.
-include("hydrology/deep_water_store.jl")
 
 # Legacy PrescribedLand component (river / iceberg freshwater forcing).
 include("prescribed_land.jl")

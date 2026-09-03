@@ -165,18 +165,23 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
 | ``h^{\mathrm{la}}`` | `slab_depth` | depth of prognostic land | Vertical thickness of the integrated land slab, from ``z_b`` to ``z_s`` (m) |
+| ``h_k`` | `slab_depth` | layer thickness | Thickness of soil layer ``k``, surface first, when `slab_depth` is a tuple; ``h_1 = h^{\mathrm{la}}`` (m) |
+| ``M_k`` | `water_storage`, `water_storage_2`, … | layer water | Water mass per area of soil layer ``k``; layer 1 is the container's `water_storage` (kg m⁻²) |
+| ``r_k`` | `root_fraction` | root fraction | Share of roots in soil layer ``k``; weights the vapor sink and the `saturation` the atmosphere reads (–) |
 | ``\nu`` | `porosity` | soil porosity | Total pore fraction (–) |
 | ``\theta^l`` | – | pore liquid fraction | Physical liquid-filled pore fraction; surface physics consumes this (–) |
 | ``\vartheta^l`` | – | augmented liquid fraction | Conservative storage variable ``= \theta^l + \max(\Pi, 0)/h^{\mathrm{ss}}``; allows ``M > M⁺`` saturated overflow (–) |
 | ``\theta^r`` | `residual_liquid_fraction` | residual liquid fraction | Minimum liquid-filled pore fraction (–) |
-| ``𝒮`` | `saturation` | effective saturation | Effective (relative) saturation ``𝒮 = \mathrm{clamp}\!\left((\theta^l - \theta^r)/(\nu - \theta^r),\, 0,\, 1\right)``; the humidity availability and the front depth ``\delta^v`` derive from it (–) |
+| ``𝒮`` | `saturation` | effective saturation | Effective (relative) saturation ``𝒮 = \mathrm{clamp}\!\left((\theta^l - \theta^r)/(\nu - \theta^r),\, 0,\, 1\right)``; the humidity availability and the front depth ``\delta^v`` derive from it. With several soil layers, `saturation` is the root-weighted ``\sum_k r_k 𝒮_k`` (–) |
 | ``h^{\mathrm{ss}}`` | `storage_height` | storage height | Saturated storage height — the head built per unit fractional over-saturation; reciprocal of the specific storage (``1/S_s``) (m) |
 | ``\Pi`` | – | soil pressure head | Matric/pressure head; ``\Pi \le 0`` unsaturated, ``\Pi > 0`` saturated overflow (m) |
-| ``\Pi^d`` | `deep_pressure_head` | deep pressure head | Pressure head of the deep reservoir below the slab, passed to the deep-flux closure (m) |
+| ``\Pi^d`` | `deep_pressure_head` | deep pressure head | Pressure head of the deep reservoir below the last soil layer, passed to the deep-flux closure (m) |
 | ``h`` | – | hydraulic head | ``h = z + \Pi`` (m) |
 | ``K`` | – | hydraulic conductivity | Darcy conductivity (m s⁻¹) |
 | ``J^{Es}`` | `surface_energy_flux` | surface energy flux | Signed surface energy flux, positive upward (out of the slab) (W m⁻²) |
-| ``J^{lb}`` | `deep_liquid_flux` | deep-boundary liquid flux | Liquid mass flux across the slab bottom, positive upward (into the slab, capillary rise / groundwater return); drainage is ``J^{lb} < 0`` (kg m⁻² s⁻¹) |
+| ``J^{lb}`` | `deep_liquid_flux` | deep-boundary liquid flux | Liquid mass flux across the column bottom, positive upward (into the soil, capillary rise / groundwater return); drainage is ``J^{lb} < 0`` (kg m⁻² s⁻¹) |
+| ``J_k`` | `interlayer_liquid_flux_k` | interlayer liquid flux | Liquid mass flux across the bottom of soil layer ``k`` into layer ``k+1``, positive upward; under the last layer it is ``J^{lb}`` (kg m⁻² s⁻¹) |
+| ``\Lambda_k`` | – | interlayer hydraulic conductance | ``\rho^l \bar K/\ell`` with ``\ell = (h_k + h_{k+1})/2`` and ``\bar K`` the conductivity at the two layers' mean saturation (kg m⁻³ s⁻¹) |
 | ``J^{ls}`` | `surface_liquid_flux` | surface liquid flux | Liquid mass flux at the surface, ``J^{ls} = -P^l + R^{\mathrm{sfc}}`` without a surface water store, positive upward (out of the slab); infiltration is ``J^{ls} < 0`` (kg m⁻² s⁻¹) |
 | ``R^{\mathrm{sfc}}`` | `surface_runoff` | surface runoff | Liquid leaving the column at the surface, ``\ge 0``: the infiltration excess, or the share of the surface water store drained over the step (kg m⁻² s⁻¹) |
 | ``S^{\mathrm{sfc}}`` | `surface_water_storage` | surface water store | Infiltration excess ponded at the surface, draining on `drainage_timescale` (kg m⁻²) |

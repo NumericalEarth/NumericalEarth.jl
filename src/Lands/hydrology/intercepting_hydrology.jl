@@ -107,6 +107,7 @@ diagnostic_variables(h::InterceptingHydrology) =
 # shapes are preserved; interception's own fields fall through to the defaults.
 initial_flux(h::InterceptingHydrology, name::Symbol, grid) = initial_flux(h.soil, name, grid)
 initial_diagnostic(h::InterceptingHydrology, name::Symbol, grid) = initial_diagnostic(h.soil, name, grid)
+initial_prognostic(h::InterceptingHydrology, name::Symbol, grid) = initial_prognostic(h.soil, name, grid)
 
 #####
 ##### Interception step — runs before the delegated soil hydrology step.

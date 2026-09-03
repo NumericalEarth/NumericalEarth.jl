@@ -127,7 +127,6 @@ export
     WaterCoupledEnergy,
     VariablySaturatedHydrology,
     InterceptingHydrology,
-    DeepWaterStore,
     VanGenuchtenRetention, VanGenuchtenConductivity,
     NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
     NoRunoff, InfiltrationCapacityRunoff,
