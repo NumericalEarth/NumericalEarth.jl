@@ -15,7 +15,7 @@
 ##### Diagnostics published every step:
 #####   * `deep_liquid_flux`        (Jˡᵇ, positive upward)
 #####   * `surface_liquid_flux`     (Jˡˢ, positive upward)
-#####   * `surface_runoff`          (Rˢᶠᶜ, ≥ 0; rejected input)
+#####   * `surface_runoff`          (Rˢᶠᶜ, ≥ 0; leaves the column at the surface)
 #####   * `subsurface_runoff`       (Rˡᵃᵗ, ≥ 0; storage export)
 #####   * `water_storage_tendency`  (dMˡᵃ/dt, kg m⁻² s⁻¹)
 #####
@@ -123,6 +123,8 @@ end
 flux_variables(::VariablySaturatedHydrology) =
     (:vapor_flux, :liquid_precipitation_flux)
 
+prognostic_variables(h::VariablySaturatedHydrology) = prognostic_variables(h.runoff)
+
 diagnostic_variables(::VariablySaturatedHydrology) =
     (:deep_liquid_flux,
      :surface_liquid_flux,
@@ -198,7 +200,7 @@ EarthSystemModels.surface_retention_curve(h::VariablySaturatedHydrology) = h.ret
 
 @kernel function _variably_saturated_step!(M, saturation,
                                            Jˡb_diag, Jˡs_diag, Rsfc_diag, Rlat_diag, dMdt_diag,
-                                           Jv, Pl, h, deep_pressure_head,
+                                           Jv, Pl, prognostic, h, deep_pressure_head,
                                            Δt, grid, time)
     i, j = @index(Global, NTuple)
     @inbounds begin
@@ -213,7 +215,7 @@ EarthSystemModels.surface_retention_curve(h::VariablySaturatedHydrology) = h.ret
     Π  = diagnostic_pressure_head(h, Mij, θˡ, 𝒮, i, j)
     K  = hydraulic_conductivity(h.hydraulic_conductivity, 𝒮)
 
-    Jˡs, Rsfc = surface_liquid_flux_and_runoff(h.runoff, Plij, Mij, θˡ, 𝒮, Π, K)
+    Jˡs, Rsfc = surface_water_balance!(h.runoff, prognostic, i, j, Plij, Mij, θˡ, 𝒮, Π, K, Δt)
     Jˡb       = deep_liquid_flux(h.deep_liquid_flux, Mij, θˡ, 𝒮, Π, K, Πᵈ, time)
     Rlat      = subsurface_runoff(h.runoff, Mij, Π, K)
 
@@ -250,6 +252,7 @@ function time_step!(h::VariablySaturatedHydrology, land, Δt, time)
             land.diagnostics.water_storage_tendency,
             land.fluxes.vapor_flux,
             land.fluxes.liquid_precipitation_flux,
+            land.prognostic,
             h, h.deep_pressure_head, Δt, land.grid, time)
     return nothing
 end
