@@ -1,5 +1,6 @@
 include("runtests_setup.jl")
 include("download_utils.jl")
+include("dataset_status.jl")
 
 using CDSAPI
 using Dates
@@ -8,7 +9,7 @@ using NCDatasets
 
 using NumericalEarth.DataWrangling: metadata_path, BoundingBox, Column, Linear, Nearest, is_three_dimensional
 using NumericalEarth.DataWrangling.ERA5
-using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
+using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel,
                                          ERA5_dataset_variable_names, ERA5_netcdf_variable_names
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
                                          ERA5_all_pressure_levels, ERA5PL_dataset_variable_names,
@@ -1263,6 +1264,22 @@ end
 
             @test sort(received) == ["a.nc", "b.nc"]   # readme.txt filtered out
         end
+    end
+end
+
+# `ERA5YearlySingleLevel` writes one file per year per variable, a filename and request
+# shape distinct from the hourly and monthly products covered above. A bounding box keeps
+# the year's worth of hourly data to a manageable subset.
+@testset "Downloading ERA5 yearly single-level data" begin
+    @dataset_check "ERA5YearlySingleLevel" "temperature" begin
+        region = BoundingBox(longitude=(0, 2), latitude=(40, 42))
+        metadatum = Metadatum(:temperature; dataset=ERA5YearlySingleLevel(), region, date=DateTime(2000, 1, 1))
+        filepath = metadata_path(metadatum)
+        isfile(filepath) && rm(filepath; force=true)
+
+        download(metadatum)
+        isfile(filepath) || error("ERA5YearlySingleLevel download produced no file at $(filepath)")
+        filepath
     end
 end
 

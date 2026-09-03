@@ -4,7 +4,7 @@ using Downloads: Downloads
 using Oceananigans.DistributedComputations
 
 using ..DataWrangling: all_dates, DataWrangling, Metadata, metadata_path,
-                       DownloadProgress, DatasetBackend, metadata_url,
+                       DownloadProgress, atomic_download, DatasetBackend, metadata_url,
                        dataset_variable_name, getfilename
 
 abstract type JRA55Dataset end
@@ -54,12 +54,35 @@ DataWrangling.default_inpainting(::JRA55Metadata) = nothing
 
 # The whole range of dates in the different dataset datasets
 # NOTE! rivers and icebergs have a different frequency! (typical JRA55 data is three-hourly while rivers and icebergs are daily)
-function DataWrangling.all_dates(::RepeatYearJRA55, name)
+function native_repeat_year_JRA55_dates(name)
     if name == :river_freshwater_flux || name == :iceberg_freshwater_flux
         return DateTime(1990, 1, 1) : Day(1) : DateTime(1990, 12, 31)
     else
         return DateTime(1990, 1, 1) : Hour(3) : DateTime(1990, 12, 31, 23, 59, 59)
     end
+end
+
+const repeat_year_JRA55_instant_counts = Dict{Tuple{String, Int}, Int}()
+
+# Keyed on the file size too, so that re-downloading a file replaces its entry instead of reusing it.
+function repeat_year_JRA55_instants(path, native_instants)
+    return get!(repeat_year_JRA55_instant_counts, (path, filesize(path))) do
+        ds = Dataset(path)
+        instants = ds.dim["time"]
+        close(ds)
+        instants < native_instants && @warn "$(basename(path)) holds $instants of the $native_instants JRA55 time instants; the time axis follows the file."
+        return instants
+    end
+end
+
+function DataWrangling.all_dates(dataset::RepeatYearJRA55, name)
+    dates = native_repeat_year_JRA55_dates(name)
+    path = joinpath(DataWrangling.default_download_directory(dataset), DataWrangling.metadata_filename(dataset, name, nothing, nothing))
+
+    isfile(path) || return dates
+
+    # The file on disk owns the time axis: CI runs against RYF files cropped to a few days.
+    return dates[1:min(repeat_year_JRA55_instants(path, length(dates)), length(dates))]
 end
 
 DataWrangling.all_dates(::MultiYearJRA55, name) = JRA55_multiple_year_dates[name]
@@ -240,7 +263,7 @@ function Downloads.download(metadata::JRA55Metadata)
         filepath = metadata_path(metadatum)
 
         if !isfile(filepath)
-            Downloads.download(fileurl, filepath; progress=DownloadProgress())
+            atomic_download(fileurl, filepath; progress=DownloadProgress())
         end
     end
 

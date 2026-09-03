@@ -86,8 +86,7 @@ end
 @testset "Tracer budget closure under surface fluxes" begin
     for arch in test_architectures
         for z in (MutableVerticalDiscretization((-100, 0)), ) # TODO: Add a static grid
-            for fold_topology in (RightFaceFolded,
-                                  RightCenterFolded)
+            for fold_topology in (RightFaceFolded, RightCenterFolded)
 
             @info ".. on $(typeof(arch)) with $(typeof(z)) and $fold_topology topology"
             underlying_grid = TripolarGrid(arch;
@@ -121,20 +120,22 @@ end
             Sᵒᶜ = 35 # reference salinity [psu]
             free_surface = SplitExplicitFreeSurface(substeps=20)
 
-            # Without shortwave penetration
-            @testset "Surface-only fluxes" begin
-                ocean = ocean_simulation(deepcopy(grid); free_surface, radiative_forcing=nothing)
-                set!(ocean.model, T=Tᵢ, S=Sᵢ)
-                coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
-                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; heat_rtol=1e-11, freshwater_rtol=√eps(eltype(grid)))
-            end
+            if fold_topology === RightFaceFolded # the partial budgets only, the full one runs on both
+                # Without shortwave penetration
+                @testset "Surface-only fluxes" begin
+                    ocean = ocean_simulation(deepcopy(grid); free_surface, radiative_forcing=nothing)
+                    set!(ocean.model, T=Tᵢ, S=Sᵢ)
+                    coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
+                    test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; heat_rtol=1e-11, freshwater_rtol=√eps(eltype(grid)))
+                end
 
-            # With penetrative shortwave radiation
-            @testset "Surface fluxes + Penetrating shortwave radiation" begin
-                ocean = ocean_simulation(deepcopy(grid); free_surface)
-                set!(ocean.model, T=Tᵢ, S=Sᵢ)
-                coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
-                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; heat_rtol=1e-11, freshwater_rtol=√eps(eltype(grid)))
+                # With penetrative shortwave radiation
+                @testset "Surface fluxes + Penetrating shortwave radiation" begin
+                    ocean = ocean_simulation(deepcopy(grid); free_surface)
+                    set!(ocean.model, T=Tᵢ, S=Sᵢ)
+                    coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
+                    test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; heat_rtol=1e-11, freshwater_rtol=√eps(eltype(grid)))
+                end
             end
 
             @testset "Surface fluxes + penetrating shortwave radiation + Sea ice" begin

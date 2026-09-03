@@ -1,12 +1,13 @@
 include("runtests_setup.jl")
 include("download_utils.jl")
+include("dataset_status.jl")
 
 # The CopernicusMarine standalone executable bundles its own HDF5/h5py, so the
 # previous in-process CondaPkg h5py/hdf5 pinning is no longer required.
 using CopernicusMarine
 
-using NumericalEarth.DataWrangling: BoundingBox, is_three_dimensional, z_interfaces
-using NumericalEarth.DataWrangling.GLORYS: GLORYSDaily
+using NumericalEarth.DataWrangling: BoundingBox, is_three_dimensional, z_interfaces, metadata_path
+using NumericalEarth.DataWrangling.GLORYS: GLORYSDaily, GLORYSMonthly, GLORYSStatic
 using Oceananigans.Fields: location
 
 @testset "GLORYS CopernicusMarine fetch padding" begin
@@ -37,11 +38,39 @@ end
     region = BoundingBox(longitude=(200, 202), latitude=(35, 37))
     dataset = GLORYSDaily()
     for variable in variables
-        metadatum = Metadatum(variable; dataset, region)
-        filepath = NumericalEarth.DataWrangling.metadata_path(metadatum)
+        @dataset_check "GLORYSDaily" string(variable) begin
+            metadatum = Metadatum(variable; dataset, region)
+            filepath = metadata_path(metadatum)
+            isfile(filepath) && rm(filepath; force=true)
+            download(metadatum)
+            isfile(filepath) || error("GLORYSDaily $(variable) download produced no file at $(filepath)")
+            filepath
+        end
+    end
+end
+
+# `GLORYSMonthly` and `GLORYSStatic` share the CopernicusMarine path with `GLORYSDaily` but
+# resolve to different product IDs, so a monthly or static product going away is invisible
+# to the daily check above. One variable each is enough to catch that.
+@testset "Downloading GLORYS monthly and static products" begin
+    region = BoundingBox(longitude=(200, 202), latitude=(35, 37))
+
+    @dataset_check "GLORYSMonthly" "temperature" begin
+        metadatum = Metadatum(:temperature; dataset=GLORYSMonthly(), region)
+        filepath = metadata_path(metadatum)
         isfile(filepath) && rm(filepath; force=true)
         download(metadatum)
-        @test isfile(filepath)
+        isfile(filepath) || error("GLORYSMonthly temperature download produced no file at $(filepath)")
+        filepath
+    end
+
+    @dataset_check "GLORYSStatic" "depth" begin
+        metadatum = Metadatum(:depth; dataset=GLORYSStatic(), region)
+        filepath = metadata_path(metadatum)
+        isfile(filepath) && rm(filepath; force=true)
+        download(metadatum)
+        isfile(filepath) || error("GLORYSStatic depth download produced no file at $(filepath)")
+        filepath
     end
 end
 

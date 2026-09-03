@@ -36,6 +36,7 @@ using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
 using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
 using Oceananigans.Utils: launch!, prettytime, prettysummary
+using DocStringExtensions: TYPEDSIGNATURES
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
 using Scratch: @get_scratch!
@@ -107,6 +108,28 @@ function (d::DownloadProgress)(total, now; filename="")
     end
 
     return nothing
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Download `url` to `filepath`, which either does not exist or holds the complete file: the transfer
+lands beside the destination and is renamed into place once it has arrived in full.
+
+Extra keyword arguments are forwarded to `Downloads.download` (`progress`, `downloader`, ...).
+"""
+function atomic_download(url, filepath; kw...)
+    dir = dirname(filepath)
+    mkpath(dir)
+
+    # Same filesystem as the destination, so the rename is atomic rather than a copy.
+    mktemp(dir) do partial_filepath, partial_io
+        close(partial_io)
+        Downloads.download(url, partial_filepath; kw...)
+        mv(partial_filepath, filepath; force=true)
+    end
+
+    return filepath
 end
 
 """

@@ -15,6 +15,9 @@
   <a href="https://github.com/NumericalEarth/NumericalEarth.jl/actions/workflows/ci.yml">
     <img src="https://github.com/NumericalEarth/NumericalEarth.jl/actions/workflows/ci.yml/badge.svg" alt="CI">
   </a>
+  <a href="https://numericalearth.github.io/NumericalEarth.jl/">
+    <img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fnumericalearth.github.io%2FNumericalEarth.jl%2Fstatus.json&style=flat-square" alt="Dataset download status">
+  </a>
   <a href="https://numericalearth.github.io/NumericalEarthDocumentation/stable/">
     <img src="https://img.shields.io/badge/docs-stable-blue.svg?style=flat-square" alt="Stable docs">
   </a>

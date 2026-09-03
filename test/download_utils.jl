@@ -1,7 +1,35 @@
-using Downloads: Downloads
-using NumericalEarth.DataWrangling: metadata_path
+using NumericalEarth.DataWrangling: metadata_path, atomic_download
 
 const ARTIFACTS_BASE_URL = "https://github.com/NumericalEarth/NumericalEarthArtifacts/releases/download/data-v1/"
+const TEST_FIXTURES_BASE_URL = "https://github.com/NumericalEarth/NumericalEarthArtifacts/releases/download/test-fixtures-v1/"
+
+"""
+    download_test_fixtures()
+
+Populate the JRA55 download cache with cropped RYF fixtures, replacing an 11.6 GB download with
+roughly 100 MB. Returns `true` when fixtures were used. A no-op unless
+`NUMERICALEARTH_TEST_FIXTURES == "true"`.
+"""
+function download_test_fixtures()
+    get(ENV, "NUMERICALEARTH_TEST_FIXTURES", "false") == "true" || return false
+
+    for name in NumericalEarth.DataWrangling.JRA55.JRA55_variable_names
+        filepath = metadata_path(Metadatum(name; dataset=NumericalEarth.JRA55.RepeatYearJRA55()))
+        isfile(filepath) && continue
+
+        filename = basename(filepath)
+
+        try
+            @info "Fetching cropped JRA55 fixture $(filename)..."
+            atomic_download(TEST_FIXTURES_BASE_URL * filename, filepath)
+        catch e
+            @warn "Could not fetch JRA55 fixture $(filename); falling back to the full file." exception=(e, catch_backtrace())
+            emit_ci_warning("Missing JRA55 test fixture", "$(filename): $(sprint(showerror, e))")
+        end
+    end
+
+    return true
+end
 
 function emit_ci_warning(title, message)
     if haskey(ENV, "GITHUB_ACTIONS")
@@ -15,11 +43,7 @@ function download_from_artifacts(filepath::AbstractString; max_retries=3)
     @info "Downloading $filename from NumericalEarthArtifacts fallback..."
     for attempt in 1:max_retries
         try
-            mktemp(dirname(filepath)) do tmppath, tmpio
-                close(tmpio)
-                Downloads.download(fallback_url, tmppath)
-                mv(tmppath, filepath; force=true)
-            end
+            atomic_download(fallback_url, filepath)
             return
         catch e
             attempt < max_retries || rethrow(e)

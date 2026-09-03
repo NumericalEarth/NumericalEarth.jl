@@ -21,7 +21,7 @@ using ...NumericalEarth: NumericalEarth
 using ..DataWrangling: DataWrangling, binary_data_grid, binary_data_size, default_mask_value,
                        dataset_variable_name, default_download_directory, longitude_interfaces,
                        latitude_interfaces, netrc_downloader, NearestNeighborInpainting, metadata_path,
-                       GramPerKilogramMinus35, Metadata, Metadatum, DownloadProgress,
+                       GramPerKilogramMinus35, Metadata, Metadatum, DownloadProgress, atomic_download,
                        metadata_url, first_date, last_date, all_dates
 
 download_ECCO_cache::String = ""
@@ -331,7 +331,7 @@ function Downloads.download(metadata::ECCOMetadata)
                 end
                 @info "Downloading ECCO data: $(metadatum.name) in $(metadatum.dir)..."
                 try
-                    Downloads.download(fileurl, filepath; downloader, progress=DownloadProgress())
+                    atomic_download(fileurl, filepath; downloader, progress=DownloadProgress())
                 catch err
                     throw(ecco_download_error(err, metadatum))
                 end
