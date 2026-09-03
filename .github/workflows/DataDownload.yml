@@ -22,13 +22,16 @@ env:
   CDSAPI_URL: "https://cds.climate.copernicus.eu/api"
   CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
   DESTINE_ACCESS_TOKEN: ${{ secrets.DESTINE_ACCESS_TOKEN }}
+  EARTHDATA_USERNAME: ${{ secrets.EARTHDATA_USERNAME }}
+  EARTHDATA_PASSWORD: ${{ secrets.EARTHDATA_PASSWORD }}
   DATADEPS_ALWAYS_ACCEPT: true
   JULIA_PKG_SERVER_REGISTRY_PREFERENCE: 'eager'
 
-  cds_downloading:
+jobs:
+  data_downloading:
     name: Data Downloading - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -73,13 +76,32 @@ env:
       - uses: julia-actions/cache@v3
         with:
           cache-scratchspaces: false
+      - name: Set test arguments
+        shell: bash
+        run: |
+          TEST_ARGS=(--verbose
+                     test_jra55_ecco_en4_etopo_downloading
+                     test_cds_downloading
+                     test_copernicus_climate_datastore_downloading
+                     test_copernicus_albedo_downloading
+                     test_copernicus_dem_downloading
+                     test_glorys_downloading
+                     test_aviso_downloading
+                     test_globfp3d_downloading
+                     test_ghsl_downloading
+                     test_esaworldcover_downloading)
+          # ASTER GED needs NASA Earthdata credentials
+          if [[ -n "${EARTHDATA_USERNAME}" ]]; then
+            TEST_ARGS+=(test_asterged_downloading)
+          fi
+          echo "runtest_test_args=${TEST_ARGS[@]}" | tee -a "${GITHUB_ENV}"
       - name: Run tests
         run: |
           julia --project --color=yes --check-bounds=yes -e '
               using Pkg;
               Pkg.test(; coverage=true,
                         julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
-                        test_args=["--verbose", "test_cds_downloading", "test_jra55_ecco_en4_etopo_downloading", "test_glorys_downloading", "test_aviso_downloading", "test_copernicus_dem_downloading", "test_copernicus_climate_datastore_downloading"])
+                        test_args=`${{ env.runtest_test_args }}`)
           '
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v7
