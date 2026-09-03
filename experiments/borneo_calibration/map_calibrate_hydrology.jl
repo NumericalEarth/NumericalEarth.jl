@@ -10,7 +10,9 @@
 #   thickness  ζ = log hᵈ, the thickness of the prognostic deep store (DEEP_STORE=1)
 #   deepK0     κ = log₁₀K₀ᵈ, the store's own saturated conductivity (its drainage ∝ Kᵈ)
 #
-#     L = (1/N) Σₙ Σᵢⱼ wᵢⱼ (θᵢⱼ(tₙ; q, λ, ν) − θᵢⱼᴱᴿᴬ⁵ᴸ(tₙ))²,      θ = Mˡᵃ / (ρˡ h₀).
+#     L = (1/N) Σₙ Σᵢⱼ wᵢⱼ (θᵢⱼ(tₙ; q, λ, ν) − θᵢⱼᴱᴿᴬ⁵ᴸ(tₙ))²,      θ = Mˡᵃ / (ρˡ h₀),
+#
+# plus, with DEEP_LOSS=1, the same mismatch of the deep store's θᵈ = Mᵈ / (ρˡ hᵈ) to the 28–100 cm layer.
 #
 # One compiled reverse pass returns all three adjoints. Descent is per cell along the adjoint
 # direction, each field scaled by its own step (a diagonal preconditioner) and capped, with a
@@ -33,6 +35,7 @@ active = Symbol.(split(get(ENV, "FIELDS", "K0,exchange"), ","))
 constant_deep_head = deep_head_mode in ("constant", "mean", "initial") && !deep_store
 :deephead in active && !constant_deep_head && error("calibrating the deep head needs DEEP_HEAD=constant, mean or initial")
 (:thickness in active || :deepK0 in active) && !deep_store && error("calibrating the deep store needs DEEP_STORE=1")
+deep_loss && !deep_store && error("the deep-layer loss needs DEEP_STORE=1")
 tag = "map_hydrology_" * join(string.(active), "_") * "_r$(refinement)_$(backend)$(tag_suffix)"
 
 # ## Start values, bounds and characteristic steps
@@ -73,7 +76,7 @@ function set_retention!(model, ν, 𝒮★)
     return nothing
 end
 
-function hydrology_loss(model, k, l, ν, d, ζ, κ, 𝒮★, h, θ₀, T₀, q₀, θᵈ₀, w, θᵗ, Δt, nsteps)
+function hydrology_loss(model, k, l, ν, d, ζ, κ, 𝒮★, h, θ₀, T₀, q₀, θᵈ₀, w, θᵗ, θᵈᵗ, Δt, nsteps)
     reset_clock!(model.clock)
     reset_clock!(model.land.clock)
     parent(conductivity_field(model)) .= exp.(log(10) .* parent(k))
@@ -87,11 +90,12 @@ function hydrology_loss(model, k, l, ν, d, ζ, κ, 𝒮★, h, θ₀, T₀, q�
     @trace mincut=true checkpointing=true track_numbers=false for n in 1:nsteps
         time_step!(model, Δt)
         L += sum(cell_loss(model, h, w, θᵗ[n, :, :, :]))
+        deep_loss && (L += deep_loss_weight * sum(deep_cell_loss(model, w, θᵈᵗ[n, :, :, :])))
     end
     return L / nsteps
 end
 
-function grad_hydrology_loss(model, dmodel, k, dk, l, dl, ν, dν, d, dd, ζ, dζ, κ, dκ, 𝒮★, h, θ₀, T₀, q₀, θᵈ₀, w, θᵗ, Δt, nsteps)
+function grad_hydrology_loss(model, dmodel, k, dk, l, dl, ν, dν, d, dd, ζ, dζ, κ, dκ, 𝒮★, h, θ₀, T₀, q₀, θᵈ₀, w, θᵗ, θᵈᵗ, Δt, nsteps)
     for g in (dk, dl, dν, dd, dζ, dκ)
         parent(g) .= 0
     end
@@ -100,7 +104,7 @@ function grad_hydrology_loss(model, dmodel, k, dk, l, dl, ν, dν, d, dd, ζ, d�
                            Enzyme.Duplicated(model, dmodel), Enzyme.Duplicated(k, dk), Enzyme.Duplicated(l, dl),
                            Enzyme.Duplicated(ν, dν), Enzyme.Duplicated(d, dd), Enzyme.Duplicated(ζ, dζ), Enzyme.Duplicated(κ, dκ),
                            Enzyme.Const(𝒮★), Enzyme.Const(h), Enzyme.Const(θ₀), Enzyme.Const(T₀), Enzyme.Const(q₀), Enzyme.Const(θᵈ₀),
-                           Enzyme.Const(w), Enzyme.Const(θᵗ), Enzyme.Const(Δt), Enzyme.Const(nsteps))
+                           Enzyme.Const(w), Enzyme.Const(θᵗ), Enzyme.Const(θᵈᵗ), Enzyme.Const(Δt), Enzyme.Const(nsteps))
     return dk, dl, dν, dd, dζ, dκ, L
 end
 
@@ -111,6 +115,7 @@ k_ad, l_ad, ν_ad, d_ad, ζ_ad, κ_ad = (surface_property(grid_ad, p) for p in (
 dk_ad, dl_ad, dν_ad, dd_ad, dζ_ad, dκ_ad = (Enzyme.make_zero(f) for f in (k_ad, l_ad, ν_ad, d_ad, ζ_ad, κ_ad))
 𝒮★_ad = Reactant.to_rarray(parent(set_cells!(surface_field(cpu_grid), 𝒮★, median(𝒮★[land]))))
 θ_target_ad = Reactant.to_rarray(θ_target)
+θᵈ_target_ad = Reactant.to_rarray(θᵈ_target)
 s_ad = surface_parameters(static, grid_ad, FT)
 model_ad = borneo_coupled_model(grid_ad, FT, forcing, s_ad; slab_depth = surface_field(grid_ad),
                                 exchanger_correction = correction, surface_layer_height, boundary_layer_height,
@@ -120,7 +125,7 @@ Oceananigans.initialize!(model_ad)
 @info "compiling the reverse pass over $Nsteps steps on the $backend backend..."
 compile_seconds = @elapsed compiled = Reactant.@compile raise=true raise_first=true sync=true grad_hydrology_loss(
     model_ad, Enzyme.make_zero(model_ad), k_ad, dk_ad, l_ad, dl_ad, ν_ad, dν_ad, d_ad, dd_ad, ζ_ad, dζ_ad, κ_ad, dκ_ad, 𝒮★_ad, fields_ad.h,
-    fields_ad.θ₀, fields_ad.T₀, fields_ad.q₀, fields_ad.θᵈ₀, fields_ad.w, θ_target_ad, Δt, Nsteps)
+    fields_ad.θ₀, fields_ad.T₀, fields_ad.q₀, fields_ad.θᵈ₀, fields_ad.w, θ_target_ad, θᵈ_target_ad, Δt, Nsteps)
 @info @sprintf("compiled in %.0f s", compile_seconds)
 
 # ## Descent: preconditioned adjoint direction, per-cell backtracking over eager runs
@@ -142,7 +147,7 @@ for iteration in 1:Niter
     dmodel = Enzyme.make_zero(model_ad)
     t = @elapsed dk_out, dl_out, dν_out, dd_out, dζ_out, dκ_out, L_ad = compiled(model_ad, dmodel, k_ad, dk_ad, l_ad, dl_ad, ν_ad, dν_ad, d_ad, dd_ad,
                                                                                   ζ_ad, dζ_ad, κ_ad, dκ_ad, 𝒮★_ad, fields_ad.h, fields_ad.θ₀, fields_ad.T₀, fields_ad.q₀,
-                                                                                  fields_ad.θᵈ₀, fields_ad.w, θ_target_ad, Δt, Nsteps)
+                                                                                  fields_ad.θᵈ₀, fields_ad.w, θ_target_ad, θᵈ_target_ad, Δt, Nsteps)
     gradients = Dict(:K0 => Array(interior(dk_out, :, :, 1)), :exchange => Array(interior(dl_out, :, :, 1)),
                      :retention => Array(interior(dν_out, :, :, 1)), :deephead => Array(interior(dd_out, :, :, 1)),
                      :thickness => Array(interior(dζ_out, :, :, 1)), :deepK0 => Array(interior(dκ_out, :, :, 1)))

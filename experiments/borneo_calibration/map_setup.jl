@@ -42,6 +42,13 @@ for n in 1:Nsteps
     θ_target[n, 1 + Hx:Nx + Hx, 1 + Hy:Ny + Hy, 1] .= (1 - a) .* era5_land_soil_water(era5_land, k) .+ a .* era5_land_soil_water(era5_land, k + 1)
 end
 θ_target_end = θ_target[end, 1 + Hx:Nx + Hx, 1 + Hy:Ny + Hy, 1]
+θᵈ_target = zeros(FT, Nsteps, Nx + 2Hx, Ny + 2Hy, 1)      # ERA5-Land 28–100 cm, the deep store's target when DEEP_LOSS=1
+for n in 1:Nsteps
+    t = n * Δt / 3600
+    k = clamp(floor(Int, t) + 1, 1, length(era5_land.times) - 1)
+    a = t - (k - 1)
+    θᵈ_target[n, 1 + Hx:Nx + Hx, 1 + Hy:Ny + Hy, 1] .= (1 - a) .* era5_land.layer_3[k, :, :] .+ a .* era5_land.layer_3[k + 1, :, :]
+end
 weight = FT.(.!static.water)
 θ₀ = FT.(static.initial_soil_water)
 T₀ = FT.(forcing.skin_temperature)
@@ -102,7 +109,10 @@ deep_store_thickness = parse(Float64, get(ENV, "DEEP_STORE_THICKNESS", "0.72")) 
 deep_store_drainage = get(ENV, "DEEP_STORE_DRAINAGE", "free")                        # "free" (K(𝒮ᵈ)) or "none"
 deep_initial_soil_water = FT.(era5_land.layer_3[1, :, :])
 
-deep_store_options(grid) = (; thickness = surface_property(grid, fill(FT(deep_store_thickness), Nx, Ny)),
+deep_loss = get(ENV, "DEEP_LOSS", "0") == "1"                                  # add the store's mismatch to ERA5-Land 28–100 cm
+deep_loss_weight = parse(Float64, get(ENV, "DEEP_LOSS_WEIGHT", "1"))            # relative to the surface term
+
+deep_store_options(grid) = (; thickness = surface_property(grid, fill(FT(deep_store_thickness), Nx + 2Hx, Ny + 2Hy, 1)),
                               drainage = deep_store_drainage == "free" ? FreeDrainageFlux(FT) : NoDeepLiquidFlux(),
                               conductivity = surface_property(grid, FT.(static.matching_point_conductivity)))
 hydrology_options(grid) = deep_flux == "darcy" ?
@@ -141,6 +151,8 @@ end
 
 soil_water(model, h) = parent(model.land.water_storage) ./ (1000 .* parent(h))
 cell_loss(model, h, w, θᵗ) = parent(w) .* (soil_water(model, h) .- θᵗ).^2
+deep_soil_water(model) = parent(model.land.prognostic.deep_water_storage) ./ (1000 .* parent(deep_water_store(model).thickness))
+deep_cell_loss(model, w, θᵈᵗ) = parent(w) .* (deep_soil_water(model) .- θᵈᵗ).^2
 
 # Fields on `grid` for the state and target arrays; `h` carries h₀ into the halos too, so
 # the parent-level θ = M / (ρ h) stays finite where the loss weight is zero.
@@ -188,6 +200,7 @@ function forward_map(depth; record = false, modify! = nothing, hydrology...)
     for n in 1:Nsteps
         time_step!(model, Δt)
         losses .+= cell_loss(model, fields.h, fields.w, view(θ_target, n, :, :, :))
+        deep_loss && (losses .+= deep_loss_weight .* deep_cell_loss(model, fields.w, view(θᵈ_target, n, :, :, :)))
         θ = soil_water(model, fields.h)
         Σθ .+= θ
         Σθ² .+= θ .^ 2
