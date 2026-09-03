@@ -175,9 +175,12 @@ end
             @test model.interfaces.net_fluxes.atmosphere.ρv === ρv_bc
 
             # After update_state!, those BC fields receive the computed MOST land surface
-            # stress (the atmosphere-feels-drag link), and the stress is nonzero.
-            @test Array(interior(ρu_bc)) ≈ Array(interior(al.fluxes.x_momentum))
-            @test Array(interior(ρv_bc)) ≈ Array(interior(al.fluxes.y_momentum))
+            # stress (the atmosphere-feels-drag link), interpolated onto the face-located
+            # ρu/ρv, so each interior face equals the mean of its two adjacent centers.
+            τx = Array(interior(al.fluxes.x_momentum))
+            τy = Array(interior(al.fluxes.y_momentum))
+            @test Array(interior(ρu_bc))[2:end, :, :] ≈ (τx[1:end-1, :, :] .+ τx[2:end, :, :]) ./ 2
+            @test Array(interior(ρv_bc))[:, 2:end, :] ≈ (τy[:, 1:end-1, :] .+ τy[:, 2:end, :]) ./ 2
             @test maximum(abs, interior(ρu_bc)) > 0
         end
 
@@ -286,9 +289,12 @@ end
             @test model.interfaces.net_fluxes.atmosphere.ρu === ρu_bc
             @test model.interfaces.net_fluxes.atmosphere.ρv === ρv_bc
 
-            # MOST land surface stress reaches the nested child's bottom BC.
-            @test Array(interior(ρu_bc)) ≈ Array(interior(al.fluxes.x_momentum))
-            @test Array(interior(ρv_bc)) ≈ Array(interior(al.fluxes.y_momentum))
+            # MOST land surface stress reaches the nested child's bottom BC, interpolated
+            # onto the face-located ρu/ρv (each interior face = mean of adjacent centers).
+            τx = Array(interior(al.fluxes.x_momentum))
+            τy = Array(interior(al.fluxes.y_momentum))
+            @test Array(interior(ρu_bc))[2:end, :, :] ≈ (τx[1:end-1, :, :] .+ τx[2:end, :, :]) ./ 2
+            @test Array(interior(ρv_bc))[:, 2:end, :] ≈ (τy[:, 1:end-1, :] .+ τy[:, 2:end, :]) ./ 2
             @test maximum(abs, interior(ρu_bc)) > 0
         end
 
