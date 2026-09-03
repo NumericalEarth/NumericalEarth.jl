@@ -36,7 +36,8 @@ V = Dict(
     :store_cal4b  => validation("map_hydrology_K0_exchange_thickness_deepK0_r1_gpu_darcy_store4b_12d"),
     :store_cal4dl => validation("map_hydrology_K0_exchange_thickness_deepK0_r1_gpu_darcy_store4dl_12d"),
     :store_wt     => validation("map_hydrology_K0_exchange_thickness_watertable_r1_gpu_darcy_store_wt_12d"),
-    :store_wteq   => validation("map_hydrology_K0_exchange_thickness_watertable_r1_gpu_darcy_store_wteq_12d"))
+    :store_wteq   => validation("map_hydrology_K0_exchange_thickness_watertable_r1_gpu_darcy_store_wteq_12d"),
+    :store_wteq5  => validation("map_hydrology_K0_exchange_thickness_watertable_deepK0_r1_gpu_darcy_store_wteq5_12d"))
 era5 = jldopen(f -> f["data"], "surface_cache/era5_land_r1.jld2")
 
 θ_obs = V[:free_joint6]["θ_obs"]
@@ -74,6 +75,7 @@ suites = [
     ("deep store on a water table (2.5 m start): K₀ + ℓ + hᵈ + depth", series(:store_wt), :store, 12.25),
     ("deep store: K₀ + ℓ + hᵈ + K₀ᵈ, 16 iterations (control)",    series(:store_cal4b), :store, 12.25),
     ("deep store on a water table (equilibrium start): K₀ + ℓ + hᵈ + depth", series(:store_wteq), :store, 12.25),
+    ("deep store on a water table: K₀ + ℓ + hᵈ + depth + K₀ᵈ", series(:store_wteq5), :store, 12.25),
 ]
 filter!(s -> !isnothing(s[2]), suites)
 
@@ -101,7 +103,7 @@ mask(a) = ifelse.(land, a, NaN)
 free_colors  = Makie.wong_colors()[1:6]
 darcy_colors = (:gray40, :firebrick, :darkorange, :seagreen, :mediumpurple, :deepskyblue, :goldenrod)
 fair_colors  = (:sienna, :navy, :teal, :crimson)
-store_colors = (:gray40, :darkorange, :seagreen, :firebrick, :indianred, :navy, :teal, :purple)
+store_colors = (:gray40, :darkorange, :seagreen, :firebrick, :indianred, :navy, :teal, :purple, :goldenrod)
 
 # ## Trajectories
 
@@ -125,9 +127,9 @@ save("suite_trajectories_r1.png", fig)
 
 # ## The deep store against the reanalysis layer it never sees
 
-store_keys = filter(k -> !isnothing(V[k]), [:store, :store_cal3, :store_cal4, :store_cal4dl, :store_wt, :store_cal4b, :store_wteq])
+store_keys = filter(k -> !isnothing(V[k]), [:store, :store_cal3, :store_cal4, :store_cal4dl, :store_wt, :store_cal4b, :store_wteq, :store_wteq5])
 store_labels = [label for (label, _, fam, _) in suites if fam == :store && !occursin("pedotransfer", label)]
-store_color = Dict(:store => 1, :store_cal3 => 3, :store_cal4 => 4, :store_cal4dl => 5, :store_wt => 6, :store_cal4b => 7, :store_wteq => 8)
+store_color = Dict(:store => 1, :store_cal3 => 3, :store_cal4 => 4, :store_cal4dl => 5, :store_wt => 6, :store_cal4b => 7, :store_wteq => 8, :store_wteq5 => 9)
 fig = Figure(size = (1500, 1000), fontsize = 15)
 Label(fig[0, 1], "The prognostic deep store (28–100 cm) against ERA5-Land's deep layer, which only set its t = 0 state"; fontsize = 18)
 ax1 = Axis(fig[1, 1]; title = "domain-median water content of the deep layer", xlabel = "day", ylabel = "θᵈ (m³ m⁻³)")
@@ -218,7 +220,7 @@ held = last(windows)[2]
 cell_rms(θm) = [sqrt(sum(abs2, θm[held, i, j] .- θ_obs[held, i, j]) / length(held)) for i in axes(θm, 2), j in axes(θm, 3)]
 fig = Figure(size = (1900, 1000), fontsize = 14)
 Label(fig[0, 1:8], "Held-out RMS (days 12.25–20, unseen by every calibration), shared scale"; fontsize = 19)
-picks = filter(≤(length(suites)), [1, 5, 8, 10, 13, 15, 23, 25])
+picks = filter(≤(length(suites)), [1, 5, 8, 10, 13, 15, 22, 26])
 for (k, idx) in enumerate(picks)
     label, θm, _, _ = suites[idx]
     row, col = divrem(k - 1, 4)
