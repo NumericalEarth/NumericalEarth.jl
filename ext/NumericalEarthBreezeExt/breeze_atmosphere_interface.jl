@@ -185,8 +185,7 @@ NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos::BreezeA
         Qc = ao_fluxes.sensible_heat[i, j, 1]
         Fv = ao_fluxes.water_vapor[i, j, 1]
 
-        # ρu/ρv are face-located, so interpolate the (Center, Center) surface stress
-        # onto their velocity faces. Heat and moisture stay at centers.
+        # interpolate stresses on variable's location
         net.ρu[i, j, 1]  = ℑxᶠᵃᵃ(i, j, 1, grid, ao_fluxes.x_momentum)
         net.ρv[i, j, 1]  = ℑyᵃᶠᵃ(i, j, 1, grid, ao_fluxes.y_momentum)
         net.ρe[i, j, 1]  = Qc   # sensible heat only; latent heat handled by moisture flux
