@@ -13,12 +13,12 @@ Empirical soil-water retention curve mapping liquid pore fraction `θˡ`
 unsaturated soil), following [van Genuchten (1980)](@cite vangenuchten1980):
 
 ```math
-\\Pi_m(\\mathcal S) = -\\frac{1}{\\alpha}\\left[\\mathcal S^{-1/m} - 1\\right]^{1/n},
-\\qquad m = 1 - 1/n.
+\\Pi_m(\\mathcal S) = -\\frac{1}{\\alpha}\\left[\\mathcal S^{-1/\\mathscr{m}} - 1\\right]^{1/\\mathscr{n}},
+\\qquad \\mathscr{m} = 1 - 1/\\mathscr{n}.
 ```
 
 `inverse_air_entry_head` (`α`, m⁻¹) is the reciprocal of the air-entry pressure head, the
-suction at which the largest pores begin to empty. `pore_size_uniformity` (`n`, –) sets how
+suction at which the largest pores begin to empty. `pore_size_uniformity` (`𝓃`, –) sets how
 narrow the band of suctions is over which the soil drains. Each may be a scalar or a
 `Field` (see [`soil_hydraulic_properties`](@ref)).
 """
@@ -39,18 +39,18 @@ Adapt.adapt_structure(to, r::VanGenuchtenRetention) =
 """
 $(TYPEDSIGNATURES)
 
-The second van Genuchten shape parameter, `m = 1 - 1/n`, under the
+The second van Genuchten shape parameter, `𝓂 = 1 - 1/𝓃`, under the
 [Mualem (1976)](@cite mualem1976new) restriction.
 """
-@inline van_genuchten_m(n) = 1 - 1/n
+@inline van_genuchten_m(𝓃) = 1 - 1/𝓃
 
 """
 $(TYPEDSIGNATURES)
 
-Effective saturation `𝒮 = [1 + (αψ)ⁿ]^(-m)` at dimensionless suction `αψ ≥ 0`, the
+Effective saturation `𝒮 = [1 + (αψ)^𝓃]^(-𝓂)` at dimensionless suction `αψ ≥ 0`, the
 inverse of [`VanGenuchtenRetention`](@ref)'s `pressure_head`.
 """
-@inline van_genuchten_saturation(αψ, n) = (1 + αψ^n)^(-van_genuchten_m(n))
+@inline van_genuchten_saturation(αψ, 𝓃) = (1 + αψ^𝓃)^(-van_genuchten_m(𝓃))
 
 """
 $(TYPEDSIGNATURES)
@@ -62,19 +62,19 @@ $(TYPEDSIGNATURES)
 @inline function pressure_head(i, j, grid, r::VanGenuchtenRetention, 𝒮)
     FT = typeof(𝒮)
     α  = convert(FT, property_value(r.inverse_air_entry_head, i, j))
-    n  = convert(FT, property_value(r.pore_size_uniformity, i, j))
-    m  = van_genuchten_m(n)
+    𝓃  = convert(FT, property_value(r.pore_size_uniformity, i, j))
+    𝓂  = van_genuchten_m(𝓃)
     𝒮c = clamp(𝒮, 0, 1)
 
     # the head is capped at √floatmax so the pole at 𝒮 = 0 stays finite
     logΠᵐᵃˣ = log(floatmax(FT)) / 2
-    logΠ    = logexpm1(-log(𝒮c) / m) / n - log(α)
+    logΠ    = logexpm1(-log(𝒮c) / 𝓂) / 𝓃 - log(α)
     return ifelse(𝒮c >= 1, zero(FT), -exp(min(logΠ, logΠᵐᵃˣ)))
 end
 
 Base.summary(r::VanGenuchtenRetention) =
     string("VanGenuchtenRetention(α=", prettysummary(r.inverse_air_entry_head),
-           ", n=", prettysummary(r.pore_size_uniformity), ")")
+           ", 𝓃=", prettysummary(r.pore_size_uniformity), ")")
 
 """
     VanGenuchtenConductivity(FT = Oceananigans.defaults.FloatType;
@@ -87,12 +87,12 @@ the [Mualem (1976)](@cite mualem1976new) pore-bundle model with the
 [van Genuchten (1980)](@cite vangenuchten1980) retention shape:
 
 ```math
-K(\\mathcal S) = K_0\\,\\mathcal S^{\\eta^K}\\left[1 - (1 - \\mathcal S^{1/m})^m\\right]^2,
-\\qquad m = 1 - 1/n.
+K(\\mathcal S) = K_0\\,\\mathcal S^{\\eta^K}\\left[1 - (1 - \\mathcal S^{1/\\mathscr{m}})^{\\mathscr{m}}\\right]^2,
+\\qquad \\mathscr{m} = 1 - 1/\\mathscr{n}.
 ```
 
 `matching_point_conductivity` (`K₀`, m s⁻¹) is the conductivity this curve reaches at
-`𝒮 = 1`, `pore_size_uniformity` (`n`) must match the retention curve's, and
+`𝒮 = 1`, `pore_size_uniformity` (`𝓃`) must match the retention curve's, and
 `pore_connectivity_exponent` (`ηᴷ`, –) is the exponent on saturation: a larger value
 throttles conductivity more steeply as the soil drains. Each may be a scalar or a
 `Field` (see [`soil_hydraulic_properties`](@ref)). `K₀` and `ηᴷ` belong to one fit:
@@ -132,17 +132,17 @@ Darcy hydraulic conductivity (m s⁻¹) of closure `c` at saturation `𝒮` and 
 @inline function hydraulic_conductivity(i, j, grid, c::VanGenuchtenConductivity, 𝒮, T)
     FT = typeof(𝒮)
     K₀ = convert(FT, property_value(c.matching_point_conductivity, i, j))
-    n  = convert(FT, property_value(c.pore_size_uniformity, i, j))
+    𝓃  = convert(FT, property_value(c.pore_size_uniformity, i, j))
     ηᴷ = convert(FT, property_value(c.pore_connectivity_exponent, i, j))
-    m  = van_genuchten_m(n)
+    𝓂  = van_genuchten_m(𝓃)
     𝒮c = clamp(𝒮, 0, 1)
 
     log𝒮 = log(𝒮c)
-    logu = log𝒮 / m
+    logu = log𝒮 / 𝓂
     u    = exp(logu)
     # summing logarithms keeps 𝒮^ηᴷ [⋯]² finite where the direct product is `Inf * 0`
     negligible = logu < log(eps(FT))
-    logbracket = ifelse(negligible, log(m) + logu, log(-expm1(m * log1p(-u))))
+    logbracket = ifelse(negligible, log(𝓂) + logu, log(-expm1(𝓂 * log1p(-u))))
     K = K₀ * exp(ηᴷ * log𝒮 + 2 * logbracket) * viscosity_correction(c.water_viscosity, T)
     return ifelse(𝒮c == 0, zero(FT), K)
 end
@@ -223,9 +223,9 @@ end
 $(TYPEDSIGNATURES)
 
 Effective saturation at which capillary flow paths to an evaporating surface become
-disconnected, `𝒮ᶜ = [1 + ((n-1)/n)^(1-2n)]^(-m)` with `m = 1 - 1/n`, the saturation at the
-critical head `hᶜ = α⁻¹((n-1)/n)^((1-2n)/n)` of [Lehmann et al. (2008)](@cite lehmann2008).
-The retention curve depends on the product `α hᶜ`, so `α` cancels and `𝒮ᶜ` is set by `n`
+disconnected, `𝒮ᶜ = [1 + ((𝓃-1)/𝓃)^(1-2𝓃)]^(-𝓂)` with `𝓂 = 1 - 1/𝓃`, the saturation at the
+critical head `hᶜ = α⁻¹((𝓃-1)/𝓃)^((1-2𝓃)/𝓃)` of [Lehmann et al. (2008)](@cite lehmann2008).
+The retention curve depends on the product `α hᶜ`, so `α` cancels and `𝒮ᶜ` is set by `𝓃`
 alone. Bare-soil evaporation falls to half its potential rate near
 `θ½ ≈ θʳ + (ν - θʳ) 𝒮ᶜ` ([Lehmann et al. (2018)](@cite lehmann2018)), the threshold
 [`CriticalSaturation`](@ref) takes as `critical_saturation`.
@@ -242,9 +242,9 @@ round.(capillary_disconnect_saturation.([1.2, 1.5, 3.0]), digits = 3)
  0.238
 ```
 """
-@inline function capillary_disconnect_saturation(n)
-    m = van_genuchten_m(n)
-    return (1 + ((n - 1) / n)^(1 - 2n))^(-m)
+@inline function capillary_disconnect_saturation(𝓃)
+    𝓂 = van_genuchten_m(𝓃)
+    return (1 + ((𝓃 - 1) / 𝓃)^(1 - 2𝓃))^(-𝓂)
 end
 
 """
@@ -331,6 +331,6 @@ viscosity_summary(::Nothing) = "isothermal"
 
 Base.summary(c::VanGenuchtenConductivity) =
     string("VanGenuchtenConductivity(K₀=", prettysummary(c.matching_point_conductivity),
-           ", n=", prettysummary(c.pore_size_uniformity),
+           ", 𝓃=", prettysummary(c.pore_size_uniformity),
            ", ηᴷ=", prettysummary(c.pore_connectivity_exponent),
            ", ", viscosity_summary(c.water_viscosity), ")")

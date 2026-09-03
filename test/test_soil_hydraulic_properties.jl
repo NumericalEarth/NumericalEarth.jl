@@ -13,7 +13,7 @@ clay_soil  = (0.25, 0.25, 0.50, 1400.0)
 sand_soil  = (0.92, 0.05, 0.03, 1600.0)
 textures   = (sandy_loam, silt_loam, clay_soil, sand_soil)
 
-van_genuchten_water_content(ψ, θʳ, ν, α, n) = θʳ + (ν - θʳ) * (1 + (α * ψ)^n)^(-(1 - 1/n))
+van_genuchten_water_content(ψ, θʳ, ν, α, 𝓃) = θʳ + (ν - θʳ) * (1 + (α * ψ)^𝓃)^(-(1 - 1/𝓃))
 
 # OpenLandMap depth faces: 60–100, 30–60 and 0–30 cm.
 z_interfaces = [-1.0, -0.6, -0.3, 0.0]
@@ -134,23 +134,23 @@ end
 
 @testset "matched_retention_parameters inverts the retention curve" begin
     θʳ, ν, ψ¹, ψ² = 0.03, 0.45, 1.0, 150.0
-    recover(α, n) = matched_retention_parameters(van_genuchten_water_content(ψ¹, θʳ, ν, α, n),
-                                                 van_genuchten_water_content(ψ², θʳ, ν, α, n),
+    recover(α, 𝓃) = matched_retention_parameters(van_genuchten_water_content(ψ¹, θʳ, ν, α, 𝓃),
+                                                 van_genuchten_water_content(ψ², θʳ, ν, α, 𝓃),
                                                  θʳ, ν, ψ¹, ψ²)
 
-    for (α, n) in ((1.0, 1.05), (2.0, 1.3), (0.5, 2.0), (3.0, 1.6), (8.7, 2.3), (0.8, 1.08),
+    for (α, 𝓃) in ((1.0, 1.05), (2.0, 1.3), (0.5, 2.0), (3.0, 1.6), (8.7, 2.3), (0.8, 1.08),
                    (8.0, 4.5), (20.0, 4.5))
-        αᵉ, nᵉ = recover(α, n)
-        @test nᵉ ≈ n rtol=1e-6
+        αᵉ, 𝓃ᵉ = recover(α, 𝓃)
+        @test 𝓃ᵉ ≈ 𝓃 rtol=1e-6
         @test αᵉ ≈ α rtol=1e-6
     end
 
     matched_retention_parameters(0.30, 0.12, 0.0, 0.45, 1.0, 150.0)
     @test 0 == @allocated matched_retention_parameters(0.30, 0.12, 0.0, 0.45, 1.0, 150.0)
 
-    α32, n32 = matched_retention_parameters(0.30f0, 0.12f0, 0.0f0, 0.45f0, 1.0f0, 150.0f0)
-    α64, n64 = matched_retention_parameters(0.30, 0.12, 0.0, 0.45, 1.0, 150.0)
-    @test n32 ≈ n64 rtol=1e-4
+    α32, 𝓃32 = matched_retention_parameters(0.30f0, 0.12f0, 0.0f0, 0.45f0, 1.0f0, 150.0f0)
+    α64, 𝓃64 = matched_retention_parameters(0.30, 0.12, 0.0, 0.45, 1.0, 150.0)
+    @test 𝓃32 ≈ 𝓃64 rtol=1e-4
     @test α32 ≈ α64 rtol=1e-4
 end
 
@@ -172,7 +172,7 @@ end
         @test size(props.matching_point_conductivity) == (2, 1, 1)
 
         ν, θʳ  = column(props.porosity), column(props.residual_liquid_fraction)
-        α, n   = column(props.inverse_air_entry_head), column(props.pore_size_uniformity)
+        α, 𝓃   = column(props.inverse_air_entry_head), column(props.pore_size_uniformity)
         K₀, ηᴷ = column(props.matching_point_conductivity), column(props.pore_connectivity_exponent)
 
         loam   = fill((0.40, 0.40, 0.20, 1400.0), 3)
@@ -187,19 +187,19 @@ end
         @test K₀[2] ≈ ΣΔz / sum(Δz ./ Kᵏ)
         @test K₀[2] < sum(Δz .* Kᵏ) / ΣΔz
 
-        # α and n put the effective curve through the thickness-weighted mean curve at both heads.
+        # α and 𝓃 put the effective curve through the thickness-weighted mean curve at both heads.
         for (k, ψ) in Iterators.product(1:2, heads)
             ps = [soil_hydraulic_parameters(ptf, l..., d) for (l, d) in zip(k == 1 ? loam : layers, depths)]
             θ̄ = sum(Δz[j] * van_genuchten_water_content(ψ, ps[j].residual_liquid_fraction, ps[j].porosity,
                                                        ps[j].inverse_air_entry_head, ps[j].pore_size_uniformity)
                     for j in eachindex(ps)) / ΣΔz
-            @test van_genuchten_water_content(ψ, θʳ[k], ν[k], α[k], n[k]) ≈ θ̄ rtol=1e-6
+            @test van_genuchten_water_content(ψ, θʳ[k], ν[k], α[k], 𝓃[k]) ≈ θ̄ rtol=1e-6
         end
 
         # A uniform column reduces to its own layer parameters.
         uniform = soil_hydraulic_parameters(ptf, loam[1]..., depths[1])
         @test α[1] ≈ uniform.inverse_air_entry_head rtol=1e-8
-        @test n[1] ≈ uniform.pore_size_uniformity   rtol=1e-8
+        @test 𝓃[1] ≈ uniform.pore_size_uniformity   rtol=1e-8
         @test ηᴷ[1] ≈ uniform.pore_connectivity_exponent
     end
 end
@@ -256,8 +256,8 @@ end
 
         r = VanGenuchtenRetention(inverse_air_entry_head = 2.0, pore_size_uniformity = 1.4)
         𝒮 = 0.5
-        m = 1 - 1/1.4
-        Π = -(𝒮^(-1/m) - 1)^(1/1.4) / 2.0
+        𝓂 = 1 - 1/1.4
+        Π = -(𝒮^(-1/𝓂) - 1)^(1/1.4) / 2.0
         @test pressure_head(1, 1, grid, r, 𝒮) ≈ Π
         @test van_genuchten_saturation(2.0 * abs(Π), 1.4) ≈ 𝒮
 
@@ -265,15 +265,15 @@ end
                              set!(f, (x, y) -> x < 1 ? v1 : v2); f)
         ν  = makefield(0.45, 0.35)
         α  = makefield(1.0, 4.0)
-        n  = makefield(1.6, 1.2)
+        𝓃  = makefield(1.6, 1.2)
         K₀ = makefield(1e-5, 1e-7)
         ηᴷ = makefield(-1.6, -8.9)
 
         hydrology = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0, porosity = ν, storage_height = 1000,
-            retention_curve = VanGenuchtenRetention(; inverse_air_entry_head = α, pore_size_uniformity = n),
+            retention_curve = VanGenuchtenRetention(; inverse_air_entry_head = α, pore_size_uniformity = 𝓃),
             hydraulic_conductivity = VanGenuchtenConductivity(; matching_point_conductivity = K₀,
-                                        pore_size_uniformity = n, pore_connectivity_exponent = ηᴷ),
+                                        pore_size_uniformity = 𝓃, pore_connectivity_exponent = ηᴷ),
             deep_liquid_flux = FreeDrainageFlux(), runoff = NoRunoff())
 
         land = SlabLand(grid; hydrology)
@@ -376,12 +376,12 @@ end
                                topology = (Bounded, Bounded, Bounded))
         saturations = FT[0, 1e-12, 1e-6, 1e-3, 0.1, 0.5, 1]
 
-        # Weynants' (n, ηᴷ) pairs, from a sand to a clay.
-        for (n, ηᴷ) in ((1.6, -1.6), (1.082, -8.3), (1.2, -8.9))
+        # Weynants' (𝓃, ηᴷ) pairs, from a sand to a clay.
+        for (𝓃, ηᴷ) in ((1.6, -1.6), (1.082, -8.3), (1.2, -8.9))
             c = VanGenuchtenConductivity(FT; matching_point_conductivity = 1e-6,
-                                             pore_size_uniformity = n,
+                                             pore_size_uniformity = 𝓃,
                                              pore_connectivity_exponent = ηᴷ)
-            r = VanGenuchtenRetention(FT; inverse_air_entry_head = 0.95, pore_size_uniformity = n)
+            r = VanGenuchtenRetention(FT; inverse_air_entry_head = 0.95, pore_size_uniformity = 𝓃)
 
             @test K(c, zero(FT), grid) == 0
             @test all(isfinite, [K(c, 𝒮, grid) for 𝒮 in saturations])
@@ -398,23 +398,23 @@ end
         c = VanGenuchtenConductivity(FT; matching_point_conductivity = 1e-6, pore_size_uniformity = 1.5)
         r = VanGenuchtenRetention(FT; inverse_air_entry_head = 2, pore_size_uniformity = 1.4)
         for 𝒮 in FT[0.2, 0.6, 0.95]
-            m = 1 - 1/FT(1.5)
-            @test K(c, 𝒮, grid) ≈ 1e-6 * 𝒮^0.5 * (1 - (1 - 𝒮^(1/m))^m)^2 rtol=rtol
-            mᵣ = 1 - 1/FT(1.4)
-            @test Π(r, 𝒮, grid) ≈ -(𝒮^(-1/mᵣ) - 1)^(1/FT(1.4)) / 2 rtol=rtol
+            𝓂 = 1 - 1/FT(1.5)
+            @test K(c, 𝒮, grid) ≈ 1e-6 * 𝒮^0.5 * (1 - (1 - 𝒮^(1/𝓂))^𝓂)^2 rtol=rtol
+            𝓂ᵣ = 1 - 1/FT(1.4)
+            @test Π(r, 𝒮, grid) ≈ -(𝒮^(-1/𝓂ᵣ) - 1)^(1/FT(1.4)) / 2 rtol=rtol
         end
     end
 
-    # Against BigFloat: the direct product loses the Mualem bracket to cancellation for a clay n.
-    let n = 1.082, ηᴷ = -8.3
+    # Against BigFloat: the direct product loses the Mualem bracket to cancellation for a clay 𝓃.
+    let 𝓃 = 1.082, ηᴷ = -8.3
         grid = RectilinearGrid(size = (1, 1, 1), x = (0, 1), y = (0, 1), z = (-1, 0),
                                topology = (Bounded, Bounded, Bounded))
         c = VanGenuchtenConductivity(matching_point_conductivity = 1e-6,
-                                     pore_size_uniformity = n, pore_connectivity_exponent = ηᴷ)
+                                     pore_size_uniformity = 𝓃, pore_connectivity_exponent = ηᴷ)
         for 𝒮 in (0.3, 0.1, 0.08, 0.065, 0.05)
-            m = 1 - 1/BigFloat(n)
+            𝓂 = 1 - 1/BigFloat(𝓃)
             S = BigFloat(𝒮)
-            Kᵉ = BigFloat(1e-6) * S^BigFloat(ηᴷ) * (1 - (1 - S^(1/m))^m)^2
+            Kᵉ = BigFloat(1e-6) * S^BigFloat(ηᴷ) * (1 - (1 - S^(1/𝓂))^𝓂)^2
             @test K(c, 𝒮, grid) ≈ Float64(Kᵉ) rtol=1e-12
         end
     end

@@ -1,6 +1,6 @@
 #####
 ##### Pedotransfer functions: soil texture and bulk density → van Genuchten hydraulic
-##### parameters `(ν, θʳ, α, n, K₀, ηᴷ)`, evaluated per grid point and per depth layer inside
+##### parameters `(ν, θʳ, α, 𝓃, K₀, ηᴷ)`, evaluated per grid point and per depth layer inside
 ##### the `soil_hydraulic_properties` reduction.
 #####
 
@@ -50,7 +50,7 @@ Coefficients of the [Weynants et al. (2009)](@cite weynants2009) pedotransfer
 regressions, one tuple per predicted parameter, each ordered by the shared predictor
 basis `(1, C, S, S², D, OC)` in clay %, sand %, bulk density g/cm³ and organic
 carbon %. `porosity` and `pore_connectivity_exponent` are predicted directly; the other
-three predict `ln α`, `ln(n - 1)` and `ln K₀`.
+three predict `ln α`, `ln(𝓃 - 1)` and `ln K₀`.
 
 Construct one to swap in a different calibration of the same functional form;
 [`WEYNANTS_REGRESSION`](@ref) holds the published fit.
@@ -90,7 +90,7 @@ erratum. Each field predicts one parameter:
 |:------|:---------|:------|:-------|
 | `porosity` | `ν` (`θs` in the paper) | – | clay, `ρᵇ` |
 | `inverse_air_entry_head` | `ln α` | ln(cm⁻¹) | clay, sand, OC |
-| `pore_size_uniformity` | `ln(n - 1)` | – | clay, sand, sand² |
+| `pore_size_uniformity` | `ln(𝓃 - 1)` | – | clay, sand, sand² |
 | `matching_point_conductivity` | `ln K₀` | ln(cm day⁻¹) | sand, `ρᵇ`, OC |
 | `pore_connectivity_exponent` | `ηᴷ` (`λ` in the paper) | – | clay, sand |
 
@@ -160,14 +160,14 @@ Base.summary(ptf::WeynantsPedotransfer) =
 
     ν  = apply_regression(c.porosity, predictors)
     α  = 100 * exp(apply_regression(c.inverse_air_entry_head, predictors))            # cm⁻¹ → m⁻¹
-    n  = 1 + exp(apply_regression(c.pore_size_uniformity, predictors))
+    𝓃  = 1 + exp(apply_regression(c.pore_size_uniformity, predictors))
     K₀ = exp(apply_regression(c.matching_point_conductivity, predictors)) / 8_640_000  # cm day⁻¹ → m s⁻¹
     ηᴷ = apply_regression(c.pore_connectivity_exponent, predictors)
 
     return (porosity = ν,
             residual_liquid_fraction = zero(FT),
             inverse_air_entry_head = α,
-            pore_size_uniformity = n,
+            pore_size_uniformity = 𝓃,
             matching_point_conductivity = K₀,
             pore_connectivity_exponent = ηᴷ)
 end
@@ -190,8 +190,8 @@ end
 Coefficients of the continuous pedotransfer regressions fitted to HYPRES, the
 database of HYdraulic PRoperties of European Soils. One tuple per predicted
 parameter, each ordered by the shared predictor basis. `porosity` predicts `ν`
-directly; the other three predict `ln α`, `ln(n - 1)` and `ln K₀`, the transforms that
-enforce `α > 0`, `n > 1` and `K₀ > 0`.
+directly; the other three predict `ln α`, `ln(𝓃 - 1)` and `ln K₀`, the transforms that
+enforce `α > 0`, `𝓃 > 1` and `K₀ > 0`.
 
 Construct one to swap in a different calibration of the same functional form;
 [`HYPRES_REGRESSION`](@ref) holds the published fit.
@@ -227,7 +227,7 @@ Table 5). Each field predicts one parameter:
 |:------|:---------|:------|:---|
 | `porosity` | `ν` (`θs` in the paper) | – | 76 % |
 | `inverse_air_entry_head` | `ln α` | ln(cm⁻¹) | 20 % |
-| `pore_size_uniformity` | `ln(n - 1)` | – | 54 % |
+| `pore_size_uniformity` | `ln(𝓃 - 1)` | – | 54 % |
 | `matching_point_conductivity` | `ln K₀` | ln(cm day⁻¹) | 19 % |
 
 There is no regression for `θʳ`, and Wösten's regression for `ηᴷ` (`R² = 12 %`) is not
@@ -340,13 +340,13 @@ Base.summary(ptf::HYPRESPedotransfer) =
 
     ν  = apply_regression(c.porosity, predictors)
     α  = 100 * exp(apply_regression(c.inverse_air_entry_head, predictors))            # cm⁻¹ → m⁻¹
-    n  = 1 + exp(apply_regression(c.pore_size_uniformity, predictors))
+    𝓃  = 1 + exp(apply_regression(c.pore_size_uniformity, predictors))
     K₀ = exp(apply_regression(c.matching_point_conductivity, predictors)) / 8_640_000  # cm day⁻¹ → m s⁻¹
 
     return (porosity = ν,
             residual_liquid_fraction = convert(FT, ptf.residual_liquid_fraction),
             inverse_air_entry_head = α,
-            pore_size_uniformity = n,
+            pore_size_uniformity = 𝓃,
             matching_point_conductivity = K₀,
             pore_connectivity_exponent = convert(FT, ptf.pore_connectivity_exponent))
 end

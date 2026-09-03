@@ -8,7 +8,7 @@ using NumericalEarth.DataWrangling: NearestNeighborInpainting
 # Derive van Genuchten hydraulic parameters for a `VariablySaturatedHydrology` slab
 # straight from 30 m soil texture. OpenLandMap-soilDB supplies sand/silt/clay and
 # bulk density over three depth intervals; the pedotransfer function converts each
-# interval to (ν, θʳ, α, n, K₀, ηᴷ), and the depth-layer combination collapses them to
+# interval to (ν, θʳ, α, 𝓃, K₀, ηᴷ), and the depth-layer combination collapses them to
 # one effective column per grid point.
 
 region = BoundingBox(longitude = (-112.2, -112.0), latitude = (36.0, 36.2))
@@ -23,7 +23,7 @@ metadata = MetadataSet(:sand_fraction, :silt_fraction, :clay_fraction, :bulk_den
 # of a filled cell mutually consistent.
 soil = map(m -> Field(m, CPU(); inpainting = NearestNeighborInpainting(20)), NamedTuple(metadata))
 
-# Weynants per depth layer, then combined over `slab_depth`: α and n are matched to the
+# Weynants per depth layer, then combined over `slab_depth`: α and 𝓃 are matched to the
 # thickness-weighted mean retention curve, K₀ upscales harmonically.
 properties = soil_hydraulic_properties(soil.sand_fraction, soil.silt_fraction,
                                        soil.clay_fraction, soil.bulk_density;
@@ -55,12 +55,12 @@ infiltration_capacity = Field(3_600_000 * saturated_conductivity(CosbyConductivi
 
 panels = [("porosity ν",                    "–",            properties.porosity,                   :viridis),
           ("inverse air-entry head α",      "m⁻¹",          properties.inverse_air_entry_head,     :plasma),
-          ("pore-size uniformity n",        "–",            properties.pore_size_uniformity,       :plasma),
+          ("pore-size uniformity 𝓃",        "–",            properties.pore_size_uniformity,       :plasma),
           ("pore-connectivity exponent ηᴷ", "–",            properties.pore_connectivity_exponent, :batlow),
           ("matching-point K₀",             "log₁₀(m s⁻¹)", Field(log10(K₀)),                      :turbo),
           ("Cosby saturated K⁺ (0–30 cm)",  "mm hour⁻¹",    view(infiltration_capacity, :, :, 3),  :turbo)]
 
-# Every parameter here has a thin tail: for n, the full min-to-max range spends 77 % of the
+# Every parameter here has a thin tail: for 𝓃, the full min-to-max range spends 77 % of the
 # colormap on under 2 % of the cells, which flattens everything else. Span the 1st to 99th
 # percentile instead and let the tails saturate, which the colorbar marks with pointed ends.
 function percentile_range(field, low = 0.01, high = 0.99)

@@ -167,9 +167,9 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``K_0`` | `matching_point_conductivity` | matching-point conductivity | Conductivity the Mualem–van Genuchten curve reaches at ``𝒮 = 1``; a *matrix* value when it comes from a pedotransfer function, excluding macropore flow (m s⁻¹) |
 | ``K^{+}`` | `saturated_conductivity` | saturated hydraulic conductivity | Macropore-inclusive Darcy conductivity of saturated soil, for an infiltration cap (m s⁻¹) |
 | ``\Pi^\mathrm{ae}`` | `inverse_air_entry_head` | air-entry pressure head | Suction at which the largest pores begin to empty; the closure stores its reciprocal ``\alpha = 1/\Pi^\mathrm{ae}`` (m⁻¹) |
-| ``n`` | `pore_size_uniformity` | pore-size uniformity | van Genuchten retention exponent; large ``n`` drains over a narrow band of suctions, ``n \to 1`` over orders of magnitude. Sets ``m = 1 - 1/n`` (–) |
+| ``\mathscr{n}`` | `pore_size_uniformity` | pore-size uniformity | van Genuchten retention exponent; large ``\mathscr{n}`` drains over a narrow band of suctions, ``\mathscr{n} \to 1`` over orders of magnitude. Sets ``\mathscr{m} = 1 - 1/\mathscr{n}`` (–) |
 | ``\eta^K`` | `ηᴷ`, `pore_connectivity_exponent` | pore-connectivity exponent | Mualem exponent on saturation in ``K(\mathcal S)`` (–) |
-| ``𝒮ᶜ`` | `capillary_disconnect_saturation` | capillary-disconnect saturation | Saturation at which capillary paths to an evaporating surface break, predicted from ``n`` alone; shares the symbol ``𝒮ᶜ`` with `critical_saturation` above, which is the tunable form of the same threshold (–) |
+| ``𝒮ᶜ`` | `capillary_disconnect_saturation` | capillary-disconnect saturation | Saturation at which capillary paths to an evaporating surface break, predicted from ``\mathscr{n}`` alone; shares the symbol ``𝒮ᶜ`` with `critical_saturation` above, which is the tunable form of the same threshold (–) |
 | ``J^{Es}`` | `surface_energy_flux` | surface energy flux | Signed surface energy flux, positive upward (out of the slab) (W m⁻²) |
 | ``J^{lb}`` | `deep_liquid_flux` | deep-boundary liquid flux | Liquid mass flux across the slab bottom, positive upward (into the slab, capillary rise / groundwater return); drainage is ``J^{lb} < 0`` (kg m⁻² s⁻¹) |
 | ``J^{ls}`` | `surface_liquid_flux` | surface liquid flux | Liquid mass flux at the surface ``J^{ls} = -P^l + R^{\mathrm{sfc}}``, positive upward (out of the slab); infiltration is ``J^{ls} < 0`` (kg m⁻² s⁻¹) |
@@ -358,6 +358,8 @@ Most symbols can be entered in the Julia REPL and in editors with Julia support 
 | `𝒬` | `\scrQ` | Script Q (heat flux) |
 | `ℐ` | `\scrI` | Script I (radiative intensity) |
 | `ℒ` | `\scrL` | Script L (latent heat) |
+| `𝓃` | `\scrn` | Script n (pore-size uniformity) |
+| `𝓂` | `\scrm` | Script m (van Genuchten `1 - 1/𝓃`) |
 | `τ` | `\tau` | Tau (kinematic stress) |
 | `ρ` | `\rho` | Rho (density) |
 | `σ` | `\sigma` | Sigma (Stefan–Boltzmann constant) |
