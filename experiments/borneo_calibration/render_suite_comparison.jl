@@ -130,7 +130,7 @@ save("suite_trajectories_r1.png", fig)
 store_keys = filter(k -> !isnothing(V[k]), [:store, :store_cal3, :store_cal4, :store_cal4dl, :store_wt, :store_cal4b, :store_wteq, :store_wteq5])
 store_labels = [label for (label, _, fam, _) in suites if fam == :store && !occursin("pedotransfer", label)]
 store_color = Dict(:store => 1, :store_cal3 => 3, :store_cal4 => 4, :store_cal4dl => 5, :store_wt => 6, :store_cal4b => 7, :store_wteq => 8, :store_wteq5 => 9)
-fig = Figure(size = (1500, 1000), fontsize = 15)
+fig = Figure(size = (1700, 1100), fontsize = 15)
 Label(fig[0, 1], "The prognostic deep store (28–100 cm) against ERA5-Land's deep layer, which only set its t = 0 state"; fontsize = 18)
 ax1 = Axis(fig[1, 1]; title = "domain-median water content of the deep layer", xlabel = "day", ylabel = "θᵈ (m³ m⁻³)")
 vlines!(ax1, [6.25, 12.25]; color = :gray60, linestyle = :dash)
@@ -144,7 +144,7 @@ lines!(ax2, days, med(θ_obs); color = :black, linewidth = 2.6, label = "ERA5-La
 for (i, key) in enumerate(store_keys)
     lines!(ax2, days, med(V[key]["snapshots"][:θ]); color = store_colors[store_color[key]], linewidth = 1.8, label = store_labels[i])
 end
-Legend(fig[3, 1], ax2; orientation = :horizontal, nbanks = 2, labelsize = 13, tellwidth = false)
+Legend(fig[3, 1], ax2; orientation = :horizontal, nbanks = 4, labelsize = 13, tellwidth = false)
 save("suite_store_r1.png", fig)
 
 # ## Scorecard
