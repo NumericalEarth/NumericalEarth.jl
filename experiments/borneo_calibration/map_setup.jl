@@ -92,14 +92,34 @@ function deep_pressure_head_on(grid)
     return surface_property(grid, FT.(head))
 end
 exchange_length_on(grid) = exchange_field ? surface_property(grid, fill(FT(exchange_length), Nx, Ny)) : exchange_length
+
+# ## Or a prognostic deep store under the slab (DEEP_STORE=1): the Darcy exchange then talks to a
+# reservoir of thickness hᵈ whose head follows its own water content, initialized from ERA5-Land's
+# 28–100 cm layer at t = 0 and never read again
+
+deep_store = get(ENV, "DEEP_STORE", "0") == "1"
+deep_store_thickness = parse(Float64, get(ENV, "DEEP_STORE_THICKNESS", "0.72"))       # m, ERA5-Land layer 3
+deep_store_drainage = get(ENV, "DEEP_STORE_DRAINAGE", "free")                        # "free" (K(𝒮ᵈ)) or "none"
+deep_initial_soil_water = FT.(era5_land.layer_3[1, :, :])
+
+deep_store_options(grid) = (; thickness = surface_property(grid, fill(FT(deep_store_thickness), Nx, Ny)),
+                              drainage = deep_store_drainage == "free" ? FreeDrainageFlux(FT) : NoDeepLiquidFlux())
 hydrology_options(grid) = deep_flux == "darcy" ?
     (; deep_liquid_flux = DarcyDeepLiquidFlux(FT; exchange_length = exchange_length_on(grid)),
-       deep_pressure_head = deep_pressure_head_on(grid)) : (;)
+       deep_pressure_head = deep_store ? surface_property(grid, zeros(FT, Nx, Ny)) : deep_pressure_head_on(grid),
+       deep_store = deep_store ? deep_store_options(grid) : nothing) : (;)
+
+# ## Reaching the closures inside InterceptingHydrology(SurfaceWaterStore([DeepWaterStore(]soil[)]))
+
+soil_hydrology(h) = h isa VariablySaturatedHydrology ? h : soil_hydrology(h.soil)
+soil_hydrology(model::AtmosphereLandModel) = soil_hydrology(model.land.hydrology)
+deep_water_store(h) = h isa DeepWaterStore ? h : deep_water_store(h.soil)
+deep_water_store(model::AtmosphereLandModel) = deep_water_store(model.land.hydrology)
 
 # ## State initialization shared by every run (parent-level, so it traces on any backend)
 
-function initialize_map!(model, h, θ₀, T₀, q₀)
-    hydrology = model.land.hydrology.soil.soil
+function initialize_map!(model, h, θ₀, T₀, q₀, θᵈ₀ = nothing)
+    hydrology = soil_hydrology(model)
     parent(hydrology.slab_depth) .= parent(h)
     parent(model.land.water_storage) .= 1000 .* parent(θ₀) .* parent(h)
     parent(model.land.temperature) .= parent(T₀)
@@ -107,6 +127,10 @@ function initialize_map!(model, h, θ₀, T₀, q₀)
     parent(model.land.saturation) .= clamp.((parent(θ₀) .- θʳ) ./ (ν .- θʳ), 0, 1)
     parent(model.land.prognostic.canopy_water_storage) .= 0
     parent(model.land.prognostic.surface_water_storage) .= 0
+    if haskey(model.land.prognostic, :deep_water_storage)
+        isnothing(θᵈ₀) && error("the deep store needs its initial water content")
+        parent(model.land.prognostic.deep_water_storage) .= 1000 .* parent(deep_water_store(model).thickness) .* parent(θᵈ₀)
+    end
     for tile in (model.interfaces.atmosphere_land_interface.vegetated, model.interfaces.atmosphere_land_interface.bare)
         parent(tile.temperature.state.temperature) .= parent(T₀)
         parent(tile.temperature.state.specific_humidity) .= parent(q₀)
@@ -123,12 +147,13 @@ cell_loss(model, h, w, θᵗ) = parent(w) .* (soil_water(model, h) .- θᵗ).^2
 function map_fields(grid, depth)
     h = surface_property(grid, fill(FT(1), Nx, Ny)); parent(h) .= 0; set!(h, depth); parent(h) .= ifelse.(parent(h) .== 0, h₀, parent(h))
     return (; h, θ₀ = surface_property(grid, θ₀), T₀ = surface_property(grid, T₀),
-              q₀ = surface_property(grid, forcing.q[1]), w = surface_property(grid, weight))
+              q₀ = surface_property(grid, forcing.q[1]), w = surface_property(grid, weight),
+              θᵈ₀ = surface_property(grid, deep_initial_soil_water))
 end
 
 # ## Eager CPU forward, recording hourly snapshots
 
-snapshot_names = (:θ, :T, :LST, :𝒮, :Wᶜ, :LE, :LEᶜ, :LEᵍ, :H, :rain, :E)
+snapshot_names = (:θ, :θᵈ, :T, :LST, :𝒮, :Wᶜ, :LE, :LEᶜ, :LEᵍ, :H, :rain, :E)
 
 function forward_map(depth; record = false, modify! = nothing, hydrology...)
     fields = map_fields(cpu_grid, depth)
@@ -137,12 +162,15 @@ function forward_map(depth; record = false, modify! = nothing, hydrology...)
                                  exchanger_correction = correction, surface_layer_height, boundary_layer_height,
                                  inner_iterations, similarity_iterations, merge(hydrology_options(cpu_grid), hydrology)...)
     isnothing(modify!) || modify!(model)
-    initialize_map!(model, fields.h, fields.θ₀, fields.T₀, fields.q₀)
+    initialize_map!(model, fields.h, fields.θ₀, fields.T₀, fields.q₀, fields.θᵈ₀)
     interface = model.interfaces.atmosphere_land_interface
     land = model.land
     steps_per_hour = round(Int, 3600 / Δt)
     snapshots = record ? NamedTuple{snapshot_names}(ntuple(_ -> zeros(Float32, Nsteps ÷ steps_per_hour + 1, Nx, Ny), length(snapshot_names))) : nothing
-    take!(k) = (snapshots.θ[k, :, :]   .= interior(land.water_storage, :, :, 1) ./ (1000 .* interior(fields.h, :, :, 1));
+    deep_water(k) = haskey(land.prognostic, :deep_water_storage) ?
+        (snapshots.θᵈ[k, :, :] .= interior(land.prognostic.deep_water_storage, :, :, 1) ./ (1000 .* interior(deep_water_store(model).thickness, :, :, 1))) : nothing
+    take!(k) = (deep_water(k);
+                snapshots.θ[k, :, :]   .= interior(land.water_storage, :, :, 1) ./ (1000 .* interior(fields.h, :, :, 1));
                 snapshots.T[k, :, :]   .= interior(land.temperature, :, :, 1);
                 snapshots.LST[k, :, :] .= interior(interface.temperature.effective, :, :, 1);
                 snapshots.𝒮[k, :, :]   .= interior(land.saturation, :, :, 1);
@@ -177,7 +205,7 @@ rms(losses) = sqrt(sum(losses) / count(land))
 
 # ## Writing calibrated per-cell fields into a model (eager or traced) through their parents
 
-conductivity_field(model) = model.land.hydrology.soil.soil.hydraulic_conductivity.matching_point_conductivity
+conductivity_field(model) = soil_hydrology(model).hydraulic_conductivity.matching_point_conductivity
 cpu_scratch = surface_field(cpu_grid)
 function set_cells!(field, values, fill_value)
     set!(cpu_scratch, values)
@@ -208,11 +236,12 @@ end
 # model carries it as a Field); `log_n_minus_1` the retention exponent, with the air-entry
 # parameter α slaved so the curve keeps its pedotransfer saturation at the matching head ψ★ = 1 m.
 
-exchange_length_field(model) = model.land.hydrology.soil.soil.deep_liquid_flux.exchange_length
-deep_pressure_head_field(model) = model.land.hydrology.soil.soil.deep_pressure_head
-air_entry_field(model) = model.land.hydrology.soil.soil.retention_curve.inverse_air_entry_head
-pore_size_uniformity_fields(model) = (model.land.hydrology.soil.soil.retention_curve.pore_size_uniformity,
-                                      model.land.hydrology.soil.soil.hydraulic_conductivity.pore_size_uniformity)
+exchange_length_field(model) = soil_hydrology(model).deep_liquid_flux.exchange_length
+deep_pressure_head_field(model) = soil_hydrology(model).deep_pressure_head
+thickness_field(model) = deep_water_store(model).thickness
+air_entry_field(model) = soil_hydrology(model).retention_curve.inverse_air_entry_head
+pore_size_uniformity_fields(model) = (soil_hydrology(model).retention_curve.pore_size_uniformity,
+                                      soil_hydrology(model).hydraulic_conductivity.pore_size_uniformity)
 
 matching_head = 1.0
 van_genuchten_saturation(α, n, ψ) = (1 + (α * ψ)^n)^(-(1 - 1 / n))
@@ -226,6 +255,8 @@ function with_calibration(cal)
             set_cells!(exchange_length_field(model), exp.(cal["log_exchange_length"]), exchange_length)
         haskey(cal, "log_deep_suction") &&
             set_cells!(deep_pressure_head_field(model), -exp.(cal["log_deep_suction"]), -exp(median(cal["log_deep_suction"][land])))
+        haskey(cal, "log_thickness") &&
+            set_cells!(thickness_field(model), exp.(cal["log_thickness"]), deep_store_thickness)
         if haskey(cal, "log_n_minus_1")
             n = 1 .+ exp.(cal["log_n_minus_1"])
             foreach(f -> set_cells!(f, n, median(n[land])), pore_size_uniformity_fields(model))

@@ -5,9 +5,9 @@
 #SBATCH --output=/shared/home/xklee/numericalearth_land_scratch_plans/borneo_calibration/logs/queue_%j.log
 
 # One warm Julia session per partition, fed by scripts dropped into
-# $RUNDIR/queue_<partition suffix>:
+# $RUNDIR/queue_<partition suffix> (or the directory named as the first argument):
 #   sbatch --partition=cpu-large queue_server.sbatch
-#   sbatch --partition=gpu-dev --gres=gpu:t4:1 queue_server.sbatch
+#   sbatch --partition=gpu-dev --gres=gpu:t4:1 queue_server.sbatch queue_gpu2
 
 set -uo pipefail
 
@@ -17,8 +17,8 @@ PROJECT=$WORKTREE/docs
 JULIA=/shared/home/xklee/.juliaup/bin/julia
 
 case "$SLURM_JOB_PARTITION" in
-    gpu*) QUEUE=$RUNDIR/queue_gpu ;;
-    *)    QUEUE=$RUNDIR/queue_cpu ;;
+    gpu*) QUEUE=$RUNDIR/${1:-queue_gpu} ;;
+    *)    QUEUE=$RUNDIR/${1:-queue_cpu} ;;
 esac
 
 export NUMERICALEARTH_DATA_DIRECTORY="$RUNDIR"

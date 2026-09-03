@@ -21,7 +21,7 @@ calibrated_depths = haskey(it, "depths") ? it["depths"] : fill(FT(it["h₀"]), N
 q = haskey(it, "q") ? it["q"] : log10.(max.(static.matching_point_conductivity, 1e-9))
 q_conductivity_only = jldopen(f -> f["q"], get(ENV, "CONDUCTIVITY_ONLY", "map_logK_r$(refinement)_gpu$(tag_suffix).jld2"))
 
-conductivity_field(model) = model.land.hydrology.soil.soil.hydraulic_conductivity.matching_point_conductivity
+conductivity_field(model) = soil_hydrology(model).hydraulic_conductivity.matching_point_conductivity
 cpu_scratch = surface_field(land_grid(CPU(), FT))
 function set_cells!(field, values, fill_value)
     set!(cpu_scratch, values)
