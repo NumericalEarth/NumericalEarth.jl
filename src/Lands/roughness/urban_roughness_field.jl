@@ -1,3 +1,8 @@
+using Oceananigans.Architectures: CPU
+using Oceananigans.Fields: interior, set!
+using Oceananigans.Grids: LatitudeLongitudeGrid, Bounded, Flat, λnodes, φnodes
+using Oceananigans.Operators: Δxᶜᶜᶜ, Δyᶜᶜᶜ
+
 #####
 ##### On-grid evaluation of the urban roughness closures: (λᵖ, h) → (ℓᵐ, d) fields.
 #####
@@ -37,7 +42,7 @@ of `h`) from a mean building-height field `h` and a plan-area index field `λᵖ
 under `closure` (default [`MorphometricRoughness`](@ref)). Where `λᵖ → 0` the result
 reduces to a bare-soil roughness.
 """
-function urban_roughness(h, λᵖ; closure = MorphometricRoughness(eltype(h.grid)))
+function urban_roughness(h::AbstractField, λᵖ; closure = MorphometricRoughness(eltype(h.grid)))
     grid = h.grid
     ℓᵐ = Field{Center, Center, Nothing}(grid)
     d  = Field{Center, Center, Nothing}(grid)
@@ -92,7 +97,7 @@ closure (default [`MorphometricRoughness`](@ref)) is fed the measured height het
 in place of its frontal-area estimator and `σʰ`/`hᵐᵃˣ` regressions. Where `λᵖ → 0` the
 result reduces to a bare-soil roughness.
 """
-function urban_roughness(h, λᵖ, σʰ, hᵐᵃˣ, λᶠ; closure = MorphometricRoughness(eltype(h.grid)))
+function urban_roughness(h::AbstractField, λᵖ, σʰ, hᵐᵃˣ, λᶠ; closure = MorphometricRoughness(eltype(h.grid)))
     grid = h.grid
     ℓᵐ = Field{Center, Center, Nothing}(grid)
     d  = Field{Center, Center, Nothing}(grid)
@@ -101,4 +106,81 @@ function urban_roughness(h, λᵖ, σʰ, hᵐᵃˣ, λᶠ; closure = Morphometri
                     frontal_area_index = λᶠ)
     compute_aerodynamic_roughness!(ℓᵐ, d, closure, properties, grid)
     return ℓᵐ, d
+end
+
+#####
+##### Neighborhood-scale evaluation from building datasets: dataset → lattice morphometry →
+##### closure → built-area-weighted reduction to the grid.
+#####
+
+"""
+$(TYPEDSIGNATURES)
+
+Per-cell building morphometry on `grid` from building `datasets`, as a NamedTuple of `Field`s
+named after the closure inputs: `plan_area_index` and `mean_building_height` (m), and, where
+the dataset measures them, `building_height_deviation` (m), `maximum_building_height` (m) and
+`frontal_area_index`. Dataset modules add methods for their products.
+"""
+function building_morphometry end
+
+# Sums over the `rx × ry` blocks of a lattice array.
+block_sum(a, rx, ry) =
+    dropdims(sum(reshape(a, rx, size(a, 1) ÷ rx, ry, size(a, 2) ÷ ry); dims = (1, 3)); dims = (1, 3))
+
+"""
+$(TYPEDSIGNATURES)
+
+Momentum roughness length and zero-plane displacement (m) of the built-up surface on `grid`
+from building `datasets`, as the NamedTuple of `Field`s
+`(; momentum_roughness_length, zero_plane_displacement, urban_fraction, building_height)`.
+
+The closure is evaluated on a lattice of cells about `neighborhood` (m) wide subdividing each
+grid cell, on the morphometry that [`building_morphometry`](@ref) supplies there. Each grid cell
+then takes the built-area-weighted log-mean roughness length, mean displacement and mean
+height of its urban lattice cells, those with plan-area index at least the closure's
+`minimum_built_fraction`; `urban_fraction` is their share of the cell, and a cell without urban
+lattice cells takes the closure's bare-soil limit. A grid cell narrower than `neighborhood` is
+its own lattice cell. Remaining keyword arguments pass to `building_morphometry`.
+"""
+function urban_roughness(grid, datasets...; closure = MorphometricRoughness(eltype(grid)),
+                         neighborhood = 1000, kw...)
+    FT = eltype(grid)
+    Nx, Ny, _ = size(grid)
+    center = (Nx ÷ 2 + 1, Ny ÷ 2 + 1, 1)
+    rx = max(1, round(Int, Δxᶜᶜᶜ(center..., grid) / neighborhood))
+    ry = max(1, round(Int, Δyᶜᶜᶜ(center..., grid) / neighborhood))
+
+    lattice_faces(faces, r) = [[faces[i] + (faces[i + 1] - faces[i]) * k / r
+                                for i in 1:length(faces) - 1 for k in 0:r - 1]; faces[end]]
+    lattice = LatitudeLongitudeGrid(CPU(), FT; size = (rx * Nx, ry * Ny),
+                                    longitude = lattice_faces(λnodes(grid, Face()), rx),
+                                    latitude  = lattice_faces(φnodes(grid, Face()), ry),
+                                    topology = (Bounded, Bounded, Flat))
+
+    properties = building_morphometry(lattice, datasets...; kw...)
+    measured = (:plan_area_index, :mean_building_height,
+                :building_height_deviation, :maximum_building_height, :frontal_area_index)
+    closure_inputs = hasproperty(properties, :frontal_area_index) ? properties[measured] : properties[measured[1:2]]
+    ℓᵐ = Field{Center, Center, Nothing}(lattice)
+    d  = Field{Center, Center, Nothing}(lattice)
+    compute_aerodynamic_roughness!(ℓᵐ, d, closure, closure_inputs, lattice)
+
+    # Built-area weights of the urban lattice cells
+    λᵖ = interior(properties.plan_area_index, :, :, 1)
+    w  = ifelse.(λᵖ .>= closure.minimum_built_fraction, λᵖ, 0)
+    Σw = block_sum(w, rx, ry)
+    urban = Σw .> 0
+    bare_roughness, bare_displacement = aerodynamic_parameters(closure, 0, 0)
+
+    roughness      = ifelse.(urban, exp.(block_sum(w .* log.(interior(ℓᵐ, :, :, 1)), rx, ry) ./ Σw), bare_roughness)
+    displacement   = ifelse.(urban, block_sum(w .* interior(d, :, :, 1), rx, ry) ./ Σw, bare_displacement)
+    mean_height    = ifelse.(urban, block_sum(w .* interior(properties.mean_building_height, :, :, 1), rx, ry) ./ Σw, 0)
+    urban_fraction = block_sum(w .> 0, rx, ry) ./ (rx * ry)
+
+    fields = map((roughness, displacement, urban_fraction, mean_height)) do data
+        field = Field{Center, Center, Nothing}(grid)
+        set!(field, data)
+        return field
+    end
+    return NamedTuple{(:momentum_roughness_length, :zero_plane_displacement, :urban_fraction, :building_height)}(fields)
 end

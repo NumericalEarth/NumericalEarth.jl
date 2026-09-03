@@ -1,6 +1,6 @@
 module GloBFP3D
 
-export GlobalBuildingFootprints3D, building_morphometry
+export GlobalBuildingFootprints3D
 
 using Downloads: Downloads
 using Oceananigans: Center, Face
@@ -8,8 +8,12 @@ using Oceananigans.Fields: Field, set!
 using Oceananigans.Grids: LatitudeLongitudeGrid, λnodes, φnodes
 using Oceananigans.DistributedComputations: @root
 
+using NumericalEarth.Lands: Lands
+
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum, metadata_path,
                        BoundingBox, bounding_box_suffix, latitude_summary, native_region_grid
+
+using DocStringExtensions: TYPEDSIGNATURES
 
 import Oceananigans
 
@@ -287,12 +291,11 @@ function morphometry_latitude_bands(target_grid, region, Δ, maximum_raster_cell
 end
 
 """
-    building_morphometry(target_grid; dataset = GlobalBuildingFootprints3D(), region,
-                         maximum_raster_cells = 400_000_000)
+$(TYPEDSIGNATURES)
 
 Per-cell building morphometry on `target_grid` (a `LatitudeLongitudeGrid`, coarser than the
 `dataset` rasterization resolution), aggregated from the fine 3D-GloBFP building-height raster
-over `region`. Returns a NamedTuple of `Field`s:
+over `region`, by default the extent of `target_grid`. Returns a NamedTuple of `Field`s:
 
 - `plan_area_index` `λᵖ` — fraction of fine cells that are built.
 - `mean_building_height` `h` — mean height over the built fine cells.
@@ -309,8 +312,8 @@ deleted once reduced (the downloaded footprint tiles stay cached).
 
 Downloading and rasterizing the footprints requires `using ArchGDAL`.
 """
-function building_morphometry(target_grid::LatitudeLongitudeGrid; dataset = GlobalBuildingFootprints3D(),
-                              region, maximum_raster_cells = 400_000_000)
+function Lands.building_morphometry(target_grid::LatitudeLongitudeGrid, dataset::GlobalBuildingFootprints3D;
+                                    region = BoundingBox(target_grid), maximum_raster_cells = 400_000_000)
     metadatum = Metadatum(:building_height; dataset, region)
     DataWrangling.validate_dataset_coverage(nothing, metadatum)
 

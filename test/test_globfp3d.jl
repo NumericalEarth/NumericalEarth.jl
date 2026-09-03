@@ -134,7 +134,7 @@ end
     target = LatitudeLongitudeGrid(CPU(), Float64; size = (4, 4),
                                    longitude = (-74.02, -73.93), latitude = (40.70, 40.82),
                                    topology = (Bounded, Bounded, Flat))
-    @test_throws "must be used with a bounded region" building_morphometry(target; dataset, region = BoundingBox())
+    @test_throws "must be used with a bounded region" building_morphometry(target, dataset; region = BoundingBox())
 end
 
 @testset "GloBFP3D native aggregation grid" begin

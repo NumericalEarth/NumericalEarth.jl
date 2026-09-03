@@ -107,7 +107,7 @@ export
     AbstractUrbanRoughness, MorphometricRoughness,
     IsotropicFrontalArea, EmpiricalFrontalArea,
     UniformHeight, VariableHeight,
-    urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
+    urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters, building_morphometry,
     surface_temperature,
     regrid_bathymetry,
     regrid_topography,
