@@ -40,8 +40,10 @@ DataWrangling.metadata_filename(::SyntheticDataset, name, date, region) =
 DataWrangling.inpainted_metadata_path(metadata::Metadatum{<:SyntheticDataset}) =
     joinpath(metadata.dir, replace(metadata.filename, ".nc" => "_inpainted.jld2"))
 
-# One continent in an otherwise global ocean
-synthetic_land(λ, φ) = -60 ≤ λ ≤ 20 && -30 ≤ φ ≤ 40
+# A continent across the equator, a south polar cap, and land under the two north poles of the
+# default `TripolarGrid` (55°N at 70°E and 110°W)
+synthetic_land(λ, φ) = (-60 ≤ λ ≤ 20 && -30 ≤ φ ≤ 40) || φ ≤ -70 ||
+                       (45 ≤ φ ≤ 65 && (40 ≤ λ ≤ 100 || -140 ≤ λ ≤ -80))
 
 synthetic_value(::SyntheticBathymetry, name, λ, φ, z) = synthetic_land(λ, φ) ? 500 : -4000
 
