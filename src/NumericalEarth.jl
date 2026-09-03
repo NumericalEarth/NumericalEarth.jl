@@ -128,6 +128,7 @@ export
     VariablySaturatedHydrology,
     InterceptingHydrology,
     SurfaceWaterStore,
+    DeepWaterStore,
     VanGenuchtenRetention, VanGenuchtenConductivity,
     capillary_disconnect_saturation, WaterViscosity, viscosity_correction,
     CosbyConductivity,

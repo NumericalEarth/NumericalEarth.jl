@@ -25,6 +25,8 @@ export AbstractLand,
        InterceptingHydrology,
        # Surface water (pond) store
        SurfaceWaterStore,
+       # Deep water store (prognostic reservoir under the soil)
+       DeepWaterStore,
        # Pedotransfer functions + depth-layer combination
        PedotransferFunction, WeynantsPedotransfer, WeynantsRegression,
        HYPRESPedotransfer, HYPRESRegression,
@@ -119,6 +121,10 @@ include("hydrology/intercepting_hydrology.jl")
 # (the soil's `surface_runoff`), drains it to true runoff, and re-offers the
 # remainder to infiltration.
 include("hydrology/surface_water_store.jl")
+
+# Deep water store — a prognostic reservoir under the soil, fed by the soil's Darcy
+# exchange and drained by its own bottom closure.
+include("hydrology/deep_water_store.jl")
 
 # Legacy PrescribedLand component (river / iceberg freshwater forcing).
 include("prescribed_land.jl")
