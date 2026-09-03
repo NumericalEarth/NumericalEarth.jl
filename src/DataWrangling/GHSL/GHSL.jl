@@ -453,21 +453,6 @@ ghsl_tiles_to_netcdf(metadatum, nc_path) =
 ##### urban lattice cells.
 #####
 
-# Regrid in latitude, then in longitude, through a grid sharing the source's longitudes
-# and the target's latitudes.
-function conservative_regrid(target_grid, source)
-    FT = eltype(target_grid)
-    intermediate_grid = LatitudeLongitudeGrid(CPU(), FT; size = (size(source, 1), size(target_grid, 2)),
-                                              longitude = x_domain(source.grid),
-                                              latitude = φnodes(target_grid, Face()),
-                                              topology = (Bounded, Bounded, Flat))
-    intermediate = Field{Center, Center, Nothing}(intermediate_grid)
-    target = Field{Center, Center, Nothing}(target_grid)
-    regrid!(intermediate, source)
-    regrid!(target, intermediate)
-    return target
-end
-
 # Sums over the `refinement × refinement` blocks of a lattice array.
 block_sum(a, refinement) =
     dropdims(sum(reshape(a, refinement, size(a, 1) ÷ refinement, refinement, size(a, 2) ÷ refinement); dims = (1, 3)); dims = (1, 3))
@@ -526,12 +511,17 @@ function Lands.urban_roughness(grid, height_dataset::GHSBuiltH, built_dataset::G
         replace!(interior(built_fraction), NaN => 0)
         replace!(interior(building_height), NaN => 0)
         if built_fraction.grid != building_height.grid  # the 10 m built-up product
-            built_fraction = conservative_regrid(building_height.grid, built_fraction)
+            fraction_on_height_pixels = Field{Center, Center, Center}(building_height.grid)
+            built_fraction = regrid!(fraction_on_height_pixels, built_fraction)
         end
         interior(building_height) .*= interior(built_fraction)  # building volume per pixel area
 
-        interior(λᵖ, a, b, 1) .= interior(conservative_regrid(window_lattice, built_fraction), :, :, 1)
-        interior(h,  a, b, 1) .= interior(conservative_regrid(window_lattice, building_height), :, :, 1)
+        window_fraction = Field{Center, Center, Nothing}(window_lattice)
+        window_volume   = Field{Center, Center, Nothing}(window_lattice)
+        regrid!(window_fraction, built_fraction)
+        regrid!(window_volume, building_height)
+        interior(λᵖ, a, b, 1) .= interior(window_fraction, :, :, 1)
+        interior(h,  a, b, 1) .= interior(window_volume, :, :, 1)
     end
     interior(h) .= ifelse.(interior(λᵖ) .> 0, interior(h) ./ interior(λᵖ), 0)
 
