@@ -196,6 +196,7 @@ Factor by which [`WaterViscosity`](@ref) scales hydraulic conductivity at temper
 
 ```jldoctest
 using NumericalEarth
+using NumericalEarth.Lands: viscosity_correction
 
 v = WaterViscosity()
 
@@ -231,7 +232,7 @@ alone. Bare-soil evaporation falls to half its potential rate near
 [`CriticalSaturation`](@ref) takes as `critical_saturation`.
 
 ```jldoctest
-using NumericalEarth
+using NumericalEarth.Lands: capillary_disconnect_saturation
 
 round.(capillary_disconnect_saturation.([1.2, 1.5, 3.0]), digits = 3)
 

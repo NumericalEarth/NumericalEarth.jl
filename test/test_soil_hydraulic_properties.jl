@@ -4,7 +4,9 @@ using Oceananigans
 using Oceananigans.Fields: interior
 using Oceananigans.TimeSteppers: time_step!
 using NumericalEarth.Lands: hydraulic_conductivity, pressure_head,
-                            matched_retention_parameters, van_genuchten_saturation
+                            matched_retention_parameters, van_genuchten_saturation,
+                            capillary_disconnect_saturation, viscosity_correction,
+                            conductivity_spread, layer_weights, layer_depths
 
 # (sand, silt, clay, bulk_density) in kg/kg and kg/m³.
 sandy_loam = (0.55, 0.25, 0.20, 1500.0)

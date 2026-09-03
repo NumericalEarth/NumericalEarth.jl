@@ -2,6 +2,7 @@ include("runtests_setup.jl")
 
 using Oceananigans
 using Oceananigans.TimeSteppers: time_step!
+using NumericalEarth.Lands: viscosity_correction
 
 @testset "VariablySaturatedHydrology diagnostics" begin
     for arch in test_architectures

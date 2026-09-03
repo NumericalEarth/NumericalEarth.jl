@@ -12,7 +12,7 @@ the dataset vertical axis. `z_interfaces` are the layer faces increasing upward
 and layers outside the column get zero weight.
 
 ```jldoctest
-using NumericalEarth
+using NumericalEarth.Lands: layer_weights
 
 layer_weights([-1.0, -0.6, -0.3, 0.0], 0.3)
 
@@ -37,7 +37,7 @@ Depth below the surface of each layer's midpoint (m, positive down), deepest-fir
 to match [`layer_weights`](@ref).
 
 ```jldoctest
-using NumericalEarth
+using NumericalEarth.Lands: layer_depths
 
 layer_depths([-1.0, -0.5, 0.0])
 
