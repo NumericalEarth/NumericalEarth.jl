@@ -18,6 +18,7 @@ export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
 
 using Adapt: Adapt
+using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using LibCURL: LibCURL
 using JLD2: JLD2, jldopen
@@ -154,6 +155,26 @@ function netrc_permission_file(username, password, machine, dir)
     end
 
     return filepath
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Download `url` to `path` with `Downloads.download(url, path; kw...)`, retrying up to `attempts`
+times on failure and discarding a partial file between attempts.
+"""
+function download_with_retries(url, path; attempts = 3, description = "Download", kw...)
+    for attempt in 1:attempts
+        try
+            Downloads.download(url, path; kw...)
+            return path
+        catch error
+            rm(path, force = true)
+            attempt == attempts && rethrow()
+            @warn "$description failed (attempt $attempt of $attempts); retrying..." url error
+            sleep(2attempt)
+        end
+    end
 end
 
 #####

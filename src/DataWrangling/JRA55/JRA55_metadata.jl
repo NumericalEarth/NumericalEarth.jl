@@ -5,7 +5,7 @@ using Oceananigans.DistributedComputations
 
 using ..DataWrangling: all_dates, DataWrangling, Metadata, metadata_path,
                        DownloadProgress, DatasetBackend, metadata_url,
-                       dataset_variable_name, getfilename
+                       dataset_variable_name, getfilename, download_with_retries
 
 abstract type JRA55Dataset end
 
@@ -240,7 +240,7 @@ function Downloads.download(metadata::JRA55Metadata)
         filepath = metadata_path(metadatum)
 
         if !isfile(filepath)
-            Downloads.download(fileurl, filepath; progress=DownloadProgress())
+            download_with_retries(fileurl, filepath; progress=DownloadProgress())
         end
     end
 
