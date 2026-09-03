@@ -106,14 +106,18 @@ exchange_length_on(grid) = exchange_field ? surface_property(grid, fill(FT(excha
 
 deep_store = get(ENV, "DEEP_STORE", "0") == "1"
 deep_store_thickness = parse(Float64, get(ENV, "DEEP_STORE_THICKNESS", "0.72"))       # m, ERA5-Land layer 3
-deep_store_drainage = get(ENV, "DEEP_STORE_DRAINAGE", "free")                        # "free" (K(𝒮ᵈ)) or "none"
+deep_store_drainage = get(ENV, "DEEP_STORE_DRAINAGE", "free")                        # "free" (K(𝒮ᵈ)), "none", or "watertable":
+water_table_length = parse(Float64, get(ENV, "DEEP_STORE_WATER_TABLE", "2.5"))        # Darcy exchange with a saturated head this far (m) below the store
 deep_initial_soil_water = FT.(era5_land.layer_3[1, :, :])
 
 deep_loss = get(ENV, "DEEP_LOSS", "0") == "1"                                  # add the store's mismatch to ERA5-Land 28–100 cm
 deep_loss_weight = parse(Float64, get(ENV, "DEEP_LOSS_WEIGHT", "1"))            # relative to the surface term
 
+store_drainage(grid) = deep_store_drainage == "free" ? FreeDrainageFlux(FT) :
+                       deep_store_drainage == "watertable" ? DarcyDeepLiquidFlux(FT; exchange_length = surface_property(grid, fill(FT(water_table_length), Nx + 2Hx, Ny + 2Hy, 1))) :
+                       NoDeepLiquidFlux()
 deep_store_options(grid) = (; thickness = surface_property(grid, fill(FT(deep_store_thickness), Nx + 2Hx, Ny + 2Hy, 1)),
-                              drainage = deep_store_drainage == "free" ? FreeDrainageFlux(FT) : NoDeepLiquidFlux(),
+                              drainage = store_drainage(grid),
                               conductivity = surface_property(grid, FT.(static.matching_point_conductivity)))
 hydrology_options(grid) = deep_flux == "darcy" ?
     (; deep_liquid_flux = DarcyDeepLiquidFlux(FT; exchange_length = exchange_length_on(grid)),
@@ -253,6 +257,7 @@ exchange_length_field(model) = soil_hydrology(model).deep_liquid_flux.exchange_l
 deep_pressure_head_field(model) = soil_hydrology(model).deep_pressure_head
 thickness_field(model) = deep_water_store(model).thickness
 deep_conductivity_field(model) = deep_water_store(model).hydraulic_conductivity.matching_point_conductivity
+water_table_field(model) = deep_water_store(model).drainage.exchange_length
 air_entry_field(model) = soil_hydrology(model).retention_curve.inverse_air_entry_head
 pore_size_uniformity_fields(model) = (soil_hydrology(model).retention_curve.pore_size_uniformity,
                                       soil_hydrology(model).hydraulic_conductivity.pore_size_uniformity)
@@ -273,6 +278,8 @@ function with_calibration(cal)
             set_cells!(thickness_field(model), exp.(cal["log_thickness"]), deep_store_thickness)
         q_deep = get(cal, "q_deep", haskey(cal, "log_thickness") ? cal["q"] : nothing)   # stores calibrated before K₀ᵈ existed drained at the slab's K₀
         isnothing(q_deep) || set_cells!(deep_conductivity_field(model), exp10.(q_deep), exp10(median(q_deep[land])))
+        haskey(cal, "log_water_table") &&
+            set_cells!(water_table_field(model), exp.(cal["log_water_table"]), water_table_length)
         if haskey(cal, "log_n_minus_1")
             n = 1 .+ exp.(cal["log_n_minus_1"])
             foreach(f -> set_cells!(f, n, median(n[land])), pore_size_uniformity_fields(model))

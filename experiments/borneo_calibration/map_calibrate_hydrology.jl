@@ -9,6 +9,7 @@
 #              from the DEEP_HEAD=constant value, or the reanalysis "mean" or "initial" head
 #   thickness  ζ = log hᵈ, the thickness of the prognostic deep store (DEEP_STORE=1)
 #   deepK0     κ = log₁₀K₀ᵈ, the store's own saturated conductivity (its drainage ∝ Kᵈ)
+#   watertable ω = log ℓ₂, the distance from the store to a saturated head below it (DEEP_STORE_DRAINAGE=watertable)
 #
 #     L = (1/N) Σₙ Σᵢⱼ wᵢⱼ (θᵢⱼ(tₙ; q, λ, ν) − θᵢⱼᴱᴿᴬ⁵ᴸ(tₙ))²,      θ = Mˡᵃ / (ρˡ h₀),
 #
@@ -36,6 +37,7 @@ constant_deep_head = deep_head_mode in ("constant", "mean", "initial") && !deep_
 :deephead in active && !constant_deep_head && error("calibrating the deep head needs DEEP_HEAD=constant, mean or initial")
 (:thickness in active || :deepK0 in active) && !deep_store && error("calibrating the deep store needs DEEP_STORE=1")
 deep_loss && !deep_store && error("the deep-layer loss needs DEEP_STORE=1")
+:watertable in active && deep_store_drainage != "watertable" && error("calibrating the water-table depth needs DEEP_STORE_DRAINAGE=watertable")
 tag = "map_hydrology_" * join(string.(active), "_") * "_r$(refinement)_$(backend)$(tag_suffix)"
 
 # ## Start values, bounds and characteristic steps
@@ -50,16 +52,19 @@ q = get(warm, "q", copy(q_pedotransfer))
 δ = get(warm, "log_deep_suction", constant_deep_head ? log.(-Array(interior(deep_pressure_head_on(cpu_grid), :, :, 1))) : fill(log(1.0), Nx, Ny))
 ζ = get(warm, "log_thickness", fill(log(deep_store_thickness), Nx, Ny))
 κ = get(warm, "q_deep", copy(q))
+ω = get(warm, "log_water_table", fill(log(water_table_length), Nx, Ny))
 
 bounds = (; K0 = (q_pedotransfer .- 1, q_pedotransfer .+ 4),
             exchange = (fill(log(0.1), Nx, Ny), fill(log(3.0), Nx, Ny)),
             retention = (ν_pedotransfer .- 0.5, ν_pedotransfer .+ 0.7),
             deephead = (fill(log(0.3), Nx, Ny), fill(log(30.0), Nx, Ny)),
             thickness = (fill(log(0.1), Nx, Ny), fill(log(3.0), Nx, Ny)),
-            deepK0 = (q_pedotransfer .- 2, q_pedotransfer .+ 4))
-steps = (; K0 = 0.25, exchange = 0.25, retention = 0.1, deephead = 0.25, thickness = 0.25, deepK0 = 0.25)
+            deepK0 = (q_pedotransfer .- 2, q_pedotransfer .+ 4),
+            watertable = (fill(log(0.3), Nx, Ny), fill(log(30.0), Nx, Ny)))
+steps = (; K0 = 0.25, exchange = 0.25, retention = 0.1, deephead = 0.25, thickness = 0.25, deepK0 = 0.25, watertable = 0.25)
 fills = (; K0 = median(q[land]), exchange = log(exchange_length), retention = median(ν[land]), deephead = median(δ[land]),
-           thickness = log(deep_store_thickness), deepK0 = median(κ[land]))
+           thickness = log(deep_store_thickness), deepK0 = median(κ[land]), watertable = log(water_table_length))
+water_table = deep_store && deep_store_drainage == "watertable"
 𝒮★ = saturation_at_matching_head
 
 # ## The compiled objective: every field set inside the trace
@@ -76,7 +81,7 @@ function set_retention!(model, ν, 𝒮★)
     return nothing
 end
 
-function hydrology_loss(model, k, l, ν, d, ζ, κ, 𝒮★, h, θ₀, T₀, q₀, θᵈ₀, w, θᵗ, θᵈᵗ, Δt, nsteps)
+function hydrology_loss(model, k, l, ν, d, ζ, κ, ω, 𝒮★, h, θ₀, T₀, q₀, θᵈ₀, w, θᵗ, θᵈᵗ, Δt, nsteps)
     reset_clock!(model.clock)
     reset_clock!(model.land.clock)
     parent(conductivity_field(model)) .= exp.(log(10) .* parent(k))
@@ -84,6 +89,7 @@ function hydrology_loss(model, k, l, ν, d, ζ, κ, 𝒮★, h, θ₀, T₀, q�
     constant_deep_head && (parent(deep_pressure_head_field(model)) .= -exp.(parent(d)))
     deep_store && (parent(thickness_field(model)) .= exp.(parent(ζ)))
     deep_store && (parent(deep_conductivity_field(model)) .= exp.(log(10) .* parent(κ)))
+    water_table && (parent(water_table_field(model)) .= exp.(parent(ω)))
     set_retention!(model, ν, 𝒮★)
     initialize_map!(model, h, θ₀, T₀, q₀, θᵈ₀)
     L = sum(zero(parent(h)))
@@ -95,24 +101,24 @@ function hydrology_loss(model, k, l, ν, d, ζ, κ, 𝒮★, h, θ₀, T₀, q�
     return L / nsteps
 end
 
-function grad_hydrology_loss(model, dmodel, k, dk, l, dl, ν, dν, d, dd, ζ, dζ, κ, dκ, 𝒮★, h, θ₀, T₀, q₀, θᵈ₀, w, θᵗ, θᵈᵗ, Δt, nsteps)
-    for g in (dk, dl, dν, dd, dζ, dκ)
+function grad_hydrology_loss(model, dmodel, k, dk, l, dl, ν, dν, d, dd, ζ, dζ, κ, dκ, ω, dω, 𝒮★, h, θ₀, T₀, q₀, θᵈ₀, w, θᵗ, θᵈᵗ, Δt, nsteps)
+    for g in (dk, dl, dν, dd, dζ, dκ, dω)
         parent(g) .= 0
     end
     _, L = Enzyme.autodiff(Enzyme.set_strong_zero(Enzyme.ReverseWithPrimal),
                            hydrology_loss, Enzyme.Active,
                            Enzyme.Duplicated(model, dmodel), Enzyme.Duplicated(k, dk), Enzyme.Duplicated(l, dl),
                            Enzyme.Duplicated(ν, dν), Enzyme.Duplicated(d, dd), Enzyme.Duplicated(ζ, dζ), Enzyme.Duplicated(κ, dκ),
-                           Enzyme.Const(𝒮★), Enzyme.Const(h), Enzyme.Const(θ₀), Enzyme.Const(T₀), Enzyme.Const(q₀), Enzyme.Const(θᵈ₀),
+                           Enzyme.Duplicated(ω, dω), Enzyme.Const(𝒮★), Enzyme.Const(h), Enzyme.Const(θ₀), Enzyme.Const(T₀), Enzyme.Const(q₀), Enzyme.Const(θᵈ₀),
                            Enzyme.Const(w), Enzyme.Const(θᵗ), Enzyme.Const(θᵈᵗ), Enzyme.Const(Δt), Enzyme.Const(nsteps))
-    return dk, dl, dν, dd, dζ, dκ, L
+    return dk, dl, dν, dd, dζ, dκ, dω, L
 end
 
 Reactant.set_default_backend(backend)
 grid_ad = land_grid(ReactantState(), FT)
 fields_ad = map_fields(grid_ad, fill(h₀, Nx, Ny))
-k_ad, l_ad, ν_ad, d_ad, ζ_ad, κ_ad = (surface_property(grid_ad, p) for p in (q, λ, ν, δ, ζ, κ))
-dk_ad, dl_ad, dν_ad, dd_ad, dζ_ad, dκ_ad = (Enzyme.make_zero(f) for f in (k_ad, l_ad, ν_ad, d_ad, ζ_ad, κ_ad))
+k_ad, l_ad, ν_ad, d_ad, ζ_ad, κ_ad, ω_ad = (surface_property(grid_ad, p) for p in (q, λ, ν, δ, ζ, κ, ω))
+dk_ad, dl_ad, dν_ad, dd_ad, dζ_ad, dκ_ad, dω_ad = (Enzyme.make_zero(f) for f in (k_ad, l_ad, ν_ad, d_ad, ζ_ad, κ_ad, ω_ad))
 𝒮★_ad = Reactant.to_rarray(parent(set_cells!(surface_field(cpu_grid), 𝒮★, median(𝒮★[land]))))
 θ_target_ad = Reactant.to_rarray(θ_target)
 θᵈ_target_ad = Reactant.to_rarray(θᵈ_target)
@@ -124,16 +130,17 @@ Oceananigans.initialize!(model_ad)
 
 @info "compiling the reverse pass over $Nsteps steps on the $backend backend..."
 compile_seconds = @elapsed compiled = Reactant.@compile raise=true raise_first=true sync=true grad_hydrology_loss(
-    model_ad, Enzyme.make_zero(model_ad), k_ad, dk_ad, l_ad, dl_ad, ν_ad, dν_ad, d_ad, dd_ad, ζ_ad, dζ_ad, κ_ad, dκ_ad, 𝒮★_ad, fields_ad.h,
+    model_ad, Enzyme.make_zero(model_ad), k_ad, dk_ad, l_ad, dl_ad, ν_ad, dν_ad, d_ad, dd_ad, ζ_ad, dζ_ad, κ_ad, dκ_ad, ω_ad, dω_ad, 𝒮★_ad, fields_ad.h,
     fields_ad.θ₀, fields_ad.T₀, fields_ad.q₀, fields_ad.θᵈ₀, fields_ad.w, θ_target_ad, θᵈ_target_ad, Δt, Nsteps)
 @info @sprintf("compiled in %.0f s", compile_seconds)
 
 # ## Descent: preconditioned adjoint direction, per-cell backtracking over eager runs
 
-parameters = Dict(:K0 => q, :exchange => λ, :retention => ν, :deephead => δ, :thickness => ζ, :deepK0 => κ)
+parameters = Dict(:K0 => q, :exchange => λ, :retention => ν, :deephead => δ, :thickness => ζ, :deepK0 => κ, :watertable => ω)
 calibration(v) = merge(Dict("q" => v[:K0], "log_exchange_length" => v[:exchange], "log_n_minus_1" => v[:retention]),
                        constant_deep_head ? Dict("log_deep_suction" => v[:deephead]) : Dict{String, Any}(),
-                       deep_store ? Dict("log_thickness" => v[:thickness], "q_deep" => v[:deepK0]) : Dict{String, Any}())
+                       deep_store ? Dict("log_thickness" => v[:thickness], "q_deep" => v[:deepK0]) : Dict{String, Any}(),
+                       water_table ? Dict("log_water_table" => v[:watertable]) : Dict{String, Any}())
 factors = [1.0, 0.5, 0.25, 0.125, -0.25, 0.0]
 history = []
 
@@ -144,13 +151,15 @@ for iteration in 1:Niter
     set_cells!(d_ad, parameters[:deephead], fills.deephead)
     set_cells!(ζ_ad, parameters[:thickness], fills.thickness)
     set_cells!(κ_ad, parameters[:deepK0], fills.deepK0)
+    set_cells!(ω_ad, parameters[:watertable], fills.watertable)
     dmodel = Enzyme.make_zero(model_ad)
-    t = @elapsed dk_out, dl_out, dν_out, dd_out, dζ_out, dκ_out, L_ad = compiled(model_ad, dmodel, k_ad, dk_ad, l_ad, dl_ad, ν_ad, dν_ad, d_ad, dd_ad,
-                                                                                  ζ_ad, dζ_ad, κ_ad, dκ_ad, 𝒮★_ad, fields_ad.h, fields_ad.θ₀, fields_ad.T₀, fields_ad.q₀,
-                                                                                  fields_ad.θᵈ₀, fields_ad.w, θ_target_ad, θᵈ_target_ad, Δt, Nsteps)
+    t = @elapsed dk_out, dl_out, dν_out, dd_out, dζ_out, dκ_out, dω_out, L_ad = compiled(model_ad, dmodel, k_ad, dk_ad, l_ad, dl_ad, ν_ad, dν_ad, d_ad, dd_ad,
+                                                                                          ζ_ad, dζ_ad, κ_ad, dκ_ad, ω_ad, dω_ad, 𝒮★_ad, fields_ad.h, fields_ad.θ₀, fields_ad.T₀, fields_ad.q₀,
+                                                                                          fields_ad.θᵈ₀, fields_ad.w, θ_target_ad, θᵈ_target_ad, Δt, Nsteps)
     gradients = Dict(:K0 => Array(interior(dk_out, :, :, 1)), :exchange => Array(interior(dl_out, :, :, 1)),
                      :retention => Array(interior(dν_out, :, :, 1)), :deephead => Array(interior(dd_out, :, :, 1)),
-                     :thickness => Array(interior(dζ_out, :, :, 1)), :deepK0 => Array(interior(dκ_out, :, :, 1)))
+                     :thickness => Array(interior(dζ_out, :, :, 1)), :deepK0 => Array(interior(dκ_out, :, :, 1)),
+                     :watertable => Array(interior(dω_out, :, :, 1)))
     L = Reactant.to_number(L_ad)
 
     # Each active field moves along its adjoint, scaled to its characteristic step and capped at 4 steps.
@@ -178,17 +187,19 @@ initial = forward_map(fill(h₀, Nx, Ny); record = true)
 θ_obs = hourly_observations()
 fit = 1:(Nsteps ÷ round(Int, 3600 / Δt) + 1)
 s0, s1 = window_scores(initial.snapshots.θ, θ_obs, fit), window_scores(final.snapshots.θ, θ_obs, fit)
-@info @sprintf("calibration (%s): run-RMS %.4f → %.4f;  median r %.3f → %.3f;  median σ ratio %.2f → %.2f;  Δq median %.2f;  ℓ ∈ [%.2f, %.2f] m (median %.2f);  n ∈ [%.3f, %.3f] (median %.3f);  deep suction ∈ [%.2f, %.2f] m (median %.2f);  store thickness ∈ [%.2f, %.2f] m (median %.2f);  Δq_deep median %.2f",
+@info @sprintf("calibration (%s): run-RMS %.4f → %.4f;  median r %.3f → %.3f;  median σ ratio %.2f → %.2f;  Δq median %.2f;  ℓ ∈ [%.2f, %.2f] m (median %.2f);  n ∈ [%.3f, %.3f] (median %.3f);  deep suction ∈ [%.2f, %.2f] m (median %.2f);  store thickness ∈ [%.2f, %.2f] m (median %.2f);  Δq_deep median %.2f;  water table ∈ [%.2f, %.2f] m below the store (median %.2f)",
                join(string.(active), ", "), s0.rms, s1.rms, s0.r, s1.r, s0.σ, s1.σ, median((parameters[:K0] .- q_pedotransfer)[land]),
                extrema(exp.(parameters[:exchange][land]))..., median(exp.(parameters[:exchange][land])),
                extrema(1 .+ exp.(parameters[:retention][land]))..., median(1 .+ exp.(parameters[:retention][land])),
                extrema(exp.(parameters[:deephead][land]))..., median(exp.(parameters[:deephead][land])),
                extrema(exp.(parameters[:thickness][land]))..., median(exp.(parameters[:thickness][land])),
-               median((parameters[:deepK0] .- q_pedotransfer)[land]))
+               median((parameters[:deepK0] .- q_pedotransfer)[land]),
+               extrema(exp.(parameters[:watertable][land]))..., median(exp.(parameters[:watertable][land])))
 
 jldsave("$(tag).jld2"; h₀, q = parameters[:K0], log_exchange_length = parameters[:exchange], log_n_minus_1 = parameters[:retention],
         (constant_deep_head ? (; log_deep_suction = parameters[:deephead]) : (;))...,
         (deep_store ? (; log_thickness = parameters[:thickness], q_deep = parameters[:deepK0]) : (;))...,
+        (water_table ? (; log_water_table = parameters[:watertable]) : (;))...,
         active = string.(active), q_pedotransfer, ν_pedotransfer, weight, deep_head_mode,
         history = [(h.iteration, h.L, h.parameters, h.gradients) for h in history], compile_seconds,
         initial_losses = initial.losses, final_losses = final.losses,
