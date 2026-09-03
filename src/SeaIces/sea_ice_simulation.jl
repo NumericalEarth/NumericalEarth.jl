@@ -2,7 +2,7 @@ using ClimaSeaIce: ClimaSeaIce, SeaIceModel, PhaseTransitions, ConductiveFlux,
                    sea_ice_slab_thermodynamics, snow_slab_thermodynamics,
                    default_sea_ice_boundary_conditions
 using ClimaSeaIce.SeaIceThermodynamics.HeatBoundaryConditions: PrescribedTemperature
-using ClimaSeaIce.SeaIceThermodynamics: IceWaterThermalEquilibrium, IceSnowConductiveFlux
+using ClimaSeaIce.SeaIceThermodynamics: IceWaterThermalEquilibrium, IceSnowConductiveFlux, LinearLiquidus
 using ClimaSeaIce.SeaIceDynamics: SplitExplicitSolver, SemiImplicitStress, SeaIceMomentumEquation, StressBalanceFreeDrift,
                                   LandfastBasalStress, maybe_extended_grid
 using ClimaSeaIce.Rheologies: ElastoViscoPlasticRheology
@@ -10,10 +10,24 @@ using ClimaSeaIce.Rheologies: ElastoViscoPlasticRheology
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGridOfSomeKind
 using Oceananigans.TimeSteppers: SplitRungeKuttaTimeStepper
 
-using ..EarthSystemModels: ocean_surface_salinity, ocean_surface_velocities, reference_density
+using ..EarthSystemModels: ocean_surface_salinity, ocean_surface_velocities, ocean_surface_height,
+                           surface_layer_velocities, reference_density
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, SkinTemperature
 
 default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
+
+# The ocean carries Conservative Temperature and the liquidus is compared against it, so this is a
+# least-squares fit to the TEOS-10 freezing point expressed in Θ rather than in situ, over
+# S = 28-35.5 psu. It holds the freezing point to 0.0012 K, against 0.032 K for `LinearLiquidus`'s own
+# (0, 0.054) — which is too warm at every salinity and so biases the ice-ocean heat flux
+# `ρ cᵖ αₕ u★ (Θ - Tₘ)` one way everywhere.
+#
+# ⚠ The intercept is only free because `interface_states.jl` no longer reads
+# `freshwater_melting_temperature` as the melting point of the ice top surface. That field is the
+# liquidus intercept — the freezing point of seawater extrapolated to S = 0 — and it is NOT 0 ᵒC once
+# fitted. ClimaSeaIce itself uses it only in `melting_temperature`, which is the correct usage.
+conservative_temperature_liquidus(FT) =
+    LinearLiquidus(FT; freshwater_melting_temperature = 0.10737, slope = 0.057888)
 
 ocean_reference_density(ocean::Simulation, FT) = convert(FT, reference_density(ocean))
 ocean_reference_density(::Nothing, FT) = convert(FT, 1026.0)
@@ -145,9 +159,11 @@ function sea_ice_simulation(grid, ocean=nothing;
                             bottom_heat_boundary_condition = nothing,
                             top_heat_boundary_condition = nothing,
                             timestepper = :ForwardEuler,
+                            liquidus = conservative_temperature_liquidus(eltype(grid)),
                             phase_transitions = PhaseTransitions(eltype(grid);
                                                                  heat_capacity=ice_heat_capacity,
-                                                                 density=sea_ice_density),
+                                                                 density=sea_ice_density,
+                                                                 liquidus),
                             conductivity = 2, # W m⁻¹ K⁻¹
                             thickness_categories = 1,
                             internal_heat_flux = ConductiveFlux(; conductivity, subgrid_conductivity_keyword(thickness_categories)...),
@@ -210,15 +226,23 @@ end
 default_coriolis(ocean::Simulation) = ocean.model.coriolis
 default_coriolis(ocean::Nothing) = HydrostaticSphericalCoriolis(; rotation_rate=default_rotation_rate)
 
+# `ocean_surface_height` needs a ClimaSeaIce that carries the free-surface term, so it is forwarded
+# only when the tilt is switched on.
+ocean_surface_tilt_keyword(with_tilt, ocean, gravitational_acceleration) =
+    with_tilt ? (; ocean_surface_height = ocean_surface_height(ocean), gravitational_acceleration) : NamedTuple()
+
 function sea_ice_dynamics(grid, ocean=nothing;
                           sea_ice_ocean_drag_coefficient = 5.5e-3,
+                          sea_ice_ocean_drag_reference_depth = 6,
                           basal_stress = LandfastBasalStress(eltype(grid)),
                           rheology = ElastoViscoPlasticRheology(),
                           coriolis = default_coriolis(ocean),
                           free_drift = nothing,
+                          with_ocean_surface_tilt = false,
+                          gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration,
                           solver = SplitExplicitSolver(grid; substeps=150))
 
-    SSU, SSV = ocean_surface_velocities(ocean)
+    SSU, SSV = surface_layer_velocities(ocean, sea_ice_ocean_drag_reference_depth)
     FT = eltype(grid)
     sea_ice_ocean_drag_coefficient = convert(FT, sea_ice_ocean_drag_coefficient)
     ρₑ = ocean_reference_density(ocean, FT)
@@ -241,6 +265,8 @@ function sea_ice_dynamics(grid, ocean=nothing;
                                   basal_stress,
                                   rheology,
                                   free_drift,
+                                  ocean_surface_tilt_keyword(with_ocean_surface_tilt, ocean,
+                                                             gravitational_acceleration)...,
                                   solver)
 end
 

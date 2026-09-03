@@ -22,7 +22,8 @@ does not dip below freezing.
 
 The melting temperature is a function of salinity and is controlled by the `liquidus`.
 """
-FreezingLimitedOceanTemperature(FT::DataType=Oceananigans.defaults.FloatType; liquidus=LinearLiquidus(FT)) =
+FreezingLimitedOceanTemperature(FT::DataType=Oceananigans.defaults.FloatType;
+                                liquidus=conservative_temperature_liquidus(FT)) =
     FreezingLimitedOceanTemperature(liquidus, nothing)
 
 const FreezingLimitedEarthSystemModel = EarthSystemModel{R, A, L, <:FreezingLimitedOceanTemperature, O, <:NoSeaIceInterface} where {R, A, L, O}

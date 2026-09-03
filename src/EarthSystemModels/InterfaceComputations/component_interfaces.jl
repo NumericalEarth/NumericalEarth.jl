@@ -27,7 +27,7 @@ mutable struct AtmosphereInterface{J, F, ST, P}
 end
 
 """
-    SeaIceOceanInterface{J, F, T, S, D}
+    SeaIceOceanInterface{J, F, T, S, D, E}
 
 Container for sea ice-ocean interface data including fluxes, formulation, and interface state.
 
@@ -41,13 +41,16 @@ Fields
 - `freshwater_delivery::D`: how the ice-ocean mass exchange reaches the ocean
   ([`ConservativeIceFreshwater`](@ref), [`ScaledIceFreshwater`](@ref),
   [`VirtualSaltFluxIceFreshwater`](@ref))
+- `meltwater_enthalpy::E`: the temperature ice meltwater carries into the ocean
+  ([`ZeroHeatContentMeltwater`](@ref), [`InterfaceTemperatureMeltwater`](@ref))
 """
-mutable struct SeaIceOceanInterface{J, F, T, S, D}
+mutable struct SeaIceOceanInterface{J, F, T, S, D, E}
     fluxes :: J
     flux_formulation :: F
     temperature :: T
     salinity :: S
     freshwater_delivery :: D
+    meltwater_enthalpy :: E
 end
 
 # Utilities to get the computed fluxes
@@ -149,6 +152,9 @@ struct SeaIceOceanFluxes{C, FX, FY}
     frazil_heat            :: C
     salt                   :: C
     freshwater             :: C
+    # Σ Tᵢ Jʷᵢ over the ice-ocean exchange: zero unless the meltwater is delivered at the interface
+    # temperature, in which case it is Tᵦ times the ice-only volume flux.
+    freshwater_heat_content :: C
     # The ice-ocean drag is split for the ocean's semi-implicit momentum boundary condition:
     # `x_momentum` carries the explicit part Fₑ = -ρₑ Cᴰ |Δu| uⁱ and `x_momentum_coefficient` the
     # implicit coefficient λ = ρₑ Cᴰ |Δu|, so the total flux is Fₑ + λ uᵒ with uᵒ the ocean velocity.
@@ -162,20 +168,21 @@ function SeaIceOceanFluxes(grid)
     C  = Field{Center, Center, Nothing}
     x_velocity_bcs = vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
     y_velocity_bcs = vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
-    return SeaIceOceanFluxes(C(grid), C(grid), C(grid), C(grid),
+    return SeaIceOceanFluxes(C(grid), C(grid), C(grid), C(grid), C(grid),
                              Field{Face, Center, Nothing}(grid),
                              Field{Center, Face, Nothing}(grid),
                              Field{Face, Center, Nothing}(grid),
                              Field{Center, Face, Nothing}(grid))
 end
 
-SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes(ntuple(_ -> ZeroField(), 8)...)
+SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes(ntuple(_ -> ZeroField(), 9)...)
 
 Adapt.adapt_structure(to, fluxes::SeaIceOceanFluxes) =
     SeaIceOceanFluxes(Adapt.adapt(to, fluxes.interface_heat),
                       Adapt.adapt(to, fluxes.frazil_heat),
                       Adapt.adapt(to, fluxes.salt),
                       Adapt.adapt(to, fluxes.freshwater),
+                      Adapt.adapt(to, fluxes.freshwater_heat_content),
                       Adapt.adapt(to, fluxes.x_momentum),
                       Adapt.adapt(to, fluxes.y_momentum),
                       Adapt.adapt(to, fluxes.x_momentum_coefficient),
@@ -186,6 +193,7 @@ Oceananigans.Architectures.on_architecture(arch, fluxes::SeaIceOceanFluxes) =
                       on_architecture(arch, fluxes.frazil_heat),
                       on_architecture(arch, fluxes.salt),
                       on_architecture(arch, fluxes.freshwater),
+                      on_architecture(arch, fluxes.freshwater_heat_content),
                       on_architecture(arch, fluxes.x_momentum),
                       on_architecture(arch, fluxes.y_momentum),
                       on_architecture(arch, fluxes.x_momentum_coefficient),
@@ -209,11 +217,12 @@ struct ZeroFluxes{Z}
     frazil_heat           :: Z
     salt                  :: Z
     freshwater            :: Z
+    freshwater_heat_content :: Z
     x_momentum_coefficient :: Z
     y_momentum_coefficient :: Z
 end
 
-ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 14)...)
+ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 15)...)
 
 @inline computed_fluxes(::Nothing) = ZeroFluxes()
 
@@ -342,27 +351,33 @@ Arguments
 - `flux_formulation`: heat flux formulation (`IceBathHeatFlux` or `ThreeEquationHeatFlux`)
 - `freshwater_delivery`: how the ice-ocean mass exchange reaches the ocean. Default:
   `ConservativeIceFreshwater()`
+- `meltwater_enthalpy`: the temperature ice meltwater carries into the ocean. Default:
+  `ZeroHeatContentMeltwater()`
 """
 function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation;
-                                 freshwater_delivery = ConservativeIceFreshwater())
+                                 freshwater_delivery = ConservativeIceFreshwater(),
+                                 meltwater_enthalpy = ZeroHeatContentMeltwater())
     io_fluxes = SeaIceOceanFluxes(grid)
 
     # For default flux formulations, interface temperature and salinity point to ocean surface
     Tⁱⁿ = ocean_surface_temperature(ocean)
     Sⁱⁿ = ocean_surface_salinity(ocean)
 
-    return SeaIceOceanInterface(io_fluxes, flux_formulation, Tⁱⁿ, Sⁱⁿ, freshwater_delivery)
+    return SeaIceOceanInterface(io_fluxes, flux_formulation, Tⁱⁿ, Sⁱⁿ, freshwater_delivery,
+                                meltwater_enthalpy)
 end
 
 function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation::ThreeEquationHeatFlux;
-                                 freshwater_delivery = ConservativeIceFreshwater())
+                                 freshwater_delivery = ConservativeIceFreshwater(),
+                                 meltwater_enthalpy = ZeroHeatContentMeltwater())
     io_fluxes = SeaIceOceanFluxes(grid)
 
     # Interface temperature and salinity are computed fields
     Tⁱⁿ = Field{Center, Center, Nothing}(grid)
     Sⁱⁿ = Field{Center, Center, Nothing}(grid)
 
-    return SeaIceOceanInterface(io_fluxes, flux_formulation, Tⁱⁿ, Sⁱⁿ, freshwater_delivery)
+    return SeaIceOceanInterface(io_fluxes, flux_formulation, Tⁱⁿ, Sⁱⁿ, freshwater_delivery,
+                                meltwater_enthalpy)
 end
 
 #####
@@ -418,6 +433,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              atmosphere_land_fluxes = default_atmosphere_land_fluxes(land, eltype(exchange_grid)),
                              sea_ice_ocean_heat_flux = ThreeEquationHeatFlux(sea_ice),
                              ice_freshwater_delivery = ConservativeIceFreshwater(),
+                             ice_meltwater_enthalpy = ZeroHeatContentMeltwater(),
                              atmosphere_ocean_interface_temperature = BulkTemperature(),
                              atmosphere_ocean_velocity_difference = RelativeVelocity(),
                              atmosphere_ocean_interface_specific_humidity = default_ao_specific_humidity(ocean),
@@ -478,7 +494,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                                               atmosphere_ocean_interface_specific_humidity)
 
     io_interface = sea_ice_ocean_interface(exchange_grid, sea_ice, ocean, sea_ice_ocean_heat_flux;
-                                          freshwater_delivery = ice_freshwater_delivery)
+                                          freshwater_delivery = ice_freshwater_delivery,
+                                          meltwater_enthalpy = ice_meltwater_enthalpy)
 
     ai_interface = atmosphere_sea_ice_interface(exchange_grid,
                                                 atmosphere,

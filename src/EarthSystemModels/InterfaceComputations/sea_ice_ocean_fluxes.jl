@@ -41,6 +41,57 @@ and it does not conserve total salt; the drift is measurable in the ocean + ice 
 """
 struct VirtualSaltFluxIceFreshwater end
 
+#####
+##### The temperature the ice meltwater carries into the ocean
+#####
+
+"""
+    ZeroHeatContentMeltwater()
+
+Ice meltwater joins the ocean carrying no heat content, that is, at Conservative Temperature 0.
+"""
+struct ZeroHeatContentMeltwater end
+
+"""
+    InterfaceTemperatureMeltwater()
+
+Ice meltwater joins the ocean at the interface temperature `Tᵦ`. `ClimaSeaIce` evaluates the latent heat
+at the interface, `ℰb = ρⁱ latent_heat(phase_transitions, Tbi)`, so the liquid a basal phase change
+produces is at `Tᵦ` and not at 0; delivering it at 0 hands the ocean `ρᵒᶜ cᵒᶜ |Tᵦ|` of heat it never
+paid for, about 0.23 W m⁻² per m yr⁻¹ of basal melt.
+
+The same correction applies in the freezing direction: water leaving the ocean to form ice leaves at
+`Tᵦ` rather than at 0.
+
+⚠ The correction is applied to the whole ice mass flux. Top melt is produced at the surface melting
+temperature, which is near 0 and needs no correction, so this **over-corrects** that fraction:
+`ClimaSeaIce` computes the top and bottom rates separately but returns only their sum. Read this as an
+upper bound on the correction, not as the exact treatment.
+"""
+struct InterfaceTemperatureMeltwater end
+
+"""
+$(TYPEDSIGNATURES)
+
+The ocean-side heat-content flux carried by ice meltwater, given the interface temperature `Tᵦ` and the
+ice-only volume flux `Jʷⁱ`. Enters `Jᴴ`, which the temperature boundary condition subtracts from the
+ambient carry `Tᴺ Jʷ`, so returning `Tᵦ Jʷⁱ` delivers the ice water at `Tᵦ` and returning zero delivers
+it at Conservative Temperature 0.
+"""
+@inline meltwater_heat_content(::ZeroHeatContentMeltwater, Tᵦ, Jʷⁱ) = zero(Jʷⁱ)
+@inline meltwater_heat_content(::InterfaceTemperatureMeltwater, Tᵦ, Jʷⁱ) = Tᵦ * Jʷⁱ
+
+"""
+$(TYPEDSIGNATURES)
+
+The ocean-side volume flux of the *ice* alone, excluding snow, under the same delivery
+[`ice_freshwater_and_salt`](@ref) applies. Snow is salt-free and melts at 0, so only the ice term
+carries a meltwater temperature correction.
+"""
+@inline ice_volume_flux(::ConservativeIceFreshwater, Eᵢ, ρᵒᶜ) = - Eᵢ / ρᵒᶜ
+@inline ice_volume_flux(delivery::ScaledIceFreshwater, Eᵢ, ρᵒᶜ) = - delivery.fraction * Eᵢ / ρᵒᶜ
+@inline ice_volume_flux(::VirtualSaltFluxIceFreshwater, Eᵢ, ρᵒᶜ) = zero(Eᵢ / ρᵒᶜ)
+
 """
 $(TYPEDSIGNATURES)
 
@@ -128,7 +179,7 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
             flux_formulation, fluxes, Tˢⁱ, Sˢⁱ, grid, clock,
             hˢⁱ, hc, ℵ, Sⁱ, Tᵒᶜ, Sᵒᶜ, uˢⁱ, vˢⁱ, τₛ,
             liquidus, ocean_properties, L, Δt, mass_fluxes.ice, mass_fluxes.snow,
-            interface.freshwater_delivery)
+            interface.freshwater_delivery, interface.meltwater_enthalpy)
 
     return nothing
 end
@@ -190,7 +241,8 @@ end
                                                 Δt,
                                                 ice_ocean_mass_flux,
                                                 snow_ocean_mass_flux,
-                                                freshwater_delivery)
+                                                freshwater_delivery,
+                                                meltwater_enthalpy)
 
     i, j = @index(Global, NTuple)
 
@@ -198,6 +250,7 @@ end
     𝒬ᶠʳᶻ = fluxes.frazil_heat
     𝒬ⁱⁿ = fluxes.interface_heat
     Jˢ = fluxes.salt
+    Jᴴ = fluxes.freshwater_heat_content
     Jʷ = fluxes.freshwater
     τˣ = fluxes.x_momentum
     τʸ = fluxes.y_momentum
@@ -291,5 +344,7 @@ end
         Jʷⁱᵒ, Jˢⁱᵒ = ice_freshwater_and_salt(freshwater_delivery, Eᵢ, Eₛ, Sᴺ, Sˢⁱ, ρᵒᶜ)
         Jʷ[i, j, 1] = Jʷⁱᵒ
         Jˢ[i, j, 1] = Jˢⁱᵒ
+        Jᴴ[i, j, 1] = meltwater_heat_content(meltwater_enthalpy, Tᵦ,
+                                             ice_volume_flux(freshwater_delivery, Eᵢ, ρᵒᶜ))
     end
 end

@@ -129,7 +129,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
     Jᵀ = net_ocean_fluxes.T
     Jˢ = net_ocean_fluxes.S
     Jʷ = net_ocean_fluxes.η
-    Jᴴ = net_ocean_fluxes.freshwater_heat_content # Σᵢ Tᵢ Jʷᵢ — atmosphere freshwater enters at SST
+    Jᴴ = net_ocean_fluxes.freshwater_heat_content # Σᵢ Tᵢ Jʷᵢ over every freshwater source
     ℵ  = sea_ice_concentration
     cᵒᶜ⁻¹ = 1 / ocean_properties.heat_capacity
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
@@ -158,10 +158,13 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         # Tracer fluxes — radiative contributions added later by apply_air_sea_radiative_fluxes!.
         # The atmosphere-ocean virtual salt flux (Sᴺ Jʷ) and the surface-value heat exchange
         # (Tᴺ Jʷ) are applied live in the salinity/temperature top BCs, so Jˢ holds only the
-        # sea-ice contribution and Jᴴ the freshwater enthalpy (rain − evaporation at SST).
+        # sea-ice contribution and Jᴴ the freshwater enthalpy: rain − evaporation at SST, plus the
+        # ice meltwater term, which is zero unless the meltwater is delivered at the interface
+        # temperature rather than at Conservative Temperature 0.
         Jᵀ[i, j, 1] = ifelse(inactive, zero(grid), Jᵀao + Jᵀio)
         Jˢ[i, j, 1] = ifelse(inactive, zero(grid), Jˢio)
         Jʷ[i, j, 1] = ifelse(inactive, zero(grid), Jʷao + Jʷio)
-        Jᴴ[i, j, 1] = ifelse(inactive, zero(grid), Tᵒᶜ * Jʷao)
+        Jᴴio = sea_ice_ocean_fluxes.freshwater_heat_content[i, j, 1]
+        Jᴴ[i, j, 1] = ifelse(inactive, zero(grid), Tᵒᶜ * Jʷao + Jᴴio)
     end
 end

@@ -39,6 +39,52 @@ ocean_salinity(ocean) = ZeroField()
 ocean_surface_temperature(ocean) = ZeroField()
 ocean_surface_salinity(ocean) = ZeroField()
 ocean_surface_velocities(ocean) = ZeroField(), ZeroField()
+
+"""
+$(TYPEDSIGNATURES)
+
+Sea surface height ``η`` [m] of the ocean, on a `(Center, Center, Nothing)` field so that a sea-ice
+momentum equation can read it at its own topmost index. Its slope enters the ice momentum balance as
+``- g ∇η``, which is `f × uᵍ` for a geostrophic surface current: without it the ice cannot ride the
+ocean's dynamic topography and the uncompensated Coriolis force is absorbed by the ice-ocean drag.
+"""
+ocean_surface_height(ocean) = ZeroField()
+
+"""
+$(TYPEDSIGNATURES)
+
+Refill the sea surface height field the sea-ice surface-tilt term reads from the ocean state.
+"""
+ocean_surface_height!(ηˢ, ocean) = nothing
+
+"""
+$(TYPEDSIGNATURES)
+
+Ocean velocities averaged over the top `reference_depth` metres, the reference velocities of the sea
+ice-ocean drag. The quadratic law `ρ Cᴰ |uⁱ - uᵒ| (uⁱ - uᵒ)` carries a coefficient defined against the
+velocity of the under-ice boundary layer, which is tens of metres thick, so referencing it to the
+topmost cell brakes the ice against a film the ice itself accelerates. `reference_depth = nothing`
+returns [`ocean_surface_velocities`](@ref) unchanged.
+"""
+surface_layer_velocities(ocean, reference_depth) = ocean_surface_velocities(ocean)
+surface_layer_velocities(ocean, ::Nothing) = ocean_surface_velocities(ocean)
+
+"""
+$(TYPEDSIGNATURES)
+
+Recompute the sea ice-ocean drag reference velocities from the ocean state. Called once per coupled
+step from `update_state!`; a no-op for models whose reference is a plain view of the ocean's own field.
+"""
+refresh_drag_reference_velocities!(model) = nothing
+
+"""
+$(TYPEDSIGNATURES)
+
+Recompute the sea surface height the sea-ice momentum equation reads for its surface-tilt term from
+the ocean state. Called once per coupled step from `update_state!`; a no-op when the ice carries no
+tilt term.
+"""
+refresh_ocean_surface_height!(model) = nothing
 temperature_units(ocean) = DegreesCelsius()
 
 #####

@@ -502,9 +502,10 @@ end
     max_ΔT = convert(typeof(T★), st.max_ΔT)
     Tₛ⁺ = Tₛ⁻ + clamp(ΔT★, -max_ΔT, max_ΔT)
 
-    # Cap at melting temperature
-    Tₘ = ℙᵢ.liquidus.freshwater_melting_temperature
-    Tₘ = convert_to_kelvin(ℙᵢ.temperature_units, Tₘ)
+    # Cap at the melting temperature of the ice TOP surface, which is snow or nearly fresh ice and so
+    # melts at 0 ᵒC. This is not the liquidus intercept: the liquidus is the freezing point of SEAWATER
+    # against salinity, and once its intercept is fitted rather than pinned at 0 the two part company.
+    Tₘ = convert_to_kelvin(ℙᵢ.temperature_units, zero(T★))
     Tₛ⁺ = min(Tₛ⁺, Tₘ)
 
     # If ice is not consolidated, use the bottom temperature

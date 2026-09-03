@@ -4,24 +4,25 @@ export ocean_simulation, SlabOcean, PrescribedOcean,
        TwoColorRadiation, ChlorophyllOptics, absorption_coefficient, equivalent_chlorophyll
 
 using Adapt: Adapt, adapt
+using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Advection: WENO, WENOVectorInvariant
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
                                        FieldBoundaryConditions, FluxBoundaryCondition,
-                                       IMEXFluxBoundaryCondition, IMEXFlux, getbc
+                                       IMEXFluxBoundaryCondition, IMEXFlux, fill_halo_regions!, getbc
 using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
-using Oceananigans.Fields: Field, CenterField, set!, interior
+using Oceananigans.Fields: Field, CenterField, ZeroField, compute!, set!, interior
 using Oceananigans.Forcings: MultipleForcings, DiscreteForcing
 using Oceananigans.Grids: Grids, architecture, inactive_node, Face, Center, xspacings, yspacings, RectilinearGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition, MutableGridOfSomeKind
-using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel, displacement
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
 using Oceananigans.Models.NonhydrostaticModels: NonhydrostaticModel
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids, TripolarGrid
-using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ
+using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ, Δzᶠᶜᶜ, Δzᶜᶠᶜ
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TimeSteppers: Clock
 using Oceananigans.TurbulenceClosures: κzᶜᶜᶠ
@@ -35,6 +36,9 @@ using SeawaterPolynomials.TEOS10: TEOS10EquationOfState, θᴾ_from_Θ
 
 using ..EarthSystemModels: EarthSystemModels,
                            ocean_surface_velocities,
+                           ocean_surface_height,
+                           ocean_surface_height!,
+                           surface_layer_velocities,
                            ocean_surface_salinity,
                            DegreesKelvin,
                            default_stop_time,
@@ -69,6 +73,8 @@ include("radiative_forcing.jl")
 include("multiple_surface_fluxes.jl")
 include("ocean_simulation.jl")
 include("nonhydrostatic_ocean_simulation.jl")
+include("surface_layer_velocities.jl")
+include("ocean_surface_height.jl")
 include("assemble_net_ocean_fluxes.jl")
 
 #####

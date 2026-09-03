@@ -13,6 +13,8 @@ export
     ConservativeIceFreshwater,
     ScaledIceFreshwater,
     VirtualSaltFluxIceFreshwater,
+    ZeroHeatContentMeltwater,
+    InterfaceTemperatureMeltwater,
     SimilarityTheoryFluxes,
     FixedIterations,
     ConvergenceStopCriteria,
