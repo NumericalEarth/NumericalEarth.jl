@@ -23,7 +23,11 @@ V = Dict(
     :darcy_kl     => validation("map_hydrology_K0_exchange_r1_gpu_darcy_12d"),
     :darcy_kln    => validation("map_hydrology_K0_exchange_retention_r1_gpu_darcy_12d"),
     :darcy_mean   => validation("map_logK_r1_gpu_darcy_12d_meanhead"),
-    :darcy_fc     => validation("map_hydrology_K0_deephead_r1_gpu_darcy_fc_12d"))
+    :darcy_fc     => validation("map_hydrology_K0_deephead_r1_gpu_darcy_fc_12d"),
+    :darcy_t0     => validation("map_logK_r1_gpu_darcy_12d_initialhead"),
+    :darcy_init   => validation("map_hydrology_K0_deephead_r1_gpu_darcy_init_12d"),
+    :darcy_s2     => validation("map_logK_r1_gpu_darcy_12d_smooth2d"),
+    :darcy_s5     => validation("map_logK_r1_gpu_darcy_12d_smooth5d"))
 
 θ_obs = V[:free_joint6]["θ_obs"]
 land = V[:free_joint6]["weight"] .> 0
@@ -48,6 +52,10 @@ suites = [
     ("Darcy: K₀ + ℓ + retention n (12.25 d)",    V[:darcy_kln]["snapshots"][:θ],                :darcy, 12.25),
     ("Darcy: suite-8 K₀, deep head frozen to its mean", V[:darcy_mean]["snapshots"][:θ],         :fair,  12.25),
     ("Darcy, no deep data: K₀ + calibrated constant head (12.25 d)", V[:darcy_fc]["snapshots"][:θ], :fair, 12.25),
+    ("Darcy: suite-8 K₀, deep head fixed at ERA5-Land's t = 0 value", V[:darcy_t0]["snapshots"][:θ], :fair, 12.25),
+    ("Darcy: K₀ + constant head started from the t = 0 value (12.25 d)", V[:darcy_init]["snapshots"][:θ], :fair, 12.25),
+    ("Darcy: suite-8 K₀, deep head smoothed over 2 d",  V[:darcy_s2]["snapshots"][:θ],               :darcy, 12.25),
+    ("Darcy: suite-8 K₀, deep head smoothed over 5 d",  V[:darcy_s5]["snapshots"][:θ],               :darcy, 12.25),
 ]
 
 function scores(θm, hours)
@@ -72,8 +80,8 @@ jldsave("suite_scorecard_r1.jld2"; labels = first.(table), windows = first.(wind
 med(x) = [median(x[k, :, :][land]) for k in 1:Nh]
 mask(a) = ifelse.(land, a, NaN)
 free_colors  = Makie.wong_colors()[1:6]
-darcy_colors = (:gray40, :firebrick, :darkorange, :seagreen, :mediumpurple)
-fair_colors  = (:sienna, :navy)
+darcy_colors = (:gray40, :firebrick, :darkorange, :seagreen, :mediumpurple, :deepskyblue, :goldenrod)
+fair_colors  = (:sienna, :navy, :teal, :crimson)
 
 # ## Trajectories
 
@@ -118,10 +126,13 @@ C = Dict(:free_k => load("map_logK_r1_gpu.jld2"), :free_joint6 => load("map_join
          :darcy_k => load("map_logK_r1_gpu_darcy_12d.jld2"), :darcy_joint => load("map_joint_r1_gpu_darcy_12d.jld2"),
          :darcy_kl => load("map_hydrology_K0_exchange_r1_gpu_darcy_12d.jld2"),
          :darcy_kln => load("map_hydrology_K0_exchange_retention_r1_gpu_darcy_12d.jld2"),
+         :darcy_fc => load("map_hydrology_K0_deephead_r1_gpu_darcy_fc_12d.jld2"),
+         :darcy_init => load("map_hydrology_K0_deephead_r1_gpu_darcy_init_12d.jld2"),
          :depth => load("map_iterations_r1_gpu_two_sided.jld2"))
 q₀ = C[:free_k]["q_pedotransfer"]
+ψ_initial = exp.(C[:darcy_init]["history"][1][3][:deephead])
 
-fig = Figure(size = (1900, 1350), fontsize = 14)
+fig = Figure(size = (1900, 1750), fontsize = 14)
 Label(fig[0, 1:8], "Calibrated parameter fields across the suites"; fontsize = 19)
 function panel!(pos, data, title, label; colormap, colorrange, scale = identity)
     ax = Axis(fig[pos...]; title, aspect = DataAspect())
@@ -144,6 +155,11 @@ panel!((3, 1), mask(exp.(C[:darcy_kl]["log_exchange_length"])), "exchange length
 panel!((3, 3), mask(1 .+ exp.(C[:darcy_kln]["log_n_minus_1"])), "retention exponent n — Darcy: K₀ + ℓ + n", "–"; colormap = :viridis, colorrange = (1.10, 1.20))
 panel!((3, 5), mask(q₀), "pedotransfer log₁₀K₀ (prior)", "log₁₀ m s⁻¹"; colormap = :viridis, colorrange = extrema(q₀[land]))
 panel!((3, 7), mask(1 .+ exp.(C[:darcy_kln]["ν_pedotransfer"])), "pedotransfer n (prior)", "–"; colormap = :viridis, colorrange = (1.10, 1.20))
+ψlim = (0.3, 10.0)
+panel!((4, 1), mask(ψ_initial), "deep suction ψᵈ — ERA5-Land at t = 0 (the start)", "m"; colormap = :viridis, colorrange = ψlim, scale = log10)
+panel!((4, 3), mask(exp.(C[:darcy_init]["log_deep_suction"])), "deep suction ψᵈ — calibrated from the t = 0 value", "m"; colormap = :viridis, colorrange = ψlim, scale = log10)
+panel!((4, 5), mask(exp.(C[:darcy_fc]["log_deep_suction"])), "deep suction ψᵈ — calibrated from 1 m", "m"; colormap = :viridis, colorrange = ψlim, scale = log10)
+panel!((4, 7), mask(C[:darcy_init]["q"] .- q₀), "Δlog₁₀K₀ — K₀ + head from the t = 0 value", "decades"; colormap = :viridis, colorrange = qlim)
 save("suite_parameters_r1.png", fig)
 
 # ## Held-out RMS maps
@@ -152,7 +168,7 @@ held = last(windows)[2]
 cell_rms(θm) = [sqrt(sum(abs2, θm[held, i, j] .- θ_obs[held, i, j]) / length(held)) for i in axes(θm, 2), j in axes(θm, 3)]
 fig = Figure(size = (1900, 1000), fontsize = 14)
 Label(fig[0, 1:8], "Held-out RMS (days 12.25–20, unseen by every calibration), shared scale"; fontsize = 19)
-picks = [1, 3, 5, 7, 8, 10, 12, 13]
+picks = [1, 3, 5, 8, 10, 13, 14, 15]
 for (k, idx) in enumerate(picks)
     label, θm, _, _ = suites[idx]
     row, col = divrem(k - 1, 4)

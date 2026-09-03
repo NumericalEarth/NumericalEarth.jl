@@ -5,8 +5,8 @@
 #   exchange   λ = log ℓ, the Darcy exchange length to the deep reservoir
 #   retention  ν = log(n − 1), the van Genuchten exponent, with α slaved so the retention curve
 #              keeps its pedotransfer saturation at ψ★ = 1 m
-#   deephead   δ = log ψᵈ, the (time-constant) suction of the deep reservoir, Πᵈ = −ψᵈ; needs
-#              DEEP_HEAD=constant so the head is a per-cell Field rather than the reanalysis series
+#   deephead   δ = log ψᵈ, the (time-constant) suction of the deep reservoir, Πᵈ = −ψᵈ, started
+#              from the DEEP_HEAD=constant value, or the reanalysis "mean" or "initial" head
 #
 #     L = (1/N) Σₙ Σᵢⱼ wᵢⱼ (θᵢⱼ(tₙ; q, λ, ν) − θᵢⱼᴱᴿᴬ⁵ᴸ(tₙ))²,      θ = Mˡᵃ / (ρˡ h₀).
 #
@@ -28,8 +28,8 @@ using Reactant: @trace
 exchange_field || error("set EXCHANGE_FIELD=1 so the model carries the exchange length as a Field")
 Niter = parse(Int, get(ENV, "NITER", "8"))
 active = Symbol.(split(get(ENV, "FIELDS", "K0,exchange"), ","))
-:deephead in active && deep_head_mode == "series" && error("calibrating the deep head needs DEEP_HEAD=constant or mean")
-constant_deep_head = deep_head_mode != "series"
+constant_deep_head = deep_head_mode in ("constant", "mean", "initial")
+:deephead in active && !constant_deep_head && error("calibrating the deep head needs DEEP_HEAD=constant, mean or initial")
 tag = "map_hydrology_" * join(string.(active), "_") * "_r$(refinement)_$(backend)$(tag_suffix)"
 
 # ## Start values, bounds and characteristic steps

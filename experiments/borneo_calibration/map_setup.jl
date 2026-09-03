@@ -56,28 +56,39 @@ function deep_head(θ, α, n, ν, θʳ)
     return 𝒮 ≥ 1 ? 0.0 : -(𝒮^(-1 / m) - 1)^(1 / n) / α
 end
 
-function deep_pressure_head_series(grid)
+deep_head_table() = deep_head.(era5_land.layer_3, reshape(static.inverse_air_entry_head, 1, Nx, Ny),
+                               reshape(static.pore_size_uniformity, 1, Nx, Ny), reshape(static.porosity, 1, Nx, Ny),
+                               reshape(static.residual_liquid_fraction, 1, Nx, Ny))
+
+function running_time_mean(table, window)
+    Nt = size(table, 1)
+    return [mean(view(table, max(1, k - window ÷ 2):min(Nt, k + window ÷ 2), i, j)) for k in 1:Nt, i in 1:Nx, j in 1:Ny]
+end
+
+function deep_pressure_head_series(grid, table)
     Πᵈ = FieldTimeSeries{Center, Center, Nothing}(grid, era5_land.times)
     slice = zeros(FT, Nx + 2Hx, Ny + 2Hy, 1)
     for k in eachindex(era5_land.times)
-        slice[1 + Hx:Nx + Hx, 1 + Hy:Ny + Hy, 1] .= deep_head.(era5_land.layer_3[k, :, :], static.inverse_air_entry_head,
-                                                              static.pore_size_uniformity, static.porosity, static.residual_liquid_fraction)
+        slice[1 + Hx:Nx + Hx, 1 + Hy:Ny + Hy, 1] .= table[k, :, :]
         parent(Πᵈ[k]) .= slice
     end
     return Πᵈ
 end
 
 exchange_field = get(ENV, "EXCHANGE_FIELD", "0") == "1"     # carry ℓ as a per-cell Field (calibratable)
-deep_head_mode = get(ENV, "DEEP_HEAD", "series")             # "series": ERA5-Land 28–100 cm through the retention curve;
-deep_head_value = parse(Float64, get(ENV, "DEEP_HEAD_VALUE", "-1.0"))   # "mean": its per-cell time mean; "constant": this value (m), as a Field
-
+deep_head_mode = get(ENV, "DEEP_HEAD", "series")             # ERA5-Land 28–100 cm through the retention curve as a "series",
+deep_head_smooth_days = parse(Float64, get(ENV, "DEEP_HEAD_SMOOTH_DAYS", "2"))   # its running mean over this window ("smooth"),
+deep_head_value = parse(Float64, get(ENV, "DEEP_HEAD_VALUE", "-1.0"))           # per-cell Fields of its time "mean" or "initial" value,
+                                                                                # or a uniform "constant" head (m)
 function deep_pressure_head_on(grid)
-    deep_head_mode == "series" && return deep_pressure_head_series(grid)
-    head = deep_head_mode == "mean" ?
-        dropdims(mean(deep_head.(era5_land.layer_3, reshape(static.inverse_air_entry_head, 1, Nx, Ny),
-                                 reshape(static.pore_size_uniformity, 1, Nx, Ny), reshape(static.porosity, 1, Nx, Ny),
-                                 reshape(static.residual_liquid_fraction, 1, Nx, Ny)); dims = 1); dims = 1) :
-        fill(FT(deep_head_value), Nx, Ny)
+    deep_head_mode == "constant" && return surface_property(grid, fill(FT(deep_head_value), Nx, Ny))
+    table = deep_head_table()
+    deep_head_mode == "series" && return deep_pressure_head_series(grid, table)
+    if deep_head_mode == "smooth"
+        window = round(Int, deep_head_smooth_days * 86400 / (era5_land.times[2] - era5_land.times[1]))
+        return deep_pressure_head_series(grid, running_time_mean(table, window))
+    end
+    head = deep_head_mode == "mean" ? dropdims(mean(table; dims = 1); dims = 1) : table[1, :, :]
     return surface_property(grid, FT.(head))
 end
 exchange_length_on(grid) = exchange_field ? surface_property(grid, fill(FT(exchange_length), Nx, Ny)) : exchange_length
