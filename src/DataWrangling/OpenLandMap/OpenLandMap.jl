@@ -248,4 +248,90 @@ function cog_window_to_netcdf(sources, nc_path, variable_name, bbox)
     return nothing
 end
 
+#####
+##### Windowing and decoding, independent of the GDAL reader
+#####
+
+# The windowing math and the north→south row reversal below assume a north-up,
+# axis-aligned geographic (EPSG:4326, degrees) grid.
+function validate_geographic_northup(geotransform)
+    _, dx, rx, _, ry, dy = geotransform
+    (rx == 0 && ry == 0) ||
+        error("Windowed COG reader requires an axis-aligned grid (no rotation/shear); " *
+              "got geotransform $geotransform.")
+    (dx > 0 && dy < 0) ||
+        error("Windowed COG reader assumes west→east (Δλ > 0) and north→south (Δφ < 0) " *
+              "pixel order; got Δλ = $dx, Δφ = $dy.")
+    return nothing
+end
+
+# The windowing is done in degrees, so a projected grid would silently land the
+# window in the wrong place. `epsg` is `nothing` when the source declares no CRS,
+# or a WKT without an EPSG authority tag; then the geometry checks are all we have.
+function validate_epsg4326(epsg)
+    isnothing(epsg) || epsg == 4326 ||
+        error("Windowed COG reader expects EPSG:4326 lon/lat in degrees; " *
+              "the source declares EPSG:$epsg.")
+    return nothing
+end
+
+"""
+    cog_window_indices(geotransform, width, height, bbox)
+
+Return the `(xoff, yoff, xsize, ysize)` raster window, in 0-based GDAL pixel
+coordinates, covering the `bbox` longitude/latitude box on a `width` × `height`
+raster with the north-up `geotransform` `[x₀, Δλ, 0, y₀, 0, Δφ]`.
+"""
+function cog_window_indices(geotransform, width, height, bbox)
+    x0, dx, _, y0, _, dy = geotransform
+    W, E = bbox.longitude
+    S, N = bbox.latitude
+
+    # Pad one native cell on each side so the window is a strict superset of the
+    # framework's center-bracketed native grid; otherwise the grid can hold one
+    # more cell than the file, forcing a clamped read that shifts the whole
+    # window by a pixel and duplicates the outermost row/column.
+    xoff  = clamp(floor(Int, (W - x0) / dx) - 1, 0, width - 1)
+    yoff  = clamp(floor(Int, (N - y0) / dy) - 1, 0, height - 1)
+    xsize = clamp(ceil(Int, (E - x0) / dx) + 1 - xoff, 1, width - xoff)
+    ysize = clamp(ceil(Int, (S - y0) / dy) + 1 - yoff, 1, height - yoff)
+
+    return xoff, yoff, xsize, ysize
+end
+
+# Decode raw COG integers to Float32 physical values. Order matters: mask nodata
+# to NaN first, then apply the band scale/offset (a scaled fill is a spurious value).
+function decode_cog_window(raw, scale, offset, nodata)
+    decoded = Array{Float32}(undef, size(raw))
+    @inbounds for idx in eachindex(raw)
+        value = Float64(raw[idx])
+        is_nodata = !isnothing(nodata) && isequal(value, nodata)
+        decoded[idx] = is_nodata ? NaN32 : Float32(value * scale + offset)
+    end
+    return decoded
+end
+
+"""
+    assemble_cog_window(raw, geotransform, xoff, yoff, scale, offset, nodata)
+
+Turn the `(lon, lat)` north-first window `raw`, read at the 0-based pixel offsets
+`(xoff, yoff)` of a raster with `geotransform`, into `(longitude, latitude, data)`
+with cell-center coordinates, ascending latitude, and `raw` decoded to `Float32`
+physical units.
+"""
+function assemble_cog_window(raw, geotransform, xoff, yoff, scale, offset, nodata)
+    x0, dx, _, y0, _, dy = geotransform
+    xsize, ysize = size(raw)
+
+    # Pixel centers: x₀ is the corner of pixel 0, so the 0-based column
+    # (xoff + i - 1) plus half a pixel (+0.5) gives the center: xoff + i - 0.5.
+    longitude = [x0 + (xoff + i - 0.5) * dx for i in 1:xsize]
+    # COGs store rows north-first (Δφ < 0); reverse latitude and data so both
+    # come out ascending (south-to-north), per CF convention.
+    latitude  = reverse([y0 + (yoff + j - 0.5) * dy for j in 1:ysize])
+    data = reverse(decode_cog_window(raw, scale, offset, nodata), dims = 2)
+
+    return longitude, latitude, data
+end
+
 end # module OpenLandMap
