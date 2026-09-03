@@ -215,7 +215,7 @@ EarthSystemModels.surface_retention_curve(h::VariablySaturatedHydrology) = h.ret
     Π  = diagnostic_pressure_head(h, Mij, θˡ, 𝒮, i, j)
     K  = hydraulic_conductivity(h.hydraulic_conductivity, 𝒮)
 
-    Jˡs, Rsfc = surface_water_balance!(h.runoff, prognostic, i, j, Plij, Mij, θˡ, 𝒮, Π, K, Δt)
+    Jˡs, Rsfc = surface_water_balance!(i, j, h.runoff, prognostic, Plij, Mij, θˡ, 𝒮, Π, K, Δt)
     Jˡb       = deep_liquid_flux(h.deep_liquid_flux, Mij, θˡ, 𝒮, Π, K, Πᵈ, time)
     Rlat      = subsurface_runoff(h.runoff, Mij, Π, K)
 

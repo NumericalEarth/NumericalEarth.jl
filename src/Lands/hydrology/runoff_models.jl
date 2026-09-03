@@ -21,7 +21,7 @@
 ##### `Rˢᶠᶜ ≥ 0`, `Rˡᵃᵗ ≥ 0`. A closure with prognostic surface storage
 ##### declares it through `prognostic_variables` and steps it in
 #####
-#####     surface_water_balance!(runoff, prognostic, i, j, Pˡ, M, θˡ, 𝒮, Π, K, Δt)
+#####     surface_water_balance!(i, j, runoff, prognostic, Pˡ, M, θˡ, 𝒮, Π, K, Δt)
 #####         -> (Jˡˢ, Rˢᶠᶜ)
 #####
 
@@ -96,13 +96,13 @@ end
 
 @inline subsurface_runoff(::InfiltrationCapacityRunoff, M, Π, K) = zero(M)
 
-@inline surface_water_balance!(runoff, prognostic, i, j, Pˡ, M, θˡ, 𝒮, Π, K, Δt) =
+@inline surface_water_balance!(i, j, runoff, prognostic, Pˡ, M, θˡ, 𝒮, Π, K, Δt) =
     surface_liquid_flux_and_runoff(runoff, Pˡ, M, θˡ, 𝒮, Π, K)
 
 # The pond is offered to infiltration with the rain; the excess ponds again, and the
 # share `f` of it that survives the step's linear drain stays in the store.
-@inline function surface_water_balance!(c::InfiltrationCapacityRunoff{<:Any, <:Number},
-                                        prognostic, i, j, Pˡ, M, θˡ, 𝒮, Π, K, Δt)
+@inline function surface_water_balance!(i, j, c::InfiltrationCapacityRunoff{<:Any, <:Number},
+                                        prognostic, Pˡ, M, θˡ, 𝒮, Π, K, Δt)
     S = prognostic.surface_water_storage
     @inbounds Sⁿ = S[i, j, 1]
     Jˡˢ, Rˢᶠᶜ = surface_liquid_flux_and_runoff(c, Pˡ + Sⁿ / Δt, M, θˡ, 𝒮, Π, K)
