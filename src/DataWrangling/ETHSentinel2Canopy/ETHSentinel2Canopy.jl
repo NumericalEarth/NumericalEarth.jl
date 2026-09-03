@@ -279,7 +279,7 @@ grid cell is subdivided into ten aggregation cells per side (never finer than th
 reaches `threshold`. Cells the product never covers are `NaN`. Requires the `ArchGDAL`
 package (`using ArchGDAL`).
 """
-tall_canopy_fraction_field(grid, dataset; kw...) =
+tall_canopy_fraction_field(grid, dataset::AbstractStaticDataset; kw...) =
     error("Reading a canopy-height Cloud-Optimized GeoTIFF onto a grid requires the " *
           "ArchGDAL package. Load it with `using ArchGDAL`.")
 
