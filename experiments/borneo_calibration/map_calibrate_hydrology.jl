@@ -38,14 +38,15 @@ tag = "map_hydrology_" * join(string.(active), "_") * "_r$(refinement)_$(backend
 # ## Start values, bounds and characteristic steps
 
 q_pedotransfer = log10.(max.(static.matching_point_conductivity, 1e-9))
-warm_start = get(ENV, "WARM_START", "")
-q = isfile(warm_start) ? jldopen(f -> f["q"], warm_start) : copy(q_pedotransfer)
-λ = fill(log(exchange_length), Nx, Ny)
-ν = log.(static.pore_size_uniformity .- 1)
-ν_pedotransfer = copy(ν)
-δ = constant_deep_head ? log.(-Array(interior(deep_pressure_head_on(cpu_grid), :, :, 1))) : fill(log(1.0), Nx, Ny)
-ζ = fill(log(deep_store_thickness), Nx, Ny)
-κ = copy(q)
+warm_start = get(ENV, "WARM_START", "")   # a K₀-only or hydrology file; every field it carries starts from it
+warm = isfile(warm_start) ? jldopen(f -> Dict(k => f[k] for k in keys(f)), warm_start) : Dict{String, Any}()
+q = get(warm, "q", copy(q_pedotransfer))
+λ = get(warm, "log_exchange_length", fill(log(exchange_length), Nx, Ny))
+ν_pedotransfer = log.(static.pore_size_uniformity .- 1)
+ν = get(warm, "log_n_minus_1", copy(ν_pedotransfer))
+δ = get(warm, "log_deep_suction", constant_deep_head ? log.(-Array(interior(deep_pressure_head_on(cpu_grid), :, :, 1))) : fill(log(1.0), Nx, Ny))
+ζ = get(warm, "log_thickness", fill(log(deep_store_thickness), Nx, Ny))
+κ = get(warm, "q_deep", copy(q))
 
 bounds = (; K0 = (q_pedotransfer .- 1, q_pedotransfer .+ 4),
             exchange = (fill(log(0.1), Nx, Ny), fill(log(3.0), Nx, Ny)),

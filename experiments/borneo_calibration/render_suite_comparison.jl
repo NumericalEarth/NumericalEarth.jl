@@ -27,7 +27,12 @@ V = Dict(
     :darcy_t0     => validation("map_logK_r1_gpu_darcy_12d_initialhead"),
     :darcy_init   => validation("map_hydrology_K0_deephead_r1_gpu_darcy_init_12d"),
     :darcy_s2     => validation("map_logK_r1_gpu_darcy_12d_smooth2d"),
-    :darcy_s5     => validation("map_logK_r1_gpu_darcy_12d_smooth5d"))
+    :darcy_s5     => validation("map_logK_r1_gpu_darcy_12d_smooth5d"),
+    :store        => validation("map_logK_r1_gpu_darcy_12d_store"),
+    :store_ptf    => validation("map_logK_r1_gpu_darcy_12d_store_ptf"),
+    :store_cal3   => validation("map_hydrology_K0_exchange_thickness_r1_gpu_darcy_store_12d"),
+    :store_cal4   => validation("map_hydrology_K0_exchange_thickness_deepK0_r1_gpu_darcy_store4_12d"))
+era5 = jldopen(f -> f["data"], "surface_cache/era5_land_r1.jld2")
 
 θ_obs = V[:free_joint6]["θ_obs"]
 land = V[:free_joint6]["weight"] .> 0
@@ -56,6 +61,10 @@ suites = [
     ("Darcy: K₀ + constant head started from the t = 0 value (12.25 d)", V[:darcy_init]["snapshots"][:θ], :fair, 12.25),
     ("Darcy: suite-8 K₀, deep head smoothed over 2 d",  V[:darcy_s2]["snapshots"][:θ],               :darcy, 12.25),
     ("Darcy: suite-8 K₀, deep head smoothed over 5 d",  V[:darcy_s5]["snapshots"][:θ],               :darcy, 12.25),
+    ("deep store: suite-8 K₀, store drains at the slab's K₀",     V[:store]["snapshots"][:θ],      :store, 12.25),
+    ("deep store: suite-8 K₀, store drains at pedotransfer K₀",   V[:store_ptf]["snapshots"][:θ],  :store, 12.25),
+    ("deep store: K₀ + ℓ + hᵈ calibrated (12.25 d)",              V[:store_cal3]["snapshots"][:θ], :store, 12.25),
+    ("deep store: K₀ + ℓ + hᵈ + K₀ᵈ calibrated (12.25 d)",        V[:store_cal4]["snapshots"][:θ], :store, 12.25),
 ]
 
 function scores(θm, hours)
@@ -82,23 +91,48 @@ mask(a) = ifelse.(land, a, NaN)
 free_colors  = Makie.wong_colors()[1:6]
 darcy_colors = (:gray40, :firebrick, :darkorange, :seagreen, :mediumpurple, :deepskyblue, :goldenrod)
 fair_colors  = (:sienna, :navy, :teal, :crimson)
+store_colors = (:gray40, :darkorange, :seagreen, :firebrick)
 
 # ## Trajectories
 
-fig = Figure(size = (1700, 1450), fontsize = 15)
-Label(fig[0, 1], "Domain-median soil water, every calibration suite, against ERA5-Land over 20 days"; fontsize = 19)
+fig = Figure(size = (2100, 1900), fontsize = 15)
+Label(fig[0, 1:2], "Domain-median soil water, every calibration suite, against ERA5-Land over 20 days"; fontsize = 19)
 for (row, family, title, colors) in ((1, :free, "free drainage (the original bottom boundary)", free_colors),
                                      (2, :darcy, "Darcy exchange to ERA5-Land's 28–100 cm head", darcy_colors),
-                                     (3, :fair, "Darcy exchange without the reanalysis deep layer", fair_colors))
+                                     (3, :fair, "Darcy exchange to a constant head (no reanalysis after t = 0)", fair_colors),
+                                     (4, :store, "Darcy exchange to a prognostic deep store (no reanalysis after t = 0)", store_colors))
     ax = Axis(fig[row, 1]; title, xlabel = "day", ylabel = "θ (m³ m⁻³)")
     vlines!(ax, [6.25, 12.25]; color = :gray60, linestyle = :dash)
     lines!(ax, days, med(θ_obs); color = :black, linewidth = 2.6, label = "ERA5-Land")
     for (i, (label, θm, fam, _)) in enumerate(filter(s -> s[3] == family, suites))
+        occursin("pedotransfer K₀", label) && continue   # the saturating store stays in the scorecard only
         lines!(ax, days, med(θm); color = colors[i], linewidth = 1.8, label)
     end
-    axislegend(ax; position = :rt, nbanks = 2, labelsize = 12)
+    Legend(fig[row, 2], ax; labelsize = 12)
 end
+colsize!(fig.layout, 2, Auto(false))
 save("suite_trajectories_r1.png", fig)
+
+# ## The deep store against the reanalysis layer it never sees
+
+store_keys = (:store, :store_cal3, :store_cal4)
+store_labels = [label for (label, _, fam, _) in suites if fam == :store && !occursin("pedotransfer", label)]
+fig = Figure(size = (1500, 1000), fontsize = 15)
+Label(fig[0, 1], "The prognostic deep store (28–100 cm) against ERA5-Land's deep layer, which only set its t = 0 state"; fontsize = 18)
+ax1 = Axis(fig[1, 1]; title = "domain-median water content of the deep layer", xlabel = "day", ylabel = "θᵈ (m³ m⁻³)")
+vlines!(ax1, [6.25, 12.25]; color = :gray60, linestyle = :dash)
+lines!(ax1, days, [median(era5.layer_3[k, :, :][land]) for k in 1:Nh]; color = :black, linewidth = 2.6, label = "ERA5-Land")
+for (i, key) in enumerate(store_keys)
+    lines!(ax1, days, med(V[key]["snapshots"][:θᵈ]); color = store_colors[i == 1 ? 1 : i + 1], linewidth = 1.8, label = store_labels[i])
+end
+ax2 = Axis(fig[2, 1]; title = "and the slab above it (0–28 cm)", xlabel = "day", ylabel = "θ (m³ m⁻³)")
+vlines!(ax2, [6.25, 12.25]; color = :gray60, linestyle = :dash)
+lines!(ax2, days, med(θ_obs); color = :black, linewidth = 2.6, label = "ERA5-Land")
+for (i, key) in enumerate(store_keys)
+    lines!(ax2, days, med(V[key]["snapshots"][:θ]); color = store_colors[i == 1 ? 1 : i + 1], linewidth = 1.8, label = store_labels[i])
+end
+Legend(fig[3, 1], ax2; orientation = :horizontal, nbanks = 2, labelsize = 13, tellwidth = false)
+save("suite_store_r1.png", fig)
 
 # ## Scorecard
 
@@ -128,11 +162,12 @@ C = Dict(:free_k => load("map_logK_r1_gpu.jld2"), :free_joint6 => load("map_join
          :darcy_kln => load("map_hydrology_K0_exchange_retention_r1_gpu_darcy_12d.jld2"),
          :darcy_fc => load("map_hydrology_K0_deephead_r1_gpu_darcy_fc_12d.jld2"),
          :darcy_init => load("map_hydrology_K0_deephead_r1_gpu_darcy_init_12d.jld2"),
+         :store_cal4 => load("map_hydrology_K0_exchange_thickness_deepK0_r1_gpu_darcy_store4_12d.jld2"),
          :depth => load("map_iterations_r1_gpu_two_sided.jld2"))
 q₀ = C[:free_k]["q_pedotransfer"]
 ψ_initial = exp.(C[:darcy_init]["history"][1][3][:deephead])
 
-fig = Figure(size = (1900, 1750), fontsize = 14)
+fig = Figure(size = (1900, 2150), fontsize = 14)
 Label(fig[0, 1:8], "Calibrated parameter fields across the suites"; fontsize = 19)
 function panel!(pos, data, title, label; colormap, colorrange, scale = identity)
     ax = Axis(fig[pos...]; title, aspect = DataAspect())
@@ -160,6 +195,10 @@ panel!((4, 1), mask(ψ_initial), "deep suction ψᵈ — ERA5-Land at t = 0 (the
 panel!((4, 3), mask(exp.(C[:darcy_init]["log_deep_suction"])), "deep suction ψᵈ — calibrated from the t = 0 value", "m"; colormap = :viridis, colorrange = ψlim, scale = log10)
 panel!((4, 5), mask(exp.(C[:darcy_fc]["log_deep_suction"])), "deep suction ψᵈ — calibrated from 1 m", "m"; colormap = :viridis, colorrange = ψlim, scale = log10)
 panel!((4, 7), mask(C[:darcy_init]["q"] .- q₀), "Δlog₁₀K₀ — K₀ + head from the t = 0 value", "decades"; colormap = :viridis, colorrange = qlim)
+panel!((5, 1), mask(exp.(C[:store_cal4]["log_thickness"])), "store thickness hᵈ — deep store, 4 fields", "m"; colormap = :viridis, colorrange = (0.1, 3.0), scale = log10)
+panel!((5, 3), mask(C[:store_cal4]["q_deep"] .- q₀), "Δlog₁₀K₀ᵈ (store drainage) — deep store, 4 fields", "decades"; colormap = :viridis, colorrange = (-2, 2.6))
+panel!((5, 5), mask(exp.(C[:store_cal4]["log_exchange_length"])), "exchange length ℓ — deep store, 4 fields", "m"; colormap = :viridis, colorrange = (0.1, 1.4))
+panel!((5, 7), mask(C[:store_cal4]["q"] .- q₀), "Δlog₁₀K₀ (slab) — deep store, 4 fields", "decades"; colormap = :viridis, colorrange = qlim)
 save("suite_parameters_r1.png", fig)
 
 # ## Held-out RMS maps
@@ -168,7 +207,7 @@ held = last(windows)[2]
 cell_rms(θm) = [sqrt(sum(abs2, θm[held, i, j] .- θ_obs[held, i, j]) / length(held)) for i in axes(θm, 2), j in axes(θm, 3)]
 fig = Figure(size = (1900, 1000), fontsize = 14)
 Label(fig[0, 1:8], "Held-out RMS (days 12.25–20, unseen by every calibration), shared scale"; fontsize = 19)
-picks = [1, 3, 5, 8, 10, 13, 14, 15]
+picks = [1, 5, 8, 10, 13, 15, 20, 21]
 for (k, idx) in enumerate(picks)
     label, θm, _, _ = suites[idx]
     row, col = divrem(k - 1, 4)

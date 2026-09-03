@@ -258,8 +258,8 @@ function with_calibration(cal)
             set_cells!(deep_pressure_head_field(model), -exp.(cal["log_deep_suction"]), -exp(median(cal["log_deep_suction"][land])))
         haskey(cal, "log_thickness") &&
             set_cells!(thickness_field(model), exp.(cal["log_thickness"]), deep_store_thickness)
-        haskey(cal, "q_deep") &&
-            set_cells!(deep_conductivity_field(model), exp10.(cal["q_deep"]), exp10(median(cal["q_deep"][land])))
+        q_deep = get(cal, "q_deep", haskey(cal, "log_thickness") ? cal["q"] : nothing)   # stores calibrated before K₀ᵈ existed drained at the slab's K₀
+        isnothing(q_deep) || set_cells!(deep_conductivity_field(model), exp10.(q_deep), exp10(median(q_deep[land])))
         if haskey(cal, "log_n_minus_1")
             n = 1 .+ exp.(cal["log_n_minus_1"])
             foreach(f -> set_cells!(f, n, median(n[land])), pore_size_uniformity_fields(model))
