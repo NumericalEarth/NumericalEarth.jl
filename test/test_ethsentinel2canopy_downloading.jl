@@ -39,6 +39,16 @@ const canopy_height = canopy_height_field(canopy_grid, ETHSentinel2CanopyHeight(
     @test all(0 .< sd .< h)
 end
 
+@testset "Tall-canopy fraction over closed forest" begin
+    f = Array(interior(tall_canopy_fraction_field(canopy_grid, ETHSentinel2CanopyHeight()), :, :, 1))
+    tall = Array(interior(tall_canopy_fraction_field(canopy_grid, ETHSentinel2CanopyHeight();
+                                                     threshold = 40), :, :, 1))
+
+    @test all(f .≈ 1)                      # closed evergreen canopy: nothing stands under 2 m
+    @test all(0 .≤ tall .≤ 1)
+    @test all(tall .≤ f)                   # a taller threshold can only select less
+end
+
 @testset "Downloading the ETH regional canopy-height file" begin
     metadatum = Metadatum(:canopy_height; dataset = ETHSentinel2CanopyHeight(), region = canopy_region)
     filepath = metadata_path(metadatum)

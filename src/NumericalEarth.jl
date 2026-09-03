@@ -133,7 +133,7 @@ export
     ASTERGEDv3, ASTERGEDResolution, ASTERGEDHigh100m, ASTERGEDLow1km,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
     ESAWorldCover, WorldCoverVersion, WorldCoverV100, WorldCoverV200,
-    ETHSentinel2CanopyHeight, canopy_height_field,
+    ETHSentinel2CanopyHeight, canopy_height_field, tall_canopy_fraction_field,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,

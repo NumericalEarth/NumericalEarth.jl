@@ -160,6 +160,7 @@ end
     if isnothing(Base.get_extension(NumericalEarth, :NumericalEarthArchGDALExt))
         @test_throws ErrorException canopy_height_cog_to_netcdf(meta, tempname() * ".nc")
         @test_throws ErrorException canopy_height_field(grid, ETHSentinel2CanopyHeight())
+        @test_throws ErrorException tall_canopy_fraction_field(grid, ETHSentinel2CanopyHeight())
     end
 end
 
@@ -213,4 +214,67 @@ end
     @test size(H) == (nx, ny, 1)
     @test H[1, 1, 1] ≈ 50                      # south
     @test isnan(H[1, ny, 1])                   # north-west gap
+end
+
+#####
+##### Tall-canopy fraction over a synthetic two-tile mosaic (no network): the threshold
+##### selects, treeless and no-data pixels are told apart, adjacent tiles both contribute,
+##### and the aggregation lattice follows the grid down to the product's own pixel size.
+#####
+
+@testset "Tall-canopy fraction" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthArchGDALExt)
+    @test !isnothing(ext)
+
+    # Two adjacent 0.1° × 0.1° EPSG:4326 Byte tiles at 0.002° pixels, meeting at λ = 0.1.
+    native_step = 0.002
+    nx = ny = 50
+    function synthetic_tile(λ₀, band)
+        tif = tempname() * ".tif"
+        ArchGDAL.create(tif; driver = ArchGDAL.getdriver("GTiff"),
+                        width = nx, height = ny, nbands = 1, dtype = UInt8) do ds
+            ArchGDAL.setgeotransform!(ds, [λ₀, native_step, 0.0, 50.1, 0.0, -native_step])
+            ArchGDAL.setproj!(ds, ArchGDAL.toWKT(ArchGDAL.importEPSG(4326)))
+            ArchGDAL.write!(ArchGDAL.getband(ds, 1), band)
+        end
+        return tif
+    end
+
+    # West tile: 10 m canopy, with three patches across rows 6:10 — columns 6:10 no-data,
+    # columns 11:15 a single 25 m column beside treeless zeros, columns 16:20 all treeless.
+    west = fill(UInt8(10), nx, ny)
+    west[6:10, 6:10]  .= 255
+    west[11:15, 6:10] .= 0
+    west[11, 6:10]    .= 25
+    west[16:20, 6:10] .= 0
+    east = fill(UInt8(30), nx, ny)
+
+    sources = [synthetic_tile(0.0, west), synthetic_tile(0.1, east)]
+
+    # Three 0.1° cells: the west tile, the east tile, and one the tiles never reach.
+    grid = LatitudeLongitudeGrid(CPU(); size = (3, 1), longitude = (0, 0.3), latitude = (50, 50.1),
+                                 topology = (Bounded, Bounded, Flat))
+
+    # Aggregation cells are a tenth of a grid cell (0.01°): 99 of the west cell's 100 carry
+    # data, and the one whose mean the zeros pull under 2 m is the only one not tall.
+    F = Array(interior(ext.canopy_fraction_field(grid, sources, 2, native_step), :, :, 1))
+    @test F[1] ≈ 98 / 99 atol = 1e-3
+    @test F[2] ≈ 1
+    @test isnan(F[3])
+
+    # Nothing in the west tile reaches 20 m once averaged; the east tile is 30 m throughout.
+    T = Array(interior(ext.canopy_fraction_field(grid, sources, 20, native_step), :, :, 1))
+    @test T[1] ≈ 0 atol = 1e-6
+    @test T[2] ≈ 1
+    @test isnan(T[3])
+
+    # A grid finer than ten native pixels per cell floors the lattice at the pixel size, so
+    # the fraction becomes the exact share of tall pixels: the treeless patch spans 20 of
+    # the 250 pixels under cell 3 and all 25 under cell 4.
+    fine = LatitudeLongitudeGrid(CPU(); size = (30, 1), longitude = (0, 0.3), latitude = (50, 50.1),
+                                 topology = (Bounded, Bounded, Flat))
+    P = Array(interior(ext.canopy_fraction_field(fine, sources, 2, native_step), :, :, 1))
+    @test P[2] ≈ 1                             # the no-data patch shrinks the denominator only
+    @test P[3] ≈ 230 / 250 atol = 1e-3
+    @test P[4] ≈ 225 / 250 atol = 1e-3
 end

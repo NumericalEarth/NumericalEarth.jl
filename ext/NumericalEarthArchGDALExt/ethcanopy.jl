@@ -154,3 +154,57 @@ function NumericalEarth.DataWrangling.ETHSentinel2Canopy.canopy_height_field(gri
 
     return canopy_field(grid, mask_eth.(warped.data, 255))
 end
+
+# Aggregation cells per grid-cell side, so the fraction resolves a hundredth of a cell.
+const canopy_subdivisions = 10
+
+# Fraction of each grid cell whose canopy stands at least `threshold` m tall: the tiles are
+# aggregated onto a lattice `canopy_subdivisions` times finer than the grid (never finer than
+# the product's own pixels), thresholded there, and landed by a conservative regrid of the
+# mask and of its validity, so cells no tile covers come out NaN (0/0).
+function canopy_fraction_field(grid, sources, threshold, native_step)
+    region = BoundingBox(grid)
+    λ₁, λ₂ = region.longitude
+    φ₁, φ₂ = region.latitude
+    Δ = max(native_step, min((λ₂ - λ₁) / size(grid, 1), (φ₂ - φ₁) / size(grid, 2)) / canopy_subdivisions)
+
+    # 1e-9 absorbs float dust so a bound already on a lattice line does not snap a cell further
+    iλ₁ = floor(Int, λ₁ / Δ + 1e-9)
+    iλ₂ =  ceil(Int, λ₂ / Δ - 1e-9)
+    iφ₁ = floor(Int, φ₁ / Δ + 1e-9)
+    iφ₂ =  ceil(Int, φ₂ / Δ - 1e-9)
+    longitude = (iλ₁, iλ₂) .* Δ
+    latitude  = (iφ₁, iφ₂) .* Δ
+    Nλ = iλ₂ - iλ₁
+    Nφ = iφ₂ - iφ₁
+
+    warped = with_gdal_config(eth_http_config()) do
+        warp_canopy_onto_grid(sources, longitude, latitude, Nλ, Nφ; nodata = 255)
+    end
+    heights = mask_eth.(warped.data, 255)
+
+    lattice = LatitudeLongitudeGrid(CPU(); size = (Nλ, Nφ), longitude, latitude,
+                                    topology = (Bounded, Bounded, Flat))
+    tall  = Field{Center, Center, Nothing}(lattice)
+    valid = Field{Center, Center, Nothing}(lattice)
+    interior(tall,  :, :, 1) .= heights .≥ threshold
+    interior(valid, :, :, 1) .= isfinite.(heights)
+
+    # Flat CPU twin of `grid` to land the lattice on.
+    twin = LatitudeLongitudeGrid(CPU(); size = (size(grid, 1), size(grid, 2)),
+                                 longitude = Array(λnodes(grid, Face())),
+                                 latitude  = Array(φnodes(grid, Face())),
+                                 topology  = (Bounded, Bounded, Flat))
+    fraction = Field{Center, Center, Nothing}(twin)
+    weight   = Field{Center, Center, Nothing}(twin)
+    regrid!(fraction, tall)
+    regrid!(weight, valid)
+
+    return canopy_field(grid, interior(fraction, :, :, 1) ./ interior(weight, :, :, 1))
+end
+
+function NumericalEarth.DataWrangling.ETHSentinel2Canopy.tall_canopy_fraction_field(grid, dataset::ETHSentinel2CanopyHeight;
+                                                                                    threshold = 2)
+    sources = eth_tile_urls(BoundingBox(grid), :canopy_height)
+    return canopy_fraction_field(grid, sources, threshold, 360 / size(dataset, :canopy_height)[1])
+end

@@ -1,6 +1,6 @@
 module ETHSentinel2Canopy
 
-export ETHSentinel2CanopyHeight, canopy_height_field
+export ETHSentinel2CanopyHeight, canopy_height_field, tall_canopy_fraction_field
 
 using Downloads: Downloads
 using Oceananigans: Center
@@ -34,7 +34,9 @@ raster distributed in 3°×3° tiles. Two layers per tile:
 
 Canopy height over non-forest is a legitimate value of `0` m (not missing), so
 these fields are **not inpainted** and zeros are kept — only the product's
-explicit no-data code is masked to `NaN`.
+explicit no-data code is masked to `NaN`. The retrieval reads several meters of
+canopy over cropland and grassland, so mask by land-cover class where tree
+heights are wanted.
 
 Because it is a global 10 m product, it is read in regional windows only:
 construct the `Metadatum` with a longitude/latitude `BoundingBox`. The windowed
@@ -265,6 +267,19 @@ Returns a `Field{Center, Center, Nothing}(grid)`: canopy height over non-forest 
 Requires the `ArchGDAL` package (`using ArchGDAL`).
 """
 canopy_height_field(grid, dataset; kw...) =
+    error("Reading a canopy-height Cloud-Optimized GeoTIFF onto a grid requires the " *
+          "ArchGDAL package. Load it with `using ArchGDAL`.")
+
+"""
+    tall_canopy_fraction_field(grid, dataset; threshold = 2)
+
+Fraction of each grid cell standing under canopy at least `threshold` meters tall. Each
+grid cell is subdivided into ten aggregation cells per side (never finer than the product's
+10 m pixels), and the fraction is the share of those whose mean `dataset` canopy height
+reaches `threshold`. Cells the product never covers are `NaN`. Requires the `ArchGDAL`
+package (`using ArchGDAL`).
+"""
+tall_canopy_fraction_field(grid, dataset; kw...) =
     error("Reading a canopy-height Cloud-Optimized GeoTIFF onto a grid requires the " *
           "ArchGDAL package. Load it with `using ArchGDAL`.")
 
