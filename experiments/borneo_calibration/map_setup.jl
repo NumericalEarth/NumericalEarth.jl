@@ -107,14 +107,21 @@ exchange_length_on(grid) = exchange_field ? surface_property(grid, fill(FT(excha
 deep_store = get(ENV, "DEEP_STORE", "0") == "1"
 deep_store_thickness = parse(Float64, get(ENV, "DEEP_STORE_THICKNESS", "0.72"))       # m, ERA5-Land layer 3
 deep_store_drainage = get(ENV, "DEEP_STORE_DRAINAGE", "free")                        # "free" (K(𝒮ᵈ)), "none", or "watertable":
-water_table_length = parse(Float64, get(ENV, "DEEP_STORE_WATER_TABLE", "2.5"))        # Darcy exchange with a saturated head this far (m) below the store
+water_table_mode = get(ENV, "DEEP_STORE_WATER_TABLE", "2.5")                         # Darcy exchange with a saturated head this far (m) below the store,
+water_table_length = water_table_mode == "equilibrium" ? 2.5 : parse(Float64, water_table_mode)   # or per cell at the t = 0 suction ("equilibrium")
 deep_initial_soil_water = FT.(era5_land.layer_3[1, :, :])
 
 deep_loss = get(ENV, "DEEP_LOSS", "0") == "1"                                  # add the store's mismatch to ERA5-Land 28–100 cm
 deep_loss_weight = parse(Float64, get(ENV, "DEEP_LOSS_WEIGHT", "1"))            # relative to the surface term
 
+water_table_depths() = water_table_mode == "equilibrium" ? max.(-deep_head_table()[1, :, :], 0.3) : fill(water_table_length, Nx, Ny)
+function water_table_lengths_on(grid)
+    values = fill(FT(water_table_length), Nx + 2Hx, Ny + 2Hy, 1)
+    values[1 + Hx:Nx + Hx, 1 + Hy:Ny + Hy, 1] .= water_table_depths()
+    return surface_property(grid, values)
+end
 store_drainage(grid) = deep_store_drainage == "free" ? FreeDrainageFlux(FT) :
-                       deep_store_drainage == "watertable" ? DarcyDeepLiquidFlux(FT; exchange_length = surface_property(grid, fill(FT(water_table_length), Nx + 2Hx, Ny + 2Hy, 1))) :
+                       deep_store_drainage == "watertable" ? DarcyDeepLiquidFlux(FT; exchange_length = water_table_lengths_on(grid)) :
                        NoDeepLiquidFlux()
 deep_store_options(grid) = (; thickness = surface_property(grid, fill(FT(deep_store_thickness), Nx + 2Hx, Ny + 2Hy, 1)),
                               drainage = store_drainage(grid),

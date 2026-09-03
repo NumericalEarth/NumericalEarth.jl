@@ -52,7 +52,7 @@ q = get(warm, "q", copy(q_pedotransfer))
 δ = get(warm, "log_deep_suction", constant_deep_head ? log.(-Array(interior(deep_pressure_head_on(cpu_grid), :, :, 1))) : fill(log(1.0), Nx, Ny))
 ζ = get(warm, "log_thickness", fill(log(deep_store_thickness), Nx, Ny))
 κ = get(warm, "q_deep", copy(q))
-ω = get(warm, "log_water_table", fill(log(water_table_length), Nx, Ny))
+ω = get(warm, "log_water_table", log.(water_table_depths()))
 
 bounds = (; K0 = (q_pedotransfer .- 1, q_pedotransfer .+ 4),
             exchange = (fill(log(0.1), Nx, Ny), fill(log(3.0), Nx, Ny)),
