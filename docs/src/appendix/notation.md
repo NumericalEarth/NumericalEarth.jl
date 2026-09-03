@@ -78,6 +78,7 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``x`` | `ˣ` | zonal / x-direction | ``\tau^x`` (zonal kinematic stress) |
 | ``y`` | `ʸ` | meridional / y-direction | ``\tau^y`` (meridional kinematic stress) |
 | ``\mathrm{at}`` | `ᵃᵗ` | atmosphere | ``\rho^{\mathrm{at}}`` (air density) |
+| ``\mathrm{ae}`` | `ᵃᵉ` | air entry | ``\alpha^{\mathrm{ae}}`` (inverse air-entry head) |
 | ``\mathrm{oc}`` | `ᵒᶜ` | ocean | ``\rho^{\mathrm{oc}}`` (ocean reference density) |
 | ``\mathrm{si}`` | `ˢⁱ` | sea ice | ``h^{\mathrm{si}}`` (sea ice thickness) |
 | ``\mathrm{la}`` | `ˡᵃ` | land | ``M^{\mathrm{la}}`` (land water mass per area) |
@@ -166,7 +167,7 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``K`` | – | hydraulic conductivity | Darcy conductivity (m s⁻¹) |
 | ``K_0`` | `matching_point_conductivity` | matching-point conductivity | Conductivity the Mualem–van Genuchten curve reaches at ``𝒮 = 1``; a *matrix* value when it comes from a pedotransfer function, excluding macropore flow (m s⁻¹) |
 | ``K^{+}`` | `saturated_conductivity` | saturated hydraulic conductivity | Macropore-inclusive Darcy conductivity of saturated soil, for an infiltration cap (m s⁻¹) |
-| ``\Pi^\mathrm{ae}`` | `inverse_air_entry_head` | air-entry pressure head | Suction at which the largest pores begin to empty; the closure stores its reciprocal ``\alpha = 1/\Pi^\mathrm{ae}`` (m⁻¹) |
+| ``\alpha^{\mathrm{ae}}`` | `inverse_air_entry_head` | inverse air-entry head | Reciprocal of the air-entry pressure head, the suction at which the largest pores begin to empty (m⁻¹) |
 | ``\mathscr{n}`` | `pore_size_uniformity` | pore-size uniformity | van Genuchten retention exponent; large ``\mathscr{n}`` drains over a narrow band of suctions, ``\mathscr{n} \to 1`` over orders of magnitude. Sets ``\mathscr{m} = 1 - 1/\mathscr{n}`` (–) |
 | ``\eta^K`` | `ηᴷ`, `pore_connectivity_exponent` | pore-connectivity exponent | Mualem exponent on saturation in ``K(\mathcal S)`` (–) |
 | ``𝒮ᶜ`` | `capillary_disconnect_saturation` | capillary-disconnect saturation | Saturation at which capillary paths to an evaporating surface break, predicted from ``\mathscr{n}`` alone; shares the symbol ``𝒮ᶜ`` with `critical_saturation` above, which is the tunable form of the same threshold (–) |

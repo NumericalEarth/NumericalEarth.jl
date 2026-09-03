@@ -13,7 +13,7 @@ clay_soil  = (0.25, 0.25, 0.50, 1400.0)
 sand_soil  = (0.92, 0.05, 0.03, 1600.0)
 textures   = (sandy_loam, silt_loam, clay_soil, sand_soil)
 
-van_genuchten_water_content(ψ, θʳ, ν, α, 𝓃) = θʳ + (ν - θʳ) * (1 + (α * ψ)^𝓃)^(-(1 - 1/𝓃))
+van_genuchten_water_content(ψ, θʳ, ν, αᵃᵉ, 𝓃) = θʳ + (ν - θʳ) * (1 + (αᵃᵉ * ψ)^𝓃)^(-(1 - 1/𝓃))
 
 # OpenLandMap depth faces: 60–100, 30–60 and 0–30 cm.
 z_interfaces = [-1.0, -0.6, -0.3, 0.0]
@@ -87,7 +87,7 @@ end
     @test -1 > ηᴷ(sand_soil) > -3
     @test -6 > ηᴷ(clay_soil) > -12
 
-    # Organic carbon enters α and K₀ only, and lowers both.
+    # Organic carbon enters αᵃᵉ and K₀ only, and lowers both.
     lean = soil_hydraulic_parameters(WeynantsPedotransfer(organic_carbon = 0.58), silt_loam...)
     rich = soil_hydraulic_parameters(WeynantsPedotransfer(organic_carbon = 3.0), silt_loam...)
     @test rich.matching_point_conductivity < lean.matching_point_conductivity
@@ -134,24 +134,24 @@ end
 
 @testset "matched_retention_parameters inverts the retention curve" begin
     θʳ, ν, ψ¹, ψ² = 0.03, 0.45, 1.0, 150.0
-    recover(α, 𝓃) = matched_retention_parameters(van_genuchten_water_content(ψ¹, θʳ, ν, α, 𝓃),
-                                                 van_genuchten_water_content(ψ², θʳ, ν, α, 𝓃),
+    recover(αᵃᵉ, 𝓃) = matched_retention_parameters(van_genuchten_water_content(ψ¹, θʳ, ν, αᵃᵉ, 𝓃),
+                                                 van_genuchten_water_content(ψ², θʳ, ν, αᵃᵉ, 𝓃),
                                                  θʳ, ν, ψ¹, ψ²)
 
-    for (α, 𝓃) in ((1.0, 1.05), (2.0, 1.3), (0.5, 2.0), (3.0, 1.6), (8.7, 2.3), (0.8, 1.08),
+    for (αᵃᵉ, 𝓃) in ((1.0, 1.05), (2.0, 1.3), (0.5, 2.0), (3.0, 1.6), (8.7, 2.3), (0.8, 1.08),
                    (8.0, 4.5), (20.0, 4.5))
-        αᵉ, 𝓃ᵉ = recover(α, 𝓃)
-        @test 𝓃ᵉ ≈ 𝓃 rtol=1e-6
-        @test αᵉ ≈ α rtol=1e-6
+        recovered = recover(αᵃᵉ, 𝓃)
+        @test recovered[2] ≈ 𝓃 rtol=1e-6
+        @test recovered[1] ≈ αᵃᵉ rtol=1e-6
     end
 
     matched_retention_parameters(0.30, 0.12, 0.0, 0.45, 1.0, 150.0)
     @test 0 == @allocated matched_retention_parameters(0.30, 0.12, 0.0, 0.45, 1.0, 150.0)
 
-    α32, 𝓃32 = matched_retention_parameters(0.30f0, 0.12f0, 0.0f0, 0.45f0, 1.0f0, 150.0f0)
-    α64, 𝓃64 = matched_retention_parameters(0.30, 0.12, 0.0, 0.45, 1.0, 150.0)
+    αᵃᵉ32, 𝓃32 = matched_retention_parameters(0.30f0, 0.12f0, 0.0f0, 0.45f0, 1.0f0, 150.0f0)
+    αᵃᵉ64, 𝓃64 = matched_retention_parameters(0.30, 0.12, 0.0, 0.45, 1.0, 150.0)
     @test 𝓃32 ≈ 𝓃64 rtol=1e-4
-    @test α32 ≈ α64 rtol=1e-4
+    @test αᵃᵉ32 ≈ αᵃᵉ64 rtol=1e-4
 end
 
 @testset "soil_hydraulic_properties reduction" begin
@@ -172,7 +172,7 @@ end
         @test size(props.matching_point_conductivity) == (2, 1, 1)
 
         ν, θʳ  = column(props.porosity), column(props.residual_liquid_fraction)
-        α, 𝓃   = column(props.inverse_air_entry_head), column(props.pore_size_uniformity)
+        αᵃᵉ, 𝓃   = column(props.inverse_air_entry_head), column(props.pore_size_uniformity)
         K₀, ηᴷ = column(props.matching_point_conductivity), column(props.pore_connectivity_exponent)
 
         loam   = fill((0.40, 0.40, 0.20, 1400.0), 3)
@@ -187,18 +187,18 @@ end
         @test K₀[2] ≈ ΣΔz / sum(Δz ./ Kᵏ)
         @test K₀[2] < sum(Δz .* Kᵏ) / ΣΔz
 
-        # α and 𝓃 put the effective curve through the thickness-weighted mean curve at both heads.
+        # αᵃᵉ and 𝓃 put the effective curve through the thickness-weighted mean curve at both heads.
         for (k, ψ) in Iterators.product(1:2, heads)
             ps = [soil_hydraulic_parameters(ptf, l..., d) for (l, d) in zip(k == 1 ? loam : layers, depths)]
             θ̄ = sum(Δz[j] * van_genuchten_water_content(ψ, ps[j].residual_liquid_fraction, ps[j].porosity,
                                                        ps[j].inverse_air_entry_head, ps[j].pore_size_uniformity)
                     for j in eachindex(ps)) / ΣΔz
-            @test van_genuchten_water_content(ψ, θʳ[k], ν[k], α[k], 𝓃[k]) ≈ θ̄ rtol=1e-6
+            @test van_genuchten_water_content(ψ, θʳ[k], ν[k], αᵃᵉ[k], 𝓃[k]) ≈ θ̄ rtol=1e-6
         end
 
         # A uniform column reduces to its own layer parameters.
         uniform = soil_hydraulic_parameters(ptf, loam[1]..., depths[1])
-        @test α[1] ≈ uniform.inverse_air_entry_head rtol=1e-8
+        @test αᵃᵉ[1] ≈ uniform.inverse_air_entry_head rtol=1e-8
         @test 𝓃[1] ≈ uniform.pore_size_uniformity   rtol=1e-8
         @test ηᴷ[1] ≈ uniform.pore_connectivity_exponent
     end
@@ -264,14 +264,14 @@ end
         makefield(v1, v2) = (f = Field{Center, Center, Nothing}(grid);
                              set!(f, (x, y) -> x < 1 ? v1 : v2); f)
         ν  = makefield(0.45, 0.35)
-        α  = makefield(1.0, 4.0)
+        αᵃᵉ  = makefield(1.0, 4.0)
         𝓃  = makefield(1.6, 1.2)
         K₀ = makefield(1e-5, 1e-7)
         ηᴷ = makefield(-1.6, -8.9)
 
         hydrology = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0, porosity = ν, storage_height = 1000,
-            retention_curve = VanGenuchtenRetention(; inverse_air_entry_head = α, pore_size_uniformity = 𝓃),
+            retention_curve = VanGenuchtenRetention(; inverse_air_entry_head = αᵃᵉ, pore_size_uniformity = 𝓃),
             hydraulic_conductivity = VanGenuchtenConductivity(; matching_point_conductivity = K₀,
                                         pore_size_uniformity = 𝓃, pore_connectivity_exponent = ηᴷ),
             deep_liquid_flux = FreeDrainageFlux(), runoff = NoRunoff())

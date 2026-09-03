@@ -58,13 +58,13 @@ layer_depths(z_interfaces) =
 """
 $(TYPEDSIGNATURES)
 
-The `(α, 𝓃)` whose van Genuchten curve passes through water contents `θ¹` and `θ²` at
-suction heads `ψ¹` and `ψ²`, given `θʳ` and `ν`. Eliminating `α` leaves one equation in `𝓃`,
+The `(αᵃᵉ, 𝓃)` whose van Genuchten curve passes through water contents `θ¹` and `θ²` at
+suction heads `ψ¹` and `ψ²`, given `θʳ` and `ν`. Eliminating `αᵃᵉ` leaves one equation in `𝓃`,
 
     log[(𝒮¹^(-1/𝓂) - 1) / (𝒮²^(-1/𝓂) - 1)] = 𝓃 log(ψ¹/ψ²),   𝓂 = 1 - 1/𝓃,
 
 whose residual increases monotonically in `𝓃`; it is bisected over `1.01 ≤ 𝓃 ≤ 12`, and
-`α` follows from the first constraint. A root outside that bracket, or a pair of water
+`αᵃᵉ` follows from the first constraint. A root outside that bracket, or a pair of water
 contents that determines none, returns `NaN`.
 """
 @inline function matched_retention_parameters(θ¹, θ², θʳ, ν, ψ¹, ψ²)
@@ -89,13 +89,13 @@ contents that determines none, returns `NaN`.
     end
 
     𝓃 = (lo + hi) / 2
-    α = exp(logexpm1(-log(𝒮¹) / van_genuchten_m(𝓃)) / 𝓃) / ψ¹
+    αᵃᵉ = exp(logexpm1(-log(𝒮¹) / van_genuchten_m(𝓃)) / 𝓃) / ψ¹
 
-    return ifelse(bracketed, α, convert(FT, NaN)),
+    return ifelse(bracketed, αᵃᵉ, convert(FT, NaN)),
            ifelse(bracketed, 𝓃, convert(FT, NaN))
 end
 
-@kernel function _soil_hydraulic_properties!(ν, θʳ, α, 𝓃, K₀, ηᴷ,
+@kernel function _soil_hydraulic_properties!(ν, θʳ, αᵃᵉ, 𝓃, K₀, ηᴷ,
                                             sand, silt, clay, bulk_density,
                                             Δz, depths, ΣΔz, Nz, ψ¹, ψ², ptf)
     i, j = @index(Global, NTuple)
@@ -127,7 +127,7 @@ end
     @inbounds begin
         ν[i, j, 1]  = Σν / ΣΔz
         θʳ[i, j, 1] = Σθʳ / ΣΔz
-        α[i, j, 1], 𝓃[i, j, 1] = matched_retention_parameters(Σθ¹ / ΣΔz, Σθ² / ΣΔz,
+        αᵃᵉ[i, j, 1], 𝓃[i, j, 1] = matched_retention_parameters(Σθ¹ / ΣΔz, Σθ² / ΣΔz,
                                                               Σθʳ / ΣΔz, Σν / ΣΔz, ψ¹, ψ²)
         K₀[i, j, 1] = ΣΔz / ΣR
         ηᴷ[i, j, 1] = Σηᴷ / ΣΔz
@@ -150,7 +150,7 @@ The pedotransfer function `ptf` is applied to each depth layer of the inputs' gr
 layer's depth, and the layers inside `[-slab_depth, 0]` are combined so that the slab
 reproduces the thickness-weighted mean retention curve of the column: `ν`, `θʳ` and `ηᴷ`
 are thickness-weighted arithmetic means, `K₀` is the harmonic mean of layers in series, and
-`α` and `𝓃` are solved so the effective curve passes through the mean curve at the two
+`αᵃᵉ` and `𝓃` are solved so the effective curve passes through the mean curve at the two
 suction heads `matching_heads` (m). The defaults are field capacity and the permanent
 wilting point, with field capacity at 1 m after [Balsamo et al. (2009)](@cite balsamo2009).
 
@@ -178,10 +178,10 @@ function soil_hydraulic_properties(sand, silt, clay, bulk_density;
     ΣΔz > 0 ||
         throw(ArgumentError("slab_depth = $slab_depth does not overlap the soil column $(extrema(z_interfaces))"))
 
-    ν, θʳ, α, 𝓃, K₀, ηᴷ = ntuple(_ -> Field{Center, Center, Nothing}(grid), 6)
+    ν, θʳ, αᵃᵉ, 𝓃, K₀, ηᴷ = ntuple(_ -> Field{Center, Center, Nothing}(grid), 6)
 
     launch!(arch, grid, :xy, _soil_hydraulic_properties!,
-            ν, θʳ, α, 𝓃, K₀, ηᴷ,
+            ν, θʳ, αᵃᵉ, 𝓃, K₀, ηᴷ,
             sand, silt, clay, bulk_density,
             on_architecture(arch, convert.(FT, Δz)),
             on_architecture(arch, convert.(FT, layer_depths(z_interfaces))),
@@ -190,7 +190,7 @@ function soil_hydraulic_properties(sand, silt, clay, bulk_density;
 
     return (porosity = ν,
             residual_liquid_fraction = θʳ,
-            inverse_air_entry_head = α,
+            inverse_air_entry_head = αᵃᵉ,
             pore_size_uniformity = 𝓃,
             matching_point_conductivity = K₀,
             pore_connectivity_exponent = ηᴷ)

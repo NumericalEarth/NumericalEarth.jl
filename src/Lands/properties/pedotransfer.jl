@@ -1,6 +1,6 @@
 #####
 ##### Pedotransfer functions: soil texture and bulk density → van Genuchten hydraulic
-##### parameters `(ν, θʳ, α, 𝓃, K₀, ηᴷ)`, evaluated per grid point and per depth layer inside
+##### parameters `(ν, θʳ, αᵃᵉ, 𝓃, K₀, ηᴷ)`, evaluated per grid point and per depth layer inside
 ##### the `soil_hydraulic_properties` reduction.
 #####
 
@@ -16,7 +16,7 @@ van Genuchten–Mualem hydraulic parameters. Concrete subtypes implement
               pore_connectivity_exponent)
 
 with `sand`, `silt`, `clay` mass fractions (kg/kg), `bulk_density` in kg/m³, `depth` the
-soil layer's depth below the surface (m, positive down), and outputs in model units (`α` in
+soil layer's depth below the surface (m, positive down), and outputs in model units (`αᵃᵉ` in
 m⁻¹, `K₀` in m s⁻¹). The keys match the keyword arguments of
 [`VariablySaturatedHydrology`](@ref), [`VanGenuchtenRetention`](@ref) and
 [`VanGenuchtenConductivity`](@ref). Subtypes also implement [`convert_eltype`](@ref).
@@ -50,7 +50,7 @@ Coefficients of the [Weynants et al. (2009)](@cite weynants2009) pedotransfer
 regressions, one tuple per predicted parameter, each ordered by the shared predictor
 basis `(1, C, S, S², D, OC)` in clay %, sand %, bulk density g/cm³ and organic
 carbon %. `porosity` and `pore_connectivity_exponent` are predicted directly; the other
-three predict `ln α`, `ln(𝓃 - 1)` and `ln K₀`.
+three predict `ln αᵃᵉ`, `ln(𝓃 - 1)` and `ln K₀`.
 
 Construct one to swap in a different calibration of the same functional form;
 [`WEYNANTS_REGRESSION`](@ref) holds the published fit.
@@ -89,7 +89,7 @@ erratum. Each field predicts one parameter:
 | field | predicts | units | source |
 |:------|:---------|:------|:-------|
 | `porosity` | `ν` (`θs` in the paper) | – | clay, `ρᵇ` |
-| `inverse_air_entry_head` | `ln α` | ln(cm⁻¹) | clay, sand, OC |
+| `inverse_air_entry_head` | `ln αᵃᵉ` | ln(cm⁻¹) | clay, sand, OC |
 | `pore_size_uniformity` | `ln(𝓃 - 1)` | – | clay, sand, sand² |
 | `matching_point_conductivity` | `ln K₀` | ln(cm day⁻¹) | sand, `ρᵇ`, OC |
 | `pore_connectivity_exponent` | `ηᴷ` (`λ` in the paper) | – | clay, sand |
@@ -115,13 +115,13 @@ Mualem–van Genuchten parameters, fitted in a single inversion against measured
 and conductivity curves.
 
 `organic_carbon` (% by weight, per the [Weihermüller et al. (2017)](@cite weihermuller2017)
-erratum) is a uniform value, since the 30 m texture datasets do not carry it; it enters `α`
+erratum) is a uniform value, since the 30 m texture datasets do not carry it; it enters `αᵃᵉ`
 and `K₀` only. 0.58 % is the same soil as [`HYPRESPedotransfer`](@ref)'s 1 % organic matter
 under the van Bemmelen convention that organic matter is 58 % carbon.
 `regression_coefficients` is a [`WeynantsRegression`](@ref).
 
 Predicted `θs` is returned as the porosity `ν` and `θʳ` is zero. Units are converted to
-model units: `α` (cm⁻¹) → m⁻¹, `K₀` (cm day⁻¹) → m s⁻¹. `K₀` is a matrix value: the fit
+model units: `αᵃᵉ` (cm⁻¹) → m⁻¹, `K₀` (cm day⁻¹) → m s⁻¹. `K₀` is a matrix value: the fit
 excluded measurements wetter than 6 cm suction, so macropore flow is not in it.
 
 Predictors are clamped to the fit's own ranges — clay ≤ 54.5 %, sand 5.6–97.8 %, `ρᵇ`
@@ -159,14 +159,14 @@ Base.summary(ptf::WeynantsPedotransfer) =
     c = ptf.regression_coefficients
 
     ν  = apply_regression(c.porosity, predictors)
-    α  = 100 * exp(apply_regression(c.inverse_air_entry_head, predictors))            # cm⁻¹ → m⁻¹
+    αᵃᵉ  = 100 * exp(apply_regression(c.inverse_air_entry_head, predictors))            # cm⁻¹ → m⁻¹
     𝓃  = 1 + exp(apply_regression(c.pore_size_uniformity, predictors))
     K₀ = exp(apply_regression(c.matching_point_conductivity, predictors)) / 8_640_000  # cm day⁻¹ → m s⁻¹
     ηᴷ = apply_regression(c.pore_connectivity_exponent, predictors)
 
     return (porosity = ν,
             residual_liquid_fraction = zero(FT),
-            inverse_air_entry_head = α,
+            inverse_air_entry_head = αᵃᵉ,
             pore_size_uniformity = 𝓃,
             matching_point_conductivity = K₀,
             pore_connectivity_exponent = ηᴷ)
@@ -190,8 +190,8 @@ end
 Coefficients of the continuous pedotransfer regressions fitted to HYPRES, the
 database of HYdraulic PRoperties of European Soils. One tuple per predicted
 parameter, each ordered by the shared predictor basis. `porosity` predicts `ν`
-directly; the other three predict `ln α`, `ln(𝓃 - 1)` and `ln K₀`, the transforms that
-enforce `α > 0`, `𝓃 > 1` and `K₀ > 0`.
+directly; the other three predict `ln αᵃᵉ`, `ln(𝓃 - 1)` and `ln K₀`, the transforms that
+enforce `αᵃᵉ > 0`, `𝓃 > 1` and `K₀ > 0`.
 
 Construct one to swap in a different calibration of the same functional form;
 [`HYPRES_REGRESSION`](@ref) holds the published fit.
@@ -226,7 +226,7 @@ Table 5). Each field predicts one parameter:
 | field | predicts | units | R² |
 |:------|:---------|:------|:---|
 | `porosity` | `ν` (`θs` in the paper) | – | 76 % |
-| `inverse_air_entry_head` | `ln α` | ln(cm⁻¹) | 20 % |
+| `inverse_air_entry_head` | `ln αᵃᵉ` | ln(cm⁻¹) | 20 % |
 | `pore_size_uniformity` | `ln(𝓃 - 1)` | – | 54 % |
 | `matching_point_conductivity` | `ln K₀` | ln(cm day⁻¹) | 19 % |
 
@@ -286,7 +286,7 @@ Table 4 class fit for `θʳ` and the Mualem exponent an unreduced matching point
 `regression_coefficients` is a [`HYPRESRegression`](@ref).
 
 Predicted `θs` is returned as the porosity `ν`. Units are converted to model units:
-`α` (cm⁻¹) → m⁻¹, `K₀` (cm day⁻¹) → m s⁻¹.
+`αᵃᵉ` (cm⁻¹) → m⁻¹, `K₀` (cm day⁻¹) → m s⁻¹.
 
 Texture and organic matter are floored at 1 % and bulk density held within 0.5–2.0 g/cm³,
 because they enter as `1/x` and `ln x`. Wösten warns the regressions "should not be used
@@ -339,13 +339,13 @@ Base.summary(ptf::HYPRESPedotransfer) =
     c = ptf.regression_coefficients
 
     ν  = apply_regression(c.porosity, predictors)
-    α  = 100 * exp(apply_regression(c.inverse_air_entry_head, predictors))            # cm⁻¹ → m⁻¹
+    αᵃᵉ  = 100 * exp(apply_regression(c.inverse_air_entry_head, predictors))            # cm⁻¹ → m⁻¹
     𝓃  = 1 + exp(apply_regression(c.pore_size_uniformity, predictors))
     K₀ = exp(apply_regression(c.matching_point_conductivity, predictors)) / 8_640_000  # cm day⁻¹ → m s⁻¹
 
     return (porosity = ν,
             residual_liquid_fraction = convert(FT, ptf.residual_liquid_fraction),
-            inverse_air_entry_head = α,
+            inverse_air_entry_head = αᵃᵉ,
             pore_size_uniformity = 𝓃,
             matching_point_conductivity = K₀,
             pore_connectivity_exponent = convert(FT, ptf.pore_connectivity_exponent))

@@ -13,11 +13,11 @@ Empirical soil-water retention curve mapping liquid pore fraction `θˡ`
 unsaturated soil), following [van Genuchten (1980)](@cite vangenuchten1980):
 
 ```math
-\\Pi_m(\\mathcal S) = -\\frac{1}{\\alpha}\\left[\\mathcal S^{-1/\\mathscr{m}} - 1\\right]^{1/\\mathscr{n}},
+\\Pi_m(\\mathcal S) = -\\frac{1}{\\alpha^{\\mathrm{ae}}}\\left[\\mathcal S^{-1/\\mathscr{m}} - 1\\right]^{1/\\mathscr{n}},
 \\qquad \\mathscr{m} = 1 - 1/\\mathscr{n}.
 ```
 
-`inverse_air_entry_head` (`α`, m⁻¹) is the reciprocal of the air-entry pressure head, the
+`inverse_air_entry_head` (`αᵃᵉ`, m⁻¹) is the reciprocal of the air-entry pressure head, the
 suction at which the largest pores begin to empty. `pore_size_uniformity` (`𝓃`, –) sets how
 narrow the band of suctions is over which the soil drains. Each may be a scalar or a
 `Field` (see [`soil_hydraulic_properties`](@ref)).
@@ -61,19 +61,19 @@ $(TYPEDSIGNATURES)
 
 @inline function pressure_head(i, j, grid, r::VanGenuchtenRetention, 𝒮)
     FT = typeof(𝒮)
-    α  = convert(FT, property_value(r.inverse_air_entry_head, i, j))
+    αᵃᵉ  = convert(FT, property_value(r.inverse_air_entry_head, i, j))
     𝓃  = convert(FT, property_value(r.pore_size_uniformity, i, j))
     𝓂  = van_genuchten_m(𝓃)
     𝒮c = clamp(𝒮, 0, 1)
 
     # the head is capped at √floatmax so the pole at 𝒮 = 0 stays finite
     logΠᵐᵃˣ = log(floatmax(FT)) / 2
-    logΠ    = logexpm1(-log(𝒮c) / 𝓂) / 𝓃 - log(α)
+    logΠ    = logexpm1(-log(𝒮c) / 𝓂) / 𝓃 - log(αᵃᵉ)
     return ifelse(𝒮c >= 1, zero(FT), -exp(min(logΠ, logΠᵐᵃˣ)))
 end
 
 Base.summary(r::VanGenuchtenRetention) =
-    string("VanGenuchtenRetention(α=", prettysummary(r.inverse_air_entry_head),
+    string("VanGenuchtenRetention(αᵃᵉ=", prettysummary(r.inverse_air_entry_head),
            ", 𝓃=", prettysummary(r.pore_size_uniformity), ")")
 
 """
@@ -224,8 +224,8 @@ $(TYPEDSIGNATURES)
 
 Effective saturation at which capillary flow paths to an evaporating surface become
 disconnected, `𝒮ᶜ = [1 + ((𝓃-1)/𝓃)^(1-2𝓃)]^(-𝓂)` with `𝓂 = 1 - 1/𝓃`, the saturation at the
-critical head `hᶜ = α⁻¹((𝓃-1)/𝓃)^((1-2𝓃)/𝓃)` of [Lehmann et al. (2008)](@cite lehmann2008).
-The retention curve depends on the product `α hᶜ`, so `α` cancels and `𝒮ᶜ` is set by `𝓃`
+critical head `hᶜ = αᵃᵉ⁻¹((𝓃-1)/𝓃)^((1-2𝓃)/𝓃)` of [Lehmann et al. (2008)](@cite lehmann2008).
+The retention curve depends on the product `αᵃᵉ hᶜ`, so `αᵃᵉ` cancels and `𝒮ᶜ` is set by `𝓃`
 alone. Bare-soil evaporation falls to half its potential rate near
 `θ½ ≈ θʳ + (ν - θʳ) 𝒮ᶜ` ([Lehmann et al. (2018)](@cite lehmann2018)), the threshold
 [`CriticalSaturation`](@ref) takes as `critical_saturation`.
