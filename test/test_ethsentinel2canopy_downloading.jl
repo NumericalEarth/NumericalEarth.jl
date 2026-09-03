@@ -40,11 +40,13 @@ const canopy_height = canopy_height_field(canopy_grid, ETHSentinel2CanopyHeight(
 end
 
 @testset "Tall-canopy fraction over closed forest" begin
-    fraction = tall_canopy_fraction_field(canopy_grid, ETHSentinel2CanopyHeight())
-    f = Array(interior(fraction, :, :, 1))
+    f = Array(interior(tall_canopy_fraction_field(canopy_grid, ETHSentinel2CanopyHeight()), :, :, 1))
+    tall = Array(interior(tall_canopy_fraction_field(canopy_grid, ETHSentinel2CanopyHeight();
+                                                     threshold = 40), :, :, 1))
 
-    # Closed evergreen canopy: every ~1 km lattice cell stands at least 2 m tall.
-    @test all(f .≈ 1)
+    @test all(f .≈ 1)                      # closed evergreen canopy: nothing stands under 2 m
+    @test all(0 .≤ tall .≤ 1)
+    @test all(tall .≤ f)                   # a taller threshold can only select less
 end
 
 @testset "Downloading the ETH regional canopy-height file" begin
