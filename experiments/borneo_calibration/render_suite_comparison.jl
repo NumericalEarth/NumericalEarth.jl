@@ -10,7 +10,8 @@ using Statistics: median, std, cor
 using Printf
 
 load(name) = jldopen(f -> Dict(k => f[k] for k in keys(f)), name)
-validation(stem) = load("validation_of_$(stem).jld2")
+validation(stem) = isfile("validation_of_$(stem).jld2") ? load("validation_of_$(stem).jld2") : nothing   # suites still running are skipped
+series(key) = isnothing(V[key]) ? nothing : V[key]["snapshots"][:θ]
 
 V = Dict(
     :free_joint6  => validation("map_joint_r1_gpu"),
@@ -49,31 +50,32 @@ windows = ("days 0–6.25" => 1:151, "days 6.25–12.25" => 151:295, "days 12.25
 # (label, θ series, family, fitting-window end in days)
 suites = [
     ("pedotransfer, free drainage",              V[:free_joint6]["snapshots_uncalibrated"][:θ], :free,  0.0),
-    ("depth only (6.25 d)",                      V[:depth]["snapshots"][:θ],                    :free,  6.25),
-    ("K₀ only (6.25 d)",                         V[:free_k]["snapshots"][:θ],                   :free,  6.25),
-    ("joint (h, K₀) (6.25 d)",                   V[:free_joint6]["snapshots"][:θ],              :free,  6.25),
-    ("joint (h, K₀) (12.25 d)",                  V[:free_joint12]["snapshots"][:θ],             :free,  12.25),
-    ("joint, variance-matched loss (12.25 d)",   V[:vm]["snapshots"][:θ],                       :free,  12.25),
+    ("depth only (6.25 d)",                      series(:depth),                    :free,  6.25),
+    ("K₀ only (6.25 d)",                         series(:free_k),                   :free,  6.25),
+    ("joint (h, K₀) (6.25 d)",                   series(:free_joint6),              :free,  6.25),
+    ("joint (h, K₀) (12.25 d)",                  series(:free_joint12),             :free,  12.25),
+    ("joint, variance-matched loss (12.25 d)",   series(:vm),                       :free,  12.25),
     ("pedotransfer, Darcy exchange",             V[:darcy_k]["snapshots_uncalibrated"][:θ],     :darcy, 0.0),
-    ("Darcy: K₀ (12.25 d)",                      V[:darcy_k]["snapshots"][:θ],                  :darcy, 12.25),
-    ("Darcy: joint (h, K₀) (12.25 d)",           V[:darcy_joint]["snapshots"][:θ],              :darcy, 12.25),
-    ("Darcy: K₀ + exchange length (12.25 d)",    V[:darcy_kl]["snapshots"][:θ],                 :darcy, 12.25),
-    ("Darcy: K₀ + ℓ + retention n (12.25 d)",    V[:darcy_kln]["snapshots"][:θ],                :darcy, 12.25),
-    ("Darcy: suite-8 K₀, deep head frozen to its mean", V[:darcy_mean]["snapshots"][:θ],         :fair,  12.25),
-    ("Darcy, no deep data: K₀ + calibrated constant head (12.25 d)", V[:darcy_fc]["snapshots"][:θ], :fair, 12.25),
-    ("Darcy: suite-8 K₀, deep head fixed at ERA5-Land's t = 0 value", V[:darcy_t0]["snapshots"][:θ], :fair, 12.25),
-    ("Darcy: K₀ + constant head started from the t = 0 value (12.25 d)", V[:darcy_init]["snapshots"][:θ], :fair, 12.25),
-    ("Darcy: suite-8 K₀, deep head smoothed over 2 d",  V[:darcy_s2]["snapshots"][:θ],               :darcy, 12.25),
-    ("Darcy: suite-8 K₀, deep head smoothed over 5 d",  V[:darcy_s5]["snapshots"][:θ],               :darcy, 12.25),
-    ("deep store: suite-8 K₀, store drains at the slab's K₀",     V[:store]["snapshots"][:θ],      :store, 12.25),
-    ("deep store: suite-8 K₀, store drains at pedotransfer K₀",   V[:store_ptf]["snapshots"][:θ],  :store, 12.25),
-    ("deep store: K₀ + ℓ + hᵈ calibrated (12.25 d)",              V[:store_cal3]["snapshots"][:θ], :store, 12.25),
-    ("deep store: K₀ + ℓ + hᵈ + K₀ᵈ calibrated (12.25 d)",        V[:store_cal4]["snapshots"][:θ], :store, 12.25),
-    ("deep store: K₀ + ℓ + hᵈ + K₀ᵈ, 16 iterations",              V[:store_cal4b]["snapshots"][:θ], :store, 12.25),
-    ("deep store: K₀ + ℓ + hᵈ + K₀ᵈ, deep layer in the loss",     V[:store_cal4dl]["snapshots"][:θ], :store, 12.25),
-    ("deep store on a water table: K₀ + ℓ + hᵈ + depth, deep layer in the loss", V[:store_wt]["snapshots"][:θ], :store, 12.25),
-    ("deep store on a water table started in equilibrium: K₀ + ℓ + hᵈ + depth", V[:store_wteq]["snapshots"][:θ], :store, 12.25),
+    ("Darcy: K₀ (12.25 d)",                      series(:darcy_k),                  :darcy, 12.25),
+    ("Darcy: joint (h, K₀) (12.25 d)",           series(:darcy_joint),              :darcy, 12.25),
+    ("Darcy: K₀ + exchange length (12.25 d)",    series(:darcy_kl),                 :darcy, 12.25),
+    ("Darcy: K₀ + ℓ + retention n (12.25 d)",    series(:darcy_kln),                :darcy, 12.25),
+    ("Darcy: suite-8 K₀, deep head frozen to its mean", series(:darcy_mean),         :fair,  12.25),
+    ("Darcy, no deep data: K₀ + calibrated constant head (12.25 d)", series(:darcy_fc), :fair, 12.25),
+    ("Darcy: suite-8 K₀, deep head fixed at ERA5-Land's t = 0 value", series(:darcy_t0), :fair, 12.25),
+    ("Darcy: K₀ + constant head started from the t = 0 value (12.25 d)", series(:darcy_init), :fair, 12.25),
+    ("Darcy: suite-8 K₀, deep head smoothed over 2 d",  series(:darcy_s2),               :darcy, 12.25),
+    ("Darcy: suite-8 K₀, deep head smoothed over 5 d",  series(:darcy_s5),               :darcy, 12.25),
+    ("deep store: suite-8 K₀, store drains at the slab's K₀",     series(:store),      :store, 12.25),
+    ("deep store: suite-8 K₀, store drains at pedotransfer K₀",   series(:store_ptf),  :store, 12.25),
+    ("deep store: K₀ + ℓ + hᵈ calibrated (12.25 d)",              series(:store_cal3), :store, 12.25),
+    ("deep store: K₀ + ℓ + hᵈ + K₀ᵈ calibrated (12.25 d)",        series(:store_cal4), :store, 12.25),
+    ("deep store: K₀ + ℓ + hᵈ + K₀ᵈ, deep layer in the loss",     series(:store_cal4dl), :store, 12.25),
+    ("deep store on a water table (2.5 m start): K₀ + ℓ + hᵈ + depth", series(:store_wt), :store, 12.25),
+    ("deep store: K₀ + ℓ + hᵈ + K₀ᵈ, 16 iterations (control)",    series(:store_cal4b), :store, 12.25),
+    ("deep store on a water table (equilibrium start): K₀ + ℓ + hᵈ + depth", series(:store_wteq), :store, 12.25),
 ]
+filter!(s -> !isnothing(s[2]), suites)
 
 function scores(θm, hours)
     r = Float64[]; σ = Float64[]; mse = Float64[]
@@ -123,21 +125,22 @@ save("suite_trajectories_r1.png", fig)
 
 # ## The deep store against the reanalysis layer it never sees
 
-store_keys = (:store, :store_cal3, :store_cal4, :store_cal4b, :store_cal4dl, :store_wt, :store_wteq)
+store_keys = filter(k -> !isnothing(V[k]), [:store, :store_cal3, :store_cal4, :store_cal4dl, :store_wt, :store_cal4b, :store_wteq])
 store_labels = [label for (label, _, fam, _) in suites if fam == :store && !occursin("pedotransfer", label)]
+store_color = Dict(:store => 1, :store_cal3 => 3, :store_cal4 => 4, :store_cal4dl => 5, :store_wt => 6, :store_cal4b => 7, :store_wteq => 8)
 fig = Figure(size = (1500, 1000), fontsize = 15)
 Label(fig[0, 1], "The prognostic deep store (28–100 cm) against ERA5-Land's deep layer, which only set its t = 0 state"; fontsize = 18)
 ax1 = Axis(fig[1, 1]; title = "domain-median water content of the deep layer", xlabel = "day", ylabel = "θᵈ (m³ m⁻³)")
 vlines!(ax1, [6.25, 12.25]; color = :gray60, linestyle = :dash)
 lines!(ax1, days, [median(era5.layer_3[k, :, :][land]) for k in 1:Nh]; color = :black, linewidth = 2.6, label = "ERA5-Land")
 for (i, key) in enumerate(store_keys)
-    lines!(ax1, days, med(V[key]["snapshots"][:θᵈ]); color = store_colors[i == 1 ? 1 : i + 1], linewidth = 1.8, label = store_labels[i])
+    lines!(ax1, days, med(V[key]["snapshots"][:θᵈ]); color = store_colors[store_color[key]], linewidth = 1.8, label = store_labels[i])
 end
 ax2 = Axis(fig[2, 1]; title = "and the slab above it (0–28 cm)", xlabel = "day", ylabel = "θ (m³ m⁻³)")
 vlines!(ax2, [6.25, 12.25]; color = :gray60, linestyle = :dash)
 lines!(ax2, days, med(θ_obs); color = :black, linewidth = 2.6, label = "ERA5-Land")
 for (i, key) in enumerate(store_keys)
-    lines!(ax2, days, med(V[key]["snapshots"][:θ]); color = store_colors[i == 1 ? 1 : i + 1], linewidth = 1.8, label = store_labels[i])
+    lines!(ax2, days, med(V[key]["snapshots"][:θ]); color = store_colors[store_color[key]], linewidth = 1.8, label = store_labels[i])
 end
 Legend(fig[3, 1], ax2; orientation = :horizontal, nbanks = 2, labelsize = 13, tellwidth = false)
 save("suite_store_r1.png", fig)
@@ -215,7 +218,7 @@ held = last(windows)[2]
 cell_rms(θm) = [sqrt(sum(abs2, θm[held, i, j] .- θ_obs[held, i, j]) / length(held)) for i in axes(θm, 2), j in axes(θm, 3)]
 fig = Figure(size = (1900, 1000), fontsize = 14)
 Label(fig[0, 1:8], "Held-out RMS (days 12.25–20, unseen by every calibration), shared scale"; fontsize = 19)
-picks = [1, 5, 8, 10, 13, 15, 23, 25]
+picks = filter(≤(length(suites)), [1, 5, 8, 10, 13, 15, 23, 25])
 for (k, idx) in enumerate(picks)
     label, θm, _, _ = suites[idx]
     row, col = divrem(k - 1, 4)
