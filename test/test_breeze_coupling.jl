@@ -230,8 +230,8 @@ end
         first_surface_temperature = 280
         second_surface_temperature = 300
         emissivity = 0.95
-        downwelling_longwave = -300
-        downwelling_shortwave = -600
+        downwelling_longwave = 300
+        downwelling_shortwave = 600
         albedo = 0.2
         stefan_boltzmann_constant = convert(eltype(grid), default_stefan_boltzmann_constant)
 
@@ -246,6 +246,7 @@ end
             launch!(arch, grid, :xy,
                     NumericalEarthBreezeExt._apply_breeze_air_land_radiative_fluxes!,
                     surface_energy_flux,
+                    grid,
                     surface_temperature,
                     surface_emissivity,
                     stefan_boltzmann_constant,
@@ -260,8 +261,8 @@ end
 
         expected_surface_energy(temperature) =
             initial_surface_energy_flux +
-            emissivity * stefan_boltzmann_constant * temperature^4 +
-            emissivity * downwelling_longwave +
+            emissivity * stefan_boltzmann_constant * temperature^4 -
+            emissivity * downwelling_longwave -
             (1 - albedo) * downwelling_shortwave
 
         @test first_surface_energy ≈ expected_surface_energy(first_surface_temperature)
