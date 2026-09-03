@@ -75,7 +75,6 @@ using NumericalEarth.JRA55: download_JRA55_cache
 
         md_first = Metadatum(ds_var; dataset=JRA55.RepeatYearJRA55())
         f_first  = Field(md_first, arch)
-        @test f_first isa Field
         @test size(f_first) == (640, 320, 1)
         @allowscalar @test f_first[1, 1, 1] == 430.98105f0
         @allowscalar @test view(f_first.data, 1, :, 1) == view(f_first.data, 641, :, 1)
@@ -135,7 +134,6 @@ using NumericalEarth.JRA55: download_JRA55_cache
                                                          overwrite_existing = true)
         @test isfile(filepath)
 
-        # Test that we can load the data back
         Qswt = FieldTimeSeries(filepath, "Qsw")
         @test on_architecture(CPU(), parent(Qswt.data)) == on_architecture(CPU(), parent(target_fts.data))
         @test Qswt.times == target_fts.times
@@ -187,7 +185,6 @@ using NumericalEarth.JRA55: download_JRA55_cache
         end
         @test Second(end_date - start_date).value ≈ river_flux.times[end] - river_flux.times[1]
 
-        # Test we can access all the data
         for t in eachindex(river_flux.times)
             @test river_flux[t] isa Field
         end
@@ -212,11 +209,8 @@ using NumericalEarth.JRA55: download_JRA55_cache
 
         @info "Testing MultiYearJRA55 single-window crossing year boundary on $A..."
 
-        # Force a single in-memory window to straddle the 1958 → 1959 file
-        # boundary. Before the per-file `ftsn_loc` fix, the second file's
-        # iteration in `set!` would clobber the outer `ftsn` and write to the
-        # wrong slots; this regression test would then leave some in-memory
-        # slots untouched (zero-valued).
+        # A single in-memory window straddling the 1958 → 1959 file boundary must have every slot
+        # written, with each file's iteration going to its own slots.
         start_date_span = DateTime("1958-12-27T12:00:00")
         end_date_span   = DateTime("1959-01-05T12:00:00")
 

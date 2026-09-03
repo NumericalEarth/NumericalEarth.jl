@@ -251,7 +251,7 @@ jobs:
       # calls, and keeps their cache inside GitHub's 10 GB budget.
       - name: Run tests
         run: |
-          julia --project=test/reactant --color=yes --check-bounds=yes -O0 \
+          julia --project=test/reactant --color=yes --check-bounds=auto -O0 \
                 --code-coverage=@${PWD}/src -e '
               using Pkg
               Pkg.instantiate()

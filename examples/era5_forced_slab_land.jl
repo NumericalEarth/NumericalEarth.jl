@@ -4,7 +4,7 @@
 # example, then demonstrating a more realistic case with ERA5 forcing on realistic topography.
 # We use a `SlabLand` composed of
 #
-#     energy    = WaterCoupledEnergy(...)          # C(Mˡᵃ) = C_dry + cˡ Mˡᵃ, conservative dTˡᵃ/dt
+#     energy    = WaterCoupledEnergy(...)          # cˡᵃ(Mˡᵃ) = cᵈʳʸ + cˡ Mˡᵃ, conservative dTˡᵃ/dt
 #     hydrology = VariablySaturatedHydrology(...)  # augmented-storage ϑˡ budget
 #     humidity  = DryLayerHumidity(...)            # qⁱⁿ from a dry-layer vapor-flux balance
 #
@@ -136,8 +136,8 @@ initial_water_storage =
 # `WaterCoupledEnergy` is the slab's energy budget which steps the skin temperature `Tˡᵃ`
 #  with a force-restore balance toward a deep reservoir at `deep_temperature` on the
 # `deep_time_scale`, and folds the water storage into the areal heat capacity
-# `C(Mˡᵃ) = C_dry + cˡ Mˡᵃ`, recomputed each step so that a wetter slab carries more
-# thermal inertia. `dry_heat_capacity` is `C_dry` (depth × density × specific heat of
+# `cˡᵃ(Mˡᵃ) = cᵈʳʸ + cˡ Mˡᵃ`, recomputed each step so that a wetter slab carries more
+# thermal inertia. `dry_heat_capacity` is `cᵈʳʸ` (depth × density × specific heat of
 # the dry soil), `liquid_heat_capacity` is `cˡ`.
 soil_energy(FT; deep_time_scale) = WaterCoupledEnergy(FT;
     dry_heat_capacity     = 0.1 * 1500 * 1480,
@@ -480,11 +480,11 @@ atmosphere = ERA5PrescribedAtmosphere(arch; dataset, start_date, end_date, regio
 radiation = ERA5PrescribedRadiation(arch; dataset, start_date, end_date, region,
                                     land_surface = SurfaceRadiationProperties(0.18, 0.95))
 
-# ## Elevation correction and downscaling
+# ## Altitude correction and downscaling
 #
 # `SlabLand` itself has no terrain knowledge, and ERA5's near-surface fields
 # correspond to ERA5's own ~28 km grid-cell mean elevation. To make the 1 km grid
-# show elevation-driven temperature contrasts, [`ElevationCorrection`](@ref) lifts
+# show elevation-driven temperature contrasts, [`AltitudeCorrection`](@ref) lifts
 # the regridded atmosphere from that elevation (`z_era5`) to the 1 km ETOPO surface
 # (`z_land`) over the elevation difference
 #
@@ -493,7 +493,7 @@ radiation = ERA5PrescribedRadiation(arch; dataset, start_date, end_date, region,
 # with a moist-environmental lapse-rate shift `T ← T − Γ Δz` (Γ = 6.5 K km⁻¹) and a
 # hydrostatic pressure adjustment, applied by the state exchanger every step
 # (specific humidity `q` conserved through the lift). `z_era5` is ERA5's own model
-# topography (its surface geopotential ÷ g → metres); the gravitational
+# topography (its surface geopotential ÷ g → meters); the gravitational
 # acceleration and gas constant the pressure adjustment needs are pulled from the
 # atmosphere's thermodynamics.
 
@@ -503,7 +503,7 @@ z_era5 = Field(z_meta, land_grid)
 Δz = z_land - z_era5
 
 Γ_lapse    = 6.5e-3 # K m⁻¹, environmental lapse rate
-correction = ElevationCorrection(z_land, z_era5; lapse_rate = Γ_lapse)
+correction = AltitudeCorrection(z_land, z_era5; lapse_rate = Γ_lapse)
 
 # ## Slab land
 #
@@ -850,7 +850,7 @@ parent(cpu_porosity) .= elevation_porosity.(parent(z_patch))
 z_era5_patch         = Field(Metadatum(:topography; dataset, date = patch_start_date, region = patch_region), cpu_grid)
 surface_elevation    = Array(interior(z_patch, :, :, 1))
 atmosphere_elevation = Array(interior(z_era5_patch, :, :, 1))
-patch_correction     = ElevationCorrection(surface_elevation, atmosphere_elevation; lapse_rate = Γ_lapse)
+patch_correction     = AltitudeCorrection(surface_elevation, atmosphere_elevation; lapse_rate = Γ_lapse)
 
 function run_forward(grid, forcing, T₀, porosity_field)
     model = era5_slab_land_model(grid, forcing, porosity_field, nominal_porosity;

@@ -70,6 +70,13 @@ DataWrangling.all_dates(dataset::ECCO4Monthly, variable) = metadata_epoch(datase
 DataWrangling.all_dates(dataset::ECCO2Monthly, variable) = metadata_epoch(dataset) : Month(1) : DateTime(2024, 12, 1)
 DataWrangling.all_dates(dataset::ECCO2Daily,   variable) = metadata_epoch(dataset) : Day(1)   : DateTime(2024, 12, 31)
 
+DataWrangling.averaging_window(metadatum::Metadatum{<:Union{ECCO2Monthly, ECCO4Monthly}}) =
+    DataWrangling.calendar_month_window(metadatum)
+
+# The cube92 daily files hold means over the day they are named for.
+DataWrangling.averaging_window(metadatum::Metadatum{<:ECCO2Daily}) =
+    (metadatum.dates, metadatum.dates + Day(1))
+
 DataWrangling.longitude_interfaces(::ECCODataset) = (0, 360)
 DataWrangling.longitude_interfaces(::ECCO4Monthly) = (-180, 180)
 DataWrangling.latitude_interfaces(::ECCODataset) = (-90, 90)
@@ -270,6 +277,24 @@ function DataWrangling.metadata_url(m::Metadata{<:ECCO4Monthly})
     return ECCO4_url * dataset_variable_name(m) * "/" * year * "/" * m.filename
 end
 
+# The drive stopped serving its `ECCO2` directory, which holds the quarter-degree fields and both
+# ECCO-Darwin datasets whatever grid their name refers to. The download is still attempted in case it
+# returns, but a bare 403 reads as bad credentials, so say what it means instead.
+#
+# TODO: delete this and the note in README.md once the drive serves `ECCO2` again. JPL has announced
+# no timeline, so the check is here until a download succeeds.
+const ECCO2DriveDataset = Union{ECCO2Monthly, ECCO2Daily, ECCO2DarwinMonthly, ECCO4DarwinMonthly}
+
+function ecco_download_error(err, metadatum)
+    refused = err isa Downloads.RequestError && err.response.status == 403
+    (refused && metadatum.dataset isa ECCO2DriveDataset) || return err
+
+    return ErrorException("The ECCO drive refused $(typeof(metadatum.dataset)), whose files live in \
+                           the `ECCO2` directory it no longer serves. This is not a problem with \
+                           `ECCO_USERNAME` or `ECCO_WEBDAV_PASSWORD`. `ECCO4Monthly` reads from the \
+                           drive's `Version4` directory and is unaffected.")
+end
+
 function Downloads.download(metadata::ECCOMetadata)
     # Skip download if all files already exist
     all(isfile(metadata_path(m)) for m in metadata) && return metadata_path(metadata)
@@ -305,7 +330,11 @@ function Downloads.download(metadata::ECCOMetadata)
                     throw(ArgumentError(msg))
                 end
                 @info "Downloading ECCO data: $(metadatum.name) in $(metadatum.dir)..."
-                atomic_download(fileurl, filepath; downloader, progress=DownloadProgress())
+                try
+                    atomic_download(fileurl, filepath; downloader, progress=DownloadProgress())
+                catch err
+                    throw(ecco_download_error(err, metadatum))
+                end
             end
         end
     end

@@ -56,10 +56,14 @@ export
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     PowerLawTortuosity,
-    ElevationCorrection,
+    AltitudeCorrection,
     atmosphere_land_interface,
     SlabOcean,
     PrescribedOcean,
+    TwoColorRadiation,
+    ChlorophyllOptics,
+    absorption_coefficient,
+    equivalent_chlorophyll,
     AbstractPrescribedComponent,
     PrescribedRadiation,
     PrescribedAtmosphere,
@@ -72,10 +76,6 @@ export
     GloFASReanalysis,
     ERA5PrescribedAtmosphere,
     ERA5PrescribedRadiation,
-    OSPapaPrescribedRadiation,
-    OSPapaPrescribedAtmosphere,
-    os_papa_prescribed_fluxes,
-    os_papa_prescribed_flux_boundary_conditions,
     FreezingLimitedOceanTemperature,
     SurfaceRadiationProperties,
     InterfaceRadiationFlux,
@@ -111,30 +111,33 @@ export
     surface_temperature,
     regrid_bathymetry,
     regrid_topography,
+    smooth_topography!,
     Metadata, Metadatum, MetadataSet,
     BoundingBox,
     Column, Linear, Nearest,
     ECCOMetadatum,
     EN4Metadatum,
     ETOPO2022,
+    GLO30, GLO90,
     ECCO2Daily, ECCO2Monthly, ECCO4Monthly,
     ECCO2DarwinMonthly, ECCO4DarwinMonthly,
     EN4Monthly,
     WOAClimatology, WOAAnnual, WOAMonthly,
-    ASTERGEDv3,
+    ASTERGEDv3, ASTERGEDResolution, ASTERGEDHigh100m, ASTERGEDLow1km,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
+    ESAWorldCover, WorldCoverVersion, WorldCoverV100, WorldCoverV200,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
     ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel,
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
-    OSPapaHourly,
+    ERA5HourlyLand, ERA5MonthlyLand,
     JRA55FieldTimeSeries,
     ORCAOne, ORCAQuarter, ORCATwelfth,
     ORCAGrid,
     OpenLandMapSoilDB,
     GlobalBuildingFootprints3D, building_morphometry,
-    GHSBuiltH, GHSBuiltS,
+    GHSBuiltH, GHSBuiltS, GHSBuiltSResolution, GHSBuiltS10m, GHSBuiltS100m,
     first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,
     DatasetRestoring,
@@ -259,7 +262,7 @@ include("NestedModels/NestedModels.jl")   # last: wraps a parent + a child (any 
 
 using .Grids
 using .DataWrangling
-using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55, OSPapa
+using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55
 using .Bathymetry
 using .InitialConditions
 using .EarthSystemModels
@@ -280,14 +283,15 @@ using .DataWrangling.ORCA
 using .DataWrangling.WOA
 using .DataWrangling.JRA55
 using .DataWrangling.GloFAS
-using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
 using .DataWrangling.ASTERGED
+using .DataWrangling.CopernicusDEM
 using .DataWrangling.CopernicusLandAlbedo
 using .DataWrangling.OpenLandMap
 using .DataWrangling.GloBFP3D
 using .DataWrangling.GHSL
+using .DataWrangling.WorldCover
 
 using PrecompileTools: @setup_workload, @compile_workload
 

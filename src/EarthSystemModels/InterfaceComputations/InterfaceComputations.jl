@@ -1,7 +1,8 @@
 module InterfaceComputations
 
-using Adapt: Adapt, adapt
-using Oceananigans: Oceananigans
+using Adapt: Adapt
+using Oceananigans: Oceananigans, location
+using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: AbstractField, Field, Face, Center
 using Oceananigans.Grids: Flat, topology
 using Oceananigans.Simulations: Simulation
@@ -14,8 +15,6 @@ export
     ConvergenceStopCriteria,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
-    LandRoughnessLength,
-    LandZeroPlaneDisplacement,
     CoefficientBasedFluxes,
     SimilarityScales,
     PolynomialNeutralDragCoefficient,
@@ -45,7 +44,7 @@ export
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     PowerLawTortuosity,
-    ElevationCorrection,
+    AltitudeCorrection,
     atmosphere_land_interface,
     # Sea ice-ocean heat flux formulations
     IceBathHeatFlux,
@@ -59,6 +58,8 @@ using ..EarthSystemModels: EarthSystemModels,
                            thermodynamics_parameters,
                            surface_layer_height,
                            boundary_layer_height
+
+using ...NumericalEarth: stateindex
 
 #####
 ##### Functions extended by component models
@@ -112,6 +113,13 @@ function interface_kernel_parameters(grid)
 
     return kernel_parameters
 end
+
+# 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1
+@inline state2dindex(a, i, j) = stateindex(a, i, j, 1)
+@inline state2dindex(a, i, j, grid, time) = stateindex(a, i, j, 1, grid, time, (Center, Center, Nothing))
+
+# Functions are resolved at the topmost center: a `Nothing` vertical location yields a two-tuple node.
+@inline state2dindex(a::Function, i, j, grid, time) = stateindex(a, i, j, size(grid, 3), grid, time, (Center, Center, Center))
 
 # Turbulent fluxes
 include("roughness_lengths.jl")

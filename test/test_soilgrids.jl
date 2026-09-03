@@ -23,7 +23,6 @@ import Downloads
     for var in keys(SoilGrids.SoilGrids2_dataset_variable_names)
         sgmd = Metadatum(var, dataset=sg_mean)
         field = Field(sgmd)
-        # Check that at least some grid cells are finite
         @test any(isfinite.(field))
     end
     for var in (:sand_fraction, :silt_fraction, :clay_fraction)

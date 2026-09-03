@@ -16,7 +16,6 @@ args = parse_args(ARGS)
 delete!(testsuite, "runtests_setup")
 delete!(testsuite, "download_utils")
 delete!(testsuite, "test_distributed_utils")
-delete!(testsuite, "test_ospapa")
 
 gpu_test = parse(Bool, get(ENV, "GPU_TEST", "false"))
 
@@ -32,12 +31,13 @@ if filter_tests!(testsuite, args)
     delete!(testsuite, "test_aviso_downloading")
     delete!(testsuite, "test_copernicus_dem_downloading")
     delete!(testsuite, "test_copernicus_albedo_downloading")
+    delete!(testsuite, "test_copernicus_climate_datastore_downloading")
     delete!(testsuite, "test_asterged_downloading")
     delete!(testsuite, "test_globfp3d_downloading")
     delete!(testsuite, "test_ghsl_downloading")
+    delete!(testsuite, "test_esaworldcover_downloading")
     delete!(testsuite, "test_glofas_downloading")
     delete!(testsuite, "test_openlandmap_downloading")
-    delete!(testsuite, "test_ospapa_downloading")
 
     # These are not named `*_downloading`, but they are download tests all the same: each
     # spends most of its runtime pulling from an external server (IBCSO alone is ~1.5 GB).

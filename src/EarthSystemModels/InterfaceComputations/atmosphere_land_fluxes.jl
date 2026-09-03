@@ -24,12 +24,19 @@ the given turbulent-flux closure, interface-temperature model, atmosphere-relati
 velocity model, and specific-humidity formulation. Pass the result as
 `atmosphere_land_interface = ...` to `ComponentInterfaces` /
 `AtmosphereLandModel` to override the default.
+
+The flux closure's roughness lengths and zero-plane displacement may be per-cell
+`Field`s at `(Center, Center, Nothing)` on `grid` — for example from
+`urban_roughness` or a canopy roughness closure — localized to each cell before the
+Monin--Obukhov solve.
 """
 function atmosphere_land_interface(grid, atmosphere, land;
                                    fluxes              = default_atmosphere_land_fluxes(land, eltype(grid)),
                                    temperature         = BulkTemperature(),
                                    velocity_difference = RelativeVelocity(),
                                    specific_humidity   = default_al_specific_humidity(land))
+    validate_flux_formulation(fluxes, grid)
+
     al_fluxes = AtmosphereSurfaceFluxes(grid)
     al_properties = InterfaceProperties(specific_humidity, temperature, velocity_difference)
     interface_temperature = Field{Center, Center, Nothing}(grid)
@@ -61,7 +68,7 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     interface_temperature = atmosphere_land_interface.temperature
     interface_properties = atmosphere_land_interface.properties
     atmosphere_properties = (thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
-                             surface_layer_height = surface_layer_height(coupled_model.atmosphere),
+                             surface_layer_height = coupled_model.interfaces.properties.surface_layer_height,
                              gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
 
     # Land surface state from the exchanger. `interface_energy_state` /
@@ -71,8 +78,6 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     land_exchanger_state = exchanger.land.state
     land_state = (T = land_exchanger_state.T,
                   saturation = land_exchanger_state.saturation)
-
-    land_properties = atmosphere_land_surface_properties(land_exchanger_state)
 
     radiation = coupled_model.radiation
     radiation_kernel_props = kernel_radiation_properties(radiation)
@@ -97,24 +102,11 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
             atmosphere_data,
             interface_properties,
             atmosphere_properties,
-            land_properties,
             radiation_kernel_props,
             radiation_state)
 
     return nothing
 end
-
-# Roughness and zero-plane displacement live on the flux closure
-# (`atmosphere_land_fluxes`), not the land state — `SlabLand` carries neither.
-# A land model that provides per-cell values (`momentum_roughness_length`,
-# `scalar_roughness_length`, `zero_plane_displacement`) overrides these for its
-# own land state type.
-@inline atmosphere_land_surface_properties(land_state) = (;)
-@inline local_atmosphere_land_surface_properties(land_properties, i, j) = (;)
-
-# Per-cell scalar from a constant or a `Field`.
-@inline land_field_value(x::Number, i, j) = x
-@inline land_field_value(x, i, j) = @inbounds x[i, j, 1]
 
 #####
 ##### Land surface state materialized into the interface state.
@@ -127,7 +119,7 @@ end
 #####
 
 @inline land_saturation(i, j, grid, land_state) =
-    (saturation = land_field_value(land_state.saturation, i, j),)
+    (saturation = state2dindex(land_state.saturation, i, j),)
 
 # Hydrology state, per humidity formulation.
 @inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) = land_saturation(i, j, grid, land_state)
@@ -142,9 +134,9 @@ end
 # (the SkinHumidity reservoir and the DryLayerHumidity dry-layer model)
 # pull it from the materialized land state.
 @inline interface_energy_state(i, j, grid, ::SkinHumidity, land_state) =
-    (temperature = land_field_value(land_state.T, i, j),)
+    (temperature = state2dindex(land_state.T, i, j),)
 @inline interface_energy_state(i, j, grid, ::DryLayerHumidity, land_state) =
-    (temperature = land_field_value(land_state.T, i, j),)
+    (temperature = state2dindex(land_state.T, i, j),)
 @inline interface_energy_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
 
 @kernel function _compute_atmosphere_land_interface_state!(interface_fluxes,
@@ -156,7 +148,6 @@ end
                                                            atmosphere_state,
                                                            interface_properties,
                                                            atmosphere_properties,
-                                                           land_properties,
                                                            radiation_kernel_props,
                                                            radiation_exchanger_state)
 
@@ -174,11 +165,14 @@ end
     q_formulation = interface_properties.specific_humidity_formulation
 
     # Bulk land temperature serves as the initial skin-temperature guess.
-    Tₛ = land_field_value(land_state.T, i, j)
+    Tₛ = state2dindex(land_state.T, i, j)
     FT = typeof(Tₛ)
 
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
-    zᵃᵗ = atmosphere_properties.surface_layer_height
+    zᵃᵗ = state2dindex(atmosphere_properties.surface_layer_height, i, j)
+
+    # Collapse Field-valued roughness lengths and displacement to this cell's values.
+    local_turbulent_flux_formulation = local_flux_formulation(turbulent_flux_formulation, i, j)
 
     local_atmosphere_state = (z = zᵃᵗ,
                               u = uᵃᵗ,
@@ -186,14 +180,13 @@ end
                               T = Tᵃᵗ,
                               p = pᵃᵗ,
                               q = qᵃᵗ,
-                              h_bℓ = atmosphere_state.h_bℓ)
+                              h_bℓ = state2dindex(atmosphere_state.h_bℓ, i, j))
 
     # Surface velocities are zero for land.
     uₛ = zero(FT)
     vₛ = zero(FT)
 
     local_interior_state = (u = uₛ, v = vₛ, T = Tₛ)
-    local_land_properties = local_atmosphere_land_surface_properties(land_properties, i, j)
 
     radiation_state = air_land_interface_radiation_state(radiation_kernel_props,
                                                          radiation_exchanger_state,
@@ -208,14 +201,14 @@ end
                                                     InterfaceVelocities(uₛ, vₛ),
                                                     q_formulation, land_state, Tₛ, qₛ)
 
-    interface_state = compute_interface_state(turbulent_flux_formulation,
+    interface_state = compute_interface_state(local_turbulent_flux_formulation,
                                               initial_interface_state,
                                               local_atmosphere_state,
                                               local_interior_state,
                                               radiation_state,
                                               interface_properties,
                                               atmosphere_properties,
-                                              local_land_properties)
+                                              (;))
 
     u★ = interface_state.fluxes.u★
     θ★ = interface_state.fluxes.θ★

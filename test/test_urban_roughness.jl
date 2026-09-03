@@ -100,7 +100,7 @@ end
     end
     @test frontal_area_index(EmpiricalFrontalArea(), 0.0, 15.0) == 0
 
-    # σʰ = 1.05h − 3.7, floored at zero below the one-storey zero crossing.
+    # σʰ = 1.05h − 3.7, floored at zero below the one-story zero crossing.
     variable = VariableHeight()
     @test height_spread(variable, 15.0) ≈ 1.05 * 15 - 3.7
     @test height_spread(variable, 2.0) == 0
