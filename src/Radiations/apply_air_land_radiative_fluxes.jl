@@ -7,8 +7,8 @@ using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties, Ca
     apply_air_land_radiative_fluxes!(coupled_model)
 
 Add the radiative contribution to the land `surface_energy_flux` (positive
-upward) and write diagnostic radiative fluxes into
-`coupled_model.radiation.interface_fluxes.land`.
+upward) and, for a radiation that keeps them, write the diagnostic radiative
+fluxes into `coupled_model.radiation.interface_fluxes.land`.
 
 When `coupled_model.radiation === nothing`, this is a no-op.
 """
@@ -20,6 +20,10 @@ EarthSystemModels.apply_air_land_radiative_fluxes!(coupled_model::EarthSystemMod
 # No land: nothing to do.
 apply_air_land_radiative_fluxes!(coupled_model, ::Nothing) = nothing
 
+# Diagnostic radiative fluxes at the land surface; `nothing` for a radiation that keeps none.
+land_interface_radiation_flux(radiation) = nothing
+land_interface_radiation_flux(radiation::PrescribedRadiation) = radiation.interface_fluxes.land
+
 function apply_air_land_radiative_fluxes!(coupled_model, land)
     # No atmosphere--land interface (no atmosphere): nothing to do.
     al_interface = coupled_model.interfaces.atmosphere_land_interface
@@ -30,32 +34,24 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     # separate radiative contribution is added here.
     al_interface.temperature isa CanopyAirSpaceDiagnostics && return nothing
 
+    # Skip when the radiation was not configured with a land surface.
     radiation = coupled_model.radiation
-    interface_fluxes = radiation.interface_fluxes
-    isnothing(interface_fluxes) && return nothing
-
-    # Skip when the radiation was not configured with a land surface — the
-    # accumulator and the surface properties must both be present.
-    land_radiative_flux = get(interface_fluxes, :land, nothing)
-    isnothing(land_radiative_flux) && return nothing
-
     rk = kernel_radiation_properties(radiation)
     land_surface_props = get(rk.surface_properties, :land, nothing)
     isnothing(land_surface_props) && return nothing
+
+    fluxes = land.fluxes
+    hasproperty(fluxes, :surface_energy_flux) || return nothing
 
     grid  = coupled_model.interfaces.exchanger.grid
     arch  = architecture(grid)
     clock = coupled_model.clock
     radiation_state = coupled_model.interfaces.exchanger.radiation.state
 
-    fluxes = land.fluxes
-    hasproperty(fluxes, :surface_energy_flux) || return nothing
-    land_energy_flux = fluxes.surface_energy_flux
-
     launch!(arch, grid, :xy,
             _apply_air_land_radiative_fluxes!,
-            land_energy_flux,
-            land_radiative_flux,
+            fluxes.surface_energy_flux,
+            land_interface_radiation_flux(radiation),
             grid,
             clock,
             rk,
@@ -66,7 +62,7 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
 end
 
 @kernel function _apply_air_land_radiative_fluxes!(land_energy_flux,
-                                                  interface_radiative_flux,
+                                                  interface_radiation_flux,
                                                   grid,
                                                   clock,
                                                   rk,
@@ -93,10 +89,18 @@ end
     inactive = inactive_node(i, j, 1, grid, Center(), Center(), Center())
 
     # `surface_energy_flux` is positive upward, so the into-land `ΣQ_rad` enters as `-ΣQ_rad`.
+    @inbounds land_energy_flux[i, j, 1] += ifelse(inactive, zero(grid), -ΣQ_rad)
+
+    store_interface_radiation_flux!(interface_radiation_flux, i, j, ℐꜛˡʷ, ℐₐˡʷ, ℐₜˢʷ)
+end
+
+@inline store_interface_radiation_flux!(::Nothing, i, j, ℐꜛˡʷ, ℐₐˡʷ, ℐₜˢʷ) = nothing
+
+@inline function store_interface_radiation_flux!(flux, i, j, ℐꜛˡʷ, ℐₐˡʷ, ℐₜˢʷ)
     @inbounds begin
-        land_energy_flux[i, j, 1] += ifelse(inactive, zero(grid), -ΣQ_rad)
-        interface_radiative_flux.upwelling_longwave[i, j, 1]    = ℐꜛˡʷ
-        interface_radiative_flux.downwelling_longwave[i, j, 1]  = - ℐₐˡʷ
-        interface_radiative_flux.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ
+        flux.upwelling_longwave[i, j, 1]    = ℐꜛˡʷ
+        flux.downwelling_longwave[i, j, 1]  = - ℐₐˡʷ
+        flux.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ
     end
+    return nothing
 end

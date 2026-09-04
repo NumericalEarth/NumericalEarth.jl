@@ -224,5 +224,9 @@ end
         bare_effective_temperature = bare_temperature.effective[i, j, 1]
         blended_temperature.effective[i, j, 1] =
             sqrt(sqrt(f * vegetated_temperature^4 + g * bare_effective_temperature^4))
+
+        # Both tiles see the same incident shortwave, so the mosaic albedo is their area weight.
+        blended_temperature.effective_albedo[i, j, 1] =
+            f * veg_temperature.effective_albedo[i, j, 1] + g * bare_temperature.effective_albedo[i, j, 1]
     end
 end
