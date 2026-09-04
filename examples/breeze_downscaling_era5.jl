@@ -1,10 +1,12 @@
-# # ERA5 → 12 km land-coupled, convection-permitting hindcast (Breeze + NestedModel + SlabLand)
+# # ERA5 → 12 km coast-to-plains, convection-permitting hindcast (Breeze + SlabLand + PrescribedOcean)
 #
 # A limited-area model (LAM) example that downscales ERA5 reanalysis to a ~12 km Breeze compressible
-# atmosphere over the U.S. Southern Great Plains, for the Midlatitude Continental Convective Clouds
-# Experiment (MC3E) 20 May 2011 squall-line case ([Fan2017](@citet)) — with an interactive `SlabLand`
-# surface under the child and all-sky RRTMGP radiation heating the column and the surface, so the
-# diurnal cycle, the clouds, and the land talk to each other.
+# atmosphere over a domain running from the U.S. Southern Great Plains to the Gulf of Mexico, for the
+# Midlatitude Continental Convective Clouds Experiment (MC3E) 20 May 2011 squall-line case
+# ([Fan2017](@citet)). The lower boundary is part land, part ocean: an interactive `SlabLand` and a
+# prescribed-SST Gulf share the surface through a fractional `SurfacePartition`, all-sky RRTMGP
+# radiation heats the column and the surface, and the low-level jet that feeds the squall line draws
+# its moisture from the resolved Gulf.
 #
 # `nested_atmosphere_model(grid, dataset; dates, …)` builds the whole nest: an ERA5 "parent"
 # `PrescribedAtmosphere` on its native 0.25° pressure-level grid, driving a Breeze "child" through open
@@ -19,17 +21,22 @@
 #   terrain-consistent `w̃ ≈ 0`, and a dynamical-initialization (DFI) pass that balances `ρw`.
 # - Integrates the compressible equations with split-explicit acoustic substepping, 1-moment
 #   mixed-phase microphysics, Coriolis, and Rayleigh damping.
-# - Couples an interactive `SlabLand` (prognostic skin temperature + bucket hydrology) under the
-#   child through Monin–Obukhov similarity fluxes, and the child's rain into the land bucket.
+# - Couples an interactive `SlabLand` (prognostic skin temperature + bucket hydrology) and a
+#   `PrescribedOcean` under the child through Monin–Obukhov similarity fluxes. The
+#   `SurfacePartition` — built automatically because the model has both surfaces — blends each
+#   cell's land and ocean fluxes by its ETOPO2022-derived `ocean_fraction`, so coastal cells are
+#   fractionally wet rather than binary.
 # - Runs all-sky RRTMGP radiative transfer inside the child — interior heating rates on the
 #   evolving clouds, observed (CGLS 1 km) surface albedo, surface fluxes into the land energy
-#   budget, and the interface skin temperature closing the longwave loop.
-# - Writes and animates horizontal slices, a vertical section, and the land-surface response.
+#   budget, and the partition-blended skin temperature closing the longwave loop.
+# - Writes and animates horizontal slices, a vertical section, and the surface response.
 #
 # ## What it does NOT do (yet)
 # - Single nest only (ERA5 → 12 km; coarsened 4× from Fan's 3 km Domain 3 for a fast configuration).
 # - The land is a slab: no soil column, no vegetation, and no boundary-layer or cumulus
 #   parameterization — diffusion is numerical, and deep convection is resolved on the grid.
+# - The ocean is prescribed: the SST holds the initial ERA5 analysis, with no response to the
+#   atmosphere over the few simulated hours.
 # - Snow does not reach the bucket yet (the coupler diagnoses the child's surface rain flux,
 #   but no snow analog); immaterial for this warm-season case.
 
@@ -46,7 +53,7 @@ using CUDA
 using Printf
 using Dates: DateTime, Second
 
-# This 12 km LAM (150×136×50 ≈ 1.0M cells, split-explicit) targets a CUDA GPU; switch to `CPU()` only
+# This 12 km LAM (162×153×50 ≈ 1.2M cells, split-explicit) targets a CUDA GPU; switch to `CPU()` only
 # for a small smoke test.
 arch = GPU()
 
@@ -55,9 +62,10 @@ Oceananigans.defaults.FloatType = Float32
 
 # ## Configuration
 #
-# Domain centered on the DOE Atmospheric Radiation Measurement (ARM) Southern Great Plains (SGP) site
-# in Lamont, OK — the 3 km Domain 3 of the WRF telescoping nest in [Fan2017](@citet), coarsened 4×
-# and driven directly by ERA5.
+# The domain covers [Fan2017](@citet)'s 3 km WRF Domain 3 around the DOE Atmospheric Radiation
+# Measurement (ARM) Southern Great Plains (SGP) site in Lamont, OK — coarsened 4× and driven
+# directly by ERA5 — and extends south past the Texas–Louisiana coast into the open Gulf of
+# Mexico, so the surface under the child is genuinely part land, part ocean.
 
 ## dates
 name = "mc3e"
@@ -65,9 +73,12 @@ duration = 3hours
 start_date = DateTime(2011, 05, 20, 0)
 stop_date = start_date + Second(duration)
 
-## location
-φ₀, λ₀ = 36.605, -97.485    # center latitude, longitude (deg)
-Lλ, Lφ = 16.7, 15.1
+## location: ARM SGP in the northern half, open Gulf water in the southern third
+φ₀, λ₀ = 36.605, -97.485    # ARM SGP site (deg)
+λ_west, λ_east   = -104.5, -86.5
+φ_south, φ_north = 24.5, 41.5
+Lλ = λ_east - λ_west
+Lφ = φ_north - φ_south
 
 ## horizontal resolution: grid spacing in degrees; the cell counts follow from the extent
 ## (which stays fixed, so the realized spacing Lλ/Nx only approximates Δλ)
@@ -76,8 +87,6 @@ Nx = round(Int, Lλ / Δλ)
 Ny = round(Int, Lφ / Δφ)
 
 dates = (start_date, stop_date)
-λ_west, λ_east   = λ₀ .+ [-1, 1] .* Lλ / 2
-φ_south, φ_north = φ₀ .+ [-1, 1] .* Lφ / 2
 
 # Vertical grid matched to [Fan2017](@citet)'s WRF nest: `Nz = 50` cells, a constant 60 m surface
 # cell, 490 m maximum spacing, and a model top at ~20 km (~50 hPa).
@@ -138,7 +147,7 @@ nest = nested_atmosphere_model(grid, dataset;
                                momentum_advection = WENO(order = 5))
 
 # No `bottom_drag_coefficient`: the surface stress (with the heat and moisture fluxes) comes from
-# the land coupling below, so the child's bottom boundary conditions stay the coupler's flux fields.
+# the surface coupling below, so the child's bottom boundary conditions stay the coupler's flux fields.
 
 # The realized parent region (child + padding, snapped to the native 0.25° grid) serves the domain
 # map and the ERA5 snapshots below.
@@ -168,35 +177,64 @@ fig
 ω_metadata = Metadata(:vertical_velocity; dataset, dates, region = era5_region, dir = era5_datadir)
 ω_series = FieldTimeSeries(ω_metadata, parent.grid; time_indices_in_memory = length(ω_metadata.dates))
 
-# ## Land surface
+# ## The land–ocean surface
 #
-# The lower boundary is interactive: a `SlabLand` on the child's horizontal grid — prognostic
-# skin temperature plus bucket hydrology, driven by the coupled turbulent fluxes, the child's
-# rain, and the radiation below. Temperature initializes from ERA5's skin temperature; the
-# bucket starts with ≈ 20 mm of water.
+# The lower boundary is part land, part Gulf of Mexico, and both surfaces live on the child's
+# horizontal grid. The land is an interactive `SlabLand` — prognostic skin temperature plus
+# bucket hydrology, driven by the coupled turbulent fluxes, the child's rain, and the radiation
+# below; its bucket starts with ≈ 20 mm of water. The ocean is a `PrescribedOcean` whose SST
+# holds the initial analysis over the few simulated hours. ERA5's skin temperature initializes
+# both — over open water it carries the analyzed sea surface temperature — so land and ocean
+# start from one consistent field.
 
-land_grid = LatitudeLongitudeGrid(arch;
-                                  longitude = (λ_west,  λ_east),
-                                  latitude  = (φ_south, φ_north),
-                                  size = (Nx, Ny),
-                                  halo = (5, 5),
-                                  topology = (Bounded, Bounded, Flat))
+surface_grid = LatitudeLongitudeGrid(arch;
+                                     longitude = (λ_west,  λ_east),
+                                     latitude  = (φ_south, φ_north),
+                                     size = (Nx, Ny),
+                                     halo = (5, 5),
+                                     topology = (Bounded, Bounded, Flat))
 
-land = SlabLand(land_grid)
 skin_temperature = Metadatum(:skin_temperature; dataset = ERA5HourlySingleLevel(),
                              date = start_date, region = era5_region, dir = era5_datadir)
+
+land = SlabLand(surface_grid)
 set!(land.temperature, skin_temperature)
 set!(land; M = 20)
+
+ocean = PrescribedOcean(surface_grid)
+set!(ocean.sea_surface_temperature[1], skin_temperature)
+
+# ## Surface partition
+#
+# What makes a cell land or ocean is its `ocean_fraction` θ: the fraction of the cell's area
+# below sea level in ETOPO2022 — the same dataset that shapes the child's terrain, so the
+# coastline and the orography agree. Coastal cells carry genuine fractions rather than a binary
+# mask: the coupler blends each cell's land and ocean fluxes as `(1 - θ)` land + `θ` ocean, and
+# the radiation sees the same blend of skin temperatures.
+
+ocean_fraction = regrid_ocean_fraction(surface_grid; dataset = ETOPO2022())
+
+fig_partition = Figure(size = (700, 620))
+ax_θ = Axis(fig_partition[1, 1]; xlabel = "longitude (°)", ylabel = "latitude (°)",
+            title = "Ocean fraction θ (ETOPO2022)")
+hm_θ = heatmap!(ax_θ, ocean_fraction; colormap = :dense, colorrange = (0, 1))
+scatter!(ax_θ, [λ₀], [φ₀]; marker = :star5, color = :orange, markersize = 15)
+text!(ax_θ, λ₀ + 0.3, φ₀; text = "ARM SGP", color = :orange, align = (:left, :center))
+Colorbar(fig_partition[1, 2], hm_θ)
+save("gulf_ocean_fraction.png", fig_partition)
+
+fig_partition
 
 # ## RRTMGP radiation
 #
 # All-sky RRTMGP: interior heating on the evolving clouds, surface fluxes into the land
 # budget. The surface albedo is observed, not constant — passing the dataset materializes
 # the CGLS 1 km blue-sky albedo at the ten-day date nearest `epoch`, with water pixels
-# (NaN in the land product) defaulting to open water. Everything else is a Breeze default — per-column
-# sun angles from the grid, climatological ozone, emissivity, effective radii. No surface
-# temperature either: the coupled model below binds the atmosphere–land interface skin
-# temperature, re-read every solve. Hourly solves match the ERA5 cadence.
+# (NaN in the land product) defaulting to open water — the Gulf gets its open-water albedo the
+# same way. Everything else is a Breeze default — per-column sun angles from the grid,
+# climatological ozone, emissivity, effective radii. No surface temperature either: the coupled
+# model below binds the partition-blended skin temperature, re-read every solve. Hourly solves
+# match the ERA5 cadence.
 
 radiation = RadiativeTransferModel(grid, AllSkyOptics(), nest.child.thermodynamic_constants;
                                    solar_position = ApparentSolarPosition(epoch = start_date),
@@ -205,15 +243,18 @@ radiation = RadiativeTransferModel(grid, AllSkyOptics(), nest.child.thermodynami
 
 # ## Coupled model
 #
-# `AtmosphereLandModel` wires nest, land, and radiation together: it binds the interface skin
-# temperature into the RTM, materializes the child's radiation proxy, and each step computes
-# Monin–Obukhov fluxes from the child's lowest-cell state, writing them into the child's
-# bottom flux boundary conditions and the land's accumulators. The adaptive outer Δt is
-# bounded by the advective CFL (acoustic modes are substepped).
+# `EarthSystemModel` wires nest, land, ocean, and radiation together. Because the model has both
+# a land and an ocean component, the `SurfacePartition` activates automatically: each coupled
+# step computes Monin–Obukhov fluxes over both surfaces from the child's lowest-cell state,
+# blends them by the cell's `ocean_fraction`, and writes the blend into the child's bottom flux
+# boundary conditions; the land's accumulators receive their per-land-area fluxes. The RTM is
+# bound to the partition-weighted skin temperature — SST over the Gulf, the live land skin
+# temperature inland. The adaptive outer Δt is bounded by the advective CFL (acoustic modes are
+# substepped).
 
 Δt = 10
 atmosphere = Simulation(nest; Δt)   ## the coupled model manages Δt; this sets only the initial value
-model = AtmosphereLandModel(atmosphere, land; radiation)
+model = EarthSystemModel(; atmosphere, land, ocean, radiation, ocean_fraction)
 
 simulation = Simulation(model; Δt, stop_time=duration)
 conjure_time_step_wizard!(simulation, IterationInterval(3); cfl=0.5, max_Δt=Δt)
@@ -226,8 +267,9 @@ conjure_time_step_wizard!(simulation, IterationInterval(3); cfl=0.5, max_Δt=Δt
 # `indices`: horizontal slices at the surface and at `k_aloft` (the reference level nearest 2 km —
 # on the terrain-following grid a constant reference level ≈ constant height above ground near the
 # surface), and a zonal x-z section at `j_section`, the latitude row through the ARM SGP site.
-# A fourth writer saves the land surface: skin temperature and bucket saturation (2-D already,
-# no slicing needed — the writer stores each output's own grid).
+# A fourth writer saves the surface: the land skin temperature, the bucket saturation, and the
+# partition-blended skin temperature Tₛ the atmosphere sees (2-D already, no slicing needed —
+# the writer stores each output's own grid).
 
 child = nest.child
 k_aloft = searchsortedfirst(Array(znodes(grid, Center())), 2000)
@@ -253,7 +295,9 @@ simulation.output_writers[:aloft]   = slice_writer((:, :, k_aloft),   aloft_file
 simulation.output_writers[:section] = slice_writer((:, j_section, :), section_filename)
 
 land_filename = name * "_land.jld2"
-land_fields = (Tˡᵃ = land.temperature, 𝒮 = land.saturation)
+land_fields = (Tˡᵃ = land.temperature,
+               𝒮 = land.saturation,
+               Tₛ = surface_temperature(model.interfaces))
 simulation.output_writers[:land] = JLD2Writer(model, land_fields; schedule,
                                               filename = land_filename,
                                               overwrite_existing = true)
@@ -457,28 +501,30 @@ nothing #hide
 
 # ![](era5_section_xz.mp4)
 
-# ## Land response
+# ## Surface response
 #
-# The coupled surface closes the loop: skin-temperature change over the run (daytime heating,
-# plus cooling under the squall line's cold pool and anvil shading) and the final bucket
-# saturation — wetted where the squall line rained, dried by evaporation elsewhere. Both load
-# back as 2-D `FieldTimeSeries` on the land grid and plot directly.
+# The coupled surface closes the loop. The partition-blended skin temperature Tₛ — the one
+# surface the atmosphere and the radiation see — changes over the run only where the land
+# fraction lets it: daytime heating plus cooling under the squall line's cold pool and anvil
+# shading over the plains, next to nothing over the prescribed Gulf, and a muted response along
+# the fractional coast. The final bucket saturation shows where the squall line rained. Both
+# load back as 2-D `FieldTimeSeries` and plot directly.
 
-Tˡᵃ_series = FieldTimeSeries(land_filename, "Tˡᵃ")
-𝒮_series   = FieldTimeSeries(land_filename, "𝒮")
+Tₛ_series = FieldTimeSeries(land_filename, "Tₛ")
+𝒮_series  = FieldTimeSeries(land_filename, "𝒮")
 
 fig_land = Figure(size = (1100, 420))
 
 ax_T = Axis(fig_land[1, 1]; xlabel = "longitude (°)", ylabel = "latitude (°)",
-            title = "ΔTˡᵃ over $(prettytime(duration)) (K)")
+            title = "ΔTₛ over $(prettytime(duration)) (K)")
 ax_𝒮 = Axis(fig_land[1, 3]; xlabel = "longitude (°)", title = "final surface saturation 𝒮")
 
-hm_T = heatmap!(ax_T, Tˡᵃ_series[end] - Tˡᵃ_series[1]; colormap = :balance, colorrange = (-8, 8))
+hm_T = heatmap!(ax_T, Tₛ_series[end] - Tₛ_series[1]; colormap = :balance, colorrange = (-8, 8))
 hm_𝒮 = heatmap!(ax_𝒮, 𝒮_series[end]; colormap = :dense, colorrange = (0, 1))
 
 Colorbar(fig_land[1, 2], hm_T)
 Colorbar(fig_land[1, 4], hm_𝒮)
 
-save("era5_breeze_land_response.png", fig_land)
+save("era5_breeze_surface_response.png", fig_land)
 
 fig_land

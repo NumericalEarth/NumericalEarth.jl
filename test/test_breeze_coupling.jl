@@ -70,6 +70,35 @@ function build_land_test_model(arch)
     return model
 end
 
+# Helper to build a fresh atmosphere over a mixed land-ocean surface: a SlabLand and a
+# PrescribedOcean share the surface grid, partitioned by `ocean_fraction`.
+function build_partition_test_model(arch; ocean_fraction)
+    grid = RectilinearGrid(arch,
+                           size = (16, 16), halo = (5, 5),
+                           x = (-10kilometers, 10kilometers),
+                           z = (0, 10kilometers),
+                           topology = (Periodic, Flat, Bounded))
+
+    θ₀ = 285
+
+    atmosphere = atmosphere_simulation(grid; potential_temperature=θ₀)
+    set!(atmosphere.model, θ=atmosphere.model.dynamics.reference_state.surface_potential_temperature, u=5)
+
+    surface_grid = RectilinearGrid(arch,
+                                   size = grid.Nx,
+                                   halo = grid.Hx,
+                                   x = (-10kilometers, 10kilometers),
+                                   topology = (Periodic, Flat, Flat))
+
+    land = SlabLand(surface_grid)
+    set!(land; T=θ₀ + 5)
+
+    ocean = PrescribedOcean(surface_grid)
+    set!(ocean, T=θ₀ - 5)
+
+    return EarthSystemModel(; atmosphere, land, ocean, ocean_fraction)
+end
+
 # The land setup with the child wrapped in a NestedModel (inert prescribed parent) inside
 # a Simulation — the shape a parent-driven LAM presents to AtmosphereLandModel.
 function build_nested_land_test_model(arch;
@@ -199,6 +228,56 @@ end
 
             @test minimum(qˡ) > 0
             @test q_interface ≈ qᵛ
+        end
+    end
+end
+
+@testset "Surface partition blends land and ocean" begin
+    for arch in test_architectures
+        A = typeof(arch)
+
+        @testset "Net atmosphere fluxes are partition-weighted on $A" begin
+            ## West half land, east half ocean, with a fractional strip across the middle.
+            θ(x) = clamp(1/2 + x / 10kilometers, 0, 1)
+            model = build_partition_test_model(arch; ocean_fraction=θ)
+            update_state!(model)
+
+            interfaces = model.interfaces
+            partition = interfaces.surface_partition
+            fractions = Array(interior(partition.ocean_fraction))
+            @test minimum(fractions) == 0 && maximum(fractions) == 1
+            @test any(f -> 0 < f < 1, fractions)
+
+            al = interfaces.atmosphere_land_interface.fluxes
+            ao = interfaces.atmosphere_ocean_interface.fluxes
+            net = interfaces.net_fluxes.atmosphere
+
+            Qˡ = Array(interior(al.sensible_heat))
+            Qᵒ = Array(interior(ao.sensible_heat))
+            Fˡ = Array(interior(al.water_vapor))
+            Fᵒ = Array(interior(ao.water_vapor))
+            @test Array(interior(net.ρe))   ≈ fractions .* Qᵒ .+ (1 .- fractions) .* Qˡ
+            @test Array(interior(net.ρqᵛᵉ)) ≈ fractions .* Fᵒ .+ (1 .- fractions) .* Fˡ
+
+            ## Stresses are weighted at centers, then interpolated to the face-located ρu.
+            τˡ = Array(interior(al.x_momentum))
+            τᵒ = Array(interior(ao.x_momentum))
+            τ = fractions .* τᵒ .+ (1 .- fractions) .* τˡ
+            ρu = Array(interior(net.ρu))
+            @test ρu[2:end, :, :] ≈ (τ[1:end-1, :, :] .+ τ[2:end, :, :]) ./ 2
+            @test maximum(abs, ρu) > 0
+
+            ## The blended skin temperature interpolates the warm land and the cool ocean
+            ## (PrescribedOcean temperatures are already Kelvin).
+            Tˡ = Array(interior(interfaces.atmosphere_land_interface.temperature))
+            Tᵒ = Array(interior(interfaces.atmosphere_ocean_interface.temperature))
+            Tₛ = Array(interior(partition.surface_temperature))
+            @test Tₛ ≈ fractions .* Tᵒ .+ (1 .- fractions) .* Tˡ
+            @test surface_temperature(interfaces) === partition.surface_temperature
+        end
+
+        @testset "Both surfaces without an ocean_fraction refuse to build on $A" begin
+            @test_throws ArgumentError build_partition_test_model(arch; ocean_fraction=nothing)
         end
     end
 end

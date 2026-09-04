@@ -298,6 +298,7 @@ superscript band.
 | ``\tau^y`` | `τʸ` | meridional kinematic stress | Kinematic meridional momentum flux (m² s⁻²) |
 | ``\rho \tau^x`` | `ρτˣ` | zonal wind stress | Mass-weighted zonal stress (N m⁻²) |
 | ``\rho \tau^y`` | `ρτʸ` | meridional wind stress | Mass-weighted meridional stress (N m⁻²) |
+| ``\theta`` | `ocean_fraction` | ocean fraction | Areal fraction of a surface cell covered by ocean; the land fraction is ``1 - \theta`` (–) |
 
 ## Net ocean fluxes
 

@@ -1,4 +1,5 @@
 using Oceananigans.Architectures: architecture
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: update_field_time_series!, FieldTimeSeries
 using Oceananigans.TimeSteppers: Clock, tick!
 using Oceananigans.Units: Time
@@ -176,6 +177,13 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::Prescribed
     interior(exchanger.state.S) .= interior(ocean.sea_surface_salinity)[:, :, :, n]
     interior(exchanger.state.u) .= interior(ocean.velocities.u)[:, :, :, n]
     interior(exchanger.state.v) .= interior(ocean.velocities.v)[:, :, :, n]
+
+    # The flux kernel also evaluates halo columns; a 0 K halo temperature NaNs the solve.
+    fill_halo_regions!(exchanger.state.T)
+    fill_halo_regions!(exchanger.state.S)
+    fill_halo_regions!(exchanger.state.u)
+    fill_halo_regions!(exchanger.state.v)
+
     return nothing
 end
 

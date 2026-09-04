@@ -59,7 +59,7 @@ function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
     grid = land.grid
     arch = architecture(grid)
     σ = convert(eltype(grid), NumericalEarth.Radiations.default_stefan_boltzmann_constant)
-    Tˢ = rtm.surface_properties.surface_temperature
+    Tˢ = al_interface.temperature   # land skin temperature (K)
     ε = rtm.surface_properties.surface_emissivity
 
     # Equals `diffuse_surface_albedo` in the coupled configuration; always indexable.

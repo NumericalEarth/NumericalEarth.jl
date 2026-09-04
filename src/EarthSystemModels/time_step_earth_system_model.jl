@@ -3,7 +3,8 @@ using Oceananigans.TimeSteppers: maybe_prepare_first_time_step!
 
 using .InterfaceComputations: compute_atmosphere_ocean_fluxes!,
                               compute_atmosphere_land_fluxes!,
-                              compute_sea_ice_ocean_fluxes!
+                              compute_sea_ice_ocean_fluxes!,
+                              update_surface_temperature!
 
 # Hooks called from `update_state!` to apply radiative contributions on top of
 # turbulent fluxes. Concrete radiation types overload these (no-op when
@@ -66,6 +67,10 @@ function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel
     compute_atmosphere_sea_ice_fluxes!(coupled_model)
     compute_atmosphere_land_fluxes!(coupled_model)
     compute_sea_ice_ocean_fluxes!(coupled_model)
+
+    # Phase 2.5: blend the per-surface skin temperatures over the surface partition
+    # (no-op unless the model has both land and ocean interfaces)
+    update_surface_temperature!(coupled_model)
 
     # Phase 3: assemble net component fluxes (turbulent only)
     update_net_fluxes!(coupled_model, radiation)
