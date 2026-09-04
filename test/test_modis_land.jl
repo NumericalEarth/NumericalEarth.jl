@@ -958,16 +958,10 @@ end
         @test build_lai_climatology!(climatology; region, periods = period:period, dir) == paths
         @test mtime(only(paths)) == modified
 
-        # A peak reducer selects the largest retained value instead of averaging.
-        peak_dir = mkpath(joinpath(dir, "peak"))
-        for date in source_dates
-            source = Metadatum(:leaf_area_index; dataset = MCD15A2H(), region, date, dir)
-            cp(joinpath(dir, source.filename), joinpath(peak_dir, source.filename))
-        end
-        build_lai_climatology!(climatology; region, periods = period:period,
-                               dir = peak_dir, reducer = maximum)
-        peak = Metadatum(:leaf_area_index; dataset = climatology, region, date = stamp,
-                         dir = peak_dir)
+        # A peak reducer selects the largest retained value, in its own file beside the mean's.
+        peak = Metadatum(:leaf_area_index; dataset = MODISLAIClimatology(; years, reducer = maximum),
+                         region, date = stamp, dir)
+        @test peak.filename != metadatum.filename
         @test Array(interior(Field(peak), :, :, 1))[1, 1] ≈ 30 * MODIS_LAI_SCALE
 
         # The count is stored beside a reduction, so it is not something the builder makes.

@@ -51,11 +51,12 @@ Base.show(io::IO, dataset::MCD15A2H) =
     print(io, "MCD15A2H(screened_flags=", repr(dataset.screened_flags), ")")
 
 """
-    MODISLAIClimatology(; dataset = MCD15A2H(), years = 2003:2019)
+    MODISLAIClimatology(; dataset = MCD15A2H(), years = 2003:2019, reducer = mean)
 
 A seasonal climatology of a [`MODISLAIDataset`](@ref): one composite per period of the
-year, each reducing that period's retrievals across `years` pixel by pixel with the
-screen `dataset` carries. An 8-day source gives 46 periods, so
+year, each combining the retrievals `dataset`'s screen retains across `years` pixel by pixel
+with `reducer`, a named function of the vector of retained values (`mean` for a seasonal
+mean, `maximum` for a peak-season field). An 8-day source gives 46 periods, so
 `FieldTimeSeries(Metadata(:leaf_area_index; dataset = MODISLAIClimatology(), region), grid)`
 is a 46-slot cyclic seasonal series. Cells no year could observe stay `NaN`, and the
 number of retained retrievals behind every cell is stored beside the reduction, see
@@ -68,19 +69,21 @@ equatorial crossing times.
 julia> using NumericalEarth
 
 julia> MODISLAIClimatology()
-MODISLAIClimatology(MCD15A2H(screened_flags=0x0007), years=2003:2019)
+MODISLAIClimatology(MCD15A2H(screened_flags=0x0007), years=2003:2019, reducer=mean)
 ```
 """
-struct MODISLAIClimatology{D <: MODISLAIDataset, Y} <: AbstractMODISLandDataset
+struct MODISLAIClimatology{D <: MODISLAIDataset, Y, R} <: AbstractMODISLandDataset
     dataset :: D
     years :: Y
+    reducer :: R
 end
 
-MODISLAIClimatology(; dataset = MCD15A2H(), years = 2003:2019) =
-    MODISLAIClimatology(dataset, years)
+MODISLAIClimatology(; dataset = MCD15A2H(), years = 2003:2019, reducer = mean) =
+    MODISLAIClimatology(dataset, years, reducer)
 
 Base.show(io::IO, climatology::MODISLAIClimatology) =
-    print(io, "MODISLAIClimatology(", climatology.dataset, ", years=", climatology.years, ")")
+    print(io, "MODISLAIClimatology(", climatology.dataset, ", years=", climatology.years,
+          ", reducer=", climatology.reducer, ")")
 
 """
     MCD12Q1(; legend = :IGBP)
@@ -277,7 +280,7 @@ DataWrangling.conversion_units(::MODISLandCoverMetadatum) = nothing
 #####
 ##### Each granule read produces one regional file holding every layer, so the raw filename
 ##### is keyed by date and region but not by variable. The climatology reduces a single
-##### variable, so its filename carries the variable, the years, and the period.
+##### variable, so its filename carries the variable, the years, the reducer, and the period.
 #####
 
 date_tag(date) = Dates.format(DateTime(date), "yyyymmdd")
@@ -307,7 +310,7 @@ DataWrangling.metadata_filename(dataset::MCD12Q1, name, date, region) =
 function DataWrangling.metadata_filename(dataset::MODISLAIClimatology, name, date, region)
     period = period_index(date, composite_period_days(dataset))
     return string(modis_short_name(dataset), "_", modis_version(dataset), "_", name,
-                  "_climatology_", years_tag(dataset.years),
+                  "_climatology_", years_tag(dataset.years), "_", nameof(dataset.reducer),
                   "_p", lpad(period, 2, '0'), "_", region_tag(region), ".nc")
 end
 
