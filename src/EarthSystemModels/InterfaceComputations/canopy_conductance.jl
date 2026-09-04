@@ -103,7 +103,7 @@ function CanopyConductanceHumidity(FT=Oceananigans.defaults.FloatType;
 end
 
 Adapt.adapt_structure(to, q::CanopyConductanceHumidity) =
-    CanopyConductanceHumidity(adapt(to, q.leaf_area_index),
+    CanopyConductanceHumidity(Adapt.adapt(to, q.leaf_area_index),
                               q.photosynthesis, q.conductance, q.moisture_stress,
                               q.absorbed_par, q.atmospheric_co2, q.phase)
 

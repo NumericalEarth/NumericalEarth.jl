@@ -384,7 +384,7 @@ Base.summary(s::PrognosticCanopyAir) =
     string("PrognosticCanopyAir(h_c=", prettysummary(s.layer_depth), ")")
 Base.show(io::IO, s::PrognosticCanopyAir) = print(io, summary(s))
 
-Adapt.adapt_structure(to, s::PrognosticCanopyAir) = PrognosticCanopyAir(adapt(to, s.layer_depth))
+Adapt.adapt_structure(to, s::PrognosticCanopyAir) = PrognosticCanopyAir(Adapt.adapt(to, s.layer_depth))
 
 """
     struct CanopyAirSpace

@@ -12,9 +12,9 @@ struct InterfaceProperties{Q, T, V}
 end
 
 Adapt.adapt_structure(to, p::InterfaceProperties) =
-    InterfaceProperties(adapt(to, p.specific_humidity_formulation),
-                        adapt(to, p.temperature_formulation),
-                        adapt(to, p.velocity_formulation))
+    InterfaceProperties(Adapt.adapt(to, p.specific_humidity_formulation),
+                        Adapt.adapt(to, p.temperature_formulation),
+                        Adapt.adapt(to, p.velocity_formulation))
 
 #####
 ##### Interface specific humidity formulations
@@ -663,7 +663,7 @@ PrognosticSkin(FT::Type = Oceananigans.defaults.FloatType; heat_capacity = 1e5) 
 Base.summary(s::PrognosticSkin) = string("PrognosticSkin(C=", prettysummary(s.heat_capacity), ")")
 Base.show(io::IO, s::PrognosticSkin) = print(io, summary(s))
 
-Adapt.adapt_structure(to, s::PrognosticSkin) = PrognosticSkin(adapt(to, s.heat_capacity))
+Adapt.adapt_structure(to, s::PrognosticSkin) = PrognosticSkin(Adapt.adapt(to, s.heat_capacity))
 
 """
     EnergyBalanceTemperature(coupling; storage=PrognosticSkin())
@@ -690,7 +690,7 @@ const PrognosticEnergyBalanceTemperature = EnergyBalanceTemperature{<:Any, <:Pro
 # structs untouched, which is invisible on the CPU and leaves host memory in the
 # kernel on the GPU.
 Adapt.adapt_structure(to, t::EnergyBalanceTemperature) =
-    EnergyBalanceTemperature(adapt(to, t.coupling), adapt(to, t.storage))
+    EnergyBalanceTemperature(Adapt.adapt(to, t.coupling), Adapt.adapt(to, t.storage))
 
 """
     SoilSkinTemperature(conductivity, thickness; storage=PrognosticSkin())

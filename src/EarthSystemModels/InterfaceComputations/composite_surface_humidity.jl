@@ -61,7 +61,7 @@ end
 CompositeSurfaceHumidity(; soil, canopy) = CompositeSurfaceHumidity(soil, canopy)
 
 Adapt.adapt_structure(to, q::CompositeSurfaceHumidity) =
-    CompositeSurfaceHumidity(adapt(to, q.soil), adapt(to, q.canopy))
+    CompositeSurfaceHumidity(Adapt.adapt(to, q.soil), Adapt.adapt(to, q.canopy))
 
 Base.summary(q::CompositeSurfaceHumidity) =
     string("CompositeSurfaceHumidity(soil=", summary(q.soil), ", canopy=", summary(q.canopy), ")")
