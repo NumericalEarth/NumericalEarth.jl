@@ -364,7 +364,7 @@ nothing #hide
 # closed evergreen canopy holds its leaf area through the year, where a temperate deciduous stand
 # swings by close to an order of magnitude between leaf-off and full canopy. For a domain like
 # this one a single peak-season field is therefore a defensible boundary condition, and
-# `build_lai_climatology!(…; reducer = maximum)` produces exactly that; for a mid-latitude domain
+# `MODISLAIClimatology(reducer = maximum)` produces exactly that; for a mid-latitude domain
 # the seasonal series is not optional.
 #
 # The gap panel is the one that sets the `years` default. Three years reaches the land-cover floor

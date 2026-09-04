@@ -19,18 +19,14 @@ end
                            name = :leaf_area_index,
                            region,
                            periods = 1:periods_per_year(dataset),
-                           reducer = mean,
                            dir = default_download_directory(dataset))
 
 Build the cached per-period files behind a [`MODISLAIClimatology`](@ref) over `region`. For
 each composite period in `periods`, every contributing date of `dataset.years` is
 downloaded and screened, the retained retrievals are combined pixel by pixel with
-`reducer`, and one file is written holding the reduction and the retained-retrieval count.
-Periods already on disk are skipped, so an interrupted build resumes. Returns the paths of
-the files.
-
-`reducer` acts on the vector of retained values of a pixel: `mean` gives a seasonal mean,
-while `maximum` (or a high quantile) gives a peak-season field.
+`dataset.reducer`, and one file is written holding the reduction and the retained-retrieval
+count. Periods already on disk are skipped, so an interrupted build resumes. Returns the
+paths of the files.
 
 A date the archive holds no composite for is skipped with a warning.
 """
@@ -38,7 +34,6 @@ function build_lai_climatology!(dataset::MODISLAIClimatology;
                                 name = :leaf_area_index,
                                 region,
                                 periods = 1:periods_per_year(dataset),
-                                reducer = mean,
                                 dir = default_download_directory(dataset))
 
     haskey(MODISLAI_variable_names, name) ||
@@ -70,7 +65,7 @@ function build_lai_climatology!(dataset::MODISLAIClimatology;
 
         @info string("Compositing ", length(available), " retrievals into period ", period,
                      " of the ", modis_short_name(source), " ", name, " climatology...")
-        write_lai_composite(filepath, metadata, reducer)
+        write_lai_composite(filepath, metadata, dataset.reducer)
     end
 
     return paths
