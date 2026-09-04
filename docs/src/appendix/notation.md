@@ -258,7 +258,6 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyAirSpace`](@r
 |:----:|:----:|:---------|:------------|
 | ``\sigma`` | `σ` | Stefan–Boltzmann constant | (W m⁻² K⁻⁴) |
 | ``\alpha`` | `α` | albedo | Surface reflectivity (–) |
-| ``\alpha^{\mathrm{eff}}`` | `effective_albedo` | column albedo | Broadband shortwave albedo of the canopy + ground column (–) |
 | ``\epsilon`` | `ϵ` | emissivity | Surface emissivity (–) |
 
 ## Similarity theory / surface layer
