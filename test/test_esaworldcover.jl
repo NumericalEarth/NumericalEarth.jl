@@ -1,5 +1,8 @@
 include("runtests_setup.jl")
 
+using ArchGDAL
+using NCDatasets: NCDataset
+
 using NumericalEarth: ESAWorldCover, WorldCoverVersion, WorldCoverV100, WorldCoverV200
 using NumericalEarth.DataWrangling.WorldCover: class_counts, majority_class,
                                                class_fractions, vegetation_fraction,
@@ -11,6 +14,7 @@ using NumericalEarth.DataWrangling.WorldCover: class_counts, majority_class,
                                                ESA_WORLDCOVER_FRACTION_VARIABLE_NAMES,
                                                ESA_WORLDCOVER_VEGETATED_CLASSES,
                                                ESA_WORLDCOVER_NATIVE_STEP,
+                                               ESA_WORLDCOVER_PIXELS_PER_DEGREE,
                                                version_year, version_string
 using Oceananigans.Grids: λnodes, φnodes
 using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, native_grid,
@@ -284,4 +288,64 @@ end
         @test all(λ -> any(fλ -> abs(fλ - λ) < ε, file_λ), λc)
         @test all(φ -> any(fφ -> abs(fφ - φ) < ε, file_φ), φc)
     end
+end
+
+@testset "chunked aggregation matches the one-pass aggregation" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthArchGDALExt)
+    factor = 4
+    Δ = ESA_WORLDCOVER_NATIVE_STEP
+    i₀ = 5 * ESA_WORLDCOVER_PIXELS_PER_DEGREE
+    j₀ = 52 * ESA_WORLDCOVER_PIXELS_PER_DEGREE
+
+    # A GeoTIFF on the global 10 m lattice with its SW pixel corner at pixel (i, j);
+    # `codes` run west to east and south to north.
+    function synthetic_tile(i, j, codes)
+        path = tempname() * ".tif"
+        nx, ny = size(codes)
+        ArchGDAL.create(path; driver = ArchGDAL.getdriver("GTiff"),
+                        width = nx, height = ny, nbands = 1, dtype = UInt8) do dataset
+            ArchGDAL.setgeotransform!(dataset, [i * Δ, Δ, 0.0, (j + ny) * Δ, 0.0, -Δ])
+            ArchGDAL.setproj!(dataset, ArchGDAL.toWKT(ArchGDAL.importEPSG(4326)))
+            ArchGDAL.write!(ArchGDAL.getband(dataset, 1), reverse(codes, dims = 2))
+        end
+        return path
+    end
+
+    # Two tiles meeting inside the window: the west one cycles through the legend with a
+    # no-data corner, the east one covers only the southern half, so the northeast quarter
+    # of the window has no source and reads as no-data.
+    codes = collect(ESA_WORLDCOVER_CLASS_CODES)
+    west = UInt8.(codes[mod1.((1:24) .+ (1:48)', 11)])
+    west[1:3, 1:3] .= 0
+    east = fill(UInt8(40), 24, 24)
+    raster = zeros(UInt8, 48, 48)
+    raster[1:24, :] = west
+    raster[25:48, 1:24] = east
+
+    region = BoundingBox(longitude = ((i₀ + 6) * Δ, (i₀ + 42) * Δ),
+                         latitude  = ((j₀ + 6) * Δ, (j₀ + 42) * Δ))
+    window = worldcover_window(region.longitude, region.latitude, factor)
+    @test window == (i₀, i₀ + 48, j₀, j₀ + 48)
+
+    sources = [ArchGDAL.read(synthetic_tile(i₀, j₀, west)),
+               ArchGDAL.read(synthetic_tile(i₀ + 24, j₀, east))]
+    expected = aggregate_landcover(raster, factor)
+
+    for tile_bytes in (10^6, 300, 1)  # one chunk, 3 × 3 chunks, one coarse cell per chunk
+        nc_path = tempname() * ".nc"
+        ext.aggregate_worldcover_tiles(sources, window, factor, nc_path; tile_bytes)
+        NCDataset(nc_path) do ds
+            @test ds["lon"][:] ≈ (i₀ .+ factor .* (0.5:11.5)) .* Δ
+            @test ds["landcover_class"].var[:, :] == Float32.(expected.landcover_class)
+            @test ds["vegetation_fraction"].var[:, :] == Float32.(expected.vegetation_fraction)
+            for (name, fraction) in pairs(expected.class_fractions)
+                @test ds[string(class_fraction_variable_name(name))].var[:, :] == Float32.(fraction)
+            end
+        end
+    end
+    foreach(ArchGDAL.destroy, sources)
+
+    # The quarter with no published tile is no-data: class 0 and zero fractions.
+    @test all(iszero, expected.landcover_class[7:12, 7:12])
+    @test all(iszero, expected.vegetation_fraction[7:12, 7:12])
 end
