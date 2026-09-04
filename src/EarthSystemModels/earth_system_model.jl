@@ -127,21 +127,19 @@ atmosphere's tendency machinery reads from the same field the coupled
 Called from inside the [`EarthSystemModel`](@ref) constructor, after
 `ComponentInterfaces` is built (so the radiation has already been bound to the
 interfaces' surface temperature — see
-[`materialize_earth_system_surface_temperature`](@ref)).
+[`materialize_earth_system_surface_properties`](@ref)).
 """
 materialize_earth_system_radiation!(atmosphere, radiation) = atmosphere
 
 """
 $(TYPEDSIGNATURES)
 
-Return `radiation` with its surface temperature bound to the coupled interfaces'
-diagnostic surface (skin) temperature — the interface-formulation field the atmosphere
-actually sees, which coincides with a land's prognostic temperature only for bulk
-formulations — when `radiation` supports late binding and carries none of its own.
-Radiation components that read a surface temperature (e.g. Breeze's
+Return `radiation` with the surface properties it reads bound to the coupled interfaces:
+the radiating temperature, and any optics the surface computes for itself rather than
+takes as configuration. Radiation components that read surface properties (e.g. Breeze's
 `RadiativeTransferModel`) overload this. Default: no-op, returning `radiation` unchanged.
 """
-materialize_earth_system_surface_temperature(radiation, interfaces) = radiation
+materialize_earth_system_surface_properties(radiation, interfaces) = radiation
 
 """
 $(TYPEDSIGNATURES)
@@ -271,7 +269,7 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
     # Bind the interfaces' skin temperature into the radiation, then materialize the
     # atmosphere's radiation skeletons against it — in that order, so the atmosphere's
     # proxy aliases the bound radiation. Both are no-ops by default.
-    radiation  = materialize_earth_system_surface_temperature(radiation, interfaces)
+    radiation  = materialize_earth_system_surface_properties(radiation, interfaces)
     atmosphere = materialize_earth_system_radiation!(atmosphere, radiation)
 
     arch = architecture(interfaces.exchanger.grid)
