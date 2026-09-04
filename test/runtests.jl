@@ -15,6 +15,7 @@ args = parse_args(ARGS)
 # download_utils and runtests_setup are not tests!
 delete!(testsuite, "runtests_setup")
 delete!(testsuite, "download_utils")
+delete!(testsuite, "synthetic_datasets")
 delete!(testsuite, "test_distributed_utils")
 
 gpu_test = parse(Bool, get(ENV, "GPU_TEST", "false"))
