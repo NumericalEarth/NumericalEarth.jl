@@ -265,7 +265,8 @@ Pass the atmosphere's `clock` so that stepping the atmosphere advances the grid'
 heights; the default (a detached clock at `t = 0`) yields a first-date-static grid.
 """
 function per_column_geopotential_discretization(metadata::ERA5PressureMetadata;
-                                                 clock = Clock{eltype(metadata)}(time = zero(eltype(metadata))))
+                                                 clock = Clock{eltype(metadata)}(time = zero(eltype(metadata))),
+                                                 architecture = CPU())
     static_z = standard_atmosphere_z_interfaces(metadata.dataset.pressure_levels)
     static_ds = _with_z(metadata.dataset, static_z)
     sl_ds = DataWrangling.matching_single_level_dataset(metadata.dataset)
@@ -280,14 +281,19 @@ function per_column_geopotential_discretization(metadata::ERA5PressureMetadata;
     # cycle over, so fall back to `Linear()` — the resulting FTS returns a constant
     # geopotential at every clock time, which is correct for a static snapshot.
     time_indexing = Nt > 1 ? Cyclical() : Linear()
-    Φ_fts = FieldTimeSeries(ϕ_meta, CPU(); time_indices_in_memory = Nt, time_indexing)
+    # Built on `architecture`, not a hardcoded `CPU()`: this discretization ends up INSIDE the parent
+    # grid, so on `ReactantState` a CPU-backed geopotential leaves the grid half on the host, and
+    # `on_architecture` then fails with `MethodError: no method matching _to_reactant(::PressureLevel\
+    # VerticalDiscretization{...})` — there is no way to move a lazily-read `FieldTimeSeries` after
+    # the fact, so it has to be created on the right architecture in the first place.
+    Φ_fts = FieldTimeSeries(ϕ_meta, architecture; time_indices_in_memory = Nt, time_indexing)
     Φ = TimeSeriesInterpolation(Φ_fts, Φ_fts.grid; clock)
 
     # Surface geopotential is orography × g — static in time — so a single snapshot is the clip source.
     date = first(metadata).dates
     ϕ_sl_datum = Metadatum(:geopotential; dataset=sl_ds, date, region=metadata.region, dir=metadata.dir)
     Downloads.download(ϕ_sl_datum)
-    Φ_sfc = Field(ϕ_sl_datum)  # 2-D surface geopotential, m²/s²
+    Φ_sfc = Field(ϕ_sl_datum, architecture)  # 2-D surface geopotential, m²/s²
 
     return PressureLevelVerticalDiscretization(Φ;
                                                gravitational_acceleration = ERA5_gravitational_acceleration,

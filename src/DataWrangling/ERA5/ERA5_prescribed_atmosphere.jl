@@ -167,7 +167,7 @@ function ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
     # Build the native PressureLevelGrid once, with a geopotential `TimeSeriesInterpolation` bound to
     # `clock`. `_with_z` carries the fully built vertical only into this transient grid construction —
     # the atmosphere's `source` stays the plain dataset (product identity only).
-    plvd = per_column_geopotential_discretization(temperature_metadata; clock)
+    plvd = per_column_geopotential_discretization(temperature_metadata; clock, architecture)
     grid = native_grid(Metadata(:temperature; dataset = _with_z(dataset, plvd), dates, region, dir), architecture)
 
     era5_fts(name) = era5_native_pressure_fts(Metadata(name; dataset, dates, region, dir), grid; time_indices_in_memory, other_kw...)

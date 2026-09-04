@@ -473,9 +473,26 @@ Currently, these are: $(dataset_constructor_docstring()).
 """
 supported_datasets() = dataset_constructor_list()
 
-# Fallback: if no download extension is loaded, check that all files already exist
+# Fallback: if no download extension is loaded, check that all files already exist.
+#
+# This is what the comment above always promised, but the body used to `error` unconditionally — so a
+# FULLY CACHED workflow still could not run without loading the download backend, even though it had
+# nothing to download. That matters for jobs that deliberately keep the backend out: it drags in a
+# Python runtime for the CDS API, and a GPU job that loads it can also stall in the CDS request queue
+# instead of failing fast.
+#
+# Only the genuinely missing files are named, and the message keeps pointing at the backend, since a
+# missing file is exactly when loading it IS the fix.
 function Downloads.download(metadata::Metadata)
-    error("No download method for $metadata is available (is the backend package loaded?)")
+    paths = metadata_path(metadata)
+    paths = paths isa AbstractString ? [paths] : paths
+    missing_paths = filter(!isfile, paths)
+
+    isempty(missing_paths) && return nothing
+
+    error("No download method for $metadata is available (is the backend package loaded?)\n" *
+          "$(length(missing_paths)) of $(length(paths)) files are missing, starting with:\n  " *
+          join(first(missing_paths, 3), "\n  "))
 end
 
 end # module

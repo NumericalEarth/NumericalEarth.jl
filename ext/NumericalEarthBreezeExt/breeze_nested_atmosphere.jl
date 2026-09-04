@@ -432,21 +432,69 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
     ρv  = to_child(prognostic.ρv)
 
     # Recover the specific state from the density-weighted prognostics (dry-weighted momentum/energy,
-    # total-weighted vapor); `ρ` is the total density set! expects.
-    ρ   = Field(ρᵈ + ρqᵛ)
-    qᵗ  = Field(ρqᵛ / ρ)
-    θˡⁱ = Field(ρθ / ρᵈ)
-    u   = Field(ρu / ρᵈ)
-    v   = Field(ρv / ρᵈ)
+    # total-weighted vapor); `ρ` is the total density set! expects. The algebra is written as a
+    # broadcast over `interior` rather than as `Field(ρᵈ + ρqᵛ)`, because `compute!`ing an
+    # `AbstractOperation` launches a KernelAbstractions kernel, and Reactant compiles those through
+    # GPUCompiler. Whenever the grid carries materialized coordinate arrays — every
+    # `LatitudeLongitudeGrid`, and any stretched `RectilinearGrid` — tracing rewrites the grid's `FT`
+    # type parameter to `TracedRNumber`, and the kernel then fails to compile (`InvalidIRError:
+    # unsupported call to jl_f_throw_methoderror`). Broadcasting stays inside Reactant's own array
+    # operations, so it traces on every architecture; see `AtmosphericRivers.jl/minrepro_ic.jl`.
+    # NB `interior(f)` is a non-contiguous `SubArray`, and broadcasting INTO a view of a
+    # `ConcretePJRTArray` does not reach Reactant's array broadcast — it falls back to generic
+    # `AbstractArray` broadcasting, which walks the destination element by element. On the CPU backend
+    # that silently works (scalar indexing into a host-backed `ConcretePJRTArray` is permitted); on the
+    # GPU backend it is `ERROR: Scalar indexing is disallowed`. So compute on the HOST and push the
+    # whole array back in a single copy. This runs once, at construction, so two transfers per field
+    # cost nothing, and it sidesteps the dispatch question entirely.
+    function binary(op, a, b)
+        f  = CenterField(child_grid)
+        pf = op.(Array(parent(a)), Array(parent(b)))
+        # Halo cells are still zero here, so a division there gives NaN/Inf. Those cells are
+        # overwritten by the boundary fill before they are read, but keep them finite so that a
+        # non-finite value can never leak inward through a later stencil.
+        map!(x -> ifelse(isfinite(x), x, zero(x)), pf, pf)
+        copyto!(parent(f), pf)
+        return f
+    end
+
+    ρ   = binary(+, ρᵈ, ρqᵛ)
+    qᵗ  = binary(/, ρqᵛ, ρ)
+    θˡⁱ = binary(/, ρθ, ρᵈ)
+    u   = binary(/, ρu, ρᵈ)
+    v   = binary(/, ρv, ρᵈ)
 
     set!(nested_model; ρ, u, v, qᵗ, θˡⁱ, compute_reference_state = true)
 
     # Consistent-w: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (the initial flow follows the ground).
-    update_state!(nested_model)
+    #
+    # `compute_tendencies=false`: only the DIAGNOSTIC contravariant momentum is needed here, and the
+    # tendency half pulls in the momentum-advection stencils. Under Reactant those are compiled
+    # eagerly, one kernel at a time, and the advection reconstruction's `muladd` becomes an
+    # `enzymexla.math.fmuladd` that the eager pipeline cannot lower:
+    #
+    #     error: Failed to lower enzymexla math operation
+    #     note: see current operation: %498 = "enzymexla.math.fmuladd"(…) : (f32, f32, f32) -> f32
+    #
+    # The tendencies are recomputed by the first time step regardless, and inside the explicit
+    # `@compile` that same advection lowers fine. Breeze's own `set!` already calls
+    # `update_state!(model, compute_tendencies=false)` for the same reason: an initial condition has
+    # no use for tendencies.
+    update_state!(nested_model; compute_tendencies=false)
 
     if !isnothing(child.dynamics.contravariant_vertical_momentum)
-        interior(child.momentum.ρw) .-= interior(child.dynamics.contravariant_vertical_momentum)
-        update_state!(nested_model)
+        # Same story as `binary` above: `interior(f)` is a non-contiguous `SubArray`, so broadcasting
+        # into it bypasses Reactant's array broadcast and walks the destination element by element —
+        # fine on the CPU backend, `ERROR: Scalar indexing is disallowed` on the GPU one. Do the
+        # subtraction on the host over the SAME index ranges (`parentindices` keeps this correct for
+        # ρw's (Center, Center, Face) location, where the interior offsets differ from a CenterField),
+        # then push the whole array back in one copy.
+        ρw  = child.momentum.ρw
+        ρw̃  = child.dynamics.contravariant_vertical_momentum
+        pρw = Array(parent(ρw))
+        view(pρw, parentindices(interior(ρw))...) .-= view(Array(parent(ρw̃)), parentindices(interior(ρw̃))...)
+        copyto!(parent(ρw), pρw)
+        update_state!(nested_model; compute_tendencies=false)   ## diagnostics only, as above
     end
 
     # Adiabatic (DFI) balance at Breeze's auto acoustic-CFL step. `balancer=false` skips it (to isolate
