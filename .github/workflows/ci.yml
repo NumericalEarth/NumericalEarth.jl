@@ -85,15 +85,19 @@ jobs:
           '
       - uses: julia-actions/julia-runtest@v1
         with:
-          # Cap parallelism at 2 workers. ParallelTestRunner's default_njobs
+          # Cap parallelism at 3 workers. ParallelTestRunner's default_njobs
           # assumes ~2 GiB per worker, but the Breeze-compilation and bathymetry
           # tests peak at 2.5-3.5 GiB RSS each. On the 16 GiB GitHub-hosted
           # runner, the default (4 = core count) intermittently OOMs when several
           # heavy tests coincide, and the runner reports it as
-          # "The operation was canceled." Two workers keep peak memory well
+          # "The operation was canceled." Three workers keep peak memory well
           # within budget while staying comfortably under the job timeout.
-          test_args: '--verbose --jobs=2'
+          test_args: '--verbose --jobs=3'
           optimize: 0
+        env:
+          # Reduce memory threshold before recycling ParallelTestRunner's
+          # workers.
+          JULIA_TEST_MAXRSS_MB: 2800
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v7
         with:
