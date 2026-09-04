@@ -9,7 +9,7 @@ using Oceananigans.DistributedComputations: @root
 
 using ...NumericalEarth: NumericalEarth
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, DownloadProgress, Kelvin,
-                       first_date, metadata_path, metadata_url, unzip
+                       first_date, metadata_path, metadata_url, download_with_retries, unzip
 
 download_EN4_cache::String = ""
 function __init__()
@@ -166,7 +166,7 @@ function Downloads.download(metadata::Metadata{<:EN4Monthly})
             if !isfile(extracted_file) & !isfile(zippath)
                 push!(missingzips, zippath)
                 @info "Downloading EN4 data: $(metadatum.name) in $(metadatum.dir)..."
-                Downloads.download(fileurl, zippath; progress=DownloadProgress())
+                download_with_retries(fileurl, zippath; progress=DownloadProgress())
             elseif !isfile(extracted_file) & isfile(zippath)
                 push!(missingzips, zippath)
             end
