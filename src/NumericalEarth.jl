@@ -132,8 +132,11 @@ export
     VariablySaturatedHydrology,
     InterceptingHydrology,
     VanGenuchtenRetention, VanGenuchtenConductivity,
+    WaterViscosity, CosbyConductivity, saturated_conductivity,
     NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
     NoRunoff, InfiltrationCapacityRunoff,
+    WeynantsPedotransfer, HYPRESPedotransfer,
+    soil_hydraulic_parameters, soil_hydraulic_properties,
     # Urban aerodynamic roughness closures
     AbstractUrbanRoughness, MorphometricRoughness,
     IsotropicFrontalArea, EmpiricalFrontalArea,

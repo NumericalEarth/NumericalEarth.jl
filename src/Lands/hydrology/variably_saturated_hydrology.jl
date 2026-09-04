@@ -136,27 +136,27 @@ diagnostic_variables(::VariablySaturatedHydrology) =
 ##### Per-cell helpers — used by both `update_diagnostics!` and `time_step!`.
 #####
 
-@inline function augmented_liquid_fraction(h, M, i, j)
+@inline function augmented_liquid_fraction(i, j, grid, h, M)
     FT  = typeof(M)
     hˡᵃ = convert(FT, property_value(h.slab_depth, i, j))
     return M / (convert(FT, h.liquid_density) * hˡᵃ)
 end
 
-@inline function liquid_fraction(h, M, i, j)
-    ϑˡ = augmented_liquid_fraction(h, M, i, j)
+@inline function liquid_fraction(i, j, grid, h, M)
+    ϑˡ = augmented_liquid_fraction(i, j, grid, h, M)
     ν  = property_value(h.porosity, i, j)
     return min(ϑˡ, convert(typeof(ϑˡ), ν))
 end
 
-@inline function liquid_saturation(h, θˡ, i, j)
+@inline function liquid_saturation(i, j, grid, h, θˡ)
     FT  = typeof(θˡ)
     ν   = convert(FT, property_value(h.porosity, i, j))
     θʳ  = convert(FT, property_value(h.residual_liquid_fraction, i, j))
     Δ   = ν - θʳ
-    return clamp((θˡ - θʳ) / Δ, zero(FT), one(FT))
+    return clamp((θˡ - θʳ) / Δ, 0, 1)
 end
 
-@inline function diagnostic_pressure_head(h, M, θˡ, 𝒮, i, j)
+@inline function diagnostic_pressure_head(i, j, grid, h, M, θˡ, 𝒮)
     FT  = typeof(M)
     ν   = convert(FT, property_value(h.porosity, i, j))
     ρˡ  = convert(FT, h.liquid_density)
@@ -165,7 +165,7 @@ end
     Mˡᵃ⁺ = ρˡ * ν * hˡᵃ
     # Unsaturated branch: Π = Π_m(𝒮). Saturated branch: Π = (M − M⁺) hˢˢ/(ρˡ hˡᵃ).
     return ifelse(M < Mˡᵃ⁺,
-                  pressure_head(h.retention_curve, 𝒮),
+                  pressure_head(i, j, grid, h.retention_curve, 𝒮),
                   (M - Mˡᵃ⁺) * hˢˢ / (ρˡ * hˡᵃ))
 end
 
@@ -173,12 +173,12 @@ end
 ##### Diagnostic-saturation kernel — refreshes `land.saturation` from `M`.
 #####
 
-@kernel function _variably_saturated_saturation!(saturation, M, h)
+@kernel function _variably_saturated_saturation!(saturation, M, h, grid)
     i, j = @index(Global, NTuple)
     @inbounds begin
         Mij = M[i, j, 1]
-        θˡ  = liquid_fraction(h, Mij, i, j)
-        𝒮   = liquid_saturation(h, θˡ, i, j)
+        θˡ  = liquid_fraction(i, j, grid, h, Mij)
+        𝒮   = liquid_saturation(i, j, grid, h, θˡ)
         saturation[i, j, 1] = 𝒮
     end
 end
@@ -186,7 +186,7 @@ end
 function update_diagnostics!(h::VariablySaturatedHydrology, land)
     arch = architecture(land.grid)
     launch!(arch, land.grid, :xy, _variably_saturated_saturation!,
-            land.saturation, land.water_storage, h)
+            land.saturation, land.water_storage, h, land.grid)
     return nothing
 end
 
@@ -200,7 +200,7 @@ EarthSystemModels.surface_retention_curve(h::VariablySaturatedHydrology) = h.ret
 
 @kernel function _variably_saturated_step!(M, saturation,
                                            Jˡb_diag, Jˡs_diag, Rsfc_diag, Rlat_diag, dMdt_diag,
-                                           Jv, Pl, prognostic, h, deep_pressure_head,
+                                           Jv, Pl, T, prognostic, h, deep_pressure_head,
                                            Δt, grid, time)
     i, j = @index(Global, NTuple)
     @inbounds begin
@@ -208,12 +208,13 @@ EarthSystemModels.surface_retention_curve(h::VariablySaturatedHydrology) = h.ret
         Jvij = Jv[i, j, 1]
         Plij = Pl[i, j, 1]
         Πᵈ   = stateindex(deep_pressure_head, i, j, 1, grid, time, (Center, Center, Center))
+        Tij  = T[i, j, 1]
     end
 
-    θˡ = liquid_fraction(h, Mij, i, j)
-    𝒮  = liquid_saturation(h, θˡ, i, j)
-    Π  = diagnostic_pressure_head(h, Mij, θˡ, 𝒮, i, j)
-    K  = hydraulic_conductivity(h.hydraulic_conductivity, 𝒮)
+    θˡ = liquid_fraction(i, j, grid, h, Mij)
+    𝒮  = liquid_saturation(i, j, grid, h, θˡ)
+    Π  = diagnostic_pressure_head(i, j, grid, h, Mij, θˡ, 𝒮)
+    K  = hydraulic_conductivity(i, j, grid, h.hydraulic_conductivity, 𝒮, Tij)
 
     Jˡs, Rsfc = surface_water_balance!(i, j, h.runoff, prognostic, Plij, Mij, θˡ, 𝒮, Π, K, Δt)
     Jˡb       = deep_liquid_flux(h.deep_liquid_flux, Mij, θˡ, 𝒮, Π, K, Πᵈ, time)
@@ -236,8 +237,8 @@ EarthSystemModels.surface_retention_curve(h::VariablySaturatedHydrology) = h.ret
         dMdt_diag[i, j, 1] = (Mnew - Mij) / Δt
         # Refresh saturation in the same kernel so `land.saturation` is
         # consistent with the new `M` even before `update_state!` runs.
-        θˡn = liquid_fraction(h, Mnew, i, j)
-        saturation[i, j, 1] = liquid_saturation(h, θˡn, i, j)
+        θˡn = liquid_fraction(i, j, grid, h, Mnew)
+        saturation[i, j, 1] = liquid_saturation(i, j, grid, h, θˡn)
     end
 end
 
@@ -252,6 +253,7 @@ function time_step!(h::VariablySaturatedHydrology, land, Δt, time)
             land.diagnostics.water_storage_tendency,
             land.fluxes.vapor_flux,
             land.fluxes.liquid_precipitation_flux,
+            land.temperature,
             land.prognostic,
             h, h.deep_pressure_head, Δt, land.grid, time)
     return nothing
