@@ -203,7 +203,7 @@ saturation(h::VariablySaturatedHydrology, land) = land.saturation
         Mij = M[i, j, 1]
         Jvij = Jv[i, j, 1]
         Plij = Pl[i, j, 1]
-        Πᵈ   = stateindex(deep_pressure_head, i, j, 1, grid, time, (Center, Center, Center))
+        Πᵈ   = stateindex(deep_pressure_head, i, j, 1, grid, Time(time), (Center, Center, Center))
     end
 
     θˡ = liquid_fraction(h, Mij, i, j)

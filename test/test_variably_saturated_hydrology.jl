@@ -118,3 +118,41 @@ end
         @test only(Array(interior(land_drain.water_storage))) ≈ 399.9 atol = 1e-3
     end
 end
+
+@testset "VariablySaturatedHydrology time-varying deep head" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch;
+                               size = 1,
+                               x = (0, 1),
+                               y = (0, 1),
+                               z = (-1, 0),
+                               topology = (Flat, Flat, Bounded))
+
+        Πᵈ = FieldTimeSeries{Center, Center, Nothing}(grid, [0.0, 200.0])
+        interior(Πᵈ[1]) .= -1.0
+        interior(Πᵈ[2]) .= -3.0
+
+        storage(deep_pressure_head) = begin
+            hydrology = VariablySaturatedHydrology(eltype(grid);
+                slab_depth = 1.0,
+                porosity = 0.4,
+                storage_height = 1000,
+                retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
+                hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
+                deep_liquid_flux = DarcyDeepLiquidFlux(exchange_length = 0.5),
+                deep_pressure_head,
+                runoff = NoRunoff(),
+            )
+            land = SlabLand(grid; hydrology)
+            set!(land; M = 300.0)
+            land.clock.time = 90.0
+            time_step!(land, 10.0)
+            only(Array(interior(land.water_storage)))
+        end
+
+        # The clock ticks before the hydrology step, so the series is read at t = 100 s,
+        # where it interpolates to −2 m: the step must match the constant head −2 m.
+        @test storage(Πᵈ) ≈ storage(-2.0)
+        @test storage(Πᵈ) != storage(-1.0)
+    end
+end
