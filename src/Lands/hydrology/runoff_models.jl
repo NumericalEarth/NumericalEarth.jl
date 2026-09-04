@@ -6,13 +6,14 @@
 ##### * `Rˢᶠᶜ`: surface runoff — rejected liquid input. Returned together with
 #####   the actual surface liquid flux `Jˡˢ` because they are coupled (the
 #####   infiltration-capacity model splits incoming precipitation between the
-#####   two).
+#####   two). The hydrology adds saturation excess (input the remaining pore
+#####   volume cannot hold) to `Rˢᶠᶜ` outside the closure.
 ##### * `Rˡᵃᵗ`: lateral / subsurface runoff — true storage export. Carries
 #####   internal energy with it.
 #####
 ##### Each closure implements
 #####
-#####     surface_liquid_flux_and_runoff(runoff, Pˡ, M, θˡ, 𝒮, Π, K)
+#####     surface_liquid_flux_and_runoff(runoff, Pˡ, M, θˡ, 𝒮, Π, K, i, j)
 #####         -> (Jˡˢ, Rˢᶠᶜ)
 #####
 #####     subsurface_runoff(runoff, M, Π, K) -> Rˡᵃᵗ
@@ -24,11 +25,12 @@
 """
     NoRunoff()
 
-No runoff. All precipitation infiltrates (`Jˡˢ = −Pˡ`), no subsurface export.
+No runoff from the closure. All precipitation infiltrates (`Jˡˢ = −Pˡ`) up to
+the pore volume the column has left; no subsurface export.
 """
 struct NoRunoff end
 
-@inline function surface_liquid_flux_and_runoff(::NoRunoff, Pˡ, M, θˡ, 𝒮, Π, K)
+@inline function surface_liquid_flux_and_runoff(::NoRunoff, Pˡ, M, θˡ, 𝒮, Π, K, i, j)
     return -Pˡ, zero(Pˡ)
 end
 
@@ -40,8 +42,8 @@ Base.summary(::NoRunoff) = "NoRunoff"
     InfiltrationCapacityRunoff(infiltration_capacity)
 
 Cap the downward infiltration rate at `infiltration_capacity` (kg m⁻² s⁻¹,
-positive magnitude). Any precipitation exceeding the cap becomes surface
-runoff:
+positive magnitude; a number or a per-cell `Field`). Any precipitation exceeding
+the cap becomes surface runoff:
 
 ```math
 J^{ls} = \\max(-P^l, -J^l_{cap}), \\qquad R^{\\mathrm{sfc}} = J^{ls} - (-P^l) \\ge 0.
@@ -49,18 +51,21 @@ J^{ls} = \\max(-P^l, -J^l_{cap}), \\qquad R^{\\mathrm{sfc}} = J^{ls} - (-P^l) \\
 
 No subsurface runoff.
 """
-struct InfiltrationCapacityRunoff{FT}
-    infiltration_capacity :: FT
+struct InfiltrationCapacityRunoff{C}
+    infiltration_capacity :: C
 end
 
 InfiltrationCapacityRunoff(FT::Type = Oceananigans.defaults.FloatType;
                            infiltration_capacity) =
-    InfiltrationCapacityRunoff(convert(FT, infiltration_capacity))
+    InfiltrationCapacityRunoff(normalize_property(FT, infiltration_capacity))
+
+Adapt.adapt_structure(to, c::InfiltrationCapacityRunoff) =
+    InfiltrationCapacityRunoff(Adapt.adapt(to, c.infiltration_capacity))
 
 @inline function surface_liquid_flux_and_runoff(c::InfiltrationCapacityRunoff,
-                                                Pˡ, M, θˡ, 𝒮, Π, K)
+                                                Pˡ, M, θˡ, 𝒮, Π, K, i, j)
     FT   = typeof(Pˡ)
-    Jcap = convert(FT, c.infiltration_capacity)
+    Jcap = convert(FT, property_value(c.infiltration_capacity, i, j))
     # Available downward flux is -Pˡ. Cap its downward magnitude at Jcap.
     Jˡs  = max(-Pˡ, -Jcap)
     Rsfc = Jˡs - (-Pˡ)   # ≥ 0

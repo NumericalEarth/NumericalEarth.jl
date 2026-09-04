@@ -10,7 +10,9 @@
 ##### where every term is positive-upward (`Jˡˢ = −Pˡ + Rˢᶠᶜ`). The
 ##### conservative storage variable is the *augmented* liquid fraction
 ##### `ϑˡ = θˡ + max(Π,0)/hˢˢ`, so `Mˡᵃ > Mˡᵃ⁺` is admitted and corresponds to
-##### saturated positive-pressure storage (`Π > 0`).
+##### saturated positive-pressure storage (`Π > 0`), reachable only through an
+##### upward deep liquid flux or dew since infiltration is limited to the
+##### remaining pore volume.
 #####
 ##### Diagnostics published every step:
 #####   * `deep_liquid_flux`        (Jˡᵇ, positive upward)
@@ -154,13 +156,19 @@ end
     return clamp((θˡ - θʳ) / Δ, zero(FT), one(FT))
 end
 
-@inline function diagnostic_pressure_head(h, M, θˡ, 𝒮, i, j)
+@inline function saturated_water_storage(h, M, i, j)
     FT  = typeof(M)
     ν   = convert(FT, property_value(h.porosity, i, j))
+    hˡᵃ = convert(FT, property_value(h.slab_depth, i, j))
+    return convert(FT, h.liquid_density) * ν * hˡᵃ
+end
+
+@inline function diagnostic_pressure_head(h, M, θˡ, 𝒮, i, j)
+    FT  = typeof(M)
     ρˡ  = convert(FT, h.liquid_density)
     hˡᵃ = convert(FT, property_value(h.slab_depth, i, j))
     hˢˢ = convert(FT, property_value(h.storage_height, i, j))
-    Mˡᵃ⁺ = ρˡ * ν * hˡᵃ
+    Mˡᵃ⁺ = saturated_water_storage(h, M, i, j)
     # Unsaturated branch: Π = Π_m(𝒮). Saturated branch: Π = (M − M⁺) hˢˢ/(ρˡ hˡᵃ).
     return ifelse(M < Mˡᵃ⁺,
                   pressure_head(h.retention_curve, 𝒮),
@@ -211,9 +219,16 @@ saturation(h::VariablySaturatedHydrology, land) = land.saturation
     Π  = diagnostic_pressure_head(h, Mij, θˡ, 𝒮, i, j)
     K  = hydraulic_conductivity(h.hydraulic_conductivity, 𝒮)
 
-    Jˡs, Rsfc = surface_liquid_flux_and_runoff(h.runoff, Plij, Mij, θˡ, 𝒮, Π, K)
+    Jˡs, Rsfc = surface_liquid_flux_and_runoff(h.runoff, Plij, Mij, θˡ, 𝒮, Π, K, i, j)
     Jˡb       = deep_liquid_flux(h.deep_liquid_flux, Mij, θˡ, 𝒮, Π, K, Πᵈ, time)
     Rlat      = subsurface_runoff(h.runoff, Mij, Π, K)
+
+    # Infiltration cannot exceed the pore volume the column has left; the surplus
+    # is saturation-excess runoff.
+    pore_limited_flux = -max(saturated_water_storage(h, Mij, i, j) - Mij, 0) / Δt
+    saturation_excess = max(pore_limited_flux - Jˡs, 0)
+    Jˡs  += saturation_excess
+    Rsfc += saturation_excess
 
     dMdt = Jˡb - Jˡs - Jvij - Rlat
 
