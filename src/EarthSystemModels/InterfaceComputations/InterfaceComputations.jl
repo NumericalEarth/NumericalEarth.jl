@@ -115,11 +115,8 @@ function interface_kernel_parameters(grid)
     return kernel_parameters
 end
 
-# A halo column of the exchange grid indexes outside a regional component's interior by design:
-# the value there comes from the component's own halo, and so from its boundary conditions.
-# Interpolation reads cells `⌊f⌋` and `⌊f⌋ + 1`, so a halo column is held within `1 - H` and
-# `N + H`. Interior columns are never clamped, so a component that does not cover the exchange
-# grid fails instead of being interpolated over.
+# Halo columns read the component's own halo, so the index is held where interpolation can
+# reach: `⌊f⌋` and `⌊f⌋ + 1` must both lie within `1 - H` and `N + H`.
 @inline clamp_fractional_index(::Nothing, topo, N, H, halo_column) = nothing
 
 @inline function clamp_fractional_index(fractional_index, topo, N, H, halo_column)

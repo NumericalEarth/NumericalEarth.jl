@@ -41,7 +41,7 @@ end
     TX, TY, _ = topology(rad_grid)
     Nx, Ny, _ = size(rad_grid)
     Hx, Hy, _ = halo_size(rad_grid)
-    Sx, Sy, _ = size(exchange_grid)
+    Sx, Sy, _ = worksize(exchange_grid)
     halo_column = (i < 1) | (i > Sx) | (j < 1) | (j > Sy)
 
     fi = indices_tuple.i

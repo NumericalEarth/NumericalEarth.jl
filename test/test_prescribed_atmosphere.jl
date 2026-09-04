@@ -95,8 +95,7 @@ end
 
         # Halo columns are not clamped onto the interior, so the read reaches the
         # atmosphere's halo and hence its boundary conditions — in latitude too, where the
-        # atmosphere is a single cell deep. Which index a *western* column lands on is
-        # `fractional_x_index`'s business.
+        # atmosphere is a single cell deep.
         @test fi[end, 1, 1] > Nx
         @test fj[1, end, 1] > Ny
 

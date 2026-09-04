@@ -15,7 +15,7 @@ using Oceananigans.Grids: grid_name, halo_size, topology, Bounded, Flat, Latitud
 using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time, meters, second
-using Oceananigans.Utils: Utils, prettysummary, launch!
+using Oceananigans.Utils: Utils, prettysummary, launch!, worksize
 using Thermodynamics.Parameters: AbstractThermodynamicsParameters
 
 using ...NumericalEarth: NumericalEarth

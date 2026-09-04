@@ -26,7 +26,7 @@ using Oceananigans.OutputReaders: FieldTimeSeries, cpu_interpolating_time_indice
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
-using Oceananigans.Utils: launch!, prettysummary, interpolator
+using Oceananigans.Utils: launch!, prettysummary, interpolator, worksize
 
 using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, sea_ice_concentration, set_prescribed_field!
