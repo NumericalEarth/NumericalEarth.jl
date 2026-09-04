@@ -80,7 +80,7 @@ jobs:
         run: |
           echo "JULIA_CPU_TARGET=generic;haswell,-xsaveopt,clone_all;znver3,-rdrnd,base(1);znver4,-rdrnd,base(1);sapphirerapids,-rdrnd,base(1)" | tee -a "${GITHUB_ENV}"
       - name: Instantiate test environment
-        timeout-minutes: 30
+        timeout-minutes: 45
         shell: bash
         run: |
           julia --project=test --color=yes --check-bounds=yes -e '
@@ -186,7 +186,7 @@ jobs:
           Pkg.Registry.add("General")
           Pkg.Registry.update()
       - name: Instantiate test environment
-        timeout-minutes: 30
+        timeout-minutes: 45
         shell: bash
         run: |
           julia --project=test --color=yes --check-bounds=yes -e '
@@ -263,7 +263,7 @@ jobs:
         run: |
           echo "JULIA_CPU_TARGET=generic;haswell,-xsaveopt,clone_all;znver3,-rdrnd,base(1);znver4,-rdrnd,base(1);sapphirerapids,-rdrnd,base(1)" | tee -a "${GITHUB_ENV}"
       - name: Instantiate test environment
-        timeout-minutes: 30
+        timeout-minutes: 45
         shell: bash
         run: |
           julia --project=test --color=yes --check-bounds=auto -e '
