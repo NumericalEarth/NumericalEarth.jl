@@ -23,9 +23,7 @@ end
     select_granules(urls, date)
 
 Keep the granule `urls` whose composite begins on `date`, one per sinusoidal tile: the
-most recently processed, so a reprocessed tile supersedes its predecessor. A bounding-box
-granule search returns the neighboring composites too (their date ranges overlap the
-requested day), which is why the date is matched rather than trusted.
+most recently processed, so a reprocessed tile supersedes its predecessor.
 """
 function select_granules(urls, date)
     latest = Dict{String, Tuple{Int, String}}()
@@ -49,13 +47,8 @@ end
 
 The regional latitude-longitude window the sinusoidal granules are reprojected onto:
 `(; west, south, east, north, Nx, Ny)`, in degrees and cells of the product's 1/240°
-lattice.
-
-The window is exactly the set of native cells `native_grid` keeps for the metadata's
-region, so the stored file and the native grid share their cells one for one. That pins the
-region offset of the shared regrid to zero instead of leaving it to a floating-point
-comparison between the grid's nodes and the file's coordinates — the difference between a
-correct read and one shifted by a cell on a fine grid.
+lattice. The window is exactly the set of native cells `native_grid` keeps for the
+metadata's region, so the stored file and the native grid share their cells one for one.
 """
 function regional_lattice(metadata::MODISLandMetadata)
     region = metadata.region
@@ -89,10 +82,7 @@ end
 """
     MissingGranulesError
 
-Raised when the Common Metadata Repository holds no granule for a requested region and
-date. The record has occasional holes where an instrument outage prevented a composite —
-2016-02-18 is one — so [`build_lai_climatology!`](@ref) catches this and composites the
-rest, while an explicit read of that date still fails.
+Raised when the Common Metadata Repository holds no granule for a requested region and date.
 """
 struct MissingGranulesError <: Exception
     message :: String
@@ -115,11 +105,8 @@ function granule_urls(metadatum::MODISLandMetadatum)
 
     granules = select_granules(candidates, metadatum.dates)
     isempty(granules) &&
-        throw(MissingGranulesError(
-            "The Common Metadata Repository holds no $(modis_short_name(dataset)) granules " *
-            "for the region $(metadatum.region) on $(metadatum.dates). The record has " *
-            "occasional holes where an instrument outage prevented a composite; a " *
-            "climatology skips them, but a read of that date alone cannot."))
+        throw(MissingGranulesError("The Common Metadata Repository holds no $(modis_short_name(dataset)) " *
+                                   "granules for the region $(metadatum.region) on $(metadatum.dates)."))
 
     return granules
 end
@@ -138,9 +125,7 @@ end
 
 # Implemented in ext/NumericalEarthArchGDALExt.jl once `ArchGDAL` is loaded.
 modis_granules_to_netcdf(metadatum, nc_path) =
-    error("Reading MODIS HDF-EOS granules requires ArchGDAL.jl built with GDAL's HDF4 " *
-          "driver, and NASA Earthdata credentials (EARTHDATA_USERNAME / " *
-          "EARTHDATA_PASSWORD). Load ArchGDAL with `using ArchGDAL`.")
+    error("Reading MODIS HDF-EOS granules requires `using ArchGDAL` and NASA Earthdata credentials (EARTHDATA_USERNAME / EARTHDATA_PASSWORD).")
 
 #####
 ##### Reading
@@ -177,8 +162,7 @@ function DataWrangling.retrieve_data(metadatum::MODISLAIClimatologyMetadatum)
     end
 end
 
-# `QC` is an enumerated classification outcome (0 good classified land, 10 no data), not a
-# packed bitfield like `FparLai_QC` — nothing to screen, and bit-masking it would be nonsense.
+# `QC` is an enumerated classification outcome, not a packed bitfield.
 function DataWrangling.retrieve_data(metadatum::MODISLandCoverMetadatum)
     variable = DataWrangling.dataset_variable_name(metadatum)
     valid = metadatum.name === :landcover_class ? landcover_valid_range(metadatum.dataset) :

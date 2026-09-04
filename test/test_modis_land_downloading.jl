@@ -5,7 +5,8 @@ using ArchGDAL  # loads NumericalEarthArchGDALExt (GDAL's HDF4 driver, the granu
 using NumericalEarth.DataWrangling: DataWrangling, BoundingBox, Metadatum, metadata_path,
     native_grid, read_file_coords, region_info, all_dates
 using NumericalEarth.DataWrangling.MODISLand: granule_urls, parse_granule_name, regional_lattice,
-    stored_granule_layers, landcover_valid_range, MissingGranulesError
+    stored_granule_layers, landcover_valid_range, MissingGranulesError,
+    igbp_non_vegetated_classes, period_index, retained_retrieval_metadatum
 using Oceananigans.Grids: topology, Bounded
 using NCDatasets: NCDataset
 using Dates: DateTime

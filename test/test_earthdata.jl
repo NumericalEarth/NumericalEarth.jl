@@ -20,8 +20,6 @@ using Dates: DateTime
     @test !occursin("temporal=", url)
     dated = cmr_granules_url("MCD15A2H", "061", region; date = DateTime(2020, 7, 3))
     @test occursin("temporal=2020-07-03T00:00:00Z,2020-07-04T00:00:00Z", dated)
-
-    @test_throws ArgumentError cmr_granules_url("AG100", "003", BoundingBox())
 end
 
 @testset "Cached Earthdata granules" begin

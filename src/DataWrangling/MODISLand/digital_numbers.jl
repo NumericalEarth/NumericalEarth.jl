@@ -19,8 +19,7 @@ const modis_landcover_class_names = (unclassified = 249,
     mask_lai_fill(DN)
 
 Return the MCD15 digital number `DN` as a `Float32`, or `NaN` when `DN` exceeds the valid
-range of `0:$(MODIS_LAI_MAXIMUM_VALID)` — the fill value and the land-cover special codes.
-The product's scale factor is applied downstream, so the rejection has to happen here.
+range of `0:$(MODIS_LAI_MAXIMUM_VALID)`, the fill value and the land-cover special codes.
 """
 @inline mask_lai_fill(DN) = ifelse(DN > MODIS_LAI_MAXIMUM_VALID, NaN32, Float32(DN))
 
@@ -40,9 +39,6 @@ value 255, neither of which names a class.
 | 252 | perennial snow or ice |
 | 253 | barren or sparsely vegetated |
 | 254 | perennial salt or fresh water |
-
-These are **class codes**, so read them on the product's own grid: interpolating them onto
-another grid averages 250 against 254 into 252, which is a different class.
 """
 @inline mask_lai_landcover(DN) =
     ifelse((DN ≥ first(MODIS_LAI_LANDCOVER_CODES)) & (DN ≤ last(MODIS_LAI_LANDCOVER_CODES)),
@@ -125,7 +121,7 @@ Combine the named quality criteria into one screening mask, for use as the
 mask is read as `NaN`. The criteria are listed under [`lai_rejection_flags`](@ref).
 
 ```jldoctest
-julia> using NumericalEarth
+julia> using NumericalEarth.DataWrangling.MODISLand
 
 julia> lai_screening_mask(:other_quality, :snow_or_ice)
 0x0011
@@ -148,14 +144,11 @@ end
 The screen the product's user guide recommends and the aerodynamic-roughness literature
 applies: keep only good-quality pixels retrieved by the main radiative-transfer algorithm
 under a clear (or assumed-clear) sky. This is the default `screened_flags` of
-[`MCD15A2H`](@ref).
-
-The scene-state detections — snow, aerosol, cirrus, internal cloud, cloud shadow — are
-deliberately left in: snow in particular is a physical state rather than a retrieval failure,
-and screening it out is opt-in via [`lai_screening_mask`](@ref).
+[`MCD15A2H`](@ref). Snow, aerosol, cirrus, internal cloud and cloud shadow are not
+screened; add them with [`lai_screening_mask`](@ref).
 
 ```jldoctest
-julia> using NumericalEarth
+julia> using NumericalEarth.DataWrangling.MODISLand
 
 julia> recommended_lai_screening()
 0x0007

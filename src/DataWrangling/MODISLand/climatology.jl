@@ -5,10 +5,8 @@
 """
     reduce_retained(reducer, samples)
 
-Apply `reducer` to the finite entries of `samples`, returning `(value, count)` — the
-reduction and how many retrievals survived screening. With no finite entry the value is
-`NaN32` and the count `0`, so a period no year could observe stays visibly empty instead of
-silently reading as zero.
+Apply `reducer` to the finite entries of `samples`, returning `(value, count)`, or
+`(NaN32, 0)` when none is finite.
 """
 function reduce_retained(reducer, samples)
     retained = filter(isfinite, samples)
@@ -34,8 +32,7 @@ the files.
 `reducer` acts on the vector of retained values of a pixel: `mean` gives a seasonal mean,
 while `maximum` (or a high quantile) gives a peak-season field.
 
-A year the archive holds no composite for is skipped with a warning and costs that period
-one sample rather than aborting the build. Every other failure still raises.
+A date the archive holds no composite for is skipped with a warning.
 """
 function build_lai_climatology!(dataset::MODISLAIClimatology;
                                 name = :leaf_area_index,
@@ -45,11 +42,7 @@ function build_lai_climatology!(dataset::MODISLAIClimatology;
                                 dir = default_download_directory(dataset))
 
     haskey(MODISLAI_variable_names, name) ||
-        throw(ArgumentError("$name cannot be composited — a retained-retrieval count and a " *
-                            "land-cover code are not quantities a reducer means anything on. " *
-                            "Build the climatology of a variable that is, and read the count " *
-                            "with `retained_retrieval_metadatum`. The variables that can be " *
-                            "composited are $(keys(MODISLAI_variable_names))."))
+        throw(ArgumentError("$name cannot be composited; the variables that can are $(keys(MODISLAI_variable_names))."))
 
     source = source_dataset(dataset)
     period_days = composite_period_days(dataset)
@@ -148,8 +141,7 @@ function Downloads.download(metadata::MODISLAIClimatologyMetadata)
     return metadata_path(metadata)
 end
 
-# A cold-cache read of the count must build the variable its file composites, recovered
-# from the filename the two metadata share.
+# The variable a count's file composites, recovered from the filename the two share.
 function climatology_build_name(metadatum::MODISLAIClimatologyMetadatum)
     metadatum.name === :retained_retrieval_count || return metadatum.name
 
@@ -158,7 +150,5 @@ function climatology_build_name(metadatum::MODISLAIClimatologyMetadatum)
                                         metadatum.region) == metadatum.filename && return name
     end
 
-    throw(ArgumentError("A retained-retrieval count is stored beside the variable it counts, " *
-                        "so it cannot say on its own which climatology to build. Read it with " *
-                        "`retained_retrieval_metadatum` of the composited variable's metadatum."))
+    throw(ArgumentError("A retained-retrieval count is read with `retained_retrieval_metadatum` of the composited variable's metadatum."))
 end

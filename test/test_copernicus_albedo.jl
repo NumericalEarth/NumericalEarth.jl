@@ -5,9 +5,9 @@ using NumericalEarth.DataWrangling: BoundingBox, Metadata, Metadatum, native_gri
     dataset_variable_name, metadata_filename,
     longitude_name, latitude_name, all_dates, native_times,
     longitude_interfaces, latitude_interfaces,
-    sample_window, sample_bounds, time_window_offset, spans_whole_cycle
+    averaging_window, window_bounds, window_center, spans_whole_cycle
 using NumericalEarth.DataWrangling.CopernicusLandAlbedo: bluesky_blend, copernicus_albedo_decode,
-    copernicus_albedo_dekadal_dates, albedo_satellite,
+    copernicus_albedo_ten_day_dates, albedo_satellite,
     albedo_cds_request_variables,
     albedo_read_window
 using Oceananigans.Grids: λnodes, φnodes
@@ -28,8 +28,8 @@ using Dates: DateTime, Day, day, month, daysinmonth
     @test isnan(bluesky_blend(copernicus_albedo_decode(missing), 0.5f0, 0.2f0))
 end
 
-@testset "Copernicus land albedo dekadal dates" begin
-    dates = copernicus_albedo_dekadal_dates(DateTime(2019, 1, 10), DateTime(2019, 12, 31))
+@testset "Copernicus land albedo ten-day dates" begin
+    dates = copernicus_albedo_ten_day_dates(DateTime(2019, 1, 10), DateTime(2019, 12, 31))
     @test length(dates) == 36
     @test issorted(dates)
     @test all(d -> day(d) in (10, 20, daysinmonth(d)), dates)
@@ -52,36 +52,36 @@ end
     @test month.(climatology_dates) == 1:12
 end
 
-@testset "Copernicus land albedo sample windows" begin
+@testset "Copernicus land albedo averaging windows" begin
     dataset = CopernicusAlbedo()
-    dekad(date) = Metadatum(:albedo; dataset, date)
+    ten_day(date) = Metadatum(:albedo; dataset, date)
 
-    # A dekad is stamped on its last day, so its value belongs four days earlier — the first
-    # two dekads of a month are ten days, the third is whatever the month has left.
-    @test sample_window(dekad(DateTime(2019, 7, 10))) == (DateTime(2019, 7, 1), DateTime(2019, 7, 11))
-    @test sample_window(dekad(DateTime(2019, 7, 20))) == (DateTime(2019, 7, 11), DateTime(2019, 7, 21))
-    @test sample_window(dekad(DateTime(2019, 7, 31))) == (DateTime(2019, 7, 21), DateTime(2019, 8, 1))
-    @test sample_window(dekad(DateTime(2019, 2, 28))) == (DateTime(2019, 2, 21), DateTime(2019, 3, 1))
+    # A ten-day file is stamped on its last day; the third window of a month runs to the
+    # month's end.
+    @test averaging_window(ten_day(DateTime(2019, 7, 10))) == (DateTime(2019, 7, 1), DateTime(2019, 7, 11))
+    @test averaging_window(ten_day(DateTime(2019, 7, 20))) == (DateTime(2019, 7, 11), DateTime(2019, 7, 21))
+    @test averaging_window(ten_day(DateTime(2019, 7, 31))) == (DateTime(2019, 7, 21), DateTime(2019, 8, 1))
+    @test averaging_window(ten_day(DateTime(2019, 2, 28))) == (DateTime(2019, 2, 21), DateTime(2019, 3, 1))
 
-    @test time_window_offset(dekad(DateTime(2019, 7, 10))) == -4 * 86400
-    @test time_window_offset(dekad(DateTime(2019, 7, 20))) == -4 * 86400
-    @test time_window_offset(dekad(DateTime(2019, 7, 31))) == -4.5 * 86400
+    @test window_center(ten_day(DateTime(2019, 7, 10))) == DateTime(2019, 7, 6)
+    @test window_center(ten_day(DateTime(2019, 7, 20))) == DateTime(2019, 7, 16)
+    @test window_center(ten_day(DateTime(2019, 7, 31))) == DateTime(2019, 7, 26, 12)
 
     # The stamps close their windows, but the windows tile time, so the bounds are the
     # window edges whatever the stamp convention.
-    @test sample_bounds(Metadata(:albedo; dataset, dates = [DateTime(2019, 7, 10),
+    @test window_bounds(Metadata(:albedo; dataset, dates = [DateTime(2019, 7, 10),
                                                             DateTime(2019, 7, 20)])) ==
           [DateTime(2019, 7, 1), DateTime(2019, 7, 11), DateTime(2019, 7, 21)]
 
-    # A climatological month is the mean of the month it is stamped at the start of, so its
-    # value sits mid-month and the twelve stamps tile a year.
+    # A climatological month is stamped at its start, so its value sits mid-month and the
+    # twelve stamps tile a year.
     climatology = CopernicusAlbedoClimatology()
     january = Metadatum(:albedo; dataset = climatology, date = DateTime(2018, 1, 1))
-    @test sample_window(january) == (DateTime(2018, 1, 1), DateTime(2018, 2, 1))
-    @test time_window_offset(january) == 15.5 * 86400
+    @test averaging_window(january) == (DateTime(2018, 1, 1), DateTime(2018, 2, 1))
+    @test window_center(january) == DateTime(2018, 1, 16, 12)
 
     months = Metadata(:albedo; dataset = climatology)
-    @test sample_bounds(months) == [all_dates(climatology, :albedo); DateTime(2019, 1, 1)]
+    @test window_bounds(months) == [all_dates(climatology, :albedo); DateTime(2019, 1, 1)]
 
     # A whole climatology wraps onto itself, so `Cyclical()` needs no coverage warning.
     @test spans_whole_cycle(months)
@@ -151,7 +151,6 @@ end
         grid = native_grid(metadatum)
 
         win = albedo_read_window(metadatum)
-        @test win !== nothing
         icols, jrows = win
 
         # The window is EXACTLY the native-grid cell count, so

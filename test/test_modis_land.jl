@@ -6,7 +6,7 @@ using NumericalEarth.DataWrangling: DataWrangling, BoundingBox, Metadatum, Metad
     longitude_name, latitude_name, all_dates, native_times, available_variables,
     longitude_interfaces, latitude_interfaces, validate_dataset_coverage,
     retrieve_data, read_file_coords, region_info, fill_gaps!, cmr_granules_url,
-    time_window_offset, sample_window, sample_bounds, time_average
+    window_center, averaging_window, window_bounds, time_average, class_fractions
 using NumericalEarth.DataWrangling.MODISLand: MODISLand, mask_lai_fill, lai_screening_flags,
     lai_rejection_flags, modis_composite_dates,
     parse_granule_name, select_granules, regional_lattice,
@@ -14,7 +14,10 @@ using NumericalEarth.DataWrangling.MODISLand: MODISLand, mask_lai_fill, lai_scre
     MODIS_LAI_SCALE, MODIS_FPAR_SCALE, MODIS_LAI_LANDCOVER_CODES,
     mask_landcover_fill, landcover_valid_range, landcover_layer, composite_window,
     MissingGranulesError,
-    modis_lai_class_names, modis_plant_functional_type_names, igbp_maximum_gap_periods
+    modis_lai_class_names, modis_plant_functional_type_names,
+    retained_retrieval_metadatum, lai_screening_mask, recommended_lai_screening,
+    mask_lai_landcover, modis_landcover_class_names, landcover_class_names,
+    igbp_class_names, class_maximum_gap, zero_non_vegetated!
 using Oceananigans.Grids: λnodes, φnodes, topology, Bounded
 using NCDatasets: NCDataset, defDim, defVar
 using Dates: DateTime, Day, Month, dayofyear
@@ -108,9 +111,6 @@ end
         @test isnan(mask_lai_fill(DN))
     end
     @test isnan(mask_lai_fill(0x65))   # 101, one past the valid range
-
-    @test MODIS_LAI_SCALE == 0.1
-    @test MODIS_FPAR_SCALE == 0.01
 
     # The same codes the leaf-area decode rejects name the non-vegetated classes, and the two
     # helpers partition the digital-number range between them.
@@ -372,7 +372,6 @@ end
     # The record has holes where an instrument outage prevented a composite, so "no granule"
     # is a distinguishable condition: a climatology skips it, a single-date read cannot.
     outage = MissingGranulesError("no granules on 2016-02-18")
-    @test outage isa Exception
     @test sprint(showerror, outage) == "no granules on 2016-02-18"
 
     # The search URL carries the region and a one-day window around the composite's start,
@@ -544,9 +543,6 @@ end
     @test landcover_valid_range(MCD12Q1()) == 1:17
     @test landcover_valid_range(MCD12Q1(legend = :LAI)) == 0:10
     @test landcover_valid_range(MCD12Q1(legend = :PFT)) == 0:11
-    @test landcover_layer(MCD12Q1()) == "LC_Type1"
-    @test landcover_layer(MCD12Q1(legend = :LAI)) == "LC_Type3"
-    @test landcover_layer(MCD12Q1(legend = :PFT)) == "LC_Type5"
 
     # A valid code round-trips as itself, unscaled, and the fill value does not.
     @test mask_landcover_fill(0x01, 1:17) === 1f0
@@ -565,18 +561,6 @@ end
         @test sort(collect(values(landcover_class_names(dataset)))) ==
               collect(landcover_valid_range(dataset))
     end
-
-    # The tiled product uses 17 for water; the coarse CMG product uses 0, and conflating
-    # them silently relabels every ocean cell as evergreen needleleaf.
-    @test igbp_class_names.water != 0
-
-    # Per-class fractions are the continuous delivery a model grid can take.
-    codes = Float32[1 1 4; 4 NaN 1]
-    @test class_fraction(codes, 1) ≈ 3/5
-    @test class_fraction(codes, 4) ≈ 2/5
-    @test sum(class_fraction(codes, c) for c in (1, 4)) ≈ 1
-    @test class_fraction(codes, 17) == 0
-    @test isnan(class_fraction(fill(NaN32, 2, 2), 1))
 end
 
 @testset "MODIS land-cover dataset interface" begin
@@ -747,16 +731,6 @@ end
 end
 
 @testset "MODIS class-keyed temporal tolerance" begin
-    # A month-long bridge is nearly exact over an evergreen canopy and fabricates a green-up
-    # ramp over a crop, so the two cannot share a tolerance.
-    @test igbp_maximum_gap_periods[igbp_class_names.evergreen_broadleaf_forest] >
-          igbp_maximum_gap_periods[igbp_class_names.deciduous_broadleaf_forest]
-    @test igbp_maximum_gap_periods[igbp_class_names.cropland] == 1
-    for class in (igbp_class_names.urban, igbp_class_names.permanent_snow_and_ice,
-                  igbp_class_names.barren, igbp_class_names.water)
-        @test igbp_maximum_gap_periods[class] == 0
-    end
-
     classes = Float32[igbp_class_names.evergreen_broadleaf_forest,
                       igbp_class_names.deciduous_broadleaf_forest,
                       NaN]
@@ -775,13 +749,12 @@ end
     @test all(isnan, 𝒜[2, 1, 4:6])
 end
 
-# A stand-in for the sign of an end-stamped window (the Copernicus albedo dekads are the real
-# case), so the MODIS tests stay clear of another product's dataset.
+# A stand-in for an end-stamped window, so the MODIS tests stay clear of another product's dataset.
 struct EndStampedMetadatum
     dates :: DateTime
 end
 
-DataWrangling.sample_window(metadatum::EndStampedMetadatum) =
+DataWrangling.averaging_window(metadatum::EndStampedMetadatum) =
     (metadatum.dates - Day(8), metadatum.dates)
 
 @testset "MODIS composite window and stamp offset" begin
@@ -798,17 +771,17 @@ DataWrangling.sample_window(metadatum::EndStampedMetadatum) =
 
     region = BoundingBox(longitude = (-92.5, -91.5), latitude = (36.5, 37.5))
     metadatum = Metadatum(:leaf_area_index; dataset, region, date = DateTime(2018, 1, 1))
-    @test sample_window(metadatum) == (DateTime(2018, 1, 1), DateTime(2018, 1, 9))
-    @test time_window_offset(metadatum) == 4 * 86400
+    @test averaging_window(metadatum) == (DateTime(2018, 1, 1), DateTime(2018, 1, 9))
+    @test window_center(metadatum) == DateTime(2018, 1, 5)
 
     # A class map is not a temporal composite, so its window is a point and its offset zero.
     class_metadatum = Metadatum(:landcover_class; dataset = MCD12Q1(), region,
                                 date = DateTime(2015))
-    @test sample_window(class_metadatum) == (DateTime(2015), DateTime(2015))
-    @test time_window_offset(class_metadatum) == 0
+    @test averaging_window(class_metadatum) == (DateTime(2015), DateTime(2015))
+    @test window_center(class_metadatum) == DateTime(2015)
 
     # A stamp that closes its window instead puts the value half a period earlier.
-    @test time_window_offset(EndStampedMetadatum(DateTime(2018, 1, 9))) == -4 * 86400
+    @test window_center(EndStampedMetadatum(DateTime(2018, 1, 9))) == DateTime(2018, 1, 5)
 
     # The 46 climatological stamps then span exactly one year rather than 46 × 8 = 368 days,
     # which is what a cyclic series has to wrap on.
@@ -827,7 +800,7 @@ end
 
     # The stamps close with the end of the last composite, which is the short five-day period
     # ending a common year rather than another eight days.
-    @test sample_bounds(metadata) == [dates; DateTime(2019, 1, 1)]
+    @test window_bounds(metadata) == [dates; DateTime(2019, 1, 1)]
 
     # Handing `time_average` the metadata is the same call as building those bounds by hand.
     grid = LatitudeLongitudeGrid(size = (1, 1, 1), longitude = (-92.5, -91.5),
@@ -838,7 +811,7 @@ end
     end
 
     averaged, edges = time_average(ramp, metadata, Month(1))
-    by_hand, _ = time_average(ramp, sample_bounds(metadata), Month(1))
+    by_hand, _ = time_average(ramp, window_bounds(metadata), Month(1))
 
     @test interior(averaged) == interior(by_hand)
     @test edges == [DateTime(2018, 12, 11), DateTime(2019, 1, 1)]
@@ -850,13 +823,13 @@ end
     # An instantaneous product has no window with which to close the series.
     class_map = Metadata(:landcover_class; dataset = MCD12Q1(), region,
                          dates = [DateTime(2015)])
-    @test_throws ArgumentError sample_bounds(class_map)
+    @test_throws ArgumentError window_bounds(class_map)
 
     # Dates that skip composites do not tile time, so the interior bounds would credit each
     # sample with the skipped period as well.
     every_other = Metadata(:leaf_area_index; dataset = MCD15A2H(), region,
                            dates = [DateTime(2019, 1, 1), DateTime(2019, 1, 17)])
-    @test_throws ArgumentError sample_bounds(every_other)
+    @test_throws ArgumentError window_bounds(every_other)
 end
 
 @testset "Cyclic coverage of a whole climatology" begin

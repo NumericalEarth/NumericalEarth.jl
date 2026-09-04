@@ -19,17 +19,14 @@ The MODIS MCD15A2H V061 combined Terra + Aqua leaf-area-index / FPAR product: 50
 composites on the sinusoidal grid, from 2002-07-04 onwards. Provides `:leaf_area_index`
 (``𝒜``, one-sided green leaf area per unit *ground* area, m² m⁻²), `:fpar`,
 `:leaf_area_index_uncertainty`, and `:landcover_code` — the class the product names in place of
-a retrieval, listed under [`mask_lai_landcover`](@ref).
-
-The product targets *true* leaf area index, applying its own per-biome clumping inside the
-retrieval, so it is the quantity a canopy drag closure calibrated on MODIS expects — unlike
-the *effective* leaf area index the two-stream inversion records report.
+a retrieval, listed under [`mask_lai_landcover`](@ref). The product reports *true* leaf
+area index, with per-biome clumping applied inside the retrieval.
 
 Granules are HDF-EOS2 tiles on the sinusoidal projection, discovered from NASA's Common
 Metadata Repository and reprojected to a regional latitude-longitude window at download
 time. Build the `Metadata` with a lon/lat [`BoundingBox`](@ref); a global read is not
 supported. Requires `ArchGDAL` (for GDAL's HDF4 driver) and a NASA Earthdata login
-(`EARTHDATA_USERNAME` / `EARTHDATA_PASSWORD` — see this module's README).
+(`EARTHDATA_USERNAME` / `EARTHDATA_PASSWORD`).
 
 `screened_flags` is a mask of the quality criteria whose pixels are read as `NaN`; see
 [`recommended_lai_screening`](@ref) and [`lai_screening_mask`](@ref). Pass `0x0000` to keep
@@ -60,17 +57,12 @@ A seasonal climatology of a [`MODISLAIDataset`](@ref): one composite per period 
 year, each reducing that period's retrievals across `years` pixel by pixel with the
 screen `dataset` carries. An 8-day source gives 46 periods, so
 `FieldTimeSeries(Metadata(:leaf_area_index; dataset = MODISLAIClimatology(), region), grid)`
-is a 46-slot cyclic seasonal series.
-
-Multi-year compositing is what makes an 8-day leaf-area series usable: a period that is
-cloudy in one year is usually clear in another, so the composite's residual gap fraction
-falls far below any single retrieval's. Cells no year could observe stay `NaN` rather than
-reading as zero, and the number of retained retrievals behind every cell is stored beside
-the reduction — see [`retained_retrieval_metadatum`](@ref).
+is a 46-slot cyclic seasonal series. Cells no year could observe stay `NaN`, and the
+number of retained retrievals behind every cell is stored beside the reduction, see
+[`retained_retrieval_metadatum`](@ref).
 
 `years` defaults to 2003–2019, the span over which both Terra and Aqua held their
-equatorial crossing times; Terra began drifting in 2020, which changes the composite's
-sensor characteristics.
+equatorial crossing times.
 
 ```jldoctest
 julia> using NumericalEarth
@@ -107,10 +99,6 @@ enumerated classification quality, 0 being good classified land), and `:land_wat
 | `:LAI` | `LC_Type3` | 0–10 | `modis_lai_class_names` |
 | `:PFT` | `LC_Type5` | 0–11 | `modis_plant_functional_type_names` |
 
-`:IGBP` is the default because the roughness literature's drag and stem-area tables are
-keyed on it. `:LAI` is the stratification the MCD15 retrieval itself uses, which makes it
-the closer match when the class field is there to pool leaf-area donors.
-
 On a model grid, `Field(metadatum, grid)` lands the class covering the largest area of
 each cell, and [`class_fractions`](@ref) returns every class's area fraction beside it.
 
@@ -141,7 +129,7 @@ Base.show(io::IO, dataset::MCD12Q1) = print(io, "MCD12Q1(legend=", repr(dataset.
 The `(class_name = code, …)` table of the dataset's legend.
 
 ```jldoctest
-julia> using NumericalEarth
+julia> using NumericalEarth.DataWrangling.MODISLand
 
 julia> landcover_class_names(MCD12Q1()).cropland
 12
@@ -205,9 +193,8 @@ const MODISLAI_variable_names = Dict(:leaf_area_index             => "Lai_500m",
                                      :fpar                       => "Fpar_500m",
                                      :leaf_area_index_uncertainty => "LaiStdDev_500m")
 
-# `:landcover_code` is read from the leaf-area layer itself, which substitutes a land-cover
-# code where it has no retrieval. A class code cannot be averaged, so it is absent from
-# `MODISLAI_variable_names`, the set the climatology composites.
+# `:landcover_code` is the class the leaf-area layer writes where it has no retrieval; a
+# code cannot be composited, so it is absent from `MODISLAI_variable_names`.
 const MODISLAI_readable_variable_names =
     merge(MODISLAI_variable_names, Dict(:landcover_code => "Lai_500m"))
 
@@ -248,11 +235,7 @@ DataWrangling.dataset_variable_name(metadata::MODISLandMetadata) =
     DataWrangling.available_variables(metadata.dataset)[metadata.name]
 
 #####
-##### Grid traits
-#####
-##### The sinusoidal granules are reprojected to a global 1/240° latitude-longitude lattice
-##### (≈464 m, the 500 m product's actual pixel size) restricted to the requested region —
-##### see [`regional_lattice`](@ref).
+##### Grid traits: the granules are reprojected onto a global 1/240° latitude-longitude lattice
 #####
 
 const MODIS_LATTICE_SPACING = 1/240
@@ -286,8 +269,7 @@ function DataWrangling.conversion_units(metadatum::MODISLandMetadatum)
     return MODISLAIScale()
 end
 
-# Class codes carry no scale factor, and the leaf-area fallthrough above would silently
-# turn IGBP class 12 into 1.2.
+# Class codes carry no scale factor.
 DataWrangling.conversion_units(::MODISLandCoverMetadatum) = nothing
 
 #####
@@ -344,10 +326,7 @@ retained_retrieval_metadatum(metadatum::MODISLAIClimatologyMetadatum) =
 function DataWrangling.validate_dataset_coverage(grid, metadata::MODISLandMetadata)
     region = metadata.region
     if !(region isa BoundingBox) || isnothing(region.longitude) || isnothing(region.latitude)
-        error("$(modis_short_name(metadata.dataset)) must be used with a bounded region. " *
-              "Build the metadata with a longitude/latitude BoundingBox, e.g.\n" *
-              "    metadata = Metadata(:$(metadata.name); dataset = $(metadata.dataset),\n" *
-              "                        region = BoundingBox(longitude = (λ₁, λ₂), latitude = (φ₁, φ₂)))")
+        error("$(modis_short_name(metadata.dataset)) needs a longitude/latitude BoundingBox region.")
     end
     return nothing
 end

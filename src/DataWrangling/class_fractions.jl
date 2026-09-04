@@ -5,12 +5,10 @@
 """
     class_fraction(codes, class)
 
-The fraction of the valid entries of `codes` that carry `class`. Averaging class codes is
-meaningless, but their per-class *fractions* are continuous fields that ride the shared
-bilinear regrid onto a model grid safely, and over valid cells they sum to one.
+The fraction of the valid entries of `codes` that carry `class`.
 
 ```jldoctest
-julia> using NumericalEarth
+julia> using NumericalEarth.DataWrangling: class_fraction
 
 julia> codes = Float32[1 1 4; 4 NaN 1];
 

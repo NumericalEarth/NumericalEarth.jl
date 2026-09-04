@@ -2,6 +2,7 @@ include("runtests_setup.jl")
 
 using NumericalEarth.DataWrangling: fill_gaps!, fill_seasonal_gaps!, gap_fill_provenance,
     gap_fill_denial, time_average
+using NumericalEarth.DataWrangling.MODISLand: igbp_class_names, zero_non_vegetated!
 using Oceananigans.Grids: halo_size
 using Oceananigans.OutputReaders: Cyclical, InMemory
 using Dates: DateTime, Day, Month, Year

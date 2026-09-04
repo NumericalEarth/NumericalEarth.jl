@@ -4,22 +4,13 @@ using DocStringExtensions: TYPEDSIGNATURES
 #####
 ##### Averaging a series onto a coarser cadence
 #####
-##### TODO: a lazily evaluated, reduced `FieldTimeSeries` is related to upstream
-##### `FieldTimeSeriesOperation` work in Oceananigans (CliMA/Oceananigans.jl#5761).
-##### Replace this with that when it lands.
+##### TODO: replace with Oceananigans' `time_average` (CliMA/Oceananigans.jl#5925), and with a lazy
+##### `FieldTimeSeriesOperation` (CliMA/Oceananigans.jl#5761) once that lands.
 #####
 
 @inline function window_overlap(sample_start, sample_stop, window_start, window_stop)
     overlap = min(sample_stop, window_stop) - max(sample_start, window_start)
     return max(0, Dates.value(Dates.Second(overlap)))
-end
-
-function validate_average_bounds(bounds, Nt)
-    length(bounds) == Nt + 1 ||
-        throw(ArgumentError("time_average needs one more bound than the series has times " *
-                            "($(Nt + 1)); got $(length(bounds)). The extra bound closes the " *
-                            "last sample's window."))
-    return nothing
 end
 
 function average_window_edges(bounds, window)
@@ -36,9 +27,8 @@ function average_window_edges(bounds, window)
     return edges
 end
 
-# Every cell shares the same weights, so the dates are resolved once on the host and the
-# kernel reads scalars out of an `(Nt, Nw)` matrix. That matrix is banded — a window overlaps
-# consecutive samples only — so each window also carries the range it has to sum over.
+# The `(Nt, Nw)` overlap weights, resolved once on the host, with the range of samples each
+# window overlaps.
 function overlap_weights(FT, bounds, edges)
     Nt = length(bounds) - 1
     Nw = length(edges) - 1
@@ -60,8 +50,7 @@ function overlap_weights(FT, bounds, edges)
     return ω, first_sample, last_sample
 end
 
-# Each cell renormalizes over its own valid samples, so a cloudy pixel drops the sample
-# while its neighbor keeps it.
+# Each cell renormalizes over its own valid samples.
 @kernel function _accumulate_sample!(total, weight, sample, ω)
     i, j, k = @index(Global, NTuple)
     FT = eltype(total)
@@ -95,16 +84,13 @@ overlap returns a value and one with none returns `NaN`.
 
 Returns `(; series, edges)`: the averaged series, carrying the input's grid, indices, and time
 indexing, and the `Nw + 1` window edges. Its times are the window centers measured from
-`first(bounds)`.
-
-The reduction streams through the record one sample at a time, so `fts` may hold any number
-of its times in memory; a partly-resident series has its window advanced (and left) at the
-end of the record. The reduction runs on the series' own architecture; only the dates resolve
-to weights on the host.
+`first(bounds)`. The reduction streams through the record one sample at a time, so `fts`
+may hold any number of its times in memory.
 """
 function time_average(fts::FieldTimeSeries, bounds, window)
     Nt = length(fts.times)
-    validate_average_bounds(bounds, Nt)
+    length(bounds) == Nt + 1 ||
+        throw(ArgumentError("time_average needs $(Nt + 1) bounds, one more than the series has times; got $(length(bounds))."))
 
     edges = average_window_edges(bounds, window)
     Nw = length(edges) - 1
@@ -120,9 +106,8 @@ function time_average(fts::FieldTimeSeries, bounds, window)
     cannot_cycle = Nw == 1 && fts.time_indexing isa Cyclical{Nothing}
     time_indexing = cannot_cycle ? Clamp() : fts.time_indexing
 
-    # TODO: window the boundary conditions the way a sliced `Field` does. A sliced
-    # `FieldTimeSeries` keeps the unsliced ones, so `fill_halo_regions!` writes a halo the slice
-    # does not have — which lands in the next time slice. Fix this in Oceananigans' constructor.
+    # TODO: Oceananigans' sliced `FieldTimeSeries` keeps the unsliced boundary conditions, so
+    # `fill_halo_regions!` would write a halo the slice does not have; window them here instead.
     boundary_conditions = FieldBoundaryConditions(fts.indices, fts.boundary_conditions)
 
     LX, LY, LZ = location(fts)
@@ -135,9 +120,6 @@ function time_average(fts::FieldTimeSeries, bounds, window)
     total = on_architecture(arch, zeros(FT, spatial_size))
     weight = on_architecture(arch, zeros(FT, spatial_size))
 
-    # Samples ascend within a window and consecutive windows share at most the straddling
-    # sample, so a partly-resident series only ever advances its window forward, one move per
-    # sample at worst — `fts[n]` reads the slice in whatever way its backend provides.
     for w in 1:Nw
         fill!(total, 0)
         fill!(weight, 0)
@@ -158,9 +140,8 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Average `fts` onto windows of length `window`, taking the sample bounds from the `metadata` the
-series was read from with [`sample_bounds`](@ref) — the composite stamps, closed with the end of
-the last composite from the dataset's own compositing rule rather than a spacing assumption.
+Average `fts` onto windows of length `window`, with the [`window_bounds`](@ref) of the
+`metadata` the series was read from.
 """
 time_average(fts::FieldTimeSeries, metadata::Metadata, window) =
-    time_average(fts, sample_bounds(metadata), window)
+    time_average(fts, window_bounds(metadata), window)

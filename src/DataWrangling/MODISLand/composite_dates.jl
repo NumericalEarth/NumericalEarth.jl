@@ -11,8 +11,7 @@ that begins within that year.
 
 MODIS land products restart their compositing period at day-of-year 1 every January, so
 the last period of a year is short (5 days, or 6 in a leap year, for an 8-day product) and
-the sequence is *not* a uniform cadence across a year boundary — stepping uniformly from
-the first date would drift out of phase after one year.
+the sequence is not a uniform cadence across a year boundary.
 
 ```jldoctest
 julia> using Dates, NumericalEarth.DataWrangling.MODISLand
@@ -66,12 +65,10 @@ DataWrangling.all_dates(dataset::MCD12Q1, variable) =
     period_index(date, period_days)
     period_index(date, dataset)
 
-The 1-based index of the year-anchored composite period containing `date` — which of a
-seasonal climatology's periods a calendar date belongs to, and so the `anchor_periods` a
-date-window series needs to map onto a climatology.
+The 1-based index of the year-anchored composite period containing `date`.
 
 ```jldoctest
-julia> using NumericalEarth, Dates
+julia> using Dates, NumericalEarth.DataWrangling.MODISLand
 
 julia> period_index(DateTime(2019, 7, 4), MCD15A2H())
 24
@@ -97,6 +94,6 @@ function composite_window(dataset, date)
     return start, min(stop, year_start + Dates.Year(1))
 end
 
-DataWrangling.sample_window(metadatum::Union{MODISLAIMetadatum,
+DataWrangling.averaging_window(metadatum::Union{MODISLAIMetadatum,
                                             MODISLAIClimatologyMetadatum}) =
     composite_window(metadatum.dataset, metadatum.dates)

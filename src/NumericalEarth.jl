@@ -56,10 +56,14 @@ export
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     PowerLawTortuosity,
-    ElevationCorrection,
+    AltitudeCorrection,
     atmosphere_land_interface,
     SlabOcean,
     PrescribedOcean,
+    TwoColorRadiation,
+    ChlorophyllOptics,
+    absorption_coefficient,
+    equivalent_chlorophyll,
     AbstractPrescribedComponent,
     PrescribedRadiation,
     PrescribedAtmosphere,
@@ -72,10 +76,6 @@ export
     GloFASReanalysis,
     ERA5PrescribedAtmosphere,
     ERA5PrescribedRadiation,
-    OSPapaPrescribedRadiation,
-    OSPapaPrescribedAtmosphere,
-    os_papa_prescribed_fluxes,
-    os_papa_prescribed_flux_boundary_conditions,
     FreezingLimitedOceanTemperature,
     SurfaceRadiationProperties,
     InterfaceRadiationFlux,
@@ -111,12 +111,14 @@ export
     surface_temperature,
     regrid_bathymetry,
     regrid_topography,
+    smooth_topography!,
     Metadata, Metadatum, MetadataSet,
     BoundingBox,
     Column, Linear, Nearest,
     ECCOMetadatum,
     EN4Metadatum,
     ETOPO2022,
+    GLO30, GLO90,
     ECCO2Daily, ECCO2Monthly, ECCO4Monthly,
     ECCO2DarwinMonthly, ECCO4DarwinMonthly,
     EN4Monthly,
@@ -125,20 +127,12 @@ export
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
     ESAWorldCover, WorldCoverVersion, WorldCoverV100, WorldCoverV200,
     MCD15A2H, MCD12Q1, MODISLAIClimatology, build_lai_climatology!,
-    retained_retrieval_metadatum,
-    lai_screening_mask, recommended_lai_screening,
-    mask_lai_landcover, modis_landcover_class_names,
-    landcover_class_names, igbp_class_names, igbp_non_vegetated_classes,
-    class_fraction, class_fractions,
-    class_maximum_gap, zero_non_vegetated!,
-    period_index, composite_window,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
     ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel,
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
     ERA5HourlyLand, ERA5MonthlyLand,
-    OSPapaHourly,
     JRA55FieldTimeSeries,
     ORCAOne, ORCAQuarter, ORCATwelfth,
     ORCAGrid,
@@ -164,11 +158,6 @@ export
     meridional_heat_transport,
     location,
     native_grid,
-    fill_gaps!,
-    fill_seasonal_gaps!,
-    gap_fill_provenance,
-    gap_fill_denial,
-    time_average,
     natural_earth_lines,
     surface_elevation,
     exchange_state!,
@@ -274,7 +263,7 @@ include("NestedModels/NestedModels.jl")   # last: wraps a parent + a child (any 
 
 using .Grids
 using .DataWrangling
-using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55, OSPapa
+using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55
 using .Bathymetry
 using .InitialConditions
 using .EarthSystemModels
@@ -295,10 +284,10 @@ using .DataWrangling.ORCA
 using .DataWrangling.WOA
 using .DataWrangling.JRA55
 using .DataWrangling.GloFAS
-using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
 using .DataWrangling.ASTERGED
+using .DataWrangling.CopernicusDEM
 using .DataWrangling.CopernicusLandAlbedo
 using .DataWrangling.OpenLandMap
 using .DataWrangling.GloBFP3D

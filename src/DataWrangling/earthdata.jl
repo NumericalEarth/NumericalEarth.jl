@@ -57,10 +57,6 @@ end
 Download the granule at `url` into `cache_dir` unless it is already there, and return
 its path. Keyed on the granule name, so overlapping regions and sibling variables
 reuse a granule instead of re-downloading it.
-
-The download is staged and renamed into place, since a granule already in `cache_dir` is
-skipped on sight: an interrupted download must not leave a truncated file behind where a
-later call expects a complete one.
 """
 function earthdata_download_cached(url, cache_dir; attempts = 3)
     path = joinpath(cache_dir, basename(url))
@@ -77,16 +73,11 @@ end
 Build the NASA CMR granule-search URL for page `page_num` of the product `short_name` /
 `version` whose granules intersect the `bbox` `BoundingBox` (encoded `W,S,E,N`,
 longitudes in `[-180, 180]`). CMR search is anonymous; only the granule download itself
-needs Earthdata credentials.
-
-A `date` narrows the search to the day it opens, for a product whose granules are dated;
-`nothing` searches the whole record, for one whose tiles are a single static epoch.
+needs Earthdata credentials. A `date` narrows the search to the day it opens; `nothing`
+searches the whole record.
 """
 function cmr_granules_url(short_name, version, bbox::BoundingBox;
                           date = nothing, page_size = 2000, page_num = 1)
-
-    (!isnothing(bbox.longitude) && !isnothing(bbox.latitude)) ||
-        throw(ArgumentError("cmr_granules_url requires a bounded (longitude, latitude) BoundingBox."))
     west, east = bbox.longitude
     south, north = bbox.latitude
     return string("https://cmr.earthdata.nasa.gov/search/granules.json",
@@ -100,9 +91,7 @@ end
 
 cmr_temporal_query(::Nothing) = ""
 
-cmr_temporal_query(date) =
-    string("&temporal=", cmr_time(date), ",", cmr_time(DateTime(date) + Dates.Day(1)))
-
+cmr_temporal_query(date) = string("&temporal=", cmr_time(date), ",", cmr_time(DateTime(date) + Dates.Day(1)))
 cmr_time(date) = string(Dates.format(DateTime(date), "yyyy-mm-ddTHH:MM:SS"), "Z")
 
 """
@@ -113,7 +102,7 @@ Return the download URLs of the `short_name` / `version` granules whose footprin
 intersect `bbox`, querying NASA CMR page by page until a short page signals the last
 one. Only URLs ending in `extension` are collected, and one URL is kept per granule
 name (preferring a protected `data`-host endpoint). A `date` narrows the search to the
-day it opens, for a product whose granules are dated.
+day it opens.
 """
 function cmr_granules(short_name, version, bbox::BoundingBox;
                       extension = "h5", date = nothing, page_size = 2000, attempts = 3)

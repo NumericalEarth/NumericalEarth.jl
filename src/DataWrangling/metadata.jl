@@ -28,11 +28,19 @@ BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
     BoundingBox(grid; padding = 0)
 
 Create a `BoundingBox` spanning the horizontal extent of `grid`, widened on every
-side by `padding` (degrees).
+side by `padding` (degrees). For a distributed grid the box spans the *global* domain,
+identically on every rank.
 """
-BoundingBox(grid::AbstractGrid; padding = 0) =
-    BoundingBox(longitude = extrema(λnodes(grid, Face(), Center(), Center())) .+ (-padding, padding),
-                latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padding, padding))
+function BoundingBox(grid::AbstractGrid; padding = 0)
+    # Domain endpoints, not node extrema: distributed grids window their node arrays
+    # differently. Rank-local domains reduce to the global extent (`all_reduce` is the
+    # identity on serial architectures).
+    arch = architecture(grid)
+    λ₁, λ₂ = x_domain(grid)
+    φ₁, φ₂ = y_domain(grid)
+    return BoundingBox(longitude = (all_reduce(min, λ₁, arch) - padding, all_reduce(max, λ₂, arch) + padding),
+                       latitude  = (all_reduce(min, φ₁, arch) - padding, all_reduce(max, φ₂, arch) + padding))
+end
 
 """
     bounding_box_intersects(bounds, bbox::BoundingBox)
@@ -142,7 +150,7 @@ latitude_interfaces(md::Metadata) = latitude_interfaces(md.dataset)
              dataset,
              dates = all_dates(dataset, variable_name),
              dir = default_download_directory(dataset),
-             region = nothing,
+             region = default_region(dataset),
              filename = nothing,
              start_date = nothing,
              end_date = nothing)
@@ -186,7 +194,7 @@ function Metadata(variable_name;
                   dataset,
                   dates = all_dates(dataset, variable_name),
                   dir = default_download_directory(dataset),
-                  region = nothing,
+                  region = default_region(dataset),
                   filename = nothing,
                   start_date = nothing,
                   end_date = nothing)
@@ -238,7 +246,7 @@ end
 """
     Metadatum(variable_name;
               dataset,
-              region = nothing,
+              region = default_region(dataset),
               date = first_date(dataset, variable_name),
               filename = nothing,
               dir = default_download_directory(dataset))
@@ -247,7 +255,7 @@ A specialized constructor for a [`Metadata`](@ref) object with a single date, re
 """
 function Metadatum(variable_name;
                    dataset,
-                   region = nothing,
+                   region = default_region(dataset),
                    date = first_date(dataset, variable_name),
                    filename = nothing,
                    dir = default_download_directory(dataset))
@@ -372,7 +380,7 @@ end
                 dates = all_dates(dataset, first(variable_names)),
                 date = nothing,
                 dir = default_download_directory(dataset),
-                region = nothing,
+                region = default_region(dataset),
                 filenames = nothing,
                 start_date = nothing,
                 end_date = nothing)
@@ -438,7 +446,7 @@ function MetadataSet(variable_names::Symbol...;
                      dates = nothing,
                      date = nothing,
                      dir = default_download_directory(dataset),
-                     region = nothing,
+                     region = default_region(dataset),
                      filenames = nothing,
                      start_date = nothing,
                      end_date = nothing)
@@ -684,35 +692,37 @@ Keyword Argument
 - `start_time`: The start time for calculating the time difference. Defaults to the first
                 date in the metadata.
 
-Each date is shifted by the dataset's [`time_window_offset`](@ref), which places a
-window-averaged sample at the midpoint of its window rather than at the date its file is
-stamped with.
+Times are measured to each sample's [`window_center`](@ref), which for a time average is the
+midpoint of its [`averaging_window`](@ref) rather than the date its file is stamped with.
 """
 function native_times(metadata; start_time=first(metadata).dates)
     times = zeros(length(metadata))
+    reference = comparable_datetime(start_time)
+
     for (t, data) in enumerate(metadata)
-        date = data.dates
-        delta = date - start_time
-        delta = Second(delta).value + time_window_offset(data)
-        times[t] = delta
+        delta = window_center(data) - reference
+        times[t] = Dates.value(Dates.Millisecond(delta)) / 1000
     end
 
     return times
 end
 
 """
-    sample_window(metadatum)
+    averaging_window(metadatum)
 
-The `(start, stop)` dates of the averaging window the value in `metadatum` represents.
-Defaults to a zero-width window at the stamp itself, which is an instantaneous sample; a
-product whose files hold window averages extends this with its own averaging period.
+The `(start, stop)` dates of the interval of time the value in `metadatum` represents, its
+`time_bnds` in CF terms. Defaults to a zero-width window at the stamp itself, which is a value
+at an instant; a product whose files hold time averages extends this with the interval each
+average is taken over. Whether the dates label the start of that interval, its end, or its
+middle varies from product to product. See [`calendar_month_window`](@ref) for the
+calendar-month case, whose length varies with the month.
 """
-sample_window(metadatum) = (metadatum.dates, metadatum.dates)
+averaging_window(metadatum) = (metadatum.dates, metadatum.dates)
 
 """
     calendar_month_window(metadatum)
 
-The [`sample_window`](@ref) of a product whose files hold calendar-month means: the month
+The [`averaging_window`](@ref) of a product whose files hold calendar-month means: the month
 containing the date `metadatum` is stamped with. Independent of where in the month the stamp
 falls, so it also covers products stamped at, say, noon on the first.
 """
@@ -724,12 +734,12 @@ end
 """
     window_center(metadatum)
 
-The date at the middle of the [`sample_window`](@ref) of `metadatum`, where a window mean
+The date at the middle of the [`averaging_window`](@ref) of `metadatum`, where a time average
 equals the value of the field itself and so where a linearly interpolating `FieldTimeSeries`
-has to place it. The stamp itself for an instantaneous sample.
+has to place it. The stamp itself for a value at an instant.
 """
 function window_center(metadatum)
-    window_start, window_stop = sample_window(metadatum)
+    window_start, window_stop = averaging_window(metadatum)
     start_datetime = comparable_datetime(window_start)
     stop_datetime = comparable_datetime(window_stop)
     half_window = Dates.value(Dates.Millisecond(stop_datetime - start_datetime)) ÷ 2
@@ -737,45 +747,34 @@ function window_center(metadatum)
 end
 
 """
-    time_window_offset(metadatum)
+    window_span(metadata)
 
-The offset in seconds from the date a file is stamped with to its [`window_center`](@ref).
-
-Zero for an instantaneous sample, half a period for a stamp that labels the start of an
-averaging window, and negative for one that labels the end.
-"""
-time_window_offset(metadatum) =
-    Dates.value(Dates.Millisecond(window_center(metadatum) - comparable_datetime(metadatum.dates))) / 1000
-
-"""
-    sample_window_span(metadata)
-
-The span in seconds from the start of the first [`sample_window`](@ref) in `metadata` to the
+The span in seconds from the start of the first [`averaging_window`](@ref) in `metadata` to the
 end of the last, which is the period over which a window-averaged series repeats: its windows
-tile that span without gaps or overlaps. `nothing` for an instantaneous product, whose samples
-are points and so leave the period to be inferred from the node spacing.
+tile that span without gaps or overlaps. `nothing` for a product of values at an instant, whose
+samples are points and so leave the period to be inferred from the node spacing.
 """
-function sample_window_span(metadata)
-    window_start, window_stop = sample_window(first(metadata))
+function window_span(metadata)
+    window_start, window_stop = averaging_window(first(metadata))
     window_start == window_stop && return nothing
-    span = comparable_datetime(last(sample_window(last(metadata)))) - comparable_datetime(window_start)
+    span = comparable_datetime(last(averaging_window(last(metadata)))) - comparable_datetime(window_start)
     return Dates.value(Dates.Millisecond(span)) / 1000
 end
 
 """
     uncovered_time_gaps(metadata)
 
-The `(head, tail)` durations in seconds that the [`sample_window`](@ref)s of `metadata` span
+The `(head, tail)` durations in seconds that the [`averaging_window`](@ref)s of `metadata` span
 but its nodes do not: from the start of the first window to the first [`window_center`](@ref),
 and from the last center to the end of the last window. A `FieldTimeSeries` extrapolates over
-both. Zero for an instantaneous product, whose nodes span exactly its samples.
+both. Zero for a product of values at an instant, whose nodes span exactly its samples.
 """
 function uncovered_time_gaps(metadata)
     first_metadatum = first(metadata)
     last_metadatum = last(metadata)
 
-    head = window_center(first_metadatum) - comparable_datetime(first(sample_window(first_metadatum)))
-    tail = comparable_datetime(last(sample_window(last_metadatum))) - window_center(last_metadatum)
+    head = window_center(first_metadatum) - comparable_datetime(first(averaging_window(first_metadatum)))
+    tail = comparable_datetime(last(averaging_window(last_metadatum))) - window_center(last_metadatum)
 
     return Dates.value(Dates.Millisecond(head)) / 1000, Dates.value(Dates.Millisecond(tail)) / 1000
 end
@@ -801,39 +800,32 @@ spans_whole_cycle(metadata) =
     length(metadata) == length(all_dates(metadata.dataset, metadata.name))
 
 """
-    sample_bounds(metadata)
+    window_bounds(metadata)
 
 The `length(metadata) + 1` dates delimiting `metadata`'s samples, in the form
-[`time_average`](@ref) takes: sample `n` covers `[bounds[n], bounds[n+1])`. The bounds are
-the [`sample_window`](@ref) edges themselves — each window's start, closed by the last
-window's end — so they are independent of where in its window a product places its stamp.
-
-Defined only for a product whose samples tile time. An instantaneous product reports a
-zero-width `sample_window`, so where its samples end is a modeling choice rather than a
-property of the data, and this throws instead of guessing one. It also throws when
-`metadata` skips dates its cadence has, since the bounds would then credit each sample with
-the skipped interval too.
+[`time_average`](@ref) takes: sample `n` covers `[bounds[n], bounds[n+1])`. They are the
+[`averaging_window`](@ref) edges, so they do not depend on where in its window a product
+places its stamp. Throws for a product of values at an instant, and for dates that skip
+the cadence.
 """
-function sample_bounds(metadata::Metadata)
+function window_bounds(metadata::Metadata)
     Nt = length(metadata)
     bounds = Vector{DateTime}(undef, Nt + 1)
     previous_stop = nothing
 
     for (n, metadatum) in enumerate(metadata)
-        window_start, window_stop = sample_window(metadatum)
+        window_start, window_stop = averaging_window(metadatum)
         start = comparable_datetime(window_start)
         stop = comparable_datetime(window_stop)
 
         start < stop ||
-            throw(ArgumentError("`sample_bounds` needs a dataset whose samples tile time, and " *
-                                "$(metadata.dataset) reports instantaneous samples. Pass the " *
-                                "bounds explicitly to say what interval each sample stands for."))
+            throw(ArgumentError("window_bounds needs samples that span time, but " *
+                                "$(metadata.dataset) reports instantaneous samples."))
 
         isnothing(previous_stop) || previous_stop == start ||
-            throw(ArgumentError("`sample_bounds` needs samples that tile time, and the " *
-                                "$(metadata.dataset) sample covering up to $previous_stop is " *
-                                "followed by one opening at $start. Pass every date of the " *
-                                "cadence, or pass the bounds explicitly."))
+            throw(ArgumentError("window_bounds needs samples that tile time, but the " *
+                                "$(metadata.dataset) sample ending $previous_stop is " *
+                                "followed by one starting $start."))
 
         bounds[n] = start
         previous_stop = stop
@@ -895,6 +887,16 @@ Return the native field location `(LX, LY, LZ)` for `variable_name` in
 staggered variables (e.g., ECCO velocity fields) need to extend this.
 """
 dataset_location(dataset, variable_name) = (Center, Center, Center)
+
+"""
+    default_region(dataset)
+
+Return the default `region` used when constructing `Metadata`/`Metadatum` for
+`dataset`. Defaults to `nothing` (full domain). Single-location datasets (e.g. a
+moored buoy) can override this to embed their fixed [`Column`](@ref) so callers
+need not repeat the coordinates.
+"""
+default_region(dataset) = nothing
 
 # Note: all_dates needs to be extended for any new dataset.
 """

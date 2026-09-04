@@ -7,23 +7,17 @@ using Statistics: mean, cor
 """
     fill_gaps!(fts::FieldTimeSeries; max_gap=6, cyclic=false)
     fill_gaps!(data::AbstractArray; max_gap=6, cyclic=false)
-    fill_gaps!(data::AbstractVector; max_gap=6, cyclic=false)
 
-Fill NaN gaps along the time dimension using linear interpolation. For an
-`AbstractArray`, the last dimension is assumed to be time, and each spatial
-column is filled independently. For a `FieldTimeSeries`, `interior(fts)` is
-copied to the CPU, filled in place, and copied back.
+Fill NaN gaps along the time dimension by linear interpolation. For an `AbstractArray` the
+last dimension is time and each spatial column is filled independently; a `FieldTimeSeries`
+is filled through a host copy of its interior.
 
-Gaps longer than `max_gap` points are left as NaN, and one warning summarizes what was
-left behind across the whole call. A gap running to either end of an open series is the
-exception: it is extended with its nearest value whatever `max_gap` says, because there
-is no second value to interpolate towards. `max_gap` may instead be an array matching the
-spatial dimensions of `data`, giving each column its own tolerance.
+Gaps longer than `max_gap` points are left as NaN, with one warning per call. A gap running
+to either end of an open series is extended with its nearest value whatever `max_gap` says.
+`max_gap` may be an array over the spatial dimensions, giving each column its own tolerance.
 
-With `cyclic = true` the series is treated as one period of a periodic signal, so a
-gap at either end interpolates across the wrap rather than being extended with its
-nearest value — what a seasonal climatology needs, where December's neighbor is
-January. An all-NaN column is left untouched either way.
+With `cyclic = true` the series is one period of a periodic signal, so a gap at either end
+interpolates across the wrap. An all-NaN column is left untouched either way.
 """
 function fill_gaps!(fts::FieldTimeSeries; max_gap=6, cyclic=false)
     validate_whole_series(fts)
@@ -33,57 +27,36 @@ function fill_gaps!(fts::FieldTimeSeries; max_gap=6, cyclic=false)
     return fts
 end
 
-# A series read through a sliding window holds only its in-memory slice, so filling it would
-# quietly treat that window as the whole record — and, with `cyclic`, as the whole cycle.
 function validate_whole_series(fts)
     size(interior(fts))[end] == length(fts.times) ||
-        throw(ArgumentError("Filling gaps along time needs the whole series in memory, but " *
-                            "this one holds $(size(interior(fts))[end]) of its " *
-                            "$(length(fts.times)) times. Rebuild it with " *
-                            "`time_indices_in_memory = $(length(fts.times))`."))
+        throw(ArgumentError("Filling gaps along time needs the whole series in memory; " *
+                            "rebuild it with `time_indices_in_memory = $(length(fts.times))`."))
     return nothing
 end
 
 function fill_gaps!(data::AbstractArray; max_gap=6, cyclic=false)
-    validate_maximum_gap(max_gap, size(data)[1:end-1])
+    spatial_size = size(data)[1:end-1]
+    max_gap isa AbstractArray && size(max_gap) != spatial_size[1:ndims(max_gap)] &&
+        throw(ArgumentError("A per-column max_gap must match the spatial dimensions of the " *
+                            "data, $spatial_size; got $(size(max_gap))."))
+
     unfilled = Tuple{Int, Int}[]
-    for I in CartesianIndices(size(data)[1:end-1])
+    for I in CartesianIndices(spatial_size)
         fill_column_gaps!(view(data, I, :), unfilled; max_gap=column_maximum_gap(max_gap, I), cyclic)
     end
-    warn_unfilled_gaps(unfilled, max_gap)
-    return data
-end
 
-function fill_gaps!(data::AbstractVector; max_gap=6, cyclic=false)
-    unfilled = Tuple{Int, Int}[]
-    fill_column_gaps!(data, unfilled; max_gap, cyclic)
-    warn_unfilled_gaps(unfilled, max_gap)
+    if !isempty(unfilled)
+        longest = maximum(last(gap) - first(gap) + 1 for gap in unfilled)
+        tolerance = max_gap isa AbstractArray ? extrema(max_gap) : max_gap
+        @warn "Left $(length(unfilled)) gap(s) of up to $longest points unfilled (longer than max_gap = $tolerance)"
+    end
+
     return data
 end
 
 @inline column_maximum_gap(max_gap, I) = max_gap
 @inline column_maximum_gap(max_gap::AbstractArray, I) =
     @inbounds max_gap[ntuple(d -> I[d], ndims(max_gap))...]
-
-validate_maximum_gap(max_gap, spatial_size) = nothing
-
-function validate_maximum_gap(max_gap::AbstractArray, spatial_size)
-    size(max_gap) == spatial_size[1:ndims(max_gap)] ||
-        throw(ArgumentError("A per-column max_gap must match the spatial dimensions of the " *
-                            "data, $(spatial_size); got $(size(max_gap))."))
-    return nothing
-end
-
-maximum_gap_summary(max_gap) = string(max_gap)
-maximum_gap_summary(max_gap::AbstractArray) = string(minimum(max_gap), "–", maximum(max_gap))
-
-function warn_unfilled_gaps(unfilled, max_gap)
-    isempty(unfilled) && return nothing
-    longest = maximum(last(gap) - first(gap) + 1 for gap in unfilled)
-    @warn "Left $(length(unfilled)) gap(s) of up to $longest points unfilled " *
-          "(longer than max_gap = $(maximum_gap_summary(max_gap)))"
-    return nothing
-end
 
 # Records the gaps it refused to bridge in `unfilled`, so the caller can warn once.
 function fill_column_gaps!(data::AbstractVector, unfilled; max_gap, cyclic)
@@ -162,9 +135,6 @@ end
 #####
 ##### Class-aware seasonal gap filling
 #####
-##### Compositing a period across years and interpolating along the seasonal axis both
-##### assume cloud is quasi-random across years at a given period.
-#####
 
 """
     gap_fill_provenance
@@ -185,7 +155,6 @@ const gap_fill_provenance = (observed   = 0x00,
                             class_mean = 0x03,
                             unfilled   = 0xff)
 
-# The chain is host-side, so a `Field` or `FieldTimeSeries` argument is materialized once.
 horizontal_array(codes::AbstractArray) = codes
 
 function horizontal_array(field::Field)
@@ -196,8 +165,7 @@ function horizontal_array(field::Field)
     return codes[:, :, 1]
 end
 
-# A `(Nx, Ny, Nt)` view of a series whose last dimension is time, sharing its memory so the
-# fill is in place. `interior` of a horizontal `FieldTimeSeries` carries a singleton level.
+# A `(Nx, Ny, Nt)` view of a series whose last dimension is time.
 function seasonal_array(data::AbstractArray)
     spatial = size(data)[1:end-1]
     Nt = size(data)[end]
@@ -209,8 +177,7 @@ end
 
 seasonal_array(fts::FieldTimeSeries) = seasonal_array(Array(interior(fts)))
 
-# Compact 1-based indices for the classes actually present, so the donor table's class axis
-# is as short as the region's legend rather than as long as the product's.
+# Compact 1-based indices of the classes present.
 function class_indices(codes)
     present = sort!(unique(round.(Int, filter(isfinite, vec(codes)))))
     index = zeros(Int, size(codes))
@@ -230,14 +197,8 @@ end
 #####
 ##### Caching a filled series
 #####
-##### The chain is expensive over a continental lattice and deterministic in its inputs and
-##### its parameters, while the target grids that read its result are no part of it: every
-##### resolution built on the same native series wants the same fill.
-#####
 
-# An argument reduced to something storable beside the result: a scalar stands for itself,
-# an array for its shape and the sum of its finite entries, which no change of region,
-# window, or product leaves alone.
+# A storable stand-in for an argument: an array by its shape and the sum of its finite entries.
 fill_signature(parameter) = parameter
 fill_signature(parameter::AbstractArray) =
     (size(parameter), sum(value -> isfinite(value) ? Float64(value) : 0.0, parameter; init = 0.0))
@@ -304,9 +265,8 @@ Observed values are never rewritten:
 
 The donor curve has two sources, and `anchor` chooses between them. By default it is
 the mean cycle of same-class neighbors, pooled over an expanding block stencil. With
-`anchor` set to a climatology on the same lattice it is the cell's *own* climatological
-curve. This is the better donor when one is available, since it preserves the cell's
-individual timing as well as its level.
+`anchor` set to a climatology on the same lattice it is the cell's own climatological
+curve.
 
 Keyword arguments
 =================
@@ -372,10 +332,7 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
     codes = horizontal_array(land_cover)
     size(codes) == (Nx, Ny) ||
         throw(ArgumentError("The land-cover array is $(size(codes)) but the series is " *
-                            "$((Nx, Ny)) in space. Both must be on the same lattice: a " *
-                            "one-cell offset pairs every cell with its neighbor's class, " *
-                            "which is worse than an error because the result still looks " *
-                            "like a map."))
+                            "$((Nx, Ny)) in space."))
 
     key = seasonal_fill_key(; series = 𝒜, land_cover = codes, anchor, anchor_periods, cyclic,
                             max_gap, block_size, initial_radius, minimum_donors, maximum_radius,
@@ -467,8 +424,7 @@ end
 ##### Scoring the fill by data denial
 #####
 
-# Every `stride`-th eligible entry: spreads the sample over the region and repeats exactly,
-# with no seed to report.
+# Every `stride`-th eligible entry, so the sample is deterministic.
 function strided_sample(candidates, count)
     length(candidates) ≤ count && return candidates
     stride = length(candidates) ÷ count

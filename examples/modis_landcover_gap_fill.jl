@@ -30,6 +30,12 @@
 # `EARTHDATA_PASSWORD`.
 
 using NumericalEarth
+using NumericalEarth.DataWrangling: fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial,
+                                    time_average, class_fraction, class_fractions
+using NumericalEarth.DataWrangling.MODISLand: landcover_class_names, igbp_class_names,
+                                              igbp_non_vegetated_classes, class_maximum_gap,
+                                              zero_non_vegetated!, period_index,
+                                              retained_retrieval_metadatum
 using ArchGDAL
 using Oceananigans
 using Oceananigans.Units: Time   ## `Dates` exports a `Time` too, and it is not this one

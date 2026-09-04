@@ -92,8 +92,7 @@ function set!(fts::DatasetFieldTimeSeries, backend=fts.backend)
     for t in time_indices(fts)
         metadatum = @inbounds backend.metadata[t]
 
-        # Interpolating onto an identical grid is the identity where the data is complete,
-        # but its bilinear stencil spreads each missing cell into its neighbors.
+        # A copy has no stencil to spread missing cells through.
         if on_native_grid(backend) && isnothing(inpainting)
             isfile(metadata_path(metadatum)) || Downloads.download(metadatum)
             set_metadata_field!(fts[t], retrieve_data(metadatum), metadatum)

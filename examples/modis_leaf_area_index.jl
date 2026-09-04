@@ -26,6 +26,7 @@
 # through `EARTHDATA_USERNAME` and `EARTHDATA_PASSWORD`.
 
 using NumericalEarth
+using NumericalEarth.DataWrangling: fill_gaps!
 using ArchGDAL
 using Oceananigans
 using Oceananigans.Fields: interpolate!

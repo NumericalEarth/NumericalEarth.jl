@@ -28,19 +28,10 @@ restrict(::Nothing, interfaces::AbstractVector, N) = interfaces, N
 """
     native_cell_range(bounds, interfaces, N)
 
-The 1-based native cell range covered by `bounds` on an axis spanning `interfaces` in `N`
-cells — the cells [`restrict`](@ref) keeps, as indices rather than as edges.
-
-Snap so the native cell *centers* bracket `bounds`: include the cell whose center is at or
-below the lower edge and the one whose center is at or above the upper edge. This keeps
-`bounds` inside the center hull so it stays interpolatable at its edges (downscaling clamps
-outside the hull). Pads by 0 or 1 cell depending on where the edge falls within a native cell
-(an edge in a cell's first half — or exactly on a face — needs the extra cell; an edge past
-the center does not).
-
-A dataset that reads this range off disk hands `set_region_data!` exactly as many cells as
-the native grid has, pinning the region offset to zero instead of relying on a float
-comparison between the grid's nodes and the file's coordinates.
+The 1-based range of native cells covered by `bounds` on an axis spanning `interfaces` in
+`N` cells: the cells whose centers bracket `bounds`, including the cell whose center is at
+or below the lower edge and the one at or above the upper edge, so `bounds` stays inside
+the center hull and interpolatable at its edges.
 """
 function native_cell_range(bounds, interfaces, N)
     left, right = interfaces
@@ -208,32 +199,8 @@ end
 Retrieve data from netcdf file according to `metadata`.
 """
 function retrieve_data(metadata::Metadatum)
-    path = metadata_path(metadata)
-    name = dataset_variable_name(metadata)
-
-    # NetCDF shenanigans
-    ds = Dataset(path)
-
-    if is_three_dimensional(metadata)
-        data = ds[name][:, :, :, 1]
-
-        # Many ocean datasets use a "depth convention" for their vertical axis
-        if reversed_vertical_axis(metadata.dataset)
-            data = reverse(data, dims=3)
-        end
-    else
-        data = ds[name][:, :, 1]
-    end
-
-    close(ds)
-
-    # ERA5 (and some other datasets) store latitude north-to-south;
-    # flip to south-to-north to match the grid.
-    if reversed_latitude_axis(metadata.dataset)
-        data = reverse(data, dims=2)
-    end
-
-    return data
+    data, _, _ = retrieve_window(metadata, :, :)
+    return is_three_dimensional(metadata) ? data : dropdims(data, dims=3)
 end
 
 """
@@ -298,6 +265,11 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
     set_metadata_field!(field, data, metadata)
     fill_halo_regions!(field)
 
+    # Columns have no horizontal neighbours, the propagate is vertical
+    if metadata.region isa Column
+        propagate_vertically!(field)
+    end
+
     if !isnothing(inpainting)
         # Respect user-supplied mask, but otherwise build default mask for this dataset.
         if isnothing(mask)
@@ -361,18 +333,12 @@ below the (clipped) surface of a `PressureLevelGrid` source.
     Drop this once Oceananigans' `interpolate!` resolves the target vertical node
     from the physical `znode` for mutable grids.
 """
-# `==` alone compares nodes whenever the grids' wrapper types match, which for a
-# `PressureLevelGrid` reduces the whole geopotential to a column-mean profile
-# (`mean_height_profile`) only to discard it; the exact-type guard short-circuits that.
 same_grid(a::AbstractGrid, b::AbstractGrid) = typeof(a) === typeof(b) && a == b
 
-same_nodes(a, b) = same_grid(a.grid, b.grid) &&
-                   location(a) === location(b) && a.indices == b.indices
-
 function interpolate_physical!(to_field, from_field)
-    # On the same nodes interpolation is the identity where the data is complete, but its
-    # bilinear stencil spreads each NaN into its neighbors; a copy has no stencil to spread.
-    if same_nodes(to_field, from_field)
+    # A copy has no stencil to spread NaNs through.
+    if same_grid(to_field.grid, from_field.grid) && location(to_field) === location(from_field) &&
+       to_field.indices == from_field.indices
         interior(to_field) .= interior(from_field)
         fill_halo_regions!(to_field)
         return to_field
@@ -401,41 +367,50 @@ end
 interpolate_physical!(to_field, from_field, metadata) = interpolate_physical!(to_field, from_field)
 
 """
-    Field(metadata::Metadatum, grid::AbstractGrid; kw...)
+    Field(metadata::Metadatum, grid::AbstractGrid; cache = false, overwrite_cache = false, kw...)
 
 Load `metadata` on its native grid and interpolate onto `grid` — the
 `Field` analog of `FieldTimeSeries(metadata, grid)`. Keyword arguments are
 forwarded to the native-grid `Field(metadata, arch; …)` (e.g. `inpainting`,
 `mask`, `halo`, `cache_inpainted_data`).
+
+With `cache = true` the regridded result is cached to disk and reused by later
+reads with the same dataset, variable, date, region, target-grid geometry, and
+read keywords — skipping the native materialization and regrid entirely; with
+`cache = false` (default) the cache is disabled entirely and nothing is read or
+written. The key carries a size/mtime stamp of the local dataset file where one
+exists, so a re-download invalidates the cache. For streaming datasets with no
+local file, pass `overwrite_cache = true` after replacing data upstream: it
+skips the lookup and overwrites the entry with a freshly regridded result.
 """
-function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid; kw...)
-    native = Field(metadata, architecture(grid); kw...)
+function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid;
+                                   cache = false, overwrite_cache = false,
+                                   tile_bytes = default_tile_bytes, kw...)
     LX, LY, LZ = location(metadata)
+
+    if cache && !overwrite_cache
+        config = FieldRegridding(grid, metadata, values(kw))
+        data = load_field_cache(config)
+        if !isnothing(data)
+            target = Field{LX, LY, LZ}(grid)
+            interior(target) .= on_architecture(architecture(grid), data)
+            fill_halo_regions!(target)
+            return target
+        end
+    end
+
     target = Field{LX, LY, LZ}(grid)
-    interpolate_physical!(target, native, metadata)
+    regrid_from_metadata!(target, metadata; tile_bytes, kw...)
+    if cache
+        # rebuild the key: the native read may have just downloaded the dataset file it stamps
+        config = FieldRegridding(grid, metadata, values(kw))
+        save_field_cache(config, Array(interior(target)))
+    end
     return target
 end
 
 function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw...)
-    grid = target_field.grid
-    arch = child_architecture(grid)
-    meta_field = Field(metadata, arch; kw...)
-
-    Lzt = grid.Lz
-    Lzm = meta_field.grid.Lz
-
-    # Allow up to 1% vertical mismatch for pressure-level datasets with time-varying
-    # geopotential heights — the per-timestep vertical extent can be slightly smaller
-    # than the temporal-mean extent used for the target grid (e.g. when the atmosphere
-    # is compressed). Oceananigans' interpolate! does not extrapolate, so target points
-    # just outside the source domain will use the nearest interior values.
-    if is_three_dimensional(metadata) && Lzt > Lzm * (1 + 1e-2)
-        throw("The vertical range of the $(metadata.dataset) dataset ($(Lzm) m) is smaller than " *
-              "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
-    end
-
-    interpolate_physical!(target_field, meta_field, metadata)
-
+    regrid_from_metadata!(target_field, metadata; kw...)
     return target_field
 end
 
