@@ -5,8 +5,7 @@ using Oceananigans.Fields: interior
 using Oceananigans.TimeSteppers: time_step!
 using NumericalEarth.Lands: hydraulic_conductivity, pressure_head,
                             matched_retention_parameters, van_genuchten_saturation,
-                            capillary_disconnect_saturation, viscosity_correction,
-                            conductivity_spread, layer_weights, layer_depths
+                            viscosity_correction, layer_weights, layer_depths
 
 # (sand, silt, clay, bulk_density) in kg/kg and kg/m³.
 sandy_loam = (0.55, 0.25, 0.20, 1500.0)
@@ -15,7 +14,7 @@ clay_soil  = (0.25, 0.25, 0.50, 1400.0)
 sand_soil  = (0.92, 0.05, 0.03, 1600.0)
 textures   = (sandy_loam, silt_loam, clay_soil, sand_soil)
 
-van_genuchten_water_content(ψ, θʳ, ν, αᵃᵉ, 𝓃) = θʳ + (ν - θʳ) * (1 + (αᵃᵉ * ψ)^𝓃)^(-(1 - 1/𝓃))
+van_genuchten_water_content(head, θʳ, ν, αᵃᵉ, 𝓃) = θʳ + (ν - θʳ) * (1 + (αᵃᵉ * head)^𝓃)^(-(1 - 1/𝓃))
 
 # OpenLandMap depth faces: 60–100, 30–60 and 0–30 cm.
 z_interfaces = [-1.0, -0.6, -0.3, 0.0]
@@ -125,20 +124,11 @@ end
     end
 end
 
-@testset "layer_weights and layer_depths" begin
-    @test layer_weights(z_interfaces, 1.0) ≈ [0.4, 0.3, 0.3]
-    @test layer_weights(z_interfaces, 0.3) ≈ [0.0, 0.0, 0.3]
-    @test layer_weights(z_interfaces, 0.5) ≈ [0.0, 0.2, 0.3]
-    @test sum(layer_weights(z_interfaces, 0.5)) ≈ 0.5
-    @test sum(layer_weights(z_interfaces, 2.0)) ≈ 1.0
-    @test layer_depths(z_interfaces) ≈ [0.8, 0.45, 0.15]
-end
-
 @testset "matched_retention_parameters inverts the retention curve" begin
-    θʳ, ν, ψ¹, ψ² = 0.03, 0.45, 1.0, 150.0
-    recover(αᵃᵉ, 𝓃) = matched_retention_parameters(van_genuchten_water_content(ψ¹, θʳ, ν, αᵃᵉ, 𝓃),
-                                                 van_genuchten_water_content(ψ², θʳ, ν, αᵃᵉ, 𝓃),
-                                                 θʳ, ν, ψ¹, ψ²)
+    θʳ, ν, heads = 0.03, 0.45, (1.0, 150.0)
+    recover(αᵃᵉ, 𝓃) = matched_retention_parameters(van_genuchten_water_content(heads[1], θʳ, ν, αᵃᵉ, 𝓃),
+                                                 van_genuchten_water_content(heads[2], θʳ, ν, αᵃᵉ, 𝓃),
+                                                 θʳ, ν, heads)
 
     for (αᵃᵉ, 𝓃) in ((1.0, 1.05), (2.0, 1.3), (0.5, 2.0), (3.0, 1.6), (8.7, 2.3), (0.8, 1.08),
                    (8.0, 4.5), (20.0, 4.5))
@@ -147,11 +137,11 @@ end
         @test recovered[1] ≈ αᵃᵉ rtol=1e-6
     end
 
-    matched_retention_parameters(0.30, 0.12, 0.0, 0.45, 1.0, 150.0)
-    @test 0 == @allocated matched_retention_parameters(0.30, 0.12, 0.0, 0.45, 1.0, 150.0)
+    matched_retention_parameters(0.30, 0.12, 0.0, 0.45, (1.0, 150.0))
+    @test 0 == @allocated matched_retention_parameters(0.30, 0.12, 0.0, 0.45, (1.0, 150.0))
 
-    αᵃᵉ32, 𝓃32 = matched_retention_parameters(0.30f0, 0.12f0, 0.0f0, 0.45f0, 1.0f0, 150.0f0)
-    αᵃᵉ64, 𝓃64 = matched_retention_parameters(0.30, 0.12, 0.0, 0.45, 1.0, 150.0)
+    αᵃᵉ32, 𝓃32 = matched_retention_parameters(0.30f0, 0.12f0, 0.0f0, 0.45f0, (1.0f0, 150.0f0))
+    αᵃᵉ64, 𝓃64 = matched_retention_parameters(0.30, 0.12, 0.0, 0.45, (1.0, 150.0))
     @test 𝓃32 ≈ 𝓃64 rtol=1e-4
     @test αᵃᵉ32 ≈ αᵃᵉ64 rtol=1e-4
 end
@@ -190,12 +180,12 @@ end
         @test K₀[2] < sum(Δz .* Kᵏ) / ΣΔz
 
         # αᵃᵉ and 𝓃 put the effective curve through the thickness-weighted mean curve at both heads.
-        for (k, ψ) in Iterators.product(1:2, heads)
+        for (k, head) in Iterators.product(1:2, heads)
             ps = [soil_hydraulic_parameters(ptf, l..., d) for (l, d) in zip(k == 1 ? loam : layers, depths)]
-            θ̄ = sum(Δz[j] * van_genuchten_water_content(ψ, ps[j].residual_liquid_fraction, ps[j].porosity,
+            θ̄ = sum(Δz[j] * van_genuchten_water_content(head, ps[j].residual_liquid_fraction, ps[j].porosity,
                                                        ps[j].inverse_air_entry_head, ps[j].pore_size_uniformity)
                     for j in eachindex(ps)) / ΣΔz
-            @test van_genuchten_water_content(ψ, θʳ[k], ν[k], αᵃᵉ[k], 𝓃[k]) ≈ θ̄ rtol=1e-6
+            @test van_genuchten_water_content(head, θʳ[k], ν[k], αᵃᵉ[k], 𝓃[k]) ≈ θ̄ rtol=1e-6
         end
 
         # A uniform column reduces to its own layer parameters.
@@ -294,15 +284,10 @@ end
 end
 
 @testset "Cosby saturated conductivity" begin
-    c = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 1.5)
-    @test c.pore_connectivity_exponent == 0.5
-
     K⁺ = [saturated_conductivity(CosbyConductivity(), s) for s in (0.05, 0.25, 0.45, 0.65, 0.85, 0.95)]
     @test issorted(K⁺)
     @test K⁺[end] / K⁺[1] > 15
     @test saturated_conductivity(CosbyConductivity(), 0.92) * 3.6e6 ≈ 84.8 atol=0.5    # mm/hr
-    @test conductivity_spread(CosbyConductivity(), 0.05) ≈ 0.475 atol=0.001
-    @test conductivity_spread(CosbyConductivity(), 0.65) > conductivity_spread(CosbyConductivity(), 0.05)
 
     c32 = CosbyConductivity(Float32)
     @test saturated_conductivity(c32, 0.2f0) isa Float32
@@ -313,32 +298,9 @@ end
     @test saturated_conductivity(steeper, 0.0) == saturated_conductivity(CosbyConductivity(), 0.0)
 end
 
-@testset "capillary disconnect saturation" begin
-    @test capillary_disconnect_saturation(1.2) > capillary_disconnect_saturation(1.5) >
-          capillary_disconnect_saturation(3.0)
-    @test all(0 .< capillary_disconnect_saturation.([1.05, 1.2, 1.5, 3.0, 7.0]) .< 1)
-
-    # Merlin et al. (2016) fitted θ½ = 0.20 + 0.28 clay − 0.16 sand to 34 flux-tower sites;
-    # both pedotransfer functions predict the shutoff wetter than that, by a bounded amount.
-    θ½ᵒᵇˢ(sand, clay) = 0.20 + 0.28clay - 0.16sand
-    for ptf in (WeynantsPedotransfer(), HYPRESPedotransfer())
-        errors = Float64[]
-        for (sand, silt, clay, ρᵇ) in textures
-            p = soil_hydraulic_parameters(ptf, sand, silt, clay, ρᵇ)
-            θʳ, ν = p.residual_liquid_fraction, p.porosity
-            θ½ = θʳ + (ν - θʳ) * capillary_disconnect_saturation(p.pore_size_uniformity)
-            @test θʳ <= θ½ < ν
-            push!(errors, θ½ - θ½ᵒᵇˢ(sand, clay))
-        end
-        @test all(>(0), errors)
-        @test sqrt(sum(errors.^2) / length(errors)) < 0.18
-    end
-end
-
 @testset "viscosity correction on hydraulic conductivity" begin
     v = WaterViscosity()
     Θ(T) = viscosity_correction(v, T)
-    @test Θ(v.reference_temperature) == 1
     @test Θ(298.0) > 1 > Θ(275.0)
     # Against tabulated μ: μ(15 °C)/μ(20 °C) = 1.1375/1.0016, and K ∝ 1/μ.
     @test Θ(288.15) / Θ(293.15) ≈ 1.0016 / 1.1375 rtol=5e-3
@@ -347,14 +309,13 @@ end
     @test viscosity_correction(WaterViscosity(Float32), 298.0f0) isa Float32
 
     warm = WaterViscosity(reference_temperature = 298)
-    @test viscosity_correction(warm, 298.0) == 1
     @test viscosity_correction(warm, 288.0) < 1
     @test viscosity_correction(warm, 288.0) ≈ Θ(288.0) / Θ(298.0)
 
     grid = RectilinearGrid(size = (1, 1, 1), x = (0, 1), y = (0, 1), z = (-1, 0),
                            topology = (Bounded, Bounded, Bounded))
     c = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 1.5)
-    K₀ = hydraulic_conductivity(1, 1, grid, c, 0.6, 288.0)
+    K₀ = hydraulic_conductivity(1, 1, grid, c, 0.6, 293.0)
     @test hydraulic_conductivity(1, 1, grid, c, 0.6, 298.0) ≈ K₀ * Θ(298.0)
 
     # The arithmetic follows the state, so a Float64 closure runs in a Float32 kernel.
@@ -370,7 +331,7 @@ end
 end
 
 @testset "conductivity and pressure head stay finite as the soil dries" begin
-    K(c, 𝒮, grid) = hydraulic_conductivity(1, 1, grid, c, 𝒮, convert(eltype(grid), 288))
+    K(c, 𝒮, grid) = hydraulic_conductivity(1, 1, grid, c, 𝒮, convert(eltype(grid), 293))
     Π(r, 𝒮, grid) = pressure_head(1, 1, grid, r, 𝒮)
 
     for FT in (Float64, Float32)

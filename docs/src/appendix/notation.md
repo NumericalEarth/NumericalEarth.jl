@@ -170,7 +170,7 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``\alpha^{\mathrm{ae}}`` | `inverse_air_entry_head` | inverse air-entry head | Reciprocal of the air-entry pressure head, the suction at which the largest pores begin to empty (m⁻¹) |
 | ``\mathscr{n}`` | `pore_size_uniformity` | pore-size uniformity | van Genuchten retention exponent; large ``\mathscr{n}`` drains over a narrow band of suctions, ``\mathscr{n} \to 1`` over orders of magnitude. Sets ``\mathscr{m} = 1 - 1/\mathscr{n}`` (–) |
 | ``\eta^K`` | `ηᴷ`, `pore_connectivity_exponent` | pore-connectivity exponent | Mualem exponent on saturation in ``K(\mathcal S)`` (–) |
-| ``𝒮ᶜ`` | `capillary_disconnect_saturation` | capillary-disconnect saturation | Saturation at which capillary paths to an evaporating surface break, predicted from ``\mathscr{n}`` alone; shares the symbol ``𝒮ᶜ`` with `critical_saturation` above, which is the tunable form of the same threshold (–) |
+| ``T_0`` | `reference_temperature` | viscosity reference temperature | Temperature at which ``K_0`` holds and the viscosity factor ``\Theta(T)`` on ``K`` is unity (K) |
 | ``J^{Es}`` | `surface_energy_flux` | surface energy flux | Signed surface energy flux, positive upward (out of the slab) (W m⁻²) |
 | ``J^{lb}`` | `deep_liquid_flux` | deep-boundary liquid flux | Liquid mass flux across the slab bottom, positive upward (into the slab, capillary rise / groundwater return); drainage is ``J^{lb} < 0`` (kg m⁻² s⁻¹) |
 | ``J^{ls}`` | `surface_liquid_flux` | surface liquid flux | Liquid mass flux at the surface ``J^{ls} = -P^l + R^{\mathrm{sfc}}``, positive upward (out of the slab); infiltration is ``J^{ls} < 0`` (kg m⁻² s⁻¹) |

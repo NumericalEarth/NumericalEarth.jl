@@ -17,24 +17,13 @@ van Genuchten–Mualem hydraulic parameters. Concrete subtypes implement
 
 with `sand`, `silt`, `clay` mass fractions (kg/kg), `bulk_density` in kg/m³, `depth` the
 soil layer's depth below the surface (m, positive down), and outputs in model units (`αᵃᵉ` in
-m⁻¹, `K₀` in m s⁻¹). The keys match the keyword arguments of
-[`VariablySaturatedHydrology`](@ref), [`VanGenuchtenRetention`](@ref) and
-[`VanGenuchtenConductivity`](@ref). Subtypes also implement [`convert_eltype`](@ref).
-
-[`WeynantsPedotransfer`](@ref) is the default; [`HYPRESPedotransfer`](@ref) is the
-Wösten alternative.
+m⁻¹, `K₀` in m s⁻¹), keyed like the keyword arguments of the hydrology closures.
 """
 abstract type PedotransferFunction end
 
-"""
-    convert_eltype(FT, parameters)
-
-Rebuild a parameter set with every coefficient at float type `FT`, so that a kernel at
-`FT` receives no `Float64`.
-"""
-function convert_eltype end
-
-@inline apply_regression(coefficients, predictors) = sum(map(*, coefficients, predictors))
+# the coefficients are `Float64` literals; converting here keeps an `FT` kernel at `FT`
+@inline apply_regression(FT, coefficients, predictors) =
+    sum(map((c, p) -> convert(FT, c) * p, coefficients, predictors))
 
 #####
 ##### Weynants et al. (2009) — the default.
@@ -72,19 +61,13 @@ WeynantsRegression(; porosity, inverse_air_entry_head, pore_size_uniformity,
                        map(float, matching_point_conductivity),
                        map(float, pore_connectivity_exponent))
 
-convert_eltype(::Type{FT}, r::WeynantsRegression) where FT =
-    WeynantsRegression(convert.(FT, r.porosity),
-                       convert.(FT, r.inverse_air_entry_head),
-                       convert.(FT, r.pore_size_uniformity),
-                       convert.(FT, r.matching_point_conductivity),
-                       convert.(FT, r.pore_connectivity_exponent))
-
 """
     WEYNANTS_REGRESSION
 
-The [Weynants et al. (2009)](@cite weynants2009) pedotransfer coefficients (their
-Table 6), with the units of the [Weihermüller et al. (2017)](@cite weihermuller2017)
-erratum. Each field predicts one parameter:
+The [Weynants et al. (2009)](@cite weynants2009) pedotransfer coefficients at the full
+precision of the `spsh` R package's `ptf.cW`, which their Table 6 rounds to four decimals,
+with the units of the [Weihermüller et al. (2017)](@cite weihermuller2017) erratum. Each
+field predicts one parameter:
 
 | field | predicts | units | source |
 |:------|:---------|:------|:-------|
@@ -97,12 +80,12 @@ erratum. Each field predicts one parameter:
 `θʳ` is absent because Weynants fitted it and found it "not significantly different from 0".
 """
 const WEYNANTS_REGRESSION = WeynantsRegression(
-    #                            1,        C,       S,      S²,       D,       OC
-    porosity                    = (0.6355,  0.0013,  0,       0,      -0.1631,  0),
-    inverse_air_entry_head      = (-4.3003, -0.0097, 0.0138,  0,       0,      -0.0992),
-    pore_size_uniformity        = (-1.0846, -0.0236, -0.0085, 0.0001,  0,       0),
-    matching_point_conductivity = (1.9582,  0,       0.0308,  0,      -0.6142, -0.1566),
-    pore_connectivity_exponent  = (-1.8642, -0.1317, 0.0067,  0,       0,       0))
+    #                              1,              C,              S,             S²,            D,              OC
+    porosity                    = (0.6355365504,   0.0012807613,   0,             0,            -0.1630910071,   0),
+    inverse_air_entry_head      = (-4.3003420026, -0.0096851210,   0.0137763939,  0,             0,             -0.0992391618),
+    pore_size_uniformity        = (-1.0846069190, -0.0235654376,  -0.0085043044,  0.0001369944,  0,              0),
+    matching_point_conductivity = (1.9581584626,   0,              0.0308449531,  0,            -0.6141610130,  -0.1565557100),
+    pore_connectivity_exponent  = (-1.8641969563, -0.1317363417,   0.0067082506,  0,             0,              0))
 
 """
     WeynantsPedotransfer(FT = Oceananigans.defaults.FloatType;
@@ -136,12 +119,7 @@ end
 WeynantsPedotransfer(FT::Type = Oceananigans.defaults.FloatType;
                      organic_carbon = 0.58,
                      regression_coefficients = WEYNANTS_REGRESSION) =
-    WeynantsPedotransfer(convert(FT, organic_carbon),
-                         convert_eltype(FT, regression_coefficients))
-
-convert_eltype(::Type{FT}, ptf::WeynantsPedotransfer) where FT =
-    WeynantsPedotransfer(FT; organic_carbon = ptf.organic_carbon,
-                             regression_coefficients = ptf.regression_coefficients)
+    WeynantsPedotransfer(convert(FT, organic_carbon), regression_coefficients)
 
 Base.summary(ptf::WeynantsPedotransfer) =
     string("WeynantsPedotransfer(organic_carbon=", prettysummary(ptf.organic_carbon), ")")
@@ -158,11 +136,11 @@ Base.summary(ptf::WeynantsPedotransfer) =
     predictors = weynants_predictors(C, S, D, OC)
     c = ptf.regression_coefficients
 
-    ν  = apply_regression(c.porosity, predictors)
-    αᵃᵉ  = 100 * exp(apply_regression(c.inverse_air_entry_head, predictors))            # cm⁻¹ → m⁻¹
-    𝓃  = 1 + exp(apply_regression(c.pore_size_uniformity, predictors))
-    K₀ = exp(apply_regression(c.matching_point_conductivity, predictors)) / 8_640_000  # cm day⁻¹ → m s⁻¹
-    ηᴷ = apply_regression(c.pore_connectivity_exponent, predictors)
+    ν  = apply_regression(FT, c.porosity, predictors)
+    αᵃᵉ  = 100 * exp(apply_regression(FT, c.inverse_air_entry_head, predictors))            # cm⁻¹ → m⁻¹
+    𝓃  = 1 + exp(apply_regression(FT, c.pore_size_uniformity, predictors))
+    K₀ = exp(apply_regression(FT, c.matching_point_conductivity, predictors)) / 8_640_000  # cm day⁻¹ → m s⁻¹
+    ηᴷ = apply_regression(FT, c.pore_connectivity_exponent, predictors)
 
     return (porosity = ν,
             residual_liquid_fraction = zero(FT),
@@ -209,12 +187,6 @@ HYPRESRegression(; porosity, inverse_air_entry_head, pore_size_uniformity,
                      map(float, inverse_air_entry_head),
                      map(float, pore_size_uniformity),
                      map(float, matching_point_conductivity))
-
-convert_eltype(::Type{FT}, r::HYPRESRegression) where FT =
-    HYPRESRegression(convert.(FT, r.porosity),
-                     convert.(FT, r.inverse_air_entry_head),
-                     convert.(FT, r.pore_size_uniformity),
-                     convert.(FT, r.matching_point_conductivity))
 
 """
     HYPRES_REGRESSION
@@ -310,14 +282,7 @@ HYPRESPedotransfer(FT::Type = Oceananigans.defaults.FloatType;
                        convert(FT, topsoil_depth),
                        convert(FT, residual_liquid_fraction),
                        convert(FT, pore_connectivity_exponent),
-                       convert_eltype(FT, regression_coefficients))
-
-convert_eltype(::Type{FT}, ptf::HYPRESPedotransfer) where FT =
-    HYPRESPedotransfer(FT; organic_matter = ptf.organic_matter,
-                           topsoil_depth = ptf.topsoil_depth,
-                           residual_liquid_fraction = ptf.residual_liquid_fraction,
-                           pore_connectivity_exponent = ptf.pore_connectivity_exponent,
-                           regression_coefficients = ptf.regression_coefficients)
+                       regression_coefficients)
 
 Base.summary(ptf::HYPRESPedotransfer) =
     string("HYPRESPedotransfer(organic_matter=", prettysummary(ptf.organic_matter),
@@ -338,10 +303,10 @@ Base.summary(ptf::HYPRESPedotransfer) =
     predictors = hypres_predictors(C, S, OM, D, topsoil)
     c = ptf.regression_coefficients
 
-    ν  = apply_regression(c.porosity, predictors)
-    αᵃᵉ  = 100 * exp(apply_regression(c.inverse_air_entry_head, predictors))            # cm⁻¹ → m⁻¹
-    𝓃  = 1 + exp(apply_regression(c.pore_size_uniformity, predictors))
-    K₀ = exp(apply_regression(c.matching_point_conductivity, predictors)) / 8_640_000  # cm day⁻¹ → m s⁻¹
+    ν  = apply_regression(FT, c.porosity, predictors)
+    αᵃᵉ  = 100 * exp(apply_regression(FT, c.inverse_air_entry_head, predictors))            # cm⁻¹ → m⁻¹
+    𝓃  = 1 + exp(apply_regression(FT, c.pore_size_uniformity, predictors))
+    K₀ = exp(apply_regression(FT, c.matching_point_conductivity, predictors)) / 8_640_000  # cm day⁻¹ → m s⁻¹
 
     return (porosity = ν,
             residual_liquid_fraction = convert(FT, ptf.residual_liquid_fraction),

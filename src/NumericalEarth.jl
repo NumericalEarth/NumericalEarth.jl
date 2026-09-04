@@ -104,7 +104,7 @@ export
     WaterViscosity, CosbyConductivity, saturated_conductivity,
     NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
     NoRunoff, InfiltrationCapacityRunoff,
-    PedotransferFunction, WeynantsPedotransfer, HYPRESPedotransfer,
+    WeynantsPedotransfer, HYPRESPedotransfer,
     soil_hydraulic_parameters, soil_hydraulic_properties,
     # Urban aerodynamic roughness closures
     AbstractUrbanRoughness, MorphometricRoughness,

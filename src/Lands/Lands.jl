@@ -20,7 +20,7 @@ export AbstractLand,
        NoRunoff, InfiltrationCapacityRunoff,
        VariablySaturatedHydrology,
        # Pedotransfer functions + depth-layer combination
-       PedotransferFunction, WeynantsPedotransfer, HYPRESPedotransfer,
+       WeynantsPedotransfer, HYPRESPedotransfer,
        soil_hydraulic_parameters, soil_hydraulic_properties,
        # Urban aerodynamic roughness closures
        AbstractUrbanRoughness, MorphometricRoughness,
@@ -62,7 +62,7 @@ include("energy_balance/energy_balance.jl")
 include("hydrology/hydrology.jl")
 include("properties/property_providers.jl")
 
-# Setup-time helpers that build the property `Field`s the closures consume.
+# Pedotransfer functions and depth-layer combination.
 include("properties/pedotransfer.jl")
 include("properties/soil_hydraulic_properties.jl")
 

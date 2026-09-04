@@ -47,10 +47,10 @@ The second van Genuchten shape parameter, `𝓂 = 1 - 1/𝓃`, under the
 """
 $(TYPEDSIGNATURES)
 
-Effective saturation `𝒮 = [1 + (αψ)^𝓃]^(-𝓂)` at dimensionless suction `αψ ≥ 0`, the
-inverse of [`VanGenuchtenRetention`](@ref)'s `pressure_head`.
+Effective saturation `𝒮 = [1 + scaled_suction^𝓃]^(-𝓂)`, with `scaled_suction = -αᵃᵉ Π ≥ 0`
+the dimensionless suction; the inverse of [`VanGenuchtenRetention`](@ref)'s `pressure_head`.
 """
-@inline van_genuchten_saturation(αψ, 𝓃) = (1 + αψ^𝓃)^(-van_genuchten_m(𝓃))
+@inline van_genuchten_saturation(scaled_suction, 𝓃) = (1 + scaled_suction^𝓃)^(-van_genuchten_m(𝓃))
 
 """
 $(TYPEDSIGNATURES)
@@ -95,8 +95,7 @@ K(\\mathcal S) = K_0\\,\\mathcal S^{\\eta^K}\\left[1 - (1 - \\mathcal S^{1/\\mat
 `𝒮 = 1`, `pore_size_uniformity` (`𝓃`) must match the retention curve's, and
 `pore_connectivity_exponent` (`ηᴷ`, –) is the exponent on saturation: a larger value
 throttles conductivity more steeply as the soil drains. Each may be a scalar or a
-`Field` (see [`soil_hydraulic_properties`](@ref)). `K₀` and `ηᴷ` belong to one fit:
-[`WeynantsPedotransfer`](@ref) predicts the two together.
+`Field` (see [`soil_hydraulic_properties`](@ref)).
 
 `water_viscosity` is a [`WaterViscosity`](@ref) scaling `K` with the slab temperature;
 pass `nothing` for an isothermal conductivity.
@@ -151,21 +150,21 @@ end
     WaterViscosity(FT = Oceananigans.defaults.FloatType;
                    activation_temperature = 507.88,
                    pole_temperature = 149.3,
-                   reference_temperature = 288)
+                   reference_temperature = 293)
 
 Temperature dependence of the dynamic viscosity of water, as the factor by which it scales
 the hydraulic conductivity of soil:
 
 ```math
-\\Theta(T) = \\exp\\!\\left[\\frac{T_1}{T^{ref} - T_2} - \\frac{T_1}{T - T_2}\\right],
+\\Theta(T) = \\exp\\!\\left[\\frac{T_1}{T_0 - T_2} - \\frac{T_1}{T - T_2}\\right],
 ```
 
 with `T₁` the `activation_temperature` and `T₂` the `pole_temperature`, the law of
 [Deck et al. (2026)](@cite deck2026) (their Equations A19–A20) after
 [Hansson et al. (2004)](@cite hansson2004). Read with [`viscosity_correction`](@ref).
 
-`Θ` is unity at `reference_temperature`, the temperature a tabulated
-`matching_point_conductivity` is taken to have been measured at.
+`Θ` is unity at `reference_temperature` (`T₀`), the temperature at which
+`matching_point_conductivity` holds; laboratory `K₀` is measured near 20 °C.
 """
 struct WaterViscosity{FT}
     activation_temperature :: FT
@@ -176,7 +175,7 @@ end
 WaterViscosity(FT::Type = Oceananigans.defaults.FloatType;
                activation_temperature = 50_788//100,
                pole_temperature = 1493//10,
-               reference_temperature = 288) =
+               reference_temperature = 293) =
     WaterViscosity(convert(FT, activation_temperature),
                    convert(FT, pole_temperature),
                    convert(FT, reference_temperature))
@@ -201,98 +200,54 @@ using NumericalEarth.Lands: viscosity_correction
 v = WaterViscosity()
 
 ## warm soil conducts more than cold soil
-round.([viscosity_correction(v, T) for T in (275.0, 288.0, 310.0)], digits = 3)
+round.([viscosity_correction(v, T) for T in (275.0, 293.0, 310.0)], digits = 3)
 
 # output
 3-element Vector{Float64}:
- 0.685
+ 0.603
  1.0
- 1.651
+ 1.453
 ```
 """
 @inline function viscosity_correction(v::WaterViscosity, T)
     FT = float(typeof(T))
     T₁ = convert(FT, v.activation_temperature)
     T₂ = convert(FT, v.pole_temperature)
-    Tᵛ = convert(FT, v.reference_temperature)
-    return exp(T₁ / (Tᵛ - T₂) - T₁ / (convert(FT, T) - T₂))
+    T₀ = convert(FT, v.reference_temperature)
+    return exp(T₁ / (T₀ - T₂) - T₁ / (convert(FT, T) - T₂))
 end
 
 @inline viscosity_correction(::Nothing, T) = one(float(typeof(T)))
 
 """
-$(TYPEDSIGNATURES)
-
-Effective saturation at which capillary flow paths to an evaporating surface become
-disconnected, `𝒮ᶜ = [1 + ((𝓃-1)/𝓃)^(1-2𝓃)]^(-𝓂)` with `𝓂 = 1 - 1/𝓃`, the saturation at the
-critical head `hᶜ = αᵃᵉ⁻¹((𝓃-1)/𝓃)^((1-2𝓃)/𝓃)` of [Lehmann et al. (2008)](@cite lehmann2008).
-The retention curve depends on the product `αᵃᵉ hᶜ`, so `αᵃᵉ` cancels and `𝒮ᶜ` is set by `𝓃`
-alone. Bare-soil evaporation falls to half its potential rate near
-`θ½ ≈ θʳ + (ν - θʳ) 𝒮ᶜ` ([Lehmann et al. (2018)](@cite lehmann2018)), the threshold
-[`CriticalSaturation`](@ref) takes as `critical_saturation`.
-
-```jldoctest
-using NumericalEarth.Lands: capillary_disconnect_saturation
-
-round.(capillary_disconnect_saturation.([1.2, 1.5, 3.0]), digits = 3)
-
-# output
-3-element Vector{Float64}:
- 0.65
- 0.464
- 0.238
-```
-"""
-@inline function capillary_disconnect_saturation(𝓃)
-    𝓂 = van_genuchten_m(𝓃)
-    return (1 + ((𝓃 - 1) / 𝓃)^(1 - 2𝓃))^(-𝓂)
-end
-
-"""
     CosbyConductivity(FT = Oceananigans.defaults.FloatType;
                       intercept = -0.884,
-                      sand_coefficient = 0.0153,
-                      spread_intercept = 0.459,
-                      spread_silt_coefficient = 0.00321)
+                      sand_coefficient = 0.0153)
 
-Saturated hydraulic conductivity from sand, and its within-class spread from silt, after
-[Cosby et al. (1984)](@cite cosby1984) Table 5:
+Saturated hydraulic conductivity from sand, after [Cosby et al. (1984)](@cite cosby1984)
+Table 5:
 
 ```math
-\\log_{10} K^{+} = a + b\\,S, \\qquad
-\\sigma(\\log_{10} K^{+}) = c + d\\,S^{silt},
+\\log_{10} K^{+} = a + b\\,S,
 ```
 
-with texture in % and `K⁺` in inch hour⁻¹. Read with [`saturated_conductivity`](@ref) and
-[`conductivity_spread`](@ref), which take mass fractions (kg/kg) and return m s⁻¹ and
-decades respectively.
-
-The defaults are the published fit, regressed on 1,448 US samples across 11 texture
-classes; against the laboratory `K⁺` of GSHP ([Gupta et al. (2022)](@cite gupta2022)) it
-runs `+1.16` high in `log₁₀ cm/day`, so treat it as a prior to calibrate.
+with sand `S` in % and `K⁺` in inch hour⁻¹. Read with [`saturated_conductivity`](@ref),
+which takes a mass fraction (kg/kg) and returns m s⁻¹. The defaults are the published fit,
+regressed on 1,448 US samples across 11 texture classes.
 """
 struct CosbyConductivity{FT}
-    intercept               :: FT
-    sand_coefficient        :: FT
-    spread_intercept        :: FT
-    spread_silt_coefficient :: FT
+    intercept        :: FT
+    sand_coefficient :: FT
 end
 
 CosbyConductivity(FT::Type = Oceananigans.defaults.FloatType;
                   intercept = -884//1000,
-                  sand_coefficient = 153//10_000,
-                  spread_intercept = 459//1000,
-                  spread_silt_coefficient = 321//100_000) =
-    CosbyConductivity(convert(FT, intercept),
-                      convert(FT, sand_coefficient),
-                      convert(FT, spread_intercept),
-                      convert(FT, spread_silt_coefficient))
+                  sand_coefficient = 153//10_000) =
+    CosbyConductivity(convert(FT, intercept), convert(FT, sand_coefficient))
 
 Base.summary(c::CosbyConductivity) =
     string("CosbyConductivity(intercept=", prettysummary(c.intercept),
-           ", sand_coefficient=", prettysummary(c.sand_coefficient),
-           ", spread_intercept=", prettysummary(c.spread_intercept),
-           ", spread_silt_coefficient=", prettysummary(c.spread_silt_coefficient), ")")
+           ", sand_coefficient=", prettysummary(c.sand_coefficient), ")")
 
 Base.show(io::IO, c::CosbyConductivity) = print(io, summary(c))
 
@@ -319,15 +274,7 @@ round.(K⁺ .* 3.6e6, digits = 1)
 @inline saturated_conductivity(c::CosbyConductivity, sand) =
     (254//36_000_000) * 10^(c.sand_coefficient * 100sand + c.intercept)  # inch hour⁻¹ → m s⁻¹
 
-"""
-$(TYPEDSIGNATURES)
-
-Standard deviation of `log₁₀ K⁺` within a texture class, from silt mass fraction (kg/kg).
-"""
-@inline conductivity_spread(c::CosbyConductivity, silt) =
-    c.spread_silt_coefficient * 100silt + c.spread_intercept
-
-viscosity_summary(v::WaterViscosity) = string("Tᵛ=", prettysummary(v.reference_temperature))
+viscosity_summary(v::WaterViscosity) = string("T₀=", prettysummary(v.reference_temperature))
 viscosity_summary(::Nothing) = "isothermal"
 
 Base.summary(c::VanGenuchtenConductivity) =

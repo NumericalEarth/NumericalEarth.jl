@@ -51,45 +51,44 @@ layer_depths(z_interfaces) =
     [-(float(z_interfaces[k]) + float(z_interfaces[k+1])) / 2
      for k in 1:length(z_interfaces)-1]
 
-@inline retention_residual(𝓃, 𝒮¹, 𝒮², logψ) =
+@inline retention_residual(𝓃, 𝒮¹, 𝒮², log_head_ratio) =
     logexpm1(-log(𝒮¹) / van_genuchten_m(𝓃)) -
-    logexpm1(-log(𝒮²) / van_genuchten_m(𝓃)) - 𝓃 * logψ
+    logexpm1(-log(𝒮²) / van_genuchten_m(𝓃)) - 𝓃 * log_head_ratio
 
 """
 $(TYPEDSIGNATURES)
 
 The `(αᵃᵉ, 𝓃)` whose van Genuchten curve passes through water contents `θ¹` and `θ²` at
-suction heads `ψ¹` and `ψ²`, given `θʳ` and `ν`. Eliminating `αᵃᵉ` leaves one equation in `𝓃`,
+the two positive suction `heads`, given `θʳ` and `ν`. Eliminating `αᵃᵉ` leaves one equation in `𝓃`,
 
-    log[(𝒮¹^(-1/𝓂) - 1) / (𝒮²^(-1/𝓂) - 1)] = 𝓃 log(ψ¹/ψ²),   𝓂 = 1 - 1/𝓃,
+    log[(𝒮¹^(-1/𝓂) - 1) / (𝒮²^(-1/𝓂) - 1)] = 𝓃 log(heads[1] / heads[2]),   𝓂 = 1 - 1/𝓃,
 
 whose residual increases monotonically in `𝓃`; it is bisected over `1.01 ≤ 𝓃 ≤ 12`, and
 `αᵃᵉ` follows from the first constraint. A root outside that bracket, or a pair of water
 contents that determines none, returns `NaN`.
 """
-@inline function matched_retention_parameters(θ¹, θ², θʳ, ν, ψ¹, ψ²)
+@inline function matched_retention_parameters(θ¹, θ², θʳ, ν, heads)
     FT = typeof(θ¹)
     Δ  = ν - θʳ
     ϵ  = convert(FT, 1//1_000_000)
     𝒮¹ = clamp((θ¹ - θʳ) / Δ, 0, 1 - ϵ)
     𝒮² = clamp((θ² - θʳ) / Δ, 0, 1 - ϵ)
-    logψ = log(ψ¹ / ψ²)
+    log_head_ratio = log(heads[1] / heads[2])
 
     lo = convert(FT, 101//100)
     hi = convert(FT, 12)
-    # a non-finite residual fails the sign test, since `NaN < 0` is false
-    bracketed = (retention_residual(lo, 𝒮¹, 𝒮², logψ) < 0) &
-                (retention_residual(hi, 𝒮¹, 𝒮², logψ) > 0)
+    bracketed = (retention_residual(lo, 𝒮¹, 𝒮², log_head_ratio) < 0) &
+                (retention_residual(hi, 𝒮¹, 𝒮², log_head_ratio) > 0)
 
     for _ in 1:40
         𝓃  = (lo + hi) / 2
-        up = retention_residual(𝓃, 𝒮¹, 𝒮², logψ) > 0
+        up = retention_residual(𝓃, 𝒮¹, 𝒮², log_head_ratio) > 0
         hi = ifelse(up, 𝓃, hi)
         lo = ifelse(up, lo, 𝓃)
     end
 
     𝓃 = (lo + hi) / 2
-    αᵃᵉ = exp(logexpm1(-log(𝒮¹) / van_genuchten_m(𝓃)) / 𝓃) / ψ¹
+    αᵃᵉ = exp(logexpm1(-log(𝒮¹) / van_genuchten_m(𝓃)) / 𝓃) / heads[1]
 
     return ifelse(bracketed, αᵃᵉ, convert(FT, NaN)),
            ifelse(bracketed, 𝓃, convert(FT, NaN))
@@ -97,7 +96,7 @@ end
 
 @kernel function _soil_hydraulic_properties!(ν, θʳ, αᵃᵉ, 𝓃, K₀, ηᴷ,
                                             sand, silt, clay, bulk_density,
-                                            Δz, depths, ΣΔz, Nz, ψ¹, ψ², ptf)
+                                            Δz, depths, ΣΔz, Nz, heads, ptf)
     i, j = @index(Global, NTuple)
     FT = eltype(ν)
 
@@ -111,9 +110,9 @@ end
         νk  = p.porosity
         θʳk = p.residual_liquid_fraction
         nk  = p.pore_size_uniformity
-        θ¹  = θʳk + (νk - θʳk) * van_genuchten_saturation(p.inverse_air_entry_head * ψ¹, nk)
-        θ²  = θʳk + (νk - θʳk) * van_genuchten_saturation(p.inverse_air_entry_head * ψ², nk)
-        # `0 * NaN` is NaN, so zero weight alone would not drop an out-of-column layer
+        θ¹  = θʳk + (νk - θʳk) * van_genuchten_saturation(p.inverse_air_entry_head * heads[1], nk)
+        θ²  = θʳk + (νk - θʳk) * van_genuchten_saturation(p.inverse_air_entry_head * heads[2], nk)
+        # layers outside the column are skipped rather than zero-weighted
         inside = Δzk > 0
         Σν  += ifelse(inside, Δzk * νk, zero(FT))
         Σθʳ += ifelse(inside, Δzk * θʳk, zero(FT))
@@ -128,7 +127,7 @@ end
         ν[i, j, 1]  = Σν / ΣΔz
         θʳ[i, j, 1] = Σθʳ / ΣΔz
         αᵃᵉ[i, j, 1], 𝓃[i, j, 1] = matched_retention_parameters(Σθ¹ / ΣΔz, Σθ² / ΣΔz,
-                                                              Σθʳ / ΣΔz, Σν / ΣΔz, ψ¹, ψ²)
+                                                              Σθʳ / ΣΔz, Σν / ΣΔz, heads)
         K₀[i, j, 1] = ΣΔz / ΣR
         ηᴷ[i, j, 1] = Σηᴷ / ΣΔz
     end
@@ -168,8 +167,8 @@ function soil_hydraulic_properties(sand, silt, clay, bulk_density;
     all(f -> f.grid == grid && size(f) == size(sand), (silt, clay, bulk_density)) ||
         throw(ArgumentError("sand, silt, clay and bulk_density must share one grid"))
 
-    ψ¹, ψ² = matching_heads
-    0 < ψ¹ < ψ² ||
+    heads = (convert(FT, matching_heads[1]), convert(FT, matching_heads[2]))
+    0 < heads[1] < heads[2] ||
         throw(ArgumentError("matching_heads must be two increasing positive suction heads, found $matching_heads"))
 
     z_interfaces = on_architecture(CPU(), znodes(grid, Face()))
@@ -185,8 +184,7 @@ function soil_hydraulic_properties(sand, silt, clay, bulk_density;
             sand, silt, clay, bulk_density,
             on_architecture(arch, convert.(FT, Δz)),
             on_architecture(arch, convert.(FT, layer_depths(z_interfaces))),
-            convert(FT, ΣΔz), size(sand, 3), convert(FT, ψ¹), convert(FT, ψ²),
-            convert_eltype(FT, ptf))
+            convert(FT, ΣΔz), size(sand, 3), heads, ptf)
 
     return (porosity = ν,
             residual_liquid_fraction = θʳ,
