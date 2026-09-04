@@ -47,21 +47,7 @@ jobs:
         arch:
           - "default"
     steps:
-      - name: Show available storage before cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-      - name: Free Disk Space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          large-packages: false
-      - name: Cleanup /opt
-        run: |
-          sudo rm -rf /opt/*
-      - name: Show available storage after cleanup
+      - name: Show available storage at the beginning
         run: |
           echo " --> df -h /"
           df -h /
@@ -230,21 +216,7 @@ jobs:
         arch:
           - default
     steps:
-      - name: Show available storage before cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-      - name: Free Disk Space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          large-packages: false
-      - name: Cleanup /opt
-        run: |
-          sudo rm -rf /opt/*
-      - name: Show available storage after cleanup
+      - name: Show available storage at the beginning
         run: |
           echo " --> df -h /"
           df -h /
@@ -283,6 +255,14 @@ jobs:
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Show available storage at the end
+        if: always()
+        timeout-minutes: 2
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
   
   #####
   ##### Distributed MPI tests (GitHub-hosted runners)
