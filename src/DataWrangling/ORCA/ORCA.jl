@@ -6,7 +6,8 @@ using Downloads: Downloads
 using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
 
-using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, metadata_url
+using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, metadata_url,
+                       download_with_retries
 
 import ..DataWrangling:
     metadata_filename,
@@ -94,7 +95,7 @@ function Downloads.download(metadatum::ORCAMetadatum)
     @root if !isfile(filepath)
         dataset_name = nameof(typeof(metadatum.dataset))
         @info "Downloading $(dataset_name) data: $(metadatum.name) to $(metadatum.dir)..."
-        Downloads.download(fileurl, filepath; progress=DownloadProgress())
+        download_with_retries(fileurl, filepath; progress=DownloadProgress())
     end
 
     return filepath

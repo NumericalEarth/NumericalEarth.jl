@@ -18,6 +18,7 @@ export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
 
 using Adapt: Adapt
+using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using LibCURL: LibCURL
 using JLD2: JLD2, jldopen
@@ -38,6 +39,7 @@ using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
 using Oceananigans.Utils: launch!, prettytime, prettysummary
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
+using ZipFile: ZipFile
 using Scratch: @get_scratch!
 
 using ..NumericalEarth: NumericalEarth, stateindex
@@ -67,6 +69,24 @@ function download_cache(key)
     else
         return @get_scratch!(key)
     end
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Extract the zip archive `file` into the directory `exdir`, which is created if missing.
+"""
+function unzip(file, exdir = dirname(file))
+    mkpath(exdir)
+    archive = ZipFile.Reader(file)
+    for entry in archive.files
+        endswith(entry.name, '/') && continue
+        path = joinpath(exdir, entry.name)
+        mkpath(dirname(path))
+        write(path, read(entry))
+    end
+    close(archive)
+    return exdir
 end
 
 mutable struct DownloadProgress <: Function
@@ -154,6 +174,26 @@ function netrc_permission_file(username, password, machine, dir)
     end
 
     return filepath
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Download `url` to `path` with `Downloads.download(url, path; kw...)`, retrying up to `attempts`
+times on failure and discarding a partial file between attempts.
+"""
+function download_with_retries(url, path; attempts = 3, description = "Download", kw...)
+    for attempt in 1:attempts
+        try
+            Downloads.download(url, path; kw...)
+            return path
+        catch error
+            rm(path, force = true)
+            attempt == attempts && rethrow()
+            @warn "$description failed (attempt $attempt of $attempts); retrying..." url error
+            sleep(2attempt)
+        end
+    end
 end
 
 #####
@@ -268,6 +308,7 @@ include("metadata.jl")
 include("set_region_data.jl")
 include("field_cache.jl")
 include("metadata_field.jl")
+include("tiled_regridding.jl")
 include("dataset_backend.jl")
 include("metadata_field_time_series.jl")
 include("inpainting.jl")
@@ -359,12 +400,12 @@ include("ECCO/ECCO.jl")
 include("GLORYS/GLORYS.jl")
 include("AVISO/AVISO.jl")
 include("ERA5/ERA5.jl")
+include("SeaWiFS/SeaWiFS.jl")
 include("EN4/EN4.jl")
 include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
 include("GloFAS/GloFAS.jl")
-include("OSPapa/OSPapa.jl")
 include("SoilGrids/SoilGrids.jl")
 include("OpenLandMap/OpenLandMap.jl")
 include("IBCSO/IBCSO.jl")
@@ -382,12 +423,12 @@ using .ECCO
 using .GLORYS
 using .AVISO
 using .ERA5
+using .SeaWiFS
 using .EN4
 using .ORCA
 using .WOA
 using .JRA55
 using .GloFAS
-using .OSPapa
 using .OpenLandMap
 using .IBCSO
 using .GEBCO

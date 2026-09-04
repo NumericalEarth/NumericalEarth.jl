@@ -69,12 +69,13 @@ end
 #####
 
 """
-    download(meta::ERA5Metadatum; skip_existing=true)
+$(TYPEDSIGNATURES)
 
 Download ERA5 data for a single date/time using the CDSAPI package.
 
 # Keyword Arguments
 - `skip_existing`: Skip download if the file already exists (default: `true`).
+- `retrieve`: the function `(product, request, path)` that fetches the request (default: `CDSAPI.retrieve`).
 
 # Environment Setup
 Before downloading, you must:
@@ -84,7 +85,7 @@ Before downloading, you must:
 
 See https://cds.climate.copernicus.eu/how-to-api for details.
 """
-function Downloads.download(meta::ERA5Metadatum; skip_existing=true)
+function Downloads.download(meta::ERA5Metadatum; skip_existing=true, retrieve=CDSAPI.retrieve)
     output_path = metadata_path(meta)
 
     # Skip download if file already exists
@@ -94,7 +95,7 @@ function Downloads.download(meta::ERA5Metadatum; skip_existing=true)
 
     request = build_era5_request(meta.name, meta.dataset, meta.dates; region=meta.region)
 
-    @root retrieve_with_retries(cds_product(meta.dataset), request, output_path)
+    @root retrieve_with_retries(cds_product(meta.dataset), request, output_path; retrieve)
 
     return output_path
 end
@@ -105,7 +106,7 @@ end
 ##### in `src/DataWrangling/ERA5/ERA5_batched_downloads.jl`)
 #####
 
-function Downloads.download(metadata::ERA5Metadata; skip_existing=true, cleanup=true)
+function Downloads.download(metadata::ERA5Metadata; skip_existing=true, cleanup=true, retrieve=CDSAPI.retrieve)
     dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
     batches = batch_datetimes_for_cds(dates, metadata.dataset, 1)
 
@@ -114,7 +115,7 @@ function Downloads.download(metadata::ERA5Metadata; skip_existing=true, cleanup=
         path = download_era5_month(metadata.name, metadata.dataset, batch;
                                    region = metadata.region,
                                    dir = metadata.dir,
-                                   skip_existing, cleanup)
+                                   skip_existing, cleanup, retrieve)
         append!(paths, path)
     end
 
@@ -171,7 +172,7 @@ function plan_era5_month(name, dataset, dates; region, dir, skip_existing)
 end
 
 function download_era5_month(name, dataset, dates;
-                             region, dir, skip_existing, cleanup)
+                             region, dir, skip_existing, cleanup, retrieve = CDSAPI.retrieve)
 
     plan = plan_era5_month(name, dataset, dates; region, dir, skip_existing)
     isempty(plan.pending) && return map(dt_path -> dt_path[2], plan.dt_path_pairs)
@@ -179,7 +180,7 @@ function download_era5_month(name, dataset, dates;
     mkpath(dir)
 
     @root begin
-        retrieve_with_retries(cds_product(dataset), plan.request, plan.tmp_path)
+        retrieve_with_retries(cds_product(dataset), plan.request, plan.tmp_path; retrieve)
         foreach_nc(plan.tmp_path, dir) do nc_path
             split_era5_nc_by_datetime(nc_path, plan.nc_triples, coord_vars(dataset), ERA5_TIME_DIMNAMES)
         end
@@ -227,12 +228,12 @@ function Downloads.download(mset::MetadataSet{<:ERA5Dataset}; kwargs...)
 end
 
 """
-    Downloads.download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; skip_existing=true)
+$(TYPEDSIGNATURES)
 
 Download multiple ERA5 pressure-level variables for a single date in one CDS API request.
 The multi-variable NetCDF is split into individual per-variable files.
 """
-function Downloads.download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; skip_existing=true)
+function Downloads.download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; skip_existing=true, retrieve=CDSAPI.retrieve)
     name_path_pairs = []
     for name in names
         metadatum = Metadatum(name;
@@ -267,7 +268,7 @@ function Downloads.download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; 
     nc_name_path_pairs = [(nc_varnames(meta.dataset)[name], path) for (name, path) in pending]
 
     @root begin
-        retrieve_with_retries(cds_product(meta.dataset), request, tmp_path)
+        retrieve_with_retries(cds_product(meta.dataset), request, tmp_path; retrieve)
         foreach_nc(tmp_path, meta.dir) do nc_path
             split_era5_nc(nc_path, nc_name_path_pairs, coord_vars(meta.dataset))
         end
@@ -278,25 +279,27 @@ function Downloads.download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; 
 end
 
 """
-    Downloads.download(names, dataset::ERA5Dataset, datetime; ...)
+$(TYPEDSIGNATURES)
 
 Download one or more ERA5 variables at a single datetime.
 """
 function Downloads.download(names::Vector{Symbol}, dataset::ERA5Dataset, datetime;
                             region = nothing,
-                            dir = default_download_directory(dataset))
+                            dir = default_download_directory(dataset),
+                            kw...)
     meta = Metadatum(first(names); dataset, date=datetime, region, dir)
-    return Downloads.download(names, meta)
+    return Downloads.download(names, meta; kw...)
 end
 
 function Downloads.download(name::Symbol, dataset::ERA5Dataset, datetime;
                             region = nothing,
-                            dir = default_download_directory(dataset))
-    return Downloads.download([name], dataset, datetime; region, dir)
+                            dir = default_download_directory(dataset),
+                            kw...)
+    return Downloads.download([name], dataset, datetime; region, dir, kw...)
 end
 
 """
-    Downloads.download(names, dataset::ERA5Dataset, datetimes::AbstractVector; ...)
+$(TYPEDSIGNATURES)
 
 Download one or more ERA5 variables for multiple datetimes, batching by calendar day.
 """
@@ -306,14 +309,15 @@ function Downloads.download(names::Vector{Symbol},
                             region = nothing,
                             dir = default_download_directory(dataset),
                             skip_existing = true,
-                            cleanup = true)
+                            cleanup = true,
+                            retrieve = CDSAPI.retrieve)
 
     batches = batch_datetimes_for_cds(datetimes, dataset, length(names))
 
     paths = String[]
     for batch in batches
         path = download_era5_multivar_month(names, dataset, batch;
-                                            region, dir, skip_existing, cleanup)
+                                            region, dir, skip_existing, cleanup, retrieve)
         append!(paths, path)
     end
 
@@ -325,9 +329,8 @@ function Downloads.download(name::Symbol,
                             datetimes::AbstractVector;
                             region = nothing,
                             dir = default_download_directory(dataset),
-                            skip_existing = true,
-                            cleanup = true)
-    return Downloads.download([name], dataset, datetimes; region, dir, skip_existing, cleanup)
+                            kw...)
+    return Downloads.download([name], dataset, datetimes; region, dir, kw...)
 end
 
 """
@@ -380,7 +383,7 @@ function plan_era5_multivar_month(names, dataset, dates; region, dir, skip_exist
 end
 
 function download_era5_multivar_month(names, dataset, dates;
-                                      region, dir, skip_existing, cleanup)
+                                      region, dir, skip_existing, cleanup, retrieve = CDSAPI.retrieve)
 
     plan = plan_era5_multivar_month(names, dataset, dates; region, dir, skip_existing)
     isempty(plan.pending) && return map(name_dt_path -> name_dt_path[3], plan.name_dt_paths)
@@ -388,7 +391,7 @@ function download_era5_multivar_month(names, dataset, dates;
     mkpath(dir)
 
     @root begin
-        retrieve_with_retries(cds_product(dataset), plan.request, plan.tmp_path)
+        retrieve_with_retries(cds_product(dataset), plan.request, plan.tmp_path; retrieve)
         foreach_nc(plan.tmp_path, dir) do nc_path
             split_era5_nc_by_datetime(nc_path, plan.nc_triples, coord_vars(dataset), ERA5_TIME_DIMNAMES)
         end
