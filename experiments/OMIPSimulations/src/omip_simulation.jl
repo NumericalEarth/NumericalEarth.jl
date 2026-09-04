@@ -717,7 +717,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                          checkpoint_interval = 360days,
                          output_dir = ".",
                          filename_prefix = string(config),
-                         file_splitting_interval = 360days)
+                         file_splitting_interval = 360days,
+                         repeat_year_forcing = true)
 
     cfg = Val(config)
 
@@ -763,7 +764,7 @@ function omip_simulation(config::Symbol = :halfdegree;
         nothing
     end
 
-    land = JRA55PrescribedLand(grid; dir = atmosphere_dir, dataset = MultiYearJRA55(),
+    land = JRA55PrescribedLand(grid; dir = atmosphere_dir, dataset = repeat_year_forcing ? RepeatYearJRA55() : MultiYearJRA55(),
                                start_date, end_date, time_indices_in_memory = backend_size, prefetch = true,
                                maximum_search_radius,
                                spread_radius = river_spread_radius,
@@ -838,7 +839,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                                          forcing_dir = atmosphere_dir,
                                          start_date,
                                          end_date,
-                                         backend_size)
+                                         backend_size,
+                                         repeat_year_forcing)
 
     ice_freshwater_delivery = if ice_virtual_salt_flux
         VirtualSaltFluxIceFreshwater()
