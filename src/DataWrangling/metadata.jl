@@ -779,6 +779,62 @@ function uncovered_time_gaps(metadata)
     return Dates.value(Dates.Millisecond(head)) / 1000, Dates.value(Dates.Millisecond(tail)) / 1000
 end
 
+"""
+    is_seasonal_climatology(dataset)
+
+Whether `dataset`'s whole record is one period of the seasonal cycle, so that `Cyclical`
+wrapping across its ends continues the cycle rather than splicing two unrelated dates.
+`false` by default; climatology datasets extend this.
+"""
+is_seasonal_climatology(dataset) = false
+
+"""
+    spans_whole_cycle(metadata)
+
+Whether `metadata` covers every period of a seasonal climatology, in which case the half
+window `Cyclical` fills beyond each end node comes from the adjacent phase of the same
+cycle, and wrapping is exact.
+"""
+spans_whole_cycle(metadata) =
+    is_seasonal_climatology(metadata.dataset) &&
+    length(metadata) == length(all_dates(metadata.dataset, metadata.name))
+
+"""
+    window_bounds(metadata)
+
+The `length(metadata) + 1` dates delimiting `metadata`'s samples, in the form
+[`time_average`](@ref) takes: sample `n` covers `[bounds[n], bounds[n+1])`. They are the
+[`averaging_window`](@ref) edges, so they do not depend on where in its window a product
+places its stamp. Throws for a product of values at an instant, and for dates that skip
+the cadence.
+"""
+function window_bounds(metadata::Metadata)
+    Nt = length(metadata)
+    bounds = Vector{DateTime}(undef, Nt + 1)
+    previous_stop = nothing
+
+    for (n, metadatum) in enumerate(metadata)
+        window_start, window_stop = averaging_window(metadatum)
+        start = comparable_datetime(window_start)
+        stop = comparable_datetime(window_stop)
+
+        start < stop ||
+            throw(ArgumentError("window_bounds needs samples that span time, but " *
+                                "$(metadata.dataset) reports instantaneous samples."))
+
+        isnothing(previous_stop) || previous_stop == start ||
+            throw(ArgumentError("window_bounds needs samples that tile time, but the " *
+                                "$(metadata.dataset) sample ending $previous_stop is " *
+                                "followed by one starting $start."))
+
+        bounds[n] = start
+        previous_stop = stop
+    end
+
+    bounds[Nt + 1] = previous_stop
+    return bounds
+end
+
 ####
 #### Metadata interface
 ####
@@ -956,6 +1012,7 @@ Compute the range of `native_dates` that fall within the specified `start_date` 
 """
 comparable_datetime(date::Dates.AbstractDateTime) = DateTime(date)
 comparable_datetime(date::AbstractCFDateTime) = DateTime(date)
+comparable_datetime(date::Date) = DateTime(date)
 
 function compute_native_date_range(native_dates, start_date, end_date)
     start_datetime = comparable_datetime(start_date)
