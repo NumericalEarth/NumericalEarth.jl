@@ -16,6 +16,7 @@ export DatasetRestoring, SurfaceFluxRestoring
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
 export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
+export masked_regrid!
 
 using Adapt: Adapt
 using DocStringExtensions: TYPEDSIGNATURES
@@ -31,7 +32,7 @@ using Oceananigans.DistributedComputations: DistributedComputations, @root, all_
 using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
                           LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes,
                           topology, x_domain, y_domain, z_domain
-using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
+using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, regrid!, set!
 using Oceananigans.Grids: node
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
@@ -309,6 +310,7 @@ include("set_region_data.jl")
 include("field_cache.jl")
 include("metadata_field.jl")
 include("tiled_regridding.jl")
+include("masked_regrid.jl")
 include("dataset_backend.jl")
 include("metadata_field_time_series.jl")
 include("inpainting.jl")
