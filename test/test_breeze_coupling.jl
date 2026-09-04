@@ -210,69 +210,6 @@ end
     end
 end
 
-@testset "Breeze RTM surface longwave follows live temperature" begin
-    for arch in test_architectures
-        grid = RectilinearGrid(arch;
-                               size = 1,
-                               x = (0, 1),
-                               y = (0, 1),
-                               z = (-1, 0),
-                               topology = (Flat, Flat, Bounded))
-
-        surface_energy_flux = CenterField(grid)
-        surface_temperature = CenterField(grid)
-        surface_emissivity = CenterField(grid)
-        downwelling_longwave_flux = CenterField(grid)
-        downwelling_shortwave_flux = CenterField(grid)
-        surface_albedo = CenterField(grid)
-
-        initial_surface_energy_flux = 25
-        first_surface_temperature = 280
-        second_surface_temperature = 300
-        emissivity = 0.95
-        downwelling_longwave = 300
-        downwelling_shortwave = 600
-        albedo = 0.2
-        stefan_boltzmann_constant = convert(eltype(grid), default_stefan_boltzmann_constant)
-
-        fill!(parent(surface_emissivity), emissivity)
-        fill!(parent(downwelling_longwave_flux), downwelling_longwave)
-        fill!(parent(downwelling_shortwave_flux), downwelling_shortwave)
-        fill!(parent(surface_albedo), albedo)
-
-        function surface_energy_at(temperature)
-            fill!(parent(surface_energy_flux), initial_surface_energy_flux)
-            fill!(parent(surface_temperature), temperature)
-            launch!(arch, grid, :xy,
-                    NumericalEarthBreezeExt._apply_breeze_air_land_radiative_fluxes!,
-                    surface_energy_flux,
-                    grid,
-                    surface_temperature,
-                    surface_emissivity,
-                    stefan_boltzmann_constant,
-                    downwelling_longwave_flux,
-                    downwelling_shortwave_flux,
-                    surface_albedo)
-            return only(Array(interior(surface_energy_flux)))
-        end
-
-        first_surface_energy = surface_energy_at(first_surface_temperature)
-        second_surface_energy = surface_energy_at(second_surface_temperature)
-
-        expected_surface_energy(temperature) =
-            initial_surface_energy_flux +
-            emissivity * stefan_boltzmann_constant * temperature^4 -
-            emissivity * downwelling_longwave -
-            (1 - albedo) * downwelling_shortwave
-
-        @test first_surface_energy ≈ expected_surface_energy(first_surface_temperature)
-        @test second_surface_energy ≈ expected_surface_energy(second_surface_temperature)
-        @test second_surface_energy - first_surface_energy ≈
-              emissivity * stefan_boltzmann_constant *
-              (second_surface_temperature^4 - first_surface_temperature^4)
-    end
-end
-
 @testset "AtmosphereLandModel with a nested Breeze atmosphere" begin
     for arch in test_architectures
         A = typeof(arch)
