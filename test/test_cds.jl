@@ -4,6 +4,7 @@ using CDSAPI
 using Dates
 using Random: shuffle!
 using NCDatasets
+using ZipFile: ZipFile
 
 using NumericalEarth.DataWrangling: metadata_path, BoundingBox, Column, Linear, Nearest, is_three_dimensional
 using NumericalEarth.DataWrangling.ERA5
@@ -1079,12 +1080,12 @@ end
         mktempdir() do tmp
             # Build a ZIP fixture containing two .nc files (and a non-.nc file
             # that should be ignored).
-            nc1 = joinpath(tmp, "a.nc"); touch(nc1)
-            nc2 = joinpath(tmp, "b.nc"); touch(nc2)
-            other = joinpath(tmp, "readme.txt"); touch(other)
-
             zip_path = joinpath(tmp, "bundle.zip")
-            run(`zip -j -q $zip_path $nc1 $nc2 $other`)
+            archive = ZipFile.Writer(zip_path)
+            for name in ("a.nc", "b.nc", "readme.txt")
+                close(ZipFile.addfile(archive, name))
+            end
+            close(archive)
 
             received = String[]
             CDSExt.foreach_nc(p -> push!(received, basename(p)), zip_path, tmp)

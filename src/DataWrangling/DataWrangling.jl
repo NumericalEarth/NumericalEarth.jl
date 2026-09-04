@@ -18,6 +18,7 @@ export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
 
 using Adapt: Adapt
+using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using LibCURL: LibCURL
 using JLD2: JLD2, jldopen
@@ -38,6 +39,7 @@ using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
 using Oceananigans.Utils: launch!, prettytime, prettysummary
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
+using ZipFile: ZipFile
 using Scratch: @get_scratch!
 
 using ..NumericalEarth: NumericalEarth, stateindex
@@ -67,6 +69,24 @@ function download_cache(key)
     else
         return @get_scratch!(key)
     end
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Extract the zip archive `file` into the directory `exdir`, which is created if missing.
+"""
+function unzip(file, exdir = dirname(file))
+    mkpath(exdir)
+    archive = ZipFile.Reader(file)
+    for entry in archive.files
+        endswith(entry.name, '/') && continue
+        path = joinpath(exdir, entry.name)
+        mkpath(dirname(path))
+        write(path, read(entry))
+    end
+    close(archive)
+    return exdir
 end
 
 mutable struct DownloadProgress <: Function
