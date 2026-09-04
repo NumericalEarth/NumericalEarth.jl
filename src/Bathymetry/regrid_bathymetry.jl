@@ -94,7 +94,7 @@ function regrid_bathymetry(target_grid, metadata;
         end
     end
 
-    download(metadata)
+    download_for_regridding(metadata)
 
     target_z = _regrid_bathymetry(target_grid, metadata;
                                   height_above_water,
@@ -113,6 +113,9 @@ function regrid_bathymetry(target_grid, metadata;
     return target_z
 end
 
+# Datasets that regrid straight from their remote store specialize this to skip the download.
+download_for_regridding(metadata) = download(metadata)
+
 # regrid the bathymetry assuming the data is already downloaded
 function _regrid_bathymetry(target_grid, metadata;
                             height_above_water,
@@ -127,6 +130,24 @@ function _regrid_bathymetry(target_grid, metadata;
         return throw(ArgumentError("interpolation_passes has to be an integer ≥ 1"))
     end
 
+    target_z = regrid_bottom_height(target_grid, metadata; height_above_water, interpolation_passes)
+
+    if minimum_depth > 0
+        arch = architecture(target_grid)
+        launch!(arch, target_grid, :xy, _enforce_minimum_depth!, target_z, minimum_depth)
+    end
+
+    if major_basins < Inf
+        remove_minor_basins!(target_z, major_basins)
+    end
+
+    fill_halo_regions!(target_z)
+
+    return target_z
+end
+
+# Datasets that regrid straight from their remote store specialize this.
+function regrid_bottom_height(target_grid, metadata; height_above_water, interpolation_passes)
     arch = architecture(target_grid)
 
     bathymetry_native_grid = native_grid(metadata, arch; halo = (10, 10, 1))
@@ -150,20 +171,8 @@ function _regrid_bathymetry(target_grid, metadata;
     set!(native_z, z_data)
     fill_halo_regions!(native_z)
 
-    target_z = interpolate_bathymetry_in_passes(native_z, target_grid;
-                                                passes = interpolation_passes)
-
-    if minimum_depth > 0
-        launch!(arch, target_grid, :xy, _enforce_minimum_depth!, target_z, minimum_depth)
-    end
-
-    if major_basins < Inf
-        remove_minor_basins!(target_z, major_basins)
-    end
-
-    fill_halo_regions!(target_z)
-
-    return target_z
+    return interpolate_bathymetry_in_passes(native_z, target_grid;
+                                            passes = interpolation_passes)
 end
 
 """
@@ -220,7 +229,7 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
     Nx, Ny, _ = size(global_grid)
 
     # download uses @root internally; all ranks must call it
-    download(metadata)
+    download_for_regridding(metadata)
 
     config = cache ? bathymetry_regridding_key(global_grid, metadata;
                                                height_above_water, minimum_depth,

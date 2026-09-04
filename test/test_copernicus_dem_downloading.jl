@@ -10,6 +10,7 @@ using Zarr  # activates NumericalEarthZarrExt (registers the bitround filter, en
 
 using NumericalEarth.DataWrangling: metadata_path
 using NumericalEarth.DataWrangling.CopernicusDEM: GLO30, GLO90
+using NumericalEarth.Bathymetry: regrid_bottom_height
 
 # Requires a DestinE personal access token in DESTINE_ACCESS_TOKEN (free; see
 # https://earthdatahub.destine.eu/account-settings#my-personal-access-tokens).
@@ -48,4 +49,28 @@ end
         @test maximum(z) > 1000    # the Alps reach well above 1 km
         @test maximum(z) < 5000    # but below the Mont Blanc ceiling
     end
+end
+
+@testset "Tiled Copernicus DEM regridding matches the single-tile result" begin
+    grid = LatitudeLongitudeGrid(CPU();
+                                 size = (24, 24, 1),
+                                 longitude = dem_longitude,
+                                 latitude = dem_latitude,
+                                 z = (-1, 0))
+
+    metadatum = Metadatum(:bottom_height; dataset = GLO90(), region = dem_region)
+
+    single_tile = regrid_bottom_height(grid, metadatum;
+                                       height_above_water = nothing,
+                                       interpolation_passes = 1,
+                                       tile_size = 10^6)
+
+    # 333 source cells per tile: the seams cut through the 50-cell target cells,
+    # so straddling cells must accumulate from several tiles.
+    tiled = regrid_bottom_height(grid, metadatum;
+                                 height_above_water = nothing,
+                                 interpolation_passes = 1,
+                                 tile_size = 333)
+
+    @test Array(interior(tiled, :, :, 1)) ≈ Array(interior(single_tile, :, :, 1))
 end
