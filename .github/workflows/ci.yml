@@ -24,15 +24,8 @@ permissions:
   actions: write
   contents: read
 
+# The tests run here are offline; the ones that need real remote data run in DataTests.yml.
 env:
-  ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
-  ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
-  COPERNICUSMARINE_SERVICE_USERNAME: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
-  COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
-  CDSAPI_URL: "https://cds.climate.copernicus.eu/api"
-  CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
-  DESTINE_ACCESS_TOKEN: ${{ secrets.DESTINE_ACCESS_TOKEN }}
-  DATADEPS_ALWAYS_ACCEPT: true
   JULIA_PKG_SERVER_REGISTRY_PREFERENCE: 'eager'
 
 #####
@@ -82,6 +75,14 @@ jobs:
       - uses: julia-actions/cache@v3
         with:
           cache-scratchspaces: false
+      - name: Instantiate test environment
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          julia --project=test --color=yes --check-bounds=yes -e '
+              using Pkg;
+              Pkg.instantiate()
+          '
       - uses: julia-actions/julia-runtest@v1
         with:
           # Cap parallelism at 2 workers. ParallelTestRunner's default_njobs
@@ -92,6 +93,7 @@ jobs:
           # "The operation was canceled." Two workers keep peak memory well
           # within budget while staying comfortably under the job timeout.
           test_args: '--verbose --jobs=2'
+          optimize: 0
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v7
         with:
@@ -175,6 +177,14 @@ jobs:
           Pkg.Registry.rm("General")
           Pkg.Registry.add("General")
           Pkg.Registry.update()
+      - name: Instantiate test environment
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          julia --project=test --color=yes --check-bounds=yes -e '
+              using Pkg;
+              Pkg.instantiate()
+          '
       - name: Run tests
         run: |
           earlyoom -m 3 -s 100 -r 300 --prefer 'julia' &
@@ -240,6 +250,14 @@ jobs:
       - uses: julia-actions/cache@v3
         with:
           cache-scratchspaces: false
+      - name: Instantiate test environment
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          julia --project=test --color=yes --check-bounds=auto -e '
+              using Pkg;
+              Pkg.instantiate()
+          '
       - name: Run tests
         run: |
           julia --project --color=yes --check-bounds=auto -e '
