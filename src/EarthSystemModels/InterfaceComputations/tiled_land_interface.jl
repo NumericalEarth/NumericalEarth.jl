@@ -134,6 +134,9 @@ Base.show(io::IO, ti::TiledLandInterface) =
 
 @inline computed_fluxes(ti::TiledLandInterface) = ti.fluxes
 
+validate_zero_plane_displacement(ti::TiledLandInterface, zᵃᵗ) =
+    foreach(tile -> validate_zero_plane_displacement(tile, zᵃᵗ), (ti.vegetated, ti.bare))
+
 # The atmosphere-facing surface temperature is the blended canopy-air node (the same
 # NamedTuple signal a single CanopyAirSpace uses).
 EarthSystemModels.surface_temperature(ti::TiledLandInterface) = interface_node_temperature(ti.temperature)

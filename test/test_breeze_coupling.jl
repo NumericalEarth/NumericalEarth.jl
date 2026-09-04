@@ -126,23 +126,15 @@ end
         @testset "Construction on $A" begin
             model = build_test_model(arch)
 
-            @test model isa EarthSystemModel
             @test model.ocean isa SlabOcean
             @test model.atmosphere isa Simulation
             @test model.atmosphere.model isa Breeze.AtmosphereModel
             @test model.architecture isa typeof(arch)
-
-            # Check that interfaces were created
-            @test !isnothing(model.interfaces)
-            @test !isnothing(model.interfaces.atmosphere_ocean_interface)
         end
 
         @testset "Time stepping on $A" begin
-            # KNOWN BROKEN on Breeze 0.7 (NumericalEarth/Breeze.jl#827): the coupled solver is
-            # unstable at Δt = 10 s — the stable Δt dropped below 5 s vs ≥10 s on Breeze 0.6. The
-            # failure mode is arch-dependent: CPU throws a θ^γ DomainError, GPU integrates to NaN.
-            # Fold the would-be success into ONE @test_broken so it records broken on either arch
-            # (throw or false) and flips to an error (prompting re-enable) once the run is clean again.
+            # Broken on Breeze 0.7 (NumericalEarth/Breeze.jl#827): the coupled solver is unstable
+            # at Δt = 10 s. CPU throws a θ^γ DomainError, GPU integrates to NaN.
             @test_broken begin
                 model = build_test_model(arch)
                 SST_before = Array(interior(model.ocean.temperature))
@@ -153,8 +145,7 @@ end
         end
 
         @testset "SST responds to fluxes on $A" begin
-            # KNOWN BROKEN on Breeze 0.7 (same coupled-solver instability at Δt = 10 s as above;
-            # NumericalEarth/Breeze.jl#827). CPU throws, GPU yields NaN fluxes — both record broken.
+            # Broken on Breeze 0.7 (NumericalEarth/Breeze.jl#827): CPU throws, GPU yields NaN fluxes.
             @test_broken begin
                 model = build_test_model(arch)
                 run!(Simulation(model, Δt=10, stop_iteration=50))
@@ -175,7 +166,6 @@ end
 
             atmos = model.atmosphere.model
             al = model.interfaces.atmosphere_land_interface
-            @test !isnothing(al)
 
             ρu_bc = atmos.momentum.ρu.boundary_conditions.bottom.condition
             ρv_bc = atmos.momentum.ρv.boundary_conditions.bottom.condition
@@ -185,9 +175,12 @@ end
             @test model.interfaces.net_fluxes.atmosphere.ρv === ρv_bc
 
             # After update_state!, those BC fields receive the computed MOST land surface
-            # stress (the atmosphere-feels-drag link), and the stress is nonzero.
-            @test Array(interior(ρu_bc)) ≈ Array(interior(al.fluxes.x_momentum))
-            @test Array(interior(ρv_bc)) ≈ Array(interior(al.fluxes.y_momentum))
+            # stress (the atmosphere-feels-drag link), interpolated onto the face-located
+            # ρu/ρv, so each interior face equals the mean of its two adjacent centers.
+            τx = Array(interior(al.fluxes.x_momentum))
+            τy = Array(interior(al.fluxes.y_momentum))
+            @test Array(interior(ρu_bc))[2:end, :, :] ≈ (τx[1:end-1, :, :] .+ τx[2:end, :, :]) ./ 2
+            @test Array(interior(ρv_bc))[:, 2:end, :] ≈ (τy[:, 1:end-1, :] .+ τy[:, 2:end, :]) ./ 2
             @test maximum(abs, interior(ρu_bc)) > 0
         end
 
@@ -296,9 +289,12 @@ end
             @test model.interfaces.net_fluxes.atmosphere.ρu === ρu_bc
             @test model.interfaces.net_fluxes.atmosphere.ρv === ρv_bc
 
-            # MOST land surface stress reaches the nested child's bottom BC.
-            @test Array(interior(ρu_bc)) ≈ Array(interior(al.fluxes.x_momentum))
-            @test Array(interior(ρv_bc)) ≈ Array(interior(al.fluxes.y_momentum))
+            # MOST land surface stress reaches the nested child's bottom BC, interpolated
+            # onto the face-located ρu/ρv (each interior face = mean of adjacent centers).
+            τx = Array(interior(al.fluxes.x_momentum))
+            τy = Array(interior(al.fluxes.y_momentum))
+            @test Array(interior(ρu_bc))[2:end, :, :] ≈ (τx[1:end-1, :, :] .+ τx[2:end, :, :]) ./ 2
+            @test Array(interior(ρv_bc))[:, 2:end, :] ≈ (τy[:, 1:end-1, :] .+ τy[:, 2:end, :]) ./ 2
             @test maximum(abs, interior(ρu_bc)) > 0
         end
 

@@ -135,7 +135,7 @@ Adapt.adapt_structure(to, energy::WaterCoupledEnergy) =
 #####
 
 @inline function deep_conductance_value(energy::WaterCoupledEnergy, cˡᵃ, i, j, grid, time)
-    FT = eltype(grid)
+    FT = typeof(cˡᵃ)
     Λ  = energy.deep_conductance
     τ  = energy.deep_time_scale
     if Λ === nothing
