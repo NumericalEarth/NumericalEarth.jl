@@ -352,3 +352,43 @@ end
     @test all(≈(ℓᵐref), interior(ℓᵐ))
     @test all(≈(dref), interior(d))
 end
+
+@testset "Gap filling to an unbuilt surface" begin
+    closure = MorphometricRoughness()
+    grid = LatitudeLongitudeGrid(CPU(), Float64; size = (4, 4),
+                                 longitude = (-0.1, 0.1), latitude = (51.4, 51.6),
+                                 topology = (Bounded, Bounded, Flat))
+    Nx = size(grid, 1)
+    built_roughness, built_displacement = aerodynamic_parameters(closure, 0.3, 15.0)
+    ℓˢᵒⁱˡ, dˢᵒⁱˡ = aerodynamic_parameters(closure, 0, 0)
+
+    # A building dataset with a missing tile: the closure marks it NaN by design.
+    λᵖ = Field{Center, Center, Nothing}(grid)
+    h  = Field{Center, Center, Nothing}(grid)
+    set!(λᵖ, (λ, φ) -> ifelse(λ < 0, 0.3, NaN))
+    set!(h,  (λ, φ) -> ifelse(λ < 0, 15.0, NaN))
+    roughness_and_displacement() = urban_roughness(h, λᵖ; closure)
+
+    ℓᵐ, d = roughness_and_displacement()
+    @test any(isnan, interior(ℓᵐ))
+    fill_aerodynamic_roughness_gaps!(ℓᵐ, d, closure)
+    @test all(isfinite, interior(ℓᵐ)) && all(isfinite, interior(d))
+    @test ℓᵐ[1, 1, 1] ≈ built_roughness && d[1, 1, 1] ≈ built_displacement   # built cells are untouched
+    @test ℓᵐ[Nx, 1, 1] ≈ ℓˢᵒⁱˡ && d[Nx, 1, 1] ≈ dˢᵒⁱˡ                          # the gap becomes unbuilt surface
+
+    # The unbuilt surface can be prescribed, e.g. open water.
+    ℓᵐ, d = roughness_and_displacement()
+    fill_aerodynamic_roughness_gaps!(ℓᵐ, d, closure; unbuilt = (1e-4, 0))
+    @test ℓᵐ[Nx, 1, 1] ≈ 1e-4 && d[Nx, 1, 1] == 0
+    @test ℓᵐ[1, 1, 1] ≈ built_roughness
+
+    # A non-positive roughness is a gap too.
+    ℓᵐ, d = roughness_and_displacement()
+    ℓᵐ[1, 1, 1] = 0
+    fill_aerodynamic_roughness_gaps!(ℓᵐ, d, closure)
+    @test ℓᵐ[1, 1, 1] ≈ ℓˢᵒⁱˡ && d[1, 1, 1] == 0
+
+    # The unbuilt surface itself must be evaluable.
+    @test_throws ArgumentError fill_aerodynamic_roughness_gaps!(ℓᵐ, d, closure; unbuilt = (0, 0))
+    @test_throws ArgumentError fill_aerodynamic_roughness_gaps!(ℓᵐ, d, closure; unbuilt = (0.03, -1))
+end
