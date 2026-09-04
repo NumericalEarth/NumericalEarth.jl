@@ -352,3 +352,31 @@ end
     @test all(≈(ℓᵐref), interior(ℓᵐ))
     @test all(≈(dref), interior(d))
 end
+
+#####
+##### Dataset-level evaluation: a dataset supplying measured morphometry selects the measured closure.
+#####
+
+struct UniformBuildings end
+
+function NumericalEarth.Lands.building_morphometry(grid, ::UniformBuildings)
+    uniform(value) = set!(Field{Center, Center, Nothing}(grid), value)
+    return (; plan_area_index = uniform(0.4), mean_building_height = uniform(25.0),
+              building_height_deviation = uniform(8.0), maximum_building_height = uniform(60.0),
+              frontal_area_index = uniform(0.3), gross_building_height = uniform(10.0))
+end
+
+@testset "Dataset-level urban roughness from measured morphometry" begin
+    grid = LatitudeLongitudeGrid(CPU(), Float64; size = (2, 2),
+                                 longitude = (0, 0.2), latitude = (0, 0.2),
+                                 topology = (Bounded, Bounded, Flat))
+    closure = MorphometricRoughness()
+    fields = urban_roughness(grid, UniformBuildings(); closure, neighborhood = 5000)
+    @test keys(fields) == (:momentum_roughness_length, :zero_plane_displacement, :urban_fraction, :building_height)
+
+    ℓᵐ, d = aerodynamic_parameters(closure, 0.4, 25.0, 8.0, 60.0, 0.3)
+    @test all(interior(fields.momentum_roughness_length, :, :, 1) .≈ ℓᵐ)
+    @test all(interior(fields.zero_plane_displacement, :, :, 1) .≈ d)
+    @test all(interior(fields.urban_fraction, :, :, 1) .== 1)
+    @test all(interior(fields.building_height, :, :, 1) .≈ 25)
+end

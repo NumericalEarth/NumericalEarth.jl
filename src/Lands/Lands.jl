@@ -22,7 +22,7 @@ export AbstractLand,
        AbstractUrbanRoughness, MorphometricRoughness,
        IsotropicFrontalArea, EmpiricalFrontalArea,
        UniformHeight, VariableHeight,
-       urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
+       urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters, building_morphometry,
        # Atmosphere-facing accessors
        surface_temperature, surface_saturation
 
