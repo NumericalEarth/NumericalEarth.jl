@@ -162,8 +162,7 @@ end
             similarity_theory = SimilarityTheoryFluxes(; momentum_roughness_length = ℓ,
                                                          temperature_roughness_length = ℓ,
                                                          water_vapor_roughness_length = ℓ,
-                                                         gustiness_parameter = 0,
-                                                         minimum_gustiness = 0,
+                                                         subgrid_velocities = nothing,
                                                          stability_functions)
 
             interfaces = ComponentInterfaces(atmosphere, ocean;
@@ -244,8 +243,6 @@ end
         @test model_with_land.land.freshwater_flux === land.freshwater_flux
         @test typeof(model_with_land.land.clock.time) === typeof(model_with_land.clock.time)
 
-        # Test PrescribedLand display methods
-        @test summary(land) isa String
         @test contains(sprint(show, land), "PrescribedLand")
         @test contains(sprint(show, land), "freshwater_flux")
 

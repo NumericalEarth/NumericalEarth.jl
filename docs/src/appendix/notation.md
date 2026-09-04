@@ -17,6 +17,13 @@ Variable names are built by combining a **base symbol** with **superscripts** an
 - _Direction_: `ˣ` / `ʸ` (spatial), `ˢʷ` / `ˡʷ` (shortwave / longwave)
 - _Process_: `ⁱⁿ` (interface), `ᶠʳᶻ` (frazil)
 
+Component superscripts are used only in *cross-component* context — wherever
+a variable appears alongside variables from other components, as in interface
+computations or coupled-model discussions (`Tˡᵃ` next to `Tᵃᵗ` and `Tⁱⁿ`).
+Within a single component's own namespace the bare symbol is used: the land
+model's prognostic state is `(; T, M)` (as returned by
+`prognostic_fields(land)`), just as the ocean's is `(; u, v, w, T, S)`.
+
 **Modifier arrows** `ꜜ` (`\^downarrow`) and `ꜛ` (`\^uparrow`) denote
 downwelling and upwelling directions in radiative fluxes.
 
@@ -58,6 +65,8 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``\mathrm{rn}`` | `ʳⁿ` | rain | ``J^{\mathrm{rn}}`` (rainfall) |
 | ``\mathrm{sn}`` | `ˢⁿ` | snow | ``J^{\mathrm{sn}}`` (snowfall) |
 | ``S`` | `ˢ` | salinity | ``J^S`` (salinity flux) |
+| ``w`` | `ʷ` | freshwater | ``J^w`` (freshwater volume flux per unit area) |
+| ``h`` | `ʰ` | height (roughness element) | ``\sigma^h`` (height standard deviation) |
 | ``i`` | `ⁱ` | ice | ``\mathcal{L}^i`` (latent heat of sublimation) |
 | ``\ell`` | `ˡ` | liquid | ``\mathcal{L}^\ell`` (latent heat of vaporization) |
 | ``p`` | `ᵖ` | constant pressure | ``c^{pm}`` (moist isobaric heat capacity) |
@@ -111,15 +120,23 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 
 ## Land state variables and parameters
 
+Bare symbols below are the land model's internal names; in cross-component
+context they take the `ˡᵃ` superscript (`Tˡᵃ`, `Mˡᵃ`, `Mˡᵃ⁺`) per the
+component-superscript rule above.
+
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
 | ``T`` | `temperature` | ground temperature | Prognostic land-column temperature (K) |
-| ``M^{\mathrm{la}}`` | `water_storage` | land water | Prognostic land water mass per area (kg m⁻²) |
-| ``M^{\mathrm{la}\!+}`` | `maximum_water_storage` | maximum land water | Bucket capacity; soil-science "field capacity" (kg m⁻²) |
-| ``𝒮`` | `saturation` | surface saturation | Continuous land surface saturation ``\mathrm{clamp}(Mˡᵃ/Mˡᵃ⁺, 0, 1)``; the interface humidity models derive their availability ``β`` from it (–) |
+| ``M`` | `water_storage` | land water | Prognostic land water mass per area (kg m⁻²) |
+| ``M^{+}`` | `maximum_water_storage` | maximum land water | Bucket capacity; soil-science "field capacity" (kg m⁻²) |
+| ``𝒮`` | `saturation` | surface saturation | Continuous land surface saturation ``\mathrm{clamp}(M/M⁺, 0, 1)``; the interface humidity models derive their availability ``β`` from it (–) |
 | ``𝒮ᶜ`` | `critical_saturation` | critical saturation | Saturation above which the surface evaporates at full efficiency, for `CriticalSaturation` (–) |
+| ``𝒮ᶜ`` | `dry_layer_onset_saturation` | dry-layer onset saturation | Saturation below which a dry surface layer forms, for `StorageBasedDryLayerDepth`; shares the symbol ``𝒮ᶜ`` with `critical_saturation` above (–) |
 | ``T^{\mathrm{deep}}`` | `deep_temperature` | deep climatological temperature | Prescribed deep/climatological target temperature for force-restore (K) |
 | ``τ^{\mathrm{deep}}`` | `deep_time_scale` | deep-restore time scale | Time scale of surface relaxation toward ``T^{\mathrm{deep}}`` (s) |
+| ``c^{\mathrm{dry}}`` | `dry_heat_capacity` | dry areal heat capacity | Areal heat capacity of the water-free slab; a `Number` or an `AbstractField` (J m⁻² K⁻¹) |
+| ``c^l`` | `liquid_heat_capacity` | liquid heat capacity | Specific heat capacity of slab liquid water (J kg⁻¹ K⁻¹) |
+| ``c^{\mathrm{la}}`` | – | land areal heat capacity | Water-dependent areal heat capacity ``c^{\mathrm{la}} = c^{\mathrm{dry}} + c^l M`` (J m⁻² K⁻¹) |
 | ``d`` | `surface_thickness` | surface thickness | Thickness of the dry surface layer through which soil vapor diffuses, for `SkinHumidity` (m) |
 | ``κ^q`` | `vapor_diffusivity` | soil vapor diffusivity | Vapor mass diffusivity in the surface soil layer, for `SkinHumidity` (kg m⁻¹ s⁻¹) |
 | ``\chi^{\mathrm{sand}}`` | `sand` | soil sand fraction | Mass fraction of sand grains in the mineral (non-organic) solid matrix (kg kg⁻¹)
@@ -128,6 +145,43 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``\chi^{\mathrm{soc}}`` | `SOC` | soil organic carbon concentration | Mass fraction of organic carbon in the solid matrix (kg kg⁻¹)
 | ``\rho^{\mathrm{soil}}`` | `ρ_soil` | soil bulk dry density | Bulk dry density of the soil within each vertical layer (kg m⁻³)
 | ``\rho^{\mathrm{soc}}`` | `ρ_soc` | soil organic carbon density | Bulk density of organic material within each vertical layer (kg m⁻³)
+
+### Variably-saturated slab land
+
+Symbols introduced by [`VariablySaturatedHydrology`](@ref),
+[`WaterCoupledEnergy`](@ref), and [`DryLayerHumidity`](@ref).
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``h^{\mathrm{la}}`` | `slab_depth` | depth of prognostic land | Vertical thickness of the integrated land slab, from ``z_b`` to ``z_s`` (m) |
+| ``\nu`` | `porosity` | soil porosity | Total pore fraction (–) |
+| ``\theta^l`` | – | pore liquid fraction | Physical liquid-filled pore fraction; surface physics consumes this (–) |
+| ``\vartheta^l`` | – | augmented liquid fraction | Conservative storage variable ``= \theta^l + \max(\Pi, 0)/h^{\mathrm{ss}}``; allows ``M > M⁺`` saturated overflow (–) |
+| ``\theta^r`` | `residual_liquid_fraction` | residual liquid fraction | Minimum liquid-filled pore fraction (–) |
+| ``𝒮`` | `saturation` | effective saturation | Effective (relative) saturation ``𝒮 = \mathrm{clamp}\!\left((\theta^l - \theta^r)/(\nu - \theta^r),\, 0,\, 1\right)``; the humidity availability and the front depth ``\delta^v`` derive from it (–) |
+| ``h^{\mathrm{ss}}`` | `storage_height` | storage height | Saturated storage height — the head built per unit fractional over-saturation; reciprocal of the specific storage (``1/S_s``) (m) |
+| ``\Pi`` | – | soil pressure head | Matric/pressure head; ``\Pi \le 0`` unsaturated, ``\Pi > 0`` saturated overflow (m) |
+| ``\Pi^d`` | `deep_pressure_head` | deep pressure head | Pressure head of the deep reservoir below the slab, passed to the deep-flux closure (m) |
+| ``h`` | – | hydraulic head | ``h = z + \Pi`` (m) |
+| ``K`` | – | hydraulic conductivity | Darcy conductivity (m s⁻¹) |
+| ``J^{Es}`` | `surface_energy_flux` | surface energy flux | Signed surface energy flux, positive upward (out of the slab) (W m⁻²) |
+| ``J^{lb}`` | `deep_liquid_flux` | deep-boundary liquid flux | Liquid mass flux across the slab bottom, positive upward (into the slab, capillary rise / groundwater return); drainage is ``J^{lb} < 0`` (kg m⁻² s⁻¹) |
+| ``J^{ls}`` | `surface_liquid_flux` | surface liquid flux | Liquid mass flux at the surface ``J^{ls} = -P^l + R^{\mathrm{sfc}}``, positive upward (out of the slab); infiltration is ``J^{ls} < 0`` (kg m⁻² s⁻¹) |
+| ``R^{\mathrm{sfc}}`` | `surface_runoff` | surface runoff | Liquid input rejected at the surface, ``\ge 0`` (kg m⁻² s⁻¹) |
+| ``R^{\mathrm{lat}}`` | `subsurface_runoff` | subsurface runoff | Lateral storage export, ``\ge 0`` (kg m⁻² s⁻¹) |
+| ``\kappa^T`` | `thermal_conductivity` | thermal conductivity | Effective ground thermal conductivity (W m⁻¹ K⁻¹) |
+| ``\Lambda^{\mathrm{deep}}`` | `deep_conductance` | deep energy conductance | Force-restore deep energy conductance (W m⁻² K⁻¹); see also ``τ^{\mathrm{deep}}`` |
+| ``T_r`` | `reference_temperature` | reference temperature | Reference temperature for internal energy ``e^l(T) = c^l (T - T_r)`` (K) |
+| ``T^{\mathrm{in}}`` | – | interface temperature | Atmosphere-facing skin temperature, ``T^{\mathrm{in}}`` (K) |
+| ``q^{\mathrm{in}}`` | – | interface specific humidity | Atmosphere-facing skin humidity, ``q^{\mathrm{in}}`` (kg kg⁻¹) |
+| ``T^e`` | – | dry-layer temperature | Diagnostic temperature at the dry layer (K) |
+| ``q^e`` | – | dry-layer specific humidity | Vapor source humidity at the dry layer (kg kg⁻¹) |
+| ``\delta^v`` | `dry_layer_depth` | dry-layer depth | Dry-layer thickness through which vapor diffuses, diagnostic of ``𝒮`` (m) |
+| ``\chi`` | – | blend coefficient | ``\chi = \mathrm{clamp}(\delta^v/\ell^T, 0, 1)``; weights ``T^e`` between ``T^{\mathrm{in}}`` and ``T^{\mathrm{la}}`` (–) |
+| ``\eta`` | `dry_layer_exponent` | front-depth exponent | Exponent in ``\delta^v = \delta^v_{max}[1 - \min(𝒮/𝒮^c, 1)]^\eta`` (–) |
+| ``\ell^T`` | `thermal_exchange_depth`, `exchange_depth` | thermal exchange depth | Depth over which ``\Lambda^{\mathrm{in}} = \kappa^T/\ell^T`` couples ``T^{\mathrm{la}}`` to ``T^{\mathrm{in}}`` (m) |
+| ``D^v`` | `molecular_diffusivity` | vapor diffusivity in air | Molecular vapor diffusivity in air (m² s⁻¹) |
+| ``w^d`` | – | dry-layer piston velocity | ``w^d = D^v_{eff}/\max(\delta^v, \delta^v_{min})`` (m s⁻¹) |
 
 ## Ocean state variables
 
@@ -169,6 +223,7 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``\psi`` | `ψ` | stability function | Integrated stability correction (–) |
 | ``\Psi`` | `Ψ` | interface state | Aggregate interface state (an `AbstractInterfaceState`) carried through the similarity-theory fixed-point solver `compute_interface_state` |
 | ``\zeta`` | `ζ` | stability parameter | ``z / L_\star`` (–) |
+| ``\Delta h^d`` | `Δhᵈ` | displaced profile height | Height ``\Delta h - d`` above the zero-plane displacement at which the similarity profiles are evaluated (m) |
 | ``\ell`` | `ℓ` | roughness length | Aerodynamic roughness length (m) |
 | ``\ell^\mathrm{m}`` | `ℓᵐ` | momentum roughness length | Aerodynamic momentum roughness length (m) |
 | ``\ell^\mathrm{s}`` | `ℓˢ` | scalar roughness length | Aerodynamic scalar roughness length (m) |
@@ -176,6 +231,38 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 
 Note the case distinction: lowercase ``\psi`` (`ψ`) is the stability
 function, while capital ``\Psi`` (`Ψ`) is the aggregate interface-state object.
+
+## Surface morphometry
+
+Roughness elements — buildings or plant canopy — that set the aerodynamic
+parameters ``\ell^\mathrm{m}`` and ``d`` of a land surface.
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``h`` | `h` | element height | Mean height of the roughness elements (m) |
+| ``h^\mathrm{max}`` | `hᵐᵃˣ` | maximum element height | Tallest roughness element in the cell (m) |
+| ``\sigma^h`` | `σʰ` | height standard deviation | Spread of the roughness-element heights (m) |
+| ``\lambda^p h`` | `gross_building_height` | gross building height | Mean element height over *all* cells, built or not, ``\lambda^p h`` — the digital-surface lift (m) |
+| ``d`` | `d` | zero-plane displacement | Displacement height of the roughness sublayer (m) |
+| ``d^h`` | `dʰ` | displacement ratio | Packing displacement ``d/h`` of the obstacle-array fit, before the height-spread correction (–) |
+| ``\lambda^p`` | `λᵖ` | plan-area index | Ground-plan area covered by the elements, per unit ground area (–) |
+| ``\lambda^f`` | `λᶠ` | frontal-area index | Windward face area of the elements, per unit ground area (–) |
+| ``\lambda^{p\,\mathrm{min}}`` | `λᵖᵐⁱⁿ` | plan-area index floor | Below this ``\lambda^p`` a cell reduces to bare soil (–) |
+| ``\ell^\mathrm{soil}`` | `ℓˢᵒⁱˡ` | bare-soil roughness length | Momentum roughness length where the plan-area index vanishes (m) |
+| ``A`` | `A` | array constant | Packing constant of the Macdonald displacement fit (–) |
+| ``\beta`` | `β` | drag correction factor | Lumped drag correction of the Macdonald drag partition (–) |
+| ``X`` | `X` | displacement parameter | ``(\sigma^h + h)/h^\mathrm{max} \in [0, 1]``, argument of the Kanda displacement fit (–) |
+| ``Y`` | `Y` | height-spread parameter | ``\lambda^p \sigma^h / h``, argument of the Kanda roughness rescaling (–) |
+
+The superscripts on ``\lambda^p`` and ``\lambda^f`` distinguish them from the
+longitude ``\lambda``.
+
+Two symbols here are shared with other land parameters and mean something
+different. ``\beta`` is the drag correction of the Macdonald drag partition,
+not the moisture availability ``\beta`` of the hydrology and interface-humidity
+models; it keeps the symbol of its source parametrization. Likewise ``d`` is the
+zero-plane displacement, not the `surface_thickness` ``d`` of
+[`SkinHumidity`](@ref).
 
 ## Radiative fluxes
 
@@ -280,6 +367,7 @@ Most symbols can be entered in the Julia REPL and in editors with Julia support 
 | `ᵀ` | `\^T` | Superscript T |
 | `ˢ` | `\^s` | Superscript s |
 | `ʷ` | `\^w` | Superscript w |
+| `ʰ` | `\^h` | Superscript h |
 | `ⁱ` | `\^i` | Superscript i |
 | `ˡ` | `\^l` | Superscript l |
 | `ᵖ` | `\^p` | Superscript p |

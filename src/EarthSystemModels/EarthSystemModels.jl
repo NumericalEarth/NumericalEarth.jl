@@ -13,10 +13,16 @@ export
     SkinHumidity,
     FractionalHumidity,
     CriticalSaturation,
-    ElevationCorrection,
+    DryLayerHumidity,
+    StorageBasedDryLayerDepth,
+    DryLayerVaporPistonVelocity,
+    ConstantTortuosity,
+    PowerLawTortuosity,
+    AltitudeCorrection,
     atmosphere_land_interface,
     SimilarityTheoryFluxes,
-    LandRoughnessLength,
+    FixedIterations,
+    ConvergenceStopCriteria,
     CoefficientBasedFluxes,
     FreezingLimitedOceanTemperature,
     SkinTemperature,
@@ -35,6 +41,7 @@ export
 
 import Dates
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
+using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
@@ -67,10 +74,6 @@ using .InterfaceComputations
 
 include("earth_system_model.jl")
 include("time_step_earth_system_model.jl")
-
-include("NestedSimulations/NestedSimulations.jl")
-
-using .NestedSimulations
 
 #####
 #####  Fallbacks for no-interface models

@@ -12,7 +12,6 @@ using NumericalEarth.Radiations: PrescribedRadiation,
         @info "Testing PrescribedRadiation(grid) on $A..."
         grid = RectilinearGrid(arch, size = 10, z = (-100, 0), topology = (Flat, Flat, Bounded))
         rad = PrescribedRadiation(grid)
-        @test rad isa PrescribedRadiation
         @test rad.surface_properties isa NamedTuple
         @test haskey(rad.surface_properties, :ocean)
         @test haskey(rad.surface_properties, :sea_ice)
@@ -41,6 +40,22 @@ using NumericalEarth.Radiations: PrescribedRadiation,
         rad2 = PrescribedRadiation(grid)
         time_step!(rad2, 60.0)
         @test rad2.clock.time == 60.0
+    end
+end
+
+@testset "PrescribedRadiation set!" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch, size = 1, z = (-1, 0), topology = (Flat, Flat, Bounded))
+        rad = PrescribedRadiation(grid)
+
+        set!(rad; downwelling_shortwave = 250, downwelling_longwave = 350)
+        @test only(Array(interior(rad.downwelling_shortwave[1]))) == 250
+        @test only(Array(interior(rad.downwelling_longwave[1])))  == 350
+
+        # An omitted keyword leaves that field untouched.
+        set!(rad; downwelling_shortwave = 100)
+        @test only(Array(interior(rad.downwelling_shortwave[1]))) == 100
+        @test only(Array(interior(rad.downwelling_longwave[1])))  == 350
     end
 end
 
@@ -76,7 +91,6 @@ end
 
         # interface_fluxes are allocated for present surfaces (ocean + sea_ice
         # via FreezingLimitedOceanTemperature).
-        @test !isnothing(model.radiation.interface_fluxes)
         @test model.radiation.interface_fluxes.ocean isa InterfaceRadiationFlux
         @test model.radiation.interface_fluxes.sea_ice isa InterfaceRadiationFlux
 

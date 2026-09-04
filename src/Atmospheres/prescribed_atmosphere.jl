@@ -19,11 +19,26 @@ mutable struct PrescribedAtmosphere{S, FT, G, T, U, Θ, Q, M, P, C, F, TP, TI} <
     boundary_layer_height :: FT
 end
 
+# Compact bounds for regional (λ-Bounded) latitude-longitude grids; empty for global or
+# non-lat-lon grids. Latitude alone being bounded doesn't count — it always is.
+horizontal_domain_summary(grid) = ""
+
+function horizontal_domain_summary(grid::LatitudeLongitudeGrid)
+    TX, _, _ = topology(grid)
+    TX == Bounded || return ""
+    λ₁, λ₂ = extrema(λnodes(grid, Face(), Center(), Center()))
+    φ₁, φ₂ = extrema(φnodes(grid, Center(), Face(), Center()))
+    return string("λ ∈ [", prettysummary(λ₁), ", ", prettysummary(λ₂),
+                  "], φ ∈ [", prettysummary(φ₁), ", ", prettysummary(φ₂), "]")
+end
+
 function Base.summary(atmos::PrescribedAtmosphere{<:Any, FT}) where FT
     Nx, Ny, Nz = size(atmos.grid)
     Nt = length(atmos.times)
     sz_str = string(Nx, "×", Ny, "×", Nz, "×", Nt)
-    return string(sz_str, " PrescribedAtmosphere{$FT}")
+    domain = horizontal_domain_summary(atmos.grid)
+    suffix = isempty(domain) ? "" : string(" (", domain, ")")
+    return string(sz_str, " PrescribedAtmosphere{$FT}", suffix)
 end
 
 function Base.show(io::IO, atmos::PrescribedAtmosphere)
@@ -32,6 +47,9 @@ function Base.show(io::IO, atmos::PrescribedAtmosphere)
     print(io, "├── surface_layer_height: ", prettysummary(atmos.surface_layer_height), '\n')
     print(io, "└── boundary_layer_height: ", prettysummary(atmos.boundary_layer_height))
 end
+
+NumericalEarth.Grids.surface_elevation(atmos::PrescribedAtmosphere) =
+    NumericalEarth.Grids.surface_elevation(atmos.grid)
 
 velocity_boundary_conditions(grid, loc) = FieldBoundaryConditions(grid, loc)
 
@@ -251,3 +269,26 @@ function Oceananigans.restore_prognostic_state!(atmos::PrescribedAtmosphere, sta
 end
 
 Oceananigans.restore_prognostic_state!(atmos::PrescribedAtmosphere, ::Nothing) = atmos
+
+#####
+##### set!
+#####
+
+"""
+    set!(atmosphere::PrescribedAtmosphere; u=nothing, v=nothing, T=nothing, q=nothing, p=nothing)
+
+Set the prescribed atmospheric velocities (`u`, `v`), air temperature (`T`),
+specific humidity (`q`), and surface pressure (`p`), then refresh
+the interpolated state. Omitted keywords are left untouched. A `Number` sets a
+constant in space and time.
+"""
+function Oceananigans.set!(atmosphere::PrescribedAtmosphere;
+                           u=nothing, v=nothing, T=nothing, q=nothing, p=nothing)
+    set_prescribed_field!(atmosphere.velocities.u, u)
+    set_prescribed_field!(atmosphere.velocities.v, v)
+    set_prescribed_field!(atmosphere.temperature, T)
+    set_prescribed_field!(atmosphere.specific_humidity, q)
+    set_prescribed_field!(atmosphere.pressure, p)
+    update_state!(atmosphere)
+    return atmosphere
+end

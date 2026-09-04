@@ -89,7 +89,7 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
     # Recompute the interface specific humidity from the just-updated temperature.
     # Diagnostic formulations (`ImpureSaturationSpecificHumidity`, `BulkHumidity`)
     # evaluate qₛ explicitly; `SkinHumidity` solves a vapor-flux balance for qₛ
-    # using the previous iterate's turbulent fluxes (analogue of `SkinTemperature`).
+    # using the previous iterate's turbulent fluxes (analog of `SkinTemperature`).
     q_formulation = interface_properties.specific_humidity_formulation
     qᵃᵗ = atmosphere_state.q
     qₛ = compute_interface_humidity(q_formulation, Tₛ,
@@ -110,8 +110,7 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
                                           approximate_interface_state,
                                           atmosphere_state,
                                           interface_properties,
-                                          atmosphere_properties,
-                                          interior_properties)
+                                          atmosphere_properties)
 
     fluxes = InterfaceFluxScales(convert(FT, u★), convert(FT, θ★), convert(FT, q★))
 

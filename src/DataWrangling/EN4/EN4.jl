@@ -6,11 +6,10 @@ export EN4Monthly
 using Dates: Dates, DateTime, Month
 using Downloads: Downloads
 using Oceananigans.DistributedComputations: @root
-using ZipFile: ZipFile
 
 using ...NumericalEarth: NumericalEarth
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, DownloadProgress, Kelvin,
-                       first_date, metadata_path, metadata_url
+                       first_date, metadata_path, metadata_url, download_with_retries, unzip
 
 download_EN4_cache::String = ""
 function __init__()
@@ -26,6 +25,10 @@ struct EN4Monthly end
 
 Base.size(::EN4Monthly, variable) = (360, 173, 42)
 DataWrangling.all_dates(::EN4Monthly, variable) = DateTime(1900, 1, 1) : Month(1) : DateTime(2024, 12, 1)
+
+DataWrangling.averaging_window(metadatum::Metadatum{<:EN4Monthly}) =
+    DataWrangling.calendar_month_window(metadatum)
+
 DataWrangling.default_download_directory(::EN4Monthly) = download_EN4_cache
 DataWrangling.reversed_vertical_axis(::EN4Monthly) = true
 
@@ -140,23 +143,6 @@ function metadata_zippath(m::EN4Metadata)
     return zippath
 end
 
-function unzip(file, exdir="")
-    filepath = isabspath(file) ? file : joinpath(pwd(), file)
-    basepath = dirname(filepath)
-    outpath = (exdir == "" ? basepath : (isabspath(exdir) ? exdir : joinpath(pwd(), exdir)))
-    isdir(outpath) ? "" : mkdir(outpath)
-    zarchive = ZipFile.Reader(filepath)
-    for f in zarchive.files
-        filepath = joinpath(outpath, f.name)
-        if endswith(f.name, "/") || endswith(f.name, "\\")
-            mkdir(filepath)
-        else
-            write(filepath, read(f))
-        end
-    end
-    close(zarchive)
-end
-
 function DataWrangling.metadata_url(m::EN4Metadata)
     year = string(Dates.year(m.dates))
     if Dates.year(m.dates) < 2021
@@ -180,7 +166,7 @@ function Downloads.download(metadata::Metadata{<:EN4Monthly})
             if !isfile(extracted_file) & !isfile(zippath)
                 push!(missingzips, zippath)
                 @info "Downloading EN4 data: $(metadatum.name) in $(metadatum.dir)..."
-                Downloads.download(fileurl, zippath; progress=DownloadProgress())
+                download_with_retries(fileurl, zippath; progress=DownloadProgress())
             elseif !isfile(extracted_file) & isfile(zippath)
                 push!(missingzips, zippath)
             end

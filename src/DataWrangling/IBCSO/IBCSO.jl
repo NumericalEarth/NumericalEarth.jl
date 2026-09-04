@@ -6,7 +6,8 @@ using Downloads: Downloads
 using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
 
-using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
+using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry,
+                       download_with_retries
 
 import ..DataWrangling:
     metadata_filename,
@@ -65,7 +66,7 @@ function validate_dataset_coverage(grid, ::IBCSOMetadatum)
     if φ_north > -50
         error("IBCSOv2 only covers the Southern Ocean (south of 50°S). " *
               "The grid extends to $(round(φ_north, digits=1))°. " *
-              "Use ETOPO2022() or GEBCO2024() for domains that include latitudes north of 50°S.")
+              "Use ETOPO2022() or GEBCO2026() for domains that include latitudes north of 50°S.")
     end
 end
 
@@ -75,7 +76,7 @@ function Downloads.download(metadatum::IBCSOMetadatum)
 
     @root if !isfile(filepath)
         @info "Downloading IBCSO data: $(metadatum.name) to $download_dir..."
-        Downloads.download(IBCSO_pangaea_url, filepath; progress=DownloadProgress())
+        download_with_retries(IBCSO_pangaea_url, filepath; progress=DownloadProgress())
     end
 
     return filepath

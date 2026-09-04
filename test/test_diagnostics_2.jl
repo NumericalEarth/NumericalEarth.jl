@@ -35,8 +35,8 @@ for arch in test_architectures
                 OceanOnlyModel(ocean; atmosphere)
             end
 
-            T_flux = ocean.model.tracers.T.boundary_conditions.top.condition
-            S_flux = ocean.model.tracers.S.boundary_conditions.top.condition
+            T_flux = Diagnostics.flux_field(ocean.model.tracers.T.boundary_conditions.top.condition)
+            S_flux = Diagnostics.flux_field(ocean.model.tracers.S.boundary_conditions.top.condition)
 
             fill!(T_flux, T_flux_value)
             fill!(S_flux, S_flux_value)
