@@ -10,7 +10,7 @@ using Oceananigans.Fields: Center
 
 using ...NumericalEarth: NumericalEarth
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_filename, metadata_path,
-                       dataset_variable_name
+                       dataset_variable_name, download_with_retries
 
 download_SeaWiFS_cache::String = ""
 function __init__()
@@ -91,7 +91,7 @@ function Downloads.download(metadata::SeaWiFSMetadata; kwargs...)
         isfile(path) && continue
         @root begin
             @info "Downloading SeaWiFS chlorophyll for $(Dates.format(metadatum.dates, "yyyy-mm"))"
-            Downloads.download(erddap_url(metadatum), path; kwargs...)
+            download_with_retries(erddap_url(metadatum), path; kwargs...)
         end
     end
     return nothing
