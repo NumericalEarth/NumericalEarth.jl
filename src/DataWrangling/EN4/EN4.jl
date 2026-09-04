@@ -6,11 +6,10 @@ export EN4Monthly
 using Dates: Dates, DateTime, Month
 using Downloads: Downloads
 using Oceananigans.DistributedComputations: @root
-using ZipFile: ZipFile
 
 using ...NumericalEarth: NumericalEarth
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, DownloadProgress, Kelvin,
-                       first_date, metadata_path, metadata_url, download_with_retries
+                       first_date, metadata_path, metadata_url, download_with_retries, unzip
 
 download_EN4_cache::String = ""
 function __init__()
@@ -142,23 +141,6 @@ function metadata_zippath(m::EN4Metadata)
     month = string(Dates.month(m.dates))
     zippath = joinpath(m.dir, "EN4_" * year * ".zip")
     return zippath
-end
-
-function unzip(file, exdir="")
-    filepath = isabspath(file) ? file : joinpath(pwd(), file)
-    basepath = dirname(filepath)
-    outpath = (exdir == "" ? basepath : (isabspath(exdir) ? exdir : joinpath(pwd(), exdir)))
-    isdir(outpath) ? "" : mkdir(outpath)
-    zarchive = ZipFile.Reader(filepath)
-    for f in zarchive.files
-        filepath = joinpath(outpath, f.name)
-        if endswith(f.name, "/") || endswith(f.name, "\\")
-            mkdir(filepath)
-        else
-            write(filepath, read(f))
-        end
-    end
-    close(zarchive)
 end
 
 function DataWrangling.metadata_url(m::EN4Metadata)
