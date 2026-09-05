@@ -223,7 +223,7 @@ ocean = PrescribedOcean(surface_grid, sst.times; sea_surface_temperature = sst)
 # What makes a cell land or ocean is its `ocean_fraction` þ: the fraction of the cell's area
 # below sea level in ETOPO2022 — the same dataset that shapes the child's terrain, so the
 # coastline and the orography agree. Coastal cells carry genuine fractions rather than a binary
-# mask: the coupler blends each cell's land and ocean fluxes as `(1 - þ)` land + `þ` ocean, and
+# mask: the coupler blends each cell's land and ocean fluxes as `(1 - þ) * land_fluxes + þ * ocean_fluxes`, and
 # the radiation sees the same blend of skin temperatures.
 
 ocean_fraction = regrid_ocean_fraction(surface_grid; dataset = ETOPO2022())
