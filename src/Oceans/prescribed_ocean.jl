@@ -1,8 +1,10 @@
 using Oceananigans.Architectures: architecture
-using Oceananigans.OutputReaders: update_field_time_series!, FieldTimeSeries
+using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.OutputReaders: update_field_time_series!, FieldTimeSeries, cpu_interpolating_time_indices
 using Oceananigans.TimeSteppers: Clock, tick!
 using Oceananigans.Units: Time
-using Oceananigans.Utils: prettysummary, prettytime
+using Oceananigans.Utils: launch!, prettysummary, prettytime
+using KernelAbstractions: @kernel, @index
 using NumericalEarth.EarthSystemModels: AbstractPrescribedComponent
 
 """
@@ -167,20 +169,47 @@ end
 
 EarthSystemModels.InterfaceComputations.net_fluxes(ocean::PrescribedOcean) = nothing
 
+# Read each series at the ocean clock, linearly interpolating between the two snapshots that
+# bracket it. `time_interpolated_getindex` returns the first snapshot whenever the bracketing
+# indices coincide, so a single-time (constant) series needs no special case. The interpolation
+# weights are computed once on the host — `cpu_interpolating_time_indices` — and reach the kernel
+# as a `TimeInterpolator`, rather than being recomputed from `times` in every thread.
 function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::PrescribedOcean, coupled_model)
-    # Copy from FieldTimeSeries to exchanger snapshot fields.
-    # For single-time data (constant), time index 1 is always correct.
-    # TODO: proper temporal interpolation for multi-time prescribed data.
-    n = 1
-    interior(exchanger.state.T) .= interior(ocean.sea_surface_temperature)[:, :, :, n]
-    interior(exchanger.state.S) .= interior(ocean.sea_surface_salinity)[:, :, :, n]
-    interior(exchanger.state.u) .= interior(ocean.velocities.u)[:, :, :, n]
-    interior(exchanger.state.v) .= interior(ocean.velocities.v)[:, :, :, n]
+    Tᵒ = ocean.sea_surface_temperature
+    Sᵒ = ocean.sea_surface_salinity
+    uᵒ, vᵒ = ocean.velocities
+
+    ocean_grid = ocean.grid
+    arch = architecture(ocean_grid)
+    t = ocean.clock.time
+    interpolator(fts) = cpu_interpolating_time_indices(arch, fts.times, fts.time_indexing, t)
+
+    launch!(arch, ocean_grid, :xy, _interpolate_prescribed_ocean_state!,
+            exchanger.state.T, exchanger.state.S, exchanger.state.u, exchanger.state.v,
+            Tᵒ, Sᵒ, uᵒ, vᵒ,
+            interpolator(Tᵒ), interpolator(Sᵒ), interpolator(uᵒ), interpolator(vᵒ))
+
+    # The flux kernel also evaluates halo columns; a 0 K halo temperature NaNs the solve.
+    fill_halo_regions!(exchanger.state.T)
+    fill_halo_regions!(exchanger.state.S)
+    fill_halo_regions!(exchanger.state.u)
+    fill_halo_regions!(exchanger.state.v)
+
     return nothing
 end
 
-# Prescribed ocean does not evolve, so net flux assembly is not needed.
-# The atmosphere still receives its fluxes from compute_atmosphere_ocean_fluxes!.
+@kernel function _interpolate_prescribed_ocean_state!(T, S, u, v, Tᵒ, Sᵒ, uᵒ, vᵒ, τT, τS, τu, τv)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        T[i, j, 1] = Tᵒ[i, j, 1, τT]
+        S[i, j, 1] = Sᵒ[i, j, 1, τS]
+        u[i, j, 1] = uᵒ[i, j, 1, τu]
+        v[i, j, 1] = vᵒ[i, j, 1, τv]
+    end
+end
+
+# A prescribed ocean follows its data rather than responding to fluxes, so net flux assembly
+# is not needed. The atmosphere still receives its fluxes from compute_atmosphere_ocean_fluxes!.
 EarthSystemModels.update_net_fluxes!(coupled_model, ocean::PrescribedOcean) = nothing
 
 #####
