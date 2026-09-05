@@ -72,7 +72,7 @@ end
 
 # Helper to build a fresh atmosphere over a mixed land-ocean surface: a SlabLand and a
 # PrescribedOcean share the surface grid, partitioned by `ocean_fraction`.
-function build_partition_test_model(arch; ocean_fraction)
+function build_partition_test_model(arch; ocean_fraction, ocean_times=nothing, sea_surface_temperatures=nothing)
     grid = RectilinearGrid(arch,
                            size = (16, 16), halo = (5, 5),
                            x = (-10kilometers, 10kilometers),
@@ -93,8 +93,15 @@ function build_partition_test_model(arch; ocean_fraction)
     land = SlabLand(surface_grid)
     set!(land; T=θ₀ + 5)
 
-    ocean = PrescribedOcean(surface_grid)
-    set!(ocean, T=θ₀ - 5)
+    if isnothing(ocean_times)
+        ocean = PrescribedOcean(surface_grid)
+        set!(ocean, T=θ₀ - 5)
+    else
+        ocean = PrescribedOcean(surface_grid, ocean_times)
+        for (n, T) in enumerate(sea_surface_temperatures)
+            interior(ocean.sea_surface_temperature[n]) .= T
+        end
+    end
 
     return EarthSystemModel(; atmosphere, land, ocean, ocean_fraction)
 end
@@ -278,6 +285,31 @@ end
 
         @testset "Both surfaces without an ocean_fraction refuse to build on $A" begin
             @test_throws ArgumentError build_partition_test_model(arch; ocean_fraction=nothing)
+        end
+
+        @testset "A prescribed ocean follows its time series on $A" begin
+            ## Two snapshots 100 s apart; the exchanger state should track the ocean clock
+            ## linearly between them, and hold the end values outside the record.
+            model = build_partition_test_model(arch; ocean_fraction=1,
+                                               ocean_times = [0, 100],
+                                               sea_surface_temperatures = (280, 290))
+            exchanger = model.interfaces.exchanger.ocean
+
+            for (t, Tₑ) in ((0, 280), (25, 282.5), (50, 285), (100, 290))
+                model.ocean.clock.time = t
+                update_state!(model)
+                @test all(≈(Tₑ), Array(interior(exchanger.state.T)))
+            end
+
+            ## A single-time series is the degenerate case of the same path: bracketing
+            ## indices coincide, so the one snapshot holds for every clock value.
+            constant = build_partition_test_model(arch; ocean_fraction=1)
+            constant_exchanger = constant.interfaces.exchanger.ocean
+            for t in (0, 50, 1000)
+                constant.ocean.clock.time = t
+                update_state!(constant)
+                @test all(≈(280), Array(interior(constant_exchanger.state.T)))
+            end
         end
     end
 end
