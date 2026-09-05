@@ -214,13 +214,27 @@ set!(ocean.sea_surface_temperature[1], skin_temperature)
 
 ocean_fraction = regrid_ocean_fraction(surface_grid; dataset = ETOPO2022())
 
-fig_partition = Figure(size = (700, 620))
+# Alongside þ, the sea surface temperature the Gulf supplies. ERA5's skin temperature is set into
+# every cell, so the field holds *land* skin temperature inland; masking to þ > 1/2 shows the water
+# the partition actually weights. ETOPO2022's below-sea-level test also catches deep continental
+# lakes, so Lake Michigan (bed ≈ 105 m below sea level) enters the northeast corner ~20 K colder.
+
+Tᵒᶜ = Field{Center, Center, Nothing}(surface_grid)
+set!(Tᵒᶜ, ocean.sea_surface_temperature[1])
+interior(Tᵒᶜ) .= ifelse.(interior(ocean_fraction) .> 1/2, interior(Tᵒᶜ) .- 273.15, NaN)
+
+fig_partition = Figure(size = (1320, 560))
 ax_þ = Axis(fig_partition[1, 1]; xlabel = "longitude (°)", ylabel = "latitude (°)",
             title = "Ocean fraction þ (ETOPO2022)")
 hm_þ = heatmap!(ax_þ, ocean_fraction; colormap = :dense, colorrange = (0, 1))
 scatter!(ax_þ, [λ₀], [φ₀]; marker = :star5, color = :orange, markersize = 15)
 text!(ax_þ, λ₀ + 0.3, φ₀; text = "ARM SGP", color = :orange, align = (:left, :center))
 Colorbar(fig_partition[1, 2], hm_þ)
+
+ax_T = Axis(fig_partition[1, 3]; xlabel = "longitude (°)",
+            title = "Sea surface temperature where þ > 1/2")
+hm_T = heatmap!(ax_T, Tᵒᶜ; colormap = :thermal, colorrange = (5, 30))
+Colorbar(fig_partition[1, 4], hm_T; label = "°C")
 save("gulf_ocean_fraction.png", fig_partition)
 
 fig_partition
