@@ -136,18 +136,21 @@ end
 
 inpainted_metadata_path(metadata::GLORYSMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
+const GLORYS_surface_variables = (:free_surface, :sea_ice_thickness, :sea_ice_concentration,
+                                   :sea_ice_u_velocity, :sea_ice_v_velocity)
+
 function dataset_location(::GLORYSDataset, name)
-    name == :free_surface && return (Center, Center, Nothing)
+    name ∈ GLORYS_surface_variables && return (Center, Center, Nothing)
     return (Center, Center, Center)
 end
 
-is_three_dimensional(metadata::GLORYSMetadata) = metadata.name != :free_surface
+is_three_dimensional(metadata::GLORYSMetadata) = metadata.name ∉ GLORYS_surface_variables
 
 longitude_interfaces(::GLORYSMetadata) = (-180, 180)
 latitude_interfaces(::GLORYSMetadata) = (-80, 90)
 
 function z_interfaces(metadata::GLORYSMetadata)
-    metadata.name == :free_surface && return (-1.0, 0.0)
+    metadata.name ∈ GLORYS_surface_variables && return (-1.0, 0.0)
     paths = metadata_path(metadata)
     path = paths isa AbstractVector ? first(paths) : paths
     ds = Dataset(path)

@@ -1,0 +1,90 @@
+name: Data tests
+
+# Tests that need real remote datasets (JRA55, ETOPO, ECCO, EN4, WOA, ...).
+# The default `CI` workflow is offline; these run nightly, on demand, on
+# pushes to `main`, and on pull requests labeled `run data tests`.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  actions: write
+  contents: read
+
+env:
+  ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
+  ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
+  COPERNICUSMARINE_SERVICE_USERNAME: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
+  COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
+  CDSAPI_URL: "https://cds.climate.copernicus.eu/api"
+  CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
+  DESTINE_ACCESS_TOKEN: ${{ secrets.DESTINE_ACCESS_TOKEN }}
+  DATADEPS_ALWAYS_ACCEPT: true
+  JULIA_PKG_SERVER_REGISTRY_PREFERENCE: 'eager'
+  NUMERICALEARTH_TEST_REMOTE_DATA: "true"
+
+jobs:
+  data_tests:
+    name: (GPU) - real data
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'run data tests') }}
+    runs-on: aws-linux-nvidia-gpu-l4
+    container:
+      image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
+      options: --gpus=all
+      volumes:
+        - /opt:/host-opt
+        - /usr/local:/host-usr-local
+    timeout-minutes: 180
+    env:
+      GPU_TEST: "true"
+      OPENBLAS_NUM_THREADS: 1
+      TMPDIR: /__w/_temp
+      JULIA_DEPOT_PATH: '/__w/_temp/depot:/usr/local/share/julia:'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Create workspace temp directories
+        run: mkdir -p "${TMPDIR}"
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory ${PWD}
+      - name: Copy LocalPreferences
+        run: cp -v /usr/local/share/julia/environments/numericalearth/LocalPreferences.toml test/.
+      - name: Clean up space on host device
+        run: |
+          rm -rfv /host-opt/nvidia/ /host-usr-local/cuda*
+          df -hT
+      - name: Update registry
+        shell: julia --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.Registry.rm("General")
+          Pkg.Registry.add("General")
+          Pkg.Registry.update()
+      - name: Run tests
+        run: |
+          earlyoom -m 3 -s 100 -r 300 --prefer 'julia' &
+          julia --project --color=yes --check-bounds=yes -e '
+              using Pkg;
+              Pkg.test(; coverage=true,
+                       julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
+                       test_args=["--verbose", "--jobs=4"])
+          '
+      - uses: julia-actions/julia-processcoverage@v1
+      - uses: codecov/codecov-action@v7
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Show available storage at the end
+        if: always()
+        timeout-minutes: 2
+        run: df -h /
