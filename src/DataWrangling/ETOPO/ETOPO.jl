@@ -6,7 +6,7 @@ using Downloads: Downloads
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, DownloadProgress, AbstractStaticBathymetry, Metadatum,
-                       metadata_path, metadata_url
+                       metadata_path, metadata_url, download_with_retries
 
 download_ETOPO_cache::String = ""
 function __init__()
@@ -39,7 +39,7 @@ function Downloads.download(metadatum::ETOPOMetadatum)
 
     @root if !isfile(filepath)
         @info "Downloading ETOPO data: $(metadatum.name) in $(metadatum.dir)..."
-        Downloads.download(fileurl, filepath; progress=DownloadProgress())
+        download_with_retries(fileurl, filepath; progress=DownloadProgress())
     end
     return filepath
 end
