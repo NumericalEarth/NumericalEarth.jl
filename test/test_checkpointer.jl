@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using Glob
 using Oceananigans.OutputWriters: Checkpointer
 using Oceananigans.TimeSteppers: reset!
-using NumericalEarth.EarthSystemModels: components
+using NumericalEarth.EarthSystemModels: components, AbstractPrescribedComponent
 
 function make_coupled_model(grid)
     @inline hi(λ, φ) = φ > 70 || φ < -70
