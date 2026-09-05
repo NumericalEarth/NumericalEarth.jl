@@ -41,27 +41,13 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - "1.12.5"
+          - "1.12.7"
         os:
           - ubuntu-latest
         arch:
           - "default"
     steps:
-      - name: Show available storage before cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-      - name: Free Disk Space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          large-packages: false
-      - name: Cleanup /opt
-        run: |
-          sudo rm -rf /opt/*
-      - name: Show available storage after cleanup
+      - name: Show available storage at the beginning
         run: |
           echo " --> df -h /"
           df -h /
@@ -75,8 +61,12 @@ jobs:
       - uses: julia-actions/cache@v3
         with:
           cache-scratchspaces: false
+      - name: Set JULIA_CPU_TARGET
+        shell: bash
+        run: |
+          echo "JULIA_CPU_TARGET=generic;haswell,-xsaveopt,clone_all;x86-64-v4,-rdrnd,base(1)" | tee -a "${GITHUB_ENV}"
       - name: Instantiate test environment
-        timeout-minutes: 30
+        timeout-minutes: 60
         shell: bash
         run: |
           julia --project=test --color=yes --check-bounds=yes -e '
@@ -85,15 +75,19 @@ jobs:
           '
       - uses: julia-actions/julia-runtest@v1
         with:
-          # Cap parallelism at 2 workers. ParallelTestRunner's default_njobs
+          # Cap parallelism at 3 workers. ParallelTestRunner's default_njobs
           # assumes ~2 GiB per worker, but the Breeze-compilation and bathymetry
           # tests peak at 2.5-3.5 GiB RSS each. On the 16 GiB GitHub-hosted
           # runner, the default (4 = core count) intermittently OOMs when several
           # heavy tests coincide, and the runner reports it as
-          # "The operation was canceled." Two workers keep peak memory well
+          # "The operation was canceled." Three workers keep peak memory well
           # within budget while staying comfortably under the job timeout.
-          test_args: '--verbose --jobs=2'
+          test_args: '--verbose --jobs=3'
           optimize: 0
+        env:
+          # Reduce memory threshold before recycling ParallelTestRunner's
+          # workers.
+          JULIA_TEST_MAXRSS_MB: 2800
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v7
         with:
@@ -178,7 +172,7 @@ jobs:
           Pkg.Registry.add("General")
           Pkg.Registry.update()
       - name: Instantiate test environment
-        timeout-minutes: 30
+        timeout-minutes: 45
         shell: bash
         run: |
           julia --project=test --color=yes --check-bounds=yes -e '
@@ -222,21 +216,7 @@ jobs:
         arch:
           - default
     steps:
-      - name: Show available storage before cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-      - name: Free Disk Space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          large-packages: false
-      - name: Cleanup /opt
-        run: |
-          sudo rm -rf /opt/*
-      - name: Show available storage after cleanup
+      - name: Show available storage at the beginning
         run: |
           echo " --> df -h /"
           df -h /
@@ -250,8 +230,12 @@ jobs:
       - uses: julia-actions/cache@v3
         with:
           cache-scratchspaces: false
+      - name: Set JULIA_CPU_TARGET
+        shell: bash
+        run: |
+          echo "JULIA_CPU_TARGET=generic;haswell,-xsaveopt,clone_all;znver3,-rdrnd,base(1);znver4,-rdrnd,base(1);sapphirerapids,-rdrnd,base(1)" | tee -a "${GITHUB_ENV}"
       - name: Instantiate test environment
-        timeout-minutes: 30
+        timeout-minutes: 45
         shell: bash
         run: |
           julia --project=test --color=yes --check-bounds=auto -e '
@@ -271,6 +255,14 @@ jobs:
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Show available storage at the end
+        if: always()
+        timeout-minutes: 2
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
   
   #####
   ##### Distributed MPI tests (GitHub-hosted runners)
@@ -287,7 +279,7 @@ jobs:
   #     - uses: actions/checkout@v7
   #     - uses: julia-actions/setup-julia@v3
   #       with:
-  #         version: '1.12.5'
+  #         version: '1.12.7'
   #     - name: Instantiate and precompile
   #       shell: julia --project --color=yes {0}
   #       run: |
