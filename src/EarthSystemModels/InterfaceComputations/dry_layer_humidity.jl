@@ -359,13 +359,8 @@ end
     FT = eltype(Ψₛ)
     Gᵉ, qᵉ, σ, qᵍ⁺ = dry_layer_terms(q, Tₛ, Ψₛ, Ψₐ, ℙₐ)
 
-    qⁱⁿ⁻ = Ψₛ.specific_humidity
-    qᵃᵗ  = Ψₐ.q
     Gᵃ   = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
-
-    # Series solution qⁱⁿ = (Gᵉ qᵉ + Gᵃ qᵃᵗ)/(Gᵉ + Gᵃ); see the banner above.
-    D    = Gᵉ + Gᵃ
-    qⁱⁿ★ = ifelse(D > 0, (Gᵉ * qᵉ + Gᵃ * qᵃᵗ) / D, qⁱⁿ⁻)
+    qⁱⁿ★ = conductance_weighted_node(Ψₛ.specific_humidity, (Gᵉ, Gᵃ), (qᵉ, Ψₐ.q))
 
     return convert(FT, qᵍ⁺ + σ * (qⁱⁿ★ - qᵍ⁺))
 end

@@ -1,35 +1,10 @@
 #####
-##### Single-source, resistance-only vegetation surface.
-#####
-##### A `CanopyConductanceHumidity` is the vegetation analogue of `SkinHumidity`:
-##### it puts a *canopy (stomatal) conductance* `gᶜ = LAI · gₛ` in series with
-##### the aerodynamic conductance and solves the same surface vapor-flux balance
-##### for `qˢ` inside the Monin–Obukhov fixed point. The stomatal conductance
-##### `gₛ` — the dominant lever on the Bowen ratio, the sensible/latent partition
-##### an atmosphere-coupled simulation reads from the land — comes from a pluggable
-##### model: the empirical Jarvis form (default), or the photosynthesis-coupled
-##### optimality conductance of [Medlyn et al. (2011)](@cite medlyn2011) driven by
-##### the net CO₂ assimilation `Aₙ` of the
-##### [Farquhar et al. (1980)](@cite farquhar1980) model.
-#####
-##### Grounded in ClimaLand (Deck et al. 2026, JAMES, App. C–E): the series
-##### resistance network `r_stomata + r_ae` (Eqs E15–E17), the Farquhar
-##### co-limitation (Eqs C1–C5), and the Medlyn conductance. The whole path is
-##### Enzyme/Reactant-friendly.
-#####
-##### The stomatal conductance is pluggable: the empirical, closed-form
-##### [`JarvisConductance`](@ref) (default — needs neither photosynthesis nor CO₂)
-##### or the photosynthesis-coupled [`MedlynConductance`](@ref), both behind
-##### `AbstractStomatalConductance` (see `stomatal_conductance.jl`). The photosynthesis model lives in
-##### `photosynthesis.jl` and absorbed PAR in `absorbed_par.jl`: either prescribed
-##### ([`PrescribedAbsorbedPAR`](@ref), the offline default) or recomputed each step
-##### from the downwelling shortwave ([`InteractiveAbsorbedPAR`](@ref)), so the
-##### canopy can follow the diurnal light cycle. CO₂ is prescribed, and the leaf
-##### temperature is the skin temperature `Tₛ` (single-source).
+##### `CanopyConductanceHumidity` — a single-source (big-leaf) canopy: the stomatal
+##### conductance `gᶜ = LAI · gₛ` in series with the aerodynamic conductance.
 #####
 
-# Leaf-to-air vapor pressure deficit (Pa), floored to a small positive value so
-# the Medlyn `√VPD` stays finite and differentiable at saturation.
+# Leaf-to-air vapor pressure deficit (Pa), floored so the Medlyn `√VPD` stays
+# differentiable at saturation.
 @inline function vapor_pressure_deficit(ℂᵃᵗ, Tˡᵉᵃᶠ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, phase)
     eₛ = AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, Tˡᵉᵃᶠ, phase)
     ε  = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)   # Rᵈ/Rᵛ ≈ 0.622
@@ -50,14 +25,9 @@ read from the ground hydrology (`moisture_stress`, a `Number`, a
 [`PlantAvailableWaterStress`](@ref) — the model meant for transpiration — or a
 [`CriticalSaturation`](@ref)). The conductance is either the empirical
 [`JarvisConductance`](@ref) (default; needs no `photosynthesis` model) or the
-photosynthesis-coupled [`MedlynConductance`](@ref). Absorbed PAR is prescribed
-([`PrescribedAbsorbedPAR`](@ref)) or live from the radiation state
-([`InteractiveAbsorbedPAR`](@ref)); CO₂ is prescribed.
-
-Because the canopy vapor flux *is* transpiration, the resulting reduced `qˢ`
-lowers the latent-heat / vapor flux, which the existing
-flux → evaporation → water-storage plumbing already routes as a sink on the ground
-water store — no separate transpiration wiring is needed.
+photosynthesis-coupled [`MedlynConductance`](@ref). Absorbed PAR is a prescribed
+`Number` or live from the radiation state ([`InteractiveAbsorbedPAR`](@ref)); CO₂ is
+prescribed.
 
 Fields:
 - `leaf_area_index` : bulk LAI (–), upscales leaf `gₛ` to the canopy.
@@ -66,7 +36,8 @@ Fields:
 - `moisture_stress` : `β(𝒮)` model — a `Number`, a [`PlantAvailableWaterStress`](@ref)
   (wilting-point/field-capacity endpoints, the model meant for a transpiring canopy), or
   a [`CriticalSaturation`](@ref) (the bare-soil evaporation model).
-- `absorbed_par`    : an [`AbstractAbsorbedPAR`](@ref) (a `Number` is wrapped as prescribed).
+- `absorbed_par`    : a prescribed per-leaf absorbed PAR (`Number`, mol photon m⁻² s⁻¹) or an
+  [`InteractiveAbsorbedPAR`](@ref).
 - `atmospheric_co2` : prescribed CO₂ partial pressure (Pa).
 - `phase`           : saturation phase (Liquid).
 """
@@ -98,7 +69,7 @@ function CanopyConductanceHumidity(FT=Oceananigans.defaults.FloatType;
 
     return CanopyConductanceHumidity(convert_if_number(FT, leaf_area_index),
                                      photosynthesis, conductance, moisture_stress,
-                                     absorbed_par_spec(absorbed_par, FT),
+                                     convert_if_number(FT, absorbed_par),
                                      convert(FT, atmospheric_co2), phase)
 end
 
@@ -127,12 +98,8 @@ Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
 @inline interface_vegetation_state(i, j, grid, ::CanopyConductanceHumidity, vegetation, time_interpolator) =
     (leaf_area_index = convert(eltype(grid), surface_field_value(vegetation, i, j, time_interpolator)),)
 
-# Canopy flux terms, split off so the standalone formulation and the composite
-# (soil + canopy) share them. Returns the bulk canopy (stomatal) mass conductance
-# `gᶜ = LAI · gₛ · Mᵈ` (kg m⁻² s⁻¹) and the leaf saturation source `qᵛ⁺(Tˡᵉᵃᶠ)`.
-# The canopy (leaf) reservoir is saturated at the leaf temperature (= skin
-# temperature Tₛ, single-source). `Ψᵣ` is the interface radiation state (drives
-# `InteractiveAbsorbedPAR`).
+# Bulk canopy (stomatal) mass conductance `gᶜ = LAI · gₛ · Mᵈ` (kg m⁻² s⁻¹) and the leaf
+# saturation humidity `qᵛ⁺(Tˡᵉᵃᶠ)`.
 @inline function canopy_conductance_terms(q::CanopyConductanceHumidity, Tˡᵉᵃᶠ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ,
                                           canopy_transmittance)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
@@ -159,12 +126,8 @@ end
     FT = eltype(Ψₛ)
     gᶜ, qᵛ⁺ = canopy_conductance_terms(q, Tₛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, nothing)
 
-    qˢ⁻ = Ψₛ.specific_humidity
-    qᵃᵗ = Ψₐ.q
-    Gᵃ  = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
-
-    D  = gᶜ + Gᵃ
-    qˢ = ifelse(D > 0, (gᶜ * qᵛ⁺ + Gᵃ * qᵃᵗ) / D, qˢ⁻)
+    Gᵃ = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
+    qˢ = conductance_weighted_node(Ψₛ.specific_humidity, (gᶜ, Gᵃ), (qᵛ⁺, Ψₐ.q))
 
     return convert(FT, qˢ)
 end

@@ -1,12 +1,6 @@
 #####
 ##### Farquhar C3 photosynthesis and its temperature-response helpers.
 #####
-##### Net CO₂ assimilation `Aₙ` is the (smoothly) co-limited minimum of the
-##### Rubisco- and light-limited rates, less dark respiration. Rate parameters are
-##### given at 25 °C and scaled to leaf temperature. Grounded in ClimaLand
-##### (Deck et al. 2026, JAMES, App. C): Farquhar co-limitation (Eqs C1–C5), the
-##### peaked/plain Arrhenius scalings (Eqs C6, C11), and Heskel respiration (Eq C12).
-#####
 
 # Reference temperature of the photosynthesis rate parameters (the "25" suffix
 # of Vcmax25, etc.) — distinct from the thermodynamic reference (triple point).
@@ -23,24 +17,21 @@ end
 # Deactivation exponent `(ΔS T − ΔHd)/(R T)` of the peaked Arrhenius form.
 @inline function deactivation_exponent(T, ΔS, ΔHd)
     R = oftype(T, default_gas_constant)
-    return clamp((T * ΔS - ΔHd) / (R * T), oftype(T, -80), oftype(T, 80))
+    return (T * ΔS - ΔHd) / (R * T)
 end
 
-# Peaked Arrhenius for `Vcmax`/`Jmax` (ClimaLand Eq C11): plain Arrhenius times a
-# high-temperature deactivation term, so the capacity peaks near an optimum
-# (low-to-mid 30s °C) and rolls off, rather than climbing without bound. The numerator
-# normalizes `f′(T₂₅) = 1`, preserving the meaning of the 25 °C values. Activation
-# `ΔHa`, entropy `ΔS`, deactivation `ΔHd` are the Kattge & Knorr (2007) peaked set.
-@inline function peaked_arrhenius(T, ΔHa, ΔS, ΔHd)
+# Peaked Arrhenius for `Vcmax`/`Jmax`: plain Arrhenius times a high-temperature
+# deactivation term, normalized to 1 at 25 °C.
+@inline function peaked_arrhenius(T, p)
+    ΔS, ΔHd = p.entropy, p.deactivation_energy
     T₂₅  = oftype(T, physiology_reference_temperature)
-    base = arrhenius_scaling(T, ΔHa)
+    base = arrhenius_scaling(T, p.activation_energy)
     return base * (1 + exp(deactivation_exponent(T₂₅, ΔS, ΔHd))) /
                   (1 + exp(deactivation_exponent(T,   ΔS, ΔHd)))
 end
 
-# Heskel et al. (2016) leaf-respiration temperature response (ClimaLand Eq C12),
-# normalized to 1 at 25 °C. Defined in Celsius (`Tᶜ = T − 273.15`): using Kelvin
-# with these coefficients flips the sign and makes `Rd` fall with temperature.
+# Heskel et al. (2016) leaf-respiration temperature response, in Celsius, normalized
+# to 1 at 25 °C.
 @inline function heskel_respiration_scaling(T, b, c)
     Tᶜ   = T - oftype(T, celsius_to_kelvin)
     T₂₅ᶜ = oftype(T, 25)
@@ -96,22 +87,6 @@ Base.summary(p::HeskelParameters) =
            ", curvature=", prettysummary(p.curvature), ")")
 Base.show(io::IO, p::HeskelParameters) = print(io, summary(p))
 
-#####
-##### Photosynthetic-capacity temperature response (trait). `PeakedArrhenius`
-##### (default) rolls the capacities off above their optimum; `PlainArrhenius`
-##### keeps a monotone response (deactivation disabled) for comparison.
-##### `Rd` always uses the Heskel form; the trait toggles only `Vcmax`/`Jmax`.
-#####
-
-abstract type AbstractCapacityResponse end
-struct PlainArrhenius  <: AbstractCapacityResponse end
-struct PeakedArrhenius <: AbstractCapacityResponse end
-
-@inline capacity_scaling(::PlainArrhenius,  T, p::PeakedArrheniusParameters) =
-    arrhenius_scaling(T, p.activation_energy)
-@inline capacity_scaling(::PeakedArrhenius, T, p::PeakedArrheniusParameters) =
-    peaked_arrhenius(T, p.activation_energy, p.entropy, p.deactivation_energy)
-
 # Smooth (θ-quadratic) minimum of two positive rates — the standard co-limitation
 # smoothing (Collatz/Bonan): the smaller root of `θ x² − (a+b) x + a b = 0`.
 # As `θ → 1` it approaches `min(a, b)` but stays differentiable. The discriminant
@@ -129,11 +104,9 @@ C3 photosynthesis after [Farquhar et al. (1980)](@cite farquhar1980): net CO₂
 assimilation `Aₙ` is the (smoothly) co-limited minimum of the Rubisco-limited
 rate `Aᶜ` and the light (RuBP-regeneration)-limited rate `Aⱼ`, less dark
 respiration `Rᵈ`. Rate parameters are given at 25 °C and scaled to leaf
-temperature: `Vcmax`/`Jmax` by the peaked Arrhenius factor (ClimaLand Eq C11) so
-they peak near an optimum and roll off at high leaf temperature, `Rᵈ` by the
-Heskel (2016) form (Eq C12), and `Γ*`/`Kc`/`Ko` by plain Arrhenius (Eq C6).
-Defaults follow ClimaLand Table C1 / Kattge & Knorr (2007); `Vcmax25 = 5e-5` is
-a generic mid-range C3 value (ClimaLand's US-Var C3-grass run used `2.5e-5`).
+temperature: `Vcmax`/`Jmax` by a peaked Arrhenius factor, `Rᵈ` by the Heskel (2016)
+form, and `Γ*`/`Kc`/`Ko` by plain Arrhenius. The peaked-Arrhenius parameters follow
+Kattge & Knorr (2007); the remaining constants are ClimaLand's.
 
 Fields (all at 25 °C unless noted):
 - `Vcmax25`      : maximum carboxylation rate (mol CO₂ m⁻² s⁻¹).
@@ -141,17 +114,15 @@ Fields (all at 25 °C unless noted):
   Kattge & Knorr (2007) ratio acclimated to 25 °C growth temperature.
 - `respiration_to_vcmax` : ratio `Rd25 / Vcmax25` (–).
 - `quantum_yield`: electrons to PSII per absorbed photon (–).
-- `Γ★25`         : CO₂ compensation point (Pa); `Kc25`, `Ko25`: Michaelis constants (Pa).
+- `Γ★25`         : photorespiratory compensation point (Pa); `Kc25`, `Ko25`: Michaelis constants (Pa).
 - `O₂`           : intercellular O₂ mole fraction (–).
 - `θⱼ`, `θᶜⱼ`    : co-limitation smoothing for `J` and for `min(Aᶜ, Aⱼ)` (–).
-- `capacity_response` : `PeakedArrhenius()` (default) or `PlainArrhenius()` — the
-  `Vcmax`/`Jmax` temperature response.
 - `vcmax_response`, `jmax_response` : the [`PeakedArrheniusParameters`](@ref) of each capacity.
 - `respiration_response` : the [`HeskelParameters`](@ref) of the `Rᵈ` temperature response.
 - `compensation_activation_energy`, `kc_activation_energy`, `ko_activation_energy` :
   plain-Arrhenius activation energies of `Γ★`, `Kc`, `Ko` (J mol⁻¹).
 """
-struct FarquharPhotosynthesis{FT, K, PV, PJ, H}
+struct FarquharPhotosynthesis{FT, PV, PJ, H}
     Vcmax25              :: FT
     jmax_to_vcmax        :: FT
     respiration_to_vcmax :: FT
@@ -162,7 +133,6 @@ struct FarquharPhotosynthesis{FT, K, PV, PJ, H}
     O₂                   :: FT
     θⱼ                   :: FT
     θᶜⱼ                  :: FT
-    capacity_response    :: K
     vcmax_response       :: PV
     jmax_response        :: PJ
     respiration_response :: H
@@ -182,7 +152,6 @@ function FarquharPhotosynthesis(FT=Oceananigans.defaults.FloatType;
                                 O₂                   = 0.209,
                                 θⱼ                   = 0.9,
                                 θᶜⱼ                  = 0.98,
-                                capacity_response    = PeakedArrhenius(),
                                 vcmax_response       = PeakedArrheniusParameters(FT;
                                                            activation_energy = 71513,
                                                            entropy = 649,
@@ -196,12 +165,12 @@ function FarquharPhotosynthesis(FT=Oceananigans.defaults.FloatType;
                                 kc_activation_energy = 79430,
                                 ko_activation_energy = 36380)
 
-    return FarquharPhotosynthesis{FT, typeof(capacity_response), typeof(vcmax_response),
+    return FarquharPhotosynthesis{FT, typeof(vcmax_response),
                                   typeof(jmax_response), typeof(respiration_response)}(
         convert(FT, Vcmax25), convert(FT, jmax_to_vcmax), convert(FT, respiration_to_vcmax),
         convert(FT, quantum_yield), convert(FT, Γ★25), convert(FT, Kc25),
         convert(FT, Ko25), convert(FT, O₂), convert(FT, θⱼ), convert(FT, θᶜⱼ),
-        capacity_response, vcmax_response, jmax_response, respiration_response,
+        vcmax_response, jmax_response, respiration_response,
         convert(FT, compensation_activation_energy),
         convert(FT, kc_activation_energy), convert(FT, ko_activation_energy))
 end
@@ -225,8 +194,8 @@ both `Aₙ` and — through the Medlyn coupling — the stomatal conductance.
     Ko = p.Ko25 * arrhenius_scaling(Tˡᵉᵃᶠ, p.ko_activation_energy)
     Km = Kc * (1 + p.O₂ * P / Ko)
 
-    Vcmax = β * p.Vcmax25 * capacity_scaling(p.capacity_response, Tˡᵉᵃᶠ, p.vcmax_response)
-    Jmax  = β * p.jmax_to_vcmax * p.Vcmax25 * capacity_scaling(p.capacity_response, Tˡᵉᵃᶠ, p.jmax_response)
+    Vcmax = β * p.Vcmax25 * peaked_arrhenius(Tˡᵉᵃᶠ, p.vcmax_response)
+    Jmax  = β * p.jmax_to_vcmax * p.Vcmax25 * peaked_arrhenius(Tˡᵉᵃᶠ, p.jmax_response)
     Rd    = p.respiration_to_vcmax * p.Vcmax25 *
             heskel_respiration_scaling(Tˡᵉᵃᶠ, p.respiration_response.slope, p.respiration_response.curvature)
 

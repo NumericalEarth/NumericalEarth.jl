@@ -228,6 +228,9 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyAirSpace`](@r
 | ``G^a`` | – | aerodynamic vapor conductance | ``G^a = \rho^{\mathrm{at}} u_\star \chi^q``, the divider every humidity formulation closes against (kg m⁻² s⁻¹) |
 | ``G^e`` | – | dry-layer vapor conductance | Soil vapor conductance of [`DryLayerHumidity`](@ref) (kg m⁻² s⁻¹) |
 | ``\Sigma g^T``, ``\Sigma g^v`` | – | node conductance sums | Sums over the three branches feeding the canopy-air node, per side |
+| ``h^{c}`` | `layer_depth` | canopy air layer depth | Depth of the canopy air layer of a [`PrognosticCanopyAir`](@ref) storage (m) |
+| ``C^{T}``, ``C^{v}`` | – | canopy-air heat and vapor capacities | ``\rho c^p h^c`` (J m⁻² K⁻¹) and ``\rho h^c`` (kg m⁻²) |
+| ``m`` | – | node memory | Start-of-step weight surviving in the step-mean canopy-air node, ``m = (\tau/\Delta t)(1 - e^{-\Delta t/\tau})`` with ``\tau = C/\Sigma g`` (–) |
 | ``\epsilon^{\mathrm{leaf}}``, ``\epsilon^{g}`` | `max_canopy_emissivity`, `ground_emissivity` | emissivities | Longwave emissivity of the canopy (``\epsilon^{\mathrm{leaf}} = \epsilon^{max}(1 - e^{-L})``) and of the ground (–) |
 | ``\alpha^{\mathrm{leaf}}``, ``\alpha^{g}`` | `leaf_albedo`, `ground_albedo` | albedos | Shortwave albedo of the canopy and of the ground below it (–) |
 | ``r^s`` | – | soil surface resistance | Moist-soil evaporation resistance of a [`SellersSoilResistance`](@ref) (s m⁻¹) |
@@ -235,6 +238,7 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyAirSpace`](@r
 | ``W^c``, ``W^{c\,max}`` | `canopy_water_storage` | canopy water store | Intercepted water on the foliage and its capacity ``W^{c\,max} = c L`` (kg m⁻²) |
 | ``f^{\mathrm{int}}`` | – | interception fraction | Caught fraction of rain, ``1 - e^{-K \Omega L}`` (–) |
 | ``f^{\mathrm{wet}}`` | – | wet-canopy fraction | Deardorff wetted-leaf fraction ``(W^c/W^{c\,max})^{2/3}`` (–) |
+| ``g^{w}`` | – | wet-canopy vapor conductance | Wetted fraction of the leaf boundary-layer conductance, capped so that ``E^{\mathrm{wet}} \le W^c/\Delta t`` (kg m⁻² s⁻¹) |
 | ``E^{\mathrm{wet}}``, ``LE^{\mathrm{wet}}`` | – | wet-canopy evaporation | Evaporation of intercepted water (kg m⁻² s⁻¹) and its latent heat (W m⁻²) |
 | ``A_n`` | – | net assimilation | Net CO₂ assimilation of [`FarquharPhotosynthesis`](@ref) (mol m⁻² s⁻¹) |
 | ``V_a`` | – | surface wind speed | Wind speed at the surface-layer reference height (m s⁻¹) |

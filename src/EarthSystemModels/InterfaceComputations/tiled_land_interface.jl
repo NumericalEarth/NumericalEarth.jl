@@ -1,44 +1,24 @@
 #####
-##### `TiledLandInterface` — subgrid vegetation/bare-soil tiling (parallel fluxes).
-#####
-##### A `TiledLandInterface` makes a **mosaic** of a vegetated fraction `f = f_veg` and a
-##### bare-soil fraction `1 − f`: each tile runs the *same* single-tile interface solve
-##### independently against the *same* atmosphere (different roughness / stability), and
-##### the fluxes are area-weighted into the boundary condition the atmosphere and slab read,
-#####
-#####     𝒬 = f · 𝒬_veg + (1 − f) · 𝒬_bare.
-#####
-##### This is the SOTA parallel/tiled-flux scheme (Avissar & Pielke 1989; Koster–Suarez
-##### 1992; Noah-MP `F_veg·veg + (1−F_veg)·bare`; ClimaLand v1's parallel fluxes, App. E3).
-##### It is *complementary* to the `CanopyAirSpace` composite: the vegetated tile is a full
-##### CAS footprint (canopy over its own shaded soil); the bare tile is open soil talking
-##### straight to the atmosphere. At `f = 1` the blend reduces to pure CAS; at `f = 0` to
-##### pure bare soil.
-#####
-##### Both tiles are `CanopyAirSpace` objects so they emit the *same currency* — an
-##### internalized-radiation, conduction-driven slab energy input (`𝒬ᵍ`) and an
-##### upwelling-longwave (LST) — and the blend is a clean area-weight (no radiation
-##### double-count; `apply_air_land_radiative_fluxes!` stays a no-op). The bare tile is a
-##### canopy-free CAS (LAI = 0), derived from the vegetated tile by default. The two tiles
-##### share one soil column (one `Tˡᵃ`, `Mˡᵃ`, `𝒮`), matching Noah-MP / JULES; both deplete
-##### the same water store through the area-weighted vapor flux.
+##### `TiledLandInterface` — a mosaic of a vegetated `CanopyAirSpace` tile and a bare-soil
+##### skin tile over one soil column; each tile runs the single-tile interface solve and
+##### the fluxes are area-weighted, 𝒬 = f 𝒬ᵛᵉᵍ + (1 − f) 𝒬ᵇᵃʳᵉ.
 #####
 
 """
     struct TiledLandInterface
 
-A subgrid mosaic of a vegetated tile and a bare-soil tile over a shared soil column.
-Holds two `CanopyAirSpace` sub-interfaces (each a full [`atmosphere_land_interface`](@ref)
-with its own roughness), the vegetation fraction `f_veg`, and the area-weighted buffers
-the atmosphere and slab read. Build it with [`TiledLandInterface(grid, atmosphere, land; …)`](@ref)
-and pass it as `atmosphere_land_interface = …` to `AtmosphereLandModel` / `ComponentInterfaces`.
+A vegetated tile and a bare-soil tile over a shared soil column, each a full
+[`atmosphere_land_interface`](@ref) with its own roughness, with the area-weighted fluxes
+and temperatures the atmosphere and slab read. Build it with
+[`TiledLandInterface(grid, atmosphere, land; …)`](@ref) and pass it as
+`atmosphere_land_interface = …` to `AtmosphereLandModel` / `ComponentInterfaces`.
 
 Fields:
 - `vegetated`   : the vegetated tile, an `AtmosphereInterface` with a [`CanopyAirSpace`](@ref).
-- `bare`        : the bare-soil tile, an `AtmosphereInterface` with a canopy-free `CanopyAirSpace`.
-- `fraction`    : `f_veg ∈ [0, 1]` — a `Number`, `Field`, or `FieldTimeSeries`.
-- `fluxes`      : the blended [`AtmosphereSurfaceFluxes`](@ref) the atmosphere/slab read.
-- `temperature` : the blended diagnostic temperatures/fluxes (a [`CanopyAirSpaceDiagnostics`](@ref)).
+- `bare`        : the bare-soil tile, an `AtmosphereInterface` with an [`EnergyBalanceTemperature`](@ref).
+- `fraction`    : the vegetated fraction `f ∈ [0, 1]` — a `Number`, `Field`, or `FieldTimeSeries`.
+- `fluxes`      : the blended [`AtmosphereSurfaceFluxes`](@ref).
+- `temperature` : the blended [`CanopyAirSpaceDiagnostics`](@ref).
 """
 struct TiledLandInterface{V, B, F, FL, T}
     vegetated   :: V
@@ -48,78 +28,43 @@ struct TiledLandInterface{V, B, F, FL, T}
     temperature :: T
 end
 
-# A canopy-free canopy: LAI = 0 collapses the leaf branch (no transpiration, no canopy
-# shortwave/longwave, `gˡᵉᵃᶠᵀ = 0`), leaving the soil-skin balance the bare tile needs.
-zero_leaf_area_index_canopy(q::CanopyConductanceHumidity) =
-    CanopyConductanceHumidity(zero(q.atmospheric_co2), q.photosynthesis, q.conductance,
-                              q.moisture_stress, q.absorbed_par, q.atmospheric_co2, q.phase)
-
-"""
-    bare_canopy_air_space(vegetated::CanopyAirSpace;
-                          undercanopy_conductance, wet_soil_resistance, litter_resistance)
-
-Derive the bare-soil tile from the vegetated `CanopyAirSpace`: the same soil vapor branch,
-skin conduction, albedos, emissivities, and optics, but with a canopy-free (LAI = 0) leaf
-branch, no interception, and no litter (litter blankets vegetated ground only, so
-`litter_resistance` defaults to `nothing` here). The soil then talks straight to the
-atmosphere (all shortwave reaches the ground, the ground sees the sky, no transpiration).
-`undercanopy_conductance` sets the soil↔canopy-air coupling for the bare tile (defaults to
-the vegetated value; a larger value pushes the soil resistance toward the pure-aerodynamic
-limit), and `wet_soil_resistance` the moist-soil surface resistance (defaults to the
-vegetated value).
-"""
-function bare_canopy_air_space(c::CanopyAirSpace; undercanopy_conductance = c.undercanopy_conductance,
-                               wet_soil_resistance = c.wet_soil_resistance,
-                               litter_resistance = nothing)
-    FT = typeof(c.extinction)
-    return CanopyAirSpace(c.soil, zero_leaf_area_index_canopy(c.canopy), c.soil_skin_flux,
-                          c.leaf_albedo, c.ground_albedo, c.max_canopy_emissivity, c.ground_emissivity,
-                          c.extinction, c.clumping, c.leaf_boundary_conductance,
-                          undercanopy_conductance_model(undercanopy_conductance, FT),
-                          wet_soil_resistance, litter_resistance,
-                          c.inner_iterations, c.relaxation, nothing, c.phase, c.storage)
-end
-
 """
     TiledLandInterface(grid, atmosphere, land;
                        vegetated,
                        fraction,
-                       bare              = bare_canopy_air_space(vegetated),
-                       vegetated_fluxes   = default_atmosphere_land_fluxes(land, eltype(grid)),
-                       bare_fluxes        = default_atmosphere_land_fluxes(land, eltype(grid)),
+                       bare                = EnergyBalanceTemperature(vegetated.soil_skin_flux),
+                       bare_specific_humidity = vegetated.soil,
+                       vegetated_fluxes    = default_atmosphere_land_fluxes(land, eltype(grid)),
+                       bare_fluxes         = default_atmosphere_land_fluxes(land, eltype(grid)),
                        velocity_difference = RelativeVelocity())
 
 Build a two-tile (vegetated + bare) land interface. `vegetated` is a [`CanopyAirSpace`](@ref);
-`bare` defaults to its canopy-free counterpart. `fraction` is `f_veg` (a `Number`, `Field`, or
-`FieldTimeSeries`). Pass `vegetated_fluxes` / `bare_fluxes` to give the tiles a roughness
-contrast (forest z₀ ≫ bare z₀) — a first-order control on inland wind decay.
-
-```julia
-model = AtmosphereLandModel(atmosphere, land; radiation,
-    atmosphere_land_interface = TiledLandInterface(grid, atmosphere, land;
-                                                   vegetated = canopy_air_space,
-                                                   fraction  = 0.6))
-```
+the bare tile is a soil skin with the same skin→bulk conduction and soil vapor branch by
+default. `fraction` is the vegetated fraction (a `Number`, `Field`, or `FieldTimeSeries`).
+Pass `vegetated_fluxes` / `bare_fluxes` to give the tiles a roughness contrast.
 """
 function TiledLandInterface(grid, atmosphere, land;
                             vegetated,
                             fraction,
-                            bare                = bare_canopy_air_space(vegetated),
-                            vegetated_fluxes     = default_atmosphere_land_fluxes(land, eltype(grid)),
-                            bare_fluxes          = default_atmosphere_land_fluxes(land, eltype(grid)),
-                            velocity_difference = RelativeVelocity())
+                            bare                   = EnergyBalanceTemperature(vegetated.soil_skin_flux),
+                            bare_specific_humidity = vegetated.soil,
+                            vegetated_fluxes       = default_atmosphere_land_fluxes(land, eltype(grid)),
+                            bare_fluxes            = default_atmosphere_land_fluxes(land, eltype(grid)),
+                            velocity_difference    = RelativeVelocity())
+
+    skin_conductance(bare) == skin_conductance(vegetated) ||
+        throw(ArgumentError("the bare and vegetated tiles must share the skin conductance Λᵍ"))
 
     vegetated_interface = atmosphere_land_interface(grid, atmosphere, land;
-                                                    fluxes               = vegetated_fluxes,
+                                                    fluxes              = vegetated_fluxes,
                                                     temperature         = vegetated,
-                                                    velocity_difference = velocity_difference,
-                                                    specific_humidity    = vegetated)
+                                                    velocity_difference = velocity_difference)
 
     bare_interface = atmosphere_land_interface(grid, atmosphere, land;
-                                               fluxes               = bare_fluxes,
+                                               fluxes              = bare_fluxes,
                                                temperature         = bare,
                                                velocity_difference = velocity_difference,
-                                               specific_humidity    = bare)
+                                               specific_humidity   = bare_specific_humidity)
 
     fluxes      = AtmosphereSurfaceFluxes(grid)
     temperature = build_interface_temperature(vegetated, grid)
@@ -134,22 +79,18 @@ Base.show(io::IO, ti::TiledLandInterface) =
 
 @inline computed_fluxes(ti::TiledLandInterface) = ti.fluxes
 
+skin_conductance(ti::TiledLandInterface) = skin_conductance(ti.vegetated)
+
 validate_zero_plane_displacement(ti::TiledLandInterface, zᵃᵗ) =
     foreach(tile -> validate_zero_plane_displacement(tile, zᵃᵗ), (ti.vegetated, ti.bare))
 
-# The atmosphere-facing surface temperature is the blended canopy-air node (the same
-# NamedTuple signal a single CanopyAirSpace uses).
 EarthSystemModels.surface_temperature(ti::TiledLandInterface) = interface_node_temperature(ti.temperature)
-EarthSystemModels.surface_temperature(ti::TiledLandInterface, ::Nothing) =
+EarthSystemModels.surface_temperature(ti::TiledLandInterface, ocean_interface) =
     EarthSystemModels.surface_temperature(ti)
 
-# Checkpointing: each tile is an ordinary `AtmosphereInterface`, so its prognostic
-# interface state (canopy-air node, prognostic skin) round-trips tile by tile.
 interface_prognostic_state(ti::TiledLandInterface) =
     (; vegetated = interface_prognostic_state(ti.vegetated),
        bare      = interface_prognostic_state(ti.bare))
-
-restore_interface_state!(ti::TiledLandInterface, ::Nothing) = nothing
 
 function restore_interface_state!(ti::TiledLandInterface, state)
     restore_interface_state!(ti.vegetated, state.vegetated)
@@ -157,27 +98,12 @@ function restore_interface_state!(ti::TiledLandInterface, state)
     return nothing
 end
 
-"""
-    leaf_area_index_cover_fraction(leaf_area_index; extinction=0.5, clumping=1)
+function compute_atmosphere_land_fluxes!(coupled_model, ti::TiledLandInterface, Δt)
+    compute_atmosphere_land_fluxes!(coupled_model, ti.vegetated, Δt)
+    compute_atmosphere_land_fluxes!(coupled_model, ti.bare, Δt)
 
-Beer–Lambert vegetation cover fraction `f_veg = 1 − exp(−K·Ω·LAI)` — the fraction of the
-cell shaded by foliage, and Noah-MP's `1 − gap`. A data-free default for the tiling
-`fraction` (the same relation the `CanopyAirSpace` uses for its canopy shortwave split).
-"""
-@inline leaf_area_index_cover_fraction(leaf_area_index; extinction = 0.5, clumping = 1) =
-    1 - canopy_transmittance(extinction, clumping, leaf_area_index)
-
-#####
-##### Two-pass parallel fluxes: run each tile's existing single-tile solve, then blend.
-#####
-
-function compute_atmosphere_land_fluxes!(coupled_model, ti::TiledLandInterface)
-    # Pass 1 & 2: each tile writes its own turbulent fluxes and diagnostic temperatures,
-    # both reading the shared land exchanger state (𝒮, Tˡᵃ, Wᶜ).
-    compute_atmosphere_land_fluxes!(coupled_model, ti.vegetated)
-    compute_atmosphere_land_fluxes!(coupled_model, ti.bare)
-
-    grid  = coupled_model.interfaces.exchanger.grid
+    exchanger = coupled_model.interfaces.exchanger
+    grid  = exchanger.grid
     arch  = architecture(grid)
     clock = coupled_model.clock
 
@@ -186,7 +112,7 @@ function compute_atmosphere_land_fluxes!(coupled_model, ti::TiledLandInterface)
     launch!(arch, grid, :xy, _blend_tiled_land_fluxes!,
             ti.fluxes, ti.temperature,
             ti.vegetated.fluxes, ti.vegetated.temperature,
-            ti.bare.fluxes, ti.bare.temperature,
+            ti.bare.fluxes, ti.bare.temperature, skin_conductance(ti.bare), exchanger.land.state.T,
             fraction, fraction_time_interpolator)
 
     return nothing
@@ -194,7 +120,7 @@ end
 
 @kernel function _blend_tiled_land_fluxes!(blended_fluxes, blended_temperature,
                                            veg_fluxes, veg_temperature,
-                                           bare_fluxes, bare_temperature,
+                                           bare_fluxes, bare_temperature, Λ, T,
                                            fraction, fraction_time_interpolator)
     i, j = @index(Global, NTuple)
     f = clamp(surface_field_value(fraction, i, j, fraction_time_interpolator), 0, 1)
@@ -210,22 +136,23 @@ end
         blended_fluxes.temperature_scale[i, j, 1] = f * veg_fluxes.temperature_scale[i, j, 1] + g * bare_fluxes.temperature_scale[i, j, 1]
         blended_fluxes.water_vapor_scale[i, j, 1] = f * veg_fluxes.water_vapor_scale[i, j, 1] + g * bare_fluxes.water_vapor_scale[i, j, 1]
 
-        blended_temperature.interface[i, j, 1]              = f * veg_temperature.interface[i, j, 1]              + g * bare_temperature.interface[i, j, 1]
-        blended_temperature.canopy[i, j, 1]                 = f * veg_temperature.canopy[i, j, 1]                 + g * bare_temperature.canopy[i, j, 1]
-        blended_temperature.soil_skin[i, j, 1]              = f * veg_temperature.soil_skin[i, j, 1]              + g * bare_temperature.soil_skin[i, j, 1]
-        blended_temperature.ground_heat_flux[i, j, 1]        = f * veg_temperature.ground_heat_flux[i, j, 1]        + g * bare_temperature.ground_heat_flux[i, j, 1]
-        blended_temperature.canopy_latent_heat[i, j, 1]     = f * veg_temperature.canopy_latent_heat[i, j, 1]     + g * bare_temperature.canopy_latent_heat[i, j, 1]
-        blended_temperature.soil_latent_heat[i, j, 1]       = f * veg_temperature.soil_latent_heat[i, j, 1]       + g * bare_temperature.soil_latent_heat[i, j, 1]
-        blended_temperature.canopy_sensible_heat[i, j, 1]   = f * veg_temperature.canopy_sensible_heat[i, j, 1]   + g * bare_temperature.canopy_sensible_heat[i, j, 1]
-        blended_temperature.soil_sensible_heat[i, j, 1]     = f * veg_temperature.soil_sensible_heat[i, j, 1]     + g * bare_temperature.soil_sensible_heat[i, j, 1]
-        blended_temperature.canopy_evaporation[i, j, 1]     = f * veg_temperature.canopy_evaporation[i, j, 1]     + g * bare_temperature.canopy_evaporation[i, j, 1]
-        blended_temperature.canopy_wet_latent_heat[i, j, 1] = f * veg_temperature.canopy_wet_latent_heat[i, j, 1] + g * bare_temperature.canopy_wet_latent_heat[i, j, 1]
+        # The bare tile is a single skin: its own temperature is its soil skin and its
+        # turbulent fluxes are all soil fluxes. The canopy water store is kept per unit
+        # vegetated area, so its evaporation is not area-weighted.
+        Tᵇ = bare_temperature[i, j, 1]
+        blended_temperature.interface[i, j, 1]              = f * veg_temperature.interface[i, j, 1] + g * Tᵇ
+        blended_temperature.canopy[i, j, 1]                 = veg_temperature.canopy[i, j, 1]
+        blended_temperature.soil_skin[i, j, 1]              = f * veg_temperature.soil_skin[i, j, 1] + g * Tᵇ
+        blended_temperature.ground_heat_flux[i, j, 1]       = f * veg_temperature.ground_heat_flux[i, j, 1] + g * Λ * (Tᵇ - T[i, j, 1])
+        blended_temperature.canopy_latent_heat[i, j, 1]     = f * veg_temperature.canopy_latent_heat[i, j, 1]
+        blended_temperature.soil_latent_heat[i, j, 1]       = f * veg_temperature.soil_latent_heat[i, j, 1] + g * bare_fluxes.latent_heat[i, j, 1]
+        blended_temperature.canopy_sensible_heat[i, j, 1]   = f * veg_temperature.canopy_sensible_heat[i, j, 1]
+        blended_temperature.soil_sensible_heat[i, j, 1]     = f * veg_temperature.soil_sensible_heat[i, j, 1] + g * bare_fluxes.sensible_heat[i, j, 1]
+        blended_temperature.canopy_evaporation[i, j, 1]     = veg_temperature.canopy_evaporation[i, j, 1]
+        blended_temperature.canopy_wet_latent_heat[i, j, 1] = f * veg_temperature.canopy_wet_latent_heat[i, j, 1]
+        blended_temperature.land_vapor_flux[i, j, 1]        = f * veg_temperature.land_vapor_flux[i, j, 1] + g * bare_fluxes.water_vapor[i, j, 1]
 
-        # Effective (LST) temperature: area-weight in radiance (T⁴) space (σ cancels),
-        # σ T⁴ = f · LWꜛ(vegetated) + (1 − f) · LWꜛ(bare).
-        vegetated_temperature = veg_temperature.effective[i, j, 1]
-        bare_effective_temperature = bare_temperature.effective[i, j, 1]
-        blended_temperature.effective[i, j, 1] =
-            sqrt(sqrt(f * vegetated_temperature^4 + g * bare_effective_temperature^4))
+        # Radiating temperature: area-weighted in σT⁴.
+        blended_temperature.effective[i, j, 1] = sqrt(sqrt(f * veg_temperature.effective[i, j, 1]^4 + g * Tᵇ^4))
     end
 end

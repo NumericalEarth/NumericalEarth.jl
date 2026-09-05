@@ -9,8 +9,7 @@ using NumericalEarth.Lands: SlabLand, SlabEnergy, SaturatedSurface
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     FarquharPhotosynthesis, MedlynConductance, JarvisConductance,
     CanopyConductanceHumidity, BulkHumidity,
-    PrescribedAbsorbedPAR, InteractiveAbsorbedPAR, absorbed_par_value,
-    PlainArrhenius, PeakedArrhenius,
+    InteractiveAbsorbedPAR, absorbed_par_value,
     net_assimilation, medlyn_conductance, stomatal_conductance,
     jarvis_light_factor, jarvis_vpd_factor, jarvis_temperature_factor,
     peaked_arrhenius, heskel_respiration_scaling
@@ -78,13 +77,13 @@ end
         T₂₅ = FT(298.15)
 
         # Normalization: both scalings are 1 at 25 °C.
-        @test peaked_arrhenius(T₂₅, FT(71513), FT(649), FT(200000)) ≈ 1
+        @test peaked_arrhenius(T₂₅, PeakedArrheniusParameters(FT; activation_energy = 71513, entropy = 649, deactivation_energy = 200000)) ≈ 1
         @test heskel_respiration_scaling(T₂₅, FT(0.1012), FT(-0.0005)) ≈ 1
 
         # Vcmax/Jmax rise then fall — interior optimum with high-T rolloff.
         Ts = FT(273):FT(1):FT(323)
-        vc = [peaked_arrhenius(T, FT(71513), FT(649), FT(200000)) for T in Ts]
-        jm = [peaked_arrhenius(T, FT(49884), FT(646), FT(200000)) for T in Ts]
+        vc = [peaked_arrhenius(T, PeakedArrheniusParameters(FT; activation_energy = 71513, entropy = 649, deactivation_energy = 200000)) for T in Ts]
+        jm = [peaked_arrhenius(T, PeakedArrheniusParameters(FT; activation_energy = 49884, entropy = 646, deactivation_energy = 200000)) for T in Ts]
         @test vc[end] < maximum(vc)                       # rolls off by 50 °C
         @test jm[end] < maximum(jm)
         @test Ts[argmax(vc)] ≥ Ts[argmax(jm)]             # Vcmax optimum ≥ Jmax optimum
@@ -93,20 +92,12 @@ end
         rd = [heskel_respiration_scaling(T, FT(0.1012), FT(-0.0005)) for T in FT(273):FT(1):FT(318)]
         @test all(diff(rd) .> 0)
 
-        photo_peak  = FarquharPhotosynthesis(FT)                                 # PeakedArrhenius default
-        photo_plain = FarquharPhotosynthesis(FT; capacity_response = PlainArrhenius())
+        photo_peak = FarquharPhotosynthesis(FT)
 
-        # The point of the change: peaked Aₙ(Tˡᵉᵃᶠ) reaches an interior maximum and
-        # rolls off, and turns over at a lower temperature than the plain form.
+        # Aₙ(Tˡᵉᵃᶠ) reaches an interior maximum and rolls off at high leaf temperature.
         Tl = FT(273):FT(1):FT(318)
-        An_peak  = [net_assimilation(photo_peak,  FT(28), FT(8e-4), T, FT(101325), FT(1)) for T in Tl]
-        An_plain = [net_assimilation(photo_plain, FT(28), FT(8e-4), T, FT(101325), FT(1)) for T in Tl]
+        An_peak = [net_assimilation(photo_peak, FT(28), FT(8e-4), T, FT(101325), FT(1)) for T in Tl]
         @test An_peak[end] < maximum(An_peak)
-        @test argmax(An_peak) < argmax(An_plain)
-
-        # 25 °C regression anchor: peaked and plain agree at exactly 25 °C.
-        @test net_assimilation(photo_peak,  FT(28), FT(8e-4), T₂₅, FT(101325), FT(1)) ≈
-              net_assimilation(photo_plain, FT(28), FT(8e-4), T₂₅, FT(101325), FT(1))
 
         # Type stability.
         @test eltype(net_assimilation(photo_peak, FT(28), FT(8e-4), FT(298), FT(101325), FT(1))) == FT
@@ -168,9 +159,8 @@ end
     for FT in (Float32, Float64)
         LAI = FT(2)
 
-        # Prescribed reproduces its value, ignoring the radiation state.
-        pre = PrescribedAbsorbedPAR(FT(4e-4))
-        @test absorbed_par_value(pre, nothing, LAI, nothing) == FT(4e-4)
+        # A prescribed value ignores the radiation state.
+        @test absorbed_par_value(FT(4e-4), nothing, LAI, nothing) == FT(4e-4)
 
         inter = InteractiveAbsorbedPAR(FT)
         rad(SW) = (; ℐꜜˢʷ = FT(SW))

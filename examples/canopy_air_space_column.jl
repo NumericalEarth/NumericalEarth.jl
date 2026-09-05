@@ -1,36 +1,9 @@
 # # A canopy-air-space column: two-source vegetation, transpiration, and a rain pulse
 #
-# This idealized 0D example exercises every piece of the [`CanopyAirSpace`](@ref)
-# (CAS) land-surface component under an analytic diurnal forcing with a **rain pulse**
-# dropped after the first day, so we can watch the surface energy and water budgets
-# *before*, *during*, and *after* rain. A vegetated CAS column carries *four*
-# temperatures — the atmosphere never talks to a leaf or the soil directly, only to a
-# massless **canopy-air node** `(Tᵃᶜ, qᵃᶜ)` that both surfaces feed and that drains to
-# the atmosphere by Monin–Obukhov turbulence:
-#
-#     Tˡᵉᵃᶠ   leaf         (diagnostic, massless: Rₙˡᵉᵃᶠ = Hˡᵉᵃᶠ + LEˡᵉᵃᶠ)
-#     Tᵍ  soil skin    (diagnostic: Rₙᵍ = Hᵍ + LEᵍ + Λᵍ(Tᵍ − Tˡᵃ))
-#     Tᵃᶜ  canopy air    (diagnostic node; what the atmosphere sees)
-#     Tˡᵃ  bulk slab     (prognostic; driven by the skin→bulk conduction Λᵍ)
-#
-# The canopy shades the soil (Beer–Lambert shortwave split), the leaf transpires
-# (photosynthesis-coupled stomata), the soil evaporates through a dry surface layer
-# ([`DryLayerHumidity`](@ref)), and the two surfaces exchange longwave through a
-# two-face ledger. The land is a variably-saturated soil column carrying a **canopy
-# interception store** ([`InterceptingHydrology`](@ref) + [`CanopyInterception`](@ref)):
-# rain is caught on the foliage, evaporated at the potential rate (*wet-canopy
-# evaporation*) or dripped through as throughfall, then lifts the surface saturation `𝒮`
-# that gates transpiration (moisture stress `β(𝒮)`) and soil evaporation (`δᵛ(𝒮)`).
-#
-# We turn **two knobs**:
-#
-# 1. **Leaf-area index** — a bare surface (`LAI = 0`, the smooth bare-ground limit),
-#    a moderate canopy (`LAI = 2`), and a dense one (`LAI = 4`).
-# 2. **Stomatal conductance** — the empirical multiplicative [`JarvisConductance`](@ref)
-#    (1976, the default) versus the photosynthesis-coupled [`MedlynConductance`](@ref) (2011).
-#
-# A final section adds **subgrid tiling** ([`TiledLandInterface`](@ref)), sweeping the
-# bare-soil fraction of a vegetation/bare mosaic that shares the same soil and store.
+# This idealized 0D example exercises the [`CanopyAirSpace`](@ref) land-surface
+# component under an analytic diurnal forcing with a rain pulse dropped on day 2.
+# It sweeps leaf-area index and stomatal conductance, then adds subgrid tiling
+# ([`TiledLandInterface`](@ref)).
 
 # ## Load packages
 using NumericalEarth
@@ -90,11 +63,8 @@ end
 
 # ## Canopy, soil, and slab constants
 #
-# The Beer–Lambert / two-face-longwave optics are shared by the model and by the
-# post-run radiation partition below, so we name them once. `CanopyAirSpace` reads the
-# *downwelling* shortwave and longwave directly (its radiation is internalized), so
-# these leaf/ground albedos and emissivities — not the prescribed-radiation surface
-# properties — set the canopy's radiative budget.
+# Beer–Lambert and two-face-longwave optics constants, shared by the model below and
+# the post-run radiation partition.
 
 leaf_albedo           = 0.15
 ground_albedo         = 0.15
@@ -104,12 +74,8 @@ extinction            = 0.5   # Beer–Lambert K
 clumping              = 1.0   # foliage clumping Ω
 stefan_boltzmann      = 5.670374419e-8
 
-# The critical saturation `𝒮ᶜ` sets where the *bare-soil* branch becomes water-limited:
-# below it the soil's dry layer opens and throttles ground evaporation. The canopy's
-# moisture stress is keyed to different water — a `PlantAvailableWaterStress` interpolates
-# `β` between the permanent wilting point and field capacity, both evaluated on the soil
-# hydrology's own van Genuchten retention curve, so stomata respond to plant-available
-# water rather than to the fast-drying skin.
+# The critical saturation `𝒮ᶜ` sets where the bare-soil branch becomes water-limited,
+# opening the soil's dry layer and throttling ground evaporation below it.
 
 critical_saturation = 0.5
 
@@ -126,10 +92,9 @@ soil_branch() = DryLayerHumidity(;
                                                   tortuosity              = ConstantTortuosity()),
     thermal_exchange_depth = 0.05, porosity = soil_porosity)
 
-# The soil is a `VariablySaturatedHydrology` column — van Genuchten retention `Π(𝒮)` and
-# Mualem conductivity `K(𝒮)`, so rain routes through a genuine liquid budget — wrapped by an
-# `InterceptingHydrology` **canopy interception store** and stepped with the conservative
-# `WaterCoupledEnergy`. Every column below shares this land. We start dry (below `𝒮ᶜ`).
+# The soil is a `VariablySaturatedHydrology` column wrapped by an `InterceptingHydrology`
+# canopy interception store, stepped with the conservative `WaterCoupledEnergy`. Every
+# column below shares this land, starting dry (below `𝒮ᶜ`).
 
 vegetated_leaf_area_index   = 4.0
 soil_slab_depth             = 0.1
@@ -138,7 +103,7 @@ soil_residual_fraction      = 0.05
 liquid_density              = 1000.0
 soil_retention_α            = 1.0     # van Genuchten inverse air-entry (m⁻¹)
 soil_retention_n            = 2.0     # van Genuchten pore-size shape
-soil_retention              = VanGenuchtenRetention(α = soil_retention_α, n = soil_retention_n)
+soil_retention              = VanGenuchtenRetention(inverse_air_entry_head = soil_retention_α, pore_size_uniformity = soil_retention_n)
 soil_conductivity_saturated = 1e-6    # K_sat (m s⁻¹)
 interception_capacity       = 0.1     # c — canopy water capacity per unit LAI (kg m⁻², BATS/CLM)
 
@@ -151,7 +116,7 @@ variably_saturated_soil() = VariablySaturatedHydrology(;
     slab_depth = soil_slab_depth, porosity = soil_porosity,
     residual_liquid_fraction = soil_residual_fraction, storage_height = 1000,
     retention_curve        = soil_retention,
-    hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = soil_conductivity_saturated, n = soil_retention_n),
+    hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = soil_conductivity_saturated, pore_size_uniformity = soil_retention_n),
     deep_liquid_flux       = NoDeepLiquidFlux(),
     runoff                 = InfiltrationCapacityRunoff(infiltration_capacity = 5e-4))
 
@@ -167,12 +132,10 @@ intercepting_hydrology(leaf_area_index) = InterceptingHydrology(;
 
 # ## Model builder
 #
-# Both interface slots take the *same* `CanopyAirSpace` object (a combined temperature +
-# humidity formulation), carrying a `CanopyInterception` so the wet leaf evaporates
-# intercepted rain — the store and its capacity are owned by the land's
-# `InterceptingHydrology`, and the interface reads them. Every column shares one soil
-# branch, moisture stress, PAR, skin flux, and optics, so we build the canopy once and
-# vary only the leaf-area index and the stomatal `conductance`.
+# Both interface slots take the same `CanopyAirSpace` object, carrying a
+# `CanopyInterception` so the wet leaf evaporates intercepted rain. Every column shares
+# one soil branch, moisture stress, PAR, skin flux, and optics; only the leaf-area
+# index and stomatal `conductance` vary.
 
 canopy_with_interception(; leaf_area_index, conductance = JarvisConductance()) = CanopyAirSpace(;
     soil   = soil_branch(),
@@ -290,9 +253,8 @@ applied_rain(model) = scalar(model.interfaces.exchanger.atmosphere.state.Jʳⁿ)
 Nsteps = 6 * 144                     # 6 days
 times  = range(0, Nsteps * Δt, step = 1hour)
 
-# The bare/moderate/dense sweep runs the default Jarvis conductance; the dense case is
-# repeated with the photosynthesis-coupled Medlyn so the two models can be compared at
-# fixed LAI.
+# The bare/moderate/dense sweep uses the default Jarvis conductance; the dense case is
+# repeated with Medlyn conductance at the same LAI.
 
 medlyn = MedlynConductance()
 jarvis = JarvisConductance()
@@ -304,10 +266,9 @@ dense_m  = canopy_air_space_column(leaf_area_index = 4.0, conductance = medlyn, 
 
 # ## Radiation partition (reconstructed from the stored surface temperatures)
 #
-# The CAS keeps only the surface *temperatures* and the turbulent *totals*; the
-# radiative shares are diagnostic functions of those, so we rebuild them here with the
-# exact solve formulas — the Beer–Lambert shortwave split and the two-face longwave
-# ledger (ClimaLand D13–D17) — using the leaf `Tˡᵉᵃᶠ` and soil-skin `Tᵍ` each column stored.
+# The CAS keeps only the surface temperatures and turbulent totals, so the radiative
+# shares are reconstructed here from the stored leaf `Tˡᵉᵃᶠ` and soil-skin `Tᵍ`
+# temperatures using the Beer–Lambert shortwave split and two-face longwave ledger.
 
 function radiation_partition(case)
     LAI = case.leaf_area_index
@@ -477,13 +438,9 @@ nothing #hide
 
 # ## Figure 2 — turning the two knobs
 #
-# The left column sweeps leaf-area index (bare → dense, all Jarvis); the right column
-# fixes `LAI = 4` and swaps Jarvis for Medlyn stomata. The rows follow the two-source
-# partition: leaf temperature, transpiration (the leaf latent share), soil evaporation
-# (the ground latent share), and the surface saturation the drydown reads out. Raising
-# LAI shifts the latent flux from bare-soil evaporation toward transpiration — the total
-# stays energy-limited while its *sources* trade places — and Medlyn transpires
-# differently from Jarvis at the same LAI.
+# The left column sweeps leaf-area index (bare → dense, Jarvis); the right column
+# fixes `LAI = 4` and compares Jarvis against Medlyn stomata. Rows show leaf
+# temperature, transpiration, soil evaporation, and surface saturation.
 
 lai_cases  = (bare, moderate, dense)
 lai_colors = (:saddlebrown, :seagreen, :darkgreen)
@@ -529,21 +486,16 @@ nothing #hide
 
 # ## Sweeping the bare-soil fraction: a vegetation/bare mosaic
 #
-# The columns above are a single vegetated canopy. **Subgrid tiling**
-# ([`TiledLandInterface`](@ref)) makes the cell a mosaic of a vegetated fraction `f_veg`
-# and a bare-soil fraction `1 − f_veg`: each tile runs the same surface solve against the
-# shared atmosphere and soil column, area-weighted into one boundary condition
-# `𝒬 = f_veg·𝒬_veg + (1 − f_veg)·𝒬_bare`. The vegetated tile keeps the interception store,
-# so wet-canopy evaporation and the store scale with the vegetated area, and a fully bare
-# cell (`f_veg = 0`) intercepts nothing. We reuse the *same* soil, energy, and interception
-# as above; only the tiling and the shared store's cell-average LAI `f_veg·LAI_veg` change.
+# Subgrid tiling ([`TiledLandInterface`](@ref)) makes the cell a mosaic of a vegetated
+# fraction `f_veg` and bare-soil fraction `1 − f_veg`, area-weighted into one boundary
+# condition `𝒬 = f_veg·𝒬_veg + (1 − f_veg)·𝒬_bare`. It reuses the same soil, energy, and
+# interception store as above, with only the tiling and the shared store's cell-average
+# LAI `f_veg·LAI_veg` changing.
 
-# The vegetated tile is the same `canopy_with_interception` as the columns above (full
-# `LAI_veg`); its canopy-free (LAI = 0) bare counterpart is derived automatically by
-# `TiledLandInterface`. The interception store is a cell-average quantity — LAI `f_veg·LAI_veg`
-# and capacity `c·f_veg·LAI_veg`, set on the land's `InterceptingHydrology` — and the tile's
-# `fʷᵉᵗ` normalizes by *that* store's own capacity, so a full store gives `fʷᵉᵗ → 1` at any
-# `f_veg` (and a fully bare cell, `f_veg = 0`, intercepts nothing).
+# The vegetated tile is the same `canopy_with_interception` as above (full `LAI_veg`);
+# its bare (`LAI = 0`) counterpart is derived automatically by `TiledLandInterface`. The
+# interception store is a cell-average quantity (LAI `f_veg·LAI_veg`, capacity
+# `c·f_veg·LAI_veg`) set on the land's `InterceptingHydrology`.
 
 function tiled_intercepting_column(; fraction, label)
     grid       = RectilinearGrid(CPU(); size = (), topology = (Flat, Flat, Flat))
@@ -641,9 +593,8 @@ nothing #hide
 # ## Figure 4 — anatomy of the interception store (full canopy, f_veg = 1)
 #
 # The store buffers the rain and opens a third latent pathway. During the pulse the canopy
-# catches part of the rain (throughfall < incident) and fills `Wᶜ`; the wet leaf then
-# evaporates at the potential rate, so wet-canopy evaporation spikes while the store drains —
-# a latent flux that persists past the rain and competes with transpiration.
+# catches part of the rain and fills `Wᶜ`; the wet leaf then evaporates at the potential
+# rate, so wet-canopy evaporation spikes while the store drains.
 
 ref   = full_canopy
 Wᶜᵐᵃˣ = interception_capacity * vegetated_leaf_area_index

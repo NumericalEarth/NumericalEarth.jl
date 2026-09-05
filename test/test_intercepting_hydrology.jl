@@ -1,30 +1,20 @@
 include("runtests_setup.jl")
 
 using Oceananigans
-using Oceananigans: set!, interior
+using Oceananigans: set!
 using Oceananigans.TimeSteppers: update_state!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyAirSpace, CanopyConductanceHumidity, CanopyInterception, DryLayerHumidity,
-    StorageBasedDryLayerDepth, DryLayerVaporPistonVelocity, ConstantTortuosity,
+    CanopyAirSpace, CanopyConductanceHumidity, CanopyInterception,
     CriticalSaturation, InteractiveAbsorbedPAR, SoilConductiveFlux
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.Lands: SlabLand, SlabEnergy, VariablySaturatedHydrology, InterceptingHydrology,
     VanGenuchtenRetention, VanGenuchtenConductivity
 using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
 
-scalar(field) = Array(interior(field))[1, 1, 1]
-
-soil_humidity_branch(FT) = DryLayerHumidity(FT;
-    dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
-                                                dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
-    vapor_exchange  = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
-                                                  molecular_diffusivity = 2.4e-5, tortuosity = ConstantTortuosity()),
-    thermal_exchange_depth = 0.05, porosity = 0.4)
-
 soil_hydrology(FT) = VariablySaturatedHydrology(FT;
     slab_depth = 1.0, porosity = 0.4, storage_height = 0.1,
-    retention_curve = VanGenuchtenRetention(FT; α = 2.0, n = 1.5),
-    hydraulic_conductivity = VanGenuchtenConductivity(FT; K_saturated = 1e-6, n = 1.5))
+    retention_curve = VanGenuchtenRetention(FT; inverse_air_entry_head = 2.0, pore_size_uniformity = 1.5),
+    hydraulic_conductivity = VanGenuchtenConductivity(FT; matching_point_conductivity = 1e-6, pore_size_uniformity = 1.5))
 
 # Coupled single-column model. `interception = true` wraps the soil hydrology in an
 # `InterceptingHydrology` and hands the CAS a matching `CanopyInterception`.
@@ -49,7 +39,7 @@ function interception_model(arch, FT; leaf_area_index = 3.0, capacity = 0.1, rai
 
     cas_interception = interception ? CanopyInterception() : nothing
     cas = CanopyAirSpace(FT;
-        soil = soil_humidity_branch(FT),
+        soil = bare_soil_humidity(FT),
         canopy = CanopyConductanceHumidity(FT; leaf_area_index,
                                            moisture_stress = CriticalSaturation(0.5),
                                            absorbed_par = InteractiveAbsorbedPAR(FT)),
@@ -78,8 +68,6 @@ end
         h = InterceptingHydrology(FT; soil = soil_hydrology(FT), leaf_area_index = 3.0)
         land = SlabLand(grid; energy = SlabEnergy(FT), hydrology = h)
 
-        # The store is a declared extra prognostic; the coupler-written wet-canopy
-        # evaporation and (soil) throughfall route through the flux/diagnostic tuples.
         @test :canopy_water_storage in keys(land.prognostic)
         @test :canopy_evaporation in keys(land.fluxes)
         @test :liquid_precipitation_flux in keys(land.fluxes)     # from the wrapped soil
@@ -108,9 +96,10 @@ end
         for name in (:sensible_heat, :latent_heat, :water_vapor)
             @test scalar(getproperty(Fwith, name)) == scalar(getproperty(Fwithout, name))
         end
-        # No wet canopy ⇒ no wet-canopy evaporation, and the soil vapor sink is the full Jᵛ.
+        # No wet canopy ⇒ no wet-canopy evaporation, and the land loses the full Jᵛ (the
+        # source partition closes to the fixed-point tolerance).
         @test scalar(Twith.canopy_evaporation) == 0
-        @test scalar(with.land.fluxes.vapor_flux) == scalar(Fwith.water_vapor)
+        @test scalar(with.land.fluxes.vapor_flux) ≈ scalar(Fwith.water_vapor) rtol = 1e-6
     end
 end
 
@@ -134,10 +123,11 @@ end
         @test scalar(model.interfaces.atmosphere_land_interface.temperature.canopy_evaporation) > 0
         @test scalar(land.fluxes.canopy_evaporation) ==
               scalar(model.interfaces.atmosphere_land_interface.temperature.canopy_evaporation)
-        # Soil vapor sink excludes the wet-canopy share.
+        # The land loses the atmospheric vapor flux less the wet-canopy share (to the
+        # fixed-point tolerance of the source partition).
         Jᵛ = scalar(model.interfaces.atmosphere_land_interface.fluxes.water_vapor)
         Ew = scalar(land.fluxes.canopy_evaporation)
-        @test scalar(land.fluxes.vapor_flux) ≈ Jᵛ - Ew
+        @test scalar(land.fluxes.vapor_flux) ≈ Jᵛ - Ew rtol = 1e-5
     end
 end
 
@@ -160,12 +150,10 @@ end
 
         dWcdt    = scalar(land.diagnostics.canopy_water_storage_tendency)
         throughf = scalar(land.diagnostics.throughfall)
-        Ewet     = scalar(land.diagnostics.wet_canopy_evaporation)   # *realized* store loss
-        # Exact canopy water budget: rain = dWᶜ/dt + Eʷᵉᵗ + throughfall (any regime, any Δt).
-        @test rain ≈ dWcdt + Ewet + throughf atol=1e-14
-        # No over-drain here ⇒ realized loss equals the interface-demanded Eʷᵉᵗ (read pre-step,
-        # since update_net_fluxes! refreshes the accumulator with the new Wᶜ afterward).
-        @test Ewet ≈ Ewet_demanded atol=1e-14
+        # Exact canopy water budget: rain = dWᶜ/dt + Eʷᵉᵗ + throughfall.
+        @test rain ≈ dWcdt + Ewet_demanded + throughf atol=1e-14
+        # The soil reads the throughfall; the rain accumulator is left as the coupler wrote it.
+        @test scalar(land.fluxes.liquid_precipitation_flux) == rain
         # Interception caught a positive fraction ⇒ less than the raw rain reaches the soil.
         @test 0 ≤ throughf < rain
     end
@@ -175,20 +163,20 @@ end
     for arch in test_architectures
         FT = Float64
         LAI = 3.0; c = 0.1
-        # No rain, large step: the lagged interface Eʷᵉᵗ can demand more than the store holds.
+        # No rain, large step: the interface caps Eʷᵉᵗ at what the store holds, Wᶜ/Δt (to the
+        # tolerance of the canopy solve), so the atmosphere never receives water the canopy
+        # did not lose.
         model = interception_model(arch, FT; leaf_area_index = LAI, capacity = c, rain = 0.0)
         land = model.land
         set!(land; canopy_water_storage = 0.8 * c * LAI)
-
+        Δt = 3600.0
         for _ in 1:200
-            time_step!(model, 3600.0)
-            @test scalar(land.prognostic.canopy_water_storage) ≥ 0   # never negative
+            Wᶜ⁻ = scalar(land.prognostic.canopy_water_storage)
+            time_step!(model, Δt)
+            @test scalar(land.fluxes.canopy_evaporation) ≤ Wᶜ⁻ / Δt * (1 + 1e-5)
+            @test scalar(land.prognostic.canopy_water_storage) ≥ 0
         end
-        Wᶜ = scalar(land.prognostic.canopy_water_storage)
-        @test Wᶜ < 1e-3                                              # drains toward empty
-        # The store can supply no more than it holds: realized ≤ interface-demanded.
-        @test scalar(land.diagnostics.wet_canopy_evaporation) ≤
-              scalar(land.fluxes.canopy_evaporation) + 1e-14
+        @test scalar(land.prognostic.canopy_water_storage) < 1e-3   # drains toward empty
     end
 end
 
@@ -222,27 +210,6 @@ end
             @test scalar(landT.prognostic.canopy_water_storage) ≈ 0.2 rtol=1e-6
         end
     end
-end
-
-@testset "Smoothed drainage is C¹ across the drip onset" begin
-    Δt = 600.0; Wᶜᵐᵃˣ = 0.3; fⁱⁿᵗ = 1 - exp(-0.5 * 3 * 1)
-    store = NumericalEarth.Lands.canopy_store_update
-    Wᶜ = 0.28                                   # near capacity so a rain sweep crosses the cap
-    rain★ = (Wᶜᵐᵃˣ - Wᶜ) / (Δt * fⁱⁿᵗ)     # rain that just fills the canopy
-
-    # One-sided finite-difference derivatives of Wᶜⁿ⁺¹ w.r.t. rain, just below/above onset.
-    δ = 1e-7
-    dWc(rain, w) = (store(Wᶜ, rain + δ, 6e-6, Wᶜᵐᵃˣ, fⁱⁿᵗ, w, Δt)[1] -
-                    store(Wᶜ, rain - δ, 6e-6, Wᶜᵐᵃˣ, fⁱⁿᵗ, w, Δt)[1]) / 2δ
-
-    jump_hard   = abs(dWc(rain★ + 1e-5, 0.0)  - dWc(rain★ - 1e-5, 0.0))
-    jump_smooth = abs(dWc(rain★ + 1e-5, 0.03) - dWc(rain★ - 1e-5, 0.03))
-
-    @test jump_hard > 100                        # sharp cap: derivative discontinuous at onset
-    @test jump_smooth < 0.25 * jump_hard         # width 0.03 tames it → continuous adjoint
-    # Sanity: both are conservative and bounded.
-    Wn, _, _, _ = store(Wᶜ, 5rain★, 6e-6, Wᶜᵐᵃˣ, fⁱⁿᵗ, 0.03, Δt)
-    @test 0 ≤ Wn ≤ Wᶜᵐᵃˣ
 end
 
 @testset "Checkpoint round-trip of the canopy water store" begin

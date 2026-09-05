@@ -13,7 +13,9 @@ using NumericalEarth.JRA55
 using NumericalEarth.WOA
 
 using Oceananigans.Architectures: architecture, on_architecture
-using Oceananigans.Fields: interpolate!
+using Oceananigans.Fields: interpolate!, interior
+using Oceananigans: set!
+using Oceananigans.TimeSteppers: update_state!
 
 using CFTime
 using Dates
@@ -55,6 +57,51 @@ test_fields = Dict(
 #####
 ##### Test utilities
 #####
+
+scalar(field) = Array(interior(field))[1, 1, 1]
+
+bare_soil_humidity(FT) = DryLayerHumidity(FT;
+    dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
+                                                dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
+    vapor_exchange  = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
+                                                  molecular_diffusivity = 2.4e-5, tortuosity = ConstantTortuosity()),
+    thermal_exchange_depth = 0.05, porosity = 0.4)
+
+# Coupled single-column land model: a 1-cell grid, a filled `PrescribedAtmosphere`, a `SlabLand`
+# (`BucketHydrology` + `SlabEnergy`), and (unless `radiation = nothing`) a filled
+# `PrescribedRadiation`. Interface keywords (`atmosphere_land_interface_temperature`,
+# `atmosphere_land_interface_specific_humidity`, `atmosphere_land_interface`, ...) forward to
+# `AtmosphereLandModel`.
+function coupled_land_model(arch, FT = Float64;
+                            grid = LatitudeLongitudeGrid(arch, FT; size = 1, latitude = 10, longitude = 10,
+                                                         z = (-1, 0), topology = (Flat, Flat, Bounded)),
+                            Tair = 300.0, qair = 0.008, wind = 3.0, pressure = 101325.0,
+                            Tland = 298.0, water = 45.0,
+                            shortwave = 600.0, longwave = 350.0, α = 0.2, ϵ = 0.95,
+                            radiation = PrescribedRadiation(grid; ocean_surface = nothing, sea_ice_surface = nothing,
+                                                            land_surface = SurfaceRadiationProperties(α, ϵ)),
+                            kw...)
+    atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10, boundary_layer_height = 512)
+    fill!(parent(atmosphere.temperature), Tair)
+    fill!(parent(atmosphere.specific_humidity), qair)
+    fill!(parent(atmosphere.velocities.u), wind)
+    fill!(parent(atmosphere.pressure), pressure)
+
+    land = SlabLand(grid; hydrology = BucketHydrology(FT; maximum_water_storage = 150.0), energy = SlabEnergy(FT))
+    set!(land; T = Tland)
+    fill!(parent(land.water_storage), water)
+
+    if !isnothing(radiation)
+        fill!(parent(radiation.downwelling_shortwave), shortwave)
+        fill!(parent(radiation.downwelling_longwave), longwave)
+        update_state!(radiation)
+    end
+
+    model = AtmosphereLandModel(atmosphere, land; radiation, kw...)
+    update_state!(model.land)
+    update_state!(model)
+    return model
+end
 
 function test_setting_from_metadata(arch, dataset, start_date, inpainting;
                                     loc = (Center, Center, Center),

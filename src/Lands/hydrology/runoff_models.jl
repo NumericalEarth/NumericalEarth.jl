@@ -57,9 +57,8 @@ J^{ls} = \\max(-P^l, -J^l_{cap}), \\qquad R^{\\mathrm{sfc}} = J^{ls} + P^l \\ge 
 By default the excess `Rˢᶠᶜ` leaves as surface runoff within the step. With a
 `drainage_timescale` `τ` (s) it instead ponds in the prognostic surface water store
 `Sˢᶠᶜ` (kg m⁻²), which is offered back to infiltration together with the rain each
-step and drains to surface runoff as a linear reservoir, `dSˢᶠᶜ/dt = −Sˢᶠᶜ/τ`,
-integrated exactly over the step. The store exchanges mass only: water infiltrating
-from it enters the slab at the precipitation temperature, like rain.
+step and drains to surface runoff as a linear reservoir, `dSˢᶠᶜ/dt = −Sˢᶠᶜ/τ`
+(the water ponded during the step decays with it). The store exchanges mass only.
 
 No subsurface runoff.
 

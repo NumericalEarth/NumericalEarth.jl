@@ -136,8 +136,8 @@ end
                 slab_depth = 1.0,
                 porosity = 0.4,
                 storage_height = 1000,
-                retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
-                hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
+                retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
+                hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
                 runoff = InfiltrationCapacityRunoff(; infiltration_capacity, drainage_timescale))
 
         value(field) = only(Array(interior(field)))

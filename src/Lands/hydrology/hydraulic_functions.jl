@@ -60,15 +60,6 @@ $(TYPEDSIGNATURES)
 @inline logexpm1(x) = x + log(-expm1(-x))
 
 @inline function pressure_head(i, j, grid, r::VanGenuchtenRetention, 𝒮)
-
-# Per-cell endpoint evaluation for the interface's plant-stress formulations.
-@inline function EarthSystemModels.effective_saturation(i, j, grid, r::VanGenuchtenRetention, ψ)
-    FT = typeof(ψ)
-    αᵃᵉ = convert(FT, property_value(r.inverse_air_entry_head, i, j))
-    𝓃   = convert(FT, property_value(r.pore_size_uniformity, i, j))
-    return van_genuchten_saturation(αᵃᵉ * ψ, 𝓃)
-end
-
     FT = typeof(𝒮)
     αᵃᵉ  = convert(FT, property_value(r.inverse_air_entry_head, i, j))
     𝓃  = convert(FT, property_value(r.pore_size_uniformity, i, j))
@@ -79,6 +70,14 @@ end
     logΠᵐᵃˣ = log(floatmax(FT)) / 2
     logΠ    = logexpm1(-log(𝒮c) / 𝓂) / 𝓃 - log(αᵃᵉ)
     return ifelse(𝒮c >= 1, zero(FT), -exp(min(logΠ, logΠᵐᵃˣ)))
+end
+
+# Per-cell endpoint evaluation for the interface's plant-stress formulations.
+@inline function EarthSystemModels.effective_saturation(i, j, grid, r::VanGenuchtenRetention, ψ)
+    FT = typeof(ψ)
+    αᵃᵉ = convert(FT, property_value(r.inverse_air_entry_head, i, j))
+    𝓃   = convert(FT, property_value(r.pore_size_uniformity, i, j))
+    return van_genuchten_saturation(αᵃᵉ * ψ, 𝓃)
 end
 
 Base.summary(r::VanGenuchtenRetention) =

@@ -1,30 +1,7 @@
 #####
-##### `InterceptingHydrology` — a canopy interception store wrapping a soil hydrology.
-#####
-##### A wet canopy is a small leaky bucket between the rain and the soil. This closure
-##### adds one prognostic, the canopy water store `Wᶜ` (kg m⁻² ≡ mm), and *wraps* an
-##### underlying soil hydrology (a [`VariablySaturatedHydrology`](@ref)) — the same
-##### wrap-and-delegate pattern the interface side uses in `CompositeSurfaceHumidity` /
-##### `CanopyAirSpace`. Each step, before the soil hydrology runs, the interception step:
-#####
-#####   fⁱⁿᵗ  = 1 − exp(−K·LAI·Ω)                        # canopy-caught fraction (Beer–Lambert)
-#####   Pⁱⁿᵗ  = fⁱⁿᵗ · P                                # intercepted rain
-#####   Wᶜ    ← clamp(Wᶜ + Δt(Pⁱⁿᵗ − Eʷᵉᵗ), 0, Wᶜᵐᵃˣ)   # store update, capacity Wᶜᵐᵃˣ = c·LAI
-#####   D      = max(Wᶜ + Δt(Pⁱⁿᵗ − Eʷᵉᵗ) − Wᶜᵐᵃˣ, 0)/Δt  # canopy drip (over-capacity shed)
-#####   Pˡ    ← (P − Pⁱⁿᵗ) + D                           # throughfall → soil
-#####
-##### `Eʷᵉᵗ` (wet-canopy evaporation, the potential-rate leaf latent share) is computed
-##### on the interface side by a `CanopyAirSpace` carrying a `CanopyInterception` and
-##### delivered here through the `canopy_evaporation` flux accumulator; the soil vapor
-##### sink `land.fluxes.vapor_flux` already excludes it (`Jᵛ − Eʷᵉᵗ`). The interception
-##### step overwrites `liquid_precipitation_flux` with the throughfall the soil then
-##### reads, so ordering within the delegated `time_step!` is interception → soil.
-#####
-##### Physics: Rutter (1971) running canopy balance, Deardorff (1978) wet fraction,
-##### BATS/CLM `Wᶜᵐᵃˣ = c·LAI` capacity (`c ≈ 0.1 kg m⁻²`). The Beer–Lambert caught
-##### fraction is a canopy-cover closure sitting between published rain forms: CLM5
-##### uses `tanh(LAI+SAI)` (more interception at moderate LAI), PALADYN scales the
-##### exponential by 0.2 (less).
+##### `InterceptingHydrology` — a canopy water store `Wᶜ` between the rain and a soil
+##### hydrology: intercepted rain fills it, the interface's wet-canopy evaporation drains
+##### it, over-capacity drip and the uncaught rain reach the soil as throughfall.
 #####
 
 """
@@ -34,34 +11,32 @@
                           capacity_per_leaf_area = 0.1,
                           extinction = 0.5,
                           clumping = 1,
-                          drainage_smoothing_width = 0)
+                          cover_fraction = 1)
 
-Canopy interception store `Wᶜ` wrapping a soil hydrology `soil` (typically a
-[`VariablySaturatedHydrology`](@ref)). Splits incoming rain into interception and
-throughfall, drains the wet canopy at the potential rate `Eʷᵉᵗ` supplied by the
-interface, sheds drip over capacity, and routes throughfall to `soil`.
+Canopy water store `Wᶜ` (kg m⁻²) wrapping a [`VariablySaturatedHydrology`](@ref)
+`soil`. Rain is caught by the Beer–Lambert canopy fraction `1 − e^{−KΩ·LAI}` up to the
+capacity `c·LAI`; the wet canopy evaporates at the rate `Eʷᵉᵗ` the interface computes
+(a [`CanopyAirSpace`](@ref) with `CanopyInterception`), and the uncaught rain plus the
+over-capacity drip reach the soil as throughfall.
 
-`leaf_area_index` should be the *same* LAI object passed to the interface
-[`CanopyConductanceHumidity`](@ref). A `Number` or static `Field` LAI runs on CPU
-and GPU; a `FieldTimeSeries` (time-varying LAI) currently runs on **CPU only** (the
-series is indexed in-kernel, which does not adapt to GPU — a follow-up).
+`leaf_area_index` should be the same LAI passed to the interface canopy; a
+`FieldTimeSeries` LAI runs on CPU only. The store is kept per unit vegetated area; on a
+tiled cell `cover_fraction` is the vegetated fraction of a [`TiledLandInterface`](@ref),
+which scales the interception and drip the soil sees.
 
-* `capacity_per_leaf_area` — `c`, canopy water capacity per unit LAI (kg m⁻² ≈ 0.1 mm/LAI).
-* `extinction`, `clumping` — Beer–Lambert `K`, `Ω` setting the caught fraction `fⁱⁿᵗ`.
-* `drainage_smoothing_width` — `w` (kg m⁻²), softens the over-capacity drip so the store
-  update is C¹ for the adjoint (Enzyme/Reactant). `0` (default) is the sharp cap, exact.
+* `capacity_per_leaf_area` — `c` (kg m⁻² per unit LAI).
+* `extinction`, `clumping` — Beer–Lambert `K`, `Ω` of the caught fraction.
+* `cover_fraction` — vegetated fraction of the cell (a `Number` or `Field`).
 """
-struct InterceptingHydrology{S, L, FT} <: AbstractHydrology
+struct InterceptingHydrology{S, L, C, FT} <: AbstractHydrology
     soil                     :: S
     leaf_area_index          :: L
+    cover_fraction           :: C
     capacity_per_leaf_area   :: FT
     extinction               :: FT
     clumping                 :: FT
-    drainage_smoothing_width :: FT
 end
 
-# Keep a scalar LAI as `FT`; a `Field` (static map) or `FieldTimeSeries` (time-varying)
-# passes through untouched, mirroring the interface `CanopyConductanceHumidity`.
 @inline canopy_lai_property(x::Number, FT) = convert(FT, x)
 @inline canopy_lai_property(x, FT) = x
 
@@ -71,27 +46,23 @@ function InterceptingHydrology(FT::Type = Oceananigans.defaults.FloatType;
                                capacity_per_leaf_area = 0.1,
                                extinction = 0.5,
                                clumping = 1,
-                               drainage_smoothing_width = 0)
+                               cover_fraction = 1)
     return InterceptingHydrology(soil,
                                  canopy_lai_property(leaf_area_index, FT),
+                                 canopy_lai_property(cover_fraction, FT),
                                  convert(FT, capacity_per_leaf_area),
                                  convert(FT, extinction),
-                                 convert(FT, clumping),
-                                 convert(FT, drainage_smoothing_width))
+                                 convert(FT, clumping))
 end
 
 Adapt.adapt_structure(to, h::InterceptingHydrology) =
     InterceptingHydrology(Adapt.adapt(to, h.soil),
                           Adapt.adapt(to, h.leaf_area_index),
+                          Adapt.adapt(to, h.cover_fraction),
                           h.capacity_per_leaf_area,
                           h.extinction,
-                          h.clumping,
-                          h.drainage_smoothing_width)
+                          h.clumping)
 
-# Declarations — merge the wrapped soil's with the interception's. The store is the
-# extra prognostic; `canopy_evaporation` (Eʷᵉᵗ) is the extra flux the coupler writes;
-# `liquid_precipitation_flux` is guaranteed present (the interception step overwrites it
-# with throughfall). Throughfall and the store tendency are published for diagnostics.
 prognostic_variables(h::InterceptingHydrology) =
     merge_unique(prognostic_variables(h.soil), (:canopy_water_storage,))
 
@@ -100,68 +71,46 @@ flux_variables(h::InterceptingHydrology) =
 
 diagnostic_variables(h::InterceptingHydrology) =
     merge_unique(diagnostic_variables(h.soil),
-                 (:throughfall, :canopy_water_storage_tendency, :wet_canopy_evaporation,
-                  :canopy_water_capacity))
+                 (:throughfall, :canopy_water_storage_tendency, :canopy_water_capacity))
 
-# Delegate the initial-field builders to the wrapped soil so any soil-specific field
-# shapes are preserved; interception's own fields fall through to the defaults.
 initial_flux(h::InterceptingHydrology, name::Symbol, grid) = initial_flux(h.soil, name, grid)
 initial_diagnostic(h::InterceptingHydrology, name::Symbol, grid) = initial_diagnostic(h.soil, name, grid)
 
 #####
-##### Interception step — runs before the delegated soil hydrology step.
+##### Interception step, ahead of the soil step that reads its throughfall.
 #####
 
-# Smooth (C¹) positive part `≈ max(x, 0)`, a numerically stable softplus of width `w`.
-# `w = 0` recovers the sharp `max(x, 0)` exactly (no NaN in the unused soft branch).
-@inline function smooth_positive_part(x, w)
-    hard = max(x, zero(x))
-    positive = w > zero(w)
-    ws   = ifelse(positive, w, one(w))
-    soft = hard + ws * log1p(exp(-abs(x) / ws))
-    return ifelse(positive, soft, hard)
+# Canopy store update over one step, per unit vegetated area: returns the new store, the
+# drip, and the throughfall reaching the soil of a cell with vegetated fraction `f`,
+# with rain = (Wᶜⁿ⁺¹ − Wᶜ)/Δt · f + Eʷᵉᵗ f + throughfall exactly.
+@inline function canopy_store_update(Wᶜ, rain, Eʷᵉᵗ, Wᶜᵐᵃˣ, fⁱⁿᵗ, f, Δt)
+    Pⁱⁿᵗ      = fⁱⁿᵗ * rain
+    Wᶜᵗ       = Wᶜ + Δt * (Pⁱⁿᵗ - Eʷᵉᵗ)
+    drip_mass = max(Wᶜᵗ - Wᶜᵐᵃˣ, zero(Wᶜ))
+    Wᶜⁿ⁺¹     = max(Wᶜᵗ - drip_mass, zero(Wᶜ))
+    drip      = drip_mass / Δt
+    return Wᶜⁿ⁺¹, drip, rain - f * (Pⁱⁿᵗ - drip)
 end
 
-# Pure, allocation-free canopy-store update, split out so the kernel and the
-# differentiability tests share it. Returns the new store, drip, throughfall, and the
-# *realized* wet-canopy evaporation. Conserves canopy water exactly for any `w`:
-# `rain = (Wᶜⁿ⁺¹ − Wᶜ)/Δt + E_wet_realized + throughfall`. The demand cap
-# `E_wet_realized = min(Eʷᵉᵗ, Wᶜ/Δt + Pⁱⁿᵗ)` keeps `Wᶜ ≥ 0` (the store cannot evaporate
-# more water than it holds); the smoothed over-capacity shed bounds it above by `Wᶜᵐᵃˣ`.
-@inline function canopy_store_update(Wᶜ, rain, Eʷᵉᵗ, Wᶜᵐᵃˣ, fⁱⁿᵗ, w, Δt)
-    Pⁱⁿᵗ       = fⁱⁿᵗ * rain
-    Eʷᵉᵗᵣ     = min(Eʷᵉᵗ, Wᶜ / Δt + Pⁱⁿᵗ)
-    Wᶜᵗ       = Wᶜ + Δt * (Pⁱⁿᵗ - Eʷᵉᵗᵣ)
-    drip_mass   = smooth_positive_part(Wᶜᵗ - Wᶜᵐᵃˣ, w)
-    Wᶜⁿ⁺¹       = Wᶜᵗ - drip_mass
-    drip        = drip_mass / Δt
-    throughfall = rain - Pⁱⁿᵗ + drip
-    return Wᶜⁿ⁺¹, drip, throughfall, Eʷᵉᵗᵣ
-end
-
-@kernel function _interception_step!(Wc, Pl, Cev, throughfall, realized_evaporation, dWcdt, h, Δt, grid, time)
+@kernel function _interception_step!(Wc, Pl, Cev, throughfall, dWcdt, h, Δt, grid, time)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        Wcⁿ   = Wc[i, j, 1]
-        rain  = Pl[i, j, 1]       # raw rain, positive down
-        Eʷᵉᵗ = Cev[i, j, 1]      # interface-demanded wet-canopy evaporation, positive up
+        Wcⁿ  = Wc[i, j, 1]
+        rain = Pl[i, j, 1]
+        Eʷᵉᵗ = Cev[i, j, 1]
     end
     FT    = typeof(Wcⁿ)
-    # `Time(time)` so a time-varying (`FieldTimeSeries`) LAI interpolates to the clock;
-    # a `Number`/`Field` LAI ignores the time argument.
     LAI   = convert(FT, stateindex(h.leaf_area_index, i, j, 1, grid, Time(time), (Center, Center, Center)))
+    f     = convert(FT, stateindex(h.cover_fraction, i, j, 1, grid, Time(time), (Center, Center, Center)))
     Wcᵐᵃˣ = h.capacity_per_leaf_area * LAI
-    fⁱⁿᵗ = 1 - canopy_transmittance(h.extinction, h.clumping, LAI)
+    fⁱⁿᵗ  = 1 - canopy_transmittance(h.extinction, h.clumping, LAI)
 
-    Wcⁿ⁺¹, _, Pˡ, Eʷᵉᵗᵣ = canopy_store_update(Wcⁿ, rain, Eʷᵉᵗ, Wcᵐᵃˣ, fⁱⁿᵗ,
-                                                h.drainage_smoothing_width, Δt)
+    Wcⁿ⁺¹, _, Pˡ = canopy_store_update(Wcⁿ, rain, Eʷᵉᵗ, Wcᵐᵃˣ, fⁱⁿᵗ, f, Δt)
 
     @inbounds begin
-        Wc[i, j, 1]            = Wcⁿ⁺¹
-        Pl[i, j, 1]            = Pˡ
-        throughfall[i, j, 1]   = Pˡ
-        realized_evaporation[i, j, 1] = Eʷᵉᵗᵣ
-        dWcdt[i, j, 1]         = (Wcⁿ⁺¹ - Wcⁿ) / Δt
+        Wc[i, j, 1]          = Wcⁿ⁺¹
+        throughfall[i, j, 1] = Pˡ
+        dWcdt[i, j, 1]       = (Wcⁿ⁺¹ - Wcⁿ) / Δt
     end
 end
 
@@ -172,16 +121,13 @@ function time_step!(h::InterceptingHydrology, land, Δt, time)
             land.fluxes.liquid_precipitation_flux,
             land.fluxes.canopy_evaporation,
             land.diagnostics.throughfall,
-            land.diagnostics.wet_canopy_evaporation,
             land.diagnostics.canopy_water_storage_tendency,
             h, Δt, land.grid, time)
-    time_step!(h.soil, land, Δt, time)
+    time_step!(h.soil, land, Δt, time, land.diagnostics.throughfall)
     return nothing
 end
 
-# Refresh the wrapped soil's diagnostics, then publish the store capacity `Wᶜᵐᵃˣ = c·LAI`
-# the interface reads to normalize `fʷᵉᵗ` — kept fresh here so a time-varying LAI stays
-# current and the first coupled flux computation already sees a nonzero capacity.
+# The store capacity `Wᶜᵐᵃˣ = c·LAI` the interface normalizes the wet fraction by.
 function update_diagnostics!(h::InterceptingHydrology, land)
     update_diagnostics!(h.soil, land)
     arch = architecture(land.grid)

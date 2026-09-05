@@ -20,31 +20,23 @@ export
     ConstantTortuosity,
     PowerLawTortuosity,
     CanopyConductanceHumidity,
-    CompositeSurfaceHumidity,
     CanopyAirSpace,
     DiagnosticCanopyAir,
     PrognosticCanopyAir,
     DiagnosticSkin,
     PrognosticSkin,
     CanopyInterception,
-    AbstractUndercanopyConductance,
-    ConstantUndercanopyConductance,
     AreaIndexUndercanopyConductance,
     FrictionVelocityUndercanopyConductance,
     SellersSoilResistance,
     LitterResistance,
     TiledLandInterface,
-    bare_canopy_air_space,
-    leaf_area_index_cover_fraction,
     FarquharPhotosynthesis,
     MedlynConductance,
     JarvisConductance,
-    PrescribedAbsorbedPAR,
     InteractiveAbsorbedPAR,
-    PlainArrhenius,
     PeakedArrheniusParameters,
     HeskelParameters,
-    PeakedArrhenius,
     AltitudeCorrection,
     atmosphere_land_interface,
     SimilarityTheoryFluxes,
@@ -129,7 +121,7 @@ InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoSeaIceInterfaceModel)   
 
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoAtmosInterfaceModel)   = nothing
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoAtmosInterfaceModel) = nothing
-InterfaceComputations.compute_atmosphere_land_fluxes!(::NoAtmosInterfaceModel)    = nothing
+InterfaceComputations.compute_atmosphere_land_fluxes!(::NoAtmosInterfaceModel, Δt) = nothing
 
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoOceanInterfaceModel) = nothing
 InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoOceanInterfaceModel)    = nothing
@@ -138,7 +130,7 @@ InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoOceanInterfaceModel)    
 # are all absent. The atmosphere-land interface may still be present
 # (e.g. an `AtmosphereLandModel` with ocean = sea_ice = nothing), so we
 # explicitly do *not* fall back `compute_atmosphere_land_fluxes!` here —
-# its own 2-arg Nothing dispatch handles the missing-AL-interface case.
+# its own Nothing dispatch handles the missing-AL-interface case.
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoInterfaceModel)   = nothing
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoInterfaceModel) = nothing
 InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoInterfaceModel)      = nothing

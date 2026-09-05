@@ -1,9 +1,6 @@
 #####
-##### Stomatal conductance models, behind one dispatch seam. `JarvisConductance`
-##### (default) is a closed-form empirical multiplicative form that needs no
-##### photosynthesis; `MedlynConductance` is photosynthesis-coupled, with the
-##### intercellular CO₂ given in closed form by its own optimality ratio.
-##### `stomatal_conductance` dispatches on the model.
+##### Stomatal conductance models: the empirical `JarvisConductance` and the
+##### photosynthesis-coupled `MedlynConductance`.
 #####
 
 abstract type AbstractStomatalConductance end
@@ -85,20 +82,16 @@ end
 """
     struct JarvisConductance
 
-Empirical multiplicative stomatal conductance after Jarvis (1976) / Stewart
-(1988): a maximum conductance reduced by independent environmental stress
-factors,
+Jarvis-type multiplicative stomatal conductance: a maximum conductance reduced by
+independent environmental factors,
 
     gₛ = gₛ,max · fᴾᴬᴿ(APAR) · fⱽᴾᴰ(VPD) · fᵀ(Tˡᵉᵃᶠ) · β ,
 
-with `gₛ`, `gₛ,max` in mol H₂O m⁻² s⁻¹. Unlike [`MedlynConductance`](@ref) it is
-not coupled to photosynthesis, so it is closed-form (no iteration, no Farquhar
-call) — cheap and a trivial reverse-mode adjoint, adequate for weather-timescale
-runs. The soil-moisture factor is the same `β(𝒮)` the interface already forms.
-The temperature factor is Noah's `1 − 0.0016 (298 − T)²` form (after Noilhan &
-Planton 1989). `gₛ,max = 0.4` corresponds to a minimum stomatal resistance
-`Rsmin ≈ 100 s m⁻¹`, Noah's deciduous-forest value; its grass/crop tables use
-`40 s m⁻¹` (≈ 1 mol m⁻² s⁻¹).
+with `gₛ`, `gₛ,max` in mol H₂O m⁻² s⁻¹, a saturating light factor
+`APAR/(APAR + APAR₁ᐟ₂)`, a hyperbolic VPD factor `1/(1 + kᴰ VPD)`, the Noah-MP
+quadratic temperature factor `1 − c (Tᵒᵖᵗ − Tˡᵉᵃᶠ)²` evaluated at the leaf
+temperature, and the soil-moisture factor `β(𝒮)`. `gₛ,max = 0.4` corresponds to a
+minimum stomatal resistance of about 100 s m⁻¹.
 
 Fields:
 - `maximum_conductance`   : unstressed maximum conductance (mol m⁻² s⁻¹).
@@ -128,9 +121,6 @@ Base.summary(::JarvisConductance{FT}) where FT = "JarvisConductance{$FT}"
 Base.show(io::IO, c::JarvisConductance) = print(io, summary(c),
     "(maximum_conductance=", prettysummary(c.maximum_conductance), ")")
 
-# Light factor: saturating in absorbed PAR (0 → 1). VPD factor: hyperbolic
-# decline as the air dries (1 → 0). Temperature factor: quadratic in `Tˡᵉᵃᶠ` peaking
-# at `optimal_temperature`, clamped to stay positive away from the optimum.
 @inline jarvis_light_factor(c::JarvisConductance, APAR) = APAR / (APAR + c.par_half_saturation)
 @inline jarvis_vpd_factor(c::JarvisConductance, VPD)    = 1 / (1 + c.vpd_sensitivity * VPD)
 

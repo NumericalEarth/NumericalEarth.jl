@@ -52,33 +52,24 @@ export
     ConstantTortuosity,
     PowerLawTortuosity,
     CanopyConductanceHumidity,
-    CompositeSurfaceHumidity,
     CanopyAirSpace,
     DiagnosticCanopyAir,
     PrognosticCanopyAir,
     DiagnosticSkin,
     PrognosticSkin,
     CanopyInterception,
-    AbstractUndercanopyConductance,
-    ConstantUndercanopyConductance,
     AreaIndexUndercanopyConductance,
     FrictionVelocityUndercanopyConductance,
     SellersSoilResistance,
     LitterResistance,
     TiledLandInterface,
-    bare_canopy_air_space,
-    leaf_area_index_cover_fraction,
     FarquharPhotosynthesis,
     AbstractStomatalConductance,
     MedlynConductance,
     JarvisConductance,
-    AbstractAbsorbedPAR,
-    PrescribedAbsorbedPAR,
     InteractiveAbsorbedPAR,
-    PlainArrhenius,
     PeakedArrheniusParameters,
     HeskelParameters,
-    PeakedArrhenius,
     AltitudeCorrection,
     atmosphere_land_interface,
     # Sea ice-ocean heat flux formulations
@@ -182,7 +173,6 @@ include("photosynthesis.jl")
 include("stomatal_conductance.jl")
 include("absorbed_par.jl")
 include("canopy_conductance.jl")
-include("composite_surface_humidity.jl")
 include("canopy_air_space.jl")
 include("compute_interface_state.jl")
 include("similarity_theory_turbulent_fluxes.jl")

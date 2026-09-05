@@ -717,21 +717,7 @@ profile beyond it,
 which is continuously differentiable at ``-ζ_m``. The default
 `matching_stability_parameter` and `free_convection_coefficient` produce that
 ``C^1`` match for `a = 16`; retune them together with `a`.
-
-The unmatched Businger--Dyer form is ill-posed in the free-convection limit: ``ψ``
-grows like ``\\log(4 |ζ|)``, so ``ψ(h / L_★) - ψ(ℓ / L_★) → \\log(h / ℓ)`` and the
-similarity profile [`similarity_profile`](@ref) collapses to zero, with unbounded
-transfer coefficients. [businger1971flux](@citet) note the underlying problem: as
-``u_★ → 0`` the profile needs a velocity scale of the large convective eddies,
-which Monin--Obukhov similarity does not supply (here, [`ConvectiveGustiness`](@ref)
-does). The matched profile grows like ``|ζ|^{1/3}`` instead.
-
-`maximum_stability_parameter` bounds ``|ζ|`` in the profile, as CLM bounds the
-unstable stability parameter within its flux iteration. It is load-bearing: the
-matched momentum profile sends ``χ_u → 0`` like ``|ζ|^{-1/3}``, which admits a
-spurious turbulent-shutoff solution (``u_★ → 0`` with the surface far warmer than
-the air) in dead-calm convection under a shallow boundary layer. Freezing the
-profile beyond the bound removes that solution.
+`maximum_stability_parameter` bounds ``|ζ|`` in the profile, as CLM does.
 """
 @kwdef struct FreeConvectionMomentumStabilityFunction{FT} <: AbstractStabilityFunction
     a :: FT = 16.0

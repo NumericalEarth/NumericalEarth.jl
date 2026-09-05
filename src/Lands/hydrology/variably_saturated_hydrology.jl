@@ -242,7 +242,8 @@ EarthSystemModels.surface_retention_curve(h::VariablySaturatedHydrology) = h.ret
     end
 end
 
-function time_step!(h::VariablySaturatedHydrology, land, Δt, time)
+function time_step!(h::VariablySaturatedHydrology, land, Δt, time,
+                    liquid_input = land.fluxes.liquid_precipitation_flux)
     arch = architecture(land.grid)
     launch!(arch, land.grid, :xy, _variably_saturated_step!,
             land.water_storage, land.saturation,
@@ -252,7 +253,7 @@ function time_step!(h::VariablySaturatedHydrology, land, Δt, time)
             land.diagnostics.subsurface_runoff,
             land.diagnostics.water_storage_tendency,
             land.fluxes.vapor_flux,
-            land.fluxes.liquid_precipitation_flux,
+            liquid_input,
             land.temperature,
             land.prognostic,
             h, h.deep_pressure_head, Δt, land.grid, time)

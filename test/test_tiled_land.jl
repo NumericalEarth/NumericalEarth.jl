@@ -4,21 +4,15 @@ using Oceananigans
 using Oceananigans: set!, interior, CenterField
 using Oceananigans.TimeSteppers: update_state!, time_step!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyAirSpace, CanopyConductanceHumidity, DryLayerHumidity, StorageBasedDryLayerDepth,
-    DryLayerVaporPistonVelocity, ConstantTortuosity, CriticalSaturation, InteractiveAbsorbedPAR,
-    SoilConductiveFlux, TiledLandInterface, bare_canopy_air_space, leaf_area_index_cover_fraction,
+    CanopyAirSpace, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR,
+    SoilConductiveFlux, TiledLandInterface, EnergyBalanceTemperature,
     SimilarityTheoryFluxes, atmosphere_land_stability_functions, CanopyAirSpaceDiagnostics
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
 using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
 
 build_tiled_canopy_air_space(FT) = CanopyAirSpace(FT;
-    soil = DryLayerHumidity(FT;
-        dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
-                                                    dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
-        vapor_exchange  = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
-                                                      molecular_diffusivity = 2.4e-5, tortuosity = ConstantTortuosity()),
-        thermal_exchange_depth = 0.05, porosity = 0.4),
+    soil = bare_soil_humidity(FT),
     canopy = CanopyConductanceHumidity(FT; leaf_area_index = 3.0, moisture_stress = CriticalSaturation(0.5),
                                        absorbed_par = InteractiveAbsorbedPAR(FT)),
     soil_skin_flux = SoilConductiveFlux(1.5, 0.05))
@@ -60,8 +54,6 @@ function tiled_land_model(arch, cas; fraction, shortwave = 600.0,
     return model
 end
 
-scalar(field) = Array(interior(field))[1, 1, 1]
-
 @testset "TiledLandInterface" begin
     for arch in test_architectures
         cas = build_tiled_canopy_air_space(Float64)
@@ -83,38 +75,40 @@ scalar(field) = Array(interior(field))[1, 1, 1]
         Es = scalar(model.land.fluxes.surface_energy_flux)
         @test Es ≈ -𝒬ᵍ atol = 1e-10
 
-        # --- Linearity: blended == f·veg + (1−f)·bare from the sub-tile buffers. ---
+        # --- Linearity: blended == f·veg + (1−f)·bare from the sub-tile buffers. The bare
+        # tile is a single soil skin: its temperature is the soil skin and its turbulent
+        # fluxes are soil fluxes.
         f = 0.6
         veg = ti.vegetated
         bare = ti.bare
+        @test bare.properties.temperature_formulation isa EnergyBalanceTemperature
         for name in (:sensible_heat, :latent_heat, :water_vapor, :x_momentum, :y_momentum)
             b  = scalar(getproperty(ti.fluxes, name))
             fv = scalar(getproperty(veg.fluxes, name))
             bv = scalar(getproperty(bare.fluxes, name))
             @test b ≈ f * fv + (1 - f) * bv rtol = 1e-12
         end
-        for name in (:ground_heat_flux, :canopy_latent_heat, :soil_latent_heat,
-                     :canopy_sensible_heat, :soil_sensible_heat, :canopy_evaporation, :interface)
-            b  = scalar(getproperty(ti.temperature, name))
-            fv = scalar(getproperty(veg.temperature, name))
-            bv = scalar(getproperty(bare.temperature, name))
-            @test b ≈ f * fv + (1 - f) * bv rtol = 1e-12
-        end
+        Tᵇ = scalar(bare.temperature)
+        Tˡᵃ = scalar(model.land.temperature)
+        Λ = 1.5 / 0.05
+        @test scalar(ti.temperature.interface) ≈ f * scalar(veg.temperature.interface) + (1 - f) * Tᵇ rtol = 1e-12
+        @test scalar(ti.temperature.soil_skin) ≈ f * scalar(veg.temperature.soil_skin) + (1 - f) * Tᵇ rtol = 1e-12
+        @test scalar(ti.temperature.ground_heat_flux) ≈
+              f * scalar(veg.temperature.ground_heat_flux) + (1 - f) * Λ * (Tᵇ - Tˡᵃ) rtol = 1e-12
+        @test scalar(ti.temperature.soil_latent_heat) ≈
+              f * scalar(veg.temperature.soil_latent_heat) + (1 - f) * scalar(bare.fluxes.latent_heat) rtol = 1e-12
+        @test scalar(ti.temperature.canopy_latent_heat) ≈ f * scalar(veg.temperature.canopy_latent_heat) rtol = 1e-12
+        @test scalar(ti.temperature.canopy) == scalar(veg.temperature.canopy)
         # Effective (LST) temperature blends in radiance (T⁴) space.
         Tv = scalar(veg.temperature.effective)
-        Tb = scalar(bare.temperature.effective)
-        @test scalar(ti.temperature.effective) ≈ (f * Tv^4 + (1 - f) * Tb^4)^(1/4) rtol = 1e-12
-
-        # The bare tile is canopy-free: no transpiration, no leaf sensible.
-        @test scalar(bare.temperature.canopy_latent_heat) == 0
-        @test scalar(bare.temperature.canopy_sensible_heat) == 0
+        @test scalar(ti.temperature.effective) ≈ (f * Tv^4 + (1 - f) * Tᵇ^4)^(1/4) rtol = 1e-12
 
         # Sunlit veg tile: shaded soil skin cooler than the leaf; transpiration dominates the
         # tile's latent flux; and the shaded, litter-covered ground evaporates far less than
         # the sunlit bare tile.
         @test scalar(veg.temperature.soil_skin) < scalar(veg.temperature.canopy)
         @test scalar(veg.temperature.canopy_latent_heat) > scalar(veg.temperature.soil_latent_heat)
-        @test scalar(veg.temperature.soil_latent_heat) < scalar(bare.temperature.soil_latent_heat)
+        @test scalar(veg.temperature.soil_latent_heat) < scalar(bare.fluxes.latent_heat)
 
         # --- Endpoint reduction: f=1 → veg tile, f=0 → bare tile (bit-for-bit). ---
         m1 = tiled_land_model(arch, cas; fraction = 1.0)
@@ -126,25 +120,14 @@ scalar(field) = Array(interior(field))[1, 1, 1]
             @test scalar(getproperty(t0.fluxes, name)) == scalar(getproperty(t0.bare.fluxes, name))
         end
         @test scalar(t1.temperature.ground_heat_flux) == scalar(t1.vegetated.temperature.ground_heat_flux)
-        @test scalar(t0.temperature.ground_heat_flux) == scalar(t0.bare.temperature.ground_heat_flux)
+        @test scalar(t0.temperature.soil_skin) == scalar(t0.bare.temperature)
+        @test scalar(m0.land.fluxes.surface_energy_flux) ≈ -Λ * (scalar(t0.bare.temperature) - scalar(m0.land.temperature)) atol = 1e-10
 
         # --- f=1 tiled ≡ a standalone CanopyAirSpace model (bit-for-bit). ---
         FT = Float64
         grid = LatitudeLongitudeGrid(arch, FT; size = 1, latitude = 10, longitude = 10,
                                      z = (-1, 0), topology = (Flat, Flat, Bounded))
-        atmos = PrescribedAtmosphere(grid; surface_layer_height = 10, boundary_layer_height = 512)
-        fill!(parent(atmos.temperature), 300.0); fill!(parent(atmos.specific_humidity), 0.008)
-        fill!(parent(atmos.velocities.u), 3.0); fill!(parent(atmos.pressure), 101325.0)
-        lands = SlabLand(grid; hydrology = BucketHydrology(FT; maximum_water_storage = 150.0), energy = SlabEnergy(FT))
-        set!(lands; T = 298.0); fill!(parent(lands.water_storage), 45.0)
-        rads = PrescribedRadiation(grid; ocean_surface = nothing, sea_ice_surface = nothing,
-                                   land_surface = SurfaceRadiationProperties(0.2, 0.95))
-        fill!(parent(rads.downwelling_shortwave), 600.0); fill!(parent(rads.downwelling_longwave), 350.0)
-        update_state!(rads)
-        ms = AtmosphereLandModel(atmos, lands; radiation = rads,
-                atmosphere_land_interface_temperature = cas,
-                atmosphere_land_interface_specific_humidity = cas)
-        update_state!(ms.land); update_state!(ms)
+        ms = coupled_land_model(arch; grid, atmosphere_land_interface_temperature = cas)
         alis = ms.interfaces.atmosphere_land_interface
         @test scalar(t1.fluxes.sensible_heat) == scalar(alis.fluxes.sensible_heat)
         @test scalar(t1.fluxes.latent_heat) == scalar(alis.fluxes.latent_heat)
@@ -199,8 +182,4 @@ scalar(field) = Array(interior(field))[1, 1, 1]
         @test 𝒬ᵀ isa FT
         @test isfinite(𝒬ᵀ)
     end
-
-    # The Beer–Lambert cover helper is monotone in LAI and bounded in [0, 1).
-    @test leaf_area_index_cover_fraction(0.0) == 0
-    @test 0 < leaf_area_index_cover_fraction(2.0) < leaf_area_index_cover_fraction(6.0) < 1
 end

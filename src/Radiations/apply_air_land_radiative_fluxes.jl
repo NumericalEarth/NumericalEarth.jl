@@ -1,7 +1,7 @@
 using Oceananigans.Grids: inactive_node
 
 using ..EarthSystemModels: EarthSystemModel
-using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties, CanopyAirSpaceDiagnostics
+using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties, skin_conductance
 
 """
     apply_air_land_radiative_fluxes!(coupled_model)
@@ -25,10 +25,9 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     al_interface = coupled_model.interfaces.atmosphere_land_interface
     isnothing(al_interface) && return nothing
 
-    # A CanopyAirSpace interface internalizes the two-face longwave and shortwave split
-    # in its soil-skin balance — the slab is driven by the skin→bulk conduction, so no
-    # separate radiative contribution is added here.
-    al_interface.temperature isa CanopyAirSpaceDiagnostics && return nothing
+    # A skin that closes its own energy balance already absorbs the radiation; the slab is
+    # then driven by the skin→bulk conduction.
+    isnothing(skin_conductance(al_interface)) || return nothing
 
     radiation = coupled_model.radiation
     interface_fluxes = radiation.interface_fluxes
