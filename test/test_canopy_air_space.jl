@@ -12,12 +12,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     AirLandInterfaceState, InterfaceFluxScales, InterfaceVelocities, AirLandRadiationState,
     AreaIndexUndercanopyConductance, FrictionVelocityUndercanopyConductance, undercanopy_conductance,
     SellersSoilResistance, LitterResistance, soil_surface_resistance, litter_resistance,
-    CanopyAirSpaceDiagnostics, DiagnosticSkin,
-    default_atmosphere_land_fluxes
-using NumericalEarth.Atmospheres: PrescribedAtmosphere, AtmosphereThermodynamicsParameters
-using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
-using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
-
+    CanopyAirSpaceDiagnostics, DiagnosticSkin
+using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 build_canopy_air_space(FT; optics...) = CanopyAirSpace(FT;
     soil = bare_soil_humidity(FT),
     canopy = CanopyConductanceHumidity(FT; leaf_area_index = 4.0, moisture_stress = CriticalSaturation(0.5),
@@ -140,36 +136,13 @@ end
         grid = LatitudeLongitudeGrid(arch, FT; size = (2, 1, 1), latitude = (10, 11),
                                      longitude = (10, 12), z = (-1, 0),
                                      topology = (Bounded, Bounded, Bounded))
-        atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10, boundary_layer_height = 512)
-        fill!(parent(atmosphere.temperature), 300.0)
-        fill!(parent(atmosphere.specific_humidity), 0.008)
-        fill!(parent(atmosphere.velocities.u), 3.0)
-        fill!(parent(atmosphere.pressure), 101325.0)
-        land = SlabLand(grid; hydrology = BucketHydrology(FT; maximum_water_storage = 150.0), energy = SlabEnergy(FT))
-        set!(land; T = 298.0)
-        fill!(parent(land.water_storage), 45.0)
-        radiation = PrescribedRadiation(grid; ocean_surface = nothing, sea_ice_surface = nothing,
-                                        land_surface = SurfaceRadiationProperties(0.2, 0.95))
-        fill!(parent(radiation.downwelling_shortwave), 600.0)
-        fill!(parent(radiation.downwelling_longwave), 350.0)
-        update_state!(radiation)
-
         scalar_cas = build_canopy_air_space(FT)
 
         # Cell 1 keeps the closure's own leaf albedo, cell 2 is a bright leaf.
         leaf_albedo = Field{Center, Center, Nothing}(grid)
         set!(leaf_albedo, (λ, φ) -> ifelse(λ < 11, scalar_cas.leaf_albedo, 0.6))
 
-        function canopy_model(cas)
-            interface = atmosphere_land_interface(grid, atmosphere, land;
-                                                  fluxes = default_atmosphere_land_fluxes(land, FT),
-                                                  temperature = cas, specific_humidity = cas)
-            model = AtmosphereLandModel(atmosphere, land; radiation,
-                                        atmosphere_land_interface = interface)
-            update_state!(model.land)
-            update_state!(model)
-            return model
-        end
+        canopy_model(cas) = coupled_land_model(arch; grid, atmosphere_land_interface_temperature = cas)
 
         model = canopy_model(build_canopy_air_space(FT; leaf_albedo))
         Tˡᵉᵃᶠ = Array(interior(model.interfaces.atmosphere_land_interface.temperature.canopy))

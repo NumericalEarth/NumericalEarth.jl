@@ -7,10 +7,6 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyAirSpace, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR,
     SoilConductiveFlux, TiledLandInterface, EnergyBalanceTemperature,
     SimilarityTheoryFluxes, atmosphere_land_stability_functions, CanopyAirSpaceDiagnostics
-using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
-using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
-
 build_tiled_canopy_air_space(FT) = CanopyAirSpace(FT;
     soil = bare_soil_humidity(FT),
     canopy = CanopyConductanceHumidity(FT; leaf_area_index = 3.0, moisture_stress = CriticalSaturation(0.5),
@@ -26,22 +22,7 @@ land_roughness(FT, z₀m, z₀s) = SimilarityTheoryFluxes(FT;
 # Single-column coupled model with a `TiledLandInterface` (veg + bare over a shared slab).
 function tiled_land_model(arch, cas; fraction, shortwave = 600.0,
                           vegetated_fluxes = nothing, bare_fluxes = nothing, wind = 3.0)
-    FT = Float64
-    grid = LatitudeLongitudeGrid(arch, FT; size = 1, latitude = 10, longitude = 10,
-                                 z = (-1, 0), topology = (Flat, Flat, Bounded))
-    atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10, boundary_layer_height = 512)
-    fill!(parent(atmosphere.temperature), 300.0)
-    fill!(parent(atmosphere.specific_humidity), 0.008)
-    fill!(parent(atmosphere.velocities.u), wind)
-    fill!(parent(atmosphere.pressure), 101325.0)
-    land = SlabLand(grid; hydrology = BucketHydrology(FT; maximum_water_storage = 150.0), energy = SlabEnergy(FT))
-    set!(land; T = 298.0)
-    fill!(parent(land.water_storage), 45.0)   # 𝒮 = 0.3
-    radiation = PrescribedRadiation(grid; ocean_surface = nothing, sea_ice_surface = nothing,
-                                    land_surface = SurfaceRadiationProperties(0.2, 0.95))
-    fill!(parent(radiation.downwelling_shortwave), shortwave)
-    fill!(parent(radiation.downwelling_longwave), 350.0)
-    update_state!(radiation)
+    grid, atmosphere, land, radiation = coupled_land_components(arch; wind, shortwave)
 
     kw = (; vegetated = cas, fraction)
     isnothing(vegetated_fluxes) || (kw = (; kw..., vegetated_fluxes))
@@ -163,17 +144,7 @@ end
 
     # --- Float32 / Float64 end-to-end (blended buffers keep the grid float type). ---
     for FT in (Float32, Float64)
-        grid = LatitudeLongitudeGrid(CPU(), FT; size = 1, latitude = 10, longitude = 10,
-                                     z = (-1, 0), topology = (Flat, Flat, Bounded))
-        atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10, boundary_layer_height = 512)
-        fill!(parent(atmosphere.temperature), 300); fill!(parent(atmosphere.specific_humidity), 0.008)
-        fill!(parent(atmosphere.velocities.u), 3); fill!(parent(atmosphere.pressure), 101325)
-        land = SlabLand(grid; hydrology = BucketHydrology(FT; maximum_water_storage = 150), energy = SlabEnergy(FT))
-        set!(land; T = 298); fill!(parent(land.water_storage), 45)
-        radiation = PrescribedRadiation(grid; ocean_surface = nothing, sea_ice_surface = nothing,
-                                        land_surface = SurfaceRadiationProperties(0.2, 0.95))
-        fill!(parent(radiation.downwelling_shortwave), 600); fill!(parent(radiation.downwelling_longwave), 350)
-        update_state!(radiation)
+        grid, atmosphere, land, radiation = coupled_land_components(CPU(), FT)
         tiled = TiledLandInterface(grid, atmosphere, land;
                                    vegetated = build_tiled_canopy_air_space(FT), fraction = FT(0.5))
         model = AtmosphereLandModel(atmosphere, land; radiation, atmosphere_land_interface = tiled)

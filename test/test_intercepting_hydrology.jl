@@ -6,11 +6,8 @@ using Oceananigans.TimeSteppers: update_state!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyAirSpace, CanopyConductanceHumidity, CanopyInterception,
     CriticalSaturation, InteractiveAbsorbedPAR, SoilConductiveFlux
-using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.Lands: SlabLand, SlabEnergy, VariablySaturatedHydrology, InterceptingHydrology,
     VanGenuchtenRetention, VanGenuchtenConductivity
-using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
-
 soil_hydrology(FT) = VariablySaturatedHydrology(FT;
     slab_depth = 1.0, porosity = 0.4, storage_height = 0.1,
     retention_curve = VanGenuchtenRetention(FT; inverse_air_entry_head = 2.0, pore_size_uniformity = 1.5),
@@ -20,44 +17,20 @@ soil_hydrology(FT) = VariablySaturatedHydrology(FT;
 # `InterceptingHydrology` and hands the CAS a matching `CanopyInterception`.
 function interception_model(arch, FT; leaf_area_index = 3.0, capacity = 0.1, rain = 1e-3,
                             water_storage = 300.0, interception = true)
-    grid = LatitudeLongitudeGrid(arch, FT; size = 1, latitude = 10, longitude = 10,
-                                 z = (-1, 0), topology = (Flat, Flat, Bounded))
-    atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10, boundary_layer_height = 512)
-    fill!(parent(atmosphere.temperature), 298)
-    fill!(parent(atmosphere.specific_humidity), 0.010)
-    fill!(parent(atmosphere.velocities.u), 3)
-    fill!(parent(atmosphere.pressure), 101325)
-    fill!(parent(atmosphere.precipitation_flux.rain), rain)
-    update_state!(atmosphere)
-
     hydrology = interception ?
         InterceptingHydrology(FT; soil = soil_hydrology(FT), leaf_area_index,
                               capacity_per_leaf_area = capacity) :
         soil_hydrology(FT)
-    land = SlabLand(grid; energy = SlabEnergy(FT), hydrology)
-    set!(land; T = 298, M = water_storage)
-
-    cas_interception = interception ? CanopyInterception() : nothing
     cas = CanopyAirSpace(FT;
         soil = bare_soil_humidity(FT),
         canopy = CanopyConductanceHumidity(FT; leaf_area_index,
                                            moisture_stress = CriticalSaturation(0.5),
                                            absorbed_par = InteractiveAbsorbedPAR(FT)),
         soil_skin_flux = SoilConductiveFlux(1.5, 0.05),
-        interception = cas_interception)
-
-    radiation = PrescribedRadiation(grid; ocean_surface = nothing, sea_ice_surface = nothing,
-                                    land_surface = SurfaceRadiationProperties(0.2, 0.95))
-    fill!(parent(radiation.downwelling_shortwave), 400)
-    fill!(parent(radiation.downwelling_longwave), 350)
-    update_state!(radiation)
-
-    model = AtmosphereLandModel(atmosphere, land; radiation,
-                atmosphere_land_interface_temperature = cas,
-                atmosphere_land_interface_specific_humidity = cas)
-    update_state!(model.land)
-    update_state!(model)
-    return model
+        interception = interception ? CanopyInterception() : nothing)
+    return coupled_land_model(arch, FT; Tair = 298, qair = 0.010, wind = 3, rain, hydrology,
+                              Tland = 298, water = water_storage, shortwave = 400,
+                              atmosphere_land_interface_temperature = cas)
 end
 
 @testset "InterceptingHydrology declarations & container" begin

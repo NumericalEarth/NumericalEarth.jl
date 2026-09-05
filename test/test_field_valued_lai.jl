@@ -9,9 +9,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyConductanceHumidity, JarvisConductance,
     surface_field_value, kernel_surface_field,
     interface_vegetation_state
-using NumericalEarth.Lands: SlabLand, SlabEnergy, SaturatedSurface
-using NumericalEarth.Atmospheres: PrescribedAtmosphere
-
+using NumericalEarth.Lands: SaturatedSurface
 #####
 ##### Unit — the per-cell accessor for a constant, a static `Field`, and a
 ##### time-interpolated `FieldTimeSeries` LAI. Runs on the CPU: the accessor is
@@ -79,19 +77,10 @@ end
         lai_field = Field{Center, Center, Nothing}(grid)
         set!(lai_field, (λ, φ) -> ifelse(λ < 10, 4.0, 0.0))
 
-        atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10, boundary_layer_height = 512)
-        fill!(parent(atmosphere.temperature),       290.0)
-        fill!(parent(atmosphere.specific_humidity), 0.006)
-        fill!(parent(atmosphere.velocities.u),      5.0)
-        fill!(parent(atmosphere.pressure),          101325.0)
-
-        land = SlabLand(grid; hydrology = SaturatedSurface(), energy = SlabEnergy(FT))
-        set!(land; T = 300.0)
-
         canopy = CanopyConductanceHumidity(FT; leaf_area_index = lai_field, conductance = JarvisConductance(FT))
-        model = AtmosphereLandModel(atmosphere, land; radiation = nothing,
-                                    atmosphere_land_interface_specific_humidity = canopy)
-        update_state!(model)
+        model = coupled_land_model(arch; grid, Tair = 290.0, qair = 0.006, wind = 5.0, Tland = 300.0,
+                                   water = nothing, hydrology = SaturatedSurface(), radiation = nothing,
+                                   atmosphere_land_interface_specific_humidity = canopy)
         LE = Array(interior(model.interfaces.atmosphere_land_interface.fluxes.latent_heat))[:, 1, 1]
 
         # Dense-canopy cell transpires; the bare cell (g_c = LAI · gₛ = 0) has ~no latent flux.
@@ -118,19 +107,11 @@ end
         set!(lai_fts[2], 4.0)   # dense at t = 100
 
         function latent_heat_at(t)
-            atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10, boundary_layer_height = 512)
-            fill!(parent(atmosphere.temperature),       290.0)
-            fill!(parent(atmosphere.specific_humidity), 0.006)
-            fill!(parent(atmosphere.velocities.u),      5.0)
-            fill!(parent(atmosphere.pressure),          101325.0)
-            land = SlabLand(grid; hydrology = SaturatedSurface(), energy = SlabEnergy(FT))
-            set!(land; T = 300.0)
             canopy = CanopyConductanceHumidity(FT; leaf_area_index = lai_fts, conductance = JarvisConductance(FT))
-            model = AtmosphereLandModel(atmosphere, land; radiation = nothing,
-                                        atmosphere_land_interface_specific_humidity = canopy)
-            model.clock.time = t
-            update_state!(model)
-            return Array(interior(model.interfaces.atmosphere_land_interface.fluxes.latent_heat))[1, 1, 1]
+            model = coupled_land_model(arch; grid, time = t, Tair = 290.0, qair = 0.006, wind = 5.0, Tland = 300.0,
+                                       water = nothing, hydrology = SaturatedSurface(), radiation = nothing,
+                                       atmosphere_land_interface_specific_humidity = canopy)
+            return scalar(model.interfaces.atmosphere_land_interface.fluxes.latent_heat)
         end
 
         LE_t0  = latent_heat_at(0.0)     # LAI = 0.5

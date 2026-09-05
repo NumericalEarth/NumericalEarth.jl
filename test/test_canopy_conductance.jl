@@ -5,7 +5,7 @@ using Oceananigans
 using Oceananigans: set!
 using Oceananigans.TimeSteppers: update_state!
 using Thermodynamics
-using NumericalEarth.Lands: SlabLand, SlabEnergy, SaturatedSurface
+using NumericalEarth.Lands: SaturatedSurface
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     FarquharPhotosynthesis, MedlynConductance, JarvisConductance,
     CanopyConductanceHumidity, BulkHumidity,
@@ -13,8 +13,6 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     net_assimilation, medlyn_conductance, stomatal_conductance,
     jarvis_light_factor, jarvis_vpd_factor, jarvis_temperature_factor,
     peaked_arrhenius, heskel_respiration_scaling
-using NumericalEarth.Atmospheres: PrescribedAtmosphere
-
 #####
 ##### Photosynthesis + conductance physics (pure functions — no grid needed).
 #####
@@ -191,22 +189,12 @@ end
                                      size = 1, latitude = 10, longitude = 10,
                                      z = (-1, 0), topology = (Flat, Flat, Bounded))
 
-        function latent_heat(q_formulation; leaf_area_index = 2.0)
-            atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10,
-                                                    boundary_layer_height = 512)
-            @allowscalar begin
-                fill!(parent(atmosphere.temperature),       290.0)
-                fill!(parent(atmosphere.specific_humidity), 0.006)
-                fill!(parent(atmosphere.velocities.u),      5.0)
-                fill!(parent(atmosphere.pressure),          101325.0)
-            end
-            land = SlabLand(grid; hydrology = SaturatedSurface(), energy = SlabEnergy(FT))
-            set!(land; T = 300.0)   # warm, wet surface → upward evaporation
-            model = AtmosphereLandModel(atmosphere, land; radiation = nothing,
-                                        atmosphere_land_interface_specific_humidity = q_formulation)
-            update_state!(model)
-            f = model.interfaces.atmosphere_land_interface.fluxes
-            return @allowscalar f.latent_heat[1, 1, 1]
+        # Warm, wet surface under drier air → upward evaporation.
+        function latent_heat(q_formulation)
+            model = coupled_land_model(arch; grid, Tair = 290.0, qair = 0.006, wind = 5.0, Tland = 300.0,
+                                       water = nothing, hydrology = SaturatedSurface(), radiation = nothing,
+                                       atmosphere_land_interface_specific_humidity = q_formulation)
+            return scalar(model.interfaces.atmosphere_land_interface.fluxes.latent_heat)
         end
 
         # Saturated bare surface (no resistance) evaporates most; the canopy
@@ -217,8 +205,8 @@ end
         @test LE_canopy > 0   # upward evaporation → positive (evaporative cooling) latent flux
 
         # More leaf area → larger canopy conductance → stronger latent flux.
-        LE_lo = latent_heat(CanopyConductanceHumidity(FT; leaf_area_index = 0.5), leaf_area_index = 0.5)
-        LE_hi = latent_heat(CanopyConductanceHumidity(FT; leaf_area_index = 4.0), leaf_area_index = 4.0)
+        LE_lo = latent_heat(CanopyConductanceHumidity(FT; leaf_area_index = 0.5))
+        LE_hi = latent_heat(CanopyConductanceHumidity(FT; leaf_area_index = 4.0))
         @test abs(LE_hi) > abs(LE_lo)
 
         # Moisture stress throttles transpiration (constant β here; the
