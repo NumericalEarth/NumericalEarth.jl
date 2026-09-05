@@ -1,4 +1,6 @@
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, LinearLiquidus
+using Oceananigans.Grids: znode, Center
+using Oceananigans.ImmersedBoundaries: inactive_node
 using Oceananigans.Operators: Δzᶜᶜᶜ
 
 using ..EarthSystemModels: EarthSystemModels, EarthSystemModel, NoSeaIceInterface
@@ -106,8 +108,12 @@ end
             Sᵏ = Sᵒᶜ[i, j, k]
         end
 
-        Tₘ = melting_temperature(liquidus, Sᵏ)
-        freezing = Tᵏ < Tₘ
+        # Pressure depression of the freezing point, as in the coupled frazil loop; see
+        # `InterfaceComputations.melting_temperature_at_depth`. `z` is negative below the surface.
+        z   = znode(i, j, k, grid, Center(), Center(), Center())
+        wet = !inactive_node(i, j, k, grid, Center(), Center(), Center())
+        Tₘ  = min(melting_temperature(liquidus, Sᵏ) + convert(eltype(grid), 7.53e-4) * z, zero(Tᵏ))
+        freezing = wet & (Tᵏ < Tₘ)
         δE = freezing * ρᵒᶜ * cᵒᶜ * (Tₘ - Tᵏ)
 
         @inbounds Tᵒᶜ[i, j, k] = ifelse(freezing, Tₘ, Tᵏ)

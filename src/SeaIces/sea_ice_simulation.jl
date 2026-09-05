@@ -2,11 +2,13 @@ using ClimaSeaIce: ClimaSeaIce, SeaIceModel, PhaseTransitions, ConductiveFlux,
                    sea_ice_slab_thermodynamics, snow_slab_thermodynamics,
                    default_sea_ice_boundary_conditions
 using ClimaSeaIce.SeaIceThermodynamics.HeatBoundaryConditions: PrescribedTemperature
-using ClimaSeaIce.SeaIceThermodynamics: IceWaterThermalEquilibrium, IceSnowConductiveFlux, LinearLiquidus
+using ClimaSeaIce.SeaIceThermodynamics: IceWaterThermalEquilibrium, IceSnowConductiveFlux, LinearLiquidus,
+                                        ThicknessDependentConductivity
 using ClimaSeaIce.SeaIceDynamics: SplitExplicitSolver, SemiImplicitStress, SeaIceMomentumEquation, StressBalanceFreeDrift,
                                   LandfastBasalStress, maybe_extended_grid
 using ClimaSeaIce.Rheologies: ElastoViscoPlasticRheology
 
+using Oceananigans.Fields: ZeroField
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGridOfSomeKind
 using Oceananigans.TimeSteppers: SplitRungeKuttaTimeStepper
 
@@ -16,18 +18,31 @@ using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, SkinTemp
 
 default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
 
-# The ocean carries Conservative Temperature and the liquidus is compared against it, so this is a
-# least-squares fit to the TEOS-10 freezing point expressed in Θ rather than in situ, over
-# S = 28-35.5 psu. It holds the freezing point to 0.0012 K, against 0.032 K for `LinearLiquidus`'s own
-# (0, 0.054) — which is too warm at every salinity and so biases the ice-ocean heat flux
-# `ρ cᵖ αₕ u★ (Θ - Tₘ)` one way everywhere.
+# The ocean carries Conservative Temperature and the liquidus is compared against it, so the slope is
+# a least-squares fit to the TEOS-10 freezing point expressed in Θ rather than in situ, over
+# S = 28-35.5 psu: 0.013 K there, against 0.032 K for `LinearLiquidus`'s own 0.054, which is too warm
+# at every salinity and so biases the ice-ocean heat flux `ρ cᵖ αₕ u★ (Θ - Tₘ)` one way everywhere.
 #
-# ⚠ The intercept is only free because `interface_states.jl` no longer reads
-# `freshwater_melting_temperature` as the melting point of the ice top surface. That field is the
-# liquidus intercept — the freezing point of seawater extrapolated to S = 0 — and it is NOT 0 ᵒC once
-# fitted. ClimaSeaIce itself uses it only in `melting_temperature`, which is the correct usage.
-conservative_temperature_liquidus(FT) =
-    LinearLiquidus(FT; freshwater_melting_temperature = 0.10737, slope = 0.057888)
+# ⚠⚠ THE INTERCEPT MUST STAY AT ZERO. Fresh water freezes at 0 ᵒC, so the true liquidus passes through
+# (0, 0) exactly and a fitted intercept is unphysical below S ≈ 1.9 psu — it would reach 0.0012 K in
+# the 28-35.5 band and be WRONG at low salinity, which the model reaches at river mouths and, more
+# dangerously, in cells inside the bathymetry, which are masked to S = 0. A fitted intercept of
+# +0.107 turned the entire seafloor into a frazil source and killed two runs on 2026-09-03.
+#
+# ⚠ TWO freezing relations coexist, and the split is FORCED, not a preference:
+#
+#   * this linear one, used by every INTERFACE term — the ice base, the ice-ocean heat flux, the
+#     atmosphere-ice flux. `solve_interface_conditions` dispatches on `::LinearLiquidus` and derives a
+#     closed-form quadratic from (λ₁, λ₂) = (-slope, intercept), so a non-linear liquidus cannot be
+#     substituted there without replacing the solve with an iteration.
+#   * the exact UNESCO-in-situ-converted-to-Θ relation WITH pressure, in
+#     `InterfaceComputations.melting_temperature_at_depth`, used by the frazil clamp.
+#
+# They agree to 0.011 K at S = 34.9, p = 0, which is where the interface terms all live — the ice base
+# is at p ≈ 0, so the missing pressure term costs nothing there. That is exactly why the error hid for
+# so long: it only bites in the frazil clamp, which scans the WHOLE column and reaches 0.5 K of error
+# at 660 m and 2.4 K at 3000 m.
+conservative_temperature_liquidus(FT) = LinearLiquidus(FT; slope = 0.054523)
 
 ocean_reference_density(ocean::Simulation, FT) = convert(FT, reference_density(ocean))
 ocean_reference_density(::Nothing, FT) = convert(FT, 1026.0)
@@ -95,8 +110,11 @@ end
                                                             density=sea_ice_density),
                        conductivity = 2, # W m⁻¹ K⁻¹
                        thickness_categories = 1,
-                       internal_heat_flux = ConductiveFlux(; conductivity, subgrid_conductivity_keyword(thickness_categories)...),
-                       snow_thermodynamics = default_snow_thermodynamics(grid; thickness_categories))
+                       snow_thickness_categories = thickness_categories,
+                       itd_shape = nothing,
+                       internal_heat_flux = ConductiveFlux(; conductivity, itd_shape,
+                                                           subgrid_conductivity_keyword(thickness_categories)...),
+                       snow_thermodynamics = default_snow_thermodynamics(grid; thickness_categories = snow_thickness_categories))
 
 Construct a sea ice simulation with the given grid and optional ocean simulation.
 The sea ice model is configured with a slab thermodynamics, Elasto-Visco-Plastic rheology,
@@ -166,8 +184,11 @@ function sea_ice_simulation(grid, ocean=nothing;
                                                                  liquidus),
                             conductivity = 2, # W m⁻¹ K⁻¹
                             thickness_categories = 1,
-                            internal_heat_flux = ConductiveFlux(; conductivity, subgrid_conductivity_keyword(thickness_categories)...),
-                            snow_thermodynamics = default_snow_thermodynamics(grid; thickness_categories))
+                            snow_thickness_categories = thickness_categories,
+                            itd_shape = nothing,
+                            internal_heat_flux = ConductiveFlux(; conductivity, itd_shape,
+                                                                subgrid_conductivity_keyword(thickness_categories)...),
+                            snow_thermodynamics = default_snow_thermodynamics(grid; thickness_categories = snow_thickness_categories))
 
     # Build consistent boundary conditions for the ice model:
     # - bottom -> flux boundary condition
@@ -228,8 +249,18 @@ default_coriolis(ocean::Nothing) = HydrostaticSphericalCoriolis(; rotation_rate=
 
 # `ocean_surface_height` needs a ClimaSeaIce that carries the free-surface term, so it is forwarded
 # only when the tilt is switched on.
-ocean_surface_tilt_keyword(with_tilt, ocean, gravitational_acceleration) =
-    with_tilt ? (; ocean_surface_height = ocean_surface_height(ocean), gravitational_acceleration) : NamedTuple()
+#
+# ⚠ When it is OFF we still pass an explicitly typed `ZeroField(eltype(grid))`. Leaving it to
+# `SeaIceMomentumEquation`'s own default gives `ZeroField()`, which is `ZeroField{Int64}` — an
+# Int-typed field inside a Float64 GPU kernel that evaluates `g * ∂xᶠᶜᶜ(…, η)`. That combination
+# faulted with an illegal memory access on the first time step of every run with ice dynamics on
+# 2026-09-03, while `_icetilt` (which passes a real Field) and `orca_noicedyn` (no dynamics) were
+# unaffected. On a ClimaSeaIce without the free-surface term the keyword is simply not forwarded.
+function ocean_surface_tilt_keyword(with_tilt, ocean, grid, gravitational_acceleration)
+    :free_surface in fieldnames(SeaIceMomentumEquation) || return NamedTuple()
+    η = with_tilt ? ocean_surface_height(ocean) : ZeroField(eltype(grid))
+    return (; ocean_surface_height = η, gravitational_acceleration)
+end
 
 function sea_ice_dynamics(grid, ocean=nothing;
                           sea_ice_ocean_drag_coefficient = 5.5e-3,
@@ -265,7 +296,7 @@ function sea_ice_dynamics(grid, ocean=nothing;
                                   basal_stress,
                                   rheology,
                                   free_drift,
-                                  ocean_surface_tilt_keyword(with_ocean_surface_tilt, ocean,
+                                  ocean_surface_tilt_keyword(with_ocean_surface_tilt, ocean, velocity_grid,
                                                              gravitational_acceleration)...,
                                   solver)
 end
@@ -306,7 +337,8 @@ function InterfaceComputations.default_ai_temperature(sea_ice::Simulation{<:SeaI
     internal_flux = if isnothing(snow_thermo)
         ice_flux
     else
-        IceSnowConductiveFlux(snow_thermo.internal_heat_flux.conductivity, ice_flux.conductivity)
+        IceSnowConductiveFlux(snow_thermo.internal_heat_flux.conductivity, ice_flux.conductivity,
+                              ice_flux.itd_shape)
     end
     return SkinTemperature(internal_flux)
 end

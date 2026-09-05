@@ -1,6 +1,6 @@
 module SeaIces
 
-export sea_ice_simulation, FreezingLimitedOceanTemperature, LandfastBasalStress
+export sea_ice_simulation, FreezingLimitedOceanTemperature, LandfastBasalStress, ThicknessDependentConductivity
 
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: architecture
