@@ -64,7 +64,7 @@ jobs:
       - name: Set JULIA_CPU_TARGET
         shell: bash
         run: |
-          echo "JULIA_CPU_TARGET=generic;haswell,-xsaveopt,clone_all;znver3,-rdrnd,base(1);znver4,-rdrnd,base(1);sapphirerapids,-rdrnd,base(1)" | tee -a "${GITHUB_ENV}"
+          echo "JULIA_CPU_TARGET=generic;haswell,-xsaveopt,clone_all;x86-64-v4,-rdrnd,base(1)" | tee -a "${GITHUB_ENV}"
       - name: Instantiate test environment
         timeout-minutes: 60
         shell: bash
