@@ -223,7 +223,7 @@ ocean = PrescribedOcean(surface_grid, sst.times; sea_surface_temperature = sst)
 # What makes a cell land or ocean is its `ocean_fraction` þ: the fraction of the cell's area
 # below sea level in ETOPO2022 — the same dataset that shapes the child's terrain, so the
 # coastline and the orography agree. Coastal cells carry genuine fractions rather than a binary
-# mask: the coupler blends each cell's land and ocean fluxes as `(1 - þ) * land_fluxes + þ * ocean_fluxes`, and
+# mask: the coupler blends each cell's land and ocean fluxes as `(1 - þ) * land_fluxes + þ * ocean_fluxes`;
 # the radiation sees the same blend of skin temperatures.
 
 ocean_fraction = regrid_ocean_fraction(surface_grid; dataset = ETOPO2022())
@@ -382,9 +382,9 @@ function parent_slices(t)
     hydrometeors = parent.microphysical_variables
     qˡ = hydrometeors.qᶜˡ[Time(t)] + hydrometeors.qʳ[Time(t)]   ## total liquid: cloud + rain
     qⁱ = hydrometeors.qᶜⁱ[Time(t)] + hydrometeors.qˢ[Time(t)]   ## total ice: cloud ice + snow
-    (; ρ, θˡⁱ, qᵗ) = breeze_prognostic_state(constants, pˢᵗ,
-                        parent.temperature[Time(t)], parent.specific_humidity[Time(t)],
-                        qˡ, qⁱ, parent.pressure)
+    (; ρ, θˡⁱ, qᵗ) = breeze_prognostic_state(constants, pˢᵗ, parent.temperature[Time(t)],
+                                             parent.specific_humidity[Time(t)],
+                                             qˡ, qⁱ, parent.pressure)
     u, v = parent.velocities.u[Time(t)], parent.velocities.v[Time(t)]
     ## `u` and `v` are staggered, so |U| would inherit `u`'s location; force it to centers, where the
     ## other three frames already live, so every parent panel shares one prototype location.
