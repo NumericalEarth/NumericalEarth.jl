@@ -202,7 +202,7 @@ end
 
         net.ρu[i, j, 1] = ℑxᶠᵃᵃ(i, j, 1, grid, ρτᶜᶜᶜ, ao_fluxes.x_momentum, ai_fluxes.x_momentum, al_fluxes.x_momentum, þ, ℵ)
         net.ρv[i, j, 1] = ℑyᵃᶠᵃ(i, j, 1, grid, ρτᶜᶜᶜ, ao_fluxes.y_momentum, ai_fluxes.y_momentum, al_fluxes.y_momentum, þ, ℵ)
-        net.ρe[i, j, 1]  = Qc   # sensible heat only; latent heat handled by moisture flux
+        net.ρe[i, j, 1] = Qc   # sensible heat only; latent heat handled by moisture flux
         net.ρqᵛᵉ[i, j, 1] = Fv
     end
 end
