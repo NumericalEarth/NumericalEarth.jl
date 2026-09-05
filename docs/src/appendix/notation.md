@@ -298,7 +298,7 @@ superscript band.
 | ``\tau^y`` | `τʸ` | meridional kinematic stress | Kinematic meridional momentum flux (m² s⁻²) |
 | ``\rho \tau^x`` | `ρτˣ` | zonal wind stress | Mass-weighted zonal stress (N m⁻²) |
 | ``\rho \tau^y`` | `ρτʸ` | meridional wind stress | Mass-weighted meridional stress (N m⁻²) |
-| ``\theta`` | `ocean_fraction` | ocean fraction | Areal fraction of a surface cell covered by ocean; the land fraction is ``1 - \theta`` (–) |
+| ``\text{þ}`` | `þ` | ocean fraction | Areal fraction of a surface cell covered by ocean (`ocean_fraction`); the land fraction is ``1 - \text{þ}`` (–) |
 
 ## Net ocean fluxes
 
@@ -368,6 +368,7 @@ Most symbols can be entered in the Julia REPL and in editors with Julia support 
 | `α` | `\alpha` | Alpha (albedo) |
 | `ϵ` | `\epsilon` | Epsilon (emissivity) |
 | `ℵ` | `\aleph` | Aleph (ice concentration) |
+| `þ` | `\th` | Thorn (ocean fraction) |
 | `ϰ` | `\varkappa` | Varkappa (von Kármán constant) |
 | `Ψ` | `\Psi` | Capital Psi (interface state) |
 | `★` | `\bigstar` | Star (similarity-theory scale) |

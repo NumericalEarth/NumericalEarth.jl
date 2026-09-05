@@ -178,30 +178,30 @@ NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos::BreezeA
 #####
 ##### Assemble ESM similarity-theory fluxes into Breeze bottom BCs,
 ##### weighting each surface's contribution by the surface partition:
-##### open ocean θ (1 - ℵ), sea ice θ ℵ, land (1 - θ).
+##### open ocean þ (1 - ℵ), sea ice þ ℵ, land (1 - þ).
 #####
 
 # Center-located partition-weighted stress, interpolated to the face-located ρu/ρv
 # only after weighting.
-@inline function ρτᶜᶜᶜ(i, j, k, grid, ρτᵃᵒ, ρτᵃⁱ, ρτᵃˡ, θ, ℵ)
+@inline function ρτᶜᶜᶜ(i, j, k, grid, ρτᵃᵒ, ρτᵃⁱ, ρτᵃˡ, þ, ℵ)
     @inbounds begin
-        θᵢ = θ[i, j, k]
+        þᵢ = þ[i, j, k]
         ℵᵢ = ℵ[i, j, k]
-        return θᵢ * ((1 - ℵᵢ) * ρτᵃᵒ[i, j, k] + ℵᵢ * ρτᵃⁱ[i, j, k]) + (1 - θᵢ) * ρτᵃˡ[i, j, k]
+        return þᵢ * ((1 - ℵᵢ) * ρτᵃᵒ[i, j, k] + ℵᵢ * ρτᵃⁱ[i, j, k]) + (1 - þᵢ) * ρτᵃˡ[i, j, k]
     end
 end
 
-@kernel function _assemble_net_atmosphere_fluxes!(net, ao_fluxes, ai_fluxes, al_fluxes, θ, ℵ, grid)
+@kernel function _assemble_net_atmosphere_fluxes!(net, ao_fluxes, ai_fluxes, al_fluxes, þ, ℵ, grid)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        θᵢ = θ[i, j, 1]
+        þᵢ = þ[i, j, 1]
         ℵᵢ = ℵ[i, j, 1]
 
-        Qc = θᵢ * ((1 - ℵᵢ) * ao_fluxes.sensible_heat[i, j, 1] + ℵᵢ * ai_fluxes.sensible_heat[i, j, 1]) + (1 - θᵢ) * al_fluxes.sensible_heat[i, j, 1]
-        Fv = θᵢ * ((1 - ℵᵢ) * ao_fluxes.water_vapor[i, j, 1]   + ℵᵢ * ai_fluxes.water_vapor[i, j, 1])   + (1 - θᵢ) * al_fluxes.water_vapor[i, j, 1]
+        Qc = þᵢ * ((1 - ℵᵢ) * ao_fluxes.sensible_heat[i, j, 1] + ℵᵢ * ai_fluxes.sensible_heat[i, j, 1]) + (1 - þᵢ) * al_fluxes.sensible_heat[i, j, 1]
+        Fv = þᵢ * ((1 - ℵᵢ) * ao_fluxes.water_vapor[i, j, 1]   + ℵᵢ * ai_fluxes.water_vapor[i, j, 1])   + (1 - þᵢ) * al_fluxes.water_vapor[i, j, 1]
 
-        net.ρu[i, j, 1] = ℑxᶠᵃᵃ(i, j, 1, grid, ρτᶜᶜᶜ, ao_fluxes.x_momentum, ai_fluxes.x_momentum, al_fluxes.x_momentum, θ, ℵ)
-        net.ρv[i, j, 1] = ℑyᵃᶠᵃ(i, j, 1, grid, ρτᶜᶜᶜ, ao_fluxes.y_momentum, ai_fluxes.y_momentum, al_fluxes.y_momentum, θ, ℵ)
+        net.ρu[i, j, 1] = ℑxᶠᵃᵃ(i, j, 1, grid, ρτᶜᶜᶜ, ao_fluxes.x_momentum, ai_fluxes.x_momentum, al_fluxes.x_momentum, þ, ℵ)
+        net.ρv[i, j, 1] = ℑyᵃᶠᵃ(i, j, 1, grid, ρτᶜᶜᶜ, ao_fluxes.y_momentum, ai_fluxes.y_momentum, al_fluxes.y_momentum, þ, ℵ)
         net.ρe[i, j, 1]  = Qc   # sensible heat only; latent heat handled by moisture flux
         net.ρqᵛᵉ[i, j, 1] = Fv
     end
@@ -222,11 +222,11 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmo
     ao_fluxes = computed_fluxes(interfaces.atmosphere_ocean_interface)
     ai_fluxes = computed_fluxes(interfaces.atmosphere_sea_ice_interface)
     al_fluxes = computed_fluxes(interfaces.atmosphere_land_interface)
-    θ = interfaces.surface_partition.ocean_fraction
+    þ = interfaces.surface_partition.ocean_fraction
     ℵ = sea_ice_concentration(coupled_model.sea_ice)
 
     launch!(arch, grid, params, _assemble_net_atmosphere_fluxes!,
-            net, ao_fluxes, ai_fluxes, al_fluxes, θ, ℵ, grid)
+            net, ao_fluxes, ai_fluxes, al_fluxes, þ, ℵ, grid)
 
     return nothing
 end

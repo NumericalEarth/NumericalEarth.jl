@@ -9,9 +9,9 @@ using ..EarthSystemModels: sea_ice_concentration, DegreesCelsius, convert_to_kel
     SurfacePartition{F, T}
 
 Fractional partition of each exchange-grid cell among the surface types the atmosphere
-couples to. `ocean_fraction` (θ) is the fraction of the cell covered by ocean, so the
-land fraction is `1 - θ`, and the sea ice concentration ℵ further splits the ocean
-fraction into an open-ocean part `θ (1 - ℵ)` and an ice-covered part `θ ℵ`.
+couples to. `ocean_fraction` (þ) is the fraction of the cell covered by ocean, so the
+land fraction is `1 - þ`, and the sea ice concentration ℵ further splits the ocean
+fraction into an open-ocean part `þ (1 - ℵ)` and an ice-covered part `þ ℵ`.
 `surface_temperature` is the partition-weighted skin temperature (K) — the single
 surface the atmosphere and radiation see; it is `nothing` unless the model carries
 both a land and an ocean interface.
@@ -33,12 +33,12 @@ function SurfacePartition(grid, ocean_fraction, ao_interface, al_interface)
     isnothing(ocean_fraction) &&
         throw(ArgumentError("a model with both ocean and land components requires an explicit `ocean_fraction`"))
 
-    θ = Field{Center, Center, Nothing}(grid)
-    set!(θ, ocean_fraction)
-    fill_halo_regions!(θ)
+    þ = Field{Center, Center, Nothing}(grid)
+    set!(þ, ocean_fraction)
+    fill_halo_regions!(þ)
     Tₛ = Field{Center, Center, Nothing}(grid)
 
-    return SurfacePartition(θ, Tₛ)
+    return SurfacePartition(þ, Tₛ)
 end
 
 #####
@@ -74,14 +74,14 @@ function update_surface_temperature!(partition::SurfacePartition, coupled_model)
     return nothing
 end
 
-@kernel function _update_surface_temperature!(Tₛ, θ, ℵ, Tᵃᵒ, Tᵃⁱ, Tᵃˡ, ocean_units, sea_ice_units)
+@kernel function _update_surface_temperature!(Tₛ, þ, ℵ, Tᵃᵒ, Tᵃⁱ, Tᵃˡ, ocean_units, sea_ice_units)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        θᵢ = θ[i, j, 1]
+        þᵢ = þ[i, j, 1]
         ℵᵢ = ℵ[i, j, 1]
         Tᵒ = convert_to_kelvin(ocean_units, Tᵃᵒ[i, j, 1])
         Tⁱ = convert_to_kelvin(sea_ice_units, Tᵃⁱ[i, j, 1])
         Tˡ = Tᵃˡ[i, j, 1]
-        Tₛ[i, j, 1] = (1 - θᵢ) * Tˡ + θᵢ * ((1 - ℵᵢ) * Tᵒ + ℵᵢ * Tⁱ)
+        Tₛ[i, j, 1] = (1 - þᵢ) * Tˡ + þᵢ * ((1 - ℵᵢ) * Tᵒ + ℵᵢ * Tⁱ)
     end
 end

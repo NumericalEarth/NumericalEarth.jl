@@ -53,7 +53,7 @@ using CUDA
 using Printf
 using Dates: DateTime, Second
 
-# This 12 km LAM (162×153×50 ≈ 1.2M cells, split-explicit) targets a CUDA GPU; switch to `CPU()` only
+# This 12 km LAM (162×180×50 ≈ 1.5M cells, split-explicit) targets a CUDA GPU; switch to `CPU()` only
 # for a small smoke test.
 arch = GPU()
 
@@ -73,10 +73,10 @@ duration = 3hours
 start_date = DateTime(2011, 05, 20, 0)
 stop_date = start_date + Second(duration)
 
-## location: ARM SGP in the northern half, open Gulf water in the southern third
+## location: ARM SGP mid-domain, open Gulf water in the southern quarter
 φ₀, λ₀ = 36.605, -97.485    # ARM SGP site (deg)
 λ_west, λ_east   = -104.5, -86.5
-φ_south, φ_north = 24.5, 41.5
+φ_south, φ_north = 24.5, 44.5
 Lλ = λ_east - λ_west
 Lφ = φ_north - φ_south
 
@@ -206,21 +206,21 @@ set!(ocean.sea_surface_temperature[1], skin_temperature)
 
 # ## Surface partition
 #
-# What makes a cell land or ocean is its `ocean_fraction` θ: the fraction of the cell's area
+# What makes a cell land or ocean is its `ocean_fraction` þ: the fraction of the cell's area
 # below sea level in ETOPO2022 — the same dataset that shapes the child's terrain, so the
 # coastline and the orography agree. Coastal cells carry genuine fractions rather than a binary
-# mask: the coupler blends each cell's land and ocean fluxes as `(1 - θ)` land + `θ` ocean, and
+# mask: the coupler blends each cell's land and ocean fluxes as `(1 - þ)` land + `þ` ocean, and
 # the radiation sees the same blend of skin temperatures.
 
 ocean_fraction = regrid_ocean_fraction(surface_grid; dataset = ETOPO2022())
 
 fig_partition = Figure(size = (700, 620))
-ax_θ = Axis(fig_partition[1, 1]; xlabel = "longitude (°)", ylabel = "latitude (°)",
-            title = "Ocean fraction θ (ETOPO2022)")
-hm_θ = heatmap!(ax_θ, ocean_fraction; colormap = :dense, colorrange = (0, 1))
-scatter!(ax_θ, [λ₀], [φ₀]; marker = :star5, color = :orange, markersize = 15)
-text!(ax_θ, λ₀ + 0.3, φ₀; text = "ARM SGP", color = :orange, align = (:left, :center))
-Colorbar(fig_partition[1, 2], hm_θ)
+ax_þ = Axis(fig_partition[1, 1]; xlabel = "longitude (°)", ylabel = "latitude (°)",
+            title = "Ocean fraction þ (ETOPO2022)")
+hm_þ = heatmap!(ax_þ, ocean_fraction; colormap = :dense, colorrange = (0, 1))
+scatter!(ax_þ, [λ₀], [φ₀]; marker = :star5, color = :orange, markersize = 15)
+text!(ax_þ, λ₀ + 0.3, φ₀; text = "ARM SGP", color = :orange, align = (:left, :center))
+Colorbar(fig_partition[1, 2], hm_þ)
 save("gulf_ocean_fraction.png", fig_partition)
 
 fig_partition

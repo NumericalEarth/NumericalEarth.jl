@@ -238,8 +238,8 @@ end
 
         @testset "Net atmosphere fluxes are partition-weighted on $A" begin
             ## West half land, east half ocean, with a fractional strip across the middle.
-            θ(x) = clamp(1/2 + x / 10kilometers, 0, 1)
-            model = build_partition_test_model(arch; ocean_fraction=θ)
+            þ(x) = clamp(1/2 + x / 10kilometers, 0, 1)
+            model = build_partition_test_model(arch; ocean_fraction=þ)
             update_state!(model)
 
             interfaces = model.interfaces
