@@ -91,7 +91,8 @@ with `gₛ`, `gₛ,max` in mol H₂O m⁻² s⁻¹, a saturating light factor
 `APAR/(APAR + APAR₁ᐟ₂)`, a hyperbolic VPD factor `1/(1 + kᴰ VPD)`, the Noah-MP
 quadratic temperature factor `1 − c (Tᵒᵖᵗ − Tˡᵉᵃᶠ)²` evaluated at the leaf
 temperature, and the soil-moisture factor `β(𝒮)`. `gₛ,max = 0.4` corresponds to a
-minimum stomatal resistance of about 100 s m⁻¹.
+minimum stomatal resistance of about 100 s m⁻¹. The light and VPD factors are this
+model's own forms, not those of Jarvis (1976), Stewart (1988), or Noilhan & Planton (1989).
 
 Fields:
 - `maximum_conductance`   : unstressed maximum conductance (mol m⁻² s⁻¹).

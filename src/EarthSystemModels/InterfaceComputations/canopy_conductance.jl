@@ -99,17 +99,16 @@ Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
     (leaf_area_index = convert(eltype(grid), surface_field_value(vegetation, i, j, time_interpolator)),)
 
 # Bulk canopy (stomatal) mass conductance `gᶜ = LAI · gₛ · Mᵈ` (kg m⁻² s⁻¹) and the leaf
-# saturation humidity `qᵛ⁺(Tˡᵉᵃᶠ)`.
-@inline function canopy_conductance_terms(q::CanopyConductanceHumidity, Tˡᵉᵃᶠ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ,
+# saturation humidity `qᵛ⁺(Tˡᵉᵃᶠ)`; `qᵃ` is the humidity of the air the leaf exchanges with.
+@inline function canopy_conductance_terms(q::CanopyConductanceHumidity, Tˡᵉᵃᶠ, qᵃ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ,
                                           canopy_transmittance)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     pᵃᵗ = Ψₐ.p
-    qᵃᵗ = Ψₐ.q
     Tᵃᵗ = Ψₐ.T
 
     LAI  = Ψₛ.vegetation.leaf_area_index               # materialized per-cell (constant, Field, or FTS)
     qᵛ⁺  = saturation_specific_humidity(ℂᵃᵗ, Tˡᵉᵃᶠ, pᵃᵗ, q.phase)
-    VPD  = vapor_pressure_deficit(ℂᵃᵗ, Tˡᵉᵃᶠ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, q.phase)
+    VPD  = vapor_pressure_deficit(ℂᵃᵗ, Tˡᵉᵃᶠ, Tᵃᵗ, pᵃᵗ, qᵃ, q.phase)
     β    = evaporation_efficiency(q.moisture_stress, Ψₛ.hydrology)
     APAR = absorbed_par_value(q.absorbed_par, Ψᵣ, LAI, canopy_transmittance)
 
@@ -124,7 +123,7 @@ end
 
 @inline function compute_interface_humidity(q::CanopyConductanceHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     FT = eltype(Ψₛ)
-    gᶜ, qᵛ⁺ = canopy_conductance_terms(q, Tₛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, nothing)
+    gᶜ, qᵛ⁺ = canopy_conductance_terms(q, Tₛ, Ψₐ.q, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, nothing)
 
     Gᵃ = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
     qˢ = conductance_weighted_node(Ψₛ.specific_humidity, (gᶜ, Gᵃ), (qᵛ⁺, Ψₐ.q))

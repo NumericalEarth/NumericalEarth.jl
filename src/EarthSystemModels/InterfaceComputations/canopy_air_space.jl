@@ -331,7 +331,9 @@ Fields:
 - `extinction`, `clumping` : Beer–Lambert `K`, `Ω` for the shortwave split.
 - `leaf_boundary_conductance` : per-leaf boundary-layer conductance `gᵇ` (m s⁻¹) →
   sensible `gˡᵉᵃᶠᵀ = ρcₚ·LAI·gᵇ`, vapor `gˡᵇ = ρ·LAI·gᵇ` (in series with the stomata
-  when dry, alone over the wetted fraction).
+  when dry, alone over the wetted fraction). A constant; CTSM and ClimaLand scale it
+  with the wind as `Cᵥ √(u★ / dˡᵉᵃᶠ)` (`Cᵥ = 0.01 m s⁻¹ᐟ²`, `dˡᵉᵃᶠ = 0.04 m`), which a
+  wind-dependent closure in this slot would reproduce.
 - `undercanopy_conductance` : ground↔canopy-air conductance `gᵘᶜ` → `gᵍᵀ = ρcₚ·gᵘᶜ`;
   a constant `Number` (m s⁻¹), an [`AreaIndexUndercanopyConductance`](@ref), or a
   [`FrictionVelocityUndercanopyConductance`](@ref).
@@ -519,9 +521,10 @@ end
 end
 
 # Leaf vapor conductance `gˡᵉᵃᶠᵛ`, its wet-canopy part `gʷ`, and the leaf-saturated
-# humidity `qˡᵉᵃᶠ` at the leaf temperature; `qᵃᶜ` is the node humidity the wet cap sees.
+# humidity `qˡᵉᵃᶠ` at the leaf temperature; the stomata and the wet cap see the node
+# humidity `qᵃᶜ`.
 @inline function leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜ, gˡᵇ, Δt, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, transmittance)
-    gᶜ, qˡᵉᵃᶠ = canopy_conductance_terms(c.canopy, Tˡᵉᵃᶠ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, transmittance)
+    gᶜ, qˡᵉᵃᶠ = canopy_conductance_terms(c.canopy, Tˡᵉᵃᶠ, qᵃᶜ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, transmittance)
     fʷᵉᵗ, gʷ = wet_canopy_conductance(c.interception, Ψₛ.hydrology, gˡᵇ, qˡᵉᵃᶠ - qᵃᶜ, Δt)
     return leaf_vapor_conductance(gᶜ, gˡᵇ, fʷᵉᵗ, gʷ), gʷ, qˡᵉᵃᶠ
 end

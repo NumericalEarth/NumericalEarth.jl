@@ -646,7 +646,9 @@ C \\frac{dT_s}{dt} = R_n(T_s) + G(T_s) - H(T_s) - LE(T_s),
 ```
 
 frozen through the Monin–Obukhov fixed point and advanced once per step by a
-backward-Euler update. The default `heat_capacity = 10⁵` is about 5 cm of moist soil.
+backward-Euler update. The default `heat_capacity = 10⁵` is about 5 cm of moist soil,
+a layer the slab's own heat capacity also contains: it sets the skin's response time
+rather than adding a separate reservoir.
 
 ```jldoctest
 using NumericalEarth
