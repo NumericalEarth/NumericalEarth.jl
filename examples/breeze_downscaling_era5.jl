@@ -3,7 +3,7 @@
 # A limited-area model (LAM) example that downscales ERA5 reanalysis to a ~12 km Breeze compressible
 # atmosphere over a domain running from the U.S. Southern Great Plains to the Gulf of Mexico and the
 # open Atlantic, for the Midlatitude Continental Convective Clouds Experiment (MC3E) 20 May 2011
-# squall-line case ([Fan2017](@citet)). The lower boundary is part land, part ocean: an interactive
+# squall-line case [Fan2017](@citep). The lower boundary is part land, part ocean: an interactive
 # `SlabLand` and a prescribed-SST ocean share the surface through a fractional `SurfacePartition`,
 # all-sky RRTMGP radiation heats the column and the surface, and the low-level jet that feeds the
 # squall line draws its moisture from the resolved Gulf.
