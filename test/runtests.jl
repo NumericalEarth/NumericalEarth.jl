@@ -40,15 +40,6 @@ remote_data_tests = ["test_bathymetry",
                      "test_soilgrids",
                      "test_dataset_region",
                      "test_diagnostics_1",
-                     # Use real data only as forcing or initial condition; to be moved onto the synthetic datasets
-                     "test_coefficient_based_fluxes",
-                     "test_surface_fluxes",
-                     "test_sea_ice_ocean_heat_fluxes",
-                     "test_ocean_only_model",
-                     "test_ocean_sea_ice_model",
-                     "test_tracer_budget",
-                     "test_column_field",
-                     "test_speedy_coupling",
                      "test_mangling"]
 
 if filter_tests!(testsuite, args)
