@@ -50,8 +50,7 @@ end
                                  closure = nothing,
                                  bottom_drag_coefficient = 0)
 
-        dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
+        atmosphere = synthetic_prescribed_atmosphere(arch)
 
         @allowscalar begin
             h  = atmosphere.surface_layer_height
@@ -234,8 +233,7 @@ end
                                            bottom_drag_coefficient = 0)
 
         set!(ocean_with_land.model, T = 15, S = 30)
-        land_dates = all_dates(RepeatYearJRA55(), :river_freshwater_flux)
-        land = JRA55PrescribedLand(arch; end_date=land_dates[2])
+        land = synthetic_prescribed_land(arch)
         model_with_land = OceanOnlyModel(ocean_with_land; atmosphere, land)
 
         # Verify land exchanger is wired up
@@ -272,8 +270,7 @@ end
                                                   closure = nothing,
                                   bottom_drag_coefficient = 0.0)
 
-        dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
+        atmosphere = synthetic_prescribed_atmosphere(arch; dates = all_dates(SyntheticAtmosphere(), :temperature)[1:2])
 
         fill!(ocean.model.tracers.T, -2.0)
 
