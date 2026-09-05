@@ -1,22 +1,6 @@
 #####
 ##### `SurfaceWaterStore` — a prognostic surface pond wrapping a soil hydrology.
 #####
-##### Water a runoff closure rejects at the surface (the wrapped soil's
-##### `surface_runoff`) has not left the column — it ponds. This closure adds one
-##### prognostic, the surface water store `Sˢᶠᶜ` (kg m⁻²), that catches everything
-##### the soil rejects, drains to true runoff on a timescale `τ`, and re-offers the
-##### remainder to infiltration. Each step, around the delegated soil step:
-#####
-#####   R    = Sⁿ (1 − e^{−Δt/τ}) / Δt   # true runoff (exact linear drain)
-#####   Pˡ  += Sⁿ e^{−Δt/τ} / Δt         # remainder re-offered to infiltration
-#####   (soil step: infiltrates up to its cap, rejects the rest into `surface_runoff`)
-#####   Sⁿ⁺¹ = Δt · Rˢᶠᶜ                 # rejected water refills the pond
-#####
-##### Nothing is created or destroyed — pond → offer → infiltrated or rejected →
-##### pond — so the surface water balance closes to machine precision and the store
-##### stays non-negative without a clamp. The re-offer passes through the soil's own
-##### runoff cap, so the pond needs no knowledge of the infiltration model.
-#####
 
 """
     SurfaceWaterStore(FT = Oceananigans.defaults.FloatType;
@@ -28,11 +12,9 @@ Prognostic surface pond `Sˢᶠᶜ` (kg m⁻²) wrapping a soil hydrology `soil`
 Rejected infiltration lands in the pond instead of vanishing; the pond drains to true
 runoff on the e-folding timescale `drainage_timescale` (`τ`, s) — published as
 `surface_water_runoff`, the flux that actually leaves the column — and re-offers what
-remains to infiltration through `liquid_precipitation_flux`. The drain is the exact
-solution of the linear reservoir `dS/dt = −S/τ` over the step.
-
-The pond carries no internal energy (a 5 mm pond is ~2% of a 0.1 m dry slab's areal
-heat capacity), so pond drainage advects no heat yet.
+remains to infiltration through `liquid_precipitation_flux`. The existing store follows
+the homogeneous linear-reservoir decay over each step; newly rejected water is added at
+the end of the step.
 
 ```jldoctest
 julia> using NumericalEarth
@@ -84,7 +66,7 @@ saturation(h::SurfaceWaterStore, land) = saturation(h.soil, land)
     i, j = @index(Global, NTuple)
     @inbounds begin
         Sⁿ = S[i, j, 1]
-        Sᵈ = Sⁿ * exp(-Δt / τ)   # store left after the exact linear drain
+        Sᵈ = Sⁿ * exp(-Δt / τ)
         Pl[i, j, 1] += Sᵈ / Δt
         R[i, j, 1]   = (Sⁿ - Sᵈ) / Δt
     end

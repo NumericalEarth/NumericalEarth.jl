@@ -579,6 +579,10 @@ Adapt.@adapt_structure CanopyAirSpace
     return (1 - fʷᵉᵗ) * gᵈ + fʷᵉᵗ * gˡᵇ
 end
 
+@inline canopy_water_flux(::Nothing, Eʷᵉᵗ, Eˡᵉᵃᶠ) = Eʷᵉᵗ
+@inline canopy_water_flux(::CanopyInterception, Eʷᵉᵗ, Eˡᵉᵃᶠ) =
+    Eʷᵉᵗ + min(zero(Eˡᵉᵃᶠ), Eˡᵉᵃᶠ - Eʷᵉᵗ)
+
 # Leaf vapor conductance `gˡᵉᵃᶠᵛ` and leaf-saturated humidity `qˡᵉᵃᶠ` at the leaf temperature `Tˡᵉᵃᶠ`.
 @inline function leaf_vapor_terms(canopy, Tˡᵉᵃᶠ, gˡᵇ, fʷᵉᵗ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, transmittance)
     gᶜ, qˡᵉᵃᶠ = canopy_conductance_terms(canopy, Tˡᵉᵃᶠ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, transmittance)
@@ -768,10 +772,13 @@ closes.
 
     Hˡᵉᵃᶠ    = gˡᵉᵃᶠᵀ * (Tˡᵉᵃᶠ - Tᵃᶜ)
     Hᵍ    = gᵍᵀ * (Tᵍ - Tᵃᶜ)
-    LEˡᵉᵃᶠ   = ℒ * gˡᵉᵃᶠᵛ * (qˡᵉᵃᶠ - qᵃᶜ)              # total leaf latent (transpiration + wet-canopy)
+    Eˡᵉᵃᶠ    = gˡᵉᵃᶠᵛ * (qˡᵉᵃᶠ - qᵃᶜ)
+    LEˡᵉᵃᶠ   = ℒ * Eˡᵉᵃᶠ
     LEᵍ   = ℒ * Gᵉ * (qᵉ - qᵃᶜ)
     𝒬ᵍ = Λ * (Tᵍ - Tˡᵃ)
-    Eʷᵉᵗ = fʷᵉᵗ * gˡᵇ * (qˡᵉᵃᶠ - qᵃᶜ)           # wet-canopy evaporation, mass flux (kg m⁻² s⁻¹, up)
+    gʷᵉᵗ = fʷᵉᵗ * gˡᵇ
+    Eʷᵉᵗ = gʷᵉᵗ * (qˡᵉᵃᶠ - qᵃᶜ)
+    Eᶜ = canopy_water_flux(c.interception, Eʷᵉᵗ, Eˡᵉᵃᶠ)
     LEʷᵉᵗ = ℒ * Eʷᵉᵗ                           # wet-canopy latent heat (W m⁻², up); LEˡᵉᵃᶠ − LEʷᵉᵗ = transpiration
 
     # Node balance ingredients for the prognostic advance: conductance sums per side
@@ -788,7 +795,8 @@ closes.
               Hˡᵉᵃᶠ = convert(FT, Hˡᵉᵃᶠ), Hᵍ = convert(FT, Hᵍ),
               LEˡᵉᵃᶠ = convert(FT, LEˡᵉᵃᶠ), LEᵍ = convert(FT, LEᵍ),
               𝒬ᵍ = convert(FT, 𝒬ᵍ), Eʷᵉᵗ = convert(FT, Eʷᵉᵗ),
-              LEʷᵉᵗ = convert(FT, LEʷᵉᵗ),
+              LEʷᵉᵗ = convert(FT, LEʷᵉᵗ), Eᶜ = convert(FT, Eᶜ),
+              gʷᵉᵗ = convert(FT, gʷᵉᵗ),
               Σgᵀ = convert(FT, Σgᵀ), Σgᵛ = convert(FT, Σgᵛ),
               T_eq = convert(FT, T_eq), q_eq = convert(FT, q_eq),
               gˡᵉᵃᶠᵀ = convert(FT, gˡᵉᵃᶠᵀ), gᵍᵀ = convert(FT, gᵍᵀ),
@@ -870,7 +878,7 @@ struct CanopyAirSpaceDiagnostics{F, S}
     soil_latent_heat       :: F   # soil evaporation LEᵍ
     canopy_sensible_heat   :: F   # leaf sensible Hˡᵉᵃᶠ
     soil_sensible_heat     :: F   # ground sensible Hᵍ
-    canopy_evaporation     :: F   # wet-canopy evaporation Eʷᵉᵗ (kg m⁻² s⁻¹, up)
+    canopy_evaporation     :: F   # canopy-store vapor flux Eᶜ (kg m⁻² s⁻¹, up)
     canopy_wet_latent_heat :: F   # wet-canopy latent heat ℒ·Eʷᵉᵗ (W m⁻², up)
     state                  :: S   # prognostic CanopyAirState, or nothing (diagnostic node)
 end

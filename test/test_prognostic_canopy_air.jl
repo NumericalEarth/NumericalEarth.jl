@@ -8,7 +8,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     DryLayerVaporPistonVelocity, ConstantTortuosity, CriticalSaturation, InteractiveAbsorbedPAR,
     SoilConductiveFlux, CanopyAirSpaceDiagnostics, CanopyAirState,
     DiagnosticCanopyAir, PrognosticCanopyAir, advance_canopy_air, step_mean_canopy_air,
-    AtmosphericThermodynamics
+    AtmosphericThermodynamics, compute_atmosphere_land_fluxes!
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, AtmosphereThermodynamicsParameters
 using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
 using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
@@ -104,10 +104,19 @@ end
         @test 0 < q₀ < 0.05
         @test value1(Ts.interface) == T₀
 
+        time_step!(mp, 300.0)
+        T¹ = value1(Ts.state.temperature)
+        q¹ = value1(Ts.state.specific_humidity)
+        update_state!(mp)
+        update_state!(mp)
+        @test value1(Ts.state.temperature) == T¹
+        @test value1(Ts.state.specific_humidity) == q¹
+
         # --- daytime equivalence: at windy daytime the node's relaxation time is much
         # shorter than the step, so the prognostic column matches the diagnostic one.
         md = prognostic_test_model(arch, prognostic_test_cas(Float64; storage = DiagnosticCanopyAir()))
         @test md.interfaces.atmosphere_land_interface.temperature.state === nothing
+        time_step!(md, 300.0)
         for _ in 1:24
             time_step!(md, 300.0)
             time_step!(mp, 300.0)
@@ -117,28 +126,6 @@ end
         @test value1(fp.latent_heat) ≈ value1(fd.latent_heat) atol = 2
         @test value1(fp.sensible_heat) ≈ value1(fd.sensible_heat) atol = 2
 
-        # --- exact step ledger: flux to the atmosphere = Kirchhoff supply − storage
-        # tendency, with capacities Cᵀ = ρ cᵖ h_c and Cᵛ = ρ h_c.
-        T⁻ = value1(Ts.state.temperature)
-        q⁻ = value1(Ts.state.specific_humidity)
-        Δt = 300.0
-        time_step!(mp, Δt)
-        T⁺ = value1(Ts.state.temperature)
-        q⁺ = value1(Ts.state.specific_humidity)
-        ℂ  = AtmosphereThermodynamicsParameters(Float64)
-        ρ  = AtmosphericThermodynamics.air_density(ℂ, 300.0, 101325.0, 0.008)
-        cᵖ = AtmosphericThermodynamics.cp_m(ℂ, 0.008)
-        ℒ  = AtmosphericThermodynamics.latent_heat_vapor(ℂ, 300.0)
-        h_c = 10.0
-        Sᵀ = ρ * cᵖ * h_c * (T⁺ - T⁻) / Δt
-        Sᵛ = ℒ * ρ * h_c * (q⁺ - q⁻) / Δt
-        Hˡᵉᵃᶠ  = value1(Ts.canopy_sensible_heat)
-        Hᵍ  = value1(Ts.soil_sensible_heat)
-        LEˡᵉᵃᶠ = value1(Ts.canopy_latent_heat)
-        LEᵍ = value1(Ts.soil_latent_heat)
-        @test Hˡᵉᵃᶠ + Hᵍ - value1(fp.sensible_heat) ≈ Sᵀ atol = 1e-6
-        @test LEˡᵉᵃᶠ + LEᵍ - value1(fp.latent_heat) ≈ Sᵛ atol = 1e-6
-
         # --- the node stays inside the hull of its sources.
         θᵃᵗ = 300.0
         @test min(value1(Ts.canopy), value1(Ts.soil_skin), θᵃᵗ) - 1 ≤ value1(Ts.interface) ≤
@@ -147,8 +134,7 @@ end
 
     # --- calm-dusk boundedness: the configuration where the diagnostic closure has no
     # steady state (hot wet soil under cooler dry air, near-calm wind, dusk radiation).
-    # The prognostic node keeps every exit finite, supply-consistent through the
-    # ledger, and free of kW-scale artifacts.
+    # The prognostic node keeps every exit finite and free of kW-scale artifacts.
     for arch in test_architectures
         cas = prognostic_test_cas(Float64; storage = PrognosticCanopyAir())
         mp = prognostic_test_model(arch, cas; shortwave = 50.0, longwave = 350.0,
@@ -165,5 +151,36 @@ end
         @test isfinite(value1(Ts.state.temperature))
         @test isfinite(value1(Ts.state.specific_humidity))
         @test 0 < value1(Ts.state.specific_humidity) < 0.06
+    end
+end
+
+@testset "Prognostic canopy-air step ledger" begin
+    for arch in test_architectures
+        cas = prognostic_test_cas(Float64; storage = PrognosticCanopyAir())
+        model = prognostic_test_model(arch, cas)
+        Δt = 300.0
+        time_step!(model, Δt)
+
+        interface = model.interfaces.atmosphere_land_interface
+        Ts = interface.temperature
+        T⁻ = value1(Ts.state.temperature)
+        q⁻ = value1(Ts.state.specific_humidity)
+        compute_atmosphere_land_fluxes!(model, interface; Δt)
+        T⁺ = value1(Ts.state.temperature)
+        q⁺ = value1(Ts.state.specific_humidity)
+
+        ℂ  = AtmosphereThermodynamicsParameters(Float64)
+        ρ  = AtmosphericThermodynamics.air_density(ℂ, 300.0, 101325.0, 0.008)
+        cᵖ = AtmosphericThermodynamics.cp_m(ℂ, 0.008)
+        ℒ  = AtmosphericThermodynamics.latent_heat_vapor(ℂ, 300.0)
+        canopy_air_depth = 10.0
+        Sᵀ = ρ * cᵖ * canopy_air_depth * (T⁺ - T⁻) / Δt
+        Sᵛ = ℒ * ρ * canopy_air_depth * (q⁺ - q⁻) / Δt
+        H = value1(Ts.canopy_sensible_heat) + value1(Ts.soil_sensible_heat) -
+            value1(interface.fluxes.sensible_heat)
+        LE = value1(Ts.canopy_latent_heat) + value1(Ts.soil_latent_heat) -
+             value1(interface.fluxes.latent_heat)
+        @test H ≈ Sᵀ atol = 1e-6
+        @test LE ≈ Sᵛ atol = 1e-6
     end
 end

@@ -7,12 +7,13 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyAirSpace, CanopyConductanceHumidity, DryLayerHumidity, StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity, ConstantTortuosity, CriticalSaturation, InteractiveAbsorbedPAR,
     SoilConductiveFlux, TiledLandInterface, bare_canopy_air_space, leaf_area_index_cover_fraction,
-    SimilarityTheoryFluxes, atmosphere_land_stability_functions, CanopyAirSpaceDiagnostics
+    SimilarityTheoryFluxes, atmosphere_land_stability_functions, CanopyAirSpaceDiagnostics,
+    PrognosticCanopyAir
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
 using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
 
-build_tiled_canopy_air_space(FT) = CanopyAirSpace(FT;
+build_tiled_canopy_air_space(FT; kw...) = CanopyAirSpace(FT;
     soil = DryLayerHumidity(FT;
         dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
                                                     dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
@@ -21,7 +22,7 @@ build_tiled_canopy_air_space(FT) = CanopyAirSpace(FT;
         thermal_exchange_depth = 0.05, porosity = 0.4),
     canopy = CanopyConductanceHumidity(FT; leaf_area_index = 3.0, moisture_stress = CriticalSaturation(0.5),
                                        absorbed_par = InteractiveAbsorbedPAR(FT)),
-    soil_skin_flux = SoilConductiveFlux(1.5, 0.05))
+    soil_skin_flux = SoilConductiveFlux(1.5, 0.05), kw...)
 
 land_roughness(FT, z₀m, z₀s) = SimilarityTheoryFluxes(FT;
     stability_functions          = atmosphere_land_stability_functions(FT),
@@ -70,6 +71,8 @@ scalar(field) = Array(interior(field))[1, 1, 1]
         model = tiled_land_model(arch, cas; fraction = 0.6)
         ti = model.interfaces.atmosphere_land_interface
         @test ti.temperature isa CanopyAirSpaceDiagnostics
+        @test NumericalEarth.EarthSystemModels.surface_temperature(ti, ti.vegetated) ===
+              ti.temperature.interface
 
         𝒬ᵀ = scalar(ti.fluxes.sensible_heat)
         𝒬ᵛ = scalar(ti.fluxes.latent_heat)
@@ -176,6 +179,14 @@ scalar(field) = Array(interior(field))[1, 1, 1]
         @test all(isfinite, (scalar(tstep.fluxes.sensible_heat),
                              scalar(tstep.fluxes.latent_heat),
                              scalar(mstep.land.temperature)))
+
+        prognostic_canopy = build_tiled_canopy_air_space(Float64; storage = PrognosticCanopyAir())
+        prognostic = tiled_land_model(arch, prognostic_canopy; fraction = 0.6)
+        time_step!(prognostic, 300.0)
+        state = prognostic.interfaces.atmosphere_land_interface.vegetated.temperature.state.temperature
+        T⁻ = scalar(state)
+        time_step!(prognostic, 300.0)
+        @test scalar(state) != T⁻
     end
 
     # --- Float32 / Float64 end-to-end (blended buffers keep the grid float type). ---

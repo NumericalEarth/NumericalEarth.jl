@@ -1,28 +1,6 @@
 #####
 ##### `TiledLandInterface` — subgrid vegetation/bare-soil tiling (parallel fluxes).
 #####
-##### A `TiledLandInterface` makes a **mosaic** of a vegetated fraction `f = f_veg` and a
-##### bare-soil fraction `1 − f`: each tile runs the *same* single-tile interface solve
-##### independently against the *same* atmosphere (different roughness / stability), and
-##### the fluxes are area-weighted into the boundary condition the atmosphere and slab read,
-#####
-#####     𝒬 = f · 𝒬_veg + (1 − f) · 𝒬_bare.
-#####
-##### This is the SOTA parallel/tiled-flux scheme (Avissar & Pielke 1989; Koster–Suarez
-##### 1992; Noah-MP `F_veg·veg + (1−F_veg)·bare`; ClimaLand v1's parallel fluxes, App. E3).
-##### It is *complementary* to the `CanopyAirSpace` composite: the vegetated tile is a full
-##### CAS footprint (canopy over its own shaded soil); the bare tile is open soil talking
-##### straight to the atmosphere. At `f = 1` the blend reduces to pure CAS; at `f = 0` to
-##### pure bare soil.
-#####
-##### Both tiles are `CanopyAirSpace` objects so they emit the *same currency* — an
-##### internalized-radiation, conduction-driven slab energy input (`𝒬ᵍ`) and an
-##### upwelling-longwave (LST) — and the blend is a clean area-weight (no radiation
-##### double-count; `apply_air_land_radiative_fluxes!` stays a no-op). The bare tile is a
-##### canopy-free CAS (LAI = 0), derived from the vegetated tile by default. The two tiles
-##### share one soil column (one `Tˡᵃ`, `Mˡᵃ`, `𝒮`), matching Noah-MP / JULES; both deplete
-##### the same water store through the area-weighted vapor flux.
-#####
 
 """
     struct TiledLandInterface
@@ -83,7 +61,7 @@ end
 """
     TiledLandInterface(grid, atmosphere, land;
                        vegetated,
-                       fraction,
+                       fraction           = land.hydrology.vegetation_fraction,
                        bare              = bare_canopy_air_space(vegetated),
                        vegetated_fluxes   = default_atmosphere_land_fluxes(land, eltype(grid)),
                        bare_fluxes        = default_atmosphere_land_fluxes(land, eltype(grid)),
@@ -91,19 +69,12 @@ end
 
 Build a two-tile (vegetated + bare) land interface. `vegetated` is a [`CanopyAirSpace`](@ref);
 `bare` defaults to its canopy-free counterpart. `fraction` is `f_veg` (a `Number`, `Field`, or
-`FieldTimeSeries`). Pass `vegetated_fluxes` / `bare_fluxes` to give the tiles a roughness
-contrast (forest z₀ ≫ bare z₀) — a first-order control on inland wind decay.
-
-```julia
-model = AtmosphereLandModel(atmosphere, land; radiation,
-    atmosphere_land_interface = TiledLandInterface(grid, atmosphere, land;
-                                                   vegetated = canopy_air_space,
-                                                   fraction  = 0.6))
-```
+`FieldTimeSeries`) and defaults to an `InterceptingHydrology` land's vegetation fraction.
+Pass `vegetated_fluxes` and `bare_fluxes` to set distinct tile roughnesses.
 """
 function TiledLandInterface(grid, atmosphere, land;
                             vegetated,
-                            fraction,
+                            fraction            = land.hydrology.vegetation_fraction,
                             bare                = bare_canopy_air_space(vegetated),
                             vegetated_fluxes     = default_atmosphere_land_fluxes(land, eltype(grid)),
                             bare_fluxes          = default_atmosphere_land_fluxes(land, eltype(grid)),
@@ -137,14 +108,17 @@ Base.show(io::IO, ti::TiledLandInterface) =
 # The atmosphere-facing surface temperature is the blended canopy-air node (the same
 # NamedTuple signal a single CanopyAirSpace uses).
 EarthSystemModels.surface_temperature(ti::TiledLandInterface) = interface_node_temperature(ti.temperature)
-EarthSystemModels.surface_temperature(ti::TiledLandInterface, ::Nothing) =
-    EarthSystemModels.surface_temperature(ti)
+EarthSystemModels.surface_temperature(ti::TiledLandInterface, ocean_interface) =
+    interface_node_temperature(ti.temperature)
 
 # Checkpointing: each tile is an ordinary `AtmosphereInterface`, so its prognostic
 # interface state (canopy-air node, prognostic skin) round-trips tile by tile.
 interface_prognostic_state(ti::TiledLandInterface) =
     (; vegetated = interface_prognostic_state(ti.vegetated),
        bare      = interface_prognostic_state(ti.bare))
+
+@inline has_prognostic_interface_state(ti::TiledLandInterface) =
+    has_prognostic_interface_state(ti.vegetated) || has_prognostic_interface_state(ti.bare)
 
 restore_interface_state!(ti::TiledLandInterface, ::Nothing) = nothing
 
@@ -168,11 +142,9 @@ cell shaded by foliage, and Noah-MP's `1 − gap`. A data-free default for the t
 ##### Two-pass parallel fluxes: run each tile's existing single-tile solve, then blend.
 #####
 
-function compute_atmosphere_land_fluxes!(coupled_model, ti::TiledLandInterface)
-    # Pass 1 & 2: each tile writes its own turbulent fluxes and diagnostic temperatures,
-    # both reading the shared land exchanger state (𝒮, Tˡᵃ, Wᶜ).
-    compute_atmosphere_land_fluxes!(coupled_model, ti.vegetated)
-    compute_atmosphere_land_fluxes!(coupled_model, ti.bare)
+function compute_atmosphere_land_fluxes!(coupled_model, ti::TiledLandInterface; Δt = 0)
+    compute_atmosphere_land_fluxes!(coupled_model, ti.vegetated; Δt)
+    compute_atmosphere_land_fluxes!(coupled_model, ti.bare; Δt)
 
     grid  = coupled_model.interfaces.exchanger.grid
     arch  = architecture(grid)

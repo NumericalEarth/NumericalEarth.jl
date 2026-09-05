@@ -67,16 +67,25 @@ end
 
     for FT in (Float32, Float64)
         t = SoilSkinTemperature(FT(1.5), FT(0.05); storage=DiagnosticSkin())
-        Ψₛ = AirLandInterfaceState(InterfaceFluxScales(FT(0.3), FT(0.1), FT(-2e-4)),
+        Ψₛ = AirLandInterfaceState(InterfaceFluxScales(FT(0.3), FT(0.1), FT(-2e-4), FT(0.2), FT(0.3)),
                                    InterfaceVelocities(FT(0), FT(0)),
                                    FT(300), FT(8e-3), (saturation=FT(0.6),), (temperature=FT(300),))
         Ψᵢ = (u=FT(0), v=FT(0), T=FT(300))
-        Ψₐ = (T=FT(290), p=FT(1e5), q=FT(6e-3), z=FT(10))
+        Ψₐ = (T=FT(290), p=FT(1e5), q=FT(6e-3), z=FT(0))
         ℙₐ = (thermodynamics_parameters=AtmosphereThermodynamicsParameters(FT), gravitational_acceleration=FT(9.81))
         rad = (σ=FT(0), α=FT(0), ϵ=FT(0), ℐꜜˢʷ=FT(0), ℐꜜˡʷ=FT(0))
-        q_form = FractionalHumidity(AtmosphericThermodynamics.Liquid(); efficiency=FT(1))
+        q_form = FractionalHumidity(AtmosphericThermodynamics.Liquid(); efficiency=FT(0))
         ℙₛ = (specific_humidity_formulation=q_form,)
         T★ = compute_interface_temperature(t, Ψₛ, Ψₐ, Ψᵢ, rad, ℙₛ, ℙₐ, (;))
+        ℂ = ℙₐ.thermodynamics_parameters
+        ρ = AtmosphericThermodynamics.air_density(ℂ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
+        cᵖ = AtmosphericThermodynamics.cp_m(ℂ, Ψₐ.q)
+        ℒ = AtmosphericThermodynamics.latent_heat_vapor(ℂ, Ψₐ.T)
+        Λ = FT(30)
+        F = Λ * (Ψᵢ.T - Ψₛ.temperature) - ρ * Ψₛ.fluxes.u★ *
+            (cᵖ * Ψₛ.fluxes.χθ * (Ψₛ.temperature - Ψₐ.T) - ℒ * Ψₛ.fluxes.χq * Ψₐ.q)
+        Σλ = Λ + ρ * cᵖ * Ψₛ.fluxes.u★ * Ψₛ.fluxes.χθ
+        @test T★ ≈ Ψₛ.temperature + F / Σλ rtol=sqrt(eps(FT))
         @test eltype(T★) == FT
         @inferred compute_interface_temperature(t, Ψₛ, Ψₐ, Ψᵢ, rad, ℙₛ, ℙₐ, (;))
     end

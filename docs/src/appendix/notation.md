@@ -211,7 +211,8 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyAirSpace`](@r
 
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
-| ``L`` | `leaf_area_index` | leaf area index | One-sided leaf area per unit ground area (m² m⁻²) |
+| ``L`` | `leaf_area_index` | leaf area index | One-sided leaf area per unit vegetated ground area (m² m⁻²) |
+| ``a`` | `vegetation_fraction` | vegetation fraction | Fraction of the grid cell occupied by the vegetated tile (–) |
 | ``K`` | `extinction` | extinction coefficient | Beer-Lambert extinction of the canopy shortwave split (–) |
 | ``\Omega`` | `clumping` | clumping index | Foliage clumping in the Beer-Lambert transmittance ``e^{-K \Omega L}`` (–) |
 | ``T^{\mathrm{leaf}}`` | – | leaf temperature | Diagnostic temperature of the massless leaf, ``R_n^{\mathrm{leaf}} = H^{\mathrm{leaf}} + LE^{\mathrm{leaf}}`` (K) |
@@ -224,6 +225,7 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyAirSpace`](@r
 | ``g^c`` | – | canopy conductance | Bulk stomatal conductance ``g^c = L g_s``, mass units (kg m⁻² s⁻¹) |
 | ``g^b`` | `leaf_boundary_conductance` | leaf boundary conductance | Per-leaf-area boundary-layer conductance (m s⁻¹) |
 | ``g^{\mathrm{lb}}`` | – | leaf boundary-layer mass conductance | ``g^{\mathrm{lb}} = \rho^{\mathrm{at}} L g^b``; the stomata-free wet-leaf vapor path (kg m⁻² s⁻¹) |
+| ``g^{\mathrm{wet}}`` | – | wet-canopy conductance | ``g^{\mathrm{wet}} = f^{\mathrm{wet}} g^{\mathrm{lb}}`` (kg m⁻² s⁻¹) |
 | ``g^{\mathrm{leaf}\,T}``, ``g^{\mathrm{leaf}\,v}`` | – | leaf conductances | Leaf sensible-heat and vapor conductance to the canopy air (W m⁻² K⁻¹, kg m⁻² s⁻¹) |
 | ``g^{gT}``, ``g^{gv}`` | – | ground conductances | Ground sensible-heat and vapor conductance to the canopy air (W m⁻² K⁻¹, kg m⁻² s⁻¹) |
 | ``g^{aT}``, ``g^{av}`` | – | aerodynamic conductances | Canopy-air↔atmosphere sensible-heat and vapor conductance of the similarity solution (W m⁻² K⁻¹, kg m⁻² s⁻¹) |
@@ -234,10 +236,11 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyAirSpace`](@r
 | ``\alpha^{\mathrm{leaf}}``, ``\alpha^{g}`` | `leaf_albedo`, `ground_albedo` | albedos | Shortwave albedo of the canopy and of the ground below it (–) |
 | ``r^s`` | – | soil surface resistance | Moist-soil evaporation resistance of a [`SellersSoilResistance`](@ref) (s m⁻¹) |
 | ``r^l``, ``L^l`` | `litter_area_index` | litter resistance, litter area index | Ground evaporation resistance of a [`LitterResistance`](@ref) (s m⁻¹) and its area index (m² m⁻²) |
-| ``W^c``, ``W^{c\,max}`` | `canopy_water_storage` | canopy water store | Intercepted water on the foliage and its capacity ``W^{c\,max} = c L`` (kg m⁻²) |
-| ``f^{\mathrm{int}}`` | – | interception fraction | Caught fraction of rain, ``1 - e^{-K \Omega L}`` (–) |
+| ``W^c``, ``W^{c\,max}`` | `canopy_water_storage` | canopy water store | Cell-mean intercepted water and its capacity ``W^{c\,max} = a c L`` (kg m⁻²) |
+| ``f^{\mathrm{int}}`` | – | interception fraction | Cell fraction of rain caught by foliage, ``a (1 - e^{-K \Omega L})`` (–) |
 | ``f^{\mathrm{wet}}`` | – | wet-canopy fraction | Deardorff wetted-leaf fraction ``(W^c/W^{c\,max})^{2/3}`` (–) |
 | ``E^{\mathrm{wet}}``, ``LE^{\mathrm{wet}}`` | – | wet-canopy evaporation | Evaporation of intercepted water (kg m⁻² s⁻¹) and its latent heat (W m⁻²) |
+| ``E^c`` | `canopy_evaporation` | canopy-store vapor flux | Wet-canopy evaporation plus dry-leaf condensation, positive upward (kg m⁻² s⁻¹) |
 | ``A_n`` | – | net assimilation | Net CO₂ assimilation of [`FarquharPhotosynthesis`](@ref) (mol m⁻² s⁻¹) |
 | ``V_a`` | – | surface wind speed | Wind speed at the surface-layer reference height (m s⁻¹) |
 | ``R^v`` | – | vapor gas constant | Specific gas constant of water vapor (J kg⁻¹ K⁻¹) |

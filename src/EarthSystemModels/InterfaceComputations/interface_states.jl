@@ -706,14 +706,22 @@ SoilSkinTemperature(conductivity, thickness; storage=PrognosticSkin()) =
 Base.summary(t::EnergyBalanceTemperature) = string("EnergyBalanceTemperature(Λ=", prettysummary(skin_conductance(t.coupling)), ")")
 Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
 
+# Temperature derivative of the humidity formulation used by the skin balance.
+@inline function interface_humidity_slope(q, T, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    FT = eltype(Ψₛ)
+    δT = sqrt(eps(FT)) * max(abs(T), one(FT))
+    q⁺ = compute_interface_humidity(q, T + δT, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    q⁻ = compute_interface_humidity(q, T - δT, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    return (q⁺ - q⁻) / (2 * δT)
+end
+
 # The surface energy imbalance F(T) = Rₙ(T) + G(T) − H(T) − LE(T) and the conductance
 # sum Σλ = −dF/dT at skin temperature T, with the similarity scales frozen at the
 # current iterate (u★, χ). The humidity is re-diagnosed at T through the (nonlinear)
 # humidity formulation, so a Newton step on F converges the true balance rather than
 # its tangent at the previous skin.
 #
-# Σλ = 4ϵσT³ + Λ + ρ u★ (cᵖ χθ⁺ + ℒ χq⁺ dq/dT) is a sum of non-negative conductances
-# with Σλ ≥ Λ > 0, so dividing by it is always safe.
+# Σλ = 4ϵσT³ + Λ + ρ u★ (cᵖ χθ⁺ + ℒ χq⁺ dq/dT).
 @inline function skin_energy_imbalance(T, t, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ)
     FT  = eltype(Ψₛ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
@@ -733,7 +741,7 @@ Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
     LE = ℒ * ρᵃᵗ * u★ * χq⁺ * (q - Ψₐ.q)
     F  = Rn + G - H - LE
 
-    dq = saturation_humidity_slope(ℂᵃᵗ, T, Ψₐ.p, interface_phase(ℙₛ.specific_humidity_formulation))
+    dq = interface_humidity_slope(ℙₛ.specific_humidity_formulation, T, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     Σλ = 4 * Ψᵣ.ϵ * Ψᵣ.σ * T^3 + Λ + ρᵃᵗ * u★ * (cᵖ * χθ⁺ + ℒ * χq⁺ * dq)
     return F, Σλ
 end

@@ -8,7 +8,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     SoilSkinTemperature, EnergyBalanceTemperature, SoilConductiveFlux,
     InterfaceProperties,
     DiagnosticSkin, PrognosticSkin,
-    DryLayerHumidity, StorageBasedDryLayerDepth, DryLayerVaporPistonVelocity, ConstantTortuosity
+    DryLayerHumidity, StorageBasedDryLayerDepth, DryLayerVaporPistonVelocity, ConstantTortuosity,
+    compute_atmosphere_land_fluxes!
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
 using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties,
@@ -58,8 +59,6 @@ end
 
 @inline value1(f) = Array(interior(f))[1, 1, 1]
 
-# Surface energy-balance terms from the model outputs: Rₙ + G − H − LE at the
-# stored skin, with Λ = 30 and the test's radiation properties.
 function surface_imbalance(model; SW = 600.0, LW = 350.0, α = 0.2, ϵ = 0.95, Λ = 30.0)
     ai = model.interfaces.atmosphere_land_interface
     σ  = default_stefan_boltzmann_constant
@@ -78,7 +77,7 @@ end
         Tform = SoilSkinTemperature(1.5, 0.05; storage = PrognosticSkin(heat_capacity = 1e5))
         mp = bare_soil_model(arch, Tform)
         md = bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05; storage = DiagnosticSkin()))
-        for _ in 1:36
+        for _ in 1:144
             time_step!(mp, 300.0)
             time_step!(md, 300.0)
         end
@@ -88,26 +87,39 @@ end
         @test value1(mp.interfaces.atmosphere_land_interface.fluxes.latent_heat) ≈
               value1(md.interfaces.atmosphere_land_interface.fluxes.latent_heat) atol = 10
 
-        # --- calm moist transition (the issue-549 bare-soil exemplar): the prognostic
-        # skin closes the surface energy balance through its storage tendency instead
-        # of silently violating it, and every exit stays bounded.
-        C, Δt = 1e5, 300.0
-        mp = bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05; storage = PrognosticSkin(heat_capacity = C));
+        Tₛ = value1(mp.interfaces.atmosphere_land_interface.temperature)
+        update_state!(mp)
+        update_state!(mp)
+        @test value1(mp.interfaces.atmosphere_land_interface.temperature) == Tₛ
+
+        # --- calm moist transition (the issue-549 bare-soil exemplar).
+        Δt = 300.0
+        mp = bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05; storage = PrognosticSkin(heat_capacity = 1e5));
                              shortwave = 50.0, wind = 0.2, Tair = 304.0,
                              Tland = 310.0, water = 135.0)
         ai = mp.interfaces.atmosphere_land_interface
-        worst = 0.0
-        Tₛ⁻ = value1(ai.temperature)
         for _ in 1:48
             time_step!(mp, Δt)
-            F, Tₛ = surface_imbalance(mp; SW = 50.0)
-            residual = F - C * (Tₛ - Tₛ⁻) / Δt   # imbalance beyond storage: linearization error only
-            worst = max(worst, abs(residual))
-            Tₛ⁻ = Tₛ
             @test isfinite(value1(ai.fluxes.latent_heat))
             @test abs(value1(ai.fluxes.latent_heat)) < 2000
         end
-        @test worst < 15
+    end
+end
+
+@testset "Prognostic skin step ledger" begin
+    for arch in test_architectures
+        C, Δt = 1e5, 300.0
+        skin = SoilSkinTemperature(1.5, 0.05; storage = PrognosticSkin(heat_capacity = C))
+        model = bare_soil_model(arch, skin; shortwave = 50, wind = 0.2,
+                                Tair = 304, Tland = 310, water = 135)
+        time_step!(model, Δt)
+
+        interface = model.interfaces.atmosphere_land_interface
+        Tₛ⁻ = value1(interface.temperature)
+        compute_atmosphere_land_fluxes!(model, interface; Δt)
+        F, Tₛ⁺ = surface_imbalance(model; SW = 50)
+        storage_tendency = C * (Tₛ⁺ - Tₛ⁻) / Δt
+        @test F ≈ storage_tendency atol = 1e-6
     end
 end
 
@@ -120,11 +132,7 @@ end
         @test eltype(PrognosticSkin(FT).heat_capacity) == FT
     end
 
-    # The first `update_state!` (Δt = 0) lands on the energy-balance root at the
-    # converged similarity scales, so the default prognostic skin starts near the
-    # massless answer rather than at the bulk temperature it is seeded from. It is
-    # not identical: the massless root iterates Tₛ jointly with u★, while the
-    # prognostic skin is frozen through the fixed point by construction.
+    # Initialization places the prognostic skin near the massless root.
     for arch in test_architectures
         Tbulk = 298.0
         Tp = value1(bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05)).interfaces.atmosphere_land_interface.temperature)
