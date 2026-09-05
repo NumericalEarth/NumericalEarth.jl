@@ -9,6 +9,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterface
                                                               celsius_to_kelvin,
                                                               SimilarityScales,
                                                               surface_specific_humidity,
+                                                              saturation_specific_humidity,
+                                                              saturation_humidity_slope,
                                                               SkinTemperature,
                                                               BulkTemperature,
                                                               DiffusiveFlux,
@@ -19,6 +21,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterface
                                                               CriticalSaturation,
                                                               evaporation_efficiency,
                                                               AirLandInterfaceState,
+                                                              InterfaceFluxScales,
+                                                              InterfaceVelocities,
                                                               compute_interface_humidity,
                                                               saturation_specific_humidity
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
@@ -332,6 +336,24 @@ end
     end
 end
 
+@testset "Saturation humidity slope" begin
+    for FT in (Float32, Float64), phase in (Thermodynamics.Liquid(), Thermodynamics.Ice())
+        ℂ = AtmosphereThermodynamicsParameters(FT)
+        p = FT(101325)
+
+        # dqᵛ⁺/dT is the derivative of qᵛ⁺(T), checked against a fourth-order
+        # central difference across the range the surface balances sample.
+        for T in FT.((200, 240, 273.15, 288, 300, 320, 340))
+            q(t) = saturation_specific_humidity(ℂ, t, p, phase)
+            h = FT(1//8)
+            fd = (-q(T + 2h) + 8q(T + h) - 8q(T - h) + q(T - 2h)) / 12h
+            @test saturation_humidity_slope(ℂ, T, p, phase) ≈ fd rtol=1e-3
+        end
+
+        @inferred saturation_humidity_slope(ℂ, FT(300), p, phase)
+    end
+end
+
 @testset "SkinHumidity vapor-flux balance" begin
     ℂ = AtmosphereThermodynamicsParameters(Float64)
     ℙₐ = (; thermodynamics_parameters = ℂ)
@@ -349,9 +371,10 @@ end
     qᵛ⁺ = saturation_specific_humidity(ℂ, Tᵈ, pᵃᵗ, Thermodynamics.Liquid())
     @test qᵛ⁺ > qᵃᵗ # reservoir saturation exceeds the sub-saturated air
 
-    # AirLandInterfaceState with an upward moisture flux (q★ < 0 ⟹ qˢ > qᵃᵗ);
+    # AirLandInterfaceState with a fixed aerodynamic conductance Gᵃ = ρ u★ χq;
     # bulk reservoir temperature carried in the energy component.
-    mkΨₛ(q) = AirLandInterfaceState(0.3, -0.01, -1e-4, 0.0, 0.0, Tₛ, q,
+    mkΨₛ(q) = AirLandInterfaceState(InterfaceFluxScales(0.3, -0.01, -1e-4, 0.0, 0.2),
+                                    InterfaceVelocities(0.0, 0.0), Tₛ, q,
                                     (saturation = 1.0,), (temperature = Tᵈ,))
 
     # Drive the fixed point to convergence for a few saturation depths
@@ -359,7 +382,7 @@ end
         sh = SkinHumidity(surface_thickness=d, vapor_diffusivity=2e-2)
         q = qᵛ⁺
         for _ in 1:100
-            q = compute_interface_humidity(sh, Tₛ, mkΨₛ(q), Ψₐ, Ψᵢ, ℙₐ)
+            q = compute_interface_humidity(sh, Tₛ, mkΨₛ(q), Ψₐ, Ψᵢ, nothing, ℙₐ)
         end
         return q
     end
@@ -383,7 +406,7 @@ end
     sh = SkinHumidity(surface_thickness=0.1, vapor_diffusivity=2e-2)
     Ψₛ⁰ = AirLandInterfaceState(0.0, 0.0, 0.0, 0.0, 0.0, Tₛ, 0.0,
                                 (saturation = 1.0,), (temperature = Tᵈ,))
-    @test compute_interface_humidity(sh, Tₛ, Ψₛ⁰, Ψₐ, Ψᵢ, ℙₐ) ≈ qᵛ⁺
+    @test compute_interface_humidity(sh, Tₛ, Ψₛ⁰, Ψₐ, Ψᵢ, nothing, ℙₐ) ≈ qᵛ⁺
 end
 
 @testset "FractionalHumidity (Manabe critical wetness)" begin
@@ -408,13 +431,13 @@ end
     # qˢ = β · qᵛ⁺(Tₛ), with β derived from the materialized hydrology state
     mkΨₛ(𝒮) = AirLandInterfaceState(0.3, 0.0, 0.0, 0.0, 0.0, Tₛ, 0.0, (saturation = 𝒮,), (;))
     fh = FractionalHumidity(efficiency = cs)
-    @test compute_interface_humidity(fh, Tₛ, mkΨₛ(0.0),   Ψₐ, Ψᵢ, ℙₐ) ≈ 0.0
-    @test compute_interface_humidity(fh, Tₛ, mkΨₛ(0.375), Ψₐ, Ψᵢ, ℙₐ) ≈ 0.5 * qᵛ⁺
-    @test compute_interface_humidity(fh, Tₛ, mkΨₛ(1.0),   Ψₐ, Ψᵢ, ℙₐ) ≈ qᵛ⁺ # saturated
+    @test compute_interface_humidity(fh, Tₛ, mkΨₛ(0.0),   Ψₐ, Ψᵢ, nothing, ℙₐ) ≈ 0.0
+    @test compute_interface_humidity(fh, Tₛ, mkΨₛ(0.375), Ψₐ, Ψᵢ, nothing, ℙₐ) ≈ 0.5 * qᵛ⁺
+    @test compute_interface_humidity(fh, Tₛ, mkΨₛ(1.0),   Ψₐ, Ψᵢ, nothing, ℙₐ) ≈ qᵛ⁺ # saturated
 
     # Constant-efficiency FractionalHumidity is a uniform fraction of saturation
     fc = FractionalHumidity(efficiency = 0.4)
-    @test compute_interface_humidity(fc, Tₛ, mkΨₛ(0.1), Ψₐ, Ψᵢ, ℙₐ) ≈ 0.4 * qᵛ⁺
+    @test compute_interface_humidity(fc, Tₛ, mkΨₛ(0.1), Ψₐ, Ψᵢ, nothing, ℙₐ) ≈ 0.4 * qᵛ⁺
 end
 
 #=

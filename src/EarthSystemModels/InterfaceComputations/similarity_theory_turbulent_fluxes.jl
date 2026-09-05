@@ -235,7 +235,7 @@ struct COARELogarithmicSimilarityProfile end
 @inline function similarity_profile(::LogarithmicSimilarityProfile, stability_function, h, ℓ, L)
     ζ = h / L
     ψh = stability_profile(stability_function, ζ)
-    ψℓ = stability_profile(stability_function, ℓ / L)
+    ψℓ = inner_stability_profile(stability_function, ℓ / L)
     return log(h / ℓ) - ψh + ψℓ
 end
 
@@ -373,7 +373,7 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     θ★ = χθ * Δθ
     q★ = χq * Δq
 
-    return u★, θ★, q★
+    return u★, θ★, q★, χθ, χq
 end
 
 """
@@ -674,34 +674,104 @@ end
 ##### From Paulson (1970), for unstable boundary layers
 #####
 
+# Integrated Businger--Dyer profiles, shared with the free-convection matched
+# functions below.
+@inline function businger_dyer_momentum_profile(a, b, ζ⁻)
+    z = sqrt(sqrt(1 - a * ζ⁻))
+    return 2 * log((1 + z) / 2) + log((1 + z^2) / 2) - 2 * atan(z) + b
+end
+
+@inline businger_dyer_scalar_profile(a, ζ⁻) = 2 * log((1 + sqrt(1 - a * ζ⁻)) / 2)
+
 @kwdef struct PaulsonMomentumStabilityFunction{FT} <: AbstractStabilityFunction
     a :: FT = 16.0
     b :: FT = π/2
 end
 
-@inline function stability_profile(ψ::PaulsonMomentumStabilityFunction, ζ)
-    a = ψ.a
-    b = ψ.b
-    ζ⁻ = min(zero(ζ), ζ)
-    z = sqrt(sqrt((1 - a * ζ⁻)))
-
-    Ψ₁ = 2 * log((1 + z) / 2)
-    Ψ₂ = log((1 + z^2) / 2)
-    Ψ₃ = - 2 * atan(z)
-
-    return Ψ₁ + Ψ₂ + Ψ₃ + b
-end
+@inline stability_profile(ψ::PaulsonMomentumStabilityFunction, ζ) =
+    businger_dyer_momentum_profile(ψ.a, ψ.b, min(zero(ζ), ζ))
 
 @kwdef struct PaulsonScalarStabilityFunction{FT} <: AbstractStabilityFunction
     a :: FT = 16.0
 end
 
-@inline function stability_profile(ψ::PaulsonScalarStabilityFunction, ζ)
-    a = ψ.a
-    ζ⁻ = min(zero(ζ), ζ)
-    z = sqrt(sqrt((1 - a * ζ⁻)))
-    return 2 * log((1 + z^2) / 2)
+@inline stability_profile(ψ::PaulsonScalarStabilityFunction, ζ) =
+    businger_dyer_scalar_profile(ψ.a, min(zero(ζ), ζ))
+
+#####
+##### From Zeng et al. (1998), matching the unstable branch to free convection
+#####
+
+"""
+    FreeConvectionMomentumStabilityFunction{FT}
+
+Unstable momentum stability function of [zeng1998intercomparison](@citet): the
+Businger--Dyer profile up to a matching point ``ζ_m``, and the free-convection
+profile beyond it,
+
+```math
+ψ(ζ) = ψ_{BD}(-ζ_m) + \\log \\left ( \\frac{|ζ|}{ζ_m} \\right )
+       - C \\left ( |ζ|^{1/3} - ζ_m^{1/3} \\right ) , \\qquad ζ < -ζ_m ,
+```
+
+which is continuously differentiable at ``-ζ_m``. The default
+`matching_stability_parameter` and `free_convection_coefficient` produce that
+``C^1`` match for `a = 16`; retune them together with `a`.
+`maximum_stability_parameter` bounds ``|ζ|`` in the profile, as CLM does.
+"""
+@kwdef struct FreeConvectionMomentumStabilityFunction{FT} <: AbstractStabilityFunction
+    a :: FT = 16.0
+    b :: FT = π/2
+    matching_stability_parameter :: FT = 1.574
+    free_convection_coefficient :: FT = 1.14
+    maximum_stability_parameter :: FT = 100.0
 end
+
+@inline function stability_profile(ψ::FreeConvectionMomentumStabilityFunction, ζ)
+    ζₘ = ψ.matching_stability_parameter
+    ζ⁻ = min(zero(ζ), max(ζ, -ψ.maximum_stability_parameter))
+
+    # |ζ| clipped from below at the match, so both matched terms vanish above it
+    ζᶠ = max(-ζ⁻, ζₘ)
+    ψᴮᴰ = businger_dyer_momentum_profile(ψ.a, ψ.b, max(ζ⁻, -ζₘ))
+
+    return ψᴮᴰ + log(ζᶠ / ζₘ) - ψ.free_convection_coefficient * (cbrt(ζᶠ) - cbrt(ζₘ))
+end
+
+"""
+    FreeConvectionScalarStabilityFunction{FT}
+
+Unstable scalar stability function of [zeng1998intercomparison](@citet), matched to
+free convection at ``ζ_t`` as in [`FreeConvectionMomentumStabilityFunction`](@ref) with the
+scalar free-convection increment,
+
+```math
+ψ(ζ) = ψ_{BD}(-ζ_t) + \\log \\left ( \\frac{|ζ|}{ζ_t} \\right )
+       - C \\left ( ζ_t^{-1/3} - |ζ|^{-1/3} \\right ) , \\qquad ζ < -ζ_t .
+```
+"""
+@kwdef struct FreeConvectionScalarStabilityFunction{FT} <: AbstractStabilityFunction
+    a :: FT = 16.0
+    matching_stability_parameter :: FT = 0.465
+    free_convection_coefficient :: FT = 0.8
+    maximum_stability_parameter :: FT = 100.0
+end
+
+@inline function stability_profile(ψ::FreeConvectionScalarStabilityFunction, ζ)
+    ζₜ = ψ.matching_stability_parameter
+    ζ⁻ = min(zero(ζ), max(ζ, -ψ.maximum_stability_parameter))
+
+    ζᶠ = max(-ζ⁻, ζₜ)
+    ψᴮᴰ = businger_dyer_scalar_profile(ψ.a, max(ζ⁻, -ζₜ))
+
+    return ψᴮᴰ + log(ζᶠ / ζₜ) - ψ.free_convection_coefficient * (1 / cbrt(ζₜ) - 1 / cbrt(ζᶠ))
+end
+
+Base.summary(::FreeConvectionMomentumStabilityFunction{FT}) where FT = "FreeConvectionMomentumStabilityFunction{$FT}"
+Base.summary(::FreeConvectionScalarStabilityFunction{FT}) where FT = "FreeConvectionScalarStabilityFunction{$FT}"
+
+Base.show(io::IO, ψ::FreeConvectionMomentumStabilityFunction) = print(io, summary(ψ))
+Base.show(io::IO, ψ::FreeConvectionScalarStabilityFunction) = print(io, summary(ψ))
 
 struct SplitStabilityFunction{S, U}
     stable :: S
@@ -716,6 +786,30 @@ Base.show(io::IO, ss::SplitStabilityFunction) = print(io, "SplitStabilityFunctio
     Ψ_unstable = stability_profile(ψ.unstable, ζ)
     stable = ζ > 0
     return ifelse(stable, Ψ_stable, Ψ_unstable)
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Stability function evaluated at the roughness height by [`similarity_profile`](@ref).
+
+The free-convection matched functions split the profile at ``z = -ζ_m L_★`` and keep
+the Businger--Dyer form below the match, so their roughness-height term is the
+*unmatched* function. Every other stability function evaluates identically at both
+heights.
+"""
+@inline inner_stability_profile(ψ, ζ) = stability_profile(ψ, ζ)
+
+@inline inner_stability_profile(ψ::FreeConvectionMomentumStabilityFunction, ζ) =
+    businger_dyer_momentum_profile(ψ.a, ψ.b, min(zero(ζ), ζ))
+
+@inline inner_stability_profile(ψ::FreeConvectionScalarStabilityFunction, ζ) =
+    businger_dyer_scalar_profile(ψ.a, min(zero(ζ), ζ))
+
+@inline function inner_stability_profile(ψ::SplitStabilityFunction, ζ)
+    Ψ_stable = stability_profile(ψ.stable, ζ)
+    Ψ_unstable = inner_stability_profile(ψ.unstable, ζ)
+    return ifelse(ζ > 0, Ψ_stable, Ψ_unstable)
 end
 
 #####
@@ -764,11 +858,42 @@ function large_yeager_stability_functions(FT=Oceananigans.defaults.FloatType)
     return SimilarityScales(momentum, scalar, scalar)
 end
 
-# Land currently borrows the NCAR/Large–Yeager Businger–Dyer form
-# (Paulson 1970 unstable + linear stable). TODO: replace with land-tuned
-# stability functions.
-atmosphere_land_stability_functions(FT=Oceananigans.defaults.FloatType) =
-    large_yeager_stability_functions(FT)
+"""
+$(TYPEDSIGNATURES)
+
+Stability functions for the atmosphere--land interface: the free-convection matched
+unstable functions of [zeng1998intercomparison](@citet)
+([`FreeConvectionMomentumStabilityFunction`](@ref), [`FreeConvectionScalarStabilityFunction`](@ref)) and
+the linear stable function ``ψ = -5 ζ``, bounded at ``ζ ≤`` `stable_maximum_stability_parameter`.
+
+Both branches of the plain Businger--Dyer form used over the ocean misbehave over
+land, where calm transitions push ``|ζ|`` far outside its fitted range:
+
+  - unstable: ``ψ`` grows like ``\\log(4|ζ|)``, so the similarity profile
+    ``\\log(h / ℓ) - ψ(h / L_★) + ψ(ℓ / L_★)`` collapses toward zero and the transfer
+    coefficients grow without bound. The matched form removes the collapse.
+  - stable: extrapolating ``ψ = -5 ζ`` to the Large--Yeager ocean bound ``ζ ≤ 10``
+    cuts each transfer coefficient by ``\\sim 10 ×``, a near-decoupled state that
+    drives excessive surface cooling [louis1979parametric](@citep) and suppresses
+    turbulence that observations sustain to ``Ri_b ≥ 1`` [best2001modelling](@citep).
+    Bounding the stable branch is standard land practice (CLM4.5 at ``ζ = 2``,
+    CLM5 at ``0.5``, Noah-MP at ``1``).
+
+Ocean and sea-ice stability functions are unchanged.
+"""
+function atmosphere_land_stability_functions(FT=Oceananigans.defaults.FloatType;
+                                             maximum_stability_parameter = 100,
+                                             stable_maximum_stability_parameter = 2)
+    ζᵐᵃˣ = convert(FT, maximum_stability_parameter)
+    ζᵐᵃˣ⁺ = convert(FT, stable_maximum_stability_parameter)
+    stable   = LinearStableStabilityFunction{FT}(coefficient = 5,
+                                                 maximum_stability_parameter = ζᵐᵃˣ⁺)
+    momentum = SplitStabilityFunction(stable,
+                   FreeConvectionMomentumStabilityFunction{FT}(; maximum_stability_parameter = ζᵐᵃˣ))
+    scalar   = SplitStabilityFunction(stable,
+                   FreeConvectionScalarStabilityFunction{FT}(; maximum_stability_parameter = ζᵐᵃˣ))
+    return SimilarityScales(momentum, scalar, scalar)
+end
 
 function atmosphere_sea_ice_stability_functions(FT=Oceananigans.defaults.FloatType)
     unstable_momentum = PaulsonMomentumStabilityFunction{FT}()

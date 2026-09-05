@@ -26,6 +26,9 @@ mutable struct AtmosphereInterface{J, F, ST, P}
     properties :: P
 end
 
+validate_zero_plane_displacement(interface::AtmosphereInterface, zᵃᵗ) =
+    validate_zero_plane_displacement(interface.flux_formulation, zᵃᵗ)
+
 """
     SeaIceOceanInterface{J, F, T, S, P}
 
@@ -222,16 +225,23 @@ Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
 # Diagnostic surface (skin) temperature — what the atmosphere "sees"; for skin-temperature
 # closures it differs from `land.temperature`. The land interface wins; then the
 # atmosphere-ocean interface; `nothing` when the atmosphere touches neither.
-EarthSystemModels.surface_temperature(interface::AtmosphereInterface) = interface.temperature
+# A `CanopyAirSpace` interface holds several diagnostic temperatures; the atmosphere-facing
+# one is the canopy-air node.
+@inline interface_node_temperature(t) = t
+@inline interface_node_temperature(t::CanopyAirSpaceDiagnostics) = t.interface
+EarthSystemModels.surface_temperature(interface::AtmosphereInterface) =
+    interface_node_temperature(interface.temperature)
 EarthSystemModels.surface_temperature(interfaces::ComponentInterfaces) =
     EarthSystemModels.surface_temperature(interfaces.atmosphere_land_interface,
                                           interfaces.atmosphere_ocean_interface)
 
 EarthSystemModels.surface_temperature(land_interface::AtmosphereInterface, ocean_interface) =
-    land_interface.temperature
+    interface_node_temperature(land_interface.temperature)
 EarthSystemModels.surface_temperature(::Nothing, ocean_interface::AtmosphereInterface) =
     ocean_interface.temperature
 EarthSystemModels.surface_temperature(::Nothing, ::Nothing) = nothing
+
+skin_conductance(ai::AtmosphereInterface) = skin_conductance(ai.properties.temperature_formulation)
 
 #####
 ##### Atmosphere-Ocean Interface
@@ -403,7 +413,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              atmosphere_sea_ice_velocity_difference = RelativeVelocity(),
                              atmosphere_land_interface_temperature = BulkTemperature(),
                              atmosphere_land_velocity_difference = RelativeVelocity(),
-                             atmosphere_land_interface_specific_humidity = default_al_specific_humidity(land),
+                             atmosphere_land_interface_specific_humidity = default_al_specific_humidity(atmosphere_land_interface_temperature, land),
                              atmosphere_land_interface = atmosphere_land_interface(exchange_grid, atmosphere, land;
                                                                                    fluxes              = atmosphere_land_fluxes,
                                                                                    temperature         = atmosphere_land_interface_temperature,
@@ -483,7 +493,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     zᵃᵗ = surface_layer_height(atmosphere, exchange_grid)
 
     for interface in (ao_interface, ai_interface, al_interface)
-        isnothing(interface) || validate_zero_plane_displacement(interface.flux_formulation, zᵃᵗ)
+        isnothing(interface) || validate_zero_plane_displacement(interface, zᵃᵗ)
     end
 
     properties = (; gravitational_acceleration, surface_layer_height = zᵃᵗ)
@@ -500,12 +510,11 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                                properties)
 end
 
-# Default land surface humidity formulation: bulk (saturated where wet, dry
-# otherwise). The binary saturation is read from `saturation` per cell
-# by the flux kernel and threaded through the iteration's `S` slot.
-default_al_specific_humidity(::Nothing) = nothing
-default_al_specific_humidity(land) =
-    BulkHumidity(AtmosphericThermodynamics.Liquid())
+# Default land surface humidity formulation: bulk (saturated where wet, dry otherwise);
+# a `CanopyAirSpace` temperature formulation closes the humidity slot itself.
+default_al_specific_humidity(temperature, ::Nothing) = nothing
+default_al_specific_humidity(temperature, land) = BulkHumidity(AtmosphericThermodynamics.Liquid())
+default_al_specific_humidity(cas::CanopyAirSpace, land) = cas
 
 # Default atmosphere--land flux formulation. Aerodynamic roughness lengths and the
 # zero-plane displacement are properties of the flux closure, not the land model:
@@ -526,9 +535,37 @@ function default_atmosphere_land_fluxes(land, FT; solver_stop_criteria = nothing
 end
 
 #####
-##### Chekpointing (not needed for ComponentInterfaces)
+##### Checkpointing: the atmosphere-land interface temperature is the only interface state.
 #####
 
-Oceananigans.prognostic_state(::ComponentInterfaces) = nothing
-Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, state) = ci
+Oceananigans.prognostic_state(ci::ComponentInterfaces) =
+    (; atmosphere_land_interface = interface_prognostic_state(ci.atmosphere_land_interface))
+
+interface_prognostic_state(::Nothing) = nothing
+interface_prognostic_state(ai::AtmosphereInterface) = interface_prognostic_state(ai.temperature)
+interface_prognostic_state(Ts) = Oceananigans.prognostic_state(Ts)
+interface_prognostic_state(Ts::CanopyAirSpaceDiagnostics) = interface_prognostic_state(Ts.state)
+interface_prognostic_state(state::CanopyAirState) =
+    (; temperature = Oceananigans.prognostic_state(state.temperature),
+       specific_humidity = Oceananigans.prognostic_state(state.specific_humidity))
+
+function Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, state)
+    if hasproperty(state, :atmosphere_land_interface)
+        restore_interface_state!(ci.atmosphere_land_interface, state.atmosphere_land_interface)
+    end
+    return ci
+end
+
 Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, ::Nothing) = ci
+
+restore_interface_state!(::Nothing, state) = nothing
+restore_interface_state!(ai::AtmosphereInterface, ::Nothing) = nothing
+restore_interface_state!(ai::AtmosphereInterface, state) = restore_interface_state!(ai.temperature, state)
+restore_interface_state!(Ts, state) = Oceananigans.restore_prognostic_state!(Ts, state)
+restore_interface_state!(Ts::CanopyAirSpaceDiagnostics, ::Nothing) = nothing
+restore_interface_state!(Ts::CanopyAirSpaceDiagnostics, state) = restore_interface_state!(Ts.state, state)
+function restore_interface_state!(state::CanopyAirState, saved)
+    Oceananigans.restore_prognostic_state!(state.temperature, saved.temperature)
+    Oceananigans.restore_prognostic_state!(state.specific_humidity, saved.specific_humidity)
+    return nothing
+end

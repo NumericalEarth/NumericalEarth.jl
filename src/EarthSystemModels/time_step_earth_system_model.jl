@@ -20,6 +20,8 @@ function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, �
     sea_ice    = coupled_model.sea_ice
     ocean      = coupled_model.ocean
 
+    compute_land_fluxes!(coupled_model, Δt)
+
     !isnothing(radiation)  && time_step!(radiation, Δt)
     !isnothing(atmosphere) && time_step!(atmosphere, Δt)
     !isnothing(land)       && time_step!(land, Δt)
@@ -32,6 +34,17 @@ function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, �
     tick!(coupled_model.clock, Δt)
     update_state!(coupled_model)
 
+    return nothing
+end
+
+# The atmosphere–land interface may carry prognostic state (a skin or canopy-air node), so
+# its fluxes are computed once per step with the step's `Δt`, ahead of the components that
+# consume them; `update_state!` only initializes them (`Δt = 0`).
+function compute_land_fluxes!(coupled_model, Δt)
+    compute_atmosphere_land_fluxes!(coupled_model, Δt)
+    update_net_fluxes!(coupled_model, coupled_model.land)
+    update_net_fluxes!(coupled_model, coupled_model.atmosphere)
+    apply_air_land_radiative_fluxes!(coupled_model)
     return nothing
 end
 
@@ -64,20 +77,19 @@ function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel
     # Phase 2: compute interface turbulent fluxes
     compute_atmosphere_ocean_fluxes!(coupled_model)
     compute_atmosphere_sea_ice_fluxes!(coupled_model)
-    compute_atmosphere_land_fluxes!(coupled_model)
     compute_sea_ice_ocean_fluxes!(coupled_model)
 
     # Phase 3: assemble net component fluxes (turbulent only)
     update_net_fluxes!(coupled_model, radiation)
     update_net_fluxes!(coupled_model, atmosphere)
-    update_net_fluxes!(coupled_model, land)
     update_net_fluxes!(coupled_model, sea_ice)
     update_net_fluxes!(coupled_model, ocean)
 
     # Phase 4: add radiative contributions on top
     apply_air_sea_radiative_fluxes!(coupled_model)
-    apply_air_land_radiative_fluxes!(coupled_model)
     apply_air_sea_ice_radiative_fluxes!(coupled_model)
+
+    coupled_model.clock.iteration == 0 && compute_land_fluxes!(coupled_model, 0)
 
     return nothing
 end
