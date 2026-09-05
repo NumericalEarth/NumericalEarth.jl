@@ -59,6 +59,8 @@ jobs:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v3
+        with:
+          cache-scratchspaces: false
       - name: Set JULIA_CPU_TARGET
         shell: bash
         run: |
@@ -226,6 +228,8 @@ jobs:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v3
+        with:
+          cache-scratchspaces: false
       - name: Set JULIA_CPU_TARGET
         shell: bash
         run: |
