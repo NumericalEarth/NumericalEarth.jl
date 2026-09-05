@@ -1,12 +1,12 @@
-# # ERA5 → 12 km coast-to-plains, convection-permitting hindcast (Breeze + SlabLand + PrescribedOcean)
+# # ERA5 → 12 km plains-to-ocean, convection-permitting hindcast (Breeze + SlabLand + PrescribedOcean)
 #
 # A limited-area model (LAM) example that downscales ERA5 reanalysis to a ~12 km Breeze compressible
-# atmosphere over a domain running from the U.S. Southern Great Plains to the Gulf of Mexico, for the
-# Midlatitude Continental Convective Clouds Experiment (MC3E) 20 May 2011 squall-line case
-# ([Fan2017](@citet)). The lower boundary is part land, part ocean: an interactive `SlabLand` and a
-# prescribed-SST Gulf share the surface through a fractional `SurfacePartition`, all-sky RRTMGP
-# radiation heats the column and the surface, and the low-level jet that feeds the squall line draws
-# its moisture from the resolved Gulf.
+# atmosphere over a domain running from the U.S. Southern Great Plains to the Gulf of Mexico and the
+# open Atlantic, for the Midlatitude Continental Convective Clouds Experiment (MC3E) 20 May 2011
+# squall-line case ([Fan2017](@citet)). The lower boundary is part land, part ocean: an interactive
+# `SlabLand` and a prescribed-SST ocean share the surface through a fractional `SurfacePartition`,
+# all-sky RRTMGP radiation heats the column and the surface, and the low-level jet that feeds the
+# squall line draws its moisture from the resolved Gulf.
 #
 # `nested_atmosphere_model(grid, dataset; dates, …)` builds the whole nest: an ERA5 "parent"
 # `PrescribedAtmosphere` on its native 0.25° pressure-level grid, driving a Breeze "child" through open
@@ -54,7 +54,7 @@ using CUDA
 using Printf
 using Dates: DateTime, Second
 
-# This 12 km LAM (162×180×50 ≈ 1.5M cells, split-explicit) targets a CUDA GPU; switch to `CPU()` only
+# This 12 km LAM (220×176×50 ≈ 1.9M cells, split-explicit) targets a CUDA GPU; switch to `CPU()` only
 # for a small smoke test.
 arch = GPU()
 
@@ -65,8 +65,10 @@ Oceananigans.defaults.FloatType = Float32
 #
 # The domain covers [Fan2017](@citet)'s 3 km WRF Domain 3 around the DOE Atmospheric Radiation
 # Measurement (ARM) Southern Great Plains (SGP) site in Lamont, OK — coarsened 4× and driven
-# directly by ERA5 — and extends south past the Texas–Louisiana coast into the open Gulf of
-# Mexico, so the surface under the child is genuinely part land, part ocean.
+# directly by ERA5 — and extends south past the Texas–Louisiana coast into the open Gulf and east
+# across Florida into the Atlantic, so the surface under the child is genuinely part land, part
+# ocean. The northern edge stops at 41.5°N: ETOPO2022's below-sea-level test reads the Great Lakes
+# as ocean (Lake Michigan's bed lies ≈ 105 m below sea level), and its southern tip sits at 41.6°N.
 
 ## dates
 name = "mc3e"
@@ -74,10 +76,10 @@ duration = 3hours
 start_date = DateTime(2011, 05, 20, 0)
 stop_date = start_date + Second(duration)
 
-## location: ARM SGP mid-domain, open Gulf water in the southern quarter
+## location: ARM SGP inland, with the Gulf, the Florida Straits and the open Atlantic to the south and east
 φ₀, λ₀ = 36.605, -97.485    # ARM SGP site (deg)
-λ_west, λ_east   = -104.5, -86.5
-φ_south, φ_north = 24.5, 44.5
+λ_west, λ_east   = -104.5, -80.0
+φ_south, φ_north = 22.0, 41.5
 Lλ = λ_east - λ_west
 Lφ = φ_north - φ_south
 
@@ -226,10 +228,9 @@ ocean = PrescribedOcean(surface_grid, sst.times; sea_surface_temperature = sst)
 
 ocean_fraction = regrid_ocean_fraction(surface_grid; dataset = ETOPO2022())
 
-# Alongside þ, the sea surface temperature the Gulf supplies. ERA5's skin temperature is set into
+# Alongside þ, the sea surface temperature the water supplies. ERA5's skin temperature is set into
 # every cell, so the field holds *land* skin temperature inland; masking to þ > 1/2 shows the water
-# the partition actually weights. ETOPO2022's below-sea-level test also catches deep continental
-# lakes, so Lake Michigan (bed ≈ 105 m below sea level) enters the northeast corner ~20 K colder.
+# the partition actually weights — the Gulf, the Florida Straits and the western Atlantic.
 
 Tᵒᶜ = Field{Center, Center, Nothing}(surface_grid)
 set!(Tᵒᶜ, ocean.sea_surface_temperature[1])
