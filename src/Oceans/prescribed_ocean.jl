@@ -169,11 +169,7 @@ end
 
 EarthSystemModels.InterfaceComputations.net_fluxes(ocean::PrescribedOcean) = nothing
 
-# Read each series at the ocean clock, linearly interpolating between the two snapshots that
-# bracket it. `time_interpolated_getindex` returns the first snapshot whenever the bracketing
-# indices coincide, so a single-time (constant) series needs no special case. The interpolation
-# weights are computed once on the host — `cpu_interpolating_time_indices` — and reach the kernel
-# as a `TimeInterpolator`, rather than being recomputed from `times` in every thread.
+# Read each series at the ocean clock, linearly interpolating between the two snapshots that bracket it. 
 function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::PrescribedOcean, coupled_model)
     Tᵒ = ocean.sea_surface_temperature
     Sᵒ = ocean.sea_surface_salinity
