@@ -43,7 +43,9 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     clock = coupled_model.clock
     radiation_state = coupled_model.interfaces.exchanger.radiation.state
 
-    fluxes = land.fluxes
+    # Skip lands that expose no flux accumulator (e.g. a land that computes its own radiation
+    # internally). Guard `hasproperty(land, :fluxes)`
+    fluxes = hasproperty(land, :fluxes) ? land.fluxes : nothing
     hasproperty(fluxes, :surface_energy_flux) || return nothing
     land_energy_flux = fluxes.surface_energy_flux
 
