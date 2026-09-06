@@ -118,7 +118,7 @@ end
 
             Δt = 605seconds
             Sᵒᶜ = 35 # reference salinity [psu]
-            free_surface = SplitExplicitFreeSurface(substeps=20)
+            free_surface = SplitExplicitFreeSurface(substeps=5)
 
             # Without shortwave penetration
             @testset "Surface-only fluxes" begin
