@@ -66,7 +66,7 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
         # Heat content changes by the surface heat flux plus the enthalpy carried by the freshwater
         # (rain − evaporation at SST). The live Tᴺ Jʷ exchange cancels the z-star ambient carry, so
         # the freshwater's own enthalpy Σᵢ Tᵢ Jʷᵢ is what remains.
-        heat_content_tendency = sum(ρᵒᶜ * cᵒᶜ * ΔVT)
+        heat_content_tendency = ρᵒᶜ * cᵒᶜ * sum(ΔVT)
         expected_heat_content_tendency = (previous_radiative_rate - previous_heat_flux + previous_enthalpy) * last_Δt
         @test isapprox(heat_content_tendency, expected_heat_content_tendency; rtol=heat_rtol)
 
