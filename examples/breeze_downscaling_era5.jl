@@ -228,9 +228,9 @@ ocean = PrescribedOcean(surface_grid, sst.times; sea_surface_temperature = sst)
 
 ocean_fraction = regrid_ocean_fraction(surface_grid; dataset = ETOPO2022())
 
-# Alongside þ, the sea surface temperature the water supplies. ERA5's skin temperature is set into
-# every cell, so the field holds *land* skin temperature inland; masking to þ > 1/2 shows the water
-# the partition actually weights — the Gulf, the Florida Straits and the western Atlantic.
+# Alongside þ in the left panel, the right panel shows the sea surface temperature the ocean part of each cell supplies.
+# ERA5's skin temperature is set into every cell, so the field holds *land* skin temperature inland;
+# masking to þ > 1/2 shows the water the partition actually weights — the Gulf, the Florida Straits and the western Atlantic.
 
 Tᵒᶜ = Field{Center, Center, Nothing}(surface_grid)
 set!(Tᵒᶜ, ocean.sea_surface_temperature[1])
