@@ -26,7 +26,9 @@ Base.summary(partition::SurfacePartition) =
 
 Base.show(io::IO, partition::SurfacePartition) = print(io, summary(partition))
 
-function SurfacePartition(grid, ocean_fraction, ao_interface, al_interface)
+SurfacePartition(grid, ::PrescribedAtmosphere, args...) = nothing
+
+function SurfacePartition(grid, atmos, ocean_fraction, ao_interface, al_interface)
     isnothing(ao_interface) && return SurfacePartition(ZeroField(), nothing)
     isnothing(al_interface) && return SurfacePartition(OneField(), nothing)
 
