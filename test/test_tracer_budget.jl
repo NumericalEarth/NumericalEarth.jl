@@ -2,6 +2,7 @@ include("runtests_setup.jl")
 
 using CUDA: @allowscalar
 using Oceananigans.AbstractOperations: KernelFunctionOperation
+using Oceananigans.Diagnostics: NaNChecker, nan_detected
 using Oceananigans.Grids: MutableVerticalDiscretization
 using Oceananigans.Operators: volume
 using Oceananigans.Units
@@ -48,6 +49,10 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
     set!(VS⁻, S * volume)
     ∫S⁻ = sum(VS⁻)
 
+    sea_ice = coupled_model.sea_ice
+    sea_ice_fields = isnothing(sea_ice) ? NamedTuple() : Oceananigans.prognostic_fields(sea_ice.model)
+    nan_checker = NaNChecker(fields = merge(Oceananigans.prognostic_fields(ocean.model), sea_ice_fields))
+
     for _ = 1:nsteps
         set!(VT⁻, T * volume)
         set!(VV⁻, cell_volume)
@@ -59,6 +64,9 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
 
         time_step!(coupled_model, Δt)
         last_Δt = ocean.model.clock.last_Δt
+
+        nan_checker(ocean)
+        @test !nan_detected(nan_checker)
 
         compute!(ΔVT)
         compute!(ΔVV)
