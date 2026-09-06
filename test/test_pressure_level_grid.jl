@@ -1,6 +1,7 @@
 include("runtests_setup.jl")
 
 using Oceananigans
+using Oceananigans.Architectures: on_architecture
 using Oceananigans.Fields: instantiated_location
 using Oceananigans.Grids: Flat, Bounded, topology
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
@@ -8,6 +9,9 @@ using Statistics
 
 using NumericalEarth.Grids: PressureLevelGrid, PressureLevelVerticalDiscretization,
                             column_fractional_z_index
+using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters, R_d, R_v
+using NumericalEarth.DataWrangling.ERA5: reconstruct_near_surface_snapshot!,
+                                         ERA5_gravitational_acceleration
 
 # Build a small static-Field-backed `PressureLevelVerticalDiscretization` from
 # a per-cell geopotential array. Returns the (Φ, Φ_sfc, plvd) triple.
@@ -142,6 +146,130 @@ end
         # No clip (surface below the whole column) ⇒ first above-ground level is 1, behavior unchanged.
         grid0, _, _, _ = make_plg()
         @test column_fractional_z_index(0.0, 1.0, 1.0, grid0) == 1
+    end
+
+    @testset "near-surface reconstruction anchors low pressure-level columns on $(arch)" for arch in test_architectures
+        FT = Float32
+        Nx, Ny, Nz = 2, 1, 5
+        grid = RectilinearGrid(arch, FT; size = (Nx, Ny, Nz),
+                               x = (0, 1), y = (0, 1), z = (0, 1000),
+                               topology = (Bounded, Bounded, Bounded))
+        surface_grid = RectilinearGrid(arch, FT; size = (Nx, Ny),
+                                       x = (0, 1), y = (0, 1),
+                                       topology = (Bounded, Bounded, Flat))
+        volume_field(value) = set!(CenterField(grid), FT(value))
+        surface_field(value) = set!(Field{Center, Center, Nothing}(surface_grid), FT(value))
+
+        source_geopotential = CenterField(grid)
+        set!(source_geopotential, (x, y, z) -> FT(ERA5_gravitational_acceleration) * z)
+        geopotential = CenterField(grid)
+        pressure = CenterField(grid)
+        source_state = (temperature = volume_field(270),
+                        eastward_velocity = volume_field(20),
+                        northward_velocity = volume_field(10),
+                        specific_humidity = volume_field(0.003),
+                        cloud_liquid = volume_field(0.001),
+                        rain = volume_field(0.002),
+                        cloud_ice = volume_field(0.003),
+                        snow = volume_field(0.004))
+        state = (temperature = volume_field(0),
+                 eastward_velocity = volume_field(0),
+                 northward_velocity = volume_field(0),
+                 specific_humidity = volume_field(0),
+                 cloud_liquid = volume_field(0),
+                 rain = volume_field(0),
+                 cloud_ice = volume_field(0),
+                 snow = volume_field(0))
+
+        surface_geopotential = Field{Center, Center, Nothing}(surface_grid)
+        set!(surface_geopotential,
+             (x, y) -> ifelse(x < FT(1//2), 0,
+                              FT(500 * ERA5_gravitational_acceleration)))
+        surface_pressure = Field{Center, Center, Nothing}(surface_grid)
+        set!(surface_pressure, (x, y) -> ifelse(x < FT(1//2), FT(102000), FT(94000)))
+        surface_state = (temperature = surface_field(290),
+                         eastward_velocity = surface_field(5),
+                         northward_velocity = surface_field(-3),
+                         specific_humidity = surface_field(0.01),
+                         pressure = surface_pressure)
+        pressure_level_values = FT[100000, 97500, 95000, 92500, 90000]
+        pressure_levels = on_architecture(arch, pressure_level_values)
+        thermodynamics_parameters = AtmosphereThermodynamicsParameters(FT)
+        reference_height = FT(10)
+
+        reconstruct_near_surface_snapshot!(grid, geopotential, state, pressure,
+                                           source_geopotential, source_state,
+                                           surface_geopotential, surface_state,
+                                           pressure_levels, thermodynamics_parameters,
+                                           reference_height)
+
+        qᵛ = FT(0.01)
+        Rᵐ = R_d(thermodynamics_parameters) * (1 - qᵛ) +
+             R_v(thermodynamics_parameters) * qᵛ
+        pʳ_sea = FT(102000) * exp(-FT(ERA5_gravitational_acceleration) * reference_height /
+                                  (Rᵐ * FT(290)))
+        pʳ_land = FT(94000) * exp(-FT(ERA5_gravitational_acceleration) * reference_height /
+                                  (Rᵐ * FT(290)))
+
+        p = Array(interior(pressure))
+        Φ = Array(interior(geopotential))
+        T = Array(interior(state.temperature))
+        u = Array(interior(state.eastward_velocity))
+        v = Array(interior(state.northward_velocity))
+        qᵛ = Array(interior(state.specific_humidity))
+        qᶜˡ = Array(interior(state.cloud_liquid))
+        qʳ = Array(interior(state.rain))
+        qᶜⁱ = Array(interior(state.cloud_ice))
+        qˢ = Array(interior(state.snow))
+
+        bottom = 1
+        second = bottom + 1
+        third = second + 1
+        top = size(grid, 3)
+
+        # Sea-level column: the first slot becomes the 10 m anchor and 1000 hPa shifts to k=2.
+        @test p[1, 1, bottom] ≈ pʳ_sea
+        @test Φ[1, 1, bottom] ≈ FT(ERA5_gravitational_acceleration) * reference_height
+        @test T[1, 1, bottom] == FT(290)
+        @test u[1, 1, bottom] == FT(5)
+        @test v[1, 1, bottom] == FT(-3)
+        @test qᵛ[1, 1, bottom] == FT(0.01)
+        @test iszero(qᶜˡ[1, 1, bottom])
+        @test iszero(qʳ[1, 1, bottom])
+        @test iszero(qᶜⁱ[1, 1, bottom])
+        @test iszero(qˢ[1, 1, bottom])
+        @test p[1, 1, second] == pressure_level_values[bottom]
+        @test Φ[1, 1, second] ≈ FT(ERA5_gravitational_acceleration) * FT(100)
+        @test T[1, 1, second] == FT(270)
+
+        # Elevated column: the anchor plus 1000, 975, and 950 hPa are reconstructed;
+        # shifted 925 hPa remains the first reanalysis level above it.
+        fourth = third + 1
+        @test all(p[2, 1, bottom:fourth] .≈ pʳ_land)
+        @test all(Φ[2, 1, bottom:fourth] .≈
+                  FT(ERA5_gravitational_acceleration) * FT(510))
+        @test all(T[2, 1, bottom:fourth] .== FT(290))
+        @test all(iszero, qᶜˡ[2, 1, bottom:fourth])
+        @test p[2, 1, top] == pressure_level_values[top - 1]
+        @test Φ[2, 1, top] ≈ FT(ERA5_gravitational_acceleration) * FT(700)
+        @test T[2, 1, top] == FT(270)
+        @test all(diff(vec(p[1, 1, :])) .< 0)
+        @test all(diff(vec(Φ[1, 1, :])) .> 0)
+        @test all(diff(vec(p[2, 1, :])) .<= 0)
+        @test all(diff(vec(Φ[2, 1, :])) .>= 0)
+
+        if arch isa CPU
+            reconstructed_vertical = PressureLevelVerticalDiscretization(geopotential;
+                gravitational_acceleration = ERA5_gravitational_acceleration,
+                surface_geopotential)
+            reconstructed_grid = LatitudeLongitudeGrid(arch, FT;
+                size = (Nx, Ny, Nz), longitude = (0, 1), latitude = (0, 1),
+                z = reconstructed_vertical, topology = (Bounded, Bounded, Bounded))
+            # A query just above the repeated 510 m surface plateau must interpolate from its last
+            # reconstructed slot toward the retained 700 m / 925 hPa level, not snap to k=1.
+            @test column_fractional_z_index(FT(520), FT(2), FT(1), reconstructed_grid) ≈
+                  FT(4 + 10 / 190)
+        end
     end
 
     @testset "rnodes / znodes on the grid return the column-mean Vector" begin

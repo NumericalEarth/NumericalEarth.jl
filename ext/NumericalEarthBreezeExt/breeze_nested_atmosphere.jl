@@ -456,11 +456,18 @@ the child grid (a static snapshot, not the dataset's diurnal cycle). `balancer` 
 post-initialization adiabatic (DFI) balance: `true` (default) runs it, `false` skips it, and an
 `AdiabaticBalancer(Δt=…)` runs a custom (e.g. gentler) excursion. Remaining keyword arguments flow to
 `nested_atmosphere_model(parent, child_grid; kw...)`.
+
+`reconstruct_near_surface=true` inserts ERA5 2 m thermodynamics, 10 m winds, and hydrostatically
+adjusted surface pressure in the parent column's lowest slot, shifts the pressure-level state upward,
+and drops its topmost level before child initialization, lateral-boundary interpolation, and Davies
+relaxation.
 """
 function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_dataset; dates,
     dir = default_download_directory(parent_dataset),
     parent_padding = default_horizontal_padding(parent_dataset),
     parent_time_indices_in_memory = nothing,   # nothing ⇒ every date resident; ≥3 streams a moving window
+    reconstruct_near_surface = false,
+    near_surface_reference_height = 10,
     surface_pressure = nothing,
     bottom_drag_coefficient = nothing,
     drag_surface_temperature = nothing,
@@ -468,9 +475,17 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
     kw...)
 
     parent_region = BoundingBox(child_grid; padding = parent_padding)
-    parent_atmosphere = PrescribedAtmosphere(parent_region, dates, parent_dataset;
-                                             architecture = architecture(child_grid), dir,
-                                             time_indices_in_memory = parent_time_indices_in_memory)
+    if reconstruct_near_surface
+        parent_atmosphere = PrescribedAtmosphere(parent_region, dates, parent_dataset;
+                                                 architecture = architecture(child_grid), dir,
+                                                 time_indices_in_memory = parent_time_indices_in_memory,
+                                                 reconstruct_near_surface,
+                                                 near_surface_reference_height)
+    else
+        parent_atmosphere = PrescribedAtmosphere(parent_region, dates, parent_dataset;
+                                                 architecture = architecture(child_grid), dir,
+                                                 time_indices_in_memory = parent_time_indices_in_memory)
+    end
 
     if isnothing(surface_pressure)
         surface_pressure = mean_surface_pressure(parent_dataset, child_grid, first(dates), dir)
