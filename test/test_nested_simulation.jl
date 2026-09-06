@@ -14,6 +14,11 @@ using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, 
               SpecificForcing
 using Test
 
+@static if isdefined(Breeze.Microphysics, :PredictedParticleProperties)
+    using Breeze.Microphysics.PredictedParticleProperties:
+        CloudDroplets, AerosolActivation, AerosolMode, ProcessRate, p3_ice_moments
+end
+
 @testset "PrescribedAtmosphere: grid vertical topology selects surface vs volumetric fields" begin
     # A `Flat` vertical gives a surface atmosphere: u, v and 2D temperature, specific humidity
     # and pressure, with no gas or microphysical species.
@@ -513,6 +518,169 @@ end
     # Dropping rain + snow (cloud-only) gives a measurably different, biased density.
     ρ_cloud_only = p / (((1 - qᵛ - 1.0e-3 - 4.0e-4) * Rᵈ + qᵛ * Rᵛ) * T)
     @test !isapprox(ρ, ρ_cloud_only; rtol = 1e-6)
+end
+
+@static if isdefined(Breeze.Microphysics, :PredictedParticleProperties)
+    # ERA5 carries four hydrometeor masses but no number moments. The P3 exchanger maps those masses into
+    # the independently transported P3 categories, diagnoses reproducible rain/ice moments, and partitions
+    # the LASSO-style aerosol reservoir between cloud, rain, and unactivated aerosol.
+    @testset "StateExchanger: ERA5 hydrometeors map to every P3 prognostic on $(arch)" for arch in test_architectures
+        ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+        FT = Float32
+
+        parent_grid = RectilinearGrid(arch, FT; size = (4, 4, 2), x = (-1, 1), y = (-1, 1),
+                                          z = (0, 1), topology = (Bounded, Bounded, Bounded))
+        times = FT[0, 1, 2]
+        hydrometeor() = FieldTimeSeries{Center, Center, Center}(parent_grid, times)
+        qᶜˡ, qʳ, qᶜⁱ, qˢ = hydrometeor(), hydrometeor(), hydrometeor(), hydrometeor()
+        set!(qᶜˡ, 1.0e-3)
+        set!(qʳ,  1.5e-3)
+        set!(qᶜⁱ, 4.0e-4)
+        set!(qˢ,  2.0e-3)
+        parent = PrescribedAtmosphere(parent_grid, times; microphysical_variables = (; qᶜˡ, qʳ, qᶜⁱ, qˢ))
+        set!(parent.temperature,       280.0)
+        set!(parent.specific_humidity, 0.005)
+        set!(parent.velocities.u,      1.0)
+        set!(parent.velocities.v,      0.0)
+        set!(parent.pressure,          9.0e4)
+
+        cloud = CloudDroplets(FT; number_concentration = 75e6)
+        aerosol = AerosolActivation(AerosolMode(FT; number_mixing_ratio = 5e8))
+        process_rates = ProcessRate(FT; maximum_ice_number_density = 100)
+        p3 = P3Microphysics(FT; cloud, aerosol, process_rates)
+        constants = ThermodynamicConstants(FT)
+        exchanger = ext.state_exchanger(parent, FT(1.0e5), constants; microphysics = p3)
+        prognostic = exchanger.prognostic
+
+        p3_names = Breeze.AtmosphereModels.prognostic_field_names(p3)
+        specific_names = ext.parent_microphysics_specific_names(exchanger.microphysics_mapping)
+        base_names = (:ρᵈ, :ρu, :ρv, :ρθ, :ρqᵛ, :θ, :u, :v, :qᵛ)
+        @test keys(prognostic) == (base_names..., p3_names..., specific_names...)
+
+        qᵛ, qcl, qr, qi, temperature, pressure = 0.005, 1e-3, 1.5e-3, 2.4e-3, 280.0, 9e4
+        Rᵈ = dry_air_gas_constant(constants)
+        Rᵛ = vapor_gas_constant(constants)
+        ρ = pressure / (((1 - qᵛ - qcl - qr - qi) * Rᵈ + qᵛ * Rᵛ) * temperature)
+
+        parameters = p3.process_rates
+        rain_slope = sqrt(sqrt(π * parameters.liquid_water_density * 8e6 / (ρ * qr)))
+        rain_slope = clamp(rain_slope, parameters.minimum_rain_slope, parameters.maximum_rain_slope)
+        rain_number_density = ρ * qr * rain_slope^3 / (π * parameters.liquid_water_density)
+        mean_ice_mass = π * parameters.pure_ice_density * (100e-6)^3 / 6
+        raw_ice_number = qi / mean_ice_mass
+        ice_number_density = ρ * p3_ice_moments(p3, ρ, qi, raw_ice_number,
+                                                0, 0, p3.ice.minimum_rime_density).nⁱ
+
+        values(name) = Array(interior(prognostic[name][1]))
+        @test all(isapprox.(values(:ρqᶜˡ), ρ * qcl; rtol = 1e-5))
+        @test all(isapprox.(values(:ρqʳ),  ρ * qr;  rtol = 1e-5))
+        @test all(isapprox.(values(:ρqⁱ),  ρ * qi;  rtol = 1e-5))
+        @test all(isapprox.(values(:ρnʳ), rain_number_density; rtol = 1e-5))
+        @test all(isapprox.(values(:ρnⁱ), ice_number_density; rtol = 1e-5))
+        @test ice_number_density > parameters.maximum_ice_number_density
+        @test all(iszero, values(:ρqᶠ))
+        @test all(iszero, values(:ρbᶠ))
+        @test all(iszero, values(:ρqʷⁱ))
+
+        cloud_number_density = cloud.number_concentration
+        total_aerosol_number_density = ρ * 5e8
+        aerosol_number_density = max(0, total_aerosol_number_density -
+                                        cloud_number_density - rain_number_density)
+        @test all(values(:ρnᶜˡ) .== cloud_number_density)
+        @test all(isapprox.(values(:ρnᵃ), aerosol_number_density; rtol = 1e-5))
+
+        for (density_name, specific_name) in zip(p3_names, specific_names)
+            @test all(isapprox.(values(specific_name), values(density_name) ./ ρ; rtol = 1e-5))
+        end
+        @test all(isapprox.(values(:qᵛ), qᵛ; rtol = 1e-5))
+
+        mapped_total_density = values(:ρᵈ) + values(:ρqᵛ) + values(:ρqᶜˡ) +
+                               values(:ρqʳ) + values(:ρqⁱ) + values(:ρqʷⁱ)
+        @test all(isapprox.(mapped_total_density, ρ; rtol = 1e-5))
+    end
+
+    @testset "P3 nested initialization preserves mapped condensate and aerosol state on CPU()" begin
+        ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+        parent_grid = RectilinearGrid(CPU(); size = (4, 4, 2), x = (-1, 1), y = (-1, 1),
+                                      z = (0, 1), topology = (Bounded, Bounded, Bounded))
+        times = [0.0, 1.0, 2.0]
+        hydrometeor() = FieldTimeSeries{Center, Center, Center}(parent_grid, times)
+        qᶜˡ, qʳ, qᶜⁱ, qˢ = hydrometeor(), hydrometeor(), hydrometeor(), hydrometeor()
+        set!(qᶜˡ, 1.0e-3)
+        set!(qʳ,  1.5e-3)
+        set!(qᶜⁱ, 4.0e-4)
+        set!(qˢ,  2.0e-3)
+        parent = PrescribedAtmosphere(parent_grid, times; microphysical_variables = (; qᶜˡ, qʳ, qᶜⁱ, qˢ))
+        set!(parent.temperature, 280.0)
+        set!(parent.specific_humidity, 0.005)
+        set!(parent.velocities.u, 1.0)
+        set!(parent.velocities.v, 0.0)
+        set!(parent.pressure, 9.0e4)
+
+        cloud = CloudDroplets(Float64; number_concentration = 75e6)
+        aerosol = AerosolActivation(AerosolMode(Float64; number_mixing_ratio = 5e8))
+        p3 = P3Microphysics(Float64; cloud, aerosol)
+        child_grid = RectilinearGrid(CPU(); size = (8, 8, 8), x = (-0.5, 0.5), y = (-0.5, 0.5),
+                                     z = (0, 1), halo = (5, 5, 5),
+                                     topology = (Bounded, Bounded, Bounded))
+        nested = nested_atmosphere_model(parent, child_grid; microphysics = p3,
+                                         relaxation_rate = 1/300, coriolis = nothing,
+                                         surface_pressure = 1e5)
+        ext.initialize_nested_child!(nested, nothing, first(times), "")
+
+        names = Breeze.AtmosphereModels.prognostic_field_names(p3)
+        for name in names
+            parent_values = Array(interior(nested.exchanger.prognostic[name][1]))
+            child_values = Array(interior(nested.child.microphysical_fields[name]))
+            @test all(isapprox.(child_values, first(parent_values); rtol = 1e-12, atol = 1e-12))
+            @test name ∈ keys(nested.child.forcing)
+            @test !isnothing(nested.child.microphysical_fields[name].boundary_conditions.west)
+        end
+
+        # P3's default initialization bypasses the process-free DFI twin because that twin omits P3
+        # condensate. It must leave the incoming `diagCCN` aerosol partition unchanged as well.
+        ρnᵃ_parent = first(Array(interior(nested.exchanger.prognostic.ρnᵃ[1])))
+        @test all(isapprox.(Array(interior(nested.child.microphysical_fields.ρnᵃ)),
+                            ρnᵃ_parent; rtol = 1e-12))
+
+        # The first west ghost and first interior center average to the imposed face value.
+        # This evaluates the actual interpolated P3 boundary condition, not just its presence.
+        model = nested.child
+        model_fields = fields(model)
+        fill_halo_regions!(model.microphysical_fields, model.clock, model_fields)
+        for name in names
+            field = model.microphysical_fields[name]
+            boundary_value = (field[0, 4, 4] + field[1, 4, 4]) / 2
+            parent_value = first(Array(interior(nested.exchanger.prognostic[name][1])))
+            @test isapprox(boundary_value, parent_value; rtol = 1e-12, atol = 1e-12)
+        end
+
+        # Scaling every constituent density changes ρ but preserves composition. Specific Davies
+        # relaxation must therefore return zero; density-target relaxation would spuriously restore
+        # every field toward the unscaled parent density.
+        α = 0.9
+        interior(model.dynamics.dry_density) .*= α
+        interior(model.moisture_density) .*= α
+        for name in names
+            interior(model.microphysical_fields[name]) .*= α
+        end
+        Oceananigans.TimeSteppers.update_state!(model, compute_tendencies = false)
+        model_fields = fields(model)
+        for name in (:ρqᵛ, names...)
+            density_forcing = model.forcing[name]
+            Breeze.AtmosphereModels.compute_forcing!(density_forcing)
+            tendency = density_forcing(4, 4, 4, model.grid, model.clock, model_fields)
+            @test isapprox(tendency, 0; atol = 1e-10)
+        end
+
+        # A composition perturbation produces a restoring tendency with the correct sign.
+        interior(model.microphysical_fields.ρqᶜˡ) .*= 0.5
+        Oceananigans.TimeSteppers.update_state!(model, compute_tendencies = false)
+        cloud_forcing = model.forcing.ρqᶜˡ
+        Breeze.AtmosphereModels.compute_forcing!(cloud_forcing)
+        @test cloud_forcing(4, 4, 4, model.grid, model.clock, fields(model)) > 0
+
+    end
 end
 
 @testset "StateExchanger: moving-window interpolation never aliases nonresident time slots on $(arch)" for arch in test_architectures

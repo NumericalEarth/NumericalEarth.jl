@@ -31,16 +31,17 @@ using Oceananigans:
     Center, Face,
     set!
 
-using Oceananigans.Architectures: architecture
+using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.DistributedComputations: all_reduce
 using Oceananigans.Coriolis: SphericalCoriolis
-using Oceananigans.Fields: AbstractField, interior, interpolate!
-using Oceananigans.Forcings: Relaxation
+using Oceananigans.Fields: AbstractField, interior, interpolate!, compute!
+using Oceananigans.Forcings: Relaxation, materialize_forcing
 using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 
 using GPUArraysCore: @allowscalar
+using Adapt: Adapt, adapt
 
 using Breeze:
     BulkDrag,
@@ -53,7 +54,7 @@ using Breeze:
     materialize_terrain!,
     moisture_prognostic_name
 
-using Breeze.AtmosphereModels: prognostic_field_names
+using Breeze.AtmosphereModels: AtmosphereModels, prognostic_field_names
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
 # saturation-adjustment cloud formation when Breeze's `CloudMicrophysics` extension is loaded,
@@ -63,6 +64,45 @@ function default_nested_microphysics()
     ext = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
     isnothing(ext) && return SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())
     return ext.OneMomentCloudMicrophysics(cloud_formation = SaturationAdjustment(equilibrium = MixedPhaseEquilibrium()))
+end
+
+# Davies relaxation for a density-weighted scalar whose physical target is a specific quantity.
+# The skeleton carries an ordinary `Relaxation`; materialization replaces its relaxed field by
+# ρϕ / ρ and the kernel multiplies the resulting specific tendency by the child's current total ρ.
+struct ParentSpecificRelaxation{R, D}
+    relaxation :: R
+    density :: D
+end
+
+ParentSpecificRelaxation(; rate, mask, target) =
+    ParentSpecificRelaxation(Relaxation(; rate, mask, target), nothing)
+
+Adapt.adapt_structure(to, forcing::ParentSpecificRelaxation) =
+    ParentSpecificRelaxation(adapt(to, forcing.relaxation), adapt(to, forcing.density))
+
+@inline function (forcing::ParentSpecificRelaxation)(i, j, k, grid, clock, model_fields)
+    @inbounds ρ = forcing.density[i, j, k]
+    return ρ * forcing.relaxation(i, j, k, grid, clock, model_fields)
+end
+
+function AtmosphereModels.materialize_atmosphere_model_forcing(forcing::ParentSpecificRelaxation,
+                                                                field, name, model_field_names,
+                                                                context::NamedTuple)
+    density = context.total_density
+    specific_field = Field(field / density)
+    relaxation = materialize_forcing(forcing.relaxation, specific_field, name, model_field_names)
+
+    # A non-`nothing` marker normally tells Oceananigans to refresh a transformed relaxed field.
+    # Our compute hook below performs that refresh directly, including after GPU adaptation drops
+    # this host-only marker.
+    relaxation = Relaxation(relaxation.rate, relaxation.relaxed, relaxation.mask,
+                            relaxation.target, relaxation.location, Val(:specific_composition))
+    return ParentSpecificRelaxation(relaxation, density)
+end
+
+function AtmosphereModels.compute_forcing!(forcing::ParentSpecificRelaxation)
+    compute!(forcing.relaxation.relaxed)
+    return nothing
 end
 
 # Ramp shapes (isbits callables) for a nudging zone: weight vs. normalized distance from the wall, s ∈ [0, 1].
@@ -188,6 +228,17 @@ source via `parent_condensates`, a `NamedTuple` with `qᶜˡ`/`qʳ`/`qᶜⁱ`/`q
 `nothing` entry — or the whole `parent_condensates` — is treated as absent (⇒ omitted; with all four
 absent, `qᵗ = qᵛ`).
 
+For P3, the same parent condensates are also mapped into every P3 prognostic carried by the child and
+used consistently for its initial condition, lateral boundary values, and Davies targets. Cloud liquid
+maps directly; ERA5 cloud ice + snow become initially unrimed, uncoated P3 ice. ERA5 supplies no number
+moments, so rain uses a Marshall--Palmer exponential distribution with
+`p3_rain_intercept_parameter = 8e6` m⁻⁴, while ice uses a compact-particle mean-mass diameter
+`p3_ice_mean_mass_diameter = 100e-6` m; both moments are clipped through the P3 scheme's configured
+slope limits. With prognostic aerosol, cloudy cells start at `p3.cloud.number_concentration` and the
+remaining aerosol follows the LASSO `diagCCN` partition `ρnᵃ = max(0, ρnᵃ₀ - ρnᶜˡ - ρnʳ)`.
+P3 initialization skips the current adiabatic DFI balancer: its process-free twin omits the P3
+condensate load and is not thermodynamically equivalent to the mapped parent state.
+
 Provides sensible, overridable physics defaults: `microphysics` (1-moment mixed-phase when
 `CloudMicrophysics` is loaded), `momentum_advection = WENO(order=9)`, `coriolis = SphericalCoriolis()`,
 and a compressible split-explicit `dynamics` with an `UpperSponge` over the top `damping_depth` m at
@@ -231,6 +282,8 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     drag_surface_temperature = nothing, # surface temperature entering the drag's surface density
     parent_condensates = default_parent_condensates(parent_atmosphere),
     microphysics = default_nested_microphysics(),
+    p3_rain_intercept_parameter = 8e6,  # Marshall--Palmer N₀ [m⁻⁴]
+    p3_ice_mean_mass_diameter = 100e-6, # ERA5 cloud ice + snow mapping [m]
     momentum_advection = WENO(order = 9),
     scalar_advection = default_nested_scalar_advection(microphysics),
     coriolis = SphericalCoriolis(),
@@ -246,17 +299,28 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
         materialize_nested_terrain!(child_grid, terrain, parent_atmosphere, blend_width, terrain_smoothing_passes)
     end
 
-    moisture_name = moisture_prognostic_name(microphysics)
+    child_microphysics = on_architecture(architecture(child_grid), microphysics)
+    moisture_name = moisture_prognostic_name(child_microphysics)
     pˢᵗ = dynamics.standard_pressure
 
     # Precompute the child prognostics on the parent grid (combine-then-interpolate); the exchanger owns
     # its own 3-level moving window and refreshes it from the parent each step via `exchange_state!`.
     condensates = isnothing(parent_condensates) ? (qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing) : parent_condensates
-    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates)
+    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants;
+                                  condensates, microphysics = child_microphysics,
+                                  rain_intercept_parameter = p3_rain_intercept_parameter,
+                                  ice_mean_mass_diameter = p3_ice_mean_mass_diameter)
     prognostic = exchanger.prognostic
 
     ρqᵛ = prognostic.ρqᵛ
     moist_variables = NamedTuple{tuple(moisture_name)}(tuple(ρqᵛ))
+    microphysical_names = parent_microphysics_names(exchanger.microphysics_mapping)
+    specific_microphysical_names = parent_microphysics_specific_names(exchanger.microphysics_mapping)
+    microphysical_variables =
+        NamedTuple{microphysical_names}(map(name -> prognostic[name], microphysical_names))
+    moist_specific_variables = NamedTuple{tuple(moisture_name)}((prognostic.qᵛ,))
+    microphysical_specific_variables = NamedTuple{microphysical_names}(
+        map(name -> prognostic[name], specific_microphysical_names))
 
     # Lateral BCs: interpolate the precomputed prognostics at the boundary face. Momentum is prescribed on
     # every side, but the BC *type* is per-side: `NormalFlowBoundaryCondition` on the wall-normal side
@@ -271,14 +335,16 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     energy_key = energy_bc_key()
     dry_bc_variables = merge((ρᵈ = prognostic.ρᵈ, ρu = prognostic.ρu, ρv = prognostic.ρv),
                              NamedTuple{(energy_key,)}((prognostic.ρθ,)))
-    bc_variables = merge(dry_bc_variables, moist_variables)
+    bc_variables = merge(dry_bc_variables, moist_variables, microphysical_variables)
 
     density_and_energy_types = merge((ρᵈ = ValueBoundaryCondition,),
                                      NamedTuple{(energy_key,)}((ValueBoundaryCondition,)))
     momentum_types = (ρu = (west = NormalFlowBoundaryCondition, east = NormalFlowBoundaryCondition, south = ValueBoundaryCondition, north = ValueBoundaryCondition),
                       ρv = (west = ValueBoundaryCondition, east = ValueBoundaryCondition, south = NormalFlowBoundaryCondition, north = NormalFlowBoundaryCondition))
     moist_types = NamedTuple{tuple(moisture_name)}(tuple(ValueBoundaryCondition))
-    bc_types = merge(density_and_energy_types, momentum_types, moist_types)
+    microphysical_types = NamedTuple{microphysical_names}(map(name -> ValueBoundaryCondition,
+                                                               microphysical_names))
+    bc_types = merge(density_and_energy_types, momentum_types, moist_types, microphysical_types)
 
     nested_bcs = parent_boundary_conditions(child_grid; variables = bc_variables, sides, bc_types)
 
@@ -302,7 +368,12 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # absent because Breeze's compressible continuity kernels overwrite `Gⁿ.ρᵈ` with `-∇·m` and never
     # read `forcing.ρᵈ`, so a mass-nudging entry is silently discarded; were that to change, the
     # specific form would gain a `θ Δρᵈ / ρᵈ` cross-term and the density-weighted form would be unbiased.
-    # The wrap is explicit and keyed by the density-weighted prognostic rather than left to Breeze's
+    # Moisture and P3 moments are conserved per unit total-air mass. `ParentSpecificRelaxation` therefore
+    # relaxes ρϕ/ρ toward the parent-specific FTS and multiplies by the child's current total ρ. Directly
+    # relaxing toward the parent density-weighted target would instead equilibrate at
+    # ϕ = ρ_parent ϕ_parent / ρ_child because dry density is not nudged.
+    #
+    # The dynamics wrap is explicit and keyed by the density-weighted prognostic rather than left to Breeze's
     # specific-key dispatch, so a caller's own `θ`/`u`/`v` forcing combines with the relaxation instead
     # of replacing it in the `merge` below.
     relax_mask = relaxation_mask isa Number ? Returns(relaxation_mask) : relaxation_mask
@@ -311,8 +382,13 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     else
         specific_targets = (ρθ = prognostic.θ, ρu = prognostic.u, ρv = prognostic.v)
         specific = parent_forcings(; variables = specific_targets, rate = relaxation_rate, mask = relax_mask)
-        moist = parent_forcings(; variables = moist_variables, rate = relaxation_rate, mask = relax_mask)
-        merge(map(SpecificForcing, specific), moist)
+        moist = map(target -> ParentSpecificRelaxation(rate = relaxation_rate,
+                                                       mask = relax_mask, target = target),
+                    moist_specific_variables)
+        microphysical = map(target -> ParentSpecificRelaxation(rate = relaxation_rate,
+                                                                mask = relax_mask, target = target),
+                            microphysical_specific_variables)
+        merge(map(SpecificForcing, specific), moist, microphysical)
     end
 
     # ρw Rayleigh sponge over BOTH the top `damping_depth` meters AND the lateral relaxation zone. The
@@ -330,7 +406,8 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # `initialize_nested_child!` and destabilize the adiabatic balance twin — the child's full
     # state (and reference) is derived from the parent instead.
     child = NumericalEarth.Atmospheres.atmosphere_model(child_grid;
-        thermodynamic_constants, microphysics, momentum_advection, scalar_advection, coriolis, dynamics,
+        thermodynamic_constants, microphysics = child_microphysics,
+        momentum_advection, scalar_advection, coriolis, dynamics,
         boundary_conditions = merge_boundary_conditions(child_bcs, NamedTuple(boundary_conditions)),
         forcing = merge(lid_sponge, davies, NamedTuple(forcing)),
         initialize = false,
@@ -412,6 +489,44 @@ end
 NumericalEarth.Atmospheres.bulk_drag(model::NestedModel; kw...) =
     NumericalEarth.Atmospheres.bulk_drag(model.child; kw...)
 
+function set_parent_initial_state!(nested_model, ::NoParentMicrophysicsMapping, prognostic,
+                                   to_child, ρᵈ, ρθ, ρqᵛ, ρu, ρv)
+    # The pre-P3 path retains the existing equilibrium-moisture initialization convention.
+    ρ   = Field(ρᵈ + ρqᵛ)
+    qᵗ  = Field(ρqᵛ / ρ)
+    θˡⁱ = Field(ρθ / ρᵈ)
+    u   = Field(ρu / ρᵈ)
+    v   = Field(ρv / ρᵈ)
+    set!(nested_model; ρ, u, v, qᵗ, θˡⁱ, compute_reference_state = true)
+    return nothing
+end
+
+function balance_parent_initial_state!(nested_model, mapping, balancer)
+    balancer === false && return nothing
+    return set!(nested_model; balancer)
+end
+
+@static if isdefined(Breeze.Microphysics, :PredictedParticleProperties)
+    function set_parent_initial_state!(nested_model, mapping::P3ParentMicrophysicsMapping, prognostic,
+                                       to_child, ρᵈ, ρθ, ρqᵛ, ρu, ρv)
+        names = parent_microphysics_names(mapping)
+        microphysical = NamedTuple{names}(map(name -> to_child(prognostic[name]), names))
+        θˡⁱ = Field(ρθ / ρᵈ)
+        u   = Field(ρu / ρᵈ)
+        v   = Field(ρv / ρᵈ)
+        initial_state = merge((; ρᵈ, ρqᵛ), microphysical, (; u, v, θˡⁱ))
+        set!(nested_model; initial_state..., compute_reference_state = true)
+        return nothing
+    end
+
+    function balance_parent_initial_state!(nested_model, mapping::P3ParentMicrophysicsMapping, balancer)
+        # Breeze's current process-free adiabatic twin drops every P3 condensate and moment. Running
+        # it would omit condensate from total density and interpret θˡⁱ as a vapor-only state, so the
+        # mapped P3 parent state is safer and more faithful without DFI until that twin is P3-aware.
+        return nothing
+    end
+end
+
 # Initialize the nested child from the exchanger's parent-derived prognostics (the SAME state that drives
 # the lateral boundaries), interpolated to the child interior — so the interior IC and the prescribed
 # boundary agree at the walls (no standing pressure/density jump). Recompute the Exner reference from the
@@ -436,15 +551,11 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
     ρu  = to_child(prognostic.ρu)
     ρv  = to_child(prognostic.ρv)
 
-    # Recover the specific state from the density-weighted prognostics (dry-weighted momentum/energy,
-    # total-weighted vapor); `ρ` is the total density set! expects.
-    ρ   = Field(ρᵈ + ρqᵛ)
-    qᵗ  = Field(ρqᵛ / ρ)
-    θˡⁱ = Field(ρθ / ρᵈ)
-    u   = Field(ρu / ρᵈ)
-    v   = Field(ρv / ρᵈ)
-
-    set!(nested_model; ρ, u, v, qᵗ, θˡⁱ, compute_reference_state = true)
+    # P3 receives the mapped vapor, condensate masses, and moments directly. Other schemes retain the
+    # existing equilibrium-moisture path. Dispatch here prevents a vapor-only qᵗ reconstruction from
+    # discarding ERA5 condensate before the P3 child takes its first step.
+    set_parent_initial_state!(nested_model, nested_model.exchanger.microphysics_mapping,
+                              prognostic, to_child, ρᵈ, ρθ, ρqᵛ, ρu, ρv)
 
     # Consistent-w: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (the initial flow follows the ground).
     update_state!(nested_model)
@@ -454,10 +565,10 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
         update_state!(nested_model)
     end
 
-    # Adiabatic (DFI) balance at Breeze's auto acoustic-CFL step. `balancer=false` skips it (to isolate
-    # whether the interpolated IC steps stably on its own); pass an `AdiabaticBalancer(Δt=…)` for a
-    # gentler excursion when the default 0.85·Δz/c DFI drives a pathological IC cell's pressure negative.
-    set!(nested_model; balancer)
+    # Adiabatic (DFI) balance at Breeze's auto acoustic-CFL step for schemes whose process-free twin
+    # retains the complete thermodynamic state. P3 dispatch skips DFI because its current twin omits
+    # every P3 condensate and moment; `balancer=false` skips it explicitly for all other schemes.
+    balance_parent_initial_state!(nested_model, nested_model.exchanger.microphysics_mapping, balancer)
 
     return nested_model
 end
