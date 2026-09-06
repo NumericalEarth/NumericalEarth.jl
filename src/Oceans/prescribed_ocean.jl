@@ -204,8 +204,7 @@ end
     end
 end
 
-# A prescribed ocean follows its data rather than responding to fluxes, so net flux assembly
-# is not needed. The atmosphere still receives its fluxes from compute_atmosphere_ocean_fluxes!.
+# A prescribed ocean follows its data rather than responding to fluxes, so net flux assembly is not needed.
 EarthSystemModels.update_net_fluxes!(coupled_model, ocean::PrescribedOcean) = nothing
 
 #####
