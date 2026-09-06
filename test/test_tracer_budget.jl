@@ -96,17 +96,16 @@ end
                                            halo = (7, 7, 4),
                                            fold_topology)
 
-            bottom_height = regrid_bathymetry(underlying_grid,
-                                              Metadatum(:bottom_height, dataset=ETOPO2022());
-                                              minimum_depth=15,
-                                              interpolation_passes=1,
-                                              major_basins=1)
+            bottom_height = synthetic_bottom_height(underlying_grid;
+                                                    minimum_depth=15,
+                                                    interpolation_passes=1,
+                                                    major_basins=1)
 
             grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map = true)
 
             time_indices_in_memory = 4
-            radiation  = JRA55PrescribedRadiation(arch; time_indices_in_memory)
-            atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory)
+            radiation  = synthetic_prescribed_radiation(arch; time_indices_in_memory)
+            atmosphere = synthetic_prescribed_atmosphere(arch; time_indices_in_memory)
 
             # An idealized, stably stratified initial state
             Tᵢ(λ, φ, z) = 2 + 26 * cosd(φ)^2 * exp(z / 30)

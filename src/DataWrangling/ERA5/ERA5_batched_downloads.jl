@@ -106,7 +106,7 @@ on `download_path`.
 function foreach_nc(f, download_path, cleanup_dir)
     if is_zip(download_path)
         tmp_dir = mktempdir(cleanup_dir)
-        run(`unzip -qo $download_path -d $tmp_dir`)
+        unzip(download_path, tmp_dir)
         nc_files = filter(p -> endswith(p, ".nc"), readdir(tmp_dir; join=true))
         for nc_file in nc_files
             f(nc_file)

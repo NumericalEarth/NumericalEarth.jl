@@ -2,6 +2,7 @@ module NumericalEarthCopernicusClimateDataStoreExt
 
 using NumericalEarth
 using CopernicusClimateDataStore: CopernicusClimateDataStore
+using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using Dates: Dates
 using Oceananigans.DistributedComputations: @root
@@ -463,10 +464,10 @@ function era5_land_request(variable_name, ::ERA5MonthlyLand, dts, area)
     return request
 end
 
-function retrieve_with_retries(product, request, path; max_retries=3)
+function retrieve_with_retries(product, request, path; retrieve=CopernicusClimateDataStore.retrieve, max_retries=3)
     for attempt in 1:max_retries
         try
-            return CopernicusClimateDataStore.retrieve(product, request, path)
+            return retrieve(product, request, path)
         catch e
             attempt < max_retries || rethrow(e)
             @warn "CDS retrieve attempt $attempt/$max_retries failed for $product; retrying..." exception=(e, catch_backtrace())
@@ -532,18 +533,19 @@ cds_area(::Nothing) = nothing
 cds_area(area) = [area[3], area[2], area[1], area[4]]
 
 """
-    NumericalEarth.DataWrangling.ERA5.download_era5_land(meta::NumericalEarth.DataWrangling.Metadatum{<:ERA5LandDataset};
-                                                         skip_existing=true, additional_kw...)
+$(TYPEDSIGNATURES)
 
 Download a whole year of ERA5-Land data for one variable into a single yearly file,
 the first time any date within that year is requested; later dates in the same year
-find the file already on disk and skip (see `skip_existing`).
+find the file already on disk and skip (see `skip_existing`). Each chunk of the year is
+fetched with `retrieve(product, request, path)`.
 
 Implements the `download_era5_land` stub declared in `src/DataWrangling/ERA5/ERA5_land.jl`,
 which owns `Downloads.download` for ERA5-Land metadata under any extension load order.
 """
 function NumericalEarth.DataWrangling.ERA5.download_era5_land(meta::NumericalEarth.DataWrangling.Metadatum{<:ERA5LandDataset};
                                                               skip_existing = true,
+                                                              retrieve = CopernicusClimateDataStore.retrieve,
                                                               additional_kw...)
 
     output_directory = meta.dir
@@ -570,7 +572,7 @@ function NumericalEarth.DataWrangling.ERA5.download_era5_land(meta::NumericalEar
 
         for (batch, chunk_path) in zip(batches, chunk_paths)
             request = era5_land_request(variable_name, dataset, batch, area)
-            retrieve_with_retries(cds_land_product(dataset), request, chunk_path)
+            retrieve_with_retries(cds_land_product(dataset), request, chunk_path; retrieve)
         end
 
         concatenate_era5_nc(chunk_paths, output_path)
