@@ -130,17 +130,17 @@ function default_nested_dynamics(grid; surface_pressure, reference_potential_tem
     return CompressibleDynamics(time_discretization; kw...)
 end
 
-# Default child scalar advection: WENO(5) for the energy density `ρθ` and positivity-bounded WENO(5)
-# for the moisture + precipitation densities. `atmosphere_model`'s scalar default is `Centered(order=2)`,
-# which is oscillatory on the sharp moist fronts of a downscaled convective case — it overshoots the
-# moisture density into the density/saturation coupling and blows the cold start up within the first
-# minute. Bounding mirrors Breeze's own moist-convection examples (`ρqᵉ = WENO(order=5, bounds=(0, 1))`).
-# The energy density is unbounded (`ρθ` is not confined to `[0, 1]`). Names are derived from the
-# microphysics so the default tracks whichever moisture/precipitation prognostics it carries.
+# Child scalar advection by field class: water masses (`ρq*`) bounds-preserving on `(0, 1)`, number and
+# volume moments (`ρn*`, `ρb*`) positivity-preserving, the energy density `ρθ` unbounded.
 function default_nested_scalar_advection(microphysics)
-    bounded = WENO(order = 5, bounds = (0, 1))
-    moist_names = (moisture_prognostic_name(microphysics), prognostic_field_names(microphysics)...)
-    return merge((ρθ = WENO(order = 5),), NamedTuple{moist_names}(map(_ -> bounded, moist_names)))
+    names = (:ρθ, moisture_prognostic_name(microphysics), prognostic_field_names(microphysics)...)
+    schemes = map(names) do name
+        s = string(name)
+        startswith(s, "ρq") ? WENO(order = 5, bounds = (0, 1)) :
+        startswith(s, "ρn") || startswith(s, "ρb") ? WENO(order = 5, bounds = (0.0, Inf)) :
+        WENO(order = 5)
+    end
+    return NamedTuple{names}(schemes)
 end
 
 # Blend-zone width in cells from a physical length: a fixed cell count steepens the parent→child

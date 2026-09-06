@@ -678,6 +678,14 @@ end
     end
 end
 
+@testset "default_nested_scalar_advection: bounds by field class" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    schemes = ext.default_nested_scalar_advection(P3Microphysics(Float64))
+    @test isnothing(schemes.ρθ.bounds)
+    @test all(s -> s.bounds.maximum_value == 1, (schemes.ρqᵛ, schemes.ρqᶜˡ, schemes.ρqʳ, schemes.ρqⁱ))
+    @test all(s -> isinf(s.bounds.maximum_value), (schemes.ρnʳ, schemes.ρnⁱ, schemes.ρbᶠ))
+end
+
 # `terrain_blend_length` is a physical length converted to a cell count per grid, so the blend slope is
 # resolution-invariant: a 4×-finer grid gets ~4× the cells.
 @testset "default_terrain_blend_width: physical length gives a resolution-invariant slope" begin
