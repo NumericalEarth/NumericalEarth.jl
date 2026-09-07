@@ -109,9 +109,21 @@ end
 Return the native grid corresponding to `metadata` with `halo` size.
 Returns a `LatitudeLongitudeGrid` for global or `BoundingBox` regions,
 and a column `RectilinearGrid` for `Column` regions.
+
+The native grid is always built on the *child* architecture, so `arch` may be the
+`Distributed` architecture of the target grid: every rank reads and inpaints the whole
+dataset redundantly and then regrids onto its own subdomain. `child_architecture` is the
+identity on a serial architecture, so passing one is unchanged.
+
+A *distributed* native grid would be wrong in two ways at once. `propagate_horizontally!`
+tests for termination with `remaining_gaps`, a `sum` that becomes an `MPI` reduction, so
+inpainting a dataset would turn into a collective — one that the ranks reach a different
+number of times whenever they hold different amounts of land. And the propagation kernel
+reads horizontal neighbors without a halo exchange, so values would stop crossing rank
+boundaries and the fill would depend on the partition.
 """
 native_grid(metadata::Metadata, arch=CPU(); halo=(3, 3, 3)) =
-    construct_native_grid(metadata, metadata.region, arch; halo)
+    construct_native_grid(metadata, metadata.region, child_architecture(arch); halo)
 
 # 2D-only datasets (surface forcing like JRA55) skip the z dimension.
 function construct_native_grid(metadata, ::Nothing, arch; halo)

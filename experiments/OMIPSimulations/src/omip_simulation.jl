@@ -4,7 +4,7 @@ using Oceananigans.Operators: Δzᶜᶜᶜ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ℑxy�
 using Dates: month
 using Oceananigans.Grids: λnode, φnode, znode, λnodes, φnodes, Center
 using Oceananigans.Architectures: on_architecture, architecture
-using Oceananigans.DistributedComputations: @root
+using Oceananigans.DistributedComputations: @root, Distributed
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, getbc, fill_halo_regions!
 using Oceananigans.Fields: Field, CenterField, interior
 using Oceananigans.ImmersedBoundaries: bottom_height_field, mask_immersed_field!
@@ -468,6 +468,17 @@ end
 ##### Main simulation builder
 #####
 
+# Every stage of `omip_simulation` below is collective, and at eddying resolution each one takes
+# minutes, so a rank that stalls in a mismatched collective is invisible: the job simply stops
+# producing output until the scheduler kills it. Tag each completed stage with the rank and the
+# elapsed time, so a hang is localized both to a stage and to the ranks that never reached it.
+function log_setup_stage(arch, stage, t₀)
+    rank = arch isa Distributed ? arch.local_rank : 0
+    @info @sprintf("omip_simulation setup [rank %d] %-28s %8.1f s", rank, stage, time() - t₀)
+    flush(stderr)
+    return nothing
+end
+
 """
     omip_simulation(config::Symbol = :halfdegree; kwargs...)
 
@@ -814,7 +825,11 @@ function omip_simulation(config::Symbol = :halfdegree;
 
     check_depth_independent_skew_coefficient(κ_skew, skew_flux_formulation)
 
+    setup_t₀ = time()
+    log_setup_stage(arch, "start", setup_t₀)
+
     grid = build_grid(cfg, arch, Nz, depth; Δz_top, partial_cell_bathymetry)
+    log_setup_stage(arch, "grid", setup_t₀)
 
     # When staging_dir is provided, JRA55 data is read from fast scratch
     # with symlink fallback to the slow source directory.
@@ -848,6 +863,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                                spread_radius = river_spread_radius,
                                n_spread_cells = river_spread_cells,
                                flux_diversion)
+    log_setup_stage(arch, "land", setup_t₀)
 
     # Built here because the ocean closure is constructed before the coupled model that owns the real
     # ice-ocean flux; `RefreshIceMeltDiffusivity` fills this field once the simulation exists.
@@ -914,6 +930,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                         normalize_salinity,
                         additional_tracer_closure = filter(!isnothing, (river_κ, ice_melt_κ_closure, under_ice_ν_closure)),
                         start_date, end_date)
+    log_setup_stage(arch, "ocean", setup_t₀)
 
     snow_thermodynamics = with_snow ?
         NumericalEarth.SeaIces.default_snow_thermodynamics(grid; thickness_categories = snow_thickness_categories) : nothing
@@ -925,12 +942,14 @@ function omip_simulation(config::Symbol = :halfdegree;
                             northern_sea_ice_initial_date, southern_sea_ice_initial_date,
                             thickness_categories, itd_shape,
                             ice_arch_region, ice_arch_stress, ice_arch_months)
+    log_setup_stage(arch, "sea ice", setup_t₀)
 
     atmosphere, radiation = omip_forcing(arch, sea_ice;
                                          forcing_dir = atmosphere_dir,
                                          start_date,
                                          end_date,
                                          backend_size)
+    log_setup_stage(arch, "atmosphere", setup_t₀)
 
     ice_freshwater_delivery = if ice_virtual_salt_flux
         VirtualSaltFluxIceFreshwater()
@@ -947,8 +966,10 @@ function omip_simulation(config::Symbol = :halfdegree;
                                   velocity_formulation, sea_ice_ocean_heat_transfer_coefficient,
                                   sea_ice_momentum_roughness_length,
                                   ice_freshwater_delivery, ice_meltwater_enthalpy)
+    log_setup_stage(arch, "coupled model", setup_t₀)
 
     simulation = Simulation(coupled; Δt, stop_time)
+    log_setup_stage(arch, "simulation", setup_t₀)
 
     # Only rank 0 creates dirs; others barrier inside @root and proceed once
     # the dirs exist. mkpath is idempotent so a race-free retry would also

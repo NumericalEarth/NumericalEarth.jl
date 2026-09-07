@@ -1,6 +1,7 @@
 using Oceananigans.Grids: inactive_node, λnodes, φnodes
 using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶜᶜᶜ
 using Oceananigans.Architectures: on_architecture
+using Oceananigans.DistributedComputations: Distributed, all_reduce, global_size
 using Oceananigans.Fields: interior
 
 #####
@@ -188,8 +189,14 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     λc = Array(λnodes(target_grid, Center(), Center(), Center()))
     φc = Array(φnodes(target_grid, Center(), Center(), Center()))
 
-    Nx, Ny = size(wet)
     wet_i, wet_j, wet_λ, wet_φ = wet_cells(wet, λc, φc)
+
+    # `maximum_search_radius` is a cell count, so converting it back into a geographic reach needs the
+    # *global* shape. With this rank's own `Ny` the same radius reaches roughly `Ry` times further —
+    # at eORCA1 on 2 ranks, 5.53° against a serial 4.00° — and the routing picks up mouths a serial
+    # build drops, delivering 7% more river freshwater. The reach has to be a property of the planet,
+    # not of the decomposition.
+    Nx, Ny, _ = global_grid_size(arch, size(target_grid))
     max_degrees = maximum_search_radius * (360 / Nx + 180 / Ny) / 2
 
     # Split each mouth's discharge over its plume footprint, each cell weighted by its column depth
@@ -205,11 +212,21 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
         n_receivers = get(flux_diversion, :spread_cells, 8 * something(n_spread_cells, 8))
     end
 
+    # `outlet_i/j` index the forcing dataset's grid, which is global on every rank, so every rank
+    # walks every mouth on Earth. `wet_*` however is this rank's subdomain, and a mouth within
+    # `max_degrees` of a rank boundary finds targets on *both* sides of it. Since the shares below
+    # are normalized per mouth, both ranks would then deposit that mouth's *entire* discharge —
+    # measured at eORCA1 on 2 ranks, that was 17% more river freshwater than a serial build.
+    # So assign every mouth a single owner: the rank holding the wet cell nearest to it.
+    nearest_cells = [nearest_wet_cell(wet_λ, wet_φ, outlet_λ[n], outlet_φ[n]) for n in eachindex(outlet_i)]
+    owned = mouth_ownership(arch, last.(nearest_cells))
+
     contributions = Dict{Tuple{Int, Int}, Vector{Tuple{Int, Int, FT}}}()
     dropped = 0
     for n in eachindex(outlet_i)
+        owned[n] || continue
         targets = spread_target_cells(wet_i, wet_j, wet_λ, wet_φ, outlet_λ[n], outlet_φ[n],
-                                      max_degrees, spread_radius, n_spread_cells)
+                                      max_degrees, spread_radius, n_spread_cells, nearest_cells[n])
         if isempty(targets)
             dropped += 1
             continue
@@ -241,8 +258,8 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     end
 
     if dropped > 0
-        @warn string(dropped, " of ", length(outlet_i), " river mouths had no active ocean ",
-                     "cell in range and were dropped.")
+        @warn string(dropped, " of ", count(owned), " river mouths owned by this rank had no ",
+                     "active ocean cell in range and were dropped.")
     end
 
     target_i = Int[]
@@ -351,6 +368,48 @@ function wet_cells(wet, λc, φc)
     return wet_i, wet_j, wet_λ, wet_φ
 end
 
+# `DistributedComputations.global_size` reassembles a partitioned shape, but it reaches for
+# `concatenate_local_sizes`, which is only defined on `Distributed`. On a serial architecture the local
+# shape is already the global one.
+global_grid_size(arch, local_size) = local_size
+global_grid_size(arch::Distributed, local_size) = global_size(arch, local_size)
+
+# Which of the mouths every rank is walking does *this* rank route?
+#
+# On a serial architecture, all of them. Under `Distributed`, the one whose subdomain holds the wet
+# cell nearest the mouth — the same cell the serial build would have centred the footprint on, so
+# ownership follows the serial answer and the only difference left is that a footprint straddling a
+# rank boundary is clipped to the owner's side.
+#
+# `distances` are squared, from `nearest_wet_cell`, and `Inf` on a rank holding no ocean at all.
+# `all_reduce(min, ...)` returns one of the contributed values bit for bit, so testing the local
+# distance against it with `==` is exact. Two ranks can still tie — a mouth equidistant from both,
+# or a mouth no rank can reach, where every distance is `Inf` — so break the tie on rank index and
+# let the lowest-numbered claimant have it. Both reductions are one collective over a vector the
+# length of the mouth list, not one per mouth.
+mouth_ownership(arch, distances) = fill(true, length(distances))
+
+function mouth_ownership(arch::Distributed, distances)
+    nearest_distances = all_reduce(min, distances, arch)
+
+    claim = [ifelse(distances[n] == nearest_distances[n], arch.local_rank, typemax(Int))
+             for n in eachindex(distances)]
+
+    return all_reduce(min, claim, arch) .== arch.local_rank
+end
+
+# Index into the wet-cell lists of the cell closest to `(λₒ, φₒ)`, and its squared distance.
+# `(0, Inf)` when the lists are empty, which is what a rank holding no ocean reports.
+function nearest_wet_cell(wet_λ, wet_φ, λₒ, φₒ)
+    nearest = 0
+    nearest_distance = Inf
+    for n in eachindex(wet_λ)
+        d = squared_distance(λₒ, φₒ, wet_λ[n], wet_φ[n])
+        d < nearest_distance && (nearest_distance = d; nearest = n)
+    end
+    return nearest, nearest_distance
+end
+
 """
     spread_target_cells(wet_i, wet_j, wet_λ, wet_φ, λₒ, φₒ, max_degrees, spread_radius, maximum_cells)
 
@@ -361,17 +420,17 @@ Empty when no wet cell lies within `max_degrees` of the mouth.
 `spread_radius = nothing` instead takes the `maximum_cells` cells nearest the outlet itself, a footprint
 fixed in cell count rather than in area.
 """
-function spread_target_cells(wet_i, wet_j, wet_λ, wet_φ, λₒ, φₒ, max_degrees, spread_radius, maximum_cells)
+function spread_target_cells(wet_i, wet_j, wet_λ, wet_φ, λₒ, φₒ, max_degrees, spread_radius, maximum_cells,
+                             nearest_cell = nearest_wet_cell(wet_λ, wet_φ, λₒ, φₒ))
     reach = max_degrees^2
-    nearest = 0
-    nearest_distance = Inf
+    nearest, nearest_distance = nearest_cell
+    nearest_distance < reach || return Tuple{Int, Int}[]
+
     reachable = Tuple{Float64, Int}[]
     for n in eachindex(wet_i)
         d = squared_distance(λₒ, φₒ, wet_λ[n], wet_φ[n])
-        d < nearest_distance && (nearest_distance = d; nearest = n)
         d < reach && push!(reachable, (d, n))
     end
-    nearest_distance < reach || return Tuple{Int, Int}[]
 
     targets = if isnothing(spread_radius)
         sort!(reachable; by = first)   # cell-count footprint, ranked from the outlet
