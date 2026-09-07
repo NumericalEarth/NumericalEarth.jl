@@ -104,6 +104,60 @@ Environment variables (physics):
                 let the recursion reach FIRST-ORDER UPWIND, which is monotone, in exactly those
                 boundary-touching cells while the interior keeps the full order -- targeted at
                 topography-induced extrema without paying accuracy everywhere. Adds "_buford<val>".
+                Only 1 and 3 are accepted: with boundary_scheme replacing minimum_buffer_upwind_order
+                in Oceananigans, BUFFER_ORDER=1 is now the old spelling of BOUNDARY_SCHEME=upwind and
+                keeps the same run name, while a chain truncated above third order is no longer
+                expressible.
+  BOUNDARY_SCHEME
+                The reconstruction the WENO buffer chain terminates in, i.e. what is used in the one
+                boundary-touching cell described under BUFFER_ORDER.
+                  default  Centered(order=2) for tracers, UpwindBiased(order=1) for momentum.
+                  upwind   first-order upwind everywhere the stencil does not fit; = BUFFER_ORDER=1.
+                  cwenoz   the third-order central-WENO reconstruction of Semplice, Travaglia and
+                           Puppo (2022), whose stencil extends only inwards. It blends an inward
+                           parabola, a linear polynomial and a constant with Z-weights, so it keeps
+                           third-order accuracy on smooth data and falls to the constant only where
+                           the data is genuinely rough -- unlike "upwind", which pays first order in
+                           every boundary cell. Adds "_cwenoz".
+                Sets both tracers and momentum. TRACER_BOUNDARY_SCHEME and MOMENTUM_BOUNDARY_SCHEME
+                take the same three values and override it one component at a time, which is how to
+                tell whether the boundary treatment acts through the tracers or through the momentum.
+                A scheme shared by both keeps the plain tag; split, they add "_tr<scheme>" and
+                "_mom<scheme>", so the two halves never collide in one run directory.
+  TRACER_BOUNDARY_SCHEME, MOMENTUM_BOUNDARY_SCHEME
+                BOUNDARY_SCHEME for the tracer and for the momentum reconstructions separately.
+                Default: whatever BOUNDARY_SCHEME is.
+  HORIZONTAL_TEMPERATURE_GRADIENT, VERTICAL_TEMPERATURE_GRADIENT
+  HORIZONTAL_SALINITY_GRADIENT, VERTICAL_SALINITY_GRADIENT
+  VERTICAL_MOMENTUM_GRADIENT
+                CWENOZ reference gradients, used only where the boundary scheme is cwenoz. Each sets
+                the oscillation scale eps = (grad_ref * Delta)^2 below which the reconstruction reads
+                the data as smooth and keeps third order; above it the linear and constant candidates
+                take over. It therefore carries the units of the reconstructed field per metre, which
+                is why there is one per variable and per direction -- Delta is the grid spacing in the
+                direction being reconstructed.
+
+                All five default to 0, which estimates eps from the stencil as the smaller of the two
+                linear oscillations, i.e. the LOCAL increment squared. That is the right default and a
+                constant is not, for two reasons. First, the constant candidate is capped at d0 = 0.01
+                against d_opt = 0.74, so it only takes over once the second difference exceeds about
+                6.7 * grad_ref * Delta; put grad_ref at the ocean's typical gradient and grad_ref*Delta
+                IS the typical first difference, so a genuine step gets 2% constant weight and nothing
+                is limited at all. Getting the constant to fire needs grad_ref roughly a decade below
+                the typical gradient, and the threshold is then absolute: a large smooth feature limits
+                as hard as a discontinuity. Second, no one value works at every depth, because eps
+                scales as Delta^2 and grows monotonically downwards while the per-cell increment does
+                not -- on an ORCA column grad_T * dz runs 8e-3 K in the 1.5 m top cell, 0.36 K in the
+                thermocline core, 0.20 K at 1000 m and 0.048 K in the 435 m abyssal cell. The stencil
+                estimate follows all of it, holding the constant at its 1% floor on smooth data and
+                giving it the whole weight at a step.
+
+                Set one of these only as a sensitivity probe; each adds its own tag to the run name.
+
+                There is no horizontal momentum gradient: the vorticity, divergence and
+                kinetic-energy-gradient terms reconstruct a vorticity, a divergence flux and a squared
+                velocity, so one constant cannot carry their units and the horizontal scale is read
+                off the stencil.
   ICE_LIQUIDUS  Freezing-point relation. "teos10" (default) is the linear fit to the TEOS-10
                 freezing point expressed in CONSERVATIVE temperature, which is what the ocean
                 carries: Tm = -0.054523 S, accurate to 0.013 K over S = 28-35.5, against 0.032 K
@@ -193,7 +247,8 @@ Environment variables (physics):
                 as a mechanism probe, like ICE_DYNAMICS=false, not as a tuning.
   ICE_ARCH_STRESS  The arresting stress in N/m^2 (default: 100). Adds "<stress>" to the tag.
   ICE_ARCH_MONTHS  First and last month it acts, inclusive, wrapping the year, as "m1,m2".
-                Defaults to "12,7" for "nares" and "1,12" for "davis".
+                Defaults to "12,7" for "nares" and "1,12" for "davis". When set, adds "m<m1>-<m2>" to
+                the tag, so a seasonal arch never collides with the year-round run's directory.
   ICE_MELTWATER_TB
                 Deliver ice meltwater at the interface temperature Tb instead of at Conservative
                 Temperature 0. *** DEFAULT CHANGED 2026-09-03: now "true". Set ICE_MELTWATER_TB=false
@@ -250,6 +305,20 @@ Environment variables (physics):
                 how to get dense water down a staircase. Both BBL schemes left the
                 delivered density unchanged, so neither tested that. Adds "_dsow<days>"
                 to the run name.
+  LAB_RESTORE   Diagnostic only, in DAYS. Restores SALINITY ONLY in the deep Labrador
+                interior (65-40 W, 52-66 N, columns whose bottom is below 2000 m) above
+                200 m toward WOA Annual Absolute Salinity. Campaign 27 priced the
+                convection: removing d metres of freshwater from that column takes the
+                autumn resistance D(1000 m) from orca's 1.170 to noicedyn's 0.750 at
+                d = 1.54-1.65 m, and the model's measured freshwater-content excess over
+                WOA there is 1.638 m - the same number. This pins the box to observation
+                so "does the Labrador freshwater bias set the AMOC?" can be answered
+                without first solving what causes the bias. It must be a restoring, not a
+                one-off correction: davisarch stopped adding 177 g/kg m of freshwater to
+                that box over sixteen years and kept 2, so a fixed flux is consumed by
+                the lateral compensation within a year. Salinity only - the year-1
+                resistance change is 100% haline (haline 0.785 against a full 0.783,
+                thermal 0.998). Adds "_labrest<days>" to the run name.
   ML_TAPER      Set to "true" to ramp the isopycnal-closure slopes linearly to zero
                 from the mixed-layer base to the surface (Danabasoglu et al. 2008;
                 NEMO ldfslp). Off by default; adds "_mltaper" to the run name.
@@ -279,6 +348,12 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
                             which is comparable in size ("true" also accepted)
                   annual    remove a running mean relaxed over a year; keeps the
                             seasonal cycle, spins up over the first ~2 years
+  ISOPYCNAL     Which closure carries GM/Redi. "standard" (default) is
+                IsopycnalSkewSymmetricDiffusivity; "triad" is
+                TriadIsopycnalSkewSymmetricDiffusivity, which evaluates the tensor on the
+                Griffies triad stencil. The triad closure carries no skew flux formulation,
+                so ISOPYCNAL=triad requires SKEW_FORMULATION=diffusive (the default).
+                Adds "_triad" to the run name.
   SKEW_FORMULATION How the GM skew transport is applied. Ignored when KSKEW=0.
                   diffusive  add it to the tracer flux (default)
                   advective  build the eddy-induced velocity and advect with it,
@@ -521,6 +596,34 @@ KSYMM_JULIA="$KSYMM"; [[ "$KSYMM" == "0" ]] && KSYMM_JULIA="nothing"
 export KSKEW_JULIA KSYMM_JULIA
 export NZ DT ARCH EXTRA_USING FILE_SPLIT RUN_CMD
 
+# ── Boundary reconstruction ───────────────────────────────────────────
+# BUFFER_ORDER=1 is the pre-CWENOZ spelling of BOUNDARY_SCHEME=upwind; both name the same run.
+TRACER_ORDER="${TRACER_ORDER:-7}"
+BUFFER_ORDER="${BUFFER_ORDER:-3}"
+BOUNDARY_SCHEME="${BOUNDARY_SCHEME:-default}"
+
+case "$BUFFER_ORDER" in
+  3) ;;
+  1) if [[ "$BOUNDARY_SCHEME" != "default" && "$BOUNDARY_SCHEME" != "upwind" ]]; then
+         echo "BUFFER_ORDER=1 and BOUNDARY_SCHEME=$BOUNDARY_SCHEME ask for two different boundary reconstructions" >&2
+         exit 1
+     fi
+     BOUNDARY_SCHEME="upwind" ;;
+  *) echo "BUFFER_ORDER must be 1 or 3; a chain truncated above third order is not expressible as a boundary_scheme" >&2
+     exit 1 ;;
+esac
+
+TRACER_BOUNDARY_SCHEME="${TRACER_BOUNDARY_SCHEME:-$BOUNDARY_SCHEME}"
+MOMENTUM_BOUNDARY_SCHEME="${MOMENTUM_BOUNDARY_SCHEME:-$BOUNDARY_SCHEME}"
+
+for scheme_name in BOUNDARY_SCHEME TRACER_BOUNDARY_SCHEME MOMENTUM_BOUNDARY_SCHEME; do
+  case "${!scheme_name}" in
+    default|upwind|cwenoz) ;;
+    *) echo "$scheme_name must be default, upwind or cwenoz, got '${!scheme_name}'" >&2; exit 1 ;;
+  esac
+done
+export TRACER_ORDER BUFFER_ORDER BOUNDARY_SCHEME TRACER_BOUNDARY_SCHEME MOMENTUM_BOUNDARY_SCHEME
+
 # ── Initial-condition preset ──────────────────────────────────────────
 IC_CONDITIONS="${IC_CONDITIONS:-default}"
 case "$IC_CONDITIONS" in
@@ -549,7 +652,19 @@ RUN_NAME="$CONFIG"
                                                  && RUN_NAME="${RUN_NAME}_snowcat${SNOW_CATEGORIES}"
 [[ -n "${ICE_ITD_SHAPE:-}" ]]                    && RUN_NAME="${RUN_NAME}_itd${ICE_ITD_SHAPE//,/-}"
 [[ "${TRACER_ORDER:-7}" != "7" ]]                && RUN_NAME="${RUN_NAME}_tracer${TRACER_ORDER}"
-[[ "${BUFFER_ORDER:-3}" != "3" ]]                && RUN_NAME="${RUN_NAME}_buford${BUFFER_ORDER}"
+# A scheme shared by tracers and momentum keeps the undecorated tag, so BUFFER_ORDER=1 still names "_buford1".
+if [[ "$TRACER_BOUNDARY_SCHEME" == "$MOMENTUM_BOUNDARY_SCHEME" ]]; then
+  [[ "$TRACER_BOUNDARY_SCHEME" == "upwind" ]]    && RUN_NAME="${RUN_NAME}_buford1"
+  [[ "$TRACER_BOUNDARY_SCHEME" == "cwenoz" ]]    && RUN_NAME="${RUN_NAME}_cwenoz"
+else
+  [[ "$TRACER_BOUNDARY_SCHEME" != "default" ]]   && RUN_NAME="${RUN_NAME}_tr${TRACER_BOUNDARY_SCHEME}"
+  [[ "$MOMENTUM_BOUNDARY_SCHEME" != "default" ]] && RUN_NAME="${RUN_NAME}_mom${MOMENTUM_BOUNDARY_SCHEME}"
+fi
+[[ -n "${HORIZONTAL_TEMPERATURE_GRADIENT:-}" ]]  && RUN_NAME="${RUN_NAME}_gTh${HORIZONTAL_TEMPERATURE_GRADIENT}"
+[[ -n "${VERTICAL_TEMPERATURE_GRADIENT:-}" ]]    && RUN_NAME="${RUN_NAME}_gTz${VERTICAL_TEMPERATURE_GRADIENT}"
+[[ -n "${HORIZONTAL_SALINITY_GRADIENT:-}" ]]     && RUN_NAME="${RUN_NAME}_gSh${HORIZONTAL_SALINITY_GRADIENT}"
+[[ -n "${VERTICAL_SALINITY_GRADIENT:-}" ]]       && RUN_NAME="${RUN_NAME}_gSz${VERTICAL_SALINITY_GRADIENT}"
+[[ -n "${VERTICAL_MOMENTUM_GRADIENT:-}" ]]       && RUN_NAME="${RUN_NAME}_guz${VERTICAL_MOMENTUM_GRADIENT}"
 [[ "${ICE_TILT:-false}" == "true" ]]             && RUN_NAME="${RUN_NAME}_icetilt"
 [[ -n "${IC_BLEND:-}" ]]                         && RUN_NAME="${RUN_NAME}_icblend${IC_BLEND}"
 [[ "$IC_CONDITIONS" != "default" ]]              && RUN_NAME="${RUN_NAME}_summerice"
@@ -561,10 +676,12 @@ RUN_NAME="$CONFIG"
 [[ "${CLOSURE:-catke}" == "nemo_tke" ]]        && RUN_NAME="${RUN_NAME}_nemotke"
 [[ "${WIND_VELOCITY:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_wind"
 [[ "${ML_TAPER:-false}" == "true" ]]           && RUN_NAME="${RUN_NAME}_mltaper"
+[[ "${ISOPYCNAL:-standard}" == "triad" ]]      && RUN_NAME="${RUN_NAME}_triad"
 [[ "${PARTIAL_CELLS:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_pcells"
 [[ -n "${BBL_KAPPA:-}" ]]                      && RUN_NAME="${RUN_NAME}_bbl${BBL_KAPPA}"
 [[ -n "${BBL_GAMMA:-}" ]]                      && RUN_NAME="${RUN_NAME}_cg${BBL_GAMMA}"
 [[ -n "${OVERFLOW_RESTORE:-}" ]]               && RUN_NAME="${RUN_NAME}_dsow${OVERFLOW_RESTORE}"
+[[ -n "${LAB_RESTORE:-}" ]]                     && RUN_NAME="${RUN_NAME}_labrest${LAB_RESTORE}"
 [[ "${NORMALIZE_SALINITY:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_rawsalt"
 [[ "${RESTORING_UNDER_ICE:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_noicerest"
 case "${NORMALIZE_FRESHWATER:-timestep}" in
@@ -592,6 +709,10 @@ case "${ICE_ARCH:-}" in
   davis)  RUN_NAME="${RUN_NAME}_davisarch${ICE_ARCH_STRESS:-}" ;;
   *)      RUN_NAME="${RUN_NAME}_arch$(echo "$ICE_ARCH" | tr -d ' ' | tr ',' '_')${ICE_ARCH_STRESS:-}" ;;
 esac
+# The arch season is physics: an untagged ICE_ARCH_MONTHS would give a seasonal arch the same run name as
+# the year-round one, and a relaunch into that directory resumes its checkpoint instead of starting.
+[[ -n "${ICE_ARCH:-}" && -n "${ICE_ARCH_MONTHS:-}" ]] && \
+  RUN_NAME="${RUN_NAME}m$(echo "$ICE_ARCH_MONTHS" | tr -d ' ' | tr ',' '-')"
 [[ "$KSKEW" != "$DEFAULT_KSKEW" ]]             && RUN_NAME="${RUN_NAME}_kskew${KSKEW}"
 [[ "$KSYMM" != "$DEFAULT_KSYMM" ]]             && RUN_NAME="${RUN_NAME}_ksymm${KSYMM}"
 [[ "$BIHARMONIC" != "$DEFAULT_BIHARMONIC" ]]   && RUN_NAME="${RUN_NAME}_bih${BIHARMONIC}"
@@ -895,6 +1016,7 @@ BBL_KWARG=""
 [[ -n "${BBL_KAPPA:-}" ]] && BBL_KWARG="bbl_diffusivity = ${BBL_KAPPA},"
 [[ -n "${BBL_GAMMA:-}" ]] && BBL_KWARG="${BBL_KWARG}bbl_transport_coefficient = ${BBL_GAMMA},"
 [[ -n "${OVERFLOW_RESTORE:-}" ]] && BBL_KWARG="${BBL_KWARG}overflow_restoring_timescale = ${OVERFLOW_RESTORE}days,"
+[[ -n "${LAB_RESTORE:-}" ]] && BBL_KWARG="${BBL_KWARG}labrador_restoring_timescale = ${LAB_RESTORE}days,"
 
 SNOW_KWARG=""
 [[ "$SNOW" == "true" ]] && SNOW_KWARG="with_snow = true,"
@@ -925,11 +1047,23 @@ fi
 [[ -n "$ICE_PSTAR" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}ice_compressive_strength = ${ICE_PSTAR},"
 ICE_SALINITY="${ICE_SALINITY:-}"
 [[ -n "$ICE_SALINITY" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}ice_salinity = ${ICE_SALINITY},"
-TRACER_ORDER="${TRACER_ORDER:-7}"
-BUFFER_ORDER="${BUFFER_ORDER:-3}"
+ISOPYCNAL="${ISOPYCNAL:-standard}"
+case "$ISOPYCNAL" in
+    standard|triad) ;;
+    *) echo "ISOPYCNAL must be 'standard' or 'triad', got '$ISOPYCNAL'" >&2; exit 1 ;;
+esac
+ISOPYCNAL_KWARG=""
+[[ "$ISOPYCNAL" == "triad" ]] && ISOPYCNAL_KWARG="isopycnal_formulation = :triad,"
+
 ADVECTION_KWARG=""
 [[ "$TRACER_ORDER" != "7" ]] && ADVECTION_KWARG="${ADVECTION_KWARG}tracer_advection_order = ${TRACER_ORDER},"
-[[ "$BUFFER_ORDER" != "3" ]] && ADVECTION_KWARG="${ADVECTION_KWARG}minimum_buffer_upwind_order = ${BUFFER_ORDER},"
+[[ "$TRACER_BOUNDARY_SCHEME" != "default" ]]   && ADVECTION_KWARG="${ADVECTION_KWARG}tracer_boundary_scheme = :${TRACER_BOUNDARY_SCHEME},"
+[[ "$MOMENTUM_BOUNDARY_SCHEME" != "default" ]] && ADVECTION_KWARG="${ADVECTION_KWARG}momentum_boundary_scheme = :${MOMENTUM_BOUNDARY_SCHEME},"
+[[ -n "${HORIZONTAL_TEMPERATURE_GRADIENT:-}" ]] && ADVECTION_KWARG="${ADVECTION_KWARG}horizontal_temperature_reference_gradient = ${HORIZONTAL_TEMPERATURE_GRADIENT},"
+[[ -n "${VERTICAL_TEMPERATURE_GRADIENT:-}" ]]   && ADVECTION_KWARG="${ADVECTION_KWARG}vertical_temperature_reference_gradient = ${VERTICAL_TEMPERATURE_GRADIENT},"
+[[ -n "${HORIZONTAL_SALINITY_GRADIENT:-}" ]]    && ADVECTION_KWARG="${ADVECTION_KWARG}horizontal_salinity_reference_gradient = ${HORIZONTAL_SALINITY_GRADIENT},"
+[[ -n "${VERTICAL_SALINITY_GRADIENT:-}" ]]      && ADVECTION_KWARG="${ADVECTION_KWARG}vertical_salinity_reference_gradient = ${VERTICAL_SALINITY_GRADIENT},"
+[[ -n "${VERTICAL_MOMENTUM_GRADIENT:-}" ]]      && ADVECTION_KWARG="${ADVECTION_KWARG}vertical_momentum_reference_gradient = ${VERTICAL_MOMENTUM_GRADIENT},"
 ICE_LIQUIDUS="${ICE_LIQUIDUS:-teos10}"
 [[ "$ICE_LIQUIDUS" != "teos10" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}sea_ice_liquidus = :${ICE_LIQUIDUS},"
 ICE_DRAGREF="${ICE_DRAGREF:-6}"
@@ -999,6 +1133,7 @@ sim = omip_simulation(:${CONFIG};
                       ${RIVER_KWARG}
                       ${ADVECTION_KWARG}
                       ${SKEW_FORMULATION_KWARG}
+                      ${ISOPYCNAL_KWARG}
                       ${BVP_KWARG}
                       Δt = ${DT},
                       forcing_dir = \"${FORCING_DIR}\",

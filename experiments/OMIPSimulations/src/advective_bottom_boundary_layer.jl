@@ -314,3 +314,15 @@ merge_tracer_forcings(first::NamedTuple, ::NamedTuple{()}) = first
 
 merge_tracer_forcings(first::NamedTuple{names}, second::NamedTuple{names}) where names =
     NamedTuple{names}(map(tuple, values(first), values(second)))
+
+# A tracer named by only one of the two keeps its forcing unchanged. Needed because not every forcing
+# covers the same tracers - the Labrador restoring is salinity-only, since its temperature term was
+# measured inert - and without this the pair is a `MethodError` rather than a merge.
+merge_tracer_forcings(first::NamedTuple, second::NamedTuple) =
+    NamedTuple{(union(keys(first), keys(second))...,)}(
+        map(n -> paired_forcing(get(first, n, nothing), get(second, n, nothing)),
+            (union(keys(first), keys(second))...,)))
+
+@inline paired_forcing(a, ::Nothing) = a
+@inline paired_forcing(::Nothing, b) = b
+@inline paired_forcing(a, b) = (a, b)

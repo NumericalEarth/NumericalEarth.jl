@@ -7,6 +7,7 @@ using Oceananigans.Architectures: on_architecture, architecture
 using Oceananigans.DistributedComputations: @root, Distributed
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, getbc, fill_halo_regions!
 using Oceananigans.Fields: Field, CenterField, interior
+using Oceananigans.Advection: CWENOZ
 using Oceananigans.ImmersedBoundaries: bottom_height_field, mask_immersed_field!
 using Oceananigans.Utils: launch!
 using Adapt: Adapt
@@ -24,6 +25,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes,
                                                               InterfaceTemperatureMeltwater
 using SeawaterPolynomials.TEOS10: Sᴬ_from_Sᴾ, Θ_from_T
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity,
+                                       TriadIsopycnalSkewSymmetricDiffusivity,
                                        ConvectiveAdjustmentVerticalDiffusivity,
                                        AdvectiveFormulation, DiffusiveFormulation
 using Oceananigans.Utils: NormalDivision
@@ -523,6 +525,10 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   the internal Rossby radius squared times the baroclinic growth rate, recomputed every step and
   held depth-uniform. GM tapers to zero equatorward of 20°, Redi rises to its reference value there
   and carries a floor of one fifth of it. See [`NEMOEddyCoefficients`](@ref).
+- `isopycnal_formulation`: which closure carries GM/Redi. `:standard` (default) is
+  `IsopycnalSkewSymmetricDiffusivity`; `:triad` is `TriadIsopycnalSkewSymmetricDiffusivity`, which
+  evaluates the tensor on the Griffies triad stencil. The triad closure carries no
+  `skew_flux_formulation`, so `:triad` requires the default `:diffusive`.
 - `skew_flux_formulation`: how the GM skew transport is applied. `:diffusive` (default) adds it to
   the tracer flux; `:advective` builds the eddy-induced velocity and advects with it, which also
   makes the bolus transport available as a model field. Those two are equivalent continuously, not
@@ -711,6 +717,31 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   `AdaptiveVerticallyImplicitDiscretization(cfl=0.5)` (switches the vertical advective flux to implicit
   where the vertical Courant number is large — e.g. in thin near-surface cells). If `false`, fully
   explicit `WENO`/`WENOVectorInvariant`. Use `false` to isolate adaptive-implicit advection effects.
+- `boundary_scheme::Symbol`: the reconstruction the WENO buffer chain terminates in, used in the one cell
+  whose stencil no longer fits — the domain buffer and, on an `ImmersedBoundaryGrid`, any cell adjacent to
+  an inactive node. Options:
+   * `:default` — `Centered(order=2)` for tracers and `UpwindBiased(order=1)` for momentum.
+   * `:upwind` — first-order upwind, monotone, in exactly those cells while the interior keeps the full order.
+   * `:cwenoz` — the third-order central-WENO reconstruction of Semplice, Travaglia and Puppo (2022),
+     whose stencil extends only inwards.
+- `tracer_boundary_scheme::Symbol`, `momentum_boundary_scheme::Symbol`: the same choice made separately for the
+  tracer and the momentum reconstructions, both defaulting to `boundary_scheme`. Setting one of them alone
+  isolates which of the two the boundary treatment acts through.
+- `horizontal_temperature_reference_gradient`, `vertical_temperature_reference_gradient`,
+  `horizontal_salinity_reference_gradient`, `vertical_salinity_reference_gradient`,
+  `vertical_momentum_reference_gradient`: the CWENOZ oscillation scale ϵ = (∇ref Δ)² below which the
+  reconstruction reads the data as smooth and keeps third order. ∇ref carries the units of the reconstructed
+  field per metre and Δ is the spacing in the direction being reconstructed, hence one value per variable and
+  per direction. `0` estimates ϵ from the stencil, which sets ϵ to the local oscillation itself: at a
+  genuine step ϵ then grows with the roughness, τ/ϵ stays near 1, and the constant candidate never takes
+  over, so the blend keeps third order across the discontinuity and undershoots. Measured at the Denmark
+  Strait step (66.25 °N, 27.90 °W), τ/ϵ reads 1.00 where the constant needs τ/ϵ ≳ 74 to win against
+  `dᵒ = 0.74` at `d⁰ = 0.01`. The horizontal tracer defaults are therefore a fixed increment scale of
+  ≈0.28 K and its density equivalent ≈0.074 g/kg, small enough that a topographic step activates the
+  constant while smooth data is untouched.
+  The vertical defaults stay `0`: Δz spans 1.5 m to 55.8 m in this configuration, so one constant ∇ref
+  would set ϵ values differing by ~10³ down a column and no single value fits. The horizontal momentum terms reconstruct a vorticity,
+  a divergence flux and a squared velocity, so they take no reference gradient.
 - `velocity_formulation::Symbol`: Δu used by the bulk formula. Options:
    * `:relative` — `Δu = u_atm − u_ocean` (OMIP-2 α=1, default).
    * `:wind` — `Δu = u_atm` (ignores ocean current). For isolating bulk-formula
@@ -728,6 +759,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          κ_skew = ConfigDefault(),
                          κ_symmetric = ConfigDefault(),
                          skew_flux_formulation = :diffusive,
+                         isopycnal_formulation = :standard,
                          Cᵇ = 0.28,
                          Cᵉc = 0.112,
                          biharmonic_timescale = ConfigDefault(),
@@ -750,7 +782,14 @@ function omip_simulation(config::Symbol = :halfdegree;
                          background_vertical_viscosity = nothing,
                          implicit_vertical_advection = true,
                          tracer_advection_order = 7,
-                         minimum_buffer_upwind_order = 3,
+                         boundary_scheme = :default,
+                         tracer_boundary_scheme = boundary_scheme,
+                         momentum_boundary_scheme = boundary_scheme,
+                         horizontal_temperature_reference_gradient = 5e-6,
+                         vertical_temperature_reference_gradient = 0,
+                         horizontal_salinity_reference_gradient = 1.2e-6,
+                         vertical_salinity_reference_gradient = 0,
+                         vertical_momentum_reference_gradient = 0,
                          implicit_bottom_drag = true,
                          bottom_drag_background_velocity = 0,
                          velocity_formulation = :relative,
@@ -800,6 +839,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          bbl_diffusivity = nothing,
                          bbl_transport_coefficient = nothing,
                          overflow_restoring_timescale = nothing,
+                         labrador_restoring_timescale = nothing,
                          diagnostics = true,
                          field_mean_interval = 5days,
                          surface_averaging_interval = 5days,
@@ -824,6 +864,7 @@ function omip_simulation(config::Symbol = :halfdegree;
     Δt                   = resolve_config_default(Δt,                   config_Δt(cfg))
 
     check_depth_independent_skew_coefficient(κ_skew, skew_flux_formulation)
+    check_isopycnal_formulation(isopycnal_formulation, skew_flux_formulation)
 
     setup_t₀ = time()
     log_setup_stage(arch, "start", setup_t₀)
@@ -898,9 +939,12 @@ function omip_simulation(config::Symbol = :halfdegree;
         advective_bottom_boundary_layer_forcing(grid, bbl_transport_coefficient)
 
     restoring_forcing = overflow_restoring_forcing(grid, overflow_restoring_timescale)
+    labrador_forcing  = labrador_restoring_forcing(grid, labrador_restoring_timescale; restoring_dir)
 
-    ocean_forcing = merge_tracer_forcings(merge_tracer_forcings(diffusive_forcing, advective_forcing),
-                                          restoring_forcing)
+    ocean_forcing = merge_tracer_forcings(
+                        merge_tracer_forcings(merge_tracer_forcings(diffusive_forcing, advective_forcing),
+                                              restoring_forcing),
+                        labrador_forcing)
 
     ocean = build_ocean(cfg, grid;
                         forcing = ocean_forcing,
@@ -919,10 +963,18 @@ function omip_simulation(config::Symbol = :halfdegree;
                         background_vertical_viscosity,
                         implicit_vertical_advection,
                         tracer_advection_order,
-                        minimum_buffer_upwind_order,
+                        boundary_scheme,
+                        tracer_boundary_scheme,
+                        momentum_boundary_scheme,
+                        horizontal_temperature_reference_gradient,
+                        vertical_temperature_reference_gradient,
+                        horizontal_salinity_reference_gradient,
+                        vertical_salinity_reference_gradient,
+                        vertical_momentum_reference_gradient,
                         implicit_bottom_drag,
                         bottom_drag_background_velocity,
                         skew_flux_formulation,
+                        isopycnal_formulation,
                         restoring_under_sea_ice,
                         Cᵂu★,
                         restoring_dir, piston_velocity, chlorophyll,
@@ -1326,6 +1378,19 @@ gm_skew_flux_formulation(formulation::Symbol) =
 # the barotropic eddy velocity, and the vertical structure of the transport comes from the column
 # problem instead (Ferrari et al. 2010, Section 4.1). The CESM and hybrid coefficients carry their
 # own vertical shape, which would apply a vertical structure twice.
+# The triad closure carries no `skew_flux_formulation`: its skew flux is always the diffusive form on
+# the triad stencil, so pairing it with an advective or boundary-value transport would silently drop one
+# of the two choices.
+function check_isopycnal_formulation(isopycnal_formulation, skew_flux_formulation)
+    isopycnal_formulation in (:standard, :triad) ||
+        throw(ArgumentError("isopycnal_formulation must be :standard or :triad, got :$isopycnal_formulation"))
+    if isopycnal_formulation === :triad && skew_flux_formulation !== :diffusive
+        throw(ArgumentError("isopycnal_formulation = :triad supports only skew_flux_formulation = :diffusive, \
+                             got :$skew_flux_formulation"))
+    end
+    return nothing
+end
+
 function check_depth_independent_skew_coefficient(κ_skew, skew_flux_formulation)
     if skew_flux_formulation === :boundary_value && (κ_skew === :cesm || κ_skew === :hybrid)
         throw(ArgumentError("skew_flux_formulation = :boundary_value requires a depth-independent \
@@ -1345,6 +1410,7 @@ function omip_closure(vertical_closure::Symbol;
                       biharmonic_timescale,
                       biharmonic_viscosity = nothing,
                       skew_flux_formulation = :diffusive,
+                      isopycnal_formulation = :standard,
                       eddy_slope_limiter = nothing,
                       boundary_value_mode_number = 2,
                       boundary_value_minimum_speed = 0.1,
@@ -1402,6 +1468,15 @@ function omip_closure(vertical_closure::Symbol;
         redi = IsopycnalSkewSymmetricDiffusivity(; κ_skew = nothing, κ_symmetric,
                                                  slope_limiter = limiter)
         (transport, redi)
+    elseif isopycnal_formulation === :triad
+        limiter = isnothing(eddy_slope_limiter) ? FluxTapering(1e-2) : eddy_slope_limiter
+        # The triad constructor defaults to an explicit discretization, unlike every other closure here.
+        # κ_symmetric S² over Δz_top = 1.5 m is stable only below Δt ≈ 15 s, so the vertical component
+        # must be implicit. `TriadSlopeTapering` limits each triad on its own slope, which the
+        # per-cell factor the closure applies otherwise does not bound.
+        (TriadIsopycnalSkewSymmetricDiffusivity(VerticallyImplicitTimeDiscretization();
+                                                κ_skew, κ_symmetric,
+                                                slope_limiter = TriadSlopeTapering(limiter)),)
     else
         limiter = isnothing(eddy_slope_limiter) ? FluxTapering(1e-2) : eddy_slope_limiter
         (IsopycnalSkewSymmetricDiffusivity(; κ_skew, κ_symmetric, slope_limiter = limiter,
@@ -1780,12 +1855,106 @@ build_grid(::Val{:test}, arch, Nz, depth; Δz_top = nothing, partial_cell_bathym
 using Oceananigans.TimeSteppers: AdaptiveVerticallyImplicitDiscretization, ExplicitTimeDiscretization
 using Oceananigans.Utils: NormalDivision
 
-# `time_discretization` selects explicit vs. adaptive-implicit vertical advection (see `build_ocean`).
-config_momentum_advection(::Val{:orca},          td) = WENOVectorInvariant(order=5, time_discretization=td)
-config_momentum_advection(::Val{:test},          td) = WENOVectorInvariant(order=5, time_discretization=td)
-config_momentum_advection(::Val{:halfdegree},    td) = WENOVectorInvariant(order=5, time_discretization=td)
-config_momentum_advection(::Val{:quarterdegree}, td) = WENOVectorInvariant(time_discretization=td)
-config_momentum_advection(::Val{:twelfthdegree}, td) = WENOVectorInvariant(time_discretization=td)
+# `nothing` keeps the `WENOVectorInvariant` per-term defaults: vorticity_order = 9, everything else 5.
+config_momentum_advection_order(::Val{:orca})          = 5
+config_momentum_advection_order(::Val{:test})          = 5
+config_momentum_advection_order(::Val{:halfdegree})    = 5
+config_momentum_advection_order(::Val{:quarterdegree}) = nothing
+config_momentum_advection_order(::Val{:twelfthdegree}) = nothing
+
+#####
+##### Boundary reconstructions
+#####
+
+# The reconstruction a WENO buffer chain terminates in, used in the one cell whose stencil no longer fits:
+# the domain buffer and, on an `ImmersedBoundaryGrid`, any cell adjacent to an `inactive_node`
+# (`Advection/immersed_advective_fluxes.jl`). The interior keeps the full order.
+#
+#   :default  `Centered(order=2)` for tracers and `UpwindBiased(order=1)` for momentum, the Oceananigans defaults
+#   :upwind   first-order upwind, monotone, in exactly those cells and nowhere else
+#   :cwenoz   the third-order central-WENO reconstruction of Semplice, Travaglia and Puppo (2022), whose stencil
+#             extends only inwards, blending an inward parabola, a linear polynomial and a constant with Z-weights
+#
+# `reference_gradient` sets the oscillation scale ϵ = (∇ref Δ)² below which CWENOZ reads the data as smooth and
+# recovers third order. It carries the units of the reconstructed field per unit length, so it belongs to one
+# variable and one direction; zero estimates it from the stencil as min(I¹, I¹'), the smaller of the two linear
+# oscillations, which is the local increment squared.
+#
+# Zero is the default because a constant ∇ref cannot track the column. The constant candidate is capped at
+# d⁰ = 0.01 against d° = 0.74, so it only takes over once τ = 5/3 c² reaches ~74 ϵ, i.e. once the second
+# difference c exceeds ~6.7 ∇ref Δ. With ∇ref at the ocean's typical gradient, ∇ref Δ is the typical FIRST
+# difference and a genuine step gets 2% constant weight -- no limiting at all, plain third order. Getting the
+# constant to fire needs ∇ref about a decade below the typical gradient, and then the threshold is absolute:
+# a large smooth feature limits as hard as a discontinuity. There is also no value that works at every depth,
+# because ϵ ∝ Δ² grows monotonically downwards while the per-cell increment ∇T Δz does not: on an ORCA column
+# it runs 8e-3 K in the 1.5 m top cell, 0.36 K in the thermocline core, 0.20 K at 1000 m and 0.048 K in the
+# 435 m abyssal cell. The stencil estimate tracks all of that for free, holding the constant at its 1% floor
+# on smooth data and giving it the full weight at a step.
+tracer_boundary_reconstruction(::Val{:default}, reference_gradient) = nothing
+tracer_boundary_reconstruction(::Val{:upwind},  reference_gradient) = UpwindBiased(order=1)
+tracer_boundary_reconstruction(::Val{:cwenoz},  reference_gradient) = CWENOZ(reference_gradient=reference_gradient)
+
+momentum_boundary_reconstruction(::Val{:default}, reference_gradient) = UpwindBiased(order=1)
+momentum_boundary_reconstruction(::Val{:upwind},  reference_gradient) = UpwindBiased(order=1)
+momentum_boundary_reconstruction(::Val{:cwenoz},  reference_gradient) = CWENOZ(reference_gradient=reference_gradient)
+
+function boundary_scheme_value(boundary_scheme)
+    boundary_scheme ∈ (:default, :upwind, :cwenoz) ||
+        throw(ArgumentError("boundary_scheme must be :default, :upwind or :cwenoz, got $boundary_scheme"))
+
+    return Val(boundary_scheme)
+end
+
+"""
+    split_tracer_advection(order, time_discretization, boundary_scheme,
+                           horizontal_reference_gradient, vertical_reference_gradient)
+
+Tracer advection of order `order` whose horizontal and vertical reconstructions terminate in boundary schemes
+carrying `horizontal_reference_gradient` and `vertical_reference_gradient` respectively. Only the vertical direction
+takes `time_discretization`, which is where the adaptive-implicit treatment applies.
+"""
+function split_tracer_advection(order, time_discretization, boundary_scheme,
+                                horizontal_reference_gradient, vertical_reference_gradient)
+
+    horizontal_boundary_scheme = tracer_boundary_reconstruction(boundary_scheme, horizontal_reference_gradient)
+    vertical_boundary_scheme   = tracer_boundary_reconstruction(boundary_scheme, vertical_reference_gradient)
+
+    horizontal = WENO(; order, boundary_scheme = horizontal_boundary_scheme)
+    vertical   = WENO(; order, time_discretization, boundary_scheme = vertical_boundary_scheme)
+
+    return FluxFormAdvection(horizontal, horizontal, vertical)
+end
+
+"""
+    split_momentum_advection(order, time_discretization, boundary_scheme,
+                             horizontal_reference_gradient, vertical_reference_gradient)
+
+Vector-invariant momentum advection whose four reconstructions terminate in a boundary scheme chosen per direction,
+reproducing `WENOVectorInvariant` in every other respect. The vorticity, divergence and kinetic-energy-gradient terms
+are the horizontal ones, and they reconstruct a vorticity, a divergence flux and a squared velocity: three different
+units, so `horizontal_reference_gradient` is dimensionally meaningful only at zero, where the scale is read off the
+stencil. The vertical term reconstructs velocity, so `vertical_reference_gradient` is a shear in inverse seconds.
+Both default to zero for the reason given above `tracer_boundary_reconstruction`.
+"""
+function split_momentum_advection(order, time_discretization, boundary_scheme,
+                                  horizontal_reference_gradient, vertical_reference_gradient)
+
+    vorticity_order, remaining_order = isnothing(order) ? (9, 5) : (order, order)
+
+    horizontal_boundary_scheme = momentum_boundary_reconstruction(boundary_scheme, horizontal_reference_gradient)
+    vertical_boundary_scheme   = momentum_boundary_reconstruction(boundary_scheme, vertical_reference_gradient)
+
+    vorticity_scheme               = WENO(order=vorticity_order, boundary_scheme=horizontal_boundary_scheme)
+    divergence_scheme              = WENO(order=remaining_order, boundary_scheme=horizontal_boundary_scheme)
+    kinetic_energy_gradient_scheme = WENO(order=remaining_order, boundary_scheme=horizontal_boundary_scheme)
+    vertical_advection_scheme      = WENO(; order = remaining_order, time_discretization,
+                                            boundary_scheme = vertical_boundary_scheme)
+
+    return VectorInvariant(; vorticity_scheme,
+                             vertical_advection_scheme,
+                             divergence_scheme,
+                             kinetic_energy_gradient_scheme)
+end
 
 struct ConfigDefault end
 
@@ -1926,10 +2095,18 @@ function build_ocean(config, grid;
                      vertical_closure = :catke,
                      implicit_vertical_advection = true,
                      tracer_advection_order = 7,
-                     minimum_buffer_upwind_order = 3,
+                     boundary_scheme = :default,
+                     tracer_boundary_scheme = boundary_scheme,
+                     momentum_boundary_scheme = boundary_scheme,
+                     horizontal_temperature_reference_gradient = 5e-6,
+                     vertical_temperature_reference_gradient = 0,
+                     horizontal_salinity_reference_gradient = 1.2e-6,
+                     vertical_salinity_reference_gradient = 0,
+                     vertical_momentum_reference_gradient = 0,
                      implicit_bottom_drag = true,
                      bottom_drag_background_velocity = 0,
                      skew_flux_formulation = :diffusive,
+                     isopycnal_formulation = :standard,
                      nemo_eddy_coefficients = nothing,
                      cesm_eddy_coefficients = nothing,
                      hybrid_eddy_coefficients = nothing,
@@ -1969,6 +2146,7 @@ function build_ocean(config, grid;
                            κ_skew, κ_symmetric, Cᵇ, Cᵉc,
                            biharmonic_timescale, biharmonic_viscosity,
                            skew_flux_formulation,
+                           isopycnal_formulation,
                            eddy_slope_limiter,
                            boundary_value_mode_number,
                            boundary_value_minimum_speed,
@@ -1982,20 +2160,32 @@ function build_ocean(config, grid;
 
     time_discretization = implicit_vertical_advection ?
         AdaptiveVerticallyImplicitDiscretization(cfl=0.5) : ExplicitTimeDiscretization()
-    momentum_advection = config_momentum_advection(config, time_discretization)
+
+    tracer_boundary_scheme   = boundary_scheme_value(tracer_boundary_scheme)
+    momentum_boundary_scheme = boundary_scheme_value(momentum_boundary_scheme)
+
+    # The horizontal momentum terms reconstruct a vorticity, a divergence flux and a squared velocity, so no single
+    # reference gradient carries their units: there the oscillation scale is read off the stencil.
+    horizontal_momentum_reference_gradient = 0
+
+    momentum_advection = split_momentum_advection(config_momentum_advection_order(config),
+                                                  time_discretization, momentum_boundary_scheme,
+                                                  horizontal_momentum_reference_gradient,
+                                                  vertical_momentum_reference_gradient)
+
+    # Temperature and salinity carry their own reference gradients, so each takes its own scheme.
+    tracer_advection = (T = split_tracer_advection(tracer_advection_order, time_discretization, tracer_boundary_scheme,
+                                                   horizontal_temperature_reference_gradient,
+                                                   vertical_temperature_reference_gradient),
+                        S = split_tracer_advection(tracer_advection_order, time_discretization, tracer_boundary_scheme,
+                                                   horizontal_salinity_reference_gradient,
+                                                   vertical_salinity_reference_gradient))
 
     ocean = ocean_simulation(grid;
                              Δt = 1minutes,
                              radiative_forcing = omip_radiative_forcing(grid, chlorophyll, restoring_dir),
                              momentum_advection,
-                             # `minimum_buffer_upwind_order` is where the reconstruction bottoms out when its
-                             # stencil touches a boundary — the DOMAIN buffer, and, on an
-                             # `ImmersedBoundaryGrid`, any stencil containing an `inactive_node`
-                             # (`Advection/immersed_advective_fluxes.jl`). Setting it to 1 lets the
-                             # recursion reach first-order upwind, which is monotone, in exactly those
-                             # cells and nowhere else — the interior keeps order 7.
-                             tracer_advection = WENO(order = tracer_advection_order;
-                                                     minimum_buffer_upwind_order, time_discretization),
+                             tracer_advection,
                              coriolis,
                              implicit_bottom_drag,
                              bottom_drag_background_velocity,
