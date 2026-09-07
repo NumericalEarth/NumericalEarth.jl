@@ -175,9 +175,9 @@ end
 function default_nested_scalar_advection(microphysics)
     names = (:ρθ, moisture_prognostic_name(microphysics), prognostic_field_names(microphysics)...)
     schemes = map(names) do name
-        s = string(name)
-        startswith(s, "ρq") ? WENO(order = 5, bounds = (0, 1)) :
-        startswith(s, "ρn") || startswith(s, "ρb") ? WENO(order = 5, bounds = (0.0, Inf)) :
+        prefix = first(string(name), 2)
+        prefix == "ρq" ? WENO(order = 5, bounds = (0, 1)) :
+        prefix == "ρn" || prefix == "ρb" ? WENO(order = 5, bounds = (0.0, Inf)) :
         WENO(order = 5)
     end
     return NamedTuple{names}(schemes)
