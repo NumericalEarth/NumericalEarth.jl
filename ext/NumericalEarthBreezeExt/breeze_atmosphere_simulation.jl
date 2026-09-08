@@ -26,6 +26,10 @@ function merge_fbcs(coupling::FieldBoundaryConditions, user::FieldBoundaryCondit
                                    immersed = pick(coupling.immersed, user.immersed))
 end
 
+# Breeze 0.10 renamed static energy e → s (Breeze #926), and the energy-BC interface key
+# (converted to a ρθ BC for potential-temperature formulations) follows the symbol.
+energy_bc_key() = pkgversion(Breeze) >= v"0.10" ? :ρs : :ρe
+
 function merge_boundary_conditions(coupling_bcs::NamedTuple, user_bcs::NamedTuple)
     all_keys = (keys(coupling_bcs)..., (k for k in keys(user_bcs) if !(k in keys(coupling_bcs)))...)
     pairs = (k => haskey(coupling_bcs, k) && haskey(user_bcs, k) ?
@@ -113,7 +117,7 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
 
     moisture_key = moisture_prognostic_name(microphysics)
     moisture_bc = NamedTuple{tuple(moisture_key)}(tuple(FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵛ))))
-    energy_bc = (; ρe = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵉ)))
+    energy_bc = NamedTuple{(energy_bc_key(),)}((FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵉ)),))
 
     momentum_bcs = (
         ρu = FieldBoundaryConditions(bottom = FluxBoundaryCondition(ρτˣ)),

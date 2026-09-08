@@ -203,13 +203,13 @@ end
     # Part 3: Interface heat flux (formulation-specific)
     # =============================================
     # Returns interfacial heat flux and interface T, S
-    𝒬ⁱᵒ, Tᵦ, Sᵦ = compute_interface_heat_flux(flux_formulation,
+    𝒬ⁱᵒ, Tb, Sb = compute_interface_heat_flux(flux_formulation,
                                               ocean_surface_state, ice_state,
                                               liquidus, ocean_properties, ℰ, u★)
 
     # Store interface values and heat flux
     @inbounds 𝒬ⁱⁿ[i, j, 1] = 𝒬ⁱᵒ
-    store_interface_state!(flux_formulation, T★, S★, i, j, Tᵦ, Sᵦ)
+    store_interface_state!(flux_formulation, T★, S★, i, j, Tb, Sb)
 
     # =============================================
     # Part 4: Freshwater and salt fluxes
