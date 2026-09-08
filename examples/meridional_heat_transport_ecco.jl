@@ -41,7 +41,7 @@ set!(ocean.model,   ecco_set)   # T, S
 set!(sea_ice.model, ecco_set)   # h, ℵ
 
 atmosphere = JRA55PrescribedAtmosphere(arch)
-land       = JRA55PrescribedLand(arch)
+land       = JRA55PrescribedLand(grid)
 radiation  = JRA55PrescribedRadiation(arch)
 esm = OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
 
