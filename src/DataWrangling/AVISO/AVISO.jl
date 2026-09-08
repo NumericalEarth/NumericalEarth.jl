@@ -5,14 +5,13 @@ export AVISOMetadata, AVISOMetadatum, AVISODaily, AVISOMonthly
 using Dates: Dates, DateTime, Day, Month
 using Oceananigans.Fields: Center
 using NCDatasets: Dataset
-using Scratch: @get_scratch!
 
 using ...NumericalEarth: NumericalEarth
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path, first_date
 
 download_AVISO_cache::String = ""
 function __init__()
-    global download_AVISO_cache = @get_scratch!("AVISO")
+    global download_AVISO_cache = DataWrangling.download_cache("AVISO")
 end
 
 abstract type AVISODataset end
@@ -39,7 +38,7 @@ Base.size(::AVISODataset, variable) = (2880, 1440, 1)
 DataWrangling.all_dates(::AVISODaily, variable) = AVISO_FIRST_DATE : Day(1) : AVISO_DAILY_LAST_DATE
 DataWrangling.all_dates(::AVISOMonthly, variable) = AVISO_FIRST_DATE : Month(1) : AVISO_MONTHLY_LAST_DATE
 
-DataWrangling.sample_window(metadatum::Metadatum{<:AVISOMonthly}) = DataWrangling.calendar_month_window(metadatum)
+DataWrangling.averaging_window(metadatum::Metadatum{<:AVISOMonthly}) = DataWrangling.calendar_month_window(metadatum)
 
 const AVISO_dataset_variable_names = Dict(
     :free_surface => "adt",

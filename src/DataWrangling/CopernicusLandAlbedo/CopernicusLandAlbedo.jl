@@ -10,7 +10,7 @@ using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
-                       metadata_path, default_download_directory, native_convention_longitude
+                       metadata_path, default_download_directory, native_convention_longitude, unzip
 
 # TODO: move `group_by_calendar_month` and `is_zip` (product-agnostic download helpers) from
 # ERA5 into DataWrangling proper, so dataset modules don't reach across siblings.
@@ -54,10 +54,10 @@ abstract type AbstractCopernicusAlbedo end
 """
     CopernicusAlbedo(; diffuse_fraction = 0.2)
 
-The Copernicus Global Land Service (CGLS) 1 km surface-albedo dataset, a dekadal
-(10-daily) time series derived from SPOT/VGT and PROBA-V observations. Provides
-`:albedo`, the broadband blue-sky albedo blended from the black-sky (`AL_DH_BB`)
-and white-sky (`AL_BH_BB`) broadband albedos with diffuse fraction `diffuse_fraction`.
+The Copernicus Global Land Service (CGLS) 1 km surface-albedo dataset, a ten-day time
+series derived from SPOT/VGT and PROBA-V observations. Provides `:albedo`, the broadband
+blue-sky albedo blended from the black-sky (`AL_DH_BB`) and white-sky (`AL_BH_BB`)
+broadband albedos with diffuse fraction `diffuse_fraction`.
 
 Files are global on a regular 1/112° latitude-longitude grid; build the `Metadata`
 with a lon/lat [`BoundingBox`](@ref) to window a region at read time. Downloads come
@@ -82,7 +82,7 @@ CopernicusAlbedo(; diffuse_fraction = 0.2) = CopernicusAlbedo(diffuse_fraction)
     CopernicusAlbedoClimatology(; diffuse_fraction = 0.2, years = 2019:2019)
 
 A 12-month climatology of the [`CopernicusAlbedo`](@ref) blue-sky broadband albedo,
-built by averaging all dekadal files of `years` month by month (NaN-aware, per pixel).
+built by averaging all ten-day files of `years` month by month (NaN-aware, per pixel).
 The monthly-mean files are generated on demand by [`build_monthly_climatology!`](@ref)
 (triggered automatically on download) and yield a 12-slot `FieldTimeSeries` with
 `Cyclical()` time indexing.
@@ -144,8 +144,8 @@ DataWrangling.latitude_interfaces(::CopernicusAlbedoMetadata)  = (-60 + 1/224, 8
 ##### Dates
 #####
 
-# CGLS dekads are stamped on day 10, day 20, and the last day of each month.
-function copernicus_albedo_dekadal_dates(start_date, end_date)
+# CGLS ten-day composites are stamped on day 10, day 20, and the last day of each month.
+function copernicus_albedo_ten_day_dates(start_date, end_date)
     dates = DateTime[]
     d = DateTime(year(start_date), month(start_date), 1)
     while d ≤ end_date
@@ -166,10 +166,14 @@ const last_albedo_date  = DateTime(2020, 6, 30)
 # SPOT ends May 2014; PROBA-V takes over from June 2014.
 albedo_satellite(date) = date < DateTime(2014, 6, 1) ? "spot" : "proba"
 
-DataWrangling.all_dates(::CopernicusAlbedo, variable) = copernicus_albedo_dekadal_dates(first_albedo_date, last_albedo_date)
+DataWrangling.all_dates(::CopernicusAlbedo, variable) = copernicus_albedo_ten_day_dates(first_albedo_date, last_albedo_date)
 
 # 12 climatological months; the year is arbitrary, only the month matters.
 DataWrangling.all_dates(::CopernicusAlbedoClimatology, variable) = [DateTime(2018, m, 1) for m in 1:12]
+
+# Each climatological month averages every ten days falling in it, so it spans the calendar month.
+DataWrangling.averaging_window(md::Metadatum{<:CopernicusAlbedoClimatology}) =
+    DataWrangling.calendar_month_window(md)
 
 #####
 ##### Filenames (date + variable keyed, region-independent — reused across regions)
@@ -188,7 +192,7 @@ DataWrangling.metadata_filename(dataset::CopernicusAlbedoClimatology, name, date
 #####
 ##### Download
 #####
-##### The dekadal-file download lives in
+##### The ten-day-file download lives in
 ##### `ext/NumericalEarthCDSAPIExt/copernicus_land_albedo.jl` (needs `using CDSAPI`); it
 ##### fetches the source pair and calls `repack_albedo_pair` below.
 ##### Everything here is CDS-free: repacking, climatology download, and reading.
@@ -389,9 +393,9 @@ end
                                dir = default_download_directory(dataset),
                                latitude_chunk = 1120)
 
-For each calendar month in `months`, download every dekadal albedo file of
+For each calendar month in `months`, download every ten-day albedo file of
 `dataset.years` falling in that month, average the black-sky and white-sky
-broadband albedos pixel by pixel (NaN-aware: pixels missing in a dekad are
+broadband albedos pixel by pixel (NaN-aware: pixels missing in a ten-day file are
 excluded from its mean), and write one monthly-mean NetCDF to `dir` under the
 name computed by `metadata_filename`. Months whose file already exists are
 skipped. Returns the paths of the 12 (or `length(months)`) monthly files.
@@ -403,7 +407,7 @@ function build_monthly_climatology!(dataset::CopernicusAlbedoClimatology;
                                     latitude_chunk = 1120)
 
     raw_dataset = CopernicusAlbedo(diffuse_fraction = dataset.diffuse_fraction)
-    dekads = DataWrangling.all_dates(raw_dataset, name)
+    ten_day_dates = DataWrangling.all_dates(raw_dataset, name)
     variable_names = copernicus_albedo_variables[name]
     paths = String[]
 
@@ -412,14 +416,14 @@ function build_monthly_climatology!(dataset::CopernicusAlbedoClimatology;
         push!(paths, filepath)
         isfile(filepath) && continue
 
-        dates = [d for d in dekads if month(d) == m && year(d) in dataset.years]
-        isempty(dates) && error("No CGLS albedo dekads fall in month $m of years $(dataset.years).")
+        dates = [d for d in ten_day_dates if month(d) == m && year(d) in dataset.years]
+        isempty(dates) && error("No CGLS albedo ten-day dates fall in month $m of years $(dataset.years).")
 
         metadata = Metadata(name; dataset = raw_dataset, dates, dir)
         Downloads.download(metadata)
         source_paths = metadata_path(metadata)
 
-        @info "Averaging $(length(source_paths)) dekads into month $m of the CGLS albedo climatology..."
+        @info "Averaging $(length(source_paths)) ten-day files into month $m of the CGLS albedo climatology..."
         write_monthly_mean(filepath, source_paths, variable_names, latitude_chunk)
     end
 
@@ -467,7 +471,7 @@ end
 ##### Copernicus land surface albedo (C3S `satellite-albedo` catalog entry)
 #####
 ##### One CDS request per calendar month fetches the black-sky (`albb_dh`) and
-##### white-sky (`albb_bh`) products for all of that month's dekads; each dekad's
+##### white-sky (`albb_bh`) products for all of that month's ten-day dates; each date's
 ##### pair is repacked into one compact local file by the CopernicusLandAlbedo module.
 #####
 
@@ -481,7 +485,7 @@ $(TYPEDSIGNATURES)
 Construct the CDS request for the 1 km v2 albedo `source_variables` covering `dates`, which must
 share a `(year, month)` (CDS interprets `year`/`month`/`nominal_day` as a Cartesian product, and the
 valid nominal days differ by month). `source_variables` defaults to the full black-sky/white-sky pair,
-but [`download_albedo_dekads!`](@ref) requests one variable at a time — see the note there.
+but [`download_ten_day_albedo!`](@ref) requests one variable at a time — see the note there.
 """
 function build_albedo_request(name, dates, source_variables = albedo_cds_request_variables[name])
     dts = dates isa AbstractVector ? dates : [dates]
@@ -509,14 +513,14 @@ end
 # The delivery is either a ZIP of per-variable NetCDF files or a single NetCDF.
 function extract_albedo_files(download_path, extraction_dir)
     if is_zip(download_path)
-        run(`unzip -qo $download_path -d $extraction_dir`)
+        unzip(download_path, extraction_dir)
     else
         cp(download_path, joinpath(extraction_dir, "albedo.nc"); force=true)
     end
     return filter(p -> endswith(p, ".nc"), readdir(extraction_dir; join=true))
 end
 
-# The dekad a delivered file belongs to, from its time coordinate (authoritative)
+# The ten-day date a delivered file belongs to, from its time coordinate (authoritative)
 # or the timestamp in its filename.
 function albedo_file_date(path)
     date = NCDataset(path) do ds
@@ -546,7 +550,7 @@ function repack_albedo_batch(nc_files, batch, path_of, destination_names, expect
     for date in batch
         entry = get(members, date, nothing)
         if isnothing(entry) || !haskey(entry, :blacksky) || !haskey(entry, :whitesky)
-            # Distinguish "no file for this dekad" from "files arrived but one of the pair's
+            # Distinguish "no file for this date" from "files arrived but one of the pair's
             # variables was absent" — the latter means a delivery was dropped or renamed upstream,
             # and reporting only the dates makes it look like a date-matching failure.
             missing_skies = isnothing(entry) ? ["blacksky", "whitesky"] :
@@ -567,9 +571,9 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Download the dekadal black-sky and white-sky broadband albedo for every date of
+Download the ten-day black-sky and white-sky broadband albedo for every date of
 `metadata` through `retrieve(request, path)` (supplied by a CDS backend extension), and repack each
-dekad's pair into a single compact local NetCDF. Requires `~/.cdsapirc` credentials and acceptance of
+date's pair into a single compact local NetCDF. Requires `~/.cdsapirc` credentials and acceptance of
 the Copernicus Global Land product license on the CDS portal.
 
 Issues one request per source variable per calendar month, rather than one request for the pair: CDS
@@ -577,7 +581,7 @@ answers a multi-variable request with a ZIP of per-variable members, and a backe
 it to a single file — `CopernicusClimateDataStore` keeps only the first member — which silently drops
 half of the pair and fails the repack below.
 """
-function download_albedo_dekads!(retrieve, metadata::CopernicusAlbedoDatasetMetadata; skip_existing=true, cleanup=true)
+function download_ten_day_albedo!(retrieve, metadata::CopernicusAlbedoDatasetMetadata; skip_existing=true, cleanup=true)
     meta_filename = DataWrangling.metadata_filename
     dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
     dir = metadata.dir

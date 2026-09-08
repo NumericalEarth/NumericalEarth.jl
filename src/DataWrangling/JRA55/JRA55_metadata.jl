@@ -5,7 +5,7 @@ using Oceananigans.DistributedComputations
 
 using ..DataWrangling: all_dates, DataWrangling, Metadata, metadata_path,
                        DownloadProgress, DatasetBackend, metadata_url,
-                       dataset_variable_name, getfilename
+                       dataset_variable_name, getfilename, download_with_retries
 
 abstract type JRA55Dataset end
 
@@ -66,6 +66,23 @@ DataWrangling.all_dates(::MultiYearJRA55, name) = JRA55_multiple_year_dates[name
 
 # Fallback, if we not provide the name, take the highest frequency
 DataWrangling.all_dates(dataset::JRA55Dataset) = all_dates(dataset, :temperature)
+
+# Fluxes, radiation, and precipitation are means over the interval between stamps; the state
+# variables are instantaneous.
+const JRA55_window_averaged_variables = (:river_freshwater_flux,
+                                         :iceberg_freshwater_flux,
+                                         :rain_freshwater_flux,
+                                         :snow_freshwater_flux,
+                                         :downwelling_longwave_radiation,
+                                         :downwelling_shortwave_radiation)
+
+# The repeat-year files label each mean with the start of its interval; the multi-year files label
+# it with the center.
+function DataWrangling.averaging_window(md::RepeatYearJRA55Metadatum)
+    md.name in JRA55_window_averaged_variables || return (md.dates, md.dates)
+    span = md.name in (:river_freshwater_flux, :iceberg_freshwater_flux) ? Day(1) : Hour(3)
+    return (md.dates, md.dates + span)
+end
 
 # Valid for all JRA55 datasets
 function JRA55_time_indices(dataset, dates, name)
@@ -223,7 +240,7 @@ function Downloads.download(metadata::JRA55Metadata)
         filepath = metadata_path(metadatum)
 
         if !isfile(filepath)
-            Downloads.download(fileurl, filepath; progress=DownloadProgress())
+            download_with_retries(fileurl, filepath; progress=DownloadProgress())
         end
     end
 

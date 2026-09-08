@@ -1,0 +1,110 @@
+name: CDS Downloading
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "26 15 * * 4"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# needed to allow julia-actions/cache to delete old caches that it has created
+permissions:
+  actions: write
+  contents: read
+
+env:
+  ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
+  ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
+  COPERNICUSMARINE_SERVICE_USERNAME: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
+  COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
+  CDSAPI_URL: "https://cds.climate.copernicus.eu/api"
+  CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
+  DESTINE_ACCESS_TOKEN: ${{ secrets.DESTINE_ACCESS_TOKEN }}
+  EARTHDATA_USERNAME: ${{ secrets.EARTHDATA_USERNAME }}
+  EARTHDATA_PASSWORD: ${{ secrets.EARTHDATA_PASSWORD }}
+  DATADEPS_ALWAYS_ACCEPT: true
+  JULIA_PKG_SERVER_REGISTRY_PREFERENCE: 'eager'
+
+jobs:
+  data_downloading:
+    name: Data Downloading - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - "1.12.5"
+        os:
+          - ubuntu-latest
+        arch:
+          - default
+        include:
+          - os: macOS-latest
+            arch: aarch64
+            version: "1.12.5"
+    steps:
+      - name: Show available storage before cleanup
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
+      - name: Free Disk Space
+        if: ${{ runner.os != 'macOS' }}
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: true
+          large-packages: false
+      - name: Cleanup /opt
+        if: ${{ runner.os != 'macOS' }}
+        run: |
+          sudo rm -rf /opt/*
+      - name: Show available storage after cleanup
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: ${{ matrix.version }}
+          arch: ${{ matrix.arch }}
+      - uses: julia-actions/cache@v3
+        with:
+          cache-scratchspaces: false
+      - name: Set test arguments
+        shell: bash
+        run: |
+          TEST_ARGS=(--verbose
+                     test_jra55_ecco_en4_etopo_downloading
+                     test_cds_downloading
+                     test_copernicus_climate_datastore_downloading
+                     test_copernicus_albedo_downloading
+                     test_copernicus_dem_downloading
+                     test_glorys_downloading
+                     test_aviso_downloading
+                     test_globfp3d_downloading
+                     test_ghsl_downloading
+                     test_esaworldcover_downloading)
+          # ASTER GED needs NASA Earthdata credentials
+          if [[ -n "${EARTHDATA_USERNAME}" ]]; then
+            TEST_ARGS+=(test_asterged_downloading)
+          fi
+          echo "runtest_test_args=${TEST_ARGS[@]}" | tee -a "${GITHUB_ENV}"
+      - name: Run tests
+        run: |
+          julia --project --color=yes --check-bounds=yes -e '
+              using Pkg;
+              Pkg.test(; coverage=true,
+                        julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
+                        test_args=`${{ env.runtest_test_args }}`)
+          '
+      - uses: julia-actions/julia-processcoverage@v1
+      - uses: codecov/codecov-action@v7
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}

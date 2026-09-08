@@ -192,8 +192,8 @@ set!(land; M = 20)
 #
 # All-sky RRTMGP: interior heating on the evolving clouds, surface fluxes into the land
 # budget. The surface albedo is observed, not constant — passing the dataset materializes
-# the CGLS 1 km blue-sky albedo at the dekad nearest `epoch`, with water pixels (NaN in the
-# land product) defaulting to open water. Everything else is a Breeze default — per-column
+# the CGLS 1 km blue-sky albedo at the ten-day date nearest `epoch`, with water pixels
+# (NaN in the land product) defaulting to open water. Everything else is a Breeze default — per-column
 # sun angles from the grid, climatological ozone, emissivity, effective radii. No surface
 # temperature either: the coupled model below binds the atmosphere–land interface skin
 # temperature, re-read every solve. Hourly solves match the ERA5 cadence.

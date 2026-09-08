@@ -139,13 +139,13 @@ const ERA5_window_averaged_variables = (:total_precipitation,
                                         :mean_surface_sensible_heat_flux,
                                         :mean_surface_latent_heat_flux)
 
-function DataWrangling.sample_window(md::Metadatum{<:Union{ERA5HourlySingleLevel, ERA5YearlySingleLevel}})
+function DataWrangling.averaging_window(md::Metadatum{<:Union{ERA5HourlySingleLevel, ERA5YearlySingleLevel}})
     md.name in ERA5_window_averaged_variables || return (md.dates, md.dates)
     return (md.dates - Hour(1), md.dates)
 end
 
 # Monthly means span the calendar month, accumulations and instantaneous variables alike.
-DataWrangling.sample_window(md::Metadatum{<:ERA5MonthlySingleLevel}) = DataWrangling.calendar_month_window(md)
+DataWrangling.averaging_window(md::Metadatum{<:ERA5MonthlySingleLevel}) = DataWrangling.calendar_month_window(md)
 
 """
     retrieve_data(metadata::ERA5Metadatum)
