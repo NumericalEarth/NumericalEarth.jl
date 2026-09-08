@@ -37,6 +37,7 @@ using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
 using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
 using Oceananigans.Utils: launch!, prettytime, prettysummary
+using DocStringExtensions: TYPEDSIGNATURES
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
 using ZipFile: ZipFile
@@ -179,16 +180,25 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Download `url` to `path` with `Downloads.download(url, path; kw...)`, retrying up to `attempts`
-times on failure and discarding a partial file between attempts.
+Download `url` to `path`, retrying up to `attempts` times on failure. Each transfer lands beside the
+destination and is renamed into place once it has arrived in full, so `path` never holds a partial file.
+
+Extra keyword arguments are forwarded to `Downloads.download` (`progress`, `downloader`, ...).
 """
 function download_with_retries(url, path; attempts = 3, description = "Download", kw...)
+    dir = dirname(path)
+    mkpath(dir)
+
     for attempt in 1:attempts
         try
-            Downloads.download(url, path; kw...)
+            # Same filesystem as the destination, so the rename is atomic rather than a copy.
+            mktemp(dir) do partial_path, partial_io
+                close(partial_io)
+                Downloads.download(url, partial_path; kw...)
+                mv(partial_path, path; force=true)
+            end
             return path
         catch error
-            rm(path, force = true)
             attempt == attempts && rethrow()
             @warn "$description failed (attempt $attempt of $attempts); retrying..." url error
             sleep(2attempt)

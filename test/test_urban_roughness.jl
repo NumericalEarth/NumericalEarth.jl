@@ -1,3 +1,5 @@
+include("runtests_setup.jl")
+
 using NumericalEarth
 using Oceananigans
 using Test
@@ -172,55 +174,59 @@ end
     end
 end
 
-@testset "Mixed-FT closure stays Union-free (kernel/GPU safety)" begin
-    # A closure whose FT differs from the grid eltype must not make aerodynamic_parameters
-    # return a Union — that breaks the launched kernel (dynamic dispatch) on the GPU.
-    for (Tgrid, Tclosure) in ((Float64, Float32), (Float32, Float64))
-        for closure in (MorphometricRoughness(Tclosure; height_distribution = UniformHeight()),
-                        MorphometricRoughness(Tclosure))
-            ℓᵐ, d = @inferred aerodynamic_parameters(closure, Tgrid(0.3), Tgrid(15))
-            @test typeof(ℓᵐ) == typeof(d)
-            @test isfinite(ℓᵐ) && isfinite(d)
+for arch in test_architectures
+    @testset "Mixed-FT closure stays Union-free (kernel/GPU safety)" begin
+        # A closure whose FT differs from the grid eltype must not make aerodynamic_parameters
+        # return a Union — that breaks the launched kernel (dynamic dispatch) on the GPU.
+        for (Tgrid, Tclosure) in ((Float64, Float32), (Float32, Float64))
+            for closure in (MorphometricRoughness(Tclosure; height_distribution = UniformHeight()),
+                            MorphometricRoughness(Tclosure))
+                ℓᵐ, d = @inferred aerodynamic_parameters(closure, Tgrid(0.3), Tgrid(15))
+                @test typeof(ℓᵐ) == typeof(d)
+                @test isfinite(ℓᵐ) && isfinite(d)
+            end
         end
-    end
 
-    # And through the launched kernel with a closure whose FT ≠ eltype(grid).
-    grid = LatitudeLongitudeGrid(CPU(), Float64; size = (3, 3),
-                                 longitude = (0, 1), latitude = (0, 1),
-                                 topology = (Bounded, Bounded, Flat))
-    λᵖ = Field{Center, Center, Nothing}(grid); set!(λᵖ, 0.3)
-    h  = Field{Center, Center, Nothing}(grid); set!(h, 15.0)
-    ℓᵐ, d = urban_roughness(h, λᵖ; closure = MorphometricRoughness(Float32))
-    @test all(isfinite, interior(ℓᵐ)) && all(isfinite, interior(d))
+        # And through the launched kernel with a closure whose FT ≠ eltype(grid).
+        grid = LatitudeLongitudeGrid(arch, Float64; size = (3, 3),
+                                    longitude = (0, 1), latitude = (0, 1),
+                                    topology = (Bounded, Bounded, Flat))
+        λᵖ = Field{Center, Center, Nothing}(grid); set!(λᵖ, 0.3)
+        h  = Field{Center, Center, Nothing}(grid); set!(h, 15.0)
+        ℓᵐ, d = urban_roughness(h, λᵖ; closure = MorphometricRoughness(Float32))
+        @test all(isfinite, interior(ℓᵐ)) && all(isfinite, interior(d))
+    end
 end
 
-@testset "On-grid builder matches the scalar closure" begin
-    grid = LatitudeLongitudeGrid(CPU(), Float64; size = (6, 6),
-                                 longitude = (-0.1, 0.1), latitude = (51.4, 51.6),
-                                 topology = (Bounded, Bounded, Flat))
-    λᵖ = Field{Center, Center, Nothing}(grid)
-    h  = Field{Center, Center, Nothing}(grid)
+for arch in test_architectures
+    @testset "On-grid builder matches the scalar closure" begin
+        grid = LatitudeLongitudeGrid(arch, Float64; size = (6, 6),
+                                    longitude = (-0.1, 0.1), latitude = (51.4, 51.6),
+                                    topology = (Bounded, Bounded, Flat))
+        λᵖ = Field{Center, Center, Nothing}(grid)
+        h  = Field{Center, Center, Nothing}(grid)
 
-    # Uniform urban patch: the field builder reproduces the scalar closure exactly.
-    set!(λᵖ, 0.3); set!(h, 15.0)
-    ℓᵐ, d = urban_roughness(h, λᵖ; closure = MorphometricRoughness())
-    ℓᵐref, dref = aerodynamic_parameters(MorphometricRoughness(), 0.3, 15.0)
-    @test all(≈(ℓᵐref), interior(ℓᵐ))
-    @test all(≈(dref), interior(d))
+        # Uniform urban patch: the field builder reproduces the scalar closure exactly.
+        set!(λᵖ, 0.3); set!(h, 15.0)
+        ℓᵐ, d = urban_roughness(h, λᵖ; closure = MorphometricRoughness())
+        ℓᵐref, dref = aerodynamic_parameters(MorphometricRoughness(), 0.3, 15.0)
+        @test all(≈(ℓᵐref), interior(ℓᵐ))
+        @test all(≈(dref), interior(d))
 
-    # Non-built patch reduces to bare soil everywhere.
-    set!(λᵖ, 0)
-    compute_aerodynamic_roughness!(ℓᵐ, d, uniform_height_closure(),
-                                   (; plan_area_index = λᵖ, mean_building_height = h), grid)
-    @test all(≈(MorphometricRoughness().bare_soil_roughness), interior(ℓᵐ))
-    @test all(≈(0), interior(d))
+        # Non-built patch reduces to bare soil everywhere.
+        set!(λᵖ, 0)
+        compute_aerodynamic_roughness!(ℓᵐ, d, uniform_height_closure(),
+                                    (; plan_area_index = λᵖ, mean_building_height = h), grid)
+        @test all(≈(MorphometricRoughness().bare_soil_roughness), interior(ℓᵐ))
+        @test all(≈(0), interior(d))
 
-    # Invalid inputs propagate to NaN gaps.
-    set!(λᵖ, 0.3); set!(h, NaN)
-    compute_aerodynamic_roughness!(ℓᵐ, d, MorphometricRoughness(),
-                                   (; plan_area_index = λᵖ, mean_building_height = h), grid)
-    @test all(isnan, interior(ℓᵐ))
-    @test all(isnan, interior(d))
+        # Invalid inputs propagate to NaN gaps.
+        set!(λᵖ, 0.3); set!(h, NaN)
+        compute_aerodynamic_roughness!(ℓᵐ, d, MorphometricRoughness(),
+                                    (; plan_area_index = λᵖ, mean_building_height = h), grid)
+        @test all(isnan, interior(ℓᵐ))
+        @test all(isnan, interior(d))
+    end
 end
 
 @testset "The default height distribution is VariableHeight" begin
@@ -233,31 +239,33 @@ end
     @test closure(0.3, h) == aerodynamic_parameters(closure, 0.3, h)
 end
 
-@testset "Closure construction and composition" begin
-    # Drag-partition parameters and the height distribution are configured side by side,
-    # on one flat closure.
-    closure = MorphometricRoughness(array_constant = 3.59, bare_soil_roughness = 0.05,
-                                    frontal_area_estimator = IsotropicFrontalArea(),
-                                    height_distribution = VariableHeight(height_spread_constants = (0.6, 0.0)))
-    @test closure.array_constant == 3.59
-    @test closure.bare_soil_roughness == 0.05
-    @test closure.frontal_area_estimator isa IsotropicFrontalArea
-    @test closure.height_distribution.height_spread_constants == (0.6, 0.0)
+for arch in test_architectures
+    @testset "Closure construction and composition" begin
+        # Drag-partition parameters and the height distribution are configured side by side,
+        # on one flat closure.
+        closure = MorphometricRoughness(array_constant = 3.59, bare_soil_roughness = 0.05,
+                                        frontal_area_estimator = IsotropicFrontalArea(),
+                                        height_distribution = VariableHeight(height_spread_constants = (0.6, 0.0)))
+        @test closure.array_constant == 3.59
+        @test closure.bare_soil_roughness == 0.05
+        @test closure.frontal_area_estimator isa IsotropicFrontalArea
+        @test closure.height_distribution.height_spread_constants == (0.6, 0.0)
 
-    # A narrower closure FT converts the sub-closures too.
-    narrow = MorphometricRoughness(Float32)
-    @test narrow.frontal_area_estimator.quadratic_coefficient isa Float32
-    @test eltype(narrow.height_distribution.height_spread_constants) == Float32
+        # A narrower closure FT converts the sub-closures too.
+        narrow = MorphometricRoughness(Float32)
+        @test narrow.frontal_area_estimator.quadratic_coefficient isa Float32
+        @test eltype(narrow.height_distribution.height_spread_constants) == Float32
 
-    grid = LatitudeLongitudeGrid(CPU(), Float64; size = (3, 3),
-                                 longitude = (0, 1), latitude = (0, 1),
-                                 topology = (Bounded, Bounded, Flat))
-    λᵖ = Field{Center, Center, Nothing}(grid); set!(λᵖ, 0)
-    h  = Field{Center, Center, Nothing}(grid); set!(h, 15.0)
+        grid = LatitudeLongitudeGrid(arch, Float64; size = (3, 3),
+                                    longitude = (0, 1), latitude = (0, 1),
+                                    topology = (Bounded, Bounded, Flat))
+        λᵖ = Field{Center, Center, Nothing}(grid); set!(λᵖ, 0)
+        h  = Field{Center, Center, Nothing}(grid); set!(h, 15.0)
 
-    # The bare-soil floor governs the on-grid result.
-    ℓᵐ, _ = urban_roughness(h, λᵖ; closure)
-    @test all(≈(0.05), interior(ℓᵐ))
+        # The bare-soil floor governs the on-grid result.
+        ℓᵐ, _ = urban_roughness(h, λᵖ; closure)
+        @test all(≈(0.05), interior(ℓᵐ))
+    end
 end
 
 @testset "Measured morphometry bypasses the input regressions" begin
@@ -304,51 +312,55 @@ end
     end
 end
 
-@testset "Measured-morphometry grid builder matches the scalar closure" begin
-    grid = LatitudeLongitudeGrid(CPU(), Float64; size = (4, 4),
-                                 longitude = (-74.0, -73.9), latitude = (40.7, 40.8),
-                                 topology = (Bounded, Bounded, Flat))
-    λᵖ   = Field{Center, Center, Nothing}(grid); set!(λᵖ, 0.4)
-    h    = Field{Center, Center, Nothing}(grid); set!(h, 30.0)
-    σʰ   = Field{Center, Center, Nothing}(grid); set!(σʰ, 25.0)
-    hᵐᵃˣ = Field{Center, Center, Nothing}(grid); set!(hᵐᵃˣ, 250.0)
-    λᶠ   = Field{Center, Center, Nothing}(grid); set!(λᶠ, 0.9)
+for arch in test_architectures
+    @testset "Measured-morphometry grid builder matches the scalar closure" begin
+        grid = LatitudeLongitudeGrid(arch, Float64; size = (4, 4),
+                                    longitude = (-74.0, -73.9), latitude = (40.7, 40.8),
+                                    topology = (Bounded, Bounded, Flat))
+        λᵖ   = Field{Center, Center, Nothing}(grid); set!(λᵖ, 0.4)
+        h    = Field{Center, Center, Nothing}(grid); set!(h, 30.0)
+        σʰ   = Field{Center, Center, Nothing}(grid); set!(σʰ, 25.0)
+        hᵐᵃˣ = Field{Center, Center, Nothing}(grid); set!(hᵐᵃˣ, 250.0)
+        λᶠ   = Field{Center, Center, Nothing}(grid); set!(λᶠ, 0.9)
 
-    ℓᵐ, d = urban_roughness(h, λᵖ, σʰ, hᵐᵃˣ, λᶠ)
-    ℓᵐref, dref = aerodynamic_parameters(MorphometricRoughness(), 0.4, 30.0, 25.0, 250.0, 0.9)
-    @test all(≈(ℓᵐref), interior(ℓᵐ))
-    @test all(≈(dref), interior(d))
+        ℓᵐ, d = urban_roughness(h, λᵖ, σʰ, hᵐᵃˣ, λᶠ)
+        ℓᵐref, dref = aerodynamic_parameters(MorphometricRoughness(), 0.4, 30.0, 25.0, 250.0, 0.9)
+        @test all(≈(ℓᵐref), interior(ℓᵐ))
+        @test all(≈(dref), interior(d))
 
-    # The measured statistics change the answer relative to the regression-fed builder.
-    ℓᵐreg, dreg = urban_roughness(h, λᵖ)
-    @test !(interior(ℓᵐ) ≈ interior(ℓᵐreg))
-    @test !(interior(d) ≈ interior(dreg))
+        # The measured statistics change the answer relative to the regression-fed builder.
+        ℓᵐreg, dreg = urban_roughness(h, λᵖ)
+        @test !(interior(ℓᵐ) ≈ interior(ℓᵐreg))
+        @test !(interior(d) ≈ interior(dreg))
 
-    # Scalar properties sample through property_value like Fields do.
-    compute_aerodynamic_roughness!(ℓᵐ, d, MorphometricRoughness(),
-                                   (; plan_area_index = λᵖ, mean_building_height = 30.0,
-                                      building_height_deviation = 25.0, maximum_building_height = 250.0,
-                                      frontal_area_index = 0.9), grid)
-    @test all(≈(ℓᵐref), interior(ℓᵐ))
-    @test all(≈(dref), interior(d))
+        # Scalar properties sample through property_value like Fields do.
+        compute_aerodynamic_roughness!(ℓᵐ, d, MorphometricRoughness(),
+                                    (; plan_area_index = λᵖ, mean_building_height = 30.0,
+                                        building_height_deviation = 25.0, maximum_building_height = 250.0,
+                                        frontal_area_index = 0.9), grid)
+        @test all(≈(ℓᵐref), interior(ℓᵐ))
+        @test all(≈(dref), interior(d))
+    end
 end
 
-@testset "Cell contract and mixed-type property sampling" begin
-    closure = MorphometricRoughness()
-    # The cell contract reads only the closure's own keys and matches the scalar form.
-    cell = (; plan_area_index = 0.3, mean_building_height = 15.0, latitude = 51.5)
-    @test aerodynamic_parameters(closure, cell) == aerodynamic_parameters(closure, 0.3, 15.0)
+for arch in test_architectures
+    @testset "Cell contract and mixed-type property sampling" begin
+        closure = MorphometricRoughness()
+        # The cell contract reads only the closure's own keys and matches the scalar form.
+        cell = (; plan_area_index = 0.3, mean_building_height = 15.0, latitude = 51.5)
+        @test aerodynamic_parameters(closure, cell) == aerodynamic_parameters(closure, 0.3, 15.0)
 
-    # The shared grid builder samples a Field and a uniform scalar property via property_value.
-    grid = LatitudeLongitudeGrid(CPU(), Float64; size = (4, 4),
-                                 longitude = (-0.1, 0.1), latitude = (51.4, 51.6),
-                                 topology = (Bounded, Bounded, Flat))
-    ℓᵐ = Field{Center, Center, Nothing}(grid)
-    d  = Field{Center, Center, Nothing}(grid)
-    λᵖ = Field{Center, Center, Nothing}(grid); set!(λᵖ, 0.3)
-    compute_aerodynamic_roughness!(ℓᵐ, d, closure,
-                                   (; plan_area_index = λᵖ, mean_building_height = 15.0), grid)
-    ℓᵐref, dref = aerodynamic_parameters(closure, 0.3, 15.0)
-    @test all(≈(ℓᵐref), interior(ℓᵐ))
-    @test all(≈(dref), interior(d))
+        # The shared grid builder samples a Field and a uniform scalar property via property_value.
+        grid = LatitudeLongitudeGrid(arch, Float64; size = (4, 4),
+                                    longitude = (-0.1, 0.1), latitude = (51.4, 51.6),
+                                    topology = (Bounded, Bounded, Flat))
+        ℓᵐ = Field{Center, Center, Nothing}(grid)
+        d  = Field{Center, Center, Nothing}(grid)
+        λᵖ = Field{Center, Center, Nothing}(grid); set!(λᵖ, 0.3)
+        compute_aerodynamic_roughness!(ℓᵐ, d, closure,
+                                    (; plan_area_index = λᵖ, mean_building_height = 15.0), grid)
+        ℓᵐref, dref = aerodynamic_parameters(closure, 0.3, 15.0)
+        @test all(≈(ℓᵐref), interior(ℓᵐ))
+        @test all(≈(dref), interior(d))
+    end
 end

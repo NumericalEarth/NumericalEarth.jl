@@ -73,6 +73,15 @@ jobs:
               using Pkg;
               Pkg.instantiate()
           '
+      # ParallelTestRunner schedules longest-first from a duration history it keeps in a
+      # scratchspace. Without it every duration defaults to Inf, the sort is a no-op and the
+      # order falls back to random -- leaving the longest test to start last and run alone.
+      # A few KB, keyed to ParallelTestRunner's UUID; the blanket scratchspace cache stays off.
+      - uses: actions/cache@v6
+        with:
+          path: ~/.julia/scratchspaces/d3525ed8-44d0-4b2c-a655-542cee43accc/durations
+          key: julia-test-durations;job=cpu_tests;${{ github.run_id }}
+          restore-keys: julia-test-durations;job=cpu_tests;
       - uses: julia-actions/julia-runtest@v1
         with:
           # Cap parallelism at 3 workers. ParallelTestRunner's default_njobs
@@ -201,7 +210,7 @@ jobs:
           df -h /
           echo " --> df -a /"
           df -a /
-  
+
   reactant:
     name: Reactant extension - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
@@ -229,26 +238,27 @@ jobs:
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v3
         with:
+          # `test/reactant` is a much smaller environment than `test`, so it gets its own
+          # (small) cache rather than sharing the `env=test` one.
+          cache-name: julia-cache;env=reactant
           cache-scratchspaces: false
       - name: Set JULIA_CPU_TARGET
         shell: bash
         run: |
-          echo "JULIA_CPU_TARGET=generic;haswell,-xsaveopt,clone_all;znver3,-rdrnd,base(1);znver4,-rdrnd,base(1);sapphirerapids,-rdrnd,base(1)" | tee -a "${GITHUB_ENV}"
-      - name: Instantiate test environment
-        timeout-minutes: 45
-        shell: bash
-        run: |
-          julia --project=test --color=yes --check-bounds=auto -e '
-              using Pkg;
-              Pkg.instantiate()
-          '
+          echo "JULIA_CPU_TARGET=generic;haswell,-xsaveopt,clone_all;x86-64-v4,-rdrnd,base(1)" | tee -a "${GITHUB_ENV}"
+      # Runs against test/reactant/Project.toml, which carries Reactant and nothing else it
+      # doesn't need. Reactant is the sole path to Enzyme, the largest single precompile unit,
+      # and pulls the very large Reactant_jll artifact; keeping it out of the shared test env
+      # stops every other job from precompiling code it never calls, and keeps their cache
+      # inside GitHub's 10 GB budget.
       - name: Run tests
+        timeout-minutes: 45
         run: |
-          julia --project --color=yes --check-bounds=auto -e '
-              using Pkg;
-              Pkg.test(; coverage=true,
-                        julia_args=["--check-bounds=auto", "--compiled-modules=yes", "-O0"],
-                        test_args=["--verbose", "test_reactant"])
+          julia --project=test/reactant --color=yes --check-bounds=auto -O0 \
+                --code-coverage=@${PWD}/src -e '
+              using Pkg
+              Pkg.instantiate()
+              include("test/reactant/test_reactant.jl")
           '
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v7
@@ -263,7 +273,7 @@ jobs:
           df -h /
           echo " --> df -a /"
           df -a /
-  
+
   #####
   ##### Distributed MPI tests (GitHub-hosted runners)
   #####

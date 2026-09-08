@@ -1,7 +1,35 @@
-using Downloads: Downloads
-using NumericalEarth.DataWrangling: metadata_path
+using NumericalEarth.DataWrangling: metadata_path, download_with_retries
 
 const ARTIFACTS_BASE_URL = "https://github.com/NumericalEarth/NumericalEarthArtifacts/releases/download/data-v1/"
+const TEST_FIXTURES_BASE_URL = "https://github.com/NumericalEarth/NumericalEarthArtifacts/releases/download/test-fixtures-v1/"
+
+"""
+    download_test_fixtures()
+
+Populate the JRA55 download cache with cropped RYF fixtures, replacing an 11.6 GB download with
+roughly 100 MB. Returns `true` when fixtures were used. A no-op unless
+`NUMERICALEARTH_TEST_FIXTURES == "true"`.
+"""
+function download_test_fixtures()
+    get(ENV, "NUMERICALEARTH_TEST_FIXTURES", "false") == "true" || return false
+
+    for name in NumericalEarth.DataWrangling.JRA55.JRA55_variable_names
+        filepath = metadata_path(Metadatum(name; dataset=NumericalEarth.JRA55.RepeatYearJRA55()))
+        isfile(filepath) && continue
+
+        filename = basename(filepath)
+
+        try
+            @info "Fetching cropped JRA55 fixture $(filename)..."
+            download_with_retries(TEST_FIXTURES_BASE_URL * filename, filepath)
+        catch e
+            @warn "Could not fetch JRA55 fixture $(filename); falling back to the full file." exception=(e, catch_backtrace())
+            emit_ci_warning("Missing JRA55 test fixture", "$(filename): $(sprint(showerror, e))")
+        end
+    end
+
+    return true
+end
 
 function emit_ci_warning(title, message)
     if haskey(ENV, "GITHUB_ACTIONS")
@@ -15,11 +43,7 @@ function download_from_artifacts(filepath::AbstractString; max_retries=3)
     @info "Downloading $filename from NumericalEarthArtifacts fallback..."
     for attempt in 1:max_retries
         try
-            mktemp(dirname(filepath)) do tmppath, tmpio
-                close(tmpio)
-                Downloads.download(fallback_url, tmppath)
-                mv(tmppath, filepath; force=true)
-            end
+            download_with_retries(fallback_url, filepath)
             return
         catch e
             attempt < max_retries || rethrow(e)
@@ -70,8 +94,7 @@ function download_test_data()
     ##### Download JRA55 data
     #####
 
-    land_grid = LatitudeLongitudeGrid(size=(8, 4, 1), longitude=(0, 360), latitude=(-60, 60), z=(-100, 0))
-    land_end_date = NumericalEarth.DataWrangling.all_dates(JRA55.RepeatYearJRA55(), :river_freshwater_flux)[2]
+    download_test_fixtures()
 
     try
         atmosphere = JRA55PrescribedAtmosphere(time_indices_in_memory=2)
