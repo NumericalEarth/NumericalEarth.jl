@@ -70,9 +70,11 @@ function download_test_data()
     ##### Download JRA55 data
     #####
 
+    land_grid = LatitudeLongitudeGrid(size=(8, 4, 1), longitude=(0, 360), latitude=(-60, 60), z=(-100, 0))
+
     try
         atmosphere = JRA55PrescribedAtmosphere(time_indices_in_memory=2)
-        land       = JRA55PrescribedLand(time_indices_in_memory=2)
+        land       = JRA55PrescribedLand(land_grid; time_indices_in_memory=2, outlet_detection_snapshots=1)
         # Touch the radiation variables (rlds/rsds) too, so a corrupted cached
         # download is caught by the same fallback path.
         radiation = JRA55PrescribedRadiation(time_indices_in_memory=2)
@@ -84,7 +86,7 @@ function download_test_data()
             download_from_artifacts(metadata_path(datum))
         end
         atmosphere = JRA55PrescribedAtmosphere(time_indices_in_memory=2)
-        land       = JRA55PrescribedLand(time_indices_in_memory=2)
+        land       = JRA55PrescribedLand(land_grid; time_indices_in_memory=2, outlet_detection_snapshots=1)
         radiation  = JRA55PrescribedRadiation(time_indices_in_memory=2)
     end
 
