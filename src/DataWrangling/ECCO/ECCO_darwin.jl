@@ -28,7 +28,7 @@ DataWrangling.all_dates(dataset::ECCO2DarwinMonthly, name) = metadata_epoch(data
 
 # ECCO4Darwin is stamped at noon on the first of the month, so the window is the calendar month
 # containing the stamp rather than a month starting at it.
-DataWrangling.sample_window(metadatum::ECCODarwinMetadatum) = DataWrangling.calendar_month_window(metadatum)
+DataWrangling.averaging_window(metadatum::ECCODarwinMetadatum) = DataWrangling.calendar_month_window(metadatum)
 
 # File name generation specific to each Dataset dataset
 """

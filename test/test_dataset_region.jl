@@ -28,10 +28,8 @@ using Dates
         @test maximum(φg) ≤  30 + 1.0
         @test any(!iszero, interior(f))
 
-        # Correctness: hand-extract the reference value at (0°, 0°, surface)
-        # directly from the NetCDF file and compare against the bbox-restricted
-        # field at the same physical point. This catches the silent SW-corner
-        # positional-indexing bug in `set_metadata_field!`.
+        # The reference value at (0°, 0°, surface), read straight from the NetCDF file, must match
+        # the bbox-restricted field at the same physical point.
         path = metadata_path(md)
         ds = Dataset(path)
         # ECCO4 surface is k=1 in the raw file (Z=-5 m). After

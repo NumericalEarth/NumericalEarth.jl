@@ -13,6 +13,7 @@ on:
     branches:
       - main
     tags: "*"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -23,15 +24,8 @@ permissions:
   actions: write
   contents: read
 
+# The tests run here are offline; the ones that need real remote data run in DataTests.yml.
 env:
-  ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
-  ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
-  COPERNICUSMARINE_SERVICE_USERNAME: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
-  COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
-  CDSAPI_URL: "https://cds.climate.copernicus.eu/api"
-  CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
-  DESTINE_ACCESS_TOKEN: ${{ secrets.DESTINE_ACCESS_TOKEN }}
-  DATADEPS_ALWAYS_ACCEPT: true
   JULIA_PKG_SERVER_REGISTRY_PREFERENCE: 'eager'
 
 #####
@@ -47,33 +41,19 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - "1.12.5"
+          - "1.12.7"
         os:
           - ubuntu-latest
         arch:
           - "default"
     steps:
-      - name: Show available storage before cleanup
+      - name: Show available storage at the beginning
         run: |
           echo " --> df -h /"
           df -h /
           echo " --> df -a /"
           df -a /
-      - name: Free Disk Space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          large-packages: false
-      - name: Cleanup /opt
-        run: |
-          sudo rm -rf /opt/*
-      - name: Show available storage after cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.version }}
@@ -81,18 +61,35 @@ jobs:
       - uses: julia-actions/cache@v3
         with:
           cache-scratchspaces: false
+      - name: Set JULIA_CPU_TARGET
+        shell: bash
+        run: |
+          echo "JULIA_CPU_TARGET=generic;haswell,-xsaveopt,clone_all;x86-64-v4,-rdrnd,base(1)" | tee -a "${GITHUB_ENV}"
+      - name: Instantiate test environment
+        timeout-minutes: 60
+        shell: bash
+        run: |
+          julia --project=test --color=yes --check-bounds=yes -e '
+              using Pkg;
+              Pkg.instantiate()
+          '
       - uses: julia-actions/julia-runtest@v1
         with:
-          # Cap parallelism at 2 workers. ParallelTestRunner's default_njobs
+          # Cap parallelism at 3 workers. ParallelTestRunner's default_njobs
           # assumes ~2 GiB per worker, but the Breeze-compilation and bathymetry
           # tests peak at 2.5-3.5 GiB RSS each. On the 16 GiB GitHub-hosted
           # runner, the default (4 = core count) intermittently OOMs when several
           # heavy tests coincide, and the runner reports it as
-          # "The operation was canceled." Two workers keep peak memory well
+          # "The operation was canceled." Three workers keep peak memory well
           # within budget while staying comfortably under the job timeout.
-          test_args: '--verbose --jobs=2'
+          test_args: '--verbose --jobs=3'
+          optimize: 0
+        env:
+          # Reduce memory threshold before recycling ParallelTestRunner's
+          # workers.
+          JULIA_TEST_MAXRSS_MB: 2800
       - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v7
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -131,7 +128,7 @@ jobs:
       TMPDIR: /__w/_temp
       JULIA_DEPOT_PATH: '/__w/_temp/depot:/usr/local/share/julia:'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Create workspace temp directories
         run: mkdir -p "${TMPDIR}"
       - name: Configure git safe directory
@@ -174,6 +171,14 @@ jobs:
           Pkg.Registry.rm("General")
           Pkg.Registry.add("General")
           Pkg.Registry.update()
+      - name: Instantiate test environment
+        timeout-minutes: 45
+        shell: bash
+        run: |
+          julia --project=test --color=yes --check-bounds=yes -e '
+              using Pkg;
+              Pkg.instantiate()
+          '
       - name: Run tests
         run: |
           earlyoom -m 3 -s 100 -r 300 --prefer 'julia' &
@@ -184,7 +189,7 @@ jobs:
                        test_args=`${{ env.runtest_test_args }}`)
           '
       - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v7
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -196,72 +201,6 @@ jobs:
           df -h /
           echo " --> df -a /"
           df -a /
-
-  #####
-  ##### Specialized tests (GitHub-hosted runners)
-  #####
-
-  cds_downloading:
-    name: Data Downloading - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        version:
-          - "1.12.5"
-        os:
-          - ubuntu-latest
-        arch:
-          - default
-        include:
-          - os: macOS-latest
-            arch: aarch64
-            version: "1.12.5"
-    steps:
-      - name: Show available storage before cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-      - name: Free Disk Space
-        if: ${{ runner.os != 'macOS' }}
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          large-packages: false
-      - name: Cleanup /opt
-        if: ${{ runner.os != 'macOS' }}
-        run: |
-          sudo rm -rf /opt/*
-      - name: Show available storage after cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-      - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@v2
-        with:
-          version: ${{ matrix.version }}
-          arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v3
-        with:
-          cache-scratchspaces: false
-      - name: Run tests
-        run: |
-          julia --project --color=yes --check-bounds=yes -e '
-              using Pkg;
-              Pkg.test(; coverage=true,
-                        julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
-                        test_args=["--verbose", "test_cds_downloading", "test_jra55_ecco_en4_etopo_downloading", "test_glorys_downloading", "test_aviso_downloading", "test_copernicus_dem_downloading", "test_copernicus_climate_datastore_downloading"])
-          '
-      - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v5
-        with:
-          files: lcov.info
-          token: ${{ secrets.CODECOV_TOKEN }}
   
   reactant:
     name: Reactant extension - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
@@ -277,34 +216,32 @@ jobs:
         arch:
           - default
     steps:
-      - name: Show available storage before cleanup
+      - name: Show available storage at the beginning
         run: |
           echo " --> df -h /"
           df -h /
           echo " --> df -a /"
           df -a /
-      - name: Free Disk Space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          large-packages: false
-      - name: Cleanup /opt
-        run: |
-          sudo rm -rf /opt/*
-      - name: Show available storage after cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-      - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@v2
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v3
         with:
           cache-scratchspaces: false
+      - name: Set JULIA_CPU_TARGET
+        shell: bash
+        run: |
+          echo "JULIA_CPU_TARGET=generic;haswell,-xsaveopt,clone_all;znver3,-rdrnd,base(1);znver4,-rdrnd,base(1);sapphirerapids,-rdrnd,base(1)" | tee -a "${GITHUB_ENV}"
+      - name: Instantiate test environment
+        timeout-minutes: 45
+        shell: bash
+        run: |
+          julia --project=test --color=yes --check-bounds=auto -e '
+              using Pkg;
+              Pkg.instantiate()
+          '
       - name: Run tests
         run: |
           julia --project --color=yes --check-bounds=auto -e '
@@ -314,10 +251,18 @@ jobs:
                         test_args=["--verbose", "test_reactant"])
           '
       - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v7
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Show available storage at the end
+        if: always()
+        timeout-minutes: 2
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
   
   #####
   ##### Distributed MPI tests (GitHub-hosted runners)
@@ -331,10 +276,10 @@ jobs:
   #     OPENBLAS_NUM_THREADS: 1
   #     JULIA_NUM_PRECOMPILE_TASKS: 8
   #   steps:
-  #     - uses: actions/checkout@v6
-  #     - uses: julia-actions/setup-julia@v2
+  #     - uses: actions/checkout@v7
+  #     - uses: julia-actions/setup-julia@v3
   #       with:
-  #         version: '1.12.5'
+  #         version: '1.12.7'
   #     - name: Instantiate and precompile
   #       shell: julia --project --color=yes {0}
   #       run: |
@@ -357,7 +302,6 @@ jobs:
     needs:
       - cpu_tests
       - gpu_tests
-      - cds_downloading
       - reactant
     runs-on: ubuntu-latest
     if: ${{ success() }}

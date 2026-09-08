@@ -220,15 +220,17 @@ applying mangling, NaN conversion, and unit conversion in a single GPU-friendly 
 """
 function set_region_data!(target::Field, data, λc, φc, metadata;
                           mangling = mangling_for(metadata, size(data, 2)),
-                          conversion = conversion_units(metadata))
+                          conversion = conversion_units(metadata),
+                          region = region_info(metadata.region, target, λc, φc),
+                          parameters = :xyz)
 
-    region      = region_info(metadata.region, target, λc, φc)
     FT          = eltype(target)
     grid        = target.grid
     arch        = architecture(grid)
     data        = architecture_ready(arch, data)
     missing_val = missing_value(metadata)
-    launch!(arch, grid, :xyz, _set_region_kernel!, interior(target), data, region, mangling, conversion, missing_val, FT)
+    # With `parameters`, a windowed field is then filled over its own indices.
+    launch!(arch, grid, parameters, _set_region_kernel!, target, data, region, mangling, conversion, missing_val, FT)
     return nothing
 end
 

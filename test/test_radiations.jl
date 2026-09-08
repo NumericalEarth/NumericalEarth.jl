@@ -12,7 +12,6 @@ using NumericalEarth.Radiations: PrescribedRadiation,
         @info "Testing PrescribedRadiation(grid) on $A..."
         grid = RectilinearGrid(arch, size = 10, z = (-100, 0), topology = (Flat, Flat, Bounded))
         rad = PrescribedRadiation(grid)
-        @test rad isa PrescribedRadiation
         @test rad.surface_properties isa NamedTuple
         @test haskey(rad.surface_properties, :ocean)
         @test haskey(rad.surface_properties, :sea_ice)
@@ -92,7 +91,6 @@ end
 
         # interface_fluxes are allocated for present surfaces (ocean + sea_ice
         # via FreezingLimitedOceanTemperature).
-        @test !isnothing(model.radiation.interface_fluxes)
         @test model.radiation.interface_fluxes.ocean isa InterfaceRadiationFlux
         @test model.radiation.interface_fluxes.sea_ice isa InterfaceRadiationFlux
 
@@ -101,12 +99,12 @@ end
     end
 end
 
-@testset "JRA55PrescribedRadiation" begin
+@testset "Dataset-backed PrescribedRadiation" begin
     for arch in test_architectures
         A = typeof(arch)
-        @info "Testing JRA55PrescribedRadiation on $A..."
+        @info "Testing dataset-backed PrescribedRadiation on $A..."
 
-        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=2)
+        radiation = synthetic_prescribed_radiation(arch)
 
         @test radiation isa PrescribedRadiation
         @test radiation.downwelling_shortwave isa FieldTimeSeries

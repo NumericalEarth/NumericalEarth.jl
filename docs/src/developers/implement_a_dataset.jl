@@ -22,6 +22,7 @@
 # | `dataset_variable_name` | the variable's name *inside* the file |
 # | `longitude_name` / `latitude_name` | the file's coordinate-variable names (default `"longitude"`/`"latitude"`) |
 # | `all_dates` | the time axis |
+# | `averaging_window` | (optional) the interval a value represents (default: the stamp itself) |
 # | `Base.size` | the `(Nx, Ny, Nz)` shape of one snapshot |
 # | `is_three_dimensional` | whether a variable has a vertical axis (default `true`) |
 # | `z_interfaces` | the vertical cell faces (3-D variables) |
@@ -31,6 +32,16 @@
 #
 # Everything else — building the column grid, reducing the horizontal location, vertical interpolation onto
 # the target grid — is supplied by the generic path.
+#
+# ### Dates and averaging windows
+#
+# `all_dates` returns the dates the *files* carry. They build filenames and download requests and locate a
+# record inside a file, so they stay exactly as the product labels them. What a value means in time is a
+# separate question, answered by `averaging_window`: for a product whose files hold time averages it returns
+# the interval each average is taken over, and a `FieldTimeSeries` then puts the sample at the middle of that
+# interval and repeats a cyclic series over the span the intervals tile. Products label an average with the
+# start of that interval, its end, or its middle, so the window is declared per dataset rather than inferred
+# from the dates. The mooring records values at an instant and keeps the default, a window of zero width.
 
 using NumericalEarth
 using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path, centers_to_interfaces,

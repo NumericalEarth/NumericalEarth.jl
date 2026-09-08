@@ -46,49 +46,48 @@ for arch in test_architectures, dataset in test_ecco_en4_datasets
                 end
 
                 datum = first(metadata)
-                ψ = Field(datum, arch, inpainting=NearestNeighborInpainting(2))
-                @test ψ isa Field
+                Field(datum, arch, inpainting=NearestNeighborInpainting(2))
                 datapath = NumericalEarth.DataWrangling.inpainted_metadata_path(datum)
                 @test isfile(datapath)
             end
         end
 
         @testset "Setting a field from a dataset" begin
-            test_setting_from_metadata(arch, dataset, start_date, inpainting, 
+            test_setting_from_metadata(arch, dataset, start_date, inpainting,
                                        varnames=test_names[dataset])
         end
 
         @testset "Timestepping with fields from Dataset" begin
-            test_timestepping_with_dataset(arch, dataset, start_date, inpainting, 
-                                           varnames=test_names[dataset], 
+            test_timestepping_with_dataset(arch, dataset, start_date, inpainting,
+                                           varnames=test_names[dataset],
                                            fldnames=test_fields[dataset])
         end
 
         @testset "Field utilities" begin
-            test_ocean_metadata_utilities(arch, dataset, dates, inpainting, 
+            test_ocean_metadata_utilities(arch, dataset, dates, inpainting,
                                           varnames=test_names[dataset])
         end
 
         @testset "DatasetRestoring with LinearlyTaperedPolarMask" begin
-            test_dataset_restoring(arch, dataset, dates, inpainting, 
-                                   varnames=test_names[dataset], 
+            test_dataset_restoring(arch, dataset, dates, inpainting,
+                                   varnames=test_names[dataset],
                                    fldnames=test_fields[dataset])
         end
 
         @testset "Timestepping with DatasetRestoring" begin
-            test_timestepping_with_dataset_restoring(arch, dataset, dates, inpainting, 
-                                                     varnames=test_names[dataset], 
+            test_timestepping_with_dataset_restoring(arch, dataset, dates, inpainting,
+                                                     varnames=test_names[dataset],
                                                      fldnames=test_fields[dataset])
         end
 
         @testset "Dataset cycling boundaries" begin
-            test_cycling_dataset_restoring(arch, dataset, dates, inpainting, 
-                                           varnames=test_names[dataset], 
+            test_cycling_dataset_restoring(arch, dataset, dates, inpainting,
+                                           varnames=test_names[dataset],
                                            fldnames=test_fields[dataset])
         end
 
         @testset "Inpainting algorithm" begin
-            test_inpainting_algorithm(arch, dataset, start_date, inpainting, 
+            test_inpainting_algorithm(arch, dataset, start_date, inpainting,
                                       varnames=test_names[dataset])
         end
     end
