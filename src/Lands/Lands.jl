@@ -4,6 +4,7 @@ export AbstractLand,
        PrescribedLand,
        RiverRouting,
        build_river_routing,
+       river_mouth_vertical_diffusivity,
        coastal_outlet_indices,
        # Composable container
        SlabLand,
@@ -88,5 +89,6 @@ include("prescribed_land.jl")
 include("prescribed_land_regridder.jl")
 include("interpolate_land_state.jl")
 include("river_routing.jl")
+include("river_mouth_vertical_diffusivity.jl")
 
 end # module Lands

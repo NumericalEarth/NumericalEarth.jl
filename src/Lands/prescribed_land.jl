@@ -8,8 +8,7 @@ mutable struct PrescribedLand{G, T, F, TI, R} <: AbstractPrescribedComponent
     clock :: Clock{T}
     freshwater_flux :: F     # NamedTuple, e.g. (rivers=FTS, icebergs=FTS)
     times :: TI
-    river_routing :: R       # `nothing`, or a `RiverRouting` mapping native river
-                             # mouths to coastal ocean cells (see river_routing.jl)
+    river_routing :: R       # One routing map, maps for each component, or nothing.
 end
 
 function Base.summary(pl::PrescribedLand)
@@ -38,7 +37,9 @@ element type of `freshwater_flux`.
 When `river_routing` is a [`RiverRouting`](@ref), the freshwater flux is treated
 as a per-river-mouth volume discharge (m³ s⁻¹) that is scattered onto coastal
 ocean cells conserving volume (see [`GloFASPrescribedLand`](@ref)). When it is
-`nothing` (the default), the flux is a per-area mass flux interpolated pointwise
+a `NamedTuple` of routing maps, each component is scattered through its own
+map with its own conversion weights, as used for JRA55 river and iceberg mass fluxes.
+When it is `nothing` (the default), the flux is a per-area mass flux interpolated pointwise
 onto the ocean grid (see [`JRA55PrescribedLand`](@ref)).
 """
 function PrescribedLand(freshwater_flux; clock=nothing, river_routing=nothing)

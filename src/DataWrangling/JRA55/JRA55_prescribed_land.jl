@@ -1,4 +1,8 @@
-using ...Lands: PrescribedLand
+using DocStringExtensions: TYPEDSIGNATURES
+using Oceananigans.Architectures: architecture
+using Oceananigans.Grids: AbstractGrid
+using NumericalEarth.Lands: PrescribedLand, ever_positive_mask, outlet_indices_from_mask,
+                            source_cell_areas, build_river_routing
 
 JRA55PrescribedLand(arch::Distributed; kw...) =
     JRA55PrescribedLand(child_architecture(arch); kw...)
@@ -38,4 +42,31 @@ function JRA55PrescribedLand(architecture = CPU();
     freshwater_flux = (; rivers = Fri, icebergs = Fic)
 
     return PrescribedLand(freshwater_flux)
+end
+
+"""
+    $(TYPEDSIGNATURES)
+
+Build JRA55 river and iceberg forcing routed onto wet cells of `grid`.
+`spread_radius` sets the radius in degrees around each receiving cell. Discharge
+is shared in proportion to column depth, capped at 50 m, and converted using
+source and receiving cell areas to conserve mass. Unreachable mouths are reported.
+The first `n_outlet_snapshots` identify cells that discharge during the year.
+Pass forcing date selections and cache options through `kw`.
+"""
+function JRA55PrescribedLand(grid::AbstractGrid;
+                             maximum_search_radius = 5,
+                             spread_radius = 1.2,
+                             n_spread_cells = nothing,
+                             n_outlet_snapshots = 365,
+                             kw...)
+    land = JRA55PrescribedLand(architecture(grid); kw...)
+    routing = map(land.freshwater_flux) do flux
+        outlet_mask = ever_positive_mask(flux, n_outlet_snapshots)
+        outlet_i, outlet_j, outlet_λ, outlet_φ = outlet_indices_from_mask(outlet_mask, flux.grid)
+        outlet_weight = source_cell_areas(flux.grid, outlet_i, outlet_j)
+        build_river_routing(grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
+                           maximum_search_radius, spread_radius, n_spread_cells)
+    end
+    return PrescribedLand(land.freshwater_flux; river_routing=routing)
 end
