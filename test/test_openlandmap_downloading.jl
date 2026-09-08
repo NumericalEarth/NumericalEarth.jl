@@ -1,5 +1,4 @@
 include("runtests_setup.jl")
-include("dataset_status.jl")
 
 using ArchGDAL  # activates NumericalEarthArchGDALExt (the windowed /vsicurl COG read)
 
@@ -16,14 +15,11 @@ const openlandmap_region = BoundingBox(longitude = (-112.05, -112.00), latitude 
 
 @testset "Downloading OpenLandMap soil properties" begin
     for name in (:clay_fraction, :bulk_density)
-        @dataset_check "OpenLandMapSoilDB" string(name) begin
-            metadatum = Metadatum(name; dataset=OpenLandMapSoilDB(), region=openlandmap_region)
-            filepath = metadata_path(metadatum)
-            isfile(filepath) && rm(filepath; force=true)
+        metadatum = Metadatum(name; dataset=OpenLandMapSoilDB(), region=openlandmap_region)
+        filepath = metadata_path(metadatum)
+        isfile(filepath) && rm(filepath; force=true)
 
-            download(metadatum)
-            isfile(filepath) || error("OpenLandMapSoilDB $(name) download produced no file at $(filepath)")
-            filepath
-        end
+        download(metadatum)
+        @test isfile(filepath)
     end
 end

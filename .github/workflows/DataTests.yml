@@ -33,8 +33,6 @@ env:
   DATADEPS_ALWAYS_ACCEPT: true
   JULIA_PKG_SERVER_REGISTRY_PREFERENCE: 'eager'
   NUMERICALEARTH_TEST_REMOTE_DATA: "true"
-  # Unset, `@dataset_check` is inert.
-  DATASET_STATUS_DIR: ${{ github.workspace }}/dataset-status
 
 jobs:
   data_tests:
@@ -91,14 +89,6 @@ jobs:
                        julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
                        test_args=["--verbose", "--jobs=4"])
           '
-      # `always()`: a run where a dataset broke is the one the dashboard must show.
-      - name: Upload dataset status records
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dataset-status-data-tests
-          path: ${{ env.DATASET_STATUS_DIR }}
-          if-no-files-found: warn
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v7
         with:
