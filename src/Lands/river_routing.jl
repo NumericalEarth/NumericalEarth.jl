@@ -1,4 +1,4 @@
-using Oceananigans.Grids: inactive_node, topology, Flat
+using Oceananigans.Grids: inactive_node, longitude_in_same_window, topology, Flat
 using Oceananigans.Operators: Azᶜᶜᶜ
 using Oceananigans.Architectures: on_architecture, CPU
 using Oceananigans.DistributedComputations: Distributed, all_reduce, global_size
@@ -219,11 +219,9 @@ end
     end
 end
 
-wrap180(λ) = λ - 360 * floor((λ + 180) / 360)
-
 # Approximate squared distance on the sphere (equirectangular, degrees).
 function squared_distance(λ₁, φ₁, λ₂, φ₂)
-    Δλ = wrap180(λ₂ - λ₁) * cosd((φ₁ + φ₂) / 2)
+    Δλ = (longitude_in_same_window(λ₂, λ₁) - λ₁) * cosd((φ₁ + φ₂) / 2)
     Δφ = φ₂ - φ₁
     return Δλ^2 + Δφ^2
 end

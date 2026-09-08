@@ -4,7 +4,6 @@ export AbstractLand,
        PrescribedLand,
        RiverRouting,
        build_river_routing,
-       build_flux_routing,
        coastal_outlet_indices,
        routable_grid,
        # Composable container
