@@ -6,7 +6,7 @@ Base.summary(::SpeedySimulation) = "SpeedyWeather.Simulation"
 
 # Take one time-step or more depending on the global timestep
 function Oceananigans.TimeSteppers.time_step!(atmos::SpeedySimulation, Δt)
-    Δt_atmos = atmos.model.time_stepping.Δt_sec
+    Δt_atmos = atmos.model.time_stepping.Δt
     nsteps = ceil(Int, Δt / Δt_atmos)
 
     if (Δt / Δt_atmos) % 1 != 0
@@ -41,7 +41,7 @@ function initialize_atmospheric_state!(simulation::SpeedyWeather.Simulation)
     (; time) = vars.prognostic.clock  # current time
 
     # set the tendencies back to zero for accumulation
-    SpeedyWeather.reset_tendencies!(vars)
+    SpeedyWeather.reset_tendencies!(vars, model.time_stepping)
 
     if !model.dynamics_only
         SpeedyWeather.parameterization_tendencies!(vars, model)
@@ -59,7 +59,7 @@ end
 Return an atmosphere simulation using `SpeedyWeather.PrimitiveWetModel` on `spectral_grid`.
 Output is written when `output_interval` is provided. `time_stepping` controls
 SpeedyWeather's internal timestep (e.g. via its `Δt_at_T31` field); the resulting
-`Δt_sec` must be an integer divisor of the coupled `EarthSystemModel` timestep.
+`Δt` must be an integer divisor of the coupled `EarthSystemModel` timestep.
 
 `stop_time` should match the `stop_time` later passed to the coupled
 `Oceananigans.Simulation`. It only synchronizes SpeedyWeather's internal clock
@@ -108,4 +108,4 @@ function NumericalEarth.Atmospheres.atmosphere_simulation(spectral_grid::SpeedyW
 end
 
 Oceananigans.Simulations.reset_clock!(atmos::SpeedyWeather.Simulation) =
-    SpeedyWeather.initialize!(atmos.prognostic_variables.clock)
+    SpeedyWeather.initialize!(atmos.variables.prognostic.clock)

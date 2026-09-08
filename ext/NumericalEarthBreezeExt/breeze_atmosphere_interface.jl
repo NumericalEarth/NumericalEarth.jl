@@ -1,5 +1,8 @@
 using Oceananigans.Grids: Center
-using Breeze.AtmosphereModels: thermodynamic_density, dynamics_density, surface_pressure
+using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
+using Oceananigans.Fields: compute!
+using Breeze.AtmosphereModels: thermodynamic_density, dynamics_pressure,
+                               specific_humidity, surface_precipitation_flux
 using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
 using GPUArraysCore: @allowscalar
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
@@ -72,6 +75,15 @@ NumericalEarth.EarthSystemModels.boundary_layer_height(atmos::BreezeAtmosphereSi
 
 function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::BreezeAtmosphere, exchange_grid;
                                                                                    correction = nothing)
+    # Breeze's surface rain-flux diagnostic (positive down, kg m⁻² s⁻¹); schemes with no
+    # precipitating species define no method — fall back to an inert zero field.
+    # TODO: move the fallback into Breeze; add a snow analog (Jˢⁿ stays zero below).
+    Jʳⁿ = if applicable(surface_precipitation_flux, atmosphere, atmosphere.microphysics)
+        surface_precipitation_flux(atmosphere)
+    else
+        Oceananigans.CenterField(exchange_grid)
+    end
+
     state = (; u    = Oceananigans.CenterField(exchange_grid),
                v    = Oceananigans.CenterField(exchange_grid),
                T    = Oceananigans.CenterField(exchange_grid),
@@ -79,7 +91,7 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchang
                q    = Oceananigans.CenterField(exchange_grid),
                ℐꜜˢʷ = Oceananigans.CenterField(exchange_grid),
                ℐꜜˡʷ = Oceananigans.CenterField(exchange_grid),
-               Jʳⁿ  = Oceananigans.CenterField(exchange_grid),
+               Jʳⁿ  = Jʳⁿ,
                Jˢⁿ  = Oceananigans.CenterField(exchange_grid))
 
     correction = NumericalEarth.EarthSystemModels.InterfaceComputations.materialize_correction(correction, exchange_grid, atmosphere)
@@ -93,18 +105,17 @@ NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmos:
 ##### Interpolate atmospheric state onto exchange grid
 #####
 
-@kernel function _interpolate_breeze_state!(state, u, v, T, ρqᵛᵉ, ρ₀, p₀)
+@kernel function _interpolate_breeze_state!(state, u, v, T, qᵛ, p)
     i, j = @index(Global, NTuple)
 
     @inbounds begin
         state.u[i, j, 1]    = u[i, j, 1]
         state.v[i, j, 1]    = v[i, j, 1]
         state.T[i, j, 1]    = T[i, j, 1]
-        state.q[i, j, 1]    = ρqᵛᵉ[i, j, 1] / ρ₀[i, j, 1]
-        state.p[i, j, 1]    = p₀
+        state.q[i, j, 1]    = qᵛ[i, j, 1]
+        state.p[i, j, 1]    = p[i, j, 1]
         state.ℐꜜˢʷ[i, j, 1] = 0
         state.ℐꜜˡʷ[i, j, 1] = 0
-        state.Jʳⁿ[i, j, 1]  = 0
         state.Jˢⁿ[i, j, 1]  = 0
     end
 end
@@ -113,22 +124,20 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     state = exchanger.state
     u, v, w = atmosphere.velocities
     T = atmosphere.temperature
-    ρqᵛᵉ = atmosphere.moisture_density
+    qᵛ = specific_humidity(atmosphere)
 
-    # Near-surface density (to convert moisture density ρqᵛ → specific humidity) and
-    # surface pressure, via dynamics-generic accessors so coupling works for *both*
-    # anelastic atmospheres (reference-state density) and compressible terrain-following
-    # atmospheres (prognostic density). Reaching into
-    # `dynamics.reference_state` directly is anelastic-only (it is `nothing` for
-    # `CompressibleDynamics`).
-    ρ₀ = dynamics_density(atmosphere.dynamics)
-    p₀ = surface_pressure(atmosphere.dynamics)
+    # Breeze's diagnosed vapor mass fraction, not the scheme-dependent moisture prognostic;
+    # `dynamics_pressure` gives the per-column pressure (a single scalar `surface_pressure`
+    # would bias fluxes over terrain).
+    p = dynamics_pressure(atmosphere.dynamics)
 
     arch = architecture(exchange_grid)
     kernel_parameters = interface_kernel_parameters(exchange_grid)
     launch!(arch, exchange_grid, kernel_parameters,
             _interpolate_breeze_state!,
-            state, u, v, T, ρqᵛᵉ, ρ₀, p₀)
+            state, u, v, T, qᵛ, p)
+
+    compute!(state.Jʳⁿ)   # refresh the rain diagnostic (no-op for the zero-field fallback)
 
     return nothing
 end
@@ -144,6 +153,12 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos
     # Momentum flux fields (direct FluxBoundaryCondition on ρu, ρv)
     ρu = atmosphere.momentum.ρu.boundary_conditions.bottom.condition
     ρv = atmosphere.momentum.ρv.boundary_conditions.bottom.condition
+
+    # BulkDrag bottoms would break the extraction below and double-count the coupler's stress.
+    ρu isa Oceananigans.Field || throw(ArgumentError(
+        "the atmosphere's bottom momentum boundary condition is $(summary(ρu)), not a coupling " *
+        "flux field, so its surface stress cannot come from the coupler. Build the atmosphere " *
+        "without `bottom_drag_coefficient` (Breeze `BulkDrag`) when coupling to land or ocean."))
 
     # Energy flux field: ρe BC was converted to ρθ by Breeze's materialization,
     # wrapped in EnergyFluxBoundaryConditionFunction.
@@ -164,16 +179,15 @@ NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos::BreezeA
 ##### Assemble ESM similarity-theory fluxes into Breeze bottom BCs
 #####
 
-@kernel function _assemble_net_atmosphere_fluxes!(net, ao_fluxes)
+@kernel function _assemble_net_atmosphere_fluxes!(net, ao_fluxes, grid)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        τx = ao_fluxes.x_momentum[i, j, 1]
-        τy = ao_fluxes.y_momentum[i, j, 1]
         Qc = ao_fluxes.sensible_heat[i, j, 1]
         Fv = ao_fluxes.water_vapor[i, j, 1]
 
-        net.ρu[i, j, 1]  = τx
-        net.ρv[i, j, 1]  = τy
+        # interpolate stresses on variable's location
+        net.ρu[i, j, 1]  = ℑxᶠᵃᵃ(i, j, 1, grid, ao_fluxes.x_momentum)
+        net.ρv[i, j, 1]  = ℑyᵃᶠᵃ(i, j, 1, grid, ao_fluxes.y_momentum)
         net.ρe[i, j, 1]  = Qc   # sensible heat only; latent heat handled by moisture flux
         net.ρqᵛᵉ[i, j, 1] = Fv
     end
@@ -195,7 +209,7 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmo
     if !isnothing(ao_interface)
         ao_fluxes = computed_fluxes(ao_interface)
         if !isnothing(ao_fluxes)
-            launch!(arch, grid, params, _assemble_net_atmosphere_fluxes!, net, ao_fluxes)
+            launch!(arch, grid, params, _assemble_net_atmosphere_fluxes!, net, ao_fluxes, grid)
         end
     end
 
@@ -208,7 +222,7 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmo
     if !isnothing(al_interface)
         al_fluxes = computed_fluxes(al_interface)
         if !isnothing(al_fluxes)
-            launch!(arch, grid, params, _assemble_net_atmosphere_fluxes!, net, al_fluxes)
+            launch!(arch, grid, params, _assemble_net_atmosphere_fluxes!, net, al_fluxes, grid)
         end
     end
 

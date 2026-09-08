@@ -7,7 +7,7 @@ onto a shared `exchange_grid`, where atmosphere--ocean and atmosphere--sea-ice
 fluxes are computed.
 
 The optional `correction` is an in-place post-regrid hook applied to `state`
-after each `interpolate_state!` (e.g. [`ElevationCorrection`](@ref) on the
+after each `interpolate_state!` (e.g. [`AltitudeCorrection`](@ref) on the
 atmosphere). When `correction === nothing`, the per-step `correct_state!` sweep
 is a no-op for this component.
 """

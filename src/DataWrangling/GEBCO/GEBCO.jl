@@ -5,7 +5,8 @@ export GEBCO2026
 using Downloads: Downloads
 using Oceananigans.DistributedComputations: @root
 
-using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
+using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry,
+                       download_with_retries
 
 import ..DataWrangling:
     metadata_filename,
@@ -54,7 +55,7 @@ function Downloads.download(metadatum::GEBCOMetadatum)
     @root if !isfile(filepath)
         @info "Downloading GEBCO to $(metadatum.dir)..."
         @info "Note: GEBCO is a large dataset (~7.5 GB). This may take a while."
-        Downloads.download(GEBCO_2026_nc_url, filepath; progress=DownloadProgress())
+        download_with_retries(GEBCO_2026_nc_url, filepath; progress=DownloadProgress())
         @info "GEBCO download complete."
     end
 

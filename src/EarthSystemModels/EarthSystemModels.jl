@@ -18,13 +18,11 @@ export
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     PowerLawTortuosity,
-    ElevationCorrection,
+    AltitudeCorrection,
     atmosphere_land_interface,
     SimilarityTheoryFluxes,
     FixedIterations,
     ConvergenceStopCriteria,
-    LandRoughnessLength,
-    LandZeroPlaneDisplacement,
     CoefficientBasedFluxes,
     FreezingLimitedOceanTemperature,
     SkinTemperature,
@@ -43,12 +41,14 @@ export
 
 import Dates
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
+using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 using Oceananigans: Oceananigans, AbstractModel, initialize!,
                     prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture, AbstractArchitecture, ReactantState
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Diagnostics: NaNChecker
 using Oceananigans.Fields: ZeroField
 using Oceananigans.Simulations: reset_clock!, Simulation

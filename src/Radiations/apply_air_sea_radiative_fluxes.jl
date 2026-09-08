@@ -2,7 +2,7 @@ using Oceananigans.Grids: inactive_node
 
 using ..EarthSystemModels: EarthSystemModel, sea_ice_concentration
 using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties, convert_to_kelvin
-using ..Oceans: shortwave_radiative_forcing, get_radiative_forcing
+using ..Oceans: shortwave_radiative_forcing, get_radiative_forcing, compute_absorption_coefficient!
 
 """
     apply_air_sea_radiative_fluxes!(coupled_model)
@@ -42,6 +42,7 @@ function EarthSystemModels.apply_air_sea_radiative_fluxes!(coupled_model::EarthS
     interface_temperature = ao_interface.temperature
     ocean_properties = coupled_model.interfaces.ocean_properties
     penetrating_radiation = get_radiative_forcing(ocean)
+    compute_absorption_coefficient!(penetrating_radiation, Time(clock.time))
 
     launch!(arch, grid, :xy,
             _apply_air_sea_radiative_fluxes!,

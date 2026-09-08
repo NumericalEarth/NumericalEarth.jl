@@ -51,7 +51,7 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
     # A window-averaged series repeats over the span its windows tile, not over the span of its
     # nodes, which sit half a window inside it at each end. Oceananigans infers the latter.
     if time_indexing isa Cyclical{Nothing}
-        period = sample_window_span(metadata)
+        period = window_span(metadata)
         isnothing(period) || (time_indexing = Cyclical(convert(eltype(grid), period)))
     end
 

@@ -84,7 +84,7 @@ Adapt.adapt_structure(to, f::FreshwaterExchange{name}) where name =
 @inline carried_tracer_flux(f::FreshwaterExchange, ::Val{name}, i, j, grid, fields) where name =
     @inbounds surface_tracer_value(fields, Val(name), i, j, grid.Nz) * f.carrying_flux[i, j, 1] - f.content_flux[i, j, 1]
 
-# The temperature carried flux is required only for mutable grids to cancel the volume movement. 
+# The temperature carried flux is required only for mutable grids to cancel the volume movement.
 # On the other hand, it is required always for salinity
 @inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:S}, i, j, grid, fields) = carried_tracer_flux(f, name, i, j, grid, fields)
 @inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:T}, i, j, grid, fields) = zero(grid)
@@ -153,18 +153,7 @@ function default_ocean_closure(FT=Oceananigans.defaults.FloatType)
     return CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization(), FT; mixing_length, turbulent_kinetic_energy_equation)
 end
 
-# Two-band shortwave penetration in the Paulson & Simpson (1977) form,
-# Defaults are Jerlov Type I (clearest open-ocean water)
-function default_radiative_forcing(grid)
-    surface_fraction = 0.58  # Paulson & Simpson 1977, Table 2, Type I
-    surface_scale    = 0.35  # [m]
-    deep_scale       = 23    # [m]
-    forcing = TwoColorRadiation(grid;
-                                first_color_fraction          = surface_fraction,
-                                first_absorption_coefficient  = 1 / surface_scale,
-                                second_absorption_coefficient = 1 / deep_scale)
-    return forcing
-end
+default_radiative_forcing(grid) = TwoColorRadiation(grid)
 
 # TODO: Specify the grid to a grid on the sphere; otherwise we can provide a different
 # function that requires latitude and longitude etc for computing coriolis=FPlane...
@@ -420,7 +409,7 @@ function hydrostatic_ocean_simulation(grid;
     # Set up boundary conditions
     x_velocity_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
     y_velocity_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
-  
+
     top_zonal_momentum_flux      = τˣ = Field{Face, Center, Nothing}(grid; boundary_conditions = x_velocity_bcs)
     top_meridional_momentum_flux = τʸ = Field{Center, Face, Nothing}(grid; boundary_conditions = y_velocity_bcs)
     top_ocean_heat_flux          = Jᵀ = Field{Center, Center, Nothing}(grid)

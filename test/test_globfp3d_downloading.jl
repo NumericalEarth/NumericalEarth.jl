@@ -1,7 +1,8 @@
 include("runtests_setup.jl")
 
 using ArchGDAL  # loads NumericalEarthArchGDALExt (the OGR read + rasterize path)
-using NumericalEarth.DataWrangling: BoundingBox, Metadatum
+using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_region_grid
+using NumericalEarth.DataWrangling.GloBFP3D: globfp3d_native_cell_size
 
 # Network-gated: downloads the figshare tile catalog plus one 3D-GloBFP tile archive
 # (hundreds of MB). Excluded from the default suite in runtests.jl, mirroring the
@@ -34,4 +35,27 @@ using NumericalEarth.DataWrangling: BoundingBox, Metadatum
     @test any(>(0), σʰ)
     @test all(λᶠ .≥ 0)
     @test Array(interior(morphometry.gross_building_height, :, :, 1)) ≈ λᵖ .* h
+
+    # Reducing the same region in latitude bands must reproduce the single pass exactly.
+    Δ = globfp3d_native_cell_size(dataset)
+    raster = native_region_grid(region, Δ, Δ)
+    maximum_raster_cells = raster.Nx * (raster.Ny ÷ 4)
+    @test raster.Nx * raster.Ny > maximum_raster_cells    # the limit really forces bands
+
+    banded = building_morphometry(target_grid; dataset, region, maximum_raster_cells)
+    for name in keys(morphometry)
+        @test Array(interior(banded[name], :, :, 1)) == Array(interior(morphometry[name], :, :, 1))
+    end
+end
+
+@testset "3D-GloBFP region with no tiles" begin
+    dataset = GlobalBuildingFootprints3D()
+    # Open ocean south of Hawaii: the tile catalog covers built-up land only, so no tile
+    # intersects and `building_morphometry` errors instead of returning empty fields.
+    region = BoundingBox(longitude = (-150.0, -149.99), latitude = (10.0, 10.01))
+    target_grid = LatitudeLongitudeGrid(CPU(), Float64; size = (2, 2),
+                                        longitude = region.longitude, latitude = region.latitude,
+                                        topology = (Bounded, Bounded, Flat))
+
+    @test_throws ErrorException building_morphometry(target_grid; dataset, region)
 end

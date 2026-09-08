@@ -6,10 +6,10 @@
 ##### under the surface energy flux (positive upward, hence the minus sign)
 ##### plus a restoring term toward a prescribed deep temperature `Tᵈᵉᵉᵖ`:
 #####
-#####     ∂T/∂t = −Jᴱs / C + (Tᵈᵉᵉᵖ − T) / τ
+#####     ∂T/∂t = −Jᴱs / cˡᵃ + (Tᵈᵉᵉᵖ − T) / τ
 #####
-##### where `C = Cdry + Cl · Mˡᵃ` is the effective areal heat capacity
-##### (the liquid-water term `Cl · Mˡᵃ` is included when bucket hydrology is
+##### where `cˡᵃ = cᵈʳʸ + cˡ · Mˡᵃ` is the effective areal heat capacity
+##### (the liquid-water term `cˡ · Mˡᵃ` is included when bucket hydrology is
 ##### present), and `τ` is the deep-restore time scale.
 #####
 ##### `Tᵈᵉᵉᵖ` is prescribed, not prognostic: a `Number`, per-cell
@@ -66,7 +66,7 @@ Adapt.adapt_structure(to, energy::ForceRestoreEnergy) =
 # kinematic momentum flux `τ`. `Tᵈ` is the deep-target temperature.
 # `Jᴱs` is the surface energy flux, positive *upward* (out of the slab), so it
 # enters the budget with a minus sign:
-# ∂T/∂t = −Jᴱs/C + (Tᵈ − T)/τᵈ, with C = Cdry + Cl·max(Mˡᵃ, 0).
+# ∂T/∂t = −Jᴱs/cˡᵃ + (Tᵈ − T)/τᵈ, with cˡᵃ = cᵈʳʸ + cˡ·max(Mˡᵃ, 0).
 @inline function temperature_tendency(i, j, grid, energy::ForceRestoreEnergy,
                                       prognostic, fluxes, diagnostics, time)
     @inbounds begin
@@ -74,11 +74,11 @@ Adapt.adapt_structure(to, energy::ForceRestoreEnergy) =
         Mᵢⱼ = prognostic.M[i, j, 1]
         Jᴱs = fluxes.surface_energy_flux[i, j, 1]
     end
-    Cdry = property_value(energy.dry_heat_capacity, i, j, 1)
-    Cl   = property_value(energy.liquid_heat_capacity, i, j, 1)
-    C    = Cdry + Cl * max(Mᵢⱼ, 0)
+    cᵈʳʸ = property_value(energy.dry_heat_capacity, i, j, 1)
+    cˡ   = property_value(energy.liquid_heat_capacity, i, j, 1)
+    cˡᵃ  = cᵈʳʸ + cˡ * max(Mᵢⱼ, 0)
     Tᵈ   = stateindex(energy.deep_temperature, i, j, 1, grid, time, (Center, Center, Center))
-    return -Jᴱs / C + (Tᵈ - Tᵢⱼ) / energy.deep_time_scale
+    return -Jᴱs / cˡᵃ + (Tᵈ - Tᵢⱼ) / energy.deep_time_scale
 end
 
 time_step!(energy::ForceRestoreEnergy, land, Δt, time) = step_land_temperature!(energy, land, Δt, time)
