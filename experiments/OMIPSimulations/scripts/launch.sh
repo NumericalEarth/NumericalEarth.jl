@@ -127,37 +127,20 @@ Environment variables (physics):
   TRACER_BOUNDARY_SCHEME, MOMENTUM_BOUNDARY_SCHEME
                 BOUNDARY_SCHEME for the tracer and for the momentum reconstructions separately.
                 Default: whatever BOUNDARY_SCHEME is.
-  HORIZONTAL_TEMPERATURE_GRADIENT, VERTICAL_TEMPERATURE_GRADIENT
-  HORIZONTAL_SALINITY_GRADIENT, VERTICAL_SALINITY_GRADIENT
-  VERTICAL_MOMENTUM_GRADIENT
-                CWENOZ reference gradients, used only where the boundary scheme is cwenoz. Each sets
-                the oscillation scale eps = (grad_ref * Delta)^2 below which the reconstruction reads
-                the data as smooth and keeps third order; above it the linear and constant candidates
-                take over. It therefore carries the units of the reconstructed field per metre, which
-                is why there is one per variable and per direction -- Delta is the grid spacing in the
-                direction being reconstructed.
+  TEMPERATURE_VARIATION, SALINITY_VARIATION, MOMENTUM_VARIATION
+                CWENOZ reference variations, used only where the boundary scheme is cwenoz. Each sets
+                eps = variation^2: the cell-to-cell variation of the field below which the reconstruction
+                reads the stencil as noise and keeps third order. The constant candidate takes over above
+                a variation of about 8.6 * variation between adjacent averages.
 
-                All five default to 0, which estimates eps from the stencil as the smaller of the two
-                linear oscillations, i.e. the LOCAL increment squared. That is the right default and a
-                constant is not, for two reasons. First, the constant candidate is capped at d0 = 0.01
-                against d_opt = 0.74, so it only takes over once the second difference exceeds about
-                6.7 * grad_ref * Delta; put grad_ref at the ocean's typical gradient and grad_ref*Delta
-                IS the typical first difference, so a genuine step gets 2% constant weight and nothing
-                is limited at all. Getting the constant to fire needs grad_ref roughly a decade below
-                the typical gradient, and the threshold is then absolute: a large smooth feature limits
-                as hard as a discontinuity. Second, no one value works at every depth, because eps
-                scales as Delta^2 and grows monotonically downwards while the per-cell increment does
-                not -- on an ORCA column grad_T * dz runs 8e-3 K in the 1.5 m top cell, 0.36 K in the
-                thermocline core, 0.20 K at 1000 m and 0.048 K in the 435 m abyssal cell. The stencil
-                estimate follows all of it, holding the constant at its 1% floor on smooth data and
-                giving it the whole weight at a step.
+                It carries the units of the field and no grid spacing, so one value serves every direction
+                and every cell thickness. All default to 0, which reads eps off the stencil: a nonzero
+                value acts only on the horizontal and is inert on the vertical. Each adds its own tag to
+                the run name.
 
-                Set one of these only as a sensitivity probe; each adds its own tag to the run name.
-
-                There is no horizontal momentum gradient: the vorticity, divergence and
-                kinetic-energy-gradient terms reconstruct a vorticity, a divergence flux and a squared
-                velocity, so one constant cannot carry their units and the horizontal scale is read
-                off the stencil.
+                MOMENTUM_VARIATION is a speed in m/s and applies to the vertical momentum reconstruction
+                alone: the horizontal terms reconstruct a vorticity, a divergence flux and a squared
+                velocity, so one constant cannot carry their units.
   ICE_LIQUIDUS  Freezing-point relation. "teos10" (default) is the linear fit to the TEOS-10
                 freezing point expressed in CONSERVATIVE temperature, which is what the ocean
                 carries: Tm = -0.054523 S, accurate to 0.013 K over S = 28-35.5, against 0.032 K
@@ -660,11 +643,9 @@ else
   [[ "$TRACER_BOUNDARY_SCHEME" != "default" ]]   && RUN_NAME="${RUN_NAME}_tr${TRACER_BOUNDARY_SCHEME}"
   [[ "$MOMENTUM_BOUNDARY_SCHEME" != "default" ]] && RUN_NAME="${RUN_NAME}_mom${MOMENTUM_BOUNDARY_SCHEME}"
 fi
-[[ -n "${HORIZONTAL_TEMPERATURE_GRADIENT:-}" ]]  && RUN_NAME="${RUN_NAME}_gTh${HORIZONTAL_TEMPERATURE_GRADIENT}"
-[[ -n "${VERTICAL_TEMPERATURE_GRADIENT:-}" ]]    && RUN_NAME="${RUN_NAME}_gTz${VERTICAL_TEMPERATURE_GRADIENT}"
-[[ -n "${HORIZONTAL_SALINITY_GRADIENT:-}" ]]     && RUN_NAME="${RUN_NAME}_gSh${HORIZONTAL_SALINITY_GRADIENT}"
-[[ -n "${VERTICAL_SALINITY_GRADIENT:-}" ]]       && RUN_NAME="${RUN_NAME}_gSz${VERTICAL_SALINITY_GRADIENT}"
-[[ -n "${VERTICAL_MOMENTUM_GRADIENT:-}" ]]       && RUN_NAME="${RUN_NAME}_guz${VERTICAL_MOMENTUM_GRADIENT}"
+[[ -n "${TEMPERATURE_VARIATION:-}" ]]            && RUN_NAME="${RUN_NAME}_vT${TEMPERATURE_VARIATION}"
+[[ -n "${SALINITY_VARIATION:-}" ]]               && RUN_NAME="${RUN_NAME}_vS${SALINITY_VARIATION}"
+[[ -n "${MOMENTUM_VARIATION:-}" ]]               && RUN_NAME="${RUN_NAME}_vu${MOMENTUM_VARIATION}"
 [[ "${ICE_TILT:-false}" == "true" ]]             && RUN_NAME="${RUN_NAME}_icetilt"
 [[ -n "${IC_BLEND:-}" ]]                         && RUN_NAME="${RUN_NAME}_icblend${IC_BLEND}"
 [[ "$IC_CONDITIONS" != "default" ]]              && RUN_NAME="${RUN_NAME}_summerice"
@@ -1059,11 +1040,9 @@ ADVECTION_KWARG=""
 [[ "$TRACER_ORDER" != "7" ]] && ADVECTION_KWARG="${ADVECTION_KWARG}tracer_advection_order = ${TRACER_ORDER},"
 [[ "$TRACER_BOUNDARY_SCHEME" != "default" ]]   && ADVECTION_KWARG="${ADVECTION_KWARG}tracer_boundary_scheme = :${TRACER_BOUNDARY_SCHEME},"
 [[ "$MOMENTUM_BOUNDARY_SCHEME" != "default" ]] && ADVECTION_KWARG="${ADVECTION_KWARG}momentum_boundary_scheme = :${MOMENTUM_BOUNDARY_SCHEME},"
-[[ -n "${HORIZONTAL_TEMPERATURE_GRADIENT:-}" ]] && ADVECTION_KWARG="${ADVECTION_KWARG}horizontal_temperature_reference_gradient = ${HORIZONTAL_TEMPERATURE_GRADIENT},"
-[[ -n "${VERTICAL_TEMPERATURE_GRADIENT:-}" ]]   && ADVECTION_KWARG="${ADVECTION_KWARG}vertical_temperature_reference_gradient = ${VERTICAL_TEMPERATURE_GRADIENT},"
-[[ -n "${HORIZONTAL_SALINITY_GRADIENT:-}" ]]    && ADVECTION_KWARG="${ADVECTION_KWARG}horizontal_salinity_reference_gradient = ${HORIZONTAL_SALINITY_GRADIENT},"
-[[ -n "${VERTICAL_SALINITY_GRADIENT:-}" ]]      && ADVECTION_KWARG="${ADVECTION_KWARG}vertical_salinity_reference_gradient = ${VERTICAL_SALINITY_GRADIENT},"
-[[ -n "${VERTICAL_MOMENTUM_GRADIENT:-}" ]]      && ADVECTION_KWARG="${ADVECTION_KWARG}vertical_momentum_reference_gradient = ${VERTICAL_MOMENTUM_GRADIENT},"
+[[ -n "${TEMPERATURE_VARIATION:-}" ]]           && ADVECTION_KWARG="${ADVECTION_KWARG}temperature_reference_variation = ${TEMPERATURE_VARIATION},"
+[[ -n "${SALINITY_VARIATION:-}" ]]              && ADVECTION_KWARG="${ADVECTION_KWARG}salinity_reference_variation = ${SALINITY_VARIATION},"
+[[ -n "${MOMENTUM_VARIATION:-}" ]]              && ADVECTION_KWARG="${ADVECTION_KWARG}momentum_reference_variation = ${MOMENTUM_VARIATION},"
 ICE_LIQUIDUS="${ICE_LIQUIDUS:-teos10}"
 [[ "$ICE_LIQUIDUS" != "teos10" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}sea_ice_liquidus = :${ICE_LIQUIDUS},"
 ICE_DRAGREF="${ICE_DRAGREF:-6}"
