@@ -3,8 +3,8 @@ using CubedSphere.SphericalGeometry: lat_lon_to_cartesian, cartesian_to_lat_lon,
 using Distances: haversine
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FPivotZipperBoundaryCondition,
                                        NoFluxBoundaryCondition, FieldBoundaryConditions
-using Oceananigans.Fields: set!, convert_to_0_360
-using Oceananigans.Grids: RightFaceFolded, generate_coordinate
+using Oceananigans.Fields: set!
+using Oceananigans.Grids: RightFaceFolded, generate_coordinate, longitude_in_same_window
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar
 
@@ -77,13 +77,9 @@ function orient_xy(data, Nx, Ny; name = "variable")
     end
 end
 
-@inline wrap_longitude(λ) = convert_to_0_360(λ + 180) - 180
-
 @inline function midpoint_longitude(λ₁, λ₂)
-    Δλ = λ₂ - λ₁
-    Δλ = ifelse(Δλ > 180, Δλ - 360, Δλ)
-    Δλ = ifelse(Δλ < -180, Δλ + 360, Δλ)
-    return wrap_longitude(λ₁ + Δλ / 2)
+    Δλ = longitude_in_same_window(λ₂, λ₁) - λ₁
+    return longitude_in_same_window(λ₁ + Δλ / 2, 0)
 end
 
 @inline function spherical_midpoint(λ₁, φ₁, λ₂, φ₂)
@@ -105,8 +101,7 @@ end
     z /= n
 
     φm, λm = cartesian_to_lat_lon(x, y, z)
-    λm = wrap_longitude(λm)
-    return λm, φm
+    return longitude_in_same_window(λm, 0), φm
 end
 
 @inline function spherical_quadrilateral_area_unit(λ₁, φ₁, λ₂, φ₂, λ₃, φ₃, λ₄, φ₄)
