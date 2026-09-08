@@ -4,11 +4,9 @@ using Distances: haversine
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FPivotZipperBoundaryCondition,
                                        NoFluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Fields: set!, convert_to_0_360
-using Oceananigans.DistributedComputations: Distributed, concatenate_local_sizes,
-                                            insert_connected_topology, local_size, ranks
-using Oceananigans.Grids: FullyConnected, RightFaceFolded, generate_coordinate, halo_size
+using Oceananigans.Grids: RightFaceFolded, generate_coordinate
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
-using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, partition_tripolar_metric, receiving_rank
+using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, distribute_tripolar_grid
 
 using ..DataWrangling: dataset_variable_name, default_download_directory
 using ..DataWrangling.ORCA: ORCAOne, default_south_rows_to_remove
@@ -401,105 +399,6 @@ function remove_minor_orca_basins(bottom_height, major_basins)
     return Array(bottom_field.data[1:Nx, 1:Ny, 1])
 end
 
-distribute_orca_grid(global_grid, arch) = on_architecture(arch, global_grid)
-
-# Cut the global eORCA grid down to this rank's slice; the mesh itself can only be assembled globally,
-# because `halo_fill_stagger` closes the northern fold across all of x.
-#
-# TODO: move to Oceananigans as `distribute_tripolar_grid(arch, global_grid)`. This duplicates the body
-# of `TripolarGrid(arch::Distributed, ...)` in `OrthogonalSphericalShellGrids/distributed_tripolar_grid.jl`
-# after its `global_grid = ...` line, and must be kept in step with it by hand until it is extracted.
-function distribute_orca_grid(global_grid, arch::Distributed)
-
-    workers = ranks(arch.partition)
-    px = ifelse(isnothing(arch.partition.x), 1, arch.partition.x)
-    py = ifelse(isnothing(arch.partition.y), 1, arch.partition.y)
-
-    if isodd(px) && px != 1
-        throw(ArgumentError("The x partition $(px) is not supported by ORCAGrid: the fold pairs each " *
-                            "northern rank with the rank mirrored across the pole, so the x partition " *
-                            "must be 1 or an even number."))
-    end
-
-    if px != 1 && py == 1
-        throw(ArgumentError("An x-only partitioning is not supported by ORCAGrid. " *
-                            "Use a y partitioning or an x-y pencil partitioning."))
-    end
-
-    Nx, Ny, Nz = global_size = size(global_grid)
-    Hx, Hy, Hz = halo_size(global_grid)
-
-    lsize   = local_size(arch, global_size)
-    nxlocal = concatenate_local_sizes(lsize, arch, 1)
-    nylocal = concatenate_local_sizes(lsize, arch, 2)
-
-    xrank = ifelse(isnothing(arch.partition.x), 0, arch.local_index[1] - 1)
-    yrank = ifelse(isnothing(arch.partition.y), 0, arch.local_index[2] - 1)
-
-    # The j-range
-    jstart = 1 + sum(nylocal[1:yrank])
-    jend   = yrank == workers[2] - 1 ? Ny : sum(nylocal[1:yrank+1])
-    jrange = jstart-Hy:jend+Hy
-
-    # The i-range
-    istart = 1 + sum(nxlocal[1:xrank])
-    iend   = xrank == workers[1] - 1 ? Nx : sum(nxlocal[1:xrank+1])
-    irange = istart-Hx:iend+Hx
-
-    slice(metric_name) = on_architecture(arch, partition_tripolar_metric(global_grid, metric_name, irange, jrange))
-
-    LX = workers[1] == 1 ? Periodic : FullyConnected
-
-    # 1-based indices for insert_connected_topology
-    Rx, Ry = workers[1], workers[2]
-    rx, ry = xrank + 1, yrank + 1
-    LY = insert_connected_topology(topology(global_grid, 2), Ry, ry, Rx, rx)
-    nx = nxlocal[rx]
-    ny = nylocal[ry]
-
-    # Fix corner halos passing in case workers[1] != 1
-    if workers[1] != 1
-        northwest_idx_x = ranks(arch)[1] - arch.local_index[1] + 2
-        northeast_idx_x = ranks(arch)[1] - arch.local_index[1]
-
-        if northwest_idx_x > workers[1]
-            northwest_idx_x = arch.local_index[1]
-        end
-
-        if northeast_idx_x < 1
-            northeast_idx_x = arch.local_index[1]
-        end
-
-        # Make sure the northwest and northeast connectivities are correct
-        northwest_recv_rank = receiving_rank(arch; receive_idx_x = northwest_idx_x)
-        northeast_recv_rank = receiving_rank(arch; receive_idx_x = northeast_idx_x)
-        north_recv_rank     = receiving_rank(arch)
-
-        if yrank == workers[2] - 1
-            arch.connectivity.northwest = northwest_recv_rank
-            arch.connectivity.northeast = northeast_recv_rank
-            arch.connectivity.north     = north_recv_rank
-        end
-    end
-
-    FT = eltype(global_grid)
-
-    return OrthogonalSphericalShellGrid{LX, LY, Bounded}(
-        arch,
-        nx, ny, Nz,
-        Hx, Hy, Hz,
-        convert(FT, global_grid.Lz),
-        slice(:λᶜᶜᵃ), slice(:λᶠᶜᵃ), slice(:λᶜᶠᵃ), slice(:λᶠᶠᵃ),
-        slice(:φᶜᶜᵃ), slice(:φᶠᶜᵃ), slice(:φᶜᶠᵃ), slice(:φᶠᶠᵃ),
-        on_architecture(arch, global_grid.z),
-        slice(:Δxᶜᶜᵃ), slice(:Δxᶠᶜᵃ), slice(:Δxᶜᶠᵃ), slice(:Δxᶠᶠᵃ),
-        slice(:Δyᶜᶜᵃ), slice(:Δyᶠᶜᵃ), slice(:Δyᶜᶠᵃ), slice(:Δyᶠᶠᵃ),
-        slice(:Azᶜᶜᵃ), slice(:Azᶠᶜᵃ), slice(:Azᶜᶠᵃ), slice(:Azᶠᶠᵃ),
-        convert(FT, global_grid.radius),
-        global_grid.conformal_mapping
-    )
-end
-
 """
     ORCAGrid(arch = CPU(), FT::DataType = Float64;
              dataset,
@@ -628,6 +527,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     to_host(data) = map(FT, data)
 
+    # `halo_fill_stagger` closed the northern fold across all of x, so the mesh is assembled for the
+    # whole globe and then cut to this rank's slice.
     global_grid = OrthogonalSphericalShellGrid{Periodic, RightFaceFolded, Bounded}(
         CPU(),
         Nx, Ny, Nz,
@@ -643,7 +544,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
         Tripolar(north_poles_latitude, first_pole_longitude, southernmost_latitude)
     )
 
-    underlying_grid = distribute_orca_grid(global_grid, arch)
+    underlying_grid = distribute_tripolar_grid(arch, global_grid)
 
     with_bathymetry || return underlying_grid
 
@@ -671,8 +572,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     end
 
     bottom_field = Field{Center, Center, Nothing}(underlying_grid)
-    set!(bottom_field, global_orca_bottom_height(read_global_bottom_height, underlying_grid,
-                                                 arch, FT, major_basins))
+    set!(bottom_field, global_orca_bottom_height(read_global_bottom_height, underlying_grid, arch, FT, major_basins))
 
     return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_field); active_cells_map)
 end
