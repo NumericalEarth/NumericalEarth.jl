@@ -26,7 +26,12 @@ exchange_grid(atmosphere, ::Nothing, ::Nothing, land) = land.grid
 # Prescribed fields are FieldTimeSeries; set a `Number` into every time slice.
 # `nothing` leaves the field untouched.
 set_prescribed_field!(fts, ::Nothing) = nothing
-set_prescribed_field!(fts, value::Number) = Oceananigans.set!(fts, value)
+
+function set_prescribed_field!(fts, value::Number)
+    Oceananigans.set!(fts, value)
+    fill_halo_regions!(fts)
+    return nothing
+end
 
 #####
 ##### Functions extended by sea-ice and ocean models

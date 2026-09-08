@@ -18,10 +18,10 @@ using ClimaSeaIce.Rheologies
                             halo = (7, 7, 7),
                             z = (-5000, 0))
 
-        bottom_height = regrid_bathymetry(grid;
-                                          minimum_depth = 10,
-                                          interpolation_passes = 5,
-                                          major_basins = 1)
+        bottom_height = synthetic_bottom_height(grid;
+                                                minimum_depth = 10,
+                                                interpolation_passes = 5,
+                                                major_basins = 1)
 
         grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
         free_surface = SplitExplicitFreeSurface(grid; substeps=20)
@@ -30,59 +30,48 @@ using ClimaSeaIce.Rheologies
         ##### Coupled ocean-sea ice and prescribed atmosphere
         #####
 
-        for dataset in [ECCO4Monthly(), EN4Monthly()]
-            @info "Testing timestepping with $(typeof(dataset)) on $A"
+        initial_state = MetadataSet(:temperature, :salinity; dataset=SyntheticOcean(), date=DateTime(2000, 1, 1))
 
-            start_date = DateTimeProlepticGregorian(1993, 1, 1)
-            time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
-            end_date = DateTimeProlepticGregorian(1993, 2, 1)
-            dates = start_date : time_resolution : end_date
+        ocean = ocean_simulation(grid; free_surface)
 
-            initial_state = MetadataSet(:temperature, :salinity;
-                                        dataset, date=start_date)
+        sea_ice  = sea_ice_simulation(grid, ocean; advection=WENO(order=7))
+        liquidus = sea_ice.model.phase_transitions.liquidus
 
-            ocean = ocean_simulation(grid; free_surface)
+        # Set the ocean temperature and salinity
+        set!(ocean.model, initial_state)
+        above_freezing_ocean_temperature!(ocean, grid, sea_ice)
 
-            sea_ice  = sea_ice_simulation(grid, ocean; advection=WENO(order=7))
-            liquidus = sea_ice.model.phase_transitions.liquidus
+        # Test that ocean temperatures are above freezing
+        T = on_architecture(CPU(), ocean.model.tracers.T)
+        S = on_architecture(CPU(), ocean.model.tracers.S)
 
-            # Set the ocean temperature and salinity
-            set!(ocean.model, initial_state)
-            above_freezing_ocean_temperature!(ocean, grid, sea_ice)
+        Tm = KernelFunctionOperation{Center, Center, Center}(kernel_melting_temperature, grid, liquidus, S)
+        @test all(T .≥ Tm)
 
-            # Test that ocean temperatures are above freezing
-            T = on_architecture(CPU(), ocean.model.tracers.T)
-            S = on_architecture(CPU(), ocean.model.tracers.S)
+        atmosphere = synthetic_prescribed_atmosphere(arch)
+        radiation = synthetic_prescribed_radiation(arch)
 
-            Tm = KernelFunctionOperation{Center, Center, Center}(kernel_melting_temperature, grid, liquidus, S)
-            @test all(T .≥ Tm)
+        # Fluxes are computed when the model is constructed, so we just test that this works.
+        # And that we can time step with sea ice
+        @test begin
+            coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+            time_step!(coupled_model, 1)
+            true
+        end
 
-            atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
-            radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
+        @info "Testing OceanSeaIceModel with land on $A..."
+        land = synthetic_prescribed_land(arch)
 
-            # Fluxes are computed when the model is constructed, so we just test that this works.
-            # And that we can time step with sea ice
-            @test begin
-                coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
-                time_step!(coupled_model, 1)
-                true
-            end
+        @test begin
+            ocean_with_land = ocean_simulation(grid; free_surface)
+            set!(ocean_with_land.model, initial_state)
+            sea_ice_with_land = sea_ice_simulation(grid, ocean_with_land; advection=WENO(order=7))
+            above_freezing_ocean_temperature!(ocean_with_land, grid, sea_ice_with_land)
 
-            @info "Testing OceanSeaIceModel with land on $A..."
-            land_dates = all_dates(RepeatYearJRA55(), :river_freshwater_flux)
-            land = JRA55PrescribedLand(arch; end_date=land_dates[2])
-
-            @test begin
-                ocean_with_land = ocean_simulation(grid; free_surface)
-                set!(ocean_with_land.model, initial_state)
-                sea_ice_with_land = sea_ice_simulation(grid, ocean_with_land; advection=WENO(order=7))
-                above_freezing_ocean_temperature!(ocean_with_land, grid, sea_ice_with_land)
-
-                coupled_model = OceanSeaIceModel(ocean_with_land, sea_ice_with_land; atmosphere, land, radiation)
-                @test !isnothing(coupled_model.interfaces.exchanger.land)
-                time_step!(coupled_model, 1)
-                true
-            end
+            coupled_model = OceanSeaIceModel(ocean_with_land, sea_ice_with_land; atmosphere, land, radiation)
+            @test !isnothing(coupled_model.interfaces.exchanger.land)
+            time_step!(coupled_model, 1)
+            true
         end
     end
 end

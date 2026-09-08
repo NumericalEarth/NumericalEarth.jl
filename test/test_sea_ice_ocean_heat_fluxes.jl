@@ -199,8 +199,8 @@ end
         ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
         sea_ice = sea_ice_simulation(grid, ocean)
 
-        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
-        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
+        atmosphere = synthetic_prescribed_atmosphere(arch)
+        radiation = synthetic_prescribed_radiation(arch)
 
         for sea_ice_ocean_heat_flux in [IceBathHeatFlux(), ThreeEquationHeatFlux()]
             @testset "Salt flux with $(nameof(typeof(sea_ice_ocean_heat_flux)))" begin
@@ -254,8 +254,8 @@ end
         ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
         sea_ice = sea_ice_simulation(grid, ocean)
 
-        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
-        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
+        atmosphere = synthetic_prescribed_atmosphere(arch)
+        radiation = synthetic_prescribed_radiation(arch)
 
         for sea_ice_ocean_heat_flux in [IceBathHeatFlux(), ThreeEquationHeatFlux()]
             @testset "Flux magnitude with $(nameof(typeof(sea_ice_ocean_heat_flux)))" begin
@@ -391,8 +391,8 @@ end
         ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
         sea_ice = sea_ice_simulation(grid, ocean)
 
-        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
-        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
+        atmosphere = synthetic_prescribed_atmosphere(arch)
+        radiation = synthetic_prescribed_radiation(arch)
 
         for sea_ice_ocean_heat_flux in [IceBathHeatFlux(), ThreeEquationHeatFlux()]
             @testset "Frazil with $(nameof(typeof(sea_ice_ocean_heat_flux)))" begin
@@ -441,8 +441,8 @@ end
         ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
         sea_ice = sea_ice_simulation(grid, ocean)
 
-        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
-        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
+        atmosphere = synthetic_prescribed_atmosphere(arch)
+        radiation = synthetic_prescribed_radiation(arch)
 
         # Test with ThreeEquationHeatFlux (default)
         @test begin
