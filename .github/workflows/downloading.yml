@@ -105,6 +105,14 @@ jobs:
       - uses: julia-actions/cache@v3
         with:
           cache-scratchspaces: false
+      - name: Instantiate test environment
+        timeout-minutes: 60
+        shell: bash
+        run: |
+          julia --project=test --color=yes --check-bounds=yes -e '
+              using Pkg;
+              Pkg.instantiate()
+          '
       # `test_asterged_downloading` is deliberately absent: it needs NASA Earthdata
       # credentials (EARTHDATA_USERNAME / EARTHDATA_PASSWORD), which this repository has no
       # secrets for. Add it here once those secrets exist.
