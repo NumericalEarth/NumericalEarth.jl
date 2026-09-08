@@ -1,4 +1,4 @@
-using Oceananigans.Grids: inactive_node, λnodes, φnodes, topology, Flat
+using Oceananigans.Grids: inactive_node, topology, Flat
 using Oceananigans.Operators: Azᶜᶜᶜ
 using Oceananigans.Architectures: on_architecture, CPU
 using Oceananigans.Fields: interior
@@ -84,11 +84,11 @@ function outlet_indices_from_mask(outlet_mask, grid)
     outlet_i = [I[1] for I in indices]
     outlet_j = [I[2] for I in indices]
 
-    λc = Array(λnodes(grid, Center(), Center(), Center()))
-    φc = Array(φnodes(grid, Center(), Center(), Center()))
-    nodes = [node_λφ(λc, φc, outlet_i[n], outlet_j[n]) for n in eachindex(outlet_i)]
+    cpu_grid = on_architecture(CPU(), grid)
+    outlet_λ = [λnode(outlet_i[n], outlet_j[n], 1, cpu_grid, Center(), Center(), Center()) for n in eachindex(outlet_i)]
+    outlet_φ = [φnode(outlet_i[n], outlet_j[n], 1, cpu_grid, Center(), Center(), Center()) for n in eachindex(outlet_i)]
 
-    return outlet_i, outlet_j, first.(nodes), last.(nodes)
+    return outlet_i, outlet_j, outlet_λ, outlet_φ
 end
 
 #####
@@ -120,11 +120,8 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     wet  = Array(interior(wet_field))[:, :, 1]
     area = Array(interior(area_field))[:, :, 1]
 
-    λc = Array(λnodes(target_grid, Center(), Center(), Center()))
-    φc = Array(φnodes(target_grid, Center(), Center(), Center()))
-
     Nx, Ny = size(wet)
-    ocean_cells = wet_cells(wet, λc, φc)
+    ocean_cells = wet_cells(wet, on_architecture(CPU(), target_grid))
     maximum_degrees = maximum_search_radius * (360 / Nx + 180 / Ny) / 2
 
     # Split each mouth's discharge equally over its plume footprint so no single coastal cell receives
@@ -179,24 +176,23 @@ end
 """
     build_flux_routing(target_grid, flux_time_series;
                        maximum_search_radius = 5, spread_radius = 1.2,
-                       maximum_spread_cells = nothing, outlet_detection_snapshots = 365)
+                       maximum_spread_cells = nothing)
 
 Route a component stored as a per-area mass flux (kg m⁻² s⁻¹) on coastal cells — the JRA55-do convention — onto `target_grid`. Mouths are
-the cells positive in any of the first `outlet_detection_snapshots` records, weighted by their source-cell area. Remaining keyword arguments
+the cells positive in any record of `flux_time_series`, weighted by their source-cell area. Remaining keyword arguments
 go to [`build_river_routing`](@ref).
 """
 function build_flux_routing(target_grid, flux_time_series;
                             maximum_search_radius = 5,
                             spread_radius = 1.2,
-                            maximum_spread_cells = nothing,
-                            outlet_detection_snapshots = 365)
+                            maximum_spread_cells = nothing)
 
     source_grid = on_architecture(CPU(), flux_time_series.grid)
     kᴺ = size(source_grid, 3)
 
-    # Scan a full seasonal cycle so intermittent and seasonally frozen rivers stay in the map.
+    # Every record, so intermittent and seasonally frozen rivers stay in the map.
     outlet_mask = Array(interior(flux_time_series[1]))[:, :, 1] .> 0
-    for n in 2:min(outlet_detection_snapshots, length(flux_time_series.times))
+    for n in 2:length(flux_time_series.times)
         outlet_mask .|= Array(interior(flux_time_series[n]))[:, :, 1] .> 0
     end
 
@@ -215,9 +211,6 @@ end
     end
 end
 
-node_λφ(λc::AbstractVector, φc::AbstractVector, i, j) = (λc[i], φc[j])
-node_λφ(λc::AbstractMatrix, φc::AbstractMatrix, i, j) = (λc[i, j], φc[i, j])
-
 wrap180(λ) = λ - 360 * floor((λ + 180) / 360)
 
 # Approximate squared distance on the sphere (equirectangular, degrees).
@@ -227,15 +220,15 @@ function squared_distance(λ₁, φ₁, λ₂, φ₂)
     return Δλ^2 + Δφ^2
 end
 
-function wet_cells(wet, λc, φc)
+function wet_cells(wet, grid)
     Nx, Ny = size(wet)
     wet_i = Int[]; wet_j = Int[]
     wet_λ = Float64[]; wet_φ = Float64[]
     for j in 1:Ny, i in 1:Nx
         wet[i, j] || continue
-        λ, φ = node_λφ(λc, φc, i, j)
         push!(wet_i, i); push!(wet_j, j)
-        push!(wet_λ, λ); push!(wet_φ, φ)
+        push!(wet_λ, λnode(i, j, 1, grid, Center(), Center(), Center()))
+        push!(wet_φ, φnode(i, j, 1, grid, Center(), Center(), Center()))
     end
     return (i = wet_i, j = wet_j, λ = wet_λ, φ = wet_φ)
 end
@@ -243,9 +236,12 @@ end
 """
     spread_target_cells(wet, λₒ, φₒ, maximum_degrees, spread_radius, maximum_cells)
 
-The ocean cells a mouth at `(λₒ, φₒ)` discharges into: the wet cells within `spread_radius` degrees of its
-landing cell, nearest first, capped at `maximum_cells`. `spread_radius = nothing` spreads over the whole
-`maximum_degrees` reach. Empty when no wet cell lies within `maximum_degrees`.
+The ocean cells a mouth at `(λₒ, φₒ)` discharges into, in two steps: the mouth lands on the nearest wet cell
+within `maximum_degrees`, and the footprint is the wet cells within `spread_radius` degrees of that landing
+cell, nearest first, capped at `maximum_cells`. The footprint is centered on the landing cell rather than on
+the mouth, so a mouth relocated far offshore — the Ob and Yenisei move 2-3° — still gets a full footprint.
+`spread_radius = nothing` spreads over the whole `maximum_degrees` reach. Empty when no wet cell lies within
+`maximum_degrees`.
 """
 function spread_target_cells(wet, λₒ, φₒ, maximum_degrees, spread_radius, maximum_cells)
     reach = maximum_degrees^2
@@ -261,8 +257,6 @@ function spread_target_cells(wet, λₒ, φₒ, maximum_degrees, spread_radius, 
     end
     nearest_distance < reach || return Tuple{Int, Int}[]
 
-    # The footprint is centered on the landing cell, so mouths relocated onto the shelf (the Ob and
-    # Yenisei move 2-3°) keep a full footprint.
     λ★, φ★ = wet.λ[nearest], wet.φ[nearest]
     footprint = isnothing(spread_radius) ? reach : spread_radius^2
     targets = [(squared_distance(λ★, φ★, wet.λ[n], wet.φ[n]), n) for n in reachable]

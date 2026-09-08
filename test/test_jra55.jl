@@ -149,7 +149,8 @@ using NumericalEarth.JRA55: download_JRA55_cache
         # Test JRA55PrescribedLand loads river and iceberg data with correct frequency
         land_grid = LatitudeLongitudeGrid(arch; size=(20, 10, 1), longitude=(0, 360),
                                           latitude=(-60, 60), z=(-100, 0))
-        land = JRA55PrescribedLand(land_grid; time_indices_in_memory=2, outlet_detection_snapshots=2)
+        river_dates = NumericalEarth.DataWrangling.all_dates(JRA55.RepeatYearJRA55(), :river_freshwater_flux)
+        land = JRA55PrescribedLand(land_grid; time_indices_in_memory=2, end_date=river_dates[2])
         @test land isa NumericalEarth.Lands.PrescribedLand
         @test haskey(land.freshwater_flux, :rivers)
         @test haskey(land.freshwater_flux, :icebergs)
