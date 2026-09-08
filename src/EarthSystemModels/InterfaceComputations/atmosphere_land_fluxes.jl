@@ -19,12 +19,19 @@ the given turbulent-flux closure, interface-temperature model, atmosphere-relati
 velocity model, and specific-humidity formulation. Pass the result as
 `atmosphere_land_interface = ...` to `ComponentInterfaces` /
 `AtmosphereLandModel` to override the default.
+
+The flux closure's roughness lengths and zero-plane displacement may be per-cell
+`Field`s at `(Center, Center, Nothing)` on `grid` — for example from
+`urban_roughness` or a canopy roughness closure — localized to each cell before the
+Monin--Obukhov solve.
 """
 function atmosphere_land_interface(grid, atmosphere, land;
                                    fluxes              = default_atmosphere_land_fluxes(land, eltype(grid)),
                                    temperature         = BulkTemperature(),
                                    velocity_difference = RelativeVelocity(),
                                    specific_humidity   = default_al_specific_humidity(land))
+    validate_flux_formulation(fluxes, grid)
+
     al_fluxes = AtmosphereSurfaceFluxes(grid)
     al_properties = InterfaceProperties(specific_humidity, temperature, velocity_difference)
     interface_temperature = Field{Center, Center, Nothing}(grid)
@@ -67,8 +74,6 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     land_state = (T = land_exchanger_state.T,
                   saturation = land_exchanger_state.saturation)
 
-    land_properties = atmosphere_land_surface_properties(land_exchanger_state)
-
     radiation = coupled_model.radiation
     radiation_kernel_props = kernel_radiation_properties(radiation)
     radiation_exchanger    = exchanger.radiation
@@ -87,20 +92,11 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
             atmosphere_data,
             interface_properties,
             atmosphere_properties,
-            land_properties,
             radiation_kernel_props,
             radiation_state)
 
     return nothing
 end
-
-# Roughness and zero-plane displacement live on the flux closure
-# (`atmosphere_land_fluxes`), not the land state — `SlabLand` carries neither.
-# A land model that provides per-cell values (`momentum_roughness_length`,
-# `scalar_roughness_length`, `zero_plane_displacement`) overrides these for its
-# own land state type.
-@inline atmosphere_land_surface_properties(land_state) = (;)
-@inline local_atmosphere_land_surface_properties(land_properties, i, j) = (;)
 
 #####
 ##### Land surface state materialized into the interface state.
@@ -142,7 +138,6 @@ end
                                                            atmosphere_state,
                                                            interface_properties,
                                                            atmosphere_properties,
-                                                           land_properties,
                                                            radiation_kernel_props,
                                                            radiation_exchanger_state)
 
@@ -158,12 +153,14 @@ end
     Tₛ = state2dindex(land_state.T, i, j)
     FT = typeof(Tₛ)
 
+    # Collapse Field-valued roughness lengths and displacement to this cell's values.
+    local_turbulent_flux_formulation = local_flux_formulation(turbulent_flux_formulation, i, j)
+
     # Surface velocities are zero for land.
     uₛ = zero(FT)
     vₛ = zero(FT)
 
     local_interior_state = (u = uₛ, v = vₛ, T = Tₛ)
-    local_land_properties = local_atmosphere_land_surface_properties(land_properties, i, j)
 
     radiation_state = air_land_interface_radiation_state(radiation_kernel_props,
                                                          radiation_exchanger_state,
@@ -178,14 +175,14 @@ end
                                                     InterfaceVelocities(uₛ, vₛ),
                                                     q_formulation, land_state, Tₛ, qₛ)
 
-    Ψₛ = compute_interface_state(turbulent_flux_formulation,
+    Ψₛ = compute_interface_state(local_turbulent_flux_formulation,
                                  initial_interface_state,
                                  Ψₐ,
                                  local_interior_state,
                                  radiation_state,
                                  interface_properties,
                                  atmosphere_properties,
-                                 local_land_properties)
+                                 (;))
 
     ℒˡ = AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, Ψₐ.T)
 

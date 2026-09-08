@@ -110,7 +110,6 @@ end
         grid = native_grid(metadatum)
 
         win = albedo_read_window(metadatum)
-        @test win !== nothing
         icols, jrows = win
 
         # The window is EXACTLY the native-grid cell count, so

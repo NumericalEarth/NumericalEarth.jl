@@ -5,56 +5,9 @@ MPI.Init()
 
 using CFTime
 using Dates
-using NCDatasets
 using NumericalEarth.DataWrangling: metadata_path
 using Oceananigans.DistributedComputations
 using Oceananigans.DistributedComputations: reconstruct_global_grid
-
-# We start by building a fake bathymetry on rank 0 and save it to file
-rm("./trivial_bathymetry.nc", force=true)
-
-res = 0.5 # degrees
-λ = -180+res/2:res:180-res/2
-φ = 0:res:50
-
-Nλ = length(λ)
-Nφ = length(φ)
-
-@root begin
-    ds = NCDataset("./trivial_bathymetry.nc", "c")
-
-    # Define the dimension "lon" and "lat" with the size Nλ and Nφ respectively
-    defDim(ds, "lon", Nλ)
-    defDim(ds, "lat", Nφ)
-    defVar(ds, "lat", Float32, ("lat", ))
-    defVar(ds, "lon", Float32, ("lon", ))
-
-    # Define the variables z
-    z = defVar(ds, "z", Float32, ("lon", "lat"))
-
-    # Generate some example data
-    data = [Float32(-i) for i = 1:Nλ, j = 1:Nφ]
-
-    # write a the complete data set
-    ds["lon"][:] = λ
-    ds["lat"][:] = φ
-    z[:, :] = data
-
-    close(ds)
-end
-
-struct TrivalBathymetry end
-
-using Downloads: Downloads, download
-import NumericalEarth.DataWrangling: z_interfaces, longitude_interfaces, latitude_interfaces, metadata_filename
-
-Downloads.download(::Metadatum{<:TrivalBathymetry}) = nothing
-Base.size(::TrivalBathymetry) = (Nλ, Nφ, 1)
-Base.size(::TrivalBathymetry, variable) = (Nλ, Nφ, 1)
-z_interfaces(::TrivalBathymetry) = (0, 1)
-longitude_interfaces(::TrivalBathymetry) = (-180, 180)
-latitude_interfaces(::TrivalBathymetry) = (0, 50)
-metadata_filename(::TrivalBathymetry, name, date, region) = "trivial_bathymetry.nc"
 
 @testset "Distributed ECCO download" begin
     dates = DateTimeProlepticGregorian(1992, 1, 1) : Month(1) : DateTimeProlepticGregorian(1994, 4, 1)
@@ -67,7 +20,7 @@ metadata_filename(::TrivalBathymetry, name, date, region) = "trivial_bathymetry.
 end
 
 @testset "Distributed Bathymetry interpolation" begin
-    TrivialBathymetry_metadata = Metadata(:z, TrivalBathymetry(), nothing, nothing, ".")
+    metadata = Metadatum(:bottom_height; dataset = SyntheticBathymetry())
 
     global_grid = LatitudeLongitudeGrid(CPU();
                                         size = (40, 40, 1),
@@ -76,8 +29,7 @@ end
                                         z = (0, 1))
 
     interpolation_passes = 4
-    global_height = regrid_bathymetry(global_grid, TrivialBathymetry_metadata;
-                                      interpolation_passes)
+    global_height = regrid_bathymetry(global_grid, metadata; interpolation_passes, cache = false)
 
     arch_x  = Distributed(CPU(), partition=Partition(4, 1))
     arch_y  = Distributed(CPU(), partition=Partition(1, 4))
@@ -90,8 +42,7 @@ end
                                            latitude = (0, 20),
                                            z = (0, 1))
 
-        local_height = regrid_bathymetry(local_grid, TrivialBathymetry_metadata;
-                                         interpolation_passes)
+        local_height = regrid_bathymetry(local_grid, metadata; interpolation_passes, cache = false)
 
         Nx, Ny, _ = size(local_grid)
         rx, ry, _ = arch.local_index

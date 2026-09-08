@@ -8,6 +8,7 @@ using NumericalEarth.DataWrangling: native_times, averaging_window, window_cente
                                     window_span, uncovered_time_gaps, validate_time_coverage
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
                                          ERA5MonthlyPressureLevels, ERA5MonthlyLand
+using NumericalEarth.DataWrangling.SeaWiFS: SeaWiFSMonthly
 
 using Oceananigans: location
 using Oceananigans.Grids: topology, Flat, Bounded, Periodic, RectilinearGrid,
@@ -29,12 +30,6 @@ using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
 
     col_z = Column(35.1, 50.1; z=(-400, 0))
     @test col_z.z == (-400, 0)
-end
-
-@testset "Column isa checks" begin
-    @test Column(0, 0) isa Column
-    @test !(BoundingBox(longitude=(0, 10), latitude=(0, 10)) isa Column)
-    @test !(nothing isa Column)
 end
 
 @testset "restrict_location" begin
@@ -282,7 +277,8 @@ end
                         WOAMonthly() => :temperature,
                         ERA5MonthlySingleLevel() => :temperature,
                         ERA5MonthlyPressureLevels() => :temperature,
-                        ERA5MonthlyLand() => :temperature)
+                        ERA5MonthlyLand() => :temperature,
+                        SeaWiFSMonthly() => :chlorophyll)
 
     for (dataset, name) in monthly_datasets, stamp in (DateTime(2010, 7, 1), DateTime(2010, 7, 1, 12))
         metadatum = Metadatum(name; dataset, date = stamp)

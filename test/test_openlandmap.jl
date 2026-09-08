@@ -68,9 +68,10 @@ end
 end
 
 # Build a small GeoTIFF with a known CRS/scale/offset/nodata; row 0 is north.
-function write_synthetic_tile(path; nx, ny, x0, y0, dx, dy, scale, offset, nodata, raw, epsg = 4326)
+function write_synthetic_tile(path; nx, ny, x0, y0, dx, dy, scale, offset, nodata, raw,
+                              epsg = 4326, dtype = UInt8)
     ArchGDAL.create(path; driver = ArchGDAL.getdriver("GTiff"),
-                    width = nx, height = ny, nbands = 1, dtype = UInt8) do ds
+                    width = nx, height = ny, nbands = 1, dtype) do ds
         ArchGDAL.setgeotransform!(ds, [x0, dx, 0.0, y0, 0.0, dy])
         ArchGDAL.setproj!(ds, ArchGDAL.toWKT(ArchGDAL.importEPSG(epsg)))
         band = ArchGDAL.getband(ds, 1)
@@ -140,4 +141,72 @@ end
                                nodata = 255, raw, epsg = 3857)
     bbox = BoundingBox(longitude = (x0, x0 + nx * dx), latitude = (y0 + ny * dy, y0))
     @test_throws ErrorException cog_window_to_netcdf([tif], joinpath(dir, "bad.nc"), "clay", bbox)
+end
+
+@testset "OpenLandMapSoilDB tiled regrid reproduces the whole-window regrid" begin
+    dir = mktempdir()
+
+    # A tile on the dataset's global lattice, carrying structure at every scale so that a
+    # misregistered tile boundary could not hide in a smooth field.
+    nx, ny = 512, 512
+    x0, y0, dx, dy = -112.0005, 36.0005, 0.00025, -0.00025
+    raw = Float32[30 + 10 * sinpi(i / 64) * cospi(j / 48) + (i % 7) for i in 1:nx, j in 1:ny]
+    raw[100:140, 60:90] .= -1.0   # a masked patch straddling tile interiors
+
+    tif = write_synthetic_tile(joinpath(dir, "tiled.tif");
+                               nx, ny, x0, y0, dx, dy, scale = 1.0, offset = 0.0,
+                               nodata = -1.0, raw, dtype = Float32)
+
+    # The window spans the masked patch, so tile interiors have to straddle it.
+    grid = LatitudeLongitudeGrid(CPU(); size = (10, 10, 3),
+                                 longitude = (-111.98, -111.96), latitude = (35.97, 35.99),
+                                 z = [-1.0, -0.6, -0.3, 0.0])
+    region = BoundingBox(grid)
+
+    metadatum = Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region, dir)
+    cog_window_to_netcdf(fill(tif, 3), metadata_path(metadatum), "clay", region)
+
+    # The path the regrid took before tiling: materialize the whole window, then interpolate.
+    native = Field(metadatum, CPU())
+    untiled = Field{Center, Center, Center}(grid)
+    NumericalEarth.DataWrangling.interpolate_physical!(untiled, native, metadatum)
+
+    # Tiling changes where the data comes from, never the arithmetic done on it: each tile is a
+    # windowed field over the native grid interpolated into a window of the target, so it runs
+    # the same regrid over the same node coordinates. Every budget reproduces it bitwise.
+    reference = Array(interior(untiled))
+
+    for tile_bytes in (typemax(Int), 20_000, 5_000)
+        tiled = Array(interior(Field(metadatum, grid; tile_bytes)))
+        @test size(tiled) == size(reference)
+        @test isequal(tiled, reference)
+    end
+end
+
+@testset "windowed retrieval matches the whole-file read" begin
+    dir = mktempdir()
+    nx, ny = 256, 256
+    x0, y0, dx, dy = -112.0005, 36.0005, 0.00025, -0.00025
+    raw = Float32[(i % 11) + 3 * (j % 5) for i in 1:nx, j in 1:ny]
+
+    tif = write_synthetic_tile(joinpath(dir, "window.tif");
+                               nx, ny, x0, y0, dx, dy, scale = 1.0, offset = 0.0,
+                               nodata = -1.0, raw, dtype = Float32)
+
+    region = BoundingBox(longitude = (x0 + 0.01, x0 + 0.05), latitude = (y0 - 0.05, y0 - 0.01))
+    metadatum = Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region, dir)
+    cog_window_to_netcdf(fill(tif, 3), metadata_path(metadatum), "clay", region)
+
+    whole = NumericalEarth.DataWrangling.retrieve_data(metadatum)
+    λ, φ = NumericalEarth.DataWrangling.read_file_coords(metadatum)
+
+    for (longitude_indices, latitude_indices) in ((1:3, 1:4), (2:5, 3:6),
+                                                  (1:size(whole, 1), 1:size(whole, 2)),
+                                                  (:, :))
+        data, window_longitude, window_latitude =
+            NumericalEarth.DataWrangling.retrieve_window(metadatum, longitude_indices, latitude_indices)
+        @test isequal(Array(data), whole[longitude_indices, latitude_indices, :])
+        @test Array(window_longitude) ≈ λ[longitude_indices]
+        @test Array(window_latitude) ≈ φ[latitude_indices]
+    end
 end

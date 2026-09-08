@@ -40,7 +40,6 @@ end
                                      latitude = (0, 50),
                                      z = (-6000, 0))
 
-        # Test that remove_minor_basins!(Z, Inf) does nothing
         control_bottom_height = regrid_bathymetry(grid, ETOPOmetadata)
         bottom_height = deepcopy(control_bottom_height)
         @test_throws ArgumentError remove_minor_basins!(bottom_height, Inf)
@@ -120,9 +119,7 @@ end
     # Integer and float parameter values key identically
     @test key(minimum_depth = 10) == key(minimum_depth = 10.0)
 
-    # Test cache filename: same config → same filename
     @test field_cache_filename(config1) == field_cache_filename(config2)
-    # Different config → different filename
     @test field_cache_filename(config1) != field_cache_filename(config3)
 
     # Test JLD2 round-trip of the key

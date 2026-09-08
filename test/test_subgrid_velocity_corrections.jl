@@ -6,7 +6,7 @@ using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using Thermodynamics
 
 # `Adapt` is not a test dependency; reuse the binding loaded by InterfaceComputations
-using NumericalEarth.EarthSystemModels.InterfaceComputations: adapt
+using NumericalEarth.EarthSystemModels.InterfaceComputations: Adapt
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     ConvectiveGustiness,
     SubgridVelocityCorrection,
@@ -95,7 +95,7 @@ end
     @test isbits(f32.subgrid_velocities)
 
     # The correction survives an `adapt` roundtrip (GPU struct integrity)
-    adapted = adapt(Array, fluxes)
+    adapted = Adapt.adapt(Array, fluxes)
     @test adapted.subgrid_velocities === fluxes.subgrid_velocities
 
     # Numeric roughness and displacement slots join the closure's float type

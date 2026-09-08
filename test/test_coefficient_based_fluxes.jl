@@ -11,8 +11,6 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     stability_profile,
     FixedIterations
 
-using NumericalEarth.DataWrangling: all_dates
-
 @testset "PolynomialNeutralDragCoefficient" begin
     p = PolynomialNeutralDragCoefficient()
     @test p isa PolynomialNeutralDragCoefficient{Float64}
@@ -84,8 +82,7 @@ function coefficient_based_fluxes(arch, flux_formulation)
                              closure = nothing,
                              bottom_drag_coefficient = 0)
 
-    dates = all_dates(RepeatYearJRA55(), :temperature)
-    atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
+    atmosphere = synthetic_prescribed_atmosphere(arch)
     interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=flux_formulation)
 
     set!(ocean.model, T=15, S=35)
