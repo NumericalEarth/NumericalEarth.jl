@@ -211,6 +211,20 @@ Environment variables (physics):
   CB            CATKE bottom-distance coefficient for the shear length scale Cᵇ (default: 0.28).
                 It enters as min(Cˢ*depth, Cᵇ*height_above_bottom, ℓᴺ), so it caps the stable
                 mixing length through the whole column, not only near the bottom.
+  CUNB          CATKE weight on |N²| where the stratification is unstable, Cᵘⁿᵇ (default: 0.0).
+                Continues the stratification length w★/√N² onto the unstable branch instead of
+                letting it go unbounded and fall back to the geometric min(Cˢ*depth, Cᵇ*hab).
+  CF            CATKE weight on the geometric floor where the column is actively convecting and
+                weakly sheared, Cᶠ (default: 1.0 = unmodified). The floor max(ℓ★, ℓʰ) becomes
+                max(ℓʰ, Cᶠ*ℓ★) only where ℓʰ > 0, so CF acts on convecting cells while CUNB acts
+                on parked ones (ℓʰ = 0) — the two populations are disjoint.
+  CF0           S²/|N²| below which the CF weight applies in full, Cᶠ⁰ (default: 1e9, i.e. at every
+                shear). Lower it to restore the floor in sheared cells; the measured separation between
+                convecting and shear-entraining cells is only ~1.4x, so there is no supported setting.
+  CFD           Width in S²/|N²| over which the floor ramps back to full strength, Cᶠᵟ (default: 0.75).
+                Inert while CF0 is large. Must stay finite.
+                THRESHOLD, NOT A KNOB: below Cᵘⁿc/CᵘⁿD = 0.6197 it is exactly a no-op; above it the
+                parked TKE equilibrium disappears and e decays to minimum_tke. Use 1.0, not 0.5.
   CP            CATKE convective penetration length coefficient for tracers Cᵉc (default: 0.112).
                 Sets how far a convective plume entrains below the unstable layer.
   ICE_FW        Fraction of the sea ice-ocean mass exchange delivered to the ocean, volume and salt
@@ -694,6 +708,10 @@ esac
 [[ -n "${BVP_MODE:-}" ]]                       && RUN_NAME="${RUN_NAME}_bvpm${BVP_MODE}"
 [[ -n "${BVP_CMIN:-}" ]]                       && RUN_NAME="${RUN_NAME}_bvpc${BVP_CMIN}"
 [[ "${CB:-0.01}" != "0.01" ]]                  && RUN_NAME="${RUN_NAME}_cb${CB}"
+[[ -n "${CUNB:-}" ]] && [[ "${CUNB}" != "0.0" ]] && RUN_NAME="${RUN_NAME}_cunb${CUNB}"
+[[ -n "${CF:-}" ]]   && [[ "${CF}" != "1.0" ]]   && RUN_NAME="${RUN_NAME}_cf${CF}"
+[[ -n "${CF0:-}" ]]  && [[ "${CF0}" != "1e9" ]]  && RUN_NAME="${RUN_NAME}_cf0${CF0}"
+[[ -n "${CFD:-}" ]]  && [[ "${CFD}" != "0.75" ]] && RUN_NAME="${RUN_NAME}_cfd${CFD}"
 [[ -n "${CP:-}" ]]                             && RUN_NAME="${RUN_NAME}_cp${CP}"
 [[ -n "${ICE_FW:-}" ]]                         && RUN_NAME="${RUN_NAME}_icefw${ICE_FW}"
 [[ "${ICE_VSF:-false}" == "true" ]]            && RUN_NAME="${RUN_NAME}_icevsf"
@@ -821,6 +839,10 @@ JULIA="${JULIA:-$HOME/julia-1.12.5/bin/julia}"
 FORCING_DIR="${FORCING_DIR:-${DATA}forcing_data}"
 STAGING_DIR="${STAGING_DIR:-./staged_data}"
 CB="${CB:-0.01}"
+CUNB="${CUNB:-}"
+CF="${CF:-}"
+CF0="${CF0:-}"
+CFD="${CFD:-}"
 CP="${CP:-}"
 ICE_FW="${ICE_FW:-}"
 ICE_VSF="${ICE_VSF:-false}"
@@ -863,6 +885,14 @@ fi
 
 CB_KWARG=""
 [[ -n "$CB" ]] && CB_KWARG="Cᵇ = ${CB},"
+
+CUNB_KWARG=""
+[[ -n "$CUNB" ]] && CUNB_KWARG="Cᵘⁿᵇ = ${CUNB},"
+
+CF_KWARG=""
+[[ -n "$CF" ]]  && CF_KWARG="Cᶠ = ${CF},"
+[[ -n "$CF0" ]] && CF_KWARG="${CF_KWARG} Cᶠ⁰ = ${CF0},"
+[[ -n "$CFD" ]] && CF_KWARG="${CF_KWARG} Cᶠᵟ = ${CFD},"
 
 CP_KWARG=""
 [[ -n "$CP" ]] && CP_KWARG="Cᵉc = ${CP},"
@@ -1103,6 +1133,8 @@ sim = omip_simulation(:${CONFIG};
                       biharmonic_timescale = ${BIHARMONIC},
                       ${BIHVISC_KWARG}
                       ${CB_KWARG}
+                      ${CUNB_KWARG}
+                      ${CF_KWARG}
                       ${CP_KWARG}
                       ${ICE_FW_KWARG}
                       ${ICE_MELT_KWARG}

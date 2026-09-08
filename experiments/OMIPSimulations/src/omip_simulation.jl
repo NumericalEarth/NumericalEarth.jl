@@ -761,6 +761,10 @@ function omip_simulation(config::Symbol = :halfdegree;
                          skew_flux_formulation = :diffusive,
                          isopycnal_formulation = :standard,
                          Cᵇ = 0.28,
+                         Cᵘⁿᵇ = 0.0,
+                         Cᶠ = 1.0,
+                         Cᶠ⁰ = 1e9,
+                         Cᶠᵟ = 0.75,
                          Cᵉc = 0.112,
                          biharmonic_timescale = ConfigDefault(),
                          biharmonic_viscosity = nothing,
@@ -948,7 +952,7 @@ function omip_simulation(config::Symbol = :halfdegree;
 
     ocean = build_ocean(cfg, grid;
                         forcing = ocean_forcing,
-                        κ_skew, κ_symmetric, Cᵇ, Cᵉc,
+                        κ_skew, κ_symmetric, Cᵇ, Cᵘⁿᵇ, Cᶠ, Cᶠ⁰, Cᶠᵟ, Cᵉc,
                         barotropic_substeps, Δt,
                         nemo_eddy_coefficients,
                         cesm_eddy_coefficients,
@@ -1406,6 +1410,10 @@ end
 function omip_closure(vertical_closure::Symbol;
                       κ_skew, κ_symmetric, 
                       Cᵇ = 0.28, 
+                      Cᵘⁿᵇ = 0.0,
+                      Cᶠ = 1.0,
+                      Cᶠ⁰ = 1e9,
+                      Cᶠᵟ = 0.75,
                       Cᵉc = 0.112,
                       biharmonic_timescale,
                       biharmonic_viscosity = nothing,
@@ -1422,7 +1430,9 @@ function omip_closure(vertical_closure::Symbol;
     background_ν = resolve_background_viscosity(background_vertical_viscosity)
 
     primary, background = if vertical_closure == :catke
-        mixing_length = CATKEMixingLength(; Cᵇ, Cᵉc)
+        # CATKEMixingLength is @kwdef over a single FT, so a mixed Int/Float keyword set has no method
+        mixing_length = CATKEMixingLength(; Cᵇ = Float64(Cᵇ), Cᵘⁿᵇ = Float64(Cᵘⁿᵇ), Cᵉc = Float64(Cᵉc),
+                                            Cᶠ = Float64(Cᶠ), Cᶠ⁰ = Float64(Cᶠ⁰), Cᶠᵟ = Float64(Cᶠᵟ))
         tke_eq = isnothing(Cᵂu★) ? CATKEEquation() : CATKEEquation(; Cᵂu★)
         catke = CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization();
                                          mixing_length,
@@ -2084,7 +2094,8 @@ function barotropic_free_surface(grid, substeps, Δt; cfl = 0.7)
 end
 
 function build_ocean(config, grid;
-                     κ_skew, κ_symmetric, Cᵇ = 0.28, Cᵉc = 0.112,
+                     κ_skew, κ_symmetric, Cᵇ = 0.28, Cᵘⁿᵇ = 0.0, Cᵉc = 0.112,
+                     Cᶠ = 1.0, Cᶠ⁰ = 1e9, Cᶠᵟ = 0.75,
                      barotropic_substeps = 100,
                      Δt,
                      restoring_dir, piston_velocity,
@@ -2143,7 +2154,7 @@ function build_ocean(config, grid;
     end
 
     closure = omip_closure(vertical_closure;
-                           κ_skew, κ_symmetric, Cᵇ, Cᵉc,
+                           κ_skew, κ_symmetric, Cᵇ, Cᵘⁿᵇ, Cᶠ, Cᶠ⁰, Cᶠᵟ, Cᵉc,
                            biharmonic_timescale, biharmonic_viscosity,
                            skew_flux_formulation,
                            isopycnal_formulation,
