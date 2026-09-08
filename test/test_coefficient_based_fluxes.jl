@@ -84,8 +84,7 @@ end
                                  closure = nothing,
                                  bottom_drag_coefficient = 0)
 
-        dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
+        atmosphere = synthetic_prescribed_atmosphere(arch)
 
         constant_fluxes = CoefficientBasedFluxes(transfer_coefficients = SimilarityScales(2e-3, 2e-3, 2e-3))
         interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=constant_fluxes)
@@ -117,8 +116,7 @@ end
                                  closure = nothing,
                                  bottom_drag_coefficient = 0)
 
-        dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
+        atmosphere = synthetic_prescribed_atmosphere(arch)
 
         poly_drag = PolynomialNeutralDragCoefficient()
         poly_fluxes = CoefficientBasedFluxes(transfer_coefficients = SimilarityScales(poly_drag, 1e-3, 1e-3))
@@ -154,8 +152,7 @@ end
                                  closure = nothing,
                                  bottom_drag_coefficient = 0)
 
-        dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
+        atmosphere = synthetic_prescribed_atmosphere(arch)
 
         ly = LargeYeagerTransferCoefficients()
         ly_fluxes = CoefficientBasedFluxes(transfer_coefficients = ly,

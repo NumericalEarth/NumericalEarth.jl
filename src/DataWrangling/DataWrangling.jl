@@ -18,6 +18,7 @@ export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
 
 using Adapt: Adapt
+using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using LibCURL: LibCURL
 using JLD2: JLD2, jldopen
@@ -39,6 +40,7 @@ using Oceananigans.Utils: launch!, prettytime, prettysummary
 using DocStringExtensions: TYPEDSIGNATURES
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
+using ZipFile: ZipFile
 using Scratch: @get_scratch!
 
 using ..NumericalEarth: NumericalEarth, stateindex
@@ -68,6 +70,24 @@ function download_cache(key)
     else
         return @get_scratch!(key)
     end
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Extract the zip archive `file` into the directory `exdir`, which is created if missing.
+"""
+function unzip(file, exdir = dirname(file))
+    mkpath(exdir)
+    archive = ZipFile.Reader(file)
+    for entry in archive.files
+        endswith(entry.name, '/') && continue
+        path = joinpath(exdir, entry.name)
+        mkpath(dirname(path))
+        write(path, read(entry))
+    end
+    close(archive)
+    return exdir
 end
 
 mutable struct DownloadProgress <: Function
@@ -108,28 +128,6 @@ function (d::DownloadProgress)(total, now; filename="")
     end
 
     return nothing
-end
-
-"""
-$(TYPEDSIGNATURES)
-
-Download `url` to `filepath`, which either does not exist or holds the complete file: the transfer
-lands beside the destination and is renamed into place once it has arrived in full.
-
-Extra keyword arguments are forwarded to `Downloads.download` (`progress`, `downloader`, ...).
-"""
-function atomic_download(url, filepath; kw...)
-    dir = dirname(filepath)
-    mkpath(dir)
-
-    # Same filesystem as the destination, so the rename is atomic rather than a copy.
-    mktemp(dir) do partial_filepath, partial_io
-        close(partial_io)
-        Downloads.download(url, partial_filepath; kw...)
-        mv(partial_filepath, filepath; force=true)
-    end
-
-    return filepath
 end
 
 """
@@ -177,6 +175,35 @@ function netrc_permission_file(username, password, machine, dir)
     end
 
     return filepath
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Download `url` to `path`, retrying up to `attempts` times on failure. Each transfer lands beside the
+destination and is renamed into place once it has arrived in full, so `path` never holds a partial file.
+
+Extra keyword arguments are forwarded to `Downloads.download` (`progress`, `downloader`, ...).
+"""
+function download_with_retries(url, path; attempts = 3, description = "Download", kw...)
+    dir = dirname(path)
+    mkpath(dir)
+
+    for attempt in 1:attempts
+        try
+            # Same filesystem as the destination, so the rename is atomic rather than a copy.
+            mktemp(dir) do partial_path, partial_io
+                close(partial_io)
+                Downloads.download(url, partial_path; kw...)
+                mv(partial_path, path; force=true)
+            end
+            return path
+        catch error
+            attempt == attempts && rethrow()
+            @warn "$description failed (attempt $attempt of $attempts); retrying..." url error
+            sleep(2attempt)
+        end
+    end
 end
 
 #####

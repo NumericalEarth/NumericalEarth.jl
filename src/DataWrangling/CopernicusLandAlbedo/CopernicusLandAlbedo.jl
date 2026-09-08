@@ -10,7 +10,7 @@ using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
-                       metadata_path, default_download_directory, native_convention_longitude
+                       metadata_path, default_download_directory, native_convention_longitude, unzip
 
 # TODO: move `group_by_calendar_month` and `is_zip` (product-agnostic download helpers) from
 # ERA5 into DataWrangling proper, so dataset modules don't reach across siblings.
@@ -513,7 +513,7 @@ end
 # The delivery is either a ZIP of per-variable NetCDF files or a single NetCDF.
 function extract_albedo_files(download_path, extraction_dir)
     if is_zip(download_path)
-        run(`unzip -qo $download_path -d $extraction_dir`)
+        unzip(download_path, extraction_dir)
     else
         cp(download_path, joinpath(extraction_dir, "albedo.nc"); force=true)
     end

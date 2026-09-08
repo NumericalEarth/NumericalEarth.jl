@@ -99,12 +99,12 @@ end
     end
 end
 
-@testset "JRA55PrescribedRadiation" begin
+@testset "Dataset-backed PrescribedRadiation" begin
     for arch in test_architectures
         A = typeof(arch)
-        @info "Testing JRA55PrescribedRadiation on $A..."
+        @info "Testing dataset-backed PrescribedRadiation on $A..."
 
-        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=2)
+        radiation = synthetic_prescribed_radiation(arch)
 
         @test radiation isa PrescribedRadiation
         @test radiation.downwelling_shortwave isa FieldTimeSeries

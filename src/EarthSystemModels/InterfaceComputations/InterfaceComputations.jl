@@ -4,7 +4,7 @@ using Adapt: Adapt
 using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: AbstractField, Field, Face, Center
-using Oceananigans.Grids: Flat, topology
+using Oceananigans.Grids: Flat, Periodic, topology
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: KernelParameters, worksize
 
@@ -112,6 +112,18 @@ function interface_kernel_parameters(grid)
     end
 
     return kernel_parameters
+end
+
+# Halo columns read the component's own halo, so the index is held where interpolation can
+# reach: `⌊f⌋` and `⌊f⌋ + 1` must both lie within `1 - H` and `N + H`.
+@inline clamp_fractional_index(::Nothing, topo, N, H, halo_column) = nothing
+
+@inline function clamp_fractional_index(fractional_index, topo, N, H, halo_column)
+    FT = typeof(fractional_index)
+    lowest = convert(FT, 1 - H)
+    highest = prevfloat(convert(FT, N + H))
+    clamped = halo_column & !(topo isa Periodic)
+    return ifelse(clamped, clamp(fractional_index, lowest, highest), fractional_index)
 end
 
 # 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1
