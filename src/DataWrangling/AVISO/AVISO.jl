@@ -98,12 +98,6 @@ function DataWrangling.metadata_filename(::AVISOMonthly, name, date, region)
     return string(var, "_AVISOMonthly_", Dates.format(date, "yyyy-mm-dd"), ".nc")
 end
 
-function inpainted_metadata_filename(metadata::Metadatum{<:AVISODataset})
-    return replace(metadata.filename, ".nc" => "_inpainted.jld2")
-end
-
-DataWrangling.inpainted_metadata_path(metadata::Metadatum{<:AVISODataset}) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
-
 const AVISOMetadata{D} = Metadata{<:AVISODataset, D}
 const AVISOMetadatum = Metadatum{<:AVISODataset}
 

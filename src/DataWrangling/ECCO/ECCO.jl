@@ -342,11 +342,6 @@ function Downloads.download(metadata::ECCOMetadata)
     return metadata_path(metadata)
 end
 
-function inpainted_metadata_filename(metadata::ECCOMetadatum)
-    without_extension = metadata.filename[1:end-3]
-    return without_extension * "_inpainted.jld2"
-end
-
 ECCO_atmosphere_variables = (
     :downwelling_shortwave,
     :downwelling_longwave,
@@ -367,9 +362,6 @@ function DataWrangling.default_inpainting(metadata::ECCOMetadata)
         return NearestNeighborInpainting(5)
     end
 end
-
-DataWrangling.inpainted_metadata_path(metadata::ECCOMetadatum) = 
-    joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 function DataWrangling.read_file_coords(metadata::ECCOMetadatum)
     Nx, Ny, _, _ = size(metadata)

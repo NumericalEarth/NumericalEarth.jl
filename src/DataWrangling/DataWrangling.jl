@@ -261,8 +261,6 @@ Arguments
 # not `Base.download` which is a 1.0-era shim). Per-dataset methods are added
 # within each dataset module via `Downloads.download(metadata::FooMetadata) = ...`.
 
-function inpainted_metadata_path end
-
 """
     z_interfaces(dataset)
 
@@ -393,6 +391,8 @@ function default_inpainting(metadata)
         return NearestNeighborInpainting(5)
     end
 end
+
+include("prescribed_radiation.jl")
 
 # Datasets
 include("ETOPO/ETOPO.jl")
