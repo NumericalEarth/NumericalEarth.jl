@@ -727,21 +727,16 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `tracer_boundary_scheme::Symbol`, `momentum_boundary_scheme::Symbol`: the same choice made separately for the
   tracer and the momentum reconstructions, both defaulting to `boundary_scheme`. Setting one of them alone
   isolates which of the two the boundary treatment acts through.
-- `horizontal_temperature_reference_gradient`, `vertical_temperature_reference_gradient`,
-  `horizontal_salinity_reference_gradient`, `vertical_salinity_reference_gradient`,
-  `vertical_momentum_reference_gradient`: the CWENOZ oscillation scale ϵ = (∇ref Δ)² below which the
-  reconstruction reads the data as smooth and keeps third order. ∇ref carries the units of the reconstructed
-  field per metre and Δ is the spacing in the direction being reconstructed, hence one value per variable and
-  per direction. `0` estimates ϵ from the stencil, which sets ϵ to the local oscillation itself: at a
-  genuine step ϵ then grows with the roughness, τ/ϵ stays near 1, and the constant candidate never takes
-  over, so the blend keeps third order across the discontinuity and undershoots. Measured at the Denmark
-  Strait step (66.25 °N, 27.90 °W), τ/ϵ reads 1.00 where the constant needs τ/ϵ ≳ 74 to win against
-  `dᵒ = 0.74` at `d⁰ = 0.01`. The horizontal tracer defaults are therefore a fixed increment scale of
-  ≈0.28 K and its density equivalent ≈0.074 g/kg, small enough that a topographic step activates the
-  constant while smooth data is untouched.
-  The vertical defaults stay `0`: Δz spans 1.5 m to 55.8 m in this configuration, so one constant ∇ref
-  would set ϵ values differing by ~10³ down a column and no single value fits. The horizontal momentum terms reconstruct a vorticity,
-  a divergence flux and a squared velocity, so they take no reference gradient.
+- `temperature_reference_variation`, `salinity_reference_variation`, `momentum_reference_variation`:
+  the cell-to-cell variation of the reconstructed field below which CWENOZ reads the stencil as noise, setting
+  `ϵ = reference_variation²`. It carries the units of the field and no grid spacing, so one value serves every
+  direction and every cell thickness. The constant candidate takes over above a variation of about
+  `8.6 × reference_variation` between adjacent averages. All three default to `0`, which reads `ϵ` off the
+  stencil: a nonzero value acts only on the horizontal, where it is worth some tens of m²/s against a skew
+  diffusivity of order 1e3, and is inert on the vertical, where the boundary reconstruction competes against a
+  background diffusivity of order 1e-5. The horizontal momentum terms reconstruct a vorticity, a divergence flux
+  and a squared velocity, so they take no variation; `momentum_reference_variation` is a speed in m/s and applies
+  to the vertical reconstruction alone.
 - `velocity_formulation::Symbol`: Δu used by the bulk formula. Options:
    * `:relative` — `Δu = u_atm − u_ocean` (OMIP-2 α=1, default).
    * `:wind` — `Δu = u_atm` (ignores ocean current). For isolating bulk-formula
@@ -789,11 +784,9 @@ function omip_simulation(config::Symbol = :halfdegree;
                          boundary_scheme = :default,
                          tracer_boundary_scheme = boundary_scheme,
                          momentum_boundary_scheme = boundary_scheme,
-                         horizontal_temperature_reference_gradient = 5e-6,
-                         vertical_temperature_reference_gradient = 0,
-                         horizontal_salinity_reference_gradient = 1.2e-6,
-                         vertical_salinity_reference_gradient = 0,
-                         vertical_momentum_reference_gradient = 0,
+                         temperature_reference_variation = 0,
+                         salinity_reference_variation = 0,
+                         momentum_reference_variation = 0,
                          implicit_bottom_drag = true,
                          bottom_drag_background_velocity = 0,
                          velocity_formulation = :relative,
@@ -970,11 +963,9 @@ function omip_simulation(config::Symbol = :halfdegree;
                         boundary_scheme,
                         tracer_boundary_scheme,
                         momentum_boundary_scheme,
-                        horizontal_temperature_reference_gradient,
-                        vertical_temperature_reference_gradient,
-                        horizontal_salinity_reference_gradient,
-                        vertical_salinity_reference_gradient,
-                        vertical_momentum_reference_gradient,
+                        temperature_reference_variation,
+                        salinity_reference_variation,
+                        momentum_reference_variation,
                         implicit_bottom_drag,
                         bottom_drag_background_velocity,
                         skew_flux_formulation,
@@ -1885,28 +1876,16 @@ config_momentum_advection_order(::Val{:twelfthdegree}) = nothing
 #   :cwenoz   the third-order central-WENO reconstruction of Semplice, Travaglia and Puppo (2022), whose stencil
 #             extends only inwards, blending an inward parabola, a linear polynomial and a constant with Z-weights
 #
-# `reference_gradient` sets the oscillation scale ϵ = (∇ref Δ)² below which CWENOZ reads the data as smooth and
-# recovers third order. It carries the units of the reconstructed field per unit length, so it belongs to one
-# variable and one direction; zero estimates it from the stencil as min(I¹, I¹'), the smaller of the two linear
-# oscillations, which is the local increment squared.
-#
-# Zero is the default because a constant ∇ref cannot track the column. The constant candidate is capped at
-# d⁰ = 0.01 against d° = 0.74, so it only takes over once τ = 5/3 c² reaches ~74 ϵ, i.e. once the second
-# difference c exceeds ~6.7 ∇ref Δ. With ∇ref at the ocean's typical gradient, ∇ref Δ is the typical FIRST
-# difference and a genuine step gets 2% constant weight -- no limiting at all, plain third order. Getting the
-# constant to fire needs ∇ref about a decade below the typical gradient, and then the threshold is absolute:
-# a large smooth feature limits as hard as a discontinuity. There is also no value that works at every depth,
-# because ϵ ∝ Δ² grows monotonically downwards while the per-cell increment ∇T Δz does not: on an ORCA column
-# it runs 8e-3 K in the 1.5 m top cell, 0.36 K in the thermocline core, 0.20 K at 1000 m and 0.048 K in the
-# 435 m abyssal cell. The stencil estimate tracks all of that for free, holding the constant at its 1% floor
-# on smooth data and giving it the full weight at a step.
-tracer_boundary_reconstruction(::Val{:default}, reference_gradient) = nothing
-tracer_boundary_reconstruction(::Val{:upwind},  reference_gradient) = UpwindBiased(order=1)
-tracer_boundary_reconstruction(::Val{:cwenoz},  reference_gradient) = CWENOZ(reference_gradient=reference_gradient)
+# `reference_variation` sets the oscillation scale ϵ = reference_variation² below which CWENOZ reads the stencil as
+# noise and keeps third order. It carries the units of the reconstructed field and no grid spacing, so one value serves
+# every direction; zero reads ϵ off the stencil, which is a pure shape measure and limits at any amplitude.
+tracer_boundary_reconstruction(::Val{:default}, reference_variation) = nothing
+tracer_boundary_reconstruction(::Val{:upwind},  reference_variation) = UpwindBiased(order=1)
+tracer_boundary_reconstruction(::Val{:cwenoz},  reference_variation) = CWENOZ(; reference_variation)
 
-momentum_boundary_reconstruction(::Val{:default}, reference_gradient) = UpwindBiased(order=1)
-momentum_boundary_reconstruction(::Val{:upwind},  reference_gradient) = UpwindBiased(order=1)
-momentum_boundary_reconstruction(::Val{:cwenoz},  reference_gradient) = CWENOZ(reference_gradient=reference_gradient)
+momentum_boundary_reconstruction(::Val{:default}, reference_variation) = UpwindBiased(order=1)
+momentum_boundary_reconstruction(::Val{:upwind},  reference_variation) = UpwindBiased(order=1)
+momentum_boundary_reconstruction(::Val{:cwenoz},  reference_variation) = CWENOZ(; reference_variation)
 
 function boundary_scheme_value(boundary_scheme)
     boundary_scheme ∈ (:default, :upwind, :cwenoz) ||
@@ -1916,43 +1895,38 @@ function boundary_scheme_value(boundary_scheme)
 end
 
 """
-    split_tracer_advection(order, time_discretization, boundary_scheme,
-                           horizontal_reference_gradient, vertical_reference_gradient)
+    split_tracer_advection(order, time_discretization, boundary_scheme, reference_variation)
 
-Tracer advection of order `order` whose horizontal and vertical reconstructions terminate in boundary schemes
-carrying `horizontal_reference_gradient` and `vertical_reference_gradient` respectively. Only the vertical direction
-takes `time_discretization`, which is where the adaptive-implicit treatment applies.
+Tracer advection of order `order` whose reconstructions terminate in a boundary scheme carrying
+`reference_variation`. One value serves both directions: the variation is in units of the tracer and carries no
+grid spacing. The split is only so that the vertical direction takes `time_discretization`, which is where the
+adaptive-implicit treatment applies.
 """
-function split_tracer_advection(order, time_discretization, boundary_scheme,
-                                horizontal_reference_gradient, vertical_reference_gradient)
+function split_tracer_advection(order, time_discretization, boundary_scheme, reference_variation)
 
-    horizontal_boundary_scheme = tracer_boundary_reconstruction(boundary_scheme, horizontal_reference_gradient)
-    vertical_boundary_scheme   = tracer_boundary_reconstruction(boundary_scheme, vertical_reference_gradient)
+    tracer_boundary_scheme = tracer_boundary_reconstruction(boundary_scheme, reference_variation)
 
-    horizontal = WENO(; order, boundary_scheme = horizontal_boundary_scheme)
-    vertical   = WENO(; order, time_discretization, boundary_scheme = vertical_boundary_scheme)
+    horizontal = WENO(; order, boundary_scheme = tracer_boundary_scheme)
+    vertical   = WENO(; order, time_discretization, boundary_scheme = tracer_boundary_scheme)
 
     return FluxFormAdvection(horizontal, horizontal, vertical)
 end
 
 """
-    split_momentum_advection(order, time_discretization, boundary_scheme,
-                             horizontal_reference_gradient, vertical_reference_gradient)
+    split_momentum_advection(order, time_discretization, boundary_scheme, reference_variation)
 
 Vector-invariant momentum advection whose four reconstructions terminate in a boundary scheme chosen per direction,
 reproducing `WENOVectorInvariant` in every other respect. The vorticity, divergence and kinetic-energy-gradient terms
 are the horizontal ones, and they reconstruct a vorticity, a divergence flux and a squared velocity: three different
-units, so `horizontal_reference_gradient` is dimensionally meaningful only at zero, where the scale is read off the
-stencil. The vertical term reconstructs velocity, so `vertical_reference_gradient` is a shear in inverse seconds.
-Both default to zero for the reason given above `tracer_boundary_reconstruction`.
+units, so no single variation carries them and they always read the oscillation scale off the stencil. The vertical
+term reconstructs velocity, so `reference_variation` is a speed in m/s and applies there alone.
 """
-function split_momentum_advection(order, time_discretization, boundary_scheme,
-                                  horizontal_reference_gradient, vertical_reference_gradient)
+function split_momentum_advection(order, time_discretization, boundary_scheme, reference_variation)
 
     vorticity_order, remaining_order = isnothing(order) ? (9, 5) : (order, order)
 
-    horizontal_boundary_scheme = momentum_boundary_reconstruction(boundary_scheme, horizontal_reference_gradient)
-    vertical_boundary_scheme   = momentum_boundary_reconstruction(boundary_scheme, vertical_reference_gradient)
+    horizontal_boundary_scheme = momentum_boundary_reconstruction(boundary_scheme, 0)
+    vertical_boundary_scheme   = momentum_boundary_reconstruction(boundary_scheme, reference_variation)
 
     vorticity_scheme               = WENO(order=vorticity_order, boundary_scheme=horizontal_boundary_scheme)
     divergence_scheme              = WENO(order=remaining_order, boundary_scheme=horizontal_boundary_scheme)
@@ -2109,11 +2083,9 @@ function build_ocean(config, grid;
                      boundary_scheme = :default,
                      tracer_boundary_scheme = boundary_scheme,
                      momentum_boundary_scheme = boundary_scheme,
-                     horizontal_temperature_reference_gradient = 5e-6,
-                     vertical_temperature_reference_gradient = 0,
-                     horizontal_salinity_reference_gradient = 1.2e-6,
-                     vertical_salinity_reference_gradient = 0,
-                     vertical_momentum_reference_gradient = 0,
+                     temperature_reference_variation = 0,
+                     salinity_reference_variation = 0,
+                     momentum_reference_variation = 0,
                      implicit_bottom_drag = true,
                      bottom_drag_background_velocity = 0,
                      skew_flux_formulation = :diffusive,
@@ -2175,22 +2147,15 @@ function build_ocean(config, grid;
     tracer_boundary_scheme   = boundary_scheme_value(tracer_boundary_scheme)
     momentum_boundary_scheme = boundary_scheme_value(momentum_boundary_scheme)
 
-    # The horizontal momentum terms reconstruct a vorticity, a divergence flux and a squared velocity, so no single
-    # reference gradient carries their units: there the oscillation scale is read off the stencil.
-    horizontal_momentum_reference_gradient = 0
-
     momentum_advection = split_momentum_advection(config_momentum_advection_order(config),
                                                   time_discretization, momentum_boundary_scheme,
-                                                  horizontal_momentum_reference_gradient,
-                                                  vertical_momentum_reference_gradient)
+                                                  momentum_reference_variation)
 
-    # Temperature and salinity carry their own reference gradients, so each takes its own scheme.
-    tracer_advection = (T = split_tracer_advection(tracer_advection_order, time_discretization, tracer_boundary_scheme,
-                                                   horizontal_temperature_reference_gradient,
-                                                   vertical_temperature_reference_gradient),
-                        S = split_tracer_advection(tracer_advection_order, time_discretization, tracer_boundary_scheme,
-                                                   horizontal_salinity_reference_gradient,
-                                                   vertical_salinity_reference_gradient))
+    # Turbulent kinetic energy keeps the `ocean_simulation` default: its variation scale is ~1e-3 m²/s².
+    tracer_advection = (T = split_tracer_advection(tracer_advection_order, time_discretization,
+                                                   tracer_boundary_scheme, temperature_reference_variation),
+                        S = split_tracer_advection(tracer_advection_order, time_discretization,
+                                                   tracer_boundary_scheme, salinity_reference_variation))
 
     ocean = ocean_simulation(grid;
                              Δt = 1minutes,
