@@ -39,22 +39,22 @@ function merge_boundary_conditions(user::FieldBoundaryConditions, default::Field
 end
 
 @inline ϕ²(i, j, k, grid, ϕ)    = @inbounds ϕ[i, j, k]^2
-@inline spᶠᶜᶜ(i, j, k, grid, Φ, uᵦ) = @inbounds sqrt(uᵦ^2 + Φ.u[i, j, k]^2 + ℑxyᶠᶜᵃ(i, j, k, grid, ϕ², Φ.v))
-@inline spᶜᶠᶜ(i, j, k, grid, Φ, uᵦ) = @inbounds sqrt(uᵦ^2 + Φ.v[i, j, k]^2 + ℑxyᶜᶠᵃ(i, j, k, grid, ϕ², Φ.u))
+@inline spᶠᶜᶜ(i, j, k, grid, Φ, ub) = @inbounds sqrt(ub^2 + Φ.u[i, j, k]^2 + ℑxyᶠᶜᵃ(i, j, k, grid, ϕ², Φ.v))
+@inline spᶜᶠᶜ(i, j, k, grid, Φ, ub) = @inbounds sqrt(ub^2 + Φ.v[i, j, k]^2 + ℑxyᶜᶠᵃ(i, j, k, grid, ϕ², Φ.u))
 
 # A quadratic drag J = -μ |u| u is affine in the boundary-cell velocity with no explicit part, so it
 # is carried entirely by the implicit coefficient λ = -μ |u|.
-@inline u_quadratic_drag_coefficient(i, j, grid, c, Φ, p) = - p.μ * spᶠᶜᶜ(i, j, 1, grid, Φ, p.uᵦ)
-@inline v_quadratic_drag_coefficient(i, j, grid, c, Φ, p) = - p.μ * spᶜᶠᶜ(i, j, 1, grid, Φ, p.uᵦ)
+@inline u_quadratic_drag_coefficient(i, j, grid, c, Φ, p) = - p.μ * spᶠᶜᶜ(i, j, 1, grid, Φ, p.ub)
+@inline v_quadratic_drag_coefficient(i, j, grid, c, Φ, p) = - p.μ * spᶜᶠᶜ(i, j, 1, grid, Φ, p.ub)
 
-@inline u_immersed_drag_coefficient(i, j, k, grid, clock, Φ, p) = - p.μ * spᶠᶜᶜ(i, j, k, grid, Φ, p.uᵦ)
-@inline v_immersed_drag_coefficient(i, j, k, grid, clock, Φ, p) = - p.μ * spᶜᶠᶜ(i, j, k, grid, Φ, p.uᵦ)
+@inline u_immersed_drag_coefficient(i, j, k, grid, clock, Φ, p) = - p.μ * spᶠᶜᶜ(i, j, k, grid, Φ, p.ub)
+@inline v_immersed_drag_coefficient(i, j, k, grid, clock, Φ, p) = - p.μ * spᶜᶠᶜ(i, j, k, grid, Φ, p.ub)
 
 # The same drag written explicitly, selected by `implicit_bottom_drag = false`.
-@inline u_quadratic_bottom_drag(i, j, grid, c, Φ, p) = @inbounds - p.μ * Φ.u[i, j, 1] * spᶠᶜᶜ(i, j, 1, grid, Φ, p.uᵦ)
-@inline v_quadratic_bottom_drag(i, j, grid, c, Φ, p) = @inbounds - p.μ * Φ.v[i, j, 1] * spᶜᶠᶜ(i, j, 1, grid, Φ, p.uᵦ)
-@inline u_immersed_bottom_drag(i, j, k, grid, clock, Φ, p) = @inbounds - p.μ * Φ.u[i, j, k] * spᶠᶜᶜ(i, j, k, grid, Φ, p.uᵦ)
-@inline v_immersed_bottom_drag(i, j, k, grid, clock, Φ, p) = @inbounds - p.μ * Φ.v[i, j, k] * spᶜᶠᶜ(i, j, k, grid, Φ, p.uᵦ)
+@inline u_quadratic_bottom_drag(i, j, grid, c, Φ, p) = @inbounds - p.μ * Φ.u[i, j, 1] * spᶠᶜᶜ(i, j, 1, grid, Φ, p.ub)
+@inline v_quadratic_bottom_drag(i, j, grid, c, Φ, p) = @inbounds - p.μ * Φ.v[i, j, 1] * spᶜᶠᶜ(i, j, 1, grid, Φ, p.ub)
+@inline u_immersed_bottom_drag(i, j, k, grid, clock, Φ, p) = @inbounds - p.μ * Φ.u[i, j, k] * spᶠᶜᶜ(i, j, k, grid, Φ, p.ub)
+@inline v_immersed_bottom_drag(i, j, k, grid, clock, Φ, p) = @inbounds - p.μ * Φ.v[i, j, k] * spᶜᶠᶜ(i, j, k, grid, Φ, p.ub)
 
 bottom_drag_bc(λ, Fₑ, p, implicit) = implicit ? IMEXFluxBoundaryCondition(0, λ; discrete_form=true, parameters=p) : FluxBoundaryCondition(Fₑ; discrete_form=true, parameters=p)
 
@@ -317,8 +317,8 @@ defaults on a per-field basis.
 - `rotation_rate`: Planetary rotation rate used for Coriolis forcing.
 - `gravitational_acceleration`: Gravitational acceleration, passed to buoyancy.
 - `bottom_drag_coefficient`: Bottom drag coefficient. May be a `Default` wrapper.
-- `bottom_drag_background_velocity`: unresolved velocity `uᵦ` added in quadrature to the resolved speed in the
-  quadratic drag, `𝛕 = - μ 𝐮 √(uᵦ² + |𝐮|²)`, representing tides and other motions the grid does not carry.
+- `bottom_drag_background_velocity`: unresolved velocity `ub` added in quadrature to the resolved speed in the
+  quadratic drag, `𝛕 = - μ 𝐮 √(ub² + |𝐮|²)`, representing tides and other motions the grid does not carry.
 - `implicit_bottom_drag`: whether the bottom and immersed quadratic drag are applied as affine fluxes
   with the drag coefficient carried in the vertical solver's diagonal. Default: `true`.
 - `forcing`: Named tuple of additional forcing(s) for individual fields.
@@ -396,7 +396,7 @@ function hydrostatic_ocean_simulation(grid;
 
         bottom_drag_coefficient = default_or_override(bottom_drag_coefficient)
 
-        drag_parameters = (μ = convert(FT, bottom_drag_coefficient), uᵦ = convert(FT, bottom_drag_background_velocity))
+        drag_parameters = (μ = convert(FT, bottom_drag_coefficient), ub = convert(FT, bottom_drag_background_velocity))
 
         u_immersed_bc = ImmersedBoundaryCondition(bottom = bottom_drag_bc(u_immersed_drag_coefficient, u_immersed_bottom_drag, drag_parameters, implicit_bottom_drag))
         v_immersed_bc = ImmersedBoundaryCondition(bottom = bottom_drag_bc(v_immersed_drag_coefficient, v_immersed_bottom_drag, drag_parameters, implicit_bottom_drag))
@@ -461,7 +461,7 @@ function hydrostatic_ocean_simulation(grid;
     T_top_bc = build_tracer_top_bc(Jᵀ, Jʷ, freshwater_heat_content, additional.T, :T)
     S_top_bc = build_tracer_top_bc(Jˢ, Jʷ, freshwater_salt_content, additional.S, :S)
 
-    drag_parameters = (μ = bottom_drag_coefficient, uᵦ = bottom_drag_background_velocity)
+    drag_parameters = (μ = bottom_drag_coefficient, ub = bottom_drag_background_velocity)
 
     u_bot_bc = bottom_drag_bc(u_quadratic_drag_coefficient, u_quadratic_bottom_drag, drag_parameters, implicit_bottom_drag)
     v_bot_bc = bottom_drag_bc(v_quadratic_drag_coefficient, v_quadratic_bottom_drag, drag_parameters, implicit_bottom_drag)
