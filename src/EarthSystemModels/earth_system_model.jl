@@ -1,6 +1,7 @@
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using Oceananigans
 using Oceananigans.TimeSteppers: Clock
+using Oceananigans.OutputReaders: extract_field_time_series
 using KernelAbstractions: @kernel, @index
 
 mutable struct EarthSystemModel{R, A, L, I, O, F, C, Arch} <: AbstractModel{Nothing, Arch}
@@ -15,6 +16,27 @@ mutable struct EarthSystemModel{R, A, L, I, O, F, C, Arch} <: AbstractModel{Noth
 end
 
 const ESM = EarthSystemModel
+
+"""
+    validate_time_axes(components, clock)
+
+Throw if a component holds a `FieldTimeSeries` whose time axis does not share the clock's time type.
+"""
+function validate_time_axes(components, clock)
+    clock_time_type = typeof(clock.time)
+
+    for component in components
+        isnothing(component) && continue
+        model = component isa Simulation ? component.model : component
+
+        for fts in extract_field_time_series(model)
+            eltype(fts.times) === clock_time_type || throw(ArgumentError(
+                "$(summary(component)) has a $(eltype(fts.times)) time axis but the clock keeps time as $clock_time_type"))
+        end
+    end
+
+    return nothing
+end
 
 function Base.summary(model::ESM)
     A = nameof(typeof(architecture(model)))
@@ -244,6 +266,8 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
     land       = adopt_clock(land, clock)
     sea_ice    = adopt_clock(sea_ice, clock)
     ocean      = adopt_clock(ocean, clock)
+
+    validate_time_axes((radiation, atmosphere, land, sea_ice, ocean), clock)
 
     if atmosphere isa Simulation
         if !isnothing(atmosphere.callbacks)
