@@ -145,8 +145,11 @@ struct SeaIceOceanFluxes{C, FX, FY}
     frazil_heat    :: C
     salt           :: C
     freshwater     :: C
-    x_momentum     :: FX
-    y_momentum     :: FY
+    # Affine ice-ocean drag Fₑ + λ uᵒ: `x_momentum` is Fₑ = -ρₑ Cᴰ |Δu| uⁱ, `x_momentum_coefficient` is λ = ρₑ Cᴰ |Δu|.
+    x_momentum             :: FX
+    y_momentum             :: FY
+    x_momentum_coefficient :: FX
+    y_momentum_coefficient :: FY
 end
 
 function SeaIceOceanFluxes(grid)
@@ -155,10 +158,12 @@ function SeaIceOceanFluxes(grid)
     y_velocity_bcs = vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
     return SeaIceOceanFluxes(C(grid), C(grid), C(grid), C(grid),
                              Field{Face, Center, Nothing}(grid; boundary_conditions = x_velocity_bcs),
-                             Field{Center, Face, Nothing}(grid; boundary_conditions = y_velocity_bcs))
+                             Field{Center, Face, Nothing}(grid; boundary_conditions = y_velocity_bcs),
+                             Field{Face, Center, Nothing}(grid),
+                             Field{Center, Face, Nothing}(grid))
 end
 
-SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes(ntuple(_ -> ZeroField(), 6)...)
+SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes(ntuple(_ -> ZeroField(), 8)...)
 
 Adapt.adapt_structure(to, fluxes::SeaIceOceanFluxes) =
     SeaIceOceanFluxes(Adapt.adapt(to, fluxes.interface_heat),
@@ -166,7 +171,9 @@ Adapt.adapt_structure(to, fluxes::SeaIceOceanFluxes) =
                       Adapt.adapt(to, fluxes.salt),
                       Adapt.adapt(to, fluxes.freshwater),
                       Adapt.adapt(to, fluxes.x_momentum),
-                      Adapt.adapt(to, fluxes.y_momentum))
+                      Adapt.adapt(to, fluxes.y_momentum),
+                      Adapt.adapt(to, fluxes.x_momentum_coefficient),
+                      Adapt.adapt(to, fluxes.y_momentum_coefficient))
 
 Oceananigans.Architectures.on_architecture(arch, fluxes::SeaIceOceanFluxes) =
     SeaIceOceanFluxes(on_architecture(arch, fluxes.interface_heat),
@@ -174,29 +181,33 @@ Oceananigans.Architectures.on_architecture(arch, fluxes::SeaIceOceanFluxes) =
                       on_architecture(arch, fluxes.salt),
                       on_architecture(arch, fluxes.freshwater),
                       on_architecture(arch, fluxes.x_momentum),
-                      on_architecture(arch, fluxes.y_momentum))
+                      on_architecture(arch, fluxes.y_momentum),
+                      on_architecture(arch, fluxes.x_momentum_coefficient),
+                      on_architecture(arch, fluxes.y_momentum_coefficient))
 
 # ZeroFluxes is returned by computed_fluxes(::Nothing) for absent interfaces.
 # It contains the union of all flux field names across interface types.
 struct ZeroFluxes{Z}
     # Atmosphere-ocean and atmosphere-sea-ice flux fields (turbulent only;
     # radiative diagnostic fields live on the radiation component)
-    latent_heat           :: Z
-    sensible_heat         :: Z
-    water_vapor           :: Z
-    x_momentum            :: Z
-    y_momentum            :: Z
-    friction_velocity     :: Z
-    temperature_scale     :: Z
-    water_vapor_scale     :: Z
+    latent_heat            :: Z
+    sensible_heat          :: Z
+    water_vapor            :: Z
+    x_momentum             :: Z
+    y_momentum             :: Z
+    friction_velocity      :: Z
+    temperature_scale      :: Z
+    water_vapor_scale      :: Z
     # Sea ice-ocean flux fields
-    interface_heat        :: Z
-    frazil_heat           :: Z
-    salt                  :: Z
-    freshwater            :: Z
+    interface_heat         :: Z
+    frazil_heat            :: Z
+    salt                   :: Z
+    freshwater             :: Z
+    x_momentum_coefficient :: Z
+    y_momentum_coefficient :: Z
 end
 
-ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 12)...)
+ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 14)...)
 
 @inline computed_fluxes(::Nothing) = ZeroFluxes()
 

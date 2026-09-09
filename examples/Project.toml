@@ -16,8 +16,8 @@ RRTMGP = "a01a1ee8-cea4-48fc-987c-fc7878d79da1"
 NumericalEarth = {path = ".."}
 
 [compat]
-Breeze = "0.9"
+Breeze = "0.10"
 CopernicusClimateDataStore = "0.2"
 CUDA = "6"
 CairoMakie = "0.15"
-Oceananigans = "0.110"
+Oceananigans = "0.111"
