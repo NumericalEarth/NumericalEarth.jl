@@ -391,7 +391,7 @@ EarthSystemModel{GPU}(time = 0 seconds, iteration = 0)
 ├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
-├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── sea_ice: FreezingLimitedOceanTemperature
 ├── ocean: HydrostaticFreeSurfaceModel{CUDAGPU, LatitudeLongitudeGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```

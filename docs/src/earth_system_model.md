@@ -26,7 +26,7 @@ EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
 ├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
-├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── sea_ice: FreezingLimitedOceanTemperature
 ├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
@@ -55,7 +55,7 @@ EarthSystemModel{CPU}(time = 1 hour, iteration = 3)
 ├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
-├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── sea_ice: FreezingLimitedOceanTemperature
 ├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 1 hour, iteration = 3)
 └── interfaces: ComponentInterfaces
 ```
@@ -96,7 +96,7 @@ EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
 ├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
-├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── sea_ice: FreezingLimitedOceanTemperature
 ├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
@@ -139,7 +139,7 @@ EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
 ├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
-├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── sea_ice: FreezingLimitedOceanTemperature
 ├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
@@ -158,7 +158,7 @@ EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
 ├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
-├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── sea_ice: FreezingLimitedOceanTemperature
 ├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
