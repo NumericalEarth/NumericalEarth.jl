@@ -991,6 +991,7 @@ hm_ν = heatmap!(ax_ν, λ, φ, Array(interior(cpu_porosity, :, :, 1)); colormap
 Colorbar(fig[1, 4], hm_ν; label = "ν")
 
 slim = max(maximum(abs.(adjoint_map)), maximum(abs.(fd_map)), eps())
+maximum_absolute_error = maximum(abs.(adjoint_map .- fd_map))
 
 ax_A = Axis(fig[2, 3]; title = "Adjoint ∂T/∂ν (K) — one reverse pass",
             xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
@@ -1003,7 +1004,7 @@ hm_F = heatmap!(ax_F, λ, φ, fd_map; colormap = :balance, colorrange = (-slim, 
 Colorbar(fig[2, 6], hm_F; label = "∂T/∂ν (K)")
 
 Label(fig[0, 1:6], @sprintf("Differentiable ERA5 slab land — pointwise ∂T/∂ν map (max|adjoint − FD| = %.2e K)",
-                            max_abs_error))
+                            maximum_absolute_error))
 
 save("era5_forced_slab_land_porosity_map.png", fig)
 @info "Saved era5_forced_slab_land_porosity_map.png"

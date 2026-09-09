@@ -2,28 +2,36 @@ name: Documentation
 
 on:
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Build all examples and deploy the dev documentation"
+        type: boolean
+        default: false
+  schedule:
+    # Docs build on odd days of the month at 06:00 UTC: the full-examples build
+    # takes hours on the GPU runner, so building on every push to main both
+    # starved the runner and (with cancel-in-progress) never finished. The
+    # scheduled run builds the tip of main and, when the latest release's docs
+    # have not been deployed yet, that release too (see the plan job).
+    - cron: '0 6 */2 * *'
   pull_request:
-    paths: &paths
+    paths:
       - ".github/workflows/docs.yml"
       - "docs/**"
       - "examples/**"
       - "ext/**"
       - "src/**"
       - "Project.toml"
-  push:
-    paths: *paths
-    branches:
-      - main
-    tags: '*'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded runs on pull requests, but let scheduled and dispatched
+  # builds queue and run to completion so they can deploy.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   JULIA_NUM_PRECOMPILE_TASKS: 8
   JULIA_NUM_THREADS: 8
-  JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
   NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES: 'build all examples'
   CDSAPI_URL: "https://cds.climate.copernicus.eu/api"
   CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
@@ -34,24 +42,87 @@ env:
   JULIA_CUDA_USE_COMPAT: false
 
 jobs:
+  plan:
+    # Decide which refs to build. Every run builds the triggering ref ("" =
+    # the default checkout: the PR merge commit, or the tip of main for
+    # scheduled/dispatched runs). Scheduled and deploying dispatched runs also
+    # build the latest release when its docs are missing from the deploy repo,
+    # so releases don't need their own tag-triggered builds competing for the
+    # GPU runner — they ride along with the next scheduled build.
+    name: Plan builds
+    runs-on: ubuntu-latest
+    outputs:
+      refs: ${{ steps.plan.outputs.refs }}
+    steps:
+      - name: Determine refs to build
+        id: plan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          refs='""'
+          if [[ ('${{ github.event_name }}' == 'schedule') || ('${{ github.event_name }}' == 'workflow_dispatch' && '${{ inputs.deploy }}' == 'true') ]]; then
+              tag=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name 2>/dev/null || true)
+              if [[ -n "${tag}" ]] && ! gh api "repos/NumericalEarth/NumericalEarthDocumentation/contents/${tag}?ref=gh-pages" --silent 2>/dev/null; then
+                  echo "Docs for latest release ${tag} are not deployed yet; adding it to the build."
+                  refs="${refs}, \"${tag}\""
+              fi
+          fi
+          echo "refs=[${refs}]" | tee "${GITHUB_OUTPUT}"
+
   build-docs:
-    name: Build documentation
-    runs-on: [self-hosted, tartarus, gpu-3]
+    name: Build documentation ${{ matrix.ref != '' && format('({0})', matrix.ref) || '' }}
+    needs: plan
+    # The tartarus gpu-3 runner is offline; build on the AWS L4 fleet (same
+    # container pattern as the CI GPU tests) until it returns.
+    runs-on: aws-linux-nvidia-gpu-l4
+    container:
+      image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
+      options: --gpus=all
+      volumes:
+        # Mount host directories so that we can delete some stuff to free disk
+        - /opt:/host-opt
+        - /usr/local:/host-usr-local
     timeout-minutes: 1440
+    strategy:
+      fail-fast: false
+      max-parallel: 1   # build dev first, then the release leg if any
+      matrix:
+        ref: ${{ fromJSON(needs.plan.outputs.refs) }}
     permissions:
       actions: write
       contents: write
       pull-requests: read
       statuses: write
+    env:
+      # Redirect temp and the depot to the workspace volume (bind-mounted from
+      # the host's EBS disk) to avoid filling the container's overlay
+      # filesystem with large dataset downloads and compiled artifacts.
+      TMPDIR: /__w/_temp
+      JULIA_DEPOT_PATH: '/__w/_temp/depot:/usr/local/share/julia:'
     steps:
       - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@v2
         with:
-          version: '1.12.5'
+          ref: ${{ matrix.ref }}
+      - name: Create workspace temp directories
+        run: mkdir -p "${TMPDIR}"
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory ${PWD}
+      - name: Clean up space on host device
+        # Save storage by deleting CUDA toolkits and other Nvidia tools we don't need
+        run: |
+          rm -rf /host-opt/nvidia/ /host-usr-local/cuda*
+          df -hT
+      - name: Update registry
+        shell: julia --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.Registry.rm("General")
+          Pkg.Registry.add("General")
+          Pkg.Registry.update()
       - name: Set NUMERICAL_EARTH_BUILD_ALL_EXAMPLES
         shell: bash
         run: |
-          if [[ ('${{ github.event_name }}' == 'push' && ('${{ github.ref }}' == 'refs/heads/main' || '${{ github.ref }}' == refs/tags/v*)) || ('${{ github.event_name }}' == 'pull_request' && ${{ contains(github.event.pull_request.labels.*.name, env.NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES) }} == true) ]]; then
+          if [[ ('${{ github.event_name }}' == 'schedule') || ('${{ github.event_name }}' == 'workflow_dispatch' && '${{ inputs.deploy }}' == 'true') || ('${{ github.event_name }}' == 'pull_request' && ${{ contains(github.event.pull_request.labels.*.name, env.NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES) }} == true) ]]; then
               NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=true
           else
               NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=false
@@ -82,43 +153,61 @@ jobs:
           JULIA_SSL_NO_VERIFY: "**"
         run: julia --project=docs --color=yes docs/make.jl
       - uses: actions/upload-artifact@v6
+        # make.jl fails the step when any example fails, but still builds the
+        # site from the examples that succeeded — upload it for inspection.
+        if: ${{ always() }}
         with:
-          name: documentation-build
+          name: documentation-build${{ matrix.ref != '' && format('-{0}', matrix.ref) || '' }}
           path: docs/build
           retention-days: 10
 
   deploy-docs:
     # We want to deploy docs if:
-    # * it's a push, but only to main
-    # * it's a PR, but not from a fork
-    # * on a release
-    needs: build-docs
-    if: ${{ (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) || (github.event_name == 'pull_request' && ! github.event.pull_request.head.repo.fork) }}
+    # * it's a scheduled build (dev docs, plus release docs when the plan job
+    #   found an undeployed release)
+    # * it's a manual dispatch with deploy enabled (same as scheduled)
+    # * it's a PR, but not from a fork (preview)
+    needs: [plan, build-docs]
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy) || (github.event_name == 'pull_request' && ! github.event.pull_request.head.repo.fork) }}
+    name: Deploy documentation ${{ matrix.ref != '' && format('({0})', matrix.ref) || '' }}
+    strategy:
+      max-parallel: 1
+      matrix:
+        ref: ${{ fromJSON(needs.plan.outputs.refs) }}
     permissions:
       actions: write
       contents: write
       pull-requests: read
       statuses: write
-    runs-on: [self-hosted, tartarus]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
       group: docs-pushing
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ matrix.ref }}
       - uses: julia-actions/setup-julia@v2
         with:
           version: '1.12.5'
       - uses: actions/download-artifact@v7
         with:
-          name: documentation-build
+          name: documentation-build${{ matrix.ref != '' && format('-{0}', matrix.ref) || '' }}
           path: docs/build
       - name: Remove extra files
         # There may be JLD2 files generated during execution of Literate
         # examples, we don't need them on the website.
         run:
           rm -fv docs/build/literated/*.jld2
+      - name: Install Documenter
+        # deploy.jl runs in the default environment; it only needs Documenter.
+        run: julia --color=yes -e 'using Pkg; Pkg.add(name="Documenter", version="1")'
       - name: Deploy documentation
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY: ${{ secrets.NUMERICALEARTHDOCUMENTATION_DOCUMENTER_KEY }}
-        run: julia --color=yes docs/deploy.jl
+          # Documenter decides dev vs. versioned deployment from GITHUB_REF.
+          # The release leg of the matrix runs under a schedule/dispatch event
+          # (GITHUB_REF = refs/heads/main), so point it at the tag instead.
+          DEPLOY_REF: ${{ matrix.ref != '' && format('refs/tags/{0}', matrix.ref) || github.ref }}
+        run: GITHUB_REF="${DEPLOY_REF}" julia --color=yes docs/deploy.jl
