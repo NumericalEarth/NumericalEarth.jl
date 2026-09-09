@@ -27,6 +27,24 @@ flux_variables(::AbstractHydrology) = ()
 initial_flux(::AbstractHydrology, ::Symbol, grid) = CenterField(grid)
 
 """
+    prognostic_variables(hydrology::AbstractHydrology) -> Tuple{Vararg{Symbol}}
+
+Names of *extra* prognostic fields this closure owns beyond the container's
+hardcoded `temperature`/`water_storage` (e.g. a canopy water store). The container
+sizes the `SlabLand.prognostic` `NamedTuple` from these and checkpoints them
+generically. Default: none.
+"""
+prognostic_variables(::AbstractHydrology) = ()
+
+"""
+    initial_prognostic(hydrology::AbstractHydrology, name::Symbol, grid)
+
+Build the initial prognostic `Field` for prognostic variable `name`. Defaults to
+a zeroed `CenterField`.
+"""
+initial_prognostic(::AbstractHydrology, ::Symbol, grid) = CenterField(grid)
+
+"""
     diagnostic_variables(hydrology::AbstractHydrology) -> Tuple{Vararg{Symbol}}
 
 Names of closure-owned diagnostic fields published into `SlabLand.diagnostics`.
@@ -58,3 +76,15 @@ latent-heat BC reads. May be a `Field`, `ZeroField`, any `AbstractField`,
 or a `Number`.
 """
 function saturation end
+
+"""
+    surface_retention_curve(hydrology::AbstractHydrology)
+
+The soil-water retention curve this closure owns, published to the atmosphere-land
+interface so a surface formulation measuring plant-available water evaluates its
+suction endpoints on the same curve the soil drains on. Defaults to `nothing`: a
+hydrology whose saturation is not a retention-curve saturation (e.g.
+[`BucketHydrology`](@ref), whose `𝒮` is a fill fraction) carries no curve, and the
+formulations that need one reject it at construction.
+"""
+EarthSystemModels.surface_retention_curve(::AbstractHydrology) = nothing

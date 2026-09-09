@@ -72,6 +72,14 @@ $(TYPEDSIGNATURES)
     return ifelse(𝒮c >= 1, zero(FT), -exp(min(logΠ, logΠᵐᵃˣ)))
 end
 
+# Per-cell endpoint evaluation for the interface's plant-stress formulations.
+@inline function EarthSystemModels.effective_saturation(i, j, grid, r::VanGenuchtenRetention, ψ)
+    FT = typeof(ψ)
+    αᵃᵉ = convert(FT, property_value(r.inverse_air_entry_head, i, j))
+    𝓃   = convert(FT, property_value(r.pore_size_uniformity, i, j))
+    return van_genuchten_saturation(αᵃᵉ * ψ, 𝓃)
+end
+
 Base.summary(r::VanGenuchtenRetention) =
     string("VanGenuchtenRetention(αᵃᵉ=", prettysummary(r.inverse_air_entry_head),
            ", 𝓃=", prettysummary(r.pore_size_uniformity), ")")

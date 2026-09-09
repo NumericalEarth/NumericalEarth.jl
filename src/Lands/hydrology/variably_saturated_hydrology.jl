@@ -15,7 +15,7 @@
 ##### Diagnostics published every step:
 #####   * `deep_liquid_flux`        (Jˡᵇ, positive upward)
 #####   * `surface_liquid_flux`     (Jˡˢ, positive upward)
-#####   * `surface_runoff`          (Rˢᶠᶜ, ≥ 0; rejected input)
+#####   * `surface_runoff`          (Rˢᶠᶜ, ≥ 0; leaves the column at the surface)
 #####   * `subsurface_runoff`       (Rˡᵃᵗ, ≥ 0; storage export)
 #####   * `water_storage_tendency`  (dMˡᵃ/dt, kg m⁻² s⁻¹)
 #####
@@ -123,6 +123,8 @@ end
 flux_variables(::VariablySaturatedHydrology) =
     (:vapor_flux, :liquid_precipitation_flux)
 
+prognostic_variables(h::VariablySaturatedHydrology) = prognostic_variables(h.runoff)
+
 diagnostic_variables(::VariablySaturatedHydrology) =
     (:deep_liquid_flux,
      :surface_liquid_flux,
@@ -190,13 +192,15 @@ end
 
 saturation(h::VariablySaturatedHydrology, land) = land.saturation
 
+EarthSystemModels.surface_retention_curve(h::VariablySaturatedHydrology) = h.retention_curve
+
 #####
 ##### Time-step kernel.
 #####
 
 @kernel function _variably_saturated_step!(M, saturation,
                                            Jˡb_diag, Jˡs_diag, Rsfc_diag, Rlat_diag, dMdt_diag,
-                                           Jv, Pl, T, h, deep_pressure_head,
+                                           Jv, Pl, T, prognostic, h, deep_pressure_head,
                                            Δt, grid, time)
     i, j = @index(Global, NTuple)
     @inbounds begin
@@ -212,7 +216,7 @@ saturation(h::VariablySaturatedHydrology, land) = land.saturation
     Π  = diagnostic_pressure_head(i, j, grid, h, Mij, θˡ, 𝒮)
     K  = hydraulic_conductivity(i, j, grid, h.hydraulic_conductivity, 𝒮, Tij)
 
-    Jˡs, Rsfc = surface_liquid_flux_and_runoff(h.runoff, Plij, Mij, θˡ, 𝒮, Π, K)
+    Jˡs, Rsfc = surface_water_balance!(i, j, h.runoff, prognostic, Plij, Mij, θˡ, 𝒮, Π, K, Δt)
     Jˡb       = deep_liquid_flux(h.deep_liquid_flux, Mij, θˡ, 𝒮, Π, K, Πᵈ, time)
     Rlat      = subsurface_runoff(h.runoff, Mij, Π, K)
 
@@ -238,7 +242,8 @@ saturation(h::VariablySaturatedHydrology, land) = land.saturation
     end
 end
 
-function time_step!(h::VariablySaturatedHydrology, land, Δt, time)
+function time_step!(h::VariablySaturatedHydrology, land, Δt, time,
+                    liquid_input = land.fluxes.liquid_precipitation_flux)
     arch = architecture(land.grid)
     launch!(arch, land.grid, :xy, _variably_saturated_step!,
             land.water_storage, land.saturation,
@@ -248,8 +253,9 @@ function time_step!(h::VariablySaturatedHydrology, land, Δt, time)
             land.diagnostics.subsurface_runoff,
             land.diagnostics.water_storage_tendency,
             land.fluxes.vapor_flux,
-            land.fluxes.liquid_precipitation_flux,
+            liquid_input,
             land.temperature,
+            land.prognostic,
             h, h.deep_pressure_head, Δt, land.grid, time)
     return nothing
 end
