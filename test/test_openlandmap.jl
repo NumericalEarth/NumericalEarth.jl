@@ -5,7 +5,7 @@ using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, z
                                     dataset_variable_name, validate_dataset_coverage,
                                     metadata_filename, conversion_units, convert_units,
                                     default_inpainting, is_three_dimensional,
-                                    WeightPercent, GramPerCubicCentimeter
+                                    NearestNeighborInpainting, WeightPercent, GramPerCubicCentimeter
 using NumericalEarth.DataWrangling.OpenLandMap: cog_window_to_netcdf
 
 using ArchGDAL
@@ -180,6 +180,43 @@ end
         tiled = Array(interior(Field(metadatum, grid; tile_bytes)))
         @test size(tiled) == size(reference)
         @test isequal(tiled, reference)
+    end
+end
+
+@testset "tiled regrid inpaints the assembled target" begin
+    dir = mktempdir()
+
+    # The gap sits inside a constant plateau, so inpainting fills it with the plateau
+    # value whether it runs on the native window or on the assembled target.
+    nx, ny = 512, 512
+    x0, y0, dx, dy = -112.0005, 36.0005, 0.00025, -0.00025
+    raw = Float32[30 + 10 * sinpi(i / 64) * cospi(j / 48) + (i % 7) for i in 1:nx, j in 1:ny]
+    raw[75:165, 35:115] .= 25.0
+    raw[100:140, 60:90] .= -1.0
+
+    tif = write_synthetic_tile(joinpath(dir, "gap.tif");
+                               nx, ny, x0, y0, dx, dy, scale = 1.0, offset = 0.0,
+                               nodata = -1.0, raw, dtype = Float32)
+
+    grid = LatitudeLongitudeGrid(CPU(); size = (10, 10, 3),
+                                 longitude = (-111.98, -111.96), latitude = (35.97, 35.99),
+                                 z = [-1.0, -0.6, -0.3, 0.0])
+    region = BoundingBox(grid)
+    metadatum = Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region, dir)
+    cog_window_to_netcdf(fill(tif, 3), metadata_path(metadatum), "clay", region)
+
+    inpainting = NearestNeighborInpainting(Inf)
+
+    native = Field(metadatum, CPU(); inpainting)
+    untiled = Field{Center, Center, Center}(grid)
+    NumericalEarth.DataWrangling.interpolate_physical!(untiled, native, metadatum)
+    reference = Array(interior(untiled))
+    @test !any(isnan, reference)
+
+    for tile_bytes in (typemax(Int), 20_000)
+        tiled = Array(interior(Field(metadatum, grid; tile_bytes, inpainting)))
+        @test !any(isnan, tiled)
+        @test tiled ≈ reference
     end
 end
 
