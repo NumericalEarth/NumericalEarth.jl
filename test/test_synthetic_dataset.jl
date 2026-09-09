@@ -69,6 +69,20 @@ for arch in test_architectures
         @test values == expected
     end
 
+    @testset "$A synthetic ocean fraction" begin
+        ## 20° × 30° target cells, each holding 2 × 3 native 10° centers, offset so some cells
+        ## straddle the synthetic continent's edges (λ ∈ [-60, 20], φ ∈ [-30, 40]).
+        grid = LatitudeLongitudeGrid(arch; size = (7, 3, 1), longitude = (-110, 30), latitude = (-40, 50), z = (0, 1))
+        metadatum = Metadatum(:bottom_height; dataset = SyntheticBathymetry())
+        ocean_fraction = regrid_ocean_fraction(grid, metadatum)
+        fractions = Array(interior(ocean_fraction, :, :, 1))
+
+        @test all(f -> 0 <= f <= 1, fractions)
+        @test fractions[1, 1] == 1    # open ocean
+        @test fractions[4, 2] == 0    # interior of the continent
+        @test fractions[3, 1] ≈ 4/6   # 2 of 6 native centers on the continent's corner
+    end
+
     @testset "$A synthetic prescribed components" begin
         atmosphere = synthetic_prescribed_atmosphere(arch)
         radiation = synthetic_prescribed_radiation(arch)

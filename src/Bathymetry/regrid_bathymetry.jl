@@ -204,6 +204,75 @@ function regrid_topography(target_grid, metadata; kw...)
     return elevation
 end
 
+"""
+    regrid_ocean_fraction(target_grid; dataset = ETOPO2022())
+    regrid_ocean_fraction(target_grid, metadata)
+
+The fraction of each `target_grid` cell covered by ocean, computed by averaging the
+dataset's below-sea-level indicator over the native cells falling inside each cell.
+Returns a `Field{Center, Center, Nothing}` with values in ``[0, 1]``: 0 over land,
+1 over open ocean, fractional along the coast. Pass it as the `ocean_fraction` of an
+`EarthSystemModel` that couples both land and ocean.
+"""
+function regrid_ocean_fraction(target_grid; dataset = ETOPO2022())
+    metadatum = Metadatum(:bottom_height; dataset)
+    return regrid_ocean_fraction(target_grid, metadatum)
+end
+
+function regrid_ocean_fraction(target_grid, metadata)
+    validate_dataset_coverage(target_grid, metadata)
+    download(metadata)
+
+    FT = eltype(target_grid)
+    native = native_grid(metadata, CPU())
+    dataset = Dataset(metadata_path(metadata), "r")
+    z_data = convert(Array{FT}, dataset[dataset_variable_name(metadata)][:, :])
+    close(dataset)
+
+    cpu_grid = on_architecture(CPU(), target_grid)
+    λface = λnodes(cpu_grid, Face())
+    φface = φnodes(cpu_grid, Face())
+    λnative = λnodes(native, Center())
+    φnative = φnodes(native, Center())
+
+    Nx, Ny, _ = size(target_grid)
+    wet_count = zeros(Int, Nx, Ny)
+    cell_count = zeros(Int, Nx, Ny)
+
+    for jj in eachindex(φnative)
+        j = searchsortedlast(φface, φnative[jj])
+        1 <= j <= Ny || continue
+        for ii in eachindex(λnative)
+            λ = λnative[ii]
+            λ += 360 * ((λ < first(λface)) - (λ > last(λface)))
+            i = searchsortedlast(λface, λ)
+            1 <= i <= Nx || continue
+            cell_count[i, j] += 1
+            wet_count[i, j] += z_data[ii, jj] < 0
+        end
+    end
+
+    fraction = wet_count ./ max.(cell_count, 1)
+
+    # Target cells finer than the native spacing catch no native centers; read the
+    # indicator of the native cell containing the target center instead.
+    λcenter = λnodes(cpu_grid, Center())
+    φcenter = φnodes(cpu_grid, Center())
+    nearest(nodes, x) = clamp(searchsortedlast(nodes, x), 1, length(nodes))
+    for j in 1:Ny, i in 1:Nx
+        if cell_count[i, j] == 0
+            λ = λcenter[i] + 360 * ((λcenter[i] < first(λnative)) - (λcenter[i] > last(λnative)))
+            fraction[i, j] = z_data[nearest(λnative, λ), nearest(φnative, φcenter[j])] < 0
+        end
+    end
+
+    ocean_fraction = Field{Center, Center, Nothing}(target_grid)
+    set!(ocean_fraction, reshape(fraction, Nx, Ny, 1))
+    fill_halo_regions!(ocean_fraction)
+
+    return ocean_fraction
+end
+
 # Regridding bathymetry for distributed grids, we handle the whole process
 # on just one rank, and share the results with the other processors.
 function regrid_bathymetry(target_grid::DistributedGrid, metadata;
