@@ -46,8 +46,7 @@ end
                                  closure = nothing,
                                  bottom_drag_coefficient = 0)
 
-        dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
+        atmosphere = synthetic_prescribed_atmosphere(arch)
 
         @allowscalar begin
             h  = atmosphere.surface_layer_height
@@ -230,8 +229,7 @@ end
                                            bottom_drag_coefficient = 0)
 
         set!(ocean_with_land.model, T = 15, S = 30)
-        land_dates = all_dates(RepeatYearJRA55(), :river_freshwater_flux)
-        land = JRA55PrescribedLand(arch; end_date=land_dates[2])
+        land = synthetic_prescribed_land(arch)
         model_with_land = OceanOnlyModel(ocean_with_land; atmosphere, land)
 
         # Verify land exchanger is wired up
@@ -268,8 +266,7 @@ end
                                                   closure = nothing,
                                   bottom_drag_coefficient = 0.0)
 
-        dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
+        atmosphere = synthetic_prescribed_atmosphere(arch; dates = all_dates(SyntheticAtmosphere(), :temperature)[1:2])
 
         fill!(ocean.model.tracers.T, -2.0)
 
@@ -327,10 +324,16 @@ end
 
         τˣ = earth.interfaces.sea_ice_ocean_interface.fluxes.x_momentum
         τʸ = earth.interfaces.sea_ice_ocean_interface.fluxes.y_momentum
+        λˣ = earth.interfaces.sea_ice_ocean_interface.fluxes.x_momentum_coefficient
+        λʸ = earth.interfaces.sea_ice_ocean_interface.fluxes.y_momentum_coefficient
 
+        # The drag is split as Fₑ + λ uᵒ with λ = ρₑ Cᴰ |Δu|; the ice is at rest, so Fₑ vanishes and
+        # λ uᵒ carries the whole stress.
         @allowscalar begin
-            @test τˣ[1, 1, 1] == sqrt(0.1^2 + 0.2^2) * 0.1
-            @test τʸ[1, 1, 1] == sqrt(0.1^2 + 0.2^2) * 0.2
+            @test λˣ[1, 1, 1] == sqrt(0.1^2 + 0.2^2)
+            @test λʸ[1, 1, 1] == sqrt(0.1^2 + 0.2^2)
+            @test τˣ[1, 1, 1] + λˣ[1, 1, 1] * 0.1 == sqrt(0.1^2 + 0.2^2) * 0.1
+            @test τʸ[1, 1, 1] + λʸ[1, 1, 1] * 0.2 == sqrt(0.1^2 + 0.2^2) * 0.2
         end
     end
 end

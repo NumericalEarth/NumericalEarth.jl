@@ -6,7 +6,8 @@ using Downloads: Downloads
 using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
 
-using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
+using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry,
+                       download_with_retries
 
 import ..DataWrangling:
     metadata_filename,
@@ -80,7 +81,7 @@ function Downloads.download(metadatum::IBCAOMetadatum)
     @root if !isfile(nc_path)
         if !isfile(tiff_path)
             @info "Downloading IBCAO V5.1 GeoTIFF (100m, with Greenland ice, ~25 GB)..."
-            Downloads.download(IBCAO_tiff_url, tiff_path; progress=DownloadProgress())
+            download_with_retries(IBCAO_tiff_url, tiff_path; progress=DownloadProgress())
         end
 
         @info "Reprojecting IBCAO from Polar Stereographic (EPSG:3996) to WGS84 at 0.01°..."

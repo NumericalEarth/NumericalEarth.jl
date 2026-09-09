@@ -35,7 +35,7 @@ Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 NumericalEarth = {path = ".."}
 
 [compat]
-Breeze = "0.9"
+Breeze = "0.10"
 CUDA = "6"
 CairoMakie = "0.15"
 ConservativeRegridding = "0.2"
@@ -43,5 +43,5 @@ Documenter = "1"
 DocumenterCitations = "1.3"
 Enzyme = "0.13.166"
 Literate = "2.2"
-Oceananigans = "0.110"
+Oceananigans = "0.111"
 Reactant = "0.2.278"

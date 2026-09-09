@@ -17,8 +17,8 @@ using Oceananigans.OrthogonalSphericalShellGrids
         data = Int[]
         pushdata(sim) = push!(data, iteration(sim))
         add_callback!(ocean, pushdata)
-        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
-        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
+        atmosphere = synthetic_prescribed_atmosphere(arch)
+        radiation = synthetic_prescribed_radiation(arch)
         coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
         Δt = 60
         for n = 1:3
@@ -37,10 +37,10 @@ using Oceananigans.OrthogonalSphericalShellGrids
                             halo = (7, 7, 7),
                             z = (-5000, 0))
 
-        bottom_height = regrid_bathymetry(grid;
-                                          minimum_depth = 10,
-                                          interpolation_passes = 5,
-                                          major_basins = 1)
+        bottom_height = synthetic_bottom_height(grid;
+                                                minimum_depth = 10,
+                                                interpolation_passes = 5,
+                                                major_basins = 1)
 
         grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
 
@@ -49,8 +49,8 @@ using Oceananigans.OrthogonalSphericalShellGrids
 
         @test NumericalEarth.Oceans.get_radiative_forcing(ocean) isa NumericalEarth.Oceans.TwoColorRadiation
 
-        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
-        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
+        atmosphere = synthetic_prescribed_atmosphere(arch)
+        radiation = synthetic_prescribed_radiation(arch)
 
         # Fluxes are computed when the model is constructed, so we just test that this works.
         @test begin
@@ -63,9 +63,8 @@ using Oceananigans.OrthogonalSphericalShellGrids
         ##### Ocean with prescribed atmosphere and land
         #####
 
-        @info "Testing OceanOnlyModel with JRA55PrescribedLand on $A..."
-        land_dates = all_dates(RepeatYearJRA55(), :river_freshwater_flux)
-        land = JRA55PrescribedLand(arch; end_date=land_dates[2])
+        @info "Testing OceanOnlyModel with PrescribedLand on $A..."
+        land = synthetic_prescribed_land(arch)
 
         @test begin
             ocean_with_land = ocean_simulation(grid; free_surface)
