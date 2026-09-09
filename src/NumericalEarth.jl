@@ -148,6 +148,7 @@ export
     breeze_prognostic_state,
     hydrostatic_pressure_from_surface,
     ocean_simulation,
+    river_mouth_vertical_diffusivity,
     sea_ice_simulation,
     default_sea_ice,
     initialize!,
