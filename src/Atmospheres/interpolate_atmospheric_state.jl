@@ -129,14 +129,25 @@ end
         surface_atmos_state.Jˢⁿ[i, j, 1] = Ms
     end
 
-    for (tn, tv) in pairs(atmos_tracers)
-        @inbounds update_tracer_state!(i, j, surface_atmos_state[tn], tv, atmos_args, t_itp)
+    update_tracer_states!(i, j, surface_atmos_state, atmos_tracers, atmos_args, t_itp)
+end
+
+# Unrolled over the names in the type, so each `getindex` compiles to a `getfield`
+# on a literal symbol and the kernel stays statically resolvable on GPU.
+@inline function update_tracer_states!(i, j, surface_atmos_state, atmos_tracers::NamedTuple{names},
+                                       atmos_args, t_itp) where names
+
+    ntuple(Val(length(names))) do n
+        name = names[n]
+        update_tracer_state!(i, j, surface_atmos_state[name], atmos_tracers[name], atmos_args, t_itp)
     end
+
+    return nothing
 end
 
 @inline function update_tracer_state!(i, j, state, tracer, atmos_args, t_itp)
     @inbounds state[i, j, 1] = interp_atmos_time_series(tracer, atmos_args...)
-    
+
     return nothing
 end
 
