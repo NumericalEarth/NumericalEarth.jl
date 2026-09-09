@@ -28,7 +28,7 @@ using OceanBioME
 
         O₂ = Oceananigans.Fields.ConstantField(100)
         pCO₂ = FieldTimeSeries((nothing, nothing, nothing), grid, 0:10800:3.15252f7, time_indexing = Oceananigans.OutputReaders.Cyclical())
-        pCO₂ .= reshape(250 .+ 200 .* [1:2920;] ./ 2920, 1, 1, 1, 2920)
+        pCO₂ .= on_architecture(arch, reshape(250 .+ 200 .* [1:2920;] ./ 2920, 1, 1, 1, 2920))
 
         river_alkalinity = Field{Center, Center, Nothing}(grid)
         set!(river_alkalinity, (λ, φ) -> 1000 * (sqrt((λ - 310)^2 + (φ - 1)^2) < 10)) # set the amazon mouth to high concentration
