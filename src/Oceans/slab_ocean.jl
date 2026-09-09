@@ -127,6 +127,7 @@ end
 
 # No interpolation needed: the slab ocean IS on the exchange grid
 EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabOcean, coupled_model) = nothing
+EarthSystemModels.InterfaceComputations.biogeochemical_interface(exchanger, ocean::SlabOcean) = NamedTuple()
 
 # Assemble net ocean fluxes from interface computations
 EarthSystemModels.update_net_fluxes!(coupled_model, ocean::SlabOcean) =
