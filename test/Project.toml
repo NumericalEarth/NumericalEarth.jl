@@ -37,6 +37,9 @@ ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
 
 [sources]
 NumericalEarth = {path = ".."}
+# TEMPORARY: OceanBioME 0.19 is unregistered, so take it from the coupling branch.
+# Remove this line once OceanBioME 0.19 is released.
+OceanBioME = {url = "https://github.com/OceanBioME/OceanBioME.jl", rev = "jsw/numerical-earth-coupling"}
 
 [compat]
 ArchGDAL = "0.10"
