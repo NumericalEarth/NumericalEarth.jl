@@ -39,7 +39,7 @@ using OceanBioME
                                                time_indices_in_memory=2, 
                                                tracers = (; O₂, pCO₂))
         radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=2)
-        land = JRA55PrescribedLand(arch, time_indices_in_memory=2)
+        land = JRA55PrescribedLand(GRID, time_indices_in_memory=2)
 
         coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, land)
 
