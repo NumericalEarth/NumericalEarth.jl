@@ -1,6 +1,6 @@
 [CUDA_Runtime_jll]
-local = "true"
-version = "12.4"
+__clear__ = ["local"]
+version = "12.6"
 
 [MPIPreferences]
 __clear__ = ["preloads_env_switch"]
@@ -8,6 +8,14 @@ _format = "1.0"
 abi = "OpenMPI"
 binary = "system"
 cclibs = []
-libmpi = "/orcd/software/community/001/rocky8/nvhpc/2024_245/Linux_x86_64/24.5/comm_libs/openmpi/openmpi-3.1.5/lib/libmpi.so"
-mpiexec = "mpiexec"
+libmpi = "libmpi"
+mpiexec = "srun"
 preloads = []
+
+[OpenMPI_jll]
+libmpi_path = "/apps/software/2024a/software/OpenMPI/5.0.3-GCC-13.3.0-CUDA-12.6.0/lib/libmpi.so"
+mpiexec_path = "/apps/software/2024a/software/OpenMPI/5.0.3-GCC-13.3.0-CUDA-12.6.0/bin/mpiexec"
+
+[HDF5]
+libhdf5 = "/apps/software/2024a/software/HDF5/1.14.5-gompi-2024a/lib/libhdf5.so"
+libhdf5_hl = "/apps/software/2024a/software/HDF5/1.14.5-gompi-2024a/lib/lib/hdf5_hl.so"
