@@ -152,8 +152,10 @@ end
 end
 
 @inline update_tracer_state!(i, j, state, ::ConstantField, atmos_args, t_itp) = nothing
+# `t_itp` comes from the atmosphere's time axis, so the tracer must share it.
 @inline function update_tracer_state!(i, j, state, zero_D_fts::FTS0, atmos_args, t_itp)
-    @inbounds state[1, 1, 1] = interpolate(FractionalIndices(1, 1, 1), t_itp, zero_D_fts, atmos_args[3:4]...)
+    fi = FractionalIndices(nothing, nothing, nothing)
+    @inbounds state[1, 1, 1] = interpolate(fi, t_itp, zero_D_fts, zero_D_fts.backend, zero_D_fts.time_indexing)
 
     return nothing
 end
