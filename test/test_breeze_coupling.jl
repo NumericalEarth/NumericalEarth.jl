@@ -426,3 +426,25 @@ end
         end
     end
 end
+
+@testset "Attaching nested radiation preserves simulation controls" for arch in test_architectures
+    grid = RectilinearGrid(arch; size=(3, 3, 3), extent=(3000, 3000, 3000))
+    child = Breeze.AtmosphereModel(grid; radiation=NumericalEarthBreezeExt.CoupledRadiation())
+    parent_atmosphere = NumericalEarth.PrescribedAtmosphere(grid, [0.0, 1.0])
+    nested = NumericalEarth.NestedModels.NestedModel(parent_atmosphere, child)
+    simulation = Simulation(nested; Δt=0.1, stop_time=2.0, stop_iteration=5,
+                            wall_time_limit=60.0, align_time_step=false, verbose=false)
+    simulation.callbacks[:control] = Callback(sim -> nothing, IterationInterval(2))
+    radiation = Breeze.RadiativeTransferModel(eltype(grid)(1361), nothing, nothing, nothing,
+        nothing, nothing, nothing, ntuple(_ -> ZFaceField(grid), 4)...,
+        CenterField(grid), nothing, nothing, IterationInterval(1))
+    coupled = NumericalEarth.EarthSystemModels.materialize_earth_system_radiation!(simulation, radiation)
+    @test coupled.stop_time == 2.0
+    @test coupled.stop_iteration == 5
+    @test coupled.wall_time_limit == 60.0
+    @test !coupled.align_time_step
+    @test coupled.callbacks === simulation.callbacks
+    @test coupled.model.child.temperature === child.temperature
+    @test coupled.model.clock === coupled.model.child.clock
+    @test coupled.model.child.radiation.flux_divergence === radiation.flux_divergence
+end
