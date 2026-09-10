@@ -116,11 +116,13 @@ end
 # `Metadatum` is a `Metadata` with one date, so this covers both.
 function Downloads.download(metadata::SeaWiFSMetadata; kwargs...)
     for metadatum in metadata
-        path = metadata_path(metadatum)
-        isfile(path) && continue
-        @root begin
+        # `@root` ends in an `MPI.Barrier`, so the test for "is it already here?" belongs
+        # inside it, as in every other dataset: skipping the block on a rank-local `isfile`
+        # lets the ranks enter the barrier a different number of times — one stale directory
+        # cache, or one file that lands mid-loop, and the run deadlocks with no output.
+        @root if !isfile(metadata_path(metadatum))
             @info "Downloading SeaWiFS chlorophyll for $(Dates.format(metadatum.dates, "yyyy-mm"))"
-            Downloads.download(erddap_url(metadatum), path; kwargs...)
+            Downloads.download(erddap_url(metadatum), metadata_path(metadatum); kwargs...)
         end
     end
     return nothing

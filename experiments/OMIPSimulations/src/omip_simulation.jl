@@ -1,24 +1,31 @@
 using Printf
 using KernelAbstractions: @index, @kernel
-using Oceananigans.Operators: Δzᶜᶜᶜ
-using Oceananigans.Grids: λnode, φnode, znode, Center
+using Oceananigans.Operators: Δzᶜᶜᶜ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
+using Dates: month
+using Oceananigans.Grids: λnode, φnode, znode, λnodes, φnodes, Center
 using Oceananigans.Architectures: on_architecture, architecture
-using Oceananigans.DistributedComputations: @root
+using Oceananigans.DistributedComputations: @root, Distributed
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, getbc, fill_halo_regions!
-using Oceananigans.Fields: CenterField, interior
+using Oceananigans.Fields: Field, CenterField, interior
+using Oceananigans.Advection: CWENOZ
 using Oceananigans.ImmersedBoundaries: bottom_height_field, mask_immersed_field!
 using Oceananigans.Utils: launch!
 using Adapt: Adapt
 using ClimaSeaIce
 using ClimaSeaIce.Rheologies: ElastoViscoPlasticRheology
+using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus
+using NumericalEarth: DataWrangling
 using NumericalEarth.Bathymetry: remove_minor_basins!, atlantic_ocean_basin, pacific_ocean_basin
 using NumericalEarth.Oceans: MultipleFluxes, FreshwaterExchange, extract_freshwater_flux, freshwater_exchange
 using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes,
                                                               ConservativeIceFreshwater,
                                                               ScaledIceFreshwater,
-                                                              VirtualSaltFluxIceFreshwater
+                                                              VirtualSaltFluxIceFreshwater,
+                                                              ZeroHeatContentMeltwater,
+                                                              InterfaceTemperatureMeltwater
 using SeawaterPolynomials.TEOS10: Sᴬ_from_Sᴾ, Θ_from_T
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity,
+                                       TriadIsopycnalSkewSymmetricDiffusivity,
                                        ConvectiveAdjustmentVerticalDiffusivity,
                                        AdvectiveFormulation, DiffusiveFormulation
 using Oceananigans.Utils: NormalDivision
@@ -63,7 +70,7 @@ function corrected_atmosphere_ocean_fluxes(FT = Float64;
 end
 
 """
-    corrected_atmosphere_sea_ice_fluxes(FT = Float64)
+    corrected_atmosphere_sea_ice_fluxes(FT = Float64; momentum_roughness_length, scalar_roughness_length)
 
 Atmosphere-sea ice flux formulation with:
 - SHEBA/Paulson+Grachev stability functions (existing default, correct)
@@ -71,15 +78,22 @@ Atmosphere-sea ice flux formulation with:
 - Fixed scalar roughness z0t = z0q = 5e-5 m (Andreas 1987: z0t ≈ z0/10 at R*≈7)
 - COARE logarithmic similarity profile
 - Minimum gustiness = 0.2 m/s
+
+Both roughnesses are geometric constants rather than wind-dependent, because sea ice carries no gravity
+waves; the roughness is set by ridges, floe edges and sastrugi. The SHEBA value describes multiyear pack,
+and smoother first-year ice sits nearer 1e-4 m, so `momentum_roughness_length` is exposed to let the drift
+speed be varied over its observed range.
 """
-corrected_atmosphere_sea_ice_fluxes(FT = Float64) = 
+corrected_atmosphere_sea_ice_fluxes(FT = Float64;
+                                    momentum_roughness_length = 5e-4,
+                                    scalar_roughness_length = 5e-5) =
     SimilarityTheoryFluxes(FT;
                            stability_functions          = atmosphere_sea_ice_stability_functions(FT),
                            similarity_form              = COARELogarithmicSimilarityProfile(),
                            subgrid_velocities           = ConvectiveGustiness{FT}(minimum_gustiness = FT(0.2)),
-                           momentum_roughness_length    = FT(5e-4),
-                           temperature_roughness_length = FT(5e-5),
-                           water_vapor_roughness_length = FT(5e-5))
+                           momentum_roughness_length    = FT(momentum_roughness_length),
+                           temperature_roughness_length = FT(scalar_roughness_length),
+                           water_vapor_roughness_length = FT(scalar_roughness_length))
 
 """
     corrected_ice_ocean_heat_flux()
@@ -145,11 +159,13 @@ Options for `velocity_formulation`:  `:relative`, `:wind`
 function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
                              velocity_formulation::Symbol = :relative,
                              sea_ice_ocean_heat_transfer_coefficient = 0.0057,
-                             ice_freshwater_delivery = ConservativeIceFreshwater())
+                             sea_ice_momentum_roughness_length = 5e-4,
+                             ice_freshwater_delivery = ConservativeIceFreshwater(),
+                             ice_meltwater_enthalpy = ZeroHeatContentMeltwater())
     FT = eltype(ocean.model.grid)
     if flux_configuration == :default
         interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice; radiation, land,
-                                         ice_freshwater_delivery)
+                                         ice_freshwater_delivery, ice_meltwater_enthalpy)
         return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, land, interfaces)
     end
 
@@ -162,9 +178,10 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
                                          radiation,
                                          land,
                                          atmosphere_ocean_fluxes   = corrected_atmosphere_ocean_fluxes(FT),
-                                         atmosphere_sea_ice_fluxes = corrected_atmosphere_sea_ice_fluxes(FT),
+                                         atmosphere_sea_ice_fluxes = corrected_atmosphere_sea_ice_fluxes(FT; momentum_roughness_length = sea_ice_momentum_roughness_length),
                                          sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = sea_ice_ocean_heat_transfer_coefficient),
                                          ice_freshwater_delivery,
+                                         ice_meltwater_enthalpy,
                                          atmosphere_ocean_velocity_difference   = velocity_difference_obj,
                                          atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
     elseif flux_configuration == :ncar
@@ -175,6 +192,7 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
                                          atmosphere_sea_ice_fluxes = ncar_atmosphere_sea_ice_fluxes(FT),
                                          sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = sea_ice_ocean_heat_transfer_coefficient),
                                          ice_freshwater_delivery,
+                                         ice_meltwater_enthalpy,
                                          atmosphere_ocean_velocity_difference   = velocity_difference_obj,
                                          atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
     else
@@ -452,6 +470,17 @@ end
 ##### Main simulation builder
 #####
 
+# Every stage of `omip_simulation` below is collective, and at eddying resolution each one takes
+# minutes, so a rank that stalls in a mismatched collective is invisible: the job simply stops
+# producing output until the scheduler kills it. Tag each completed stage with the rank and the
+# elapsed time, so a hang is localized both to a stage and to the ranks that never reached it.
+function log_setup_stage(arch, stage, t₀)
+    rank = arch isa Distributed ? arch.local_rank : 0
+    @info @sprintf("omip_simulation setup [rank %d] %-28s %8.1f s", rank, stage, time() - t₀)
+    flush(stderr)
+    return nothing
+end
+
 """
     omip_simulation(config::Symbol = :halfdegree; kwargs...)
 
@@ -496,6 +525,10 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   the internal Rossby radius squared times the baroclinic growth rate, recomputed every step and
   held depth-uniform. GM tapers to zero equatorward of 20°, Redi rises to its reference value there
   and carries a floor of one fifth of it. See [`NEMOEddyCoefficients`](@ref).
+- `isopycnal_formulation`: which closure carries GM/Redi. `:standard` (default) is
+  `IsopycnalSkewSymmetricDiffusivity`; `:triad` is `TriadIsopycnalSkewSymmetricDiffusivity`, which
+  evaluates the tensor on the Griffies triad stencil. The triad closure carries no
+  `skew_flux_formulation`, so `:triad` requires the default `:diffusive`.
 - `skew_flux_formulation`: how the GM skew transport is applied. `:diffusive` (default) adds it to
   the tracer flux; `:advective` builds the eddy-induced velocity and advects with it, which also
   makes the bolus transport available as a model field. Those two are equivalent continuously, not
@@ -551,6 +584,28 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `atlantic_runoff_diversion`: fraction of the river and iceberg discharge landing in the Atlantic
   that is delivered to the Pacific instead, at the latitude it was diverted from. Conserves the
   global freshwater input. Default: 0.
+- `initial_condition_blend_depth`: depth in metres above which the initial T and S come from WOA
+  **Monthly** for the month of `start_date` rather than WOA Annual, tapering linearly to the annual
+  field at the monthly climatology's own reach (~1500 m). WOA Annual averages a seasonal cycle whose
+  winter half has kilometre-deep mixed layers, so a January start initialized from it begins with a
+  seasonal thermocline the season does not have. `nothing` (default) uses WOA Annual throughout and
+  reproduces the previous model exactly.
+- `northern_sea_ice_initial_date`, `southern_sea_ice_initial_date`: the ECCO4Monthly dates the initial
+  sea-ice thickness and concentration are taken from, north and south of the equator. The two
+  hemispheres reach their minimum six months apart, so the single date both default to,
+  `DateTime(1993, 1, 1)`, starts the Arctic at its seasonal maximum while the Antarctic is at its
+  minimum; `DateTime(1993, 9, 1)` in the north gives the summer pack in both. Sea ice never reaches
+  the equator, so the two fields are stitched there with no taper. Defaults: `DateTime(1993, 1, 1)`
+  for both, which reproduces the previous model exactly.
+- `sea_ice_ocean_drag_reference_depth`: depth in metres over which the ocean velocity is averaged to
+  give the reference of the ice-ocean drag. McPhee's `Cᵢₒ = 5.5e-3` is defined against the under-ice
+  boundary layer, tens of metres thick, while the topmost cell is 1.5 m and is dragged along by the ice
+  itself, so referencing the drag there under-brakes the pack. `nothing` uses the topmost cell and
+  reproduces the previous model exactly. Default: `nothing`.
+- `ice_salinity`: bulk salinity of the sea ice in psu, carried as a `ConstantField`. It sets the salt
+  returned per unit of melt, `Jˢ = Eᵢ Sˢⁱ / ρᵒᶜ`, so the freshwater a melting cell delivers goes as
+  `(Sᴺ - Sˢⁱ)/Sᴺ`: 0.885 at 4 psu against 0.828 at 6, for `Sᴺ = 34.9`. Multi-year Arctic ice is 2-4 psu
+  and first-year ice 5-8. Default: `4`.
 - `ice_freshwater_fraction`: the fraction of the sea ice-ocean mass exchange delivered to the ocean,
   volume and salt alike. The withheld water leaves the ocean + ice + snow total and
   `normalize_freshwater` returns it globally through the free surface, so the global budget closes
@@ -563,6 +618,26 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   device as `river_mixing`, and unlike it the footprint follows the melt from step to step. ⚠ `κ` is
   *not* the river value — 0.1 m² s⁻¹ would mix ≈131 m in a day, which is convective adjustment, while
   5e-4 gives ≈9 m day⁻¹. Defaults: `false`, `5e-4` m² s⁻¹, `10` m, `1e-9` m s⁻¹.
+- `under_ice_viscosity`, `under_ice_viscosity_depth`: floor on the vertical viscosity over the top
+  `under_ice_viscosity_depth` metres, scaled by the ice concentration, the closure otherwise untouched.
+  Under ice CATKE's momentum diffusivity falls to molecular values below ≈18 m, so the ice stress reaches
+  an Ekman layer of 3–16 m against 11–196 m in open water; this bounds how deep it reaches. McPhee's u★ℓ
+  scaling with u★ ≈ 1 cm s⁻¹ and ℓ ≈ 1 m gives 1e-2 m² s⁻¹. Defaults: `nothing` (off), `20` m.
+- `ice_arch_region`, `ice_arch_stress`, `ice_arch_months`: a seasonal ice arch over the longitude–latitude
+  box `ice_arch_region = (λ₁, λ₂, φ₁, φ₂)`, as a basal stress of `ice_arch_stress` N m⁻² arresting the ice
+  from the first to the last month of `ice_arch_months` inclusive, wrapping the year. `nothing` switches it
+  off. Two boxes are in use. Nares Strait `(-78, -58, 77.5, 82.5)` over `(12, 7)` is the observed arch season
+  (Kwok 2005, 2010), which holds the annual export to ≈ 130 km³ against the 450 the model exports without it.
+  Baffin Bay and Davis Strait `(-80, -48, 65, 80)` over `(1, 12)` arrests the Davis delivery outright: the
+  ψ response is linear in the removed Davis export and blind to Fram (C21-3, C21-5), and no run has yet
+  varied Davis while holding the global ice state fixed. ⚠ Davis Strait is far too deep for a basal stress
+  to be physical there — read the second box as a mechanism probe, like `with_ice_dynamics = false`, not as
+  a tuning. Defaults: `nothing`, `100`, `(12, 7)`.
+- `ice_meltwater_at_interface_temperature`: deliver ice meltwater at the interface temperature `Tᵦ`
+  rather than at Conservative Temperature 0. `ClimaSeaIce` produces basal meltwater at `Tᵦ`, so the
+  default hands the ocean roughly 0.23 W m⁻² per m yr⁻¹ of basal melt that it never paid for.
+  ⚠ The correction is applied to the whole ice mass flux, over-correcting the top-melt fraction, which
+  is produced near 0; read it as an upper bound. Default: `false`.
 - `ice_virtual_salt_flux`: deliver that exchange as a salt flux at fixed ocean volume — the classical
   virtual salt flux `Jˢ = Jʷ (Sᴺ − Sˢⁱ)` — instead of as a real volume flux, which isolates the volume
   pathway from the freshwater amount. Exact only for `Sᴺ` uniform over the column, and it does not
@@ -597,6 +672,9 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
    * `:default` — current defaults (Edson/COARE with constant Charnock 0.02)
    * `:corrected` — COARE 3.6 with wind-dependent Charnock, fixed ice roughness, momentum-based u*
    * `:ncar` — OMIP-2 standard Large & Yeager (2004) bulk formulae
+- `sea_ice_momentum_roughness_length`: aerodynamic roughness z₀ of the ice surface, m, used by
+  `:corrected`. 5e-4 is the SHEBA multiyear-pack value; smooth first-year ice is nearer 1e-4, which cuts
+  the neutral drag coefficient by about a quarter and the free-drift speed by about a seventh.
 - `vertical_closure::Symbol`: ocean vertical-mixing closure. Options:
    * `:catke` — CATKE TKE-based scheme (default).
    * `:simple` — `ConvectiveAdjustmentVerticalDiffusivity(convective_κz=1)` plus a
@@ -639,6 +717,26 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   `AdaptiveVerticallyImplicitDiscretization(cfl=0.5)` (switches the vertical advective flux to implicit
   where the vertical Courant number is large — e.g. in thin near-surface cells). If `false`, fully
   explicit `WENO`/`WENOVectorInvariant`. Use `false` to isolate adaptive-implicit advection effects.
+- `boundary_scheme::Symbol`: the reconstruction the WENO buffer chain terminates in, used in the one cell
+  whose stencil no longer fits — the domain buffer and, on an `ImmersedBoundaryGrid`, any cell adjacent to
+  an inactive node. Options:
+   * `:default` — `Centered(order=2)` for tracers and `UpwindBiased(order=1)` for momentum.
+   * `:upwind` — first-order upwind, monotone, in exactly those cells while the interior keeps the full order.
+   * `:cwenoz` — the third-order central-WENO reconstruction of Semplice, Travaglia and Puppo (2022),
+     whose stencil extends only inwards.
+- `tracer_boundary_scheme::Symbol`, `momentum_boundary_scheme::Symbol`: the same choice made separately for the
+  tracer and the momentum reconstructions, both defaulting to `boundary_scheme`. Setting one of them alone
+  isolates which of the two the boundary treatment acts through.
+- `temperature_reference_variation`, `salinity_reference_variation`, `momentum_reference_variation`:
+  the cell-to-cell variation of the reconstructed field below which CWENOZ reads the stencil as noise, setting
+  `ϵ = reference_variation²`. It carries the units of the field and no grid spacing, so one value serves every
+  direction and every cell thickness. The constant candidate takes over above a variation of about
+  `8.6 × reference_variation` between adjacent averages. All three default to `0`, which reads `ϵ` off the
+  stencil: a nonzero value acts only on the horizontal, where it is worth some tens of m²/s against a skew
+  diffusivity of order 1e3, and is inert on the vertical, where the boundary reconstruction competes against a
+  background diffusivity of order 1e-5. The horizontal momentum terms reconstruct a vorticity, a divergence flux
+  and a squared velocity, so they take no variation; `momentum_reference_variation` is a speed in m/s and applies
+  to the vertical reconstruction alone.
 - `velocity_formulation::Symbol`: Δu used by the bulk formula. Options:
    * `:relative` — `Δu = u_atm − u_ocean` (OMIP-2 α=1, default).
    * `:wind` — `Δu = u_atm` (ignores ocean current). For isolating bulk-formula
@@ -656,7 +754,12 @@ function omip_simulation(config::Symbol = :halfdegree;
                          κ_skew = ConfigDefault(),
                          κ_symmetric = ConfigDefault(),
                          skew_flux_formulation = :diffusive,
+                         isopycnal_formulation = :standard,
                          Cᵇ = 0.28,
+                         Cᵘⁿᵇ = 0.0,
+                         Cᶠ = 1.0,
+                         Cᶠ⁰ = 1e9,
+                         Cᶠᵟ = 0.75,
                          Cᵉc = 0.112,
                          biharmonic_timescale = ConfigDefault(),
                          biharmonic_viscosity = nothing,
@@ -665,6 +768,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          backend_size = 50,
                          restoring_dir = "climatology",
                          piston_velocity = 1 / 6, # m / day
+                         initial_condition_blend_depth = nothing,
                          start_date = DateTime(1958, 1, 1),
                          end_date = DateTime(2018, 1, 1),
                          Δt = ConfigDefault(),
@@ -676,17 +780,30 @@ function omip_simulation(config::Symbol = :halfdegree;
                          background_vertical_diffusivity = :henyey,
                          background_vertical_viscosity = nothing,
                          implicit_vertical_advection = true,
+                         tracer_advection_order = 7,
+                         boundary_scheme = :default,
+                         tracer_boundary_scheme = boundary_scheme,
+                         momentum_boundary_scheme = boundary_scheme,
+                         temperature_reference_variation = 0,
+                         salinity_reference_variation = 0,
+                         momentum_reference_variation = 0,
                          implicit_bottom_drag = true,
                          bottom_drag_background_velocity = 0,
                          velocity_formulation = :relative,
                          Cᵂu★ = nothing,
                          with_snow = false,
                          with_ice_dynamics = true,
+                         with_ocean_surface_tilt = false,
                          with_landfast_basal_stress = true,
                          sea_ice_ocean_heat_transfer_coefficient = 0.0057,
+                         sea_ice_momentum_roughness_length = 5e-4,
                          sea_ice_lateral_boundary_condition = :no_slip,
                          sea_ice_ocean_drag_coefficient = 5.5e-3,
+                         sea_ice_ocean_drag_reference_depth = 6,
                          ice_compressive_strength = 27500,
+                         ice_salinity = 4,
+                         northern_sea_ice_initial_date = DateTime(1993, 1, 1),
+                         southern_sea_ice_initial_date = DateTime(1993, 1, 1),
                          partial_cell_bathymetry = false,
                          mixed_layer_tapering = false,
                          normalize_salinity = true,
@@ -700,16 +817,26 @@ function omip_simulation(config::Symbol = :halfdegree;
                          atlantic_runoff_diversion = 0,
                          ice_freshwater_fraction = 1,
                          ice_virtual_salt_flux = false,
+                         ice_meltwater_at_interface_temperature = true,
+                         sea_ice_liquidus = :teos10,
                          ice_melt_mixing = false,
                          ice_melt_mixing_κ = 5e-4,
                          ice_melt_mixing_depth = 10,
                          ice_melt_mixing_threshold = 1e-9,
+                         under_ice_viscosity = nothing,
+                         under_ice_viscosity_depth = 20,
+                         ice_arch_region = nothing,
+                         ice_arch_stress = 100,
+                         ice_arch_months = (12, 7),
                          barotropic_substeps = ConfigDefault(),
                          chlorophyll = :seawifs,
                          thickness_categories = 1,
+                         snow_thickness_categories = thickness_categories,
+                         itd_shape = nothing,
                          bbl_diffusivity = nothing,
                          bbl_transport_coefficient = nothing,
                          overflow_restoring_timescale = nothing,
+                         labrador_restoring_timescale = nothing,
                          diagnostics = true,
                          field_mean_interval = 5days,
                          surface_averaging_interval = 5days,
@@ -735,8 +862,13 @@ function omip_simulation(config::Symbol = :halfdegree;
     Δt                   = resolve_config_default(Δt,                   config_Δt(cfg))
 
     check_depth_independent_skew_coefficient(κ_skew, skew_flux_formulation)
+    check_isopycnal_formulation(isopycnal_formulation, skew_flux_formulation)
+
+    setup_t₀ = time()
+    log_setup_stage(arch, "start", setup_t₀)
 
     grid = build_grid(cfg, arch, Nz, depth; Δz_top, partial_cell_bathymetry)
+    log_setup_stage(arch, "grid", setup_t₀)
 
     # When staging_dir is provided, JRA55 data is read from fast scratch
     # with symlink fallback to the slow source directory.
@@ -770,6 +902,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                                spread_radius = river_spread_radius,
                                n_spread_cells = river_spread_cells,
                                flux_diversion)
+    log_setup_stage(arch, "land", setup_t₀)
 
     # Built here because the ocean closure is constructed before the coupled model that owns the real
     # ice-ocean flux; `RefreshIceMeltDiffusivity` fills this field once the simulation exists.
@@ -778,6 +911,11 @@ function omip_simulation(config::Symbol = :halfdegree;
         ice_melt_mixing_mask(grid; κ = ice_melt_mixing_κ, mixing_depth = ice_melt_mixing_depth) :
         nothing
     ice_melt_κ_closure = ice_melt_mixing ? ice_melt_vertical_diffusivity(ice_melt_diffusivity) : nothing
+
+    under_ice_ν_field = isnothing(under_ice_viscosity) ? nothing : CenterField(grid)
+    under_ice_ν_mask = isnothing(under_ice_viscosity) ? nothing :
+        ice_melt_mixing_mask(grid; κ = under_ice_viscosity, mixing_depth = under_ice_viscosity_depth)
+    under_ice_ν_closure = isnothing(under_ice_viscosity) ? nothing : under_ice_vertical_viscosity(under_ice_ν_field)
 
     river_κ = river_mixing ?
         river_mouth_vertical_diffusivity(grid, land.river_routing; κ = river_mixing_κ, mixing_depth = river_mixing_depth) :
@@ -799,13 +937,16 @@ function omip_simulation(config::Symbol = :halfdegree;
         advective_bottom_boundary_layer_forcing(grid, bbl_transport_coefficient)
 
     restoring_forcing = overflow_restoring_forcing(grid, overflow_restoring_timescale)
+    labrador_forcing  = labrador_restoring_forcing(grid, labrador_restoring_timescale; restoring_dir)
 
-    ocean_forcing = merge_tracer_forcings(merge_tracer_forcings(diffusive_forcing, advective_forcing),
-                                          restoring_forcing)
+    ocean_forcing = merge_tracer_forcings(
+                        merge_tracer_forcings(merge_tracer_forcings(diffusive_forcing, advective_forcing),
+                                              restoring_forcing),
+                        labrador_forcing)
 
     ocean = build_ocean(cfg, grid;
                         forcing = ocean_forcing,
-                        κ_skew, κ_symmetric, Cᵇ, Cᵉc,
+                        κ_skew, κ_symmetric, Cᵇ, Cᵘⁿᵇ, Cᶠ, Cᶠ⁰, Cᶠᵟ, Cᵉc,
                         barotropic_substeps, Δt,
                         nemo_eddy_coefficients,
                         cesm_eddy_coefficients,
@@ -819,21 +960,37 @@ function omip_simulation(config::Symbol = :halfdegree;
                         background_vertical_diffusivity,
                         background_vertical_viscosity,
                         implicit_vertical_advection,
+                        tracer_advection_order,
+                        boundary_scheme,
+                        tracer_boundary_scheme,
+                        momentum_boundary_scheme,
+                        temperature_reference_variation,
+                        salinity_reference_variation,
+                        momentum_reference_variation,
                         implicit_bottom_drag,
                         bottom_drag_background_velocity,
                         skew_flux_formulation,
+                        isopycnal_formulation,
                         restoring_under_sea_ice,
                         Cᵂu★,
                         restoring_dir, piston_velocity, chlorophyll,
+                        initial_condition_blend_depth,
                         normalize_salinity,
-                        additional_tracer_closure = filter(!isnothing, (river_κ, ice_melt_κ_closure)),
+                        additional_tracer_closure = filter(!isnothing, (river_κ, ice_melt_κ_closure, under_ice_ν_closure)),
                         start_date, end_date)
+    log_setup_stage(arch, "ocean", setup_t₀)
 
     snow_thermodynamics = with_snow ?
-        NumericalEarth.SeaIces.default_snow_thermodynamics(grid; thickness_categories) : nothing
+        NumericalEarth.SeaIces.default_snow_thermodynamics(grid; thickness_categories = snow_thickness_categories) : nothing
     sea_ice = build_sea_ice(cfg, grid, ocean; restoring_dir, snow_thermodynamics, with_ice_dynamics,
+                            with_ocean_surface_tilt, sea_ice_liquidus,
                             with_landfast_basal_stress, sea_ice_lateral_boundary_condition,
-                            sea_ice_ocean_drag_coefficient, ice_compressive_strength, thickness_categories)
+                            sea_ice_ocean_drag_coefficient, sea_ice_ocean_drag_reference_depth,
+                            ice_compressive_strength, ice_salinity,
+                            northern_sea_ice_initial_date, southern_sea_ice_initial_date,
+                            thickness_categories, itd_shape,
+                            ice_arch_region, ice_arch_stress, ice_arch_months)
+    log_setup_stage(arch, "sea ice", setup_t₀)
 
     atmosphere, radiation = omip_forcing(arch, sea_ice;
                                          forcing_dir = atmosphere_dir,
@@ -841,6 +998,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                                          end_date,
                                          backend_size,
                                          repeat_year_forcing)
+                                         
+    log_setup_stage(arch, "atmosphere", setup_t₀)
 
     ice_freshwater_delivery = if ice_virtual_salt_flux
         VirtualSaltFluxIceFreshwater()
@@ -850,11 +1009,17 @@ function omip_simulation(config::Symbol = :halfdegree;
         ScaledIceFreshwater(convert(eltype(grid), ice_freshwater_fraction))
     end
 
+    ice_meltwater_enthalpy = ice_meltwater_at_interface_temperature ?
+        InterfaceTemperatureMeltwater() : ZeroHeatContentMeltwater()
+
     coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
                                   velocity_formulation, sea_ice_ocean_heat_transfer_coefficient,
-                                  ice_freshwater_delivery)
+                                  sea_ice_momentum_roughness_length,
+                                  ice_freshwater_delivery, ice_meltwater_enthalpy)
+    log_setup_stage(arch, "coupled model", setup_t₀)
 
     simulation = Simulation(coupled; Δt, stop_time)
+    log_setup_stage(arch, "simulation", setup_t₀)
 
     # Only rank 0 creates dirs; others barrier inside @root and proceed once
     # the dirs exist. mkpath is idempotent so a race-free retry would also
@@ -892,6 +1057,18 @@ function omip_simulation(config::Symbol = :halfdegree;
                                                      convert(eltype(grid), ice_melt_mixing_threshold))
         refresh_ice_melt(simulation)
         add_callback!(simulation, refresh_ice_melt, IterationInterval(1))
+    end
+
+    if !isnothing(under_ice_ν_field)
+        refresh_under_ice_ν = RefreshUnderIceViscosity(under_ice_ν_field, under_ice_ν_mask)
+        refresh_under_ice_ν(simulation)
+        add_callback!(simulation, refresh_under_ice_ν, IterationInterval(1))
+    end
+
+    if !isnothing(ice_arch_region)
+        refresh_arch = RefreshArchStress(start_date)
+        refresh_arch(simulation)
+        add_callback!(simulation, refresh_arch, IterationInterval(1))
     end
 
     # NEMO recomputes its Treguier coefficient every step from the current stratification. Primed here
@@ -1012,6 +1189,77 @@ function woa_to_teos10!(T_field, S_field)
 end
 
 """
+    blend_monthly_initial_condition!(T_field, S_field, date, restoring_dir, blend_depth)
+
+Blend WOA Monthly for the month of `date` into `T_field` and `S_field` above `blend_depth`, leaving the
+WOA Annual values they already carry below it.
+
+WOA Annual is a mean over a seasonal cycle whose winter half has kilometre-deep mixed layers, so a
+1 January start initialized from it begins with a seasonal thermocline the season does not have. The
+monthly climatology has the right surface structure but reaches only ~1500 m and is noisier where the
+observations are sparse, so it is used where it is informative and the annual field is kept at depth.
+
+The weight is 1 above `blend_depth` and tapers linearly to 0 at the monthly dataset's own vertical
+reach, taken from its native grid rather than assumed; cells outside that reach keep the annual value
+exactly. The monthly field is converted to Θ and Sᴬ cell by cell before it is blended, so the result
+mixes TEOS-10 quantities and never mixed conventions.
+"""
+function blend_monthly_initial_condition!(T_field, S_field, date, restoring_dir, blend_depth)
+    grid = T_field.grid
+    cpu_arch = Oceananigans.DistributedComputations.cpu_architecture(architecture(grid))
+    cpu_grid = on_architecture(cpu_arch, grid)
+    Nx, Ny, Nz = size(grid)
+
+    Tmeta = Metadatum(:temperature; dir = restoring_dir, dataset = WOAMonthly(), date)
+    Smeta = Metadatum(:salinity;    dir = restoring_dir, dataset = WOAMonthly(), date)
+    Tnative = Field(Tmeta, architecture(grid))
+    Snative = Field(Smeta, architecture(grid))
+
+    # `set!(field, metadata)` refuses a target grid deeper than the dataset, and the monthly
+    # climatology reaches only ~1500 m; interpolating directly fills deeper cells with the nearest
+    # interior value, which the taper below discards.
+    Tm = CenterField(grid)
+    Sm = CenterField(grid)
+    DataWrangling.interpolate_physical!(Tm, Tnative, Tmeta)
+    DataWrangling.interpolate_physical!(Sm, Snative, Smeta)
+
+    deepest = Tnative.grid.Lz
+    deepest > blend_depth ||
+        throw(ArgumentError("initial_condition_blend_depth = $blend_depth m is below the monthly \
+                             climatology's reach of $(round(deepest)) m"))
+
+    Ta = Array(interior(T_field)); Sa = Array(interior(S_field))
+    Tb = Array(interior(Tm));      Sb = Array(interior(Sm))
+
+    # The monthly field is still in-situ T and Practical Salinity, and carries sentinel fills that are
+    # not NaN outside its coverage — `woa_to_teos10!`'s `isnan` guard lets those through into
+    # `Θ_from_T`, which throws out of `sqrt`. Convert here instead, behind a physical-range test.
+    for k in 1:Nz, j in 1:Ny, i in 1:Nx
+        t = Tb[i, j, k]; SP = Sb[i, j, k]
+        (isfinite(t) && isfinite(SP) && 1 < SP < 45 && -5 < t < 45) || continue
+        isfinite(Ta[i, j, k]) && isfinite(Sa[i, j, k]) || continue
+        d = -znode(i, j, k, cpu_grid, Center(), Center(), Center())
+        w = clamp((deepest - d) / (deepest - blend_depth), 0, 1)
+        w > 0 || continue
+        λ = λnode(i, j, k, cpu_grid, Center(), Center(), Center())
+        φ = φnode(i, j, k, cpu_grid, Center(), Center(), Center())
+        p = approx_pressure_dbar(-d)
+        Sᴬᵐ = Sᴬ_from_Sᴾ(SP, p, λ, φ)
+        Θᵐ  = Θ_from_T(Sᴬᵐ, t, p)
+        Ta[i, j, k] = w * Θᵐ  + (1 - w) * Ta[i, j, k]
+        Sa[i, j, k] = w * Sᴬᵐ + (1 - w) * Sa[i, j, k]
+    end
+
+    copyto!(interior(T_field), Ta)
+    copyto!(interior(S_field), Sa)
+
+    @info "blended WOA Monthly $(month(date)) into the initial condition above $(blend_depth) m, " *
+          "tapering to the monthly climatology's reach of $(round(Int, deepest)) m"
+
+    return T_field, S_field
+end
+
+"""
     woa_salinity_fts_to_teos10!(fts)
 
 Convert each time slice of a WOA Practical Salinity `FieldTimeSeries` to TEOS-10
@@ -1128,6 +1376,19 @@ gm_skew_flux_formulation(formulation::Symbol) =
 # the barotropic eddy velocity, and the vertical structure of the transport comes from the column
 # problem instead (Ferrari et al. 2010, Section 4.1). The CESM and hybrid coefficients carry their
 # own vertical shape, which would apply a vertical structure twice.
+# The triad closure carries no `skew_flux_formulation`: its skew flux is always the diffusive form on
+# the triad stencil, so pairing it with an advective or boundary-value transport would silently drop one
+# of the two choices.
+function check_isopycnal_formulation(isopycnal_formulation, skew_flux_formulation)
+    isopycnal_formulation in (:standard, :triad) ||
+        throw(ArgumentError("isopycnal_formulation must be :standard or :triad, got :$isopycnal_formulation"))
+    if isopycnal_formulation === :triad && skew_flux_formulation !== :diffusive
+        throw(ArgumentError("isopycnal_formulation = :triad supports only skew_flux_formulation = :diffusive, \
+                             got :$skew_flux_formulation"))
+    end
+    return nothing
+end
+
 function check_depth_independent_skew_coefficient(κ_skew, skew_flux_formulation)
     if skew_flux_formulation === :boundary_value && (κ_skew === :cesm || κ_skew === :hybrid)
         throw(ArgumentError("skew_flux_formulation = :boundary_value requires a depth-independent \
@@ -1143,10 +1404,15 @@ end
 function omip_closure(vertical_closure::Symbol;
                       κ_skew, κ_symmetric, 
                       Cᵇ = 0.28, 
+                      Cᵘⁿᵇ = 0.0,
+                      Cᶠ = 1.0,
+                      Cᶠ⁰ = 1e9,
+                      Cᶠᵟ = 0.75,
                       Cᵉc = 0.112,
                       biharmonic_timescale,
                       biharmonic_viscosity = nothing,
                       skew_flux_formulation = :diffusive,
+                      isopycnal_formulation = :standard,
                       eddy_slope_limiter = nothing,
                       boundary_value_mode_number = 2,
                       boundary_value_minimum_speed = 0.1,
@@ -1158,7 +1424,9 @@ function omip_closure(vertical_closure::Symbol;
     background_ν = resolve_background_viscosity(background_vertical_viscosity)
 
     primary, background = if vertical_closure == :catke
-        mixing_length = CATKEMixingLength(; Cᵇ, Cᵉc)
+        # CATKEMixingLength is @kwdef over a single FT, so a mixed Int/Float keyword set has no method
+        mixing_length = CATKEMixingLength(; Cᵇ = Float64(Cᵇ), Cᵘⁿᵇ = Float64(Cᵘⁿᵇ), Cᵉc = Float64(Cᵉc),
+                                            Cᶠ = Float64(Cᶠ), Cᶠ⁰ = Float64(Cᶠ⁰), Cᶠᵟ = Float64(Cᶠᵟ))
         tke_eq = isnothing(Cᵂu★) ? CATKEEquation() : CATKEEquation(; Cᵂu★)
         catke = CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization();
                                          mixing_length,
@@ -1204,6 +1472,15 @@ function omip_closure(vertical_closure::Symbol;
         redi = IsopycnalSkewSymmetricDiffusivity(; κ_skew = nothing, κ_symmetric,
                                                  slope_limiter = limiter)
         (transport, redi)
+    elseif isopycnal_formulation === :triad
+        limiter = isnothing(eddy_slope_limiter) ? FluxTapering(1e-2) : eddy_slope_limiter
+        # The triad constructor defaults to an explicit discretization, unlike every other closure here.
+        # κ_symmetric S² over Δz_top = 1.5 m is stable only below Δt ≈ 15 s, so the vertical component
+        # must be implicit. `TriadSlopeTapering` limits each triad on its own slope, which the
+        # per-cell factor the closure applies otherwise does not bound.
+        (TriadIsopycnalSkewSymmetricDiffusivity(VerticallyImplicitTimeDiscretization();
+                                                κ_skew, κ_symmetric,
+                                                slope_limiter = TriadSlopeTapering(limiter)),)
     else
         limiter = isnothing(eddy_slope_limiter) ? FluxTapering(1e-2) : eddy_slope_limiter
         (IsopycnalSkewSymmetricDiffusivity(; κ_skew, κ_symmetric, slope_limiter = limiter,
@@ -1290,6 +1567,112 @@ function (r::RefreshIceMeltDiffusivity)(sim)
     isnothing(io) && return nothing
     Jʷ = parent(io.fluxes.freshwater)
     parent(r.diffusivity) .= ifelse.(Jʷ .> r.threshold, parent(r.mask), 0)
+    return nothing
+end
+
+@inline under_ice_ν(i, j, k, grid, clock, fields, ν) = @inbounds ν[i, j, k]
+
+"""
+    under_ice_vertical_viscosity(viscosity)
+
+Extra vertical viscosity read from the live `viscosity` field, which `RefreshUnderIceViscosity` rewrites
+each step as the depth taper scaled by the ice concentration.
+"""
+under_ice_vertical_viscosity(viscosity) =
+    VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization();
+                              ν = under_ice_ν, discrete_form = true,
+                              loc = (Center, Center, Center), parameters = viscosity)
+
+struct RefreshUnderIceViscosity{V, M}
+    viscosity :: V
+    mask :: M
+end
+
+function (r::RefreshUnderIceViscosity)(sim)
+    sea_ice = sim.model.sea_ice
+    isnothing(sea_ice) && return nothing
+    ℵ = parent(sea_ice.model.ice_concentration)
+    parent(r.viscosity) .= parent(r.mask) .* ℵ
+    return nothing
+end
+
+"""
+A basal stress that adds a seasonal ice arch to `landfast`: `stress` (N m⁻²) over the cells inside the
+longitude–latitude box `bounds = (λ₁, λ₂, φ₁, φ₂)` while the month lies in `months` (first to last inclusive,
+wrapping the year), zero otherwise. `region` and `arch` are built on the ice velocity grid by
+`materialize_basal_stress`; `RefreshArchStress` rewrites `arch` each step. `minimum_speed` regularizes τ/u
+exactly as in `LandfastBasalStress`.
+"""
+struct SeasonalArchStress{L, R, A, FT, M, B}
+    landfast :: L
+    region :: R
+    arch :: A
+    stress :: FT
+    minimum_speed :: FT
+    months :: M
+    bounds :: B
+end
+
+seasonal_arch_stress(landfast, FT; bounds, stress = 100, months = (12, 7)) =
+    SeasonalArchStress(landfast, nothing, nothing, convert(FT, stress), convert(FT, 5e-5), months,
+                       convert.(FT, Tuple(bounds)))
+
+in_arch_bounds(λ, φ, (λ₁, λ₂, φ₁, φ₂)) = λ₁ <= (λ > 180 ? λ - 360 : λ) <= λ₂ && φ₁ <= φ <= φ₂
+
+function ClimaSeaIce.SeaIceDynamics.materialize_basal_stress(b::SeasonalArchStress, grid)
+    isnothing(b.region) || return b
+    landfast = ClimaSeaIce.SeaIceDynamics.materialize_basal_stress(b.landfast, grid)
+    λ = Array(λnodes(grid, Center(), Center(), Center()))
+    φ = Array(φnodes(grid, Center(), Center(), Center()))
+    Nx, Ny = size(grid, 1), size(grid, 2)
+    region_data = [in_arch_bounds(λ[i, j], φ[i, j], b.bounds) ? one(eltype(grid)) : zero(eltype(grid))
+                   for i in 1:Nx, j in 1:Ny]
+    region = Field{Center, Center, Nothing}(grid)
+    set!(region, region_data)
+    arch = Field{Center, Center, Nothing}(grid)
+    @root @info "Ice arch $(b.bounds): $(Int(sum(region_data))) cells arrested at $(b.stress) N m⁻², months $(b.months)"
+    return SeasonalArchStress(landfast, region, arch, b.stress, b.minimum_speed, b.months, b.bounds)
+end
+
+@inline landfast_magnitude(i, j, k, grid, ::Nothing, fields) = zero(grid)
+@inline landfast_magnitude(i, j, k, grid, b, fields) = ClimaSeaIce.SeaIceDynamics.basal_stress_magnitude(i, j, k, grid, b, fields)
+
+@inline ClimaSeaIce.SeaIceDynamics.basal_stress_magnitude(i, j, k, grid, b::SeasonalArchStress, fields) =
+    landfast_magnitude(i, j, k, grid, b.landfast, fields) + @inbounds b.arch[i, j, 1]
+
+# `basal_τ{x,y}_coefficient` dispatch on the concrete stress type, so a new stress needs both, not just
+# `basal_stress_magnitude`. Bodies mirror the `LandfastBasalStress` ones.
+@inline function ClimaSeaIce.SeaIceDynamics.basal_τx_coefficient(i, j, k, grid, b::SeasonalArchStress, fields)
+    kᵇ = ℑxᶠᵃᵃ(i, j, 1, grid, ClimaSeaIce.SeaIceDynamics.basal_stress_magnitude, b, fields)
+    u  = @inbounds fields.u[i, j, k]
+    v  = ℑxyᶠᶜᵃ(i, j, k, grid, fields.v)
+    return kᵇ / (sqrt(u^2 + v^2) + b.minimum_speed)
+end
+
+@inline function ClimaSeaIce.SeaIceDynamics.basal_τy_coefficient(i, j, k, grid, b::SeasonalArchStress, fields)
+    kᵇ = ℑyᵃᶠᵃ(i, j, 1, grid, ClimaSeaIce.SeaIceDynamics.basal_stress_magnitude, b, fields)
+    u  = ℑxyᶜᶠᵃ(i, j, k, grid, fields.u)
+    v  = @inbounds fields.v[i, j, k]
+    return kᵇ / (sqrt(u^2 + v^2) + b.minimum_speed)
+end
+
+Adapt.adapt_structure(to, b::SeasonalArchStress) =
+    SeasonalArchStress(Adapt.adapt(to, b.landfast), Adapt.adapt(to, b.region), Adapt.adapt(to, b.arch),
+                       b.stress, b.minimum_speed, b.months, b.bounds)
+
+Base.summary(b::SeasonalArchStress) =
+    "SeasonalArchStress($(b.stress) N m⁻², months $(b.months), bounds $(b.bounds)) over $(summary(b.landfast))"
+
+struct RefreshArchStress{D}
+    start_date :: D
+end
+
+function (r::RefreshArchStress)(sim)
+    b = sim.model.sea_ice.model.dynamics.basal_stress
+    m = month(r.start_date + Second(round(Int, sim.model.clock.time)))
+    m₁, m₂ = b.months
+    in_season = m₁ <= m₂ ? (m₁ <= m <= m₂) : (m >= m₁ || m <= m₂)
+    parent(b.arch) .= (in_season ? b.stress : zero(b.stress)) .* parent(b.region)
     return nothing
 end
 
@@ -1476,12 +1859,89 @@ build_grid(::Val{:test}, arch, Nz, depth; Δz_top = nothing, partial_cell_bathym
 using Oceananigans.TimeSteppers: AdaptiveVerticallyImplicitDiscretization, ExplicitTimeDiscretization
 using Oceananigans.Utils: NormalDivision
 
-# `time_discretization` selects explicit vs. adaptive-implicit vertical advection (see `build_ocean`).
-config_momentum_advection(::Val{:orca},          td) = WENOVectorInvariant(order=5, time_discretization=td)
-config_momentum_advection(::Val{:test},          td) = WENOVectorInvariant(order=5, time_discretization=td)
-config_momentum_advection(::Val{:halfdegree},    td) = WENOVectorInvariant(order=5, time_discretization=td)
-config_momentum_advection(::Val{:quarterdegree}, td) = WENOVectorInvariant(time_discretization=td)
-config_momentum_advection(::Val{:twelfthdegree}, td) = WENOVectorInvariant(time_discretization=td)
+# `nothing` keeps the `WENOVectorInvariant` per-term defaults: vorticity_order = 9, everything else 5.
+config_momentum_advection_order(::Val{:orca})          = 5
+config_momentum_advection_order(::Val{:test})          = 5
+config_momentum_advection_order(::Val{:halfdegree})    = 5
+config_momentum_advection_order(::Val{:quarterdegree}) = nothing
+config_momentum_advection_order(::Val{:twelfthdegree}) = nothing
+
+#####
+##### Boundary reconstructions
+#####
+
+# The reconstruction a WENO buffer chain terminates in, used in the one cell whose stencil no longer fits:
+# the domain buffer and, on an `ImmersedBoundaryGrid`, any cell adjacent to an `inactive_node`
+# (`Advection/immersed_advective_fluxes.jl`). The interior keeps the full order.
+#
+#   :default  `Centered(order=2)` for tracers and `UpwindBiased(order=1)` for momentum, the Oceananigans defaults
+#   :upwind   first-order upwind, monotone, in exactly those cells and nowhere else
+#   :cwenoz   the third-order central-WENO reconstruction of Semplice, Travaglia and Puppo (2022), whose stencil
+#             extends only inwards, blending an inward parabola, a linear polynomial and a constant with Z-weights
+#
+# `reference_variation` sets the oscillation scale ϵ = reference_variation² below which CWENOZ reads the stencil as
+# noise and keeps third order. It carries the units of the reconstructed field and no grid spacing, so one value serves
+# every direction; zero reads ϵ off the stencil, which is a pure shape measure and limits at any amplitude.
+tracer_boundary_reconstruction(::Val{:default}, reference_variation) = nothing
+tracer_boundary_reconstruction(::Val{:upwind},  reference_variation) = UpwindBiased(order=1)
+tracer_boundary_reconstruction(::Val{:cwenoz},  reference_variation) = CWENOZ(; reference_variation)
+
+momentum_boundary_reconstruction(::Val{:default}, reference_variation) = UpwindBiased(order=1)
+momentum_boundary_reconstruction(::Val{:upwind},  reference_variation) = UpwindBiased(order=1)
+momentum_boundary_reconstruction(::Val{:cwenoz},  reference_variation) = CWENOZ(; reference_variation)
+
+function boundary_scheme_value(boundary_scheme)
+    boundary_scheme ∈ (:default, :upwind, :cwenoz) ||
+        throw(ArgumentError("boundary_scheme must be :default, :upwind or :cwenoz, got $boundary_scheme"))
+
+    return Val(boundary_scheme)
+end
+
+"""
+    split_tracer_advection(order, time_discretization, boundary_scheme, reference_variation)
+
+Tracer advection of order `order` whose reconstructions terminate in a boundary scheme carrying
+`reference_variation`. One value serves both directions: the variation is in units of the tracer and carries no
+grid spacing. The split is only so that the vertical direction takes `time_discretization`, which is where the
+adaptive-implicit treatment applies.
+"""
+function split_tracer_advection(order, time_discretization, boundary_scheme, reference_variation)
+
+    tracer_boundary_scheme = tracer_boundary_reconstruction(boundary_scheme, reference_variation)
+
+    horizontal = WENO(; order, boundary_scheme = tracer_boundary_scheme)
+    vertical   = WENO(; order, time_discretization, boundary_scheme = tracer_boundary_scheme)
+
+    return FluxFormAdvection(horizontal, horizontal, vertical)
+end
+
+"""
+    split_momentum_advection(order, time_discretization, boundary_scheme, reference_variation)
+
+Vector-invariant momentum advection whose four reconstructions terminate in a boundary scheme chosen per direction,
+reproducing `WENOVectorInvariant` in every other respect. The vorticity, divergence and kinetic-energy-gradient terms
+are the horizontal ones, and they reconstruct a vorticity, a divergence flux and a squared velocity: three different
+units, so no single variation carries them and they always read the oscillation scale off the stencil. The vertical
+term reconstructs velocity, so `reference_variation` is a speed in m/s and applies there alone.
+"""
+function split_momentum_advection(order, time_discretization, boundary_scheme, reference_variation)
+
+    vorticity_order, remaining_order = isnothing(order) ? (9, 5) : (order, order)
+
+    horizontal_boundary_scheme = momentum_boundary_reconstruction(boundary_scheme, 0)
+    vertical_boundary_scheme   = momentum_boundary_reconstruction(boundary_scheme, reference_variation)
+
+    vorticity_scheme               = WENO(order=vorticity_order, boundary_scheme=horizontal_boundary_scheme)
+    divergence_scheme              = WENO(order=remaining_order, boundary_scheme=horizontal_boundary_scheme)
+    kinetic_energy_gradient_scheme = WENO(order=remaining_order, boundary_scheme=horizontal_boundary_scheme)
+    vertical_advection_scheme      = WENO(; order = remaining_order, time_discretization,
+                                            boundary_scheme = vertical_boundary_scheme)
+
+    return VectorInvariant(; vorticity_scheme,
+                             vertical_advection_scheme,
+                             divergence_scheme,
+                             kinetic_energy_gradient_scheme)
+end
 
 struct ConfigDefault end
 
@@ -1520,7 +1980,12 @@ config_river_spread_cells(::Val{:test})          = 8
 # grows as it is refined: eORCA025 carries a CFL of 0.92 at Δt = 20 minutes with 100, and 1.38 — 30 000
 # cells past unity, and a first-step blow-up — at Δt = 30 minutes. `validate_barotropic_substeps`
 # reports the count the configuration actually needs.
+#
+# ⚠ The substep count and Δt must move TOGETHER. `orca` runs at Δt = 5400 s, where the generic 100
+# gives a gravity-wave Courant number of 1.16 and the free surface NaNs on the first step; 300 is what
+# the whole Option A family runs at (M★ = 216, halo 218, inside Ny = 297; the ceiling is 409).
 config_barotropic_substeps(::Val)                 = 100
+config_barotropic_substeps(::Val{:orca})          = 300
 config_barotropic_substeps(::Val{:quarterdegree}) = 200
 config_barotropic_substeps(::Val{:twelfthdegree}) = 200
 
@@ -1530,6 +1995,7 @@ config_biharmonic_timescale(::Val{:twelfthdegree}) = nothing
 config_biharmonic_timescale(::Val{:test})          = 10days
 
 config_Δt(::Val)                 = 30minutes
+config_Δt(::Val{:orca})          = 5400        # 90 minutes; needs 300 barotropic substeps, see above
 config_Δt(::Val{:quarterdegree}) = 20minutes
 config_Δt(::Val{:twelfthdegree}) = 5minutes
 config_Δt(::Val{:test})          = 45minutes
@@ -1605,18 +2071,28 @@ function barotropic_free_surface(grid, substeps, Δt; cfl = 0.7)
 end
 
 function build_ocean(config, grid;
-                     κ_skew, κ_symmetric, Cᵇ = 0.28, Cᵉc = 0.112,
+                     κ_skew, κ_symmetric, Cᵇ = 0.28, Cᵘⁿᵇ = 0.0, Cᵉc = 0.112,
+                     Cᶠ = 1.0, Cᶠ⁰ = 1e9, Cᶠᵟ = 0.75,
                      barotropic_substeps = 100,
                      Δt,
                      restoring_dir, piston_velocity,
+                     initial_condition_blend_depth = nothing,
                      chlorophyll = :seawifs,
                      biharmonic_timescale,
                      biharmonic_viscosity = nothing,
                      vertical_closure = :catke,
                      implicit_vertical_advection = true,
+                     tracer_advection_order = 7,
+                     boundary_scheme = :default,
+                     tracer_boundary_scheme = boundary_scheme,
+                     momentum_boundary_scheme = boundary_scheme,
+                     temperature_reference_variation = 0,
+                     salinity_reference_variation = 0,
+                     momentum_reference_variation = 0,
                      implicit_bottom_drag = true,
                      bottom_drag_background_velocity = 0,
                      skew_flux_formulation = :diffusive,
+                     isopycnal_formulation = :standard,
                      nemo_eddy_coefficients = nothing,
                      cesm_eddy_coefficients = nothing,
                      hybrid_eddy_coefficients = nothing,
@@ -1653,9 +2129,10 @@ function build_ocean(config, grid;
     end
 
     closure = omip_closure(vertical_closure;
-                           κ_skew, κ_symmetric, Cᵇ, Cᵉc,
+                           κ_skew, κ_symmetric, Cᵇ, Cᵘⁿᵇ, Cᶠ, Cᶠ⁰, Cᶠᵟ, Cᵉc,
                            biharmonic_timescale, biharmonic_viscosity,
                            skew_flux_formulation,
+                           isopycnal_formulation,
                            eddy_slope_limiter,
                            boundary_value_mode_number,
                            boundary_value_minimum_speed,
@@ -1669,13 +2146,25 @@ function build_ocean(config, grid;
 
     time_discretization = implicit_vertical_advection ?
         AdaptiveVerticallyImplicitDiscretization(cfl=0.5) : ExplicitTimeDiscretization()
-    momentum_advection = config_momentum_advection(config, time_discretization)
+
+    tracer_boundary_scheme   = boundary_scheme_value(tracer_boundary_scheme)
+    momentum_boundary_scheme = boundary_scheme_value(momentum_boundary_scheme)
+
+    momentum_advection = split_momentum_advection(config_momentum_advection_order(config),
+                                                  time_discretization, momentum_boundary_scheme,
+                                                  momentum_reference_variation)
+
+    # Turbulent kinetic energy keeps the `ocean_simulation` default: its variation scale is ~1e-3 m²/s².
+    tracer_advection = (T = split_tracer_advection(tracer_advection_order, time_discretization,
+                                                   tracer_boundary_scheme, temperature_reference_variation),
+                        S = split_tracer_advection(tracer_advection_order, time_discretization,
+                                                   tracer_boundary_scheme, salinity_reference_variation))
 
     ocean = ocean_simulation(grid;
                              Δt = 1minutes,
                              radiative_forcing = omip_radiative_forcing(grid, chlorophyll, restoring_dir),
                              momentum_advection,
-                             tracer_advection = WENO(order=7; minimum_buffer_upwind_order=3, time_discretization),
+                             tracer_advection,
                              coriolis,
                              implicit_bottom_drag,
                              bottom_drag_background_velocity,
@@ -1694,6 +2183,11 @@ function build_ocean(config, grid;
     set!(T_init, Metadatum(:temperature; dir=restoring_dir, dataset=WOAAnnual()))
     set!(S_init, Metadatum(:salinity;    dir=restoring_dir, dataset=WOAAnnual()))
     woa_to_teos10!(T_init, S_init)
+
+    isnothing(initial_condition_blend_depth) ||
+        blend_monthly_initial_condition!(T_init, S_init, start_date, restoring_dir,
+                                         initial_condition_blend_depth)
+
     set!(ocean.model, T=T_init, S=S_init)
 
     return ocean
@@ -1703,19 +2197,40 @@ end
 ##### Sea Ice builder
 #####
 
+# `:teos10` is the relation fitted to the TEOS-10 freezing point in Conservative Temperature, which is
+# what the ocean carries; `:linear` restores ClimaSeaIce's own (0, 0.054) default, up to 0.032 K warmer.
+resolve_liquidus(::Val{:teos10}, FT) = NumericalEarth.SeaIces.conservative_temperature_liquidus(FT)
+resolve_liquidus(::Val{:linear}, FT) = LinearLiquidus(FT)
+resolve_liquidus(name::Symbol, FT) = resolve_liquidus(Val(name), FT)
+
 function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics = nothing,
                        with_ice_dynamics = true,
+                       with_ocean_surface_tilt = false,
+                       sea_ice_liquidus = :teos10,
                        with_landfast_basal_stress = true,
                        sea_ice_lateral_boundary_condition = :no_slip,
                        sea_ice_ocean_drag_coefficient = 5.5e-3,
+                       sea_ice_ocean_drag_reference_depth = 6,
                        ice_compressive_strength = 27500,
-                       thickness_categories = 1)
+                       ice_salinity = 4,
+                       northern_sea_ice_initial_date = DateTime(1993, 1, 1),
+                       southern_sea_ice_initial_date = DateTime(1993, 1, 1),
+                       thickness_categories = 1,
+                       itd_shape = nothing,
+                       ice_arch_region = nothing,
+                       ice_arch_stress = 100,
+                       ice_arch_months = (12, 7))
 
     basal_stress = with_landfast_basal_stress ? LandfastBasalStress(eltype(grid)) : nothing
+    isnothing(ice_arch_region) ||
+        (basal_stress = seasonal_arch_stress(basal_stress, eltype(grid); bounds = ice_arch_region,
+                                             stress = ice_arch_stress, months = ice_arch_months))
 
     dynamics = if with_ice_dynamics
         rheology = ElastoViscoPlasticRheology(eltype(grid); ice_compressive_strength)
-        NumericalEarth.SeaIces.sea_ice_dynamics(grid, ocean; basal_stress, sea_ice_ocean_drag_coefficient, rheology)
+        NumericalEarth.SeaIces.sea_ice_dynamics(grid, ocean; basal_stress, sea_ice_ocean_drag_coefficient,
+                                                sea_ice_ocean_drag_reference_depth, rheology,
+                                                with_ocean_surface_tilt)
     else
         nothing
     end
@@ -1724,14 +2239,62 @@ function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics =
                                  advection = ClimaSeaIce.IncrementalRemapping(),
                                  lateral_boundary_condition = sea_ice_lateral_boundary_condition,
                                  dynamics,
-                                 thickness_categories,
+                                 liquidus = resolve_liquidus(sea_ice_liquidus, eltype(grid)),
+                                 ice_salinity,
+                                 thickness_categories, itd_shape,
                                  snow_thermodynamics)
 
-    set!(sea_ice.model,
-         h = Metadatum(:sea_ice_thickness;     dir=restoring_dir, dataset=ECCO4Monthly(), date = DateTime(1993, 1, 1)),
-         ℵ = Metadatum(:sea_ice_concentration; dir=restoring_dir, dataset=ECCO4Monthly(), date = DateTime(1993, 1, 1)))
+    set_sea_ice_initial_condition!(sea_ice.model, restoring_dir,
+                                   northern_sea_ice_initial_date, southern_sea_ice_initial_date)
 
     return sea_ice
+end
+
+"""
+    set_sea_ice_initial_condition!(model, restoring_dir, northern_date, southern_date)
+
+Initialize `h` and `ℵ` from ECCO4Monthly, taking the northern hemisphere from `northern_date` and the
+southern hemisphere from `southern_date`.
+
+The two hemispheres reach their ice minimum six months apart, so one date for the whole globe starts
+one of them at its seasonal maximum: an ORCA run beginning on 1 January carries an Arctic pack at its
+March extent, which the first spring melts into the Labrador. Sea ice never reaches the equator, so
+the two fields are stitched at ``φ = 0`` with no taper.
+"""
+function set_sea_ice_initial_condition!(model, restoring_dir, northern_date, southern_date)
+    thickness(date)     = Metadatum(:sea_ice_thickness;     dir=restoring_dir, dataset=ECCO4Monthly(), date)
+    concentration(date) = Metadatum(:sea_ice_concentration; dir=restoring_dir, dataset=ECCO4Monthly(), date)
+
+    set!(model, h = thickness(southern_date), ℵ = concentration(southern_date))
+
+    northern_date == southern_date && return model
+
+    h = model.ice_thickness
+    ℵ = model.ice_concentration
+    hˢ = Array(interior(h)); ℵˢ = Array(interior(ℵ))
+
+    set!(model, h = thickness(northern_date), ℵ = concentration(northern_date))
+
+    hⁿ = Array(interior(h)); ℵⁿ = Array(interior(ℵ))
+
+    grid = h.grid
+    cpu_arch = Oceananigans.DistributedComputations.cpu_architecture(architecture(grid))
+    cpu_grid = on_architecture(cpu_arch, grid)
+    Nx, Ny = size(grid)[1:2]
+
+    for j in 1:Ny, i in 1:Nx
+        φnode(i, j, 1, cpu_grid, Center(), Center(), Center()) < 0 || continue
+        hⁿ[i, j, 1] = hˢ[i, j, 1]
+        ℵⁿ[i, j, 1] = ℵˢ[i, j, 1]
+    end
+
+    copyto!(interior(h), hⁿ)
+    copyto!(interior(ℵ), ℵⁿ)
+
+    @info "sea ice initialized from ECCO4Monthly $(northern_date) north of the equator and " *
+          "$(southern_date) south of it"
+
+    return model
 end
 
 #####

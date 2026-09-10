@@ -12,7 +12,7 @@ using NumericalEarth
 using NumericalEarth.Oceans: ocean_simulation, default_ocean_closure, TwoColorRadiation
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities:
     CATKEVerticalDiffusivity, CATKEMixingLength, CATKEEquation
-using NumericalEarth.SeaIces: sea_ice_simulation, LandfastBasalStress
+using NumericalEarth.SeaIces: sea_ice_simulation, LandfastBasalStress, ThicknessDependentConductivity
 using NumericalEarth.EarthSystemModels: OceanSeaIceModel,
     SimilarityTheoryFluxes,
     LinearStableStabilityFunction,
@@ -49,6 +49,7 @@ using NumericalEarth.DataWrangling.JRA55: MultiYearJRA55, RepeatYearJRA55,
 using NumericalEarth.Diagnostics: MixedLayerDepthField
 
 export omip_simulation,
+       ThicknessDependentConductivity,
        add_omip_diagnostics!,
        add_ke_spectrum_diagnostic!,
        compute_report_fields,
@@ -85,9 +86,11 @@ include("cesm_eddy_coefficients.jl")
 include("hybrid_eddy_coefficients.jl")
 include("boundary_value_transport.jl")
 include("mixed_layer_tapering.jl")
+include("triad_slope_tapering.jl")
 include("bottom_boundary_layer.jl")
 include("advective_bottom_boundary_layer.jl")
 include("overflow_restoring.jl")
+include("labrador_restoring.jl")
 include("omip_simulation.jl")
 include("report_fields.jl")
 include("strait_transports.jl")
