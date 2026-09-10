@@ -426,3 +426,19 @@ end
         end
     end
 end
+
+@testset "Nested P3 transport bounds follow physical units" begin
+    for FT in (Float32, Float64)
+        p3 = Breeze.Microphysics.PredictedParticleProperties.PredictedParticlePropertiesMicrophysics(
+            FT; predict_supersaturation = true)
+        advection = NumericalEarthBreezeExt.default_nested_scalar_advection(p3; FT)
+        @test advection.ρqᵛ.bounds == (0, 1)
+        @test advection.ρqᶜˡ.bounds == (0, 1)
+        @test advection.ρqᶠ.bounds == (0, 1)
+        @test advection.ρnⁱ.bounds == (0, Inf)
+        @test advection.ρbᶠ.bounds == (0, Inf)
+        @test isnothing(advection.ρsᵛ⁺ˡ.bounds)
+        @test isnothing(advection.ρθ.bounds)
+        @test all(n -> advection.ρnⁱ.bounds[1] ≤ n ≤ advection.ρnⁱ.bounds[2], FT.((1e2, 1e8)))
+    end
+end
