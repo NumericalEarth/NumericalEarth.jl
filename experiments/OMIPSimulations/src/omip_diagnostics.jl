@@ -216,7 +216,7 @@ function add_omip_diagnostics!(simulation;
         :uvol => uvol,
         :vvol => vvol,
     )
-
+#=
     if haskey(ocean.model.tracers, :e)
         field_outputs[:tke] = ocean.model.tracers.e
     end
@@ -228,7 +228,7 @@ function add_omip_diagnostics!(simulation;
     if !isnothing(vgm)
         field_outputs[:vvolgm] = KernelFunctionOperation{Center, Face, Center}(meridional_volume_flux, grid, vgm)
     end
-
+=#
     # Field-valued (flow-aware) eddy coefficients: write what the closure actually used, so a run
     # with KSKEW=nemo/cesm can be audited against the offline climatological estimates.
     closures = ocean.model.closure isa Tuple ? ocean.model.closure : (ocean.model.closure,)
