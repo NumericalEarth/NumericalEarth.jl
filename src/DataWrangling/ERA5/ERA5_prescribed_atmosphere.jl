@@ -51,6 +51,7 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
                                   boundary_layer_height = 512,
                                   thermodynamics_parameters = nothing,
                                   region = nothing,
+                                  tracers = NamedTuple(),
                                   other_kw...)
 
     kw = (; time_indexing, time_indices_in_memory)
@@ -99,7 +100,8 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
                                             precipitation_flux,
                                             thermodynamics_parameters = ℂ,
                                             surface_layer_height  = convert(FT, surface_layer_height),
-                                            boundary_layer_height = convert(FT, boundary_layer_height))
+                                            boundary_layer_height = convert(FT, boundary_layer_height),
+                                            tracers)
 end
 
 # Pressure on a `PressureLevelGrid` is the level coordinate (Pa), constant in space and time
