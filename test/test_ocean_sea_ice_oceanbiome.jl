@@ -26,7 +26,6 @@ using OceanBioME
 
         @info "Testing timestepping on $arch"
 
-        O₂ = Oceananigans.Fields.ConstantField(100)
         pCO₂ = FieldTimeSeries((nothing, nothing, nothing), grid, 0:10800:3.15252f7, time_indexing = Oceananigans.OutputReaders.Cyclical())
         pCO₂ .= on_architecture(arch, reshape(250 .+ 200 .* [1:2920;] ./ 2920, 1, 1, 1, 2920))
 
@@ -37,7 +36,7 @@ using OceanBioME
         sea_ice  = sea_ice_simulation(grid, ocean; advection=nothing)
         atmosphere = JRA55PrescribedAtmosphere(arch; 
                                                time_indices_in_memory=2, 
-                                               tracers = (; O₂, pCO₂))
+                                               tracers = (; pCO₂))
         radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=2)
         land = JRA55PrescribedLand(grid, time_indices_in_memory=2)
 
