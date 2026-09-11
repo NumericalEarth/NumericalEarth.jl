@@ -281,7 +281,8 @@ function add_omip_diagnostics!(simulation;
     # Checkpointer (drives `run!(sim; pickup=true)`)
     simulation.output_writers[:checkpointer] = Checkpointer(simulation.model;
                                                             schedule = TimeInterval(checkpoint_interval),
-                                                            prefix   = joinpath(output_dir, filename_prefix * "_checkpoint"),
+                                                            dir      = output_dir,
+                                                            prefix   = filename_prefix * "_checkpoint",
                                                             cleanup  = false,
                                                             verbose  = true)
 
