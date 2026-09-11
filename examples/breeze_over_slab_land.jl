@@ -217,7 +217,7 @@ radiation = RadiativeTransferModel(grid, AllSkyOptics(), constants;
 # `radiation` kwarg is passed here.
 
 atmos = atmosphere_simulation(grid; dynamics,
-                              forcing  = (; ρe = sponge),
+                              forcing  = (; ρθ = sponge),
                               coriolis = FPlane(latitude = latitude))
 
 # Initial atmospheric profile: dry-adiabatic sub-cloud layer capped by a

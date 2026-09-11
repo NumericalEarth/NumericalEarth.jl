@@ -7,7 +7,8 @@ using Oceananigans.Utils: launch!
 
 using Breeze: ThermodynamicConstants, CompressibleDynamics,
               SaturationAdjustment, WarmPhaseEquilibrium,
-              AtmosphereModel, moisture_prognostic_name, HydrostaticallyBalancedDensity
+              AtmosphereModel, moisture_prognostic_name, HydrostaticallyBalancedDensity,
+              total_energy_density_name
 
 # Per-side merge for FieldBoundaryConditions: user's non-default sides override
 # coupling's; coupling's non-default sides survive where the user leaves the
@@ -26,9 +27,7 @@ function merge_fbcs(coupling::FieldBoundaryConditions, user::FieldBoundaryCondit
                                    immersed = pick(coupling.immersed, user.immersed))
 end
 
-# Breeze 0.10 renamed static energy e → s (Breeze #926), and the energy-BC interface key
-# (converted to a ρθ BC for potential-temperature formulations) follows the symbol.
-energy_bc_key() = pkgversion(Breeze) >= v"0.10" ? :ρs : :ρe
+energy_bc_key() = total_energy_density_name
 
 function merge_boundary_conditions(coupling_bcs::NamedTuple, user_bcs::NamedTuple)
     all_keys = (keys(coupling_bcs)..., (k for k in keys(user_bcs) if !(k in keys(coupling_bcs)))...)

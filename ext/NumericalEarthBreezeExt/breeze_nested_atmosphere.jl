@@ -264,8 +264,8 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # side (prescribing the parent's tangential velocity in the halo — `NormalFlowBC` there leaves it
     # under-constrained and injects spurious near-boundary convergence). `ρᵈ`/energy/moisture are Center
     # scalars (`ValueBoundaryCondition` on all sides, since `NormalFlowBC` overwrites the first interior cell
-    # asymmetrically for Center fields). The energy BC uses Breeze's energy-BC interface key (`ρs` on
-    # Breeze ≥0.10, `ρe` before): it merges with the coupling's bottom energy-flux BC on the same field,
+    # asymmetrically for Center fields). The energy BC uses Breeze's energy interface key (`ρE`):
+    # it merges with the coupling's bottom energy-flux BC on the same field,
     # and for a potential-temperature formulation Breeze routes the (Value) `ρθ` boundary values through
     # unchanged. `ρθ` and the energy key must not both carry BCs.
     energy_key = energy_bc_key()
