@@ -37,9 +37,7 @@ biogeochemical_interface(exchanger, ocean, biogeochemistry::DiscreteBiogeochemis
 biogeochemical_interface(exchanger, ocean, ::Oxygen) =
     (; O₂ = OxygenGasExchangeBoundaryCondition(;
                 wind_speed = surface_wind_speed(exchanger),
-                air_concentration =
-                    PartiallySolubleGas(; air_concentration = exchanger.atmosphere.state.O₂,
-                                          solubility = OxygenSolubility())).condition.func)
+                air_concentration = GarciaGordonOxygenSaturation()))
 
 biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{1}) =
     (; DIC = carbon_dioxide_exchange(exchanger, :DIC, :Alk))
