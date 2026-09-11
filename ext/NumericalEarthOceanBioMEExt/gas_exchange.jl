@@ -4,7 +4,7 @@ using Oceananigans.Fields: ZeroField
 using OceanBioME: CarbonDioxideGasExchangeBoundaryCondition,
                   OxygenGasExchangeBoundaryCondition
 
-using OceanBioME.Models.GasExchangeModel: PartiallySolubleGas, OxygenSolubility
+using OceanBioME.Models.GasExchangeModel: PartiallySolubleGas, OxygenSolubility, GarciaGordonOxygenSaturation
 
 import NumericalEarth.EarthSystemModels.InterfaceComputations: biogeochemical_interface
 import NumericalEarth.Oceans: update_net_ocean_biogeochemical_fluxes!, biogeochemistry_surface_exchanged_tracers
@@ -37,7 +37,7 @@ biogeochemical_interface(exchanger, ocean, biogeochemistry::DiscreteBiogeochemis
 biogeochemical_interface(exchanger, ocean, ::Oxygen) =
     (; O₂ = OxygenGasExchangeBoundaryCondition(;
                 wind_speed = surface_wind_speed(exchanger),
-                air_concentration = GarciaGordonOxygenSaturation()))
+                air_concentration = GarciaGordonOxygenSaturation()).condition.func)
 
 biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{1}) =
     (; DIC = carbon_dioxide_exchange(exchanger, :DIC, :Alk))
