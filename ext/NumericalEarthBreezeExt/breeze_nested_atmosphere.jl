@@ -125,7 +125,7 @@ function default_nested_dynamics(grid; surface_pressure, reference_potential_tem
     time_discretization = SplitExplicitTimeDiscretization(sponge = UpperSponge(; damping_rate, depth = damping_depth),
                                                           damping = NoDivergenceDamping())
     kw = (;)
-    isnothing(surface_pressure)                || (kw = merge(kw, (; surface_pressure)))
+    isnothing(surface_pressure)                || (kw = merge(kw, (; base_pressure = surface_pressure)))
     isnothing(reference_potential_temperature) || (kw = merge(kw, (; reference_potential_temperature)))
     return CompressibleDynamics(time_discretization; kw...)
 end

@@ -332,7 +332,7 @@ end
 
     # #220: `atmosphere_simulation` returns a `Simulation`; its `.model` is the child model.
     child_sim = atmosphere_simulation(child_grid; boundary_conditions = bcs,
-                                      dynamics = CompressibleDynamics(surface_pressure = 1e5))
+                                      dynamics = CompressibleDynamics(base_pressure = 1e5))
     @test child_sim isa Simulation
     child = child_sim.model
     @test child isa Breeze.AtmosphereModel
@@ -357,7 +357,7 @@ end
     land_grid = RectilinearGrid(arch; size = (8, 8), x = (0, 8000), y = (0, 8000),
                                 halo = (atmos_grid.Hx, atmos_grid.Hy), topology = (Periodic, Periodic, Flat))
 
-    atmos = atmosphere_simulation(atmos_grid; dynamics = CompressibleDynamics(surface_pressure = 1e5))
+    atmos = atmosphere_simulation(atmos_grid; dynamics = CompressibleDynamics(base_pressure = 1e5))
     set!(atmos.model; ρ = 1.2, θˡⁱ = 288.0, qᵗ = 0.0)
 
     land = SlabLand(land_grid)

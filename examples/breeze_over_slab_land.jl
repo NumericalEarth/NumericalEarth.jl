@@ -157,7 +157,7 @@ latitude = 15
 
 constants = ThermodynamicConstants()
 reference_state = ReferenceState(grid, constants;
-                                 surface_pressure = p₀,
+                                 base_pressure = p₀,
                                  potential_temperature = θ₀)
 dynamics = AnelasticDynamics(reference_state)
 
