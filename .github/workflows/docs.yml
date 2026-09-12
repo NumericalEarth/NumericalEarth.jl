@@ -38,6 +38,9 @@ jobs:
     name: Build documentation
     runs-on: [self-hosted, tartarus, gpu-3]
     timeout-minutes: 1440
+    # CondaPkg resolves against every environment on the load path, and the depot of this runner is shared.
+    env:
+      JULIA_LOAD_PATH: "@:@stdlib"
     permissions:
       actions: write
       contents: write
@@ -63,11 +66,10 @@ jobs:
           using Pkg
           Pkg.instantiate(verbose=true)
           Pkg.precompile(strict=true)
-
-          using CUDA
-          CUDA.precompile_runtime()
       - name: Instantiate docs folder
         run: julia --project=docs --color=yes -e 'using Pkg; Pkg.instantiate(verbose=true)'
+      - name: Precompile the CUDA runtime
+        run: julia --project=docs --color=yes -e 'using CUDA; CUDA.precompile_runtime()'
       - name: Install Veros in docs CondaPkg environment
         run: |
           julia --project=docs --color=yes -e '
