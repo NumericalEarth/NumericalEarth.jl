@@ -134,6 +134,7 @@ export
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
     ERA5HourlyLand, ERA5MonthlyLand,
     ORCAOne, ORCAQuarter, ORCATwelfth,
+    TPXO10Atlas,
     ORCAGrid,
     OpenLandMapSoilDB,
     GlobalBuildingFootprints3D, building_morphometry,
@@ -260,7 +261,7 @@ include("NestedModels/NestedModels.jl")   # last: wraps a parent + a child (any 
 
 using .Grids
 using .DataWrangling
-using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55
+using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55, TPXO
 using .Bathymetry
 using .InitialConditions
 using .EarthSystemModels
@@ -274,6 +275,7 @@ using .EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRo
 using .NestedModels
 using .NestedModels: NestedModel, NestedSimulation, nested_atmosphere_model, parent_boundary_conditions
 using .DataWrangling.ETOPO
+using .DataWrangling.TPXO
 using .DataWrangling.ECCO
 using .DataWrangling.GLORYS
 using .DataWrangling.EN4
