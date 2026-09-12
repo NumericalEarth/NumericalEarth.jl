@@ -17,7 +17,7 @@ using ..DataWrangling.ORCA: ORCAOne, default_south_rows_to_remove
 # NEMO C-grid: T is the cell center, U the east face of T, V the north face of T, F the northeast corner.
 # eORCA quirks handled before constructing the grid:
 #
-#   - Duplicated east-edge periodic columns (`periodic_overlap_index`, `shift_face_x`).
+#   - Duplicated east-edge periodic columns (`periodic_overlap_index`, `shift_face_x`, `chop`).
 #   - Optional southern land padding rows (`south_rows_to_remove`, `chop`).
 #
 # NEMO → Oceananigans index mapping:
@@ -367,6 +367,8 @@ directly from the `mesh_mask` NetCDF file. If all staggered NEMO fields are pres
 (`T`, `U`, `V`, `F` points), they are used directly. If only `T` and `F`
 coordinates are available (`glamt/gphit/glamf/gphif`), staggered coordinates and
 metrics are reconstructed approximately using Tripolar-style spherical assumptions.
+The duplicated columns eORCA carries at its east edge for cyclic exchange are dropped, so `Nx` is the number
+of distinct columns: 360 for eORCA1, 1440 for eORCA025 and 4320 for eORCA12.
 
 When `with_bathymetry = true` (the default), the bathymetry is also downloaded
 and the grid is returned as an `ImmersedBoundaryGrid` with a `GridFittedBottom`.
@@ -426,23 +428,21 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     AzCC, AzFC, AzCF, AzFF = mesh.AzCC, mesh.AzFC, mesh.AzCF, mesh.AzFF
 
     pole_idx = argmin(φFF[:, end])
-    north_poles_latitude = φFF[pole_idx]
-    first_pole_longitude = Float64(λFF[pole_idx])
+    north_poles_latitude = φFF[pole_idx, end]
+    first_pole_longitude = Float64(λFF[pole_idx, end])
+
+    # eORCA repeats its first `ir` columns at the east edge, and a Periodic topology carries distinct cells only
+    ir = periodic_overlap_index(λCC)
+    jr = south_rows_to_remove
+    chop(data) = data[1:end-ir, jr+1:end]
+
+    λCC, λFC, λCF, λFF     = chop(λCC),  chop(λFC),  chop(λCF),  chop(λFF)
+    φCC, φFC, φCF, φFF     = chop(φCC),  chop(φFC),  chop(φCF),  chop(φFF)
+    e1t, e1u, e1v, e1f     = chop(e1t),  chop(e1u),  chop(e1v),  chop(e1f)
+    e2t, e2u, e2v, e2f     = chop(e2t),  chop(e2u),  chop(e2v),  chop(e2f)
+    AzCC, AzFC, AzCF, AzFF = chop(AzCC), chop(AzFC), chop(AzCF), chop(AzFF)
 
     Nx, Ny = size(λCC)
-
-    jr = south_rows_to_remove
-    if jr > 0
-        chop(data) = data[:, jr+1:end]
-
-        λCC, λFC, λCF, λFF     = chop(λCC),  chop(λFC),  chop(λCF),  chop(λFF)
-        φCC, φFC, φCF, φFF     = chop(φCC),  chop(φFC),  chop(φCF),  chop(φFF)
-        e1t, e1u, e1v, e1f     = chop(e1t),  chop(e1u),  chop(e1v),  chop(e1f)
-        e2t, e2u, e2v, e2f     = chop(e2t),  chop(e2u),  chop(e2v),  chop(e2f)
-        AzCC, AzFC, AzCF, AzFF = chop(AzCC), chop(AzFC), chop(AzCF), chop(AzFF)
-
-        Ny = size(λCC, 2)
-    end
 
     southernmost_latitude = Float64(minimum(φCC))
 
@@ -482,7 +482,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
         to_arch(Δyᶜᶜᵃ), to_arch(Δyᶠᶜᵃ), to_arch(Δyᶜᶠᵃ), to_arch(Δyᶠᶠᵃ),
         to_arch(Azᶜᶜᵃ), to_arch(Azᶠᶜᵃ), to_arch(Azᶜᶠᵃ), to_arch(Azᶠᶠᵃ),
         convert(FT, radius),
-        Tripolar(north_poles_latitude, first_pole_longitude, southernmost_latitude)
+        Tripolar(north_poles_latitude, first_pole_longitude, southernmost_latitude, RightFaceFolded)
     )
 
     with_bathymetry || return underlying_grid
@@ -497,9 +497,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     bathy_data = orient_xy(bathy_data, size(bathy_data)...; name = string(bathy_name))
 
-    if jr > 0
-        bathy_data = chop(bathy_data)
-    end
+    bathy_data = chop(bathy_data)
 
     bottom_height  = FT.(coalesce.(bathy_data, FT(0)))
     bottom_height .= ifelse.(isfinite.(bottom_height) .& (bottom_height .> 0), .-bottom_height, FT(100))
