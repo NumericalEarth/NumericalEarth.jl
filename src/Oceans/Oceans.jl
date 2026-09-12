@@ -1,21 +1,28 @@
 module Oceans
 
 export ocean_simulation, river_mouth_vertical_diffusivity, SlabOcean, PrescribedOcean,
-       TwoColorRadiation, ChlorophyllOptics, absorption_coefficient, equivalent_chlorophyll
+       TwoColorRadiation, ChlorophyllOptics, absorption_coefficient, equivalent_chlorophyll,
+       TidalHarmonics, tidal_forcing, tidal_boundary_conditions
 
 using Adapt: Adapt, adapt
+using Dates: Dates, DateTime
+using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
 using Oceananigans.AbstractOperations: KernelFunctionOperation
+using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.Advection: WENO, WENOVectorInvariant
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
                                        FieldBoundaryConditions, FluxBoundaryCondition,
+                                       GravityWaveRadiationBoundaryCondition,
+                                       SurfaceWaveRadiationBoundaryCondition,
                                        IMEXFluxBoundaryCondition, IMEXFlux, getbc
 using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
-using Oceananigans.Fields: Field, CenterField, set!, interior
-using Oceananigans.Forcings: MultipleForcings, DiscreteForcing
-using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, znodes, RectilinearGrid
+using Oceananigans.Fields: Field, CenterField, set!, interior, interpolate
+using Oceananigans.Forcings: Forcing, MultipleForcings, DiscreteForcing
+using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, znodes, RectilinearGrid,
+                          λnode, φnode, λnodes, φnodes
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition, MutableGridOfSomeKind
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
@@ -65,6 +72,7 @@ default_or_override(override, alternative_default=nothing) = override
 include("slab_ocean.jl")
 include("prescribed_ocean.jl")
 include("barotropic_potential_forcing.jl")
+include("tides.jl")
 include("radiative_forcing.jl")
 include("multiple_surface_fluxes.jl")
 include("ocean_simulation.jl")
