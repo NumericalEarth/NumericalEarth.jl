@@ -8,16 +8,15 @@ export GloFASPrescribedLand
 
 using Dates: Dates, DateTime, Day
 using Oceananigans.OutputReaders: Cyclical, FieldTimeSeries
-using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum,
                        available_variables, first_date, last_date
-using ...Lands: PrescribedLand, build_river_routing, coastal_outlet_indices
+using ...Lands: PrescribedLand, build_river_routing, coastal_outlet_indices, routable_grid
 
 download_GloFAS_cache::String = ""
 
 function __init__()
-    global download_GloFAS_cache = @get_scratch!("GloFAS")
+    global download_GloFAS_cache = DataWrangling.download_cache("GloFAS")
 end
 
 #####

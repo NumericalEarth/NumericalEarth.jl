@@ -151,6 +151,8 @@ remove trailing whitespace, remove trailing blank lines, ensure file ends with e
 
 ## Agent Behavior
 
+- **Before presenting any change, run the checklist in `.claude/rules/restraint-rules.md` over your own
+  `git diff` and cut what it catches.** Report the result in one line. This is mandatory for every edit.
 - Prioritize type stability and GPU compatibility
 - Follow established patterns in existing code
 - Add tests for new functionality; update exports when adding public API
@@ -168,6 +170,7 @@ Detailed reference docs are in `.agents/` — read on demand:
 | `.agents/documentation.md` | Building docs, fast builds, Literate.jl examples, doctest details |
 | `.agents/validation.md` | Reproducing paper results, common issues, TC genesis |
 | `.agents/physics-debugging.md` | Thermodynamic variables, diagnose-before-fix, model architecture |
+| `.agents/cluster.md` | Slurm/GPU clusters: precompilation, MPI launches, job health, sysimages |
 
 ### Auto-loading Rules
 
@@ -177,6 +180,8 @@ Rules in `.claude/rules/` load automatically when you touch matching files:
 - `testing-rules.md` — test writing and running (test/)
 - `docs-rules.md` — documentation building and style (docs/)
 - `examples-rules.md` — Literate.jl example conventions (examples/)
+- `restraint-rules.md` — **keeping the code human-written**: diff size, one invariant one mechanism,
+  no guards for unreachable states, comments that describe only this code (src/, test/, examples/)
 
 ### Skills (slash commands)
 

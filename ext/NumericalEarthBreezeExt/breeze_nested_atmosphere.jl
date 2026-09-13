@@ -264,13 +264,17 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # side (prescribing the parent's tangential velocity in the halo — `NormalFlowBC` there leaves it
     # under-constrained and injects spurious near-boundary convergence). `ρᵈ`/energy/moisture are Center
     # scalars (`ValueBoundaryCondition` on all sides, since `NormalFlowBC` overwrites the first interior cell
-    # asymmetrically for Center fields). The energy BC is keyed `ρe` (Breeze's energy-BC interface): it merges
-    # with the coupling's bottom energy-flux BC on the same field, and for a potential-temperature formulation
-    # Breeze routes the (Value) `ρθ` boundary values through unchanged. `ρθ` and `ρe` must not both carry BCs.
-    dry_bc_variables = (ρᵈ = prognostic.ρᵈ, ρu = prognostic.ρu, ρv = prognostic.ρv, ρe = prognostic.ρθ)
+    # asymmetrically for Center fields). The energy BC uses Breeze's energy-BC interface key (`ρs` on
+    # Breeze ≥0.10, `ρe` before): it merges with the coupling's bottom energy-flux BC on the same field,
+    # and for a potential-temperature formulation Breeze routes the (Value) `ρθ` boundary values through
+    # unchanged. `ρθ` and the energy key must not both carry BCs.
+    energy_key = energy_bc_key()
+    dry_bc_variables = merge((ρᵈ = prognostic.ρᵈ, ρu = prognostic.ρu, ρv = prognostic.ρv),
+                             NamedTuple{(energy_key,)}((prognostic.ρθ,)))
     bc_variables = merge(dry_bc_variables, moist_variables)
 
-    density_and_energy_types = (ρᵈ = ValueBoundaryCondition, ρe = ValueBoundaryCondition)
+    density_and_energy_types = merge((ρᵈ = ValueBoundaryCondition,),
+                                     NamedTuple{(energy_key,)}((ValueBoundaryCondition,)))
     momentum_types = (ρu = (west = NormalFlowBoundaryCondition, east = NormalFlowBoundaryCondition, south = ValueBoundaryCondition, north = ValueBoundaryCondition),
                       ρv = (west = ValueBoundaryCondition, east = ValueBoundaryCondition, south = NormalFlowBoundaryCondition, north = NormalFlowBoundaryCondition))
     moist_types = NamedTuple{tuple(moisture_name)}(tuple(ValueBoundaryCondition))
