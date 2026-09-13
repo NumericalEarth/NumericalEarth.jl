@@ -82,14 +82,6 @@ end
     return ϵ * mixed_layer_ramp(i, j, k, grid, closure.slope_limiter)
 end
 
-# ⚠⚠ SIGNATURE-SENSITIVE (2026-09-08, campaign 32). `ϵSxᶠᶜᶠ` / `ϵSyᶜᶠᶠ` take a SLOPE LIMITER in
-# Oceananigans zA2CT (what the two `orca_triad*` jobs launched at 11:53 are running) and take a CLOSURE
-# in Qd5sf, which the Manifest re-resolve of 17:32 pulled in — reading `.isopycnal_tensor` and
-# `.slope_limiter` instead. Under Qd5sf the two methods below no longer dispatch, so the ramp is silently
-# dropped in the ADVECTIVE and BOUNDARY-VALUE formulations. The DIFFUSIVE formulation — the default, and
-# the one ML_TAPER and BTAPER actually act through — goes via `tapering_factorᶠᶜᶜ/ᶜᶠᶜ/ᶜᶜᶠ` above and is
-# unaffected under both. ⚠ The same signature change is what killed `orca_gmbvp` at 17:49; see
-# `2026-09-08-campaign32.md` C32-39 and `temp/c32/PROPOSED_boundary_value_transport.jl`.
 # Advective-formulation slope functions: same ramp on top of the Gerdes magnitude clip.
 @inline function TurbulenceClosures.ϵSxᶠᶜᶠ(i, j, k, grid, limiter::MixedLayerTapering, b, C)
     Sx = TurbulenceClosures.Sxᶠᶜᶠ(i, j, k, grid, b, C)
