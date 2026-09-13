@@ -2,6 +2,7 @@ include("runtests_setup.jl")
 
 using NumericalEarth.DataWrangling.SoilGrids
 using NumericalEarth.DataWrangling.SoilGrids: Statistic, Mean, Q5, Q50, Q95,
+                                              Grid250m, Grid1000m, Clenshaw10km,
                                               SoilGrids2_dataset_variable_names,
                                               SoilGrids2_z_interfaces, SoilGrids2_depth_ranges,
                                               soilgrids_spacing_meters,

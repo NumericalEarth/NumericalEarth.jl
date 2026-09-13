@@ -1,6 +1,6 @@
 module SoilGrids
 
-export SoilGrids2, Resolution, Grid250m, Grid1000m, Clenshaw10km
+export SoilGrids2
 
 using Downloads: Downloads
 using Oceananigans: Center, CPU
