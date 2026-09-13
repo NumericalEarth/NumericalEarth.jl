@@ -417,7 +417,6 @@ include("ASTERGED/ASTERGED.jl")
 include("GloBFP3D/GloBFP3D.jl")
 include("GHSL/GHSL.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
-include("SeaWiFS/SeaWiFS.jl")
 include("WorldCover/WorldCover.jl")
 
 using .ETOPO
