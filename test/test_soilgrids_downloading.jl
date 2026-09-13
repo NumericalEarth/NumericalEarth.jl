@@ -6,6 +6,7 @@ using NCDatasets: NCDataset
 
 using NumericalEarth.DataWrangling: BoundingBox, native_grid
 using NumericalEarth.DataWrangling.SoilGrids
+using NumericalEarth.DataWrangling.SoilGrids: Grid250m
 
 using Oceananigans.Grids: λnodes, φnodes
 
