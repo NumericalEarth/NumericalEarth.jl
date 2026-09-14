@@ -139,7 +139,9 @@ end
     needs_to_converge = stop_criteria isa ConvergenceStopCriteria
 
     if (needs_to_converge && not_water) || ice_free
-        interface_state = AirIceInterfaceState(zero(FT), zero(FT), zero(FT), uˢⁱ, vˢⁱ, Tᵒᶜ, zero(FT))
+        Tᶠ = ClimaSeaIce.SeaIceThermodynamics.melting_temperature(sea_ice_properties.liquidus, Sᵒᶜ)
+        Tᶠ = convert_to_kelvin(sea_ice_properties.temperature_units, Tᶠ)
+        interface_state = AirIceInterfaceState(zero(FT), zero(FT), zero(FT), uˢⁱ, vˢⁱ, Tᶠ, zero(FT))
     else
         interface_state = compute_interface_state(turbulent_flux_formulation,
                                                   initial_interface_state,

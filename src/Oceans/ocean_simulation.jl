@@ -110,6 +110,7 @@ build_tracer_top_bc(Jᶜ, Jʷ, content, additional, name) = FluxBoundaryConditio
 ##### Defaults
 #####
 
+
 default_free_surface(grid) = SplitExplicitFreeSurface(grid; cfl=0.7)
 default_tracer_advection() = WENO(order=5)
 
@@ -194,6 +195,10 @@ function river_mouth_vertical_diffusivity(grid, river_routing;
                                      loc = (Center, Center, Center), parameters = mask)
 end
 
+# Two-band shortwave penetration with the Jerlov Type I optics of Paulson & Simpson (1977),
+# which is what `TwoColorRadiation` defaults to. Pass a chlorophyll field or climatology to
+# `ocean_simulation(grid; radiative_forcing = TwoColorRadiation(grid; chlorophyll))` for optics
+# that vary in space and time.
 default_radiative_forcing(grid) = TwoColorRadiation(grid)
 
 # TODO: Specify the grid to a grid on the sphere; otherwise we can provide a different
@@ -274,7 +279,7 @@ end
                                  closure = default_ocean_closure(),
                                  tracers = (:T, :S),
                                  free_surface = default_free_surface(grid),
-                                 reference_density = 1020,
+                                 reference_density = 1026,
                                  rotation_rate = default_planet_rotation_rate,
                                  gravitational_acceleration = default_gravitational_acceleration,
                                  bottom_drag_coefficient = Default(0.003),
@@ -383,7 +388,7 @@ function hydrostatic_ocean_simulation(grid;
                                       closure = default_ocean_closure(),
                                       tracers = (:T, :S),
                                       free_surface = default_free_surface(grid),
-                                      reference_density = 1020,
+                                      reference_density = 1026,
                                       rotation_rate = default_planet_rotation_rate,
                                       gravitational_acceleration = default_gravitational_acceleration,
                                       bottom_drag_coefficient = Default(0.003),
@@ -399,6 +404,7 @@ function hydrostatic_ocean_simulation(grid;
                                       equation_of_state = TEOS10EquationOfState(; reference_density),
                                       boundary_conditions::NamedTuple = NamedTuple(),
                                       radiative_forcing = default_radiative_forcing(grid),
+                                      materialize_buoyancy_gradients = true,
                                       river_routing = nothing,
                                       river_mouth_diffusivity = 0.1,
                                       river_mouth_mixing_depth = 10,
@@ -536,6 +542,7 @@ function hydrostatic_ocean_simulation(grid;
 
     boundary_conditions = merge(default_boundary_conditions, merged_boundary_conditions)
     buoyancy = SeawaterBuoyancy(; gravitational_acceleration, equation_of_state)
+    buoyancy = Oceananigans.BuoyancyFormulations.BuoyancyForce(grid, buoyancy; materialize_gradients = materialize_buoyancy_gradients)
 
     if tracer_advection isa NamedTuple
         tracer_advection = with_tracers(tracers, tracer_advection, default_tracer_advection())

@@ -28,6 +28,16 @@ The native product is mapped at 1/12°; `resolution` is the degree spacing actua
 
 A `FieldTimeSeries` built over a twelve-month window of `Metadata(:chlorophyll; dataset=SeaWiFSMonthly(), dates)` drives a run of any length with a repeating seasonal cycle, under
 the default `Cyclical()` time indexing.
+
+```jldoctest
+using NumericalEarth.DataWrangling.SeaWiFS
+
+SeaWiFSMonthly()
+
+# output
+
+SeaWiFSMonthly chlorophyll at 1° resolution
+```
 """
 struct SeaWiFSMonthly
     resolution :: Int
@@ -87,11 +97,12 @@ end
 
 function Downloads.download(metadata::SeaWiFSMetadata; kwargs...)
     for metadatum in metadata
-        path = metadata_path(metadatum)
-        isfile(path) && continue
-        @root begin
+        # `@root` ends in an `MPI.Barrier`, so the test for "is it already here?" belongs
+        # inside it: skipping the block on a rank-local `isfile` lets the ranks enter the
+        # barrier a different number of times and the run deadlocks with no output.
+        @root if !isfile(metadata_path(metadatum))
             @info "Downloading SeaWiFS chlorophyll for $(Dates.format(metadatum.dates, "yyyy-mm"))"
-            download_with_retries(erddap_url(metadatum), path; kwargs...)
+            download_with_retries(erddap_url(metadatum), metadata_path(metadatum); kwargs...)
         end
     end
     return nothing

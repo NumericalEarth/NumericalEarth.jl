@@ -1,5 +1,10 @@
 module Bathymetry
 
+export regrid_bathymetry, ORCAGrid
+export Basin
+export atlantic_ocean_basin, indian_ocean_basin, southern_ocean_basin, pacific_ocean_basin, arctic_ocean_basin
+export label_ocean_basins
+export meridional_barrier
 export regrid_bathymetry, regrid_topography, smooth_topography!, ORCAGrid
 
 using Downloads: Downloads, download
@@ -24,7 +29,9 @@ using ..DataWrangling: Metadatum, native_grid, metadata_path,
                        FieldRegridding, load_field_cache, save_field_cache
 using ..DataWrangling.ETOPO: ETOPO2022
 
+include("label_ocean_basins.jl")
 include("regrid_bathymetry.jl")
+include("ocean_basin.jl")
 include("smooth_topography.jl")
 include("orca_grid.jl")
 

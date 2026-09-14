@@ -38,8 +38,7 @@ struct DatasetBackend{N, C, I, M} <: AbstractInMemoryBackend{Int}
     end
 end
 
-Adapt.adapt_structure(to, b::DatasetBackend{N, C}) where {N, C} =
-    DatasetBackend{N, C}(b.start, b.length, nothing, nothing)
+Adapt.adapt_structure(to, b::DatasetBackend{N, C}) where {N, C} = DatasetBackend{N, C}(b.start, b.length, nothing, nothing)
 
 """
     DatasetBackend(length, metadata;

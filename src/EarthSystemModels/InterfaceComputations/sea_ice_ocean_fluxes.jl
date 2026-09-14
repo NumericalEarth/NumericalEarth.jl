@@ -1,8 +1,158 @@
 using Oceananigans.Operators: Δzᶜᶜᶜ
+using Oceananigans.Grids: znode, Center
+using Oceananigans.ImmersedBoundaries: inactive_node
+using SeawaterPolynomials.TEOS10: Θ_from_T
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.SeaIceDynamics: implicit_τx_coefficient, implicit_τy_coefficient
 
 using ..EarthSystemModels: ocean_temperature, ocean_salinity
+
+#####
+##### Freezing point at depth
+#####
+
+# Freezing is an IN-SITU phenomenon, so the threshold is the in-situ freezing point of seawater —
+# UNESCO (1983), valid over S = 0-40 and p = 0-500 bar, and exact at S = 0 where fresh water freezes
+# at 0 ᵒC:
+#
+#     Tᶠ(S, p) = -0.0575 S + 1.710523e-3 S^1.5 - 2.154996e-4 S² - 7.53e-4 p
+#
+# Ice Ih is LESS dense than the liquid, so seawater's Clapeyron slope is negative and the freezing
+# point FALLS with pressure, -0.75 K per 1000 m. (The reversal to a positive slope needs the denser
+# ice III at ≈21000 dbar, twice the deepest ocean.) A surface-referenced threshold is therefore 0.5 K
+# TOO WARM at 660 m, which parks ordinary cold deep water exactly on it; the clamp below is one-way,
+# so from there any perturbation is rectified into ice indefinitely. C18-12 found a single Denmark
+# Strait cell minting 176 m of ice a year for 45 years onto water at +5.8 ᵒC.
+#
+# The ocean carries CONSERVATIVE temperature, so the threshold is converted into Θ rather than the
+# state being converted into in-situ and back. That is equivalent for the comparison and keeps the
+# frazil energy `ρ cᵖ (Θᶠ - Θ)` exact, because Θ is potential enthalpy divided by cₚ⁰.
+@inline function insitu_freezing_temperature(S, p)
+    S⁺ = max(S, zero(S))
+    return -0.0575 * S⁺ + 1.710523e-3 * S⁺ * sqrt(S⁺) - 2.154996e-4 * S⁺^2 - 7.53e-4 * p
+end
+
+"""Freezing point at `(i, j, k)` expressed in conservative temperature. `z` is negative below the surface."""
+@inline function melting_temperature_at_depth(S, i, j, k, grid)
+    FT = eltype(grid)
+    S⁺ = max(S, zero(S))
+    p  = -znode(i, j, k, grid, Center(), Center(), Center())
+    Θᶠ = Θ_from_T(S⁺, insitu_freezing_temperature(S⁺, p), p)
+    # ⚠ Cap at 0. The in-situ formula is exact at S = 0 (fresh water freezes at 0 ᵒC) but the Θ
+    # conversion returns +0.0153 there, because TEOS-10's x = √Sᴬ has a singular derivative at S = 0.
+    # Cells inside the bathymetry carry T = S = 0, so an uncapped positive threshold would make the
+    # whole seafloor a frazil source — which is exactly what killed two runs on 2026-09-03. The `wet`
+    # guard in the frazil loop catches this too; both are kept because either alone is sufficient and
+    # the failure is silent and catastrophic.
+    return convert(FT, min(Θᶠ, zero(Θᶠ)))
+end
+
+
+
+#####
+##### How the ice-ocean mass exchange reaches the ocean
+#####
+
+"""
+    ConservativeIceFreshwater()
+
+Hand the ocean the mass the sea ice actually exchanged: the volume flux `−(Eᵢ + Eₛ)/ρᵒᶜ` and the salt
+held in the ice, `Eᵢ Sˢⁱ/ρᵒᶜ`. The `Sᴺ`-weighted dilution rides on the volume flux in the salinity
+boundary condition, so melting ice of salinity `Sˢⁱ` adds exactly its own volume and its own salt.
+"""
+struct ConservativeIceFreshwater end
+
+"""
+    ScaledIceFreshwater(fraction)
+
+Deliver `fraction` of the exchange, volume and salt alike. The withheld water leaves the ocean-ice-snow
+total, which `normalize_freshwater` returns globally by moving the free surface, so the global budget
+still closes while the *local* delivery is scaled. A diagnostic knob for how sensitive a basin is to
+the freshwater the ice puts into it; `fraction = 1` is [`ConservativeIceFreshwater`](@ref).
+"""
+struct ScaledIceFreshwater{FT}
+    fraction :: FT
+end
+
+"""
+    VirtualSaltFluxIceFreshwater()
+
+Deliver the exchange as a salt flux at fixed ocean volume — the classical virtual salt flux,
+`Jˢ = Jʷ (Sᴺ − Sˢⁱ)` with `Jʷ = 0` — instead of as a real volume flux. Isolates the volume pathway
+from the freshwater amount. ⚠ This is an approximation, exact only for `Sᴺ` uniform over the column,
+and it does not conserve total salt; the drift is measurable in the ocean + ice + snow budget.
+"""
+struct VirtualSaltFluxIceFreshwater end
+
+#####
+##### The temperature the ice meltwater carries into the ocean
+#####
+
+"""
+    ZeroHeatContentMeltwater()
+
+Ice meltwater joins the ocean carrying no heat content, that is, at Conservative Temperature 0.
+"""
+struct ZeroHeatContentMeltwater end
+
+"""
+    InterfaceTemperatureMeltwater()
+
+Ice meltwater joins the ocean at the interface temperature `Tᵦ`. `ClimaSeaIce` evaluates the latent heat
+at the interface, `ℰb = ρⁱ latent_heat(phase_transitions, Tbi)`, so the liquid a basal phase change
+produces is at `Tᵦ` and not at 0; delivering it at 0 hands the ocean `ρᵒᶜ cᵒᶜ |Tᵦ|` of heat it never
+paid for, about 0.23 W m⁻² per m yr⁻¹ of basal melt.
+
+The same correction applies in the freezing direction: water leaving the ocean to form ice leaves at
+`Tᵦ` rather than at 0.
+
+⚠ The correction is applied to the whole ice mass flux. Top melt is produced at the surface melting
+temperature, which is near 0 and needs no correction, so this **over-corrects** that fraction:
+`ClimaSeaIce` computes the top and bottom rates separately but returns only their sum. Read this as an
+upper bound on the correction, not as the exact treatment.
+"""
+struct InterfaceTemperatureMeltwater end
+
+"""
+$(TYPEDSIGNATURES)
+
+The ocean-side heat-content flux carried by ice meltwater, given the interface temperature `Tᵦ` and the
+ice-only volume flux `Jʷⁱ`. Enters `Jᴴ`, which the temperature boundary condition subtracts from the
+ambient carry `Tᴺ Jʷ`, so returning `Tᵦ Jʷⁱ` delivers the ice water at `Tᵦ` and returning zero delivers
+it at Conservative Temperature 0.
+"""
+@inline meltwater_heat_content(::ZeroHeatContentMeltwater, Tᵦ, Jʷⁱ) = zero(Jʷⁱ)
+@inline meltwater_heat_content(::InterfaceTemperatureMeltwater, Tᵦ, Jʷⁱ) = Tᵦ * Jʷⁱ
+
+"""
+$(TYPEDSIGNATURES)
+
+The ocean-side volume flux of the *ice* alone, excluding snow, under the same delivery
+[`ice_freshwater_and_salt`](@ref) applies. Snow is salt-free and melts at 0, so only the ice term
+carries a meltwater temperature correction.
+"""
+@inline ice_volume_flux(::ConservativeIceFreshwater, Eᵢ, ρᵒᶜ) = - Eᵢ / ρᵒᶜ
+@inline ice_volume_flux(delivery::ScaledIceFreshwater, Eᵢ, ρᵒᶜ) = - delivery.fraction * Eᵢ / ρᵒᶜ
+@inline ice_volume_flux(::VirtualSaltFluxIceFreshwater, Eᵢ, ρᵒᶜ) = zero(Eᵢ / ρᵒᶜ)
+
+"""
+$(TYPEDSIGNATURES)
+
+The ocean-side volume and salt fluxes `(Jʷ, Jˢ)` for an ice-ocean mass exchange of `Eᵢ` ice and `Eₛ`
+snow, against ocean surface salinity `Sᴺ` and ice salinity `Sˢⁱ`.
+"""
+@inline ice_freshwater_and_salt(::ConservativeIceFreshwater, Eᵢ, Eₛ, Sᴺ, Sˢⁱ, ρᵒᶜ) =
+    (- (Eᵢ + Eₛ) / ρᵒᶜ, Eᵢ * Sˢⁱ / ρᵒᶜ)
+
+@inline function ice_freshwater_and_salt(delivery::ScaledIceFreshwater, Eᵢ, Eₛ, Sᴺ, Sˢⁱ, ρᵒᶜ)
+    α = delivery.fraction
+    return (- α * (Eᵢ + Eₛ) / ρᵒᶜ, α * Eᵢ * Sˢⁱ / ρᵒᶜ)
+end
+
+@inline function ice_freshwater_and_salt(::VirtualSaltFluxIceFreshwater, Eᵢ, Eₛ, Sᴺ, Sˢⁱ, ρᵒᶜ)
+    Jʷ = - (Eᵢ + Eₛ) / ρᵒᶜ
+    return (zero(Jʷ), Jʷ * (Sᴺ - Sˢⁱ))
+end
 
 """
     compute_sea_ice_ocean_fluxes!(coupled_model)
@@ -71,7 +221,8 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     launch!(arch, grid, :xy, _compute_sea_ice_ocean_fluxes!,
             flux_formulation, fluxes, Tˢⁱ, Sˢⁱ, grid, clock,
             hˢⁱ, hc, ℵ, Sⁱ, Tᵒᶜ, Sᵒᶜ, uˢⁱ, vˢⁱ, τₛ,
-            liquidus, ocean_properties, L, Δt, mass_fluxes.ice, mass_fluxes.snow)
+            liquidus, ocean_properties, L, Δt, mass_fluxes.ice, mass_fluxes.snow,
+            interface.freshwater_delivery, interface.meltwater_enthalpy)
 
     return nothing
 end
@@ -128,7 +279,9 @@ end
                                                 latent_heat,
                                                 Δt,
                                                 ice_ocean_mass_flux,
-                                                snow_ocean_mass_flux)
+                                                snow_ocean_mass_flux,
+                                                freshwater_delivery,
+                                                meltwater_enthalpy)
 
     i, j = @index(Global, NTuple)
 
@@ -136,6 +289,7 @@ end
     𝒬ᶠʳᶻ = fluxes.frazil_heat
     𝒬ⁱⁿ = fluxes.interface_heat
     Jˢ = fluxes.salt
+    Jᴴ = fluxes.freshwater_heat_content
     Jʷ = fluxes.freshwater
     τˣ = fluxes.x_momentum
     τʸ = fluxes.y_momentum
@@ -158,15 +312,21 @@ end
     δ𝒬ᶠʳᶻ = zero(grid)
 
     for k = Nz:-1:1
+        # ⚠ Cells inside the bathymetry are masked to T = 0, S = 0 every state update, so without this
+        # guard the loop asks whether the ROCK is freezing. It was dormant only because the old
+        # liquidus gave Tₘ(0) = 0 exactly, making `0 < 0` false; any liquidus with a non-zero
+        # intercept turns the whole seafloor into a frazil source.
+        wet = !inactive_node(i, j, k, grid, Center(), Center(), Center())
+
         @inbounds begin
             Δz = Δzᶜᶜᶜ(i, j, k, grid)
             Tᵏ = Tᵒᶜ[i, j, k]
             Sᵏ = Sᵒᶜ[i, j, k]
         end
 
-        # Melting/freezing temperature at this depth
-        Tₘ = melting_temperature(liquidus, Sᵏ)
-        freezing = Tᵏ < Tₘ
+        # Melting/freezing temperature at this depth, INCLUDING the pressure depression.
+        Tₘ = melting_temperature_at_depth(Sᵏ, i, j, k, grid)
+        freezing = wet & (Tᵏ < Tₘ)
 
         # Compute change in ocean heat energy due to freezing.
         # When Tᵏ < Tₘ, we heat the ocean back to melting temperature
@@ -208,13 +368,13 @@ end
     # Part 3: Interface heat flux (formulation-specific)
     # =============================================
     # Returns interfacial heat flux and interface T, S
-    𝒬ⁱᵒ, Tb, Sb = compute_interface_heat_flux(flux_formulation,
+    𝒬ⁱᵒ, Tᵦ, Sᵦ = compute_interface_heat_flux(flux_formulation,
                                               ocean_surface_state, ice_state,
                                               liquidus, ocean_properties, ℰ, u★)
 
     # Store interface values and heat flux
     @inbounds 𝒬ⁱⁿ[i, j, 1] = 𝒬ⁱᵒ
-    store_interface_state!(flux_formulation, T★, S★, i, j, Tb, Sb)
+    store_interface_state!(flux_formulation, T★, S★, i, j, Tᵦ, Sᵦ)
 
     # =============================================
     # Part 4: Freshwater and salt fluxes
@@ -225,7 +385,11 @@ end
     @inbounds begin
         Eᵢ = ice_ocean_mass_flux[i, j, 1]
         Eₛ = snow_ocean_mass_flux[i, j, 1]
-        Jʷ[i, j, 1] = - (Eᵢ + Eₛ) / ρᵒᶜ
-        Jˢ[i, j, 1] = Eᵢ * Sˢⁱ / ρᵒᶜ # the snow term Sˢⁿ * Eₛ drops since Sˢⁿ == 0
+        # the snow term Sˢⁿ * Eₛ drops from the salt flux since Sˢⁿ == 0
+        Jʷⁱᵒ, Jˢⁱᵒ = ice_freshwater_and_salt(freshwater_delivery, Eᵢ, Eₛ, Sᴺ, Sˢⁱ, ρᵒᶜ)
+        Jʷ[i, j, 1] = Jʷⁱᵒ
+        Jˢ[i, j, 1] = Jˢⁱᵒ
+        Jᴴ[i, j, 1] = meltwater_heat_content(meltwater_enthalpy, Tᵦ,
+                                             ice_volume_flux(freshwater_delivery, Eᵢ, ρᵒᶜ))
     end
 end

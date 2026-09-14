@@ -1,11 +1,13 @@
 include("runtests_setup.jl")
 
 using Oceananigans.Grids: Center, Face, Flat, λnodes, φnodes
+using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid
 using Oceananigans.Operators: Azᶜᶜᶜ
 using Oceananigans.ImmersedBoundaries: inactive_node
 using Oceananigans.Units: Time
 using NumericalEarth.Lands: RiverRouting, build_river_routing, coastal_outlet_indices, routable_grid
 using NumericalEarth.EarthSystemModels: interpolate_state!
+using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
 using NumericalEarth.Oceans: river_mouth_vertical_diffusivity
 using Oceananigans.TurbulenceClosures: VerticalScalarDiffusivity
 
@@ -146,13 +148,15 @@ end
                        icebergs = constant_time_series(iceberg_snapshot))
     land = PrescribedLand(freshwater_flux; river_routing = (rivers = routing, icebergs = routing))
 
-    exchanger = (; state = (; freshwater_flux = Field{Center, Center, Nothing}(target_grid)))
+    exchanger = ComponentExchanger(land, target_grid)
     interpolate_state!(exchanger, target_grid, land, (; clock = Clock(time = 0.0)))
 
     flux = Array(interior(exchanger.state.freshwater_flux))[:, :, 1]
+    iceberg_flux = Array(interior(exchanger.state.iceberg_freshwater_flux))[:, :, 1]
 
-    # Both components accumulate into the same freshwater flux.
+    # Both components accumulate into the same freshwater flux; the icebergs are also held on their own.
     @test integrated_mass_flux(flux, on_architecture(CPU(), target_grid)) ≈ ρ * (Q₀ + Q₁) rtol = 1e-5
+    @test integrated_mass_flux(iceberg_flux, on_architecture(CPU(), target_grid)) ≈ ρ * Q₁ rtol = 1e-5
 end
 
 @testset "River mouth vertical mixing [$arch]" for arch in test_architectures
@@ -194,6 +198,51 @@ end
 
     @test ocean.model.closure isa VerticalScalarDiffusivity
     @test isnothing(ocean_simulation(target_grid; closure = nothing).model.closure)
+end
+
+@testset "River routing on a tripolar grid [$arch]" for arch in test_architectures
+    Q₀ = 3000.0
+    ρ = 1000.0
+
+    discharge = synthetic_discharge_field(arch, Q₀)
+    underlying = TripolarGrid(arch; size = (40, 40, 1), z = (-100, 0), halo = (4, 4, 4))
+    target_grid = ImmersedBoundaryGrid(underlying, GridFittedBottom((λ, φ) -> ifelse(φ > 60, 10, -100)))
+
+    cpu_grid = on_architecture(CPU(), target_grid)
+    kᴺ = size(cpu_grid, 3)
+    discharge_cpu = Array(interior(discharge))[:, :, 1]
+
+    flux, ti, tj = scattered_flux(routing_for(discharge, target_grid, ρ), discharge_cpu, cpu_grid)
+
+    @test length(ti) > 0
+    for c in eachindex(ti)
+        @test !inactive_node(ti[c], tj[c], kᴺ, cpu_grid, Center(), Center(), Center())
+    end
+
+    @test integrated_mass_flux(flux, cpu_grid) ≈ ρ * Q₀ rtol = 1e-4
+end
+
+@testset "Diverted river discharge [$arch]" for arch in test_architectures
+    Q₀ = 1234.0
+    ρ = 1000.0
+
+    discharge = synthetic_discharge_field(arch, Q₀)
+    target_grid = half_land_ocean_grid(arch)
+    cpu_grid = on_architecture(CPU(), target_grid)
+    discharge_cpu = Array(interior(discharge))[:, :, 1]
+
+    Nx, Ny, _ = size(cpu_grid)
+    φc = Array(φnodes(cpu_grid, Center(), Center(), Center()))
+    from = [true for i in 1:Nx, j in 1:Ny]
+    to = [φc[j] < -5 for i in 1:Nx, j in 1:Ny]
+
+    flux_diversion = (; fraction = 0.4, from, to)
+    diverted = routing_for(discharge, target_grid, ρ; flux_diversion)
+    flux, _, _ = scattered_flux(diverted, discharge_cpu, cpu_grid)
+
+    # Diversion moves water between basins without creating or destroying any.
+    @test integrated_mass_flux(flux, cpu_grid) ≈ ρ * Q₀ rtol = 1e-5
+    @test integrated_mass_flux(flux .* to, cpu_grid) ≈ 0.4 * ρ * Q₀ rtol = 1e-5
 end
 
 @testset "Single-column grids carry no routing" begin

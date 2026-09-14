@@ -39,14 +39,18 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
                                                     time_indices_in_memory = 2,
                                                     time_indexing = Cyclical(),
                                                     inpainting = default_inpainting(metadata),
-                                                    cache_inpainted_data = true)
+                                                    cache_inpainted_data = true,
+                                                    prefetch = false)
 
     Downloads.download(metadata)
 
-    # Match the time axis to the grid's float type. `native_times` returns `Float64` seconds, but with a
-    # Float32 grid that mismatch makes `interpolate`'s time weight `Float64`, so the interpolated value is
-    # `Union{Float32, Float64}` — a type instability that boxes inside GPU tendency/halo kernels.
-    times = convert.(eltype(grid), native_times(metadata))
+    # Keep the time axis in Float64, matching the model clock. `interpolate`'s time weight promotes to the
+    # clock's type regardless of the axis, so a narrower axis buys no type stability and only costs
+    # resolution: past 2^28 s a Float32 axis rounds nodes by up to 32 s, which lets the bracketing weight
+    # exceed 1 and `Cyclical` read that as running off the end of the record, wrapping the in-memory window
+    # to the last snapshot for one step out of every few.
+    times = native_times(metadata)
+
 
     # A window-averaged series repeats over the span its windows tile, not over the span of its
     # nodes, which sit half a window inside it at each end. Oceananigans infers the latter.
@@ -69,10 +73,19 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
     # it whenever — as for any interpolation target — the grid isn't the native one.
     native = native_grid(metadata, architecture(grid))
     on_native_grid = typeof(grid) === typeof(native) && grid == native
-    backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid, inpainting, cache_inpainted_data)
+    inner_backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid, inpainting, cache_inpainted_data)
 
     loc = LX, LY, LZ = location(metadata)
     boundary_conditions = FieldBoundaryConditions(grid, instantiate.(loc))
+
+    if prefetch
+        Threads.nthreads() < 2 && @warn "prefetch=true is a no-op with JULIA_NUM_THREADS=$(Threads.nthreads()); start Julia with ≥ 2 threads."
+        buffer_inner = new_backend(inner_backend, 1, time_indices_in_memory)
+        buffer_fts = FieldTimeSeries{LX, LY, LZ}(grid, times; backend=buffer_inner, time_indexing, boundary_conditions)
+        backend = PrefetchingBackend(inner_backend, buffer_fts)
+    else
+        backend = inner_backend
+    end
 
     fts = FieldTimeSeries{LX, LY, LZ}(grid, times; backend, time_indexing, boundary_conditions)
     set!(fts)

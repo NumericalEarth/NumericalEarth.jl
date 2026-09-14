@@ -67,7 +67,7 @@ set!(ocean.model, ecco_set)
 # matching `JRA55PrescribedRadiation` that supplies downwelling shortwave and
 # longwave radiation as well as ocean / sea-ice surface properties.
 
-radiation = JRA55PrescribedRadiation(; backend = JRA55NetCDFBackend(2))
+radiation = JRA55PrescribedRadiation(; time_indices_in_memory = 2)
 coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
 
 # Now that the surface fluxes are computed, we can extract and visualize them.

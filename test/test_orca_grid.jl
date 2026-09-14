@@ -3,7 +3,7 @@ include("download_utils.jl")
 
 using Oceananigans
 using Oceananigans.Architectures: CPU
-using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid
+using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid, fold_topology
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using NCDatasets
 using NumericalEarth
@@ -72,7 +72,7 @@ end
     underlying = grid.underlying_grid
     @test underlying isa Oceananigans.Grids.OrthogonalSphericalShellGrid
     @test underlying isa TripolarGrid
-    @test underlying.Nx == 362
+    @test underlying.Nx == 360
     @test underlying.Ny == 332
     @test underlying.Nz == 5
 
@@ -81,6 +81,12 @@ end
     @test maximum(underlying.λᶜᶜᵃ.parent) > 179
     @test minimum(underlying.φᶜᶜᵃ.parent) < -80
     @test maximum(underlying.φᶜᶜᵃ.parent) > 80
+
+    # The conformal mapping describes the mesh it was read from: the fold the grid is folded on, and a north
+    # singularity that lies on the fold row in the northern hemisphere.
+    mapping = underlying.conformal_mapping
+    @test fold_topology(mapping) === Oceananigans.Grids.topology(underlying, 2)
+    @test 0 < mapping.north_poles_latitude < 90
 end
 
 @testset "ORCAGrid without bathymetry on $(arch)" for arch in test_architectures
@@ -90,18 +96,19 @@ end
     @test grid isa Oceananigans.Grids.OrthogonalSphericalShellGrid
     @test grid isa TripolarGrid
     @test !(grid isa ImmersedBoundaryGrid)
-    @test grid.Nx == 362
+    @test grid.Nx == 360
     @test grid.Ny == 332 - default_south_rows_to_remove(ORCAOne())
     @test grid.Nz == 5
 end
 
 @testset "ORCAGrid with south_rows_to_remove on $(arch)" for arch in test_architectures
     Nremove = 40
-    grid = ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove=Nremove)
+    grid = ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
+                    south_rows_to_remove=Nremove)
 
     @test grid isa ImmersedBoundaryGrid
     underlying = grid.underlying_grid
-    @test underlying.Nx == 362
+    @test underlying.Nx == 360
     @test underlying.Ny == 332 - Nremove
     @test underlying.Nz == 5
 end
@@ -165,16 +172,14 @@ end
     nsouth = count(j -> φF[j] < φC[j], 1:Ny)
     @test nsouth / length(φC) > 0.95
 
-    # Periodic overlap: first and last unique columns should be consistent
-    # After filling halos, the periodic halo should smoothly wrap.
-    # Check that Δx at the periodic boundary has no discontinuity.
+    # The zonal seam: the interior columns are the distinct ones, and the step from the last of them to the
+    # first is one grid step forward, so a Periodic wrap continues the mesh instead of repeating its start.
     jmid = Ny ÷ 2
-    Δx = grid.Δxᶜᶜᵃ[:, jmid]
-    # The relative jump from column Nx to column 1 (via periodic halo)
-    # should be similar to the jump between adjacent interior columns
-    interior_variation = maximum(abs, diff(Array(Δx[1:Nx]))) / mean(Δx[1:Nx])
-    boundary_jump = abs(Δx[Nx] - Δx[1]) / mean(Δx[1:Nx])
-    @test boundary_jump < 10 * interior_variation + 1e-10
+    λ = grid.λᶜᶜᵃ[1:Nx, jmid]
+    zonal_step(λ₁, λ₂) = mod(λ₂ - λ₁ + 180, 360) - 180
+
+    @test allunique(λ)
+    @test zonal_step(λ[Nx], λ[1]) ≈ zonal_step(λ[Nx-1], λ[Nx]) rtol=1e-3
 end
 
 # The eORCA1 mesh_mask ships both the staggered metrics and the T/F coordinates, so reconstructing it
@@ -192,22 +197,32 @@ end
     λFF, φFF = read_coordinate("glamf"), read_coordinate("gphif")
     close(ds)
 
-    reconstructed = Bathymetry.reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius = Oceananigans.defaults.planet_radius)
+    reconstructed = Bathymetry.reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF;
+                                                                       radius = Oceananigans.defaults.planet_radius)
 
+    # Both read paths must agree on shape and on NEMO's y-indexing: `halo_filled_data` applies the
+    # +1 Face-y shift exactly once, so neither path may pre-shift.
     for name in (:e1t, :e2t, :e1u, :e2u, :e1v, :e2v, :e1f, :e2f, :λFC, :λCF, :λFF, :φFF)
         @test size(getproperty(reconstructed, name)) == size(getproperty(staggered, name))
     end
 
+    # NEMO stores degenerate padding metrics (e1t = 4 m) in the southern rows that `south_rows_to_remove`
+    # discards, so compare only the rows the grid actually keeps.
     south = default_south_rows_to_remove(ORCAOne()) + 1
     for name in (:e1t, :e2t, :e1u, :e2u, :e1v, :e2v, :e1f, :e2f)
         reference = getproperty(staggered, name)[:, south:end]
         computed  = getproperty(reconstructed, name)[:, south:end]
         error     = abs.(computed .- reference) ./ max.(abs.(reference), 1e-6)
 
+        # Reconstruction from coordinates is approximate; the tail sits at the tripolar poles where the
+        # stored Float32 coordinates stop resolving the sub-metre spacing.
         @test median(error) < 1e-3
         @test count(>(0.01), error) / length(error) < 0.02
     end
 
+    # A metric of exactly zero is never physical: it makes `minimum_xspacing` vanish and the
+    # split-explicit substep count diverge. Zeros here mean the periodic overlap columns were wrapped
+    # onto their own duplicates.
     for name in (:e1t, :e2t, :e1u, :e2u, :e2v)
         @test count(==(0), getproperty(reconstructed, name)) == 0
     end

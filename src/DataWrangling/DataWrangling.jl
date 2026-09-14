@@ -320,6 +320,7 @@ include("field_cache.jl")
 include("metadata_field.jl")
 include("tiled_regridding.jl")
 include("dataset_backend.jl")
+include("prefetching_backend.jl")
 include("metadata_field_time_series.jl")
 include("inpainting.jl")
 include("restoring.jl")
@@ -448,6 +449,7 @@ using .ASTERGED
 using .GloBFP3D
 using .GHSL
 using .CopernicusLandAlbedo
+using .SeaWiFS
 using .WorldCover
 
 function dataset_modules()

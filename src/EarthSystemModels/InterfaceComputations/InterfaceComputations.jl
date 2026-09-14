@@ -1,6 +1,7 @@
 module InterfaceComputations
 
-using Adapt: Adapt
+using Adapt: Adapt, adapt
+using DocStringExtensions: TYPEDSIGNATURES
 using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: AbstractField, Field, Face, Center
@@ -10,6 +11,11 @@ using Oceananigans.Utils: KernelParameters, worksize
 
 export
     ComponentInterfaces,
+    ConservativeIceFreshwater,
+    ScaledIceFreshwater,
+    VirtualSaltFluxIceFreshwater,
+    ZeroHeatContentMeltwater,
+    InterfaceTemperatureMeltwater,
     SimilarityTheoryFluxes,
     FixedIterations,
     ConvergenceStopCriteria,
@@ -55,6 +61,7 @@ export
 using ..EarthSystemModels: EarthSystemModels,
                            default_gravitational_acceleration,
                            default_freshwater_density,
+                           default_latent_heat_of_fusion,
                            thermodynamics_parameters,
                            surface_layer_height,
                            boundary_layer_height
@@ -126,7 +133,11 @@ end
     return ifelse(clamped, clamp(fractional_index, lowest, highest), fractional_index)
 end
 
-# 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1
+# 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1: a scalar
+# (e.g. a prescribed measurement height or the 600 m BL-height fallback) passes through,
+# and a 2-D `Field` (Breeze's per-column surface- or boundary-layer height) is read at
+# column `(i, j)`. The five-argument form also resolves functions of `(λ, φ, z, t)` and
+# time series, which need the grid and the time.
 @inline state2dindex(a, i, j) = stateindex(a, i, j, 1)
 @inline state2dindex(a, i, j, grid, time) = stateindex(a, i, j, 1, grid, time, (Center, Center, Nothing))
 

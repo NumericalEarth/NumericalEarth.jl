@@ -1,0 +1,13 @@
+[CUDA_Runtime_jll]
+local = "true"
+version = "13.1"
+
+[MPIPreferences]
+__clear__ = ["preloads_env_switch"]
+_format = "1.0"
+abi = "OpenMPI"
+binary = "system"
+cclibs = []
+libmpi = "/orcd/software/core/001/pkg/nvhpc/26.1/Linux_x86_64/26.1/comm_libs/13.1/hpcx/hpcx-2.25.1/ompi/lib/libmpi"
+mpiexec = "/orcd/software/core/001/pkg/nvhpc/26.1/Linux_x86_64/26.1/comm_libs/hpcx/bin/mpiexec"
+preloads = []

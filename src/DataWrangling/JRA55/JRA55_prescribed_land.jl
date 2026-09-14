@@ -12,6 +12,8 @@ using ...Lands: PrescribedLand, build_flux_routing, routable_grid
                         maximum_search_radius = 5,
                         spread_radius = 1.2,
                         maximum_spread_cells = nothing,
+                        n_outlet_snapshots = 365,
+                        flux_diversion = nothing,
                         other_kw...)
 
 Return a [`PrescribedLand`](@ref) holding the JRA55-do river runoff and iceberg calving fluxes, routed
@@ -22,6 +24,9 @@ Keyword Arguments
 - `maximum_search_radius`: search distance in `grid` cells for the ocean cell receiving a mouth. Default: `5`.
 - `spread_radius`: radius in degrees over which each mouth's discharge is divided equally. Default: `1.2`.
 - `maximum_spread_cells`: cap on that footprint, nearest first. Default: `nothing` (uncapped).
+- `n_outlet_snapshots`: records scanned for discharging cells when locating the mouths. Default: `365`.
+- `flux_diversion`: `(; fraction, from, to)` sending a fraction of the discharge landing in one basin to another,
+  conserving the global freshwater input. Default: `nothing`.
 
 See also [`GloFASPrescribedLand`](@ref).
 """
@@ -36,6 +41,8 @@ function JRA55PrescribedLand(grid;
                              maximum_search_radius = 5,
                              spread_radius = 1.2,
                              maximum_spread_cells = nothing,
+                             n_outlet_snapshots = 365,
+                             flux_diversion = nothing,
                              other_kw...)
 
     arch = child_architecture(grid)
@@ -49,8 +56,8 @@ function JRA55PrescribedLand(grid;
 
     freshwater_flux = (; rivers = Fri, icebergs = Fic)
     river_routing = routable_grid(grid) ?
-        map(fts -> build_flux_routing(grid, fts; maximum_search_radius, spread_radius, maximum_spread_cells),
-            freshwater_flux) : nothing
+        map(fts -> build_flux_routing(grid, fts; maximum_search_radius, spread_radius, maximum_spread_cells,
+                                      n_outlet_snapshots, flux_diversion), freshwater_flux) : nothing
 
     return PrescribedLand(freshwater_flux; river_routing)
 end

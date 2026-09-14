@@ -33,6 +33,22 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, land::PrescribedL
             land_backend,
             land_time_indexing)
 
+    iceberg_freshwater_flux = exchanger.state.iceberg_freshwater_flux
+    fill!(iceberg_freshwater_flux, 0)
+
+    if haskey(freshwater_data, :icebergs)
+        launch!(arch, grid, kernel_parameters,
+                _interpolate_land_freshwater_flux!,
+                iceberg_freshwater_flux.data,
+                grid,
+                clock,
+                (freshwater_data.icebergs,),
+                land_grid,
+                land_times,
+                land_backend,
+                land_time_indexing)
+    end
+
     return nothing
 end
 
