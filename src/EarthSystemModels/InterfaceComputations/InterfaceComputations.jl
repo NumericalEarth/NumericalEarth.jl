@@ -5,6 +5,7 @@ using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: AbstractField, Field, Face, Center
 using Oceananigans.Grids: Flat, Periodic, topology
+using Oceananigans.OutputReaders: FieldTimeSeries, FlavorOfFTS, cpu_interpolating_time_indices
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: KernelParameters, worksize
 
@@ -20,9 +21,14 @@ export
     PolynomialNeutralDragCoefficient,
     LargeYeagerTransferCoefficients,
     LinearStableStabilityFunction,
+    FreeConvectionMomentumStabilityFunction,
+    FreeConvectionScalarStabilityFunction,
     SkinTemperature,
     BulkTemperature,
     DiffusiveFlux,
+    SoilConductiveFlux,
+    EnergyBalanceTemperature,
+    SoilSkinTemperature,
     InteriorDiffusivity,
     ConvectiveGustiness,
     SubgridVelocityCorrection,
@@ -39,11 +45,31 @@ export
     SkinHumidity,
     FractionalHumidity,
     CriticalSaturation,
+    PlantAvailableWaterStress,
     DryLayerHumidity,
     StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     PowerLawTortuosity,
+    CanopyConductanceHumidity,
+    CanopyAirSpace,
+    DiagnosticCanopyAir,
+    PrognosticCanopyAir,
+    DiagnosticSkin,
+    PrognosticSkin,
+    CanopyInterception,
+    AreaIndexUndercanopyConductance,
+    FrictionVelocityUndercanopyConductance,
+    SellersSoilResistance,
+    LitterResistance,
+    TiledLandInterface,
+    FarquharPhotosynthesis,
+    AbstractStomatalConductance,
+    MedlynConductance,
+    JarvisConductance,
+    InteractiveAbsorbedPAR,
+    PeakedArrheniusParameters,
+    HeskelParameters,
     AltitudeCorrection,
     atmosphere_land_interface,
     # Sea ice-ocean heat flux formulations
@@ -53,8 +79,13 @@ export
     MomentumBasedFrictionVelocity
 
 using ..EarthSystemModels: EarthSystemModels,
+                           surface_retention_curve,
+                           effective_saturation,
                            default_gravitational_acceleration,
                            default_freshwater_density,
+                           default_gas_constant,
+                           default_dry_air_molar_mass,
+                           celsius_to_kelvin,
                            thermodynamics_parameters,
                            surface_layer_height,
                            boundary_layer_height
@@ -135,8 +166,14 @@ end
 
 # Turbulent fluxes
 include("roughness_lengths.jl")
+include("moisture_stress.jl")
 include("interface_states.jl")
 include("dry_layer_humidity.jl")
+include("photosynthesis.jl")
+include("stomatal_conductance.jl")
+include("absorbed_par.jl")
+include("canopy_conductance.jl")
+include("canopy_air_space.jl")
 include("compute_interface_state.jl")
 include("similarity_theory_turbulent_fluxes.jl")
 include("coefficient_based_turbulent_fluxes.jl")
@@ -153,6 +190,7 @@ include("atmosphere_state_correction.jl")
 include("atmosphere_ocean_fluxes.jl")
 include("atmosphere_sea_ice_fluxes.jl")
 include("atmosphere_land_fluxes.jl")
+include("tiled_land_interface.jl")
 include("sea_ice_ocean_fluxes.jl")
 
 end # module

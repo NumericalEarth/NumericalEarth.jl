@@ -19,7 +19,8 @@ using Oceananigans.Utils: Utils, prettysummary, launch!, worksize
 using Thermodynamics.Parameters: AbstractThermodynamicsParameters
 
 using ...NumericalEarth: NumericalEarth
-using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, set_prescribed_field!
+using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, set_prescribed_field!,
+                           default_gas_constant, default_dry_air_molar_mass
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger,
                                                  clamp_fractional_index
 

@@ -92,6 +92,9 @@ function WaterCoupledEnergy(FT::Type = Oceananigans.defaults.FloatType;
     end
     # The surface-advective term needs the temperature of incoming liquid
     # precipitation, which the atmosphere–land flux assembly does not write.
+    # When wiring it, advect only the rain share `min(Pˡ, cap)` of `Jˡˢ` at `Tˡᵖ`:
+    # with a ponded `InfiltrationCapacityRunoff`, `Jˡˢ` also carries water re-entering
+    # from the surface water store, which should enter at the slab temperature.
     if advect_surface_liquid_energy
         throw(ArgumentError(
             "advect_surface_liquid_energy=true is not yet supported: the " *

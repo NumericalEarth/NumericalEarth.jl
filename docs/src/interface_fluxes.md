@@ -622,7 +622,9 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     ShebaMomentumStabilityFunction,     # Grachev et al. 2007
     ShebaScalarStabilityFunction,       # Grachev et al. 2007
     PaulsonMomentumStabilityFunction,   # Paulson 1970
-    PaulsonScalarStabilityFunction      # Paulson 1970
+    PaulsonScalarStabilityFunction,     # Paulson 1970
+    FreeConvectionMomentumStabilityFunction,      # Zeng et al. 1998
+    FreeConvectionScalarStabilityFunction         # Zeng et al. 1998
 
 edson_momentum   = EdsonMomentumStabilityFunction()
 edson_scalar     = EdsonScalarStabilityFunction()
@@ -630,6 +632,8 @@ sheba_momentum   = ShebaMomentumStabilityFunction()
 sheba_scalar     = ShebaScalarStabilityFunction()
 paulson_momentum = PaulsonMomentumStabilityFunction()
 paulson_scalar   = PaulsonScalarStabilityFunction()
+free_convection_momentum    = FreeConvectionMomentumStabilityFunction()
+free_convection_scalar      = FreeConvectionScalarStabilityFunction()
 
 ζstep = 0.01
 ζ = -4:ζstep:4
@@ -644,11 +648,13 @@ axs = Axis(fig[1, 2], xlabel="Stability parameter ζ", ylabel="Scalar auxiliary 
 lines!(axm, ζ,  edson_momentum.(ζ), label="Edson et al. (2013)", alpha=0.7)
 lines!(axm, ζ⁺, sheba_momentum.(ζ⁺), label="Grachev et al. (2007)", alpha=0.7)
 lines!(axm, ζ⁻, paulson_momentum.(ζ⁻), label="Paulson (1970)", alpha=0.7)
+lines!(axm, ζ⁻, free_convection_momentum.(ζ⁻), label="Zeng et al. (1998)", alpha=0.7)
 axislegend(axm, position=:lb)
 
 lines!(axs, ζ,  edson_scalar.(ζ), label="Edson et al. (2013)", alpha=0.7)
 lines!(axs, ζ⁺, sheba_scalar.(ζ⁺), label="Grachev et al. (2007)", alpha=0.7)
 lines!(axs, ζ⁻, paulson_scalar.(ζ⁻), label="Paulson (1970)", alpha=0.7)
+lines!(axs, ζ⁻, free_convection_scalar.(ζ⁻), label="Zeng et al. (1998)", alpha=0.7)
 
 for ax in (axm, axs)
     ylims!(ax, -14, 4)
