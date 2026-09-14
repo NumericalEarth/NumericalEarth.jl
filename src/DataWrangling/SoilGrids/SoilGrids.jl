@@ -30,6 +30,7 @@ remote islands, deserts, and the Arctic.
 download_SoilGrids2_cache::String = ""
 function __init__()
     global download_SoilGrids2_cache = DataWrangling.download_cache("SoilGrids2")
+    return nothing
 end
 
 @kwdef struct SoilGrids2 <: AbstractStaticDataset
