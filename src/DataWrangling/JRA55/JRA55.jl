@@ -26,6 +26,7 @@ download_JRA55_cache::String = ""
 
 function __init__()
     global download_JRA55_cache = DataWrangling.download_cache("JRA55")
+    return nothing
 end
 
 include("JRA55_metadata.jl")

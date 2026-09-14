@@ -25,6 +25,7 @@ import ..DataWrangling:
 download_GLORYS_cache::String = ""
 function __init__()
     global download_GLORYS_cache = DataWrangling.download_cache("GLORYS")
+    return nothing
 end
 
 # Datasets

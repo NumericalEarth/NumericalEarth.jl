@@ -16,6 +16,7 @@ import Oceananigans
 download_ASTERGED_cache::String = ""
 function __init__()
     global download_ASTERGED_cache = DataWrangling.download_cache("ASTERGED")
+    return nothing
 end
 
 #####

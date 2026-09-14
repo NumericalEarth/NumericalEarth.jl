@@ -17,6 +17,7 @@ import Oceananigans
 download_OpenLandMap_cache::String = ""
 function __init__()
     global download_OpenLandMap_cache = DataWrangling.download_cache("OpenLandMap")
+    return nothing
 end
 
 """

@@ -12,6 +12,7 @@ using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path, first_
 download_AVISO_cache::String = ""
 function __init__()
     global download_AVISO_cache = DataWrangling.download_cache("AVISO")
+    return nothing
 end
 
 abstract type AVISODataset end

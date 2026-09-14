@@ -17,6 +17,7 @@ download_GloFAS_cache::String = ""
 
 function __init__()
     global download_GloFAS_cache = DataWrangling.download_cache("GloFAS")
+    return nothing
 end
 
 #####

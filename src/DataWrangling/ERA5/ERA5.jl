@@ -36,6 +36,7 @@ download_ERA5_cache::String = ""
 
 function __init__()
     global download_ERA5_cache = DataWrangling.download_cache("ERA5")
+    return nothing
 end
 
 #####

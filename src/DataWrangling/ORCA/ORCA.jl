@@ -25,6 +25,7 @@ download_ORCA_cache::String = ""
 
 function __init__()
     global download_ORCA_cache = DataWrangling.download_cache("ORCA")
+    return nothing
 end
 
 abstract type ORCADataset end

@@ -21,6 +21,7 @@ import Oceananigans
 download_CopernicusLandAlbedo_cache::String = ""
 function __init__()
     global download_CopernicusLandAlbedo_cache = DataWrangling.download_cache("CopernicusLandAlbedo")
+    return nothing
 end
 
 #####

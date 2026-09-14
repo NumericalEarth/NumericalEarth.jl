@@ -11,6 +11,7 @@ using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path,
 download_WOA_cache::String = ""
 function __init__()
     global download_WOA_cache = DataWrangling.download_cache("WOA")
+    return nothing
 end
 
 WOA_variable_names = Dict(

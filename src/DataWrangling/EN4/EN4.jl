@@ -14,6 +14,7 @@ using ..DataWrangling: DataWrangling, Metadata, Metadatum, DownloadProgress, Kel
 download_EN4_cache::String = ""
 function __init__()
     global download_EN4_cache = DataWrangling.download_cache("EN4")
+    return nothing
 end
 
 EN4_dataset_variable_names = Dict(

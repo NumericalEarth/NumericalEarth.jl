@@ -27,6 +27,7 @@ using ..DataWrangling: DataWrangling, binary_data_grid, binary_data_size, defaul
 download_ECCO_cache::String = ""
 function __init__()
     global download_ECCO_cache = DataWrangling.download_cache("ECCO")
+    return nothing
 end
 
 # Datasets
