@@ -60,16 +60,16 @@ jobs:
               NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=false
           fi
           echo "NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=${NUMERICAL_EARTH_BUILD_ALL_EXAMPLES}" | tee "${GITHUB_ENV}"
+      # The Python extensions resolve their CondaPkg environment while precompiling, which only works in docs.
       - name: Instantiate and precompile
-        shell: julia --project --color=yes {0}
+        shell: julia --project=docs --color=yes {0}
         run: |
           using Pkg
           Pkg.instantiate(verbose=true)
           Pkg.precompile(strict=true)
-      - name: Instantiate docs folder
-        run: julia --project=docs --color=yes -e 'using Pkg; Pkg.instantiate(verbose=true)'
-      - name: Precompile the CUDA runtime
-        run: julia --project=docs --color=yes -e 'using CUDA; CUDA.precompile_runtime()'
+
+          using CUDA
+          CUDA.precompile_runtime()
       - name: Install Veros in docs CondaPkg environment
         run: |
           julia --project=docs --color=yes -e '
