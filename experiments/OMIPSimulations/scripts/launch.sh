@@ -113,12 +113,11 @@ Environment variables (physics):
                 boundary-touching cell described under BUFFER_ORDER.
                   default  Centered(order=2) for tracers, UpwindBiased(order=1) for momentum.
                   upwind   first-order upwind everywhere the stencil does not fit; = BUFFER_ORDER=1.
-                  cwenoz   the third-order central-WENO reconstruction of Semplice, Travaglia and
-                           Puppo (2022), whose stencil extends only inwards. It blends an inward
-                           parabola, a linear polynomial and a constant with Z-weights, so it keeps
-                           third-order accuracy on smooth data and falls to the constant only where
-                           the data is genuinely rough -- unlike "upwind", which pays first order in
-                           every boundary cell. Adds "_cwenoz".
+                  ghost_cells
+                           the full-order reconstruction on a stencil whose inactive cells are
+                           completed with ghost values, blending the mirror image of the active run
+                           with its quadratic extrapolation -- unlike "upwind", which pays first
+                           order in every boundary cell. Adds "_ghostcells".
                 Sets both tracers and momentum. TRACER_BOUNDARY_SCHEME and MOMENTUM_BOUNDARY_SCHEME
                 take the same three values and override it one component at a time, which is how to
                 tell whether the boundary treatment acts through the tracers or through the momentum.
@@ -127,20 +126,6 @@ Environment variables (physics):
   TRACER_BOUNDARY_SCHEME, MOMENTUM_BOUNDARY_SCHEME
                 BOUNDARY_SCHEME for the tracer and for the momentum reconstructions separately.
                 Default: whatever BOUNDARY_SCHEME is.
-  TEMPERATURE_VARIATION, SALINITY_VARIATION, MOMENTUM_VARIATION
-                CWENOZ reference variations, used only where the boundary scheme is cwenoz. Each sets
-                eps = variation^2: the cell-to-cell variation of the field below which the reconstruction
-                reads the stencil as noise and keeps third order. The constant candidate takes over above
-                a variation of about 8.6 * variation between adjacent averages.
-
-                It carries the units of the field and no grid spacing, so one value serves every direction
-                and every cell thickness. All default to 0, which reads eps off the stencil: a nonzero
-                value acts only on the horizontal and is inert on the vertical. Each adds its own tag to
-                the run name.
-
-                MOMENTUM_VARIATION is a speed in m/s and applies to the vertical momentum reconstruction
-                alone: the horizontal terms reconstruct a vorticity, a divergence flux and a squared
-                velocity, so one constant cannot carry their units.
   ICE_LIQUIDUS  Freezing-point relation. "teos10" (default) is the linear fit to the TEOS-10
                 freezing point expressed in CONSERVATIVE temperature, which is what the ocean
                 carries: Tm = -0.054523 S, accurate to 0.013 K over S = 28-35.5, against 0.032 K
@@ -594,7 +579,7 @@ export KSKEW_JULIA KSYMM_JULIA
 export NZ DT ARCH EXTRA_USING FILE_SPLIT RUN_CMD
 
 # ── Boundary reconstruction ───────────────────────────────────────────
-# BUFFER_ORDER=1 is the pre-CWENOZ spelling of BOUNDARY_SCHEME=upwind; both name the same run.
+# BUFFER_ORDER=1 is the legacy spelling of BOUNDARY_SCHEME=upwind; both name the same run.
 TRACER_ORDER="${TRACER_ORDER:-7}"
 BUFFER_ORDER="${BUFFER_ORDER:-3}"
 BOUNDARY_SCHEME="${BOUNDARY_SCHEME:-default}"
@@ -615,8 +600,8 @@ MOMENTUM_BOUNDARY_SCHEME="${MOMENTUM_BOUNDARY_SCHEME:-$BOUNDARY_SCHEME}"
 
 for scheme_name in BOUNDARY_SCHEME TRACER_BOUNDARY_SCHEME MOMENTUM_BOUNDARY_SCHEME; do
   case "${!scheme_name}" in
-    default|upwind|cwenoz) ;;
-    *) echo "$scheme_name must be default, upwind or cwenoz, got '${!scheme_name}'" >&2; exit 1 ;;
+    default|upwind|ghost_cells) ;;
+    *) echo "$scheme_name must be default, upwind or ghost_cells, got '${!scheme_name}'" >&2; exit 1 ;;
   esac
 done
 export TRACER_ORDER BUFFER_ORDER BOUNDARY_SCHEME TRACER_BOUNDARY_SCHEME MOMENTUM_BOUNDARY_SCHEME
@@ -652,14 +637,11 @@ RUN_NAME="$CONFIG"
 # A scheme shared by tracers and momentum keeps the undecorated tag, so BUFFER_ORDER=1 still names "_buford1".
 if [[ "$TRACER_BOUNDARY_SCHEME" == "$MOMENTUM_BOUNDARY_SCHEME" ]]; then
   [[ "$TRACER_BOUNDARY_SCHEME" == "upwind" ]]    && RUN_NAME="${RUN_NAME}_buford1"
-  [[ "$TRACER_BOUNDARY_SCHEME" == "cwenoz" ]]    && RUN_NAME="${RUN_NAME}_cwenoz"
+  [[ "$TRACER_BOUNDARY_SCHEME" == "ghost_cells" ]] && RUN_NAME="${RUN_NAME}_ghostcells"
 else
   [[ "$TRACER_BOUNDARY_SCHEME" != "default" ]]   && RUN_NAME="${RUN_NAME}_tr${TRACER_BOUNDARY_SCHEME}"
   [[ "$MOMENTUM_BOUNDARY_SCHEME" != "default" ]] && RUN_NAME="${RUN_NAME}_mom${MOMENTUM_BOUNDARY_SCHEME}"
 fi
-[[ -n "${TEMPERATURE_VARIATION:-}" ]]            && RUN_NAME="${RUN_NAME}_vT${TEMPERATURE_VARIATION}"
-[[ -n "${SALINITY_VARIATION:-}" ]]               && RUN_NAME="${RUN_NAME}_vS${SALINITY_VARIATION}"
-[[ -n "${MOMENTUM_VARIATION:-}" ]]               && RUN_NAME="${RUN_NAME}_vu${MOMENTUM_VARIATION}"
 [[ "${ICE_TILT:-false}" == "true" ]]             && RUN_NAME="${RUN_NAME}_icetilt"
 [[ -n "${IC_BLEND:-}" ]]                         && RUN_NAME="${RUN_NAME}_icblend${IC_BLEND}"
 [[ "$IC_CONDITIONS" != "default" ]]              && RUN_NAME="${RUN_NAME}_summerice"
@@ -1070,9 +1052,6 @@ ADVECTION_KWARG=""
 [[ "$TRACER_ORDER" != "7" ]] && ADVECTION_KWARG="${ADVECTION_KWARG}tracer_advection_order = ${TRACER_ORDER},"
 [[ "$TRACER_BOUNDARY_SCHEME" != "default" ]]   && ADVECTION_KWARG="${ADVECTION_KWARG}tracer_boundary_scheme = :${TRACER_BOUNDARY_SCHEME},"
 [[ "$MOMENTUM_BOUNDARY_SCHEME" != "default" ]] && ADVECTION_KWARG="${ADVECTION_KWARG}momentum_boundary_scheme = :${MOMENTUM_BOUNDARY_SCHEME},"
-[[ -n "${TEMPERATURE_VARIATION:-}" ]]           && ADVECTION_KWARG="${ADVECTION_KWARG}temperature_reference_variation = ${TEMPERATURE_VARIATION},"
-[[ -n "${SALINITY_VARIATION:-}" ]]              && ADVECTION_KWARG="${ADVECTION_KWARG}salinity_reference_variation = ${SALINITY_VARIATION},"
-[[ -n "${MOMENTUM_VARIATION:-}" ]]              && ADVECTION_KWARG="${ADVECTION_KWARG}momentum_reference_variation = ${MOMENTUM_VARIATION},"
 ICE_LIQUIDUS="${ICE_LIQUIDUS:-teos10}"
 [[ "$ICE_LIQUIDUS" != "teos10" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}sea_ice_liquidus = :${ICE_LIQUIDUS},"
 ICE_DRAGREF="${ICE_DRAGREF:-6}"

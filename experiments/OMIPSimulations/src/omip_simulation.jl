@@ -7,7 +7,7 @@ using Oceananigans.Architectures: on_architecture, architecture
 using Oceananigans.DistributedComputations: @root, Distributed
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, getbc, fill_halo_regions!
 using Oceananigans.Fields: Field, CenterField, interior
-using Oceananigans.Advection: CWENOZ
+using Oceananigans.Advection: GhostCells
 using Oceananigans.ImmersedBoundaries: bottom_height_field, mask_immersed_field!
 using Oceananigans.Utils: launch!
 using Adapt: Adapt
@@ -451,10 +451,9 @@ function compute_total_water!(n::NormalizeTotalWater, coupled_model)
 end
 
 # Checkpoint the reference state
-Oceananigans.Simulations.callback_state(n::NormalizeTotalWater) =
-    (; reference_water = Array(n.reference_water)[1])
+Oceananigans.prognostic_state(n::NormalizeTotalWater) = (; reference_water = Array(n.reference_water)[1])
 
-function Oceananigans.Simulations.restore_callback_state!(n::NormalizeTotalWater, state)
+function Oceananigans.restore_prognostic_state!(n::NormalizeTotalWater, state)
     n.reference_water .= state.reference_water
     return n
 end
@@ -737,21 +736,11 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   an inactive node. Options:
    * `:default` — `Centered(order=2)` for tracers and `UpwindBiased(order=1)` for momentum.
    * `:upwind` — first-order upwind, monotone, in exactly those cells while the interior keeps the full order.
-   * `:cwenoz` — the third-order central-WENO reconstruction of Semplice, Travaglia and Puppo (2022),
-     whose stencil extends only inwards.
+   * `:ghost_cells` — the full-order reconstruction on a stencil whose inactive cells are completed with ghost
+     values, blending the mirror image of the active run with its quadratic extrapolation.
 - `tracer_boundary_scheme::Symbol`, `momentum_boundary_scheme::Symbol`: the same choice made separately for the
   tracer and the momentum reconstructions, both defaulting to `boundary_scheme`. Setting one of them alone
   isolates which of the two the boundary treatment acts through.
-- `temperature_reference_variation`, `salinity_reference_variation`, `momentum_reference_variation`:
-  the cell-to-cell variation of the reconstructed field below which CWENOZ reads the stencil as noise, setting
-  `ϵ = reference_variation²`. It carries the units of the field and no grid spacing, so one value serves every
-  direction and every cell thickness. The constant candidate takes over above a variation of about
-  `8.6 × reference_variation` between adjacent averages. All three default to `0`, which reads `ϵ` off the
-  stencil: a nonzero value acts only on the horizontal, where it is worth some tens of m²/s against a skew
-  diffusivity of order 1e3, and is inert on the vertical, where the boundary reconstruction competes against a
-  background diffusivity of order 1e-5. The horizontal momentum terms reconstruct a vorticity, a divergence flux
-  and a squared velocity, so they take no variation; `momentum_reference_variation` is a speed in m/s and applies
-  to the vertical reconstruction alone.
 - `velocity_formulation::Symbol`: Δu used by the bulk formula. Options:
    * `:relative` — `Δu = u_atm − u_ocean` (OMIP-2 α=1, default).
    * `:wind` — `Δu = u_atm` (ignores ocean current). For isolating bulk-formula
@@ -803,9 +792,6 @@ function omip_simulation(config::Symbol = :halfdegree;
                          boundary_scheme = :default,
                          tracer_boundary_scheme = boundary_scheme,
                          momentum_boundary_scheme = boundary_scheme,
-                         temperature_reference_variation = 0,
-                         salinity_reference_variation = 0,
-                         momentum_reference_variation = 0,
                          implicit_bottom_drag = true,
                          bottom_drag_background_velocity = 0,
                          velocity_formulation = :relative,
@@ -994,9 +980,6 @@ function omip_simulation(config::Symbol = :halfdegree;
                         boundary_scheme,
                         tracer_boundary_scheme,
                         momentum_boundary_scheme,
-                        temperature_reference_variation,
-                        salinity_reference_variation,
-                        momentum_reference_variation,
                         implicit_bottom_drag,
                         bottom_drag_background_velocity,
                         skew_flux_formulation,
@@ -1976,38 +1959,32 @@ config_momentum_advection_order(::Val{:twelfthdegree}) = nothing
 #
 #   :default  `Centered(order=2)` for tracers and `UpwindBiased(order=1)` for momentum, the Oceananigans defaults
 #   :upwind   first-order upwind, monotone, in exactly those cells and nowhere else
-#   :cwenoz   the third-order central-WENO reconstruction of Semplice, Travaglia and Puppo (2022), whose stencil
-#             extends only inwards, blending an inward parabola, a linear polynomial and a constant with Z-weights
-#
-# `reference_variation` sets the oscillation scale ϵ = reference_variation² below which CWENOZ reads the stencil as
-# noise and keeps third order. It carries the units of the reconstructed field and no grid spacing, so one value serves
-# every direction; zero reads ϵ off the stencil, which is a pure shape measure and limits at any amplitude.
-tracer_boundary_reconstruction(::Val{:default}, reference_variation) = nothing
-tracer_boundary_reconstruction(::Val{:upwind},  reference_variation) = UpwindBiased(order=1)
-tracer_boundary_reconstruction(::Val{:cwenoz},  reference_variation) = CWENOZ(; reference_variation)
+#   :ghost_cells  the full-order reconstruction on a stencil whose inactive cells are completed with ghost values,
+#                 blending the mirror image of the active run with its quadratic extrapolation
+tracer_boundary_reconstruction(::Val{:default})     = nothing
+tracer_boundary_reconstruction(::Val{:upwind})      = UpwindBiased(order=1)
+tracer_boundary_reconstruction(::Val{:ghost_cells}) = GhostCells()
 
-momentum_boundary_reconstruction(::Val{:default}, reference_variation) = UpwindBiased(order=1)
-momentum_boundary_reconstruction(::Val{:upwind},  reference_variation) = UpwindBiased(order=1)
-momentum_boundary_reconstruction(::Val{:cwenoz},  reference_variation) = CWENOZ(; reference_variation)
+momentum_boundary_reconstruction(::Val{:default})     = UpwindBiased(order=1)
+momentum_boundary_reconstruction(::Val{:upwind})      = UpwindBiased(order=1)
+momentum_boundary_reconstruction(::Val{:ghost_cells}) = GhostCells()
 
 function boundary_scheme_value(boundary_scheme)
-    boundary_scheme ∈ (:default, :upwind, :cwenoz) ||
-        throw(ArgumentError("boundary_scheme must be :default, :upwind or :cwenoz, got $boundary_scheme"))
+    boundary_scheme ∈ (:default, :upwind, :ghost_cells) ||
+        throw(ArgumentError("boundary_scheme must be :default, :upwind or :ghost_cells, got $boundary_scheme"))
 
     return Val(boundary_scheme)
 end
 
 """
-    split_tracer_advection(order, time_discretization, boundary_scheme, reference_variation)
+    split_tracer_advection(order, time_discretization, boundary_scheme)
 
-Tracer advection of order `order` whose reconstructions terminate in a boundary scheme carrying
-`reference_variation`. One value serves both directions: the variation is in units of the tracer and carries no
-grid spacing. The split is only so that the vertical direction takes `time_discretization`, which is where the
-adaptive-implicit treatment applies.
+Tracer advection of order `order` whose reconstructions terminate in `boundary_scheme`. The split is only so that the
+vertical direction takes `time_discretization`, which is where the adaptive-implicit treatment applies.
 """
-function split_tracer_advection(order, time_discretization, boundary_scheme, reference_variation)
+function split_tracer_advection(order, time_discretization, boundary_scheme)
 
-    tracer_boundary_scheme = tracer_boundary_reconstruction(boundary_scheme, reference_variation)
+    tracer_boundary_scheme = tracer_boundary_reconstruction(boundary_scheme)
 
     horizontal = WENO(; order, boundary_scheme = tracer_boundary_scheme)
     vertical   = WENO(; order, time_discretization, boundary_scheme = tracer_boundary_scheme)
@@ -2016,34 +1993,30 @@ function split_tracer_advection(order, time_discretization, boundary_scheme, ref
 end
 
 """
-    split_momentum_advection(scheme, order, time_discretization, boundary_scheme, reference_variation)
+    split_momentum_advection(scheme, order, time_discretization, boundary_scheme)
 
-Vector-invariant momentum advection whose four reconstructions terminate in a boundary scheme chosen per direction,
-reproducing `WENOVectorInvariant` in every other respect. The vorticity, divergence and kinetic-energy-gradient terms
-are the horizontal ones, and they reconstruct a vorticity, a divergence flux and a squared velocity: three different
-units, so no single variation carries them and they always read the oscillation scale off the stencil. The vertical
-term reconstructs velocity, so `reference_variation` is a speed in m/s and applies there alone.
+Vector-invariant momentum advection whose four reconstructions terminate in `boundary_scheme`, reproducing
+`WENOVectorInvariant` in every other respect.
 
 `scheme = :conserving` instead returns the bare `VectorInvariant()`, whose defaults are an enstrophy-conserving
 vorticity term and energy-conserving divergence, kinetic-energy-gradient and vertical terms. That scheme carries no
 upwinding and therefore no implicit dissipation, which is the class NEMO uses at ORCA1; it needs an explicit
 `viscous_velocity` to supply the dissipation the upwind-biased reconstructions would otherwise have provided.
-`order`, `boundary_scheme` and `reference_variation` do not apply to it — none of its terms reconstructs a stencil.
+`order` and `boundary_scheme` do not apply to it — none of its terms reconstructs a stencil.
 """
-function split_momentum_advection(scheme, order, time_discretization, boundary_scheme, reference_variation)
+function split_momentum_advection(scheme, order, time_discretization, boundary_scheme)
 
     scheme === :conserving && return VectorInvariant()
 
     vorticity_order, remaining_order = isnothing(order) ? (9, 5) : (order, order)
 
-    horizontal_boundary_scheme = momentum_boundary_reconstruction(boundary_scheme, 0)
-    vertical_boundary_scheme   = momentum_boundary_reconstruction(boundary_scheme, reference_variation)
+    momentum_boundary_scheme = momentum_boundary_reconstruction(boundary_scheme)
 
-    vorticity_scheme               = WENO(order=vorticity_order, boundary_scheme=horizontal_boundary_scheme)
-    divergence_scheme              = WENO(order=remaining_order, boundary_scheme=horizontal_boundary_scheme)
-    kinetic_energy_gradient_scheme = WENO(order=remaining_order, boundary_scheme=horizontal_boundary_scheme)
+    vorticity_scheme               = WENO(order=vorticity_order, boundary_scheme=momentum_boundary_scheme)
+    divergence_scheme              = WENO(order=remaining_order, boundary_scheme=momentum_boundary_scheme)
+    kinetic_energy_gradient_scheme = WENO(order=remaining_order, boundary_scheme=momentum_boundary_scheme)
     vertical_advection_scheme      = WENO(; order = remaining_order, time_discretization,
-                                            boundary_scheme = vertical_boundary_scheme)
+                                            boundary_scheme = momentum_boundary_scheme)
 
     return VectorInvariant(; vorticity_scheme,
                              vertical_advection_scheme,
@@ -2198,9 +2171,6 @@ function build_ocean(config, grid;
                      boundary_scheme = :default,
                      tracer_boundary_scheme = boundary_scheme,
                      momentum_boundary_scheme = boundary_scheme,
-                     temperature_reference_variation = 0,
-                     salinity_reference_variation = 0,
-                     momentum_reference_variation = 0,
                      implicit_bottom_drag = true,
                      bottom_drag_background_velocity = 0,
                      skew_flux_formulation = :diffusive,
@@ -2267,14 +2237,12 @@ function build_ocean(config, grid;
 
     momentum_advection = split_momentum_advection(momentum_advection_scheme,
                                                   config_momentum_advection_order(config),
-                                                  time_discretization, momentum_boundary_scheme,
-                                                  momentum_reference_variation)
+                                                  time_discretization, momentum_boundary_scheme)
 
-    # Turbulent kinetic energy keeps the `ocean_simulation` default: its variation scale is ~1e-3 m²/s².
-    tracer_advection = (T = split_tracer_advection(tracer_advection_order, time_discretization,
-                                                   tracer_boundary_scheme, temperature_reference_variation),
-                        S = split_tracer_advection(tracer_advection_order, time_discretization,
-                                                   tracer_boundary_scheme, salinity_reference_variation))
+    # Turbulent kinetic energy keeps the `ocean_simulation` default.
+    temperature_salinity_advection = split_tracer_advection(tracer_advection_order, time_discretization,
+                                                            tracer_boundary_scheme)
+    tracer_advection = (T = temperature_salinity_advection, S = temperature_salinity_advection)
 
     ocean = ocean_simulation(grid;
                              Δt = 1minutes,
