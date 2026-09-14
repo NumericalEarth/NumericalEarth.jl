@@ -352,6 +352,7 @@ Keyword Arguments
 
 - `radiation`: radiation component. Default: `nothing`.
 - `freshwater_density`: reference density of freshwater. Default: `default_freshwater_density`.
+- `latent_heat_of_fusion`: latent heat [J kg⁻¹] the ocean supplies to melt snowfall and icebergs. Default: `default_latent_heat_of_fusion`.
 - `atmosphere_ocean_fluxes`: flux formulation for atmosphere-ocean interface. Default: `SimilarityTheoryFluxes()`.
 - `atmosphere_sea_ice_fluxes`: flux formulation for atmosphere-sea ice interface. Default: `SimilarityTheoryFluxes()`.
 - `atmosphere_ocean_interface_temperature`: temperature formulation for atmosphere-ocean interface.
@@ -373,6 +374,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              land = nothing,
                              exchange_grid = exchange_grid(atmosphere, ocean, sea_ice, land),
                              freshwater_density = default_freshwater_density,
+                             latent_heat_of_fusion = default_latent_heat_of_fusion,
                              atmosphere_ocean_fluxes = SimilarityTheoryFluxes(eltype(exchange_grid)),
                              atmosphere_sea_ice_fluxes = atmosphere_sea_ice_similarity_theory(eltype(exchange_grid)),
                              atmosphere_land_fluxes = default_atmosphere_land_fluxes(land, eltype(exchange_grid)),
@@ -406,15 +408,17 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     sea_ice_reference_density  = convert(FT, sea_ice_reference_density)
     sea_ice_heat_capacity      = convert(FT, sea_ice_heat_capacity)
     freshwater_density         = convert(FT, freshwater_density)
+    latent_heat_of_fusion      = convert(FT, latent_heat_of_fusion)
     gravitational_acceleration = convert(FT, gravitational_acceleration)
 
     # Component properties
     atmosphere_properties = thermodynamics_parameters(atmosphere)
 
-    ocean_properties = (reference_density  = ocean_reference_density,
-                        heat_capacity      = ocean_heat_capacity,
-                        freshwater_density = freshwater_density,
-                        temperature_units  = ocean_temperature_units)
+    ocean_properties = (reference_density     = ocean_reference_density,
+                        heat_capacity         = ocean_heat_capacity,
+                        freshwater_density    = freshwater_density,
+                        latent_heat_of_fusion = latent_heat_of_fusion,
+                        temperature_units     = ocean_temperature_units)
 
     # Only build sea_ice_properties if sea_ice is an actual Simulation with a model
     if sea_ice isa Simulation
