@@ -9,7 +9,7 @@ using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar
 
 using ..DataWrangling: dataset_variable_name, default_download_directory
-using ..DataWrangling.ORCA: ORCAOne, default_south_rows_to_remove
+using ..DataWrangling.ORCA: ORCAOne, default_south_rows_to_remove, periodic_overlap
 
 # Build an Oceananigans OrthogonalSphericalShellGrid with topology (Periodic, RightFaceFolded, Bounded) from
 # a NEMO eORCA mesh_mask file.
@@ -17,7 +17,7 @@ using ..DataWrangling.ORCA: ORCAOne, default_south_rows_to_remove
 # NEMO C-grid: T is the cell center, U the east face of T, V the north face of T, F the northeast corner.
 # eORCA quirks handled before constructing the grid:
 #
-#   - Duplicated east-edge periodic columns (`periodic_overlap_index`, `shift_face_x`, `chop`).
+#   - Duplicated east-edge periodic columns (`periodic_overlap`, `shift_face_x`, `chop`).
 #   - Optional southern land padding rows (`south_rows_to_remove`, `chop`).
 #
 # NEMO → Oceananigans index mapping:
@@ -194,13 +194,12 @@ end
     AzFF[i, Ny] = AzFF[i, Ny-1]
 end
 
-function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
+function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF, overlap; radius)
     size(λCC) == size(φCC) || throw(ArgumentError("glamt and gphit size mismatch: $(size(λCC)) vs $(size(φCC))."))
     size(λFF) == size(φFF) || throw(ArgumentError("glamf and gphif size mismatch: $(size(λFF)) vs $(size(φFF))."))
     size(λCC) == size(λFF) || throw(ArgumentError("T-point and F-point grids must have matching size, got $(size(λCC)) and $(size(λFF))."))
 
     Nx, Ny = size(λCC)
-    overlap = periodic_overlap_index(λCC)
     AFT = promote_type(eltype(λCC), eltype(φCC), eltype(λFF), eltype(φFF), typeof(radius))
 
     λFFₒ = shift_face_x(λFF, overlap)
@@ -244,7 +243,7 @@ function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
 end
 
 """
-    read_orca_staggered_mesh(ds)
+    read_orca_staggered_mesh(ds, overlap)
 
 Read ORCA horizontal coordinates and metrics.
 
@@ -253,7 +252,7 @@ Supports:
 - approximate reconstruction from T/F coordinates only (`glamt/gphit/glamf/gphif`)
   using Tripolar-style spherical metric assumptions.
 """
-function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radius)
+function read_orca_staggered_mesh(ds, overlap; radius = Oceananigans.defaults.planet_radius)
     metrics = ("glamt", "glamu", "glamv", "glamf",
                "gphit", "gphiu", "gphiv", "gphif",
                "e1t", "e1u", "e1v", "e1f",
@@ -261,7 +260,6 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
 
     λCC = read_2d_nemo_variable(ds, "glamt")
     Nx, Ny = size(λCC)
-    overlap = periodic_overlap_index(λCC)
 
     orcaread(data, name) = orient_xy(read_2d_nemo_variable(data, name), Nx, Ny; name)
     shift_x(data) = shift_face_x(data, overlap)
@@ -290,20 +288,10 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
         λFF = orcaread(ds, "glamf")
         φCC = orcaread(ds, "gphit")
         φFF = orcaread(ds, "gphif")
-        return reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
+        return reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF, overlap; radius)
     end
 
     throw(ArgumentError("Unsupported ORCA mesh format. Missing either full staggered variables $(metrics) or T/F variables $(coords)."))
-end
-
-function periodic_overlap_index(λCC)
-    Nx = size(λCC, 1)
-    for n in min(div(Nx, 4), 10):-1:1
-        if all(isapprox.(λCC[Nx-n+1:Nx, :], λCC[1:n, :]; atol=1e-4))
-            return n
-        end
-    end
-    return 0
 end
 
 function shift_face_x(data, overlap)
@@ -418,7 +406,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     mesh_mask_path = download(mesh_meta)
 
     ds = Dataset(mesh_mask_path)
-    mesh = read_orca_staggered_mesh(ds; radius)
+    overlap = periodic_overlap(dataset)
+    mesh = read_orca_staggered_mesh(ds, overlap; radius)
     close(ds)
 
     λCC,  λFC,  λCF,  λFF  = mesh.λCC,  mesh.λFC,  mesh.λCF,  mesh.λFF
@@ -431,10 +420,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     north_poles_latitude = φFF[pole_idx, end]
     first_pole_longitude = Float64(λFF[pole_idx, end])
 
-    # eORCA repeats its first `ir` columns at the east edge, and a Periodic topology carries distinct cells only
-    ir = periodic_overlap_index(λCC)
     jr = south_rows_to_remove
-    chop(data) = data[1:end-ir, jr+1:end]
+    chop(data) = data[1:end-overlap, jr+1:end]
 
     λCC, λFC, λCF, λFF     = chop(λCC),  chop(λFC),  chop(λCF),  chop(λFF)
     φCC, φFC, φCF, φFF     = chop(φCC),  chop(φFC),  chop(φCF),  chop(φFF)
