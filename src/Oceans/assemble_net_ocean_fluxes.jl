@@ -24,8 +24,8 @@ snowfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.sta
 
 atmos_ocean_flux(coupled_model) = computed_fluxes(coupled_model.interfaces.atmosphere_ocean_interface)
 
-land_freshwater_flux(::Nothing) = ZeroField()
-land_freshwater_flux(land_exchanger) = land_exchanger.state.freshwater_flux.data
+land_freshwater_flux(::Nothing, name) = ZeroField()
+land_freshwater_flux(land_exchanger, name) = getproperty(land_exchanger.state, name).data
 
 function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     sea_ice = coupled_model.sea_ice
@@ -40,7 +40,8 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     snowfall = snowfall_flux(coupled_model)
 
     land_exchanger = coupled_model.interfaces.exchanger.land
-    freshwater_flux = land_freshwater_flux(land_exchanger)
+    freshwater_flux = land_freshwater_flux(land_exchanger, :freshwater_flux)
+    iceberg_freshwater_flux = land_freshwater_flux(land_exchanger, :iceberg_freshwater_flux)
 
     ice_concentration = sea_ice_concentration(sea_ice)
     intercepted_snowfall_flux = intercepted_snowfall(sea_ice)
@@ -60,6 +61,7 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
             snowfall,
             intercepted_snowfall_flux,
             freshwater_flux,
+            iceberg_freshwater_flux,
             ocean_properties)
 
     if grid isa MutableGridOfSomeKind
@@ -86,6 +88,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
                                              snowfall_flux,
                                              intercepted_snowfall_flux,
                                              land_freshwater_flux,
+                                             iceberg_freshwater_flux,
                                              ocean_properties)
 
     i, j = @index(Global, NTuple)
@@ -105,13 +108,16 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         Jˢⁿ = snowfall_flux[i, j, 1]
         Pˢⁿ = intercepted_snowfall_flux[i, j, 1]
         Jˡⁿ = get_land_freshwater_flux(i, j, land_freshwater_flux)
+        Jⁱᵇ = get_land_freshwater_flux(i, j, iceberg_freshwater_flux)
         𝒬ᵀ = atmos_ocean_fluxes.sensible_heat[i, j, 1]
         𝒬ᵛ = atmos_ocean_fluxes.latent_heat[i, j, 1]
         Jᵛ = atmos_ocean_fluxes.water_vapor[i, j, 1]
     end
 
-    # Turbulent contributions to surface heat flux (radiation added later)
-    ΣQao = (𝒬ᵀ + 𝒬ᵛ) * (1 - ℵᵢ)
+    # Turbulent contributions to surface heat flux (radiation added later), plus the fusion enthalpy
+    # the ocean supplies to melt the snowfall and icebergs it receives
+    ℒᶠ = ocean_properties.latent_heat_of_fusion
+    ΣQao = (𝒬ᵀ + 𝒬ᵛ) * (1 - ℵᵢ) + ℒᶠ * (Jˢⁿ - Pˢⁿ + Jⁱᵇ)
 
     # Freshwater flux to the ocean per unit cell area (volume flux, positive up = leaving ocean):
     # - rain and land runoff reach the ocean everywhere (rain runs through cracks in ice)
