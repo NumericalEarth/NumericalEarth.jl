@@ -1,7 +1,7 @@
 using Oceananigans.Operators: intrinsic_vector
 using Oceananigans.Grids: _node
 using Oceananigans.Fields: FractionalIndices, interpolate
-using Oceananigans.OutputReaders: cpu_interpolating_time_indices
+using Oceananigans.OutputReaders: cpu_interpolating_time_indices, FTS0
 
 using ..Oceans: forcing_barotropic_potential
 
@@ -23,8 +23,9 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
     atmosphere_velocities = (u = atmosphere.velocities.u.data,
                              v = atmosphere.velocities.v.data)
 
-    atmosphere_tracers = (T = atmosphere.temperature.data,
-                          q = atmosphere.specific_humidity.data)
+    atmosphere_tracers = merge((T = atmosphere.temperature.data,
+                                q = atmosphere.specific_humidity.data),
+                               atmosphere.tracers)
 
     rainfall_flux = surface_rainfall_flux(atmosphere)
     snowfall_flux = surface_snowfall_flux(atmosphere)
@@ -41,13 +42,7 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
 
     # Simplify NamedTuple to reduce parameter space consumption.
     # See https://github.com/CliMA/NumericalEarth.jl/issues/116.
-    atmosphere_data = (u   = atmosphere_fields.u.data,
-                       v   = atmosphere_fields.v.data,
-                       T   = atmosphere_fields.T.data,
-                       p   = atmosphere_fields.p.data,
-                       q   = atmosphere_fields.q.data,
-                       Jʳⁿ = atmosphere_fields.Jʳⁿ.data,
-                       Jˢⁿ = atmosphere_fields.Jˢⁿ.data)
+    atmosphere_data = NamedTuple(k=>underlying_data(v) for (k, v) in pairs(atmosphere_fields))
 
     kernel_parameters = interface_kernel_parameters(grid)
 
@@ -88,6 +83,9 @@ end
 @inline get_fractional_index(i, j, ::Nothing) = nothing
 @inline get_fractional_index(i, j, frac) = @inbounds frac[i, j, 1]
 
+@inline underlying_data(f) = f.data
+@inline underlying_data(c::ConstantField) = c
+
 @kernel function _interpolate_primary_atmospheric_state!(surface_atmos_state,
                                                          space_fractional_indices,
                                                          time_interpolator,
@@ -113,8 +111,6 @@ end
 
     uᵃᵗ = interp_atmos_time_series(atmos_velocities.u, atmos_args...)
     vᵃᵗ = interp_atmos_time_series(atmos_velocities.v, atmos_args...)
-    Tᵃᵗ = interp_atmos_time_series(atmos_tracers.T,    atmos_args...)
-    qᵃᵗ = interp_atmos_time_series(atmos_tracers.q,    atmos_args...)
     pᵃᵗ = interp_atmos_time_series(atmos_pressure,     atmos_args...)
 
     Mr = interp_atmos_time_series(rainfall_flux, atmos_args...)
@@ -128,12 +124,40 @@ end
     @inbounds begin
         surface_atmos_state.u[i, j, 1] = uᵃᵗ
         surface_atmos_state.v[i, j, 1] = vᵃᵗ
-        surface_atmos_state.T[i, j, 1] = Tᵃᵗ
         surface_atmos_state.p[i, j, 1] = pᵃᵗ
-        surface_atmos_state.q[i, j, 1] = qᵃᵗ
         surface_atmos_state.Jʳⁿ[i, j, 1] = Mr
         surface_atmos_state.Jˢⁿ[i, j, 1] = Ms
     end
+
+    update_tracer_states!(i, j, surface_atmos_state, atmos_tracers, atmos_args, t_itp)
+end
+
+# Unrolled over the names in the type, so each `getindex` compiles to a `getfield`
+# on a literal symbol and the kernel stays statically resolvable on GPU.
+@inline function update_tracer_states!(i, j, surface_atmos_state, atmos_tracers::NamedTuple{names},
+                                       atmos_args, t_itp) where names
+
+    ntuple(Val(length(names))) do n
+        name = names[n]
+        update_tracer_state!(i, j, surface_atmos_state[name], atmos_tracers[name], atmos_args, t_itp)
+    end
+
+    return nothing
+end
+
+@inline function update_tracer_state!(i, j, state, tracer, atmos_args, t_itp)
+    @inbounds state[i, j, 1] = interp_atmos_time_series(tracer, atmos_args...)
+
+    return nothing
+end
+
+@inline update_tracer_state!(i, j, state, ::ConstantField, atmos_args, t_itp) = nothing
+# `t_itp` comes from the atmosphere's time axis, so the tracer must share it.
+@inline function update_tracer_state!(i, j, state, zero_D_fts::FTS0, atmos_args, t_itp)
+    fi = FractionalIndices(nothing, nothing, nothing)
+    @inbounds state[1, 1, 1] = interpolate(fi, t_itp, zero_D_fts, zero_D_fts.backend, zero_D_fts.time_indexing)
+
+    return nothing
 end
 
 #####

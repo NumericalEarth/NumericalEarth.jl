@@ -1,3 +1,5 @@
+using Oceananigans.Fields: ConstantField, AbstractField
+
 function EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::PrescribedAtmosphere, grid;
                                                                     correction = nothing)
     regridder = atmosphere_regridder(atmosphere, grid)
@@ -12,9 +14,20 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::
                Jʳⁿ = Field{Center, Center, Nothing}(grid),
                Jˢⁿ = Field{Center, Center, Nothing}(grid))
 
+    
+    tracer_names = keys(atmosphere.tracers)
+
+    tracer_states = NamedTuple{tracer_names}(map(tn -> similar_surface_field(grid, atmosphere.tracers[tn]), tracer_names))
+
+    state = merge(state, tracer_states)
+
     correction = EarthSystemModels.InterfaceComputations.materialize_correction(correction, grid, atmosphere)
     return ComponentExchanger(state, regridder, correction)
 end
+
+similar_surface_field(grid, src) = Field{Center, Center, Nothing}(grid)
+similar_surface_field(grid, cf::ConstantField) = ConstantField(cf.constant)
+similar_surface_field(grid, ::AbstractField{LX, LY, LZ}) where {LX, LY, LZ} = Field{LX, LY, LZ}(grid)
 
 # Note that Field location can also affect fractional index type.
 # Here we assume that we know the location of Fields that will be interpolated.

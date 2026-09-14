@@ -13,8 +13,14 @@ using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 # Fallback for an ocean-only model (it has no interfaces!)
 EarthSystemModels.update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel, NoInterfaceModel}, ocean::OceananigansModelSimulations) = nothing
 
-EarthSystemModels.update_net_fluxes!(coupled_model, ocean::OceananigansModelSimulations) =
+function EarthSystemModels.update_net_fluxes!(coupled_model, ocean::OceananigansModelSimulations)
     update_net_ocean_fluxes!(coupled_model, ocean, ocean.model.grid)
+    update_net_ocean_biogeochemical_fluxes!(coupled_model, ocean.model.biogeochemistry, ocean, ocean.model.grid)
+
+    return nothing
+end
+
+update_net_ocean_biogeochemical_fluxes!(coupled_model, biogeochemistry, ocean, grid) = nothing
 
 rainfall_flux(coupled_model::NoAtmosInterfaceModel) = ZeroField(eltype(coupled_model))
 rainfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state.Jʳⁿ.data

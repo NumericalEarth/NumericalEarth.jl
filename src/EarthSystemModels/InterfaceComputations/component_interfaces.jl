@@ -360,6 +360,9 @@ end
 #####
 
 default_ai_temperature(::Nothing) = nothing
+biogeochemical_interface(exchanger, ocean) = biogeochemical_interface(exchanger, ocean, ocean.model.biogeochemistry)
+biogeochemical_interface(exchanger, ocean::Nothing) = NamedTuple()
+biogeochemical_interface(exchanger, ocean, biogeochemistry) = NamedTuple()
 
 function default_ao_specific_humidity(ocean)
     FT    = eltype(ocean)
@@ -497,7 +500,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
         isnothing(interface) || validate_zero_plane_displacement(interface.flux_formulation, zᵃᵗ)
     end
 
-    properties = (; gravitational_acceleration, surface_layer_height = zᵃᵗ)
+    properties = merge((; gravitational_acceleration, surface_layer_height = zᵃᵗ),
+                          biogeochemical_interface(exchanger, ocean))
 
     return ComponentInterfaces(ao_interface,
                                ai_interface,
