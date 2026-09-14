@@ -70,6 +70,16 @@ jobs:
           Pkg.Registry.rm("General")
           Pkg.Registry.add("General")
           Pkg.Registry.update()
+      # From the root project `PythonCall` is a weakdep, so CondaPkg installs no Python and
+      # `NumericalEarthVerosExt` fails to precompile; `test` has it as a direct dep.
+      - name: Instantiate test environment
+        timeout-minutes: 60
+        shell: bash
+        run: |
+          julia --project=test --color=yes --check-bounds=yes -e '
+              using Pkg;
+              Pkg.instantiate()
+          '
       - name: Run tests
         run: |
           earlyoom -m 3 -s 100 -r 300 --prefer 'julia' &
