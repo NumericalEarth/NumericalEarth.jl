@@ -66,7 +66,7 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
 
 @kernel function _compute_child_prognostics!(ρᵈ, ρu, ρv, ρθ, ρqᵛ, θ, u, v,
                                              T, qᵛ, qᶜˡ, qʳ, qᶜⁱ, qˢ, p, uₚ, vₚ,
-                                             pˢᵗ, Rᵈ, Rᵛ, cᵖᵈ, ℒˡ, ℒⁱ)
+                                             pˢᵗ, Rᵈ, Rᵛ, constants)
     i, j, k = @index(Global, NTuple)
     @inbounds begin
         Tᵢ  = T[i, j, k]
@@ -77,7 +77,7 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
 
         ρ  = air_density(Tᵢ, qᵛᵢ, qˡ, qⁱ, pᵢ, Rᵈ, Rᵛ)
         qᵗ = qᵛᵢ + qˡ + qⁱ
-        θᵢ = liquid_ice_potential_temperature(Tᵢ, qˡ, qⁱ, pᵢ, pˢᵗ, Rᵈ, cᵖᵈ, ℒˡ, ℒⁱ)
+        θᵢ = liquid_ice_potential_temperature(Tᵢ, qᵛᵢ, qˡ, qⁱ, pᵢ, pˢᵗ, constants)
 
         ρᵈ[i, j, k]  = ρ * (1 - qᵗ)
         ρθ[i, j, k]  = ρᵈ[i, j, k] * θᵢ
@@ -135,9 +135,6 @@ function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, const
 
     Rᵈ  = dry_air_gas_constant(constants)
     Rᵛ  = vapor_gas_constant(constants)
-    cᵖᵈ = constants.dry_air.heat_capacity
-    ℒˡ  = constants.liquid.reference_latent_heat
-    ℒⁱ  = constants.ice.reference_latent_heat
 
     for n in time_indices(prognostic.ρᵈ)
         launch!(arch, grid, :xyz, _compute_child_prognostics!,
@@ -147,7 +144,7 @@ function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, const
                 source_snapshot(condensates.qᶜⁱ, n), source_snapshot(condensates.qˢ, n),
                 source_snapshot(parent_atmosphere.pressure, n),   # static Field (ERA5) or FTS: both handled
                 parent_atmosphere.velocities.u[n], parent_atmosphere.velocities.v[n],
-                pˢᵗ, Rᵈ, Rᵛ, cᵖᵈ, ℒˡ, ℒⁱ)
+                pˢᵗ, Rᵈ, Rᵛ, constants)
     end
 
     for fts in prognostic
