@@ -517,6 +517,8 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   spacings still sum to `depth`. `Nz = 100`, `Δzmax = 100` reproduces the uncapped upper ocean to within
   3% (9.7 m at 100 m against 9.9, 80.9 m at 1000 m against 84.1) and holds 100 m from 1500 m down.
 - `depth`: maximum ocean depth in metres. Default: `5500`.
+- `immersed_bottom`: constructor of the immersed bottom, called with the bottom height: `GridFittedBottom` (full
+  cells), `PartialCellBottom` or `ShavedCellBottom`. Default: `GridFittedBottom`.
 - `Δz_top`: target surface-cell thickness in metres (sets the exponential vertical scale). Per-config
   default: `1.5` for `:quarterdegree`/`:twelfthdegree`/`:test`, `nothing` (scale derived from
   `depth`/`Nz`) otherwise.
@@ -811,7 +813,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          northern_sea_ice_initial_date = DateTime(1993, 1, 1),
                          southern_sea_ice_initial_date = DateTime(1993, 1, 1),
                          Δzmax = nothing,
-                         partial_cell_bathymetry = false,
+                         immersed_bottom = GridFittedBottom,
                          mixed_layer_tapering = false,
                          bottom_layer_tapering_depth = 0,
                          normalize_salinity = true,
@@ -874,7 +876,7 @@ function omip_simulation(config::Symbol = :halfdegree;
     setup_t₀ = time()
     log_setup_stage(arch, "start", setup_t₀)
 
-    grid = build_grid(cfg, arch, Nz, depth; Δz_top, Δzmax, partial_cell_bathymetry)
+    grid = build_grid(cfg, arch, Nz, depth; Δz_top, Δzmax, immersed_bottom)
     log_setup_stage(arch, "grid", setup_t₀)
 
     # When staging_dir is provided, JRA55 data is read from fast scratch
@@ -1845,18 +1847,8 @@ end
 exponential_scale(Nz, depth, ::Nothing) = 1300
 exponential_scale(Nz, depth, Δz_top)    = find_exponential_scale(Nz, depth, Δz_top)
 
-# Partial bottom cells resolve sill depths and slopes continuously instead of in full-cell
-# steps. Documented benefits: mean-circulation and boundary-current realism (Gulf Stream
-# separation, NAC path — Barnier et al. 2006) and reduced staircase entrainment of downslope
-# overflows (Winton et al. 1998). They mitigate but do not cure the too-shallow NADW that
-# every configuration shares (zero-crossing ~2900 m vs ~4300 m in RAPID); the documented full
-# fix in z-coordinate models is a dedicated overflow parameterization (Legg et al. 2009;
-# Danabasoglu et al. 2010).
-bottom_immersed_boundary(bottom_height, partial_cell_bathymetry) =
-    partial_cell_bathymetry ? PartialCellBottom(bottom_height) : GridFittedBottom(bottom_height)
-
 function build_grid(config, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing,
-                    partial_cell_bathymetry = false)
+                    immersed_bottom = GridFittedBottom)
 
     Nx = config == Val(:halfdegree) ? 720 : throw("Configuration $(config) does not exist")
 
@@ -1875,12 +1867,12 @@ function build_grid(config, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing
                                     major_basins = 1,
                                     interpolation_passes = 25)
 
-    return ImmersedBoundaryGrid(base_grid, bottom_immersed_boundary(bottom_height, partial_cell_bathymetry); active_cells_map = true)
+    return ImmersedBoundaryGrid(base_grid, immersed_bottom(bottom_height); active_cells_map = true)
 end
 
-build_grid(::Val{:orca}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, partial_cell_bathymetry = false)          = build_grid(ORCAOne(),     arch, Nz, depth; Δz_top, Δzmax, partial_cell_bathymetry)
-build_grid(::Val{:quarterdegree}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, partial_cell_bathymetry = false) = build_grid(ORCAQuarter(), arch, Nz, depth; Δz_top, Δzmax, partial_cell_bathymetry)
-build_grid(::Val{:twelfthdegree}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, partial_cell_bathymetry = false) = build_grid(ORCATwelfth(), arch, Nz, depth; Δz_top, Δzmax, partial_cell_bathymetry)
+build_grid(::Val{:orca}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, immersed_bottom = GridFittedBottom)          = build_grid(ORCAOne(),     arch, Nz, depth; Δz_top, Δzmax, immersed_bottom)
+build_grid(::Val{:quarterdegree}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, immersed_bottom = GridFittedBottom) = build_grid(ORCAQuarter(), arch, Nz, depth; Δz_top, Δzmax, immersed_bottom)
+build_grid(::Val{:twelfthdegree}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, immersed_bottom = GridFittedBottom) = build_grid(ORCATwelfth(), arch, Nz, depth; Δz_top, Δzmax, immersed_bottom)
 
 # The Gulf of Ob and the Yenisei Gulf are ~5 m deep for hundreds of kilometres, so their full river
 # discharge lands in a single 1.5 m top cell with no water column to mix into and the salinity collapses.
@@ -1903,7 +1895,7 @@ const kara_river_closures = ((68.0, 77.0, 66.0, 72.6),   # Gulf of Ob
     @inbounds bottom_height[i, j, 1] = ifelse(closed, oftype(z, 100), z)
 end
 
-function close_shallow_river_regions(grid; regions = kara_river_closures, minimum_depth = 10, partial_cell_bathymetry = false)
+function close_shallow_river_regions(grid; regions = kara_river_closures, minimum_depth = 10, immersed_bottom = GridFittedBottom)
     arch      = architecture(grid)
     underlying = grid.underlying_grid
     bottom    = bottom_height_field(grid)
@@ -1911,11 +1903,11 @@ function close_shallow_river_regions(grid; regions = kara_river_closures, minimu
             convert(eltype(grid), minimum_depth))
     fill_halo_regions!(bottom)
     remove_minor_basins!(bottom, 1)
-    return ImmersedBoundaryGrid(underlying, bottom_immersed_boundary(bottom, partial_cell_bathymetry); active_cells_map = true)
+    return ImmersedBoundaryGrid(underlying, immersed_bottom(bottom); active_cells_map = true)
 end
 
 function build_grid(dataset::ORCADataset, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing,
-                    partial_cell_bathymetry = false)
+                    immersed_bottom = GridFittedBottom)
 
     z_faces = omip_vertical_discretization(Nz, depth; surface_grid_size = Δz_top,
                                                        maximum_grid_size = Δzmax)
@@ -1926,7 +1918,7 @@ function build_grid(dataset::ORCADataset, arch, Nz, depth; Δz_top = nothing, Δ
                     z = z_faces,
                     halo = (8, 8, 8),
                     with_bathymetry = true,
-                    partial_cell_bathymetry,
+                    immersed_bottom,
                     major_basins = 1,
                     active_cells_map = true)
 
@@ -1935,7 +1927,7 @@ end
 
 # Locally-runnable testing configuration: the NEMO eORCA1 (~1ᵒ) mesh, used to reproduce the
 # quarter-degree spurious high-latitude ice + surface salinity drift at a fraction of the cost.
-build_grid(::Val{:test}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, partial_cell_bathymetry = false) = build_grid(Val(:orca), arch, Nz, depth; Δz_top, Δzmax, partial_cell_bathymetry)
+build_grid(::Val{:test}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, immersed_bottom = GridFittedBottom) = build_grid(Val(:orca), arch, Nz, depth; Δz_top, Δzmax, immersed_bottom)
 
 #####
 ##### ORCA builder

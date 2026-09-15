@@ -39,8 +39,8 @@ function merge_boundary_conditions(user::FieldBoundaryConditions, default::Field
 end
 
 @inline ϕ²(i, j, k, grid, ϕ)    = @inbounds ϕ[i, j, k]^2
-@inline spᶠᶜᶜ(i, j, k, grid, Φ, ub) = @inbounds sqrt(ub^2 + Φ.u[i, j, k]^2 + ℑxyᶠᶜᵃ(i, j, k, grid, ϕ², Φ.v))
-@inline spᶜᶠᶜ(i, j, k, grid, Φ, ub) = @inbounds sqrt(ub^2 + Φ.v[i, j, k]^2 + ℑxyᶜᶠᵃ(i, j, k, grid, ϕ², Φ.u))
+@inline spᶠᶜᶜ(i, j, k, grid, Φ, ub) = @inbounds sqrt(ub^2 + Φ.u[i, j, k]^2 + active_weighted_ℑxyᶠᶜᶜ(i, j, k, grid, ϕ², Φ.v))
+@inline spᶜᶠᶜ(i, j, k, grid, Φ, ub) = @inbounds sqrt(ub^2 + Φ.v[i, j, k]^2 + active_weighted_ℑxyᶜᶠᶜ(i, j, k, grid, ϕ², Φ.u))
 
 # A quadratic drag J = -μ |u| u is affine in the boundary-cell velocity with no explicit part, so it
 # is carried entirely by the implicit coefficient λ = -μ |u|.

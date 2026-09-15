@@ -261,10 +261,9 @@ Environment variables (physics):
                             Mellor-Blumberg wave penetration + EVD.
                             Vendored in `NEMOTKE/`;
                  all ignore CB)
-  PARTIAL_CELLS Set to "true" to use partial bottom cells (PartialCellBottom) instead of
-                full-cell GridFittedBottom bathymetry. Resolves sill depths and slopes
-                continuously; targets the too-shallow NADW from staircased overflows.
-                Adds "_pcells" to the run name.
+  BOTTOM_CELLS  Representation of the bathymetry: full (GridFittedBottom, default), partial
+                (PartialCellBottom) or shaved (ShavedCellBottom, a linear slope through each bottom
+                cell). Adds "_pcells" or "_scells" to the run name.
   BBL_KAPPA     Diffusive bottom boundary layer coefficient in m² s⁻¹ (NEMO rn_ahtbbl;
                 its ORCA reference value is 1000). Dense water upslope of a deeper
                 neighbour is diffused along the bottom, mimicking the gravity current a
@@ -656,7 +655,9 @@ fi
 [[ "${WIND_VELOCITY:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_wind"
 [[ "${ML_TAPER:-false}" == "true" ]]           && RUN_NAME="${RUN_NAME}_mltaper"
 [[ "${ISOPYCNAL:-standard}" == "triad" ]]      && RUN_NAME="${RUN_NAME}_triad"
-[[ "${PARTIAL_CELLS:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_pcells"
+[[ -n "${PARTIAL_CELLS:-}" ]] && { echo "PARTIAL_CELLS is replaced by BOTTOM_CELLS=full|partial|shaved" >&2; exit 1; }
+[[ "${BOTTOM_CELLS:-full}" == "partial" ]]     && RUN_NAME="${RUN_NAME}_pcells"
+[[ "${BOTTOM_CELLS:-full}" == "shaved" ]]      && RUN_NAME="${RUN_NAME}_scells"
 [[ -n "${BBL_KAPPA:-}" ]]                      && RUN_NAME="${RUN_NAME}_bbl${BBL_KAPPA}"
 [[ -n "${BBL_GAMMA:-}" ]]                      && RUN_NAME="${RUN_NAME}_cg${BBL_GAMMA}"
 [[ -n "${OVERFLOW_RESTORE:-}" ]]               && RUN_NAME="${RUN_NAME}_dsow${OVERFLOW_RESTORE}"
@@ -1010,8 +1011,12 @@ VELOCITY_KWARG=""
 ML_TAPER_KWARG=""
 [[ "${ML_TAPER:-false}" == "true" ]] && ML_TAPER_KWARG="mixed_layer_tapering = true,"
 
-PARTIAL_CELLS_KWARG=""
-[[ "${PARTIAL_CELLS:-false}" == "true" ]] && PARTIAL_CELLS_KWARG="partial_cell_bathymetry = true,"
+case "${BOTTOM_CELLS:-full}" in
+    full)    BOTTOM_CELLS_KWARG="" ;;
+    partial) BOTTOM_CELLS_KWARG="immersed_bottom = PartialCellBottom," ;;
+    shaved)  BOTTOM_CELLS_KWARG="immersed_bottom = ShavedCellBottom," ;;
+    *) echo "BOTTOM_CELLS must be full|partial|shaved, got '${BOTTOM_CELLS}'" >&2; exit 1 ;;
+esac
 
 BBL_KWARG=""
 [[ -n "${BBL_KAPPA:-}" ]] && BBL_KWARG="bbl_diffusivity = ${BBL_KAPPA},"
@@ -1110,7 +1115,7 @@ sim = omip_simulation(:${CONFIG};
                       ${CLOSURE_KWARG}
                       ${VELOCITY_KWARG}
                       ${ML_TAPER_KWARG}
-                      ${PARTIAL_CELLS_KWARG}
+                      ${BOTTOM_CELLS_KWARG}
                       ${BBL_KWARG}
                       ${SNOW_KWARG}
                       ${ICE_DYNAMICS_KWARG}
