@@ -153,8 +153,8 @@ soil_energy(FT; deep_time_scale) = WaterCoupledEnergy(FT;
 variably_saturated_hydrology(FT, porosity; slab_depth) = VariablySaturatedHydrology(FT;
     slab_depth, porosity, residual_liquid_fraction,
     storage_height         = 1000,
-    retention_curve        = VanGenuchtenRetention(α = 1.0, n = 2.0),
-    hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-7, n = 2.0),
+    retention_curve        = VanGenuchtenRetention(inverse_air_entry_head = 1, pore_size_uniformity = 2),
+    hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-7, pore_size_uniformity = 2),
     deep_liquid_flux       = NoDeepLiquidFlux(),
     runoff                 = InfiltrationCapacityRunoff(infiltration_capacity = 1e-3))
 

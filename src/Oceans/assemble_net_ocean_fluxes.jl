@@ -71,6 +71,10 @@ end
 
 Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
 
+# A surface momentum boundary condition without an implicit part supplies no coefficient field.
+@inline set_implicit_coefficient!(::Nothing, i, j, value) = nothing
+@inline set_implicit_coefficient!(λ, i, j, value) = @inbounds λ[i, j, 1] = value
+
 @kernel function _assemble_net_ocean_fluxes!(net_ocean_fluxes,
                                              grid,
                                              clock,
@@ -88,8 +92,10 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
     kᴺ = size(grid, 3)
     ρτˣᵃᵒ = atmos_ocean_fluxes.x_momentum   # atmosphere - ocean zonal momentum flux
     ρτʸᵃᵒ = atmos_ocean_fluxes.y_momentum   # atmosphere - ocean meridional momentum flux
-    ρτˣⁱᵒ = sea_ice_ocean_fluxes.x_momentum # sea_ice - ocean zonal momentum flux
-    ρτʸⁱᵒ = sea_ice_ocean_fluxes.y_momentum # sea_ice - ocean meridional momentum flux
+    ρτˣⁱᵒ = sea_ice_ocean_fluxes.x_momentum             # sea_ice - ocean zonal momentum flux (explicit part)
+    ρτʸⁱᵒ = sea_ice_ocean_fluxes.y_momentum             # sea_ice - ocean meridional momentum flux (explicit part)
+    ρλˣⁱᵒ = sea_ice_ocean_fluxes.x_momentum_coefficient # implicit ice-ocean drag coefficient (zonal)
+    ρλʸⁱᵒ = sea_ice_ocean_fluxes.y_momentum_coefficient # implicit ice-ocean drag coefficient (meridional)
 
     @inbounds begin
         ℵᵢ = sea_ice_concentration[i, j, 1]
@@ -118,10 +124,12 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
 
     τˣ = net_ocean_fluxes.u
     τʸ = net_ocean_fluxes.v
+    λˣ = net_ocean_fluxes.u_coefficient
+    λʸ = net_ocean_fluxes.v_coefficient
     Jᵀ = net_ocean_fluxes.T
     Jˢ = net_ocean_fluxes.S
     Jʷ = net_ocean_fluxes.η
-    Jᴴ = net_ocean_fluxes.freshwater_heat_content # Σᵢ Tᵢ Jʷᵢ — atmosphere freshwater enters at SST
+    Jᴴ = net_ocean_fluxes.freshwater_heat_content # Σᵢ Tᵢ Jʷᵢ — atmosphere freshwater enters at SST, ice meltwater at Tb
     ℵ  = sea_ice_concentration
     cᵒᶜ⁻¹ = 1 / ocean_properties.heat_capacity
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
@@ -130,16 +138,21 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         𝒬ⁱⁿ = sea_ice_ocean_fluxes.interface_heat[i, j, 1]
         Jˢio = sea_ice_ocean_fluxes.salt[i, j, 1]
         Jʷio = sea_ice_ocean_fluxes.freshwater[i, j, 1]
+        Jᴴio = sea_ice_ocean_fluxes.freshwater_heat_content[i, j, 1]
         Jᵀao = ΣQao * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
         Jᵀio =  𝒬ⁱⁿ * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
-
+        
         τˣᵃᵒ = ℑxᶠᵃᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτˣᵃᵒ)
         τʸᵃᵒ = ℑyᵃᶠᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτʸᵃᵒ)
         τˣⁱᵒ = ρτˣⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑxᶠᵃᵃ(i, j, 1, grid, ℵ)
         τʸⁱᵒ = ρτʸⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑyᵃᶠᵃ(i, j, 1, grid, ℵ)
+        λˣⁱᵒ = ρλˣⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑxᶠᵃᵃ(i, j, 1, grid, ℵ)
+        λʸⁱᵒ = ρλʸⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑyᵃᶠᵃ(i, j, 1, grid, ℵ)
 
         τˣ[i, j, 1] = ifelse(inactive, zero(grid), τˣᵃᵒ + τˣⁱᵒ)
         τʸ[i, j, 1] = ifelse(inactive, zero(grid), τʸᵃᵒ + τʸⁱᵒ)
+        set_implicit_coefficient!(λˣ, i, j, ifelse(inactive, zero(grid), λˣⁱᵒ))
+        set_implicit_coefficient!(λʸ, i, j, ifelse(inactive, zero(grid), λʸⁱᵒ))
 
         # Tracer fluxes — radiative contributions added later by apply_air_sea_radiative_fluxes!.
         # The atmosphere-ocean virtual salt flux (Sᴺ Jʷ) and the surface-value heat exchange
@@ -148,6 +161,6 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         Jᵀ[i, j, 1] = ifelse(inactive, zero(grid), Jᵀao + Jᵀio)
         Jˢ[i, j, 1] = ifelse(inactive, zero(grid), Jˢio)
         Jʷ[i, j, 1] = ifelse(inactive, zero(grid), Jʷao + Jʷio)
-        Jᴴ[i, j, 1] = ifelse(inactive, zero(grid), Tᵒᶜ * Jʷao)
+        Jᴴ[i, j, 1] = ifelse(inactive, zero(grid), Tᵒᶜ * Jʷao + Jᴴio)
     end
 end
