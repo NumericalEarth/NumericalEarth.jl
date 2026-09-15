@@ -439,6 +439,7 @@ using .ORCA
 using .WOA
 using .JRA55
 using .GloFAS
+using .SoilGrids
 using .OpenLandMap
 using .IBCSO
 using .GEBCO
