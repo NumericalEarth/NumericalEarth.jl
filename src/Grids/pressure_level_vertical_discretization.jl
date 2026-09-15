@@ -2,14 +2,16 @@ using Adapt: Adapt
 using KernelAbstractions: @kernel, @index
 using Statistics: mean
 using Oceananigans.AbstractOperations: KernelFunctionOperation
-using Oceananigans.Architectures: architecture
+using Oceananigans.Architectures: CPU, architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans: instantiated_location
-using Oceananigans.Fields: Field, compute!, interior
-using Oceananigans.OutputReaders: FieldTimeSeries
+using Oceananigans: Oceananigans
+using Oceananigans.Fields: Fields, Field, compute!, interior, mapped_data
+using Oceananigans.OutputReaders: FieldTimeSeries, FlavorOfFTS, TimeInterpolator, memory_index
+using Oceananigans.Units: Time
 using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Center, Face, Flat, LatitudeLongitudeGrid, topology
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
-using Oceananigans.Utils: launch!
+using Oceananigans.Utils: launch!, interpolator, _interpolate
 
 import Oceananigans.Architectures: on_architecture
 import Oceananigans.Grids: rnode, rnodes, znodes, generate_coordinate,
@@ -38,6 +40,10 @@ Two `znodes` paths:
 over a `FieldTimeSeries`. The former gives a static z-coordinate; the latter
 gives a time-evolving one driven by an attached `Clock`.
 
+Center-located fields are interpolated vertically in each horizontal source
+column before horizontal blending. Terrain eligibility excludes levels within
+eight floating-point spacings of the surface geopotential.
+
 The `LatitudeLongitudeGrid` constructor needs a value for `Lz`; we compute it
 as `extrema(geopotential) / g` inside `generate_coordinate`.
 """
@@ -45,12 +51,14 @@ struct PressureLevelVerticalDiscretization{G, Geo, S} <: AbstractVerticalCoordin
     gravitational_acceleration :: G
     geopotential               :: Geo
     surface_geopotential       :: S
+    clip_subsurface            :: Bool
 end
 
 """
     PressureLevelVerticalDiscretization(geopotential;
                                         gravitational_acceleration,
-                                        surface_geopotential = nothing)
+                                        surface_geopotential = nothing,
+                                        clip_subsurface = true)
 
 Build a discretization backed by per-column `geopotential` (m²/s²). `znode`
 divides by `gravitational_acceleration` at read time.
@@ -64,12 +72,19 @@ sub-surface *data* stays on those levels, so `column_fractional_z_index` also
 clamps interpolation to the first above-ground level (never sampling it). The
 clip source is retained on the discretization and exposed through
 [`surface_elevation`](@ref).
+
+With `clip_subsurface=false`, all supplied levels remain available for
+interpolation, including physically reconstructed subsurface states.
 """
 function PressureLevelVerticalDiscretization(geopotential;
                                               gravitational_acceleration,
-                                              surface_geopotential = nothing)
-    isnothing(surface_geopotential) || clip_subsurface!(geopotential, surface_geopotential)
-    return PressureLevelVerticalDiscretization(gravitational_acceleration, geopotential, surface_geopotential)
+                                              surface_geopotential = nothing,
+                                              clip_subsurface = true)
+    if clip_subsurface && !isnothing(surface_geopotential)
+        clip_subsurface!(geopotential, surface_geopotential)
+    end
+    return PressureLevelVerticalDiscretization(gravitational_acceleration, geopotential,
+                                               surface_geopotential, clip_subsurface)
 end
 
 # Skip the generic validator (which would `length`-check the missing 1-D fields).
@@ -91,7 +106,8 @@ function generate_coordinate(FT, topo, sz, halo,
 
     arch_discretization = PressureLevelVerticalDiscretization(g,
                                                               on_architecture(arch, coord.geopotential),
-                                                              on_architecture(arch, coord.surface_geopotential))
+                                                              on_architecture(arch, coord.surface_geopotential),
+                                                              coord.clip_subsurface)
     return Lz, arch_discretization
 end
 
@@ -105,12 +121,12 @@ geopotential_data_for_extrema(Φ::TimeSeriesInterpolation) = interior(Φ.time_se
 Adapt.adapt_structure(to, z::PressureLevelVerticalDiscretization) =
     PressureLevelVerticalDiscretization(z.gravitational_acceleration,
                                         Adapt.adapt(to, z.geopotential),
-                                        Adapt.adapt(to, z.surface_geopotential))
+                                        Adapt.adapt(to, z.surface_geopotential), z.clip_subsurface)
 
 on_architecture(arch, z::PressureLevelVerticalDiscretization) =
     PressureLevelVerticalDiscretization(z.gravitational_acceleration,
                                         on_architecture(arch, z.geopotential),
-                                        on_architecture(arch, z.surface_geopotential))
+                                        on_architecture(arch, z.surface_geopotential), z.clip_subsurface)
 
 function Base.show(io::IO, z::PressureLevelVerticalDiscretization)
     print(io, "PressureLevelVerticalDiscretization with $(size(z.geopotential, 3)) levels, ",
@@ -125,6 +141,8 @@ Type alias for any underlying grid whose vertical coordinate is a
 """
 const PressureLevelGrid =
     AbstractUnderlyingGrid{<:Any, <:Any, <:Any, <:Any, <:PressureLevelVerticalDiscretization}
+
+Oceananigans.Grids.cpu_face_constructor_z(grid::PressureLevelGrid) = on_architecture(CPU(), grid.z)
 
 # Override the LLG show, which reads `grid.z.cᵃᵃᶠ` and crashes on PLVD.
 # We print the horizontal axes and report the z coordinate via the
@@ -280,8 +298,10 @@ end
 
 @inline function first_above_surface_level(i, j, grid, Φ_sfc)
     Φˢ = @inbounds Φ_sfc[i, j, 1]
+    # A clipped shelf stays below the eligibility threshold under temporal roundoff.
+    δΦ = 8 * eps(max(abs(Φˢ), one(Φˢ)))
     k = 1
-    @inbounds while k < grid.Nz && grid.z.geopotential[i, j, k] <= Φˢ
+    @inbounds while grid.z.clip_subsurface && k < grid.Nz && grid.z.geopotential[i, j, k] <= Φˢ + δΦ
         k += 1
     end
     return k
@@ -308,6 +328,39 @@ end
     # terrain-following ERA5 initial state.)
     k_sfc = first_above_surface_level(i, j, grid)
     return clamp(convert(FT, kk), convert(FT, k_sfc), convert(FT, grid.Nz))
+end
+
+@inline function interpolate_column(i, j, z, grid, data, indices...)
+    kk = column_fractional_z_index(z, i, j, grid)
+    k⁻, k⁺, ζ = interpolator(kk)
+    iz = (k⁻, min(k⁺, grid.Nz), ζ)
+    return _interpolate(data, (i, i, 0), (j, j, 0), iz, indices...)
+end
+
+@inline function interpolate_columns((x, y, z), loc, grid, data, indices...)
+    i⁻, i⁺, ξ = interpolator(fractional_x_index(x, loc, grid))
+    j⁻, j⁺, η = interpolator(fractional_y_index(y, loc, grid))
+    f₁ = interpolate_column(i⁻, j⁻, z, grid, data, indices...)
+    f₂ = interpolate_column(i⁺, j⁻, z, grid, data, indices...)
+    f₃ = interpolate_column(i⁻, j⁺, z, grid, data, indices...)
+    f₄ = interpolate_column(i⁺, j⁺, z, grid, data, indices...)
+    return (1 - η) * ((1 - ξ) * f₁ + ξ * f₂) + η * ((1 - ξ) * f₃ + ξ * f₄)
+end
+
+@inline function Fields.interpolate(func::Base.Callable, node::NTuple{3, Any}, field,
+                                    loc::Tuple{Center, Center, Center}, grid::PressureLevelGrid)
+    return interpolate_columns(node, loc, grid, mapped_data(func, field))
+end
+
+@inline function Fields.interpolate(func::Base.Callable, node::NTuple{3, Any}, time::Time,
+                                    series::FlavorOfFTS, loc::Tuple{Center, Center, Center}, grid::PressureLevelGrid)
+    data = mapped_data(func, series.data)
+    times = TimeInterpolator(series.time_indexing, series.times, time.time)
+    n₁, n₂ = Int(times.first_index), Int(times.second_index)
+    m₁ = memory_index(series.backend, series.time_indexing, Int(times.length), n₁)
+    m₂ = memory_index(series.backend, series.time_indexing, Int(times.length), n₂)
+    ξ = ifelse(n₁ == n₂, zero(times.fractional_index), times.fractional_index)
+    return interpolate_columns(node, loc, grid, data, (m₁, m₂, ξ))
 end
 
 #####
