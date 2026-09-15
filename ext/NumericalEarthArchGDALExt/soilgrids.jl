@@ -5,7 +5,6 @@
 ##### six depths into the global or regional NetCDF the read path expects.
 #####
 
-const SOILGRIDS_IGH_PROJ4 = "+proj=igh +lat_0=0 +lon_0=0 +datum=WGS84 +units=m +no_defs"
 
 # Warp one depth's remote VRT directly onto `raster`'s EPSG:4326 grid.
 function soilgrids_depth_window(source, raster)
@@ -13,7 +12,7 @@ function soilgrids_depth_window(source, raster)
     dataset = ArchGDAL.read(source)
     data = try
         ArchGDAL.gdalwarp([dataset],
-            ["-s_srs", SOILGRIDS_IGH_PROJ4,
+            ["-s_srs", "+proj=igh +lat_0=0 +lon_0=0 +datum=WGS84 +units=m +no_defs",
              "-t_srs", "EPSG:4326",
              "-te",    string(raster.west), string(raster.south),
                        string(raster.east), string(raster.north),
