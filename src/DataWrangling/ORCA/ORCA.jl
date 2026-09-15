@@ -25,6 +25,7 @@ download_ORCA_cache::String = ""
 
 function __init__()
     global download_ORCA_cache = DataWrangling.download_cache("ORCA")
+    return nothing
 end
 
 abstract type ORCADataset end
@@ -42,8 +43,6 @@ all_dates(::ORCADataset, args...) = nothing
 first_date(::ORCADataset, args...) = nothing
 last_date(::ORCADataset, args...) = nothing
 
-const ORCAOneMetadatum = Metadatum{<:ORCAOne}
-const ORCAQuarterMetadatum = Metadatum{<:ORCAQuarter}
 const ORCATwelfthMetadatum = Metadatum{<:ORCATwelfth}
 const ORCAMetadatum = Metadatum{<:ORCADataset}
 
