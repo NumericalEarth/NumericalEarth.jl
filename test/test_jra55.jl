@@ -147,7 +147,10 @@ using NumericalEarth.JRA55: download_JRA55_cache
         @test atmosphere isa PrescribedAtmosphere
 
         # Test JRA55PrescribedLand loads river and iceberg data with correct frequency
-        land = JRA55PrescribedLand(arch; time_indices_in_memory=2)
+        land_grid = LatitudeLongitudeGrid(arch; size=(20, 10, 1), longitude=(0, 360),
+                                          latitude=(-60, 60), z=(-100, 0))
+        river_dates = NumericalEarth.DataWrangling.all_dates(JRA55.RepeatYearJRA55(), :river_freshwater_flux)
+        land = JRA55PrescribedLand(land_grid; time_indices_in_memory=2, end_date=river_dates[2])
         @test land isa NumericalEarth.Lands.PrescribedLand
         @test haskey(land.freshwater_flux, :rivers)
         @test haskey(land.freshwater_flux, :icebergs)
@@ -188,6 +191,18 @@ using NumericalEarth.JRA55: download_JRA55_cache
         for t in eachindex(river_flux.times)
             @test river_flux[t] isa Field
         end
+        @test Second(end_date - start_date).value ≈ river_flux.times[end] - river_flux.times[1]
+
+        # Test we can access all the data
+        for t in eachindex(river_flux.times)
+            @test river_flux[t] isa Field
+        end
+
+        # friver is daily, so it takes the `Hour(12)` branch of `metadata_filename`. Keep the
+        # three-hourly branch that tas exercises covered; building a path downloads nothing.
+        three_hourly_datum = Metadatum(:temperature; dataset, date=DateTime(1958, 6, 1))
+        @test basename(metadata_path(three_hourly_datum)) ==
+            "tas_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_195801010000-195812312100.nc"
 
         # friver is daily, so it takes the `Hour(12)` branch of `metadata_filename`; keep the
         # three-hourly branch that tas exercises covered. Building a path downloads nothing.
