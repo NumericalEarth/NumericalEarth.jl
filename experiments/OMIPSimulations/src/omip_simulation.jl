@@ -150,13 +150,16 @@ ncar_atmosphere_sea_ice_fluxes(FT = Float64) =
 
 """
     build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
+                        sea_ice_flux_configuration = flux_configuration,
                         velocity_formulation = :relative)
 
-Build the `OceanSeaIceModel` with the specified flux configuration.
-Options for `flux_configuration`: `:default`, `:corrected`, `:ncar`.
+Build the `OceanSeaIceModel` with the specified flux configurations.
+Options for `flux_configuration` (atmosphere–ocean): `:default`, `:corrected`, `:ncar`.
+Options for `sea_ice_flux_configuration` (atmosphere–sea ice): `:corrected`, `:ncar`.
 Options for `velocity_formulation`:  `:relative`, `:wind`
 """
 function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
+                             sea_ice_flux_configuration = flux_configuration,
                              velocity_formulation::Symbol = :relative,
                              sea_ice_ocean_heat_transfer_coefficient = 0.0057,
                              sea_ice_momentum_roughness_length = 5e-4,
@@ -173,31 +176,24 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
                               velocity_formulation == :wind     ? WindVelocity()     :
                               error("Unknown velocity_formulation: $velocity_formulation. Options: :relative, :wind")
 
-    if flux_configuration == :corrected
-        interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
-                                         radiation,
-                                         land,
-                                         atmosphere_ocean_fluxes   = corrected_atmosphere_ocean_fluxes(FT),
-                                         atmosphere_sea_ice_fluxes = corrected_atmosphere_sea_ice_fluxes(FT; momentum_roughness_length = sea_ice_momentum_roughness_length),
-                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = sea_ice_ocean_heat_transfer_coefficient),
-                                         ice_freshwater_delivery,
-                                         ice_meltwater_enthalpy,
-                                         atmosphere_ocean_velocity_difference   = velocity_difference_obj,
-                                         atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
-    elseif flux_configuration == :ncar
-        interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
-                                         radiation,
-                                         land,
-                                         atmosphere_ocean_fluxes   = ncar_atmosphere_ocean_fluxes(FT),
-                                         atmosphere_sea_ice_fluxes = ncar_atmosphere_sea_ice_fluxes(FT),
-                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = sea_ice_ocean_heat_transfer_coefficient),
-                                         ice_freshwater_delivery,
-                                         ice_meltwater_enthalpy,
-                                         atmosphere_ocean_velocity_difference   = velocity_difference_obj,
-                                         atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
-    else
-        error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :ncar")
-    end
+    atmosphere_ocean_fluxes = flux_configuration == :corrected ? corrected_atmosphere_ocean_fluxes(FT) :
+                              flux_configuration == :ncar      ? ncar_atmosphere_ocean_fluxes(FT) :
+                              error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :ncar")
+
+    atmosphere_sea_ice_fluxes = sea_ice_flux_configuration == :corrected ? corrected_atmosphere_sea_ice_fluxes(FT; momentum_roughness_length = sea_ice_momentum_roughness_length) :
+                                sea_ice_flux_configuration == :ncar      ? ncar_atmosphere_sea_ice_fluxes(FT) :
+                                error("Unknown sea_ice_flux_configuration: $sea_ice_flux_configuration. Options: :corrected, :ncar")
+
+    interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
+                                     radiation,
+                                     land,
+                                     atmosphere_ocean_fluxes,
+                                     atmosphere_sea_ice_fluxes,
+                                     sea_ice_ocean_heat_flux = corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = sea_ice_ocean_heat_transfer_coefficient),
+                                     ice_freshwater_delivery,
+                                     ice_meltwater_enthalpy,
+                                     atmosphere_ocean_velocity_difference   = velocity_difference_obj,
+                                     atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
 
     return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, land, interfaces)
 end
@@ -682,12 +678,16 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   barotropic gravity wave must stay inside a substep, so a refined grid or a longer `Δt` needs more;
   too few blows the free surface up on the first step. Per-config default: `200` for
   `:quarterdegree`/`:twelfthdegree`, `100` otherwise. A warning names the count the grid needs.
-- `flux_configuration`: surface flux formulation. Options:
-   * `:default` — current defaults (Edson/COARE with constant Charnock 0.02)
-   * `:corrected` — COARE 3.6 with wind-dependent Charnock, fixed ice roughness, momentum-based u*
+- `flux_configuration`: atmosphere–ocean flux formulation. Options:
+   * `:default` — current defaults (Edson/COARE with constant Charnock 0.02) over both ocean and sea ice
+   * `:corrected` — COARE 3.6 with wind-dependent Charnock, momentum-based u*
    * `:ncar` — OMIP-2 standard Large & Yeager (2004) bulk formulae
+- `sea_ice_flux_configuration`: atmosphere–sea ice flux formulation, ignored when `flux_configuration = :default`.
+  Default: `flux_configuration`. Options:
+   * `:corrected` — SHEBA stability functions, fixed roughness (`sea_ice_momentum_roughness_length`, 5e-5 m for scalars)
+   * `:ncar` — Large & Yeager stability functions, fixed roughness 5e-4 m for momentum and scalars
 - `sea_ice_momentum_roughness_length`: aerodynamic roughness z₀ of the ice surface, m, used by
-  `:corrected`. 5e-4 is the SHEBA multiyear-pack value; smooth first-year ice is nearer 1e-4, which cuts
+  `sea_ice_flux_configuration = :corrected`. 5e-4 is the SHEBA multiyear-pack value; smooth first-year ice is nearer 1e-4, which cuts
   the neutral drag coefficient by about a quarter and the free-drift speed by about a seventh.
 - `vertical_closure::Symbol`: ocean vertical-mixing closure. Options:
    * `:catke` — CATKE TKE-based scheme (default).
@@ -782,6 +782,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          Δt = ConfigDefault(),
                          stop_time = Inf,
                          flux_configuration = :default,
+                         sea_ice_flux_configuration = flux_configuration,
                          vertical_closure = :catke,
                          boundary_value_mode_number = 2,
                          boundary_value_minimum_speed = 0.1,
@@ -1024,6 +1025,7 @@ function omip_simulation(config::Symbol = :halfdegree;
         InterfaceTemperatureMeltwater() : ZeroHeatContentMeltwater()
 
     coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
+                                  sea_ice_flux_configuration,
                                   velocity_formulation, sea_ice_ocean_heat_transfer_coefficient,
                                   sea_ice_momentum_roughness_length,
                                   ice_freshwater_delivery, ice_meltwater_enthalpy)

@@ -3,9 +3,9 @@
 #
 # Usage:
 #   ./launch.sh orca                           # ORCA with default fluxes
-#   NCAR=true ./launch.sh orca                 # ORCA with NCAR bulk formulae
-#   NCAR=true SNOW=true ./launch.sh orca       # ORCA + NCAR + snow
-#   CB=0.1 NCAR=true ./launch.sh orca          # ORCA + NCAR + Cᵇ=0.1
+#   OCEAN_FLUXES=ncar ./launch.sh orca                  # NCAR bulk formulae over the ocean
+#   OCEAN_FLUXES=ncar ICE_FLUXES=ncar ./launch.sh orca  # NCAR bulk formulae over ocean and sea ice
+#   CB=0.1 OCEAN_FLUXES=ncar ./launch.sh orca           # NCAR over the ocean + Cᵇ=0.1
 #   KSKEW=1000 KSYMM=500 ./launch.sh orca      # ORCA with custom eddy diffusivities
 #   PROFILE=true ./launch.sh orca              # nsys-profile run
 #
@@ -28,8 +28,9 @@ Configurations:
   twelfthdegree     1/10-degree TripolarGrid (4 GPUs)
 
 Environment variables (physics):
-  NCAR          Set to "true" for OMIP-2/NCAR bulk formulae
-  CORRECTED     Set to "true" for corrected COARE 3.6 fluxes
+  OCEAN_FLUXES  Atmosphere–ocean bulk formulae: corrected (COARE 3.6, default), ncar (OMIP-2 Large & Yeager),
+                or default (NumericalEarth defaults over ocean and sea ice). Adds "_ncar" or "_rawflux".
+  ICE_FLUXES    Atmosphere–sea ice bulk formulae: corrected (default) or ncar. Adds "_icencar".
   SNOW          Set to "true" to enable snow thermodynamics
   SNOW_CATEGORIES
                 Sub-grid categories for the snow conductivity, independently of ICE_CATEGORIES.
@@ -91,7 +92,7 @@ Environment variables (physics):
                 ICE_CATEGORIES=1 so the stored conductivity is the bare material value. Adds
                 "_itd<min>-<max>-<h>" to the run name.
   ICE_Z0        Aerodynamic momentum roughness of the ice surface, in metres, used by the corrected
-                flux configuration. Sea ice carries no gravity waves, so this is a geometric constant
+                sea-ice fluxes (ICE_FLUXES=corrected). Sea ice carries no gravity waves, so this is a geometric constant
                 set by ridges, floe edges and sastrugi rather than a Charnock relation. The default
                 5e-4 is the SHEBA multiyear-pack value (Andreas et al. 2010); smooth first-year ice
                 sits nearer 1e-4, which cuts the neutral drag coefficient from 1.63e-3 to 1.21e-3 and
@@ -458,10 +459,9 @@ Environment variables (I/O & runtime):
 
 Examples:
   ./launch.sh orca
-  NCAR=true ./launch.sh orca
-  NCAR=true SNOW=true ./launch.sh orca
-  CORRECTED=true SNOW=true ./launch.sh orca
-  CB=0.1 NCAR=true ./launch.sh orca
+  OCEAN_FLUXES=ncar ./launch.sh orca
+  OCEAN_FLUXES=ncar ICE_FLUXES=ncar ./launch.sh orca
+  CB=0.1 OCEAN_FLUXES=ncar ./launch.sh orca
   KSKEW=1000 KSYMM=500 ./launch.sh orca
   KSKEW=0 ./launch.sh orca                    # disable eddy closure
   BIHARMONIC=5days ./launch.sh orca           # custom biharmonic timescale
@@ -617,8 +617,10 @@ export IC_CONDITIONS IC_BLEND
 
 # ── Build run name from config + options ──────────────────────────────
 RUN_NAME="$CONFIG"
-[[ "${CORRECTED:-true}" != "true" ]]           && RUN_NAME="${RUN_NAME}_rawflux"
-[[ "${NCAR:-false}" == "true" ]]               && RUN_NAME="${RUN_NAME}_ncar"
+[[ -n "${NCAR:-}${CORRECTED:-}" ]] && { echo "NCAR and CORRECTED are replaced by OCEAN_FLUXES and ICE_FLUXES" >&2; exit 1; }
+[[ "${OCEAN_FLUXES:-corrected}" == "default" ]]  && RUN_NAME="${RUN_NAME}_rawflux"
+[[ "${OCEAN_FLUXES:-corrected}" == "ncar" ]]     && RUN_NAME="${RUN_NAME}_ncar"
+[[ "${ICE_FLUXES:-corrected}" == "ncar" ]]       && RUN_NAME="${RUN_NAME}_icencar"
 [[ "${SNOW:-true}" != "true" ]]                && RUN_NAME="${RUN_NAME}_nosnow"
 [[ "${ICE_DYNAMICS:-true}" == "false" ]]       && RUN_NAME="${RUN_NAME}_noicedyn"
 [[ "${ICE_LATERAL:-no_slip}" != "no_slip" ]]   && RUN_NAME="${RUN_NAME}_freeslip"
@@ -831,8 +833,8 @@ IMEX_DRAG="${IMEX_DRAG:-true}"
 DRAG_UB="${DRAG_UB:-}"
 CHLOROPHYLL="${CHLOROPHYLL:-seawifs}"
 BACKEND_SIZE="${BACKEND_SIZE:-}"
-NCAR="${NCAR:-false}"
-CORRECTED="${CORRECTED:-true}"
+OCEAN_FLUXES="${OCEAN_FLUXES:-corrected}"
+ICE_FLUXES="${ICE_FLUXES:-corrected}"
 SNOW="${SNOW:-true}"
 ICE_DYNAMICS="${ICE_DYNAMICS:-true}"
 OUTPUT_DIR="${OUTPUT_DIR:-.}"
@@ -979,9 +981,15 @@ BVP_KWARG=""
 BACKEND_KWARG=""
 [[ -n "$BACKEND_SIZE" ]] && BACKEND_KWARG="backend_size = ${BACKEND_SIZE},"
 
-FLUX_KWARG=""
-[[ "$NCAR" == "true" ]]        && FLUX_KWARG="flux_configuration = :ncar,"
-[[ "$CORRECTED" == "true" ]]   && FLUX_KWARG="flux_configuration = :corrected,"
+case "$ICE_FLUXES" in
+    corrected|ncar) ;;
+    *) echo "ICE_FLUXES must be corrected|ncar, got '$ICE_FLUXES'" >&2; exit 1 ;;
+esac
+case "$OCEAN_FLUXES" in
+    corrected|ncar) FLUX_KWARG="flux_configuration = :${OCEAN_FLUXES}, sea_ice_flux_configuration = :${ICE_FLUXES}," ;;
+    default)        FLUX_KWARG="" ;;
+    *) echo "OCEAN_FLUXES must be corrected|ncar|default, got '$OCEAN_FLUXES'" >&2; exit 1 ;;
+esac
 
 PVELKWARG=""
 [[ -n "$PVEL" ]] && PVELKWARG="piston_velocity = ${PVEL},"
