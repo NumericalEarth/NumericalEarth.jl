@@ -100,9 +100,6 @@ SoilGrids2_dataset_variable_names = Dict(
     :soil_organic_carbon     => "soc"
 )
 
-# Faces of the 100-200 / 60-100 / 30-60 / 15-30 / 5-15 / 0-5 cm intervals, increasing upward (m).
-const SoilGrids2_z_interfaces = [-2.0, -1.0, -0.6, -0.3, -0.15, -0.05, 0.0]
-
 # ISRIC depth-range URL fragments, deepest first (matches SoilGrids2_z_interfaces above).
 const SoilGrids2_depth_ranges = ("100-200cm", "60-100cm", "30-60cm", "15-30cm", "5-15cm", "0-5cm")
 
@@ -181,7 +178,7 @@ end
 
 function DataWrangling.z_interfaces(dataset::SoilGrids2)
     dataset.resolution === Clenshaw10km && return [-200, -100, -60, -30, -15, -5, 0]
-    return SoilGrids2_z_interfaces
+    return [-2.0, -1.0, -0.6, -0.3, -0.15, -0.05, 0]
 end
 
 DataWrangling.latitude_interfaces(::SoilGrids2) = (-90, 90)
