@@ -245,6 +245,9 @@ end
     Rᵈ   = dry_air_gas_constant(constants)
     Rᵛ   = vapor_gas_constant(constants)
     cₚᵈ  = constants.dry_air.heat_capacity
+    cₚᵛ  = constants.vapor.heat_capacity
+    cₚˡ  = constants.liquid.heat_capacity
+    cₚⁱ  = constants.ice.heat_capacity
     Lᵥ   = constants.liquid.reference_latent_heat
     Lₛ   = constants.ice.reference_latent_heat
     κ    = Rᵈ / cₚᵈ
@@ -265,11 +268,14 @@ end
     # Moist + condensate, p ≠ pˢᵗ ⇒ check against the documented formulas.
     set!(T, 290.0); set!(qᵛ, 0.01); set!(qᶜ, 1e-3); set!(qⁱ, 5e-4); set!(p, 9e4)
     s2 = breeze_prognostic_state(constants, pˢᵗ, T, qᵛ, qᶜ, qⁱ, p)
-    Rᵐ = (1 - 0.01 - 1e-3 - 5e-4) * Rᵈ + 0.01 * Rᵛ   # mixture gas constant: condensate loads the mixture
+    qᵈ = 1 - 0.01 - 1e-3 - 5e-4
+    Rᵐ = qᵈ * Rᵈ + 0.01 * Rᵛ
+    cₚᵐ = qᵈ * cₚᵈ + 0.01 * cₚᵛ + 1e-3 * cₚˡ + 5e-4 * cₚⁱ
     θ  = 290.0 * (pˢᵗ / 9e4)^κ
+    θˡⁱ = (290.0 - (Lᵥ * 1e-3 + Lₛ * 5e-4) / cₚᵐ) * (pˢᵗ / 9e4)^(Rᵐ / cₚᵐ)
     @test all(isapprox.(interior(s2.qᵗ), 0.01 + 1e-3 + 5e-4; rtol = 1e-12))
     @test all(isapprox.(interior(s2.ρ), 9e4 / (Rᵐ * 290.0); rtol = 1e-10))
-    @test all(isapprox.(interior(s2.θˡⁱ), θ * (1 - (Lᵥ * 1e-3 + Lₛ * 5e-4) / (cₚᵈ * 290.0)); rtol = 1e-10))
+    @test all(isapprox.(interior(s2.θˡⁱ), θˡⁱ; rtol = 1e-10))
     @test all(interior(s2.θˡⁱ) .< θ)   # condensate loading lowers θˡⁱ below the dry θ
 end
 
@@ -461,14 +467,18 @@ end
 
     # reconstruct_parent_state reads the parent's FULL-memory fields, not the windowed levels: with the
     # window parked forward, a reconstruction at t = 0 still recovers the parent's t = 0 state
-    # (θˡⁱ = T (pˢᵗ/p)^κ with T = 280 + t, condensate-free), proving no residency aliasing.
+    # (θˡⁱ = T (pˢᵗ/p)^(Rᵐ/cₚᵐ) with T = 280 + t, condensate-free), proving no residency aliasing.
     reconstruct = NumericalEarth.NestedModels.reconstruct_parent_state
-    κ = dry_air_gas_constant(constants) / constants.dry_air.heat_capacity
+    qᵛ = 0.005
+    qᵈ = 1 - qᵛ
+    Rᵐ = qᵈ * dry_air_gas_constant(constants) + qᵛ * vapor_gas_constant(constants)
+    cₚᵐ = qᵈ * constants.dry_air.heat_capacity + qᵛ * constants.vapor.heat_capacity
+    moist_exponent = Rᵐ / cₚᵐ
     exchange(exchanger, 2.5)                                    # park the window forward
     θ₀ = Array(interior(reconstruct(exchanger, 0.0).θˡⁱ))
     θ₃ = Array(interior(reconstruct(exchanger, 3.0).θˡⁱ))
-    @test all(θ₀ .≈ 280 * (1e5 / 9e4)^κ)
-    @test all(θ₃ .≈ 283 * (1e5 / 9e4)^κ)
+    @test all(θ₀ .≈ 280 * (1e5 / 9e4)^moist_exponent)
+    @test all(θ₃ .≈ 283 * (1e5 / 9e4)^moist_exponent)
 end
 
 # Every liquid and ice hydrometeor the parent carries — cloud liquid and rain, cloud ice and snow —
@@ -613,8 +623,11 @@ end
     exchanger = ext.state_exchanger(parent, 1.0e5, constants; condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
     prog      = exchanger.prognostic
     exchange  = NumericalEarth.NestedModels.exchange_state!
-    κ = dry_air_gas_constant(constants) / constants.dry_air.heat_capacity
-    θtrue(t) = (280 + 5t) * (1e5 / 9e4)^κ
+    qᵛ = 0.005
+    qᵈ = 1 - qᵛ
+    Rᵐ = qᵈ * dry_air_gas_constant(constants) + qᵛ * vapor_gas_constant(constants)
+    cₚᵐ = qᵈ * constants.dry_air.heat_capacity + qᵛ * constants.vapor.heat_capacity
+    θtrue(t) = (280 + 5t) * (1e5 / 9e4)^(Rᵐ / cₚᵐ)
 
     # Baseline: an in-window query is correct.
     exchange(exchanger, 0.5)                                    # bracket n₁ = 1 ⇒ start = 1 (levels 1,2,3)
