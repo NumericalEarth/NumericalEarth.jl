@@ -22,8 +22,7 @@ biogeochemistry_surface_exchanged_tracers(::AbstractInorganicCarbon{N}) where N 
 
 @inline carbon_replicate_names(::Val{N}) where N = ntuple(n -> Symbol(:DIC, n), Val(N))
 
-@inline surface_wind_speed(exchanger) =
-    sqrt(exchanger.atmosphere.state.u^2 + exchanger.atmosphere.state.v^2)
+@inline surface_wind_speed(exchanger) = sqrt(exchanger.atmosphere.state.u^2 + exchanger.atmosphere.state.v^2)
 
 biogeochemical_interface(exchanger, ocean, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}) =
     merge(
