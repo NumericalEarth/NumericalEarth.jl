@@ -446,8 +446,6 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
     u   = Field(ρu / ρᵈ)
     v   = Field(ρv / ρᵈ)
 
-    # `set!` accepts `qᵗ`/`qᵛ`/`qᵉ` for the one moisture slot and writes whichever verbatim; spell it
-    # the way the child's scheme names it.
     moisture = NamedTuple{(moisture_specific_name(child.microphysics),)}((qᵛᵉ,))
     set!(nested_model; ρ, u, v, θˡⁱ, moisture..., compute_reference_state = true)
 
