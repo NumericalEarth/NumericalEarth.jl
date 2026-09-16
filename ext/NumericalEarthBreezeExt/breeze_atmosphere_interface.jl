@@ -160,10 +160,6 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos
         "flux field, so its surface stress cannot come from the coupler. Build the atmosphere " *
         "without `bottom_drag_coefficient` (Breeze `BulkDrag`) when coupling to land or ocean."))
 
-    # Energy flux field: the ρE BC was converted to ρθ by Breeze's materialization,
-    # wrapped in EnergyFluxBoundaryConditionFunction.
-    # First .condition unwraps BoundaryCondition, second .condition extracts the
-    # original field from EnergyFluxBoundaryConditionFunction.
     ρe = thermodynamic_density(atmosphere.formulation).boundary_conditions.bottom.condition.condition
 
     # Moisture flux field

@@ -264,10 +264,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # side (prescribing the parent's tangential velocity in the halo — `NormalFlowBC` there leaves it
     # under-constrained and injects spurious near-boundary convergence). `ρᵈ`/energy/moisture are Center
     # scalars (`ValueBoundaryCondition` on all sides, since `NormalFlowBC` overwrites the first interior cell
-    # asymmetrically for Center fields). The energy BC uses Breeze's energy interface key (`ρE`):
-    # it merges with the coupling's bottom energy-flux BC on the same field,
-    # and for a potential-temperature formulation Breeze routes the (Value) `ρθ` boundary values through
-    # unchanged. `ρθ` and the energy key must not both carry BCs.
+    # asymmetrically for Center fields).
     energy_key = energy_bc_key()
     dry_bc_variables = merge((ρᵈ = prognostic.ρᵈ, ρu = prognostic.ρu, ρv = prognostic.ρv),
                              NamedTuple{(energy_key,)}((prognostic.ρθ,)))
@@ -339,8 +336,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     return NestedModel(parent_atmosphere, child, exchanger)
 end
 
-# Domain-mean dataset mean-sea-level pressure at `date`, regridded onto the child grid — anchors
-# the default compressible dynamics' reference datum, which Breeze defines at z = 0.
+# Domain-mean dataset mean-sea-level pressure at `date`, regridded onto the child grid.
 function mean_sea_level_pressure(dataset, child_grid, date, dir)
     single_level_dataset = matching_single_level_dataset(dataset)
     p₀ = Field{Center, Center, Nothing}(child_grid)
