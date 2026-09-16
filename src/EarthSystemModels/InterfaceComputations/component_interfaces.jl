@@ -430,7 +430,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              sea_ice_reference_density = reference_density(sea_ice),
                              sea_ice_heat_capacity = heat_capacity(sea_ice),
                              gravitational_acceleration = default_gravitational_acceleration,
-                             exchanger_correction = nothing)
+                             exchanger_correction = nothing,
+                             biogeochemistry_interface_kwargs = NamedTuple())
 
     FT = eltype(exchange_grid)
 
@@ -501,7 +502,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     end
 
     properties = merge((; gravitational_acceleration, surface_layer_height = zᵃᵗ),
-                          biogeochemical_interface(exchanger, ocean))
+                          biogeochemical_interface(exchanger, ocean; biogeochemistry_interface_kwargs...))
 
     return ComponentInterfaces(ao_interface,
                                ai_interface,

@@ -34,27 +34,29 @@ biogeochemical_interface(exchanger, ocean, biogeochemistry::DiscreteBiogeochemis
         biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.inorganic_carbon)
     )
 
-biogeochemical_interface(exchanger, ocean, ::Oxygen) =
+biogeochemical_interface(exchanger, ocean, ::Oxygen; kwargs...) =
     (; O₂ = OxygenGasExchangeBoundaryCondition(;
                 wind_speed = surface_wind_speed(exchanger),
-                air_concentration = GarciaGordonOxygenSaturation()).condition.func)
+                air_concentration = GarciaGordonOxygenSaturation(),
+                kwargs...).condition.func)
 
-biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{1}) =
-    (; DIC = carbon_dioxide_exchange(exchanger, :DIC, :Alk))
+biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{1}; kwargs...) =
+    (; DIC = carbon_dioxide_exchange(exchanger, :DIC, :Alk; kwargs...))
 
-function biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{N}) where N
+function biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{N}; kwargs...) where N
     names = carbon_replicate_names(Val(N))
 
-    exchanges = ntuple(n -> carbon_dioxide_exchange(exchanger, Symbol(:DIC, n), Symbol(:Alk, n)), Val(N))
+    exchanges = ntuple(n -> carbon_dioxide_exchange(exchanger, Symbol(:DIC, n), Symbol(:Alk, n); kwargs...), Val(N))
 
     return NamedTuple{names}(exchanges)
 end
 
-carbon_dioxide_exchange(exchanger, DIC, Alk) =
+carbon_dioxide_exchange(exchanger, DIC, Alk; kwargs...) =
     CarbonDioxideGasExchangeBoundaryCondition(;
         wind_speed = surface_wind_speed(exchanger),
         air_concentration = exchanger.atmosphere.state.pCO₂,
-        DIC, Alk
+        DIC, Alk,
+        kwargs...
     ).condition.func
 
 #####
