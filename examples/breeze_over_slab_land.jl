@@ -149,7 +149,7 @@ Oceananigans.TimeSteppers.update_state!(slab_land)
 # temperature toward the reference profile above 8 km anchors the
 # stratosphere without affecting the troposphere (as in Breeze's
 # `radiative_convection` example). We apply the relaxation as an energy forcing
-# on `ρE`, which Breeze converts to the prognostic thermodynamic tendency, and
+# on `ρs`, which Breeze converts to the prognostic thermodynamic tendency, and
 # build the reference state explicitly so the sponge and radiation share the
 # same thermodynamic constants.
 
@@ -219,7 +219,7 @@ radiation = RadiativeTransferModel(grid, AllSkyOptics(), constants;
 # `radiation` kwarg is passed here.
 
 atmos = atmosphere_simulation(grid; dynamics,
-                              forcing  = (; ρE = sponge),
+                              forcing  = (; ρs = sponge),
                               coriolis = FPlane(latitude = latitude))
 
 # Initial atmospheric profile: dry-adiabatic sub-cloud layer capped by a
