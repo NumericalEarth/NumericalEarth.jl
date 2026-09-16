@@ -22,10 +22,14 @@ using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant
 
 # `pˢᵗ` is the potential-temperature reference pressure, supplied by the caller from the child
 # dynamics' `standard_pressure` (Breeze's `ReferenceState` value) — never hardcoded.
-@inline potential_temperature(T, p, pˢᵗ, Rᵈ, cᵖᵈ) = T * (pˢᵗ / p)^(Rᵈ / cᵖᵈ)
-
-@inline liquid_ice_potential_temperature(T, qˡ, qⁱ, p, pˢᵗ, Rᵈ, cᵖᵈ, ℒˡ, ℒⁱ) =
-    potential_temperature(T, p, pˢᵗ, Rᵈ, cᵖᵈ) * (1 - (ℒˡ * qˡ + ℒⁱ * qⁱ) / (cᵖᵈ * T))
+@inline function liquid_ice_potential_temperature(T, qᵛ, qˡ, qⁱ, p, pˢᵗ, constants)
+    qᵈ = 1 - qᵛ - qˡ - qⁱ
+    Rᵐ = qᵈ * dry_air_gas_constant(constants) + qᵛ * vapor_gas_constant(constants)
+    cᵖᵐ = qᵈ * constants.dry_air.heat_capacity + qᵛ * constants.vapor.heat_capacity +
+          qˡ * constants.liquid.heat_capacity + qⁱ * constants.ice.heat_capacity
+    L = constants.liquid.reference_latent_heat * qˡ + constants.ice.reference_latent_heat * qⁱ
+    return (T - L / cᵖᵐ) * (pˢᵗ / p)^(Rᵐ / cᵖᵐ)
+end
 
 @inline total_water_specific_humidity(qᵛ, qˡ, qⁱ) = qᵛ + qˡ + qⁱ
 
@@ -38,8 +42,7 @@ ice + snow), and pressure `p` (all `Field`s on a common grid) — to the
 prognostic fields integrated by Breeze's `CompressibleDynamics`:
 
   - density,                          `ρ   = p / (Rᵐ T)`,   with `Rᵐ = (1 − qᵗ) Rᵈ + qᵛ Rᵛ`
-  - liquid-ice potential temperature, `θˡⁱ = θ (1 − (Lᵥ qˡ + Lₛ qⁱ) / (cₚᵈ T))`,
-    with `θ = T (pˢᵗ/p)^(Rᵈ/cₚᵈ)`
+  - liquid-ice potential temperature, `θˡⁱ = (T − (Lᵥ qˡ + Lₛ qⁱ) / cₚᵐ) (pˢᵗ/p)^(Rᵐ/cₚᵐ)`,
   - total-water specific humidity,    `qᵗ  = qᵛ + qˡ + qⁱ`
 
 `qˡ`/`qⁱ` load the density through Breeze's mixture gas constant and set `qᵗ`
@@ -57,12 +60,9 @@ function NumericalEarth.Atmospheres.breeze_prognostic_state(constants::Thermodyn
                                                             T, qᵛ, qˡ, qⁱ, p)
     Rᵈ  = dry_air_gas_constant(constants)
     Rᵛ  = vapor_gas_constant(constants)
-    cᵖᵈ = constants.dry_air.heat_capacity
-    ℒˡ  = constants.liquid.reference_latent_heat
-    ℒⁱ  = constants.ice.reference_latent_heat
 
     ρ   = Field(air_density(T, qᵛ, qˡ, qⁱ, p, Rᵈ, Rᵛ))
-    θˡⁱ = Field(liquid_ice_potential_temperature(T, qˡ, qⁱ, p, pˢᵗ, Rᵈ, cᵖᵈ, ℒˡ, ℒⁱ))
+    θˡⁱ = Field(liquid_ice_potential_temperature(T, qᵛ, qˡ, qⁱ, p, pˢᵗ, constants))
     qᵗ  = Field(total_water_specific_humidity(qᵛ, qˡ, qⁱ))
 
     compute!(ρ)
