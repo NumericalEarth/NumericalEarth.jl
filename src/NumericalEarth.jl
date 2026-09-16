@@ -146,6 +146,7 @@ export
     breeze_prognostic_state,
     hydrostatic_pressure_from_surface,
     ocean_simulation,
+    river_mouth_vertical_diffusivity,
     sea_ice_simulation,
     default_sea_ice,
     initialize!,
@@ -251,7 +252,6 @@ include("Atmospheres/Atmospheres.jl")
 include("Lands/Lands.jl")
 include("Radiations/Radiations.jl")
 include("SeaIces/SeaIces.jl")
-include("InitialConditions/InitialConditions.jl")
 include("DataWrangling/DataWrangling.jl")
 include("Bathymetry/Bathymetry.jl")
 include("Diagnostics/Diagnostics.jl")
@@ -261,7 +261,6 @@ using .Grids
 using .DataWrangling
 using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55
 using .Bathymetry
-using .InitialConditions
 using .EarthSystemModels
 using .Atmospheres
 using .Lands
