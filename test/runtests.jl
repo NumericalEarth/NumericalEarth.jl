@@ -54,7 +54,7 @@ if filter_tests!(testsuite, args)
         end
     end
 
-    delete!(testsuite, "test_reactant")
+    delete!(testsuite, "reactant/test_reactant")
     delete!(testsuite, "test_veros") # Veros seems to have introduce a pypi conflict issue; temporarily removing from CI
 
     if gpu_test

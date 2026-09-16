@@ -12,6 +12,7 @@ using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path, first_
 download_AVISO_cache::String = ""
 function __init__()
     global download_AVISO_cache = DataWrangling.download_cache("AVISO")
+    return nothing
 end
 
 abstract type AVISODataset end
@@ -97,12 +98,6 @@ function DataWrangling.metadata_filename(::AVISOMonthly, name, date, region)
     var = AVISO_monthly_dataset_variable_names[name]
     return string(var, "_AVISOMonthly_", Dates.format(date, "yyyy-mm-dd"), ".nc")
 end
-
-function inpainted_metadata_filename(metadata::Metadatum{<:AVISODataset})
-    return replace(metadata.filename, ".nc" => "_inpainted.jld2")
-end
-
-DataWrangling.inpainted_metadata_path(metadata::Metadatum{<:AVISODataset}) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 const AVISOMetadata{D} = Metadata{<:AVISODataset, D}
 const AVISOMetadatum = Metadatum{<:AVISODataset}
