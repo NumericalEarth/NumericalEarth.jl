@@ -127,7 +127,7 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     qᵛ = specific_humidity(atmosphere)
 
     # Breeze's diagnosed vapor mass fraction, not the scheme-dependent moisture prognostic;
-    # `dynamics_pressure` gives the per-column pressure (a single scalar `surface_pressure`
+    # `dynamics_pressure` gives the per-column pressure (a single scalar `base_pressure`
     # would bias fluxes over terrain).
     p = dynamics_pressure(atmosphere.dynamics)
 

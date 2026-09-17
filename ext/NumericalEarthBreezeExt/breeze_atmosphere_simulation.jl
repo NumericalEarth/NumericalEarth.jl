@@ -40,10 +40,10 @@ end
 
 """
     atmosphere_model(grid;
-                     surface_pressure = 101325,
+                     base_pressure = 101325,
                      potential_temperature = 285,
                      thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
-                     dynamics = CompressibleDynamics(; base_pressure = surface_pressure,
+                     dynamics = CompressibleDynamics(; base_pressure,
                                                      reference_potential_temperature = potential_temperature),
                      microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
                      momentum_advection = WENO(order=9),
@@ -61,7 +61,7 @@ the role of [`ocean_simulation`](@ref)).
 
 When `initialize` (the default) and `dynamics isa CompressibleDynamics`, the returned model is
 set to a resting, hydrostatically balanced state at the reference `potential_temperature` and
-`surface_pressure`, so its density is valid for anything that divides by it (e.g. the MOST
+`base_pressure`, so its density is valid for anything that divides by it (e.g. the MOST
 surface-flux coupling). `AnelasticDynamics` needs no such step: its `reference_state` already
 prescribes a valid resting density, and zero prognostic perturbation is by construction the
 resting hydrostatically balanced state. Pass `initialize = false` when a caller derives the full
@@ -86,10 +86,10 @@ extension), which derives the lateral BCs and Davies relaxation from the parent 
 in a `NestedModel`.
 """
 function NumericalEarth.Atmospheres.atmosphere_model(grid;
-                                                     surface_pressure = 101325,
+                                                     base_pressure = 101325,
                                                      potential_temperature = 285,
                                                      thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
-                                                     dynamics = CompressibleDynamics(; base_pressure = surface_pressure,
+                                                     dynamics = CompressibleDynamics(; base_pressure,
                                                                                      reference_potential_temperature = potential_temperature),
                                                      microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
                                                      momentum_advection = Oceananigans.WENO(order=9),
