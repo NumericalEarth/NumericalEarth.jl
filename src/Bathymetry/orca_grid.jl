@@ -359,8 +359,7 @@ end
 # result. Stays on the host: a distributed `set!` partitions a global-size `Array`, but not a `CuArray`.
 function global_orca_bottom_height(read_global_bottom_height, grid, arch, FT, major_basins)
 
-    grid isa DistributedGrid ||
-        return remove_minor_orca_basins(read_global_bottom_height(), major_basins)
+    grid isa DistributedGrid || return remove_minor_orca_basins(read_global_bottom_height(), major_basins)
 
     bottom_height = if arch.local_rank == 0
         convert(Matrix{FT}, remove_minor_orca_basins(read_global_bottom_height(), major_basins))
