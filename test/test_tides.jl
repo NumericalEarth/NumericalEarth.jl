@@ -60,9 +60,30 @@ function tidal_constants(times, series, harmonics)
     return (amplitude = sqrt(cosine^2 + sine^2) / f, phase_lag = mod(atan(-sine, cosine), 2π))
 end
 
+# NOAA CO-OPS published angular speeds [° per hour], an independent source for the frequencies that
+# `earth_tidal_harmonics` builds out of the constituents' astronomical arguments.
+const noaa_speeds = (M2 = 28.9841042, S2 = 30.0,       N2 = 28.4397295, K2 = 30.0821373,
+                     K1 = 15.0410686, O1 = 13.9430356, P1 = 14.9589314, Q1 = 13.3986609,
+                     Mf =  1.0980331, Mm =  0.5443747)
+
+@testset "Earth tidal astronomy" begin
+    harmonics = earth_tidal_harmonics(DateTime(2019, 4, 1))
+
+    speeds = rad2deg.(harmonics.frequencies) .* 3600
+    for (name, speed) in zip(harmonics.constituents, speeds)
+        @test isapprox(speed, noaa_speeds[name]; rtol = 1e-7)
+    end
+
+    # The phases are the equilibrium arguments at the reference date, so they must advance with the
+    # frequencies: this is what keeps the body force and the boundary tide in phase with each other.
+    later = earth_tidal_harmonics(DateTime(2019, 4, 1, 6))
+    drift = @. mod(later.phases - harmonics.phases - harmonics.frequencies * 6 * 3600, 2π)
+    @test all(@. min(drift, 2π - drift) < 1e-4)
+end
+
 @testset "Tidal boundary conditions" begin
     for arch in test_architectures
-        harmonics = TidalHarmonics(DateTime(2019, 4, 1); constituents = (:M2,))
+        harmonics = earth_tidal_harmonics(DateTime(2019, 4, 1); constituents = (:M2,))
         period = 2π / first(harmonics.frequencies)
         amplitude = 0.5
         dir = write_synthetic_atlas(mktempdir(), harmonics; amplitude)

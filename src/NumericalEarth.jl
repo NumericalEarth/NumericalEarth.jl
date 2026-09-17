@@ -148,6 +148,8 @@ export
     hydrostatic_pressure_from_surface,
     ocean_simulation,
     river_mouth_vertical_diffusivity,
+    earth_tidal_harmonics,
+    earth_tidal_constituents,
     sea_ice_simulation,
     default_sea_ice,
     initialize!,
