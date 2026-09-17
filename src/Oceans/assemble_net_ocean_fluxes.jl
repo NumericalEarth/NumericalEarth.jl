@@ -16,7 +16,6 @@ EarthSystemModels.update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel,
 function EarthSystemModels.update_net_fluxes!(coupled_model, ocean::OceananigansModelSimulations)
     update_net_ocean_fluxes!(coupled_model, ocean, ocean.model.grid)
     update_net_ocean_biogeochemical_fluxes!(coupled_model, ocean.model.biogeochemistry, ocean, ocean.model.grid)
-
     return nothing
 end
 

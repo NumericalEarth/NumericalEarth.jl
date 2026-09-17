@@ -133,20 +133,16 @@ end
 
 # Unrolled over the names in the type, so each `getindex` compiles to a `getfield`
 # on a literal symbol and the kernel stays statically resolvable on GPU.
-@inline function update_tracer_states!(i, j, surface_atmos_state, atmos_tracers::NamedTuple{names},
-                                       atmos_args, t_itp) where names
-
+@inline function update_tracer_states!(i, j, surface_atmos_state, atmos_tracers::NamedTuple{names}, atmos_args, t_itp) where names
     ntuple(Val(length(names))) do n
         name = names[n]
         update_tracer_state!(i, j, surface_atmos_state[name], atmos_tracers[name], atmos_args, t_itp)
     end
-
     return nothing
 end
 
 @inline function update_tracer_state!(i, j, state, tracer, atmos_args, t_itp)
     @inbounds state[i, j, 1] = interp_atmos_time_series(tracer, atmos_args...)
-
     return nothing
 end
 
@@ -155,7 +151,6 @@ end
 @inline function update_tracer_state!(i, j, state, zero_D_fts::FTS0, atmos_args, t_itp)
     fi = FractionalIndices(nothing, nothing, nothing)
     @inbounds state[1, 1, 1] = interpolate(fi, t_itp, zero_D_fts, zero_D_fts.backend, zero_D_fts.time_indexing)
-
     return nothing
 end
 

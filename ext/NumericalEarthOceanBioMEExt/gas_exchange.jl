@@ -44,9 +44,7 @@ biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{1}; kwargs.
 
 function biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{N}; kwargs...) where N
     names = carbon_replicate_names(Val(N))
-
     exchanges = ntuple(n -> carbon_dioxide_exchange(exchanger, Symbol(:DIC, n), Symbol(:Alk, n); kwargs...), Val(N))
-
     return NamedTuple{names}(exchanges)
 end
 
@@ -125,13 +123,11 @@ end
 
 @inline function compute_gas_exchange!(i, j, grid, clock, ::Oxygen, fluxes, ℵ, ocean_tracers, exchangers)
     @inbounds fluxes.O₂[i, j, 1] = exchangers.O₂(i, j, grid, clock, ocean_tracers) * (1 - ℵ)
-
     return nothing
 end
 
 @inline function compute_gas_exchange!(i, j, grid, clock, ::AbstractInorganicCarbon{1}, fluxes, ℵ, ocean_tracers, exchangers)
     @inbounds fluxes.DIC[i, j, 1] = exchangers.DIC(i, j, grid, clock, ocean_tracers) * (1 - ℵ)
-
     return nothing
 end
 
@@ -139,7 +135,6 @@ end
 @generated function compute_gas_exchange!(i, j, grid, clock, ::AbstractInorganicCarbon{N}, fluxes, ℵ, ocean_tracers, exchangers) where N
     exprs = map(1:N) do n
         DIC = Symbol(:DIC, n)
-
         :(@inbounds fluxes.$DIC[i, j, 1] = exchangers.$DIC(i, j, grid, clock, ocean_tracers) * (1 - ℵ))
     end
 

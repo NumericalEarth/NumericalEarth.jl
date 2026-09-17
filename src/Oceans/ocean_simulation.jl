@@ -521,18 +521,15 @@ function hydrostatic_ocean_simulation(grid;
 
     # Freshwater heat content is `Σᵢ Tᵢ Jʷᵢ`, the Freshwater salinity content is assumed to be 0 for the moment (no salinity for incoming freshwater)
     freshwater_heat_content = Field{Center, Center, Nothing}(grid)
-    default_freshwater_tracer_content = NamedTuple(name => name === :T ? freshwater_heat_content : ZeroField()
-                                                    for name in tracers)
+    default_freshwater_tracer_content = NamedTuple(name => name === :T ? freshwater_heat_content : ZeroField() for name in tracers)
     freshwater_tracer_content = merge(default_freshwater_tracer_content, freshwater_tracer_content)
 
     u_top_bc = build_top_bc(τˣ, λˣ, additional.u)
     v_top_bc = build_top_bc(τʸ, λʸ, additional.v)
 
     flux_tracers = (:T, :S, surface_exchanged_tracers...)
-    tracer_top_fluxes = NamedTuple(name => name ∈ flux_tracers ? Field{Center, Center, Nothing}(grid) : ZeroField()
-                                    for name in tracers)
-    tracer_top_bcs = NamedTuple(name => build_tracer_top_bc(tracer_top_fluxes[name], Jʷ, freshwater_tracer_content[name],
-                                                             additional[name], name)
+    tracer_top_fluxes = NamedTuple(name => name ∈ flux_tracers ? Field{Center, Center, Nothing}(grid) : ZeroField() for name in tracers)
+    tracer_top_bcs = NamedTuple(name => build_tracer_top_bc(tracer_top_fluxes[name], Jʷ, freshwater_tracer_content[name], additional[name], name)
                                 for name in tracers)
 
     drag_parameters = (μ = bottom_drag_coefficient, ub = bottom_drag_background_velocity)
