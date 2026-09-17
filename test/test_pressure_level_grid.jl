@@ -3,6 +3,7 @@ include("runtests_setup.jl")
 using Oceananigans
 using Oceananigans.Fields: instantiated_location
 using Oceananigans.Grids: Flat, Bounded, topology
+using Oceananigans.Fields: _fractional_indices
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
 using Statistics
 
@@ -232,6 +233,30 @@ for arch in test_architectures
             @test znodes(grid, Center()) ≈ [3000.0, 6000.0, 9000.0, 12000.0]
             # Lz = max - min = 20*1000 - 1*1000 = 19000.
             @test grid.Lz ≈ 19000.0
+        end
+
+        @testset "the column is picked by nearest node, not by truncation" begin
+            # `fractional_y_index` returns a node index a few ulp below the integer for most nodes,
+            # so truncating drops a whole column. No LCC here: this is the plain lat-lon path.
+            Nx, Ny, Nz = 4, 3, 5
+            g = 9.80665
+            height(j, k) = 100.0j + 400.0 * (k - 1)
+
+            Φ_grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny, Nz),
+                                           longitude = (0, 1), latitude = (30, 44), z = (0, 1))
+            Φ = CenterField(Φ_grid)
+            set!(Φ, [g * height(j, k) for i in 1:Nx, j in 1:Ny, k in 1:Nz])
+            plvd = PressureLevelVerticalDiscretization(Φ; gravitational_acceleration = g)
+            grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny, Nz),
+                                         longitude = (0, 1), latitude = (30, 44), z = plvd)
+            ℓ = (Center(), Center(), Center())
+
+            @allowscalar for j in 1:Ny, z in (700.0, 1100.0)
+                λ = Oceananigans.Grids.λnode(1, j, 1, grid, ℓ...)
+                φ = Oceananigans.Grids.φnode(1, j, 1, grid, ℓ...)
+                idx = _fractional_indices((λ, φ, z), grid, ℓ...)
+                @test height(j, 1) + 400.0 * (idx.k - 1) ≈ z
+            end
         end
 
         @testset "TimeSeriesInterpolation-backed Φ heights follow the clock" begin
