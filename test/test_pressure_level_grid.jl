@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using Oceananigans
 using Oceananigans.Fields: instantiated_location
 using Oceananigans.Grids: Flat, Bounded, topology
-using Oceananigans.Fields: _fractional_indices
+using Oceananigans.Fields: _fractional_indices, fractional_z_index
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
 using Statistics
 
@@ -284,6 +284,44 @@ for arch in test_architectures
                 @test rnode(1, 1, 2, grid, ℓ...) ≈ 4000.0    # same grid, later snapshot → 4 km
                 clock.time = 5.0
                 @test rnode(1, 1, 2, grid, ℓ...) ≈ 3000.0    # linear-in-time between snapshots
+            end
+        end
+        @testset "Lambert-conformal horizontal composes with the per-column vertical" begin
+            # A LambertConformalConicGrid specializes `_fractional_indices` on the horizontal, and
+            # that method is more specific than the PressureLevelGrid one. Without a joint method it
+            # wins outright and the vertical silently uses the column-mean profile.
+            Nx, Ny, Nz = 8, 6, 5
+            g = 9.80665
+            lcc_kw = (; size = (Nx, Ny, Nz), center = (-105, 40), spacing = 13545.0,
+                        standard_parallel = 25.0, warn = false)
+
+            # Column i spans 100i to 100i + 1600 m, so the columns vary laterally.
+            height(i, k) = 100.0i + 400.0 * (k - 1)
+
+            placeholder = LambertConformalConicGrid(arch, Float64; z = (0, 1), lcc_kw...)
+            Φ = CenterField(placeholder)
+            set!(Φ, [g * height(i, k) for i in 1:Nx, j in 1:Ny, k in 1:Nz])
+            plvd = PressureLevelVerticalDiscretization(Φ; gravitational_acceleration = g)
+            grid = LambertConformalConicGrid(arch, Float64; z = plvd, lcc_kw...)
+
+            @test grid isa PressureLevelGrid
+            ℓ = (Center(), Center(), Center())
+
+            @allowscalar for (i, z) in ((1, 300.0), (3, 400.0), (3, 1000.0))
+                λ = Oceananigans.Grids.λnode(i, 1, 1, grid, ℓ...)
+                φ = Oceananigans.Grids.φnode(i, 1, 1, grid, ℓ...)
+                idx = _fractional_indices((λ, φ, z), grid, ℓ...)
+                # The column is linear in k, so the fractional index inverts exactly.
+                @test height(i, 1) + 400.0 * (idx.k - 1) ≈ z
+                # And it is the column, not the domain mean, which is what the generic path reads.
+                i > 1 && @test !isapprox(idx.k, fractional_z_index(z, ℓ, grid))
+            end
+
+            # Above the column top, clamped rather than extrapolated off the end.
+            @allowscalar begin
+                λ = Oceananigans.Grids.λnode(3, 1, 1, grid, ℓ...)
+                φ = Oceananigans.Grids.φnode(3, 1, 1, grid, ℓ...)
+                @test _fractional_indices((λ, φ, 1.0e5), grid, ℓ...).k ≈ Nz
             end
         end
     end

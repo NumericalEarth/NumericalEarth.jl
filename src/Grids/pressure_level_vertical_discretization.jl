@@ -8,6 +8,12 @@ using Oceananigans: instantiated_location
 using Oceananigans.Fields: Field, compute!, interior
 using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Center, Face, Flat, LatitudeLongitudeGrid, topology
+# TODO: `lcc_fractional_indices` is not exported by Oceananigans, so an upstream rename would break
+# this at load time with no deprecation. Reimplementing it here from the exported `lcc_forward` plus
+# `grid.conformal_mapping` would duplicate the Center/Face node offsets, which is worse. Ask upstream
+# to export it, or to provide a `horizontal_fractional_indices` hook that vertical coordinates can
+# compose with instead of competing against (see the discussion in NumericalEarth #508).
+using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid, lcc_fractional_indices
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
 using Oceananigans.Utils: launch!
 
@@ -255,6 +261,26 @@ end
                                       grid::PressureLevelGrid, ℓx, ℓy, ℓz)
     ii = fractional_x_index(x, (ℓx, ℓy, ℓz), grid)
     jj = fractional_y_index(y, (ℓx, ℓy, ℓz), grid)
+    kk = column_fractional_z_index(z, ii, jj, grid)
+    return FractionalIndices(ii, jj, kk)
+end
+
+# A `LambertConformalConicGrid` specializes `_fractional_indices` on the *horizontal*: its projected
+# axes are not separable, so it cannot route through `fractional_x_index`/`fractional_y_index` the way
+# a `LatitudeLongitudeGrid` does. That method is more specific than the `PressureLevelGrid` one above,
+# so on a grid that is both it wins outright — no ambiguity, no error — and the vertical falls back to
+# the generic `fractional_z_index`, which reads the column-*mean* `rnodes` profile. Compose the two
+# instead: the closed-form horizontal, and this file's per-column bisection for `kk`.
+const LCCPressureLevelGrid =
+    LambertConformalConicGrid{<:Any, <:Any, <:Any, <:Any, <:PressureLevelVerticalDiscretization}
+
+@inline function _fractional_indices(
+        (λ, φ, z)::NTuple{3, Any}, grid::LCCPressureLevelGrid,
+        ℓx::Union{Center, Face}, ℓy::Union{Center, Face}, ℓz::Union{Center, Face}
+    )
+    ii, jj = lcc_fractional_indices(λ, φ, grid, ℓx, ℓy)
+    # Face-located `ii`/`jj` pick the column half a cell over, as they do on the lat-lon path above:
+    # `column_fractional_z_index` reads cell-center heights whatever the horizontal location.
     kk = column_fractional_z_index(z, ii, jj, grid)
     return FractionalIndices(ii, jj, kk)
 end
