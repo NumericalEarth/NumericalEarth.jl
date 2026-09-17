@@ -1,7 +1,8 @@
 include("runtests_setup.jl")
 
 using NumericalEarth
-using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model
+using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model,
+                                   blend_parent_terrain!, blend_frame
 using Oceananigans
 using Oceananigans: prognostic_fields
 using Oceananigans.OutputReaders: interpolating_time_indices, memory_index
@@ -696,4 +697,39 @@ end
     Δxf = minimum_xspacing(fine,   Center(), Center(), Center())
     @test isapprox(wc * Δxc, 60_000; rtol = 0.2)
     @test isapprox(wf * Δxf, 60_000; rtol = 0.2)
+end
+
+# The blend frame follows the *domain* edge. Serial half of the regression; the distributed half —
+# that a `Partition` does not ring each rank's own subdomain — is in `test_distributed_utils.jl`.
+@testset "blend_parent_terrain!: the blend frame is the domain frame" begin
+    grid = RectilinearGrid(size = (24, 18, 1), x = (0, 24), y = (0, 18), z = (0, 1),
+                           topology = (Bounded, Bounded, Bounded))
+    Nx, Ny = size(grid, 1), size(grid, 2)
+    width = 3
+
+    elevation = Field{Center, Center, Nothing}(grid)
+    parent_surface = Field{Center, Center, Nothing}(grid)
+    set!(elevation, (x, y) -> 1000 + 2x + 3y)
+    set!(parent_surface, (x, y) -> 500 - x + y / 2)
+    child_terrain = Array(interior(elevation, :, :, 1))
+    parent_terrain = Array(interior(parent_surface, :, :, 1))
+
+    # serial fallback: no rank offset, and the global size is the local size
+    @test blend_frame(grid) == (0, 0, Nx, Ny)
+
+    blend_parent_terrain!(elevation, parent_surface; width)
+    blended = Array(interior(elevation, :, :, 1))
+
+    # the weight ramps with the global-index distance to the nearest domain edge
+    w = [clamp(min(i - 1, Nx - i, j - 1, Ny - j) / width, 0, 1) for i in 1:Nx, j in 1:Ny]
+    @test blended == w .* child_terrain .+ (1 .- w) .* parent_terrain
+
+    # the domain edge is pure parent orography
+    @test blended[1, :] == parent_terrain[1, :]
+    @test blended[Nx, :] == parent_terrain[Nx, :]
+    @test blended[:, 1] == parent_terrain[:, 1]
+    @test blended[:, Ny] == parent_terrain[:, Ny]
+
+    # everything `width` cells or more from every edge is untouched
+    @test blended[width+1:Nx-width, width+1:Ny-width] == child_terrain[width+1:Nx-width, width+1:Ny-width]
 end
