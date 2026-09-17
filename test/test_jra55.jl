@@ -131,7 +131,7 @@ using NumericalEarth.JRA55: download_JRA55_cache
         @info "Testing save_field_time_series! on $A..."
         filepath = "JRA55_downwelling_shortwave_radiation_test_$(string(typeof(arch))).jld2" # different filename for each arch so that the CPU and GPU tests do not crash
         NumericalEarth.DataWrangling.save_field_time_series!(target_fts, path=filepath, name="Qsw",
-                                                         overwrite_existing = true)
+                                                             overwrite_files=true)
         @test isfile(filepath)
 
         Qswt = FieldTimeSeries(filepath, "Qsw")
