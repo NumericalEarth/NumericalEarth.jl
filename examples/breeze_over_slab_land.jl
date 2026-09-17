@@ -325,7 +325,7 @@ qˡ = atmos.model.microphysical_fields.qˡ
 simulation.output_writers[:atmos] = JLD2Writer(model, (; w, T, qˡ);
                                                filename = "breeze_slab_land_atmos",
                                                schedule = TimeInterval(10minutes),
-                                               overwrite_existing = true)
+                                               overwrite_files = true)
 
 simulation.output_writers[:land] = JLD2Writer(model,
                                               (; T = slab_land.temperature,
@@ -333,7 +333,7 @@ simulation.output_writers[:land] = JLD2Writer(model,
                                                   𝒮 = slab_land.saturation);
                                               filename = "breeze_slab_land_surface",
                                               schedule = TimeInterval(10minutes),
-                                              overwrite_existing = true)
+                                              overwrite_files = true)
 
 # ## Run
 
