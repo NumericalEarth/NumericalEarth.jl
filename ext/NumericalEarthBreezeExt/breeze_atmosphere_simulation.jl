@@ -150,7 +150,7 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
     # applying this compressible-only set! corrupts it in place (Breeze's set_to_mean.jl copies
     # between mismatched-shape Fields), NaN-ing every field that divides by density.
     initialize && dynamics isa CompressibleDynamics &&
-        set!(model; θ = potential_temperature, ρ = HydrostaticallyBalancedDensity(; surface_pressure))
+        set!(model; θ = potential_temperature, ρ = HydrostaticallyBalancedDensity())
 
     return model
 end
