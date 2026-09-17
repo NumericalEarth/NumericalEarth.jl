@@ -304,8 +304,7 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Evaluate `restoring.flux` from the current model state and subtract its
-area-weighted mean over wet cells.
+Evaluate `restoring.flux` from the current model state and subtract its area-weighted mean over wet cells.
 """
 function update_restoring_flux!(restoring::ConservativeSurfaceFluxRestoring, model)
     grid = model.grid
