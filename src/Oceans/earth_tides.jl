@@ -1,3 +1,5 @@
+using DocStringExtensions: TYPEDSIGNATURES
+
 #####
 ##### Earth's tidal astronomy
 #####
