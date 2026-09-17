@@ -19,6 +19,7 @@ import ..DataWrangling:
 download_GEBCO_cache::String = ""
 function __init__()
     global download_GEBCO_cache = DataWrangling.download_cache("GEBCO")
+    return nothing
 end
 
 const GEBCO_bathymetry_variable_names = Dict(:bottom_height => "elevation")
