@@ -8,6 +8,12 @@ using Oceananigans: instantiated_location
 using Oceananigans.Fields: Field, compute!, interior
 using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Center, Face, Flat, LatitudeLongitudeGrid, topology
+# TODO: `lcc_fractional_indices` is not exported by Oceananigans, so an upstream rename would break
+# this at load time with no deprecation. Reimplementing it here from the exported `lcc_forward` plus
+# `grid.conformal_mapping` would duplicate the Center/Face node offsets, which is worse. Ask upstream
+# to export it, or to provide a `horizontal_fractional_indices` hook that vertical coordinates can
+# compose with instead of competing against (see the discussion in NumericalEarth #508).
+using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid, lcc_fractional_indices
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
 using Oceananigans.Utils: launch!
 
@@ -259,6 +265,26 @@ end
     return FractionalIndices(ii, jj, kk)
 end
 
+# A `LambertConformalConicGrid` specializes `_fractional_indices` on the *horizontal*: its projected
+# axes are not separable, so it cannot route through `fractional_x_index`/`fractional_y_index` the way
+# a `LatitudeLongitudeGrid` does. That method is more specific than the `PressureLevelGrid` one above,
+# so on a grid that is both it wins outright — no ambiguity, no error — and the vertical falls back to
+# the generic `fractional_z_index`, which reads the column-*mean* `rnodes` profile. Compose the two
+# instead: the closed-form horizontal, and this file's per-column bisection for `kk`.
+const LCCPressureLevelGrid =
+    LambertConformalConicGrid{<:Any, <:Any, <:Any, <:Any, <:PressureLevelVerticalDiscretization}
+
+@inline function _fractional_indices(
+        (λ, φ, z)::NTuple{3, Any}, grid::LCCPressureLevelGrid,
+        ℓx::Union{Center, Face}, ℓy::Union{Center, Face}, ℓz::Union{Center, Face}
+    )
+    ii, jj = lcc_fractional_indices(λ, φ, grid, ℓx, ℓy)
+    # Face-located `ii`/`jj` pick the column half a cell over, as they do on the lat-lon path above:
+    # `column_fractional_z_index` reads cell-center heights whatever the horizontal location.
+    kk = column_fractional_z_index(z, ii, jj, grid)
+    return FractionalIndices(ii, jj, kk)
+end
+
 # Column-region source (Flat-Flat-Bounded): there's only one (i,j)=(1,1), so
 # bisect that single column directly. Mirrors the 3-D form's column logic.
 @inline function _fractional_indices((z,)::NTuple{1, Any},
@@ -287,9 +313,21 @@ end
     return k
 end
 
+# `ii`/`jj` arrive as 1-based *node* indices — `ii == 3` means node 3 — which is what both
+# `fractional_x_index` and `LambertConformalConicGrid`'s `lcc_fractional_indices` return. A query
+# placed exactly on a node round-trips through the horizontal map to within a few ulp of the
+# integer, on either side, so truncating drops a whole column whenever that error is negative.
+@inline nearest_column_index(ii::Integer) = Int(ii)   # the column-region path passes literal 1, 1
+
+# `unsafe_trunc(x + 1/2)` rounds half-up for positive `x`. An out-of-domain query can give
+# `x <= 0` or a non-finite `x`, where `unsafe_trunc` is platform-dependent; `clamp` below bounds
+# every outcome into `[1, Nx]`. `unsafe_trunc` rather than `round` for the reason Oceananigans
+# prefers it to `trunc` — GPU safety (CliMA/Oceananigans.jl#828, #997).
+@inline nearest_column_index(ii) = Base.unsafe_trunc(Int, ii + oftype(ii, 0.5))
+
 @inline function column_fractional_z_index(z, ii, jj, grid)
-    i = clamp(Base.unsafe_trunc(Int, ii), 1, grid.Nx)
-    j = clamp(Base.unsafe_trunc(Int, jj), 1, grid.Ny)
+    i = clamp(nearest_column_index(ii), 1, grid.Nx)
+    j = clamp(nearest_column_index(jj), 1, grid.Ny)
     column = ColumnView(grid, i, j)
     low, high = index_binary_search(column, z, grid.Nz)
     z_lo = @inbounds column[low]
