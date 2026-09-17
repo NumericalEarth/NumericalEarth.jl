@@ -136,6 +136,7 @@ export
     ORCAOne, ORCAQuarter, ORCATwelfth,
     ORCAGrid,
     OpenLandMapSoilDB,
+    SoilGrids2,
     GlobalBuildingFootprints3D, building_morphometry,
     GHSBuiltH, GHSBuiltS, GHSBuiltS10m, GHSBuiltS100m,
     first_date, last_date, all_dates,
