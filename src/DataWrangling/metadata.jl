@@ -42,6 +42,14 @@ function BoundingBox(grid::AbstractGrid; padding = 0)
                        latitude  = (all_reduce(min, φ₁, arch) - padding, all_reduce(max, φ₂, arch) + padding))
 end
 
+function BoundingBox(grid::OrthogonalSphericalShellGrid; padding = 0)
+    Nx, Ny, _ = size(grid)
+    λ = grid.λᶠᶠᵃ[1:Nx+1, 1:Ny+1]
+    φ = grid.φᶠᶠᵃ[1:Nx+1, 1:Ny+1]
+    return BoundingBox(longitude = (minimum(λ) - padding, maximum(λ) + padding),
+                       latitude  = (minimum(φ) - padding, maximum(φ) + padding))
+end
+
 """
     bounding_box_intersects(bounds, bbox::BoundingBox)
 
