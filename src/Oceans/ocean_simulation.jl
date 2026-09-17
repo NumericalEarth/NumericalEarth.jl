@@ -195,6 +195,8 @@ end
 
 default_radiative_forcing(grid) = TwoColorRadiation(grid)
 
+default_freshwater_tracer_content(val_name, biogeochemistry) = ZeroField()
+
 # TODO: Specify the grid to a grid on the sphere; otherwise we can provide a different
 # function that requires latitude and longitude etc for computing coriolis=FPlane...
 """
@@ -521,7 +523,10 @@ function hydrostatic_ocean_simulation(grid;
 
     # Freshwater heat content is `Σᵢ Tᵢ Jʷᵢ`, the Freshwater salinity content is assumed to be 0 for the moment (no salinity for incoming freshwater)
     freshwater_heat_content = Field{Center, Center, Nothing}(grid)
-    default_freshwater_tracer_content = NamedTuple(name => name === :T ? freshwater_heat_content : ZeroField() for name in tracers)
+    default_freshwater_tracer_content = 
+        NamedTuple(name => name === :T ? 
+                           freshwater_heat_content : default_freshwater_tracer_content(Val(name), biogeochemistry)
+                   for name in tracers)
     freshwater_tracer_content = merge(default_freshwater_tracer_content, freshwater_tracer_content)
 
     u_top_bc = build_top_bc(τˣ, λˣ, additional.u)
