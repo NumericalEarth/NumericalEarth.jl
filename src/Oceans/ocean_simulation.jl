@@ -523,11 +523,11 @@ function hydrostatic_ocean_simulation(grid;
 
     # Freshwater heat content is `Σᵢ Tᵢ Jʷᵢ`, the Freshwater salinity content is assumed to be 0 for the moment (no salinity for incoming freshwater)
     freshwater_heat_content = Field{Center, Center, Nothing}(grid)
-    default_freshwater_tracer_content = 
+    assumed_freshwater_tracer_content = 
         NamedTuple(name => name === :T ? 
                            freshwater_heat_content : default_freshwater_tracer_content(Val(name), biogeochemistry)
                    for name in tracers)
-    freshwater_tracer_content = merge(default_freshwater_tracer_content, freshwater_tracer_content)
+    freshwater_tracer_content = merge(assumed_freshwater_tracer_content, freshwater_tracer_content)
 
     u_top_bc = build_top_bc(τˣ, λˣ, additional.u)
     v_top_bc = build_top_bc(τʸ, λʸ, additional.v)
