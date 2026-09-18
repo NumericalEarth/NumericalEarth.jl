@@ -7,7 +7,7 @@ using Oceananigans: prognostic_fields
 using Oceananigans.OutputReaders: interpolating_time_indices, memory_index
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location, interpolate!
-using Oceananigans.Operators: extrinsic_vector
+using Oceananigans.Operators: extrinsic_vector, rotation_angle
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
 using Oceananigans.Forcings: MultipleForcings
 using Breeze
@@ -317,7 +317,8 @@ end
     u = CenterField(child_grid); interpolate!(u, ex.prognostic.u[1])
     v = CenterField(child_grid); interpolate!(v, ex.prognostic.v[1])
 
-    @test minimum(abs, interior(v)) > 0.2   # every child column sits east of the central meridian: axes rotated ≥ 1°
+    # The child sits east of its central meridian, so its axes are turned from east at every column.
+    @test all(abs(rotation_angle(i, j, child_grid)) > deg2rad(1) for i in 1:20, j in 1:20)
     for k in 1:4, j in 1:20, i in 1:20
         uₑ, vₑ = extrinsic_vector(i, j, k, child_grid, u, v)
         @test isapprox(uₑ, 10; atol = 1e-2)
