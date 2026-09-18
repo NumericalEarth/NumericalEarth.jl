@@ -659,4 +659,12 @@ function Downloads.download(metadata::CopernicusAlbedoDatasetMetadata; kwargs...
     end
 end
 
+function __init__()
+    if Base.get_extension(NumericalEarth, :NumericalEarthCDSAPIExt) !== nothing
+        @warn "Both CDSAPI and CopernicusClimateDataStore are loaded; both define the ERA5 " *
+              "`Downloads.download` methods, so the extension loaded last is used."
+    end
+    return nothing
+end
+
 end # module NumericalEarthCopernicusClimateDataStoreExt
