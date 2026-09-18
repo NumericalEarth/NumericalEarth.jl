@@ -7,6 +7,7 @@ using Oceananigans: prognostic_fields
 using Oceananigans.OutputReaders: interpolating_time_indices, memory_index
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location, interpolate!
+using Oceananigans.Architectures: on_architecture
 using Oceananigans.Operators: extrinsic_vector, rotation_angle
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
 using Oceananigans.Forcings: MultipleForcings
@@ -298,9 +299,9 @@ end
 
 # A uniform eastward parent wind, carried into a Lambert-conformal child's frame, must still point east
 # when rotated back with the child's own axes.
-@testset "state exchanger rotates parent winds into a Lambert-conformal child's frame" begin
+@testset "state exchanger rotates parent winds into a Lambert-conformal child's frame on $(arch)" for arch in test_architectures
     ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
-    parent_grid = LatitudeLongitudeGrid(size = (16, 16, 4), longitude = (-110, -90), latitude = (30, 48), z = (0, 1),
+    parent_grid = LatitudeLongitudeGrid(arch; size = (16, 16, 4), longitude = (-110, -90), latitude = (30, 48), z = (0, 1),
                                         topology = (Bounded, Bounded, Bounded))
     parent = PrescribedAtmosphere(parent_grid, [0.0, 1.0, 2.0])
     set!(parent.temperature,       (λ, φ, z, t) -> 290)
@@ -309,7 +310,7 @@ end
     set!(parent.velocities.u,      (λ, φ, z, t) -> 10)
     set!(parent.velocities.v,      (λ, φ, z, t) -> 0)
 
-    child_grid = LambertConformalConicGrid(size = (20, 20, 4), x = (200e3, 600e3), y = (-200e3, 200e3),
+    child_grid = LambertConformalConicGrid(arch; size = (20, 20, 4), x = (200e3, 600e3), y = (-200e3, 200e3),
                                            standard_parallels = (33, 45), central_longitude = -100,
                                            latitude_of_origin = 39, z = (0, 1))
     ex = ext.state_exchanger(parent, 1e5, ThermodynamicConstants();
@@ -317,10 +318,12 @@ end
     u = CenterField(child_grid); interpolate!(u, ex.prognostic.u[1])
     v = CenterField(child_grid); interpolate!(v, ex.prognostic.v[1])
 
-    # The child sits east of its central meridian, so its axes are turned from east at every column.
-    @test all(abs(rotation_angle(i, j, child_grid)) > deg2rad(1) for i in 1:20, j in 1:20)
+    grid = on_architecture(CPU(), child_grid)
+    u, v = on_architecture(CPU(), u), on_architecture(CPU(), v)
+    # Every child column lies east of the projection's central meridian (−100°), so its axes are turned from east.
+    @test all(abs(rotation_angle(i, j, grid)) > deg2rad(1) for i in 1:20, j in 1:20)
     for k in 1:4, j in 1:20, i in 1:20
-        uₑ, vₑ = extrinsic_vector(i, j, k, child_grid, u, v)
+        uₑ, vₑ = extrinsic_vector(i, j, k, grid, u, v)
         @test isapprox(uₑ, 10; atol = 1e-2)
         @test isapprox(vₑ, 0; atol = 1e-2)
     end
