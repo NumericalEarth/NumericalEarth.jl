@@ -439,8 +439,8 @@ end
     set!(mask, ext.davies_relaxation_mask(grid, width))
     m = Array(interior(mask, :, :, 1))
     half_cell = ext.SmoothStepRamp()(0.5 / width)
-    @test all(isapprox(m[i, j], half_cell; rtol = 1e-6) for i in 1:Nx for j in (1, Ny))
-    @test all(isapprox(m[i, j], half_cell; rtol = 1e-6) for j in 1:Ny for i in (1, Nx))
+    @test all(isapprox(m[i, j], half_cell) for i in 1:Nx for j in (1, Ny))
+    @test all(isapprox(m[i, j], half_cell) for j in 1:Ny for i in (1, Nx))
     @test m[Nx ÷ 2, Ny ÷ 2] == 0
 
     box = BoundingBox(grid)
