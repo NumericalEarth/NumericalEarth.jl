@@ -30,4 +30,12 @@ include("era5.jl")
 include("glofas.jl")
 include("copernicus_land_albedo.jl")
 
+function __init__()
+    if Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClimateDataStoreExt) !== nothing
+        @warn "Both CDSAPI and CopernicusClimateDataStore are loaded; both define the ERA5 " *
+              "`Downloads.download` methods, so the extension loaded last is used."
+    end
+    return nothing
+end
+
 end # module NumericalEarthCDSAPIExt
