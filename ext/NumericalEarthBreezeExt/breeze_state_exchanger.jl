@@ -20,6 +20,8 @@
 #   ρqᵛ = ρ · qᵛ                                         ← TOTAL-weighted (moisture mass density)
 
 using Oceananigans.Fields: Center, ZeroField, AbstractField
+using Oceananigans.Grids: λnode
+using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid, LambertConformalConic
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, AbstractInMemoryBackend,
                                   time_indices, interpolating_time_indices, extract_field_time_series
@@ -64,9 +66,23 @@ end
 const PrognosticStateFTS = FieldTimeSeries{<:Any, <:Any, <:Any, <:Any, <:PrognosticStateBackend}
 update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
 
+# The child's velocity components follow its grid axes: eastward/northward on a `LatitudeLongitudeGrid`,
+# rotated by the cone convergence angle on a `LambertConformalConicGrid`.
+child_frame(grid) = nothing
+child_frame(grid::LambertConformalConicGrid) = grid.conformal_mapping
+
+@inline rotate_to_child_frame(::Nothing, i, j, k, grid, u, v) = (u, v)
+
+@inline function rotate_to_child_frame(map::LambertConformalConic, i, j, k, grid, u, v)
+    λ = λnode(i, j, k, grid, Center(), Center(), Center())
+    Δλ = deg2rad(λ) - map.central_longitude
+    θ = map.cone_constant * atan(sin(Δλ), cos(Δλ))
+    return u * cos(θ) - v * sin(θ), u * sin(θ) + v * cos(θ)
+end
+
 @kernel function _compute_child_prognostics!(ρᵈ, ρu, ρv, ρθ, ρqᵛ, θ, u, v,
                                              T, qᵛ, qᶜˡ, qʳ, qᶜⁱ, qˢ, p, uₚ, vₚ,
-                                             pˢᵗ, Rᵈ, Rᵛ, cᵖᵈ, ℒˡ, ℒⁱ)
+                                             pˢᵗ, Rᵈ, Rᵛ, cᵖᵈ, ℒˡ, ℒⁱ, grid, frame)
     i, j, k = @index(Global, NTuple)
     @inbounds begin
         Tᵢ  = T[i, j, k]
@@ -79,19 +95,17 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
         qᵗ = qᵛᵢ + qˡ + qⁱ
         θᵢ = liquid_ice_potential_temperature(Tᵢ, qˡ, qⁱ, pᵢ, pˢᵗ, Rᵈ, cᵖᵈ, ℒˡ, ℒⁱ)
 
+        uᵢ, vᵢ = rotate_to_child_frame(frame, i, j, k, grid, uₚ[i, j, k], vₚ[i, j, k])
+
         ρᵈ[i, j, k]  = ρ * (1 - qᵗ)
         ρθ[i, j, k]  = ρᵈ[i, j, k] * θᵢ
-        ρu[i, j, k]  = ρᵈ[i, j, k] * uₚ[i, j, k]
-        ρv[i, j, k]  = ρᵈ[i, j, k] * vₚ[i, j, k]
+        ρu[i, j, k]  = ρᵈ[i, j, k] * uᵢ
+        ρv[i, j, k]  = ρᵈ[i, j, k] * vᵢ
         ρqᵛ[i, j, k] = ρ * qᵛᵢ
 
-        # When performing Davies `Relaxation` to a `PrescribedAtmosphere` parent, we construct
-        # `SpecificForcing`s with these intensive quantities
-        #
-        # Note: we can do a memory optimization here for `parent_atmosphere.velocities.*`
         θ[i, j, k] = θᵢ
-        u[i, j, k] = uₚ[i, j, k]
-        v[i, j, k] = vₚ[i, j, k]
+        u[i, j, k] = uᵢ
+        v[i, j, k] = vᵢ
     end
 end
 
@@ -129,7 +143,7 @@ end
 
 # Fill the derived FTS's resident window with one fused
 # `launch!` per level, reading the parent at the matching resident time index.
-function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, constants, condensates)
+function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, constants, condensates, frame)
     grid = parent_atmosphere.temperature.grid
     arch = architecture(grid)
 
@@ -147,7 +161,7 @@ function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, const
                 source_snapshot(condensates.qᶜⁱ, n), source_snapshot(condensates.qˢ, n),
                 source_snapshot(parent_atmosphere.pressure, n),   # static Field (ERA5) or FTS: both handled
                 parent_atmosphere.velocities.u[n], parent_atmosphere.velocities.v[n],
-                pˢᵗ, Rᵈ, Rᵛ, cᵖᵈ, ℒˡ, ℒⁱ)
+                pˢᵗ, Rᵈ, Rᵛ, cᵖᵈ, ℒˡ, ℒⁱ, grid, frame)
     end
 
     for fts in prognostic
@@ -166,12 +180,13 @@ end
 # child clock, and — when the child clock has crossed into a new parent interval — cycles the derived
 # window forward and recomputes it. The name is direction-neutral for eventual two-way nesting.
 
-struct StateExchanger{P, Pr, C, S, Q}
+struct StateExchanger{P, Pr, C, S, Q, F}
     parent       :: P    # the parent PrescribedAtmosphere (raw ERA5 state)
     prognostic   :: Pr   # NamedTuple of derived child-prognostic FTS on the parent grid
     constants    :: C
     pˢᵗ          :: S
     condensates  :: Q    # NamedTuple (qᶜˡ, qʳ, qᶜⁱ, qˢ); entries may be `nothing` (⇒ `ZeroField`)
+    child_frame  :: F    # `nothing`, or the child's `LambertConformalConic` map
 end
 
 # Diagnostics on the exchanger's density-weighted prognostics at time index `n`, as lazy operations.
@@ -199,14 +214,15 @@ function state_exchanger(parent_atmosphere, pˢᵗ, constants;
                                         qʳ  = parent_atmosphere.microphysical_variables.qʳ,
                                         qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ,
                                         qˢ  = parent_atmosphere.microphysical_variables.qˢ),
-                         time_indices_in_memory = 3)
+                         time_indices_in_memory = 3,
+                         child_grid = nothing)
 
     # Fill any hydrometeor a caller-supplied `condensates` omits with `nothing` (⇒ ZeroField), so the
     # 4-species contract (qᶜˡ, qʳ, qᶜⁱ, qˢ) holds regardless of how many species the source carries.
     condensates = merge((qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing), condensates)
 
     prognostic = child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory)
-    exchanger  = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates)
+    exchanger  = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates, child_frame(child_grid))
     exchange_state!(exchanger, first(parent_atmosphere.temperature.times); force=true)   # fill the initial window
     return exchanger
 end
@@ -249,6 +265,6 @@ function exchange_state!(ex::StateExchanger, time; force=false)
     # when the bracket moves; on every intra-interval child step the recompute would reproduce identical
     # values. Skip it unless the bracket moved (or this is the initial fill) to spare the hot path two
     # parent-grid kernels + halo fills per step.
-    (moved || force) && compute_child_prognostics!(p, parent, ex.pˢᵗ, ex.constants, ex.condensates)
+    (moved || force) && compute_child_prognostics!(p, parent, ex.pˢᵗ, ex.constants, ex.condensates, ex.child_frame)
     return nothing
 end

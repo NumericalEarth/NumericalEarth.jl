@@ -6,7 +6,9 @@ using Oceananigans
 using Oceananigans: prognostic_fields
 using Oceananigans.OutputReaders: interpolating_time_indices, memory_index
 using Oceananigans.Units: Time
-using Oceananigans.Fields: location
+using Oceananigans.Fields: location, interpolate!
+using Oceananigans.Architectures: on_architecture
+using Oceananigans.Operators: extrinsic_vector, rotation_angle
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
 using Oceananigans.Forcings: MultipleForcings
 using Breeze
@@ -293,6 +295,38 @@ end
     @test es.ρv[1] ≈ es.ρᵈ[1] .* es.v[1]
     @test es.u[1]  ≈ parent.velocities.u[1]          # u/v are verbatim parent copies
     @test es.v[1]  ≈ parent.velocities.v[1]
+end
+
+# A uniform eastward parent wind, carried into a Lambert-conformal child's frame, must still point east
+# when rotated back with the child's own axes.
+@testset "state exchanger rotates parent winds into a Lambert-conformal child's frame on $(arch)" for arch in test_architectures
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    parent_grid = LatitudeLongitudeGrid(arch; size = (16, 16, 4), longitude = (-110, -90), latitude = (30, 48), z = (0, 1),
+                                        topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(parent_grid, [0.0, 1.0, 2.0])
+    set!(parent.temperature,       (λ, φ, z, t) -> 290)
+    set!(parent.specific_humidity, (λ, φ, z, t) -> 0.005)
+    set!(parent.pressure,          (λ, φ, z, t) -> 9e4)
+    set!(parent.velocities.u,      (λ, φ, z, t) -> 10)
+    set!(parent.velocities.v,      (λ, φ, z, t) -> 0)
+
+    child_grid = LambertConformalConicGrid(arch; size = (20, 20, 4), x = (200e3, 600e3), y = (-200e3, 200e3),
+                                           standard_parallels = (33, 45), central_longitude = -100,
+                                           latitude_of_origin = 39, z = (0, 1))
+    ex = ext.state_exchanger(parent, 1e5, ThermodynamicConstants();
+                             condensates = (qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing), child_grid)
+    u = CenterField(child_grid); interpolate!(u, ex.prognostic.u[1])
+    v = CenterField(child_grid); interpolate!(v, ex.prognostic.v[1])
+
+    grid = on_architecture(CPU(), child_grid)
+    u, v = on_architecture(CPU(), u), on_architecture(CPU(), v)
+    # Every child column lies east of the projection's central meridian (−100°), so its axes are turned from east.
+    @test all(abs(rotation_angle(i, j, grid)) > deg2rad(1) for i in 1:20, j in 1:20)
+    for k in 1:4, j in 1:20, i in 1:20
+        uₑ, vₑ = extrinsic_vector(i, j, k, grid, u, v)
+        @test isapprox(uₑ, 10; atol = 1e-2)
+        @test isapprox(vₑ, 0; atol = 1e-2)
+    end
 end
 
 @testset "Breeze AtmosphereModel as a NestedSimulation child on $(arch)" for arch in test_architectures
