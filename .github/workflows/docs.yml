@@ -38,6 +38,9 @@ jobs:
     name: Build documentation
     runs-on: [self-hosted, tartarus, gpu-3]
     timeout-minutes: 1440
+    # CondaPkg resolves against every environment on the load path, and the depot of this runner is shared.
+    env:
+      JULIA_LOAD_PATH: "@:@stdlib"
     permissions:
       actions: write
       contents: write
@@ -57,8 +60,9 @@ jobs:
               NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=false
           fi
           echo "NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=${NUMERICAL_EARTH_BUILD_ALL_EXAMPLES}" | tee "${GITHUB_ENV}"
+      # The Python extensions resolve their CondaPkg environment while precompiling, which only works in docs.
       - name: Instantiate and precompile
-        shell: julia --project --color=yes {0}
+        shell: julia --project=docs --color=yes {0}
         run: |
           using Pkg
           Pkg.instantiate(verbose=true)
@@ -66,8 +70,6 @@ jobs:
 
           using CUDA
           CUDA.precompile_runtime()
-      - name: Instantiate docs folder
-        run: julia --project=docs --color=yes -e 'using Pkg; Pkg.instantiate(verbose=true)'
       - name: Install Veros in docs CondaPkg environment
         run: |
           julia --project=docs --color=yes -e '
