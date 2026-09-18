@@ -2,11 +2,14 @@ include("runtests_setup.jl")
 
 using NumericalEarth
 using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model
+using NumericalEarth.DataWrangling: BoundingBox
 using Oceananigans
 using Oceananigans: prognostic_fields
 using Oceananigans.OutputReaders: interpolating_time_indices, memory_index
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location
+using Oceananigans.Grids: node
+using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
 using Oceananigans.Forcings: MultipleForcings
 using Breeze
@@ -422,6 +425,29 @@ end
     @test ρθ_forcing isa MultipleForcings
     @test length(ρθ_forcing.forcings) == 2                       # Davies relaxation + the caller's θ forcing
     @test all(f -> f isa SpecificForcing, ρθ_forcing.forcings)   # both ρᵈ-weighted at kernel time
+end
+
+# On a Lambert-conformal child the relaxation zone follows the panel's walls (constant projected x or y),
+# and the parent region is the lon/lat hull of the panel's faces.
+@testset "Davies mask and parent region follow a Lambert-conformal child's walls on $(arch)" for arch in test_architectures
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    Nx, Ny, width = 40, 30, 5
+    grid = LambertConformalConicGrid(arch; size = (Nx, Ny, 2), center = (-97.5, 38.5), spacing = 13e3,
+                                     standard_parallel = 38.5, z = (0, 1))
+
+    mask = CenterField(grid)
+    set!(mask, ext.davies_relaxation_mask(grid, width))
+    m = Array(interior(mask, :, :, 1))
+    half_cell = ext.SmoothStepRamp()(0.5 / width)
+    @test all(isapprox(m[i, j], half_cell) for i in 1:Nx for j in (1, Ny))
+    @test all(isapprox(m[i, j], half_cell) for j in 1:Ny for i in (1, Nx))
+    @test m[Nx ÷ 2, Ny ÷ 2] == 0
+
+    box = BoundingBox(grid)
+    cpu_grid = on_architecture(CPU(), grid)
+    faces = [node(i, j, 1, cpu_grid, Face(), Face(), Center()) for i in 1:Nx+1, j in 1:Ny+1]
+    @test box.longitude == extrema(first, faces)
+    @test box.latitude  == extrema(x -> x[2], faces)
 end
 
 # The exchanger's 3-level window advances as the clock crosses parent intervals and back, with

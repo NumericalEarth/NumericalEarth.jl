@@ -37,6 +37,7 @@ using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, interior, interpolate!
 using Oceananigans.Forcings: Relaxation
 using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
+using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid, lcc_forward
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 
@@ -92,6 +93,23 @@ function davies_relaxation_mask(grid, width; ramp = SmoothStepRamp())
     φ₂ = all_reduce(max, φ₂ˡ, arch)
     return (λ, φ, z) -> begin
         d = min(λ - λ₁, λ₂ - λ, φ - φ₁, φ₂ - φ)
+        s = clamp(d / w, zero(d), one(d))
+        return oftype(d, ramp(s))
+    end
+end
+
+# On a Lambert-conformal child the walls are lines of constant projected x or y, so the distance to the
+# nearest wall is measured in the projection.
+function davies_relaxation_mask(grid::LambertConformalConicGrid, width; ramp = SmoothStepRamp())
+    map = grid.conformal_mapping
+    Nx, Ny, _ = size(grid)
+    x₁, y₁ = map.x₁, map.y₁
+    x₂ = x₁ + Nx * map.Δx
+    y₂ = y₁ + Ny * map.Δy
+    w = width * max(map.Δx, map.Δy)
+    return (λ, φ, z) -> begin
+        x, y = lcc_forward(map, λ, φ)
+        d = min(x - x₁, x₂ - x, y - y₁, y₂ - y)
         s = clamp(d / w, zero(d), one(d))
         return oftype(d, ramp(s))
     end
