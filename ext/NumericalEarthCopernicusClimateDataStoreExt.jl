@@ -43,23 +43,23 @@ end
 #####
 ##### Batched downloads — same strategy as NumericalEarthCDSAPIExt
 #####
-##### One era5cli invocation per calendar-month batch: one CDS request per variable, expanded
+##### One CDS request per calendar-month batch covering all pending variables, expanded
 ##### server-side into a `months` × `days` × `hours` product, then split locally into the
-##### per-datetime files the readers expect (matched against the file's own time coordinate,
-##### so the product's over-fetch is harmless).
+##### per-variable, per-datetime files the readers expect (matched against the file's own
+##### time coordinate, so the product's over-fetch is harmless). CDS runs one job at a time
+##### per user, so one request for all variables is several times faster than one request each.
 #####
 
 """
-    Downloads.download(metadata::ERA5Metadata; skip_existing=true, cleanup=true, threads=nothing, kwargs...)
+    Downloads.download(metadata::ERA5Metadata; skip_existing=true, cleanup=true, kwargs...)
 
-Download ERA5 data for every date in `metadata` using `era5cli` through the
-CopernicusClimateDataStore package, one CDS request per calendar-month batch,
-returning the paths of the per-datetime files.
+Download ERA5 data for every date in `metadata` through the CopernicusClimateDataStore
+package, one CDS request per calendar-month batch, returning the paths of the
+per-datetime files.
 
 # Keyword Arguments
 - `skip_existing`: Skip datetimes whose files already exist (default: `true`).
 - `cleanup`: Remove the temporary multi-step NetCDF after splitting (default: `true`).
-- `threads`: Number of era5cli download threads (default: one per requested variable).
 - Additional keyword arguments are passed to `CopernicusClimateDataStore.hourly`.
 
 # Environment Setup
@@ -92,7 +92,7 @@ end
     Downloads.download(names::Vector{Symbol}, metadata::ERA5Metadata; kwargs...)
 
 Download multiple ERA5 variables for every date in `metadata`, bundling variables
-and datetimes into month-batched era5cli invocations.
+and datetimes into month-batched CDS requests.
 """
 function Downloads.download(names::Vector{Symbol}, metadata::ERA5Metadata; kwargs...)
     dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
@@ -103,10 +103,9 @@ end
 """
     Downloads.download(mset::MetadataSet{<:ERA5Dataset}; kwargs...)
 
-Download every variable of `mset` together: one era5cli invocation per
-calendar-month batch covers all pending variables, and era5cli submits one CDS
-request per variable, downloading them with concurrent threads — so the whole
-bundle waits in the Copernicus queue at once instead of one variable at a time.
+Download every variable of `mset` together: one CDS request per calendar-month
+batch covers all pending variables, so the whole bundle waits in the Copernicus
+queue once.
 """
 function Downloads.download(mset::MetadataSet{<:ERA5Dataset}; kwargs...)
     names = collect(getfield(mset, :names))
@@ -123,16 +122,15 @@ function download_era5cli(names, dataset, dates;
                           region, dir,
                           skip_existing = true,
                           cleanup = true,
-                          threads = nothing,
                           additional_kw...)
 
-    # era5cli submits one CDS request per variable, so batch sizing is per variable
-    batches = batch_datetimes_for_cds(dates, dataset, 1)
+    # every pending variable shares one request, so the per-request cost cap counts all of them
+    batches = batch_datetimes_for_cds(dates, dataset, length(names))
 
     paths = String[]
     for batch in batches
         append!(paths, download_era5cli_month(names, dataset, batch;
-                                              region, dir, skip_existing, cleanup, threads,
+                                              region, dir, skip_existing, cleanup,
                                               additional_kw...))
     end
 
@@ -145,14 +143,10 @@ end
 era5cli_levels(dataset::ERA5PressureLevelsDataset, variable_name) = Int.(dataset.pressure_levels) .÷ hPa
 era5cli_levels(dataset::ERA5Dataset, variable_name) = variable_name == "geopotential" ? :surface : nothing
 
-# era5cli rejects `--threads` above 6
-const ERA5CLI_MAX_THREADS = 6
-
 function download_era5cli_month(names, dataset, dates;
                                 region, dir,
                                 skip_existing = true,
                                 cleanup = true,
-                                threads = nothing,
                                 additional_kw...)
 
     name_dt_paths = [(name, dt, joinpath(dir, metadata_filename(dataset, name, dt, region)))
@@ -180,9 +174,9 @@ function download_era5cli_month(names, dataset, dates;
     levels_of(name) = era5cli_levels(dataset, available_variables(dataset)[name])
     levels_values = unique(map(levels_of, pending_names))
 
-    # Each per-variable file era5cli delivers carries only its own variable, and the
-    # splitter skips triples whose variable is absent, so every file is split against
-    # the full pending set — no filename parsing needed.
+    # CDS delivers one NetCDF per step type (instantaneous, accumulated), each holding only
+    # some of the variables; the splitter skips triples whose variable is absent, so every
+    # file is split against the full pending set — no filename parsing needed.
     nc_triples = [(nc_varnames(dataset)[name], dt, path) for (name, dt, path) in pending]
 
     @root begin
@@ -209,7 +203,7 @@ function download_era5cli_month(names, dataset, dates;
                 format = "netcdf",
                 outputprefix,
                 overwrite = true,
-                threads = min(something(threads, length(group_variable_names)), ERA5CLI_MAX_THREADS),
+                batch = true,
                 splitmonths = false,
                 directory = dir,
                 additional_kw...)
