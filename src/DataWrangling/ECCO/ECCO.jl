@@ -23,6 +23,7 @@ using ..DataWrangling: DataWrangling, binary_data_grid, binary_data_size, defaul
                        latitude_interfaces, netrc_downloader, NearestNeighborInpainting, metadata_path,
                        GramPerKilogramMinus35, Metadata, Metadatum, DownloadProgress,
                        metadata_url, first_date, last_date, all_dates, download_with_retries
+                       MicromolePerLiter
 
 download_ECCO_cache::String = ""
 function __init__()
@@ -86,8 +87,6 @@ DataWrangling.longitude_name(::Metadata{<:ECCODataset})        = "LONGITUDE_T"
 DataWrangling.latitude_name(::Metadata{<:ECCODataset})         = "LATITUDE_T"
 DataWrangling.longitude_name(::Metadata{<:ECCO4Monthly})       = "longitude"
 DataWrangling.latitude_name(::Metadata{<:ECCO4Monthly})        = "latitude"
-DataWrangling.longitude_name(::Metadata{<:ECCO4DarwinMonthly}) = "longitude"
-DataWrangling.latitude_name(::Metadata{<:ECCO4DarwinMonthly})  = "latitude"
 
 DataWrangling.z_interfaces(::ECCODataset) = [
     -6128.75,
@@ -278,6 +277,26 @@ function DataWrangling.metadata_url(m::Metadata{<:ECCO4Monthly})
     return ECCO4_url * dataset_variable_name(m) * "/" * year * "/" * m.filename
 end
 
+function remote_file_exists(url::AbstractString)
+    # Execute a HEAD request without throwing network exceptions
+    response = Downloads.request(url, method="HEAD", throw=false)
+
+    # Check if the server returned a successful HTTP 200 OK status
+    if response isa Downloads.Response
+        return response.status == 200
+    else
+        # response is a RequestError (e.g. host unreachable, or a transient dropped
+        # HTTP/2 stream). Retry a couple of times before concluding the file is
+        # actually missing, since a flaky connection error is not the same as a 404.
+        for _ in 1:2
+            sleep(1.0)
+            response = Downloads.request(url, method="HEAD", throw=false)
+            response isa Downloads.Response && return response.status == 200
+        end
+        return false
+    end
+end
+
 # The drive stopped serving its `ECCO2` directory, which holds the quarter-degree fields and both
 # ECCO-Darwin datasets whatever grid their name refers to. The download is still attempted in case it
 # returns, but a bare 403 reads as bad credentials, so say what it means instead.
@@ -285,6 +304,30 @@ end
 # TODO: delete this and the note in README.md once the drive serves `ECCO2` again. JPL has announced
 # no timeline, so the check is here until a download succeeds.
 const ECCO2DriveDataset = Union{ECCO2Monthly, ECCO2Daily, ECCO2DarwinMonthly, ECCO4DarwinMonthly}
+
+"""
+    robust_download(fileurl, filepath; downloader, progress, max_attempts=3)
+
+Call `Downloads.download`, retrying on transient network/protocol errors
+(e.g. dropped HTTP/2 streams reported by libcurl as `RequestError`) with a
+short backoff, instead of letting a single flaky request abort an entire
+batch download.
+"""
+function robust_download(fileurl, filepath; downloader, progress, max_attempts=3)
+    attempt = 1
+    while true
+        try
+            return Downloads.download(fileurl, filepath; downloader, progress)
+        catch err
+            if attempt >= max_attempts
+                rethrow(err)
+            end
+            @warn "Download attempt $attempt/$max_attempts for $fileurl failed with $(sprint(showerror, err)); retrying..."
+            attempt += 1
+            sleep(2.0 * attempt)
+        end
+    end
+end
 
 function ecco_download_error(err, metadatum)
     refused = err isa Downloads.RequestError && err.response.status == 403
@@ -310,8 +353,15 @@ function Downloads.download(metadata::ECCOMetadata)
 
         # Write down the username and password in a .netrc file
         downloader = netrc_downloader(username, password, "ecco.jpl.nasa.gov", tmp; verify_ssl = false)
-        ntasks = Threads.nthreads()
 
+        # Some ECCO hosts (e.g. data.nas.nasa.gov, used for ECCO4Daily) run a flaky
+        # HTTP/2 server that resets streams ("INTERNAL_ERROR") when hit with too many
+        # concurrent requests. Cap concurrency independently of the number of Julia
+        # threads to avoid overwhelming it; this can be overridden for testing/tuning
+        # via the ECCO_DOWNLOAD_NTASKS environment variable.
+        default_ntasks = min(Threads.nthreads(), 4)
+        ntasks = parse(Int, get(ENV, "ECCO_DOWNLOAD_NTASKS", string(default_ntasks)))
+        
         asyncmap(metadata; ntasks) do metadatum # Distribute the download among tasks
 
             fileurl  = metadata_url(metadatum)

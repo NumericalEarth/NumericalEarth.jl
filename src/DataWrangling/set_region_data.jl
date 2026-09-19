@@ -200,7 +200,8 @@ blend(scheme, data, c, k, mangling, FT) = blend(scheme, data, c, k, mangling, mi
 @kernel function _set_region_kernel!(dst, data, region, mangling, conversion, missing_val, FT)
     i, j, k = @index(Global, NTuple)
     d = read_data(data, i, j, k, region, mangling, missing_val, FT)
-    d = convert_units(d, conversion)
+    d = coalesce(d, convert(FT, NaN))
+    d = ifelse(isnan(d), d, convert_units(d, conversion))
     @inbounds dst[i, j, k] = d
 end
 
