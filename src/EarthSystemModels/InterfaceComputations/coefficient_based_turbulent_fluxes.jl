@@ -327,10 +327,11 @@ end
     CqN = sqrt(CdN) / 1000 * ly.moisture_transfer_coefficient
 
     # Stability corrections (L&Y eq. 10a-10c)
-    ξₘ = sqrt(CdN) / κ * (log(Δh / h₀) - ψₘ)
+    χs = log(Δh / h₀)
+    ξₘ = sqrt(CdN) / κ * (χs - ψₘ)
     Cd = CdN / (1 + ξₘ)^2
 
-    ξₕ = sqrt(CdN) / κ * (log(Δh / h₀) - ψₕ)
+    ξₕ = (χs - ψₕ) / (κ * sqrt(CdN))
     ratio = sqrt(Cd) / sqrt(CdN)
 
     Ch = ChN * ratio / (1 + ChN * ξₕ)

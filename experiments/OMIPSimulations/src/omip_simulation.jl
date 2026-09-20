@@ -150,13 +150,16 @@ ncar_atmosphere_sea_ice_fluxes(FT = Float64) =
 
 """
     build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
+                        sea_ice_flux_configuration = flux_configuration,
                         velocity_formulation = :relative)
 
-Build the `OceanSeaIceModel` with the specified flux configuration.
-Options for `flux_configuration`: `:default`, `:corrected`, `:ncar`.
+Build the `OceanSeaIceModel` with the specified flux configurations.
+Options for `flux_configuration` (atmosphere–ocean): `:default`, `:corrected`, `:ncar`.
+Options for `sea_ice_flux_configuration` (atmosphere–sea ice): `:corrected`, `:ncar`.
 Options for `velocity_formulation`:  `:relative`, `:wind`
 """
 function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
+                             sea_ice_flux_configuration = flux_configuration,
                              velocity_formulation::Symbol = :relative,
                              sea_ice_ocean_heat_transfer_coefficient = 0.0057,
                              sea_ice_momentum_roughness_length = 5e-4,
@@ -173,31 +176,24 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
                               velocity_formulation == :wind     ? WindVelocity()     :
                               error("Unknown velocity_formulation: $velocity_formulation. Options: :relative, :wind")
 
-    if flux_configuration == :corrected
-        interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
-                                         radiation,
-                                         land,
-                                         atmosphere_ocean_fluxes   = corrected_atmosphere_ocean_fluxes(FT),
-                                         atmosphere_sea_ice_fluxes = corrected_atmosphere_sea_ice_fluxes(FT; momentum_roughness_length = sea_ice_momentum_roughness_length),
-                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = sea_ice_ocean_heat_transfer_coefficient),
-                                         ice_freshwater_delivery,
-                                         ice_meltwater_enthalpy,
-                                         atmosphere_ocean_velocity_difference   = velocity_difference_obj,
-                                         atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
-    elseif flux_configuration == :ncar
-        interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
-                                         radiation,
-                                         land,
-                                         atmosphere_ocean_fluxes   = ncar_atmosphere_ocean_fluxes(FT),
-                                         atmosphere_sea_ice_fluxes = ncar_atmosphere_sea_ice_fluxes(FT),
-                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = sea_ice_ocean_heat_transfer_coefficient),
-                                         ice_freshwater_delivery,
-                                         ice_meltwater_enthalpy,
-                                         atmosphere_ocean_velocity_difference   = velocity_difference_obj,
-                                         atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
-    else
-        error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :ncar")
-    end
+    atmosphere_ocean_fluxes = flux_configuration == :corrected ? corrected_atmosphere_ocean_fluxes(FT) :
+                              flux_configuration == :ncar      ? ncar_atmosphere_ocean_fluxes(FT) :
+                              error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :ncar")
+
+    atmosphere_sea_ice_fluxes = sea_ice_flux_configuration == :corrected ? corrected_atmosphere_sea_ice_fluxes(FT; momentum_roughness_length = sea_ice_momentum_roughness_length) :
+                                sea_ice_flux_configuration == :ncar      ? ncar_atmosphere_sea_ice_fluxes(FT) :
+                                error("Unknown sea_ice_flux_configuration: $sea_ice_flux_configuration. Options: :corrected, :ncar")
+
+    interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
+                                     radiation,
+                                     land,
+                                     atmosphere_ocean_fluxes,
+                                     atmosphere_sea_ice_fluxes,
+                                     sea_ice_ocean_heat_flux = corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = sea_ice_ocean_heat_transfer_coefficient),
+                                     ice_freshwater_delivery,
+                                     ice_meltwater_enthalpy,
+                                     atmosphere_ocean_velocity_difference   = velocity_difference_obj,
+                                     atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
 
     return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, land, interfaces)
 end
@@ -520,6 +516,8 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   spacings still sum to `depth`. `Nz = 100`, `Δzmax = 100` reproduces the uncapped upper ocean to within
   3% (9.7 m at 100 m against 9.9, 80.9 m at 1000 m against 84.1) and holds 100 m from 1500 m down.
 - `depth`: maximum ocean depth in metres. Default: `5500`.
+- `immersed_bottom`: constructor of the immersed bottom, called with the bottom height: `GridFittedBottom` (full
+  cells), `PartialCellBottom` or `ShavedCellBottom`. Default: `GridFittedBottom`.
 - `Δz_top`: target surface-cell thickness in metres (sets the exponential vertical scale). Per-config
   default: `1.5` for `:quarterdegree`/`:twelfthdegree`/`:test`, `nothing` (scale derived from
   `depth`/`Nz`) otherwise.
@@ -681,12 +679,16 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   barotropic gravity wave must stay inside a substep, so a refined grid or a longer `Δt` needs more;
   too few blows the free surface up on the first step. Per-config default: `200` for
   `:quarterdegree`/`:twelfthdegree`, `100` otherwise. A warning names the count the grid needs.
-- `flux_configuration`: surface flux formulation. Options:
-   * `:default` — current defaults (Edson/COARE with constant Charnock 0.02)
-   * `:corrected` — COARE 3.6 with wind-dependent Charnock, fixed ice roughness, momentum-based u*
+- `flux_configuration`: atmosphere–ocean flux formulation. Options:
+   * `:default` — current defaults (Edson/COARE with constant Charnock 0.02) over both ocean and sea ice
+   * `:corrected` — COARE 3.6 with wind-dependent Charnock, momentum-based u*
    * `:ncar` — OMIP-2 standard Large & Yeager (2004) bulk formulae
+- `sea_ice_flux_configuration`: atmosphere–sea ice flux formulation, ignored when `flux_configuration = :default`.
+  Default: `flux_configuration`. Options:
+   * `:corrected` — SHEBA stability functions, fixed roughness (`sea_ice_momentum_roughness_length`, 5e-5 m for scalars)
+   * `:ncar` — Large & Yeager stability functions, fixed roughness 5e-4 m for momentum and scalars
 - `sea_ice_momentum_roughness_length`: aerodynamic roughness z₀ of the ice surface, m, used by
-  `:corrected`. 5e-4 is the SHEBA multiyear-pack value; smooth first-year ice is nearer 1e-4, which cuts
+  `sea_ice_flux_configuration = :corrected`. 5e-4 is the SHEBA multiyear-pack value; smooth first-year ice is nearer 1e-4, which cuts
   the neutral drag coefficient by about a quarter and the free-drift speed by about a seventh.
 - `vertical_closure::Symbol`: ocean vertical-mixing closure. Options:
    * `:catke` — CATKE TKE-based scheme (default).
@@ -781,6 +783,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          Δt = ConfigDefault(),
                          stop_time = Inf,
                          flux_configuration = :default,
+                         sea_ice_flux_configuration = flux_configuration,
                          vertical_closure = :catke,
                          boundary_value_mode_number = 2,
                          boundary_value_minimum_speed = 0.1,
@@ -809,7 +812,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          northern_sea_ice_initial_date = DateTime(1993, 1, 1),
                          southern_sea_ice_initial_date = DateTime(1993, 1, 1),
                          Δzmax = nothing,
-                         partial_cell_bathymetry = false,
+                         immersed_bottom = GridFittedBottom,
                          mixed_layer_tapering = false,
                          bottom_layer_tapering_depth = 0,
                          normalize_salinity = true,
@@ -873,7 +876,7 @@ function omip_simulation(config::Symbol = :halfdegree;
     setup_t₀ = time()
     log_setup_stage(arch, "start", setup_t₀)
 
-    grid = build_grid(cfg, arch, Nz, depth; Δz_top, Δzmax, partial_cell_bathymetry)
+    grid = build_grid(cfg, arch, Nz, depth; Δz_top, Δzmax, immersed_bottom)
     log_setup_stage(arch, "grid", setup_t₀)
 
     # When staging_dir is provided, JRA55 data is read from fast scratch
@@ -1027,6 +1030,7 @@ function omip_simulation(config::Symbol = :halfdegree;
         InterfaceTemperatureMeltwater() : ZeroHeatContentMeltwater()
 
     coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
+                                  sea_ice_flux_configuration,
                                   velocity_formulation, sea_ice_ocean_heat_transfer_coefficient,
                                   sea_ice_momentum_roughness_length,
                                   ice_freshwater_delivery, ice_meltwater_enthalpy)
@@ -1852,18 +1856,8 @@ end
 exponential_scale(Nz, depth, ::Nothing) = 1300
 exponential_scale(Nz, depth, Δz_top)    = find_exponential_scale(Nz, depth, Δz_top)
 
-# Partial bottom cells resolve sill depths and slopes continuously instead of in full-cell
-# steps. Documented benefits: mean-circulation and boundary-current realism (Gulf Stream
-# separation, NAC path — Barnier et al. 2006) and reduced staircase entrainment of downslope
-# overflows (Winton et al. 1998). They mitigate but do not cure the too-shallow NADW that
-# every configuration shares (zero-crossing ~2900 m vs ~4300 m in RAPID); the documented full
-# fix in z-coordinate models is a dedicated overflow parameterization (Legg et al. 2009;
-# Danabasoglu et al. 2010).
-bottom_immersed_boundary(bottom_height, partial_cell_bathymetry) =
-    partial_cell_bathymetry ? PartialCellBottom(bottom_height) : GridFittedBottom(bottom_height)
-
 function build_grid(config, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing,
-                    partial_cell_bathymetry = false)
+                    immersed_bottom = GridFittedBottom)
 
     Nx = config == Val(:halfdegree) ? 720 : throw("Configuration $(config) does not exist")
 
@@ -1882,12 +1876,12 @@ function build_grid(config, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing
                                     major_basins = 1,
                                     interpolation_passes = 25)
 
-    return ImmersedBoundaryGrid(base_grid, bottom_immersed_boundary(bottom_height, partial_cell_bathymetry); active_cells_map = true)
+    return ImmersedBoundaryGrid(base_grid, immersed_bottom(bottom_height); active_cells_map = true)
 end
 
-build_grid(::Val{:orca}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, partial_cell_bathymetry = false)          = build_grid(ORCAOne(),     arch, Nz, depth; Δz_top, Δzmax, partial_cell_bathymetry)
-build_grid(::Val{:quarterdegree}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, partial_cell_bathymetry = false) = build_grid(ORCAQuarter(), arch, Nz, depth; Δz_top, Δzmax, partial_cell_bathymetry)
-build_grid(::Val{:twelfthdegree}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, partial_cell_bathymetry = false) = build_grid(ORCATwelfth(), arch, Nz, depth; Δz_top, Δzmax, partial_cell_bathymetry)
+build_grid(::Val{:orca}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, immersed_bottom = GridFittedBottom)          = build_grid(ORCAOne(),     arch, Nz, depth; Δz_top, Δzmax, immersed_bottom)
+build_grid(::Val{:quarterdegree}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, immersed_bottom = GridFittedBottom) = build_grid(ORCAQuarter(), arch, Nz, depth; Δz_top, Δzmax, immersed_bottom)
+build_grid(::Val{:twelfthdegree}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, immersed_bottom = GridFittedBottom) = build_grid(ORCATwelfth(), arch, Nz, depth; Δz_top, Δzmax, immersed_bottom)
 
 # The Gulf of Ob and the Yenisei Gulf are ~5 m deep for hundreds of kilometres, so their full river
 # discharge lands in a single 1.5 m top cell with no water column to mix into and the salinity collapses.
@@ -1910,7 +1904,7 @@ const kara_river_closures = ((68.0, 77.0, 66.0, 72.6),   # Gulf of Ob
     @inbounds bottom_height[i, j, 1] = ifelse(closed, oftype(z, 100), z)
 end
 
-function close_shallow_river_regions(grid; regions = kara_river_closures, minimum_depth = 10, partial_cell_bathymetry = false)
+function close_shallow_river_regions(grid; regions = kara_river_closures, minimum_depth = 10, immersed_bottom = GridFittedBottom)
     arch      = architecture(grid)
     underlying = grid.underlying_grid
     bottom    = bottom_height_field(grid)
@@ -1918,11 +1912,11 @@ function close_shallow_river_regions(grid; regions = kara_river_closures, minimu
             convert(eltype(grid), minimum_depth))
     fill_halo_regions!(bottom)
     remove_minor_basins!(bottom, 1)
-    return ImmersedBoundaryGrid(underlying, bottom_immersed_boundary(bottom, partial_cell_bathymetry); active_cells_map = true)
+    return ImmersedBoundaryGrid(underlying, immersed_bottom(bottom); active_cells_map = true)
 end
 
 function build_grid(dataset::ORCADataset, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing,
-                    partial_cell_bathymetry = false)
+                    immersed_bottom = GridFittedBottom)
 
     z_faces = omip_vertical_discretization(Nz, depth; surface_grid_size = Δz_top,
                                                        maximum_grid_size = Δzmax)
@@ -1933,7 +1927,7 @@ function build_grid(dataset::ORCADataset, arch, Nz, depth; Δz_top = nothing, Δ
                     z = z_faces,
                     halo = (8, 8, 8),
                     with_bathymetry = true,
-                    partial_cell_bathymetry,
+                    immersed_bottom,
                     major_basins = 1,
                     active_cells_map = true)
 
@@ -1942,7 +1936,7 @@ end
 
 # Locally-runnable testing configuration: the NEMO eORCA1 (~1ᵒ) mesh, used to reproduce the
 # quarter-degree spurious high-latitude ice + surface salinity drift at a fraction of the cost.
-build_grid(::Val{:test}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, partial_cell_bathymetry = false) = build_grid(Val(:orca), arch, Nz, depth; Δz_top, Δzmax, partial_cell_bathymetry)
+build_grid(::Val{:test}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, immersed_bottom = GridFittedBottom) = build_grid(Val(:orca), arch, Nz, depth; Δz_top, Δzmax, immersed_bottom)
 
 #####
 ##### ORCA builder

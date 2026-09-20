@@ -63,9 +63,11 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
     T  = convert(CT, Tₛ)
     p  = convert(CT, pᵃᵗ)
 
-    # Raoult's law on the saturation vapor pressure.
+    # Raoult's law on the saturation vapor pressure, with the moist-air enhancement factor of Gill (1982)
     χ_H₂O = compute_water_mole_fraction(formulation.water_mole_fraction, Sₛ)
-    pᵛ⁺   = χ_H₂O * AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
+    t     = T - convert(CT, 273.15)
+    fᵛ    = 1 + convert(CT, 1e-8) * p * (convert(CT, 4.5) + convert(CT, 6e-4) * t^2)
+    pᵛ⁺   = fᵛ * χ_H₂O * AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
     εᵈᵛ⁻¹ = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
 
     # Guard against unphysically warm interface temperatures: once pᵛ⁺ exceeds

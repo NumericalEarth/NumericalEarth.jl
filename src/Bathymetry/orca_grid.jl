@@ -7,7 +7,7 @@ using Oceananigans.Fields: set!, convert_to_0_360
 using Oceananigans.DistributedComputations: Distributed, concatenate_local_sizes,
                                             insert_connected_topology, local_size, ranks
 using Oceananigans.Grids: FullyConnected, RightFaceFolded, generate_coordinate, halo_size
-using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom, PartialCellBottom
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, partition_tripolar_metric, receiving_rank
 
 using ..DataWrangling: dataset_variable_name, default_download_directory
@@ -564,8 +564,7 @@ The duplicated columns eORCA carries at its east edge for cyclic exchange are dr
 of distinct columns: 360 for eORCA1, 1440 for eORCA025 and 4320 for eORCA12.
 
 When `with_bathymetry = true` (the default), the bathymetry is also downloaded
-and the grid is returned as an `ImmersedBoundaryGrid` with a `GridFittedBottom`,
-or with a `PartialCellBottom` when `partial_cell_bathymetry = true`.
+and the grid is returned as an `ImmersedBoundaryGrid` whose bottom is built by `immersed_bottom`.
 
 Positional Arguments
 ====================
@@ -583,11 +582,9 @@ Keyword Arguments
        or, e.g., an `ExponentialDiscretization`. Default: `(-6000, 0)`.
 - `Nz`: Number of vertical levels (only used when `z` is a 2-tuple). Default: `50`.
 - `radius`: Planet radius. Default: `Oceananigans.defaults.planet_radius`.
-- `with_bathymetry`: If `true`, download the bathymetry and return an `ImmersedBoundaryGrid` with
-                     `GridFittedBottom`. Default: `true`.
-- `partial_cell_bathymetry`: If `true` and `with_bathymetry = true`, use a `PartialCellBottom`, which
-                             resolves sill depths and slopes continuously rather than in full-cell
-                             steps. Default: `false`.
+- `with_bathymetry`: If `true`, download the bathymetry and return an `ImmersedBoundaryGrid`. Default: `true`.
+- `immersed_bottom`: Constructor of the immersed bottom, called with the bottom height field, e.g.
+                     `GridFittedBottom` (full cells), `PartialCellBottom` or `ShavedCellBottom`. Default: `GridFittedBottom`.
 - `active_cells_map`: If `true` and `with_bathymetry = true`, build an active cells map
                       for efficient kernel execution over wet cells only. Default: `true`.
 - `major_basins`: Number of independent connected ocean basins to retain via
@@ -606,7 +603,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   Nz = 50,
                   radius = Oceananigans.defaults.planet_radius,
                   with_bathymetry = true,
-                  partial_cell_bathymetry = false,
+                  immersed_bottom = GridFittedBottom,
                   active_cells_map = true,
                   major_basins = Inf,
                   south_rows_to_remove = default_south_rows_to_remove(dataset),
@@ -717,7 +714,5 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     set!(bottom_field, global_orca_bottom_height(read_global_bottom_height, underlying_grid,
                                                  arch, FT, major_basins))
 
-    bottom = partial_cell_bathymetry ? PartialCellBottom(bottom_field) : GridFittedBottom(bottom_field)
-
-    return ImmersedBoundaryGrid(underlying_grid, bottom; active_cells_map)
+    return ImmersedBoundaryGrid(underlying_grid, immersed_bottom(bottom_field); active_cells_map)
 end
