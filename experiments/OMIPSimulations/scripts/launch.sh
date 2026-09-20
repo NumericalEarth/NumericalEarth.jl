@@ -177,6 +177,26 @@ Environment variables (physics):
   BIHVISC       Constant biharmonic viscosity ν in m^4/s (default: unset).
                 When set, overrides BIHARMONIC and uses ν directly instead of
                 the grid-area-scaled νhb = Az^2 / λ form.
+  VISCOUS_VELOCITY
+                NEMO's rn_Uv: lateral viscous velocity in m/s giving a grid-scaled
+                Laplacian viscosity ν = 1/2 Uv sqrt(Az), i.e. NEMO's ahm = 1/2 Uv Lv
+                with nn_ahm_ijk_t = 20/30. NEMO runs 0.1 at ORCA1 (~5e3 m^2/s at 1
+                degree). Adds "_uv<value>" to the run name. Default: unset (off).
+  STRAIT_TAU    Damping timescale for the extra lateral friction at NEMO's narrowed straits, e.g.
+                "1days" (a singular "1day" is accepted and normalized). NEMO's strait treatment is TWO modifications: e1v/e2u reduced to the channel
+                width (which the eORCA1 mesh file carries, and we inherit) and extra lateral friction
+                there via fmask/strait_shlat (which we do not). This supplies the second half. The
+                cells are located from the grid, and ν = Δ²/STRAIT_TAU, so the viscous stability
+                number is Δt/STRAIT_TAU at every strait however narrow. Adds "_strait<value>".
+                Default: unset (off).
+  LAPVISC       Constant horizontal Laplacian viscosity ν in m^2/s. Overrides
+                VISCOUS_VELOCITY. Adds "_lapvisc<value>". Default: unset (off).
+  MOMENTUM_ADVECTION
+                "weno" (default) for the upwind-biased vector-invariant scheme, or
+                "conserving" for the enstrophy/energy-conserving scheme NEMO uses at
+                ORCA1. "conserving" carries NO implicit dissipation and is meant to be
+                paired with VISCOUS_VELOCITY; on its own it is under-dissipated.
+                Adds "_consmom" to the run name.
   CB            CATKE bottom-distance coefficient for the shear length scale Cᵇ (default: 0.28).
                 It enters as min(Cˢ*depth, Cᵇ*height_above_bottom, ℓᴺ), so it caps the stable
                 mixing length through the whole column, not only near the bottom.
@@ -294,6 +314,13 @@ Environment variables (physics):
                 how to get dense water down a staircase. Both BBL schemes left the
                 delivered density unchanged, so neither tested that. Adds "_dsow<days>"
                 to the run name.
+  SILL_OVERFLOW Denmark Strait overflow parameterization (Danabasoglu, Large & Briegleb 2010),
+                true/false. Every 16 steps the Whitehead hydraulic transport
+                M_s = g′h_u²/2f of the dense water above the 690 m sill, plus an equal
+                entrainment from 700-1500 m, is exchanged volume-neutrally with the
+                East Greenland slope below 1500 m, so the product crosses the bottom
+                steps instead of being mixed away on them. Tracers only; the velocity is
+                untouched. Logs "SILL OVERFLOW M_s=..." to the .err. Adds "_ofp".
   LAB_RESTORE   Diagnostic only, in DAYS. Restores SALINITY ONLY in the deep Labrador
                 interior (65-40 W, 52-66 N, columns whose bottom is below 2000 m) above
                 200 m toward WOA Annual Absolute Salinity. Campaign 27 priced the
@@ -311,12 +338,34 @@ Environment variables (physics):
   ML_TAPER      Set to "true" to ramp the isopycnal-closure slopes linearly to zero
                 from the mixed-layer base to the surface (Danabasoglu et al. 2008;
                 NEMO ldfslp). Off by default; adds "_mltaper" to the run name.
+  BTAPER        Depth in metres of a bottom boundary layer over which the isopycnal
+                closure's slopes are ramped linearly to zero, the mirror of ML_TAPER at
+                the sea floor (Ferrari et al. 2010; NEMO ldfslp tapers at both
+                boundaries). The GM streamfunction is kappa_skew * S, capped by the slope
+                limiter at 800 * 1e-2 = 8 m^2/s, so on a continental slope the
+                parameterized eddy overturning is several Sverdrups pointed up the slope
+                — which is what campaign 32 measures destroying the Denmark Strait
+                overflow product in the Irminger Sea. Off by default (0); adds
+                "_btaper<depth>" to the run name.
   WIND_VELOCITY Set to "true" to use absolute wind (Δu = u_atm) in the bulk
                 formula instead of the OMIP-2 default relative wind
                 (Δu = u_atm − u_ocean). For isolating ACC-current feedback.
   NZ            Number of vertical levels. Default: per config (70 for orca, 100 for
                 quarter/twelfth degree). Adds "_nz<N>" to the run name when overridden.
 
+  MAXDZ         Cap on the vertical grid spacing, in metres. Default: unset, which keeps the
+                single-parameter ExponentialDiscretization -- it pins Δz at the surface and pays for it
+                in the abyss: NZ=70, Δz_top=1.5 gives 127 m at 1500 m, 208 m at 2500 m and 400 m at
+                4900 m, so a 200 m overflow plume occupies ONE TO TWO CELLS everywhere Nordic Seas
+                water has to keep its density (campaign 32, C32-60). A cap switches to a geometric ramp
+                from Δz_top held at MAXDZ below the depth it reaches, with the growth ratio solved so
+                the spacings still sum to the domain depth.
+                  NZ=100 MAXDZ=100  reproduces the uncapped upper ocean to within 3% -- 9.7 m at 100 m
+                                    against 9.9, 42.2 at 500 against 43.6, 80.9 at 1000 against 84.1 --
+                                    and holds 100 m from 1500 m down.  +43% levels.
+                  NZ=90  MAXDZ=100  11.9 m at 100 m (20% coarser than now).  +29% levels.
+                  NZ=70  MAXDZ=150  13.6 m at 100 m, 150 m below 1500 m.  No extra levels at all.
+                Adds "_maxdz<value>" to the run name.
   DZ_TOP        Target thickness of the top (surface) cell in meters. If set,
                 the ExponentialDiscretization scale is found by bisection so
                 that Δz of the surface level matches DZ_TOP within ~0.1%.
@@ -445,7 +494,7 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
 Environment variables (I/O & runtime):
   BACKEND_SIZE  Number of JRA55 time indices kept in memory (default: 240,
                 i.e. 30 days of 3-hourly data ≈ 2 GB RAM for 11 variables)
-  FORCING_DIR   Path to JRA55 forcing data (default: ${DATA}forcing_data)
+  FORCING_DIR   Path to JRA55 forcing data (default: $DATA/forcing_data)
   STAGING_DIR   Base directory for JRA55 staging (default: ./staged_data).
                 A per-run subdirectory (STAGING_DIR/<run_name>) is created
                 with symlinks from FORCING_DIR; files are progressively
@@ -604,6 +653,33 @@ esac
 TRACER_BOUNDARY_SCHEME="${TRACER_BOUNDARY_SCHEME:-$BOUNDARY_SCHEME}"
 MOMENTUM_BOUNDARY_SCHEME="${MOMENTUM_BOUNDARY_SCHEME:-$BOUNDARY_SCHEME}"
 
+# The conserving momentum scheme carries no implicit dissipation, so a run that selects it without
+# VISCOUS_VELOCITY or LAPVISC has nothing damping the grid scale. Refuse rather than run it.
+MOMENTUM_ADVECTION="${MOMENTUM_ADVECTION:-weno}"
+if [[ "$MOMENTUM_ADVECTION" != "weno" && "$MOMENTUM_ADVECTION" != "conserving" ]]; then
+  echo "MOMENTUM_ADVECTION must be weno or conserving, got $MOMENTUM_ADVECTION" >&2
+  exit 1
+fi
+if [[ "$MOMENTUM_ADVECTION" == "conserving" && -z "${VISCOUS_VELOCITY:-}${LAPVISC:-}${BIHVISC:-}" \
+      && "${BIHARMONIC:-}" == "nothing" ]]; then
+  echo "MOMENTUM_ADVECTION=conserving with no VISCOUS_VELOCITY, LAPVISC or biharmonic viscosity" >&2
+  echo "leaves the grid scale undamped. Set VISCOUS_VELOCITY=0.1 (NEMO ORCA1) or pass one explicitly." >&2
+  exit 1
+fi
+# eORCA1 inherits NEMO's narrowed strait scale factors: nine wet cells have e1v cut to 8-50 km in the
+# Indonesian passages and four have e2u cut to 10-20 km at Gibraltar and the Dardanelles. The 8 km face
+# reaches an advective CFL of 1 at 1.48 m/s and the Dardanelles at 1.85, against flows that run 2-4 m/s
+# there, so an explicit Laplacian on top has no margin: VISCOUS_VELOCITY=0.1 NaN'd in the Flores Sea at
+# day 71 with conserving momentum and at day 47 with WENO. Require STRAIT_TAU alongside it, which is
+# NEMO's own remedy (fmask/strait_shlat) and acts only at those cells.
+if [[ "$CONFIG" == "orca" && -n "${VISCOUS_VELOCITY:-}${LAPVISC:-}" && -z "${STRAIT_TAU:-}" ]]; then
+  echo "explicit horizontal viscosity on eORCA1 without STRAIT_TAU: the narrowed strait faces (8 km at" >&2
+  echo "119.5E, 10 km at the Dardanelles) are already at advective CFL ~1 and both previous attempts" >&2
+  echo "NaN'd in the Flores Sea. Set STRAIT_TAU=1day, or ALLOW_UNDAMPED_STRAITS=true to override." >&2
+  [[ "${ALLOW_UNDAMPED_STRAITS:-false}" == "true" ]] || exit 1
+fi
+export MOMENTUM_ADVECTION VISCOUS_VELOCITY LAPVISC STRAIT_TAU
+
 for scheme_name in BOUNDARY_SCHEME TRACER_BOUNDARY_SCHEME MOMENTUM_BOUNDARY_SCHEME; do
   case "${!scheme_name}" in
     default|upwind|ghost_cells) ;;
@@ -661,6 +737,7 @@ fi
 [[ "${CLOSURE:-catke}" == "nemo_tke" ]]        && RUN_NAME="${RUN_NAME}_nemotke"
 [[ "${WIND_VELOCITY:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_wind"
 [[ "${ML_TAPER:-false}" == "true" ]]           && RUN_NAME="${RUN_NAME}_mltaper"
+[[ -n "${BTAPER:-}" ]]                         && RUN_NAME="${RUN_NAME}_btaper${BTAPER}"
 [[ "${ISOPYCNAL:-standard}" == "triad" ]]      && RUN_NAME="${RUN_NAME}_triad"
 [[ -n "${PARTIAL_CELLS:-}" ]] && { echo "PARTIAL_CELLS is replaced by BOTTOM_CELLS=full|partial|shaved" >&2; exit 1; }
 [[ "${BOTTOM_CELLS:-full}" == "partial" ]]     && RUN_NAME="${RUN_NAME}_pcells"
@@ -673,6 +750,7 @@ fi
 [[ -n "${BBL_GAMMA:-}" ]]                      && RUN_NAME="${RUN_NAME}_cg${BBL_GAMMA}"
 [[ -n "${OVERFLOW_RESTORE:-}" ]]               && RUN_NAME="${RUN_NAME}_dsow${OVERFLOW_RESTORE}"
 [[ -n "${LAB_RESTORE:-}" ]]                     && RUN_NAME="${RUN_NAME}_labrest${LAB_RESTORE}"
+[[ "${SILL_OVERFLOW:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_ofp"
 [[ "${NORMALIZE_SALINITY:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_rawsalt"
 [[ "${RESTORING_UNDER_ICE:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_noicerest"
 case "${NORMALIZE_FRESHWATER:-timestep}" in
@@ -714,8 +792,13 @@ esac
 [[ "$DT" != "$DEFAULT_DT" ]]                   && RUN_NAME="${RUN_NAME}_dt${DT}"
 [[ "${BAROTROPIC_SUBSTEPS:-$DEFAULT_SUBSTEPS}" != "$DEFAULT_SUBSTEPS" ]] && RUN_NAME="${RUN_NAME}_substeps${BAROTROPIC_SUBSTEPS}"
 [[ -n "${BIHVISC:-}" ]]                        && RUN_NAME="${RUN_NAME}_bihvisc${BIHVISC}"
+[[ -n "${VISCOUS_VELOCITY:-}" ]]               && RUN_NAME="${RUN_NAME}_uv${VISCOUS_VELOCITY}"
+[[ -n "${LAPVISC:-}" ]]                        && RUN_NAME="${RUN_NAME}_lapvisc${LAPVISC}"
+[[ -n "${STRAIT_TAU:-}" ]]                     && RUN_NAME="${RUN_NAME}_strait${STRAIT_TAU}"
+[[ "${MOMENTUM_ADVECTION:-weno}" == "conserving" ]] && RUN_NAME="${RUN_NAME}_consmom"
 [[ "$DZ_TOP" != "$DEFAULT_DZ_TOP" ]]           && RUN_NAME="${RUN_NAME}_dz${DZ_TOP}"
 [[ "$NZ" != "$DEFAULT_NZ" ]]                    && RUN_NAME="${RUN_NAME}_nz${NZ}"
+[[ -n "${MAXDZ:-}" ]]                           && RUN_NAME="${RUN_NAME}_maxdz${MAXDZ}"
 [[ -n "${CATKE_CWUSTAR:-}" ]]                  && RUN_NAME="${RUN_NAME}_cwu${CATKE_CWUSTAR}"
 [[ -n "${BACKGROUND_K:-}" ]]                   && RUN_NAME="${RUN_NAME}_bgk${BACKGROUND_K}"
 [[ "${BACKGROUND_NU:-3e-5}" != "3e-5" ]]       && RUN_NAME="${RUN_NAME}_bgnu${BACKGROUND_NU}"
@@ -754,7 +837,7 @@ fi
 if [[ "${PARTITION}" == "default" ]]; then
     TIME="${TIME:-05:00:00}"
 else
-    TIME="${TIME:-120:00:00}"
+    TIME="${TIME:-25:00:00}"
 fi
 SBATCH_ARGS+=(--time="${TIME}")
 
@@ -813,7 +896,7 @@ export JULIA_CUDA_MEMORY_POOL=none
 JULIA="${JULIA:-$HOME/julia-1.12.5/bin/julia}"
 
 # ── Shared environment ────────────────────────────────────────────────
-FORCING_DIR="${FORCING_DIR:-${DATA}forcing_data}"
+FORCING_DIR="${FORCING_DIR:-${DATA%/}/forcing_data}"
 STAGING_DIR="${STAGING_DIR:-./staged_data}"
 CB="${CB:-0.01}"
 CUNB="${CUNB:-}"
@@ -835,6 +918,16 @@ ICE_ARCH_STRESS="${ICE_ARCH_STRESS:-}"
 ICE_ARCH_MONTHS="${ICE_ARCH_MONTHS:-}"
 IC_CONDITIONS="${IC_CONDITIONS:-default}"
 BIHVISC="${BIHVISC:-}"
+VISCOUS_VELOCITY="${VISCOUS_VELOCITY:-}"
+LAPVISC="${LAPVISC:-}"
+STRAIT_TAU="${STRAIT_TAU:-}"
+# The generated script does `using Oceananigans.Units` and `using Dates`, which both export the
+# SINGULAR unit names, so `1day` is ambiguous at top level while `1days` is not. Every other timescale
+# knob here is plural (BIHARMONIC=40days, DT=30minutes); normalize so either spelling works.
+if [[ "$STRAIT_TAU" =~ ^[0-9.]+(day|hour|minute|second)$ ]]; then
+  STRAIT_TAU="${STRAIT_TAU}s"
+fi
+MOMENTUM_ADVECTION="${MOMENTUM_ADVECTION:-weno}"
 DZ_TOP="${DZ_TOP:-}"
 CATKE_CWUSTAR="${CATKE_CWUSTAR:-}"
 BACKGROUND_K="${BACKGROUND_K:-}"
@@ -907,6 +1000,18 @@ fi
 
 BIHVISC_KWARG=""
 [[ -n "$BIHVISC" ]] && BIHVISC_KWARG="biharmonic_viscosity = ${BIHVISC},"
+
+VISCOUS_VELOCITY_KWARG=""
+[[ -n "$VISCOUS_VELOCITY" ]] && VISCOUS_VELOCITY_KWARG="viscous_velocity = ${VISCOUS_VELOCITY},"
+
+LAPVISC_KWARG=""
+[[ -n "$LAPVISC" ]] && LAPVISC_KWARG="laplacian_viscosity = ${LAPVISC},"
+STRAIT_KWARG=""
+[[ -n "$STRAIT_TAU" ]] && STRAIT_KWARG="strait_damping_timescale = ${STRAIT_TAU},"
+
+MOMENTUM_ADVECTION_KWARG=""
+[[ "$MOMENTUM_ADVECTION" == "conserving" ]] && \
+  MOMENTUM_ADVECTION_KWARG="momentum_advection_scheme = :conserving,"
 
 DZ_TOP_KWARG=""
 [[ -n "$DZ_TOP" ]] && DZ_TOP_KWARG="Δz_top = ${DZ_TOP},"
@@ -1022,6 +1127,13 @@ VELOCITY_KWARG=""
 ML_TAPER_KWARG=""
 [[ "${ML_TAPER:-false}" == "true" ]] && ML_TAPER_KWARG="mixed_layer_tapering = true,"
 
+BTAPER="${BTAPER:-}"
+BTAPER_KWARG=""
+[[ -n "$BTAPER" ]] && BTAPER_KWARG="bottom_layer_tapering_depth = ${BTAPER},"
+
+MAXDZ_KWARG=""
+[[ -n "${MAXDZ:-}" ]] && MAXDZ_KWARG="Δzmax = ${MAXDZ},"
+
 case "${BOTTOM_CELLS:-full}" in
     full)    BOTTOM_CELLS_KWARG="" ;;
     partial) BOTTOM_CELLS_KWARG="immersed_bottom = PartialCellBottom," ;;
@@ -1040,6 +1152,7 @@ BBL_KWARG=""
 [[ -n "${BBL_GAMMA:-}" ]] && BBL_KWARG="${BBL_KWARG}bbl_transport_coefficient = ${BBL_GAMMA},"
 [[ -n "${OVERFLOW_RESTORE:-}" ]] && BBL_KWARG="${BBL_KWARG}overflow_restoring_timescale = ${OVERFLOW_RESTORE}days,"
 [[ -n "${LAB_RESTORE:-}" ]] && BBL_KWARG="${BBL_KWARG}labrador_restoring_timescale = ${LAB_RESTORE}days,"
+[[ "${SILL_OVERFLOW:-false}" == "true" ]] && BBL_KWARG="${BBL_KWARG}sill_overflow = true,"
 
 SNOW_KWARG=""
 [[ "$SNOW" == "true" ]] && SNOW_KWARG="with_snow = true,"
@@ -1132,6 +1245,12 @@ sim = omip_simulation(:${CONFIG};
                       ${CLOSURE_KWARG}
                       ${VELOCITY_KWARG}
                       ${ML_TAPER_KWARG}
+                      ${BTAPER_KWARG}
+                      ${MAXDZ_KWARG}
+                      ${VISCOUS_VELOCITY_KWARG}
+                      ${LAPVISC_KWARG}
+                      ${STRAIT_KWARG}
+                      ${MOMENTUM_ADVECTION_KWARG}
                       ${BOTTOM_CELLS_KWARG}
                       ${CORIOLIS_KWARG}
                       ${BBL_KWARG}

@@ -414,8 +414,7 @@ function correct_sea_level!(ocean_model, δ)
             η, ocean_model.tracers.T, ocean_model.tracers.S, grid, δ, Nz + 1)
 
     # Refresh `σⁿ` from the corrected `η`.
-    launch!(architecture(grid), grid, Oceananigans.Models.surface_kernel_parameters(grid),
-            Oceananigans.Models.HydrostaticFreeSurfaceModels._update_zstar_scaling!, η, grid)
+    Oceananigans.Models.HydrostaticFreeSurfaceModels.update_zstar_scaling!(grid, η)
 
     return nothing
 end
@@ -853,6 +852,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          bbl_transport_coefficient = nothing,
                          overflow_restoring_timescale = nothing,
                          labrador_restoring_timescale = nothing,
+                         sill_overflow = false,
                          diagnostics = true,
                          field_mean_interval = 5days,
                          surface_averaging_interval = 5days,
@@ -959,11 +959,14 @@ function omip_simulation(config::Symbol = :halfdegree;
 
     restoring_forcing = overflow_restoring_forcing(grid, overflow_restoring_timescale)
     labrador_forcing  = labrador_restoring_forcing(grid, labrador_restoring_timescale; restoring_dir)
+    overflow_forcing, overflow = sill_overflow_forcing(grid, sill_overflow)
 
     ocean_forcing = merge_tracer_forcings(
-                        merge_tracer_forcings(merge_tracer_forcings(diffusive_forcing, advective_forcing),
-                                              restoring_forcing),
-                        labrador_forcing)
+                        merge_tracer_forcings(
+                            merge_tracer_forcings(merge_tracer_forcings(diffusive_forcing, advective_forcing),
+                                                  restoring_forcing),
+                            labrador_forcing),
+                        overflow_forcing)
 
     ocean = build_ocean(cfg, grid;
                         forcing = ocean_forcing,
@@ -1111,6 +1114,11 @@ function omip_simulation(config::Symbol = :halfdegree;
         update_advective_bottom_boundary_layer!(simulation, advective_bottom_boundary_layer)
         add_callback!(simulation, AdvectiveBottomBoundaryLayerUpdate(advective_bottom_boundary_layer),
                       IterationInterval(1))
+    end
+
+    if !isnothing(overflow)
+        update_sill_overflow!(simulation, overflow)
+        add_callback!(simulation, SillOverflowUpdate(overflow), IterationInterval(16))
     end
 
     # Same for CESM's stratification-dependent coefficient.
@@ -1604,7 +1612,7 @@ ice_melt_vertical_diffusivity(diffusivity) =
 # Dardanelles (10 km). At Δt = 5400 s the 8 km face reaches an advective CFL of 1 at only 1.48 m/s and
 # the Dardanelles at 1.85, against flows that routinely run 2-4 m/s there.
 
-@inline strait_ν(i, j, k, grid, clock, fields, ν) = @inbounds ν[i, j, k]
+@inline strait_ν(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, ν) = @inbounds ν[i, j, k]
 
 """
     narrow_strait_viscosity_mask(grid; threshold = 0.9, damping_timescale = 1day, minimum_width = 1000)
@@ -1619,7 +1627,8 @@ channel narrows the way a constant `ν` would.
 """
 function narrow_strait_viscosity_mask(grid; threshold = 0.9, damping_timescale = 1day,
                                       minimum_width = 1000)
-    ug = grid isa ImmersedBoundaryGrid ? grid.underlying_grid : grid
+    cpu_grid = on_architecture(CPU(), grid)
+    ug = cpu_grid isa ImmersedBoundaryGrid ? cpu_grid.underlying_grid : cpu_grid
     Nx, Ny, Nz = size(grid)
     H = ug.Hx
 
@@ -1633,7 +1642,7 @@ function narrow_strait_viscosity_mask(grid; threshold = 0.9, damping_timescale =
         2R * asin(sqrt(sind((φ₂ - φ₁)/2)^2 + cosd(φ₁) * cosd(φ₂) * sind((λ₂ - λ₁)/2)^2))
 
     # a reduced metric in a dry cell is inert, and counting those makes the log meaningless
-    bottom_height = grid isa ImmersedBoundaryGrid ? collect(grid.immersed_boundary.bottom_height) : nothing
+    bottom_height = cpu_grid isa ImmersedBoundaryGrid ? collect(cpu_grid.immersed_boundary.bottom_height) : nothing
 
     mask_data = zeros(eltype(grid), Nx, Ny, Nz)
     nstrait = 0

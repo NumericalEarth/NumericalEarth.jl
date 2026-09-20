@@ -65,7 +65,7 @@ end
 # (rename(2) is atomic on the same filesystem), so readers see either the old
 # symlink or the new real copy, never a half-written file.
 function _stage_jra55_year_files!(source_dir, staging_dir, year)
-    year_str = string(year)
+    year_str = "_gr_" * string(year)
     for name in JRA55_SHORTNAMES
         for dst in filter(f -> contains(f, name) && contains(f, year_str) && endswith(f, ".nc"), readdir(staging_dir; join=true))
             if islink(dst)
@@ -79,7 +79,7 @@ function _stage_jra55_year_files!(source_dir, staging_dir, year)
 end
 
 function _unstage_jra55_year_files!(source_dir, staging_dir, year)
-    year_str = string(year)
+    year_str = "_gr_" * string(year)
     for name in JRA55_SHORTNAMES
         for dst in filter(f -> contains(f, name) && contains(f, year_str) && endswith(f, ".nc"), readdir(staging_dir; join=true))
             if isfile(dst) && !islink(dst)

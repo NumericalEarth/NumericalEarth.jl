@@ -159,25 +159,37 @@ diag_cache_path(case_cache::CaseCache, sym::Symbol) = joinpath(diag_cache_dir(ca
 # metadata only, never via a full `FieldTimeSeries` build.
 const FTS_DISK_PATH_SYM = Dict{Symbol, Symbol}()
 
+# Window fields of a key whose loader reads the whole record, and so cannot depend on the case
+# averaging window. A case declared with `years_from_end` moves `stop_time` with every new surface
+# snapshot, which would otherwise invalidate such a cache on every render of a running case.
+const WHOLE_RECORD_WINDOW = (-Inf, Inf)
+
 """
-    current_disk_cache_key(case_cache, fts_syms)
+    current_disk_cache_key(case_cache, fts_syms; window_dependent = true)
 
 Validation key for a disk-cached derived field whose value depends on
 the FTS named by each symbol in `fts_syms`. Reads `Nt` per source via
 `total_jld2_timeseries_snapshot_count`, so no `FieldTimeSeries` is
 constructed. Pass `()` for fields independent of model output.
+
+Set `window_dependent = false` for a loader that reads the whole record
+rather than `case_cache.start_time`/`stop_time`; the key then carries
+`WHOLE_RECORD_WINDOW` in place of the window.
 """
-function current_disk_cache_key(c::CaseCache, fts_syms::Tuple{Vararg{Symbol}})
+function current_disk_cache_key(c::CaseCache, fts_syms::Tuple{Vararg{Symbol}};
+                                window_dependent = true)
     Nts = ntuple(length(fts_syms)) do i
         fts_sym  = fts_syms[i]
         file_sym = get(FTS_DISK_PATH_SYM, fts_sym, nothing)
         isnothing(file_sym) && error("No JLD2 stem registered for FTS :$fts_sym")
         return total_jld2_timeseries_snapshot_count(get_field(c, file_sym))
     end
-    return DiskCacheKey(Nts, c.start_time, c.stop_time)
+    start_time, stop_time = window_dependent ? (c.start_time, c.stop_time) : WHOLE_RECORD_WINDOW
+    return DiskCacheKey(Nts, start_time, stop_time)
 end
 
-current_disk_cache_key(c::CaseCache, fts_sym::Symbol) = current_disk_cache_key(c, (fts_sym,))
+current_disk_cache_key(c::CaseCache, fts_sym::Symbol; kw...) =
+    current_disk_cache_key(c, (fts_sym,); kw...)
 
 """
     read_disk_cache(path)
@@ -243,13 +255,17 @@ the loader is rerun and the cache is overwritten.
 
 `source_fts_syms` is either a single FTS symbol or a tuple of them.
 Use `()` for fields that depend only on the grid or climatologies.
+
+Pass `window_dependent = false` when `loader` reads the whole record instead of the case averaging
+window, so the window stays out of the validation key.
 """
 function disk_cached(loader::Function, sym::Symbol;
-                     source_fts_syms::Union{Symbol, Tuple{Vararg{Symbol}}} = ())
+                     source_fts_syms::Union{Symbol, Tuple{Vararg{Symbol}}} = (),
+                     window_dependent = true)
     sources = source_fts_syms isa Symbol ? (source_fts_syms,) : source_fts_syms
     return function (c::CaseCache)
         path    = diag_cache_path(c, sym)
-        new_key = current_disk_cache_key(c, sources)
+        new_key = current_disk_cache_key(c, sources; window_dependent)
         cached  = read_disk_cache(path)
         if !isnothing(cached)
             value, stored_key = cached
@@ -265,6 +281,55 @@ function disk_cached(loader::Function, sym::Symbol;
         @info "  $(c.label): :$sym ← computing"
         return write_disk_cache(path, loader(c), new_key)
     end
+end
+
+"""
+    disk_cached_per_snapshot(loader, sym; source_fts_sym)
+
+Wrap `loader(case_cache, ns)` — which returns a tuple or named tuple of vectors carrying one entry per
+source snapshot index in `ns` — so a record that grew since the cache was written pays only for its
+new snapshots. Reading a 3-D snapshot costs tens of megabytes of Zstd-compressed I/O whatever the
+loader keeps of it, so recomputing a whole record to append a year of it dominates the render.
+
+The cache is keyed by the snapshot times it covers: an equal vector is a hit, a prefix is extended
+entrywise with `vcat`, anything else is recomputed from scratch. Times rather than a snapshot count,
+because a relaunch over an existing archive splices two records — the count keeps growing while the
+times of the shared span shift, and appending onto that would silently join two different runs.
+"""
+function disk_cached_per_snapshot(loader::Function, sym::Symbol; source_fts_sym::Symbol)
+    file_sym = get(FTS_DISK_PATH_SYM, source_fts_sym, nothing)
+    isnothing(file_sym) && error("No JLD2 stem registered for FTS :$source_fts_sym")
+    return function (c::CaseCache)
+        path  = diag_cache_path(c, sym)
+        times = total_jld2_timeseries_times(get_field(c, file_sym))
+        Nt    = length(times)
+
+        cached = read_disk_cache(path)
+        if !isnothing(cached)
+            value, cached_times = cached
+            if extends_cached_record(cached_times, times)
+                Ncached = length(cached_times)
+                if Ncached == Nt
+                    @info "  $(c.label): :$sym ← disk cache"
+                    return value
+                end
+                @info "  $(c.label): :$sym ← extending by $(Nt - Ncached) snapshots"
+                return write_disk_cache(path, map(vcat, value, loader(c, Ncached+1:Nt)), times)
+            end
+            @info "  $(c.label): :$sym ← invalidated (cached record is not a prefix of the current one)"
+        end
+        @info "  $(c.label): :$sym ← computing $Nt snapshots"
+        return write_disk_cache(path, loader(c, 1:Nt), times)
+    end
+end
+
+# `cached_times` is whatever the JLD2 file held under "key", so a cache written by `disk_cached`
+# reaches here as a `DiskCacheKey` and correctly fails the type test.
+function extends_cached_record(cached_times, times)
+    cached_times isa AbstractVector{<:AbstractFloat} || return false
+    n = length(cached_times)
+    n <= length(times) || return false
+    return cached_times == @view times[1:n]
 end
 
 #####
@@ -309,10 +374,32 @@ const FTS_VARS = (
                      (:to_h_fts,  "to_h"),  (:so_h_fts,  "so_h")),
 )
 
+"""
+Number of snapshots the JLD2 output stem `path` holds for `name`, summed over its split parts.
+"""
+function jld2_timeseries_length(path, name)
+    n = 0
+    for part in jld2_parts(path)
+        n += with_jld2(part) do jf
+            haskey(jf, "timeseries/$name") || return 0
+            count(k -> !isnothing(tryparse(Int, k)), keys(jf["timeseries/$name"]))
+        end
+    end
+    return n
+end
+
+# A young run, or a stream written at a coarse cadence, can hold fewer snapshots than the shared
+# backend window, which `FieldTimeSeries` rejects outright — so the window is clamped to what is
+# on disk.
 for (file_sym, mappings) in pairs(FTS_VARS), (sym, var) in mappings
     FTS_DISK_PATH_SYM[sym] = file_sym
     LOADERS[sym] = let v = var, f = file_sym
-        c -> FieldTimeSeries(get_field(c, f), v; backend = deepcopy(FTS_BACKEND))
+        c -> begin
+            file = get_field(c, f)
+            available = jld2_timeseries_length(file, v)
+            window = min(FTS_BACKEND.length, max(available, 1))
+            FieldTimeSeries(file, v; backend = InMemory(window))
+        end
     end
 end
 
@@ -849,15 +936,38 @@ end
 ##### Time-series scalars + horizontal-mean profiles
 #####
 
+"""
+Whether the JLD2 output stem `path` carries a `timeseries/<name>` group in any of its parts.
+"""
+function has_jld2_timeseries(path, name)
+    for part in jld2_parts(path)
+        found = with_jld2(part) do jf
+            haskey(jf, "timeseries/$name")
+        end
+        found && return true
+    end
+    return false
+end
+
 # Global volume-means as Integral/Volume (both z-star-live), not `Average` (frozen denominator).
+# The May-2026 archive runs carry `soga`, a global mean in its own right, and no content integrals;
+# a case with neither gets `nothing` and the figures skip it.
 LOADERS[:ocean_volume_timeseries] = c ->
     total_jld2_scalar_timeseries(get_field(c, :averages_file), "voco")
-LOADERS[:global_mean_temperature_timeseries] = c ->
-    total_jld2_scalar_timeseries(get_field(c, :averages_file), "hoco") ./
-    get_field(c, :ocean_volume_timeseries)
-LOADERS[:global_mean_salinity_timeseries] = c ->
-    total_jld2_scalar_timeseries(get_field(c, :averages_file), "soco") ./
-    get_field(c, :ocean_volume_timeseries)
+LOADERS[:global_mean_temperature_timeseries] = c -> let file = get_field(c, :averages_file)
+    has_jld2_timeseries(file, "hoco") ?
+        total_jld2_scalar_timeseries(file, "hoco") ./ get_field(c, :ocean_volume_timeseries) :
+        nothing
+end
+LOADERS[:global_mean_salinity_timeseries] = c -> let file = get_field(c, :averages_file)
+    if has_jld2_timeseries(file, "soco")
+        total_jld2_scalar_timeseries(file, "soco") ./ get_field(c, :ocean_volume_timeseries)
+    elseif has_jld2_timeseries(file, "soga")
+        total_jld2_scalar_timeseries(file, "soga")
+    else
+        nothing
+    end
+end
 LOADERS[:global_mean_ssh_timeseries] =
     disk_cached(:global_mean_ssh_timeseries; source_fts_syms = :zosga_fts) do c
     total_jld2_scalar_timeseries(get_field(c, :averages_file), "zosga")
@@ -927,10 +1037,12 @@ function profile_drift(c, fts_sym)
     return Δ
 end
 
-LOADERS[:temperature_drift] = disk_cached(:temperature_drift; source_fts_syms = :to_h_fts) do c
+LOADERS[:temperature_drift] = disk_cached(:temperature_drift; source_fts_syms = :to_h_fts,
+                                          window_dependent = false) do c
     profile_drift(c, :to_h_fts)
 end
-LOADERS[:salinity_drift] = disk_cached(:salinity_drift; source_fts_syms = :so_h_fts) do c
+LOADERS[:salinity_drift] = disk_cached(:salinity_drift; source_fts_syms = :so_h_fts,
+                                       window_dependent = false) do c
     profile_drift(c, :so_h_fts)
 end
 
@@ -960,7 +1072,8 @@ end
     (ℑxᶜᵃᵃ(i, j, k, grid, ψ², u) + ℑyᵃᶜᵃ(i, j, k, grid, ψ², v)) / 2
 
 
-LOADERS[:kinetic_energy_pair] = disk_cached(:kinetic_energy_pair; source_fts_syms = :uo_fts) do c
+LOADERS[:kinetic_energy_pair] = disk_cached_per_snapshot(:kinetic_energy_pair;
+                                                         source_fts_sym = :uo_fts) do c, ns
     grid   = get_field(c, :grid)
     u_fts  = get_field(c, :uo_fts)
     v_fts  = get_field(c, :vo_fts)
@@ -972,15 +1085,14 @@ LOADERS[:kinetic_energy_pair] = disk_cached(:kinetic_energy_pair; source_fts_sym
     e    = Field(e_op)
     V    = sum(V_op)
 
-    Nt = length(u_fts.times)
-    ke = zeros(Nt)
-    for n in 1:Nt
+    ke = zeros(length(ns))
+    for (m, n) in enumerate(ns)
         set!(u, u_fts[n])
         set!(v, v_fts[n])
         compute!(e)
-        ke[n] = sum(e) / V
+        ke[m] = sum(e) / V
     end
-    return (ke, u_fts.times ./ (365.25 * 24 * 3600))
+    return (ke, u_fts.times[ns] ./ (365.25 * 24 * 3600))
 end
 
 LOADERS[:kinetic_energy]               = c -> get_field(c, :kinetic_energy_pair)[1]
@@ -1229,7 +1341,7 @@ for (sym, src, fts) in ((:zonal_temperature,       :time_mean_temperature_3d, :t
                         (:zonal_woa_salinity,      :woa_salinity,             nothing))
     LOADERS[sym] = let s = src
         wrapped = c -> zonal_of(c, s)
-        isnothing(fts) ? disk_cached(wrapped, sym) :
+        isnothing(fts) ? disk_cached(wrapped, sym; window_dependent = false) :
                          disk_cached(wrapped, sym; source_fts_syms = fts)
     end
 end
@@ -1240,6 +1352,35 @@ LOADERS[:zonal_salinity_bias]    = c -> get_field(c, :zonal_salinity) .-
                                           get_field(c, :zonal_woa_salinity)
 LOADERS[:zonal_buoyancy_drift]   = c -> get_field(c, :zonal_buoyancy) .-
                                           get_field(c, :zonal_initial_buoyancy)
+
+# Root-mean-square deviation from WOA, formed *before* the zonal average. The signed biases above
+# average a zonal ring, so a warm western boundary and a cold interior at the same latitude cancel and
+# the ring reads as unbiased; squaring first keeps them. The gap between the two is the cancellation,
+# which is what `:zonal_*_cancellation` reports.
+#
+# ⚠ WOA is NaN over land while `ocean_mask_3d` is 0 there, and `compute_zonal_mean` forms
+# `data .* mask` — so `NaN * 0 = NaN` would poison the regrid. The squared bias is zeroed wherever it
+# is not finite; the mask already excludes those cells from the average.
+finite_or_zero(x) = ifelse(isfinite(x), x, zero(x))
+
+LOADERS[:squared_temperature_bias_3d] =
+    c -> finite_or_zero.(get_field(c, :time_mean_temperature_3d) .- get_field(c, :woa_temperature)) .^ 2
+LOADERS[:squared_salinity_bias_3d] =
+    c -> finite_or_zero.(get_field(c, :time_mean_salinity_3d) .- get_field(c, :woa_salinity)) .^ 2
+
+for (sym, src, fts) in ((:zonal_temperature_rms, :squared_temperature_bias_3d, :to_fts),
+                        (:zonal_salinity_rms,    :squared_salinity_bias_3d,    :so_fts))
+    LOADERS[sym] = let s = src
+        disk_cached(c -> sqrt.(zonal_of(c, s)), sym; source_fts_syms = fts)
+    end
+end
+
+# How much of the error cancels within a zonal ring: sqrt(<Δ²>) − |<Δ>| ≥ 0, the zonal standard
+# deviation of the bias. Large where a latitude band looks unbiased only because its errors offset.
+LOADERS[:zonal_temperature_cancellation] = c -> get_field(c, :zonal_temperature_rms) .-
+                                                abs.(get_field(c, :zonal_temperature_bias))
+LOADERS[:zonal_salinity_cancellation]    = c -> get_field(c, :zonal_salinity_rms) .-
+                                                abs.(get_field(c, :zonal_salinity_bias))
 
 # Zonal MLD: regrid the 2-D surface MLD field, weighted by the surface
 # ocean mask. NaNs (land) become 0 so they don't poison the regrid.
@@ -1277,7 +1418,7 @@ LOADERS[:zonal_mld_max_dbm] = c -> zonal_mld(c, :mld_max_dbm)
 # and CMIP `msftmz` measure. Runs without GM, and runs predating the `vvolgm`
 # diagnostic, carry no bolus file and fall back to the Eulerian part alone.
 
-LOADERS[:atlantic_mask_2d] = disk_cached(:atlantic_mask_2d) do c
+LOADERS[:atlantic_mask_2d] = disk_cached(:atlantic_mask_2d; window_dependent = false) do c
     basin = atlantic_ocean_basin(get_field(c, :grid))
     return Bool.(dropdims(Array(interior(basin.mask)); dims = 3))
 end
@@ -1370,9 +1511,13 @@ end
 
 # Per-snapshot ψ_max at 26.5°N: loop vvol over time, sum across the
 # Atlantic at the single j-row, cumulatively integrate in z, take max.
-# Cheap per snapshot (O(Nx·Nz)) so this covers the full record even on
-# tenth-degree grids. Disk-cached on vvol_fts so reruns are instant.
-LOADERS[:amoc_max_timeseries] = disk_cached(:amoc_max_timeseries; source_fts_syms = :vvol_fts) do c
+# The arithmetic is O(Nx·Nz), but the read is not: `vvol` is stored as
+# whole Zstd-compressed 3-D snapshots, so a single j-row costs the full
+# (Nx, Ny, Nz) decompression, twice over once `vvolgm` is included. The
+# per-snapshot cache is what keeps that off every render — a record that
+# grew by a part pays for the new snapshots alone.
+LOADERS[:amoc_max_timeseries] = disk_cached_per_snapshot(:amoc_max_timeseries;
+                                                         source_fts_sym = :vvol_fts) do c, ns
     vvol_fts   = get_field(c, :vvol_fts)
     vvolgm_fts = optional_field(c, :vvolgm_fts)
     atl        = get_field(c, :atlantic_mask_2d)
@@ -1381,9 +1526,8 @@ LOADERS[:amoc_max_timeseries] = disk_cached(:amoc_max_timeseries; source_fts_sym
     # The index tracks the NADW cell, so the search skips the top 500 m: the GM streamfunction spikes
     # to several Sv against the surface taper, and would otherwise win the maximum outright.
     deep = findall(<(-AMOC_INDEX_MINIMUM_DEPTH), get_field(c, :depth))
-    Nt = length(vvol_fts.times)
-    ψ_max = zeros(Nt)
-    for n in 1:Nt
+    ψ_max = zeros(length(ns))
+    for (m, n) in enumerate(ns)
         slice = Array(interior(vvol_fts[n]))
         isnothing(vvolgm_fts) || (slice = slice .+ Array(interior(vvolgm_fts[n])))
         col = zeros(Nz)
@@ -1392,13 +1536,13 @@ LOADERS[:amoc_max_timeseries] = disk_cached(:amoc_max_timeseries; source_fts_sym
             col[k] += slice[i, j, k]
         end
         ψ_z = -cumsum(col) ./ 1e6   # Sv, sign matches :amoc
-        ψ_max[n] = maximum(view(ψ_z, deep))
+        ψ_max[m] = maximum(view(ψ_z, deep))
     end
     # Convert to decimal calendar year using the JRA55-do epoch the rest
     # of the visualize pipeline assumes (`compute_monthly_means` uses
     # `DateTime(1958, 1, 1)` as the reference).
     year_start = 1958.0
-    times_year = year_start .+ vvol_fts.times ./ years
+    times_year = year_start .+ vvol_fts.times[ns] ./ years
     return (year = times_year, psi_max = ψ_max)
 end
 
@@ -1458,7 +1602,8 @@ end
 # case — to extract a few hundred numbers per snapshot, so it is cached to disk like the other heavy
 # diagnostics and recomputed only when new snapshots land.
 LOADERS[:strait_transports] = guard_truncated_output("strait transports",
-    disk_cached(:strait_transports; source_fts_syms = (:uo_fts, :vo_fts)) do c
+    disk_cached(:strait_transports; source_fts_syms = (:uo_fts, :vo_fts),
+                window_dependent = false) do c
         config = strait_config_for(c.case)
         if isnothing(config)
             @warn "Cannot infer strait config for case '$(c.label)' — skipping."
@@ -1475,7 +1620,8 @@ LOADERS[:strait_transports] = guard_truncated_output("strait transports",
 # Restricted to the zonal sections that matter for the Arctic budget: that skips `uo` entirely,
 # leaving two 3-D fields to read instead of three.
 LOADERS[:strait_freshwater_transports] = guard_truncated_output("Arctic freshwater transports",
-    disk_cached(:strait_freshwater_transports; source_fts_syms = (:vo_fts, :so_fts)) do c
+    disk_cached(:strait_freshwater_transports; source_fts_syms = (:vo_fts, :so_fts),
+                window_dependent = false) do c
         config = strait_config_for(c.case)
         if isnothing(config)
             @warn "Cannot infer strait config for case '$(c.label)' — skipping."
@@ -1498,7 +1644,8 @@ LOADERS[:strait_freshwater_transports] = guard_truncated_output("Arctic freshwat
 # density class the observational estimate (~3.2 Sv) is quoted for. Needs `to` and `so` on top of
 # `vo`, so it is keyed on all three and disk-cached like the other section diagnostics.
 LOADERS[:denmark_overflow] = guard_truncated_output("Denmark Strait overflow",
-    disk_cached(:denmark_overflow; source_fts_syms = (:vo_fts, :to_fts, :so_fts)) do c
+    disk_cached(:denmark_overflow; source_fts_syms = (:vo_fts, :to_fts, :so_fts),
+                window_dependent = false) do c
         config = strait_config_for(c.case)
         if isnothing(config)
             @warn "Cannot infer strait config for case '$(c.label)' — skipping."

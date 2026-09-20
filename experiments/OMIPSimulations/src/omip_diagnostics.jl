@@ -197,7 +197,7 @@ function add_omip_diagnostics!(simulation;
                                                      dir = output_dir,
                                                      filename = filename_prefix * "_surface",
                                                      file_splitting = TimeInterval(file_splitting_interval),
-                                                     overwrite_existing = true,
+                                                     overwrite_files = true,
                                                      jld2_kw = Dict(:compress => ZstdFilter()))
 
     # 3-D fields (including buoyancy)
@@ -248,7 +248,7 @@ function add_omip_diagnostics!(simulation;
                                                     dir = output_dir,
                                                     filename = filename_prefix * "_fields",
                                                     file_splitting = TimeInterval(file_splitting_interval),
-                                                    overwrite_existing = true,
+                                                    overwrite_files = true,
                                                     jld2_kw = Dict(:compress => ZstdFilter()))
 
     # `:zosga` (area-mean free-surface displacement) is a Boussinesq mass-conservation check;
@@ -281,7 +281,7 @@ function add_omip_diagnostics!(simulation;
                                                       dir = output_dir,
                                                       filename = filename_prefix * "_averages",
                                                       file_splitting = TimeInterval(file_splitting_interval),
-                                                      overwrite_existing = true)
+                                                      overwrite_files = true)
 
     # Checkpointer (drives `run!(sim; pickup=true)`)
     simulation.output_writers[:checkpointer] = Checkpointer(simulation.model;

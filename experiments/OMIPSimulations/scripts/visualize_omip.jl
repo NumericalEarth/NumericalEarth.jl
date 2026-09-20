@@ -49,12 +49,57 @@
 # Configuration
 # ══════════════════════════════════════════════════════════════
 
+# `store.sh` stages every run to $DATA and leaves only the newest part next to this script, so the
+# staged copy is the one to read when it exists.
+#
+# The seven runs that hold a Slurm allocation on 2026-09-08 — the control plus six levers. Three were
+# executing when this list was written (`orca_icez01e-4`, `orca_cunb1.0`, `orca_noicedyn_trcwenoz`) and
+# four were queued behind them (`orca`, `orca_triad`, `orca_trcwenoz`, `orca_labrest100`); queued and
+# running read the same on disk, since a pending job's record is whatever its last segment left staged.
+#
+# `orca_cunb1.0` was submitted minutes before this edit and has written no surface part yet, so
+# `has_surface_record` drops it with a warning until its first part lands. Leave it in the list.
+#
+# Record lengths, from the contiguous surface-part index (each part is 360 days, so parts ≈ years):
+# `icez0 1e-4` 145, `orca` 98, `tracer cwenoz` 53, `noicedyn cwenoz` 42, `triad` 26, `labrest100` 26.
+#
+# `years_from_end = 5` reads each record's own last five years, so the figures show where each run
+# stands now. The records are very unequal — 143 yr for `icez0 1e-4` against 25 for `triad` — so a
+# panel compares the late drift of one run against the spin-up of another; read level and shape per
+# run, not run-to-run differences, wherever the record lengths differ.
+#
+# ⚠ `cwenoz+triad+GRID` blew up at 35.11 yr and its output carries the blow-up: iteration 205200 is
+# NaN in both `fields` and `surface`. `years_from_end` anchors on the newest snapshot, so its last
+# five years average NaN into every panel it appears in. `kskew600+triad+GRID` blew up at 16.03 yr but
+# stopped writing one output interval earlier, so its file is finite throughout.
+#
+# The two May-2026 archive runs (`orca_corrected_snow_bih50days` and its κ1000 twin) are NOT here:
+# their serialized grids carry `Tripolar{…, RightCenterFolded}`, which JLD2 reconstructs as an opaque
+# object rather than a grid, so every loader that calls an Oceananigans grid function on them fails.
+# Read those runs with the `c8_lib.jl` array readers instead.
+const DATA_DIR = "/orcd/nese/raffaele/001/ssilvest/OMIP-data"
+
+const YEARS_FROM_END = 5
+
 cases = [
-(prefix = "orca_corrected_snow_fwnorm_pvel0.254", label = "O0", years_from_end = 10),
-(prefix = "orca_corrected_snow_noslip_landfast_cio5.5e-3_ah0.0057_ncat4_fwnorm_cb0.01_bgnu3e-5_pvel0.254",        label = "cb0.01",        years_from_end = 3),
-(prefix = "orca_corrected_snow_noslip_landfast_cio5.5e-3_ah0.0057_ncat4_fwnorm_cb0.1_bgnu3e-5_pvel0.254",         label = "cb0.1",         years_from_end = 3),
-(prefix = "orca_corrected_snow_noslip_landfast_cio5.5e-3_ah0.0057_ncat4_dsow10_fwnorm_cb0.01_bgnu3e-5_pvel0.254", label = "dsow10",        years_from_end = 3),
-(prefix = "orca_corrected_snow_noslip_landfast_cio5.5e-3_ah0.0057_ncat4_dsow10_fwnorm_cb0.01_dt5400_bgnu3e-5_pvel0.254", label = "dsow10-dt5400", years_from_end = 3),
+(prefix = "orca",                   label = "orca (control)",  years_from_end=YEARS_FROM_END),  # queued
+(prefix = "orca_icez01e-4",         label = "icez0 1e-4",      years_from_end=YEARS_FROM_END),  # running
+(prefix = "orca_cunb2.0",           label = "cunb 2.0",        years_from_end=YEARS_FROM_END),  # running, no output yet
+(prefix = "orca_noicedyn_trcwenoz", label = "noicedyn cwenoz", years_from_end=YEARS_FROM_END),  # running
+(prefix = "orca_trcwenoz",          label = "tracer cwenoz",   years_from_end=YEARS_FROM_END),  # queued
+(prefix = "orca_triad",             label = "triad",           years_from_end=YEARS_FROM_END),  # queued
+(prefix = "orca_labrest100",        label = "labrest100",      years_from_end=YEARS_FROM_END),  # queued
+(prefix = "orca_gmvbp",             label = "gmvbp",           years_from_end=YEARS_FROM_END),  # queued
+(prefix = "orca_triad_cf0.25",      label = "triad_cf0.25",    years_from_end=YEARS_FROM_END),  # queued
+# The NZ=100 MAXDZ=100 family, 2026-09-11 session.
+(prefix = "orca_triad_nz100_maxdz100",           label = "triad+GRID",       years_from_end=YEARS_FROM_END),
+(prefix = "orca_kskew350_nz100_maxdz100",        label = "kskew350+GRID",    years_from_end=YEARS_FROM_END),
+(prefix = "orca_icez01e-4_triad_nz100_maxdz100", label = "icez0+GRID",       years_from_end=YEARS_FROM_END),
+(prefix = "orca_triad_kskew600_nz100_maxdz100",  label = "kskew600+GRID",    years_from_end=YEARS_FROM_END),
+# ⚠ its last five years are NaN — see the note above; give it an absolute window instead of
+# years_from_end, or every panel it appears in averages NaN.
+(prefix = "orca_trcwenoz_triad_nz100_maxdz100",  label = "cwenoz+triad+GRID",
+     start_time = 29.4 * 31536000, stop_time = 34.5 * 31536000),
 ]
 
 output_dir = length(ARGS) >= 1 ? ARGS[1] : "figures"
@@ -66,6 +111,19 @@ output_dir = length(ARGS) >= 1 ? ARGS[1] : "figures"
 const HERE = @__DIR__
 include(joinpath(HERE, "visualize", "common.jl"))
 include(joinpath(HERE, "visualize", "cache.jl"))
+
+# `common.jl` resolves run directories against the working directory; redefine after the include so
+# the staged copies are found, with this script's own directory — not the caller's cwd — as the
+# fallback for runs `store.sh` has not drained yet.
+#
+# `store.sh` creates the staged directory as soon as it archives a young run's checkpoints, before any
+# output part has moved, so the test is whether the staged copy holds output — not whether it exists.
+holds_output(dir) = isdir(dir) &&
+    any(f -> endswith(f, ".jld2") && !contains(f, "checkpoint"), readdir(dir))
+
+run_dir_for(prefix) = let staged = joinpath(DATA_DIR, "$(prefix)_run")
+    holds_output(staged) ? staged : joinpath(HERE, "$(prefix)_run")
+end
 
 # ══════════════════════════════════════════════════════════════
 # Figure registry: (number, file basename, function symbol)
@@ -102,6 +160,7 @@ const FIG_REGISTRY = [
     (n = 28, file = "fig28_content_conservation.jl",      fn = :fig28),
     (n = 29, file = "fig29_barotropic_streamfunction.jl", fn = :fig29),
     (n = 30, file = "fig30_arctic_freshwater.jl",         fn = :fig30),
+    (n = 31, file = "fig31_zonal_rms_drift.jl",           fn = :fig31),
 ]
 
 # ══════════════════════════════════════════════════════════════
@@ -134,6 +193,21 @@ end
 # Build per-case caches (cheap — no data loaded yet)
 # Pre-include every fig file so `figNN` symbols are always defined.
 # ══════════════════════════════════════════════════════════════
+
+# A freshly launched run has no surface file until it writes its first part, and `years_from_end`
+# reads that file to place the window, so an unwritten run would raise here and take every other
+# case with it. Drop such cases and say which ones.
+function has_surface_record(case)
+    dir = run_dir_for(case.prefix)
+    isdir(dir) || return false
+    return any(f -> startswith(f, "$(case.prefix)_surface") && endswith(f, ".jld2"), readdir(dir))
+end
+
+let pending = filter(c -> !has_surface_record(c), cases)
+    isempty(pending) || @warn "Skipping cases with no surface output yet: " *
+                              join(("$(c.label) ($(c.prefix))" for c in pending), ", ")
+    global cases = filter(has_surface_record, cases)
+end
 
 labels = [c.label for c in cases]
 caches = Dict(c.label => CaseCache(c) for c in cases)
