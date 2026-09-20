@@ -269,7 +269,8 @@ Environment variables (physics):
                 area-weighted interpolation of the transport by the interpolation of the wet face
                 areas, reconstructing a uniform velocity exactly where face areas differ: next to
                 land, and between cells of unequal thickness. Use them with BOTTOM_CELLS=partial
-                or shaved, whose cells vary in thickness from column to column.
+                or shaved, whose cells vary in thickness from column to column. Adds "_encor",
+                "_awcor", "_cacor" or "_caecor" to the run name.
   BBL_KAPPA     Diffusive bottom boundary layer coefficient in m² s⁻¹ (NEMO rn_ahtbbl;
                 its ORCA reference value is 1000). Dense water upslope of a deeper
                 neighbour is diffused along the bottom, mimicking the gravity current a
@@ -664,6 +665,10 @@ fi
 [[ -n "${PARTIAL_CELLS:-}" ]] && { echo "PARTIAL_CELLS is replaced by BOTTOM_CELLS=full|partial|shaved" >&2; exit 1; }
 [[ "${BOTTOM_CELLS:-full}" == "partial" ]]     && RUN_NAME="${RUN_NAME}_pcells"
 [[ "${BOTTOM_CELLS:-full}" == "shaved" ]]      && RUN_NAME="${RUN_NAME}_scells"
+[[ "${CORIOLIS:-enstrophy}" == "energy" ]]                 && RUN_NAME="${RUN_NAME}_encor"
+[[ "${CORIOLIS:-enstrophy}" == "active_weighted" ]]        && RUN_NAME="${RUN_NAME}_awcor"
+[[ "${CORIOLIS:-enstrophy}" == "consistent_area" ]]        && RUN_NAME="${RUN_NAME}_cacor"
+[[ "${CORIOLIS:-enstrophy}" == "consistent_area_energy" ]] && RUN_NAME="${RUN_NAME}_caecor"
 [[ -n "${BBL_KAPPA:-}" ]]                      && RUN_NAME="${RUN_NAME}_bbl${BBL_KAPPA}"
 [[ -n "${BBL_GAMMA:-}" ]]                      && RUN_NAME="${RUN_NAME}_cg${BBL_GAMMA}"
 [[ -n "${OVERFLOW_RESTORE:-}" ]]               && RUN_NAME="${RUN_NAME}_dsow${OVERFLOW_RESTORE}"
