@@ -555,6 +555,11 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   `0.1` at ORCA1, which is `≈ 5 × 10³` m² s⁻¹ at 1°. Default: `nothing`.
 - `laplacian_viscosity`: constant horizontal Laplacian viscosity ν in m² s⁻¹, overriding
   `viscous_velocity`. Default: `nothing`.
+- `coriolis_scheme`: discretization of the Coriolis term: `:enstrophy` (default), `:energy`, `:active_weighted`,
+  `:consistent_area` or `:consistent_area_energy`. The `consistent_area` schemes reconstruct a uniform velocity
+  exactly where face areas differ, next to immersed boundaries and between cells of unequal thickness, and are the
+  ones to use with `immersed_bottom = PartialCellBottom` or `ShavedCellBottom`.
+
 - `momentum_advection_scheme`: `:weno` (default) for the upwind-biased vector-invariant scheme, or
   `:conserving` for the enstrophy/energy-conserving one NEMO uses at ORCA1. `:conserving` carries no
   implicit dissipation and is intended to be paired with `viscous_velocity`.
@@ -772,6 +777,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          laplacian_viscosity = nothing,
                          strait_damping_timescale = nothing,
                          momentum_advection_scheme = :weno,
+                         coriolis_scheme = :enstrophy,
                          forcing_dir = joinpath(get(ENV, "DATA", ""), "forcing_data"),
                          staging_dir = nothing,
                          backend_size = 50,
@@ -978,6 +984,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                         laplacian_viscosity,
                         strait_damping_timescale,
                         momentum_advection_scheme,
+                        coriolis_scheme,
                         vertical_closure,
                         background_vertical_diffusivity,
                         background_vertical_viscosity,
@@ -1856,6 +1863,11 @@ end
 exponential_scale(Nz, depth, ::Nothing) = 1300
 exponential_scale(Nz, depth, Δz_top)    = find_exponential_scale(Nz, depth, Δz_top)
 
+# `ShavedCellBottom` reconstructs a piecewise-bilinear bottom from cell corners, so regridding straight onto the
+# corners spares it the box average it would otherwise apply to a center field, retaining ~2.3x more structure.
+bathymetry_location(immersed_bottom) = (Center, Center)
+bathymetry_location(::Type{ShavedCellBottom}) = (Face, Face)
+
 function build_grid(config, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing,
                     immersed_bottom = GridFittedBottom)
 
@@ -1874,7 +1886,8 @@ function build_grid(config, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing
     bottom_height = regrid_bathymetry(base_grid;
                                     minimum_depth = 20,
                                     major_basins = 1,
-                                    interpolation_passes = 25)
+                                    interpolation_passes = 25,
+                                    location = bathymetry_location(immersed_bottom))
 
     return ImmersedBoundaryGrid(base_grid, immersed_bottom(bottom_height); active_cells_map = true)
 end
@@ -1977,6 +1990,27 @@ function boundary_scheme_value(boundary_scheme)
         throw(ArgumentError("boundary_scheme must be :default, :upwind or :ghost_cells, got $boundary_scheme"))
 
     return Val(boundary_scheme)
+end
+
+const coriolis_schemes = (enstrophy = Oceananigans.Coriolis.EnstrophyConserving,
+                          energy = Oceananigans.Coriolis.EnergyConserving,
+                          active_weighted = Oceananigans.Coriolis.ActiveWeightedEnstrophyConserving,
+                          consistent_area = Oceananigans.Coriolis.ConsistentAreaEnstrophyConserving,
+                          consistent_area_energy = Oceananigans.Coriolis.ConsistentAreaEnergyConserving)
+
+"""
+    coriolis_scheme_value(coriolis_scheme)
+
+Discretization of the Coriolis term named by `coriolis_scheme`. The `consistent_area` schemes divide the
+area-weighted interpolation of the transport by the interpolation of the wet face areas, reconstructing a uniform
+velocity exactly where face areas differ: next to immersed boundaries, and between cells of unequal thickness such
+as those of `PartialCellBottom` and `ShavedCellBottom`.
+"""
+function coriolis_scheme_value(coriolis_scheme)
+    haskey(coriolis_schemes, coriolis_scheme) ||
+        throw(ArgumentError("coriolis_scheme must be one of $(keys(coriolis_schemes)), got $coriolis_scheme"))
+
+    return coriolis_schemes[coriolis_scheme]()
 end
 
 """
@@ -2168,6 +2202,7 @@ function build_ocean(config, grid;
                      laplacian_viscosity = nothing,
                      strait_damping_timescale = nothing,
                      momentum_advection_scheme = :weno,
+                     coriolis_scheme = :enstrophy,
                      vertical_closure = :catke,
                      implicit_vertical_advection = true,
                      tracer_advection_order = 7,
@@ -2230,7 +2265,7 @@ function build_ocean(config, grid;
     extra_closures = additional_tracer_closure isa Tuple ? additional_tracer_closure :
                      isnothing(additional_tracer_closure) ? () : (additional_tracer_closure,)
     closure = (closure..., extra_closures...)
-    coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
+    coriolis = HydrostaticSphericalCoriolis(scheme = coriolis_scheme_value(coriolis_scheme))
 
     time_discretization = implicit_vertical_advection ?
         AdaptiveVerticallyImplicitDiscretization(cfl=0.5) : ExplicitTimeDiscretization()

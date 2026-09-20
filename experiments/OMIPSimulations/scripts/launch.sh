@@ -284,6 +284,12 @@ Environment variables (physics):
   BOTTOM_CELLS  Representation of the bathymetry: full (GridFittedBottom, default), partial
                 (PartialCellBottom) or shaved (ShavedCellBottom, a linear slope through each bottom
                 cell). Adds "_pcells" or "_scells" to the run name.
+  CORIOLIS      Discretization of the Coriolis term: enstrophy (default), energy, active_weighted,
+                consistent_area or consistent_area_energy. The consistent_area schemes divide the
+                area-weighted interpolation of the transport by the interpolation of the wet face
+                areas, reconstructing a uniform velocity exactly where face areas differ: next to
+                land, and between cells of unequal thickness. Use them with BOTTOM_CELLS=partial
+                or shaved, whose cells vary in thickness from column to column.
   BBL_KAPPA     Diffusive bottom boundary layer coefficient in m² s⁻¹ (NEMO rn_ahtbbl;
                 its ORCA reference value is 1000). Dense water upslope of a deeper
                 neighbour is diffused along the bottom, mimicking the gravity current a
@@ -1130,6 +1136,12 @@ case "${BOTTOM_CELLS:-full}" in
     *) echo "BOTTOM_CELLS must be full|partial|shaved, got '${BOTTOM_CELLS}'" >&2; exit 1 ;;
 esac
 
+case "${CORIOLIS:-enstrophy}" in
+    enstrophy|energy|active_weighted|consistent_area|consistent_area_energy)
+        CORIOLIS_KWARG="coriolis_scheme = :${CORIOLIS:-enstrophy}," ;;
+    *) echo "CORIOLIS must be enstrophy|energy|active_weighted|consistent_area|consistent_area_energy, got '${CORIOLIS}'" >&2; exit 1 ;;
+esac
+
 BBL_KWARG=""
 [[ -n "${BBL_KAPPA:-}" ]] && BBL_KWARG="bbl_diffusivity = ${BBL_KAPPA},"
 [[ -n "${BBL_GAMMA:-}" ]] && BBL_KWARG="${BBL_KWARG}bbl_transport_coefficient = ${BBL_GAMMA},"
@@ -1235,6 +1247,7 @@ sim = omip_simulation(:${CONFIG};
                       ${STRAIT_KWARG}
                       ${MOMENTUM_ADVECTION_KWARG}
                       ${BOTTOM_CELLS_KWARG}
+                      ${CORIOLIS_KWARG}
                       ${BBL_KWARG}
                       ${SNOW_KWARG}
                       ${ICE_DYNAMICS_KWARG}
