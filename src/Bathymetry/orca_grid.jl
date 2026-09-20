@@ -8,6 +8,7 @@ using Oceananigans.DistributedComputations: Distributed, concatenate_local_sizes
                                             insert_connected_topology, local_size, ranks
 using Oceananigans.Grids: FullyConnected, RightFaceFolded, generate_coordinate, halo_size
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
+using Oceananigans.Grids: peripheral_node
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, partition_tripolar_metric, receiving_rank
 
 using ..DataWrangling: dataset_variable_name, default_download_directory
@@ -595,6 +596,15 @@ Keyword Arguments
                           Removing them reduces memory usage and computation.
 - `dir`: Directory to store and look up ORCA files (`mesh_mask` and bathymetry).
          Defaults to the dataset scratch cache via `default_download_directory(dataset)`.
+- `subcell_slope_dataset`: Dataset supplying the bathymetric slope within each cell, for an
+                           `immersed_bottom` that reconstructs its bottom from cell corners, such as
+                           `ShavedCellBottom`. The ORCA bathymetry is defined at cell centers, which
+                           fixes the depth of a cell but says nothing about how the bottom tilts across
+                           it; a finer dataset, e.g. `ETOPO2022()`, is regridded onto the corners and
+                           then corrected so that the mean of each cell's four corners reproduces the
+                           ORCA depth exactly. Depths, sills and the land mask therefore remain ORCA's,
+                           and only the tilt comes from the finer dataset. Default: `nothing`, which
+                           reconstructs the corners from the ORCA centers alone.
 """
 function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   dataset = ORCAOne(),
@@ -607,7 +617,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   active_cells_map = true,
                   major_basins = Inf,
                   south_rows_to_remove = default_south_rows_to_remove(dataset),
-                  dir = default_download_directory(dataset))
+                  dir = default_download_directory(dataset),
+                  subcell_slope_dataset = nothing)
 
     mesh_meta = Metadatum(:mesh_mask; dataset, dir)
     mesh_mask_path = download(mesh_meta)
@@ -714,5 +725,193 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     set!(bottom_field, global_orca_bottom_height(read_global_bottom_height, underlying_grid,
                                                  arch, FT, major_basins))
 
+    if !isnothing(subcell_slope_dataset)
+        corner_field = subcell_slope_corner_bottom_height(underlying_grid, bottom_field, subcell_slope_dataset,
+                                                         immersed_bottom)
+        return ImmersedBoundaryGrid(underlying_grid, immersed_bottom(corner_field); active_cells_map)
+    end
+
     return ImmersedBoundaryGrid(underlying_grid, immersed_bottom(bottom_field); active_cells_map)
+end
+
+"""
+    subcell_slope_corner_bottom_height(grid, center_height, dataset; iterations = 50)
+
+Bottom height at cell corners whose four-corner mean reproduces `center_height`, with the structure
+within each cell taken from `dataset`.
+
+The corner heights are regridded from `dataset` and then relaxed: each sweep measures how far the mean
+of a cell's four corners sits from `center_height` and spreads that mismatch back over the corners. The
+fixed point leaves every cell's mean depth equal to `center_height`, so depths, sills and the land mask
+stay those of `center_height`, while the tilt across each cell comes from the finer dataset.
+
+A checkerboard in `center_height` lies in the null space of the corner-to-center mean and cannot be
+represented by any bilinear surface; the residual of the relaxation is reported and is confined to it.
+"""
+function subcell_slope_corner_bottom_height(grid, center_height, dataset, immersed_bottom;
+                                            iterations = 200, mask_sweeps = 12)
+    arch = architecture(grid)
+    corner_field = regrid_bathymetry(grid; dataset, location = (Face, Face), major_basins = Inf)
+    mismatch = Field{Center, Center, Nothing}(grid)
+
+    # the land mask belongs to `center_height`: a corner with no wet neighbouring cell is land
+    launch!(arch, grid, :xy, _mask_dry_corners!, corner_field, center_height, grid)
+    fill_halo_regions!(corner_field)
+
+    # A seamount the finer dataset resolves but the ORCA cell cannot would raise a face into a sill that blocks the
+    # flow, so each sweep also returns a corner to the depth range of the cells it joins: slopes survive, spurious
+    # peaks cannot. The two constraints conflict at a local extremum, where the surface stays smoothed.
+    for _ in 1:iterations
+        launch!(arch, grid, :xy, _corner_mean_mismatch!, mismatch, corner_field, center_height, grid)
+        fill_halo_regions!(mismatch)
+        launch!(arch, grid, :xy, _spread_mismatch_to_corners!, corner_field, mismatch, center_height, grid)
+        fill_halo_regions!(corner_field)
+        launch!(arch, grid, :xy, _bound_corners_by_neighbouring_cells!, corner_field, center_height, grid)
+        fill_halo_regions!(corner_field)
+    end
+
+    # A cell whose corner mean lands on the wrong side of sea level would move the coastline, so any cell still
+    # misclassified after the relaxation falls back to the corners reconstructed from the ORCA centers alone.
+    fallback = Field{Face, Face, Nothing}(grid)
+    launch!(arch, grid, :xy, _corners_from_centers!, fallback, center_height, grid)
+    fill_halo_regions!(fallback)
+
+    # Reverting a corner perturbs its neighbouring cells, which can misclassify those in turn, so a corner that
+    # reverts stays reverted: the set only grows, the sweep terminates, and at worst it is the plain reconstruction.
+    misclassified = Field{Center, Center, Nothing}(grid)
+    reverted = Field{Face, Face, Nothing}(grid)
+    for _ in 1:iterations
+        launch!(arch, grid, :xy, _flag_misclassified_cells!, misclassified, corner_field, center_height, grid)
+        sum(interior(misclassified)) == 0 && break
+        fill_halo_regions!(misclassified)
+        launch!(arch, grid, :xy, _restore_mask_at_corners!, corner_field, fallback, misclassified, reverted, grid)
+        fill_halo_regions!(corner_field)
+        fill_halo_regions!(reverted)
+    end
+
+    # The sign of the corner mean is only a proxy for the mask: a column's wet cells are decided by the immersed
+    # boundary itself, after its own ϵ-limiting. Match that mask to the one reconstructed from the ORCA centers, so
+    # that taking the slopes from a finer dataset leaves the coastline untouched.
+    reference_mask = wet_column_mask(grid, fallback, immersed_bottom)
+    for _ in 1:mask_sweeps
+        differing = wet_column_mask(grid, corner_field, immersed_bottom) .!= reference_mask
+        sum(differing) == 0 && break
+        set!(misclassified, reshape(differing, size(differing)..., 1))
+        fill_halo_regions!(misclassified)
+        launch!(arch, grid, :xy, _restore_mask_at_corners!, corner_field, fallback, misclassified, reverted, grid)
+        fill_halo_regions!(corner_field)
+        fill_halo_regions!(reverted)
+    end
+    remaining = sum(wet_column_mask(grid, corner_field, immersed_bottom) .!= reference_mask)
+
+    launch!(arch, grid, :xy, _corner_mean_mismatch!, mismatch, corner_field, center_height, grid)
+    wet_mismatch = abs.(vec(Array(interior(mismatch))))
+    @info string("Sub-cell slopes from ", summary(dataset), ": cell-mean depth reproduced to ",
+                 prettysummary(median(wet_mismatch)), " m (median), ",
+                 prettysummary(maximum(wet_mismatch)), " m (max); ",
+                 remaining, " columns differ from the mask of the ORCA-center reconstruction")
+
+    return corner_field
+end
+
+# Which columns hold at least one wet cell once `immersed_bottom` has been materialized on `bottom_height`.
+function wet_column_mask(grid, bottom_height, immersed_bottom)
+    ibg = ImmersedBoundaryGrid(grid, immersed_bottom(bottom_height); active_cells_map = false)
+    Nx, Ny, Nz = size(grid)
+    mask = falses(Nx, Ny)
+    for i in 1:Nx, j in 1:Ny
+        for k in 1:Nz   # `break` would leave a fused i, j, k loop entirely, so the column scan is its own loop
+            if !peripheral_node(i, j, k, ibg, Center(), Center(), Center())
+                mask[i, j] = true
+                break
+            end
+        end
+    end
+    return mask
+end
+
+# The reconstruction `ShavedCellBottom` performs internally: the mean of the wet neighbouring cells, land otherwise.
+@kernel function _corners_from_centers!(corner_field, center_height, grid)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        Σ = zero(eltype(corner_field))
+        n = 0
+        for (i′, j′) in ((i-1, j-1), (i, j-1), (i-1, j), (i, j))
+            wet = !dry_cell(center_height[i′, j′, 1])
+            Σ += ifelse(wet, center_height[i′, j′, 1], zero(Σ))
+            n += ifelse(wet, 1, 0)
+        end
+        corner_field[i, j, 1] = ifelse(n > 0, Σ / max(n, 1), one(Σ) * 100)
+    end
+end
+
+@kernel function _bound_corners_by_neighbouring_cells!(corner_field, center_height, grid)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        shallowest = -Inf * one(eltype(corner_field))
+        deepest = Inf * one(eltype(corner_field))
+        for (i′, j′) in ((i-1, j-1), (i, j-1), (i-1, j), (i, j))
+            if !dry_cell(center_height[i′, j′, 1])
+                shallowest = max(shallowest, center_height[i′, j′, 1])
+                deepest = min(deepest, center_height[i′, j′, 1])
+            end
+        end
+        bounded = isfinite(shallowest) & isfinite(deepest)
+        corner_field[i, j, 1] = ifelse(bounded, clamp(corner_field[i, j, 1], deepest, shallowest),
+                                                corner_field[i, j, 1])
+    end
+end
+
+@kernel function _flag_misclassified_cells!(misclassified, corner_field, center_height, grid)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        corner_mean = (corner_field[i, j, 1] + corner_field[i+1, j, 1] +
+                       corner_field[i, j+1, 1] + corner_field[i+1, j+1, 1]) / 4
+        misclassified[i, j, 1] = ifelse(dry_cell(center_height[i, j, 1]) == dry_cell(corner_mean), 0, 1)
+    end
+end
+
+@kernel function _restore_mask_at_corners!(corner_field, fallback, misclassified, reverted, grid)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        touched = (misclassified[i-1, j-1, 1] + misclassified[i, j-1, 1] +
+                   misclassified[i-1, j, 1] + misclassified[i, j, 1]) > 0
+        keep = touched | (reverted[i, j, 1] > 0)
+        reverted[i, j, 1] = ifelse(keep, 1, 0)
+        corner_field[i, j, 1] = ifelse(keep, fallback[i, j, 1], corner_field[i, j, 1])
+    end
+end
+
+@inline dry_cell(height) = height ≥ 0
+
+# A corner keeps the bathymetry of the finer dataset only where the ORCA mask says there is ocean.
+@kernel function _mask_dry_corners!(corner_field, center_height, grid)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        wet = !dry_cell(center_height[i-1, j-1, 1]) | !dry_cell(center_height[i, j-1, 1]) |
+              !dry_cell(center_height[i-1, j, 1])   | !dry_cell(center_height[i, j, 1])
+        corner_field[i, j, 1] = ifelse(wet, corner_field[i, j, 1], one(eltype(corner_field)) * 100)
+    end
+end
+
+# Only wet cells constrain the surface; a dry cell reports no mismatch so its corners are left at land.
+@kernel function _corner_mean_mismatch!(mismatch, corner_field, center_height, grid)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        corner_mean = (corner_field[i, j, 1] + corner_field[i+1, j, 1] +
+                       corner_field[i, j+1, 1] + corner_field[i+1, j+1, 1]) / 4
+        wet = !dry_cell(center_height[i, j, 1])
+        mismatch[i, j, 1] = ifelse(wet, center_height[i, j, 1] - corner_mean, zero(corner_mean))
+    end
+end
+
+@kernel function _spread_mismatch_to_corners!(corner_field, mismatch, center_height, grid)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        wet = !dry_cell(center_height[i-1, j-1, 1]) | !dry_cell(center_height[i, j-1, 1]) |
+              !dry_cell(center_height[i-1, j, 1])   | !dry_cell(center_height[i, j, 1])
+        correction = (mismatch[i-1, j-1, 1] + mismatch[i, j-1, 1] +
+                      mismatch[i-1, j, 1] + mismatch[i, j, 1]) / 4
+        corner_field[i, j, 1] += ifelse(wet, correction, zero(correction))
+    end
 end
