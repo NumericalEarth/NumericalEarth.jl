@@ -51,9 +51,9 @@ grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height);
 # eddy fluxes. For vertical mixing at the upper-ocean boundary layer we include the CATKE
 # parameterization.
 
-using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, AdvectiveFormulation
+using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
 
-eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3, skew_flux_formulation=AdvectiveFormulation())
+eddy_closure = TriadIsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3)
 vertical_mixing = NumericalEarth.Oceans.default_ocean_closure()
 
 # ### Ocean simulation
@@ -114,7 +114,7 @@ radiation = JRA55PrescribedRadiation(arch; ocean_surface)
 # With Runge-Kutta 3rd order time-stepping we can safely use a timestep of 20 minutes.
 
 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
-simulation = Simulation(coupled_model; Δt=20minutes, stop_time=90days)
+simulation = Simulation(coupled_model; Δt=120minutes, stop_time=90days)
 
 # ### A progress messenger
 #
