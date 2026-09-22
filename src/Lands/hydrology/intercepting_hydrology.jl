@@ -75,6 +75,7 @@ diagnostic_variables(h::InterceptingHydrology) =
 
 initial_flux(h::InterceptingHydrology, name::Symbol, grid) = initial_flux(h.soil, name, grid)
 initial_diagnostic(h::InterceptingHydrology, name::Symbol, grid) = initial_diagnostic(h.soil, name, grid)
+initial_prognostic(h::InterceptingHydrology, name::Symbol, grid) = initial_prognostic(h.soil, name, grid)
 
 #####
 ##### Interception step, ahead of the soil step that reads its throughfall.
