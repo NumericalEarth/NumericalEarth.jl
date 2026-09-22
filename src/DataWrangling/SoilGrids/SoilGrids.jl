@@ -85,8 +85,7 @@ SoilGrids2(statistic = Mean, resolution = Grid1000m)
     resolution::Resolution = Grid1000m
 end
 
-Base.summary(dataset::SoilGrids2) =
-    string("SoilGrids2(statistic = ", dataset.statistic, ", resolution = ", dataset.resolution, ")")
+Base.summary(dataset::SoilGrids2) = string("SoilGrids2(statistic = ", dataset.statistic, ", resolution = ", dataset.resolution, ")")
 Base.show(io::IO, dataset::SoilGrids2) = print(io, summary(dataset))
 
 # Variable name mappings from NumericalEarth names to SoilGrids2 variable names
