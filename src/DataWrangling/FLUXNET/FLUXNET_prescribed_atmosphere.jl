@@ -80,9 +80,10 @@ function FLUXNETPrescribedAtmosphere(site::FLUXNETSite, architecture = CPU(), FT
 
     return PrescribedAtmosphere(grid, ua.times;
                                 velocities = (u = ua, v = va),
-                                tracers = (T = Ta, q = qa),
+                                temperature = Ta,
+                                specific_humidity = qa,
                                 pressure = pa,
-                                freshwater_flux = PrescribedPrecipitationFlux(; rain),
+                                precipitation_flux = PrescribedPrecipitationFlux(; rain),
                                 thermodynamics_parameters = ℂ,
                                 surface_layer_height = convert(FT, surface_layer_height))
 end

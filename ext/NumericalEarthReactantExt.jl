@@ -13,17 +13,22 @@ const OceananigansReactantExt = Base.get_extension(
      Oceananigans, :OceananigansReactantExt
 )
 
-const ReactantOSIM{R, A, L, I, O, F, C} = Union{
+# Any EarthSystemModel (every component combination) carried on `ReactantState`.
+const ReactantESM{R, A, L, I, O, F, C} = Union{
     EarthSystemModel{R, A, L, I, O, F, C, <:ReactantState},
     EarthSystemModel{R, A, L, I, O, F, C, <:Distributed{ReactantState}},
 }
 
-reconcile_state!(model::ReactantOSIM) = nothing
+function reconcile_state!(model::ReactantESM)
+    @jit Oceananigans.initialize!(model.interfaces.exchanger, model)
+    @jit Oceananigans.TimeSteppers.update_state!(model)
+    return nothing
+end
 
 import NumericalEarth.EarthSystemModels: same_time_type
 
-same_time_type(::Reactant.ConcretePJRTNumber{FT}, ::TT) where {FT, TT} = FT == TT
-same_time_type(::Reactant.ConcretePJRTNumber{FT}, ::Reactant.ConcretePJRTNumber{TT}) where {FT, TT} = FT == TT
-same_time_type(::FT, ::Reactant.ConcretePJRTNumber{TT}) where {FT, TT} = FT == TT
+same_time_type(::Reactant.ConcreteRNumber{FT}, ::TT) where {FT,TT} = FT == TT
+same_time_type(::Reactant.ConcreteRNumber{FT}, ::Reactant.ConcreteRNumber{TT}) where {FT,TT} = FT == TT
+same_time_type(::FT, ::Reactant.ConcreteRNumber{TT}) where {FT,TT} = FT == TT
 
 end # module NumericalEarthReactantExt

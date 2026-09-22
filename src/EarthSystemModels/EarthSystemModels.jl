@@ -13,10 +13,16 @@ export
     SkinHumidity,
     FractionalHumidity,
     CriticalSaturation,
-    ElevationCorrection,
+    DryLayerHumidity,
+    StorageBasedDryLayerDepth,
+    DryLayerVaporPistonVelocity,
+    ConstantTortuosity,
+    PowerLawTortuosity,
+    AltitudeCorrection,
     atmosphere_land_interface,
     SimilarityTheoryFluxes,
-    LandRoughnessLength,
+    FixedIterations,
+    ConvergenceStopCriteria,
     CoefficientBasedFluxes,
     FreezingLimitedOceanTemperature,
     SkinTemperature,
@@ -30,20 +36,29 @@ export
     IceBathHeatFlux,
     ThreeEquationHeatFlux,
     # Friction velocity formulations
-    MomentumBasedFrictionVelocity
+    MomentumBasedFrictionVelocity,
+    default_stop_time
 
+import Dates
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
+using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 using Oceananigans: Oceananigans, AbstractModel, initialize!,
                     prognostic_state, restore_prognostic_state!
-using Oceananigans.Architectures: architecture
+using Oceananigans.Architectures: architecture, AbstractArchitecture, ReactantState
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Diagnostics: NaNChecker
 using Oceananigans.Fields: ZeroField
 using Oceananigans.Simulations: reset_clock!, Simulation
 using Oceananigans.TimeSteppers: Clock, reset!, tick!, time_step!, update_state!, reconcile_state!
 using Oceananigans.Utils: launch!, prettytime
+
+# Reactant does not support `stop_time`; it must stay `nothing` there.
+default_stop_time(grid, clock) = default_stop_time(architecture(grid), clock)
+default_stop_time(::AbstractArchitecture, clock) = clock.time isa Number ? Inf : Dates.DateTime(9999, 12, 31, 23, 59, 59)
+default_stop_time(::ReactantState, clock) = nothing
 
 include("components.jl")
 
@@ -53,6 +68,7 @@ include("components.jl")
 
 const default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 const default_freshwater_density = 1000 # kg m⁻³
+const default_latent_heat_of_fusion = 334e3 # J kg⁻¹
 
 include("InterfaceComputations/InterfaceComputations.jl")
 

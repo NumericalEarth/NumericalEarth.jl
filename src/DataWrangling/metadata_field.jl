@@ -1,8 +1,11 @@
 using NCDatasets
 using JLD2
-using Oceananigans.Grids: λnodes, φnodes, Periodic, Bounded
+using KernelAbstractions: @kernel, @index
+using Oceananigans.Grids: λnodes, φnodes, Periodic, Bounded, AbstractMutableGrid, interior_indices, ξnode, ηnode, znode
 using Oceananigans.Architectures: on_architecture
-using Oceananigans.Fields: interpolate!
+using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.Fields: interpolate, interpolate!
+using Oceananigans.Utils: launch!, KernelParameters
 
 #####
 ##### Location with automatic restriction based on region
@@ -81,6 +84,26 @@ function restrict_longitude(bbox_interfaces, interfaces::NTuple{2,Any}, N)
 end
 
 """
+    native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
+
+Regular lat/lon raster of cell steps `Δλ`/`Δφ` (degrees) covering `region`, snapped to the global
+lattice anchored at `(-180, -90)` and padded by `pad` cells on each side. Returns
+`(; west, south, Δλ, Δφ, Nx, Ny)`.
+
+Datasets distributed as vector or tiled files lay out the raster they burn onto with this, so the
+result is a sub-window of the global lattice `Field(::Metadatum)` assumes.
+"""
+function native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
+    west, east   = region.longitude
+    south, north = region.latitude
+    i₀ = floor(Int, (west  + 180) / Δλ) - pad
+    j₀ = floor(Int, (south +  90) / Δφ) - pad
+    i₁ = ceil(Int,  (east  + 180) / Δλ) + pad
+    j₁ = ceil(Int,  (north +  90) / Δφ) + pad
+    return (; west = -180 + i₀ * Δλ, south = -90 + j₀ * Δφ, Δλ, Δφ, Nx = i₁ - i₀, Ny = j₁ - j₀)
+end
+
+"""
     native_grid(metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
 
 Return the native grid corresponding to `metadata` with `halo` size.
@@ -100,7 +123,7 @@ function construct_native_grid(metadata, ::Nothing, arch; halo)
     if is_three_dimensional(metadata)
         z = z_interfaces(metadata)
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
-                                     halo, longitude, latitude, z)
+                                     halo, longitude, latitude, z = z)
     else
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny),
                                      halo = halo[1:2], longitude, latitude,
@@ -122,10 +145,19 @@ function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
 
     TX = infer_longitudinal_topology(native_longitude, longitude)
 
+    # Relabel the grid longitudes back to the bbox's convention (data is array-indexed, so the
+    # ordering is unchanged). The shift is 0 when the bbox already matches the dataset's native
+    # convention and ±360 when they differ (e.g. a [-180, 180] bbox over ERA5's [0, 360] native
+    # grid), so a `NestedSimulation` child sees a parent grid labeled in its own convention.
+    if !isnothing(bbox.longitude)
+        shift = bbox_lon[1] - bbox.longitude[1]
+        longitude = longitude .- shift
+    end
+
     if is_three_dimensional(metadata)
         z = z_interfaces(metadata)
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
-                                     halo, longitude, latitude, z,
+                                     halo, longitude, latitude, z = z,
                                      topology = (TX, Bounded, Bounded))
     else
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny),
@@ -144,7 +176,7 @@ function construct_native_grid(metadata, col::Column, arch; halo)
         _, _, Nz, _ = size(metadata)
         z = z_interfaces(metadata)
         return RectilinearGrid(arch, FT; size = Nz, halo = halo[3],
-                               x, y, z, topology = (Flat, Flat, Bounded))
+                               x = x, y = y, z = z, topology = (Flat, Flat, Bounded))
     else
         return RectilinearGrid(arch, FT; size = (), halo = (),
                                x, y, topology = (Flat, Flat, Flat))
@@ -157,32 +189,8 @@ end
 Retrieve data from netcdf file according to `metadata`.
 """
 function retrieve_data(metadata::Metadatum)
-    path = metadata_path(metadata)
-    name = dataset_variable_name(metadata)
-
-    # NetCDF shenanigans
-    ds = Dataset(path)
-
-    if is_three_dimensional(metadata)
-        data = ds[name][:, :, :, 1]
-
-        # Many ocean datasets use a "depth convention" for their vertical axis
-        if reversed_vertical_axis(metadata.dataset)
-            data = reverse(data, dims=3)
-        end
-    else
-        data = ds[name][:, :, 1]
-    end
-
-    close(ds)
-
-    # ERA5 (and some other datasets) store latitude north-to-south;
-    # flip to south-to-north to match the grid.
-    if reversed_latitude_axis(metadata.dataset)
-        data = reverse(data, dims=2)
-    end
-
-    return data
+    data, _, _ = retrieve_window(metadata, :, :)
+    return is_three_dimensional(metadata) ? data : dropdims(data, dims=3)
 end
 
 """
@@ -208,7 +216,7 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
 
     # Inpainting on a (Flat, Flat, *) column field is meaningless and the
     # iterative algorithm doesn't terminate gracefully without horizontal
-    # neighbours; the NaN-aware bracket-blend in `set_region_data!` handles
+    # neighbors; the NaN-aware bracket-blend in `set_region_data!` handles
     # land cells directly.
     if metadata.region isa Column
         inpainting = nothing
@@ -247,6 +255,11 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
     set_metadata_field!(field, data, metadata)
     fill_halo_regions!(field)
 
+    # Columns have no horizontal neighbours, the propagate is vertical
+    if metadata.region isa Column
+        propagate_vertically!(field)
+    end
+
     if !isnothing(inpainting)
         # Respect user-supplied mask, but otherwise build default mask for this dataset.
         if isnothing(mask)
@@ -284,42 +297,100 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
     return field
 end
 
+@kernel function _interpolate_physical!(to_field, to_grid, to_location, from_field, from_grid, from_location)
+    i, j, k = @index(Global, NTuple)
+    ℓx, ℓy, ℓz = to_location
+    # Sample at the target's deformed `znode`, not the reference coordinate that
+    # `_node` (and hence Oceananigans' `interpolate!`) uses on a mutable grid.
+    to_node = (ξnode(i, j, k, to_grid, ℓx, ℓy, ℓz),
+               ηnode(i, j, k, to_grid, ℓx, ℓy, ℓz),
+               znode(i, j, k, to_grid, ℓx, ℓy, ℓz))
+    @inbounds to_field[i, j, k] = interpolate(to_node, from_field, from_location, from_grid)
+end
+
 """
-    Field(metadata::Metadatum, grid::AbstractGrid; kw...)
+    interpolate_physical!(to_field, from_field)
+
+Interpolate `from_field` onto `to_field`. Identical to Oceananigans'
+`interpolate!` for ordinary grids, but on a `MutableVerticalDiscretization`
+(terrain-following) target it samples the source at the target's *deformed*
+`znode` rather than the reference `rnode`. `interpolate!` builds its target node
+from `_node`, whose vertical component is `rnode`, so it would place the source
+at the LAM's reference heights and ignore the terrain — putting the lowest cells
+below the (clipped) surface of a `PressureLevelGrid` source.
+
+!!! note "TODO"
+    Drop this once Oceananigans' `interpolate!` resolves the target vertical node
+    from the physical `znode` for mutable grids.
+"""
+function interpolate_physical!(to_field, from_field)
+    to_field.grid isa AbstractMutableGrid || return interpolate!(to_field, from_field)
+
+    to_grid       = to_field.grid
+    from_grid     = from_field.grid
+    arch          = child_architecture(to_grid)
+    from_location = Tuple(L() for L in location(from_field))
+    to_location   = Tuple(L() for L in location(to_field))
+    params        = KernelParameters(interior_indices(to_field))
+
+    launch!(arch, to_grid, params, _interpolate_physical!,
+            to_field, to_grid, to_location, from_field, from_grid, from_location)
+
+    fill_halo_regions!(to_field)
+    return to_field
+end
+
+# Regrid the native-grid field onto the target during `Field(metadata, grid)` and
+# `set!`. The default is bilinear `interpolate_physical!`; datasets whose variables
+# need a different scheme (e.g. conservative area-weighting for fractions, or an
+# area-majority vote for categorical codes) extend this metadatum-dispatched method.
+interpolate_physical!(to_field, from_field, metadata) = interpolate_physical!(to_field, from_field)
+
+"""
+    Field(metadata::Metadatum, grid::AbstractGrid; cache = false, overwrite_cache = false, kw...)
 
 Load `metadata` on its native grid and interpolate onto `grid` — the
 `Field` analog of `FieldTimeSeries(metadata, grid)`. Keyword arguments are
 forwarded to the native-grid `Field(metadata, arch; …)` (e.g. `inpainting`,
 `mask`, `halo`, `cache_inpainted_data`).
+
+With `cache = true` the regridded result is cached to disk and reused by later
+reads with the same dataset, variable, date, region, target-grid geometry, and
+read keywords — skipping the native materialization and regrid entirely; with
+`cache = false` (default) the cache is disabled entirely and nothing is read or
+written. The key carries a size/mtime stamp of the local dataset file where one
+exists, so a re-download invalidates the cache. For streaming datasets with no
+local file, pass `overwrite_cache = true` after replacing data upstream: it
+skips the lookup and overwrites the entry with a freshly regridded result.
 """
-function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid; kw...)
-    native = Field(metadata, architecture(grid); kw...)
+function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid;
+                                   cache = false, overwrite_cache = false,
+                                   tile_bytes = default_tile_bytes, kw...)
     LX, LY, LZ = location(metadata)
+
+    if cache && !overwrite_cache
+        config = FieldRegridding(grid, metadata, values(kw))
+        data = load_field_cache(config)
+        if !isnothing(data)
+            target = Field{LX, LY, LZ}(grid)
+            interior(target) .= on_architecture(architecture(grid), data)
+            fill_halo_regions!(target)
+            return target
+        end
+    end
+
     target = Field{LX, LY, LZ}(grid)
-    Oceananigans.Fields.interpolate!(target, native)
+    regrid_from_metadata!(target, metadata; tile_bytes, kw...)
+    if cache
+        # rebuild the key: the native read may have just downloaded the dataset file it stamps
+        config = FieldRegridding(grid, metadata, values(kw))
+        save_field_cache(config, Array(interior(target)))
+    end
     return target
 end
 
 function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw...)
-    grid = target_field.grid
-    arch = child_architecture(grid)
-    meta_field = Field(metadata, arch; kw...)
-
-    Lzt = grid.Lz
-    Lzm = meta_field.grid.Lz
-
-    # Allow up to 1% vertical mismatch for pressure-level datasets with time-varying
-    # geopotential heights — the per-timestep vertical extent can be slightly smaller
-    # than the temporal-mean extent used for the target grid (e.g. when the atmosphere
-    # is compressed). Oceananigans' interpolate! does not extrapolate, so target points
-    # just outside the source domain will use the nearest interior values.
-    if is_three_dimensional(metadata) && Lzt > Lzm * (1 + 1e-2)
-        throw("The vertical range of the $(metadata.dataset) dataset ($(Lzm) m) is smaller than " *
-              "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
-    end
-
-    interpolate!(target_field, meta_field)
-
+    regrid_from_metadata!(target_field, metadata; kw...)
     return target_field
 end
 
@@ -330,7 +401,7 @@ function set_metadata_field!(field, data, metadatum)
     return nothing
 end
 
-# Read the lon/lat cell centres from the NetCDF file using the names supplied
+# Read the lon/lat cell centers from the NetCDF file using the names supplied
 # by the dataset's `longitude_name` / `latitude_name` traits.
 function read_file_coords(metadatum)
     ds = Dataset(metadata_path(metadatum))
@@ -409,10 +480,12 @@ end
 # Mass fractions (convert to kg/kg)
 @inline convert_units(χ::FT, ::DecigramPerKilogram) where FT = χ / convert(FT, 1e4)
 @inline convert_units(χ::FT, ::GramPerKilogram) where FT = χ / convert(FT, 1e3)
+@inline convert_units(χ::FT, ::WeightPercent) where FT = χ / convert(FT, 100)
 
 # Densities (convert to kg/m^3)
 @inline convert_units(ρ::FT, ::HectogramPerCubicMeter) where FT = ρ / convert(FT, 10)
 @inline convert_units(ρ::FT, ::CentigramPerCubicCentimeter) where FT = ρ * convert(FT, 10)
+@inline convert_units(ρ::FT, ::GramPerCubicCentimeter) where FT = ρ * convert(FT, 1000)
 
 #####
 ##### Masking data for inpainting
@@ -471,10 +544,7 @@ multi-date sets, build a `NamedTuple` of `FieldTimeSeries` per variable, e.g.
 function Oceananigans.Fields.Field(mset::MetadataSet, arch=CPU(); kw...)
     dates = getfield(mset, :dates)
     if !(dates isa AnyDateTime)
-        throw(ArgumentError(
-            "Field(::MetadataSet) requires a scalar `date`, but this `MetadataSet` carries a multi-date axis. " *
-            "For multi-date sets build a NamedTuple of FieldTimeSeries per variable, e.g. " *
-            "`NamedTuple(name => FieldTimeSeries(mset[name], grid) for name in mset.names)`."))
+        throw(ArgumentError("Field(::MetadataSet) requires a scalar `date`, got a multi-date axis"))
     end
     names = getfield(mset, :names)
     return NamedTuple{names}(map(n -> Field(mset[n], arch; kw...), names))

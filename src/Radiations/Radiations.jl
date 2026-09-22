@@ -6,16 +6,20 @@ export PrescribedRadiation,
        LatitudeDependentAlbedo,
        TabulatedAlbedo,
        SeaIceAlbedo,
-       default_stefan_boltzmann_constant
+       default_stefan_boltzmann_constant,
+       default_water_emissivity
 
 # CODATA 2018 value of the Stefan–Boltzmann constant, in W m⁻² K⁻⁴.
 const default_stefan_boltzmann_constant = 5.670374419e-8
+
+# Broadband longwave emissivity of a water surface
+const default_water_emissivity = 0.97
 
 using Adapt: Adapt
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture, CPU
-using Oceananigans.Fields: Center, Face, Field, ZeroField, FractionalIndices
+using Oceananigans.Fields: Center, Field, ZeroField, FractionalIndices
 using Oceananigans.Grids: grid_name, ηnode, _node, topology, Flat, on_architecture
 using Oceananigans.OutputReaders: FieldTimeSeries, cpu_interpolating_time_indices,
                                   update_field_time_series!, extract_field_time_series
@@ -25,8 +29,9 @@ using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!, prettysummary, interpolator
 
 using ..NumericalEarth: NumericalEarth, stateindex
-using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, sea_ice_concentration
+using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, sea_ice_concentration, set_prescribed_field!
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters,
+                                                 _compute_fractional_indices!,
                                                  ComponentExchanger,
                                                  kernel_radiation_properties,
                                                  air_sea_interface_radiation_state,

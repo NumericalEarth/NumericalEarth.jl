@@ -6,7 +6,7 @@ Base.summary(::SpeedySimulation) = "SpeedyWeather.Simulation"
 
 # Take one time-step or more depending on the global timestep
 function Oceananigans.TimeSteppers.time_step!(atmos::SpeedySimulation, Δt)
-    Δt_atmos = atmos.model.time_stepping.Δt_sec
+    Δt_atmos = atmos.model.time_stepping.Δt
     nsteps = ceil(Int, Δt / Δt_atmos)
 
     if (Δt / Δt_atmos) % 1 != 0
@@ -25,7 +25,8 @@ function NumericalEarth.EarthSystemModels.surface_layer_height(sim::SpeedySimula
     T = sim.model.atmosphere.reference_temperature
     g = sim.model.planet.gravity
     Φ = sim.model.geopotential.Δp_geopot_full
-    return Φ[end] * T / g
+    Φₙ = @allowscalar Φ[end]
+    return Φₙ * T / g
 end
 
 # This is a parameter that is used in the computation of the fluxes,
@@ -40,7 +41,7 @@ function initialize_atmospheric_state!(simulation::SpeedyWeather.Simulation)
     (; time) = vars.prognostic.clock  # current time
 
     # set the tendencies back to zero for accumulation
-    SpeedyWeather.reset_tendencies!(vars)
+    SpeedyWeather.reset_tendencies!(vars, model.time_stepping)
 
     if !model.dynamics_only
         SpeedyWeather.parameterization_tendencies!(vars, model)
@@ -50,12 +51,25 @@ function initialize_atmospheric_state!(simulation::SpeedyWeather.Simulation)
 end
 
 """
-    atmosphere_simulation(spectral_grid::SpeedyWeather.SpectralGrid; output_interval=nothing)
+    atmosphere_simulation(spectral_grid::SpeedyWeather.SpectralGrid;
+                          output_interval=nothing,
+                          stop_time=nothing,
+                          time_stepping=SpeedyWeather.Leapfrog(spectral_grid))
 
 Return an atmosphere simulation using `SpeedyWeather.PrimitiveWetModel` on `spectral_grid`.
-Output is written when `output_interval` is provided.
+Output is written when `output_interval` is provided. `time_stepping` controls
+SpeedyWeather's internal timestep (e.g. via its `Δt_at_T31` field); the resulting
+`Δt` must be an integer divisor of the coupled `EarthSystemModel` timestep.
+
+`stop_time` should match the `stop_time` later passed to the coupled
+`Oceananigans.Simulation`. It only synchronizes SpeedyWeather's internal clock
+(used for, e.g., `progress.txt` reporting); the actual run length is controlled
+by the coupled `Simulation`, not by SpeedyWeather's clock.
 """
-function NumericalEarth.Atmospheres.atmosphere_simulation(spectral_grid::SpeedyWeather.SpectralGrid; output_interval=nothing)
+function NumericalEarth.Atmospheres.atmosphere_simulation(spectral_grid::SpeedyWeather.SpectralGrid;
+                                                          output_interval=nothing,
+                                                          stop_time=nothing,
+                                                          time_stepping=SpeedyWeather.Leapfrog(spectral_grid))
     # Surface fluxes
     humidity_flux_ocean = SpeedyWeather.PrescribedOceanHumidityFlux(spectral_grid)
     humidity_flux_land = SpeedyWeather.SurfaceLandHumidityFlux(spectral_grid)
@@ -68,6 +82,7 @@ function NumericalEarth.Atmospheres.atmosphere_simulation(spectral_grid::SpeedyW
     # The atmospheric model
     atmosphere_model = SpeedyWeather.PrimitiveWetModel(
         spectral_grid;
+        time_stepping,
         surface_heat_flux,
         surface_humidity_flux,
         ocean = SpeedyWeather.PrescribedOcean(),
@@ -80,8 +95,11 @@ function NumericalEarth.Atmospheres.atmosphere_simulation(spectral_grid::SpeedyW
     # Construct the simulation
     atmosphere = SpeedyWeather.initialize!(atmosphere_model)
 
-    # Initialize the simulation
-    SpeedyWeather.initialize!(atmosphere; output)
+    # Initialize the simulation, syncing SpeedyWeather's internal clock with the
+    # coupled simulation's intended stop time so progress.txt reports the correct
+    # run duration.
+    period_kw = isnothing(stop_time) ? NamedTuple() : (; period=SpeedyWeather.Second(stop_time))
+    SpeedyWeather.initialize!(atmosphere; output, period_kw...)
 
     # Fill in prognostic fields
     initialize_atmospheric_state!(atmosphere)
@@ -90,4 +108,4 @@ function NumericalEarth.Atmospheres.atmosphere_simulation(spectral_grid::SpeedyW
 end
 
 Oceananigans.Simulations.reset_clock!(atmos::SpeedyWeather.Simulation) =
-    SpeedyWeather.initialize!(atmos.prognostic_variables.clock)
+    SpeedyWeather.initialize!(atmos.variables.prognostic.clock)

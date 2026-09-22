@@ -120,15 +120,15 @@ end
             @test atmosphere isa PrescribedAtmosphere
             @test haskey(atmosphere.velocities, :u)
             @test haskey(atmosphere.velocities, :v)
-            @test atmosphere.tracers.T isa FieldTimeSeries
-            @test atmosphere.tracers.q isa FieldTimeSeries
-            @test atmosphere.freshwater_flux isa PrescribedPrecipitationFlux
+            @test atmosphere.temperature isa FieldTimeSeries
+            @test atmosphere.specific_humidity isa FieldTimeSeries
+            @test atmosphere.precipitation_flux isa PrescribedPrecipitationFlux
 
-            T_data = Array(interior(atmosphere.tracers.T))
-            q_data = Array(interior(atmosphere.tracers.q))
+            T_data = Array(interior(atmosphere.temperature))
+            q_data = Array(interior(atmosphere.specific_humidity))
             u_data = Array(interior(atmosphere.velocities.u))
             v_data = Array(interior(atmosphere.velocities.v))
-            rain_data = Array(interior(atmosphere.freshwater_flux.rain))
+            rain_data = Array(interior(atmosphere.precipitation_flux.rain))
 
             @test all(240 .< T_data .< 320)
             @test all(0 .< q_data .< 0.05)       # physical specific humidity

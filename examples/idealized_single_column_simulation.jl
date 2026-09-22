@@ -28,9 +28,9 @@ atmosphere = PrescribedAtmosphere(atmosphere_grid, atmosphere_times)
 radiation = PrescribedRadiation(atmosphere_grid, atmosphere_times;
                                 ocean_surface = SurfaceRadiationProperties(albedo=0.1))
 
-parent(atmosphere.tracers.T) .= Tᵃᵗ     # K
+parent(atmosphere.temperature) .= Tᵃᵗ     # K
 parent(atmosphere.velocities.u) .= u₁₀ # m/s
-parent(atmosphere.tracers.q) .= qᵃᵗ     # mass ratio
+parent(atmosphere.specific_humidity) .= qᵃᵗ     # mass ratio
 parent(radiation.downwelling_shortwave) .= ℐꜜˢʷ # W
 
 # Build ocean model at rest with initial temperature stratification
