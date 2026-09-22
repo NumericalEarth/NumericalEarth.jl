@@ -51,19 +51,24 @@ function warp_canopy_sources(sources, geometry; resampling, nodata = nothing)
     # than blending it in; all-no-data cells then come out as `nodata` for the caller to mask.
     nodata_options = isnothing(nodata) ? String[] :
                      String["-srcnodata", string(nodata), "-dstnodata", string(nodata)]
+    mosaic_options = isnothing(nodata) ? String[] :
+                     String["-srcnodata", string(nodata), "-vrtnodata", string(nodata)]
     options = vcat(String["-t_srs", "EPSG:4326"], geometry,
                    String["-r", resampling, "-ot", "Float32"], nodata_options)
     try
-        return ArchGDAL.gdalwarp(datasets, options) do warped
-            λ₀, Δλ, _, φ₀, _, Δφ = ArchGDAL.getgeotransform(warped)   # Δφ < 0, rows run north→south
-            band = Float32.(ArchGDAL.read(warped, 1))
-            Nx, Ny = size(band)
-            # Cell centers off the geotransform stay exact even when `-tr` snaps the extent
-            # to whole pixels. Reverse the rows and the latitudes together: north→south→north.
-            data = reverse(band, dims = 2)
-            longitude = [λ₀ + (i - 0.5) * Δλ for i in 1:Nx]
-            latitude  = reverse([φ₀ + (j - 0.5) * Δφ for j in 1:Ny])
-            return (; data, longitude, latitude)
+        # Mosaic before resampling so a tile's tiny overlap cannot overwrite a whole output cell.
+        return ArchGDAL.gdalbuildvrt(datasets, mosaic_options) do mosaic
+            ArchGDAL.gdalwarp([mosaic], options) do warped
+                λ₀, Δλ, _, φ₀, _, Δφ = ArchGDAL.getgeotransform(warped)   # Δφ < 0, rows run north→south
+                band = Float32.(ArchGDAL.read(warped, 1))
+                Nx, Ny = size(band)
+                # Cell centers off the geotransform stay exact even when `-tr` snaps the extent
+                # to whole pixels. Reverse the rows and the latitudes together: north→south→north.
+                data = reverse(band, dims = 2)
+                longitude = [λ₀ + (i - 0.5) * Δλ for i in 1:Nx]
+                latitude  = reverse([φ₀ + (j - 0.5) * Δφ for j in 1:Ny])
+                return (; data, longitude, latitude)
+            end
         end
     finally
         for dataset in datasets

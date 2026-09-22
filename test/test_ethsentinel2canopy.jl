@@ -268,6 +268,15 @@ end
     @test T[2] ≈ 1
     @test isnan(T[3])
 
+    # An uncovered interior cell remains missing inside the mosaic's bounds.
+    separated_sources = [sources[1], synthetic_tile(0.3, east)]
+    separated_grid = LatitudeLongitudeGrid(CPU(); size = (3, 1), longitude = (0.025, 0.325),
+                                           latitude = (50, 50.1), topology = (Bounded, Bounded, Flat))
+    separated = Array(interior(ext.canopy_fraction_field(separated_grid, separated_sources, 20, native_step), :, :, 1))
+    @test separated[1] ≈ 0 atol = 1e-6
+    @test isnan(separated[2])
+    @test separated[3] ≈ 1
+
     # A grid finer than ten native pixels per cell floors the lattice at the pixel size, so
     # the fraction becomes the exact share of tall pixels: the treeless patch spans 20 of
     # the 250 pixels under cell 3 and all 25 under cell 4.
