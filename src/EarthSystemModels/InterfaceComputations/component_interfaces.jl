@@ -1,6 +1,6 @@
 using KernelAbstractions: @kernel, @index
 using Oceananigans: initialize!
-using Oceananigans.Architectures: architecture
+using Oceananigans.Architectures: architecture, on_architecture, CPU
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions
 using Oceananigans.Units: Time
 using Oceananigans.Grids: inactive_node, topology
@@ -148,16 +148,14 @@ Oceananigans.Architectures.on_architecture(arch, fluxes::AtmosphereSeaIceFluxes)
                            on_architecture(arch, fluxes.y_momentum))
 
 struct SeaIceOceanFluxes{C, FX, FY}
-    interface_heat         :: C
-    frazil_heat            :: C
-    salt                   :: C
-    freshwater             :: C
+    interface_heat          :: C
+    frazil_heat             :: C
+    salt                    :: C
+    freshwater              :: C
     # Σ Tᵢ Jʷᵢ over the ice-ocean exchange: zero unless the meltwater is delivered at the interface
     # temperature, in which case it is Tᵦ times the ice-only volume flux.
     freshwater_heat_content :: C
-    # The ice-ocean drag is split for the ocean's semi-implicit momentum boundary condition:
-    # `x_momentum` carries the explicit part Fₑ = -ρₑ Cᴰ |Δu| uⁱ and `x_momentum_coefficient` the
-    # implicit coefficient λ = ρₑ Cᴰ |Δu|, so the total flux is Fₑ + λ uᵒ with uᵒ the ocean velocity.
+    # Affine ice-ocean drag Fₑ + λ uᵒ: `x_momentum` is Fₑ = -ρₑ Cᴰ |Δu| uⁱ, `x_momentum_coefficient` is λ = ρₑ Cᴰ |Δu|.
     x_momentum             :: FX
     y_momentum             :: FY
     x_momentum_coefficient :: FX
@@ -169,8 +167,8 @@ function SeaIceOceanFluxes(grid)
     x_velocity_bcs = vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
     y_velocity_bcs = vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
     return SeaIceOceanFluxes(C(grid), C(grid), C(grid), C(grid), C(grid),
-                             Field{Face, Center, Nothing}(grid),
-                             Field{Center, Face, Nothing}(grid),
+                             Field{Face, Center, Nothing}(grid; boundary_conditions = x_velocity_bcs),
+                             Field{Center, Face, Nothing}(grid; boundary_conditions = y_velocity_bcs),
                              Field{Face, Center, Nothing}(grid),
                              Field{Center, Face, Nothing}(grid))
 end
@@ -204,19 +202,19 @@ Oceananigans.Architectures.on_architecture(arch, fluxes::SeaIceOceanFluxes) =
 struct ZeroFluxes{Z}
     # Atmosphere-ocean and atmosphere-sea-ice flux fields (turbulent only;
     # radiative diagnostic fields live on the radiation component)
-    latent_heat           :: Z
-    sensible_heat         :: Z
-    water_vapor           :: Z
-    x_momentum            :: Z
-    y_momentum            :: Z
-    friction_velocity     :: Z
-    temperature_scale     :: Z
-    water_vapor_scale     :: Z
+    latent_heat            :: Z
+    sensible_heat          :: Z
+    water_vapor            :: Z
+    x_momentum             :: Z
+    y_momentum             :: Z
+    friction_velocity      :: Z
+    temperature_scale      :: Z
+    water_vapor_scale      :: Z
     # Sea ice-ocean flux fields
-    interface_heat        :: Z
-    frazil_heat           :: Z
-    salt                  :: Z
-    freshwater            :: Z
+    interface_heat          :: Z
+    frazil_heat             :: Z
+    salt                    :: Z
+    freshwater              :: Z
     freshwater_heat_content :: Z
     x_momentum_coefficient :: Z
     y_momentum_coefficient :: Z
@@ -407,6 +405,7 @@ Keyword Arguments
 
 - `radiation`: radiation component. Default: `nothing`.
 - `freshwater_density`: reference density of freshwater. Default: `default_freshwater_density`.
+- `latent_heat_of_fusion`: latent heat [J kg⁻¹] the ocean supplies to melt snowfall and icebergs. Default: `default_latent_heat_of_fusion`.
 - `atmosphere_ocean_fluxes`: flux formulation for atmosphere-ocean interface. Default: `SimilarityTheoryFluxes()`.
 - `atmosphere_sea_ice_fluxes`: flux formulation for atmosphere-sea ice interface. Default: `SimilarityTheoryFluxes()`.
 - `atmosphere_ocean_interface_temperature`: temperature formulation for atmosphere-ocean interface.
@@ -428,6 +427,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              land = nothing,
                              exchange_grid = exchange_grid(atmosphere, ocean, sea_ice, land),
                              freshwater_density = default_freshwater_density,
+                             latent_heat_of_fusion = default_latent_heat_of_fusion,
                              atmosphere_ocean_fluxes = SimilarityTheoryFluxes(eltype(exchange_grid)),
                              atmosphere_sea_ice_fluxes = atmosphere_sea_ice_similarity_theory(eltype(exchange_grid)),
                              atmosphere_land_fluxes = default_atmosphere_land_fluxes(land, eltype(exchange_grid)),
@@ -463,15 +463,17 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     sea_ice_reference_density  = convert(FT, sea_ice_reference_density)
     sea_ice_heat_capacity      = convert(FT, sea_ice_heat_capacity)
     freshwater_density         = convert(FT, freshwater_density)
+    latent_heat_of_fusion      = convert(FT, latent_heat_of_fusion)
     gravitational_acceleration = convert(FT, gravitational_acceleration)
 
     # Component properties
     atmosphere_properties = thermodynamics_parameters(atmosphere)
 
-    ocean_properties = (reference_density  = ocean_reference_density,
-                        heat_capacity      = ocean_heat_capacity,
-                        freshwater_density = freshwater_density,
-                        temperature_units  = ocean_temperature_units)
+    ocean_properties = (reference_density     = ocean_reference_density,
+                        heat_capacity         = ocean_heat_capacity,
+                        freshwater_density    = freshwater_density,
+                        latent_heat_of_fusion = latent_heat_of_fusion,
+                        temperature_units     = ocean_temperature_units)
 
     # Only build sea_ice_properties if sea_ice is an actual Simulation with a model
     if sea_ice isa Simulation
@@ -552,8 +554,8 @@ default_al_specific_humidity(land) =
 # the defaults below are uniform constants (0.1 m momentum, 0.01 m scalar, no
 # displacement). Override per-domain by passing `atmosphere_land_fluxes =
 # SimilarityTheoryFluxes(...)` with explicit roughness lengths and displacement
-# (constants, or per-cell models such as `LandRoughnessLength` /
-# `LandZeroPlaneDisplacement`) to `ComponentInterfaces` / `AtmosphereLandModel`.
+# (constants, or `Field`s of per-cell values) to `ComponentInterfaces` /
+# `AtmosphereLandModel`.
 default_atmosphere_land_fluxes(::Nothing, FT; kw...) = nothing
 
 function default_atmosphere_land_fluxes(land, FT; solver_stop_criteria = nothing)

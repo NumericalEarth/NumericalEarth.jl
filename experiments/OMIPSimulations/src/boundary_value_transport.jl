@@ -8,7 +8,7 @@ using Oceananigans.Operators: Az⁻¹ᶜᶜᶠ, Δx_qᶜᶠᶠ, Δy_qᶠᶜᶠ, 
                               δxᶜᵃᵃ, δyᵃᶜᵃ, δzᵃᵃᶜ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.TurbulenceClosures: AbstractTurbulenceClosure, ExplicitTimeDiscretization,
                                        FluxTapering, convert_diffusivity, issd_coefficient_loc,
-                                       κᶜᶠᶠ, κᶠᶜᶠ, ϵSxᶠᶜᶠ, ϵSyᶜᶠᶠ
+                                       κᶜᶠᶠ, κᶠᶜᶠ, Sxᶠᶜᶠ, Syᶜᶠᶠ, tapering_factor
 using Oceananigans.Utils: KernelParameters, launch!, prettysummary
 using Adapt: Adapt, adapt
 
@@ -170,6 +170,36 @@ function Oceananigans.TurbulenceClosures.compute_closure_fields!(closure_fields,
 end
 
 #####
+##### Tapered slopes, computed here rather than taken from Oceananigans
+#####
+
+# ⚠ Oceananigans' `ϵSxᶠᶜᶠ` / `ϵSyᶜᶠᶠ` took a SLOPE LIMITER through 0.112.0+zA2CT and take a CLOSURE from
+# 0.112.0+Qd5sf on, reading `.isopycnal_tensor` and `.slope_limiter` off it. Passing this scheme's bare
+# `FluxTapering` into the newer signature makes `closure.isopycnal_tensor` a dynamic `getfield` on a type
+# with no such field — a GPU kernel-compile failure (`InvalidIRError: call to jl_f_getfield`), which is
+# what killed `orca_gmbvp` twice on 2026-09-08 after the Manifest moved at 17:32.
+#
+# `Sxᶠᶜᶠ`, `Syᶜᶠᶠ` and the position-free `tapering_factor(Sx, Sy, limiter)` are identical in both
+# versions, so computing the tapered slope here makes the callers independent of that signature. The
+# bodies reproduce the pre-17:32 behaviour exactly.
+#
+# ⚠ A limiter carrying a position-dependent ramp (`MixedLayerTapering`, `BoundaryLayerTapering`)
+# contributes its magnitude clip through `tapering_factor` but NOT its ramp, which needs `(i, j, k)`.
+# That is also what the newer Oceananigans does, and no run combines those limiters with this scheme.
+
+@inline function tapered_ϵSxᶠᶜᶠ(i, j, k, grid, slope_limiter, b, C)
+    Sx = Sxᶠᶜᶠ(i, j, k, grid, b, C)
+    ϵ  = tapering_factor(Sx, zero(grid), slope_limiter)
+    return ϵ * Sx
+end
+
+@inline function tapered_ϵSyᶜᶠᶠ(i, j, k, grid, slope_limiter, b, C)
+    Sy = Syᶜᶠᶠ(i, j, k, grid, b, C)
+    ϵ  = tapering_factor(zero(grid), Sy, slope_limiter)
+    return ϵ * Sy
+end
+
+#####
 ##### The local Gent et al. (1995) transport, Υᴳᴹ = -κ S
 #####
 
@@ -180,8 +210,8 @@ end
     κˣ = κᶠᶜᶠ(i, j, k, grid, issd_coefficient_loc, κ, t, fields)
     κʸ = κᶜᶠᶠ(i, j, k, grid, issd_coefficient_loc, κ, t, fields)
 
-    Sˣ = ϵSxᶠᶜᶠ(i, j, k, grid, slope_limiter, buoyancy, fields)
-    Sʸ = ϵSyᶜᶠᶠ(i, j, k, grid, slope_limiter, buoyancy, fields)
+    Sˣ = tapered_ϵSxᶠᶜᶠ(i, j, k, grid, slope_limiter, buoyancy, fields)
+    Sʸ = tapered_ϵSyᶜᶠᶠ(i, j, k, grid, slope_limiter, buoyancy, fields)
 
     # The slope stencil reaches into the halo, where the folded metrics of a tripolar grid can
     # return a non-finite slope; one such level would poison the whole column solve below.

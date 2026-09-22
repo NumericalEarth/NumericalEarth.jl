@@ -1,6 +1,6 @@
 module Oceans
 
-export ocean_simulation, SlabOcean, PrescribedOcean,
+export ocean_simulation, river_mouth_vertical_diffusivity, SlabOcean, PrescribedOcean,
        TwoColorRadiation, ChlorophyllOptics, absorption_coefficient, equivalent_chlorophyll
 
 using Adapt: Adapt, adapt
@@ -16,16 +16,16 @@ using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, ZeroField, compute!, set!, interior
 using Oceananigans.Forcings: MultipleForcings, DiscreteForcing
-using Oceananigans.Grids: Grids, architecture, inactive_node, Face, Center, xspacings, yspacings, RectilinearGrid
+using Oceananigans.Grids: Grids, architecture, inactive_node, Face, Center, xspacings, yspacings, znodes, RectilinearGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition, MutableGridOfSomeKind
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel, displacement
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
 using Oceananigans.Models.NonhydrostaticModels: NonhydrostaticModel
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids, TripolarGrid
-using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ, Δzᶠᶜᶜ, Δzᶜᶠᶜ
+using Oceananigans.Operators: active_weighted_ℑxyᶠᶜᶜ, active_weighted_ℑxyᶜᶠᶜ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ, Δzᶠᶜᶜ, Δzᶜᶠᶜ
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TimeSteppers: Clock
-using Oceananigans.TurbulenceClosures: κzᶜᶜᶠ
+using Oceananigans.TurbulenceClosures: κzᶜᶜᶠ, VerticalScalarDiffusivity
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
                                                                      CATKEEquation
@@ -194,8 +194,7 @@ end
 @inline net_flux(f::DiscreteForcing)   = f.parameters
 @inline net_flux(mf::MultipleForcings) = net_flux(mf.forcings[1])
 
-# The implicit drag coefficient λ of a semi-implicit surface stress; `nothing` when the boundary
-# condition carries no implicit part.
+# The implicit coefficient λ of an affine surface flux; `nothing` when the flux has no implicit part.
 @inline net_flux_coefficient(condition) = nothing
 @inline net_flux_coefficient(bc::IMEXFlux) = net_flux(bc.implicit_coefficient)
 

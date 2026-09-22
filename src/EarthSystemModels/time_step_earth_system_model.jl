@@ -60,6 +60,7 @@ function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, �
     !isnothing(radiation)  && time_step!(radiation, Δt)
     !isnothing(atmosphere) && time_step!(atmosphere, Δt)
     !isnothing(land)       && time_step!(land, Δt)
+    # Ocean before sea ice: the ice-ocean drag is evaluated against the just-updated ocean velocity.
     !isnothing(ocean)      && time_step!(ocean, Δt)
     !isnothing(sea_ice)    && time_step!(sea_ice, Δt)
 

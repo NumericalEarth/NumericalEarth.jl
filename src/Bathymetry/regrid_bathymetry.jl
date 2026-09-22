@@ -4,11 +4,13 @@
 # that, e.g., `minimum_depth = 0` and `minimum_depth = 0.0` key identically.
 function bathymetry_regridding_key(grid, metadata;
                                    height_above_water, minimum_depth,
-                                   interpolation_passes, major_basins)
+                                   interpolation_passes, major_basins,
+                                   location = (Center, Center))
     parameters = (; height_above_water = isnothing(height_above_water) ? nothing : Float64(height_above_water),
                     minimum_depth = Float64(minimum_depth),
                     interpolation_passes = Int(interpolation_passes),
-                    major_basins = Float64(major_basins))
+                    major_basins = Float64(major_basins),
+                    location = string(location[1], '_', location[2]))
     return FieldRegridding(grid, metadata, parameters)
 end
 
@@ -63,6 +65,12 @@ Keyword Arguments
                   the smallest basins are removed first. `major_basins = 1` retains only the largest basin.
                   If `Inf` then no basins are removed. Default: 1.
 
+- `location`: Horizontal location the bathymetry is regridded onto, as a tuple of `Center` and `Face`.
+              Default: `(Center, Center)`, the cell centers. `(Face, Face)` returns the height at
+              cell corners, which [`ShavedCellBottom`](@ref) consumes directly: its bottom is a
+              piecewise-bilinear surface through the corners, so supplying them avoids the box
+              average it otherwise applies to reconstruct them from centers.
+
 - `cache`: If `true` (default), caches the regridded bathymetry to disk and reuses it on subsequent
            calls with the same grid, parameters, and dataset file; a re-download of the dataset
            invalidates the entry. If `false`, the cache is disabled entirely: nothing is read
@@ -76,6 +84,7 @@ function regrid_bathymetry(target_grid, metadata;
                            minimum_depth = 0,
                            interpolation_passes = 1,
                            major_basins = 1,
+                           location = (Center, Center),
                            cache = true,
                            overwrite_cache = false)
 
@@ -84,10 +93,10 @@ function regrid_bathymetry(target_grid, metadata;
     if cache && !overwrite_cache
         config = bathymetry_regridding_key(target_grid, metadata;
                                            height_above_water, minimum_depth,
-                                           interpolation_passes, major_basins)
+                                           interpolation_passes, major_basins, location)
         cached_data = load_field_cache(config)
         if !isnothing(cached_data)
-            target_z = Field{Center, Center, Nothing}(target_grid)
+            target_z = Field{location[1], location[2], Nothing}(target_grid)
             set!(target_z, cached_data)
             fill_halo_regions!(target_z)
             return target_z
@@ -100,13 +109,14 @@ function regrid_bathymetry(target_grid, metadata;
                                   height_above_water,
                                   minimum_depth,
                                   interpolation_passes,
-                                  major_basins)
+                                  major_basins,
+                                  location)
 
     if cache
         # rebuild the key: `download` may have just fetched the dataset file it stamps
         config = bathymetry_regridding_key(target_grid, metadata;
                                            height_above_water, minimum_depth,
-                                           interpolation_passes, major_basins)
+                                           interpolation_passes, major_basins, location)
         save_field_cache(config, Array(interior(target_z, :, :, 1)))
     end
 
@@ -118,7 +128,8 @@ function _regrid_bathymetry(target_grid, metadata;
                             height_above_water,
                             minimum_depth,
                             interpolation_passes,
-                            major_basins)
+                            major_basins,
+                            location = (Center, Center))
     if isinteger(interpolation_passes)
         interpolation_passes = convert(Int, interpolation_passes)
     end
@@ -151,7 +162,8 @@ function _regrid_bathymetry(target_grid, metadata;
     fill_halo_regions!(native_z)
 
     target_z = interpolate_bathymetry_in_passes(native_z, target_grid;
-                                                passes = interpolation_passes)
+                                                passes = interpolation_passes,
+                                                location)
 
     if minimum_depth > 0
         launch!(arch, target_grid, :xy, _enforce_minimum_depth!, target_z, minimum_depth)
@@ -277,7 +289,8 @@ end
 
 # Here we can either use `regrid!` (three dimensional version) or `interpolate!`.
 function interpolate_bathymetry_in_passes(native_z, target_grid;
-                                          passes = 10)
+                                          passes = 10,
+                                          location = (Center, Center))
 
     Nλt, Nφt = Nt = size(target_grid)
     Nλn, Nφn = Nn = size(native_z)
@@ -327,8 +340,8 @@ function interpolate_bathymetry_in_passes(native_z, target_grid;
     end
 
     new_size = (Nλ[passes], Nφ[passes], 1)
-    @info "    pass $passes to size $new_size"
-    target_z = Field{Center, Center, Nothing}(target_grid)
+    @info "    pass $passes to size $new_size at $(location[1]), $(location[2])"
+    target_z = Field{location[1], location[2], Nothing}(target_grid)
     interpolate!(target_z, old_z)
 
     return target_z
@@ -360,9 +373,10 @@ function remove_minor_basins!(zb::Field, keep_major_basins)
     cpu_arch  = Oceananigans.DistributedComputations.cpu_architecture(architecture(zb))
     zb_cpu    = on_architecture(cpu_arch, zb)
     TX, TY, _ = topology(zb_cpu.grid)
+    LX, LY, _ = Oceananigans.Fields.location(zb_cpu)
 
-    Nx = Base.length(Center(), TX(), zb_cpu.grid.Nx)
-    Ny = Base.length(Center(), TY(), zb_cpu.grid.Ny)
+    Nx = Base.length(LX(), TX(), zb_cpu.grid.Nx)
+    Ny = Base.length(LY(), TY(), zb_cpu.grid.Ny)
 
     # Get labels for the core region (extension is handled internally by label_ocean_basins)
     labels = label_ocean_basins(zb_cpu, TX, (Nx, Ny))

@@ -14,25 +14,30 @@ using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, getclo
 # GM eddy-induced meridional velocity v★ = -δz(κ ϵ Sʸ) / Δz, for the `DiffusiveFormulation`, where GM
 # enters as a skew tracer flux and v★ is never materialized. Built from the same helpers Oceananigans
 # uses for the `AdvectiveFormulation`, so the two formulations give bitwise-identical diagnostics.
+#
+# ⚠ `κ_ϵSyᶜᶠᶠ` takes the CLOSURE in its sixth slot and reads `.isopycnal_tensor` and `.slope_limiter`
+# off it. Handing it a bare slope limiter makes those a dynamic `getfield` on a type with no such
+# field — an `InvalidIRError: call to jl_f_getfield` at kernel-compile time, before the first step.
 @inline function skew_meridional_velocity(i, j, k, grid, clock, closure, buoyancy, model_fields)
     closure = getclosure(i, j, closure)
     κ = closure.κ_skew
-    limiter = closure.slope_limiter
-    return - δzᵃᵃᶜ(i, j, k, grid, κ_ϵSyᶜᶠᶠ, clock, limiter, κ, buoyancy, model_fields) * Δz⁻¹ᶜᶠᶜ(i, j, k, grid)
+    return - δzᵃᵃᶜ(i, j, k, grid, κ_ϵSyᶜᶠᶠ, clock, closure, κ, buoyancy, model_fields) * Δz⁻¹ᶜᶠᶜ(i, j, k, grid)
 end
 
 """
     bolus_meridional_velocity(model)
 
-Return the GM eddy-induced meridional velocity — the field the `AdvectiveFormulation` already advects
-with, or an operation rebuilding it under the `DiffusiveFormulation`. `nothing` without a skew
-diffusivity, so the eddy-resolving configurations write no identically-zero field to disk.
+Return the GM eddy-induced meridional velocity — the field the `AdvectiveFormulation` and
+`BoundaryValueTransport` already advect with, or an operation rebuilding it under the
+`DiffusiveFormulation`. `nothing` without a skew diffusivity, so the eddy-resolving configurations
+write no identically-zero field to disk.
 """
 function bolus_meridional_velocity(model)
     closures = model.closure isa Tuple ? model.closure : (model.closure,)
     K        = model.closure isa Tuple ? model.closure_fields : (model.closure_fields,)
 
-    n = findfirst(c -> c isa IsopycnalSkewSymmetricDiffusivity && !isnothing(c.κ_skew), closures)
+    n = findfirst(c -> c isa BoundaryValueTransport ||
+                       (c isa IsopycnalSkewSymmetricDiffusivity && !isnothing(c.κ_skew)), closures)
     isnothing(n) && return nothing
 
     hasproperty(K[n], :v) && return K[n].v
@@ -192,7 +197,7 @@ function add_omip_diagnostics!(simulation;
                                                      dir = output_dir,
                                                      filename = filename_prefix * "_surface",
                                                      file_splitting = TimeInterval(file_splitting_interval),
-                                                     overwrite_existing = true,
+                                                     overwrite_files = true,
                                                      jld2_kw = Dict(:compress => ZstdFilter()))
 
     # 3-D fields (including buoyancy)
@@ -243,7 +248,7 @@ function add_omip_diagnostics!(simulation;
                                                     dir = output_dir,
                                                     filename = filename_prefix * "_fields",
                                                     file_splitting = TimeInterval(file_splitting_interval),
-                                                    overwrite_existing = true,
+                                                    overwrite_files = true,
                                                     jld2_kw = Dict(:compress => ZstdFilter()))
 
     # `:zosga` (area-mean free-surface displacement) is a Boussinesq mass-conservation check;
@@ -276,7 +281,7 @@ function add_omip_diagnostics!(simulation;
                                                       dir = output_dir,
                                                       filename = filename_prefix * "_averages",
                                                       file_splitting = TimeInterval(file_splitting_interval),
-                                                      overwrite_existing = true)
+                                                      overwrite_files = true)
 
     # Checkpointer (drives `run!(sim; pickup=true)`)
     simulation.output_writers[:checkpointer] = Checkpointer(simulation.model;

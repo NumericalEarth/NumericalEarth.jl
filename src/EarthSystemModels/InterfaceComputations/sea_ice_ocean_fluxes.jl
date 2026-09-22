@@ -3,9 +3,7 @@ using Oceananigans.Grids: znode, Center
 using Oceananigans.ImmersedBoundaries: inactive_node
 using SeawaterPolynomials.TEOS10: Θ_from_T
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
-using ClimaSeaIce.SeaIceDynamics: x_momentum_stress, y_momentum_stress,
-                                  explicit_τx, explicit_τy,
-                                  implicit_τx_coefficient, implicit_τy_coefficient
+using ClimaSeaIce.SeaIceDynamics: implicit_τx_coefficient, implicit_τy_coefficient
 
 using ..EarthSystemModels: ocean_temperature, ocean_salinity
 
@@ -252,16 +250,12 @@ end
     sea_ice_fields = (; u = uˢⁱ, v = vˢⁱ, h = hˢⁱ, ℵ = ℵ)
     τₛ = sea_ice_ocean_stress
 
-    # The drag ρₑ Cᴰ |Δu| (uᵒ - uⁱ) is split so the ocean can treat it semi-implicitly: λ is embedded
-    # in the ocean's vertical solver diagonal and Fₑ enters the tendency. Since `x_momentum_stress`
-    # is `explicit_τx - λ uⁱ`, subtracting `explicit_τx` leaves exactly Fₑ = -λ uⁱ.
+    # The drag ρₑ Cᴰ |Δu| (uᵒ - uⁱ) split into the implicit coefficient λ = ρₑ Cᴰ |Δu| and the explicit remainder Fₑ = -λ uⁱ.
     @inbounds begin
         λˣ[i, j, 1] = implicit_τx_coefficient(i, j, Nz, grid, τₛ, clock, sea_ice_fields)
         λʸ[i, j, 1] = implicit_τy_coefficient(i, j, Nz, grid, τₛ, clock, sea_ice_fields)
-        τˣ[i, j, 1] = x_momentum_stress(i, j, Nz, grid, τₛ, clock, sea_ice_fields) -
-                      explicit_τx(i, j, Nz, grid, τₛ, clock, sea_ice_fields)
-        τʸ[i, j, 1] = y_momentum_stress(i, j, Nz, grid, τₛ, clock, sea_ice_fields) -
-                      explicit_τy(i, j, Nz, grid, τₛ, clock, sea_ice_fields)
+        τˣ[i, j, 1] = - λˣ[i, j, 1] * uˢⁱ[i, j, Nz]
+        τʸ[i, j, 1] = - λʸ[i, j, 1] * vˢⁱ[i, j, Nz]
     end
 end
 

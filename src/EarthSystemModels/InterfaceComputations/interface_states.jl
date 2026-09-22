@@ -63,9 +63,11 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
     T  = convert(CT, Tₛ)
     p  = convert(CT, pᵃᵗ)
 
-    # Raoult's law on the saturation vapor pressure.
+    # Raoult's law on the saturation vapor pressure, with the moist-air enhancement factor of Gill (1982)
     χ_H₂O = compute_water_mole_fraction(formulation.water_mole_fraction, Sₛ)
-    pᵛ⁺   = χ_H₂O * AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
+    t     = T - convert(CT, 273.15)
+    fᵛ    = 1 + convert(CT, 1e-8) * p * (convert(CT, 4.5) + convert(CT, 6e-4) * t^2)
+    pᵛ⁺   = fᵛ * χ_H₂O * AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
     εᵈᵛ⁻¹ = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
 
     # Guard against unphysically warm interface temperatures: once pᵛ⁺ exceeds
@@ -462,21 +464,21 @@ assemble_interior_fields(state, temperature_formulation::IDST) = state
 end
 
 # Solve the surface flux balance equation:
-#   Qa(Tₛ) + Ωc (Tᵃᵗ - Tₛ) + (Tₛ - Tᵦ) / R = 0
+#   Qa(Tₛ) + Ωc (Tᵃᵗ - Tₛ) + (Tₛ - Tb) / R = 0
 # where R is the total thermal resistance (h/k for bare ice, hₛ/kₛ + hᵢ/kᵢ with snow),
 # Ωc = 𝒬ᵀ/(Tᵃᵗ-Tₛ) is the linearized sensible heat coefficient, and Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd.
 # The upward longwave ℐꜛˡʷ = σ ε Tₛ⁴ is strongly nonlinear in Tₛ; a pure Picard
 # iteration (treating Qa constant) is unstable when 4σεTₛ³ ≳ 1/R (radiation
 # dominated). We linearize: Qa(Tₛ) ≈ Qa(Tₛ⁻) + β (Tₛ − Tₛ⁻) with β = 4σεTₛ⁻³,
 # yielding the Newton-like semi-implicit update:
-#   Tₛ = [Tᵦ + β R Tₛ⁻ - Ωc R Tᵃᵗ - Qa R] / [1 + β R - Ωc R]
+#   Tₛ = [Tb + β R Tₛ⁻ - Ωc R Tᵃᵗ - Qa R] / [1 + β R - Ωc R]
 @inline function conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     hᵢ = Ψᵢ.hi
     hc = Ψᵢ.hc
 
     # Bottom temperature at the melting point
-    Tᵦ = ClimaSeaIce.SeaIceThermodynamics.melting_temperature(ℙᵢ.liquidus, Ψᵢ.S)
-    Tᵦ = convert_to_kelvin(ℙᵢ.temperature_units, Tᵦ)
+    Tb = ClimaSeaIce.SeaIceThermodynamics.melting_temperature(ℙᵢ.liquidus, Ψᵢ.S)
+    Tb = convert_to_kelvin(ℙᵢ.temperature_units, Tb)
     Tₛ⁻ = Ψₛ.temperature
 
     Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
@@ -492,7 +494,7 @@ end
 
     # Flux balance solution with T⁴ linearization (stable even at ΔT = 0):
     D  = 1 + β * R - Ωc * R
-    T★ = (Tᵦ + β * R * Tₛ⁻ - Ωc * R * Tᵃᵗ - Qa * R) / D
+    T★ = (Tb + β * R * Tₛ⁻ - Ωc * R * Tᵃᵗ - Qa * R) / D
     T★ = ifelse(D == 0, Tₛ⁻, T★)
     T★ = ifelse(isnan(T★), Tₛ⁻, T★)
 
@@ -509,7 +511,7 @@ end
     Tₛ⁺ = min(Tₛ⁺, Tₘ)
 
     # If ice is not consolidated, use the bottom temperature
-    Tₛ⁺ = ifelse(hᵢ ≥ hc, Tₛ⁺, Tᵦ)
+    Tₛ⁺ = ifelse(hᵢ ≥ hc, Tₛ⁺, Tb)
 
     return Tₛ⁺
 end

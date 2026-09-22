@@ -4,7 +4,7 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.BuoyancyFormulations: ∂z_b
 using Oceananigans.Grids: Center, Face, inactive_node, φnode
 using Oceananigans.Operators: Δzᶜᶜᶠ, ℑxᶜᵃᵃ, ℑyᵃᶜᵃ
-using Oceananigans.TurbulenceClosures: FluxTapering, ϵSxᶠᶜᶠ, ϵSyᶜᶠᶠ
+using Oceananigans.TurbulenceClosures: FluxTapering
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGridOfSomeKind
 using Oceananigans.Utils: KernelParameters, launch!
 
@@ -55,8 +55,8 @@ end
 # The slope stencil reaches into the halo, and on the tripolar fold row the folded metrics can return a
 # non-finite slope. One such level would otherwise poison the whole column sum below.
 @inline function squared_isopycnal_slope(i, j, k, grid, limiter, buoyancy, tracers)
-    Sx = ℑxᶜᵃᵃ(i, j, k, grid, ϵSxᶠᶜᶠ, limiter, buoyancy, tracers)
-    Sy = ℑyᵃᶜᵃ(i, j, k, grid, ϵSyᶜᶠᶠ, limiter, buoyancy, tracers)
+    Sx = ℑxᶜᵃᵃ(i, j, k, grid, tapered_ϵSxᶠᶜᶠ, limiter, buoyancy, tracers)
+    Sy = ℑyᵃᶜᵃ(i, j, k, grid, tapered_ϵSyᶜᶠᶠ, limiter, buoyancy, tracers)
     return finite_or_zero(Sx^2, grid) + finite_or_zero(Sy^2, grid)
 end
 
@@ -142,6 +142,16 @@ end
 # Promote unequal scalars to static fields whose symmetric coefficient matches the skew
 # one over the fold band; equal pairs and non-tripolar grids pass through untouched.
 fold_safe_constant_coefficients(grid, κ_skew, κ_symmetric) = (κ_skew, κ_symmetric)
+
+# The triad formulation assembles κˢ and κᴬ per triad rather than through a single cross-term evaluated
+# at ᶜᶜᶠ, and conserves tracer across the fold with unequal scalars: on an immersed tripolar grid the
+# residual grows 4.2× over a 16× increase in step count, against 196× for the unpromoted ISSD and 2.4×
+# for the promoted one — round-off, not a leak. Promotion would also be fatal there, because the triad
+# kernel takes the closure unadapted and cannot accept a `Field`-valued κ.
+fold_safe_constant_coefficients(grid, κ_skew, κ_symmetric, isopycnal_formulation) =
+    fold_safe_constant_coefficients(grid, κ_skew, κ_symmetric)
+
+fold_safe_constant_coefficients(grid, κ_skew, κ_symmetric, ::Val{:triad}) = (κ_skew, κ_symmetric)
 
 function fold_safe_constant_coefficients(grid::TripolarGridOfSomeKind, κ_skew::Number, κ_symmetric::Number)
     κ_skew == κ_symmetric && return (κ_skew, κ_symmetric)

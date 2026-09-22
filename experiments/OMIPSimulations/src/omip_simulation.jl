@@ -7,7 +7,7 @@ using Oceananigans.Architectures: on_architecture, architecture
 using Oceananigans.DistributedComputations: @root, Distributed
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, getbc, fill_halo_regions!
 using Oceananigans.Fields: Field, CenterField, interior
-using Oceananigans.Advection: CWENOZ
+using Oceananigans.Advection: GhostCells
 using Oceananigans.ImmersedBoundaries: bottom_height_field, mask_immersed_field!
 using Oceananigans.Utils: launch!
 using Adapt: Adapt
@@ -150,13 +150,16 @@ ncar_atmosphere_sea_ice_fluxes(FT = Float64) =
 
 """
     build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
+                        sea_ice_flux_configuration = flux_configuration,
                         velocity_formulation = :relative)
 
-Build the `OceanSeaIceModel` with the specified flux configuration.
-Options for `flux_configuration`: `:default`, `:corrected`, `:ncar`.
+Build the `OceanSeaIceModel` with the specified flux configurations.
+Options for `flux_configuration` (atmosphere–ocean): `:default`, `:corrected`, `:ncar`.
+Options for `sea_ice_flux_configuration` (atmosphere–sea ice): `:corrected`, `:ncar`.
 Options for `velocity_formulation`:  `:relative`, `:wind`
 """
 function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
+                             sea_ice_flux_configuration = flux_configuration,
                              velocity_formulation::Symbol = :relative,
                              sea_ice_ocean_heat_transfer_coefficient = 0.0057,
                              sea_ice_momentum_roughness_length = 5e-4,
@@ -173,31 +176,24 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
                               velocity_formulation == :wind     ? WindVelocity()     :
                               error("Unknown velocity_formulation: $velocity_formulation. Options: :relative, :wind")
 
-    if flux_configuration == :corrected
-        interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
-                                         radiation,
-                                         land,
-                                         atmosphere_ocean_fluxes   = corrected_atmosphere_ocean_fluxes(FT),
-                                         atmosphere_sea_ice_fluxes = corrected_atmosphere_sea_ice_fluxes(FT; momentum_roughness_length = sea_ice_momentum_roughness_length),
-                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = sea_ice_ocean_heat_transfer_coefficient),
-                                         ice_freshwater_delivery,
-                                         ice_meltwater_enthalpy,
-                                         atmosphere_ocean_velocity_difference   = velocity_difference_obj,
-                                         atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
-    elseif flux_configuration == :ncar
-        interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
-                                         radiation,
-                                         land,
-                                         atmosphere_ocean_fluxes   = ncar_atmosphere_ocean_fluxes(FT),
-                                         atmosphere_sea_ice_fluxes = ncar_atmosphere_sea_ice_fluxes(FT),
-                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = sea_ice_ocean_heat_transfer_coefficient),
-                                         ice_freshwater_delivery,
-                                         ice_meltwater_enthalpy,
-                                         atmosphere_ocean_velocity_difference   = velocity_difference_obj,
-                                         atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
-    else
-        error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :ncar")
-    end
+    atmosphere_ocean_fluxes = flux_configuration == :corrected ? corrected_atmosphere_ocean_fluxes(FT) :
+                              flux_configuration == :ncar      ? ncar_atmosphere_ocean_fluxes(FT) :
+                              error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :ncar")
+
+    atmosphere_sea_ice_fluxes = sea_ice_flux_configuration == :corrected ? corrected_atmosphere_sea_ice_fluxes(FT; momentum_roughness_length = sea_ice_momentum_roughness_length) :
+                                sea_ice_flux_configuration == :ncar      ? ncar_atmosphere_sea_ice_fluxes(FT) :
+                                error("Unknown sea_ice_flux_configuration: $sea_ice_flux_configuration. Options: :corrected, :ncar")
+
+    interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
+                                     radiation,
+                                     land,
+                                     atmosphere_ocean_fluxes,
+                                     atmosphere_sea_ice_fluxes,
+                                     sea_ice_ocean_heat_flux = corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = sea_ice_ocean_heat_transfer_coefficient),
+                                     ice_freshwater_delivery,
+                                     ice_meltwater_enthalpy,
+                                     atmosphere_ocean_velocity_difference   = velocity_difference_obj,
+                                     atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
 
     return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, land, interfaces)
 end
@@ -418,8 +414,7 @@ function correct_sea_level!(ocean_model, δ)
             η, ocean_model.tracers.T, ocean_model.tracers.S, grid, δ, Nz + 1)
 
     # Refresh `σⁿ` from the corrected `η`.
-    launch!(architecture(grid), grid, Oceananigans.Models.surface_kernel_parameters(grid),
-            Oceananigans.Models.HydrostaticFreeSurfaceModels._update_zstar_scaling!, η, grid)
+    Oceananigans.Models.HydrostaticFreeSurfaceModels.update_zstar_scaling!(grid, η)
 
     return nothing
 end
@@ -451,10 +446,9 @@ function compute_total_water!(n::NormalizeTotalWater, coupled_model)
 end
 
 # Checkpoint the reference state
-Oceananigans.Simulations.callback_state(n::NormalizeTotalWater) =
-    (; reference_water = Array(n.reference_water)[1])
+Oceananigans.prognostic_state(n::NormalizeTotalWater) = (; reference_water = Array(n.reference_water)[1])
 
-function Oceananigans.Simulations.restore_callback_state!(n::NormalizeTotalWater, state)
+function Oceananigans.restore_prognostic_state!(n::NormalizeTotalWater, state)
     n.reference_water .= state.reference_water
     return n
 end
@@ -514,7 +508,16 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 
 - `arch`: architecture (`CPU()` or `GPU()`). Default: `CPU()`.
 - `Nz::Int`: number of vertical levels. Per-config default: `15` for `:test`, `100` otherwise.
+- `Δzmax`: cap on the vertical grid spacing, in metres. The default `nothing` keeps the single-parameter
+  `ExponentialDiscretization`, which pins `Δz_top` and pays for it in the abyss — `Nz = 70`,
+  `Δz_top = 1.5` gives 127 m at 1500 m and 400 m at 4900 m, so a 200 m overflow plume occupies one to
+  two cells everywhere Nordic Seas water has to keep its density. A cap switches to a geometric ramp
+  from `Δz_top` that is held at `Δzmax` below the depth it reaches, with the growth ratio solved so the
+  spacings still sum to `depth`. `Nz = 100`, `Δzmax = 100` reproduces the uncapped upper ocean to within
+  3% (9.7 m at 100 m against 9.9, 80.9 m at 1000 m against 84.1) and holds 100 m from 1500 m down.
 - `depth`: maximum ocean depth in metres. Default: `5500`.
+- `immersed_bottom`: constructor of the immersed bottom, called with the bottom height: `GridFittedBottom` (full
+  cells), `PartialCellBottom` or `ShavedCellBottom`. Default: `GridFittedBottom`.
 - `Δz_top`: target surface-cell thickness in metres (sets the exponential vertical scale). Per-config
   default: `1.5` for `:quarterdegree`/`:twelfthdegree`/`:test`, `nothing` (scale derived from
   `depth`/`Nz`) otherwise.
@@ -547,6 +550,19 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `biharmonic_timescale`: horizontal biharmonic-viscosity timescale. Per-config default: `nothing`
   (no biharmonic viscosity) for `:quarterdegree`/`:twelfthdegree`, `10days` for `:test`, `50days`
   otherwise.
+- `viscous_velocity`: NEMO's `rn_Uv`, a lateral viscous velocity in m s⁻¹ giving a grid-scaled
+  Laplacian viscosity `ν = ½ Uv √Az` (NEMO's `ahm = ½ Uv Lv`, `nn_ahm_ijk_t` = 20/30). NEMO runs
+  `0.1` at ORCA1, which is `≈ 5 × 10³` m² s⁻¹ at 1°. Default: `nothing`.
+- `laplacian_viscosity`: constant horizontal Laplacian viscosity ν in m² s⁻¹, overriding
+  `viscous_velocity`. Default: `nothing`.
+- `coriolis_scheme`: discretization of the Coriolis term: `:enstrophy` (default), `:energy`, `:active_weighted`,
+  `:consistent_area` or `:consistent_area_energy`. The `consistent_area` schemes reconstruct a uniform velocity
+  exactly where face areas differ, next to immersed boundaries and between cells of unequal thickness, and are the
+  ones to use with `immersed_bottom = PartialCellBottom` or `ShavedCellBottom`.
+
+- `momentum_advection_scheme`: `:weno` (default) for the upwind-biased vector-invariant scheme, or
+  `:conserving` for the enstrophy/energy-conserving one NEMO uses at ORCA1. `:conserving` carries no
+  implicit dissipation and is intended to be paired with `viscous_velocity`.
 - `forcing_dir`: directory for JRA55 forcing data. Default: `"forcing_data"`.
 - `restoring_dir`: directory for restoring/IC climatology. Default: `"climatology"`.
 - `piston_velocity`: surface salinity restoring piston velocity in m/day. Default: `1/6`.
@@ -668,12 +684,16 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   barotropic gravity wave must stay inside a substep, so a refined grid or a longer `Δt` needs more;
   too few blows the free surface up on the first step. Per-config default: `200` for
   `:quarterdegree`/`:twelfthdegree`, `100` otherwise. A warning names the count the grid needs.
-- `flux_configuration`: surface flux formulation. Options:
-   * `:default` — current defaults (Edson/COARE with constant Charnock 0.02)
-   * `:corrected` — COARE 3.6 with wind-dependent Charnock, fixed ice roughness, momentum-based u*
+- `flux_configuration`: atmosphere–ocean flux formulation. Options:
+   * `:default` — current defaults (Edson/COARE with constant Charnock 0.02) over both ocean and sea ice
+   * `:corrected` — COARE 3.6 with wind-dependent Charnock, momentum-based u*
    * `:ncar` — OMIP-2 standard Large & Yeager (2004) bulk formulae
+- `sea_ice_flux_configuration`: atmosphere–sea ice flux formulation, ignored when `flux_configuration = :default`.
+  Default: `flux_configuration`. Options:
+   * `:corrected` — SHEBA stability functions, fixed roughness (`sea_ice_momentum_roughness_length`, 5e-5 m for scalars)
+   * `:ncar` — Large & Yeager stability functions, fixed roughness 5e-4 m for momentum and scalars
 - `sea_ice_momentum_roughness_length`: aerodynamic roughness z₀ of the ice surface, m, used by
-  `:corrected`. 5e-4 is the SHEBA multiyear-pack value; smooth first-year ice is nearer 1e-4, which cuts
+  `sea_ice_flux_configuration = :corrected`. 5e-4 is the SHEBA multiyear-pack value; smooth first-year ice is nearer 1e-4, which cuts
   the neutral drag coefficient by about a quarter and the free-drift speed by about a seventh.
 - `vertical_closure::Symbol`: ocean vertical-mixing closure. Options:
    * `:catke` — CATKE TKE-based scheme (default).
@@ -722,21 +742,11 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   an inactive node. Options:
    * `:default` — `Centered(order=2)` for tracers and `UpwindBiased(order=1)` for momentum.
    * `:upwind` — first-order upwind, monotone, in exactly those cells while the interior keeps the full order.
-   * `:cwenoz` — the third-order central-WENO reconstruction of Semplice, Travaglia and Puppo (2022),
-     whose stencil extends only inwards.
+   * `:ghost_cells` — the full-order reconstruction on a stencil whose inactive cells are completed with ghost
+     values, blending the mirror image of the active run with its quadratic extrapolation.
 - `tracer_boundary_scheme::Symbol`, `momentum_boundary_scheme::Symbol`: the same choice made separately for the
   tracer and the momentum reconstructions, both defaulting to `boundary_scheme`. Setting one of them alone
   isolates which of the two the boundary treatment acts through.
-- `temperature_reference_variation`, `salinity_reference_variation`, `momentum_reference_variation`:
-  the cell-to-cell variation of the reconstructed field below which CWENOZ reads the stencil as noise, setting
-  `ϵ = reference_variation²`. It carries the units of the field and no grid spacing, so one value serves every
-  direction and every cell thickness. The constant candidate takes over above a variation of about
-  `8.6 × reference_variation` between adjacent averages. All three default to `0`, which reads `ϵ` off the
-  stencil: a nonzero value acts only on the horizontal, where it is worth some tens of m²/s against a skew
-  diffusivity of order 1e3, and is inert on the vertical, where the boundary reconstruction competes against a
-  background diffusivity of order 1e-5. The horizontal momentum terms reconstruct a vorticity, a divergence flux
-  and a squared velocity, so they take no variation; `momentum_reference_variation` is a speed in m/s and applies
-  to the vertical reconstruction alone.
 - `velocity_formulation::Symbol`: Δu used by the bulk formula. Options:
    * `:relative` — `Δu = u_atm − u_ocean` (OMIP-2 α=1, default).
    * `:wind` — `Δu = u_atm` (ignores ocean current). For isolating bulk-formula
@@ -763,6 +773,11 @@ function omip_simulation(config::Symbol = :halfdegree;
                          Cᵉc = 0.112,
                          biharmonic_timescale = ConfigDefault(),
                          biharmonic_viscosity = nothing,
+                         viscous_velocity = nothing,
+                         laplacian_viscosity = nothing,
+                         strait_damping_timescale = nothing,
+                         momentum_advection_scheme = :weno,
+                         coriolis_scheme = :enstrophy,
                          forcing_dir = joinpath(get(ENV, "DATA", ""), "forcing_data"),
                          staging_dir = nothing,
                          backend_size = 50,
@@ -774,6 +789,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          Δt = ConfigDefault(),
                          stop_time = Inf,
                          flux_configuration = :default,
+                         sea_ice_flux_configuration = flux_configuration,
                          vertical_closure = :catke,
                          boundary_value_mode_number = 2,
                          boundary_value_minimum_speed = 0.1,
@@ -784,9 +800,6 @@ function omip_simulation(config::Symbol = :halfdegree;
                          boundary_scheme = :default,
                          tracer_boundary_scheme = boundary_scheme,
                          momentum_boundary_scheme = boundary_scheme,
-                         temperature_reference_variation = 0,
-                         salinity_reference_variation = 0,
-                         momentum_reference_variation = 0,
                          implicit_bottom_drag = true,
                          bottom_drag_background_velocity = 0,
                          velocity_formulation = :relative,
@@ -804,8 +817,10 @@ function omip_simulation(config::Symbol = :halfdegree;
                          ice_salinity = 4,
                          northern_sea_ice_initial_date = DateTime(1993, 1, 1),
                          southern_sea_ice_initial_date = DateTime(1993, 1, 1),
-                         partial_cell_bathymetry = false,
+                         Δzmax = nothing,
+                         immersed_bottom = GridFittedBottom,
                          mixed_layer_tapering = false,
+                         bottom_layer_tapering_depth = 0,
                          normalize_salinity = true,
                          restoring_under_sea_ice = true,
                          normalize_freshwater = false,
@@ -837,6 +852,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          bbl_transport_coefficient = nothing,
                          overflow_restoring_timescale = nothing,
                          labrador_restoring_timescale = nothing,
+                         sill_overflow = false,
                          diagnostics = true,
                          field_mean_interval = 5days,
                          surface_averaging_interval = 5days,
@@ -869,7 +885,7 @@ function omip_simulation(config::Symbol = :halfdegree;
     setup_t₀ = time()
     log_setup_stage(arch, "start", setup_t₀)
 
-    grid = build_grid(cfg, arch, Nz, depth; Δz_top, partial_cell_bathymetry)
+    grid = build_grid(cfg, arch, Nz, depth; Δz_top, Δzmax, immersed_bottom)
     log_setup_stage(arch, "grid", setup_t₀)
 
     # When staging_dir is provided, JRA55 data is read from fast scratch
@@ -902,7 +918,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                                start_date, end_date, time_indices_in_memory = backend_size, prefetch = true,
                                maximum_search_radius,
                                spread_radius = river_spread_radius,
-                               n_spread_cells = river_spread_cells,
+                               maximum_spread_cells = river_spread_cells,
                                flux_diversion)
     log_setup_stage(arch, "land", setup_t₀)
 
@@ -920,7 +936,8 @@ function omip_simulation(config::Symbol = :halfdegree;
     under_ice_ν_closure = isnothing(under_ice_viscosity) ? nothing : under_ice_vertical_viscosity(under_ice_ν_field)
 
     river_κ = river_mixing ?
-        river_mouth_vertical_diffusivity(grid, land.river_routing; κ = river_mixing_κ, mixing_depth = river_mixing_depth) :
+        river_mouth_vertical_diffusivity(grid, land.river_routing; river_mouth_diffusivity = river_mixing_κ,
+                                         river_mouth_mixing_depth = river_mixing_depth) :
         nothing
 
     nemo_eddy_coefficients = uses_nemo_eddy_coefficients(κ_skew, κ_symmetric) ?
@@ -932,7 +949,12 @@ function omip_simulation(config::Symbol = :halfdegree;
     hybrid_eddy_coefficients = uses_hybrid_eddy_coefficients(κ_skew, κ_symmetric) ?
         HybridEddyCoefficients(grid) : nothing
 
-    eddy_slope_limiter = mixed_layer_tapering ? MixedLayerTapering(grid) : nothing
+    eddy_slope_limiter = if mixed_layer_tapering | (bottom_layer_tapering_depth > 0)
+        BoundaryLayerTapering(grid; mixed_layer = mixed_layer_tapering,
+                                    bottom_layer_depth = bottom_layer_tapering_depth)
+    else
+        nothing
+    end
 
     diffusive_forcing, bottom_boundary_layer = bottom_boundary_layer_forcing(grid, bbl_diffusivity)
     advective_forcing, advective_bottom_boundary_layer =
@@ -940,11 +962,14 @@ function omip_simulation(config::Symbol = :halfdegree;
 
     restoring_forcing = overflow_restoring_forcing(grid, overflow_restoring_timescale)
     labrador_forcing  = labrador_restoring_forcing(grid, labrador_restoring_timescale; restoring_dir)
+    overflow_forcing, overflow = sill_overflow_forcing(grid, sill_overflow)
 
     ocean_forcing = merge_tracer_forcings(
-                        merge_tracer_forcings(merge_tracer_forcings(diffusive_forcing, advective_forcing),
-                                              restoring_forcing),
-                        labrador_forcing)
+                        merge_tracer_forcings(
+                            merge_tracer_forcings(merge_tracer_forcings(diffusive_forcing, advective_forcing),
+                                                  restoring_forcing),
+                            labrador_forcing),
+                        overflow_forcing)
 
     ocean = build_ocean(cfg, grid;
                         forcing = ocean_forcing,
@@ -958,6 +983,11 @@ function omip_simulation(config::Symbol = :halfdegree;
                         boundary_value_minimum_speed,
                         biharmonic_timescale,
                         biharmonic_viscosity,
+                        viscous_velocity,
+                        laplacian_viscosity,
+                        strait_damping_timescale,
+                        momentum_advection_scheme,
+                        coriolis_scheme,
                         vertical_closure,
                         background_vertical_diffusivity,
                         background_vertical_viscosity,
@@ -966,9 +996,6 @@ function omip_simulation(config::Symbol = :halfdegree;
                         boundary_scheme,
                         tracer_boundary_scheme,
                         momentum_boundary_scheme,
-                        temperature_reference_variation,
-                        salinity_reference_variation,
-                        momentum_reference_variation,
                         implicit_bottom_drag,
                         bottom_drag_background_velocity,
                         skew_flux_formulation,
@@ -1017,6 +1044,7 @@ function omip_simulation(config::Symbol = :halfdegree;
         InterfaceTemperatureMeltwater() : ZeroHeatContentMeltwater()
 
     coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
+                                  sea_ice_flux_configuration,
                                   velocity_formulation, sea_ice_ocean_heat_transfer_coefficient,
                                   sea_ice_momentum_roughness_length,
                                   ice_freshwater_delivery, ice_meltwater_enthalpy)
@@ -1095,6 +1123,11 @@ function omip_simulation(config::Symbol = :halfdegree;
                       IterationInterval(1))
     end
 
+    if !isnothing(overflow)
+        update_sill_overflow!(simulation, overflow)
+        add_callback!(simulation, SillOverflowUpdate(overflow), IterationInterval(16))
+    end
+
     # Same for CESM's stratification-dependent coefficient.
     if !isnothing(cesm_eddy_coefficients)
         compute_cesm_eddy_coefficients!(cesm_eddy_coefficients, ocean.model)
@@ -1107,10 +1140,11 @@ function omip_simulation(config::Symbol = :halfdegree;
         add_callback!(simulation, RefreshHybridEddyCoefficients(hybrid_eddy_coefficients), IterationInterval(1))
     end
 
-    # The mixed-layer taper reads a depth field refreshed from the model state each step.
+    # The mixed-layer taper reads a depth field refreshed from the model state each step; the
+    # bottom taper is static, so a bottom-only limiter refreshes nothing.
     if !isnothing(eddy_slope_limiter)
         compute_tapering_mixed_layer_depth!(eddy_slope_limiter, ocean.model)
-        add_callback!(simulation, RefreshMixedLayerTapering(eddy_slope_limiter), IterationInterval(1))
+        add_callback!(simulation, RefreshBoundaryLayerTapering(eddy_slope_limiter), IterationInterval(1))
     end
 
     # Hold the global ocean volume fixed by removing the global mean of the atmospheric freshwater
@@ -1299,6 +1333,12 @@ end
 
 @inline νhb(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, λ) = Oceananigans.Operators.Az(i, j, k, grid, ℓx, ℓy, ℓz)^2 / λ
 
+# NEMO's `ldfdyn` Laplacian coefficient, `ahm = ½ Uv Lv` with `Lv` the grid spacing (`nn_ahm_ijk_t` =
+# 20 or 30). `½ Uv Δx` is exactly the numerical diffusion first-order upwind advection supplies, so the
+# viscous velocity is the amount of upwinding an energy/enstrophy-conserving scheme has to be given back.
+@inline νh(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, Uv) =
+    Uv * sqrt(Oceananigans.Operators.Az(i, j, k, grid, ℓx, ℓy, ℓz)) / 2
+
 # Background tracer diffusivity following Henyey et al. (1986).
 @inline henyey_diffusivity(x, y, z, t) = max(2e-6, 1e-5 * abs(sind(y)))
 
@@ -1406,7 +1446,8 @@ end
 # components are common to every option; the primary vertical closure
 # and any background κ/ν are selected by `vertical_closure`.
 function omip_closure(vertical_closure::Symbol;
-                      κ_skew, κ_symmetric, 
+                      grid = nothing,
+                      κ_skew, κ_symmetric,
                       Cᵇ = 0.28, 
                       Cᵘⁿᵇ = 0.0,
                       Cᶠ = 1.0,
@@ -1415,6 +1456,9 @@ function omip_closure(vertical_closure::Symbol;
                       Cᵉc = 0.112,
                       biharmonic_timescale,
                       biharmonic_viscosity = nothing,
+                      viscous_velocity = nothing,
+                      laplacian_viscosity = nothing,
+                      strait_damping_timescale = nothing,
                       skew_flux_formulation = :diffusive,
                       isopycnal_formulation = :standard,
                       eddy_slope_limiter = nothing,
@@ -1478,13 +1522,10 @@ function omip_closure(vertical_closure::Symbol;
         (transport, redi)
     elseif isopycnal_formulation === :triad
         limiter = isnothing(eddy_slope_limiter) ? FluxTapering(1e-2) : eddy_slope_limiter
-        # The triad constructor defaults to an explicit discretization, unlike every other closure here.
         # κ_symmetric S² over Δz_top = 1.5 m is stable only below Δt ≈ 15 s, so the vertical component
-        # must be implicit. `TriadSlopeTapering` limits each triad on its own slope, which the
-        # per-cell factor the closure applies otherwise does not bound.
+        # is treated implicitly.
         (TriadIsopycnalSkewSymmetricDiffusivity(VerticallyImplicitTimeDiscretization();
-                                                κ_skew, κ_symmetric,
-                                                slope_limiter = TriadSlopeTapering(limiter)),)
+                                                κ_skew, κ_symmetric, slope_limiter = limiter),)
     else
         limiter = isnothing(eddy_slope_limiter) ? FluxTapering(1e-2) : eddy_slope_limiter
         (IsopycnalSkewSymmetricDiffusivity(; κ_skew, κ_symmetric, slope_limiter = limiter,
@@ -1501,15 +1542,27 @@ function omip_closure(vertical_closure::Symbol;
         nothing
     end
 
-    return filter(!isnothing, (primary, eddy..., horizontal_viscosity, background))
+    laplacian_horizontal_viscosity = if !isnothing(laplacian_viscosity)
+        HorizontalScalarDiffusivity(ν=laplacian_viscosity)
+    elseif !isnothing(viscous_velocity)
+        HorizontalScalarDiffusivity(ν=νh, discrete_form=true, parameters=viscous_velocity)
+    else
+        nothing
+    end
+
+    strait_viscosity = if !isnothing(strait_damping_timescale)
+        isnothing(grid) && throw(ArgumentError("strait_damping_timescale needs `grid` to locate the straits"))
+        narrow_strait_horizontal_viscosity(narrow_strait_viscosity_mask(grid;
+                                               damping_timescale = strait_damping_timescale))
+    else
+        nothing
+    end
+
+    return filter(!isnothing, (primary, eddy..., horizontal_viscosity,
+                               laplacian_horizontal_viscosity, strait_viscosity, background))
 end
 
-# Enhanced vertical mixing at river mouths (cf. NEMO `rn_avt_rnf` over `rn_hrnf`): an extra tracer
-# diffusivity `κ` over the top `mixing_depth` metres at the routed river-mouth cells, mixing the
-# fresh plume downward so a coastal surface cell cannot be freshened to zero. Added to the closure.
-@inline river_mouth_κ(i, j, k, grid, clock, fields, mask) = @inbounds mask[i, j, k]
-
-# The same idea as `river_mouth_κ`, applied where the sea ice is *melting* into the ocean. The ice-ocean
+# Enhanced vertical mixing where the sea ice is *melting* into the ocean. The ice-ocean
 # freshwater flux is delivered to the top cell, so a melt event freshens one 1.5 m cell and CATKE has to
 # erode the resulting lid; in reality the meltwater is stirred through the ice-ocean boundary layer under
 # keels of 1-3 m. The melt condition is dynamic, but the kernel stays a bare lookup and the melt test is
@@ -1552,6 +1605,78 @@ ice_melt_vertical_diffusivity(diffusivity) =
     VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization();
                               κ = ice_melt_κ, discrete_form = true,
                               loc = (Center, Center, Center), parameters = diffusivity)
+
+#####
+##### Lateral friction at NEMO's narrowed straits
+#####
+
+# NEMO's strait treatment is two coupled modifications: `e1v`/`e2u` are reduced to the physical width of
+# an unresolved channel, AND extra lateral friction is applied there through `fmask`/`strait_shlat`
+# (NEMO issue 461). The eORCA1 mesh file carries the first, so `Bathymetry/orca_grid.jl` inherits it;
+# the second has no counterpart here, which leaves the narrowed channel with none of the friction NEMO
+# puts on it. On eORCA1 thirteen wet cells are reduced — nine in `e1v` across the Indonesian passages
+# (8 km at 119.5 E, 13 km at Lombok and Ombai) and four in `e2u` at Gibraltar (20 km) and the
+# Dardanelles (10 km). At Δt = 5400 s the 8 km face reaches an advective CFL of 1 at only 1.48 m/s and
+# the Dardanelles at 1.85, against flows that routinely run 2-4 m/s there.
+
+@inline strait_ν(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, ν) = @inbounds ν[i, j, k]
+
+"""
+    narrow_strait_viscosity_mask(grid; threshold = 0.9, damping_timescale = 1day, minimum_width = 1000)
+
+Horizontal viscosity confined to the cells whose stored horizontal metric has been reduced below
+`threshold` times the spacing its own corner coordinates imply — that is, to NEMO's narrowed straits,
+located from the grid rather than from a hard-coded list so a different mesh finds its own.
+
+The coefficient is set from the reduced spacing as `ν = Δ² / damping_timescale`, so the viscous stability
+number is `Δt / damping_timescale` at every strait however narrow it is, instead of growing as the
+channel narrows the way a constant `ν` would.
+"""
+function narrow_strait_viscosity_mask(grid; threshold = 0.9, damping_timescale = 1day,
+                                      minimum_width = 1000)
+    cpu_grid = on_architecture(CPU(), grid)
+    ug = cpu_grid isa ImmersedBoundaryGrid ? cpu_grid.underlying_grid : cpu_grid
+    Nx, Ny, Nz = size(grid)
+    H = ug.Hx
+
+    # `collect` here, not `Array`: the metrics are OffsetArrays and `Array` keeps their axes, so the
+    # `i + H` indexing below would silently read the wrong cells.
+    λff = collect(ug.λᶠᶠᵃ); φff = collect(ug.φᶠᶠᵃ)
+    Δxᶜᶠ = collect(ug.Δxᶜᶠᵃ); Δyᶠᶜ = collect(ug.Δyᶠᶜᵃ)
+    R = ug.radius
+
+    haversine_distance(λ₁, φ₁, λ₂, φ₂) =
+        2R * asin(sqrt(sind((φ₂ - φ₁)/2)^2 + cosd(φ₁) * cosd(φ₂) * sind((λ₂ - λ₁)/2)^2))
+
+    # a reduced metric in a dry cell is inert, and counting those makes the log meaningless
+    bottom_height = cpu_grid isa ImmersedBoundaryGrid ? collect(cpu_grid.immersed_boundary.bottom_height) : nothing
+
+    mask_data = zeros(eltype(grid), Nx, Ny, Nz)
+    nstrait = 0
+    for j in 1:Ny, i in 1:Nx
+        I = i + H; J = j + H
+        Δzonal      = haversine_distance(λff[I, J], φff[I, J], λff[I+1, J], φff[I+1, J])
+        Δmeridional = haversine_distance(λff[I, J], φff[I, J], λff[I, J+1], φff[I, J+1])
+        (isfinite(Δzonal) && isfinite(Δmeridional) && Δzonal > 1 && Δmeridional > 1) || continue
+        reduced_zonal      = Δxᶜᶠ[I, J] < threshold * Δzonal
+        reduced_meridional = Δyᶠᶜ[I, J] < threshold * Δmeridional
+        (reduced_zonal || reduced_meridional) || continue
+        Δ = min(reduced_zonal ? Δxᶜᶠ[I, J] : Inf, reduced_meridional ? Δyᶠᶜ[I, J] : Inf)
+        # dry cells carry placeholder metrics (4 m under the Antarctic ice sheet), not straits
+        Δ > minimum_width || continue
+        isnothing(bottom_height) || bottom_height[I, J] < 0 || continue
+        mask_data[i, j, :] .= Δ^2 / damping_timescale
+        nstrait += 1
+    end
+    @info "narrow-strait viscosity: $nstrait cells, ν up to $(maximum(mask_data)) m² s⁻¹"
+
+    mask = CenterField(grid)
+    set!(mask, mask_data)
+    return mask
+end
+
+narrow_strait_horizontal_viscosity(mask) =
+    HorizontalScalarDiffusivity(ν = strait_ν, discrete_form = true, parameters = mask)
 
 """
 The ocean closure is built before the coupled model exists, so the ice-melt diffusivity is given its own
@@ -1680,27 +1805,6 @@ function (r::RefreshArchStress)(sim)
     return nothing
 end
 
-function river_mouth_vertical_diffusivity(grid, river_routing; κ = 0.1, mixing_depth = 10)
-    zc = Array(znodes(grid, Center()))
-    Nz = size(grid, 3)
-    mask_data = zeros(eltype(grid), size(grid)...)
-
-    for routing in values(river_routing)
-        ti = Array(routing.target_i)
-        tj = Array(routing.target_j)
-        for n in eachindex(ti), k in 1:Nz
-            zc[k] > -mixing_depth && (mask_data[ti[n], tj[n], k] = κ)
-        end
-    end
-
-    mask = CenterField(grid)
-    set!(mask, mask_data)
-
-    return VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization();
-                                     κ = river_mouth_κ, discrete_form = true,
-                                     loc = (Center, Center, Center), parameters = mask)
-end
-
 #####
 ##### Salinity restoring (shared by both configurations)
 #####
@@ -1766,24 +1870,20 @@ end
 exponential_scale(Nz, depth, ::Nothing) = 1300
 exponential_scale(Nz, depth, Δz_top)    = find_exponential_scale(Nz, depth, Δz_top)
 
-# Partial bottom cells resolve sill depths and slopes continuously instead of in full-cell
-# steps. Documented benefits: mean-circulation and boundary-current realism (Gulf Stream
-# separation, NAC path — Barnier et al. 2006) and reduced staircase entrainment of downslope
-# overflows (Winton et al. 1998). They mitigate but do not cure the too-shallow NADW that
-# every configuration shares (zero-crossing ~2900 m vs ~4300 m in RAPID); the documented full
-# fix in z-coordinate models is a dedicated overflow parameterization (Legg et al. 2009;
-# Danabasoglu et al. 2010).
-bottom_immersed_boundary(bottom_height, partial_cell_bathymetry) =
-    partial_cell_bathymetry ? PartialCellBottom(bottom_height) : GridFittedBottom(bottom_height)
+# `ShavedCellBottom` reconstructs a piecewise-bilinear bottom from cell corners, so regridding straight onto the
+# corners spares it the box average it would otherwise apply to a center field, retaining ~2.3x more structure.
+bathymetry_location(immersed_bottom) = (Center, Center)
+bathymetry_location(::Type{ShavedCellBottom}) = (Face, Face)
 
-function build_grid(config, arch, Nz, depth; Δz_top = nothing, partial_cell_bathymetry = false)
+function build_grid(config, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing,
+                    immersed_bottom = GridFittedBottom)
 
     Nx = config == Val(:halfdegree) ? 720 : throw("Configuration $(config) does not exist")
 
     Ny = Nx ÷ 2
 
-    scale = exponential_scale(Nz, depth, Δz_top)
-    z_faces = ExponentialDiscretization(Nz, -depth, 0; scale, mutable=true)
+    z_faces = omip_vertical_discretization(Nz, depth; surface_grid_size = Δz_top,
+                                                       maximum_grid_size = Δzmax)
 
     base_grid = TripolarGrid(arch;
                              size = (Nx, Ny, Nz),
@@ -1793,14 +1893,15 @@ function build_grid(config, arch, Nz, depth; Δz_top = nothing, partial_cell_bat
     bottom_height = regrid_bathymetry(base_grid;
                                     minimum_depth = 20,
                                     major_basins = 1,
-                                    interpolation_passes = 25)
+                                    interpolation_passes = 25,
+                                    location = bathymetry_location(immersed_bottom))
 
-    return ImmersedBoundaryGrid(base_grid, bottom_immersed_boundary(bottom_height, partial_cell_bathymetry); active_cells_map = true)
+    return ImmersedBoundaryGrid(base_grid, immersed_bottom(bottom_height); active_cells_map = true)
 end
 
-build_grid(::Val{:orca}, arch, Nz, depth; Δz_top = nothing, partial_cell_bathymetry = false)          = build_grid(ORCAOne(),     arch, Nz, depth; Δz_top, partial_cell_bathymetry)
-build_grid(::Val{:quarterdegree}, arch, Nz, depth; Δz_top = nothing, partial_cell_bathymetry = false) = build_grid(ORCAQuarter(), arch, Nz, depth; Δz_top, partial_cell_bathymetry)
-build_grid(::Val{:twelfthdegree}, arch, Nz, depth; Δz_top = nothing, partial_cell_bathymetry = false) = build_grid(ORCATwelfth(), arch, Nz, depth; Δz_top, partial_cell_bathymetry)
+build_grid(::Val{:orca}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, immersed_bottom = GridFittedBottom)          = build_grid(ORCAOne(),     arch, Nz, depth; Δz_top, Δzmax, immersed_bottom)
+build_grid(::Val{:quarterdegree}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, immersed_bottom = GridFittedBottom) = build_grid(ORCAQuarter(), arch, Nz, depth; Δz_top, Δzmax, immersed_bottom)
+build_grid(::Val{:twelfthdegree}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, immersed_bottom = GridFittedBottom) = build_grid(ORCATwelfth(), arch, Nz, depth; Δz_top, Δzmax, immersed_bottom)
 
 # The Gulf of Ob and the Yenisei Gulf are ~5 m deep for hundreds of kilometres, so their full river
 # discharge lands in a single 1.5 m top cell with no water column to mix into and the salinity collapses.
@@ -1823,7 +1924,7 @@ const kara_river_closures = ((68.0, 77.0, 66.0, 72.6),   # Gulf of Ob
     @inbounds bottom_height[i, j, 1] = ifelse(closed, oftype(z, 100), z)
 end
 
-function close_shallow_river_regions(grid; regions = kara_river_closures, minimum_depth = 10, partial_cell_bathymetry = false)
+function close_shallow_river_regions(grid; regions = kara_river_closures, minimum_depth = 10, immersed_bottom = GridFittedBottom)
     arch      = architecture(grid)
     underlying = grid.underlying_grid
     bottom    = bottom_height_field(grid)
@@ -1831,13 +1932,14 @@ function close_shallow_river_regions(grid; regions = kara_river_closures, minimu
             convert(eltype(grid), minimum_depth))
     fill_halo_regions!(bottom)
     remove_minor_basins!(bottom, 1)
-    return ImmersedBoundaryGrid(underlying, bottom_immersed_boundary(bottom, partial_cell_bathymetry); active_cells_map = true)
+    return ImmersedBoundaryGrid(underlying, immersed_bottom(bottom); active_cells_map = true)
 end
 
-function build_grid(dataset::ORCADataset, arch, Nz, depth; Δz_top = nothing, partial_cell_bathymetry = false)
+function build_grid(dataset::ORCADataset, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing,
+                    immersed_bottom = GridFittedBottom)
 
-    scale = exponential_scale(Nz, depth, Δz_top)
-    z_faces = ExponentialDiscretization(Nz, -depth, 0; scale, mutable=true)
+    z_faces = omip_vertical_discretization(Nz, depth; surface_grid_size = Δz_top,
+                                                       maximum_grid_size = Δzmax)
 
     grid = ORCAGrid(arch;
                     dataset,
@@ -1845,7 +1947,7 @@ function build_grid(dataset::ORCADataset, arch, Nz, depth; Δz_top = nothing, pa
                     z = z_faces,
                     halo = (8, 8, 8),
                     with_bathymetry = true,
-                    partial_cell_bathymetry,
+                    immersed_bottom,
                     major_basins = 1,
                     active_cells_map = true)
 
@@ -1854,7 +1956,7 @@ end
 
 # Locally-runnable testing configuration: the NEMO eORCA1 (~1ᵒ) mesh, used to reproduce the
 # quarter-degree spurious high-latitude ice + surface salinity drift at a fraction of the cost.
-build_grid(::Val{:test}, arch, Nz, depth; Δz_top = nothing, partial_cell_bathymetry = false) = build_grid(Val(:orca), arch, Nz, depth; Δz_top, partial_cell_bathymetry)
+build_grid(::Val{:test}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, immersed_bottom = GridFittedBottom) = build_grid(Val(:orca), arch, Nz, depth; Δz_top, Δzmax, immersed_bottom)
 
 #####
 ##### ORCA builder
@@ -1880,38 +1982,53 @@ config_momentum_advection_order(::Val{:twelfthdegree}) = nothing
 #
 #   :default  `Centered(order=2)` for tracers and `UpwindBiased(order=1)` for momentum, the Oceananigans defaults
 #   :upwind   first-order upwind, monotone, in exactly those cells and nowhere else
-#   :cwenoz   the third-order central-WENO reconstruction of Semplice, Travaglia and Puppo (2022), whose stencil
-#             extends only inwards, blending an inward parabola, a linear polynomial and a constant with Z-weights
-#
-# `reference_variation` sets the oscillation scale ϵ = reference_variation² below which CWENOZ reads the stencil as
-# noise and keeps third order. It carries the units of the reconstructed field and no grid spacing, so one value serves
-# every direction; zero reads ϵ off the stencil, which is a pure shape measure and limits at any amplitude.
-tracer_boundary_reconstruction(::Val{:default}, reference_variation) = nothing
-tracer_boundary_reconstruction(::Val{:upwind},  reference_variation) = UpwindBiased(order=1)
-tracer_boundary_reconstruction(::Val{:cwenoz},  reference_variation) = CWENOZ(; reference_variation)
+#   :ghost_cells  the full-order reconstruction on a stencil whose inactive cells are completed with ghost values,
+#                 blending the mirror image of the active run with its quadratic extrapolation
+tracer_boundary_reconstruction(::Val{:default})     = nothing
+tracer_boundary_reconstruction(::Val{:upwind})      = UpwindBiased(order=1)
+tracer_boundary_reconstruction(::Val{:ghost_cells}) = GhostCells()
 
-momentum_boundary_reconstruction(::Val{:default}, reference_variation) = UpwindBiased(order=1)
-momentum_boundary_reconstruction(::Val{:upwind},  reference_variation) = UpwindBiased(order=1)
-momentum_boundary_reconstruction(::Val{:cwenoz},  reference_variation) = CWENOZ(; reference_variation)
+momentum_boundary_reconstruction(::Val{:default})     = UpwindBiased(order=1)
+momentum_boundary_reconstruction(::Val{:upwind})      = UpwindBiased(order=1)
+momentum_boundary_reconstruction(::Val{:ghost_cells}) = GhostCells()
 
 function boundary_scheme_value(boundary_scheme)
-    boundary_scheme ∈ (:default, :upwind, :cwenoz) ||
-        throw(ArgumentError("boundary_scheme must be :default, :upwind or :cwenoz, got $boundary_scheme"))
+    boundary_scheme ∈ (:default, :upwind, :ghost_cells) ||
+        throw(ArgumentError("boundary_scheme must be :default, :upwind or :ghost_cells, got $boundary_scheme"))
 
     return Val(boundary_scheme)
 end
 
-"""
-    split_tracer_advection(order, time_discretization, boundary_scheme, reference_variation)
+const coriolis_schemes = (enstrophy = Oceananigans.Coriolis.EnstrophyConserving,
+                          energy = Oceananigans.Coriolis.EnergyConserving,
+                          active_weighted = Oceananigans.Coriolis.ActiveWeightedEnstrophyConserving,
+                          consistent_area = Oceananigans.Coriolis.ConsistentAreaEnstrophyConserving,
+                          consistent_area_energy = Oceananigans.Coriolis.ConsistentAreaEnergyConserving)
 
-Tracer advection of order `order` whose reconstructions terminate in a boundary scheme carrying
-`reference_variation`. One value serves both directions: the variation is in units of the tracer and carries no
-grid spacing. The split is only so that the vertical direction takes `time_discretization`, which is where the
-adaptive-implicit treatment applies.
 """
-function split_tracer_advection(order, time_discretization, boundary_scheme, reference_variation)
+    coriolis_scheme_value(coriolis_scheme)
 
-    tracer_boundary_scheme = tracer_boundary_reconstruction(boundary_scheme, reference_variation)
+Discretization of the Coriolis term named by `coriolis_scheme`. The `consistent_area` schemes divide the
+area-weighted interpolation of the transport by the interpolation of the wet face areas, reconstructing a uniform
+velocity exactly where face areas differ: next to immersed boundaries, and between cells of unequal thickness such
+as those of `PartialCellBottom` and `ShavedCellBottom`.
+"""
+function coriolis_scheme_value(coriolis_scheme)
+    haskey(coriolis_schemes, coriolis_scheme) ||
+        throw(ArgumentError("coriolis_scheme must be one of $(keys(coriolis_schemes)), got $coriolis_scheme"))
+
+    return coriolis_schemes[coriolis_scheme]()
+end
+
+"""
+    split_tracer_advection(order, time_discretization, boundary_scheme)
+
+Tracer advection of order `order` whose reconstructions terminate in `boundary_scheme`. The split is only so that the
+vertical direction takes `time_discretization`, which is where the adaptive-implicit treatment applies.
+"""
+function split_tracer_advection(order, time_discretization, boundary_scheme)
+
+    tracer_boundary_scheme = tracer_boundary_reconstruction(boundary_scheme)
 
     horizontal = WENO(; order, boundary_scheme = tracer_boundary_scheme)
     vertical   = WENO(; order, time_discretization, boundary_scheme = tracer_boundary_scheme)
@@ -1920,26 +2037,30 @@ function split_tracer_advection(order, time_discretization, boundary_scheme, ref
 end
 
 """
-    split_momentum_advection(order, time_discretization, boundary_scheme, reference_variation)
+    split_momentum_advection(scheme, order, time_discretization, boundary_scheme)
 
-Vector-invariant momentum advection whose four reconstructions terminate in a boundary scheme chosen per direction,
-reproducing `WENOVectorInvariant` in every other respect. The vorticity, divergence and kinetic-energy-gradient terms
-are the horizontal ones, and they reconstruct a vorticity, a divergence flux and a squared velocity: three different
-units, so no single variation carries them and they always read the oscillation scale off the stencil. The vertical
-term reconstructs velocity, so `reference_variation` is a speed in m/s and applies there alone.
+Vector-invariant momentum advection whose four reconstructions terminate in `boundary_scheme`, reproducing
+`WENOVectorInvariant` in every other respect.
+
+`scheme = :conserving` instead returns the bare `VectorInvariant()`, whose defaults are an enstrophy-conserving
+vorticity term and energy-conserving divergence, kinetic-energy-gradient and vertical terms. That scheme carries no
+upwinding and therefore no implicit dissipation, which is the class NEMO uses at ORCA1; it needs an explicit
+`viscous_velocity` to supply the dissipation the upwind-biased reconstructions would otherwise have provided.
+`order` and `boundary_scheme` do not apply to it — none of its terms reconstructs a stencil.
 """
-function split_momentum_advection(order, time_discretization, boundary_scheme, reference_variation)
+function split_momentum_advection(scheme, order, time_discretization, boundary_scheme)
+
+    scheme === :conserving && return VectorInvariant()
 
     vorticity_order, remaining_order = isnothing(order) ? (9, 5) : (order, order)
 
-    horizontal_boundary_scheme = momentum_boundary_reconstruction(boundary_scheme, 0)
-    vertical_boundary_scheme   = momentum_boundary_reconstruction(boundary_scheme, reference_variation)
+    momentum_boundary_scheme = momentum_boundary_reconstruction(boundary_scheme)
 
-    vorticity_scheme               = WENO(order=vorticity_order, boundary_scheme=horizontal_boundary_scheme)
-    divergence_scheme              = WENO(order=remaining_order, boundary_scheme=horizontal_boundary_scheme)
-    kinetic_energy_gradient_scheme = WENO(order=remaining_order, boundary_scheme=horizontal_boundary_scheme)
+    vorticity_scheme               = WENO(order=vorticity_order, boundary_scheme=momentum_boundary_scheme)
+    divergence_scheme              = WENO(order=remaining_order, boundary_scheme=momentum_boundary_scheme)
+    kinetic_energy_gradient_scheme = WENO(order=remaining_order, boundary_scheme=momentum_boundary_scheme)
     vertical_advection_scheme      = WENO(; order = remaining_order, time_discretization,
-                                            boundary_scheme = vertical_boundary_scheme)
+                                            boundary_scheme = momentum_boundary_scheme)
 
     return VectorInvariant(; vorticity_scheme,
                              vertical_advection_scheme,
@@ -2084,15 +2205,17 @@ function build_ocean(config, grid;
                      chlorophyll = :seawifs,
                      biharmonic_timescale,
                      biharmonic_viscosity = nothing,
+                     viscous_velocity = nothing,
+                     laplacian_viscosity = nothing,
+                     strait_damping_timescale = nothing,
+                     momentum_advection_scheme = :weno,
+                     coriolis_scheme = :enstrophy,
                      vertical_closure = :catke,
                      implicit_vertical_advection = true,
                      tracer_advection_order = 7,
                      boundary_scheme = :default,
                      tracer_boundary_scheme = boundary_scheme,
                      momentum_boundary_scheme = boundary_scheme,
-                     temperature_reference_variation = 0,
-                     salinity_reference_variation = 0,
-                     momentum_reference_variation = 0,
                      implicit_bottom_drag = true,
                      bottom_drag_background_velocity = 0,
                      skew_flux_formulation = :diffusive,
@@ -2121,7 +2244,8 @@ function build_ocean(config, grid;
     κ_symmetric = resolve_hybrid_coefficient(κ_symmetric, hybrid_eddy_coefficients, :symmetric_coefficient)
 
     if !isnothing(κ_skew) && !isnothing(κ_symmetric)
-        κ_skew, κ_symmetric = fold_safe_constant_coefficients(grid, κ_skew, κ_symmetric)
+        κ_skew, κ_symmetric = fold_safe_constant_coefficients(grid, κ_skew, κ_symmetric,
+                                                              Val(isopycnal_formulation))
     end
 
     additional_surface_fluxes = if piston_velocity == 0
@@ -2134,8 +2258,10 @@ function build_ocean(config, grid;
     end
 
     closure = omip_closure(vertical_closure;
+                           grid,
                            κ_skew, κ_symmetric, Cᵇ, Cᵘⁿᵇ, Cᶠ, Cᶠ⁰, Cᶠᵟ, Cᵉc,
                            biharmonic_timescale, biharmonic_viscosity,
+                           viscous_velocity, laplacian_viscosity, strait_damping_timescale,
                            skew_flux_formulation,
                            isopycnal_formulation,
                            eddy_slope_limiter,
@@ -2147,7 +2273,7 @@ function build_ocean(config, grid;
     extra_closures = additional_tracer_closure isa Tuple ? additional_tracer_closure :
                      isnothing(additional_tracer_closure) ? () : (additional_tracer_closure,)
     closure = (closure..., extra_closures...)
-    coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
+    coriolis = HydrostaticSphericalCoriolis(scheme = coriolis_scheme_value(coriolis_scheme))
 
     time_discretization = implicit_vertical_advection ?
         AdaptiveVerticallyImplicitDiscretization(cfl=0.5) : ExplicitTimeDiscretization()
@@ -2155,15 +2281,14 @@ function build_ocean(config, grid;
     tracer_boundary_scheme   = boundary_scheme_value(tracer_boundary_scheme)
     momentum_boundary_scheme = boundary_scheme_value(momentum_boundary_scheme)
 
-    momentum_advection = split_momentum_advection(config_momentum_advection_order(config),
-                                                  time_discretization, momentum_boundary_scheme,
-                                                  momentum_reference_variation)
+    momentum_advection = split_momentum_advection(momentum_advection_scheme,
+                                                  config_momentum_advection_order(config),
+                                                  time_discretization, momentum_boundary_scheme)
 
-    # Turbulent kinetic energy keeps the `ocean_simulation` default: its variation scale is ~1e-3 m²/s².
-    tracer_advection = (T = split_tracer_advection(tracer_advection_order, time_discretization,
-                                                   tracer_boundary_scheme, temperature_reference_variation),
-                        S = split_tracer_advection(tracer_advection_order, time_discretization,
-                                                   tracer_boundary_scheme, salinity_reference_variation))
+    # Turbulent kinetic energy keeps the `ocean_simulation` default.
+    temperature_salinity_advection = split_tracer_advection(tracer_advection_order, time_discretization,
+                                                            tracer_boundary_scheme)
+    tracer_advection = (T = temperature_salinity_advection, S = temperature_salinity_advection)
 
     biogeochemistry, bgc_additional_forcing, bgc_additional_surface_fluxes = build_biogeochemistry(Val(biogeochemistry), grid)
 
