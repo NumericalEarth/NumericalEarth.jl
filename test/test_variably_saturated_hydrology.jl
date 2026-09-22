@@ -216,7 +216,7 @@ end
 
         # A rain pulse, steady evaporation and free drainage: the column's budget closes.
         land = column(deep_liquid_flux = FreeDrainageFlux(FT))
-        set!(land; M = 75.0, water_storage_2 = 105.0)
+        set!(land; T = 293.0, M = 75.0, water_storage_2 = 105.0)
         Δt, Jᵛ = 600.0, 1e-5
         fill!(land.fluxes.vapor_flux, Jᵛ)
         ∫P = ∫Jᵈ = 0.0
@@ -233,7 +233,7 @@ end
 
         # A wet slab over a drier layer with a closed bottom relaxes to equal hydraulic head, Π₂ − Π₁ = ℓ.
         land = column()
-        set!(land; M = 75.0, water_storage_2 = 105.0)
+        set!(land; T = 293.0, M = 75.0, water_storage_2 = 105.0)
         quiet!(land)
         for _ in 1:8640
             time_step!(land, 600.0)
@@ -245,7 +245,7 @@ end
 
         # The implicit exchange survives sandy conductivity at ten-minute steps, where the explicit one collapses.
         land = column(matching_point_conductivity = 1e-3)
-        set!(land; M = 75.0, water_storage_2 = 105.0)
+        set!(land; T = 293.0, M = 75.0, water_storage_2 = 105.0)
         quiet!(land)
         for _ in 1:50
             time_step!(land, 600.0)
@@ -275,7 +275,7 @@ end
         # Roots draw the vapor sink from each layer in proportion to rₖ 𝒮ₖ, and the
         # atmosphere reads Σ rₖ 𝒮ₖ.
         land = column(matching_point_conductivity = 1e-15, root_fraction = (0.5, 0.5))
-        set!(land; M = 30.0, water_storage_2 = 245.0)
+        set!(land; T = 293.0, M = 30.0, water_storage_2 = 245.0)
         𝒮₁, 𝒮₂ = effective_saturation(30.0, h₁), effective_saturation(245.0, h₂)
         @test value(land.saturation) ≈ (𝒮₁ + 𝒮₂) / 2
         quiet!(land)
@@ -301,7 +301,7 @@ end
                                           deep_liquid_flux = DarcyDeepLiquidFlux(FT; exchange_length = ℓ),
                                           deep_pressure_head = -1.0, runoff = NoRunoff())
         land = SlabLand(grid; hydrology = soil)
-        set!(land; M = 75.0)
+        set!(land; T = 293.0, M = 75.0)
         quiet!(land)
         Ms = [value(land.water_storage)]
         for _ in 1:20
