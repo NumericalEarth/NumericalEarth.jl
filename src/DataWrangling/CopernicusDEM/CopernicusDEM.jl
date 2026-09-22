@@ -11,6 +11,7 @@ using ..DataWrangling: DataWrangling, AbstractStaticBathymetry, Metadatum,
 download_CopernicusDEM_cache::String = ""
 function __init__()
     global download_CopernicusDEM_cache = DataWrangling.download_cache("CopernicusDEM")
+    return nothing
 end
 
 # Variable name in the regional NetCDF that `download(metadatum)` materializes from the
