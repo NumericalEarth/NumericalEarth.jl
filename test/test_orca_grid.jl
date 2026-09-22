@@ -8,7 +8,7 @@ using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using NCDatasets
 using NumericalEarth
 using NumericalEarth.DataWrangling: metadata_path
-using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove
+using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove, periodic_overlap
 using Statistics
 using Test
 
@@ -190,15 +190,20 @@ end
     path = metadata_path(Metadatum(:mesh_mask; dataset=ORCAOne()))
 
     ds = Dataset(path)
-    staggered = Bathymetry.read_orca_staggered_mesh(ds)
+    overlap = periodic_overlap(ORCAOne())
+    staggered = Bathymetry.read_orca_staggered_mesh(ds, overlap)
     Nx, Ny = size(Bathymetry.read_2d_nemo_variable(ds, "glamt"))
     read_coordinate(name) = Bathymetry.orient_xy(Bathymetry.read_2d_nemo_variable(ds, name), Nx, Ny; name)
     λCC, φCC = read_coordinate("glamt"), read_coordinate("gphit")
     λFF, φFF = read_coordinate("glamf"), read_coordinate("gphif")
     close(ds)
 
+<<<<<<< HEAD
     reconstructed = Bathymetry.reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF;
                                                                        radius = Oceananigans.defaults.planet_radius)
+=======
+    reconstructed = Bathymetry.reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF, overlap; radius = Oceananigans.defaults.planet_radius)
+>>>>>>> origin/jsw/bgc-coupling
 
     # Both read paths must agree on shape and on NEMO's y-indexing: `halo_filled_data` applies the
     # +1 Face-y shift exactly once, so neither path may pre-shift.

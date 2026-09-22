@@ -131,7 +131,7 @@ using NumericalEarth.JRA55: download_JRA55_cache
         @info "Testing save_field_time_series! on $A..."
         filepath = "JRA55_downwelling_shortwave_radiation_test_$(string(typeof(arch))).jld2" # different filename for each arch so that the CPU and GPU tests do not crash
         NumericalEarth.DataWrangling.save_field_time_series!(target_fts, path=filepath, name="Qsw",
-                                                         overwrite_existing = true)
+                                                             overwrite_files=true)
         @test isfile(filepath)
 
         Qswt = FieldTimeSeries(filepath, "Qsw")
@@ -191,6 +191,18 @@ using NumericalEarth.JRA55: download_JRA55_cache
         for t in eachindex(river_flux.times)
             @test river_flux[t] isa Field
         end
+        @test Second(end_date - start_date).value ≈ river_flux.times[end] - river_flux.times[1]
+
+        # Test we can access all the data
+        for t in eachindex(river_flux.times)
+            @test river_flux[t] isa Field
+        end
+
+        # friver is daily, so it takes the `Hour(12)` branch of `metadata_filename`. Keep the
+        # three-hourly branch that tas exercises covered; building a path downloads nothing.
+        three_hourly_datum = Metadatum(:temperature; dataset, date=DateTime(1958, 6, 1))
+        @test basename(metadata_path(three_hourly_datum)) ==
+            "tas_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_195801010000-195812312100.nc"
 
         # friver is daily, so it takes the `Hour(12)` branch of `metadata_filename`; keep the
         # three-hourly branch that tas exercises covered. Building a path downloads nothing.

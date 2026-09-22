@@ -67,11 +67,9 @@ end
 """
     AtmosphereSurfaceFluxes{F}
 
-Atmosphere↔surface turbulent flux container, shared by the
-atmosphere–ocean and atmosphere–land interfaces (both produce the same
-8 quantities). Atmosphere–sea-ice uses a smaller container
-([`AtmosphereSeaIceFluxes`](@ref)) because it does not emit the
-characteristic scales.
+Atmosphere↔surface turbulent flux container, shared by the atmosphere–ocean, atmosphere–land and
+atmosphere–sea-ice interfaces: the five fluxes, and the three characteristic scales of the
+Monin–Obukhov solve.
 """
 struct AtmosphereSurfaceFluxes{F}
     latent_heat       :: F
@@ -114,38 +112,6 @@ Oceananigans.Architectures.on_architecture(arch, fluxes::AtmosphereSurfaceFluxes
                             on_architecture(arch, fluxes.friction_velocity),
                             on_architecture(arch, fluxes.temperature_scale),
                             on_architecture(arch, fluxes.water_vapor_scale))
-
-struct AtmosphereSeaIceFluxes{F}
-    latent_heat   :: F
-    sensible_heat :: F
-    water_vapor   :: F
-    x_momentum    :: F
-    y_momentum    :: F
-end
-
-function AtmosphereSeaIceFluxes(grid)
-    F = Field{Center, Center, Nothing}
-    velocity_bcs = vector_component_boundary_conditions(grid, (Center(), Center(), nothing))
-    return AtmosphereSeaIceFluxes(F(grid), F(grid), F(grid),
-                                  F(grid; boundary_conditions = velocity_bcs),
-                                  F(grid; boundary_conditions = velocity_bcs))
-end
-
-AtmosphereSeaIceFluxes(::Nothing) = AtmosphereSeaIceFluxes(ntuple(_ -> ZeroField(), 5)...)
-
-Adapt.adapt_structure(to, fluxes::AtmosphereSeaIceFluxes) =
-    AtmosphereSeaIceFluxes(Adapt.adapt(to, fluxes.latent_heat),
-                           Adapt.adapt(to, fluxes.sensible_heat),
-                           Adapt.adapt(to, fluxes.water_vapor),
-                           Adapt.adapt(to, fluxes.x_momentum),
-                           Adapt.adapt(to, fluxes.y_momentum))
-
-Oceananigans.Architectures.on_architecture(arch, fluxes::AtmosphereSeaIceFluxes) =
-    AtmosphereSeaIceFluxes(on_architecture(arch, fluxes.latent_heat),
-                           on_architecture(arch, fluxes.sensible_heat),
-                           on_architecture(arch, fluxes.water_vapor),
-                           on_architecture(arch, fluxes.x_momentum),
-                           on_architecture(arch, fluxes.y_momentum))
 
 struct SeaIceOceanFluxes{C, FX, FY}
     interface_heat          :: C
@@ -202,22 +168,27 @@ Oceananigans.Architectures.on_architecture(arch, fluxes::SeaIceOceanFluxes) =
 struct ZeroFluxes{Z}
     # Atmosphere-ocean and atmosphere-sea-ice flux fields (turbulent only;
     # radiative diagnostic fields live on the radiation component)
-    latent_heat            :: Z
-    sensible_heat          :: Z
-    water_vapor            :: Z
-    x_momentum             :: Z
-    y_momentum             :: Z
-    friction_velocity      :: Z
-    temperature_scale      :: Z
-    water_vapor_scale      :: Z
+    latent_heat             :: Z
+    sensible_heat           :: Z
+    water_vapor             :: Z
+    x_momentum              :: Z
+    y_momentum              :: Z
+    friction_velocity       :: Z
+    temperature_scale       :: Z
+    water_vapor_scale       :: Z
     # Sea ice-ocean flux fields
     interface_heat          :: Z
     frazil_heat             :: Z
     salt                    :: Z
     freshwater              :: Z
     freshwater_heat_content :: Z
+<<<<<<< HEAD
     x_momentum_coefficient :: Z
     y_momentum_coefficient :: Z
+=======
+    x_momentum_coefficient  :: Z
+    y_momentum_coefficient  :: Z
+>>>>>>> origin/jsw/bgc-coupling
 end
 
 ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 15)...)
@@ -299,7 +270,7 @@ function atmosphere_sea_ice_interface(grid,
                                       temperature_formulation,
                                       velocity_formulation)
 
-    fluxes = AtmosphereSeaIceFluxes(grid)
+    fluxes = AtmosphereSurfaceFluxes(grid)
 
     phase = AtmosphericThermodynamics.Ice()
     specific_humidity_formulation = ImpureSaturationSpecificHumidity(phase)
@@ -383,6 +354,9 @@ end
 #####
 
 default_ai_temperature(::Nothing) = nothing
+biogeochemical_interface(exchanger, ocean) = biogeochemical_interface(exchanger, ocean, ocean.model.biogeochemistry)
+biogeochemical_interface(exchanger, ocean::Nothing) = NamedTuple()
+biogeochemical_interface(exchanger, ocean, biogeochemistry) = NamedTuple()
 
 function default_ao_specific_humidity(ocean)
     FT    = eltype(ocean)
@@ -454,7 +428,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              sea_ice_reference_density = reference_density(sea_ice),
                              sea_ice_heat_capacity = heat_capacity(sea_ice),
                              gravitational_acceleration = default_gravitational_acceleration,
-                             exchanger_correction = nothing)
+                             exchanger_correction = nothing,
+                             biogeochemistry_interface_kwargs = NamedTuple())
 
     FT = eltype(exchange_grid)
 
@@ -528,7 +503,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
         isnothing(interface) || validate_zero_plane_displacement(interface.flux_formulation, zᵃᵗ)
     end
 
-    properties = (; gravitational_acceleration, surface_layer_height = zᵃᵗ)
+    properties = merge((; gravitational_acceleration, surface_layer_height = zᵃᵗ),
+                          biogeochemical_interface(exchanger, ocean; biogeochemistry_interface_kwargs...))
 
     return ComponentInterfaces(ao_interface,
                                ai_interface,

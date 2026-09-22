@@ -40,6 +40,7 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
                                    prefetch = true,
                                    surface_layer_height = 10,  # meters
                                    region = nothing,
+                                   tracers = NamedTuple(),
                                    other_kw...)
 
     kw = (; time_indexing, time_indices_in_memory, prefetch)
@@ -68,5 +69,6 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
                                 specific_humidity = qᵛ,
                                 pressure = p,
                                 precipitation_flux,
-                                surface_layer_height = convert(FT, surface_layer_height))
+                                surface_layer_height = convert(FT, surface_layer_height),
+                                tracers)
 end

@@ -291,6 +291,7 @@ end
     Jˢ = fluxes.salt
     Jᴴ = fluxes.freshwater_heat_content
     Jʷ = fluxes.freshwater
+    Jᴴ = fluxes.freshwater_heat_content
     τˣ = fluxes.x_momentum
     τʸ = fluxes.y_momentum
     T★ = interface_temperature
@@ -385,11 +386,17 @@ end
     @inbounds begin
         Eᵢ = ice_ocean_mass_flux[i, j, 1]
         Eₛ = snow_ocean_mass_flux[i, j, 1]
+<<<<<<< HEAD
         # the snow term Sˢⁿ * Eₛ drops from the salt flux since Sˢⁿ == 0
         Jʷⁱᵒ, Jˢⁱᵒ = ice_freshwater_and_salt(freshwater_delivery, Eᵢ, Eₛ, Sᴺ, Sˢⁱ, ρᵒᶜ)
         Jʷ[i, j, 1] = Jʷⁱᵒ
         Jˢ[i, j, 1] = Jˢⁱᵒ
         Jᴴ[i, j, 1] = meltwater_heat_content(meltwater_enthalpy, Tᵦ,
                                              ice_volume_flux(freshwater_delivery, Eᵢ, ρᵒᶜ))
+=======
+        Jʷ[i, j, 1] = - (Eᵢ + Eₛ) / ρᵒᶜ
+        Jˢ[i, j, 1] = Eᵢ * Sˢⁱ / ρᵒᶜ # the snow term Sˢⁿ * Eₛ drops since Sˢⁿ == 0
+        Jᴴ[i, j, 1] = - Tb * Eᵢ / ρᵒᶜ # ice meltwater enters at the interface temperature, snow melts at 0
+>>>>>>> origin/jsw/bgc-coupling
     end
 end

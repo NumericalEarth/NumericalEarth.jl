@@ -390,8 +390,8 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, land::RoutedPresc
     fill!(iceberg_freshwater_flux, 0)
 
     for name in keys(land.freshwater_flux)
-        scatter_freshwater_flux!(land_freshwater_flux, land.freshwater_flux[name],
-                                 land.river_routing[name], arch, grid, time)
+        target_flux = name == :icebergs ? iceberg_freshwater_flux : runoff_freshwater_flux
+        scatter_freshwater_flux!(target_flux, land.freshwater_flux[name], land.river_routing[name], arch, grid, time)
     end
 
     if haskey(land.freshwater_flux, :icebergs)
