@@ -111,12 +111,12 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
     # Create 2D coupling-flux fields populated by the ESM coupler each step.
     ρτˣ = Field{Center, Center, Nothing}(grid)
     ρτʸ = Field{Center, Center, Nothing}(grid)
-    Jᵉ  = Field{Center, Center, Nothing}(grid)
+    Jᴱ  = Field{Center, Center, Nothing}(grid)
     Jᵛ  = Field{Center, Center, Nothing}(grid)
 
     moisture_key = moisture_prognostic_name(microphysics)
     moisture_bc = NamedTuple{tuple(moisture_key)}(tuple(FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵛ))))
-    energy_bc = NamedTuple{(energy_bc_key(),)}((FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵉ)),))
+    energy_bc = NamedTuple{(energy_bc_key(),)}((FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᴱ)),))
 
     momentum_bcs = (
         ρu = FieldBoundaryConditions(bottom = FluxBoundaryCondition(ρτˣ)),
