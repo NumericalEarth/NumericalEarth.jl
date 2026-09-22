@@ -242,7 +242,7 @@ u_p, v_p, w_p = prescribed_ocean_atmos.velocities
 prescribed_sim.output_writers[:atmos] = JLD2Writer(prescribed_model, (; θ=θ_p, u=u_p),
                                                    filename = "prescribed_ocean_atmos",
                                                    schedule = TimeInterval(1minute),
-                                                   overwrite_existing = true)
+                                                   overwrite_files = true)
 
 u_s, v_s, w_s = slab_ocean_atmos.velocities
 θ_s = liquid_ice_potential_temperature(slab_ocean_atmos)
@@ -250,12 +250,12 @@ u_s, v_s, w_s = slab_ocean_atmos.velocities
 slab_sim.output_writers[:atmos] = JLD2Writer(slab_model, (; θ=θ_s, u=u_s),
                                              filename = "slab_ocean_atmos",
                                              schedule = TimeInterval(1minute),
-                                             overwrite_existing = true)
+                                             overwrite_files = true)
 
 slab_sim.output_writers[:sst] = JLD2Writer(slab_model, (; SST=slab_ocean.temperature),
                                            filename = "sst_slab",
                                            schedule = TimeInterval(1minute),
-                                           overwrite_existing = true)
+                                           overwrite_files = true)
 
 u_f, v_f, w_f = full_ocean_atmos.velocities
 θ_f = liquid_ice_potential_temperature(full_ocean_atmos)
@@ -264,12 +264,12 @@ qˡ_f = full_ocean_atmos.microphysical_fields.qˡ
 full_sim.output_writers[:atmos] = JLD2Writer(full_model, (; θ=θ_f, u=u_f, qˡ=qˡ_f, w=w_f),
                                              filename = "full_ocean_atmos",
                                              schedule = TimeInterval(1minute),
-                                             overwrite_existing = true)
+                                             overwrite_files = true)
 
 full_sim.output_writers[:ocean] = JLD2Writer(full_model, (; T=ocean.model.tracers.T),
                                              filename = "ocean_full",
                                              schedule = TimeInterval(1minute),
-                                             overwrite_existing = true)
+                                             overwrite_files = true)
 
 u_nh, v_nh, w_nh = nh_ocean_atmos.velocities
 θ_nh = liquid_ice_potential_temperature(nh_ocean_atmos)
@@ -278,12 +278,12 @@ qˡ_nh = nh_ocean_atmos.microphysical_fields.qˡ
 nh_sim.output_writers[:atmos] = JLD2Writer(nh_model, (; θ=θ_nh, u=u_nh, qˡ=qˡ_nh, w=w_nh),
                                            filename = "nh_ocean_atmos",
                                            schedule = TimeInterval(1minute),
-                                           overwrite_existing = true)
+                                           overwrite_files = true)
 
 nh_sim.output_writers[:ocean] = JLD2Writer(nh_model, (; T=nh_ocean.model.tracers.T),
                                            filename = "ocean_nh",
                                            schedule = TimeInterval(1minute),
-                                           overwrite_existing = true)
+                                           overwrite_files = true)
 
 # ## Run all four simulations sequentially
 
