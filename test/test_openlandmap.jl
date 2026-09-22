@@ -6,7 +6,9 @@ using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, z
                                     metadata_filename, conversion_units, convert_units,
                                     default_inpainting, is_three_dimensional,
                                     WeightPercent, GramPerCubicCentimeter
-using NumericalEarth.DataWrangling.OpenLandMap: cog_window_to_netcdf
+using NumericalEarth.DataWrangling.OpenLandMap: assemble_cog_window, cog_window_indices,
+                                                cog_window_to_netcdf, validate_epsg4326,
+                                                validate_geographic_northup
 
 using ArchGDAL
 using NCDatasets: NCDataset
@@ -65,6 +67,53 @@ end
     region = BoundingBox(longitude = (-112.3, -111.9), latitude = (36.0, 36.4))
     meta_region = Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region)
     @test validate_dataset_coverage(grid, meta_region) === nothing
+end
+
+@testset "OpenLandMapSoilDB COG windowing and decoding" begin
+    x0, y0, dx, dy = -5.0, 4.0, 0.1, -0.1
+    geotransform = [x0, dx, 0.0, y0, 0.0, dy]
+    width, height = 10, 8
+
+    # An interior request: the window must strictly contain it on all four sides.
+    bbox = BoundingBox(longitude = (-4.5, -4.2), latitude = (3.5, 3.8))
+    xoff, yoff, xsize, ysize = cog_window_indices(geotransform, width, height, bbox)
+
+    @test x0 + xoff * dx < bbox.longitude[1]
+    @test x0 + (xoff + xsize) * dx > bbox.longitude[2]
+    @test y0 + (yoff + ysize) * dy < bbox.latitude[1]
+    @test y0 + yoff * dy > bbox.latitude[2]
+
+    # A request overhanging every edge clamps to the raster instead of running off it.
+    huge = BoundingBox(longitude = (x0 - 1, x0 + width * dx + 1),
+                       latitude  = (y0 + height * dy - 1, y0 + 1))
+    @test cog_window_indices(geotransform, width, height, huge) == (0, 0, width, height)
+
+    scale, offset, nodata = 0.5, 2.0, 255
+    raw = UInt8[i + 10 * (j - 1) for i in 1:4, j in 1:3]  # (lon, lat), north-first
+    raw[2, 1] = nodata
+    longitude, latitude, data = assemble_cog_window(raw, geotransform, 2, 1, scale, offset, nodata)
+
+    # Cell centers, half a pixel in from the window's west and north faces.
+    @test longitude[1] ≈ x0 + 2 * dx + dx / 2
+    @test latitude[end] ≈ y0 + 1 * dy + dy / 2
+    @test issorted(latitude)
+
+    # Latitude ascends, so raw row 1 (north) becomes the last latitude index.
+    @test eltype(data) == Float32
+    @test data[1, end] ≈ raw[1, 1] * scale + offset
+    @test data[1, 1] ≈ raw[1, 3] * scale + offset
+
+    # The fill is masked before scale/offset; scaling it would give a finite 129.5.
+    @test isnan(data[2, end])
+    @test count(isnan, data) == 1
+
+    @test validate_geographic_northup(geotransform) === nothing
+    @test_throws ErrorException validate_geographic_northup([x0, dx, 0.01, y0, 0.0, dy])
+    @test_throws ErrorException validate_geographic_northup([x0, dx, 0.0, y0, 0.0, -dy])
+
+    @test validate_epsg4326(nothing) === nothing
+    @test validate_epsg4326(4326) === nothing
+    @test_throws ErrorException validate_epsg4326(3857)
 end
 
 # Build a small GeoTIFF with a known CRS/scale/offset/nodata; row 0 is north.
