@@ -20,11 +20,7 @@ using ..DataWrangling.ORCA: ORCAOne, default_south_rows_to_remove, periodic_over
 # NEMO C-grid: T is the cell center, U the east face of T, V the north face of T, F the northeast corner.
 # eORCA quirks handled before constructing the grid:
 #
-<<<<<<< HEAD
 #   - Duplicated east-edge periodic columns (`periodic_overlap_index`, `shift_face_x`, `chop`).
-=======
-#   - Duplicated east-edge periodic columns (`periodic_overlap`, `shift_face_x`, `chop`).
->>>>>>> origin/jsw/bgc-coupling
 #   - Optional southern land padding rows (`south_rows_to_remove`, `chop`).
 #
 # NEMO → Oceananigans index mapping:

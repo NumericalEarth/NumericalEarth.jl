@@ -151,18 +151,11 @@ end
     exchanger = ComponentExchanger(land, target_grid)
     interpolate_state!(exchanger, target_grid, land, (; clock = Clock(time = 0.0)))
 
-<<<<<<< HEAD
     flux = Array(interior(exchanger.state.freshwater_flux))[:, :, 1]
     iceberg_flux = Array(interior(exchanger.state.iceberg_freshwater_flux))[:, :, 1]
 
     # Both components accumulate into the same freshwater flux; the icebergs are also held on their own.
     @test integrated_mass_flux(flux, on_architecture(CPU(), target_grid)) ≈ ρ * (Q₀ + Q₁) rtol = 1e-5
-=======
-    runoff_flux  = Array(interior(exchanger.state.runoff_freshwater_flux))[:, :, 1]
-    iceberg_flux = Array(interior(exchanger.state.iceberg_freshwater_flux))[:, :, 1]
-
-    @test integrated_mass_flux(runoff_flux, on_architecture(CPU(), target_grid))  ≈ ρ * Q₀ rtol = 1e-5
->>>>>>> origin/jsw/bgc-coupling
     @test integrated_mass_flux(iceberg_flux, on_architecture(CPU(), target_grid)) ≈ ρ * Q₁ rtol = 1e-5
 end
 

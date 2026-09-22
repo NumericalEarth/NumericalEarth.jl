@@ -35,11 +35,7 @@ Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 NumericalEarth = {path = ".."}
 
 [compat]
-<<<<<<< HEAD
-Breeze = "0.10, 0.11"
-=======
 Breeze = "0.11"
->>>>>>> origin/jsw/bgc-coupling
 CUDA = "6"
 CairoMakie = "0.15"
 ConservativeRegridding = "0.2"
@@ -47,9 +43,5 @@ Documenter = "1"
 DocumenterCitations = "1.3"
 Enzyme = "0.13.166"
 Literate = "2.2"
-<<<<<<< HEAD
-Oceananigans = "0.111, 0.112, 0.113"
-=======
 Oceananigans = "0.113"
->>>>>>> origin/jsw/bgc-coupling
 Reactant = "0.2.278"

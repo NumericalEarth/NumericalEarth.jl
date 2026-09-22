@@ -198,12 +198,8 @@ end
     λFF, φFF = read_coordinate("glamf"), read_coordinate("gphif")
     close(ds)
 
-<<<<<<< HEAD
     reconstructed = Bathymetry.reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF;
                                                                        radius = Oceananigans.defaults.planet_radius)
-=======
-    reconstructed = Bathymetry.reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF, overlap; radius = Oceananigans.defaults.planet_radius)
->>>>>>> origin/jsw/bgc-coupling
 
     # Both read paths must agree on shape and on NEMO's y-indexing: `halo_filled_data` applies the
     # +1 Face-y shift exactly once, so neither path may pre-shift.

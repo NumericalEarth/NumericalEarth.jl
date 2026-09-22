@@ -182,13 +182,8 @@ struct ZeroFluxes{Z}
     salt                    :: Z
     freshwater              :: Z
     freshwater_heat_content :: Z
-<<<<<<< HEAD
     x_momentum_coefficient :: Z
     y_momentum_coefficient :: Z
-=======
-    x_momentum_coefficient  :: Z
-    y_momentum_coefficient  :: Z
->>>>>>> origin/jsw/bgc-coupling
 end
 
 ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 15)...)

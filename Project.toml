@@ -84,11 +84,7 @@ NumericalEarthZarrExt = "Zarr"
 Accessors = "0.1.44"
 Adapt = "4"
 ArchGDAL = "0.10"
-<<<<<<< HEAD
-Breeze = "0.10, 0.11"
-=======
 Breeze = "0.11"
->>>>>>> origin/jsw/bgc-coupling
 CDSAPI = "2.2.1"
 CFTime = "0.1, 0.2"
 ClimaSeaIce = "0.5, 0.6"
