@@ -245,6 +245,9 @@ end
     return log(h / ℓ) - ψh
 end
 
+@inline local_flux_parameter(parameter, i, j) = parameter
+@inline local_flux_parameter(parameter::AbstractArray, i, j) = @inbounds parameter[i, j, 1]
+
 # Localize the flux closure to cell (i, j) before the index-free MOST iteration:
 # `Field`-valued roughness lengths and displacement collapse to the cell's values,
 # `Number`s and formulations pass through.
@@ -252,16 +255,16 @@ end
 
 @inline function local_flux_formulation(fluxes::SimilarityTheoryFluxes, i, j)
     ℓ = fluxes.roughness_lengths
-    roughness_lengths = SimilarityScales(state2dindex(ℓ.momentum, i, j),
-                                         state2dindex(ℓ.temperature, i, j),
-                                         state2dindex(ℓ.water_vapor, i, j))
+    roughness_lengths = SimilarityScales(local_flux_parameter(ℓ.momentum, i, j),
+                                         local_flux_parameter(ℓ.temperature, i, j),
+                                         local_flux_parameter(ℓ.water_vapor, i, j))
 
     return SimilarityTheoryFluxes(fluxes.von_karman_constant,
                                   fluxes.turbulent_prandtl_number,
                                   fluxes.subgrid_velocities,
                                   fluxes.stability_functions,
                                   roughness_lengths,
-                                  state2dindex(fluxes.zero_plane_displacement, i, j),
+                                  local_flux_parameter(fluxes.zero_plane_displacement, i, j),
                                   fluxes.similarity_form,
                                   fluxes.solver_stop_criteria)
 end
