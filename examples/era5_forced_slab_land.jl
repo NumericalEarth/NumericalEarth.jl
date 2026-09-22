@@ -604,7 +604,7 @@ filename = "era5_forced_slab_land"
 simulation.output_writers[:land] = JLD2Writer(model, outputs;
                                               filename,
                                               schedule = TimeInterval(1hour),
-                                              overwrite_existing = true)
+                                              overwrite_files = true)
 
 # ## Run
 

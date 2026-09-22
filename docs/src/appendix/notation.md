@@ -108,6 +108,7 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``t`` | `ₜ` | transmitted | ``\mathscr{I}_{t}^{\mathrm{sw}}`` (transmitted shortwave) |
 | ``a`` | `ₐ` | absorbed | ``\mathscr{I}_{a}^{\mathrm{lw}}`` (absorbed longwave) |
 | ``\star`` | `★` | similarity theory scale | ``u_\star`` (friction velocity) |
+| ``b`` | `b` | boundary value, or background | ``T_b`` (interface temperature), ``u_b`` (background bottom velocity) |
 
 ## Atmosphere state variables
 
@@ -252,6 +253,7 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyAirSpace`](@r
 | ``S`` | `S` | salinity | Practical salinity (g kg⁻¹) |
 | ``u`` | `u` | zonal velocity | Eastward ocean velocity (m s⁻¹) |
 | ``v`` | `v` | meridional velocity | Northward ocean velocity (m s⁻¹) |
+| ``u_b`` | `ub` | background bottom velocity | Unresolved velocity, mostly tidal, added in quadrature to the resolved speed in the bottom drag (m s⁻¹) |
 | ``\rho^{\mathrm{oc}}`` | `ρᵒᶜ` | reference density | Ocean reference density (kg m⁻³) |
 | ``c^{\mathrm{oc}}`` | `cᵒᶜ` | heat capacity | Ocean heat capacity (J kg⁻¹ K⁻¹) |
 
@@ -367,6 +369,7 @@ superscript band.
 |:----:|:----:|:---------|:------------|
 | ``J^{\mathrm{rn}}`` | `Jʳⁿ` | rain freshwater flux | Rain mass flux at the surface (kg m⁻² s⁻¹) |
 | ``J^{\mathrm{sn}}`` | `Jˢⁿ` | snow freshwater flux | Snow mass flux at the surface (kg m⁻² s⁻¹) |
+| ``J^{\mathrm{ib}}`` | `Jⁱᵇ` | iceberg freshwater flux | Iceberg calving mass flux into the ocean (kg m⁻² s⁻¹) |
 
 ## Thermodynamic properties
 
@@ -374,6 +377,7 @@ superscript band.
 |:----:|:----:|:---------|:------------|
 | ``\mathcal{L}^\ell`` | `ℒˡ` | latent heat of vaporization | Liquid-phase latent heat (J kg⁻¹) |
 | ``\mathcal{L}^i`` | `ℒⁱ` | latent heat of sublimation | Ice-phase latent heat (J kg⁻¹) |
+| ``\mathcal{L}^f`` | `ℒᶠ` | latent heat of fusion | Heat the ocean supplies to melt snowfall and icebergs (J kg⁻¹) |
 | ``c^{pm}`` | `cᵖᵐ` | moist air heat capacity | Moist isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``c^{pd}`` | `cᵖᵈ` | dry air heat capacity | Dry-air isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``\rho^{\mathrm{at}}`` | `ρᵃᵗ` | air density | Atmospheric air density (kg m⁻³) |

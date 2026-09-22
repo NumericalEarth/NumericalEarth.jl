@@ -63,11 +63,9 @@ end
 """
     AtmosphereSurfaceFluxes{F}
 
-Atmosphere↔surface turbulent flux container, shared by the
-atmosphere–ocean and atmosphere–land interfaces (both produce the same
-8 quantities). Atmosphere–sea-ice uses a smaller container
-([`AtmosphereSeaIceFluxes`](@ref)) because it does not emit the
-characteristic scales.
+Atmosphere↔surface turbulent flux container, shared by the atmosphere–ocean, atmosphere–land and
+atmosphere–sea-ice interfaces: the five fluxes, and the three characteristic scales of the
+Monin–Obukhov solve.
 """
 struct AtmosphereSurfaceFluxes{F}
     latent_heat       :: F
@@ -111,95 +109,78 @@ Oceananigans.Architectures.on_architecture(arch, fluxes::AtmosphereSurfaceFluxes
                             on_architecture(arch, fluxes.temperature_scale),
                             on_architecture(arch, fluxes.water_vapor_scale))
 
-struct AtmosphereSeaIceFluxes{F}
-    latent_heat   :: F
-    sensible_heat :: F
-    water_vapor   :: F
-    x_momentum    :: F
-    y_momentum    :: F
-end
-
-function AtmosphereSeaIceFluxes(grid)
-    F = Field{Center, Center, Nothing}
-    velocity_bcs = vector_component_boundary_conditions(grid, (Center(), Center(), nothing))
-    return AtmosphereSeaIceFluxes(F(grid), F(grid), F(grid),
-                                  F(grid; boundary_conditions = velocity_bcs),
-                                  F(grid; boundary_conditions = velocity_bcs))
-end
-
-AtmosphereSeaIceFluxes(::Nothing) = AtmosphereSeaIceFluxes(ntuple(_ -> ZeroField(), 5)...)
-
-Adapt.adapt_structure(to, fluxes::AtmosphereSeaIceFluxes) =
-    AtmosphereSeaIceFluxes(Adapt.adapt(to, fluxes.latent_heat),
-                           Adapt.adapt(to, fluxes.sensible_heat),
-                           Adapt.adapt(to, fluxes.water_vapor),
-                           Adapt.adapt(to, fluxes.x_momentum),
-                           Adapt.adapt(to, fluxes.y_momentum))
-
-Oceananigans.Architectures.on_architecture(arch, fluxes::AtmosphereSeaIceFluxes) =
-    AtmosphereSeaIceFluxes(on_architecture(arch, fluxes.latent_heat),
-                           on_architecture(arch, fluxes.sensible_heat),
-                           on_architecture(arch, fluxes.water_vapor),
-                           on_architecture(arch, fluxes.x_momentum),
-                           on_architecture(arch, fluxes.y_momentum))
-
 struct SeaIceOceanFluxes{C, FX, FY}
     interface_heat :: C
     frazil_heat    :: C
     salt           :: C
     freshwater     :: C
-    x_momentum     :: FX
-    y_momentum     :: FY
+    freshwater_heat_content :: C
+    # Affine ice-ocean drag Fₑ + λ uᵒ: `x_momentum` is Fₑ = -ρₑ Cᴰ |Δu| uⁱ, `x_momentum_coefficient` is λ = ρₑ Cᴰ |Δu|.
+    x_momentum             :: FX
+    y_momentum             :: FY
+    x_momentum_coefficient :: FX
+    y_momentum_coefficient :: FY
 end
 
 function SeaIceOceanFluxes(grid)
     C  = Field{Center, Center, Nothing}
     x_velocity_bcs = vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
     y_velocity_bcs = vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
-    return SeaIceOceanFluxes(C(grid), C(grid), C(grid), C(grid),
+    return SeaIceOceanFluxes(C(grid), C(grid), C(grid), C(grid), C(grid),
                              Field{Face, Center, Nothing}(grid; boundary_conditions = x_velocity_bcs),
-                             Field{Center, Face, Nothing}(grid; boundary_conditions = y_velocity_bcs))
+                             Field{Center, Face, Nothing}(grid; boundary_conditions = y_velocity_bcs),
+                             Field{Face, Center, Nothing}(grid),
+                             Field{Center, Face, Nothing}(grid))
 end
 
-SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes(ntuple(_ -> ZeroField(), 6)...)
+SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes(ntuple(_ -> ZeroField(), 9)...)
 
 Adapt.adapt_structure(to, fluxes::SeaIceOceanFluxes) =
     SeaIceOceanFluxes(Adapt.adapt(to, fluxes.interface_heat),
                       Adapt.adapt(to, fluxes.frazil_heat),
                       Adapt.adapt(to, fluxes.salt),
                       Adapt.adapt(to, fluxes.freshwater),
+                      Adapt.adapt(to, fluxes.freshwater_heat_content),
                       Adapt.adapt(to, fluxes.x_momentum),
-                      Adapt.adapt(to, fluxes.y_momentum))
+                      Adapt.adapt(to, fluxes.y_momentum),
+                      Adapt.adapt(to, fluxes.x_momentum_coefficient),
+                      Adapt.adapt(to, fluxes.y_momentum_coefficient))
 
 Oceananigans.Architectures.on_architecture(arch, fluxes::SeaIceOceanFluxes) =
     SeaIceOceanFluxes(on_architecture(arch, fluxes.interface_heat),
                       on_architecture(arch, fluxes.frazil_heat),
                       on_architecture(arch, fluxes.salt),
                       on_architecture(arch, fluxes.freshwater),
+                      on_architecture(arch, fluxes.freshwater_heat_content),
                       on_architecture(arch, fluxes.x_momentum),
-                      on_architecture(arch, fluxes.y_momentum))
+                      on_architecture(arch, fluxes.y_momentum),
+                      on_architecture(arch, fluxes.x_momentum_coefficient),
+                      on_architecture(arch, fluxes.y_momentum_coefficient))
 
 # ZeroFluxes is returned by computed_fluxes(::Nothing) for absent interfaces.
 # It contains the union of all flux field names across interface types.
 struct ZeroFluxes{Z}
     # Atmosphere-ocean and atmosphere-sea-ice flux fields (turbulent only;
     # radiative diagnostic fields live on the radiation component)
-    latent_heat           :: Z
-    sensible_heat         :: Z
-    water_vapor           :: Z
-    x_momentum            :: Z
-    y_momentum            :: Z
-    friction_velocity     :: Z
-    temperature_scale     :: Z
-    water_vapor_scale     :: Z
+    latent_heat             :: Z
+    sensible_heat           :: Z
+    water_vapor             :: Z
+    x_momentum              :: Z
+    y_momentum              :: Z
+    friction_velocity       :: Z
+    temperature_scale       :: Z
+    water_vapor_scale       :: Z
     # Sea ice-ocean flux fields
-    interface_heat        :: Z
-    frazil_heat           :: Z
-    salt                  :: Z
-    freshwater            :: Z
+    interface_heat          :: Z
+    frazil_heat             :: Z
+    salt                    :: Z
+    freshwater              :: Z
+    freshwater_heat_content :: Z
+    x_momentum_coefficient  :: Z
+    y_momentum_coefficient  :: Z
 end
 
-ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 12)...)
+ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 15)...)
 
 @inline computed_fluxes(::Nothing) = ZeroFluxes()
 
@@ -285,7 +266,7 @@ function atmosphere_sea_ice_interface(grid,
                                       temperature_formulation,
                                       velocity_formulation)
 
-    fluxes = AtmosphereSeaIceFluxes(grid)
+    fluxes = AtmosphereSurfaceFluxes(grid)
 
     phase = AtmosphericThermodynamics.Ice()
     specific_humidity_formulation = ImpureSaturationSpecificHumidity(phase)
@@ -381,6 +362,7 @@ Keyword Arguments
 
 - `radiation`: radiation component. Default: `nothing`.
 - `freshwater_density`: reference density of freshwater. Default: `default_freshwater_density`.
+- `latent_heat_of_fusion`: latent heat [J kg⁻¹] the ocean supplies to melt snowfall and icebergs. Default: `default_latent_heat_of_fusion`.
 - `atmosphere_ocean_fluxes`: flux formulation for atmosphere-ocean interface. Default: `SimilarityTheoryFluxes()`.
 - `atmosphere_sea_ice_fluxes`: flux formulation for atmosphere-sea ice interface. Default: `SimilarityTheoryFluxes()`.
 - `atmosphere_ocean_interface_temperature`: temperature formulation for atmosphere-ocean interface.
@@ -402,6 +384,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              land = nothing,
                              exchange_grid = exchange_grid(atmosphere, ocean, sea_ice, land),
                              freshwater_density = default_freshwater_density,
+                             latent_heat_of_fusion = default_latent_heat_of_fusion,
                              atmosphere_ocean_fluxes = SimilarityTheoryFluxes(eltype(exchange_grid)),
                              atmosphere_sea_ice_fluxes = atmosphere_sea_ice_similarity_theory(eltype(exchange_grid)),
                              atmosphere_land_fluxes = default_atmosphere_land_fluxes(land, eltype(exchange_grid)),
@@ -435,15 +418,17 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     sea_ice_reference_density  = convert(FT, sea_ice_reference_density)
     sea_ice_heat_capacity      = convert(FT, sea_ice_heat_capacity)
     freshwater_density         = convert(FT, freshwater_density)
+    latent_heat_of_fusion      = convert(FT, latent_heat_of_fusion)
     gravitational_acceleration = convert(FT, gravitational_acceleration)
 
     # Component properties
     atmosphere_properties = thermodynamics_parameters(atmosphere)
 
-    ocean_properties = (reference_density  = ocean_reference_density,
-                        heat_capacity      = ocean_heat_capacity,
-                        freshwater_density = freshwater_density,
-                        temperature_units  = ocean_temperature_units)
+    ocean_properties = (reference_density     = ocean_reference_density,
+                        heat_capacity         = ocean_heat_capacity,
+                        freshwater_density    = freshwater_density,
+                        latent_heat_of_fusion = latent_heat_of_fusion,
+                        temperature_units     = ocean_temperature_units)
 
     # Only build sea_ice_properties if sea_ice is an actual Simulation with a model
     if sea_ice isa Simulation
