@@ -22,7 +22,7 @@ using NumericalEarth.DataWrangling.GloBFP3D: globfp3d_native_cell_size
     target_grid = LatitudeLongitudeGrid(CPU(), Float64; size = (4, 4),
                                         longitude = region.longitude, latitude = region.latitude,
                                         topology = (Bounded, Bounded, Flat))
-    morphometry = building_morphometry(target_grid; dataset, region)
+    morphometry = building_morphometry(target_grid, dataset)
 
     λᵖ   = Array(interior(morphometry.plan_area_index, :, :, 1))
     h    = Array(interior(morphometry.mean_building_height, :, :, 1))
@@ -42,7 +42,7 @@ using NumericalEarth.DataWrangling.GloBFP3D: globfp3d_native_cell_size
     maximum_raster_cells = raster.Nx * (raster.Ny ÷ 4)
     @test raster.Nx * raster.Ny > maximum_raster_cells    # the limit really forces bands
 
-    banded = building_morphometry(target_grid; dataset, region, maximum_raster_cells)
+    banded = building_morphometry(target_grid, dataset; maximum_raster_cells)
     for name in keys(morphometry)
         @test Array(interior(banded[name], :, :, 1)) == Array(interior(morphometry[name], :, :, 1))
     end
@@ -57,5 +57,5 @@ end
                                         longitude = region.longitude, latitude = region.latitude,
                                         topology = (Bounded, Bounded, Flat))
 
-    @test_throws ErrorException building_morphometry(target_grid; dataset, region)
+    @test_throws ErrorException building_morphometry(target_grid, dataset)
 end

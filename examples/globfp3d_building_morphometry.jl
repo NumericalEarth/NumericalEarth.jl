@@ -42,7 +42,7 @@ fig1
 target_grid = LatitudeLongitudeGrid(CPU(), Float64; size = (102, 136),
                                     longitude = region.longitude, latitude = region.latitude,
                                     topology = (Bounded, Bounded, Flat))
-morphometry = building_morphometry(target_grid; dataset, region)
+morphometry = building_morphometry(target_grid, dataset)
 
 robust_range(field) = (v = filter(>(0), interior(field, :, :, 1)); isempty(v) ? (0, 1) : (0, quantile(v, 0.98)))
 
@@ -66,7 +66,7 @@ Label(fig2[0, 1:2], "3D-GloBFP building morphometry — Manhattan (3 m raster �
 overview_grid = LatitudeLongitudeGrid(CPU(), Float64; size = size(building_height)[1:2] .÷ 3,
                                       longitude = region.longitude, latitude = region.latitude,
                                       topology = (Bounded, Bounded, Flat))
-building_height_overview = building_morphometry(overview_grid; dataset, region).maximum_building_height
+building_height_overview = building_morphometry(overview_grid, dataset).maximum_building_height
 
 left = fig2[1, 1] = GridLayout()
 ax_bh = Axis(left[1, 1]; title = "building height (9 m max of the 3 m raster)",
@@ -184,7 +184,7 @@ end
 kilometer_grid = LatitudeLongitudeGrid(CPU(), Float64; size = (8, 13),
                                        longitude = region.longitude, latitude = region.latitude,
                                        topology = (Bounded, Bounded, Flat))
-kilometer_morphometry = building_morphometry(kilometer_grid; dataset, region)
+kilometer_morphometry = building_morphometry(kilometer_grid, dataset)
 
 kilometer_regressed_roughness, kilometer_regressed_displacement =
     urban_roughness(kilometer_morphometry.mean_building_height, kilometer_morphometry.plan_area_index)
