@@ -1,7 +1,7 @@
 include("runtests_setup.jl")
 
-using NumericalEarth: ESAWorldCover, WorldCoverVersion, WorldCoverV100, WorldCoverV200
-using NumericalEarth.DataWrangling.WorldCover: class_counts, majority_class,
+using NumericalEarth: ESAWorldCover, WorldCoverV100, WorldCoverV200
+using NumericalEarth.DataWrangling.WorldCover: WorldCoverVersion, class_counts, majority_class,
                                                class_fractions, vegetation_fraction,
                                                aggregate_blockwise, aggregate_landcover,
                                                worldcover_window,
