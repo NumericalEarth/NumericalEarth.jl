@@ -80,9 +80,15 @@ end
               f * scalar(veg.temperature.soil_latent_heat) + (1 - f) * scalar(bare.fluxes.latent_heat) rtol = 1e-12
         @test scalar(ti.temperature.canopy_latent_heat) ≈ f * scalar(veg.temperature.canopy_latent_heat) rtol = 1e-12
         @test scalar(ti.temperature.canopy) == scalar(veg.temperature.canopy)
-        # Effective (LST) temperature blends in radiance (T⁴) space.
+        # Effective temperature includes emitted and reflected longwave from each tile.
         Tv = scalar(veg.temperature.effective)
-        @test scalar(ti.temperature.effective) ≈ (f * Tv^4 + (1 - f) * Tᵇ^4)^(1/4) rtol = 1e-12
+        σ = model.radiation.stefan_boltzmann_constant
+        ε = model.radiation.surface_properties.land.emissivity
+        LW = scalar(model.interfaces.exchanger.radiation.state.ℐꜜˡʷ)
+        bare_longwave = ε * σ * Tᵇ^4 + (1 - ε) * LW
+        @test σ * scalar(ti.temperature.effective)^4 ≈ f * σ * Tv^4 + (1 - f) * bare_longwave rtol = 1e-12
+        α = model.radiation.surface_properties.land.albedo
+        @test scalar(ti.temperature.effective_albedo) ≈ f * scalar(veg.temperature.effective_albedo) + (1 - f) * α
 
         # Sunlit veg tile: shaded soil skin cooler than the leaf; transpiration dominates the
         # tile's latent flux; and the shaded, litter-covered ground evaporates far less than

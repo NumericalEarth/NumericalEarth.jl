@@ -61,9 +61,12 @@ function build_rtm_canopy_model(arch; hour = 12)
                                            moisture_stress = CriticalSaturation(0.5),
                                            absorbed_par = InteractiveAbsorbedPAR(FT)))
 
-    return AtmosphereLandModel(atmosphere, land; radiation,
-                               atmosphere_land_interface_temperature = canopy,
-                               atmosphere_land_interface_specific_humidity = canopy)
+    model = AtmosphereLandModel(atmosphere, land; radiation,
+                                atmosphere_land_interface_temperature = canopy,
+                                atmosphere_land_interface_specific_humidity = canopy)
+    # Initialize the RTM so the first measured land step has downwelling radiation.
+    time_step!(model, 1.0)
+    return model
 end
 
 @testset "Breeze RadiativeTransferModel driving a CanopyAirSpace" begin
@@ -89,11 +92,10 @@ end
             @test all(Array(interior(canopy.canopy)) .> Array(interior(canopy.soil_skin)))
             @test all(Array(interior(canopy.effective)) .> Tᵃᶜ)
 
-            # RRTMGP solves at the start of a step from the temperature bound at the end of the
-            # previous one, so its surface emission reproduces the canopy's upwelling longwave.
+            # RRTMGP solves after the land interface, using the canopy temperature for this step.
             σ = default_stefan_boltzmann_constant
-            Tᵉᶠᶠ = Array(interior(canopy.effective))
             time_step!(model, 1.0)
+            Tᵉᶠᶠ = Array(interior(canopy.effective, :, :, 1))
             @test Array(interior(rtm.upwelling_longwave_flux))[:, :, 1] ≈ σ .* Tᵉᶠᶠ .^ 4 rtol = 1e-3
         end
 
