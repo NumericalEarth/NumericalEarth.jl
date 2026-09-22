@@ -19,6 +19,7 @@ export native_grid
 export masked_regrid!
 
 using Adapt: Adapt
+using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using LibCURL: LibCURL
 using JLD2: JLD2, jldopen
@@ -37,8 +38,10 @@ using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
 using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
 using Oceananigans.Utils: launch!, prettytime, prettysummary
+using DocStringExtensions: TYPEDSIGNATURES
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
+using ZipFile: ZipFile
 using Scratch: @get_scratch!
 
 using ..NumericalEarth: NumericalEarth, stateindex
@@ -68,6 +71,24 @@ function download_cache(key)
     else
         return @get_scratch!(key)
     end
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Extract the zip archive `file` into the directory `exdir`, which is created if missing.
+"""
+function unzip(file, exdir = dirname(file))
+    mkpath(exdir)
+    archive = ZipFile.Reader(file)
+    for entry in archive.files
+        endswith(entry.name, '/') && continue
+        path = joinpath(exdir, entry.name)
+        mkpath(dirname(path))
+        write(path, read(entry))
+    end
+    close(archive)
+    return exdir
 end
 
 mutable struct DownloadProgress <: Function
@@ -157,12 +178,41 @@ function netrc_permission_file(username, password, machine, dir)
     return filepath
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Download `url` to `path`, retrying up to `attempts` times on failure. Each transfer lands beside the
+destination and is renamed into place once it has arrived in full, so `path` never holds a partial file.
+
+Extra keyword arguments are forwarded to `Downloads.download` (`progress`, `downloader`, ...).
+"""
+function download_with_retries(url, path; attempts = 3, description = "Download", kw...)
+    dir = dirname(path)
+    mkpath(dir)
+
+    for attempt in 1:attempts
+        try
+            # Same filesystem as the destination, so the rename is atomic rather than a copy.
+            mktemp(dir) do partial_path, partial_io
+                close(partial_io)
+                Downloads.download(url, partial_path; kw...)
+                mv(partial_path, path; force=true)
+            end
+            return path
+        catch error
+            attempt == attempts && rethrow()
+            @warn "$description failed (attempt $attempt of $attempts); retrying..." url error
+            sleep(2attempt)
+        end
+    end
+end
+
 #####
 ##### FieldTimeSeries utilities
 #####
 
-function save_field_time_series!(fts; path, name, overwrite_existing=false)
-    overwrite_existing && rm(path; force=true)
+function save_field_time_series!(fts; path, name, overwrite_files=false)
+    overwrite_files && rm(path; force=true)
 
     times = on_architecture(CPU(), fts.times)
     grid  = on_architecture(CPU(), fts.grid)
@@ -221,8 +271,6 @@ Arguments
 # `download(::Metadata)` extends `Downloads.download` (the modern stdlib function,
 # not `Base.download` which is a 1.0-era shim). Per-dataset methods are added
 # within each dataset module via `Downloads.download(metadata::FooMetadata) = ...`.
-
-function inpainted_metadata_path end
 
 """
     z_interfaces(dataset)
@@ -355,6 +403,8 @@ function default_inpainting(metadata)
         return NearestNeighborInpainting(5)
     end
 end
+
+include("prescribed_radiation.jl")
 
 # Datasets
 include("ETOPO/ETOPO.jl")

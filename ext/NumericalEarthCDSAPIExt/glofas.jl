@@ -21,7 +21,7 @@ restore_env!(name, value) = (ENV[name] = value; nothing)
 # differs. The `GLOFAS_CDSAPI_URL` / `GLOFAS_CDSAPI_KEY` environment variables
 # override the defaults (an empty key falls back to the key CDSAPI already
 # resolves from the environment or `~/.cdsapirc`).
-function glofas_retrieve(product, request, path)
+function glofas_retrieve(product, request, path; retrieve = CDSAPI.retrieve)
     url = get(ENV, "GLOFAS_CDSAPI_URL", GLOFAS_EWDS_URL)
     key = get(ENV, "GLOFAS_CDSAPI_KEY", "")
 
@@ -32,7 +32,7 @@ function glofas_retrieve(product, request, path)
     isempty(key) || (ENV["CDSAPI_KEY"] = key)
 
     try
-        return retrieve_with_retries(product, request, path)
+        return retrieve_with_retries(product, request, path; retrieve)
     finally
         restore_env!("CDSAPI_URL", saved_url)
         isempty(key) || restore_env!("CDSAPI_KEY", saved_key)
@@ -90,28 +90,30 @@ function glofas_request_area(bbox::BBOX)
 end
 
 """
-    download(meta::GloFASMetadatum; skip_existing=true)
+$(TYPEDSIGNATURES)
 
-Download GloFAS river discharge for a single date via the EWDS CDS API.
+Download GloFAS river discharge for a single date via the EWDS CDS API, fetching the request with
+`retrieve(product, request, path)`.
 """
-function Downloads.download(meta::GloFASMetadatum; skip_existing=true)
+function Downloads.download(meta::GloFASMetadatum; skip_existing=true, retrieve=CDSAPI.retrieve)
     output_path = metadata_path(meta)
     skip_existing && isfile(output_path) && return output_path
 
     mkpath(dirname(output_path))
     request = build_glofas_request(meta.dataset, meta.dates, meta.region)
-    @root glofas_retrieve(glofas_product(meta.dataset), request, output_path)
+    @root glofas_retrieve(glofas_product(meta.dataset), request, output_path; retrieve)
 
     return output_path
 end
 
 """
-    download(metadata::GloFASMetadata; skip_existing=true, cleanup=true)
+$(TYPEDSIGNATURES)
 
 Download GloFAS river discharge for multiple dates, batching by calendar month
-and splitting the multi-timestep NetCDF into one file per day.
+and splitting the multi-timestep NetCDF into one file per day. Each batch is fetched with
+`retrieve(product, request, path)`.
 """
-function Downloads.download(metadata::GloFASMetadata; skip_existing=true, cleanup=true)
+function Downloads.download(metadata::GloFASMetadata; skip_existing=true, cleanup=true, retrieve=CDSAPI.retrieve)
     dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
     monthly = group_by_calendar_month(dates)
 
@@ -121,13 +123,13 @@ function Downloads.download(metadata::GloFASMetadata; skip_existing=true, cleanu
         append!(paths, download_glofas_month(metadata.name, metadata.dataset, batch;
                                              region = metadata.region,
                                              dir = metadata.dir,
-                                             skip_existing, cleanup))
+                                             skip_existing, cleanup, retrieve))
     end
 
     return paths
 end
 
-function download_glofas_month(name, dataset, dates; region, dir, skip_existing, cleanup)
+function download_glofas_month(name, dataset, dates; region, dir, skip_existing, cleanup, retrieve = CDSAPI.retrieve)
     meta_filename = NumericalEarth.DataWrangling.metadata_filename
 
     dt_path_pairs = [(dt, joinpath(dir, meta_filename(dataset, name, dt, region))) for dt in dates]
@@ -146,7 +148,7 @@ function download_glofas_month(name, dataset, dates; region, dir, skip_existing,
     nc_triples = [(nc_varname, dt + Dates.Day(1), path) for (dt, path) in pending]
 
     @root begin
-        glofas_retrieve(glofas_product(dataset), request, tmp_path)
+        glofas_retrieve(glofas_product(dataset), request, tmp_path; retrieve)
         foreach_nc(tmp_path, dir) do nc_path
             split_era5_nc_by_datetime(nc_path, nc_triples, GLOFAS_COORD_VARS, ERA5_TIME_DIMNAMES)
         end
