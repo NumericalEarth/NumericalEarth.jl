@@ -121,8 +121,7 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
                                                   approximate_interface_state,
                                                   atmosphere_state,
                                                   interface_properties,
-                                                  atmosphere_properties,
-                                                  interior_properties)
+                                                  atmosphere_properties)
 
     fluxes = InterfaceFluxScales(convert(FT, u★), convert(FT, θ★), convert(FT, q★),
                                  convert(FT, χθ), convert(FT, χq))

@@ -20,38 +20,28 @@ export
     ConstantTortuosity,
     PowerLawTortuosity,
     CanopyConductanceHumidity,
-    CompositeSurfaceHumidity,
     CanopyAirSpace,
     DiagnosticCanopyAir,
     PrognosticCanopyAir,
     DiagnosticSkin,
     PrognosticSkin,
     CanopyInterception,
-    AbstractUndercanopyConductance,
-    ConstantUndercanopyConductance,
     AreaIndexUndercanopyConductance,
     FrictionVelocityUndercanopyConductance,
     SellersSoilResistance,
     LitterResistance,
     TiledLandInterface,
-    bare_canopy_air_space,
-    leaf_area_index_cover_fraction,
     FarquharPhotosynthesis,
     MedlynConductance,
     JarvisConductance,
-    PrescribedAbsorbedPAR,
     InteractiveAbsorbedPAR,
-    PlainArrhenius,
     PeakedArrheniusParameters,
     HeskelParameters,
-    PeakedArrhenius,
-    ElevationCorrection,
+    AltitudeCorrection,
     atmosphere_land_interface,
     SimilarityTheoryFluxes,
     FixedIterations,
     ConvergenceStopCriteria,
-    LandRoughnessLength,
-    LandZeroPlaneDisplacement,
     CoefficientBasedFluxes,
     FreezingLimitedOceanTemperature,
     SkinTemperature,
@@ -102,6 +92,7 @@ const default_gravitational_acceleration = Oceananigans.defaults.gravitational_a
 const default_freshwater_density = 1000 # kg m⁻³
 const default_gas_constant = 8.3144598 # J mol⁻¹ K⁻¹ (universal gas constant)
 const default_dry_air_molar_mass = 0.02897 # kg mol⁻¹
+const default_latent_heat_of_fusion = 334e3 # J kg⁻¹
 
 include("InterfaceComputations/InterfaceComputations.jl")
 
@@ -131,7 +122,7 @@ InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoSeaIceInterfaceModel)   
 
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoAtmosInterfaceModel)   = nothing
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoAtmosInterfaceModel) = nothing
-InterfaceComputations.compute_atmosphere_land_fluxes!(::NoAtmosInterfaceModel)    = nothing
+InterfaceComputations.compute_atmosphere_land_fluxes!(::NoAtmosInterfaceModel, Δt) = nothing
 
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoOceanInterfaceModel) = nothing
 InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoOceanInterfaceModel)    = nothing
@@ -140,7 +131,7 @@ InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoOceanInterfaceModel)    
 # are all absent. The atmosphere-land interface may still be present
 # (e.g. an `AtmosphereLandModel` with ocean = sea_ice = nothing), so we
 # explicitly do *not* fall back `compute_atmosphere_land_fluxes!` here —
-# its own 2-arg Nothing dispatch handles the missing-AL-interface case.
+# its own Nothing dispatch handles the missing-AL-interface case.
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoInterfaceModel)   = nothing
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoInterfaceModel) = nothing
 InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoInterfaceModel)      = nothing

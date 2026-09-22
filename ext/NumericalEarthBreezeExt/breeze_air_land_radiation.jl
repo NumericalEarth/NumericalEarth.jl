@@ -17,16 +17,16 @@ function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_prope
     temperature = isnothing(land) ? nothing : land.temperature
 
     if temperature isa CanopyAirSpaceDiagnostics
-        rtm = @set rtm.surface_properties.surface_temperature = temperature.effective
-        rtm = @set rtm.surface_properties.surface_emissivity = ConstantField(one(eltype(temperature.effective)))
-        rtm = @set rtm.surface_properties.direct_surface_albedo = temperature.effective_albedo
-        return @set rtm.surface_properties.diffuse_surface_albedo = temperature.effective_albedo
+        rtm = @set rtm.surface_radiation.surface_temperature = temperature.effective
+        rtm = @set rtm.surface_radiation.surface_emissivity = ConstantField(one(eltype(temperature.effective)))
+        rtm = @set rtm.surface_radiation.direct_surface_albedo = temperature.effective_albedo
+        return @set rtm.surface_radiation.diffuse_surface_albedo = temperature.effective_albedo
     end
 
-    isnothing(rtm.surface_properties.surface_temperature) || return rtm
+    isnothing(rtm.surface_radiation.surface_temperature) || return rtm
     Tˢ = NumericalEarth.EarthSystemModels.surface_temperature(interfaces)
     isnothing(Tˢ) && return rtm
-    return @set rtm.surface_properties.surface_temperature = Tˢ
+    return @set rtm.surface_radiation.surface_temperature = Tˢ
 end
 
 # A Breeze RTM needs no exchange state; without this method the generic constructor

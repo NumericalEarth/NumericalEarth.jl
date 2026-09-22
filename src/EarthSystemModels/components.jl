@@ -24,9 +24,7 @@ exchange_grid(atmosphere, ocean, sea_ice, land=nothing) = grid(ocean)
 exchange_grid(atmosphere, ::Nothing, ::Nothing, land) = land.grid
 
 # Prescribed fields are FieldTimeSeries; set a `Number` into every time slice.
-# `nothing` leaves the field untouched. Halos are filled because the exchanger interpolates
-# into them: a dataset-backed series has them filled as snapshots are paged in, so do the
-# same here.
+# `nothing` leaves the field untouched.
 set_prescribed_field!(fts, ::Nothing) = nothing
 
 function set_prescribed_field!(fts, value::Number)
@@ -159,11 +157,8 @@ adopt_clock(::Nothing, clock) = nothing
 
 function adopt_clock(simulation::Simulation, clock)
     same_time_type(simulation.model.clock.time, clock.time) && return simulation
-    throw(ArgumentError(string(
-        "the simulation clock tracks time as ", typeof(simulation.model.clock.time),
-        " but the EarthSystemModel clock uses ", typeof(clock.time), ". A Simulation's clock type ",
-        "follows its grid and cannot be coerced; rebuild the simulation on a grid ",
-        "with float type ", typeof(clock.time), ", or construct the EarthSystemModel with a matching `clock`.")))
+    throw(ArgumentError(string("the simulation clock tracks time as ", typeof(simulation.model.clock.time),
+                               " but the EarthSystemModel clock uses ", typeof(clock.time))))
 end
 
 same_time_type(::TT, ::ST) where {TT, ST} = ST === TT

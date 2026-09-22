@@ -1,11 +1,6 @@
 #####
-##### Moisture-availability (evaporation-efficiency) models — the β(𝒮) seam.
-#####
-##### `evaporation_efficiency(model, hydrology)` maps the land surface saturation 𝒮
-##### to an availability factor β ∈ [0, 1]. `CriticalSaturation` is the bare-soil
-##### evaporation model; `PlantAvailableWaterStress` is the transpiration model a
-##### canopy reads. Both are consumed by `FractionalHumidity` and by the canopy
-##### formulations (`CanopyConductanceHumidity`, `CanopyAirSpace`).
+##### Moisture-availability models: `evaporation_efficiency(model, hydrology)` maps the land
+##### surface saturation 𝒮 to a factor β ∈ [0, 1].
 #####
 
 """
@@ -18,9 +13,7 @@ critical saturation `𝒮ᶜ`, and the efficiency falls off linearly below it,
 β(𝒮) = \\min(𝒮 / 𝒮ᶜ, 1),   𝒮 = Mˡᵃ / Mˡᵃ⁺.
 ```
 
-Used as the `efficiency` of [`FractionalHumidity`](@ref). The type declares its
-land-state dependency (the saturation `𝒮`); the interface materializes exactly
-that into the land interface state.
+Used as the `efficiency` of [`FractionalHumidity`](@ref).
 """
 struct CriticalSaturation{FT}
     critical_saturation :: FT
@@ -46,25 +39,10 @@ the permanent wilting point to 1 at field capacity,
 β(𝒮) = \\mathrm{clamp}\\left(\\frac{𝒮 - 𝒮ʷᵖ}{𝒮ᶠᶜ - 𝒮ʷᵖ}, 0, 1\\right),
 ```
 
-where `𝒮ᶠᶜ` and `𝒮ʷᵖ` are the effective saturations at the two suction heads. The
-closure holds the heads, which are plant properties; the curve they are evaluated on
-comes from the land's own hydrology, per cell, so the stress and the soil cannot
-disagree. A hydrology carrying no retention curve (e.g. [`BucketHydrology`](@ref),
-whose `𝒮` is a fill fraction rather than a retention-curve saturation) is rejected when
-the interface is built.
-
-The default heads follow [Balsamo et al. (2009)](@cite balsamo2009): `ψᶠᶜ = 1` m and
-`ψʷᵖ = 150` m of suction.
-
-Because `β` is a ratio of effective saturations on one curve, the porosity and the
-residual liquid fraction cancel; the closure needs neither.
-
-This is the moisture stress meant for a transpiring canopy
-([`CanopyConductanceHumidity`](@ref)'s `moisture_stress`): unlike
-[`CriticalSaturation`](@ref) — a *bare-soil* evaporation model whose `β` reaches 1 at the
-critical saturation and 0 only at the residual liquid fraction — its endpoints are the
-plant ones, so stomata shut at wilting rather than at oven dryness. The clamp at wilting
-is physical: a wilted plant does not respond to a perturbation.
+where `𝒮ᶠᶜ` and `𝒮ʷᵖ` are the effective saturations at the two suction heads on the
+land's own retention curve, evaluated per cell; a hydrology without a retention curve is
+rejected when the interface is built. The default heads follow
+[Balsamo et al. (2009)](@cite balsamo2009): `ψᶠᶜ = 1` m and `ψʷᵖ = 150` m of suction.
 
 ```jldoctest
 using NumericalEarth

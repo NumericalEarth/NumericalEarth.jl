@@ -82,7 +82,7 @@ end
 
             # The RTM reflects with the canopy's albedo rather than its configured one: leaf and
             # ground albedo are both 0.15 by default, so the column's is too at any leaf area.
-            @test all(Array(interior(rtm.surface_properties.direct_surface_albedo)) .≈ 0.15)
+            @test all(Array(interior(rtm.surface_radiation.direct_surface_albedo)) .≈ 0.15)
 
             # Sunlit leaves over shaded soil, radiating warmer than the canopy air.
             Tᵃᶜ = Array(interior(canopy.interface))

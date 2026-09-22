@@ -1,9 +1,12 @@
 module InterfaceComputations
 
-using Adapt: Adapt, adapt
-using Oceananigans: Oceananigans
-using Oceananigans.Fields: AbstractField, Field, Face, Center
-using Oceananigans.Grids: Flat, Periodic, topology
+using Adapt: Adapt
+using DocStringExtensions: TYPEDSIGNATURES
+using KernelAbstractions: @kernel, @index
+using Oceananigans: Oceananigans, location
+using Oceananigans.Architectures: architecture
+using Oceananigans.Fields: AbstractField, Field, Face, Center, FractionalIndices
+using Oceananigans.Grids: Flat, Periodic, halo_size, topology, _node
 using Oceananigans.OutputReaders: FieldTimeSeries, FlavorOfFTS, cpu_interpolating_time_indices
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: KernelParameters, worksize
@@ -15,8 +18,6 @@ export
     ConvergenceStopCriteria,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
-    LandRoughnessLength,
-    LandZeroPlaneDisplacement,
     CoefficientBasedFluxes,
     SimilarityScales,
     PolynomialNeutralDragCoefficient,
@@ -53,34 +54,25 @@ export
     ConstantTortuosity,
     PowerLawTortuosity,
     CanopyConductanceHumidity,
-    CompositeSurfaceHumidity,
     CanopyAirSpace,
     DiagnosticCanopyAir,
     PrognosticCanopyAir,
     DiagnosticSkin,
     PrognosticSkin,
     CanopyInterception,
-    AbstractUndercanopyConductance,
-    ConstantUndercanopyConductance,
     AreaIndexUndercanopyConductance,
     FrictionVelocityUndercanopyConductance,
     SellersSoilResistance,
     LitterResistance,
     TiledLandInterface,
-    bare_canopy_air_space,
-    leaf_area_index_cover_fraction,
     FarquharPhotosynthesis,
     AbstractStomatalConductance,
     MedlynConductance,
     JarvisConductance,
-    AbstractAbsorbedPAR,
-    PrescribedAbsorbedPAR,
     InteractiveAbsorbedPAR,
-    PlainArrhenius,
     PeakedArrheniusParameters,
     HeskelParameters,
-    PeakedArrhenius,
-    ElevationCorrection,
+    AltitudeCorrection,
     atmosphere_land_interface,
     # Sea ice-ocean heat flux formulations
     IceBathHeatFlux,
@@ -96,6 +88,7 @@ using ..EarthSystemModels: EarthSystemModels,
                            default_gas_constant,
                            default_dry_air_molar_mass,
                            celsius_to_kelvin,
+                           default_latent_heat_of_fusion,
                            thermodynamics_parameters,
                            surface_layer_height,
                            boundary_layer_height
@@ -137,6 +130,34 @@ end
 ##### Utilities
 #####
 
+@kernel function _compute_fractional_indices!(indices_tuple, exchange_grid, source_grid)
+    i, j = @index(Global, NTuple)
+    kᴺ = size(exchange_grid, 3)
+    X = _node(i, j, kᴺ + 1, exchange_grid, Center(), Center(), Face())
+    if topology(source_grid) == (Flat, Flat, Flat)
+        fractional_indices_ij = FractionalIndices(nothing, nothing, nothing)
+    else
+        fractional_indices_ij = FractionalIndices(X, source_grid, Center(), Center(), Center())
+    end
+    TX, TY, _ = topology(source_grid)
+    Nx, Ny, _ = size(source_grid)
+    Hx, Hy, _ = halo_size(source_grid)
+    Sx, Sy, _ = worksize(exchange_grid)
+    halo_column = (i < 1) | (i > Sx) | (j < 1) | (j > Sy)
+
+    fi = indices_tuple.i
+    fj = indices_tuple.j
+    @inbounds begin
+        if !isnothing(fi)
+            fi[i, j, 1] = clamp_fractional_index(fractional_indices_ij.i, TX(), Nx, Hx, halo_column)
+        end
+
+        if !isnothing(fj)
+            fj[i, j, 1] = clamp_fractional_index(fractional_indices_ij.j, TY(), Ny, Hy, halo_column)
+        end
+    end
+end
+
 function interface_kernel_parameters(grid)
     Sx, Sy, _ = worksize(grid)
     TX, TY, _ = topology(grid)
@@ -155,32 +176,24 @@ function interface_kernel_parameters(grid)
     return kernel_parameters
 end
 
-# Fractional indices of a prescribed component's grid are computed over the exchange grid's
-# halo as well as its interior (`interface_kernel_parameters`), so a halo node lands outside a
-# regional component's interior by design: the value there comes from the component's own halo,
-# and therefore from its boundary conditions. Interpolation reads cells `⌊f⌋` and `⌊f⌋ + 1`, so
-# the index only has to stay within `1 - H` and `N + H - 1` for those reads to be in bounds.
-#
-# Clamping to that range leaves the halo reads alone whenever the component grid carries enough
-# halo to hold them, so a halo column reads the component's halo and hence its boundary
-# conditions. The upper bound is strict — `⌊f⌋ + 1` must not exceed `N + H` — so it is the
-# largest representable index below `N + H` rather than `N + H - 1`, which would give the
-# outermost halo cell zero weight and discard the boundary condition it holds.
-@inline clamp_fractional_index(::Nothing, topo, N, H) = nothing
+# Halo columns read the component's own halo, so the index is held where interpolation can
+# reach: `⌊f⌋` and `⌊f⌋ + 1` must both lie within `1 - H` and `N + H`.
+@inline clamp_fractional_index(::Nothing, topo, N, H, halo_column) = nothing
 
-@inline function clamp_fractional_index(fractional_index, topo, N, H)
+@inline function clamp_fractional_index(fractional_index, topo, N, H, halo_column)
     FT = typeof(fractional_index)
-    westmost = convert(FT, 1 - H)
-    eastmost = prevfloat(convert(FT, N + H))
-    return ifelse(topo isa Periodic, fractional_index, clamp(fractional_index, westmost, eastmost))
+    lowest = convert(FT, 1 - H)
+    highest = prevfloat(convert(FT, N + H))
+    clamped = halo_column & !(topo isa Periodic)
+    return ifelse(clamped, clamp(fractional_index, lowest, highest), fractional_index)
 end
 
-# 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1: a scalar
-# (e.g. a prescribed measurement height or the 600 m BL-height fallback) passes through,
-# and a 2-D `Field` (Breeze's per-column surface- or boundary-layer height) is read at
-# column `(i, j)`. Used by the atmosphere–surface flux kernels to consume
-# `surface_layer_height` / `h_bℓ` uniformly.
+# 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1
 @inline state2dindex(a, i, j) = stateindex(a, i, j, 1)
+@inline state2dindex(a, i, j, grid, time) = stateindex(a, i, j, 1, grid, time, (Center, Center, Nothing))
+
+# Functions are resolved at the topmost center: a `Nothing` vertical location yields a two-tuple node.
+@inline state2dindex(a::Function, i, j, grid, time) = stateindex(a, i, j, size(grid, 3), grid, time, (Center, Center, Center))
 
 # Turbulent fluxes
 include("roughness_lengths.jl")
@@ -191,7 +204,6 @@ include("photosynthesis.jl")
 include("stomatal_conductance.jl")
 include("absorbed_par.jl")
 include("canopy_conductance.jl")
-include("composite_surface_humidity.jl")
 include("canopy_air_space.jl")
 include("compute_interface_state.jl")
 include("similarity_theory_turbulent_fluxes.jl")
@@ -206,6 +218,7 @@ include("sea_ice_ocean_heat_flux_formulations.jl")
 
 include("component_interfaces.jl")
 include("atmosphere_state_correction.jl")
+include("atmosphere_interface_kernels.jl")
 include("atmosphere_ocean_fluxes.jl")
 include("atmosphere_sea_ice_fluxes.jl")
 include("atmosphere_land_fluxes.jl")

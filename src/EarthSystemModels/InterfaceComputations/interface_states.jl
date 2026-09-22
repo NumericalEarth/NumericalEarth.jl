@@ -12,9 +12,9 @@ struct InterfaceProperties{Q, T, V}
 end
 
 Adapt.adapt_structure(to, p::InterfaceProperties) =
-    InterfaceProperties(adapt(to, p.specific_humidity_formulation),
-                        adapt(to, p.temperature_formulation),
-                        adapt(to, p.velocity_formulation))
+    InterfaceProperties(Adapt.adapt(to, p.specific_humidity_formulation),
+                        Adapt.adapt(to, p.temperature_formulation),
+                        Adapt.adapt(to, p.velocity_formulation))
 
 #####
 ##### Interface specific humidity formulations
@@ -116,19 +116,25 @@ end
 # composite formulations forward to their soil branch.
 @inline interface_phase(q_formulation) = q_formulation.phase
 
-# Aerodynamic vapor conductance `Gᵃ = ρᵃᵗ u★ χq` (kg m⁻² s⁻¹) of the previous
-# similarity iterate — the bulk linearization `Jᵃ(q) ≈ Gᵃ (q - qᵃᵗ)` of the
-# similarity vapor flux, anchored so that `Jᵃ(qˢ⁻) = -ρᵃᵗ u★ q★` exactly
-# (`q★ = χq Δq`). The series-resistance humidity formulations (`SkinHumidity`,
-# `DryLayerHumidity`, `CanopyConductanceHumidity`, `CompositeSurfaceHumidity`,
-# `CanopyAirSpace`) close their flux balance against it. Reading the conductance
-# off the similarity solution — instead of reconstructing it from the
-# flux/increment ratio `Jᵃ/Δq`, which is singular as `Δq` crosses zero — keeps
-# every humidity divider a convex mean of its sources; the floor guards against
-# transient unphysical profiles.
+# Aerodynamic vapor `Gᵃ = ρᵃᵗ u★ χq` and heat `ρᵃᵗ cᵖ u★ χθ` conductances of the previous
+# similarity iterate, the bulk linearizations of the similarity fluxes the surface
+# balances close against.
 @inline function aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
-    return max(0, ρᵃᵗ * Ψₛ.fluxes.u★ * Ψₛ.fluxes.χq)
+    return ρᵃᵗ * Ψₛ.fluxes.u★ * Ψₛ.fluxes.χq
+end
+
+@inline function aerodynamic_heat_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
+    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
+    cᵖ  = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, Ψₐ.q)
+    return ρᵃᵗ * cᵖ * Ψₛ.fluxes.u★ * Ψₛ.fluxes.χθ
+end
+
+# Conductance-weighted mean of the sources `xs` behind the conductances `gs`: the value
+# of a node in flux continuity with all of them. Every conductance zero keeps `x⁻`.
+@inline function conductance_weighted_node(x⁻, gs, xs)
+    D = sum(gs)
+    return ifelse(D > 0, sum(gs .* xs) / D, x⁻)
 end
 
 # `BulkHumidity` — surface specific humidity for a bulk land surface with no
@@ -488,22 +494,29 @@ end
 
 @inline skin_conductance(F::SoilConductiveFlux) = F.conductivity / F.thickness
 
+# Skin→bulk conductance of an interface temperature formulation that closes its own
+# surface energy balance, or `nothing` for a bulk skin.
+@inline skin_conductance(formulation) = nothing
+
+# The soil-skin temperature the slab conducts to.
+@inline skin_temperature(Ts, i, j) = @inbounds Ts[i, j, 1]
+
 # Solve the surface flux balance equation:
-#   Qa(Tₛ) + Ωc (Tᵃᵗ - Tₛ) + (Tₛ - Tᵦ) / R = 0
+#   Qa(Tₛ) + Ωc (Tᵃᵗ - Tₛ) + (Tₛ - Tb) / R = 0
 # where R is the total thermal resistance (h/k for bare ice, hₛ/kₛ + hᵢ/kᵢ with snow),
 # Ωc = 𝒬ᵀ/(Tᵃᵗ-Tₛ) is the linearized sensible heat coefficient, and Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd.
 # The upward longwave ℐꜛˡʷ = σ ε Tₛ⁴ is strongly nonlinear in Tₛ; a pure Picard
 # iteration (treating Qa constant) is unstable when 4σεTₛ³ ≳ 1/R (radiation
 # dominated). We linearize: Qa(Tₛ) ≈ Qa(Tₛ⁻) + β (Tₛ − Tₛ⁻) with β = 4σεTₛ⁻³,
 # yielding the Newton-like semi-implicit update:
-#   Tₛ = [Tᵦ + β R Tₛ⁻ - Ωc R Tᵃᵗ - Qa R] / [1 + β R - Ωc R]
+#   Tₛ = [Tb + β R Tₛ⁻ - Ωc R Tᵃᵗ - Qa R] / [1 + β R - Ωc R]
 @inline function conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     hᵢ = Ψᵢ.hi
     hc = Ψᵢ.hc
 
     # Bottom temperature at the melting point
-    Tᵦ = ClimaSeaIce.SeaIceThermodynamics.melting_temperature(ℙᵢ.liquidus, Ψᵢ.S)
-    Tᵦ = convert_to_kelvin(ℙᵢ.temperature_units, Tᵦ)
+    Tb = ClimaSeaIce.SeaIceThermodynamics.melting_temperature(ℙᵢ.liquidus, Ψᵢ.S)
+    Tb = convert_to_kelvin(ℙᵢ.temperature_units, Tb)
     Tₛ⁻ = Ψₛ.temperature
 
     Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
@@ -519,7 +532,7 @@ end
 
     # Flux balance solution with T⁴ linearization (stable even at ΔT = 0):
     D  = 1 + β * R - Ωc * R
-    T★ = (Tᵦ + β * R * Tₛ⁻ - Ωc * R * Tᵃᵗ - Qa * R) / D
+    T★ = (Tb + β * R * Tₛ⁻ - Ωc * R * Tᵃᵗ - Qa * R) / D
     T★ = ifelse(D == 0, Tₛ⁻, T★)
     T★ = ifelse(isnan(T★), Tₛ⁻, T★)
 
@@ -534,7 +547,7 @@ end
     Tₛ⁺ = min(Tₛ⁺, Tₘ)
 
     # If ice is not consolidated, use the bottom temperature
-    Tₛ⁺ = ifelse(hᵢ ≥ hc, Tₛ⁺, Tᵦ)
+    Tₛ⁺ = ifelse(hᵢ ≥ hc, Tₛ⁺, Tb)
 
     return Tₛ⁺
 end
@@ -615,9 +628,7 @@ end
     DiagnosticSkin()
 
 Massless skin: the energy-balance temperature is solved to equilibrium inside the
-Monin–Obukhov fixed point, one Newton step per iterate, so the skin and the
-similarity scales converge jointly. The skin has no memory, so turbulence, surface,
-and radiation are in mutual equilibrium within every time step.
+Monin–Obukhov fixed point, one Newton step per iterate.
 """
 struct DiagnosticSkin end
 
@@ -628,21 +639,16 @@ Base.show(io::IO, s::DiagnosticSkin) = print(io, summary(s))
     PrognosticSkin(FT = Oceananigans.defaults.FloatType; heat_capacity = 1e5)
 
 Prognostic skin storage (the default): the skin carries an areal `heat_capacity`
-``C`` (J m⁻² K⁻¹ — a `Number`, or a `Field` when the capacity varies by cell with
-soil texture, wetness, or surface type) and integrates
+``C`` (J m⁻² K⁻¹, a `Number` or a per-cell `Field`) and integrates
 
 ```math
 C \\frac{dT_s}{dt} = R_n(T_s) + G(T_s) - H(T_s) - LE(T_s),
 ```
 
-frozen through the Monin–Obukhov fixed point (only ``u_★ ↔ ζ`` iterates) and
-advanced once per step by a Newton-refined backward-Euler update, so the imbalance a
-massless skin would dissipate instantly lands in the storage tendency instead. The
-default `heat_capacity = 10⁵ ≈ (ρc)_soil × 0.05 m` (5 cm of moist soil) gives a
-30–40 minute skin timescale at calm night while daytime remains effectively
-diagnostic. At ``Δt = 0`` the update lands on the equilibrium root. The skin
-humidity carries no storage of its own: it follows the skin temperature and the
-(already prognostic) soil moisture.
+frozen through the Monin–Obukhov fixed point and advanced once per step by a
+backward-Euler update. The default `heat_capacity = 10⁵` is about 5 cm of moist soil,
+a layer the slab's own heat capacity also contains: it sets the skin's response time
+rather than adding a separate reservoir.
 
 ```jldoctest
 using NumericalEarth
@@ -663,7 +669,7 @@ PrognosticSkin(FT::Type = Oceananigans.defaults.FloatType; heat_capacity = 1e5) 
 Base.summary(s::PrognosticSkin) = string("PrognosticSkin(C=", prettysummary(s.heat_capacity), ")")
 Base.show(io::IO, s::PrognosticSkin) = print(io, summary(s))
 
-Adapt.adapt_structure(to, s::PrognosticSkin) = PrognosticSkin(adapt(to, s.heat_capacity))
+Adapt.adapt_structure(to, s::PrognosticSkin) = PrognosticSkin(Adapt.adapt(to, s.heat_capacity))
 
 """
     EnergyBalanceTemperature(coupling; storage=PrognosticSkin())
@@ -686,11 +692,10 @@ EnergyBalanceTemperature(coupling; storage=PrognosticSkin()) =
 
 const PrognosticEnergyBalanceTemperature = EnergyBalanceTemperature{<:Any, <:PrognosticSkin}
 
-# Needed so a Field-valued `storage` reaches the device: Adapt's fallback returns
-# structs untouched, which is invisible on the CPU and leaves host memory in the
-# kernel on the GPU.
+@inline skin_conductance(t::EnergyBalanceTemperature) = skin_conductance(t.coupling)
+
 Adapt.adapt_structure(to, t::EnergyBalanceTemperature) =
-    EnergyBalanceTemperature(adapt(to, t.coupling), adapt(to, t.storage))
+    EnergyBalanceTemperature(Adapt.adapt(to, t.coupling), Adapt.adapt(to, t.storage))
 
 """
     SoilSkinTemperature(conductivity, thickness; storage=PrognosticSkin())
@@ -708,41 +713,32 @@ Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
 
 # The surface energy imbalance F(T) = Rₙ(T) + G(T) − H(T) − LE(T) and the conductance
 # sum Σλ = −dF/dT at skin temperature T, with the similarity scales frozen at the
-# current iterate (u★, χ). The humidity is re-diagnosed at T through the (nonlinear)
-# humidity formulation, so a Newton step on F converges the true balance rather than
-# its tangent at the previous skin.
-#
-# Σλ = 4ϵσT³ + Λ + ρ u★ (cᵖ χθ⁺ + ℒ χq⁺ dq/dT) is a sum of non-negative conductances
-# with Σλ ≥ Λ > 0, so dividing by it is always safe.
+# current iterate.
 @inline function skin_energy_imbalance(T, t, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ)
     FT  = eltype(Ψₛ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
-    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
-    cᵖ  = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, Ψₐ.q)
     ℒ   = interface_latent_heat(ℂᵃᵗ, Ψₐ.T, Ψₛ)
-    u★  = Ψₛ.fluxes.u★
-    χθ⁺ = max(zero(FT), Ψₛ.fluxes.χθ)
-    χq⁺ = max(zero(FT), Ψₛ.fluxes.χq)
-    Λ   = convert(FT, skin_conductance(t.coupling))
+    gᵀ  = aerodynamic_heat_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
+    gᵛ  = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
+    Λ   = convert(FT, skin_conductance(t))
     Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
 
     q  = compute_interface_humidity(ℙₛ.specific_humidity_formulation, T, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     Rn = (1 - Ψᵣ.α) * Ψᵣ.ℐꜜˢʷ + Ψᵣ.ϵ * (Ψᵣ.ℐꜜˡʷ - Ψᵣ.σ * T^4)
     G  = Λ * (Ψᵢ.T - T)
-    H  = ρᵃᵗ * cᵖ * u★ * χθ⁺ * (T - Tᵃᵗ)
-    LE = ℒ * ρᵃᵗ * u★ * χq⁺ * (q - Ψₐ.q)
+    H  = gᵀ * (T - Tᵃᵗ)
+    LE = ℒ * gᵛ * (q - Ψₐ.q)
     F  = Rn + G - H - LE
 
-    dq = saturation_humidity_slope(ℂᵃᵗ, T, Ψₐ.p, interface_phase(ℙₛ.specific_humidity_formulation))
-    Σλ = 4 * Ψᵣ.ϵ * Ψᵣ.σ * T^3 + Λ + ρᵃᵗ * u★ * (cᵖ * χθ⁺ + ℒ * χq⁺ * dq)
+    # dq/dT of the humidity the formulation actually diagnoses, by a one-sided difference.
+    δT = sqrt(eps(FT)) * T
+    dq = (compute_interface_humidity(ℙₛ.specific_humidity_formulation, T + δT, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ) - q) / δT
+    Σλ = 4 * Ψᵣ.ϵ * Ψᵣ.σ * T^3 + Λ + gᵀ + ℒ * gᵛ * dq
     return F, Σλ
 end
 
-# A massless skin equilibrates within the step: one Newton step per iterate of the
-# Monin–Obukhov fixed point, so the skin and the similarity scales converge jointly
-# on F(Tₛ) = 0. Newton (rather than the previous Picard step, which froze the
-# upwelling longwave and the surface humidity at the previous iterate) carries the
-# radiative and vapor feedbacks in Σλ, so it converges faster and needs no clamp.
+# A massless skin takes one Newton step on F(Tₛ) = 0 per iterate of the Monin–Obukhov
+# fixed point, so the skin and the similarity scales converge jointly.
 @inline function compute_interface_temperature(t::EnergyBalanceTemperature,
                                                interface_state,
                                                atmosphere_state,
@@ -755,10 +751,7 @@ end
     T = interface_state.temperature
     F, Σλ = skin_energy_imbalance(T, t, interface_state, atmosphere_state, interior_state,
                                   radiation_state, interface_properties, atmosphere_properties)
-    # Σλ = 0 only if the skin has no restoring conductance at all: no conduction
-    # (Λᵍ → 0 decouples it), no radiative feedback (ϵ = 0), and no turbulent exchange.
-    # F is then independent of T, the balance has no root, and holding the skin is the
-    # answer — not a bounded step toward a root that does not exist.
+    # Σλ = 0 leaves F independent of T: no root to step toward.
     return ifelse(Σλ > 0, T + F / Σλ, T)
 end
 
@@ -825,11 +818,8 @@ end
     κ  = q.vapor_diffusivity
     gˢ = κ / d # soil vapor conductance
 
-    qˢ⁻ = Ψₛ.specific_humidity
-    Gᵃ  = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
-
-    D  = gˢ + Gᵃ
-    qˢ = ifelse(D > 0, (gˢ * qᵛ⁺ + Gᵃ * qᵃᵗ) / D, qˢ⁻)
+    Gᵃ = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
+    qˢ = conductance_weighted_node(Ψₛ.specific_humidity, (gˢ, Gᵃ), (qᵛ⁺, qᵃᵗ))
 
     return convert(FT, qˢ)
 end
