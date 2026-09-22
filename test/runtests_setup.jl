@@ -25,9 +25,9 @@ test_architectures = gpu_test ? [GPU()] : [CPU()]
 
 start_date = DateTimeProlepticGregorian(1993, 1, 1)
 
-test_datasets = (ECCO2Monthly(), 
-                 ECCO2Daily(), 
-                 ECCO4Monthly(), 
+test_datasets = (ECCO2Monthly(),
+                 ECCO2Daily(),
+                 ECCO4Monthly(),
                  ECCO2DarwinMonthly(),
                  ECCO4DarwinMonthly(),
                  EN4Monthly(),
@@ -183,15 +183,17 @@ function test_dataset_restoring(arch, dataset, dates, inpainting;
         fill!(var_restoring.field_time_series[2], 1.0)
 
         field = NamedTuple{fldnames}(ntuple(i->CenterField(grid), length(fldnames)))
-        clock  = Clock(; time = 0)
+
+        # A window-averaged product has no node at its first date: the first sits half a window later.
+        clock = Clock(; time = @allowscalar first(var_restoring.field_time_series.times))
 
         @allowscalar begin
-            @test var_restoring(1, 1,   10, grid, clock, field) == var_restoring.rate
-            @test var_restoring(1, 11,  10, grid, clock, field) == var_restoring.rate / 2
+            @test var_restoring(1, 1,   10, grid, clock, field) ≈ var_restoring.rate
+            @test var_restoring(1, 11,  10, grid, clock, field) ≈ var_restoring.rate / 2
             @test var_restoring(1, 21,  10, grid, clock, field) == 0
             @test var_restoring(1, 80,  10, grid, clock, field) == 0
-            @test var_restoring(1, 90,  10, grid, clock, field) == var_restoring.rate / 2
-            @test var_restoring(1, 100, 10, grid, clock, field) == var_restoring.rate
+            @test var_restoring(1, 90,  10, grid, clock, field) ≈ var_restoring.rate / 2
+            @test var_restoring(1, 100, 10, grid, clock, field) ≈ var_restoring.rate
             @test var_restoring(1, 1,   5,  grid, clock, field) == 0
             @test var_restoring(1, 10,  5,  grid, clock, field) == 0
         end
@@ -291,7 +293,7 @@ function test_cycling_dataset_restoring(arch, dataset, dates, inpainting;
         mod1.(Tuple(range(length(times), length=time_indices_in_memory)), length(times))
 end
 
-function test_inpainting_algorithm(arch, dataset, start_date, inpainting; 
+function test_inpainting_algorithm(arch, dataset, start_date, inpainting;
                                    varnames = (:temperature, :salinity),
                                   )
     for name in varnames
@@ -318,3 +320,5 @@ function test_inpainting_algorithm(arch, dataset, start_date, inpainting;
     end
     return nothing
 end
+
+include("synthetic_datasets.jl")

@@ -5,6 +5,7 @@ export AbstractLand,
        RiverRouting,
        build_river_routing,
        coastal_outlet_indices,
+       routable_grid,
        # Composable container
        SlabLand,
        # Energy-balance closures
@@ -15,16 +16,13 @@ export AbstractLand,
        BucketHydrology, DryLand, SaturatedSurface,
        # Variably saturated hydrology + sub-closures
        VanGenuchtenRetention, VanGenuchtenConductivity,
-       capillary_disconnect_saturation, WaterViscosity, viscosity_correction,
-       CosbyConductivity,
-       saturated_conductivity, conductivity_spread,
+       WaterViscosity, CosbyConductivity, saturated_conductivity,
        NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
        NoRunoff, InfiltrationCapacityRunoff,
        VariablySaturatedHydrology,
        # Pedotransfer functions + depth-layer combination
-       PedotransferFunction, WeynantsPedotransfer, WeynantsRegression,
-       HYPRESPedotransfer, HYPRESRegression,
-       soil_hydraulic_parameters, soil_hydraulic_properties, layer_weights, layer_depths,
+       WeynantsPedotransfer, HYPRESPedotransfer,
+       soil_hydraulic_parameters, soil_hydraulic_properties,
        # Urban aerodynamic roughness closures
        AbstractUrbanRoughness, MorphometricRoughness,
        IsotropicFrontalArea, EmpiricalFrontalArea,
@@ -50,7 +48,7 @@ using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: CPU, architecture, on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField
-using Oceananigans.Grids: grid_name, Center, Face, znodes, φnode
+using Oceananigans.Grids: grid_name, Center, Face, znodes, λnode, φnode
 using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
@@ -65,7 +63,7 @@ include("energy_balance/energy_balance.jl")
 include("hydrology/hydrology.jl")
 include("properties/property_providers.jl")
 
-# Setup-time helpers that build the property `Field`s the closures consume.
+# Pedotransfer functions and depth-layer combination.
 include("properties/pedotransfer.jl")
 include("properties/soil_hydraulic_properties.jl")
 

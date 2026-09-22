@@ -238,16 +238,24 @@ end
 # cross-component contexts (coupling, the all-components notation table).
 Oceananigans.prognostic_fields(land::SlabLand) = (; T = land.temperature, M = land.water_storage)
 
+# The coupler-written flux/forcing fields are staggered state: computed at the
+# end of each coupled step and consumed by the next `time_step!(land, Δt)`, so
+# exact restarts must carry them alongside the prognostic fields.
 function Oceananigans.prognostic_state(land::SlabLand)
     return (; clock         = prognostic_state(land.clock),
               temperature   = prognostic_state(land.temperature),
-              water_storage = prognostic_state(land.water_storage))
+              water_storage = prognostic_state(land.water_storage),
+              fluxes        = map(prognostic_state, land.fluxes))
 end
 
 function Oceananigans.restore_prognostic_state!(land::SlabLand, state)
     restore_prognostic_state!(land.clock,         state.clock)
     restore_prognostic_state!(land.temperature,   state.temperature)
     restore_prognostic_state!(land.water_storage, state.water_storage)
+    forcing = hasproperty(state, :fluxes) ? state.fluxes : (;)
+    for name in keys(land.fluxes)
+        hasproperty(forcing, name) && restore_prognostic_state!(land.fluxes[name], forcing[name])
+    end
     update_state!(land)
     return land
 end

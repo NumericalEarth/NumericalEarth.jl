@@ -135,7 +135,7 @@ diagnostic_variables(::VariablySaturatedHydrology) =
 #####
 
 @inline function augmented_liquid_fraction(i, j, grid, h, M)
-    FT  = eltype(grid)
+    FT  = typeof(M)
     hˡᵃ = convert(FT, property_value(h.slab_depth, i, j))
     return M / (convert(FT, h.liquid_density) * hˡᵃ)
 end
@@ -147,15 +147,15 @@ end
 end
 
 @inline function liquid_saturation(i, j, grid, h, θˡ)
-    FT  = eltype(grid)
+    FT  = typeof(θˡ)
     ν   = convert(FT, property_value(h.porosity, i, j))
     θʳ  = convert(FT, property_value(h.residual_liquid_fraction, i, j))
     Δ   = ν - θʳ
-    return clamp((θˡ - θʳ) / Δ, zero(FT), one(FT))
+    return clamp((θˡ - θʳ) / Δ, 0, 1)
 end
 
 @inline function diagnostic_pressure_head(i, j, grid, h, M, θˡ, 𝒮)
-    FT  = eltype(grid)
+    FT  = typeof(M)
     ν   = convert(FT, property_value(h.porosity, i, j))
     ρˡ  = convert(FT, h.liquid_density)
     hˡᵃ = convert(FT, property_value(h.slab_depth, i, j))
@@ -204,14 +204,13 @@ saturation(h::VariablySaturatedHydrology, land) = land.saturation
         Jvij = Jv[i, j, 1]
         Plij = Pl[i, j, 1]
         Πᵈ   = stateindex(deep_pressure_head, i, j, 1, grid, time, (Center, Center, Center))
+        Tij  = T[i, j, 1]
     end
 
     θˡ = liquid_fraction(i, j, grid, h, Mij)
     𝒮  = liquid_saturation(i, j, grid, h, θˡ)
     Π  = diagnostic_pressure_head(i, j, grid, h, Mij, θˡ, 𝒮)
-    # `K` carries the temperature dependence of the viscosity of water.
-    Tij = @inbounds T[i, j, 1]
-    K   = hydraulic_conductivity(i, j, grid, h.hydraulic_conductivity, 𝒮, Tij)
+    K  = hydraulic_conductivity(i, j, grid, h.hydraulic_conductivity, 𝒮, Tij)
 
     Jˡs, Rsfc = surface_liquid_flux_and_runoff(h.runoff, Plij, Mij, θˡ, 𝒮, Π, K)
     Jˡb       = deep_liquid_flux(h.deep_liquid_flux, Mij, θˡ, 𝒮, Π, K, Πᵈ, time)
