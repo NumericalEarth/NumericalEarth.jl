@@ -9,6 +9,8 @@ using Oceananigans.Grids: Flat, Periodic, halo_size, topology, _node
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: KernelParameters, worksize
 
+using KernelAbstractions: @index, @kernel
+
 export
     ComponentInterfaces,
     ConservativeIceFreshwater,
