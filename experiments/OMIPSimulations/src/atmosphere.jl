@@ -14,7 +14,8 @@ function omip_forcing(arch, sea_ice;
                       start_date,
                       end_date,
                       repeat_year_forcing = false,
-                      backend_size = 30)
+                      backend_size = 30,
+                      tracers = NamedTuple())
 
     dataset = repeat_year_forcing ? RepeatYearJRA55() : MultiYearJRA55()
 
@@ -23,7 +24,8 @@ function omip_forcing(arch, sea_ice;
             start_date,
             end_date,
             time_indices_in_memory = backend_size,
-            prefetch = true)
+            prefetch = true,
+            tracers)
 
     atmosphere = JRA55PrescribedAtmosphere(arch; kw...)
 

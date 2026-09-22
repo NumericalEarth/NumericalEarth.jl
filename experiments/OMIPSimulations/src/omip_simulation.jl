@@ -845,7 +845,9 @@ function omip_simulation(config::Symbol = :halfdegree;
                          output_dir = ".",
                          filename_prefix = string(config),
                          file_splitting_interval = 360days,
-                         repeat_year_forcing = true)
+                         repeat_year_forcing = true,
+                         biogeochemistry = nothing,
+                         atmosphere_tracers = NamedTuple())
 
     cfg = Val(config)
 
@@ -977,7 +979,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                         initial_condition_blend_depth,
                         normalize_salinity,
                         additional_tracer_closure = filter(!isnothing, (river_κ, ice_melt_κ_closure, under_ice_ν_closure)),
-                        start_date, end_date)
+                        start_date, end_date,
+                        biogeochemistry)
     log_setup_stage(arch, "ocean", setup_t₀)
 
     snow_thermodynamics = with_snow ?
@@ -997,7 +1000,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                                          start_date,
                                          end_date,
                                          backend_size,
-                                         repeat_year_forcing)
+                                         repeat_year_forcing,
+                                         tracers = atmosphere_tracers)
                                          
     log_setup_stage(arch, "atmosphere", setup_t₀)
 
@@ -2106,7 +2110,8 @@ function build_ocean(config, grid;
                      normalize_salinity = true,
                      additional_tracer_closure = nothing,
                      forcing = NamedTuple(),
-                     start_date, end_date)
+                     start_date, end_date,
+                     biogeochemistry = nothing)
 
     κ_skew      = resolve_nemo_coefficient(κ_skew,      nemo_eddy_coefficients, :skew_coefficient)
     κ_symmetric = resolve_nemo_coefficient(κ_symmetric, nemo_eddy_coefficients, :symmetric_coefficient)
@@ -2160,6 +2165,11 @@ function build_ocean(config, grid;
                         S = split_tracer_advection(tracer_advection_order, time_discretization,
                                                    tracer_boundary_scheme, salinity_reference_variation))
 
+    biogeochemistry, bgc_additional_forcing, bgc_additional_surface_fluxes = build_biogeochemistry(Val(biogeochemistry), grid)
+
+    forcing = merge(forcing, bgc_additional_forcing)
+    additional_surface_fluxes = merge(additional_surface_fluxes, bgc_additional_surface_fluxes)
+
     ocean = ocean_simulation(grid;
                              Δt = 1minutes,
                              radiative_forcing = omip_radiative_forcing(grid, chlorophyll, restoring_dir),
@@ -2173,7 +2183,8 @@ function build_ocean(config, grid;
                              free_surface = barotropic_free_surface(grid, barotropic_substeps, Δt),
                              additional_surface_fluxes,
                              forcing,
-                             closure)
+                             closure,
+                             biogeochemistry)
 
     # Load WOA Annual T (in-situ, °C) and S (Practical) onto the model grid,
     # convert to TEOS-10 Conservative T and Absolute Salinity in place, then
@@ -2192,6 +2203,8 @@ function build_ocean(config, grid;
 
     return ocean
 end
+
+build_biogeochemistry(::Val{nothing}, grid) = nothing, NamedTuple()
 
 #####
 ##### Sea Ice builder
