@@ -157,7 +157,7 @@ use `LargeYeagerTransferCoefficients`. This computes all three transfer coeffici
 stability corrections (L&Y eqs. 6c-6d, 10a-10c):
 
 ```@example interface_fluxes
-using NumericalEarth.EarthSystemModels.InterfaceComputations: FixedIterations, LargeYeagerTransferCoefficients
+using NumericalEarth.EarthSystemModels.InterfaceComputations: LargeYeagerTransferCoefficients
 
 ly = LargeYeagerTransferCoefficients()
 ly_fluxes = CoefficientBasedFluxes(transfer_coefficients = ly,
@@ -931,10 +931,10 @@ ice_state = (; S = Sˢⁱ, h = hˢⁱ, hc = 0.0, ℵ = 1.0, T = Tˢⁱ)
 
 data = map(Tᵒᶜ) do T
     ocean_state = (; T, S = Sᵒᶜ)
-    _, q¹, T★¹, S★¹ = compute_interface_heat_flux(flux¹, ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
-    _, q², T★², S★² = compute_interface_heat_flux(flux², ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
-    _, q³, T★³, S★³ = compute_interface_heat_flux(flux³, ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
-    (; T★¹, S★¹, q¹ = q¹ / ρˢⁱ * 86400e3, T★², S★², q² = q² / ρˢⁱ * 86400e3, T★³, S★³, q³ = q³ / ρˢⁱ * 86400e3)
+    Q¹, T★¹, S★¹ = compute_interface_heat_flux(flux¹, ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
+    Q², T★², S★² = compute_interface_heat_flux(flux², ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
+    Q³, T★³, S★³ = compute_interface_heat_flux(flux³, ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
+    (; T★¹, S★¹, Q¹, T★², S★², Q², T★³, S★³, Q³)
 end
 
 fig = Figure(size=(900, 750))
@@ -952,10 +952,10 @@ lines!(ax2, Tᵒᶜ, [d.S★³ for d in data], linewidth=2)
 hlines!(ax2, [Sᵒᶜ], color=:gray, linestyle=:dash)
 hlines!(ax2, [Sˢⁱ], color=:gray, linestyle=:dot)
 
-ax3 = Axis(fig[2, 1:2], xlabel="Ocean temperature Tᵒᶜ (°C)", ylabel="Melt rate q (mm/day)")
-lines!(ax3, Tᵒᶜ, [d.q¹ for d in data], linewidth=2)
-lines!(ax3, Tᵒᶜ, [d.q² for d in data], linewidth=2)
-lines!(ax3, Tᵒᶜ, [d.q³ for d in data], linewidth=2)
+ax3 = Axis(fig[2, 1:2], xlabel="Ocean temperature Tᵒᶜ (°C)", ylabel="Heat flux (W/m²)")
+lines!(ax3, Tᵒᶜ, [d.Q¹ for d in data], linewidth=2)
+lines!(ax3, Tᵒᶜ, [d.Q² for d in data], linewidth=2)
+lines!(ax3, Tᵒᶜ, [d.Q³ for d in data], linewidth=2)
 hlines!(ax3, [0], color=:gray, linestyle=:dash)
 
 Legend(fig[3, 1:2], [l1, l2, l3],
@@ -978,9 +978,9 @@ The plots reveal key differences between the formulations:
    (during rapid melting). The conductive flux case shows enhanced freezing (lower ``S_★``) due to the
    additional heat sink from the cold ice.
 
-3. **Melt rate**: The three-equation formulation captures the feedback between interface salinity, freezing point
+3. **Heat flux**: The three-equation formulation captures the feedback between interface salinity, freezing point
    depression, and heat flux. When conductive flux is included, the cold ice interior extracts heat from the
-   interface, shifting the melt rate toward freezing (more negative values) across all ocean temperatures.
+   interface, shifting the heat flux toward freezing (more negative values) across all ocean temperatures.
 
 ### Configuring sea ice-ocean fluxes
 

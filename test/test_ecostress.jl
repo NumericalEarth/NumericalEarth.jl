@@ -143,9 +143,9 @@ end
                                  longitude = (-101, -100), latitude = (33.5, 34.5),
                                  z = (0, 1))
     # Global (unbounded) metadatum is rejected; a BoundingBox is accepted.
-    global_md = Metadatum(:land_surface_temperature; dataset)
+    global_md = Metadatum(:land_surface_temperature; dataset, date)
     @test_throws ErrorException validate_dataset_coverage(grid, global_md)
-    region_md = Metadatum(:land_surface_temperature; dataset, region = region_a)
+    region_md = Metadatum(:land_surface_temperature; dataset, date, region = region_a)
     @test validate_dataset_coverage(grid, region_md) === nothing
 end
 

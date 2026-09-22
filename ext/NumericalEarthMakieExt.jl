@@ -16,7 +16,7 @@ function region_outline(region)
 end
 
 # Recenter `:topo` so its sea-level break sits at relief = 0 while the colorrange stays linear
-# in metres; regions entirely above (below) sea level use the land (ocean) half of the gradient.
+# in meters; regions entirely above (below) sea level use the land (ocean) half of the gradient.
 function relief_colormap(minimum_relief, maximum_relief)
     topography_gradient = cgrad(:topo)
     remap = if minimum_relief >= 0

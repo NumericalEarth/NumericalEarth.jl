@@ -8,14 +8,17 @@ export Metadata, Metadatum, MetadataSet, DatewiseFilename, ECCOMetadatum, EN4Met
 export validate_dataset_coverage, metadata_filename
 export BoundingBox, Column, Linear, Nearest
 export WOAClimatology, WOAAnnual, WOAMonthly
+export AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum
 export metadata_time_step, metadata_epoch
 export supported_datasets
 export LinearlyTaperedPolarMask
 export DatasetRestoring, SurfaceFluxRestoring
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
+export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
 
 using Adapt: Adapt
+using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using LibCURL: LibCURL
 using JLD2: JLD2, jldopen
@@ -24,16 +27,20 @@ using Oceananigans: Oceananigans, pretty_filesize, location
 using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
                                   on_architecture, child_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
-using Oceananigans.DistributedComputations: DistributedComputations, @root
-using Oceananigans.Grids: AbstractGrid, Center, Face, Flat, Bounded,
-                          LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes
+using Oceananigans.DistributedComputations: DistributedComputations, @root, all_reduce
+using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
+                          LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes,
+                          topology, x_domain, y_domain, z_domain
 using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
 using Oceananigans.Grids: node
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
+using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
 using Oceananigans.Utils: launch!, prettytime, prettysummary
+using DocStringExtensions: TYPEDSIGNATURES
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
+using ZipFile: ZipFile
 using Scratch: @get_scratch!
 
 using ..NumericalEarth: NumericalEarth, stateindex
@@ -63,6 +70,24 @@ function download_cache(key)
     else
         return @get_scratch!(key)
     end
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Extract the zip archive `file` into the directory `exdir`, which is created if missing.
+"""
+function unzip(file, exdir = dirname(file))
+    mkpath(exdir)
+    archive = ZipFile.Reader(file)
+    for entry in archive.files
+        endswith(entry.name, '/') && continue
+        path = joinpath(exdir, entry.name)
+        mkpath(dirname(path))
+        write(path, read(entry))
+    end
+    close(archive)
+    return exdir
 end
 
 mutable struct DownloadProgress <: Function
@@ -106,9 +131,11 @@ function (d::DownloadProgress)(total, now; filename="")
 end
 
 """
-    netrc_downloader(username, password, machine, dir)
+    netrc_downloader(username, password, machine, dir; verify_ssl = true)
 
 Create a downloader that uses a netrc file to authenticate with the given machine.
+Pass `verify_ssl = false` only for hosts serving an untrusted CA certificate, as
+`ecco.jpl.nasa.gov` does.
 This downloader writes the username and password in a file named `auth.netrc` (for Unix) and
 `auth_netrc` (for Windows), located in the directory `dir`.
 To avoid leaving the password on disk after the downloader has been used,
@@ -124,13 +151,12 @@ mktempdir(dir) do tmp
 end
 ```
 """
-function netrc_downloader(username, password, machine, dir)
+function netrc_downloader(username, password, machine, dir; verify_ssl = true)
     netrc_file = netrc_permission_file(username, password, machine, dir)
     downloader = Downloads.Downloader()
     easy_hook  = (easy, _) -> begin
         Downloads.Curl.setopt(easy, LibCURL.CURLOPT_NETRC_FILE, netrc_file)
-        # Bypass certificate verification because ecco.jpl.nasa.gov is using an untrusted CA certificate
-        Downloads.Curl.setopt(easy, LibCURL.CURLOPT_SSL_VERIFYPEER, false)
+        verify_ssl || Downloads.Curl.setopt(easy, LibCURL.CURLOPT_SSL_VERIFYPEER, false)
     end
     downloader.easy_hook = easy_hook
     return downloader
@@ -151,12 +177,41 @@ function netrc_permission_file(username, password, machine, dir)
     return filepath
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Download `url` to `path`, retrying up to `attempts` times on failure. Each transfer lands beside the
+destination and is renamed into place once it has arrived in full, so `path` never holds a partial file.
+
+Extra keyword arguments are forwarded to `Downloads.download` (`progress`, `downloader`, ...).
+"""
+function download_with_retries(url, path; attempts = 3, description = "Download", kw...)
+    dir = dirname(path)
+    mkpath(dir)
+
+    for attempt in 1:attempts
+        try
+            # Same filesystem as the destination, so the rename is atomic rather than a copy.
+            mktemp(dir) do partial_path, partial_io
+                close(partial_io)
+                Downloads.download(url, partial_path; kw...)
+                mv(partial_path, path; force=true)
+            end
+            return path
+        catch error
+            attempt == attempts && rethrow()
+            @warn "$description failed (attempt $attempt of $attempts); retrying..." url error
+            sleep(2attempt)
+        end
+    end
+end
+
 #####
 ##### FieldTimeSeries utilities
 #####
 
-function save_field_time_series!(fts; path, name, overwrite_existing=false)
-    overwrite_existing && rm(path; force=true)
+function save_field_time_series!(fts; path, name, overwrite_files=false)
+    overwrite_files && rm(path; force=true)
 
     times = on_architecture(CPU(), fts.times)
     grid  = on_architecture(CPU(), fts.grid)
@@ -216,8 +271,6 @@ Arguments
 # not `Base.download` which is a 1.0-era shim). Per-dataset methods are added
 # within each dataset module via `Downloads.download(metadata::FooMetadata) = ...`.
 
-function inpainted_metadata_path end
-
 """
     z_interfaces(dataset)
 
@@ -261,11 +314,15 @@ Base.size(dataset::AbstractStaticBathymetry, variable) = size(dataset)
 # Fundamentals
 include("metadata.jl")
 include("set_region_data.jl")
+include("field_cache.jl")
 include("metadata_field.jl")
+include("tiled_regridding.jl")
 include("dataset_backend.jl")
 include("metadata_field_time_series.jl")
 include("inpainting.jl")
 include("restoring.jl")
+include("earthdata.jl")
+include("figshare.jl")
 
 function metadata_time_step end
 function metadata_epoch end
@@ -345,41 +402,55 @@ function default_inpainting(metadata)
     end
 end
 
+include("prescribed_radiation.jl")
+
 # Datasets
 include("ETOPO/ETOPO.jl")
 include("ECCO/ECCO.jl")
 include("GLORYS/GLORYS.jl")
+include("AVISO/AVISO.jl")
 include("ERA5/ERA5.jl")
+include("SeaWiFS/SeaWiFS.jl")
 include("EN4/EN4.jl")
 include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
 include("GloFAS/GloFAS.jl")
-include("OSPapa/OSPapa.jl")
 include("SoilGrids/SoilGrids.jl")
+include("OpenLandMap/OpenLandMap.jl")
 include("IBCSO/IBCSO.jl")
 include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
 include("CopernicusDEM/CopernicusDEM.jl")
+include("ASTERGED/ASTERGED.jl")
+include("GloBFP3D/GloBFP3D.jl")
+include("GHSL/GHSL.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
 include("ECOSTRESS/ECOSTRESS.jl")
+include("WorldCover/WorldCover.jl")
 
 using .ETOPO
 using .ECCO
 using .GLORYS
+using .AVISO
 using .ERA5
+using .SeaWiFS
 using .EN4
 using .ORCA
 using .WOA
 using .JRA55
 using .GloFAS
-using .OSPapa
+using .OpenLandMap
 using .IBCSO
 using .GEBCO
 using .IBCAO
 using .CopernicusDEM
+using .ASTERGED
+using .GloBFP3D
+using .GHSL
 using .CopernicusLandAlbedo
 using .ECOSTRESS
+using .WorldCover
 
 function dataset_modules()
     modules = Module[]

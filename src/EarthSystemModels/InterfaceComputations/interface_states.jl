@@ -47,7 +47,7 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
 @inline compute_water_mole_fraction(x_H₂O::Number, salinity) = x_H₂O
 
 # COARE 3.6 / Edson (2013) pressure-based saturation specific humidity:
-#   qₛ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − ε) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵥ
+#   qₛ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − εᵈᵛ⁻¹) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵥ
 # Direct evaluation at the atmospheric pressure p. The 6th positional
 # argument `qᵃᵗ` is accepted (and ignored) so the same call site can
 # dispatch on either `ImpureSaturationSpecificHumidity` or
@@ -57,11 +57,17 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
     CT = eltype(ℂᵃᵗ)
     T  = convert(CT, Tₛ)
     p  = convert(CT, pᵃᵗ)
-    
+
     # Raoult's law on the saturation vapor pressure.
     χ_H₂O = compute_water_mole_fraction(formulation.water_mole_fraction, Sₛ)
     pᵛ⁺   = χ_H₂O * AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
     εᵈᵛ⁻¹ = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
+
+    # Guard against unphysically warm interface temperatures: once pᵛ⁺ exceeds
+    # p / (1 − εᵈᵛ⁻¹) the denominator below turns negative, producing a negative
+    # qₛ that drives a runaway spurious-condensation instability. In the physical
+    # regime pᵛ⁺ ≪ p the cap is inert; it keeps qₛ ∈ [0, 1).
+    pᵛ⁺   = min(pᵛ⁺, convert(CT, 0.999) * p)
     qₛ    = εᵈᵛ⁻¹ * pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) * pᵛ⁺)
 
     return convert(FT, qₛ)
@@ -76,6 +82,10 @@ end
     p  = convert(CT, pᵃᵗ)
     pᵛ⁺   = AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, phase)
     εᵈᵛ⁻¹ = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
+
+    # Same negative-denominator guard as in `surface_specific_humidity` above;
+    # inert in the physical regime pᵛ⁺ ≪ p.
+    pᵛ⁺   = min(pᵛ⁺, convert(CT, 0.999) * p)
     return εᵈᵛ⁻¹ * pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) * pᵛ⁺)
 end
 
@@ -97,6 +107,8 @@ end
 struct BulkHumidity{Φ}
     phase :: Φ
 end
+
+BulkHumidity(; phase=AtmosphericThermodynamics.Liquid()) = BulkHumidity(phase)
 
 Base.summary(::BulkHumidity{Φ}) where Φ =
     string("BulkHumidity{", Φ === AtmosphericThermodynamics.Liquid ? "Liquid" : "Ice", "}")
@@ -177,7 +189,7 @@ Base.show(io::IO, q::FractionalHumidity) = print(io, summary(q))
     struct SkinHumidity
 
 Surface specific humidity `qˢ` solved from a vapor-flux balance at the land
-surface, the humidity analogue of [`SkinTemperature`](@ref).
+surface, the humidity analog of [`SkinTemperature`](@ref).
 
 Vapor reaches the surface by diffusing up from saturated soil at the saturation
 depth `d` (the `surface_thickness`), where the soil air is saturated at `qᵛ⁺(Tᵢ)` —
@@ -445,21 +457,21 @@ assemble_interior_fields(state, temperature_formulation::IDST) = state
 end
 
 # Solve the surface flux balance equation:
-#   Qa(Tₛ) + Ωc (Tᵃᵗ - Tₛ) + (Tₛ - Tᵦ) / R = 0
+#   Qa(Tₛ) + Ωc (Tᵃᵗ - Tₛ) + (Tₛ - Tb) / R = 0
 # where R is the total thermal resistance (h/k for bare ice, hₛ/kₛ + hᵢ/kᵢ with snow),
 # Ωc = 𝒬ᵀ/(Tᵃᵗ-Tₛ) is the linearized sensible heat coefficient, and Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd.
 # The upward longwave ℐꜛˡʷ = σ ε Tₛ⁴ is strongly nonlinear in Tₛ; a pure Picard
 # iteration (treating Qa constant) is unstable when 4σεTₛ³ ≳ 1/R (radiation
 # dominated). We linearize: Qa(Tₛ) ≈ Qa(Tₛ⁻) + β (Tₛ − Tₛ⁻) with β = 4σεTₛ⁻³,
 # yielding the Newton-like semi-implicit update:
-#   Tₛ = [Tᵦ + β R Tₛ⁻ - Ωc R Tᵃᵗ - Qa R] / [1 + β R - Ωc R]
+#   Tₛ = [Tb + β R Tₛ⁻ - Ωc R Tᵃᵗ - Qa R] / [1 + β R - Ωc R]
 @inline function conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     hᵢ = Ψᵢ.hi
     hc = Ψᵢ.hc
 
     # Bottom temperature at the melting point
-    Tᵦ = ClimaSeaIce.SeaIceThermodynamics.melting_temperature(ℙᵢ.liquidus, Ψᵢ.S)
-    Tᵦ = convert_to_kelvin(ℙᵢ.temperature_units, Tᵦ)
+    Tb = ClimaSeaIce.SeaIceThermodynamics.melting_temperature(ℙᵢ.liquidus, Ψᵢ.S)
+    Tb = convert_to_kelvin(ℙᵢ.temperature_units, Tb)
     Tₛ⁻ = Ψₛ.temperature
 
     Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
@@ -475,7 +487,7 @@ end
 
     # Flux balance solution with T⁴ linearization (stable even at ΔT = 0):
     D  = 1 + β * R - Ωc * R
-    T★ = (Tᵦ + β * R * Tₛ⁻ - Ωc * R * Tᵃᵗ - Qa * R) / D
+    T★ = (Tb + β * R * Tₛ⁻ - Ωc * R * Tᵃᵗ - Qa * R) / D
     T★ = ifelse(D == 0, Tₛ⁻, T★)
     T★ = ifelse(isnan(T★), Tₛ⁻, T★)
 
@@ -490,7 +502,7 @@ end
     Tₛ⁺ = min(Tₛ⁺, Tₘ)
 
     # If ice is not consolidated, use the bottom temperature
-    Tₛ⁺ = ifelse(hᵢ ≥ hc, Tₛ⁺, Tᵦ)
+    Tₛ⁺ = ifelse(hᵢ ≥ hc, Tₛ⁺, Tb)
 
     return Tₛ⁺
 end
@@ -756,7 +768,7 @@ end
                                        q_formulation,
                                        land_state,
                                        Tₛ, qₛ)
-    FT  = eltype(grid)
+    FT  = typeof(Tₛ)
     energy    = interface_energy_state(i, j, grid, q_formulation, land_state)
     hydrology = interface_hydrology_state(i, j, grid, q_formulation, land_state)
     return AirLandInterfaceState(fluxes, velocities, convert(FT, Tₛ), convert(FT, qₛ), hydrology, energy)
