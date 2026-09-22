@@ -50,7 +50,7 @@ end
 """
     PrescribedRadiation(downwelling_shortwave, downwelling_longwave;
                         clock = nothing,
-                        ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
+                        ocean_surface = SurfaceRadiationProperties(0.05, default_water_emissivity),
                         sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
                         snow_surface = nothing,
                         land_surface = nothing,
@@ -65,7 +65,7 @@ Pass `*_surface = nothing` to omit that surface from `surface_properties`.
 function PrescribedRadiation(downwelling_shortwave::FieldTimeSeries,
                              downwelling_longwave::FieldTimeSeries;
                              clock = nothing,
-                             ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
+                             ocean_surface = SurfaceRadiationProperties(0.05, default_water_emissivity),
                              sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
                              snow_surface = nothing,
                              land_surface = nothing,

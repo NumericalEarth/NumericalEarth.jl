@@ -26,7 +26,12 @@ exchange_grid(atmosphere, ::Nothing, ::Nothing, land) = land.grid
 # Prescribed fields are FieldTimeSeries; set a `Number` into every time slice.
 # `nothing` leaves the field untouched.
 set_prescribed_field!(fts, ::Nothing) = nothing
-set_prescribed_field!(fts, value::Number) = Oceananigans.set!(fts, value)
+
+function set_prescribed_field!(fts, value::Number)
+    Oceananigans.set!(fts, value)
+    fill_halo_regions!(fts)
+    return nothing
+end
 
 #####
 ##### Functions extended by sea-ice and ocean models
@@ -60,6 +65,13 @@ function boundary_layer_height end
 
 surface_layer_height(::Nothing) = 0
 boundary_layer_height(::Nothing) = 0
+
+# Grid-aware surface-layer height, built once and cached in `interfaces.properties`.
+# The generic fallback ignores the exchange grid and returns the scalar height
+# (prescribed atmospheres carry a fixed measurement height); atmosphere models with
+# per-column geometry (e.g. Breeze on a terrain-following grid) override this to
+# materialize a 2-D field on the exchange grid.
+surface_layer_height(atmosphere, exchange_grid) = surface_layer_height(atmosphere)
 
 #####
 ##### Functions extended by all component models
@@ -121,11 +133,8 @@ adopt_clock(::Nothing, clock) = nothing
 
 function adopt_clock(simulation::Simulation, clock)
     same_time_type(simulation.model.clock.time, clock.time) && return simulation
-    throw(ArgumentError(string(
-        "the simulation clock tracks time as ", typeof(simulation.model.clock.time),
-        " but the EarthSystemModel clock uses ", typeof(clock.time), ". A Simulation's clock type ",
-        "follows its grid and cannot be coerced; rebuild the simulation on a grid ",
-        "with float type ", typeof(clock.time), ", or construct the EarthSystemModel with a matching `clock`.")))
+    throw(ArgumentError(string("the simulation clock tracks time as ", typeof(simulation.model.clock.time),
+                               " but the EarthSystemModel clock uses ", typeof(clock.time))))
 end
 
 same_time_type(::TT, ::ST) where {TT, ST} = ST === TT

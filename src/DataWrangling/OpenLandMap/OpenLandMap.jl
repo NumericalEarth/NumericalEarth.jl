@@ -10,13 +10,14 @@ using Oceananigans.DistributedComputations: @root
 using ..DataWrangling: DataWrangling,
     AbstractStaticDataset, Metadatum, BoundingBox, Dataset,
     WeightPercent, GramPerCubicCentimeter,
-    metadata_path, dataset_variable_name
+    metadata_path, dataset_variable_name, bounding_box_suffix
 
 import Oceananigans
 
 download_OpenLandMap_cache::String = ""
 function __init__()
-    return global download_OpenLandMap_cache = DataWrangling.download_cache("OpenLandMap")
+    global download_OpenLandMap_cache = DataWrangling.download_cache("OpenLandMap")
+    return nothing
 end
 
 """
@@ -131,26 +132,12 @@ Oceananigans.Fields.location(::OpenLandMapSoilDBMetadatum) = (Center, Center, Ce
 # Pass an explicit `inpainting = NearestNeighborInpainting(n)` to `Field` to fill them.
 DataWrangling.default_inpainting(::OpenLandMapSoilDBMetadatum) = nothing
 
-DataWrangling.inpainted_metadata_path(metadata::OpenLandMapSoilDBMetadatum) =
-    joinpath(metadata.dir, replace(metadata.filename, ".nc" => "_inpainted.jld2"))
-
 #####
 ##### Regional-window filename (variable + region)
 #####
 
 DataWrangling.metadata_filename(::OpenLandMapSoilDB, name, date, region) =
-    string("OpenLandMap_", name, "_", region_suffix(region), ".nc")
-
-region_suffix(::Nothing) = "global"
-
-function region_suffix(region::BoundingBox)
-    λ = region.longitude
-    φ = region.latitude
-    return string("lon_", bound_str(λ), "_lat_", bound_str(φ))
-end
-
-bound_str(::Nothing) = "nothing"
-bound_str(bounds) = string(bounds[1], "_", bounds[2])
+    string("OpenLandMap_", name, "_", bounding_box_suffix(region), ".nc")
 
 function DataWrangling.validate_dataset_coverage(grid, metadata::OpenLandMapSoilDBMetadatum)
     region = metadata.region
@@ -200,6 +187,9 @@ function DataWrangling.retrieve_data(metadata::OpenLandMapSoilDBMetadatum)
     return data
 end
 
+# The 30 m regional window is large and regridded by window.
+DataWrangling.windowed_retrieval(::OpenLandMapSoilDB) = true
+
 """
     read_cog_window(source, bbox)
 
@@ -209,7 +199,7 @@ nodata → `NaN`, then apply the band `scale`/`offset`), and return
 `(longitude, latitude, data)` with ascending, cell-center coordinates (latitude
 south-to-north, per CF convention).
 
-Implemented in `ext/NumericalEarthArchGDALExt.jl` when ArchGDAL is loaded; the
+Implemented in `ext/NumericalEarthArchGDALExt/openlandmap.jl` when ArchGDAL is loaded; the
 fallback below fires only when the extension is not active.
 """
 read_cog_window(source, bbox) =
@@ -244,7 +234,8 @@ function cog_window_to_netcdf(sources, nc_path, variable_name, bbox)
                            attrib = ["units" => "degrees_north", "long_name" => "latitude"])
         depth_var = defVar(ds, "depth", Float64, ("depth",);
                            attrib = ["units" => "m", "long_name" => "depth interval midpoint"])
-        data_var  = defVar(ds, variable_name, Float32, ("lon", "lat", "depth"))
+        chunk     = [min(512, Nx), min(512, Ny), Nz]
+        data_var  = defVar(ds, variable_name, Float32, ("lon", "lat", "depth"); chunksizes = chunk)
 
         lon_var[:]        = longitude
         lat_var[:]        = latitude

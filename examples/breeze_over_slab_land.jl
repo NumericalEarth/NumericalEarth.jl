@@ -90,13 +90,13 @@ hydrology = VariablySaturatedHydrology(eltype(land_grid);
     porosity = 0.4,
     residual_liquid_fraction = 0.05,
     storage_height = 1000,
-    retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
-    hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-7, n = 2.0),
+    retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1, pore_size_uniformity = 2),
+    hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-7, pore_size_uniformity = 2),
     deep_liquid_flux = NoDeepLiquidFlux(),
     runoff = InfiltrationCapacityRunoff(infiltration_capacity = 1e-3))
 
 # Water-mass-coupled energy with a water-mass-dependent areal heat capacity
-# `C(Mˡᵃ) = C_dry + cˡ Mˡᵃ` and conservative `Tˡᵃ` update — adding or removing
+# `cˡᵃ(Mˡᵃ) = cᵈʳʸ + cˡ Mˡᵃ` and conservative `Tˡᵃ` update — adding or removing
 # water at the slab temperature leaves `Tˡᵃ` unchanged.
 #
 # `deep_temperature` should sit near the surface's radiative–convective
@@ -157,7 +157,7 @@ latitude = 15
 
 constants = ThermodynamicConstants()
 reference_state = ReferenceState(grid, constants;
-                                 surface_pressure = p₀,
+                                 base_pressure = p₀,
                                  potential_temperature = θ₀)
 dynamics = AnelasticDynamics(reference_state)
 
@@ -217,7 +217,7 @@ radiation = RadiativeTransferModel(grid, AllSkyOptics(), constants;
 # `radiation` kwarg is passed here.
 
 atmos = atmosphere_simulation(grid; dynamics,
-                              forcing  = (; ρe = sponge),
+                              forcing  = (; ρθ = sponge),
                               coriolis = FPlane(latitude = latitude))
 
 # Initial atmospheric profile: dry-adiabatic sub-cloud layer capped by a
@@ -325,7 +325,7 @@ qˡ = atmos.model.microphysical_fields.qˡ
 simulation.output_writers[:atmos] = JLD2Writer(model, (; w, T, qˡ);
                                                filename = "breeze_slab_land_atmos",
                                                schedule = TimeInterval(10minutes),
-                                               overwrite_existing = true)
+                                               overwrite_files = true)
 
 simulation.output_writers[:land] = JLD2Writer(model,
                                               (; T = slab_land.temperature,
@@ -333,7 +333,7 @@ simulation.output_writers[:land] = JLD2Writer(model,
                                                   𝒮 = slab_land.saturation);
                                               filename = "breeze_slab_land_surface",
                                               schedule = TimeInterval(10minutes),
-                                              overwrite_existing = true)
+                                              overwrite_files = true)
 
 # ## Run
 

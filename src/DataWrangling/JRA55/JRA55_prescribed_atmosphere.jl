@@ -20,7 +20,7 @@ JRA55PrescribedAtmosphere(arch::Distributed; kw...) =
                               other_kw...)
 
 Return a [`PrescribedAtmosphere`](@ref) representing JRA55 reanalysis data. Each atmospheric field is constructed via
-`FieldTimeSeries(::JRA55Metadata)`, which uses a `DatasetBackend` parameterised by JRA55 metadata so that the JRA55-specific
+`FieldTimeSeries(::JRA55Metadata)`, which uses a `DatasetBackend` parameterized by JRA55 metadata so that the JRA55-specific
 `set!` (chunked-yearly NetCDF) is dispatched.
 The `region` keyword restricts the atmosphere to a sub-domain of the global JRA55 grid.
 

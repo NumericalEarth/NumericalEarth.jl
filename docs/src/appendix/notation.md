@@ -66,6 +66,7 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``\mathrm{sn}`` | `ˢⁿ` | snow | ``J^{\mathrm{sn}}`` (snowfall) |
 | ``S`` | `ˢ` | salinity | ``J^S`` (salinity flux) |
 | ``w`` | `ʷ` | freshwater | ``J^w`` (freshwater volume flux per unit area) |
+| ``h`` | `ʰ` | height (roughness element) | ``\sigma^h`` (height standard deviation) |
 | ``i`` | `ⁱ` | ice | ``\mathcal{L}^i`` (latent heat of sublimation) |
 | ``\ell`` | `ˡ` | liquid | ``\mathcal{L}^\ell`` (latent heat of vaporization) |
 | ``p`` | `ᵖ` | constant pressure | ``c^{pm}`` (moist isobaric heat capacity) |
@@ -77,6 +78,7 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``x`` | `ˣ` | zonal / x-direction | ``\tau^x`` (zonal kinematic stress) |
 | ``y`` | `ʸ` | meridional / y-direction | ``\tau^y`` (meridional kinematic stress) |
 | ``\mathrm{at}`` | `ᵃᵗ` | atmosphere | ``\rho^{\mathrm{at}}`` (air density) |
+| ``\mathrm{ae}`` | `ᵃᵉ` | air entry | ``\alpha^{\mathrm{ae}}`` (inverse air-entry head) |
 | ``\mathrm{oc}`` | `ᵒᶜ` | ocean | ``\rho^{\mathrm{oc}}`` (ocean reference density) |
 | ``\mathrm{si}`` | `ˢⁱ` | sea ice | ``h^{\mathrm{si}}`` (sea ice thickness) |
 | ``\mathrm{la}`` | `ˡᵃ` | land | ``M^{\mathrm{la}}`` (land water mass per area) |
@@ -100,6 +102,7 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``t`` | `ₜ` | transmitted | ``\mathscr{I}_{t}^{\mathrm{sw}}`` (transmitted shortwave) |
 | ``a`` | `ₐ` | absorbed | ``\mathscr{I}_{a}^{\mathrm{lw}}`` (absorbed longwave) |
 | ``\star`` | `★` | similarity theory scale | ``u_\star`` (friction velocity) |
+| ``b`` | `b` | boundary value, or background | ``T_b`` (interface temperature), ``u_b`` (background bottom velocity) |
 
 ## Atmosphere state variables
 
@@ -133,6 +136,9 @@ component-superscript rule above.
 | ``𝒮ᶜ`` | `dry_layer_onset_saturation` | dry-layer onset saturation | Saturation below which a dry surface layer forms, for `StorageBasedDryLayerDepth`; shares the symbol ``𝒮ᶜ`` with `critical_saturation` above (–) |
 | ``T^{\mathrm{deep}}`` | `deep_temperature` | deep climatological temperature | Prescribed deep/climatological target temperature for force-restore (K) |
 | ``τ^{\mathrm{deep}}`` | `deep_time_scale` | deep-restore time scale | Time scale of surface relaxation toward ``T^{\mathrm{deep}}`` (s) |
+| ``c^{\mathrm{dry}}`` | `dry_heat_capacity` | dry areal heat capacity | Areal heat capacity of the water-free slab; a `Number` or an `AbstractField` (J m⁻² K⁻¹) |
+| ``c^l`` | `liquid_heat_capacity` | liquid heat capacity | Specific heat capacity of slab liquid water (J kg⁻¹ K⁻¹) |
+| ``c^{\mathrm{la}}`` | – | land areal heat capacity | Water-dependent areal heat capacity ``c^{\mathrm{la}} = c^{\mathrm{dry}} + c^l M`` (J m⁻² K⁻¹) |
 | ``d`` | `surface_thickness` | surface thickness | Thickness of the dry surface layer through which soil vapor diffuses, for `SkinHumidity` (m) |
 | ``κ^q`` | `vapor_diffusivity` | soil vapor diffusivity | Vapor mass diffusivity in the surface soil layer, for `SkinHumidity` (kg m⁻¹ s⁻¹) |
 | ``\chi^{\mathrm{sand}}`` | `sand` | soil sand fraction | Mass fraction of sand grains in the mineral (non-organic) solid matrix (kg kg⁻¹)
@@ -160,6 +166,12 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``\Pi^d`` | `deep_pressure_head` | deep pressure head | Pressure head of the deep reservoir below the slab, passed to the deep-flux closure (m) |
 | ``h`` | – | hydraulic head | ``h = z + \Pi`` (m) |
 | ``K`` | – | hydraulic conductivity | Darcy conductivity (m s⁻¹) |
+| ``K_0`` | `matching_point_conductivity` | matching-point conductivity | Conductivity the Mualem–van Genuchten curve reaches at ``𝒮 = 1``; a *matrix* value when it comes from a pedotransfer function, excluding macropore flow (m s⁻¹) |
+| ``K^{+}`` | `saturated_conductivity` | saturated hydraulic conductivity | Macropore-inclusive Darcy conductivity of saturated soil, for an infiltration cap (m s⁻¹) |
+| ``\alpha^{\mathrm{ae}}`` | `inverse_air_entry_head` | inverse air-entry head | Reciprocal of the air-entry pressure head, the suction at which the largest pores begin to empty (m⁻¹) |
+| ``\mathscr{n}`` | `pore_size_uniformity` | pore-size uniformity | van Genuchten retention exponent; large ``\mathscr{n}`` drains over a narrow band of suctions, ``\mathscr{n} \to 1`` over orders of magnitude. Sets ``\mathscr{m} = 1 - 1/\mathscr{n}`` (–) |
+| ``\eta^K`` | `ηᴷ`, `pore_connectivity_exponent` | pore-connectivity exponent | Mualem exponent on saturation in ``K(\mathcal S)`` (–) |
+| ``T_0`` | `reference_temperature` | viscosity reference temperature | Temperature at which ``K_0`` holds and the viscosity factor ``\Theta(T)`` on ``K`` is unity (K) |
 | ``J^{Es}`` | `surface_energy_flux` | surface energy flux | Signed surface energy flux, positive upward (out of the slab) (W m⁻²) |
 | ``J^{lb}`` | `deep_liquid_flux` | deep-boundary liquid flux | Liquid mass flux across the slab bottom, positive upward (into the slab, capillary rise / groundwater return); drainage is ``J^{lb} < 0`` (kg m⁻² s⁻¹) |
 | ``J^{ls}`` | `surface_liquid_flux` | surface liquid flux | Liquid mass flux at the surface ``J^{ls} = -P^l + R^{\mathrm{sfc}}``, positive upward (out of the slab); infiltration is ``J^{ls} < 0`` (kg m⁻² s⁻¹) |
@@ -187,6 +199,7 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``S`` | `S` | salinity | Practical salinity (g kg⁻¹) |
 | ``u`` | `u` | zonal velocity | Eastward ocean velocity (m s⁻¹) |
 | ``v`` | `v` | meridional velocity | Northward ocean velocity (m s⁻¹) |
+| ``u_b`` | `ub` | background bottom velocity | Unresolved velocity, mostly tidal, added in quadrature to the resolved speed in the bottom drag (m s⁻¹) |
 | ``\rho^{\mathrm{oc}}`` | `ρᵒᶜ` | reference density | Ocean reference density (kg m⁻³) |
 | ``c^{\mathrm{oc}}`` | `cᵒᶜ` | heat capacity | Ocean heat capacity (J kg⁻¹ K⁻¹) |
 
@@ -219,6 +232,7 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``\psi`` | `ψ` | stability function | Integrated stability correction (–) |
 | ``\Psi`` | `Ψ` | interface state | Aggregate interface state (an `AbstractInterfaceState`) carried through the similarity-theory fixed-point solver `compute_interface_state` |
 | ``\zeta`` | `ζ` | stability parameter | ``z / L_\star`` (–) |
+| ``\Delta h^d`` | `Δhᵈ` | displaced profile height | Height ``\Delta h - d`` above the zero-plane displacement at which the similarity profiles are evaluated (m) |
 | ``\ell`` | `ℓ` | roughness length | Aerodynamic roughness length (m) |
 | ``\ell^\mathrm{m}`` | `ℓᵐ` | momentum roughness length | Aerodynamic momentum roughness length (m) |
 | ``\ell^\mathrm{s}`` | `ℓˢ` | scalar roughness length | Aerodynamic scalar roughness length (m) |
@@ -226,6 +240,38 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 
 Note the case distinction: lowercase ``\psi`` (`ψ`) is the stability
 function, while capital ``\Psi`` (`Ψ`) is the aggregate interface-state object.
+
+## Surface morphometry
+
+Roughness elements — buildings or plant canopy — that set the aerodynamic
+parameters ``\ell^\mathrm{m}`` and ``d`` of a land surface.
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``h`` | `h` | element height | Mean height of the roughness elements (m) |
+| ``h^\mathrm{max}`` | `hᵐᵃˣ` | maximum element height | Tallest roughness element in the cell (m) |
+| ``\sigma^h`` | `σʰ` | height standard deviation | Spread of the roughness-element heights (m) |
+| ``\lambda^p h`` | `gross_building_height` | gross building height | Mean element height over *all* cells, built or not, ``\lambda^p h`` — the digital-surface lift (m) |
+| ``d`` | `d` | zero-plane displacement | Displacement height of the roughness sublayer (m) |
+| ``d^h`` | `dʰ` | displacement ratio | Packing displacement ``d/h`` of the obstacle-array fit, before the height-spread correction (–) |
+| ``\lambda^p`` | `λᵖ` | plan-area index | Ground-plan area covered by the elements, per unit ground area (–) |
+| ``\lambda^f`` | `λᶠ` | frontal-area index | Windward face area of the elements, per unit ground area (–) |
+| ``\lambda^{p\,\mathrm{min}}`` | `λᵖᵐⁱⁿ` | plan-area index floor | Below this ``\lambda^p`` a cell reduces to bare soil (–) |
+| ``\ell^\mathrm{soil}`` | `ℓˢᵒⁱˡ` | bare-soil roughness length | Momentum roughness length where the plan-area index vanishes (m) |
+| ``A`` | `A` | array constant | Packing constant of the Macdonald displacement fit (–) |
+| ``\beta`` | `β` | drag correction factor | Lumped drag correction of the Macdonald drag partition (–) |
+| ``X`` | `X` | displacement parameter | ``(\sigma^h + h)/h^\mathrm{max} \in [0, 1]``, argument of the Kanda displacement fit (–) |
+| ``Y`` | `Y` | height-spread parameter | ``\lambda^p \sigma^h / h``, argument of the Kanda roughness rescaling (–) |
+
+The superscripts on ``\lambda^p`` and ``\lambda^f`` distinguish them from the
+longitude ``\lambda``.
+
+Two symbols here are shared with other land parameters and mean something
+different. ``\beta`` is the drag correction of the Macdonald drag partition,
+not the moisture availability ``\beta`` of the hydrology and interface-humidity
+models; it keeps the symbol of its source parametrization. Likewise ``d`` is the
+zero-plane displacement, not the `surface_thickness` ``d`` of
+[`SkinHumidity`](@ref).
 
 ## Radiative fluxes
 
@@ -269,6 +315,7 @@ superscript band.
 |:----:|:----:|:---------|:------------|
 | ``J^{\mathrm{rn}}`` | `Jʳⁿ` | rain freshwater flux | Rain mass flux at the surface (kg m⁻² s⁻¹) |
 | ``J^{\mathrm{sn}}`` | `Jˢⁿ` | snow freshwater flux | Snow mass flux at the surface (kg m⁻² s⁻¹) |
+| ``J^{\mathrm{ib}}`` | `Jⁱᵇ` | iceberg freshwater flux | Iceberg calving mass flux into the ocean (kg m⁻² s⁻¹) |
 
 ## Thermodynamic properties
 
@@ -276,6 +323,7 @@ superscript band.
 |:----:|:----:|:---------|:------------|
 | ``\mathcal{L}^\ell`` | `ℒˡ` | latent heat of vaporization | Liquid-phase latent heat (J kg⁻¹) |
 | ``\mathcal{L}^i`` | `ℒⁱ` | latent heat of sublimation | Ice-phase latent heat (J kg⁻¹) |
+| ``\mathcal{L}^f`` | `ℒᶠ` | latent heat of fusion | Heat the ocean supplies to melt snowfall and icebergs (J kg⁻¹) |
 | ``c^{pm}`` | `cᵖᵐ` | moist air heat capacity | Moist isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``c^{pd}`` | `cᵖᵈ` | dry air heat capacity | Dry-air isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``\rho^{\mathrm{at}}`` | `ρᵃᵗ` | air density | Atmospheric air density (kg m⁻³) |
@@ -315,6 +363,8 @@ Most symbols can be entered in the Julia REPL and in editors with Julia support 
 | `𝒬` | `\scrQ` | Script Q (heat flux) |
 | `ℐ` | `\scrI` | Script I (radiative intensity) |
 | `ℒ` | `\scrL` | Script L (latent heat) |
+| `𝓃` | `\scrn` | Script n (pore-size uniformity) |
+| `𝓂` | `\scrm` | Script m (van Genuchten `1 - 1/𝓃`) |
 | `τ` | `\tau` | Tau (kinematic stress) |
 | `ρ` | `\rho` | Rho (density) |
 | `σ` | `\sigma` | Sigma (Stefan–Boltzmann constant) |
@@ -330,6 +380,7 @@ Most symbols can be entered in the Julia REPL and in editors with Julia support 
 | `ᵀ` | `\^T` | Superscript T |
 | `ˢ` | `\^s` | Superscript s |
 | `ʷ` | `\^w` | Superscript w |
+| `ʰ` | `\^h` | Superscript h |
 | `ⁱ` | `\^i` | Superscript i |
 | `ˡ` | `\^l` | Superscript l |
 | `ᵖ` | `\^p` | Superscript p |

@@ -1,9 +1,12 @@
 module InterfaceComputations
 
-using Adapt: Adapt, adapt
-using Oceananigans: Oceananigans
-using Oceananigans.Fields: AbstractField, Field, Face, Center
-using Oceananigans.Grids: Flat, topology
+using Adapt: Adapt
+using DocStringExtensions: TYPEDSIGNATURES
+using KernelAbstractions: @kernel, @index
+using Oceananigans: Oceananigans, location
+using Oceananigans.Architectures: architecture
+using Oceananigans.Fields: AbstractField, Field, Face, Center, FractionalIndices
+using Oceananigans.Grids: Flat, Periodic, halo_size, topology, _node
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: KernelParameters, worksize
 
@@ -14,7 +17,6 @@ export
     ConvergenceStopCriteria,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
-    LandRoughnessLength,
     CoefficientBasedFluxes,
     SimilarityScales,
     PolynomialNeutralDragCoefficient,
@@ -44,7 +46,7 @@ export
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     PowerLawTortuosity,
-    ElevationCorrection,
+    AltitudeCorrection,
     atmosphere_land_interface,
     # Sea ice-ocean heat flux formulations
     IceBathHeatFlux,
@@ -55,9 +57,12 @@ export
 using ..EarthSystemModels: EarthSystemModels,
                            default_gravitational_acceleration,
                            default_freshwater_density,
+                           default_latent_heat_of_fusion,
                            thermodynamics_parameters,
                            surface_layer_height,
                            boundary_layer_height
+
+using ...NumericalEarth: stateindex
 
 #####
 ##### Functions extended by component models
@@ -94,6 +99,34 @@ end
 ##### Utilities
 #####
 
+@kernel function _compute_fractional_indices!(indices_tuple, exchange_grid, source_grid)
+    i, j = @index(Global, NTuple)
+    kᴺ = size(exchange_grid, 3)
+    X = _node(i, j, kᴺ + 1, exchange_grid, Center(), Center(), Face())
+    if topology(source_grid) == (Flat, Flat, Flat)
+        fractional_indices_ij = FractionalIndices(nothing, nothing, nothing)
+    else
+        fractional_indices_ij = FractionalIndices(X, source_grid, Center(), Center(), Center())
+    end
+    TX, TY, _ = topology(source_grid)
+    Nx, Ny, _ = size(source_grid)
+    Hx, Hy, _ = halo_size(source_grid)
+    Sx, Sy, _ = worksize(exchange_grid)
+    halo_column = (i < 1) | (i > Sx) | (j < 1) | (j > Sy)
+
+    fi = indices_tuple.i
+    fj = indices_tuple.j
+    @inbounds begin
+        if !isnothing(fi)
+            fi[i, j, 1] = clamp_fractional_index(fractional_indices_ij.i, TX(), Nx, Hx, halo_column)
+        end
+
+        if !isnothing(fj)
+            fj[i, j, 1] = clamp_fractional_index(fractional_indices_ij.j, TY(), Ny, Hy, halo_column)
+        end
+    end
+end
+
 function interface_kernel_parameters(grid)
     Sx, Sy, _ = worksize(grid)
     TX, TY, _ = topology(grid)
@@ -112,6 +145,25 @@ function interface_kernel_parameters(grid)
     return kernel_parameters
 end
 
+# Halo columns read the component's own halo, so the index is held where interpolation can
+# reach: `⌊f⌋` and `⌊f⌋ + 1` must both lie within `1 - H` and `N + H`.
+@inline clamp_fractional_index(::Nothing, topo, N, H, halo_column) = nothing
+
+@inline function clamp_fractional_index(fractional_index, topo, N, H, halo_column)
+    FT = typeof(fractional_index)
+    lowest = convert(FT, 1 - H)
+    highest = prevfloat(convert(FT, N + H))
+    clamped = halo_column & !(topo isa Periodic)
+    return ifelse(clamped, clamp(fractional_index, lowest, highest), fractional_index)
+end
+
+# 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1
+@inline state2dindex(a, i, j) = stateindex(a, i, j, 1)
+@inline state2dindex(a, i, j, grid, time) = stateindex(a, i, j, 1, grid, time, (Center, Center, Nothing))
+
+# Functions are resolved at the topmost center: a `Nothing` vertical location yields a two-tuple node.
+@inline state2dindex(a::Function, i, j, grid, time) = stateindex(a, i, j, size(grid, 3), grid, time, (Center, Center, Center))
+
 # Turbulent fluxes
 include("roughness_lengths.jl")
 include("interface_states.jl")
@@ -129,6 +181,7 @@ include("sea_ice_ocean_heat_flux_formulations.jl")
 
 include("component_interfaces.jl")
 include("atmosphere_state_correction.jl")
+include("atmosphere_interface_kernels.jl")
 include("atmosphere_ocean_fluxes.jl")
 include("atmosphere_sea_ice_fluxes.jl")
 include("atmosphere_land_fluxes.jl")
