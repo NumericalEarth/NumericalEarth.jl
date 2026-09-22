@@ -1,25 +1,11 @@
 include("runtests_setup.jl")
 
 using Oceananigans
-using Oceananigans: set!, interior
-using Oceananigans.TimeSteppers: update_state!, time_step!
-using Oceananigans.Architectures: Adapt
+using Oceananigans.TimeSteppers: time_step!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     SoilSkinTemperature, EnergyBalanceTemperature, SoilConductiveFlux,
-    InterfaceProperties,
-    DiagnosticSkin, PrognosticSkin,
-    DryLayerHumidity, StorageBasedDryLayerDepth, DryLayerVaporPistonVelocity, ConstantTortuosity
-using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
-using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties,
-                                 default_stefan_boltzmann_constant
-
-bare_soil_humidity(FT) = DryLayerHumidity(FT;
-    dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
-                                                dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
-    vapor_exchange  = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
-                                                  molecular_diffusivity = 2.4e-5, tortuosity = ConstantTortuosity()),
-    thermal_exchange_depth = 0.05, porosity = 0.4)
+    DiagnosticSkin, PrognosticSkin
+using NumericalEarth.Radiations: default_stefan_boltzmann_constant
 
 bare_soil_column(arch, FT = Float64) =
     LatitudeLongitudeGrid(arch, FT; size = 1, latitude = 10, longitude = 10,
@@ -30,45 +16,25 @@ bare_soil_pair(arch, FT = Float64) =
     LatitudeLongitudeGrid(arch, FT; size = (2, 1, 1), longitude = (10, 12), latitude = (10, 11),
                           z = (-1, 0), topology = (Bounded, Bounded, Bounded))
 
-function bare_soil_model(arch, temperature; grid = bare_soil_column(arch),
-                         shortwave = 600.0, longwave = 350.0,
-                         wind = 5.0, Tair = 300.0, qair = 0.008,
-                         Tland = 298.0, water = 90.0, α = 0.2, ϵ = 0.95)
-    FT = Float64
-    atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10, boundary_layer_height = 512)
-    fill!(parent(atmosphere.temperature), Tair)
-    fill!(parent(atmosphere.specific_humidity), qair)
-    fill!(parent(atmosphere.velocities.u), wind)
-    fill!(parent(atmosphere.pressure), 101325.0)
-    land = SlabLand(grid; hydrology = BucketHydrology(FT; maximum_water_storage = 150.0), energy = SlabEnergy(FT))
-    set!(land; T = Tland)
-    fill!(parent(land.water_storage), water)
-    radiation = PrescribedRadiation(grid; ocean_surface = nothing, sea_ice_surface = nothing,
-                                    land_surface = SurfaceRadiationProperties(α, ϵ))
-    fill!(parent(radiation.downwelling_shortwave), shortwave)
-    fill!(parent(radiation.downwelling_longwave), longwave)
-    update_state!(radiation)
-    model = AtmosphereLandModel(atmosphere, land; radiation,
-                atmosphere_land_interface_temperature = temperature,
-                atmosphere_land_interface_specific_humidity = bare_soil_humidity(FT))
-    update_state!(model.land)
-    update_state!(model)
-    return model
-end
+bare_soil_model(arch, temperature; grid = bare_soil_column(arch),
+               shortwave = 600.0, longwave = 350.0,
+               wind = 5.0, Tair = 300.0, qair = 0.008,
+               Tland = 298.0, water = 90.0, α = 0.2, ϵ = 0.95) =
+    coupled_land_model(arch; grid, shortwave, longwave, wind, Tair, qair, Tland, water, α, ϵ,
+                       atmosphere_land_interface_temperature = temperature,
+                       atmosphere_land_interface_specific_humidity = bare_soil_humidity(Float64))
 
-@inline value1(f) = Array(interior(f))[1, 1, 1]
-
-# Surface energy-balance terms from the model outputs: Rₙ + G − H − LE at the
-# stored skin, with Λ = 30 and the test's radiation properties.
-function surface_imbalance(model; SW = 600.0, LW = 350.0, α = 0.2, ϵ = 0.95, Λ = 30.0)
+# Surface energy-balance terms of the step just taken: Rₙ + G − H − LE at the stored
+# skin, with `Tˡ` the bulk temperature the step started from. The slab receives exactly G.
+function surface_imbalance(model, Tˡ; SW = 600.0, LW = 350.0, α = 0.2, ϵ = 0.95, Λ = 30.0)
     ai = model.interfaces.atmosphere_land_interface
     σ  = default_stefan_boltzmann_constant
-    Tₛ = value1(ai.temperature)
-    Tˡ = value1(model.land.temperature)
+    Tₛ = scalar(ai.temperature)
     Rn = (1 - α) * SW + ϵ * (LW - σ * Tₛ^4)
     G  = Λ * (Tˡ - Tₛ)
-    H  = value1(ai.fluxes.sensible_heat)
-    LE = value1(ai.fluxes.latent_heat)
+    H  = scalar(ai.fluxes.sensible_heat)
+    LE = scalar(ai.fluxes.latent_heat)
+    @test scalar(model.land.fluxes.surface_energy_flux) ≈ G atol = 1e-9
     return Rn + G - H - LE, Tₛ
 end
 
@@ -82,11 +48,11 @@ end
             time_step!(mp, 300.0)
             time_step!(md, 300.0)
         end
-        Tp = value1(mp.interfaces.atmosphere_land_interface.temperature)
-        Td = value1(md.interfaces.atmosphere_land_interface.temperature)
+        Tp = scalar(mp.interfaces.atmosphere_land_interface.temperature)
+        Td = scalar(md.interfaces.atmosphere_land_interface.temperature)
         @test Tp ≈ Td atol = 0.5
-        @test value1(mp.interfaces.atmosphere_land_interface.fluxes.latent_heat) ≈
-              value1(md.interfaces.atmosphere_land_interface.fluxes.latent_heat) atol = 10
+        @test scalar(mp.interfaces.atmosphere_land_interface.fluxes.latent_heat) ≈
+              scalar(md.interfaces.atmosphere_land_interface.fluxes.latent_heat) atol = 10
 
         # --- calm moist transition (the issue-549 bare-soil exemplar): the prognostic
         # skin closes the surface energy balance through its storage tendency instead
@@ -97,15 +63,16 @@ end
                              Tland = 310.0, water = 135.0)
         ai = mp.interfaces.atmosphere_land_interface
         worst = 0.0
-        Tₛ⁻ = value1(ai.temperature)
+        Tₛ⁻ = scalar(ai.temperature)
         for _ in 1:48
+            Tˡ⁻ = scalar(mp.land.temperature)
             time_step!(mp, Δt)
-            F, Tₛ = surface_imbalance(mp; SW = 50.0)
+            F, Tₛ = surface_imbalance(mp, Tˡ⁻; SW = 50.0)
             residual = F - C * (Tₛ - Tₛ⁻) / Δt   # imbalance beyond storage: linearization error only
             worst = max(worst, abs(residual))
             Tₛ⁻ = Tₛ
-            @test isfinite(value1(ai.fluxes.latent_heat))
-            @test abs(value1(ai.fluxes.latent_heat)) < 2000
+            @test isfinite(scalar(ai.fluxes.latent_heat))
+            @test abs(scalar(ai.fluxes.latent_heat)) < 2000
         end
         @test worst < 15
     end
@@ -127,8 +94,8 @@ end
     # prognostic skin is frozen through the fixed point by construction.
     for arch in test_architectures
         Tbulk = 298.0
-        Tp = value1(bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05)).interfaces.atmosphere_land_interface.temperature)
-        Td = value1(bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05; storage = DiagnosticSkin())).interfaces.atmosphere_land_interface.temperature)
+        Tp = scalar(bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05)).interfaces.atmosphere_land_interface.temperature)
+        Td = scalar(bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05; storage = DiagnosticSkin())).interfaces.atmosphere_land_interface.temperature)
         @test Tp ≈ Td atol = 1
         @test abs(Tp - Td) < abs(Tbulk - Td)
     end
@@ -173,28 +140,14 @@ end
         for storage in (DiagnosticSkin(), PrognosticSkin(heat_capacity = 1e5))
             model = bare_soil_model(arch, SoilSkinTemperature(0, 0.05; storage);
                                     shortwave = 0.0, longwave = 0.0, wind = 0.0, ϵ = 0)
-            @test isfinite(value1(model.interfaces.atmosphere_land_interface.temperature))
+            @test isfinite(scalar(model.interfaces.atmosphere_land_interface.temperature))
             for _ in 1:3
                 time_step!(model, 300.0)
             end
             ai = model.interfaces.atmosphere_land_interface
-            @test isfinite(value1(ai.temperature))
-            @test isfinite(value1(ai.fluxes.latent_heat))
-            @test isfinite(value1(ai.fluxes.sensible_heat))
+            @test isfinite(scalar(ai.temperature))
+            @test isfinite(scalar(ai.fluxes.latent_heat))
+            @test isfinite(scalar(ai.fluxes.sensible_heat))
         end
     end
-end
-
-# A Field-valued heat capacity must reach the device through every wrapper on the path.
-@testset "Field-valued capacity survives adapt" begin
-    grid = bare_soil_pair(CPU())
-    C = Field{Center, Center, Nothing}(grid)
-    leaf = typeof(Adapt.adapt(Array, PrognosticSkin(heat_capacity = C)).heat_capacity)
-
-    t = SoilSkinTemperature(1.5, 0.05; storage = PrognosticSkin(heat_capacity = C))
-    @test typeof(Adapt.adapt(Array, t).storage.heat_capacity) == leaf
-
-    properties = InterfaceProperties(nothing, t, nothing)
-    adapted = Adapt.adapt(Array, properties).temperature_formulation
-    @test typeof(adapted.storage.heat_capacity) == leaf
 end

@@ -78,6 +78,7 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``x`` | `ˣ` | zonal / x-direction | ``\tau^x`` (zonal kinematic stress) |
 | ``y`` | `ʸ` | meridional / y-direction | ``\tau^y`` (meridional kinematic stress) |
 | ``\mathrm{at}`` | `ᵃᵗ` | atmosphere | ``\rho^{\mathrm{at}}`` (air density) |
+| ``\mathrm{ae}`` | `ᵃᵉ` | air entry | ``\alpha^{\mathrm{ae}}`` (inverse air-entry head) |
 | ``\mathrm{oc}`` | `ᵒᶜ` | ocean | ``\rho^{\mathrm{oc}}`` (ocean reference density) |
 | ``\mathrm{si}`` | `ˢⁱ` | sea ice | ``h^{\mathrm{si}}`` (sea ice thickness) |
 | ``\mathrm{la}`` | `ˡᵃ` | land | ``M^{\mathrm{la}}`` (land water mass per area) |
@@ -107,6 +108,7 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``t`` | `ₜ` | transmitted | ``\mathscr{I}_{t}^{\mathrm{sw}}`` (transmitted shortwave) |
 | ``a`` | `ₐ` | absorbed | ``\mathscr{I}_{a}^{\mathrm{lw}}`` (absorbed longwave) |
 | ``\star`` | `★` | similarity theory scale | ``u_\star`` (friction velocity) |
+| ``b`` | `b` | boundary value, or background | ``T_b`` (interface temperature), ``u_b`` (background bottom velocity) |
 
 ## Atmosphere state variables
 
@@ -178,6 +180,12 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``\Pi^d`` | `deep_pressure_head` | deep pressure head | Pressure head of the deep reservoir below the last soil layer, passed to the deep-flux closure (m) |
 | ``h`` | – | hydraulic head | ``h = z + \Pi`` (m) |
 | ``K`` | – | hydraulic conductivity | Darcy conductivity (m s⁻¹) |
+| ``K_0`` | `matching_point_conductivity` | matching-point conductivity | Conductivity the Mualem–van Genuchten curve reaches at ``𝒮 = 1``; a *matrix* value when it comes from a pedotransfer function, excluding macropore flow (m s⁻¹) |
+| ``K^{+}`` | `saturated_conductivity` | saturated hydraulic conductivity | Macropore-inclusive Darcy conductivity of saturated soil, for an infiltration cap (m s⁻¹) |
+| ``\alpha^{\mathrm{ae}}`` | `inverse_air_entry_head` | inverse air-entry head | Reciprocal of the air-entry pressure head, the suction at which the largest pores begin to empty (m⁻¹) |
+| ``\mathscr{n}`` | `pore_size_uniformity` | pore-size uniformity | van Genuchten retention exponent; large ``\mathscr{n}`` drains over a narrow band of suctions, ``\mathscr{n} \to 1`` over orders of magnitude. Sets ``\mathscr{m} = 1 - 1/\mathscr{n}`` (–) |
+| ``\eta^K`` | `ηᴷ`, `pore_connectivity_exponent` | pore-connectivity exponent | Mualem exponent on saturation in ``K(\mathcal S)`` (–) |
+| ``T_0`` | `reference_temperature` | viscosity reference temperature | Temperature at which ``K_0`` holds and the viscosity factor ``\Theta(T)`` on ``K`` is unity (K) |
 | ``J^{Es}`` | `surface_energy_flux` | surface energy flux | Signed surface energy flux, positive upward (out of the slab) (W m⁻²) |
 | ``J^{lb}`` | `deep_liquid_flux` | deep-boundary liquid flux | Liquid mass flux across the column bottom, positive upward (into the soil, capillary rise / groundwater return); drainage is ``J^{lb} < 0`` (kg m⁻² s⁻¹) |
 | ``J_k`` | `interlayer_liquid_flux_k` | interlayer liquid flux | Liquid mass flux across the bottom of soil layer ``k`` into layer ``k+1``, positive upward; under the last layer it is ``J^{lb}`` (kg m⁻² s⁻¹) |
@@ -226,6 +234,9 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyAirSpace`](@r
 | ``G^a`` | – | aerodynamic vapor conductance | ``G^a = \rho^{\mathrm{at}} u_\star \chi^q``, the divider every humidity formulation closes against (kg m⁻² s⁻¹) |
 | ``G^e`` | – | dry-layer vapor conductance | Soil vapor conductance of [`DryLayerHumidity`](@ref) (kg m⁻² s⁻¹) |
 | ``\Sigma g^T``, ``\Sigma g^v`` | – | node conductance sums | Sums over the three branches feeding the canopy-air node, per side |
+| ``h^{c}`` | `layer_depth` | canopy air layer depth | Depth of the canopy air layer of a [`PrognosticCanopyAir`](@ref) storage (m) |
+| ``C^{T}``, ``C^{v}`` | – | canopy-air heat and vapor capacities | ``\rho c^p h^c`` (J m⁻² K⁻¹) and ``\rho h^c`` (kg m⁻²) |
+| ``m`` | – | node memory | Start-of-step weight surviving in the step-mean canopy-air node, ``m = (\tau/\Delta t)(1 - e^{-\Delta t/\tau})`` with ``\tau = C/\Sigma g`` (–) |
 | ``\epsilon^{\mathrm{leaf}}``, ``\epsilon^{g}`` | `max_canopy_emissivity`, `ground_emissivity` | emissivities | Longwave emissivity of the canopy (``\epsilon^{\mathrm{leaf}} = \epsilon^{max}(1 - e^{-L})``) and of the ground (–) |
 | ``\alpha^{\mathrm{leaf}}``, ``\alpha^{g}`` | `leaf_albedo`, `ground_albedo` | albedos | Shortwave albedo of the canopy and of the ground below it (–) |
 | ``r^s`` | – | soil surface resistance | Moist-soil evaporation resistance of a [`SellersSoilResistance`](@ref) (s m⁻¹) |
@@ -233,6 +244,7 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyAirSpace`](@r
 | ``W^c``, ``W^{c\,max}`` | `canopy_water_storage` | canopy water store | Intercepted water on the foliage and its capacity ``W^{c\,max} = c L`` (kg m⁻²) |
 | ``f^{\mathrm{int}}`` | – | interception fraction | Caught fraction of rain, ``1 - e^{-K \Omega L}`` (–) |
 | ``f^{\mathrm{wet}}`` | – | wet-canopy fraction | Deardorff wetted-leaf fraction ``(W^c/W^{c\,max})^{2/3}`` (–) |
+| ``g^{w}`` | – | wet-canopy vapor conductance | Wetted fraction of the leaf boundary-layer conductance, capped so that ``E^{\mathrm{wet}} \le W^c/\Delta t`` (kg m⁻² s⁻¹) |
 | ``E^{\mathrm{wet}}``, ``LE^{\mathrm{wet}}`` | – | wet-canopy evaporation | Evaporation of intercepted water (kg m⁻² s⁻¹) and its latent heat (W m⁻²) |
 | ``A_n`` | – | net assimilation | Net CO₂ assimilation of [`FarquharPhotosynthesis`](@ref) (mol m⁻² s⁻¹) |
 | ``V_a`` | – | surface wind speed | Wind speed at the surface-layer reference height (m s⁻¹) |
@@ -246,6 +258,7 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyAirSpace`](@r
 | ``S`` | `S` | salinity | Practical salinity (g kg⁻¹) |
 | ``u`` | `u` | zonal velocity | Eastward ocean velocity (m s⁻¹) |
 | ``v`` | `v` | meridional velocity | Northward ocean velocity (m s⁻¹) |
+| ``u_b`` | `ub` | background bottom velocity | Unresolved velocity, mostly tidal, added in quadrature to the resolved speed in the bottom drag (m s⁻¹) |
 | ``\rho^{\mathrm{oc}}`` | `ρᵒᶜ` | reference density | Ocean reference density (kg m⁻³) |
 | ``c^{\mathrm{oc}}`` | `cᵒᶜ` | heat capacity | Ocean heat capacity (J kg⁻¹ K⁻¹) |
 
@@ -278,6 +291,7 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyAirSpace`](@r
 | ``\psi`` | `ψ` | stability function | Integrated stability correction (–) |
 | ``\Psi`` | `Ψ` | interface state | Aggregate interface state (an `AbstractInterfaceState`) carried through the similarity-theory fixed-point solver `compute_interface_state` |
 | ``\zeta`` | `ζ` | stability parameter | ``z / L_\star`` (–) |
+| ``\Delta h^d`` | `Δhᵈ` | displaced profile height | Height ``\Delta h - d`` above the zero-plane displacement at which the similarity profiles are evaluated (m) |
 | ``\ell`` | `ℓ` | roughness length | Aerodynamic roughness length (m) |
 | ``\ell^\mathrm{m}`` | `ℓᵐ` | momentum roughness length | Aerodynamic momentum roughness length (m) |
 | ``\ell^\mathrm{s}`` | `ℓˢ` | scalar roughness length | Aerodynamic scalar roughness length (m) |
@@ -360,6 +374,7 @@ superscript band.
 |:----:|:----:|:---------|:------------|
 | ``J^{\mathrm{rn}}`` | `Jʳⁿ` | rain freshwater flux | Rain mass flux at the surface (kg m⁻² s⁻¹) |
 | ``J^{\mathrm{sn}}`` | `Jˢⁿ` | snow freshwater flux | Snow mass flux at the surface (kg m⁻² s⁻¹) |
+| ``J^{\mathrm{ib}}`` | `Jⁱᵇ` | iceberg freshwater flux | Iceberg calving mass flux into the ocean (kg m⁻² s⁻¹) |
 
 ## Thermodynamic properties
 
@@ -367,6 +382,7 @@ superscript band.
 |:----:|:----:|:---------|:------------|
 | ``\mathcal{L}^\ell`` | `ℒˡ` | latent heat of vaporization | Liquid-phase latent heat (J kg⁻¹) |
 | ``\mathcal{L}^i`` | `ℒⁱ` | latent heat of sublimation | Ice-phase latent heat (J kg⁻¹) |
+| ``\mathcal{L}^f`` | `ℒᶠ` | latent heat of fusion | Heat the ocean supplies to melt snowfall and icebergs (J kg⁻¹) |
 | ``c^{pm}`` | `cᵖᵐ` | moist air heat capacity | Moist isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``c^{pd}`` | `cᵖᵈ` | dry air heat capacity | Dry-air isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``\rho^{\mathrm{at}}`` | `ρᵃᵗ` | air density | Atmospheric air density (kg m⁻³) |
@@ -406,6 +422,8 @@ Most symbols can be entered in the Julia REPL and in editors with Julia support 
 | `𝒬` | `\scrQ` | Script Q (heat flux) |
 | `ℐ` | `\scrI` | Script I (radiative intensity) |
 | `ℒ` | `\scrL` | Script L (latent heat) |
+| `𝓃` | `\scrn` | Script n (pore-size uniformity) |
+| `𝓂` | `\scrm` | Script m (van Genuchten `1 - 1/𝓃`) |
 | `τ` | `\tau` | Tau (kinematic stress) |
 | `ρ` | `\rho` | Rho (density) |
 | `σ` | `\sigma` | Sigma (Stefan–Boltzmann constant) |

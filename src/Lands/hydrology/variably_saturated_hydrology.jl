@@ -174,7 +174,7 @@ interlayer_fluxes(h, land) = map(name -> getproperty(land.diagnostics, name), in
 #####
 
 # θ, 𝒮, pressure head Π, its storage derivative dΠ/dM, and K of layer `k` holding water `M`.
-@inline function layer_state(h, M, k, i, j)
+@inline function layer_state(h, M, T, k, i, j, grid)
     FT   = typeof(M)
     hₗ   = convert(FT, property_value(layer(h.slab_depth, k), i, j))
     ν    = convert(FT, property_value(h.porosity, i, j))
@@ -185,24 +185,24 @@ interlayer_fluxes(h, land) = map(name -> getproperty(land.diagnostics, name), in
     θ    = min(M / ρˡhₗ, ν)
     𝒮    = clamp((θ - θʳ) / (ν - θʳ), zero(FT), one(FT))
     saturated = M ≥ M⁺
-    Π    = ifelse(saturated, (M - M⁺) * hˢˢ / ρˡhₗ, pressure_head(h.retention_curve, 𝒮))
-    dΠdM = ifelse(saturated, hˢˢ, pressure_head_derivative(h.retention_curve, 𝒮) / (ν - θʳ)) / ρˡhₗ
-    K    = hydraulic_conductivity(layer(h.hydraulic_conductivity, k), 𝒮)
+    Π    = ifelse(saturated, (M - M⁺) * hˢˢ / ρˡhₗ, pressure_head(i, j, grid, h.retention_curve, 𝒮))
+    dΠdM = ifelse(saturated, hˢˢ, pressure_head_derivative(i, j, grid, h.retention_curve, 𝒮) / (ν - θʳ)) / ρˡhₗ
+    K    = hydraulic_conductivity(i, j, grid, layer(h.hydraulic_conductivity, k), 𝒮, T)
     return (; θ, 𝒮, Π, dΠdM, K)
 end
 
-@inline root_weighted_saturation(h, M, i, j) =
-    sum(ntuple(k -> h.root_fraction[k] * layer_state(h, M[k], k, i, j).𝒮, Val(length(M))))
+@inline root_weighted_saturation(h, M, T, i, j, grid) =
+    sum(ntuple(k -> h.root_fraction[k] * layer_state(h, M[k], T, k, i, j, grid).𝒮, Val(length(M))))
 
 # Conductance Λ = ρˡ K̄/ℓ and explicit Darcy flux between layers k and k+1, a distance
 # ℓ = (hₖ + hₖ₊₁)/2 apart, with K̄ at their mean saturation (Oleson et al. 2013, eq. 7.89).
-@inline function interlayer_exchange(h, s, k, i, j)
+@inline function interlayer_exchange(h, s, T, k, i, j, grid)
     FT = typeof(s[k].Π)
     ℓ  = (convert(FT, property_value(layer(h.slab_depth, k), i, j)) +
           convert(FT, property_value(layer(h.slab_depth, k + 1), i, j))) / 2
     𝒮̄  = (s[k].𝒮 + s[k+1].𝒮) / 2
-    K̄  = (hydraulic_conductivity(layer(h.hydraulic_conductivity, k), 𝒮̄) +
-          hydraulic_conductivity(layer(h.hydraulic_conductivity, k + 1), 𝒮̄)) / 2
+    K̄  = (hydraulic_conductivity(i, j, grid, layer(h.hydraulic_conductivity, k), 𝒮̄, T) +
+          hydraulic_conductivity(i, j, grid, layer(h.hydraulic_conductivity, k + 1), 𝒮̄, T)) / 2
     Λ  = convert(FT, h.liquid_density) * K̄ / ℓ
     return Λ, Λ * (s[k+1].Π - s[k].Π - ℓ)
 end
@@ -228,34 +228,35 @@ end
 ##### Kernels
 #####
 
-@kernel function _variably_saturated_saturation!(saturation, M, h)
+@kernel function _variably_saturated_saturation!(saturation, M, T, h, grid)
     i, j = @index(Global, NTuple)
     @inbounds begin
         Mᵢⱼ = ntuple(k -> M[k][i, j, 1], Val(length(M)))
-        saturation[i, j, 1] = root_weighted_saturation(h, Mᵢⱼ, i, j)
+        saturation[i, j, 1] = root_weighted_saturation(h, Mᵢⱼ, T[i, j, 1], i, j, grid)
     end
 end
 
 @kernel function _variably_saturated_step!(M, saturation, interlayer_flux_fields, diagnostics,
-                                           Jᵛ, Pˡ, prognostic, h, deep_pressure_head, Δt, grid, time)
+                                           Jᵛ, Pˡ, T, prognostic, h, deep_pressure_head, Δt, grid, time)
     i, j = @index(Global, NTuple)
     N = length(M)
     @inbounds begin
         Mⁿ   = ntuple(k -> M[k][i, j, 1], Val(N))
         Jᵛᵢⱼ = Jᵛ[i, j, 1]
         Pˡᵢⱼ = Pˡ[i, j, 1]
+        Tij  = T[i, j, 1]
         Πᵈ   = stateindex(deep_pressure_head, i, j, 1, grid, time, (Center, Center, Center))
     end
     FT = typeof(Jᵛᵢⱼ)
     δt = convert(FT, Δt)
-    s  = ntuple(k -> layer_state(h, Mⁿ[k], k, i, j), Val(N))
+    s  = ntuple(k -> layer_state(h, Mⁿ[k], Tij, k, i, j, grid), Val(N))
     s₁, sₙ = s[1], s[end]
 
     # Surface fluxes on the top layer, the deep closure under the last, Darcy exchanges between.
     Jˡˢ, Rˢᶠᶜ = surface_water_balance!(i, j, h.runoff, prognostic, Pˡᵢⱼ, Mⁿ[1], s₁.θ, s₁.𝒮, s₁.Π, s₁.K, δt)
     Rˡᵃᵗ      = subsurface_runoff(h.runoff, Mⁿ[1], s₁.Π, s₁.K)
     Jᵇ        = deep_liquid_flux(h.deep_liquid_flux, Mⁿ[end], sₙ.θ, sₙ.𝒮, sₙ.Π, sₙ.K, Πᵈ, time)
-    exchanges = ntuple(k -> interlayer_exchange(h, s, k, i, j), Val(N - 1))
+    exchanges = ntuple(k -> interlayer_exchange(h, s, Tij, k, i, j, grid), Val(N - 1))
     Λ  = (map(first, exchanges)..., -deep_liquid_flux_head_derivative(h.deep_liquid_flux, sₙ.K))
     J⁰ = (map(last, exchanges)..., Jᵇ)
 
@@ -297,21 +298,22 @@ end
         diagnostics.surface_runoff[i, j, 1]         = Rˢᶠᶜ
         diagnostics.subsurface_runoff[i, j, 1]      = Rˡᵃᵗ
         diagnostics.water_storage_tendency[i, j, 1] = (Mⁿ⁺¹[1] - Mⁿ[1]) / δt
-        saturation[i, j, 1] = root_weighted_saturation(h, Mⁿ⁺¹, i, j)
+        saturation[i, j, 1] = root_weighted_saturation(h, Mⁿ⁺¹, Tij, i, j, grid)
     end
 end
 
-function time_step!(h::VariablySaturatedHydrology, land, Δt, time)
+function time_step!(h::VariablySaturatedHydrology, land, Δt, time,
+                    liquid_input = land.fluxes.liquid_precipitation_flux)
     launch!(architecture(land.grid), land.grid, :xy, _variably_saturated_step!,
             layer_storages(h, land), land.saturation, interlayer_fluxes(h, land), land.diagnostics,
-            land.fluxes.vapor_flux, land.fluxes.liquid_precipitation_flux, land.prognostic,
+            land.fluxes.vapor_flux, liquid_input, land.temperature, land.prognostic,
             h, h.deep_pressure_head, Δt, land.grid, time)
     return nothing
 end
 
 function update_diagnostics!(h::VariablySaturatedHydrology, land)
     launch!(architecture(land.grid), land.grid, :xy, _variably_saturated_saturation!,
-            land.saturation, layer_storages(h, land), h)
+            land.saturation, layer_storages(h, land), land.temperature, h, land.grid)
     return nothing
 end
 
