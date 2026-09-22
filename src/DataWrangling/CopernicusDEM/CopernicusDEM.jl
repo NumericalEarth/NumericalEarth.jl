@@ -11,6 +11,7 @@ using ..DataWrangling: DataWrangling, AbstractStaticBathymetry, Metadatum,
 download_CopernicusDEM_cache::String = ""
 function __init__()
     global download_CopernicusDEM_cache = DataWrangling.download_cache("CopernicusDEM")
+    return nothing
 end
 
 # Variable name in the regional NetCDF we materialize from the Zarr store; this is
@@ -58,8 +59,16 @@ const CopernicusDEMDataset = Union{GLO30, GLO90}
 
 DataWrangling.default_download_directory(::CopernicusDEMDataset) = download_CopernicusDEM_cache
 DataWrangling.reversed_vertical_axis(::CopernicusDEMDataset) = false
-DataWrangling.longitude_interfaces(::CopernicusDEMDataset) = (-180, 180)
-DataWrangling.latitude_interfaces(::CopernicusDEMDataset) = (-90, 90)
+
+# The store's pixel centers sit on whole arc-seconds (the last latitude row at exactly
+# 90), so its grid is shifted half a cell from (-180, 180) × (-90, 90). Declaring the
+# shifted box puts the computed native centers exactly on the store's pixels.
+native_cell_width(dataset::CopernicusDEMDataset) = 360 / size(dataset)[1]
+
+DataWrangling.longitude_interfaces(dataset::CopernicusDEMDataset) =
+    (-180 - native_cell_width(dataset) / 2, 180 - native_cell_width(dataset) / 2)
+DataWrangling.latitude_interfaces(dataset::CopernicusDEMDataset) =
+    (-90 + native_cell_width(dataset) / 2, 90 + native_cell_width(dataset) / 2)
 
 # Two native cells of margin for interpolation stencils at the edge.
 DataWrangling.default_horizontal_padding(dataset::CopernicusDEMDataset) = 2 * 360 / size(dataset)[1]
@@ -88,9 +97,10 @@ const CopernicusDEMMetadatum = Metadatum{<:CopernicusDEMDataset}
 DataWrangling.dataset_variable_name(data::CopernicusDEMMetadatum) =
     CopernicusDEM_bathymetry_variable_names[data.name]
 
-# The NetCDF materialized from the Zarr store names its coordinates "lon"/"lat".
 DataWrangling.longitude_name(::CopernicusDEMMetadatum) = "lon"
-DataWrangling.latitude_name(::CopernicusDEMMetadatum) = "lat"
+DataWrangling.latitude_name(::CopernicusDEMMetadatum)  = "lat"
+
+DataWrangling.default_inpainting(::CopernicusDEMMetadatum) = nothing
 
 DataWrangling.metadata_filename(dataset::CopernicusDEMDataset, name, date, region) =
     string(dataset_prefix(dataset), "_", bounding_box_suffix(region), ".nc")

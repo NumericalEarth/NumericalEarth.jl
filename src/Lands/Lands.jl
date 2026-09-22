@@ -5,6 +5,7 @@ export AbstractLand,
        RiverRouting,
        build_river_routing,
        coastal_outlet_indices,
+       routable_grid,
        # Composable container
        SlabLand,
        # Energy-balance closures
@@ -15,6 +16,7 @@ export AbstractLand,
        BucketHydrology, DryLand, SaturatedSurface,
        # Variably saturated hydrology + sub-closures
        VanGenuchtenRetention, VanGenuchtenConductivity,
+       WaterViscosity, CosbyConductivity, saturated_conductivity,
        NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
        NoRunoff, InfiltrationCapacityRunoff,
        VariablySaturatedHydrology,
@@ -24,6 +26,9 @@ export AbstractLand,
        DragPartitionParameters, DragPartitionRoughness, canopy_drag_parameters, canopy_roughness,
        canopy_wind_ratio, canopy_roughness_climatology, drag_partition_group,
        representative_canopy_height, is_vegetated, nonvegetated_roughness,
+       # Pedotransfer functions + depth-layer combination
+       WeynantsPedotransfer, HYPRESPedotransfer,
+       soil_hydraulic_parameters, soil_hydraulic_properties,
        # Urban (morphometric)
        AbstractUrbanRoughness, MorphometricRoughness,
        IsotropicFrontalArea, EmpiricalFrontalArea,
@@ -45,10 +50,10 @@ using Adapt: Adapt
 using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
-using Oceananigans.Architectures: architecture
+using Oceananigans.Architectures: CPU, architecture, on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField
-using Oceananigans.Grids: grid_name, Center, Face, φnode
+using Oceananigans.Grids: grid_name, Center, Face, znodes, λnode, φnode
 using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series, FieldTimeSeries
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
@@ -69,6 +74,11 @@ include("properties/property_providers.jl")
 include("roughness/canopy_roughness_closure.jl")
 include("roughness/igbp_canopy_classes.jl")
 include("roughness/canopy_roughness_field.jl")
+# Pedotransfer functions and depth-layer combination.
+include("properties/pedotransfer.jl")
+include("properties/soil_hydraulic_properties.jl")
+
+# Urban aerodynamic roughness closures.
 include("roughness/urban_roughness_closure.jl")
 include("roughness/urban_roughness_field.jl")
 

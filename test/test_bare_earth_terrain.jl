@@ -1,6 +1,6 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.Bathymetry: bare_earth_elevation, BathymetryRegridding
+using NumericalEarth.Bathymetry: bare_earth_elevation, bathymetry_regridding_key
 using NumericalEarth.DataWrangling: validate_dataset_coverage, validate_region_covers_grid,
                                     default_region, dataset_bounding_box, native_grid,
                                     file_cell_index, region_info, file_window, wrapped_i,
@@ -74,11 +74,13 @@ end
 @testset "regrid_bathymetry — a window and a global read get different cache keys" begin
     grid = land_grid(CPU())
 
-    global_config = BathymetryRegridding(grid, Metadatum(:bottom_height; dataset = ETOPO2022()))
-    @test isnothing(global_config.region)
+    parameters = (; height_above_water = nothing, minimum_depth = 0,
+                    interpolation_passes = 1, major_basins = 1)
+    global_config = bathymetry_regridding_key(grid, Metadatum(:bottom_height; dataset = ETOPO2022()); parameters...)
+    @test global_config.region == "global"
 
     region = default_region(GLO30(), grid)
-    windowed_config = BathymetryRegridding(grid, Metadatum(:bottom_height; dataset = ETOPO2022(), region))
+    windowed_config = bathymetry_regridding_key(grid, Metadatum(:bottom_height; dataset = ETOPO2022(), region); parameters...)
     @test windowed_config.region isa String
 
     # A window and a global read of the same dataset+grid must not collide on disk.

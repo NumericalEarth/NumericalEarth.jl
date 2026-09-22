@@ -50,8 +50,7 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         M_max = bucket_capacity(maximum_water_storage, i, j, 1)
-        # Saturation cap; excess water above M_max is shed (runoff diagnostic
-        # to be reintroduced when downstream coupling needs it).
+        # Saturation cap: water above M_max is shed.
         M[i, j, 1] = clamp(M[i, j, 1] + (P[i, j, 1] - E[i, j, 1]) * Δt, 0, M_max)
     end
 end

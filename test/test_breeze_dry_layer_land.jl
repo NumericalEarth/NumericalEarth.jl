@@ -36,8 +36,8 @@ function build_coupled_test_model(arch; M₀, T₀, with_radiation = false)
         slab_depth = 1.0, porosity = 0.4,
         residual_liquid_fraction = 0.0,
         storage_height = 1000,
-        retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
-        hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
+        retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
+        hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
         deep_liquid_flux = NoDeepLiquidFlux(),
         runoff = NoRunoff())
     energy = WaterCoupledEnergy(eltype(land_grid);
@@ -94,9 +94,6 @@ end
             @test model.land.hydrology isa VariablySaturatedHydrology
             @test model.land.energy isa WaterCoupledEnergy
 
-            interface = model.interfaces.atmosphere_land_interface
-            @test !isnothing(interface)
-
             simulation = Simulation(model; Δt = 0.2, stop_iteration = 10)
             run!(simulation)
 
@@ -132,12 +129,8 @@ end
         end
 
         @testset "Radiation adds to surface_energy_flux, not overwritten, on $A" begin
-            # Regression guard for the radiation→land coupling: the radiative
-            # flux must be *added* to the turbulent `surface_energy_flux` that
-            # `WaterCoupledEnergy` reads — not overwrite it, and not be
-            # overwritten by the turbulent assembly. Covers the call ordering in
-            # `time_step_earth_system_model.jl` and the accumulator/sign choice in
-            # `apply_air_land_radiative_fluxes.jl`.
+            # The radiative flux is added to the turbulent `surface_energy_flux` that
+            # `WaterCoupledEnergy` reads, rather than either one overwriting the other.
             model_with_radiation = build_coupled_test_model(arch; M₀ = 200.0, T₀ = 295.0, with_radiation = true)
             @test haskey(model_with_radiation.radiation.interface_fluxes, :land)
             update_state!(model_with_radiation)

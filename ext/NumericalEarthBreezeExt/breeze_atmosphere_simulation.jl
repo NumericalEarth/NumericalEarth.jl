@@ -7,7 +7,8 @@ using Oceananigans.Utils: launch!
 
 using Breeze: ThermodynamicConstants, CompressibleDynamics,
               SaturationAdjustment, WarmPhaseEquilibrium,
-              AtmosphereModel, moisture_prognostic_name, HydrostaticallyBalancedDensity
+              AtmosphereModel, moisture_prognostic_name, HydrostaticallyBalancedDensity,
+              total_energy_density_name
 
 # Per-side merge for FieldBoundaryConditions: user's non-default sides override
 # coupling's; coupling's non-default sides survive where the user leaves the
@@ -26,6 +27,8 @@ function merge_fbcs(coupling::FieldBoundaryConditions, user::FieldBoundaryCondit
                                    immersed = pick(coupling.immersed, user.immersed))
 end
 
+energy_bc_key() = total_energy_density_name
+
 function merge_boundary_conditions(coupling_bcs::NamedTuple, user_bcs::NamedTuple)
     all_keys = (keys(coupling_bcs)..., (k for k in keys(user_bcs) if !(k in keys(coupling_bcs)))...)
     pairs = (k => haskey(coupling_bcs, k) && haskey(user_bcs, k) ?
@@ -40,7 +43,7 @@ end
                      surface_pressure = 101325,
                      potential_temperature = 285,
                      thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
-                     dynamics = CompressibleDynamics(; surface_pressure,
+                     dynamics = CompressibleDynamics(; base_pressure = surface_pressure,
                                                      reference_potential_temperature = potential_temperature),
                      microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
                      momentum_advection = WENO(order=9),
@@ -86,7 +89,7 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
                                                      surface_pressure = 101325,
                                                      potential_temperature = 285,
                                                      thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
-                                                     dynamics = CompressibleDynamics(; surface_pressure,
+                                                     dynamics = CompressibleDynamics(; base_pressure = surface_pressure,
                                                                                      reference_potential_temperature = potential_temperature),
                                                      microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
                                                      momentum_advection = Oceananigans.WENO(order=9),
@@ -113,7 +116,7 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
 
     moisture_key = moisture_prognostic_name(microphysics)
     moisture_bc = NamedTuple{tuple(moisture_key)}(tuple(FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵛ))))
-    energy_bc = (; ρe = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵉ)))
+    energy_bc = NamedTuple{(energy_bc_key(),)}((FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵉ)),))
 
     momentum_bcs = (
         ρu = FieldBoundaryConditions(bottom = FluxBoundaryCondition(ρτˣ)),
