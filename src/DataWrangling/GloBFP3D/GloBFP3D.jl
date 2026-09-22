@@ -20,6 +20,7 @@ import Oceananigans
 download_GloBFP3D_cache::String = ""
 function __init__()
     global download_GloBFP3D_cache = DataWrangling.download_cache("GloBFP3D")
+    return nothing
 end
 
 #####
