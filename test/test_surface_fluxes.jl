@@ -360,8 +360,8 @@ end
                                     (saturation = 1.0,), (temperature = Tᵈ,))
 
     # Drive the fixed point to convergence for a few saturation depths
-    converge(d) = begin
-        sh = SkinHumidity(surface_thickness=d, vapor_diffusivity=2e-2)
+    converge(δˢ) = begin
+        sh = SkinHumidity(surface_thickness=δˢ, vapor_diffusivity=2e-2)
         q = qᵛ⁺
         for _ in 1:100
             q = compute_interface_humidity(sh, Tₛ, mkΨₛ(q), Ψₐ, Ψᵢ, ℙₐ)

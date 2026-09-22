@@ -103,11 +103,17 @@ export
     VanGenuchtenRetention, VanGenuchtenConductivity,
     NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
     NoRunoff, InfiltrationCapacityRunoff,
-    # Urban aerodynamic roughness closures
+    # Aerodynamic roughness closures
+    compute_aerodynamic_roughness!, aerodynamic_parameters,
+    # Canopy (drag partition)
+    DragPartitionParameters, DragPartitionRoughness,
+    canopy_roughness, canopy_roughness_climatology, canopy_wind_ratio,
+    canopy_drag_parameters, drag_partition_group,
+    representative_canopy_height, nonvegetated_roughness, is_vegetated,
+    # Urban (morphometric)
     AbstractUrbanRoughness, MorphometricRoughness,
     IsotropicFrontalArea, EmpiricalFrontalArea,
-    UniformHeight, VariableHeight,
-    urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
+    UniformHeight, VariableHeight, urban_roughness,
     surface_temperature,
     regrid_bathymetry,
     regrid_topography,
@@ -127,6 +133,7 @@ export
     ASTERGEDv3, ASTERGEDResolution, ASTERGEDHigh100m, ASTERGEDLow1km,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
     ESAWorldCover, WorldCoverVersion, WorldCoverV100, WorldCoverV200,
+    ETHSentinel2CanopyHeight, canopy_height_field, tall_canopy_fraction_field,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
@@ -290,6 +297,7 @@ using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
 using .DataWrangling.ASTERGED
 using .DataWrangling.CopernicusDEM
+using .DataWrangling.ETHSentinel2Canopy
 using .DataWrangling.CopernicusLandAlbedo
 using .DataWrangling.OpenLandMap
 using .DataWrangling.GloBFP3D
