@@ -87,6 +87,7 @@ end
         Ts.canopy[i, j, 1]                 = sol.Tˡᵉᵃᶠ
         Ts.soil_skin[i, j, 1]              = sol.Tᵍ
         Ts.effective[i, j, 1]              = sol.effective_temperature
+        Ts.effective_albedo[i, j, 1]       = sol.effective_albedo
         Ts.ground_heat_flux[i, j, 1]       = sol.𝒬ᵍ
         Ts.canopy_latent_heat[i, j, 1]     = sol.LEˡᵉᵃᶠ
         Ts.soil_latent_heat[i, j, 1]       = sol.LEᵍ

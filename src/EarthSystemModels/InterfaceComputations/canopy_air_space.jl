@@ -630,6 +630,7 @@ radiation state.
     transmittance = canopy_transmittance(c.extinction, c.clumping, LAI)
     SWˡᵉᵃᶠ = (1 - αˡᵉᵃᶠ) * (1 - transmittance) * SW
     SWᵍ    = transmittance * (1 - αᵍ) * SW
+    effective_albedo = 1 - ((1 - αˡᵉᵃᶠ) * (1 - transmittance) + transmittance * (1 - αᵍ))
 
     Tˡᵉᵃᶠ = Tˡᵃ
     Tᵍ    = Tˡᵃ
@@ -706,6 +707,7 @@ radiation state.
     return (; Tˡᵉᵃᶠ = convert(FT, Tˡᵉᵃᶠ), Tᵍ = convert(FT, Tᵍ),
               Tᵃᶜ = convert(FT, Tᵃᶜ), qᵃᶜ = convert(FT, qᵃᶜ),
               effective_temperature = convert(FT, effective_temperature),
+              effective_albedo = convert(FT, effective_albedo),
               Hˡᵉᵃᶠ = convert(FT, Hˡᵉᵃᶠ), Hᵍ = convert(FT, Hᵍ),
               LEˡᵉᵃᶠ = convert(FT, LEˡᵉᵃᶠ), LEᵍ = convert(FT, LEᵍ),
               𝒬ᵍ = convert(FT, 𝒬ᵍ), Eʷᵉᵗ = convert(FT, Eʷᵉᵗ), ℒ = convert(FT, ℒ),
@@ -763,7 +765,8 @@ struct CanopyAirSpaceDiagnostics{F, S}
     interface              :: F   # canopy-air node Tᵃᶜ (what MOST sees)
     canopy                 :: F   # leaf temperature Tˡᵉᵃᶠ
     soil_skin              :: F   # soil-skin temperature Tᵍ
-    effective              :: F   # radiating (LST) temperature effective_temperature
+    effective              :: F   # radiating (LST) temperature
+    effective_albedo       :: F   # broadband shortwave albedo of the canopy + ground column
     ground_heat_flux       :: F   # skin→bulk conduction 𝒬ᵍ
     canopy_latent_heat     :: F   # leaf transpiration LEˡᵉᵃᶠ
     soil_latent_heat       :: F   # soil evaporation LEᵍ
