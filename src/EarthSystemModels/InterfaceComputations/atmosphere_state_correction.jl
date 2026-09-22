@@ -9,7 +9,7 @@
 #####
 
 """
-    ElevationCorrection(surface_elevation, atmosphere_elevation; lapse_rate = 6.5e-3)
+    AltitudeCorrection(surface_elevation, atmosphere_elevation; lapse_rate = 6.5e-3)
 
 A moist-environmental lapse-rate correction of the near-surface atmosphere state
 for the mismatch between the desired surface elevation (`surface_elevation`, the
@@ -36,7 +36,7 @@ with specific humidity `q` conserved (adiabatic lifting conserves `q`). `Δz` is
 naturally ≈ 0 over ocean / sea-ice (sea level), so a single correction is correct
 across surfaces, and it applies to any atmosphere (prescribed or online).
 """
-struct ElevationCorrection{A, S, FT, Z}
+struct AltitudeCorrection{A, S, FT, Z}
     atmosphere_elevation :: A
     surface_elevation :: S
     lapse_rate :: FT
@@ -45,17 +45,17 @@ struct ElevationCorrection{A, S, FT, Z}
     elevation_difference :: Z # materialized Δz on the exchange grid; `nothing` until then
 end
 
-function ElevationCorrection(surface_elevation, atmosphere_elevation; lapse_rate = 6.5e-3)
+function AltitudeCorrection(surface_elevation, atmosphere_elevation; lapse_rate = 6.5e-3)
     FT = Oceananigans.defaults.FloatType
 
     # g and Rᵈ are placeholders here; they're filled from the atmosphere's
     # thermodynamics when the correction is materialized on the exchange grid.
-    return ElevationCorrection(atmosphere_elevation,
-                               surface_elevation,
-                               convert(FT, lapse_rate),
-                               zero(FT),
-                               zero(FT),
-                               nothing)
+    return AltitudeCorrection(atmosphere_elevation,
+                              surface_elevation,
+                              convert(FT, lapse_rate),
+                              zero(FT),
+                              zero(FT),
+                              nothing)
 end
 
 """
@@ -63,7 +63,7 @@ end
 
 Return the physical constants the atmosphere-state corrections need — the
 gravitational acceleration and the dry-air gas constant `Rᵈ` (the latter from the
-atmosphere's own thermodynamics) — so corrections like [`ElevationCorrection`](@ref)
+atmosphere's own thermodynamics) — so corrections like [`AltitudeCorrection`](@ref)
 don't hard-code or duplicate them.
 """
 function thermodynamic_constants(atmosphere)
@@ -86,9 +86,9 @@ end
 @inline materialize_elevation!(field, elevation::AbstractArray) =
     (Oceananigans.interior(field, :, :, 1) .= elevation; field)
 
-# Δz is formed on the host and copied through the parent: broadcasting into an `interior`
-# view scalar-indexes GPU and Reactant buffers.
-function materialize_correction(c::ElevationCorrection, grid, atmosphere)
+# Δz is formed on the host: subtracting `interior` views scalar-indexes GPU and Reactant
+# buffers.
+function materialize_correction(c::AltitudeCorrection, grid, atmosphere)
     cpu_grid = on_architecture(CPU(), grid)
     zᵃ = Field{Center, Center, Nothing}(cpu_grid)
     zˢ = Field{Center, Center, Nothing}(cpu_grid)
@@ -97,17 +97,17 @@ function materialize_correction(c::ElevationCorrection, grid, atmosphere)
     Oceananigans.interior(zˢ) .-= Oceananigans.interior(zᵃ)
 
     Δz = Field{Center, Center, Nothing}(grid)
-    parent(Δz) .= parent(zˢ)
+    Oceananigans.set!(Δz, zˢ)
 
     FT = eltype(grid)
     constants = thermodynamic_constants(atmosphere)
 
-    return ElevationCorrection(c.atmosphere_elevation,
-                               c.surface_elevation,
-                               c.lapse_rate,
-                               convert(FT, constants.gravitational_acceleration),
-                               convert(FT, constants.dry_air_gas_constant),
-                               Δz)
+    return AltitudeCorrection(c.atmosphere_elevation,
+                              c.surface_elevation,
+                              convert(FT, c.lapse_rate),
+                              convert(FT, constants.gravitational_acceleration),
+                              convert(FT, constants.dry_air_gas_constant),
+                              Δz)
 end
 
 #####
@@ -123,7 +123,7 @@ end
 # Per-correction-type kernels.
 @inline correct_state!(::Nothing, exchanger, grid) = nothing
 
-function correct_state!(correction::ElevationCorrection, exchanger, grid)
+function correct_state!(correction::AltitudeCorrection, exchanger, grid)
     arch  = architecture(grid)
     state = exchanger.state
     launch!(arch, grid, interface_kernel_parameters(grid),

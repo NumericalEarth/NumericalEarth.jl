@@ -22,11 +22,12 @@ using ..DataWrangling: DataWrangling, binary_data_grid, binary_data_size, defaul
                        dataset_variable_name, default_download_directory, longitude_interfaces,
                        latitude_interfaces, netrc_downloader, NearestNeighborInpainting, metadata_path,
                        GramPerKilogramMinus35, Metadata, Metadatum, DownloadProgress,
-                       metadata_url, first_date, last_date, all_dates
+                       metadata_url, first_date, last_date, all_dates, download_with_retries
 
 download_ECCO_cache::String = ""
 function __init__()
     global download_ECCO_cache = DataWrangling.download_cache("ECCO")
+    return nothing
 end
 
 # Datasets
@@ -331,7 +332,7 @@ function Downloads.download(metadata::ECCOMetadata)
                 end
                 @info "Downloading ECCO data: $(metadatum.name) in $(metadatum.dir)..."
                 try
-                    Downloads.download(fileurl, filepath; downloader, progress=DownloadProgress())
+                    download_with_retries(fileurl, filepath; downloader, progress=DownloadProgress())
                 catch err
                     throw(ecco_download_error(err, metadatum))
                 end
@@ -340,11 +341,6 @@ function Downloads.download(metadata::ECCOMetadata)
     end
 
     return metadata_path(metadata)
-end
-
-function inpainted_metadata_filename(metadata::ECCOMetadatum)
-    without_extension = metadata.filename[1:end-3]
-    return without_extension * "_inpainted.jld2"
 end
 
 ECCO_atmosphere_variables = (
@@ -367,9 +363,6 @@ function DataWrangling.default_inpainting(metadata::ECCOMetadata)
         return NearestNeighborInpainting(5)
     end
 end
-
-DataWrangling.inpainted_metadata_path(metadata::ECCOMetadatum) = 
-    joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 function DataWrangling.read_file_coords(metadata::ECCOMetadatum)
     Nx, Ny, _, _ = size(metadata)
