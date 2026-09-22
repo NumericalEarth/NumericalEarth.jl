@@ -27,10 +27,10 @@ const BreezeRTM = Breeze.RadiativeTransferModel
 # equal to land.temperature only for bulk formulations — into an RTM constructed without
 # one. Explicit construction wins; with no land interface, Breeze errors at first solve.
 function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_temperature(rtm::BreezeRTM, interfaces)
-    isnothing(rtm.surface_properties.surface_temperature) || return rtm
+    isnothing(rtm.surface_radiation.surface_temperature) || return rtm
     Tˢ = NumericalEarth.EarthSystemModels.surface_temperature(interfaces)
     isnothing(Tˢ) && return rtm
-    return @set rtm.surface_properties.surface_temperature = Tˢ
+    return @set rtm.surface_radiation.surface_temperature = Tˢ
 end
 
 # `interpolate_state!` copies index for index, so the RTM's horizontal grid has to be the exchange
@@ -82,10 +82,10 @@ end
 # model, so land emission pairs with atmospheric absorption only while Breeze keeps that default.
 function NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation_properties(rtm::BreezeRTM)
     FT = eltype(rtm.downwelling_shortwave_flux)
-    ε = rtm.surface_properties.surface_emissivity
+    ε = rtm.surface_radiation.surface_emissivity
     # Whoever reads this state sees the direct albedo, the one the surface energy balance applies.
     # It is also the diffuse albedo unless the RTM was given the two separately.
-    α = rtm.surface_properties.direct_surface_albedo
+    α = rtm.surface_radiation.direct_surface_albedo
     return (σ = convert(FT, default_stefan_boltzmann_constant),
             surface_properties = (; land = SurfaceRadiationProperties(α, ε)))
 end
@@ -123,8 +123,8 @@ function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
     arch = architecture(grid)
     σ = convert(eltype(grid), NumericalEarth.Radiations.default_stefan_boltzmann_constant)
     Tˢ = al_interface.temperature
-    ε = rtm.surface_properties.surface_emissivity
-    α = rtm.surface_properties.direct_surface_albedo
+    ε = rtm.surface_radiation.surface_emissivity
+    α = rtm.surface_radiation.direct_surface_albedo
 
     state = coupled_model.interfaces.exchanger.radiation.state
 

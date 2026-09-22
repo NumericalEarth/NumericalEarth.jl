@@ -134,18 +134,18 @@ sea_ice_fields = merge(sea_ice.model.velocities, sea_ice.model.dynamics.auxiliar
                        (; h=sea_ice.model.ice_thickness, ℵ=sea_ice.model.ice_concentration))
 
 ocean.output_writers[:free_surf] = JLD2Writer(ocean.model, (; η=ocean.model.free_surface.displacement);
-                                              overwrite_existing=true,
+                                              overwrite_files=true,
                                               schedule=TimeInterval(output_interval),
                                               filename="ocean_free_surface.jld2")
 
 ocean.output_writers[:surface] = JLD2Writer(ocean.model, outputs;
-                                            overwrite_existing=true,
+                                            overwrite_files=true,
                                             schedule=TimeInterval(output_interval),
                                             filename="ocean_surface_fields.jld2",
                                             indices=(:, :, grid.Nz))
 
 sea_ice.output_writers[:fields] = JLD2Writer(sea_ice.model, sea_ice_fields;
-                                             overwrite_existing=true,
+                                             overwrite_files=true,
                                              schedule=TimeInterval(output_interval),
                                              filename="sea_ice_fields.jld2")
 
@@ -162,7 +162,7 @@ Jˢⁱᵒ  = earth.model.interfaces.sea_ice_ocean_interface.fluxes.salt
 fluxes = (; 𝒬ᵀᵃᵒ, 𝒬ᵛᵃᵒ, τˣᵃᵒ, τʸᵃᵒ, 𝒬ᵀᵃⁱ, 𝒬ᵛᵃⁱ, τˣᵃⁱ, τʸᵃⁱ, 𝒬ⁱᵒ, Jˢⁱᵒ)
 
 ocean.output_writers[:fluxes] = JLD2Writer(earth.model.ocean.model, fluxes;
-                                           overwrite_existing=true,
+                                           overwrite_files=true,
                                            schedule=TimeInterval(output_interval),
                                            filename="intercomponent_fluxes.jld2")
 
