@@ -92,6 +92,11 @@ start_date = DateTime(2005, 2, 16, 12)
         dates = NumericalEarth.DataWrangling.all_dates(monthly_dataset, :temperature)
         @test first(dates) == DateTime("1940-01-01")
         @test step(dates) == Month(1)
+
+        # The range ends at the last complete month behind the ERA5T latency, not at a hard-coded date.
+        @test last(dates) == Dates.firstdayofmonth(last(dates))
+        @test last(dates) <= Dates.firstdayofmonth(Dates.now(Dates.UTC)) - Month(1)
+        @test last(dates) >= Dates.firstdayofmonth(Dates.now(Dates.UTC)) - Month(2)
     end
 
     @testset "ERA5 single-level all_dates (Hourly)" begin
@@ -99,6 +104,12 @@ start_date = DateTime(2005, 2, 16, 12)
         dates = NumericalEarth.DataWrangling.all_dates(hourly_dataset, :temperature)
         @test first(dates) == DateTime("1940-01-01")
         @test step(dates) == Hour(1)
+
+        # The range follows the clock: it ends about five days behind real time (the ERA5T latency).
+        now_utc = Dates.now(Dates.UTC)
+        @test last(dates) <= now_utc - Day(5)
+        @test last(dates) > now_utc - Day(5) - Hour(1)
+        @test last(dates) == floor(last(dates), Hour)
     end
 
     @testset "ERA5 single-level dispatch helpers" begin
