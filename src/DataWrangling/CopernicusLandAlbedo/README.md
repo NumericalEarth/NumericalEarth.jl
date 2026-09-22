@@ -1,9 +1,9 @@
 # Copernicus Global Land Surface Albedo
 
 This module ingests the Copernicus Global Land Service (CGLS) 1 km surface-albedo
-collection (version 2): dekadal (10-daily) global NetCDF files on a regular 1/112°
-latitude-longitude grid spanning 80°N–60°S, derived from SPOT/VGT (1998–2014) and
-PROBA-V (2014–2020) observations.
+collection (version 2): ten-day global NetCDF files on a regular 1/112° latitude-longitude
+grid spanning 80°N–60°S, derived from SPOT/VGT (1998–2014) and PROBA-V (2014–2020)
+observations.
 
 The files are downloaded from the Copernicus Climate Data Store's
 [`satellite-albedo`](https://cds.climate.copernicus.eu/datasets/satellite-albedo)
@@ -22,7 +22,7 @@ Downloads go through the CDS API, the same setup as ERA5:
 
 ## What gets stored locally
 
-For each dekad, the extension downloads the black-sky (`albb_dh`,
+For each ten-day date, the extension downloads the black-sky (`albb_dh`,
 directional-hemispherical) and white-sky (`albb_bh`, bi-hemispherical) broadband
 products — one CDS request per calendar month — and repacks the pair into a single
 compact local NetCDF (variables `AL_DH_BB` and `AL_BH_BB`, packed integers with CF
@@ -38,7 +38,7 @@ using NumericalEarth
 using CDSAPI
 using Dates
 
-# Single dekad over a region
+# Single ten-day date over a region
 region = BoundingBox(longitude = (-114, -111), latitude = (35, 37))
 metadatum = Metadatum(:albedo; dataset = CopernicusAlbedo(), region, date = DateTime(2019, 7, 10))
 α = Field(metadatum)
@@ -49,7 +49,7 @@ albedo_climatology = FieldTimeSeries(metadata)
 ```
 
 `build_monthly_climatology!(dataset)` precomputes the monthly-mean files explicitly
-(useful to control when the dekadal downloads happen); months are cached and skipped
+(useful to control when the ten-day downloads happen); months are cached and skipped
 on rebuild.
 
 ## Notes
