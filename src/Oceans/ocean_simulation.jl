@@ -39,19 +39,28 @@ function merge_boundary_conditions(user::FieldBoundaryConditions, default::Field
 end
 
 @inline ϕ²(i, j, k, grid, ϕ)    = @inbounds ϕ[i, j, k]^2
-@inline spᶠᶜᶜ(i, j, k, grid, Φ) = @inbounds sqrt(Φ.u[i, j, k]^2 + ℑxyᶠᶜᵃ(i, j, k, grid, ϕ², Φ.v))
-@inline spᶜᶠᶜ(i, j, k, grid, Φ) = @inbounds sqrt(Φ.v[i, j, k]^2 + ℑxyᶜᶠᵃ(i, j, k, grid, ϕ², Φ.u))
+@inline spᶠᶜᶜ(i, j, k, grid, Φ, ub) = @inbounds sqrt(ub^2 + Φ.u[i, j, k]^2 + ℑxyᶠᶜᵃ(i, j, k, grid, ϕ², Φ.v))
+@inline spᶜᶠᶜ(i, j, k, grid, Φ, ub) = @inbounds sqrt(ub^2 + Φ.v[i, j, k]^2 + ℑxyᶜᶠᵃ(i, j, k, grid, ϕ², Φ.u))
 
-@inline u_quadratic_bottom_drag(i, j, grid, c, Φ, μ) = @inbounds - μ * Φ.u[i, j, 1] * spᶠᶜᶜ(i, j, 1, grid, Φ)
-@inline v_quadratic_bottom_drag(i, j, grid, c, Φ, μ) = @inbounds - μ * Φ.v[i, j, 1] * spᶜᶠᶜ(i, j, 1, grid, Φ)
+# A quadratic drag J = -μ |u| u is affine in the boundary-cell velocity with no explicit part, so it
+# is carried entirely by the implicit coefficient λ = -μ |u|.
+@inline u_quadratic_drag_coefficient(i, j, grid, c, Φ, p) = - p.μ * spᶠᶜᶜ(i, j, 1, grid, Φ, p.ub)
+@inline v_quadratic_drag_coefficient(i, j, grid, c, Φ, p) = - p.μ * spᶜᶠᶜ(i, j, 1, grid, Φ, p.ub)
 
-# Keep a constant linear drag parameter independent on vertical level
-@inline u_immersed_bottom_drag(i, j, k, grid, clock, Φ, μ) = @inbounds - μ * Φ.u[i, j, k] * spᶠᶜᶜ(i, j, k, grid, Φ)
-@inline v_immersed_bottom_drag(i, j, k, grid, clock, Φ, μ) = @inbounds - μ * Φ.v[i, j, k] * spᶜᶠᶜ(i, j, k, grid, Φ)
+@inline u_immersed_drag_coefficient(i, j, k, grid, clock, Φ, p) = - p.μ * spᶠᶜᶜ(i, j, k, grid, Φ, p.ub)
+@inline v_immersed_drag_coefficient(i, j, k, grid, clock, Φ, p) = - p.μ * spᶜᶠᶜ(i, j, k, grid, Φ, p.ub)
 
-# With or without additional fluxes
-@inline build_top_bc(flux_field, ::Nothing) = FluxBoundaryCondition(flux_field)
-@inline build_top_bc(flux_field, additional) = FluxBoundaryCondition(MultipleFluxes(flux_field, additional); discrete_form=true)
+# The same drag written explicitly, selected by `implicit_bottom_drag = false`.
+@inline u_quadratic_bottom_drag(i, j, grid, c, Φ, p) = @inbounds - p.μ * Φ.u[i, j, 1] * spᶠᶜᶜ(i, j, 1, grid, Φ, p.ub)
+@inline v_quadratic_bottom_drag(i, j, grid, c, Φ, p) = @inbounds - p.μ * Φ.v[i, j, 1] * spᶜᶠᶜ(i, j, 1, grid, Φ, p.ub)
+@inline u_immersed_bottom_drag(i, j, k, grid, clock, Φ, p) = @inbounds - p.μ * Φ.u[i, j, k] * spᶠᶜᶜ(i, j, k, grid, Φ, p.ub)
+@inline v_immersed_bottom_drag(i, j, k, grid, clock, Φ, p) = @inbounds - p.μ * Φ.v[i, j, k] * spᶜᶠᶜ(i, j, k, grid, Φ, p.ub)
+
+bottom_drag_bc(λ, Fₑ, p, implicit) = implicit ? IMEXFluxBoundaryCondition(0, λ; discrete_form=true, parameters=p) : FluxBoundaryCondition(Fₑ; discrete_form=true, parameters=p)
+
+# The surface momentum flux is affine in the top-cell velocity, J = Fₑ + λ uᵒ, with λ the ice-ocean drag coefficient.
+@inline build_top_bc(flux_field, coefficient_field, ::Nothing)  = IMEXFluxBoundaryCondition(flux_field, coefficient_field)
+@inline build_top_bc(flux_field, coefficient_field, additional) = IMEXFluxBoundaryCondition(MultipleFluxes(flux_field, additional), coefficient_field; discrete_form=true)
 
 # A freshwater surface tracer exchange. Each freshwater source carries a prescribed concentration `cᵢ` into the tracer
 # (zero salinity for pure water; its own temperature for heat), so the net surface flux is
@@ -153,6 +162,38 @@ function default_ocean_closure(FT=Oceananigans.defaults.FloatType)
     return CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization(), FT; mixing_length, turbulent_kinetic_energy_equation)
 end
 
+@inline masked_river_mouth_diffusivity(i, j, k, grid, clock, fields, mask) = @inbounds mask[i, j, k]
+
+"""
+$(TYPEDSIGNATURES)
+
+A `VerticalScalarDiffusivity` adding `river_mouth_diffusivity` over the top `river_mouth_mixing_depth` metres of the
+cells `river_routing` discharges into, so a fresh plume trapped in the surface layer cannot drive the salinity to zero.
+"""
+function river_mouth_vertical_diffusivity(grid, river_routing;
+                                          river_mouth_diffusivity = 0.1,
+                                          river_mouth_mixing_depth = 10)
+
+    zᶜ = Array(znodes(grid, Center()))
+    Nz = size(grid, 3)
+    mask_data = zeros(eltype(grid), size(grid)...)
+
+    for routing in values(river_routing)
+        target_i = Array(routing.target_i)
+        target_j = Array(routing.target_j)
+        for n in eachindex(target_i), k in 1:Nz
+            zᶜ[k] > -river_mouth_mixing_depth && (mask_data[target_i[n], target_j[n], k] = river_mouth_diffusivity)
+        end
+    end
+
+    mask = CenterField(grid)
+    set!(mask, mask_data)
+
+    return VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization();
+                                     κ = masked_river_mouth_diffusivity, discrete_form = true,
+                                     loc = (Center, Center, Center), parameters = mask)
+end
+
 default_radiative_forcing(grid) = TwoColorRadiation(grid)
 
 # TODO: Specify the grid to a grid on the sphere; otherwise we can provide a different
@@ -163,8 +204,8 @@ default_radiative_forcing(grid) = TwoColorRadiation(grid)
 Construct and return an ocean simulation tailored to `grid`. The `model` keyword
 selects the underlying Oceananigans model formulation:
 
-- `:hydrostatic` (default) — builds a `HydrostaticFreeSurfaceModel`-based simulation
-  with a free surface, CATKE vertical mixing, quadratic bottom drag, and a
+- `:hydrostatic` (default) — builds a `HydrostaticFreeSurfaceModel`-based simulation with a free surface,
+  CATKE vertical mixing, quadratic bottom drag (semi-implicit unless `implicit_bottom_drag = false`), and a
   TEOS-10 equation of state. See [`hydrostatic_ocean_simulation`](@ref) for the full kwarg list.
 
 - `:nonhydrostatic` — builds a `NonhydrostaticModel`-based simulation suitable
@@ -237,6 +278,8 @@ end
                                  rotation_rate = default_planet_rotation_rate,
                                  gravitational_acceleration = default_gravitational_acceleration,
                                  bottom_drag_coefficient = Default(0.003),
+                                 bottom_drag_background_velocity = 0,
+                                 implicit_bottom_drag = true,
                                  forcing = NamedTuple(),
                                  additional_surface_fluxes = NamedTuple(),
                                  biogeochemistry = nothing,
@@ -247,6 +290,9 @@ end
                                  equation_of_state = TEOS10EquationOfState(; reference_density),
                                  boundary_conditions::NamedTuple = NamedTuple(),
                                  radiative_forcing = default_radiative_forcing(grid),
+                                 river_routing = nothing,
+                                 river_mouth_diffusivity = 0.1,
+                                 river_mouth_mixing_depth = 10,
                                  warn = true,
                                  verbose = false)
 
@@ -281,6 +327,9 @@ For multi-column grids:
 ### Radiative forcing
 By default, `radiative_forcing` is `TwoColorRadiation` scheme.
 
+### River mouths
+When `river_routing` is supplied, [`river_mouth_vertical_diffusivity`](@ref) is added to `closure`.
+
 ### Tracers and closures
 - `tracers` defaults to `(:T, :S)`.
 - If the closure requires turbulent kinetic energy (e.g. `CATKEVerticalDiffusivity`),
@@ -306,6 +355,10 @@ defaults on a per-field basis.
 - `rotation_rate`: Planetary rotation rate used for Coriolis forcing.
 - `gravitational_acceleration`: Gravitational acceleration, passed to buoyancy.
 - `bottom_drag_coefficient`: Bottom drag coefficient. May be a `Default` wrapper.
+- `bottom_drag_background_velocity`: unresolved velocity `ub` added in quadrature to the resolved speed in the
+  quadratic drag, `𝛕 = - μ 𝐮 √(ub² + |𝐮|²)`, representing tides and other motions the grid does not carry.
+- `implicit_bottom_drag`: whether the bottom and immersed quadratic drag are applied as affine fluxes
+  with the drag coefficient carried in the vertical solver's diagonal. Default: `true`.
 - `forcing`: Named tuple of additional forcing(s) for individual fields.
 - `additional_surface_fluxes`: Named tuple of additional top boundary flux conditions (e.g. `(; S=SurfaceFluxRestoring(...))`) for any field (`u`, `v`, `T`, `S`).
 - `biogeochemistry`: A biogeochemical model or `nothing`.
@@ -316,6 +369,10 @@ defaults on a per-field basis.
 - `equation_of_state`: Equation of state object. Defaults to TEOS-10 (`TEOS10EquationOfState`).
 - `boundary_conditions`: User-supplied boundary conditions; merged with defaults.
 - `radiative_forcing`: Additional temperature forcing; merged into `forcing`.
+- `river_routing`: `NamedTuple` of [`RiverRouting`](@ref), typically `land.river_routing`. Defaults to
+  `nothing`, which leaves `closure` untouched.
+- `river_mouth_diffusivity`: vertical tracer diffusivity (m² s⁻¹) at the river mouths. Default: `0.1`.
+- `river_mouth_mixing_depth`: depth (m) over which it is applied. Default: `10`.
 - `warn`: If `true`, warnings are emitted for potentially unintended setups.
 - `verbose`: If `true`, prints additional setup information.
 """
@@ -330,6 +387,8 @@ function hydrostatic_ocean_simulation(grid;
                                       rotation_rate = default_planet_rotation_rate,
                                       gravitational_acceleration = default_gravitational_acceleration,
                                       bottom_drag_coefficient = Default(0.003),
+                                      bottom_drag_background_velocity = 0,
+                                      implicit_bottom_drag = true,
                                       forcing = NamedTuple(),
                                       additional_surface_fluxes = NamedTuple(),
                                       biogeochemistry = nothing,
@@ -340,10 +399,21 @@ function hydrostatic_ocean_simulation(grid;
                                       equation_of_state = TEOS10EquationOfState(; reference_density),
                                       boundary_conditions::NamedTuple = NamedTuple(),
                                       radiative_forcing = default_radiative_forcing(grid),
+                                      river_routing = nothing,
+                                      river_mouth_diffusivity = 0.1,
+                                      river_mouth_mixing_depth = 10,
                                       warn = true,
                                       verbose = false)
 
     FT = eltype(grid)
+
+    if !isnothing(river_routing)
+        river_mixing = river_mouth_vertical_diffusivity(grid, river_routing;
+                                                        river_mouth_diffusivity,
+                                                        river_mouth_mixing_depth)
+        closure = isnothing(closure) ? river_mixing :
+                  closure isa Tuple  ? (closure..., river_mixing) : (closure, river_mixing)
+    end
 
     if grid isa RectilinearGrid # turn off Coriolis unless user-supplied
         coriolis = default_or_override(coriolis, nothing)
@@ -379,11 +449,10 @@ function hydrostatic_ocean_simulation(grid;
 
         bottom_drag_coefficient = default_or_override(bottom_drag_coefficient)
 
-        u_immersed_drag = FluxBoundaryCondition(u_immersed_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
-        v_immersed_drag = FluxBoundaryCondition(v_immersed_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
+        drag_parameters = (μ = convert(FT, bottom_drag_coefficient), ub = convert(FT, bottom_drag_background_velocity))
 
-        u_immersed_bc = ImmersedBoundaryCondition(bottom=u_immersed_drag)
-        v_immersed_bc = ImmersedBoundaryCondition(bottom=v_immersed_drag)
+        u_immersed_bc = ImmersedBoundaryCondition(bottom = bottom_drag_bc(u_immersed_drag_coefficient, u_immersed_bottom_drag, drag_parameters, implicit_bottom_drag))
+        v_immersed_bc = ImmersedBoundaryCondition(bottom = bottom_drag_bc(v_immersed_drag_coefficient, v_immersed_bottom_drag, drag_parameters, implicit_bottom_drag))
 
         # Forcing for u, v
         barotropic_potential = Field{Center, Center, Nothing}(grid)
@@ -405,6 +474,7 @@ function hydrostatic_ocean_simulation(grid;
     end
 
     bottom_drag_coefficient = convert(FT, bottom_drag_coefficient)
+    bottom_drag_background_velocity = convert(FT, bottom_drag_background_velocity)
 
     # Set up boundary conditions
     x_velocity_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
@@ -412,6 +482,10 @@ function hydrostatic_ocean_simulation(grid;
 
     top_zonal_momentum_flux      = τˣ = Field{Face, Center, Nothing}(grid; boundary_conditions = x_velocity_bcs)
     top_meridional_momentum_flux = τʸ = Field{Center, Face, Nothing}(grid; boundary_conditions = y_velocity_bcs)
+
+    implicit_zonal_momentum_coefficient      = λˣ = Field{Face, Center, Nothing}(grid)
+    implicit_meridional_momentum_coefficient = λʸ = Field{Center, Face, Nothing}(grid)
+
     top_ocean_heat_flux          = Jᵀ = Field{Center, Center, Nothing}(grid)
     top_salt_flux                = Jˢ = Field{Center, Center, Nothing}(grid)
 
@@ -439,13 +513,15 @@ function hydrostatic_ocean_simulation(grid;
     freshwater_salt_content = ZeroField()
 
     # Construct ocean boundary conditions including surface forcing and bottom drag
-    u_top_bc = build_top_bc(τˣ, additional.u)
-    v_top_bc = build_top_bc(τʸ, additional.v)
+    u_top_bc = build_top_bc(τˣ, λˣ, additional.u)
+    v_top_bc = build_top_bc(τʸ, λʸ, additional.v)
     T_top_bc = build_tracer_top_bc(Jᵀ, Jʷ, freshwater_heat_content, additional.T, :T)
     S_top_bc = build_tracer_top_bc(Jˢ, Jʷ, freshwater_salt_content, additional.S, :S)
 
-    u_bot_bc = FluxBoundaryCondition(u_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
-    v_bot_bc = FluxBoundaryCondition(v_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
+    drag_parameters = (μ = bottom_drag_coefficient, ub = bottom_drag_background_velocity)
+
+    u_bot_bc = bottom_drag_bc(u_quadratic_drag_coefficient, u_quadratic_bottom_drag, drag_parameters, implicit_bottom_drag)
+    v_bot_bc = bottom_drag_bc(v_quadratic_drag_coefficient, v_quadratic_bottom_drag, drag_parameters, implicit_bottom_drag)
 
     default_boundary_conditions = (u = FieldBoundaryConditions(top=u_top_bc, bottom=u_bot_bc, immersed=u_immersed_bc),
                                    v = FieldBoundaryConditions(top=v_top_bc, bottom=v_bot_bc, immersed=v_immersed_bc),
