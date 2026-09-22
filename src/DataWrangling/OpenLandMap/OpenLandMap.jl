@@ -18,7 +18,8 @@ import Oceananigans
 
 download_OpenLandMap_cache::String = ""
 function __init__()
-    return global download_OpenLandMap_cache = DataWrangling.download_cache("OpenLandMap")
+    global download_OpenLandMap_cache = DataWrangling.download_cache("OpenLandMap")
+    return nothing
 end
 
 """
@@ -206,9 +207,6 @@ Oceananigans.Fields.location(::OpenLandMapSoilDBMetadatum) = (Center, Center, Ce
 # Pass an explicit `inpainting = NearestNeighborInpainting(n)` to `Field` to fill them.
 DataWrangling.default_inpainting(::OpenLandMapSoilDBMetadatum) = nothing
 
-DataWrangling.inpainted_metadata_path(metadata::OpenLandMapSoilDBMetadatum) =
-    joinpath(metadata.dir, replace(metadata.filename, ".nc" => "_inpainted.jld2"))
-
 #####
 ##### Regional-window filename (variable + aggregation factor + region)
 #####
@@ -270,6 +268,9 @@ function DataWrangling.retrieve_data(metadata::OpenLandMapSoilDBMetadatum)
     return data
 end
 
+# The 30 m regional window is large and regridded by window.
+DataWrangling.windowed_retrieval(::OpenLandMapSoilDB) = true
+
 """
     read_cog_window(source, bbox, factor = 1)
 
@@ -317,7 +318,8 @@ function cog_window_to_netcdf(sources, nc_path, variable_name, bbox, factor = 1)
                 defVar(ds, "depth", Float64, ("depth",);
                        attrib = ["units" => "m", "long_name" => "depth interval midpoint"])[:] = depth_centers
 
-                defVar(ds, variable_name, Float32, ("lon", "lat", "depth"))
+                chunk = [min(512, length(longitude)), min(512, length(latitude)), Nz]
+                defVar(ds, variable_name, Float32, ("lon", "lat", "depth"); chunksizes = chunk)
             end
 
             ds[variable_name][:, :, k] = layer

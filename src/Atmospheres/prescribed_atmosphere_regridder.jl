@@ -16,11 +16,6 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::
     return ComponentExchanger(state, regridder, correction)
 end
 
-# Note that Field location can also affect fractional index type.
-# Here we assume that we know the location of Fields that will be interpolated.
-fractional_index_type(FT, Topo) = FT
-fractional_index_type(FT, ::Flat) = Nothing
-
 function atmosphere_regridder(atmosphere::PrescribedAtmosphere, exchange_grid)
     atmos_grid = atmosphere.grid
     arch = architecture(exchange_grid)
@@ -46,26 +41,4 @@ function EarthSystemModels.InterfaceComputations.initialize!(exchanger::Componen
     launch!(architecture(grid), grid, kernel_parameters, _compute_fractional_indices!, frac_indices, grid, atmos_grid)
 
     return nothing
-end
-
-@kernel function _compute_fractional_indices!(indices_tuple, exchange_grid, atmos_grid)
-    i, j = @index(Global, NTuple)
-    kᴺ = size(exchange_grid, 3) # index of the top ocean cell
-    X = _node(i, j, kᴺ + 1, exchange_grid, Center(), Center(), Face())
-    if topology(atmos_grid) == (Flat, Flat, Flat)
-        fractional_indices_ij = FractionalIndices(nothing, nothing, nothing)
-    else
-        fractional_indices_ij = FractionalIndices(X, atmos_grid, Center(), Center(), Center())
-    end
-    fi = indices_tuple.i
-    fj = indices_tuple.j
-    @inbounds begin
-        if !isnothing(fi)
-            fi[i, j, 1] = fractional_indices_ij.i
-        end
-
-        if !isnothing(fj)
-            fj[i, j, 1] = fractional_indices_ij.j
-        end
-    end
 end

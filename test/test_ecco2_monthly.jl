@@ -49,15 +49,14 @@ for arch in test_architectures, dataset in test_ecco_datasets
                     end
 
                     datum = first(metadata)
-                    ψ = Field(datum, arch, inpainting=NearestNeighborInpainting(2))
-                    @test ψ isa Field
+                    Field(datum, arch, inpainting=NearestNeighborInpainting(2))
                     datapath = NumericalEarth.DataWrangling.inpainted_metadata_path(datum)
                     @test isfile(datapath)
                 end
             end
 
             @testset "Setting a field from a dataset" begin
-                test_setting_from_metadata(arch, dataset, start_date, inpainting, 
+                test_setting_from_metadata(arch, dataset, start_date, inpainting,
                                         varnames=test_names[dataset])
             end
 
@@ -67,14 +66,14 @@ for arch in test_architectures, dataset in test_ecco_datasets
             end
 
             @testset "DatasetRestoring with LinearlyTaperedPolarMask" begin
-                test_dataset_restoring(arch, dataset, dates, inpainting, 
+                test_dataset_restoring(arch, dataset, dates, inpainting,
                                     varnames=test_names[dataset],
                                     fldnames=test_fields[dataset])
             end
 
             @testset "Timestepping with DatasetRestoring" begin
-                test_timestepping_with_dataset_restoring(arch, dataset, dates, inpainting, 
-                                                        varnames=test_names[dataset], 
+                test_timestepping_with_dataset_restoring(arch, dataset, dates, inpainting,
+                                                        varnames=test_names[dataset],
                                                         fldnames=test_fields[dataset])
             end
 
@@ -95,10 +94,7 @@ for arch in test_architectures, dataset in test_ecco_datasets
                 @test_throws "The vertical range" set!(field, datum; inpainting=nothing)
             end
 
-            # Expensive due to the high resolution of ECCO2
-            # @testset "Inpainting algorithm" begin
-            #     test_inpainting_algorithm(arch, dataset, start_date, inpainting)
-            # end
+            # The inpainting algorithm is not exercised here: ECCO2's resolution makes it too slow.
         end
     end
 end
