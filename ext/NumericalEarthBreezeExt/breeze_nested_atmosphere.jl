@@ -53,7 +53,7 @@ using Breeze:
     materialize_terrain!,
     moisture_prognostic_name
 
-using Breeze.AtmosphereModels: prognostic_field_names
+using Breeze.AtmosphereModels: prognostic_field_names, microphysical_transport_bounds
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
 # saturation-adjustment cloud formation when Breeze's `CloudMicrophysics` extension is loaded,
@@ -137,10 +137,18 @@ end
 # minute. Bounding mirrors Breeze's own moist-convection examples (`ρqᵉ = WENO(order=5, bounds=(0, 1))`).
 # The energy density is unbounded (`ρθ` is not confined to `[0, 1]`). Names are derived from the
 # microphysics so the default tracks whichever moisture/precipitation prognostics it carries.
-function default_nested_scalar_advection(microphysics)
-    bounded = WENO(order = 5, bounds = (0, 1))
-    moist_names = (moisture_prognostic_name(microphysics), prognostic_field_names(microphysics)...)
-    return merge((ρθ = WENO(order = 5),), NamedTuple{moist_names}(map(_ -> bounded, moist_names)))
+function default_nested_scalar_advection(microphysics; FT = Oceananigans.defaults.FloatType)
+    moisture_name = moisture_prognostic_name(microphysics)
+    microphysical_names = prognostic_field_names(microphysics)
+    moisture_advection = NamedTuple{(moisture_name, )}((WENO(FT; order = 5, bounds = (0, 1)), ))
+    microphysical_advection = map(microphysical_names) do name
+        bounds = microphysical_transport_bounds(microphysics, name)
+        # WENO admits a homogeneous NTuple; the physical trait may mix 0 and Inf.
+        typed_bounds = isnothing(bounds) ? nothing : FT.(bounds)
+        WENO(FT; order = 5, bounds = typed_bounds)
+    end
+    return merge((ρθ = WENO(FT; order = 5), ), moisture_advection,
+                 NamedTuple{microphysical_names}(microphysical_advection))
 end
 
 # Blend-zone width in cells from a physical length: a fixed cell count steepens the parent→child
@@ -232,7 +240,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     parent_condensates = default_parent_condensates(parent_atmosphere),
     microphysics = default_nested_microphysics(),
     momentum_advection = WENO(order = 9),
-    scalar_advection = default_nested_scalar_advection(microphysics),
+    scalar_advection = default_nested_scalar_advection(microphysics; FT = eltype(child_grid)),
     coriolis = SphericalCoriolis(),
     damping_rate = 1/5,
     damping_depth = default_lid_depth(child_grid),
