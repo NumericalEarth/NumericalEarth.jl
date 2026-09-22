@@ -72,6 +72,28 @@ $(TYPEDSIGNATURES)
     return ifelse(𝒮c >= 1, zero(FT), -exp(min(logΠ, logΠᵐᵃˣ)))
 end
 
+# Per-cell endpoint evaluation for the interface's plant-stress formulations.
+@inline function EarthSystemModels.effective_saturation(i, j, grid, r::VanGenuchtenRetention, ψ)
+    FT = typeof(ψ)
+    αᵃᵉ = convert(FT, property_value(r.inverse_air_entry_head, i, j))
+    𝓃   = convert(FT, property_value(r.pore_size_uniformity, i, j))
+    return van_genuchten_saturation(αᵃᵉ * ψ, 𝓃)
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Slope `dΠ/d𝒮` of the [`VanGenuchtenRetention`](@ref) pressure head at effective saturation `𝒮` (m).
+"""
+@inline function pressure_head_derivative(i, j, grid, r::VanGenuchtenRetention, 𝒮)
+    FT = typeof(𝒮)
+    α = convert(FT, property_value(r.inverse_air_entry_head, i, j))
+    n = convert(FT, property_value(r.pore_size_uniformity, i, j))
+    m = van_genuchten_m(n)
+    𝒮c = clamp(𝒮, eps(FT), one(FT) - eps(FT))
+    return (𝒮c^(-1/m) - one(FT))^(1/n - one(FT)) * 𝒮c^(-1/m - one(FT)) / (α * n * m)
+end
+
 Base.summary(r::VanGenuchtenRetention) =
     string("VanGenuchtenRetention(αᵃᵉ=", prettysummary(r.inverse_air_entry_head),
            ", 𝓃=", prettysummary(r.pore_size_uniformity), ")")
