@@ -24,10 +24,9 @@ function omip_forcing(arch, sea_ice;
             start_date,
             end_date,
             time_indices_in_memory = backend_size,
-            prefetch = true,
-            tracers)
+            prefetch = true)
 
-    atmosphere = JRA55PrescribedAtmosphere(arch; kw...)
+    atmosphere = JRA55PrescribedAtmosphere(arch; tracers, kw...)
 
     # CCSM3 sea-ice albedo reads live model fields, so the surface
     # temperature must come from whichever layer the atmosphere actually

@@ -867,7 +867,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          biogeochemistry = nothing,
                          atmosphere_tracers = NamedTuple(),
                          biogeochemistry_interface_kwargs = NamedTuple(),
-                         bgc_dir = get(ENV, "DATA", ""),)
+                         bgc_dir = forcing_dir)
 
     cfg = Val(config)
 
