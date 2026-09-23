@@ -291,6 +291,14 @@ function add_omip_diagnostics!(simulation;
                                                             cleanup  = false,
                                                             verbose  = true)
 
+    add_biogeochemistry_diagnostics!(ocean.model.biogeochemistry, simulaiton;
+                                     field_mean_interval,
+                                     surface_averaging_interval,
+                                     field_averaging_interval,
+                                     output_dir,
+                                     filename_prefix,
+                                     file_splitting_interval)
+
     @info "OMIP diagnostics attached:" *
           " surface ($(length(surface_outputs)) fields, every $(prettytime(surface_averaging_interval)))," *
           " 3-D ($(length(field_outputs)) fields, every $(prettytime(field_averaging_interval)))," *
@@ -299,3 +307,5 @@ function add_omip_diagnostics!(simulation;
 
     return nothing
 end
+
+add_biogeochemistry_diagnostics!(simulation, biogeochemistry; kwargs...) = nothing
