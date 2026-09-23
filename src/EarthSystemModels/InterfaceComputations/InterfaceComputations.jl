@@ -63,7 +63,7 @@ using ..EarthSystemModels: EarthSystemModels,
                            surface_layer_height,
                            boundary_layer_height
 
-using ...NumericalEarth: stateindex
+using ...NumericalEarth: NumericalEarth, stateindex
 
 #####
 ##### Functions extended by component models
