@@ -2336,7 +2336,7 @@ function build_ocean(config, grid;
     return ocean
 end
 
-build_biogeochemistry(::Val{nothing}, grid; dir) = nothing, NamedTuple()
+build_biogeochemistry(::Val{nothing}, grid; dir) = nothing, NamedTuple(), NamedTuple()
 
 #####
 ##### Sea Ice builder
