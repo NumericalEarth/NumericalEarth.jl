@@ -74,31 +74,29 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
                                              pˢᵗ, constants, equilibrium_moisture)
     i, j, k = @index(Global, NTuple)
     @inbounds begin
-        Tᵢ   = T[i, j, k]
-        qᵛᵢ  = qᵛ[i, j, k]
-        qᶜˡᵢ = qᶜˡ[i, j, k]
-        qᶜⁱᵢ = qᶜⁱ[i, j, k]
-        qˡ   = qᶜˡᵢ + qʳ[i, j, k]
-        qⁱ   = qᶜⁱᵢ + qˢ[i, j, k]
-        pᵢ   = p[i, j, k]
+        Tᵢ  = T[i, j, k]
+        qᵛᵢ = qᵛ[i, j, k]
+        qˡᵢ = qᶜˡ[i, j, k] + qʳ[i, j, k]
+        qⁱᵢ = qᶜⁱ[i, j, k] + qˢ[i, j, k]
+        pᵢ  = p[i, j, k]
 
         Rᵈ = dry_air_gas_constant(constants)
         Rᵛ = vapor_gas_constant(constants)
 
         # Density and dry density carry every species: all condensate is mass that is not dry gas.
-        ρ  = air_density(Tᵢ, qᵛᵢ, qˡ, qⁱ, pᵢ, Rᵈ, Rᵛ)
-        qᵗ = qᵛᵢ + qˡ + qⁱ
+        ρ  = air_density(Tᵢ, qᵛᵢ, qˡᵢ, qⁱᵢ, pᵢ, Rᵈ, Rᵛ)
+        qᵗ = qᵛᵢ + qˡᵢ + qⁱᵢ
 
         # The child is handed precipitation-free air: it makes its own precipitation, at its own
         # resolution and dynamics, so the parent's `qʳ`/`qˢ` cross neither channel. The moisture slot is
         # `moisture_prognostic_name` at face value — `qᵉ = qᵗ − qʳ − qˢ` for an equilibrium scheme, true
         # vapor otherwise — and θˡⁱ gives up latent heat for exactly the condensate that slot carries, so
         # the child recovers the parent's temperature from the pair it was actually given.
-        qᶜˡᶜ = ifelse(equilibrium_moisture, qᶜˡᵢ, zero(qᶜˡᵢ))
-        qᶜⁱᶜ = ifelse(equilibrium_moisture, qᶜⁱᵢ, zero(qᶜⁱᵢ))
-        qᵛᵉ  = qᵛᵢ + qᶜˡᶜ + qᶜⁱᶜ
+        qᶜˡᵢ = ifelse(equilibrium_moisture, qᶜˡ[i, j, k], zero(Tᵢ))
+        qᶜⁱᵢ = ifelse(equilibrium_moisture, qᶜⁱ[i, j, k], zero(Tᵢ))
+        qᵛᵉ  = qᵛᵢ + qᶜˡᵢ + qᶜⁱᵢ
 
-        θᵢ = liquid_ice_potential_temperature(Tᵢ, qᵛᵢ, qᶜˡᶜ, qᶜⁱᶜ, pᵢ, pˢᵗ, constants)
+        θᵢ = liquid_ice_potential_temperature(Tᵢ, qᵛᵢ, qᶜˡᵢ, qᶜⁱᵢ, pᵢ, pˢᵗ, constants)
 
         ρᵈ[i, j, k]   = ρ * (1 - qᵗ)
         ρθ[i, j, k]   = ρᵈ[i, j, k] * θᵢ

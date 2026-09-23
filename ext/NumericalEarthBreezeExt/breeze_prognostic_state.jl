@@ -33,7 +33,7 @@ using Breeze.Thermodynamics: MoistureMassFractions, LiquidIcePotentialTemperatur
 # `Rᵐ = qᵈRᵈ + qᵛRᵛ` and the mixture heat capacity `cᵖᵐ = qᵈcᵖᵈ + qᵛcᵖᵛ + qˡcˡ + qⁱcⁱ` (both through
 # `qᵈ = 1 − qᵛ − qˡ − qⁱ` as well), whose ratio is the Exner exponent in `Π = (p/pˢᵗ)^(Rᵐ/cᵖᵐ)`; and `cᵖᵐ`
 # divides the latent term again in `θˡⁱ = (T − (ℒˡqˡ + ℒⁱqⁱ)/cᵖᵐ)/Π`. `pˢᵗ` is the caller's
-# `standard_pressure`, never hardcoded.
+# `standard_pressure`.
 @inline function liquid_ice_potential_temperature(T, qᵛ, qˡ, qⁱ, p, pˢᵗ, constants)
     FT = typeof(T)
     q  = MoistureMassFractions(convert(FT, qᵛ), convert(FT, qˡ), convert(FT, qⁱ))
