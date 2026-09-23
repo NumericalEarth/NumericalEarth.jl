@@ -291,7 +291,7 @@ function add_omip_diagnostics!(simulation;
                                                             cleanup  = false,
                                                             verbose  = true)
 
-    add_biogeochemistry_diagnostics!(ocean.model.biogeochemistry, simulaiton;
+    add_biogeochemistry_diagnostics!(ocean.model.biogeochemistry, simulation;
                                      field_mean_interval,
                                      surface_averaging_interval,
                                      field_averaging_interval,
