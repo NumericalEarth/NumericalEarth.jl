@@ -756,6 +756,53 @@ u_\star = \sqrt{C_D | Δ \bm{u} | \, U} \\
 q_\star = \frac{C_q}{\sqrt{C_D}} \, Δ q \, \sqrt{\frac{U}{| Δ \bm{u} |}} \\
 ```
 
+### Surface-layer diagnostics
+
+The same profiles run in the other direction. Once the solve has converged, ``u_\star``,
+``\theta_\star`` and ``q_\star`` fix the state at every height inside the surface layer, so the
+observation-height diagnostics -- the 10 m wind, and the 2 m temperature and specific humidity --
+are one non-iterative evaluation away,
+
+```math
+\varphi(z) = \varphi_s + \frac{\varphi_\star}{\kappa}
+    \left [ \log \left ( \frac{z - d}{\ell_\varphi} \right )
+    - \psi_\varphi \left ( \frac{z - d}{L_\star} \right )
+    + \psi_\varphi \left ( \frac{\ell_\varphi}{L_\star} \right ) \right ] \, ,
+```
+
+where ``d`` is the zero-plane displacement. `surface_layer_diagnostics` returns these as lazy
+`KernelFunctionOperation`s over the stored interface state, so they compose with other operations
+and are re-evaluated wherever they are computed -- inside an output writer, for instance:
+
+```@example interface_fluxes
+diagnostics = surface_layer_diagnostics(stability_model,
+                                        stability_model.interfaces.atmosphere_ocean_interface)
+
+u₁₀ = compute!(Field(diagnostics.u))
+T₂ = compute!(Field(diagnostics.T))
+
+extrema(interior(T₂, :, :, 1) .- Tᵃᵗ)
+```
+
+The 2 m temperature has moved toward the ``20 \, \mathrm{{}^∘ C}`` sea surface everywhere: up to
+``18 \, \mathrm{K}`` below the 10 m air in the warmest, most stable columns, and ``5 \, \mathrm{K}``
+above it in the coldest.
+
+Three conventions are worth stating:
+
+- **The temperature is in situ.** ``\theta_\star`` scales a potential temperature referenced to
+  ``z = 0``, so the diagnostic subtracts the adiabatic increment ``g z / c_p^m`` at the geometric
+  height ``z``. That is ``0.02 \, \mathrm{K}`` at 2 m -- small, but easy to get backwards.
+- **Subgrid velocity enhancements stay in the wind.** With `subgrid_velocities` active, ``u_\star``
+  was solved against ``U^2 = Δ u^2 + Δ v^2 + U_{sg}^2``, and the diagnostic does not undo that, so
+  ``u`` and ``v`` at ``z = h`` exceed the resolved wind. ``T`` and ``q`` are unaffected: their scales
+  are built from the resolved ``Δ \theta`` and ``Δ q``.
+- **The direction comes from the stress**, ``- \rho \bm{\tau} / | \rho \bm{\tau} |``, and over the
+  ocean the interface velocity is the surface current rather than zero.
+
+A height inside the roughness sublayer, ``z - d \le \ell_\varphi``, has no similarity profile and
+returns `NaN`; a height at or below ``d`` is an error.
+
 ## Sea ice-ocean fluxes
 
 When sea ice is present, the exchange of heat, salt, and momentum between the ocean and ice is critical for both
