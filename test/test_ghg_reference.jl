@@ -30,7 +30,7 @@ for arch in test_architectures
 
         field = Field(metadatum, arch)
         @test location(field) == (Center, Face, Nothing)
-        @test φnodes(field.grid, Face()) ≈ φ
+        @test Array(φnodes(field.grid, Face())) ≈ φ
         @test Array(interior(field))[1, :, 1] ≈ Float32.(401 .+ 10 .* sind.(φ))
 
         uncertainty = Field(Metadatum(:carbon_dioxide_uncertainty; dataset, date=dates[2], dir), arch)
