@@ -866,7 +866,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                          repeat_year_forcing = true,
                          biogeochemistry = nothing,
                          atmosphere_tracers = NamedTuple(),
-                         biogeochemistry_interface_kwargs = NamedTuple())
+                         biogeochemistry_interface_kwargs = NamedTuple(),
+                         bgc_dir = get(ENV, "DATA", ""),)
 
     cfg = Val(config)
 
@@ -1010,7 +1011,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                         normalize_salinity,
                         additional_tracer_closure = filter(!isnothing, (river_κ, ice_melt_κ_closure, under_ice_ν_closure)),
                         start_date, end_date,
-                        biogeochemistry)
+                        biogeochemistry,
+                        bgc_dir)
     log_setup_stage(arch, "ocean", setup_t₀)
 
     snow_thermodynamics = with_snow ?
@@ -2238,7 +2240,8 @@ function build_ocean(config, grid;
                      additional_tracer_closure = nothing,
                      forcing = NamedTuple(),
                      start_date, end_date,
-                     biogeochemistry = nothing)
+                     biogeochemistry = nothing,
+                     bgc_dir = nothing)
 
     κ_skew      = resolve_nemo_coefficient(κ_skew,      nemo_eddy_coefficients, :skew_coefficient)
     κ_symmetric = resolve_nemo_coefficient(κ_symmetric, nemo_eddy_coefficients, :symmetric_coefficient)
@@ -2294,7 +2297,7 @@ function build_ocean(config, grid;
                                                             tracer_boundary_scheme)
     tracer_advection = (T = temperature_salinity_advection, S = temperature_salinity_advection)
 
-    biogeochemistry, bgc_additional_forcing, bgc_additional_surface_fluxes = build_biogeochemistry(Val(biogeochemistry), grid)
+    biogeochemistry, bgc_additional_forcing, bgc_additional_surface_fluxes = build_biogeochemistry(Val(biogeochemistry), grid; dir = bgc_dir)
 
     forcing = merge(forcing, bgc_additional_forcing)
     additional_surface_fluxes = merge(additional_surface_fluxes, bgc_additional_surface_fluxes)
