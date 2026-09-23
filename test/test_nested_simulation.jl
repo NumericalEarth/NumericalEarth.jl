@@ -462,13 +462,13 @@ end
 
     bcs = parent_boundary_conditions(child_grid;
               variables = (ρu = parent.velocities.u, ρv = parent.velocities.v,
-                           ρ = ρ_fts, ρe = ρθ_fts, ρqᵉ = ρqᵉ_fts),
+                           ρᵈ = ρ_fts, ρE = ρθ_fts, ρqᵉ = ρqᵉ_fts),
               sides     = (:west, :east, :south, :north),
-              bc_types  = (ρ = ValueBoundaryCondition, ρe = ValueBoundaryCondition, ρqᵉ = ValueBoundaryCondition))
+              bc_types  = (ρᵈ = ValueBoundaryCondition, ρE = ValueBoundaryCondition, ρqᵉ = ValueBoundaryCondition))
 
     # No ESM coupling here, so override the coupling bottom-flux BCs with Dirichlet placeholders.
-    bcs = merge(bcs, (; ρe  = FieldBoundaryConditions(west = bcs.ρe.west,  east = bcs.ρe.east,
-                                                      south = bcs.ρe.south, north = bcs.ρe.north,
+    bcs = merge(bcs, (; ρE  = FieldBoundaryConditions(west = bcs.ρE.west,  east = bcs.ρE.east,
+                                                      south = bcs.ρE.south, north = bcs.ρE.north,
                                                       bottom = ValueBoundaryCondition(ρ̄ * θ̄)),
                         ρqᵉ = FieldBoundaryConditions(west = bcs.ρqᵉ.west,  east = bcs.ρqᵉ.east,
                                                       south = bcs.ρqᵉ.south, north = bcs.ρqᵉ.north,
@@ -476,7 +476,7 @@ end
 
     # #220: `atmosphere_simulation` returns a `Simulation`; its `.model` is the child model.
     child_sim = atmosphere_simulation(child_grid; boundary_conditions = bcs,
-                                      dynamics = CompressibleDynamics(surface_pressure = 1e5))
+                                      dynamics = CompressibleDynamics(base_pressure = 1e5))
     @test child_sim isa Simulation
     child = child_sim.model
     @test child isa Breeze.AtmosphereModel
@@ -501,7 +501,7 @@ end
     land_grid = RectilinearGrid(arch; size = (8, 8), x = (0, 8000), y = (0, 8000),
                                 halo = (atmos_grid.Hx, atmos_grid.Hy), topology = (Periodic, Periodic, Flat))
 
-    atmos = atmosphere_simulation(atmos_grid; dynamics = CompressibleDynamics(surface_pressure = 1e5))
+    atmos = atmosphere_simulation(atmos_grid; dynamics = CompressibleDynamics(base_pressure = 1e5))
     set!(atmos.model; ρ = 1.2, θˡⁱ = 288.0, qᵗ = 0.0)
 
     land = SlabLand(land_grid)
