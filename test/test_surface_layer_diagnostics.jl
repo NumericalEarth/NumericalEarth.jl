@@ -142,9 +142,9 @@ end
         near_surface = surface_layer_diagnostics(model; temperature_height = 2,
                                                         specific_humidity_height = 2)
 
-        # The column is unstable over a dry surface, so the air cools and moistens upward.
-        @test value(near_surface.T) > value(aloft.T)
-        @test value(near_surface.q) < value(aloft.q)
+        # The column is unstable over a dry surface, so the air aloft is cooler and more moist.
+        @test value(aloft.T) < value(near_surface.T)
+        @test value(aloft.q) > value(near_surface.q)
 
         # The defaults are the WMO observation heights.
         @test value(surface_layer_diagnostics(model).T) == value(near_surface.T)
