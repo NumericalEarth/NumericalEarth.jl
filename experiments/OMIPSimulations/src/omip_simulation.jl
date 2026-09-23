@@ -164,11 +164,13 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
                              sea_ice_ocean_heat_transfer_coefficient = 0.0057,
                              sea_ice_momentum_roughness_length = 5e-4,
                              ice_freshwater_delivery = ConservativeIceFreshwater(),
-                             ice_meltwater_enthalpy = ZeroHeatContentMeltwater())
+                             ice_meltwater_enthalpy = ZeroHeatContentMeltwater(),
+                             biogeochemistry_interface_kwargs)
     FT = eltype(ocean.model.grid)
     if flux_configuration == :default
         interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice; radiation, land,
-                                         ice_freshwater_delivery, ice_meltwater_enthalpy)
+                                         ice_freshwater_delivery, ice_meltwater_enthalpy,
+                                         biogeochemistry_interface_kwargs)
         return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, land, interfaces)
     end
 
@@ -863,7 +865,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                          file_splitting_interval = 360days,
                          repeat_year_forcing = true,
                          biogeochemistry = nothing,
-                         atmosphere_tracers = NamedTuple())
+                         atmosphere_tracers = NamedTuple(),
+                         biogeochemistry_interface_kwargs = NamedTuple())
 
     cfg = Val(config)
 
@@ -1047,7 +1050,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                                   sea_ice_flux_configuration,
                                   velocity_formulation, sea_ice_ocean_heat_transfer_coefficient,
                                   sea_ice_momentum_roughness_length,
-                                  ice_freshwater_delivery, ice_meltwater_enthalpy)
+                                  ice_freshwater_delivery, ice_meltwater_enthalpy,
+                                  biogeochemistry_interface_kwargs)
     log_setup_stage(arch, "coupled model", setup_t₀)
 
     simulation = Simulation(coupled; Δt, stop_time)
