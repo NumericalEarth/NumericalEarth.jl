@@ -9,10 +9,10 @@ using OceanBioME
                             halo = (7, 7, 7),
                             z = (-5000, 0))
 
-        bottom_height = regrid_bathymetry(grid;
-                                          minimum_depth = 10,
-                                          interpolation_passes = 5,
-                                          major_basins = 1)
+        bottom_height = synthetic_bottom_height(grid;
+                                                minimum_depth = 10,
+                                                interpolation_passes = 5,
+                                                major_basins = 1)
 
         grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
         free_surface = SplitExplicitFreeSurface(grid; substeps=20)
@@ -30,15 +30,13 @@ using OceanBioME
         pCO₂ .= on_architecture(arch, reshape(250 .+ 200 .* [1:2920;] ./ 2920, 1, 1, 1, 2920))
 
         river_alkalinity = Field{Center, Center, Nothing}(grid)
-        set!(river_alkalinity, (λ, φ) -> 1000 * (sqrt((λ - 310)^2 + (φ - 1)^2) < 10)) # set the amazon mouth to high concentration
+        set!(river_alkalinity, (λ, φ) -> 1000 * (sqrt((λ - 290)^2 + φ^2) < 10)) # a river mouth just west of the synthetic continent
 
         ocean = ocean_simulation(grid; free_surface, biogeochemistry, freshwater_tracer_content = (; Alk = river_alkalinity))
         sea_ice  = sea_ice_simulation(grid, ocean; advection=nothing)
-        atmosphere = JRA55PrescribedAtmosphere(arch; 
-                                               time_indices_in_memory=2, 
-                                               tracers = (; pCO₂))
-        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=2)
-        land = JRA55PrescribedLand(grid, time_indices_in_memory=2)
+        atmosphere = synthetic_prescribed_atmosphere(arch; tracers = (; pCO₂))
+        radiation = synthetic_prescribed_radiation(arch)
+        land = synthetic_prescribed_land(arch)
 
         coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, land)
 
