@@ -72,7 +72,7 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
     backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid, inpainting, cache_inpainted_data)
 
     loc = LX, LY, LZ = location(metadata)
-    boundary_conditions = FieldBoundaryConditions(grid, instantiate.(loc))
+    boundary_conditions = dataset_boundary_conditions(grid, loc)
 
     fts = FieldTimeSeries{LX, LY, LZ}(grid, times; backend, time_indexing, boundary_conditions)
     set!(fts)

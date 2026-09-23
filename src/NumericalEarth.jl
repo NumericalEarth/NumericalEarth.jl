@@ -129,6 +129,7 @@ export
     ESAWorldCover, WorldCoverV100, WorldCoverV200,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     AVISODaily, AVISOMonthly, AVISOMetadatum,
+    NOAAMarineBoundaryLayer,
     RepeatYearJRA55, MultiYearJRA55,
     ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel,
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
