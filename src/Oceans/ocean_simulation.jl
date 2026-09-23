@@ -562,7 +562,7 @@ function hydrostatic_ocean_simulation(grid;
     buoyancy = Oceananigans.BuoyancyFormulations.BuoyancyForce(grid, buoyancy; materialize_gradients = materialize_buoyancy_gradients)
 
     if tracer_advection isa NamedTuple
-        tracer_advection = with_tracers(tracers, tracer_advection, default_tracer_advection())
+        tracer_advection = with_tracers(tracers, tracer_advection, (names, initial_tuple) -> default_tracer_advection())
     else
         tracer_advection = NamedTuple(name => tracer_advection for name in tracers)
     end
