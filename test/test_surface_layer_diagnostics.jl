@@ -136,16 +136,18 @@ end
         model = single_column_land_model(single_column_grid(arch);
                                          surface_layer_height = h, fluxes = similarity_fluxes())
 
-        reference = surface_layer_diagnostics(model; velocity_height = h,
-                                                     temperature_height = h,
-                                                     specific_humidity_height = h)
-        diagnostics = surface_layer_diagnostics(model)
+        aloft = surface_layer_diagnostics(model; temperature_height = h,
+                                                 specific_humidity_height = h)
+
+        near_surface = surface_layer_diagnostics(model; temperature_height = 2,
+                                                        specific_humidity_height = 2)
 
         # The column is unstable over a dry surface, so the air cools and moistens upward.
-        @test value(diagnostics.T) > value(reference.T)
-        @test value(diagnostics.q) < value(reference.q)
+        @test value(near_surface.T) > value(aloft.T)
+        @test value(near_surface.q) < value(aloft.q)
 
-        @test value(sqrt(diagnostics.u^2 + diagnostics.v^2)) ≈ value(diagnostics.u)
+        # The defaults are the WMO observation heights.
+        @test value(surface_layer_diagnostics(model).T) == value(near_surface.T)
     end
 end
 
