@@ -129,6 +129,7 @@ component-superscript rule above.
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
 | ``T`` | `temperature` | ground temperature | Prognostic land-column temperature (K) |
+| ``T^{\mathrm{la}}`` | `land_surface_temperature` | land surface temperature | Observed skin/radiometric temperature (e.g. ECOSTRESS); a supervision target for the surface `Tˡᵃ` (K) |
 | ``M`` | `water_storage` | land water | Prognostic land water mass per area (kg m⁻²) |
 | ``M^{+}`` | `maximum_water_storage` | maximum land water | Bucket capacity; soil-science "field capacity" (kg m⁻²) |
 | ``𝒮`` | `saturation` | surface saturation | Continuous land surface saturation ``\mathrm{clamp}(M/M⁺, 0, 1)``; the interface humidity models derive their availability ``β`` from it (–) |

@@ -285,6 +285,7 @@ using .DataWrangling.SoilGrids
 using .DataWrangling.ASTERGED
 using .DataWrangling.CopernicusDEM
 using .DataWrangling.CopernicusLandAlbedo
+using .DataWrangling.ECOSTRESS
 using .DataWrangling.OpenLandMap
 using .DataWrangling.GloBFP3D
 using .DataWrangling.GHSL

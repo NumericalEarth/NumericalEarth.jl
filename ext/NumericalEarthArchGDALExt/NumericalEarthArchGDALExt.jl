@@ -4,6 +4,7 @@ using ArchGDAL: ArchGDAL
 using GDAL: OGREnvelope, ogr_l_getextent, vsireaddirrecursive
 using NCDatasets: NCDataset, defDim, defVar
 using Downloads: Downloads
+using Dates: Dates, Day, Second
 using NetworkOptions: NetworkOptions
 using NumericalEarth: NumericalEarth
 
@@ -26,11 +27,14 @@ using NumericalEarth.DataWrangling.GHSL: GHSBuiltS, GHSLMetadatum, native_resolu
                                          ghsl_tile_url, ghsl_tile_tif_name, ghsl_tiles_in_bbox,
                                          ghsl_regional_raster, built_surface_to_fraction,
                                          mask_building_height
-                                         built_surface_to_fraction, mask_building_height
 using NumericalEarth.DataWrangling.WorldCover: ESAWorldCoverMetadatum, version_year, version_string,
                                                worldcover_window, aggregate_landcover,
                                                class_fraction_variable_name,
                                                ESA_WORLDCOVER_NATIVE_STEP
+
+using NumericalEarth.DataWrangling.ECOSTRESS: ECOSTRESS, ecostress_lst,
+                                              ecostress_cmr_granules, earthdata_download,
+                                              ECOSTRESS_RESOLUTION
 
 include("gdal_utils.jl")
 include("ibcao.jl")
@@ -39,5 +43,6 @@ include("globfp3d.jl")
 include("ghsl.jl")
 include("openlandmap.jl")
 include("worldcover.jl")
+include("ecostress.jl")
 
 end # module NumericalEarthArchGDALExt
