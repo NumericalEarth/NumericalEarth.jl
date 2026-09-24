@@ -570,14 +570,14 @@ end
 
     approximate_state     = (; fluxes = (; u★ = 0.1, θ★ = 0.0, q★ = 0.0), u = 0.0, v = 0.0)
     atmosphere_state      = (; u = U, v = 0.0, p = 101325.0, h_bℓ = 512.0)
-    interface_properties  = (; velocity_formulation = RelativeVelocity())
+    interface_formulation = (; velocity_difference = RelativeVelocity())
     atmosphere_properties = (; thermodynamics_parameters = AtmosphereThermodynamicsParameters(Float64),
                                gravitational_acceleration = 9.81)
 
     solved_friction_velocity(fluxes) =
         iterate_interface_fluxes(fluxes, 290.0, 0.01, -2.0, 0.001, Δh,
                                  approximate_state, atmosphere_state,
-                                 interface_properties, atmosphere_properties)[1]
+                                 interface_formulation, atmosphere_properties)[1]
 
     @test solved_friction_velocity(similarity_fluxes(4.0)) ≈ 0.4 / log((Δh - 4) / ℓ) * U
 end

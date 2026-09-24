@@ -5,11 +5,26 @@ using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 ##### Interface properties
 #####
 
-struct InterfaceProperties{Q, T, V}
-    specific_humidity_formulation :: Q
-    temperature_formulation :: T
-    velocity_formulation :: V
+"""
+    InterfaceFormulation{F, Q, T, V}
+
+The physics of one atmosphere interface (air–sea, air–ice, or air–land): the turbulent-flux
+closure (e.g. `SimilarityTheoryFluxes`), and the formulations for the interface specific
+humidity, the interface temperature, and the atmosphere–surface velocity difference.
+"""
+struct InterfaceFormulation{F, Q, T, V}
+    turbulent_fluxes    :: F
+    specific_humidity   :: Q
+    temperature         :: T
+    velocity_difference :: V
 end
+
+Adapt.@adapt_structure InterfaceFormulation
+
+# Collapse Field-valued roughness lengths and displacement to the values at cell `(i, j)`.
+@inline local_interface_formulation(formulation::InterfaceFormulation, i, j) =
+    InterfaceFormulation(local_flux_formulation(formulation.turbulent_fluxes, i, j),
+                         formulation.specific_humidity, formulation.temperature, formulation.velocity_difference)
 
 #####
 ##### Interface specific humidity formulations
@@ -427,7 +442,7 @@ assemble_interior_fields(state, temperature_formulation::IDST) = state
 # Tₛⁿ⁺¹ = = (Tˢⁱ - δ / κ * (Jᵃ - 4 α Tₛⁿ⁴)) / (1 + 4 δ σ ϵ Tₛⁿ³ / ρ c κ)
 #
 # corresponding to a linearization of the outgoing longwave radiation term.
-@inline function flux_balance_temperature(st::SkinTemperature{<:DiffusiveFlux}, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+@inline function flux_balance_temperature(st::SkinTemperature{<:DiffusiveFlux}, Ψₛ, interface_formulation, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     FT = typeof(Ψₛ.temperature)
     F  = st.internal_flux
     κ  = convert(FT, internal_diffusivity(F.κ, Ψᵢ))
@@ -461,7 +476,7 @@ end
 # dominated). We linearize: Qa(Tₛ) ≈ Qa(Tₛ⁻) + β (Tₛ − Tₛ⁻) with β = 4σεTₛ⁻³,
 # yielding the Newton-like semi-implicit update:
 #   Tₛ = [Tb + β R Tₛ⁻ - Ωc R Tᵃᵗ - Qa R] / [1 + β R - Ωc R]
-@inline function conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+@inline function conductive_flux_balance_temperature(st, R, Ψₛ, interface_formulation, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     hᵢ = Ψᵢ.hi
     hc = Ψᵢ.hc
 
@@ -505,18 +520,18 @@ end
 
 # Bare ice: R = hᵢ / kᵢ
 @inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.ConductiveFlux},
-                                          Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+                                          Ψₛ, interface_formulation, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     k  = st.internal_flux.conductivity
     R  = Ψᵢ.hi / k
-    return conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+    return conductive_flux_balance_temperature(st, R, Ψₛ, interface_formulation, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
 end
 
 # Snow + ice: R = hₛ / kₛ + hᵢ / kᵢ
 @inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.SeaIceThermodynamics.IceSnowConductiveFlux},
-                                          Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+                                          Ψₛ, interface_formulation, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     F  = st.internal_flux
     R  = Ψᵢ.hs / F.snow_conductivity + Ψᵢ.hi / F.ice_conductivity
-    return conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+    return conductive_flux_balance_temperature(st, R, Ψₛ, interface_formulation, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
 end
 
 @inline function compute_interface_temperature(st::SkinTemperature,
@@ -524,7 +539,7 @@ end
                                                atmosphere_state,
                                                interior_state,
                                                radiation_state,
-                                               interface_properties,
+                                               interface_formulation,
                                                atmosphere_properties,
                                                interior_properties)
 
@@ -562,7 +577,7 @@ end
 
     Tₛ = flux_balance_temperature(st,
                                   interface_state,
-                                  interface_properties,
+                                  interface_formulation,
                                   𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd,
                                   interior_state,
                                   interior_properties,

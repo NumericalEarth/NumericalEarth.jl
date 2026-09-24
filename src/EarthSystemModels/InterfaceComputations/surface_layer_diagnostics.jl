@@ -128,7 +128,7 @@ function surface_layer_diagnostics(model, interface = model.interfaces.atmospher
     isnothing(interface) &&
         throw(ArgumentError("surface_layer_diagnostics requires an atmosphere interface, found nothing"))
 
-    flux_formulation = interface.flux_formulation
+    flux_formulation = interface.formulation.turbulent_fluxes
 
     flux_formulation isa SimilarityTheoryFluxes ||
         throw(ArgumentError("surface_layer_diagnostics requires SimilarityTheoryFluxes, found $(summary(flux_formulation))"))
@@ -154,7 +154,7 @@ function surface_layer_diagnostics(model, interface = model.interfaces.atmospher
 
     # The stress is built from the velocity difference the solve saw, so the profile is
     # relative to the same interface velocity.
-    surface_velocities = if over_ocean && interface.properties.velocity_formulation isa RelativeVelocity
+    surface_velocities = if over_ocean && interface.formulation.velocity_difference isa RelativeVelocity
         ocean_state = interfaces.exchanger.ocean.state
         (u = ocean_state.u, v = ocean_state.v)
     else

@@ -176,8 +176,7 @@ end
             Tᵒᶜ = ocean.model.tracers.T[1, 1, 1] + celsius_to_kelvin
             Sᵒᶜ = ocean.model.tracers.S[1, 1, 1]
 
-            interface_properties = interfaces.atmosphere_ocean_interface.properties
-            q_formulation = interface_properties.specific_humidity_formulation
+            q_formulation = interfaces.atmosphere_ocean_interface.formulation.specific_humidity
             qᵒᶜ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tᵒᶜ, Sᵒᶜ)
             g = ocean.model.buoyancy.formulation.gravitational_acceleration
 

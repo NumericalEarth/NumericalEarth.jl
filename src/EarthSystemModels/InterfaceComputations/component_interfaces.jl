@@ -19,12 +19,11 @@ using ..EarthSystemModels: reference_density,
 ##### Container for organizing information related to fluxes
 #####
 
-mutable struct AtmosphereInterface{J, F, ST, SQ, P}
+mutable struct AtmosphereInterface{J, ST, SQ, F}
     fluxes :: J
-    flux_formulation :: F
     temperature :: ST
     specific_humidity :: SQ
-    properties :: P
+    formulation :: F
 end
 
 """
@@ -233,15 +232,15 @@ function atmosphere_ocean_interface(grid,
 
     ao_fluxes = AtmosphereSurfaceFluxes(grid)
 
-    ao_properties = InterfaceProperties(specific_humidity_formulation,
-                                        temperature_formulation,
-                                        velocity_formulation)
+    formulation = InterfaceFormulation(ao_flux_formulation,
+                                       specific_humidity_formulation,
+                                       temperature_formulation,
+                                       velocity_formulation)
 
     interface_temperature = Field{Center, Center, Nothing}(grid)
     interface_specific_humidity = Field{Center, Center, Nothing}(grid)
 
-    return AtmosphereInterface(ao_fluxes, ao_flux_formulation, interface_temperature,
-                               interface_specific_humidity, ao_properties)
+    return AtmosphereInterface(ao_fluxes, interface_temperature, interface_specific_humidity, formulation)
 end
 
 #####
@@ -264,9 +263,10 @@ function atmosphere_sea_ice_interface(grid,
     phase = AtmosphericThermodynamics.Ice()
     specific_humidity_formulation = ImpureSaturationSpecificHumidity(phase)
 
-    properties = InterfaceProperties(specific_humidity_formulation,
-                                     temperature_formulation,
-                                     velocity_formulation)
+    formulation = InterfaceFormulation(ai_flux_formulation,
+                                       specific_humidity_formulation,
+                                       temperature_formulation,
+                                       velocity_formulation)
 
     snow_thermo = sea_ice.model.snow_thermodynamics
     interface_temperature = if isnothing(snow_thermo)
@@ -277,8 +277,7 @@ function atmosphere_sea_ice_interface(grid,
 
     interface_specific_humidity = Field{Center, Center, Nothing}(grid)
 
-    return AtmosphereInterface(fluxes, ai_flux_formulation, interface_temperature,
-                               interface_specific_humidity, properties)
+    return AtmosphereInterface(fluxes, interface_temperature, interface_specific_humidity, formulation)
 end
 
 #####
@@ -463,7 +462,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                     sea_ice    = net_fluxes(sea_ice),
                     atmosphere = net_fluxes(atmosphere))
 
-    land_names = isnothing(al_interface) ? () : land_state_names(al_interface.properties)
+    land_names = isnothing(al_interface) ? () : land_state_names(al_interface.formulation)
 
     exchanger = StateExchanger(exchange_grid, radiation, atmosphere, land, ocean, sea_ice;
                                atmosphere_correction = exchanger_correction,
@@ -477,7 +476,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     zᵃᵗ = surface_layer_height(atmosphere, exchange_grid)
 
     for interface in (ao_interface, ai_interface, al_interface)
-        isnothing(interface) || validate_zero_plane_displacement(interface.flux_formulation, zᵃᵗ)
+        isnothing(interface) || validate_zero_plane_displacement(interface.formulation.turbulent_fluxes, zᵃᵗ)
     end
 
     properties = (; gravitational_acceleration, surface_layer_height = zᵃᵗ)

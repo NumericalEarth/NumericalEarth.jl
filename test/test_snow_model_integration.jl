@@ -10,7 +10,6 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     ComponentExchanger,
     ComponentInterfaces,
     SkinTemperature,
-    InterfaceProperties,
     conductive_flux_balance_temperature
 using NumericalEarth.SeaIces: default_snow_thermodynamics
 

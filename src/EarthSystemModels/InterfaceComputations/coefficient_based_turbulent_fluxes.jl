@@ -340,10 +340,10 @@ end
                                           Tₛ, qₛ, Δθ, Δq, Δh,
                                           approximate_interface_state,
                                           atmosphere_state,
-                                          interface_properties,
+                                          interface_formulation,
                                           atmosphere_properties)
 
-    Δu, Δv = velocity_difference(interface_properties.velocity_formulation,
+    Δu, Δv = velocity_difference(interface_formulation.velocity_difference,
                                  atmosphere_state,
                                  approximate_interface_state)
 
