@@ -83,13 +83,13 @@ value(operation) = column(compute!(Field(operation)))
 
         approximate_state     = (; fluxes = (; u★, θ★ = zero(FT), q★ = zero(FT)), u = zero(FT), v = zero(FT))
         atmosphere_state      = (; u = FT(5), v = zero(FT), p = FT(101325), h_bℓ = FT(512))
-        interface_properties  = (; velocity_formulation = RelativeVelocity())
+        interface_formulation = (; velocity_difference = RelativeVelocity())
         atmosphere_properties = (; thermodynamics_parameters = AtmosphereThermodynamicsParameters(FT),
                                    gravitational_acceleration = FT(9.81))
 
         argument_types = (typeof(fluxes), FT, FT, FT, FT, FT,
                           typeof(approximate_state), typeof(atmosphere_state),
-                          typeof(interface_properties), typeof(atmosphere_properties))
+                          typeof(interface_formulation), typeof(atmosphere_properties))
 
         @test Base.return_types(iterate_interface_fluxes, argument_types) == [Tuple{FT, FT, FT}]
     end
