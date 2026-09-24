@@ -79,12 +79,10 @@ using Thermodynamics
         NumericalEarth.Lands.time_step!(land.energy, land, 1)
         @test only(Array(interior(land.temperature))) > 10
 
-        # The atmosphere-facing land state exposes skin temperature and saturation;
-        # roughness lengths belong to the flux closure, not the land.
-        ex = NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(land, land.grid)
-        @test hasproperty(ex.state, :T)
-        @test hasproperty(ex.state, :𝒮)
-        @test !hasproperty(ex.state, :momentum_roughness_length)
+        # The land publishes the state the interface requests.
+        ex = NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(land, land.grid; state_names = (:T, :𝒮))
+        @test keys(ex.state) == (:T, :𝒮)
+        @test ex.state.T === land.temperature
     end
 end
 

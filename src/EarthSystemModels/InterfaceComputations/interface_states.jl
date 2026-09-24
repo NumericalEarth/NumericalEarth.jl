@@ -101,8 +101,7 @@ end
 # runs downward (dew/frost). The skin-resistance model [`SkinHumidity`](@ref)
 # instead lets the surface be sub-saturated even where the bulk holds water.
 #
-# The saturation arrives via `humidity_surface_scalar(AirLandInterfaceState)`
-# (`Ψ.hydrology.saturation`). `BulkHumidity` has no moisture-availability
+# The saturation is the land state's `𝒮`. `BulkHumidity` has no moisture-availability
 # parameter of its own — only the saturation `phase`.
 struct BulkHumidity{Φ}
     phase :: Φ
@@ -139,21 +138,19 @@ critical saturation `𝒮ᶜ`, and the efficiency falls off linearly below it,
 β(𝒮) = \\min(𝒮 / 𝒮ᶜ, 1),   𝒮 = Mˡᵃ / Mˡᵃ⁺.
 ```
 
-Used as the `efficiency` of [`FractionalHumidity`](@ref). The type declares its
-land-state dependency (the saturation `𝒮`); the interface materializes exactly
-that into the land interface state.
+Used as the `efficiency` of [`FractionalHumidity`](@ref); reads the land saturation `𝒮`.
 """
 struct CriticalSaturation{FT}
     critical_saturation :: FT
 end
 
-@inline function evaporation_efficiency(𝒮ᶜ::CriticalSaturation, hydrology)
-    𝒮 = hydrology.saturation
+@inline function evaporation_efficiency(𝒮ᶜ::CriticalSaturation, Ψˡᵃ)
+    𝒮 = Ψˡᵃ.𝒮
     return min(𝒮 / convert(typeof(𝒮), 𝒮ᶜ.critical_saturation), one(𝒮))
 end
 
 # Constant efficiency — a uniformly sub-saturated surface; reads no land state.
-@inline evaporation_efficiency(β::Number, hydrology) = β
+@inline evaporation_efficiency(β::Number, Ψˡᵃ) = β
 
 """
     struct FractionalHumidity
@@ -224,9 +221,8 @@ Base.summary(::SkinHumidity{D, K, Φ}) where {D, K, Φ} =
 Base.show(io::IO, q::SkinHumidity) = print(io, summary(q))
 
 # Saturation depth d. For a fixed `Number` thickness it is the number itself;
-# a future `WetnessDependentSurfaceThickness` will dispatch here on the land
-# water state carried by the interface state.
-@inline surface_layer_thickness(d::Number, Ψₛ) = d
+# a future `WetnessDependentSurfaceThickness` will dispatch here on the land state.
+@inline surface_layer_thickness(d::Number, Ψˡᵃ) = d
 
 struct SalinityConstituent{FT}
     molar_mass :: FT
@@ -580,19 +576,22 @@ end
 #### Interface specific humidity
 ####
 
-# Diagnostic formulations (`ImpureSaturationSpecificHumidity`, `BulkHumidity`):
-# qˢ is an explicit function of the interface temperature `Tₛ` and the surface
-# scalar (salinity / saturation `𝒮`) from `humidity_surface_scalar`. The interior
-# state `Ψᵢ` is ignored.
+# Diagnostic formulations (`ImpureSaturationSpecificHumidity`): qˢ is an explicit
+# function of the interface temperature `Tₛ` and the surface scalar (salinity) from
+# `humidity_surface_scalar`. The interior state `Ψᵢ` is ignored.
 @inline compute_interface_humidity(q_formulation, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ) =
     surface_specific_humidity(q_formulation, ℙₐ.thermodynamics_parameters, Ψₐ.p, Tₛ, humidity_surface_scalar(Ψₛ), Ψₐ.q)
 
+# `BulkHumidity`: saturated at `Tₛ` where the land saturation `𝒮` is positive.
+@inline compute_interface_humidity(q::BulkHumidity, Tₛ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ) =
+    surface_specific_humidity(q, ℙₐ.thermodynamics_parameters, Ψₐ.p, Tₛ, Ψˡᵃ.𝒮)
+
 # `FractionalHumidity`: qˢ = β · qᵛ⁺(Tₛ) at the skin temperature, with the
-# evaporation efficiency β derived from the materialized hydrology state.
-@inline function compute_interface_humidity(q::FractionalHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+# evaporation efficiency β derived from the land state.
+@inline function compute_interface_humidity(q::FractionalHumidity, Tₛ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     FT  = eltype(Ψₛ)
-    β   = evaporation_efficiency(q.efficiency, Ψₛ.hydrology)
+    β   = evaporation_efficiency(q.efficiency, Ψˡᵃ)
     qᵛ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tₛ, Ψₐ.p, q.phase)
     return convert(FT, β * qᵛ⁺)
 end
@@ -617,13 +616,12 @@ end
 #
 #     qˢ = (gˢ qᵛ⁺ Δq + Jᵃ qᵃᵗ) / (gˢ Δq + Jᵃ).
 #
-# The reservoir is saturated at the *bulk land* temperature `Tᵈ` (the energy
-# component of the interface state), not the skin temperature: the saturated soil
-# sits at depth `d` below the surface, so its temperature is the deep soil
+# The reservoir is saturated at the *bulk land* temperature `Tᵈ = Tˡᵃ`, not the skin
+# temperature: the saturated soil sits at depth `d` below the surface, so its temperature is the deep soil
 # temperature — the same deep endpoint the conductive heat flux uses. `Tₛ` is
 # therefore unused here (`qˢ` is decoupled from the skin temperature, as a dry
 # skin implies).
-@inline function compute_interface_humidity(q::SkinHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+@inline function compute_interface_humidity(q::SkinHumidity, Tₛ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     FT  = eltype(Ψₛ)
     pᵃᵗ = Ψₐ.p
@@ -631,10 +629,10 @@ end
     Tᵃᵗ = Ψₐ.T
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
 
-    Tᵈ  = Ψₛ.energy.temperature # bulk land temperature at the saturation depth `d`
+    Tᵈ  = Ψˡᵃ.T # bulk land temperature at the saturation depth `d`
     qᵛ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tᵈ, pᵃᵗ, q.phase)
 
-    d  = surface_layer_thickness(q.surface_thickness, Ψₛ)
+    d  = surface_layer_thickness(q.surface_thickness, Ψˡᵃ)
     κ  = q.vapor_diffusivity
     gˢ = κ / d # soil vapor conductance
 
@@ -737,44 +735,21 @@ end
 @inline humidity_surface_scalar(Ψ::AirIceInterfaceState) = zero(eltype(Ψ))
 
 """
-    AirLandInterfaceState{FT, H, E}
+    AirLandInterfaceState{FT}
 
-Air–land interface state. In place of salinity it carries the land's `hydrology`
-and `energy` surface state (e.g. `(saturation = 𝒮,)` and `(temperature = Tᵢ,)`),
-from which the surface humidity models derive what they need — the moisture
-availability `β`, the reservoir temperature, etc. `β` is *not* stored: it is
-`evaporation_efficiency(efficiency, saturation)`, computed by the formulation.
+Air–land interface state: the iterated scales, velocities, temperature, and specific
+humidity. The land state the surface models read (e.g. `T`, `𝒮`) is not carried here;
+it enters the solver as the land state `Ψˡᵃ`.
 """
-struct AirLandInterfaceState{FT, H, E} <: AbstractInterfaceState{FT}
+struct AirLandInterfaceState{FT} <: AbstractInterfaceState{FT}
     fluxes            :: InterfaceFluxScales{FT}
     velocities        :: InterfaceVelocities{FT}
     temperature       :: FT
     specific_humidity :: FT
-    hydrology         :: H
-    energy            :: E
 end
 
-@inline AirLandInterfaceState(u★, θ★, q★, u, v, T, q, hydrology, energy) =
-    AirLandInterfaceState(InterfaceFluxScales(u★, θ★, q★), InterfaceVelocities(u, v), T, q, hydrology, energy)
-
-# (i, j, grid)-first convenience constructor — pulls the per-cell land
-# energy/hydrology substate from `land_state` via the humidity formulation, so
-# the kernel call site stays compact. `Tₛ` and `qₛ` are passed in because they
-# typically share computation with the atmosphere thermodynamics at the call
-# site (e.g. the saturation humidity needs `Tₛ`, `pᵃᵗ`, and `ℂᵃᵗ`).
-@inline function AirLandInterfaceState(i, j, grid,
-                                       fluxes::InterfaceFluxScales,
-                                       velocities::InterfaceVelocities,
-                                       q_formulation,
-                                       land_state,
-                                       Tₛ, qₛ)
-    FT  = typeof(Tₛ)
-    energy    = interface_energy_state(i, j, grid, q_formulation, land_state)
-    hydrology = interface_hydrology_state(i, j, grid, q_formulation, land_state)
-    return AirLandInterfaceState(fluxes, velocities, convert(FT, Tₛ), convert(FT, qₛ), hydrology, energy)
-end
-
-@inline humidity_surface_scalar(Ψ::AirLandInterfaceState) = Ψ.hydrology.saturation
+@inline AirLandInterfaceState(u★, θ★, q★, u, v, T, q) =
+    AirLandInterfaceState(InterfaceFluxScales(u★, θ★, q★), InterfaceVelocities(u, v), T, q)
 
 # Rebuild the next iterate, carrying the fixed per-surface state forward.
 @inline rebuild_interface_state(Ψ⁻::AirSeaInterfaceState, fluxes, T, q) =
@@ -784,7 +759,7 @@ end
     AirIceInterfaceState(fluxes, Ψ⁻.velocities, T, q)
 
 @inline rebuild_interface_state(Ψ⁻::AirLandInterfaceState, fluxes, T, q) =
-    AirLandInterfaceState(fluxes, Ψ⁻.velocities, T, q, Ψ⁻.hydrology, Ψ⁻.energy)
+    AirLandInterfaceState(fluxes, Ψ⁻.velocities, T, q)
 
 function Base.show(io::IO, Ψ::AbstractInterfaceState)
     print(io, nameof(typeof(Ψ)), "(",

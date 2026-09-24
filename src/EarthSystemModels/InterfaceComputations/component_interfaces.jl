@@ -463,8 +463,11 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                     sea_ice    = net_fluxes(sea_ice),
                     atmosphere = net_fluxes(atmosphere))
 
+    land_names = isnothing(al_interface) ? () : land_state_names(al_interface.properties)
+
     exchanger = StateExchanger(exchange_grid, radiation, atmosphere, land, ocean, sea_ice;
-                               atmosphere_correction = exchanger_correction)
+                               atmosphere_correction = exchanger_correction,
+                               land_names)
 
     # The surface-layer (MOST reference) height is fixed by the atmosphere grid, so
     # build it once here rather than per coupled step. Scalar for prescribed

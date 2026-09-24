@@ -69,10 +69,6 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
                              surface_layer_height = coupled_model.interfaces.properties.surface_layer_height,
                              gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
 
-    # Land surface state from the exchanger. `interface_energy_state` /
-    # `interface_hydrology_state` read these per cell to build the land
-    # interface state; the surface models derive `β`, the reservoir
-    # temperature, etc. from them.
     land_state = exchanger.land.state
 
     radiation = coupled_model.radiation
@@ -101,35 +97,32 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
 end
 
 #####
-##### Land surface state materialized into the interface state.
-#####
-##### The surface model (`interface_model`, here the specific-humidity
-##### formulation) dispatches these helpers to pull *exactly* the per-cell land
-##### state it consumes — saturation for the moisture-availability models, the
-##### bulk temperature for the reservoir model — and nothing otherwise. The
-##### model then derives `β`, the reservoir temperature, etc. from what it pulled.
+##### Land state read by the interface solver
 #####
 
-@inline land_saturation(i, j, grid, land_state) =
-    (saturation = state2dindex(land_state.𝒮, i, j),)
+"""
+$(TYPEDSIGNATURES)
 
-# Hydrology state, per humidity formulation.
-@inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) = land_saturation(i, j, grid, land_state)
-@inline interface_hydrology_state(i, j, grid, q::FractionalHumidity, land_state) =
-    interface_hydrology_state(i, j, grid, q.efficiency, land_state)
-@inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) = land_saturation(i, j, grid, land_state)
-@inline interface_hydrology_state(i, j, grid, ::DryLayerHumidity, land_state) =
-    land_saturation(i, j, grid, land_state)
-@inline interface_hydrology_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
+Names of the land-state quantities that the atmosphere--land interface described by
+`properties` reads at each cell. The land component publishes exactly these, on the
+exchange grid, through its `ComponentExchanger`; the flux kernel reads them pointwise
+as the land state `Ψˡᵃ`. The bulk land temperature `T` is always included: it is the
+initial guess for the interface temperature.
+"""
+land_state_names(properties::InterfaceProperties) = land_state_names(properties.specific_humidity_formulation)
 
-# Energy state: humidity formulations that need the bulk land temperature
-# (the SkinHumidity reservoir and the DryLayerHumidity dry-layer model)
-# pull it from the materialized land state.
-@inline interface_energy_state(i, j, grid, ::SkinHumidity, land_state) =
-    (temperature = state2dindex(land_state.T, i, j),)
-@inline interface_energy_state(i, j, grid, ::DryLayerHumidity, land_state) =
-    (temperature = state2dindex(land_state.T, i, j),)
-@inline interface_energy_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
+land_state_names(specific_humidity_formulation) = (:T, :𝒮)
+land_state_names(::SkinHumidity) = (:T,)
+land_state_names(::FractionalHumidity{<:Number}) = (:T,)
+
+"""
+    land_state_field(land, ::Val{name})
+
+Return the land quantity `name` on the land grid, e.g. the bulk land temperature for
+`Val(:T)` or the surface saturation for `Val(:𝒮)`. Land components extend this for
+every name in `land_state_names` they support.
+"""
+function land_state_field end
 
 @kernel function _compute_atmosphere_land_interface_state!(interface_fluxes,
                                                            interface_temperature,
@@ -148,47 +141,35 @@ end
     time = Time(clock.time)
 
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
-    Ψₐ  = local_atmosphere_state(i, j, atmosphere_state, atmosphere_properties)
-
-    q_formulation = interface_properties.specific_humidity_formulation
-
-    # Bulk land temperature serves as the initial skin-temperature guess.
-    Tₛ = state2dindex(land_state.T, i, j)
-    FT = typeof(Tₛ)
+    Ψᵃᵗ = local_atmosphere_state(i, j, atmosphere_state, atmosphere_properties)
+    Ψˡᵃ = state2dindex(land_state, i, j, grid, time)
+    FT  = typeof(Ψˡᵃ.T)
 
     # Collapse Field-valued roughness lengths and displacement to this cell's values.
     local_turbulent_flux_formulation = local_flux_formulation(turbulent_flux_formulation, i, j)
-
-    # Surface velocities are zero for land.
-    uₛ = zero(FT)
-    vₛ = zero(FT)
-
-    local_interior_state = (u = uₛ, v = vₛ, T = Tₛ)
 
     radiation_state = air_land_interface_radiation_state(radiation_kernel_props,
                                                          radiation_exchanger_state,
                                                          i, j, 1, grid, time)
 
-    # Estimate initial interface state. Use the saturated value as the initial
-    # surface humidity guess (the solver recomputes it via the formulation).
-    u★ = convert(FT, 1e-4)
-    qₛ = convert(FT, saturation_specific_humidity(ℂᵃᵗ, Tₛ, Ψₐ.p, q_formulation.phase))
-    initial_interface_state = AirLandInterfaceState(i, j, grid,
-                                                    InterfaceFluxScales(u★, u★, u★),
-                                                    InterfaceVelocities(uₛ, vₛ),
-                                                    q_formulation, land_state, Tₛ, qₛ)
+    # The bulk land temperature and its saturation humidity are the initial guess;
+    # the solver recomputes both via the interface formulations.
+    q_formulation = interface_properties.specific_humidity_formulation
+    u★  = convert(FT, 1e-4)
+    qⁱⁿ = convert(FT, saturation_specific_humidity(ℂᵃᵗ, Ψˡᵃ.T, Ψᵃᵗ.p, q_formulation.phase))
+    Ψⁱⁿ⁰ = AirLandInterfaceState(u★, u★, u★, zero(FT), zero(FT), Ψˡᵃ.T, qⁱⁿ)
 
-    Ψₛ = compute_interface_state(local_turbulent_flux_formulation,
-                                 initial_interface_state,
-                                 Ψₐ,
-                                 local_interior_state,
-                                 radiation_state,
-                                 interface_properties,
-                                 atmosphere_properties,
-                                 (;))
+    Ψⁱⁿ = compute_interface_state(local_turbulent_flux_formulation,
+                                  Ψⁱⁿ⁰,
+                                  Ψᵃᵗ,
+                                  Ψˡᵃ,
+                                  radiation_state,
+                                  interface_properties,
+                                  atmosphere_properties,
+                                  (;))
 
-    ℒˡ = AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, Ψₐ.T)
+    ℒˡ = AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, Ψᵃᵗ.T)
 
     store_interface_fluxes!(interface_fluxes, interface_temperature, interface_specific_humidity, i, j,
-                            Ψₛ, Ψₐ, ℂᵃᵗ, ℒˡ, Ψₛ.temperature, interface_properties)
+                            Ψⁱⁿ, Ψᵃᵗ, ℂᵃᵗ, ℒˡ, Ψⁱⁿ.temperature, interface_properties)
 end
