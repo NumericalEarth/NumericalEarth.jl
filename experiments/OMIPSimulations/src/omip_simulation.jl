@@ -296,6 +296,11 @@ function (r::RefreshSalinityRestoring)(sim)
     return nothing
 end
 
+# The corrected flux is a function of the model state, so nothing is checkpointed; the first step after
+# a pickup uses the flux primed at construction, which is still zero-mean. Older checkpoints stored the
+# whole callback, which is ignored.
+Oceananigans.prognostic_state(::RefreshSalinityRestoring) = nothing
+
 #####
 ##### Global freshwater-flux normalization
 #####
