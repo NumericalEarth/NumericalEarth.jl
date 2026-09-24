@@ -111,7 +111,7 @@ end
 #####
 
 @inline land_saturation(i, j, grid, land_state) =
-    (saturation = state2dindex(land_state.saturation, i, j),)
+    (saturation = state2dindex(land_state.𝒮, i, j),)
 
 # Hydrology state, per humidity formulation.
 @inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) = land_saturation(i, j, grid, land_state)
