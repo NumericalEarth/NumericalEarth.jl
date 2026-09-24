@@ -41,7 +41,7 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
 
     # Simplify NamedTuple to reduce parameter space consumption.
     # See https://github.com/CliMA/NumericalEarth.jl/issues/116.
-    atmosphere_data = NamedTuple(k=>underlying_data(v) for (k, v) in pairs(atmosphere_fields))
+    atmosphere_data = unwrap_fields(atmosphere_fields)
 
     kernel_parameters = interface_kernel_parameters(grid)
 
@@ -77,6 +77,11 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
     if !isnothing(potential)
         parent(potential) .= parent(atmosphere_data.p) ./ ρᵒᶜ
     end
+end
+
+@inline @generated function unwrap_fields(fields::NamedTuple{names}) where names
+    unwrapped = Tuple(:(underlying_data(fields.$name)) for name in names)
+    return :(NamedTuple{names}(($(unwrapped...),)))
 end
 
 @inline get_fractional_index(i, j, ::Nothing) = nothing
