@@ -24,6 +24,9 @@ env:
   JULIA_NUM_PRECOMPILE_TASKS: 8
   JULIA_NUM_THREADS: 8
   JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
+  # Keep the runner's shared global environment (@v#.#) off the load path: CondaPkg scans
+  # every load-path environment, and a stale global manifest breaks PythonCall initialization.
+  JULIA_LOAD_PATH: "@:@stdlib"
   NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES: 'build all examples'
   CDSAPI_URL: "https://cds.climate.copernicus.eu/api"
   CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
