@@ -74,6 +74,10 @@ export
     GloFASReanalysis,
     ERA5PrescribedAtmosphere,
     ERA5PrescribedRadiation,
+    FLUXNETSite,
+    FLUXNETPrescribedAtmosphere,
+    FLUXNETPrescribedRadiation,
+    fluxnet_flux_observations,
     FreezingLimitedOceanTemperature,
     SurfaceRadiationProperties,
     InterfaceRadiationFlux,
@@ -280,6 +284,7 @@ using .DataWrangling.ORCA
 using .DataWrangling.WOA
 using .DataWrangling.JRA55
 using .DataWrangling.GloFAS
+using .DataWrangling.FLUXNET
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
 using .DataWrangling.ASTERGED
