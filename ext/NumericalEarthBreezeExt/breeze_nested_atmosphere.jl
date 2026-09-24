@@ -408,6 +408,12 @@ end
 NumericalEarth.Atmospheres.bulk_drag(model::NestedModel; kw...) =
     NumericalEarth.Atmospheres.bulk_drag(model.child; kw...)
 
+function interpolate_to_child(fts, child_grid, t₀, loc = (Center, Center, Center))
+    field = Field{loc...}(child_grid)
+    interpolate!(field, fts[Time(t₀)])
+    return field
+end
+
 # Initialize the nested child from the exchanger's parent-derived prognostics (the SAME state that drives
 # the lateral boundaries), interpolated to the child interior — so the interior IC and the prescribed
 # boundary agree at the walls (no standing pressure/density jump). Recompute the Exner reference from the
@@ -420,12 +426,11 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
     prognostic = nested_model.exchanger.prognostic
     t₀ = first(prognostic.ρᵈ.times)
 
-    to_child(fts, loc = (Center, Center, Center)) = (field = Field{loc...}(child_grid); interpolate!(field, fts[Time(t₀)]); field)
-    ρᵈ   = to_child(prognostic.ρᵈ)
-    ρθ   = to_child(prognostic.ρθ)
-    ρqᵛᵉ = to_child(prognostic.ρqᵛᵉ)
-    ρu   = to_child(prognostic.ρu, (Face, Center, Center))
-    ρv   = to_child(prognostic.ρv, (Center, Face, Center))
+    ρᵈ   = interpolate_to_child(prognostic.ρᵈ, child_grid, t₀)
+    ρθ   = interpolate_to_child(prognostic.ρθ, child_grid, t₀)
+    ρqᵛᵉ = interpolate_to_child(prognostic.ρqᵛᵉ, child_grid, t₀)
+    ρu   = interpolate_to_child(prognostic.ρu, child_grid, t₀, (Face, Center, Center))
+    ρv   = interpolate_to_child(prognostic.ρv, child_grid, t₀, (Center, Face, Center))
 
     ρ   = Field(ρᵈ + ρqᵛᵉ)
     qᵛᵉ = Field(ρqᵛᵉ / ρ)
