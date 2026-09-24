@@ -37,11 +37,12 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
     atmosphere_time_indexing = u.time_indexing
 
     atmosphere_fields = exchanger.state
-    space_fractional_indices = exchanger.regridder
+    regridder = exchanger.regridder
+    space_fractional_indices = (i = regridder.i, j = regridder.j)
 
     # Simplify NamedTuple to reduce parameter space consumption.
     # See https://github.com/CliMA/NumericalEarth.jl/issues/116.
-    atmosphere_data = NamedTuple(k=>underlying_data(v) for (k, v) in pairs(atmosphere_fields))
+    atmosphere_data = unwrap_fields(atmosphere_fields)
 
     kernel_parameters = interface_kernel_parameters(grid)
 
@@ -53,6 +54,12 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
     t = clock.time
     time_interpolator = cpu_interpolating_time_indices(arch, times, time_indexing, t)
 
+    # Tracers other than T and q carry their own grid, location and time axis
+    atmosphere_time_arguments = (time_interpolator, atmosphere_backend, atmosphere_time_indexing)
+    tracer_fractional_indices = merge((T = space_fractional_indices, q = space_fractional_indices), regridder.tracers)
+    tracer_time_arguments = merge((T = atmosphere_time_arguments, q = atmosphere_time_arguments),
+                                  map(tracer -> time_arguments(arch, tracer, t), atmosphere.tracers))
+
     launch!(arch, grid, kernel_parameters,
             _interpolate_primary_atmospheric_state!,
             atmosphere_data,
@@ -61,6 +68,8 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
             grid,
             atmosphere_velocities,
             atmosphere_tracers,
+            tracer_fractional_indices,
+            tracer_time_arguments,
             atmosphere_pressure,
             rainfall_flux,
             snowfall_flux,
@@ -79,6 +88,14 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
     end
 end
 
+@inline @generated function unwrap_fields(fields::NamedTuple{names}) where names
+    unwrapped = Tuple(:(underlying_data(fields.$name)) for name in names)
+    return :(NamedTuple{names}(($(unwrapped...),)))
+end
+
+time_arguments(arch, fts, t) = (cpu_interpolating_time_indices(arch, fts.times, fts.time_indexing, t), fts.backend, fts.time_indexing)
+time_arguments(arch, ::ConstantField, t) = nothing
+
 @inline get_fractional_index(i, j, ::Nothing) = nothing
 @inline get_fractional_index(i, j, frac) = @inbounds frac[i, j, 1]
 
@@ -91,6 +108,8 @@ end
                                                          exchange_grid,
                                                          atmos_velocities,
                                                          atmos_tracers,
+                                                         tracer_fractional_indices,
+                                                         tracer_time_arguments,
                                                          atmos_pressure,
                                                          rainfall_flux,
                                                          snowfall_flux,
@@ -128,31 +147,34 @@ end
         surface_atmos_state.Jˢⁿ[i, j, 1] = Ms
     end
 
-    update_tracer_states!(i, j, surface_atmos_state, atmos_tracers, atmos_args, t_itp)
+    update_tracer_states!(i, j, surface_atmos_state, atmos_tracers, tracer_fractional_indices, tracer_time_arguments)
 end
 
-# Unrolled over the names in the type, so each `getindex` compiles to a `getfield`
-# on a literal symbol and the kernel stays statically resolvable on GPU.
-@inline function update_tracer_states!(i, j, surface_atmos_state, atmos_tracers::NamedTuple{names}, atmos_args, t_itp) where names
-    ntuple(Val(length(names))) do n
-        name = names[n]
-        update_tracer_state!(i, j, surface_atmos_state[name], atmos_tracers[name], atmos_args, t_itp)
+@inline @generated function update_tracer_states!(i, j, surface_atmos_state, atmos_tracers::NamedTuple{names},
+                                                  fractional_indices, time_arguments) where names
+    calls = [:(update_tracer_state!(i, j, surface_atmos_state.$name, atmos_tracers.$name,
+                                    fractional_indices.$name, time_arguments.$name)) for name in names]
+    return quote
+        $(calls...)
+        return nothing
     end
+end
+
+@inline function update_tracer_state!(i, j, state, tracer, fractional_indices, (time_interpolator, backend, time_indexing))
+    fi = get_fractional_index(i, j, fractional_indices.i)
+    fj = get_fractional_index(i, j, fractional_indices.j)
+    X = FractionalIndices(fi, fj, nothing)
+    @inbounds state[i, j, 1] = interpolate(X, time_interpolator, tracer, backend, time_indexing)
     return nothing
 end
 
-@inline function update_tracer_state!(i, j, state, tracer, atmos_args, t_itp)
-    @inbounds state[i, j, 1] = interp_atmos_time_series(tracer, atmos_args...)
+@inline function update_tracer_state!(i, j, state, tracer::FTS0, fractional_indices, (time_interpolator, backend, time_indexing))
+    X = FractionalIndices(nothing, nothing, nothing)
+    @inbounds state[1, 1, 1] = interpolate(X, time_interpolator, tracer, backend, time_indexing)
     return nothing
 end
 
-@inline update_tracer_state!(i, j, state, ::ConstantField, atmos_args, t_itp) = nothing
-# `t_itp` comes from the atmosphere's time axis, so the tracer must share it.
-@inline function update_tracer_state!(i, j, state, zero_D_fts::FTS0, atmos_args, t_itp)
-    fi = FractionalIndices(nothing, nothing, nothing)
-    @inbounds state[1, 1, 1] = interpolate(fi, t_itp, zero_D_fts, zero_D_fts.backend, zero_D_fts.time_indexing)
-    return nothing
-end
+@inline update_tracer_state!(i, j, state, ::ConstantField, fractional_indices, time_arguments) = nothing
 
 #####
 ##### Utility for interpolating tuples of fields

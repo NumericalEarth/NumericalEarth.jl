@@ -19,10 +19,11 @@ using ..EarthSystemModels: reference_density,
 ##### Container for organizing information related to fluxes
 #####
 
-mutable struct AtmosphereInterface{J, F, ST, P}
+mutable struct AtmosphereInterface{J, F, ST, SQ, P}
     fluxes :: J
     flux_formulation :: F
     temperature :: ST
+    specific_humidity :: SQ
     properties :: P
 end
 
@@ -246,8 +247,10 @@ function atmosphere_ocean_interface(grid,
                                         velocity_formulation)
 
     interface_temperature = Field{Center, Center, Nothing}(grid)
+    interface_specific_humidity = Field{Center, Center, Nothing}(grid)
 
-    return AtmosphereInterface(ao_fluxes, ao_flux_formulation, interface_temperature, ao_properties)
+    return AtmosphereInterface(ao_fluxes, ao_flux_formulation, interface_temperature,
+                               interface_specific_humidity, ao_properties)
 end
 
 #####
@@ -281,7 +284,10 @@ function atmosphere_sea_ice_interface(grid,
         snow_thermo.top_surface_temperature
     end
 
-    return AtmosphereInterface(fluxes, ai_flux_formulation, interface_temperature, properties)
+    interface_specific_humidity = Field{Center, Center, Nothing}(grid)
+
+    return AtmosphereInterface(fluxes, ai_flux_formulation, interface_temperature,
+                               interface_specific_humidity, properties)
 end
 
 #####
