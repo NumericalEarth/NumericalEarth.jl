@@ -27,7 +27,6 @@ using Oceananigans:
     ValueBoundaryCondition,
     NormalFlowBoundaryCondition,
     Field,
-    CenterField,
     Center, Face,
     set!
 
@@ -421,29 +420,19 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
     prognostic = nested_model.exchanger.prognostic
     t₀ = first(prognostic.ρᵈ.times)
 
-    # Interpolate each exchanger prognostic (parent grid, initial time) to the child interior. Using the
-    # SAME parent-derived prognostics that drive the lateral boundaries — via the same `interpolate!` —
-    # makes the interior IC and the prescribed boundary agree at the walls, so there is no standing
-    # density/pressure jump to force spurious vertical velocity. The adiabatic balancer below then spins
-    # up ρw from this consistent state.
-    to_child(fts) = (field = CenterField(child_grid); interpolate!(field, fts[Time(t₀)]); field)
+    to_child(fts, loc = (Center, Center, Center)) = (field = Field{loc...}(child_grid); interpolate!(field, fts[Time(t₀)]); field)
     ρᵈ   = to_child(prognostic.ρᵈ)
     ρθ   = to_child(prognostic.ρθ)
     ρqᵛᵉ = to_child(prognostic.ρqᵛᵉ)
-    ρu   = to_child(prognostic.ρu)
-    ρv   = to_child(prognostic.ρv)
+    ρu   = to_child(prognostic.ρu, (Face, Center, Center))
+    ρv   = to_child(prognostic.ρv, (Center, Face, Center))
 
-    # Recover the specific state from the density-weighted prognostics (dry-weighted momentum/energy,
-    # total-weighted moisture). `set!` backs out `ρᵈ = ρ − Σρqˣ`, so pairing `qᵛᵉ` with
-    # `ρ = ρᵈ + ρqᵛᵉ` returns the child exactly the exchanger's `ρᵈ`.
     ρ   = Field(ρᵈ + ρqᵛᵉ)
     qᵛᵉ = Field(ρqᵛᵉ / ρ)
     θˡⁱ = Field(ρθ / ρᵈ)
-    u   = Field(ρu / ρᵈ)
-    v   = Field(ρv / ρᵈ)
 
     moisture = NamedTuple{(moisture_specific_name(child.microphysics),)}((qᵛᵉ,))
-    set!(nested_model; ρ, u, v, θˡⁱ, moisture..., compute_reference_state = true)
+    set!(nested_model; ρ, ρu, ρv, θˡⁱ, moisture..., compute_reference_state = true)
 
     # Consistent-w: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (the initial flow follows the ground).
     update_state!(nested_model)
