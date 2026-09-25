@@ -11,7 +11,7 @@ export standard_atmosphere_z_interfaces, mean_geopotential_z_interfaces
 # Prescribed components
 export ERA5PrescribedAtmosphere, ERA5PrescribedRadiation
 
-using Dates: Dates, DateTime, Month, Hour
+using Dates: Dates, DateTime, Day, Month, Hour
 using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using Oceananigans: Oceananigans, location
@@ -141,6 +141,19 @@ end
 # CDS client is loaded via NumericalEarthCDSClientExt extension when HTTP/JSON3 are available
 # The extension exports: download_era5, read_cds_credentials
 # Users need to: using HTTP, JSON3  (or just using HTTP if JSON3 is already loaded)
+
+#####
+##### Data availability
+#####
+
+# ERA5 is extended daily. Preliminary (ERA5T) data lags real time by about five days, and the
+# monthly means for a month are published early in the following month. The available range
+# therefore ends at the clock rather than at a hard-coded date; a request for an hour that CDS
+# has not published yet fails at download time.
+const ERA5_LATENCY = Day(5)
+
+era5_last_hourly_date() = floor(Dates.now(Dates.UTC) - ERA5_LATENCY, Hour)
+era5_last_monthly_date() = Dates.firstdayofmonth(Dates.now(Dates.UTC) - ERA5_LATENCY) - Month(1)
 
 #####
 ##### Single-level and pressure-level specifics
