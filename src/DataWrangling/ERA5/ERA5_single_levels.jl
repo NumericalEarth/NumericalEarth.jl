@@ -36,7 +36,9 @@ end
 ##### ERA5 single-level variable name mappings
 #####
 
-# Variable name mappings from NumericalEarth names to ERA5/CDS API variable names
+# Variable name mappings from NumericalEarth names to ERA5/CDS API variable names.
+# Invariant fields (surface geopotential, land-sea mask) are requested like instantaneous
+# variables: the CDS returns the same field for every date.
 ERA5_dataset_variable_names = Dict(
     :temperature                     => "2m_temperature",
     :dewpoint_temperature            => "2m_dewpoint_temperature",
@@ -66,6 +68,12 @@ ERA5_dataset_variable_names = Dict(
     :total_column_water_vapor        => "total_column_water_vapour",
     :vertically_integrated_eastward_water_vapor_flux  => "vertical_integral_of_eastward_water_vapour_flux",
     :vertically_integrated_northward_water_vapor_flux => "vertical_integral_of_northward_water_vapour_flux",
+    :boundary_layer_height                 => "boundary_layer_height",
+    :convective_available_potential_energy => "convective_available_potential_energy",
+    :convective_precipitation              => "convective_precipitation",
+    :land_sea_mask                         => "land_sea_mask",
+    :sea_ice_concentration                 => "sea_ice_cover",
+    :forecast_albedo                       => "forecast_albedo",
 )
 
 # NetCDF short variable names (what's actually in the downloaded files)
@@ -101,6 +109,12 @@ ERA5_netcdf_variable_names = Dict(
     :total_column_water_vapor        => "tcwv",
     :vertically_integrated_eastward_water_vapor_flux  => "viwve",
     :vertically_integrated_northward_water_vapor_flux => "viwvn",
+    :boundary_layer_height                 => "blh",
+    :convective_available_potential_energy => "cape",
+    :convective_precipitation              => "cp",
+    :land_sea_mask                         => "lsm",
+    :sea_ice_concentration                 => "siconc", # shortName: ci
+    :forecast_albedo                       => "fal",
 )
 
 # Variables available for download
@@ -116,10 +130,10 @@ DataWrangling.dataset_variable_name(md::ERA5Metadata) = ERA5_netcdf_variable_nam
 # - `topography` divides the (surface) geopotential by g to give ERA5's model
 #   surface elevation in meters (`geopotential` is left in m² s⁻²);
 # - downwelling SW/LW are hourly-accumulated energy (J/m²) → mean flux (W/m²);
-# - total precipitation is an hourly-accumulated depth (m) → mass flux (kg/m²/s).
+# - total and convective precipitation are hourly-accumulated depths (m) → mass flux (kg/m²/s).
 function DataWrangling.conversion_units(md::ERA5Metadata)
-    md.name == :topography           && return InverseGravity()
-    md.name == :total_precipitation && return MetersPerHour()
+    md.name == :topography && return InverseGravity()
+    md.name in (:total_precipitation, :convective_precipitation) && return MetersPerHour()
     md.name in (:downwelling_shortwave_radiation, :downwelling_longwave_radiation) &&
         return JoulesPerSquareMeterPerHour()
     return nothing
@@ -130,6 +144,7 @@ DataWrangling.default_inpainting(md::ERA5Metadata) = nothing
 # ERA5 accumulations and mean rates cover the hour *ending* at the stamp, so their windows run
 # backwards from it. Every other single-level variable is instantaneous.
 const ERA5_window_averaged_variables = (:total_precipitation,
+                                        :convective_precipitation,
                                         :evaporation,
                                         :mean_evaporation_rate,
                                         :downwelling_shortwave_radiation,
