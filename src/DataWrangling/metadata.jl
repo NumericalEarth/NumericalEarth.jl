@@ -359,12 +359,30 @@ Base.iterate(m::Metadatum, i::Int=1) = i == 1 ? (m, 2) : nothing
     end
 end
 
-metadata_path(metadata::Metadatum) = joinpath(metadata.dir, metadata.filename)
+"""
+    metadata_path(metadatum)
+
+Path to the file holding `metadatum`: its own file if cached, otherwise a cached file that
+covers it (see `covering_cached_file`), otherwise the path a download writes to.
+"""
+function metadata_path(metadatum::Metadatum)
+    path = joinpath(metadatum.dir, metadatum.filename)
+    isfile(path) && return path
+    return something(covering_cached_file(metadatum, metadatum.dir), path)
+end
+
+"""
+    covering_cached_file(metadatum, dir)
+
+A file in `dir` that holds `metadatum` although it was downloaded for another request, or
+`nothing`. Datasets whose readers take any such file extend this; the default is `nothing`.
+"""
+covering_cached_file(metadatum, dir) = nothing
 
 function metadata_path(metadata::Metadata)
     fn = metadata.filename
     if fn isa DatewiseFilename
-        return [joinpath(metadata.dir, f) for f in fn.filenames]
+        return [metadata_path(metadatum) for metadatum in metadata]
     else
         # Single filename (String) — one file for all dates
         return joinpath(metadata.dir, fn)

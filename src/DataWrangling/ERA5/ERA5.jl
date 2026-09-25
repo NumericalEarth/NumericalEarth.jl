@@ -25,7 +25,8 @@ using NCDatasets: NCDatasets
 using Printf: Printf, @sprintf
 using Statistics: Statistics, mean
 
-using ..DataWrangling: DataWrangling, Metadata, Metadatum, MetadataSet, BoundingBox, InverseGravity, prescribed_radiation,
+using ..DataWrangling: DataWrangling, Metadata, Metadatum, MetadataSet, BoundingBox, Column, Nearest,
+                       InverseGravity, prescribed_radiation, infer_longitudinal_period,
                        MetersPerHour, JoulesPerSquareMeterPerHour, metadata_path,
                        native_grid, dataset_variable_name, available_variables, retrieve_data,
                        first_date, last_date, native_times, set_metadata_field!, DatasetBackend,
@@ -150,6 +151,7 @@ include("ERA5_single_levels.jl")
 include("ERA5_land.jl")
 include("ERA5_field_time_series.jl")  # Yearly file reading (like JRA55)
 include("ERA5_pressure_levels.jl")
+include("ERA5_cached_files.jl")
 include("ERA5_batched_downloads.jl")
 include("ERA5_prescribed_radiation.jl")
 include("ERA5_prescribed_atmosphere.jl")

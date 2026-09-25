@@ -13,7 +13,7 @@ using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingl
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
                                          ERA5_all_pressure_levels, ERA5PL_dataset_variable_names,
                                          ERA5PL_netcdf_variable_names, pressure_field
-using NumericalEarth.DataWrangling.ERA5: split_era5_nc_by_datetime, ERA5_COORD_VARS, ERA5_TIME_DIMNAMES
+using NumericalEarth.DataWrangling.ERA5: split_era5_nc_by_datetime, ERA5_COORD_VARS, ERA5_TIME_DIMNAMES, build_era5_area
 using NumericalEarth.DataWrangling.GloFAS: GloFASReanalysis, GloFAS_dataset_variable_names
 # ERA5-owned batching / NetCDF helpers are exercised at their owner module, not through the
 # CDS extension (the extension no longer re-imports the ones it does not itself use).
@@ -300,21 +300,21 @@ end
 
     @testset "build_era5_area" begin
         # Nothing → nothing
-        @test CDSExt.build_era5_area(nothing) === nothing
+        @test build_era5_area(nothing) === nothing
 
         # BoundingBox with both axes → [N, W, S, E]
         bbox = BoundingBox(longitude=(-10.0, 5.0), latitude=(40.0, 50.0))
-        @test CDSExt.build_era5_area(bbox) == [50.0, -10.0, 40.0, 5.0]
+        @test build_era5_area(bbox) == [50.0, -10.0, 40.0, 5.0]
 
         # BoundingBox with one axis missing → nothing (CDS gets the global slab)
         bbox_no_lat = BoundingBox(longitude=(-10.0, 5.0))
-        @test CDSExt.build_era5_area(bbox_no_lat) === nothing
+        @test build_era5_area(bbox_no_lat) === nothing
         bbox_no_lon = BoundingBox(latitude=(40.0, 50.0))
-        @test CDSExt.build_era5_area(bbox_no_lon) === nothing
+        @test build_era5_area(bbox_no_lon) === nothing
 
         # Column with Nearest interpolation → tight ε=1e-3 box around the point
         col_nr = Column(-61.5, 18.0; interpolation=Nearest())
-        area_nr = CDSExt.build_era5_area(col_nr)
+        area_nr = build_era5_area(col_nr)
         @test length(area_nr) == 4
         # [N, W, S, E]
         @test area_nr[1] ≈ 18.0 + 1e-3      # north
@@ -324,7 +324,7 @@ end
 
         # Column with Linear interpolation → ε=0.3 padding for 2x2 stencil
         col_lin = Column(-61.5, 18.0; interpolation=Linear())
-        area_lin = CDSExt.build_era5_area(col_lin)
+        area_lin = build_era5_area(col_lin)
         @test area_lin[1] ≈ 18.0 + 0.3
         @test area_lin[2] ≈ -61.5 - 0.3
         @test area_lin[3] ≈ 18.0 - 0.3

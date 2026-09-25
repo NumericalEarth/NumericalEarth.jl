@@ -139,10 +139,11 @@ Returns a 3D array (lon, lat, level) with levels ordered bottom-to-top
 function DataWrangling.retrieve_data(metadata::ERA5PressureMetadatum)
     path = metadata_path(metadata)
     name = dataset_variable_name(metadata)
+    i, j, _, _ = cached_window(metadata, path)
     ds   = NCDatasets.Dataset(path)
-    data = ds[name][:, :, :, 1]   # (lon, lat, pressure_level, time=1)
+    data = ds[name][:, j, :, 1]   # (lon, lat, pressure_level, time=1)
     close(ds)
-    return reverse(data, dims=2)  # Latitude is stored from 90°N → 90°S
+    return reverse(data[i, :, :], dims=2)  # Latitude is stored from 90°N → 90°S
 end
 
 #####

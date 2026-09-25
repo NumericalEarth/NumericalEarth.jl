@@ -189,3 +189,32 @@ start_date = DateTime(2005, 2, 16, 12)
         end
     end
 end
+
+@testset "A CDS area request equals the same window of the global file" begin
+    retrieve_data = NumericalEarth.DataWrangling.retrieve_data
+    read_file_coords = NumericalEarth.DataWrangling.read_file_coords
+    dataset = ERA5HourlySingleLevel()
+
+    mktempdir() do global_dir
+        download(Metadatum(:temperature; dataset, date=start_date, dir=global_dir))
+
+        for region in (BoundingBox(longitude=(-10.3, 10.1), latitude=(40.2, 45.7)),
+                       BoundingBox(longitude=(350.1, 365.2), latitude=(-5.3, 5.3)),
+                       NumericalEarth.DataWrangling.Column(15.1, 45.1))
+
+            mktempdir() do regional_dir
+                downloaded = Metadatum(:temperature; dataset, region, date=start_date, dir=regional_dir)
+                download(downloaded)
+                served = Metadatum(:temperature; dataset, region, date=start_date, dir=global_dir)
+                @test dirname(metadata_path(served)) == global_dir
+
+                # The CDS may label the same longitudes in another convention, and packs each file over its own range
+                λ, φ = read_file_coords(served)
+                λ_downloaded, φ_downloaded = read_file_coords(downloaded)
+                @test mod.(λ, 360) ≈ mod.(λ_downloaded, 360)
+                @test φ ≈ φ_downloaded
+                @test retrieve_data(served) ≈ retrieve_data(downloaded) atol=1e-2
+            end
+        end
+    end
+end

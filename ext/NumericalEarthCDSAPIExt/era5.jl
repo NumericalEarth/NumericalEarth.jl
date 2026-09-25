@@ -86,11 +86,12 @@ Before downloading, you must:
 See https://cds.climate.copernicus.eu/how-to-api for details.
 """
 function Downloads.download(meta::ERA5Metadatum; skip_existing=true, retrieve=CDSAPI.retrieve)
-    output_path = metadata_path(meta)
+    cached_path = metadata_path(meta)
 
-    # Skip download if file already exists
-    skip_existing && isfile(output_path) && return output_path
+    # Skip download if a cached file holds the data
+    skip_existing && isfile(cached_path) && return cached_path
 
+    output_path = joinpath(meta.dir, meta.filename)
     mkpath(dirname(output_path))
 
     request = build_era5_request(meta.name, meta.dataset, meta.dates; region=meta.region)
@@ -129,7 +130,7 @@ Pure planner for a single-variable ERA5 download whose `dates` all share the
 same `(year, month)`. Computes the per-datetime output paths, filters to the
 subset that needs downloading, and (when there is work to do) builds the CDS
 request, the temporary download path, and the NetCDF splitting triples. No
-I/O beyond `isfile` checks; no network.
+I/O beyond cache lookups; no network.
 
 Returned NamedTuple fields:
 - `dt_path_pairs`: every `(datetime, path)` pair the caller should report.
@@ -139,9 +140,7 @@ Returned NamedTuple fields:
   triples consumed by `split_era5_nc_by_datetime`.
 """
 function plan_era5_month(name, dataset, dates; region, dir, skip_existing)
-    meta_filename = NumericalEarth.DataWrangling.metadata_filename
-
-    dt_path_pairs = [(dt, joinpath(dir, meta_filename(dataset, name, dt, region)))
+    dt_path_pairs = [(dt, era5_download_path(dataset, name, dt; region, dir, skip_existing))
                      for dt in dates]
 
     pending = if skip_existing
@@ -234,16 +233,8 @@ Download multiple ERA5 pressure-level variables for a single date in one CDS API
 The multi-variable NetCDF is split into individual per-variable files.
 """
 function Downloads.download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; skip_existing=true, retrieve=CDSAPI.retrieve)
-    name_path_pairs = []
-    for name in names
-        metadatum = Metadatum(name;
-                              dataset = meta.dataset,
-                              region = meta.region,
-                              date = meta.dates,
-                              dir = meta.dir)
-        path = metadata_path(metadatum)
-        push!(name_path_pairs, (name, path))
-    end
+    name_path_pairs = [(name, era5_download_path(meta.dataset, name, meta.dates; meta.region, meta.dir, skip_existing))
+                       for name in names]
 
     pending = if skip_existing
         filter(name_path -> !isfile(name_path[2]), name_path_pairs)
@@ -349,9 +340,7 @@ Returned NamedTuple fields:
   triples consumed by `split_era5_nc_by_datetime`.
 """
 function plan_era5_multivar_month(names, dataset, dates; region, dir, skip_existing)
-    meta_filename = NumericalEarth.DataWrangling.metadata_filename
-
-    name_dt_paths = [(name, dt, joinpath(dir, meta_filename(dataset, name, dt, region)))
+    name_dt_paths = [(name, dt, era5_download_path(dataset, name, dt; region, dir, skip_existing))
                      for name in names for dt in dates]
 
     pending = if skip_existing
@@ -399,62 +388,4 @@ function download_era5_multivar_month(names, dataset, dates;
     end
 
     return map(name_dt_path -> name_dt_path[3], plan.name_dt_paths)
-end
-
-#####
-##### Area/bounding box utilities
-#####
-
-build_era5_area(::Nothing) = nothing
-
-# Columns and unbounded regions: the area is a pure function of the region.
-era5_request_area(region, dataset, name) = build_era5_area(region)
-
-# Bounding box: the native grid is built by center-bracketing `restrict`, which
-# can reach one cell past a boundary-aligned edge. Fetch two native cells of
-# margin (in the bbox's own longitude convention) so the downloaded file always
-# covers the grid the data is interpolated onto — otherwise downscaling leaves
-# NaNs at the domain edges. Over-fetching is harmless: `restrict` selects the
-# exact cells from the larger file.
-function era5_request_area(bbox::BBOX, dataset, name)
-    (isnothing(bbox.longitude) || isnothing(bbox.latitude)) && return nothing
-    Nx, Ny, _ = size(dataset, name)
-    Δλ = 360 / Nx
-    Δφ = 180 / Ny
-    lon = bbox.longitude
-    lat = bbox.latitude
-    padded = BBOX(longitude = (lon[1] - 2Δλ, lon[2] + 2Δλ),
-                  latitude  = (max(lat[1] - 2Δφ, -90), min(lat[2] + 2Δφ, 90)))
-    return build_era5_area(padded)
-end
-
-function build_era5_area(bbox::BBOX)
-    lon = bbox.longitude
-    lat = bbox.latitude
-
-    if isnothing(lon) || isnothing(lat)
-        return nothing
-    end
-
-    west  = lon[1]
-    east  = lon[2]
-    south = lat[1]
-    north = lat[2]
-
-    return [north, west, south, east]
-end
-
-# Column with Nearest interpolation: tight box; CDS returns the nearest cell.
-function build_era5_area(col::COL{<:Any, <:Any, <:Any, <:NR})
-    lon, lat = col.longitude, col.latitude
-    ε = 1e-3
-    return [lat + ε, lon - ε, lat - ε, lon + ε]  # [N, W, S, E]
-end
-
-# Column with Linear interpolation: pad by slightly more than ERA5's native
-# 0.25° spacing so the file contains the 2x2 stencil bilinear interp needs.
-function build_era5_area(col::COL{<:Any, <:Any, <:Any, <:LIN})
-    lon, lat = col.longitude, col.latitude
-    ε = 0.3
-    return [lat + ε, lon - ε, lat - ε, lon + ε]
 end
