@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using NumericalEarth.DataWrangling.CopernicusDEM
 using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, z_interfaces,
                                     dataset_variable_name, validate_dataset_coverage,
-                                    metadata_filename
+                                    metadata_filename, longitude_name, latitude_name
 using NumericalEarth.Bathymetry: regrid_bathymetry
 
 # The actual data read requires a DestinE token, the Zarr extension, and network
@@ -27,6 +27,11 @@ using NumericalEarth.Bathymetry: regrid_bathymetry
         region = BoundingBox(longitude = (9, 11), latitude = (45, 47))
         meta = Metadatum(:bottom_height; dataset = ds, region)
         @test dataset_variable_name(meta) == "z"
+
+        # The window is placed by matching file coordinates to the native grid, so these must
+        # name the coordinates the Zarr-materialized NetCDF actually writes.
+        @test longitude_name(meta) == "lon"
+        @test latitude_name(meta) == "lat"
 
         filename = metadata_filename(ds, :bottom_height, nothing, region)
         @test startswith(filename, "GLO30_")
