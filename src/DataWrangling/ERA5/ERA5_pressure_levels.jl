@@ -254,8 +254,9 @@ end
 Build a [`PressureLevelVerticalDiscretization`](@ref) whose per-column heights
 follow the ERA5 geopotential in time. The geopotential Φ(λ,φ,p,t) is loaded over
 the whole date window of `metadata` (all snapshots in memory) and wrapped in a
-`TimeSeriesInterpolation` bound to `clock`; `znode` reads Φ interpolated to
-`clock.time` and divides by `g`. Sub-surface levels are clipped to the local
+`TimeSeriesInterpolation` bound to `clock`, which the discretization materializes
+into a `Field` refreshed at each `update_state!(::PrescribedAtmosphere)`; `znode`
+reads that snapshot and divides by `g`. Sub-surface levels are clipped to the local
 surface geopotential so that columns stay monotonic. The single-level surface
 geopotential (orography × g, static in time) is downloaded from the matching
 `ERA5*SingleLevel` dataset and used as the clip source.
