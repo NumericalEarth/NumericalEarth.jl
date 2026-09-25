@@ -4,7 +4,9 @@ using Oceananigans.Fields: ZeroField
 using OceanBioME: CarbonDioxideGasExchangeBoundaryCondition,
                   OxygenGasExchangeBoundaryCondition
 
-using OceanBioME.Models.GasExchangeModel: PartiallySolubleGas, OxygenSolubility, GarciaGordonOxygenSaturation
+using OceanBioME.Models.GasExchangeModel: PartiallySolubleGas, OxygenSolubility, GarciaGordonOxygenSaturation,
+                                          CarbonDioxideAirConcentration, MolPerKgPerAtmToMMolPerCubicMPerMicroAtm, ATM
+using OceanBioME.Models.CarbonChemistryModel: CarbonChemistry, FF
 
 import NumericalEarth.EarthSystemModels.InterfaceComputations: biogeochemical_interface
 import NumericalEarth.Oceans: update_net_ocean_biogeochemical_fluxes!, biogeochemistry_surface_exchanged_tracers
@@ -24,19 +26,22 @@ biogeochemistry_surface_exchanged_tracers(::AbstractInorganicCarbon{N}) where N 
 
 @inline surface_wind_speed(exchanger) = sqrt(exchanger.atmosphere.state.u^2 + exchanger.atmosphere.state.v^2)
 
-biogeochemical_interface(exchanger, ocean, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}) =
+# prescribed atmosphere pressure is in Pa, the gas exchange takes atm
+@inline surface_atmospheric_pressure(exchanger) = exchanger.atmosphere.state.p / ATM
+
+biogeochemical_interface(exchanger, ocean, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}; kwargs...) =
     merge(
-        biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.nutrients),
-        biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.plankton),
-        biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.detritus),
-        biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.oxygen),
-        biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.inorganic_carbon)
+        biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.nutrients; kwargs...),
+        biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.plankton; kwargs...),
+        biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.detritus; kwargs...),
+        biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.oxygen; kwargs...),
+        biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.inorganic_carbon; kwargs...)
     )
 
 biogeochemical_interface(exchanger, ocean, ::Oxygen; kwargs...) =
     (; O₂ = OxygenGasExchangeBoundaryCondition(;
                 wind_speed = surface_wind_speed(exchanger),
-                air_concentration = GarciaGordonOxygenSaturation(),
+                air_concentration = GarciaGordonOxygenSaturation(; atmospheric_pressure = surface_atmospheric_pressure(exchanger)),
                 kwargs...).condition.func)
 
 biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{1}; kwargs...) =
@@ -48,13 +53,21 @@ function biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{N}
     return NamedTuple{names}(exchanges)
 end
 
-carbon_dioxide_exchange(exchanger, DIC, Alk; kwargs...) =
-    CarbonDioxideGasExchangeBoundaryCondition(;
+# same solubility as the boundary condition's default, so the air and water sides share a density
+function carbon_dioxide_exchange(exchanger, DIC, Alk; carbon_chemistry = CarbonChemistry(), kwargs...)
+    air_concentration = CarbonDioxideAirConcentration(; mole_fraction = exchanger.atmosphere.state.pCO₂,
+                                                        atmospheric_pressure = surface_atmospheric_pressure(exchanger),
+                                                        solubility = MolPerKgPerAtmToMMolPerCubicMPerMicroAtm(FF{Float64}(),
+                                                                                                              carbon_chemistry.density_function))
+
+    return CarbonDioxideGasExchangeBoundaryCondition(;
         wind_speed = surface_wind_speed(exchanger),
-        air_concentration = exchanger.atmosphere.state.pCO₂,
+        air_concentration,
+        carbon_chemistry,
         DIC, Alk,
         kwargs...
     ).condition.func
+end
 
 #####
 ##### Applying it
