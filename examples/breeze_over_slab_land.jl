@@ -157,7 +157,7 @@ latitude = 15
 
 constants = ThermodynamicConstants()
 reference_state = ReferenceState(grid, constants;
-                                 surface_pressure = p₀,
+                                 base_pressure = p₀,
                                  potential_temperature = θ₀)
 dynamics = AnelasticDynamics(reference_state)
 
@@ -217,7 +217,7 @@ radiation = RadiativeTransferModel(grid, AllSkyOptics(), constants;
 # `radiation` kwarg is passed here.
 
 atmos = atmosphere_simulation(grid; dynamics,
-                              forcing  = (; ρe = sponge),
+                              forcing  = (; ρθ = sponge),
                               coriolis = FPlane(latitude = latitude))
 
 # Initial atmospheric profile: dry-adiabatic sub-cloud layer capped by a
@@ -325,7 +325,7 @@ qˡ = atmos.model.microphysical_fields.qˡ
 simulation.output_writers[:atmos] = JLD2Writer(model, (; w, T, qˡ);
                                                filename = "breeze_slab_land_atmos",
                                                schedule = TimeInterval(10minutes),
-                                               overwrite_existing = true)
+                                               overwrite_files = true)
 
 simulation.output_writers[:land] = JLD2Writer(model,
                                               (; T = slab_land.temperature,
@@ -333,7 +333,7 @@ simulation.output_writers[:land] = JLD2Writer(model,
                                                   𝒮 = slab_land.saturation);
                                               filename = "breeze_slab_land_surface",
                                               schedule = TimeInterval(10minutes),
-                                              overwrite_existing = true)
+                                              overwrite_files = true)
 
 # ## Run
 

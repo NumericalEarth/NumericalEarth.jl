@@ -389,7 +389,7 @@ function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid;
     return target
 end
 
-function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw...)
+function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum, args...; kw...)
     regrid_from_metadata!(target_field, metadata; kw...)
     return target_field
 end

@@ -3,7 +3,7 @@
 #####
 
 # The child's prognostic variables (dry density `ρᵈ`, momentum densities `ρu`/`ρv`, potential-temperature
-# density `ρθ`, vapor density `ρqᵛ`) are precomputed from the parent's raw state ON THE PARENT GRID and
+# density `ρθ`, moisture density `ρqᵛᵉ`) are precomputed from the parent's raw state ON THE PARENT GRID and
 # stored as `FieldTimeSeries` (see `breeze_state_exchanger.jl`). The child's lateral boundary conditions
 # and interior Davies relaxation then just interpolate those precomputed prognostics in space + time —
 # there is no thermodynamic combine inside the tendency/halo kernels. Both layers reuse the generic
@@ -27,7 +27,6 @@ using Oceananigans:
     ValueBoundaryCondition,
     NormalFlowBoundaryCondition,
     Field,
-    CenterField,
     Center, Face,
     set!
 
@@ -51,7 +50,8 @@ using Breeze:
     MixedPhaseEquilibrium,
     SpecificForcing,
     materialize_terrain!,
-    moisture_prognostic_name
+    moisture_prognostic_name,
+    moisture_specific_name
 
 using Breeze.AtmosphereModels: prognostic_field_names
 
@@ -125,7 +125,7 @@ function default_nested_dynamics(grid; surface_pressure, reference_potential_tem
     time_discretization = SplitExplicitTimeDiscretization(sponge = UpperSponge(; damping_rate, depth = damping_depth),
                                                           damping = NoDivergenceDamping())
     kw = (;)
-    isnothing(surface_pressure)                || (kw = merge(kw, (; surface_pressure)))
+    isnothing(surface_pressure)                || (kw = merge(kw, (; base_pressure = surface_pressure)))
     isnothing(reference_potential_temperature) || (kw = merge(kw, (; reference_potential_temperature)))
     return CompressibleDynamics(time_discretization; kw...)
 end
@@ -252,11 +252,11 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # Precompute the child prognostics on the parent grid (combine-then-interpolate); the exchanger owns
     # its own 3-level moving window and refreshes it from the parent each step via `exchange_state!`.
     condensates = isnothing(parent_condensates) ? (qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing) : parent_condensates
-    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates)
+    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates, moisture_name)
     prognostic = exchanger.prognostic
 
-    ρqᵛ = prognostic.ρqᵛ
-    moist_variables = NamedTuple{tuple(moisture_name)}(tuple(ρqᵛ))
+    ρqᵛᵉ = prognostic.ρqᵛᵉ
+    moist_variables = NamedTuple{tuple(moisture_name)}(tuple(ρqᵛᵉ))
 
     # Lateral BCs: interpolate the precomputed prognostics at the boundary face. Momentum is prescribed on
     # every side, but the BC *type* is per-side: `NormalFlowBoundaryCondition` on the wall-normal side
@@ -264,10 +264,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # side (prescribing the parent's tangential velocity in the halo — `NormalFlowBC` there leaves it
     # under-constrained and injects spurious near-boundary convergence). `ρᵈ`/energy/moisture are Center
     # scalars (`ValueBoundaryCondition` on all sides, since `NormalFlowBC` overwrites the first interior cell
-    # asymmetrically for Center fields). The energy BC uses Breeze's energy-BC interface key (`ρs` on
-    # Breeze ≥0.10, `ρe` before): it merges with the coupling's bottom energy-flux BC on the same field,
-    # and for a potential-temperature formulation Breeze routes the (Value) `ρθ` boundary values through
-    # unchanged. `ρθ` and the energy key must not both carry BCs.
+    # asymmetrically for Center fields).
     energy_key = energy_bc_key()
     dry_bc_variables = merge((ρᵈ = prognostic.ρᵈ, ρu = prognostic.ρu, ρv = prognostic.ρv),
                              NamedTuple{(energy_key,)}((prognostic.ρθ,)))
@@ -339,12 +336,11 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     return NestedModel(parent_atmosphere, child, exchanger)
 end
 
-# Domain-mean dataset surface pressure at `date`, regridded onto the child grid — anchors the
-# default compressible dynamics' hydrostatic reference to the parent state.
-function mean_surface_pressure(dataset, child_grid, date, dir)
+# Domain-mean dataset mean-sea-level pressure at `date`, regridded onto the child grid.
+function mean_sea_level_pressure(dataset, child_grid, date, dir)
     single_level_dataset = matching_single_level_dataset(dataset)
     p₀ = Field{Center, Center, Nothing}(child_grid)
-    set!(p₀, Metadatum(:surface_pressure; dataset = single_level_dataset, date,
+    set!(p₀, Metadatum(:mean_sea_level_pressure; dataset = single_level_dataset, date,
                        region = BoundingBox(child_grid), dir))
     # Reduce across ranks so every rank anchors the same hydrostatic reference
     # (`all_reduce` is the identity on serial architectures).
@@ -372,8 +368,8 @@ Build the parent `PrescribedAtmosphere`, nest a Breeze child in it, and initiali
 `parent_dataset` at `first(dates)` — the returned model is ready to step. The parent spans
 `child_grid`'s bounding box padded by `parent_padding` (default `parent_dataset`'s
 `default_horizontal_padding`, margin for the lateral-BC interpolation stencils) at `dates`, on
-`parent_dataset`'s native grid. Unless given, the default dynamics' `surface_pressure` anchor is the domain-mean dataset surface
-pressure over the child at `first(dates)`. When `bottom_drag_coefficient` is given,
+`parent_dataset`'s native grid. Unless given, the default dynamics' `surface_pressure` anchor is the domain-mean dataset
+mean-sea-level pressure over the child at `first(dates)`. When `bottom_drag_coefficient` is given,
 `drag_surface_temperature` defaults to the dataset's skin temperature at `first(dates)` regridded onto
 the child grid (a static snapshot, not the dataset's diurnal cycle). `balancer` controls the
 post-initialization adiabatic (DFI) balance: `true` (default) runs it, `false` skips it, and an
@@ -396,7 +392,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
                                              time_indices_in_memory = parent_time_indices_in_memory)
 
     if isnothing(surface_pressure)
-        surface_pressure = mean_surface_pressure(parent_dataset, child_grid, first(dates), dir)
+        surface_pressure = mean_sea_level_pressure(parent_dataset, child_grid, first(dates), dir)
     end
 
     if !isnothing(bottom_drag_coefficient) && isnothing(drag_surface_temperature)
@@ -412,6 +408,12 @@ end
 NumericalEarth.Atmospheres.bulk_drag(model::NestedModel; kw...) =
     NumericalEarth.Atmospheres.bulk_drag(model.child; kw...)
 
+function interpolate_to_child(fts, child_grid, t₀, loc = (Center, Center, Center))
+    field = Field{loc...}(child_grid)
+    interpolate!(field, fts[Time(t₀)])
+    return field
+end
+
 # Initialize the nested child from the exchanger's parent-derived prognostics (the SAME state that drives
 # the lateral boundaries), interpolated to the child interior — so the interior IC and the prescribed
 # boundary agree at the walls (no standing pressure/density jump). Recompute the Exner reference from the
@@ -424,27 +426,18 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
     prognostic = nested_model.exchanger.prognostic
     t₀ = first(prognostic.ρᵈ.times)
 
-    # Interpolate each exchanger prognostic (parent grid, initial time) to the child interior. Using the
-    # SAME parent-derived prognostics that drive the lateral boundaries — via the same `interpolate!` —
-    # makes the interior IC and the prescribed boundary agree at the walls, so there is no standing
-    # density/pressure jump to force spurious vertical velocity. The adiabatic balancer below then spins
-    # up ρw from this consistent state.
-    to_child(fts) = (field = CenterField(child_grid); interpolate!(field, fts[Time(t₀)]); field)
-    ρᵈ  = to_child(prognostic.ρᵈ)
-    ρθ  = to_child(prognostic.ρθ)
-    ρqᵛ = to_child(prognostic.ρqᵛ)
-    ρu  = to_child(prognostic.ρu)
-    ρv  = to_child(prognostic.ρv)
+    ρᵈ   = interpolate_to_child(prognostic.ρᵈ, child_grid, t₀)
+    ρθ   = interpolate_to_child(prognostic.ρθ, child_grid, t₀)
+    ρqᵛᵉ = interpolate_to_child(prognostic.ρqᵛᵉ, child_grid, t₀)
+    ρu   = interpolate_to_child(prognostic.ρu, child_grid, t₀, (Face, Center, Center))
+    ρv   = interpolate_to_child(prognostic.ρv, child_grid, t₀, (Center, Face, Center))
 
-    # Recover the specific state from the density-weighted prognostics (dry-weighted momentum/energy,
-    # total-weighted vapor); `ρ` is the total density set! expects.
-    ρ   = Field(ρᵈ + ρqᵛ)
-    qᵗ  = Field(ρqᵛ / ρ)
+    ρ   = Field(ρᵈ + ρqᵛᵉ)
+    qᵛᵉ = Field(ρqᵛᵉ / ρ)
     θˡⁱ = Field(ρθ / ρᵈ)
-    u   = Field(ρu / ρᵈ)
-    v   = Field(ρv / ρᵈ)
 
-    set!(nested_model; ρ, u, v, qᵗ, θˡⁱ, compute_reference_state = true)
+    moisture = NamedTuple{(moisture_specific_name(child.microphysics),)}((qᵛᵉ,))
+    set!(nested_model; ρ, ρu, ρv, θˡⁱ, moisture..., compute_reference_state = true)
 
     # Consistent-w: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (the initial flow follows the ground).
     update_state!(nested_model)
