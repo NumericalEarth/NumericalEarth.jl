@@ -2,10 +2,11 @@
 ##### ESA WorldCover: anonymous COG tiles → regional NetCDF
 #####
 ##### The `Map` band is a UInt8 land-cover class code (no-data = 0). Class codes
-##### must never be averaged, so we read the raw 10 m pixels windowed to the bbox
-##### with nearest resampling (which only clips/aligns — it never invents an
-##### intermediate code), then aggregate onto the coarse lat/lon grid by an
-##### integer factor using `aggregate_landcover`. This keeps the categorical
+##### must never be averaged, so the mosaic of 3° tiles is read at its native
+##### 10 m resolution with nearest resampling (which only clips/aligns — it never
+##### invents an intermediate code), one bounded chunk at a time; each chunk is
+##### counted onto the coarse lat/lon lattice with `aggregate_landcover` and
+##### written to the NetCDF before the next is read. This keeps the categorical
 ##### field on its native EPSG:4326 grid — no reprojection.
 #####
 
@@ -28,17 +29,11 @@ function worldcover_tile_label(longitude, latitude)
                   ew, lpad(abs(Int(tile_longitude)), 3, '0'))
 end
 
-# The SW corners of every 3° tile intersecting the bbox.
-function worldcover_tiles(longitude_bounds, latitude_bounds)
-    λ₁, λ₂ = longitude_bounds
-    φ₁, φ₂ = latitude_bounds
-    tiles = String[]
-    for tile_latitude in (3 * fld(φ₁, 3)):3:(3 * fld(φ₂, 3))
-        for tile_longitude in (3 * fld(λ₁, 3)):3:(3 * fld(λ₂, 3))
-            push!(tiles, worldcover_tile_label(tile_longitude, tile_latitude))
-        end
-    end
-    return tiles
+# Labels of every 3° tile overlapping the native-pixel window.
+function worldcover_tiles(i₁, i₂, j₁, j₂)
+    tile_span = 3 * ESA_WORLDCOVER_PIXELS_PER_DEGREE
+    return [worldcover_tile_label(λ, φ) for φ in 3 * fld(j₁, tile_span) : 3 : 3 * fld(j₂ - 1, tile_span)
+                                        for λ in 3 * fld(i₁, tile_span) : 3 : 3 * fld(i₂ - 1, tile_span)]
 end
 
 function NumericalEarth.DataWrangling.WorldCover.worldcover_cog_to_netcdf(metadatum::ESAWorldCoverMetadatum, nc_path)
@@ -46,27 +41,18 @@ function NumericalEarth.DataWrangling.WorldCover.worldcover_cog_to_netcdf(metada
 
     dataset = metadatum.dataset
     region  = metadatum.region
+    factor  = dataset.aggregation_factor
 
-    factor = dataset.aggregation_factor
-    native_step = ESA_WORLDCOVER_NATIVE_STEP
-
-    i₁, i₂, j₁, j₂ = worldcover_window(region.longitude, region.latitude, factor)
-    west  = i₁ * native_step
-    east  = i₂ * native_step
-    south = j₁ * native_step
-    north = j₂ * native_step
-
-    tile_urls = [worldcover_tile_url(dataset, tile)
-                 for tile in worldcover_tiles(region.longitude, region.latitude)]
+    window = worldcover_window(region.longitude, region.latitude, factor)
+    tile_urls = [worldcover_tile_url(dataset, tile) for tile in worldcover_tiles(window...)]
 
     # Read the anonymous, unsigned public bucket; `environment` restores any prior
     # AWS/GDAL config afterwards, so a signed `/vsis3` read elsewhere in the same
     # session is not left with signing disabled.
-    pixels = ArchGDAL.environment(globalconfig = ["AWS_NO_SIGN_REQUEST" => "YES",
-                                                  "AWS_REGION" => "eu-central-1"]) do
+    ArchGDAL.environment(globalconfig = ["AWS_NO_SIGN_REQUEST" => "YES",
+                                         "AWS_REGION" => "eu-central-1"]) do
         # ESA WorldCover only publishes tiles that contain land; a 3° cell that is
-        # entirely ocean (or outside coverage) has no tile, so skip a URL that
-        # fails to open instead of aborting the whole read.
+        # entirely ocean has no tile and reads as no-data.
         sources = ArchGDAL.IDataset[]
         for url in tile_urls
             try
@@ -76,40 +62,35 @@ function NumericalEarth.DataWrangling.WorldCover.worldcover_cog_to_netcdf(metada
             end
         end
         isempty(sources) && error("No ESA WorldCover tiles are published for the region " *
-                                  "longitude $(region.longitude), latitude $(region.latitude); " *
-                                  "it may be entirely ocean or outside the product's coverage " *
-                                  "(land only, 60°S–84°N).")
+                                  "longitude $(region.longitude), latitude $(region.latitude)")
 
-        # Build a VRT mosaic over the available tiles, then read the raw pixels on
-        # the snapped window at native resolution with nearest resampling.
         try
-            ArchGDAL.gdalbuildvrt(sources) do mosaic
-                ArchGDAL.gdalwarp([mosaic],
-                    ["-te", string(west), string(south), string(east), string(north),
-                     "-tr", string(native_step), string(native_step),
-                     "-r",  "near",
-                     "-ot", "Byte"]) do windowed
-                    # (Nx, Ny) with y north-to-south (GDAL convention).
-                    data = UInt8.(ArchGDAL.read(windowed, 1))
-                    reverse(data, dims = 2)  # flip to south-to-north
-                end
-            end
+            aggregate_worldcover_tiles(sources, window, factor, nc_path)
         finally
             foreach(ArchGDAL.destroy, sources)
         end
     end
 
-    # Aggregate onto the coarse lat/lon grid by the integer factor in one pass.
-    aggregated  = aggregate_landcover(pixels, factor)
-    class_field = aggregated.landcover_class
-    vegetation  = aggregated.vegetation_fraction
+    return nothing
+end
 
-    nx, ny = size(class_field)
+# Count the mosaic of `sources` over the native-pixel `window` onto the `factor`-pixel
+# lattice and write every product to `nc_path`, holding at most `tile_bytes` of pixels at a time.
+function aggregate_worldcover_tiles(sources, window, factor, nc_path; tile_bytes = default_tile_bytes)
+    i₁, i₂, j₁, j₂ = window
+    native_step = ESA_WORLDCOVER_NATIVE_STEP
+    nx = (i₂ - i₁) ÷ factor
+    ny = (j₂ - j₁) ÷ factor
     Δ = factor * native_step
-    longitude = range(west  + Δ / 2, step = Δ, length = nx)
-    latitude  = range(south + Δ / 2, step = Δ, length = ny)
+    longitude = range(i₁ * native_step + Δ / 2, step = Δ, length = nx)
+    latitude  = range(j₁ * native_step + Δ / 2, step = Δ, length = ny)
 
-    NCDataset(nc_path, "c") do ds
+    chunks = ceil(Int, sqrt((i₂ - i₁) * (j₂ - j₁) / tile_bytes))
+    chunks_x = min(chunks, nx)
+    chunks_y = min(chunks, ny)
+
+    staging = tempname(dirname(nc_path))
+    NCDataset(staging, "c") do ds
         defDim(ds, "lon", nx)
         defDim(ds, "lat", ny)
 
@@ -123,21 +104,41 @@ function NumericalEarth.DataWrangling.WorldCover.worldcover_cog_to_netcdf(metada
         class_variable = defVar(ds, "landcover_class", Float32, ("lon", "lat");
                                 attrib = ["long_name" => "majority land-cover class code",
                                           "missing_value" => 0])
-        class_variable[:, :] = Float32.(class_field)
-
         vegetation_variable = defVar(ds, "vegetation_fraction", Float32, ("lon", "lat");
                                      attrib = ["long_name" => "vegetated area fraction",
                                                "units" => "1"])
-        vegetation_variable[:, :] = Float32.(vegetation)
+        fraction_variables = map(keys(ESA_WORLDCOVER_CLASS_NAMES)) do name
+            defVar(ds, string(class_fraction_variable_name(name)), Float32, ("lon", "lat");
+                   attrib = ["long_name" => string(name, " area fraction"), "units" => "1"])
+        end
 
-        for (name, fraction) in pairs(aggregated.class_fractions)
-            band = string(class_fraction_variable_name(name))
-            fraction_variable = defVar(ds, band, Float32, ("lon", "lat");
-                                       attrib = ["long_name" => string(name, " area fraction"),
-                                                 "units" => "1"])
-            fraction_variable[:, :] = Float32.(fraction)
+        ArchGDAL.gdalbuildvrt(sources) do mosaic
+            for chunk_j in 1:chunks_y, chunk_i in 1:chunks_x
+                cells_i = tile_indices(nx, chunks_x, chunk_i)
+                cells_j = tile_indices(ny, chunks_y, chunk_j)
+                west  = (i₁ + factor * (first(cells_i) - 1)) * native_step
+                east  = (i₁ + factor * last(cells_i)) * native_step
+                south = (j₁ + factor * (first(cells_j) - 1)) * native_step
+                north = (j₁ + factor * last(cells_j)) * native_step
+
+                pixels = ArchGDAL.gdalwarp([mosaic],
+                    ["-te", string(west), string(south), string(east), string(north),
+                     "-tr", string(native_step), string(native_step),
+                     "-r",  "near",
+                     "-ot", "Byte"]) do windowed
+                    reverse!(ArchGDAL.read(windowed, 1), dims = 2)  # GDAL rows run north to south
+                end
+
+                aggregated = aggregate_landcover(pixels, factor)
+                class_variable[cells_i, cells_j]      = Float32.(aggregated.landcover_class)
+                vegetation_variable[cells_i, cells_j] = Float32.(aggregated.vegetation_fraction)
+                for (variable, fraction) in zip(fraction_variables, aggregated.class_fractions)
+                    variable[cells_i, cells_j] = Float32.(fraction)
+                end
+            end
         end
     end
+    mv(staging, nc_path; force = true)
 
     return nothing
 end
