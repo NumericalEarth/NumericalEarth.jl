@@ -27,7 +27,6 @@ using Oceananigans:
     ValueBoundaryCondition,
     NormalFlowBoundaryCondition,
     Field,
-    CenterField,
     Center, Face,
     set!
 
@@ -409,6 +408,12 @@ end
 NumericalEarth.Atmospheres.bulk_drag(model::NestedModel; kw...) =
     NumericalEarth.Atmospheres.bulk_drag(model.child; kw...)
 
+function interpolate_to_child(fts, child_grid, t₀, loc = (Center, Center, Center))
+    field = Field{loc...}(child_grid)
+    interpolate!(field, fts[Time(t₀)])
+    return field
+end
+
 # Initialize the nested child from the exchanger's parent-derived prognostics (the SAME state that drives
 # the lateral boundaries), interpolated to the child interior — so the interior IC and the prescribed
 # boundary agree at the walls (no standing pressure/density jump). Recompute the Exner reference from the
@@ -421,29 +426,18 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
     prognostic = nested_model.exchanger.prognostic
     t₀ = first(prognostic.ρᵈ.times)
 
-    # Interpolate each exchanger prognostic (parent grid, initial time) to the child interior. Using the
-    # SAME parent-derived prognostics that drive the lateral boundaries — via the same `interpolate!` —
-    # makes the interior IC and the prescribed boundary agree at the walls, so there is no standing
-    # density/pressure jump to force spurious vertical velocity. The adiabatic balancer below then spins
-    # up ρw from this consistent state.
-    to_child(fts) = (field = CenterField(child_grid); interpolate!(field, fts[Time(t₀)]); field)
-    ρᵈ   = to_child(prognostic.ρᵈ)
-    ρθ   = to_child(prognostic.ρθ)
-    ρqᵛᵉ = to_child(prognostic.ρqᵛᵉ)
-    ρu   = to_child(prognostic.ρu)
-    ρv   = to_child(prognostic.ρv)
+    ρᵈ   = interpolate_to_child(prognostic.ρᵈ, child_grid, t₀)
+    ρθ   = interpolate_to_child(prognostic.ρθ, child_grid, t₀)
+    ρqᵛᵉ = interpolate_to_child(prognostic.ρqᵛᵉ, child_grid, t₀)
+    ρu   = interpolate_to_child(prognostic.ρu, child_grid, t₀, (Face, Center, Center))
+    ρv   = interpolate_to_child(prognostic.ρv, child_grid, t₀, (Center, Face, Center))
 
-    # Recover the specific state from the density-weighted prognostics (dry-weighted momentum/energy,
-    # total-weighted moisture). `set!` backs out `ρᵈ = ρ − Σρqˣ`, so pairing `qᵛᵉ` with
-    # `ρ = ρᵈ + ρqᵛᵉ` returns the child exactly the exchanger's `ρᵈ`.
     ρ   = Field(ρᵈ + ρqᵛᵉ)
     qᵛᵉ = Field(ρqᵛᵉ / ρ)
     θˡⁱ = Field(ρθ / ρᵈ)
-    u   = Field(ρu / ρᵈ)
-    v   = Field(ρv / ρᵈ)
 
     moisture = NamedTuple{(moisture_specific_name(child.microphysics),)}((qᵛᵉ,))
-    set!(nested_model; ρ, u, v, θˡⁱ, moisture..., compute_reference_state = true)
+    set!(nested_model; ρ, ρu, ρv, θˡⁱ, moisture..., compute_reference_state = true)
 
     # Consistent-w: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (the initial flow follows the ground).
     update_state!(nested_model)
