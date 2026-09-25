@@ -1,7 +1,7 @@
 module InterfaceComputations
 
 using Adapt: Adapt
-using DocStringExtensions: TYPEDSIGNATURES
+using DocStringExtensions: TYPEDSIGNATURES, SIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: architecture
@@ -48,6 +48,7 @@ export
     PowerLawTortuosity,
     AltitudeCorrection,
     atmosphere_land_interface,
+    surface_layer_diagnostics,
     # Sea ice-ocean heat flux formulations
     IceBathHeatFlux,
     ThreeEquationHeatFlux,
@@ -57,11 +58,12 @@ export
 using ..EarthSystemModels: EarthSystemModels,
                            default_gravitational_acceleration,
                            default_freshwater_density,
+                           default_latent_heat_of_fusion,
                            thermodynamics_parameters,
                            surface_layer_height,
                            boundary_layer_height
 
-using ...NumericalEarth: stateindex
+using ...NumericalEarth: NumericalEarth, stateindex
 
 #####
 ##### Functions extended by component models
@@ -185,5 +187,6 @@ include("atmosphere_ocean_fluxes.jl")
 include("atmosphere_sea_ice_fluxes.jl")
 include("atmosphere_land_fluxes.jl")
 include("sea_ice_ocean_fluxes.jl")
+include("surface_layer_diagnostics.jl")
 
 end # module
