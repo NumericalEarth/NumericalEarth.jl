@@ -127,7 +127,7 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     qᵛ = specific_humidity(atmosphere)
 
     # Breeze's diagnosed vapor mass fraction, not the scheme-dependent moisture prognostic;
-    # `dynamics_pressure` gives the per-column pressure (a single scalar `surface_pressure`
+    # `dynamics_pressure` gives the per-column pressure (a single scalar `base_pressure`
     # would bias fluxes over terrain).
     p = dynamics_pressure(atmosphere.dynamics)
 
@@ -160,12 +160,12 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos
         "flux field, so its surface stress cannot come from the coupler. Build the atmosphere " *
         "without `bottom_drag_coefficient` (Breeze `BulkDrag`) when coupling to land or ocean."))
 
-    ρe = thermodynamic_density(atmosphere.formulation).boundary_conditions.bottom.condition.condition
+    ρE = thermodynamic_density(atmosphere.formulation).boundary_conditions.bottom.condition.condition
 
     # Moisture flux field
     ρqᵛᵉ = atmosphere.moisture_density.boundary_conditions.bottom.condition
 
-    return (; ρu, ρv, ρe, ρqᵛᵉ)
+    return (; ρu, ρv, ρE, ρqᵛᵉ)
 end
 
 NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos::BreezeAtmosphereSim) =
@@ -184,7 +184,7 @@ NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos::BreezeA
         # interpolate stresses on variable's location
         net.ρu[i, j, 1]  = ℑxᶠᵃᵃ(i, j, 1, grid, ao_fluxes.x_momentum)
         net.ρv[i, j, 1]  = ℑyᵃᶠᵃ(i, j, 1, grid, ao_fluxes.y_momentum)
-        net.ρe[i, j, 1]  = Qc   # sensible heat only; latent heat handled by moisture flux
+        net.ρE[i, j, 1]  = Qc   # sensible heat only; latent heat handled by moisture flux
         net.ρqᵛᵉ[i, j, 1] = Fv
     end
 end

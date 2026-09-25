@@ -119,13 +119,13 @@ default_lid_depth(grid) = convert(eltype(grid), grid.Lz / 4)
 # Default child dynamics: compressible with split-explicit acoustic substepping, an `UpperSponge`
 # Rayleigh layer over the top `damping_depth` meters at `damping_rate`, and no divergence damping
 # (its (ρθ)′-proxy damper injects a spurious force on an unbalanced cold start). When given,
-# `surface_pressure`/`reference_potential_temperature` anchor the hydrostatic reference and the
+# `base_pressure`/`reference_potential_temperature` anchor the hydrostatic reference and the
 # perturbation-form pressure-gradient reference profile.
-function default_nested_dynamics(grid; surface_pressure, reference_potential_temperature, damping_rate, damping_depth)
+function default_nested_dynamics(grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth)
     time_discretization = SplitExplicitTimeDiscretization(sponge = UpperSponge(; damping_rate, depth = damping_depth),
                                                           damping = NoDivergenceDamping())
     kw = (;)
-    isnothing(surface_pressure)                || (kw = merge(kw, (; base_pressure = surface_pressure)))
+    isnothing(base_pressure)                   || (kw = merge(kw, (; base_pressure)))
     isnothing(reference_potential_temperature) || (kw = merge(kw, (; reference_potential_temperature)))
     return CompressibleDynamics(time_discretization; kw...)
 end
@@ -192,7 +192,7 @@ Provides sensible, overridable physics defaults: `microphysics` (1-moment mixed-
 `CloudMicrophysics` is loaded), `momentum_advection = WENO(order=9)`, `coriolis = SphericalCoriolis()`,
 and a compressible split-explicit `dynamics` with an `UpperSponge` over the top `damping_depth` m at
 `damping_rate`; a matching ρw Rayleigh lid sponge (`Relaxation` toward zero) is added to `forcing`. Pass
-`surface_pressure`/`reference_potential_temperature` to anchor the default dynamics. Any
+`base_pressure`/`reference_potential_temperature` to anchor the default dynamics. Any
 `boundary_conditions`/`forcing` the caller passes are merged with the parent-derived ones (caller wins).
 
 When `bottom_drag_coefficient` is given — a constant drag coefficient or a `Breeze.PolynomialCoefficient`
@@ -221,7 +221,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     relaxation_mask = davies_relaxation_mask(child_grid, relaxation_width),
     sides = (:west, :east, :south, :north),
     thermodynamic_constants = ThermodynamicConstants(eltype(child_grid)),
-    surface_pressure = nothing,
+    base_pressure = nothing,
     reference_potential_temperature = nothing,
     terrain = nothing,
     terrain_blend_length = 60_000,   # meters; physical blend width → resolution-invariant slope
@@ -236,7 +236,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     coriolis = SphericalCoriolis(),
     damping_rate = 1/5,
     damping_depth = default_lid_depth(child_grid),
-    dynamics = default_nested_dynamics(child_grid; surface_pressure, reference_potential_temperature, damping_rate, damping_depth),
+    dynamics = default_nested_dynamics(child_grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth),
     boundary_conditions = NamedTuple(),
     forcing = NamedTuple(),
     kw...)
@@ -368,7 +368,7 @@ Build the parent `PrescribedAtmosphere`, nest a Breeze child in it, and initiali
 `parent_dataset` at `first(dates)` — the returned model is ready to step. The parent spans
 `child_grid`'s bounding box padded by `parent_padding` (default `parent_dataset`'s
 `default_horizontal_padding`, margin for the lateral-BC interpolation stencils) at `dates`, on
-`parent_dataset`'s native grid. Unless given, the default dynamics' `surface_pressure` anchor is the domain-mean dataset
+`parent_dataset`'s native grid. Unless given, the default dynamics' `base_pressure` anchor is the domain-mean dataset
 mean-sea-level pressure over the child at `first(dates)`. When `bottom_drag_coefficient` is given,
 `drag_surface_temperature` defaults to the dataset's skin temperature at `first(dates)` regridded onto
 the child grid (a static snapshot, not the dataset's diurnal cycle). `balancer` controls the
@@ -380,7 +380,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
     dir = default_download_directory(parent_dataset),
     parent_padding = default_horizontal_padding(parent_dataset),
     parent_time_indices_in_memory = nothing,   # nothing ⇒ every date resident; ≥3 streams a moving window
-    surface_pressure = nothing,
+    base_pressure = nothing,
     bottom_drag_coefficient = nothing,
     drag_surface_temperature = nothing,
     balancer = true,
@@ -391,15 +391,15 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
                                              architecture = architecture(child_grid), dir,
                                              time_indices_in_memory = parent_time_indices_in_memory)
 
-    if isnothing(surface_pressure)
-        surface_pressure = mean_sea_level_pressure(parent_dataset, child_grid, first(dates), dir)
+    if isnothing(base_pressure)
+        base_pressure = mean_sea_level_pressure(parent_dataset, child_grid, first(dates), dir)
     end
 
     if !isnothing(bottom_drag_coefficient) && isnothing(drag_surface_temperature)
         drag_surface_temperature = dataset_skin_temperature(parent_dataset, child_grid, first(dates), dir)
     end
 
-    nested_model = NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere, child_grid; surface_pressure,
+    nested_model = NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere, child_grid; base_pressure,
                                                                        bottom_drag_coefficient, drag_surface_temperature, kw...)
     initialize_nested_child!(nested_model, parent_dataset, first(dates), dir; balancer)
     return nested_model

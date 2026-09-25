@@ -812,7 +812,7 @@ end
     # Default microphysics: with CloudMicrophysics unloaded (as in the test env) this is the Breeze-native
     # `SaturationAdjustment(WarmPhaseEquilibrium())` — no extra dependency needed to exercise the seam.
     model = nested_atmosphere_model(parent, child_grid;
-                relaxation_rate = 1/300, relaxation_width = 3, surface_pressure = 1e5,
+                relaxation_rate = 1/300, relaxation_width = 3, base_pressure = 1e5,
                 coriolis = nothing, terrain = nothing, parent_condensates = nothing)
     ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false)
 
