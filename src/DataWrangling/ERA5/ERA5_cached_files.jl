@@ -82,20 +82,36 @@ function cached_filenames(dir)
     return listing[3]
 end
 
+# Pressure levels [hPa] of an open ERA5 file; empty for single-level files
+function file_pressure_levels(ds)
+    for name in ("pressure_level", "level")
+        haskey(ds, name) && return Float64.(ds[name][:])
+    end
+    return Float64[]
+end
+
+requested_pressure_levels(dataset) = Float64[]
+requested_pressure_levels(dataset::ERA5PressureLevelsDataset) = dataset.pressure_levels ./ hPa
+
 struct FileExtent
     west :: Float64
     east :: Float64
     south :: Float64
     north :: Float64
     periodic :: Bool
+    pressure_levels :: Vector{Float64}
 end
 
 const file_extents = Dict{Tuple{String, Float64}, FileExtent}()
 
 function file_extent(path)
     return get!(file_extents, (path, mtime(path))) do
-        λ, φ = NCDatasets.Dataset(ds -> (ds["longitude"][:], ds["latitude"][:]), path)
-        FileExtent(first(λ), last(λ), minimum(φ), maximum(φ), !isnothing(infer_longitudinal_period(λ)))
+        NCDatasets.Dataset(path) do ds
+            λ = ds["longitude"][:]
+            φ = ds["latitude"][:]
+            periodic = !isnothing(infer_longitudinal_period(λ))
+            FileExtent(first(λ), last(λ), minimum(φ), maximum(φ), periodic, file_pressure_levels(ds))
+        end
     end
 end
 
@@ -116,7 +132,7 @@ const region_suffix_pattern = r"^(_(-?\d+\.\d|nothing)){4}\.nc$"
 
 The first file in `dir` holding `metadatum`'s variable and date — the global file, then
 regional ones — whose longitudes and latitudes contain the area a download for `metadatum`
-would fetch, or `nothing`.
+would fetch, and whose pressure levels include the requested ones, or `nothing`.
 """
 function DataWrangling.covering_cached_file(metadatum::ERA5SnapshotMetadatum, dir)
     area = era5_request_area(metadatum.region, metadatum.dataset, metadatum.name)
@@ -132,7 +148,8 @@ function DataWrangling.covering_cached_file(metadatum::ERA5SnapshotMetadatum, di
         suffix == ".nc" || occursin(region_suffix_pattern, suffix) || continue
         path = joinpath(dir, filename)
         isfile(path) || continue
-        covers(file_extent(path), area) && return path
+        extent = file_extent(path)
+        covers(extent, area) && requested_pressure_levels(metadatum.dataset) ⊆ extent.pressure_levels && return path
     end
 
     return nothing
