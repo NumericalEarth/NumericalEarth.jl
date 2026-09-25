@@ -58,7 +58,7 @@ end
 
 Return an atmosphere simulation using `SpeedyWeather.PrimitiveWetModel` on `spectral_grid`.
 Output is written when `output_interval` is provided. `time_stepping` controls
-SpeedyWeather's internal timestep (e.g. via its `Δt_at_T31` field); the resulting
+SpeedyWeather's internal timestep (e.g. via its `Δt_at_T32` field); the resulting
 `Δt` must be an integer divisor of the coupled `EarthSystemModel` timestep.
 
 `stop_time` should match the `stop_time` later passed to the coupled
