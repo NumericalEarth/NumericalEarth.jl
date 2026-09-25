@@ -13,6 +13,14 @@ using Oceananigans.Utils: launch!, KernelParameters
 
 Oceananigans.location(metadata::Metadata) = restrict_location(dataset_location(metadata.dataset, metadata.name), metadata.region)
 
+# TODO: Oceananigans' polar boundary condition fills a `Face` pole from row `Ny` rather than the pole
+# face `Ny + 1`, overwriting data that lies on it. Drop the `nothing` conditions once fixed upstream.
+function dataset_boundary_conditions(grid, (LX, LY, LZ))
+    loc = instantiate.((LX, LY, LZ))
+    LY === Face || return FieldBoundaryConditions(grid, loc)
+    return FieldBoundaryConditions(grid, loc; south=nothing, north=nothing)
+end
+
 restrict_location(loc, ::Nothing) = loc
 restrict_location(loc, ::BoundingBox) = loc
 restrict_location((LX, LY, LZ), ::Column) = (Nothing, Nothing, LZ)
@@ -224,7 +232,7 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
 
     grid = native_grid(metadata, arch; halo)
     LX, LY, LZ = location(metadata)
-    field = Field{LX, LY, LZ}(grid)
+    field = Field{LX, LY, LZ}(grid; boundary_conditions = dataset_boundary_conditions(grid, (LX, LY, LZ)))
 
     if !isnothing(inpainting)
         inpainted_path = inpainted_metadata_path(metadata)
@@ -372,14 +380,14 @@ function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid;
         config = FieldRegridding(grid, metadata, values(kw))
         data = load_field_cache(config)
         if !isnothing(data)
-            target = Field{LX, LY, LZ}(grid)
+            target = Field{LX, LY, LZ}(grid; boundary_conditions = dataset_boundary_conditions(grid, (LX, LY, LZ)))
             interior(target) .= on_architecture(architecture(grid), data)
             fill_halo_regions!(target)
             return target
         end
     end
 
-    target = Field{LX, LY, LZ}(grid)
+    target = Field{LX, LY, LZ}(grid; boundary_conditions = dataset_boundary_conditions(grid, (LX, LY, LZ)))
     regrid_from_metadata!(target, metadata; tile_bytes, kw...)
     if cache
         # rebuild the key: the native read may have just downloaded the dataset file it stamps
