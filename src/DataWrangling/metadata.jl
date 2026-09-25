@@ -362,13 +362,24 @@ end
 """
     metadata_path(metadatum)
 
-Path to the file holding `metadatum`: its own file if cached, otherwise a cached file that
-covers it (see `covering_cached_file`), otherwise the path a download writes to.
+Path to the file holding `metadatum`, searching the `cache_directories` of `metadatum.dir`
+for its own file, then for a cached file that covers it (see `covering_cached_file`).
+Otherwise, the path in `metadatum.dir` a download writes to.
 """
 function metadata_path(metadatum::Metadatum)
-    path = joinpath(metadatum.dir, metadatum.filename)
-    isfile(path) && return path
-    return something(covering_cached_file(metadatum, metadatum.dir), path)
+    directories = cache_directories(metadatum.dir)
+
+    for directory in directories
+        path = joinpath(directory, metadatum.filename)
+        isfile(path) && return path
+    end
+
+    for directory in directories
+        path = covering_cached_file(metadatum, directory)
+        isnothing(path) || return path
+    end
+
+    return joinpath(metadatum.dir, metadatum.filename)
 end
 
 """
@@ -380,13 +391,8 @@ A file in `dir` that holds `metadatum` although it was downloaded for another re
 covering_cached_file(metadatum, dir) = nothing
 
 function metadata_path(metadata::Metadata)
-    fn = metadata.filename
-    if fn isa DatewiseFilename
-        return [metadata_path(metadatum) for metadatum in metadata]
-    else
-        # Single filename (String) — one file for all dates
-        return joinpath(metadata.dir, fn)
-    end
+    metadata.filename isa DatewiseFilename && return [metadata_path(metadatum) for metadatum in metadata]
+    return metadata_path(first(metadata))  # one file for all dates
 end
 
 #####

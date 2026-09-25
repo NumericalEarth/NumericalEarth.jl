@@ -109,3 +109,35 @@ end
         end
     end
 end
+
+@testset "Cached files are found in every root of NUMERICALEARTH_DATA_PATH" begin
+    mktempdir() do tmp
+        shared = joinpath(tmp, "shared")
+        personal = joinpath(tmp, "personal")
+        write_era5_file(joinpath(mkpath(joinpath(shared, "ERA5")), temperature(nothing, tmp).filename),
+                        global_longitudes, global_latitudes)
+        chmod(shared, 0o555; recursive = true)
+        try
+            # Downloads go to the last root that can be written to
+            withenv("NUMERICALEARTH_DATA_PATH" => join([personal, shared], ':')) do
+                @test NumericalEarth.DataWrangling.download_cache("ERA5") == joinpath(personal, "ERA5")
+            end
+
+            withenv("NUMERICALEARTH_DATA_PATH" => join([shared, personal], ':')) do
+                dir = NumericalEarth.DataWrangling.download_cache("ERA5")
+                @test dir == joinpath(personal, "ERA5")
+
+                region = BoundingBox(longitude = (10, 20), latitude = (40, 50))
+                @test metadata_path(temperature(region, dir)) == joinpath(shared, "ERA5", temperature(nothing, tmp).filename)
+                @test last(field_and_retrievals(temperature(region, dir))) == 0
+
+                later = Metadatum(:temperature; dataset = ERA5HourlySingleLevel(), date = date + Hour(1), region, dir)
+                retrievals[] = 0
+                @test download(later; retrieve = fake_retrieve) == joinpath(dir, later.filename)
+                @test retrievals[] == 1
+            end
+        finally
+            chmod(shared, 0o755; recursive = true)
+        end
+    end
+end
