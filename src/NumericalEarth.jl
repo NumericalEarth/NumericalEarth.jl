@@ -109,6 +109,7 @@ export
     IsotropicFrontalArea, EmpiricalFrontalArea,
     UniformHeight, VariableHeight,
     urban_roughness,
+    fill_aerodynamic_roughness_gaps!,
     surface_temperature,
     surface_layer_diagnostics,
     regrid_bathymetry,
