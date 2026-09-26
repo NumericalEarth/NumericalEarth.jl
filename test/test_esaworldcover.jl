@@ -77,18 +77,18 @@ end
     @test majority_class(patch) in ESA_WORLDCOVER_CLASS_CODES
 end
 
-@testset "per-class fractions sum to 1 over valid pixels" begin
+@testset "per-class fractions are shares of the block area" begin
     # 2×2 tree, plus one crop and one no-data pixel.
     codes = UInt8[10 10 40
                   10 10 0]  # 5 valid (four 10s, one 40), one no-data
     fr = class_fractions(codes)
-    @test fr.tree_cover == 4 / 5
-    @test fr.cropland   == 1 / 5
-    @test sum(values(fr)) ≈ 1.0
+    @test fr.tree_cover == 4 / 6
+    @test fr.cropland   == 1 / 6
+    @test sum(values(fr)) ≈ 5 / 6   # the no-data pixel is the unmapped sixth
 
-    # The fractions are the counts normalized by the valid-pixel count.
+    # The fractions are the counts normalized by the block size.
     counts = class_counts(codes)
-    @test values(fr) == values(counts) ./ sum(counts)
+    @test values(fr) == values(counts) ./ length(codes)
 
     # A uniform patch: one class is 1, the rest are 0.
     uniform = fill(UInt8(20), 5, 5)
@@ -104,20 +104,20 @@ end
     @test vegetation_fraction(empty) == 0.0
     @test majority_class(empty) == 0
 
-    # No-data pixels are excluded from the denominator.
+    # No-data pixels stay in the denominator as unmapped area.
     codes = UInt8[10 0 0
-                  0 0 0]  # 1 valid tree pixel out of 6
-    @test class_fractions(codes).tree_cover == 1.0
+                  0 0 0]  # 1 tree pixel out of 6
+    @test class_fractions(codes).tree_cover == 1 / 6
 end
 
 @testset "vegetation fraction" begin
     # tree(10)+crop(40) vegetated; water(80)+built-up(50) not; one no-data.
     codes = UInt8[10 40 80
-                  50 0 10]  # valid: 10,40,80,50,10 → 3 vegetated of 5
-    @test vegetation_fraction(codes) == 3 / 5
+                  50 0 10]  # 3 vegetated of 6 pixels, one of them no-data
+    @test vegetation_fraction(codes) == 3 / 6
 
     # Overriding the vegetated-class set is a modeling choice.
-    @test vegetation_fraction(codes; vegetated_classes = (80,)) == 1 / 5
+    @test vegetation_fraction(codes; vegetated_classes = (80,)) == 1 / 6
 
     # Equals the sum of the vegetated-class fractions.
     fr = class_fractions(codes)
