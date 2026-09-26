@@ -113,15 +113,17 @@ end
 #####
 
 @inline land_saturation(i, j, grid, land_state) =
-    (saturation = state2dindex(land_state.saturation, i, j),)
+    state2dindex(land_state.saturation, i, j)
 
-# Hydrology state, per humidity formulation.
-@inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) = land_saturation(i, j, grid, land_state)
+# Hydrology state, per humidity formulation. The caller adds the `saturation` key.
+@inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) =
+    (; saturation = land_saturation(i, j, grid, land_state))
 @inline interface_hydrology_state(i, j, grid, q::FractionalHumidity, land_state) =
     interface_hydrology_state(i, j, grid, q.efficiency, land_state)
-@inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) = land_saturation(i, j, grid, land_state)
+@inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) =
+    (; saturation = land_saturation(i, j, grid, land_state))
 @inline interface_hydrology_state(i, j, grid, ::DryLayerHumidity, land_state) =
-    land_saturation(i, j, grid, land_state)
+    (; saturation = land_saturation(i, j, grid, land_state))
 @inline interface_hydrology_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
 
 # Energy state: humidity formulations that need the bulk land temperature
