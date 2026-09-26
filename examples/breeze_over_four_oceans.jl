@@ -51,10 +51,13 @@ Tᵒᶜ = 290 # K
 U₀ = 10 # m/s
 coriolis = FPlane(latitude=33)
 
-prescribed_ocean_atmos = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis)
-slab_ocean_atmos       = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis)
-full_ocean_atmos       = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis)
-nh_ocean_atmos         = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis)
+reference_state = ReferenceState(grid, ThermodynamicConstants(); potential_temperature=θᵃᵗ)
+dynamics = AnelasticDynamics(reference_state)
+
+prescribed_ocean_atmos = atmosphere_simulation(grid; dynamics, coriolis)
+slab_ocean_atmos       = atmosphere_simulation(grid; dynamics, coriolis)
+full_ocean_atmos       = atmosphere_simulation(grid; dynamics, coriolis)
+nh_ocean_atmos         = atmosphere_simulation(grid; dynamics, coriolis)
 
 # ## Atmospheric initial conditions
 #
@@ -64,9 +67,7 @@ nh_ocean_atmos         = atmosphere_simulation(grid; potential_temperature=θᵃ
 # A background zonal wind `U₀` provides a nonzero wind speed for the
 # similarity theory flux computation.
 
-reference_state = slab_ocean_atmos.model.dynamics.reference_state
-
-θᵢ(x, z) = reference_state.surface_potential_temperature + 0.1 * randn() * (z < 500)
+θᵢ(x, z) = reference_state.potential_temperature + 0.1 * randn() * (z < 500)
 set!(prescribed_ocean_atmos.model, θ=θᵢ, u=U₀)
 set!(slab_ocean_atmos.model,       θ=θᵢ, u=U₀)
 set!(full_ocean_atmos.model,       θ=θᵢ, u=U₀)
@@ -168,7 +169,7 @@ nh_sim         = Simulation(nh_model; Δt, stop_time)
 # ## Progress callbacks
 
 function prescribed_progress(sim)
-    atmos = sim.model.atmosphere
+    atmos = sim.model.atmosphere.model
     u, v, w = atmos.velocities
     umax = maximum(abs, u)
     wmax = maximum(abs, w)
@@ -179,7 +180,7 @@ function prescribed_progress(sim)
 end
 
 function slab_progress(sim)
-    atmos = sim.model.atmosphere
+    atmos = sim.model.atmosphere.model
     u, v, w = atmos.velocities
     umax = maximum(abs, u)
     wmax = maximum(abs, w)
@@ -193,7 +194,7 @@ function slab_progress(sim)
 end
 
 function full_progress(sim)
-    atmos = sim.model.atmosphere
+    atmos = sim.model.atmosphere.model
     u, v, w = atmos.velocities
     umax = maximum(abs, u)
     wmax = maximum(abs, w)
@@ -209,7 +210,7 @@ function full_progress(sim)
 end
 
 function nh_progress(sim)
-    atmos = sim.model.atmosphere
+    atmos = sim.model.atmosphere.model
     u, v, w = atmos.velocities
     umax = maximum(abs, u)
     wmax = maximum(abs, w)
