@@ -58,7 +58,6 @@ end
 
 function Oceananigans.Fields.compute!(mld::MixedLayerDepthField, time=nothing)
     compute_mixed_layer_depth!(mld)
-    # @apply_regionally compute_mixed_layer_depth!(mld)
     fill_halo_regions!(mld)
     return mld
 end
