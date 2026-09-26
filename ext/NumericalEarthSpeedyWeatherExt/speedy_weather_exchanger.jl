@@ -54,7 +54,9 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchang
 end
 
 function ConservativeRegridding.regrid!(field::Oceananigans.Field, regridder::Regridder, data::AbstractArray)
-    regrid!(vec(interior(field)), regridder, vec(data))
+    # Stage `data` in the regridder's dense source buffer so `mul!` dispatches to the GPU sparse kernel
+    regridder.src_temp .= vec(data)
+    regrid!(vec(interior(field)), regridder, regridder.src_temp)
 end
 
 function ConservativeRegridding.regrid!(data::AbstractArray, regridder::Regridder, field::Oceananigans.Field)

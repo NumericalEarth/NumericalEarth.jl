@@ -15,6 +15,9 @@ default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
 ocean_reference_density(ocean::Simulation, FT) = convert(FT, reference_density(ocean))
 ocean_reference_density(::Nothing, FT) = convert(FT, 1026.0)
 
+ocean_surface_height(ocean::Simulation) = ocean.model.free_surface.displacement
+ocean_surface_height(::Nothing) = ZeroField()
+
 function default_snow_thermodynamics(grid)
     FT = eltype(grid)
     snow_conductivity = FT(0.31)
@@ -206,6 +209,7 @@ function sea_ice_dynamics(grid, ocean=nothing;
                                   bottom_momentum_stress = τo,
                                   rheology,
                                   free_drift,
+                                  ocean_surface_height = ocean_surface_height(ocean),
                                   solver)
 end
 

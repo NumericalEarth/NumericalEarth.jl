@@ -104,6 +104,11 @@ build_tracer_top_bc(Jᶜ, Jʷ, content, additional, name) = FluxBoundaryConditio
 
 @inline freshwater_exchange(bc::DiscreteBoundaryFunction) = freshwater_exchange(bc.func)
 @inline freshwater_exchange(mf::MultipleFluxes) = mf.additional_fluxes
+
+# A bare flux `Field` exchanges no freshwater, so its freshwater fluxes are written to unused fields
+freshwater_exchange(J::Field) = (; carrying_flux = Field{Center, Center, Nothing}(J.grid),
+                                   content_flux  = Field{Center, Center, Nothing}(J.grid))
+
 @inline extract_freshwater_flux(bc) = freshwater_exchange(bc).carrying_flux
 
 #####
