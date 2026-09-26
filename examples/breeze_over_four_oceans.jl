@@ -380,30 +380,30 @@ end
 
 n = Observable(1)
 
-# Column 1 — prescribed atmosphere
+## Column 1 — prescribed atmosphere
 θn_p = @lift θ_prescribed_ts[$n]
 un_p = @lift u_prescribed_ts[$n]
 
-# Column 2 — slab atmosphere
+## Column 2 — slab atmosphere
 θn = @lift θ_slab_ts[$n]
 un = @lift u_slab_ts[$n]
 sstn_slab = @lift sst_slab_ts[$n]
 
-# SST comparison (convert °C to K for full/NH)
+## SST comparison (convert °C to K for full/NH)
 ocean_sst_kelvin = @lift interior(T_ocean_ts[$n], :, 1, Nzᵒᶜ) .+ celsius_to_kelvin
 nh_sst_kelvin    = @lift interior(T_nh_ts[$n], :, 1, Nzⁿʰ) .+ celsius_to_kelvin
 
-# Column 3 — hydrostatic atmosphere
+## Column 3 — hydrostatic atmosphere
 qˡn = @lift qˡ_full_ts[$n]
 wn  = @lift w_full_ts[$n]
 oTn = @lift T_ocean_ts[$n]
 
-# Column 4 — nonhydrostatic atmosphere
+## Column 4 — nonhydrostatic atmosphere
 qˡn_nh = @lift qˡ_nh_ts[$n]
 wn_nh  = @lift w_nh_ts[$n]
 oTn_nh = @lift T_nh_ts[$n]
 
-# Profile column — horizontal-mean profiles
+## Profile column — horizontal-mean profiles
 θ_avg_prescribed = @lift Field(Average(θ_prescribed_ts[$n], dims=1))
 θ_avg_slab       = @lift Field(Average(θ_slab_ts[$n], dims=1))
 θ_avg_full       = @lift Field(Average(θ_full_ts[$n], dims=1))
@@ -414,9 +414,10 @@ u_avg_full       = @lift Field(Average(u_full_ts[$n], dims=1))
 u_avg_nh         = @lift Field(Average(u_nh_ts[$n], dims=1))
 T_avg_ocean      = @lift Field(Average(T_ocean_ts[$n], dims=1))
 T_avg_nh         = @lift Field(Average(T_nh_ts[$n], dims=1))
-# Convert slab SST from K to °C for the ocean T profile comparison
+## Convert slab SST from K to °C for the ocean T profile comparison
 sst_avg_celsius        = @lift fill(mean(sst_slab_ts[$n]) - celsius_to_kelvin, 2)
 prescribed_avg_celsius = fill(Tᵒᶜ - celsius_to_kelvin, 2) # constant
+nothing #hide
 
 # ### Plot
 
