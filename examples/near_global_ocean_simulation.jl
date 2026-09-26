@@ -147,7 +147,7 @@ ocean.output_writers[:surface] = JLD2Writer(ocean.model, outputs;
                                             filename = "near_global_surface_fields",
                                             indices = (:, :, grid.Nz),
                                             with_halos = true,
-                                            overwrite_existing = true,
+                                            overwrite_files = true,
                                             array_type = Array{Float32})
 
 # ### Running the simulation
