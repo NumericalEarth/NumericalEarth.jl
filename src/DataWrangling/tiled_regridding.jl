@@ -163,9 +163,8 @@ end
 
 # The native grid to regrid `metadata` onto `target` in tiles, or `nothing` where tiling would not
 # reproduce the single-pass regrid.
-function tiled_native_grid(target, metadata, inpainting, halo)
+function tiled_native_grid(target, metadata, halo)
     windowed_retrieval(metadata.dataset) || return nothing
-    isnothing(inpainting) || return nothing
     metadata.region isa BoundingBox || return nothing
     isnothing(horizontal_centers(target.grid)) && return nothing
 
@@ -189,8 +188,9 @@ end
     regrid_from_metadata!(target, metadata; tile_bytes = default_tile_bytes, kw...)
 
 Fill `target` from `metadata`, regridding in tiles of at most `tile_bytes` of source each where
-the dataset reads windows, and in a single pass otherwise. Remaining keyword arguments go to
-`Field(metadata, arch; …)`.
+the dataset reads windows, and in a single pass otherwise. On the tiled path `inpainting` fills
+the gaps of the assembled `target`, which the tiles leave `NaN`. Remaining keyword arguments go
+to `Field(metadata, arch; …)`.
 """
 function regrid_from_metadata!(target, metadata;
                                tile_bytes = default_tile_bytes,
@@ -200,7 +200,7 @@ function regrid_from_metadata!(target, metadata;
 
     Downloads.download(metadata)
 
-    native = tiled_native_grid(target, metadata, inpainting, halo)
+    native = tiled_native_grid(target, metadata, halo)
 
     if isnothing(native)
         source = Field(metadata, architecture(target.grid); inpainting, halo, kw...)
@@ -209,6 +209,11 @@ function regrid_from_metadata!(target, metadata;
     end
 
     validate_vertical_extent(target.grid, native, metadata)
+    regrid_in_tiles!(target, metadata, native, tile_bytes)
 
-    return regrid_in_tiles!(target, metadata, native, tile_bytes)
+    if !isnothing(inpainting)
+        inpaint_mask!(target, compute_mask(metadata, target); inpainting)
+    end
+
+    return target
 end
