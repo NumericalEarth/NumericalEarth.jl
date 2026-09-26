@@ -14,7 +14,7 @@ function Oceananigans.TimeSteppers.time_step!(atmos::SpeedySimulation, Δt)
     end
 
     for _ in 1:nsteps
-        SpeedyWeather.timestep!(atmos)
+        SpeedyWeather.time_step!(atmos)
     end
 end
 
