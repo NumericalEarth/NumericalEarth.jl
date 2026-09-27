@@ -19,21 +19,13 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
 
     # We use .data here to save parameter space (unlike Field, adapt_structure for
     # fts = FieldTimeSeries does not return fts.data)
-    atmosphere_velocities = (u = atmosphere.velocities.u.data,
-                             v = atmosphere.velocities.v.data)
-
-    atmosphere_tracers = (T = atmosphere.temperature.data,
-                          q = atmosphere.specific_humidity.data)
-
-    rainfall_flux = surface_rainfall_flux(atmosphere)
-    snowfall_flux = surface_snowfall_flux(atmosphere)
-    atmosphere_pressure = atmosphere.pressure.data
-
-    # Extract info for time-interpolation
-    u = atmosphere.velocities.u # for example
-    atmosphere_times = u.times
-    atmosphere_backend = u.backend
-    atmosphere_time_indexing = u.time_indexing
+    atmosphere_time_series = (u  = field_data(atmosphere.velocities.u),
+                              v  = field_data(atmosphere.velocities.v),
+                              T  = field_data(atmosphere.temperature),
+                              q  = field_data(atmosphere.specific_humidity),
+                              p  = field_data(atmosphere.pressure),
+                              Jʳ = surface_rainfall_flux(atmosphere),
+                              Jˢ = surface_snowfall_flux(atmosphere))
 
     atmosphere_fields = exchanger.state
     space_fractional_indices = exchanger.regridder
@@ -64,13 +56,7 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
             space_fractional_indices,
             time_interpolator,
             grid,
-            atmosphere_velocities,
-            atmosphere_tracers,
-            atmosphere_pressure,
-            rainfall_flux,
-            snowfall_flux,
-            atmosphere_backend,
-            atmosphere_time_indexing)
+            atmosphere_time_series)
 
     # Set ocean barotropic pressure forcing
     #
@@ -91,13 +77,7 @@ end
                                                          space_fractional_indices,
                                                          time_interpolator,
                                                          exchange_grid,
-                                                         atmos_velocities,
-                                                         atmos_tracers,
-                                                         atmos_pressure,
-                                                         rainfall_flux,
-                                                         snowfall_flux,
-                                                         atmos_backend,
-                                                         atmos_time_indexing)
+                                                         atmos_time_series)
 
     i, j = @index(Global, NTuple)
 
@@ -108,16 +88,15 @@ end
 
     x_itp = FractionalIndices(fi, fj, nothing)
     t_itp = time_interpolator
-    atmos_args = (x_itp, t_itp, atmos_backend, atmos_time_indexing)
 
-    uᵃᵗ = interp_atmos_time_series(atmos_velocities.u, atmos_args...)
-    vᵃᵗ = interp_atmos_time_series(atmos_velocities.v, atmos_args...)
-    Tᵃᵗ = interp_atmos_time_series(atmos_tracers.T,    atmos_args...)
-    qᵃᵗ = interp_atmos_time_series(atmos_tracers.q,    atmos_args...)
-    pᵃᵗ = interp_atmos_time_series(atmos_pressure,     atmos_args...)
+    uᵃᵗ = interp_atmos_time_series(atmos_time_series.u, x_itp, t_itp)
+    vᵃᵗ = interp_atmos_time_series(atmos_time_series.v, x_itp, t_itp)
+    Tᵃᵗ = interp_atmos_time_series(atmos_time_series.T, x_itp, t_itp)
+    qᵃᵗ = interp_atmos_time_series(atmos_time_series.q, x_itp, t_itp)
+    pᵃᵗ = interp_atmos_time_series(atmos_time_series.p, x_itp, t_itp)
 
-    Mr = interp_atmos_time_series(rainfall_flux, atmos_args...)
-    Ms = interp_atmos_time_series(snowfall_flux, atmos_args...)
+    Mr = interp_atmos_time_series(atmos_time_series.Jʳ, x_itp, t_itp)
+    Ms = interp_atmos_time_series(atmos_time_series.Jˢ, x_itp, t_itp)
 
     # Convert atmosphere velocities (usually defined on a latitude-longitude grid) to
     # the frame of reference of the native grid
@@ -139,7 +118,10 @@ end
 ##### Utility for interpolating tuples of fields
 #####
 
-@inline interp_atmos_time_series(::Nothing, X, time, grid, args...) = 0
+@inline interp_atmos_time_series(::Nothing, args...) = 0
+
+@inline interp_atmos_time_series(J::NamedTuple{(:data, :backend, :time_indexing)}, X, time) =
+    interpolate(X, time, J.data, J.backend, J.time_indexing)
 
 # Note: assumes loc = (c, c, nothing) (and the third location should not matter.)
 @inline interp_atmos_time_series(J::AbstractArray, X::FractionalIndices, time, args...) =

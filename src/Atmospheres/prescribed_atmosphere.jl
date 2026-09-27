@@ -132,7 +132,7 @@ function default_precipitation_flux(grid, times)
 end
 
 @inline field_data(::Nothing) = nothing
-@inline field_data(field) = field.data
+@inline field_data(fts) = (data = fts.data, backend = fts.backend, time_indexing = fts.time_indexing)
 
 @inline surface_snowfall_flux(::Nothing) = nothing
 @inline surface_snowfall_flux(atmos::PrescribedAtmosphere) = surface_snowfall_flux(atmos.precipitation_flux)
