@@ -11,7 +11,7 @@ using Oceananigans.Advection: WENO, WENOVectorInvariant
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
                                        FieldBoundaryConditions, FluxBoundaryCondition,
                                        IMEXFluxBoundaryCondition, IMEXFlux, getbc
-using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
+using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy, get_temperature_and_salinity, thermal_expansionᶜᶜᶠ
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, set!, interior
 using Oceananigans.Forcings: MultipleForcings, DiscreteForcing
@@ -25,9 +25,11 @@ using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ, ℑxᶠᵃᵃ, ℑ
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TimeSteppers: Clock
 using Oceananigans.TurbulenceClosures: κzᶜᶜᶠ, VerticalScalarDiffusivity
-using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: TKEBasedVerticalDiffusivities,
+                                                                     CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
-                                                                     CATKEEquation
+                                                                     CATKEEquation,
+                                                                     with_penetrative_radiation
 using Oceananigans.Units: minutes, hours
 using Oceananigans.Utils: with_tracers, launch!
 using SeawaterPolynomials: SeawaterPolynomials

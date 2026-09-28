@@ -1,7 +1,7 @@
 using Adapt: Adapt
 using DocStringExtensions: TYPEDSIGNATURES
 using Oceananigans.Grids: inactive_cell
-using Oceananigans.Operators: ∂zᶜᶜᶜ, Δzᶜᶜᶜ, Δrᶜᶜᶜ
+using Oceananigans.Operators: ∂zᶜᶜᶜ
 
 
 """
@@ -222,7 +222,6 @@ end
 
 @inline function (R::TwoColorRadiation)(i, j, k, grid, clock, fields)
     J₀ = @inbounds R.surface_flux[i, j, 1]
-    Nz = size(grid, 3)
     κ₁ = R.first_absorption_coefficient
     κ₂ = blue_green_absorption_coefficient(R.second_absorption_coefficient, i, j)
     ϵ₁ = R.first_color_fraction
@@ -232,39 +231,54 @@ end
     dJ₂dz = ∂zᶜᶜᶜ(i, j, k, grid, beers_law_radiation, J₀, κ₂)
 
     # Net radiation flux divergence
-    dJdz = ϵ₁ * dJ₁dz + (1 - ϵ₁) * dJ₂dz
-
-    # The surface cell's share is delivered through the temperature boundary condition instead. 
-    surface_share = surface_absorbed_fraction(i, j, grid, R) * J₀ / Δzᶜᶜᶜ(i, j, Nz, grid)
-    return dJdz - ifelse(k == Nz, surface_share, zero(dJdz))
+    return ϵ₁ * dJ₁dz + (1 - ϵ₁) * dJ₂dz
 end
 
 @inline shortwave_radiative_forcing(i, j, grid, Fᵀ, ℐₜˢʷ, ocean_properties) = ℐₜˢʷ
-
-"""
-$(TYPEDSIGNATURES)
-
-Fraction of the net shortwave absorbed within the surface cell, from Beer's law on both colors.
-Vertical closures build their surface buoyancy flux from the tracer boundary conditions, so this
-part of the shortwave has to arrive there rather than as an interior source. Beer's law is evaluated
-on the reference thickness `Δr`, which a moving vertical coordinate leaves alone: the condition is
-set once per coupled step while the interior source is evaluated at every substep, and the column
-closes on the incoming shortwave only if the two read the same fraction.
-"""
-@inline function surface_absorbed_fraction(i, j, grid, tcr::TwoColorRadiation)
-    Δr = Δrᶜᶜᶜ(i, j, size(grid, 3), grid)
-    ϵ₁ = tcr.first_color_fraction
-    κ₁ = tcr.first_absorption_coefficient
-    κ₂ = blue_green_absorption_coefficient(tcr.second_absorption_coefficient, i, j)
-    return ϵ₁ * (1 - exp(-κ₁ * Δr)) + (1 - ϵ₁) * (1 - exp(-κ₂ * Δr))
-end
 
 @inline function shortwave_radiative_forcing(i, j, grid, tcr::TwoColorRadiation, Iˢʷ, ocean_properties)
     ρᵒᶜ = ocean_properties.reference_density
     cᵒᶜ = ocean_properties.heat_capacity
     J₀ = tcr.surface_flux
     @inbounds J₀[i, j,  1] = - Iˢʷ / (ρᵒᶜ * cᵒᶜ)
-    return surface_absorbed_fraction(i, j, grid, tcr) * Iˢʷ
+    return zero(Iˢʷ)
+end
+
+
+#####
+##### The penetrating shortwave as CATKE's convective velocity scale sees it
+#####
+
+penetrating_radiation(radiative_forcing) = nothing
+penetrating_radiation(radiation::TwoColorRadiation) = radiation
+
+@inline function two_color_parameters(R::TwoColorRadiation, i, j)
+    κ₂ = blue_green_absorption_coefficient(R.second_absorption_coefficient, i, j)
+    return R.first_color_fraction, R.first_absorption_coefficient, κ₂
+end
+
+# Fluxes positive upward: `surface_flux` holds the downward temperature flux J₀ ≥ 0, so the buoyancy flux is -g α J₀ ≤ 0
+@inline function TKEBasedVerticalDiffusivities.surface_radiative_buoyancy_flux(i, j, grid, R::TwoColorRadiation, buoyancy, fields)
+    b = buoyancy.formulation
+    T, S = get_temperature_and_salinity(b, fields)
+    α = thermal_expansionᶜᶜᶠ(i, j, size(grid, 3) + 1, grid, b.equation_of_state, T, S)
+    J₀ = @inbounds R.surface_flux[i, j, 1]
+    return - b.gravitational_acceleration * α * J₀
+end
+
+@inline function TKEBasedVerticalDiffusivities.transmitted_fraction(R::TwoColorRadiation, i, j, grid, d)
+    ϵ₁, κ₁, κ₂ = two_color_parameters(R, i, j)
+    return ϵ₁ * exp(-κ₁ * d) + (1 - ϵ₁) * exp(-κ₂ * d)
+end
+
+@inline function TKEBasedVerticalDiffusivities.transmitted_fraction_derivative(R::TwoColorRadiation, i, j, grid, d)
+    ϵ₁, κ₁, κ₂ = two_color_parameters(R, i, j)
+    return - ϵ₁ * κ₁ * exp(-κ₁ * d) - (1 - ϵ₁) * κ₂ * exp(-κ₂ * d)
+end
+
+@inline function TKEBasedVerticalDiffusivities.transmitted_thickness(R::TwoColorRadiation, i, j, grid, h)
+    ϵ₁, κ₁, κ₂ = two_color_parameters(R, i, j)
+    return - ϵ₁ * expm1(-κ₁ * h) / κ₁ - (1 - ϵ₁) * expm1(-κ₂ * h) / κ₂
 end
 
 get_radiative_forcing(something) = nothing
