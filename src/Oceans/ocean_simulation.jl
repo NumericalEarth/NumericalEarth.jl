@@ -375,7 +375,7 @@ defaults on a per-field basis.
 - `equation_of_state`: Equation of state object. Defaults to TEOS-10 (`TEOS10EquationOfState`).
 - `boundary_conditions`: User-supplied boundary conditions; merged with defaults.
 - `radiative_forcing`: Additional temperature forcing; merged into `forcing`.
-- `materialize_buoyancy_gradients`: whether the buoyancy gradients are precomputed and stored in fields. Default: `true`.
+- `materialize_buoyancy_gradients`: whether the buoyancy gradients are precomputed and stored in fields. Default: `false`.
 - `river_routing`: `NamedTuple` of [`RiverRouting`](@ref), typically `land.river_routing`. Defaults to
   `nothing`, which leaves `closure` untouched.
 - `river_mouth_diffusivity`: vertical tracer diffusivity (m² s⁻¹) at the river mouths. Default: `0.1`.
