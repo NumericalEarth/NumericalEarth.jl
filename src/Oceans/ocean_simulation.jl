@@ -295,6 +295,7 @@ end
                                  equation_of_state = TEOS10EquationOfState(; reference_density),
                                  boundary_conditions::NamedTuple = NamedTuple(),
                                  radiative_forcing = default_radiative_forcing(grid),
+                                 materialize_buoyancy_gradients = true,
                                  river_routing = nothing,
                                  river_mouth_diffusivity = 0.1,
                                  river_mouth_mixing_depth = 10,
@@ -374,6 +375,7 @@ defaults on a per-field basis.
 - `equation_of_state`: Equation of state object. Defaults to TEOS-10 (`TEOS10EquationOfState`).
 - `boundary_conditions`: User-supplied boundary conditions; merged with defaults.
 - `radiative_forcing`: Additional temperature forcing; merged into `forcing`.
+- `materialize_buoyancy_gradients`: whether the buoyancy gradients are precomputed and stored in fields. Default: `false`.
 - `river_routing`: `NamedTuple` of [`RiverRouting`](@ref), typically `land.river_routing`. Defaults to
   `nothing`, which leaves `closure` untouched.
 - `river_mouth_diffusivity`: vertical tracer diffusivity (m² s⁻¹) at the river mouths. Default: `0.1`.
@@ -404,6 +406,7 @@ function hydrostatic_ocean_simulation(grid;
                                       equation_of_state = TEOS10EquationOfState(; reference_density),
                                       boundary_conditions::NamedTuple = NamedTuple(),
                                       radiative_forcing = default_radiative_forcing(grid),
+                                      materialize_buoyancy_gradients = false,
                                       river_routing = nothing,
                                       river_mouth_diffusivity = 0.1,
                                       river_mouth_mixing_depth = 10,
@@ -541,6 +544,7 @@ function hydrostatic_ocean_simulation(grid;
 
     boundary_conditions = merge(default_boundary_conditions, merged_boundary_conditions)
     buoyancy = SeawaterBuoyancy(; gravitational_acceleration, equation_of_state)
+    buoyancy = BuoyancyForce(grid, buoyancy; materialize_gradients = materialize_buoyancy_gradients)
 
     if tracer_advection isa NamedTuple
         tracer_advection = with_tracers(tracers, tracer_advection, default_tracer_advection())
