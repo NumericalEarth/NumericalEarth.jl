@@ -284,7 +284,8 @@ Environment variables (physics):
   BOTTOM_CELLS  Representation of the bathymetry: full (GridFittedBottom, default), partial
                 (PartialCellBottom) or shaved (ShavedCellBottom, a linear slope through each bottom
                 cell). Adds "_pcells" or "_scells" to the run name.
-  CORIOLIS      Discretization of the Coriolis term: enstrophy (default), energy, active_weighted,
+  CORIOLIS      Discretization of the Coriolis term: enstrophy (default), energy, triad,
+                active_weighted,
                 consistent_area or consistent_area_energy. The consistent_area schemes divide the
                 area-weighted interpolation of the transport by the interpolation of the wet face
                 areas, reconstructing a uniform velocity exactly where face areas differ: next to
@@ -743,6 +744,7 @@ fi
 [[ "${BOTTOM_CELLS:-full}" == "partial" ]]     && RUN_NAME="${RUN_NAME}_pcells"
 [[ "${BOTTOM_CELLS:-full}" == "shaved" ]]      && RUN_NAME="${RUN_NAME}_scells"
 [[ "${CORIOLIS:-enstrophy}" == "energy" ]]                 && RUN_NAME="${RUN_NAME}_encor"
+[[ "${CORIOLIS:-enstrophy}" == "triad" ]]                  && RUN_NAME="${RUN_NAME}_triadcor"
 [[ "${CORIOLIS:-enstrophy}" == "active_weighted" ]]        && RUN_NAME="${RUN_NAME}_awcor"
 [[ "${CORIOLIS:-enstrophy}" == "consistent_area" ]]        && RUN_NAME="${RUN_NAME}_cacor"
 [[ "${CORIOLIS:-enstrophy}" == "consistent_area_energy" ]] && RUN_NAME="${RUN_NAME}_caecor"
@@ -1142,9 +1144,9 @@ case "${BOTTOM_CELLS:-full}" in
 esac
 
 case "${CORIOLIS:-enstrophy}" in
-    enstrophy|energy|active_weighted|consistent_area|consistent_area_energy)
+    enstrophy|energy|triad|active_weighted|consistent_area|consistent_area_energy)
         CORIOLIS_KWARG="coriolis_scheme = :${CORIOLIS:-enstrophy}," ;;
-    *) echo "CORIOLIS must be enstrophy|energy|active_weighted|consistent_area|consistent_area_energy, got '${CORIOLIS}'" >&2; exit 1 ;;
+    *) echo "CORIOLIS must be enstrophy|energy|triad|active_weighted|consistent_area|consistent_area_energy, got '${CORIOLIS}'" >&2; exit 1 ;;
 esac
 
 BBL_KWARG=""

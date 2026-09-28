@@ -555,7 +555,8 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   `0.1` at ORCA1, which is `≈ 5 × 10³` m² s⁻¹ at 1°. Default: `nothing`.
 - `laplacian_viscosity`: constant horizontal Laplacian viscosity ν in m² s⁻¹, overriding
   `viscous_velocity`. Default: `nothing`.
-- `coriolis_scheme`: discretization of the Coriolis term: `:enstrophy` (default), `:energy`, `:active_weighted`,
+- `coriolis_scheme`: discretization of the Coriolis term: `:enstrophy` (default), `:energy`, `:triad`,
+  `:active_weighted`,
   `:consistent_area` or `:consistent_area_energy`. The `consistent_area` schemes reconstruct a uniform velocity
   exactly where face areas differ, next to immersed boundaries and between cells of unequal thickness, and are the
   ones to use with `immersed_bottom = PartialCellBottom` or `ShavedCellBottom`.
@@ -1994,6 +1995,7 @@ end
 
 const coriolis_schemes = (enstrophy = Oceananigans.Coriolis.EnstrophyConserving,
                           energy = Oceananigans.Coriolis.EnergyConserving,
+                          triad = Oceananigans.Coriolis.TriadScheme,
                           active_weighted = Oceananigans.Coriolis.ActiveWeightedEnstrophyConserving,
                           consistent_area = Oceananigans.Coriolis.ConsistentAreaEnstrophyConserving,
                           consistent_area_energy = Oceananigans.Coriolis.ConsistentAreaEnergyConserving)

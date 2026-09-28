@@ -42,7 +42,7 @@ strait_sections(::Val{:halfdegree}) = (
 
 # Denmark Strait carries the densest overflow feeding North Atlantic Deep Water. Its row closes
 # land-to-land like the Arctic gateways: j=250 runs 35.6°W..24.0°W at 66.0°N..66.3°N, bounded by
-# Greenland at i=254 and Iceland at i=265. Its deepest cell is 690 m against an observed sill of
+# Greenland at i=253 and Iceland at i=264. Its deepest cell is 690 m against an observed sill of
 # ~620 m, which is the check that the row sits on the sill rather than in the Irminger Basin — the
 # row one to the south reaches 816 m and does not.
 #
@@ -54,12 +54,12 @@ strait_sections(::Val{:halfdegree}) = (
 # Rows of constant `j` slant in latitude this far north, which is why the endpoints are quoted as
 # ranges; what matters for a transport is that the section closes, not that it follows a parallel.
 strait_sections(::Val{:orca}) = (
-    bering = StraitSection(112:118, 251:251, :v),
-    drake  = StraitSection(221:221,  53:71,  :u),
-    itf    = StraitSection( 39:58,  130:130, :v),
-    fram   = StraitSection(268:278, 275:275, :v),
-    davis  = StraitSection(234:241, 254:254, :v),
-    denmark = StraitSection(255:264, 250:250, :v),
+    bering = StraitSection(111:117, 251:251, :v),
+    drake  = StraitSection(220:220,  53:71,  :u),
+    itf    = StraitSection( 38:57,  130:130, :v),
+    fram   = StraitSection(267:277, 275:275, :v),
+    davis  = StraitSection(233:240, 254:254, :v),
+    denmark = StraitSection(254:263, 250:250, :v),
 )
 
 strait_sections(config::Symbol) = strait_sections(Val(config))
