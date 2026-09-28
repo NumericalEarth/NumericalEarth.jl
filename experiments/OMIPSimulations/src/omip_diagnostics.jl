@@ -1,7 +1,7 @@
 
 using JLD2
 using Oceananigans.AbstractOperations: KernelFunctionOperation, Integral
-using Oceananigans.Operators: Axᶠᶜᶜ, Ayᶜᶠᶜ, ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, δzᵃᵃᶜ, Δz⁻¹ᶜᶠᶜ
+using Oceananigans.Operators: Axᶠᶜᶜ, Ayᶜᶠᶜ, ℑxᶜᵃᵃ, ℑxᶠᵃᵃ, ℑyᵃᶜᵃ, ℑyᵃᶠᵃ, δzᵃᵃᶜ, Δz⁻¹ᶜᶠᶜ
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, getclosure, κ_ϵSyᶜᶠᶠ
 
 # Volumetric face fluxes [m³/s] for offline transport diagnostics
@@ -10,6 +10,16 @@ using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, getclo
 # directly without re-deriving Δx/Δz on the visualizer side.
 @inline zonal_volume_flux(i, j, k, grid, u)      = @inbounds u[i, j, k] * Axᶠᶜᶜ(i, j, k, grid)
 @inline meridional_volume_flux(i, j, k, grid, v) = @inbounds v[i, j, k] * Ayᶜᶠᶜ(i, j, k, grid)
+
+# Time-averaged tracer transport ⟨u Aˣ c⟩ and ⟨v Aʸ c⟩, written beside ⟨u Aˣ⟩, ⟨v Aʸ⟩ and ⟨c⟩ so that the eddy
+# flux — everything the time average of the product holds that the product of the time averages does not —
+# is recoverable offline as ⟨v Aʸ c⟩ - ⟨v Aʸ⟩⟨c⟩. The tracer is centred onto the velocity face, so these are
+# second-order estimates of the transport rather than the WENO reconstruction the model advects with.
+@inline zonal_tracer_transport(i, j, k, grid, u, c) =
+    @inbounds u[i, j, k] * Axᶠᶜᶜ(i, j, k, grid) * ℑxᶠᵃᵃ(i, j, k, grid, c)
+
+@inline meridional_tracer_transport(i, j, k, grid, v, c) =
+    @inbounds v[i, j, k] * Ayᶜᶠᶜ(i, j, k, grid) * ℑyᵃᶠᵃ(i, j, k, grid, c)
 
 # GM eddy-induced meridional velocity v★ = -δz(κ ϵ Sʸ) / Δz, for the `DiffusiveFormulation`, where GM
 # enters as a skew tracer flux and v★ is never materialized. Built from the same helpers Oceananigans
@@ -97,12 +107,16 @@ Creates four output writers:
 - `output_dir`: directory for all output files. Default: `"."`.
 - `filename_prefix`: prefix for output filenames. Default: `"omip"`.
 - `file_splitting_interval`: time interval for splitting output files. Default: `360days`.
+- `transformation_interval`: interval between σ₂ water-mass-transformation samples, which split the overturning
+   into its physical and numerical parts (see [`WaterMassTransformation`](@ref)). `nothing`, the default, leaves
+   the diagnostic off; it costs two extra 3-D fields and one sweep of the grid per sample.
 """
 function add_omip_diagnostics!(simulation;
                                field_mean_interval = 5days,
                                surface_averaging_interval = 5days,
                                field_averaging_interval = 15days,
                                checkpoint_interval = 720days,
+                               transformation_interval = nothing,
                                output_dir = ".",
                                filename_prefix = "omip",
                                file_splitting_interval = 360days)
@@ -192,7 +206,11 @@ function add_omip_diagnostics!(simulation;
         surface_outputs[:sisnthick] = hs
     end
 
+    # Each writer is handed `ocean.model`, but Oceananigans serializes `including` against
+    # `simulation.model` — the coupled `EarthSystemModel`, which has no ocean properties.
+    # TODO(Oceananigans): serialize against the model the writer was constructed with.
     simulation.output_writers[:surface] = JLD2Writer(ocean.model, surface_outputs;
+                                                     including = Symbol[],
                                                      schedule = AveragedTimeInterval(surface_averaging_interval),
                                                      dir = output_dir,
                                                      filename = filename_prefix * "_surface",
@@ -220,6 +238,10 @@ function add_omip_diagnostics!(simulation;
         :vosq => vosq,
         :uvol => uvol,
         :vvol => vvol,
+        :uvolto => KernelFunctionOperation{Face,   Center, Center}(zonal_tracer_transport,      grid, u, T),
+        :vvolto => KernelFunctionOperation{Center, Face,   Center}(meridional_tracer_transport, grid, v, T),
+        :uvolso => KernelFunctionOperation{Face,   Center, Center}(zonal_tracer_transport,      grid, u, S),
+        :vvolso => KernelFunctionOperation{Center, Face,   Center}(meridional_tracer_transport, grid, v, S),
     )
 
     if haskey(ocean.model.tracers, :e)
@@ -244,6 +266,7 @@ function add_omip_diagnostics!(simulation;
     end
 
     simulation.output_writers[:fields] = JLD2Writer(ocean.model, field_outputs;
+                                                    including = Symbol[],
                                                     schedule = AveragedTimeInterval(field_averaging_interval),
                                                     dir = output_dir,
                                                     filename = filename_prefix * "_fields",
@@ -277,11 +300,20 @@ function add_omip_diagnostics!(simulation;
     end
 
     simulation.output_writers[:averages] = JLD2Writer(ocean.model, average_outputs;
+                                                      including = Symbol[],
                                                       schedule = AveragedTimeInterval(field_mean_interval),
                                                       dir = output_dir,
                                                       filename = filename_prefix * "_averages",
                                                       file_splitting = TimeInterval(file_splitting_interval),
                                                       overwrite_files = true)
+
+    # The transformation diagnostic needs the coupled model for its surface fluxes, so it is a callback on the
+    # coupled simulation rather than an output writer on `ocean.model` like everything above.
+    if !isnothing(transformation_interval)
+        wmt = WaterMassTransformation(ocean.model;
+                                      filename = joinpath(output_dir, filename_prefix * "_transformation.jld2"))
+        simulation.callbacks[:transformation] = Callback(wmt, TimeInterval(transformation_interval))
+    end
 
     # Checkpointer (drives `run!(sim; pickup=true)`)
     simulation.output_writers[:checkpointer] = Checkpointer(simulation.model;
@@ -294,6 +326,8 @@ function add_omip_diagnostics!(simulation;
           " surface ($(length(surface_outputs)) fields, every $(prettytime(surface_averaging_interval)))," *
           " 3-D ($(length(field_outputs)) fields, every $(prettytime(field_averaging_interval)))," *
           " averages ($(length(average_outputs)) fields, every $(prettytime(field_averaging_interval)))," *
+          (isnothing(transformation_interval) ? "" :
+           " σ₂ transformation (every $(prettytime(transformation_interval))),") *
           " checkpointer (every $(prettytime(checkpoint_interval)))"
 
     return nothing

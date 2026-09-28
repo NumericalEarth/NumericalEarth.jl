@@ -1,8 +1,8 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.12.7"
+julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "2db81b4b0fd8f670c2d429aca483901db85d3103"
+project_hash = "e6fb37b49362c1120086b692dc547867a2b91ff6"
 
 [[deps.ANSIColoredPrinters]]
 git-tree-sha1 = "574baf8110975760d391c710b6341da1afa48d8c"
@@ -490,7 +490,7 @@ version = "0.5.1"
 [[deps.CompilerSupportLibraries_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
-version = "1.3.1+2"
+version = "1.3.0+1"
 
 [[deps.CompositionsBase]]
 git-tree-sha1 = "802bb88cd69dfd1509f6670416bd4434015693ad"
@@ -1899,7 +1899,7 @@ version = "0.4.7"
 
 [[deps.Oceananigans]]
 deps = ["Adapt", "BFloat16s", "Crayons", "CubedSphere", "Dates", "Distances", "DocStringExtensions", "FFTW", "GPUArraysCore", "Glob", "InteractiveUtils", "JLD2", "KernelAbstractions", "Krylov", "LinearAlgebra", "Logging", "MPI", "MuladdMacro", "OffsetArrays", "OrderedCollections", "Pkg", "Printf", "ReactantCore", "Rotations", "SeawaterPolynomials", "SparseArrays", "StaticArrays", "Statistics", "StructArrays"]
-git-tree-sha1 = "4896eabdf3c7b97b485727a982fa9b4be6aa4d4c"
+git-tree-sha1 = "d5f64590a4787debd59a4969d316b75382732975"
 repo-rev = "ss/for-omip"
 repo-url = "https://github.com/CliMA/Oceananigans.jl.git"
 uuid = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
@@ -1998,7 +1998,7 @@ version = "1.6.1"
 [[deps.OpenSSL_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "458c3c95-2e84-50aa-8efc-19380b2a3a95"
-version = "3.5.6+0"
+version = "3.5.4+0"
 
 [[deps.OpenSpecFun_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl"]

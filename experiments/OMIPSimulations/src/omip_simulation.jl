@@ -27,7 +27,8 @@ using SeawaterPolynomials.TEOS10: Sᴬ_from_Sᴾ, Θ_from_T
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity,
                                        TriadIsopycnalSkewSymmetricDiffusivity,
                                        ConvectiveAdjustmentVerticalDiffusivity,
-                                       AdvectiveFormulation, DiffusiveFormulation
+                                       AdvectiveFormulation, DiffusiveFormulation,
+                                       HorizontalDivergenceScalarBiharmonicDiffusivity
 using Oceananigans.Utils: NormalDivision
 using NumericalEarth.EarthSystemModels.InterfaceComputations: COARELogarithmicSimilarityProfile,
                                                               WindDependentWaveFormulation,
@@ -113,16 +114,18 @@ corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = 0.0057) =
                             friction_velocity = MomentumBasedFrictionVelocity())
 
 """
-    ncar_atmosphere_ocean_fluxes(FT = Float64)
+    ncar_atmosphere_ocean_fluxes(FT = Float64; momentum_flux_scale = 1)
 
 OMIP-2 standard atmosphere-ocean flux formulation using the Large & Yeager
 (2004, 2009) bulk algorithm. Iterates directly on transfer coefficients (Cd, Ch, Ce),
 NOT on roughness lengths. Uses 5 fixed iterations with Paulson stability functions.
+`momentum_flux_scale` multiplies the converged wind stress only; heat and moisture fluxes are unchanged.
 """
-ncar_atmosphere_ocean_fluxes(FT = Float64) =
+ncar_atmosphere_ocean_fluxes(FT = Float64; momentum_flux_scale = 1) =
     CoefficientBasedFluxes(FT;
                            transfer_coefficients = LargeYeagerTransferCoefficients(FT),
-                           solver_stop_criteria = FixedIterations(5))
+                           solver_stop_criteria = FixedIterations(5),
+                           momentum_flux_scale)
 
 """
     ncar_atmosphere_sea_ice_fluxes(FT = Float64)
@@ -163,6 +166,7 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
                              velocity_formulation::Symbol = :relative,
                              sea_ice_ocean_heat_transfer_coefficient = 0.0057,
                              sea_ice_momentum_roughness_length = 5e-4,
+                             wind_stress_scale = 1,
                              ice_freshwater_delivery = ConservativeIceFreshwater(),
                              ice_meltwater_enthalpy = ZeroHeatContentMeltwater())
     FT = eltype(ocean.model.grid)
@@ -176,8 +180,11 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
                               velocity_formulation == :wind     ? WindVelocity()     :
                               error("Unknown velocity_formulation: $velocity_formulation. Options: :relative, :wind")
 
+    wind_stress_scale == 1 || flux_configuration == :ncar ||
+        throw(ArgumentError("wind_stress_scale is only implemented for flux_configuration = :ncar"))
+
     atmosphere_ocean_fluxes = flux_configuration == :corrected ? corrected_atmosphere_ocean_fluxes(FT) :
-                              flux_configuration == :ncar      ? ncar_atmosphere_ocean_fluxes(FT) :
+                              flux_configuration == :ncar      ? ncar_atmosphere_ocean_fluxes(FT; momentum_flux_scale = wind_stress_scale) :
                               error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :ncar")
 
     atmosphere_sea_ice_fluxes = sea_ice_flux_configuration == :corrected ? corrected_atmosphere_sea_ice_fluxes(FT; momentum_roughness_length = sea_ice_momentum_roughness_length) :
@@ -293,6 +300,13 @@ function (r::RefreshSalinityRestoring)(sim)
     update_restoring_flux!(r.restoring, sim.model.ocean.model, ℵ)
     return nothing
 end
+
+# A callable struct misses `prognostic_state(::Function)`, so the catch-all `prognostic_state(obj) = obj` would put the whole
+# restoring object in the checkpoint; the `state` method reads back the checkpoints that already hold one, and the `Nothing`
+# method disambiguates against Oceananigans' own `restore_prognostic_state!(obj, ::Nothing)`.
+Oceananigans.prognostic_state(::RefreshSalinityRestoring) = nothing
+Oceananigans.restore_prognostic_state!(r::RefreshSalinityRestoring, state) = r
+Oceananigans.restore_prognostic_state!(r::RefreshSalinityRestoring, ::Nothing) = r
 
 #####
 ##### Global freshwater-flux normalization
@@ -550,14 +564,16 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `biharmonic_timescale`: horizontal biharmonic-viscosity timescale. Per-config default: `nothing`
   (no biharmonic viscosity) for `:quarterdegree`/`:twelfthdegree`, `10days` for `:test`, `50days`
   otherwise.
+- `divergence_biharmonic_timescale`: total biharmonic timescale felt by the horizontal divergence, shorter than
+  `biharmonic_timescale`. An extra divergence-only biharmonic viscosity `Az² (1/λᵈ − 1/λ)` is added on top of the
+  full one, so the rotational flow keeps `biharmonic_timescale` and the divergent flow gets this. Default: `nothing`.
 - `viscous_velocity`: NEMO's `rn_Uv`, a lateral viscous velocity in m s⁻¹ giving a grid-scaled
   Laplacian viscosity `ν = ½ Uv √Az` (NEMO's `ahm = ½ Uv Lv`, `nn_ahm_ijk_t` = 20/30). NEMO runs
   `0.1` at ORCA1, which is `≈ 5 × 10³` m² s⁻¹ at 1°. Default: `nothing`.
 - `laplacian_viscosity`: constant horizontal Laplacian viscosity ν in m² s⁻¹, overriding
   `viscous_velocity`. Default: `nothing`.
-- `coriolis_scheme`: discretization of the Coriolis term: `:enstrophy` (default), `:energy`, `:triad`,
-  `:active_weighted`,
-  `:consistent_area` or `:consistent_area_energy`. The `consistent_area` schemes reconstruct a uniform velocity
+- `coriolis_scheme`: discretization of the Coriolis term: `:enstrophy` (default), `:energy`, `:active_weighted`,
+  `:consistent_area`, `:consistent_area_energy` or `:triad`. The `consistent_area` schemes reconstruct a uniform velocity
   exactly where face areas differ, next to immersed boundaries and between cells of unequal thickness, and are the
   ones to use with `immersed_bottom = PartialCellBottom` or `ShavedCellBottom`.
 
@@ -693,6 +709,9 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   Default: `flux_configuration`. Options:
    * `:corrected` — SHEBA stability functions, fixed roughness (`sea_ice_momentum_roughness_length`, 5e-5 m for scalars)
    * `:ncar` — Large & Yeager stability functions, fixed roughness 5e-4 m for momentum and scalars
+- `wind_stress_scale`: factor on the atmosphere–ocean wind stress after the bulk formula has converged, so heat and
+  moisture fluxes are unchanged (`:ncar` only). The L&Y stress is 0.89 of COARE 3.6's on the same state (0.83 in the
+  Southern Ocean westerlies); a scale near 1.13 applies COARE-size stress with NCAR buoyancy fluxes. Default: `1`.
 - `sea_ice_momentum_roughness_length`: aerodynamic roughness z₀ of the ice surface, m, used by
   `sea_ice_flux_configuration = :corrected`. 5e-4 is the SHEBA multiyear-pack value; smooth first-year ice is nearer 1e-4, which cuts
   the neutral drag coefficient by about a quarter and the free-drift speed by about a seventh.
@@ -718,6 +737,7 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   background internally and reject this keyword). Options:
    * `:henyey` (default) — the latitude-dependent internal-wave scaling of Henyey et al. (1986),
      κ = max(2×10⁻⁶, 10⁻⁵ |sin φ|), i.e. 2×10⁻⁶ m² s⁻¹ at the equator rising to 10⁻⁵ m² s⁻¹ at the poles.
+   * `:henyey2x` — twice `:henyey` everywhere, κ = max(4×10⁻⁶, 2×10⁻⁵ |sin φ|).
    * `:bryan_lewis` — the Bryan & Lewis (1979) depth profile,
      κ = 0.8×10⁻⁴ + (1.05×10⁻⁴/π) atan[4.5×10⁻³ (|z| − 2500)] m² s⁻¹, i.e. 3×10⁻⁵ in the upper ocean
      rising to 1.3×10⁻⁴ in the abyss. Buys the deep upwelling without diffusing the thermocline the
@@ -755,6 +775,8 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `diagnostics::Bool`: whether to attach OMIP diagnostics. Default: `true`.
 - `surface_averaging_interval`, `field_averaging_interval`: averaging windows.
 - `checkpoint_interval`: interval between checkpoint writes.
+- `transformation_interval`: interval between σ₂ water-mass-transformation samples, which split the
+  overturning into its physical and numerical parts. `nothing` (the default) omits the diagnostic.
 - `output_dir`, `filename_prefix`, `file_splitting_interval`: output configuration.
 """
 function omip_simulation(config::Symbol = :halfdegree;
@@ -774,6 +796,9 @@ function omip_simulation(config::Symbol = :halfdegree;
                          Cᵉc = 0.112,
                          biharmonic_timescale = ConfigDefault(),
                          biharmonic_viscosity = nothing,
+                         divergence_biharmonic_timescale = nothing,
+                         reynolds_limit = nothing,
+                         divergence_damping_timescale = nothing,
                          viscous_velocity = nothing,
                          laplacian_viscosity = nothing,
                          strait_damping_timescale = nothing,
@@ -811,6 +836,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          with_landfast_basal_stress = true,
                          sea_ice_ocean_heat_transfer_coefficient = 0.0057,
                          sea_ice_momentum_roughness_length = 5e-4,
+                         wind_stress_scale = 1,
                          sea_ice_lateral_boundary_condition = :no_slip,
                          sea_ice_ocean_drag_coefficient = 5.5e-3,
                          sea_ice_ocean_drag_reference_depth = 6,
@@ -859,6 +885,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          surface_averaging_interval = 5days,
                          field_averaging_interval = 15days,
                          checkpoint_interval = 360days,
+                         transformation_interval = nothing,
                          output_dir = ".",
                          filename_prefix = string(config),
                          file_splitting_interval = 360days)
@@ -969,6 +996,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                             labrador_forcing),
                         overflow_forcing)
 
+    ocean_forcing = merge(ocean_forcing, divergence_damping_forcing(divergence_damping_timescale))
+
     ocean = build_ocean(cfg, grid;
                         forcing = ocean_forcing,
                         κ_skew, κ_symmetric, Cᵇ, Cᵘⁿᵇ, Cᶠ, Cᶠ⁰, Cᶠᵟ, Cᵉc,
@@ -981,6 +1010,9 @@ function omip_simulation(config::Symbol = :halfdegree;
                         boundary_value_minimum_speed,
                         biharmonic_timescale,
                         biharmonic_viscosity,
+                        divergence_biharmonic_timescale,
+                        reynolds_limit,
+                        reynolds_limit_timestep = Δt,
                         viscous_velocity,
                         laplacian_viscosity,
                         strait_damping_timescale,
@@ -1040,7 +1072,7 @@ function omip_simulation(config::Symbol = :halfdegree;
     coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
                                   sea_ice_flux_configuration,
                                   velocity_formulation, sea_ice_ocean_heat_transfer_coefficient,
-                                  sea_ice_momentum_roughness_length,
+                                  sea_ice_momentum_roughness_length, wind_stress_scale,
                                   ice_freshwater_delivery, ice_meltwater_enthalpy)
     log_setup_stage(arch, "coupled model", setup_t₀)
 
@@ -1159,6 +1191,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                               field_averaging_interval,
                               field_mean_interval,
                               checkpoint_interval,
+                              transformation_interval,
                               output_dir,
                               filename_prefix,
                               file_splitting_interval)
@@ -1327,6 +1360,48 @@ end
 
 @inline νhb(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, λ) = Oceananigans.Operators.Az(i, j, k, grid, ℓx, ℓy, ℓz)^2 / λ
 
+# `νhb` is flow-independent, so the grid Reynolds number `Re = |u| Δx³ / ν` grows with the flow speed and is
+# largest in the bottom cells, where it sets the tracer scheme's spurious diapycnal mixing: the dissipation
+# intensity of σ₂ ≥ 37.00 rises four orders of magnitude monotonically in `Re`, and cells above `Re = 2` carry
+# 58% of it on 1% of the dense volume. A floor on ν bounds `Re` by `Reᵐᵃˣ` and leaves everything else alone.
+# The floor `|u| Δx³/Reᵐᵃˣ` grows relative to `Az²/λ` like `|u| λ/Δx`, so it explodes where Δx is small
+# (high latitudes, the tripolar fold) and reached 1376× on eORCA1, tightening the explicit biharmonic limit
+# to 1760 s against a 5400 s step. `Δx⁴/(Cˢ Δt)` caps it so the scheme is stable by construction.
+@inline function νhb_reynolds(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, p)
+    Az = Oceananigans.Operators.Az(i, j, k, grid, ℓx, ℓy, ℓz)
+    Δx = Oceananigans.Operators.Δx(i, j, k, grid, ℓx, ℓy, ℓz)
+    u = @inbounds fields.u[i, j, k]
+    v = @inbounds fields.v[i, j, k]
+    νᴿ = max(Az^2 / p.λ, sqrt(u * u + v * v) * Δx^3 / p.Reᵐᵃˣ)
+    return min(νᴿ, Δx^4 / (p.Cˢ * p.Δt))
+end
+
+# Divergence damping: `∂ₜ𝐮 += νᵈ ∇(∇⋅𝐮)`, whose divergence obeys `∂ₜδ = νᵈ ∇²δ`. It damps the divergent
+# grid-scale modes and leaves the rotational (geostrophic) flow untouched, unlike a plain viscosity. The
+# grid-scale divergence of this configuration rises tenfold from the near-surface (1.1% of the power at the
+# Nyquist stripes) to the bottom cell (12.4%). `νᵈ = Az/τ` keeps the damping grid-adaptive, so the explicit
+# stability limit `Δt ≤ Δx²/4νᵈ ≈ τ/4` holds at every latitude.
+@inline νᵈ(i, j, k, grid, ℓx, ℓy, ℓz, τ) = Oceananigans.Operators.Az(i, j, k, grid, ℓx, ℓy, ℓz) / τ
+
+@inline divergence_damping_u(i, j, k, grid, clock, fields, τ) =
+    νᵈ(i, j, k, grid, Face(), Center(), Center(), τ) *
+    ∂xᶠᶜᶜ(i, j, k, grid, div_xyᶜᶜᶜ, fields.u, fields.v)
+
+@inline divergence_damping_v(i, j, k, grid, clock, fields, τ) =
+    νᵈ(i, j, k, grid, Center(), Face(), Center(), τ) *
+    ∂yᶜᶠᶜ(i, j, k, grid, div_xyᶜᶜᶜ, fields.u, fields.v)
+
+"""
+    divergence_damping_forcing(τ)
+
+Momentum forcings applying divergence damping with timescale `τ` (in seconds), or an empty `NamedTuple`
+when `τ` is `nothing`.
+"""
+divergence_damping_forcing(τ) =
+    isnothing(τ) ? NamedTuple() :
+                   (u = Forcing(divergence_damping_u, discrete_form = true, parameters = τ),
+                    v = Forcing(divergence_damping_v, discrete_form = true, parameters = τ))
+
 # NEMO's `ldfdyn` Laplacian coefficient, `ahm = ½ Uv Lv` with `Lv` the grid spacing (`nn_ahm_ijk_t` =
 # 20 or 30). `½ Uv Δx` is exactly the numerical diffusion first-order upwind advection supplies, so the
 # viscous velocity is the amount of upwinding an energy/enstrophy-conserving scheme has to be given back.
@@ -1335,6 +1410,7 @@ end
 
 # Background tracer diffusivity following Henyey et al. (1986).
 @inline henyey_diffusivity(x, y, z, t) = max(2e-6, 1e-5 * abs(sind(y)))
+@inline henyey2x_diffusivity(x, y, z, t) = 2 * henyey_diffusivity(x, y, z, t)
 
 # Bryan & Lewis (1979) depth-dependent background diffusivity, in the form GFDL models carry:
 # κ = 0.8×10⁻⁴ + (1.05×10⁻⁴/π) atan[4.5×10⁻³ (|z| − 2500)], i.e. 3×10⁻⁵ m² s⁻¹ in the upper ocean
@@ -1370,9 +1446,10 @@ end
 resolve_background_diffusivity(κ::Number) = κ
 resolve_background_diffusivity(κ::Symbol) =
     κ === :henyey         ? henyey_diffusivity :
+    κ === :henyey2x       ? henyey2x_diffusivity :
     κ === :bryan_lewis    ? bryan_lewis_diffusivity :
     κ === :abyssal_henyey ? abyssal_henyey_diffusivity :
-    throw(ArgumentError("background_vertical_diffusivity must be :henyey, :bryan_lewis, :abyssal_henyey or a number, got :$κ"))
+    throw(ArgumentError("background_vertical_diffusivity must be :henyey, :henyey2x, :bryan_lewis, :abyssal_henyey or a number, got :$κ"))
 
 # Default background momentum viscosity, shared by the closures that carry an explicit background.
 # `nothing` keeps it, a number overrides it.
@@ -1450,6 +1527,9 @@ function omip_closure(vertical_closure::Symbol;
                       Cᵉc = 0.112,
                       biharmonic_timescale,
                       biharmonic_viscosity = nothing,
+                      divergence_biharmonic_timescale = nothing,
+                      reynolds_limit = nothing,
+                      reynolds_limit_timestep = 5400.0,
                       viscous_velocity = nothing,
                       laplacian_viscosity = nothing,
                       strait_damping_timescale = nothing,
@@ -1528,10 +1608,26 @@ function omip_closure(vertical_closure::Symbol;
 
     horizontal_viscosity = if !isnothing(biharmonic_viscosity)
         HorizontalScalarBiharmonicDiffusivity(ν=biharmonic_viscosity)
+    elseif !isnothing(biharmonic_timescale) && !isnothing(reynolds_limit)
+        HorizontalScalarBiharmonicDiffusivity(ν=νhb_reynolds,
+                                              discrete_form=true,
+                                              parameters=(; λ = biharmonic_timescale, Reᵐᵃˣ = reynolds_limit,
+                                                            Δt = reynolds_limit_timestep, Cˢ = 256.0))
     elseif !isnothing(biharmonic_timescale)
         HorizontalScalarBiharmonicDiffusivity(ν=νhb,
                                               discrete_form=true,
                                               parameters=biharmonic_timescale)
+    else
+        nothing
+    end
+
+    divergence_viscosity = if !isnothing(divergence_biharmonic_timescale)
+        (isnothing(biharmonic_timescale) || divergence_biharmonic_timescale >= biharmonic_timescale) &&
+            throw(ArgumentError("divergence_biharmonic_timescale must be shorter than biharmonic_timescale"))
+        # the divergent flow already feels Az²/λ from the full biharmonic; add the remainder up to Az²/λᵈ
+        HorizontalDivergenceScalarBiharmonicDiffusivity(ν=νhb,
+                                                        discrete_form=true,
+                                                        parameters=1 / (1 / divergence_biharmonic_timescale - 1 / biharmonic_timescale))
     else
         nothing
     end
@@ -1552,7 +1648,7 @@ function omip_closure(vertical_closure::Symbol;
         nothing
     end
 
-    return filter(!isnothing, (primary, eddy..., horizontal_viscosity,
+    return filter(!isnothing, (primary, eddy..., horizontal_viscosity, divergence_viscosity,
                                laplacian_horizontal_viscosity, strait_viscosity, background))
 end
 
@@ -1978,17 +2074,19 @@ config_momentum_advection_order(::Val{:twelfthdegree}) = nothing
 #   :upwind   first-order upwind, monotone, in exactly those cells and nowhere else
 #   :ghost_cells  the full-order reconstruction on a stencil whose inactive cells are completed with ghost values,
 #                 blending the mirror image of the active run with its quadratic extrapolation
-tracer_boundary_reconstruction(::Val{:default})     = nothing
-tracer_boundary_reconstruction(::Val{:upwind})      = UpwindBiased(order=1)
-tracer_boundary_reconstruction(::Val{:ghost_cells}) = GhostCells()
+tracer_boundary_reconstruction(::Val{:default})          = nothing
+tracer_boundary_reconstruction(::Val{:upwind})           = UpwindBiased(order=1)
+tracer_boundary_reconstruction(::Val{:ghost_cells})      = GhostCells()
+tracer_boundary_reconstruction(::Val{:ghost_cells_full}) = GhostCells(monotone=false)
 
-momentum_boundary_reconstruction(::Val{:default})     = UpwindBiased(order=1)
-momentum_boundary_reconstruction(::Val{:upwind})      = UpwindBiased(order=1)
-momentum_boundary_reconstruction(::Val{:ghost_cells}) = GhostCells()
+momentum_boundary_reconstruction(::Val{:default})          = UpwindBiased(order=1)
+momentum_boundary_reconstruction(::Val{:upwind})           = UpwindBiased(order=1)
+momentum_boundary_reconstruction(::Val{:ghost_cells})      = GhostCells()
+momentum_boundary_reconstruction(::Val{:ghost_cells_full}) = GhostCells(monotone=false)
 
 function boundary_scheme_value(boundary_scheme)
-    boundary_scheme ∈ (:default, :upwind, :ghost_cells) ||
-        throw(ArgumentError("boundary_scheme must be :default, :upwind or :ghost_cells, got $boundary_scheme"))
+    boundary_scheme ∈ (:default, :upwind, :ghost_cells, :ghost_cells_full) ||
+        throw(ArgumentError("boundary_scheme must be :default, :upwind, :ghost_cells, or :ghost_cells_full, got $boundary_scheme"))
 
     return Val(boundary_scheme)
 end
@@ -1998,7 +2096,8 @@ const coriolis_schemes = (enstrophy = Oceananigans.Coriolis.EnstrophyConserving,
                           triad = Oceananigans.Coriolis.TriadScheme,
                           active_weighted = Oceananigans.Coriolis.ActiveWeightedEnstrophyConserving,
                           consistent_area = Oceananigans.Coriolis.ConsistentAreaEnstrophyConserving,
-                          consistent_area_energy = Oceananigans.Coriolis.ConsistentAreaEnergyConserving)
+                          consistent_area_energy = Oceananigans.Coriolis.ConsistentAreaEnergyConserving,
+                          triad = Oceananigans.Coriolis.TriadScheme)
 
 """
     coriolis_scheme_value(coriolis_scheme)
@@ -2007,6 +2106,11 @@ Discretization of the Coriolis term named by `coriolis_scheme`. The `consistent_
 area-weighted interpolation of the transport by the interpolation of the wet face areas, reconstructing a uniform
 velocity exactly where face areas differ: next to immersed boundaries, and between cells of unequal thickness such
 as those of `PartialCellBottom` and `ShavedCellBottom`.
+
+`enstrophy` averages four velocity nodes and divides by four, but a node inside the immersed boundary contributes
+zero: in the rock-touching layer of the North Atlantic 60% of u points lose Coriolis force and the mean force is 21%
+too weak, against exactly 1.000 in the interior. `active_weighted` divides by the active fraction instead
+(Jamart & Ozer 1986).
 """
 function coriolis_scheme_value(coriolis_scheme)
     haskey(coriolis_schemes, coriolis_scheme) ||
@@ -2200,6 +2304,9 @@ function build_ocean(config, grid;
                      chlorophyll = :seawifs,
                      biharmonic_timescale,
                      biharmonic_viscosity = nothing,
+                     divergence_biharmonic_timescale = nothing,
+                     reynolds_limit = nothing,
+                     reynolds_limit_timestep = 5400.0,
                      viscous_velocity = nothing,
                      laplacian_viscosity = nothing,
                      strait_damping_timescale = nothing,
@@ -2254,7 +2361,7 @@ function build_ocean(config, grid;
     closure = omip_closure(vertical_closure;
                            grid,
                            κ_skew, κ_symmetric, Cᵇ, Cᵘⁿᵇ, Cᶠ, Cᶠ⁰, Cᶠᵟ, Cᵉc,
-                           biharmonic_timescale, biharmonic_viscosity,
+                           biharmonic_timescale, biharmonic_viscosity, divergence_biharmonic_timescale, reynolds_limit, reynolds_limit_timestep,
                            viscous_velocity, laplacian_viscosity, strait_damping_timescale,
                            skew_flux_formulation,
                            isopycnal_formulation,
