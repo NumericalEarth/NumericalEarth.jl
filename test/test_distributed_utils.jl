@@ -56,8 +56,7 @@ end
     end
 end
 
-# Each rank holds a contiguous window of the serial grid, and the last rank in a direction absorbs the
-# remainder, so the window comes from the actual local sizes rather than an even split.
+# The window of the serial grid held by this rank
 function rank_window(arch, global_size, local_size_)
     sizes = local_size(arch, global_size)
     rx, ry, _ = arch.local_index
@@ -66,9 +65,7 @@ function rank_window(arch, global_size, local_size_)
     return istart:istart+local_size_[1]-1, jstart:jstart+local_size_[2]-1
 end
 
-# The eORCA mesh is assembled globally and then cut to each rank's slice, so a rank's metrics must be
-# the matching window of the serial grid. An x partition must be 1 or even, and x-only is rejected,
-# because the northern fold pairs each rank with the one mirrored across the pole.
+# Each rank's metrics are its window of the serial grid
 @testset "Distributed ORCAGrid" begin
     orca(arch) = ORCAGrid(arch; dataset = ORCAOne(), Nz = 5, z = (-5000, 0), with_bathymetry = false)
 
@@ -87,8 +84,7 @@ end
     end
 end
 
-# The basin flood fill runs on rank 0 and is shared, so every rank's bottom height must agree with the
-# serial one over its own window.
+# Each rank's bottom height, basins removed, is its window of the serial one
 @testset "Distributed ORCAGrid bathymetry" begin
     orca(arch) = ORCAGrid(arch; dataset = ORCAOne(), Nz = 5, z = (-5000, 0), major_basins = 1)
 

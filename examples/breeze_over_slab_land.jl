@@ -146,7 +146,7 @@ Oceananigans.TimeSteppers.update_state!(slab_land)
 # The 15 km column gives RRTMGP a realistic atmosphere, but the initial
 # stratosphere is not in radiative equilibrium and the coarse upper cells
 # respond strongly once radiation switches on. A Newtonian relaxation of
-# temperature toward the reference profile above 8 km anchors the
+# potential temperature toward its initial profile above 8 km anchors the
 # stratosphere without affecting the troposphere (as in Breeze's
 # `radiative_convection` example). We build the reference state explicitly
 # so the sponge and the radiation share the same thermodynamic constants.
@@ -157,26 +157,25 @@ latitude = 15
 
 constants = ThermodynamicConstants()
 reference_state = ReferenceState(grid, constants;
-                                 surface_pressure = p₀,
+                                 base_pressure = p₀,
                                  potential_temperature = θ₀)
 dynamics = AnelasticDynamics(reference_state)
 
-Tᵣ  = reference_state.temperature
-ρᵣ  = reference_state.density
-cᵖᵈ = constants.dry_air.heat_capacity / constants.dry_air.molar_mass
+θᵣ = CenterField(grid) # the initial potential temperature, set below
+ρᵣ = reference_state.density
 τ_sponge = 6hours
 
 @inline function stratospheric_relaxation(i, j, k, grid, clock, model_fields, p)
-    @inbounds T  = model_fields.T[i, j, k]
-    @inbounds Tᵣ = p.Tᵣ[i, j, k]
+    @inbounds θ  = model_fields.θ[i, j, k]
+    @inbounds θᵣ = p.θᵣ[i, j, k]
     @inbounds ρ  = p.ρᵣ[i, j, k]
     z = Oceananigans.Grids.znode(i, j, k, grid, Center(), Center(), Center())
     α = clamp((z - 8000) / 4000, 0, 1)
-    return ρ * p.cᵖᵈ * (-α * (T - Tᵣ) / p.τ)
+    return ρ * (-α * (θ - θᵣ) / p.τ)
 end
 
 sponge = Forcing(stratospheric_relaxation; discrete_form = true,
-                 parameters = (; Tᵣ, ρᵣ, cᵖᵈ, τ = τ_sponge))
+                 parameters = (; θᵣ, ρᵣ, τ = τ_sponge))
 
 # ## RRTMGP radiation
 #
@@ -217,7 +216,7 @@ radiation = RadiativeTransferModel(grid, AllSkyOptics(), constants;
 # `radiation` kwarg is passed here.
 
 atmos = atmosphere_simulation(grid; dynamics,
-                              forcing  = (; ρe = sponge),
+                              forcing  = (; ρθ = sponge),
                               coriolis = FPlane(latitude = latitude))
 
 # Initial atmospheric profile: dry-adiabatic sub-cloud layer capped by a
@@ -244,6 +243,7 @@ set!(atmos.model; T = Tᵢ, ℋ = ℋᵢ)
 # precision; `set_to_mean!` anchors `ρᵣ` to the current state.
 
 set_to_mean!(reference_state, atmos.model, rescale_densities = true)
+set!(θᵣ, liquid_ice_potential_temperature(atmos.model))
 
 # ## Coupled model
 #
@@ -325,7 +325,7 @@ qˡ = atmos.model.microphysical_fields.qˡ
 simulation.output_writers[:atmos] = JLD2Writer(model, (; w, T, qˡ);
                                                filename = "breeze_slab_land_atmos",
                                                schedule = TimeInterval(10minutes),
-                                               overwrite_existing = true)
+                                               overwrite_files = true)
 
 simulation.output_writers[:land] = JLD2Writer(model,
                                               (; T = slab_land.temperature,
@@ -333,7 +333,7 @@ simulation.output_writers[:land] = JLD2Writer(model,
                                                   𝒮 = slab_land.saturation);
                                               filename = "breeze_slab_land_surface",
                                               schedule = TimeInterval(10minutes),
-                                              overwrite_existing = true)
+                                              overwrite_files = true)
 
 # ## Run
 
