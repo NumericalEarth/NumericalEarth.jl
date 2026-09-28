@@ -308,4 +308,4 @@ function add_omip_diagnostics!(simulation;
     return nothing
 end
 
-add_biogeochemistry_diagnostics!(simulation, biogeochemistry; kwargs...) = nothing
+add_biogeochemistry_diagnostics!(biogeochemistry, simulation; kwargs...) = nothing
