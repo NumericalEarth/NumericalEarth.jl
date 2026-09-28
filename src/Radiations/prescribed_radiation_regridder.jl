@@ -29,29 +29,6 @@ function EarthSystemModels.InterfaceComputations.initialize!(exchanger::Componen
     rad_grid = radiation.grid
     kernel_parameters = interface_kernel_parameters(grid)
     launch!(architecture(grid), grid, kernel_parameters,
-            _compute_radiation_fractional_indices!, frac_indices, grid, rad_grid)
+            _compute_fractional_indices!, frac_indices, grid, rad_grid)
     return nothing
-end
-
-@kernel function _compute_radiation_fractional_indices!(indices_tuple, exchange_grid, rad_grid)
-    i, j = @index(Global, NTuple)
-    kᴺ = size(exchange_grid, 3)
-    X = _node(i, j, kᴺ + 1, exchange_grid, Center(), Center(), Face())
-    fractional_indices_ij = FractionalIndices(X, rad_grid, Center(), Center(), Center())
-    TX, TY, _ = topology(rad_grid)
-    Nx, Ny, _ = size(rad_grid)
-    Hx, Hy, _ = halo_size(rad_grid)
-    Sx, Sy, _ = worksize(exchange_grid)
-    halo_column = (i < 1) | (i > Sx) | (j < 1) | (j > Sy)
-
-    fi = indices_tuple.i
-    fj = indices_tuple.j
-    @inbounds begin
-        if !isnothing(fi)
-            fi[i, j, 1] = clamp_fractional_index(fractional_indices_ij.i, TX(), Nx, Hx, halo_column)
-        end
-        if !isnothing(fj)
-            fj[i, j, 1] = clamp_fractional_index(fractional_indices_ij.j, TY(), Ny, Hy, halo_column)
-        end
-    end
 end

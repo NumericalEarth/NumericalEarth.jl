@@ -210,8 +210,8 @@ end
 ##### FieldTimeSeries utilities
 #####
 
-function save_field_time_series!(fts; path, name, overwrite_existing=false)
-    overwrite_existing && rm(path; force=true)
+function save_field_time_series!(fts; path, name, overwrite_files=false)
+    overwrite_files && rm(path; force=true)
 
     times = on_architecture(CPU(), fts.times)
     grid  = on_architecture(CPU(), fts.grid)
@@ -270,8 +270,6 @@ Arguments
 # `download(::Metadata)` extends `Downloads.download` (the modern stdlib function,
 # not `Base.download` which is a 1.0-era shim). Per-dataset methods are added
 # within each dataset module via `Downloads.download(metadata::FooMetadata) = ...`.
-
-function inpainted_metadata_path end
 
 """
     z_interfaces(dataset)
@@ -403,6 +401,8 @@ function default_inpainting(metadata)
         return NearestNeighborInpainting(5)
     end
 end
+
+include("prescribed_radiation.jl")
 
 # Datasets
 include("ETOPO/ETOPO.jl")

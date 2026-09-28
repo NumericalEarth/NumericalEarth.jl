@@ -14,6 +14,7 @@ using ..DataWrangling: DataWrangling, Metadata, Metadatum, DownloadProgress, Kel
 download_EN4_cache::String = ""
 function __init__()
     global download_EN4_cache = DataWrangling.download_cache("EN4")
+    return nothing
 end
 
 EN4_dataset_variable_names = Dict(
@@ -98,13 +99,8 @@ end
 const EN4_url_pre2021  = "http://www.metoffice.gov.uk/hadobs/en4/data/en4-2-1/EN.4.2.2/EN.4.2.2.analyses.g10."
 const EN4_url_post2021 = "http://www.metoffice.gov.uk/hadobs/en4/data/en4-2-1/EN.4.2.2.analyses.g10."
 
-function inpainted_metadata_filename(metadata::EN4Metadatum)
-    without_extension = metadata.filename[1:end-3]
-    var = string(metadata.name)
-    return without_extension * "_" * var *"_inpainted.jld2"
-end
-
-DataWrangling.inpainted_metadata_path(metadata::EN4Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+DataWrangling.inpainted_metadata_filename(metadata::EN4Metadatum) =
+    metadata.filename[1:end-3] * "_" * string(metadata.name) * "_inpainted.jld2"
 
 """
     EN4Metadatum(name;

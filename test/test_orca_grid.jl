@@ -3,12 +3,12 @@ include("download_utils.jl")
 
 using Oceananigans
 using Oceananigans.Architectures: CPU
-using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid
+using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid, fold_topology
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using NCDatasets
 using NumericalEarth
 using NumericalEarth.DataWrangling: metadata_path
-using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove
+using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove, periodic_overlap
 using Statistics
 using Test
 
@@ -72,7 +72,7 @@ end
     underlying = grid.underlying_grid
     @test underlying isa Oceananigans.Grids.OrthogonalSphericalShellGrid
     @test underlying isa TripolarGrid
-    @test underlying.Nx == 362
+    @test underlying.Nx == 360
     @test underlying.Ny == 332
     @test underlying.Nz == 5
 
@@ -81,6 +81,12 @@ end
     @test maximum(underlying.λᶜᶜᵃ.parent) > 179
     @test minimum(underlying.φᶜᶜᵃ.parent) < -80
     @test maximum(underlying.φᶜᶜᵃ.parent) > 80
+
+    # The conformal mapping describes the mesh it was read from: the fold the grid is folded on, and a north
+    # singularity that lies on the fold row in the northern hemisphere.
+    mapping = underlying.conformal_mapping
+    @test fold_topology(mapping) === Oceananigans.Grids.topology(underlying, 2)
+    @test 0 < mapping.north_poles_latitude < 90
 end
 
 @testset "ORCAGrid without bathymetry on $(arch)" for arch in test_architectures
@@ -90,7 +96,7 @@ end
     @test grid isa Oceananigans.Grids.OrthogonalSphericalShellGrid
     @test grid isa TripolarGrid
     @test !(grid isa ImmersedBoundaryGrid)
-    @test grid.Nx == 362
+    @test grid.Nx == 360
     @test grid.Ny == 332 - default_south_rows_to_remove(ORCAOne())
     @test grid.Nz == 5
 end
@@ -101,7 +107,7 @@ end
 
     @test grid isa ImmersedBoundaryGrid
     underlying = grid.underlying_grid
-    @test underlying.Nx == 362
+    @test underlying.Nx == 360
     @test underlying.Ny == 332 - Nremove
     @test underlying.Nz == 5
 end
@@ -165,16 +171,14 @@ end
     nsouth = count(j -> φF[j] < φC[j], 1:Ny)
     @test nsouth / length(φC) > 0.95
 
-    # Periodic overlap: first and last unique columns should be consistent
-    # After filling halos, the periodic halo should smoothly wrap.
-    # Check that Δx at the periodic boundary has no discontinuity.
+    # The zonal seam: the interior columns are the distinct ones, and the step from the last of them to the
+    # first is one grid step forward, so a Periodic wrap continues the mesh instead of repeating its start.
     jmid = Ny ÷ 2
-    Δx = grid.Δxᶜᶜᵃ[:, jmid]
-    # The relative jump from column Nx to column 1 (via periodic halo)
-    # should be similar to the jump between adjacent interior columns
-    interior_variation = maximum(abs, diff(Array(Δx[1:Nx]))) / mean(Δx[1:Nx])
-    boundary_jump = abs(Δx[Nx] - Δx[1]) / mean(Δx[1:Nx])
-    @test boundary_jump < 10 * interior_variation + 1e-10
+    λ = grid.λᶜᶜᵃ[1:Nx, jmid]
+    zonal_step(λ₁, λ₂) = mod(λ₂ - λ₁ + 180, 360) - 180
+
+    @test allunique(λ)
+    @test zonal_step(λ[Nx], λ[1]) ≈ zonal_step(λ[Nx-1], λ[Nx]) rtol=1e-3
 end
 
 # The eORCA1 mesh_mask ships both the staggered metrics and the T/F coordinates, so reconstructing it
@@ -185,14 +189,15 @@ end
     path = metadata_path(Metadatum(:mesh_mask; dataset=ORCAOne()))
 
     ds = Dataset(path)
-    staggered = Bathymetry.read_orca_staggered_mesh(ds)
+    overlap = periodic_overlap(ORCAOne())
+    staggered = Bathymetry.read_orca_staggered_mesh(ds, overlap)
     Nx, Ny = size(Bathymetry.read_2d_nemo_variable(ds, "glamt"))
     read_coordinate(name) = Bathymetry.orient_xy(Bathymetry.read_2d_nemo_variable(ds, name), Nx, Ny; name)
     λCC, φCC = read_coordinate("glamt"), read_coordinate("gphit")
     λFF, φFF = read_coordinate("glamf"), read_coordinate("gphif")
     close(ds)
 
-    reconstructed = Bathymetry.reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius = Oceananigans.defaults.planet_radius)
+    reconstructed = Bathymetry.reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF, overlap; radius = Oceananigans.defaults.planet_radius)
 
     for name in (:e1t, :e2t, :e1u, :e2u, :e1v, :e2v, :e1f, :e2f, :λFC, :λCF, :λFF, :φFF)
         @test size(getproperty(reconstructed, name)) == size(getproperty(staggered, name))

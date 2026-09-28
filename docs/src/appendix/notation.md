@@ -315,6 +315,7 @@ superscript band.
 |:----:|:----:|:---------|:------------|
 | ``J^{\mathrm{rn}}`` | `Jʳⁿ` | rain freshwater flux | Rain mass flux at the surface (kg m⁻² s⁻¹) |
 | ``J^{\mathrm{sn}}`` | `Jˢⁿ` | snow freshwater flux | Snow mass flux at the surface (kg m⁻² s⁻¹) |
+| ``J^{\mathrm{ib}}`` | `Jⁱᵇ` | iceberg freshwater flux | Iceberg calving mass flux into the ocean (kg m⁻² s⁻¹) |
 
 ## Thermodynamic properties
 
@@ -322,6 +323,7 @@ superscript band.
 |:----:|:----:|:---------|:------------|
 | ``\mathcal{L}^\ell`` | `ℒˡ` | latent heat of vaporization | Liquid-phase latent heat (J kg⁻¹) |
 | ``\mathcal{L}^i`` | `ℒⁱ` | latent heat of sublimation | Ice-phase latent heat (J kg⁻¹) |
+| ``\mathcal{L}^f`` | `ℒᶠ` | latent heat of fusion | Heat the ocean supplies to melt snowfall and icebergs (J kg⁻¹) |
 | ``c^{pm}`` | `cᵖᵐ` | moist air heat capacity | Moist isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``c^{pd}`` | `cᵖᵈ` | dry air heat capacity | Dry-air isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``\rho^{\mathrm{at}}`` | `ρᵃᵗ` | air density | Atmospheric air density (kg m⁻³) |
