@@ -166,8 +166,9 @@ end
     Δu, Δv = velocity_difference(interface_properties.velocity_formulation, Ψₐ, Ψₛ)
     ΔU = sqrt(Δu^2 + Δv^2)
 
-    τˣ = ifelse(ΔU == 0, zero(grid), - u★^2 * Δu / ΔU)
-    τʸ = ifelse(ΔU == 0, zero(grid), - u★^2 * Δv / ΔU)
+    s = momentum_flux_scale(turbulent_flux_formulation)
+    τˣ = ifelse(ΔU == 0, zero(grid), - s * u★^2 * Δu / ΔU)
+    τʸ = ifelse(ΔU == 0, zero(grid), - s * u★^2 * Δv / ΔU)
 
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
     cᵖᵐ = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, qᵃᵗ) # moist heat capacity

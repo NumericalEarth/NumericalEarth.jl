@@ -119,15 +119,15 @@ DataWrangling.metaprefix(::WOAMetadatum) = "WOAMetadatum"
 woa_period(::WOAAnnual, date) = 0
 woa_period(::WOAMonthly, date) = month(date)
 
-function DataWrangling.metadata_filename(::WOAAnnual, name, date, region)
+function DataWrangling.metadata_filename(dataset::WOAAnnual, name, date, region)
     varname = WOA_variable_names[name]
-    return "woa_$(varname)_annual.nc"
+    return "woa$(dataset.product_year)_$(varname)_annual.nc"
 end
 
-function DataWrangling.metadata_filename(::WOAMonthly, name, date, region)
+function DataWrangling.metadata_filename(dataset::WOAMonthly, name, date, region)
     varname = WOA_variable_names[name]
     m = lpad(month(date), 2, '0')
-    return "woa_$(varname)_monthly_$(m).nc"
+    return "woa$(dataset.product_year)_$(varname)_monthly_$(m).nc"
 end
 
 # WOA NetCDF variables are named "{tracer}_an" for the objectively analyzed field

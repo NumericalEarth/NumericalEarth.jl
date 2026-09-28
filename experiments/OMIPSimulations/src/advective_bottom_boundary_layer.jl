@@ -25,10 +25,21 @@ using Oceananigans.Utils: launch!
 using KernelAbstractions: @index, @kernel
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Grids: Center, znode
-using Oceananigans.Operators: Azᶜᶜᶜ, Δxᶜᶠᶜ, Δyᶠᶜᶜ, Δzᶜᶜᶜ
+using Oceananigans.Operators: Axᶠᶜᶜ, Ayᶜᶠᶜ, Azᶜᶜᶜ, Δxᶜᶠᶜ, Δyᶠᶜᶜ, Δzᶜᶜᶜ
 using SeawaterPolynomials: haline_contraction, thermal_expansion
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 using Adapt: Adapt, adapt
+
+"Campin & Goosse's density-driven downslope speed `u = γ g (ρˢ - ρᵈ) / ρ₀`, NEMO's `nn_bbl_adv = 2`."
+struct DensityDrivenTransport end
+
+"""
+The model's own downslope volume transport through the step face at the shelf's bottom level, wherever the
+shelf bottom water is denser than the deep column's bottom water (NEMO's `nn_bbl_adv = 1`). The resolved
+flow would deposit that water on top of lighter water, where the vertical closure mixes it through the deep
+column; the scheme delivers it to the deep column's bottom cell instead.
+"""
+struct ResolvedSpillTransport end
 
 """
     AdvectiveBottomBoundaryLayer(grid, equation_of_state; transport_coefficient, gravitational_acceleration)
@@ -36,18 +47,22 @@ using Adapt: Adapt, adapt
 Overturning bottom boundary layer following [Campin and Goosse (1999)](@cite CampinGoosse1999), NEMO's
 `nn_bbl_adv = 2`. `transport_coefficient` is NEMO's `rn_gambbl` in seconds (default 10), setting the
 downslope speed `u = γ g (ρˢ - ρᵈ) / ρ₀` from the density contrast across the step.
+`transport_coefficient = :resolved` uses [`ResolvedSpillTransport`](@ref) instead.
 
 Shares `bottom_index` semantics with [`BottomBoundaryLayer`](@ref): the deepest wet level of every
 column, zero over land.
 """
-struct AdvectiveBottomBoundaryLayer{K, T, FT, E}
+struct AdvectiveBottomBoundaryLayer{K, T, FT, E, L}
     bottom_index               :: K
     transport_x                :: T
     transport_y                :: T
     transport_coefficient      :: FT
     gravitational_acceleration :: FT
     equation_of_state          :: E
+    law                        :: L
 end
+
+const ResolvedSpillBottomBoundaryLayer = AdvectiveBottomBoundaryLayer{<:Any, <:Any, <:Any, <:Any, <:ResolvedSpillTransport}
 
 Adapt.adapt_structure(to, bbl::AdvectiveBottomBoundaryLayer) =
     AdvectiveBottomBoundaryLayer(adapt(to, bbl.bottom_index),
@@ -55,7 +70,8 @@ Adapt.adapt_structure(to, bbl::AdvectiveBottomBoundaryLayer) =
                                  adapt(to, bbl.transport_y),
                                  adapt(to, bbl.transport_coefficient),
                                  adapt(to, bbl.gravitational_acceleration),
-                                 adapt(to, bbl.equation_of_state))
+                                 adapt(to, bbl.equation_of_state),
+                                 bbl.law)
 
 function AdvectiveBottomBoundaryLayer(grid, equation_of_state;
                                       transport_coefficient = 10,
@@ -70,10 +86,13 @@ function AdvectiveBottomBoundaryLayer(grid, equation_of_state;
     transport_x = Field{Center, Center, Nothing}(grid)
     transport_y = Field{Center, Center, Nothing}(grid)
 
+    law = transport_coefficient === :resolved ? ResolvedSpillTransport() : DensityDrivenTransport()
+    γ = transport_coefficient === :resolved ? 0 : transport_coefficient
+
     return AdvectiveBottomBoundaryLayer(bottom_index, transport_x, transport_y,
-                                        convert(FT, transport_coefficient),
+                                        convert(FT, γ),
                                         convert(FT, gravitational_acceleration),
-                                        equation_of_state)
+                                        equation_of_state, law)
 end
 
 #####
@@ -87,12 +106,8 @@ end
     return shelf_is_first, max(kᴬ, kᴮ), min(kᴬ, kᴮ)
 end
 
-# `u = γ g δρ` with `δρ = (ρˢ - ρᵈ)/ρ₀ ≈ ᾱ (Tᵈ - Tˢ) - β̄ (Sᵈ - Sˢ)`, clipped at zero so water only ever
-# runs downslope. NEMO's `zgdrho` with `MAX(0, ...)`.
-@inline function advective_face_transport(bbl, fields, grid, iˢ, jˢ, kˢ, iᵈ, jᵈ, kᵈ, face_width)
-
-    wet = (kˢ > 0) & (kᵈ > 0) & (kˢ > kᵈ)   # a step is required; a flat bottom has no downslope direction
-
+# `δρ = (ρˢ - ρᵈ)/ρ₀ ≈ ᾱ (Tᵈ - Tˢ) - β̄ (Sᵈ - Sˢ)` between the shelf and deep bottom cells, NEMO's `zgdrho`.
+@inline function bottom_density_contrast(bbl, fields, grid, iˢ, jˢ, kˢ, iᵈ, jᵈ, kᵈ)
     kˢ⁺ = max(kˢ, 1)
     kᵈ⁺ = max(kᵈ, 1)
 
@@ -108,9 +123,17 @@ end
     αˢ = thermal_expansion(Tˢ, Sˢ, zˢ, ℰ);  βˢ = haline_contraction(Tˢ, Sˢ, zˢ, ℰ)
     αᵈ = thermal_expansion(Tᵈ, Sᵈ, zᵈ, ℰ);  βᵈ = haline_contraction(Tᵈ, Sᵈ, zᵈ, ℰ)
 
-    δρ = 0.5 * ((αˢ + αᵈ) * (Tᵈ - Tˢ) - (βˢ + βᵈ) * (Sᵈ - Sˢ))
+    return 0.5 * ((αˢ + αᵈ) * (Tᵈ - Tˢ) - (βˢ + βᵈ) * (Sᵈ - Sˢ))
+end
 
-    thickness = min(Δzᶜᶜᶜ(iˢ, jˢ, kˢ⁺, grid), Δzᶜᶜᶜ(iᵈ, jᵈ, kᵈ⁺, grid))
+# `u = γ g δρ`, clipped at zero so water only ever runs downslope. NEMO's `zgdrho` with `MAX(0, ...)`.
+@inline function advective_face_transport(bbl, fields, grid, iˢ, jˢ, kˢ, iᵈ, jᵈ, kᵈ, face_width)
+
+    wet = (kˢ > 0) & (kᵈ > 0) & (kˢ > kᵈ)   # a step is required; a flat bottom has no downslope direction
+
+    δρ = bottom_density_contrast(bbl, fields, grid, iˢ, jˢ, kˢ, iᵈ, jᵈ, kᵈ)
+
+    thickness = min(Δzᶜᶜᶜ(iˢ, jˢ, max(kˢ, 1), grid), Δzᶜᶜᶜ(iᵈ, jᵈ, max(kᵈ, 1), grid))
     u = bbl.transport_coefficient * bbl.gravitational_acceleration * max(0, δρ)
 
     return ifelse(wet, u * face_width * thickness, zero(grid))
@@ -142,6 +165,44 @@ end
     return advective_face_transport(bbl, fields, grid, i, jˢ, kˢ, i, jᵈ, kᵈ, face_width)
 end
 
+# The shelf water is delivered to the deep bottom cell, so it is compared with the deep bottom water: shelf
+# water that is only denser than the deep column at the shelf's level would land under denser water.
+@inline function spill_transport(bbl, fields, grid, iˢ, jˢ, kˢ, iᵈ, jᵈ, kᵈ, downslope)
+    wet = (kˢ > 0) & (kᵈ > 0) & (kˢ > kᵈ)
+    δρ = bottom_density_contrast(bbl, fields, grid, iˢ, jˢ, kˢ, iᵈ, jᵈ, kᵈ)
+    return ifelse(wet & (δρ > 0), downslope, zero(grid))
+end
+
+@inline function x_face_transport(bbl::ResolvedSpillBottomBoundaryLayer, fields, grid, i, j)
+    kᴸ = bottom_level(bbl, i,   j)
+    kᴿ = bottom_level(bbl, i+1, j)
+    left_is_shelf, kˢ, kᵈ = step_columns(kᴸ, kᴿ)
+
+    iˢ = ifelse(left_is_shelf, i,   i+1)
+    iᵈ = ifelse(left_is_shelf, i+1, i)
+
+    k = max(kˢ, 1)
+    U = @inbounds fields.u[i+1, j, k] * Axᶠᶜᶜ(i+1, j, k, grid)
+    downslope = ifelse(left_is_shelf, max(U, zero(U)), max(-U, zero(U)))
+
+    return spill_transport(bbl, fields, grid, iˢ, j, kˢ, iᵈ, j, kᵈ, downslope)
+end
+
+@inline function y_face_transport(bbl::ResolvedSpillBottomBoundaryLayer, fields, grid, i, j)
+    kᴰ = bottom_level(bbl, i, j)
+    kᵁ = bottom_level(bbl, i, j+1)
+    down_is_shelf, kˢ, kᵈ = step_columns(kᴰ, kᵁ)
+
+    jˢ = ifelse(down_is_shelf, j,   j+1)
+    jᵈ = ifelse(down_is_shelf, j+1, j)
+
+    k = max(kˢ, 1)
+    V = @inbounds fields.v[i, j+1, k] * Ayᶜᶠᶜ(i, j+1, k, grid)
+    downslope = ifelse(down_is_shelf, max(V, zero(V)), max(-V, zero(V)))
+
+    return spill_transport(bbl, fields, grid, i, jˢ, kˢ, i, jᵈ, kᵈ, downslope)
+end
+
 """
     update_advective_bottom_boundary_layer!(sim, bbl)
 
@@ -150,7 +211,7 @@ equation-of-state evaluations per face are paid on the 2D bottom surface rather 
 """
 function update_advective_bottom_boundary_layer!(sim, bbl::AdvectiveBottomBoundaryLayer)
     ocean = sim.model.ocean
-    fields = (T = ocean.model.tracers.T, S = ocean.model.tracers.S)
+    fields = (T = ocean.model.tracers.T, S = ocean.model.tracers.S, u = ocean.model.velocities.u, v = ocean.model.velocities.v)
     return update_advective_bottom_boundary_layer!(bbl, ocean.model.grid, fields)
 end
 
@@ -200,10 +261,30 @@ end
     return on_shelf | in_column | on_deep, iₛ, jₛ, kₛ
 end
 
-@inline function overturning_limb(c, cᶜ, Q, iˢ, jˢ, kˢ, iᵈ, jᵈ, kᵈ, i, j, k, grid)
+@inline function overturning_limb(law, c, cᶜ, Q, iˢ, jˢ, kˢ, iᵈ, jᵈ, kᵈ, i, j, k, grid)
     active, iₛ, jₛ, kₛ = limb_source(iˢ, jˢ, kˢ, iᵈ, jᵈ, kᵈ, i, j, k)
     cₛ = @inbounds c[iₛ, jₛ, kₛ]
     return ifelse(active, Q * (cₛ - cᶜ), zero(grid))
+end
+
+# The resolved flow already carries the shelf water into the deep column at the shelf's level, so the circuit
+# has no shelf limb: that cell gives the shelf water back (`c[shelf]` in place of its own value) and receives
+# the water displaced from below, the column rises one limb at a time, and the bottom receives the shelf water.
+# Summed over the column the limbs telescope to zero.
+@inline function overturning_limb(::ResolvedSpillTransport, c, cᶜ, Q, iˢ, jˢ, kˢ, iᵈ, jᵈ, kᵈ, i, j, k, grid)
+    in_column = (i == iᵈ) & (j == jᵈ) & (k >= kᵈ) & (k <= kˢ)
+    at_bottom = k == kᵈ
+    at_spill  = k == kˢ
+
+    iₛ = ifelse(at_bottom, iˢ, i)
+    jₛ = ifelse(at_bottom, jˢ, j)
+    kₛ = ifelse(at_bottom, kˢ, max(k - 1, 1))
+
+    cₛ = @inbounds c[iₛ, jₛ, kₛ]
+    cˢ = @inbounds c[iˢ, jˢ, max(kˢ, 1)]
+    sink = ifelse(at_spill, cˢ, cᶜ)
+
+    return ifelse(in_column, Q * (cₛ - sink), zero(grid))
 end
 
 @inline function x_overturning_limb(c, cᶜ, bbl, grid, iface, i, j, k)
@@ -216,7 +297,7 @@ end
     iˢ = ifelse(left_is_shelf, iface,   iface+1)
     iᵈ = ifelse(left_is_shelf, iface+1, iface)
 
-    return overturning_limb(c, cᶜ, Q, iˢ, j, kˢ, iᵈ, j, kᵈ, i, j, k, grid)
+    return overturning_limb(bbl.law, c, cᶜ, Q, iˢ, j, kˢ, iᵈ, j, kᵈ, i, j, k, grid)
 end
 
 @inline function y_overturning_limb(c, cᶜ, bbl, grid, jface, i, j, k)
@@ -229,7 +310,7 @@ end
     jˢ = ifelse(down_is_shelf, jface,   jface+1)
     jᵈ = ifelse(down_is_shelf, jface+1, jface)
 
-    return overturning_limb(c, cᶜ, Q, i, jˢ, kˢ, i, jᵈ, kᵈ, i, j, k, grid)
+    return overturning_limb(bbl.law, c, cᶜ, Q, i, jˢ, kˢ, i, jᵈ, kᵈ, i, j, k, grid)
 end
 
 """

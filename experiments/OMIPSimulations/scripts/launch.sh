@@ -73,7 +73,7 @@ Environment variables (physics):
                 whose winter half has km-deep mixed layers, so a January start from it begins
                 with a seasonal thermocline the season does not have. Unset uses WOA Annual
                 throughout and reproduces the previous model exactly. Adds "_icblend<val>".
-                Requires woa_t_monthly_<MM>.nc and woa_s_monthly_<MM>.nc in the climatology dir.
+                Requires woa2023_t_monthly_<MM>.nc and woa2023_s_monthly_<MM>.nc in the climatology dir.
   ICE_DRAGREF   Depth in metres over which the ocean velocity is averaged to give the reference
                 of the ice-ocean drag. McPhee's Cio = 5.5e-3 is defined against the under-ice
                 boundary layer; the topmost cell is 1.5 m and is dragged by the ice itself, so
@@ -119,6 +119,8 @@ Environment variables (physics):
                            completed with ghost values, blending the mirror image of the active run
                            with its quadratic extrapolation -- unlike "upwind", which pays first
                            order in every boundary cell. Adds "_ghostcells".
+                  ghost_cells_full
+                           the non-monotone version of ghost_cells 
                 Sets both tracers and momentum. TRACER_BOUNDARY_SCHEME and MOMENTUM_BOUNDARY_SCHEME
                 take the same three values and override it one component at a time, which is how to
                 tell whether the boundary treatment acts through the tracers or through the momentum.
@@ -177,6 +179,10 @@ Environment variables (physics):
   BIHVISC       Constant biharmonic viscosity ν in m^4/s (default: unset).
                 When set, overrides BIHARMONIC and uses ν directly instead of
                 the grid-area-scaled νhb = Az^2 / λ form.
+  BIHDIV        Total biharmonic timescale felt by the horizontal divergence, e.g. "30days",
+                shorter than BIHARMONIC. Adds a divergence-only biharmonic viscosity on top of
+                the full one, so the rotational flow keeps BIHARMONIC. Adds "_bihdiv<value>".
+                Default: unset (off).
   VISCOUS_VELOCITY
                 NEMO's rn_Uv: lateral viscous velocity in m/s giving a grid-scaled
                 Laplacian viscosity ν = 1/2 Uv sqrt(Az), i.e. NEMO's ahm = 1/2 Uv Lv
@@ -305,6 +311,9 @@ Environment variables (physics):
                 cannot pass. Downslope speed is u = γ g Δρ/ρ₀, so the transport shuts off
                 as the contrast is consumed. Combines with BBL_KAPPA; the two act on
                 different failures. Adds "_cg<γ>" to the run name.
+                BBL_GAMMA=resolved uses the model's own downslope transport at the shelf level
+                wherever the shelf bottom water is denser than the deep bottom water (NEMO
+                nn_bbl_adv = 1) and delivers it to the deep column's bottom cell. Adds "_cgresolved".
   OVERFLOW_RESTORE
                 Diagnostic only, in DAYS. Pins T and S on the East Greenland slope
                 (36-26 W, 62-66.5 N, below 1500 m) to observed Denmark Strait Overflow
@@ -314,13 +323,25 @@ Environment variables (physics):
                 how to get dense water down a staircase. Both BBL schemes left the
                 delivered density unchanged, so neither tested that. Adds "_dsow<days>"
                 to the run name.
-  SILL_OVERFLOW Denmark Strait overflow parameterization (Danabasoglu, Large & Briegleb 2010),
-                true/false. Every 16 steps the Whitehead hydraulic transport
-                M_s = g′h_u²/2f of the dense water above the 690 m sill, plus an equal
-                entrainment from 700-1500 m, is exchanged volume-neutrally with the
-                East Greenland slope below 1500 m, so the product crosses the bottom
-                steps instead of being mixed away on them. Tracers only; the velocity is
-                untouched. Logs "SILL OVERFLOW M_s=..." to the .err. Adds "_ofp".
+  SILL_OVERFLOW Greenland-Scotland overflow parameterization (Danabasoglu, Large &
+                Briegleb 2010), true/false. Denmark Strait and the Faroe Bank Channel.
+                Every 16 steps each sill exchanges, volume-neutrally, the Whitehead
+                (1974) rotating hydraulic transport of its upstream dense layer, less
+                what the model already carries down, plus Froude-limited entrainment
+                along the descent, with the levels bracketing the depth at which the
+                product stops being denser than the ambient column. Only the two boxes
+                saying where each strait is are prescribed: the sill depth is the
+                bottleneck of the deepest connected path from the upstream basin to the
+                downstream one, and the layers, the latitude and the descent slope come
+                from the grid and the density field. Tracers only; the velocity is
+                untouched. Logs "SILL OVERFLOW M_w=... z_n=..." to the .err. Adds "_ofp".
+  TRANSFORMATION
+                Diagnostic only, in DAYS: interval between σ₂ water-mass-transformation
+                samples. Writes "<prefix>_transformation.jld2" holding, per model-latitude
+                row and σ₂ class, the overturning attributed to the surface fluxes, the
+                vertical closures, the isopycnal closure, and the discrete tracer advection.
+                The advective term is zero in the continuum, so it measures the numerical
+                mixing directly. Unset omits the diagnostic. Does not change the run name.
   LAB_RESTORE   Diagnostic only, in DAYS. Restores SALINITY ONLY in the deep Labrador
                 interior (65-40 W, 52-66 N, columns whose bottom is below 2000 m) above
                 200 m toward WOA Annual Absolute Salinity. Campaign 27 priced the
@@ -441,13 +462,18 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
   CATKE_CWUSTAR `Cᵂu★` of CATKEEquation: surface shear-driven TKE flux
                 coefficient. Higher → more wind-injected TKE → deeper
                 equatorial ML. Default (Oceananigans): 3.179.
+  WIND_STRESS_SCALE
+                Factor on the atmosphere-ocean wind stress after the bulk formula has converged
+                (OCEAN_FLUXES=ncar only); heat and moisture fluxes are unchanged. Adds
+                "_tau<value>" to the run name. Default: unset (1).
   BACKGROUND_K  Interior background tracer diffusivity κ added underneath CATKE (or RBVD).
                 Either a number in m^2/s (uniform), or "bryan_lewis" for the Bryan & Lewis
                 (1979) depth profile, 3e-5 in the upper ocean rising across ~2500 m to 1.3e-4
                 in the abyss (deep upwelling without diffusing the thermocline), or
                 "abyssal_henyey" for Henyey in the thermocline with the same arctangent
                 enhancement added beneath it, reaching +5e-5 at 5000 m — the abyssal upwelling
-                without the upper-ocean value that sets the drift.
+                without the upper-ocean value that sets the drift, or "henyey2x" for twice the
+                Henyey profile everywhere.
                 Default: unset, i.e. the Henyey et al. (1986) latitudinal internal-wave
                 scaling κ = max(2e-6, 1e-5 |sin φ|), 2e-6 at the equator to 1e-5 at the poles.
                 Raising it strengthens the diapycnal upwelling that closes the AMOC lower limb
@@ -522,6 +548,7 @@ Examples:
   BIHARMONIC=5days ./launch.sh orca           # custom biharmonic timescale
   BIHARMONIC=nothing ./launch.sh orca         # disable biharmonic viscosity
   BIHVISC=1e12 ./launch.sh orca               # constant biharmonic viscosity ν=1e12 m^4/s
+  BIHDIV=30days ./launch.sh orca              # extra biharmonic damping of the divergence, 30 days in total
   DZ_TOP=2 ./launch.sh orca                   # 2 m top cell (scale chosen by bisection)
   IC_CONDITIONS=blended ./launch.sh orca      # January WOA Monthly blend + summer ice both hemispheres
   CATKE_CWUSTAR=5.0 ./launch.sh orca          # stronger surface TKE injection in CATKE
@@ -682,8 +709,8 @@ export MOMENTUM_ADVECTION VISCOUS_VELOCITY LAPVISC STRAIT_TAU
 
 for scheme_name in BOUNDARY_SCHEME TRACER_BOUNDARY_SCHEME MOMENTUM_BOUNDARY_SCHEME; do
   case "${!scheme_name}" in
-    default|upwind|ghost_cells) ;;
-    *) echo "$scheme_name must be default, upwind or ghost_cells, got '${!scheme_name}'" >&2; exit 1 ;;
+    default|upwind|ghost_cells|ghost_cells_full) ;;
+    *) echo "$scheme_name must be default, upwind or ghost_cells, ghost_cells_full, got '${!scheme_name}'" >&2; exit 1 ;;
   esac
 done
 export TRACER_ORDER BUFFER_ORDER BOUNDARY_SCHEME TRACER_BOUNDARY_SCHEME MOMENTUM_BOUNDARY_SCHEME
@@ -714,6 +741,8 @@ RUN_NAME="$CONFIG"
 [[ "${ICE_DRAGREF:-6}" != "6" ]]                 && RUN_NAME="${RUN_NAME}_dragref${ICE_DRAGREF}"
 [[ "${ICE_LIQUIDUS:-teos10}" != "teos10" ]]      && RUN_NAME="${RUN_NAME}_liq${ICE_LIQUIDUS}"
 [[ "${ICE_Z0:-5e-4}" != "5e-4" ]]                && RUN_NAME="${RUN_NAME}_icez0${ICE_Z0}"
+[[ -n "${REYNOLDS_LIMIT:-}" ]]                   && RUN_NAME="${RUN_NAME}_relim${REYNOLDS_LIMIT}"
+[[ -n "${DIVDAMP:-}" ]]                          && RUN_NAME="${RUN_NAME}_divdamp${DIVDAMP}"
 [[ -n "${SNOW_CATEGORIES:-}" && "${SNOW_CATEGORIES}" != "${ICE_CATEGORIES:-4}" ]] \
                                                  && RUN_NAME="${RUN_NAME}_snowcat${SNOW_CATEGORIES}"
 [[ -n "${ICE_ITD_SHAPE:-}" ]]                    && RUN_NAME="${RUN_NAME}_itd${ICE_ITD_SHAPE//,/-}"
@@ -722,6 +751,7 @@ RUN_NAME="$CONFIG"
 if [[ "$TRACER_BOUNDARY_SCHEME" == "$MOMENTUM_BOUNDARY_SCHEME" ]]; then
   [[ "$TRACER_BOUNDARY_SCHEME" == "upwind" ]]    && RUN_NAME="${RUN_NAME}_buford1"
   [[ "$TRACER_BOUNDARY_SCHEME" == "ghost_cells" ]] && RUN_NAME="${RUN_NAME}_ghostcells"
+  [[ "$TRACER_BOUNDARY_SCHEME" == "ghost_cells_full" ]] && RUN_NAME="${RUN_NAME}_ghostcellsfull"
 else
   [[ "$TRACER_BOUNDARY_SCHEME" != "default" ]]   && RUN_NAME="${RUN_NAME}_tr${TRACER_BOUNDARY_SCHEME}"
   [[ "$MOMENTUM_BOUNDARY_SCHEME" != "default" ]] && RUN_NAME="${RUN_NAME}_mom${MOMENTUM_BOUNDARY_SCHEME}"
@@ -792,6 +822,7 @@ esac
 [[ "$DT" != "$DEFAULT_DT" ]]                   && RUN_NAME="${RUN_NAME}_dt${DT}"
 [[ "${BAROTROPIC_SUBSTEPS:-$DEFAULT_SUBSTEPS}" != "$DEFAULT_SUBSTEPS" ]] && RUN_NAME="${RUN_NAME}_substeps${BAROTROPIC_SUBSTEPS}"
 [[ -n "${BIHVISC:-}" ]]                        && RUN_NAME="${RUN_NAME}_bihvisc${BIHVISC}"
+[[ -n "${BIHDIV:-}" ]]                         && RUN_NAME="${RUN_NAME}_bihdiv${BIHDIV}"
 [[ -n "${VISCOUS_VELOCITY:-}" ]]               && RUN_NAME="${RUN_NAME}_uv${VISCOUS_VELOCITY}"
 [[ -n "${LAPVISC:-}" ]]                        && RUN_NAME="${RUN_NAME}_lapvisc${LAPVISC}"
 [[ -n "${STRAIT_TAU:-}" ]]                     && RUN_NAME="${RUN_NAME}_strait${STRAIT_TAU}"
@@ -801,6 +832,7 @@ esac
 [[ -n "${MAXDZ:-}" ]]                           && RUN_NAME="${RUN_NAME}_maxdz${MAXDZ}"
 [[ -n "${CATKE_CWUSTAR:-}" ]]                  && RUN_NAME="${RUN_NAME}_cwu${CATKE_CWUSTAR}"
 [[ -n "${BACKGROUND_K:-}" ]]                   && RUN_NAME="${RUN_NAME}_bgk${BACKGROUND_K}"
+[[ -n "${WIND_STRESS_SCALE:-}" ]]              && RUN_NAME="${RUN_NAME}_tau${WIND_STRESS_SCALE}"
 [[ "${BACKGROUND_NU:-3e-5}" != "3e-5" ]]       && RUN_NAME="${RUN_NAME}_bgnu${BACKGROUND_NU}"
 [[ "${CHLOROPHYLL:-seawifs}" != "seawifs" ]]   && RUN_NAME="${RUN_NAME}_chl${CHLOROPHYLL}"
 [[ "${IMEX_DRAG:-true}" == "false" ]]            && RUN_NAME="${RUN_NAME}_explicitdrag"
@@ -837,11 +869,13 @@ fi
 if [[ "${PARTITION}" == "default" ]]; then
     TIME="${TIME:-05:00:00}"
 else
-    TIME="${TIME:-25:00:00}"
+    TIME="${TIME:-120:00:00}"
 fi
 SBATCH_ARGS+=(--time="${TIME}")
 
 MEM="${MEM:-150GB}"
+# Slurm reads a unitless --mem as megabytes, so a bare MEM=100 is OOM-killed within seconds.
+[[ "$MEM" =~ ^[0-9]+$ ]] && { echo "MEM must carry a unit, got '$MEM' (write ${MEM}GB)" >&2; exit 1; }
 SBATCH_ARGS+=(--mem="${MEM}")
 
 if [[ "${PROFILE:-false}" == "true" ]]; then
@@ -918,6 +952,7 @@ ICE_ARCH_STRESS="${ICE_ARCH_STRESS:-}"
 ICE_ARCH_MONTHS="${ICE_ARCH_MONTHS:-}"
 IC_CONDITIONS="${IC_CONDITIONS:-default}"
 BIHVISC="${BIHVISC:-}"
+BIHDIV="${BIHDIV:-}"
 VISCOUS_VELOCITY="${VISCOUS_VELOCITY:-}"
 LAPVISC="${LAPVISC:-}"
 STRAIT_TAU="${STRAIT_TAU:-}"
@@ -931,6 +966,7 @@ MOMENTUM_ADVECTION="${MOMENTUM_ADVECTION:-weno}"
 DZ_TOP="${DZ_TOP:-}"
 CATKE_CWUSTAR="${CATKE_CWUSTAR:-}"
 BACKGROUND_K="${BACKGROUND_K:-}"
+WIND_STRESS_SCALE="${WIND_STRESS_SCALE:-}"
 BACKGROUND_NU="${BACKGROUND_NU:-3e-5}"
 PVEL="${PVEL:-0.254}"
 BAROTROPIC_SUBSTEPS="${BAROTROPIC_SUBSTEPS:-}"
@@ -1001,6 +1037,9 @@ fi
 BIHVISC_KWARG=""
 [[ -n "$BIHVISC" ]] && BIHVISC_KWARG="biharmonic_viscosity = ${BIHVISC},"
 
+BIHDIV_KWARG=""
+[[ -n "$BIHDIV" ]] && BIHDIV_KWARG="divergence_biharmonic_timescale = ${BIHDIV},"
+
 VISCOUS_VELOCITY_KWARG=""
 [[ -n "$VISCOUS_VELOCITY" ]] && VISCOUS_VELOCITY_KWARG="viscous_velocity = ${VISCOUS_VELOCITY},"
 
@@ -1019,11 +1058,14 @@ DZ_TOP_KWARG=""
 CATKE_CWUSTAR_KWARG=""
 [[ -n "$CATKE_CWUSTAR" ]] && CATKE_CWUSTAR_KWARG="Cᵂu★ = ${CATKE_CWUSTAR},"
 
+WIND_STRESS_SCALE_KWARG=""
+[[ -n "$WIND_STRESS_SCALE" ]] && WIND_STRESS_SCALE_KWARG="wind_stress_scale = ${WIND_STRESS_SCALE},"
+
 # A named profile is passed as a Julia Symbol, a number verbatim.
 BACKGROUND_K_KWARG=""
 case "$BACKGROUND_K" in
     "")                     ;;
-    henyey|bryan_lewis|abyssal_henyey)
+    henyey|henyey2x|bryan_lewis|abyssal_henyey)
                             BACKGROUND_K_KWARG="background_vertical_diffusivity = :${BACKGROUND_K}," ;;
     *)                      BACKGROUND_K_KWARG="background_vertical_diffusivity = ${BACKGROUND_K}," ;;
 esac
@@ -1134,6 +1176,13 @@ BTAPER_KWARG=""
 MAXDZ_KWARG=""
 [[ -n "${MAXDZ:-}" ]] && MAXDZ_KWARG="Δzmax = ${MAXDZ},"
 
+# C39 numerics knobs. The tracer scheme's spurious diapycnal mixing is set by the grid Reynolds number
+# and lives in the rock-touching layer; REYNOLDS_LIMIT bounds it, and DIVDAMP damps the divergent
+# grid-scale modes without touching the rotational flow.
+NUMERICS_KWARG=""
+[[ -n "${REYNOLDS_LIMIT:-}" ]] && NUMERICS_KWARG="${NUMERICS_KWARG}reynolds_limit = ${REYNOLDS_LIMIT},"
+[[ -n "${DIVDAMP:-}" ]]        && NUMERICS_KWARG="${NUMERICS_KWARG}divergence_damping_timescale = ${DIVDAMP} * 86400,"
+
 case "${BOTTOM_CELLS:-full}" in
     full)    BOTTOM_CELLS_KWARG="" ;;
     partial) BOTTOM_CELLS_KWARG="immersed_bottom = PartialCellBottom," ;;
@@ -1149,10 +1198,17 @@ esac
 
 BBL_KWARG=""
 [[ -n "${BBL_KAPPA:-}" ]] && BBL_KWARG="bbl_diffusivity = ${BBL_KAPPA},"
-[[ -n "${BBL_GAMMA:-}" ]] && BBL_KWARG="${BBL_KWARG}bbl_transport_coefficient = ${BBL_GAMMA},"
+if [[ "${BBL_GAMMA:-}" == "resolved" ]]; then
+  BBL_KWARG="${BBL_KWARG}bbl_transport_coefficient = :resolved,"
+elif [[ -n "${BBL_GAMMA:-}" ]]; then
+  BBL_KWARG="${BBL_KWARG}bbl_transport_coefficient = ${BBL_GAMMA},"
+fi
 [[ -n "${OVERFLOW_RESTORE:-}" ]] && BBL_KWARG="${BBL_KWARG}overflow_restoring_timescale = ${OVERFLOW_RESTORE}days,"
 [[ -n "${LAB_RESTORE:-}" ]] && BBL_KWARG="${BBL_KWARG}labrador_restoring_timescale = ${LAB_RESTORE}days,"
 [[ "${SILL_OVERFLOW:-false}" == "true" ]] && BBL_KWARG="${BBL_KWARG}sill_overflow = true,"
+
+TRANSFORMATION_KWARG=""
+[[ -n "${TRANSFORMATION:-}" ]] && TRANSFORMATION_KWARG="transformation_interval = ${TRANSFORMATION}days,"
 
 SNOW_KWARG=""
 [[ "$SNOW" == "true" ]] && SNOW_KWARG="with_snow = true,"
@@ -1233,6 +1289,7 @@ sim = omip_simulation(:${CONFIG};
                       κ_symmetric = ${KSYMM_JULIA},
                       biharmonic_timescale = ${BIHARMONIC},
                       ${BIHVISC_KWARG}
+                      ${BIHDIV_KWARG}
                       ${CB_KWARG}
                       ${CUNB_KWARG}
                       ${CF_KWARG}
@@ -1247,6 +1304,7 @@ sim = omip_simulation(:${CONFIG};
                       ${ML_TAPER_KWARG}
                       ${BTAPER_KWARG}
                       ${MAXDZ_KWARG}
+                      ${NUMERICS_KWARG}
                       ${VISCOUS_VELOCITY_KWARG}
                       ${LAPVISC_KWARG}
                       ${STRAIT_KWARG}
@@ -1258,10 +1316,12 @@ sim = omip_simulation(:${CONFIG};
                       ${ICE_DYNAMICS_KWARG}
                       ${SEA_ICE_KWARG}
                       ${DIAGNOSTICS_KWARG}
+                      ${TRANSFORMATION_KWARG}
                       ${PVELKWARG}
                       ${IC_BLEND_KWARG}
                       ${CATKE_CWUSTAR_KWARG}
                       ${BACKGROUND_K_KWARG}
+                      ${WIND_STRESS_SCALE_KWARG}
                       ${BACKGROUND_NU_KWARG}
                       ${BAROTROPIC_SUBSTEPS_KWARG}
                       ${IMEX_DRAG_KWARG}
