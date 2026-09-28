@@ -11,7 +11,7 @@ using Oceananigans.Advection: WENO, WENOVectorInvariant
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
                                        FieldBoundaryConditions, FluxBoundaryCondition,
                                        IMEXFluxBoundaryCondition, IMEXFlux, getbc
-using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
+using Oceananigans.BuoyancyFormulations: BuoyancyForce, SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, set!, interior
 using Oceananigans.Forcings: MultipleForcings, DiscreteForcing
