@@ -29,13 +29,13 @@ biogeochemistry_surface_exchanged_tracers(::AbstractInorganicCarbon{N}) where N 
 # prescribed atmosphere pressure is in Pa, the gas exchange takes atm
 @inline surface_atmospheric_pressure(exchanger) = exchanger.atmosphere.state.p / ATM
 
-biogeochemical_interface(exchanger, ocean, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}; kwargs...) =
+biogeochemical_interface(exchanger, ocean, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}; warm_start = true, kwargs...) =
     merge(
         biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.nutrients; kwargs...),
         biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.plankton; kwargs...),
         biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.detritus; kwargs...),
         biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.oxygen; kwargs...),
-        biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.inorganic_carbon; kwargs...)
+        biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.inorganic_carbon; warm_start, kwargs...)
     )
 
 biogeochemical_interface(exchanger, ocean, ::Oxygen; kwargs...) =
@@ -45,11 +45,11 @@ biogeochemical_interface(exchanger, ocean, ::Oxygen; kwargs...) =
                 kwargs...).condition.func)
 
 biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{1}; kwargs...) =
-    (; DIC = carbon_dioxide_exchange(exchanger, :DIC, :Alk; kwargs...))
+    (; DIC = carbon_dioxide_exchange(exchanger, :DIC, :Alk; grid = ocean.model.grid, kwargs...))
 
 function biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{N}; kwargs...) where N
     names = carbon_replicate_names(Val(N))
-    exchanges = ntuple(n -> carbon_dioxide_exchange(exchanger, Symbol(:DIC, n), Symbol(:Alk, n); kwargs...), Val(N))
+    exchanges = ntuple(n -> carbon_dioxide_exchange(exchanger, Symbol(:DIC, n), Symbol(:Alk, n); grid = ocean.model.grid, kwargs...), Val(N))
     return NamedTuple{names}(exchanges)
 end
 
