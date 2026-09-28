@@ -1,16 +1,18 @@
 module Oceans
 
 export ocean_simulation, river_mouth_vertical_diffusivity, SlabOcean, PrescribedOcean,
-       TwoColorRadiation, ChlorophyllOptics, absorption_coefficient, equivalent_chlorophyll
+       TwoColorRadiation, ChlorophyllOptics, absorption_coefficient, equivalent_chlorophyll,
+       earth_tidal_harmonics, earth_tidal_constituents
 
 using Adapt: Adapt, adapt
+using Dates: Dates, DateTime
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Advection: WENO, WENOVectorInvariant
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
                                        FieldBoundaryConditions, FluxBoundaryCondition,
-                                       IMEXFluxBoundaryCondition, IMEXFlux, getbc
+                                       IMEXFluxBoundaryCondition, IMEXFlux, TidalHarmonics, getbc
 using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, set!, interior
@@ -64,6 +66,7 @@ default_or_override(override, alternative_default=nothing) = override
 
 include("slab_ocean.jl")
 include("prescribed_ocean.jl")
+include("earth_tides.jl")
 include("barotropic_potential_forcing.jl")
 include("radiative_forcing.jl")
 include("multiple_surface_fluxes.jl")
