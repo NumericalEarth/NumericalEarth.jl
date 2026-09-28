@@ -800,6 +800,33 @@ end
 LOADERS[:mld_min] = c -> masked!(c, reduce_monthly(c, :mld_monthly, min))
 LOADERS[:mld_max] = c -> masked!(c, reduce_monthly(c, :mld_monthly, max))
 
+# Treguier et al. (2023, GMD 16, 3849) seasonal MLD: winter is the January–March mean in the
+# Northern Hemisphere and the July–September mean in the Southern Hemisphere; summer the reverse.
+# Unlike `mld_min`/`mld_max` (per-cell extreme monthly mean), this fixes the months per hemisphere.
+LOADERS[:cell_latitudes] = c -> let grid = get_field(c, :grid)
+    [φnode(i, j, 1, grid, Center(), Center(), Center()) for i in 1:size(grid, 1), j in 1:size(grid, 2)]
+end
+
+function monthly_season_mean(monthly::AbstractVector, months)
+    any(m -> isnothing(monthly[m]), months) && error("MLD climatology is missing one of months $months")
+    return sum(m -> dropdims(monthly[m]; dims = 3), months) ./ length(months)
+end
+
+monthly_season_mean(monthly::AbstractArray{<:Any, 3}, months) = dropdims(mean(monthly[:, :, months]; dims = 3); dims = 3)
+
+function hemispheric_season_mld(c, sym, northern_months, southern_months)
+    monthly = get_field(c, sym)
+    isnothing(monthly) && return nothing
+    north = monthly_season_mean(monthly, northern_months)
+    south = monthly_season_mean(monthly, southern_months)
+    return masked!(c, ifelse.(get_field(c, :cell_latitudes) .>= 0, north, south))
+end
+
+LOADERS[:mld_winter]     = c -> hemispheric_season_mld(c, :mld_monthly,     1:3, 7:9)
+LOADERS[:mld_summer]     = c -> hemispheric_season_mld(c, :mld_monthly,     7:9, 1:3)
+LOADERS[:mld_winter_dbm] = c -> hemispheric_season_mld(c, :dbm_mld_monthly, 1:3, 7:9)
+LOADERS[:mld_summer_dbm] = c -> hemispheric_season_mld(c, :dbm_mld_monthly, 7:9, 1:3)
+
 #####
 ##### WOA temperature & salinity on case grid (TEOS-10)
 #####
@@ -1206,6 +1233,7 @@ function regrid_surface_to_latlon(c::CaseCache, data_2d)
     fdata = zeros(ZONAL_NLON * ZONAL_NLAT)
     fcov  = zeros(ZONAL_NLON * ZONAL_NLAT)
     clean = replace(data_2d, NaN => zero(eltype(data_2d)))
+    surface_mask = surface_mask .* isfinite.(data_2d)   # NaN over ocean (obs gaps) is missing, not zero
 
     ConservativeRegridding.regrid!(fdata, regridder, vec(clean .* surface_mask))
     ConservativeRegridding.regrid!(fcov,  regridder, vec(surface_mask))
@@ -1242,6 +1270,7 @@ const SURFACE_LATLON_FIELDS = (
     :near_surface_zonal_velocity, :near_surface_meridional_velocity,
     :sic_mean, :sic_march, :sic_september,
     :mld_min, :mld_max, :mld_min_dbm, :mld_max_dbm,
+    :mld_winter, :mld_summer, :mld_winter_dbm, :mld_summer_dbm,
     :barotropic_streamfunction,
 )
 
@@ -1383,12 +1412,13 @@ LOADERS[:zonal_salinity_cancellation]    = c -> get_field(c, :zonal_salinity_rms
                                                 abs.(get_field(c, :zonal_salinity_bias))
 
 # Zonal MLD: regrid the 2-D surface MLD field, weighted by the surface
-# ocean mask. NaNs (land) become 0 so they don't poison the regrid.
+# ocean mask. NaNs (land, obs gaps) are excluded from the weights so they
+# neither poison the regrid nor count as 0 m.
 function zonal_mld(c, sym)
     raw = get_field(c, sym)
     isnothing(raw) && return nothing
     raw_3d  = reshape(replace(raw, NaN => zero(eltype(raw))), size(raw)..., 1)
-    surface = get_field(c, :ocean_mask_3d)[:, :, end:end]
+    surface = get_field(c, :ocean_mask_3d)[:, :, end:end] .* isfinite.(reshape(raw, size(raw_3d)))
     return vec(compute_zonal_mean(raw_3d, surface, get_field(c, :zonal_regridder),
                                    ZONAL_NLON, ZONAL_NLAT))
 end
@@ -1397,6 +1427,12 @@ LOADERS[:zonal_mld_min]     = c -> zonal_mld(c, :mld_min)
 LOADERS[:zonal_mld_max]     = c -> zonal_mld(c, :mld_max)
 LOADERS[:zonal_mld_min_dbm] = c -> zonal_mld(c, :mld_min_dbm)
 LOADERS[:zonal_mld_max_dbm] = c -> zonal_mld(c, :mld_max_dbm)
+
+for sym in (:mld_winter, :mld_summer, :mld_winter_dbm, :mld_summer_dbm)
+    let s = sym
+        LOADERS[Symbol(:zonal_, s)] = c -> zonal_mld(c, s)
+    end
+end
 
 #####
 ##### AMOC streamfunction (Atlantic basin, no regridding)

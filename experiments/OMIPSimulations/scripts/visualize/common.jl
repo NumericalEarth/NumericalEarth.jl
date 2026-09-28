@@ -580,11 +580,18 @@ function dbm_mld_climatology_on_grid(grid;
     dst = Field{Center, Center, Nothing}(grid)
     Nx, Ny = size(grid, 1), size(grid, 2)
     out = Array{Float64, 3}(undef, Nx, Ny, Nm)
+
+    # dBM leaves cells without enough profiles (under sea ice, sparse polar coverage) as NaN.
+    # Interpolate a validity mask alongside the data and normalize by it, so gaps stay NaN
+    # instead of being read as 0 m, which would drag min/seasonal/zonal means to zero.
+    interpolate_month(data) = (interior(src) .= reshape(data, Nlon, Nlat, 1);
+                               interpolate!(dst, src);
+                               Array(interior(dst))[:, :, 1])
     for m in 1:Nm
-        clean = replace(mld_raw[:, :, m], NaN => 0.0)
-        interior(src) .= reshape(clean, Nlon, Nlat, 1)
-        interpolate!(dst, src)
-        out[:, :, m] = Array(interior(dst))[:, :, 1]
+        valid = isfinite.(mld_raw[:, :, m])
+        data  = interpolate_month(ifelse.(valid, mld_raw[:, :, m], 0.0))
+        cover = interpolate_month(Float64.(valid))
+        out[:, :, m] = ifelse.(cover .> 0.5, data ./ cover, NaN)
     end
     return out
 end
