@@ -18,7 +18,6 @@ import ..DataWrangling:
     latitude_interfaces,
     z_interfaces,
     metadata_filename,
-    inpainted_metadata_path,
     reversed_vertical_axis,
     available_variables,
     is_three_dimensional
@@ -26,6 +25,7 @@ import ..DataWrangling:
 download_GLORYS_cache::String = ""
 function __init__()
     global download_GLORYS_cache = DataWrangling.download_cache("GLORYS")
+    return nothing
 end
 
 # Datasets
@@ -129,25 +129,24 @@ function metadata_filename(dataset::GLORYSDataset, name, date, region)
     return string(prefix, ".nc")
 end
 
-function inpainted_metadata_filename(metadata::GLORYSMetadatum)
-    prefix = metadata_prefix(metadata.dataset, metadata.name, metadata.dates, metadata.region)
-    return string(prefix, "_inpainted.jld2")
-end
+DataWrangling.inpainted_metadata_filename(metadata::GLORYSMetadatum) =
+    string(metadata_prefix(metadata.dataset, metadata.name, metadata.dates, metadata.region), "_inpainted.jld2")
 
-inpainted_metadata_path(metadata::GLORYSMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+const GLORYS_surface_variables = (:free_surface, :sea_ice_thickness, :sea_ice_concentration,
+                                   :sea_ice_u_velocity, :sea_ice_v_velocity)
 
 function dataset_location(::GLORYSDataset, name)
-    name == :free_surface && return (Center, Center, Nothing)
+    name ∈ GLORYS_surface_variables && return (Center, Center, Nothing)
     return (Center, Center, Center)
 end
 
-is_three_dimensional(metadata::GLORYSMetadata) = metadata.name != :free_surface
+is_three_dimensional(metadata::GLORYSMetadata) = metadata.name ∉ GLORYS_surface_variables
 
 longitude_interfaces(::GLORYSMetadata) = (-180, 180)
 latitude_interfaces(::GLORYSMetadata) = (-80, 90)
 
 function z_interfaces(metadata::GLORYSMetadata)
-    metadata.name == :free_surface && return (-1.0, 0.0)
+    metadata.name ∈ GLORYS_surface_variables && return (-1.0, 0.0)
     paths = metadata_path(metadata)
     path = paths isa AbstractVector ? first(paths) : paths
     ds = Dataset(path)

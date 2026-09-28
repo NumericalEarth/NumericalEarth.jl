@@ -1,5 +1,4 @@
 using Oceananigans.Operators: intrinsic_vector
-using Oceananigans.Grids: _node
 using Oceananigans.Fields: FractionalIndices, interpolate
 using Oceananigans.OutputReaders: cpu_interpolating_time_indices
 

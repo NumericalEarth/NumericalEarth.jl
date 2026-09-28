@@ -1,90 +1,284 @@
 #####
-##### Hydraulic property functions used by `VariablySaturatedHydrology`.
-#####
-##### Two closures: retention curve `Π_m(θˡ)` (pressure head from pore liquid
-##### fraction) and hydraulic conductivity `K(𝒮)`. Both are pure `@inline`
-##### functions called from per-cell kernels — type-stable, allocation-free.
-#####
-##### van Genuchten (1980) retention and Mualem (1976) conductivity are the
-##### available models.
+##### Hydraulic property closures for `VariablySaturatedHydrology`: van Genuchten (1980)
+##### retention `Π_m(θˡ)` and Mualem (1976) conductivity `K(𝒮)`. Both are pure `@inline`
+##### functions called from per-cell kernels.
 #####
 
 """
-    VanGenuchtenRetention(α, n)
+    VanGenuchtenRetention(FT = Oceananigans.defaults.FloatType;
+                          inverse_air_entry_head, pore_size_uniformity)
 
 Empirical soil-water retention curve mapping liquid pore fraction `θˡ`
 (or saturation `𝒮`) to soil matric pressure head `Π_m` (m, negative in
 unsaturated soil), following [van Genuchten (1980)](@cite vangenuchten1980):
 
 ```math
-\\Pi_m(\\mathcal S) = -\\frac{1}{\\alpha}\\left[\\mathcal S^{-1/m} - 1\\right]^{1/n},
-\\qquad m = 1 - 1/n.
+\\Pi_m(\\mathcal S) = -\\frac{1}{\\alpha^{\\mathrm{ae}}}\\left[\\mathcal S^{-1/\\mathscr{m}} - 1\\right]^{1/\\mathscr{n}},
+\\qquad \\mathscr{m} = 1 - 1/\\mathscr{n}.
 ```
 
-`α` (m⁻¹) and `n` (–) are the standard van Genuchten shape parameters.
+`inverse_air_entry_head` (`αᵃᵉ`, m⁻¹) is the reciprocal of the air-entry pressure head, the
+suction at which the largest pores begin to empty. `pore_size_uniformity` (`𝓃`, –) sets how
+narrow the band of suctions is over which the soil drains. Each may be a scalar or a
+`Field` (see [`soil_hydraulic_properties`](@ref)).
 """
-struct VanGenuchtenRetention{FT}
-    α :: FT
-    n :: FT
+struct VanGenuchtenRetention{A, N}
+    inverse_air_entry_head :: A
+    pore_size_uniformity   :: N
 end
 
-VanGenuchtenRetention(FT::Type = Oceananigans.defaults.FloatType; α, n) =
-    VanGenuchtenRetention(convert(FT, α), convert(FT, n))
+VanGenuchtenRetention(FT::Type = Oceananigans.defaults.FloatType;
+                      inverse_air_entry_head, pore_size_uniformity) =
+    VanGenuchtenRetention(normalize_property(FT, inverse_air_entry_head),
+                          normalize_property(FT, pore_size_uniformity))
 
-@inline van_genuchten_m(n) = 1 - 1/n
+Adapt.adapt_structure(to, r::VanGenuchtenRetention) =
+    VanGenuchtenRetention(Adapt.adapt(to, r.inverse_air_entry_head),
+                          Adapt.adapt(to, r.pore_size_uniformity))
 
-@inline function pressure_head(r::VanGenuchtenRetention, 𝒮)
+"""
+$(TYPEDSIGNATURES)
+
+The second van Genuchten shape parameter, `𝓂 = 1 - 1/𝓃`, under the
+[Mualem (1976)](@cite mualem1976new) restriction.
+"""
+@inline van_genuchten_m(𝓃) = 1 - 1/𝓃
+
+"""
+$(TYPEDSIGNATURES)
+
+Effective saturation `𝒮 = [1 + scaled_suction^𝓃]^(-𝓂)`, with `scaled_suction = -αᵃᵉ Π ≥ 0`
+the dimensionless suction; the inverse of [`VanGenuchtenRetention`](@ref)'s `pressure_head`.
+"""
+@inline van_genuchten_saturation(scaled_suction, 𝓃) = (1 + scaled_suction^𝓃)^(-van_genuchten_m(𝓃))
+
+"""
+$(TYPEDSIGNATURES)
+
+`log(eˣ - 1)` for `x > 0`, evaluated as `x + log(1 - e⁻ˣ)` to keep `eˣ` from overflowing.
+"""
+@inline logexpm1(x) = x + log(-expm1(-x))
+
+@inline function pressure_head(i, j, grid, r::VanGenuchtenRetention, 𝒮)
     FT = typeof(𝒮)
-    α = convert(FT, r.α)
-    n = convert(FT, r.n)
-    m = van_genuchten_m(n)
-    # Clamp 𝒮 strictly inside (0, 1] to avoid singularities at endpoints.
-    𝒮c = clamp(𝒮, eps(FT), one(FT))
-    return ifelse(𝒮c >= one(FT),
-                  zero(FT),
-                  -(𝒮c^(-1/m) - one(FT))^(1/n) / α)
+    αᵃᵉ  = convert(FT, property_value(r.inverse_air_entry_head, i, j))
+    𝓃  = convert(FT, property_value(r.pore_size_uniformity, i, j))
+    𝓂  = van_genuchten_m(𝓃)
+    𝒮c = clamp(𝒮, 0, 1)
+
+    # the head is capped at √floatmax so the pole at 𝒮 = 0 stays finite
+    logΠᵐᵃˣ = log(floatmax(FT)) / 2
+    logΠ    = logexpm1(-log(𝒮c) / 𝓂) / 𝓃 - log(αᵃᵉ)
+    return ifelse(𝒮c >= 1, zero(FT), -exp(min(logΠ, logΠᵐᵃˣ)))
 end
 
 Base.summary(r::VanGenuchtenRetention) =
-    string("VanGenuchtenRetention(α=", prettysummary(r.α), ", n=", prettysummary(r.n), ")")
+    string("VanGenuchtenRetention(αᵃᵉ=", prettysummary(r.inverse_air_entry_head),
+           ", 𝓃=", prettysummary(r.pore_size_uniformity), ")")
 
 """
-    VanGenuchtenConductivity(K_saturated, n, ℓ)
+    VanGenuchtenConductivity(FT = Oceananigans.defaults.FloatType;
+                             matching_point_conductivity, pore_size_uniformity,
+                             pore_connectivity_exponent = 1//2,
+                             water_viscosity = WaterViscosity(FT))
 
 Unsaturated hydraulic conductivity as a function of saturation `𝒮`, combining
 the [Mualem (1976)](@cite mualem1976new) pore-bundle model with the
 [van Genuchten (1980)](@cite vangenuchten1980) retention shape:
 
 ```math
-K(\\mathcal S) = K_{sat}\\,\\mathcal S^\\ell\\left[1 - (1 - \\mathcal S^{1/m})^m\\right]^2,
-\\qquad m = 1 - 1/n.
+K(\\mathcal S) = K_0\\,\\mathcal S^{\\eta^K}\\left[1 - (1 - \\mathcal S^{1/\\mathscr{m}})^{\\mathscr{m}}\\right]^2,
+\\qquad \\mathscr{m} = 1 - 1/\\mathscr{n}.
 ```
 
-`K_saturated` (m s⁻¹) is the saturated hydraulic conductivity, `n` matches the
-retention `n`, and `ℓ` (–) is the Mualem pore-connectivity exponent (default 0.5).
+`matching_point_conductivity` (`K₀`, m s⁻¹) is the conductivity this curve reaches at
+`𝒮 = 1`, `pore_size_uniformity` (`𝓃`) must match the retention curve's, and
+`pore_connectivity_exponent` (`ηᴷ`, –) is the exponent on saturation: a larger value
+throttles conductivity more steeply as the soil drains. Each may be a scalar or a
+`Field` (see [`soil_hydraulic_properties`](@ref)).
+
+`water_viscosity` is a [`WaterViscosity`](@ref) scaling `K` with the slab temperature;
+pass `nothing` for an isothermal conductivity.
 """
-struct VanGenuchtenConductivity{FT}
-    K_saturated :: FT
-    n           :: FT
-    ℓ           :: FT
+struct VanGenuchtenConductivity{K, N, L, V}
+    matching_point_conductivity :: K
+    pore_size_uniformity        :: N
+    pore_connectivity_exponent  :: L
+    water_viscosity             :: V
 end
 
 VanGenuchtenConductivity(FT::Type = Oceananigans.defaults.FloatType;
-                         K_saturated, n, ℓ = 0.5) =
-    VanGenuchtenConductivity(convert(FT, K_saturated), convert(FT, n), convert(FT, ℓ))
+                         matching_point_conductivity, pore_size_uniformity,
+                         pore_connectivity_exponent = 1//2,
+                         water_viscosity = WaterViscosity(FT)) =
+    VanGenuchtenConductivity(normalize_property(FT, matching_point_conductivity),
+                             normalize_property(FT, pore_size_uniformity),
+                             normalize_property(FT, pore_connectivity_exponent),
+                             water_viscosity)
 
-@inline function hydraulic_conductivity(c::VanGenuchtenConductivity, 𝒮)
+Adapt.adapt_structure(to, c::VanGenuchtenConductivity) =
+    VanGenuchtenConductivity(Adapt.adapt(to, c.matching_point_conductivity),
+                             Adapt.adapt(to, c.pore_size_uniformity),
+                             Adapt.adapt(to, c.pore_connectivity_exponent),
+                             Adapt.adapt(to, c.water_viscosity))
+
+"""
+$(TYPEDSIGNATURES)
+
+Darcy hydraulic conductivity (m s⁻¹) of closure `c` at saturation `𝒮` and temperature `T`
+(K) in cell `(i, j)`.
+"""
+@inline function hydraulic_conductivity(i, j, grid, c::VanGenuchtenConductivity, 𝒮, T)
     FT = typeof(𝒮)
-    Ksat = convert(FT, c.K_saturated)
-    n = convert(FT, c.n)
-    ℓ = convert(FT, c.ℓ)
-    m = van_genuchten_m(n)
-    𝒮c = clamp(𝒮, zero(FT), one(FT))
-    # K → K_sat as 𝒮 → 1.
-    inner = one(FT) - (one(FT) - 𝒮c^(1/m))^m
-    return Ksat * 𝒮c^ℓ * inner^2
+    K₀ = convert(FT, property_value(c.matching_point_conductivity, i, j))
+    𝓃  = convert(FT, property_value(c.pore_size_uniformity, i, j))
+    ηᴷ = convert(FT, property_value(c.pore_connectivity_exponent, i, j))
+    𝓂  = van_genuchten_m(𝓃)
+    𝒮c = clamp(𝒮, 0, 1)
+
+    log𝒮 = log(𝒮c)
+    logu = log𝒮 / 𝓂
+    u    = exp(logu)
+    # summing logarithms keeps 𝒮^ηᴷ [⋯]² finite where the direct product is `Inf * 0`
+    negligible = logu < log(eps(FT))
+    logbracket = ifelse(negligible, log(𝓂) + logu, log(-expm1(𝓂 * log1p(-u))))
+    K = K₀ * exp(ηᴷ * log𝒮 + 2 * logbracket) * viscosity_correction(c.water_viscosity, T)
+    return ifelse(𝒮c == 0, zero(FT), K)
 end
 
+"""
+    WaterViscosity(FT = Oceananigans.defaults.FloatType;
+                   activation_temperature = 507.88,
+                   pole_temperature = 149.3,
+                   reference_temperature = 293)
+
+Temperature dependence of the dynamic viscosity of water, as the factor by which it scales
+the hydraulic conductivity of soil:
+
+```math
+\\Theta(T) = \\exp\\!\\left[\\frac{T_1}{T_0 - T_2} - \\frac{T_1}{T - T_2}\\right],
+```
+
+with `T₁` the `activation_temperature` and `T₂` the `pole_temperature`, the law of
+[Deck et al. (2026)](@cite deck2026) (their Equations A19–A20) after
+[Hansson et al. (2004)](@cite hansson2004). Read with [`viscosity_correction`](@ref).
+
+`Θ` is unity at `reference_temperature` (`T₀`), the temperature at which
+`matching_point_conductivity` holds; laboratory `K₀` is measured near 20 °C.
+"""
+struct WaterViscosity{FT}
+    activation_temperature :: FT
+    pole_temperature       :: FT
+    reference_temperature  :: FT
+end
+
+WaterViscosity(FT::Type = Oceananigans.defaults.FloatType;
+               activation_temperature = 50_788//100,
+               pole_temperature = 1493//10,
+               reference_temperature = 293) =
+    WaterViscosity(convert(FT, activation_temperature),
+                   convert(FT, pole_temperature),
+                   convert(FT, reference_temperature))
+
+Base.summary(v::WaterViscosity) =
+    string("WaterViscosity(activation_temperature=", prettysummary(v.activation_temperature),
+           ", pole_temperature=", prettysummary(v.pole_temperature),
+           ", reference_temperature=", prettysummary(v.reference_temperature), ")")
+
+Base.show(io::IO, v::WaterViscosity) = print(io, summary(v))
+
+"""
+$(TYPEDSIGNATURES)
+
+Factor by which [`WaterViscosity`](@ref) scales hydraulic conductivity at temperature `T`
+(K), unity at `v.reference_temperature`.
+
+```jldoctest
+using NumericalEarth
+using NumericalEarth.Lands: viscosity_correction
+
+v = WaterViscosity()
+
+## warm soil conducts more than cold soil
+round.([viscosity_correction(v, T) for T in (275.0, 293.0, 310.0)], digits = 3)
+
+# output
+3-element Vector{Float64}:
+ 0.603
+ 1.0
+ 1.453
+```
+"""
+@inline function viscosity_correction(v::WaterViscosity, T)
+    FT = float(typeof(T))
+    T₁ = convert(FT, v.activation_temperature)
+    T₂ = convert(FT, v.pole_temperature)
+    T₀ = convert(FT, v.reference_temperature)
+    return exp(T₁ / (T₀ - T₂) - T₁ / (convert(FT, T) - T₂))
+end
+
+@inline viscosity_correction(::Nothing, T) = one(float(typeof(T)))
+
+"""
+    CosbyConductivity(FT = Oceananigans.defaults.FloatType;
+                      intercept = -0.884,
+                      sand_coefficient = 0.0153)
+
+Saturated hydraulic conductivity from sand, after [Cosby et al. (1984)](@cite cosby1984)
+Table 5:
+
+```math
+\\log_{10} K^{+} = a + b\\,S,
+```
+
+with sand `S` in % and `K⁺` in inch hour⁻¹. Read with [`saturated_conductivity`](@ref),
+which takes a mass fraction (kg/kg) and returns m s⁻¹. The defaults are the published fit,
+regressed on 1,448 US samples across 11 texture classes.
+"""
+struct CosbyConductivity{FT}
+    intercept        :: FT
+    sand_coefficient :: FT
+end
+
+CosbyConductivity(FT::Type = Oceananigans.defaults.FloatType;
+                  intercept = -884//1000,
+                  sand_coefficient = 153//10_000) =
+    CosbyConductivity(convert(FT, intercept), convert(FT, sand_coefficient))
+
+Base.summary(c::CosbyConductivity) =
+    string("CosbyConductivity(intercept=", prettysummary(c.intercept),
+           ", sand_coefficient=", prettysummary(c.sand_coefficient), ")")
+
+Base.show(io::IO, c::CosbyConductivity) = print(io, summary(c))
+
+"""
+$(TYPEDSIGNATURES)
+
+Macropore-inclusive saturated hydraulic conductivity `K⁺` (m s⁻¹) from sand mass fraction
+(kg/kg), for an infiltration cap such as [`InfiltrationCapacityRunoff`](@ref).
+
+```jldoctest
+using NumericalEarth
+
+## sand, loam and clay, in mm hour⁻¹
+K⁺ = [saturated_conductivity(CosbyConductivity(), sand) for sand in (0.92, 0.43, 0.20)]
+round.(K⁺ .* 3.6e6, digits = 1)
+
+# output
+3-element Vector{Float64}:
+ 84.8
+ 15.1
+  6.7
+```
+"""
+@inline saturated_conductivity(c::CosbyConductivity, sand) =
+    (254//36_000_000) * 10^(c.sand_coefficient * 100sand + c.intercept)  # inch hour⁻¹ → m s⁻¹
+
+viscosity_summary(v::WaterViscosity) = string("T₀=", prettysummary(v.reference_temperature))
+viscosity_summary(::Nothing) = "isothermal"
+
 Base.summary(c::VanGenuchtenConductivity) =
-    string("VanGenuchtenConductivity(K_saturated=", prettysummary(c.K_saturated),
-           ", n=", prettysummary(c.n), ", ℓ=", prettysummary(c.ℓ), ")")
+    string("VanGenuchtenConductivity(K₀=", prettysummary(c.matching_point_conductivity),
+           ", 𝓃=", prettysummary(c.pore_size_uniformity),
+           ", ηᴷ=", prettysummary(c.pore_connectivity_exponent),
+           ", ", viscosity_summary(c.water_viscosity), ")")

@@ -6,7 +6,8 @@ using Downloads: Downloads
 using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
 
-using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, metadata_url
+using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, metadata_url,
+                       download_with_retries
 
 import ..DataWrangling:
     metadata_filename,
@@ -24,6 +25,7 @@ download_ORCA_cache::String = ""
 
 function __init__()
     global download_ORCA_cache = DataWrangling.download_cache("ORCA")
+    return nothing
 end
 
 abstract type ORCADataset end
@@ -41,8 +43,6 @@ all_dates(::ORCADataset, args...) = nothing
 first_date(::ORCADataset, args...) = nothing
 last_date(::ORCADataset, args...) = nothing
 
-const ORCAOneMetadatum = Metadatum{<:ORCAOne}
-const ORCAQuarterMetadatum = Metadatum{<:ORCAQuarter}
 const ORCATwelfthMetadatum = Metadatum{<:ORCATwelfth}
 const ORCAMetadatum = Metadatum{<:ORCADataset}
 
@@ -94,7 +94,7 @@ function Downloads.download(metadatum::ORCAMetadatum)
     @root if !isfile(filepath)
         dataset_name = nameof(typeof(metadatum.dataset))
         @info "Downloading $(dataset_name) data: $(metadatum.name) to $(metadatum.dir)..."
-        Downloads.download(fileurl, filepath; progress=DownloadProgress())
+        download_with_retries(fileurl, filepath; progress=DownloadProgress())
     end
 
     return filepath
@@ -103,5 +103,8 @@ end
 default_south_rows_to_remove(::ORCAOne)     = 35
 default_south_rows_to_remove(::ORCAQuarter) = 155
 default_south_rows_to_remove(::ORCATwelfth) = 460
+
+# Number of first columns repeated at the east edge of the mesh
+periodic_overlap(::ORCADataset) = 2
 
 end # module
