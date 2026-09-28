@@ -345,12 +345,12 @@ EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabLand, coupled_model)
     ComponentExchanger(land::SlabLand, grid)
 
 Expose the generic atmosphere-facing SlabLand state: skin temperature `T` and
-surface `saturation`. Aerodynamic roughness lengths belong to the atmosphere-land
+surface saturation `𝒮`. Aerodynamic roughness lengths belong to the atmosphere-land
 flux closure (`atmosphere_land_fluxes`), not the land state.
 """
 function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::SlabLand, grid)
-    state = (T          = surface_temperature(land),
-             saturation = surface_saturation(land))
+    state = (T = surface_temperature(land),
+             𝒮 = surface_saturation(land))
     return ComponentExchanger(state, nothing)
 end
 

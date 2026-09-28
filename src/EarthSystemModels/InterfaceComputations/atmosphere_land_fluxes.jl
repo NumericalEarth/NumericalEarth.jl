@@ -73,9 +73,7 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     # `interface_hydrology_state` read these per cell to build the land
     # interface state; the surface models derive `β`, the reservoir
     # temperature, etc. from them.
-    land_exchanger_state = exchanger.land.state
-    land_state = (T = land_exchanger_state.T,
-                  saturation = land_exchanger_state.saturation)
+    land_state = exchanger.land.state
 
     radiation = coupled_model.radiation
     radiation_kernel_props = kernel_radiation_properties(radiation)
@@ -113,7 +111,7 @@ end
 #####
 
 @inline land_saturation(i, j, grid, land_state) =
-    (saturation = state2dindex(land_state.saturation, i, j),)
+    (saturation = state2dindex(land_state.𝒮, i, j),)
 
 # Hydrology state, per humidity formulation.
 @inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) = land_saturation(i, j, grid, land_state)
