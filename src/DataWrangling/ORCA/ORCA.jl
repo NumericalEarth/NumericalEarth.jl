@@ -4,6 +4,7 @@ export ORCAOne, ORCAQuarter, ORCATwelfth
 
 using Downloads: Downloads
 using Oceananigans: Oceananigans
+using Oceananigans.BoundaryConditions: FPivot, TPivot
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, metadata_url,
@@ -100,6 +101,10 @@ function Downloads.download(metadatum::ORCAMetadatum)
 
     return filepath
 end
+
+# NEMO's north fold: eORCA1 pivots on F points, eORCA025 and eORCA12 on T points
+north_fold_pivot(::ORCAOne)     = FPivot
+north_fold_pivot(::ORCADataset) = TPivot
 
 default_south_rows_to_remove(::ORCAOne)     = 35
 default_south_rows_to_remove(::ORCAQuarter) = 155
