@@ -71,6 +71,9 @@ NumericalEarthVerosExt = ["PythonCall", "CondaPkg"]
 NumericalEarthWOAExt = "WorldOceanAtlasTools"
 NumericalEarthZarrExt = "Zarr"
 
+[sources]
+SeawaterPolynomials = {rev = "ss/conversion-functions", url = "https://github.com/CliMA/SeawaterPolynomials.jl.git"}
+
 [compat]
 Accessors = "0.1.44"
 Adapt = "4"
