@@ -301,14 +301,16 @@ end
 """Scatter each prescribed freshwater component onto coastal ocean cells, conserving volume."""
 function EarthSystemModels.interpolate_state!(exchanger, grid, land::RoutedPrescribedLand, coupled_model)
     arch = architecture(grid)
-    land_freshwater_flux = exchanger.state.freshwater_flux
+    runoff_freshwater_flux  = exchanger.state.runoff_freshwater_flux
+    iceberg_freshwater_flux = exchanger.state.iceberg_freshwater_flux
     time = Time(coupled_model.clock.time)
 
-    fill!(land_freshwater_flux, 0)
+    fill!(runoff_freshwater_flux,  0)
+    fill!(iceberg_freshwater_flux, 0)
 
     for name in keys(land.freshwater_flux)
-        scatter_freshwater_flux!(land_freshwater_flux, land.freshwater_flux[name],
-                                 land.river_routing[name], arch, grid, time)
+        target_flux = name == :icebergs ? iceberg_freshwater_flux : runoff_freshwater_flux
+        scatter_freshwater_flux!(target_flux, land.freshwater_flux[name], land.river_routing[name], arch, grid, time)
     end
 
     return nothing

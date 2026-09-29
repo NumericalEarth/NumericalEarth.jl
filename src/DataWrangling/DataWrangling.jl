@@ -210,8 +210,8 @@ end
 ##### FieldTimeSeries utilities
 #####
 
-function save_field_time_series!(fts; path, name, overwrite_existing=false)
-    overwrite_existing && rm(path; force=true)
+function save_field_time_series!(fts; path, name, overwrite_files=false)
+    overwrite_files && rm(path; force=true)
 
     times = on_architecture(CPU(), fts.times)
     grid  = on_architecture(CPU(), fts.grid)
