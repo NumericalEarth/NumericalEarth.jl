@@ -61,7 +61,7 @@ end
 vector_component_boundary_conditions(grid, loc) = FieldBoundaryConditions(grid, loc)
 
 function vector_component_boundary_conditions(grid::OrthogonalSphericalShellGrids.TripolarGridOfSomeKind, loc)
-    north_bc = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid)(-1)
+    north_bc = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid, -1)
     return FieldBoundaryConditions(grid, loc; north = north_bc)
 end
 

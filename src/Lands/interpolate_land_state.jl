@@ -6,7 +6,7 @@ using ..Atmospheres: interp_atmos_time_series
 function EarthSystemModels.interpolate_state!(exchanger, grid, land::PrescribedLand, coupled_model)
     arch = architecture(grid)
     clock = coupled_model.clock
-    runoff_freshwater_flux = exchanger.state.runoff_freshwater_flux
+    runoff_freshwater_flux = exchanger.state.freshwater_flux
     iceberg_freshwater_flux = exchanger.state.iceberg_freshwater_flux
 
     fill!(runoff_freshwater_flux, 0)
