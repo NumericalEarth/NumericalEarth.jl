@@ -120,7 +120,6 @@ src/
 ├── DataWrangling/            # Interfaces for atmospheres (prescribed or diagnostic)
 ├── Diagnostics/              # Various diagnostics from all model components
 ├── EarthSystemModels/        # Module that brings all Earth system model components together
-├── InitialConditions/        # Module for initial conditions
 ├── Oceans/                   # Interfaces for oceans (prescribed or diagnostic)
 └── SeaIces/                  # Interfaces for sea ices (prescribed or diagnostic)
 ```

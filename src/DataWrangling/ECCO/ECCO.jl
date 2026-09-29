@@ -27,6 +27,7 @@ using ..DataWrangling: DataWrangling, binary_data_grid, binary_data_size, defaul
 download_ECCO_cache::String = ""
 function __init__()
     global download_ECCO_cache = DataWrangling.download_cache("ECCO")
+    return nothing
 end
 
 # Datasets
@@ -166,6 +167,7 @@ ECCO4_dataset_variable_names = Dict(
     :eastward_wind          => "EXFewind",
     :northward_wind         => "EXFnwind",
     :rain_freshwater_flux   => "EXFpreci",
+    :net_freshwater_flux    => "oceFWflx",
     :zonal_wind_stress      => "EXFtaue",
     :meridional_wind_stress => "EXFtaun",
 )
@@ -201,6 +203,7 @@ ECCO_location = Dict(
     :eastward_wind          => (Center, Center, Nothing),
     :northward_wind         => (Center, Center, Nothing),
     :rain_freshwater_flux   => (Center, Center, Nothing),
+    :net_freshwater_flux    => (Center, Center, Nothing),
     :zonal_wind_stress      => (Center, Center, Nothing),
     :meridional_wind_stress => (Center, Center, Nothing),
 )
@@ -342,11 +345,6 @@ function Downloads.download(metadata::ECCOMetadata)
     return metadata_path(metadata)
 end
 
-function inpainted_metadata_filename(metadata::ECCOMetadatum)
-    without_extension = metadata.filename[1:end-3]
-    return without_extension * "_inpainted.jld2"
-end
-
 ECCO_atmosphere_variables = (
     :downwelling_shortwave,
     :downwelling_longwave,
@@ -367,9 +365,6 @@ function DataWrangling.default_inpainting(metadata::ECCOMetadata)
         return NearestNeighborInpainting(5)
     end
 end
-
-DataWrangling.inpainted_metadata_path(metadata::ECCOMetadatum) = 
-    joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 function DataWrangling.read_file_coords(metadata::ECCOMetadatum)
     Nx, Ny, _, _ = size(metadata)

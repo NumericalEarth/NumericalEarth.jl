@@ -6,6 +6,7 @@ using Oceananigans.ImmersedBoundaries: inactive_node
 using Oceananigans.Units: Time
 using NumericalEarth.Lands: RiverRouting, build_river_routing, coastal_outlet_indices, routable_grid
 using NumericalEarth.EarthSystemModels: interpolate_state!
+using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
 using NumericalEarth.Oceans: river_mouth_vertical_diffusivity
 using Oceananigans.TurbulenceClosures: VerticalScalarDiffusivity
 
@@ -146,13 +147,14 @@ end
                        icebergs = constant_time_series(iceberg_snapshot))
     land = PrescribedLand(freshwater_flux; river_routing = (rivers = routing, icebergs = routing))
 
-    exchanger = (; state = (; freshwater_flux = Field{Center, Center, Nothing}(target_grid)))
+    exchanger = ComponentExchanger(land, target_grid)
     interpolate_state!(exchanger, target_grid, land, (; clock = Clock(time = 0.0)))
 
-    flux = Array(interior(exchanger.state.freshwater_flux))[:, :, 1]
+    runoff_flux  = Array(interior(exchanger.state.runoff_freshwater_flux))[:, :, 1]
+    iceberg_flux = Array(interior(exchanger.state.iceberg_freshwater_flux))[:, :, 1]
 
-    # Both components accumulate into the same freshwater flux.
-    @test integrated_mass_flux(flux, on_architecture(CPU(), target_grid)) ≈ ρ * (Q₀ + Q₁) rtol = 1e-5
+    @test integrated_mass_flux(runoff_flux, on_architecture(CPU(), target_grid))  ≈ ρ * Q₀ rtol = 1e-5
+    @test integrated_mass_flux(iceberg_flux, on_architecture(CPU(), target_grid)) ≈ ρ * Q₁ rtol = 1e-5
 end
 
 @testset "River mouth vertical mixing [$arch]" for arch in test_architectures

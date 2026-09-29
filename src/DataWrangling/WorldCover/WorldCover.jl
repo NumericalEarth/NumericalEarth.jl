@@ -63,6 +63,7 @@ const ESA_WORLDCOVER_NATIVE_STEP = 1 / ESA_WORLDCOVER_PIXELS_PER_DEGREE   # degr
 download_ESAWorldCover_cache::String = ""
 function __init__()
     global download_ESAWorldCover_cache = DataWrangling.download_cache("ESAWorldCover")
+    return nothing
 end
 
 """

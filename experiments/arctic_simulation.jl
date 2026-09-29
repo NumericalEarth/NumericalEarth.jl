@@ -121,13 +121,13 @@ arctic.output_writers[:vars] = JLD2Writer(sea_ice.model, (; h, ℵ, u, v, Tu, �
                                           including = [:grid],
                                           filename = "sea_ice_quantities.jld2",
                                           schedule = IterationInterval(12),
-                                          overwrite_existing=true)
+                                          overwrite_files=true)
 
 arctic.output_writers[:averages] = JLD2Writer(sea_ice.model, (; h, ℵ, Tu, 𝒬ᵛ, 𝒬ᵀ, 𝒬ⁱⁿᵗ, 𝒬ᶠʳᶻ, 𝒬ᵗᵒᵖ, 𝒬ᵇᵒᵗ, u, v, τˣ, τʸ),
                                               including = [:grid],
                                               filename = "averaged_sea_ice_quantities.jld2",
                                               schedule = AveragedTimeInterval(1days),
-                                              overwrite_existing=true)
+                                              overwrite_files=true)
 
 wall_time = Ref(time_ns())
 
