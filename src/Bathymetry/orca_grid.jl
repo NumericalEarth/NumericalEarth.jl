@@ -1,33 +1,35 @@
 using CubedSphere.SphericalGeometry: lat_lon_to_cartesian, cartesian_to_lat_lon,
                                      spherical_area_quadrilateral
 using Distances: haversine
-using Oceananigans.BoundaryConditions: fill_halo_regions!, FPivotZipperBoundaryCondition,
+using Oceananigans.BoundaryConditions: fill_halo_regions!, BoundaryCondition, Zipper, FPivot,
                                        NoFluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Fields: set!
-using Oceananigans.Grids: RightFaceFolded, generate_coordinate, longitude_in_same_window
+using Oceananigans.Grids: RightCenterFolded, RightFaceFolded, generate_coordinate, longitude_in_same_window
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, distribute_tripolar_grid
 
 using ..DataWrangling: dataset_variable_name, default_download_directory
-using ..DataWrangling.ORCA: ORCAOne, default_south_rows_to_remove, periodic_overlap
+using ..DataWrangling.ORCA: ORCAOne, default_south_rows_to_remove, periodic_overlap, north_fold_pivot
 
-# Build an Oceananigans OrthogonalSphericalShellGrid with topology (Periodic, RightFaceFolded, Bounded) from
-# a NEMO eORCA mesh_mask file.
+# Build an Oceananigans OrthogonalSphericalShellGrid with topology (Periodic, fold, Bounded) from a NEMO eORCA
+# mesh_mask file, where the fold is `RightFaceFolded` for an F-pivot mesh (eORCA1) and `RightCenterFolded` with a
+# `TPivot` for a T-pivot mesh (eORCA025, eORCA12).
 #
 # NEMO C-grid: T is the cell center, U the east face of T, V the north face of T, F the northeast corner.
 # eORCA quirks handled before constructing the grid:
 #
 #   - Duplicated east-edge periodic columns (`periodic_overlap`, `shift_face_x`, `chop`).
 #   - Optional southern land padding rows (`south_rows_to_remove`, `chop`).
+#   - The last row, a mirror copy of the rows below the fold (`chop`).
 #
 # NEMO → Oceananigans index mapping:
 #
-#   Center-y[:, 1:Ny]   ← NEMO[:, 1:Ny]
-#   Face-y  [:, 2:Ny+1] ← NEMO V/F[:, 1:Ny]   (NEMO V is the north face of T[:, j] = south face of T[:, j+1])
+#   Center-y[:, 1:Ny] ← NEMO[:, 1:Ny]
+#   Face-y  [:, 2:]   ← NEMO V/F[:, 1:]     (NEMO V is the north face of T[:, j] = south face of T[:, j+1])
 #
-# Face-y row j=1 has no NEMO counterpart; `halo_filled_data` mirrors the southernmost data row into it
+# Face-y row j=1 has no NEMO counterpart; `halo_filled_data` copies the southernmost data row into it
 # (cf. Oceananigans #5565 — copy the j-row instead of using a LatitudeLongitudeGrid). `fill_halo_regions!`
-# then propagates it south using PeriodicBC east/west, NoFluxBC south, and FPivotZipperBC north.
+# then propagates it south using PeriodicBC east/west, NoFluxBC south, and the zipper north.
 #
 # `read_orca_staggered_mesh` supports two read paths: a full staggered NEMO mesh used directly, or T/F
 # coordinates only, with U/V coordinates and all `e1`/`e2`/`Az` metrics reconstructed from spherical
@@ -300,16 +302,13 @@ function halo_filled_data(data, helper_grid, bcs, LX, LY)
     Nx, Ny, _ = size(helper_grid)
     Ni = Base.length(LX(), TX(), Nx)
     Nj = Base.length(LY(), TY(), Ny)
-    Nj_data = size(data, 2)
 
     field = Field{LX, LY, Center}(helper_grid; boundary_conditions = bcs)
-    if Nj_data == Nj
-        field.data[1:Ni, 1:Nj, 1] .= data[1:Ni, 1:Nj]
-    elseif LY === Face && Nj_data == Nj - 1
+    if LY === Face
         field.data[1:Ni, 2:Nj, 1] .= data[1:Ni, 1:Nj-1]
         field.data[1:Ni, 1, 1]    .= data[1:Ni, 1]
     else
-        throw(DimensionMismatch("data has $Nj_data rows but $LY field expects $Nj rows"))
+        field.data[1:Ni, 1:Nj, 1] .= data[1:Ni, 1:Nj]
     end
     fill_halo_regions!(field)
 
@@ -378,8 +377,9 @@ end
              south_rows_to_remove = default_south_rows_to_remove(dataset),
              dir = default_download_directory(dataset))
 
-Construct an `OrthogonalSphericalShellGrid` with `(Periodic, RightFaceFolded, Bounded)`
-topology using coordinate and metric data from a NEMO eORCA `mesh_mask` file.
+Construct an `OrthogonalSphericalShellGrid` using coordinate and metric data from a NEMO eORCA `mesh_mask` file.
+The topology follows the north fold of the mesh: `(Periodic, RightFaceFolded, Bounded)` for the F-pivot eORCA1,
+`(Periodic, RightCenterFolded, Bounded)` with a `TPivot` fold for the T-pivot eORCA025 and eORCA12.
 
 The `dataset` keyword argument specifies which ORCA configuration to use (e.g., `ORCAOne()`, `ORCAQuarter()`, or `ORCATwelfth()`).
 The mesh mask and bathymetry files are downloaded automatically via the
@@ -455,8 +455,14 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     north_poles_latitude = φFF[pole_idx, end]
     first_pole_longitude = Float64(λFF[pole_idx, end])
 
+    pivot = north_fold_pivot(dataset)
+    fold_topology = pivot === FPivot ? RightFaceFolded : RightCenterFolded
+
+    # The first kept column `ic + 1` aligns NEMO's fold mirror (i ↔ jpi + 1 - i for an F pivot,
+    # i ↔ jpi + 2 - i for a T pivot) with the Oceananigans one.
+    ic = pivot === FPivot ? 1 : 2
     jr = south_rows_to_remove
-    chop(data) = data[1:end-overlap, jr+1:end]
+    chop(data) = data[ic+1:ic+size(data, 1)-overlap, jr+1:end-1]
 
     λCC, λFC, λCF, λFF     = chop(λCC),  chop(λFC),  chop(λCF),  chop(λFF)
     φCC, φFC, φCF, φFF     = chop(φCC),  chop(φFC),  chop(φCF),  chop(φFF)
@@ -470,14 +476,14 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     Hx, Hy, Hz = halo
 
-    topo = (Periodic, RightFaceFolded, Bounded)
+    topo = (Periodic, fold_topology, Bounded)
     Lz, z_coord = generate_coordinate(FT, topo, (Nx, Ny, Nz), halo, z, :z, 3, CPU())
 
     helper_grid = RectilinearGrid(; size = (Nx, Ny), halo = (Hx, Hy),
                                     x = (0, 1), y = (0, 1),
-                                    topology = (Periodic, RightFaceFolded, Flat))
+                                    topology = (Periodic, fold_topology, Flat))
 
-    bcs = FieldBoundaryConditions(north  = FPivotZipperBoundaryCondition(),
+    bcs = FieldBoundaryConditions(north  = BoundaryCondition(Zipper{pivot}(), 1),
                                   south  = NoFluxBoundaryCondition(),
                                   west   = Oceananigans.PeriodicBoundaryCondition(),
                                   east   = Oceananigans.PeriodicBoundaryCondition(),
@@ -493,7 +499,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     to_host(data) = map(FT, data)
 
     # The north fold spans all of x, so the mesh is assembled globally and then cut to this rank's slice
-    global_grid = OrthogonalSphericalShellGrid{Periodic, RightFaceFolded, Bounded}(
+    global_grid = OrthogonalSphericalShellGrid{Periodic, fold_topology, Bounded}(
         CPU(),
         Nx, Ny, Nz,
         Hx, Hy, Hz,
@@ -505,7 +511,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
         to_host(Δyᶜᶜᵃ), to_host(Δyᶠᶜᵃ), to_host(Δyᶜᶠᵃ), to_host(Δyᶠᶠᵃ),
         to_host(Azᶜᶜᵃ), to_host(Azᶠᶜᵃ), to_host(Azᶜᶠᵃ), to_host(Azᶠᶠᵃ),
         convert(FT, radius),
-        Tripolar(north_poles_latitude, first_pole_longitude, southernmost_latitude, RightFaceFolded)
+        Tripolar(north_poles_latitude, first_pole_longitude, southernmost_latitude, fold_topology, pivot)
     )
 
     underlying_grid = distribute_tripolar_grid(arch, global_grid)
