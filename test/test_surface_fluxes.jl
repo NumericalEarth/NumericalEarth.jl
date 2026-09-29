@@ -4,6 +4,7 @@ using ClimaSeaIce.Rheologies
 using ClimaSeaIce.SeaIceDynamics
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: hours, days
+using SeawaterPolynomials.TEOS10: θ_from_Θ
 using NumericalEarth.DataWrangling: all_dates
 using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterfaces,
                                                               celsius_to_kelvin,
@@ -173,8 +174,8 @@ end
             coupled_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
             # Now manually compute the fluxes:
-            Tᵒᶜ = ocean.model.tracers.T[1, 1, 1] + celsius_to_kelvin
             Sᵒᶜ = ocean.model.tracers.S[1, 1, 1]
+            Tᵒᶜ = θ_from_Θ(Sᵒᶜ, ocean.model.tracers.T[1, 1, 1]) + celsius_to_kelvin
 
             interface_properties = interfaces.atmosphere_ocean_interface.properties
             q_formulation = interface_properties.specific_humidity_formulation
