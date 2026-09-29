@@ -8,6 +8,7 @@ using Oceananigans.DistributedComputations: @root, Distributed
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, getbc, fill_halo_regions!
 using Oceananigans.Fields: Field, CenterField, interior
 using Oceananigans.Advection: GhostCells
+using Oceananigans.Biogeochemistry: required_biogeochemical_tracers
 using Oceananigans.ImmersedBoundaries: bottom_height_field, mask_immersed_field!
 using Oceananigans.Utils: launch!
 using Adapt: Adapt
@@ -744,6 +745,13 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   `AdaptiveVerticallyImplicitDiscretization(cfl=0.5)` (switches the vertical advective flux to implicit
   where the vertical Courant number is large — e.g. in thin near-surface cells). If `false`, fully
   explicit `WENO`/`WENOVectorInvariant`. Use `false` to isolate adaptive-implicit advection effects.
+  The biogeochemical tracers follow the same choice (see `biogeochemical_tracer_advection_order`).
+- `biogeochemical_tracer_advection_order`: WENO order of the advection of the biogeochemical tracers (the
+  `required_biogeochemical_tracers` of `biogeochemistry`, excluding `T` and `S`). Default: `5`, the order
+  `ocean_simulation` would otherwise give them. Their vertical reconstruction takes the same time
+  discretization as `T` and `S`, so with `implicit_vertical_advection = true` they are advected
+  adaptive-implicitly in the vertical, including any biogeochemical sinking (drift) velocity. Each such
+  tracer adds a vertical tridiagonal solve per substep. Has no effect when `biogeochemistry = nothing`.
 - `boundary_scheme::Symbol`: the reconstruction the WENO buffer chain terminates in, used in the one cell
   whose stencil no longer fits — the domain buffer and, on an `ImmersedBoundaryGrid`, any cell adjacent to
   an inactive node. Options:
@@ -804,6 +812,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          background_vertical_viscosity = nothing,
                          implicit_vertical_advection = true,
                          tracer_advection_order = 7,
+                         biogeochemical_tracer_advection_order = 5,
                          boundary_scheme = :default,
                          tracer_boundary_scheme = boundary_scheme,
                          momentum_boundary_scheme = boundary_scheme,
@@ -1002,6 +1011,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                         background_vertical_viscosity,
                         implicit_vertical_advection,
                         tracer_advection_order,
+                        biogeochemical_tracer_advection_order,
                         boundary_scheme,
                         tracer_boundary_scheme,
                         momentum_boundary_scheme,
@@ -2048,6 +2058,25 @@ function split_tracer_advection(order, time_discretization, boundary_scheme)
 end
 
 """
+    omip_tracer_advection(biogeochemistry, order, biogeochemical_order, time_discretization, boundary_scheme)
+
+The `tracer_advection` `NamedTuple` passed to `ocean_simulation`: `T` and `S` at `order`, and every tracer
+required by `biogeochemistry` at `biogeochemical_order`, all with the same vertical `time_discretization`, so that
+the biogeochemical tracers are advected adaptive-implicitly in the vertical whenever `T` and `S` are. `T` and `S`
+may themselves be among the required tracers of a biogeochemistry, and keep their own scheme. Turbulent kinetic
+energy, and any tracer not listed, keeps the `ocean_simulation` default.
+"""
+function omip_tracer_advection(biogeochemistry, order, biogeochemical_order, time_discretization, boundary_scheme)
+    temperature_salinity_advection = split_tracer_advection(order, time_discretization, boundary_scheme)
+    biogeochemical_advection = split_tracer_advection(biogeochemical_order, time_discretization, boundary_scheme)
+
+    biogeochemical_names = filter(name -> name ∉ (:T, :S, :e), required_biogeochemical_tracers(biogeochemistry))
+
+    return merge((T = temperature_salinity_advection, S = temperature_salinity_advection),
+                 NamedTuple(name => biogeochemical_advection for name in biogeochemical_names))
+end
+
+"""
     split_momentum_advection(scheme, order, time_discretization, boundary_scheme)
 
 Vector-invariant momentum advection whose four reconstructions terminate in `boundary_scheme`, reproducing
@@ -2224,6 +2253,7 @@ function build_ocean(config, grid;
                      vertical_closure = :catke,
                      implicit_vertical_advection = true,
                      tracer_advection_order = 7,
+                     biogeochemical_tracer_advection_order = 5,
                      boundary_scheme = :default,
                      tracer_boundary_scheme = boundary_scheme,
                      momentum_boundary_scheme = boundary_scheme,
@@ -2297,12 +2327,11 @@ function build_ocean(config, grid;
                                                   config_momentum_advection_order(config),
                                                   time_discretization, momentum_boundary_scheme)
 
-    # Turbulent kinetic energy keeps the `ocean_simulation` default.
-    temperature_salinity_advection = split_tracer_advection(tracer_advection_order, time_discretization,
-                                                            tracer_boundary_scheme)
-    tracer_advection = (T = temperature_salinity_advection, S = temperature_salinity_advection)
-
     biogeochemistry, bgc_additional_forcing, bgc_additional_surface_fluxes = build_biogeochemistry(Val(biogeochemistry), grid; dir = bgc_dir)
+
+    tracer_advection = omip_tracer_advection(biogeochemistry, tracer_advection_order,
+                                             biogeochemical_tracer_advection_order,
+                                             time_discretization, tracer_boundary_scheme)
 
     forcing = merge(forcing, bgc_additional_forcing)
     additional_surface_fluxes = merge(additional_surface_fluxes, bgc_additional_surface_fluxes)

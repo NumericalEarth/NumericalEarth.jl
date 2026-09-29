@@ -234,3 +234,4 @@ end
 include("test_bottom_boundary_layer.jl")
 include("test_advective_bottom_boundary_layer.jl")
 include("test_overflow_restoring.jl")
+include("test_biogeochemical_tracer_advection.jl")
