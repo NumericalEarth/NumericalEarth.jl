@@ -334,10 +334,10 @@ end
         @test window_center(metadatum) == DateTime(1990, 4, 1, 12)
     end
 
-    # A repeat year of three-hourly means tiles the year exactly, rather than falling short by
-    # the last interval as the node spacing alone suggests.
+    # Three-hourly means tile their span exactly, rather than falling short by the last interval as
+    # the node spacing alone suggests.
     radiation = Metadata(:downwelling_shortwave_radiation; dataset = RepeatYearJRA55())
-    @test window_span(radiation) == Dates.value(Second(DateTime(1991, 1, 1) - DateTime(1990, 1, 1)))
+    @test window_span(radiation) == length(radiation) * Dates.value(Second(Hour(3)))
 
     # The state variables in both products, and every multi-year mean, sit at their stamps: the
     # multi-year files already label each mean with the center of its interval.

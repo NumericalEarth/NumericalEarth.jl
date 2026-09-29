@@ -42,7 +42,7 @@ if initialization
                                                      schedule = IterationInterval(100),
                                                      including = [:grid],
                                                      filename = prefix * "_fields",
-                                                     overwrite_existing = true)
+                                                     overwrite_files = true)
 
     slice_indices = (11, :, :)
     test_simulation.output_writers[:d2] = JLD2Writer(model, model.tracers,
@@ -50,7 +50,7 @@ if initialization
                                                      including = [:grid],
                                                      filename = prefix * "_slices",
                                                      indices = slice_indices,
-                                                     overwrite_existing = true)
+                                                     overwrite_files = true)
 
 
     @info "Running simulation..."; timer = time_ns()

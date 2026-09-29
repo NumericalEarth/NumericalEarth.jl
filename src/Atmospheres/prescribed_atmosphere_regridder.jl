@@ -1,3 +1,7 @@
+using Oceananigans: instantiated_location
+using Oceananigans.Fields: ConstantField
+using Oceananigans.OutputReaders: FTS0
+
 function EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::PrescribedAtmosphere, grid;
                                                                     correction = nothing)
     regridder = atmosphere_regridder(atmosphere, grid)
@@ -12,66 +16,50 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::
                Jʳⁿ = Field{Center, Center, Nothing}(grid),
                Jˢⁿ = Field{Center, Center, Nothing}(grid))
 
+    state = merge(state, map(tracer -> similar_surface_field(grid, tracer), atmosphere.tracers))
+
     correction = EarthSystemModels.InterfaceComputations.materialize_correction(correction, grid, atmosphere)
     return ComponentExchanger(state, regridder, correction)
 end
 
-# Note that Field location can also affect fractional index type.
-# Here we assume that we know the location of Fields that will be interpolated.
-fractional_index_type(FT, Topo) = FT
-fractional_index_type(FT, ::Flat) = Nothing
+similar_surface_field(grid, tracer) = Field{Center, Center, Nothing}(grid)
+similar_surface_field(grid, cf::ConstantField) = ConstantField(cf.constant)
+similar_surface_field(grid, ::FTS0) = Field{Nothing, Nothing, Nothing}(grid)
 
 function atmosphere_regridder(atmosphere::PrescribedAtmosphere, exchange_grid)
-    atmos_grid = atmosphere.grid
-    arch = architecture(exchange_grid)
-    Nx, Ny, Nz = size(exchange_grid)
-
-    # Make a NamedTuple of fractional indices
     # Note: we could use an array of FractionalIndices. Instead, for compatbility
     # with Reactant we construct FractionalIndices on the fly in `interpolate_atmospheric_state`.
-    FT = eltype(atmos_grid)
-    TX, TY, TZ = topology(exchange_grid)
-    fi = TX() isa Flat ? nothing : Field{Center, Center, Nothing}(exchange_grid, FT)
-    fj = TY() isa Flat ? nothing : Field{Center, Center, Nothing}(exchange_grid, FT)
-    frac_indices = (i=fi, j=fj) # no k needed, only horizontal interpolation
+    FT = eltype(atmosphere.grid)
+    fi, fj = fractional_index_fields(exchange_grid, FT, Center(), Center())
 
-    return frac_indices
+    # Each tracer is interpolated from its own grid and location
+    tracers = map(atmosphere.tracers) do tracer
+        ℓx, ℓy, _ = instantiated_location(tracer)
+        fractional_index_fields(exchange_grid, FT, ℓx, ℓy)
+    end
+
+    return (i=fi, j=fj, tracers) # no k needed, only horizontal interpolation
+end
+
+function fractional_index_fields(exchange_grid, FT, ℓx, ℓy)
+    TX, TY, _ = topology(exchange_grid)
+    fi = TX() isa Flat || isnothing(ℓx) ? nothing : Field{Center, Center, Nothing}(exchange_grid, FT)
+    fj = TY() isa Flat || isnothing(ℓy) ? nothing : Field{Center, Center, Nothing}(exchange_grid, FT)
+    return (i=fi, j=fj)
 end
 
 function EarthSystemModels.InterfaceComputations.initialize!(exchanger::ComponentExchanger, grid, atmosphere::PrescribedAtmosphere)
-
+    arch = architecture(grid)
     frac_indices = exchanger.regridder
-    atmos_grid = atmosphere.grid
     kernel_parameters = interface_kernel_parameters(grid)
-    launch!(architecture(grid), grid, kernel_parameters, _compute_fractional_indices!, frac_indices, grid, atmos_grid)
+    launch!(arch, grid, kernel_parameters, _compute_fractional_indices!, frac_indices, grid, atmosphere.grid, Center(), Center())
+
+    for (name, tracer) in pairs(atmosphere.tracers)
+        tracer_indices = frac_indices.tracers[name]
+        isnothing(tracer_indices.i) && isnothing(tracer_indices.j) && continue
+        ℓx, ℓy, _ = instantiated_location(tracer)
+        launch!(arch, grid, kernel_parameters, _compute_fractional_indices!, tracer_indices, grid, tracer.grid, ℓx, ℓy)
+    end
 
     return nothing
-end
-
-@kernel function _compute_fractional_indices!(indices_tuple, exchange_grid, atmos_grid)
-    i, j = @index(Global, NTuple)
-    kᴺ = size(exchange_grid, 3) # index of the top ocean cell
-    X = _node(i, j, kᴺ + 1, exchange_grid, Center(), Center(), Face())
-    if topology(atmos_grid) == (Flat, Flat, Flat)
-        fractional_indices_ij = FractionalIndices(nothing, nothing, nothing)
-    else
-        fractional_indices_ij = FractionalIndices(X, atmos_grid, Center(), Center(), Center())
-    end
-    TX, TY, _ = topology(atmos_grid)
-    Nx, Ny, _ = size(atmos_grid)
-    Hx, Hy, _ = halo_size(atmos_grid)
-    Sx, Sy, _ = worksize(exchange_grid)
-    halo_column = (i < 1) | (i > Sx) | (j < 1) | (j > Sy)
-
-    fi = indices_tuple.i
-    fj = indices_tuple.j
-    @inbounds begin
-        if !isnothing(fi)
-            fi[i, j, 1] = clamp_fractional_index(fractional_indices_ij.i, TX(), Nx, Hx, halo_column)
-        end
-
-        if !isnothing(fj)
-            fj[i, j, 1] = clamp_fractional_index(fractional_indices_ij.j, TY(), Ny, Hy, halo_column)
-        end
-    end
 end

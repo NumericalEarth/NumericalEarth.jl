@@ -365,7 +365,7 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
 
     # Transfer coefficients at height `h`
     ϰ = flux_formulation.von_karman_constant
-    L★ = ifelse(b★ == 0, Inf, u★^2 / (ϰ * b★))
+    L★ = monin_obukhov_length(u★, b★, ϰ)
     form = flux_formulation.similarity_form
 
     χu = ϰ / similarity_profile(form, ψu, Δhᵈ, ℓu₀, L★)
@@ -418,6 +418,24 @@ L★ = u★² / ϰ b★ .
     b★ = g / 𝒯ₛ * (θ★ * (1 + δ * qₛ) + δ * 𝒯ₛ * q★)
 
     return b★
+end
+
+"""
+    monin_obukhov_length(u★, b★, ϰ)
+
+Return the Monin--Obukhov length scale
+
+```math
+L★ = u★² / ϰ b★ ,
+```
+
+given the friction velocity `u★`, the buoyancy scale `b★` (see [`buoyancy_scale`](@ref)),
+and the Von Karman constant `ϰ`. A neutral interface (`b★ = 0`) has an infinite `L★`,
+typed like `u★` so that the profiles stay in the working precision.
+"""
+@inline function monin_obukhov_length(u★, b★, ϰ)
+    L★ = u★^2 / (ϰ * b★)
+    return ifelse(b★ == 0, convert(typeof(L★), Inf), L★)
 end
 
 

@@ -12,7 +12,7 @@ using Oceananigans.Fields: ZeroField
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGridOfSomeKind
 using Oceananigans.TimeSteppers: SplitRungeKuttaTimeStepper
 
-using ..EarthSystemModels: ocean_surface_salinity, ocean_surface_velocities, ocean_surface_height,
+using ..EarthSystemModels: ocean_surface_salinity, ocean_surface_velocities,
                            surface_layer_velocities, reference_density
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, SkinTemperature
 
@@ -67,6 +67,11 @@ end
 # it is forwarded only when it differs from the mean-thickness default.
 subgrid_conductivity_keyword(thickness_categories) =
     thickness_categories == 1 ? NamedTuple() : (; thickness_categories)
+
+# typed so that no `Int` zero enters the Float sea-ice kernels. The ice reads η at its own topmost index, so it
+# gets the `(Center, Center, Nothing)` mirror that `refresh_ocean_surface_height!` refills every coupled step.
+ocean_surface_height(ocean::Simulation, grid) = EarthSystemModels.ocean_surface_height(ocean)
+ocean_surface_height(::Nothing, grid) = ZeroField(eltype(grid))
 
 function default_snow_thermodynamics(grid; thickness_categories = 1)
     FT = eltype(grid)
@@ -247,21 +252,6 @@ end
 default_coriolis(ocean::Simulation) = ocean.model.coriolis
 default_coriolis(ocean::Nothing) = HydrostaticSphericalCoriolis(; rotation_rate=default_rotation_rate)
 
-# `ocean_surface_height` needs a ClimaSeaIce that carries the free-surface term, so it is forwarded
-# only when the tilt is switched on.
-#
-# ⚠ When it is OFF we still pass an explicitly typed `ZeroField(eltype(grid))`. Leaving it to
-# `SeaIceMomentumEquation`'s own default gives `ZeroField()`, which is `ZeroField{Int64}` — an
-# Int-typed field inside a Float64 GPU kernel that evaluates `g * ∂xᶠᶜᶜ(…, η)`. That combination
-# faulted with an illegal memory access on the first time step of every run with ice dynamics on
-# 2026-09-03, while `_icetilt` (which passes a real Field) and `orca_noicedyn` (no dynamics) were
-# unaffected. On a ClimaSeaIce without the free-surface term the keyword is simply not forwarded.
-function ocean_surface_tilt_keyword(with_tilt, ocean, grid, gravitational_acceleration)
-    :free_surface in fieldnames(SeaIceMomentumEquation) || return NamedTuple()
-    η = with_tilt ? ocean_surface_height(ocean) : ZeroField(eltype(grid))
-    return (; ocean_surface_height = η, gravitational_acceleration)
-end
-
 function sea_ice_dynamics(grid, ocean=nothing;
                           sea_ice_ocean_drag_coefficient = 5.5e-3,
                           sea_ice_ocean_drag_reference_depth = 6,
@@ -269,8 +259,7 @@ function sea_ice_dynamics(grid, ocean=nothing;
                           rheology = ElastoViscoPlasticRheology(),
                           coriolis = default_coriolis(ocean),
                           free_drift = nothing,
-                          with_ocean_surface_tilt = false,
-                          gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration,
+                          with_ocean_surface_tilt = true,
                           solver = SplitExplicitSolver(grid; substeps=150))
 
     SSU, SSV = surface_layer_velocities(ocean, sea_ice_ocean_drag_reference_depth)
@@ -296,8 +285,7 @@ function sea_ice_dynamics(grid, ocean=nothing;
                                   basal_stress,
                                   rheology,
                                   free_drift,
-                                  ocean_surface_tilt_keyword(with_ocean_surface_tilt, ocean, velocity_grid,
-                                                             gravitational_acceleration)...,
+                                  ocean_surface_height = ocean_surface_height(with_ocean_surface_tilt ? ocean : nothing, grid),
                                   solver)
 end
 

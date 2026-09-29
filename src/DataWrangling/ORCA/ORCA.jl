@@ -26,6 +26,7 @@ download_ORCA_cache::String = ""
 
 function __init__()
     global download_ORCA_cache = DataWrangling.download_cache("ORCA")
+    return nothing
 end
 
 abstract type ORCADataset end
@@ -43,8 +44,6 @@ all_dates(::ORCADataset, args...) = nothing
 first_date(::ORCADataset, args...) = nothing
 last_date(::ORCADataset, args...) = nothing
 
-const ORCAOneMetadatum = Metadatum{<:ORCAOne}
-const ORCAQuarterMetadatum = Metadatum{<:ORCAQuarter}
 const ORCATwelfthMetadatum = Metadatum{<:ORCATwelfth}
 const ORCAMetadatum = Metadatum{<:ORCADataset}
 
@@ -109,5 +108,8 @@ north_fold_pivot(::ORCADataset) = TPivot
 default_south_rows_to_remove(::ORCAOne)     = 35
 default_south_rows_to_remove(::ORCAQuarter) = 155
 default_south_rows_to_remove(::ORCATwelfth) = 460
+
+# Number of first columns repeated at the east edge of the mesh
+periodic_overlap(::ORCADataset) = 2
 
 end # module

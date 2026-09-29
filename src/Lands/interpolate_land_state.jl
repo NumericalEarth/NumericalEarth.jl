@@ -6,13 +6,16 @@ using ..Atmospheres: interp_atmos_time_series
 function EarthSystemModels.interpolate_state!(exchanger, grid, land::PrescribedLand, coupled_model)
     arch = architecture(grid)
     clock = coupled_model.clock
-    land_freshwater_flux = exchanger.state.freshwater_flux
+    runoff_freshwater_flux = exchanger.state.runoff_freshwater_flux
+    iceberg_freshwater_flux = exchanger.state.iceberg_freshwater_flux
 
-    # Zero the land freshwater flux before accumulating
-    fill!(land_freshwater_flux, 0)
+    fill!(runoff_freshwater_flux, 0)
+    fill!(iceberg_freshwater_flux, 0)
 
     freshwater_flux = land.freshwater_flux
     freshwater_data = map(ϕ -> ϕ.data, freshwater_flux)
+    runoff_data = Base.structdiff(freshwater_data, NamedTuple{(:icebergs,)})
+    iceberg_data = get(freshwater_data, :icebergs, nothing)
 
     first_flux = first(freshwater_flux)
     land_grid = first_flux.grid
@@ -22,16 +25,18 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, land::PrescribedL
 
     kernel_parameters = interface_kernel_parameters(grid)
 
-    launch!(arch, grid, kernel_parameters,
-            _interpolate_land_freshwater_flux!,
-            land_freshwater_flux.data,
-            grid,
-            clock,
-            freshwater_data,
-            land_grid,
-            land_times,
-            land_backend,
-            land_time_indexing)
+    for (flux, data) in ((runoff_freshwater_flux, runoff_data), (iceberg_freshwater_flux, iceberg_data))
+        launch!(arch, grid, kernel_parameters,
+                _interpolate_land_freshwater_flux!,
+                flux.data,
+                grid,
+                clock,
+                data,
+                land_grid,
+                land_times,
+                land_backend,
+                land_time_indexing)
+    end
 
     iceberg_freshwater_flux = exchanger.state.iceberg_freshwater_flux
     fill!(iceberg_freshwater_flux, 0)

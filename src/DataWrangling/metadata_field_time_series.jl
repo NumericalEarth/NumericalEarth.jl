@@ -44,13 +44,8 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
 
     Downloads.download(metadata)
 
-    # Keep the time axis in Float64, matching the model clock. `interpolate`'s time weight promotes to the
-    # clock's type regardless of the axis, so a narrower axis buys no type stability and only costs
-    # resolution: past 2^28 s a Float32 axis rounds nodes by up to 32 s, which lets the bracketing weight
-    # exceed 1 and `Cyclical` read that as running off the end of the record, wrapping the in-memory window
-    # to the last snapshot for one step out of every few.
+    # Float64 like the model clock: past 2^28 s a Float32 axis rounds the nodes by up to 32 s
     times = native_times(metadata)
-
 
     # A window-averaged series repeats over the span its windows tile, not over the span of its
     # nodes, which sit half a window inside it at each end. Oceananigans infers the latter.

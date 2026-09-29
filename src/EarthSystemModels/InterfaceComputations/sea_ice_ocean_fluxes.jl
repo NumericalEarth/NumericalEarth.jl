@@ -50,41 +50,6 @@ end
 
 
 #####
-##### How the ice-ocean mass exchange reaches the ocean
-#####
-
-"""
-    ConservativeIceFreshwater()
-
-Hand the ocean the mass the sea ice actually exchanged: the volume flux `−(Eᵢ + Eₛ)/ρᵒᶜ` and the salt
-held in the ice, `Eᵢ Sˢⁱ/ρᵒᶜ`. The `Sᴺ`-weighted dilution rides on the volume flux in the salinity
-boundary condition, so melting ice of salinity `Sˢⁱ` adds exactly its own volume and its own salt.
-"""
-struct ConservativeIceFreshwater end
-
-"""
-    ScaledIceFreshwater(fraction)
-
-Deliver `fraction` of the exchange, volume and salt alike. The withheld water leaves the ocean-ice-snow
-total, which `normalize_freshwater` returns globally by moving the free surface, so the global budget
-still closes while the *local* delivery is scaled. A diagnostic knob for how sensitive a basin is to
-the freshwater the ice puts into it; `fraction = 1` is [`ConservativeIceFreshwater`](@ref).
-"""
-struct ScaledIceFreshwater{FT}
-    fraction :: FT
-end
-
-"""
-    VirtualSaltFluxIceFreshwater()
-
-Deliver the exchange as a salt flux at fixed ocean volume — the classical virtual salt flux,
-`Jˢ = Jʷ (Sᴺ − Sˢⁱ)` with `Jʷ = 0` — instead of as a real volume flux. Isolates the volume pathway
-from the freshwater amount. ⚠ This is an approximation, exact only for `Sᴺ` uniform over the column,
-and it does not conserve total salt; the drift is measurable in the ocean + ice + snow budget.
-"""
-struct VirtualSaltFluxIceFreshwater end
-
-#####
 ##### The temperature the ice meltwater carries into the ocean
 #####
 
@@ -123,36 +88,6 @@ it at Conservative Temperature 0.
 """
 @inline meltwater_heat_content(::ZeroHeatContentMeltwater, Tᵦ, Jʷⁱ) = zero(Jʷⁱ)
 @inline meltwater_heat_content(::InterfaceTemperatureMeltwater, Tᵦ, Jʷⁱ) = Tᵦ * Jʷⁱ
-
-"""
-$(TYPEDSIGNATURES)
-
-The ocean-side volume flux of the *ice* alone, excluding snow, under the same delivery
-[`ice_freshwater_and_salt`](@ref) applies. Snow is salt-free and melts at 0, so only the ice term
-carries a meltwater temperature correction.
-"""
-@inline ice_volume_flux(::ConservativeIceFreshwater, Eᵢ, ρᵒᶜ) = - Eᵢ / ρᵒᶜ
-@inline ice_volume_flux(delivery::ScaledIceFreshwater, Eᵢ, ρᵒᶜ) = - delivery.fraction * Eᵢ / ρᵒᶜ
-@inline ice_volume_flux(::VirtualSaltFluxIceFreshwater, Eᵢ, ρᵒᶜ) = zero(Eᵢ / ρᵒᶜ)
-
-"""
-$(TYPEDSIGNATURES)
-
-The ocean-side volume and salt fluxes `(Jʷ, Jˢ)` for an ice-ocean mass exchange of `Eᵢ` ice and `Eₛ`
-snow, against ocean surface salinity `Sᴺ` and ice salinity `Sˢⁱ`.
-"""
-@inline ice_freshwater_and_salt(::ConservativeIceFreshwater, Eᵢ, Eₛ, Sᴺ, Sˢⁱ, ρᵒᶜ) =
-    (- (Eᵢ + Eₛ) / ρᵒᶜ, Eᵢ * Sˢⁱ / ρᵒᶜ)
-
-@inline function ice_freshwater_and_salt(delivery::ScaledIceFreshwater, Eᵢ, Eₛ, Sᴺ, Sˢⁱ, ρᵒᶜ)
-    α = delivery.fraction
-    return (- α * (Eᵢ + Eₛ) / ρᵒᶜ, α * Eᵢ * Sˢⁱ / ρᵒᶜ)
-end
-
-@inline function ice_freshwater_and_salt(::VirtualSaltFluxIceFreshwater, Eᵢ, Eₛ, Sᴺ, Sˢⁱ, ρᵒᶜ)
-    Jʷ = - (Eᵢ + Eₛ) / ρᵒᶜ
-    return (zero(Jʷ), Jʷ * (Sᴺ - Sˢⁱ))
-end
 
 """
     compute_sea_ice_ocean_fluxes!(coupled_model)
@@ -222,7 +157,7 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
             flux_formulation, fluxes, Tˢⁱ, Sˢⁱ, grid, clock,
             hˢⁱ, hc, ℵ, Sⁱ, Tᵒᶜ, Sᵒᶜ, uˢⁱ, vˢⁱ, τₛ,
             liquidus, ocean_properties, L, Δt, mass_fluxes.ice, mass_fluxes.snow,
-            interface.freshwater_delivery, interface.meltwater_enthalpy)
+            interface.meltwater_enthalpy)
 
     return nothing
 end
@@ -280,7 +215,6 @@ end
                                                 Δt,
                                                 ice_ocean_mass_flux,
                                                 snow_ocean_mass_flux,
-                                                freshwater_delivery,
                                                 meltwater_enthalpy)
 
     i, j = @index(Global, NTuple)
@@ -289,8 +223,8 @@ end
     𝒬ᶠʳᶻ = fluxes.frazil_heat
     𝒬ⁱⁿ = fluxes.interface_heat
     Jˢ = fluxes.salt
-    Jᴴ = fluxes.freshwater_heat_content
     Jʷ = fluxes.freshwater
+    Jᴴ = fluxes.freshwater_heat_content
     τˣ = fluxes.x_momentum
     τʸ = fluxes.y_momentum
     T★ = interface_temperature
@@ -385,11 +319,8 @@ end
     @inbounds begin
         Eᵢ = ice_ocean_mass_flux[i, j, 1]
         Eₛ = snow_ocean_mass_flux[i, j, 1]
-        # the snow term Sˢⁿ * Eₛ drops from the salt flux since Sˢⁿ == 0
-        Jʷⁱᵒ, Jˢⁱᵒ = ice_freshwater_and_salt(freshwater_delivery, Eᵢ, Eₛ, Sᴺ, Sˢⁱ, ρᵒᶜ)
-        Jʷ[i, j, 1] = Jʷⁱᵒ
-        Jˢ[i, j, 1] = Jˢⁱᵒ
-        Jᴴ[i, j, 1] = meltwater_heat_content(meltwater_enthalpy, Tᵦ,
-                                             ice_volume_flux(freshwater_delivery, Eᵢ, ρᵒᶜ))
+        Jʷ[i, j, 1] = - (Eᵢ + Eₛ) / ρᵒᶜ
+        Jˢ[i, j, 1] = Eᵢ * Sˢⁱ / ρᵒᶜ # the snow term Sˢⁿ * Eₛ drops since Sˢⁿ == 0
+        Jᴴ[i, j, 1] = meltwater_heat_content(meltwater_enthalpy, Tᵦ, - Eᵢ / ρᵒᶜ)
     end
 end

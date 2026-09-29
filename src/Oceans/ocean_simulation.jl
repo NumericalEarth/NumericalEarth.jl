@@ -1,5 +1,6 @@
 using DocStringExtensions: TYPEDSIGNATURES
 using Oceananigans.Architectures: architecture
+using Oceananigans.Biogeochemistry: required_biogeochemical_tracers
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition
 using Oceananigans.DistributedComputations: DistributedGrid, all_reduce
 using Oceananigans.Grids: inactive_node, topology
@@ -84,26 +85,29 @@ Adapt.adapt_structure(to, f::FreshwaterExchange{name}) where name =
                              Adapt.adapt(to, f.content_flux),
                              Adapt.adapt(to, f.additional))
 
-@inline surface_tracer_value(fields, ::Val{:S}, i, j, k) = @inbounds fields.S[i, j, k]
-@inline surface_tracer_value(fields, ::Val{:T}, i, j, k) = @inbounds fields.T[i, j, k]
+@inline surface_tracer_value(fields, ::Val{name}, i, j, k) where name = @inbounds fields[name][i, j, k]
 
 @inline (f::FreshwaterExchange{name})(i, j, grid, clock, fields) where name =
     freshwater_exchange_flux(f, Val(name), i, j, grid, fields) + getbc(f.additional, i, j, grid, clock, fields)
 
-@inline carried_tracer_flux(f::FreshwaterExchange, ::Val{name}, i, j, grid, fields) where name =
-    @inbounds surface_tracer_value(fields, Val(name), i, j, grid.Nz) * f.carrying_flux[i, j, 1] - f.content_flux[i, j, 1]
+@inline carried_tracer_flux(f::FreshwaterExchange, val_name, i, j, grid, fields) =
+    @inbounds surface_tracer_value(fields, val_name, i, j, grid.Nz) * f.carrying_flux[i, j, 1] - f.content_flux[i, j, 1]
 
 # The temperature carried flux is required only for mutable grids to cancel the volume movement.
 # On the other hand, it is required always for salinity
-@inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:S}, i, j, grid, fields) = carried_tracer_flux(f, name, i, j, grid, fields)
+@inline freshwater_exchange_flux(f::FreshwaterExchange, name, i, j, grid, fields) = carried_tracer_flux(f, name, i, j, grid, fields)
 @inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:T}, i, j, grid, fields) = zero(grid)
 @inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:T}, i, j, grid::MutableGridOfSomeKind, fields) = carried_tracer_flux(f, name, i, j, grid, fields)
-
 
 build_tracer_top_bc(Jᶜ, Jʷ, content, additional, name) = FluxBoundaryCondition(MultipleFluxes(Jᶜ, FreshwaterExchange{name}(Jʷ, content, additional)); discrete_form=true)
 
 @inline freshwater_exchange(bc::DiscreteBoundaryFunction) = freshwater_exchange(bc.func)
 @inline freshwater_exchange(mf::MultipleFluxes) = mf.additional_fluxes
+
+# A bare flux `Field` exchanges no freshwater, so its freshwater fluxes are written to unused fields
+freshwater_exchange(J::Field) = (; carrying_flux = Field{Center, Center, Nothing}(J.grid),
+                                   content_flux  = Field{Center, Center, Nothing}(J.grid))
+
 @inline extract_freshwater_flux(bc) = freshwater_exchange(bc).carrying_flux
 
 #####
@@ -201,6 +205,8 @@ end
 # that vary in space and time.
 default_radiative_forcing(grid) = TwoColorRadiation(grid)
 
+default_freshwater_tracer_content(val_name, biogeochemistry) = ZeroField()
+
 # TODO: Specify the grid to a grid on the sphere; otherwise we can provide a different
 # function that requires latitude and longitude etc for computing coriolis=FPlane...
 """
@@ -287,6 +293,8 @@ end
                                  implicit_bottom_drag = true,
                                  forcing = NamedTuple(),
                                  additional_surface_fluxes = NamedTuple(),
+                                 freshwater_tracer_content = NamedTuple(),
+                                 surface_exchanged_tracers = (),
                                  biogeochemistry = nothing,
                                  timestepper = :SplitRungeKutta3,
                                  coriolis = Default(HydrostaticSphericalCoriolis(; rotation_rate)),
@@ -295,6 +303,7 @@ end
                                  equation_of_state = TEOS10EquationOfState(; reference_density),
                                  boundary_conditions::NamedTuple = NamedTuple(),
                                  radiative_forcing = default_radiative_forcing(grid),
+                                 materialize_buoyancy_gradients = true,
                                  river_routing = nothing,
                                  river_mouth_diffusivity = 0.1,
                                  river_mouth_mixing_depth = 10,
@@ -341,9 +350,11 @@ When `river_routing` is supplied, [`river_mouth_vertical_diffusivity`](@ref) is 
   the turbulent kinetic energy `:e` tracer is automatically added while its advection is disabled.
 
 ### Boundary conditions
-Default boundary conditions are constructed for `u`, `v`, `T`, and `S`, including
-surface fluxes and bottom drag. User-provided boundary conditions override the
-defaults on a per-field basis.
+Default boundary conditions are constructed for `u`, `v`, and every tracer in `tracers`
+(excluding `:e`), including surface fluxes and bottom drag. Every tracer's surface flux
+also carries a freshwater-exchange term that dilutes or concentrates it by the net
+freshwater volume flux; see `freshwater_tracer_content`. User-provided boundary conditions
+override the defaults on a per-field basis.
 
 ## Keyword Arguments
 
@@ -365,7 +376,16 @@ defaults on a per-field basis.
 - `implicit_bottom_drag`: whether the bottom and immersed quadratic drag are applied as affine fluxes
   with the drag coefficient carried in the vertical solver's diagonal. Default: `true`.
 - `forcing`: Named tuple of additional forcing(s) for individual fields.
-- `additional_surface_fluxes`: Named tuple of additional top boundary flux conditions (e.g. `(; S=SurfaceFluxRestoring(...))`) for any field (`u`, `v`, `T`, `S`).
+- `additional_surface_fluxes`: Named tuple of additional top boundary flux conditions (e.g. `(; S=SurfaceFluxRestoring(...))`) for any field (`u`, `v`, or any tracer).
+- `freshwater_tracer_content`: Named tuple giving, per tracer, the concentration carried into that
+  tracer by the net freshwater volume flux (e.g. `Σᵢ cᵢ Jʷᵢ`). Defaults to `ZeroField()` for every
+  tracer except `T`, which defaults to the ocean's own surface temperature (freshwater enters at SST).
+  Pass a `Field` (rather than `ZeroField()`) for a tracer whose carried content is nonzero or varies —
+  e.g. a biogeochemistry extension updating a tracer's content each step.
+- `surface_exchanged_tracers`: Tuple of tracer names (beyond `T` and `S`, which always get one) that need a
+  real, writable top-flux `Field` for an external flux solver — e.g. air-sea gas exchange — to write
+  into each step. Every other tracer's surface flux defaults to a `ZeroField()` sentinel, so a purely
+  interior tracer (no atmosphere/sea-ice exchange) carries no unused flux field.
 - `biogeochemistry`: A biogeochemical model or `nothing`.
 - `timestepper`: Time-stepping scheme; options are `:SplitRungeKutta3` (default), or `:QuasiAdamsBashforth2`.
 - `coriolis`: Coriolis object or `Default(...)` wrapper.
@@ -374,6 +394,7 @@ defaults on a per-field basis.
 - `equation_of_state`: Equation of state object. Defaults to TEOS-10 (`TEOS10EquationOfState`).
 - `boundary_conditions`: User-supplied boundary conditions; merged with defaults.
 - `radiative_forcing`: Additional temperature forcing; merged into `forcing`.
+- `materialize_buoyancy_gradients`: whether the buoyancy gradients are precomputed and stored in fields. Default: `false`.
 - `river_routing`: `NamedTuple` of [`RiverRouting`](@ref), typically `land.river_routing`. Defaults to
   `nothing`, which leaves `closure` untouched.
 - `river_mouth_diffusivity`: vertical tracer diffusivity (m² s⁻¹) at the river mouths. Default: `0.1`.
@@ -396,7 +417,9 @@ function hydrostatic_ocean_simulation(grid;
                                       implicit_bottom_drag = true,
                                       forcing = NamedTuple(),
                                       additional_surface_fluxes = NamedTuple(),
+                                      freshwater_tracer_content::NamedTuple = NamedTuple(),
                                       biogeochemistry = nothing,
+                                      surface_exchanged_tracers = biogeochemistry_surface_exchanged_tracers(biogeochemistry),
                                       timestepper = :SplitRungeKutta3,
                                       coriolis = Default(HydrostaticSphericalCoriolis(; rotation_rate)),
                                       momentum_advection = WENOVectorInvariant(time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
@@ -404,7 +427,7 @@ function hydrostatic_ocean_simulation(grid;
                                       equation_of_state = TEOS10EquationOfState(; reference_density),
                                       boundary_conditions::NamedTuple = NamedTuple(),
                                       radiative_forcing = default_radiative_forcing(grid),
-                                      materialize_buoyancy_gradients = true,
+                                      materialize_buoyancy_gradients = false,
                                       river_routing = nothing,
                                       river_mouth_diffusivity = 0.1,
                                       river_mouth_mixing_depth = 10,
@@ -492,9 +515,6 @@ function hydrostatic_ocean_simulation(grid;
     implicit_zonal_momentum_coefficient      = λˣ = Field{Face, Center, Nothing}(grid)
     implicit_meridional_momentum_coefficient = λʸ = Field{Center, Face, Nothing}(grid)
 
-    top_ocean_heat_flux          = Jᵀ = Field{Center, Center, Nothing}(grid)
-    top_salt_flux                = Jˢ = Field{Center, Center, Nothing}(grid)
-
     TX, TY, _ = topology(grid)
     η_grid = if free_surface isa SplitExplicitFreeSurface
         maybe_extend_halos(TX, TY, grid, free_surface.substepping)
@@ -502,7 +522,6 @@ function hydrostatic_ocean_simulation(grid;
         grid
     end
 
-    # Freshwater forcing is needed on the free surface grid
     top_freshwater_volume_flux = Jʷ = Field{Center, Center, Nothing}(η_grid)
 
     if grid isa MutableGridOfSomeKind
@@ -510,31 +529,36 @@ function hydrostatic_ocean_simulation(grid;
         forcing = merge(forcing, (; η = Fη))
     end
 
-    # Merge user-supplied additional fluxes with defaults
-    default_additional_fluxes = (u=nothing, v=nothing, T=nothing, S=nothing)
+    tracers = (tracers..., required_biogeochemical_tracers(biogeochemistry)...)
+
+    default_additional_fluxes = merge((u=nothing, v=nothing), NamedTuple(name => nothing for name in tracers))
     additional = merge(default_additional_fluxes, additional_surface_fluxes)
 
     # Freshwater heat content is `Σᵢ Tᵢ Jʷᵢ`, the Freshwater salinity content is assumed to be 0 for the moment (no salinity for incoming freshwater)
     freshwater_heat_content = Field{Center, Center, Nothing}(grid)
-    freshwater_salt_content = ZeroField()
+    assumed_freshwater_tracer_content = 
+        NamedTuple(name => name === :T ? 
+                           freshwater_heat_content : default_freshwater_tracer_content(Val(name), biogeochemistry)
+                   for name in tracers)
+    freshwater_tracer_content = merge(assumed_freshwater_tracer_content, freshwater_tracer_content)
 
-    # Construct ocean boundary conditions including surface forcing and bottom drag
     u_top_bc = build_top_bc(τˣ, λˣ, additional.u)
     v_top_bc = build_top_bc(τʸ, λʸ, additional.v)
-    T_top_bc = build_tracer_top_bc(Jᵀ, Jʷ, freshwater_heat_content, additional.T, :T)
-    S_top_bc = build_tracer_top_bc(Jˢ, Jʷ, freshwater_salt_content, additional.S, :S)
+
+    flux_tracers = (:T, :S, surface_exchanged_tracers...)
+    tracer_top_fluxes = NamedTuple(name => name ∈ flux_tracers ? Field{Center, Center, Nothing}(grid) : ZeroField() for name in tracers)
+    tracer_top_bcs = NamedTuple(name => build_tracer_top_bc(tracer_top_fluxes[name], Jʷ, freshwater_tracer_content[name], additional[name], name)
+                                for name in tracers)
 
     drag_parameters = (μ = bottom_drag_coefficient, ub = bottom_drag_background_velocity)
 
     u_bot_bc = bottom_drag_bc(u_quadratic_drag_coefficient, u_quadratic_bottom_drag, drag_parameters, implicit_bottom_drag)
     v_bot_bc = bottom_drag_bc(v_quadratic_drag_coefficient, v_quadratic_bottom_drag, drag_parameters, implicit_bottom_drag)
 
-    default_boundary_conditions = (u = FieldBoundaryConditions(top=u_top_bc, bottom=u_bot_bc, immersed=u_immersed_bc),
-                                   v = FieldBoundaryConditions(top=v_top_bc, bottom=v_bot_bc, immersed=v_immersed_bc),
-                                   T = FieldBoundaryConditions(top=T_top_bc),
-                                   S = FieldBoundaryConditions(top=S_top_bc))
+    default_boundary_conditions = merge((u = FieldBoundaryConditions(top=u_top_bc, bottom=u_bot_bc, immersed=u_immersed_bc),
+                                         v = FieldBoundaryConditions(top=v_top_bc, bottom=v_bot_bc, immersed=v_immersed_bc)),
+                                        NamedTuple(name => FieldBoundaryConditions(top=tracer_top_bcs[name]) for name in tracers))
 
-    # Merge boundary conditions side-by-side with preference to user
     merged_boundary_conditions = NamedTuple(name => haskey(default_boundary_conditions, name) ?
                                             merge_boundary_conditions(boundary_conditions[name], default_boundary_conditions[name]) :
                                             boundary_conditions[name]
@@ -542,7 +566,7 @@ function hydrostatic_ocean_simulation(grid;
 
     boundary_conditions = merge(default_boundary_conditions, merged_boundary_conditions)
     buoyancy = SeawaterBuoyancy(; gravitational_acceleration, equation_of_state)
-    buoyancy = Oceananigans.BuoyancyFormulations.BuoyancyForce(grid, buoyancy; materialize_gradients = materialize_buoyancy_gradients)
+    buoyancy = BuoyancyForce(grid, buoyancy; materialize_gradients = materialize_buoyancy_gradients)
 
     if tracer_advection isa NamedTuple
         tracer_advection = with_tracers(tracers, tracer_advection, default_tracer_advection())
@@ -600,3 +624,6 @@ function EarthSystemModels.heat_capacity(::TEOS10EquationOfState{FT}) where FT
     cₚ⁰ = SeawaterPolynomials.TEOS10.teos10_reference_heat_capacity
     return convert(FT, cₚ⁰)
 end
+
+# setup helpers
+biogeochemistry_surface_exchanged_tracers(biogeochemistry) = tuple()
