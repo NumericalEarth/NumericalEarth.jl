@@ -202,6 +202,41 @@ default_radiative_forcing(grid) = TwoColorRadiation(grid)
 
 default_freshwater_tracer_content(val_name, biogeochemistry) = ZeroField()
 
+"""
+    RiverConcentration(concentration)
+
+A `freshwater_tracer_content` entry for a tracer carried into the ocean only by land (river) runoff,
+at `concentration` (tracer units, e.g. mmol/m³). Its content flux is `concentration × Jʳ`, where `Jʳ`
+is the runoff volume flux (m/s, positive into the ocean) written each step by the flux assembler, so
+rain, snow, evaporation, icebergs and sea ice carry none of the tracer (they still dilute it).
+"""
+struct RiverConcentration{C}
+    concentration :: C
+end
+
+# The materialised content: `concentration × Jʳ`, indexed like the other content fields
+struct RiverTracerContent{C, J}
+    concentration :: C
+    river_volume_flux :: J
+end
+
+Adapt.adapt_structure(to, c::RiverTracerContent) =
+    RiverTracerContent(Adapt.adapt(to, c.concentration), Adapt.adapt(to, c.river_volume_flux))
+
+@inline Base.getindex(c::RiverTracerContent, i, j, k) = @inbounds c.concentration * c.river_volume_flux[i, j, k]
+
+materialize_freshwater_content(content, river_volume_flux) = content
+materialize_freshwater_content(c::RiverConcentration, river_volume_flux) = RiverTracerContent(c.concentration, river_volume_flux)
+
+# The runoff volume flux field, if any tracer is carried by rivers (`nothing` otherwise)
+river_volume_flux(content) = nothing
+river_volume_flux(c::RiverTracerContent) = c.river_volume_flux
+
+tracer_freshwater_content(bc) = nothing
+tracer_freshwater_content(bc::DiscreteBoundaryFunction) = tracer_freshwater_content(bc.func)
+tracer_freshwater_content(mf::MultipleFluxes) = tracer_freshwater_content(mf.additional_fluxes)
+tracer_freshwater_content(f::FreshwaterExchange) = f.content_flux
+
 # TODO: Specify the grid to a grid on the sphere; otherwise we can provide a different
 # function that requires latitude and longitude etc for computing coriolis=FPlane...
 """
@@ -372,11 +407,13 @@ override the defaults on a per-field basis.
   with the drag coefficient carried in the vertical solver's diagonal. Default: `true`.
 - `forcing`: Named tuple of additional forcing(s) for individual fields.
 - `additional_surface_fluxes`: Named tuple of additional top boundary flux conditions (e.g. `(; S=SurfaceFluxRestoring(...))`) for any field (`u`, `v`, or any tracer).
-- `freshwater_tracer_content`: Named tuple giving, per tracer, the concentration carried into that
-  tracer by the net freshwater volume flux (e.g. `Σᵢ cᵢ Jʷᵢ`). Defaults to `ZeroField()` for every
-  tracer except `T`, which defaults to the ocean's own surface temperature (freshwater enters at SST).
-  Pass a `Field` (rather than `ZeroField()`) for a tracer whose carried content is nonzero or varies —
-  e.g. a biogeochemistry extension updating a tracer's content each step.
+- `freshwater_tracer_content`: Named tuple giving, per tracer, the tracer *flux* carried in by the
+  freshwater sources, `Σᵢ cᵢ Jʷᵢ` (tracer units × m/s, positive into the ocean) — not a concentration.
+  Defaults to `ZeroField()` for every tracer except `T`, which defaults to the ocean's own surface
+  temperature (freshwater enters at SST). Pass a `Field` (rather than `ZeroField()`) for a tracer whose
+  carried content is nonzero or varies — e.g. a biogeochemistry extension updating a tracer's content
+  each step — or a [`RiverConcentration`](@ref) for a tracer carried only by river runoff at a
+  prescribed concentration.
 - `surface_exchanged_tracers`: Tuple of tracer names (beyond `T` and `S`, which always get one) that need a
   real, writable top-flux `Field` for an external flux solver — e.g. air-sea gas exchange — to write
   into each step. Every other tracer's surface flux defaults to a `ZeroField()` sentinel, so a purely
@@ -536,6 +573,12 @@ function hydrostatic_ocean_simulation(grid;
                            freshwater_heat_content : default_freshwater_tracer_content(Val(name), biogeochemistry)
                    for name in tracers)
     freshwater_tracer_content = merge(assumed_freshwater_tracer_content, freshwater_tracer_content)
+
+    # tracers carried only by river runoff share one runoff volume flux field, filled by the flux assembler
+    river_freshwater_volume_flux = any(c -> c isa RiverConcentration, values(freshwater_tracer_content)) ?
+                                   Field{Center, Center, Nothing}(grid) : nothing
+
+    freshwater_tracer_content = map(c -> materialize_freshwater_content(c, river_freshwater_volume_flux), freshwater_tracer_content)
 
     u_top_bc = build_top_bc(τˣ, λˣ, additional.u)
     v_top_bc = build_top_bc(τʸ, λʸ, additional.v)

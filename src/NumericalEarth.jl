@@ -59,6 +59,7 @@ export
     atmosphere_land_interface,
     SlabOcean,
     PrescribedOcean,
+    RiverConcentration,
     TwoColorRadiation,
     ChlorophyllOptics,
     absorption_coefficient,
