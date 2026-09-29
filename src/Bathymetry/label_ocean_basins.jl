@@ -1,4 +1,5 @@
-using Oceananigans.OrthogonalSphericalShellGrids: TripolarGridOfSomeKind
+using Oceananigans.BoundaryConditions: pivot_shift
+using Oceananigans.OrthogonalSphericalShellGrids: TripolarGridOfSomeKind, fold_pivot
 using Oceananigans.ImmersedBoundaries: bottom_height_field
 using Oceananigans.Fields: convert_to_0_360
 using ..DataWrangling: BoundingBox
@@ -60,13 +61,15 @@ end
 
 enforce_periodic_labels!(labels, tx) = labels
 
-# Cells (i, Ny) and (Nx-i+1, Ny) are neighbors across the tripolar fold.
-function enforce_tripolar_labels!(labels, ::TripolarGridOfSomeKind)
+# Cells (i, Ny) and (Nx-i+1+s, Ny), with s = -1 for a T pivot and s = 0 otherwise, are neighbors across a face fold
+# and the same cell along a center fold.
+function enforce_tripolar_labels!(labels, grid::TripolarGridOfSomeKind)
     Nx, Ny = size(labels)
+    s = pivot_shift(fold_pivot(grid))
 
     for i in 1:Nx÷2
         label = labels[i, Ny]
-        folded_label = labels[Nx-i+1, Ny]
+        folded_label = labels[mod1(Nx-i+1+s, Nx), Ny]
 
         if label != 0 && folded_label != 0 && label != folded_label
             replace!(labels, folded_label => label)

@@ -2,7 +2,7 @@ include("runtests_setup.jl")
 include("download_utils.jl")
 
 using JLD2
-using NumericalEarth.Bathymetry: remove_minor_basins!, bathymetry_regridding_key,
+using NumericalEarth.Bathymetry: remove_minor_basins!, bathymetry_regridding_key, meridional_barrier,
                                  label_ocean_basins, find_label_at_point, atlantic_ocean_barriers
 using NumericalEarth.DataWrangling: field_cache_filename, save_field_cache
 using NumericalEarth.DataWrangling.ETOPO
@@ -199,15 +199,16 @@ end
 
         bottom_height = regrid_bathymetry(grid)
         ibg = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height))
+        cpu_ibg = on_architecture(CPU(), ibg)
 
         # Unbarriered, the Atlantic and Pacific are one basin: they connect via the Southern Ocean.
         labels = label_ocean_basins(ibg)
-        atlantic_label = find_label_at_point(labels, ibg, -30.0, 0.0)
+        atlantic_label = find_label_at_point(labels, cpu_ibg, -30.0, 0.0)
         @test atlantic_label > 0
-        @test atlantic_label == find_label_at_point(labels, ibg, -170.0, 0.0)
+        @test atlantic_label == find_label_at_point(labels, cpu_ibg, -170.0, 0.0)
 
         barriered = label_ocean_basins(ibg; barriers=atlantic_ocean_barriers)
-        @test find_label_at_point(barriered, ibg, -30.0, 0.0) > 0
+        @test find_label_at_point(barriered, cpu_ibg, -30.0, 0.0) > 0
     end
 end
 

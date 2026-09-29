@@ -26,23 +26,23 @@ Base.show(io::IO, basin::Basin) = print(io, summary(basin), " on ", summary(basi
 """
 $(TYPEDSIGNATURES)
 
-Return the connected component label at the longitude/latitude seed point `(λs, φs)`, searching within a cap
-of radius `radius` degrees, or zero if the seed point falls outside the domain.
+Return the label of the water cell closest to the longitude/latitude seed point `(λs, φs)` within a cap of radius
+`radius` degrees, or zero if no water cell falls within the cap.
 """
 function find_label_at_point(labels, grid, λs, φs; radius = 2)
     Nx, Ny, _ = size(grid)
 
-    for j in 1:Ny, i in 1:Nx
+    # `min` over `(d², label)` pairs keeps the nearest water cell
+    _, label = mapreduce(min, CartesianIndices((Nx, Ny))) do index
+        i, j = Tuple(index)
         λ = convert_to_0_360(λnode(i, j, 1, grid, Center(), Center(), Center()))
         φ = φnode(i, j, 1, grid, Center(), Center(), Center())
         Δλ = isnothing(λs) ? zero(λ) : λ - convert_to_0_360(λs)
-
-        if Δλ^2 + (φ - φs)^2 < radius^2
-            return labels[i, j]
-        end
+        d² = Δλ^2 + (φ - φs)^2
+        ifelse((d² < radius^2) & (labels[i, j] > 0), (d², labels[i, j]), (oftype(d², Inf), 0))
     end
 
-    return 0
+    return label
 end
 
 #####

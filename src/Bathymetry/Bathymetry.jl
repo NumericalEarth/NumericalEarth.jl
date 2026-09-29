@@ -3,8 +3,6 @@ module Bathymetry
 export regrid_bathymetry, regrid_topography, smooth_topography!, ORCAGrid
 export Basin
 export atlantic_ocean_basin, indian_ocean_basin, southern_ocean_basin, pacific_ocean_basin, arctic_ocean_basin
-export label_ocean_basins
-export meridional_barrier
 
 using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads, download
