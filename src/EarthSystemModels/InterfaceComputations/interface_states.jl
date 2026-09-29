@@ -21,10 +21,11 @@ Adapt.adapt_structure(to, p::InterfaceProperties) = InterfaceProperties(Adapt.ad
 
 # TODO: allow different saturation models
 # struct ClasiusClapyeronSaturation end
-struct ImpureSaturationSpecificHumidity{Φ, X}
+struct ImpureSaturationSpecificHumidity{Φ, X, E}
     # saturation :: S
     phase :: Φ
     water_mole_fraction :: X
+    saturation_enhancement :: E
 end
 
 function Base.summary(q★::ImpureSaturationSpecificHumidity)
@@ -35,20 +36,51 @@ function Base.summary(q★::ImpureSaturationSpecificHumidity)
     end
 
     return string("ImpureSaturationSpecificHumidity{$phase_str}(water_mole_fraction=",
-                  prettysummary(q★.water_mole_fraction), ")")
+                  prettysummary(q★.water_mole_fraction),
+                  ", saturation_enhancement=", prettysummary(q★.saturation_enhancement), ")")
 end
 
 Base.show(io::IO, q★::ImpureSaturationSpecificHumidity) = print(io, summary(q★))
 
 """
-    ImpureSaturationSpecificHumidity(phase [, water_mole_fraction=1])
+    ImpureSaturationSpecificHumidity(phase [, water_mole_fraction=1]; saturation_enhancement=nothing)
 
-Return the formulation for computing specific humidity at an interface.
+Return the formulation for computing specific humidity at an interface. `saturation_enhancement` multiplies the
+saturation vapor pressure by the enhancement factor of moist air, for example `GillSaturationEnhancement()`;
+with `nothing` the saturation vapor pressure is not enhanced.
 """
-ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase, nothing)
+ImpureSaturationSpecificHumidity(phase, water_mole_fraction=nothing; saturation_enhancement=nothing) =
+    ImpureSaturationSpecificHumidity(phase, water_mole_fraction, saturation_enhancement)
 
 @inline compute_water_mole_fraction(::Nothing, salinity) = 1
 @inline compute_water_mole_fraction(x_H₂O::Number, salinity) = x_H₂O
+
+"""
+    GillSaturationEnhancement{FT}
+
+Enhancement factor of the saturation vapor pressure in moist air from [Gill (1982)](@cite gill1982atmosphere),
+
+    fᵛ = 1 + p (a + b t²),
+
+with `p` the air pressure (Pa), `t` the temperature (ᵒC), `a = pressure_coefficient` (Pa⁻¹) and
+`b = temperature_coefficient` (Pa⁻¹ ᵒC⁻²).
+"""
+struct GillSaturationEnhancement{FT}
+    pressure_coefficient :: FT
+    temperature_coefficient :: FT
+end
+
+GillSaturationEnhancement(FT = Oceananigans.defaults.FloatType; pressure_coefficient = 4.5e-8, temperature_coefficient = 6e-12) =
+    GillSaturationEnhancement(convert(FT, pressure_coefficient), convert(FT, temperature_coefficient))
+
+Base.summary(::GillSaturationEnhancement{FT}) where FT = "GillSaturationEnhancement{$FT}"
+
+@inline saturation_enhancement_factor(::Nothing, T, p) = 1
+
+@inline function saturation_enhancement_factor(enhancement::GillSaturationEnhancement, T, p)
+    t = convert(typeof(T), T - celsius_to_kelvin)
+    return 1 + p * (enhancement.pressure_coefficient + enhancement.temperature_coefficient * t^2)
+end
 
 # COARE 3.6 / Edson (2013) pressure-based saturation specific humidity:
 #   qₛ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − εᵈᵛ⁻¹) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵥ
@@ -62,9 +94,10 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
     T  = convert(CT, Tₛ)
     p  = convert(CT, pᵃᵗ)
 
-    # Raoult's law on the saturation vapor pressure.
+    # Raoult's law on the saturation vapor pressure, enhanced in moist air by fᵛ
     χ_H₂O = compute_water_mole_fraction(formulation.water_mole_fraction, Sₛ)
-    pᵛ⁺   = χ_H₂O * AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
+    fᵛ    = saturation_enhancement_factor(formulation.saturation_enhancement, T, p)
+    pᵛ⁺   = fᵛ * χ_H₂O * AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
     εᵈᵛ⁻¹ = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
 
     # Guard against unphysically warm interface temperatures: once pᵛ⁺ exceeds
