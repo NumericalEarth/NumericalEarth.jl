@@ -88,16 +88,21 @@ Adapt.adapt_structure(to, f::FreshwaterExchange{name}) where name =
 @inline surface_tracer_value(fields, ::Val{name}, i, j, k) where name = @inbounds fields[name][i, j, k]
 
 @inline (f::FreshwaterExchange{name})(i, j, grid, clock, fields) where name =
-    freshwater_exchange_flux(f, Val(name), i, j, grid, fields) + getbc(f.additional, i, j, grid, clock, fields)
+    freshwater_exchange_flux(f, Val(name), i, j, grid, clock, fields) + getbc(f.additional, i, j, grid, clock, fields)
 
-@inline carried_tracer_flux(f::FreshwaterExchange, val_name, i, j, grid, fields) =
-    @inbounds surface_tracer_value(fields, val_name, i, j, grid.Nz) * f.carrying_flux[i, j, 1] - f.content_flux[i, j, 1]
+# The content is evaluated like a boundary condition (`getbc`), so it may be a number, a 2D `Field`,
+# a `FieldTimeSeries` or a discrete function `(i, j, grid, clock, fields)`
+@inline freshwater_content(content, i, j, grid, clock, fields) = getbc(content, i, j, grid, clock, fields)
+
+@inline carried_tracer_flux(f::FreshwaterExchange, val_name, i, j, grid, clock, fields) =
+    @inbounds surface_tracer_value(fields, val_name, i, j, grid.Nz) * f.carrying_flux[i, j, 1] -
+              freshwater_content(f.content_flux, i, j, grid, clock, fields)
 
 # The temperature carried flux is required only for mutable grids to cancel the volume movement.
 # On the other hand, it is required always for salinity
-@inline freshwater_exchange_flux(f::FreshwaterExchange, name, i, j, grid, fields) = carried_tracer_flux(f, name, i, j, grid, fields)
-@inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:T}, i, j, grid, fields) = zero(grid)
-@inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:T}, i, j, grid::MutableGridOfSomeKind, fields) = carried_tracer_flux(f, name, i, j, grid, fields)
+@inline freshwater_exchange_flux(f::FreshwaterExchange, name, i, j, grid, clock, fields) = carried_tracer_flux(f, name, i, j, grid, clock, fields)
+@inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:T}, i, j, grid, clock, fields) = zero(grid)
+@inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:T}, i, j, grid::MutableGridOfSomeKind, clock, fields) = carried_tracer_flux(f, name, i, j, grid, clock, fields)
 
 build_tracer_top_bc(Jᶜ, Jʷ, content, additional, name) = FluxBoundaryCondition(MultipleFluxes(Jᶜ, FreshwaterExchange{name}(Jʷ, content, additional)); discrete_form=true)
 
@@ -209,12 +214,15 @@ A `freshwater_tracer_content` entry for a tracer carried into the ocean only by 
 at `concentration` (tracer units, e.g. mmol/m³). Its content flux is `concentration × Jʳ`, where `Jʳ`
 is the runoff volume flux (m/s, positive into the ocean) written each step by the flux assembler, so
 rain, snow, evaporation, icebergs and sea ice carry none of the tracer (they still dilute it).
+
+`concentration` can be anything a boundary condition can: a number, a 2D `Field`, a `FieldTimeSeries`
+(e.g. a climatology of river concentrations), or a discrete function `(i, j, grid, clock, fields)`.
 """
 struct RiverConcentration{C}
     concentration :: C
 end
 
-# The materialised content: `concentration × Jʳ`, indexed like the other content fields
+# The materialised content: `concentration × Jʳ`
 struct RiverTracerContent{C, J}
     concentration :: C
     river_volume_flux :: J
@@ -223,7 +231,8 @@ end
 Adapt.adapt_structure(to, c::RiverTracerContent) =
     RiverTracerContent(Adapt.adapt(to, c.concentration), Adapt.adapt(to, c.river_volume_flux))
 
-@inline Base.getindex(c::RiverTracerContent, i, j, k) = @inbounds c.concentration * c.river_volume_flux[i, j, k]
+@inline freshwater_content(c::RiverTracerContent, i, j, grid, clock, fields) =
+    @inbounds getbc(c.concentration, i, j, grid, clock, fields) * c.river_volume_flux[i, j, 1]
 
 materialize_freshwater_content(content, river_volume_flux) = content
 materialize_freshwater_content(c::RiverConcentration, river_volume_flux) = RiverTracerContent(c.concentration, river_volume_flux)
@@ -410,10 +419,10 @@ override the defaults on a per-field basis.
 - `freshwater_tracer_content`: Named tuple giving, per tracer, the tracer *flux* carried in by the
   freshwater sources, `Σᵢ cᵢ Jʷᵢ` (tracer units × m/s, positive into the ocean) — not a concentration.
   Defaults to `ZeroField()` for every tracer except `T`, which defaults to the ocean's own surface
-  temperature (freshwater enters at SST). Pass a `Field` (rather than `ZeroField()`) for a tracer whose
-  carried content is nonzero or varies — e.g. a biogeochemistry extension updating a tracer's content
-  each step — or a [`RiverConcentration`](@ref) for a tracer carried only by river runoff at a
-  prescribed concentration.
+  temperature (freshwater enters at SST). Each entry is evaluated like a boundary condition, so may be
+  a number, a 2D `Field` (e.g. one a biogeochemistry extension updates each step), a `FieldTimeSeries`,
+  or a discrete function `(i, j, grid, clock, fields)` — or a [`RiverConcentration`](@ref) for a tracer
+  carried only by river runoff at a prescribed concentration (itself any of those).
 - `surface_exchanged_tracers`: Tuple of tracer names (beyond `T` and `S`, which always get one) that need a
   real, writable top-flux `Field` for an external flux solver — e.g. air-sea gas exchange — to write
   into each step. Every other tracer's surface flux defaults to a `ZeroField()` sentinel, so a purely
