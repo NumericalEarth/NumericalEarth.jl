@@ -215,7 +215,7 @@ function Oceananigans.BuoyancyFormulations.BuoyancyForce(grid::FTG, formulation:
     gravity_unit_vector = validate_unit_vector(gravity_unit_vector)
     materialize_gradients || return BuoyancyForce(formulation, gravity_unit_vector, nothing)
 
-    sign_flipping_boundary_conditions(loc) = FieldBoundaryConditions(grid, loc; north = north_fold_boundary_condition(grid)(-1))
+    sign_flipping_boundary_conditions(loc) = FieldBoundaryConditions(grid, loc; north = north_fold_boundary_condition(grid, -1))
 
     ∂xᵣ_b = XFaceField(grid; boundary_conditions = sign_flipping_boundary_conditions((Face(), Center(), Center())))
     ∂yᵣ_b = YFaceField(grid; boundary_conditions = sign_flipping_boundary_conditions((Center(), Face(), Center())))

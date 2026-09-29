@@ -1,53 +1,10 @@
 using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.Grids: znode, Center
 using Oceananigans.ImmersedBoundaries: inactive_node
-using SeawaterPolynomials.TEOS10: Θ_from_T
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.SeaIceDynamics: implicit_τx_coefficient, implicit_τy_coefficient
 
 using ..EarthSystemModels: ocean_temperature, ocean_salinity
-
-#####
-##### Freezing point at depth
-#####
-
-# Freezing is an IN-SITU phenomenon, so the threshold is the in-situ freezing point of seawater —
-# UNESCO (1983), valid over S = 0-40 and p = 0-500 bar, and exact at S = 0 where fresh water freezes
-# at 0 ᵒC:
-#
-#     Tᶠ(S, p) = -0.0575 S + 1.710523e-3 S^1.5 - 2.154996e-4 S² - 7.53e-4 p
-#
-# Ice Ih is LESS dense than the liquid, so seawater's Clapeyron slope is negative and the freezing
-# point FALLS with pressure, -0.75 K per 1000 m. (The reversal to a positive slope needs the denser
-# ice III at ≈21000 dbar, twice the deepest ocean.) A surface-referenced threshold is therefore 0.5 K
-# TOO WARM at 660 m, which parks ordinary cold deep water exactly on it; the clamp below is one-way,
-# so from there any perturbation is rectified into ice indefinitely. C18-12 found a single Denmark
-# Strait cell minting 176 m of ice a year for 45 years onto water at +5.8 ᵒC.
-#
-# The ocean carries CONSERVATIVE temperature, so the threshold is converted into Θ rather than the
-# state being converted into in-situ and back. That is equivalent for the comparison and keeps the
-# frazil energy `ρ cᵖ (Θᶠ - Θ)` exact, because Θ is potential enthalpy divided by cₚ⁰.
-@inline function insitu_freezing_temperature(S, p)
-    S⁺ = max(S, zero(S))
-    return -0.0575 * S⁺ + 1.710523e-3 * S⁺ * sqrt(S⁺) - 2.154996e-4 * S⁺^2 - 7.53e-4 * p
-end
-
-"""Freezing point at `(i, j, k)` expressed in conservative temperature. `z` is negative below the surface."""
-@inline function melting_temperature_at_depth(S, i, j, k, grid)
-    FT = eltype(grid)
-    S⁺ = max(S, zero(S))
-    p  = -znode(i, j, k, grid, Center(), Center(), Center())
-    Θᶠ = Θ_from_T(S⁺, insitu_freezing_temperature(S⁺, p), p)
-    # ⚠ Cap at 0. The in-situ formula is exact at S = 0 (fresh water freezes at 0 ᵒC) but the Θ
-    # conversion returns +0.0153 there, because TEOS-10's x = √Sᴬ has a singular derivative at S = 0.
-    # Cells inside the bathymetry carry T = S = 0, so an uncapped positive threshold would make the
-    # whole seafloor a frazil source — which is exactly what killed two runs on 2026-09-03. The `wet`
-    # guard in the frazil loop catches this too; both are kept because either alone is sufficient and
-    # the failure is silent and catastrophic.
-    return convert(FT, min(Θᶠ, zero(Θᶠ)))
-end
-
-
 
 #####
 ##### The temperature the ice meltwater carries into the ocean
@@ -258,8 +215,9 @@ end
             Sᵏ = Sᵒᶜ[i, j, k]
         end
 
-        # Melting/freezing temperature at this depth, INCLUDING the pressure depression.
-        Tₘ = melting_temperature_at_depth(Sᵏ, i, j, k, grid)
+        # Melting/freezing temperature at this depth
+        z  = znode(i, j, k, grid, Center(), Center(), Center())
+        Tₘ = melting_temperature(liquidus, Sᵏ, z)
         freezing = wet & (Tᵏ < Tₘ)
 
         # Compute change in ocean heat energy due to freezing.

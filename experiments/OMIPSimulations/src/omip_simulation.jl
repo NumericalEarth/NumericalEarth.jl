@@ -13,16 +13,16 @@ using Oceananigans.Utils: launch!
 using Adapt: Adapt
 using ClimaSeaIce
 using ClimaSeaIce.Rheologies: ElastoViscoPlasticRheology
-using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus
 using NumericalEarth: DataWrangling
+using NumericalEarth.DataWrangling: ConservativeSurfaceFluxRestoring, ConservativeSurfaceFluxRestoringCallback
 using NumericalEarth.Bathymetry: remove_minor_basins!, atlantic_ocean_basin, pacific_ocean_basin
 using NumericalEarth.Oceans: MultipleFluxes, FreshwaterExchange, extract_freshwater_flux, freshwater_exchange
 using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes,
-                                                              ConservativeIceFreshwater,
-                                                              ScaledIceFreshwater,
-                                                              VirtualSaltFluxIceFreshwater,
                                                               ZeroHeatContentMeltwater,
-                                                              InterfaceTemperatureMeltwater
+                                                              InterfaceTemperatureMeltwater,
+                                                              AtmosphericThermodynamics,
+                                                              ImpureSaturationSpecificHumidity,
+                                                              GillSaturationEnhancement
 using SeawaterPolynomials.TEOS10: Sᴬ_from_Sᴾ, Θ_from_T
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity,
                                        TriadIsopycnalSkewSymmetricDiffusivity,
@@ -114,18 +114,16 @@ corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = 0.0057) =
                             friction_velocity = MomentumBasedFrictionVelocity())
 
 """
-    ncar_atmosphere_ocean_fluxes(FT = Float64; momentum_flux_scale = 1)
+    ncar_atmosphere_ocean_fluxes(FT = Float64)
 
 OMIP-2 standard atmosphere-ocean flux formulation using the Large & Yeager
 (2004, 2009) bulk algorithm. Iterates directly on transfer coefficients (Cd, Ch, Ce),
 NOT on roughness lengths. Uses 5 fixed iterations with Paulson stability functions.
-`momentum_flux_scale` multiplies the converged wind stress only; heat and moisture fluxes are unchanged.
 """
-ncar_atmosphere_ocean_fluxes(FT = Float64; momentum_flux_scale = 1) =
+ncar_atmosphere_ocean_fluxes(FT = Float64) =
     CoefficientBasedFluxes(FT;
                            transfer_coefficients = LargeYeagerTransferCoefficients(FT),
-                           solver_stop_criteria = FixedIterations(5),
-                           momentum_flux_scale)
+                           solver_stop_criteria = FixedIterations(5))
 
 """
     ncar_atmosphere_sea_ice_fluxes(FT = Float64)
@@ -161,18 +159,27 @@ Options for `flux_configuration` (atmosphere–ocean): `:default`, `:corrected`,
 Options for `sea_ice_flux_configuration` (atmosphere–sea ice): `:corrected`, `:ncar`.
 Options for `velocity_formulation`:  `:relative`, `:wind`
 """
+# The saturation vapor pressure over both the ocean and the sea ice carries the Gill (1982) moist-air enhancement
+function saturation_enhanced_humidities(FT)
+    saturation_enhancement = GillSaturationEnhancement(FT)
+    ocean = ImpureSaturationSpecificHumidity(AtmosphericThermodynamics.Liquid(), convert(FT, 0.98); saturation_enhancement)
+    sea_ice = ImpureSaturationSpecificHumidity(AtmosphericThermodynamics.Ice(); saturation_enhancement)
+    return (; ocean, sea_ice)
+end
+
 function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
                              sea_ice_flux_configuration = flux_configuration,
                              velocity_formulation::Symbol = :relative,
                              sea_ice_ocean_heat_transfer_coefficient = 0.0057,
                              sea_ice_momentum_roughness_length = 5e-4,
-                             wind_stress_scale = 1,
-                             ice_freshwater_delivery = ConservativeIceFreshwater(),
                              ice_meltwater_enthalpy = ZeroHeatContentMeltwater())
     FT = eltype(ocean.model.grid)
+    humidity = saturation_enhanced_humidities(FT)
+
     if flux_configuration == :default
-        interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice; radiation, land,
-                                         ice_freshwater_delivery, ice_meltwater_enthalpy)
+        interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice; radiation, land, ice_meltwater_enthalpy,
+                                         atmosphere_ocean_interface_specific_humidity = humidity.ocean,
+                                         atmosphere_sea_ice_interface_specific_humidity = humidity.sea_ice)
         return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, land, interfaces)
     end
 
@@ -180,11 +187,8 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
                               velocity_formulation == :wind     ? WindVelocity()     :
                               error("Unknown velocity_formulation: $velocity_formulation. Options: :relative, :wind")
 
-    wind_stress_scale == 1 || flux_configuration == :ncar ||
-        throw(ArgumentError("wind_stress_scale is only implemented for flux_configuration = :ncar"))
-
     atmosphere_ocean_fluxes = flux_configuration == :corrected ? corrected_atmosphere_ocean_fluxes(FT) :
-                              flux_configuration == :ncar      ? ncar_atmosphere_ocean_fluxes(FT; momentum_flux_scale = wind_stress_scale) :
+                              flux_configuration == :ncar      ? ncar_atmosphere_ocean_fluxes(FT) :
                               error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :ncar")
 
     atmosphere_sea_ice_fluxes = sea_ice_flux_configuration == :corrected ? corrected_atmosphere_sea_ice_fluxes(FT; momentum_roughness_length = sea_ice_momentum_roughness_length) :
@@ -197,8 +201,9 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
                                      atmosphere_ocean_fluxes,
                                      atmosphere_sea_ice_fluxes,
                                      sea_ice_ocean_heat_flux = corrected_ice_ocean_heat_flux(; heat_transfer_coefficient = sea_ice_ocean_heat_transfer_coefficient),
-                                     ice_freshwater_delivery,
                                      ice_meltwater_enthalpy,
+                                     atmosphere_ocean_interface_specific_humidity = humidity.ocean,
+                                     atmosphere_sea_ice_interface_specific_humidity = humidity.sea_ice,
                                      atmosphere_ocean_velocity_difference   = velocity_difference_obj,
                                      atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
 
@@ -209,75 +214,8 @@ end
 ##### Conservative salinity restoring
 #####
 #
-# The surface-salinity restoring must inject zero net salt globally (standard OMIP practice,
-# e.g. NorESM/BLOM). `ConservativeSurfaceFluxRestoring` wraps a bare `SurfaceFluxRestoring` and
-# stores a pre-corrected, zero-wet-mean flux (`corrected_flux = raw - ⟨raw⟩`, immersed cells
-# excluded from the mean) that the salinity top BC reads directly via `getbc`. Because the stored
-# field is always its own zero-mean field, the applied restoring integrates to zero over the wet
-# ocean exactly, independently of when `update_restoring_flux!` refreshes it from the model state.
-
-# Materializes the restoring flux into a field the boundary condition reads, which is what lets the
-# open-water weight and the zero-mean correction be applied at all. The two are independent: either can
-# be active alone.
-struct ConservativeSurfaceFluxRestoring{R, F, W, M, N} <: Function
-    flux            :: R   # wrapped raw surface-flux restoring (getbc-compatible)
-    corrected_flux  :: F   # 2D field storing the applied flux; read by the boundary condition
-    open_water      :: W   # 2D weight the restoring acts through: 1 everywhere, or 1 - ℵ under ice
-    mean_flux       :: M   # host-side scratch reductions
-    mean_open_water :: N
-    normalize       :: Bool
-end
-
-function ConservativeSurfaceFluxRestoring(flux, grid; normalize = true)
-    corrected_flux = Field{Center, Center, Nothing}(grid)
-    open_water = Field{Center, Center, Nothing}(grid)
-    return ConservativeSurfaceFluxRestoring(flux, corrected_flux, open_water,
-                                            Field(Average(corrected_flux, dims=(1, 2))),
-                                            Field(Average(open_water, dims=(1, 2))),
-                                            normalize)
-end
-
-# The boundary condition reads only the pre-corrected field; the weight and the reductions over it are
-# host-side scratch and are dropped on the device.
-Adapt.adapt_structure(to, sf::ConservativeSurfaceFluxRestoring) =
-    ConservativeSurfaceFluxRestoring(Adapt.adapt(to, sf.flux),
-                                     Adapt.adapt(to, sf.corrected_flux),
-                                     Adapt.adapt(to, sf.open_water),
-                                     nothing, nothing, sf.normalize)
-
-@inline Oceananigans.BoundaryConditions.getbc(sf::ConservativeSurfaceFluxRestoring, i, j, grid, clock, fields) =
-    @inbounds sf.corrected_flux[i, j, 1]
-
-@inline open_water_fraction(::Nothing, i, j, grid) = one(grid)
-@inline open_water_fraction(ℵ, i, j, grid) = @inbounds one(grid) - ℵ[i, j, 1]
-
-@kernel function _materialize_surface_flux!(buffer, weight, flux, grid, clock, fields, ice_concentration)
-    i, j = @index(Global, NTuple)
-    w = open_water_fraction(ice_concentration, i, j, grid)
-    @inbounds weight[i, j, 1] = w
-    @inbounds buffer[i, j, 1] = w * getbc(flux, i, j, grid, clock, fields)
-end
-
-# Refresh the stored restoring flux from the current model state: materialize the wrapped raw flux,
-# weight it by the open-water fraction, and remove a multiple of that same weight so the applied flux
-# both integrates to zero over the wet ocean and vanishes wherever the weight does. Passing
-# `ice_concentration = nothing` leaves the weight at one and recovers `raw - ⟨raw⟩` exactly.
-function update_restoring_flux!(sf::ConservativeSurfaceFluxRestoring, model, ice_concentration = nothing)
-    grid   = model.grid
-    arch   = architecture(grid)
-    fields = merge(model.velocities, model.tracers)
-
-    launch!(arch, grid, :xy, _materialize_surface_flux!, sf.corrected_flux, sf.open_water,
-            sf.flux, grid, model.clock, fields, ice_concentration)
-
-    if sf.normalize
-        compute!(sf.mean_flux)
-        compute!(sf.mean_open_water)
-        interior(sf.corrected_flux) .-= interior(sf.mean_flux) ./ interior(sf.mean_open_water) .* interior(sf.open_water)
-    end
-
-    return nothing
-end
+# The surface-salinity restoring injects zero net salt globally (standard OMIP practice, e.g. NorESM/BLOM) through
+# `DataWrangling.ConservativeSurfaceFluxRestoring`, which the salinity top BC reads as a stored zero-wet-mean flux.
 
 # Pull the `ConservativeSurfaceFluxRestoring` off the salinity top BC, or `nothing` when the
 # restoring is not conservative-corrected (a bare `SurfaceFluxRestoring` or a plain field).
@@ -286,27 +224,6 @@ conservative_restoring(mf::MultipleFluxes)                   = conservative_rest
 conservative_restoring(fe::FreshwaterExchange)               = conservative_restoring(fe.additional)
 conservative_restoring(sf::ConservativeSurfaceFluxRestoring) = sf
 conservative_restoring(other)                                = nothing
-
-struct RefreshSalinityRestoring{R}
-    restoring          :: R
-    mask_under_sea_ice :: Bool
-end
-
-@inline restoring_ice_concentration(::Nothing) = nothing
-@inline restoring_ice_concentration(sea_ice) = sea_ice.model.ice_concentration
-
-function (r::RefreshSalinityRestoring)(sim)
-    ℵ = r.mask_under_sea_ice ? restoring_ice_concentration(sim.model.sea_ice) : nothing
-    update_restoring_flux!(r.restoring, sim.model.ocean.model, ℵ)
-    return nothing
-end
-
-# A callable struct misses `prognostic_state(::Function)`, so the catch-all `prognostic_state(obj) = obj` would put the whole
-# restoring object in the checkpoint; the `state` method reads back the checkpoints that already hold one, and the `Nothing`
-# method disambiguates against Oceananigans' own `restore_prognostic_state!(obj, ::Nothing)`.
-Oceananigans.prognostic_state(::RefreshSalinityRestoring) = nothing
-Oceananigans.restore_prognostic_state!(r::RefreshSalinityRestoring, state) = r
-Oceananigans.restore_prognostic_state!(r::RefreshSalinityRestoring, ::Nothing) = r
 
 #####
 ##### Global freshwater-flux normalization
@@ -583,14 +500,8 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `forcing_dir`: directory for JRA55 forcing data. Default: `"forcing_data"`.
 - `restoring_dir`: directory for restoring/IC climatology. Default: `"climatology"`.
 - `piston_velocity`: surface salinity restoring piston velocity in m/day. Default: `1/6`.
-  Restoring is applied uniformly over the ocean surface, including under sea ice unless
-  `restoring_under_sea_ice = false`.
-- `restoring_under_sea_ice`: whether the surface-salinity restoring acts under sea ice. Default:
-  `true`, the OMIP-2 convention. Set `false` to weight it by the open-water fraction `1 - ℵ`, since
-  WOA is poorly constrained beneath ice and the restoring there works against the ice--ocean salt
-  flux. When `normalize_salinity` is also on, the zero-global-mean correction is spread over the
-  open-water weight alone, so the applied flux still injects no net salt while vanishing under ice.
-  The two are independent — either may be used without the other.
+  Restoring is applied uniformly over the ocean surface, including under sea ice, and its global mean is
+  removed so it injects no net salt.
 - `normalize_freshwater`: removal of the drift in total ocean + sea-ice + snow water, held to its
   initial value by lowering or raising the free surface. Tracer concentrations are rescaled by the
   same factor within each column, so heat and salt content are unchanged and the stratification is
@@ -639,10 +550,6 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   returned per unit of melt, `Jˢ = Eᵢ Sˢⁱ / ρᵒᶜ`, so the freshwater a melting cell delivers goes as
   `(Sᴺ - Sˢⁱ)/Sᴺ`: 0.885 at 4 psu against 0.828 at 6, for `Sᴺ = 34.9`. Multi-year Arctic ice is 2-4 psu
   and first-year ice 5-8. Default: `4`.
-- `ice_freshwater_fraction`: the fraction of the sea ice-ocean mass exchange delivered to the ocean,
-  volume and salt alike. The withheld water leaves the ocean + ice + snow total and
-  `normalize_freshwater` returns it globally through the free surface, so the global budget closes
-  while the local delivery is scaled. Default: `1`, the full exchange.
 - `ice_melt_mixing`, `ice_melt_mixing_κ`, `ice_melt_mixing_depth`, `ice_melt_mixing_threshold`: extra
   vertical tracer diffusivity over the top `ice_melt_mixing_depth` metres wherever the sea ice is
   melting into the ocean faster than `ice_melt_mixing_threshold` (m s⁻¹). The ice-ocean exchange is
@@ -671,10 +578,6 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   default hands the ocean roughly 0.23 W m⁻² per m yr⁻¹ of basal melt that it never paid for.
   ⚠ The correction is applied to the whole ice mass flux, over-correcting the top-melt fraction, which
   is produced near 0; read it as an upper bound. Default: `false`.
-- `ice_virtual_salt_flux`: deliver that exchange as a salt flux at fixed ocean volume — the classical
-  virtual salt flux `Jˢ = Jʷ (Sᴺ − Sˢⁱ)` — instead of as a real volume flux, which isolates the volume
-  pathway from the freshwater amount. Exact only for `Sᴺ` uniform over the column, and it does not
-  conserve total salt. Overrides `ice_freshwater_fraction`. Default: `false`.
 - `river_mixing`, `river_mixing_κ`, `river_mixing_depth`: extra vertical tracer diffusivity applied over
   the whole spread footprint (cf. NEMO `rn_avt_rnf` over `rn_hrnf`). Defaults: `true`, `0.1` m² s⁻¹,
   `10` m.
@@ -709,9 +612,6 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   Default: `flux_configuration`. Options:
    * `:corrected` — SHEBA stability functions, fixed roughness (`sea_ice_momentum_roughness_length`, 5e-5 m for scalars)
    * `:ncar` — Large & Yeager stability functions, fixed roughness 5e-4 m for momentum and scalars
-- `wind_stress_scale`: factor on the atmosphere–ocean wind stress after the bulk formula has converged, so heat and
-  moisture fluxes are unchanged (`:ncar` only). The L&Y stress is 0.89 of COARE 3.6's on the same state (0.83 in the
-  Southern Ocean westerlies); a scale near 1.13 applies COARE-size stress with NCAR buoyancy fluxes. Default: `1`.
 - `sea_ice_momentum_roughness_length`: aerodynamic roughness z₀ of the ice surface, m, used by
   `sea_ice_flux_configuration = :corrected`. 5e-4 is the SHEBA multiyear-pack value; smooth first-year ice is nearer 1e-4, which cuts
   the neutral drag coefficient by about a quarter and the free-drift speed by about a seventh.
@@ -832,11 +732,10 @@ function omip_simulation(config::Symbol = :halfdegree;
                          Cᵂu★ = nothing,
                          with_snow = false,
                          with_ice_dynamics = true,
-                         with_ocean_surface_tilt = false,
+                         with_ocean_surface_tilt = true,
                          with_landfast_basal_stress = true,
                          sea_ice_ocean_heat_transfer_coefficient = 0.0057,
                          sea_ice_momentum_roughness_length = 5e-4,
-                         wind_stress_scale = 1,
                          sea_ice_lateral_boundary_condition = :no_slip,
                          sea_ice_ocean_drag_coefficient = 5.5e-3,
                          sea_ice_ocean_drag_reference_depth = 6,
@@ -848,8 +747,6 @@ function omip_simulation(config::Symbol = :halfdegree;
                          immersed_bottom = GridFittedBottom,
                          mixed_layer_tapering = false,
                          bottom_layer_tapering_depth = 0,
-                         normalize_salinity = true,
-                         restoring_under_sea_ice = true,
                          normalize_freshwater = false,
                          river_mixing = true,
                          river_mixing_κ = 0.1,
@@ -857,10 +754,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          river_spread_radius = ConfigDefault(),
                          river_spread_cells = ConfigDefault(),
                          atlantic_runoff_diversion = 0,
-                         ice_freshwater_fraction = 1,
-                         ice_virtual_salt_flux = false,
                          ice_meltwater_at_interface_temperature = true,
-                         sea_ice_liquidus = :teos10,
                          ice_melt_mixing = false,
                          ice_melt_mixing_κ = 5e-4,
                          ice_melt_mixing_depth = 10,
@@ -1030,11 +924,9 @@ function omip_simulation(config::Symbol = :halfdegree;
                         bottom_drag_background_velocity,
                         skew_flux_formulation,
                         isopycnal_formulation,
-                        restoring_under_sea_ice,
                         Cᵂu★,
                         restoring_dir, piston_velocity, chlorophyll,
                         initial_condition_blend_depth,
-                        normalize_salinity,
                         additional_tracer_closure = filter(!isnothing, (river_κ, ice_melt_κ_closure, under_ice_ν_closure)),
                         start_date, end_date)
     log_setup_stage(arch, "ocean", setup_t₀)
@@ -1042,7 +934,7 @@ function omip_simulation(config::Symbol = :halfdegree;
     snow_thermodynamics = with_snow ?
         NumericalEarth.SeaIces.default_snow_thermodynamics(grid; thickness_categories = snow_thickness_categories) : nothing
     sea_ice = build_sea_ice(cfg, grid, ocean; restoring_dir, snow_thermodynamics, with_ice_dynamics,
-                            with_ocean_surface_tilt, sea_ice_liquidus,
+                            with_ocean_surface_tilt,
                             with_landfast_basal_stress, sea_ice_lateral_boundary_condition,
                             sea_ice_ocean_drag_coefficient, sea_ice_ocean_drag_reference_depth,
                             ice_compressive_strength, ice_salinity,
@@ -1058,22 +950,13 @@ function omip_simulation(config::Symbol = :halfdegree;
                                          backend_size)
     log_setup_stage(arch, "atmosphere", setup_t₀)
 
-    ice_freshwater_delivery = if ice_virtual_salt_flux
-        VirtualSaltFluxIceFreshwater()
-    elseif ice_freshwater_fraction == 1
-        ConservativeIceFreshwater()
-    else
-        ScaledIceFreshwater(convert(eltype(grid), ice_freshwater_fraction))
-    end
-
     ice_meltwater_enthalpy = ice_meltwater_at_interface_temperature ?
         InterfaceTemperatureMeltwater() : ZeroHeatContentMeltwater()
 
     coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
                                   sea_ice_flux_configuration,
                                   velocity_formulation, sea_ice_ocean_heat_transfer_coefficient,
-                                  sea_ice_momentum_roughness_length, wind_stress_scale,
-                                  ice_freshwater_delivery, ice_meltwater_enthalpy)
+                                  sea_ice_momentum_roughness_length, ice_meltwater_enthalpy)
     log_setup_stage(arch, "coupled model", setup_t₀)
 
     simulation = Simulation(coupled; Δt, stop_time)
@@ -1103,7 +986,7 @@ function omip_simulation(config::Symbol = :halfdegree;
     # already sees a valid corrected flux.
     salt_restoring = conservative_restoring(ocean.model.tracers.S.boundary_conditions.top.condition)
     if !isnothing(salt_restoring)
-        refresh_restoring = RefreshSalinityRestoring(salt_restoring, !restoring_under_sea_ice)
+        refresh_restoring = ConservativeSurfaceFluxRestoringCallback(salt_restoring, ocean.model)
         refresh_restoring(simulation)
         add_callback!(simulation, refresh_restoring, IterationInterval(1))
     end
@@ -1903,14 +1786,10 @@ end
 # Wrapped in a `ConservativeSurfaceFluxRestoring` so it rides on the ocean's top-flux BC
 # via the `additional_surface_fluxes` kwarg of `ocean_simulation` while injecting zero net
 # salt globally (OMIP zero-global-mean convention). The stored corrected flux is refreshed
-# each step by `update_restoring_flux!` (registered as a callback in `omip_simulation`).
+# each step by a `ConservativeSurfaceFluxRestoringCallback` registered in `omip_simulation`.
 # WOA Practical Salinity is converted to TEOS-10 Absolute Salinity at setup so
 # the restoring target matches the ocean prognostic-S convention.
-function salinity_surface_restoring(grid, dataset;
-                                    restoring_dir,
-                                    piston_velocity,
-                                    conservative = true,
-                                    mask_under_sea_ice = false)
+function salinity_surface_restoring(grid, dataset; restoring_dir, piston_velocity)
 
     Nz = size(grid, 3)
     Δz_surface = CUDA.@allowscalar Δzᶜᶜᶜ(1, 1, Nz, grid)
@@ -1925,13 +1804,7 @@ function salinity_surface_restoring(grid, dataset;
 
     woa_salinity_fts_to_teos10!(restoring.field_time_series)
 
-    surface_restoring = SurfaceFluxRestoring(restoring)
-
-    # Either option needs the flux materialized into a field; without both, the bare inline restoring
-    # is cheaper and behaves identically.
-    materialize = conservative | mask_under_sea_ice
-    return materialize ? ConservativeSurfaceFluxRestoring(surface_restoring, grid; normalize = conservative) :
-                         surface_restoring
+    return ConservativeSurfaceFluxRestoring(SurfaceFluxRestoring(restoring), grid)
 end
 
 #####
@@ -2096,8 +1969,7 @@ const coriolis_schemes = (enstrophy = Oceananigans.Coriolis.EnstrophyConserving,
                           triad = Oceananigans.Coriolis.TriadScheme,
                           active_weighted = Oceananigans.Coriolis.ActiveWeightedEnstrophyConserving,
                           consistent_area = Oceananigans.Coriolis.ConsistentAreaEnstrophyConserving,
-                          consistent_area_energy = Oceananigans.Coriolis.ConsistentAreaEnergyConserving,
-                          triad = Oceananigans.Coriolis.TriadScheme)
+                          consistent_area_energy = Oceananigans.Coriolis.ConsistentAreaEnergyConserving)
 
 """
     coriolis_scheme_value(coriolis_scheme)
@@ -2229,13 +2101,6 @@ config_Δz_top(::Val{:quarterdegree}) = 1.5
 config_Δz_top(::Val{:twelfthdegree}) = 1.5
 config_Δz_top(::Val{:test})          = 1.5
 
-# Buoyancy gradients are only needed by the GM/Redi closures; the eddy-resolving
-# configurations run without isopycnal diffusivities, so skip materializing them.
-config_materialize_buoyancy_gradients(::Val)                 = true
-config_materialize_buoyancy_gradients(::Val{:quarterdegree}) = false
-config_materialize_buoyancy_gradients(::Val{:twelfthdegree}) = false
-config_materialize_buoyancy_gradients(::Val{:test})          = false
-
 
 """
     omip_radiative_forcing(grid, chlorophyll, restoring_dir)
@@ -2330,9 +2195,7 @@ function build_ocean(config, grid;
                      boundary_value_minimum_speed = 0.1,
                      background_vertical_diffusivity = :henyey,
                      background_vertical_viscosity = nothing,
-                     restoring_under_sea_ice = true,
                      Cᵂu★ = nothing,
-                     normalize_salinity = true,
                      additional_tracer_closure = nothing,
                      forcing = NamedTuple(),
                      start_date, end_date)
@@ -2352,9 +2215,7 @@ function build_ocean(config, grid;
     additional_surface_fluxes = if piston_velocity == 0
         NamedTuple()
     else
-        salt_restoring = salinity_surface_restoring(grid, WOAMonthly(); restoring_dir, piston_velocity,
-                                                    conservative = normalize_salinity,
-                                                    mask_under_sea_ice = !restoring_under_sea_ice)
+        salt_restoring = salinity_surface_restoring(grid, WOAMonthly(); restoring_dir, piston_velocity)
         (; S = salt_restoring)
     end
 
@@ -2400,7 +2261,6 @@ function build_ocean(config, grid;
                              implicit_bottom_drag,
                              bottom_drag_background_velocity,
                              timestepper = :SplitRungeKutta3,
-                             materialize_buoyancy_gradients = config_materialize_buoyancy_gradients(config),
                              free_surface = barotropic_free_surface(grid, barotropic_substeps, Δt),
                              additional_surface_fluxes,
                              forcing,
@@ -2428,16 +2288,9 @@ end
 ##### Sea Ice builder
 #####
 
-# `:teos10` is the relation fitted to the TEOS-10 freezing point in Conservative Temperature, which is
-# what the ocean carries; `:linear` restores ClimaSeaIce's own (0, 0.054) default, up to 0.032 K warmer.
-resolve_liquidus(::Val{:teos10}, FT) = NumericalEarth.SeaIces.conservative_temperature_liquidus(FT)
-resolve_liquidus(::Val{:linear}, FT) = LinearLiquidus(FT)
-resolve_liquidus(name::Symbol, FT) = resolve_liquidus(Val(name), FT)
-
 function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics = nothing,
                        with_ice_dynamics = true,
-                       with_ocean_surface_tilt = false,
-                       sea_ice_liquidus = :teos10,
+                       with_ocean_surface_tilt = true,
                        with_landfast_basal_stress = true,
                        sea_ice_lateral_boundary_condition = :no_slip,
                        sea_ice_ocean_drag_coefficient = 5.5e-3,
@@ -2470,7 +2323,6 @@ function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics =
                                  advection = ClimaSeaIce.IncrementalRemapping(),
                                  lateral_boundary_condition = sea_ice_lateral_boundary_condition,
                                  dynamics,
-                                 liquidus = resolve_liquidus(sea_ice_liquidus, eltype(grid)),
                                  ice_salinity,
                                  thickness_categories, itd_shape,
                                  snow_thermodynamics)

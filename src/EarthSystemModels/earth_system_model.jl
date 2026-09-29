@@ -494,20 +494,14 @@ function Oceananigans.Diagnostics.default_nan_checker(model::EarthSystemModel)
     return NaNChecker((; T_ocean))
 end
 
-# The freezing point falls with pressure (-7.53e-4 K/dbar), so a surface-referenced `Tm` is far too
-# warm at depth and this clamp would warm ordinary cold deep water on contact. See
-# `InterfaceComputations.melting_temperature_at_depth`. `z` is negative below the surface.
 @kernel function _above_freezing_ocean_temperature!(T, grid, S, ℵ, liquidus)
     i, j = @index(Global, NTuple)
     Nz = size(grid, 3)
-    λᵖ = convert(eltype(grid), 7.53e-4)
 
     @inbounds begin
         for k in 1:Nz
             z  = znode(i, j, k, grid, Center(), Center(), Center())
-            # capped at 0: cells inside the bathymetry are masked to S = 0, where a fitted liquidus
-            # intercept would otherwise give a freezing point ABOVE 0 ᵒC
-            Tm = min(melting_temperature(liquidus, S[i, j, k]) + λᵖ * z, zero(λᵖ))
+            Tm = melting_temperature(liquidus, S[i, j, k], z)
             T[i, j, k] = max(T[i, j, k], Tm)
         end
     end

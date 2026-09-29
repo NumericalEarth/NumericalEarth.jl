@@ -43,7 +43,7 @@ Environment variables (physics):
   RUN_NAME_OVERRIDE
                 Use this exact run name instead of the one built from the options, to resume a run
                 whose directory predates the 2026-09-03 rename. The physics is still whatever the
-                options say, so pass the old defaults too (ICE_DRAGREF=none ICE_LIQUIDUS=linear).
+                options say, so pass the old defaults too (ICE_DRAGREF=none).
   ICE_LATERAL   Sea-ice lateral boundary condition: "no_slip" (default) applies the viscous
                 wall stress -2 eta u / Delta on coastlines; "free_slip" leaves them stress-free.
                 The old quadratic "side drag" was inert (unit mismatch) and has been removed.
@@ -129,22 +129,10 @@ Environment variables (physics):
   TRACER_BOUNDARY_SCHEME, MOMENTUM_BOUNDARY_SCHEME
                 BOUNDARY_SCHEME for the tracer and for the momentum reconstructions separately.
                 Default: whatever BOUNDARY_SCHEME is.
-  ICE_LIQUIDUS  Freezing-point relation. "teos10" (default) is the linear fit to the TEOS-10
-                freezing point expressed in CONSERVATIVE temperature, which is what the ocean
-                carries: Tm = -0.054523 S, accurate to 0.013 K over S = 28-35.5, against 0.032 K
-                for ClimaSeaIce's own 0.054 -- which is too warm at EVERY salinity and so biases the
-                ice-ocean heat flux one way everywhere. The intercept stays 0 because fresh water
-                freezes at 0 C and masked (bathymetry) cells carry S = 0. The pressure dependence,
-                -7.53e-4 K/dbar and worth 0.5 K at 660 m, is applied separately where depth is known.
-                "linear" restores ClimaSeaIce's own Tm = -0.054 S, which is up to 0.032 K TOO WARM
-                and biases the ice-ocean heat flux rho c alpha_h u* (Theta - Tm) directly.
-                *** DEFAULT CHANGED 2026-09-03. *** Adds "_liq<val>" when not "teos10".
-  ICE_TILT      Set to "true" to add the ocean surface tilt term -g grad(eta) to the sea ice
-                momentum equation. The term is f x u_geostrophic, so without it the ice cannot ride
-                the ocean's dynamic topography and the uncompensated Coriolis force is absorbed by
-                the ice-ocean drag. Default: false, which reproduces the previous model exactly.
-                Adds "_icetilt" to the run name. Requires a ClimaSeaIce carrying the free-surface
-                term (the OMIPSimulations manifest has it; the NumericalEarth root one does not).
+  ICE_TILT      Ocean surface tilt term -g grad(eta) in the sea ice momentum equation. The term is
+                f x u_geostrophic, so without it the ice cannot ride the ocean's dynamic topography
+                and the uncompensated Coriolis force is absorbed by the ice-ocean drag.
+                Default: true. Set to "false" to drop it; adds "_noicetilt" to the run name.
   ICE_SALINITY  Bulk sea-ice salinity in psu (ClimaSeaIce ConstantField). Sets the salt returned
                 per unit melt, so the freshwater a melting cell delivers goes as (S_ocean - S_ice)
                 / S_ocean: 0.885 at 4 psu against 0.828 at 6. Multi-year Arctic ice is 2-4 psu,
@@ -222,11 +210,6 @@ Environment variables (physics):
                 parked TKE equilibrium disappears and e decays to minimum_tke. Use 1.0, not 0.5.
   CP            CATKE convective penetration length coefficient for tracers Cᵉc (default: 0.112).
                 Sets how far a convective plume entrains below the unstable layer.
-  ICE_FW        Fraction of the sea ice-ocean mass exchange delivered to the ocean, volume and salt
-                alike (default: 1). The withheld water leaves the ocean+ice+snow total and
-                NORMALIZE_FRESHWATER returns it globally through the free surface, so the global
-                budget still closes while the local delivery is scaled.
-                Adds "_icefw<value>" to the run name.
   ICE_MELT_MIX  Set to "true" for extra vertical tracer diffusivity where the sea ice is melting into
                 the ocean, the same device river runoff already gets. The ice-ocean exchange lands in
                 the surface cell, so a melt event leaves a one-cell lid the closure must erode; in
@@ -267,10 +250,6 @@ Environment variables (physics):
                 Tb, so the default hands the ocean ~0.23 W/m2 per (m/yr) of basal melt it never paid
                 for. NOTE: applied to the whole ice mass flux, so it over-corrects top melt, which is
                 produced near 0. An upper bound on the correction, not the exact treatment.
-  ICE_VSF       Set to "true" to deliver that exchange as a virtual salt flux at fixed ocean volume
-                instead of as a real volume flux, isolating the volume pathway from the freshwater
-                amount. Does not conserve total salt. Overrides ICE_FW.
-                Adds "_icevsf" to the run name.
   CLOSURE       Ocean vertical closure: "catke" (default), "simple", "nori", "rbvd",
                 "kpp", or "nemo_tke"
                 ("simple" = ConvectiveAdjustment + depth-stepped background κ/ν;
@@ -394,10 +373,6 @@ Environment variables (physics):
                 Must satisfy 0 < DZ_TOP < depth/Nz. Default: unset (scale=1300).
 
 Equatorial-MLD tuning knobs (closure parameters; configuration switches):
-  NORMALIZE_SALINITY "true" (default) applies the conservative, salt-conserving
-                surface-salinity restoring (zero global mean). Set to "false" to use
-                the raw un-normalized restoring (the old, non-conserving behavior),
-                e.g. for A/B comparison. Default: true.
   NORMALIZE_FRESHWATER Removes the global mean of the atmospheric surface freshwater
                 flux, holding the global ocean volume fixed (standard OMIP-2 practice;
                 the sea-ice exchange is excluded and the freshwater heat content is
@@ -437,12 +412,6 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
                 Only used when SKEW_FORMULATION=boundary_value.
   BVP_CMIN      Floor c_min on that speed, in m/s. Keeps the transport bounded in
                 weakly stratified columns. Default: 0.1.
-  RESTORING_UNDER_ICE Set to "false" to stop the surface-salinity restoring acting under
-                sea ice (weighted by the open-water fraction 1-ℵ, with the zero-mean
-                correction spread over open water only, so no net salt is injected).
-                WOA is poorly constrained beneath ice and the restoring there fights the
-                ice-ocean salt flux. Requires NORMALIZE_SALINITY=true. Adds "_noicerest"
-                to the run name. Default: true (OMIP-2 convention).
   RIVER_SPREAD  Radius in degrees over which each river/iceberg mouth's discharge is
                 divided equally among the surrounding wet cells. A geographic radius
                 keeps the freshwater flux per unit area resolution-independent; raise it
@@ -463,10 +432,6 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
   CATKE_CWUSTAR `Cᵂu★` of CATKEEquation: surface shear-driven TKE flux
                 coefficient. Higher → more wind-injected TKE → deeper
                 equatorial ML. Default (Oceananigans): 3.179.
-  WIND_STRESS_SCALE
-                Factor on the atmosphere-ocean wind stress after the bulk formula has converged
-                (OCEAN_FLUXES=ncar only); heat and moisture fluxes are unchanged. Adds
-                "_tau<value>" to the run name. Default: unset (1).
   BACKGROUND_K  Interior background tracer diffusivity κ added underneath CATKE (or RBVD).
                 Either a number in m^2/s (uniform), or "bryan_lewis" for the Bryan & Lewis
                 (1979) depth profile, 3e-5 in the upper ocean rising across ~2500 m to 1.3e-4
@@ -740,7 +705,6 @@ RUN_NAME="$CONFIG"
 [[ -n "${ICE_PSTAR:-}" ]]                        && RUN_NAME="${RUN_NAME}_pstar${ICE_PSTAR}"
 [[ -n "${ICE_SALINITY:-}" ]]                     && RUN_NAME="${RUN_NAME}_sice${ICE_SALINITY}"
 [[ "${ICE_DRAGREF:-6}" != "6" ]]                 && RUN_NAME="${RUN_NAME}_dragref${ICE_DRAGREF}"
-[[ "${ICE_LIQUIDUS:-teos10}" != "teos10" ]]      && RUN_NAME="${RUN_NAME}_liq${ICE_LIQUIDUS}"
 [[ "${ICE_Z0:-5e-4}" != "5e-4" ]]                && RUN_NAME="${RUN_NAME}_icez0${ICE_Z0}"
 [[ -n "${REYNOLDS_LIMIT:-}" ]]                   && RUN_NAME="${RUN_NAME}_relim${REYNOLDS_LIMIT}"
 [[ -n "${DIVDAMP:-}" ]]                          && RUN_NAME="${RUN_NAME}_divdamp${DIVDAMP}"
@@ -757,7 +721,7 @@ else
   [[ "$TRACER_BOUNDARY_SCHEME" != "default" ]]   && RUN_NAME="${RUN_NAME}_tr${TRACER_BOUNDARY_SCHEME}"
   [[ "$MOMENTUM_BOUNDARY_SCHEME" != "default" ]] && RUN_NAME="${RUN_NAME}_mom${MOMENTUM_BOUNDARY_SCHEME}"
 fi
-[[ "${ICE_TILT:-false}" == "true" ]]             && RUN_NAME="${RUN_NAME}_icetilt"
+[[ "${ICE_TILT:-true}" != "true" ]]              && RUN_NAME="${RUN_NAME}_noicetilt"
 [[ -n "${IC_BLEND:-}" ]]                         && RUN_NAME="${RUN_NAME}_icblend${IC_BLEND}"
 [[ "$IC_CONDITIONS" != "default" ]]              && RUN_NAME="${RUN_NAME}_summerice"
 [[ "${ICE_CATEGORIES:-4}" != "4" ]]              && RUN_NAME="${RUN_NAME}_ncat${ICE_CATEGORIES}"
@@ -783,8 +747,6 @@ fi
 [[ -n "${OVERFLOW_RESTORE:-}" ]]               && RUN_NAME="${RUN_NAME}_dsow${OVERFLOW_RESTORE}"
 [[ -n "${LAB_RESTORE:-}" ]]                     && RUN_NAME="${RUN_NAME}_labrest${LAB_RESTORE}"
 [[ "${SILL_OVERFLOW:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_ofp"
-[[ "${NORMALIZE_SALINITY:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_rawsalt"
-[[ "${RESTORING_UNDER_ICE:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_noicerest"
 case "${NORMALIZE_FRESHWATER:-timestep}" in
   none|false)    RUN_NAME="${RUN_NAME}_fwnone" ;;
   annual)        RUN_NAME="${RUN_NAME}_fwnormann" ;;
@@ -800,8 +762,6 @@ esac
 [[ -n "${CF0:-}" ]]  && [[ "${CF0}" != "1e9" ]]  && RUN_NAME="${RUN_NAME}_cf0${CF0}"
 [[ -n "${CFD:-}" ]]  && [[ "${CFD}" != "0.75" ]] && RUN_NAME="${RUN_NAME}_cfd${CFD}"
 [[ -n "${CP:-}" ]]                             && RUN_NAME="${RUN_NAME}_cp${CP}"
-[[ -n "${ICE_FW:-}" ]]                         && RUN_NAME="${RUN_NAME}_icefw${ICE_FW}"
-[[ "${ICE_VSF:-false}" == "true" ]]            && RUN_NAME="${RUN_NAME}_icevsf"
 [[ "${ICE_MELTWATER_TB:-true}" != "true" ]]          && RUN_NAME="${RUN_NAME}_nomeltTb"
 [[ "${ICE_MELT_MIX:-false}" == "true" ]]       && RUN_NAME="${RUN_NAME}_icemix"
 [[ -n "${ICE_MELT_K:-}" ]]                     && RUN_NAME="${RUN_NAME}k${ICE_MELT_K}"
@@ -834,7 +794,6 @@ esac
 [[ -n "${MAXDZ:-}" ]]                           && RUN_NAME="${RUN_NAME}_maxdz${MAXDZ}"
 [[ -n "${CATKE_CWUSTAR:-}" ]]                  && RUN_NAME="${RUN_NAME}_cwu${CATKE_CWUSTAR}"
 [[ -n "${BACKGROUND_K:-}" ]]                   && RUN_NAME="${RUN_NAME}_bgk${BACKGROUND_K}"
-[[ -n "${WIND_STRESS_SCALE:-}" ]]              && RUN_NAME="${RUN_NAME}_tau${WIND_STRESS_SCALE}"
 [[ "${BACKGROUND_NU:-3e-5}" != "3e-5" ]]       && RUN_NAME="${RUN_NAME}_bgnu${BACKGROUND_NU}"
 [[ "${CHLOROPHYLL:-seawifs}" != "seawifs" ]]   && RUN_NAME="${RUN_NAME}_chl${CHLOROPHYLL}"
 [[ "${IMEX_DRAG:-true}" == "false" ]]            && RUN_NAME="${RUN_NAME}_explicitdrag"
@@ -940,8 +899,6 @@ CF="${CF:-}"
 CF0="${CF0:-}"
 CFD="${CFD:-}"
 CP="${CP:-}"
-ICE_FW="${ICE_FW:-}"
-ICE_VSF="${ICE_VSF:-false}"
 ICE_MELTWATER_TB="${ICE_MELTWATER_TB:-true}"
 ICE_MELT_MIX="${ICE_MELT_MIX:-false}"
 ICE_MELT_K="${ICE_MELT_K:-}"
@@ -968,7 +925,6 @@ MOMENTUM_ADVECTION="${MOMENTUM_ADVECTION:-weno}"
 DZ_TOP="${DZ_TOP:-}"
 CATKE_CWUSTAR="${CATKE_CWUSTAR:-}"
 BACKGROUND_K="${BACKGROUND_K:-}"
-WIND_STRESS_SCALE="${WIND_STRESS_SCALE:-}"
 BACKGROUND_NU="${BACKGROUND_NU:-3e-5}"
 PVEL="${PVEL:-0.254}"
 BAROTROPIC_SUBSTEPS="${BAROTROPIC_SUBSTEPS:-}"
@@ -1005,10 +961,8 @@ CF_KWARG=""
 CP_KWARG=""
 [[ -n "$CP" ]] && CP_KWARG="Cᵉc = ${CP},"
 
-ICE_FW_KWARG=""
-[[ -n "$ICE_FW" ]] && ICE_FW_KWARG="ice_freshwater_fraction = ${ICE_FW},"
-[[ "$ICE_VSF" == "true" ]] && ICE_FW_KWARG="${ICE_FW_KWARG}ice_virtual_salt_flux = true,"
-[[ "$ICE_MELTWATER_TB" != "true" ]] && ICE_FW_KWARG="${ICE_FW_KWARG}ice_meltwater_at_interface_temperature = false,"
+ICE_MELTWATER_KWARG=""
+[[ "$ICE_MELTWATER_TB" != "true" ]] && ICE_MELTWATER_KWARG="ice_meltwater_at_interface_temperature = false,"
 
 ICE_MELT_KWARG=""
 [[ "$ICE_MELT_MIX" == "true" ]]     && ICE_MELT_KWARG="ice_melt_mixing = true,"
@@ -1060,8 +1014,6 @@ DZ_TOP_KWARG=""
 CATKE_CWUSTAR_KWARG=""
 [[ -n "$CATKE_CWUSTAR" ]] && CATKE_CWUSTAR_KWARG="Cᵂu★ = ${CATKE_CWUSTAR},"
 
-WIND_STRESS_SCALE_KWARG=""
-[[ -n "$WIND_STRESS_SCALE" ]] && WIND_STRESS_SCALE_KWARG="wind_stress_scale = ${WIND_STRESS_SCALE},"
 
 # A named profile is passed as a Julia Symbol, a number verbatim.
 BACKGROUND_K_KWARG=""
@@ -1089,23 +1041,6 @@ BAROTROPIC_SUBSTEPS_KWARG=""
 CHLOROPHYLL_KWARG="chlorophyll = :seawifs,"
 [[ "$CHLOROPHYLL" != "seawifs" ]] && CHLOROPHYLL_KWARG="chlorophyll = ${CHLOROPHYLL},"
 [[ "$CHLOROPHYLL" == "none" ]]    && CHLOROPHYLL_KWARG="chlorophyll = :none,"
-
-# Pass the value explicitly (default true = conservative restoring) so the Julia-side default
-# never silently overrides a "false" request.
-NORMALIZE_SALINITY="${NORMALIZE_SALINITY:-true}"
-case "$NORMALIZE_SALINITY" in
-    true|false) ;;
-    *) echo "NORMALIZE_SALINITY must be 'true' or 'false', got '$NORMALIZE_SALINITY'" >&2; exit 1 ;;
-esac
-NORMALIZE_SALINITY_KWARG="normalize_salinity = ${NORMALIZE_SALINITY},"
-
-RESTORING_UNDER_ICE="${RESTORING_UNDER_ICE:-true}"
-case "$RESTORING_UNDER_ICE" in
-    true|false) ;;
-    *) echo "RESTORING_UNDER_ICE must be 'true' or 'false', got '$RESTORING_UNDER_ICE'" >&2; exit 1 ;;
-esac
-RESTORING_UNDER_ICE_KWARG=""
-[[ "$RESTORING_UNDER_ICE" == "false" ]] && RESTORING_UNDER_ICE_KWARG="restoring_under_sea_ice = false,"
 
 NORMALIZE_FRESHWATER="${NORMALIZE_FRESHWATER:-timestep}"
 case "$NORMALIZE_FRESHWATER" in
@@ -1253,8 +1188,6 @@ ADVECTION_KWARG=""
 [[ "$TRACER_ORDER" != "7" ]] && ADVECTION_KWARG="${ADVECTION_KWARG}tracer_advection_order = ${TRACER_ORDER},"
 [[ "$TRACER_BOUNDARY_SCHEME" != "default" ]]   && ADVECTION_KWARG="${ADVECTION_KWARG}tracer_boundary_scheme = :${TRACER_BOUNDARY_SCHEME},"
 [[ "$MOMENTUM_BOUNDARY_SCHEME" != "default" ]] && ADVECTION_KWARG="${ADVECTION_KWARG}momentum_boundary_scheme = :${MOMENTUM_BOUNDARY_SCHEME},"
-ICE_LIQUIDUS="${ICE_LIQUIDUS:-teos10}"
-[[ "$ICE_LIQUIDUS" != "teos10" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}sea_ice_liquidus = :${ICE_LIQUIDUS},"
 ICE_DRAGREF="${ICE_DRAGREF:-6}"
 if [[ "$ICE_DRAGREF" == "none" ]]; then
   SEA_ICE_KWARG="${SEA_ICE_KWARG}sea_ice_ocean_drag_reference_depth = nothing,"
@@ -1263,8 +1196,8 @@ else
 fi
 ICE_Z0="${ICE_Z0:-5e-4}"
 [[ "$ICE_Z0" != "5e-4" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}sea_ice_momentum_roughness_length = ${ICE_Z0},"
-ICE_TILT="${ICE_TILT:-false}"
-[[ "$ICE_TILT" == "true" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}with_ocean_surface_tilt = true,"
+ICE_TILT="${ICE_TILT:-true}"
+[[ "$ICE_TILT" != "true" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}with_ocean_surface_tilt = false,"
 [[ "$IC_CONDITIONS" != "default" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}northern_sea_ice_initial_date = DateTime(1993, 9, 1),"
 
 # Profile runs disable the OMIP diagnostic output writers (Average,
@@ -1296,7 +1229,7 @@ sim = omip_simulation(:${CONFIG};
                       ${CUNB_KWARG}
                       ${CF_KWARG}
                       ${CP_KWARG}
-                      ${ICE_FW_KWARG}
+                      ${ICE_MELTWATER_KWARG}
                       ${ICE_MELT_KWARG}
                       ${UNDER_ICE_NU_KWARG}
                       ${ICE_ARCH_KWARG}
@@ -1323,14 +1256,11 @@ sim = omip_simulation(:${CONFIG};
                       ${IC_BLEND_KWARG}
                       ${CATKE_CWUSTAR_KWARG}
                       ${BACKGROUND_K_KWARG}
-                      ${WIND_STRESS_SCALE_KWARG}
                       ${BACKGROUND_NU_KWARG}
                       ${BAROTROPIC_SUBSTEPS_KWARG}
                       ${IMEX_DRAG_KWARG}
                       ${DRAG_UB_KWARG}
                       ${CHLOROPHYLL_KWARG}
-                      ${NORMALIZE_SALINITY_KWARG}
-                      ${RESTORING_UNDER_ICE_KWARG}
                       ${NORMALIZE_FRESHWATER_KWARG}
                       ${RIVER_KWARG}
                       ${ADVECTION_KWARG}

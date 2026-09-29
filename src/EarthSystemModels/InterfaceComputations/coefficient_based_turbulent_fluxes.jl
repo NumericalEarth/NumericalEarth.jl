@@ -139,25 +139,19 @@ A structure for computing turbulent fluxes using bulk transfer coefficients.
 
 $(TYPEDFIELDS)
 """
-struct CoefficientBasedFluxes{C, S, M}
+struct CoefficientBasedFluxes{C, S}
     transfer_coefficients :: C  # `SimilarityScales` with constant or callable coefficients, or an `LargeYeagerTransferCoefficients`."
     solver_stop_criteria  :: S  # "Criteria for iterative solver convergence."
-    momentum_flux_scale   :: M  # "Factor applied to the converged momentum flux only."
 end
 
-Adapt.adapt_structure(to, f::CoefficientBasedFluxes) =
-    CoefficientBasedFluxes(Adapt.adapt(to, f.transfer_coefficients), f.solver_stop_criteria, f.momentum_flux_scale)
-
-@inline momentum_flux_scale(flux_formulation) = 1
-@inline momentum_flux_scale(flux_formulation::CoefficientBasedFluxes) = flux_formulation.momentum_flux_scale
+Adapt.adapt_structure(to, f::CoefficientBasedFluxes) = CoefficientBasedFluxes(Adapt.adapt(to, f.transfer_coefficients), f.solver_stop_criteria)
 
 Base.summary(flux_formulation::CoefficientBasedFluxes) = "CoefficientBasedFluxes"
 
 function Base.show(io::IO, flux_formulation::CoefficientBasedFluxes)
     print(io, summary(flux_formulation), '\n')
     print(io, "├── transfer_coefficients: ", summary(flux_formulation.transfer_coefficients), '\n')
-    print(io, "├── solver_stop_criteria: ",  summary(flux_formulation.solver_stop_criteria), '\n')
-    print(io, "└── momentum_flux_scale: ", flux_formulation.momentum_flux_scale)
+    print(io, "└── solver_stop_criteria: ",  summary(flux_formulation.solver_stop_criteria))
 end
 
 convert_if_number(FT, a::Number) = convert(FT, a)
@@ -178,8 +172,7 @@ convert_transfer_coefficients(FT, c::SimilarityScales) = SimilarityScales(conver
                            transfer_coefficients = (1e-3, 1e-3, 1e-3),
                            solver_stop_criteria = nothing,
                            solver_tolerance = 1e-8,
-                           solver_maxiter = 20,
-                           momentum_flux_scale = 1)
+                           solver_maxiter = 20)
 
 Return the structure for computing turbulent fluxes using bulk transfer coefficients.
 Used in bulk flux calculations to determine the exchange of momentum, heat, and moisture
@@ -200,8 +193,6 @@ Keyword Arguments
                           creates new criteria using `solver_tolerance` and `solver_maxiter`.
 - `solver_tolerance`: Tolerance for solver convergence when creating new stop criteria, defaults to 1e-8.
 - `solver_maxiter`: Maximum iterations for solver when creating new stop criteria, defaults to 20
-- `momentum_flux_scale`: factor multiplying the momentum flux after the flux iteration has converged, so the heat and
-  moisture fluxes are those of the unscaled formulation. Defaults to 1.
 
 Example
 ========
@@ -225,8 +216,7 @@ function CoefficientBasedFluxes(FT = Oceananigans.defaults.FloatType;
                                 transfer_coefficients = (1e-3, 1e-3, 1e-3),
                                 solver_stop_criteria = nothing,
                                 solver_tolerance = 1e-8,
-                                solver_maxiter = 20,
-                                momentum_flux_scale = 1)
+                                solver_maxiter = 20)
 
     transfer_coefficients = validate_coefficients(FT, transfer_coefficients)
 
@@ -235,7 +225,7 @@ function CoefficientBasedFluxes(FT = Oceananigans.defaults.FloatType;
         solver_stop_criteria = ConvergenceStopCriteria(solver_tolerance, solver_maxiter)
     end
 
-    return CoefficientBasedFluxes(transfer_coefficients, solver_stop_criteria, convert(FT, momentum_flux_scale))
+    return CoefficientBasedFluxes(transfer_coefficients, solver_stop_criteria)
 end
 
 validate_coefficients(FT, ly::LargeYeagerTransferCoefficients) = ly
