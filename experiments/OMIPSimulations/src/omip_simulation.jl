@@ -1863,8 +1863,8 @@ function build_grid(config, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing
 end
 
 build_grid(::Val{:orca}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, immersed_bottom = GridFittedBottom)          = build_grid(ORCAOne(),     arch, Nz, depth; Δz_top, Δzmax, immersed_bottom)
-build_grid(::Val{:quarterdegree}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, immersed_bottom = GridFittedBottom) = build_grid(ORCAQuarter(), arch, Nz, depth; Δz_top, Δzmax, immersed_bottom)
-build_grid(::Val{:twelfthdegree}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, immersed_bottom = GridFittedBottom) = build_grid(ORCATwelfth(), arch, Nz, depth; Δz_top, Δzmax, immersed_bottom)
+build_grid(::Val{:quarterdegree}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, immersed_bottom = GridFittedBottom) = build_grid(ORCAQuarter(), arch, Nz, depth; Δz_top, Δzmax, immersed_bottom, minimum_depth = 20)
+build_grid(::Val{:twelfthdegree}, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing, immersed_bottom = GridFittedBottom) = build_grid(ORCATwelfth(), arch, Nz, depth; Δz_top, Δzmax, immersed_bottom, minimum_depth = 20)
 
 # The Gulf of Ob and the Yenisei Gulf are ~5 m deep for hundreds of kilometres, so their full river
 # discharge lands in a single 1.5 m top cell with no water column to mix into and the salinity collapses.
@@ -1899,7 +1899,7 @@ function close_shallow_river_regions(grid; regions = kara_river_closures, minimu
 end
 
 function build_grid(dataset::ORCADataset, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing,
-                    immersed_bottom = GridFittedBottom)
+                    immersed_bottom = GridFittedBottom, minimum_depth = 0)
 
     z_faces = omip_vertical_discretization(Nz, depth; surface_grid_size = Δz_top,
                                                        maximum_grid_size = Δzmax)
@@ -1912,6 +1912,7 @@ function build_grid(dataset::ORCADataset, arch, Nz, depth; Δz_top = nothing, Δ
                     with_bathymetry = true,
                     immersed_bottom,
                     major_basins = 1,
+                    minimum_depth,
                     active_cells_map = true)
 
     return grid # close_shallow_river_regions(grid)
