@@ -881,7 +881,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                          biogeochemistry = nothing,
                          atmosphere_tracers = NamedTuple(),
                          biogeochemistry_interface_kwargs = NamedTuple(),
-                         bgc_dir = forcing_dir)
+                         bgc_dir = forcing_dir,
+                         progress_frequency = 1)
 
     cfg = Val(config)
 
@@ -1178,7 +1179,7 @@ function omip_simulation(config::Symbol = :halfdegree;
 
 
     wall_time = Ref(time_ns())
-    add_callback!(simulation, omip_progress_callback(wall_time), IterationInterval(1))
+    add_callback!(simulation, omip_progress_callback(wall_time), IterationInterval(progress_frequency))
 
     if diagnostics
         add_omip_diagnostics!(simulation;
