@@ -15,8 +15,9 @@ default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
 ocean_reference_density(ocean::Simulation, FT) = convert(FT, reference_density(ocean))
 ocean_reference_density(::Nothing, FT) = convert(FT, 1026.0)
 
-ocean_surface_height(ocean::Simulation) = ocean.model.free_surface.displacement
-ocean_surface_height(::Nothing) = ZeroField()
+# typed so that no `Int` zero enters the Float sea-ice kernels
+ocean_surface_height(ocean::Simulation, grid) = ocean.model.free_surface.displacement
+ocean_surface_height(::Nothing, grid) = ZeroField(eltype(grid))
 
 function default_snow_thermodynamics(grid)
     FT = eltype(grid)
@@ -186,6 +187,7 @@ function sea_ice_dynamics(grid, ocean=nothing;
                           rheology = ElastoViscoPlasticRheology(),
                           coriolis = default_coriolis(ocean),
                           free_drift = nothing,
+                          with_ocean_surface_tilt = true,
                           solver = default_solver(grid, ocean))
 
     SSU, SSV = ocean_surface_velocities(ocean)
@@ -211,7 +213,7 @@ function sea_ice_dynamics(grid, ocean=nothing;
                                   bottom_momentum_stress = τo,
                                   rheology,
                                   free_drift,
-                                  ocean_surface_height = ocean_surface_height(ocean),
+                                  ocean_surface_height = ocean_surface_height(with_ocean_surface_tilt ? ocean : nothing, grid),
                                   solver)
 end
 
