@@ -113,3 +113,46 @@ end
         @test wide_fi[end] > Nx + Hx
     end
 end
+
+@testset "Prescribed atmosphere tracers at any horizontal location" begin
+    for arch in test_architectures
+        atmosphere_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 1), longitude = (0, 90), latitude = (-40, 40), z = (0, 1))
+        grid = LatitudeLongitudeGrid(arch; size = (10, 12, 1), longitude = (10, 80), latitude = (-30, 30), z = (-100, 0), halo = (6, 6, 3))
+
+        # Tracers have their own time axis, twice as long as the atmosphere's
+        function linear_tracer(LX, LY, f)
+            c = FieldTimeSeries{LX, LY, Nothing}(atmosphere_grid, [0, 7200.0])
+            ℓλ = LX === Nothing ? Center() : LX()
+            ℓφ = LY === Nothing ? Center() : LY()
+            λ = λnodes(atmosphere_grid, ℓλ, ℓφ, Center())
+            φ = φnodes(atmosphere_grid, ℓλ, ℓφ, Center())
+            c₁ = LX === Nothing ? f.(φ') : LY === Nothing ? f.(λ) : f.(λ, φ')
+            for n in 1:2
+                set!(c[n], n .* c₁)
+            end
+            return c
+        end
+
+        tracers = (cᶠᶜ = linear_tracer(Face, Center, (λ, φ) -> λ + 2φ),
+                   cᶠᶠ = linear_tracer(Face, Face, (λ, φ) -> λ - φ),
+                   cˣ  = linear_tracer(Face, Nothing, λ -> 3λ),
+                   cʸ  = linear_tracer(Nothing, Center, φ -> φ + 50),
+                   cʸᶠ = linear_tracer(Nothing, Face, φ -> 2φ))
+
+        atmosphere = PrescribedAtmosphere(atmosphere_grid, [0, 3600.0]; tracers)
+        ocean = ocean_simulation(grid, closure = nothing)
+        model = OceanOnlyModel(ocean; atmosphere, radiation = nothing)
+        time_step!(model, 60)
+
+        # Linear fields are interpolated exactly
+        state = model.interfaces.exchanger.atmosphere.state
+        λ = Array(λnodes(grid, Center(), Center(), Center()))
+        φ = Array(φnodes(grid, Center(), Center(), Center()))
+        factor = 1 + 60 / 7200
+        @test Array(interior(state.cᶠᶜ, :, :, 1)) ≈ factor .* (λ .+ 2φ')
+        @test Array(interior(state.cᶠᶠ, :, :, 1)) ≈ factor .* (λ .- φ')
+        @test Array(interior(state.cˣ,  :, :, 1)) ≈ factor .* (3λ .+ 0φ')
+        @test Array(interior(state.cʸ,  :, :, 1)) ≈ factor .* (0λ .+ φ' .+ 50)
+        @test Array(interior(state.cʸᶠ, :, :, 1)) ≈ factor .* (0λ .+ 2φ')
+    end
+end
