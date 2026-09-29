@@ -35,7 +35,6 @@ ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
 
 [sources]
 NumericalEarth = {path = ".."}
-SeawaterPolynomials = {rev = "ss/conversion-functions", url = "https://github.com/CliMA/SeawaterPolynomials.jl.git"}
 
 [compat]
 ArchGDAL = "0.10"
@@ -61,7 +60,7 @@ Oceananigans = "0.113"
 PythonCall = "0.9.28"
 Random = "<0.0.1, 1"
 Scratch = "1"
-SeawaterPolynomials = "0.3.5, 0.4"
+SeawaterPolynomials = "0.3.11"
 SpeedyWeather = "0.22"
 Statistics = "<0.0.1, 1"
 Test = "<0.0.1, 1"
