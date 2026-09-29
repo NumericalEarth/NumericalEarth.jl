@@ -54,7 +54,7 @@ NumericalEarth.Grids.surface_elevation(atmos::PrescribedAtmosphere) =
 velocity_boundary_conditions(grid, loc) = FieldBoundaryConditions(grid, loc)
 
 function velocity_boundary_conditions(grid::OrthogonalSphericalShellGrids.TripolarGrid, loc)
-    north_boundary_condition = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid)(-1)
+    north_boundary_condition = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid, -1)
     return FieldBoundaryConditions(grid, loc; north = north_boundary_condition)
 end
 
@@ -132,7 +132,7 @@ function default_precipitation_flux(grid, times)
 end
 
 @inline field_data(::Nothing) = nothing
-@inline field_data(fts) = (data = fts.data, backend = fts.backend, time_indexing = fts.time_indexing)
+@inline field_data(field) = field.data
 
 @inline surface_snowfall_flux(::Nothing) = nothing
 @inline surface_snowfall_flux(atmos::PrescribedAtmosphere) = surface_snowfall_flux(atmos.precipitation_flux)
