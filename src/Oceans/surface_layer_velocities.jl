@@ -54,8 +54,13 @@ function EarthSystemModels.surface_layer_velocities(ocean::OceananigansModelSimu
     u, v = ocean.model.velocities.u, ocean.model.velocities.v
     H = convert(eltype(grid), reference_depth)
 
-    uˢˡ = Field(KernelFunctionOperation{Face, Center, Nothing}(surface_layer_uᶠᶜᵃ, grid, u, H))
-    vˢˡ = Field(KernelFunctionOperation{Center, Face, Nothing}(surface_layer_vᶜᶠᵃ, grid, v, H))
+    x_velocity_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
+    y_velocity_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
+
+    uˢˡ = Field(KernelFunctionOperation{Face, Center, Nothing}(surface_layer_uᶠᶜᵃ, grid, u, H);
+                boundary_conditions = x_velocity_bcs)
+    vˢˡ = Field(KernelFunctionOperation{Center, Face, Nothing}(surface_layer_vᶜᶠᵃ, grid, v, H);
+                boundary_conditions = y_velocity_bcs)
 
     compute!(uˢˡ)
     compute!(vˢˡ)

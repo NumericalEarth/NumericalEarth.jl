@@ -113,6 +113,19 @@ end
     @test underlying.Nz == 5
 end
 
+@testset "ORCAGrid minimum_depth on $(arch)" for arch in test_architectures
+    z = [-5000, -100, -25, -20, -15, -10, -5, 0]
+    bottom(grid) = Array(grid.immersed_boundary.bottom_height[1:grid.Nx, 1:grid.Ny, 1])
+
+    reference = bottom(ORCAGrid(arch; dataset=ORCAOne(), z, Nz=length(z)-1))
+    deepened  = bottom(ORCAGrid(arch; dataset=ORCAOne(), z, Nz=length(z)-1, minimum_depth=20))
+
+    wet = reference .< 0
+    @test any(reference[wet] .> -20)
+    @test all(deepened[wet] .<= -20)
+    @test (deepened .< 0) == wet
+end
+
 @testset "ORCAGrid metric consistency" begin
     grid = ORCAGrid(CPU(); dataset=ORCAOne(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), with_bathymetry=false)
 
