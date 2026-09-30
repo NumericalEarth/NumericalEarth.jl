@@ -208,7 +208,7 @@ function sea_ice_dynamics(grid, ocean=nothing;
                           rheology = ElastoViscoPlasticRheology(),
                           coriolis = default_coriolis(ocean),
                           free_drift = nothing,
-                          solver = SplitExplicitSolver(grid; substeps=150))
+                          solver = SplitExplicitSolver(grid; substeps=150),
                           with_ocean_surface_tilt = true)
 
     SSU, SSV = ocean_surface_velocities(ocean)
