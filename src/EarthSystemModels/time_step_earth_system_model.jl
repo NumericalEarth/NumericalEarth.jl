@@ -1,5 +1,7 @@
 using ClimaSeaIce: SeaIceThermodynamics
+using Oceananigans.Architectures: architecture
 using Oceananigans.TimeSteppers: maybe_prepare_first_time_step!
+using Oceananigans.Utils: sync_device!
 
 using .InterfaceComputations: compute_atmosphere_ocean_fluxes!,
                               compute_atmosphere_land_fluxes!,
@@ -11,8 +13,27 @@ using .InterfaceComputations: compute_atmosphere_ocean_fluxes!,
 apply_air_sea_radiative_fluxes!(::Any) = nothing
 apply_air_sea_ice_radiative_fluxes!(::Any) = nothing
 
+debug_earth_system_sync_enabled() =
+    lowercase(get(ENV, "RYF_DEBUG_CUDA_SYNC", "false")) in ("1", "true", "yes")
+
+function debug_earth_system_sync!(label, coupled_model)
+    debug_earth_system_sync_enabled() || return nothing
+
+    try
+        sync_device!(architecture(coupled_model))
+        @info "CUDA sync passed during earth system time_step!" label
+    catch err
+        @error "CUDA sync failed during earth system time_step!" label exception=(err, catch_backtrace())
+        rethrow()
+    end
+
+    return nothing
+end
+
 function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
+    debug_earth_system_sync!("before maybe_prepare_first_time_step!", coupled_model)
     maybe_prepare_first_time_step!(coupled_model, Δt, callbacks)
+    debug_earth_system_sync!("after maybe_prepare_first_time_step!", coupled_model)
 
     radiation  = coupled_model.radiation
     atmosphere = coupled_model.atmosphere
@@ -21,11 +42,16 @@ function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, �
     ocean      = coupled_model.ocean
 
     !isnothing(radiation)  && time_step!(radiation, Δt)
+    debug_earth_system_sync!("after radiation time_step!", coupled_model)
     !isnothing(atmosphere) && time_step!(atmosphere, Δt)
+    debug_earth_system_sync!("after atmosphere time_step!", coupled_model)
     !isnothing(land)       && time_step!(land, Δt)
+    debug_earth_system_sync!("after land time_step!", coupled_model)
     # Ocean before sea ice: the ice-ocean drag is evaluated against the just-updated ocean velocity.
     !isnothing(ocean)      && time_step!(ocean, Δt)
+    debug_earth_system_sync!("after ocean time_step!", coupled_model)
     !isnothing(sea_ice)    && time_step!(sea_ice, Δt)
+    debug_earth_system_sync!("after sea ice time_step!", coupled_model)
 
     # TODO:
     # - Store fractional ice-free / ice-covered _time_ for more
