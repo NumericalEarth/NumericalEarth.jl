@@ -18,8 +18,10 @@ conservative freshwater mass flux (kg m⁻² s⁻¹).
 Contributions are grouped by destination ocean cell so the scatter writes each
 ocean cell exactly once (no atomics). For destination cell `c`, the contributing
 river mouths are `contribution_outlet_{i,j}[offsets[c]:offsets[c+1]-1]` with
-`contribution_weight = outlet_weight / Aᵒᶜᵉᵃⁿ` (see [`build_river_routing`](@ref)),
-chosen so the area integral of the deposited flux equals the total mass delivered.
+`contribution_weight = outlet_weight / Aᶠᵒᵒᵗᵖʳⁱⁿᵗ` (see [`build_river_routing`](@ref)), where
+`Aᶠᵒᵒᵗᵖʳⁱⁿᵗ` is the total area of the ocean cells the mouth spreads into. Every cell in a
+mouth's footprint then gets the same flux per unit area, and the area integral of the
+deposited flux equals the total mass delivered.
 """
 struct RiverRouting{I, W}
     contribution_outlet_i :: I
@@ -101,7 +103,8 @@ end
                         maximum_search_radius = 5, spread_radius = 1.2, maximum_spread_cells = nothing)
 
 Map each mouth at `(outlet_λ, outlet_φ)` onto the active ocean cells of `target_grid`, returning a [`RiverRouting`](@ref) that deposits
-`outlet_weight[n] * value[outletₙ] / Aᵒᶜᵉᵃⁿ`. The weight is the freshwater density for a volumetric discharge (m³ s⁻¹), the source-cell
+`outlet_weight[n] * value[outletₙ] / Aᶠᵒᵒᵗᵖʳⁱⁿᵗ` into every cell of the mouth's footprint, where `Aᶠᵒᵒᵗᵖʳⁱⁿᵗ` is the
+footprint's total ocean area. The weight is the freshwater density for a volumetric discharge (m³ s⁻¹), the source-cell
 area for a per-area mass flux (kg m⁻² s⁻¹).
 """
 function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
@@ -131,8 +134,10 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     nearest_cells = [nearest_wet_cell(ocean_cells, outlet_λ[n], outlet_φ[n]) for n in eachindex(outlet_i)]
     owned = mouth_ownership(arch, last.(nearest_cells))
 
-    # Split each mouth's discharge equally over its plume footprint so no single coastal cell receives
-    # a runaway freshwater flux (which drives salinity to zero and crashes the run).
+    # Spread each mouth's discharge over its plume footprint so that every footprint cell gets the same
+    # flux per unit area. Each cell's share of the water is proportional to its area. An equal share per
+    # cell would give small cells (for example near the tripolar grid's poles) a much larger flux per unit
+    # area, which can drain the salt out of the top cell in one time step and crash the run.
     contributions = Dict{Tuple{Int, Int}, Vector{Tuple{Int, Int, FT}}}()
     dropped = 0
     for n in eachindex(outlet_i)
@@ -143,7 +148,8 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
             dropped += 1
             continue
         end
-        w = convert(FT, outlet_weight[n]) / length(targets)
+        footprint_area = sum(convert(FT, area[i★, j★]) for (i★, j★) in targets)
+        w = convert(FT, outlet_weight[n]) / footprint_area
         for (i★, j★) in targets
             push!(get!(contributions, (i★, j★), Tuple{Int, Int, FT}[]), (outlet_i[n], outlet_j[n], w))
         end
@@ -164,11 +170,10 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     for ((i★, j★), mouths) in contributions
         push!(target_i, i★)
         push!(target_j, j★)
-        A = convert(FT, area[i★, j★])
         for (oi, oj, w) in mouths
             push!(contribution_outlet_i, oi)
             push!(contribution_outlet_j, oj)
-            push!(contribution_weight, w / A)
+            push!(contribution_weight, w)
         end
         push!(offsets, length(contribution_outlet_i) + 1)
     end
