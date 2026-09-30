@@ -196,7 +196,8 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
                                      ice_freshwater_delivery,
                                      ice_meltwater_enthalpy,
                                      atmosphere_ocean_velocity_difference   = velocity_difference_obj,
-                                     atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
+                                     atmosphere_sea_ice_velocity_difference = velocity_difference_obj,
+                                     biogeochemistry_interface_kwargs)
 
     return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, land, interfaces)
 end
