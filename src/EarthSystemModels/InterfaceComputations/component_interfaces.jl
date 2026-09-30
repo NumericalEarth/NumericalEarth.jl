@@ -336,10 +336,7 @@ end
 #####
 
 default_ai_temperature(::Nothing) = nothing
-biogeochemical_interface(exchanger, ocean; kwargs...) = biogeochemical_interface(exchanger, ocean, ocean_biogeochemistry(ocean); kwargs...)
-
-# Prescribed components (e.g. PrescribedOcean) have no `model` and carry no biogeochemistry
-ocean_biogeochemistry(ocean) = hasproperty(ocean, :model) ? ocean.model.biogeochemistry : nothing
+biogeochemical_interface(exchanger, ocean; kwargs...) = biogeochemical_interface(exchanger, ocean, ocean.model.biogeochemistry; kwargs...)
 biogeochemical_interface(exchanger, ocean::Nothing; kwargs...) = NamedTuple()
 biogeochemical_interface(exchanger, ocean, biogeochemistry; kwargs...) = NamedTuple()
 
