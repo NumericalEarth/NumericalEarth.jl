@@ -117,6 +117,7 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``\mathscr{I}_\downarrow^{\mathrm{lw}}`` | `ℐꜜˡʷ` | downwelling longwave | Downwelling longwave radiation (W m⁻²) |
 | ``h_{b\ell}`` | `h_bℓ` | boundary layer height | Atmospheric boundary layer height (m) |
 | ``pᵛ⁺`` | ``pᵛ⁺`` | saturation vapor pressure | Vapor pressure at saturation (Pa) |
+| ``fᵛ`` | `fᵛ` | vapor pressure enhancement factor | Ratio of the saturation vapor pressure in moist air to that of pure water vapor (Gill 1982) (–) |
 | ``qᵛ⁺`` | `qᵛ⁺` | saturation specific humidity | Specific humidity at saturation, ``q^{v+}(T)`` (kg kg⁻¹) |
 | ``qˢ`` | `q` | surface specific humidity | Specific humidity at the interface; set by the humidity model (`β·qᵛ⁺` for `FractionalHumidity`, a vapor-flux balance for `SkinHumidity`) (kg kg⁻¹) |
 
@@ -315,6 +316,7 @@ superscript band.
 |:----:|:----:|:---------|:------------|
 | ``J^{\mathrm{rn}}`` | `Jʳⁿ` | rain freshwater flux | Rain mass flux at the surface (kg m⁻² s⁻¹) |
 | ``J^{\mathrm{sn}}`` | `Jˢⁿ` | snow freshwater flux | Snow mass flux at the surface (kg m⁻² s⁻¹) |
+| ``J^{\mathrm{ib}}`` | `Jⁱᵇ` | iceberg freshwater flux | Iceberg calving mass flux into the ocean (kg m⁻² s⁻¹) |
 
 ## Thermodynamic properties
 
@@ -322,6 +324,7 @@ superscript band.
 |:----:|:----:|:---------|:------------|
 | ``\mathcal{L}^\ell`` | `ℒˡ` | latent heat of vaporization | Liquid-phase latent heat (J kg⁻¹) |
 | ``\mathcal{L}^i`` | `ℒⁱ` | latent heat of sublimation | Ice-phase latent heat (J kg⁻¹) |
+| ``\mathcal{L}^f`` | `ℒᶠ` | latent heat of fusion | Heat the ocean supplies to melt snowfall and icebergs (J kg⁻¹) |
 | ``c^{pm}`` | `cᵖᵐ` | moist air heat capacity | Moist isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``c^{pd}`` | `cᵖᵈ` | dry air heat capacity | Dry-air isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``\rho^{\mathrm{at}}`` | `ρᵃᵗ` | air density | Atmospheric air density (kg m⁻³) |

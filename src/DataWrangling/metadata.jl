@@ -223,6 +223,22 @@ const AnyDateTime  = Union{AbstractCFDateTime, Dates.AbstractDateTime}
 const Metadatum{V} = Metadata{V, <:Union{AnyDateTime, Nothing}} where V
 
 """
+$(TYPEDSIGNATURES)
+
+Name of the file holding the inpainted version of `metadata`. Defaults to the metadatum's own filename
+with its extension replaced by `_inpainted.jld2`; datasets whose inpainted products are named differently
+override this.
+"""
+inpainted_metadata_filename(metadata::Metadatum) = metadata.filename[1:end-3] * "_inpainted.jld2"
+
+"""
+$(TYPEDSIGNATURES)
+
+Path to the inpainted version of `metadata`, alongside the raw file in `metadata.dir`.
+"""
+inpainted_metadata_path(metadata::Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+
+"""
     expand_dates(dataset, variable_name, dates)
 
 Return `dates`, expanding a `(start_date, end_date)` tuple to the dataset's native dates

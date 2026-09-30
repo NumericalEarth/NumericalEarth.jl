@@ -4,6 +4,7 @@ using ClimaSeaIce.Rheologies
 using ClimaSeaIce.SeaIceDynamics
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: hours, days
+using SeawaterPolynomials.TEOS10: θ_from_Θ
 using NumericalEarth.DataWrangling: all_dates
 using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterfaces,
                                                               celsius_to_kelvin,
@@ -20,7 +21,9 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterface
                                                               evaporation_efficiency,
                                                               AirLandInterfaceState,
                                                               compute_interface_humidity,
-                                                              saturation_specific_humidity
+                                                              saturation_specific_humidity,
+                                                              ImpureSaturationSpecificHumidity,
+                                                              GillSaturationEnhancement
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using Statistics: mean, std
 using Thermodynamics
@@ -173,8 +176,8 @@ end
             coupled_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
             # Now manually compute the fluxes:
-            Tᵒᶜ = ocean.model.tracers.T[1, 1, 1] + celsius_to_kelvin
             Sᵒᶜ = ocean.model.tracers.S[1, 1, 1]
+            Tᵒᶜ = θ_from_Θ(Sᵒᶜ, ocean.model.tracers.T[1, 1, 1]) + celsius_to_kelvin
 
             interface_properties = interfaces.atmosphere_ocean_interface.properties
             q_formulation = interface_properties.specific_humidity_formulation
@@ -423,78 +426,19 @@ end
     @test compute_interface_humidity(fc, Tₛ, mkΨₛ(0.1), Ψₐ, Ψᵢ, ℙₐ) ≈ 0.4 * qᵛ⁺
 end
 
-#=
-@testset "Fluxes regression" begin
-    for arch in test_architectures
-        @info "Testing fluxes regression..."
+@testset "Saturation vapor pressure enhancement (Gill 1982)" begin
+    ℂ = AtmosphereThermodynamicsParameters(Float64)
+    pᵃᵗ, Tₛ, Sₛ = 101325.0, 293.15, 35.0
+    phase = Thermodynamics.Liquid()
 
-        grid = LatitudeLongitudeGrid(arch;
-                                     size = (20, 20, 20),
-                                 latitude = (-60, 60),
-                                longitude = (0, 360),
-                                        z = (-5000, 0))
+    εᵈᵛ⁻¹ = 1 / Thermodynamics.Parameters.Rv_over_Rd(ℂ)
+    pᵛ⁺ = 0.98 * Thermodynamics.saturation_vapor_pressure(ℂ, Tₛ, phase)
+    fᵛ = 1 + 1e-8 * pᵃᵗ * (4.5 + 6e-4 * (Tₛ - celsius_to_kelvin)^2)
+    qᵛ⁺(pᵛ) = εᵈᵛ⁻¹ * pᵛ / (pᵃᵗ - (1 - εᵈᵛ⁻¹) * pᵛ)
 
-        # Speed up compilation by removing all the unnecessary stuff
-        momentum_advection = nothing
-        tracer_advection   = nothing
-        tracers  = (:T, :S)
-        buoyancy = nothing
-        closure  = nothing
-        coriolis = nothing
+    unenhanced = ImpureSaturationSpecificHumidity(phase, 0.98)
+    enhanced = ImpureSaturationSpecificHumidity(phase, 0.98; saturation_enhancement = GillSaturationEnhancement())
 
-        ocean = ocean_simulation(grid; momentum_advection, tracer_advection, closure, tracers, coriolis)
-
-        date = DateTimeProlepticGregorian(1993, 1, 1)
-        dataset = ECCO4Monthly()
-        T_metadata = Metadatum(:temperature; date, dataset)
-        S_metadata = Metadatum(:salinity; date, dataset)
-
-        set!(ocean.model; T=T_metadata, S=S_metadata)
-
-        end_date   = all_dates(RepeatYearJRA55(), :temperature)[10]
-        atmosphere = JRA55PrescribedAtmosphere(arch; end_date, backend = InMemory())
-        radiation  = Radiation(ocean_albedo=0.1, ocean_emissivity=1.0)
-        sea_ice    = nothing
-
-        coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
-        times = 0:1hours:1days
-        Ntimes = length(times)
-
-        # average the fluxes over one day
-        Jᵀ = interior(ocean.model.tracers.T.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-        Jˢ = interior(ocean.model.tracers.S.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-        τˣ = interior(ocean.model.velocities.u.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-        τʸ = interior(ocean.model.velocities.v.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-
-        for time in times[2:end]
-            coupled_model.clock.time = time
-            update_state!(coupled_model)
-            Jᵀ .+= interior(ocean.model.tracers.T.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-            Jˢ .+= interior(ocean.model.tracers.S.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-            τˣ .+= interior(ocean.model.velocities.u.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-            τʸ .+= interior(ocean.model.velocities.v.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-        end
-
-        Jᵀ_mean = mean(Jᵀ)
-        Jˢ_mean = mean(Jˢ)
-        τˣ_mean = mean(τˣ)
-        τʸ_mean = mean(τʸ)
-
-        Jᵀ_std = std(Jᵀ)
-        Jˢ_std = std(Jˢ)
-        τˣ_std = std(τˣ)
-        τʸ_std = std(τʸ)
-
-        # Regression test
-        @test_broken Jᵀ_mean ≈ -3.526464713488678e-5
-        @test_broken Jˢ_mean ≈ 1.1470078542716042e-6
-        @test_broken τˣ_mean ≈ -1.0881334225579832e-5
-        @test_broken τʸ_mean ≈ 5.653281786086694e-6
-
-        @test_broken Jᵀ_std ≈ 7.477575901188957e-5
-        @test_broken Jˢ_std ≈ 3.7416720607945508e-6
-        @test_broken τˣ_std ≈ 0.00011349625113971719
-        @test_broken τʸ_std ≈ 7.627885224680635e-5
-    end
+    @test surface_specific_humidity(unenhanced, ℂ, pᵃᵗ, Tₛ, Sₛ) ≈ qᵛ⁺(pᵛ⁺)
+    @test surface_specific_humidity(enhanced, ℂ, pᵃᵗ, Tₛ, Sₛ) ≈ qᵛ⁺(fᵛ * pᵛ⁺)
 end
-=#
