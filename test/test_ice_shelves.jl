@@ -173,7 +173,7 @@ end
     @test u★₁ ≈ sqrt(2.5e-3 * (0.1^2 + 0.2^2 + 0.01^2))
 end
 
-# Cavity grids need an Oceananigans release with CliMA/Oceananigans.jl#6110
+# Bottom-and-top grids need an Oceananigans release with CliMA/Oceananigans.jl#6110
 if isdefined(Oceananigans, :GridFittedBottomAndTop)
 
 for arch in test_architectures
