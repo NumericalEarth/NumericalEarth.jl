@@ -134,10 +134,7 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     nearest_cells = [nearest_wet_cell(ocean_cells, outlet_λ[n], outlet_φ[n]) for n in eachindex(outlet_i)]
     owned = mouth_ownership(arch, last.(nearest_cells))
 
-    # Spread each mouth's discharge over its plume footprint so that every footprint cell gets the same
-    # flux per unit area. Each cell's share of the water is proportional to its area. An equal share per
-    # cell would give small cells (for example near the tripolar grid's poles) a much larger flux per unit
-    # area, which can drain the salt out of the top cell in one time step and crash the run.
+    # Spread each mouth's discharge over its plume footprint with the same flux per unit area in every cell.
     contributions = Dict{Tuple{Int, Int}, Vector{Tuple{Int, Int, FT}}}()
     dropped = 0
     for n in eachindex(outlet_i)
