@@ -62,7 +62,7 @@ round(1 / absorption_coefficient(ChlorophyllOptics(), 1.0), digits=1)
     κw = optics.clear_water_attenuation
     Cs = optics.chlorophyll_scaling
     Ce = optics.chlorophyll_exponent
-    return κw + Cs * max(0, chlorophyll)^Ce
+    return κw + Cs * max(zero(chlorophyll), chlorophyll)^Ce
 end
 
 """
