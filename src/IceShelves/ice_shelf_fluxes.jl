@@ -37,14 +37,14 @@ function compute_ice_shelf_fluxes!(interface::IceShelfOceanInterface, model)
 
     launch!(arch, grid, :xy, _compute_ice_shelf_fluxes!,
             interface.fluxes, interface.temperature, interface.salinity,
-            interface.friction_velocity, interface.k_draft, grid,
+            interface.friction_velocity, interface.k_draft, interface.ice_concentration, grid,
             interface.flux_formulation, ice_shelf_liquidus(interface, model),
             Tᵒᶜ, Sᵒᶜ, uᵒᶜ, vᵒᶜ, interface.properties)
 
     return nothing
 end
 
-@kernel function _compute_ice_shelf_fluxes!(fluxes, T★, S★, u★_field, k_draft, grid,
+@kernel function _compute_ice_shelf_fluxes!(fluxes, T★, S★, u★_field, k_draft, ℵ, grid,
                                             flux_formulation, liquidus,
                                             Tᵒᶜ, Sᵒᶜ, uᵒᶜ, vᵒᶜ, properties)
     i, j = @index(Global, NTuple)
@@ -76,7 +76,7 @@ end
         u★ = ice_shelf_friction_velocity(flux_formulation.friction_velocity, i, j, kd, grid, uᵒᶜ, vᵒᶜ, H_TBL)
 
         ocean_state = (; T = Tᵈ, S = Sᵈ)
-        ice_state = (; S = Sˢⁱ, h = zero(FT), hc = zero(FT), ℵ = one(FT), T = zero(FT))
+        ice_state = (; S = Sˢⁱ, h = zero(FT), hc = zero(FT), ℵ = @inbounds(ℵ[i, j, 1]), T = zero(FT))
         𝒬, Tᵦ, Sᵦ = ice_shelf_interface_heat_flux(flux_formulation, ocean_state, ice_state,
                                                   liquidus, zᵈ, properties, ℰ, u★)
         q = 𝒬 / ℰ

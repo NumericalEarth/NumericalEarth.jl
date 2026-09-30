@@ -21,7 +21,7 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 
 # Ice wedge whose draft rises from -0.95 at x = 0 to the surface at x ≈ 0.59.
-cavity_test_ceiling(x) = min(0.0, -0.95 + 1.6x)
+cavity_test_top_height(x) = min(0.0, -0.95 + 1.6x)
 
 @testset "PressureDependentLiquidus" begin
     liquidus = PressureDependentLiquidus()
@@ -174,7 +174,7 @@ end
 end
 
 # Cavity grids need an Oceananigans release with CliMA/Oceananigans.jl#6110
-if isdefined(Oceananigans, :GridFittedCavity)
+if isdefined(Oceananigans, :GridFittedBottomAndTop)
 
 for arch in test_architectures
     @testset "IceShelfOceanInterface k_draft map [$(typeof(arch))]" begin
@@ -188,12 +188,18 @@ for arch in test_architectures
                                           topology = (Bounded, Periodic, Bounded))
 
         bottom(x, y)  = x < 3 ? -1.0 : -0.6
-        ceiling(x, y) = x < 1 ? 0.0 : (x < 2 ? -0.5 : (x < 3 ? -0.99 : 0.0))
+        top_height(x, y) = x < 1 ? 0.0 : (x < 2 ? -0.5 : (x < 3 ? -0.99 : 0.0))
 
-        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedCavity(bottom, ceiling))
+        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottomAndTop(bottom, top_height))
         interface = IceShelfOceanInterface(grid)
 
         @test Array(interior(interface.k_draft))[:, 2, 1] == [0, 2, 0, 0]
+
+        # An immersed top with zero ice concentration is inert; fluxes scale with the concentration
+        rock_interface = IceShelfOceanInterface(grid; ice_concentration = (x, y) -> x > 2,
+                                                flux_formulation = ThreeEquationHeatFlux())
+        half_interface = IceShelfOceanInterface(grid; ice_concentration = 1/2,
+                                                flux_formulation = ThreeEquationHeatFlux())
 
         # Melt fluxes with a constant friction velocity and quiescent warm water
         interface = IceShelfOceanInterface(grid; flux_formulation = ThreeEquationHeatFlux())
@@ -201,6 +207,16 @@ for arch in test_architectures
         set!(model, T = 1.0, S = 34.5)
 
         compute_ice_shelf_fluxes!(interface, model)
+        compute_ice_shelf_fluxes!(rock_interface, model)
+        compute_ice_shelf_fluxes!(half_interface, model)
+        @test all(Array(interior(rock_interface.fluxes.melt_rate)) .== 0)
+        @test all(Array(interior(rock_interface.fluxes.temperature)) .== 0)
+        @test all(Array(interior(rock_interface.fluxes.salt)) .== 0)
+
+        for name in (:melt_rate, :temperature, :salt)
+            @test Array(interior(half_interface.fluxes[name]))[2, 2, 1] ≈
+                  Array(interior(interface.fluxes[name]))[2, 2, 1] / 2
+        end
 
         melt_rate      = Array(interior(interface.fluxes.melt_rate))[:, 2, 1]
         interface_heat = Array(interior(interface.fluxes.interface_heat))[:, 2, 1]
@@ -253,8 +269,8 @@ for arch in test_architectures
 
         T₀, S₀ = 1.0, 34.5
         buoyancy = SeawaterBuoyancy()
-        ice_load = CavityLoad(buoyancy, (; T = (x, z) -> T₀, S = (x, z) -> S₀))
-        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedCavity(-1, cavity_test_ceiling; ice_load))
+        top_load = TopLoad(buoyancy, (; T = (x, z) -> T₀, S = (x, z) -> S₀))
+        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottomAndTop(-1, cavity_test_top_height; top_load))
 
         # Constant u★: melt starts from rest and spins up the cavity circulation
         interface = IceShelfOceanInterface(grid; flux_formulation = ThreeEquationHeatFlux())
@@ -310,5 +326,5 @@ for arch in test_architectures
 end
 
 else
-    @warn "Skipping the ice shelf cavity tests: this Oceananigans has no GridFittedCavity"
+    @warn "Skipping the ice shelf cavity tests: this Oceananigans has no GridFittedBottomAndTop"
 end

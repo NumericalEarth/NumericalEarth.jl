@@ -14,7 +14,7 @@ via the keyword arguments below -- the ice shelf melt/heat/salt fluxes are
 applied as an explicit tracer tendency by [`ice_shelf_tracer_forcing`](@ref)
 instead of an immersed top flux, so that the tendency is spread over the
 boundary layer beneath the ice base rather than concentrated in the topmost
-cell, which can be much thinner than a nominal cell in a `PartialCellCavity`
+cell, which can be much thinner than a nominal cell in a `PartialCellBottomAndTop`
 column.
 
 The velocity conditions reuse the ocean's immersed quadratic drag with
@@ -39,8 +39,8 @@ using NumericalEarth
 underlying_grid = RectilinearGrid(size = (2, 1, 4), x = (0, 2), y = (0, 1), z = (-1, 0),
                                   topology = (Bounded, Periodic, Bounded))
 bottom(x, y)  = -1
-ceiling(x, y) = x < 1 ? -0.5 : 0.0
-grid = ImmersedBoundaryGrid(underlying_grid, GridFittedCavity(bottom, ceiling))
+top_height(x, y) = x < 1 ? -0.5 : 0.0
+grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottomAndTop(bottom, top_height))
 
 interface = IceShelfOceanInterface(grid)
 boundary_conditions = ice_shelf_boundary_conditions(interface)

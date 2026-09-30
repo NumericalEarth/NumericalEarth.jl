@@ -51,7 +51,7 @@ Thickness-weighted average of `getvalue(k)` over the cells `kd, kd-1, ...`
 spanning a fixed physical boundary-layer thickness `H_TBL` beneath the ice
 base (Losch, 2008; Mathiot et al., 2017). Averaging over a fixed physical
 thickness, rather than reading the topmost cell `kd` alone, keeps the melt
-rate from depending on how thin that cell is in a `PartialCellCavity` column. The column is walked
+rate from depending on how thin that cell is in a `PartialCellBottomAndTop` column. The column is walked
 downward until `H_TBL` is spanned, the water column bottom (`k = 1`) is
 reached, or an immersed cell is hit; the last included cell contributes only
 its partial overlap with `H_TBL`.
@@ -113,9 +113,11 @@ following the sea ice-ocean interface pattern (`SeaIceOceanInterface`).
 
 $(TYPEDFIELDS)
 """
-mutable struct IceShelfOceanInterface{K, J, F, L, T, S, U, P}
+mutable struct IceShelfOceanInterface{K, A, J, F, L, T, S, U, P}
     "topmost wet cell of each ice-covered column, zero in open-ocean and dry columns"
     k_draft :: K
+    "fraction of each column's immersed top that is ice, by which the heat, salt and melt fluxes are scaled"
+    ice_concentration :: A
     "2D `interface_heat`, `temperature`, `salt` and `melt_rate` fluxes, positive out of the ocean"
     fluxes :: J
     "`ThreeEquationHeatFlux` or `IceBathHeatFlux`"
@@ -136,11 +138,17 @@ end
 $(TYPEDSIGNATURES)
 
 Build an `IceShelfOceanInterface` on `grid`, which is expected to be an
-`ImmersedBoundaryGrid` whose immersed boundary provides an ice ceiling
-(e.g. `GridFittedCavity`). The draft index map `k_draft` is computed from
+`ImmersedBoundaryGrid` with an immersed top (e.g. `GridFittedBottomAndTop`).
+The draft index map `k_draft` is computed from
 the grid's `immersed_cell` at construction; columns whose topmost cell
 `k = Nz` is wet (no ice above) get `k_draft = 0` and are excluded from the
 melt computation.
+
+`ice_concentration` is the fraction of the immersed top of each column that is ice,
+between 0 and 1: a number (default 1), a function of `(x, y)`, an array or a field.
+The heat, salt and melt fluxes are scaled by it, so an immersed top with
+`ice_concentration = 0` is inert, like rock. It may be changed during a simulation
+with `set!(interface.ice_concentration, ...)`.
 
 The default `flux_formulation` is a `ThreeEquationHeatFlux` with
 friction-velocity-based transfer coefficients (αₕ = 0.0095, αₛ = αₕ/35) and
@@ -159,6 +167,7 @@ function IceShelfOceanInterface(grid;
                                 flux_formulation = ThreeEquationHeatFlux(eltype(grid);
                                                                          friction_velocity = VelocityBasedFrictionVelocity(eltype(grid))),
                                 liquidus = nothing,
+                                ice_concentration = 1,
                                 reference_density = 1020,
                                 heat_capacity = 3991,
                                 latent_heat = 334e3,
@@ -171,6 +180,9 @@ function IceShelfOceanInterface(grid;
     launch!(architecture(grid), grid, :xy, _compute_draft_index!, k_draft, grid)
 
     F = Field{Center, Center, Nothing}
+    ℵ = F(grid)
+    set!(ℵ, ice_concentration)
+
     fluxes = (interface_heat = F(grid),
               temperature    = F(grid),
               salt           = F(grid),
@@ -186,7 +198,7 @@ function IceShelfOceanInterface(grid;
                   ice_salinity                = convert(FT, ice_salinity),
                   boundary_layer_thickness    = convert(FT, boundary_layer_thickness))
 
-    return IceShelfOceanInterface(k_draft, fluxes, flux_formulation, liquidus,
+    return IceShelfOceanInterface(k_draft, ℵ, fluxes, flux_formulation, liquidus,
                                   temperature, salinity, friction_velocity, properties)
 end
 

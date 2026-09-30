@@ -12,7 +12,7 @@ using Oceananigans: Oceananigans
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions
 using Oceananigans.BuoyancyFormulations: BuoyancyForce, SeawaterBuoyancy
-using Oceananigans.Fields: Field
+using Oceananigans.Fields: Field, set!
 using Oceananigans.Grids: Center, Face, znode
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryCondition, immersed_cell
 using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Δzᶜᶜᶜ

@@ -43,7 +43,7 @@ as an explicit tracer tendency (Losch, 2008). The tendency is spread, weighted b
 cell thickness, across the same boundary layer (thickness
 `interface.properties.boundary_layer_thickness`) that the ocean state is averaged
 over (see [`boundary_layer_average`](@ref)), rather than concentrated in the topmost
-active cell. This avoids an amplified tendency in thin `PartialCellCavity` cells and
+active cell. This avoids an amplified tendency in thin `PartialCellBottomAndTop` cells and
 a mismatch between the sensing and forcing layers in shallow water columns. Merge into a model's own `forcing`
 `NamedTuple` before passing to the model constructor:
 
@@ -54,8 +54,8 @@ using NumericalEarth
 underlying_grid = RectilinearGrid(size = (2, 1, 4), x = (0, 2), y = (0, 1), z = (-1, 0),
                                   topology = (Bounded, Periodic, Bounded))
 bottom(x, y)  = -1
-ceiling(x, y) = x < 1 ? -0.5 : 0.0
-grid = ImmersedBoundaryGrid(underlying_grid, GridFittedCavity(bottom, ceiling))
+top_height(x, y) = x < 1 ? -0.5 : 0.0
+grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottomAndTop(bottom, top_height))
 
 interface = IceShelfOceanInterface(grid)
 forcing = ice_shelf_tracer_forcing(interface)
