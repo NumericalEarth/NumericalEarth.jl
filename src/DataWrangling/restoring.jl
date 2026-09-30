@@ -334,6 +334,9 @@ end
 
 Oceananigans.initialize!(callback::ConservativeSurfaceFluxRestoringCallback, simulation) = callback(simulation)
 
+# The flux is rebuilt from the model on every call, so there is nothing to checkpoint
+Oceananigans.prognostic_state(::ConservativeSurfaceFluxRestoringCallback) = nothing
+
 #####
 ##### Masks for restoring
 #####
