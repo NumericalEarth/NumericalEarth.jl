@@ -45,7 +45,8 @@ end
                        timestepper = :SplitRungeKutta3,
                        phase_transitions = PhaseTransitions(eltype(grid);
                                                             heat_capacity=ice_heat_capacity,
-                                                            density=sea_ice_density),
+                                                            density=sea_ice_density,
+                                                            liquidus=DepthDependentLiquidus(eltype(grid))),
                        conductivity = 2, # W m⁻¹ K⁻¹
                        internal_heat_flux = ConductiveFlux(; conductivity),
                        snow_thermodynamics = default_snow_thermodynamics(grid))
@@ -64,10 +65,10 @@ Arguments
 
 Keyword Arguments
 =================
-- `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`. 
+- `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`.
   Pass a `DateTime`-based clock to step the simulation in calendar time (e.g. when coupling).
-- `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or 
-  `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since 
+- `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or
+  `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since
   Reactant does not support `stop_time`.
 - `Δt`: time step for the sea ice simulation
 - `ice_salinity`: salinity of the sea ice (psu)
@@ -85,7 +86,7 @@ Keyword Arguments
                                  is a prescribed temperature calculated in the flux computation)
 - `timestepper`: time stepper to use for the sea ice model (default is `:SplitRungeKutta3`)
 - `phase_transitions`: phase transition properties for the sea ice (default is a `PhaseTransitions`
-                       with specified heat capacity and density)
+                       with specified heat capacity and density and a `DepthDependentLiquidus`)
 - `conductivity`: thermal conductivity for the internal heat flux (W m⁻¹ K⁻¹)
 - `internal_heat_flux`: internal heat flux formulation for the sea ice (default is a
                         `ConductiveFlux` with specified conductivity)
@@ -109,7 +110,8 @@ function sea_ice_simulation(grid, ocean=nothing;
                             timestepper = :SplitRungeKutta3,
                             phase_transitions = PhaseTransitions(eltype(grid);
                                                                  heat_capacity=ice_heat_capacity,
-                                                                 density=sea_ice_density),
+                                                                 density=sea_ice_density,
+                                                                 liquidus=DepthDependentLiquidus(eltype(grid))),
                             conductivity = 2, # W m⁻¹ K⁻¹
                             internal_heat_flux = ConductiveFlux(; conductivity),
                             snow_thermodynamics = default_snow_thermodynamics(grid))
