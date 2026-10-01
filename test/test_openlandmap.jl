@@ -211,11 +211,11 @@ end
     end
 end
 
-@testset "soil_hydraulic_properties from OpenLandMapSoilDB" begin
+@testset "soil_hydraulic_properties from OpenLandMapSoilDB on $arch" for arch in test_architectures
     dataset = OpenLandMapSoilDB()
     dir = mktempdir()
 
-    grid = LatitudeLongitudeGrid(CPU(); size = (4, 3),
+    grid = LatitudeLongitudeGrid(arch; size = (4, 3),
                                  longitude = (0.0, 0.02), latitude = (40.0, 40.015),
                                  topology = (Bounded, Bounded, Flat))
 
@@ -241,7 +241,7 @@ end
 
     # Uniform texture reduces to the same parameters as hand-built lattice fields,
     # with the hole inpainted from its (identical) neighbors.
-    lattice = LatitudeLongitudeGrid(CPU(); size = (4, 3, 3),
+    lattice = LatitudeLongitudeGrid(arch; size = (4, 3, 3),
                                     longitude = (0.0, 0.02), latitude = (40.0, 40.015),
                                     z = [-1.0, -0.6, -0.3, 0.0],
                                     topology = (Bounded, Bounded, Bounded))
@@ -255,6 +255,6 @@ end
     for name in keys(reference)
         parameter = hydraulics[name]
         @test parameter.grid === grid
-        @test interior(parameter, :, :, 1) ≈ interior(reference[name], :, :, 1) rtol=1e-6
+        @test Array(interior(parameter)) ≈ Array(interior(reference[name])) rtol=1e-6
     end
 end

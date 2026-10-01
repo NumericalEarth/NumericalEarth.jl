@@ -8,7 +8,7 @@ using NCDatasets: NCDataset, defDim, defVar
 using Oceananigans: Bounded, Center, Face, LatitudeLongitudeGrid
 using Oceananigans.Architectures: architecture
 using Oceananigans.DistributedComputations: @root
-using Oceananigans.Fields: Field, interior
+using Oceananigans.Fields: Field, interior, set!
 using Oceananigans.Grids: λnodes, φnodes
 
 using ..DataWrangling: DataWrangling,
@@ -264,8 +264,10 @@ Effective van Genuchten parameter fields for `grid` computed from `dataset`: the
 texture variables (`:sand_fraction`, `:silt_fraction`, `:clay_fraction`, `:bulk_density`)
 are read over `region` onto a lattice with `grid`'s horizontal cells and the dataset's
 depth layers, their gaps are inpainted, and the per-layer pedotransfer reduction runs
-over `slab_depth`. Returns the reduction's NamedTuple with each parameter as a
-`Field{Center, Center, Nothing}` on `grid`. `dir` is the download directory; remaining
+over `slab_depth`. Returns a NamedTuple of `porosity`, `residual_liquid_fraction`,
+`inverse_air_entry_head`, `pore_size_uniformity`, `matching_point_conductivity`, and
+`pore_connectivity_exponent`, each a `Field{Center, Center, Nothing}` on `grid`.
+`dir` is the download directory; remaining
 keyword arguments (`ptf`, `matching_heads`) pass to the reduction.
 """
 function Lands.soil_hydraulic_properties(grid, dataset::OpenLandMapSoilDB;
@@ -292,11 +294,14 @@ function Lands.soil_hydraulic_properties(grid, dataset::OpenLandMapSoilDB;
 
     layered = Lands.soil_hydraulic_properties(texture...; slab_depth, kw...)
 
-    return map(layered) do parameter
-        surface = Field{Center, Center, Nothing}(grid)
-        interior(surface, :, :, 1) .= interior(parameter, :, :, 1)
-        return surface
-    end
+    surface = (porosity = Field{Center, Center, Nothing}(grid),
+               residual_liquid_fraction = Field{Center, Center, Nothing}(grid),
+               inverse_air_entry_head = Field{Center, Center, Nothing}(grid),
+               pore_size_uniformity = Field{Center, Center, Nothing}(grid),
+               matching_point_conductivity = Field{Center, Center, Nothing}(grid),
+               pore_connectivity_exponent = Field{Center, Center, Nothing}(grid))
+    set!(surface, layered)
+    return surface
 end
 
 end # module OpenLandMap
