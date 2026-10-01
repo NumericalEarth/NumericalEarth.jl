@@ -156,6 +156,7 @@ ERA5 is 2D surface data, so we return a 2D array with an added singleton z-dimen
 function DataWrangling.retrieve_data(metadata::ERA5Metadatum)
     path = metadata_path(metadata)
     name = dataset_variable_name(metadata)
+    i, j, _, _ = cached_window(metadata, path)
 
     ds = NCDatasets.Dataset(path)
 
@@ -165,9 +166,9 @@ function DataWrangling.retrieve_data(metadata::ERA5Metadatum)
     ndim = ndims(raw_data)
 
     if ndim == 2
-        data_2d = raw_data[:, :]
+        data_2d = raw_data[:, j]
     elseif ndim == 3
-        data_2d = raw_data[:, :, 1]
+        data_2d = raw_data[:, j, 1]
     else
         error("Unexpected ERA5 data dimensions: $ndim")
     end
@@ -175,7 +176,7 @@ function DataWrangling.retrieve_data(metadata::ERA5Metadatum)
     close(ds)
 
     # Latitude is stored from 90°N → 90°S
-    data_2d = reverse(data_2d, dims=2)
+    data_2d = reverse(data_2d[i, :], dims=2)
 
     # Add singleton z-dimension for 3D field compatibility
     # Return as (Nx, Ny, 1)
