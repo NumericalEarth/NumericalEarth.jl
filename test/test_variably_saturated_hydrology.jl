@@ -136,7 +136,7 @@ end
         fill!(land_drain.fluxes.liquid_precipitation_flux, 0)
         viscosity = hydrology_drain.hydraulic_conductivity.water_viscosity
         Θ = viscosity_correction(viscosity, 303.0)
-        time_step!(land_drain, 100.0)
+        time_step!(land_drain, 100)
         expected = 400 - 100 * 1000 * 1e-6 * Θ
         @test only(Array(interior(land_drain.water_storage))) ≈ expected atol = 1e-5
 
