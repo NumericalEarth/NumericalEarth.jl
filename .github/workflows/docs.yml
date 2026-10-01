@@ -41,6 +41,7 @@ jobs:
     # CondaPkg resolves against every environment on the load path, and the depot of this runner is shared.
     env:
       JULIA_LOAD_PATH: "@:@stdlib"
+      TMPDIR: ${{ runner.temp }}
     permissions:
       actions: write
       contents: write
