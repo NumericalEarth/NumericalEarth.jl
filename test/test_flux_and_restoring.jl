@@ -118,7 +118,7 @@ end
         restoring = ConservativeSurfaceFluxRestoring(raw_restoring, grid)
 
         ocean = ocean_simulation(grid;
-                                 Δt = 1minute,
+                                 Δt = Oceananigans.Units.minute,
                                  closure = nothing,
                                  momentum_advection = nothing,
                                  tracer_advection = nothing,
