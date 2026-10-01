@@ -20,14 +20,19 @@ export AbstractLand,
        NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
        NoRunoff, InfiltrationCapacityRunoff,
        VariablySaturatedHydrology,
+       # Aerodynamic roughness closures
+       aerodynamic_parameters, compute_aerodynamic_roughness!,
+       # Canopy (drag partition)
+       DragPartitionParameters, DragPartitionRoughness, canopy_drag_parameters, canopy_roughness,
+       canopy_wind_ratio, canopy_roughness_climatology, drag_partition_group,
+       representative_canopy_height, is_vegetated, nonvegetated_roughness,
        # Pedotransfer functions + depth-layer combination
        WeynantsPedotransfer, HYPRESPedotransfer,
        soil_hydraulic_parameters, soil_hydraulic_properties,
-       # Urban aerodynamic roughness closures
+       # Urban (morphometric)
        AbstractUrbanRoughness, MorphometricRoughness,
        IsotropicFrontalArea, EmpiricalFrontalArea,
-       UniformHeight, VariableHeight,
-       urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
+       UniformHeight, VariableHeight, urban_roughness,
        # Atmosphere-facing accessors
        surface_temperature, surface_saturation
 
@@ -49,7 +54,7 @@ using Oceananigans.Architectures: CPU, architecture, on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField
 using Oceananigans.Grids: grid_name, Center, Face, znodes, λnode, φnode
-using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series
+using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series, FieldTimeSeries
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!, prettysummary, prettytime
@@ -63,6 +68,12 @@ include("energy_balance/energy_balance.jl")
 include("hydrology/hydrology.jl")
 include("properties/property_providers.jl")
 
+# Aerodynamic roughness closures: surface morphology → momentum roughness length ℓᵐ
+# and zero-plane displacement d. Canopy takes height + leaf area index; urban takes
+# building morphometry.
+include("roughness/canopy_roughness_closure.jl")
+include("roughness/igbp_canopy_classes.jl")
+include("roughness/canopy_roughness_field.jl")
 # Pedotransfer functions and depth-layer combination.
 include("properties/pedotransfer.jl")
 include("properties/soil_hydraulic_properties.jl")

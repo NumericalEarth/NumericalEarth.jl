@@ -54,3 +54,29 @@ function validate_geographic_northup(dataset, geotransform)
     end
     return nothing
 end
+
+# Sentinel returned by `cplgetconfigoption` when an option is unset, so it can be told
+# apart from an option the caller genuinely set (GDAL forbids embedded NULs, so this is a
+# plain improbable string rather than a NUL-guarded one).
+const GDAL_CONFIG_UNSET = "__numericalearth_gdal_config_unset_sentinel__"
+
+# Set GDAL config `options` (key => value pairs) for the duration of `f`, then restore each
+# to its prior value or unset it afterwards. GDAL config is process-global, so leaving
+# per-host basic-auth credentials set would leak them into any later, unrelated `/vsicurl/`
+# read in the same session; scoping keeps them local to the read.
+function with_gdal_config(f, options)
+    saved = map(options) do (key, _)
+        prior = cplgetconfigoption(key, GDAL_CONFIG_UNSET)
+        key => (prior == GDAL_CONFIG_UNSET ? C_NULL : prior)
+    end
+    for (key, value) in options
+        cplsetconfigoption(key, value)
+    end
+    try
+        return f()
+    finally
+        for (key, value) in saved
+            cplsetconfigoption(key, value)
+        end
+    end
+end
