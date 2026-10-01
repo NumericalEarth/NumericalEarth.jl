@@ -6,7 +6,7 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!, BoundaryCondition, Zi
 using Oceananigans.Fields: set!
 using Oceananigans.Grids: RightCenterFolded, RightFaceFolded, generate_coordinate, longitude_in_same_window
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
-using Oceananigans.OrthogonalSphericalShellGrids: Tripolar
+using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, distribute_tripolar_grid
 
 using ..DataWrangling: dataset_variable_name, default_download_directory
 using ..DataWrangling.ORCA: ORCAOne, default_south_rows_to_remove, periodic_overlap, north_fold_pivot
@@ -324,6 +324,46 @@ function halo_fill_stagger(CC, FC, CF, FF, helper_grid, bcs)
     )
 end
 
+# Rank 0 reads the global bottom height and removes the minor basins; the host array is shared with every rank
+function global_orca_bottom_height(read_global_bottom_height, grid, arch, FT, major_basins)
+
+    grid isa DistributedGrid || return remove_minor_orca_basins(read_global_bottom_height(), major_basins)
+
+    bottom_height = if arch.local_rank == 0
+        convert(Matrix{FT}, remove_minor_orca_basins(read_global_bottom_height(), major_basins))
+    else
+        Matrix{FT}(undef, 0, 0)
+    end
+
+    # the other ranks learn the global shape before the reduction of the field itself
+    dimensions = arch.local_rank == 0 ? collect(size(bottom_height)) : zeros(Int, 2)
+    Nx, Ny = all_reduce(+, dimensions, arch)
+
+    if arch.local_rank != 0
+        bottom_height = zeros(FT, Nx, Ny)
+    end
+
+    DistributedComputations.barrier(arch.communicator)
+
+    return all_reduce(+, bottom_height, arch)
+end
+
+# The basin labeling depends only on the x-topology and the shape, so a plain grid of the array's size stands in
+function remove_minor_orca_basins(bottom_height, major_basins)
+    major_basins < Inf || return bottom_height
+
+    Nx, Ny = size(bottom_height)
+
+    labeling_grid = RectilinearGrid(CPU(); size = (Nx, Ny), topology = (Periodic, Bounded, Flat),
+                                    x = (0, 1), y = (0, 1))
+
+    bottom_field = Field{Center, Center, Nothing}(labeling_grid)
+    set!(bottom_field, bottom_height)
+    remove_minor_basins!(bottom_field, major_basins)
+
+    return Array(bottom_field.data[1:Nx, 1:Ny, 1])
+end
+
 """
     ORCAGrid(arch = CPU(), FT::DataType = Float64;
              dataset,
@@ -456,45 +496,51 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     Δyᶜᶜᵃ, Δyᶠᶜᵃ, Δyᶜᶠᵃ, Δyᶠᶠᵃ = halo_fill_stagger(e2t,  e2u,  e2v,  e2f,  helper_grid, bcs)
     Azᶜᶜᵃ, Azᶠᶜᵃ, Azᶜᶠᵃ, Azᶠᶠᵃ = halo_fill_stagger(AzCC, AzFC, AzCF, AzFF, helper_grid, bcs)
 
-    to_arch(data) = on_architecture(arch, map(FT, data))
+    to_host(data) = map(FT, data)
 
-    underlying_grid = OrthogonalSphericalShellGrid{Periodic, fold_topology, Bounded}(
-        arch,
+    # The north fold spans all of x, so the mesh is assembled globally and then cut to this rank's slice
+    global_grid = OrthogonalSphericalShellGrid{Periodic, fold_topology, Bounded}(
+        CPU(),
         Nx, Ny, Nz,
         Hx, Hy, Hz,
         convert(FT, Lz),
-        to_arch(λᶜᶜᵃ), to_arch(λᶠᶜᵃ), to_arch(λᶜᶠᵃ), to_arch(λᶠᶠᵃ),
-        to_arch(φᶜᶜᵃ), to_arch(φᶠᶜᵃ), to_arch(φᶜᶠᵃ), to_arch(φᶠᶠᵃ),
-        on_architecture(arch, z_coord),
-        to_arch(Δxᶜᶜᵃ), to_arch(Δxᶠᶜᵃ), to_arch(Δxᶜᶠᵃ), to_arch(Δxᶠᶠᵃ),
-        to_arch(Δyᶜᶜᵃ), to_arch(Δyᶠᶜᵃ), to_arch(Δyᶜᶠᵃ), to_arch(Δyᶠᶠᵃ),
-        to_arch(Azᶜᶜᵃ), to_arch(Azᶠᶜᵃ), to_arch(Azᶜᶠᵃ), to_arch(Azᶠᶠᵃ),
+        to_host(λᶜᶜᵃ), to_host(λᶠᶜᵃ), to_host(λᶜᶠᵃ), to_host(λᶠᶠᵃ),
+        to_host(φᶜᶜᵃ), to_host(φᶠᶜᵃ), to_host(φᶜᶠᵃ), to_host(φᶠᶠᵃ),
+        z_coord,
+        to_host(Δxᶜᶜᵃ), to_host(Δxᶠᶜᵃ), to_host(Δxᶜᶠᵃ), to_host(Δxᶠᶠᵃ),
+        to_host(Δyᶜᶜᵃ), to_host(Δyᶠᶜᵃ), to_host(Δyᶜᶠᵃ), to_host(Δyᶠᶠᵃ),
+        to_host(Azᶜᶜᵃ), to_host(Azᶠᶜᵃ), to_host(Azᶜᶠᵃ), to_host(Azᶠᶠᵃ),
         convert(FT, radius),
         Tripolar(north_poles_latitude, first_pole_longitude, southernmost_latitude, fold_topology, pivot)
     )
 
+    underlying_grid = distribute_tripolar_grid(arch, global_grid)
+
     with_bathymetry || return underlying_grid
 
     bathy_meta = Metadatum(:bottom_height; dataset, dir)
+    # `download` is `@root` internally, so every rank must call it.
     bathymetry_path = download(bathy_meta)
 
-    bathy_ds   = Dataset(bathymetry_path)
-    bathy_name = dataset_variable_name(bathy_meta)
-    bathy_data = read_2d_nemo_variable(bathy_ds, bathy_name)
-    close(bathy_ds)
+    # Deferred: on a distributed grid only rank 0 reads the dataset.
+    read_global_bottom_height = function ()
+        bathy_ds   = Dataset(bathymetry_path)
+        bathy_name = dataset_variable_name(bathy_meta)
+        bathy_data = read_2d_nemo_variable(bathy_ds, bathy_name)
+        close(bathy_ds)
 
-    bathy_data = orient_xy(bathy_data, size(bathy_data)...; name = string(bathy_name))
+        bathy_data = orient_xy(bathy_data, size(bathy_data)...; name = string(bathy_name))
 
-    bathy_data = chop(bathy_data)
+        bathy_data = chop(bathy_data)
 
-    bottom_height  = FT.(coalesce.(bathy_data, FT(0)))
-    bottom_height .= ifelse.(isfinite.(bottom_height) .& (bottom_height .> 0), .-bottom_height, FT(100))
-    bottom_field  = Field{Center, Center, Nothing}(underlying_grid)
-    set!(bottom_field, on_architecture(arch, bottom_height))
+        bottom_height  = FT.(coalesce.(bathy_data, FT(0)))
+        bottom_height .= ifelse.(isfinite.(bottom_height) .& (bottom_height .> 0), .-bottom_height, FT(100))
 
-    if major_basins < Inf
-        remove_minor_basins!(bottom_field, major_basins)
+        return bottom_height
     end
+
+    bottom_field = Field{Center, Center, Nothing}(underlying_grid)
+    set!(bottom_field, global_orca_bottom_height(read_global_bottom_height, underlying_grid, arch, FT, major_basins))
 
     return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_field); active_cells_map)
 end
