@@ -143,7 +143,7 @@ end
     @test_throws ErrorException cog_window_to_netcdf([tif], joinpath(dir, "bad.nc"), "clay", bbox)
 end
 
-@testset "OpenLandMapSoilDB tiled regrid reproduces the whole-window regrid" begin
+@testset "OpenLandMapSoilDB tiled regrid on $arch" for arch in test_architectures
     dir = mktempdir()
 
     # A tile on the dataset's global lattice, carrying structure at every scale so that a
@@ -158,8 +158,9 @@ end
                                nodata = -1.0, raw, dtype = Float32)
 
     # The window spans the masked patch, so tile interiors have to straddle it.
-    grid = LatitudeLongitudeGrid(CPU(); size = (10, 10, 3),
-                                 longitude = (-111.98, -111.96), latitude = (35.97, 35.99),
+    grid = LatitudeLongitudeGrid(arch; size = (10, 10, 3),
+                                 longitude = collect(range(-111.98, -111.96; length=11)),
+                                 latitude = collect(range(35.97, 35.99; length=11)),
                                  z = [-1.0, -0.6, -0.3, 0.0])
     region = BoundingBox(grid)
 
@@ -167,7 +168,7 @@ end
     cog_window_to_netcdf(fill(tif, 3), metadata_path(metadatum), "clay", region)
 
     # The path the regrid took before tiling: materialize the whole window, then interpolate.
-    native = Field(metadatum, CPU())
+    native = Field(metadatum, arch)
     untiled = Field{Center, Center, Center}(grid)
     NumericalEarth.DataWrangling.interpolate_physical!(untiled, native, metadatum)
 
