@@ -42,7 +42,7 @@ end
 flux_variables(::BucketHydrology) = (:precipitation, :evaporation)
 
 @inline function bucket_capacity(maximum_water_storage, i, j, k=1)
-    M_max = property_value(maximum_water_storage, i, j, k)
+    M_max = stateindex(maximum_water_storage, i, j, k)
     return max(M_max, 0)
 end
 
