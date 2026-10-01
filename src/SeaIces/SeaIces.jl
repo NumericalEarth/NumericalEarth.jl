@@ -1,10 +1,11 @@
 module SeaIces
 
-export sea_ice_simulation, FreezingLimitedOceanTemperature
+export sea_ice_simulation, FreezingLimitedOceanTemperature, LandfastBasalStress
 
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: architecture
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
+using Oceananigans.BoundaryConditions: BoundaryCondition, FieldBoundaryConditions, ValueBoundaryCondition, Zipper
 using Oceananigans.Fields: Field, ZeroField
 using Oceananigans.Grids: inactive_node, Face, Center
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
