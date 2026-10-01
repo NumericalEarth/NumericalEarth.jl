@@ -156,7 +156,7 @@ end
     return clamp((θˡ - θʳ) / Δ, 0, 1)
 end
 
-@inline function saturated_water_storage(h, M, i, j)
+@inline function saturated_water_storage(i, j, grid, h, M)
     FT  = typeof(M)
     ν   = convert(FT, property_value(h.porosity, i, j))
     hˡᵃ = convert(FT, property_value(h.slab_depth, i, j))
@@ -168,7 +168,7 @@ end
     ρˡ  = convert(FT, h.liquid_density)
     hˡᵃ = convert(FT, property_value(h.slab_depth, i, j))
     hˢˢ = convert(FT, property_value(h.storage_height, i, j))
-    Mˡᵃ⁺ = saturated_water_storage(h, M, i, j)
+    Mˡᵃ⁺ = saturated_water_storage(i, j, grid, h, M)
     # Unsaturated branch: Π = Π_m(𝒮). Saturated branch: Π = (M − M⁺) hˢˢ/(ρˡ hˡᵃ).
     return ifelse(M < Mˡᵃ⁺,
                   pressure_head(i, j, grid, h.retention_curve, 𝒮),
@@ -220,13 +220,13 @@ saturation(h::VariablySaturatedHydrology, land) = land.saturation
     Π  = diagnostic_pressure_head(i, j, grid, h, Mij, θˡ, 𝒮)
     K  = hydraulic_conductivity(i, j, grid, h.hydraulic_conductivity, 𝒮, Tij)
 
-    Jˡs, Rsfc = surface_liquid_flux_and_runoff(h.runoff, Plij, Mij, θˡ, 𝒮, Π, K, i, j)
+    Jˡs, Rsfc = surface_liquid_flux_and_runoff(i, j, grid, h.runoff, Plij, Mij, θˡ, 𝒮, Π, K)
     Jˡb       = deep_liquid_flux(h.deep_liquid_flux, Mij, θˡ, 𝒮, Π, K, Πᵈ, time)
     Rlat      = subsurface_runoff(h.runoff, Mij, Π, K)
 
     # Infiltration cannot exceed the pore volume the column has left; the surplus
     # is saturation-excess runoff.
-    pore_limited_flux = -max(saturated_water_storage(h, Mij, i, j) - Mij, 0) / Δt
+    pore_limited_flux = -max(saturated_water_storage(i, j, grid, h, Mij) - Mij, 0) / Δt
     saturation_excess = max(pore_limited_flux - Jˡs, 0)
     Jˡs  += saturation_excess
     Rsfc += saturation_excess

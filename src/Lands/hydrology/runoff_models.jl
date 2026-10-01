@@ -13,7 +13,7 @@
 #####
 ##### Each closure implements
 #####
-#####     surface_liquid_flux_and_runoff(runoff, Pˡ, M, θˡ, 𝒮, Π, K, i, j)
+#####     surface_liquid_flux_and_runoff(i, j, grid, runoff, Pˡ, M, θˡ, 𝒮, Π, K)
 #####         -> (Jˡˢ, Rˢᶠᶜ)
 #####
 #####     subsurface_runoff(runoff, M, Π, K) -> Rˡᵃᵗ
@@ -30,7 +30,7 @@ the pore volume the column has left; no subsurface export.
 """
 struct NoRunoff end
 
-@inline function surface_liquid_flux_and_runoff(::NoRunoff, Pˡ, M, θˡ, 𝒮, Π, K, i, j)
+@inline function surface_liquid_flux_and_runoff(i, j, grid, ::NoRunoff, Pˡ, M, θˡ, 𝒮, Π, K)
     return -Pˡ, zero(Pˡ)
 end
 
@@ -62,8 +62,8 @@ InfiltrationCapacityRunoff(FT::Type = Oceananigans.defaults.FloatType;
 Adapt.adapt_structure(to, c::InfiltrationCapacityRunoff) =
     InfiltrationCapacityRunoff(Adapt.adapt(to, c.infiltration_capacity))
 
-@inline function surface_liquid_flux_and_runoff(c::InfiltrationCapacityRunoff,
-                                                Pˡ, M, θˡ, 𝒮, Π, K, i, j)
+@inline function surface_liquid_flux_and_runoff(i, j, grid, c::InfiltrationCapacityRunoff,
+                                                Pˡ, M, θˡ, 𝒮, Π, K)
     FT   = typeof(Pˡ)
     Jcap = convert(FT, property_value(c.infiltration_capacity, i, j))
     # Available downward flux is -Pˡ. Cap its downward magnitude at Jcap.
