@@ -61,8 +61,8 @@ $(TYPEDSIGNATURES)
 
 @inline function pressure_head(i, j, grid, r::VanGenuchtenRetention, 𝒮)
     FT = typeof(𝒮)
-    αᵃᵉ  = convert(FT, property_value(r.inverse_air_entry_head, i, j))
-    𝓃  = convert(FT, property_value(r.pore_size_uniformity, i, j))
+    αᵃᵉ  = convert(FT, stateindex(r.inverse_air_entry_head, i, j, 1))
+    𝓃  = convert(FT, stateindex(r.pore_size_uniformity, i, j, 1))
     𝓂  = van_genuchten_m(𝓃)
     𝒮c = clamp(𝒮, 0, 1)
 
@@ -130,9 +130,9 @@ Darcy hydraulic conductivity (m s⁻¹) of closure `c` at saturation `𝒮` and 
 """
 @inline function hydraulic_conductivity(i, j, grid, c::VanGenuchtenConductivity, 𝒮, T)
     FT = typeof(𝒮)
-    K₀ = convert(FT, property_value(c.matching_point_conductivity, i, j))
-    𝓃  = convert(FT, property_value(c.pore_size_uniformity, i, j))
-    ηᴷ = convert(FT, property_value(c.pore_connectivity_exponent, i, j))
+    K₀ = convert(FT, stateindex(c.matching_point_conductivity, i, j, 1))
+    𝓃  = convert(FT, stateindex(c.pore_size_uniformity, i, j, 1))
+    ηᴷ = convert(FT, stateindex(c.pore_connectivity_exponent, i, j, 1))
     𝓂  = van_genuchten_m(𝓃)
     𝒮c = clamp(𝒮, 0, 1)
 

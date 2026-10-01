@@ -827,6 +827,40 @@ end
     end
 end
 
+# Over terrain, the child's initial u and v match a sheared parent at each face's physical height.
+@testset "Nested child over terrain initializes u, v at their physical face heights on $(arch)" for arch in test_architectures
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    parent_u(z) = 8 + 2e-3 * z
+    parent_v(z) = -3 + 1e-3 * z
+
+    parent_grid = LatitudeLongitudeGrid(arch; size = (12, 12, 32),
+                                        longitude = (-2, 2), latitude = (34.6, 38.6),
+                                        z = (0, 16000), halo = (5, 5, 5),
+                                        topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(parent_grid, [0.0, 4.0])
+    set!(parent.temperature,       (λ, φ, z, t) -> 288 - 6.5e-3 * z)
+    set!(parent.specific_humidity, (λ, φ, z, t) -> 0.006)
+    set!(parent.velocities.u,      (λ, φ, z, t) -> parent_u(z))
+    set!(parent.velocities.v,      (λ, φ, z, t) -> parent_v(z))
+    set!(parent.pressure,          (λ, φ, z, t) -> 1e5 * exp(-z / 8000))
+
+    z = TerrainFollowingVerticalDiscretization(collect(range(0, 16000, length = 17)))
+    child_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 16),
+                                       longitude = (-1, 1), latitude = (35.6, 37.6), z,
+                                       halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+    terrain = Field{Center, Center, Nothing}(child_grid)
+    set!(terrain, (λ, φ) -> 1000 * exp(-(λ^2 + (φ - 36.6)^2) / 0.25))
+
+    model = nested_atmosphere_model(parent, child_grid; terrain, terrain_smoothing_passes = 0,
+                                    surface_pressure = 1e5, coriolis = nothing, parent_condensates = nothing)
+    ext.initialize_nested_child!(model, nothing, 0.0, ""; balancer = false)
+
+    expected_u = XFaceField(child_grid); set!(expected_u, (λ, φ, z) -> parent_u(z))
+    expected_v = YFaceField(child_grid); set!(expected_v, (λ, φ, z) -> parent_v(z))
+    @test maximum(abs, Array(interior(model.child.velocities.u)) .- Array(interior(expected_u))) < 0.05
+    @test maximum(abs, Array(interior(model.child.velocities.v)) .- Array(interior(expected_v))) < 0.05
+end
+
 # `terrain_blend_length` is a physical length converted to a cell count per grid, so the blend slope is
 # resolution-invariant: a 4×-finer grid gets ~4× the cells.
 @testset "default_terrain_blend_width: physical length gives a resolution-invariant slope" begin
