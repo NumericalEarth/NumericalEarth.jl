@@ -84,16 +84,14 @@ component off those cells. For gaps that fall inside built-up land, inpaint `λ�
 with `DataWrangling.inpaint_mask!` before evaluating the closure instead, so the fill comes
 from horizontal neighbors rather than from a constant.
 """
-function fill_aerodynamic_roughness_gaps!(ℓᵐ, d, closure::AbstractUrbanRoughness;
-                                          unbuilt = aerodynamic_parameters(closure, 0, 0))
+function fill_aerodynamic_roughness_gaps!(ℓᵐ, d, closure::AbstractUrbanRoughness; unbuilt = aerodynamic_parameters(closure, 0, 0))
     ℓᵘ, dᵘ = unbuilt
     ℓᵘ > 0 || throw(ArgumentError("the unbuilt roughness length must be positive, got $ℓᵘ"))
     dᵘ >= 0 || throw(ArgumentError("the unbuilt zero-plane displacement must be non-negative, got $dᵘ"))
 
     grid = ℓᵐ.grid
     FT = eltype(ℓᵐ)
-    launch!(architecture(grid), grid, :xy, _fill_aerodynamic_roughness_gaps!,
-            ℓᵐ, d, convert(FT, ℓᵘ), convert(FT, dᵘ))
+    launch!(architecture(grid), grid, :xy, _fill_aerodynamic_roughness_gaps!, ℓᵐ, d, convert(FT, ℓᵘ), convert(FT, dᵘ))
     return ℓᵐ, d
 end
 
