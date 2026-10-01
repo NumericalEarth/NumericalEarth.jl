@@ -116,10 +116,10 @@ end
         fill!(land_field_capped.fluxes.vapor_flux, 0)
         fill!(land_field_capped.fluxes.liquid_precipitation_flux, 10)
         time_step!(land_field_capped, 1)
-        @test only(Array(interior(land_field_capped.water_storage))) ≈ 7
-        @test only(Array(interior(land_field_capped.diagnostics.surface_runoff))) ≈ 3
+        @test maximum(land_field_capped.water_storage) ≈ 7
+        @test maximum(land_field_capped.diagnostics.surface_runoff) ≈ 3
 
-# Free drainage: dM/dt = -ρˡ K_b. At full saturation K = K_sat Θ(T), where Θ is
+        # Free drainage: dM/dt = -ρˡ K_b. At full saturation K = K_sat Θ(T), where Θ is
         # the viscosity correction, so the rate carries the slab temperature.
         hydrology_drain = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0,
@@ -143,25 +143,25 @@ end
         # Rain on a column at pore capacity runs off: M stays at M⁺ less one step
         # of drainage, and the runoff is the rain minus the drainage ρˡ K₀ = 1e-3.
         hydrology_saturating = VariablySaturatedHydrology(eltype(grid);
-            slab_depth = 1.0,
+            slab_depth = 1,
             porosity = 0.4,
             storage_height = 1000,
-            retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
-            hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
+            retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1, pore_size_uniformity = 2),
+            hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2),
             deep_liquid_flux = FreeDrainageFlux(),
-            runoff = InfiltrationCapacityRunoff(infiltration_capacity = 7.0),
+            runoff = InfiltrationCapacityRunoff(infiltration_capacity = 7),
         )
         land_saturating = SlabLand(grid; hydrology = hydrology_saturating)
-        set!(land_saturating; T = 293.0, M = 399.0)
+        set!(land_saturating; T = 293, M = 399)
         fill!(land_saturating.fluxes.vapor_flux, 0)
-        fill!(land_saturating.fluxes.liquid_precipitation_flux, 5.0)  # below capacity 7
+        fill!(land_saturating.fluxes.liquid_precipitation_flux, 5)  # below capacity 7
         for _ in 1:20
-            time_step!(land_saturating, 1.0)
+            time_step!(land_saturating, 1)
         end
-        M = only(Array(interior(land_saturating.water_storage)))
-        @test M ≤ 400.0
-        @test M ≈ 400.0 - 1e-3 atol = 1e-2
-        @test only(Array(interior(land_saturating.diagnostics.surface_runoff))) ≈ 5.0 - 1e-3 atol = 1e-2
+        M = maximum(land_saturating.water_storage)
+        @test M ≤ 400
+        @test M ≈ 400 - 1e-3 atol = 1e-2
+        @test maximum(land_saturating.diagnostics.surface_runoff) ≈ 5 - 1e-3 atol = 1e-2
     end
 end
 
