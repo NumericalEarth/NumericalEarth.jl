@@ -31,6 +31,10 @@ using NumericalEarth.DataWrangling.WorldCover: ESAWorldCoverMetadatum, version_y
                                                worldcover_window, aggregate_landcover,
                                                class_fraction_variable_name,
                                                ESA_WORLDCOVER_NATIVE_STEP
+using NumericalEarth.DataWrangling.SoilGrids: SoilGrids2Metadatum, SoilGrids2_depth_ranges,
+                                              soilgrids_raster_geometry,
+                                              soilgrids_statistic_url_name,
+                                              soilgrids_vsicurl_source
 
 include("gdal_utils.jl")
 include("ibcao.jl")
@@ -39,5 +43,6 @@ include("globfp3d.jl")
 include("ghsl.jl")
 include("openlandmap.jl")
 include("worldcover.jl")
+include("soilgrids.jl")
 
 end # module NumericalEarthArchGDALExt
