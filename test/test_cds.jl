@@ -42,6 +42,17 @@ start_date = DateTime(2005, 2, 16, 12)
         @test ERA5_dataset_variable_names[:temperature] == "2m_temperature"
         @test ERA5_dataset_variable_names[:eastward_velocity] == "10m_u_component_of_wind"
         @test ERA5_dataset_variable_names[:northward_velocity] == "10m_v_component_of_wind"
+
+        # CDS request names and netcdf short names from the reanalysis-era5-single-levels catalog
+        for (name, request_name, short_name) in ((:boundary_layer_height,                 "boundary_layer_height",                 "blh"),
+                                                 (:convective_available_potential_energy, "convective_available_potential_energy", "cape"),
+                                                 (:convective_precipitation,              "convective_precipitation",              "cp"),
+                                                 (:land_sea_mask,                         "land_sea_mask",                         "lsm"),
+                                                 (:sea_ice_concentration,                 "sea_ice_cover",                         "siconc"),
+                                                 (:forecast_albedo,                       "forecast_albedo",                       "fal"))
+            @test ERA5_dataset_variable_names[name] == request_name
+            @test ERA5_netcdf_variable_names[name] == short_name
+        end
     end
 
     @testset "ERA5 metadata properties" begin
@@ -132,11 +143,12 @@ start_date = DateTime(2005, 2, 16, 12)
         era5m(name) = Metadatum(name; dataset=ds, date=start_date)
 
         # Surface geopotential ÷ g → meters; accumulated SW/LW (J/m²) ÷ 3600 → W/m²;
-        # accumulated precip depth (m) × 1000/3600 → kg/m²/s. Others are unconverted.
+        # accumulated total and convective precip depth (m) × 1000/3600 → kg/m²/s. Others are unconverted.
         @test conversion_units(era5m(:topography)) isa InverseGravity
         @test conversion_units(era5m(:downwelling_shortwave_radiation)) isa Jm²ph
         @test conversion_units(era5m(:downwelling_longwave_radiation))  isa Jm²ph
         @test conversion_units(era5m(:total_precipitation)) isa MetersPerHour
+        @test conversion_units(era5m(:convective_precipitation)) isa MetersPerHour
         @test conversion_units(era5m(:temperature)) === nothing
 
         @test convert_units(3600, Jm²ph()) ≈ 1               # 3600 J/m²/hr → 1 W/m²
