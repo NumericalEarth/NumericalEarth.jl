@@ -101,25 +101,25 @@ end
 
         # A per-cell capacity field caps the same way.
         capacity = Field{Center, Center, Nothing}(grid)
-        set!(capacity, 7.0)
+        set!(capacity, 7)
         hydrology_field_capped = VariablySaturatedHydrology(eltype(grid);
-            slab_depth = 1.0,
+            slab_depth = 1,
             porosity = 0.4,
             storage_height = 1000,
-            retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
-            hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
+            retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1, pore_size_uniformity = 2),
+            hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2),
             deep_liquid_flux = NoDeepLiquidFlux(),
             runoff = InfiltrationCapacityRunoff(infiltration_capacity = capacity),
         )
         land_field_capped = SlabLand(grid; hydrology = hydrology_field_capped)
-        set!(land_field_capped; M = 0.0)
-        fill!(land_field_capped.fluxes.vapor_flux, 0.0)
-        fill!(land_field_capped.fluxes.liquid_precipitation_flux, 10.0)
-        time_step!(land_field_capped, 1.0)
-        @test only(Array(interior(land_field_capped.water_storage))) ≈ 7.0
-        @test only(Array(interior(land_field_capped.diagnostics.surface_runoff))) ≈ 3.0
+        set!(land_field_capped; M = 0)
+        fill!(land_field_capped.fluxes.vapor_flux, 0)
+        fill!(land_field_capped.fluxes.liquid_precipitation_flux, 10)
+        time_step!(land_field_capped, 1)
+        @test only(Array(interior(land_field_capped.water_storage))) ≈ 7
+        @test only(Array(interior(land_field_capped.diagnostics.surface_runoff))) ≈ 3
 
-        # Free drainage: dM/dt = -ρˡ K_b. At full saturation K = K_sat Θ(T), where Θ is
+# Free drainage: dM/dt = -ρˡ K_b. At full saturation K = K_sat Θ(T), where Θ is
         # the viscosity correction, so the rate carries the slab temperature.
         hydrology_drain = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0,
