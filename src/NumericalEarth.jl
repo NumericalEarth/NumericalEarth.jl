@@ -110,6 +110,7 @@ export
     UniformHeight, VariableHeight,
     urban_roughness,
     surface_temperature,
+    surface_layer_diagnostics,
     regrid_bathymetry,
     regrid_topography,
     smooth_topography!,
