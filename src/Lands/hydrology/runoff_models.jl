@@ -65,7 +65,7 @@ Adapt.adapt_structure(to, c::InfiltrationCapacityRunoff) =
 @inline function surface_liquid_flux_and_runoff(i, j, grid, c::InfiltrationCapacityRunoff,
                                                 Pˡ, M, θˡ, 𝒮, Π, K)
     FT   = typeof(Pˡ)
-    Jcap = convert(FT, property_value(c.infiltration_capacity, i, j))
+    Jcap = convert(FT, stateindex(c.infiltration_capacity, i, j, 1))
     # Available downward flux is -Pˡ. Cap its downward magnitude at Jcap.
     Jˡs  = max(-Pˡ, -Jcap)
     Rsfc = Jˡs - (-Pˡ)   # ≥ 0
