@@ -1,6 +1,7 @@
 using Oceananigans.Grids: Center
 using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.Fields: compute!
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Breeze.AtmosphereModels: thermodynamic_density, dynamics_pressure,
                                specific_humidity, surface_precipitation_flux
 using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
@@ -205,6 +206,9 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmo
     if !isnothing(ao_interface)
         ao_fluxes = computed_fluxes(ao_interface)
         if !isnothing(ao_fluxes)
+            # The assembly interpolates the stresses to u/v faces, reading the i = 0 / j = 0 halo
+            fill_halo_regions!(ao_fluxes.x_momentum)
+            fill_halo_regions!(ao_fluxes.y_momentum)
             launch!(arch, grid, params, _assemble_net_atmosphere_fluxes!, net, ao_fluxes, grid)
         end
     end
@@ -218,6 +222,8 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmo
     if !isnothing(al_interface)
         al_fluxes = computed_fluxes(al_interface)
         if !isnothing(al_fluxes)
+            fill_halo_regions!(al_fluxes.x_momentum)
+            fill_halo_regions!(al_fluxes.y_momentum)
             launch!(arch, grid, params, _assemble_net_atmosphere_fluxes!, net, al_fluxes, grid)
         end
     end
