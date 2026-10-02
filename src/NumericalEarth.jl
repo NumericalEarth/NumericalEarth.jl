@@ -59,7 +59,6 @@ export
     AtmosphereTemperatureOffset,
     DownwellingLongwaveOffset,
     temperature_offset_corrections,
-    linear_ramp,
     atmosphere_land_interface,
     SlabOcean,
     PrescribedOcean,
