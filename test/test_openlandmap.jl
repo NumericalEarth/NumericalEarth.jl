@@ -6,7 +6,7 @@ using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, z
                                     metadata_filename, conversion_units, convert_units,
                                     default_inpainting, is_three_dimensional,
                                     WeightPercent, GramPerCubicCentimeter, native_grid
-using NumericalEarth.DataWrangling.OpenLandMap: assemble_cog_window, cog_window_indices,
+using NumericalEarth.DataWrangling.OpenLandMap: assemble_raster_window, raster_window_indices,
                                                 cog_window_to_netcdf, validate_epsg4326,
                                                 validate_geographic_northup
 
@@ -76,7 +76,7 @@ end
 
     # An interior request: the window must strictly contain it on all four sides.
     bbox = BoundingBox(longitude = (-4.5, -4.2), latitude = (3.5, 3.8))
-    column_offset, row_offset, Nx, Ny = cog_window_indices(geotransform, width, height, bbox)
+    column_offset, row_offset, Nx, Ny = raster_window_indices(geotransform, width, height, bbox)
 
     @test x0 + column_offset * dx < bbox.longitude[1]
     @test x0 + (column_offset + Nx) * dx > bbox.longitude[2]
@@ -86,12 +86,12 @@ end
     # A request overhanging every edge clamps to the raster instead of running off it.
     huge = BoundingBox(longitude = (x0 - 1, x0 + width * dx + 1),
                        latitude  = (y0 + height * dy - 1, y0 + 1))
-    @test cog_window_indices(geotransform, width, height, huge) == (0, 0, width, height)
+    @test raster_window_indices(geotransform, width, height, huge) == (0, 0, width, height)
 
     value_scale, value_offset, missing_value = 0.5, 2.0, 255
     raw = UInt8[i + 10 * (j - 1) for i in 1:4, j in 1:3]  # (lon, lat), north-first
     raw[2, 1] = missing_value
-    longitude, latitude, data = assemble_cog_window(raw, geotransform, 2, 1, value_scale, value_offset, missing_value)
+    longitude, latitude, data = assemble_raster_window(raw, geotransform, 2, 1, value_scale, value_offset, missing_value)
 
     # Cell centers, half a pixel in from the window's west and north faces.
     @test longitude[1] ≈ x0 + 2 * dx + dx / 2

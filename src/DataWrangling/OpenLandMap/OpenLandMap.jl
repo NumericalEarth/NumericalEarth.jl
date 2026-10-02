@@ -283,11 +283,14 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Return the `(column_offset, row_offset, Nx, Ny)` raster window, in 0-based GDAL pixel
-coordinates, covering the `bbox` longitude/latitude box on a `width` × `height`
-raster with the north-up `geotransform` `[x₀, Δλ, 0, y₀, 0, Δφ]`.
+Return `(column_offset, row_offset, Nx, Ny)` for a rectangular raster patch covering
+the longitude/latitude bounds `bbox`, padded by one pixel and clipped to the image.
+Offsets count columns and rows from zero; `Nx` and `Ny` are the patch's pixel counts.
+The full image has `width` columns and `height` rows, ordered west to east and north
+to south, with `geotransform = [western_edge, longitude_spacing, 0,
+northern_edge, 0, latitude_spacing]` in degrees and negative `latitude_spacing`.
 """
-function cog_window_indices(geotransform, width, height, bbox)
+function raster_window_indices(geotransform, width, height, bbox)
     x0, dx, _, y0, _, dy = geotransform
     W, E = bbox.longitude
     S, N = bbox.latitude
@@ -304,8 +307,15 @@ function cog_window_indices(geotransform, width, height, bbox)
     return column_offset, row_offset, Nx, Ny
 end
 
-# Decode stored values, masking missing pixels before applying scale and offset.
-function decode_cog_window(raw, value_scale, value_offset, missing_value)
+"""
+$(TYPEDSIGNATURES)
+
+Return a `Float32` array of physical values with the same shape as `raw`.
+Replace values equal to `missing_value` with `NaN`, then decode all other values
+as `value * value_scale + value_offset`. Use `missing_value = nothing` when
+the raster has no missing-value marker.
+"""
+function decode_raster_values(raw, value_scale, value_offset, missing_value)
     decoded = Array{Float32}(undef, size(raw))
     @inbounds for idx in eachindex(raw)
         value = Float64(raw[idx])
@@ -318,24 +328,26 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Return `(longitude, latitude, data)` for a rectangular GeoTIFF patch `raw`.
-The `geotransform` specifies the full image's origin and pixel spacing;
-`column_offset` and `row_offset` locate the patch's first pixel, counting from zero.
+Return `(longitude, latitude, data)` for a rectangular raster patch `raw`, whose
+first dimension runs west to east and second dimension runs north to south.
+The `geotransform` contains the full image's western and northern edges and pixel
+spacing in degrees as `[western_edge, longitude_spacing, 0, northern_edge, 0,
+latitude_spacing]`. `column_offset` and `row_offset` locate the patch's first
+pixel within that image, counting from zero.
 
 Compute pixel-center coordinates and reorder latitude and data from south to north.
 Replace `missing_value` with `NaN`. Convert each remaining value `v` to
 `Float32(v * value_scale + value_offset)`.
 """
-function assemble_cog_window(raw, geotransform, column_offset, row_offset, value_scale, value_offset, missing_value)
+function assemble_raster_window(raw, geotransform, column_offset, row_offset, value_scale, value_offset, missing_value)
     x0, dx, _, y0, _, dy = geotransform
     Nx, Ny = size(raw)
 
     # Pixel centers lie half a pixel inward from their western and northern edges.
     longitude = [x0 + (column_offset + i - 0.5) * dx for i in 1:Nx]
-    # COGs store rows north-first (Δφ < 0); reverse latitude and data so both
-    # come out ascending (south-to-north), per CF convention.
+    # Reverse north-first rows so latitude and data run south to north.
     latitude  = reverse([y0 + (row_offset + j - 0.5) * dy for j in 1:Ny])
-    data = reverse(decode_cog_window(raw, value_scale, value_offset, missing_value), dims = 2)
+    data = reverse(decode_raster_values(raw, value_scale, value_offset, missing_value), dims = 2)
 
     return longitude, latitude, data
 end
