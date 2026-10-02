@@ -151,6 +151,12 @@ export
     river_mouth_vertical_diffusivity,
     sea_ice_simulation,
     default_sea_ice,
+    IceShelfOceanInterface,
+    PressureDependentLiquidus,
+    VelocityBasedFrictionVelocity,
+    compute_ice_shelf_fluxes!,
+    ice_shelf_boundary_conditions,
+    ice_shelf_tracer_forcing,
     initialize!,
     net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
     net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux,
@@ -254,6 +260,7 @@ include("Atmospheres/Atmospheres.jl")
 include("Lands/Lands.jl")
 include("Radiations/Radiations.jl")
 include("SeaIces/SeaIces.jl")
+include("IceShelves/IceShelves.jl")
 include("DataWrangling/DataWrangling.jl")
 include("Bathymetry/Bathymetry.jl")
 include("Diagnostics/Diagnostics.jl")
@@ -269,6 +276,7 @@ using .Lands
 using .Radiations
 using .Oceans
 using .SeaIces
+using .IceShelves
 using .Diagnostics
 using .EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
 using .NestedModels
