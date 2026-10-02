@@ -92,6 +92,7 @@ NumericalEarth currently ships connectors for the following data products:
 - `:net_heat_flux` - Net surface heat flux into the ocean (W m⁻²).
 - `:sensible_heat_flux` - Surface sensible heat flux (W m⁻²).
 - `:latent_heat_flux` - Surface latent heat flux (W m⁻²).
+- `:net_freshwater_flux` - Net surface freshwater flux into the ocean (kg m⁻² s⁻¹).
 - `:net_longwave` - Net longwave radiation at the surface (W m⁻²).
 - `:downwelling_shortwave` - Downward shortwave radiation at the surface (W m⁻²).
 - `:downwelling_longwave` - Downward longwave radiation at the surface (W m⁻²).

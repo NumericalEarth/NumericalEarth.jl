@@ -117,9 +117,12 @@ end
 Return the native grid corresponding to `metadata` with `halo` size.
 Returns a `LatitudeLongitudeGrid` for global or `BoundingBox` regions,
 and a column `RectilinearGrid` for `Column` regions.
+
+The grid is built on the child architecture of `arch`, so with a `Distributed` architecture every rank reads and
+inpaints the whole dataset and then regrids onto its own subdomain.
 """
 native_grid(metadata::Metadata, arch=CPU(); halo=(3, 3, 3)) =
-    construct_native_grid(metadata, metadata.region, arch; halo)
+    construct_native_grid(metadata, metadata.region, child_architecture(arch); halo)
 
 # 2D-only datasets (surface forcing like JRA55) skip the z dimension.
 function construct_native_grid(metadata, ::Nothing, arch; halo)
@@ -397,7 +400,7 @@ function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid;
     return target
 end
 
-function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw...)
+function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum, args...; kw...)
     regrid_from_metadata!(target_field, metadata; kw...)
     return target_field
 end
