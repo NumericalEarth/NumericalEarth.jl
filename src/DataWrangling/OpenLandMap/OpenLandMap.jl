@@ -2,6 +2,7 @@ module OpenLandMap
 
 export OpenLandMapSoilDB
 
+using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using NCDatasets: NCDataset, defDim, defVar
 using Oceananigans: Center
@@ -274,9 +275,9 @@ function validate_epsg4326(epsg)
 end
 
 """
-    cog_window_indices(geotransform, width, height, bbox)
+$(TYPEDSIGNATURES)
 
-Return the `(xoff, yoff, xsize, ysize)` raster window, in 0-based GDAL pixel
+Return the `(column_offset, row_offset, Nx, Ny)` raster window, in 0-based GDAL pixel
 coordinates, covering the `bbox` longitude/latitude box on a `width` × `height`
 raster with the north-up `geotransform` `[x₀, Δλ, 0, y₀, 0, Δφ]`.
 """
@@ -289,45 +290,46 @@ function cog_window_indices(geotransform, width, height, bbox)
     # framework's center-bracketed native grid; otherwise the grid can hold one
     # more cell than the file, forcing a clamped read that shifts the whole
     # window by a pixel and duplicates the outermost row/column.
-    xoff  = clamp(floor(Int, (W - x0) / dx) - 1, 0, width - 1)
-    yoff  = clamp(floor(Int, (N - y0) / dy) - 1, 0, height - 1)
-    xsize = clamp(ceil(Int, (E - x0) / dx) + 1 - xoff, 1, width - xoff)
-    ysize = clamp(ceil(Int, (S - y0) / dy) + 1 - yoff, 1, height - yoff)
+    column_offset = clamp(floor(Int, (W - x0) / dx) - 1, 0, width - 1)
+    row_offset    = clamp(floor(Int, (N - y0) / dy) - 1, 0, height - 1)
+    Nx            = clamp(ceil(Int, (E - x0) / dx) + 1 - column_offset, 1, width - column_offset)
+    Ny            = clamp(ceil(Int, (S - y0) / dy) + 1 - row_offset, 1, height - row_offset)
 
-    return xoff, yoff, xsize, ysize
+    return column_offset, row_offset, Nx, Ny
 end
 
-# Decode raw COG integers to Float32 physical values. Order matters: mask nodata
-# to NaN first, then apply the band scale/offset (a scaled fill is a spurious value).
-function decode_cog_window(raw, scale, offset, nodata)
+# Decode stored values, masking missing pixels before applying scale and offset.
+function decode_cog_window(raw, value_scale, value_offset, missing_value)
     decoded = Array{Float32}(undef, size(raw))
     @inbounds for idx in eachindex(raw)
         value = Float64(raw[idx])
-        is_nodata = !isnothing(nodata) && isequal(value, nodata)
-        decoded[idx] = is_nodata ? NaN32 : Float32(value * scale + offset)
+        is_nodata = !isnothing(missing_value) && isequal(value, missing_value)
+        decoded[idx] = is_nodata ? NaN32 : Float32(value * value_scale + value_offset)
     end
     return decoded
 end
 
 """
-    assemble_cog_window(raw, geotransform, xoff, yoff, scale, offset, nodata)
+$(TYPEDSIGNATURES)
 
-Turn the `(lon, lat)` north-first window `raw`, read at the 0-based pixel offsets
-`(xoff, yoff)` of a raster with `geotransform`, into `(longitude, latitude, data)`
-with cell-center coordinates, ascending latitude, and `raw` decoded to `Float32`
-physical units.
+Return `(longitude, latitude, data)` for a rectangular GeoTIFF patch `raw`.
+The `geotransform` specifies the full image's origin and pixel spacing;
+`column_offset` and `row_offset` locate the patch's first pixel, counting from zero.
+
+Compute pixel-center coordinates and reorder latitude and data from south to north.
+Replace `missing_value` with `NaN`. Convert each remaining value `v` to
+`Float32(v * value_scale + value_offset)`.
 """
-function assemble_cog_window(raw, geotransform, xoff, yoff, scale, offset, nodata)
+function assemble_cog_window(raw, geotransform, column_offset, row_offset, value_scale, value_offset, missing_value)
     x0, dx, _, y0, _, dy = geotransform
-    xsize, ysize = size(raw)
+    Nx, Ny = size(raw)
 
-    # Pixel centers: x₀ is the corner of pixel 0, so the 0-based column
-    # (xoff + i - 1) plus half a pixel (+0.5) gives the center: xoff + i - 0.5.
-    longitude = [x0 + (xoff + i - 0.5) * dx for i in 1:xsize]
+    # Pixel centers lie half a pixel inward from their western and northern edges.
+    longitude = [x0 + (column_offset + i - 0.5) * dx for i in 1:Nx]
     # COGs store rows north-first (Δφ < 0); reverse latitude and data so both
     # come out ascending (south-to-north), per CF convention.
-    latitude  = reverse([y0 + (yoff + j - 0.5) * dy for j in 1:ysize])
-    data = reverse(decode_cog_window(raw, scale, offset, nodata), dims = 2)
+    latitude  = reverse([y0 + (row_offset + j - 0.5) * dy for j in 1:Ny])
+    data = reverse(decode_cog_window(raw, value_scale, value_offset, missing_value), dims = 2)
 
     return longitude, latitude, data
 end

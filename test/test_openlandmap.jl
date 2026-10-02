@@ -76,22 +76,22 @@ end
 
     # An interior request: the window must strictly contain it on all four sides.
     bbox = BoundingBox(longitude = (-4.5, -4.2), latitude = (3.5, 3.8))
-    xoff, yoff, xsize, ysize = cog_window_indices(geotransform, width, height, bbox)
+    column_offset, row_offset, Nx, Ny = cog_window_indices(geotransform, width, height, bbox)
 
-    @test x0 + xoff * dx < bbox.longitude[1]
-    @test x0 + (xoff + xsize) * dx > bbox.longitude[2]
-    @test y0 + (yoff + ysize) * dy < bbox.latitude[1]
-    @test y0 + yoff * dy > bbox.latitude[2]
+    @test x0 + column_offset * dx < bbox.longitude[1]
+    @test x0 + (column_offset + Nx) * dx > bbox.longitude[2]
+    @test y0 + (row_offset + Ny) * dy < bbox.latitude[1]
+    @test y0 + row_offset * dy > bbox.latitude[2]
 
     # A request overhanging every edge clamps to the raster instead of running off it.
     huge = BoundingBox(longitude = (x0 - 1, x0 + width * dx + 1),
                        latitude  = (y0 + height * dy - 1, y0 + 1))
     @test cog_window_indices(geotransform, width, height, huge) == (0, 0, width, height)
 
-    scale, offset, nodata = 0.5, 2.0, 255
+    value_scale, value_offset, missing_value = 0.5, 2.0, 255
     raw = UInt8[i + 10 * (j - 1) for i in 1:4, j in 1:3]  # (lon, lat), north-first
-    raw[2, 1] = nodata
-    longitude, latitude, data = assemble_cog_window(raw, geotransform, 2, 1, scale, offset, nodata)
+    raw[2, 1] = missing_value
+    longitude, latitude, data = assemble_cog_window(raw, geotransform, 2, 1, value_scale, value_offset, missing_value)
 
     # Cell centers, half a pixel in from the window's west and north faces.
     @test longitude[1] ≈ x0 + 2 * dx + dx / 2
@@ -100,10 +100,10 @@ end
 
     # Latitude ascends, so raw row 1 (north) becomes the last latitude index.
     @test eltype(data) == Float32
-    @test data[1, end] ≈ raw[1, 1] * scale + offset
-    @test data[1, 1] ≈ raw[1, 3] * scale + offset
+    @test data[1, end] ≈ raw[1, 1] * value_scale + value_offset
+    @test data[1, 1] ≈ raw[1, 3] * value_scale + value_offset
 
-    # The fill is masked before scale/offset; scaling it would give a finite 129.5.
+    # The fill is masked before scaling; scaling it would give a finite 129.5.
     @test isnan(data[2, end])
     @test count(isnan, data) == 1
 

@@ -12,14 +12,14 @@ function NumericalEarth.DataWrangling.OpenLandMap.read_cog_window(source, bbox::
 
         width  = ArchGDAL.width(ds)
         height = ArchGDAL.height(ds)
-        xoff, yoff, xsize, ysize = cog_window_indices(geotransform, width, height, bbox)
+        column_offset, row_offset, Nx, Ny = cog_window_indices(geotransform, width, height, bbox)
 
-        band   = ArchGDAL.getband(ds, 1)
-        scale  = ArchGDAL.getscale(band)
-        offset = ArchGDAL.getoffset(band)
-        nodata = ArchGDAL.getnodatavalue(band)
+        band          = ArchGDAL.getband(ds, 1)
+        value_scale   = ArchGDAL.getscale(band)
+        value_offset  = ArchGDAL.getoffset(band)
+        missing_value = ArchGDAL.getnodatavalue(band)
 
-        raw = ArchGDAL.read(ds, 1, xoff, yoff, xsize, ysize)  # (lon, lat), north-first
-        return assemble_cog_window(raw, geotransform, xoff, yoff, scale, offset, nodata)
+        raw = ArchGDAL.read(ds, 1, column_offset, row_offset, Nx, Ny)  # (lon, lat), north-first
+        return assemble_cog_window(raw, geotransform, column_offset, row_offset, value_scale, value_offset, missing_value)
     end
 end
