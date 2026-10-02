@@ -333,7 +333,6 @@ for arch in test_architectures
         @test !(interior(ℓᵐ) ≈ interior(ℓᵐreg))
         @test !(interior(d) ≈ interior(dreg))
 
-        # Scalar properties sample through property_value like Fields do.
         compute_aerodynamic_roughness!(ℓᵐ, d, MorphometricRoughness(),
                                     (; plan_area_index = λᵖ, mean_building_height = 30.0,
                                         building_height_deviation = 25.0, maximum_building_height = 250.0,
@@ -350,7 +349,6 @@ for arch in test_architectures
         cell = (; plan_area_index = 0.3, mean_building_height = 15.0, latitude = 51.5)
         @test aerodynamic_parameters(closure, cell) == aerodynamic_parameters(closure, 0.3, 15.0)
 
-        # The shared grid builder samples a Field and a uniform scalar property via property_value.
         grid = LatitudeLongitudeGrid(arch, Float64; size = (4, 4),
                                     longitude = (-0.1, 0.1), latitude = (51.4, 51.6),
                                     topology = (Bounded, Bounded, Flat))
