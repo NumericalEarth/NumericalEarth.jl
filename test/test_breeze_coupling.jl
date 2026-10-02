@@ -443,7 +443,7 @@ end
             p  = Array(interior(model.dynamics.pressure))
             pᵣ = Array(interior(model.dynamics.reference_state.pressure))
 
-            @test p ≈ pᵣ
+            @test all(p .≈ pᵣ)
 
             # Both anchored at the datum would also agree, so pin that the reference really is
             # reduced to the domain bottom: 2 km of hydrostatic descent is ~22 kPa.
