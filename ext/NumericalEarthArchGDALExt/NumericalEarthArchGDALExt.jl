@@ -28,7 +28,7 @@ using NumericalEarth.DataWrangling.GHSL: GHSBuiltS, GHSLMetadatum, native_resolu
                                          mask_building_height
                                          built_surface_to_fraction, mask_building_height
 using NumericalEarth.DataWrangling.OpenLandMap: assemble_raster_window, raster_window_indices,
-                                                validate_epsg4326, validate_geographic_northup
+                                                validate_wgs84_longitude_latitude, validate_geographic_northup
 using NumericalEarth.DataWrangling.WorldCover: ESAWorldCoverMetadatum, version_year, version_string,
                                                worldcover_window, aggregate_landcover,
                                                class_fraction_variable_name,

@@ -7,7 +7,7 @@ using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, z
                                     default_inpainting, is_three_dimensional,
                                     WeightPercent, GramPerCubicCentimeter, native_grid
 using NumericalEarth.DataWrangling.OpenLandMap: assemble_raster_window, raster_window_indices,
-                                                cog_window_to_netcdf, validate_epsg4326,
+                                                cog_window_to_netcdf, validate_wgs84_longitude_latitude,
                                                 validate_geographic_northup
 
 using ArchGDAL
@@ -111,9 +111,9 @@ end
     @test_throws ErrorException validate_geographic_northup([x0, dx, 0.01, y0, 0.0, dy])
     @test_throws ErrorException validate_geographic_northup([x0, dx, 0.0, y0, 0.0, -dy])
 
-    @test validate_epsg4326(nothing) === nothing
-    @test validate_epsg4326(4326) === nothing
-    @test_throws ErrorException validate_epsg4326(3857)
+    @test validate_wgs84_longitude_latitude(nothing) === nothing
+    @test validate_wgs84_longitude_latitude(4326) === nothing
+    @test_throws ErrorException validate_wgs84_longitude_latitude(3857)
 end
 
 # Build a small GeoTIFF with a known CRS/scale/offset/nodata; row 0 is north.

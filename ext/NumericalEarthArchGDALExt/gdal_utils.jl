@@ -16,8 +16,9 @@ function configure_vsicurl!()
     return nothing
 end
 
-# `nothing` when the source declares no CRS, or a WKT carrying no EPSG authority tag.
-function source_epsg(dataset)
+# Return the EPSG catalog code identifying the dataset's coordinate system,
+# or `nothing` if its coordinate-system metadata cannot supply one.
+function source_coordinate_system_code(dataset)
     wkt = ArchGDAL.getproj(dataset)
     isempty(wkt) && return nothing
     return try

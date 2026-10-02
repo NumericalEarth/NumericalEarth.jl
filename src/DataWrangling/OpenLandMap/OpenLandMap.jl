@@ -270,13 +270,19 @@ function validate_geographic_northup(geotransform)
     return nothing
 end
 
-# The windowing is done in degrees, so a projected grid would silently land the
-# window in the wrong place. `epsg` is `nothing` when the source declares no CRS,
-# or a WKT without an EPSG authority tag; then the geometry checks are all we have.
-function validate_epsg4326(epsg)
-    isnothing(epsg) || epsg == 4326 ||
-        error("Windowed COG reader expects EPSG:4326 lon/lat in degrees; " *
-              "the source declares EPSG:$epsg.")
+"""
+$(TYPEDSIGNATURES)
+
+Check that `coordinate_system_code` identifies WGS84 longitude and latitude in
+degrees (EPSG:4326). WGS84 means World Geodetic System 1984, a standard reference
+system defining Earth's shape and how coordinates locate points on it.
+EPSG:4326 is the catalog code for its longitude/latitude representation.
+Accept `nothing` when no code is available, leaving the coordinate system unverified.
+"""
+function validate_wgs84_longitude_latitude(coordinate_system_code)
+    isnothing(coordinate_system_code) || coordinate_system_code == 4326 ||
+        error("Expected WGS84 longitude/latitude in degrees (EPSG:4326), " *
+              "but the source declares EPSG:$coordinate_system_code.")
     return nothing
 end
 
