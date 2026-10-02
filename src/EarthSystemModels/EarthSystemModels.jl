@@ -20,6 +20,7 @@ export
     PowerLawTortuosity,
     AltitudeCorrection,
     atmosphere_land_interface,
+    surface_layer_diagnostics,
     SimilarityTheoryFluxes,
     FixedIterations,
     ConvergenceStopCriteria,
