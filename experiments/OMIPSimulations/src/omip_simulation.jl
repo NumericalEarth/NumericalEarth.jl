@@ -152,9 +152,12 @@ ncar_atmosphere_sea_ice_fluxes(FT = Float64) =
 """
     build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
                         sea_ice_flux_configuration = flux_configuration,
-                        velocity_formulation = :relative)
+                        velocity_formulation = :relative,
+                        atmosphere_correction = nothing, radiation_correction = nothing)
 
 Build the `OceanSeaIceModel` with the specified flux configurations.
+`atmosphere_correction` and `radiation_correction` (default `nothing`) are passed to `ComponentInterfaces`
+as `exchanger_correction` and `radiation_correction`.
 Options for `flux_configuration` (atmosphere–ocean): `:default`, `:corrected`, `:ncar`.
 Options for `sea_ice_flux_configuration` (atmosphere–sea ice): `:corrected`, `:ncar`.
 Options for `velocity_formulation`:  `:relative`, `:wind`
@@ -166,11 +169,14 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
                              sea_ice_momentum_roughness_length = 5e-4,
                              ice_freshwater_delivery = ConservativeIceFreshwater(),
                              ice_meltwater_enthalpy = ZeroHeatContentMeltwater(),
+                             atmosphere_correction = nothing,
+                             radiation_correction = nothing,
                              biogeochemistry_interface_kwargs)
     FT = eltype(ocean.model.grid)
     if flux_configuration == :default
         interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice; radiation, land,
                                          ice_freshwater_delivery, ice_meltwater_enthalpy,
+                                         exchanger_correction = atmosphere_correction, radiation_correction,
                                          biogeochemistry_interface_kwargs)
         return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, land, interfaces)
     end
@@ -197,6 +203,7 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
                                      ice_meltwater_enthalpy,
                                      atmosphere_ocean_velocity_difference   = velocity_difference_obj,
                                      atmosphere_sea_ice_velocity_difference = velocity_difference_obj,
+                                     exchanger_correction = atmosphere_correction, radiation_correction,
                                      biogeochemistry_interface_kwargs)
 
     return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, land, interfaces)
@@ -771,6 +778,10 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `surface_averaging_interval`, `field_averaging_interval`: averaging windows.
 - `checkpoint_interval`: interval between checkpoint writes.
 - `output_dir`, `filename_prefix`, `file_splitting_interval`: output configuration.
+- `atmosphere_correction`: optional post-regrid correction applied to the atmosphere exchange state each
+  step (e.g. `AtmosphereTemperatureOffset`, `AltitudeCorrection`). Default: `nothing` (no correction).
+- `radiation_correction`: same, for the downwelling radiation exchange state (e.g.
+  `DownwellingLongwaveOffset`). Default: `nothing` (no correction).
 """
 function omip_simulation(config::Symbol = :halfdegree;
                          arch = CPU(),
@@ -881,6 +892,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                          repeat_year_forcing = true,
                          biogeochemistry = nothing,
                          atmosphere_tracers = NamedTuple(),
+                         atmosphere_correction = nothing,
+                         radiation_correction = nothing,
                          biogeochemistry_interface_kwargs = NamedTuple(),
                          bgc_dir = forcing_dir,
                          progress_frequency = 1)
@@ -1070,6 +1083,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                                   velocity_formulation, sea_ice_ocean_heat_transfer_coefficient,
                                   sea_ice_momentum_roughness_length,
                                   ice_freshwater_delivery, ice_meltwater_enthalpy,
+                                  atmosphere_correction, radiation_correction,
                                   biogeochemistry_interface_kwargs)
     log_setup_stage(arch, "coupled model", setup_t₀)
 
@@ -1365,6 +1379,23 @@ end
 # Background tracer diffusivity following Henyey et al. (1986).
 @inline henyey_diffusivity(x, y, z, t) = max(2e-6, 1e-5 * abs(sind(y)))
 
+# Henyey depends only on latitude, so on a known grid it is stored in a z-reduced field rather than evaluated
+# (a node lookup and a `sind`) on every vertical face of every tracer in the tracer tendency kernels. The field
+# is not flat in x: on the tripolar grid latitude varies along i north of the grid's bend. `ScalarDiffusivity`
+# reads an array diffusivity as located at cell centres and averages it onto the z-face, and a z-reduced field
+# returns its single level for every k, so that average reproduces the value exactly. The value is evaluated at
+# the same (Center, Center, Face) node as the function form; results differ from it only at rounding level.
+@inline henyey_diffusivityᶜᶜᶠ(i, j, k, grid) =
+    henyey_diffusivity(Oceananigans.Grids.node(i, j, k, grid, Center(), Center(), Face())..., 0)
+
+function henyey_diffusivity_field(grid)
+    operation = Oceananigans.AbstractOperations.KernelFunctionOperation{Center, Center, Nothing}(henyey_diffusivityᶜᶜᶠ, grid)
+    κ = Field(operation)
+    compute!(κ)
+    Oceananigans.BoundaryConditions.fill_halo_regions!(κ)
+    return κ
+end
+
 # Bryan & Lewis (1979) depth-dependent background diffusivity, in the form GFDL models carry:
 # κ = 0.8×10⁻⁴ + (1.05×10⁻⁴/π) atan[4.5×10⁻³ (|z| − 2500)], i.e. 3×10⁻⁵ m² s⁻¹ in the upper ocean
 # rising across a ~2500 m transition to 1.3×10⁻⁴ m² s⁻¹ in the abyss. It buys the deep diapycnal
@@ -1494,6 +1525,11 @@ function omip_closure(vertical_closure::Symbol;
     background_κ = resolve_background_diffusivity(background_vertical_diffusivity)
     background_ν = resolve_background_viscosity(background_vertical_viscosity)
 
+    # see `henyey_diffusivity_field`
+    if background_κ === henyey_diffusivity && !isnothing(grid)
+        background_κ = henyey_diffusivity_field(grid)
+    end
+
     primary, background = if vertical_closure == :catke
         # CATKEMixingLength is @kwdef over a single FT, so a mixed Int/Float keyword set has no method
         mixing_length = CATKEMixingLength(; Cᵇ = Float64(Cᵇ), Cᵘⁿᵇ = Float64(Cᵘⁿᵇ), Cᵉc = Float64(Cᵉc),
@@ -1555,10 +1591,13 @@ function omip_closure(vertical_closure::Symbol;
                                            skew_flux_formulation = gm_skew_flux_formulation(skew_flux_formulation)),)
     end
 
+    # Momentum only: κ = nothing skips the biharmonic tracer fluxes altogether, rather than evaluating the
+    # stencil in every tracer tendency kernel and multiplying it by a zero diffusivity.
     horizontal_viscosity = if !isnothing(biharmonic_viscosity)
-        HorizontalScalarBiharmonicDiffusivity(ν=biharmonic_viscosity)
+        HorizontalScalarBiharmonicDiffusivity(ν=biharmonic_viscosity, κ=nothing)
     elseif !isnothing(biharmonic_timescale)
         HorizontalScalarBiharmonicDiffusivity(ν=νhb,
+                                              κ=nothing,
                                               discrete_form=true,
                                               parameters=biharmonic_timescale)
     else
