@@ -426,6 +426,7 @@ include("ASTERGED/ASTERGED.jl")
 include("GloBFP3D/GloBFP3D.jl")
 include("GHSL/GHSL.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
+include("ECOSTRESS/ECOSTRESS.jl")
 include("WorldCover/WorldCover.jl")
 
 using .ETOPO
@@ -448,6 +449,7 @@ using .ASTERGED
 using .GloBFP3D
 using .GHSL
 using .CopernicusLandAlbedo
+using .ECOSTRESS
 using .WorldCover
 
 function dataset_modules()
