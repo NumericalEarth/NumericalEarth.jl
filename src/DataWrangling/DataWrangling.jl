@@ -317,13 +317,25 @@ last_date(::AbstractStaticDataset,  args...) = nothing
 """
     AbstractStaticBathymetry <: AbstractStaticDataset
 
-Supertype for static, two-dimensional bathymetry datasets (e.g. ETOPO, GEBCO, IBCSO, IBCAO).
+Supertype for static, two-dimensional bathymetry datasets (e.g. ETOPO, GEBCO, IBCSO, IBCAO, RTopo).
 Adds defaults for the degenerate vertical axis and a variable-agnostic `Base.size`.
 """
 abstract type AbstractStaticBathymetry <: AbstractStaticDataset end
 
 z_interfaces(::AbstractStaticBathymetry) = (0, 1)
 Base.size(dataset::AbstractStaticBathymetry, variable) = size(dataset)
+
+"""
+$(TYPEDSIGNATURES)
+
+Return the two-dimensional array of `metadata`'s variable on the dataset's native grid.
+Datasets whose file layout differs from their native grid extend this.
+"""
+function retrieve_bathymetry(metadata)
+    return Dataset(metadata_path(metadata), "r") do dataset
+        dataset[dataset_variable_name(metadata)][:, :]
+    end
+end
 
 # Fundamentals
 include("metadata.jl")
@@ -438,6 +450,7 @@ include("GloFAS/GloFAS.jl")
 include("SoilGrids/SoilGrids.jl")
 include("OpenLandMap/OpenLandMap.jl")
 include("IBCSO/IBCSO.jl")
+include("RTopo/RTopo.jl")
 include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
 include("CopernicusDEM/CopernicusDEM.jl")
@@ -461,6 +474,7 @@ using .JRA55
 using .GloFAS
 using .OpenLandMap
 using .IBCSO
+using .RTopo
 using .GEBCO
 using .IBCAO
 using .CopernicusDEM

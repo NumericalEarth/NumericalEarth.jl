@@ -142,11 +142,7 @@ function _regrid_bathymetry(target_grid, metadata;
     bathymetry_native_grid = native_grid(metadata, arch; halo = (10, 10, 1))
     FT = eltype(target_grid)
 
-    filepath = metadata_path(metadata)
-    dataset = Dataset(filepath, "r")
-
-    z_data = convert(Array{FT}, dataset[dataset_variable_name(metadata)][:, :])
-    close(dataset)
+    z_data = convert(Array{FT}, retrieve_bathymetry(metadata))
 
     if !isnothing(height_above_water)
         # Overwrite the height of cells above water.
@@ -239,9 +235,7 @@ function regrid_ocean_fraction(target_grid, metadata)
 
     FT = eltype(target_grid)
     native = native_grid(metadata, CPU())
-    dataset = Dataset(metadata_path(metadata), "r")
-    z_data = convert(Array{FT}, dataset[dataset_variable_name(metadata)][:, :])
-    close(dataset)
+    z_data = convert(Array{FT}, retrieve_bathymetry(metadata))
 
     cpu_grid = on_architecture(CPU(), target_grid)
     λface = λnodes(cpu_grid, Face())
@@ -285,6 +279,28 @@ function regrid_ocean_fraction(target_grid, metadata)
     fill_halo_regions!(ocean_fraction)
 
     return ocean_fraction
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Ice-shelf draft (m, ≤ 0), the height of the ice base, regridded from `dataset` onto `target_grid`.
+Zero where there is no ice; ice bases above sea level are clamped to zero.
+Accepts the same `interpolation_passes`, `cache` and `overwrite_cache` keywords as
+[`regrid_bathymetry`](@ref); no basins are removed.
+"""
+regrid_ice_draft(target_grid; dataset = RTopo2(), kw...) =
+    regrid_ice_draft(target_grid, Metadatum(:ice_draft; dataset); kw...)
+
+"""
+$(TYPEDSIGNATURES)
+
+Ice-shelf draft (m, ≤ 0) described by `metadata` regridded onto `target_grid`.
+"""
+function regrid_ice_draft(target_grid, metadata; interpolation_passes = 1, cache = true, overwrite_cache = false)
+    draft = regrid_bathymetry(target_grid, metadata; interpolation_passes, major_basins = Inf, cache, overwrite_cache)
+    parent(draft) .= min.(parent(draft), 0)
+    return draft
 end
 
 # Regridding bathymetry for distributed grids, we handle the whole process

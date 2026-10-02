@@ -9,6 +9,7 @@ NumericalEarth currently ships connectors for the following data products:
 | `GEBCO2026`        | [Supported variables](@ref dataset-gebco2024-vars)        | [GEBCO 2024 overview](https://www.gebco.net/data-products/gridded-bathymetry-data)                 |
 | `IBCSOv2`          | [Supported variables](@ref dataset-ibcsov2-vars)          | [IBCSO overview](https://ibcso.org/ibcso-2024-annual-release/)                                     |
 | `IBCAOv5`          | [Supported variables](@ref dataset-ibcaov5-vars)          | [IBCAO overview](https://www.gebco.net/data-products/gridded-bathymetry-data/arctic-ocean)         |
+| `RTopo2`           | [Supported variables](@ref dataset-rtopo2-vars)           | [RTopo-2.0.4 (PANGAEA)](https://doi.org/10.1594/PANGAEA.905295)                                    |
 | `GLO30`            | [Supported variables](@ref dataset-glo30-vars)            | [Copernicus DEM GLO-30 (Earth Data Hub)](https://earthdatahub.destine.eu/collections/copernicus-dem/datasets/GLO-30) |
 | `GLO90`            | [Supported variables](@ref dataset-glo90-vars)            | [Copernicus DEM GLO-90 (Earth Data Hub)](https://earthdatahub.destine.eu/collections/copernicus-dem/datasets/GLO-90) |
 | `ORCAOne`          | `:bottom_height`, `:mesh_mask`                            | [eORCA1 mesh and bathymetry (Zenodo)](https://zenodo.org/records/4436658)                          |
@@ -187,3 +188,8 @@ Same variables as [ERA5HourlyLand](@ref dataset-era5hourlyland-vars), as monthly
 ## [Supported variables for IBCAOv5](@id dataset-ibcaov5-vars)
 
 - `:bottom_height` - Arctic Ocean bathymetry at 100 m resolution, north of 64°N, including Greenland ice sheet surface elevation (m).
+
+## [Supported variables for RTopo2](@id dataset-rtopo2-vars)
+
+- `:bottom_height` - Global bedrock topography at 30 arc-second resolution, including the bed under grounded and floating ice (m).
+- `:ice_draft` - Height of the ice base for the Antarctic and Greenland ice sheets and ice shelves, zero where there is no ice (m). Regrid with `regrid_ice_draft`.
