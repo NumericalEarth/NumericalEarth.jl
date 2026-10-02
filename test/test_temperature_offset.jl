@@ -44,16 +44,19 @@ function fill_reference_state!(exchanger, ℂ)
     return nothing
 end
 
+# Stand-in for the coupled model: corrections read only its clock and atmosphere properties.
+correction_model(clock, ℂ = nothing) = (; clock, interfaces = (; atmosphere_properties = ℂ))
+
 snapshot(state) = (T = Array(interior(state.T)), q = Array(interior(state.q)), p = Array(interior(state.p)))
 
 relative_humidity(ℂ, T, p, q) = q ./ saturation_specific_humidity.(Ref(ℂ), T, p, Ref(Thermodynamics.Liquid()))
 
 # Apply `AtmosphereTemperatureOffset(ΔT)` and check the update against `expected_δT`
-# (a horizontal array or a number) at the current atmosphere clock time.
-function check_atmosphere_offset(exchanger, ℂ, grid, expected_δT)
+# (a horizontal array or a number) at the time of `clock`.
+function check_atmosphere_offset(exchanger, ℂ, grid, expected_δT; clock)
     fill_reference_state!(exchanger, ℂ)
     before = snapshot(exchanger.state)
-    correct_state!(exchanger, grid)
+    correct_state!(exchanger, grid, correction_model(clock, ℂ))
     after = snapshot(exchanger.state)
 
     δT = expected_δT .* ones(size(before.T))
@@ -84,9 +87,8 @@ end
         @testset "Number" begin
             exchanger = build(-1.5)
             @test exchanger.correction.offset == -1.5
-            @test exchanger.correction.clock === atmosphere.clock
-            check_atmosphere_offset(exchanger, ℂ, grid, -1.5)
-            check_atmosphere_offset(build(0), ℂ, grid, 0)
+            check_atmosphere_offset(exchanger, ℂ, grid, -1.5; clock = atmosphere.clock)
+            check_atmosphere_offset(build(0), ℂ, grid, 0; clock = atmosphere.clock)
         end
 
         @testset "Function of time" begin
@@ -94,7 +96,7 @@ end
             exchanger = build(ΔT)
             for (t, expected) in ((0, 0), (2days, -2), (5days, -4))
                 atmosphere.clock.time = t
-                check_atmosphere_offset(exchanger, ℂ, grid, expected)
+                check_atmosphere_offset(exchanger, ℂ, grid, expected; clock = atmosphere.clock)
             end
             atmosphere.clock.time = 0
         end
@@ -104,21 +106,21 @@ end
             exchanger = build(ΔT; parameters = (; a = 0.01))
             atmosphere.clock.time = 3days
             expected = [ΔT(λ[i], φ[j], 3days, (; a = 0.01)) for i in 1:Nx, j in 1:Ny]
-            check_atmosphere_offset(exchanger, ℂ, grid, expected)
+            check_atmosphere_offset(exchanger, ℂ, grid, expected; clock = atmosphere.clock)
             atmosphere.clock.time = 0
         end
 
         @testset "Discrete form" begin
             ΔT(i, j, grid, clock, fields) = -0.1 * i - 0.01 * j
             expected = [-0.1 * i - 0.01 * j for i in 1:Nx, j in 1:Ny]
-            check_atmosphere_offset(build(ΔT; discrete_form = true), ℂ, grid, expected)
+            check_atmosphere_offset(build(ΔT; discrete_form = true), ℂ, grid, expected; clock = atmosphere.clock)
         end
 
         @testset "Static pattern" begin
             pattern = Field{Center, Center, Nothing}(grid)
             set!(pattern, (λ, φ) -> 0.05 * φ)
             expected = [0.05 * φ[j] for i in 1:Nx, j in 1:Ny]
-            check_atmosphere_offset(build(pattern), ℂ, grid, expected)
+            check_atmosphere_offset(build(pattern), ℂ, grid, expected; clock = atmosphere.clock)
         end
 
         @testset "FieldTimeSeries on the exchange grid" begin
@@ -141,7 +143,7 @@ end
                 exchanger = build(ΔT)
                 for (t, a) in ((0.5days, -0.5), (2.5days, -1.5))
                     atmosphere.clock.time = t
-                    check_atmosphere_offset(exchanger, ℂ, grid, a .+ pattern)
+                    check_atmosphere_offset(exchanger, ℂ, grid, a .+ pattern; clock = atmosphere.clock)
                 end
             end
             atmosphere.clock.time = 0
@@ -163,7 +165,7 @@ end
 
         λ = Array(λnodes(grid, Center(), Center(), Center()))
         φ = Array(φnodes(grid, Center(), Center(), Center()))
-        check_atmosphere_offset(exchanger, ℂ, grid, ΔT.(λ, φ, 0))
+        check_atmosphere_offset(exchanger, ℂ, grid, ΔT.(λ, φ, 0); clock = atmosphere.clock)
     end
 end
 
@@ -173,18 +175,17 @@ end
         s = 0.7 / 0.133
 
         exchanger = ComponentExchanger(radiation, grid; correction = DownwellingLongwaveOffset(-10; sensitivity = s))
-        @test exchanger.correction.clock === radiation.clock
         @test exchanger.correction.sensitivity == s
 
         ℐꜜˡʷ = exchanger.state.ℐꜜˡʷ
         set!(ℐꜜˡʷ, (λ, φ) -> 300 + φ) # 270 to 330 W m⁻²
         before = Array(interior(ℐꜜˡʷ))
-        correct_state!(exchanger, grid)
+        correct_state!(exchanger, grid, correction_model(radiation.clock))
         @test Array(interior(ℐꜜˡʷ)) ≈ before .- 10s
 
         # Clipping at zero
         set!(ℐꜜˡʷ, 20)
-        correct_state!(exchanger, grid)
+        correct_state!(exchanger, grid, correction_model(radiation.clock))
         @test all(Array(interior(ℐꜜˡʷ)) .== 0)
 
         # Same condition forms as the atmosphere offset, evaluated against the radiation clock
@@ -192,7 +193,7 @@ end
                                        correction = DownwellingLongwaveOffset((λ, φ, t) -> -t / 1days; sensitivity = 2))
         radiation.clock.time = 2days
         set!(exchanger.state.ℐꜜˡʷ, 300)
-        correct_state!(exchanger, grid)
+        correct_state!(exchanger, grid, correction_model(radiation.clock))
         @test all(Array(interior(exchanger.state.ℐꜜˡʷ)) .≈ 296)
         radiation.clock.time = 0
     end

@@ -93,11 +93,11 @@ function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel
 
     # Phase 1.5: apply each component's optional post-regrid correction
     # (no-op when the component carries no correction).
-    InterfaceComputations.correct_state!(exchanger.radiation,  grid)
-    InterfaceComputations.correct_state!(exchanger.atmosphere, grid)
-    InterfaceComputations.correct_state!(exchanger.land,       grid)
-    InterfaceComputations.correct_state!(exchanger.sea_ice,    grid)
-    InterfaceComputations.correct_state!(exchanger.ocean,      grid)
+    InterfaceComputations.correct_state!(exchanger.radiation,  grid, coupled_model)
+    InterfaceComputations.correct_state!(exchanger.atmosphere, grid, coupled_model)
+    InterfaceComputations.correct_state!(exchanger.land,       grid, coupled_model)
+    InterfaceComputations.correct_state!(exchanger.sea_ice,    grid, coupled_model)
+    InterfaceComputations.correct_state!(exchanger.ocean,      grid, coupled_model)
 
     # Phase 1.6: refresh the sea ice-ocean drag reference velocities from the new ocean state. The
     # quadratic drag brakes the ice against a boundary-layer average rather than the topmost cell when
