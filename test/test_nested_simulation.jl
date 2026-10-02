@@ -852,7 +852,7 @@ end
     set!(terrain, (λ, φ) -> 1000 * exp(-(λ^2 + (φ - 36.6)^2) / 0.25))
 
     model = nested_atmosphere_model(parent, child_grid; terrain, terrain_smoothing_passes = 0,
-                                    surface_pressure = 1e5, coriolis = nothing, parent_condensates = nothing)
+                                    base_pressure = 1e5, coriolis = nothing, parent_condensates = nothing)
     ext.initialize_nested_child!(model, nothing, 0.0, ""; balancer = false)
 
     expected_u = XFaceField(child_grid); set!(expected_u, (λ, φ, z) -> parent_u(z))
