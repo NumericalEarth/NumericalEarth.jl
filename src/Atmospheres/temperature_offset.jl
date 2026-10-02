@@ -8,11 +8,13 @@
 #####
 
 offset_condition(ΔT; kw...) = ΔT
-offset_condition(ΔT::Function; parameters = nothing, discrete_form = false) =
-    BoundaryCondition(Value(), ΔT; parameters, discrete_form).condition
 
-regularize_offset(condition, grid) =
-    regularize_boundary_condition(condition, grid, (Center(), Center(), nothing), 3, RightBoundary, ())
+# A continuous function is placed at the top boundary of a (Center, Center) field
+# (regularizing a `ContinuousBoundaryFunction` does not use the grid).
+function offset_condition(ΔT::Function; parameters = nothing, discrete_form = false)
+    condition = BoundaryCondition(Value(), ΔT; parameters, discrete_form).condition
+    return regularize_boundary_condition(condition, nothing, (Center(), Center(), nothing), 3, RightBoundary, ())
+end
 
 @inline offset_value(ΔT, i, j, grid, clock) = getbc(ΔT, i, j, grid, clock, NamedTuple())
 
@@ -23,7 +25,8 @@ Post-regrid correction that adds the air-temperature offset `ΔT` (K; negative c
 the atmosphere exchange state at fixed relative humidity. `ΔT` takes the same forms as a
 boundary condition: a `Number`, a horizontal `Field` or `FieldTimeSeries` on the exchange
 grid, or a function `ΔT(λ, φ, t)` (with `parameters` / `discrete_form` as for
-`BoundaryCondition`). Pass it as `exchanger_correction` to `ComponentInterfaces`.
+`BoundaryCondition`), evaluated against the coupled model clock. Pass it as
+`exchanger_correction` to `ComponentInterfaces`.
 
 ```math
 q ← q \\, \\frac{qᵛ⁺(T + ΔT, p)}{qᵛ⁺(T, p)}, \\qquad T ← T + ΔT,
@@ -31,24 +34,22 @@ q ← q \\, \\frac{qᵛ⁺(T + ΔT, p)}{qᵛ⁺(T, p)}, \\qquad T ← T + ΔT,
 
 with `qᵛ⁺` the saturation specific humidity over liquid water.
 """
-struct AtmosphereTemperatureOffset{O, C, P}
+struct AtmosphereTemperatureOffset{O}
     offset :: O
-    clock :: C                     # `nothing` until materialized
-    thermodynamics_parameters :: P # `nothing` until materialized
+
+    function AtmosphereTemperatureOffset(ΔT; kw...)
+        offset = offset_condition(ΔT; kw...)
+        return new{typeof(offset)}(offset)
+    end
 end
 
-AtmosphereTemperatureOffset(ΔT; kw...) = AtmosphereTemperatureOffset(offset_condition(ΔT; kw...), nothing, nothing)
-
-function EarthSystemModels.InterfaceComputations.materialize_correction(c::AtmosphereTemperatureOffset, grid, atmosphere)
-    return AtmosphereTemperatureOffset(regularize_offset(c.offset, grid), atmosphere.clock,
-                                       thermodynamics_parameters(atmosphere))
-end
-
-function EarthSystemModels.InterfaceComputations.correct_state!(c::AtmosphereTemperatureOffset, exchanger, grid)
-    update_field_time_series!(c.offset, Time(c.clock.time))
+function EarthSystemModels.InterfaceComputations.correct_state!(c::AtmosphereTemperatureOffset, exchanger, grid, coupled_model)
+    clock = coupled_model.clock
+    ℂ = coupled_model.interfaces.atmosphere_properties
+    update_field_time_series!(c.offset, Time(clock.time))
     state = exchanger.state
     launch!(architecture(grid), grid, interface_kernel_parameters(grid), _offset_atmosphere_temperature!,
-            state.T, state.q, state.p, grid, c.clock, c.offset, c.thermodynamics_parameters)
+            state.T, state.q, state.p, grid, clock, c.offset, ℂ)
     return nothing
 end
 
@@ -71,29 +72,27 @@ by `sensitivity * ΔT` (`sensitivity` in W m⁻² K⁻¹; `ΔT` as for
 [`AtmosphereTemperatureOffset`](@ref)), `ℐꜜˡʷ ← max(ℐꜜˡʷ + sensitivity ΔT, 0)`.
 Pass it as `radiation_correction` to `ComponentInterfaces`.
 """
-struct DownwellingLongwaveOffset{O, FT, C}
+struct DownwellingLongwaveOffset{O, FT}
     offset :: O
     sensitivity :: FT
-    clock :: C # `nothing` until materialized
 end
 
-DownwellingLongwaveOffset(ΔT; sensitivity, kw...) = DownwellingLongwaveOffset(offset_condition(ΔT; kw...), sensitivity, nothing)
+DownwellingLongwaveOffset(ΔT; sensitivity, kw...) = DownwellingLongwaveOffset(offset_condition(ΔT; kw...), sensitivity)
 
-function EarthSystemModels.InterfaceComputations.materialize_correction(c::DownwellingLongwaveOffset, grid, radiation)
-    return DownwellingLongwaveOffset(regularize_offset(c.offset, grid),
-                                     convert(eltype(grid), c.sensitivity), radiation.clock)
-end
-
-function EarthSystemModels.InterfaceComputations.correct_state!(c::DownwellingLongwaveOffset, exchanger, grid)
-    update_field_time_series!(c.offset, Time(c.clock.time))
+function EarthSystemModels.InterfaceComputations.correct_state!(c::DownwellingLongwaveOffset, exchanger, grid, coupled_model)
+    clock = coupled_model.clock
+    update_field_time_series!(c.offset, Time(clock.time))
     launch!(architecture(grid), grid, interface_kernel_parameters(grid), _offset_downwelling_longwave!,
-            exchanger.state.ℐꜜˡʷ, grid, c.clock, c.offset, c.sensitivity)
+            exchanger.state.ℐꜜˡʷ, grid, clock, c.offset, convert(eltype(grid), c.sensitivity))
     return nothing
 end
 
 @kernel function _offset_downwelling_longwave!(ℐꜜˡʷ, grid, clock, ΔT, sensitivity)
     i, j = @index(Global, NTuple)
-    @inbounds ℐꜜˡʷ[i, j, 1] = max(0, ℐꜜˡʷ[i, j, 1] + sensitivity * offset_value(ΔT, i, j, grid, clock))
+    @inbounds begin
+        δT = convert(eltype(ℐꜜˡʷ), offset_value(ΔT, i, j, grid, clock))
+        ℐꜜˡʷ[i, j, 1] = max(0, ℐꜜˡʷ[i, j, 1] + sensitivity * δT)
+    end
 end
 
 """
