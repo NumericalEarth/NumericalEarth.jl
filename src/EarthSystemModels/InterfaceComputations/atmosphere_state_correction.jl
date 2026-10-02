@@ -80,6 +80,10 @@ end
 
 @inline materialize_correction(::Nothing, grid, component) = nothing
 
+# A tuple of corrections is materialized element-wise and applied in order.
+materialize_correction(corrections::Tuple, grid, component) =
+    map(correction -> materialize_correction(correction, grid, component), corrections)
+
 # Fill an exchange-grid field from an elevation spec (`Field`, function, number,
 # or a horizontal exchange-grid array).
 @inline materialize_elevation!(field, elevation) = Oceananigans.set!(field, elevation)
@@ -122,6 +126,13 @@ end
 
 # Per-correction-type kernels.
 @inline correct_state!(::Nothing, exchanger, grid) = nothing
+
+function correct_state!(corrections::Tuple, exchanger, grid)
+    for correction in corrections
+        correct_state!(correction, exchanger, grid)
+    end
+    return nothing
+end
 
 function correct_state!(correction::AltitudeCorrection, exchanger, grid)
     arch  = architecture(grid)

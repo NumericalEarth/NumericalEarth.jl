@@ -1,11 +1,13 @@
-function EarthSystemModels.InterfaceComputations.ComponentExchanger(radiation::PrescribedRadiation, grid)
+function EarthSystemModels.InterfaceComputations.ComponentExchanger(radiation::PrescribedRadiation, grid;
+                                                                     correction = nothing)
 
     regridder = radiation_regridder(radiation, grid)
 
     state = (; ℐꜜˢʷ = Field{Center, Center, Nothing}(grid),
                ℐꜜˡʷ = Field{Center, Center, Nothing}(grid))
 
-    return ComponentExchanger(state, regridder)
+    correction = EarthSystemModels.InterfaceComputations.materialize_correction(correction, grid, radiation)
+    return ComponentExchanger(state, regridder, correction)
 end
 
 function radiation_regridder(radiation::PrescribedRadiation, exchange_grid)
