@@ -64,10 +64,10 @@ Arguments
 
 Keyword Arguments
 =================
-- `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`. 
+- `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`.
   Pass a `DateTime`-based clock to step the simulation in calendar time (e.g. when coupling).
-- `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or 
-  `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since 
+- `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or
+  `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since
   Reactant does not support `stop_time`.
 - `Δt`: time step for the sea ice simulation
 - `ice_salinity`: salinity of the sea ice (psu)

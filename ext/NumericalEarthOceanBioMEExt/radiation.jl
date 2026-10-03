@@ -9,7 +9,7 @@ function PARFromShortwave(grid::AbstractGrid;
     return PARFromShortwave(surface_PAR; photosynthetic_fraction_of_shortwave)
 end
 
-apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}) = 
+apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}) =
     apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, biogeochemistry.light_attenuation)
 
 function apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, light::AbstractPhotosyntheticallyActiveRadiation{<:PARFromShortwave})
