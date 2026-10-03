@@ -67,7 +67,8 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
             intercepted_snowfall_flux,
             runoff_freshwater_flux,
             iceberg_freshwater_flux,
-            ocean_properties)
+            ocean_properties,
+            get(net_ocean_fluxes, :river_freshwater_volume_flux, nothing))
 
     if grid isa MutableGridOfSomeKind
         fill_halo_regions!(net_ocean_fluxes.η)
@@ -82,6 +83,10 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
 @inline set_implicit_coefficient!(::Nothing, i, j, value) = nothing
 @inline set_implicit_coefficient!(λ, i, j, value) = @inbounds λ[i, j, 1] = value
 
+# The runoff volume flux is only stored when a tracer is carried by rivers (`RiverConcentration`)
+@inline set_river_volume_flux!(::Nothing, i, j, value) = nothing
+@inline set_river_volume_flux!(Jʳ, i, j, value) = @inbounds Jʳ[i, j, 1] = value
+
 @kernel function _assemble_net_ocean_fluxes!(net_ocean_fluxes,
                                              grid,
                                              clock,
@@ -94,7 +99,8 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
                                              intercepted_snowfall_flux,
                                              runoff_freshwater_flux,
                                              iceberg_freshwater_flux,
-                                             ocean_properties)
+                                             ocean_properties,
+                                             river_volume_flux)
 
     i, j = @index(Global, NTuple)
     kᴺ = size(grid, 3)
@@ -174,4 +180,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         Jʷ[i, j, 1] = ifelse(inactive, zero(grid), Jʷao + Jʷio)
         Jᴴ[i, j, 1] = ifelse(inactive, zero(grid), Tᵒᶜ * Jʷao + Jᴴio)
     end
+
+    # land runoff alone, as a volume flux into the ocean, for tracers carried only by rivers
+    set_river_volume_flux!(river_volume_flux, i, j, ifelse(inactive, zero(grid), Jˡⁿ * ρᵒᶜ⁻¹))
 end
