@@ -15,6 +15,10 @@ struct ScalarRoughnessLength{FT, V, R}
     maximum_roughness_length :: FT
 end
 
+# A roughness formulation is resolved inside the solve, not a per-cell value to index.
+@inline NumericalEarth.stateindex(ℓ::MomentumRoughnessLength, i, j, k, args...) = ℓ
+@inline NumericalEarth.stateindex(ℓ::ScalarRoughnessLength, i, j, k, args...) = ℓ
+
 Base.summary(::ScalarRoughnessLength{FT}) where FT = "ScalarRoughnessLength{$FT}"
 Base.show(io::IO, ::ScalarRoughnessLength{FT}) where FT = print(io, "ScalarRoughnessLength{$FT}")
 
