@@ -65,7 +65,7 @@ end
     ρτʸ = atmosphere_sea_ice_fluxes.y_momentum # meridional momentum flux
 
     ΣQt = (𝒬ᵀ + 𝒬ᵛ) * ℵi
-    
+
     # Frazil ice does not depend on the ice concentration (it is already per-cell)
     # While interface heat is pre-multiplied by concentration
     ΣQb = 𝒬ᶠʳᶻ + 𝒬ⁱⁿ

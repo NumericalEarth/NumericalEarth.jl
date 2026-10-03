@@ -124,7 +124,7 @@ end
                              thermodynamics_parameters = nothing,
                              other_kw...)
 
-Return a 3-D [`PrescribedAtmosphere`](@ref) built from ERA5 **pressure-level** reanalysis over `bounding_box` at the 
+Return a 3-D [`PrescribedAtmosphere`](@ref) built from ERA5 **pressure-level** reanalysis over `bounding_box` at the
 requested `dates` — a range or vector of dates, or a `(start_date, end_date)` tuple that expands to the dataset's native
 (hourly or monthly) cadence — on ERA5's **native grid**: a `PressureLevelGrid` at the reanalysis' native horizontal resolution
 with a **time-varying** geopotential-height vertical (each pressure level's height follows the reanalysis as the atmosphere's
