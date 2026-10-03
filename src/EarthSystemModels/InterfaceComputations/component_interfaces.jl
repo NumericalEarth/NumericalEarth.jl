@@ -19,10 +19,11 @@ using ..EarthSystemModels: reference_density,
 ##### Container for organizing information related to fluxes
 #####
 
-mutable struct AtmosphereInterface{J, F, ST, P}
+mutable struct AtmosphereInterface{J, F, ST, SQ, P}
     fluxes :: J
     flux_formulation :: F
     temperature :: ST
+    specific_humidity :: SQ
     properties :: P
 end
 
@@ -53,7 +54,7 @@ end
 vector_component_boundary_conditions(grid, loc) = FieldBoundaryConditions(grid, loc)
 
 function vector_component_boundary_conditions(grid::OrthogonalSphericalShellGrids.TripolarGridOfSomeKind, loc)
-    north_bc = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid)(-1)
+    north_bc = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid, -1)
     return FieldBoundaryConditions(grid, loc; north = north_bc)
 end
 
@@ -237,8 +238,10 @@ function atmosphere_ocean_interface(grid,
                                         velocity_formulation)
 
     interface_temperature = Field{Center, Center, Nothing}(grid)
+    interface_specific_humidity = Field{Center, Center, Nothing}(grid)
 
-    return AtmosphereInterface(ao_fluxes, ao_flux_formulation, interface_temperature, ao_properties)
+    return AtmosphereInterface(ao_fluxes, ao_flux_formulation, interface_temperature,
+                               interface_specific_humidity, ao_properties)
 end
 
 #####
@@ -272,7 +275,10 @@ function atmosphere_sea_ice_interface(grid,
         snow_thermo.top_surface_temperature
     end
 
-    return AtmosphereInterface(fluxes, ai_flux_formulation, interface_temperature, properties)
+    interface_specific_humidity = Field{Center, Center, Nothing}(grid)
+
+    return AtmosphereInterface(fluxes, ai_flux_formulation, interface_temperature,
+                               interface_specific_humidity, properties)
 end
 
 #####
@@ -330,6 +336,9 @@ end
 #####
 
 default_ai_temperature(::Nothing) = nothing
+biogeochemical_interface(exchanger, ocean; kwargs...) = biogeochemical_interface(exchanger, ocean, ocean.model.biogeochemistry; kwargs...)
+biogeochemical_interface(exchanger, ocean::Nothing; kwargs...) = NamedTuple()
+biogeochemical_interface(exchanger, ocean, biogeochemistry; kwargs...) = NamedTuple()
 
 function default_ao_specific_humidity(ocean)
     FT    = eltype(ocean)
@@ -399,7 +408,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              sea_ice_reference_density = reference_density(sea_ice),
                              sea_ice_heat_capacity = heat_capacity(sea_ice),
                              gravitational_acceleration = default_gravitational_acceleration,
-                             exchanger_correction = nothing)
+                             exchanger_correction = nothing,
+                             biogeochemistry_interface_kwargs = NamedTuple())
 
     FT = eltype(exchange_grid)
 
@@ -471,7 +481,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
         isnothing(interface) || validate_zero_plane_displacement(interface.flux_formulation, zᵃᵗ)
     end
 
-    properties = (; gravitational_acceleration, surface_layer_height = zᵃᵗ)
+    properties = merge((; gravitational_acceleration, surface_layer_height = zᵃᵗ),
+                          biogeochemical_interface(exchanger, ocean; biogeochemistry_interface_kwargs...))
 
     return ComponentInterfaces(ao_interface,
                                ai_interface,

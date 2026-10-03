@@ -26,6 +26,7 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
     flux_formulation = coupled_model.interfaces.atmosphere_ocean_interface.flux_formulation
     interface_fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
     interface_temperature = coupled_model.interfaces.atmosphere_ocean_interface.temperature
+    interface_specific_humidity = coupled_model.interfaces.atmosphere_ocean_interface.specific_humidity
     interface_properties = coupled_model.interfaces.atmosphere_ocean_interface.properties
     ocean_properties = coupled_model.interfaces.ocean_properties
     atmosphere_properties = atmosphere_ocean_properties(coupled_model)
@@ -45,6 +46,7 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
             _compute_atmosphere_ocean_interface_state!,
             interface_fluxes,
             interface_temperature,
+            interface_specific_humidity,
             grid,
             clock,
             flux_formulation,
@@ -79,6 +81,7 @@ end
 """ Compute turbulent fluxes between an atmosphere and an interface state using similarity theory """
 @kernel function _compute_atmosphere_ocean_interface_state!(interface_fluxes,
                                                             interface_temperature,
+                                                            interface_specific_humidity,
                                                             grid,
                                                             clock,
                                                             turbulent_flux_formulation,
@@ -136,5 +139,6 @@ end
     ℒˡ = AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, Ψₐ.T)
     Tₛ = convert_from_kelvin(ocean_properties.temperature_units, Ψₛ.temperature)
 
-    store_interface_fluxes!(interface_fluxes, interface_temperature, i, j, Ψₛ, Ψₐ, ℂᵃᵗ, ℒˡ, Tₛ, interface_properties)
+    store_interface_fluxes!(interface_fluxes, interface_temperature, interface_specific_humidity, i, j,
+                            Ψₛ, Ψₐ, ℂᵃᵗ, ℒˡ, Tₛ, interface_properties)
 end
