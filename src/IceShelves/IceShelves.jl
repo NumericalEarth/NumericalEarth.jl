@@ -1,7 +1,6 @@
 module IceShelves
 
 export IceShelfOceanInterface,
-       PressureDependentLiquidus,
        TEOS10Liquidus,
        VelocityBasedFrictionVelocity,
        compute_ice_shelf_fluxes!,
@@ -20,6 +19,9 @@ using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: launch!
 using KernelAbstractions: @kernel, @index
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
+using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus
+
+import ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 
 using ..EarthSystemModels.InterfaceComputations: ThreeEquationHeatFlux, compute_interface_heat_flux, ice_ocean_interface_fluxes
 import ..EarthSystemModels.InterfaceComputations: ice_ocean_interface_heat_flux, at_depth
@@ -27,7 +29,6 @@ using ..Oceans: bottom_drag_bc,
                 u_immersed_drag_coefficient, v_immersed_drag_coefficient,
                 u_immersed_bottom_drag, v_immersed_bottom_drag
 
-include("pressure_dependent_liquidus.jl")
 include("teos10_liquidus.jl")
 include("ice_shelf_ocean_interface.jl")
 include("ice_shelf_fluxes.jl")

@@ -151,7 +151,6 @@ export
     sea_ice_simulation,
     default_sea_ice,
     IceShelfOceanInterface,
-    PressureDependentLiquidus,
     VelocityBasedFrictionVelocity,
     compute_ice_shelf_fluxes!,
     ice_shelf_boundary_conditions,

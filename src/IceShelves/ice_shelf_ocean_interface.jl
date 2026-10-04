@@ -122,7 +122,7 @@ mutable struct IceShelfOceanInterface{K, A, J, F, L, T, S, U, P}
     fluxes :: J
     "`ThreeEquationHeatFlux` or `IceBathHeatFlux`"
     flux_formulation :: F
-    "`TEOS10Liquidus`, `PressureDependentLiquidus`, `LinearLiquidus`, or `nothing` to follow the ocean's equation of state"
+    "`TEOS10Liquidus`, `LinearLiquidus`, or `nothing` for a `TEOS10Liquidus` consistent with the ocean"
     liquidus :: L
     "interface temperature"
     temperature :: T
@@ -155,9 +155,9 @@ friction-velocity-based transfer coefficients (αₕ = 0.0095, αₛ = αₕ/35)
 ``u_*`` computed from the sub-shelf ocean velocities with drag coefficient
 ``C_d = 0.0015``.
 
-The default `liquidus = nothing` follows the ocean model's equation of state (see
-[`ice_shelf_liquidus`](@ref)): a [`TEOS10Liquidus`](@ref) when the buoyancy uses
-`TEOS10EquationOfState`, and the ISOMIP+ [`PressureDependentLiquidus`](@ref) otherwise.
+The default `liquidus = nothing` is a [`TEOS10Liquidus`](@ref) (see [`ice_shelf_liquidus`](@ref)),
+with the reference density of a `TEOS10EquationOfState` and the buoyancy's gravitational
+acceleration when the ocean provides them.
 
 `boundary_layer_thickness` sets the fixed physical thickness over which the
 ocean state feeding the melt-rate solver is averaged, default 30 m

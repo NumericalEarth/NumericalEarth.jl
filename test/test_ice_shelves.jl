@@ -1,20 +1,18 @@
 include("runtests_setup.jl")
 
 using NumericalEarth: IceShelfOceanInterface,
-                      PressureDependentLiquidus,
                       TEOS10Liquidus,
                       VelocityBasedFrictionVelocity,
                       compute_ice_shelf_fluxes!,
                       ice_shelf_boundary_conditions,
                       ice_shelf_tracer_forcing
 
-using NumericalEarth.IceShelves: at_depth, ice_shelf_friction_velocity, ice_shelf_liquidus, ice_ocean_interface_heat_flux,
+using NumericalEarth.IceShelves: ice_shelf_friction_velocity, ice_shelf_liquidus, ice_ocean_interface_heat_flux,
                                  melting_temperature_salinity_derivative
 
 using NumericalEarth.EarthSystemModels: ThreeEquationHeatFlux
-using NumericalEarth.EarthSystemModels.InterfaceComputations: compute_interface_heat_flux
 
-using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
+using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 
 using Oceananigans
 using Oceananigans.BoundaryConditions: fill_halo_regions!
@@ -22,36 +20,6 @@ using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 
 # Ice wedge whose draft rises from -0.95 at x = 0 to the surface at x ≈ 0.59.
 cavity_test_top_height(x) = min(0.0, -0.95 + 1.6x)
-
-@testset "PressureDependentLiquidus" begin
-    liquidus = PressureDependentLiquidus()
-
-    # ISOMIP+ surface values
-    @test melting_temperature(liquidus, 0.0, 0.0) ≈ 0.0832
-    @test melting_temperature(liquidus, 34.5, 0.0) ≈ 0.0832 - 0.0573 * 34.5
-
-    # Melting temperature decreases with depth (z < 0)
-    z = -500.0
-    @test melting_temperature(liquidus, 34.5, z) ≈ 0.0832 - 0.0573 * 34.5 + liquidus.depth_slope * z
-    @test melting_temperature(liquidus, 34.5, -1000.0) < melting_temperature(liquidus, 34.5, 0.0)
-
-    # ISOMIP+ magnitude: λ ≈ 7.59e-4 °C/m
-    @test liquidus.depth_slope ≈ 7.53e-8 * 1028 * 9.81
-
-    # at_depth returns the equivalent LinearLiquidus at fixed interface depth
-    effective = at_depth(liquidus, z)
-    @test effective isa LinearLiquidus
-    @test melting_temperature(effective, 34.5) ≈ melting_temperature(liquidus, 34.5, z)
-
-    # at_depth on a LinearLiquidus is the identity
-    linear = LinearLiquidus(Float64)
-    @test at_depth(linear, z) === linear
-
-    # Float32 construction propagates the float type
-    liquidus32 = PressureDependentLiquidus(Float32)
-    @test liquidus32.slope isa Float32
-    @test at_depth(liquidus32, -100) isa LinearLiquidus{Float32}
-end
 
 @testset "TEOS10Liquidus" begin
     # Reference values from GibbsSeaWater's gsw_ct_freezing_poly, with p = -1020 g z / 10⁴ dbar
@@ -91,18 +59,18 @@ end
     @test melting_temperature(liquidus32, 34.5f0, -500f0) isa Float32
     @test melting_temperature(liquidus32, 34.5f0, -500f0) ≈ -2.267114932771106 atol = 1e-5
 
-    # The default follows the ocean's equation of state
+    # The default is TEOS-10, consistent with the ocean's equation of state and gravity
     interface = (; liquidus = nothing)
     teos10 = SeawaterBuoyancy(equation_of_state = TEOS10EquationOfState(reference_density = 1030))
     @test ice_shelf_liquidus(interface, (; grid = RectilinearGrid(size = (1, 1, 1), extent = (1, 1, 1)), buoyancy = teos10)) isa TEOS10Liquidus{Float64}
     @test ice_shelf_liquidus(interface.liquidus, Float64, teos10).reference_density == 1030
-    @test ice_shelf_liquidus(nothing, Float64, SeawaterBuoyancy()) isa PressureDependentLiquidus
-    @test ice_shelf_liquidus(nothing, Float64, nothing) isa PressureDependentLiquidus
+    @test ice_shelf_liquidus(nothing, Float64, SeawaterBuoyancy(gravitational_acceleration = 9.8)).gravitational_acceleration == 9.8
+    @test ice_shelf_liquidus(nothing, Float64, nothing) isa TEOS10Liquidus{Float64}
     @test ice_shelf_liquidus(liquidus32, Float64, teos10) === liquidus32
 end
 
 @testset "Three-equation solve with pressure-dependent liquidus" begin
-    liquidus = PressureDependentLiquidus()
+    liquidus = TEOS10Liquidus()
     flux = ThreeEquationHeatFlux() # constant friction velocity u★ = 0.002
 
     ℰ = 334e3
@@ -112,32 +80,27 @@ end
     ocean_state = (; T = 1.0, S = 34.5)
     ice_state = (; S = 0.0, h = 0.0, hc = 0.0, ℵ = 1.0, T = 0.0)
 
-    𝒬₁, Tᵦ₁, Sᵦ₁ = compute_interface_heat_flux(flux, ocean_state, ice_state,
-                                               at_depth(liquidus, -100.0),
-                                               ocean_properties, ℰ, u★)
-    q₁ = 𝒬₁ / ℰ
+    𝒬₁, Tᵦ₁, Sᵦ₁ = ice_ocean_interface_heat_flux(flux, ocean_state, ice_state, liquidus, -100.0,
+                                                 ocean_properties, ℰ, u★)
 
     # Warm water under shallow draft: melting
-    @test q₁ > 0
     @test 𝒬₁ > 0
 
     # Interface sits on the liquidus, cooler and fresher than the ambient ocean
-    @test Tᵦ₁ ≈ melting_temperature(liquidus, Sᵦ₁, -100.0)
+    @test Tᵦ₁ ≈ melting_temperature(liquidus, Sᵦ₁, -100.0) atol = 1e-10
     @test Tᵦ₁ < ocean_state.T
     @test Sᵦ₁ < ocean_state.S
 
     # Deeper draft: lower freezing point, larger thermal driving, more melt
-    𝒬₂, Tᵦ₂, Sᵦ₂ = compute_interface_heat_flux(flux, ocean_state, ice_state,
-                                               at_depth(liquidus, -900.0),
+    𝒬₂, Tᵦ₂, _ = ice_ocean_interface_heat_flux(flux, ocean_state, ice_state, liquidus, -900.0,
                                                ocean_properties, ℰ, u★)
     @test 𝒬₂ > 𝒬₁
     @test Tᵦ₂ < Tᵦ₁
 
     # Supercooled ocean: freezing (negative melt rate)
     cold_state = (; T = -3.0, S = 34.5)
-    𝒬₃, _, _ = compute_interface_heat_flux(flux, cold_state, ice_state,
-                                           at_depth(liquidus, 0.0),
-                                           ocean_properties, ℰ, u★)
+    𝒬₃, _, _ = ice_ocean_interface_heat_flux(flux, cold_state, ice_state, liquidus, 0.0,
+                                             ocean_properties, ℰ, u★)
     @test 𝒬₃ < 0
 end
 
@@ -238,7 +201,7 @@ for arch in test_architectures
         # Interface state on the liquidus at the discrete ice base (z = -0.5)
         T★ = Array(interior(interface.temperature))[2, 2, 1]
         S★ = Array(interior(interface.salinity))[2, 2, 1]
-        @test T★ ≈ melting_temperature(ice_shelf_liquidus(interface, model), S★, -0.5)
+        @test T★ ≈ melting_temperature(ice_shelf_liquidus(interface, model), S★, -0.5) atol = 1e-10
         @test Array(interior(interface.friction_velocity))[2, 2, 1] == 0.002
 
         ρᵒᶜ = interface.properties.reference_density
