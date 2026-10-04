@@ -776,6 +776,8 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
      response from current feedback (e.g. when an over-strong ACC self-reinforces).
 - `diagnostics::Bool`: whether to attach OMIP diagnostics. Default: `true`.
 - `surface_averaging_interval`, `field_averaging_interval`: averaging windows.
+- `averaging_stride`: accumulate the time-averaged output every `averaging_stride` iterations instead of
+  every iteration (`AveragedTimeInterval`'s `stride`). Default: `1`.
 - `checkpoint_interval`: interval between checkpoint writes.
 - `output_dir`, `filename_prefix`, `file_splitting_interval`: output configuration.
 - `atmosphere_correction`: optional post-regrid correction applied to the atmosphere exchange state each
@@ -885,6 +887,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          field_mean_interval = 5days,
                          surface_averaging_interval = 5days,
                          field_averaging_interval = 15days,
+                         averaging_stride = 1,
                          checkpoint_interval = 360days,
                          output_dir = ".",
                          filename_prefix = string(config),
@@ -925,6 +928,8 @@ function omip_simulation(config::Symbol = :halfdegree;
     # with symlink fallback to the slow source directory.
     if !isnothing(staging_dir)
         setup_staging_directory(forcing_dir, staging_dir)
+        # Repeat-year forcing is a single year reused every cycle: copy it once, before anything reads it
+        repeat_year_forcing && stage_repeat_year_files!(forcing_dir, staging_dir)
         atmosphere_dir = staging_dir
     else
         atmosphere_dir = forcing_dir
@@ -1099,8 +1104,9 @@ function omip_simulation(config::Symbol = :halfdegree;
         end
     end
 
-    # Stage JRA55 data from slow disk to fast scratch
-    if !isnothing(staging_dir)
+    # Stage JRA55 data from slow disk to fast scratch, a year at a time (multi-year forcing only:
+    # the repeat-year files were copied once at setup)
+    if !isnothing(staging_dir) && !repeat_year_forcing
         staging_callback = JRA55DataStagingCallback(; source_dir = forcing_dir,
                                                       staging_dir,
                                                       start_date)
@@ -1201,6 +1207,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                               surface_averaging_interval,
                               field_averaging_interval,
                               field_mean_interval,
+                              averaging_stride,
                               checkpoint_interval,
                               output_dir,
                               filename_prefix,

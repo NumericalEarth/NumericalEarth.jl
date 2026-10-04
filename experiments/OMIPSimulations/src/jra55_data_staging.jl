@@ -118,6 +118,24 @@ function unstage_jra55_year!(source_dir, staging_dir, year)
 end
 
 """
+    stage_repeat_year_files!(source_dir, staging_dir)
+
+Replace the symlinks to the repeat-year (`RYF.*.nc`) JRA55 files in `staging_dir` with real copies.
+Repeat-year forcing is one year of data reused every cycle, so it is copied once, at setup, before
+anything reads it; there is nothing to rotate, so no staging callback is needed. Files that are
+already real copies are skipped, and each copy is swapped in atomically (`atomic_replace!`).
+"""
+function stage_repeat_year_files!(source_dir, staging_dir)
+    @root for dst in readdir(staging_dir; join = true)
+        startswith(basename(dst), "RYF.") && endswith(dst, ".nc") && islink(dst) || continue
+        src = joinpath(source_dir, basename(dst))
+        atomic_replace!(dst, tmp -> run(`cp $src $tmp`))
+        @debug "Staged $(basename(dst)) to scratch"
+    end
+    return nothing
+end
+
+"""
     JRA55DataStagingCallback(; source_dir, staging_dir, start_date, async = true)
 
 Return a simulation callback that dynamically stages JRA55 yearly files

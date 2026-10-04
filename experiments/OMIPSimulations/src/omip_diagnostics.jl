@@ -93,6 +93,8 @@ Creates four output writers:
 
 - `surface_averaging_interval`: averaging window for surface output. Default: `5days`.
 - `field_averaging_interval`: averaging window for 3-D / averages output. Default: `15days`.
+- `averaging_stride`: the time averages are accumulated every `averaging_stride` iterations. Default: `1`
+  (every iteration). Larger strides are cheaper but sample the averaging window less densely.
 - `checkpoint_interval`: interval between checkpoints. Default: `90days`.
 - `output_dir`: directory for all output files. Default: `"."`.
 - `filename_prefix`: prefix for output filenames. Default: `"omip"`.
@@ -102,6 +104,7 @@ function add_omip_diagnostics!(simulation;
                                field_mean_interval = 5days,
                                surface_averaging_interval = 5days,
                                field_averaging_interval = 15days,
+                               averaging_stride = 1,
                                checkpoint_interval = 720days,
                                output_dir = ".",
                                filename_prefix = "omip",
@@ -193,7 +196,7 @@ function add_omip_diagnostics!(simulation;
     end
 
     simulation.output_writers[:surface] = JLD2Writer(ocean.model, surface_outputs;
-                                                     schedule = AveragedTimeInterval(surface_averaging_interval),
+                                                     schedule = AveragedTimeInterval(surface_averaging_interval; stride = averaging_stride),
                                                      dir = output_dir,
                                                      filename = filename_prefix * "_surface",
                                                      file_splitting = TimeInterval(file_splitting_interval),
@@ -244,7 +247,7 @@ function add_omip_diagnostics!(simulation;
     end
 
     simulation.output_writers[:fields] = JLD2Writer(ocean.model, field_outputs;
-                                                    schedule = AveragedTimeInterval(field_averaging_interval),
+                                                    schedule = AveragedTimeInterval(field_averaging_interval; stride = averaging_stride),
                                                     dir = output_dir,
                                                     filename = filename_prefix * "_fields",
                                                     file_splitting = TimeInterval(file_splitting_interval),
@@ -277,7 +280,7 @@ function add_omip_diagnostics!(simulation;
     end
 
     simulation.output_writers[:averages] = JLD2Writer(ocean.model, average_outputs;
-                                                      schedule = AveragedTimeInterval(field_mean_interval),
+                                                      schedule = AveragedTimeInterval(field_mean_interval; stride = averaging_stride),
                                                       dir = output_dir,
                                                       filename = filename_prefix * "_averages",
                                                       file_splitting = TimeInterval(file_splitting_interval),
@@ -295,6 +298,7 @@ function add_omip_diagnostics!(simulation;
                                      field_mean_interval,
                                      surface_averaging_interval,
                                      field_averaging_interval,
+                                     averaging_stride,
                                      output_dir,
                                      filename_prefix,
                                      file_splitting_interval)
