@@ -428,6 +428,9 @@ end
     end
 end
 
+# Needs an Oceananigans release with CliMA/Oceananigans.jl#6110
+if isdefined(Oceananigans, :GridFittedBottomAndTop)
+
 @testset "No frazil under an ice shelf" begin
     for arch in test_architectures
         A = typeof(arch)
@@ -462,6 +465,10 @@ end
         @test all(𝒬ᶠʳᶻ[1:2, :] .== 0)
         @test all(𝒬ᶠʳᶻ[3:4, :] .< 0)
     end
+end
+
+else
+    @warn "Skipping the ice shelf frazil-masking test: this Oceananigans has no GridFittedBottomAndTop"
 end
 
 @testset "Coupled model with different heat flux formulations" begin

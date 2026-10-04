@@ -24,7 +24,7 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus
 import ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 
 using ..EarthSystemModels.InterfaceComputations: ThreeEquationHeatFlux, compute_interface_heat_flux, ice_ocean_interface_fluxes
-import ..EarthSystemModels.InterfaceComputations: ice_ocean_interface_heat_flux, at_depth
+import ..EarthSystemModels.InterfaceComputations: ice_ocean_interface_heat_flux
 using ..Oceans: bottom_drag_bc,
                 u_immersed_drag_coefficient, v_immersed_drag_coefficient,
                 u_immersed_bottom_drag, v_immersed_bottom_drag
