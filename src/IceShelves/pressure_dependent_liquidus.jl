@@ -51,8 +51,6 @@ end
     LinearLiquidus(liquidus.freshwater_melting_temperature + liquidus.depth_slope * convert(FT, z),
                    liquidus.slope)
 
-@inline at_depth(liquidus::LinearLiquidus, z) = liquidus
-
 Base.summary(::PressureDependentLiquidus{FT}) where FT = "PressureDependentLiquidus{$FT}"
 
 function Base.show(io::IO, liq::PressureDependentLiquidus)

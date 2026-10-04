@@ -129,18 +129,8 @@ end
     return LinearLiquidus(T₀, m)
 end
 
-"""
-$(TYPEDSIGNATURES)
-
-Solve the three-equation balance at the ice base at depth `zᵈ`, returning the interface heat
-flux, temperature and salinity. A linear liquidus is solved once at depth `zᵈ`; a
-[`TEOS10Liquidus`](@ref) is linearized about the ocean salinity and then about each new
-interface salinity, `liquidus.iterations` times.
-"""
-@inline ice_shelf_interface_heat_flux(flux_formulation, ocean_state, ice_state, liquidus, zᵈ, properties, ℰ, u★) =
-    compute_interface_heat_flux(flux_formulation, ocean_state, ice_state, at_depth(liquidus, zᵈ), properties, ℰ, u★)
-
-@inline function ice_shelf_interface_heat_flux(flux_formulation, ocean_state, ice_state, liquidus::TEOS10Liquidus,
+# Relinearize about each new interface salinity, `liquidus.iterations` times.
+@inline function ice_ocean_interface_heat_flux(flux_formulation, ocean_state, ice_state, liquidus::TEOS10Liquidus,
                                                zᵈ, properties, ℰ, u★)
     FT = typeof(ocean_state.S)
     𝒬  = zero(FT)

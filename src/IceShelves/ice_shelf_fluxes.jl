@@ -16,7 +16,7 @@ column the three-equation system is solved with the ocean state
 boundary-layer-averaged over a fixed physical thickness beneath the topmost
 wet cell `k_draft(i, j)` (see [`boundary_layer_average`](@ref)), using the
 liquidus evaluated at the depth of the ice base (the top face of that cell),
-see [`ice_shelf_interface_heat_flux`](@ref).
+see [`ice_ocean_interface_heat_flux`](@ref).
 
 Call this every time step, for example with
 `add_callback!(simulation, sim -> compute_ice_shelf_fluxes!(interface, sim), IterationInterval(1))`,
@@ -77,9 +77,8 @@ end
 
         ocean_state = (; T = Tᵈ, S = Sᵈ)
         ice_state = (; S = Sˢⁱ, h = zero(FT), hc = zero(FT), ℵ = @inbounds(ℵ[i, j, 1]), T = zero(FT))
-        𝒬, Tᵦ, Sᵦ = ice_shelf_interface_heat_flux(flux_formulation, ocean_state, ice_state,
-                                                  liquidus, zᵈ, properties, ℰ, u★)
-        q = 𝒬 / ℰ
+        𝒬, q, Tᵦ, Sᵦ = ice_ocean_interface_fluxes(nothing, i, j, flux_formulation, ocean_state, ice_state,
+                                                 liquidus, zᵈ, properties, ℰ, u★)
 
         # Kinematic fluxes, positive out of the ocean.
         Jᵀ = 𝒬 / (ρᵒᶜ * cᵒᶜ)

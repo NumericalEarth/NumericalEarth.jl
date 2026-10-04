@@ -8,7 +8,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: compute_interface_
                                                               get_friction_velocity,
                                                               solve_interface_conditions,
                                                               SeaIceOceanInterface,
-                                                              ComponentInterfaces
+                                                              ComponentInterfaces,
+                                                              compute_sea_ice_ocean_fluxes!
 
 using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
 
@@ -424,6 +425,42 @@ end
                 @test all(isfinite.(𝒬ᶠʳᶻ_cpu))
             end
         end
+    end
+end
+
+@testset "No frazil under an ice shelf" begin
+    for arch in test_architectures
+        A = typeof(arch)
+        @info "Testing frazil masking under an ice shelf on $A"
+
+        underlying_grid = LatitudeLongitudeGrid(arch,
+                                                size = (4, 4, 4),
+                                                latitude = (-10, 10),
+                                                longitude = (0, 10),
+                                                z = (-400, 0))
+
+        # An ice shelf with its draft at -200 m covers the western half (i = 1, 2).
+        ice_draft(λ, φ) = λ < 5 ? -200 : 0
+        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottomAndTop(-400, ice_draft))
+
+        ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
+        sea_ice = sea_ice_simulation(grid, ocean)
+        atmosphere = synthetic_prescribed_atmosphere(arch)
+        radiation = synthetic_prescribed_radiation(arch)
+        coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+
+        set!(ocean.model, T=-2.5, S=35)
+        set!(sea_ice.model, h=1, ℵ=0.5)
+        compute_sea_ice_ocean_fluxes!(coupled_model)
+
+        Tₘ = melting_temperature(sea_ice.model.phase_transitions.liquidus, 35)
+        T = Array(interior(ocean.model.tracers.T))
+        𝒬ᶠʳᶻ = Array(interior(coupled_model.interfaces.sea_ice_ocean_interface.fluxes.frazil_heat, :, :, 1))
+
+        @test all(T[3:4, :, :] .≈ Tₘ)
+        @test all(T[1:2, :, 1:2] .== -2.5)
+        @test all(𝒬ᶠʳᶻ[1:2, :] .== 0)
+        @test all(𝒬ᶠʳᶻ[3:4, :] .< 0)
     end
 end
 

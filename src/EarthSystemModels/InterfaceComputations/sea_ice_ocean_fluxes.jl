@@ -1,3 +1,4 @@
+using Oceananigans.Grids: inactive_node
 using Oceananigans.Operators: Δzᶜᶜᶜ
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.SeaIceDynamics: implicit_τx_coefficient, implicit_τy_coefficient
@@ -158,6 +159,9 @@ end
 
     δ𝒬ᶠʳᶻ = zero(grid)
 
+    # No frazil under an ice shelf: the surface liquidus is wrong there and ΣQb is masked.
+    covered = inactive_node(i, j, Nz, grid, Center(), Center(), Center())
+
     for k = Nz:-1:1
         @inbounds begin
             Δz = Δzᶜᶜᶜ(i, j, k, grid)
@@ -167,7 +171,7 @@ end
 
         # Melting/freezing temperature at this depth
         Tₘ = melting_temperature(liquidus, Sᵏ)
-        freezing = Tᵏ < Tₘ
+        freezing = !covered & (Tᵏ < Tₘ)
 
         # Compute change in ocean heat energy due to freezing.
         # When Tᵏ < Tₘ, we heat the ocean back to melting temperature
@@ -209,9 +213,10 @@ end
     # Part 3: Interface heat flux (formulation-specific)
     # =============================================
     # Returns interfacial heat flux and interface T, S
-    𝒬ⁱᵒ, Tb, Sb = compute_interface_heat_flux(flux_formulation,
-                                              ocean_surface_state, ice_state,
-                                              liquidus, ocean_properties, ℰ, u★)
+    zᵈ = znode(i, j, Nz + 1, grid, Center(), Center(), Face())
+    𝒬ⁱᵒ, _, Tb, Sb = ice_ocean_interface_fluxes(nothing, i, j, flux_formulation,
+                                                ocean_surface_state, ice_state,
+                                                liquidus, zᵈ, ocean_properties, ℰ, u★)
 
     # Store interface values and heat flux
     @inbounds 𝒬ⁱⁿ[i, j, 1] = 𝒬ⁱᵒ

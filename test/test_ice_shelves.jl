@@ -8,7 +8,7 @@ using NumericalEarth: IceShelfOceanInterface,
                       ice_shelf_boundary_conditions,
                       ice_shelf_tracer_forcing
 
-using NumericalEarth.IceShelves: at_depth, ice_shelf_friction_velocity, ice_shelf_liquidus, ice_shelf_interface_heat_flux,
+using NumericalEarth.IceShelves: at_depth, ice_shelf_friction_velocity, ice_shelf_liquidus, ice_ocean_interface_heat_flux,
                                  melting_temperature_salinity_derivative
 
 using NumericalEarth.EarthSystemModels: ThreeEquationHeatFlux
@@ -77,13 +77,13 @@ end
     ice_state = (; S = 0.0, h = 0.0, hc = 0.0, ℵ = 1.0, T = 0.0)
 
     for ocean_state in ((; T = 1.0, S = 34.5), (; T = -2.5, S = 34.5)), z in (-100.0, -1000.0)
-        𝒬, Tᵦ, Sᵦ = ice_shelf_interface_heat_flux(flux, ocean_state, ice_state, liquidus, z,
+        𝒬, Tᵦ, Sᵦ = ice_ocean_interface_heat_flux(flux, ocean_state, ice_state, liquidus, z,
                                                   ocean_properties, 334e3, 0.002)
         @test Tᵦ ≈ melting_temperature(liquidus, Sᵦ, z) atol = 1e-12
     end
 
     once = TEOS10Liquidus(; iterations = 1)
-    _, Tᵦ, Sᵦ = ice_shelf_interface_heat_flux(flux, (; T = 1.0, S = 34.5), ice_state, once, -100.0,
+    _, Tᵦ, Sᵦ = ice_ocean_interface_heat_flux(flux, (; T = 1.0, S = 34.5), ice_state, once, -100.0,
                                               ocean_properties, 334e3, 0.002)
     @test abs(Tᵦ - melting_temperature(once, Sᵦ, -100.0)) > 1e-3
 
