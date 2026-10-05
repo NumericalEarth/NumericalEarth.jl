@@ -103,8 +103,7 @@ end
     end
 end
 
-# Downwelling comes from the radiation exchanger and Tˢ from the interface, so an RTM built with its
-# own `surface_temperature` cannot force the land with a temperature the land does not carry.
+# Tˢ is the temperature RRTMGP emits from, so the land loses what the atmosphere absorbs.
 function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
         coupled_model :: NumericalEarth.EarthSystemModels.EarthSystemModel{<:BreezeRTM})
 
@@ -122,7 +121,7 @@ function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
     grid = land.grid
     arch = architecture(grid)
     σ = convert(eltype(grid), NumericalEarth.Radiations.default_stefan_boltzmann_constant)
-    Tˢ = al_interface.temperature
+    Tˢ = rtm.surface_radiation.surface_temperature
     ε = rtm.surface_radiation.surface_emissivity
     α = rtm.surface_radiation.direct_surface_albedo
 
