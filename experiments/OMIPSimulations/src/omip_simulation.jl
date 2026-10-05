@@ -778,6 +778,9 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `surface_averaging_interval`, `field_averaging_interval`: averaging windows.
 - `averaging_stride`: accumulate the time-averaged output every `averaging_stride` iterations instead of
   every iteration (`AveragedTimeInterval`'s `stride`). Default: `1`.
+- `async_output`: write the JLD2 output (compression + file I/O) on a background task, with
+  `use_async_output!`. Needs `julia --threads ≥ 2`; call `flush_output!(simulation)` in a `finally` block
+  around `run!`. Default: `false`.
 - `checkpoint_interval`: interval between checkpoint writes.
 - `output_dir`, `filename_prefix`, `file_splitting_interval`: output configuration.
 - `atmosphere_correction`: optional post-regrid correction applied to the atmosphere exchange state each
@@ -888,6 +891,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          surface_averaging_interval = 5days,
                          field_averaging_interval = 15days,
                          averaging_stride = 1,
+                         async_output = false,
                          checkpoint_interval = 360days,
                          output_dir = ".",
                          filename_prefix = string(config),
@@ -1219,6 +1223,9 @@ function omip_simulation(config::Symbol = :halfdegree;
                                      output_dir,
                                      filename_prefix,
                                      flush_interval = field_averaging_interval)
+
+        # Compression and file writes of the JLD2 writers on a background task (see async_output_writers.jl)
+        async_output && use_async_output!(simulation)
     end
 
     return simulation

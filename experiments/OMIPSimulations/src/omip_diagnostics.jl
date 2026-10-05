@@ -286,14 +286,6 @@ function add_omip_diagnostics!(simulation;
                                                       file_splitting = TimeInterval(file_splitting_interval),
                                                       overwrite_files = true)
 
-    # Checkpointer (drives `run!(sim; pickup=true)`)
-    simulation.output_writers[:checkpointer] = Checkpointer(simulation.model;
-                                                            schedule = TimeInterval(checkpoint_interval),
-                                                            dir      = output_dir,
-                                                            prefix   = filename_prefix * "_checkpoint",
-                                                            cleanup  = false,
-                                                            verbose  = true)
-
     add_biogeochemistry_diagnostics!(ocean.model.biogeochemistry, simulation;
                                      field_mean_interval,
                                      surface_averaging_interval,
@@ -302,6 +294,15 @@ function add_omip_diagnostics!(simulation;
                                      output_dir,
                                      filename_prefix,
                                      file_splitting_interval)
+
+    # Checkpointer (drives `run!(sim; pickup=true)`). Added after every other writer: writers run in insertion
+    # order, so at an iteration where an output and a checkpoint coincide the output is written first.
+    simulation.output_writers[:checkpointer] = Checkpointer(simulation.model;
+                                                            schedule = TimeInterval(checkpoint_interval),
+                                                            dir      = output_dir,
+                                                            prefix   = filename_prefix * "_checkpoint",
+                                                            cleanup  = false,
+                                                            verbose  = true)
 
     @info "OMIP diagnostics attached:" *
           " surface ($(length(surface_outputs)) fields, every $(prettytime(surface_averaging_interval)))," *

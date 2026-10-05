@@ -64,7 +64,8 @@ export omip_simulation,
        KPPVerticalDiffusivity, KPPParameters,
        NEMOTKEVerticalDiffusivity, NEMOTKEParameters,
        NORiBaseVerticalDiffusivity,
-       BoundaryValueTransport
+       BoundaryValueTransport,
+       AsyncJLD2Writer, use_async_output!, flush_output!
 
 # Patches to Oceananigans
 include("oceananigans_patches.jl")
@@ -79,6 +80,7 @@ using .NEMOTKE: NEMOTKEVerticalDiffusivity, NEMOTKEParameters
 
 include("atmosphere.jl")
 include("jra55_data_staging.jl")
+include("async_output_writers.jl")
 include("omip_diagnostics.jl")
 include("ke_spectrum_diagnostic.jl")
 include("nemo_eddy_coefficients.jl")
