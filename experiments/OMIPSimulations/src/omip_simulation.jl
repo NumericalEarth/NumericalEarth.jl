@@ -460,10 +460,11 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `depth`: maximum ocean depth in metres. Default: `5500`.
 - `immersed_bottom`: constructor of the immersed bottom, called with the bottom height: `GridFittedBottom` (full
   cells), `PartialCellBottom` or `ShavedCellBottom`. Default: `GridFittedBottom`.
-- `sea_ice_immersed_latitude`: if a number (in degrees), the sea ice runs on the ocean grid with every column
-  equatorward of `±sea_ice_immersed_latitude` also immersed, since sea ice never forms there. The sea-ice
-  kernels then skip those columns, which makes the sea ice (in particular its EVP solve) cheaper.
-  Needs `immersed_bottom = GridFittedBottom`. Default: `nothing` (the sea ice uses the ocean grid).
+- `sea_ice_immersed_latitude`: run the sea ice on the ocean grid with every column in a latitude band (in
+  degrees) also immersed, since sea ice never forms there. The sea-ice kernels then skip those columns, which
+  makes the sea ice (in particular its EVP solve) cheaper. A tuple `(south, north)`, for `south < φ < north`
+  (e.g. `(-50, 35)`). Needs `immersed_bottom = GridFittedBottom`. Default: `nothing` (the sea ice uses the
+  ocean grid).
 - `Δz_top`: target surface-cell thickness in metres (sets the exponential vertical scale). Per-config
   default: `1.5` for `:quarterdegree`/`:twelfthdegree`/`:test`, `nothing` (scale derived from
   `depth`/`Nz`) otherwise.
@@ -1972,21 +1973,23 @@ const kara_river_closures = ((68.0, 77.0, 66.0, 72.6),   # Gulf of Ob
     @inbounds bottom_height[i, j, 1] = ifelse(closed, oftype(z, 100), z)
 end
 
-# The sea ice lives on the ocean grid, optionally with every column equatorward of
-# `sea_ice_immersed_latitude` (in degrees) also immersed: sea ice never forms there, and the
-# sea-ice kernels skip immersed columns.
+# The sea ice lives on the ocean grid, optionally with every column with `south < φ < north` (in degrees)
+# also immersed: sea ice never forms there, and the sea-ice kernels skip immersed columns.
 build_sea_ice_grid(grid, ::Nothing, immersed_bottom) = grid
 
-@kernel function _immerse_low_latitudes!(bottom_height, grid, latitude)
+@kernel function _immerse_latitude_band!(bottom_height, grid, south, north)
     i, j = @index(Global, NTuple)
     φ = φnode(i, j, 1, grid, Center(), Center(), Center())
     @inbounds z = bottom_height[i, j, 1]
-    @inbounds bottom_height[i, j, 1] = ifelse(abs(φ) < latitude, oftype(z, 100), z)
+    @inbounds bottom_height[i, j, 1] = ifelse((φ > south) & (φ < north), oftype(z, 100), z)
 end
 
-function build_sea_ice_grid(grid, latitude, immersed_bottom)
+function build_sea_ice_grid(grid, latitudes::Tuple, immersed_bottom)
     immersed_bottom === GridFittedBottom ||
         throw(ArgumentError("sea_ice_immersed_latitude needs immersed_bottom = GridFittedBottom, got $immersed_bottom"))
+
+    south, north = latitudes
+    south < north || throw(ArgumentError("sea_ice_immersed_latitude = (south, north) needs south < north, got $latitudes"))
 
     arch       = architecture(grid)
     underlying = grid.underlying_grid
@@ -1995,7 +1998,8 @@ function build_sea_ice_grid(grid, latitude, immersed_bottom)
     bottom = Field{Center, Center, Nothing}(underlying)
     parent(bottom) .= parent(bottom_height_field(grid))
 
-    launch!(arch, underlying, :xy, _immerse_low_latitudes!, bottom, underlying, convert(eltype(grid), latitude))
+    FT = eltype(grid)
+    launch!(arch, underlying, :xy, _immerse_latitude_band!, bottom, underlying, convert(FT, south), convert(FT, north))
     fill_halo_regions!(bottom)
 
     return ImmersedBoundaryGrid(underlying, GridFittedBottom(bottom); active_cells_map = true)
