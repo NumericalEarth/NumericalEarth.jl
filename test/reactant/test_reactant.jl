@@ -93,7 +93,7 @@ end
     # Eager CPU reference: `set!` the skin temperature after construction, then step. The first
     # eager `time_step!` reconciles the flux state from the seeded temperature.
     cpu_model = build_atmosphere_land_model(CPU())
-    parent(cpu_model.land.temperature) .= skin_temperature
+    set!(cpu_model.land.temperature, skin_temperature)
     for _ in 1:N
         time_step!(cpu_model, Δt)
     end
@@ -102,7 +102,7 @@ end
     # Compiled Reactant run: `first_time_step!` refreshes the flux state and advances one step,
     # then the remaining steps run in a `@trace` loop.
     function run_reactant(model, Δt, n)
-        parent(model.land.temperature) .= skin_temperature
+        set!(model.land.temperature, skin_temperature)
         first_time_step!(model, Δt)
         @trace track_numbers=false for _ in 1:(n - 1)
             time_step!(model, Δt)
