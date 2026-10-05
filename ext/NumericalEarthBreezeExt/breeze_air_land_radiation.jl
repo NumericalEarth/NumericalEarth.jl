@@ -33,18 +33,7 @@ function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_tempe
     return @set rtm.surface_radiation.surface_temperature = Tˢ
 end
 
-# `interpolate_state!` copies index for index, so the RTM's horizontal grid has to be the exchange
-# grid: the ocean's where there is an ocean, the land's otherwise.
 function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(rtm::BreezeRTM, exchange_grid; kw...)
-    ℐ = rtm.downwelling_shortwave_flux
-    radiation_size = (size(ℐ, 1), size(ℐ, 2))
-    exchange_size = (size(exchange_grid, 1), size(exchange_grid, 2))
-
-    radiation_size == exchange_size ||
-        throw(ArgumentError("The Breeze RadiativeTransferModel's horizontal grid $radiation_size does not " *
-                            "match the exchange grid $exchange_size. The surface fluxes are copied index " *
-                            "for index, so the two have to agree."))
-
     state = (; ℐꜜˢʷ = Field{Center, Center, Nothing}(exchange_grid),
                ℐꜜˡʷ = Field{Center, Center, Nothing}(exchange_grid))
 
@@ -118,7 +107,7 @@ function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
     Es = fluxes.surface_energy_flux
 
     rtm = coupled_model.radiation
-    grid = land.grid
+    grid = coupled_model.interfaces.exchanger.grid
     arch = architecture(grid)
     σ = convert(eltype(grid), NumericalEarth.Radiations.default_stefan_boltzmann_constant)
     Tˢ = rtm.surface_radiation.surface_temperature

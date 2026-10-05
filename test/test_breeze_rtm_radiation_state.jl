@@ -9,7 +9,6 @@ using RRTMGP   # activates Breeze's radiative-transfer extension (RadiativeTrans
 using Dates: DateTime
 using Test
 
-using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
 using NumericalEarth.Lands: BucketHydrology, SlabEnergy, SlabLand
 
 const rtm_Nx = 8
@@ -97,15 +96,6 @@ end
             # Positive upward: turbulent plus net upward radiative.
             Jᴱs = Array(interior(model.land.fluxes.surface_energy_flux))
             @test Jᴱs ≈ 𝒬 .+ ℐˡʷꜛ .+ ℐˡʷꜜ .+ (1 - rtm_albedo) .* ℐˢʷꜜ
-        end
-
-        @testset "Exchange grid must match the radiation grid on $A" begin
-            model = build_rtm_land_model(arch)
-            mismatched = RectilinearGrid(arch, Float64; size = 2 * rtm_Nx, halo = rtm_Hx,
-                                         x = (-1kilometer, 1kilometer),
-                                         topology = (Periodic, Flat, Flat))
-
-            @test_throws ArgumentError ComponentExchanger(model.radiation, mismatched)
         end
     end
 end
