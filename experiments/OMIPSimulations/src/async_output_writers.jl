@@ -9,15 +9,12 @@
 # uses, so the files and their contents are unchanged (Zstd compression included). File initialisation and
 # splitting stay on the main task, after the background task has drained.
 #
-# Measured on the 1° model (H100, Zstd, output on NFS): physics 140 → 131 ms/step, BGC 205 → 186 ms/step.
+# Measured on the 1° model (H100, Zstd, output on NFS, job 28409367): physics 142 → 121 ms/step, BGC 213 → 167
+# ms/step, within about 5 ms/step of no output at all.
 #
 # The background task's compression and writes are plain `ccall`s, during which a stop-the-world GC requested
-# by the main task has to wait; `collect_before_write` runs a quick GC before each job is queued to make that
-# less likely. `gc_safe_compression = true` instead swaps a writer's `ZstdFilter` for `GCSafeZstdFilter`
-# (gc_safe_zstd.jl: same bytes, compression in a `gc_safe` ccall), so the GC need not wait for compression;
-# the file writes (JLD2's MmapIO `msync`, IOStream `ios_write`) remain plain ccalls. If the `safepoint` time in
-# the progress PROBE lines rises, the consumer can be moved to a separate process (the pattern of
-# `jra55_data_staging.jl`).
+# by the main task has to wait. If the `safepoint` time in the progress PROBE lines rises, the consumer can be
+# moved to a separate process (the pattern of `jra55_data_staging.jl`).
 #
 # Patterns follow `jra55_data_staging.jl`: background tasks with errors surfaced on the next call, blocking
 # only when a result is needed (`flush!`), and a synchronous fallback after a failure.
@@ -40,45 +37,24 @@ mutable struct AsyncJLD2Writer{W, S, O} <: AbstractOutputWriter
     written :: Set{Int}             # iterations handed to the background task
     async :: Bool                   # false: write synchronously (also the fallback after an error)
     nbuffers :: Int
-    collect_before_write :: Bool
 end
 
 """
-    AsyncJLD2Writer(writer::JLD2Writer; nbuffers = 2, async = true, collect_before_write = true,
-                    gc_safe_compression = false)
+    AsyncJLD2Writer(writer::JLD2Writer; nbuffers = 2, async = true)
 
 Wrap `writer` so that its compression and file writes run on a background task. `nbuffers` sets of host
 buffers allow that many writes in flight; a write blocks only when all are. `async = false` writes
-synchronously through the same buffers. `collect_before_write` runs `GC.gc(false)` before each write is
-queued. `gc_safe_compression = true` replaces a `ZstdFilter` in `writer.jld2_kw[:compress]` by a
-`GCSafeZstdFilter` of the same level (in place, on `writer`). The files written are the same as `writer`'s.
+synchronously through the same buffers. The files written are the same as `writer`'s.
 """
-function AsyncJLD2Writer(writer::JLD2Writer; nbuffers = 2, async = true, collect_before_write = true,
-                         gc_safe_compression = false)
-    gc_safe_compression && use_gc_safe_compression!(writer)
+function AsyncJLD2Writer(writer::JLD2Writer; nbuffers = 2, async = true)
     free = Channel{Int}(nbuffers)
     foreach(b -> put!(free, b), 1:nbuffers)
     return AsyncJLD2Writer(writer, writer.schedule, writer.outputs, Any[nothing for _ in 1:nbuffers], nothing,
                            free, Channel{Any}(nbuffers), nothing, Ref{Any}(nothing), Set{Int}(),
-                           async, nbuffers, collect_before_write)
+                           async, nbuffers)
 end
 
 Base.summary(aw::AsyncJLD2Writer) = string("AsyncJLD2Writer(", summary(aw.writer), ")")
-
-gc_safe_compressor(filter::ZstdFilter) = GCSafeZstdFilter(filter) # same level (the `level::Int32` field)
-gc_safe_compressor(filters::AbstractVector) = map(gc_safe_compressor, filters)
-gc_safe_compressor(compress) = compress # e.g. `false`, `true` (Deflate) or another filter: unchanged
-
-"""
-    use_gc_safe_compression!(writer)
-
-Replace a `ZstdFilter` in the `JLD2Writer` `writer`'s `jld2_kw[:compress]` (or in a vector of filters there)
-by a `GCSafeZstdFilter` of the same level. Other compressors are left as they are.
-"""
-function use_gc_safe_compression!(writer::JLD2Writer)
-    haskey(writer.jld2_kw, :compress) && (writer.jld2_kw[:compress] = gc_safe_compressor(writer.jld2_kw[:compress]))
-    return writer
-end
 
 #####
 ##### Background task
@@ -229,7 +205,6 @@ function Oceananigans.OutputWriters.write_output!(aw::AsyncJLD2Writer, model)
     end
 
     t = output_time(model.clock, w.schedule)
-    aw.collect_before_write && GC.gc(false)
 
     if aw.async
         ensure_consumer!(aw)
@@ -288,8 +263,7 @@ Oceananigans.prognostic_state(::FlushAsyncOutput) = nothing # nothing to checkpo
 """
     use_async_output!(simulation; kwargs...)
 
-Wrap every `JLD2Writer` in `simulation.output_writers` in an `AsyncJLD2Writer(writer; kwargs...)` (e.g.
-`gc_safe_compression = true`), add a
+Wrap every `JLD2Writer` in `simulation.output_writers` in an `AsyncJLD2Writer(writer; kwargs...)`, add a
 callback that flushes them at the end of `run!`, and move the checkpointer(s) after all other writers so that
 at an iteration where both write, the outputs are queued (and then drained by the checkpoint) first.
 """
