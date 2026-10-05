@@ -53,32 +53,17 @@ end
     for arch in test_architectures
         A = typeof(arch)
 
-        @testset "Interface radiation state on $A" begin
+        @testset "Interface radiation state and bulk surface energy budget on $A" begin
             model = build_rtm_land_model(arch)
             rtm = model.radiation
-
             exchanger = model.interfaces.exchanger.radiation
+            interface = model.interfaces.atmosphere_land_interface
 
             time_step!(model, 1.0)
 
             @test Array(interior(exchanger.state.ℐꜜˢʷ)) ≈ -Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
             @test Array(interior(exchanger.state.ℐꜜˡʷ)) ≈ -Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
-        end
 
-        @testset "No shortwave at night on $A" begin
-            night = build_rtm_land_model(arch; hour = 0)
-            time_step!(night, 1.0)
-
-            @test all(Array(interior(night.interfaces.exchanger.radiation.state.ℐꜜˢʷ)) .== 0)
-            @test all(Array(interior(night.interfaces.exchanger.radiation.state.ℐꜜˡʷ)) .> 0)
-        end
-
-        @testset "Bulk surface energy budget on $A" begin
-            model = build_rtm_land_model(arch)
-            interface = model.interfaces.atmosphere_land_interface
-            time_step!(model, 1.0)
-
-            rtm = model.radiation
             σ = NumericalEarth.Radiations.default_stefan_boltzmann_constant
             Tₛ = Array(interior(interface.temperature))
             ℐꜜˡʷ = -Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
@@ -91,6 +76,14 @@ end
             # Positive upward: turbulent plus net upward radiative.
             Jᴱs = Array(interior(model.land.fluxes.surface_energy_flux))
             @test Jᴱs ≈ 𝒬 .+ ℐꜛˡʷ .- ℐꜜˡʷ .- (1 - rtm_albedo) .* ℐꜜˢʷ
+        end
+
+        @testset "No shortwave at night on $A" begin
+            night = build_rtm_land_model(arch; hour = 0)
+            time_step!(night, 1.0)
+
+            @test all(Array(interior(night.interfaces.exchanger.radiation.state.ℐꜜˢʷ)) .== 0)
+            @test all(Array(interior(night.interfaces.exchanger.radiation.state.ℐꜜˡʷ)) .> 0)
         end
     end
 end
