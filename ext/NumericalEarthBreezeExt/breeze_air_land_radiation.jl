@@ -1,11 +1,11 @@
 #####
 ##### Surface energy balance coupling for the Breeze RRTMGP `RadiativeTransferModel`.
 #####
-##### Each coupled step adds the net upward surface radiative flux, ℐꜛˡʷ - ℐꜜˡʷ - (1 - α) ℐꜜˢʷ,
+##### Each coupled step adds the net upward surface radiative flux, ε σ Tₛ⁴ - ε ℐꜜˡʷ - (1 - α) ℐꜜˢʷ,
 ##### to the slab's `surface_energy_flux` (positive = upward), reading the downwelling fluxes
 ##### the radiation exchanger publishes.
 #####
-##### ℐꜛˡʷ = ε σ Tₛ⁴ + (1 - ε) ℐꜜˡʷ rebuilds RRTMGP's own surface boundary from the live Tₛ, which
+##### ε σ Tₛ⁴ + (1 - ε) ℐꜜˡʷ rebuilds RRTMGP's own surface boundary from the live Tₛ, which
 ##### the RTM's stored upwelling longwave does not track between scheduled solves. The atmosphere
 ##### keeps absorbing the emission from the last solve, so the two sides disagree by ε σ ΔTₛ⁴
 ##### within a radiation interval.
@@ -18,7 +18,9 @@
 
 using Oceananigans.Fields: Field
 using Oceananigans.Grids: Center, inactive_node
-using NumericalEarth.Radiations: SurfaceRadiationProperties, default_stefan_boltzmann_constant
+using NumericalEarth.Radiations: SurfaceRadiationProperties, default_stefan_boltzmann_constant,
+                                 emitted_longwave_radiation, absorbed_longwave_radiation,
+                                 transmitted_shortwave_radiation
 
 const BreezeRTM = Breeze.RadiativeTransferModel
 
@@ -78,10 +80,10 @@ end
     inactive = inactive_node(i, j, 1, grid, Center(), Center(), Center())
 
     @inbounds begin
-        εᵢⱼ = ε[i, j, 1]
-        ℐꜛˡʷ = εᵢⱼ * σ * Tˢ[i, j, 1]^4 + (1 - εᵢⱼ) * ℐꜜˡʷ[i, j, 1]
-        ℐꜛ = ℐꜛˡʷ - ℐꜜˡʷ[i, j, 1] - (1 - α[i, j, 1]) * ℐꜜˢʷ[i, j, 1]
-        Es[i, j, 1] += ifelse(inactive, zero(grid), ℐꜛ)
+        ℐꜛˡʷ = emitted_longwave_radiation(Tˢ[i, j, 1], σ, ε[i, j, 1])
+        ℐₐˡʷ = absorbed_longwave_radiation(ε[i, j, 1], ℐꜜˡʷ[i, j, 1])
+        ℐₜˢʷ = transmitted_shortwave_radiation(α[i, j, 1], ℐꜜˢʷ[i, j, 1])
+        Es[i, j, 1] += ifelse(inactive, zero(grid), ℐꜛˡʷ + ℐₐˡʷ + ℐₜˢʷ)
     end
 end
 
