@@ -65,7 +65,8 @@ export omip_simulation,
        NEMOTKEVerticalDiffusivity, NEMOTKEParameters,
        NORiBaseVerticalDiffusivity,
        BoundaryValueTransport,
-       AsyncJLD2Writer, use_async_output!, flush_output!
+       AsyncJLD2Writer, use_async_output!, flush_output!,
+       GCSafeZstdFilter
 
 # Patches to Oceananigans
 include("oceananigans_patches.jl")
@@ -80,6 +81,7 @@ using .NEMOTKE: NEMOTKEVerticalDiffusivity, NEMOTKEParameters
 
 include("atmosphere.jl")
 include("jra55_data_staging.jl")
+include("gc_safe_zstd.jl")
 include("async_output_writers.jl")
 include("omip_diagnostics.jl")
 include("ke_spectrum_diagnostic.jl")
