@@ -3,7 +3,7 @@ module OMIPSimulations
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Grids: znode, Face, static_column_depthᶜᶜᵃ
-using Oceananigans.Operators: Δxᶜᶜᶜ, Δyᶜᶜᶜ
+using Oceananigans.Operators: Δxᶜᶜᶜ, Δyᶜᶜᶜ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ, div_xyᶜᶜᶜ
 using Dates
 using NCDatasets
 using CUDA
@@ -52,6 +52,7 @@ export omip_simulation,
        ThicknessDependentConductivity,
        add_omip_diagnostics!,
        add_ke_spectrum_diagnostic!,
+       WaterMassTransformation,
        compute_report_fields,
        compute_woa_bias,
        strait_transports,
@@ -82,6 +83,7 @@ include("atmosphere.jl")
 include("jra55_data_staging.jl")
 include("async_output_writers.jl")
 include("omip_diagnostics.jl")
+include("water_mass_transformation.jl")
 include("ke_spectrum_diagnostic.jl")
 include("nemo_eddy_coefficients.jl")
 include("cesm_eddy_coefficients.jl")

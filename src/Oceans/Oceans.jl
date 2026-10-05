@@ -9,10 +9,11 @@ using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Advection: WENO, WENOVectorInvariant
+using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
                                        FieldBoundaryConditions, FluxBoundaryCondition,
                                        IMEXFluxBoundaryCondition, IMEXFlux, fill_halo_regions!, getbc
-using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
+using Oceananigans.BuoyancyFormulations: BuoyancyForce, SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, ZeroField, compute!, set!, interior
 using Oceananigans.Forcings: MultipleForcings, DiscreteForcing
@@ -118,7 +119,6 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::Simulation
     return nothing
 end
 
-# Other Oceananigans models (e.g. nonhydrostatic): the exchange grid is the ocean grid, no state interpolation needed.
 EarthSystemModels.interpolate_state!(exchanger, grid, ::OceananigansModelSimulations, coupled_model) = nothing
 
 function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::OceananigansModelSimulations, grid)

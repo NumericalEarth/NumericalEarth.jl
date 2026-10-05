@@ -1,6 +1,7 @@
 include("runtests_setup.jl")
 
 using CUDA
+using Oceananigans.Units: minute
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction
 using NumericalEarth.Oceans: MultipleFluxes, FreshwaterExchange, net_flux
 using NumericalEarth.EarthSystemModels.InterfaceComputations: net_fluxes
@@ -88,5 +89,58 @@ end
             CUDA.@allowscalar val = S_top.condition.func(2, 2, grid, ocean.model.clock, fields)
             @test val ≈ J + G
         end
+    end
+end
+
+struct ZonalSurfaceSalinityRestoring{FT} <: Function
+    rate :: FT
+    target :: FT
+    variation :: FT
+end
+
+@inline function (restoring::ZonalSurfaceSalinityRestoring)(i, j, grid, clock, fields)
+    Nx = size(grid, 1)
+    Nz = size(grid, 3)
+    target = restoring.target + restoring.variation * sinpi(2 * (i - 1) / Nx)
+    @inbounds return restoring.rate * (fields.S[i, j, Nz] - target)
+end
+
+@testset "Conservative surface flux restoring" begin
+    for arch in test_architectures, timestepper in (:SplitRungeKutta3, :QuasiAdamsBashforth2)
+        grid = RectilinearGrid(arch;
+                               size = (8, 8, 4),
+                               halo = (7, 7, 7),
+                               x = (0, 1e5),
+                               y = (0, 1e5),
+                               z = (-100, 0),
+                               topology = (Periodic, Periodic, Bounded))
+
+        raw_restoring = ZonalSurfaceSalinityRestoring(1e-6, 37.0, 0.5)
+        restoring = ConservativeSurfaceFluxRestoring(raw_restoring, grid)
+
+        ocean = ocean_simulation(grid;
+                                 Δt = 1minute,
+                                 closure = nothing,
+                                 momentum_advection = nothing,
+                                 tracer_advection = nothing,
+                                 radiative_forcing = nothing,
+                                 bottom_drag_coefficient = 0,
+                                 timestepper,
+                                 additional_surface_fluxes = (; S=restoring),
+                                 warn = false)
+
+        set!(ocean.model, T=10, S=35)
+        salt_content = Field(Integral(ocean.model.tracers.S))
+        initial_salt = only(Array(interior(compute!(salt_content))))
+
+        refresh = ConservativeSurfaceFluxRestoringCallback(restoring, ocean.model)
+        add_callback!(ocean, refresh, IterationInterval(1); name=:conservative_restoring)
+        ocean.stop_iteration = 4
+        run!(ocean)
+
+        salinity = Array(interior(ocean.model.tracers.S))
+        final_salt = only(Array(interior(compute!(salt_content))))
+        @test final_salt ≈ initial_salt rtol=1e-10
+        @test maximum(salinity) - minimum(salinity) > 0
     end
 end

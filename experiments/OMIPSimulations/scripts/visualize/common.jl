@@ -130,8 +130,10 @@ end
 # Per-case line colors. Plain primary/secondary names so cases stay
 # easy to distinguish on white backgrounds and in printouts. Cycles
 # if there are more cases than entries in the palette.
-const BASE_CASE_COLORS = [:red, :blue, :green, :orange, :purple,
-                           :brown, :magenta, :cyan, :black, :gold]
+# Okabe-Ito plus the distinguishable extensions of Tol (2021): safe for the common forms of colour blindness,
+# which red/green/magenta/cyan are not.
+const BASE_CASE_COLORS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9",
+                          "#882255", "#117733", "#999999", "#44AA99", "#332288", "#661100"]
 case_colors = [BASE_CASE_COLORS[mod1(i, length(BASE_CASE_COLORS))]
                for i in 1:length(cases)]
 
@@ -478,8 +480,14 @@ function geo_panel!(fig, pos, data;
     # on top of the filled data and the coastlines.
     if !isnothing(obs_contour)
         _, obs_shifted = to_minus180_180(x_in, obs_contour)
-        contour!(ga, x, y, obs_shifted;
-                 levels = obs_levels, color = obs_color, linewidth = obs_linewidth)
+        # Makie's contour recipe resolves its label machinery even with labels off and errors
+        # when a level yields no segments, so fill the gaps and skip levels that never cross
+        filled = map(v -> isfinite(v) ? v : zero(eltype(obs_shifted)), obs_shifted)
+        for level in obs_levels
+            any(<(level), filled) && any(>(level), filled) || continue
+            contour!(ga, x, y, filled;
+                     levels = [level], color = obs_color, linewidth = obs_linewidth)
+        end
     end
     Colorbar(fig[pos[1], pos[2] + 1], hm; label)
     return ga

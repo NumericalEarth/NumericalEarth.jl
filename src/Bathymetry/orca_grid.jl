@@ -1,36 +1,36 @@
 using CubedSphere.SphericalGeometry: lat_lon_to_cartesian, cartesian_to_lat_lon,
                                      spherical_area_quadrilateral
 using Distances: haversine
-using Oceananigans.BoundaryConditions: fill_halo_regions!, FPivotZipperBoundaryCondition,
+using Oceananigans.BoundaryConditions: fill_halo_regions!, BoundaryCondition, Zipper, FPivot,
                                        NoFluxBoundaryCondition, FieldBoundaryConditions
-using Oceananigans.Fields: set!, convert_to_0_360
-using Oceananigans.DistributedComputations: Distributed, concatenate_local_sizes,
-                                            insert_connected_topology, local_size, ranks
-using Oceananigans.Grids: FullyConnected, RightFaceFolded, generate_coordinate, halo_size
+using Oceananigans.Fields: set!
+using Oceananigans.Grids: RightCenterFolded, RightFaceFolded, generate_coordinate, longitude_in_same_window,
+                          peripheral_node
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
-using Oceananigans.Grids: peripheral_node
-using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, partition_tripolar_metric, receiving_rank
+using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, distribute_tripolar_grid
 
 using ..DataWrangling: dataset_variable_name, default_download_directory
-using ..DataWrangling.ORCA: ORCAOne, default_south_rows_to_remove
+using ..DataWrangling.ORCA: ORCAOne, default_south_rows_to_remove, periodic_overlap, north_fold_pivot
 
-# Build an Oceananigans OrthogonalSphericalShellGrid with topology (Periodic, RightFaceFolded, Bounded) from
-# a NEMO eORCA mesh_mask file.
+# Build an Oceananigans OrthogonalSphericalShellGrid with topology (Periodic, fold, Bounded) from a NEMO eORCA
+# mesh_mask file, where the fold is `RightFaceFolded` for an F-pivot mesh (eORCA1) and `RightCenterFolded` with a
+# `TPivot` for a T-pivot mesh (eORCA025, eORCA12).
 #
 # NEMO C-grid: T is the cell center, U the east face of T, V the north face of T, F the northeast corner.
 # eORCA quirks handled before constructing the grid:
 #
-#   - Duplicated east-edge periodic columns (`periodic_overlap_index`, `shift_face_x`, `chop`).
+#   - Duplicated east-edge periodic columns (`periodic_overlap`, `shift_face_x`, `chop`).
 #   - Optional southern land padding rows (`south_rows_to_remove`, `chop`).
+#   - The last row, a mirror copy of the rows below the fold (`chop`).
 #
 # NEMO → Oceananigans index mapping:
 #
-#   Center-y[:, 1:Ny]   ← NEMO[:, 1:Ny]
-#   Face-y  [:, 2:Ny+1] ← NEMO V/F[:, 1:Ny]   (NEMO V is the north face of T[:, j] = south face of T[:, j+1])
+#   Center-y[:, 1:Ny] ← NEMO[:, 1:Ny]
+#   Face-y  [:, 2:]   ← NEMO V/F[:, 1:]     (NEMO V is the north face of T[:, j] = south face of T[:, j+1])
 #
-# Face-y row j=1 has no NEMO counterpart; `halo_filled_data` mirrors the southernmost data row into it
+# Face-y row j=1 has no NEMO counterpart; `halo_filled_data` copies the southernmost data row into it
 # (cf. Oceananigans #5565 — copy the j-row instead of using a LatitudeLongitudeGrid). `fill_halo_regions!`
-# then propagates it south using PeriodicBC east/west, NoFluxBC south, and FPivotZipperBC north.
+# then propagates it south using PeriodicBC east/west, NoFluxBC south, and the zipper north.
 #
 # `read_orca_staggered_mesh` supports two read paths: a full staggered NEMO mesh used directly, or T/F
 # coordinates only, with U/V coordinates and all `e1`/`e2`/`Az` metrics reconstructed from spherical
@@ -84,13 +84,9 @@ function orient_xy(data, Nx, Ny; name = "variable")
     end
 end
 
-@inline wrap_longitude(λ) = convert_to_0_360(λ + 180) - 180
-
 @inline function midpoint_longitude(λ₁, λ₂)
-    Δλ = λ₂ - λ₁
-    Δλ = ifelse(Δλ > 180, Δλ - 360, Δλ)
-    Δλ = ifelse(Δλ < -180, Δλ + 360, Δλ)
-    return wrap_longitude(λ₁ + Δλ / 2)
+    Δλ = longitude_in_same_window(λ₂, λ₁) - λ₁
+    return longitude_in_same_window(λ₁ + Δλ / 2, 0)
 end
 
 @inline function spherical_midpoint(λ₁, φ₁, λ₂, φ₂)
@@ -112,8 +108,7 @@ end
     z /= n
 
     φm, λm = cartesian_to_lat_lon(x, y, z)
-    λm = wrap_longitude(λm)
-    return λm, φm
+    return longitude_in_same_window(λm, 0), φm
 end
 
 @inline function spherical_quadrilateral_area_unit(λ₁, φ₁, λ₂, φ₂, λ₃, φ₃, λ₄, φ₄)
@@ -124,7 +119,7 @@ end
     return spherical_area_quadrilateral(a, b, c, d; radius = 1)
 end
 
-# The duplicated east-edge columns (`periodic_overlap_index`) alias the west edge: column `i` and column
+# The duplicated east-edge columns (`periodic_overlap`) alias the west edge: column `i` and column
 # `Nx - overlap + i` hold the same point. Wrapping to `1`/`Nx` would therefore land on a copy of the
 # starting column and yield a zero spacing, so the wrap skips the duplicates.
 @inline east_idx(i, Nx, overlap) = ifelse(i == Nx, overlap + 1, i + 1)
@@ -209,13 +204,12 @@ end
     AzFF[i, Ny] = AzFF[i, Ny-1]
 end
 
-function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
+function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF, overlap; radius)
     size(λCC) == size(φCC) || throw(ArgumentError("glamt and gphit size mismatch: $(size(λCC)) vs $(size(φCC))."))
     size(λFF) == size(φFF) || throw(ArgumentError("glamf and gphif size mismatch: $(size(λFF)) vs $(size(φFF))."))
     size(λCC) == size(λFF) || throw(ArgumentError("T-point and F-point grids must have matching size, got $(size(λCC)) and $(size(λFF))."))
 
     Nx, Ny = size(λCC)
-    overlap = periodic_overlap_index(λCC)
     AFT = promote_type(eltype(λCC), eltype(φCC), eltype(λFF), eltype(φFF), typeof(radius))
 
     λFFₒ = shift_face_x(λFF, overlap)
@@ -259,7 +253,7 @@ function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
 end
 
 """
-    read_orca_staggered_mesh(ds)
+    read_orca_staggered_mesh(ds, overlap)
 
 Read ORCA horizontal coordinates and metrics.
 
@@ -268,7 +262,7 @@ Supports:
 - approximate reconstruction from T/F coordinates only (`glamt/gphit/glamf/gphif`)
   using Tripolar-style spherical metric assumptions.
 """
-function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radius)
+function read_orca_staggered_mesh(ds, overlap; radius = Oceananigans.defaults.planet_radius)
     metrics = ("glamt", "glamu", "glamv", "glamf",
                "gphit", "gphiu", "gphiv", "gphif",
                "e1t", "e1u", "e1v", "e1f",
@@ -276,7 +270,6 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
 
     λCC = read_2d_nemo_variable(ds, "glamt")
     Nx, Ny = size(λCC)
-    overlap = periodic_overlap_index(λCC)
 
     orcaread(data, name) = orient_xy(read_2d_nemo_variable(data, name), Nx, Ny; name)
     shift_x(data) = shift_face_x(data, overlap)
@@ -306,20 +299,10 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
         λFF = orcaread(ds, "glamf")
         φCC = orcaread(ds, "gphit")
         φFF = orcaread(ds, "gphif")
-        return reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
+        return reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF, overlap; radius)
     end
 
-    throw(ArgumentError("Unsupported ORCA mesh format. Missing either full staggered variables $(metrics) or T/F variables $(coords)."))
-end
-
-function periodic_overlap_index(λCC)
-    Nx = size(λCC, 1)
-    for n in min(div(Nx, 4), 10):-1:1
-        if all(isapprox.(λCC[Nx-n+1:Nx, :], λCC[1:n, :]; atol=1e-4))
-            return n
-        end
-    end
-    return 0
+    throw(ArgumentError("Unsupported ORCA mesh: needs staggered variables $(metrics) or T/F variables $(coords)"))
 end
 
 function shift_face_x(data, overlap)
@@ -333,16 +316,13 @@ function halo_filled_data(data, helper_grid, bcs, LX, LY)
     Nx, Ny, _ = size(helper_grid)
     Ni = Base.length(LX(), TX(), Nx)
     Nj = Base.length(LY(), TY(), Ny)
-    Nj_data = size(data, 2)
 
     field = Field{LX, LY, Center}(helper_grid; boundary_conditions = bcs)
-    if Nj_data == Nj
-        field.data[1:Ni, 1:Nj, 1] .= data[1:Ni, 1:Nj]
-    elseif LY === Face && Nj_data == Nj - 1
+    if LY === Face
         field.data[1:Ni, 2:Nj, 1] .= data[1:Ni, 1:Nj-1]
         field.data[1:Ni, 1, 1]    .= data[1:Ni, 1]
     else
-        throw(DimensionMismatch("data has $Nj_data rows but $LY field expects $Nj rows"))
+        field.data[1:Ni, 1:Nj, 1] .= data[1:Ni, 1:Nj]
     end
     fill_halo_regions!(field)
 
@@ -358,37 +338,18 @@ function halo_fill_stagger(CC, FC, CF, FF, helper_grid, bcs)
     )
 end
 
-# Bottom height for the whole globe, as a host array, with the minor basins already removed.
-#
-# `remove_minor_basins!` labels basins with a flood fill, so it has to see the whole globe at
-# once. A field built on a distributed `grid` holds only this rank's slice: labeling that cuts
-# every basin at the rank boundaries, ranks the pieces by *local* area, and — with
-# `major_basins = 1`, which `build_grid` passes — leaves every rank keeping a different piece of
-# a different basin. So the distributed path follows `regrid_bathymetry(::DistributedGrid, ...)`:
-# rank 0 alone reads the dataset and removes the minor basins, `all_reduce` shares the global
-# array, and the caller's `set!` partitions it.
-#
-# The result stays on the host deliberately: a distributed `set!` auto-partitions a global-size
-# `Array`, but not a `CuArray`.
+# Rank 0 reads the global bottom height and removes the minor basins; the host array is shared with every rank
 function global_orca_bottom_height(read_global_bottom_height, grid, arch, FT, major_basins)
 
-    grid isa DistributedGrid ||
-        return remove_minor_orca_basins(read_global_bottom_height(), major_basins)
+    grid isa DistributedGrid || return remove_minor_orca_basins(read_global_bottom_height(), major_basins)
 
-    # Every rank must contribute the same element type to a shared reduction: mismatched MPI
-    # datatypes, or mismatched counts, corrupt the collective ("Message truncated").
     bottom_height = if arch.local_rank == 0
         convert(Matrix{FT}, remove_minor_orca_basins(read_global_bottom_height(), major_basins))
     else
         Matrix{FT}(undef, 0, 0)
     end
 
-    # The receiving ranks have not opened the dataset, so they cannot size their buffer from it, and
-    # they cannot size it from the grid either: `size(grid)` is this rank's slice, and recovering the
-    # global shape from it would bake in the assumption that the model grid and the dataset array
-    # agree — which holds for eORCA today only because `south_rows_to_remove` is applied to both.
-    # Share the shape first, in its own two-element reduction, and only then the field itself. Getting
-    # this wrong does not raise: a count mismatch corrupts the collective ("Message truncated").
+    # the other ranks learn the global shape before the reduction of the field itself
     dimensions = arch.local_rank == 0 ? collect(size(bottom_height)) : zeros(Int, 2)
     Nx, Ny = all_reduce(+, dimensions, arch)
 
@@ -401,13 +362,7 @@ function global_orca_bottom_height(read_global_bottom_height, grid, arch, FT, ma
     return all_reduce(+, bottom_height, arch)
 end
 
-# `remove_minor_basins!` wants a `Field`, but the flood fill behind it reads only the grid's
-# x-topology and its `(Nx, Ny)` — never the metrics. So stage the global array through a
-# throwaway host grid of the array's own size, rather than reconstructing the eORCA mesh, which
-# at 1/12° would mean rebuilding twenty 4320×3606 coordinate arrays to label a land mask.
-# `Periodic` in x is the topology every `ORCAGrid` is built with, and `Bounded` in y gives the
-# same `Base.length(Center(), TY(), Ny)` as the grid's own `RightFaceFolded`, so the labeling is
-# identical to running it on the grid itself.
+# The basin labeling depends only on the x-topology and the shape, so a plain grid of the array's size stands in
 function remove_minor_orca_basins(bottom_height, major_basins)
     major_basins < Inf || return bottom_height
 
@@ -423,119 +378,6 @@ function remove_minor_orca_basins(bottom_height, major_basins)
     return Array(bottom_field.data[1:Nx, 1:Ny, 1])
 end
 
-# On a serial architecture there is nothing to distribute: the grid read from the `mesh_mask` file
-# already spans the whole globe, and only has to be moved off the host.
-distribute_orca_grid(global_grid, arch) = on_architecture(arch, global_grid)
-
-# Cut the global eORCA grid down to this rank's slice.
-#
-# The eORCA mesh has to be assembled globally — `halo_fill_stagger` closes the northern fold, which
-# pairs points on opposite sides of the tripolar seam and so spans all of x — but every rank must end
-# up holding only its own piece. Without this, each rank builds and integrates the entire globe: at
-# 1/12° that is 4322 × 3146 × 100 cells and ~11 GB per Float64 field per rank.
-#
-# This is the same partitioning `TripolarGrid(arch::Distributed, ...)` performs, and it reuses that
-# implementation's `partition_tripolar_metric`. The two differ only in where the global grid comes
-# from: a generated tripolar mesh there, an eORCA `mesh_mask` file here. The supported partitionings
-# are therefore identical — y-only, or an x-y pencil with an even x partition.
-#
-# TODO: this belongs in Oceananigans as `distribute_tripolar_grid(arch, global_grid)`. The body of
-# `TripolarGrid(arch::Distributed, ...)` in `OrthogonalSphericalShellGrids/distributed_tripolar_grid.jl`
-# after its `global_grid = TripolarGrid(CPU(), FT; ...)` line is exactly this function, and `ORCAGrid`
-# is its second caller. Until it is extracted, the partition validation, the `i`/`j` range arithmetic,
-# the `insert_connected_topology` call and the north-corner connectivity fix below have to be kept in
-# step with that file by hand — the two are deliberately written to stay diffable against each other.
-function distribute_orca_grid(global_grid, arch::Distributed)
-
-    workers = ranks(arch.partition)
-    px = ifelse(isnothing(arch.partition.x), 1, arch.partition.x)
-    py = ifelse(isnothing(arch.partition.y), 1, arch.partition.y)
-
-    if isodd(px) && px != 1
-        throw(ArgumentError("The x partition $(px) is not supported by ORCAGrid: the fold pairs each " *
-                            "northern rank with the rank mirrored across the pole, so the x partition " *
-                            "must be 1 or an even number."))
-    end
-
-    if px != 1 && py == 1
-        throw(ArgumentError("An x-only partitioning is not supported by ORCAGrid. " *
-                            "Use a y partitioning or an x-y pencil partitioning."))
-    end
-
-    Nx, Ny, Nz = global_size = size(global_grid)
-    Hx, Hy, Hz = halo_size(global_grid)
-
-    lsize   = local_size(arch, global_size)
-    nxlocal = concatenate_local_sizes(lsize, arch, 1)
-    nylocal = concatenate_local_sizes(lsize, arch, 2)
-
-    xrank = ifelse(isnothing(arch.partition.x), 0, arch.local_index[1] - 1)
-    yrank = ifelse(isnothing(arch.partition.y), 0, arch.local_index[2] - 1)
-
-    # The j-range
-    jstart = 1 + sum(nylocal[1:yrank])
-    jend   = yrank == workers[2] - 1 ? Ny : sum(nylocal[1:yrank+1])
-    jrange = jstart-Hy:jend+Hy
-
-    # The i-range
-    istart = 1 + sum(nxlocal[1:xrank])
-    iend   = xrank == workers[1] - 1 ? Nx : sum(nxlocal[1:xrank+1])
-    irange = istart-Hx:iend+Hx
-
-    slice(metric_name) = on_architecture(arch, partition_tripolar_metric(global_grid, metric_name, irange, jrange))
-
-    LX = workers[1] == 1 ? Periodic : FullyConnected
-
-    # 1-based indices for insert_connected_topology
-    Rx, Ry = workers[1], workers[2]
-    rx, ry = xrank + 1, yrank + 1
-    LY = insert_connected_topology(topology(global_grid, 2), Ry, ry, Rx, rx)
-    nx = nxlocal[rx]
-    ny = nylocal[ry]
-
-    # Fix corner halos passing in case workers[1] != 1
-    if workers[1] != 1
-        northwest_idx_x = ranks(arch)[1] - arch.local_index[1] + 2
-        northeast_idx_x = ranks(arch)[1] - arch.local_index[1]
-
-        if northwest_idx_x > workers[1]
-            northwest_idx_x = arch.local_index[1]
-        end
-
-        if northeast_idx_x < 1
-            northeast_idx_x = arch.local_index[1]
-        end
-
-        # Make sure the northwest and northeast connectivities are correct
-        northwest_recv_rank = receiving_rank(arch; receive_idx_x = northwest_idx_x)
-        northeast_recv_rank = receiving_rank(arch; receive_idx_x = northeast_idx_x)
-        north_recv_rank     = receiving_rank(arch)
-
-        if yrank == workers[2] - 1
-            arch.connectivity.northwest = northwest_recv_rank
-            arch.connectivity.northeast = northeast_recv_rank
-            arch.connectivity.north     = north_recv_rank
-        end
-    end
-
-    FT = eltype(global_grid)
-
-    return OrthogonalSphericalShellGrid{LX, LY, Bounded}(
-        arch,
-        nx, ny, Nz,
-        Hx, Hy, Hz,
-        convert(FT, global_grid.Lz),
-        slice(:λᶜᶜᵃ), slice(:λᶠᶜᵃ), slice(:λᶜᶠᵃ), slice(:λᶠᶠᵃ),
-        slice(:φᶜᶜᵃ), slice(:φᶠᶜᵃ), slice(:φᶜᶠᵃ), slice(:φᶠᶠᵃ),
-        on_architecture(arch, global_grid.z),
-        slice(:Δxᶜᶜᵃ), slice(:Δxᶠᶜᵃ), slice(:Δxᶜᶠᵃ), slice(:Δxᶠᶠᵃ),
-        slice(:Δyᶜᶜᵃ), slice(:Δyᶠᶜᵃ), slice(:Δyᶜᶠᵃ), slice(:Δyᶠᶠᵃ),
-        slice(:Azᶜᶜᵃ), slice(:Azᶠᶜᵃ), slice(:Azᶜᶠᵃ), slice(:Azᶠᶠᵃ),
-        convert(FT, global_grid.radius),
-        global_grid.conformal_mapping
-    )
-end
-
 """
     ORCAGrid(arch = CPU(), FT::DataType = Float64;
              dataset,
@@ -549,8 +391,9 @@ end
              south_rows_to_remove = default_south_rows_to_remove(dataset),
              dir = default_download_directory(dataset))
 
-Construct an `OrthogonalSphericalShellGrid` with `(Periodic, RightFaceFolded, Bounded)`
-topology using coordinate and metric data from a NEMO eORCA `mesh_mask` file.
+Construct an `OrthogonalSphericalShellGrid` using coordinate and metric data from a NEMO eORCA `mesh_mask` file.
+The topology follows the north fold of the mesh: `(Periodic, RightFaceFolded, Bounded)` for the F-pivot eORCA1,
+`(Periodic, RightCenterFolded, Bounded)` with a `TPivot` fold for the T-pivot eORCA025 and eORCA12.
 
 The `dataset` keyword argument specifies which ORCA configuration to use (e.g., `ORCAOne()`, `ORCAQuarter()`, or `ORCATwelfth()`).
 The mesh mask and bathymetry files are downloaded automatically via the
@@ -591,6 +434,8 @@ Keyword Arguments
 - `major_basins`: Number of independent connected ocean basins to retain via
                   [`remove_minor_basins!`](@ref). Basins are removed from smallest to largest;
                   `major_basins = 1` keeps only the largest. Default: `Inf` (keep all basins).
+- `minimum_depth`: Minimum depth [m] of the wet columns, defined as a positive value; shallower wet columns are
+                   deepened to it. Default: 0.
 - `south_rows_to_remove`: Number of southern rows to remove from the eORCA grid.  The "extended" eORCA grid
                           contains degenerate padding rows near Antarctica that are entirely land.
                           Removing them reduces memory usage and computation.
@@ -616,6 +461,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   immersed_bottom = GridFittedBottom,
                   active_cells_map = true,
                   major_basins = Inf,
+                  minimum_depth = 0,
                   south_rows_to_remove = default_south_rows_to_remove(dataset),
                   dir = default_download_directory(dataset),
                   subcell_slope_dataset = nothing)
@@ -624,7 +470,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     mesh_mask_path = download(mesh_meta)
 
     ds = Dataset(mesh_mask_path)
-    mesh = read_orca_staggered_mesh(ds; radius)
+    overlap = periodic_overlap(dataset)
+    mesh = read_orca_staggered_mesh(ds, overlap; radius)
     close(ds)
 
     λCC,  λFC,  λCF,  λFF  = mesh.λCC,  mesh.λFC,  mesh.λCF,  mesh.λFF
@@ -637,10 +484,14 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     north_poles_latitude = φFF[pole_idx, end]
     first_pole_longitude = Float64(λFF[pole_idx, end])
 
-    # eORCA repeats its first `ir` columns at the east edge, and a Periodic topology carries distinct cells only
-    ir = periodic_overlap_index(λCC)
+    pivot = north_fold_pivot(dataset)
+    fold_topology = pivot === FPivot ? RightFaceFolded : RightCenterFolded
+
+    # The first kept column `ic + 1` aligns NEMO's fold mirror (i ↔ jpi + 1 - i for an F pivot,
+    # i ↔ jpi + 2 - i for a T pivot) with the Oceananigans one.
+    ic = pivot === FPivot ? 1 : 2
     jr = south_rows_to_remove
-    chop(data) = data[1:end-ir, jr+1:end]
+    chop(data) = data[ic+1:ic+size(data, 1)-overlap, jr+1:end-1]
 
     λCC, λFC, λCF, λFF     = chop(λCC),  chop(λFC),  chop(λCF),  chop(λFF)
     φCC, φFC, φCF, φFF     = chop(φCC),  chop(φFC),  chop(φCF),  chop(φFF)
@@ -654,14 +505,14 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     Hx, Hy, Hz = halo
 
-    topo = (Periodic, RightFaceFolded, Bounded)
+    topo = (Periodic, fold_topology, Bounded)
     Lz, z_coord = generate_coordinate(FT, topo, (Nx, Ny, Nz), halo, z, :z, 3, CPU())
 
     helper_grid = RectilinearGrid(; size = (Nx, Ny), halo = (Hx, Hy),
                                     x = (0, 1), y = (0, 1),
-                                    topology = (Periodic, RightFaceFolded, Flat))
+                                    topology = (Periodic, fold_topology, Flat))
 
-    bcs = FieldBoundaryConditions(north  = FPivotZipperBoundaryCondition(),
+    bcs = FieldBoundaryConditions(north  = BoundaryCondition(Zipper{pivot}(), 1),
                                   south  = NoFluxBoundaryCondition(),
                                   west   = Oceananigans.PeriodicBoundaryCondition(),
                                   east   = Oceananigans.PeriodicBoundaryCondition(),
@@ -676,10 +527,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     to_host(data) = map(FT, data)
 
-    # `halo_fill_stagger` above closed the northern fold, which pairs points on opposite sides of the
-    # tripolar seam and so spans all of x: the mesh can only be assembled for the whole globe. Build
-    # that global grid on the host, then let `distribute_orca_grid` cut it down to this rank's slice.
-    global_grid = OrthogonalSphericalShellGrid{Periodic, RightFaceFolded, Bounded}(
+    # The north fold spans all of x, so the mesh is assembled globally and then cut to this rank's slice
+    global_grid = OrthogonalSphericalShellGrid{Periodic, fold_topology, Bounded}(
         CPU(),
         Nx, Ny, Nz,
         Hx, Hy, Hz,
@@ -691,20 +540,18 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
         to_host(Δyᶜᶜᵃ), to_host(Δyᶠᶜᵃ), to_host(Δyᶜᶠᵃ), to_host(Δyᶠᶠᵃ),
         to_host(Azᶜᶜᵃ), to_host(Azᶠᶜᵃ), to_host(Azᶜᶠᵃ), to_host(Azᶠᶠᵃ),
         convert(FT, radius),
-        Tripolar(north_poles_latitude, first_pole_longitude, southernmost_latitude, RightFaceFolded)
+        Tripolar(north_poles_latitude, first_pole_longitude, southernmost_latitude, fold_topology, pivot)
     )
 
-    underlying_grid = distribute_orca_grid(global_grid, arch)
+    underlying_grid = distribute_tripolar_grid(arch, global_grid)
 
     with_bathymetry || return underlying_grid
 
     bathy_meta = Metadatum(:bottom_height; dataset, dir)
-    # `download` uses `@root` internally, so every rank must call it.
+    # `download` is `@root` internally, so every rank must call it.
     bathymetry_path = download(bathy_meta)
 
-    # Deferred, because on a distributed grid only rank 0 reads the dataset. NEMO stores
-    # positive depth: negate it, and map land (missing, or depth ≤ 0) to +100 so
-    # `GridFittedBottom` masks it. The result spans the whole globe on whichever rank runs it.
+    # Deferred: on a distributed grid only rank 0 reads the dataset.
     read_global_bottom_height = function ()
         bathy_ds   = Dataset(bathymetry_path)
         bathy_name = dataset_variable_name(bathy_meta)
@@ -722,8 +569,11 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     end
 
     bottom_field = Field{Center, Center, Nothing}(underlying_grid)
-    set!(bottom_field, global_orca_bottom_height(read_global_bottom_height, underlying_grid,
-                                                 arch, FT, major_basins))
+    set!(bottom_field, global_orca_bottom_height(read_global_bottom_height, underlying_grid, arch, FT, major_basins))
+
+    if minimum_depth > 0
+        launch!(arch, underlying_grid, :xy, _enforce_minimum_depth!, bottom_field, convert(FT, minimum_depth))
+    end
 
     if !isnothing(subcell_slope_dataset)
         corner_field = subcell_slope_corner_bottom_height(underlying_grid, bottom_field, subcell_slope_dataset,

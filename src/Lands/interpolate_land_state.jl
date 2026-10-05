@@ -6,7 +6,7 @@ using ..Atmospheres: interp_atmos_time_series
 function EarthSystemModels.interpolate_state!(exchanger, grid, land::PrescribedLand, coupled_model)
     arch = architecture(grid)
     clock = coupled_model.clock
-    runoff_freshwater_flux = exchanger.state.freshwater_flux
+    runoff_freshwater_flux = exchanger.state.runoff_freshwater_flux
     iceberg_freshwater_flux = exchanger.state.iceberg_freshwater_flux
 
     fill!(runoff_freshwater_flux, 0)
@@ -32,22 +32,6 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, land::PrescribedL
                 grid,
                 clock,
                 data,
-                land_grid,
-                land_times,
-                land_backend,
-                land_time_indexing)
-    end
-
-    iceberg_freshwater_flux = exchanger.state.iceberg_freshwater_flux
-    fill!(iceberg_freshwater_flux, 0)
-
-    if haskey(freshwater_data, :icebergs)
-        launch!(arch, grid, kernel_parameters,
-                _interpolate_land_freshwater_flux!,
-                iceberg_freshwater_flux.data,
-                grid,
-                clock,
-                (freshwater_data.icebergs,),
                 land_grid,
                 land_times,
                 land_backend,

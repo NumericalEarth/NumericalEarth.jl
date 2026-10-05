@@ -7,32 +7,8 @@ using NumericalEarth.DataWrangling: Metadata, metadata_path
 using NumericalEarth.DataWrangling.WOA: WOAClimatology, WOA_variable_names, woa_period
 using WorldOceanAtlasTools: WorldOceanAtlasTools
 
-# NOAA servers have inconsistent availability across product years.
-# We try the user-specified product_year first, then fall back to others.
-const fallback_product_years = (2023, 2018, 2013)
-
-function woa_filepath(woa_tracer, product_year, period)
-    # Try user-specified product year first
-    try
-        return WorldOceanAtlasTools.WOAfile(woa_tracer; product_year, period, resolution=1)
-    catch e
-        @warn "Errored with exception $(e)"
-    end
-
-    # Fall back to other product years
-    for py in fallback_product_years
-        py == product_year && continue
-        try
-            @info "WOA product year $product_year unavailable for tracer \"$woa_tracer\", trying $py..."
-            return WorldOceanAtlasTools.WOAfile(woa_tracer; product_year=py, period, resolution=1)
-        catch e
-            @warn "Errored with exception $(e)"
-        end
-    end
-
-    error("Could not download WOA data for tracer \"$woa_tracer\" " *
-          "(tried product years: $product_year, $(join(fallback_product_years, ", ")))")
-end
+woa_filepath(woa_tracer, product_year, period) =
+    WorldOceanAtlasTools.WOAfile(woa_tracer; product_year, period, resolution=1)
 
 function Downloads.download(metadata::Metadata{<:WOAClimatology}; skip_existing=true)
     @root for metadatum in metadata

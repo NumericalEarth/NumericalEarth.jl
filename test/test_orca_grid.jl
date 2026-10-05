@@ -63,7 +63,7 @@ end
 @testset "ORCAGrid with ORCAOne dataset on $(arch)" for arch in test_architectures
     south_rows_to_remove = 43
     grid = ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
-    @test grid.underlying_grid.Ny == 332 - south_rows_to_remove
+    @test grid.underlying_grid.Ny == 331 - south_rows_to_remove
 
     grid = ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove=0)
 
@@ -73,7 +73,7 @@ end
     @test underlying isa Oceananigans.Grids.OrthogonalSphericalShellGrid
     @test underlying isa TripolarGrid
     @test underlying.Nx == 360
-    @test underlying.Ny == 332
+    @test underlying.Ny == 331
     @test underlying.Nz == 5
 
     # Coordinates span near-global domain
@@ -97,7 +97,7 @@ end
     @test grid isa TripolarGrid
     @test !(grid isa ImmersedBoundaryGrid)
     @test grid.Nx == 360
-    @test grid.Ny == 332 - default_south_rows_to_remove(ORCAOne())
+    @test grid.Ny == 331 - default_south_rows_to_remove(ORCAOne())
     @test grid.Nz == 5
 end
 
@@ -109,8 +109,21 @@ end
     @test grid isa ImmersedBoundaryGrid
     underlying = grid.underlying_grid
     @test underlying.Nx == 360
-    @test underlying.Ny == 332 - Nremove
+    @test underlying.Ny == 331 - Nremove
     @test underlying.Nz == 5
+end
+
+@testset "ORCAGrid minimum_depth on $(arch)" for arch in test_architectures
+    z = [-5000, -100, -25, -20, -15, -10, -5, 0]
+    bottom(grid) = Array(grid.immersed_boundary.bottom_height[1:grid.Nx, 1:grid.Ny, 1])
+
+    reference = bottom(ORCAGrid(arch; dataset=ORCAOne(), z, Nz=length(z)-1))
+    deepened  = bottom(ORCAGrid(arch; dataset=ORCAOne(), z, Nz=length(z)-1, minimum_depth=20))
+
+    wet = reference .< 0
+    @test any(reference[wet] .> -20)
+    @test all(deepened[wet] .<= -20)
+    @test (deepened .< 0) == wet
 end
 
 @testset "ORCAGrid metric consistency" begin
@@ -198,7 +211,7 @@ end
     λFF, φFF = read_coordinate("glamf"), read_coordinate("gphif")
     close(ds)
 
-    reconstructed = Bathymetry.reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF;
+    reconstructed = Bathymetry.reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF, overlap;
                                                                        radius = Oceananigans.defaults.planet_radius)
 
     # Both read paths must agree on shape and on NEMO's y-indexing: `halo_filled_data` applies the

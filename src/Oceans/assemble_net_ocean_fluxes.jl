@@ -45,7 +45,7 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     snowfall = snowfall_flux(coupled_model)
 
     land_exchanger = coupled_model.interfaces.exchanger.land
-    freshwater_flux = land_freshwater_flux(land_exchanger, :freshwater_flux)
+    runoff_freshwater_flux  = land_freshwater_flux(land_exchanger, :runoff_freshwater_flux)
     iceberg_freshwater_flux = land_freshwater_flux(land_exchanger, :iceberg_freshwater_flux)
 
     ice_concentration = sea_ice_concentration(sea_ice)
@@ -65,7 +65,7 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
             rainfall,
             snowfall,
             intercepted_snowfall_flux,
-            freshwater_flux,
+            runoff_freshwater_flux,
             iceberg_freshwater_flux,
             ocean_properties,
             get(net_ocean_fluxes, :river_freshwater_volume_flux, nothing))
@@ -97,7 +97,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
                                              rainfall_flux,
                                              snowfall_flux,
                                              intercepted_snowfall_flux,
-                                             land_freshwater_flux,
+                                             runoff_freshwater_flux,
                                              iceberg_freshwater_flux,
                                              ocean_properties,
                                              river_volume_flux)
@@ -118,7 +118,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         Jʳⁿ = rainfall_flux[i, j, 1]
         Jˢⁿ = snowfall_flux[i, j, 1]
         Pˢⁿ = intercepted_snowfall_flux[i, j, 1]
-        Jˡⁿ = get_land_freshwater_flux(i, j, land_freshwater_flux)
+        Jˡⁿ = get_land_freshwater_flux(i, j, runoff_freshwater_flux)
         Jⁱᵇ = get_land_freshwater_flux(i, j, iceberg_freshwater_flux)
         𝒬ᵀ = atmos_ocean_fluxes.sensible_heat[i, j, 1]
         𝒬ᵛ = atmos_ocean_fluxes.latent_heat[i, j, 1]
@@ -182,7 +182,6 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         Jᵀ[i, j, 1] = ifelse(inactive, zero(grid), Jᵀao + Jᵀio)
         Jˢ[i, j, 1] = ifelse(inactive, zero(grid), Jˢio)
         Jʷ[i, j, 1] = ifelse(inactive, zero(grid), Jʷao + Jʷio)
-        Jᴴio = sea_ice_ocean_fluxes.freshwater_heat_content[i, j, 1]
         Jᴴ[i, j, 1] = ifelse(inactive, zero(grid), Tᵒᶜ * Jʷao + Jᴴio)
     end
 

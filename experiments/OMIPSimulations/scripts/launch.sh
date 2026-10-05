@@ -43,7 +43,7 @@ Environment variables (physics):
   RUN_NAME_OVERRIDE
                 Use this exact run name instead of the one built from the options, to resume a run
                 whose directory predates the 2026-09-03 rename. The physics is still whatever the
-                options say, so pass the old defaults too (ICE_DRAGREF=none ICE_LIQUIDUS=linear).
+                options say, so pass the old defaults too (ICE_DRAGREF=none).
   ICE_LATERAL   Sea-ice lateral boundary condition: "no_slip" (default) applies the viscous
                 wall stress -2 eta u / Delta on coastlines; "free_slip" leaves them stress-free.
                 The old quadratic "side drag" was inert (unit mismatch) and has been removed.
@@ -73,7 +73,7 @@ Environment variables (physics):
                 whose winter half has km-deep mixed layers, so a January start from it begins
                 with a seasonal thermocline the season does not have. Unset uses WOA Annual
                 throughout and reproduces the previous model exactly. Adds "_icblend<val>".
-                Requires woa_t_monthly_<MM>.nc and woa_s_monthly_<MM>.nc in the climatology dir.
+                Requires woa2023_t_monthly_<MM>.nc and woa2023_s_monthly_<MM>.nc in the climatology dir.
   ICE_DRAGREF   Depth in metres over which the ocean velocity is averaged to give the reference
                 of the ice-ocean drag. McPhee's Cio = 5.5e-3 is defined against the under-ice
                 boundary layer; the topmost cell is 1.5 m and is dragged by the ice itself, so
@@ -119,6 +119,8 @@ Environment variables (physics):
                            completed with ghost values, blending the mirror image of the active run
                            with its quadratic extrapolation -- unlike "upwind", which pays first
                            order in every boundary cell. Adds "_ghostcells".
+                  ghost_cells_full
+                           the non-monotone version of ghost_cells 
                 Sets both tracers and momentum. TRACER_BOUNDARY_SCHEME and MOMENTUM_BOUNDARY_SCHEME
                 take the same three values and override it one component at a time, which is how to
                 tell whether the boundary treatment acts through the tracers or through the momentum.
@@ -127,22 +129,10 @@ Environment variables (physics):
   TRACER_BOUNDARY_SCHEME, MOMENTUM_BOUNDARY_SCHEME
                 BOUNDARY_SCHEME for the tracer and for the momentum reconstructions separately.
                 Default: whatever BOUNDARY_SCHEME is.
-  ICE_LIQUIDUS  Freezing-point relation. "teos10" (default) is the linear fit to the TEOS-10
-                freezing point expressed in CONSERVATIVE temperature, which is what the ocean
-                carries: Tm = -0.054523 S, accurate to 0.013 K over S = 28-35.5, against 0.032 K
-                for ClimaSeaIce's own 0.054 -- which is too warm at EVERY salinity and so biases the
-                ice-ocean heat flux one way everywhere. The intercept stays 0 because fresh water
-                freezes at 0 C and masked (bathymetry) cells carry S = 0. The pressure dependence,
-                -7.53e-4 K/dbar and worth 0.5 K at 660 m, is applied separately where depth is known.
-                "linear" restores ClimaSeaIce's own Tm = -0.054 S, which is up to 0.032 K TOO WARM
-                and biases the ice-ocean heat flux rho c alpha_h u* (Theta - Tm) directly.
-                *** DEFAULT CHANGED 2026-09-03. *** Adds "_liq<val>" when not "teos10".
-  ICE_TILT      Set to "true" to add the ocean surface tilt term -g grad(eta) to the sea ice
-                momentum equation. The term is f x u_geostrophic, so without it the ice cannot ride
-                the ocean's dynamic topography and the uncompensated Coriolis force is absorbed by
-                the ice-ocean drag. Default: false, which reproduces the previous model exactly.
-                Adds "_icetilt" to the run name. Requires a ClimaSeaIce carrying the free-surface
-                term (the OMIPSimulations manifest has it; the NumericalEarth root one does not).
+  ICE_TILT      Ocean surface tilt term -g grad(eta) in the sea ice momentum equation. The term is
+                f x u_geostrophic, so without it the ice cannot ride the ocean's dynamic topography
+                and the uncompensated Coriolis force is absorbed by the ice-ocean drag.
+                Default: true. Set to "false" to drop it; adds "_noicetilt" to the run name.
   ICE_SALINITY  Bulk sea-ice salinity in psu (ClimaSeaIce ConstantField). Sets the salt returned
                 per unit melt, so the freshwater a melting cell delivers goes as (S_ocean - S_ice)
                 / S_ocean: 0.885 at 4 psu against 0.828 at 6. Multi-year Arctic ice is 2-4 psu,
@@ -177,6 +167,10 @@ Environment variables (physics):
   BIHVISC       Constant biharmonic viscosity ν in m^4/s (default: unset).
                 When set, overrides BIHARMONIC and uses ν directly instead of
                 the grid-area-scaled νhb = Az^2 / λ form.
+  BIHDIV        Total biharmonic timescale felt by the horizontal divergence, e.g. "30days",
+                shorter than BIHARMONIC. Adds a divergence-only biharmonic viscosity on top of
+                the full one, so the rotational flow keeps BIHARMONIC. Adds "_bihdiv<value>".
+                Default: unset (off).
   VISCOUS_VELOCITY
                 NEMO's rn_Uv: lateral viscous velocity in m/s giving a grid-scaled
                 Laplacian viscosity ν = 1/2 Uv sqrt(Az), i.e. NEMO's ahm = 1/2 Uv Lv
@@ -216,11 +210,6 @@ Environment variables (physics):
                 parked TKE equilibrium disappears and e decays to minimum_tke. Use 1.0, not 0.5.
   CP            CATKE convective penetration length coefficient for tracers Cᵉc (default: 0.112).
                 Sets how far a convective plume entrains below the unstable layer.
-  ICE_FW        Fraction of the sea ice-ocean mass exchange delivered to the ocean, volume and salt
-                alike (default: 1). The withheld water leaves the ocean+ice+snow total and
-                NORMALIZE_FRESHWATER returns it globally through the free surface, so the global
-                budget still closes while the local delivery is scaled.
-                Adds "_icefw<value>" to the run name.
   ICE_MELT_MIX  Set to "true" for extra vertical tracer diffusivity where the sea ice is melting into
                 the ocean, the same device river runoff already gets. The ice-ocean exchange lands in
                 the surface cell, so a melt event leaves a one-cell lid the closure must erode; in
@@ -261,10 +250,6 @@ Environment variables (physics):
                 Tb, so the default hands the ocean ~0.23 W/m2 per (m/yr) of basal melt it never paid
                 for. NOTE: applied to the whole ice mass flux, so it over-corrects top melt, which is
                 produced near 0. An upper bound on the correction, not the exact treatment.
-  ICE_VSF       Set to "true" to deliver that exchange as a virtual salt flux at fixed ocean volume
-                instead of as a real volume flux, isolating the volume pathway from the freshwater
-                amount. Does not conserve total salt. Overrides ICE_FW.
-                Adds "_icevsf" to the run name.
   CLOSURE       Ocean vertical closure: "catke" (default), "simple", "nori", "rbvd",
                 "kpp", or "nemo_tke"
                 ("simple" = ConvectiveAdjustment + depth-stepped background κ/ν;
@@ -284,7 +269,8 @@ Environment variables (physics):
   BOTTOM_CELLS  Representation of the bathymetry: full (GridFittedBottom, default), partial
                 (PartialCellBottom) or shaved (ShavedCellBottom, a linear slope through each bottom
                 cell). Adds "_pcells" or "_scells" to the run name.
-  CORIOLIS      Discretization of the Coriolis term: enstrophy (default), energy, active_weighted,
+  CORIOLIS      Discretization of the Coriolis term: enstrophy (default), energy, triad,
+                active_weighted,
                 consistent_area or consistent_area_energy. The consistent_area schemes divide the
                 area-weighted interpolation of the transport by the interpolation of the wet face
                 areas, reconstructing a uniform velocity exactly where face areas differ: next to
@@ -305,6 +291,9 @@ Environment variables (physics):
                 cannot pass. Downslope speed is u = γ g Δρ/ρ₀, so the transport shuts off
                 as the contrast is consumed. Combines with BBL_KAPPA; the two act on
                 different failures. Adds "_cg<γ>" to the run name.
+                BBL_GAMMA=resolved uses the model's own downslope transport at the shelf level
+                wherever the shelf bottom water is denser than the deep bottom water (NEMO
+                nn_bbl_adv = 1) and delivers it to the deep column's bottom cell. Adds "_cgresolved".
   OVERFLOW_RESTORE
                 Diagnostic only, in DAYS. Pins T and S on the East Greenland slope
                 (36-26 W, 62-66.5 N, below 1500 m) to observed Denmark Strait Overflow
@@ -314,13 +303,25 @@ Environment variables (physics):
                 how to get dense water down a staircase. Both BBL schemes left the
                 delivered density unchanged, so neither tested that. Adds "_dsow<days>"
                 to the run name.
-  SILL_OVERFLOW Denmark Strait overflow parameterization (Danabasoglu, Large & Briegleb 2010),
-                true/false. Every 16 steps the Whitehead hydraulic transport
-                M_s = g′h_u²/2f of the dense water above the 690 m sill, plus an equal
-                entrainment from 700-1500 m, is exchanged volume-neutrally with the
-                East Greenland slope below 1500 m, so the product crosses the bottom
-                steps instead of being mixed away on them. Tracers only; the velocity is
-                untouched. Logs "SILL OVERFLOW M_s=..." to the .err. Adds "_ofp".
+  SILL_OVERFLOW Greenland-Scotland overflow parameterization (Danabasoglu, Large &
+                Briegleb 2010), true/false. Denmark Strait and the Faroe Bank Channel.
+                Every 16 steps each sill exchanges, volume-neutrally, the Whitehead
+                (1974) rotating hydraulic transport of its upstream dense layer, less
+                what the model already carries down, plus Froude-limited entrainment
+                along the descent, with the levels bracketing the depth at which the
+                product stops being denser than the ambient column. Only the two boxes
+                saying where each strait is are prescribed: the sill depth is the
+                bottleneck of the deepest connected path from the upstream basin to the
+                downstream one, and the layers, the latitude and the descent slope come
+                from the grid and the density field. Tracers only; the velocity is
+                untouched. Logs "SILL OVERFLOW M_w=... z_n=..." to the .err. Adds "_ofp".
+  TRANSFORMATION
+                Diagnostic only, in DAYS: interval between σ₂ water-mass-transformation
+                samples. Writes "<prefix>_transformation.jld2" holding, per model-latitude
+                row and σ₂ class, the overturning attributed to the surface fluxes, the
+                vertical closures, the isopycnal closure, and the discrete tracer advection.
+                The advective term is zero in the continuum, so it measures the numerical
+                mixing directly. Unset omits the diagnostic. Does not change the run name.
   LAB_RESTORE   Diagnostic only, in DAYS. Restores SALINITY ONLY in the deep Labrador
                 interior (65-40 W, 52-66 N, columns whose bottom is below 2000 m) above
                 200 m toward WOA Annual Absolute Salinity. Campaign 27 priced the
@@ -372,10 +373,6 @@ Environment variables (physics):
                 Must satisfy 0 < DZ_TOP < depth/Nz. Default: unset (scale=1300).
 
 Equatorial-MLD tuning knobs (closure parameters; configuration switches):
-  NORMALIZE_SALINITY "true" (default) applies the conservative, salt-conserving
-                surface-salinity restoring (zero global mean). Set to "false" to use
-                the raw un-normalized restoring (the old, non-conserving behavior),
-                e.g. for A/B comparison. Default: true.
   NORMALIZE_FRESHWATER Removes the global mean of the atmospheric surface freshwater
                 flux, holding the global ocean volume fixed (standard OMIP-2 practice;
                 the sea-ice exchange is excluded and the freshwater heat content is
@@ -415,12 +412,6 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
                 Only used when SKEW_FORMULATION=boundary_value.
   BVP_CMIN      Floor c_min on that speed, in m/s. Keeps the transport bounded in
                 weakly stratified columns. Default: 0.1.
-  RESTORING_UNDER_ICE Set to "false" to stop the surface-salinity restoring acting under
-                sea ice (weighted by the open-water fraction 1-ℵ, with the zero-mean
-                correction spread over open water only, so no net salt is injected).
-                WOA is poorly constrained beneath ice and the restoring there fights the
-                ice-ocean salt flux. Requires NORMALIZE_SALINITY=true. Adds "_noicerest"
-                to the run name. Default: true (OMIP-2 convention).
   RIVER_SPREAD  Radius in degrees over which each river/iceberg mouth's discharge is
                 divided equally among the surrounding wet cells. A geographic radius
                 keeps the freshwater flux per unit area resolution-independent; raise it
@@ -447,7 +438,8 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
                 in the abyss (deep upwelling without diffusing the thermocline), or
                 "abyssal_henyey" for Henyey in the thermocline with the same arctangent
                 enhancement added beneath it, reaching +5e-5 at 5000 m — the abyssal upwelling
-                without the upper-ocean value that sets the drift.
+                without the upper-ocean value that sets the drift, or "henyey2x" for twice the
+                Henyey profile everywhere.
                 Default: unset, i.e. the Henyey et al. (1986) latitudinal internal-wave
                 scaling κ = max(2e-6, 1e-5 |sin φ|), 2e-6 at the equator to 1e-5 at the poles.
                 Raising it strengthens the diapycnal upwelling that closes the AMOC lower limb
@@ -522,6 +514,7 @@ Examples:
   BIHARMONIC=5days ./launch.sh orca           # custom biharmonic timescale
   BIHARMONIC=nothing ./launch.sh orca         # disable biharmonic viscosity
   BIHVISC=1e12 ./launch.sh orca               # constant biharmonic viscosity ν=1e12 m^4/s
+  BIHDIV=30days ./launch.sh orca              # extra biharmonic damping of the divergence, 30 days in total
   DZ_TOP=2 ./launch.sh orca                   # 2 m top cell (scale chosen by bisection)
   IC_CONDITIONS=blended ./launch.sh orca      # January WOA Monthly blend + summer ice both hemispheres
   CATKE_CWUSTAR=5.0 ./launch.sh orca          # stronger surface TKE injection in CATKE
@@ -682,8 +675,8 @@ export MOMENTUM_ADVECTION VISCOUS_VELOCITY LAPVISC STRAIT_TAU
 
 for scheme_name in BOUNDARY_SCHEME TRACER_BOUNDARY_SCHEME MOMENTUM_BOUNDARY_SCHEME; do
   case "${!scheme_name}" in
-    default|upwind|ghost_cells) ;;
-    *) echo "$scheme_name must be default, upwind or ghost_cells, got '${!scheme_name}'" >&2; exit 1 ;;
+    default|upwind|ghost_cells|ghost_cells_full) ;;
+    *) echo "$scheme_name must be default, upwind or ghost_cells, ghost_cells_full, got '${!scheme_name}'" >&2; exit 1 ;;
   esac
 done
 export TRACER_ORDER BUFFER_ORDER BOUNDARY_SCHEME TRACER_BOUNDARY_SCHEME MOMENTUM_BOUNDARY_SCHEME
@@ -712,8 +705,9 @@ RUN_NAME="$CONFIG"
 [[ -n "${ICE_PSTAR:-}" ]]                        && RUN_NAME="${RUN_NAME}_pstar${ICE_PSTAR}"
 [[ -n "${ICE_SALINITY:-}" ]]                     && RUN_NAME="${RUN_NAME}_sice${ICE_SALINITY}"
 [[ "${ICE_DRAGREF:-6}" != "6" ]]                 && RUN_NAME="${RUN_NAME}_dragref${ICE_DRAGREF}"
-[[ "${ICE_LIQUIDUS:-teos10}" != "teos10" ]]      && RUN_NAME="${RUN_NAME}_liq${ICE_LIQUIDUS}"
 [[ "${ICE_Z0:-5e-4}" != "5e-4" ]]                && RUN_NAME="${RUN_NAME}_icez0${ICE_Z0}"
+[[ -n "${REYNOLDS_LIMIT:-}" ]]                   && RUN_NAME="${RUN_NAME}_relim${REYNOLDS_LIMIT}"
+[[ -n "${DIVDAMP:-}" ]]                          && RUN_NAME="${RUN_NAME}_divdamp${DIVDAMP}"
 [[ -n "${SNOW_CATEGORIES:-}" && "${SNOW_CATEGORIES}" != "${ICE_CATEGORIES:-4}" ]] \
                                                  && RUN_NAME="${RUN_NAME}_snowcat${SNOW_CATEGORIES}"
 [[ -n "${ICE_ITD_SHAPE:-}" ]]                    && RUN_NAME="${RUN_NAME}_itd${ICE_ITD_SHAPE//,/-}"
@@ -722,11 +716,12 @@ RUN_NAME="$CONFIG"
 if [[ "$TRACER_BOUNDARY_SCHEME" == "$MOMENTUM_BOUNDARY_SCHEME" ]]; then
   [[ "$TRACER_BOUNDARY_SCHEME" == "upwind" ]]    && RUN_NAME="${RUN_NAME}_buford1"
   [[ "$TRACER_BOUNDARY_SCHEME" == "ghost_cells" ]] && RUN_NAME="${RUN_NAME}_ghostcells"
+  [[ "$TRACER_BOUNDARY_SCHEME" == "ghost_cells_full" ]] && RUN_NAME="${RUN_NAME}_ghostcellsfull"
 else
   [[ "$TRACER_BOUNDARY_SCHEME" != "default" ]]   && RUN_NAME="${RUN_NAME}_tr${TRACER_BOUNDARY_SCHEME}"
   [[ "$MOMENTUM_BOUNDARY_SCHEME" != "default" ]] && RUN_NAME="${RUN_NAME}_mom${MOMENTUM_BOUNDARY_SCHEME}"
 fi
-[[ "${ICE_TILT:-false}" == "true" ]]             && RUN_NAME="${RUN_NAME}_icetilt"
+[[ "${ICE_TILT:-true}" != "true" ]]              && RUN_NAME="${RUN_NAME}_noicetilt"
 [[ -n "${IC_BLEND:-}" ]]                         && RUN_NAME="${RUN_NAME}_icblend${IC_BLEND}"
 [[ "$IC_CONDITIONS" != "default" ]]              && RUN_NAME="${RUN_NAME}_summerice"
 [[ "${ICE_CATEGORIES:-4}" != "4" ]]              && RUN_NAME="${RUN_NAME}_ncat${ICE_CATEGORIES}"
@@ -743,6 +738,7 @@ fi
 [[ "${BOTTOM_CELLS:-full}" == "partial" ]]     && RUN_NAME="${RUN_NAME}_pcells"
 [[ "${BOTTOM_CELLS:-full}" == "shaved" ]]      && RUN_NAME="${RUN_NAME}_scells"
 [[ "${CORIOLIS:-enstrophy}" == "energy" ]]                 && RUN_NAME="${RUN_NAME}_encor"
+[[ "${CORIOLIS:-enstrophy}" == "triad" ]]                  && RUN_NAME="${RUN_NAME}_triadcor"
 [[ "${CORIOLIS:-enstrophy}" == "active_weighted" ]]        && RUN_NAME="${RUN_NAME}_awcor"
 [[ "${CORIOLIS:-enstrophy}" == "consistent_area" ]]        && RUN_NAME="${RUN_NAME}_cacor"
 [[ "${CORIOLIS:-enstrophy}" == "consistent_area_energy" ]] && RUN_NAME="${RUN_NAME}_caecor"
@@ -751,8 +747,6 @@ fi
 [[ -n "${OVERFLOW_RESTORE:-}" ]]               && RUN_NAME="${RUN_NAME}_dsow${OVERFLOW_RESTORE}"
 [[ -n "${LAB_RESTORE:-}" ]]                     && RUN_NAME="${RUN_NAME}_labrest${LAB_RESTORE}"
 [[ "${SILL_OVERFLOW:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_ofp"
-[[ "${NORMALIZE_SALINITY:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_rawsalt"
-[[ "${RESTORING_UNDER_ICE:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_noicerest"
 case "${NORMALIZE_FRESHWATER:-timestep}" in
   none|false)    RUN_NAME="${RUN_NAME}_fwnone" ;;
   annual)        RUN_NAME="${RUN_NAME}_fwnormann" ;;
@@ -768,8 +762,6 @@ esac
 [[ -n "${CF0:-}" ]]  && [[ "${CF0}" != "1e9" ]]  && RUN_NAME="${RUN_NAME}_cf0${CF0}"
 [[ -n "${CFD:-}" ]]  && [[ "${CFD}" != "0.75" ]] && RUN_NAME="${RUN_NAME}_cfd${CFD}"
 [[ -n "${CP:-}" ]]                             && RUN_NAME="${RUN_NAME}_cp${CP}"
-[[ -n "${ICE_FW:-}" ]]                         && RUN_NAME="${RUN_NAME}_icefw${ICE_FW}"
-[[ "${ICE_VSF:-false}" == "true" ]]            && RUN_NAME="${RUN_NAME}_icevsf"
 [[ "${ICE_MELTWATER_TB:-true}" != "true" ]]          && RUN_NAME="${RUN_NAME}_nomeltTb"
 [[ "${ICE_MELT_MIX:-false}" == "true" ]]       && RUN_NAME="${RUN_NAME}_icemix"
 [[ -n "${ICE_MELT_K:-}" ]]                     && RUN_NAME="${RUN_NAME}k${ICE_MELT_K}"
@@ -792,6 +784,7 @@ esac
 [[ "$DT" != "$DEFAULT_DT" ]]                   && RUN_NAME="${RUN_NAME}_dt${DT}"
 [[ "${BAROTROPIC_SUBSTEPS:-$DEFAULT_SUBSTEPS}" != "$DEFAULT_SUBSTEPS" ]] && RUN_NAME="${RUN_NAME}_substeps${BAROTROPIC_SUBSTEPS}"
 [[ -n "${BIHVISC:-}" ]]                        && RUN_NAME="${RUN_NAME}_bihvisc${BIHVISC}"
+[[ -n "${BIHDIV:-}" ]]                         && RUN_NAME="${RUN_NAME}_bihdiv${BIHDIV}"
 [[ -n "${VISCOUS_VELOCITY:-}" ]]               && RUN_NAME="${RUN_NAME}_uv${VISCOUS_VELOCITY}"
 [[ -n "${LAPVISC:-}" ]]                        && RUN_NAME="${RUN_NAME}_lapvisc${LAPVISC}"
 [[ -n "${STRAIT_TAU:-}" ]]                     && RUN_NAME="${RUN_NAME}_strait${STRAIT_TAU}"
@@ -837,11 +830,13 @@ fi
 if [[ "${PARTITION}" == "default" ]]; then
     TIME="${TIME:-05:00:00}"
 else
-    TIME="${TIME:-25:00:00}"
+    TIME="${TIME:-120:00:00}"
 fi
 SBATCH_ARGS+=(--time="${TIME}")
 
 MEM="${MEM:-150GB}"
+# Slurm reads a unitless --mem as megabytes, so a bare MEM=100 is OOM-killed within seconds.
+[[ "$MEM" =~ ^[0-9]+$ ]] && { echo "MEM must carry a unit, got '$MEM' (write ${MEM}GB)" >&2; exit 1; }
 SBATCH_ARGS+=(--mem="${MEM}")
 
 if [[ "${PROFILE:-false}" == "true" ]]; then
@@ -904,8 +899,6 @@ CF="${CF:-}"
 CF0="${CF0:-}"
 CFD="${CFD:-}"
 CP="${CP:-}"
-ICE_FW="${ICE_FW:-}"
-ICE_VSF="${ICE_VSF:-false}"
 ICE_MELTWATER_TB="${ICE_MELTWATER_TB:-true}"
 ICE_MELT_MIX="${ICE_MELT_MIX:-false}"
 ICE_MELT_K="${ICE_MELT_K:-}"
@@ -918,6 +911,7 @@ ICE_ARCH_STRESS="${ICE_ARCH_STRESS:-}"
 ICE_ARCH_MONTHS="${ICE_ARCH_MONTHS:-}"
 IC_CONDITIONS="${IC_CONDITIONS:-default}"
 BIHVISC="${BIHVISC:-}"
+BIHDIV="${BIHDIV:-}"
 VISCOUS_VELOCITY="${VISCOUS_VELOCITY:-}"
 LAPVISC="${LAPVISC:-}"
 STRAIT_TAU="${STRAIT_TAU:-}"
@@ -967,10 +961,8 @@ CF_KWARG=""
 CP_KWARG=""
 [[ -n "$CP" ]] && CP_KWARG="Cᵉc = ${CP},"
 
-ICE_FW_KWARG=""
-[[ -n "$ICE_FW" ]] && ICE_FW_KWARG="ice_freshwater_fraction = ${ICE_FW},"
-[[ "$ICE_VSF" == "true" ]] && ICE_FW_KWARG="${ICE_FW_KWARG}ice_virtual_salt_flux = true,"
-[[ "$ICE_MELTWATER_TB" != "true" ]] && ICE_FW_KWARG="${ICE_FW_KWARG}ice_meltwater_at_interface_temperature = false,"
+ICE_MELTWATER_KWARG=""
+[[ "$ICE_MELTWATER_TB" != "true" ]] && ICE_MELTWATER_KWARG="ice_meltwater_at_interface_temperature = false,"
 
 ICE_MELT_KWARG=""
 [[ "$ICE_MELT_MIX" == "true" ]]     && ICE_MELT_KWARG="ice_melt_mixing = true,"
@@ -1001,6 +993,9 @@ fi
 BIHVISC_KWARG=""
 [[ -n "$BIHVISC" ]] && BIHVISC_KWARG="biharmonic_viscosity = ${BIHVISC},"
 
+BIHDIV_KWARG=""
+[[ -n "$BIHDIV" ]] && BIHDIV_KWARG="divergence_biharmonic_timescale = ${BIHDIV},"
+
 VISCOUS_VELOCITY_KWARG=""
 [[ -n "$VISCOUS_VELOCITY" ]] && VISCOUS_VELOCITY_KWARG="viscous_velocity = ${VISCOUS_VELOCITY},"
 
@@ -1019,11 +1014,12 @@ DZ_TOP_KWARG=""
 CATKE_CWUSTAR_KWARG=""
 [[ -n "$CATKE_CWUSTAR" ]] && CATKE_CWUSTAR_KWARG="Cᵂu★ = ${CATKE_CWUSTAR},"
 
+
 # A named profile is passed as a Julia Symbol, a number verbatim.
 BACKGROUND_K_KWARG=""
 case "$BACKGROUND_K" in
     "")                     ;;
-    henyey|bryan_lewis|abyssal_henyey)
+    henyey|henyey2x|bryan_lewis|abyssal_henyey)
                             BACKGROUND_K_KWARG="background_vertical_diffusivity = :${BACKGROUND_K}," ;;
     *)                      BACKGROUND_K_KWARG="background_vertical_diffusivity = ${BACKGROUND_K}," ;;
 esac
@@ -1045,23 +1041,6 @@ BAROTROPIC_SUBSTEPS_KWARG=""
 CHLOROPHYLL_KWARG="chlorophyll = :seawifs,"
 [[ "$CHLOROPHYLL" != "seawifs" ]] && CHLOROPHYLL_KWARG="chlorophyll = ${CHLOROPHYLL},"
 [[ "$CHLOROPHYLL" == "none" ]]    && CHLOROPHYLL_KWARG="chlorophyll = :none,"
-
-# Pass the value explicitly (default true = conservative restoring) so the Julia-side default
-# never silently overrides a "false" request.
-NORMALIZE_SALINITY="${NORMALIZE_SALINITY:-true}"
-case "$NORMALIZE_SALINITY" in
-    true|false) ;;
-    *) echo "NORMALIZE_SALINITY must be 'true' or 'false', got '$NORMALIZE_SALINITY'" >&2; exit 1 ;;
-esac
-NORMALIZE_SALINITY_KWARG="normalize_salinity = ${NORMALIZE_SALINITY},"
-
-RESTORING_UNDER_ICE="${RESTORING_UNDER_ICE:-true}"
-case "$RESTORING_UNDER_ICE" in
-    true|false) ;;
-    *) echo "RESTORING_UNDER_ICE must be 'true' or 'false', got '$RESTORING_UNDER_ICE'" >&2; exit 1 ;;
-esac
-RESTORING_UNDER_ICE_KWARG=""
-[[ "$RESTORING_UNDER_ICE" == "false" ]] && RESTORING_UNDER_ICE_KWARG="restoring_under_sea_ice = false,"
 
 NORMALIZE_FRESHWATER="${NORMALIZE_FRESHWATER:-timestep}"
 case "$NORMALIZE_FRESHWATER" in
@@ -1134,6 +1113,13 @@ BTAPER_KWARG=""
 MAXDZ_KWARG=""
 [[ -n "${MAXDZ:-}" ]] && MAXDZ_KWARG="Δzmax = ${MAXDZ},"
 
+# C39 numerics knobs. The tracer scheme's spurious diapycnal mixing is set by the grid Reynolds number
+# and lives in the rock-touching layer; REYNOLDS_LIMIT bounds it, and DIVDAMP damps the divergent
+# grid-scale modes without touching the rotational flow.
+NUMERICS_KWARG=""
+[[ -n "${REYNOLDS_LIMIT:-}" ]] && NUMERICS_KWARG="${NUMERICS_KWARG}reynolds_limit = ${REYNOLDS_LIMIT},"
+[[ -n "${DIVDAMP:-}" ]]        && NUMERICS_KWARG="${NUMERICS_KWARG}divergence_damping_timescale = ${DIVDAMP} * 86400,"
+
 case "${BOTTOM_CELLS:-full}" in
     full)    BOTTOM_CELLS_KWARG="" ;;
     partial) BOTTOM_CELLS_KWARG="immersed_bottom = PartialCellBottom," ;;
@@ -1142,17 +1128,24 @@ case "${BOTTOM_CELLS:-full}" in
 esac
 
 case "${CORIOLIS:-enstrophy}" in
-    enstrophy|energy|active_weighted|consistent_area|consistent_area_energy)
+    enstrophy|energy|triad|active_weighted|consistent_area|consistent_area_energy)
         CORIOLIS_KWARG="coriolis_scheme = :${CORIOLIS:-enstrophy}," ;;
-    *) echo "CORIOLIS must be enstrophy|energy|active_weighted|consistent_area|consistent_area_energy, got '${CORIOLIS}'" >&2; exit 1 ;;
+    *) echo "CORIOLIS must be enstrophy|energy|triad|active_weighted|consistent_area|consistent_area_energy, got '${CORIOLIS}'" >&2; exit 1 ;;
 esac
 
 BBL_KWARG=""
 [[ -n "${BBL_KAPPA:-}" ]] && BBL_KWARG="bbl_diffusivity = ${BBL_KAPPA},"
-[[ -n "${BBL_GAMMA:-}" ]] && BBL_KWARG="${BBL_KWARG}bbl_transport_coefficient = ${BBL_GAMMA},"
+if [[ "${BBL_GAMMA:-}" == "resolved" ]]; then
+  BBL_KWARG="${BBL_KWARG}bbl_transport_coefficient = :resolved,"
+elif [[ -n "${BBL_GAMMA:-}" ]]; then
+  BBL_KWARG="${BBL_KWARG}bbl_transport_coefficient = ${BBL_GAMMA},"
+fi
 [[ -n "${OVERFLOW_RESTORE:-}" ]] && BBL_KWARG="${BBL_KWARG}overflow_restoring_timescale = ${OVERFLOW_RESTORE}days,"
 [[ -n "${LAB_RESTORE:-}" ]] && BBL_KWARG="${BBL_KWARG}labrador_restoring_timescale = ${LAB_RESTORE}days,"
 [[ "${SILL_OVERFLOW:-false}" == "true" ]] && BBL_KWARG="${BBL_KWARG}sill_overflow = true,"
+
+TRANSFORMATION_KWARG=""
+[[ -n "${TRANSFORMATION:-}" ]] && TRANSFORMATION_KWARG="transformation_interval = ${TRANSFORMATION}days,"
 
 SNOW_KWARG=""
 [[ "$SNOW" == "true" ]] && SNOW_KWARG="with_snow = true,"
@@ -1195,8 +1188,6 @@ ADVECTION_KWARG=""
 [[ "$TRACER_ORDER" != "7" ]] && ADVECTION_KWARG="${ADVECTION_KWARG}tracer_advection_order = ${TRACER_ORDER},"
 [[ "$TRACER_BOUNDARY_SCHEME" != "default" ]]   && ADVECTION_KWARG="${ADVECTION_KWARG}tracer_boundary_scheme = :${TRACER_BOUNDARY_SCHEME},"
 [[ "$MOMENTUM_BOUNDARY_SCHEME" != "default" ]] && ADVECTION_KWARG="${ADVECTION_KWARG}momentum_boundary_scheme = :${MOMENTUM_BOUNDARY_SCHEME},"
-ICE_LIQUIDUS="${ICE_LIQUIDUS:-teos10}"
-[[ "$ICE_LIQUIDUS" != "teos10" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}sea_ice_liquidus = :${ICE_LIQUIDUS},"
 ICE_DRAGREF="${ICE_DRAGREF:-6}"
 if [[ "$ICE_DRAGREF" == "none" ]]; then
   SEA_ICE_KWARG="${SEA_ICE_KWARG}sea_ice_ocean_drag_reference_depth = nothing,"
@@ -1205,8 +1196,8 @@ else
 fi
 ICE_Z0="${ICE_Z0:-5e-4}"
 [[ "$ICE_Z0" != "5e-4" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}sea_ice_momentum_roughness_length = ${ICE_Z0},"
-ICE_TILT="${ICE_TILT:-false}"
-[[ "$ICE_TILT" == "true" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}with_ocean_surface_tilt = true,"
+ICE_TILT="${ICE_TILT:-true}"
+[[ "$ICE_TILT" != "true" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}with_ocean_surface_tilt = false,"
 [[ "$IC_CONDITIONS" != "default" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}northern_sea_ice_initial_date = DateTime(1993, 9, 1),"
 
 # Profile runs disable the OMIP diagnostic output writers (Average,
@@ -1233,11 +1224,12 @@ sim = omip_simulation(:${CONFIG};
                       κ_symmetric = ${KSYMM_JULIA},
                       biharmonic_timescale = ${BIHARMONIC},
                       ${BIHVISC_KWARG}
+                      ${BIHDIV_KWARG}
                       ${CB_KWARG}
                       ${CUNB_KWARG}
                       ${CF_KWARG}
                       ${CP_KWARG}
-                      ${ICE_FW_KWARG}
+                      ${ICE_MELTWATER_KWARG}
                       ${ICE_MELT_KWARG}
                       ${UNDER_ICE_NU_KWARG}
                       ${ICE_ARCH_KWARG}
@@ -1247,6 +1239,7 @@ sim = omip_simulation(:${CONFIG};
                       ${ML_TAPER_KWARG}
                       ${BTAPER_KWARG}
                       ${MAXDZ_KWARG}
+                      ${NUMERICS_KWARG}
                       ${VISCOUS_VELOCITY_KWARG}
                       ${LAPVISC_KWARG}
                       ${STRAIT_KWARG}
@@ -1258,6 +1251,7 @@ sim = omip_simulation(:${CONFIG};
                       ${ICE_DYNAMICS_KWARG}
                       ${SEA_ICE_KWARG}
                       ${DIAGNOSTICS_KWARG}
+                      ${TRANSFORMATION_KWARG}
                       ${PVELKWARG}
                       ${IC_BLEND_KWARG}
                       ${CATKE_CWUSTAR_KWARG}
@@ -1267,8 +1261,6 @@ sim = omip_simulation(:${CONFIG};
                       ${IMEX_DRAG_KWARG}
                       ${DRAG_UB_KWARG}
                       ${CHLOROPHYLL_KWARG}
-                      ${NORMALIZE_SALINITY_KWARG}
-                      ${RESTORING_UNDER_ICE_KWARG}
                       ${NORMALIZE_FRESHWATER_KWARG}
                       ${RIVER_KWARG}
                       ${ADVECTION_KWARG}

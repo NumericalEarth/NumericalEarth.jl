@@ -3,7 +3,9 @@ include("runtests_setup.jl")
 using ClimaSeaIce.Rheologies
 using ClimaSeaIce.SeaIceDynamics
 using Oceananigans.TimeSteppers: update_state!
+using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using Oceananigans.Units: hours, days
+using SeawaterPolynomials.TEOS10: θᴾ_from_Θ
 using NumericalEarth.DataWrangling: all_dates
 using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterfaces,
                                                               celsius_to_kelvin,
@@ -20,7 +22,9 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterface
                                                               evaporation_efficiency,
                                                               AirLandInterfaceState,
                                                               compute_interface_humidity,
-                                                              saturation_specific_humidity
+                                                              saturation_specific_humidity,
+                                                              ImpureSaturationSpecificHumidity,
+                                                              GillSaturationEnhancement
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using Statistics: mean, std
 using Thermodynamics
@@ -173,8 +177,8 @@ end
             coupled_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
             # Now manually compute the fluxes:
-            Tᵒᶜ = ocean.model.tracers.T[1, 1, 1] + celsius_to_kelvin
             Sᵒᶜ = ocean.model.tracers.S[1, 1, 1]
+            Tᵒᶜ = θᴾ_from_Θ(Sᵒᶜ, ocean.model.tracers.T[1, 1, 1]) + celsius_to_kelvin
 
             interface_properties = interfaces.atmosphere_ocean_interface.properties
             q_formulation = interface_properties.specific_humidity_formulation
@@ -257,7 +261,7 @@ end
                                     size = (2, 2, 10),
                                 latitude = (-0.5, 0.5),
                                longitude = (-0.5, 0.5),
-                                       z = (-1, 0),
+                                       z = (-1000, 0),
                                 topology = (Bounded, Bounded, Bounded))
 
         ocean = ocean_simulation(grid; momentum_advection = nothing,
@@ -269,6 +273,7 @@ end
         atmosphere = synthetic_prescribed_atmosphere(arch; dates = all_dates(SyntheticAtmosphere(), :temperature)[1:2])
 
         fill!(ocean.model.tracers.T, -2.0)
+        fill!(ocean.model.tracers.S, 35.0)
 
         @allowscalar begin
             ocean.model.tracers.T[1, 2, 10] = 1.0
@@ -282,8 +287,10 @@ end
 
             coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere)
 
-            # Test that the temperature has snapped up to freezing
-            @test minimum(ocean.model.tracers.T) == 0
+            # Test that the temperature has snapped up to the freezing point where it lies above -2 ᵒC
+            Tₘ = melting_temperature.(Ref(sea_ice.liquidus), 35, znodes(grid, Center()))
+            @test Tₘ[end] > -2 > Tₘ[1]
+            @test Array(interior(ocean.model.tracers.T, 1, 1, :)) ≈ max.(-2, Tₘ)
         end
 
         @info "Testing Surface Fluxes with sea ice..."
@@ -421,4 +428,21 @@ end
     # Constant-efficiency FractionalHumidity is a uniform fraction of saturation
     fc = FractionalHumidity(efficiency = 0.4)
     @test compute_interface_humidity(fc, Tₛ, mkΨₛ(0.1), Ψₐ, Ψᵢ, ℙₐ) ≈ 0.4 * qᵛ⁺
+end
+
+@testset "Saturation vapor pressure enhancement (Gill 1982)" begin
+    ℂ = AtmosphereThermodynamicsParameters(Float64)
+    pᵃᵗ, Tₛ, Sₛ = 101325.0, 293.15, 35.0
+    phase = Thermodynamics.Liquid()
+
+    εᵈᵛ⁻¹ = 1 / Thermodynamics.Parameters.Rv_over_Rd(ℂ)
+    pᵛ⁺ = 0.98 * Thermodynamics.saturation_vapor_pressure(ℂ, Tₛ, phase)
+    fᵛ = 1 + 1e-8 * pᵃᵗ * (4.5 + 6e-4 * (Tₛ - celsius_to_kelvin)^2)
+    qᵛ⁺(pᵛ) = εᵈᵛ⁻¹ * pᵛ / (pᵃᵗ - (1 - εᵈᵛ⁻¹) * pᵛ)
+
+    unenhanced = ImpureSaturationSpecificHumidity(phase, 0.98)
+    enhanced = ImpureSaturationSpecificHumidity(phase, 0.98; saturation_enhancement = GillSaturationEnhancement())
+
+    @test surface_specific_humidity(unenhanced, ℂ, pᵃᵗ, Tₛ, Sₛ) ≈ qᵛ⁺(pᵛ⁺)
+    @test surface_specific_humidity(enhanced, ℂ, pᵃᵗ, Tₛ, Sₛ) ≈ qᵛ⁺(fᵛ * pᵛ⁺)
 end

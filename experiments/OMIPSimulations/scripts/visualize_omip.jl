@@ -100,6 +100,22 @@ cases = [
 # years_from_end, or every panel it appears in averages NaN.
 (prefix = "orca_trcwenoz_triad_nz100_maxdz100",  label = "cwenoz+triad+GRID",
      start_time = 29.4 * 31536000, stop_time = 34.5 * 31536000),
+# The NCAR-flux family with the corrected implicit immersed drag, 2026-09-15 session.
+(prefix = "orca_ncar_icez01e-4_triad",                     label = "ncar icez0",           years_from_end=YEARS_FROM_END),
+(prefix = "orca_ncar_icencar_triad",                       label = "ncar icencar",         years_from_end=YEARS_FROM_END),
+(prefix = "orca_ncar_ghostcells_triad",                    label = "ncar ghostcells",      years_from_end=YEARS_FROM_END),
+(prefix = "orca_ncar_ghostcells_triad_nz100_maxdz100",     label = "ncar ghost+GRID",      years_from_end=YEARS_FROM_END),
+(prefix = "orca_ncar_ghostcells_triad_nz100_maxdz100",     label = "ncar ghost+GRID",      years_from_end=YEARS_FROM_END),
+(prefix = "orca_ncar_ghostcellsfull_triad_nz100_maxdz100", label = "ncar ghostfull+GRID",  years_from_end=YEARS_FROM_END),
+(prefix = "orca_ncar_icez01e-4_triad_cgresolved",          label = "ncar icez0 F1",        years_from_end=YEARS_FROM_END),
+# The cold-drift arms of 2026-09-21/22 (CATKE surface TKE flux restored); `orca_ncar_triad` is their parent.
+(prefix = "orca_ncar_triad",                               label = "ncar triad (TKE flux)", years_from_end=YEARS_FROM_END),
+(prefix = "orca_ncar_icez01e-4_triad_cb0.965",             label = "ncar Cb 0.965",        years_from_end=YEARS_FROM_END),
+(prefix = "orca_ncar_icez01e-4_triad_bgkabyssal_henyey",   label = "ncar abyssal Henyey",  years_from_end=YEARS_FROM_END),
+(prefix = "orca_ncar_icez01e-4_triad_kskew500",            label = "ncar kskew500",        years_from_end=YEARS_FROM_END),
+(prefix = "orca_ncar_triad_bgkhenyey2x",                   label = "ncar κ 2× Henyey",     years_from_end=YEARS_FROM_END),
+(prefix = "orca_ncar_triad_bgk1e-5",                       label = "ncar κ 1e-5",          years_from_end=YEARS_FROM_END),
+(prefix = "orca_ncar_triad_tau1.13",                       label = "ncar τ × 1.13",        years_from_end=YEARS_FROM_END),
 ]
 
 output_dir = length(ARGS) >= 1 ? ARGS[1] : "figures"

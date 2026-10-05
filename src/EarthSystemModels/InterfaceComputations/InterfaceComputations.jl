@@ -1,6 +1,6 @@
 module InterfaceComputations
 
-using Adapt: Adapt
+using Adapt: Adapt, adapt
 using DocStringExtensions: TYPEDSIGNATURES, SIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, location
@@ -14,9 +14,6 @@ using KernelAbstractions: @index, @kernel
 
 export
     ComponentInterfaces,
-    ConservativeIceFreshwater,
-    ScaledIceFreshwater,
-    VirtualSaltFluxIceFreshwater,
     ZeroHeatContentMeltwater,
     InterfaceTemperatureMeltwater,
     SimilarityTheoryFluxes,

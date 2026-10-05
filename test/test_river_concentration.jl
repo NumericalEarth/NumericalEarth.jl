@@ -55,7 +55,7 @@ freshwater_content(ocean, name) = tracer_freshwater_content(ocean.model.tracers[
         @test river_flux === Jʳ # the same field the tracer content reads
 
         ρᵒᶜ = coupled_model.interfaces.ocean_properties.reference_density
-        land_runoff = Array(interior(coupled_model.interfaces.exchanger.land.state.freshwater_flux, :, :, 1)) # kg m⁻² s⁻¹
+        land_runoff = Array(interior(coupled_model.interfaces.exchanger.land.state.runoff_freshwater_flux, :, :, 1)) # kg m⁻² s⁻¹
         Jʳ_cpu = Array(interior(river_flux, :, :, 1)) # m s⁻¹, positive into the ocean
 
         inactive = [inactive_node(i, j, Nz, on_architecture(CPU(), grid), Center(), Center(), Center()) for i in 1:Nx, j in 1:Ny]

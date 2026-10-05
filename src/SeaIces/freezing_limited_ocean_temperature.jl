@@ -1,4 +1,4 @@
-using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, LinearLiquidus
+using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using Oceananigans.Grids: znode, Center
 using Oceananigans.ImmersedBoundaries: inactive_node
 using Oceananigans.Operators: Δzᶜᶜᶜ
@@ -16,16 +16,15 @@ struct FreezingLimitedOceanTemperature{L, F}
 end
 
 """
-    FreezingLimitedOceanTemperature(FT=Float64; liquidus=LinearLiquidus(FT))
+    FreezingLimitedOceanTemperature(FT=Float64; liquidus=DepthDependentLiquidus(FT))
 
 The minimal possible sea ice representation, clipping the temperature below to the freezing point.
 Not really a "model" per se, however, it is the most simple way to make sure that temperature
 does not dip below freezing.
 
-The melting temperature is a function of salinity and is controlled by the `liquidus`.
+The melting temperature is a function of salinity and depth and is controlled by the `liquidus`.
 """
-FreezingLimitedOceanTemperature(FT::DataType=Oceananigans.defaults.FloatType;
-                                liquidus=conservative_temperature_liquidus(FT)) =
+FreezingLimitedOceanTemperature(FT::DataType=Oceananigans.defaults.FloatType; liquidus=DepthDependentLiquidus(FT)) =
     FreezingLimitedOceanTemperature(liquidus, nothing)
 
 const FreezingLimitedEarthSystemModel = EarthSystemModel{R, A, L, <:FreezingLimitedOceanTemperature, O, <:NoSeaIceInterface} where {R, A, L, O}
@@ -108,11 +107,9 @@ end
             Sᵏ = Sᵒᶜ[i, j, k]
         end
 
-        # Pressure depression of the freezing point, as in the coupled frazil loop; see
-        # `InterfaceComputations.melting_temperature_at_depth`. `z` is negative below the surface.
         z   = znode(i, j, k, grid, Center(), Center(), Center())
         wet = !inactive_node(i, j, k, grid, Center(), Center(), Center())
-        Tₘ  = min(melting_temperature(liquidus, Sᵏ) + convert(eltype(grid), 7.53e-4) * z, zero(Tᵏ))
+        Tₘ  = melting_temperature(liquidus, Sᵏ, z)
         freezing = wet & (Tᵏ < Tₘ)
         δE = freezing * ρᵒᶜ * cᵒᶜ * (Tₘ - Tᵏ)
 

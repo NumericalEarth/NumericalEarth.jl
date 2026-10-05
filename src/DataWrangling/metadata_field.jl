@@ -110,17 +110,8 @@ Return the native grid corresponding to `metadata` with `halo` size.
 Returns a `LatitudeLongitudeGrid` for global or `BoundingBox` regions,
 and a column `RectilinearGrid` for `Column` regions.
 
-The native grid is always built on the *child* architecture, so `arch` may be the
-`Distributed` architecture of the target grid: every rank reads and inpaints the whole
-dataset redundantly and then regrids onto its own subdomain. `child_architecture` is the
-identity on a serial architecture, so passing one is unchanged.
-
-A *distributed* native grid would be wrong in two ways at once. `propagate_horizontally!`
-tests for termination with `remaining_gaps`, a `sum` that becomes an `MPI` reduction, so
-inpainting a dataset would turn into a collective — one that the ranks reach a different
-number of times whenever they hold different amounts of land. And the propagation kernel
-reads horizontal neighbors without a halo exchange, so values would stop crossing rank
-boundaries and the fill would depend on the partition.
+The grid is built on the child architecture of `arch`, so with a `Distributed` architecture every rank reads and
+inpaints the whole dataset and then regrids onto its own subdomain.
 """
 native_grid(metadata::Metadata, arch=CPU(); halo=(3, 3, 3)) =
     construct_native_grid(metadata, metadata.region, child_architecture(arch); halo)
@@ -401,7 +392,7 @@ function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid;
     return target
 end
 
-function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw...)
+function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum, args...; kw...)
     regrid_from_metadata!(target_field, metadata; kw...)
     return target_field
 end

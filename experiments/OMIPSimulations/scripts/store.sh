@@ -93,6 +93,8 @@ SBATCH_ARGS+=(-o "store_${TAG}.out")
 SBATCH_ARGS+=(-e "store_${TAG}.err")
 SBATCH_ARGS+=(-J "$JOB_NAME")
 SBATCH_ARGS+=(--export="ALL,RUN_NAMES_STR=${RUN_NAMES[*]}")
+[[ -n "${PARTITION:-}" ]] && SBATCH_ARGS+=(--partition="${PARTITION}")
+[[ -n "${NODE:-}" ]]      && SBATCH_ARGS+=(-w "node${NODE#node}")
 
 sbatch "${SBATCH_ARGS[@]}" <<'EOF'
 #!/bin/bash

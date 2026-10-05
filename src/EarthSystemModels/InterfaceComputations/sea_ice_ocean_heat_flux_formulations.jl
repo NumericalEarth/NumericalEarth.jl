@@ -1,4 +1,4 @@
-using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, LinearLiquidus, ConductiveFlux
+using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, ConductiveFlux
 
 #####
 ##### Ice Bath Heat Flux (bulk formulation)
@@ -278,7 +278,7 @@ Arguments
 Returns `(T★, S★, q)` where q is the melt rate (positive for melting).
 """
 @inline function solve_interface_conditions(flux::ThreeEquationHeatFlux, Tᵒᶜ, Sᵒᶜ, ice_state,
-                                            αₕ, αₛ, u★, ℰ, ρᵒᶜ, cᵒᶜ, liquidus::LinearLiquidus)
+                                            αₕ, αₛ, u★, ℰ, ρᵒᶜ, cᵒᶜ, liquidus)
     Sˢⁱ = ice_state.S
 
     # Get conductive flux parameters - dispatches on flux type
