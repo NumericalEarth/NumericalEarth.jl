@@ -54,7 +54,7 @@ NumericalEarth.Grids.surface_elevation(atmos::PrescribedAtmosphere) =
 velocity_boundary_conditions(grid, loc) = FieldBoundaryConditions(grid, loc)
 
 function velocity_boundary_conditions(grid::OrthogonalSphericalShellGrids.TripolarGrid, loc)
-    north_boundary_condition = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid)(-1)
+    north_boundary_condition = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid, -1)
     return FieldBoundaryConditions(grid, loc; north = north_boundary_condition)
 end
 
