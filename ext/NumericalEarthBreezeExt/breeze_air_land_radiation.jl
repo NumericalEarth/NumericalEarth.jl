@@ -1,11 +1,11 @@
 #####
 ##### Surface energy balance coupling for the Breeze RRTMGP `RadiativeTransferModel`.
 #####
-##### Each coupled step adds the net upward surface radiative flux, ℐˡʷꜛ - ℐꜜˡʷ - (1 - α) ℐꜜˢʷ,
+##### Each coupled step adds the net upward surface radiative flux, ℐꜛˡʷ - ℐꜜˡʷ - (1 - α) ℐꜜˢʷ,
 ##### to the slab's `surface_energy_flux` (positive = upward), reading the downwelling fluxes
 ##### the radiation exchanger publishes.
 #####
-##### ℐˡʷꜛ = ε σ Tₛ⁴ + (1 - ε) ℐꜜˡʷ rebuilds RRTMGP's own surface boundary from the live Tₛ, which
+##### ℐꜛˡʷ = ε σ Tₛ⁴ + (1 - ε) ℐꜜˡʷ rebuilds RRTMGP's own surface boundary from the live Tₛ, which
 ##### the RTM's stored upwelling longwave does not track between scheduled solves. The atmosphere
 ##### keeps absorbing the emission from the last solve, so the two sides disagree by ε σ ΔTₛ⁴
 ##### within a radiation interval.
@@ -16,9 +16,8 @@
 ##### under gray optics, and collapses the direct and diffuse albedos under the scattering solvers.
 ##### TODO: read ℐꜜˢʷ - ℐꜛˢʷ under clear-sky and all-sky optics, where it is exact.
 
-using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Fields: Center, Field
-using Oceananigans.Grids: inactive_node
+using Oceananigans.Fields: Field
+using Oceananigans.Grids: Center, inactive_node
 using NumericalEarth.Radiations: SurfaceRadiationProperties, default_stefan_boltzmann_constant
 
 const BreezeRTM = Breeze.RadiativeTransferModel
@@ -58,12 +57,6 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
             rtm.downwelling_shortwave_flux,
             rtm.downwelling_longwave_flux)
 
-    # RRTMGP fills interior columns only, while the flux kernels iterate into the halo. This wraps
-    # the published state where the exchange grid is periodic; across a bounded edge the halo lies
-    # outside the domain and there is nothing to publish there.
-    fill_halo_regions!(state.ℐꜜˢʷ)
-    fill_halo_regions!(state.ℐꜜˡʷ)
-
     return nothing
 end
 
@@ -86,8 +79,8 @@ end
 
     @inbounds begin
         εᵢⱼ = ε[i, j, 1]
-        ℐˡʷꜛ = εᵢⱼ * σ * Tˢ[i, j, 1]^4 + (1 - εᵢⱼ) * ℐꜜˡʷ[i, j, 1]
-        ℐꜛ = ℐˡʷꜛ - ℐꜜˡʷ[i, j, 1] - (1 - α[i, j, 1]) * ℐꜜˢʷ[i, j, 1]
+        ℐꜛˡʷ = εᵢⱼ * σ * Tˢ[i, j, 1]^4 + (1 - εᵢⱼ) * ℐꜜˡʷ[i, j, 1]
+        ℐꜛ = ℐꜛˡʷ - ℐꜜˡʷ[i, j, 1] - (1 - α[i, j, 1]) * ℐꜜˢʷ[i, j, 1]
         Es[i, j, 1] += ifelse(inactive, zero(grid), ℐꜛ)
     end
 end
@@ -109,10 +102,9 @@ function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
     rtm = coupled_model.radiation
     grid = coupled_model.interfaces.exchanger.grid
     arch = architecture(grid)
-    σ = convert(eltype(grid), NumericalEarth.Radiations.default_stefan_boltzmann_constant)
+    rk = NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation_properties(rtm)
+    surface_properties = rk.surface_properties.land
     Tˢ = rtm.surface_radiation.surface_temperature
-    ε = rtm.surface_radiation.surface_emissivity
-    α = rtm.surface_radiation.direct_surface_albedo
 
     state = coupled_model.interfaces.exchanger.radiation.state
 
@@ -121,11 +113,11 @@ function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
             Es,
             grid,
             Tˢ,
-            ε,
-            σ,
+            surface_properties.emissivity,
+            rk.σ,
             state.ℐꜜˡʷ,
             state.ℐꜜˢʷ,
-            α)
+            surface_properties.albedo)
     return nothing
 end
 

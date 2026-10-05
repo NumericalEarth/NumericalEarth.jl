@@ -63,11 +63,6 @@ end
 
             @test Array(interior(exchanger.state.ℐꜜˢʷ)) ≈ -Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
             @test Array(interior(exchanger.state.ℐꜜˡʷ)) ≈ -Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
-
-            # Halos wrap, so a consumer iterating past the interior reads radiation, not zeros.
-            ℐꜜˢʷ = Array(parent(exchanger.state.ℐꜜˢʷ))
-            @test ℐꜜˢʷ[rtm_Hx, 1, 1] == ℐꜜˢʷ[rtm_Hx + rtm_Nx, 1, 1]
-            @test ℐꜜˢʷ[rtm_Hx + rtm_Nx + 1, 1, 1] == ℐꜜˢʷ[rtm_Hx + 1, 1, 1]
         end
 
         @testset "No shortwave at night on $A" begin
@@ -86,16 +81,16 @@ end
             rtm = model.radiation
             σ = NumericalEarth.Radiations.default_stefan_boltzmann_constant
             Tₛ = Array(interior(interface.temperature))
-            ℐˡʷꜜ = Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
-            ℐˢʷꜜ = Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
-            ℐˡʷꜛ = rtm_emissivity .* σ .* Tₛ .^ 4 .- (1 - rtm_emissivity) .* ℐˡʷꜜ
+            ℐꜜˡʷ = -Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
+            ℐꜜˢʷ = -Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
+            ℐꜛˡʷ = rtm_emissivity .* σ .* Tₛ .^ 4 .+ (1 - rtm_emissivity) .* ℐꜜˡʷ
 
             𝒬 = Array(interior(interface.fluxes.sensible_heat)) .+
                 Array(interior(interface.fluxes.latent_heat))
 
             # Positive upward: turbulent plus net upward radiative.
             Jᴱs = Array(interior(model.land.fluxes.surface_energy_flux))
-            @test Jᴱs ≈ 𝒬 .+ ℐˡʷꜛ .+ ℐˡʷꜜ .+ (1 - rtm_albedo) .* ℐˢʷꜜ
+            @test Jᴱs ≈ 𝒬 .+ ℐꜛˡʷ .- ℐꜜˡʷ .- (1 - rtm_albedo) .* ℐꜜˢʷ
         end
     end
 end
