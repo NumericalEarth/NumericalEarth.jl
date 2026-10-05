@@ -534,6 +534,10 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `depth`: maximum ocean depth in metres. Default: `5500`.
 - `immersed_bottom`: constructor of the immersed bottom, called with the bottom height: `GridFittedBottom` (full
   cells), `PartialCellBottom` or `ShavedCellBottom`. Default: `GridFittedBottom`.
+- `sea_ice_immersed_latitude`: if a number (in degrees), the sea ice runs on the ocean grid with every column
+  equatorward of `±sea_ice_immersed_latitude` also immersed, since sea ice never forms there. The sea-ice
+  kernels then skip those columns, which makes the sea ice (in particular its EVP solve) cheaper.
+  Needs `immersed_bottom = GridFittedBottom`. Default: `nothing` (the sea ice uses the ocean grid).
 - `Δz_top`: target surface-cell thickness in metres (sets the exponential vertical scale). Per-config
   default: `1.5` for `:quarterdegree`/`:twelfthdegree`/`:test`, `nothing` (scale derived from
   `depth`/`Nz`) otherwise.
@@ -852,6 +856,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          southern_sea_ice_initial_date = DateTime(1993, 1, 1),
                          Δzmax = nothing,
                          immersed_bottom = GridFittedBottom,
+                         sea_ice_immersed_latitude = nothing,
                          mixed_layer_tapering = false,
                          bottom_layer_tapering_depth = 0,
                          normalize_salinity = true,
@@ -1054,9 +1059,10 @@ function omip_simulation(config::Symbol = :halfdegree;
                         bgc_dir)
     log_setup_stage(arch, "ocean", setup_t₀)
 
+    sea_ice_grid = build_sea_ice_grid(grid, sea_ice_immersed_latitude, immersed_bottom)
     snow_thermodynamics = with_snow ?
-        NumericalEarth.SeaIces.default_snow_thermodynamics(grid; thickness_categories = snow_thickness_categories) : nothing
-    sea_ice = build_sea_ice(cfg, grid, ocean; restoring_dir, snow_thermodynamics, with_ice_dynamics,
+        NumericalEarth.SeaIces.default_snow_thermodynamics(sea_ice_grid; thickness_categories = snow_thickness_categories) : nothing
+    sea_ice = build_sea_ice(cfg, sea_ice_grid, ocean; restoring_dir, snow_thermodynamics, with_ice_dynamics,
                             with_ocean_surface_tilt, sea_ice_liquidus,
                             with_landfast_basal_stress, sea_ice_lateral_boundary_condition,
                             sea_ice_ocean_drag_coefficient, sea_ice_ocean_drag_reference_depth,
@@ -1998,6 +2004,35 @@ const kara_river_closures = ((68.0, 77.0, 66.0, 72.6),   # Gulf of Ob
         closed = closed | (shallow & (λ ≥ λ₀) & (λ ≤ λ₁) & (φ ≥ φ₀) & (φ ≤ φ₁))
     end
     @inbounds bottom_height[i, j, 1] = ifelse(closed, oftype(z, 100), z)
+end
+
+# The sea ice lives on the ocean grid, optionally with every column equatorward of
+# `sea_ice_immersed_latitude` (in degrees) also immersed: sea ice never forms there, and the
+# sea-ice kernels skip immersed columns.
+build_sea_ice_grid(grid, ::Nothing, immersed_bottom) = grid
+
+@kernel function _immerse_low_latitudes!(bottom_height, grid, latitude)
+    i, j = @index(Global, NTuple)
+    φ = φnode(i, j, 1, grid, Center(), Center(), Center())
+    @inbounds z = bottom_height[i, j, 1]
+    @inbounds bottom_height[i, j, 1] = ifelse(abs(φ) < latitude, oftype(z, 100), z)
+end
+
+function build_sea_ice_grid(grid, latitude, immersed_bottom)
+    immersed_bottom === GridFittedBottom ||
+        throw(ArgumentError("sea_ice_immersed_latitude needs immersed_bottom = GridFittedBottom, got $immersed_bottom"))
+
+    arch       = architecture(grid)
+    underlying = grid.underlying_grid
+
+    # A copy: `bottom_height_field` shares its data with the ocean grid
+    bottom = Field{Center, Center, Nothing}(underlying)
+    parent(bottom) .= parent(bottom_height_field(grid))
+
+    launch!(arch, underlying, :xy, _immerse_low_latitudes!, bottom, underlying, convert(eltype(grid), latitude))
+    fill_halo_regions!(bottom)
+
+    return ImmersedBoundaryGrid(underlying, GridFittedBottom(bottom); active_cells_map = true)
 end
 
 function close_shallow_river_regions(grid; regions = kara_river_closures, minimum_depth = 10, immersed_bottom = GridFittedBottom)

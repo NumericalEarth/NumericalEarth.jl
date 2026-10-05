@@ -8,6 +8,7 @@ using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.BoundaryConditions: BoundaryCondition, FieldBoundaryConditions, ValueBoundaryCondition, Zipper
 using Oceananigans.Fields: Field, ZeroField
 using Oceananigans.Grids: inactive_node, Face, Center
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids
@@ -38,10 +39,15 @@ EarthSystemModels.interpolate_state!(exchanger, grid, ::FreezingLimitedOceanTemp
 # ComponentExchangers
 InterfaceComputations.ComponentExchanger(sea_ice::FreezingLimitedOceanTemperature, grid) = nothing
 
+# The sea ice may be immersed where the ocean is not (for example at low latitudes, where it never
+# forms): its fields can still be read directly when both grids share the same underlying grid.
+underlying_grid(grid) = grid
+underlying_grid(grid::ImmersedBoundaryGrid) = grid.underlying_grid
+
 function InterfaceComputations.ComponentExchanger(sea_ice::Simulation{<:SeaIceModel}, grid)
     sea_ice_grid = sea_ice.model.grid
 
-    if sea_ice_grid == grid
+    if underlying_grid(sea_ice_grid) == underlying_grid(grid)
         u  = sea_ice.model.velocities.u
         v  = sea_ice.model.velocities.v
         hi = sea_ice.model.ice_thickness
