@@ -219,50 +219,44 @@ end
         downwelling_shortwave_flux = CenterField(grid)
         surface_albedo = CenterField(grid)
 
-        initial_surface_energy_flux = 25
-        first_surface_temperature = 280
-        second_surface_temperature = 300
-        emissivity = 0.95
-        downwelling_longwave = -300
-        downwelling_shortwave = -600
-        albedo = 0.2
-        stefan_boltzmann_constant = convert(eltype(grid), default_stefan_boltzmann_constant)
+        𝒬₀ = 25
+        T₁ = 280
+        T₂ = 300
+        ϵ = 0.95
+        ℐꜜˡʷ = -300
+        ℐꜜˢʷ = -600
+        α = 0.2
+        σ = convert(eltype(grid), default_stefan_boltzmann_constant)
 
-        fill!(parent(surface_emissivity), emissivity)
-        fill!(parent(downwelling_longwave_flux), downwelling_longwave)
-        fill!(parent(downwelling_shortwave_flux), downwelling_shortwave)
-        fill!(parent(surface_albedo), albedo)
+        fill!(parent(surface_emissivity), ϵ)
+        fill!(parent(downwelling_longwave_flux), ℐꜜˡʷ)
+        fill!(parent(downwelling_shortwave_flux), ℐꜜˢʷ)
+        fill!(parent(surface_albedo), α)
 
-        function surface_energy_at(temperature)
-            fill!(parent(surface_energy_flux), initial_surface_energy_flux)
-            fill!(parent(surface_temperature), temperature)
+        function surface_energy_at(T)
+            fill!(parent(surface_energy_flux), 𝒬₀)
+            fill!(parent(surface_temperature), T)
             launch!(arch, grid, :xy,
                     NumericalEarthBreezeExt._apply_breeze_air_land_radiative_fluxes!,
                     surface_energy_flux,
                     grid,
                     surface_temperature,
                     surface_emissivity,
-                    stefan_boltzmann_constant,
+                    σ,
                     downwelling_longwave_flux,
                     downwelling_shortwave_flux,
                     surface_albedo)
             return only(Array(interior(surface_energy_flux)))
         end
 
-        first_surface_energy = surface_energy_at(first_surface_temperature)
-        second_surface_energy = surface_energy_at(second_surface_temperature)
+        𝒬₁ = surface_energy_at(T₁)
+        𝒬₂ = surface_energy_at(T₂)
 
-        expected_surface_energy(temperature) =
-            initial_surface_energy_flux +
-            emissivity * stefan_boltzmann_constant * temperature^4 +
-            emissivity * downwelling_longwave +
-            (1 - albedo) * downwelling_shortwave
+        𝒬(T) = 𝒬₀ + ϵ * σ * T^4 + ϵ * ℐꜜˡʷ + (1 - α) * ℐꜜˢʷ
 
-        @test first_surface_energy ≈ expected_surface_energy(first_surface_temperature)
-        @test second_surface_energy ≈ expected_surface_energy(second_surface_temperature)
-        @test second_surface_energy - first_surface_energy ≈
-              emissivity * stefan_boltzmann_constant *
-              (second_surface_temperature^4 - first_surface_temperature^4)
+        @test 𝒬₁ ≈ 𝒬(T₁)
+        @test 𝒬₂ ≈ 𝒬(T₂)
+        @test 𝒬₂ - 𝒬₁ ≈ ϵ * σ * (T₂^4 - T₁^4)
     end
 end
 
