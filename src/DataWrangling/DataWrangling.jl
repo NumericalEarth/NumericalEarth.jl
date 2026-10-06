@@ -16,7 +16,7 @@ export DatasetRestoring, SurfaceFluxRestoring
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
 export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
-export fill_gaps!, fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial, time_average
+export fill_gaps!, fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial
 export class_fraction, class_fractions
 
 using Adapt: Adapt
@@ -35,7 +35,7 @@ using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
                           topology, x_domain, y_domain, z_domain
 using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
 using Oceananigans.Grids: node
-using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Clamp, Cyclical,
+using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
 using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
 using Oceananigans.Utils: launch!, prettytime, prettysummary

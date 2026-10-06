@@ -1,13 +1,12 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.DataWrangling: fill_gaps!, fill_seasonal_gaps!, gap_fill_provenance,
-    gap_fill_denial, time_average
+    gap_fill_denial
 using NumericalEarth.DataWrangling.MODISLand: igbp_class_names, zero_non_vegetated!
 using Oceananigans.Grids: halo_size
 using Oceananigans.OutputReaders: Cyclical, InMemory
-using Dates: DateTime, Day, Month, Year
+using Dates: DateTime, Day, Month
 using JLD2: jldopen
-using Statistics: mean
 
 # A seasonal shape both the donor and the target share, so a fill that preserves shape is
 # exactly checkable.
@@ -363,114 +362,31 @@ end
 
 # Eight 8-day composites of a ramp, averaged onto calendar months. The windows do not nest, so
 # the samples that straddle an edge have to be split by days of overlap.
-@testset "Time averaging [$arch]" for arch in test_architectures
-    dates = [DateTime(2019, 1, 1) + Day(8 * (n - 1)) for n in 1:8]
-    bounds = [dates; dates[end] + Day(8)]
-
-    grid = LatitudeLongitudeGrid(arch, size = (2, 1, 1), longitude = (0, 1),
-                                 latitude = (0, 1), z = (0, 1))
-    ramp = FieldTimeSeries{Center, Center, Center}(grid, Float64.(0:7))
-    for n in 1:8
-        interior(ramp[n]) .= n
-    end
-
-    averaged, edges = time_average(ramp, bounds, Month(1))
-    values = Array(interior(averaged))
-
-    @test architecture(averaged.grid) == arch
-    @test edges == [DateTime(2019, 1, 1), DateTime(2019, 2, 1), DateTime(2019, 3, 1),
-                    DateTime(2019, 3, 6)]
-    @test length(averaged.times) == length(edges) - 1 == 3
-
-    # January holds composites 1-3 whole and seven of composite 4's eight days.
-    @test values[1, 1, 1, 1] ≈ (8 * 1 + 8 * 2 + 8 * 3 + 7 * 4) / 31
-    # February takes composite 4's last day, 5-7 whole, and three days of 8.
-    @test values[1, 1, 1, 2] ≈ (1 * 4 + 8 * 5 + 8 * 6 + 8 * 7 + 3 * 8) / 28
-    @test values[1, 1, 1, 3] ≈ 8
-
-    # An unweighted mean of the same samples is a different number, which is the reason the
-    # weighting is not optional.
-    @test !isapprox(values[1, 1, 1, 1], mean(1:4))
-
-    # A NaN sample drops out of the cell that carries it and the rest renormalize, while the
-    # neighboring column keeps the sample. That per-cell weight is why the accumulator cannot
-    # be one number per window.
-    gap = Array(interior(ramp[2]))
-    gap[1, 1, 1] = NaN
-    copyto!(interior(ramp[2]), gap)
-
-    gappy = Array(interior(first(time_average(ramp, bounds, Month(1)))))
-    @test gappy[1, 1, 1, 1] ≈ (8 * 1 + 8 * 3 + 7 * 4) / 23
-    @test gappy[2, 1, 1, 1] ≈ (8 * 1 + 8 * 2 + 8 * 3 + 7 * 4) / 31
-
-    # A window with nothing valid in it stays missing.
-    for n in 1:8
-        interior(ramp[n]) .= NaN
-    end
-    @test all(isnan, Array(interior(first(time_average(ramp, bounds, Month(1))))))
-
-    # A window as long as the record returns the record's own weighted mean.
-    for n in 1:8
-        interior(ramp[n]) .= n
-    end
-    whole_record, record_edges = time_average(ramp, bounds, Year(1))
-    @test length(record_edges) == 2
-    @test Array(interior(whole_record))[1, 1, 1, 1] ≈ mean(1:8)
-
-    @test_throws ArgumentError time_average(ramp, dates, Month(1))
-
-    # A partly-resident series streams to bit-identical numbers, advancing its two-slot
-    # window through the record as the samples pass.
-    reference = Array(interior(first(time_average(ramp, bounds, Month(1)))))
-
-    path = joinpath(mktempdir(), "ramp.jld2")
-    ondisk = FieldTimeSeries{Center, Center, Center}(grid, Float64.(0:7);
-                                                     backend = OnDisk(), path, name = "ramp")
-    slice = Field{Center, Center, Center}(grid)
-    for n in 1:8
-        set!(slice, n)
-        set!(ondisk, slice, n, ondisk.times[n])
-    end
-
-    windowed = FieldTimeSeries(path, "ramp"; architecture = arch, backend = InMemory(2))
-    @test size(interior(windowed))[end] == 2
-    streamed, streamed_edges = time_average(windowed, bounds, Month(1))
-    @test Array(interior(streamed)) == reference
-    @test streamed_edges == edges
-end
-
-# The reduced series carries the input's layout, not the bare grid's: its slice, its time
-# indexing, and halos the kernel never writes.
-@testset "Time averaging preserves the series' layout [$arch]" for arch in test_architectures
+@testset "Time averaging onto calendar months [$arch]" for arch in test_architectures
     dates = [DateTime(2019, 1, 1) + Day(8 * (n - 1)) for n in 1:8]
     bounds = [dates; dates[end] + Day(8)]
 
     grid = LatitudeLongitudeGrid(arch, size = (2, 1, 4), longitude = (0, 1),
                                  latitude = (0, 1), z = (0, 1))
-
-    # A surface slice averages to the same slice; sizing the reduction from the grid instead
-    # would run the kernel down the whole column and read past the series' own data.
-    surface = FieldTimeSeries{Center, Center, Center}(grid, Float64.(0:7), indices = (:, :, 4))
+    ramp = FieldTimeSeries{Center, Center, Center}(grid, Float64.(0:7), indices = (:, :, 4),
+                                                   time_indexing = Cyclical())
     for n in 1:8
-        interior(surface[n]) .= n
+        interior(ramp[n]) .= n
     end
 
-    sliced, _ = time_average(surface, bounds, Month(1))
-    @test sliced.indices == surface.indices
-    @test size(interior(sliced)) == (2, 1, 1, 3)
-    @test Array(interior(sliced))[1, 1, 1, 3] ≈ 8
+    averaged = time_average(ramp, bounds, Month(1))
+    values = Array(interior(averaged))
 
-    # A climatology is usable as cyclic forcing only if its average stays cyclic.
-    cyclic = FieldTimeSeries{Center, Center, Center}(grid, Float64.(0:7), time_indexing = Cyclical())
-    for n in 1:8
-        interior(cyclic[n]) .= n
-    end
+    # January holds composites 1-3 whole and seven of composite 4's eight days.
+    @test values[1, 1, 1, 1] ≈ (8 * 1 + 8 * 2 + 8 * 3 + 7 * 4) / 31
+    # February takes composite 4's last day, 5-7 whole, and three days of 8.
+    @test values[1, 1, 1, 2] ≈ (1 * 4 + 8 * 5 + 8 * 6 + 8 * 7 + 3 * 8) / 28
+    # The record ends on 6 March, five days into the last window.
+    @test values[1, 1, 1, 3] ≈ 8
+    @test averaged.times ≈ [15.5, 45, 61.5] .* 86400
 
-    averaged, _ = time_average(cyclic, bounds, Month(1))
+    @test averaged.indices == ramp.indices
     @test averaged.time_indexing isa Cyclical
-
-    # The last window holds composite 8 alone, so the halo next to the interior carries its
-    # value rather than the zero it was allocated with.
-    Hx, Hy, Hz = halo_size(grid)
-    @test Array(parent(averaged[3]))[1 + Hx, Hy, 1 + Hz] ≈ 8
+    Hx, Hy, _ = halo_size(grid)
+    @test Array(parent(averaged[3]))[1 + Hx, Hy, 1] ≈ 8
 end

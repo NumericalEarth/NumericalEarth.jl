@@ -6,7 +6,7 @@ using NumericalEarth.DataWrangling: DataWrangling, BoundingBox, Metadatum, Metad
     longitude_name, latitude_name, all_dates, native_times, available_variables,
     longitude_interfaces, latitude_interfaces, validate_dataset_coverage,
     retrieve_data, read_file_coords, region_info, fill_gaps!, cmr_granules_url,
-    window_center, averaging_window, window_bounds, time_average, class_fractions
+    window_center, averaging_window, window_bounds, class_fractions
 using NumericalEarth.DataWrangling.MODISLand: MODISLand, mask_lai_fill, lai_screening_flags,
     lai_rejection_flags, modis_composite_dates,
     parse_granule_name, select_granules, regional_lattice,
@@ -802,7 +802,6 @@ end
     # ending a common year rather than another eight days.
     @test window_bounds(metadata) == [dates; DateTime(2019, 1, 1)]
 
-    # Handing `time_average` the metadata is the same call as building those bounds by hand.
     grid = LatitudeLongitudeGrid(size = (1, 1, 1), longitude = (-92.5, -91.5),
                                  latitude = (36.5, 37.5), z = (0, 1))
     ramp = FieldTimeSeries{Center, Center, Center}(grid, native_times(metadata))
@@ -810,11 +809,7 @@ end
         interior(ramp[n]) .= n
     end
 
-    averaged, edges = time_average(ramp, metadata, Month(1))
-    by_hand, _ = time_average(ramp, window_bounds(metadata), Month(1))
-
-    @test interior(averaged) == interior(by_hand)
-    @test edges == [DateTime(2018, 12, 11), DateTime(2019, 1, 1)]
+    averaged = time_average(ramp, window_bounds(metadata), Month(1))
 
     # The last composite is the short five-day period, so it carries five days of weight
     # against the eight of each of its predecessors.

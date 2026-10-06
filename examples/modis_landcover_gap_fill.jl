@@ -31,7 +31,7 @@
 
 using NumericalEarth
 using NumericalEarth.DataWrangling: fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial,
-                                    time_average, class_fraction, class_fractions
+                                    window_bounds, class_fraction, class_fractions
 using NumericalEarth.DataWrangling.MODISLand: landcover_class_names, igbp_class_names,
                                               igbp_non_vegetated_classes, class_maximum_gap,
                                               zero_non_vegetated!, period_index,
@@ -482,9 +482,11 @@ departure = filter(!isnan, vec(filled_2019 .- climatology_2019))
 # samples that straddle each edge have to be split by their days of overlap; the unweighted
 # alternative is worst exactly where the field moves fastest.
 
-bimonthly_leaf_area_index, edges = time_average(single_year_leaf_area_index, target, Month(2))
+bounds = window_bounds(target)
+bimonthly_leaf_area_index = time_average(single_year_leaf_area_index, bounds, Month(2))
 
-windows = 1:length(edges)-1
+edges = [first(bounds):Month(2):last(bounds); last(bounds)]
+windows = eachindex(bimonthly_leaf_area_index.times)
 
 unweighted = [mean(filter(!isnan, vec(filled_2019[:, :, n])))
               for n in eachindex(target.dates)]
