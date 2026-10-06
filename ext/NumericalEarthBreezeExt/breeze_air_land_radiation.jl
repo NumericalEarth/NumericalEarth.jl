@@ -70,7 +70,7 @@ end
         ℐꜛˡʷ = emitted_longwave_radiation(Tˢ[i, j, 1], σ, ε[i, j, 1])
         ℐₐˡʷ = absorbed_longwave_radiation(ε[i, j, 1], ℐꜜˡʷ[i, j, 1])
         ℐₜˢʷ = transmitted_shortwave_radiation(α[i, j, 1], ℐꜜˢʷ[i, j, 1])
-        Es[i, j, 1] += ifelse(inactive, zero(grid), ℐꜛˡʷ + ℐₐˡʷ + ℐₜˢʷ)
+        Es[i, j, 1] += inactive * (ℐꜛˡʷ + ℐₐˡʷ + ℐₜˢʷ)
     end
 end
 
