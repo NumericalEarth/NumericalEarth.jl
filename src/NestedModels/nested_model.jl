@@ -94,6 +94,11 @@ function time_step!(nm::NestedModel, Δt; kwargs...)
     return nothing
 end
 
+# Run `f!(nm)` the way the architecture executes device work: eagerly here, where every kernel launch is
+# its own call; as one compiled program on `ReactantState` (Reactant extension), where an eager launch
+# is a separate compile. For the many-kernel state refreshes of initialization.
+execute!(f!, nm::NestedModel) = f!(nm)
+
 # Checkpointing: only the child has prognostic state.
 prognostic_state(nm::NestedModel) = prognostic_state(nm.child)
 restore_prognostic_state!(nm::NestedModel, state) = restore_prognostic_state!(nm.child, state)

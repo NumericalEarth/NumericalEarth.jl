@@ -47,4 +47,21 @@ end
 
     # update_state! populates the exchange state with the interpolated air temperature
     @test any(state.T .!= 0)
+
+    # A dataset slice is `Array{Union{Missing, T}}`, sometimes reshaped; filling a ReactantState
+    # field from it must neither overflow in `Reactant.to_rarray`, pass a `DataType` to the kernel,
+    # nor hand the kernel a reshaped device array.
+    region_grid = LatitudeLongitudeGrid(arch; size = (4, 4, 2), longitude = (0, 4), latitude = (0, 4),
+                                        z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    field = CenterField(region_grid)
+    data = convert(Array{Union{Missing, Float32}}, ones(Float32, 4, 4, 2))
+    data[2, 3, 1] = missing
+    data = reshape(view(data, :, :, :), 4, 4, 2)   # a `Base.ReshapedArray`, as a 2-D slice arrives
+    NumericalEarth.DataWrangling.set_region_data!(field, data, nothing, nothing, nothing;
+                                                  mangling = nothing, conversion = nothing,
+                                                  region = NumericalEarth.DataWrangling.BoundingBoxOffset(0, 0))
+    filled = Array(interior(field))
+    @test isnan(filled[2, 3, 1])
+    @test count(isnan, filled) == 1
+    @test all(filled[.!isnan.(filled)] .== 1)
 end

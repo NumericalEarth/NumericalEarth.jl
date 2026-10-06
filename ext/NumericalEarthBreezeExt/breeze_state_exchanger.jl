@@ -245,11 +245,16 @@ function exchange_state!(ex::StateExchanger, time; force=false)
     # A 2-level window cannot span the crossing — its start-side query returns a stale/wrong boundary target
     # (the hourly-seam kick that tips the child at every ERA5 crossing).
     # A full window (memory ≥ the whole time axis) holds every level, so it never moves — pinned at
-    # start = 1. Only a limited (streaming) window slides to bracket `time` one level below `t + Δt`.
-    _, n₁, _ = interpolating_time_indices(p.ρᵈ.time_indexing, p.ρᵈ.times, time)
+    # start = 1, without consulting `time` (traced under Reactant, where only a full window can run).
+    # Only a limited (streaming) window slides to bracket `time` one level below `t + Δt`.
     N = length(p.ρᵈ.times)
     window = length(p.ρᵈ.backend)
-    start = window >= N ? 1 : clamp(n₁ - 1, 1, max(1, N - window + 1))
+    start = if window >= N
+        1
+    else
+        _, n₁, _ = interpolating_time_indices(p.ρᵈ.time_indexing, p.ρᵈ.times, time)
+        clamp(n₁ - 1, 1, max(1, N - window + 1))
+    end
 
     # Advance the parent's own (possibly limited-memory) FTS windows to bracket the child window's LOWER
     # edge `times[start]`, NOT `time` (= t + Δt). A parent bracketed on t+Δt holds a forward window from

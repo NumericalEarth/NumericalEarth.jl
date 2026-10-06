@@ -19,7 +19,7 @@ using NumericalEarth:
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
-using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!
+using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!, execute!
 
 using Oceananigans:
     Oceananigans,
@@ -120,9 +120,13 @@ default_lid_depth(grid) = convert(eltype(grid), grid.Lz / 4)
 # Rayleigh layer over the top `damping_depth` meters at `damping_rate`, and no divergence damping
 # (its (ρθ)′-proxy damper injects a spurious force on an unbalanced cold start). When given,
 # `surface_pressure`/`reference_potential_temperature` anchor the hydrostatic reference and the
-# perturbation-form pressure-gradient reference profile.
-function default_nested_dynamics(grid; surface_pressure, reference_potential_temperature, damping_rate, damping_depth)
-    time_discretization = SplitExplicitTimeDiscretization(sponge = UpperSponge(; damping_rate, depth = damping_depth),
+# perturbation-form pressure-gradient reference profile. `acoustic_substeps = nothing` lets Breeze
+# size the substep count from the acoustic CFL every stage; a compiled (Reactant) step needs a fixed
+# count, since the loop bound cannot depend on traced values.
+function default_nested_dynamics(grid; surface_pressure, reference_potential_temperature, damping_rate, damping_depth,
+                                 acoustic_substeps = nothing)
+    time_discretization = SplitExplicitTimeDiscretization(substeps = acoustic_substeps,
+                                                          sponge = UpperSponge(; damping_rate, depth = damping_depth),
                                                           damping = NoDivergenceDamping())
     kw = (;)
     isnothing(surface_pressure)                || (kw = merge(kw, (; base_pressure = surface_pressure)))
@@ -192,8 +196,10 @@ Provides sensible, overridable physics defaults: `microphysics` (1-moment mixed-
 `CloudMicrophysics` is loaded), `momentum_advection = WENO(order=9)`, `coriolis = SphericalCoriolis()`,
 and a compressible split-explicit `dynamics` with an `UpperSponge` over the top `damping_depth` m at
 `damping_rate`; a matching ρw Rayleigh lid sponge (`Relaxation` toward zero) is added to `forcing`. Pass
-`surface_pressure`/`reference_potential_temperature` to anchor the default dynamics. Any
-`boundary_conditions`/`forcing` the caller passes are merged with the parent-derived ones (caller wins).
+`surface_pressure`/`reference_potential_temperature` to anchor the default dynamics, and `acoustic_substeps`
+to fix the acoustic substep count (the default sizes it from the acoustic CFL every stage, which a compiled
+Reactant step cannot do). Any `boundary_conditions`/`forcing` the caller passes are merged with the
+parent-derived ones (caller wins).
 
 When `bottom_drag_coefficient` is given — a constant drag coefficient or a `Breeze.PolynomialCoefficient`
 — Breeze `BulkDrag` flux boundary conditions are applied at the bottom of the momentum densities
@@ -236,7 +242,9 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     coriolis = SphericalCoriolis(),
     damping_rate = 1/5,
     damping_depth = default_lid_depth(child_grid),
-    dynamics = default_nested_dynamics(child_grid; surface_pressure, reference_potential_temperature, damping_rate, damping_depth),
+    acoustic_substeps = nothing,
+    dynamics = default_nested_dynamics(child_grid; surface_pressure, reference_potential_temperature, damping_rate, damping_depth,
+                                       acoustic_substeps),
     boundary_conditions = NamedTuple(),
     forcing = NamedTuple(),
     kw...)
@@ -414,6 +422,20 @@ function interpolate_to_child(fts, child_grid, t₀, loc = (Center, Center, Cent
     return field
 end
 
+# Consistent-w: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (the initial flow follows the ground).
+# The first `update_state!` diagnoses ρw̃ from the interpolated state, the second refreshes the
+# diagnostics after the graft. Run through `execute!`: on Reactant this is one compiled program
+# rather than an eager launch per kernel.
+function graft_consistent_vertical_momentum!(nested_model)
+    child = nested_model.child
+    update_state!(nested_model)
+    if !isnothing(child.dynamics.contravariant_vertical_momentum)
+        interior(child.momentum.ρw) .-= interior(child.dynamics.contravariant_vertical_momentum)
+        update_state!(nested_model)
+    end
+    return nothing
+end
+
 # Initialize the nested child from the exchanger's parent-derived prognostics (the SAME state that drives
 # the lateral boundaries), interpolated to the child interior — so the interior IC and the prescribed
 # boundary agree at the walls (no standing pressure/density jump). Recompute the Exner reference from the
@@ -439,13 +461,7 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
     moisture = NamedTuple{(moisture_specific_name(child.microphysics),)}((qᵛᵉ,))
     set!(nested_model; ρ, ρu, ρv, θˡⁱ, moisture..., compute_reference_state = true)
 
-    # Consistent-w: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (the initial flow follows the ground).
-    update_state!(nested_model)
-
-    if !isnothing(child.dynamics.contravariant_vertical_momentum)
-        interior(child.momentum.ρw) .-= interior(child.dynamics.contravariant_vertical_momentum)
-        update_state!(nested_model)
-    end
+    execute!(graft_consistent_vertical_momentum!, nested_model)
 
     # Adiabatic (DFI) balance at Breeze's auto acoustic-CFL step. `balancer=false` skips it (to isolate
     # whether the interpolated IC steps stably on its own); pass an `AdiabaticBalancer(Δt=…)` for a

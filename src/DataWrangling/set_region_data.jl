@@ -197,20 +197,28 @@ end
 # Fallback dispatch that assumes missing_val = missing
 blend(scheme, data, c, k, mangling, FT) = blend(scheme, data, c, k, mangling, missing, FT)
 
-@kernel function _set_region_kernel!(dst, data, region, mangling, conversion, missing_val, FT)
+# The target float type is taken from `dst` rather than passed in: a `DataType` argument is not a
+# bitstype, which Reactant's kernel launch rejects.
+@kernel function _set_region_kernel!(dst, data, region, mangling, conversion, missing_val)
     i, j, k = @index(Global, NTuple)
+    FT = eltype(dst)
     d = read_data(data, i, j, k, region, mangling, missing_val, FT)
     d = convert_units(d, conversion)
     @inbounds dst[i, j, k] = d
 end
 
-# TODO: upstream to Oceananigans.Architectures alongside its SubArray/OffsetArray methods.
-# `on_architecture` has no `Base.ReshapedArray` method, so host data arriving reshaped — e.g. a
-# 2-D NetCDF variable reshaped to (Nx, Ny, 1) — falls through the generic identity fallback and
-# reaches GPU kernels as CPU memory (kernel compilation failure).
-architecture_ready(arch, data) = on_architecture(arch, data)
-architecture_ready(arch, data::Base.ReshapedArray) =
-    reshape(on_architecture(arch, parent(data)), size(data))
+# Host data arriving reshaped — e.g. a 2-D NetCDF variable reshaped to (Nx, Ny, 1) — is collected
+# to a plain array before the transfer: `on_architecture` has no `Base.ReshapedArray` method, so the
+# wrapper would reach a GPU kernel as CPU memory, and reshaping the device array instead yields a
+# wrapper Reactant's kernel adaptor cannot convert.
+architecture_ready(arch, data) = on_architecture(arch, without_missing(data))
+architecture_ready(arch, data::Base.ReshapedArray) = architecture_ready(arch, Array(data))
+
+# A NetCDF slice arrives as `Array{Union{Missing, T}}`. `Reactant.to_rarray` has no element type for
+# that union and recurses until the stack overflows, so `missing` becomes NaN on the host before the
+# transfer; the kernel's `nan_convert_missing` passes NaN through unchanged.
+without_missing(data) = data
+without_missing(data::AbstractArray{Union{Missing, T}}) where T <: AbstractFloat = coalesce.(data, convert(T, NaN))
 
 """
     set_region_data!(target, data, λc, φc, metadata)
@@ -224,13 +232,12 @@ function set_region_data!(target::Field, data, λc, φc, metadata;
                           region = region_info(metadata.region, target, λc, φc),
                           parameters = :xyz)
 
-    FT          = eltype(target)
     grid        = target.grid
     arch        = architecture(grid)
     data        = architecture_ready(arch, data)
     missing_val = missing_value(metadata)
     # With `parameters`, a windowed field is then filled over its own indices.
-    launch!(arch, grid, parameters, _set_region_kernel!, target, data, region, mangling, conversion, missing_val, FT)
+    launch!(arch, grid, parameters, _set_region_kernel!, target, data, region, mangling, conversion, missing_val)
     return nothing
 end
 
@@ -242,13 +249,12 @@ function set_region_data!(target::FieldTimeSeries, data, λc, φc, metadata;
     region      = region_info(metadata.region, target, λc, φc)
     grid        = target.grid
     arch        = architecture(grid)
-    FT          = eltype(target)
     data        = architecture_ready(arch, data)
     missing_val = missing_value(metadata)
     for (data_time, slot_time) in zip(axes(data, 4), slot_indices)
         dest = view(interior(target), :, :, :, slot_time)
         slice = view(data, :, :, :, data_time)
-        launch!(arch, grid, :xyz, _set_region_kernel!, dest, slice, region, mangling, conversion, missing_val, FT)
+        launch!(arch, grid, :xyz, _set_region_kernel!, dest, slice, region, mangling, conversion, missing_val)
     end
     return nothing
 end
