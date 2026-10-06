@@ -117,6 +117,7 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``\mathscr{I}_\downarrow^{\mathrm{lw}}`` | `ℐꜜˡʷ` | downwelling longwave | Downwelling longwave radiation (W m⁻²) |
 | ``h_{b\ell}`` | `h_bℓ` | boundary layer height | Atmospheric boundary layer height (m) |
 | ``pᵛ⁺`` | ``pᵛ⁺`` | saturation vapor pressure | Vapor pressure at saturation (Pa) |
+| ``fᵛ`` | `fᵛ` | vapor pressure enhancement factor | Ratio of the saturation vapor pressure in moist air to that of pure water vapor (Gill 1982) (–) |
 | ``qᵛ⁺`` | `qᵛ⁺` | saturation specific humidity | Specific humidity at saturation, ``q^{v+}(T)`` (kg kg⁻¹) |
 | ``qˢ`` | `q` | surface specific humidity | Specific humidity at the interface; set by the humidity model (`β·qᵛ⁺` for `FractionalHumidity`, a vapor-flux balance for `SkinHumidity`) (kg kg⁻¹) |
 
