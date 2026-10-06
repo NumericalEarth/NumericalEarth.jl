@@ -1,20 +1,7 @@
 #####
-##### Surface energy balance coupling for the Breeze RRTMGP `RadiativeTransferModel`.
+##### Surface radiation uses positive-upward fluxes (W m⁻²).
+##### The net surface flux is ε σ Tₛ⁴ + ε ℐꜜˡʷ + (1 - α) ℐꜜˢʷ.
 #####
-##### Each coupled step adds the net upward surface radiative flux, ε σ Tₛ⁴ - ε ℐꜜˡʷ - (1 - α) ℐꜜˢʷ,
-##### to the slab's `surface_energy_flux` (positive = upward), reading the downwelling fluxes
-##### the radiation exchanger publishes.
-#####
-##### ε σ Tₛ⁴ + (1 - ε) ℐꜜˡʷ rebuilds RRTMGP's own surface boundary from the live Tₛ, which
-##### the RTM's stored upwelling longwave does not track between scheduled solves. The atmosphere
-##### keeps absorbing the emission from the last solve, so the two sides disagree by ε σ ΔTₛ⁴
-##### within a radiation interval.
-#####
-##### Shortwave takes (1 - α) of the downwelling rather than the RTM's own net, ℐꜜˢʷ - ℐꜛˢʷ: gray
-##### optics computes no upwelling shortwave and never reads α, so the net would hand the land the
-##### whole beam. Honoring α instead leaves α ℐꜜˢʷ returned to neither the atmosphere nor space
-##### under gray optics, and collapses the direct and diffuse albedos under the scattering solvers.
-##### TODO: read ℐꜜˢʷ - ℐꜛˢʷ under clear-sky and all-sky optics, where it is exact.
 
 using Oceananigans.Fields: Field
 using Oceananigans.Grids: Center, inactive_node
@@ -41,12 +28,12 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchang
     return ComponentExchanger(state, nothing)
 end
 
-# Breeze stores fluxes positive-up; the interface state holds positive-down magnitudes.
+# Downwelling fluxes are negative in both Breeze and the interface state.
 @kernel function _interpolate_breeze_radiation_state!(state, ℐꜜˢʷ, ℐꜜˡʷ)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        state.ℐꜜˢʷ[i, j, 1] = -ℐꜜˢʷ[i, j, 1]
-        state.ℐꜜˡʷ[i, j, 1] = -ℐꜜˡʷ[i, j, 1]
+        state.ℐꜜˢʷ[i, j, 1] = ℐꜜˢʷ[i, j, 1]
+        state.ℐꜜˡʷ[i, j, 1] = ℐꜜˡʷ[i, j, 1]
     end
 end
 

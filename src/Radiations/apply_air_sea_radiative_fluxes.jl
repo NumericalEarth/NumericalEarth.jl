@@ -110,7 +110,7 @@ apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, biogeochemistry) =
     @inbounds begin
         net_ocean_fluxes.T[i, j, 1] += ifelse(inactive, zero(grid), Jᵀ_rad)
         interface_radiative_flux.upwelling_longwave[i, j, 1]    = ℐꜛˡʷ
-        interface_radiative_flux.downwelling_longwave[i, j, 1]  = - ℐₐˡʷ
-        interface_radiative_flux.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ
+        interface_radiative_flux.downwelling_longwave[i, j, 1]  = ℐₐˡʷ
+        interface_radiative_flux.downwelling_shortwave[i, j, 1] = ℐₜˢʷ
     end
 end

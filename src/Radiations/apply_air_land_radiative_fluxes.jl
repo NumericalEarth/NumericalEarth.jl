@@ -82,16 +82,15 @@ end
     ℐₐˡʷ = absorbed_longwave_radiation(rs.ϵ, rs.ℐꜜˡʷ)
     ℐₜˢʷ = transmitted_shortwave_radiation(rs.α, rs.ℐꜜˢʷ)
 
-    # Total radiative contribution to surface energy balance, positive into the land.
-    ΣQ_rad = -ℐꜛˡʷ - (ℐₐˡʷ + ℐₜˢʷ)
+    # Net upward radiative flux.
+    ΣQ_rad = ℐꜛˡʷ + ℐₐˡʷ + ℐₜˢʷ
 
     inactive = inactive_node(i, j, 1, grid, Center(), Center(), Center())
 
-    # `surface_energy_flux` is positive upward, so the into-land `ΣQ_rad` enters as `-ΣQ_rad`.
     @inbounds begin
-        land_energy_flux[i, j, 1] += ifelse(inactive, zero(grid), -ΣQ_rad)
+        land_energy_flux[i, j, 1] += ifelse(inactive, zero(grid), ΣQ_rad)
         interface_radiative_flux.upwelling_longwave[i, j, 1]    = ℐꜛˡʷ
-        interface_radiative_flux.downwelling_longwave[i, j, 1]  = - ℐₐˡʷ
-        interface_radiative_flux.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ
+        interface_radiative_flux.downwelling_longwave[i, j, 1]  = ℐₐˡʷ
+        interface_radiative_flux.downwelling_shortwave[i, j, 1] = ℐₜˢʷ
     end
 end
