@@ -156,3 +156,25 @@ end
         @test Array(interior(state.cʸᶠ, :, :, 1)) ≈ factor .* (0λ .+ 2φ')
     end
 end
+
+@testset "Prescribed atmosphere fields on their own time axes" begin
+    for arch in test_architectures
+        grid = LatitudeLongitudeGrid(arch; size = (10, 10, 1), longitude = (10, 20), latitude = (30, 40), z = (-100, 0), halo = (6, 6, 3))
+
+        # Rain is sampled half an interval before the other fields, as ERA5 accumulations are
+        rain_times = [-1800, 1800.0]
+        rain = FieldTimeSeries{Center, Center, Nothing}(grid, rain_times)
+        for n in 1:2
+            set!(rain[n], 1e-9 * rain_times[n])
+        end
+
+        precipitation_flux = NumericalEarth.Atmospheres.PrescribedPrecipitationFlux(; rain)
+        atmosphere = PrescribedAtmosphere(grid, [0, 3600.0]; precipitation_flux)
+        ocean = ocean_simulation(grid, closure = nothing)
+        model = OceanOnlyModel(ocean; atmosphere, radiation = nothing)
+        time_step!(model, 60)
+
+        Jʳ = Array(interior(model.interfaces.exchanger.atmosphere.state.Jʳⁿ))
+        @test all(Jʳ .≈ 1e-9 * 60)
+    end
+end
