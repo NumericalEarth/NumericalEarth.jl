@@ -35,7 +35,9 @@ function atmosphere_land_interface(grid, atmosphere, land;
     al_fluxes = AtmosphereSurfaceFluxes(grid)
     al_properties = InterfaceProperties(specific_humidity, temperature, velocity_difference)
     interface_temperature = Field{Center, Center, Nothing}(grid)
-    return AtmosphereInterface(al_fluxes, fluxes, interface_temperature, al_properties)
+    interface_specific_humidity = Field{Center, Center, Nothing}(grid)
+    return AtmosphereInterface(al_fluxes, fluxes, interface_temperature,
+                               interface_specific_humidity, al_properties)
 end
 
 #####
@@ -61,6 +63,7 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     flux_formulation = atmosphere_land_interface.flux_formulation
     interface_fluxes = atmosphere_land_interface.fluxes
     interface_temperature = atmosphere_land_interface.temperature
+    interface_specific_humidity = atmosphere_land_interface.specific_humidity
     interface_properties = atmosphere_land_interface.properties
     atmosphere_properties = (thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
                              surface_layer_height = coupled_model.interfaces.properties.surface_layer_height,
@@ -85,6 +88,7 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
             _compute_atmosphere_land_interface_state!,
             interface_fluxes,
             interface_temperature,
+            interface_specific_humidity,
             grid,
             clock,
             flux_formulation,
@@ -108,16 +112,13 @@ end
 ##### model then derives `β`, the reservoir temperature, etc. from what it pulled.
 #####
 
-@inline land_saturation(i, j, grid, land_state) =
-    (saturation = state2dindex(land_state.saturation, i, j),)
+@inline land_saturation(i, j, grid, land_state) = state2dindex(land_state.saturation, i, j)
 
-# Hydrology state, per humidity formulation.
-@inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) = land_saturation(i, j, grid, land_state)
-@inline interface_hydrology_state(i, j, grid, q::FractionalHumidity, land_state) =
-    interface_hydrology_state(i, j, grid, q.efficiency, land_state)
-@inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) = land_saturation(i, j, grid, land_state)
-@inline interface_hydrology_state(i, j, grid, ::DryLayerHumidity, land_state) =
-    land_saturation(i, j, grid, land_state)
+# Hydrology state, per humidity formulation. The caller adds the `saturation` key.
+@inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) = (; saturation = land_saturation(i, j, grid, land_state))
+@inline interface_hydrology_state(i, j, grid, q::FractionalHumidity, land_state) = interface_hydrology_state(i, j, grid, q.efficiency, land_state)
+@inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) = (; saturation = land_saturation(i, j, grid, land_state))
+@inline interface_hydrology_state(i, j, grid, ::DryLayerHumidity, land_state) = (; saturation = land_saturation(i, j, grid, land_state))
 @inline interface_hydrology_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
 
 # Energy state: humidity formulations that need the bulk land temperature
@@ -131,6 +132,7 @@ end
 
 @kernel function _compute_atmosphere_land_interface_state!(interface_fluxes,
                                                            interface_temperature,
+                                                           interface_specific_humidity,
                                                            grid,
                                                            clock,
                                                            turbulent_flux_formulation,
@@ -186,5 +188,6 @@ end
 
     ℒˡ = AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, Ψₐ.T)
 
-    store_interface_fluxes!(interface_fluxes, interface_temperature, i, j, Ψₛ, Ψₐ, ℂᵃᵗ, ℒˡ, Ψₛ.temperature, interface_properties)
+    store_interface_fluxes!(interface_fluxes, interface_temperature, interface_specific_humidity, i, j,
+                            Ψₛ, Ψₐ, ℂᵃᵗ, ℒˡ, Ψₛ.temperature, interface_properties)
 end

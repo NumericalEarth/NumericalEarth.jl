@@ -3,14 +3,21 @@ module OpenLandMap
 export OpenLandMapSoilDB
 
 using Downloads: Downloads
+using DocStringExtensions: TYPEDSIGNATURES
 using NCDatasets: NCDataset, defDim, defVar
-using Oceananigans: Center
+using Oceananigans: Bounded, Center, Face, LatitudeLongitudeGrid
+using Oceananigans.Architectures: architecture
 using Oceananigans.DistributedComputations: @root
+using Oceananigans.Fields: Field, interior, set!
+using Oceananigans.Grids: λnodes, φnodes
 
 using ..DataWrangling: DataWrangling,
     AbstractStaticDataset, Metadatum, BoundingBox, Dataset,
     WeightPercent, GramPerCubicCentimeter,
-    metadata_path, dataset_variable_name, bounding_box_suffix
+    metadata_path, dataset_variable_name, bounding_box_suffix,
+    default_download_directory, inpaint_mask!
+
+using ...Lands: Lands
 
 import Oceananigans
 
@@ -244,6 +251,162 @@ function cog_window_to_netcdf(sources, nc_path, variable_name, bbox)
     end
 
     return nothing
+end
+
+#####
+##### Windowing and decoding, independent of the GDAL reader
+#####
+
+# The windowing math and the north→south row reversal below assume a north-up,
+# axis-aligned geographic (EPSG:4326, degrees) grid.
+function validate_geographic_northup(geotransform)
+    _, dx, rx, _, ry, dy = geotransform
+    (rx == 0 && ry == 0) ||
+        error("Windowed COG reader requires an axis-aligned grid (no rotation/shear); " *
+              "got geotransform $geotransform.")
+    (dx > 0 && dy < 0) ||
+        error("Windowed COG reader assumes west→east (Δλ > 0) and north→south (Δφ < 0) " *
+              "pixel order; got Δλ = $dx, Δφ = $dy.")
+    return nothing
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Check that `coordinate_system_code` identifies WGS84 longitude and latitude in
+degrees (EPSG:4326). WGS84 means World Geodetic System 1984, a standard reference
+system defining Earth's shape and how coordinates locate points on it.
+EPSG:4326 is the catalog code for its longitude/latitude representation.
+Accept `nothing` when no code is available, leaving the coordinate system unverified.
+"""
+function validate_wgs84_longitude_latitude(coordinate_system_code)
+    isnothing(coordinate_system_code) || coordinate_system_code == 4326 ||
+        error("Expected WGS84 longitude/latitude in degrees (EPSG:4326), " *
+              "but the source declares EPSG:$coordinate_system_code.")
+    return nothing
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Return `(column_offset, row_offset, Nx, Ny)` for a rectangular raster patch covering
+the longitude/latitude bounds `bbox`, padded by one pixel and clipped to the image.
+Offsets count columns and rows from zero; `Nx` and `Ny` are the patch's pixel counts.
+The full image has `width` columns and `height` rows, ordered west to east and north
+to south, with `geotransform = [western_edge, longitude_spacing, 0,
+northern_edge, 0, latitude_spacing]` in degrees and negative `latitude_spacing`.
+"""
+function raster_window_indices(geotransform, width, height, bbox)
+    x0, dx, _, y0, _, dy = geotransform
+    W, E = bbox.longitude
+    S, N = bbox.latitude
+
+    # Pad one native cell on each side so the window is a strict superset of the
+    # framework's center-bracketed native grid; otherwise the grid can hold one
+    # more cell than the file, forcing a clamped read that shifts the whole
+    # window by a pixel and duplicates the outermost row/column.
+    column_offset = clamp(floor(Int, (W - x0) / dx) - 1, 0, width - 1)
+    row_offset    = clamp(floor(Int, (N - y0) / dy) - 1, 0, height - 1)
+    Nx            = clamp(ceil(Int, (E - x0) / dx) + 1 - column_offset, 1, width - column_offset)
+    Ny            = clamp(ceil(Int, (S - y0) / dy) + 1 - row_offset, 1, height - row_offset)
+
+    return column_offset, row_offset, Nx, Ny
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Return a `Float32` array of physical values with the same shape as `raw`.
+Replace values equal to `missing_value` with `NaN`, then decode all other values
+as `value * value_scale + value_offset`. Use `missing_value = nothing` when
+the raster has no missing-value marker.
+"""
+function decode_raster_values(raw, value_scale, value_offset, missing_value)
+    decoded = Array{Float32}(undef, size(raw))
+    @inbounds for idx in eachindex(raw)
+        value = Float64(raw[idx])
+        is_nodata = !isnothing(missing_value) && isequal(value, missing_value)
+        decoded[idx] = is_nodata ? NaN32 : Float32(value * value_scale + value_offset)
+    end
+    return decoded
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Return `(longitude, latitude, data)` for a rectangular raster patch `raw`, whose
+first dimension runs west to east and second dimension runs north to south.
+The `geotransform` contains the full image's western and northern edges and pixel
+spacing in degrees as `[western_edge, longitude_spacing, 0, northern_edge, 0,
+latitude_spacing]`. `column_offset` and `row_offset` locate the patch's first
+pixel within that image, counting from zero.
+
+Compute pixel-center coordinates and reorder latitude and data from south to north.
+Replace `missing_value` with `NaN`. Convert each remaining value `v` to
+`Float32(v * value_scale + value_offset)`.
+"""
+function assemble_raster_window(raw, geotransform, column_offset, row_offset, value_scale, value_offset, missing_value)
+    x0, dx, _, y0, _, dy = geotransform
+    Nx, Ny = size(raw)
+
+    # Pixel centers lie half a pixel inward from their western and northern edges.
+    longitude = [x0 + (column_offset + i - 0.5) * dx for i in 1:Nx]
+    # Reverse north-first rows so latitude and data run south to north.
+    latitude  = reverse([y0 + (row_offset + j - 0.5) * dy for j in 1:Ny])
+    data = reverse(decode_raster_values(raw, value_scale, value_offset, missing_value), dims = 2)
+
+    return longitude, latitude, data
+end
+
+#####
+##### Hydraulic parameters straight from the dataset
+#####
+
+"""
+$(TYPEDSIGNATURES)
+
+Effective van Genuchten parameter fields for `grid` computed from `dataset`: the four
+texture variables (`:sand_fraction`, `:silt_fraction`, `:clay_fraction`, `:bulk_density`)
+are read over `region` onto a lattice with `grid`'s horizontal cells and the dataset's
+depth layers, their gaps are inpainted, and the per-layer pedotransfer reduction runs
+over `slab_depth`. Returns a NamedTuple of `porosity`, `residual_liquid_fraction`,
+`inverse_air_entry_head`, `pore_size_uniformity`, `matching_point_conductivity`, and
+`pore_connectivity_exponent`, each a `Field{Center, Center, Nothing}` on `grid`.
+`dir` is the download directory; remaining
+keyword arguments (`ptf`, `matching_heads`) pass to the reduction.
+"""
+function Lands.soil_hydraulic_properties(grid, dataset::OpenLandMapSoilDB;
+                                         slab_depth,
+                                         region = BoundingBox(grid),
+                                         dir = default_download_directory(dataset),
+                                         kw...)
+    z = DataWrangling.z_interfaces(dataset)
+    Nx, Ny, _ = size(grid)
+    lattice = LatitudeLongitudeGrid(architecture(grid), eltype(grid);
+                                    size = (Nx, Ny, length(z) - 1),
+                                    longitude = λnodes(grid, Face(), Center(), Center()),
+                                    latitude = φnodes(grid, Center(), Face(), Center()),
+                                    z,
+                                    topology = (Bounded, Bounded, Bounded))
+
+    texture = map((:sand_fraction, :silt_fraction, :clay_fraction, :bulk_density)) do name
+        field = Field(Metadatum(name; dataset, region, dir), lattice)
+        gaps  = Field{Center, Center, Center}(lattice, Bool)
+        interior(gaps) .= .!isfinite.(interior(field))
+        inpaint_mask!(field, gaps)
+        return field
+    end
+
+    layered = Lands.soil_hydraulic_properties(texture...; slab_depth, kw...)
+
+    surface = (porosity = Field{Center, Center, Nothing}(grid),
+               residual_liquid_fraction = Field{Center, Center, Nothing}(grid),
+               inverse_air_entry_head = Field{Center, Center, Nothing}(grid),
+               pore_size_uniformity = Field{Center, Center, Nothing}(grid),
+               matching_point_conductivity = Field{Center, Center, Nothing}(grid),
+               pore_connectivity_exponent = Field{Center, Center, Nothing}(grid))
+    set!(surface, layered)
+    return surface
 end
 
 end # module OpenLandMap
