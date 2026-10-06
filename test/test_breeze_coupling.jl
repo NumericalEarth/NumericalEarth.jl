@@ -246,7 +246,7 @@ end
                     downwelling_longwave_flux,
                     downwelling_shortwave_flux,
                     surface_albedo)
-            return only(Array(interior(surface_energy_flux)))
+            return @allowscalar only(surface_energy_flux)
         end
 
         𝒬₁ = surface_energy_at(T₁)
