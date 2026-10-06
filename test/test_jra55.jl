@@ -233,3 +233,37 @@ using NumericalEarth.JRA55: download_JRA55_cache
         end
     end
 end
+
+using Oceananigans.BoundaryConditions: PolarValue, fill_halo_regions!
+
+# The prefetch buffer is filled by a background task while the live series may be filling its own halos.
+# A `PolarValueBoundaryCondition` keeps the pole value between computing and applying it, so the two must
+# not share boundary conditions, or one fill can use the other's pole value (nondeterministic forcing
+# near the poles on the GPU).
+@testset "Prefetching JRA55 series have their own boundary conditions" begin
+    for arch in test_architectures
+        A = typeof(arch)
+        @info "Testing the boundary conditions of a prefetching JRA55 FieldTimeSeries on $A..."
+
+        dates = NumericalEarth.DataWrangling.all_dates(JRA55.RepeatYearJRA55(), :temperature)
+        metadata = Metadata(:temperature; dataset = JRA55.RepeatYearJRA55(), end_date = dates[8])
+        fts = FieldTimeSeries(metadata, arch; time_indices_in_memory = 4, prefetch = true)
+        buffer = fts.backend.buffer_fts
+
+        @test buffer.boundary_conditions !== fts.boundary_conditions
+
+        north = fts.boundary_conditions.north.condition
+        if north isa PolarValue
+            @test north.data !== buffer.boundary_conditions.north.condition.data
+        end
+
+        # Every slot's polar halo row is what filling that slot on its own gives
+        Nx, Ny = size(fts.grid)[1:2]
+        north_halo(n) = Array(view(fts[n].data, 1:Nx, Ny+1, 1))
+        filled = [north_halo(n) for n in 1:4]
+        for n in 1:4
+            fill_halo_regions!(fts[n])
+            @test north_halo(n) == filled[n]
+        end
+    end
+end

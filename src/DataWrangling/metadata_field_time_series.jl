@@ -76,7 +76,14 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
     if prefetch
         Threads.nthreads() < 2 && @warn "prefetch=true is a no-op with JULIA_NUM_THREADS=$(Threads.nthreads()); start Julia with ≥ 2 threads."
         buffer_inner = new_backend(inner_backend, 1, time_indices_in_memory)
-        buffer_fts = FieldTimeSeries{LX, LY, LZ}(grid, times; backend=buffer_inner, time_indexing, boundary_conditions)
+
+        # The buffer is filled (halos included) by a background task while the live series may be filling
+        # its own halos, so it needs its own boundary conditions: some keep state between computing and
+        # applying them (the pole value of a `PolarValueBoundaryCondition`), and sharing them would let
+        # one fill use the other's pole value.
+        buffer_boundary_conditions = FieldBoundaryConditions(grid, instantiate.(loc))
+        buffer_fts = FieldTimeSeries{LX, LY, LZ}(grid, times; backend=buffer_inner, time_indexing,
+                                                 boundary_conditions = buffer_boundary_conditions)
         backend = PrefetchingBackend(inner_backend, buffer_fts)
     else
         backend = inner_backend
