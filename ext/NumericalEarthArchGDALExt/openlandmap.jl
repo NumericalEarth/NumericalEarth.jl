@@ -7,18 +7,19 @@ function NumericalEarth.DataWrangling.OpenLandMap.read_cog_window(source, bbox::
 
     return ArchGDAL.read(source) do ds
         geotransform = ArchGDAL.getgeotransform(ds)  # [x₀, Δλ, 0, y₀, 0, Δφ]
-        validate_geographic_northup(ds, geotransform)
-        window = cog_window(geotransform, (ArchGDAL.width(ds), ArchGDAL.height(ds)), bbox, factor)
+        validate_geographic_northup(geotransform)
+        validate_wgs84_longitude_latitude(source_coordinate_system_code(ds))
 
-        band   = ArchGDAL.getband(ds, 1)
-        scale  = ArchGDAL.getscale(band)
-        offset = ArchGDAL.getoffset(band)
-        nodata = ArchGDAL.getnodatavalue(band)
+        width  = ArchGDAL.width(ds)
+        height = ArchGDAL.height(ds)
+        column_offset, row_offset, Nx, Ny = raster_window_indices(geotransform, width, height, bbox, factor)
 
-        raw = read_cog_band(ds, 1, window)  # (lon, lat), north-first
-        # The window's latitude ascends but the rows do not; reverse the data so both come out
-        # south-to-north, per CF convention.
-        data = reverse(decode_cog_window(raw, scale, offset, nodata), dims = 2)
-        return (window.longitude, window.latitude, data)
+        band          = ArchGDAL.getband(ds, 1)
+        value_scale   = ArchGDAL.getscale(band)
+        value_offset  = ArchGDAL.getoffset(band)
+        missing_value = ArchGDAL.getnodatavalue(band)
+
+        raw = read_raster_band(ds, 1, column_offset, row_offset, Nx, Ny, factor)  # (lon, lat), north-first
+        return assemble_raster_window(raw, geotransform, column_offset, row_offset, value_scale, value_offset, missing_value, factor)
     end
 end
