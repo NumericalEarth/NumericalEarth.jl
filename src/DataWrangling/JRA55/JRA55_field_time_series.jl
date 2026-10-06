@@ -44,32 +44,33 @@ function DataWrangling.retrieve_data(metadatum::MultiYearJRA55Metadatum)
     return data
 end
 
-# Split at the wrap point if `nn` cycles past 1 — DiskArrays requires sorted indices.
-function jra55_read_data(ds, name, i, j, nn)
-    if issorted(nn)
-        return ds[name][i, j, nn]
-    else
-        m = findfirst(==(1), nn)
-        d1 = ds[name][i, j, nn[1:m-1]]
-        d2 = ds[name][i, j, nn[m:end]]
-        return cat(d1, d2; dims=3)
+# Read the window one time slice at a time through two slice-sized host buffers. Reading it whole
+# (`ds[name][:, :, nn]`) allocates ~14 bytes per element (137 MiB for a 640×320×50 window), and with every
+# atmospheric variable reloading at once that forces full GC sweeps. The files are chunked one time slice
+# per chunk, so slice reads cost the same I/O.
+function set_jra55_slices!(fts, ds, name, file_indices, slots, metadata)
+    λc  = ds["lon"][:]
+    φc  = ds["lat"][:]
+    var = ds[name]
+
+    Nx, Ny = length(λc), length(φc)
+    data   = Array{eltype(var)}(undef, Nx, Ny, 1, 1)
+    buffer = Array{eltype(parent(var))}(undef, Nx, Ny, 1, 1)
+
+    for (n, slot) in zip(file_indices, slots)
+        NCDatasets.load!(var, data, buffer, :, :, n)
+        set_region_data!(fts, data, λc, φc, metadata; slot_indices = slot:slot)
     end
+
+    return nothing
 end
 
 function Oceananigans.Fields.set!(fts::JRA55NetCDFFTSRepeatYear, backend=fts.backend)
     metadata = backend.metadata
     ds = Dataset(joinpath(metadata.dir, metadata.filename))
-
-    λc = ds["lon"][:]
-    φc = ds["lat"][:]
-    nn = collect(time_indices(fts))
-    name = dataset_variable_name(metadata)
-
-    raw = jra55_read_data(ds, name, :, :, nn)
+    nn = time_indices(fts)
+    set_jra55_slices!(fts, ds, dataset_variable_name(metadata), nn, eachindex(nn), metadata)
     close(ds)
-    full_data = reshape(raw, length(λc), length(φc), 1, length(nn))
-
-    set_region_data!(fts, full_data, λc, φc, metadata)
     fill_halo_regions!(fts)
     return nothing
 end
@@ -98,14 +99,8 @@ function Oceananigans.Fields.set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.
             end
         end
 
-        if !isempty(nn)
-            λc = ds["lon"][:]
-            φc = ds["lat"][:]
-            raw = jra55_read_data(ds, name, :, :, nn)
-            full_data = reshape(raw, length(λc), length(φc), 1, length(nn))
-            set_region_data!(fts, full_data, λc, φc, metadata; slot_indices = ftsn_loc)
-            append!(filled_slots, ftsn_loc)
-        end
+        set_jra55_slices!(fts, ds, name, nn, ftsn_loc, metadata)
+        append!(filled_slots, ftsn_loc)
         close(ds)
     end
 
