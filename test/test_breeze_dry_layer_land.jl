@@ -136,11 +136,10 @@ end
             update_state!(model_with_radiation)
             surface_energy_with_radiation = Array(interior(model_with_radiation.land.fluxes.surface_energy_flux))
 
-            # Net radiative flux into the surface, reconstructed from the kernel's
-            # own stored diagnostics (downwelling stored negative, upwelling positive).
+            # Net upward radiative flux (downwelling negative, upwelling positive).
             rf = model_with_radiation.radiation.interface_fluxes.land
             ΣQʳᵃᵈ = Array(interior(rf.downwelling_longwave)) .+
-                    Array(interior(rf.downwelling_shortwave)) .-
+                    Array(interior(rf.downwelling_shortwave)) .+
                     Array(interior(rf.upwelling_longwave))
 
             model_without_radiation = build_coupled_test_model(arch; M₀ = 200.0, T₀ = 295.0, with_radiation = false)
@@ -150,9 +149,7 @@ end
             @test maximum(abs, ΣQʳᵃᵈ) > 0   # radiation contributes a nonzero flux
             # ... which actually changed the surface energy flux (not dropped):
             @test surface_energy_with_radiation != surface_energy_without_radiation
-            # `surface_energy_flux` is positive-upward, so net-downward radiation
-            # enters as −ΣQʳᵃᵈ, added on top of the turbulent flux:
-            @test surface_energy_with_radiation ≈ surface_energy_without_radiation .- ΣQʳᵃᵈ
+            @test surface_energy_with_radiation ≈ surface_energy_without_radiation .+ ΣQʳᵃᵈ
         end
     end
 end
