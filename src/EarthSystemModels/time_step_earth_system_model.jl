@@ -11,6 +11,9 @@ using .InterfaceComputations: compute_atmosphere_ocean_fluxes!,
 apply_air_sea_radiative_fluxes!(::Any) = nothing
 apply_air_sea_ice_radiative_fluxes!(::Any) = nothing
 
+# Fills the ocean's barotropic potential over the interval [t, t + Δt] before the ocean steps.
+update_barotropic_potential!(atmosphere, coupled_model, Δt) = nothing
+
 function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     maybe_prepare_first_time_step!(coupled_model, Δt, callbacks)
 
@@ -23,6 +26,7 @@ function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, �
     !isnothing(radiation)  && time_step!(radiation, Δt)
     !isnothing(atmosphere) && time_step!(atmosphere, Δt)
     !isnothing(land)       && time_step!(land, Δt)
+    update_barotropic_potential!(atmosphere, coupled_model, Δt)
     # Ocean before sea ice: the ice-ocean drag is evaluated against the just-updated ocean velocity.
     !isnothing(ocean)      && time_step!(ocean, Δt)
     !isnothing(sea_ice)    && time_step!(sea_ice, Δt)

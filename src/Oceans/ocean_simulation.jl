@@ -287,6 +287,7 @@ end
                                  bottom_drag_background_velocity = 0,
                                  implicit_bottom_drag = true,
                                  forcing = NamedTuple(),
+                                 barotropic_potential = TimeInterpolatedPotential(grid, clock),
                                  additional_surface_fluxes = NamedTuple(),
                                  freshwater_tracer_content = NamedTuple(),
                                  surface_exchanged_tracers = (),
@@ -330,7 +331,7 @@ It then wraps the model into an Oceananigans's `Simulation` with the specified t
 For multi-column grids:
 - Quadratic bottom drag is automatically applied to both `u` and `v`.
 - Immersed-boundary bottom drag conditions are constructed for both velocity components.
-- Barotropic potential forcings for `u` and `v` are also added automatically, and
+- Forcing by the gradient of `barotropic_potential` is added to `u` and `v`, and
   user forcing tuples (e.g. `forcing = (u = ..., v = ...)`) are appended if provided.
 
 ### Radiative forcing
@@ -371,6 +372,11 @@ override the defaults on a per-field basis.
 - `implicit_bottom_drag`: whether the bottom and immersed quadratic drag are applied as affine fluxes
   with the drag coefficient carried in the vertical solver's diagonal. Default: `true`.
 - `forcing`: Named tuple of additional forcing(s) for individual fields.
+- `barotropic_potential`: potential `Φ` (m² s⁻²) whose horizontal gradient `-∇Φ` forces `u` and `v`
+  on multi-column grids. May be a `TimeInterpolatedPotential` filled from the atmospheric surface pressure
+  by a coupled model, a function `Φ(x, y, t)` (e.g. a tidal potential, with `(λ, φ)` on spherical grids),
+  a `Field`, a tuple of these whose sum is the potential, or `nothing`.
+  Default: `TimeInterpolatedPotential(grid, clock)`.
 - `additional_surface_fluxes`: Named tuple of additional top boundary flux conditions (e.g. `(; S=SurfaceFluxRestoring(...))`) for any field (`u`, `v`, or any tracer).
 - `freshwater_tracer_content`: Named tuple giving, per tracer, the concentration carried into that
   tracer by the net freshwater volume flux (e.g. `Σᵢ cᵢ Jʷᵢ`). Defaults to `ZeroField()` for every
@@ -411,6 +417,7 @@ function hydrostatic_ocean_simulation(grid;
                                       bottom_drag_background_velocity = 0,
                                       implicit_bottom_drag = true,
                                       forcing = NamedTuple(),
+                                      barotropic_potential = TimeInterpolatedPotential(grid, clock),
                                       additional_surface_fluxes = NamedTuple(),
                                       freshwater_tracer_content::NamedTuple = NamedTuple(),
                                       biogeochemistry = nothing,
@@ -478,14 +485,14 @@ function hydrostatic_ocean_simulation(grid;
         u_immersed_bc = ImmersedBoundaryCondition(bottom = bottom_drag_bc(u_immersed_drag_coefficient, u_immersed_bottom_drag, drag_parameters, implicit_bottom_drag))
         v_immersed_bc = ImmersedBoundaryCondition(bottom = bottom_drag_bc(v_immersed_drag_coefficient, v_immersed_bottom_drag, drag_parameters, implicit_bottom_drag))
 
-        # Forcing for u, v
-        barotropic_potential = Field{Center, Center, Nothing}(grid)
-        u_forcing = BarotropicPotentialForcing(XDirection(), barotropic_potential)
-        v_forcing = BarotropicPotentialForcing(YDirection(), barotropic_potential)
+        if !isnothing(barotropic_potential)
+            u_forcing = BarotropicPotentialForcing(XDirection(), barotropic_potential)
+            v_forcing = BarotropicPotentialForcing(YDirection(), barotropic_potential)
 
-        :u ∈ keys(forcing) && (u_forcing = (u_forcing, forcing[:u]))
-        :v ∈ keys(forcing) && (v_forcing = (v_forcing, forcing[:v]))
-        forcing = merge(forcing, (u=u_forcing, v=v_forcing))
+            :u ∈ keys(forcing) && (u_forcing = (u_forcing, forcing[:u]))
+            :v ∈ keys(forcing) && (v_forcing = (v_forcing, forcing[:v]))
+            forcing = merge(forcing, (u=u_forcing, v=v_forcing))
+        end
     end
 
     if !isnothing(radiative_forcing)

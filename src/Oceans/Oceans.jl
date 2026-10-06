@@ -1,6 +1,6 @@
 module Oceans
 
-export ocean_simulation, river_mouth_vertical_diffusivity, SlabOcean, PrescribedOcean,
+export ocean_simulation, river_mouth_vertical_diffusivity, SlabOcean, PrescribedOcean, TimeInterpolatedPotential,
        TwoColorRadiation, ChlorophyllOptics, absorption_coefficient, equivalent_chlorophyll
 
 using Adapt: Adapt, adapt
