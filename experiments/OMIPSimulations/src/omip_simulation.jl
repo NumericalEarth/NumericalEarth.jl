@@ -462,9 +462,9 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   cells), `PartialCellBottom` or `ShavedCellBottom`. Default: `GridFittedBottom`.
 - `sea_ice_immersed_latitude`: run the sea ice on the ocean grid with every column in a latitude band (in
   degrees) also immersed, since sea ice never forms there. The sea-ice kernels then skip those columns, which
-  makes the sea ice (in particular its EVP solve) cheaper. A tuple `(south, north)`, for `south < φ < north`
-  (e.g. `(-50, 35)`). Needs `immersed_bottom = GridFittedBottom`. Default: `nothing` (the sea ice uses the
-  ocean grid).
+  makes the sea ice (in particular its EVP solve) cheaper. A tuple `(south, north)`, for `south < φ < north`,
+  or `nothing` to run the sea ice on the ocean grid. Needs `immersed_bottom = GridFittedBottom`.
+  Default: `(-50, 35)` with `GridFittedBottom`, `nothing` otherwise.
 - `Δz_top`: target surface-cell thickness in metres (sets the exponential vertical scale). Per-config
   default: `1.5` for `:quarterdegree`/`:twelfthdegree`/`:test`, `nothing` (scale derived from
   `depth`/`Nz`) otherwise.
@@ -778,7 +778,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          southern_sea_ice_initial_date = DateTime(1993, 1, 1),
                          Δzmax = nothing,
                          immersed_bottom = GridFittedBottom,
-                         sea_ice_immersed_latitude = nothing,
+                         sea_ice_immersed_latitude = immersed_bottom === GridFittedBottom ? (-50, 35) : nothing,
                          mixed_layer_tapering = false,
                          bottom_layer_tapering_depth = 0,
                          normalize_freshwater = false,
