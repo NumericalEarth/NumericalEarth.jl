@@ -2239,13 +2239,6 @@ config_Δz_top(::Val{:quarterdegree}) = 1.5
 config_Δz_top(::Val{:twelfthdegree}) = 1.5
 config_Δz_top(::Val{:test})          = 1.5
 
-# Buoyancy gradients are only needed by the GM/Redi closures; the eddy-resolving
-# configurations run without isopycnal diffusivities, so skip materializing them.
-config_materialize_buoyancy_gradients(::Val)                 = true
-config_materialize_buoyancy_gradients(::Val{:quarterdegree}) = false
-config_materialize_buoyancy_gradients(::Val{:twelfthdegree}) = false
-config_materialize_buoyancy_gradients(::Val{:test})          = false
-
 
 """
     omip_radiative_forcing(grid, chlorophyll, restoring_dir)
@@ -2413,7 +2406,7 @@ function build_ocean(config, grid;
                              implicit_bottom_drag,
                              bottom_drag_background_velocity,
                              timestepper = :SplitRungeKutta3,
-                             materialize_buoyancy_gradients = config_materialize_buoyancy_gradients(config),
+                             materialize_buoyancy_gradients = true, # stored once per stage instead of recomputed in the triad/CATKE kernels
                              free_surface = barotropic_free_surface(grid, barotropic_substeps, Δt),
                              additional_surface_fluxes,
                              forcing,
