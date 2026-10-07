@@ -36,6 +36,7 @@ using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, interior, interpolate!
 using Oceananigans.Forcings: Relaxation
 using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
+using Oceananigans.Grids: OrthogonalSphericalShellGrid
 using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid, lcc_forward
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
@@ -114,6 +115,10 @@ function davies_relaxation_mask(grid::LambertConformalConicGrid, width; ramp = S
         return oftype(d, ramp(s))
     end
 end
+
+# Only the Lambert-conformal mapping carries a projected plane to measure the wall distance in.
+davies_relaxation_mask(grid::OrthogonalSphericalShellGrid, width; ramp = SmoothStepRamp()) =
+    throw(ArgumentError("davies_relaxation_mask requires a LambertConformalConicGrid or a LatitudeLongitudeGrid, got a $(nameof(typeof(grid.conformal_mapping))) mapping"))
 
 # Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` metres of the domain, for the ρw lid sponge.
 # `z_top` is read once host-side under `@allowscalar`: a `znode` on a terrain-following GPU grid
