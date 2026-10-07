@@ -383,7 +383,7 @@ end
     @test values[1, 1, 1, 2] ≈ (1 * 4 + 8 * 5 + 8 * 6 + 8 * 7 + 3 * 8) / 28
     # The record ends on 6 March, five days into the last window.
     @test values[1, 1, 1, 3] ≈ 8
-    @test averaged.times ≈ [15.5, 45, 61.5] .* 86400
+    @test Array(averaged.times) ≈ [15.5, 45, 61.5] .* 86400
 
     @test averaged.indices == ramp.indices
     @test averaged.time_indexing isa Cyclical
