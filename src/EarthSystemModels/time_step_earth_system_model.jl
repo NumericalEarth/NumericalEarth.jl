@@ -23,10 +23,10 @@ function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, �
     sea_ice    = coupled_model.sea_ice
     ocean      = coupled_model.ocean
 
+    update_barotropic_potential!(atmosphere, coupled_model, Δt)
     !isnothing(radiation)  && time_step!(radiation, Δt)
     !isnothing(atmosphere) && time_step!(atmosphere, Δt)
     !isnothing(land)       && time_step!(land, Δt)
-    update_barotropic_potential!(atmosphere, coupled_model, Δt)
     # Ocean before sea ice: the ice-ocean drag is evaluated against the just-updated ocean velocity.
     !isnothing(ocean)      && time_step!(ocean, Δt)
     !isnothing(sea_ice)    && time_step!(sea_ice, Δt)

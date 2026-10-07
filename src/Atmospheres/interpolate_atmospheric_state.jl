@@ -92,6 +92,7 @@ function EarthSystemModels.update_barotropic_potential!(atmosphere::PrescribedAt
     clock = coupled_model.clock
 
     for (potential, t) in ((Φ.previous, clock.time), (Φ.next, next_time(clock, Δt)))
+        update_field_time_series!(p, Time(t))
         time_interpolator = cpu_interpolating_time_indices(arch, p.times, p.time_indexing, t)
         launch!(arch, grid, interface_kernel_parameters(grid),
                 _interpolate_barotropic_potential!,
