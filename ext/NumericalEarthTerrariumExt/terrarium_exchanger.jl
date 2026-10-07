@@ -15,11 +15,14 @@
 #####
 
 using Oceananigans: Field, Center, architecture
-using Oceananigans.Fields: ZeroField
+using Oceananigans.Fields: ZeroField, interior
 using Oceananigans.Utils: launch!
 
 import NumericalEarth.EarthSystemModels: interpolate_state!, update_net_fluxes!, exchange_grid
-import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
+import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger,
+    land_surface_energy_flux,
+    land_surface_shortwave_up,
+    land_surface_longwave_up
 
 # The exchange grid is the Terrarium land's (flattened) Oceananigans field grid, on which all
 # state/flux `Field`s live. `land` is an Oceananigans `Simulation` wrapping the `ModelIntegrator`
@@ -27,6 +30,16 @@ import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchange
 # `exchange_grid(..., land) = land.grid` accessor does not resolve on a bare `Simulation`, so
 # specialize it here.
 exchange_grid(atmosphere, ::Nothing, ::Nothing, land::TerrariumSimulation) = land.model.grid
+
+# The coupler writes these at `[i, j, 1]`, but `ground_heat_flux` is a z-windowed `Ground(Top())`
+# field whose absolute index is the top face. `interior` aliases the same memory with 1-based
+# indexing, so the returned views are 2D from the coupler's point of view.
+# TODO: Figure out how to handle the case where snow is present
+land_surface_energy_flux(land::TerrariumSimulation) = interior(land.model.state.ground_heat_flux)
+
+# Targets for the upwelling radiation `PrescribedRadiativeFluxes` declares as inputs.
+land_surface_shortwave_up(land::TerrariumSimulation) = interior(land.model.state.surface_shortwave_up)
+land_surface_longwave_up(land::TerrariumSimulation) = interior(land.model.state.surface_longwave_up)
 
 # Land exchanger: expose skin temperature `T` (K) and surface `saturation`, the two
 # fields the atmosphere-land flux kernel reads. No regridder (exchange grid == land grid).
@@ -44,6 +57,7 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         # Uppermost soil layer temperature is the land surface temperature (°C -> K).
+        # `soil_T` is a full ground field, not a slice, so index the top cell explicitly.
         T[i, j, 1] = soil_T[i, j, Nz] + T₀
         saturation[i, j, 1] = soil_saturation[i, j, Nz]
     end
@@ -69,6 +83,7 @@ end
 #####
 
 @kernel function _terrarium_push_forcing!(skin_temperature, sensible_heat_flux, latent_heat_flux,
+                                          ground_heat_flux,
                                           air_temperature, specific_humidity, air_pressure,
                                           windspeed, rainfall, snowfall,
                                           interface_temperature, sensible_heat, latent_heat,
@@ -76,16 +91,19 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         # Prescribed skin temperature and turbulent fluxes from the atmosphere-land interface.
-        skin_temperature[i, j, 1]   = interface_temperature[i, j, 1] - T₀   # K -> °C
-        sensible_heat_flux[i, j, 1] = sensible_heat[i, j, 1]
-        latent_heat_flux[i, j, 1]   = latent_heat[i, j, 1]
+        # Note that the skin/flux variable here are 2D *sliced* Fields so we must select the last index
+        skin_temperature[i, j, end]   = interface_temperature[i, j, 1] - T₀   # K -> °C
+        sensible_heat_flux[i, j, end] = sensible_heat[i, j, 1]
+        latent_heat_flux[i, j, end]   = latent_heat[i, j, 1]
+        # Turbulent part of `G`; `apply_air_land_radiative_fluxes!` adds the radiative part.
+        ground_heat_flux[i, j, end]   = sensible_heat[i, j, 1] + latent_heat[i, j, 1]
         # Near-surface atmospheric forcing for Terrarium's hydrology / evapotranspiration.
-        air_temperature[i, j, 1]    = atmos_T[i, j, 1] - T₀                 # K -> °C
-        specific_humidity[i, j, 1]  = atmos_q[i, j, 1]
-        air_pressure[i, j, 1]       = atmos_p[i, j, 1]
-        windspeed[i, j, 1]          = sqrt(atmos_u[i, j, 1]^2 + atmos_v[i, j, 1]^2)
-        rainfall[i, j, 1]           = Jʳⁿ[i, j, 1]
-        snowfall[i, j, 1]           = Jˢⁿ[i, j, 1]
+        air_temperature[i, j, 1]      = atmos_T[i, j, 1] - T₀                 # K -> °C
+        specific_humidity[i, j, 1]    = atmos_q[i, j, 1]
+        air_pressure[i, j, 1]         = atmos_p[i, j, 1]
+        windspeed[i, j, 1]            = sqrt(atmos_u[i, j, 1]^2 + atmos_v[i, j, 1]^2)
+        rainfall[i, j, 1]             = Jʳⁿ[i, j, 1]
+        snowfall[i, j, 1]             = Jˢⁿ[i, j, 1]
     end
 end
 
@@ -95,8 +113,8 @@ end
 @kernel function _terrarium_push_downwelling!(shortwave_down, longwave_down, ℐꜜˢʷ, ℐꜜˡʷ)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        shortwave_down[i, j, 1] = ℐꜜˢʷ[i, j, 1]
-        longwave_down[i, j, 1] = ℐꜜˡʷ[i, j, 1]
+        shortwave_down[i, j, end] = ℐꜜˢʷ[i, j, 1]
+        longwave_down[i, j, end] = ℐꜜˡʷ[i, j, 1]
     end
 end
 
@@ -119,6 +137,7 @@ function update_net_fluxes!(coupled_model, land::TerrariumSimulation)
             state.skin_temperature,
             state.sensible_heat_flux,
             state.latent_heat_flux,
+            state.ground_heat_flux,
             state.air_temperature,
             state.specific_humidity,
             state.air_pressure,
