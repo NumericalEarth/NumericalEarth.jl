@@ -1,5 +1,5 @@
 using ClimaSeaIce: SeaIceThermodynamics
-using ClimaSeaIce.SeaIceDynamics: SemiImplicitStress
+using ClimaSeaIce.SeaIceDynamics: SemiImplicitStress, update_external_stress!
 using Oceananigans.Fields: Field, compute!
 using Oceananigans.TimeSteppers: maybe_prepare_first_time_step!
 
@@ -27,9 +27,14 @@ end
 
 refresh_drag_reference!(stress) = nothing
 
+# When the sea-ice grid differs from the ocean grid (e.g. extra immersed columns, or extended halos),
+# ClimaSeaIce keeps a copy of the reference velocities on the sea-ice grid (`uₑ`, `vₑ`) and refreshes it
+# only during its momentum step. The ice-ocean fluxes computed below read that copy, so refresh it
+# here too, or they use the ocean velocity of the previous step. A no-op when the copy is the source.
 function refresh_drag_reference!(stress::SemiImplicitStress)
     recompute_operand!(stress.uₑ₀)
     recompute_operand!(stress.vₑ₀)
+    update_external_stress!(stress, nothing)
     return nothing
 end
 

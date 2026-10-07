@@ -85,7 +85,10 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     liquidus = phase_transitions.liquidus
     L = phase_transitions.reference_latent_heat
 
-    grid = sea_ice.model.grid
+    # The fluxes live on the exchange (ocean) grid, which may have fewer immersed columns than the
+    # sea-ice grid (e.g. a sea-ice grid immersed where ice never forms): compute them on that grid,
+    # so every ocean column is written and the frazil adjustment reaches all of the ocean.
+    grid = interface.fluxes.interface_heat.grid
     clock = sea_ice.model.clock
     arch = architecture(grid)
 
