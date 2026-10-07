@@ -1,8 +1,10 @@
 using ...Atmospheres: Atmospheres, PrescribedPrecipitationFlux, AtmosphereThermodynamicsParameters
 using ...EarthSystemModels.InterfaceComputations: saturation_specific_humidity
+using Adapt: Adapt
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.Fields: CenterField, interior
+using Oceananigans.OutputReaders: OutputReaders, AbstractInMemoryBackend, InMemory
 using Thermodynamics: Liquid
 
 const ERA5PrescribedAtmosphere = Atmospheres.PrescribedAtmosphere{<:ERA5Dataset}
@@ -15,6 +17,33 @@ ERA5PrescribedAtmosphere(arch::Distributed; kw...) = ERA5PrescribedAtmosphere(ch
     @inbounds Tᵈ = dewpoint[i, j, k]
     @inbounds pˢ = pressure[i, j, k]
     return saturation_specific_humidity(ℂ, Tᵈ, pˢ, phase)
+end
+
+# A `FieldTimeSeries` backend that derives each in-memory window of specific humidity from the
+# same window of the dewpoint and pressure series, so qᵛ holds `length` snapshots like the
+# other ERA5 fields rather than the whole record.
+struct DewpointHumidity{D, P, C} <: AbstractInMemoryBackend{Int}
+    start :: Int
+    length :: Int
+    dewpoint :: D
+    pressure :: P
+    thermodynamics_parameters :: C
+end
+
+OutputReaders.new_backend(b::DewpointHumidity, start, length) =
+    DewpointHumidity(start, length, b.dewpoint, b.pressure, b.thermodynamics_parameters)
+
+Adapt.adapt_structure(to, b::DewpointHumidity) = InMemory(b.start, b.length)
+
+const DewpointHumidityFTS = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DewpointHumidity}
+
+function Oceananigans.Fields.set!(qᵛ::DewpointHumidityFTS, backend = qᵛ.backend)
+    Tᵈ, p, ℂ = backend.dewpoint, backend.pressure, backend.thermodynamics_parameters
+    for n in time_indices(qᵛ)
+        q = KernelFunctionOperation{Center, Center, Nothing}(specific_humidity_from_dewpoint, qᵛ.grid, Tᵈ[n], p[n], ℂ, Liquid())
+        set!(qᵛ[n], q)
+    end
+    return nothing
 end
 
 """
@@ -33,8 +62,9 @@ end
 
 Return a [`PrescribedAtmosphere`](@ref) representing ERA5 single-level reanalysis, suitable for regional hindcast forcing.
 Eastward/northward 10 m winds, 2 m temperature, and surface pressure are loaded directly; specific humidity is derived from
-the 2 m dewpoint and surface pressure (`qᵛ = qᵛ⁺(Tᵈ, pˢ)`); total precipitation is converted from hourly-accumulated depth (m)
-to a mass flux (kg m⁻² s⁻¹) at load time and wrapped in a `PrescribedPrecipitationFlux`.
+the 2 m dewpoint and surface pressure (`qᵛ = qᵛ⁺(Tᵈ, pˢ)`) one in-memory window at a time; total precipitation is
+converted from hourly-accumulated depth (m) to a mass flux (kg m⁻² s⁻¹) at load time and wrapped in a
+`PrescribedPrecipitationFlux`.
 
 `region` (a `BoundingBox`) restricts the download and the native grid to a sub-domain; the coupled model interpolates the
 native-resolution atmosphere onto the exchange grid. Pass `thermodynamics_parameters` to share a specific thermodynamics with
@@ -80,14 +110,10 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
 
     ℂ = isnothing(thermodynamics_parameters) ? AtmosphereThermodynamicsParameters(FT) :
                                                 thermodynamics_parameters
-    phase = Liquid()
 
-    qᵛ = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    for n in eachindex(times)
-        q = KernelFunctionOperation{Center, Center, Nothing}(specific_humidity_from_dewpoint,
-                                                             grid, Tᵈ[n], p[n], ℂ, phase)
-        set!(qᵛ[n], q)
-    end
+    backend = DewpointHumidity(1, length(Tᵈ.backend), Tᵈ, p, ℂ)
+    qᵛ = FieldTimeSeries{Center, Center, Nothing}(grid, times; backend, time_indexing = Tᵈ.time_indexing)
+    set!(qᵛ)
 
     precipitation_flux = PrescribedPrecipitationFlux(; rain)
 
