@@ -997,6 +997,38 @@ end
         end
     end
 
+    @testset "split_era5_nc_multistep reads time-chunked variables block by block" begin
+        mktempdir() do dir
+            src_path = joinpath(dir, "src.nc")
+            Nx, Ny, Nt = 4, 3, 7
+            NCDatasets.Dataset(src_path, "c") do ds
+                NCDatasets.defDim(ds, "longitude", Nx)
+                NCDatasets.defDim(ds, "latitude",  Ny)
+                NCDatasets.defDim(ds, "valid_time", Nt)
+                NCDatasets.defVar(ds, "longitude", collect(1.0:Nx), ("longitude",))
+                NCDatasets.defVar(ds, "latitude", collect(1.0:Ny), ("latitude",))
+                NCDatasets.defVar(ds, "valid_time", collect(1:Nt), ("valid_time",))
+                # Chunks span 3 timesteps, so 7 timesteps make blocks 1:3, 4:6, and 7:7
+                NCDatasets.defVar(ds, "u", Float32.(reshape(1:Nx*Ny*Nt, Nx, Ny, Nt)), ("longitude", "latitude", "valid_time");
+                                  chunksizes = [Nx, Ny, 3], deflatelevel = 1)
+            end
+
+            # Out of order, to exercise reloading a block
+            tidxs = [5, 1, 7, 2, 6, 3, 4]
+            triples = [("u", tidx, joinpath(dir, "u_t$(tidx).nc")) for tidx in tidxs]
+            split_era5_nc_multistep(src_path, triples, coord_vars, Set(["valid_time"]))
+
+            NCDatasets.Dataset(src_path, "r") do src
+                for (_, tidx, dst_path) in triples
+                    NCDatasets.Dataset(dst_path, "r") do dst
+                        @test dst["u"].var[:, :, 1] == src["u"].var[:, :, tidx]
+                        @test dst["valid_time"][:] == [tidx]
+                    end
+                end
+            end
+        end
+    end
+
     @testset "split_era5_nc_by_datetime selects timesteps by valid_time, not request position" begin
         # CDS expands `day × time` into a Cartesian product, so a window crossing midnight comes
         # back with extra, sorted timesteps. The split keys on valid_time.
