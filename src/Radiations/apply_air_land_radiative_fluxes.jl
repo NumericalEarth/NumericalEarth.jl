@@ -43,11 +43,12 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     clock = coupled_model.clock
     radiation_state = coupled_model.interfaces.exchanger.radiation.state
 
-    # Skip lands that expose no flux accumulator (e.g. a land that computes its own radiation
-    # internally). Guard `hasproperty(land, :fluxes)`
-    fluxes = hasproperty(land, :fluxes) ? land.fluxes : nothing
-    hasproperty(fluxes, :surface_energy_flux) || return nothing
-    land_energy_flux = fluxes.surface_energy_flux
+    # Extract surface energy flux Field from land
+    land_energy_flux = land_surface_energy_flux(land)
+
+    # `nothing` for components that diagnose their own upwelling radiation.
+    land_shortwave_up = land_surface_shortwave_up(land)
+    land_longwave_up = land_surface_longwave_up(land)
 
     launch!(arch, grid, :xy,
             _apply_air_land_radiative_fluxes!,
@@ -57,10 +58,16 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
             clock,
             rk,
             radiation_state,
-            al_interface.temperature)
+            al_interface.temperature,
+            land_shortwave_up,
+            land_longwave_up)
 
     return nothing
 end
+
+# Opting out with `nothing` is resolved at compile time, so it costs nothing in the kernel.
+@inline _maybe_write_up!(::Nothing, i, j, value) = nothing
+@inline _maybe_write_up!(field, i, j, value) = @inbounds field[i, j, 1] = value
 
 @kernel function _apply_air_land_radiative_fluxes!(land_energy_flux,
                                                   interface_radiative_flux,
@@ -68,7 +75,9 @@ end
                                                   clock,
                                                   rk,
                                                   radiation_state,
-                                                  land_surface_temperature)
+                                                  land_surface_temperature,
+                                                  land_shortwave_up,
+                                                  land_longwave_up)
 
     i, j = @index(Global, NTuple)
     kᴺ = size(grid, 3)
@@ -84,6 +93,9 @@ end
     ℐₐˡʷ = absorbed_longwave_radiation(rs.ϵ, rs.ℐꜜˡʷ)
     ℐₜˢʷ = transmitted_shortwave_radiation(rs.α, rs.ℐꜜˢʷ)
 
+    # Reflected shortwave, positive upward (`ΣQ_rad` uses the absorbed part instead).
+    ℐꜛˢʷ = rs.α * rs.ℐꜜˢʷ
+
     # Total radiative contribution to surface energy balance, positive into the land.
     ΣQ_rad = -ℐꜛˡʷ - (ℐₐˡʷ + ℐₜˢʷ)
 
@@ -96,4 +108,8 @@ end
         interface_radiative_flux.downwelling_longwave[i, j, 1]  = - ℐₐˡʷ
         interface_radiative_flux.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ
     end
+
+    # Same `Tₛ`, `α`, `ϵ` as `ΣQ_rad`, so the component cannot disagree with the assembled budget.
+    _maybe_write_up!(land_shortwave_up, i, j, ℐꜛˢʷ)
+    _maybe_write_up!(land_longwave_up, i, j, ℐꜛˡʷ)
 end
