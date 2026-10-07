@@ -6,7 +6,7 @@ using NCDatasets: NCDataset
 
 using NumericalEarth.DataWrangling: BoundingBox, native_grid
 using NumericalEarth.DataWrangling.SoilGrids
-using NumericalEarth.DataWrangling.SoilGrids: Grid250m
+using NumericalEarth.DataWrangling.SoilGrids: SoilGrids250m
 
 using Oceananigans.Grids: λnodes, φnodes
 
@@ -18,13 +18,13 @@ using Oceananigans.Grids: λnodes, φnodes
 const soilgrids_region = BoundingBox(longitude = (-0.35, -0.25), latitude = (51.20, 51.27))
 
 @testset "Downloading SoilGrids2 from ISRIC directly" begin
-    # Grid1000m shares this exact same download/warp/stack code path (soilgrids_raster_geometry
+    # SoilGrids1000m shares this exact same download/warp/stack code path (soilgrids_raster_geometry
     # → soilgrids_depth_window → gdalwarp), differing only in the target extent that native_grid
-    # computes from `region` — global for Grid1000m, this bounded window for Grid250m.
+    # computes from `region` — global for SoilGrids1000m, this bounded window for SoilGrids250m.
     # The global path is exercised offline (`test_soilgrids.jl`'s "raster geometry matches
-    # native_grid" testset checks its Nx/Ny/extent); a *real* Grid1000m download is a global
+    # native_grid" testset checks its Nx/Ny/extent); a *real* SoilGrids1000m download is a global
     # ~19 GB pull per variable+statistic, too expensive to run here routinely.
-    dataset = SoilGrids2(resolution = Grid250m)
+    dataset = SoilGrids2(resolution = SoilGrids250m)
     metadatum = Metadatum(:clay_fraction; dataset, region = soilgrids_region)
 
     # Start from a clean file so a stale cache cannot stand in for the download.
@@ -45,8 +45,8 @@ const soilgrids_region = BoundingBox(longitude = (-0.35, -0.25), latitude = (51.
     @test length(unique(vals)) > 1   # a real spatial field, not a constant fill
 end
 
-@testset "Grid250m lands on the model's own native grid" begin
-    dataset = SoilGrids2(resolution = Grid250m)
+@testset "SoilGrids250m lands on the model's own native grid" begin
+    dataset = SoilGrids2(resolution = SoilGrids250m)
     metadatum = Metadatum(:clay_fraction; dataset, region = soilgrids_region)
     download(metadatum)
 
@@ -67,7 +67,7 @@ end
 end
 
 @testset "SoilGrids2 corrected depth-unit grid extent" begin
-    dataset = SoilGrids2(resolution = Grid250m)
+    dataset = SoilGrids2(resolution = SoilGrids250m)
     metadatum = Metadatum(:clay_fraction; dataset, region = soilgrids_region)
     grid = native_grid(metadatum)
 

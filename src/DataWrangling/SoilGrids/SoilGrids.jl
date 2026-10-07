@@ -36,16 +36,16 @@ The three ways [`SoilGrids2`](@ref) can source its data:
 
 - `Clenshaw10km`: a small preprocessed global NetCDF projected onto a standard Clenshaw-Curtis grid.
   No ArchGDAL dependency required.
-- `Grid1000m`: downloads directly from ISRIC (`files.isric.org`) at 1000 m, reprojecting
+- `SoilGrids1000m`: downloads directly from ISRIC (`files.isric.org`) at 1000 m, reprojecting
   each depth's Homolosine (IGH) VRT to EPSG:4326 with GDAL. Global by default (no region needed);
   at 1000 m the full global 6-depth stack for one variable+statistic is ~19 GB.
-- `Grid250m`: the same ISRIC-direct pipeline at native resolution. A global read at 250 m
-  would be ~300 GB per variable, so `Grid250m` requires a bounded `region::BoundingBox`.
+- `SoilGrids250m`: the same ISRIC-direct pipeline at native resolution. A global read at 250 m
+  would be ~300 GB per variable, so `SoilGrids250m` requires a bounded `region::BoundingBox`.
 
-Note that `Grid1000m`/`Grid250m` require `using ArchGDAL` (for the Homolosine → EPSG:4326
+Note that `SoilGrids1000m`/`SoilGrids250m` require `using ArchGDAL` (for the Homolosine → EPSG:4326
 reprojection).
 """
-@enum Resolution Grid250m Grid1000m Clenshaw10km
+@enum Resolution SoilGrids250m SoilGrids1000m Clenshaw10km
 
 download_SoilGrids2_cache::String = ""
 function __init__()
@@ -54,7 +54,7 @@ function __init__()
 end
 
 """
-    SoilGrids2(; statistic = Mean, resolution = Grid1000m)
+    SoilGrids2(; statistic = Mean, resolution = SoilGrids1000m)
 
 SoilGrids 2.0 global soil properties (ISRIC, Poggio et al., 2021), predicted by quantile
 regression forest over a large set of environmental covariates.
@@ -66,7 +66,7 @@ whose vertical axis carries the depths (deepest first).
 
 `statistic` selects which prediction layer to load (see [`Statistic`](@ref)); `resolution`
 selects how the data is sourced (see [`Resolution`](@ref)) — the default
-`Grid1000m` downloads directly from ISRIC and requires `using ArchGDAL`.
+`SoilGrids1000m` downloads directly from ISRIC and requires `using ArchGDAL`.
 
 Data source: https://www.isric.org/explore/soilgrids (CC-BY 4.0).
 
@@ -76,14 +76,14 @@ using NumericalEarth
 SoilGrids2()
 
 # output
-SoilGrids2(statistic = Mean, resolution = Grid1000m)
+SoilGrids2(statistic = Mean, resolution = SoilGrids1000m)
 ```
 """
 @kwdef struct SoilGrids2 <: AbstractStaticDataset
     "Specifies which dataset layer to load variables from; see [SoilGrids.Statistic](@ref). Defaults to `Mean`"
     statistic::Statistic = Mean
-    "Specifies how the data is sourced; see [`Resolution`](@ref). Defaults to `Grid1000m`"
-    resolution::Resolution = Grid1000m
+    "Specifies how the data is sourced; see [`Resolution`](@ref). Defaults to `SoilGrids1000m`"
+    resolution::Resolution = SoilGrids1000m
 end
 
 Base.summary(dataset::SoilGrids2) = string("SoilGrids2(statistic = ", dataset.statistic, ", resolution = ", dataset.resolution, ")")
@@ -111,8 +111,8 @@ The native pixel size in meters of a [`Resolution`](@ref). Note that, for the po
 dataset, the native grid is spherical so the grid spacing in meters is only approximate.
 """
 function soilgrids_spacing_meters(resolution::Resolution)
-    resolution === Grid250m  && return 250
-    resolution === Grid1000m && return 1000
+    resolution === SoilGrids250m  && return 250
+    resolution === SoilGrids1000m && return 1000
     resolution === Clenshaw10km && return 10_000
     error("unsupported resolution $resolution")
 end
@@ -182,11 +182,11 @@ end
 DataWrangling.latitude_interfaces(::SoilGrids2) = (-90, 90)
 DataWrangling.reversed_latitude_axis(dataset::SoilGrids2)  = dataset.resolution === Clenshaw10km
 DataWrangling.reversed_vertical_axis(dataset::SoilGrids2)  = dataset.resolution === Clenshaw10km
-DataWrangling.windowed_retrieval(dataset::SoilGrids2)      = dataset.resolution === Grid250m
+DataWrangling.windowed_retrieval(dataset::SoilGrids2)      = dataset.resolution === SoilGrids250m
 
 function DataWrangling.metadata_filename(dataset::SoilGrids2, name, date, region)
     dataset.resolution === Clenshaw10km && return "SoilGrids2_clenshaw_10km_full.nc"
-    resolution_tag = dataset.resolution === Grid1000m ? "1000m" : "250m"
+    resolution_tag = dataset.resolution === SoilGrids1000m ? "1000m" : "250m"
     return string("SoilGrids2_", name, "_", dataset.statistic, "_", resolution_tag, "_",
                  bounding_box_suffix(region), ".nc")
 end
@@ -194,20 +194,20 @@ end
 """
     validate_dataset_coverage(grid, metadata::SoilGrids2Metadatum)
 
-`SoilGrids2(resolution = Grid250m)` must be used with a bounded region; at the native 250m
-resolution, a global read would be ~300 GB per variable. `Grid1000m` and `Clenshaw10km` are
+`SoilGrids2(resolution = SoilGrids250m)` must be used with a bounded region; at the native 250m
+resolution, a global read would be ~300 GB per variable. `SoilGrids1000m` and `Clenshaw10km` are
 unrestricted and default to global coverage.
 """
 function DataWrangling.validate_dataset_coverage(grid, metadata::SoilGrids2Metadatum)
     dataset = metadata.dataset
-    dataset.resolution === Grid250m || return nothing
+    dataset.resolution === SoilGrids250m || return nothing
 
     region = metadata.region
     if !(region isa BoundingBox) || isnothing(region.longitude) || isnothing(region.latitude)
-        error("SoilGrids2(resolution = Grid250m) must be used with a bounded region. " *
+        error("SoilGrids2(resolution = SoilGrids250m) must be used with a bounded region. " *
               "At native 250 m a global read would be ~300 GB per variable; it is never read " *
               "in full. Build the metadatum with a longitude/latitude BoundingBox, e.g.\n" *
-              "    metadatum = Metadatum(:$(metadata.name); dataset = SoilGrids2(resolution = Grid250m),\n" *
+              "    metadatum = Metadatum(:$(metadata.name); dataset = SoilGrids2(resolution = SoilGrids250m),\n" *
               "                          region = BoundingBox(longitude = (λ₁, λ₂), latitude = (φ₁, φ₂)))\n" *
               "    Field(metadatum, grid)")
     end
@@ -251,11 +251,11 @@ end
 """
     soilgrids_raster_geometry(metadatum)
 
-Geometry of the raster to materialize for `metadatum`'s ISRIC-direct pipeline (`Grid1000m`
-or `Grid250m`), taken from [`native_grid`](@ref) so the file the reprojection writes lands
+Geometry of the raster to materialize for `metadatum`'s ISRIC-direct pipeline (`SoilGrids1000m`
+or `SoilGrids250m`), taken from [`native_grid`](@ref) so the file the reprojection writes lands
 on the cells the read path indexes — global when `metadatum.region` is `nothing`
-(`Grid1000m`'s default), or the region's window when it is a `BoundingBox`
-(`Grid250m`'s required case).
+(`SoilGrids1000m`'s default), or the region's window when it is a `BoundingBox`
+(`SoilGrids250m`'s required case).
 """
 function soilgrids_raster_geometry(metadatum::SoilGrids2Metadatum)
     grid = native_grid(metadatum, CPU())
