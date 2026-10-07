@@ -90,7 +90,7 @@ Base.summary(dataset::SoilGrids2) = string("SoilGrids2(statistic = ", dataset.st
 Base.show(io::IO, dataset::SoilGrids2) = print(io, summary(dataset))
 
 # Variable name mappings from NumericalEarth names to SoilGrids2 variable names
-SoilGrids2_dataset_variable_names = Dict(
+soil_variable_names = Dict(
     :sand_fraction           => "sand",
     :silt_fraction           => "silt",
     :clay_fraction           => "clay",
@@ -102,7 +102,7 @@ SoilGrids2_dataset_variable_names = Dict(
 
 const SoilGrids2Metadatum = Metadatum{<:SoilGrids2}
 
-const SoilGrids2_10km_url = "https://syncandshare.lrz.de/dl/fiVMyHskjL3FNbceuUFJev/soilgrids2_clenshaw989_10km.nc"
+const clenshaw_10km_url = "https://syncandshare.lrz.de/dl/fiVMyHskjL3FNbceuUFJev/soilgrids2_clenshaw989_10km.nc"
 
 """
     soilgrids_spacing_meters(resolution::Resolution)
@@ -154,7 +154,7 @@ soilgrids_vsicurl_source(var, depth, stat_name) =
 ##### Dataset methods
 #####
 
-DataWrangling.available_variables(::SoilGrids2) = SoilGrids2_dataset_variable_names
+DataWrangling.available_variables(::SoilGrids2) = soil_variable_names
 DataWrangling.default_download_directory(::SoilGrids2) = download_SoilGrids2_cache
 
 function Base.size(dataset::SoilGrids2, variable)
@@ -219,7 +219,7 @@ end
 #####
 
 DataWrangling.is_three_dimensional(::SoilGrids2Metadatum) = true
-DataWrangling.dataset_variable_name(data::SoilGrids2Metadatum) = SoilGrids2_dataset_variable_names[data.name]
+DataWrangling.dataset_variable_name(data::SoilGrids2Metadatum) = soil_variable_names[data.name]
 DataWrangling.longitude_name(::SoilGrids2Metadatum) = "lon"
 DataWrangling.latitude_name(::SoilGrids2Metadatum) = "lat"
 DataWrangling.default_inpainting(md::SoilGrids2Metadatum) = nothing
@@ -273,7 +273,7 @@ end
 #####
 
 function DataWrangling.metadata_url(m::SoilGrids2Metadatum)
-    m.dataset.resolution === Clenshaw10km && return SoilGrids2_10km_url
+    m.dataset.resolution === Clenshaw10km && return clenshaw_10km_url
     error("metadata_url is only defined for SoilGrids2(resolution = Clenshaw10km); the " *
           "$(m.dataset.resolution) pipeline downloads directly from ISRIC per depth inside " *
           "`Downloads.download`, with no single URL.")
