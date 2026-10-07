@@ -100,9 +100,6 @@ SoilGrids2_dataset_variable_names = Dict(
     :soil_organic_carbon     => "soc"
 )
 
-# ISRIC depth-range URL fragments, deepest first (matches SoilGrids2_z_interfaces above).
-const SoilGrids2_depth_ranges = ("100-200cm", "60-100cm", "30-60cm", "15-30cm", "5-15cm", "0-5cm")
-
 const SoilGrids2Metadatum = Metadatum{<:SoilGrids2}
 
 const SoilGrids2_10km_url = "https://syncandshare.lrz.de/dl/fiVMyHskjL3FNbceuUFJev/soilgrids2_clenshaw989_10km.nc"
@@ -177,6 +174,7 @@ function DataWrangling.longitude_interfaces(dataset::SoilGrids2)
 end
 
 function DataWrangling.z_interfaces(dataset::SoilGrids2)
+    # ISRIC depth-range URL fragments, deepest first
     dataset.resolution === Clenshaw10km && return [-200, -100, -60, -30, -15, -5, 0]
     return [-2.0, -1.0, -0.6, -0.3, -0.15, -0.05, 0]
 end
