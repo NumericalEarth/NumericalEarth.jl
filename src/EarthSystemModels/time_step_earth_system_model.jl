@@ -1,4 +1,5 @@
 using ClimaSeaIce: SeaIceThermodynamics
+using ClimaSeaIce.SeaIceDynamics: SemiImplicitStress, update_external_stress!
 using Oceananigans.TimeSteppers: maybe_prepare_first_time_step!
 
 using .InterfaceComputations: compute_atmosphere_ocean_fluxes!,
@@ -36,6 +37,18 @@ function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, Î
     return nothing
 end
 
+function refresh_drag_reference_velocities!(coupled_model::EarthSystemModel)
+    sea_ice = coupled_model.sea_ice
+    sea_ice isa Simulation || return nothing
+    dynamics = sea_ice.model.dynamics
+    isnothing(dynamics) && return nothing
+    refresh_drag_reference!(dynamics.external_momentum_stresses.bottom)
+    return nothing
+end
+
+refresh_drag_reference!(stress) = nothing
+refresh_drag_reference!(stress::SemiImplicitStress) = update_external_stress!(stress, nothing)
+
 function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel, callbacks=[])
 
     radiation  = coupled_model.radiation
@@ -61,6 +74,8 @@ function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel
     InterfaceComputations.correct_state!(exchanger.land,       grid)
     InterfaceComputations.correct_state!(exchanger.sea_ice,    grid)
     InterfaceComputations.correct_state!(exchanger.ocean,      grid)
+
+    refresh_drag_reference_velocities!(coupled_model)
 
     # Phase 2: compute interface turbulent fluxes
     compute_atmosphere_ocean_fluxes!(coupled_model)
