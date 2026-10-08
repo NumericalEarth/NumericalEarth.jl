@@ -9,7 +9,7 @@ using Oceananigans.DistributedComputations: @root
 
 using NCDatasets: NCDatasets
 
-using NumericalEarth.DataWrangling: MetadataSet, available_variables, metadata_filename, metadata_path
+using NumericalEarth.DataWrangling: MetadataSet, available_variables, build_filename, metadata_path
 using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5PressureLevelsDataset,
                                          ERA5Metadata, ERA5Metadatum, hPa,
                                          ERA5_dataset_variable_names, ERA5PL_dataset_variable_names,
@@ -17,8 +17,7 @@ using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5PressureLevelsDataset,
                                          ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
                                          ERA5HourlyLand, ERA5MonthlyLand, ERA5LandDataset,
                                          ERA5Land_dataset_variable_names,
-                                         batch_datetimes_for_cds, coord_vars, nc_varnames,
-                                         split_era5_nc_by_datetime, ERA5_TIME_DIMNAMES
+                                         batch_datetimes_for_cds, nc_varnames, store_era5_nc
 
 #####
 ##### era5cli credential bootstrap
@@ -44,9 +43,8 @@ end
 ##### Batched downloads — same strategy as NumericalEarthCDSAPIExt
 #####
 ##### One era5cli invocation per calendar-month batch: one CDS request per variable, expanded
-##### server-side into a `months` × `days` × `hours` product, then split locally into the
-##### per-datetime files the readers expect (matched against the file's own time coordinate,
-##### so the product's over-fetch is harmless).
+##### server-side into a `months` × `days` × `hours` product. Readers locate each datetime in
+##### the file's own time coordinate, so the product's over-fetch is harmless.
 #####
 
 """
@@ -54,11 +52,11 @@ end
 
 Download ERA5 data for every date in `metadata` using `era5cli` through the
 CopernicusClimateDataStore package, one CDS request per calendar-month batch,
-returning the paths of the per-datetime files.
+returning one path per datetime.
 
 # Keyword Arguments
 - `skip_existing`: Skip datetimes whose files already exist (default: `true`).
-- `cleanup`: Remove the temporary multi-step NetCDF after splitting (default: `true`).
+- `cleanup`: Remove the downloaded NetCDF once stored (default: `true`).
 - `threads`: Number of era5cli download threads (default: one per requested variable).
 - Additional keyword arguments are passed to `CopernicusClimateDataStore.hourly`.
 
@@ -155,8 +153,9 @@ function download_era5cli_month(names, dataset, dates;
                                 threads = nothing,
                                 additional_kw...)
 
-    name_dt_paths = [(name, dt, joinpath(dir, metadata_filename(dataset, name, dt, region)))
-                     for name in names for dt in dates]
+    name_dt_paths = [(name, dt, joinpath(dir, filename))
+                     for name in names
+                     for (dt, filename) in zip(dates, build_filename(dataset, name, dates, region).filenames)]
 
     pending = if skip_existing
         filter(name_dt_path -> !isfile(name_dt_path[3]), name_dt_paths)
@@ -180,9 +179,8 @@ function download_era5cli_month(names, dataset, dates;
     levels_of(name) = era5cli_levels(dataset, available_variables(dataset)[name])
     levels_values = unique(map(levels_of, pending_names))
 
-    # Each per-variable file era5cli delivers carries only its own variable, and the
-    # splitter skips triples whose variable is absent, so every file is split against
-    # the full pending set — no filename parsing needed.
+    # Each per-variable file era5cli delivers carries only its own variable, so every file is
+    # stored against the full pending set — no filename parsing needed.
     nc_triples = [(nc_varnames(dataset)[name], dt, path) for (name, dt, path) in pending]
 
     @root begin
@@ -215,7 +213,7 @@ function download_era5cli_month(names, dataset, dates;
                 additional_kw...)
 
             for file in downloaded_files
-                split_era5_nc_by_datetime(file, nc_triples, coord_vars(dataset), ERA5_TIME_DIMNAMES)
+                store_era5_nc(file, nc_triples, dataset)
                 cleanup && rm(file; force=true)
             end
         end

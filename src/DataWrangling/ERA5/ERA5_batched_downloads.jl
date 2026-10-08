@@ -217,6 +217,24 @@ function split_era5_nc_by_datetime(src_path, nc_varname_dt_path_triples, coordin
     end
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Store the downloaded NetCDF at `src_path` in the files named by `nc_varname_dt_path_triples`.
+An hourly single-level download holds one variable and is moved, as delivered, to that
+variable's file; other datasets are split into one file per variable and timestep.
+"""
+function store_era5_nc(src_path, nc_varname_dt_path_triples, dataset::ERA5HourlySingleLevel)
+    dst_path = NCDatasets.Dataset(src_path, "r") do src
+        only(unique(dst_path for (nc_varname, _, dst_path) in nc_varname_dt_path_triples if haskey(src, nc_varname)))
+    end
+    mv(src_path, dst_path; force=true)
+    return nothing
+end
+
+store_era5_nc(src_path, nc_varname_dt_path_triples, dataset) =
+    split_era5_nc_by_datetime(src_path, nc_varname_dt_path_triples, coord_vars(dataset), ERA5_TIME_DIMNAMES)
+
 function ncvar_copy!(dst, src_var, vname)
     dims     = NCDatasets.dimnames(src_var)
     T        = eltype(src_var.var)
