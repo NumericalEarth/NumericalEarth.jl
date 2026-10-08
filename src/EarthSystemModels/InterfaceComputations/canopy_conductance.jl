@@ -85,7 +85,7 @@ Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
 # The canopy stress reads the ground saturation 𝒮 and, for a `PlantAvailableWaterStress`,
 # its per-cell stress endpoints, so the interface materializes the stress's own state.
 @inline interface_hydrology_state(i, j, grid, q::CanopyConductanceHumidity, land_state) =
-    merge(land_saturation(i, j, grid, land_state),
+    merge((; saturation = land_saturation(i, j, grid, land_state)),
           interface_hydrology_state(i, j, grid, q.moisture_stress, land_state))
 @inline requires_retention_curve(q::CanopyConductanceHumidity) = requires_retention_curve(q.moisture_stress)
 

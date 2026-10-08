@@ -129,7 +129,7 @@ Adapt.adapt_structure(to, energy::WaterCoupledEnergy) =
     if Λ === nothing
         return cˡᵃ / convert(FT, τ)
     else
-        return property_value(Λ, i, j, 1)
+        return stateindex(Λ, i, j, 1)
     end
 end
 
@@ -156,7 +156,7 @@ end
 
     cˡ   = energy.liquid_heat_capacity
     Tᵣ   = energy.reference_temperature
-    cᵈʳʸ = property_value(energy.dry_heat_capacity, i, j, 1)
+    cᵈʳʸ = stateindex(energy.dry_heat_capacity, i, j, 1)
     cˡᵃ  = cᵈʳʸ + cˡ * max(Mᵢⱼ, 0)
 
     Tᵈ = stateindex(energy.deep_temperature, i, j, 1, grid, time, (Center, Center, Center))

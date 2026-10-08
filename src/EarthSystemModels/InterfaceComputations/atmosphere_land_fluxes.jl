@@ -45,7 +45,9 @@ function atmosphere_land_interface(grid, atmosphere, land;
     al_fluxes = AtmosphereSurfaceFluxes(grid)
     al_properties = InterfaceProperties(specific_humidity, temperature, velocity_difference)
     interface_temperature = build_interface_temperature(temperature, grid)
-    return AtmosphereInterface(al_fluxes, fluxes, interface_temperature, al_properties)
+    interface_specific_humidity = Field{Center, Center, Nothing}(grid)
+    return AtmosphereInterface(al_fluxes, fluxes, interface_temperature,
+                               interface_specific_humidity, al_properties)
 end
 
 # The atmosphere-facing interface temperature: a single field, or the
@@ -118,7 +120,7 @@ end
                                  convert(FT, Ψₛ.fluxes.χθ * (θᵃᵗ - sol.Tᵃᶜ)),
                                  convert(FT, Ψₛ.fluxes.χq * (Ψₐ.q - sol.qᵃᶜ)),
                                  Ψₛ.fluxes.χθ, Ψₛ.fluxes.χq)
-    return rebuild_interface_state(Ψₛ, fluxes, convert(FT, T⁺), convert(FT, q⁺))
+    return rebuild_interface_state(Ψₛ, fluxes, sol.Tᵃᶜ, sol.qᵃᶜ)
 end
 
 # A prognostic energy-balance skin is frozen through the fixed point and advanced once per
@@ -181,6 +183,7 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     flux_formulation = atmosphere_land_interface.flux_formulation
     interface_fluxes = atmosphere_land_interface.fluxes
     interface_temperature = atmosphere_land_interface.temperature
+    interface_specific_humidity = atmosphere_land_interface.specific_humidity
     interface_properties = atmosphere_land_interface.properties
     atmosphere_properties = (thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
                              surface_layer_height = coupled_model.interfaces.properties.surface_layer_height,
@@ -215,6 +218,7 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
             _compute_atmosphere_land_interface_state!,
             interface_fluxes,
             interface_temperature,
+            interface_specific_humidity,
             grid,
             clock,
             flux_formulation,
@@ -287,15 +291,13 @@ end
 ##### model then derives `β`, the reservoir temperature, etc. from what it pulled.
 #####
 
-@inline land_saturation(i, j, grid, land_state) =
-    (saturation = state2dindex(land_state.saturation, i, j),)
+@inline land_saturation(i, j, grid, land_state) = state2dindex(land_state.saturation, i, j)
 
-# Hydrology state, per humidity formulation.
-@inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) = land_saturation(i, j, grid, land_state)
-@inline interface_hydrology_state(i, j, grid, q::FractionalHumidity, land_state) =
-    interface_hydrology_state(i, j, grid, q.efficiency, land_state)
+# Hydrology state, per humidity formulation. The caller adds the `saturation` key.
+@inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) = (; saturation = land_saturation(i, j, grid, land_state))
+@inline interface_hydrology_state(i, j, grid, q::FractionalHumidity, land_state) = interface_hydrology_state(i, j, grid, q.efficiency, land_state)
 @inline requires_retention_curve(q::FractionalHumidity) = requires_retention_curve(q.efficiency)
-@inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) = land_saturation(i, j, grid, land_state)
+@inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) = (; saturation = land_saturation(i, j, grid, land_state))
 # The stress endpoints live on the *land's* retention curve, whose parameters may vary
 # per cell; evaluate them here, once per cell, so the flux solve reads plain scalars.
 @inline function interface_hydrology_state(i, j, grid, p::PlantAvailableWaterStress, land_state)
@@ -306,8 +308,7 @@ end
             field_capacity_saturation = effective_saturation(i, j, grid, r, convert(FT, p.field_capacity_head)),
             wilting_saturation        = effective_saturation(i, j, grid, r, convert(FT, p.wilting_point_head)))
 end
-@inline interface_hydrology_state(i, j, grid, ::DryLayerHumidity, land_state) =
-    land_saturation(i, j, grid, land_state)
+@inline interface_hydrology_state(i, j, grid, ::DryLayerHumidity, land_state) = (; saturation = land_saturation(i, j, grid, land_state))
 @inline interface_hydrology_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
 
 # Energy state: humidity formulations that need the bulk land temperature
@@ -325,6 +326,7 @@ end
 
 @kernel function _compute_atmosphere_land_interface_state!(interface_fluxes,
                                                            interface_temperature,
+                                                           interface_specific_humidity,
                                                            grid,
                                                            clock,
                                                            turbulent_flux_formulation,
@@ -399,5 +401,6 @@ end
 
     ℒˡ = AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, Ψₐ.T)
 
+    @inbounds interface_specific_humidity[i, j, 1] = Ψₛ.specific_humidity
     store_interface_fluxes!(interface_fluxes, i, j, Ψₛ, Ψₐ, ℂᵃᵗ, ℒˡ, local_interface_properties)
 end

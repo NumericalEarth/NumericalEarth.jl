@@ -61,8 +61,8 @@ $(TYPEDSIGNATURES)
 
 @inline function pressure_head(i, j, grid, r::VanGenuchtenRetention, 𝒮)
     FT = typeof(𝒮)
-    αᵃᵉ  = convert(FT, property_value(r.inverse_air_entry_head, i, j))
-    𝓃  = convert(FT, property_value(r.pore_size_uniformity, i, j))
+    αᵃᵉ  = convert(FT, stateindex(r.inverse_air_entry_head, i, j, 1))
+    𝓃  = convert(FT, stateindex(r.pore_size_uniformity, i, j, 1))
     𝓂  = van_genuchten_m(𝓃)
     𝒮c = clamp(𝒮, 0, 1)
 
@@ -75,8 +75,8 @@ end
 # Per-cell endpoint evaluation for the interface's plant-stress formulations.
 @inline function EarthSystemModels.effective_saturation(i, j, grid, r::VanGenuchtenRetention, ψ)
     FT = typeof(ψ)
-    αᵃᵉ = convert(FT, property_value(r.inverse_air_entry_head, i, j))
-    𝓃   = convert(FT, property_value(r.pore_size_uniformity, i, j))
+    αᵃᵉ = convert(FT, stateindex(r.inverse_air_entry_head, i, j, 1))
+    𝓃   = convert(FT, stateindex(r.pore_size_uniformity, i, j, 1))
     return van_genuchten_saturation(αᵃᵉ * ψ, 𝓃)
 end
 
@@ -87,8 +87,8 @@ Slope `dΠ/d𝒮` of the [`VanGenuchtenRetention`](@ref) pressure head at effect
 """
 @inline function pressure_head_derivative(i, j, grid, r::VanGenuchtenRetention, 𝒮)
     FT = typeof(𝒮)
-    α = convert(FT, property_value(r.inverse_air_entry_head, i, j))
-    n = convert(FT, property_value(r.pore_size_uniformity, i, j))
+    α = convert(FT, stateindex(r.inverse_air_entry_head, i, j, 1))
+    n = convert(FT, stateindex(r.pore_size_uniformity, i, j, 1))
     m = van_genuchten_m(n)
     𝒮c = clamp(𝒮, eps(FT), one(FT) - eps(FT))
     return (𝒮c^(-1/m) - one(FT))^(1/n - one(FT)) * 𝒮c^(-1/m - one(FT)) / (α * n * m)
@@ -152,9 +152,9 @@ Darcy hydraulic conductivity (m s⁻¹) of closure `c` at saturation `𝒮` and 
 """
 @inline function hydraulic_conductivity(i, j, grid, c::VanGenuchtenConductivity, 𝒮, T)
     FT = typeof(𝒮)
-    K₀ = convert(FT, property_value(c.matching_point_conductivity, i, j))
-    𝓃  = convert(FT, property_value(c.pore_size_uniformity, i, j))
-    ηᴷ = convert(FT, property_value(c.pore_connectivity_exponent, i, j))
+    K₀ = convert(FT, stateindex(c.matching_point_conductivity, i, j, 1))
+    𝓃  = convert(FT, stateindex(c.pore_size_uniformity, i, j, 1))
+    ηᴷ = convert(FT, stateindex(c.pore_connectivity_exponent, i, j, 1))
     𝓂  = van_genuchten_m(𝓃)
     𝒮c = clamp(𝒮, 0, 1)
 

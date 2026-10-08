@@ -11,6 +11,8 @@
 ##### closure under the last layer) and `fₖ ∝ rₖ 𝒮ₖ` is the root-weighted share of the
 ##### vapor sink. The interlayer exchanges and a Darcy bottom closure are linearized in
 ##### head and stepped implicitly; surface fluxes and the other bottom closures are explicit.
+##### Infiltration is limited to the pore volume the top layer has left, so positive-pressure
+##### storage is reached only through upward Darcy flux or dew.
 #####
 ##### Diagnostics published every step:
 #####   * `deep_liquid_flux`          (Jₙ, across the column bottom)
@@ -173,13 +175,14 @@ interlayer_fluxes(h, land) = map(name -> getproperty(land.diagnostics, name), in
 ##### Per-layer state at one cell
 #####
 
-# θ, 𝒮, pressure head Π, its storage derivative dΠ/dM, and K of layer `k` holding water `M`.
+# θ, 𝒮, pressure head Π, its storage derivative dΠ/dM, K, and the pore capacity M⁺ of layer `k`
+# holding water `M`.
 @inline function layer_state(h, M, T, k, i, j, grid)
     FT   = typeof(M)
-    hₗ   = convert(FT, property_value(layer(h.slab_depth, k), i, j))
-    ν    = convert(FT, property_value(h.porosity, i, j))
-    θʳ   = convert(FT, property_value(h.residual_liquid_fraction, i, j))
-    hˢˢ  = convert(FT, property_value(h.storage_height, i, j))
+    hₗ   = convert(FT, stateindex(layer(h.slab_depth, k), i, j, 1))
+    ν    = convert(FT, stateindex(h.porosity, i, j, 1))
+    θʳ   = convert(FT, stateindex(h.residual_liquid_fraction, i, j, 1))
+    hˢˢ  = convert(FT, stateindex(h.storage_height, i, j, 1))
     ρˡhₗ = convert(FT, h.liquid_density) * hₗ
     M⁺   = ν * ρˡhₗ
     θ    = min(M / ρˡhₗ, ν)
@@ -188,7 +191,7 @@ interlayer_fluxes(h, land) = map(name -> getproperty(land.diagnostics, name), in
     Π    = ifelse(saturated, (M - M⁺) * hˢˢ / ρˡhₗ, pressure_head(i, j, grid, h.retention_curve, 𝒮))
     dΠdM = ifelse(saturated, hˢˢ, pressure_head_derivative(i, j, grid, h.retention_curve, 𝒮) / (ν - θʳ)) / ρˡhₗ
     K    = hydraulic_conductivity(i, j, grid, layer(h.hydraulic_conductivity, k), 𝒮, T)
-    return (; θ, 𝒮, Π, dΠdM, K)
+    return (; θ, 𝒮, Π, dΠdM, K, M⁺)
 end
 
 @inline root_weighted_saturation(h, M, T, i, j, grid) =
@@ -198,8 +201,8 @@ end
 # ℓ = (hₖ + hₖ₊₁)/2 apart, with K̄ at their mean saturation (Oleson et al. 2013, eq. 7.89).
 @inline function interlayer_exchange(h, s, T, k, i, j, grid)
     FT = typeof(s[k].Π)
-    ℓ  = (convert(FT, property_value(layer(h.slab_depth, k), i, j)) +
-          convert(FT, property_value(layer(h.slab_depth, k + 1), i, j))) / 2
+    ℓ  = (convert(FT, stateindex(layer(h.slab_depth, k), i, j, 1)) +
+          convert(FT, stateindex(layer(h.slab_depth, k + 1), i, j, 1))) / 2
     𝒮̄  = (s[k].𝒮 + s[k+1].𝒮) / 2
     K̄  = (hydraulic_conductivity(i, j, grid, layer(h.hydraulic_conductivity, k), 𝒮̄, T) +
           hydraulic_conductivity(i, j, grid, layer(h.hydraulic_conductivity, k + 1), 𝒮̄, T)) / 2
@@ -245,7 +248,7 @@ end
         Jᵛᵢⱼ = Jᵛ[i, j, 1]
         Pˡᵢⱼ = Pˡ[i, j, 1]
         Tij  = T[i, j, 1]
-        Πᵈ   = stateindex(deep_pressure_head, i, j, 1, grid, time, (Center, Center, Center))
+        Πᵈ   = stateindex(deep_pressure_head, i, j, 1, grid, Time(time), (Center, Center, Center))
     end
     FT = typeof(Jᵛᵢⱼ)
     δt = convert(FT, Δt)
@@ -253,7 +256,7 @@ end
     s₁, sₙ = s[1], s[end]
 
     # Surface fluxes on the top layer, the deep closure under the last, Darcy exchanges between.
-    Jˡˢ, Rˢᶠᶜ = surface_water_balance!(i, j, h.runoff, prognostic, Pˡᵢⱼ, Mⁿ[1], s₁.θ, s₁.𝒮, s₁.Π, s₁.K, δt)
+    Jˡˢ, Rˢᶠᶜ = surface_water_balance!(i, j, grid, h.runoff, prognostic, Pˡᵢⱼ, Mⁿ[1], s₁.M⁺, s₁.θ, s₁.𝒮, s₁.Π, s₁.K, δt)
     Rˡᵃᵗ      = subsurface_runoff(h.runoff, Mⁿ[1], s₁.Π, s₁.K)
     Jᵇ        = deep_liquid_flux(h.deep_liquid_flux, Mⁿ[end], sₙ.θ, sₙ.𝒮, sₙ.Π, sₙ.K, Πᵈ, time)
     exchanges = ntuple(k -> interlayer_exchange(h, s, Tij, k, i, j, grid), Val(N - 1))
