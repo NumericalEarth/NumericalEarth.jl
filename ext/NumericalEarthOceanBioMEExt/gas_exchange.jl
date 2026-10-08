@@ -24,24 +24,32 @@ biogeochemistry_surface_exchanged_tracers(::AbstractInorganicCarbon{N}) where N 
 
 @inline carbon_replicate_names(::Val{N}) where N = ntuple(n -> Symbol(:DIC, n), Val(N))
 
-@inline surface_wind_speed(exchanger) = sqrt(exchanger.atmosphere.state.u^2 + exchanger.atmosphere.state.v^2)
+# The wind speed and atmospheric pressure are computed into 2D fields once per step and shared by all of
+# the gas exchanges. Left as operations, each exchange would carry its own copies of the grid (one per
+# operation), which takes the gas exchange kernel parameters over the GPU limit with replicate carbonate systems
+surface_wind_speed(exchanger) = Field(sqrt(exchanger.atmosphere.state.u^2 + exchanger.atmosphere.state.v^2))
 
 # prescribed atmosphere pressure is in Pa, the gas exchange takes atm
-@inline surface_atmospheric_pressure(exchanger) = exchanger.atmosphere.state.p / ATM
+surface_atmospheric_pressure(exchanger) = Field(exchanger.atmosphere.state.p / ATM)
 
-biogeochemical_interface(exchanger, ocean, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}; kwargs...) =
-    merge(
+function biogeochemical_interface(exchanger, ocean, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}; kwargs...)
+    gas_exchange_state = (wind_speed = surface_wind_speed(exchanger),
+                          atmospheric_pressure = surface_atmospheric_pressure(exchanger))
+
+    return merge(
+        (; gas_exchange_state),
         biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.nutrients; kwargs...),
         biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.plankton; kwargs...),
         biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.detritus; kwargs...),
-        biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.oxygen; kwargs...),
-        biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.inorganic_carbon; kwargs...)
+        biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.oxygen; gas_exchange_state, kwargs...),
+        biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.inorganic_carbon; gas_exchange_state, kwargs...)
     )
+end
 
-biogeochemical_interface(exchanger, ocean, ::Oxygen; kwargs...) =
+biogeochemical_interface(exchanger, ocean, ::Oxygen; gas_exchange_state, kwargs...) =
     (; O₂ = OxygenGasExchangeBoundaryCondition(;
-                wind_speed = surface_wind_speed(exchanger),
-                air_concentration = GarciaGordonOxygenSaturation(; atmospheric_pressure = surface_atmospheric_pressure(exchanger)),
+                wind_speed = gas_exchange_state.wind_speed,
+                air_concentration = GarciaGordonOxygenSaturation(; atmospheric_pressure = gas_exchange_state.atmospheric_pressure),
                 kwargs...).condition.func)
 
 biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{1}; kwargs...) =
@@ -54,14 +62,14 @@ function biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{N}
 end
 
 # same solubility as the boundary condition's default, so the air and water sides share a density
-function carbon_dioxide_exchange(exchanger, DIC, Alk; carbon_chemistry = CarbonChemistry(), kwargs...)
+function carbon_dioxide_exchange(exchanger, DIC, Alk; gas_exchange_state, carbon_chemistry = CarbonChemistry(), kwargs...)
     air_concentration = CarbonDioxideAirConcentration(; mole_fraction = exchanger.atmosphere.state.pCO₂,
-                                                        atmospheric_pressure = surface_atmospheric_pressure(exchanger),
+                                                        atmospheric_pressure = gas_exchange_state.atmospheric_pressure,
                                                         solubility = MolPerKgPerAtmToMMolPerCubicMPerMicroAtm(FF{Float64}(),
                                                                                                               carbon_chemistry.density_function))
 
     return CarbonDioxideGasExchangeBoundaryCondition(;
-        wind_speed = surface_wind_speed(exchanger),
+        wind_speed = gas_exchange_state.wind_speed,
         air_concentration,
         carbon_chemistry,
         DIC, Alk,
@@ -76,7 +84,12 @@ end
 function update_net_ocean_biogeochemical_fluxes!(coupled_model, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}, ocean, grid)
     # we might want to add more stuff like sediments or rivers here in the future
 
-    exchangers = gas_transfer_parametrisations(biogeochemistry, coupled_model.interfaces.properties)
+    properties = coupled_model.interfaces.properties
+
+    compute!(properties.gas_exchange_state.wind_speed)
+    compute!(properties.gas_exchange_state.atmospheric_pressure)
+
+    exchangers = gas_transfer_parametrisations(biogeochemistry, properties)
 
     ℵ = coupled_model.sea_ice.model.ice_concentration
 
@@ -90,16 +103,13 @@ function update_net_ocean_biogeochemical_fluxes!(coupled_model, biogeochemistry:
 
     fluxes = tracer_fluxes(biogeochemistry, coupled_model.interfaces.net_fluxes.ocean)
 
-    launch!(architecture(grid),
-            grid, :xy,
-            compute_all_gas_exchange!,
-            grid,
-            ocean.model.clock,
-            fluxes,
-            ℵ,
-            ocean_tracers,
-            biogeochemistry.underlying_biogeochemistry,
-            exchangers)
+    # one launch per gas, so the kernel parameters don't grow with the number of exchanged gases
+    # (each carbon chemistry is a few KiB, and the GPU parameter limit is 32 KiB)
+    map(fluxes, exchangers) do flux, exchanger
+        launch!(architecture(grid), grid, :xy,
+                compute_gas_exchange!,
+                flux, grid, ocean.model.clock, ℵ, ocean_tracers, exchanger)
+    end
 
     return nothing
 end
@@ -123,37 +133,8 @@ end
 @inline if_phosphate_available(::NamedTuple{N}) where N = :PO₄ in N ? (:PO₄, ) : tuple()
 @inline if_silicon_available(::NamedTuple{N}) where N = :Si in N ? (:Si, ) : tuple()
 
-@kernel function compute_all_gas_exchange!(grid, clock, fluxes, ice_concentration, ocean_tracers, biogeochemistry, exchangers)
+@kernel function compute_gas_exchange!(flux, grid, clock, ice_concentration, ocean_tracers, exchanger)
     i, j = @index(Global, NTuple)
 
-    @inbounds ℵ = ice_concentration[i, j, 1]
-
-    compute_gas_exchange!(i, j, grid, clock, biogeochemistry.oxygen, fluxes, ℵ, ocean_tracers, exchangers)
-    compute_gas_exchange!(i, j, grid, clock, biogeochemistry.inorganic_carbon, fluxes, ℵ, ocean_tracers, exchangers)
-end
-
-@inline compute_gas_exchange!(i, j, grid, clock, ::Nothing, fluxes, ℵ, ocean_tracers, exchangers) = nothing
-
-@inline function compute_gas_exchange!(i, j, grid, clock, ::Oxygen, fluxes, ℵ, ocean_tracers, exchangers)
-    @inbounds fluxes.O₂[i, j, 1] = exchangers.O₂(i, j, grid, clock, ocean_tracers) * (1 - ℵ)
-    return nothing
-end
-
-@inline function compute_gas_exchange!(i, j, grid, clock, ::AbstractInorganicCarbon{1}, fluxes, ℵ, ocean_tracers, exchangers)
-    @inbounds fluxes.DIC[i, j, 1] = exchangers.DIC(i, j, grid, clock, ocean_tracers) * (1 - ℵ)
-    return nothing
-end
-
-# `Symbol(:DIC, n)` can not be constructed on the GPU so the replicates are unrolled here
-@generated function compute_gas_exchange!(i, j, grid, clock, ::AbstractInorganicCarbon{N}, fluxes, ℵ, ocean_tracers, exchangers) where N
-    exprs = map(1:N) do n
-        DIC = Symbol(:DIC, n)
-        :(@inbounds fluxes.$DIC[i, j, 1] = exchangers.$DIC(i, j, grid, clock, ocean_tracers) * (1 - ℵ))
-    end
-
-    return quote
-        $(exprs...)
-
-        return nothing
-    end
+    @inbounds flux[i, j, 1] = exchanger(i, j, grid, clock, ocean_tracers) * (1 - ice_concentration[i, j, 1])
 end
