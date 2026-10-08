@@ -30,7 +30,7 @@ using Oceananigans:
     Center, Face,
     set!
 
-using Oceananigans.Architectures: architecture
+using Oceananigans.Architectures: architecture, ReactantState
 using Oceananigans.DistributedComputations: all_reduce
 using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, interior, interpolate!
@@ -53,6 +53,7 @@ using Breeze:
     moisture_prognostic_name,
     moisture_specific_name
 
+using Breeze.Utils: initialize_on_construction!
 using Breeze.AtmosphereModels: prognostic_field_names
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
@@ -333,7 +334,9 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
         initialize = false,
         kw...)
 
-    return NestedModel(parent_atmosphere, child, exchanger)
+    nested_model = NestedModel(parent_atmosphere, child, exchanger)
+    initialize_on_construction!(architecture(child_grid), nested_model)
+    return nested_model
 end
 
 # Domain-mean dataset mean-sea-level pressure at `date`, regridded onto the child grid.
@@ -401,6 +404,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
 
     nested_model = NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere, child_grid; base_pressure,
                                                                        bottom_drag_coefficient, drag_surface_temperature, kw...)
+    architecture(child_grid) isa ReactantState && Oceananigans.initialize!(nested_model)
     initialize_nested_child!(nested_model, parent_dataset, first(dates), dir; balancer)
     return nested_model
 end

@@ -228,13 +228,13 @@ function state_exchanger(parent_atmosphere, pˢᵗ, constants;
     condensates = merge((qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing), condensates)
 
     prognostic = child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory)
-    exchanger  = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates, moisture_name)
-    exchange_state!(exchanger, first(parent_atmosphere.temperature.times); force=true)   # fill the initial window
-    return exchanger
+    return StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates, moisture_name)
 end
 
+Oceananigans.initialize!(ex::StateExchanger, time) = exchange_state!(ex, time; force=true)
+
 # Advance the derived resident window (and the parent's own FTS windows) to bracket `time`, recomputing
-# the derived prognostics only when the bracket moves (`force` fills it once at construction).
+# the derived prognostics only when the bracket moves (`force` fills it once from `initialize!`).
 function exchange_state!(ex::StateExchanger, time; force=false)
     parent = ex.parent
     p = ex.prognostic

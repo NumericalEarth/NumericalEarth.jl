@@ -116,3 +116,5 @@ end
 
     @test T_reactant ≈ T_cpu rtol=1e-4
 end
+
+include("test_reactant_nested.jl")
