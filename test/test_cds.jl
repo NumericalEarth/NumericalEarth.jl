@@ -450,7 +450,7 @@ end
 
 @testset "ERA5 CDSAPIExt plan_era5_month" begin
     region = BoundingBox(longitude=(0, 5), latitude=(40, 45))
-    ds = ERA5HourlySingleLevel()
+    ds = ERA5HourlyPressureLevels(pressure_levels=[850]hPa)
     dt1 = DateTime(2005, 2, 16, 0)
     dt2 = DateTime(2005, 2, 16, 12)
 
@@ -468,10 +468,10 @@ end
             @test plan.dt_path_pairs == [(dt1, p1), (dt2, p2)]
             @test length(plan.pending) == 2
             @test plan.request["time"] == ["00:00", "12:00"]
-            @test plan.tmp_path == joinpath(tmp, "_tmp_20050216.nc")
+            @test plan.tmp_path == joinpath(tmp, "_tmp_t_20050216.nc")
             @test length(plan.nc_triples) == 2
-            # All triples carry the netcdf short name for :temperature on single-level
-            @test all(t -> first(t) == "t2m", plan.nc_triples)
+            # All triples carry the netcdf short name for :temperature on pressure levels
+            @test all(t -> first(t) == "t", plan.nc_triples)
             # Triples carry the pending datetimes, matched against the file's time coordinate
             @test Set(t[2] for t in plan.nc_triples) == Set([dt1, dt2])
         end
@@ -763,10 +763,17 @@ end
             @test Set(result) == Set(paths)
         end
 
+        # Hourly single-level dates share one file per variable and CDS request
+        function touch_expected(name, dataset::ERA5HourlySingleLevel, dates::Vector)
+            paths = metadata_path(Metadata(name; dataset, region, dates, dir=tmp))
+            foreach(touch, unique(paths))
+            return paths
+        end
+
         @testset "single-variable multi-date (download_era5_month)" begin
             # All hours of date1, date2 already on disk
             ds_sl = ERA5HourlySingleLevel()
-            expected = [touch_expected(:temperature, ds_sl, dt) for dt in (date1, date2)]
+            expected = touch_expected(:temperature, ds_sl, [date1, date2])
 
             # Returns the existing paths without raising — the early-return guard fires
             result = CDSExt.download_era5_month(:temperature, ds_sl, [date1, date2];
@@ -795,7 +802,7 @@ end
 
         @testset "ERA5Metadata parent (multi-day)" begin
             ds_sl = ERA5HourlySingleLevel()
-            expected = [touch_expected(:temperature, ds_sl, dt) for dt in (date_day1, date_day2)]
+            expected = touch_expected(:temperature, ds_sl, [date_day1, date_day2])
             meta = Metadata(:temperature; dataset=ds_sl, dates=[date_day1, date_day2], region, dir=tmp)
 
             result = download(meta; skip_existing=true)
@@ -814,7 +821,7 @@ end
 
         @testset "names + dataset + datetimes convenience overload (multi-day)" begin
             ds_sl = ERA5HourlySingleLevel()
-            expected = [touch_expected(name, ds_sl, dt) for name in names for dt in (date_day1, date_day2)]
+            expected = vcat([touch_expected(name, ds_sl, [date_day1, date_day2]) for name in names]...)
 
             result = download(names, ds_sl, [date_day1, date_day2];
                                        region, dir=tmp, skip_existing=true, cleanup=true)
@@ -1183,19 +1190,48 @@ end
         @test request["day"] == ["16"]
         @test request["time"] == ["06:00", "18:00"]
 
+        # The request is stored as delivered, and each date is read from its own timestep
         @test paths == [metadata_path(datum) for datum in metadata]
-        for (datum, path) in zip(metadata, paths)
-            NCDataset(path) do ds
-                @test ds.dim["valid_time"] == 1
-                @test ds["valid_time"][1] == datum.dates
-                @test all(ds["t2m"][:, :, 1] .== Dates.hour(datum.dates))
-            end
+        @test length(unique(paths)) == 1
+        for datum in metadata
+            @test all(NumericalEarth.DataWrangling.retrieve_data(datum) .== Dates.hour(datum.dates))
         end
         @test isempty(filter(startswith("_tmp"), readdir(dir)))
 
         # The files are on disk: nothing is fetched again
         download(metadata; retrieve = fake_retrieve)
         @test length(requests) == 1
+    end
+end
+
+@testset "ERA5 hourly FieldTimeSeries matches per-hour Fields on a regional file" begin
+    # Like CDS: the file covers the request's area at 0.25°, latitude stored north first
+    function fake_retrieve(product, request, path)
+        north, west, south, east = request["area"]
+        λ = collect(0.25 * ceil(west / 0.25):0.25:east)
+        φ = reverse(collect(0.25 * ceil(south / 0.25):0.25:north))
+        times = vec([DateTime(parse(Int, y), parse(Int, m), parse(Int, d), parse(Int, h[1:2]))
+                     for y in request["year"], m in request["month"], d in request["day"], h in request["time"]])
+        NCDataset(path, "c") do ds
+            defVar(ds, "longitude", λ, ("longitude",))
+            defVar(ds, "latitude", φ, ("latitude",))
+            defVar(ds, "valid_time", times, ("valid_time",))
+            defVar(ds, "t2m", [Float32(250 + φj + Dates.hour(t)) for λi in λ, φj in φ, t in times],
+                   ("longitude", "latitude", "valid_time"))
+        end
+        return path
+    end
+
+    mktempdir() do dir
+        region = BoundingBox(longitude=(10, 12), latitude=(40, 42))
+        dates = DateTime(2005, 1, 31, 23):Hour(1):DateTime(2005, 2, 1, 1)
+        metadata = Metadata(:temperature; dataset=ERA5HourlySingleLevel(), dates, region, dir)
+        download(metadata; retrieve = fake_retrieve)
+
+        fts = FieldTimeSeries(metadata, CPU(); time_indices_in_memory = length(dates))
+        for n in 1:length(dates)
+            @test interior(fts[n]) == interior(Field(metadata[n]))
+        end
     end
 end
 

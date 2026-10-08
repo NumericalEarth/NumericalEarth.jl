@@ -150,36 +150,42 @@ DataWrangling.averaging_window(md::Metadatum{<:ERA5MonthlySingleLevel}) = DataWr
 """
     retrieve_data(metadata::ERA5Metadatum)
 
-Retrieve ERA5 data from NetCDF file according to `metadata`.
-ERA5 is 2D surface data, so we return a 2D array with an added singleton z-dimension.
+Read the timestep of `metadata.dates` from the ERA5 NetCDF file holding it, located by the
+file's time coordinate, as a 2D array with an added singleton z-dimension.
 """
 function DataWrangling.retrieve_data(metadata::ERA5Metadatum)
     path = metadata_path(metadata)
-    name = dataset_variable_name(metadata)
 
-    ds = NCDatasets.Dataset(path)
+    data_2d = NCDatasets.Dataset(path) do ds
+        raw_data = ds[dataset_variable_name(metadata)]
+        ndims(raw_data) == 2 && return raw_data[:, :]
 
-    # ERA5 is 2D + time, we take the first time step
-    # Data shape is typically (lon, lat) or (lon, lat, time)
-    raw_data = ds[name]
-    ndim = ndims(raw_data)
-
-    if ndim == 2
-        data_2d = raw_data[:, :]
-    elseif ndim == 3
-        data_2d = raw_data[:, :, 1]
-    else
-        error("Unexpected ERA5 data dimensions: $ndim")
+        file_dates = ds[haskey(ds, "valid_time") ? "valid_time" : "time"][:]
+        n = findfirst(==(metadata.dates), file_dates)
+        isnothing(n) && error("$(metadata.dates) is not in $path, which spans $(first(file_dates)) to $(last(file_dates)).")
+        raw_data[:, :, n]
     end
-
-    close(ds)
 
     # Latitude is stored from 90°N → 90°S
     data_2d = reverse(data_2d, dims=2)
 
-    # Add singleton z-dimension for 3D field compatibility
-    # Return as (Nx, Ny, 1)
     return reshape(data_2d, size(data_2d, 1), size(data_2d, 2), 1)
+end
+
+#####
+##### ERA5HourlySingleLevel filename: one file per CDS request
+#####
+
+# One file per variable and CDS request batch, named for the batch's first and last dates
+function DataWrangling.build_filename(dataset::ERA5HourlySingleLevel, name, dates::AbstractArray, region)
+    filenames = Dict{DateTime, String}()
+    for batch in batch_datetimes_for_cds(dates, dataset, 1)
+        filename = DataWrangling.metadata_filename(dataset, name, batch, region)
+        for date in batch
+            filenames[date] = filename
+        end
+    end
+    return DatewiseFilename([filenames[date] for date in dates])
 end
 
 #####
@@ -203,8 +209,7 @@ end
 
 # All dates in a year use the SAME file, but a request can span multiple years,
 # so return one filename per date (repeated within a year) rather than collapsing
-# to a single string. `set!` groups consecutive same-year dates and opens each
-# yearly file once (see `read_era5_yearly_series` in `ERA5_field_time_series.jl`).
+# to a single string.
 function DataWrangling.build_filename(dataset::ERA5YearlySingleLevel, name, dates::AbstractArray, region)
     return DatewiseFilename([DataWrangling.metadata_filename(dataset, name, d, region) for d in dates])
 end
