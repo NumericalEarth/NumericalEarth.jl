@@ -13,7 +13,9 @@ end
 
 propagate_horizontally!(::NearestNeighborInpainting, field, ::Nothing, args...; kw...) = field
 
-remaining_gaps(field, mask) = sum(isnan, field; condition=interior(mask))
+# Count in integers: a sum in the field's float type stops growing at 2²⁴ gaps in Float32,
+# after which every sweep looks like it filled nothing and propagation stops.
+remaining_gaps(field, mask) = count(isnan.(interior(field)) .& interior(mask))
 
 # Stop once a sweep fills nothing: no donor is reachable for what is left, and the
 # default `maxiter = Inf` would otherwise never terminate.
@@ -37,9 +39,6 @@ function propagate_horizontally!(inpainting::NearestNeighborInpainting, field, m
     previous_gaps = -1
     grid  = field.grid
     arch  = architecture(grid)
-
-    launch!(arch, grid, size(field), _nan_mask!, field, mask)
-    fill_halo_regions!(field)
 
     # Need temporary field to avoid a race condition
     parent(substituting_field) .= parent(field)
@@ -130,11 +129,18 @@ Arguments
                 `Int` is taken as that `maxiter`.
                 Default: `NearestNeighborInpainting(Inf)`.
 """
+inpaint_mask!(field, ::Nothing; kw...) = field
+
 function inpaint_mask!(field, mask; inpainting=NearestNeighborInpainting(Inf))
 
     if inpainting isa Int
         inpainting = NearestNeighborInpainting(inpainting)
     end
+
+    # Blank the masked cells first: `continue_downwards!` fills them from above, and blanking them
+    # afterwards would discard that fill, leaving levels without any valid data to `_fill_nans!`.
+    launch!(architecture(field), field.grid, size(field), _nan_mask!, field, mask)
+    fill_halo_regions!(field)
 
     if size(field, 3) > 1
         continue_downwards!(field, mask)
