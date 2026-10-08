@@ -99,6 +99,8 @@ jobs:
       # filesystem with large dataset downloads and compiled artifacts.
       TMPDIR: /__w/_temp
       JULIA_DEPOT_PATH: '/__w/_temp/depot:/usr/local/share/julia:'
+      # CondaPkg resolves against every environment on the load path.
+      JULIA_LOAD_PATH: "@:@stdlib"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -136,8 +138,9 @@ jobs:
               NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=false
           fi
           echo "NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=${NUMERICAL_EARTH_BUILD_ALL_EXAMPLES}" | tee "${GITHUB_ENV}"
+      # The Python extensions resolve their CondaPkg environment while precompiling, which only works in docs.
       - name: Instantiate and precompile
-        shell: julia --project --color=yes {0}
+        shell: julia --project=docs --color=yes {0}
         run: |
           using Pkg
           Pkg.resolve()
@@ -146,8 +149,6 @@ jobs:
 
           using CUDA
           CUDA.precompile_runtime()
-      - name: Instantiate docs folder
-        run: julia --project=docs --color=yes -e 'using Pkg; Pkg.resolve(); Pkg.instantiate(verbose=true)'
       - name: Install Veros in docs CondaPkg environment
         run: |
           julia --project=docs --color=yes -e '
