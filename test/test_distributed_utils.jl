@@ -8,7 +8,8 @@ using Dates
 using NumericalEarth.DataWrangling: metadata_path
 using NumericalEarth.DataWrangling.ORCA: ORCAOne
 using Oceananigans.DistributedComputations
-using Oceananigans.DistributedComputations: concatenate_local_sizes, local_size, reconstruct_global_grid
+using Oceananigans.DistributedComputations: concatenate_local_sizes, local_size, reconstruct_global_grid, synchronize_communication!
+using SeawaterPolynomials.TEOS10: θ_from_Θ
 
 @testset "Distributed ECCO download" begin
     dates = DateTimeProlepticGregorian(1992, 1, 1) : Month(1) : DateTimeProlepticGregorian(1994, 4, 1)
@@ -98,6 +99,36 @@ end
         local_bottom  = local_grid.immersed_boundary.bottom_height[1:length(irange), 1:length(jrange), 1]
         global_bottom = global_grid.immersed_boundary.bottom_height[irange, jrange, 1]
         @test local_bottom == global_bottom
+    end
+end
+
+# After a coupled step, the exchanger holds the ocean's surface potential temperature over the whole interface range,
+# the rows of halo next to each rank edge included
+@testset "Distributed exchanger ocean state" begin
+    for partition in (Partition(4, 1), Partition(1, 4), Partition(2, 2))
+        arch = Distributed(CPU(); partition)
+        grid = LatitudeLongitudeGrid(arch; size = (40, 40, 4), longitude = (0, 20), latitude = (10, 30), z = (-100, 0),
+                                     halo = (7, 7, 7))
+
+        ocean = ocean_simulation(grid; closure = nothing, Δt = 60)
+        set!(ocean.model, T = (λ, φ, z) -> 20 + 5 * cosd(20λ) * cosd(20φ), S = 35)
+
+        atmosphere = PrescribedAtmosphere(grid, [0.0, 86400.0])
+        for n in 1:2
+            set!(atmosphere.velocities.u[n], 10)
+            set!(atmosphere.temperature[n], 290)
+        end
+
+        model = OceanOnlyModel(ocean; atmosphere, radiation = PrescribedRadiation(grid))
+        time_step!(model, 60)
+
+        T, S = ocean.model.tracers.T, ocean.model.tracers.S
+        synchronize_communication!(T)
+        synchronize_communication!(S)
+
+        Tᵉˣ = model.interfaces.exchanger.ocean.state.T
+        Nx, Ny, Nz = size(grid)
+        @test all(Tᵉˣ[i, j, 1] == θ_from_Θ(max(0, S[i, j, Nz]), T[i, j, Nz]) for i in 0:Nx+1, j in 0:Ny+1)
     end
 end
 
