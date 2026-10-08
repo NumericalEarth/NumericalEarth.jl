@@ -13,8 +13,6 @@ end
 
 propagate_horizontally!(::NearestNeighborInpainting, field, ::Nothing, args...; kw...) = field
 
-# Count in integers: a sum in the field's float type stops growing at 2²⁴ gaps in Float32,
-# after which every sweep looks like it filled nothing and propagation stops.
 remaining_gaps(field, mask) = count(isnan.(interior(field)) .& interior(mask))
 
 # Stop once a sweep fills nothing: no donor is reachable for what is left, and the
