@@ -65,6 +65,7 @@ export
     equivalent_chlorophyll,
     PrescribedRadiation,
     PrescribedAtmosphere,
+    BoundaryPrescribedAtmosphere,
     PrescribedLand,
     ECCOPrescribedRadiation,
     JRA55PrescribedRadiation,

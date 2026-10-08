@@ -7,7 +7,8 @@
 # diurnal cycle, the clouds, and the land talk to each other.
 #
 # `nested_atmosphere_model(grid, dataset; dates, …)` builds the whole nest: an ERA5 "parent"
-# `PrescribedAtmosphere` on its native 0.25° pressure-level grid, driving a Breeze "child" through open
+# `BoundaryPrescribedAtmosphere` — ERA5 on its native 0.25° pressure-level grid along strips that cover
+# the child's lateral boundaries — driving a Breeze "child" through open
 # lateral boundary conditions + interior Davies relaxation, both derived on the fly from the parent's
 # raw state. The constructor also initializes the child from the reanalysis and spins it into balance,
 # so a plain `Simulation(model)` then steps the ready nest.
@@ -110,9 +111,9 @@ grid = LatitudeLongitudeGrid(arch;
 
 # ## Build the nest
 #
-# `nested_atmosphere_model(grid, dataset; dates, …)` derives the parent region from the child grid
-# (padded by two native ERA5 cells), loads the parent `PrescribedAtmosphere` on ERA5's native
-# pressure-level grid, anchors the default split-explicit compressible dynamics at the domain-mean
+# `nested_atmosphere_model(grid, dataset; dates, …)` loads ERA5 on its native pressure-level grid along
+# strips that cover the child's boundaries and relaxation zone (padded by two native ERA5 cells),
+# initializes the child from a full-domain ERA5 snapshot, anchors the default split-explicit compressible dynamics at the domain-mean
 # ERA5 surface pressure, derives the parent-driven lateral BCs + Davies relaxation (cosine ramp over
 # `relaxation_width` cells), materializes the blended `terrain`, and wraps parent + child in a
 # `NestedModel` whose `time_step!` advances the child then ticks the parent clock.
@@ -140,9 +141,9 @@ nest = nested_atmosphere_model(grid, dataset;
 # No `bottom_drag_coefficient`: the surface stress (with the heat and moisture fluxes) comes from
 # the land coupling below, so the child's bottom boundary conditions stay the coupler's flux fields.
 
-# The realized parent region (child + padding, snapped to the native 0.25° grid) serves the domain
-# map and the ERA5 snapshots below.
-parent = nest.parent
+# The nest holds ERA5 only on strips along the child's boundaries. For the domain map and the ERA5
+# panels below, load ERA5 over the whole child, padded by two native 0.25° cells.
+parent = PrescribedAtmosphere(BoundingBox(grid; padding = 1/2), dates, dataset; dir = era5_datadir)
 era5_region = BoundingBox(parent.grid)
 
 # ## Nested domains

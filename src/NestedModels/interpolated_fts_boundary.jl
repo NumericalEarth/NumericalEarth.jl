@@ -75,22 +75,25 @@ function regularize_boundary_condition(c::Interpolated{Nothing}, grid, loc, dim,
     LX = typeof(loc[1])
     LY = typeof(loc[2])
     LZ = typeof(loc[3])
-    validate_source_bracket(c.source, grid, LX, LY, LZ)
+    validate_source_bracket(c.source, grid, dim, SideType, LX, LY, LZ)
     return Interpolated{dim, SideType, LX, LY, LZ}(c.source, c.source_grid)
 end
 
-# The source must bracket the child *horizontally* (a too-small parent region there is a real
-# error). The vertical is intentionally NOT required to bracket: a child legitimately extends below
+# The source must bracket the boundary *horizontally* (a too-small parent region there is a real
+# error): along the boundary, the child's whole extent; across it, only the boundary itself. The
+# vertical is intentionally NOT required to bracket: a child legitimately extends below
 # the parent's lowest level (e.g. ERA5 pressure-level data doesn't reach the surface), and the
-# vertical interpolation clamps to the parent's edge value there rather than extrapolating. (The
-# horizontal check mirrors the one Oceananigans uses for `Relaxation`-on-FTS.)
-function validate_source_bracket(source, grid, ::Type{LX}, ::Type{LY}, ::Type{LZ}) where {LX, LY, LZ}
+# vertical interpolation clamps to the parent's edge value there rather than extrapolating.
+function validate_source_bracket(source, grid, dim, SideType, ::Type{LX}, ::Type{LY}, ::Type{LZ}) where {LX, LY, LZ}
     sim_loc    = (LX(), LY(), LZ())
     source_loc = Oceananigans.instantiated_location(source)
     source_grid = source.grid
-    for (label, nodes_fn) in (("x", Oceananigans.Grids.xnodes),
-                              ("y", Oceananigans.Grids.ynodes))
-        sim_lo, sim_hi = extrema(nodes_fn(grid, sim_loc...))
+    for (d, label, nodes_fn) in ((1, "x", Oceananigans.Grids.xnodes),
+                                 (2, "y", Oceananigans.Grids.ynodes))
+        boundary_loc = d == 1 ? (Face(), LY(), LZ()) : (LX(), Face(), LZ())
+        face_lo, face_hi = extrema(nodes_fn(grid, boundary_loc...))
+        boundary = SideType === LeftBoundary ? face_lo : face_hi
+        sim_lo, sim_hi = d == dim ? (boundary, boundary) : extrema(nodes_fn(grid, sim_loc...))
         src_lo, src_hi = extrema(nodes_fn(source_grid, source_loc...))
         (src_lo ≤ sim_lo && sim_hi ≤ src_hi) || throw(ArgumentError(
             "Interpolated boundary source $(label)-extent [$src_lo, $src_hi] does not " *
