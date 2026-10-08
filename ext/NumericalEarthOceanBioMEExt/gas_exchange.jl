@@ -24,17 +24,9 @@ biogeochemistry_surface_exchanged_tracers(::AbstractInorganicCarbon{N}) where N 
 
 @inline carbon_replicate_names(::Val{N}) where N = ntuple(n -> Symbol(:DIC, n), Val(N))
 
-# The wind speed and atmospheric pressure are computed into 2D fields once per step and shared by all of
-# the gas exchanges. Left as operations, each exchange would carry its own copies of the grid (one per
-# operation), which takes the gas exchange kernel parameters over the GPU limit with replicate carbonate systems
-surface_wind_speed(exchanger) = Field(sqrt(exchanger.atmosphere.state.u^2 + exchanger.atmosphere.state.v^2))
-
-# prescribed atmosphere pressure is in Pa, the gas exchange takes atm
-surface_atmospheric_pressure(exchanger) = Field(exchanger.atmosphere.state.p / ATM)
-
 function biogeochemical_interface(exchanger, ocean, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}; kwargs...)
-    gas_exchange_state = (wind_speed = surface_wind_speed(exchanger),
-                          atmospheric_pressure = surface_atmospheric_pressure(exchanger))
+    gas_exchange_state = (wind_speed = Field(sqrt(exchanger.atmosphere.state.u^2 + exchanger.atmosphere.state.v^2)),
+                          atmospheric_pressure = Field(exchanger.atmosphere.state.p / ATM))
 
     return merge(
         (; gas_exchange_state),
@@ -82,8 +74,6 @@ end
 #####
 
 function update_net_ocean_biogeochemical_fluxes!(coupled_model, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}, ocean, grid)
-    # we might want to add more stuff like sediments or rivers here in the future
-
     properties = coupled_model.interfaces.properties
 
     compute!(properties.gas_exchange_state.wind_speed)
@@ -103,8 +93,6 @@ function update_net_ocean_biogeochemical_fluxes!(coupled_model, biogeochemistry:
 
     fluxes = tracer_fluxes(biogeochemistry, coupled_model.interfaces.net_fluxes.ocean)
 
-    # one launch per gas, so the kernel parameters don't grow with the number of exchanged gases
-    # (each carbon chemistry is a few KiB, and the GPU parameter limit is 32 KiB)
     map(fluxes, exchangers) do flux, exchanger
         launch!(architecture(grid), grid, :xy,
                 compute_gas_exchange!,
