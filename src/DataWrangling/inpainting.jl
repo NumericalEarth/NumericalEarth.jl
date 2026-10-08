@@ -137,8 +137,7 @@ function inpaint_mask!(field, mask; inpainting=NearestNeighborInpainting(Inf))
         inpainting = NearestNeighborInpainting(inpainting)
     end
 
-    # Blank the masked cells first: `continue_downwards!` fills them from above, and blanking them
-    # afterwards would discard that fill, leaving levels without any valid data to `_fill_nans!`.
+    # Blank the masked cells before `continue_downwards!`
     launch!(architecture(field), field.grid, size(field), _nan_mask!, field, mask)
     fill_halo_regions!(field)
 
