@@ -182,7 +182,7 @@ end
 
 function sea_ice_dynamics(grid, ocean=nothing;
                           sea_ice_ocean_drag_coefficient = 3.24e-3,
-                          sea_ice_ocean_drag_reference_depth = 6,
+                          sea_ice_ocean_drag_reference_depth = nothing,
                           rheology = ElastoViscoPlasticRheology(),
                           coriolis = default_coriolis(ocean),
                           free_drift = nothing,
