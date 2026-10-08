@@ -35,7 +35,7 @@ using Oceananigans:
     TendencyCallsite,
     set!
 
-using Oceananigans.Architectures: architecture
+using Oceananigans.Architectures: architecture, ReactantState
 using Oceananigans.DistributedComputations: all_reduce
 using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, interior, interpolate!
@@ -65,7 +65,8 @@ using Breeze:
     moisture_prognostic_name,
     moisture_specific_name
 
-using Breeze.AtmosphereModels: prognostic_field_names, continuity_density
+using Breeze.Utils: initialize_on_construction!
+using Breeze.AtmosphereModels: prognostic_field_names
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
 # saturation-adjustment cloud formation when Breeze's `CloudMicrophysics` extension is loaded,
@@ -466,10 +467,9 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
         initialize = false,
         kw...)
 
-    child_callbacks = isnothing(relaxation_rate) || !boundary_parent ? () :
-                      (boundary_relaxation(child, prognostic, relaxation_rate, relax_mask, relaxation_width),)
-
-    return NestedModel(parent_atmosphere, child, exchanger, child_callbacks)
+    nested_model = NestedModel(parent_atmosphere, child, exchanger)
+    initialize_on_construction!(architecture(child_grid), nested_model)
+    return nested_model
 end
 
 # Domain-mean dataset mean-sea-level pressure at `date`, regridded onto the child grid.
@@ -541,14 +541,10 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
         drag_surface_temperature = dataset_skin_temperature(parent_dataset, child_grid, first(dates), dir)
     end
 
-    nested_model = NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere, child_grid;
-                                                                       relaxation_width, base_pressure,
-                                                                       bottom_drag_coefficient, drag_surface_temperature,
-                                                                       parent_surface_elevation = surface_elevation(snapshot),
-                                                                       kw...)
-
-    initial_state = child_prognostic_state(snapshot, nested_model.exchanger)
-    initialize_nested_child!(nested_model, parent_dataset, first(dates), dir; balancer, prognostic = initial_state)
+    nested_model = NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere, child_grid; base_pressure,
+                                                                       bottom_drag_coefficient, drag_surface_temperature, kw...)
+    architecture(child_grid) isa ReactantState && Oceananigans.initialize!(nested_model)
+    initialize_nested_child!(nested_model, parent_dataset, first(dates), dir; balancer)
     return nested_model
 end
 

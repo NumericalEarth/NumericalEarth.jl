@@ -239,54 +239,15 @@ function state_exchanger(parent_atmosphere, pˢᵗ, constants;
     # 4-species contract (qᶜˡ, qʳ, qᶜⁱ, qˢ) holds regardless of how many species the source carries.
     condensates = merge((qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing), something(condensates, (;)))
 
-    prognostic = child_prognostic_state(parent_atmosphere, pˢᵗ, constants, condensates, moisture_name;
-                                        time_indices_in_memory)
-    exchanger  = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates, moisture_name)
-    exchange_state!(exchanger, @allowscalar first(parent_atmosphere.temperature.times))   # position the parent's windows
-    return exchanger
-end
-
-# The derived child prognostics of `parent_atmosphere`, filled over the initial resident window.
-function child_prognostic_state(parent_atmosphere, pˢᵗ, constants, condensates, moisture_name;
-                                time_indices_in_memory = 3)
     prognostic = child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory)
-    return compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, constants, condensates, moisture_name)
+    return StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates, moisture_name)
 end
 
-# One exchanger per strip, keyed by side; `condensates` is keyed by side too, or `nothing`.
-function state_exchanger(parent_atmosphere::BoundaryPrescribedComponent, pˢᵗ, constants; condensates, kw...)
-    strips = boundary_strips(parent_atmosphere)
-    return NamedTuple{keys(strips)}(state_exchanger(strips[side], pˢᵗ, constants;
-                                                    condensates = isnothing(condensates) ? nothing : condensates[side], kw...)
-                                    for side in keys(strips))
-end
-
-# The derived child prognostics of `parent_atmosphere` with the constants, moisture and condensate species
-# of `exchanger`.
-function child_prognostic_state(parent_atmosphere::PrescribedAtmosphere, exchanger::StateExchanger)
-    names = keys(exchanger.condensates)
-    condensates = NamedTuple{names}(isnothing(exchanger.condensates[name]) ? nothing :
-                                    parent_atmosphere.microphysical_variables[name] for name in names)
-    return child_prognostic_state(parent_atmosphere, exchanger.pˢᵗ, exchanger.constants, condensates,
-                                  exchanger.moisture_name)
-end
-
-# A strip parent carries one exchanger per side, all with the child's constants, moisture and
-# condensate species, so the first one reconstructs the state.
-child_prognostic_state(parent_atmosphere::PrescribedAtmosphere, exchangers::NamedTuple) =
-    child_prognostic_state(parent_atmosphere, first(exchangers))
-
-# The derived child prognostics, keyed by variable; for strips, each variable is keyed by side.
-parent_prognostic(exchanger::StateExchanger) = exchanger.prognostic
-
-function parent_prognostic(exchangers::NamedTuple)
-    names = keys(first(exchangers).prognostic)
-    return NamedTuple{names}(map(exchanger -> exchanger.prognostic[name], exchangers) for name in names)
-end
+Oceananigans.initialize!(ex::StateExchanger, time) = exchange_state!(ex, time; force=true)
 
 # Advance the derived resident window (and the parent's own FTS windows) to bracket `time`, recomputing
-# the derived prognostics only when the bracket moves (`force` fills it once at construction).
-function NumericalEarth.NestedModels.exchange_state!(ex::StateExchanger, time; force=false)
+# the derived prognostics only when the bracket moves (`force` fills it once from `initialize!`).
+function exchange_state!(ex::StateExchanger, time; force=false)
     parent = ex.parent
     p = ex.prognostic
 
