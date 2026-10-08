@@ -65,8 +65,8 @@ function corrected_atmosphere_ocean_fluxes(FT = Float64;
                                   similarity_form              = COARELogarithmicSimilarityProfile(),
                                   subgrid_velocities           = subgrid_velocities,
                                   momentum_roughness_length    = MomentumRoughnessLength(FT;
-                                  wave_formulation             = WindDependentWaveFormulation(FT),
-                                  air_kinematic_viscosity      = TemperatureDependentAirViscosity(FT)),
+                                                    wave_formulation             = WindDependentWaveFormulation(FT),
+                                                    air_kinematic_viscosity      = TemperatureDependentAirViscosity(FT)),
                                   temperature_roughness_length = ScalarRoughnessLength(FT; air_kinematic_viscosity),
                                   water_vapor_roughness_length = ScalarRoughnessLength(FT; air_kinematic_viscosity))
 end
@@ -462,9 +462,9 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   cells), `PartialCellBottom` or `ShavedCellBottom`. Default: `GridFittedBottom`.
 - `sea_ice_immersed_latitude`: run the sea ice on the ocean grid with every column in a latitude band (in
   degrees) also immersed, since sea ice never forms there. The sea-ice kernels then skip those columns, which
-  makes the sea ice (in particular its EVP solve) cheaper. A tuple `(south, north)`, for `south < φ < north`,
-  or `nothing` to run the sea ice on the ocean grid. Needs `immersed_bottom = GridFittedBottom`.
-  Default: `(-50, 35)` with `GridFittedBottom`, `nothing` otherwise.
+  makes the sea ice (in particular its EVP solve) cheaper. A tuple `(south, north)`, for `south < φ < north`
+  (e.g. `(-50, 35)`). Needs `immersed_bottom = GridFittedBottom`. Default: `nothing` (the sea ice uses the
+  ocean grid).
 - `Δz_top`: target surface-cell thickness in metres (sets the exponential vertical scale). Per-config
   default: `1.5` for `:quarterdegree`/`:twelfthdegree`/`:test`, `nothing` (scale derived from
   `depth`/`Nz`) otherwise.
@@ -826,7 +826,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                          radiation_correction = nothing,
                          biogeochemistry_interface_kwargs = NamedTuple(),
                          bgc_dir = forcing_dir,
-                         progress_frequency = 1)
+                         progress_frequency = 1,
+                         forcing = NamedTuple())
 
     cfg = Val(config)
 
@@ -977,7 +978,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                         additional_tracer_closure = filter(!isnothing, (river_κ, ice_melt_κ_closure, under_ice_ν_closure)),
                         start_date, end_date,
                         biogeochemistry,
-                        bgc_dir)
+                        bgc_dir,
+                        forcing)
     log_setup_stage(arch, "ocean", setup_t₀)
 
     sea_ice_grid = build_sea_ice_grid(grid, sea_ice_immersed_latitude, immersed_bottom)
