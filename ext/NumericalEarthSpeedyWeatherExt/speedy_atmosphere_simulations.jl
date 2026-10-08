@@ -31,7 +31,8 @@ end
 
 # This is a parameter that is used in the computation of the fluxes,
 # It probably should not be here but in the similarity theory type.
-NumericalEarth.EarthSystemModels.boundary_layer_height(::SpeedySimulation) = 600
+NumericalEarth.EarthSystemModels.boundary_layer_height(::SpeedySimulation) =
+    NumericalEarth.EarthSystemModels.default_boundary_layer_height
 
 # This is a _hack_!! The parameters should be consistent with what is specified in SpeedyWeather
 NumericalEarth.EarthSystemModels.thermodynamics_parameters(::SpeedySimulation) = AtmosphereThermodynamicsParameters(Float32)

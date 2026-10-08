@@ -184,7 +184,7 @@ EarthSystemModels.adopt_clock(atmos::PrescribedAtmosphere, clock) = EarthSystemM
                          source = nothing,
                          clock = Clock{Float64}(time = 0),
                          surface_layer_height = 10, # meters
-                         boundary_layer_height = 512, # meters
+                         boundary_layer_height = 600, # meters
                          thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
                          velocities              = default_atmosphere_velocities(grid, times),
                          temperature             = default_atmosphere_temperature(grid, times),
@@ -220,7 +220,7 @@ function PrescribedAtmosphere(grid, times=[zero(grid)];
                               source = nothing,
                               clock = Clock{Float64}(time = 0),
                               surface_layer_height = 10,
-                              boundary_layer_height = 512,
+                              boundary_layer_height = EarthSystemModels.default_boundary_layer_height,
                               thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
                               velocities              = default_atmosphere_velocities(grid, times),
                               temperature             = default_atmosphere_temperature(grid, times),
