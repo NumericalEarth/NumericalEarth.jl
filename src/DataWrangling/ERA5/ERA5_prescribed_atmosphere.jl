@@ -22,7 +22,7 @@ end
 # A `FieldTimeSeries` backend that derives each in-memory window of specific humidity from the
 # same window of the dewpoint and pressure series, so qᵛ holds `length` snapshots like the
 # other ERA5 fields rather than the whole record.
-struct DewpointHumidity{D, P, C} <: AbstractInMemoryBackend{Int}
+struct DewpointHumidityBackend{D, P, C} <: AbstractInMemoryBackend{Int}
     start :: Int
     length :: Int
     dewpoint :: D
@@ -30,12 +30,12 @@ struct DewpointHumidity{D, P, C} <: AbstractInMemoryBackend{Int}
     thermodynamics_parameters :: C
 end
 
-OutputReaders.new_backend(b::DewpointHumidity, start, length) =
-    DewpointHumidity(start, length, b.dewpoint, b.pressure, b.thermodynamics_parameters)
+OutputReaders.new_backend(b::DewpointHumidityBackend, start, length) =
+    DewpointHumidityBackend(start, length, b.dewpoint, b.pressure, b.thermodynamics_parameters)
 
-Adapt.adapt_structure(to, b::DewpointHumidity) = InMemory(b.start, b.length)
+Adapt.adapt_structure(to, b::DewpointHumidityBackend) = InMemory(b.start, b.length)
 
-const DewpointHumidityFTS = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DewpointHumidity}
+const DewpointHumidityFTS = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DewpointHumidityBackend}
 
 function Oceananigans.Fields.set!(qᵛ::DewpointHumidityFTS, backend = qᵛ.backend)
     Tᵈ, p, ℂ = backend.dewpoint, backend.pressure, backend.thermodynamics_parameters
@@ -117,7 +117,7 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
     ℂ = isnothing(thermodynamics_parameters) ? AtmosphereThermodynamicsParameters(FT) :
                                                 thermodynamics_parameters
 
-    backend = DewpointHumidity(1, length(Tᵈ.backend), Tᵈ, p, ℂ)
+    backend = DewpointHumidityBackend(1, length(Tᵈ.backend), Tᵈ, p, ℂ)
     qᵛ = FieldTimeSeries{Center, Center, Nothing}(grid, times; backend, time_indexing = Tᵈ.time_indexing)
     set!(qᵛ)
 
