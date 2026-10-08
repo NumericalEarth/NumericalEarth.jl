@@ -1,3 +1,5 @@
+using Oceananigans.Operators: Δz
+
 #####
 ##### Reference velocities for the sea ice-ocean drag
 #####
