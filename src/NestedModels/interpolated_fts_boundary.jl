@@ -88,8 +88,8 @@ function validate_source_bracket(source, grid, dim, SideType, ::Type{LX}, ::Type
     sim_loc    = (LX(), LY(), LZ())
     source_loc = Oceananigans.instantiated_location(source)
     source_grid = source.grid
-    for (d, label, nodes_fn) in ((1, "x", Oceananigans.Grids.xnodes),
-                                 (2, "y", Oceananigans.Grids.ynodes))
+    for (d, label, nodes_fn) in ((1, "x", Oceananigans.Grids.ξnodes),
+                                 (2, "y", Oceananigans.Grids.ηnodes))
         boundary_loc = d == 1 ? (Face(), LY(), LZ()) : (LX(), Face(), LZ())
         face_lo, face_hi = extrema(nodes_fn(grid, boundary_loc...))
         boundary = SideType === LeftBoundary ? face_lo : face_hi
