@@ -38,9 +38,6 @@ function propagate_horizontally!(inpainting::NearestNeighborInpainting, field, m
     grid  = field.grid
     arch  = architecture(grid)
 
-    launch!(arch, grid, size(field), _nan_mask!, field, mask)
-    fill_halo_regions!(field)
-
     # Need temporary field to avoid a race condition
     parent(substituting_field) .= parent(field)
 
@@ -98,6 +95,14 @@ end
     end
 end
 
+nan_mask!(field, ::Nothing) = field
+
+function nan_mask!(field, mask)
+    launch!(architecture(field), field.grid, size(field), _nan_mask!, field, mask)
+    fill_halo_regions!(field)
+    return field
+end
+
 @kernel function _nan_mask!(field, mask)
     i, j, k = @index(Global, NTuple)
     FT_NaN = convert(eltype(field), NaN)
@@ -135,6 +140,8 @@ function inpaint_mask!(field, mask; inpainting=NearestNeighborInpainting(Inf))
     if inpainting isa Int
         inpainting = NearestNeighborInpainting(inpainting)
     end
+
+    nan_mask!(field, mask)
 
     if size(field, 3) > 1
         continue_downwards!(field, mask)

@@ -1,7 +1,7 @@
 include("runtests_setup.jl")
 include("download_utils.jl")
 
-using NumericalEarth.DataWrangling: NearestNeighborInpainting, native_times
+using NumericalEarth.DataWrangling: NearestNeighborInpainting, inpaint_mask!, native_times
 using Oceananigans.Grids: topology, λnodes, φnodes, znodes
 using Oceananigans.OutputReaders: time_indices
 using Oceananigans.TimeSteppers: update_state!
@@ -80,3 +80,20 @@ for arch in test_architectures
         @test all(Array(interior(land.freshwater_flux.rivers[1])) .== 1f-5)
     end
 end
+
+@testset "Inpainting continues masked cells downwards" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch, size = (4, 4, 3), extent = (1, 1, 1))
+        field = CenterField(grid)
+        set!(field, (x, y, z) -> 1 - z)
+
+        # the bottom level is missing everywhere
+        mask = Field{Center, Center, Center}(grid, Bool)
+        set!(mask, (x, y, z) -> z < -2/3)
+
+        inpaint_mask!(field, mask)
+        interior_field = on_architecture(CPU(), interior(field))
+        @test interior_field[:, :, 1] == interior_field[:, :, 2]
+    end
+end
+
