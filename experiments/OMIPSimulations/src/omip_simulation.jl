@@ -937,7 +937,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                             labrador_forcing),
                         overflow_forcing)
 
-    ocean_forcing = merge(ocean_forcing, divergence_damping_forcing(divergence_damping_timescale))
+    ocean_forcing = merge(ocean_forcing, divergence_damping_forcing(divergence_damping_timescale), forcing)
 
     ocean = build_ocean(cfg, grid;
                         forcing = ocean_forcing,
@@ -978,8 +978,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                         additional_tracer_closure = filter(!isnothing, (river_κ, ice_melt_κ_closure, under_ice_ν_closure)),
                         start_date, end_date,
                         biogeochemistry,
-                        bgc_dir,
-                        forcing)
+                        bgc_dir)
     log_setup_stage(arch, "ocean", setup_t₀)
 
     sea_ice_grid = build_sea_ice_grid(grid, sea_ice_immersed_latitude, immersed_bottom)
