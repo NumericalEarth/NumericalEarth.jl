@@ -76,13 +76,18 @@ land_grid = LatitudeLongitudeGrid(arch, NF;
 # `land_simulation` builds the `LandModel` with a fully prescribed surface energy balance,
 # initializes it, and returns an Oceananigans `Simulation`. We use the variably saturated
 # Richards equation for the soil water.
+#
+# `initializers` sets the initial state of the land model. Each entry names a Terrarium state
+# variable and gives its initial value, either as a constant or as a function of position
+# `(x, y, z)`. Terrarium works in degrees Celsius, so we start from a uniform soil column at
+# 25 °C that is 60% saturated with water and ice.
 
 soil = SoilEnergyWaterCarbon(NF; hydrology = SoilHydrology(NF, RichardsEq()))
 land = NumericalEarth.land_simulation(land_grid;
                                       soil,
                                       vegetation   = nothing,
-                                      initializers = (temperature          = 25.0,   # °C, warm tropical soil
-                                                      saturation_water_ice = 0.6))   # moist
+                                      initializers = (temperature          = 25.0,
+                                                      saturation_water_ice = 0.6))
 
 # ## ERA5 forcing
 #
@@ -112,34 +117,28 @@ Nt = length(atmosphere.velocities.u.times)
 model      = AtmosphereLandModel(atmosphere, land; radiation)
 simulation = Oceananigans.Simulation(model; Δt = 1minute, stop_time = (Nt - 1) * hour)
 
-# ## Diagnostics
+# ## Output and progress
 #
-# Record the domain skin-temperature statistics and the mean ground heat flux each simulated hour.
+# A `JLD2Writer` saves the skin temperature and the ground heat flux every simulated hour, and a
+# callback reports the domain skin-temperature range twice a day.
 
-t_hours   = Float64[]
-T_mean    = Float64[]
-T_min     = Float64[]
-T_max     = Float64[]
-G_mean    = Float64[]
-wall_time = Ref(time_ns())
+state    = land.model.state
+outputs  = (; Tₛ = state.skin_temperature, G = state.ground_heat_flux)
+filename = "era5_forced_terrarium_land"
 
-function record!(sim)
-    state = sim.model.land.model.state
-    Tsurf = Array(interior(state.skin_temperature))     # °C
-    G     = Array(interior(state.ground_heat_flux))     # W m⁻², positive upward
-    push!(t_hours, sim.model.clock.time / hour)
-    push!(T_mean, mean(Tsurf))
-    push!(T_min, minimum(Tsurf))
-    push!(T_max, maximum(Tsurf))
-    push!(G_mean, mean(G))
-    elapsed = 1e-9 * (time_ns() - wall_time[])
-    wall_time[] = time_ns()
-    @info @sprintf("t = %6.1f h   ⟨Tₛ⟩ %.2f °C  (%.2f–%.2f)   ⟨G⟩ %+6.1f W m⁻²   wall Δ %.1fs",
-                   sim.model.clock.time / hour, mean(Tsurf), minimum(Tsurf), maximum(Tsurf), mean(G), elapsed)
+simulation.output_writers[:land] = JLD2Writer(model, outputs;
+                                              filename,
+                                              schedule = TimeInterval(1hour),
+                                              overwrite_files = true)
+
+function progress(sim)
+    Tₛ = state.skin_temperature
+    @info @sprintf("t = %s, ⟨Tₛ⟩ = %.2f °C (%.2f to %.2f), wall time: %s",
+                   prettytime(sim), mean(Tₛ), minimum(Tₛ), maximum(Tₛ), prettytime(sim.run_wall_time))
     return nothing
 end
 
-add_callback!(simulation, record!, TimeInterval(1hour))
+add_callback!(simulation, progress, TimeInterval(12hours))
 
 # ## Run
 
@@ -149,28 +148,42 @@ run!(simulation)
 
 # ## Visualization
 #
-# Left: domain skin-temperature envelope over time. Right: final skin temperature over the box.
+# Left: the domain skin-temperature envelope and the domain-mean ground heat flux (positive
+# upward) over time. Right: the final skin temperature over the box.
+
+Tₛ_ts = FieldTimeSeries("$filename.jld2", "Tₛ")
+G_ts  = FieldTimeSeries("$filename.jld2", "G")
+
+t_hours = Tₛ_ts.times ./ hour
+Nₜ      = length(t_hours)
+T_mean  = [mean(Tₛ_ts[n]) for n in 1:Nₜ]
+T_min   = [minimum(Tₛ_ts[n]) for n in 1:Nₜ]
+T_max   = [maximum(Tₛ_ts[n]) for n in 1:Nₜ]
+G_mean  = [mean(G_ts[n]) for n in 1:Nₜ]
 
 λ, φ, _ = Oceananigans.nodes(land_grid, Center(), Center(), Center())
-Tsurf_f = Array(interior(land.model.state.skin_temperature))[:, :, 1]
+Tₛ_final = interior(Tₛ_ts[Nₜ], :, :, 1)
 
-let fig = Makie.Figure(size = (1400, 600), fontsize = 16)
-    ax_t = Makie.Axis(fig[1, 1]; title = "Domain skin temperature", xlabel = "t (hours)", ylabel = "Tₛ (°C)")
-    Makie.band!(ax_t, t_hours, T_min, T_max; color = (:orange, 0.25))
-    Makie.lines!(ax_t, t_hours, T_mean; color = :firebrick, label = "mean")
-    Makie.lines!(ax_t, t_hours, T_min;  color = :steelblue, linestyle = :dash, label = "min")
-    Makie.lines!(ax_t, t_hours, T_max;  color = :orangered, linestyle = :dash, label = "max")
-    Makie.axislegend(ax_t; position = :rb)
+let fig = Makie.Figure(size = (1400, 800), fontsize = 16)
+    ax_T = Makie.Axis(fig[1, 1]; title = "Domain skin temperature", ylabel = "Tₛ (°C)")
+    Makie.band!(ax_T, t_hours, T_min, T_max; color = (:orange, 0.25))
+    Makie.lines!(ax_T, t_hours, T_mean; color = :firebrick, label = "mean")
+    Makie.lines!(ax_T, t_hours, T_min;  color = :steelblue, linestyle = :dash, label = "min")
+    Makie.lines!(ax_T, t_hours, T_max;  color = :orangered, linestyle = :dash, label = "max")
+    Makie.axislegend(ax_T; position = :rb)
 
-    ax_m = Makie.Axis(fig[1, 2]; title = "Final skin temperature", xlabel = "longitude", ylabel = "latitude",
+    ax_G = Makie.Axis(fig[2, 1]; title = "Domain-mean ground heat flux", xlabel = "t (hours)", ylabel = "G (W m⁻²)")
+    Makie.lines!(ax_G, t_hours, G_mean; color = :black)
+    Makie.linkxaxes!(ax_T, ax_G)
+
+    ax_m = Makie.Axis(fig[1:2, 2]; title = "Final skin temperature", xlabel = "longitude", ylabel = "latitude",
                       aspect = Makie.DataAspect())
-    hm = Makie.heatmap!(ax_m, λ, φ, Tsurf_f; colormap = :thermal)
-    Makie.Colorbar(fig[1, 3], hm; label = "Tₛ (°C)")
+    hm = Makie.heatmap!(ax_m, λ, φ, Tₛ_final; colormap = :thermal)
+    Makie.Colorbar(fig[1:2, 3], hm; label = "Tₛ (°C)")
 
     Makie.Label(fig[0, 1:3], "ERA5-forced Terrarium land, Central Borneo")
 
     Makie.save("era5_forced_terrarium_land.png", fig)
-    @info "Saved era5_forced_terrarium_land.png"
     fig
 end
 
