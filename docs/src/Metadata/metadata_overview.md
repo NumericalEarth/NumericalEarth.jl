@@ -65,6 +65,7 @@ The key ingredients stored in a [`Metadata`](@ref) or [`Metadatum`](@ref) object
 - the temporal coverage: either a single timestamp (`Metadatum`) or a range/vector of dates (`Metadata`);
 - an optional `region` describing the spatial extent — either a
   [`BoundingBox`](@ref NumericalEarth.DataWrangling.BoundingBox) for a rectangular sub-domain,
+  a [`ConformalConicBox`](@ref) for a rectangle in conformal conic coordinates,
   a [`Column`](@ref NumericalEarth.DataWrangling.Column) for a single horizontal location, or
   `nothing` for the full global domain;
 - the on-disk `dir`ectory where the dataset files are cached.
@@ -72,6 +73,55 @@ The key ingredients stored in a [`Metadata`](@ref) or [`Metadatum`](@ref) object
 This bookkeeping lets downstream utilities (for example `set!` or `FieldTimeSeries`) request exactly the
 slices of data they need, and it keeps track of where those slices live so we do not redownload
 them unnecessarily.
+
+## Conformal conic boxes
+
+A `ConformalConicBox` specifies horizontal geometry independently of grid resolution.
+Its origin is the geographic center, its orientation is counterclockwise from local east
+in degrees, and its extent is the full projected width in each direction in meters.
+
+```@example conic_box
+using NumericalEarth, Oceananigans, Dates
+
+region = ConformalConicBox(origin = (-105, 40),
+                           orientation = 15,
+                           extent = (4_000_000, 3_000_000),
+                           standard_parallels = nothing)
+
+grid = ConformalConicGrid(region; size=(40, 30, 10), z=(0, 10_000))
+```
+
+Explicit `standard_parallels = (30, 60)` places unit projection scale at those latitudes.
+The default `nothing` chooses parallels one-sixth and five-sixths through the latitude
+span estimated with a tangent cone at the origin. This is a construction convention,
+not an optimization of distortion. Automatic selection requires a non-equatorial origin.
+The region must fit within one longitude branch and exclude the cone apex; its orientation
+is subject to that constraint. Projected lengths differ from physical lengths by the local
+projection scale.
+
+For geographic datasets, `Metadata` and `Metadatum` store the box's enclosing longitude–latitude
+region. Provider-specific padding is applied by the existing download adapters. The model
+grid continues to use the conic box:
+
+```@example conic_box
+metadatum = Metadatum(:temperature;
+                      dataset = ERA5HourlySingleLevel(),
+                      date = DateTime(2005, 2, 16),
+                      region)
+
+metadatum.region
+```
+
+This conversion uses the continuous edges, including latitude extrema between corners.
+It returns continuous longitude bounds even across the antimeridian; support for downloading
+across that seam depends on the dataset adapter. Supplying a conic box does not ask the provider
+to reproject its data onto the model grid. Datasets requiring native projected selection can
+specialize `NumericalEarth.DataWrangling.dataset_region(dataset, box)`.
+
+```@docs
+ConformalConicBox
+ConformalConicGrid
+```
 
 ## Where data is cached
 
@@ -216,4 +266,3 @@ NumericalEarth currently ships connectors for the following data products:
 | `GHSBuiltH`        | `:building_height` — mean net building height (ANBH, 100 m, epoch 2018) over a regional window; reprojected from GHSL World-Mollweide (needs `ArchGDAL`) | [GHSL GHS-BUILT-H](https://human-settlement.emergency.copernicus.eu) |
 | `GHSBuiltS`        | `:built_up_fraction` — plan-area built-up fraction (10 m or 100 m) over a regional window; reprojected from GHSL World-Mollweide (needs `ArchGDAL`) | [GHSL GHS-BUILT-S](https://human-settlement.emergency.copernicus.eu) |
 | `ESAWorldCover`    | `:landcover_class`, `:vegetation_fraction`, and a per-class `:<class>_fraction` — 10 m land-cover classification aggregated block-wise over a regional window (needs `ArchGDAL`) | [ESA WorldCover](https://esa-worldcover.org/en/data-access) |
-
