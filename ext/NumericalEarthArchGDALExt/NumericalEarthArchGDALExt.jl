@@ -13,7 +13,8 @@ using Oceananigans.Grids: λnodes, φnodes
 using NumericalEarth.DataWrangling: BoundingBox, native_grid, native_region_grid,
                                     dataset_variable_name, bounding_box_intersects,
                                     cmr_granules, earthdata_download_cached,
-                                    figshare_article_url, tile_indices, default_tile_bytes
+                                    figshare_article_url, write_atomically,
+                                    tile_indices, default_tile_bytes
 using NumericalEarth.DataWrangling.ASTERGED: asterged_short_name, asterged_version,
                                              asterged_decode_emissivity, asterged_decode_uncertainty,
                                              broadband_map, place_tile!,
@@ -26,6 +27,8 @@ using NumericalEarth.DataWrangling.GHSL: GHSBuiltS, GHSLMetadatum, native_resolu
                                          ghsl_tile_url, ghsl_tile_tif_name, ghsl_tiles_in_bbox,
                                          ghsl_regional_raster, built_surface_to_fraction,
                                          mask_building_height
+using NumericalEarth.DataWrangling.MODISLand: MODISLand, granule_urls, regional_lattice,
+                                              stored_granule_layers
 using NumericalEarth.DataWrangling.OpenLandMap: assemble_raster_window, raster_window_indices,
                                                 validate_wgs84_longitude_latitude, validate_geographic_northup
 using NumericalEarth.DataWrangling.WorldCover: ESAWorldCoverMetadatum, version_year, version_string,
@@ -40,6 +43,7 @@ include("ibcao.jl")
 include("asterged.jl")
 include("globfp3d.jl")
 include("ghsl.jl")
+include("modis_land.jl")
 include("openlandmap.jl")
 include("worldcover.jl")
 

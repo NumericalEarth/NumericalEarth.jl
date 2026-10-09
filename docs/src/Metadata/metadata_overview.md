@@ -216,4 +216,7 @@ NumericalEarth currently ships connectors for the following data products:
 | `GHSBuiltH`        | `:building_height` — mean net building height (ANBH, 100 m, epoch 2018) over a regional window; reprojected from GHSL World-Mollweide (needs `ArchGDAL`) | [GHSL GHS-BUILT-H](https://human-settlement.emergency.copernicus.eu) |
 | `GHSBuiltS`        | `:built_up_fraction` — plan-area built-up fraction (10 m or 100 m) over a regional window; reprojected from GHSL World-Mollweide (needs `ArchGDAL`) | [GHSL GHS-BUILT-S](https://human-settlement.emergency.copernicus.eu) |
 | `ESAWorldCover`    | `:landcover_class`, `:vegetation_fraction`, and a per-class `:<class>_fraction` — 10 m land-cover classification aggregated block-wise over a regional window (needs `ArchGDAL`) | [ESA WorldCover](https://esa-worldcover.org/en/data-access) |
+| `MCD15A2H` | `:leaf_area_index`, `:fpar`, `:leaf_area_index_uncertainty`, `:landcover_code` — 8-day 500 m MODIS composites (needs `ArchGDAL`) | [MCD15A2H V061](https://www.earthdata.nasa.gov/data/catalog/lpcloud-mcd15a2h-061) |
+| `MODISLAIClimatology` | 46-period seasonal climatology of an [`MCD15A2H`](@ref) variable | [MCD15A2H V061](https://www.earthdata.nasa.gov/data/catalog/lpcloud-mcd15a2h-061) |
+| `MCD12Q1` | `:landcover_class`, `:quality_flag`, `:land_water_mask` — annual 500 m land cover on [`MCD15A2H`](@ref)'s lattice | [MCD12Q1 V061](https://www.earthdata.nasa.gov/data/catalog/lpcloud-mcd12q1-061) |
 
