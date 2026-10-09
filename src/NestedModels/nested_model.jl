@@ -53,6 +53,12 @@ NestedModel(parent, child::AbstractModel{TS, A}, exchanger=nothing) where {TS, A
 # one whose parent needs no state transform — just forwards.
 exchange_state!(exchanger, time) = nothing
 
+function Oceananigans.initialize!(nm::NestedModel)
+    isnothing(nm.exchanger) || Oceananigans.initialize!(nm.exchanger)
+    Oceananigans.initialize!(nm.child)
+    return nothing
+end
+
 # Model-protocol dispatches, forwarded explicitly to the child.
 fields(nm::NestedModel)            = fields(nm.child)
 prognostic_fields(nm::NestedModel) = prognostic_fields(nm.child)

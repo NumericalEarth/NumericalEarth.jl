@@ -23,6 +23,7 @@ using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, pare
 
 using Oceananigans:
     Oceananigans,
+    prognostic_fields,
     WENO,
     ValueBoundaryCondition,
     NormalFlowBoundaryCondition,
@@ -50,8 +51,7 @@ using Breeze:
     MixedPhaseEquilibrium,
     SpecificForcing,
     materialize_terrain!,
-    moisture_prognostic_name,
-    moisture_specific_name
+    moisture_prognostic_name
 
 using Breeze.AtmosphereModels: prognostic_field_names
 
@@ -373,7 +373,9 @@ mean-sea-level pressure over the child at `first(dates)`. When `bottom_drag_coef
 `drag_surface_temperature` defaults to the dataset's skin temperature at `first(dates)` regridded onto
 the child grid (a static snapshot, not the dataset's diurnal cycle). `balancer` controls the
 post-initialization adiabatic (DFI) balance: `true` (default) runs it, `false` skips it, and an
-`AdiabaticBalancer(Δt=…)` runs a custom (e.g. gentler) excursion. Remaining keyword arguments flow to
+`AdiabaticBalancer(Δt=…)` runs a custom (e.g. gentler) excursion. With `initialize = false` the child
+is left uninitialized, for a workflow that compiles `initialize!(nested_model)` first. Remaining
+keyword arguments flow to
 `nested_atmosphere_model(parent, child_grid; kw...)`.
 """
 function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_dataset; dates,
@@ -384,6 +386,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
     bottom_drag_coefficient = nothing,
     drag_surface_temperature = nothing,
     balancer = true,
+    initialize = true,
     kw...)
 
     parent_region = BoundingBox(child_grid; padding = parent_padding)
@@ -401,43 +404,38 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
 
     nested_model = NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere, child_grid; base_pressure,
                                                                        bottom_drag_coefficient, drag_surface_temperature, kw...)
-    initialize_nested_child!(nested_model, parent_dataset, first(dates), dir; balancer)
+    initialize && initialize_nested_child!(nested_model; balancer)
     return nested_model
 end
 
 NumericalEarth.Atmospheres.bulk_drag(model::NestedModel; kw...) =
     NumericalEarth.Atmospheres.bulk_drag(model.child; kw...)
 
-function interpolate_to_child(fts, child_grid, t₀, loc = (Center, Center, Center))
-    field = Field{loc...}(child_grid)
-    interpolate!(field, fts[Time(t₀)])
-    return field
-end
-
 # Initialize the nested child from the exchanger's parent-derived prognostics (the SAME state that drives
-# the lateral boundaries), interpolated to the child interior — so the interior IC and the prescribed
-# boundary agree at the walls (no standing pressure/density jump). Recompute the Exner reference from the
-# domain-mean state, graft ρw ← ρw − ρw̃ so the flow follows the terrain, and spin ρw into nonhydrostatic
-# balance. `set!(…; balancer = true)` runs Breeze's adiabatic (FV3 `na_init`) balance on a stripped,
-# memory-sharing twin (no microphysics/sponge/forcing) at an automatically-derived acoustic-CFL step.
-function initialize_nested_child!(nested_model, dataset, date, dir; balancer = true)
+# the lateral boundaries), interpolated straight into the child's prognostic fields — so the interior IC
+# and the prescribed boundary agree at the walls (no standing pressure/density jump). `set!` of those same
+# fields reconciles the densities and recomputes the Exner reference from the domain-mean state; then
+# graft ρw ← ρw − ρw̃ so the flow follows the terrain. Kernels only up to the balancer, so on
+# `ReactantState` it compiles like `initialize!`. `balancer = true` then spins ρw into nonhydrostatic
+# balance with Breeze's adiabatic (FV3 `na_init`) balance on a stripped, memory-sharing twin (no
+# microphysics/sponge/forcing) at an automatically-derived acoustic-CFL step — eager.
+function initialize_nested_child!(nested_model; balancer = true)
     child = nested_model.child
-    child_grid = child.grid
-    prognostic = nested_model.exchanger.prognostic
-    t₀ = first(prognostic.ρᵈ.times)
+    exchanger = nested_model.exchanger
+    parent = exchanger.prognostic
+    fields = prognostic_fields(child)
+    t₀ = first(parent.ρᵈ.times)
 
-    ρᵈ   = interpolate_to_child(prognostic.ρᵈ, child_grid, t₀)
-    ρθ   = interpolate_to_child(prognostic.ρθ, child_grid, t₀)
-    ρqᵛᵉ = interpolate_to_child(prognostic.ρqᵛᵉ, child_grid, t₀)
-    ρu   = interpolate_to_child(prognostic.ρu, child_grid, t₀, (Face, Center, Center))
-    ρv   = interpolate_to_child(prognostic.ρv, child_grid, t₀, (Center, Face, Center))
+    ρᵈ, ρu, ρv, ρθ = fields.ρᵈ, fields.ρu, fields.ρv, fields.ρθ
+    ρqᵛᵉ = fields[exchanger.moisture_name]
+    interpolate!(ρᵈ,   parent.ρᵈ[Time(t₀)])
+    interpolate!(ρθ,   parent.ρθ[Time(t₀)])
+    interpolate!(ρqᵛᵉ, parent.ρqᵛᵉ[Time(t₀)])
+    interpolate!(ρu,   parent.ρu[Time(t₀)])
+    interpolate!(ρv,   parent.ρv[Time(t₀)])
 
-    ρ   = Field(ρᵈ + ρqᵛᵉ)
-    qᵛᵉ = Field(ρqᵛᵉ / ρ)
-    θˡⁱ = Field(ρθ / ρᵈ)
-
-    moisture = NamedTuple{(moisture_specific_name(child.microphysics),)}((qᵛᵉ,))
-    set!(nested_model; ρ, ρu, ρv, θˡⁱ, moisture..., compute_reference_state = true)
+    moisture = NamedTuple{(exchanger.moisture_name,)}((ρqᵛᵉ,))
+    set!(nested_model; ρᵈ, ρu, ρv, ρθ, moisture..., compute_reference_state = true)
 
     # Consistent-w: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (the initial flow follows the ground).
     update_state!(nested_model)
@@ -450,7 +448,7 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
     # Adiabatic (DFI) balance at Breeze's auto acoustic-CFL step. `balancer=false` skips it (to isolate
     # whether the interpolated IC steps stably on its own); pass an `AdiabaticBalancer(Δt=…)` for a
     # gentler excursion when the default 0.85·Δz/c DFI drives a pathological IC cell's pressure negative.
-    set!(nested_model; balancer)
+    balancer === false || set!(nested_model; balancer)
 
     return nested_model
 end
