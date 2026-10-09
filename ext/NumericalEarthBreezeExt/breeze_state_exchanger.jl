@@ -31,9 +31,9 @@ using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, Clamp, AbstractInMe
                                   time_indices, interpolating_time_indices, extract_field_time_series,
                                   new_backend, update_field_time_series!
 using Oceananigans.Units: Time
-using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips
-using NumericalEarth.NestedModels: exchange_state!
+using Breeze.Utils: initialize_on_construction!
+import Oceananigans.OutputReaders: new_backend, update_field_time_series!
+import NumericalEarth.NestedModels: exchange_state!, total_density, reconstruct_parent_state
 
 #####
 ##### An in-memory backend whose resident window is filled by the StateExchanger (not by `set!`).
@@ -181,8 +181,9 @@ function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, const
                 pˢᵗ, constants, equilibrium_moisture)
     end
 
-    for fts in prognostic
-        fill_halo_regions!(fts)
+    # slice by slice: the `FieldTimeSeries` method fills through `asyncmap`, which does not trace
+    for fts in prognostic, n in time_indices(fts)
+        fill_halo_regions!(fts[n])
     end
 
     return prognostic
@@ -240,30 +241,34 @@ function state_exchanger(parent_atmosphere, pˢᵗ, constants;
     condensates = merge((qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing), something(condensates, (;)))
 
     prognostic = child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory)
-    return StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates, moisture_name)
+    exchanger = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates, moisture_name)
+    initialize_on_construction!(architecture(prognostic.ρᵈ.grid), exchanger)
+    return exchanger
 end
 
-Oceananigans.initialize!(ex::StateExchanger, time) = exchange_state!(ex, time; force=true)
+# Fill the resident window from the parent levels it brackets: kernels only, so it compiles.
+function Oceananigans.initialize!(ex::StateExchanger)
+    compute_child_prognostics!(ex.prognostic, ex.parent, ex.pˢᵗ, ex.constants, ex.condensates, ex.moisture_name)
+    return nothing
+end
 
 # Advance the derived resident window (and the parent's own FTS windows) to bracket `time`, recomputing
-# the derived prognostics only when the bracket moves (`force` fills it once from `initialize!`).
-function exchange_state!(ex::StateExchanger, time; force=false)
+# the derived prognostics only when the bracket moves. A window holding the whole series never moves.
+function exchange_state!(ex::StateExchanger, time)
     parent = ex.parent
     p = ex.prognostic
+
+    N = length(p.ρᵈ.times)
+    window = length(p.ρᵈ.backend)
+    window >= N && return nothing
 
     # Position the 3-level window one level BELOW the bracket of `time` (= t + Δt from `time_step!`): the
     # step's start t can sit in the previous interval [n₁-1, n₁] while `time` sits in [n₁, n₁+1], so a
     # window spanning [n₁-1, n₁, n₁+1] keeps EVERY sub-stage query resident across a node crossing.
     # A 2-level window cannot span the crossing — its start-side query returns a stale/wrong boundary target
     # (the hourly-seam kick that tips the child at every ERA5 crossing).
-    # A full window (memory ≥ the whole time axis) holds every level, so it never moves — pinned at
-    # start = 1. Only a limited (streaming) window slides to bracket `time` one level below `t + Δt`.
-    # Host copy of the times: a single time stays a device array (only 2+ evenly spaced times become a range)
-    times = on_architecture(CPU(), p.ρᵈ.times)
-    _, n₁, _ = interpolating_time_indices(p.ρᵈ.time_indexing, times, time)
-    N = length(times)
-    window = length(p.ρᵈ.backend)
-    start = window >= N ? 1 : clamp(n₁ - 1, 1, max(1, N - window + 1))
+    _, n₁, _ = interpolating_time_indices(p.ρᵈ.time_indexing, p.ρᵈ.times, time)
+    start = clamp(n₁ - 1, 1, N - window + 1)
 
     # Hold the child window's levels `start:start+window-1` in the parent's own (possibly limited-memory)
     # FTS windows; they also bracket the parent's clock, which trails `time` by at most one interval.
@@ -280,9 +285,8 @@ function exchange_state!(ex::StateExchanger, time; force=false)
 
     # The window's values are a pure function of the resident parent levels, so they change only
     # when the bracket moves; on every intra-interval child step the recompute would reproduce identical
-    # values. Skip it unless the bracket moved (or this is the initial fill) to spare the hot path two
-    # parent-grid kernels + halo fills per step.
-    (moved || force) && compute_child_prognostics!(p, parent, ex.pˢᵗ, ex.constants, ex.condensates,
-                                                   ex.moisture_name)
+    # values. Skip it unless the bracket moved to spare the hot path two parent-grid kernels + halo
+    # fills per step.
+    moved && compute_child_prognostics!(p, parent, ex.pˢᵗ, ex.constants, ex.condensates, ex.moisture_name)
     return nothing
 end

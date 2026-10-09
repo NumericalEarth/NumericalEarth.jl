@@ -55,10 +55,8 @@ NestedModel(parent, child::AbstractModel{TS, A}, exchanger=nothing, child_callba
 exchange_state!(exchanger, time) = nothing
 exchange_state!(exchangers::NamedTuple, time) = foreach(exchanger -> exchange_state!(exchanger, time), exchangers)
 
-Oceananigans.initialize!(::Nothing, time) = nothing
-
 function Oceananigans.initialize!(nm::NestedModel)
-    Oceananigans.initialize!(nm.exchanger, nm.clock.time)
+    isnothing(nm.exchanger) || Oceananigans.initialize!(nm.exchanger)
     Oceananigans.initialize!(nm.child)
     return nothing
 end
