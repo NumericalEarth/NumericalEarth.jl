@@ -1,13 +1,19 @@
 using Oceananigans.Grids: Center
 using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.Fields: compute!
-using Breeze.AtmosphereModels: thermodynamic_density, dynamics_pressure,
-                               specific_humidity, surface_precipitation_flux
+using Breeze.AtmosphereModels: thermodynamic_density, dynamics_pressure, specific_humidity
 using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
 using GPUArraysCore: @allowscalar
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using NumericalEarth.EarthSystemModels: component_model
 using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
+
+# Breeze#959 renamed `surface_precipitation_flux` → `bottom_precipitation_flux` (the flux through
+# the domain's bottom face, summed over every sedimenting condensate). Resolve whichever this
+# Breeze defines, so released Breeze 0.11 and Breeze `main` both work.
+const precipitation_flux = isdefined(Breeze.AtmosphereModels, :bottom_precipitation_flux) ?
+                           Breeze.AtmosphereModels.bottom_precipitation_flux :
+                           Breeze.AtmosphereModels.surface_precipitation_flux
 
 const BreezeAtmosphere    = Breeze.AtmosphereModel
 const BreezeAtmosphereSim = Simulation{<:Breeze.AtmosphereModel}
@@ -78,8 +84,8 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchang
     # Breeze's surface rain-flux diagnostic (positive down, kg m⁻² s⁻¹); schemes with no
     # precipitating species define no method — fall back to an inert zero field.
     # TODO: move the fallback into Breeze; add a snow analog (Jˢⁿ stays zero below).
-    Jʳⁿ = if applicable(surface_precipitation_flux, atmosphere, atmosphere.microphysics)
-        surface_precipitation_flux(atmosphere)
+    Jʳⁿ = if applicable(precipitation_flux, atmosphere, atmosphere.microphysics)
+        precipitation_flux(atmosphere)
     else
         Oceananigans.CenterField(exchange_grid)
     end
