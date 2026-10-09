@@ -39,6 +39,12 @@ The sign convention is `+` for cooling of the interface and `-` for heating.
 @inline function store_interface_fluxes!(interface_fluxes, interface_temperature,
                                          interface_specific_humidity, i, j,
                                          Ψₛ, Ψₐ, ℂᵃᵗ, ℒ, Tₛ, interface_properties)
+    @inbounds interface_temperature[i, j, 1] = Tₛ
+    @inbounds interface_specific_humidity[i, j, 1] = Ψₛ.specific_humidity
+    return store_interface_fluxes!(interface_fluxes, i, j, Ψₛ, Ψₐ, ℂᵃᵗ, ℒ, interface_properties)
+end
+
+@inline function store_interface_fluxes!(interface_fluxes, i, j, Ψₛ, Ψₐ, ℂᵃᵗ, ℒ, interface_properties)
 
     u★ = Ψₛ.fluxes.u★
     θ★ = Ψₛ.fluxes.θ★
@@ -59,8 +65,6 @@ The sign convention is `+` for cooling of the interface and `-` for heating.
         interface_fluxes.water_vapor[i, j, 1]   = - ρᵃᵗ * u★ * q★
         interface_fluxes.x_momentum[i, j, 1]    = + ρᵃᵗ * τˣ
         interface_fluxes.y_momentum[i, j, 1]    = + ρᵃᵗ * τʸ
-        interface_temperature[i, j, 1]          = Tₛ
-        interface_specific_humidity[i, j, 1]    = Ψₛ.specific_humidity
 
         interface_fluxes.friction_velocity[i, j, 1] = u★
         interface_fluxes.temperature_scale[i, j, 1] = θ★

@@ -7,8 +7,13 @@
 #####
 ##### with `Jˡᵇ` positive upward (capillary rise / groundwater return) and
 ##### negative downward (drainage). All scalars are per-cell; the kernel
-##### passes them in.
+##### passes them in. A closure whose flux depends on the layer's own head also
+##### supplies `∂Jˡᵇ/∂Π` so the exchange can be stepped implicitly:
 #####
+#####     deep_liquid_flux_head_derivative(closure, K) -> ∂Jˡᵇ/∂Π   (kg m⁻³ s⁻¹)
+#####
+
+@inline deep_liquid_flux_head_derivative(closure, K) = zero(K)
 
 """
     NoDeepLiquidFlux()
@@ -70,6 +75,9 @@ DarcyDeepLiquidFlux(FT::Type = Oceananigans.defaults.FloatType;
     # h_D − h_b = (z_D + Πᵈ) − (z_b + Π) = -ℓ + Πᵈ − Π
     return ρˡ * K * (Πᵈ - Π - ℓ) / ℓ
 end
+
+@inline deep_liquid_flux_head_derivative(c::DarcyDeepLiquidFlux, K) =
+    -convert(typeof(K), c.liquid_density) * K / convert(typeof(K), c.exchange_length)
 
 Base.summary(c::DarcyDeepLiquidFlux) =
     string("DarcyDeepLiquidFlux(exchange_length=", prettysummary(c.exchange_length),
