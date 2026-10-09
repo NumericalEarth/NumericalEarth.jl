@@ -212,7 +212,7 @@ radiation = RadiativeTransferModel(grid, AllSkyOptics(), nest.child.thermodynami
 # bounded by the advective CFL (acoustic modes are substepped).
 
 Δt = 10
-atmosphere = Simulation(nest; Δt)   ## the coupled model manages Δt; this sets only the initial value
+atmosphere = Simulation(nest; Δt, verbose = false)   ## the coupled model manages Δt and the stop time
 model = AtmosphereLandModel(atmosphere, land; radiation)
 
 simulation = Simulation(model; Δt, stop_time=duration)
