@@ -1,4 +1,3 @@
-using Dates: Second
 using JLD2
 using Oceananigans: location, instantiated_location
 using Oceananigans.Architectures: AbstractArchitecture, on_architecture, architecture
@@ -192,7 +191,8 @@ function DatasetRestoring(metadata::Metadata,
                           time_indices_in_memory = default_time_indices_in_memory(metadata),
                           time_indexing = Cyclical(),
                           inpainting = NearestNeighborInpainting(Inf),
-                          cache_inpainted_data = true)
+                          cache_inpainted_data = true,
+						  field_name = oceananigans_fieldnames[metadata.name])
 
     Downloads.download(metadata)
 
@@ -204,10 +204,6 @@ function DatasetRestoring(metadata::Metadata,
 
     arch = architecture(fts)
     mask = on_architecture(arch, mask)
-
-    # Grab the correct Oceananigans field to restore
-    variable_name = metadata.name
-    field_name = oceananigans_fieldnames[variable_name]
 
     # If we pass the grid we do not need to interpolate
     # so we can save parameter space by setting the native grid to nothing
@@ -259,8 +255,8 @@ ocean = ocean_simulation(grid;
     additional_surface_fluxes = (; S = SurfaceFluxRestoring(restoring)))
 ```
 """
-struct SurfaceFluxRestoring <: Function
-    dataset_restoring :: DatasetRestoring
+struct SurfaceFluxRestoring{D} <: Function
+    dataset_restoring :: D
 end
 
 Adapt.adapt_structure(to, sf::SurfaceFluxRestoring) = SurfaceFluxRestoring(Adapt.adapt(to, sf.dataset_restoring))

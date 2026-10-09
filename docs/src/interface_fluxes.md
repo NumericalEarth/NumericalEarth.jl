@@ -157,7 +157,7 @@ use `LargeYeagerTransferCoefficients`. This computes all three transfer coeffici
 stability corrections (L&Y eqs. 6c-6d, 10a-10c):
 
 ```@example interface_fluxes
-using NumericalEarth.EarthSystemModels.InterfaceComputations: FixedIterations, LargeYeagerTransferCoefficients
+using NumericalEarth.EarthSystemModels.InterfaceComputations: LargeYeagerTransferCoefficients
 
 ly = LargeYeagerTransferCoefficients()
 ly_fluxes = CoefficientBasedFluxes(transfer_coefficients = ly,
@@ -335,7 +335,7 @@ ocean_grid = RectilinearGrid(size=(Nx, Ny, 1); x, y, z, topology=(Periodic, Peri
 
 # Build the atmosphere
 atmosphere = PrescribedAtmosphere(atmos_grid, surface_layer_height=10)
-interior(atmosphere.tracers.T) .= 273.15 + T₀ # K
+interior(atmosphere.temperature) .= 273.15 + T₀ # K
 interior(atmosphere.velocities.u, :, :, 1, 1) .= uᵃᵗ # m/s
 
 kw = (momentum_advection=nothing, tracer_advection=nothing, closure=nothing)
@@ -707,11 +707,11 @@ We then set the atmospheric state:
 
 ```@example interface_fluxes
 interior(atmosphere.pressure) .= 101352
-interior(atmosphere.tracers.q) .= qₛ
+interior(atmosphere.specific_humidity) .= qₛ
 
 Tᵃᵗ = 273.15 .+ range(-40, stop=40, length=Ny)
 Tᵃᵗ = reshape(Tᵃᵗ, 1, Ny)
-interior(atmosphere.tracers.T) .= Tᵃᵗ
+interior(atmosphere.temperature) .= Tᵃᵗ
 
 # Build a model with the default (Edson) stability functions to show non-neutral effects
 stability_interfaces = ComponentInterfaces(atmosphere, ocean)
@@ -755,6 +755,49 @@ u_\star = \sqrt{C_D | Δ \bm{u} | \, U} \\
 \theta_\star = \frac{C_θ}{\sqrt{C_D}} \, Δ θ \, \sqrt{\frac{U}{|Δ \bm{u} |}} \\
 q_\star = \frac{C_q}{\sqrt{C_D}} \, Δ q \, \sqrt{\frac{U}{| Δ \bm{u} |}} \\
 ```
+
+### Surface-layer diagnostics
+
+The same vertical profiles from similarity theory are now evaluated in the other direction. Once
+the solve has converged, ``u_\star``, ``\theta_\star``, and ``q_\star`` fix the state at every
+height inside the surface layer, so the observation-height diagnostics -- the 10 m wind, and the
+2 m temperature and specific humidity -- are one non-iterative evaluation away,
+
+```math
+\varphi(z) = \varphi_s + \frac{\varphi_\star}{\kappa}
+    \left [ \log \left ( \frac{z - d}{\ell_\varphi} \right )
+    - \psi_\varphi \left ( \frac{z - d}{L_\star} \right )
+    + \psi_\varphi \left ( \frac{\ell_\varphi}{L_\star} \right ) \right ] \, ,
+```
+
+where ``d`` is the zero-plane displacement. `surface_layer_diagnostics` returns these as lazy
+`KernelFunctionOperation`s over the stored interface state, so they compose with other operations
+and are re-evaluated wherever they are computed:
+
+```@example interface_fluxes
+diagnostics = surface_layer_diagnostics(stability_model,
+                                        stability_model.interfaces.atmosphere_ocean_interface)
+
+# fields are computed on demand
+u₁₀ = Field(diagnostics.u)
+T₂ = Field(diagnostics.T);
+```
+
+Three conventions:
+
+- **The temperature is in situ.** ``\theta_\star`` scales a potential temperature referenced to
+  ``z = 0``, so the diagnostic subtracts the adiabatic increment ``g z / c_p^m`` at the geometric
+  height ``z``.
+- **Subgrid velocity enhancements stay in the wind.** With `subgrid_velocities` active, ``u_\star``
+  was solved against ``U^2 = Δ u^2 + Δ v^2 + U_{sg}^2``, and the diagnostic does not undo that, so
+  ``u`` and ``v`` at ``z = h`` exceed the resolved wind. This effect will be more pronounced in
+  low wind speed regimes. ``T`` and ``q`` are unaffected: their scales are built from the resolved
+  ``Δ \theta`` and ``Δ q``.
+- **The direction comes from the stress**, ``- \rho \bm{\tau} / | \rho \bm{\tau} |``, and over the
+  ocean the interface velocity is the surface current rather than zero.
+
+A height inside the roughness sublayer, ``z - d \le \ell_\varphi``, has no similarity profile and
+returns `NaN`; a height at or below ``d`` is an error.
 
 ## Sea ice-ocean fluxes
 
@@ -917,7 +960,7 @@ using Oceananigans.Fields: ZeroField, ConstantField
 # Formulations
 flux¹ = IceBathHeatFlux()
 flux² = ThreeEquationHeatFlux()
-flux³ = ThreeEquationHeatFlux(ConductiveFlux(2.0), ConstantField(-40.0), 0.0095, 0.0095/35, 0.02)
+flux³ = ThreeEquationHeatFlux(ConductiveFlux(conductivity=2.0), ConstantField(-40.0), 0.0095, 0.0095/35, 0.02)
 
 # Parameters
 liquidus = LinearLiquidus()
@@ -931,10 +974,10 @@ ice_state = (; S = Sˢⁱ, h = hˢⁱ, hc = 0.0, ℵ = 1.0, T = Tˢⁱ)
 
 data = map(Tᵒᶜ) do T
     ocean_state = (; T, S = Sᵒᶜ)
-    _, q¹, T★¹, S★¹ = compute_interface_heat_flux(flux¹, ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
-    _, q², T★², S★² = compute_interface_heat_flux(flux², ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
-    _, q³, T★³, S★³ = compute_interface_heat_flux(flux³, ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
-    (; T★¹, S★¹, q¹ = q¹ / ρˢⁱ * 86400e3, T★², S★², q² = q² / ρˢⁱ * 86400e3, T★³, S★³, q³ = q³ / ρˢⁱ * 86400e3)
+    Q¹, T★¹, S★¹ = compute_interface_heat_flux(flux¹, ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
+    Q², T★², S★² = compute_interface_heat_flux(flux², ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
+    Q³, T★³, S★³ = compute_interface_heat_flux(flux³, ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
+    (; T★¹, S★¹, Q¹, T★², S★², Q², T★³, S★³, Q³)
 end
 
 fig = Figure(size=(900, 750))
@@ -952,10 +995,10 @@ lines!(ax2, Tᵒᶜ, [d.S★³ for d in data], linewidth=2)
 hlines!(ax2, [Sᵒᶜ], color=:gray, linestyle=:dash)
 hlines!(ax2, [Sˢⁱ], color=:gray, linestyle=:dot)
 
-ax3 = Axis(fig[2, 1:2], xlabel="Ocean temperature Tᵒᶜ (°C)", ylabel="Melt rate q (mm/day)")
-lines!(ax3, Tᵒᶜ, [d.q¹ for d in data], linewidth=2)
-lines!(ax3, Tᵒᶜ, [d.q² for d in data], linewidth=2)
-lines!(ax3, Tᵒᶜ, [d.q³ for d in data], linewidth=2)
+ax3 = Axis(fig[2, 1:2], xlabel="Ocean temperature Tᵒᶜ (°C)", ylabel="Heat flux (W/m²)")
+lines!(ax3, Tᵒᶜ, [d.Q¹ for d in data], linewidth=2)
+lines!(ax3, Tᵒᶜ, [d.Q² for d in data], linewidth=2)
+lines!(ax3, Tᵒᶜ, [d.Q³ for d in data], linewidth=2)
 hlines!(ax3, [0], color=:gray, linestyle=:dash)
 
 Legend(fig[3, 1:2], [l1, l2, l3],
@@ -978,9 +1021,9 @@ The plots reveal key differences between the formulations:
    (during rapid melting). The conductive flux case shows enhanced freezing (lower ``S_★``) due to the
    additional heat sink from the cold ice.
 
-3. **Melt rate**: The three-equation formulation captures the feedback between interface salinity, freezing point
+3. **Heat flux**: The three-equation formulation captures the feedback between interface salinity, freezing point
    depression, and heat flux. When conductive flux is included, the cold ice interior extracts heat from the
-   interface, shifting the melt rate toward freezing (more negative values) across all ocean temperatures.
+   interface, shifting the heat flux toward freezing (more negative values) across all ocean temperatures.
 
 ### Configuring sea ice-ocean fluxes
 

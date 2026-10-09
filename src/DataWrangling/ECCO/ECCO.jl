@@ -16,18 +16,18 @@ using Oceananigans.DistributedComputations: @root
 using Oceananigans.Grids: Face, Center
 using Oceananigans.OutputReaders: OutputReaders, Cyclical, FieldTimeSeries
 using NCDatasets: NCDatasets
-using Scratch: Scratch, @get_scratch!
 
 using ...NumericalEarth: NumericalEarth
 using ..DataWrangling: DataWrangling, binary_data_grid, binary_data_size, default_mask_value,
                        dataset_variable_name, default_download_directory, longitude_interfaces,
                        latitude_interfaces, netrc_downloader, NearestNeighborInpainting, metadata_path,
-                       GramPerKilogramMinus35, MicromolePerLiter, Metadata, Metadatum, DownloadProgress,
-                       metadata_url, first_date, last_date, all_dates
+                       GramPerKilogramMinus35, Metadata, Metadatum, DownloadProgress,
+                       metadata_url, first_date, last_date, all_dates, download_with_retries
 
 download_ECCO_cache::String = ""
 function __init__()
-    global download_ECCO_cache = @get_scratch!("ECCO")
+    global download_ECCO_cache = DataWrangling.download_cache("ECCO")
+    return nothing
 end
 
 # Datasets
@@ -70,6 +70,13 @@ DataWrangling.all_dates(dataset::ECCODataset) = all_dates(dataset, nothing)
 DataWrangling.all_dates(dataset::ECCO4Monthly, variable) = metadata_epoch(dataset) : Month(1) : DateTime(2017, 12, 1)
 DataWrangling.all_dates(dataset::ECCO2Monthly, variable) = metadata_epoch(dataset) : Month(1) : DateTime(2024, 12, 1)
 DataWrangling.all_dates(dataset::ECCO2Daily,   variable) = metadata_epoch(dataset) : Day(1)   : DateTime(2024, 12, 31)
+
+DataWrangling.averaging_window(metadatum::Metadatum{<:Union{ECCO2Monthly, ECCO4Monthly}}) =
+    DataWrangling.calendar_month_window(metadatum)
+
+# The cube92 daily files hold means over the day they are named for.
+DataWrangling.averaging_window(metadatum::Metadatum{<:ECCO2Daily}) =
+    (metadatum.dates, metadatum.dates + Day(1))
 
 DataWrangling.longitude_interfaces(::ECCODataset) = (0, 360)
 DataWrangling.longitude_interfaces(::ECCO4Monthly) = (-180, 180)
@@ -160,6 +167,7 @@ ECCO4_dataset_variable_names = Dict(
     :eastward_wind          => "EXFewind",
     :northward_wind         => "EXFnwind",
     :rain_freshwater_flux   => "EXFpreci",
+    :net_freshwater_flux    => "oceFWflx",
     :zonal_wind_stress      => "EXFtaue",
     :meridional_wind_stress => "EXFtaun",
 )
@@ -195,6 +203,7 @@ ECCO_location = Dict(
     :eastward_wind          => (Center, Center, Nothing),
     :northward_wind         => (Center, Center, Nothing),
     :rain_freshwater_flux   => (Center, Center, Nothing),
+    :net_freshwater_flux    => (Center, Center, Nothing),
     :zonal_wind_stress      => (Center, Center, Nothing),
     :meridional_wind_stress => (Center, Center, Nothing),
 )
@@ -204,10 +213,6 @@ const ECCOMetadatum   = Metadatum{<:ECCODataset}
 
 # sea surface pressure can exceed 1e5 (the default higher bound for datasets data)
 DataWrangling.higher_bound(::ECCOMetadata, ::Val{:sea_level_pressure}) = 1f10
-
-# Note: ECCO downwelling radiation variables (oceQsw, EXFlwdn) are already
-# in positive-downwelling convention, so no sign conversion is needed.
-DataWrangling.conversion_units(metadatum::ECCOMetadatum) = nothing
 
 """
     ECCOMetadatum(name;
@@ -254,11 +259,12 @@ function DataWrangling.metadata_filename(dataset::Union{ECCO2Daily, ECCO2Monthly
 end
 
 # Convenience functions
+
 DataWrangling.dataset_variable_name(data::Metadata{<:ECCO2Daily})   = ECCO2_dataset_variable_names[data.name]
 DataWrangling.dataset_variable_name(data::Metadata{<:ECCO2Monthly}) = ECCO2_dataset_variable_names[data.name]
 DataWrangling.dataset_variable_name(data::Metadata{<:ECCO4Monthly}) = ECCO4_dataset_variable_names[data.name]
-DataWrangling.dataset_location(::ECCODataset, name) = ECCO_location[name]
-
+DataWrangling.dataset_location(::ECCODataset, name) = name in keys(ECCO_location) ? ECCO_location[name] : (Center, Center, Center)
+  
 DataWrangling.is_three_dimensional(data::ECCOMetadata) =
     data.name == :temperature ||
     data.name == :salinity ||
@@ -274,7 +280,28 @@ function DataWrangling.metadata_url(m::Metadata{<:ECCO4Monthly})
     return ECCO4_url * dataset_variable_name(m) * "/" * year * "/" * m.filename
 end
 
+# The drive stopped serving its `ECCO2` directory, which holds the quarter-degree fields and both
+# ECCO-Darwin datasets whatever grid their name refers to. The download is still attempted in case it
+# returns, but a bare 403 reads as bad credentials, so say what it means instead.
+#
+# TODO: delete this and the note in README.md once the drive serves `ECCO2` again. JPL has announced
+# no timeline, so the check is here until a download succeeds.
+const ECCO2DriveDataset = Union{ECCO2Monthly, ECCO2Daily, ECCO2DarwinMonthly, ECCO4DarwinMonthly}
+
+function ecco_download_error(err, metadatum)
+    refused = err isa Downloads.RequestError && err.response.status == 403
+    (refused && metadatum.dataset isa ECCO2DriveDataset) || return err
+
+    return ErrorException("The ECCO drive refused $(typeof(metadatum.dataset)), whose files live in \
+                           the `ECCO2` directory it no longer serves. This is not a problem with \
+                           `ECCO_USERNAME` or `ECCO_WEBDAV_PASSWORD`. `ECCO4Monthly` reads from the \
+                           drive's `Version4` directory and is unaffected.")
+end
+
 function Downloads.download(metadata::ECCOMetadata)
+    # Skip download if all files already exist
+    all(isfile(metadata_path(m)) for m in metadata) && return metadata_path(metadata)
+
     username = get(ENV, "ECCO_USERNAME", nothing)
     password = get(ENV, "ECCO_WEBDAV_PASSWORD", nothing)
     dir = metadata.dir
@@ -284,7 +311,7 @@ function Downloads.download(metadata::ECCOMetadata)
     @root mktempdir(dir) do tmp
 
         # Write down the username and password in a .netrc file
-        downloader = netrc_downloader(username, password, "ecco.jpl.nasa.gov", tmp)
+        downloader = netrc_downloader(username, password, "ecco.jpl.nasa.gov", tmp; verify_ssl = false)
         ntasks = Threads.nthreads()
 
         asyncmap(metadata; ntasks) do metadatum # Distribute the download among tasks
@@ -306,17 +333,16 @@ function Downloads.download(metadata::ECCOMetadata)
                     throw(ArgumentError(msg))
                 end
                 @info "Downloading ECCO data: $(metadatum.name) in $(metadatum.dir)..."
-                Downloads.download(fileurl, filepath; downloader, progress=DownloadProgress())
+                try
+                    download_with_retries(fileurl, filepath; downloader, progress=DownloadProgress())
+                catch err
+                    throw(ecco_download_error(err, metadatum))
+                end
             end
         end
     end
 
     return metadata_path(metadata)
-end
-
-function inpainted_metadata_filename(metadata::ECCOMetadatum)
-    without_extension = metadata.filename[1:end-3]
-    return without_extension * "_inpainted.jld2"
 end
 
 ECCO_atmosphere_variables = (
@@ -340,7 +366,17 @@ function DataWrangling.default_inpainting(metadata::ECCOMetadata)
     end
 end
 
-DataWrangling.inpainted_metadata_path(metadata::ECCOMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+function DataWrangling.read_file_coords(metadata::ECCOMetadatum)
+    Nx, Ny, _, _ = size(metadata)
+    resolution_X = 360/Nx
+    resolution_Y = 180/Ny
+    longitudes = longitude_interfaces(metadata.dataset)
+    latitudes  = latitude_interfaces(metadata.dataset)
+    lon = [i for i = longitudes[1]+resolution_X/2:resolution_X:longitudes[2]-resolution_X/2]
+    lat = [j for j = latitudes[1]+resolution_Y/2:resolution_Y:latitudes[2]-resolution_Y/2]
+
+    return lon, lat
+end
 
 include("ECCO_atmosphere.jl")
 include("ECCO_radiation.jl")

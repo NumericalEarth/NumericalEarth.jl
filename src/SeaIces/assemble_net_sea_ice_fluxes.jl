@@ -5,7 +5,7 @@ using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 
 EarthSystemModels.update_net_fluxes!(coupled_model, ::FreezingLimitedOceanTemperature) = nothing
 
-snowfall_flux(::NoAtmosInterfaceModel) = ZeroField()
+snowfall_flux(coupled_model::NoAtmosInterfaceModel) = ZeroField(eltype(coupled_model))
 snowfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state.Jˢⁿ.data
 
 function EarthSystemModels.update_net_fluxes!(coupled_model, sea_ice::Simulation{<:SeaIceModel})
@@ -54,19 +54,21 @@ end
 
     @inbounds begin
         ℵi = ice_concentration[i, j, 1]
-        𝒬ᵀ   = atmosphere_sea_ice_fluxes.sensible_heat[i, j, 1] # sensible heat flux
-        𝒬ᵛ   = atmosphere_sea_ice_fluxes.latent_heat[i, j, 1]   # latent heat flux
+        𝒬ᵀ   = atmosphere_sea_ice_fluxes.sensible_heat[i, j, 1]   # sensible heat flux
+        𝒬ᵛ   = atmosphere_sea_ice_fluxes.latent_heat[i, j, 1]     # latent heat flux
         𝒬ᶠʳᶻ = sea_ice_ocean_fluxes.frazil_heat[i, j, 1]          # frazil heat flux
-        𝒬ⁱⁿᵗ = sea_ice_ocean_fluxes.interface_heat[i, j, 1]       # interfacial heat flux
+        𝒬ⁱⁿ  = sea_ice_ocean_fluxes.interface_heat[i, j, 1]       # interfacial heat flux
         Jˢⁿ  = snowfall_flux[i, j, 1]
     end
 
     ρτˣ = atmosphere_sea_ice_fluxes.x_momentum # zonal momentum flux
     ρτʸ = atmosphere_sea_ice_fluxes.y_momentum # meridional momentum flux
 
-    # Turbulent contributions only (radiation added later by apply_air_sea_ice_radiative_fluxes!)
-    ΣQt = (𝒬ᵀ + 𝒬ᵛ) * (ℵi > 0)
-    ΣQb = 𝒬ᶠʳᶻ + 𝒬ⁱⁿᵗ
+    ΣQt = (𝒬ᵀ + 𝒬ᵛ) * ℵi
+    
+    # Frazil ice does not depend on the ice concentration (it is already per-cell)
+    # While interface heat is pre-multiplied by concentration
+    ΣQb = 𝒬ᶠʳᶻ + 𝒬ⁱⁿ
 
     # Mask fluxes over land for convenience
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())

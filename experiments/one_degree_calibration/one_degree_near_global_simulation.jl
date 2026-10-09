@@ -79,7 +79,7 @@ simulation.output_writers[:checkpointer] = Checkpointer(simulation.model; dir,
                                                         prefix = output_prefix * "_checkpointer",
                                                         schedule = WallTimeInterval(10minutes),
                                                         cleanup = true,
-                                                        overwrite_existing = true)
+                                                        overwrite_files = true)
 
 model = simulation.model
 
@@ -88,7 +88,7 @@ simulation.output_writers[:fields] = JLD2Writer(model, merge(model.velocities, m
                                                 including = [:grid],
                                                 filename = output_prefix * "_fields",
                                                 with_halos = true,
-                                                overwrite_existing = true)
+                                                overwrite_files = true)
 
 slice_indices = [(:, :, Nz), (:, :, Nz-10)]
 output_names = [:surface, :near_surface]
@@ -114,7 +114,7 @@ for n = 1:2
                                                        including = [:grid],
                                                        filename = output_prefix * "_fields_$name",
                                                        with_halos = true,
-                                                       overwrite_existing = true)
+                                                       overwrite_files = true)
 end
 
 #=
@@ -136,7 +136,7 @@ for name in keys(transects)
                                                         including = [:grid],
                                                         filename = output_prefix * "_$name",
                                                         with_halos = true,
-                                                        overwrite_existing = true)
+                                                        overwrite_files = true)
 end
 =#
 

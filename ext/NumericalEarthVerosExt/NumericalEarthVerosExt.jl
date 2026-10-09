@@ -1,6 +1,7 @@
 module NumericalEarthVerosExt
 
 using CondaPkg: CondaPkg
+using Downloads: Downloads
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: CPU
 using Oceananigans.Fields: Field

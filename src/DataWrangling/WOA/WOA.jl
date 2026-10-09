@@ -4,14 +4,14 @@ export WOAClimatology, WOAAnnual, WOAMonthly
 
 using Dates: DateTime, month
 using NCDatasets: Dataset
-using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path,
                        dataset_variable_name, reversed_vertical_axis
 
 download_WOA_cache::String = ""
 function __init__()
-    global download_WOA_cache = @get_scratch!("WOA")
+    global download_WOA_cache = DataWrangling.download_cache("WOA")
+    return nothing
 end
 
 WOA_variable_names = Dict(
@@ -52,6 +52,8 @@ DataWrangling.last_date(::WOAAnnual, args...) = nothing
 
 # Monthly: 12 climatological months (year is arbitrary, month matters)
 DataWrangling.all_dates(::WOAMonthly, args...) = [DateTime(2018, m, 1) for m in 1:12]
+
+DataWrangling.averaging_window(metadatum::Metadatum{<:WOAMonthly}) = DataWrangling.calendar_month_window(metadatum)
 
 # WOA stores depth as positive values, surface first (0 to 5500m)
 DataWrangling.reversed_vertical_axis(::WOAClimatology) = true
@@ -134,13 +136,8 @@ DataWrangling.dataset_variable_name(data::WOAMetadata) = WOA_variable_names[data
 
 DataWrangling.is_three_dimensional(::WOAMetadata) = true
 
-function inpainted_metadata_filename(metadata::WOAMetadatum)
-    without_extension = metadata.filename[1:end-3]
-    var = string(metadata.name)
-    return without_extension * "_" * var * "_inpainted.jld2"
-end
-
-DataWrangling.inpainted_metadata_path(metadata::WOAMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+DataWrangling.inpainted_metadata_filename(metadata::WOAMetadatum) =
+    splitext(metadata.filename)[1] * "_" * string(metadata.name) * "_inpainted.jld2"
 
 # Custom retrieve_data: WOA NetCDF files contain Missing values (from _FillValue)
 # which must be converted to NaN before the GPU kernel in set_metadata_field!.

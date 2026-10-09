@@ -77,15 +77,12 @@ end
     ℐꜛˡʷ = emitted_longwave_radiation(Ts, rs.σ, rs.ϵ)
     ℐₐˡʷ = absorbed_longwave_radiation(rs.ϵ, rs.ℐꜜˡʷ)
     ℐₜˢʷ = transmitted_shortwave_radiation(rs.α, rs.ℐꜜˢʷ)
-
-    # Sea-ice radiation contributes only where ice exists.
-    ice_present = ℵᵢ > 0
-    ΣQ_rad_ice = (ℐꜛˡʷ + ℐₐˡʷ + ℐₜˢʷ) * ice_present
+    ΣQ  = (ℐꜛˡʷ + ℐₐˡʷ + ℐₜˢʷ) * ℵᵢ
 
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
 
     @inbounds begin
-        top_heat_flux[i, j, 1] += ifelse(inactive, zero(grid), ΣQ_rad_ice)
+        top_heat_flux[i, j, 1] += ifelse(inactive, zero(grid), ΣQ)
         interface_radiative_flux.upwelling_longwave[i, j, 1]    = ℐꜛˡʷ
         interface_radiative_flux.downwelling_longwave[i, j, 1]  = - ℐₐˡʷ
         interface_radiative_flux.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ

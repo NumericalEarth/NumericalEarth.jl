@@ -12,7 +12,6 @@ using NumericalEarth.Radiations: PrescribedRadiation,
         @info "Testing PrescribedRadiation(grid) on $A..."
         grid = RectilinearGrid(arch, size = 10, z = (-100, 0), topology = (Flat, Flat, Bounded))
         rad = PrescribedRadiation(grid)
-        @test rad isa PrescribedRadiation
         @test rad.surface_properties isa NamedTuple
         @test haskey(rad.surface_properties, :ocean)
         @test haskey(rad.surface_properties, :sea_ice)
@@ -44,6 +43,41 @@ using NumericalEarth.Radiations: PrescribedRadiation,
     end
 end
 
+@testset "PrescribedRadiation set!" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch, size = 1, z = (-1, 0), topology = (Flat, Flat, Bounded))
+        rad = PrescribedRadiation(grid)
+
+        set!(rad; downwelling_shortwave = 250, downwelling_longwave = 350)
+        @test only(Array(interior(rad.downwelling_shortwave[1]))) == 250
+        @test only(Array(interior(rad.downwelling_longwave[1])))  == 350
+
+        # An omitted keyword leaves that field untouched.
+        set!(rad; downwelling_shortwave = 100)
+        @test only(Array(interior(rad.downwelling_shortwave[1]))) == 100
+        @test only(Array(interior(rad.downwelling_longwave[1])))  == 350
+    end
+end
+
+@testset "Radiation surface property providers" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch, size = 10, z = (-100, 0), topology = (Flat, Flat, Bounded))
+
+        albedo = 0.15
+        emissivity = 0.93
+        land_surface = SurfaceRadiationProperties(; albedo, emissivity)
+
+        rad = PrescribedRadiation(grid; ocean_surface = nothing,
+                                        sea_ice_surface = nothing,
+                                        land_surface)
+
+        @test rad.surface_properties.land.albedo isa Number
+        @test rad.surface_properties.land.emissivity isa Number
+        @test NumericalEarth.stateindex(rad.surface_properties.land.albedo, 1, 1, 1, grid, 0, nothing) == 0.15
+        @test NumericalEarth.stateindex(rad.surface_properties.land.emissivity, 1, 1, 1, grid, 0, nothing) == 0.93
+    end
+end
+
 @testset "PrescribedRadiation paired with model" begin
     for arch in test_architectures
         A = typeof(arch)
@@ -57,7 +91,6 @@ end
 
         # interface_fluxes are allocated for present surfaces (ocean + sea_ice
         # via FreezingLimitedOceanTemperature).
-        @test !isnothing(model.radiation.interface_fluxes)
         @test model.radiation.interface_fluxes.ocean isa InterfaceRadiationFlux
         @test model.radiation.interface_fluxes.sea_ice isa InterfaceRadiationFlux
 
@@ -66,12 +99,12 @@ end
     end
 end
 
-@testset "JRA55PrescribedRadiation" begin
+@testset "Dataset-backed PrescribedRadiation" begin
     for arch in test_architectures
         A = typeof(arch)
-        @info "Testing JRA55PrescribedRadiation on $A..."
+        @info "Testing dataset-backed PrescribedRadiation on $A..."
 
-        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=2)
+        radiation = synthetic_prescribed_radiation(arch)
 
         @test radiation isa PrescribedRadiation
         @test radiation.downwelling_shortwave isa FieldTimeSeries
