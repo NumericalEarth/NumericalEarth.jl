@@ -11,11 +11,13 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "main"} # TODO: remove once a Breeze release supports Oceananigans 0.117.2
 LoopVectorization = {url = "https://github.com/navidcy/LoopVectorization.jl", rev = "patch-1"} # TODO: remove once JuliaSIMD/LoopVectorization.jl#574 is released
 NumericalEarth = {path = "../.."}
+Reactant = {url = "https://github.com/EnzymeAD/Reactant.jl", rev = "main"}
 
 [compat]
 Breeze = "0.11"
 CUDA = "5.9.5, 6"
-Reactant = "0.2.289"
+Reactant = "0.2.291"
+Reactant_jll = "=0.0.417"
 Test = "<0.0.1, 1"
 julia = "1.10"
 
