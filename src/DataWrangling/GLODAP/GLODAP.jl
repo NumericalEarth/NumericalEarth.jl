@@ -3,7 +3,6 @@ module GLODAP
 export GLODAPClimatology
 
 using Adapt: Adapt
-using Dates: month
 using Downloads: Downloads
 using NCDatasets: Dataset
 using Scratch: Scratch, @get_scratch!
@@ -11,7 +10,7 @@ using Tar: Tar
 using CodecZlib: GzipDecompressorStream
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path,
-                       reversed_vertical_axis, DownloadProgress
+                       DownloadProgress, AbstractStaticDataset
 
 download_GLODAP_cache::String = ""
 function __init__()
