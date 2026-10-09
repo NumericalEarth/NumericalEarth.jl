@@ -30,7 +30,7 @@ using Oceananigans:
     Center, Face,
     set!
 
-using Oceananigans.Architectures: architecture, ReactantState
+using Oceananigans.Architectures: architecture
 using Oceananigans.DistributedComputations: all_reduce
 using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, interior, interpolate!
@@ -53,7 +53,6 @@ using Breeze:
     moisture_prognostic_name,
     moisture_specific_name
 
-using Breeze.Utils: initialize_on_construction!
 using Breeze.AtmosphereModels: prognostic_field_names
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
@@ -334,9 +333,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
         initialize = false,
         kw...)
 
-    nested_model = NestedModel(parent_atmosphere, child, exchanger)
-    initialize_on_construction!(architecture(child_grid), nested_model)
-    return nested_model
+    return NestedModel(parent_atmosphere, child, exchanger)
 end
 
 # Domain-mean dataset mean-sea-level pressure at `date`, regridded onto the child grid.
@@ -376,7 +373,9 @@ mean-sea-level pressure over the child at `first(dates)`. When `bottom_drag_coef
 `drag_surface_temperature` defaults to the dataset's skin temperature at `first(dates)` regridded onto
 the child grid (a static snapshot, not the dataset's diurnal cycle). `balancer` controls the
 post-initialization adiabatic (DFI) balance: `true` (default) runs it, `false` skips it, and an
-`AdiabaticBalancer(Δt=…)` runs a custom (e.g. gentler) excursion. Remaining keyword arguments flow to
+`AdiabaticBalancer(Δt=…)` runs a custom (e.g. gentler) excursion. With `initialize = false` the child
+is left uninitialized, for a workflow that compiles `initialize!(nested_model)` first. Remaining
+keyword arguments flow to
 `nested_atmosphere_model(parent, child_grid; kw...)`.
 """
 function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_dataset; dates,
@@ -387,6 +386,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
     bottom_drag_coefficient = nothing,
     drag_surface_temperature = nothing,
     balancer = true,
+    initialize = true,
     kw...)
 
     parent_region = BoundingBox(child_grid; padding = parent_padding)
@@ -404,8 +404,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
 
     nested_model = NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere, child_grid; base_pressure,
                                                                        bottom_drag_coefficient, drag_surface_temperature, kw...)
-    architecture(child_grid) isa ReactantState && Oceananigans.initialize!(nested_model)
-    initialize_nested_child!(nested_model, parent_dataset, first(dates), dir; balancer)
+    initialize && initialize_nested_child!(nested_model, parent_dataset, first(dates), dir; balancer)
     return nested_model
 end
 
@@ -424,6 +423,7 @@ end
 # domain-mean state, graft ρw ← ρw − ρw̃ so the flow follows the terrain, and spin ρw into nonhydrostatic
 # balance. `set!(…; balancer = true)` runs Breeze's adiabatic (FV3 `na_init`) balance on a stripped,
 # memory-sharing twin (no microphysics/sponge/forcing) at an automatically-derived acoustic-CFL step.
+# Eager: on `ReactantState` it runs after a compiled `initialize!(nested_model)`.
 function initialize_nested_child!(nested_model, dataset, date, dir; balancer = true)
     child = nested_model.child
     child_grid = child.grid

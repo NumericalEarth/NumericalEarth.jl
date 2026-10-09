@@ -53,10 +53,8 @@ NestedModel(parent, child::AbstractModel{TS, A}, exchanger=nothing) where {TS, A
 # one whose parent needs no state transform — just forwards.
 exchange_state!(exchanger, time) = nothing
 
-Oceananigans.initialize!(::Nothing, time) = nothing
-
 function Oceananigans.initialize!(nm::NestedModel)
-    Oceananigans.initialize!(nm.exchanger, nm.clock.time)
+    isnothing(nm.exchanger) || Oceananigans.initialize!(nm.exchanger)
     Oceananigans.initialize!(nm.child)
     return nothing
 end
