@@ -93,23 +93,23 @@ end
     ℐₐˡʷ = absorbed_longwave_radiation(rs.ϵ, rs.ℐꜜˡʷ)
     ℐₜˢʷ = transmitted_shortwave_radiation(rs.α, rs.ℐꜜˢʷ)
 
-    # Reflected shortwave, positive upward (`ΣQ_rad` uses the absorbed part instead).
+    # Reflected shortwave, positive upward (`ΣQ` uses the absorbed part instead).
     ℐꜛˢʷ = rs.α * rs.ℐꜜˢʷ
 
-    # Total radiative contribution to surface energy balance, positive into the land.
-    ΣQ_rad = -ℐꜛˡʷ - (ℐₐˡʷ + ℐₜˢʷ)
+    # Net radiative flux, positive upward like `surface_energy_flux`: emitted longwave minus
+    # absorbed longwave and shortwave (`ℐₐˡʷ` and `ℐₜˢʷ` are negative).
+    ΣQ = ℐꜛˡʷ + ℐₐˡʷ + ℐₜˢʷ
 
     inactive = inactive_node(i, j, 1, grid, Center(), Center(), Center())
 
-    # `surface_energy_flux` is positive upward, so the into-land `ΣQ_rad` enters as `-ΣQ_rad`.
     @inbounds begin
-        land_energy_flux[i, j, 1] += ifelse(inactive, zero(grid), -ΣQ_rad)
+        land_energy_flux[i, j, 1] += ifelse(inactive, zero(grid), ΣQ)
         interface_radiative_flux.upwelling_longwave[i, j, 1]    = ℐꜛˡʷ
         interface_radiative_flux.downwelling_longwave[i, j, 1]  = - ℐₐˡʷ
         interface_radiative_flux.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ
     end
 
-    # Same `Tₛ`, `α`, `ϵ` as `ΣQ_rad`, so the component cannot disagree with the assembled budget.
+    # Same `Tₛ`, `α`, `ϵ` as `ΣQ`, so the component cannot disagree with the assembled budget.
     _maybe_write_up!(land_shortwave_up, i, j, ℐꜛˢʷ)
     _maybe_write_up!(land_longwave_up, i, j, ℐꜛˡʷ)
 end
