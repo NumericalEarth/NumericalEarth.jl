@@ -168,6 +168,7 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::Presc
 end
 
 EarthSystemModels.InterfaceComputations.net_fluxes(ocean::PrescribedOcean) = nothing
+EarthSystemModels.InterfaceComputations.biogeochemical_interface(exchanger, ::PrescribedOcean; kwargs...) = NamedTuple()
 
 # Read each series at the ocean clock, linearly interpolating between the two snapshots that bracket it. 
 function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::PrescribedOcean, coupled_model)
