@@ -166,6 +166,7 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::Presc
 end
 
 EarthSystemModels.InterfaceComputations.net_fluxes(ocean::PrescribedOcean) = nothing
+EarthSystemModels.InterfaceComputations.biogeochemical_interface(exchanger, ::PrescribedOcean; kwargs...) = NamedTuple()
 
 function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::PrescribedOcean, coupled_model)
     # Copy from FieldTimeSeries to exchanger snapshot fields.
