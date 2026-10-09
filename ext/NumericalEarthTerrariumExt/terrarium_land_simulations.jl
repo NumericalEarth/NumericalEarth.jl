@@ -26,7 +26,7 @@ turbulent fluxes computed by NumericalEarth), initialize it, and wrap it in an O
 """
 function NumericalEarth.Lands.land_simulation(
         grid::AbstractGrid;
-        Δt = 300.0,
+        Δt = 300,
         initializers = (;),
         inputs = Terrarium.InputSources(eltype(grid)),
         kwargs...
