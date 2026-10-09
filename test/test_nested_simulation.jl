@@ -814,7 +814,7 @@ end
     model = nested_atmosphere_model(parent, child_grid;
                 relaxation_rate = 1/300, relaxation_width = 3, base_pressure = 1e5,
                 coriolis = nothing, terrain = nothing, parent_condensates = nothing)
-    ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false)
+    ext.initialize_nested_child!(model; balancer = false)
 
     sim = Simulation(model; Δt = 0.5, stop_time = 10.0)
     conjure_time_step_wizard!(sim, IterationInterval(1); cfl = 0.3, max_Δt = 2.0)
@@ -853,7 +853,7 @@ end
 
     model = nested_atmosphere_model(parent, child_grid; terrain, terrain_smoothing_passes = 0,
                                     base_pressure = 1e5, coriolis = nothing, parent_condensates = nothing)
-    ext.initialize_nested_child!(model, nothing, 0.0, ""; balancer = false)
+    ext.initialize_nested_child!(model; balancer = false)
 
     expected_u = XFaceField(child_grid); set!(expected_u, (λ, φ, z) -> parent_u(z))
     expected_v = YFaceField(child_grid); set!(expected_v, (λ, φ, z) -> parent_v(z))
