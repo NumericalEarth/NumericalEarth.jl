@@ -84,7 +84,7 @@ end
     @inbounds begin
         top_heat_flux[i, j, 1] += ifelse(inactive, zero(grid), ΣQ)
         interface_radiative_flux.upwelling_longwave[i, j, 1]    = ℐꜛˡʷ
-        interface_radiative_flux.downwelling_longwave[i, j, 1]  = - ℐₐˡʷ
-        interface_radiative_flux.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ
+        interface_radiative_flux.downwelling_longwave[i, j, 1]  = ℐₐˡʷ
+        interface_radiative_flux.downwelling_shortwave[i, j, 1] = ℐₜˢʷ
     end
 end

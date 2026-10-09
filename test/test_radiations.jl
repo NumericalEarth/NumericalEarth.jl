@@ -94,7 +94,12 @@ end
         @test model.radiation.interface_fluxes.ocean isa InterfaceRadiationFlux
         @test model.radiation.interface_fluxes.sea_ice isa InterfaceRadiationFlux
 
+        set!(radiation; downwelling_shortwave = 250, downwelling_longwave = 350)
+        set!(ocean.model, T = 20, S = 35)
         time_step!(model, 60)
+        state = model.interfaces.exchanger.radiation.state
+        @test only(Array(interior(state.ℐꜜˢʷ))) ≈ -250
+        @test only(Array(interior(state.ℐꜜˡʷ))) ≈ -350
         @test iteration(model) == 1
     end
 end

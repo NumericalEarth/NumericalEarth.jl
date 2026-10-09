@@ -264,7 +264,7 @@ DataWrangling.dataset_variable_name(data::Metadata{<:ECCO2Daily})   = ECCO2_data
 DataWrangling.dataset_variable_name(data::Metadata{<:ECCO2Monthly}) = ECCO2_dataset_variable_names[data.name]
 DataWrangling.dataset_variable_name(data::Metadata{<:ECCO4Monthly}) = ECCO4_dataset_variable_names[data.name]
 DataWrangling.dataset_location(::ECCODataset, name) = name in keys(ECCO_location) ? ECCO_location[name] : (Center, Center, Center)
-  
+
 DataWrangling.is_three_dimensional(data::ECCOMetadata) =
     data.name == :temperature ||
     data.name == :salinity ||
