@@ -58,8 +58,10 @@ era5_region = BoundingBox(latitude  = (lat_min - era5_pad, lat_max + era5_pad),
 #
 # A 0.25° `LatitudeLongitudeGrid` over the box, matching the ERA5 resolution. Each horizontal
 # cell holds a soil column with an exponentially stretched 10-layer discretization. The 10 cm
-# surface layer sets the explicit stability limit on the time step (Δt ≲ Δz²/2κ), which a
-# 5-minute step satisfies comfortably.
+# surface layer sets the explicit stability limit on the time step. Heat conduction alone would
+# allow several minutes, but the Richards equation is far stiffer: when the surface layer dries
+# under strong midday heating, a 5-minute step lets the soil water oscillate between dry and
+# saturated in alternating steps. We therefore use a 1-minute step.
 
 vertical  = ExponentialSpacing(Δz_min = 0.1, Δz_max = 1.0, N = 10)
 land_grid = LatitudeLongitudeGrid(arch, NF;
@@ -108,7 +110,7 @@ Nt = length(atmosphere.velocities.u.times)
 # near-surface forcing into Terrarium, which then steps the soil.
 
 model      = AtmosphereLandModel(atmosphere, land; radiation)
-simulation = Oceananigans.Simulation(model; Δt = 5minutes, stop_time = (Nt - 1) * hour)
+simulation = Oceananigans.Simulation(model; Δt = 1minute, stop_time = (Nt - 1) * hour)
 
 # ## Diagnostics
 #
