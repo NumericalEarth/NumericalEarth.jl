@@ -7,7 +7,7 @@ using ClimaSeaIce.Rheologies: ElastoViscoPlasticRheology
 
 using Oceananigans.TimeSteppers: SplitRungeKuttaTimeStepper
 
-using ..EarthSystemModels: ocean_surface_salinity, ocean_surface_velocities, reference_density
+using ..EarthSystemModels: ocean_surface_salinity, surface_layer_velocities, reference_density
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, SkinTemperature
 
 default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
@@ -182,13 +182,14 @@ end
 
 function sea_ice_dynamics(grid, ocean=nothing;
                           sea_ice_ocean_drag_coefficient = 3.24e-3,
+                          sea_ice_ocean_drag_reference_depth = nothing,
                           rheology = ElastoViscoPlasticRheology(),
                           coriolis = default_coriolis(ocean),
                           free_drift = nothing,
                           with_ocean_surface_tilt = true,
                           solver = default_solver(grid, ocean))
 
-    SSU, SSV = ocean_surface_velocities(ocean)
+    SSU, SSV = surface_layer_velocities(ocean, sea_ice_ocean_drag_reference_depth)
     FT = eltype(grid)
     sea_ice_ocean_drag_coefficient = convert(FT, sea_ice_ocean_drag_coefficient)
     ρₑ = ocean_reference_density(ocean, FT)

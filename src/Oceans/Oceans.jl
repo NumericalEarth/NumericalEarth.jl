@@ -14,7 +14,7 @@ using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundar
                                        IMEXFluxBoundaryCondition, IMEXFlux, getbc
 using Oceananigans.BuoyancyFormulations: BuoyancyForce, SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
-using Oceananigans.Fields: Field, CenterField, set!, interior
+using Oceananigans.Fields: Field, CenterField, compute!, set!, interior
 using Oceananigans.Forcings: MultipleForcings, DiscreteForcing
 using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, znodes, RectilinearGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition, MutableGridOfSomeKind
@@ -22,7 +22,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceMo
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
 using Oceananigans.Models.NonhydrostaticModels: NonhydrostaticModel
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids, TripolarGrid
-using Oceananigans.Operators: active_weighted_ℑxyᶠᶜᶜ, active_weighted_ℑxyᶜᶠᶜ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ
+using Oceananigans.Operators: active_weighted_ℑxyᶠᶜᶜ, active_weighted_ℑxyᶜᶠᶜ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ, Δzᶠᶜᶜ, Δzᶜᶠᶜ
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TimeSteppers: Clock
 using Oceananigans.TurbulenceClosures: κzᶜᶜᶠ, VerticalScalarDiffusivity
@@ -70,6 +70,7 @@ include("radiative_forcing.jl")
 include("multiple_surface_fluxes.jl")
 include("ocean_simulation.jl")
 include("nonhydrostatic_ocean_simulation.jl")
+include("surface_layer_velocities.jl")
 include("assemble_net_ocean_fluxes.jl")
 
 #####
