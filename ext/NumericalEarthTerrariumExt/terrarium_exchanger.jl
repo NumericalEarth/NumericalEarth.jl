@@ -19,6 +19,8 @@ using Oceananigans.Fields: ZeroField, interior
 using Oceananigans.Utils: launch!
 
 import NumericalEarth.EarthSystemModels: interpolate_state!, update_net_fluxes!, exchange_grid
+
+using NumericalEarth.EarthSystemModels: DegreesCelsius, convert_to_kelvin, convert_from_kelvin
 import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger,
     land_surface_energy_flux,
     land_surface_shortwave_up,
@@ -53,12 +55,13 @@ end
 ##### Land -> exchange grid
 #####
 
-@kernel function _terrarium_surface_to_exchange!(T, saturation, soil_T, soil_saturation, Nz, T₀)
+@kernel function _terrarium_surface_to_exchange!(T, saturation, soil_T, soil_saturation, Nz)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        # Uppermost soil layer temperature is the land surface temperature (°C -> K).
-        # `soil_T` is a full ground field, not a slice, so index the top cell explicitly.
-        T[i, j, 1] = soil_T[i, j, Nz] + T₀
+        # The uppermost soil layer gives the land surface temperature and saturation.
+        # `soil_T` and `soil_saturation` are full ground fields, not slices, so index the top
+        # cell explicitly.
+        T[i, j, 1] = convert_to_kelvin(DegreesCelsius(), soil_T[i, j, Nz])
         saturation[i, j, 1] = soil_saturation[i, j, Nz]
     end
 end
@@ -67,14 +70,13 @@ function interpolate_state!(exchanger, exchange_grid, land::TerrariumSimulation,
     state = land.model.state
     arch = architecture(exchange_grid)
     Nz = size(exchange_grid, 3)
-    T₀ = convert(eltype(exchange_grid), 273.15)
     launch!(arch, exchange_grid, :xy,
             _terrarium_surface_to_exchange!,
             exchanger.state.T,
             exchanger.state.saturation,
             state.temperature,
             state.saturation_water_ice,
-            Nz, T₀)
+            Nz)
     return nothing
 end
 
@@ -87,18 +89,18 @@ end
                                           air_temperature, specific_humidity, air_pressure,
                                           windspeed, rainfall, snowfall,
                                           interface_temperature, sensible_heat, latent_heat,
-                                          atmos_u, atmos_v, atmos_T, atmos_q, atmos_p, Jʳⁿ, Jˢⁿ, T₀)
+                                          atmos_u, atmos_v, atmos_T, atmos_q, atmos_p, Jʳⁿ, Jˢⁿ)
     i, j = @index(Global, NTuple)
     @inbounds begin
         # Prescribed skin temperature and turbulent fluxes from the atmosphere-land interface.
         # Note that the skin/flux variable here are 2D *sliced* Fields so we must select the last index
-        skin_temperature[i, j, end]   = interface_temperature[i, j, 1] - T₀   # K -> °C
+        skin_temperature[i, j, end]   = convert_from_kelvin(DegreesCelsius(), interface_temperature[i, j, 1])
         sensible_heat_flux[i, j, end] = sensible_heat[i, j, 1]
         latent_heat_flux[i, j, end]   = latent_heat[i, j, 1]
         # Turbulent part of `G`; `apply_air_land_radiative_fluxes!` adds the radiative part.
         ground_heat_flux[i, j, end]   = sensible_heat[i, j, 1] + latent_heat[i, j, 1]
         # Near-surface atmospheric forcing for Terrarium's hydrology / evapotranspiration.
-        air_temperature[i, j, 1]      = atmos_T[i, j, 1] - T₀                 # K -> °C
+        air_temperature[i, j, 1]      = convert_from_kelvin(DegreesCelsius(), atmos_T[i, j, 1])
         specific_humidity[i, j, 1]    = atmos_q[i, j, 1]
         air_pressure[i, j, 1]         = atmos_p[i, j, 1]
         windspeed[i, j, 1]            = sqrt(atmos_u[i, j, 1]^2 + atmos_v[i, j, 1]^2)
@@ -108,8 +110,7 @@ end
 end
 
 # Push the downwelling shortwave/longwave radiation from the radiation exchanger into
-# Terrarium's radiation input fields, so its local `DiagnosedRadiativeFluxes` sees the
-# coupled downwelling. No-op when no radiation is configured (Terrarium keeps its defaults).
+# Terrarium's radiation input fields. Skipped when no radiation is configured.
 @kernel function _terrarium_push_downwelling!(shortwave_down, longwave_down, ℐꜜˢʷ, ℐꜜˡʷ)
     i, j = @index(Global, NTuple)
     @inbounds begin
@@ -125,7 +126,6 @@ function update_net_fluxes!(coupled_model, land::TerrariumSimulation)
     state = land.model.state
     grid = land.model.grid
     arch = architecture(grid)
-    T₀ = convert(eltype(grid), 273.15)
 
     interface_fluxes = al_interface.fluxes
     atmos_state = coupled_model.interfaces.exchanger.atmosphere.state
@@ -152,7 +152,7 @@ function update_net_fluxes!(coupled_model, land::TerrariumSimulation)
             atmos_state.T,
             atmos_state.q,
             atmos_state.p,
-            Jʳⁿ, Jˢⁿ, T₀)
+            Jʳⁿ, Jˢⁿ)
 
     # Downwelling radiation (when a radiation component is configured).
     radiation_exchanger = coupled_model.interfaces.exchanger.radiation
