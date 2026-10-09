@@ -156,6 +156,56 @@ end
     end
 end
 
+@testset "AtmosphereOceanModel with Breeze and a PrescribedOcean" begin
+    for arch in test_architectures
+        A = typeof(arch)
+
+        @testset "Exchanger halos hold the prescribed state on $A" begin
+            # Bounded in x, so nothing but the exchanger's own halo fill can put the SST in the
+            # halo columns the interface flux kernels visit (#754).
+            grid = RectilinearGrid(arch,
+                                   size = (16, 16), halo = (5, 5),
+                                   x = (-10kilometers, 10kilometers),
+                                   z = (0, 10kilometers),
+                                   topology = (Bounded, Flat, Bounded))
+
+            θ₀ = 285
+            atmosphere = atmosphere_simulation(grid; potential_temperature=θ₀)
+            set!(atmosphere.model, θ=atmosphere.model.dynamics.reference_state.surface_potential_temperature, u=1)
+
+            sst_grid = RectilinearGrid(arch,
+                                       size = grid.Nx,
+                                       halo = grid.Hx,
+                                       x = (-10kilometers, 10kilometers),
+                                       topology = (Bounded, Flat, Flat))
+
+            ocean = PrescribedOcean(sst_grid)
+            set!(ocean, T=θ₀ + 1)
+
+            # Construction needs `biogeochemical_interface(exchanger, ::PrescribedOcean)`:
+            # PrescribedOcean has no `model` to read biogeochemistry from.
+            model = AtmosphereOceanModel(atmosphere, ocean)
+            @test model.ocean isa PrescribedOcean
+
+            T = model.interfaces.exchanger.ocean.state.T
+            Hx = sst_grid.Hx
+            @test all(Array(parent(T))[Hx:Hx+grid.Nx+1, :, :] .≈ θ₀ + 1)
+
+            for _ in 1:3
+                time_step!(model, 1)
+            end
+
+            T = model.interfaces.exchanger.ocean.state.T
+            @test all(Array(parent(T))[Hx:Hx+grid.Nx+1, :, :] .≈ θ₀ + 1)
+
+            # The face-centered bottom stress averages the halo column into the first interior
+            # face, so a halo NaN would surface here at i = 1.
+            ρu_bottom = model.atmosphere.model.momentum.ρu.boundary_conditions.bottom.condition
+            @test all(isfinite, Array(interior(ρu_bottom)))
+        end
+    end
+end
+
 @testset "AtmosphereLandModel with Breeze: surface stress feedback" begin
     for arch in test_architectures
         A = typeof(arch)
