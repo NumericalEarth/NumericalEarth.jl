@@ -202,8 +202,8 @@ Nt = length(dates)
 λ, φ, _ = nodes(precip_series[1])
 λ_plot = @. ifelse(λ > 180, λ - 360, λ)
 
-## ERA5 `total_precipitation` is in m/hour; convert to mm/day.
-to_mm_day = 1000 * 24
+## `total_precipitation` is loaded as a mass flux in kg m⁻² s⁻¹; 1 kg m⁻² of water is 1 mm.
+to_mm_day = 86400
 to_g_per_kg = 1000
 
 n = Observable(1)
@@ -267,16 +267,16 @@ precip_col_meta = Metadata(:total_precipitation; dataset, dates, region = rico_c
 precip_col_series = @suppress_out FieldTimeSeries(precip_col_meta; time_indices_in_memory = Nt)
 nothing #hide
 
-# ERA5 `total_precipitation` is in m (liquid-water-equivalent depth). Note
-# that this is an *accumulated* rather than instantaneous quantity (more
-# discussion [here](https://confluence.ecmwf.int/display/CKB/ERA5%3A+data+documentation#ERA5:datadocumentation-Meanrates/fluxesandaccumulations))
-# with an accumulation period of 1 hour. We convert to a latent-heat-equivalent
-# flux in W/m² to compare with [vanZanten2011](@citet)'s reported 21 W m⁻² mean.
+# ERA5 `total_precipitation` is an *accumulated* rather than instantaneous quantity
+# (more discussion [here](https://confluence.ecmwf.int/display/CKB/ERA5%3A+data+documentation#ERA5:datadocumentation-Meanrates/fluxesandaccumulations)):
+# a liquid-water-equivalent depth in m accumulated over 1 hour. NumericalEarth converts
+# it on load to a mass flux in kg m⁻² s⁻¹. We multiply by the latent heat of vaporization
+# to get a latent-heat-equivalent flux in W/m² to compare with [vanZanten2011](@citet)'s
+# reported 21 W m⁻² mean.
 
-ρᴸ = 1000   # kg/m³
 Lᵛ = 2.5e6  # J/kg, latent heat of vaporization
 
-to_W_per_m2 = ρᴸ * Lᵛ / 3600  # m/hr → W/m²
+to_W_per_m2 = Lᵛ  # kg m⁻² s⁻¹ → W/m²
 
 precip_W_m2 = interior(precip_col_series, 1, 1, 1, :)
 precip_W_m2 .*= to_W_per_m2
