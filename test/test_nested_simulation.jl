@@ -880,3 +880,60 @@ end
     @test isapprox(wc * Δxc, 60_000; rtol = 0.2)
     @test isapprox(wf * Δxf, 60_000; rtol = 0.2)
 end
+
+# Strips cut from the same parent drive the child exactly as the full-domain parent does.
+@testset "BoundaryPrescribedComponent strips reproduce the full-domain parent on $(arch)" for arch in test_architectures
+    ext   = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    times = [0.0, 4.0, 8.0, 12.0, 16.0]
+
+    function parent_atmosphere(longitude, latitude, Nx, Ny, times = times)
+        grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny, 8), longitude, latitude, z = (0, 16000),
+                                     halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+        atmosphere = PrescribedAtmosphere(grid, times)
+        set!(atmosphere.temperature,       (λ, φ, z, t) -> 288 - 6.5e-3 * z + λ + t / 4)
+        set!(atmosphere.specific_humidity, (λ, φ, z, t) -> 0.006)
+        set!(atmosphere.velocities.u,      (λ, φ, z, t) -> 8 + t / 10)
+        set!(atmosphere.velocities.v,      (λ, φ, z, t) -> φ - 36.6)
+        set!(atmosphere.pressure,          (λ, φ, z, t) -> 1e5 * exp(-z / 8000))
+        return atmosphere
+    end
+
+    # Each strip is a sub-window of the full parent's 1/3° lattice.
+    full = parent_atmosphere((-2, 2), (34.6, 38.6), 12, 12)
+    strips = BoundaryPrescribedComponent(west  = parent_atmosphere((-2, 0), (34.6, 38.6), 6, 12),
+                                         east  = parent_atmosphere((0, 2),  (34.6, 38.6), 6, 12),
+                                         south = parent_atmosphere((-2, 2), (34.6, 36.6), 12, 6),
+                                         north = parent_atmosphere((-2, 2), (36.6, 38.6), 12, 6))
+
+    child_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 8),
+                                       longitude = (-1, 1), latitude = (35.6, 37.6),
+                                       z = (0, 16000), halo = (5, 5, 5),
+                                       topology = (Bounded, Bounded, Bounded))
+
+    nest(parent, relaxation_rate) = nested_atmosphere_model(parent, child_grid; relaxation_rate, relaxation_width = 3,
+                                                            base_pressure = 1e5, coriolis = nothing,
+                                                            parent_condensates = nothing)
+    full_model      = nest(full, 1/30)
+    strip_model     = nest(strips, 1/30)
+    unrelaxed_model = nest(full, nothing)
+
+    # The strip child starts from a one-time full-domain snapshot, as the dataset-driven constructor does.
+    snapshot = parent_atmosphere((-2, 2), (34.6, 38.6), 12, 12, times[1:2])
+    initial_states = (full_model.exchanger.prognostic,
+                      ext.state_exchanger(snapshot, first(strip_model.exchanger)).prognostic,
+                      unrelaxed_model.exchanger.prognostic)
+
+    for (model, prognostic) in zip((full_model, strip_model, unrelaxed_model), initial_states)
+        ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false, prognostic)
+        for _ in 1:8
+            time_step!(model, 0.5)
+        end
+    end
+
+    for (name, full_field) in pairs(prognostic_fields(full_model.child))
+        difference(model) = maximum(abs, Field(prognostic_fields(model.child)[name] - full_field))
+        scale = maximum(abs, full_field)
+        @test difference(strip_model) ≤ 1e-12 * scale
+        name in (:ρθ, :ρu, :ρv) && @test difference(unrelaxed_model) > 1e-6 * scale
+    end
+end

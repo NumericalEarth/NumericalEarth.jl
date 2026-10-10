@@ -18,7 +18,9 @@ using NumericalEarth:
     surface_elevation
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
+using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width
+using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset,
+                                    expand_dates
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!
 
 using Oceananigans:
@@ -28,16 +30,19 @@ using Oceananigans:
     NormalFlowBoundaryCondition,
     Field,
     Center, Face,
+    TendencyCallsite,
     set!
 
 using Oceananigans.Architectures: architecture
 using Oceananigans.DistributedComputations: all_reduce
 using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, interior, interpolate!
-using Oceananigans.Forcings: Relaxation
+using Oceananigans.Forcings: Relaxation, FieldTimeSeriesTarget
 using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
+using Oceananigans.Utils: KernelParameters
+using Oceananigans.Simulations: Callback
 
 using GPUArraysCore: @allowscalar
 
@@ -53,7 +58,7 @@ using Breeze:
     moisture_prognostic_name,
     moisture_specific_name
 
-using Breeze.AtmosphereModels: prognostic_field_names
+using Breeze.AtmosphereModels: prognostic_field_names, dynamics_density
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
 # saturation-adjustment cloud formation when Breeze's `CloudMicrophysics` extension is loaded,
@@ -64,6 +69,8 @@ function default_nested_microphysics()
     isnothing(ext) && return SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())
     return ext.OneMomentCloudMicrophysics(cloud_formation = SaturationAdjustment(equilibrium = MixedPhaseEquilibrium()))
 end
+
+const default_relaxation_width = 5
 
 # Ramp shapes (isbits callables) for a nudging zone: weight vs. normalized distance from the wall, s ∈ [0, 1].
 # Contract: ramp(0)=1, ramp(1)=0, monotone between.
@@ -83,8 +90,7 @@ function davies_relaxation_mask(grid, width; ramp = SmoothStepRamp())
     # and a boxed capture is not isbits — GPU kernels reject it.
     λ₁ˡ, λ₂ˡ = x_domain(grid)
     φ₁ˡ, φ₂ˡ = y_domain(grid)
-    Nx, Ny, _ = size(grid)
-    w = width * max((λ₂ˡ - λ₁ˡ) / Nx, (φ₂ˡ - φ₁ˡ) / Ny)
+    w = relaxation_zone_width(grid, width)
     arch = architecture(grid)
     λ₁ = all_reduce(min, λ₁ˡ, arch)
     λ₂ = all_reduce(max, λ₂ˡ, arch)
@@ -95,6 +101,68 @@ function davies_relaxation_mask(grid, width; ramp = SmoothStepRamp())
         s = clamp(d / w, zero(d), one(d))
         return oftype(d, ramp(s))
     end
+end
+
+# Index ranges of the boundary strips: every cell within the relaxation zone of a side. The
+# corners belong to the west and east strips, so no cell is relaxed twice.
+function boundary_strip_regions(grid, width, sides)
+    λ₁, λ₂ = x_domain(grid)
+    φ₁, φ₂ = y_domain(grid)
+    Nx, Ny, Nz = size(grid)
+    w = relaxation_zone_width(grid, width)
+    Wx = ceil(Int, w / ((λ₂ - λ₁) / Nx))
+    Wy = ceil(Int, w / ((φ₂ - φ₁) / Ny))
+    i₁ = :west in sides ? Wx + 1 : 1
+    i₂ = :east in sides ? Nx - Wx : Nx
+    regions = (west  = KernelParameters(1:Wx, 1:Ny, 1:Nz),
+               east  = KernelParameters(Nx-Wx+1:Nx, 1:Ny, 1:Nz),
+               south = KernelParameters(i₁:i₂, 1:Wy, 1:Nz),
+               north = KernelParameters(i₁:i₂, Ny-Wy+1:Ny, 1:Nz))
+    return NamedTuple{sides}(map(side -> regions[side], sides))
+end
+
+@kernel function _add_forcing!(G, grid, forcing, clock, model_fields)
+    i, j, k = @index(Global, NTuple)
+    @inbounds G[i, j, k] += forcing(i, j, k, grid, clock, model_fields)
+end
+
+function relax_boundary_strips!(model, strips)
+    grid = model.grid
+    arch = architecture(grid)
+    model_fields = Oceananigans.fields(model)
+    for strip in strips, name in keys(strip.forcings)
+        launch!(arch, grid, strip.region, _add_forcing!,
+                model.timestepper.Gⁿ[name], grid, strip.forcings[name], model.clock, model_fields)
+    end
+    return nothing
+end
+
+# Davies relaxation toward the strips' derived prognostics, applied over each strip's region by a
+# tendency callback. Momentum and energy relax the specific state weighted by the child's own coupling
+# density; moisture relaxes its density.
+function boundary_relaxation(child, prognostic, rate, mask, width)
+    child_fields = Oceananigans.prognostic_fields(child)
+    moisture_name = moisture_prognostic_name(child.microphysics)
+    ρᵈ = dynamics_density(child.dynamics)
+    θ = Oceananigans.fields(child.formulation).θ
+
+    relaxation(field, target) = Relaxation(rate, field, mask, FieldTimeSeriesTarget(target, target.grid),
+                                           Oceananigans.instantiated_location(field), nothing)
+    specific(name, field, target) = SpecificForcing(relaxation(field, target), ρᵈ,
+                                                    Oceananigans.instantiated_location(child_fields[name]))
+
+    sides = keys(prognostic.θ)
+    regions = boundary_strip_regions(child.grid, width, sides)
+    names = (:ρθ, :ρu, :ρv, moisture_name)
+    strips = NamedTuple{sides}(
+        (forcings = NamedTuple{names}((specific(:ρθ, θ, prognostic.θ[side]),
+                                       specific(:ρu, child.velocities.u, prognostic.u[side]),
+                                       specific(:ρv, child.velocities.v, prognostic.v[side]),
+                                       relaxation(child_fields[moisture_name], prognostic.ρqᵛᵉ[side]))),
+         region = regions[side])
+        for side in sides)
+
+    return Callback(relax_boundary_strips!; callsite = TendencyCallsite(), parameters = strips)
 end
 
 # Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` metres of the domain, for the ρw lid sponge.
@@ -153,10 +221,9 @@ default_terrain_blend_width(grid, blend_length) =
 # topography dataset. Smoothing damps the grid-scale orographic roughness that excites standing
 # near-surface noise on the terrain-following coordinate; blending toward the parent's surface
 # elevation (after smoothing) keeps the open-boundary terrain consistent with the parent state.
-function materialize_nested_terrain!(child_grid, terrain, parent_atmosphere, blend_width, smoothing_passes)
+function materialize_nested_terrain!(child_grid, terrain, parent_surface, blend_width, smoothing_passes)
     elevation = terrain isa AbstractField ? terrain : regrid_topography(child_grid; dataset = terrain)
     smoothing_passes > 0 && smooth_topography!(elevation; passes = smoothing_passes)
-    parent_surface = surface_elevation(parent_atmosphere)
     if !isnothing(parent_surface) && blend_width > 0
         parent_elevation = Field{Center, Center, Nothing}(child_grid)
         interpolate!(parent_elevation, parent_surface)
@@ -172,6 +239,9 @@ function default_parent_condensates(parent_atmosphere::PrescribedAtmosphere)
             qˢ  = parent_atmosphere.microphysical_variables.qˢ)
 end
 
+default_parent_condensates(parent_atmosphere::BoundaryPrescribedComponent) =
+    map(default_parent_condensates, boundary_strips(parent_atmosphere))
+
 """
 $(TYPEDSIGNATURES)
 
@@ -181,6 +251,11 @@ raw state on the parent grid as `FieldTimeSeries` (see `child_prognostic_field_t
 lateral boundary conditions — and, when `relaxation_rate` (s⁻¹) is given, its interior Davies relaxation
 over `relaxation_mask` (default: a cosine ramp over the outermost `relaxation_width` cells) — interpolate
 those precomputed prognostics (via `parent_boundary_conditions` / `parent_forcings`).
+
+When `parent_atmosphere` is a `BoundaryPrescribedComponent` of `PrescribedAtmosphere`s, each side's boundary conditions
+interpolate that side's strip, and the Davies relaxation acts only on the cells of each strip's
+relaxation zone, through a tendency callback the `NestedModel` adds to the child's at every time step.
+`parent_condensates` is then keyed by side.
 
 Liquid/ice inputs to the combine default to the parent's hydrometeors — total liquid `qᶜˡ + qʳ`
 (cloud liquid + rain) and total ice `qᶜⁱ + qˢ` (cloud ice + snow) — but may be supplied from any
@@ -213,11 +288,12 @@ on the terrain-following coordinate. If the parent knows its surface elevation
 frame of physical width `terrain_blend_length` (meters; converted to a resolution-invariant cell count,
 or overridden directly with `terrain_blend_width`), so the terrain at the open boundaries matches the
 orography the parent state was produced with — and the blend slope stays fixed across resolutions
-rather than steepening.
+rather than steepening. `parent_surface_elevation` replaces the parent's own surface elevation in that blend.
 """
-function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::PrescribedAtmosphere, child_grid;
+function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::Union{PrescribedAtmosphere, BoundaryPrescribedComponent},
+                                                              child_grid;
     relaxation_rate = nothing,
-    relaxation_width = 5,
+    relaxation_width = default_relaxation_width,
     relaxation_mask = davies_relaxation_mask(child_grid, relaxation_width),
     sides = (:west, :east, :south, :north),
     thermodynamic_constants = ThermodynamicConstants(eltype(child_grid)),
@@ -227,6 +303,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     terrain_blend_length = 60_000,   # meters; physical blend width → resolution-invariant slope
     terrain_blend_width = nothing,    # explicit cell-count override; derived from length if `nothing`
     terrain_smoothing_passes = 2,     # binomial-filter passes on the child elevation; 0 disables
+    parent_surface_elevation = nothing, # elevation the terrain blends toward; `nothing` ⇒ the parent's
     bottom_drag_coefficient = nothing,  # constant Cᴰ or a Breeze `PolynomialCoefficient`; `nothing` disables
     drag_surface_temperature = nothing, # surface temperature entering the drag's surface density
     parent_condensates = default_parent_condensates(parent_atmosphere),
@@ -243,7 +320,8 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
 
     if !isnothing(terrain)
         blend_width = something(terrain_blend_width, default_terrain_blend_width(child_grid, terrain_blend_length))
-        materialize_nested_terrain!(child_grid, terrain, parent_atmosphere, blend_width, terrain_smoothing_passes)
+        parent_surface = isnothing(parent_surface_elevation) ? surface_elevation(parent_atmosphere) : parent_surface_elevation
+        materialize_nested_terrain!(child_grid, terrain, parent_surface, blend_width, terrain_smoothing_passes)
     end
 
     moisture_name = moisture_prognostic_name(microphysics)
@@ -251,9 +329,8 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
 
     # Precompute the child prognostics on the parent grid (combine-then-interpolate); the exchanger owns
     # its own 3-level moving window and refreshes it from the parent each step via `exchange_state!`.
-    condensates = isnothing(parent_condensates) ? (qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing) : parent_condensates
-    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates, moisture_name)
-    prognostic = exchanger.prognostic
+    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates = parent_condensates, moisture_name)
+    prognostic = parent_prognostic(exchanger)
 
     ρqᵛᵉ = prognostic.ρqᵛᵉ
     moist_variables = NamedTuple{tuple(moisture_name)}(tuple(ρqᵛᵉ))
@@ -303,7 +380,8 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # specific-key dispatch, so a caller's own `θ`/`u`/`v` forcing combines with the relaxation instead
     # of replacing it in the `merge` below.
     relax_mask = relaxation_mask isa Number ? Returns(relaxation_mask) : relaxation_mask
-    davies = if isnothing(relaxation_rate)
+    boundary_parent = parent_atmosphere isa BoundaryPrescribedComponent
+    davies = if isnothing(relaxation_rate) || boundary_parent
         NamedTuple()
     else
         specific_targets = (ρθ = prognostic.θ, ρu = prognostic.u, ρv = prognostic.v)
@@ -333,7 +411,10 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
         initialize = false,
         kw...)
 
-    return NestedModel(parent_atmosphere, child, exchanger)
+    child_callbacks = isnothing(relaxation_rate) || !boundary_parent ? () :
+                      (boundary_relaxation(child, prognostic, relaxation_rate, relax_mask, relaxation_width),)
+
+    return NestedModel(parent_atmosphere, child, exchanger, child_callbacks)
 end
 
 # Domain-mean dataset mean-sea-level pressure at `date`, regridded onto the child grid.
@@ -364,11 +445,13 @@ end
 """
     nested_atmosphere_model(child_grid, parent_dataset; dates, kw...)
 
-Build the parent `PrescribedAtmosphere`, nest a Breeze child in it, and initialize the child from
-`parent_dataset` at `first(dates)` — the returned model is ready to step. The parent spans
-`child_grid`'s bounding box padded by `parent_padding` (default `parent_dataset`'s
-`default_horizontal_padding`, margin for the lateral-BC interpolation stencils) at `dates`, on
-`parent_dataset`'s native grid. Unless given, the default dynamics' `base_pressure` anchor is the domain-mean dataset
+Build the parent `BoundaryPrescribedComponent` of `PrescribedAtmosphere`s, nest a Breeze child in it, and initialize the child from
+`parent_dataset` at `first(dates)` — the returned model is ready to step. The parent's strips hold
+`parent_dataset` at `dates` on its native grid, along each side of `child_grid` and `relaxation_width`
+cells inward, padded by `parent_padding` (default `parent_dataset`'s `default_horizontal_padding`,
+margin for the interpolation stencils). A full-domain snapshot of `parent_dataset` at the first two
+`dates`, with the same padding, initializes the child and supplies the surface elevation the `terrain` blends
+toward. Unless given, the default dynamics' `base_pressure` anchor is the domain-mean dataset
 mean-sea-level pressure over the child at `first(dates)`. When `bottom_drag_coefficient` is given,
 `drag_surface_temperature` defaults to the dataset's skin temperature at `first(dates)` regridded onto
 the child grid (a static snapshot, not the dataset's diurnal cycle). `balancer` controls the
@@ -380,16 +463,20 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
     dir = default_download_directory(parent_dataset),
     parent_padding = default_horizontal_padding(parent_dataset),
     parent_time_indices_in_memory = nothing,   # nothing ⇒ every date resident; ≥3 streams a moving window
+    relaxation_width = default_relaxation_width,
     base_pressure = nothing,
     bottom_drag_coefficient = nothing,
     drag_surface_temperature = nothing,
     balancer = true,
     kw...)
 
-    parent_region = BoundingBox(child_grid; padding = parent_padding)
-    parent_atmosphere = PrescribedAtmosphere(parent_region, dates, parent_dataset;
-                                             architecture = architecture(child_grid), dir,
-                                             time_indices_in_memory = parent_time_indices_in_memory)
+    parent_atmosphere = BoundaryPrescribedComponent(PrescribedAtmosphere, child_grid, dates, parent_dataset;
+                                                    width = relaxation_width, padding = parent_padding, dir,
+                                                    time_indices_in_memory = parent_time_indices_in_memory)
+
+    snapshot_dates = expand_dates(parent_dataset, :temperature, dates)[1:2]
+    snapshot = PrescribedAtmosphere(BoundingBox(child_grid; padding = parent_padding), snapshot_dates, parent_dataset;
+                                    architecture = architecture(child_grid), dir)
 
     if isnothing(base_pressure)
         base_pressure = mean_sea_level_pressure(parent_dataset, child_grid, first(dates), dir)
@@ -399,9 +486,14 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
         drag_surface_temperature = dataset_skin_temperature(parent_dataset, child_grid, first(dates), dir)
     end
 
-    nested_model = NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere, child_grid; base_pressure,
-                                                                       bottom_drag_coefficient, drag_surface_temperature, kw...)
-    initialize_nested_child!(nested_model, parent_dataset, first(dates), dir; balancer)
+    nested_model = NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere, child_grid;
+                                                                       relaxation_width, base_pressure,
+                                                                       bottom_drag_coefficient, drag_surface_temperature,
+                                                                       parent_surface_elevation = surface_elevation(snapshot),
+                                                                       kw...)
+
+    initial_state = state_exchanger(snapshot, first(nested_model.exchanger)).prognostic
+    initialize_nested_child!(nested_model, parent_dataset, first(dates), dir; balancer, prognostic = initial_state)
     return nested_model
 end
 
@@ -414,16 +506,16 @@ function interpolate_to_child(fts, child_grid, t₀, loc = (Center, Center, Cent
     return field
 end
 
-# Initialize the nested child from the exchanger's parent-derived prognostics (the SAME state that drives
-# the lateral boundaries), interpolated to the child interior — so the interior IC and the prescribed
+# Initialize the nested child from the parent-derived `prognostic` (by default the exchanger's, the SAME
+# state that drives the lateral boundaries), interpolated to the child interior — so the interior IC and the prescribed
 # boundary agree at the walls (no standing pressure/density jump). Recompute the Exner reference from the
 # domain-mean state, graft ρw ← ρw − ρw̃ so the flow follows the terrain, and spin ρw into nonhydrostatic
 # balance. `set!(…; balancer = true)` runs Breeze's adiabatic (FV3 `na_init`) balance on a stripped,
 # memory-sharing twin (no microphysics/sponge/forcing) at an automatically-derived acoustic-CFL step.
-function initialize_nested_child!(nested_model, dataset, date, dir; balancer = true)
+function initialize_nested_child!(nested_model, dataset, date, dir; balancer = true,
+                                  prognostic = nested_model.exchanger.prognostic)
     child = nested_model.child
     child_grid = child.grid
-    prognostic = nested_model.exchanger.prognostic
     t₀ = first(prognostic.ρᵈ.times)
 
     ρᵈ   = interpolate_to_child(prognostic.ρᵈ, child_grid, t₀)

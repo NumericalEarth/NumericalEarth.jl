@@ -36,22 +36,24 @@ Construct via [`child_model`](@ref) plus this wrapper, or use the
 [`NestedSimulation`](@ref) convenience that bundles model construction and
 `Simulation` wrapping.
 """
-mutable struct NestedModel{P, M, X, C, TS, A} <: AbstractModel{TS, A}
-    parent    :: P
-    child     :: M
-    exchanger :: X   # mediates parent state → child variables (see `exchange_state!`); `nothing` if unused
-    clock     :: C   # shared reference to the child's clock (Simulation/run! read `model.clock`)
+mutable struct NestedModel{P, M, X, CB, C, TS, A} <: AbstractModel{TS, A}
+    parent          :: P
+    child           :: M
+    exchanger       :: X    # mediates parent state → child variables (see `exchange_state!`); `nothing` if unused
+    child_callbacks :: CB   # callbacks added to the child's at every time step (e.g. boundary relaxation)
+    clock           :: C    # shared reference to the child's clock (Simulation/run! read `model.clock`)
 end
 
-NestedModel(parent, child::AbstractModel{TS, A}, exchanger=nothing) where {TS, A} =
-    NestedModel{typeof(parent), typeof(child), typeof(exchanger), typeof(child.clock), TS, A}(
-        parent, child, exchanger, child.clock)
+NestedModel(parent, child::AbstractModel{TS, A}, exchanger=nothing, child_callbacks=()) where {TS, A} =
+    NestedModel{typeof(parent), typeof(child), typeof(exchanger), typeof(child_callbacks), typeof(child.clock), TS, A}(
+        parent, child, exchanger, child_callbacks, child.clock)
 
 # Refresh the parent-derived child state held by the exchanger to the current `time`. The exchanger
 # (a NumericalEarth object; see the Breeze extension's `StateExchanger`) recomputes the child
 # prognostics on the parent grid as needed. Default no-op so a bare `NestedModel(parent, child)` — or
 # one whose parent needs no state transform — just forwards.
 exchange_state!(exchanger, time) = nothing
+exchange_state!(exchangers::NamedTuple, time) = foreach(exchanger -> exchange_state!(exchanger, time), exchangers)
 
 # Model-protocol dispatches, forwarded explicitly to the child.
 fields(nm::NestedModel)            = fields(nm.child)
@@ -84,9 +86,9 @@ set!(nm::NestedModel, args...; kwargs...) = set!(nm.child, args...; kwargs...)
 # the parent to the child's new time with (adaptive) Δt. For a prescribed parent that reduces to a
 # clock tick + FTS-window refresh; a live prognostic parent would integrate its own dynamics over
 # Δt_parent. `Simulation` calls `time_step!(model, Δt; callbacks=...)`.
-function time_step!(nm::NestedModel, Δt; kwargs...)
+function time_step!(nm::NestedModel, Δt; callbacks=())
     exchange_state!(nm.exchanger, nm.clock.time + Δt)
-    time_step!(nm.child, Δt; kwargs...)
+    time_step!(nm.child, Δt; callbacks = (callbacks..., nm.child_callbacks...))
 
     Δt_parent = nm.child.clock.time - nm.parent.clock.time
     Δt_parent > 0 && time_step!(nm.parent, Δt_parent)
