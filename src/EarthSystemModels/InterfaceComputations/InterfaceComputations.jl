@@ -6,7 +6,7 @@ using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: AbstractField, Field, Face, Center, FractionalIndices
-using Oceananigans.Grids: Flat, Periodic, halo_size, topology, _node
+using Oceananigans.Grids: Flat, Periodic, halo_size, topology, _node, znode
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: KernelParameters, worksize
 
@@ -179,6 +179,7 @@ include("state_exchanger.jl")
 # Sea ice-ocean heat flux formulations
 include("friction_velocity.jl")
 include("sea_ice_ocean_heat_flux_formulations.jl")
+include("ice_ocean_interface_fluxes.jl")
 
 include("component_interfaces.jl")
 include("atmosphere_state_correction.jl")
