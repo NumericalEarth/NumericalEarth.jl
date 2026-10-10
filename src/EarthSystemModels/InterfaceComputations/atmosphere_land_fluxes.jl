@@ -40,6 +40,23 @@ function atmosphere_land_interface(grid, atmosphere, land;
                                interface_specific_humidity, al_properties)
 end
 
+# Fallback: assume land has a `fluxes` property like SlabLand
+land_surface_energy_flux(land) = land.fluxes.surface_energy_flux
+
+"""
+    land_surface_shortwave_up(land)
+    land_surface_longwave_up(land)
+
+Fields into which `apply_air_land_radiative_fluxes!` writes the upwelling radiation (positive
+upward), for land components that take it as a prescribed input. The upwelling fluxes are only
+known in the radiative phase, after `update_net_fluxes!`, so they are pushed rather than pulled.
+Returns `nothing` by default, in which case nothing is written.
+"""
+land_surface_shortwave_up(land) = nothing
+
+@doc (@doc land_surface_shortwave_up)
+land_surface_longwave_up(land) = nothing
+
 #####
 ##### Flux compute driver
 #####

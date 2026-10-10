@@ -30,6 +30,7 @@ Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 SeawaterPolynomials = "d496a93d-167e-4197-9f49-d3af4ff8fe40"
 SpeedyWeather = "9e226e20-d153-4fed-8a5b-493def4f21a9"
 Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
+Terrarium = "80418d68-07fa-499d-ae2b-c12e531f5cd8"
 
 [sources]
 NumericalEarth = {path = ".."}
@@ -45,3 +46,4 @@ Enzyme = "0.13.166"
 Literate = "2.2"
 Oceananigans = "0.113"
 Reactant = "0.2.278"
+Terrarium = "0.1.8"
