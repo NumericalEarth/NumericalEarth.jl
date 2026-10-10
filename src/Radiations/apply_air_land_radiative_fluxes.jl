@@ -76,7 +76,7 @@ end
                                                   rk,
                                                   radiation_state,
                                                   land_surface_temperature,
-                                                  land_shortwave_up,
+                                                  land_shortwave_upwelling_flux,
                                                   land_longwave_up)
 
     i, j = @index(Global, NTuple)
@@ -110,6 +110,6 @@ end
     end
 
     # Same `Tₛ`, `α`, `ϵ` as `ΣQ`, so the component cannot disagree with the assembled budget.
-    _maybe_write_up!(land_shortwave_up, i, j, ℐꜛˢʷ)
+    maybe_set_upwelling_radiative_fluxes!(land_shortwave_up, i, j, ℐꜛˢʷ)
     _maybe_write_up!(land_longwave_up, i, j, ℐꜛˡʷ)
 end
