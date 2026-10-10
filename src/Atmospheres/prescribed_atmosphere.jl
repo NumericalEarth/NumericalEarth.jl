@@ -2,7 +2,7 @@
 ##### Prescribed atmosphere (as opposed to dynamically evolving / prognostic)
 #####
 
-mutable struct PrescribedAtmosphere{S, FT, G, T, U, Θ, Q, M, P, C, F, TP, TI} <: AbstractPrescribedComponent
+mutable struct PrescribedAtmosphere{S, FT, G, T, U, Θ, Q, M, P, C, F, TP, TI, H} <: AbstractPrescribedComponent
     source :: S
     grid :: G
     clock :: Clock{T}
@@ -16,7 +16,7 @@ mutable struct PrescribedAtmosphere{S, FT, G, T, U, Θ, Q, M, P, C, F, TP, TI} <
     thermodynamics_parameters :: TP
     times :: TI
     surface_layer_height :: FT
-    boundary_layer_height :: FT
+    boundary_layer_height :: H
 end
 
 # Compact bounds for regional (λ-Bounded) latitude-longitude grids; empty for global or
@@ -184,7 +184,7 @@ EarthSystemModels.adopt_clock(atmos::PrescribedAtmosphere, clock) = EarthSystemM
                          source = nothing,
                          clock = Clock{Float64}(time = 0),
                          surface_layer_height = 10, # meters
-                         boundary_layer_height = 512, # meters
+                         boundary_layer_height = 600, # meters
                          thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
                          velocities              = default_atmosphere_velocities(grid, times),
                          temperature             = default_atmosphere_temperature(grid, times),
@@ -201,6 +201,9 @@ The state holds `velocities`, `temperature`, `specific_humidity`, an optional
 empty by default), `pressure`, gas-species `tracers` (e.g. CO₂; empty by default), and — for a
 surface atmosphere — a `precipitation_flux` (a 3D atmosphere defaults to none, carrying precipitation
 in `microphysical_variables` instead).
+
+`boundary_layer_height` is a number, or a 2D `FieldTimeSeries` on its own grid that is interpolated onto
+the exchange grid like the `tracers`.
 
 `source` records what the atmosphere was built from (a dataset object, e.g. `ERA5HourlyPressureLevels()`;
 `nothing` for a hand-built atmosphere). Dataset constructors set it so that aliases like
@@ -220,7 +223,7 @@ function PrescribedAtmosphere(grid, times=[zero(grid)];
                               source = nothing,
                               clock = Clock{Float64}(time = 0),
                               surface_layer_height = 10,
-                              boundary_layer_height = 512,
+                              boundary_layer_height = EarthSystemModels.default_boundary_layer_height,
                               thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
                               velocities              = default_atmosphere_velocities(grid, times),
                               temperature             = default_atmosphere_temperature(grid, times),
@@ -233,6 +236,10 @@ function PrescribedAtmosphere(grid, times=[zero(grid)];
     FT = eltype(grid)
     if isnothing(thermodynamics_parameters)
         thermodynamics_parameters = AtmosphereThermodynamicsParameters(FT)
+    end
+
+    if boundary_layer_height isa Number
+        boundary_layer_height = ConstantField(convert(FT, boundary_layer_height))
     end
 
     atmos = PrescribedAtmosphere(source,
@@ -248,7 +255,7 @@ function PrescribedAtmosphere(grid, times=[zero(grid)];
                                  thermodynamics_parameters,
                                  times,
                                  convert(FT, surface_layer_height),
-                                 convert(FT, boundary_layer_height))
+                                 boundary_layer_height)
     update_state!(atmos)
 
     return atmos

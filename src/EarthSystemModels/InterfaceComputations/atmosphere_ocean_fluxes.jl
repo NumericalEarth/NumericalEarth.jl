@@ -2,8 +2,9 @@ using Oceananigans.Grids: inactive_node
 
 atmosphere_ocean_fields(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state
 
-atmosphere_ocean_data(coupled_model) = merge(atmosphere_ocean_fields(coupled_model),
-                                             (; h_bℓ = boundary_layer_height(coupled_model.atmosphere)))
+# An `h_bℓ` regridded into the exchanger state takes precedence over the atmosphere's own
+atmosphere_ocean_data(coupled_model) = merge((; h_bℓ = boundary_layer_height(coupled_model.atmosphere)),
+                                             atmosphere_ocean_fields(coupled_model))
 
 atmosphere_ocean_properties(coupled_model) = (; thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
                                                 surface_layer_height = coupled_model.interfaces.properties.surface_layer_height,

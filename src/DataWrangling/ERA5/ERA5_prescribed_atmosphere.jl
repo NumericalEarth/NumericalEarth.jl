@@ -55,7 +55,7 @@ end
                              time_indices_in_memory = 24,
                              time_indexing = Cyclical(),
                              surface_layer_height = 10,    # meters
-                             boundary_layer_height = 512,  # meters
+                             boundary_layer_height = nothing,
                              thermodynamics_parameters = nothing,
                              region = nothing,
                              other_kw...)
@@ -64,7 +64,8 @@ Return a [`PrescribedAtmosphere`](@ref) representing ERA5 single-level reanalysi
 Eastward/northward 10 m winds, 2 m temperature, and surface pressure are loaded directly; specific humidity is derived from
 the 2 m dewpoint and surface pressure (`qᵛ = qᵛ⁺(Tᵈ, pˢ)`) one in-memory window at a time; total precipitation is
 converted from hourly-accumulated depth (m) to a mass flux (kg m⁻² s⁻¹) at load time and wrapped in a
-`PrescribedPrecipitationFlux`.
+`PrescribedPrecipitationFlux`. The boundary-layer height is ERA5's diagnosed `boundary_layer_height` unless a number (m)
+is passed.
 
 `region` (a `BoundingBox`) restricts the download and the native grid to a sub-domain; the coupled model interpolates the
 native-resolution atmosphere onto the exchange grid. Pass `thermodynamics_parameters` to share a specific thermodynamics with
@@ -78,7 +79,7 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
                                   time_indices_in_memory = 24,
                                   time_indexing = Cyclical(),
                                   surface_layer_height = 10,
-                                  boundary_layer_height = 512,
+                                  boundary_layer_height = nothing,
                                   thermodynamics_parameters = nothing,
                                   region = nothing,
                                   tracers = NamedTuple(),
@@ -91,7 +92,8 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
     # across variables (one CDS request, or one era5cli invocation with concurrent
     # per-variable requests), so the `FieldTimeSeries` below find their files cached.
     mset = MetadataSet(:eastward_velocity, :northward_velocity, :temperature,
-                       :dewpoint_temperature, :surface_pressure, :total_precipitation;
+                       :dewpoint_temperature, :surface_pressure, :total_precipitation,
+                       :boundary_layer_height;
                        dataset, start_date, end_date, dir, region)
     Downloads.download(mset)
 
@@ -103,6 +105,7 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
     Tᵈ   = era5_fts(:dewpoint_temperature)
     p    = era5_fts(:surface_pressure)
     rain = era5_fts(:total_precipitation)
+    h_bℓ = isnothing(boundary_layer_height) ? era5_fts(:boundary_layer_height) : boundary_layer_height
 
     grid  = u.grid
     times = u.times
@@ -126,7 +129,7 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
                                             precipitation_flux,
                                             thermodynamics_parameters = ℂ,
                                             surface_layer_height  = convert(FT, surface_layer_height),
-                                            boundary_layer_height = convert(FT, boundary_layer_height),
+                                            boundary_layer_height = h_bℓ,
                                             tracers)
 end
 

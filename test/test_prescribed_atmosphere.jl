@@ -114,7 +114,7 @@ end
     end
 end
 
-@testset "Prescribed atmosphere tracers at any horizontal location" begin
+@testset "Prescribed atmosphere tracers and boundary-layer height at any horizontal location" begin
     for arch in test_architectures
         atmosphere_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 1), longitude = (0, 90), latitude = (-40, 40), z = (0, 1))
         grid = LatitudeLongitudeGrid(arch; size = (10, 12, 1), longitude = (10, 80), latitude = (-30, 30), z = (-100, 0), halo = (6, 6, 3))
@@ -139,7 +139,9 @@ end
                    cʸ  = linear_tracer(Nothing, Center, φ -> φ + 50),
                    cʸᶠ = linear_tracer(Nothing, Face, φ -> 2φ))
 
-        atmosphere = PrescribedAtmosphere(atmosphere_grid, [0, 3600.0]; tracers)
+        boundary_layer_height = linear_tracer(Center, Center, (λ, φ) -> 500 + λ + φ)
+
+        atmosphere = PrescribedAtmosphere(atmosphere_grid, [0, 3600.0]; tracers, boundary_layer_height)
         ocean = ocean_simulation(grid, closure = nothing)
         model = OceanOnlyModel(ocean; atmosphere, radiation = nothing)
         time_step!(model, 60)
@@ -154,6 +156,7 @@ end
         @test Array(interior(state.cˣ,  :, :, 1)) ≈ factor .* (3λ .+ 0φ')
         @test Array(interior(state.cʸ,  :, :, 1)) ≈ factor .* (0λ .+ φ' .+ 50)
         @test Array(interior(state.cʸᶠ, :, :, 1)) ≈ factor .* (0λ .+ 2φ')
+        @test Array(interior(state.h_bℓ, :, :, 1)) ≈ factor .* (500 .+ λ .+ φ')
     end
 end
 

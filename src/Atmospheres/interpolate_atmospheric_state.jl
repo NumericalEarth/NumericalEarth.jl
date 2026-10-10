@@ -24,7 +24,7 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
 
     atmosphere_tracers = merge((T = atmosphere.temperature.data,
                                 q = atmosphere.specific_humidity.data),
-                               atmosphere.tracers)
+                               scalars_to_regrid(atmosphere))
 
     rainfall_flux = surface_rainfall_flux(atmosphere)
     snowfall_flux = surface_snowfall_flux(atmosphere)
@@ -52,7 +52,7 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
     # Tracers other than T and q carry their own grid and location
     tracer_fractional_indices = merge((T = space_fractional_indices, q = space_fractional_indices), regridder.tracers)
     tracer_time_arguments = map(tracer -> time_arguments(arch, tracer, t),
-                                merge((T = atmosphere.temperature, q = atmosphere.specific_humidity), atmosphere.tracers))
+                                merge((T = atmosphere.temperature, q = atmosphere.specific_humidity), scalars_to_regrid(atmosphere)))
 
     launch!(arch, grid, kernel_parameters,
             _interpolate_primary_atmospheric_state!,

@@ -56,15 +56,11 @@ end
 NumericalEarth.EarthSystemModels.surface_layer_height(atmos::BreezeAtmosphereSim, exchange_grid) =
     NumericalEarth.EarthSystemModels.surface_layer_height(component_model(atmos), exchange_grid)
 
-# Fallback boundary-layer height for the surface-flux convective gustiness, used when the
-# atmosphere's turbulence closure diagnoses no z_i (e.g. closure = nothing).
-const default_boundary_layer_height = 600 # m
-
 # The boundary-layer height is the per-column z_i diagnosed by the turbulence closure when
 # it provides one (e.g. Breeze's ScaleAdaptiveTKE writes it into its `zi` closure field).
 NumericalEarth.EarthSystemModels.boundary_layer_height(atmosphere::BreezeAtmosphere) =
     hasproperty(atmosphere.closure_fields, :zi) ? atmosphere.closure_fields.zi :
-                                                  default_boundary_layer_height
+                                                  NumericalEarth.EarthSystemModels.default_boundary_layer_height
 
 NumericalEarth.EarthSystemModels.boundary_layer_height(atmos::BreezeAtmosphereSim) =
     NumericalEarth.EarthSystemModels.boundary_layer_height(component_model(atmos))

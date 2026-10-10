@@ -66,6 +66,8 @@ function boundary_layer_height end
 surface_layer_height(::Nothing) = 0
 boundary_layer_height(::Nothing) = 0
 
+const default_boundary_layer_height = 600 # m
+
 # Grid-aware surface-layer height, built once and cached in `interfaces.properties`.
 # The generic fallback ignores the exchange grid and returns the scalar height
 # (prescribed atmospheres carry a fixed measurement height); atmosphere models with

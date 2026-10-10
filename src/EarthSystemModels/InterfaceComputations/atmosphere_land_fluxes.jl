@@ -57,8 +57,9 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     atmosphere_fields = exchanger.atmosphere.state
 
     # See compute_atmosphere_ocean_fluxes! for rationale.
-    atmosphere_data = merge(atmosphere_fields,
-                            (; h_bℓ = boundary_layer_height(coupled_model.atmosphere)))
+    # An `h_bℓ` regridded into the exchanger state takes precedence over the atmosphere's own
+    atmosphere_data = merge((; h_bℓ = boundary_layer_height(coupled_model.atmosphere)),
+                            atmosphere_fields)
 
     flux_formulation = atmosphere_land_interface.flux_formulation
     interface_fluxes = atmosphere_land_interface.fluxes
