@@ -43,7 +43,7 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     liquidus = phase_transitions.liquidus
     L = phase_transitions.reference_latent_heat
 
-    grid = sea_ice.model.grid
+    grid = interface.fluxes.interface_heat.grid
     clock = sea_ice.model.clock
     arch = architecture(grid)
 
