@@ -1,20 +1,20 @@
 # # Urban aerodynamic roughness from GHSL building morphometry
 #
-# Ingest the Global Human Settlement Layer (GHSL R2023A) mean building height and
-# built-up fraction over a metropolitan area, derive the momentum roughness length
-# `ℓᵐ` and zero-plane displacement `d` per cell with the urban morphometric closure
-# (Macdonald 1998 / Kanda 2013), and render diagnostic maps + profiles.
+# We ingest the mean building height and built-up fraction of the Global Human Settlement
+# Layer (GHSL R2023A) over a metropolitan area, derive the momentum roughness length `ℓᵐ`
+# and the zero-plane displacement `d` of each cell with the urban morphometric closure
+# (Macdonald et al. 1998; Kanda et al. 2013), and plot diagnostic maps and profiles.
 #
-# The model runs on the built fraction's native **10 m** grid (`GHSBuiltS(resolution = GHSBuiltS10m)`),
-# so the maps resolve street-block structure. Building height is 100 m (the only resolution
-# GHSL publishes); since `ℓᵐ` and `d` scale with height, the roughness magnitude carries
-# 100 m structure textured by the 10 m coverage.
+# We work on the built fraction's native **10 m** grid (`GHSBuiltS(resolution = GHSBuiltS10m)`),
+# so the maps resolve the street-block structure. GHSL publishes building height only at 100 m;
+# since `ℓᵐ` and `d` scale with height, the roughness magnitude carries 100 m structure
+# textured by the 10 m coverage.
 #
 # Requirements:
-#   * `using ArchGDAL` (for the World-Mollweide → EPSG:4326 reprojection)
-#   * `using CairoMakie` for the figures
-# GHSL is open access — no authentication. The first run downloads the intersecting
-# Mollweide tiles (the 10 m built-surface tile is ~470 MB; cached afterwards).
+#   * `using ArchGDAL`, for the World-Mollweide → EPSG:4326 reprojection;
+#   * `using CairoMakie`, for the figures.
+# GHSL is open access, so no authentication is needed. The first run downloads the intersecting
+# Mollweide tiles (the 10 m built-surface tile is ~470 MB) and caches them.
 
 using NumericalEarth
 using Oceananigans
@@ -26,24 +26,24 @@ output_directory = joinpath(@__DIR__, "ghsl_urban_roughness_figures")
 mkpath(output_directory)
 
 # ## Region and target grid
-# Inner London (City / Westminster / Docklands out to the inner suburbs): dense core →
-# suburb gradient. We run on the built fraction's native 10 m grid (~3800 × 1560 cells) so
-# the fine raster is used at full resolution rather than downsampled.
+# The region spans Inner London, from the dense core (the City, Westminster, and Docklands)
+# out to the inner suburbs. On the built fraction's native 10 m grid (~3800 × 1560 cells),
+# the fine raster is used at full resolution.
 region = BoundingBox(longitude = (-0.28, 0.06), latitude = (51.42, 51.56))
 
 # ## Ingest the building morphometry
-# `λᵖ` — plan-area built fraction from the 10 m built-surface product (m²/cell → fraction),
-# built directly on its native 10 m grid. `h` — mean net building height (ANBH, 100 m),
-# interpolated up onto that grid. Both reprojected from Mollweide in the adapter.
+# `λᵖ` is the plan-area built fraction, that is, the built surface per cell area, from the
+# 10 m built-surface product on its native grid. `h` is the 100 m mean net building height
+# (ANBH), interpolated onto that grid. Both are reprojected from Mollweide on ingest.
 λᵖ   = Field(Metadatum(:built_up_fraction; dataset = GHSBuiltS(resolution = GHSBuiltS10m), region), CPU())
 grid = λᵖ.grid
 h    = Field(Metadatum(:building_height; dataset = GHSBuiltH(), region), grid)
 
 # ## Urban roughness closure
-# One morphometric closure, two height distributions: `VariableHeight` (the default, after
-# Kanda et al. 2013) parameterizes the building-height spread, while `UniformHeight` takes
-# the idealized equal-height obstacle array of Macdonald et al. (1998). Both consume the
-# same `(h, λᵖ)` fields.
+# We use one morphometric closure with two height distributions: `VariableHeight` (the default,
+# after Kanda et al. 2013) parameterizes the spread of building heights, while `UniformHeight`
+# assumes the idealized equal-height obstacle array of Macdonald et al. (1998). Both take
+# the same `(h, λᵖ)` fields.
 FT = eltype(grid)
 variable_height_roughness, variable_height_displacement =
     urban_roughness(h, λᵖ; closure = MorphometricRoughness(FT))
@@ -59,11 +59,11 @@ function panel!(figure, position, title, field, colorrange, colormap, label)
     return axis
 end
 
-# (1) The two height distributions side by side. Top row: the closure inputs (h, λᵖ).
-# Middle rows: ℓᵐ and d from each (same columns → same closure). Bottom row: the anomaly,
-# largest over the dense, height-heterogeneous core.
-## Ranges are the 99th percentile of the variable-height fields, so the bulk of the
-## domain resolves rather than saturating on the few supertall cells.
+# (1) The two height distributions side by side. The top row shows the closure inputs (h, λᵖ);
+# the middle rows show ℓᵐ and d from each distribution (one distribution per column); the bottom
+# row shows their difference, which is largest over the dense, height-heterogeneous core.
+## The color ranges end at the 99th percentile of the variable-height fields, so that the
+## bulk of the domain is resolved instead of saturating on the few supertall cells.
 roughness_range = (0, 3.5)
 displacement_range = (0, 40)
 fig = Figure(size = (1150, 1500))
@@ -78,8 +78,8 @@ panel!(fig, (4, 1), "ℓᵐ anomaly — variable − uniform (m)", variable_heig
 panel!(fig, (4, 3), "d anomaly — variable − uniform (m)", variable_height_displacement - uniform_height_displacement, (-25, 25), :balance, "Δm")
 save(joinpath(output_directory, "fig1_overview.png"), fig)
 
-# (2) The diagnostic curve: ℓᵐ rises then falls with λᵖ (isolated → wake → skimming),
-# peaking at intermediate coverage — binned mean over the domain.
+# (2) The diagnostic curve: binned over the domain, the mean ℓᵐ first rises and then falls
+# with λᵖ (from isolated to wake-interference to skimming flow), peaking at intermediate coverage.
 built_fraction = interior(λᵖ, :, :, 1)
 edges = range(0, 1; length = 21)
 centers = (edges[1:end-1] .+ edges[2:end]) ./ 2
@@ -100,9 +100,9 @@ lines!(axis, centers, binned_mean(uniform_height_roughness);  linewidth = 3, lab
 axislegend(axis; position = :rt)
 save(joinpath(output_directory, "fig2_roughness_vs_built_fraction.png"), fig)
 
-# (3) West→east transect through the core. At 10 m each cell alternates building/street,
-# so we average over a ~1 km latitudinal band (and lightly along-track) to read the
-# core→suburb envelope rather than per-building spikes.
+# (3) A west–east transect through the core. At 10 m, neighboring cells alternate between
+# building and street, so we average over a ~1 km band of latitude (and lightly along the
+# transect) to bring out the core-to-suburb envelope instead of single buildings.
 longitude = λnodes(grid, Center())
 latitude = φnodes(grid, Center())
 midpoint = size(grid, 2) ÷ 2
@@ -127,16 +127,16 @@ axislegend(height_axis, [height_line, displacement_line, fraction_line, roughnes
 save(joinpath(output_directory, "fig3_transect.png"), fig)
 
 # ## Sanity check against literature ranges
-# Dense-core ℓᵐ is order 1 m and peaks at intermediate λᵖ rather than at maximum coverage;
-# λᵖ → 0 reduces to a bare-soil roughness (~0.03 m). Under `VariableHeight` the
-# displacement exceeds the mean building height, since it is referenced to the tallest
+# In the dense core, ℓᵐ is of order 1 m and peaks at intermediate λᵖ rather than at maximum
+# coverage; as λᵖ → 0 it reduces to a bare-soil roughness (~0.03 m). Under `VariableHeight`
+# the displacement exceeds the mean building height, since it is referenced to the tallest
 # element rather than to `h`.
 #
-# One caveat on reading these maps: the height-distribution and frontal-area regressions
-# were fitted to 1 km urban districts, while this grid is 10 m. Per-cell `σʰ` and `hᵐᵃˣ`
-# are therefore district statistics attached to street-width pixels, and the derived
-# `hᵐᵃˣ` runs several times the cell's own building height. Aggregate onto a coarser
-# target grid to keep the inputs and the closure at the same scale.
+# One caveat when reading these maps: the height-distribution and frontal-area regressions
+# were fitted to 1 km urban districts, while this grid is 10 m. The per-cell `σʰ` and `hᵐᵃˣ`
+# are therefore district statistics attached to street-width pixels, and the derived `hᵐᵃˣ`
+# is several times the cell's own building height. Aggregating onto a coarser target grid
+# keeps the inputs and the closure at the same scale.
 finite_mean(values) = mean(filter(isfinite, values))
 roughness = interior(variable_height_roughness, :, :, 1)
 displacement = interior(variable_height_displacement, :, :, 1)
