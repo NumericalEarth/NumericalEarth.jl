@@ -1,97 +1,94 @@
-# # Surface fluxes from prescribed ocean and atmosphere
+# # Surface fluxes from a prescribed ocean and atmosphere
 #
-# NumericalEarth uses bulk formulae to estimate the surface exchange of momentum,
-# heat, and water vapor between the atmosphere and the ocean.
+# NumericalEarth estimates the surface exchange of momentum, heat, and water vapor
+# between the atmosphere and the ocean with bulk formulae.
 #
-# This example demonstrates an example of the turbulent surface flux calculations performed in NumericalEarth
-# using ECCO2 data for the ocean and JRA55 data for the atmosphere.
+# This example computes these turbulent surface fluxes for an ocean initialized
+# from ECCO data under a prescribed JRA55 atmosphere.
 #
-# For this example, we need NumericalEarth with its DataWrangling modules: ECCO2 and JRA55.
-# We also need Oceananigans for the ImmersedBoundaryGrid and Field utilities, and CairoMakie to plot.
+# Besides NumericalEarth, we need Oceananigans for the grid and `Field` utilities,
+# and CairoMakie for plotting.
 
 using NumericalEarth
-using NumericalEarth.ECCO
-using NumericalEarth.JRA55
-using NumericalEarth.Oceans
 using Oceananigans
 using Dates
 using CairoMakie
 
-# # Computing fluxes on the ECCO2 grid
+# ## Computing fluxes on the ECCO grid
 #
-# We start by building the ECCO2 grid, using `ECCO_bottom_height` to identify the bottom height.
+# We start from the native ECCO grid between 80°S and 80°N, and add bathymetry
+# regridded onto it with `regrid_bathymetry`.
 
-grid = ECCO_immersed_grid()
+ecco_temperature = Metadatum(:temperature; dataset=ECCO4Monthly(), region=BoundingBox(latitude=(-80, 80)))
+underlying_grid = native_grid(ecco_temperature; halo=(7, 7, 7))
+bottom_height = regrid_bathymetry(underlying_grid)
+grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height))
 
-# We visualize the bottom height of the ECCO grid using CairoMakie.
+# We plot the bottom height of the ECCO grid.
 
-fig, ax, hm = heatmap(bottom_height_field(grid))
-Colorbar(fig[1, 2], hm, height = Relative(3/4), label = "Depth (m)")
+fig, ax, hm = heatmap(bottom_height)
+Colorbar(fig[1, 2], hm, height = Relative(3/4), label = "Bottom height (m)")
 
 save("ECCO_continents.png", fig)
 
 # ![](ECCO_continents.png)
 
-# Next, we construct our atmosphere and ocean.
+# Next, we construct the atmosphere and the ocean.
 #
-# The atmosphere is prescribed, downloaded from the JRA55 dataset.
-# It contains:
-# - zonal wind `u`
-# - meridional wind `v`
-# - surface temperature `T`
-# - surface relative humidity `q`
-# - surface pressure `p`
-# - downwelling shortwave radiation
-# - downwelling longwave radiation
+# The atmosphere is prescribed from the JRA55 reanalysis. It contains
+# - the zonal wind `u`,
+# - the meridional wind `v`,
+# - the surface air temperature `T`,
+# - the surface specific humidity `q`, and
+# - the surface pressure `p`.
 #
-# We load in memory only the first two time indices, corresponding to January 1st
-# (at 00:00 AM and 03:00 AM), by using `time_indices_in_memory = 2`.
+# With `time_indices_in_memory = 2`, only the first two snapshots, January 1st
+# at 00:00 and 03:00, are loaded into memory.
 
 atmosphere = JRA55PrescribedAtmosphere(; time_indices_in_memory = 2)
 ocean = ocean_simulation(grid, closure=nothing)
 
-# Now that we have an atmosphere and ocean, we `set!` the ocean temperature and salinity
-# to the ECCO2 data by first creating T, S metadata objects,
+# We then set the ocean temperature and salinity from ECCO data. First we create
+# the temperature and salinity metadata,
 
 ecco_set = MetadataSet(:temperature, :salinity;
                        dataset = ECCO4Monthly(),
                        date    = DateTime(1993, 1, 1))
 
-# Note that if a date is not provided to `Metadata`, then the default Jan 1st, 1992 is used.
-# To copy the ECCO state into `ocean.model`, we use `set!`,
+# (without a `date`, the metadata default to the first date of the dataset) and then
+# `set!` the ECCO state into `ocean.model`.
 
 set!(ocean.model, ecco_set)
 
-# Finally, we construct a coupled model, which will compute fluxes during construction.
-# We omit `sea_ice` so the model is ocean-only, and pair the JRA55 atmosphere with a
-# matching `JRA55PrescribedRadiation` that supplies downwelling shortwave and
-# longwave radiation as well as ocean / sea-ice surface properties.
+# Finally, we construct the coupled model, which computes the fluxes upon construction.
+# We omit `sea_ice`, so the model is ocean-only, and pair the JRA55 atmosphere with a
+# matching `JRA55PrescribedRadiation` that supplies the downwelling shortwave and
+# longwave radiation and the radiative properties of the ocean surface.
 
-radiation = JRA55PrescribedRadiation(; backend = JRA55NetCDFBackend(2))
+radiation = JRA55PrescribedRadiation(; time_indices_in_memory = 2)
 coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
 
-# Now that the surface fluxes are computed, we can extract and visualize them.
-# The turbulent fluxes are stored in `coupled_model.interfaces.atmosphere_ocean_interface.fluxes`.
+# With the surface fluxes computed, we extract and plot them. The turbulent fluxes
+# are stored in `coupled_model.interfaces.atmosphere_ocean_interface.fluxes`.
 
 fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
-λ, φ, z = nodes(fluxes.sensible_heat)
 
 fig = Figure(size = (800, 800), fontsize = 15)
 
 ax = Axis(fig[1, 1], title = "Sensible heat flux (W m⁻²)", ylabel = "Latitude")
-heatmap!(ax, λ, φ, interior(fluxes.sensible_heat, :, :, 1); colormap = :bwr)
+heatmap!(ax, fluxes.sensible_heat; colormap = :bwr)
 
 ax = Axis(fig[1, 2], title = "Latent heat flux (W m⁻²)")
-heatmap!(ax, λ, φ, interior(fluxes.latent_heat, :, :, 1); colormap = :bwr)
+heatmap!(ax, fluxes.latent_heat; colormap = :bwr)
 
-ax = Axis(fig[2, 1], title = "Zonal wind stress (N m)", ylabel = "Latitude")
-heatmap!(ax, λ, φ, interior(fluxes.x_momentum, :, :, 1); colormap = :bwr)
+ax = Axis(fig[2, 1], title = "Zonal wind stress (N m⁻²)", ylabel = "Latitude")
+heatmap!(ax, fluxes.x_momentum; colormap = :bwr)
 
-ax = Axis(fig[2, 2], title = "Meridional wind stress (N m)", xlabel = "Longitude")
-heatmap!(ax, λ, φ, interior(fluxes.y_momentum, :, :, 1); colormap = :bwr)
+ax = Axis(fig[2, 2], title = "Meridional wind stress (N m⁻²)", xlabel = "Longitude")
+heatmap!(ax, fluxes.y_momentum; colormap = :bwr)
 
 ax = Axis(fig[3, 1], title = "Water vapor flux (kg m⁻² s⁻¹)", xlabel = "Longitude", ylabel = "Latitude")
-heatmap!(ax, λ, φ, interior(fluxes.water_vapor, :, :, 1); colormap = :bwr)
+heatmap!(ax, fluxes.water_vapor; colormap = :bwr)
 
 save("surface_fluxes.png", fig)
 
