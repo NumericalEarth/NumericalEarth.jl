@@ -28,7 +28,7 @@ mutable struct AtmosphereInterface{J, F, ST, SQ, P}
 end
 
 """
-    SeaIceOceanInterface{J, F, T, S, P}
+    SeaIceOceanInterface{J, F, T, S, D}
 
 Container for sea ice-ocean interface data including fluxes, formulation, and interface state.
 
@@ -39,12 +39,14 @@ Fields
 - `flux_formulation::F`: heat flux formulation (`IceBathHeatFlux` or `ThreeEquationHeatFlux`)
 - `temperature::T`: interface temperature field (ocean surface view or computed field)
 - `salinity::S`: interface salinity field (ocean surface view or computed field)
+- `frazil_formation_depth::D`: maximum depth [m] of the ocean cells that form frazil ice
 """
-mutable struct SeaIceOceanInterface{J, F, T, S}
+mutable struct SeaIceOceanInterface{J, F, T, S, D}
     fluxes :: J
     flux_formulation :: F
     temperature :: T
     salinity :: S
+    frazil_formation_depth :: D
 end
 
 # Utilities to get the computed fluxes
@@ -295,7 +297,7 @@ sea_ice_ocean_interface(grid, sea_ice,   ::Nothing, ::ThreeEquationHeatFlux; kwa
 sea_ice_ocean_interface(grid, ::Nothing, ::Nothing, ::ThreeEquationHeatFlux; kwargs...) = nothing
 
 """
-    sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation)
+    sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation; frazil_formation_depth)
 
 Construct a `SeaIceOceanInterface` with the specified flux formulation.
 
@@ -310,25 +312,30 @@ Arguments
 - `sea_ice`: sea ice simulation
 - `ocean`: ocean simulation
 - `flux_formulation`: heat flux formulation (`IceBathHeatFlux` or `ThreeEquationHeatFlux`)
+
+Keyword Arguments
+=================
+
+- `frazil_formation_depth`: maximum depth [m] of the ocean cells that form frazil ice
 """
-function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation)
+function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation; frazil_formation_depth)
     io_fluxes = SeaIceOceanFluxes(grid)
 
     # For default flux formulations, interface temperature and salinity point to ocean surface
     Tⁱⁿ = ocean_surface_temperature(ocean)
     Sⁱⁿ = ocean_surface_salinity(ocean)
 
-    return SeaIceOceanInterface(io_fluxes, flux_formulation, Tⁱⁿ, Sⁱⁿ)
+    return SeaIceOceanInterface(io_fluxes, flux_formulation, Tⁱⁿ, Sⁱⁿ, frazil_formation_depth)
 end
 
-function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation::ThreeEquationHeatFlux)
+function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation::ThreeEquationHeatFlux; frazil_formation_depth)
     io_fluxes = SeaIceOceanFluxes(grid)
 
     # Interface temperature and salinity are computed fields
     Tⁱⁿ = Field{Center, Center, Nothing}(grid)
     Sⁱⁿ = Field{Center, Center, Nothing}(grid)
 
-    return SeaIceOceanInterface(io_fluxes, flux_formulation, Tⁱⁿ, Sⁱⁿ)
+    return SeaIceOceanInterface(io_fluxes, flux_formulation, Tⁱⁿ, Sⁱⁿ, frazil_formation_depth)
 end
 
 #####
@@ -359,6 +366,12 @@ Keyword Arguments
   - `IceBathHeatFlux()`: bulk heat flux with interface at freezing point
   - `ThreeEquationHeatFlux()`: coupled heat/salt/freezing point system (default)
 
+- `frazil_formation_depth`: maximum depth [m] below the ocean surface of the cells in which frazil ice forms.
+  Supercooled cells deeper than `frazil_formation_depth` are neither reset to the freezing point nor
+  converted into sea ice. Without ice-shelf cavities, supercooling at depth arises only from numerical
+  errors, such as advection undershoots near topography, so a finite depth keeps those errors from
+  producing spurious surface ice. Default: `Inf` (all cells form frazil).
+
 - `radiation`: radiation component. Default: `nothing`.
 - `freshwater_density`: reference density of freshwater. Default: `default_freshwater_density`.
 - `latent_heat_of_fusion`: latent heat [J kg⁻¹] the ocean supplies to melt snowfall and icebergs. Default: `default_latent_heat_of_fusion`.
@@ -388,6 +401,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              atmosphere_sea_ice_fluxes = atmosphere_sea_ice_similarity_theory(eltype(exchange_grid)),
                              atmosphere_land_fluxes = default_atmosphere_land_fluxes(land, eltype(exchange_grid)),
                              sea_ice_ocean_heat_flux = ThreeEquationHeatFlux(sea_ice),
+                             frazil_formation_depth = Inf,
                              atmosphere_ocean_interface_temperature = BulkTemperature(),
                              atmosphere_ocean_velocity_difference = RelativeVelocity(),
                              atmosphere_ocean_interface_specific_humidity = default_ao_specific_humidity(ocean),
@@ -420,6 +434,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     freshwater_density         = convert(FT, freshwater_density)
     latent_heat_of_fusion      = convert(FT, latent_heat_of_fusion)
     gravitational_acceleration = convert(FT, gravitational_acceleration)
+    frazil_formation_depth     = convert(FT, frazil_formation_depth)
 
     # Component properties
     atmosphere_properties = thermodynamics_parameters(atmosphere)
@@ -450,7 +465,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                                               atmosphere_ocean_velocity_difference,
                                               atmosphere_ocean_interface_specific_humidity)
 
-    io_interface = sea_ice_ocean_interface(exchange_grid, sea_ice, ocean, sea_ice_ocean_heat_flux)
+    io_interface = sea_ice_ocean_interface(exchange_grid, sea_ice, ocean, sea_ice_ocean_heat_flux; frazil_formation_depth)
 
     ai_interface = atmosphere_sea_ice_interface(exchange_grid,
                                                 atmosphere,
