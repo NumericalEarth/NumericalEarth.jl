@@ -206,6 +206,8 @@ NumericalEarth currently ships connectors for the following data products:
 | **Regional observations** |                                                    |                                                                                                     |
 | `OSPapaHourly`     | ocean profiles, near-surface meteorology, and currents    | [Ocean Station Papa dataset](https://www.pmel.noaa.gov/ocs/Papa)                                   |
 | `OSPapaFluxHourly` | air-sea fluxes, stresses, evaporation, precipitation, and skin temperature | [Ocean Station Papa flux dataset](https://www.pmel.noaa.gov/ocs/Papa) |
+| **Atmospheric composition** |                                          |                                                                                                     |
+| `NOAAMarineBoundaryLayer` | `:carbon_dioxide`, `:methane`, `:nitrous_oxide`, `:sulfur_hexafluoride`, and their `_uncertainty` | [NOAA GML marine boundary layer reference](https://gml.noaa.gov/ccgg/mbl/) |
 | **Land** |                                                    |                                                                                                     |
 | `ERA5HourlyLand`   | [Supported variables](@ref dataset-era5hourlyland-vars)   | [ERA5-Land hourly overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land?tab=overview) |
 | `ERA5MonthlyLand`  | [Supported variables](@ref dataset-era5monthlyland-vars)  | [ERA5-Land monthly overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land-monthly-means?tab=overview) |
@@ -216,4 +218,3 @@ NumericalEarth currently ships connectors for the following data products:
 | `GHSBuiltH`        | `:building_height` — mean net building height (ANBH, 100 m, epoch 2018) over a regional window; reprojected from GHSL World-Mollweide (needs `ArchGDAL`) | [GHSL GHS-BUILT-H](https://human-settlement.emergency.copernicus.eu) |
 | `GHSBuiltS`        | `:built_up_fraction` — plan-area built-up fraction (10 m or 100 m) over a regional window; reprojected from GHSL World-Mollweide (needs `ArchGDAL`) | [GHSL GHS-BUILT-S](https://human-settlement.emergency.copernicus.eu) |
 | `ESAWorldCover`    | `:landcover_class`, `:vegetation_fraction`, and a per-class `:<class>_fraction` — 10 m land-cover classification aggregated block-wise over a regional window (needs `ArchGDAL`) | [ESA WorldCover](https://esa-worldcover.org/en/data-access) |
-

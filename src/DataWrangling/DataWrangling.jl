@@ -9,6 +9,7 @@ export validate_dataset_coverage, metadata_filename
 export BoundingBox, Column, Linear, Nearest
 export WOAClimatology, WOAAnnual, WOAMonthly
 export AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum
+export NOAAMarineBoundaryLayer
 export metadata_time_step, metadata_epoch
 export supported_datasets
 export LinearlyTaperedPolarMask
@@ -28,7 +29,7 @@ using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
                                   on_architecture, child_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
 using Oceananigans.DistributedComputations: DistributedComputations, @root, all_reduce
-using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
+using Oceananigans.Grids: AbstractGrid, Center, Face, Flat, Bounded,
                           LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes,
                           topology, x_domain, y_domain, z_domain
 using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
@@ -427,6 +428,7 @@ include("GloBFP3D/GloBFP3D.jl")
 include("GHSL/GHSL.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
 include("WorldCover/WorldCover.jl")
+include("GHGReference/GHGReference.jl")
 
 using .ETOPO
 using .ECCO
@@ -449,6 +451,7 @@ using .GloBFP3D
 using .GHSL
 using .CopernicusLandAlbedo
 using .WorldCover
+using .GHGReference
 
 function dataset_modules()
     modules = Module[]
