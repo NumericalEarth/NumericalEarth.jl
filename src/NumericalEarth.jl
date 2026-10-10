@@ -115,6 +115,7 @@ export
     regrid_bathymetry,
     regrid_topography,
     smooth_topography!,
+    connect_basins!,
     Metadata, Metadatum, MetadataSet,
     BoundingBox,
     Column, Linear, Nearest,
