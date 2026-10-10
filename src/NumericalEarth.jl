@@ -75,6 +75,7 @@ export
     ERA5PrescribedAtmosphere,
     ERA5PrescribedRadiation,
     FreezingLimitedOceanTemperature,
+    DepthDependentLiquidus,
     SurfaceRadiationProperties,
     InterfaceRadiationFlux,
     LatitudeDependentAlbedo,
