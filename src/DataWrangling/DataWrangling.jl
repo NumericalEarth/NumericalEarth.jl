@@ -41,7 +41,7 @@ using DocStringExtensions: TYPEDSIGNATURES
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
 using ZipFile: ZipFile
-using Scratch: @get_scratch!
+using Scratch: @get_scratch!, scratch_dir
 
 using ..NumericalEarth: NumericalEarth, stateindex
 
@@ -61,15 +61,58 @@ managed by Julia under the active depot. If the environment variable
 Julia depot lives on a small or quota-limited filesystem (e.g. `\$HOME` on HPC clusters),
 or to share a single cache of large datasets across depots and users.
 
-The variable is read when NumericalEarth is loaded, so it must be set *before*
+`NUMERICALEARTH_DATA_PATH` lists colon-separated cache roots, which are searched in order for
+cached files (see `cache_directories`). Downloads are written under the last root that can be
+written to, and fall back to the default above when none can.
+
+The variables are read when NumericalEarth is loaded, so they must be set *before*
 `using NumericalEarth`.
 """
 function download_cache(key)
+    for root in reverse(data_path_roots())
+        directory = joinpath(root, key)
+        is_writable_directory(directory) && return directory
+    end
+
     if haskey(ENV, "NUMERICALEARTH_DATA_DIRECTORY")
         return mkpath(joinpath(ENV["NUMERICALEARTH_DATA_DIRECTORY"], key))
     else
         return @get_scratch!(key)
     end
+end
+
+data_path_roots() = split(get(ENV, "NUMERICALEARTH_DATA_PATH", ""), ':'; keepempty = false)
+
+function is_writable_directory(directory)
+    try
+        mkpath(directory)
+        mktemp((path, io) -> nothing, directory)
+        return true
+    catch exception
+        exception isa Union{Base.IOError, SystemError} || rethrow()
+        return false
+    end
+end
+
+"""
+    cache_directories(directory)
+
+The directories searched for files cached in `directory`: when `directory` is the `key`
+directory of a cache root, the `key` directory of every `NUMERICALEARTH_DATA_PATH` root in
+order, then `directory` itself; otherwise `directory` alone.
+"""
+function cache_directories(directory)
+    roots = data_path_roots()
+    isempty(roots) && return [directory]
+    default_root = get(ENV, "NUMERICALEARTH_DATA_DIRECTORY", scratch_dir(string(Base.PkgId(NumericalEarth).uuid)))
+
+    for root in (roots..., default_root)
+        key = relpath(directory, root)
+        startswith(key, "..") && continue
+        return unique!(push!([joinpath(data_root, key) for data_root in roots], directory))
+    end
+
+    return [directory]
 end
 
 """

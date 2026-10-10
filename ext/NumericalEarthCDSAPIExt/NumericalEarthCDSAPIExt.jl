@@ -15,7 +15,8 @@ using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5Metadata, ERA5Metadatu
                                          ERA5PressureMetadatum,
                                          ERA5PL_dataset_variable_names,
                                          ERA5_TIME_DIMNAMES,
-                                         coord_vars, nc_varnames,
+                                         coord_vars, nc_varnames, era5_download_path,
+                                         era5_request_area,
                                          group_by_calendar_month,
                                          batch_datetimes_for_cds, foreach_nc,
                                          split_era5_nc, split_era5_nc_by_datetime
