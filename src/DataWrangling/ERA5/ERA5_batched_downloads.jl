@@ -161,43 +161,12 @@ split_era5_nc_multistep(src_path::AbstractString, nc_varname_tidx_path_triples, 
     NCDatasets.Dataset(src -> split_era5_nc_multistep(src, nc_varname_tidx_path_triples, coordinate_vars, time_dimnames),
                        src_path, "r")
 
-# Upper bound on the memory one `time_block` occupies.
-const MAXIMUM_TIME_BLOCK_BYTES = 2^30
-
-# CDS deflates each variable in chunks spanning about a hundred timesteps, and reading one timestep decompresses every
-# chunk that holds it. `time_block` reads the whole chunk-aligned block of timesteps around `tidx` at once, so that
-# splitting a file into single timesteps decompresses each chunk once rather than once per timestep.
-function time_block(var, tidx, time_dimnames)
-    t = findfirst(in(time_dimnames), NCDatasets.dimnames(var))
-    Nt = size(var, t)
-    storage, chunk_sizes = NCDatasets.chunking(var.var)
-    chunk_length = storage === :chunked ? chunk_sizes[t] : 1
-    snapshot_bytes = sizeof(eltype(var.var)) * prod(size(var)) ÷ Nt
-    block_length = clamp(chunk_length, 1, max(1, MAXIMUM_TIME_BLOCK_BYTES ÷ snapshot_bytes))
-    first_time = (tidx - 1) ÷ block_length * block_length + 1
-    times = first_time:min(first_time + block_length - 1, Nt)
-    values = var.var[ntuple(i -> i == t ? times : Colon(), ndims(var))...]
-    return (; times, t, values)
-end
-
 function split_era5_nc_multistep(src::NCDatasets.NCDataset, nc_varname_tidx_path_triples, coordinate_vars, time_dimnames)
     src_varnames = Set(keys(src))
     unlimited = NCDatasets.unlimited(src)
 
-    block_name = ""
-    block = (; times = 1:0, t = 0, values = nothing)
-
-    for (nc_varname, tidx, dst_path) in sort(collect(nc_varname_tidx_path_triples), by = triple -> triple[1:2])
+    for (nc_varname, tidx, dst_path) in nc_varname_tidx_path_triples
         nc_varname in src_varnames || continue
-
-        if nc_varname != block_name || tidx ∉ block.times
-            block_name = nc_varname
-            block = time_block(src[nc_varname], tidx, time_dimnames)
-        end
-
-        n = tidx - first(block.times) + 1
-        values = block.values[ntuple(i -> i == block.t ? (n:n) : Colon(), ndims(block.values))...]
-
         NCDatasets.Dataset(dst_path, "c") do dst
             for (dname, dlen) in src.dim
                 out_len = dname in time_dimnames ? 1 :
@@ -210,10 +179,9 @@ function split_era5_nc_multistep(src::NCDatasets.NCDataset, nc_varname_tidx_path
             end
 
             for (vname, var) in src
-                vname in coordinate_vars && ncvar_copy_tslice!(dst, var, vname, tidx, time_dimnames)
+                (vname in coordinate_vars || vname == nc_varname) || continue
+                ncvar_copy_tslice!(dst, var, vname, tidx, time_dimnames)
             end
-
-            ncvar_copy_tslice!(dst, src[nc_varname], nc_varname, tidx, time_dimnames; values)
         end
     end
 end
@@ -268,7 +236,7 @@ function ncvar_copy!(dst, src_var, vname)
     return nothing
 end
 
-function ncvar_copy_tslice!(dst, src_var, vname, tidx, time_dimnames; values = nothing)
+function ncvar_copy_tslice!(dst, src_var, vname, tidx, time_dimnames)
     dims     = NCDatasets.dimnames(src_var)
     T        = eltype(src_var.var)
     attribs  = src_var.attrib
@@ -288,7 +256,7 @@ function ncvar_copy_tslice!(dst, src_var, vname, tidx, time_dimnames; values = n
         idx = ntuple(ndims(src_var.var)) do i
             dims[i] in time_dimnames ? (tidx:tidx) : Colon()
         end
-        dst_var.var[:] = isnothing(values) ? src_var.var[idx...] : values
+        dst_var.var[:] = src_var.var[idx...]
     else
         dst_var.var[:] = src_var.var[:]
     end
