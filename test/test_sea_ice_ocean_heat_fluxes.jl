@@ -11,6 +11,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: compute_interface_
                                                               ComponentInterfaces
 
 using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
+using Oceananigans.TimeSteppers: update_state!
 
 @testset "Ocean-sea ice heat flux formulations" begin
 
@@ -423,6 +424,44 @@ end
                 # Frazil heat flux should be finite
                 @test all(isfinite.(𝒬ᶠʳᶻ_cpu))
             end
+        end
+    end
+end
+
+@testset "Frazil formation depth" begin
+    for arch in test_architectures
+        A = typeof(arch)
+        @info "Testing frazil formation depth on $A"
+
+        grid = LatitudeLongitudeGrid(arch,
+                                     size = (4, 4, 4),
+                                     latitude = (-10, 10),
+                                     longitude = (0, 10),
+                                     z = [-1000, -500, -100, -10, 0])
+
+        ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
+        sea_ice = sea_ice_simulation(grid, ocean)
+
+        atmosphere = synthetic_prescribed_atmosphere(arch)
+        radiation = synthetic_prescribed_radiation(arch)
+
+        Tₘ = melting_temperature(sea_ice.model.phase_transitions.liquidus, 35)
+        T₀ = [Tₘ - 1, Tₘ + 1, Tₘ + 1, Tₘ - 0.1] # supercooled bottom and surface cells
+        Δz = [500, 400, 90, 10]
+
+        for (frazil_formation_depth, freezing) in ((Inf, [true, false, false, true]),
+                                                   (10,  [false, false, false, true]))
+
+            coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, frazil_formation_depth)
+            set!(ocean.model, T = repeat(reshape(T₀, 1, 1, 4), 4, 4, 1), S = 35)
+            update_state!(coupled_model)
+
+            ρᵒᶜ = coupled_model.interfaces.ocean_properties.reference_density
+            cᵒᶜ = coupled_model.interfaces.ocean_properties.heat_capacity
+            𝒬ᶠʳᶻ = coupled_model.interfaces.sea_ice_ocean_interface.fluxes.frazil_heat
+
+            @test Array(interior(ocean.model.tracers.T, 1, 1, :)) ≈ ifelse.(freezing, Tₘ, T₀)
+            @test Array(interior(𝒬ᶠʳᶻ, 1, 1, 1))[] ≈ - ρᵒᶜ * cᵒᶜ * sum(freezing .* (Tₘ .- T₀) .* Δz) / sea_ice.Δt
         end
     end
 end
