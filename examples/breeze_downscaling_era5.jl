@@ -7,8 +7,8 @@
 # diurnal cycle, the clouds, and the land talk to each other.
 #
 # `nested_atmosphere_model(grid, dataset; dates, …)` builds the whole nest: an ERA5 "parent"
-# `BoundaryPrescribedAtmosphere` — ERA5 on its native 0.25° pressure-level grid along strips that cover
-# the child's lateral boundaries — driving a Breeze "child" through open
+# `BoundaryPrescribedComponent` — `PrescribedAtmosphere` strips of ERA5 on its native 0.25° pressure-level
+# grid, covering the child's lateral boundaries — driving a Breeze "child" through open
 # lateral boundary conditions + interior Davies relaxation, both derived on the fly from the parent's
 # raw state. The constructor also initializes the child from the reanalysis and spins it into balance,
 # so a plain `Simulation(model)` then steps the ready nest.

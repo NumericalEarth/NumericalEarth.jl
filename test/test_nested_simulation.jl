@@ -882,7 +882,7 @@ end
 end
 
 # Strips cut from the same parent drive the child exactly as the full-domain parent does.
-@testset "BoundaryPrescribedAtmosphere strips reproduce the full-domain parent on $(arch)" for arch in test_architectures
+@testset "BoundaryPrescribedComponent strips reproduce the full-domain parent on $(arch)" for arch in test_architectures
     ext   = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
     times = [0.0, 4.0, 8.0, 12.0, 16.0]
 
@@ -900,10 +900,10 @@ end
 
     # Each strip is a sub-window of the full parent's 1/3° lattice.
     full = parent_atmosphere((-2, 2), (34.6, 38.6), 12, 12)
-    strips = BoundaryPrescribedAtmosphere(west  = parent_atmosphere((-2, 0), (34.6, 38.6), 6, 12),
-                                          east  = parent_atmosphere((0, 2),  (34.6, 38.6), 6, 12),
-                                          south = parent_atmosphere((-2, 2), (34.6, 36.6), 12, 6),
-                                          north = parent_atmosphere((-2, 2), (36.6, 38.6), 12, 6))
+    strips = BoundaryPrescribedComponent(west  = parent_atmosphere((-2, 0), (34.6, 38.6), 6, 12),
+                                         east  = parent_atmosphere((0, 2),  (34.6, 38.6), 6, 12),
+                                         south = parent_atmosphere((-2, 2), (34.6, 36.6), 12, 6),
+                                         north = parent_atmosphere((-2, 2), (36.6, 38.6), 12, 6))
 
     child_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 8),
                                        longitude = (-1, 1), latitude = (35.6, 37.6),

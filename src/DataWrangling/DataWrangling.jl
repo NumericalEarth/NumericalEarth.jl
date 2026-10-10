@@ -403,7 +403,7 @@ function default_inpainting(metadata)
 end
 
 include("prescribed_radiation.jl")
-include("boundary_prescribed_atmosphere.jl")
+include("boundary_prescribed_component.jl")
 
 # Datasets
 include("ETOPO/ETOPO.jl")

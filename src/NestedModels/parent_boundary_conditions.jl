@@ -32,7 +32,7 @@ Arguments
   `FieldTimeSeries` that should drive them, e.g.
   `(u = parent.velocities.u, v = parent.velocities.v)`. An entry may instead be a
   per-side `NamedTuple` of sources (keyed by `:west/:east/:south/:north`), as for
-  the strips of a [`BoundaryPrescribedAtmosphere`](@ref).
+  the strips of a [`BoundaryPrescribedComponent`](@ref).
 
 - `sides`: a tuple of `Symbol`s naming which boundaries to drive. Choices are
   `:west, :east, :south, :north, :bottom, :top`.

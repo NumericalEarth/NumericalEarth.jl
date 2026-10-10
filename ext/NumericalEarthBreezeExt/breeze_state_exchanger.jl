@@ -31,7 +31,8 @@ using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, AbstractInMemoryBac
 using Oceananigans.Units: Time
 import Oceananigans.OutputReaders: new_backend, update_field_time_series!
 import NumericalEarth.NestedModels: exchange_state!, total_density, reconstruct_parent_state
-using NumericalEarth.Atmospheres: PrescribedAtmosphere, BoundaryPrescribedAtmosphere, boundary_strips
+using NumericalEarth.Atmospheres: PrescribedAtmosphere
+using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips
 
 #####
 ##### An in-memory backend whose resident window is filled by the StateExchanger (not by `set!`).
@@ -235,7 +236,7 @@ function state_exchanger(parent_atmosphere, pˢᵗ, constants;
 end
 
 # One exchanger per strip, keyed by side; `condensates` is keyed by side too, or `nothing`.
-function state_exchanger(parent_atmosphere::BoundaryPrescribedAtmosphere, pˢᵗ, constants; condensates, kw...)
+function state_exchanger(parent_atmosphere::BoundaryPrescribedComponent, pˢᵗ, constants; condensates, kw...)
     strips = boundary_strips(parent_atmosphere)
     return NamedTuple{keys(strips)}(state_exchanger(strips[side], pˢᵗ, constants;
                                                     condensates = isnothing(condensates) ? nothing : condensates[side], kw...)

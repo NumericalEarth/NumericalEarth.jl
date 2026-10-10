@@ -1,8 +1,7 @@
 module Atmospheres
 
 export atmosphere_model, atmosphere_simulation, breeze_prognostic_state, bulk_drag,
-       hydrostatic_pressure_from_surface, density_from_pressure, PrescribedAtmosphere, PrescribedPrecipitationFlux,
-       BoundaryPrescribedAtmosphere
+       hydrostatic_pressure_from_surface, density_from_pressure, PrescribedAtmosphere, PrescribedPrecipitationFlux
 
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
@@ -12,7 +11,7 @@ using Oceananigans.BoundaryConditions: FieldBoundaryConditions
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids
 using Oceananigans.Fields: Field, Face, Center
 using Oceananigans.Grids: grid_name, topology, Bounded, Flat, LatitudeLongitudeGrid, λnodes, φnodes,
-                          minimum_xspacing, minimum_yspacing, x_domain, y_domain
+                          minimum_xspacing, minimum_yspacing
 using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time, meters, second
@@ -53,7 +52,6 @@ estimate_maximum_Δt(grid; jet_speed = 100meters/second, safety = 0.5) =
 include("hydrostatic_pressure.jl")
 include("thermodynamic_parameters.jl")
 include("prescribed_atmosphere.jl")
-include("boundary_prescribed_atmosphere.jl")
 include("prescribed_atmosphere_regridder.jl")
 include("interpolate_atmospheric_state.jl")
 

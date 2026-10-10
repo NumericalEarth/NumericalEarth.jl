@@ -17,8 +17,8 @@ using NumericalEarth:
     smooth_topography!,
     surface_elevation
 
-using NumericalEarth.Atmospheres: PrescribedAtmosphere, BoundaryPrescribedAtmosphere, boundary_strips,
-                                  relaxation_zone_width
+using NumericalEarth.Atmospheres: PrescribedAtmosphere
+using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset,
                                     expand_dates
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!
@@ -239,7 +239,7 @@ function default_parent_condensates(parent_atmosphere::PrescribedAtmosphere)
             qˢ  = parent_atmosphere.microphysical_variables.qˢ)
 end
 
-default_parent_condensates(parent_atmosphere::BoundaryPrescribedAtmosphere) =
+default_parent_condensates(parent_atmosphere::BoundaryPrescribedComponent) =
     map(default_parent_condensates, boundary_strips(parent_atmosphere))
 
 """
@@ -252,7 +252,7 @@ lateral boundary conditions — and, when `relaxation_rate` (s⁻¹) is given, i
 over `relaxation_mask` (default: a cosine ramp over the outermost `relaxation_width` cells) — interpolate
 those precomputed prognostics (via `parent_boundary_conditions` / `parent_forcings`).
 
-When `parent_atmosphere` is a `BoundaryPrescribedAtmosphere`, each side's boundary conditions
+When `parent_atmosphere` is a `BoundaryPrescribedComponent` of `PrescribedAtmosphere`s, each side's boundary conditions
 interpolate that side's strip, and the Davies relaxation acts only on the cells of each strip's
 relaxation zone, through a tendency callback the `NestedModel` adds to the child's at every time step.
 `parent_condensates` is then keyed by side.
@@ -290,7 +290,7 @@ or overridden directly with `terrain_blend_width`), so the terrain at the open b
 orography the parent state was produced with — and the blend slope stays fixed across resolutions
 rather than steepening. `parent_surface_elevation` replaces the parent's own surface elevation in that blend.
 """
-function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::Union{PrescribedAtmosphere, BoundaryPrescribedAtmosphere},
+function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::Union{PrescribedAtmosphere, BoundaryPrescribedComponent},
                                                               child_grid;
     relaxation_rate = nothing,
     relaxation_width = default_relaxation_width,
@@ -380,7 +380,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # specific-key dispatch, so a caller's own `θ`/`u`/`v` forcing combines with the relaxation instead
     # of replacing it in the `merge` below.
     relax_mask = relaxation_mask isa Number ? Returns(relaxation_mask) : relaxation_mask
-    boundary_parent = parent_atmosphere isa BoundaryPrescribedAtmosphere
+    boundary_parent = parent_atmosphere isa BoundaryPrescribedComponent
     davies = if isnothing(relaxation_rate) || boundary_parent
         NamedTuple()
     else
@@ -445,7 +445,7 @@ end
 """
     nested_atmosphere_model(child_grid, parent_dataset; dates, kw...)
 
-Build the parent `BoundaryPrescribedAtmosphere`, nest a Breeze child in it, and initialize the child from
+Build the parent `BoundaryPrescribedComponent` of `PrescribedAtmosphere`s, nest a Breeze child in it, and initialize the child from
 `parent_dataset` at `first(dates)` — the returned model is ready to step. The parent's strips hold
 `parent_dataset` at `dates` on its native grid, along each side of `child_grid` and `relaxation_width`
 cells inward, padded by `parent_padding` (default `parent_dataset`'s `default_horizontal_padding`,
@@ -470,9 +470,9 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
     balancer = true,
     kw...)
 
-    parent_atmosphere = BoundaryPrescribedAtmosphere(child_grid, dates, parent_dataset;
-                                                     width = relaxation_width, padding = parent_padding, dir,
-                                                     time_indices_in_memory = parent_time_indices_in_memory)
+    parent_atmosphere = BoundaryPrescribedComponent(PrescribedAtmosphere, child_grid, dates, parent_dataset;
+                                                    width = relaxation_width, padding = parent_padding, dir,
+                                                    time_indices_in_memory = parent_time_indices_in_memory)
 
     snapshot_dates = expand_dates(parent_dataset, :temperature, dates)[1:2]
     snapshot = PrescribedAtmosphere(BoundingBox(child_grid; padding = parent_padding), snapshot_dates, parent_dataset;
