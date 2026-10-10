@@ -42,8 +42,7 @@ bottom_height = regrid_bathymetry(underlying_grid;
 
 # We then incorporate the bathymetry into an ImmersedBoundaryGrid,
 
-grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height);
-                            active_cells_map=true)
+grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(bottom_height))
 
 # ### Closures
 #
