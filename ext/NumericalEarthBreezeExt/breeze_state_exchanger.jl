@@ -75,7 +75,7 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
     i, j, k = @index(Global, NTuple)
     @inbounds begin
         Tᵢ  = T[i, j, k]
-        qᵛᵢ = qᵛ[i, j, k]
+        qᵛᵢ = max(0, qᵛ[i, j, k])   # reanalysis humidity carries small negative values aloft
         qˡᵢ = qᶜˡ[i, j, k] + qʳ[i, j, k]
         qⁱᵢ = qᶜⁱ[i, j, k] + qˢ[i, j, k]
         pᵢ  = p[i, j, k]

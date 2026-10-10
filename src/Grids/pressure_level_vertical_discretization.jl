@@ -1,21 +1,18 @@
 using Adapt: Adapt
-using KernelAbstractions: @kernel, @index
 using Statistics: mean
 using Oceananigans.AbstractOperations: KernelFunctionOperation
-using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans: instantiated_location
 using Oceananigans.Fields: Field, compute!, interior
 using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Center, Face, Flat, LatitudeLongitudeGrid, topology
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
-using Oceananigans.Utils: launch!
 
 import Oceananigans.Architectures: on_architecture
 import Oceananigans.Grids: rnode, rnodes, znodes, generate_coordinate,
                            validate_dimension_specification
 import Oceananigans.Fields: _fractional_indices, fractional_x_index,
-                            fractional_y_index, FractionalIndices, index_binary_search
+                            fractional_y_index, FractionalIndices, fractional_index
 
 """
     PressureLevelVerticalDiscretization
@@ -55,20 +52,14 @@ end
 Build a discretization backed by per-column `geopotential` (m²/s²). `znode`
 divides by `gravitational_acceleration` at read time.
 
-If `surface_geopotential` is provided (a 2-D `Field`, m²/s²), columns are
-clipped so that `geopotential[i,j,k] ≥ surface_geopotential[i,j]`. Required
-when the source is ERA5 pressure-level data, because sub-surface levels are
-filled with non-physical extrapolations that would break the column-monotonicity
-assumed by `_fractional_indices`. Clipping fixes only the *coordinate*: the raw
-sub-surface *data* stays on those levels, so `column_fractional_z_index` also
-clamps interpolation to the first above-ground level (never sampling it). The
-clip source is retained on the discretization and exposed through
-[`surface_elevation`](@ref).
+`surface_geopotential` (a 2-D `Field`, m²/s²), when provided, is retained on the
+discretization and exposed through [`surface_elevation`](@ref). Levels below the
+surface keep their own (extrapolated) heights, so a target between the ground and the
+first above-ground level interpolates across the surface.
 """
 function PressureLevelVerticalDiscretization(geopotential;
                                               gravitational_acceleration,
                                               surface_geopotential = nothing)
-    isnothing(surface_geopotential) || clip_subsurface!(geopotential, surface_geopotential)
     return PressureLevelVerticalDiscretization(gravitational_acceleration, geopotential, surface_geopotential)
 end
 
@@ -181,7 +172,7 @@ end
 
 Return the surface elevation (m) of the orography underlying `grid` as a two-dimensional
 `(Center, Center, Nothing)` field on the source's native horizontal grid — for a
-[`PressureLevelGrid`](@ref), the clip-source surface geopotential divided by the
+[`PressureLevelGrid`](@ref), the surface geopotential divided by the
 gravitational acceleration. Return `nothing` when the surface elevation is unknown
 (non-pressure-level grids, or a discretization built without `surface_geopotential`).
 """
@@ -240,7 +231,7 @@ end
 #####
 
 # A 1-D `getindex`-only view of column `(i, j)` of a `PressureLevelGrid`'s z,
-# used to feed Oceananigans' `index_binary_search` without materializing the
+# used to feed Oceananigans' `fractional_index` without materializing the
 # column. Stack-allocated; bitstype-clean for GPU kernels when `grid` is.
 struct ColumnView{G}
     grid :: G
@@ -267,83 +258,11 @@ end
     return FractionalIndices(nothing, nothing, kk)
 end
 
-# First above-ground level of column `(i, j)`. `clip_subsurface!` parks every sub-surface level at the
-# surface geopotential, so those levels share the column's bottom height but still hold the raw ERA5
-# sub-surface *data* (the non-physical extrapolations). `column_fractional_z_index` clamps its result to
-# this level so interpolation near high terrain snaps to the lowest above-ground value instead of
-# sampling that data. Returns 1 when no `surface_geopotential` is set (no clip ⇒ no sub-surface plateau).
-# The `grid.z.surface_geopotential` argument selects the method: `nothing` (no clip) ⇒ level 1.
-@inline first_above_surface_level(i, j, grid) =
-    first_above_surface_level(i, j, grid, grid.z.surface_geopotential)
-
-@inline first_above_surface_level(i, j, grid, ::Nothing) = 1
-
-@inline function first_above_surface_level(i, j, grid, Φ_sfc)
-    Φˢ = @inbounds Φ_sfc[i, j, 1]
-    k = 1
-    @inbounds while k < grid.Nz && grid.z.geopotential[i, j, k] <= Φˢ
-        k += 1
-    end
-    return k
-end
-
 @inline function column_fractional_z_index(z, ii, jj, grid)
     i = clamp(Base.unsafe_trunc(Int, ii), 1, grid.Nx)
     j = clamp(Base.unsafe_trunc(Int, jj), 1, grid.Ny)
-    column = ColumnView(grid, i, j)
-    low, high = index_binary_search(column, z, grid.Nz)
-    z_lo = @inbounds column[low]
-    z_hi = @inbounds column[high]
-    # Degenerate column-shelf case (clipped sub-surface levels with z_lo == z_hi):
-    # snap to the integer index rather than divide by zero.
-    kk = ifelse(z_hi == z_lo, oftype(z, low),
-                (high - low) / (z_hi - z_lo) * (z - z_lo) + low)
+    kk = fractional_index(z, ColumnView(grid, i, j), grid.Nz)
     FT = eltype(grid)
-    # Clamp to the first above-ground level rather than 1: the clipped levels still carry raw
-    # sub-surface data, and an index outside [1, Nz] reads the interpolator out of bounds.
-    k_sfc = first_above_surface_level(i, j, grid)
-    return clamp(convert(FT, kk), convert(FT, k_sfc), convert(FT, grid.Nz))
-end
-
-#####
-##### Sub-surface clip helper (operates on raw geopotential, units m²/s²).
-#####
-
-@kernel function _clip_subsurface_kernel!(Φ, Φ_sfc)
-    i, j, k = @index(Global, NTuple)
-    @inbounds Φ[i, j, k] = max(Φ[i, j, k], Φ_sfc[i, j, 1])
-end
-
-"""
-    clip_subsurface!(geopotential, surface_geopotential)
-
-Clip each column of `geopotential` so that values below the local surface
-geopotential are replaced by the surface value. Required to keep columns
-monotonically increasing in z for the column bisection in
-`_fractional_indices`.
-
-Works for either a `Field` (3-D geopotential at a single time) or a
-`TimeSeriesInterpolation` wrapping a `FieldTimeSeries` of geopotential.
-"""
-function clip_subsurface!(Φ::Field, Φ_sfc)
-    grid = Φ.grid
-    arch = architecture(Φ)
-    launch!(arch, grid, :xyz, _clip_subsurface_kernel!, Φ, Φ_sfc)
-    # `Field(metadatum)` ran `fill_halo_regions!` before clipping, so halo cells
-    # still hold the pre-clip (possibly sub-surface) values. Refill so any halo
-    # read sees the clipped data.
-    fill_halo_regions!(Φ)
-    return Φ
-end
-
-# A time-varying (FTS-backed) discretization clips every snapshot. This runs once at grid
-# construction, on the host geopotential before it is moved to the device, and each per-slice
-# `clip_subsurface!(fts[t], …)` launches a GPU-safe kernel — so the loop is fine on either
-# architecture (the slice count is small: one per date in the window).
-function clip_subsurface!(geopotential::TimeSeriesInterpolation, surface_geopotential)
-    fts = geopotential.time_series
-    for t in 1:length(fts.times)
-        clip_subsurface!(fts[t], surface_geopotential)
-    end
-    return geopotential
+    # An index outside [1, Nz] reads the interpolator out of bounds.
+    return clamp(convert(FT, kk), one(FT), convert(FT, grid.Nz))
 end

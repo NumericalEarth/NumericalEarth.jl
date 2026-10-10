@@ -92,5 +92,5 @@ function NumericalEarth.EarthSystemModels.materialize_earth_system_radiation!(
     child = nest.child
     child = @set child.radiation = CoupledRadiation(radiative_transfer_model)
     nest = NestedModel(nest.parent, child, nest.exchanger)
-    return Simulation(nest; Δt = atmosphere.Δt)
+    return Simulation(nest; Δt = atmosphere.Δt, verbose = atmosphere.verbose)
 end
