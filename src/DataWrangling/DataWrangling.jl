@@ -12,7 +12,8 @@ export AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum
 export metadata_time_step, metadata_epoch
 export supported_datasets
 export LinearlyTaperedPolarMask
-export DatasetRestoring, SurfaceFluxRestoring
+export DatasetRestoring, SurfaceFluxRestoring, ConservativeSurfaceFluxRestoring
+export update_restoring_flux!, ConservativeSurfaceFluxRestoringCallback
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
 export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
@@ -26,12 +27,13 @@ using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, pretty_filesize, location
 using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
                                   on_architecture, child_architecture
+using Oceananigans.AbstractOperations: Average
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
 using Oceananigans.DistributedComputations: DistributedComputations, @root, all_reduce
 using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
                           LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes,
                           topology, x_domain, y_domain, z_domain
-using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
+using Oceananigans.Fields: Fields, Field, compute!, interpolate, interpolate!, interior, set!
 using Oceananigans.Grids: node
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
