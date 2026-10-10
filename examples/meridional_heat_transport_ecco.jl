@@ -1,11 +1,15 @@
+# # Meridional heat transport of a one-degree ocean--sea ice simulation
+#
+# We run a one-degree ocean--sea ice simulation initialized from ECCO and forced by JRA55,
+# save its meridional heat transport, and plot the time-mean transport against latitude.
+
 using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
 using Dates
-using Statistics
 using Printf
 
-using CUDA; CUDA.device!(3)
+using CUDA
 
 arch = GPU()
 Nx = 360
@@ -15,7 +19,6 @@ Nz = 50
 depth = 5000meters
 z = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4)
 
-underlying_grid = TripolarGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z)
 underlying_grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z, longitude = (0, 360), latitude = (-80, 80))
 bottom_height = regrid_bathymetry(underlying_grid;
                                   minimum_depth = 10,
@@ -52,16 +55,14 @@ wall_time = Ref(time_ns())
 function progress(sim)
     ocean = sim.model.ocean
     u, v, w = ocean.model.velocities
-    T = ocean.model.tracers.T
     e = ocean.model.tracers.e
-    Tmin, Tmax, Tavg = minimum(T), maximum(T), mean(view(T, :, :, ocean.model.grid.Nz))
     emax = maximum(e)
     umax = (maximum(abs, u), maximum(abs, v), maximum(abs, w))
 
     step_time = 1e-9 * (time_ns() - wall_time[])
 
     msg1 = @sprintf("time: %s, iter: %d", prettytime(sim), iteration(sim))
-    msg2 = @sprintf(", max|uo|: (%.1e, %.1e, %.1e) m s⁻¹", umax...)
+    msg2 = @sprintf(", max|u|: (%.1e, %.1e, %.1e) m s⁻¹", umax...)
     msg3 = @sprintf(", max(e): %.2f m² s⁻²", emax)
     msg4 = @sprintf(", wall time: %s \n", prettytime(step_time))
 
@@ -69,49 +70,39 @@ function progress(sim)
 
     wall_time[] = time_ns()
 
-     return nothing
+    return nothing
 end
 
-# And add it as a callback to the simulation.
+# We add the progress message as a callback to the simulation.
+
 add_callback!(simulation, progress, IterationInterval(200))
 
-mht = Field(meridional_heat_transport(esm))
+mht = meridional_heat_transport(esm)
 
-ocean.output_writers[:mth] = JLD2Writer(ocean.model, (; mht);
+ocean.output_writers[:mht] = JLD2Writer(ocean.model, (; mht);
                                         schedule = TimeInterval(3hours),
                                         filename = "ocean_one_degree_mht",
-                                        overwrite_files = true)
+                                        overwrite_existing = true)
 
 run!(simulation)
 
-##
-
-using Oceananigans
-
-mht  = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht"; backend = OnDisk())
-
-times = mht.times
-Nt = length(times)
-
-grid = mht.grid
-Ny = size(mht.grid, 2)
-
-mht_mean  = deepcopy(mht[1][1, :, 1])
-
-for iter in 1:Nt
-    @info "iteration $iter out of $Nt"
-    mht_mean  +=  mht[iter][1, :, 1]
-end
-
-@. mht_mean = mht_mean / Nt
+# ## Time-mean meridional heat transport
+#
+# We load the saved transport and average it over all saved snapshots.
 
 using CairoMakie
 
+mht_ts = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht"; backend = OnDisk())
+Nt = length(mht_ts.times)
+
+mean_mht = sum(mht_ts; dims=4)[1] / Nt
+
+φ = φnodes(mht_ts.grid, Face())
+
 fig = Figure()
-ax = Axis(fig[1, 1], xlabel="latitude (deg)", ylabel="MHT (PW)")
-
-φ = φnodes(grid, Face())
-
-lines!(ax, φ, mht_mean[1:Ny+1]  / 1e15, linewidth=4)
+ax = Axis(fig[1, 1], xlabel="Latitude (deg)", ylabel="Meridional heat transport (PW)")
+lines!(ax, φ, mean_mht / 1e15, linewidth=4)
 
 save("mht.png", fig)
+
+fig
