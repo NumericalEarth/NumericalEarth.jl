@@ -7,8 +7,9 @@ onto a shared `exchange_grid`, where atmosphere--ocean and atmosphere--sea-ice
 fluxes are computed.
 
 The optional `correction` is an in-place post-regrid hook applied to `state`
-after each `interpolate_state!` (e.g. [`AltitudeCorrection`](@ref) on the
-atmosphere). When `correction === nothing`, the per-step `correct_state!` sweep
+after each `interpolate_state!` (e.g. [`AltitudeCorrection`](@ref) or
+`AtmosphereTemperatureOffset` on the atmosphere, `DownwellingLongwaveOffset` on
+the radiation). When `correction === nothing`, the per-step `correct_state!` sweep
 is a no-op for this component.
 """
 struct ComponentExchanger{S, EX, C}
@@ -23,12 +24,16 @@ ComponentExchanger(state, regridder) = ComponentExchanger(state, regridder, noth
 
 """
     StateExchanger(grid, radiation, atmosphere, land, ocean, sea_ice;
-                   atmosphere_correction = nothing)
+                   atmosphere_correction = nothing,
+                   radiation_correction = nothing)
 
 Container for one `ComponentExchanger` per component. The `grid` is the shared
 exchange grid onto which each component's state is regridded each time step.
 Per-component post-regrid corrections live on each `ComponentExchanger` and run
 as a sweep in phase 1.5 of the time step (see `correct_state!`).
+`atmosphere_correction` and `radiation_correction` are materialized onto the
+atmosphere and radiation exchangers respectively; `nothing` (the default) is a
+no-op.
 """
 struct StateExchanger{G, R, A, L, O, S}
     grid       :: G
@@ -39,8 +44,10 @@ struct StateExchanger{G, R, A, L, O, S}
     sea_ice    :: S
 
     function StateExchanger(grid, radiation, atmosphere, land, ocean, sea_ice;
-                            atmosphere_correction = nothing)
-        radiation_exchanger  = ComponentExchanger(radiation, grid)
+                            atmosphere_correction = nothing,
+                            radiation_correction = nothing)
+        radiation_exchanger  = ComponentExchanger(radiation, grid;
+                                                  correction = radiation_correction)
         atmosphere_exchanger = ComponentExchanger(atmosphere, grid;
                                                   correction = atmosphere_correction)
         land_exchanger       = ComponentExchanger(land, grid)

@@ -377,6 +377,10 @@ Keyword Arguments
 - `sea_ice_reference_density`: reference density for sea ice. Default: `reference_density(sea_ice)`.
 - `sea_ice_heat_capacity`: heat capacity for sea ice. Default: `heat_capacity(sea_ice)`.
 - `gravitational_acceleration`: gravitational acceleration. Default: `default_gravitational_acceleration`.
+- `exchanger_correction`: post-regrid correction applied to the atmosphere exchange state each step,
+  e.g. [`AltitudeCorrection`](@ref) or `AtmosphereTemperatureOffset`. Default: `nothing`.
+- `radiation_correction`: post-regrid correction applied to the radiation exchange state each step,
+  e.g. `DownwellingLongwaveOffset`. Default: `nothing`.
 """
 function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              radiation = nothing,
@@ -409,6 +413,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              sea_ice_heat_capacity = heat_capacity(sea_ice),
                              gravitational_acceleration = default_gravitational_acceleration,
                              exchanger_correction = nothing,
+                             radiation_correction = nothing,
                              biogeochemistry_interface_kwargs = NamedTuple())
 
     FT = eltype(exchange_grid)
@@ -468,7 +473,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                     atmosphere = net_fluxes(atmosphere))
 
     exchanger = StateExchanger(exchange_grid, radiation, atmosphere, land, ocean, sea_ice;
-                               atmosphere_correction = exchanger_correction)
+                               atmosphere_correction = exchanger_correction,
+                               radiation_correction)
 
     # The surface-layer (MOST reference) height is fixed by the atmosphere grid, so
     # build it once here rather than per coupled step. Scalar for prescribed
