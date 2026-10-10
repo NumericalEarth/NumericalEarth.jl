@@ -1,4 +1,5 @@
 using Oceananigans.Operators: Δzᶜᶜᶜ
+using Oceananigans.Grids: znode
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.SeaIceDynamics: implicit_τx_coefficient, implicit_τy_coefficient
 
@@ -71,7 +72,8 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     launch!(arch, grid, :xy, _compute_sea_ice_ocean_fluxes!,
             flux_formulation, fluxes, Tˢⁱ, Sˢⁱ, grid, clock,
             hˢⁱ, hc, ℵ, Sⁱ, Tᵒᶜ, Sᵒᶜ, uˢⁱ, vˢⁱ, τₛ,
-            liquidus, ocean_properties, L, Δt, mass_fluxes.ice, mass_fluxes.snow)
+            liquidus, interface.frazil_formation_depth, ocean_properties, L, Δt,
+            mass_fluxes.ice, mass_fluxes.snow)
 
     return nothing
 end
@@ -124,6 +126,7 @@ end
                                                 sea_ice_v_velocity,
                                                 sea_ice_ocean_stresses,
                                                 liquidus,
+                                                frazil_formation_depth,
                                                 ocean_properties,
                                                 latent_heat,
                                                 Δt,
@@ -153,10 +156,11 @@ end
     # =============================================
     # Part 1: Frazil ice formation (all formulations)
     # =============================================
-    # When ocean temperature drops below freezing, frazil ice forms
-    # and heat is released to the ice component.
+    # When ocean temperature drops below freezing within `frazil_formation_depth`
+    # of the surface, frazil ice forms and heat is released to the ice component.
 
     δ𝒬ᶠʳᶻ = zero(grid)
+    η = znode(i, j, Nz+1, grid, Center(), Center(), Face())
 
     for k = Nz:-1:1
         @inbounds begin
@@ -166,8 +170,9 @@ end
         end
 
         # Melting/freezing temperature at this depth
+        z  = znode(i, j, k, grid, Center(), Center(), Center())
         Tₘ = melting_temperature(liquidus, Sᵏ)
-        freezing = Tᵏ < Tₘ
+        freezing = (Tᵏ < Tₘ) & (η - z ≤ frazil_formation_depth)
 
         # Compute change in ocean heat energy due to freezing.
         # When Tᵏ < Tₘ, we heat the ocean back to melting temperature
