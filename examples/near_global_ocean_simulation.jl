@@ -1,18 +1,16 @@
 # # Near-global ocean simulation
 #
-# This example sets up and runs a near-global ocean simulation using the Oceananigans.jl and
+# This example sets up and runs a near-global ocean simulation using Oceananigans.jl and
 # NumericalEarth.jl. The simulation covers latitudes from 75°S to 75°N, with a horizontal
 # resolution of 1/4 degree and 40 vertical levels.
 #
-# The simulation's results are visualized with the CairoMakie.jl package.
+# We visualize the results with CairoMakie.jl.
 #
 # ## Initial setup with package imports
 #
-# We begin by importing the necessary Julia packages for visualization (CairoMakie),
-# ocean modeling (Oceananigans, NumericalEarth), handling dates and times (CFTime, Dates),
-# and CUDA for running on CUDA-enabled GPUs.
-# These packages provide the foundational tools for setting up the simulation environment,
-# including grid setup, physical processes modeling, and data visualization.
+# We begin by importing the Julia packages for visualization (CairoMakie),
+# ocean modeling (Oceananigans, NumericalEarth), dates and times (CFTime, Dates),
+# and running on CUDA-enabled GPUs (CUDA).
 
 using NumericalEarth
 using Oceananigans
@@ -25,11 +23,9 @@ using CUDA
 
 # ### Grid configuration
 #
-# We define a global grid with a horizontal resolution of 1/4 degree and 40 vertical levels.
-# The grid is a `LatitudeLongitudeGrid` spanning latitudes from 75°S to 75°N.
-# We use an exponential vertical spacing to better resolve the upper-ocean layers.
-# The total depth of the domain is set to 6000 meters.
-# Finally, we specify the architecture for the simulation, which in this case is a GPU.
+# We define a `LatitudeLongitudeGrid` that spans latitudes from 75°S to 75°N with a horizontal
+# resolution of 1/4 degree and 40 vertical levels. Exponential vertical spacing resolves the
+# upper ocean better. The domain is 6000 meters deep, and the simulation runs on a GPU.
 
 arch = GPU()
 Nx = 1440
@@ -48,9 +44,9 @@ grid = LatitudeLongitudeGrid(arch;
 
 # ### Bathymetry and immersed boundary
 #
-# We use `regrid_bathymetry` to derive the bottom height from ETOPO1 data.
-# To smooth the interpolated data we use 5 interpolation passes. We also fill in
-# * all the minor enclosed basins except the 3 largest `major_basins`, as well as
+# We use `regrid_bathymetry` to derive the bottom height from ETOPO data.
+# We smooth the interpolated data with 5 interpolation passes. We also fill in
+# * all enclosed basins except the 3 largest (`major_basins`), and
 # * regions that are shallower than `minimum_depth`.
 
 bottom_height = regrid_bathymetry(grid;
@@ -71,23 +67,24 @@ nothing #hide
 
 # ### Ocean model configuration
 #
-# We build our ocean model using `ocean_simulation`,
+# We build the ocean simulation with `ocean_simulation`,
 
 ocean = ocean_simulation(grid)
 
-# which uses the default `ocean.model`,
+# which builds a default ocean model:
 
 ocean.model
 
-# We initialize the ocean model with ECCO4 temperature and salinity for January 1, 1992.
+# We initialize the ocean model with ECCO4 temperature and salinity on January 1, 1992.
+
 date = DateTime(1992, 1, 1)
 set!(ocean.model, MetadataSet(:temperature, :salinity; dataset=ECCO4Monthly(), date))
 
-# ### Prescribed atmosphere and radiation
+# ### Prescribed atmosphere, radiation, and land
 #
-# Next we build a prescribed atmosphere state and radiation component,
-# which together drive the ocean simulation. The atmospheric data and
-# downwelling shortwave / longwave radiation are both prescribed using JRA55.
+# Next we build the prescribed atmosphere, radiation, and land components that drive
+# the ocean simulation. The atmospheric state, the downwelling shortwave and longwave
+# radiation, and the river and iceberg runoff all come from JRA55.
 
 atmosphere = JRA55PrescribedAtmosphere(arch)
 radiation  = JRA55PrescribedRadiation(arch)
@@ -95,8 +92,7 @@ land       = JRA55PrescribedLand(grid)
 
 # ## The coupled simulation
 
-# Next we assemble the ocean, atmosphere, and radiation
-# into a coupled model,
+# We assemble the ocean, atmosphere, land, and radiation into a coupled model,
 
 coupled_model = OceanOnlyModel(ocean; atmosphere, land, radiation)
 
@@ -113,32 +109,30 @@ function progress(sim)
     u, v, w = ocean.model.velocities
     T = ocean.model.tracers.T
 
-    Tmax = maximum(interior(T))
-    Tmin = minimum(interior(T))
+    Tmax = maximum(T)
+    Tmin = minimum(T)
 
-    umax = (maximum(abs, interior(u)),
-            maximum(abs, interior(v)),
-            maximum(abs, interior(w)))
+    umax = (maximum(abs, u), maximum(abs, v), maximum(abs, w))
 
     step_time = 1e-9 * (time_ns() - wall_time[])
 
     msg = @sprintf("Iter: %d, time: %s, Δt: %s", iteration(sim), prettytime(sim), prettytime(sim.Δt))
     msg *= @sprintf(", max|u|: (%.2e, %.2e, %.2e) m s⁻¹, extrema(T): (%.2f, %.2f) ᵒC, wall time: %s",
-                    umax..., Tmax, Tmin, prettytime(step_time))
+                    umax..., Tmin, Tmax, prettytime(step_time))
 
     @info msg
 
     wall_time[] = time_ns()
+
+    return nothing
 end
 
 simulation.callbacks[:progress] = Callback(progress, TimeInterval(5days))
 
 # ### Set up output writers
 #
-# We define output writers to save the simulation data at regular intervals.
-# In this case, we save the surface fluxes and surface fields at a relatively high frequency (every day).
-# The `indices` keyword argument allows us to save only a slice of the three dimensional variable.
-# Below, we use `indices` to save only the values of the variables at the surface, which corresponds to `k = grid.Nz`
+# We save the surface velocities and tracers every day. The `indices` keyword argument
+# saves only a slice of each three-dimensional field: here, the surface level `k = grid.Nz`.
 
 outputs = merge(ocean.model.tracers, ocean.model.velocities)
 ocean.output_writers[:surface] = JLD2Writer(ocean.model, outputs;
@@ -156,52 +150,36 @@ run!(simulation)
 
 # ## A pretty movie
 #
-# It's time to make a pretty movie of the simulation. First we load the output we've been saving on
-# disk and plot the final snapshot:
+# It's time to make a pretty movie of the simulation. First we load the output we saved
+# on disk and plot the final snapshot:
 
-u = FieldTimeSeries("near_global_surface_fields.jld2", "u"; backend = OnDisk())
-v = FieldTimeSeries("near_global_surface_fields.jld2", "v"; backend = OnDisk())
-T = FieldTimeSeries("near_global_surface_fields.jld2", "T"; backend = OnDisk())
-e = FieldTimeSeries("near_global_surface_fields.jld2", "e"; backend = OnDisk())
+u_ts = FieldTimeSeries("near_global_surface_fields.jld2", "u"; backend = OnDisk())
+v_ts = FieldTimeSeries("near_global_surface_fields.jld2", "v"; backend = OnDisk())
+T_ts = FieldTimeSeries("near_global_surface_fields.jld2", "T"; backend = OnDisk())
+e_ts = FieldTimeSeries("near_global_surface_fields.jld2", "e"; backend = OnDisk())
 
-times = u.times
+times = u_ts.times
 Nt = length(times)
 
 n = Observable(Nt)
 
-land = view(T.grid.immersed_boundary.bottom_height, 1:Nx, 1:Ny, 1:1) .≥ 0
+Tₙ = @lift T_ts[$n]
+eₙ = @lift e_ts[$n]
 
-Tn = @lift begin
-    Tn = interior(T[$n])
-    Tn[land] .= NaN
-    view(Tn, :, :, 1)
-end
+# The surface speed is a field computed from snapshot velocities that we `set!` at every frame.
 
-en = @lift begin
-    en = interior(e[$n])
-    en[land] .= NaN
-    view(en, :, :, 1)
-end
+uₙ = u_ts[1]
+vₙ = v_ts[1]
+s = Field(sqrt(uₙ^2 + vₙ^2))
 
-un = Field{Face, Center, Nothing}(u.grid)
-vn = Field{Center, Face, Nothing}(v.grid)
-
-s = @at (Center, Center, Nothing) sqrt(un^2 + vn^2) # compute √(u²+v²) and interpolate back to Center, Center
-s = Field(s)
-
-sn = @lift begin
-    parent(un) .= parent(u[$n])
-    parent(vn) .= parent(v[$n])
-    compute!(s)
-    sn = interior(s)
-    sn[land] .= NaN
-    view(sn, :, :, 1)
+sₙ = @lift begin
+    set!(uₙ, u_ts[$n])
+    set!(vₙ, v_ts[$n])
+    s
 end
 
 title = @lift string("Near-global 1/4 degree ocean simulation after ",
                      prettytime(times[$n] - times[1]))
-
-λ, φ, _ = nodes(T) # T, e, and s all live on the same grid locations
 
 fig = Figure(size = (800, 1200))
 
@@ -209,14 +187,14 @@ axs = Axis(fig[1, 1], xlabel="Longitude (deg)", ylabel="Latitude (deg)")
 axT = Axis(fig[2, 1], xlabel="Longitude (deg)", ylabel="Latitude (deg)")
 axe = Axis(fig[3, 1], xlabel="Longitude (deg)", ylabel="Latitude (deg)")
 
-hm = heatmap!(axs, λ, φ, sn, colorrange = (0, 0.5), colormap = :deep, nan_color=:lightgray)
-Colorbar(fig[1, 2], hm, label = "Surface Speed (m s⁻¹)")
+hm = heatmap!(axs, sₙ, colorrange = (0, 0.5), colormap = :deep, nan_color = :lightgray)
+Colorbar(fig[1, 2], hm, label = "Surface speed (m s⁻¹)")
 
-hm = heatmap!(axT, λ, φ, Tn, colorrange = (-1, 30), colormap = :magma, nan_color=:lightgray)
-Colorbar(fig[2, 2], hm, label = "Surface Temperature (ᵒC)")
+hm = heatmap!(axT, Tₙ, colorrange = (-1, 30), colormap = :magma, nan_color = :lightgray)
+Colorbar(fig[2, 2], hm, label = "Surface temperature (ᵒC)")
 
-hm = heatmap!(axe, λ, φ, en, colorrange = (0, 1e-3), colormap = :solar, nan_color=:lightgray)
-Colorbar(fig[3, 2], hm, label = "Turbulent Kinetic Energy (m² s⁻²)")
+hm = heatmap!(axe, eₙ, colorrange = (0, 1e-3), colormap = :solar, nan_color = :lightgray)
+Colorbar(fig[3, 2], hm, label = "Turbulent kinetic energy (m² s⁻²)")
 
 Label(fig[0, :], title)
 

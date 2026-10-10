@@ -6,11 +6,12 @@
 # grid: mean height `h`, height standard deviation `σʰ`, maximum height `hᵐᵃˣ`, plan-area index
 # `λᵖ`, frontal-area index `λᶠ`, and the gross building lift `λᵖ·h`.
 #
-# `σʰ`, `hᵐᵃˣ` and `λᶠ` are the height-heterogeneity inputs an urban aerodynamic-roughness closure
-# (Kanda et al. 2013) is designed for, in place of the assumed ratios `σʰ = 0.4 h`, `hᵐᵃˣ = 2.5 h`,
-# `λᶠ ≈ λᵖ` that a mean-height-only product forces. Manhattan makes the point: supertalls in the
-# Financial District and Midtown beside low-rise blocks, with Central Park and the rivers as voids.
-# The heights are machine-learning estimates (RMSE 1.9–14.6 m) and biased low.
+# `σʰ`, `hᵐᵃˣ`, and `λᶠ` are the height-heterogeneity inputs that an urban aerodynamic-roughness
+# closure (Kanda et al. 2013) is designed for; a product that supplies only the mean height forces
+# the closure to assume the ratios `σʰ = 0.4 h`, `hᵐᵃˣ = 2.5 h`, and `λᶠ ≈ λᵖ` instead. Manhattan
+# makes the point: supertalls in the Financial District and Midtown stand beside low-rise blocks,
+# with Central Park and the rivers as voids. The heights are machine-learning estimates
+# (RMSE 1.9–14.6 m) and are biased low.
 
 using NumericalEarth
 using Oceananigans
@@ -21,15 +22,15 @@ using Statistics: quantile, median
 region = BoundingBox(longitude = (-74.02, -73.93), latitude = (40.70, 40.82))
 dataset = GlobalBuildingFootprints3D(resolution = 3)   # rasterize the footprints at 3 m
 
-# The fine building-height raster (downloads the tile + rasterizes on first use).
+# The fine building-height raster. The first use downloads the tile and rasterizes it.
 building_height = Field(Metadatum(:building_height; dataset, region), CPU())
 
 # ## The fine 3 m building-height raster
 #
 # Each footprint fills the cells it covers, so Central Park and the rivers read as zeros.
-# The raster is ~3000 cells across, and a heatmap minifies by nearest-neighbor sampling —
-# below one output pixel per cell it drops the thin gaps between buildings and fuses them
-# into streaks. Saving at ≥ 1 pixel per cell keeps every building and street.
+# The raster is ~3000 cells across, and a heatmap minifies by nearest-neighbor sampling:
+# below one output pixel per cell, it drops the thin gaps between buildings and fuses them
+# into streaks. Saving with at least one pixel per cell keeps every building and street.
 fig1 = Figure(size = (760, 900))
 ax1 = Axis(fig1[1, 1]; title = "3D-GloBFP building height (rasterized, 3 m) — Manhattan",
            xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
@@ -46,8 +47,8 @@ morphometry = building_morphometry(target_grid; dataset, region)
 
 robust_range(field) = (v = filter(>(0), interior(field, :, :, 1)); isempty(v) ? (0, 1) : (0, quantile(v, 0.98)))
 
-# Sharing one color range between the 3 m raster and the height panels shows how much the 100 m
-# aggregation smooths the towers.
+# Sharing one color range between the 3 m raster and the height panels shows how much the
+# 100 m aggregation smooths out the towers.
 height_range = (0, max(robust_range(morphometry.mean_building_height)[2],
                        robust_range(morphometry.maximum_building_height)[2]))
 
@@ -61,8 +62,8 @@ end
 fig2 = Figure(size = (2050, 950))
 Label(fig2[0, 1:2], "3D-GloBFP building morphometry — Manhattan (3 m raster → 100 m)", fontsize = 20)
 
-## Left: the fine raster, max-pooled to ~9 m by `building_morphometry` itself so this small
-## panel stays free of the nearest-neighbor minification streaks.
+## Left: the fine raster, max-pooled to ~9 m by `building_morphometry` itself, so that this
+## small panel is free of nearest-neighbor minification streaks.
 overview_grid = LatitudeLongitudeGrid(CPU(), Float64; size = size(building_height)[1:2] .÷ 3,
                                       longitude = region.longitude, latitude = region.latitude,
                                       topology = (Bounded, Bounded, Flat))
@@ -86,26 +87,27 @@ colsize!(fig2.layout, 1, Relative(0.32))
 save("globfp3d_morphometry.png", fig2)
 fig2
 
-# `σʰ` is bright where towers sit among low-rise blocks — the height heterogeneity a
+# `σʰ` is bright where towers sit among low-rise blocks: the height heterogeneity that a
 # mean-height-only product cannot express.
 
 # ## Where the assumed Kanda ratios are wrong
 #
-# The ratios are field operations, so unbuilt cells come out as `0/0 = NaN` and drop out (gray).
-maximum_to_mean_height = compute!(Field(morphometry.maximum_building_height / morphometry.mean_building_height))
-spread_to_mean_height  = compute!(Field(morphometry.building_height_deviation / morphometry.mean_building_height))
+# The ratios are computed from field operations, so unbuilt cells come out as `0/0 = NaN`
+# and are drawn in gray.
+maximum_to_mean_height = Field(morphometry.maximum_building_height / morphometry.mean_building_height)
+spread_to_mean_height  = Field(morphometry.building_height_deviation / morphometry.mean_building_height)
 
 ratios = ((maximum_to_mean_height, "hᵐᵃˣ / h  (assumed 2.5)", 2.5),
           (spread_to_mean_height,  "σʰ / h  (assumed 0.4)",   0.4))
 
 fig3 = Figure(size = (1250, 520))
 for (j, (ratio, title, assumed)) in enumerate(ratios)
-    vals = filter(isfinite, interior(ratio, :, :, 1))
+    finite_ratios = filter(isfinite, interior(ratio, :, :, 1))
     ax = Axis(fig3[1, 2j - 1]; title, xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
     hm = heatmap!(ax, ratio; colormap = :balance, nan_color = :gray90, colorrange = (0, 2assumed))
     Colorbar(fig3[1, 2j], hm)
-    @info "$title:  median = $(round(median(vals), digits=2)) (assumed $assumed);  " *
-          "fraction above assumed = $(round(100 * count(>(assumed), vals) / length(vals)))%"
+    @info "$title:  median = $(round(median(finite_ratios), digits=2)) (assumed $assumed);  " *
+          "fraction above assumed = $(round(100 * count(>(assumed), finite_ratios) / length(finite_ratios)))%"
 end
 Label(fig3[0, :], "Real height ratios vs the assumed Kanda constants", fontsize = 18)
 save("globfp3d_assumed_ratios.png", fig3)
@@ -128,10 +130,10 @@ fig4
 
 # ## The roughness closure fed the measured morphometry
 #
-# [`urban_roughness`](@ref) evaluates the Macdonald–Kanda closure per cell. Fed only
-# `(h, λᵖ)` — all a mean-height product supplies — it regresses `σʰ`, `hᵐᵃˣ` and `λᶠ` from
-# them; fed all five fields, the measured height heterogeneity replaces the regressions and
-# only the drag-partition physics and the Kanda height-spread corrections remain.
+# [`urban_roughness`](@ref) evaluates the Macdonald–Kanda closure in each cell. Given only
+# `(h, λᵖ)`, which is all that a mean-height product supplies, it regresses `σʰ`, `hᵐᵃˣ`, and `λᶠ`
+# from them; given all five fields, the measured height heterogeneity replaces the regressions,
+# and only the drag-partition physics and the Kanda height-spread corrections remain.
 regressed_roughness_length, regressed_displacement_height =
     urban_roughness(morphometry.mean_building_height, morphometry.plan_area_index)
 
@@ -140,8 +142,8 @@ roughness_length, displacement_height =
                     morphometry.building_height_deviation, morphometry.maximum_building_height,
                     morphometry.frontal_area_index)
 
-roughness_ratio = compute!(Field(roughness_length / regressed_roughness_length))
-displacement_shift = compute!(Field(displacement_height - regressed_displacement_height))
+roughness_ratio = Field(roughness_length / regressed_roughness_length)
+displacement_shift = Field(displacement_height - regressed_displacement_height)
 
 fig5 = Figure(size = (1900, 1150))
 Label(fig5[0, 1:6], "Aerodynamic roughness of Manhattan: measured σʰ, hᵐᵃˣ, λᶠ vs the regressions", fontsize = 20)
@@ -152,7 +154,7 @@ panel!(fig5, 2, 1, displacement_height,            "d, measured morphometry",   
 panel!(fig5, 2, 2, regressed_displacement_height,  "d, regressed from (h, λᵖ)", "m";
        colorrange = robust_range(displacement_height))
 
-## The comparison panels: a log₂-scaled ratio (centered on 1) and the displacement shift.
+## The comparison panels: the ratio on a log₂ scale (centered on 1) and the displacement shift.
 ax5 = Axis(fig5[1, 5]; title = "ℓᵐ ratio (measured / regressed)",
            xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
 hm5 = heatmap!(ax5, roughness_ratio; colormap = :balance, colorscale = log2, colorrange = (1/8, 8))
@@ -166,21 +168,21 @@ fig5
 built = interior(morphometry.plan_area_index, :, :, 1) .> 0.01
 for (field, name, units) in ((roughness_ratio, "ℓᵐ measured/regressed", ""),
                              (displacement_shift, "d measured − regressed", " m"))
-    vals = filter(isfinite, interior(field, :, :, 1)[built])
-    @info "$name: median = $(round(median(vals), digits = 2))$units, " *
-          "IQR = $(round.(quantile(vals, (0.25, 0.75)), digits = 2))"
+    built_values = filter(isfinite, interior(field, :, :, 1)[built])
+    @info "$name: median = $(round(median(built_values), digits = 2))$units, " *
+          "IQR = $(round.(quantile(built_values, (0.25, 0.75)), digits = 2))"
 end
 
-# The regressions were fitted to 1 km Tokyo/Nagoya districts, so on a 100 m grid they hand
-# every cell with 30 m mean height a ~160 m tallest building — the median regressed `ℓᵐ` runs
-# ~4× the measured-input value and `d` ~2×. The measured statistics are per-cell facts, valid
-# at any resolution; only where supertalls actually stand do `σʰ` and `hᵐᵃˣ` stay this large.
+# The regressions were fitted to 1 km districts of Tokyo and Nagoya, so on a 100 m grid they give
+# every cell with a 30 m mean height a ~160 m tallest building: the median regressed `ℓᵐ` is
+# ~4× the value from the measured inputs, and `d` is ~2×. The measured statistics are per-cell
+# facts, valid at any resolution; `σʰ` and `hᵐᵃˣ` stay this large only where supertalls actually stand.
 
 # ## The same comparison at the regressions' fitted 1 km scale
 #
-# If that reading is right, aggregating the morphometry to the ~1 km districts the regressions
-# were fitted on should close much of the gap: a 1 km Manhattan cell really does mix towers
-# with low-rise blocks.
+# If that reading is right, aggregating the morphometry onto the ~1 km districts that the
+# regressions were fitted on should close much of the gap: a 1 km Manhattan cell really does
+# mix towers with low-rise blocks.
 kilometer_grid = LatitudeLongitudeGrid(CPU(), Float64; size = (8, 13),
                                        longitude = region.longitude, latitude = region.latitude,
                                        topology = (Bounded, Bounded, Flat))
@@ -225,10 +227,10 @@ kilometer_height_spread_ratio = cell_values(kilometer_morphometry.building_heigh
       "IQR = $(round.(quantile(kilometer_roughness_ratio, (0.25, 0.75)), digits = 2))"
 @info "1 km measured σʰ/h: median = $(round(median(kilometer_height_spread_ratio), digits = 2))"
 
-# It does — about half of it. From 100 m to 1 km the measured `σʰ/h` median rises from 0.09
-# to ~0.34, `hᵐᵃˣ/h` from 1.11 to ~2.05 (toward the assumed 2.5), and the `ℓᵐ` ratio recovers
-# from ~0.27 to ~0.53, with the 1 km cells straddling the 1:1 line. The factor ~2 that remains
-# even at the fitted scale is a city mismatch: Kanda's `σʰ = 1.05h − 3.7` prescribes
-# `σʰ/h ≈ 0.95` at Manhattan's 1 km mean heights, three times the heterogeneity its uniform
-# mid- and high-rise districts actually have. The measured morphometry carries neither the
+# It closes about half of it. From 100 m to 1 km, the median of the measured `σʰ/h` rises from
+# 0.09 to ~0.34, that of `hᵐᵃˣ/h` from 1.11 to ~2.05 (toward the assumed 2.5), and the `ℓᵐ` ratio
+# recovers from ~0.27 to ~0.53, with the 1 km cells straddling the 1:1 line. The factor of ~2 that
+# remains even at the fitted scale is a mismatch between cities: Kanda's `σʰ = 1.05h − 3.7` prescribes
+# `σʰ/h ≈ 0.95` at Manhattan's 1 km mean heights, three times the heterogeneity that its uniform
+# mid- and high-rise districts actually have. The measured morphometry depends on neither the
 # fitted scale nor the fitted city.
