@@ -139,13 +139,6 @@ end
 # The energy density is unbounded (`ρθ` is not confined to `[0, 1]`). Names are derived from the
 # microphysics so the default tracks whichever moisture/precipitation prognostics it carries.
 #
-# Tracers a turbulence closure adds to the model (`closure_required_tracers`, e.g. the turbulent
-# kinetic energy density `ρe` of Breeze's `TKEBasedTurbulenceClosure`) must be named here too: a
-# `NamedTuple` `scalar_advection` gives every tracer it omits the model's default scheme, the
-# unbounded `Centered(order=2)`, which drives the specific TKE negative at sharp gradients and
-# overshoots it elsewhere. They get bounds-preserving WENO(5) bounded below by zero; the upper bound
-# (`closure_tracer_maximum`, in the tracer's specific units — m² s⁻² for TKE) only has to be finite
-# and never bind. `bounds` must be a homogeneous `NTuple{2}`, so both ends share one type.
 function default_nested_scalar_advection(microphysics, closure = nothing; closure_tracer_maximum = 10_000)
     bounded = WENO(order = 5, bounds = (0, 1))
     moist_names = (moisture_prognostic_name(microphysics), prognostic_field_names(microphysics)...)
