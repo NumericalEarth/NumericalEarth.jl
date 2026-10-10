@@ -296,7 +296,7 @@ end
 @testset "ERA5 accumulation windows" begin
     # ERA5 accumulations and mean rates cover the hour ending at the stamp, so their windows
     # run backwards from it and their nodes sit half an hour before it.
-    for name in (:total_precipitation, :evaporation, :mean_evaporation_rate,
+    for name in (:total_precipitation, :convective_precipitation, :evaporation, :mean_evaporation_rate,
                  :downwelling_shortwave_radiation, :downwelling_longwave_radiation,
                  :mean_surface_momentum_flux_x, :mean_surface_momentum_flux_y,
                  :mean_surface_sensible_heat_flux, :mean_surface_latent_heat_flux)
@@ -306,7 +306,9 @@ end
         @test window_center(metadatum) == DateTime(2020, 4, 1, 12, 30)
     end
 
-    for name in (:temperature, :surface_pressure, :eastward_velocity, :significant_wave_height)
+    for name in (:temperature, :surface_pressure, :eastward_velocity, :significant_wave_height,
+                 :boundary_layer_height, :convective_available_potential_energy, :land_sea_mask,
+                 :sea_ice_concentration, :forecast_albedo)
         metadatum = Metadatum(name; dataset = ERA5HourlySingleLevel(), date = DateTime(2020, 4, 1, 13))
         @test window_center(metadatum) == DateTime(2020, 4, 1, 13)
     end
