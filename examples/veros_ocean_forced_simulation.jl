@@ -1,10 +1,10 @@
 # # An Ocean Simulation at 4ᵒ Resolution Forced by JRA55 Reanalysis
 #
-# This example showcases the use of NumericalEarth's PythonCall extension to run a
-# near-global ocean simulation at 4-degree resolution using the Veros ocean model.
-# The ocean is forced by the JRA55 reanalysis data
+# This example uses NumericalEarth's PythonCall extension to run a near-global
+# ocean simulation at 4-degree resolution with the Veros ocean model.
+# The ocean is forced by the JRA55 reanalysis.
 #
-# For this example, we need Oceananigans, NumericalEarth, Dates, CUDA, and
+# For this example, we need NumericalEarth, PythonCall, Oceananigans, and
 # CairoMakie to visualize the simulation.
 
 using NumericalEarth
@@ -13,13 +13,13 @@ using Oceananigans, Oceananigans.Units
 using CairoMakie
 using Printf
 
-# We import the Veros 4 degree ocean simulation setup, which consists of a near-global ocean
-# with a uniform resolution of 4 degrees in both latitude and longitude and a latitude range spanning
-# from 80S to 80N. The setup is defined in the `veros.setups.global_4deg` module.
+# We import the Veros 4-degree ocean setup: a near-global ocean with a uniform resolution
+# of 4 degrees in both latitude and longitude, spanning from 80°S to 80°N. The setup is
+# defined in the `veros.setups.global_4deg` module.
 
 # Before importing the setup, the Veros Python package must be available in the
-# active CondaPkg environment. In the documentation CI this is installed ahead of
-# time in the workflow. For a fresh local environment, run
+# active CondaPkg environment. The documentation CI workflow installs it ahead
+# of time. For a fresh local environment, run
 #
 # ```julia
 # VerosModule = Base.get_extension(NumericalEarth, :NumericalEarthVerosExt)
@@ -32,15 +32,15 @@ VerosModule = Base.get_extension(NumericalEarth, :NumericalEarthVerosExt)
 
 VerosModule.remove_outputs(:global_4deg)
 
-# Actually loading and instantiating the Veros setup in the variable `ocean`.
+# We now load and instantiate the Veros setup as `ocean`.
 
 ocean = VerosModule.VerosOceanSimulation("global_4deg", :GlobalFourDegreeSetup)
 
-# The loaded Veros setup contains a `set_forcing` method which computes the fluxes as restoring from climatology.
-# We replace it with a custom function that only computes the TKE forcing (which depends on the wind stresses
-# that we set in NumericalEarth). This way our u, v, T, S forcings are not overwritten.
-# The `set_forcing_tke_only` method defined below is modified from the `set_forcing` method defined in
-# https://github.com/team-ocean/veros/blob/main/veros/setups/global_4deg/global_4deg.py
+# The loaded Veros setup contains a `set_forcing` method that computes the surface fluxes as a
+# restoring toward climatology. We replace it with a function that computes only the TKE forcing,
+# which depends on the wind stresses that NumericalEarth sets, so that our u, v, T, and S forcings
+# are not overwritten. The `set_forcing_tke_only` function below is adapted from the `set_forcing`
+# method in https://github.com/team-ocean/veros/blob/main/veros/setups/global_4deg/global_4deg.py
 
 pyexec("""
 def set_forcing_tke_only(state):
@@ -71,21 +71,20 @@ def set_forcing_tke_only(state):
 ocean.set_forcing = set_forcing_tke_only
 """, Main, (ocean=ocean.setup,))
 
-# We force the 4-degree setup with a prescribed atmosphere based on the JRA-55 reanalysis data.
-# This includes 2-meter wind velocity, temperature, humidity, downwelling longwave and shortwave
-# radiation, as well as freshwater fluxes.
+# We force the 4-degree setup with a prescribed atmosphere based on the JRA55 reanalysis.
+# The atmosphere supplies the 2-meter wind velocity, temperature, and humidity, as well as the
+# freshwater fluxes; the prescribed radiation supplies the downwelling longwave and shortwave radiation.
 
-atmos = JRA55PrescribedAtmosphere()
+atmosphere = JRA55PrescribedAtmosphere()
 radiation = JRA55PrescribedRadiation()
 
-# The coupled ocean--atmosphere model. We do not couple an ice model for simplicity.
+# We couple the ocean to the atmosphere; for simplicity, we do not include sea ice.
 
-coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere=atmos, radiation)
+coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
 simulation = Simulation(coupled_model; Δt = 30minutes, stop_time = 60days)
 
-# We set up a progress callback that will print the current time, iteration, and maximum velocities
-# every 10days. We also set up another callback that collects the surface prognostic variables
-# into arrays for later visualization.
+# We set up a progress callback that prints the current time, iteration, and maximum velocities
+# every 10 days.
 
 wall_time = Ref(time_ns())
 
@@ -98,41 +97,44 @@ function progress(sim)
     step_time = 1e-9 * (time_ns() - wall_time[])
 
     msg1 = @sprintf("time: %s, iteration: %d, Δt: %s, ", prettytime(sim), iteration(sim), prettytime(sim.Δt))
-    msg5 = @sprintf("maximum(u): (%.2f, %.2f, %.2f) m/s, ", umax, vmax, wmax)
-    msg6 = @sprintf("wall time: %s \n", prettytime(step_time))
+    msg2 = @sprintf("maximum(u): (%.2f, %.2f, %.2f) m s⁻¹, ", umax, vmax, wmax)
+    msg3 = @sprintf("wall time: %s \n", prettytime(step_time))
 
-    @info msg1 * msg5 * msg6
+    @info msg1 * msg2 * msg3
 
     wall_time[] = time_ns()
 
     return nothing
 end
 
-u = []
-v = []
-
-function save_variables(sim)
-    push!(u, deepcopy(sim.model.interfaces.exchanger.ocean.state.u))
-    push!(v, deepcopy(sim.model.interfaces.exchanger.ocean.state.v))
-end
-
 add_callback!(simulation, progress, TimeInterval(10days))
-add_callback!(simulation, save_variables, IterationInterval(10))
+
+# We also save the surface velocities that the ocean exchanges with the atmosphere.
+
+(; u, v) = coupled_model.interfaces.exchanger.ocean.state
+
+simulation.output_writers[:surface] = JLD2Writer(coupled_model, (; u, v);
+                                                 schedule = IterationInterval(10),
+                                                 filename = "veros_ocean_surface_fields",
+                                                 overwrite_existing = true)
 
 # Let's run the simulation!
 
 run!(simulation)
 
-# After the simulation is done, we can visualize the surface zonal and meridional velocities as a function of latitude and time.
+# After the simulation is done, we animate the surface zonal and meridional velocities.
+
+u_ts = FieldTimeSeries("veros_ocean_surface_fields.jld2", "u")
+v_ts = FieldTimeSeries("veros_ocean_surface_fields.jld2", "v")
+Nt = length(u_ts.times)
 
 n  = Observable(1)
-un = @lift(u[$n])
-vn = @lift(v[$n])
-Nt = length(u)
+un = @lift u_ts[$n]
+vn = @lift v_ts[$n]
 
 fig = Figure(size = (900, 630))
-ax1 = Axis(fig[1, 1]; title = "Surface zonal velocity (m/s)", xlabel = "", ylabel = "Latitude")
-ax2 = Axis(fig[2, 1]; title = "Surface meridional velocity (m/s)", xlabel = "", ylabel = "Latitude")
+ax1 = Axis(fig[1, 1]; title = "Surface zonal velocity (m s⁻¹)", ylabel = "Latitude")
+ax2 = Axis(fig[2, 1]; title = "Surface meridional velocity (m s⁻¹)", ylabel = "Latitude")
 hm1 = heatmap!(ax1, un, colormap = :bwr, colorrange = (-0.2, 0.2))
 hm2 = heatmap!(ax2, vn, colormap = :bwr, colorrange = (-0.2, 0.2))
 
