@@ -278,7 +278,7 @@ fig2 = Figure(size=(900, 300))
 
 ## Tick at each day boundary (00:00 of each day in the window).
 day_dts    = first(dates):Day(1):last(dates)
-day_ticks  = (0:length(day_dts)-1) .* 86400.0   # seconds since first(dates)
+day_ticks  = (0:length(day_dts)-1) .* Oceananigans.Units.days   # seconds since first(dates)
 day_labels = Dates.format.(day_dts, dateformat"u d")
 
 ax2 = Axis(fig2[1, 1],
@@ -421,7 +421,7 @@ function horizontal_mean_profiles(series)
 end
 
 T̄ = horizontal_mean_profiles(T_ts)
-q̄ = horizontal_mean_profiles(q_ts) * 1000 # kg/kg → g/kg
+q̄ = horizontal_mean_profiles(q_ts) * 1e3 # kg/kg → g/kg
 ū = horizontal_mean_profiles(u_ts)
 v̄ = horizontal_mean_profiles(v_ts)
 
