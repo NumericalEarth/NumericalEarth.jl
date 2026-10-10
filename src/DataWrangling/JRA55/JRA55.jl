@@ -11,7 +11,7 @@ using CFTime: CFTime
 using Dates: Dates, DateTime, Day, Hour
 using Downloads: Downloads
 using Oceananigans: Oceananigans
-using Oceananigans.Architectures: CPU
+using Oceananigans.Architectures: CPU, architecture, on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.DistributedComputations: DistributedComputations, @root, Distributed, child_architecture
 using Oceananigans.Grids: Center

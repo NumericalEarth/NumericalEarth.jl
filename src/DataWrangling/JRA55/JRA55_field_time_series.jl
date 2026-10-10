@@ -47,7 +47,8 @@ end
 # Read the window one time slice at a time through two slice-sized host buffers. Reading it whole
 # (`ds[name][:, :, nn]`) allocates ~14 bytes per element (137 MiB for a 640×320×50 window), and with every
 # atmospheric variable reloading at once that forces full GC sweeps. The files are chunked one time slice
-# per chunk, so slice reads cost the same I/O.
+# per chunk, so slice reads cost the same I/O. The device copy of the slice is allocated once per call too,
+# rather than `set_region_data!` moving every slice to the device with a fresh allocation.
 function set_jra55_slices!(fts, ds, name, file_indices, slots, metadata)
     λc  = ds["lon"][:]
     φc  = ds["lat"][:]
@@ -56,10 +57,12 @@ function set_jra55_slices!(fts, ds, name, file_indices, slots, metadata)
     Nx, Ny = length(λc), length(φc)
     data   = Array{eltype(var)}(undef, Nx, Ny, 1, 1)
     buffer = Array{eltype(parent(var))}(undef, Nx, Ny, 1, 1)
+    device_data = on_architecture(architecture(fts), data)
 
     for (n, slot) in zip(file_indices, slots)
         NCDatasets.load!(var, data, buffer, :, :, n)
-        set_region_data!(fts, data, λc, φc, metadata; slot_indices = slot:slot)
+        copyto!(device_data, data)
+        set_region_data!(fts, device_data, λc, φc, metadata; slot_indices = slot:slot)
     end
 
     return nothing
