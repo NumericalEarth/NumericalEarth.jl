@@ -55,9 +55,6 @@ function propagate_horizontally!(inpainting::NearestNeighborInpainting, field, m
         iter += 1
     end
 
-    launch!(arch, grid, size(field), _fill_nans!, field)
-    fill_halo_regions!(field)
-
     return field
 end
 
@@ -135,15 +132,20 @@ function inpaint_mask!(field, mask; inpainting=NearestNeighborInpainting(Inf))
         inpainting = NearestNeighborInpainting(inpainting)
     end
 
-    # Blank the masked cells before `continue_downwards!`
-    launch!(architecture(field), field.grid, size(field), _nan_mask!, field, mask)
+    arch = architecture(field)
+    launch!(arch, field.grid, size(field), _nan_mask!, field, mask)
     fill_halo_regions!(field)
+
+    # Same-depth neighbors first: continuing downwards first puts surface water at depth
+    # wherever the data is shallower than the grid
+    propagate_horizontally!(inpainting, field, mask)
 
     if size(field, 3) > 1
         continue_downwards!(field, mask)
     end
 
-    propagate_horizontally!(inpainting, field, mask)
+    launch!(arch, field.grid, size(field), _fill_nans!, field)
+    fill_halo_regions!(field)
 
     return field
 end
@@ -172,7 +174,7 @@ end
     Nz = size(grid, 3)
 
     for k = Nz-1 : -1 : 1
-        @inbounds field[i, j, k] = ifelse(mask[i, j, k], field[i, j, k+1], field[i, j, k])
+        @inbounds field[i, j, k] = ifelse(mask[i, j, k] & isnan(field[i, j, k]), field[i, j, k+1], field[i, j, k])
     end
 end
 
