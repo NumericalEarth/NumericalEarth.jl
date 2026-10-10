@@ -36,6 +36,7 @@ using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, interior, interpolate!
 using Oceananigans.Forcings: Relaxation
 using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
+using Oceananigans.TurbulenceClosures: closure_required_tracers
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 
@@ -137,10 +138,25 @@ end
 # minute. Bounding mirrors Breeze's own moist-convection examples (`ρqᵉ = WENO(order=5, bounds=(0, 1))`).
 # The energy density is unbounded (`ρθ` is not confined to `[0, 1]`). Names are derived from the
 # microphysics so the default tracks whichever moisture/precipitation prognostics it carries.
-function default_nested_scalar_advection(microphysics)
+#
+# Tracers a turbulence closure adds to the model (`closure_required_tracers`, e.g. the turbulent
+# kinetic energy density `ρe` of Breeze's `TKEBasedTurbulenceClosure`) must be named here too: a
+# `NamedTuple` `scalar_advection` gives every tracer it omits the model's default scheme, the
+# unbounded `Centered(order=2)`, which drives the specific TKE negative at sharp gradients and
+# overshoots it elsewhere. They get bounds-preserving WENO(5) bounded below by zero; the upper bound
+# (`closure_tracer_maximum`, in the tracer's specific units — m² s⁻² for TKE) only has to be finite
+# and never bind. `bounds` must be a homogeneous `NTuple{2}`, so both ends share one type.
+function default_nested_scalar_advection(microphysics, closure = nothing; closure_tracer_maximum = 10_000)
     bounded = WENO(order = 5, bounds = (0, 1))
     moist_names = (moisture_prognostic_name(microphysics), prognostic_field_names(microphysics)...)
-    return merge((ρθ = WENO(order = 5),), NamedTuple{moist_names}(map(_ -> bounded, moist_names)))
+    moist = NamedTuple{moist_names}(map(_ -> bounded, moist_names))
+
+    closure_names = closure_required_tracers(closure)
+    closure_bounds = promote(0, closure_tracer_maximum)
+    closure_scheme = WENO(order = 5, bounds = closure_bounds)
+    closure_tracers = NamedTuple{closure_names}(map(_ -> closure_scheme, closure_names))
+
+    return merge((ρθ = WENO(order = 5),), moist, closure_tracers)
 end
 
 # Blend-zone width in cells from a physical length: a fixed cell count steepens the parent→child
@@ -231,8 +247,9 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     drag_surface_temperature = nothing, # surface temperature entering the drag's surface density
     parent_condensates = default_parent_condensates(parent_atmosphere),
     microphysics = default_nested_microphysics(),
+    closure = nothing,
     momentum_advection = WENO(order = 9),
-    scalar_advection = default_nested_scalar_advection(microphysics),
+    scalar_advection = default_nested_scalar_advection(microphysics, closure),
     coriolis = SphericalCoriolis(),
     damping_rate = 1/5,
     damping_depth = default_lid_depth(child_grid),
@@ -327,7 +344,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # `initialize_nested_child!` and destabilize the adiabatic balance twin — the child's full
     # state (and reference) is derived from the parent instead.
     child = NumericalEarth.Atmospheres.atmosphere_model(child_grid;
-        thermodynamic_constants, microphysics, momentum_advection, scalar_advection, coriolis, dynamics,
+        thermodynamic_constants, microphysics, closure, momentum_advection, scalar_advection, coriolis, dynamics,
         boundary_conditions = merge_boundary_conditions(child_bcs, NamedTuple(boundary_conditions)),
         forcing = merge(lid_sponge, davies, NamedTuple(forcing)),
         initialize = false,
