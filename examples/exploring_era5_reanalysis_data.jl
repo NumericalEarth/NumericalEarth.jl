@@ -271,8 +271,8 @@ nothing #hide
 # (more discussion [here](https://confluence.ecmwf.int/display/CKB/ERA5%3A+data+documentation#ERA5:datadocumentation-Meanrates/fluxesandaccumulations)):
 # a liquid-water-equivalent depth in m accumulated over 1 hour. NumericalEarth converts
 # it on load to a mass flux in kg m⁻² s⁻¹. We multiply by the latent heat of vaporization
-# to get a latent-heat-equivalent flux in W/m² to compare with [vanZanten2011](@citet)'s
-# reported 21 W m⁻² mean.
+# to get a latent-heat-equivalent flux in W m⁻² to compare with the 21 W m⁻² mean value
+# reported by [vanZanten2011](@citet).
 
 Lᵛ = 2.5e6  # J/kg, latent heat of vaporization
 
