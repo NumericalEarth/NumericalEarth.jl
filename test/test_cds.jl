@@ -1211,7 +1211,8 @@ end
 
     # Dewpoint and surface pressure change every hour, so each snapshot of qᵛ is distinct.
     hourly_value(nc_name, time) = nc_name == "d2m" ? 260 + Dates.hour(time) :
-                                  nc_name == "sp"  ? 9e4 + 1e3 * Dates.hour(time) : 1
+                                  nc_name == "sp"  ? 9e4 + 1e3 * Dates.hour(time) :
+                                  nc_name == "msl" ? 1.01e5 + 1e2 * Dates.hour(time) : 1
 
     function fake_retrieve(product, request, path)
         times = vec([DateTime(parse(Int, y), parse(Int, m), parse(Int, d), parse(Int, h[1:2]))
@@ -1254,6 +1255,14 @@ end
             pˢ = Float32(hourly_value("sp", time))
             @test all(interior(qᵛ[n]) .≈ saturation_specific_humidity(ℂ, Tᵈ, pˢ, Liquid()))
         end
+
+        download(MetadataSet(:mean_sea_level_pressure; dataset, start_date, end_date, dir, region); retrieve = fake_retrieve)
+        atmosphere = ERA5PrescribedAtmosphere(CPU(); dataset, start_date, end_date, dir, region,
+                                              time_indices_in_memory = 3, pressure = :mean_sea_level_pressure)
+        time = start_date + Hour(4)
+        @test all(interior(atmosphere.pressure[5]) .≈ Float32(hourly_value("msl", time)))
+        @test all(interior(atmosphere.specific_humidity[5]) .≈
+                  saturation_specific_humidity(ℂ, Float32(hourly_value("d2m", time)), Float32(hourly_value("msl", time)), Liquid()))
     end
 end
 

@@ -13,7 +13,7 @@ end
 
 propagate_horizontally!(::NearestNeighborInpainting, field, ::Nothing, args...; kw...) = field
 
-remaining_gaps(field, mask) = sum(isnan, field; condition=interior(mask))
+remaining_gaps(field, mask) = count(isnan.(interior(field)) .& interior(mask))
 
 # Stop once a sweep fills nothing: no donor is reachable for what is left, and the
 # default `maxiter = Inf` would otherwise never terminate.
@@ -38,9 +38,6 @@ function propagate_horizontally!(inpainting::NearestNeighborInpainting, field, m
     grid  = field.grid
     arch  = architecture(grid)
 
-    launch!(arch, grid, size(field), _nan_mask!, field, mask)
-    fill_halo_regions!(field)
-
     # Need temporary field to avoid a race condition
     parent(substituting_field) .= parent(field)
 
@@ -57,9 +54,6 @@ function propagate_horizontally!(inpainting::NearestNeighborInpainting, field, m
 
         iter += 1
     end
-
-    launch!(arch, grid, size(field), _fill_nans!, field)
-    fill_halo_regions!(field)
 
     return field
 end
@@ -130,17 +124,28 @@ Arguments
                 `Int` is taken as that `maxiter`.
                 Default: `NearestNeighborInpainting(Inf)`.
 """
+inpaint_mask!(field, ::Nothing; kw...) = field
+
 function inpaint_mask!(field, mask; inpainting=NearestNeighborInpainting(Inf))
 
     if inpainting isa Int
         inpainting = NearestNeighborInpainting(inpainting)
     end
 
+    arch = architecture(field)
+    launch!(arch, field.grid, size(field), _nan_mask!, field, mask)
+    fill_halo_regions!(field)
+
+    # Same-depth neighbors first: continuing downwards first puts surface water at depth
+    # wherever the data is shallower than the grid
+    propagate_horizontally!(inpainting, field, mask)
+
     if size(field, 3) > 1
         continue_downwards!(field, mask)
     end
 
-    propagate_horizontally!(inpainting, field, mask)
+    launch!(arch, field.grid, size(field), _fill_nans!, field)
+    fill_halo_regions!(field)
 
     return field
 end
@@ -169,7 +174,7 @@ end
     Nz = size(grid, 3)
 
     for k = Nz-1 : -1 : 1
-        @inbounds field[i, j, k] = ifelse(mask[i, j, k], field[i, j, k+1], field[i, j, k])
+        @inbounds field[i, j, k] = ifelse(mask[i, j, k] & isnan(field[i, j, k]), field[i, j, k+1], field[i, j, k])
     end
 end
 
