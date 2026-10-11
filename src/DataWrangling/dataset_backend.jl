@@ -89,6 +89,13 @@ function set!(fts::DatasetFieldTimeSeries, backend=fts.backend)
     inpainting = backend.inpainting
     cache_data = cache_inpainted_data(backend)
 
+    # Cold reads from a parallel file system are latency-bound: pull the window's files
+    # into the page cache concurrently before reading them one by one.
+    paths = unique(metadata_path(backend.metadata[t]) for t in time_indices(fts))
+    Threads.@threads for path in filter(isfile, paths)
+        read(path)
+    end
+
     for t in time_indices(fts)
         metadatum = @inbounds backend.metadata[t]
         set!(fts[t], metadatum; inpainting, cache_inpainted_data=cache_data)
