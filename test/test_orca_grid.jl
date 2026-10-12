@@ -266,20 +266,18 @@ end
     @test mesh.e2u == shift_x(e2u)
 
     # Lombok, at NEMO's (44, 165): the channel cell takes the 13 km width of its faces,
-    # and each face's v cell is half of each tracer cell it spans
+    # and each face's v cell is its narrowed face times its length, which closes the kinetic energy budget
     @test mesh.e1t[44, 165] == e1v[44, 165] == 13e3
     @test mesh.AzCC[44, 165] ≈ 13e3 * e2t[44, 165]
     for j in (164, 165)
-        @test mesh.AzCF[44, j] ≈ (mesh.AzCC[44, j] + mesh.AzCC[44, j+1]) / 2
+        @test mesh.AzCF[44, j] == 13e3 * e2v[44, j]
     end
 
-    # Every other area is the product of the mesh's own metrics
-    changed_CC = findall(mesh.AzCC .!= e1t .* e2t)
-    changed_CF = findall(mesh.AzCF .!= e1v .* e2v)
-    changed_FC = findall(mesh.AzFC .!= shift_x(e1u .* e2u))
-    @test Set(changed_CC) == Set(channels)
-    @test length(changed_CF) == 10
-    @test length(changed_FC) == 4
+    # Only the channel cells' areas change; this mesh has no `e1e2u`/`e1e2v`, so the velocity cells already
+    # carry the products of their narrowed metrics
+    @test Set(findall(mesh.AzCC .!= e1t .* e2t)) == Set(channels)
+    @test mesh.AzCF == e1v .* e2v
+    @test mesh.AzFC == shift_x(e1u .* e2u)
 end
 
 @testset "ORCAOne bathymetry retrieval" begin
