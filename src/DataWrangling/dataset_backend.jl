@@ -85,14 +85,15 @@ const DatasetFieldTimeSeries{N} = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:Data
 # as ECCO4 / EN4 / WOA monthly climatologies. Datasets whose files hold
 # multiple time instances (e.g. JRA55) dispatch on a more specific backend
 # signature keyed off the metadata's dataset type.
+window_paths(backend, indices) = filter(isfile, unique(metadata_path(backend.metadata[n]) for n in indices))
+
 function set!(fts::DatasetFieldTimeSeries, backend=fts.backend)
     inpainting = backend.inpainting
     cache_data = cache_inpainted_data(backend)
 
     # Cold reads from a parallel file system are latency-bound: pull the window's files
     # into the page cache concurrently before reading them one by one.
-    paths = unique(metadata_path(backend.metadata[t]) for t in time_indices(fts))
-    Threads.@threads for path in filter(isfile, paths)
+    Threads.@threads for path in window_paths(backend, time_indices(fts))
         read(path)
     end
 
@@ -102,6 +103,15 @@ function set!(fts::DatasetFieldTimeSeries, backend=fts.backend)
     end
 
     fill_halo_regions!(fts)
+
+    # The next window starts at this window's last record. Pull its files into the page cache
+    # in the background, while the model steps through this window.
+    Nt = length(backend.metadata)
+    Nm = length(time_indices(fts))
+    if Nm < Nt
+        next_window = (mod1(last(time_indices(fts)) + m, Nt) for m in 0:Nm-1)
+        Threads.@spawn foreach(read, window_paths(backend, next_window))
+    end
 
     return nothing
 end
