@@ -290,7 +290,7 @@ function read_orca_staggered_mesh(ds, overlap; radius = Oceananigans.defaults.pl
         end
 
         # In NEMO's own indexing, before the u and F points are shifted to Oceananigans' convention
-        narrow_strait_cells!(e1t, e2t, AzCC, AzFC, AzCF, e1v, e2u,
+        narrow_strait_cells!(e1t, e2t, AzCC, AzFC, AzCF, e1u, e2u, e1v, e2v,
                              orcaread(ds, "glamf"), orcaread(ds, "gphif"), λCC, φCC; radius)
 
         e1u, e1f, e2u, e2f = shift_x(e1u), shift_x(e1f), shift_x(e2u), shift_x(e2f)
@@ -320,16 +320,20 @@ Make the cell geometry at NEMO's narrowed straits consistent with their narrowed
 
 NEMO represents a strait narrower than a grid cell by cutting the width of its velocity faces, `e1v` for a
 north-south strait and `e2u` for an east-west one, and leaves the tracer cell between them and the
-velocity cells' areas at full size. The face then carries the strait's transport, but a velocity cell
-there is handed the full vertical transport of the tracer columns either side of it, and the tracer cell
-holds a 110 km-wide column of water behind a 13 km (say) face. Here the geometry is made consistent:
+velocity cells' areas at full size (`e1e2u`, `e1e2v` hold the original areas). The face then carries the
+strait's transport, but the tracer cell holds a 110 km-wide column of water behind a 13 km (say) face,
+and the velocity cell's area no longer matches its face. Here the geometry is made consistent:
 
 * a tracer cell between two narrowed faces (the strait itself) takes their width, so its volume and
   surface area are those of the channel;
-* a velocity cell at a narrowed face takes the area of the two half tracer cells it spans,
-  `(Az[T₁] + Az[T₂]) / 2`, which is what an ordinary cell's `e1 e2` approximates.
+* a velocity cell at a narrowed face takes the area `e1v e2v` (`e1u e2u`) of its narrowed face times its
+  length, the area for which the pressure work on it equals the work done by the transport through the
+  face, so the discrete kinetic energy budget closes.
 
-The face widths themselves are left narrowed: they set the transport through the strait.
+The face widths themselves are left narrowed: they set the transport through the strait. A velocity cell
+between the channel and the open sea is then handed half of the open column's vertical transport over a
+small area, so its vertical advection runs at a Courant number several times the columns' own; the
+transport-based CFL of `AdaptiveVerticallyImplicitDiscretization` treats that part implicitly.
 
 A face counts as narrowed when its width falls short of `threshold` times the distance between its two
 corners while the tracer cells either side do not, which leaves out the degenerate padding rows south of
@@ -337,7 +341,8 @@ Antarctica, whose metrics are all small. All arrays are in NEMO's indexing: u(i,
 and T(i+1, j) and is bounded by F(i, j-1) and F(i, j); v(i, j) lies between T(i, j) and T(i, j+1) and is
 bounded by F(i-1, j) and F(i, j).
 """
-function narrow_strait_cells!(e1t, e2t, AzCC, AzFC, AzCF, e1v, e2u, λFF, φFF, λCC, φCC; radius, threshold = 0.9)
+function narrow_strait_cells!(e1t, e2t, AzCC, AzFC, AzCF, e1u, e2u, e1v, e2v, λFF, φFF, λCC, φCC;
+                              radius, threshold = 0.9)
     Nx, Ny = size(e1t)
 
     narrowed_v = falses(Nx, Ny)
@@ -371,10 +376,8 @@ function narrow_strait_cells!(e1t, e2t, AzCC, AzFC, AzCF, e1v, e2u, λFF, φFF, 
         end
     end
 
-    for j in 2:Ny-1, i in 2:Nx-1
-        narrowed_v[i, j] && (AzCF[i, j] = (AzCC[i, j] + AzCC[i, j+1]) / 2)
-        narrowed_u[i, j] && (AzFC[i, j] = (AzCC[i, j] + AzCC[i+1, j]) / 2)
-    end
+    AzCF[narrowed_v] .= e1v[narrowed_v] .* e2v[narrowed_v]
+    AzFC[narrowed_u] .= e1u[narrowed_u] .* e2u[narrowed_u]
 
     nfaces = count(narrowed_u) + count(narrowed_v)
     nfaces > 0 && @info "Narrowed straits: $nfaces faces, channel cells at (λ, φ, width) $(join(channels, ", "))"
