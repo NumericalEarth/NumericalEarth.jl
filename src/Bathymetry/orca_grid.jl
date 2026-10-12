@@ -7,6 +7,7 @@ using Oceananigans.Fields: set!
 using Oceananigans.Grids: RightCenterFolded, RightFaceFolded, generate_coordinate, longitude_in_same_window
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, distribute_tripolar_grid
+using Printf: @sprintf
 
 using ..DataWrangling: dataset_variable_name, default_download_directory
 using ..DataWrangling.ORCA: ORCAOne, default_south_rows_to_remove, periodic_overlap, north_fold_pivot
@@ -264,15 +265,22 @@ function read_orca_staggered_mesh(ds, overlap; radius = Oceananigans.defaults.pl
     if has_all_variables(ds, metrics)
         λCC, λFC, λCF, λFF = orcaread(ds, "glamt"), shift_x(orcaread(ds, "glamu")), orcaread(ds, "glamv"), shift_x(orcaread(ds, "glamf"))
         φCC, φFC, φCF, φFF = orcaread(ds, "gphit"), shift_x(orcaread(ds, "gphiu")), orcaread(ds, "gphiv"), shift_x(orcaread(ds, "gphif"))
-        e1t, e1u, e1v, e1f = orcaread(ds, "e1t"),   shift_x(orcaread(ds, "e1u")),   orcaread(ds, "e1v"),   shift_x(orcaread(ds, "e1f"))
-        e2t, e2u, e2v, e2f = orcaread(ds, "e2t"),   shift_x(orcaread(ds, "e2u")),   orcaread(ds, "e2v"),   shift_x(orcaread(ds, "e2f"))
+        e1t, e1u, e1v, e1f = orcaread(ds, "e1t"),   orcaread(ds, "e1u"),   orcaread(ds, "e1v"),   orcaread(ds, "e1f")
+        e2t, e2u, e2v, e2f = orcaread(ds, "e2t"),   orcaread(ds, "e2u"),   orcaread(ds, "e2v"),   orcaread(ds, "e2f")
 
         if "e1e2t" in keys(ds)
-            AzCC, AzFC = orcaread(ds, "e1e2t"), shift_x(orcaread(ds, "e1e2u"))
-            AzCF, AzFF = orcaread(ds, "e1e2v"), shift_x(orcaread(ds, "e1e2f"))
+            AzCC, AzFC = orcaread(ds, "e1e2t"), orcaread(ds, "e1e2u")
+            AzCF, AzFF = orcaread(ds, "e1e2v"), orcaread(ds, "e1e2f")
         else
             AzCC, AzFC, AzCF, AzFF = e1t .* e2t, e1u .* e2u, e1v .* e2v, e1f .* e2f
         end
+
+        # In NEMO's own indexing, before the u and F points are shifted to Oceananigans' convention
+        narrow_strait_cells!(e1t, e2t, AzCC, AzFC, AzCF, e1v, e2u,
+                             orcaread(ds, "glamf"), orcaread(ds, "gphif"), λCC, φCC; radius)
+
+        e1u, e1f, e2u, e2f = shift_x(e1u), shift_x(e1f), shift_x(e2u), shift_x(e2f)
+        AzFC, AzFF = shift_x(AzFC), shift_x(AzFF)
 
         return (; λCC, λFC, λCF, λFF, φCC, φFC, φCF, φFF,
                   e1t, e1u, e1v, e1f, e2t, e2u, e2v, e2f,
@@ -289,6 +297,75 @@ function read_orca_staggered_mesh(ds, overlap; radius = Oceananigans.defaults.pl
     end
 
     throw(ArgumentError("Unsupported ORCA mesh: needs staggered variables $(metrics) or T/F variables $(coords)"))
+end
+
+"""
+    narrow_strait_cells!(e1t, e2t, AzCC, AzFC, AzCF, e1v, e2u, λFF, φFF, λCC, φCC; radius, threshold = 0.9)
+
+Make the cell geometry at NEMO's narrowed straits consistent with their narrowed faces.
+
+NEMO represents a strait narrower than a grid cell by cutting the width of its velocity faces, `e1v` for a
+north-south strait and `e2u` for an east-west one, and leaves the tracer cell between them and the
+velocity cells' areas at full size. The face then carries the strait's transport, but a velocity cell
+there is handed the full vertical transport of the tracer columns either side of it, and the tracer cell
+holds a 110 km-wide column of water behind a 13 km (say) face. Here the geometry is made consistent:
+
+* a tracer cell between two narrowed faces (the strait itself) takes their width, so its volume and
+  surface area are those of the channel;
+* a velocity cell at a narrowed face takes the area of the two half tracer cells it spans,
+  `(Az[T₁] + Az[T₂]) / 2`, which is what an ordinary cell's `e1 e2` approximates.
+
+The face widths themselves are left narrowed: they set the transport through the strait.
+
+A face counts as narrowed when its width falls short of `threshold` times the distance between its two
+corners while the tracer cells either side do not, which leaves out the degenerate padding rows south of
+Antarctica, whose metrics are all small. All arrays are in NEMO's indexing: u(i, j) lies between T(i, j)
+and T(i+1, j) and is bounded by F(i, j-1) and F(i, j); v(i, j) lies between T(i, j) and T(i, j+1) and is
+bounded by F(i-1, j) and F(i, j).
+"""
+function narrow_strait_cells!(e1t, e2t, AzCC, AzFC, AzCF, e1v, e2u, λFF, φFF, λCC, φCC; radius, threshold = 0.9)
+    Nx, Ny = size(e1t)
+
+    narrowed_v = falses(Nx, Ny)
+    narrowed_u = falses(Nx, Ny)
+
+    for j in 2:Ny-1, i in 2:Nx-1
+        corners = haversine((λFF[i-1, j], φFF[i-1, j]), (λFF[i, j], φFF[i, j]), radius)
+        narrowed_v[i, j] = (e1v[i, j] < threshold * corners) &
+                           (e1t[i, j] > threshold * corners) & (e1t[i, j+1] > threshold * corners)
+
+        corners = haversine((λFF[i, j-1], φFF[i, j-1]), (λFF[i, j], φFF[i, j]), radius)
+        narrowed_u[i, j] = (e2u[i, j] < threshold * corners) &
+                           (e2t[i, j] > threshold * corners) & (e2t[i+1, j] > threshold * corners)
+    end
+
+    channels = String[]
+
+    for j in 2:Ny-1, i in 2:Nx-1
+        if narrowed_v[i, j-1] & narrowed_v[i, j]
+            width = (e1v[i, j-1] + e1v[i, j]) / 2
+            AzCC[i, j] *= width / e1t[i, j]
+            e1t[i, j]   = width
+            push!(channels, @sprintf("(%.1fᵒ, %.1fᵒ) %.0f km", λCC[i, j], φCC[i, j], width / 1e3))
+        end
+
+        if narrowed_u[i-1, j] & narrowed_u[i, j]
+            width = (e2u[i-1, j] + e2u[i, j]) / 2
+            AzCC[i, j] *= width / e2t[i, j]
+            e2t[i, j]   = width
+            push!(channels, @sprintf("(%.1fᵒ, %.1fᵒ) %.0f km", λCC[i, j], φCC[i, j], width / 1e3))
+        end
+    end
+
+    for j in 2:Ny-1, i in 2:Nx-1
+        narrowed_v[i, j] && (AzCF[i, j] = (AzCC[i, j] + AzCC[i, j+1]) / 2)
+        narrowed_u[i, j] && (AzFC[i, j] = (AzCC[i, j] + AzCC[i+1, j]) / 2)
+    end
+
+    nfaces = count(narrowed_u) + count(narrowed_v)
+    nfaces > 0 && @info "Narrowed straits: $nfaces faces, channel cells at (λ, φ, width) $(join(channels, ", "))"
+
+    return nothing
 end
 
 function shift_face_x(data, overlap)

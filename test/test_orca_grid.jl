@@ -218,6 +218,46 @@ end
     end
 end
 
+# eORCA1 narrows 14 wet velocity faces to the width of the straits behind them, in pairs around seven
+# tracer cells: Lombok, 119.5ᵒE, Ombai and East and West Halmahera (e1v), Gibraltar and the Dardanelles (e2u).
+@testset "ORCA narrowed straits have consistent cell geometry" begin
+    Bathymetry = NumericalEarth.Bathymetry
+    path = metadata_path(Metadatum(:mesh_mask; dataset=ORCAOne()))
+
+    ds = Dataset(path)
+    overlap = periodic_overlap(ORCAOne())
+    mesh = Bathymetry.read_orca_staggered_mesh(ds, overlap)
+    Nx, Ny = size(Bathymetry.read_2d_nemo_variable(ds, "glamt"))
+    read_metric(name) = Bathymetry.orient_xy(Bathymetry.read_2d_nemo_variable(ds, name), Nx, Ny; name)
+    e1t, e2t, e1u, e2u, e1v, e2v = read_metric("e1t"), read_metric("e2t"), read_metric("e1u"),
+                                   read_metric("e2u"), read_metric("e1v"), read_metric("e2v")
+    close(ds)
+
+    shift_x(data) = Bathymetry.shift_face_x(data, overlap)
+
+    # Only the seven channel cells' widths change, and the face widths not at all
+    channels = findall(mesh.e1t .!= e1t) ∪ findall(mesh.e2t .!= e2t)
+    @test length(channels) == 7
+    @test mesh.e1v == e1v
+    @test mesh.e2u == shift_x(e2u)
+
+    # Lombok, at NEMO's (44, 165): the channel cell takes the 13 km width of its faces,
+    # and each face's v cell is half of each tracer cell it spans
+    @test mesh.e1t[44, 165] == e1v[44, 165] == 13e3
+    @test mesh.AzCC[44, 165] ≈ 13e3 * e2t[44, 165]
+    for j in (164, 165)
+        @test mesh.AzCF[44, j] ≈ (mesh.AzCC[44, j] + mesh.AzCC[44, j+1]) / 2
+    end
+
+    # Every other area is the product of the mesh's own metrics
+    changed_CC = findall(mesh.AzCC .!= e1t .* e2t)
+    changed_CF = findall(mesh.AzCF .!= e1v .* e2v)
+    changed_FC = findall(mesh.AzFC .!= shift_x(e1u .* e2u))
+    @test Set(changed_CC) == Set(channels)
+    @test length(changed_CF) == 10
+    @test length(changed_FC) == 4
+end
+
 @testset "ORCAOne bathymetry retrieval" begin
     bathy_md = Metadatum(:bottom_height; dataset=ORCAOne())
     download(bathy_md)
