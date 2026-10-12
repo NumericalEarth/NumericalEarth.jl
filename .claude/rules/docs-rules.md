@@ -13,11 +13,11 @@ julia --project=docs/ docs/make.jl
 
 ## Fast Local Builds
 
-For local testing (especially without GPU), temporarily modify `docs/make.jl`:
-1. Comment out Literate examples in `example_scripts` and `example_pages`
+Long-running examples (`build_always = false`) are skipped unless
+`NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=true`. For faster local testing, temporarily modify `docs/make.jl`:
+1. Comment out entries in `examples` and `developer_examples`
 2. Add `warnonly = [:cross_references, :example_block, :linkcheck]`
-3. Comment out GPU-requiring pages (e.g., `simulation_tips.md`)
-4. Optional: `doctest = false`, `linkcheck = false`, `draft = true`
+3. Optional: `doctest = false`, `linkcheck = false`, `draft = true`
 
 **Remember to revert these changes before committing!**
 

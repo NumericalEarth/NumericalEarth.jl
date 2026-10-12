@@ -1,7 +1,7 @@
 name = "NumericalEarth"
 uuid = "904d977b-046a-4731-8b86-9235c0d1ef02"
 license = "MIT"
-version = "0.8.1"
+version = "0.8.2"
 authors = ["NumericalEarth contributors"]
 
 [workspace]
@@ -113,7 +113,7 @@ RRTMGP = "0.21.9, 0.22"
 Reactant = "0.2.278"
 Scratch = "1"
 SeawaterPolynomials = "0.3.11"
-SpeedyWeather = "0.22"
+SpeedyWeather = "0.22, 0.23"
 StaticArrays = "1"
 Statistics = "<0.0.1, 1"
 Thermodynamics = "0.15.3, 1"
