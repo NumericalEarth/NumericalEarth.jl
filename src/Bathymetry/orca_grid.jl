@@ -275,7 +275,6 @@ function read_orca_staggered_mesh(ds, overlap; radius = Oceananigans.defaults.pl
             AzCC, AzFC, AzCF, AzFF = e1t .* e2t, e1u .* e2u, e1v .* e2v, e1f .* e2f
         end
 
-        # In NEMO's own indexing, before the u and F points are shifted to Oceananigans' convention
         narrow_strait_cells!(e1t, e2t, AzCC, AzFC, AzCF, e1u, e2u, e1v, e2v,
                              orcaread(ds, "glamf"), orcaread(ds, "gphif"), λCC, φCC; radius)
 
