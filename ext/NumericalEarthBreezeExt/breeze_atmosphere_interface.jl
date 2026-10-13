@@ -2,7 +2,7 @@ using Oceananigans.Grids: Center
 using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.Fields: compute!
 using Breeze.AtmosphereModels: thermodynamic_density, dynamics_pressure,
-                               specific_humidity, surface_precipitation_flux
+                               specific_humidity, bottom_precipitation_flux
 using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
 using GPUArraysCore: @allowscalar
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
@@ -84,8 +84,8 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchang
     # Breeze's surface rain-flux diagnostic (positive down, kg m⁻² s⁻¹); schemes with no
     # precipitating species define no method — fall back to an inert zero field.
     # TODO: move the fallback into Breeze; add a snow analog (Jˢⁿ stays zero below).
-    Jʳⁿ = if applicable(surface_precipitation_flux, atmosphere, atmosphere.microphysics)
-        surface_precipitation_flux(atmosphere)
+    Jʳⁿ = if applicable(bottom_precipitation_flux, atmosphere, atmosphere.microphysics)
+        bottom_precipitation_flux(atmosphere)
     else
         Oceananigans.CenterField(exchange_grid)
     end
