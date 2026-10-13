@@ -9,9 +9,10 @@
 #
 # Right : AMOC index time series — monthly ψ_max at 26.5°N per case
 #         against the RAPID monthly index `moc_mar_hc10`. The model
-#         time axis is decimal calendar year assuming a 1958-01-01
-#         simulation start (the OMIP/JRA55-do convention used by
-#         `compute_monthly_means`).
+#         line is the RAPID years of the latest completed forcing
+#         cycle (`observation_window`), on the forcing calendar.
+#         Both the profile and the index average model years 2004–2017
+#         against the whole RAPID record, which continues past 2017.
 function fig26(caches, labels, cases)
     rapid_profile = rapid_amoc_profile()
     rapid_index   = rapid_amoc_timeseries()
@@ -63,7 +64,15 @@ function fig26(caches, labels, cases)
     for (i, lab) in enumerate(labels)
         c = caches[lab]
         ts = get_field(c, :amoc_max_timeseries)
-        lines!(ax_index, ts.year, ts.psi_max;
+        # `ts.year` is 1958 + t / 365 d, which runs past 2018 once the forcing cycles. Undo it, keep the
+        # RAPID years of the latest completed cycle and place them on the forcing calendar, so the
+        # model lies over the RAPID record it is forced alongside.
+        t = (ts.year .- 1958) .* years
+        start_time, stop_time = observation_window(c, RAPID_YEARS)
+        in_rapid_years = start_time .<= t .<= stop_time
+        first_year = max(RAPID_YEARS[1], case_forcing_years(c)[1])
+        forcing_calendar_year = first_year .+ (t[in_rapid_years] .- start_time) ./ (365.25 * 86400)
+        lines!(ax_index, forcing_calendar_year, ts.psi_max[in_rapid_years];
                color = case_colors[i], linewidth = CASE_LINEWIDTH, label = lab)
     end
 
