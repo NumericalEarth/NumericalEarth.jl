@@ -88,6 +88,61 @@ function resolve_case_window(case::NamedTuple, run_dir::AbstractString, prefix::
     error("Case '$(get(case, :label, prefix))': must specify either `start_time`/`stop_time` or `years_from_end`.")
 end
 
+#####
+##### Observation-matched averaging windows
+#####
+
+# Calendar years each observational reference covers, inclusive. A model mean compared against one of
+# them is taken over the same forcing years instead of the case window: the last decade of the record
+# is forced by JRA55 2008–2017, which is not the period a 1961–2008 MLD climatology describes. An open
+# end is `typemax(Int)`; every span is clipped to the forcing span by `observation_window`.
+#
+#   WOA23 `decav` T/S:       the average of the seven decades 1955–2022.
+#   dBM DR003 MLD:           profiles from 1961 to 2008 (mld.ifremer.fr, product page).
+#   NCEP/NCAR R1 `mon.ltm`:  `climo_period = "1991/01/01 - 2020/12/31"` in the file header.
+#   HadISST1 SIC:            the climatology common.jl builds, `HADISST_CLIMATOLOGY_YEARS`.
+#   NSIDC / PIOMAS:          1979 onwards, `NSIDC_FIRST_YEAR`.
+#   RAPID-MOCHA:             April 2004 onwards.
+const WOA_YEARS       = (1955, 2022)
+const DBM_MLD_YEARS   = (1961, 2008)
+const NCEP_LTM_YEARS  = (1991, 2020)
+const SEA_ICE_YEARS   = (NSIDC_FIRST_YEAR, typemax(Int))
+const RAPID_YEARS     = (2004, typemax(Int))
+
+"""
+    observation_window(case_cache, observation_years) -> (start_time, stop_time)
+
+Model time span, in seconds, over which the run is forced by calendar `observation_years = (first, last)`
+(inclusive, clipped to the forcing span), taken from the latest forcing cycle the record has completed
+that far. A run whose current cycle has not yet reached `last` is compared over the cycle before.
+
+The cycle is counted in days between the 1 January bounds of `case_forcing_years`, which is exactly
+the 21915-day `Cyclical` period of JRA55 1958–2017, so the window does not drift with cycle number the
+way a Gregorian date reconstructed from the model clock does.
+
+Output is averaged over an interval and stamped at its end, so the window opens one second after the
+cycle boundary: the snapshot stamped exactly there averages the days before it.
+"""
+function observation_window(c::CaseCache, observation_years)
+    forcing_first, forcing_end = case_forcing_years(c)
+    first_year = max(observation_years[1], forcing_first)
+    last_year  = min(observation_years[2], forcing_end - 1)
+    first_year <= last_year ||
+        error("Observation years $(observation_years) do not overlap the forcing span $(forcing_first)–$(forcing_end - 1).")
+
+    origin       = Date(forcing_first, 1, 1)
+    cycle        = Dates.value(Date(forcing_end, 1, 1) - origin) * 86400.0
+    start_offset = Dates.value(Date(first_year, 1, 1) - origin) * 86400.0
+    stop_offset  = Dates.value(Date(last_year + 1, 1, 1) - origin) * 86400.0
+
+    end_time = get_field(c, :record_end_time)
+    completed_cycles = floor((end_time - stop_offset) / cycle)
+    completed_cycles >= 0 ||
+        error("Case '$(c.label)': the record ends before forcing year $last_year is first completed.")
+
+    return completed_cycles * cycle + start_offset + 1, completed_cycles * cycle + stop_offset
+end
+
 # Sentinel used to memoize loaders that legitimately return `nothing`
 # (e.g. dBM climatology when the file is missing). Without this a
 # successful "no result" would re-trigger the loader on every access.
@@ -174,17 +229,20 @@ constructed. Pass `()` for fields independent of model output.
 
 Set `window_dependent = false` for a loader that reads the whole record
 rather than `case_cache.start_time`/`stop_time`; the key then carries
-`WHOLE_RECORD_WINDOW` in place of the window.
+`WHOLE_RECORD_WINDOW` in place of the window. Pass `observation_years`
+for a loader averaged over `observation_window(case_cache, observation_years)`;
+the key then carries that window.
 """
 function current_disk_cache_key(c::CaseCache, fts_syms::Tuple{Vararg{Symbol}};
-                                window_dependent = true)
+                                window_dependent = true, observation_years = nothing)
     Nts = ntuple(length(fts_syms)) do i
         fts_sym  = fts_syms[i]
         file_sym = get(FTS_DISK_PATH_SYM, fts_sym, nothing)
         isnothing(file_sym) && error("No JLD2 stem registered for FTS :$fts_sym")
         return total_jld2_timeseries_snapshot_count(get_field(c, file_sym))
     end
-    start_time, stop_time = window_dependent ? (c.start_time, c.stop_time) : WHOLE_RECORD_WINDOW
+    start_time, stop_time = !isnothing(observation_years) ? observation_window(c, observation_years) :
+                            window_dependent ? (c.start_time, c.stop_time) : WHOLE_RECORD_WINDOW
     return DiskCacheKey(Nts, start_time, stop_time)
 end
 
@@ -257,15 +315,17 @@ the loader is rerun and the cache is overwritten.
 Use `()` for fields that depend only on the grid or climatologies.
 
 Pass `window_dependent = false` when `loader` reads the whole record instead of the case averaging
-window, so the window stays out of the validation key.
+window, so the window stays out of the validation key, and `observation_years` when it averages over
+`observation_window(case_cache, observation_years)`, so that window is the one in the key.
 """
 function disk_cached(loader::Function, sym::Symbol;
                      source_fts_syms::Union{Symbol, Tuple{Vararg{Symbol}}} = (),
-                     window_dependent = true)
+                     window_dependent = true,
+                     observation_years = nothing)
     sources = source_fts_syms isa Symbol ? (source_fts_syms,) : source_fts_syms
     return function (c::CaseCache)
         path    = diag_cache_path(c, sym)
-        new_key = current_disk_cache_key(c, sources; window_dependent)
+        new_key = current_disk_cache_key(c, sources; window_dependent, observation_years)
         cached  = read_disk_cache(path)
         if !isnothing(cached)
             value, stored_key = cached
@@ -351,6 +411,9 @@ LOADERS[:surface_file]  = c -> find_first_file(c.run_dir, c.prefix, "surface")
 LOADERS[:fields_file]   = c -> find_first_file(c.run_dir, c.prefix, "fields")
 LOADERS[:averages_file] = c -> find_first_file(c.run_dir, c.prefix, "averages")
 
+# Time of the last surface snapshot, which places `observation_window` in the latest completed cycle.
+LOADERS[:record_end_time] = c -> last_jld2_timeseries_time(get_field(c, :surface_file))
+
 #####
 ##### Raw FieldTimeSeries
 #####
@@ -419,9 +482,9 @@ LOADERS[:depth]         = c -> collect(znodes(get_field(c, :grid), Center()))
 ##### Surface time means (with land masking)
 #####
 
-function time_mean_drop(c, fts_sym)
+function time_mean_drop(c, fts_sym; window = (c.start_time, c.stop_time))
     fts = get_field(c, fts_sym)
-    return dropdims(compute_time_mean(fts; start_time = c.start_time, stop_time = c.stop_time); dims = 3)
+    return dropdims(compute_time_mean(fts; start_time = window[1], stop_time = window[2]); dims = 3)
 end
 
 # Apply land mask in place; `nothing` is passed through (for optional
@@ -435,11 +498,12 @@ maybe_diff!(c, a_sym, b_sym) = let b = get_field(c, b_sym)
     isnothing(b) ? nothing : masked!(c, get_field(c, a_sym) .- b)
 end
 
-LOADERS[:sst] = disk_cached(:sst; source_fts_syms = :tos_fts) do c
-    masked!(c, time_mean_drop(c, :tos_fts))
+# SST and SSS are only plotted against WOA, so they average over the WOA years.
+LOADERS[:sst] = disk_cached(:sst; source_fts_syms = :tos_fts, observation_years = WOA_YEARS) do c
+    masked!(c, time_mean_drop(c, :tos_fts; window = observation_window(c, WOA_YEARS)))
 end
-LOADERS[:sss] = disk_cached(:sss; source_fts_syms = :sos_fts) do c
-    masked!(c, time_mean_drop(c, :sos_fts))
+LOADERS[:sss] = disk_cached(:sss; source_fts_syms = :sos_fts, observation_years = WOA_YEARS) do c
+    masked!(c, time_mean_drop(c, :sos_fts; window = observation_window(c, WOA_YEARS)))
 end
 LOADERS[:ssh] = disk_cached(:ssh; source_fts_syms = :zos_fts) do c
     masked!(c, time_mean_drop(c, :zos_fts))
@@ -464,9 +528,11 @@ LOADERS[:ssh_variance] = c -> masked!(c, get_field(c, :ssh_squared_mean) .- get_
 # them staggered. Cache both components together in a single pair so
 # the time-mean of `tauuo`/`tauvo` runs once even if both stresses
 # are requested.
-centered_stress(c, fts_sym) = -time_mean_drop(c, fts_sym) .* ρ_ocean
+# Averaged over the NCEP long-term-mean years it is compared against.
+centered_stress(c, fts_sym) = -time_mean_drop(c, fts_sym; window = observation_window(c, NCEP_LTM_YEARS)) .* ρ_ocean
 
-LOADERS[:wind_stress_pair] = disk_cached(:wind_stress_pair; source_fts_syms = :tauuo_fts) do c
+LOADERS[:wind_stress_pair] = disk_cached(:wind_stress_pair; source_fts_syms = :tauuo_fts,
+                                         observation_years = NCEP_LTM_YEARS) do c
     τx = centered_stress(c, :tauuo_fts)
     τy = centered_stress(c, :tauvo_fts)
     size(τx, 1) == size(τy, 1) + 1 && (τx = (τx[1:end-1, :] .+ τx[2:end, :]) ./ 2)
@@ -723,8 +789,11 @@ LOADERS[:euc_obs_equatorial] = c -> nothing
 ##### Sea-ice concentration (mean + monthly bins)
 #####
 
-LOADERS[:sic_mean_and_monthly] = disk_cached(:sic_mean_and_monthly; source_fts_syms = :sic_fts) do c
-    compute_mean_and_monthly(get_field(c, :sic_fts); start_time = c.start_time, stop_time = c.stop_time)
+# Averaged over the years of the HadISST climatology it is compared against.
+LOADERS[:sic_mean_and_monthly] = disk_cached(:sic_mean_and_monthly; source_fts_syms = :sic_fts,
+                                             observation_years = HADISST_CLIMATOLOGY_YEARS) do c
+    start_time, stop_time = observation_window(c, HADISST_CLIMATOLOGY_YEARS)
+    compute_mean_and_monthly(get_field(c, :sic_fts); start_time, stop_time)
 end
 
 function sic_month(c, m)
@@ -778,8 +847,11 @@ LOADERS[:sic_september_bias_latlon] = c -> sic_bias_latlon(c, :sic_september_lat
 ##### Mixed-layer depth (kernel diagnostic, monthly min/max)
 #####
 
-LOADERS[:mld_monthly] = disk_cached(:mld_monthly; source_fts_syms = :mld_fts) do c
-    compute_monthly_means(get_field(c, :mld_fts); start_time = c.start_time, stop_time = c.stop_time)
+# Averaged over the years of the dBM profiles it is compared against.
+LOADERS[:mld_monthly] = disk_cached(:mld_monthly; source_fts_syms = :mld_fts,
+                                    observation_years = DBM_MLD_YEARS) do c
+    start_time, stop_time = observation_window(c, DBM_MLD_YEARS)
+    compute_monthly_means(get_field(c, :mld_fts); start_time, stop_time)
 end
 
 # Stream a per-cell reduction across all available monthly bins of
@@ -899,10 +971,12 @@ LOADERS[:meridional_wind_stress_bias_ncep] = c -> maybe_diff!(c, :meridional_win
 ##### Sea-ice integrals (heavy: per-snapshot loop over sithick + sic)
 #####
 
-LOADERS[:sea_ice_diagnostics] = disk_cached(:sea_ice_diagnostics; source_fts_syms = :sithick_fts) do c
-    compute_ice_diagnostics(c.run_dir, c.prefix, get_field(c, :grid);
-                            start_time = c.start_time,
-                            stop_time  = c.stop_time)
+# Restricted to the satellite era that NSIDC and PIOMAS cover, so `observation_year_window` builds the
+# observed reference over the same forcing years.
+LOADERS[:sea_ice_diagnostics] = disk_cached(:sea_ice_diagnostics; source_fts_syms = :sithick_fts,
+                                            observation_years = SEA_ICE_YEARS) do c
+    start_time, stop_time = observation_window(c, SEA_ICE_YEARS)
+    compute_ice_diagnostics(c.run_dir, c.prefix, get_field(c, :grid); start_time, stop_time)
 end
 
 # JRA55-do span the OMIP runs are forced with. The forcing is `Cyclical`,
@@ -1346,12 +1420,17 @@ end
 
 # 3-D time-means (loaded on demand for zonal-section figures). Not
 # disk-cached because each is several hundred megabytes per ORCA case;
-# the smaller `:zonal_*` derivatives below are.
-for (sym, fts) in ((:time_mean_temperature_3d, :to_fts),
-                   (:time_mean_salinity_3d,    :so_fts),
-                   (:time_mean_buoyancy_3d,    :bo_fts))
-    LOADERS[sym] = let f = fts
-        c -> compute_time_mean(get_field(c, f); start_time = c.start_time, stop_time = c.stop_time)
+# the smaller `:zonal_*` derivatives below are. Temperature and salinity are compared against WOA, so
+# they average over the WOA years; buoyancy is compared against its own initial state, so it keeps the
+# case window (`nothing`).
+for (sym, fts, obs_years) in ((:time_mean_temperature_3d, :to_fts, WOA_YEARS),
+                              (:time_mean_salinity_3d,    :so_fts, WOA_YEARS),
+                              (:time_mean_buoyancy_3d,    :bo_fts, nothing))
+    LOADERS[sym] = let f = fts, y = obs_years
+        c -> begin
+            start_time, stop_time = isnothing(y) ? (c.start_time, c.stop_time) : observation_window(c, y)
+            compute_time_mean(get_field(c, f); start_time, stop_time)
+        end
     end
 end
 LOADERS[:initial_buoyancy_3d] = c -> Array(interior(get_field(c, :bo_fts)[1]))
@@ -1360,18 +1439,18 @@ LOADERS[:initial_buoyancy_3d] = c -> Array(interior(get_field(c, :bo_fts)[1]))
 zonal_of(c, sym) = compute_zonal_mean(get_field(c, sym), get_field(c, :ocean_mask_3d),
                                        get_field(c, :zonal_regridder), ZONAL_NLON, ZONAL_NLAT)
 
-# Each zonal section: (sym, source-3D, source-FTS for invalidation).
+# Each zonal section: (sym, source-3D, source-FTS for invalidation, observation years of its window).
 # WOA entries pass `nothing` since they don't depend on model output.
-for (sym, src, fts) in ((:zonal_temperature,       :time_mean_temperature_3d, :to_fts),
-                        (:zonal_salinity,          :time_mean_salinity_3d,    :so_fts),
-                        (:zonal_buoyancy,          :time_mean_buoyancy_3d,    :bo_fts),
-                        (:zonal_initial_buoyancy,  :initial_buoyancy_3d,      :bo_fts),
-                        (:zonal_woa_temperature,   :woa_temperature,          nothing),
-                        (:zonal_woa_salinity,      :woa_salinity,             nothing))
+for (sym, src, fts, obs_years) in ((:zonal_temperature,       :time_mean_temperature_3d, :to_fts,  WOA_YEARS),
+                                   (:zonal_salinity,          :time_mean_salinity_3d,    :so_fts,  WOA_YEARS),
+                                   (:zonal_buoyancy,          :time_mean_buoyancy_3d,    :bo_fts,  nothing),
+                                   (:zonal_initial_buoyancy,  :initial_buoyancy_3d,      :bo_fts,  nothing),
+                                   (:zonal_woa_temperature,   :woa_temperature,          nothing, nothing),
+                                   (:zonal_woa_salinity,      :woa_salinity,             nothing, nothing))
     LOADERS[sym] = let s = src
         wrapped = c -> zonal_of(c, s)
         isnothing(fts) ? disk_cached(wrapped, sym; window_dependent = false) :
-                         disk_cached(wrapped, sym; source_fts_syms = fts)
+                         disk_cached(wrapped, sym; source_fts_syms = fts, observation_years = obs_years)
     end
 end
 
@@ -1400,7 +1479,7 @@ LOADERS[:squared_salinity_bias_3d] =
 for (sym, src, fts) in ((:zonal_temperature_rms, :squared_temperature_bias_3d, :to_fts),
                         (:zonal_salinity_rms,    :squared_salinity_bias_3d,    :so_fts))
     LOADERS[sym] = let s = src
-        disk_cached(c -> sqrt.(zonal_of(c, s)), sym; source_fts_syms = fts)
+        disk_cached(c -> sqrt.(zonal_of(c, s)), sym; source_fts_syms = fts, observation_years = WOA_YEARS)
     end
 end
 
@@ -1499,22 +1578,24 @@ function overturning_streamfunction(volume_flux, atl)
     return -cumsum(transport_per_layer; dims = 2) ./ 1e6   # Sv
 end
 
-LOADERS[:amoc_eulerian] = disk_cached(:amoc_eulerian; source_fts_syms = :vvol_fts) do c
-    vvol_mean = compute_time_mean(get_field(c, :vvol_fts);
-                                   start_time = c.start_time,
-                                   stop_time  = c.stop_time)
+# The streamfunction feeds the ψ(z) profile compared against RAPID (fig26), so it averages over the
+# RAPID years; fig23 shows the same mean.
+LOADERS[:amoc_eulerian] = disk_cached(:amoc_eulerian; source_fts_syms = :vvol_fts,
+                                      observation_years = RAPID_YEARS) do c
+    start_time, stop_time = observation_window(c, RAPID_YEARS)
+    vvol_mean = compute_time_mean(get_field(c, :vvol_fts); start_time, stop_time)
     return overturning_streamfunction(vvol_mean, get_field(c, :atlantic_mask_2d))
 end
 
 # Keyed on `:vvol_fts` rather than `:vvolgm_fts`: both live in the same `_fields`
 # file, so its stamp invalidates this too, and keying on a symbol that may not
 # resolve would throw for runs without GM.
-LOADERS[:amoc_bolus] = disk_cached(:amoc_bolus; source_fts_syms = :vvol_fts) do c
+LOADERS[:amoc_bolus] = disk_cached(:amoc_bolus; source_fts_syms = :vvol_fts,
+                                   observation_years = RAPID_YEARS) do c
     vvolgm_fts = optional_field(c, :vvolgm_fts)
     isnothing(vvolgm_fts) && return zeros(size(get_field(c, :amoc_eulerian)))
-    vvolgm_mean = compute_time_mean(vvolgm_fts;
-                                     start_time = c.start_time,
-                                     stop_time  = c.stop_time)
+    start_time, stop_time = observation_window(c, RAPID_YEARS)
+    vvolgm_mean = compute_time_mean(vvolgm_fts; start_time, stop_time)
     return overturning_streamfunction(vvolgm_mean, get_field(c, :atlantic_mask_2d))
 end
 
