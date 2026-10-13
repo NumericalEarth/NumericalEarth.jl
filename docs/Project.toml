@@ -37,7 +37,7 @@ NumericalEarth = {path = ".."}
 
 [compat]
 ArchGDAL = "0.10"
-Breeze = "0.11"
+Breeze = "0.12"
 CUDA = "6"
 CairoMakie = "0.15"
 ConservativeRegridding = "0.2"
