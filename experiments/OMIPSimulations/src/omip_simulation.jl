@@ -1876,7 +1876,10 @@ end
 # each step by a `ConservativeSurfaceFluxRestoringCallback` registered in `omip_simulation`.
 # WOA Practical Salinity is converted to TEOS-10 Absolute Salinity at setup so
 # the restoring target matches the ocean prognostic-S convention.
-function salinity_surface_restoring(grid, dataset; restoring_dir, piston_velocity)
+# `time_indexing` sets how the climatology cycles, e.g. `Cyclical(365.25days)` to keep it in phase with a
+# multi-year forcing cycle; the default infers the period from the dataset's dates.
+function salinity_surface_restoring(grid, dataset; restoring_dir, piston_velocity,
+                                    time_indexing = Oceananigans.OutputReaders.Cyclical())
 
     Nz = size(grid, 3)
     Δz_surface = CUDA.@allowscalar Δzᶜᶜᶜ(1, 1, Nz, grid)
@@ -1887,6 +1890,7 @@ function salinity_surface_restoring(grid, dataset; restoring_dir, piston_velocit
 
     restoring = DatasetRestoring(Smetadata, Oceananigans.Architectures.architecture(grid);
                                  rate,
+                                 time_indexing,
                                  time_indices_in_memory = length(Smetadata))
 
     woa_salinity_fts_to_teos10!(restoring.field_time_series)
