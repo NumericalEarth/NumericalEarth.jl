@@ -383,7 +383,7 @@ end
                                  longitude = (0, 0.2), latitude = (0, 0.2),
                                  topology = (Bounded, Bounded, Flat))
     closure = MorphometricRoughness()
-    fields = urban_roughness(grid, UniformBuildings(); closure, neighborhood = 5000)
+    fields = urban_roughness(grid, UniformBuildings(); closure, surface_layer_height = 100, neighborhood = 5000)
     @test keys(fields) == (:momentum_roughness_length, :zero_plane_displacement, :urban_fraction, :building_height)
 
     ℓᵐ, d = aerodynamic_parameters(closure, 0.4, 25.0, 8.0, 60.0, 0.3)
@@ -391,4 +391,176 @@ end
     @test all(interior(fields.zero_plane_displacement, :, :, 1) .≈ d)
     @test all(interior(fields.urban_fraction, :, :, 1) .== 1)
     @test all(interior(fields.building_height, :, :, 1) .≈ 25)
+end
+
+struct TwoNeighborhoods end
+
+function NumericalEarth.Lands.building_morphometry(grid, ::TwoNeighborhoods)
+    western(western_value, eastern_value) =
+        set!(Field{Center, Center, Nothing}(grid), (λ, φ) -> λ < 0.01 ? western_value : eastern_value)
+    return (; plan_area_index = western(0.2, 0.8), mean_building_height = western(10.0, 50.0))
+end
+
+@testset "Dataset-level urban roughness preserves the area-mean neutral drag" begin
+    # One grid cell holding two equal-area neighborhoods of different density and height.
+    grid = LatitudeLongitudeGrid(CPU(), Float64; size = (1, 1),
+                                 longitude = (0, 0.02), latitude = (0, 0.01),
+                                 topology = (Bounded, Bounded, Flat))
+    closure = uniform_height_closure()
+    z = 100
+    fields = urban_roughness(grid, TwoNeighborhoods(); closure, surface_layer_height = z, neighborhood = 1100)
+
+    drag(ℓᵐ, d) = (closure.von_karman_constant / log((z - d) / ℓᵐ))^2
+    ℓ₁, d₁ = aerodynamic_parameters(closure, 0.2, 10.0)
+    ℓ₂, d₂ = aerodynamic_parameters(closure, 0.8, 50.0)
+    C₁, C₂ = drag(ℓ₁, d₁), drag(ℓ₂, d₂)
+    ℓᵐ = interior(fields.momentum_roughness_length)[1]
+    d  = interior(fields.zero_plane_displacement)[1]
+
+    @test drag(ℓᵐ, d) ≈ (C₁ + C₂) / 2
+    @test d ≈ (C₁ * d₁ + C₂ * d₂) / (C₁ + C₂)
+    @test interior(fields.building_height)[1] ≈ (0.2 * 10 + 0.8 * 50) / (0.2 + 0.8)
+    @test interior(fields.urban_fraction)[1] == 1
+end
+
+struct AlternatingBuildings
+    measured :: Bool
+end
+
+function NumericalEarth.Lands.building_morphometry(grid, buildings::AlternatingBuildings)
+    odd = isodd.(1:size(grid, 1))
+    alternating(odd_value, even_value) =
+        (field = Field{Center, Center, Nothing}(grid); interior(field) .= ifelse.(odd, odd_value, even_value); field)
+    properties = (; plan_area_index = alternating(0.6, 0.2), mean_building_height = alternating(30.0, 10.0))
+    buildings.measured || return properties
+    return (; properties..., building_height_deviation = alternating(0.0, 0.0),
+              maximum_building_height = alternating(30.0, 10.0), frontal_area_index = alternating(0.5, 0.1))
+end
+
+@testset "On a grid finer than the neighborhood the closure sees the pooled neighborhood" begin
+    # 100 m cells alternating dense-tall and sparse-low; a 500 m neighborhood pools five cells.
+    Nx = 8
+    grid = LatitudeLongitudeGrid(CPU(), Float64; size = (Nx, 1),
+                                 longitude = (0, Nx * 0.0009), latitude = (0, 0.0009),
+                                 topology = (Bounded, Bounded, Flat))
+    closure = MorphometricRoughness()
+
+    for measured in (false, true)
+        fields = urban_roughness(grid, AlternatingBuildings(measured); closure, surface_layer_height = 100, neighborhood = 500)
+        roughness    = interior(fields.momentum_roughness_length, :, 1, 1)
+        displacement = interior(fields.zero_plane_displacement, :, 1, 1)
+        height       = interior(fields.building_height, :, 1, 1)
+
+        # Cell 3 pools three dense cells and two sparse ones; cell 4 the reverse.
+        for (i, dense) in ((3, 3), (4, 2))
+            sparse = 5 - dense
+            built  = 0.6dense + 0.2sparse
+            λᵖ = built / 5
+            h  = (0.6 * 30 * dense + 0.2 * 10 * sparse) / built
+            σʰ = sqrt((0.6 * 30^2 * dense + 0.2 * 10^2 * sparse) / built - h^2)
+            λᶠ = (0.5dense + 0.1sparse) / 5
+            ℓᵐ, d = measured ? aerodynamic_parameters(closure, λᵖ, h, σʰ, 30.0, λᶠ) : aerodynamic_parameters(closure, λᵖ, h)
+            @test roughness[i] ≈ ℓᵐ
+            @test displacement[i] ≈ d
+            @test height[i] ≈ h
+        end
+    end
+end
+
+struct PatchBuildings end
+
+function NumericalEarth.Lands.building_morphometry(grid, ::PatchBuildings)
+    fraction = set!(Field{Center, Center, Nothing}(grid), (λ, φ) -> 0.018 < λ < 0.027 ? 0.6 : 0.0)
+    height = set!(Field{Center, Center, Nothing}(grid), (λ, φ) -> 0.018 < λ < 0.027 ? 20.0 : NaN)
+    return (; plan_area_index = fraction, mean_building_height = height)
+end
+
+for arch in test_architectures
+    @testset "Stretched grids resolve the urban patch on $arch" begin
+        grid = LatitudeLongitudeGrid(arch; size = (3, 1, 1),
+                                     longitude = [0, 0.009, 0.018, 0.918], latitude = (0, 0.009),
+                                     z = (0, 10), topology = (Bounded, Bounded, Bounded))
+        fields = urban_roughness(grid, PatchBuildings(); surface_layer_height = 100)
+        @test Array(interior(fields.urban_fraction))[:, 1, 1] ≈ [0, 0, 0.01]
+        @test Array(interior(fields.building_height))[:, 1, 1] ≈ [0, 0, 20]
+        expected, _ = aerodynamic_parameters(MorphometricRoughness(), 0.6, 20)
+        @test Array(interior(fields.momentum_roughness_length))[end] ≈ expected
+    end
+end
+
+@testset "Empty cells with missing height do not dilute urban height" begin
+    grid = LatitudeLongitudeGrid(CPU(); size = (8, 1),
+                                 longitude = (0.0171, 0.0243), latitude = (0, 0.0009),
+                                 topology = (Bounded, Bounded, Flat))
+    fields = urban_roughness(grid, PatchBuildings(); surface_layer_height = 100, neighborhood = 500)
+    @test all(isfinite, interior(fields.momentum_roughness_length))
+    @test all(≈(20), interior(fields.building_height))
+end
+
+struct LatitudeBandBuildings end
+
+function NumericalEarth.Lands.building_morphometry(grid, ::LatitudeBandBuildings)
+    fraction = set!(Field{Center, Center, Nothing}(grid), (λ, φ) -> φ < 60 ? 0.5 : 0.0)
+    return (; plan_area_index = fraction, mean_building_height = 20.0)
+end
+
+@testset "Urban area uses spherical cell areas" begin
+    grid = LatitudeLongitudeGrid(CPU(); size = (1, 1), longitude = (0, 1), latitude = (0, 80),
+                                 topology = (Bounded, Bounded, Flat))
+    fields = urban_roughness(grid, LatitudeBandBuildings(); surface_layer_height = 100,
+                             neighborhood = grid.radius * deg2rad(20))
+    @test only(interior(fields.urban_fraction)) ≈ sind(60) / sind(80)
+    @test only(interior(fields.building_height)) ≈ 20
+end
+
+struct PrescribedBuildings{P}
+    properties :: P
+end
+
+function NumericalEarth.Lands.building_morphometry(grid, buildings::PrescribedBuildings)
+    return map(value -> set!(Field{Center, Center, Nothing}(grid), value), buildings.properties)
+end
+
+for arch in test_architectures
+    @testset "Missing morphometry in unbuilt cells on $arch" begin
+        grid = LatitudeLongitudeGrid(arch; size = (3, 1), longitude = (0, 0.0027), latitude = (0, 0.0009),
+                                     topology = (Bounded, Bounded, Flat))
+        built(value) = (λ, φ) -> λ < 0.0009 ? NaN : value
+        buildings = PrescribedBuildings((; plan_area_index = (λ, φ) -> λ < 0.0009 ? 0.0 : 0.4,
+                                           mean_building_height = built(20.0), building_height_deviation = built(0.0),
+                                           maximum_building_height = built(20.0), frontal_area_index = built(0.3)))
+        closure = uniform_height_closure()
+        fields = urban_roughness(grid, buildings; closure, surface_layer_height = 100, neighborhood = 500)
+        ℓᵐ, d = aerodynamic_parameters(closure, 0.4 * 2 / 3, 20.0, 0.0, 20.0, 0.3 * 2 / 3)
+        @test all(≈(ℓᵐ), Array(interior(fields.momentum_roughness_length)))
+        @test all(≈(d), Array(interior(fields.zero_plane_displacement)))
+        @test all(≈(20), Array(interior(fields.building_height)))
+
+        # Raster height steps can assign a neighboring wall's frontal area to an unbuilt cell.
+        buildings = PrescribedBuildings((; buildings.properties...,
+                                           frontal_area_index = (λ, φ) -> λ < 0.0009 ? 0.15 : 0.3))
+        fields = urban_roughness(grid, buildings; closure, surface_layer_height = 100, neighborhood = 500)
+        ℓᵐ, _ = aerodynamic_parameters(closure, 0.4 * 2 / 3, 20.0, 0.0, 20.0, 0.25)
+        @test all(≈(ℓᵐ), Array(interior(fields.momentum_roughness_length)))
+    end
+
+    @testset "Float32 thin cells pool by spherical area on $arch" begin
+        # 14 m rows at 51.5°N, with faces exact in Float32, alternating dense-tall and sparse-low;
+        # a 68 m neighborhood pools five rows.
+        Ny = 9
+        Δφ = 2.0^-13
+        grid = LatitudeLongitudeGrid(arch, Float32; size = (1, Ny), longitude = (0, 0.0001),
+                                     latitude = (51.5, 51.5 + Ny * Δφ), topology = (Bounded, Bounded, Flat))
+        odd = isodd.(1:Ny)'
+        λᵖ = ifelse.(odd, 0.6, 0.2)
+        h  = ifelse.(odd, 30.0, 10.0)
+        fields = urban_roughness(grid, PrescribedBuildings((; plan_area_index = λᵖ, mean_building_height = h));
+                                 surface_layer_height = 100, neighborhood = 68)
+
+        φᶠ = 51.5 .+ (0:Ny) .* Δφ
+        area = sind.(φᶠ[2:end]) .- sind.(φᶠ[1:end-1])
+        rows(j) = max(1, j - 2):min(Ny, j + 2)
+        expected = [sum(λᵖ[b] * h[b] * area[b] for b in rows(j)) / sum(λᵖ[b] * area[b] for b in rows(j)) for j in 1:Ny]
+        @test Array(interior(fields.building_height))[1, :, 1] ≈ expected rtol = 1e-5
+    end
 end

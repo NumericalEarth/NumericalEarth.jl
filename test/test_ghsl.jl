@@ -297,7 +297,8 @@ end
         write_ghsl_raster(Metadatum(:building_height; dataset = GHSBuiltH(), region), building_height)
 
         closure = MorphometricRoughness()
-        fields = urban_roughness(grid, GHSBuilt(); closure, neighborhood = 2400)
+        surface_layer_height = 100
+        fields = urban_roughness(grid, GHSBuilt(); closure, surface_layer_height, neighborhood = 2400)
         @test keys(fields) == (:momentum_roughness_length, :zero_plane_displacement, :urban_fraction, :building_height)
 
         # The core alone sets its cell's roughness.
@@ -305,19 +306,19 @@ end
         @test fields.momentum_roughness_length[1, 1, 1] ≈ core_roughness rtol = 1e-4
         @test fields.zero_plane_displacement[1, 1, 1] ≈ core_displacement rtol = 1e-4
         @test fields.building_height[1, 1, 1] ≈ 20 rtol = 1e-4
-        @test fields.urban_fraction[1, 1, 1] == 1 / 16
+        @test fields.urban_fraction[1, 1, 1] ≈ 1 / 16 rtol = 1e-6
 
         @test fields.momentum_roughness_length[2, 2, 1] ≈ core_roughness rtol = 1e-4
         @test fields.zero_plane_displacement[2, 2, 1] ≈ core_displacement rtol = 1e-4
         @test fields.building_height[2, 2, 1] ≈ 20 rtol = 1e-4
-        @test fields.urban_fraction[2, 2, 1] == 1
+        @test fields.urban_fraction[2, 2, 1] ≈ 1
 
         # Built-area-weighted height, (0.2 · 10 + 0.6 · 30) / 0.8, at plan-area index 0.4.
         mixed_roughness, mixed_displacement = aerodynamic_parameters(closure, 0.4, 25.0)
         @test fields.building_height[1, 2, 1] ≈ 25 rtol = 1e-4
         @test fields.momentum_roughness_length[1, 2, 1] ≈ mixed_roughness rtol = 1e-4
         @test fields.zero_plane_displacement[1, 2, 1] ≈ mixed_displacement rtol = 1e-4
-        @test fields.urban_fraction[1, 2, 1] == 1 / 16
+        @test fields.urban_fraction[1, 2, 1] ≈ 1 / 16 rtol = 1e-6
 
         # No-data pixels count as unbuilt.
         bare_roughness, _ = aerodynamic_parameters(closure, 0, 0)
@@ -329,10 +330,10 @@ end
         # The 10 m built-up product regrids onto the 100 m height pixels.
         fine = GHSBuiltS(resolution = GHSBuiltS10m)
         write_ghsl_raster(Metadatum(:built_up_fraction; dataset = fine, region), built_fraction)
-        fields = urban_roughness(grid, GHSBuilt(surface = fine); closure, neighborhood = 2400)
+        fields = urban_roughness(grid, GHSBuilt(surface = fine); closure, surface_layer_height, neighborhood = 2400)
         @test fields.momentum_roughness_length[2, 2, 1] ≈ core_roughness rtol = 1e-4
         @test fields.building_height[1, 1, 1] ≈ 20 rtol = 1e-4
-        @test fields.urban_fraction[1, 1, 1] == 1 / 16
+        @test fields.urban_fraction[1, 1, 1] ≈ 1 / 16 rtol = 1e-6
         @test fields.momentum_roughness_length[2, 1, 1] == bare_roughness
     finally
         setglobal!(GHSL, :download_GHSL_cache, default_cache)
