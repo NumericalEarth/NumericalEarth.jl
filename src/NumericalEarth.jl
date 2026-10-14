@@ -130,6 +130,7 @@ export
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
     ESAWorldCover, WorldCoverV100, WorldCoverV200,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
+    GLODAPClimatology,
     AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
     ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel,
@@ -261,7 +262,7 @@ include("NestedModels/NestedModels.jl")   # last: wraps a parent + a child (any 
 
 using .Grids
 using .DataWrangling
-using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55
+using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55, GLODAP
 using .Bathymetry
 using .EarthSystemModels
 using .Atmospheres
@@ -280,6 +281,7 @@ using .DataWrangling.EN4
 using .DataWrangling.ORCA
 using .DataWrangling.WOA
 using .DataWrangling.JRA55
+using .DataWrangling.GLODAP
 using .DataWrangling.GloFAS
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
