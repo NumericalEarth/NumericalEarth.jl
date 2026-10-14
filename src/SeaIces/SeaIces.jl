@@ -1,6 +1,6 @@
 module SeaIces
 
-export sea_ice_simulation, FreezingLimitedOceanTemperature, DepthDependentLiquidus
+export sea_ice_simulation, FreezingLimitedOceanTemperature
 
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: architecture
@@ -21,7 +21,6 @@ using ..EarthSystemModels: EarthSystemModels, default_stop_time
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger,
                                                  ThreeEquationHeatFlux
 
-include("depth_dependent_liquidus.jl")
 include("freezing_limited_ocean_temperature.jl")
 include("sea_ice_simulation.jl")
 include("assemble_net_sea_ice_fluxes.jl")
