@@ -520,6 +520,19 @@ function NumericalEarth.Lands.building_morphometry(grid, buildings::PrescribedBu
 end
 
 for arch in test_architectures
+    @testset "Invalid urban neighborhoods on $arch" begin
+        grid = LatitudeLongitudeGrid(arch; size = (1, 1), longitude = (0, 0.02), latitude = (0, 0.01),
+                                     topology = (Bounded, Bounded, Flat))
+        properties = (; plan_area_index = 0.4,
+                        mean_building_height = (λ, φ) -> ifelse(λ < 0.01, 20.0, NaN))
+        for measured in (false, true)
+            inputs = measured ? (; properties..., building_height_deviation = 0.0,
+                                    maximum_building_height = 20.0, frontal_area_index = 0.3) : properties
+            @test_throws ArgumentError urban_roughness(grid, PrescribedBuildings(inputs);
+                                                       surface_layer_height = 100, neighborhood = 1100)
+        end
+    end
+
     @testset "Missing morphometry in unbuilt cells on $arch" begin
         grid = LatitudeLongitudeGrid(arch; size = (3, 1), longitude = (0, 0.0027), latitude = (0, 0.0009),
                                      topology = (Bounded, Bounded, Flat))

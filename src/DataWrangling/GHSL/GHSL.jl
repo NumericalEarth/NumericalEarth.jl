@@ -4,6 +4,7 @@ export GHSBuiltH, GHSBuiltS, GHSBuiltSResolution, GHSBuiltS10m, GHSBuiltS100m, G
 
 using Downloads: Downloads
 using Oceananigans: Bounded, Center, CPU, Face, Field, Flat, LatitudeLongitudeGrid, interior
+using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.Fields: regrid!
 using Oceananigans.DistributedComputations: @root
 using Oceananigans.Grids: x_domain, y_domain, λnodes, φnodes
@@ -96,9 +97,8 @@ a valid value, not missing.
 `resolution` selects the native pixel size, `GHSBuiltS10m` or `GHSBuiltS100m` (see
 [`GHSBuiltSResolution`](@ref)); `epoch` the reference year. The 10 m product is only
 published for `epoch = 2018`; the 100 m product covers 1975–2030 in 5-year steps.
-The default `GHSBuiltS100m`/`2020` pairs naturally with a ~100 m model grid and the
-epoch-2018 [`GHSBuiltH`](@ref) height; pass `resolution = GHSBuiltS10m` for the
-finest built fraction (much larger tiles).
+The default is `GHSBuiltS100m`/`2020`; pass `resolution = GHSBuiltS10m` for the
+epoch-2018 built fraction (much larger tiles).
 
 Read in regional windows only (see [`GHSBuiltH`](@ref)); the tile download and
 Mollweide→EPSG:4326 warp require `using ArchGDAL`.
@@ -144,16 +144,17 @@ Provides `:built_up_fraction` and `:building_volume` (m³ per m²) on a common g
 the surface product's resolution: the volume of each surface pixel is its built fraction
 times the height of the 100 m height pixel containing it. Built area and volume are
 conservatively remapped onto the regional longitude/latitude grid. Heights are always
-the epoch-2018 ANBH, whatever the surface epoch.
+the epoch-2018 ANBH, whatever the surface epoch. The default surface is the 10 m,
+epoch-2018 product, matching the height epoch.
 
 ```jldoctest
 julia> using NumericalEarth
 
 julia> GHSBuilt()
-GHSBuilt(GHSBuiltS(resolution = GHSBuiltS100m, epoch = 2020), GHSBuiltH())
-
-julia> GHSBuilt(surface = GHSBuiltS(resolution = GHSBuiltS10m))
 GHSBuilt(GHSBuiltS(resolution = GHSBuiltS10m, epoch = 2018), GHSBuiltH())
+
+julia> GHSBuilt(surface = GHSBuiltS())
+GHSBuilt(GHSBuiltS(resolution = GHSBuiltS100m, epoch = 2020), GHSBuiltH())
 ```
 """
 struct GHSBuilt <: AbstractGHSLDataset
@@ -161,7 +162,7 @@ struct GHSBuilt <: AbstractGHSLDataset
     height  :: GHSBuiltH
 end
 
-GHSBuilt(; surface = GHSBuiltS(), height = GHSBuiltH()) = GHSBuilt(surface, height)
+GHSBuilt(; surface = GHSBuiltS(resolution = GHSBuiltS10m), height = GHSBuiltH()) = GHSBuilt(surface, height)
 
 Base.summary(dataset::GHSBuilt) = string("GHSBuilt(", summary(dataset.surface), ", ", summary(dataset.height), ")")
 
@@ -526,12 +527,13 @@ built-up surface and building-height rasters of `dataset`, as the NamedTuple of 
 `(; plan_area_index, mean_building_height)`: the area mean of the native-pixel built
 fraction, and the building volume over the built area of each cell. A pixel missing
 either its fraction or its height counts as unbuilt. The rasters are read in windows of
-at most about `maximum_raster_cells` native pixels.
+at most about `maximum_raster_cells` native pixels. Regional NetCDF rasters are deleted
+after reading; downloaded source tiles remain cached.
 """
 function Lands.building_morphometry(grid, dataset::GHSBuilt; maximum_raster_cells = 100_000_000)
     Nx, Ny, _ = size(grid)
-    λᶠ = λnodes(grid, Face())
-    φᶠ = φnodes(grid, Face())
+    λᶠ = on_architecture(CPU(), λnodes(grid, Face()))
+    φᶠ = on_architecture(CPU(), φnodes(grid, Face()))
     λᵖ = Field{Center, Center, Nothing}(grid)
     h  = Field{Center, Center, Nothing}(grid)
 
@@ -554,15 +556,17 @@ function Lands.building_morphometry(grid, dataset::GHSBuilt; maximum_raster_cell
                                             latitude  = φᶠ[first(J):last(J) + 1],
                                             topology = (Bounded, Bounded, Flat))
 
-        built_fraction  = Field(Metadatum(:built_up_fraction; dataset, region = window), CPU())
+        fraction_metadatum = Metadatum(:built_up_fraction; dataset, region = window)
+        built_fraction  = Field(fraction_metadatum, CPU())
         building_volume = Field(Metadatum(:building_volume; dataset, region = window), CPU())
+        @root rm(metadata_path(fraction_metadatum); force = true)
 
         window_fraction = Field{Center, Center, Nothing}(window_grid)
         window_volume   = Field{Center, Center, Nothing}(window_grid)
         regrid!(window_fraction, built_fraction)
         regrid!(window_volume, building_volume)
-        interior(λᵖ, I, J, 1) .= interior(window_fraction, :, :, 1)
-        interior(h,  I, J, 1) .= interior(window_volume, :, :, 1)
+        interior(λᵖ, I, J, 1) .= on_architecture(architecture(grid), interior(window_fraction, :, :, 1))
+        interior(h,  I, J, 1) .= on_architecture(architecture(grid), interior(window_volume, :, :, 1))
     end
     interior(h) .= ifelse.(interior(λᵖ) .> 0, interior(h) ./ interior(λᵖ), 0)
 

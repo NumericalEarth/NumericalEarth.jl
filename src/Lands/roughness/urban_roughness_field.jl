@@ -255,7 +255,9 @@ neutral drag at `surface_layer_height` (m) is the area-mean drag of its urban ne
 [Mason (1988)](@cite Mason1988), the displacement being their drag-weighted mean, the mean
 level of momentum absorption [Jackson (1981)](@cite Jackson1981). `building_height` is their
 mean height weighted by built area. A grid cell without urban neighborhoods takes the closure's
-bare-soil limit. Remaining keyword arguments pass to `building_morphometry`.
+bare-soil limit. An urban neighborhood with non-finite roughness or displacement, or
+non-positive roughness, raises an `ArgumentError`. Remaining keyword arguments pass to
+`building_morphometry`.
 """
 function urban_roughness(grid, dataset; surface_layer_height, closure = MorphometricRoughness(eltype(grid)),
                          neighborhood = 1000, kw...)
@@ -293,6 +295,8 @@ function urban_roughness(grid, dataset; surface_layer_height, closure = Morphome
     λᵖ = interior(properties.plan_area_index, :, :, 1)
     h = interior(properties.mean_building_height, :, :, 1)
     urban = λᵖ .>= closure.minimum_built_fraction
+    any(urban .& roughness_gap.(ℓᵐ, d)) &&
+        throw(ArgumentError("urban neighborhoods must have finite, positive roughness lengths and finite displacements"))
     any(urban .& (z .<= d .+ ℓᵐ)) &&
         throw(ArgumentError("surface_layer_height = $z m must exceed d + ℓᵐ in every urban neighborhood"))
     scaled_drag = inv.(log.((z .- d) ./ ℓᵐ)) .^ 2

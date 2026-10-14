@@ -8,7 +8,7 @@ using NumericalEarth.DataWrangling.GHSL: ghsl_tile_index, ghsl_tiles_in_bbox,
                                          dataset_prefix, native_resolution, ghsl_tiles_to_netcdf,
                                          ghsl_regional_raster, ghsl_mollweide_bounds, ghsl_pixel_window,
                                          GHSL_ORIGIN_X, GHSL_ORIGIN_Y
-using NumericalEarth.Lands: MorphometricRoughness, aerodynamic_parameters, urban_roughness
+using NumericalEarth.Lands: MorphometricRoughness, aerodynamic_parameters, building_morphometry, urban_roughness
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_grid,
                                     longitude_interfaces, latitude_interfaces,
                                     dataset_variable_name, validate_dataset_coverage,
@@ -186,6 +186,12 @@ end
     @test_throws ArgumentError GHSBuiltS(resolution = GHSBuiltS100m, epoch = 1999)  # not a 5-year step
 end
 
+@testset "GHSBuilt default epoch" begin
+    dataset = GHSBuilt()
+    @test dataset.surface.epoch == 2018
+    @test dataset.surface.resolution === GHSBuiltS10m
+end
+
 #####
 ##### Windowed-read URL construction (JRC open-data host).
 #####
@@ -277,6 +283,7 @@ function write_ghsl_moments(dataset, region, built_fraction, building_height)
 end
 
 @testset "GHSL urban roughness on a grid" begin
+    dataset = GHSBuilt(surface = GHSBuiltS())
     # A 2 × 2 grid near the equator whose 2.4 km lattice cells hold 24 × 24 native pixels
     # each, aligned with the pixel faces so the conservative means are exact.
     Nλ, Nφ, _ = size(GHSBuiltH(), :building_height)
@@ -313,11 +320,33 @@ end
     setglobal!(GHSL, :download_GHSL_cache, mktempdir())
     try
         region = BoundingBox(grid)
-        write_ghsl_moments(GHSBuilt(), region, built_fraction, building_height)
+        write_ghsl_moments(dataset, region, built_fraction, building_height)
+
+        longitude = collect(λnodes(grid, Face()))
+        latitude = collect(φnodes(grid, Face()))
+        for i in 1:size(grid, 1), j in 1:size(grid, 2)
+            window = BoundingBox(longitude = (longitude[i], longitude[i + 1]),
+                                 latitude = (latitude[j], latitude[j + 1]))
+            write_ghsl_moments(dataset, window, built_fraction, building_height)
+        end
+        for arch in test_architectures, maximum_raster_cells in (100_000_000, 1)
+            @testset "GHSL building morphometry on $arch, window limit $maximum_raster_cells" begin
+                target_grid = LatitudeLongitudeGrid(arch; size = size(grid)[1:2], longitude, latitude,
+                                                    topology = (Bounded, Bounded, Flat))
+                morphometry = building_morphometry(target_grid, dataset; maximum_raster_cells)
+                @test !isfile(metadata_path(Metadatum(:built_up_fraction; dataset, region)))
+                @test architecture(morphometry.plan_area_index) == arch
+                @test architecture(morphometry.mean_building_height) == arch
+                @test Array(interior(morphometry.plan_area_index, :, :, 1)) ≈ [0.5/16 0.4/16; 0 0.5] rtol = 1e-6
+                @test Array(interior(morphometry.mean_building_height, :, :, 1)) ≈ [20 25; 0 20] rtol = 1e-4
+            end
+        end
+        @test isempty(readdir(GHSL.download_GHSL_cache))
 
         closure = MorphometricRoughness()
         surface_layer_height = 100
-        fields = urban_roughness(grid, GHSBuilt(); closure, surface_layer_height, neighborhood = 2400)
+        write_ghsl_moments(dataset, region, built_fraction, building_height)
+        fields = urban_roughness(grid, dataset; closure, surface_layer_height, neighborhood = 2400)
         @test keys(fields) == (:momentum_roughness_length, :zero_plane_displacement, :urban_fraction, :building_height)
 
         # The core alone sets its cell's roughness.

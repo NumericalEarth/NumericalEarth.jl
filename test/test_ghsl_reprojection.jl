@@ -93,10 +93,11 @@ grid = LatitudeLongitudeGrid(CPU(); size = (4, 2),
                              topology = (Bounded, Bounded, Flat))
 
 @testset "GHSL preserves density-height covariance through reprojection" begin
+    dataset = GHSBuilt(surface = GHSBuiltS())
     surface = repeat(ifelse.(isodd.(1:12), 2000.0, 6000.0), 1, 12)
     height = repeat(ifelse.(isodd.(1:12), 10.0, 30.0), 1, 12)
-    with_ghsl_tiles(GHSBuilt(), surface, height) do
-        properties = building_morphometry(grid, GHSBuilt())
+    with_ghsl_tiles(dataset, surface, height) do
+        properties = building_morphometry(grid, dataset)
         fraction = interior(properties.plan_area_index)
         mean_height = interior(properties.mean_building_height)
         # Every mixture of (λᵖ, λᵖh) = (0.2, 2 m) and (0.6, 18 m) satisfies V = 40λᵖ - 6 m.
@@ -106,13 +107,14 @@ grid = LatitudeLongitudeGrid(CPU(); size = (4, 2),
 end
 
 @testset "GHSL jointly masks missing footprint and height pixels" begin
+    dataset = GHSBuilt(surface = GHSBuiltS())
     for missing_height in (true, false)
         surface = fill(5000.0, 12, 12)
         height = fill(20.0, 12, 12)
         missing_values = missing_height ? height : surface
         missing_values[1:2:end, :] .= 65535
-        with_ghsl_tiles(GHSBuilt(), surface, height) do
-            properties = building_morphometry(grid, GHSBuilt())
+        with_ghsl_tiles(dataset, surface, height) do
+            properties = building_morphometry(grid, dataset)
             @test all(0 .< interior(properties.plan_area_index) .< 0.5)
             @test all(isapprox.(interior(properties.mean_building_height), 20; rtol=1e-6))
         end
@@ -120,7 +122,7 @@ end
 end
 
 @testset "GHSL retains 10 m footprints" begin
-    dataset = GHSBuilt(surface = GHSBuiltS(resolution = GHSBuiltS10m))
+    dataset = GHSBuilt()
     surface = repeat(ifelse.(1:120 .<= 60, 0.0, 100.0), 1, 120)
     fine_grid = LatitudeLongitudeGrid(CPU(); size = (4, 1),
                                       longitude = (580, 620) .* longitude_per_meter,
