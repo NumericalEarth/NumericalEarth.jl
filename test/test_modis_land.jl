@@ -314,6 +314,17 @@ end
     @test endswith(filename, ".nc")
     @test occursin("20200703", filename)
 
+    # A file is keyed by the lattice cells it holds: bounds a hair apart that select different
+    # cells name different files, and the same box in either longitude convention one file.
+    # (-92.5 + Δᵛ/2 is the cell center at which the window gains its western cell.)
+    east_of_center = BoundingBox(longitude = (-92.4979, -91.5), latitude = (36.5, 37.5))
+    west_of_center = BoundingBox(longitude = (-92.4980, -91.5), latitude = (36.5, 37.5))
+    @test metadata_filename(dataset, :leaf_area_index, date, east_of_center) !=
+          metadata_filename(dataset, :leaf_area_index, date, west_of_center)
+
+    wrapped = BoundingBox(longitude = (267.5, 268.5), latitude = (36.5, 37.5))
+    @test metadata_filename(dataset, :leaf_area_index, date, wrapped) == filename
+
     # A climatology reduces one variable at a time, and a different span or period is a
     # different product.
     climatology = MODISLAIClimatology(years = 2003:2019)
@@ -727,6 +738,29 @@ end
         @test all(majority[1, :] .== igbp_class_names.grassland)
         @test all(majority[2, :] .== igbp_class_names.water)
         @test landed(Field(metadatum, grid)) == majority
+
+        # The other land-cover variables are codes too, and on the native grid they are copied.
+        @test all(==(2), landed(Field(Metadatum(:land_water_mask; dataset, region, date, dir), grid)))
+        @test isequal(landed(Field(metadatum, native_grid(metadatum))), retrieve_data(metadatum))
+
+        # So are the codes the leaf-area product writes in place of a retrieval: the western
+        # cells are 7:5 water to urban, which a bilinear regrid would blend into snow (252),
+        # and the eastern ones hold retrievals, so no code covers them.
+        lai_metadatum = Metadatum(:landcover_code; dataset = MCD15A2H(), region,
+                                  date = DateTime(2019, 7, 4), dir)
+        lai_lattice = regional_lattice(lai_metadatum)
+        function stripe_code(λ)
+            λ < -92.5 + 7Δᵛ && return 0xfe  # water
+            λ < -92.45      && return 0xfa  # urban
+            return 0x10                     # a retrieval
+        end
+        lai_at = Dict((i, j) => stripe_code(lai_lattice.west + (i - 1/2) * Δᵛ)
+                      for i in 1:lai_lattice.Nx, j in 1:lai_lattice.Ny)
+        write_synthetic_modis_file(joinpath(dir, lai_metadatum.filename), lai_lattice; lai_at)
+
+        codes = landed(Field(lai_metadatum, grid))
+        @test all(codes[1, :] .== modis_landcover_class_names.water)
+        @test all(isnan, codes[2, :])
     end
 end
 
@@ -1013,6 +1047,11 @@ end
     open = Float32[NaN, 2, 3, 4, NaN]
     fill_gaps!(open; max_gap = 2)
     @test open == Float32[2, 2, 3, 4, 4]
+
+    # An edge gap is held to `max_gap` as well, rather than persisting one value indefinitely.
+    long_open = Float32[NaN, NaN, NaN, 4, 5]
+    @test_logs (:warn,) fill_gaps!(long_open; max_gap = 2)
+    @test all(isnan, long_open[1:3])
 
     # An interior gap is filled identically either way.
     interior_cyclic = Float32[1, NaN, NaN, 4, 5]

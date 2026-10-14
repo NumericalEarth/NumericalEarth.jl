@@ -165,7 +165,8 @@ Colorbar(fig[1, 3], plot, label = "𝒜 (m² m⁻²)")
 #
 # Plotted on the product's own 500 m grid, deliberately: these are class *codes*, so
 # interpolating them onto the model grid would average urban (250) against water (254) into
-# snow/ice (252) along every riverbank. Continuous fields regrid; categorical ones do not.
+# snow/ice (252) along every riverbank. On a model grid `Field(metadatum, grid)` gives each cell
+# the code covering most of it instead, which is a coarser picture of the same network.
 
 ax = Axis(fig[2, 1]; title = "Land-cover code (native 500 m grid)", axis_kw...)
 heatmap!(ax, Field(in_band_codes), colormap = cgrad(:tab10, 6, categorical = true),
@@ -363,9 +364,10 @@ nothing #hide
 # observations, not because it has been smoothed. The annual range is small against the mean:
 # closed evergreen canopy holds its leaf area through the year, where a temperate deciduous stand
 # swings by close to an order of magnitude between leaf-off and full canopy. For a domain like
-# this one a single peak-season field is therefore a defensible boundary condition, and
-# `MODISLAIClimatology(reducer = maximum)` produces exactly that; for a mid-latitude domain
-# the seasonal series is not optional.
+# this one a single field, the peak period of the mean climatology, is therefore a defensible
+# boundary condition; for a mid-latitude domain the seasonal series is not optional. That field
+# is not what `MODISLAIClimatology(reducer = maximum)` builds: it keeps the largest retrieval of
+# every period, which rises with the number of years and with the retrieval noise.
 #
 # The gap panel is the one that sets the `years` default. Three years reaches the land-cover floor
 # through the dry season and fails badly through the wet one — the Amazon's wet-season cloud is
@@ -374,8 +376,9 @@ nothing #hide
 # default is not a nicety; it is what makes half the year usable. A temperate box needs far fewer
 # years for the same result, which is worth knowing before budgeting a download.
 #
-# The residual speckle at the pixel scale is the retrieval's own uncertainty rather than anything
-# the ingestion adds: the product reports it as `:leaf_area_index_uncertainty`, and it is close to
-# independent between years, so it averages down as `√n`. Three years buys a factor 1.7 and the
-# 2003–2019 default buys 3.6, which is why the deep composite above is visibly smoother than these
-# panels.
+# The residual speckle at the pixel scale is retrieval error rather than anything the ingestion
+# adds. The part of it that varies from year to year averages down with the number of years
+# retained, which is why the deep composite above is visibly smoother than these panels; the
+# systematic part, such as the retrieval saturating over closed canopy, survives any number of
+# years. `:leaf_area_index_uncertainty` measures neither on its own: it is the spread of the
+# retrieval's acceptable solutions for one observation.

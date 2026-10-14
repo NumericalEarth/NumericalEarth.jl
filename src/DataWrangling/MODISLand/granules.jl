@@ -55,9 +55,21 @@ function regional_lattice(metadata::MODISLandMetadata)
     (region isa BoundingBox && !isnothing(region.longitude) && !isnothing(region.latitude)) ||
         throw(ArgumentError("regional_lattice requires a bounded (longitude, latitude) BoundingBox."))
 
-    Nx, Ny, _ = size(metadata.dataset, metadata.name)
     native_longitude = DataWrangling.longitude_interfaces(metadata)
     native_latitude  = DataWrangling.latitude_interfaces(metadata)
+    icols, jrows = lattice_cells(metadata.dataset, metadata.name, region)
+
+    return (west  = first(native_longitude) + (first(icols) - 1) * MODIS_LATTICE_SPACING,
+            east  = first(native_longitude) + last(icols) * MODIS_LATTICE_SPACING,
+            south = first(native_latitude) + (first(jrows) - 1) * MODIS_LATTICE_SPACING,
+            north = first(native_latitude) + last(jrows) * MODIS_LATTICE_SPACING,
+            Nx = length(icols), Ny = length(jrows))
+end
+
+# The columns and rows of the global lattice whose cells `region` selects.
+function lattice_cells(dataset, name, region)
+    Nx, Ny, _ = size(dataset, name)
+    native_longitude = DataWrangling.longitude_interfaces(dataset)
     bbox_longitude = native_convention_longitude(region.longitude, native_longitude)
 
     last(bbox_longitude) > last(native_longitude) &&
@@ -65,14 +77,8 @@ function regional_lattice(metadata::MODISLandMetadata)
                             "seam of the MODIS sinusoidal grid's reprojection. Split it into two " *
                             "requests, one on each side of the seam."))
 
-    icols = native_cell_range(bbox_longitude, native_longitude, Nx)
-    jrows = native_cell_range(region.latitude, native_latitude, Ny)
-
-    return (west  = first(native_longitude) + (first(icols) - 1) * MODIS_LATTICE_SPACING,
-            east  = first(native_longitude) + last(icols) * MODIS_LATTICE_SPACING,
-            south = first(native_latitude) + (first(jrows) - 1) * MODIS_LATTICE_SPACING,
-            north = first(native_latitude) + last(jrows) * MODIS_LATTICE_SPACING,
-            Nx = length(icols), Ny = length(jrows))
+    return native_cell_range(bbox_longitude, native_longitude, Nx),
+           native_cell_range(region.latitude, DataWrangling.latitude_interfaces(dataset), Ny)
 end
 
 #####
@@ -165,10 +171,7 @@ end
 # `QC` is an enumerated classification outcome, not a packed bitfield.
 function DataWrangling.retrieve_data(metadatum::MODISLandCoverMetadatum)
     variable = DataWrangling.dataset_variable_name(metadatum)
-    valid = metadatum.name === :landcover_class ? landcover_valid_range(metadatum.dataset) :
-            metadatum.name === :quality_flag    ? (0:10) : (1:2)
-
     return NCDataset(metadata_path(metadatum)) do ds
-        mask_landcover_fill.(ds[variable][:, :], Ref(valid))
+        mask_landcover_fill.(ds[variable][:, :], Ref(valid_codes(metadatum)))
     end
 end

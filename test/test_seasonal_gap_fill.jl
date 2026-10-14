@@ -119,6 +119,15 @@ end
     ℬ = copy(𝒜)
     ℬ[4, 4, 2] = NaN32
     @test fill_seasonal_gaps!(ℬ, classes; cache, parameters...).series != marker
+
+    # A land-cover map holding the same codes in other places is different input.
+    moved = copy(classes)
+    moved[1, 1], moved[8, 8] = 3, 1
+    swapped = copy(classes)
+    swapped[1, 1], swapped[8, 8] = 1, 3
+    fill_seasonal_gaps!(copy(𝒜), moved; cache, parameters...)
+    overwrite_cached_series!(cache, marker)
+    @test fill_seasonal_gaps!(copy(𝒜), swapped; cache, parameters...).series != marker
 end
 
 @testset "Seasonal fill: the estimator's guards" begin
@@ -146,6 +155,16 @@ end
     fill_seasonal_gaps!(𝒜, fill(Float32(2), 4, 4); cyclic = true, max_gap = 0,
                         block_size = 2, minimum_donors = 1)
     @test 𝒜[2, 2, 6] ≈ 5 * shape[6] rtol = 1e-5
+
+    # The scale comes from observed periods only: a bridged period is a linear estimate of a
+    # curved cycle, and counting it would pull the level away from the observed one.
+    𝒜 = uniform_series(shape, 8, 8)
+    𝒜[3, 3, :] .= 2 .* shape
+    𝒜[3, 3, 2] = NaN32
+    𝒜[3, 3, 6:9] .= NaN32
+    fill_seasonal_gaps!(𝒜, fill(Float32(2), 8, 8); cyclic = true, max_gap = 1,
+                        block_size = 4, minimum_donors = 4)
+    @test 𝒜[3, 3, 7] ≈ 2 * shape[7] rtol = 1e-6
 
     # Too few anchor periods to trust a scaling: fall through to the donor curve itself.
     𝒜 = uniform_series(shape, 4, 4)
@@ -294,6 +313,14 @@ end
     # The anchor is scaled, never copied: a target year that departs from the climatology
     # must keep its departure.
     @test !(𝒜[2, 2, 7] ≈ 𝒜̄[2, 2, 7])
+
+    # A gap at the start of the year too long to bridge comes from the anchor's shape, not
+    # from the first observed value held back to the first period.
+    𝒜 = 1.5f0 .* 𝒜̄
+    𝒜[3, 3, 1:3] .= NaN32
+    filled = fill_seasonal_gaps!(𝒜, fill(NaN32, 4, 4); anchor = 𝒜̄, max_gap = 1)
+    @test 𝒜[3, 3, 1:3] ≈ 1.5f0 .* 𝒜̄[3, 3, 1:3] rtol = 1e-6
+    @test all(==(gap_fill_provenance.scaled), filled.provenance[3, 3, 1:3])
 
     # A shorter anchor is reused cyclically, and an explicit mapping is honored.
     𝒜̄season = uniform_series(seasonal_shape(4), 4, 4)

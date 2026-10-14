@@ -49,6 +49,20 @@ function class_fractions(codes, classes, factor)
     return fractions
 end
 
+"""
+    class_fractions(grid, classes::Field, codes)
+
+The area fraction of each of `codes` on `grid`, regridded conservatively from the class map
+`classes`. A cell with no class counts toward none of them.
+"""
+function class_fractions(grid, classes::Field, codes)
+    indicator = Field{Center, Center, Nothing}(classes.grid)
+    return map(codes) do code
+        interior(indicator) .= interior(classes) .== code
+        regrid!(Field{Center, Center, Nothing}(grid), indicator)
+    end
+end
+
 #####
 ##### The majority class of regridded fractions
 #####

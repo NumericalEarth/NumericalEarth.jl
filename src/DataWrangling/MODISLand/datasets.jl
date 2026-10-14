@@ -237,6 +237,11 @@ DataWrangling.available_variables(dataset::MCD12Q1) =
 DataWrangling.dataset_variable_name(metadata::MODISLandMetadata) =
     DataWrangling.available_variables(metadata.dataset)[metadata.name]
 
+# The codes an MCD12Q1 variable takes; any other value is read as `NaN`.
+valid_codes(metadatum::MODISLandCoverMetadatum) =
+    metadatum.name === :landcover_class ? landcover_valid_range(metadatum.dataset) :
+    metadatum.name === :quality_flag    ? (0:10) : (1:2)
+
 #####
 ##### Grid traits: the granules are reprojected onto a global 1/240° latitude-longitude lattice
 #####
@@ -286,32 +291,29 @@ DataWrangling.conversion_units(::MODISLandCoverMetadatum) = nothing
 date_tag(date) = Dates.format(DateTime(date), "yyyymmdd")
 years_tag(years) = string(first(years), "-", last(years))
 
-bound_tag(bound) = replace(string(round(bound, digits = 3)), "-" => "m")
+region_tag(dataset, name, ::Nothing) = "global"
 
-region_tag(::Nothing) = "global"
-
-function region_tag(region::BoundingBox)
+# The lattice cells the region selects, which are what a file over it holds.
+function region_tag(dataset, name, region::BoundingBox)
     (isnothing(region.longitude) || isnothing(region.latitude)) && return "global"
-    west, east = region.longitude
-    south, north = region.latitude
-    return string("lon", bound_tag(west), "-", bound_tag(east),
-                  "_lat", bound_tag(south), "-", bound_tag(north))
+    columns, rows = lattice_cells(dataset, name, region)
+    return string("i", first(columns), "-", last(columns), "_j", first(rows), "-", last(rows))
 end
 
 DataWrangling.metadata_filename(dataset::MODISLAIDataset, name, date, region) =
     string(modis_short_name(dataset), "_", modis_version(dataset), "_",
-           date_tag(date), "_", region_tag(region), ".nc")
+           date_tag(date), "_", region_tag(dataset, name, region), ".nc")
 
 # A different legend reads a different layer, so the legend takes the variable's place.
 DataWrangling.metadata_filename(dataset::MCD12Q1, name, date, region) =
     string(modis_short_name(dataset), "_", modis_version(dataset), "_", dataset.legend, "_",
-           Dates.year(date), "_", region_tag(region), ".nc")
+           Dates.year(date), "_", region_tag(dataset, name, region), ".nc")
 
 function DataWrangling.metadata_filename(dataset::MODISLAIClimatology, name, date, region)
     period = period_index(date, composite_period_days(dataset))
     return string(modis_short_name(dataset), "_", modis_version(dataset), "_", name,
                   "_climatology_", years_tag(dataset.years), "_", nameof(dataset.reducer),
-                  "_p", lpad(period, 2, '0'), "_", region_tag(region), ".nc")
+                  "_p", lpad(period, 2, '0'), "_", region_tag(dataset, name, region), ".nc")
 end
 
 """
@@ -368,18 +370,33 @@ from the class map `classes` on its native lattice with no-data counted as water
 """
 function DataWrangling.class_fractions(grid, classes::Field, dataset::MCD12Q1)
     class_names = landcover_class_names(dataset)
-    codes = interior(classes)
-    water = convert(eltype(codes), class_names.water)
-    indicator = Field{Center, Center, Nothing}(classes.grid)
-    return map(class_names) do code
-        interior(indicator) .= ifelse.(isfinite.(codes), codes, water) .== code
-        regrid!(Field{Center, Center, Nothing}(grid), indicator)
-    end
+    water = convert(eltype(classes), class_names.water)
+    water_filled = Field{Center, Center, Nothing}(classes.grid)
+    interior(water_filled) .= ifelse.(isfinite.(interior(classes)), interior(classes), water)
+    return class_fractions(grid, water_filled, class_names)
 end
 
-function DataWrangling.interpolate_physical!(target, classes, metadatum::Metadatum{<:MCD12Q1})
-    metadatum.name === :landcover_class ||
+# Every MCD12Q1 variable is categorical, so a model cell takes the code covering most of it.
+function DataWrangling.interpolate_physical!(target, classes, metadatum::MODISLandCoverMetadatum)
+    DataWrangling.same_grid(target.grid, classes.grid) &&
         return DataWrangling.interpolate_physical!(target, classes)
-    fractions = class_fractions(target.grid, classes, metadatum.dataset)
-    return majority_class!(target, fractions, landcover_class_names(metadatum.dataset))
+
+    if metadatum.name === :landcover_class
+        codes = landcover_class_names(metadatum.dataset)
+        fractions = class_fractions(target.grid, classes, metadatum.dataset)
+    else
+        codes = valid_codes(metadatum)
+        fractions = class_fractions(target.grid, classes, codes)
+    end
+
+    return majority_class!(target, fractions, codes)
+end
+
+# The land-cover codes MCD15A2H writes in place of a retrieval are classes too.
+function DataWrangling.interpolate_physical!(target, source, metadatum::MODISLAIMetadatum)
+    (metadatum.name === :landcover_code && !DataWrangling.same_grid(target.grid, source.grid)) ||
+        return DataWrangling.interpolate_physical!(target, source)
+
+    fractions = class_fractions(target.grid, source, MODIS_LAI_LANDCOVER_CODES)
+    return majority_class!(target, fractions, MODIS_LAI_LANDCOVER_CODES)
 end

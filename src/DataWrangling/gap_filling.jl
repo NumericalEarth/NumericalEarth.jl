@@ -13,8 +13,8 @@ last dimension is time and each spatial column is filled independently; a `Field
 is filled through a host copy of its interior.
 
 Gaps longer than `max_gap` points are left as NaN, with one warning per call. A gap running
-to either end of an open series is extended with its nearest value whatever `max_gap` says.
-`max_gap` may be an array over the spatial dimensions, giving each column its own tolerance.
+to either end of an open series takes its nearest value. `max_gap` may be an array over the
+spatial dimensions, giving each column its own tolerance.
 
 With `cyclic = true` the series is one period of a periodic signal, so a gap at either end
 interpolates across the wrap. An all-NaN column is left untouched either way.
@@ -73,14 +73,14 @@ function fill_column_gaps!(data::AbstractVector, unfilled; max_gap, cyclic)
             gap_end = i - 1
             gap_length = gap_end - gap_start + 1
 
-            if gap_start == 1 || gap_end == N
-                if gap_start == 1 && gap_end < N
-                    data[gap_start:gap_end] .= data[gap_end + 1]
-                elseif gap_end == N && gap_start > 1
-                    data[gap_start:gap_end] .= data[gap_start - 1]
-                end
+            if gap_length == N
+                continue
             elseif gap_length > max_gap
                 push!(unfilled, (gap_start, gap_end))
+            elseif gap_start == 1
+                data[gap_start:gap_end] .= data[gap_end + 1]
+            elseif gap_end == N
+                data[gap_start:gap_end] .= data[gap_start - 1]
             else
                 v0 = data[gap_start - 1]
                 v1 = data[gap_end + 1]
@@ -198,10 +198,10 @@ end
 ##### Caching a filled series
 #####
 
-# A storable stand-in for an argument: an array by its shape and the sum of its finite entries.
+# A storable stand-in for an argument: an array by its shape and a hash of every entry.
 fill_signature(parameter) = parameter
 fill_signature(parameter::AbstractArray) =
-    (size(parameter), sum(value -> isfinite(value) ? Float64(value) : 0.0, parameter; init = 0.0))
+    (size(parameter), foldl((h, value) -> hash(value, h), parameter; init = zero(UInt)))
 fill_signature(fts::FieldTimeSeries) = fill_signature(Array(interior(fts)))
 
 seasonal_fill_key(; parameters...) = map(fill_signature, NamedTuple(parameters))
@@ -383,7 +383,7 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
         any(t -> isnan(𝒜[i, j, t]), 1:Nt) || continue
 
         radius = donor_series!(curve, pool, 𝒜, i, j)
-        scale = donor_scaling(𝒜, curve, i, j, scaling, minimum_anchor_periods)
+        scale = donor_scaling(𝒜, curve, observed, i, j, scaling, minimum_anchor_periods)
         filled = false
 
         for t in 1:Nt
@@ -438,6 +438,8 @@ Score [`fill_seasonal_gaps!`](@ref) by withholding values it would otherwise hav
 `samples_per_class` observed cell-periods of each class are set to `NaN`, the chain is run
 on the damaged copy, and the estimates are compared with the values that were removed. The
 remaining keyword arguments are passed to the fill, so `stages` scores each stage alone.
+The withheld entries are isolated cell-periods, so with every stage running the score is
+mostly that of the temporal stage bridging one-period gaps.
 
 Returns one row per class: `(; class, withheld, estimated, R², cv_rmse)`, where `R²` is the
 squared correlation of estimate against truth, `cv_rmse` the root-mean-square error divided

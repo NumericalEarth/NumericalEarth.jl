@@ -5,9 +5,9 @@
 # ITCZ, a monsoon, a windward slope — and neither can interpolating along the seasonal axis,
 # because the neighboring periods are cloudy for the same reason. What is left has to be
 # borrowed from somewhere else, and that is only safe if the borrowing knows what it is
-# borrowing from: averaging across a forest/cropland boundary injects a biased value, and an
-# aerodynamic-roughness closure downstream sits where more leaf area gives *less* roughness,
-# so a smeared value there becomes a roughness error of the wrong sign.
+# borrowing from: averaging across a forest/cropland boundary injects a biased value, and over
+# a dense canopy, where an aerodynamic-roughness closure gives more leaf area *less* roughness,
+# a smeared value becomes a roughness error of the wrong sign.
 #
 # MODIS MCD12Q1 supplies the class field, at 500 m and on exactly the lattice the MCD15A2H
 # leaf-area reads land on, so the two pair cell for cell with no aggregation in between.
@@ -575,12 +575,13 @@ nothing #hide
 
 # ## Scoring the fill
 #
-# The numbers above say how much was filled, not how well. Withholding values the chain would
-# otherwise have kept, running it on the damaged copy, and comparing the estimates against
-# what was removed turns "good quality" into a per-class score — and needs no new downloads,
-# because the granules are already cached.
+# The numbers above say how much was filled, not how well. Withholding observed values from
+# the composited series, running the chain on the damaged copy, and comparing the estimates
+# against what was removed turns "good quality" into a per-class score — and needs no new
+# downloads, because the granules are already cached. The series scored is the one as read,
+# before the chain: a filled series would hand the chain its own estimates back as truth.
 
-scores = gap_fill_denial(filled_leaf_area_index, classes; samples_per_class = 100, cyclic = true,
+scores = gap_fill_denial(raw_leaf_area_index, classes; samples_per_class = 100, cyclic = true,
                          max_gap, valid_range = (0, 10),
                          unfilled_classes = igbp_non_vegetated_classes)
 
@@ -593,9 +594,14 @@ end
 
 # Compositing seventeen — or here five — years before the donors are drawn is what separates
 # these scores from the published single-date experiments they are comparable with: both the
-# donors and the truth are multi-year means, carrying roughly `√n` less retrieval noise than a
-# single retrieval does. A stage that scores *worse* than the single-date literature is a
-# stage that is wrong, not a stage that is working hard.
+# donors and the truth are multi-year means, in which the part of the retrieval error that
+# varies from year to year has averaged down, though the systematic part has not. A stage that
+# scores *worse* than the single-date literature is a stage that is wrong, not a stage that is
+# working hard.
+#
+# The scores are an upper bound all the same. Each withheld entry is a single cell-period with
+# observed neighbors on both sides, which the temporal stage bridges easily, while the gaps the
+# chain exists for are long and clustered; `stages` scores the donor stages on their own.
 #
 # The remaining caveat this pipeline's design makes necessary, and the one to carry forward to
 # whatever consumes the field: compare the roughness distribution over **filled** cells against
@@ -608,9 +614,6 @@ end
 # below, it is *all* of it, with no vegetated cell left dry in either treatment. Those cells
 # are not missing a value. Their leaf area per unit ground area is zero, and that is the value
 # to write.
-#
-# Scoring came first on purpose: `gap_fill_denial` samples cells that carry a value, so zeroed
-# water entering the sample as truth the chain reproduces exactly would inflate every score.
 
 for (name, series) in ("climatology" => filled_leaf_area_index,
                        "2019" => single_year_leaf_area_index)
@@ -624,13 +627,14 @@ for (name, series) in ("climatology" => filled_leaf_area_index,
             count(isnan, horizontal(series)))
 end
 
-# Zeroing before the regrid rather than after is what keeps the model grid clean: a `NaN` at a
-# shoreline dilates into its neighbors through the interpolation stencil, while a zero blends
-# into the cell mean correctly, because leaf area is already per unit *ground* area. A model
-# cell half lake and half forest genuinely carries half the forest's leaf area.
+# The regrid is conservative, so each model cell takes the area mean of the 500 m cells under
+# it, and leaf area is already per unit *ground* area: a model cell half lake and half forest
+# carries half the forest's leaf area. Zeroing before the regrid rather than after is what
+# makes that hold, because a `NaN` left on the lake would leave the whole model cell without
+# a value.
 
 model_grid_leaf_area_index = Field{Center, Center, Nothing}(grid)
-Oceananigans.Fields.interpolate!(model_grid_leaf_area_index, filled_leaf_area_index[peak])
+regrid!(model_grid_leaf_area_index, filled_leaf_area_index[peak])
 
 @printf("\nOn the %d x %d model grid at the seasonal peak\n", size(grid, 1), size(grid, 2))
 @printf("  cells with no value : %d\n", count(isnan, Array(interior(model_grid_leaf_area_index))))

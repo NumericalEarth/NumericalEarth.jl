@@ -198,15 +198,15 @@ function donor_series!(curve, pool::AnchorDonorPool, 𝒜, i, j)
     return 0
 end
 
-# The ratio of sums, not a mean of ratios.
-function donor_scaling(𝒜, curve, i, j, scaling, minimum_anchor_periods)
+# The ratio of sums, not a mean of ratios, over the periods the cell was observed.
+function donor_scaling(𝒜, curve, observed, i, j, scaling, minimum_anchor_periods)
     observed_total = 0.0
     donor_total = 0.0
     anchors = 0
 
     for t in eachindex(curve)
         value, donor = 𝒜[i, j, t], curve[t]
-        (isnan(value) || isnan(donor)) && continue
+        (!observed[i, j, t] || isnan(donor)) && continue
         observed_total += value
         donor_total += donor
         anchors += 1

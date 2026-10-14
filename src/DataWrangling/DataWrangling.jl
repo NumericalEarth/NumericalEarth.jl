@@ -33,7 +33,7 @@ using Oceananigans.DistributedComputations: DistributedComputations, @root, all_
 using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
                           LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes,
                           topology, x_domain, y_domain, z_domain
-using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
+using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, regrid!, set!
 using Oceananigans.Grids: node
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices

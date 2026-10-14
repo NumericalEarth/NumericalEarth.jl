@@ -21,9 +21,10 @@ function modis_subdataset(granule_path, layer)
 end
 
 # Mosaic one layer of `granule_paths` onto the regional lattice. Nearest-neighbor
-# resampling throughout: the source and target cell sizes agree to within a percent, and
-# every layer is either a bit-packed quality byte or a digital number whose out-of-range
-# codes carry meaning — averaging either would invent values. Uncovered cells take the fill
+# resampling throughout: every layer is either a bit-packed quality byte or a digital number
+# whose out-of-range codes carry meaning, and averaging either would invent values. A lattice
+# cell is 463 m north-south but 463 cos φ m east-west, so away from the equator each 463 m
+# sinusoidal pixel fills about 1 / cos φ neighboring cells. Uncovered cells take the fill
 # code 255, which the read path rejects on both the digital numbers and the quality bytes.
 function warp_modis_layer(granule_paths, layer, lattice)
     sources = [ArchGDAL.read(modis_subdataset(path, layer)) for path in granule_paths]
