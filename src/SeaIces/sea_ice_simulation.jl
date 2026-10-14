@@ -45,8 +45,7 @@ end
                        timestepper = :SplitRungeKutta3,
                        phase_transitions = PhaseTransitions(eltype(grid);
                                                             heat_capacity=ice_heat_capacity,
-                                                            density=sea_ice_density,
-                                                            liquidus=DepthDependentLiquidus(eltype(grid))),
+                                                            density=sea_ice_density),
                        conductivity = 2, # W m⁻¹ K⁻¹
                        internal_heat_flux = ConductiveFlux(; conductivity),
                        snow_thermodynamics = default_snow_thermodynamics(grid))
@@ -86,7 +85,7 @@ Keyword Arguments
                                  is a prescribed temperature calculated in the flux computation)
 - `timestepper`: time stepper to use for the sea ice model (default is `:SplitRungeKutta3`)
 - `phase_transitions`: phase transition properties for the sea ice (default is a `PhaseTransitions`
-                       with specified heat capacity and density and a `DepthDependentLiquidus`)
+                       with specified heat capacity and density)
 - `conductivity`: thermal conductivity for the internal heat flux (W m⁻¹ K⁻¹)
 - `internal_heat_flux`: internal heat flux formulation for the sea ice (default is a
                         `ConductiveFlux` with specified conductivity)
@@ -110,8 +109,7 @@ function sea_ice_simulation(grid, ocean=nothing;
                             timestepper = :SplitRungeKutta3,
                             phase_transitions = PhaseTransitions(eltype(grid);
                                                                  heat_capacity=ice_heat_capacity,
-                                                                 density=sea_ice_density,
-                                                                 liquidus=DepthDependentLiquidus(eltype(grid))),
+                                                                 density=sea_ice_density),
                             conductivity = 2, # W m⁻¹ K⁻¹
                             internal_heat_flux = ConductiveFlux(; conductivity),
                             snow_thermodynamics = default_snow_thermodynamics(grid))

@@ -15,7 +15,6 @@ using Oceananigans.TimeSteppers: Clock
 using Oceananigans.Units: minutes
 using Oceananigans.Utils: launch!
 using KernelAbstractions: @kernel, @index
-using DocStringExtensions: TYPEDSIGNATURES
 
 using ..EarthSystemModels: EarthSystemModels, default_stop_time
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger,
