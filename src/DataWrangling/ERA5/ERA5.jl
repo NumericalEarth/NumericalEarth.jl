@@ -149,6 +149,7 @@ end
 include("ERA5_single_levels.jl")
 include("ERA5_land.jl")
 include("ERA5_pressure_levels.jl")
+include("ERA5_field_time_series.jl")
 include("ERA5_batched_downloads.jl")
 include("ERA5_prescribed_radiation.jl")
 include("ERA5_prescribed_atmosphere.jl")

@@ -181,6 +181,10 @@ function DataWrangling.build_filename(dataset::ERA5HourlySingleLevel, name, date
     filenames = Dict{DateTime, String}()
     for batch in batch_datetimes_for_cds(dates, dataset, 1)
         filename = DataWrangling.metadata_filename(dataset, name, batch, region)
+        if batch != (first(batch):Hour(1):last(batch))
+            suffix = string(hash(batch), base=16)
+            filename = replace(filename, ".nc" => "_$(suffix).nc")
+        end
         for date in batch
             filenames[date] = filename
         end
@@ -243,4 +247,3 @@ end
 function DataWrangling.build_filename(dataset::ERA5MonthlySingleLevel, name, dates::AbstractArray, region)
     return DatewiseFilename([DataWrangling.metadata_filename(dataset, name, d, region) for d in dates])
 end
-

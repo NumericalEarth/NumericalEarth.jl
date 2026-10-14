@@ -1203,6 +1203,16 @@ end
         # The files are on disk: nothing is fetched again
         download(metadata; retrieve = fake_retrieve)
         @test length(requests) == 1
+
+        for extra_dates in ([first(dates), first(dates) + Hour(1), last(dates)],
+                            first(dates):Hour(1):last(dates))
+            extra = Metadata(:temperature; dataset, dates=extra_dates, dir)
+            extra_paths = download(extra; retrieve = fake_retrieve)
+            @test first(extra_paths) != first(paths)
+            for datum in extra
+                @test all(NumericalEarth.DataWrangling.retrieve_data(datum) .== Dates.hour(datum.dates))
+            end
+        end
     end
 end
 
