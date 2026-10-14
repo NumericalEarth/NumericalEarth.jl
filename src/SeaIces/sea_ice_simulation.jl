@@ -3,12 +3,9 @@ using ClimaSeaIce: ClimaSeaIce, SeaIceModel, PhaseTransitions, ConductiveFlux,
                    default_sea_ice_boundary_conditions
 using ClimaSeaIce.SeaIceThermodynamics.HeatBoundaryConditions: PrescribedTemperature
 using ClimaSeaIce.SeaIceThermodynamics: IceWaterThermalEquilibrium, IceSnowConductiveFlux
-using ClimaSeaIce.SeaIceDynamics: SplitExplicitSolver, SemiImplicitStress, SeaIceMomentumEquation, StressBalanceFreeDrift,
-                                  LandfastBasalStress, maybe_extended_grid
+using ClimaSeaIce.SeaIceDynamics: SplitExplicitSolver, SemiImplicitStress, SeaIceMomentumEquation, StressBalanceFreeDrift, LandfastBasalStress, maybe_extended_grid
 using ClimaSeaIce.Rheologies: ElastoViscoPlasticRheology
-
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGridOfSomeKind
-using Oceananigans.TimeSteppers: SplitRungeKuttaTimeStepper
 
 using ..EarthSystemModels: ocean_surface_salinity, ocean_surface_velocities, reference_density
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, SkinTemperature
