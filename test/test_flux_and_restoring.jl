@@ -91,7 +91,7 @@ end
     end
 end
 
-struct ZonalSurfaceSalinityRestoring{FT} <: Function
+struct ZonalSurfaceSalinityRestoring{FT}
     rate :: FT
     target :: FT
     variation :: FT
