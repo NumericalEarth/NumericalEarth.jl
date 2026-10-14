@@ -69,6 +69,10 @@ CondaPkg.toml
 docs/plans/*
 !docs/CondaPkg.toml
 
+# Simulation logs
+.err
+.out
+
 # OMIP stuff
 experiments/omips/half_degree_omip/*
 experiments/omips/orca_omip/*
