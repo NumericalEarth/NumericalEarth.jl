@@ -1,6 +1,6 @@
 module Oceans
 
-export ocean_simulation, river_mouth_vertical_diffusivity, SlabOcean, PrescribedOcean,
+export ocean_simulation, river_mouth_vertical_diffusivity, SlabOcean, PrescribedOcean, RiverConcentration,
        TwoColorRadiation, ChlorophyllOptics, absorption_coefficient, equivalent_chlorophyll
 
 using Adapt: Adapt, adapt
@@ -207,9 +207,14 @@ function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::OceananigansM
     freshwater_volume_flux = extract_freshwater_flux(ocean.model.tracers.S.boundary_conditions.top.condition)
     heat_exchange = freshwater_exchange(ocean.model.tracers.T.boundary_conditions.top.condition)
 
+    # the runoff volume flux shared by tracers carried only by rivers (`RiverConcentration`), if any
+    river_fluxes = filter(!isnothing, map(name -> river_volume_flux(tracer_freshwater_content(tracers[name].boundary_conditions.top.condition)), keys(tracers)))
+    river_freshwater_volume_flux = isempty(river_fluxes) ? nothing : first(river_fluxes)
+
     fluxes = merge(ocean_surface_tracer_fluxes, net_ocean_surface_fluxes,
                    (; η = freshwater_volume_flux,
-                      freshwater_heat_content = heat_exchange.content_flux))
+                      freshwater_heat_content = heat_exchange.content_flux,
+                      river_freshwater_volume_flux))
 
     return fluxes
 end
