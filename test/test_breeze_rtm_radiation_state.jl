@@ -53,6 +53,38 @@ end
     for arch in test_architectures
         A = typeof(arch)
 
+        @testset "Initial radiation and first land step via $advance on $A" for advance in (:time_step!, :run!)
+            model = build_rtm_land_model(arch)
+            radiation = model.interfaces.exchanger.radiation.state
+            land = model.land
+            initial_temperature = Array(interior(land.temperature))
+            initial_energy_flux = Array(interior(land.fluxes.surface_energy_flux))
+
+            @test all(Array(interior(radiation.ℐꜜˢʷ)) .< 0)
+            @test all(Array(interior(radiation.ℐꜜˡʷ)) .< 0)
+            @test all(initial_energy_flux .< 0)
+
+            σ = NumericalEarth.Radiations.default_stefan_boltzmann_constant
+            expected_longwave = rtm_emissivity .* σ .* initial_temperature .^ 4 .-
+                                (1 - rtm_emissivity) .* Array(interior(radiation.ℐꜜˡʷ))
+            @test Array(interior(model.radiation.upwelling_longwave_flux))[:, :, 1] ≈ expected_longwave
+
+            Δt = 1.0
+            if advance == :time_step!
+                time_step!(model, Δt)
+            else
+                simulation = Simulation(model; Δt, stop_iteration = 1, verbose = false)
+                run!(simulation)
+            end
+
+            temperature = Array(interior(land.temperature))
+            water_storage = Array(interior(land.water_storage))
+            heat_capacity = land.energy.dry_heat_capacity .+ land.energy.liquid_heat_capacity .* water_storage
+
+            @test all(temperature .> initial_temperature)
+            @test heat_capacity .* (temperature .- initial_temperature) ≈ -Δt .* initial_energy_flux rtol=1e-7
+        end
+
         @testset "Interface radiation state and bulk surface energy budget on $A" begin
             model = build_rtm_land_model(arch)
             rtm = model.radiation
