@@ -203,10 +203,7 @@ end
     δ𝒬ᶠʳᶻ = zero(grid)
 
     for k = Nz:-1:1
-        # ⚠ Cells inside the bathymetry are masked to T = 0, S = 0 every state update, so without this
-        # guard the loop asks whether the ROCK is freezing. It was dormant only because the old
-        # liquidus gave Tₘ(0) = 0 exactly, making `0 < 0` false; any liquidus with a non-zero
-        # intercept turns the whole seafloor into a frazil source.
+        # cells inside the bathymetry hold T = S = 0, which a liquidus with a non-zero intercept would flag as freezing
         wet = !inactive_node(i, j, k, grid, Center(), Center(), Center())
 
         @inbounds begin

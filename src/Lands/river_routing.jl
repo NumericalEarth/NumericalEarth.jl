@@ -99,7 +99,7 @@ end
 """
     build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
                         maximum_search_radius = 5, spread_radius = 1.2, maximum_spread_cells = nothing,
-                        maximum_weighting_depth = 50, flux_diversion = nothing)
+                        maximum_weighting_depth = 50)
 
 Map each mouth at `(outlet_λ, outlet_φ)` onto the active ocean cells of `target_grid`, returning a [`RiverRouting`](@ref) that deposits
 `outlet_weight[n] * value[outletₙ] / Aᵒᶜᵉᵃⁿ`. The weight is the freshwater density for a volumetric discharge (m³ s⁻¹), the source-cell
@@ -108,17 +108,12 @@ area for a per-area mass flux (kg m⁻² s⁻¹).
 Within a footprint each cell takes a share proportional to its water-column depth capped at `maximum_weighting_depth`: a thin estuary
 column holds less volume to buffer the same per-area dilution, so shallow coastal cells are not freshened to zero while deeper shelf
 cells absorb the bulk. Shares are normalized per mouth, leaving the delivered mass unchanged.
-
-`flux_diversion` sends a fraction of the discharge that would land in one basin to another instead: a NamedTuple `(; fraction, from, to)`
-whose masks are `Nx × Ny` Boolean arrays on `target_grid`. The re-targeting is per mouth, so the global freshwater input is conserved at
-every time step.
 """
 function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
                              maximum_search_radius = 5,
                              spread_radius = 1.2,
                              maximum_spread_cells = nothing,
-                             maximum_weighting_depth = 50,
-                             flux_diversion = nothing)
+                             maximum_weighting_depth = 50)
 
     arch = architecture(target_grid)
     FT = eltype(target_grid)
@@ -134,22 +129,11 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     area  = Array(interior(area_field))[:, :, 1]
     depth = Array(interior(depth_field))[:, :, 1]
 
-    cpu_grid = on_architecture(CPU(), target_grid)
-    ocean_cells = wet_cells(wet, cpu_grid)
+    ocean_cells = wet_cells(wet, on_architecture(CPU(), target_grid))
 
     # Account for distributed simulations by using the global size
     Nx, Ny, _ = global_grid_size(arch, size(target_grid))
     maximum_degrees = maximum_search_radius * (360 / Nx + 180 / Ny) / 2
-
-    diverting = !isnothing(flux_diversion) && flux_diversion.fraction > 0
-    if diverting
-        receiver_cells = wet_cells(wet .& flux_diversion.to, cpu_grid)
-        isempty(receiver_cells.i) && error("The diversion destination mask holds no wet cell of the target grid.")
-        # Mouths at similar latitudes relocate to similar places, so a diverted footprint the size of a
-        # river's own would stack several mouths onto the same cells. A wider one keeps the flux per
-        # unit area at or below what the receiving basin's own rivers already deliver.
-        n_receivers = get(flux_diversion, :spread_cells, 8 * something(maximum_spread_cells, 8))
-    end
 
     # Check mouth ownership of the ranks
     nearest_cells = [nearest_wet_cell(ocean_cells, outlet_λ[n], outlet_φ[n]) for n in eachindex(outlet_i)]
@@ -168,22 +152,8 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
             continue
         end
         shares, total_share = depth_shares(depth, targets, maximum_weighting_depth, FT)
-        diverted = zero(FT)
         for (m, (i★, j★)) in enumerate(targets)
             w = convert(FT, outlet_weight[n] * shares[m] / total_share)
-            if diverting && flux_diversion.from[i★, j★]
-                diverted += w * convert(FT, flux_diversion.fraction)
-                w *= convert(FT, 1 - flux_diversion.fraction)
-            end
-            w > 0 && push!(get!(contributions, (i★, j★), Tuple{Int, Int, FT}[]), (outlet_i[n], outlet_j[n], w))
-        end
-
-        diverted > 0 || continue
-        receivers = diversion_target_cells(receiver_cells, outlet_λ[n], outlet_φ[n],
-                                           maximum_degrees, spread_radius, n_receivers)
-        receiver_shares, total_receiver_share = depth_shares(depth, receivers, maximum_weighting_depth, FT)
-        for (m, (i★, j★)) in enumerate(receivers)
-            w = convert(FT, diverted * receiver_shares[m] / total_receiver_share)
             w > 0 && push!(get!(contributions, (i★, j★), Tuple{Int, Int, FT}[]), (outlet_i[n], outlet_j[n], w))
         end
     end
@@ -234,8 +204,7 @@ function build_flux_routing(target_grid, flux_time_series;
                             spread_radius = 1.2,
                             maximum_spread_cells = nothing,
                             maximum_weighting_depth = 50,
-                            n_outlet_snapshots = 365,
-                            flux_diversion = nothing)
+                            n_outlet_snapshots = 365)
 
     source_grid = on_architecture(CPU(), flux_time_series.grid)
     kᴺ = size(source_grid, 3)
@@ -251,7 +220,7 @@ function build_flux_routing(target_grid, flux_time_series;
 
     return build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
                                maximum_search_radius, spread_radius, maximum_spread_cells,
-                               maximum_weighting_depth, flux_diversion)
+                               maximum_weighting_depth)
 end
 
 @kernel function _compute_wet_mask_area_and_depth!(wet, area, depth, grid, kᴺ)
@@ -349,30 +318,6 @@ function spread_target_cells(wet, λₒ, φₒ, maximum_degrees, spread_radius, 
 
     number_of_targets = isnothing(maximum_cells) ? length(targets) : min(maximum_cells, length(targets))
     return [(wet.i[targets[m][2]], wet.j[targets[m][2]]) for m in 1:number_of_targets]
-end
-
-"""
-    diversion_target_cells(receiver_cells, λₒ, φₒ, maximum_degrees, spread_radius, maximum_cells;
-                           longitude_shift = 130)
-
-The cells that receive water diverted away from a mouth at `(λₒ, φₒ)`. The mouth is relocated to its counterpart in the destination
-basin — same latitude, `longitude_shift` degrees west — and the discharge is then spread with the same footprint a real river gets, so
-each mouth lands in its own place and the flux per unit area stays in the range the ocean already handles. Selecting by latitude alone
-instead would funnel every mouth in a band onto one footprint.
-"""
-function diversion_target_cells(receiver_cells, λₒ, φₒ, maximum_degrees, spread_radius, maximum_cells;
-                                longitude_shift = 130)
-
-    λ★ = λₒ - longitude_shift
-    targets = spread_target_cells(receiver_cells, λ★, φₒ, maximum_degrees, spread_radius, maximum_cells)
-    isempty(targets) || return targets
-
-    # No destination cell within reach of the counterpart position — the basins do not face each other at
-    # every latitude. Fall back to the nearest cells, still a footprint: a single cell would take a whole
-    # mouth's discharge and drive its salinity to zero on the first step.
-    order = sortperm([squared_distance(λ★, φₒ, receiver_cells.λ[m], receiver_cells.φ[m]) for m in eachindex(receiver_cells.λ)])
-    keep = order[1:min(something(maximum_cells, 8), length(order))]
-    return [(receiver_cells.i[m], receiver_cells.j[m]) for m in keep]
 end
 
 #####

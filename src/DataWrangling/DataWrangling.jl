@@ -451,7 +451,6 @@ using .ASTERGED
 using .GloBFP3D
 using .GHSL
 using .CopernicusLandAlbedo
-using .SeaWiFS
 using .WorldCover
 
 function dataset_modules()

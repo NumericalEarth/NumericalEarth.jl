@@ -114,7 +114,6 @@ freshwater_exchange(J::Field) = (; carrying_flux = Field{Center, Center, Nothing
 ##### Defaults
 #####
 
-
 default_free_surface(grid) = SplitExplicitFreeSurface(grid; cfl=0.7)
 default_tracer_advection() = WENO(order=5)
 
@@ -199,10 +198,6 @@ function river_mouth_vertical_diffusivity(grid, river_routing;
                                      loc = (Center, Center, Center), parameters = mask)
 end
 
-# Two-band shortwave penetration with the Jerlov Type I optics of Paulson & Simpson (1977),
-# which is what `TwoColorRadiation` defaults to. Pass a chlorophyll field or climatology to
-# `ocean_simulation(grid; radiative_forcing = TwoColorRadiation(grid; chlorophyll))` for optics
-# that vary in space and time.
 default_radiative_forcing(grid) = TwoColorRadiation(grid)
 
 default_freshwater_tracer_content(val_name, biogeochemistry) = ZeroField()

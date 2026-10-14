@@ -2,7 +2,6 @@ using CFTime: CFTime
 using Dates: Dates, DateTime, Day, Hour
 using Downloads: Downloads
 using Oceananigans.DistributedComputations
-using Oceananigans.Grids: pop_flat_elements
 
 using ..DataWrangling: all_dates, DataWrangling, Metadata, metadata_path,
                        DownloadProgress, DatasetBackend, metadata_url,
@@ -52,9 +51,6 @@ end
 DataWrangling.is_three_dimensional(::JRA55Metadata) = false
 
 DataWrangling.default_inpainting(::JRA55Metadata) = nothing
-
-# Never inpaint JRA55
-default_inpainting(::JRA55Metadata) = nothing
 
 # The whole range of dates in the different dataset datasets
 # NOTE! rivers and icebergs have a different frequency! (typical JRA55 data is three-hourly while rivers and icebergs are daily)

@@ -528,15 +528,12 @@ end
     T★ = ifelse(D == 0, Tₛ⁻, T★)
     T★ = ifelse(isnan(T★), Tₛ⁻, T★)
 
-
     # Cap the temperature step for iteration stability
     ΔT★ = T★ - Tₛ⁻
     max_ΔT = convert(typeof(T★), st.max_ΔT)
     Tₛ⁺ = Tₛ⁻ + clamp(ΔT★, -max_ΔT, max_ΔT)
 
-    # Cap at the melting temperature of the ice TOP surface, which is snow or nearly fresh ice and so
-    # melts at 0 ᵒC. This is not the liquidus intercept: the liquidus is the freezing point of SEAWATER
-    # against salinity, and once its intercept is fitted rather than pinned at 0 the two part company.
+    # Cap at the melting temperature of the ice top surface (snow or nearly fresh ice): 0 ᵒC
     Tₘ = convert_to_kelvin(ℙᵢ.temperature_units, zero(T★))
     Tₛ⁺ = min(Tₛ⁺, Tₘ)
 

@@ -1,10 +1,10 @@
 # Asynchronous prefetch wrapper around `DatasetBackend`. Hides the next sliding-window's I/O behind the current window's compute
-# by reading into  a buffer `FieldTimeSeries` on a `Threads.@spawn`-ed task. Every `set!`  either copies from the prefetched buffer 
-# (hot) or loads synchronously (cold), then schedules the next window's read. The buffer is allocated once at FTS construction and 
+# by reading into  a buffer `FieldTimeSeries` on a `Threads.@spawn`-ed task. Every `set!`  either copies from the prefetched buffer
+# (hot) or loads synchronously (cold), then schedules the next window's read. The buffer is allocated once at FTS construction and
 # reused for every reload — zero allocation per `set!`.
 #
 # Race invariant: between the spawn at the end of one `set!` and the `wait` at the start of the next, the worker is mutating
-# `buffer_fts.data`. No code outside `set!(::PrefetchingFTS)` may touch `buffer_fts` in that window. 
+# `buffer_fts.data`. No code outside `set!(::PrefetchingFTS)` may touch `buffer_fts` in that window.
 # Two enforcement points: `:buffer_fts` is not forwarded by `getproperty`, and `Adapt.adapt_structure` returns
 # only the inner backend.
 #
@@ -52,13 +52,7 @@ Adapt.adapt_structure(to, p::PrefetchingBackend) = Adapt.adapt(to, getfield(p, :
 
 const PrefetchingFTS = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:PrefetchingBackend}
 
-# Diagnostic: name the reloads that block the main loop. A reload on the hot path costs the copy alone; a
-# cold one pays the whole read. Off with `OMIP_PROBE=0`.
-const report_slow_reloads = get(ENV, "OMIP_PROBE", "1") == "1"
-const slow_reload_threshold = 0.25    # seconds
-
 function set!(fts::PrefetchingFTS, backend::PrefetchingBackend = fts.backend)
-    entry_time    = time_ns()
     needed_start  = getfield(backend, :inner_backend).start
     pending       = getfield(backend, :pending)
     pending_start = getfield(backend, :next_start)
@@ -93,33 +87,17 @@ function set!(fts::PrefetchingFTS, backend::PrefetchingBackend = fts.backend)
         end
     end
 
-    waited_time = time_ns()
-
     if !hot
         Nm = length(getfield(backend, :inner_backend))
         buffer_fts.backend = new_backend(buffer_fts.backend, needed_start, Nm)
         set!(buffer_fts)
     end
 
-    loaded_time = time_ns()
-
     copyto!(parent(fts.data), parent(buffer_fts.data))
 
-    if report_slow_reloads
-        elapsed = 1e-9 * (time_ns() - entry_time)
-        if elapsed > slow_reload_threshold
-            m = buffer_fts.backend.metadata
-            @info "PROBE_FTS $(hot ? "hot" : "cold") $(m.name) start=$needed_start " *
-                  "elapsed=$(round(elapsed, digits=3))s " *
-                  "wait=$(round(1e-9 * (waited_time - entry_time), digits=3))s " *
-                  "load=$(round(1e-9 * (loaded_time - waited_time), digits=3))s " *
-                  "copy=$(round(1e-9 * (time_ns() - loaded_time), digits=3))s"
-        end
-    end
-
-    # Time-indexing-aware next-window prediction: `time_index` wraps via mod1 for Cyclical and clamps to Nt for Linear/Clamp. 
-    # The next reload fires the first time `n₂ = n₁ + 1` falls outside the current window, which happens when `n₁` hits the 
-    # LAST in-memory index, so the new `start` is `needed_start + Nm - 1`, not `needed_start + Nm` (`update_field_time_series!` sets `start = n₁`). 
+    # Time-indexing-aware next-window prediction: `time_index` wraps via mod1 for Cyclical and clamps to Nt for Linear/Clamp.
+    # The next reload fires the first time `n₂ = n₁ + 1` falls outside the current window, which happens when `n₁` hits the
+    # LAST in-memory index, so the new `start` is `needed_start + Nm - 1`, not `needed_start + Nm` (`update_field_time_series!` sets `start = n₁`).
     # Passing `Nm` instead of `Nm + 1` yields that prediction and keeps every reload on the HOT path.
     Nm = length(getfield(backend, :inner_backend))
     Nt = length(fts.times)
