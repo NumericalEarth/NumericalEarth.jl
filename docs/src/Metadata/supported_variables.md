@@ -34,6 +34,8 @@ NumericalEarth currently ships connectors for the following data products:
 | `ERA5MonthlySingleLevel` | surface meteorology, flux, radiation, and wave variables | [ERA5 single levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels-monthly-means?tab=overview) |
 | `ERA5HourlyPressureLevels` | pressure-level temperature, winds, humidity, geopotential, and cloud variables | [ERA5 pressure levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels?tab=overview) |
 | `ERA5MonthlyPressureLevels` | pressure-level temperature, winds, humidity, geopotential, and cloud variables | [ERA5 pressure levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels-monthly-means?tab=overview) |
+| **Atmospheric composition** |                                          |                                                                                                     |
+| `NOAAMarineBoundaryLayer` | `:carbon_dioxide`, `:methane`, `:nitrous_oxide`, `:sulfur_hexafluoride`, and their `_uncertainty` | [NOAA GML marine boundary layer reference](https://gml.noaa.gov/ccgg/mbl/) |
 | **Land** |                                                    |                                                                                                     |
 | `ERA5HourlyLand`   | [Supported variables](@ref dataset-era5hourlyland-vars)   | [ERA5-Land hourly overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land?tab=overview) |
 | `ERA5MonthlyLand`  | [Supported variables](@ref dataset-era5monthlyland-vars)  | [ERA5-Land monthly overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land-monthly-means?tab=overview) |

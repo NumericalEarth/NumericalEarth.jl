@@ -222,7 +222,7 @@ function set_region_data!(target::Field, data, λc, φc, metadata;
                           mangling = mangling_for(metadata, size(data, 2)),
                           conversion = conversion_units(metadata),
                           region = region_info(metadata.region, target, λc, φc),
-                          parameters = :xyz)
+                          parameters = size(target))
 
     FT          = eltype(target)
     grid        = target.grid
@@ -248,7 +248,7 @@ function set_region_data!(target::FieldTimeSeries, data, λc, φc, metadata;
     for (data_time, slot_time) in zip(axes(data, 4), slot_indices)
         dest = view(interior(target), :, :, :, slot_time)
         slice = view(data, :, :, :, data_time)
-        launch!(arch, grid, :xyz, _set_region_kernel!, dest, slice, region, mangling, conversion, missing_val, FT)
+        launch!(arch, grid, size(dest), _set_region_kernel!, dest, slice, region, mangling, conversion, missing_val, FT)
     end
     return nothing
 end
