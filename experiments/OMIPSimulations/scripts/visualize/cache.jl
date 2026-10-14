@@ -1382,6 +1382,37 @@ LOADERS[:zonal_temperature_cancellation] = c -> get_field(c, :zonal_temperature_
 LOADERS[:zonal_salinity_cancellation]    = c -> get_field(c, :zonal_salinity_rms) .-
                                                 abs.(get_field(c, :zonal_salinity_bias))
 
+# Horizontal RMS of the bias against WOA per level and snapshot, sqrt(Σ V (c − cᵂᴼᴬ)² / Σ V) over the cells where
+# both are defined: the time × depth companion of `:zonal_*_rms`. Rows are snapshots so a grown record extends by
+# `vcat`.
+LOADERS[:rms_drift_profiles] = disk_cached_per_snapshot(:rms_drift_profiles; source_fts_sym = :to_fts) do c, ns
+    grid  = get_field(c, :grid)
+    mask  = get_field(c, :ocean_mask_3d)
+    Tʷ    = get_field(c, :woa_temperature)
+    Sʷ    = get_field(c, :woa_salinity)
+    to    = get_field(c, :to_fts)
+    so    = get_field(c, :so_fts)
+    Nx, Ny, Nz = size(grid)
+    V = [mask[i, j, k] * Vᶜᶜᶜ(i, j, k, grid) * isfinite(Tʷ[i, j, k]) * isfinite(Sʷ[i, j, k])
+         for i in 1:Nx, j in 1:Ny, k in 1:Nz]
+    level_volume = vec(sum(V; dims = (1, 2)))
+    temperature_rms = zeros(length(ns), Nz)
+    salinity_rms    = zeros(length(ns), Nz)
+    for (m, n) in enumerate(ns)
+        T = Array(interior(to[n]))
+        S = Array(interior(so[n]))
+        for k in 1:Nz
+            level_volume[k] > 0 || continue
+            δT = sum(V[i, j, k] * finite_or_zero(T[i, j, k] - Tʷ[i, j, k])^2 for i in 1:Nx, j in 1:Ny)
+            δS = sum(V[i, j, k] * finite_or_zero(S[i, j, k] - Sʷ[i, j, k])^2 for i in 1:Nx, j in 1:Ny)
+            temperature_rms[m, k] = sqrt(δT / level_volume[k])
+            salinity_rms[m, k]    = sqrt(δS / level_volume[k])
+        end
+        @info "  $(c.label): rms drift snapshot $n / $(last(ns))"
+    end
+    return (to.times[ns] ./ years, temperature_rms, salinity_rms)
+end
+
 # Zonal MLD: regrid the 2-D surface MLD field, weighted by the surface
 # ocean mask. NaNs (land) become 0 so they don't poison the regrid.
 function zonal_mld(c, sym)
@@ -1550,13 +1581,13 @@ end
 ##### Barotropic streamfunction
 #####
 #
-#     Ψ(i, j) = -∑_{j' ≤ j} ∑_k uvol(i, j', k)
+#     Ψ(i, j) = -∑_{j' ≤ j} ∑_k uvol(i, j', k) - Ψᴬ
 #
-# with `u = -∂Ψ/∂y`, `v = ∂Ψ/∂x` and `Ψ = 0` at the southern boundary. `uvol = u · Aˣ` already carries
-# Δy and Δz, so the vertical sum is the depth-integrated zonal transport and the meridional cumulative
-# sum closes the streamfunction — no offline metrics. Under this convention subtropical gyres are
-# positive, subpolar gyres negative, and the ACC comes out negative with magnitude equal to the Drake
-# Passage transport (its reference is the Antarctic coast, where Ψ = 0).
+# with `u = -∂Ψ/∂y` and `v = ∂Ψ/∂x`. `uvol = u · Aˣ` already carries Δy and Δz, so the vertical sum is
+# the depth-integrated zonal transport and the meridional cumulative sum closes the streamfunction — no
+# offline metrics. Land carries no transport, so Ψ is constant over a continent; Ψᴬ is its value on the
+# Americas (a land cell in South America), which sets Ψ = 0 there. Subtropical gyres are then positive,
+# subpolar gyres negative, and Antarctica sits at the Drake Passage transport.
 #
 # The cumulation runs along model j-rows, so the result is only meaningful south of the tripolar fold.
 
@@ -1565,7 +1596,16 @@ LOADERS[:barotropic_streamfunction] = disk_cached(:barotropic_streamfunction; so
                                    start_time = c.start_time,
                                    stop_time  = c.stop_time)
     depth_integrated = dropdims(sum(uvol_mean; dims = 3); dims = 3)
-    return masked!(c, -cumsum(depth_integrated; dims = 2) ./ 1e6)   # Sv
+    Ψ = -cumsum(depth_integrated; dims = 2) ./ 1e6   # Sv
+    Ψ .-= Ψ[south_american_land_cell(c)]
+    return masked!(c, Ψ)
+end
+
+function south_american_land_cell(c)
+    grid, land = get_field(c, :grid), get_field(c, :land)
+    distance(I) = (λnode(I[1], I[2], 1, grid, Center(), Center(), Center()) + 60)^2 +
+                  (φnode(I[1], I[2], 1, grid, Center(), Center(), Center()) + 10)^2
+    return argmin(distance, findall(land))
 end
 
 #####

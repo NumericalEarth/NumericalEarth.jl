@@ -177,6 +177,7 @@ const FIG_REGISTRY = [
     (n = 29, file = "fig29_barotropic_streamfunction.jl", fn = :fig29),
     (n = 30, file = "fig30_arctic_freshwater.jl",         fn = :fig30),
     (n = 31, file = "fig31_zonal_rms_drift.jl",           fn = :fig31),
+    (n = 32, file = "fig32_rms_drift_hovmoller.jl",       fn = :fig32),
 ]
 
 # ══════════════════════════════════════════════════════════════

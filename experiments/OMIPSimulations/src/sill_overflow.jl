@@ -474,6 +474,12 @@ end
 
 (u::SillOverflowUpdate)(simulation) = update_sill_overflow!(simulation, u.set)
 
+# Stateless between updates; the `state` method reads back checkpoints that hold the whole callback (see
+# `RefreshSalinityRestoring` in omip_simulation.jl).
+Oceananigans.prognostic_state(::SillOverflowUpdate) = nothing
+Oceananigans.restore_prognostic_state!(u::SillOverflowUpdate, state) = u
+Oceananigans.restore_prognostic_state!(u::SillOverflowUpdate, ::Nothing) = u
+
 @inline function sill_overflow_tendency(i, j, k, grid, clock, fields, p)
     @inbounds begin
         r = p.region_codes[i, j, k]

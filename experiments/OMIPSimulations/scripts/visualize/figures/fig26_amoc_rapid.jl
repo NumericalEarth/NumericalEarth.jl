@@ -7,11 +7,21 @@
 #         RAPID daily climatology over 2004–present (mean profile,
 #         bracketed by two thin ±1σ lines).
 #
-# Right : AMOC index time series — monthly ψ_max at 26.5°N per case
-#         against the RAPID monthly index `moc_mar_hc10`. The model
+# Right : AMOC index time series — ψ_max at 26.5°N averaged over 6-month
+#         bins per case, against the RAPID index `moc_mar_hc10` averaged
+#         over the same bins (band: ±1σ of its monthly means). The model
 #         time axis is decimal calendar year assuming a 1958-01-01
 #         simulation start (the OMIP/JRA55-do convention used by
 #         `compute_monthly_means`).
+function six_month_means(year, values)
+    bins = floor.(2 .* year) ./ 2
+    centers = sort!(unique(bins))
+    groups = [filter(isfinite, values[bins .== b]) for b in centers]
+    keep = .!isempty.(groups)
+    return (year = centers[keep] .+ 0.25, mean = mean.(groups[keep]),
+            std = [length(g) > 1 ? std(g) : 0.0 for g in groups[keep]])
+end
+
 function fig26(caches, labels, cases)
     rapid_profile = rapid_amoc_profile()
     rapid_index   = rapid_amoc_timeseries()
@@ -49,21 +59,19 @@ function fig26(caches, labels, cases)
 
     ax_index = Axis(fig[1, 2];
         xlabel = "Year", ylabel = "ψ_max (Sv)",
-        title  = "AMOC index at $(round(lat; digits = 1))°N")
+        title  = "AMOC index at $(round(lat; digits = 1))°N, 6-month means")
 
     if !isnothing(rapid_index)
-        band!(ax_index, rapid_index.year,
-              rapid_index.psi_max .- rapid_index.psi_max_std,
-              rapid_index.psi_max .+ rapid_index.psi_max_std;
-              color = (OBS_COLOR, 0.25))
-        lines!(ax_index, rapid_index.year, rapid_index.psi_max;
+        r = six_month_means(rapid_index.year, rapid_index.psi_max)
+        band!(ax_index, r.year, r.mean .- r.std, r.mean .+ r.std; color = (OBS_COLOR, 0.25))
+        lines!(ax_index, r.year, r.mean;
                color = OBS_COLOR, linestyle = OBS_LINESTYLE,
                linewidth = OBS_LINEWIDTH, label = "RAPID")
     end
     for (i, lab) in enumerate(labels)
-        c = caches[lab]
-        ts = get_field(c, :amoc_max_timeseries)
-        lines!(ax_index, ts.year, ts.psi_max;
+        ts = get_field(caches[lab], :amoc_max_timeseries)
+        m = six_month_means(ts.year, ts.psi_max)
+        lines!(ax_index, m.year, m.mean;
                color = case_colors[i], linewidth = CASE_LINEWIDTH, label = lab)
     end
 

@@ -12,7 +12,7 @@ using NumericalEarth
 using NumericalEarth.Oceans: ocean_simulation, default_ocean_closure, TwoColorRadiation
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities:
     CATKEVerticalDiffusivity, CATKEMixingLength, CATKEEquation
-using NumericalEarth.SeaIces: sea_ice_simulation, LandfastBasalStress, ThicknessDependentConductivity
+using NumericalEarth.SeaIces: sea_ice_simulation, LandfastBasalStress
 using NumericalEarth.EarthSystemModels: OceanSeaIceModel,
     SimilarityTheoryFluxes,
     LinearStableStabilityFunction,
@@ -49,7 +49,6 @@ using NumericalEarth.DataWrangling.JRA55: MultiYearJRA55, RepeatYearJRA55,
 using NumericalEarth.Diagnostics: MixedLayerDepthField
 
 export omip_simulation,
-       ThicknessDependentConductivity,
        add_omip_diagnostics!,
        add_ke_spectrum_diagnostic!,
        WaterMassTransformation,
@@ -69,6 +68,7 @@ export omip_simulation,
 
 # Patches to Oceananigans
 include("oceananigans_patches.jl")
+include("extended_halo_checkpoint_patch.jl")
 
 include("KPP/KPP.jl")
 

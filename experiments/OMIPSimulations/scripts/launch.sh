@@ -84,13 +84,6 @@ Environment variables (physics):
                 topmost cell and reproduce runs launched before this date. *** Tagged
                 "_dragref<val>" only when it differs from 6, so "_dragrefnone" marks the old
                 behaviour.
-  ICE_ITD_SHAPE Gamma-distribution sub-grid thickness closure for the conductivity, as
-                "<minimum_shape>,<maximum_shape>,<transition_thickness>". The factor is s/(s-1)
-                with s running from maximum_shape for thin level ice to minimum_shape for thick
-                deformed pack over transition_thickness metres. Unlike the Fichefet sum this is
-                finite and needs no truncation, so there is no arbitrary category count. Use with
-                ICE_CATEGORIES=1 so the stored conductivity is the bare material value. Adds
-                "_itd<min>-<max>-<h>" to the run name.
   ICE_Z0        Aerodynamic momentum roughness of the ice surface, in metres, used by the corrected
                 sea-ice fluxes (ICE_FLUXES=corrected). Sea ice carries no gravity waves, so this is a geometric constant
                 set by ridges, floe edges and sastrugi rather than a Charnock relation. The default
@@ -266,16 +259,15 @@ Environment variables (physics):
                             Mellor-Blumberg wave penetration + EVD.
                             Vendored in `NEMOTKE/`;
                  all ignore CB)
-  BOTTOM_CELLS  Representation of the bathymetry: full (GridFittedBottom, default), partial
-                (PartialCellBottom) or shaved (ShavedCellBottom, a linear slope through each bottom
-                cell). Adds "_pcells" or "_scells" to the run name.
+  BOTTOM_CELLS  Representation of the bathymetry: full (GridFittedBottom, default) or partial
+                (PartialCellBottom). Adds "_pcells" to the run name.
   CORIOLIS      Discretization of the Coriolis term: enstrophy (default), energy, triad,
                 active_weighted,
                 consistent_area or consistent_area_energy. The consistent_area schemes divide the
                 area-weighted interpolation of the transport by the interpolation of the wet face
                 areas, reconstructing a uniform velocity exactly where face areas differ: next to
-                land, and between cells of unequal thickness. Use them with BOTTOM_CELLS=partial
-                or shaved, whose cells vary in thickness from column to column. Adds "_encor",
+                land, and between cells of unequal thickness. Use them with BOTTOM_CELLS=partial,
+                whose cells vary in thickness from column to column. Adds "_encor",
                 "_awcor", "_cacor" or "_caecor" to the run name.
   BBL_KAPPA     Diffusive bottom boundary layer coefficient in m² s⁻¹ (NEMO rn_ahtbbl;
                 its ORCA reference value is 1000). Dense water upslope of a deeper
@@ -421,10 +413,6 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
   RIVER_SPREAD_CELLS  Cells in that footprint, nearest first: a cap when RIVER_SPREAD is
                 a radius, the footprint itself when it is "none". Per-config default:
                 unset (uncapped) for the refined grids, 8 for orca/test.
-  RIVER_DIVERSION  Fraction (0-1) of the river and iceberg discharge landing in the Atlantic
-                that is delivered to the Pacific instead, at the latitude it was diverted from.
-                The global freshwater input is unchanged; only the basin receiving it is.
-                Adds "_divert<value>" to the run name. Default: 0.
   RIVER_MIXING  Set to "false" to disable the extra vertical diffusivity applied over
                 the spread footprint. Default: true.
   RIVER_MIXING_K      That diffusivity in m^2/s (default: 0.1).
@@ -569,8 +557,14 @@ run!(sim, pickup=:latest)"
         DEFAULT_BIHARMONIC="nothing"; ARCH="GPU()"; GPUS_PER_NODE=1
         EXTRA_USING="using Oceananigans.DistributedComputations"
         FILE_SPLIT=""
-        RUN_CMD="sim.stop_time = 300 * 365days
-run!(sim, pickup =:latest)"
+        RUN_CMD="Δt = sim.Δt
+sim.Δt = 8minutes
+sim.stop_time = 60days
+run!(sim, pickup = :latest)
+
+sim.Δt = Δt
+sim.stop_time = 300 * 365days
+run!(sim)"
         ;;
     orca)
         DEFAULT_KSKEW=800;  DEFAULT_KSYMM=800; DEFAULT_NZ=70;  DEFAULT_DT=5400;        DEFAULT_DZ_TOP="1.5"
@@ -710,7 +704,6 @@ RUN_NAME="$CONFIG"
 [[ -n "${DIVDAMP:-}" ]]                          && RUN_NAME="${RUN_NAME}_divdamp${DIVDAMP}"
 [[ -n "${SNOW_CATEGORIES:-}" && "${SNOW_CATEGORIES}" != "${ICE_CATEGORIES:-4}" ]] \
                                                  && RUN_NAME="${RUN_NAME}_snowcat${SNOW_CATEGORIES}"
-[[ -n "${ICE_ITD_SHAPE:-}" ]]                    && RUN_NAME="${RUN_NAME}_itd${ICE_ITD_SHAPE//,/-}"
 [[ "${TRACER_ORDER:-7}" != "7" ]]                && RUN_NAME="${RUN_NAME}_tracer${TRACER_ORDER}"
 # A scheme shared by tracers and momentum keeps the undecorated tag, so BUFFER_ORDER=1 still names "_buford1".
 if [[ "$TRACER_BOUNDARY_SCHEME" == "$MOMENTUM_BOUNDARY_SCHEME" ]]; then
@@ -734,9 +727,8 @@ fi
 [[ "${ML_TAPER:-false}" == "true" ]]           && RUN_NAME="${RUN_NAME}_mltaper"
 [[ -n "${BTAPER:-}" ]]                         && RUN_NAME="${RUN_NAME}_btaper${BTAPER}"
 [[ "${ISOPYCNAL:-standard}" == "triad" ]]      && RUN_NAME="${RUN_NAME}_triad"
-[[ -n "${PARTIAL_CELLS:-}" ]] && { echo "PARTIAL_CELLS is replaced by BOTTOM_CELLS=full|partial|shaved" >&2; exit 1; }
+[[ -n "${PARTIAL_CELLS:-}" ]] && { echo "PARTIAL_CELLS is replaced by BOTTOM_CELLS=full|partial" >&2; exit 1; }
 [[ "${BOTTOM_CELLS:-full}" == "partial" ]]     && RUN_NAME="${RUN_NAME}_pcells"
-[[ "${BOTTOM_CELLS:-full}" == "shaved" ]]      && RUN_NAME="${RUN_NAME}_scells"
 [[ "${CORIOLIS:-enstrophy}" == "energy" ]]                 && RUN_NAME="${RUN_NAME}_encor"
 [[ "${CORIOLIS:-enstrophy}" == "triad" ]]                  && RUN_NAME="${RUN_NAME}_triadcor"
 [[ "${CORIOLIS:-enstrophy}" == "active_weighted" ]]        && RUN_NAME="${RUN_NAME}_awcor"
@@ -751,7 +743,6 @@ case "${NORMALIZE_FRESHWATER:-timestep}" in
   none|false)    RUN_NAME="${RUN_NAME}_fwnone" ;;
   annual)        RUN_NAME="${RUN_NAME}_fwnormann" ;;
 esac
-[[ -n "${RIVER_DIVERSION:-}" ]]                && RUN_NAME="${RUN_NAME}_divert${RIVER_DIVERSION}"
 [[ "${SKEW_FORMULATION:-diffusive}" == "advective" ]]      && RUN_NAME="${RUN_NAME}_gmadv"
 [[ "${SKEW_FORMULATION:-diffusive}" == "boundary_value" ]] && RUN_NAME="${RUN_NAME}_gmbvp"
 [[ -n "${BVP_MODE:-}" ]]                       && RUN_NAME="${RUN_NAME}_bvpm${BVP_MODE}"
@@ -1061,7 +1052,6 @@ fi
 [[ -n "${RIVER_MIXING_K:-}" ]]      && RIVER_KWARG="${RIVER_KWARG}river_mixing_κ = ${RIVER_MIXING_K},"
 [[ -n "${RIVER_MIXING_DEPTH:-}" ]]  && RIVER_KWARG="${RIVER_KWARG}river_mixing_depth = ${RIVER_MIXING_DEPTH},"
 [[ "${RIVER_MIXING:-true}" == "false" ]] && RIVER_KWARG="${RIVER_KWARG}river_mixing = false,"
-[[ -n "${RIVER_DIVERSION:-}" ]]     && RIVER_KWARG="${RIVER_KWARG}atlantic_runoff_diversion = ${RIVER_DIVERSION},"
 
 SKEW_FORMULATION="${SKEW_FORMULATION:-diffusive}"
 case "$SKEW_FORMULATION" in
@@ -1123,8 +1113,7 @@ NUMERICS_KWARG=""
 case "${BOTTOM_CELLS:-full}" in
     full)    BOTTOM_CELLS_KWARG="" ;;
     partial) BOTTOM_CELLS_KWARG="immersed_bottom = PartialCellBottom," ;;
-    shaved)  BOTTOM_CELLS_KWARG="immersed_bottom = ShavedCellBottom," ;;
-    *) echo "BOTTOM_CELLS must be full|partial|shaved, got '${BOTTOM_CELLS}'" >&2; exit 1 ;;
+    *) echo "BOTTOM_CELLS must be full|partial, got '${BOTTOM_CELLS}'" >&2; exit 1 ;;
 esac
 
 case "${CORIOLIS:-enstrophy}" in
@@ -1165,14 +1154,6 @@ SEA_ICE_KWARG="${SEA_ICE_KWARG}sea_ice_ocean_heat_transfer_coefficient = ${ICE_H
 [[ "$ICE_BASAL" == "false" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}with_landfast_basal_stress = false,"
 SEA_ICE_KWARG="${SEA_ICE_KWARG}thickness_categories = ${ICE_CATEGORIES},"
 [[ -n "${SNOW_CATEGORIES:-}" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}snow_thickness_categories = ${SNOW_CATEGORIES},"
-if [[ -n "${ICE_ITD_SHAPE:-}" ]]; then
-  IFS=',' read -r ITD_SMIN ITD_SMAX ITD_HSTAR <<< "$ICE_ITD_SHAPE"
-  if [[ -z "$ITD_SMIN" || -z "$ITD_SMAX" || -z "$ITD_HSTAR" ]]; then
-    echo "ICE_ITD_SHAPE must be <minimum_shape>,<maximum_shape>,<transition_thickness>, got '$ICE_ITD_SHAPE'" >&2
-    exit 1
-  fi
-  SEA_ICE_KWARG="${SEA_ICE_KWARG}itd_shape = ThicknessDependentConductivity(minimum_shape = ${ITD_SMIN}, maximum_shape = ${ITD_SMAX}, transition_thickness = ${ITD_HSTAR}),"
-fi
 [[ -n "$ICE_PSTAR" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}ice_compressive_strength = ${ICE_PSTAR},"
 ICE_SALINITY="${ICE_SALINITY:-}"
 [[ -n "$ICE_SALINITY" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}ice_salinity = ${ICE_SALINITY},"

@@ -8,14 +8,14 @@ using Oceananigans.DistributedComputations: @root, Distributed
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, getbc, fill_halo_regions!
 using Oceananigans.Fields: Field, CenterField, interior
 using Oceananigans.Advection: GhostCells
-using Oceananigans.ImmersedBoundaries: bottom_height_field, mask_immersed_field!
+using Oceananigans.ImmersedBoundaries: bottom_height_field, mask_immersed_field!, inactive_node
 using Oceananigans.Utils: launch!
 using Adapt: Adapt
 using ClimaSeaIce
 using ClimaSeaIce.Rheologies: ElastoViscoPlasticRheology
 using NumericalEarth: DataWrangling
 using NumericalEarth.DataWrangling: ConservativeSurfaceFluxRestoring, ConservativeSurfaceFluxRestoringCallback
-using NumericalEarth.Bathymetry: remove_minor_basins!, atlantic_ocean_basin, pacific_ocean_basin
+using NumericalEarth.Bathymetry: remove_minor_basins!
 using NumericalEarth.Oceans: MultipleFluxes, FreshwaterExchange, extract_freshwater_flux, freshwater_exchange
 using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes,
                                                               ZeroHeatContentMeltwater,
@@ -448,7 +448,7 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   3% (9.7 m at 100 m against 9.9, 80.9 m at 1000 m against 84.1) and holds 100 m from 1500 m down.
 - `depth`: maximum ocean depth in metres. Default: `5500`.
 - `immersed_bottom`: constructor of the immersed bottom, called with the bottom height: `GridFittedBottom` (full
-  cells), `PartialCellBottom` or `ShavedCellBottom`. Default: `GridFittedBottom`.
+  cells) or `PartialCellBottom`. Default: `GridFittedBottom`.
 - `Δz_top`: target surface-cell thickness in metres (sets the exponential vertical scale). Per-config
   default: `1.5` for `:quarterdegree`/`:twelfthdegree`/`:test`, `nothing` (scale derived from
   `depth`/`Nz`) otherwise.
@@ -492,7 +492,7 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `coriolis_scheme`: discretization of the Coriolis term: `:enstrophy` (default), `:energy`, `:active_weighted`,
   `:consistent_area`, `:consistent_area_energy` or `:triad`. The `consistent_area` schemes reconstruct a uniform velocity
   exactly where face areas differ, next to immersed boundaries and between cells of unequal thickness, and are the
-  ones to use with `immersed_bottom = PartialCellBottom` or `ShavedCellBottom`.
+  ones to use with `immersed_bottom = PartialCellBottom`.
 
 - `momentum_advection_scheme`: `:weno` (default) for the upwind-biased vector-invariant scheme, or
   `:conserving` for the enstrophy/energy-conserving one NEMO uses at ORCA1. `:conserving` carries no
@@ -525,9 +525,6 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `river_spread_cells`: number of cells in that footprint, nearest first — a cap when
   `river_spread_radius` is set, and the footprint itself when it is `nothing`. Per-config default:
   `nothing` (uncapped) for the refined grids, `8` for `:orca`/`:test`.
-- `atlantic_runoff_diversion`: fraction of the river and iceberg discharge landing in the Atlantic
-  that is delivered to the Pacific instead, at the latitude it was diverted from. Conserves the
-  global freshwater input. Default: 0.
 - `initial_condition_blend_depth`: depth in metres above which the initial T and S come from WOA
   **Monthly** for the month of `start_date` rather than WOA Annual, tapering linearly to the annual
   field at the monthly climatology's own reach (~1500 m). WOA Annual averages a seasonal cycle whose
@@ -655,7 +652,7 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   `:rbvd`. Set it alongside the diffusivity to hold the background Prandtl number fixed while
   scanning κ.
 - `implicit_vertical_advection::Bool`: if `true` (default), tracer and momentum vertical advection use
-  `AdaptiveVerticallyImplicitDiscretization(cfl=0.5)` (switches the vertical advective flux to implicit
+  `AdaptiveVerticallyImplicitDiscretization(cfl=1)` (switches the vertical advective flux to implicit
   where the vertical Courant number is large — e.g. in thin near-surface cells). If `false`, fully
   explicit `WENO`/`WENOVectorInvariant`. Use `false` to isolate adaptive-implicit advection effects.
 - `boundary_scheme::Symbol`: the reconstruction the WENO buffer chain terminates in, used in the one cell
@@ -753,7 +750,6 @@ function omip_simulation(config::Symbol = :halfdegree;
                          river_mixing_depth = 10,
                          river_spread_radius = ConfigDefault(),
                          river_spread_cells = ConfigDefault(),
-                         atlantic_runoff_diversion = 0,
                          ice_meltwater_at_interface_temperature = true,
                          ice_melt_mixing = false,
                          ice_melt_mixing_κ = 5e-4,
@@ -768,7 +764,6 @@ function omip_simulation(config::Symbol = :halfdegree;
                          chlorophyll = :seawifs,
                          thickness_categories = 1,
                          snow_thickness_categories = thickness_categories,
-                         itd_shape = nothing,
                          bbl_diffusivity = nothing,
                          bbl_transport_coefficient = nothing,
                          overflow_restoring_timescale = nothing,
@@ -822,23 +817,11 @@ function omip_simulation(config::Symbol = :halfdegree;
     # so the routing search must reach that far. A fixed geographic reach keeps it resolution-independent.
     Nx, Ny, _ = size(grid)
     maximum_search_radius = max(5, ceil(Int, 3 / ((360 / Nx + 180 / Ny) / 2)))
-    # Basin masks are only needed when discharge is being moved between them, and the flood fill
-    # behind them is serial, so build them on request.
-    flux_diversion = if atlantic_runoff_diversion > 0
-        basin_mask(basin) = Bool.(dropdims(Array(interior(basin.mask)); dims = 3))
-        (; fraction = atlantic_runoff_diversion,
-           from = basin_mask(atlantic_ocean_basin(grid)),
-           to   = basin_mask(pacific_ocean_basin(grid)))
-    else
-        nothing
-    end
-
     land = JRA55PrescribedLand(grid; dir = atmosphere_dir, dataset = MultiYearJRA55(),
                                start_date, end_date, time_indices_in_memory = backend_size, prefetch = true,
                                maximum_search_radius,
                                spread_radius = river_spread_radius,
-                               maximum_spread_cells = river_spread_cells,
-                               flux_diversion)
+                               maximum_spread_cells = river_spread_cells)
     log_setup_stage(arch, "land", setup_t₀)
 
     # Built here because the ocean closure is constructed before the coupled model that owns the real
@@ -939,7 +922,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                             sea_ice_ocean_drag_coefficient, sea_ice_ocean_drag_reference_depth,
                             ice_compressive_strength, ice_salinity,
                             northern_sea_ice_initial_date, southern_sea_ice_initial_date,
-                            thickness_categories, itd_shape,
+                            thickness_categories,
                             ice_arch_region, ice_arch_stress, ice_arch_months)
     log_setup_stage(arch, "sea ice", setup_t₀)
 
@@ -1134,6 +1117,33 @@ function woa_to_teos10!(T_field, S_field)
     copyto!(interior(T_field), T_h)
     copyto!(interior(S_field), S_h)
     return T_field, S_field
+end
+
+"""
+    flatten_polar_cap!(T_field, S_field, latitude)
+
+Replace `T_field` and `S_field` north of `latitude` by their mean over the wet cells of each level. Does
+nothing when `latitude` is `nothing`.
+"""
+flatten_polar_cap!(T_field, S_field, ::Nothing) = nothing
+
+function flatten_polar_cap!(T_field, S_field, latitude)
+    grid = T_field.grid
+    cpu_grid = on_architecture(Oceananigans.DistributedComputations.cpu_architecture(architecture(grid)), grid)
+    Nx, Ny, Nz = size(grid)
+    T = Array(interior(T_field)); S = Array(interior(S_field))
+    cap = [φnode(i, j, 1, cpu_grid, Center(), Center(), Center()) > latitude for i in 1:Nx, j in 1:Ny]
+
+    for k in 1:Nz
+        wet = [cap[i, j] && !inactive_node(i, j, k, cpu_grid, Center(), Center(), Center()) for i in 1:Nx, j in 1:Ny]
+        any(wet) || continue
+        view(T, :, :, k)[wet] .= sum(view(T, :, :, k)[wet]) / count(wet)
+        view(S, :, :, k)[wet] .= sum(view(S, :, :, k)[wet]) / count(wet)
+    end
+
+    copyto!(interior(T_field), T)
+    copyto!(interior(S_field), S)
+    return nothing
 end
 
 """
@@ -1833,11 +1843,6 @@ end
 exponential_scale(Nz, depth, ::Nothing) = 1300
 exponential_scale(Nz, depth, Δz_top)    = find_exponential_scale(Nz, depth, Δz_top)
 
-# `ShavedCellBottom` reconstructs a piecewise-bilinear bottom from cell corners, so regridding straight onto the
-# corners spares it the box average it would otherwise apply to a center field, retaining ~2.3x more structure.
-bathymetry_location(immersed_bottom) = (Center, Center)
-bathymetry_location(::Type{ShavedCellBottom}) = (Face, Face)
-
 function build_grid(config, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing,
                     immersed_bottom = GridFittedBottom)
 
@@ -1856,8 +1861,7 @@ function build_grid(config, arch, Nz, depth; Δz_top = nothing, Δzmax = nothing
     bottom_height = regrid_bathymetry(base_grid;
                                     minimum_depth = 20,
                                     major_basins = 1,
-                                    interpolation_passes = 25,
-                                    location = bathymetry_location(immersed_bottom))
+                                    interpolation_passes = 25)
 
     return ImmersedBoundaryGrid(base_grid, immersed_bottom(bottom_height); active_cells_map = true)
 end
@@ -1978,7 +1982,7 @@ const coriolis_schemes = (enstrophy = Oceananigans.Coriolis.EnstrophyConserving,
 Discretization of the Coriolis term named by `coriolis_scheme`. The `consistent_area` schemes divide the
 area-weighted interpolation of the transport by the interpolation of the wet face areas, reconstructing a uniform
 velocity exactly where face areas differ: next to immersed boundaries, and between cells of unequal thickness such
-as those of `PartialCellBottom` and `ShavedCellBottom`.
+as those of `PartialCellBottom`.
 
 `enstrophy` averages four velocity nodes and divides by four, but a node inside the immersed boundary contributes
 zero: in the rock-touching layer of the North Atlantic 60% of u points lose Coriolis force and the mean force is 21%
@@ -2085,6 +2089,12 @@ config_barotropic_substeps(::Val)                 = 100
 config_barotropic_substeps(::Val{:orca})          = 300
 config_barotropic_substeps(::Val{:quarterdegree}) = 200
 config_barotropic_substeps(::Val{:twelfthdegree}) = 200
+
+# The ORCA025/12 fold row crosses the geographic pole, north of the last row of WOA; interpolation there
+# builds a dense column that drives a barotropic runaway at the pole within ~20 steps.
+config_polar_cap_latitude(::Val)                 = nothing
+config_polar_cap_latitude(::Val{:quarterdegree}) = 88
+config_polar_cap_latitude(::Val{:twelfthdegree}) = 88
 
 config_biharmonic_timescale(::Val)                 = 50days
 config_biharmonic_timescale(::Val{:quarterdegree}) = nothing
@@ -2239,7 +2249,7 @@ function build_ocean(config, grid;
     coriolis = HydrostaticSphericalCoriolis(scheme = coriolis_scheme_value(coriolis_scheme))
 
     time_discretization = implicit_vertical_advection ?
-        AdaptiveVerticallyImplicitDiscretization(cfl=0.5) : ExplicitTimeDiscretization()
+        AdaptiveVerticallyImplicitDiscretization(cfl=1) : ExplicitTimeDiscretization()
 
     tracer_boundary_scheme   = boundary_scheme_value(tracer_boundary_scheme)
     momentum_boundary_scheme = boundary_scheme_value(momentum_boundary_scheme)
@@ -2275,6 +2285,7 @@ function build_ocean(config, grid;
     set!(T_init, Metadatum(:temperature; dir=restoring_dir, dataset=WOAAnnual()))
     set!(S_init, Metadatum(:salinity;    dir=restoring_dir, dataset=WOAAnnual()))
     woa_to_teos10!(T_init, S_init)
+    flatten_polar_cap!(T_init, S_init, config_polar_cap_latitude(config))
 
     isnothing(initial_condition_blend_depth) ||
         blend_monthly_initial_condition!(T_init, S_init, start_date, restoring_dir,
@@ -2301,7 +2312,6 @@ function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics =
                        northern_sea_ice_initial_date = DateTime(1993, 1, 1),
                        southern_sea_ice_initial_date = DateTime(1993, 1, 1),
                        thickness_categories = 1,
-                       itd_shape = nothing,
                        ice_arch_region = nothing,
                        ice_arch_stress = 100,
                        ice_arch_months = (12, 7))
@@ -2325,7 +2335,7 @@ function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics =
                                  lateral_boundary_condition = sea_ice_lateral_boundary_condition,
                                  dynamics,
                                  ice_salinity,
-                                 thickness_categories, itd_shape,
+                                 thickness_categories,
                                  snow_thermodynamics)
 
     set_sea_ice_initial_condition!(sea_ice.model, restoring_dir,
