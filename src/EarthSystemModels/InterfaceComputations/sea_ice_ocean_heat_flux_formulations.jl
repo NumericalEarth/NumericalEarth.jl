@@ -278,7 +278,7 @@ Arguments
 Returns `(T★, S★, q)` where q is the melt rate (positive for melting).
 """
 @inline function solve_interface_conditions(flux::ThreeEquationHeatFlux, Tᵒᶜ, Sᵒᶜ, ice_state,
-                                            αₕ, αₛ, u★, ℰ, ρᵒᶜ, cᵒᶜ, liquidus)
+                                            αₕ, αₛ, u★, ℰ, ρᵒᶜ, cᵒᶜ, liquidus::LinearLiquidus)
     Sˢⁱ = ice_state.S
 
     # Get conductive flux parameters - dispatches on flux type
