@@ -31,9 +31,9 @@ end
     AbstractGHSLDataset
 
 Supertype for the Global Human Settlement Layer (GHSL) R2023A built-up rasters
-(European Commission JRC). All are distributed in the World Mollweide projection
-(ESRI:54009) and so require a reprojection to EPSG:4326 in the read path.
-Open access, no authentication.
+(European Commission JRC) and their [`GHSBuilt`](@ref) pairing. The rasters are
+distributed in the World Mollweide projection (ESRI:54009) and so require a
+reprojection to EPSG:4326 in the read path. Open access, no authentication.
 
 Data source: https://human-settlement.emergency.copernicus.eu
 """
@@ -140,6 +140,11 @@ $(TYPEDEF)
 
 The GHSL built-up pair that [`building_morphometry`](@ref) reads together: the built-up
 `surface` ([`GHSBuiltS`](@ref)) and the building `height` ([`GHSBuiltH`](@ref)).
+Provides `:built_up_fraction` and `:building_volume` (m³ per m²) on a common grid at
+the surface product's resolution: the volume of each surface pixel is its built fraction
+times the height of the 100 m height pixel containing it. Built area and volume are
+conservatively remapped onto the regional longitude/latitude grid. Heights are always
+the epoch-2018 ANBH, whatever the surface epoch.
 
 ```jldoctest
 julia> using NumericalEarth
@@ -151,7 +156,7 @@ julia> GHSBuilt(surface = GHSBuiltS(resolution = GHSBuiltS10m))
 GHSBuilt(GHSBuiltS(resolution = GHSBuiltS10m, epoch = 2018), GHSBuiltH())
 ```
 """
-struct GHSBuilt
+struct GHSBuilt <: AbstractGHSLDataset
     surface :: GHSBuiltS
     height  :: GHSBuiltH
 end
@@ -159,7 +164,6 @@ end
 GHSBuilt(; surface = GHSBuiltS(), height = GHSBuiltH()) = GHSBuilt(surface, height)
 
 Base.summary(dataset::GHSBuilt) = string("GHSBuilt(", summary(dataset.surface), ", ", summary(dataset.height), ")")
-Base.show(io::IO, dataset::GHSBuilt) = print(io, summary(dataset))
 
 const GHSBuiltHMetadatum = Metadatum{<:GHSBuiltH}
 const GHSBuiltSMetadatum = Metadatum{<:GHSBuiltS}
@@ -174,12 +178,15 @@ DataWrangling.windowed_retrieval(::AbstractGHSLDataset) = true
 
 GHSBuiltH_variable_names = Dict(:building_height   => "ANBH")
 GHSBuiltS_variable_names = Dict(:built_up_fraction => "built_up_fraction")
+GHSBuilt_variable_names = Dict(:built_up_fraction => "built_up_fraction", :building_volume => "building_volume")
 
 DataWrangling.available_variables(::GHSBuiltH) = GHSBuiltH_variable_names
 DataWrangling.available_variables(::GHSBuiltS) = GHSBuiltS_variable_names
+DataWrangling.available_variables(::GHSBuilt) = GHSBuilt_variable_names
 
 DataWrangling.dataset_variable_name(data::GHSBuiltHMetadatum) = GHSBuiltH_variable_names[data.name]
 DataWrangling.dataset_variable_name(data::GHSBuiltSMetadatum) = GHSBuiltS_variable_names[data.name]
+DataWrangling.dataset_variable_name(data::Metadatum{<:GHSBuilt}) = GHSBuilt_variable_names[data.name]
 
 #####
 ##### Dataset interface
@@ -194,6 +201,7 @@ DataWrangling.latitude_interfaces(::AbstractGHSLDataset)  = (-90, 90)
 # Native pixel size in meters.
 native_resolution(::GHSBuiltH) = 100
 native_resolution(dataset::GHSBuiltS) = resolution_meters(dataset.resolution)
+native_resolution(dataset::GHSBuilt) = native_resolution(dataset.surface)
 
 # Nominal global size in EPSG:4326 (only the windowed portion is ever materialized);
 # 1° ≈ 111320 m at the equator sets the degree pixel size.
@@ -207,6 +215,8 @@ end
 dataset_prefix(::GHSBuiltH) = "GHSBuiltH"
 dataset_prefix(dataset::GHSBuiltS) =
     string("GHSBuiltS_", native_resolution(dataset), "m_", dataset.epoch)
+dataset_prefix(dataset::GHSBuilt) =
+    string("GHSBuilt_", native_resolution(dataset), "m_", dataset.surface.epoch, "_conservative_moments")
 
 DataWrangling.metadata_filename(dataset::AbstractGHSLDataset, name, date, region) =
     string(dataset_prefix(dataset), "_", bounding_box_suffix(region), ".nc")
@@ -229,6 +239,9 @@ end
 #####
 
 DataWrangling.is_three_dimensional(::GHSLMetadatum) = false
+
+# Float64 preserves spherical cell areas at 10 m spacing.
+Base.eltype(::Metadatum{<:GHSBuilt}) = Float64
 
 # The regional NetCDF we materialize stores coordinates as "lon"/"lat".
 DataWrangling.longitude_name(::GHSLMetadatum) = "lon"
@@ -303,13 +316,27 @@ end
 """
     ghsl_tiles_in_bbox(region::BoundingBox)
 
-Return the sorted `(row, column)` GHSL tiles whose 1000 km Mollweide cells intersect
-`region`, from the window's Mollweide `(x, y)` bounding box: `y` is monotone in latitude
-and `|x|` is largest at the equator-most latitude, so the extremes lie among the window's
-corners and its equator-most edge. Exact for regional windows; a complete (never-missing)
+Return the sorted `(row, column)` GHSL tiles whose 1000 km Mollweide cells intersect the
+Mollweide bounding box of `region`. Exact for regional windows; a complete (never-missing)
 superset for any window.
 """
 function ghsl_tiles_in_bbox(region::BoundingBox)
+    xmin, xmax, ymin, ymax = ghsl_mollweide_bounds(region)
+    col_lo = clamp(floor(Int, (xmin - GHSL_ORIGIN_X) / GHSL_TILE_SIZE) + 1, 1, GHSL_COLUMNS)
+    col_hi = clamp(floor(Int, (xmax - GHSL_ORIGIN_X) / GHSL_TILE_SIZE) + 1, 1, GHSL_COLUMNS)
+    row_lo = clamp(floor(Int, (GHSL_ORIGIN_Y - ymax) / GHSL_TILE_SIZE) + 1, 1, GHSL_ROWS)
+    row_hi = clamp(floor(Int, (GHSL_ORIGIN_Y - ymin) / GHSL_TILE_SIZE) + 1, 1, GHSL_ROWS)
+    return [(row, col) for row in row_lo:row_hi for col in col_lo:col_hi]
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+The Mollweide bounding box `(xmin, xmax, ymin, ymax)` of `region`: `y` is monotone in
+latitude and `|x|` is largest at the equator-most latitude, so the extremes lie among the
+region's corners and its equator-most edge.
+"""
+function ghsl_mollweide_bounds(region)
     λ₁, λ₂ = region.longitude
     φ₁, φ₂ = region.latitude
     φ_maxx = clamp(0, min(φ₁, φ₂), max(φ₁, φ₂))
@@ -320,11 +347,21 @@ function ghsl_tiles_in_bbox(region::BoundingBox)
         xmin = min(xmin, x); xmax = max(xmax, x)
         ymin = min(ymin, y); ymax = max(ymax, y)
     end
-    col_lo = clamp(floor(Int, (xmin - GHSL_ORIGIN_X) / GHSL_TILE_SIZE) + 1, 1, GHSL_COLUMNS)
-    col_hi = clamp(floor(Int, (xmax - GHSL_ORIGIN_X) / GHSL_TILE_SIZE) + 1, 1, GHSL_COLUMNS)
-    row_lo = clamp(floor(Int, (GHSL_ORIGIN_Y - ymax) / GHSL_TILE_SIZE) + 1, 1, GHSL_ROWS)
-    row_hi = clamp(floor(Int, (GHSL_ORIGIN_Y - ymin) / GHSL_TILE_SIZE) + 1, 1, GHSL_ROWS)
-    return [(row, col) for row in row_lo:row_hi for col in col_lo:col_hi]
+    return xmin, xmax, ymin, ymax
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+The Mollweide bounds `(xmin, xmax, ymin, ymax)` of `region`, widened outward onto the faces
+of the GHSL native pixels of `pixel_size` meters.
+"""
+function ghsl_pixel_window(region, pixel_size)
+    xmin, xmax, ymin, ymax = ghsl_mollweide_bounds(region)
+    return (GHSL_ORIGIN_X + pixel_size * floor((xmin - GHSL_ORIGIN_X) / pixel_size),
+            GHSL_ORIGIN_X + pixel_size * ceil((xmax - GHSL_ORIGIN_X) / pixel_size),
+            GHSL_ORIGIN_Y + pixel_size * floor((ymin - GHSL_ORIGIN_Y) / pixel_size),
+            GHSL_ORIGIN_Y + pixel_size * ceil((ymax - GHSL_ORIGIN_Y) / pixel_size))
 end
 
 #####
@@ -332,6 +369,9 @@ end
 #####
 
 const GHSL_FTP = "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL"
+
+# The products JRC publishes as Mollweide tiles.
+const GHSLProduct = Union{GHSBuiltH, GHSBuiltS}
 
 # The product-folder / file basename stem shared by a dataset's tiles and mosaic.
 product_stem(::GHSBuiltH) = "GHS_BUILT_H_ANBH_E2018_GLOBE_R2023A_54009_100"
@@ -347,7 +387,7 @@ product_group(::GHSBuiltS) = "GHS_BUILT_S_GLOBE_R2023A"
 Return the JRC open-data HTTPS URL of the `(row, column)` GHSL tile `.zip` for
 `dataset` (each archive holds one Mollweide GeoTIFF of the built-up variable).
 """
-function ghsl_tile_url(dataset::AbstractGHSLDataset, row, column)
+function ghsl_tile_url(dataset::GHSLProduct, row, column)
     stem = product_stem(dataset)
     return string(GHSL_FTP, "/", product_group(dataset), "/", stem,
                   "/V1-0/tiles/", stem, "_V1_0_R", row, "_C", column, ".zip")
@@ -359,11 +399,11 @@ end
 `.zip` URLs of the GHSL tiles for `dataset` intersecting `region`, ready to be
 downloaded, unzipped, and mosaicked/reprojected by GDAL.
 """
-ghsl_tile_urls(dataset::AbstractGHSLDataset, region::BoundingBox) =
+ghsl_tile_urls(dataset::GHSLProduct, region::BoundingBox) =
     [ghsl_tile_url(dataset, row, column) for (row, column) in ghsl_tiles_in_bbox(region)]
 
 # GeoTIFF basename inside a tile `.zip` archive.
-ghsl_tile_tif_name(dataset::AbstractGHSLDataset, row, column) =
+ghsl_tile_tif_name(dataset::GHSLProduct, row, column) =
     string(product_stem(dataset), "_V1_0_R", row, "_C", column, ".tif")
 
 #####
@@ -483,9 +523,10 @@ $(TYPEDSIGNATURES)
 
 Plan-area index and built-area-weighted mean building height (m) on `grid` from the GHSL
 built-up surface and building-height rasters of `dataset`, as the NamedTuple of `Field`s
-`(; plan_area_index, mean_building_height)`: the pixel mean of the built fraction and the
-building volume over the built area of each cell, no-data pixels counting as unbuilt. The
-rasters are read in windows of at most `maximum_raster_cells` native pixels.
+`(; plan_area_index, mean_building_height)`: the area mean of the native-pixel built
+fraction, and the building volume over the built area of each cell. A pixel missing
+either its fraction or its height counts as unbuilt. The rasters are read in windows of
+at most about `maximum_raster_cells` native pixels.
 """
 function Lands.building_morphometry(grid, dataset::GHSBuilt; maximum_raster_cells = 100_000_000)
     Nx, Ny, _ = size(grid)
@@ -495,10 +536,14 @@ function Lands.building_morphometry(grid, dataset::GHSBuilt; maximum_raster_cell
     h  = Field{Center, Center, Nothing}(grid)
 
     Nλ, Nφ, _ = size(dataset.surface, :built_up_fraction)
-    pixels = (λᶠ[end] - λᶠ[1]) * Nλ / 360 * (φᶠ[end] - φᶠ[1]) * Nφ / 180
-    windows = ceil(Int, sqrt(pixels / maximum_raster_cells))
-    windows_x = min(windows, Nx)
-    windows_y = min(windows, Ny)
+    geographic_pixels = (λᶠ[end] - λᶠ[1]) * Nλ / 360 * (φᶠ[end] - φᶠ[1]) * Nφ / 180
+    xmin, xmax, ymin, ymax = ghsl_mollweide_bounds(BoundingBox(longitude = (λᶠ[1], λᶠ[end]),
+                                                               latitude  = (φᶠ[1], φᶠ[end])))
+    projected_pixels = (xmax - xmin) * (ymax - ymin) / native_resolution(dataset.surface)^2
+    windows = ceil(Int, max(geographic_pixels, projected_pixels) / maximum_raster_cells)
+    # Near-square tiling; an axis with too few cells hands its share to the other.
+    windows_x = min(Nx, max(ceil(Int, sqrt(windows)), cld(windows, Ny)))
+    windows_y = min(Ny, cld(windows, windows_x))
     for n in 1:windows_y, m in 1:windows_x
         I = tile_indices(Nx, windows_x, m)
         J = tile_indices(Ny, windows_y, n)
@@ -509,20 +554,13 @@ function Lands.building_morphometry(grid, dataset::GHSBuilt; maximum_raster_cell
                                             latitude  = φᶠ[first(J):last(J) + 1],
                                             topology = (Bounded, Bounded, Flat))
 
-        built_fraction  = Field(Metadatum(:built_up_fraction; dataset = dataset.surface, region = window), CPU())
-        building_height = Field(Metadatum(:building_height; dataset = dataset.height, region = window), CPU())
-        replace!(interior(built_fraction), NaN => 0)
-        replace!(interior(building_height), NaN => 0)
-        if built_fraction.grid != building_height.grid  # the 10 m built-up product
-            fraction_on_height_pixels = Field{Center, Center, Center}(building_height.grid)
-            built_fraction = regrid!(fraction_on_height_pixels, built_fraction)
-        end
-        interior(building_height) .*= interior(built_fraction)  # building volume per pixel area
+        built_fraction  = Field(Metadatum(:built_up_fraction; dataset, region = window), CPU())
+        building_volume = Field(Metadatum(:building_volume; dataset, region = window), CPU())
 
         window_fraction = Field{Center, Center, Nothing}(window_grid)
         window_volume   = Field{Center, Center, Nothing}(window_grid)
         regrid!(window_fraction, built_fraction)
-        regrid!(window_volume, building_height)
+        regrid!(window_volume, building_volume)
         interior(λᵖ, I, J, 1) .= interior(window_fraction, :, :, 1)
         interior(h,  I, J, 1) .= interior(window_volume, :, :, 1)
     end

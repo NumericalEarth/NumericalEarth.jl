@@ -6,7 +6,8 @@ using NumericalEarth.DataWrangling.GHSL: ghsl_tile_index, ghsl_tiles_in_bbox,
                                          longitude_latitude_to_mollweide,
                                          mask_building_height, built_surface_to_fraction,
                                          dataset_prefix, native_resolution, ghsl_tiles_to_netcdf,
-                                         ghsl_regional_raster
+                                         ghsl_regional_raster, ghsl_mollweide_bounds, ghsl_pixel_window,
+                                         GHSL_ORIGIN_X, GHSL_ORIGIN_Y
 using NumericalEarth.Lands: MorphometricRoughness, aerodynamic_parameters, urban_roughness
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_grid,
                                     longitude_interfaces, latitude_interfaces,
@@ -70,6 +71,21 @@ end
                   for φ in range(-60, 60; length = 400), λ in range(0, 1; length = 20))
     @test sampled ⊆ Set(ghsl_tiles_in_bbox(tall))
     @test issorted(ghsl_tiles_in_bbox(tall))
+end
+
+@testset "GHSL native pixel window" begin
+    region = BoundingBox(longitude = (-0.2, 0.1), latitude = (51.4, 51.6))
+    xmin, xmax, ymin, ymax = ghsl_mollweide_bounds(region)
+    for pixel_size in (10, 100)
+        west, east, south, north = ghsl_pixel_window(region, pixel_size)
+        # Widened by less than a pixel per side, onto the native pixel faces.
+        @test 0 ≤ xmin - west < pixel_size
+        @test 0 ≤ east - xmax < pixel_size
+        @test 0 ≤ ymin - south < pixel_size
+        @test 0 ≤ north - ymax < pixel_size
+        @test all(isinteger, ((west, east) .- GHSL_ORIGIN_X) ./ pixel_size)
+        @test all(isinteger, ((south, north) .- GHSL_ORIGIN_Y) ./ pixel_size)
+    end
 end
 
 #####
@@ -243,15 +259,19 @@ end
 ##### Urban roughness on a model grid, from synthetic rasters in the GHSL cache layout.
 #####
 
-function write_ghsl_raster(metadatum, values)
+function write_ghsl_moments(dataset, region, built_fraction, building_height)
+    metadatum = Metadatum(:built_up_fraction; dataset, region)
     raster = ghsl_regional_raster(metadatum)
+    fraction = [built_fraction(λ, φ) for λ in raster.longitude, φ in raster.latitude]
+    height = [building_height(λ, φ) for λ in raster.longitude, φ in raster.latitude]
+    valid = isfinite.(fraction) .& isfinite.(height)
     NCDataset(metadata_path(metadatum), "c") do ds
         defDim(ds, "lon", raster.Nx)
         defDim(ds, "lat", raster.Ny)
         defVar(ds, "lon", Float64, ("lon",))[:] = raster.longitude
         defVar(ds, "lat", Float64, ("lat",))[:] = raster.latitude
-        defVar(ds, dataset_variable_name(metadatum), Float64, ("lon", "lat"))[:, :] =
-            [values(λ, φ) for λ in raster.longitude, φ in raster.latitude]
+        defVar(ds, "built_up_fraction", Float64, ("lon", "lat"))[:, :] = ifelse.(valid, fraction, 0)
+        defVar(ds, "building_volume", Float64, ("lon", "lat"))[:, :] = ifelse.(valid, fraction .* height, 0)
     end
     return nothing
 end
@@ -293,8 +313,7 @@ end
     setglobal!(GHSL, :download_GHSL_cache, mktempdir())
     try
         region = BoundingBox(grid)
-        write_ghsl_raster(Metadatum(:built_up_fraction; dataset = GHSBuiltS(), region), built_fraction)
-        write_ghsl_raster(Metadatum(:building_height; dataset = GHSBuiltH(), region), building_height)
+        write_ghsl_moments(GHSBuilt(), region, built_fraction, building_height)
 
         closure = MorphometricRoughness()
         surface_layer_height = 100
@@ -327,9 +346,9 @@ end
         @test fields.urban_fraction[2, 1, 1] == 0
         @test fields.building_height[2, 1, 1] == 0
 
-        # The 10 m built-up product regrids onto the 100 m height pixels.
+        # Fine footprints and volume share the 10 m raster.
         fine = GHSBuiltS(resolution = GHSBuiltS10m)
-        write_ghsl_raster(Metadatum(:built_up_fraction; dataset = fine, region), built_fraction)
+        write_ghsl_moments(GHSBuilt(surface = fine), region, built_fraction, building_height)
         fields = urban_roughness(grid, GHSBuilt(surface = fine); closure, surface_layer_height, neighborhood = 2400)
         @test fields.momentum_roughness_length[2, 2, 1] ≈ core_roughness rtol = 1e-4
         @test fields.building_height[1, 1, 1] ≈ 20 rtol = 1e-4

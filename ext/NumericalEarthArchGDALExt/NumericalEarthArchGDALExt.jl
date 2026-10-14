@@ -9,9 +9,10 @@ using NumericalEarth: NumericalEarth
 
 using Oceananigans: Center, CPU
 using Oceananigans.Grids: λnodes, φnodes
+using Oceananigans.Utils: launch!
 
 using NumericalEarth.DataWrangling: BoundingBox, native_grid, native_region_grid,
-                                    dataset_variable_name, bounding_box_intersects,
+                                    available_variables, bounding_box_intersects,
                                     cmr_granules, earthdata_download_cached,
                                     figshare_article_url
 using NumericalEarth.DataWrangling.ASTERGED: asterged_short_name, asterged_version,
@@ -22,15 +23,17 @@ using NumericalEarth.DataWrangling.GloBFP3D: GlobalBuildingFootprints3DMetadatum
                                              GLOBFP3D_FIGSHARE_ARTICLE_IDS,
                                              globfp3d_parse_tile_bounds,
                                              globfp3d_native_cell_size
-using NumericalEarth.DataWrangling.GHSL: GHSBuiltS, GHSLMetadatum, native_resolution,
+using NumericalEarth.DataWrangling.GHSL: GHSBuilt, GHSBuiltH, GHSBuiltS, GHSLMetadatum, native_resolution,
                                          ghsl_tile_url, ghsl_tile_tif_name, ghsl_tiles_in_bbox,
                                          ghsl_regional_raster, built_surface_to_fraction,
-                                         mask_building_height
-                                         built_surface_to_fraction, mask_building_height
+                                         mask_building_height, ghsl_pixel_window,
+                                         longitude_latitude_to_mollweide, MOLLWEIDE_RADIUS
 using NumericalEarth.DataWrangling.WorldCover: ESAWorldCoverMetadatum, version_year, version_string,
                                                worldcover_window, aggregate_landcover,
                                                class_fraction_variable_name,
                                                ESA_WORLDCOVER_NATIVE_STEP
+
+using KernelAbstractions: @kernel, @index
 
 include("gdal_utils.jl")
 include("ibcao.jl")

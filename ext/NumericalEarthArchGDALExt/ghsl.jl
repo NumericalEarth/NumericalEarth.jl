@@ -24,29 +24,11 @@ function ghsl_download_tile(dataset, row, column, cache_dir)
     return string("/vsizip/", zip_path, "/", inner_tif)
 end
 
-function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLMetadatum, nc_path)
-    dataset = metadatum.dataset
-    region  = metadatum.region
-    (region isa BoundingBox && !isnothing(region.longitude) && !isnothing(region.latitude)) ||
-        error("ghsl_tiles_to_netcdf requires a BoundingBox region.")
-
-    name = dataset_variable_name(metadatum)
-    resolution_m = native_resolution(dataset)
-
-    # Reproject onto the grid the read path indexes the file with, and gather the tiles
-    # covering that window rather than the requested one: it reaches up to a cell beyond
-    # the request, and across a tile boundary that cell would otherwise come back empty.
-    raster = ghsl_regional_raster(metadatum)
-    west, east   = raster.region.longitude
-    south, north = raster.region.latitude
-
-    cache_dir = joinpath(dirname(nc_path), "tiles")
-    tiles = ghsl_tiles_in_bbox(raster.region)
-
+function ghsl_sources(dataset, region, cache_dir)
     # JRC omits all-ocean tiles from the grid, so a coastal window can reference a tile
     # that 404s; skip those and mosaic the land tiles that do exist.
     sources = String[]
-    for (row, column) in tiles
+    for (row, column) in ghsl_tiles_in_bbox(region)
         source = try
             ghsl_download_tile(dataset, row, column, cache_dir)
         catch err
@@ -59,8 +41,14 @@ function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLM
     isempty(sources) &&
         error("No GHSL tiles are published for the requested region; it may be entirely ocean.")
 
-    datasets = [ArchGDAL.read(source) for source in sources]
-    raw = try
+    return [ArchGDAL.read(source) for source in sources]
+end
+
+function ghsl_reprojected_raster(dataset, raster, cache_dir)
+    west, east   = raster.region.longitude
+    south, north = raster.region.latitude
+    datasets = ghsl_sources(dataset, raster.region, cache_dir)
+    try
         ArchGDAL.gdalwarp(datasets,
             # `-ts` pins the cell count: with a pixel size, GDAL rounds the extent instead
             # and the raster comes back short of the grid.
@@ -79,13 +67,105 @@ function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLM
             ArchGDAL.destroy(d)
         end
     end
+end
 
-    if dataset isa GHSBuiltS
-        cell_area = resolution_m^2
-        field = built_surface_to_fraction.(raw, cell_area)
-    else
-        field = mask_building_height.(raw)
+function ghsl_raster_fields(dataset::GHSBuiltS, raster, cache_dir)
+    surface = ghsl_reprojected_raster(dataset, raster, cache_dir)
+    return (; built_up_fraction = built_surface_to_fraction.(surface, native_resolution(dataset)^2))
+end
+
+ghsl_raster_fields(dataset::GHSBuiltH, raster, cache_dir) =
+    (; building_height = mask_building_height.(ghsl_reprojected_raster(dataset, raster, cache_dir)))
+
+# Mean of a linear segment clipped to [0, width].
+@inline function clipped_linear_mean(start_value, end_value, width)
+    lower, upper = minmax(start_value, end_value)
+    lower_clipped, upper_clipped = clamp(lower, 0, width), clamp(upper, 0, width)
+    integral = (lower_clipped + upper_clipped) * (upper_clipped - lower_clipped) / 2 +
+               width * max(0, upper - max(width, lower))
+    return ifelse(lower == upper, lower_clipped, integral / (upper - lower))
+end
+
+@kernel function _conservative_ghsl_moments!(built_fraction, building_volume, fraction, volume,
+                                            meridians, projected_latitudes, areas, west, north, step, radius)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        south_edge, north_edge = projected_latitudes[j], projected_latitudes[j + 1]
+        first_row = max(1, floor(Int, (north - north_edge) / step) + 1)
+        last_row = min(size(fraction, 2), ceil(Int, (north - south_edge) / step))
+        built_area = built_volume = zero(eltype(built_fraction))
+        for row in first_row:last_row
+            south_overlap = max(south_edge, north - row * step)
+            north_overlap = min(north_edge, north - (row - 1) * step)
+            # Mollweide meridians: x = (2√2 R / π) λ √(1 - y² / (2R²)).
+            south_scale = sqrt(max(0, 1 - south_overlap^2 / (2radius^2)))
+            north_scale = sqrt(max(0, 1 - north_overlap^2 / (2radius^2)))
+            west_south, west_north = meridians[i] * south_scale, meridians[i] * north_scale
+            east_south, east_north = meridians[i + 1] * south_scale, meridians[i + 1] * north_scale
+            first_column = max(1, floor(Int, (min(west_south, west_north) - west) / step) + 1)
+            last_column = min(size(fraction, 1), ceil(Int, (max(east_south, east_north) - west) / step))
+            for column in first_column:last_column
+                pixel_west = west + (column - 1) * step
+                # Shared meridians are linear within each row overlap, partitioning its area.
+                east_width = clipped_linear_mean(east_south - pixel_west, east_north - pixel_west, step)
+                west_width = clipped_linear_mean(west_south - pixel_west, west_north - pixel_west, step)
+                area = (north_overlap - south_overlap) * (east_width - west_width)
+                built_area += area * fraction[column, row]
+                built_volume += area * volume[column, row]
+            end
+        end
+        built_fraction[i, j] = built_area / areas[j]
+        building_volume[i, j] = built_volume / areas[j]
     end
+end
+
+function ghsl_raster_fields(dataset::GHSBuilt, raster, cache_dir)
+    west, east, south, north = ghsl_pixel_window(raster.region, native_resolution(dataset.height))
+    step = native_resolution(dataset.surface)
+
+    # Aligned native footprints, with net height constant within each 100 m pixel.
+    fraction, height = map((dataset.surface, dataset.height)) do product
+        sources = ghsl_sources(product, raster.region, cache_dir)
+        try
+            ArchGDAL.gdalbuildvrt(sources) do mosaic
+                ArchGDAL.gdalwarp([mosaic],
+                    ["-of", "MEM", "-s_srs", "ESRI:54009", "-t_srs", "ESRI:54009",
+                     "-te", string(west), string(south), string(east), string(north),
+                     "-tr", string(step), string(step), "-r", "near", "-ovr", "NONE",
+                     "-dstnodata", "nan", "-ot", "Float32"]) do windowed
+                    ArchGDAL.read(windowed, 1)
+                end
+            end
+        finally
+            foreach(ArchGDAL.destroy, sources)
+        end
+    end
+
+    fraction .= built_surface_to_fraction.(fraction, step^2)
+    height .= mask_building_height.(height)
+    valid = isfinite.(fraction) .& isfinite.(height)
+    fraction .= ifelse.(valid, fraction, 0)
+    height .= ifelse.(valid, height, 0)
+    volume = fraction .* height
+
+    longitude_faces = range(raster.region.longitude...; length = raster.Nx + 1)
+    latitude_faces = range(raster.region.latitude...; length = raster.Ny + 1)
+    meridians = (2sqrt(2) * MOLLWEIDE_RADIUS / π) .* deg2rad.(longitude_faces)
+    projected_latitudes = last.(longitude_latitude_to_mollweide.(0, latitude_faces))
+    areas = 2MOLLWEIDE_RADIUS^2 * deg2rad(Base.step(longitude_faces)) .*
+            cosd.(raster.latitude) .* sind.(diff(latitude_faces) ./ 2)
+    built_up_fraction = zeros(Float64, raster.Nx, raster.Ny)
+    building_volume = similar(built_up_fraction)
+    launch!(CPU(), nothing, size(built_up_fraction), _conservative_ghsl_moments!,
+            built_up_fraction, building_volume, fraction, volume,
+            meridians, projected_latitudes, areas, west, north, step, MOLLWEIDE_RADIUS)
+    return (; built_up_fraction, building_volume)
+end
+
+function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLMetadatum, nc_path)
+    raster = ghsl_regional_raster(metadatum)
+    fields = ghsl_raster_fields(metadatum.dataset, raster, joinpath(dirname(nc_path), "tiles"))
+    variable_names = available_variables(metadatum.dataset)
 
     NCDataset(nc_path, "c") do ds
         defDim(ds, "lon", raster.Nx)
@@ -96,8 +176,10 @@ function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLM
                          attrib = ["units" => "degrees_north", "long_name" => "latitude"])
         lon_var[:] = raster.longitude
         lat_var[:] = raster.latitude
-        var = defVar(ds, name, Float64, ("lon", "lat"))
-        var[:, :] = field
+        for (name, data) in pairs(fields)
+            var = defVar(ds, variable_names[name], Float64, ("lon", "lat"))
+            var[:, :] = data
+        end
     end
 
     return nothing
