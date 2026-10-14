@@ -18,8 +18,7 @@ using Oceananigans.Utils: launch!
 using KernelAbstractions: @kernel, @index
 
 using ..EarthSystemModels: EarthSystemModels, default_stop_time
-using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger,
-                                                 ThreeEquationHeatFlux
+using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger, ThreeEquationHeatFlux
 
 include("freezing_limited_ocean_temperature.jl")
 include("sea_ice_simulation.jl")
