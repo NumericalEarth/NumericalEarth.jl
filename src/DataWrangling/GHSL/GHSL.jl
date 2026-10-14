@@ -162,7 +162,7 @@ struct GHSBuilt <: AbstractGHSLDataset
     height  :: GHSBuiltH
 end
 
-GHSBuilt(; surface = GHSBuiltS(resolution = GHSBuiltS10m), height = GHSBuiltH()) = GHSBuilt(surface, height)
+GHSBuilt(; surface = GHSBuiltS(resolution = GHSBuiltS10m)) = GHSBuilt(surface, GHSBuiltH())
 
 Base.summary(dataset::GHSBuilt) = string("GHSBuilt(", summary(dataset.surface), ", ", summary(dataset.height), ")")
 
@@ -522,15 +522,16 @@ ghsl_tiles_to_netcdf(metadatum, nc_path) =
 """
 $(TYPEDSIGNATURES)
 
-Plan-area index and built-area-weighted mean building height (m) on `grid` from the GHSL
-built-up surface and building-height rasters of `dataset`, as the NamedTuple of `Field`s
+Plan-area index and built-area-weighted mean building height (m) on `grid` (a
+`LatitudeLongitudeGrid`) from the GHSL built-up surface and building-height rasters
+of `dataset`, as the NamedTuple of `Field`s
 `(; plan_area_index, mean_building_height)`: the area mean of the native-pixel built
 fraction, and the building volume over the built area of each cell. A pixel missing
 either its fraction or its height counts as unbuilt. The rasters are read in windows of
 at most about `maximum_raster_cells` native pixels. Regional NetCDF rasters are deleted
 after reading; downloaded source tiles remain cached.
 """
-function Lands.building_morphometry(grid, dataset::GHSBuilt; maximum_raster_cells = 100_000_000)
+function Lands.building_morphometry(grid::LatitudeLongitudeGrid, dataset::GHSBuilt; maximum_raster_cells = 100_000_000)
     Nx, Ny, _ = size(grid)
     λᶠ = on_architecture(CPU(), λnodes(grid, Face()))
     φᶠ = on_architecture(CPU(), φnodes(grid, Face()))

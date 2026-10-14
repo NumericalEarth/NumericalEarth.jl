@@ -38,8 +38,8 @@ $(TYPEDSIGNATURES)
 
 Momentum roughness length `ℓᵐ` and zero-plane displacement `d` (as `Field`s on the grid
 of `h`) from a mean building-height field `h` and a plan-area index field `λᵖ`,
-under `closure` (default [`MorphometricRoughness`](@ref)). Where `λᵖ → 0` the result
-reduces to a bare-soil roughness, and cells of invalid morphometry are `NaN`; fill them
+under `closure` (default [`MorphometricRoughness`](@ref)). Returns `(ℓᵐ, d)`. Where `λᵖ → 0`
+the result reduces to a bare-soil roughness, and cells of invalid morphometry are `NaN`; fill them
 with [`fill_aerodynamic_roughness_gaps!`](@ref) before passing the pair to a flux closure.
 """
 function urban_roughness(h::AbstractField, λᵖ; closure = MorphometricRoughness(eltype(h.grid)))
@@ -241,8 +241,8 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Momentum roughness length and zero-plane displacement (m) of the built-up surface on `grid`
-from a building `dataset`, as the NamedTuple of `Field`s
+Momentum roughness length and zero-plane displacement (m) of the built-up surface on
+`grid` (a `LatitudeLongitudeGrid`) from a building `dataset`, as the NamedTuple of `Field`s
 `(; momentum_roughness_length, zero_plane_displacement, urban_fraction, building_height)`.
 
 The closure is evaluated on neighborhoods about `neighborhood` (m) wide, from the morphometry
@@ -259,7 +259,7 @@ bare-soil limit. An urban neighborhood with non-finite roughness or displacement
 non-positive roughness, raises an `ArgumentError`. Remaining keyword arguments pass to
 `building_morphometry`.
 """
-function urban_roughness(grid, dataset; surface_layer_height, closure = MorphometricRoughness(eltype(grid)),
+function urban_roughness(grid::LatitudeLongitudeGrid, dataset; surface_layer_height, closure = MorphometricRoughness(eltype(grid)),
                          neighborhood = 1000, kw...)
     FT = eltype(grid)
     Nx, Ny, _ = size(grid)

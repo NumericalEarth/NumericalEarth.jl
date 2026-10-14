@@ -17,6 +17,16 @@ using Oceananigans.Fields: interior, set!
 
 uniform_height_closure(; kw...) = MorphometricRoughness(; height_distribution = UniformHeight(), kw...)
 
+@testset "Urban roughness requires a height field or a geographic grid" begin
+    @test_throws MethodError urban_roughness(15.0, 0.3)
+    @test_throws MethodError urban_roughness(fill(15.0, 2, 2), fill(0.3, 2, 2))
+    grid = RectilinearGrid(size=(2, 2), extent=(1, 1), topology=(Bounded, Bounded, Flat))
+    for dataset in (GHSBuilt(), GlobalBuildingFootprints3D())
+        @test_throws MethodError urban_roughness(grid, dataset; surface_layer_height=100)
+        @test_throws MethodError building_morphometry(grid, dataset)
+    end
+end
+
 roughness_at_point(λᵖ, h; closure = MorphometricRoughness()) = aerodynamic_parameters(closure, λᵖ, h)[1]
 displacement_at_point(λᵖ, h; closure = MorphometricRoughness()) = aerodynamic_parameters(closure, λᵖ, h)[2]
 

@@ -1,6 +1,6 @@
 module GloBFP3D
 
-export GlobalBuildingFootprints3D
+export GlobalBuildingFootprints3D, building_morphometry
 
 using Downloads: Downloads
 using Oceananigans: Center, Face
@@ -8,7 +8,7 @@ using Oceananigans.Fields: Field, set!
 using Oceananigans.Grids: LatitudeLongitudeGrid, λnodes, φnodes
 using Oceananigans.DistributedComputations: @root
 
-using NumericalEarth.Lands: Lands
+using NumericalEarth.Lands: Lands, building_morphometry
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum, metadata_path,
                        BoundingBox, bounding_box_suffix, latitude_summary, native_region_grid
@@ -296,7 +296,7 @@ $(TYPEDSIGNATURES)
 
 Per-cell building morphometry on `target_grid` (a `LatitudeLongitudeGrid`, coarser than the
 `dataset` rasterization resolution), aggregated from the fine 3D-GloBFP building-height raster
-over the extent of `target_grid`. Returns a NamedTuple of `Field`s:
+over `region` (default: the extent of `target_grid`). Returns a NamedTuple of `Field`s:
 
 - `plan_area_index` `λᵖ` — fraction of fine cells that are built.
 - `mean_building_height` `h` — mean height over the built fine cells.
@@ -306,7 +306,7 @@ over the extent of `target_grid`. Returns a NamedTuple of `Field`s:
 - `frontal_area_index` `λᶠ` — windward wall area from height steps, direction-averaged:
   `(Σₓ|δh|·dy + Σᵧ|δh|·dx) / (4·A)`, with `A` the cell area.
 
-A grid whose native raster exceeds `maximum_raster_cells` (default `400_000_000` cells,
+A region whose native raster exceeds `maximum_raster_cells` (default `400_000_000` cells,
 3.2 GB of `Float64`) is reduced in latitude bands sized to the limit, reproducing the single
 pass exactly while memory stays bounded regardless of the region size; band raster files are
 deleted once reduced (the downloaded footprint tiles stay cached).
@@ -314,8 +314,7 @@ deleted once reduced (the downloaded footprint tiles stay cached).
 Downloading and rasterizing the footprints requires `using ArchGDAL`.
 """
 function Lands.building_morphometry(target_grid::LatitudeLongitudeGrid, dataset::GlobalBuildingFootprints3D;
-                                    maximum_raster_cells = 400_000_000)
-    region = BoundingBox(target_grid)
+                                    region = BoundingBox(target_grid), maximum_raster_cells = 400_000_000)
     metadatum = Metadatum(:building_height; dataset, region)
     DataWrangling.validate_dataset_coverage(nothing, metadatum)
 
@@ -357,6 +356,15 @@ function Lands.building_morphometry(target_grid::LatitudeLongitudeGrid, dataset:
 
     return morphometry_fields(accumulated, target_grid)
 end
+
+"""
+$(TYPEDSIGNATURES)
+
+Per-cell building morphometry on `target_grid` with the building `dataset` supplied as a keyword.
+Defaults to `GlobalBuildingFootprints3D()` over the extent of `target_grid`.
+"""
+Lands.building_morphometry(target_grid::LatitudeLongitudeGrid; dataset = GlobalBuildingFootprints3D(), kw...) =
+    building_morphometry(target_grid, dataset; kw...)
 
 #####
 ##### Tile discovery — 3D-GloBFP ships one `.zip` per grid tile across ten figshare parts.
