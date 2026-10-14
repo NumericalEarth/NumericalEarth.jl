@@ -88,8 +88,8 @@ end
 function Downloads.download(metadata::SeaWiFSMetadata; kwargs...)
     for metadatum in metadata
         path = metadata_path(metadatum)
-        isfile(path) && continue
-        @root begin
+        # every rank has to reach `@root`'s barrier, so the existence test goes inside it
+        @root if !isfile(path)
             @info "Downloading SeaWiFS chlorophyll for $(Dates.format(metadatum.dates, "yyyy-mm"))"
             download_with_retries(erddap_url(metadatum), path; kwargs...)
         end
