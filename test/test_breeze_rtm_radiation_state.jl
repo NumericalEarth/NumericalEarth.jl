@@ -16,9 +16,9 @@ const rtm_Hx = 5
 const rtm_albedo = 0.2
 const rtm_emissivity = 0.95
 
-# `hour` is the solar epoch at longitude 0, so 12 is local noon and 0 local midnight. Gray
-# optics needs no lookup tables.
-function build_rtm_land_model(arch; hour = 12)
+# `hour` is the solar epoch at longitude 0, so 12 is local noon and 0 local midnight.
+function build_rtm_land_model(arch; hour = 12, optics = GrayOptics(),
+                              albedos = (; surface_albedo = rtm_albedo))
     FT = Float64
 
     grid = RectilinearGrid(arch, FT; size = (rtm_Nx, rtm_Nx), halo = (rtm_Hx, rtm_Hx),
@@ -39,10 +39,10 @@ function build_rtm_land_model(arch; hour = 12)
     set!(land; T = 298)
     fill!(parent(land.water_storage), 45)
 
-    radiation = RadiativeTransferModel(grid, GrayOptics(), constants;
+    radiation = RadiativeTransferModel(grid, optics, constants;
                                        solar_position = ApparentSolarPosition(coordinate = (0, 30),
                                                                              epoch = DateTime(2024, 3, 20, hour)),
-                                       surface_albedo = rtm_albedo,
+                                       albedos...,
                                        surface_emissivity = rtm_emissivity,
                                        schedule = IterationInterval(1))
 
@@ -76,6 +76,28 @@ end
             # Positive upward: turbulent plus net upward radiative.
             Jᴱs = Array(interior(model.land.fluxes.surface_energy_flux))
             @test Jᴱs ≈ 𝒬 .+ ℐꜛˡʷ .+ ℐꜜˡʷ .+ (1 - rtm_albedo) .* ℐꜜˢʷ
+        end
+
+        @testset "Two-stream surface shortwave with distinct direct and diffuse albedos on $A" begin
+            model = build_rtm_land_model(arch; optics = ClearSkyOptics(),
+                                         albedos = (direct_surface_albedo = 0.2, diffuse_surface_albedo = 0.6))
+            rtm = model.radiation
+            interface = model.interfaces.atmosphere_land_interface
+
+            time_step!(model, 1.0)
+
+            σ = NumericalEarth.Radiations.default_stefan_boltzmann_constant
+            Tₛ = Array(interior(interface.temperature))
+            ℐꜜˡʷ = Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
+            ℐꜜˢʷ = Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
+            ℐꜛˢʷ = Array(interior(rtm.upwelling_shortwave_flux))[:, :, 1]
+
+            𝒬 = Array(interior(interface.fluxes.sensible_heat)) .+
+                Array(interior(interface.fluxes.latent_heat))
+
+            # The land absorbs the RTM's net surface shortwave.
+            Jᴱs = Array(interior(model.land.fluxes.surface_energy_flux))
+            @test Jᴱs ≈ 𝒬 .+ rtm_emissivity .* σ .* Tₛ .^ 4 .+ rtm_emissivity .* ℐꜜˡʷ .+ ℐꜜˢʷ .+ ℐꜛˢʷ
         end
 
         @testset "No shortwave at night on $A" begin

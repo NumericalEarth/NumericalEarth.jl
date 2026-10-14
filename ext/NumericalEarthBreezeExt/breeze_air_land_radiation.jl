@@ -3,6 +3,7 @@
 ##### The net surface flux is ε σ Tₛ⁴ + ε ℐꜜˡʷ + (1 - α) ℐꜜˢʷ.
 #####
 
+using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Fields: Field
 using Oceananigans.Grids: Center, inactive_node
 using NumericalEarth.Radiations: SurfaceRadiationProperties, default_stefan_boltzmann_constant,
@@ -10,6 +11,7 @@ using NumericalEarth.Radiations: SurfaceRadiationProperties, default_stefan_bolt
                                  transmitted_shortwave_radiation
 
 const BreezeRTM = Breeze.RadiativeTransferModel
+const GrayBreezeRTM = Breeze.RadiativeTransferModel{<:Number, <:Any, <:Any, Nothing}
 
 # Bind the interfaces' diagnostic skin temperature — what the atmosphere actually sees;
 # equal to land.temperature only for bulk formulations — into an RTM constructed without
@@ -54,12 +56,24 @@ end
 function NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation_properties(rtm::BreezeRTM)
     FT = eltype(rtm.downwelling_shortwave_flux)
     ε = rtm.surface_radiation.surface_emissivity
-    # Whoever reads this state sees the direct albedo, the one the surface energy balance applies.
-    # It is also the diffuse albedo unless the RTM was given the two separately.
-    α = rtm.surface_radiation.direct_surface_albedo
+    α = blue_sky_albedo(rtm)
     return (σ = convert(FT, default_stefan_boltzmann_constant),
             surface_properties = (; land = SurfaceRadiationProperties(α, ε)))
 end
+
+# Gray optics transmits the direct beam only.
+blue_sky_albedo(rtm::GrayBreezeRTM) = rtm.surface_radiation.direct_surface_albedo
+
+# Two-stream optics reflect the direct and diffuse beams with their own albedos;
+# their blend is the ratio of upwelling to downwelling shortwave at the surface face k = 1.
+blue_sky_albedo(rtm::BreezeRTM) =
+    KernelFunctionOperation{Center, Center, Nothing}(reflected_shortwave_fraction,
+                                                     rtm.downwelling_shortwave_flux.grid,
+                                                     rtm.upwelling_shortwave_flux,
+                                                     rtm.downwelling_shortwave_flux)
+
+@inline reflected_shortwave_fraction(i, j, k, grid, ℐꜛˢʷ, ℐꜜˢʷ) =
+    @inbounds ifelse(ℐꜜˢʷ[i, j, 1] < 0, - ℐꜛˢʷ[i, j, 1] / ℐꜜˢʷ[i, j, 1], zero(grid))
 
 @kernel function _apply_breeze_air_land_radiative_fluxes!(Es, grid, Tˢ, ε, σ, ℐꜜˡʷ, ℐꜜˢʷ, α)
     i, j = @index(Global, NTuple)
@@ -74,7 +88,7 @@ end
     end
 end
 
-# Tˢ is the temperature RRTMGP emits from, so the land loses what the atmosphere absorbs.
+# The land emits from the current Tˢ; the atmosphere absorbs emission from Tˢ at the last RTM solve.
 function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
         coupled_model :: NumericalEarth.EarthSystemModels.EarthSystemModel{<:BreezeRTM})
 
