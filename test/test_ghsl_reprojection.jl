@@ -42,7 +42,8 @@ function with_ghsl_tiles(f, dataset, surface, height;
 end
 
 @testset "GHSL conserves native built area and volume away from the equator" begin
-    for resolution in (GHSBuiltS100m, GHSBuiltS10m), (longitude, latitude) in ((-74, 40), (140, 36), (-120, -60))
+    for arch in test_architectures, resolution in (GHSBuiltS100m, GHSBuiltS10m),
+        (longitude, latitude) in ((-74, 40), (140, 36), (-120, -60))
         dataset = GHSBuilt(surface = GHSBuiltS(; resolution))
         step = native_resolution(dataset.surface)
         region = BoundingBox(longitude = longitude .+ (-0.025, 0.025),
@@ -61,15 +62,15 @@ end
         end
         longitude_faces = range(longitude - 0.015, longitude + 0.015; length = 3)
         latitude_faces = range(latitude - 0.015, latitude + 0.015; length = 3)
-        grid = LatitudeLongitudeGrid(CPU(); size = (2, 2),
+        grid = LatitudeLongitudeGrid(arch; size = (2, 2),
                                      longitude = longitude_faces, latitude = latitude_faces,
                                      topology = (Bounded, Bounded, Flat))
         areas = MOLLWEIDE_RADIUS^2 .* deg2rad.(diff(longitude_faces)) .* diff(sind.(latitude_faces))'
         with_ghsl_tiles(dataset, surface, height; longitude, latitude, west, north) do
             for maximum_raster_cells in (100_000_000, 10_000)
                 properties = building_morphometry(grid, dataset; maximum_raster_cells)
-                fraction = interior(properties.plan_area_index, :, :, 1)
-                mean_height = interior(properties.mean_building_height, :, :, 1)
+                fraction = Array(interior(properties.plan_area_index, :, :, 1))
+                mean_height = Array(interior(properties.mean_building_height, :, :, 1))
                 @test sum(areas .* fraction) ≈ 0.8step^2 rtol = 1e-6
                 @test sum(areas .* fraction .* mean_height) ≈ 20step^2 rtol = 1e-6
             end
@@ -87,15 +88,18 @@ end
 # Equatorial Mollweide scales for a small domain wholly inside the synthetic tiles.
 longitude_per_meter = rad2deg(π / (2sqrt(2) * 6378137))
 latitude_per_meter = rad2deg(2sqrt(2) / (π * 6378137))
-grid = LatitudeLongitudeGrid(CPU(); size = (4, 2),
-                             longitude = (400, 800) .* longitude_per_meter,
-                             latitude = (400, 800) .* latitude_per_meter,
-                             topology = (Bounded, Bounded, Flat))
 
-@testset "GHSL preserves density-height covariance through reprojection" begin
-    dataset = GHSBuilt(surface = GHSBuiltS())
-    surface = repeat(ifelse.(isodd.(1:12), 2000.0, 6000.0), 1, 12)
-    height = repeat(ifelse.(isodd.(1:12), 10.0, 30.0), 1, 12)
+@testset "GHSL preserves density-height covariance on $arch at $resolution" for arch in test_architectures,
+                                                                             resolution in (GHSBuiltS100m, GHSBuiltS10m)
+    dataset = GHSBuilt(surface = GHSBuiltS(; resolution))
+    pixel_size = native_resolution(dataset.surface)
+    alternating = isodd.((1:12) .+ (1:12)')
+    surface = repeat(ifelse.(alternating, 0.2, 0.6); inner = (100 ÷ pixel_size, 100 ÷ pixel_size)) .* pixel_size^2
+    height = ifelse.(alternating, 10.0, 30.0)
+    grid = LatitudeLongitudeGrid(arch; size = (4, 2),
+                                 longitude = (400, 800) .* longitude_per_meter,
+                                 latitude = (400, 800) .* latitude_per_meter,
+                                 topology = (Bounded, Bounded, Flat))
     with_ghsl_tiles(dataset, surface, height) do
         properties = building_morphometry(grid, dataset)
         fraction = interior(properties.plan_area_index)
@@ -106,13 +110,21 @@ grid = LatitudeLongitudeGrid(CPU(); size = (4, 2),
     end
 end
 
-@testset "GHSL jointly masks missing footprint and height pixels" begin
-    dataset = GHSBuilt(surface = GHSBuiltS())
+@testset "GHSL jointly masks missing footprint and height pixels on $arch at $resolution" for arch in test_architectures,
+                                                                                           resolution in (GHSBuiltS100m, GHSBuiltS10m)
+    dataset = GHSBuilt(surface = GHSBuiltS(; resolution))
+    pixel_size = native_resolution(dataset.surface)
+    grid = LatitudeLongitudeGrid(arch; size = (4, 2),
+                                 longitude = (400, 800) .* longitude_per_meter,
+                                 latitude = (400, 800) .* latitude_per_meter,
+                                 topology = (Bounded, Bounded, Flat))
     for missing_height in (true, false)
         surface = fill(5000.0, 12, 12)
         height = fill(20.0, 12, 12)
         missing_values = missing_height ? height : surface
         missing_values[1:2:end, :] .= 65535
+        surface = repeat(surface; inner = (100 ÷ pixel_size, 100 ÷ pixel_size))
+        surface .= ifelse.(surface .== 65535, 65535, 0.5pixel_size^2)
         with_ghsl_tiles(dataset, surface, height) do
             properties = building_morphometry(grid, dataset)
             @test all(0 .< interior(properties.plan_area_index) .< 0.5)
@@ -121,16 +133,16 @@ end
     end
 end
 
-@testset "GHSL retains 10 m footprints" begin
+@testset "GHSL retains 10 m footprints on $arch" for arch in test_architectures
     dataset = GHSBuilt()
     surface = repeat(ifelse.(1:120 .<= 60, 0.0, 100.0), 1, 120)
-    fine_grid = LatitudeLongitudeGrid(CPU(); size = (4, 1),
+    fine_grid = LatitudeLongitudeGrid(arch; size = (4, 1),
                                       longitude = (580, 620) .* longitude_per_meter,
                                       latitude = (500, 600) .* latitude_per_meter,
                                       topology = (Bounded, Bounded, Flat))
     with_ghsl_tiles(dataset, surface, fill(20.0, 12, 12)) do
         properties = building_morphometry(fine_grid, dataset)
-        fraction = vec(interior(properties.plan_area_index))
+        fraction = vec(Array(interior(properties.plan_area_index)))
         @test first(fraction) ≈ 0 atol = 1e-6
         @test last(fraction) ≈ 1 atol = 1e-6
         built_height = interior(properties.mean_building_height)[interior(properties.plan_area_index) .> 0]
@@ -138,9 +150,9 @@ end
     end
 end
 
-@testset "GHSL uniform footprints survive offset window boundaries" begin
+@testset "GHSL uniform footprints survive offset window boundaries on $arch" for arch in test_architectures
     dataset = GHSBuilt(surface = GHSBuiltS(resolution = GHSBuiltS10m))
-    offset_grid = LatitudeLongitudeGrid(CPU(); size = (2, 2),
+    offset_grid = LatitudeLongitudeGrid(arch; size = (2, 2),
                                         longitude = (450, 1050) .* longitude_per_meter,
                                         latitude = (250, 850) .* latitude_per_meter,
                                         topology = (Bounded, Bounded, Flat))

@@ -500,17 +500,17 @@ function ghsl_regional_raster(metadatum::GHSLMetadatum)
               latitude  = collect(φnodes(grid, Center())))
 end
 
-function Downloads.download(metadatum::GHSLMetadatum)
+function Downloads.download(metadatum::GHSLMetadatum; arch = CPU())
     DataWrangling.validate_dataset_coverage(nothing, metadatum)
     nc_path = metadata_path(metadatum)
     @root if !isfile(nc_path)
-        ghsl_tiles_to_netcdf(metadatum, nc_path)
+        ghsl_tiles_to_netcdf(metadatum, nc_path, arch)
     end
     return nc_path
 end
 
 # Implemented in the ArchGDAL extension; this fallback fires when it is not loaded.
-ghsl_tiles_to_netcdf(metadatum, nc_path) =
+ghsl_tiles_to_netcdf(metadatum, nc_path, arch = CPU()) =
     error("Reading the $(summary(metadatum.dataset)) Mollweide GeoTIFF tiles requires " *
           "the ArchGDAL package (for the ESRI:54009 → EPSG:4326 reprojection). " *
           "Load it with `using ArchGDAL`.")
@@ -532,6 +532,7 @@ at most about `maximum_raster_cells` native pixels. Regional NetCDF rasters are 
 after reading; downloaded source tiles remain cached.
 """
 function Lands.building_morphometry(grid::LatitudeLongitudeGrid, dataset::GHSBuilt; maximum_raster_cells = 100_000_000)
+    arch = architecture(grid)
     Nx, Ny, _ = size(grid)
     λᶠ = on_architecture(CPU(), λnodes(grid, Face()))
     φᶠ = on_architecture(CPU(), φnodes(grid, Face()))
@@ -552,22 +553,23 @@ function Lands.building_morphometry(grid::LatitudeLongitudeGrid, dataset::GHSBui
         J = tile_indices(Ny, windows_y, n)
         window = BoundingBox(longitude = (λᶠ[first(I)], λᶠ[last(I) + 1]),
                              latitude  = (φᶠ[first(J)], φᶠ[last(J) + 1]))
-        window_grid = LatitudeLongitudeGrid(CPU(), eltype(grid); size = (length(I), length(J)),
+        window_grid = LatitudeLongitudeGrid(arch, eltype(grid); size = (length(I), length(J)),
                                             longitude = λᶠ[first(I):last(I) + 1],
                                             latitude  = φᶠ[first(J):last(J) + 1],
                                             topology = (Bounded, Bounded, Flat))
 
         fraction_metadatum = Metadatum(:built_up_fraction; dataset, region = window)
-        built_fraction  = Field(fraction_metadatum, CPU())
-        building_volume = Field(Metadatum(:building_volume; dataset, region = window), CPU())
+        Downloads.download(fraction_metadatum; arch)
+        built_fraction  = Field(fraction_metadatum, arch)
+        building_volume = Field(Metadatum(:building_volume; dataset, region = window), arch)
         @root rm(metadata_path(fraction_metadatum); force = true)
 
         window_fraction = Field{Center, Center, Nothing}(window_grid)
         window_volume   = Field{Center, Center, Nothing}(window_grid)
         regrid!(window_fraction, built_fraction)
         regrid!(window_volume, building_volume)
-        interior(λᵖ, I, J, 1) .= on_architecture(architecture(grid), interior(window_fraction, :, :, 1))
-        interior(h,  I, J, 1) .= on_architecture(architecture(grid), interior(window_volume, :, :, 1))
+        interior(λᵖ, I, J, 1) .= interior(window_fraction, :, :, 1)
+        interior(h,  I, J, 1) .= interior(window_volume, :, :, 1)
     end
     interior(h) .= ifelse.(interior(λᵖ) .> 0, interior(h) ./ interior(λᵖ), 0)
 

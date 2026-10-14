@@ -6,8 +6,7 @@ using NumericalEarth.DataWrangling.GHSL: ghsl_tile_index, ghsl_tiles_in_bbox,
                                          longitude_latitude_to_mollweide,
                                          mask_building_height, built_surface_to_fraction,
                                          dataset_prefix, native_resolution, ghsl_tiles_to_netcdf,
-                                         ghsl_regional_raster, ghsl_mollweide_bounds, ghsl_pixel_window,
-                                         GHSL_ORIGIN_X, GHSL_ORIGIN_Y
+                                         ghsl_regional_raster
 using NumericalEarth.Lands: MorphometricRoughness, aerodynamic_parameters, building_morphometry, urban_roughness
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_grid,
                                     longitude_interfaces, latitude_interfaces,
@@ -71,21 +70,6 @@ end
                   for φ in range(-60, 60; length = 400), λ in range(0, 1; length = 20))
     @test sampled ⊆ Set(ghsl_tiles_in_bbox(tall))
     @test issorted(ghsl_tiles_in_bbox(tall))
-end
-
-@testset "GHSL native pixel window" begin
-    region = BoundingBox(longitude = (-0.2, 0.1), latitude = (51.4, 51.6))
-    xmin, xmax, ymin, ymax = ghsl_mollweide_bounds(region)
-    for pixel_size in (10, 100)
-        west, east, south, north = ghsl_pixel_window(region, pixel_size)
-        # Widened by less than a pixel per side, onto the native pixel faces.
-        @test 0 ≤ xmin - west < pixel_size
-        @test 0 ≤ east - xmax < pixel_size
-        @test 0 ≤ ymin - south < pixel_size
-        @test 0 ≤ north - ymax < pixel_size
-        @test all(isinteger, ((west, east) .- GHSL_ORIGIN_X) ./ pixel_size)
-        @test all(isinteger, ((south, north) .- GHSL_ORIGIN_Y) ./ pixel_size)
-    end
 end
 
 #####

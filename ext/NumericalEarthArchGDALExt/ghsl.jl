@@ -69,12 +69,12 @@ function ghsl_reprojected_raster(dataset, raster, cache_dir)
     end
 end
 
-function ghsl_raster_fields(dataset::GHSBuiltS, raster, cache_dir)
+function ghsl_raster_fields(dataset::GHSBuiltS, raster, cache_dir, arch)
     surface = ghsl_reprojected_raster(dataset, raster, cache_dir)
     return (; built_up_fraction = built_surface_to_fraction.(surface, native_resolution(dataset)^2))
 end
 
-ghsl_raster_fields(dataset::GHSBuiltH, raster, cache_dir) =
+ghsl_raster_fields(dataset::GHSBuiltH, raster, cache_dir, arch) =
     (; building_height = mask_building_height.(ghsl_reprojected_raster(dataset, raster, cache_dir)))
 
 # Mean of a linear segment clipped to [0, width].
@@ -86,32 +86,35 @@ ghsl_raster_fields(dataset::GHSBuiltH, raster, cache_dir) =
     return ifelse(lower == upper, lower_clipped, integral / (upper - lower))
 end
 
-@kernel function _conservative_ghsl_moments!(built_fraction, building_volume, fraction, volume,
-                                            meridians, projected_latitudes, areas, west, north, step, radius)
+@kernel function _conservative_ghsl_moments!(built_fraction, building_volume, surface, height,
+                                            meridians, projected_latitudes, areas, west, north, pixel_size, refinement, radius)
     i, j = @index(Global, NTuple)
     @inbounds begin
         south_edge, north_edge = projected_latitudes[j], projected_latitudes[j + 1]
-        first_row = max(1, floor(Int, (north - north_edge) / step) + 1)
-        last_row = min(size(fraction, 2), ceil(Int, (north - south_edge) / step))
-        built_area = built_volume = zero(eltype(built_fraction))
+        first_row = max(1, floor(Int, (north - north_edge) / pixel_size) + 1)
+        last_row = min(size(surface, 2), ceil(Int, (north - south_edge) / pixel_size))
+        built_area = built_volume = convert(eltype(built_fraction), 0)
         for row in first_row:last_row
-            south_overlap = max(south_edge, north - row * step)
-            north_overlap = min(north_edge, north - (row - 1) * step)
+            south_overlap = max(south_edge, north - row * pixel_size)
+            north_overlap = min(north_edge, north - (row - 1) * pixel_size)
             # Mollweide meridians: x = (2√2 R / π) λ √(1 - y² / (2R²)).
             south_scale = sqrt(max(0, 1 - south_overlap^2 / (2radius^2)))
             north_scale = sqrt(max(0, 1 - north_overlap^2 / (2radius^2)))
             west_south, west_north = meridians[i] * south_scale, meridians[i] * north_scale
             east_south, east_north = meridians[i + 1] * south_scale, meridians[i + 1] * north_scale
-            first_column = max(1, floor(Int, (min(west_south, west_north) - west) / step) + 1)
-            last_column = min(size(fraction, 1), ceil(Int, (max(east_south, east_north) - west) / step))
+            first_column = max(1, floor(Int, (min(west_south, west_north) - west) / pixel_size) + 1)
+            last_column = min(size(surface, 1), ceil(Int, (max(east_south, east_north) - west) / pixel_size))
             for column in first_column:last_column
-                pixel_west = west + (column - 1) * step
+                pixel_west = west + (column - 1) * pixel_size
                 # Shared meridians are linear within each row overlap, partitioning its area.
-                east_width = clipped_linear_mean(east_south - pixel_west, east_north - pixel_west, step)
-                west_width = clipped_linear_mean(west_south - pixel_west, west_north - pixel_west, step)
+                east_width = clipped_linear_mean(east_south - pixel_west, east_north - pixel_west, pixel_size)
+                west_width = clipped_linear_mean(west_south - pixel_west, west_north - pixel_west, pixel_size)
                 area = (north_overlap - south_overlap) * (east_width - west_width)
-                built_area += area * fraction[column, row]
-                built_volume += area * volume[column, row]
+                fraction = built_surface_to_fraction(surface[column, row], pixel_size^2)
+                building_height = mask_building_height(height[cld(column, refinement), cld(row, refinement)])
+                valid = isfinite(fraction) & isfinite(building_height)
+                built_area += ifelse(valid, area * fraction, 0)
+                built_volume += ifelse(valid, area * fraction * building_height, 0)
             end
         end
         built_fraction[i, j] = built_area / areas[j]
@@ -119,21 +122,23 @@ end
     end
 end
 
-function ghsl_raster_fields(dataset::GHSBuilt, raster, cache_dir)
+function ghsl_raster_fields(dataset::GHSBuilt, raster, cache_dir, arch)
     west, east, south, north = ghsl_pixel_window(raster.region, native_resolution(dataset.height))
-    step = native_resolution(dataset.surface)
+    pixel_size = native_resolution(dataset.surface)
+    refinement = native_resolution(dataset.height) ÷ pixel_size
 
     # Aligned native footprints, with net height constant within each 100 m pixel.
-    fraction, height = map((dataset.surface, dataset.height)) do product
+    surface, height = map((dataset.surface, dataset.height)) do product
+        native_pixel_size = native_resolution(product)
         sources = ghsl_sources(product, raster.region, cache_dir)
         try
             ArchGDAL.gdalbuildvrt(sources) do mosaic
                 ArchGDAL.gdalwarp([mosaic],
                     ["-of", "MEM", "-s_srs", "ESRI:54009", "-t_srs", "ESRI:54009",
                      "-te", string(west), string(south), string(east), string(north),
-                     "-tr", string(step), string(step), "-r", "near", "-ovr", "NONE",
+                     "-tr", string(native_pixel_size), string(native_pixel_size), "-r", "near", "-ovr", "NONE",
                      "-dstnodata", "nan", "-ot", "Float32"]) do windowed
-                    ArchGDAL.read(windowed, 1)
+                    on_architecture(arch, ArchGDAL.read(windowed, 1))
                 end
             end
         finally
@@ -141,30 +146,23 @@ function ghsl_raster_fields(dataset::GHSBuilt, raster, cache_dir)
         end
     end
 
-    fraction .= built_surface_to_fraction.(fraction, step^2)
-    height .= mask_building_height.(height)
-    valid = isfinite.(fraction) .& isfinite.(height)
-    fraction .= ifelse.(valid, fraction, 0)
-    height .= ifelse.(valid, height, 0)
-    volume = fraction .* height
-
     longitude_faces = range(raster.region.longitude...; length = raster.Nx + 1)
     latitude_faces = range(raster.region.latitude...; length = raster.Ny + 1)
-    meridians = (2sqrt(2) * MOLLWEIDE_RADIUS / π) .* deg2rad.(longitude_faces)
-    projected_latitudes = last.(longitude_latitude_to_mollweide.(0, latitude_faces))
-    areas = 2MOLLWEIDE_RADIUS^2 * deg2rad(Base.step(longitude_faces)) .*
-            cosd.(raster.latitude) .* sind.(diff(latitude_faces) ./ 2)
-    built_up_fraction = zeros(Float64, raster.Nx, raster.Ny)
+    meridians = on_architecture(arch, (2sqrt(2) * MOLLWEIDE_RADIUS / π) .* deg2rad.(longitude_faces))
+    projected_latitudes = on_architecture(arch, last.(longitude_latitude_to_mollweide.(0, latitude_faces)))
+    areas = on_architecture(arch, 2MOLLWEIDE_RADIUS^2 * deg2rad(step(longitude_faces)) .*
+                                 cosd.(raster.latitude) .* sind.(diff(latitude_faces) ./ 2))
+    built_up_fraction = zeros(arch, Float64, raster.Nx, raster.Ny)
     building_volume = similar(built_up_fraction)
-    launch!(CPU(), nothing, size(built_up_fraction), _conservative_ghsl_moments!,
-            built_up_fraction, building_volume, fraction, volume,
-            meridians, projected_latitudes, areas, west, north, step, MOLLWEIDE_RADIUS)
+    launch!(arch, nothing, size(built_up_fraction), _conservative_ghsl_moments!,
+            built_up_fraction, building_volume, surface, height,
+            meridians, projected_latitudes, areas, west, north, pixel_size, refinement, MOLLWEIDE_RADIUS)
     return (; built_up_fraction, building_volume)
 end
 
-function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLMetadatum, nc_path)
+function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLMetadatum, nc_path, arch = CPU())
     raster = ghsl_regional_raster(metadatum)
-    fields = ghsl_raster_fields(metadatum.dataset, raster, joinpath(dirname(nc_path), "tiles"))
+    fields = ghsl_raster_fields(metadatum.dataset, raster, joinpath(dirname(nc_path), "tiles"), arch)
     variable_names = available_variables(metadatum.dataset)
 
     NCDataset(nc_path, "c") do ds
@@ -178,7 +176,7 @@ function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLM
         lat_var[:] = raster.latitude
         for (name, data) in pairs(fields)
             var = defVar(ds, variable_names[name], Float64, ("lon", "lat"))
-            var[:, :] = data
+            var[:, :] = on_architecture(CPU(), data)
         end
     end
 

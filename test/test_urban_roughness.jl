@@ -386,8 +386,8 @@ function NumericalEarth.Lands.building_morphometry(grid, ::UniformBuildings)
               frontal_area_index = uniform(0.3), gross_building_height = uniform(10.0))
 end
 
-@testset "Dataset-level urban roughness from measured morphometry" begin
-    grid = LatitudeLongitudeGrid(CPU(), Float64; size = (2, 2),
+@testset "Dataset-level urban roughness from measured morphometry on $arch" for arch in test_architectures
+    grid = LatitudeLongitudeGrid(arch, Float64; size = (2, 2),
                                  longitude = (0, 0.2), latitude = (0, 0.2),
                                  topology = (Bounded, Bounded, Flat))
     closure = MorphometricRoughness()
@@ -409,9 +409,9 @@ function NumericalEarth.Lands.building_morphometry(grid, ::TwoNeighborhoods)
     return (; plan_area_index = western(0.2, 0.8), mean_building_height = western(10.0, 50.0))
 end
 
-@testset "Dataset-level urban roughness preserves the area-mean neutral drag" begin
+@testset "Dataset-level urban roughness preserves the area-mean neutral drag on $arch" for arch in test_architectures
     # One grid cell holding two equal-area neighborhoods of different density and height.
-    grid = LatitudeLongitudeGrid(CPU(), Float64; size = (1, 1),
+    grid = LatitudeLongitudeGrid(arch, Float64; size = (1, 1),
                                  longitude = (0, 0.02), latitude = (0, 0.01),
                                  topology = (Bounded, Bounded, Flat))
     closure = uniform_height_closure()
@@ -422,13 +422,13 @@ end
     ℓ₁, d₁ = aerodynamic_parameters(closure, 0.2, 10.0)
     ℓ₂, d₂ = aerodynamic_parameters(closure, 0.8, 50.0)
     C₁, C₂ = drag(ℓ₁, d₁), drag(ℓ₂, d₂)
-    ℓᵐ = interior(fields.momentum_roughness_length)[1]
-    d  = interior(fields.zero_plane_displacement)[1]
+    ℓᵐ = only(Array(interior(fields.momentum_roughness_length)))
+    d  = only(Array(interior(fields.zero_plane_displacement)))
 
     @test drag(ℓᵐ, d) ≈ (C₁ + C₂) / 2
     @test d ≈ (C₁ * d₁ + C₂ * d₂) / (C₁ + C₂)
-    @test interior(fields.building_height)[1] ≈ (0.2 * 10 + 0.8 * 50) / (0.2 + 0.8)
-    @test interior(fields.urban_fraction)[1] == 1
+    @test only(Array(interior(fields.building_height))) ≈ (0.2 * 10 + 0.8 * 50) / (0.2 + 0.8)
+    @test only(Array(interior(fields.urban_fraction))) == 1
 end
 
 struct AlternatingBuildings
@@ -438,26 +438,26 @@ end
 function NumericalEarth.Lands.building_morphometry(grid, buildings::AlternatingBuildings)
     odd = isodd.(1:size(grid, 1))
     alternating(odd_value, even_value) =
-        (field = Field{Center, Center, Nothing}(grid); interior(field) .= ifelse.(odd, odd_value, even_value); field)
+        set!(Field{Center, Center, Nothing}(grid), reshape(ifelse.(odd, odd_value, even_value), :, 1))
     properties = (; plan_area_index = alternating(0.6, 0.2), mean_building_height = alternating(30.0, 10.0))
     buildings.measured || return properties
     return (; properties..., building_height_deviation = alternating(0.0, 0.0),
               maximum_building_height = alternating(30.0, 10.0), frontal_area_index = alternating(0.5, 0.1))
 end
 
-@testset "On a grid finer than the neighborhood the closure sees the pooled neighborhood" begin
+@testset "On a grid finer than the neighborhood the closure sees the pooled neighborhood on $arch" for arch in test_architectures
     # 100 m cells alternating dense-tall and sparse-low; a 500 m neighborhood pools five cells.
     Nx = 8
-    grid = LatitudeLongitudeGrid(CPU(), Float64; size = (Nx, 1),
+    grid = LatitudeLongitudeGrid(arch, Float64; size = (Nx, 1),
                                  longitude = (0, Nx * 0.0009), latitude = (0, 0.0009),
                                  topology = (Bounded, Bounded, Flat))
     closure = MorphometricRoughness()
 
     for measured in (false, true)
         fields = urban_roughness(grid, AlternatingBuildings(measured); closure, surface_layer_height = 100, neighborhood = 500)
-        roughness    = interior(fields.momentum_roughness_length, :, 1, 1)
-        displacement = interior(fields.zero_plane_displacement, :, 1, 1)
-        height       = interior(fields.building_height, :, 1, 1)
+        roughness    = Array(interior(fields.momentum_roughness_length, :, 1, 1))
+        displacement = Array(interior(fields.zero_plane_displacement, :, 1, 1))
+        height       = Array(interior(fields.building_height, :, 1, 1))
 
         # Cell 3 pools three dense cells and two sparse ones; cell 4 the reverse.
         for (i, dense) in ((3, 3), (4, 2))

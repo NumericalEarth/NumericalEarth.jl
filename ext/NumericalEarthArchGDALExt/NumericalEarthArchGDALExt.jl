@@ -8,6 +8,7 @@ using NetworkOptions: NetworkOptions
 using NumericalEarth: NumericalEarth
 
 using Oceananigans: Center, CPU
+using Oceananigans.Architectures: on_architecture
 using Oceananigans.Grids: λnodes, φnodes
 using Oceananigans.Utils: launch!
 

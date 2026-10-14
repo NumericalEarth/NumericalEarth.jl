@@ -48,12 +48,14 @@ using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: CPU, architecture, on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField
-using Oceananigans.Grids: grid_name, Center, Face, znodes, λnode, φnode
+using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField, interior, set!, regrid!
+using Oceananigans.Grids: grid_name, Center, Face, LatitudeLongitudeGrid, Bounded, Flat,
+                          znodes, λnode, φnode, λnodes, φnodes
 using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!, prettysummary, prettytime
+using Base: ForwardOrdering
 
 using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
