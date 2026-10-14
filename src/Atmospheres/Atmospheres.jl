@@ -1,13 +1,15 @@
 module Atmospheres
 
 export atmosphere_model, atmosphere_simulation, breeze_prognostic_state, bulk_drag,
-       hydrostatic_pressure_from_surface, density_from_pressure, PrescribedAtmosphere, PrescribedPrecipitationFlux
+       hydrostatic_pressure_from_surface, density_from_pressure, PrescribedAtmosphere, PrescribedPrecipitationFlux,
+       AtmosphereTemperatureOffset, DownwellingLongwaveOffset, temperature_offset_corrections
 
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture
-using Oceananigans.BoundaryConditions: FieldBoundaryConditions
+using Oceananigans.BoundaryConditions: FieldBoundaryConditions, BoundaryCondition, Value, RightBoundary, getbc,
+                                      regularize_boundary_condition
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids
 using Oceananigans.Fields: Field, Face, Center
 using Oceananigans.Grids: grid_name, topology, Bounded, Flat, LatitudeLongitudeGrid, λnodes, φnodes,
@@ -16,11 +18,13 @@ using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, ex
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time, meters, second
 using Oceananigans.Utils: Utils, prettysummary, launch!
+using Thermodynamics: Thermodynamics
 using Thermodynamics.Parameters: AbstractThermodynamicsParameters
 
 using ...NumericalEarth: NumericalEarth
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, set_prescribed_field!
-using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger, _compute_fractional_indices!
+using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger, _compute_fractional_indices!,
+                                                 saturation_specific_humidity
 
 # Can be extended by atmosphere models. `atmosphere_model` builds the model; `atmosphere_simulation`
 # wraps it in a `Simulation`.
@@ -54,6 +58,7 @@ include("thermodynamic_parameters.jl")
 include("prescribed_atmosphere.jl")
 include("prescribed_atmosphere_regridder.jl")
 include("interpolate_atmospheric_state.jl")
+include("temperature_offset.jl")
 
 EarthSystemModels.InterfaceComputations.net_fluxes(::PrescribedAtmosphere) = nothing
 
