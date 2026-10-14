@@ -139,7 +139,7 @@ end
 # The energy density is unbounded (`ρθ` is not confined to `[0, 1]`). Names are derived from the
 # microphysics so the default tracks whichever moisture/precipitation prognostics it carries.
 #
-function default_nested_scalar_advection(microphysics, closure = nothing; closure_tracer_maximum = 10_000)
+function default_nested_scalar_advection(microphysics, closure = nothing; closure_tracer_maximum = Inf)
     bounded = WENO(order = 5, bounds = (0, 1))
     moist_names = (moisture_prognostic_name(microphysics), prognostic_field_names(microphysics)...)
     moist = NamedTuple{moist_names}(map(_ -> bounded, moist_names))
