@@ -1,4 +1,5 @@
 using Oceananigans.Operators: Δzᶜᶜᶜ
+using Oceananigans.Grids: znode
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.SeaIceDynamics: implicit_τx_coefficient, implicit_τy_coefficient
 
@@ -166,7 +167,8 @@ end
         end
 
         # Melting/freezing temperature at this depth
-        Tₘ = melting_temperature(liquidus, Sᵏ)
+        z  = znode(i, j, k, grid, Center(), Center(), Center())
+        Tₘ = melting_temperature(liquidus, Sᵏ, z)
         freezing = Tᵏ < Tₘ
 
         # Compute change in ocean heat energy due to freezing.
