@@ -77,11 +77,11 @@ function PrescribedOcean(grid, times=[zero(grid)];
                          sea_surface_salinity = default_prescribed_sss(grid, times),
                          velocities = default_prescribed_velocities(grid, times))
 
-    return PrescribedOcean{FT}(grid, 
+    return PrescribedOcean{FT}(grid,
                                clock,
                                sea_surface_temperature,
                                sea_surface_salinity,
-                               velocities, 
+                               velocities,
                                times,
                                convert(FT, density),
                                convert(FT, heat_capacity))
@@ -125,13 +125,13 @@ function EarthSystemModels.adopt_clock(ocean::PrescribedOcean{FT}, clock) where 
     new_clock = EarthSystemModels.matching_clock(ocean.clock, clock)
     isnothing(new_clock) && return ocean
     EarthSystemModels.warn_clock_coercion(ocean, new_clock)
-    return PrescribedOcean{FT}(ocean.grid, 
+    return PrescribedOcean{FT}(ocean.grid,
                                new_clock,
                                ocean.sea_surface_temperature,
                                ocean.sea_surface_salinity,
-                               ocean.velocities, 
+                               ocean.velocities,
                                ocean.times,
-                               ocean.density, 
+                               ocean.density,
                                ocean.heat_capacity)
 end
 
