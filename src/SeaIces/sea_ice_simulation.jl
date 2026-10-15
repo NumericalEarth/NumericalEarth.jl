@@ -20,9 +20,9 @@ ocean_surface_height(ocean::Simulation, grid) = ocean.model.free_surface.displac
 ocean_surface_height(::Nothing, grid) = ZeroField(eltype(grid))
 
 # No slip is a zero-value condition on the immersed boundary; free slip leaves the wall stress-free
+velocity_boundary_conditions(grid, location, ::Val{:no_slip})   = velocity_boundary_conditions(grid, location, Val(:free_slip))
 velocity_boundary_conditions(grid, location, ::Val{:free_slip}) = correct_tripolar_bcs(grid, FieldBoundaryConditions(grid, location))
-velocity_boundary_conditions(grid, location, ::Val{:no_slip}) = correct_tripolar_bcs(grid, FieldBoundaryConditions(grid, location;
-                                                                                                      immersed = ValueBoundaryCondition(0)))
+velocity_boundary_conditions(grid::ImmersedBoundaryGrid, location, ::Val{:no_slip}) = correct_tripolar_bcs(grid, FieldBoundaryConditions(grid, location; immersed = ValueBoundaryCondition(0)))
 
 function sea_ice_velocity_boundary_conditions(grid, lateral_boundary_condition)
     slip = Val(lateral_boundary_condition)

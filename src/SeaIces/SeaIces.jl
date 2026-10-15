@@ -8,6 +8,7 @@ using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.BoundaryConditions: BoundaryCondition, FieldBoundaryConditions, ValueBoundaryCondition, Zipper
 using Oceananigans.Fields: Field, ZeroField
 using Oceananigans.Grids: inactive_node, Face, Center
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids
