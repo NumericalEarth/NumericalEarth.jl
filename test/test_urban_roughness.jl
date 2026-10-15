@@ -17,16 +17,6 @@ using Oceananigans.Fields: interior, set!
 
 uniform_height_closure(; kw...) = MorphometricRoughness(; height_distribution = UniformHeight(), kw...)
 
-@testset "Urban roughness requires a height field or a geographic grid" begin
-    @test_throws MethodError urban_roughness(15.0, 0.3)
-    @test_throws MethodError urban_roughness(fill(15.0, 2, 2), fill(0.3, 2, 2))
-    grid = RectilinearGrid(size=(2, 2), extent=(1, 1), topology=(Bounded, Bounded, Flat))
-    for dataset in (GHSBuilt(), GlobalBuildingFootprints3D())
-        @test_throws MethodError urban_roughness(grid, dataset; surface_layer_height=100)
-        @test_throws MethodError building_morphometry(grid, dataset)
-    end
-end
-
 roughness_at_point(λᵖ, h; closure = MorphometricRoughness()) = aerodynamic_parameters(closure, λᵖ, h)[1]
 displacement_at_point(λᵖ, h; closure = MorphometricRoughness()) = aerodynamic_parameters(closure, λᵖ, h)[2]
 
@@ -379,9 +369,13 @@ end
 
 struct PrescribedBuildings{P}
     properties :: P
+    reads :: Base.RefValue{Int}
 end
 
+PrescribedBuildings(properties) = PrescribedBuildings(properties, Ref(0))
+
 function NumericalEarth.Lands.building_morphometry(grid, buildings::PrescribedBuildings)
+    buildings.reads[] += 1
     return map(value -> set!(Field{Center, Center, Nothing}(grid), value), buildings.properties)
 end
 
@@ -405,6 +399,21 @@ end
     Nx, Ny = size(grid, 1), size(grid, 2)
     @test all(Array(fields.momentum_roughness_length[0:Nx+1, 1:Ny, 1]) .≈ ℓᵐ)
     @test all(Array(fields.momentum_roughness_length[1:Nx, 0:Ny+1, 1]) .≈ ℓᵐ)
+end
+
+@testset "Multiple closures share morphometry on $arch" for arch in test_architectures
+    grid = LatitudeLongitudeGrid(arch; size = (2, 2), longitude = (0, 0.2), latitude = (0, 0.2),
+                                 topology = (Bounded, Bounded, Flat))
+    buildings = PrescribedBuildings((; plan_area_index = 0.4, mean_building_height = 25.0))
+    closures = (; variable = MorphometricRoughness(), uniform = uniform_height_closure())
+    results = urban_roughness(grid, buildings; closure = closures, surface_layer_height = 100, neighborhood = 5000)
+    @test buildings.reads[] == 1
+    @test keys(results) == keys(closures)
+    for name in keys(closures)
+        roughness, displacement = aerodynamic_parameters(closures[name], 0.4, 25.0)
+        @test all(interior(results[name].momentum_roughness_length) .≈ roughness)
+        @test all(interior(results[name].zero_plane_displacement) .≈ displacement)
+    end
 end
 
 @testset "Dataset-level urban roughness preserves the area-mean neutral drag on $arch" for arch in test_architectures

@@ -314,9 +314,10 @@ A region whose native raster exceeds `maximum_raster_cells` (default `400_000_00
 pass exactly while memory stays bounded regardless of the region size; band raster files are
 deleted once reduced (the downloaded footprint tiles stay cached).
 
+The default `dataset` is `GlobalBuildingFootprints3D()`.
 Downloading and rasterizing the footprints requires `using ArchGDAL`.
 """
-function Lands.building_morphometry(target_grid::LatitudeLongitudeGrid, dataset::GlobalBuildingFootprints3D;
+function Lands.building_morphometry(target_grid::LatitudeLongitudeGrid, dataset::GlobalBuildingFootprints3D = GlobalBuildingFootprints3D();
                                     region = BoundingBox(target_grid), maximum_raster_cells = 400_000_000)
     metadatum = Metadatum(:building_height; dataset, region)
     DataWrangling.validate_dataset_coverage(nothing, metadatum)
@@ -360,15 +361,6 @@ function Lands.building_morphometry(target_grid::LatitudeLongitudeGrid, dataset:
 
     return morphometry_fields(accumulated, target_grid)
 end
-
-"""
-$(TYPEDSIGNATURES)
-
-Per-cell building morphometry on `target_grid` with the building `dataset` supplied as a keyword.
-Defaults to `GlobalBuildingFootprints3D()` over the extent of `target_grid`.
-"""
-Lands.building_morphometry(target_grid::LatitudeLongitudeGrid; dataset = GlobalBuildingFootprints3D(), kw...) =
-    building_morphometry(target_grid, dataset; kw...)
 
 #####
 ##### Tile discovery — 3D-GloBFP ships one `.zip` per grid tile across ten figshare parts.

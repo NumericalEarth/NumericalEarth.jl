@@ -3,17 +3,12 @@ module GHSL
 export GHSBuiltH, GHSBuiltS, GHSBuiltSResolution, GHSBuiltS10m, GHSBuiltS100m, GHSBuilt
 
 using Downloads: Downloads
-using Oceananigans: Bounded, Center, CPU, Face, Field, Flat, LatitudeLongitudeGrid, interior
-using Oceananigans.Architectures: architecture, on_architecture
-using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Fields: regrid!
+using Oceananigans: Center, CPU, Face
 using Oceananigans.DistributedComputations: @root
 using Oceananigans.Grids: x_domain, y_domain, λnodes, φnodes
 
-using NumericalEarth.Lands: Lands
-
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
-                       metadata_path, native_grid, BoundingBox, bounding_box_suffix, tile_indices
+                       metadata_path, native_grid, BoundingBox, bounding_box_suffix
 
 using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
 
@@ -312,7 +307,7 @@ function ghsl_tile_index(longitude, latitude)
 end
 
 """
-    ghsl_tiles_in_bbox(region::BoundingBox)
+$(TYPEDSIGNATURES)
 
 Return the sorted `(row, column)` GHSL tiles whose 1000 km Mollweide cells intersect the
 Mollweide bounding box of `region`. Exact for regional windows; a complete (never-missing)
@@ -490,6 +485,8 @@ function ghsl_regional_raster(metadatum::GHSLMetadatum)
 
     return (; region = BoundingBox(longitude = (λ₁, λ₂), latitude = (φ₁, φ₂)),
               Nx, Ny,
+              longitude_faces = collect(λnodes(grid, Face())),
+              latitude_faces = collect(φnodes(grid, Face())),
               longitude = collect(λnodes(grid, Center())),
               latitude  = collect(φnodes(grid, Center())))
 end
@@ -508,68 +505,5 @@ ghsl_tiles_to_netcdf(metadatum, nc_path, arch = CPU()) =
     error("Reading the $(summary(metadatum.dataset)) Mollweide GeoTIFF tiles requires " *
           "the ArchGDAL package (for the ESRI:54009 → EPSG:4326 reprojection). " *
           "Load it with `using ArchGDAL`.")
-
-#####
-##### Building morphometry on a model grid: conservative pixel means of the rasters.
-#####
-
-"""
-$(TYPEDSIGNATURES)
-
-Plan-area index and built-area-weighted mean building height (m) on `grid` (a
-`LatitudeLongitudeGrid`) from the GHSL built-up surface and building-height rasters
-of `dataset`, as the NamedTuple of `Field`s
-`(; plan_area_index, mean_building_height)`: the area mean of the native-pixel built
-fraction, and the building volume over the built area of each cell. A pixel missing
-either its fraction or its height counts as unbuilt. The rasters are read in windows of
-at most about `maximum_raster_cells` native pixels. Regional NetCDF rasters are deleted
-after reading; downloaded source tiles remain cached.
-"""
-function Lands.building_morphometry(grid::LatitudeLongitudeGrid, dataset::GHSBuilt; maximum_raster_cells = 100_000_000)
-    arch = architecture(grid)
-    Nx, Ny, _ = size(grid)
-    longitude_faces = on_architecture(CPU(), λnodes(grid, Face()))
-    latitude_faces  = on_architecture(CPU(), φnodes(grid, Face()))
-    λᵖ = Field{Center, Center, Nothing}(grid)
-    h  = Field{Center, Center, Nothing}(grid)
-
-    Nλ, Nφ, _ = size(dataset.surface, :built_up_fraction)
-    west, east = longitude_faces[1], longitude_faces[end]
-    south, north = latitude_faces[1], latitude_faces[end]
-    geographic_pixels = (east - west) * Nλ / 360 * (north - south) * Nφ / 180
-    xmin, xmax, ymin, ymax = ghsl_mollweide_bounds(BoundingBox(longitude = (west, east), latitude = (south, north)))
-    projected_pixels = (xmax - xmin) * (ymax - ymin) / native_resolution(dataset.surface)^2
-    windows = ceil(Int, max(geographic_pixels, projected_pixels) / maximum_raster_cells)
-    # Near-square tiling; an axis with too few cells hands its share to the other.
-    windows_x = min(Nx, max(ceil(Int, sqrt(windows)), cld(windows, Ny)))
-    windows_y = min(Ny, cld(windows, windows_x))
-    for n in 1:windows_y, m in 1:windows_x
-        I = tile_indices(Nx, windows_x, m)
-        J = tile_indices(Ny, windows_y, n)
-        window = BoundingBox(longitude = (longitude_faces[first(I)], longitude_faces[last(I) + 1]),
-                             latitude  = (latitude_faces[first(J)], latitude_faces[last(J) + 1]))
-        window_grid = LatitudeLongitudeGrid(arch, eltype(grid); size = (length(I), length(J)),
-                                            longitude = longitude_faces[first(I):last(I) + 1],
-                                            latitude  = latitude_faces[first(J):last(J) + 1],
-                                            topology = (Bounded, Bounded, Flat))
-
-        fraction_metadatum = Metadatum(:built_up_fraction; dataset, region = window)
-        Downloads.download(fraction_metadatum; arch)
-        built_fraction  = Field(fraction_metadatum, arch)
-        building_volume = Field(Metadatum(:building_volume; dataset, region = window), arch)
-        @root rm(metadata_path(fraction_metadatum); force = true)
-
-        window_fraction = Field{Center, Center, Nothing}(window_grid)
-        window_volume   = Field{Center, Center, Nothing}(window_grid)
-        regrid!(window_fraction, built_fraction)
-        regrid!(window_volume, building_volume)
-        interior(λᵖ, I, J, 1) .= interior(window_fraction, :, :, 1)
-        interior(h,  I, J, 1) .= interior(window_volume, :, :, 1)
-    end
-    interior(h) .= ifelse.(interior(λᵖ) .> 0, interior(h) ./ interior(λᵖ), 0)
-    fill_halo_regions!((λᵖ, h))
-
-    return (; plan_area_index = λᵖ, mean_building_height = h)
-end
 
 end # module GHSL

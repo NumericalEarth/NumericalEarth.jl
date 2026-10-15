@@ -23,7 +23,7 @@ using ArchGDAL
 grid = LatitudeLongitudeGrid(size = (4, 4),
                              longitude = (-0.10, -0.06), latitude = (51.50, 51.54),
                              topology = (Bounded, Bounded, Flat))
-dataset = GHSBuilt(surface = GHSBuiltS())
+dataset = GHSBuilt(surface=GHSBuiltS())
 roughness = urban_roughness(grid, dataset; surface_layer_height=500, neighborhood=1000)
 roughness.momentum_roughness_length
 ```
@@ -41,7 +41,7 @@ roughness.zero_plane_displacement
 measured height spread, maximum height, and frontal area from rasterized footprints.
 The GHSL closure estimates these quantities from mean height and built fraction.
 
-For morphometry alone, use `building_morphometry(grid, dataset)`. The existing
-`building_morphometry(grid; dataset=GlobalBuildingFootprints3D(), region)` form is
-also supported. To evaluate fields that are already prepared, `urban_roughness(h, λᵖ)`
+For morphometry alone, use `building_morphometry(grid, dataset)`;
+omitting `dataset` defaults to `GlobalBuildingFootprints3D()`.
+To evaluate fields that are already prepared, `urban_roughness(h, λᵖ)`
 takes a height `Field` and returns the pair `(roughness_length, displacement)` on its grid.

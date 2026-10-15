@@ -21,13 +21,12 @@ dataset = GHSBuilt()
 surface_layer_height = 500
 neighborhood = 1000
 
-variable_height = urban_roughness(grid, dataset; surface_layer_height, neighborhood)
+# Both closures share the raster read and neighborhood morphometry.
+# `UniformHeight` uses the equal-height obstacle-array closure.
 
-# `UniformHeight` uses the equal-height obstacle-array closure. Both evaluations
-# aggregate the paired rasters into neighborhoods before applying their closures.
-
-uniform_height = urban_roughness(grid, dataset; surface_layer_height, neighborhood,
-                                 closure = MorphometricRoughness(height_distribution = UniformHeight()))
+closures = (; variable_height = MorphometricRoughness(),
+              uniform_height = MorphometricRoughness(height_distribution = UniformHeight()))
+variable_height, uniform_height = urban_roughness(grid, dataset; surface_layer_height, neighborhood, closure = closures)
 
 # ## Roughness and displacement maps
 # `urban_fraction` is the area fraction occupied by urban neighborhoods in each

@@ -1,7 +1,6 @@
 #####
 ##### GHSL built-up raster ingest: download the R2023A Mollweide tiles intersecting a
-##### BoundingBox, mosaic + warp them to EPSG:4326 (reading inside each `.zip` archive
-##### with GDAL's `/vsizip/`), and write the regional lat/lon NetCDF the read path expects.
+##### BoundingBox and aggregate their native pixels onto longitude/latitude cells.
 #####
 
 # Cache the tile archive keyed by tile, so it is reused across regions.
@@ -87,7 +86,7 @@ ghsl_raster_fields(dataset::GHSBuiltH, raster, cache_dir, arch) =
 end
 
 @kernel function _conservative_ghsl_moments!(built_fraction, building_volume, surface, height,
-                                            meridians, projected_latitudes, areas, west, north, pixel_size, refinement, radius)
+                                            meridians, projected_latitudes, grid, west, north, pixel_size, refinement, radius)
     i, j = @index(Global, NTuple)
     @inbounds begin
         south_edge, north_edge = projected_latitudes[j], projected_latitudes[j + 1]
@@ -117,20 +116,25 @@ end
                 built_volume += ifelse(valid, area * fraction * building_height, 0)
             end
         end
-        built_fraction[i, j] = built_area / areas[j]
-        building_volume[i, j] = built_volume / areas[j]
+        area = Azᶜᶜᶜ(i, j, 1, grid)
+        built_fraction[i, j] = built_area / area
+        building_volume[i, j] = built_volume / area
     end
 end
 
 function ghsl_raster_fields(dataset::GHSBuilt, raster, cache_dir, arch)
-    west, east, south, north = ghsl_pixel_window(raster.region, native_resolution(dataset.height))
+    longitude_faces = Float64.(raster.longitude_faces)
+    latitude_faces = Float64.(raster.latitude_faces)
+    region = BoundingBox(longitude = (first(longitude_faces), last(longitude_faces)),
+                         latitude = (first(latitude_faces), last(latitude_faces)))
+    west, east, south, north = ghsl_pixel_window(region, native_resolution(dataset.height))
     pixel_size = native_resolution(dataset.surface)
     refinement = native_resolution(dataset.height) ÷ pixel_size
 
     # Aligned native footprints, with net height constant within each 100 m pixel.
     surface, height = map((dataset.surface, dataset.height)) do product
         native_pixel_size = native_resolution(product)
-        ghsl_sources(product, raster.region, cache_dir) do sources
+        ghsl_sources(product, region, cache_dir) do sources
             ArchGDAL.gdalbuildvrt(sources) do mosaic
                 ArchGDAL.gdalwarp([mosaic],
                     ["-of", "MEM", "-s_srs", "ESRI:54009", "-t_srs", "ESRI:54009",
@@ -143,17 +147,16 @@ function ghsl_raster_fields(dataset::GHSBuilt, raster, cache_dir, arch)
         end
     end
 
-    longitude_faces = range(raster.region.longitude...; length = raster.Nx + 1)
-    latitude_faces = range(raster.region.latitude...; length = raster.Ny + 1)
+    grid = LatitudeLongitudeGrid(arch, Float64; size = (raster.Nx, raster.Ny),
+                                 longitude = longitude_faces, latitude = latitude_faces,
+                                 radius = MOLLWEIDE_RADIUS, topology = (Bounded, Bounded, Flat))
     meridians = on_architecture(arch, first.(longitude_latitude_to_mollweide.(longitude_faces, 0)))
     projected_latitudes = on_architecture(arch, last.(longitude_latitude_to_mollweide.(0, latitude_faces)))
-    areas = on_architecture(arch, 2MOLLWEIDE_RADIUS^2 * deg2rad(step(longitude_faces)) .*
-                                 cosd.(raster.latitude) .* sind.(diff(latitude_faces) ./ 2))
     built_up_fraction = zeros(arch, Float64, raster.Nx, raster.Ny)
     building_volume = similar(built_up_fraction)
     launch!(arch, nothing, size(built_up_fraction), _conservative_ghsl_moments!,
             built_up_fraction, building_volume, surface, height,
-            meridians, projected_latitudes, areas, west, north, pixel_size, refinement, MOLLWEIDE_RADIUS)
+            meridians, projected_latitudes, grid, west, north, pixel_size, refinement, MOLLWEIDE_RADIUS)
     return (; built_up_fraction, building_volume)
 end
 
@@ -178,4 +181,48 @@ function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLM
     end
 
     return nothing
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Plan-area index and built-area-weighted mean building height (m) on `grid` (a
+`LatitudeLongitudeGrid`) from the GHSL built-up surface and building-height rasters
+of `dataset`, as the NamedTuple of `Field`s
+`(; plan_area_index, mean_building_height)`: the area mean of the native-pixel built
+fraction, and the building volume over the built area of each cell. A pixel missing
+either its fraction or its height counts as unbuilt. The rasters are read in windows of
+at most about `maximum_raster_cells` native pixels and aggregated directly onto `grid`.
+Downloaded source tiles remain cached. Requires `using ArchGDAL`.
+"""
+function NumericalEarth.Lands.building_morphometry(grid::LatitudeLongitudeGrid, dataset::GHSBuilt; maximum_raster_cells = 100_000_000)
+    arch = architecture(grid)
+    Nx, Ny, _ = size(grid)
+    longitude_faces = on_architecture(CPU(), λnodes(grid, Face()))
+    latitude_faces  = on_architecture(CPU(), φnodes(grid, Face()))
+    λᵖ = Field{Center, Center, Nothing}(grid)
+    h  = Field{Center, Center, Nothing}(grid)
+
+    west, east = longitude_faces[1], longitude_faces[end]
+    south, north = latitude_faces[1], latitude_faces[end]
+    xmin, xmax, ymin, ymax = ghsl_mollweide_bounds(BoundingBox(longitude = (west, east), latitude = (south, north)))
+    projected_pixels = (xmax - xmin) * (ymax - ymin) / native_resolution(dataset.surface)^2
+    windows = ceil(Int, projected_pixels / maximum_raster_cells)
+    # Near-square tiling; an axis with too few cells hands its share to the other.
+    windows_x = min(Nx, max(ceil(Int, sqrt(windows)), cld(windows, Ny)))
+    windows_y = min(Ny, cld(windows, windows_x))
+    for n in 1:windows_y, m in 1:windows_x
+        I = tile_indices(Nx, windows_x, m)
+        J = tile_indices(Ny, windows_y, n)
+        raster = (; Nx = length(I), Ny = length(J),
+                    longitude_faces = longitude_faces[first(I):last(I) + 1],
+                    latitude_faces = latitude_faces[first(J):last(J) + 1])
+        moments = ghsl_raster_fields(dataset, raster, joinpath(download_GHSL_cache, "tiles"), arch)
+        interior(λᵖ, I, J, 1) .= moments.built_up_fraction
+        interior(h,  I, J, 1) .= moments.building_volume
+    end
+    interior(h) .= ifelse.(interior(λᵖ) .> 0, interior(h) ./ interior(λᵖ), 0)
+    fill_halo_regions!((λᵖ, h))
+
+    return (; plan_area_index = λᵖ, mean_building_height = h)
 end

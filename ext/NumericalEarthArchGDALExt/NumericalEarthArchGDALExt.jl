@@ -7,8 +7,10 @@ using Downloads: Downloads
 using NetworkOptions: NetworkOptions
 using NumericalEarth: NumericalEarth
 
-using Oceananigans: Center, CPU
-using Oceananigans.Architectures: on_architecture
+using Oceananigans: Bounded, Center, CPU, Face, Field, Flat, LatitudeLongitudeGrid, interior
+using Oceananigans.Architectures: architecture, on_architecture
+using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.Operators: Azᶜᶜᶜ
 using Oceananigans.Grids: λnodes, φnodes
 using Oceananigans.Utils: launch!
 
@@ -27,7 +29,7 @@ using NumericalEarth.DataWrangling.GloBFP3D: GlobalBuildingFootprints3DMetadatum
 using NumericalEarth.DataWrangling.GHSL: GHSBuilt, GHSBuiltH, GHSBuiltS, GHSLMetadatum, native_resolution,
                                          ghsl_tile_url, ghsl_tile_tif_name, ghsl_tiles_in_bbox,
                                          ghsl_regional_raster, built_surface_to_fraction,
-                                         mask_building_height, ghsl_pixel_window,
+                                         mask_building_height, ghsl_pixel_window, ghsl_mollweide_bounds, download_GHSL_cache,
                                          longitude_latitude_to_mollweide, MOLLWEIDE_RADIUS
 using NumericalEarth.DataWrangling.OpenLandMap: assemble_raster_window, raster_window_indices,
                                                 validate_wgs84_longitude_latitude, validate_geographic_northup
@@ -38,6 +40,7 @@ using NumericalEarth.DataWrangling.WorldCover: ESAWorldCoverMetadatum, version_y
                                                ESA_WORLDCOVER_NATIVE_STEP,
                                                ESA_WORLDCOVER_PIXELS_PER_DEGREE
 
+using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 
 include("gdal_utils.jl")
