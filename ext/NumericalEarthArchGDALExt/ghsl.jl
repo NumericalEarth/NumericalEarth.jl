@@ -24,7 +24,7 @@ function ghsl_download_tile(dataset, row, column, cache_dir)
     return string("/vsizip/", zip_path, "/", inner_tif)
 end
 
-function ghsl_sources(dataset, region, cache_dir)
+function ghsl_sources(f, dataset, region, cache_dir)
     # JRC omits all-ocean tiles from the grid, so a coastal window can reference a tile
     # that 404s; skip those and mosaic the land tiles that do exist.
     sources = String[]
@@ -41,14 +41,18 @@ function ghsl_sources(dataset, region, cache_dir)
     isempty(sources) &&
         error("No GHSL tiles are published for the requested region; it may be entirely ocean.")
 
-    return [ArchGDAL.read(source) for source in sources]
+    datasets = [ArchGDAL.read(source) for source in sources]
+    try
+        return f(datasets)
+    finally
+        foreach(ArchGDAL.destroy, datasets)
+    end
 end
 
 function ghsl_reprojected_raster(dataset, raster, cache_dir)
     west, east   = raster.region.longitude
     south, north = raster.region.latitude
-    datasets = ghsl_sources(dataset, raster.region, cache_dir)
-    try
+    return ghsl_sources(dataset, raster.region, cache_dir) do datasets
         ArchGDAL.gdalwarp(datasets,
             # `-ts` pins the cell count: with a pixel size, GDAL rounds the extent instead
             # and the raster comes back short of the grid.
@@ -61,10 +65,6 @@ function ghsl_reprojected_raster(dataset, raster, cache_dir)
              "-ot",    "Float32"]) do warped
             data = Float64.(ArchGDAL.read(warped, 1))
             return reverse(data, dims = 2)  # GDAL writes y north→south
-        end
-    finally
-        for d in datasets
-            ArchGDAL.destroy(d)
         end
     end
 end
@@ -130,8 +130,7 @@ function ghsl_raster_fields(dataset::GHSBuilt, raster, cache_dir, arch)
     # Aligned native footprints, with net height constant within each 100 m pixel.
     surface, height = map((dataset.surface, dataset.height)) do product
         native_pixel_size = native_resolution(product)
-        sources = ghsl_sources(product, raster.region, cache_dir)
-        try
+        ghsl_sources(product, raster.region, cache_dir) do sources
             ArchGDAL.gdalbuildvrt(sources) do mosaic
                 ArchGDAL.gdalwarp([mosaic],
                     ["-of", "MEM", "-s_srs", "ESRI:54009", "-t_srs", "ESRI:54009",
@@ -141,14 +140,12 @@ function ghsl_raster_fields(dataset::GHSBuilt, raster, cache_dir, arch)
                     on_architecture(arch, ArchGDAL.read(windowed, 1))
                 end
             end
-        finally
-            foreach(ArchGDAL.destroy, sources)
         end
     end
 
     longitude_faces = range(raster.region.longitude...; length = raster.Nx + 1)
     latitude_faces = range(raster.region.latitude...; length = raster.Ny + 1)
-    meridians = on_architecture(arch, (2sqrt(2) * MOLLWEIDE_RADIUS / π) .* deg2rad.(longitude_faces))
+    meridians = on_architecture(arch, first.(longitude_latitude_to_mollweide.(longitude_faces, 0)))
     projected_latitudes = on_architecture(arch, last.(longitude_latitude_to_mollweide.(0, latitude_faces)))
     areas = on_architecture(arch, 2MOLLWEIDE_RADIUS^2 * deg2rad(step(longitude_faces)) .*
                                  cosd.(raster.latitude) .* sind.(diff(latitude_faces) ./ 2))
@@ -160,7 +157,7 @@ function ghsl_raster_fields(dataset::GHSBuilt, raster, cache_dir, arch)
     return (; built_up_fraction, building_volume)
 end
 
-function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLMetadatum, nc_path, arch = CPU())
+function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLMetadatum, nc_path, arch)
     raster = ghsl_regional_raster(metadatum)
     fields = ghsl_raster_fields(metadatum.dataset, raster, joinpath(dirname(nc_path), "tiles"), arch)
     variable_names = available_variables(metadatum.dataset)

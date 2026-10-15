@@ -167,9 +167,7 @@ GHSBuilt(; surface = GHSBuiltS(resolution = GHSBuiltS10m)) = GHSBuilt(surface, G
 
 Base.summary(dataset::GHSBuilt) = string("GHSBuilt(", summary(dataset.surface), ", ", summary(dataset.height), ")")
 
-const GHSBuiltHMetadatum = Metadatum{<:GHSBuiltH}
-const GHSBuiltSMetadatum = Metadatum{<:GHSBuiltS}
-const GHSLMetadatum      = Metadatum{<:AbstractGHSLDataset}
+const GHSLMetadatum = Metadatum{<:AbstractGHSLDataset}
 
 # The 10 m built-up rasters are large and regridded by window rather than whole.
 DataWrangling.windowed_retrieval(::AbstractGHSLDataset) = true
@@ -186,9 +184,7 @@ DataWrangling.available_variables(::GHSBuiltH) = GHSBuiltH_variable_names
 DataWrangling.available_variables(::GHSBuiltS) = GHSBuiltS_variable_names
 DataWrangling.available_variables(::GHSBuilt) = GHSBuilt_variable_names
 
-DataWrangling.dataset_variable_name(data::GHSBuiltHMetadatum) = GHSBuiltH_variable_names[data.name]
-DataWrangling.dataset_variable_name(data::GHSBuiltSMetadatum) = GHSBuiltS_variable_names[data.name]
-DataWrangling.dataset_variable_name(data::Metadatum{<:GHSBuilt}) = GHSBuilt_variable_names[data.name]
+DataWrangling.dataset_variable_name(data::GHSLMetadatum) = DataWrangling.available_variables(data.dataset)[data.name]
 
 #####
 ##### Dataset interface
@@ -372,9 +368,6 @@ end
 
 const GHSL_FTP = "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL"
 
-# The products JRC publishes as Mollweide tiles.
-const GHSLProduct = Union{GHSBuiltH, GHSBuiltS}
-
 # The product-folder / file basename stem shared by a dataset's tiles and mosaic.
 product_stem(::GHSBuiltH) = "GHS_BUILT_H_ANBH_E2018_GLOBE_R2023A_54009_100"
 product_stem(dataset::GHSBuiltS) =
@@ -389,7 +382,7 @@ product_group(::GHSBuiltS) = "GHS_BUILT_S_GLOBE_R2023A"
 Return the JRC open-data HTTPS URL of the `(row, column)` GHSL tile `.zip` for
 `dataset` (each archive holds one Mollweide GeoTIFF of the built-up variable).
 """
-function ghsl_tile_url(dataset::GHSLProduct, row, column)
+function ghsl_tile_url(dataset::AbstractGHSLDataset, row, column)
     stem = product_stem(dataset)
     return string(GHSL_FTP, "/", product_group(dataset), "/", stem,
                   "/V1-0/tiles/", stem, "_V1_0_R", row, "_C", column, ".zip")
@@ -401,11 +394,11 @@ end
 `.zip` URLs of the GHSL tiles for `dataset` intersecting `region`, ready to be
 downloaded, unzipped, and mosaicked/reprojected by GDAL.
 """
-ghsl_tile_urls(dataset::GHSLProduct, region::BoundingBox) =
+ghsl_tile_urls(dataset::AbstractGHSLDataset, region::BoundingBox) =
     [ghsl_tile_url(dataset, row, column) for (row, column) in ghsl_tiles_in_bbox(region)]
 
 # GeoTIFF basename inside a tile `.zip` archive.
-ghsl_tile_tif_name(dataset::GHSLProduct, row, column) =
+ghsl_tile_tif_name(dataset::AbstractGHSLDataset, row, column) =
     string(product_stem(dataset), "_V1_0_R", row, "_C", column, ".tif")
 
 #####
@@ -535,15 +528,16 @@ after reading; downloaded source tiles remain cached.
 function Lands.building_morphometry(grid::LatitudeLongitudeGrid, dataset::GHSBuilt; maximum_raster_cells = 100_000_000)
     arch = architecture(grid)
     Nx, Ny, _ = size(grid)
-    λᶠ = on_architecture(CPU(), λnodes(grid, Face()))
-    φᶠ = on_architecture(CPU(), φnodes(grid, Face()))
+    longitude_faces = on_architecture(CPU(), λnodes(grid, Face()))
+    latitude_faces  = on_architecture(CPU(), φnodes(grid, Face()))
     λᵖ = Field{Center, Center, Nothing}(grid)
     h  = Field{Center, Center, Nothing}(grid)
 
     Nλ, Nφ, _ = size(dataset.surface, :built_up_fraction)
-    geographic_pixels = (λᶠ[end] - λᶠ[1]) * Nλ / 360 * (φᶠ[end] - φᶠ[1]) * Nφ / 180
-    xmin, xmax, ymin, ymax = ghsl_mollweide_bounds(BoundingBox(longitude = (λᶠ[1], λᶠ[end]),
-                                                               latitude  = (φᶠ[1], φᶠ[end])))
+    west, east = longitude_faces[1], longitude_faces[end]
+    south, north = latitude_faces[1], latitude_faces[end]
+    geographic_pixels = (east - west) * Nλ / 360 * (north - south) * Nφ / 180
+    xmin, xmax, ymin, ymax = ghsl_mollweide_bounds(BoundingBox(longitude = (west, east), latitude = (south, north)))
     projected_pixels = (xmax - xmin) * (ymax - ymin) / native_resolution(dataset.surface)^2
     windows = ceil(Int, max(geographic_pixels, projected_pixels) / maximum_raster_cells)
     # Near-square tiling; an axis with too few cells hands its share to the other.
@@ -552,11 +546,11 @@ function Lands.building_morphometry(grid::LatitudeLongitudeGrid, dataset::GHSBui
     for n in 1:windows_y, m in 1:windows_x
         I = tile_indices(Nx, windows_x, m)
         J = tile_indices(Ny, windows_y, n)
-        window = BoundingBox(longitude = (λᶠ[first(I)], λᶠ[last(I) + 1]),
-                             latitude  = (φᶠ[first(J)], φᶠ[last(J) + 1]))
+        window = BoundingBox(longitude = (longitude_faces[first(I)], longitude_faces[last(I) + 1]),
+                             latitude  = (latitude_faces[first(J)], latitude_faces[last(J) + 1]))
         window_grid = LatitudeLongitudeGrid(arch, eltype(grid); size = (length(I), length(J)),
-                                            longitude = λᶠ[first(I):last(I) + 1],
-                                            latitude  = φᶠ[first(J):last(J) + 1],
+                                            longitude = longitude_faces[first(I):last(I) + 1],
+                                            latitude  = latitude_faces[first(J):last(J) + 1],
                                             topology = (Bounded, Bounded, Flat))
 
         fraction_metadatum = Metadatum(:built_up_fraction; dataset, region = window)

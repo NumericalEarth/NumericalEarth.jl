@@ -170,30 +170,33 @@ the dataset measures them, `building_height_deviation` (m), `maximum_building_he
 function building_morphometry end
 
 # Neighborhood statistics use spherical overlap areas and built-area height moments.
-@kernel function _neighborhood_morphometry!(pooled, grid, longitude_faces, latitude_faces, properties, neighborhood)
+@kernel function _neighborhood_morphometry!(pooled, grid, properties, neighborhood)
     i, j = @index(Global, NTuple)
+    Nx, Ny, _ = size(grid)
+    longitude_faces = grid.λᶠᵃᵃ
+    latitude_faces = grid.φᵃᶠᵃ
     longitude_center = (longitude_faces[i] + longitude_faces[i + 1]) / 2
     latitude_center = (latitude_faces[j] + latitude_faces[j + 1]) / 2
     longitude_spacing = longitude_faces[i + 1] - longitude_faces[i]
     latitude_spacing = latitude_faces[j + 1] - latitude_faces[j]
-    longitude_radius = max(0, round(Int, (neighborhood / (grid.radius * cosd(latitude_center) * deg2rad(longitude_spacing)) - 1) / 2))
-    latitude_radius = max(0, round(Int, (neighborhood / (grid.radius * deg2rad(latitude_spacing)) - 1) / 2))
+    longitude_radius = max(0, round(Int, (neighborhood / Δxᶜᶜᶜ(i, j, 1, grid) - 1) / 2))
+    latitude_radius = max(0, round(Int, (neighborhood / Δyᶜᶜᶜ(i, j, 1, grid) - 1) / 2))
     west = ifelse(longitude_radius == 0, longitude_faces[i], longitude_center - (longitude_radius + 1//2) * longitude_spacing)
     east = ifelse(longitude_radius == 0, longitude_faces[i + 1], longitude_center + (longitude_radius + 1//2) * longitude_spacing)
-    south = max(latitude_faces[1], ifelse(latitude_radius == 0, latitude_faces[j], latitude_center - (latitude_radius + 1//2) * latitude_spacing))
-    north = min(latitude_faces[end], ifelse(latitude_radius == 0, latitude_faces[j + 1], latitude_center + (latitude_radius + 1//2) * latitude_spacing))
+    south = ifelse(latitude_radius == 0, latitude_faces[j], latitude_center - (latitude_radius + 1//2) * latitude_spacing)
+    north = ifelse(latitude_radius == 0, latitude_faces[j + 1], latitude_center + (latitude_radius + 1//2) * latitude_spacing)
     order = ForwardOrdering()
-    first_column = max(1, searchsortedlast(longitude_faces, west, 1, length(longitude_faces), order))
-    last_column = min(size(grid, 1), searchsortedfirst(longitude_faces, east, 1, length(longitude_faces), order) - 1)
-    first_row = max(1, searchsortedlast(latitude_faces, south, 1, length(latitude_faces), order))
-    last_row = min(size(grid, 2), searchsortedfirst(latitude_faces, north, 1, length(latitude_faces), order) - 1)
+    first_column = max(1, searchsortedlast(longitude_faces, west, 1, Nx + 1, order))
+    last_column = min(Nx, searchsortedfirst(longitude_faces, east, 1, Nx + 1, order) - 1)
+    first_row = max(1, searchsortedlast(latitude_faces, south, 1, Ny + 1, order))
+    last_row = min(Ny, searchsortedfirst(latitude_faces, north, 1, Ny + 1, order) - 1)
     ground_area = built_area = volume = second_moment = maximum_height = frontal_area = convert(eltype(grid), 0)
     for row in first_row:last_row, column in first_column:last_column
         overlap_south = max(south, latitude_faces[row])
         overlap_north = min(north, latitude_faces[row + 1])
         # sin(north) - sin(south) as 2 cos(midpoint) sin(half-width), which does not cancel in Float32 for thin cells
         area = max(0, min(east, longitude_faces[column + 1]) - max(west, longitude_faces[column])) *
-               2cosd((overlap_north + overlap_south) / 2) * max(0, sind((overlap_north - overlap_south) / 2))
+               2hack_cosd((overlap_north + overlap_south) / 2) * max(0, hack_sind((overlap_north - overlap_south) / 2))
         fraction = stateindex(properties.plan_area_index, column, row, 1)
         height = stateindex(properties.mean_building_height, column, row, 1)
         deviation = stateindex(properties.building_height_deviation, column, row, 1)
@@ -211,27 +214,23 @@ function building_morphometry end
     mean_height = ifelse(built_area > 0, volume / built_area, 0)
     variance = ifelse(built_area > 0, second_moment / built_area - mean_height^2, 0)
     @inbounds begin
-        pooled[1][i, j, 1] = built_area / ground_area
-        pooled[2][i, j, 1] = mean_height
-        pooled[3][i, j, 1] = sqrt(max(0, variance))
-        pooled[4][i, j, 1] = maximum_height
-        pooled[5][i, j, 1] = frontal_area / ground_area
+        pooled.plan_area_index[i, j, 1] = built_area / ground_area
+        pooled.mean_building_height[i, j, 1] = mean_height
+        pooled.building_height_deviation[i, j, 1] = sqrt(max(0, variance))
+        pooled.maximum_building_height[i, j, 1] = maximum_height
+        pooled.frontal_area_index[i, j, 1] = frontal_area / ground_area
     end
 end
 
-function neighborhood_morphometry(properties, grid, longitude_faces, latitude_faces, neighborhood)
-    measured = hasproperty(properties, :frontal_area_index)
+function neighborhood_morphometry(properties, grid, neighborhood)
     inputs = (; properties.plan_area_index, properties.mean_building_height,
                 building_height_deviation = get(properties, :building_height_deviation, 0),
                 maximum_building_height = get(properties, :maximum_building_height, 0),
                 frontal_area_index = get(properties, :frontal_area_index, 0))
-    pooled = ntuple(_ -> Field{Center, Center, Nothing}(grid), 5)
-    launch!(architecture(grid), grid, :xy, _neighborhood_morphometry!, pooled, grid, longitude_faces, latitude_faces,
-            inputs, neighborhood)
-    morphometry = (; plan_area_index = pooled[1], mean_building_height = pooled[2])
-    measured || return morphometry
-    return (; morphometry..., building_height_deviation = pooled[3],
-              maximum_building_height = pooled[4], frontal_area_index = pooled[5])
+    pooled = map(_ -> Field{Center, Center, Nothing}(grid), inputs)
+    launch!(architecture(grid), grid, :xy, _neighborhood_morphometry!, pooled, grid, inputs, neighborhood)
+    hasproperty(properties, :frontal_area_index) && return pooled
+    return (; pooled.plan_area_index, pooled.mean_building_height)
 end
 
 """
@@ -251,7 +250,7 @@ neutral drag at `surface_layer_height` (m) is the area-mean drag of its urban ne
 [Mason (1988)](@cite Mason1988), the displacement being their drag-weighted mean, the mean
 level of momentum absorption [Jackson (1981)](@cite Jackson1981). `building_height` is their
 mean height weighted by built area. A grid cell without urban neighborhoods takes the closure's
-bare-soil limit. A non-finite plan-area index from the dataset, or an urban neighborhood with
+bare-soil limit. A `NaN` plan-area index from the dataset, or an urban neighborhood with
 non-finite roughness or displacement, or non-positive roughness, raises an `ArgumentError`.
 Remaining keyword arguments pass to `building_morphometry`.
 """
@@ -279,52 +278,49 @@ function urban_roughness(grid::LatitudeLongitudeGrid, dataset; surface_layer_hei
                                     longitude = longitude_lattice, latitude = latitude_lattice, radius = grid.radius,
                                     topology = (Bounded, Bounded, Flat))
 
-    morphometry = building_morphometry(lattice, dataset; kw...)
-    all(isfinite, interior(morphometry.plan_area_index)) ||
-        throw(ArgumentError("the $(summary(dataset)) plan-area index must be finite in every cell"))
-    properties = neighborhood_morphometry(morphometry, lattice,
-                                          on_architecture(arch, longitude_lattice), on_architecture(arch, latitude_lattice), neighborhood)
+    properties = neighborhood_morphometry(building_morphometry(lattice, dataset; kw...), lattice, neighborhood)
     lattice_roughness    = Field{Center, Center, Nothing}(lattice)
     lattice_displacement = Field{Center, Center, Nothing}(lattice)
     compute_aerodynamic_roughness!(lattice_roughness, lattice_displacement, closure, properties, lattice)
 
-    # Neutral drag coefficients over ϰ² of the urban neighborhoods at the surface-layer height
     roughness = interior(lattice_roughness, :, :, 1)
     displacement = interior(lattice_displacement, :, :, 1)
     fraction = interior(properties.plan_area_index, :, :, 1)
     height = interior(properties.mean_building_height, :, :, 1)
-    urban = fraction .>= closure.minimum_built_fraction
+    urban = .!(fraction .< closure.minimum_built_fraction)  # a NaN plan-area index is urban, and fails the check below
     any(urban .& roughness_gap.(roughness, displacement)) &&
         throw(ArgumentError("urban neighborhoods must have finite, positive roughness lengths and finite displacements"))
     any(urban .& (surface_layer_height .<= displacement .+ roughness)) &&
         throw(ArgumentError("surface_layer_height = $surface_layer_height m must exceed d + ℓᵐ in every urban neighborhood"))
-    scaled_drag = inv.(log.((surface_layer_height .- displacement) ./ roughness)) .^ 2
-    scaled_drag .= ifelse.(urban, scaled_drag, 0)
-    contributions = (urban, scaled_drag, ifelse.(urban, scaled_drag .* displacement, 0),
-                     ifelse.(urban, fraction, 0), ifelse.(urban, fraction .* height, 0))
-    urban_fraction, mean_scaled_drag, scaled_drag_moment, built_fraction, building_volume = map(contributions) do data
-        source = Field{Center, Center, Nothing}(lattice)
+
+    # Neutral drag coefficients over ϰ² of the urban neighborhoods at the surface-layer height
+    sources = ntuple(_ -> Field{Center, Center, Nothing}(lattice), 5)
+    urban_cells, scaled_drag, scaled_drag_moment, built_area, building_volume = map(source -> interior(source, :, :, 1), sources)
+    urban_cells .= urban
+    scaled_drag .= ifelse.(urban, inv.(log.((surface_layer_height .- displacement) ./ roughness)) .^ 2, 0)
+    scaled_drag_moment .= ifelse.(urban, scaled_drag .* displacement, 0)
+    built_area .= ifelse.(urban, fraction, 0)
+    building_volume .= ifelse.(urban, fraction .* height, 0)
+    lattice_is_grid = longitude_lattice == longitude_faces && latitude_lattice == latitude_faces
+    urban_fraction, mean_scaled_drag, mean_scaled_drag_moment, built_fraction, mean_building_volume = map(sources) do source
+        lattice_is_grid && return interior(source, :, :, 1)
         target = Field{Center, Center, Nothing}(reduction_grid)
-        set!(source, data)
-        if longitude_lattice == longitude_faces && latitude_lattice == latitude_faces
-            set!(target, source)
-        else
-            regrid!(target, source)
-        end
+        regrid!(target, source)
         return interior(target, :, :, 1)
     end
-    mean_displacement = scaled_drag_moment ./ mean_scaled_drag
+
+    mean_displacement = mean_scaled_drag_moment ./ mean_scaled_drag
     has_urban = urban_fraction .> 0
     bare_roughness, bare_displacement = aerodynamic_parameters(closure, 0, 0)
-    roughness = ifelse.(has_urban, (surface_layer_height .- mean_displacement) .* exp.(-sqrt.(urban_fraction ./ mean_scaled_drag)), bare_roughness)
-    displacement = ifelse.(has_urban, mean_displacement, bare_displacement)
-    mean_height = ifelse.(built_fraction .> 0, building_volume ./ built_fraction, 0)
-
-    fields = map((roughness, displacement, urban_fraction, mean_height)) do data
+    reduced = (; momentum_roughness_length = ifelse.(has_urban, (surface_layer_height .- mean_displacement) .*
+                                                                exp.(-sqrt.(urban_fraction ./ mean_scaled_drag)), bare_roughness),
+                 zero_plane_displacement = ifelse.(has_urban, mean_displacement, bare_displacement),
+                 urban_fraction,
+                 building_height = ifelse.(built_fraction .> 0, mean_building_volume ./ built_fraction, 0))
+    return map(reduced) do data
         field = Field{Center, Center, Nothing}(grid)
-        set!(field, FT.(data))
+        interior(field, :, :, 1) .= data
         fill_halo_regions!(field)
         return field
     end
-    return NamedTuple{(:momentum_roughness_length, :zero_plane_displacement, :urban_fraction, :building_height)}(fields)
 end
