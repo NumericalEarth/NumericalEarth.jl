@@ -251,9 +251,9 @@ neutral drag at `surface_layer_height` (m) is the area-mean drag of its urban ne
 [Mason (1988)](@cite Mason1988), the displacement being their drag-weighted mean, the mean
 level of momentum absorption [Jackson (1981)](@cite Jackson1981). `building_height` is their
 mean height weighted by built area. A grid cell without urban neighborhoods takes the closure's
-bare-soil limit. An urban neighborhood with non-finite roughness or displacement, or
-non-positive roughness, raises an `ArgumentError`. Remaining keyword arguments pass to
-`building_morphometry`.
+bare-soil limit. A non-finite plan-area index from the dataset, or an urban neighborhood with
+non-finite roughness or displacement, or non-positive roughness, raises an `ArgumentError`.
+Remaining keyword arguments pass to `building_morphometry`.
 """
 function urban_roughness(grid::LatitudeLongitudeGrid, dataset; surface_layer_height, closure = MorphometricRoughness(eltype(grid)),
                          neighborhood = 1000, kw...)
@@ -279,7 +279,10 @@ function urban_roughness(grid::LatitudeLongitudeGrid, dataset; surface_layer_hei
                                     longitude = longitude_lattice, latitude = latitude_lattice, radius = grid.radius,
                                     topology = (Bounded, Bounded, Flat))
 
-    properties = neighborhood_morphometry(building_morphometry(lattice, dataset; kw...), lattice,
+    morphometry = building_morphometry(lattice, dataset; kw...)
+    all(isfinite, interior(morphometry.plan_area_index)) ||
+        throw(ArgumentError("the $(summary(dataset)) plan-area index must be finite in every cell"))
+    properties = neighborhood_morphometry(morphometry, lattice,
                                           on_architecture(arch, longitude_lattice), on_architecture(arch, latitude_lattice), neighborhood)
     lattice_roughness    = Field{Center, Center, Nothing}(lattice)
     lattice_displacement = Field{Center, Center, Nothing}(lattice)
@@ -315,11 +318,12 @@ function urban_roughness(grid::LatitudeLongitudeGrid, dataset; surface_layer_hei
     bare_roughness, bare_displacement = aerodynamic_parameters(closure, 0, 0)
     roughness = ifelse.(has_urban, (surface_layer_height .- mean_displacement) .* exp.(-sqrt.(urban_fraction ./ mean_scaled_drag)), bare_roughness)
     displacement = ifelse.(has_urban, mean_displacement, bare_displacement)
-    mean_height = ifelse.(has_urban, building_volume ./ built_fraction, 0)
+    mean_height = ifelse.(built_fraction .> 0, building_volume ./ built_fraction, 0)
 
     fields = map((roughness, displacement, urban_fraction, mean_height)) do data
         field = Field{Center, Center, Nothing}(grid)
         set!(field, FT.(data))
+        fill_halo_regions!(field)
         return field
     end
     return NamedTuple{(:momentum_roughness_length, :zero_plane_displacement, :urban_fraction, :building_height)}(fields)

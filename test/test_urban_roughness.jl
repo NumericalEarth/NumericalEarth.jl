@@ -399,6 +399,10 @@ end
     @test all(interior(fields.zero_plane_displacement, :, :, 1) .≈ d)
     @test all(interior(fields.urban_fraction, :, :, 1) .== 1)
     @test all(interior(fields.building_height, :, :, 1) .≈ 25)
+
+    Nx, Ny = size(grid, 1), size(grid, 2)
+    @test all(Array(fields.momentum_roughness_length[0:Nx+1, 1:Ny, 1]) .≈ ℓᵐ)
+    @test all(Array(fields.momentum_roughness_length[1:Nx, 0:Ny+1, 1]) .≈ ℓᵐ)
 end
 
 struct TwoNeighborhoods end
@@ -541,6 +545,9 @@ for arch in test_architectures
             @test_throws ArgumentError urban_roughness(grid, PrescribedBuildings(inputs);
                                                        surface_layer_height = 100, neighborhood = 1100)
         end
+        buildings = PrescribedBuildings((; plan_area_index = (λ, φ) -> ifelse(λ < 0.01, 0.4, NaN),
+                                           mean_building_height = 20.0))
+        @test_throws ArgumentError urban_roughness(grid, buildings; surface_layer_height = 100, neighborhood = 1100)
     end
 
     @testset "Missing morphometry in unbuilt cells on $arch" begin
@@ -563,6 +570,11 @@ for arch in test_architectures
         fields = urban_roughness(grid, buildings; closure, surface_layer_height = 100, neighborhood = 500)
         ℓᵐ, _ = aerodynamic_parameters(closure, 0.4 * 2 / 3, 20.0, 0.0, 20.0, 0.25)
         @test all(≈(ℓᵐ), Array(interior(fields.momentum_roughness_length)))
+
+        # Without a built-fraction floor the unbuilt neighborhood is urban, with no building height.
+        fields = urban_roughness(grid, buildings; closure = MorphometricRoughness(minimum_built_fraction = 0),
+                                 surface_layer_height = 100, neighborhood = 100)
+        @test Array(interior(fields.building_height))[:, 1, 1] ≈ [0, 20, 20]
     end
 
     @testset "Float32 thin cells pool by spherical area on $arch" begin

@@ -5,6 +5,7 @@ export GHSBuiltH, GHSBuiltS, GHSBuiltSResolution, GHSBuiltS10m, GHSBuiltS100m, G
 using Downloads: Downloads
 using Oceananigans: Bounded, Center, CPU, Face, Field, Flat, LatitudeLongitudeGrid, interior
 using Oceananigans.Architectures: architecture, on_architecture
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: regrid!
 using Oceananigans.DistributedComputations: @root
 using Oceananigans.Grids: x_domain, y_domain, λnodes, φnodes
@@ -572,6 +573,7 @@ function Lands.building_morphometry(grid::LatitudeLongitudeGrid, dataset::GHSBui
         interior(h,  I, J, 1) .= interior(window_volume, :, :, 1)
     end
     interior(h) .= ifelse.(interior(λᵖ) .> 0, interior(h) ./ interior(λᵖ), 0)
+    fill_halo_regions!((λᵖ, h))
 
     return (; plan_area_index = λᵖ, mean_building_height = h)
 end

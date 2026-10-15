@@ -3,7 +3,9 @@ module GloBFP3D
 export GlobalBuildingFootprints3D, building_morphometry
 
 using Downloads: Downloads
-using Oceananigans: Center, Face
+using Oceananigans: Center, CPU, Face
+using Oceananigans.Architectures: on_architecture
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: Field, set!
 using Oceananigans.Grids: LatitudeLongitudeGrid, λnodes, φnodes
 using Oceananigans.DistributedComputations: @root
@@ -246,6 +248,7 @@ function morphometry_fields(reduced, target_grid)
     return map(reduced) do array
         field = Field{Center, Center, Nothing}(target_grid)
         set!(field, array)
+        fill_halo_regions!(field)
         return field
     end
 end
@@ -320,8 +323,9 @@ function Lands.building_morphometry(target_grid::LatitudeLongitudeGrid, dataset:
 
     Δ = globfp3d_native_cell_size(dataset)
     raster = native_region_grid(region, Δ, Δ)
+    cpu_grid = on_architecture(CPU(), target_grid)
     if raster.Nx * raster.Ny <= maximum_raster_cells
-        reduced = reduced_morphometry(target_grid, metadatum)
+        reduced = reduced_morphometry(cpu_grid, metadatum)
         isnothing(reduced) && error("No 3D-GloBFP tiles intersect the requested region $(summary(region)).")
         return morphometry_fields(reduced, target_grid)
     end
@@ -330,7 +334,7 @@ function Lands.building_morphometry(target_grid::LatitudeLongitudeGrid, dataset:
     # cells (`cld` is ceiling division) so buildings overhanging a tile just outside the band
     # still land in the band's rows.
     padding = cld(200, globfp3d_native_resolution(dataset))
-    bands = morphometry_latitude_bands(target_grid, region, Δ, maximum_raster_cells, padding)
+    bands = morphometry_latitude_bands(cpu_grid, region, Δ, maximum_raster_cells, padding)
     @info string(summary(dataset), ": reducing the ", raster.Nx, " × ", raster.Ny,
                  " cell raster over ", summary(region), " in ", length(bands), " latitude bands.")
 
@@ -342,7 +346,7 @@ function Lands.building_morphometry(target_grid::LatitudeLongitudeGrid, dataset:
         @info string("Reducing latitude band ", b, " of ", length(bands),
                      " (target rows ", band.rows, ", ", latitude_summary(band.region.latitude), ")...")
         band_metadatum = Metadatum(:building_height; dataset, region = band.region)
-        reduced = reduced_morphometry(target_grid, band_metadatum)
+        reduced = reduced_morphometry(cpu_grid, band_metadatum)
         # An all-water/unbuilt band intersects no tiles and reduces to zero, as in a single pass.
         isnothing(reduced) && continue
         any_tiles = true
