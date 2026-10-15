@@ -46,44 +46,50 @@ end
     return ifelse(φ★ == 0, φₛ, φ)
 end
 
-# The velocity relative to the interface. By default the atmosphere velocity difference scaled
-# by the profile, `Π(z - d) / Π(Δh - d)`; with subgrid velocities, the profile speed along
-# `- ρτ / |ρτ|`, the unit vector of the velocity difference the flux solve saw.
-@inline function surface_layer_velocity_difference(i, j, grid, interface_state, z)
+# The velocity relative to the interface: the profile speed along `- ρτ / |ρτ|`, the unit
+# vector of the velocity difference the flux solve saw.
+@inline function surface_layer_velocity_difference(::Val{true}, i, j, grid, interface_state, z)
     scales = local_similarity_scales(i, j, interface_state)
     ℱ = scales.formulation
-    ψu = ℱ.stability_functions.momentum
-    Πu = displaced_similarity_profile(ℱ, ψu, z, scales.ℓu₀, scales.L★)
+    Πu = displaced_similarity_profile(ℱ, ℱ.stability_functions.momentum, z, scales.ℓu₀, scales.L★)
     U = similarity_theory_state(zero(scales.u★), scales.u★, ℱ.von_karman_constant, Πu)
 
     @inbounds ρτˣ = interface_state.fluxes.x_momentum[i, j, 1]
     @inbounds ρτʸ = interface_state.fluxes.y_momentum[i, j, 1]
     ρτ = sqrt(ρτˣ^2 + ρτʸ^2)
 
+    return ifelse(ρτ == 0, zero(U), -U * ρτˣ / ρτ),
+           ifelse(ρτ == 0, zero(U), -U * ρτʸ / ρτ)
+end
+
+# The atmosphere velocity difference scaled by the profile, `Π(z - d) / Π(Δh - d)`.
+@inline function surface_layer_velocity_difference(::Val{false}, i, j, grid, interface_state, z)
+    scales = local_similarity_scales(i, j, interface_state)
+    ℱ = scales.formulation
+    ψu = ℱ.stability_functions.momentum
     Δh = state2dindex(interface_state.surface_layer_height, i, j)
+    Πu = displaced_similarity_profile(ℱ, ψu, z, scales.ℓu₀, scales.L★)
     Πh = displaced_similarity_profile(ℱ, ψu, Δh, scales.ℓu₀, scales.L★)
 
     kᴺ = size(grid, 3)
     uₛ = ℑxᶜᵃᵃ(i, j, kᴺ, grid, interface_state.surface_velocities.u)
     vₛ = ℑyᵃᶜᵃ(i, j, kᴺ, grid, interface_state.surface_velocities.v)
-    @inbounds Δuᵃᵗ = interface_state.atmosphere_velocities.u[i, j, 1] - uₛ
-    @inbounds Δvᵃᵗ = interface_state.atmosphere_velocities.v[i, j, 1] - vₛ
+    @inbounds Δu = interface_state.atmosphere_velocities.u[i, j, 1] - uₛ
+    @inbounds Δv = interface_state.atmosphere_velocities.v[i, j, 1] - vₛ
 
-    Δu, Δv = ifelse(interface_state.include_subgrid_velocities,
-                    (-U * ρτˣ / ρτ, -U * ρτʸ / ρτ),
-                    (Δuᵃᵗ * Πu / Πh, Δvᵃᵗ * Πu / Πh))
-
-    return ifelse(ρτ == 0, zero(U), Δu),
-           ifelse(ρτ == 0, zero(U), Δv)
+    return ifelse(scales.u★ == 0, zero(Πu), Δu * Πu / Πh),
+           ifelse(scales.u★ == 0, zero(Πu), Δv * Πu / Πh)
 end
 
 @inline function surface_layer_x_velocity(i, j, k, grid, interface_state, z)
-    Δu, Δv = surface_layer_velocity_difference(i, j, grid, interface_state, z)
+    Δu, Δv = surface_layer_velocity_difference(interface_state.include_subgrid_velocities,
+                                               i, j, grid, interface_state, z)
     return ℑxᶜᵃᵃ(i, j, size(grid, 3), grid, interface_state.surface_velocities.u) + Δu
 end
 
 @inline function surface_layer_y_velocity(i, j, k, grid, interface_state, z)
-    Δu, Δv = surface_layer_velocity_difference(i, j, grid, interface_state, z)
+    Δu, Δv = surface_layer_velocity_difference(interface_state.include_subgrid_velocities,
+                                               i, j, grid, interface_state, z)
     return ℑyᵃᶜᵃ(i, j, size(grid, 3), grid, interface_state.surface_velocities.v) + Δv
 end
 
@@ -195,7 +201,7 @@ function surface_layer_diagnostics(model, interface = model.interfaces.atmospher
                        atmosphere_velocities = (u = interfaces.exchanger.atmosphere.state.u,
                                                 v = interfaces.exchanger.atmosphere.state.v),
                        surface_layer_height = interfaces.properties.surface_layer_height,
-                       include_subgrid_velocities = include_subgrid_velocities,
+                       include_subgrid_velocities = Val(include_subgrid_velocities),
                        surface_velocities = surface_velocities,
                        flux_formulation = flux_formulation,
                        temperature_units = temperature_units,
