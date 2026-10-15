@@ -9,7 +9,7 @@ using Oceananigans.DistributedComputations: @root
 
 using NCDatasets: NCDatasets
 
-using NumericalEarth.DataWrangling: MetadataSet, available_variables, metadata_filename, metadata_path
+using NumericalEarth.DataWrangling: MetadataSet, available_variables, metadata_path
 using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5PressureLevelsDataset,
                                          ERA5Metadata, ERA5Metadatum, hPa,
                                          ERA5_dataset_variable_names, ERA5PL_dataset_variable_names,
@@ -18,7 +18,7 @@ using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5PressureLevelsDataset,
                                          ERA5HourlyLand, ERA5MonthlyLand, ERA5LandDataset,
                                          ERA5Land_dataset_variable_names,
                                          batch_datetimes_for_cds, coord_vars, nc_varnames,
-                                         split_era5_nc_by_datetime, ERA5_TIME_DIMNAMES
+                                         split_era5_nc_by_datetime, ERA5_TIME_DIMNAMES, era5_download_path
 
 #####
 ##### era5cli credential bootstrap
@@ -155,7 +155,7 @@ function download_era5cli_month(names, dataset, dates;
                                 threads = nothing,
                                 additional_kw...)
 
-    name_dt_paths = [(name, dt, joinpath(dir, metadata_filename(dataset, name, dt, region)))
+    name_dt_paths = [(name, dt, era5_download_path(dataset, name, dt; region, dir, skip_existing))
                      for name in names for dt in dates]
 
     pending = if skip_existing
@@ -354,15 +354,13 @@ function Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:Union
                             threads = Threads.nthreads(),
                             additional_kw...)
 
-    # Common setup
+    # Skip if a cached file holds the data
+    cached_path = metadata_path(meta)
+    skip_existing && isfile(cached_path) && return cached_path
+
     output_directory = meta.dir
     output_filename = NumericalEarth.DataWrangling.metadata_filename(meta)
     output_path = joinpath(output_directory, output_filename)
-
-    # Skip if file already exists
-    if skip_existing && isfile(output_path)
-        return output_path
-    end
 
     # Ensure output directory exists
     mkpath(output_directory)

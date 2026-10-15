@@ -87,6 +87,18 @@ NUMERICALEARTH_DATA_DIRECTORY=/scratch/$USER/numerical_earth_data julia
 
 A per-`Metadata` `dir` keyword still overrides this for any individual dataset.
 
+To read from caches shared with other users — for example a read-only global ERA5 download on a
+cluster — list their roots, separated by colons, in `NUMERICALEARTH_DATA_PATH`. Cached files are
+looked up in each root in order, and new downloads go to the last root that can be written to
+(or to the default location above when none can):
+
+```sh
+NUMERICALEARTH_DATA_PATH=/shared/numerical_earth_data:/scratch/$USER/numerical_earth_data julia
+```
+
+ERA5 requests are also served from any cached file of the same variable and date that covers them,
+so a regional request reads from a global download rather than fetching its region again.
+
 ## Bundling variables with `MetadataSet`
 
 Workflows often need _many_ variables from the same dataset — for example, temperature and salinity
