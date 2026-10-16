@@ -622,7 +622,7 @@ function EarthSystemModels.heat_capacity(::TEOS10EquationOfState{FT}) where FT
     cₚ⁰ = SeawaterPolynomials.TEOS10.teos10_reference_heat_capacity
     return convert(FT, cₚ⁰)
 end
-EarthSystemModels.heat_capacity(::LinearEquationOfState{FT}) where FT = 3991.86795711963
+EarthSystemModels.heat_capacity(::LinearEquationOfState{FT}) where FT = FT(3991.86795711963)
 
 # setup helpers
 biogeochemistry_surface_exchanged_tracers(biogeochemistry) = tuple()
