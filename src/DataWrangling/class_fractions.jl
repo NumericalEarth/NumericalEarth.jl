@@ -2,6 +2,8 @@
 ##### Per-class area fractions of a categorical (class-code) map
 #####
 
+using Oceananigans.Grids: constructor_arguments
+
 """
     class_fraction(codes, class)
 
@@ -50,16 +52,28 @@ function class_fractions(codes, classes, factor)
 end
 
 """
-    class_fractions(grid, classes::Field, codes)
+    $(TYPEDSIGNATURES)
 
 The area fraction of each of `codes` on `grid`, regridded conservatively from the class map
 `classes`. A cell with no class counts toward none of them.
 """
 function class_fractions(grid, classes::Field, codes)
-    indicator = Field{Center, Center, Nothing}(classes.grid)
+    source_grid = classes.grid
+
+    if source_grid isa LatitudeLongitudeGrid
+        longitude_shift = 360 * round((mean(x_domain(grid)) - mean(x_domain(source_grid))) / 360)
+        args, kwargs = constructor_arguments(source_grid)
+        kwargs[:longitude] = kwargs[:longitude] .+ longitude_shift
+        source_grid = LatitudeLongitudeGrid(args[:architecture], args[:number_type]; kwargs...)
+    end
+
+    indicator = Field{Center, Center, Nothing}(source_grid)
     return map(codes) do code
         interior(indicator) .= interior(classes) .== code
-        regrid!(Field{Center, Center, Nothing}(grid), indicator)
+        fraction = Field{Center, Center, Nothing}(grid)
+        regrid!(fraction, indicator)
+        fill_halo_regions!(fraction)
+        fraction
     end
 end
 
@@ -80,14 +94,15 @@ function majority_class!(majority_class, fractions, codes)
     LX, LY, LZ = location(majority_class)
     largest_fraction = Field{LX, LY, LZ}(grid)
     total_fraction = Field{LX, LY, LZ}(grid)
+    parameters = KernelParameters(interior_indices(majority_class))
 
     fill!(majority_class, 0)
     for (fraction, code) in zip(fractions, codes)
-        launch!(arch, grid, :xyz, _accumulate_majority_class!,
+        launch!(arch, grid, parameters, _accumulate_majority_class!,
                 majority_class, largest_fraction, total_fraction, fraction, code)
     end
 
-    launch!(arch, grid, :xyz, _mask_uncovered_class!, majority_class, total_fraction)
+    launch!(arch, grid, parameters, _mask_uncovered_class!, majority_class, total_fraction)
     fill_halo_regions!(majority_class)
     return majority_class
 end

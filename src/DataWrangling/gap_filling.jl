@@ -438,8 +438,8 @@ Score [`fill_seasonal_gaps!`](@ref) by withholding values it would otherwise hav
 `samples_per_class` observed cell-periods of each class are set to `NaN`, the chain is run
 on the damaged copy, and the estimates are compared with the values that were removed. The
 remaining keyword arguments are passed to the fill, so `stages` scores each stage alone.
-The withheld entries are isolated cell-periods, so with every stage running the score is
-mostly that of the temporal stage bridging one-period gaps.
+Sampling does not require temporal separation or observed neighbors. Short gaps may dominate
+the score when all stages run; it does not bound accuracy on long, clustered gaps.
 
 Returns one row per class: `(; class, withheld, estimated, R², cv_rmse)`, where `R²` is the
 squared correlation of estimate against truth, `cv_rmse` the root-mean-square error divided

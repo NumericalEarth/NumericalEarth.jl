@@ -595,13 +595,12 @@ end
 # Compositing seventeen — or here five — years before the donors are drawn is what separates
 # these scores from the published single-date experiments they are comparable with: both the
 # donors and the truth are multi-year means, in which the part of the retrieval error that
-# varies from year to year has averaged down, though the systematic part has not. A stage that
-# scores *worse* than the single-date literature is a stage that is wrong, not a stage that is
-# working hard.
+# varies from year to year has averaged down, though the systematic part has not. Comparisons
+# with single-date studies also depend on their validation data and gap patterns.
 #
-# The scores are an upper bound all the same. Each withheld entry is a single cell-period with
-# observed neighbors on both sides, which the temporal stage bridges easily, while the gaps the
-# chain exists for are long and clustered; `stages` scores the donor stages on their own.
+# Withheld entries can adjoin existing gaps or other withheld entries. Short, isolated gaps
+# may still dominate these scores, making them optimistic for long, clustered cloud gaps;
+# they do not bound accuracy on those gaps. `stages` scores the donor stages on their own.
 #
 # The remaining caveat this pipeline's design makes necessary, and the one to carry forward to
 # whatever consumes the field: compare the roughness distribution over **filled** cells against

@@ -694,6 +694,37 @@ end
     end
 end
 
+@testset "Class fractions conserve horizontal area [$arch]" for arch in test_architectures
+    source_grid = LatitudeLongitudeGrid(arch; size = (4, 4),
+                                        longitude = (-4, 0), latitude = (50, 70),
+                                        topology = (Bounded, Bounded, Flat))
+    classes = Field{Center, Center, Nothing}(source_grid)
+    set!(classes, (longitude, latitude) -> ifelse(longitude < -2, 1, 2))
+
+    for latitude_cells in (2, 4), longitude_shift in (0, 360)
+        grid = LatitudeLongitudeGrid(arch; size = (4, latitude_cells),
+                                     longitude = [-3.5, -2.5, -1.5, -1, -0.5] .+ longitude_shift,
+                                     latitude = (52, 68), topology = (Bounded, Bounded, Flat))
+        fractions = class_fractions(grid, classes, (1, 2))
+        west, east = map(fraction -> Array(interior(fraction, :, :, 1)), fractions)
+        @test west ≈ repeat([1, 0.5, 0, 0], 1, latitude_cells)
+        @test west + east ≈ ones(4, latitude_cells)
+    end
+
+    set!(classes, (longitude, latitude) -> ifelse(latitude < 60, 1, 2))
+    grid = LatitudeLongitudeGrid(arch; size = (2, 4), longitude = (-4, 0),
+                                 latitude = [50, 55, 65, 68, 70],
+                                 topology = (Bounded, Bounded, Flat))
+    fractions = class_fractions(grid, classes, (1, 2))
+    south, north = map(fraction -> Array(interior(fraction, :, :, 1)), fractions)
+    southern_fraction = (sind(60) - sind(55)) / (sind(65) - sind(55))
+    @test south ≈ repeat([1 southern_fraction 0 0], 2, 1)
+    @test south + north ≈ ones(2, 4)
+
+    fractions = class_fractions(source_grid, classes, (1, 2))
+    @test Array(interior(first(fractions))) ≈ (Array(interior(classes)) .== 1)
+end
+
 @testset "MODIS class fractions on a model grid" begin
     mktempdir() do dir
         region = BoundingBox(longitude = (-92.5, -92.4), latitude = (36.5, 36.6))
@@ -761,6 +792,19 @@ end
         codes = landed(Field(lai_metadatum, grid))
         @test all(codes[1, :] .== modis_landcover_class_names.water)
         @test all(isnan, codes[2, :])
+
+        for longitude_shift in (0, 360)
+            model_grid = LatitudeLongitudeGrid(CPU(); size = (2, 2, 3),
+                                               longitude = (-92.5, -92.4) .+ longitude_shift,
+                                               latitude = (36.5, 36.6), z = (-3, 0),
+                                               topology = (Bounded, Bounded, Bounded))
+            @test landed(Field(metadatum, model_grid)) == majority
+            @test isequal(landed(Field(lai_metadatum, model_grid)), codes)
+            water_mask = Metadatum(:land_water_mask; dataset, region, date, dir)
+            quality = Metadatum(:quality_flag; dataset, region, date, dir)
+            @test all(==(2), landed(Field(water_mask, model_grid)))
+            @test all(iszero, landed(Field(quality, model_grid)))
+        end
     end
 end
 
