@@ -192,8 +192,8 @@ set!(land; M = 20)
 #
 # All-sky RRTMGP: interior heating on the evolving clouds, surface fluxes into the land
 # budget. The surface albedo is observed, not constant — passing the dataset materializes
-# the CGLS 1 km blue-sky albedo at the dekad nearest `epoch`, with water pixels (NaN in the
-# land product) defaulting to open water. Everything else is a Breeze default — per-column
+# the CGLS 1 km blue-sky albedo at the ten-day date nearest `epoch`, with water pixels
+# (NaN in the land product) defaulting to open water. Everything else is a Breeze default — per-column
 # sun angles from the grid, climatological ozone, emissivity, effective radii. No surface
 # temperature either: the coupled model below binds the atmosphere–land interface skin
 # temperature, re-read every solve. Hourly solves match the ERA5 cadence.
@@ -246,7 +246,7 @@ section_filename = name * "_section.jld2"
 
 schedule = TimeInterval(20minutes)
 slice_writer(indices, filename) = JLD2Writer(model, fields; schedule, filename, indices,
-                                             overwrite_existing = true)
+                                             overwrite_files = true)
 
 simulation.output_writers[:surface] = slice_writer((:, :, 1),         surface_filename)
 simulation.output_writers[:aloft]   = slice_writer((:, :, k_aloft),   aloft_filename)
@@ -256,7 +256,7 @@ land_filename = name * "_land.jld2"
 land_fields = (Tˡᵃ = land.temperature, 𝒮 = land.saturation)
 simulation.output_writers[:land] = JLD2Writer(model, land_fields; schedule,
                                               filename = land_filename,
-                                              overwrite_existing = true)
+                                              overwrite_files = true)
 
 function progress(sim)
     child = sim.model.atmosphere.model.child

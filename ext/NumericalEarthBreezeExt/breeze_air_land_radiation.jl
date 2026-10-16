@@ -16,10 +16,10 @@ const BreezeRTM = Breeze.RadiativeTransferModel
 # equal to land.temperature only for bulk formulations — into an RTM constructed without
 # one. Explicit construction wins; with no land interface, Breeze errors at first solve.
 function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_temperature(rtm::BreezeRTM, interfaces)
-    isnothing(rtm.surface_properties.surface_temperature) || return rtm
+    isnothing(rtm.surface_radiation.surface_temperature) || return rtm
     Tˢ = NumericalEarth.EarthSystemModels.surface_temperature(interfaces)
     isnothing(Tˢ) && return rtm
-    return @set rtm.surface_properties.surface_temperature = Tˢ
+    return @set rtm.surface_radiation.surface_temperature = Tˢ
 end
 
 # A Breeze RTM needs no exchange state; without this method the generic constructor
@@ -59,11 +59,11 @@ function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
     grid = land.grid
     arch = architecture(grid)
     σ = convert(eltype(grid), NumericalEarth.Radiations.default_stefan_boltzmann_constant)
-    Tˢ = rtm.surface_properties.surface_temperature
-    ε = rtm.surface_properties.surface_emissivity
+    Tˢ = rtm.surface_radiation.surface_temperature
+    ε = rtm.surface_radiation.surface_emissivity
 
     # Equals `diffuse_surface_albedo` in the coupled configuration; always indexable.
-    α = rtm.surface_properties.direct_surface_albedo
+    α = rtm.surface_radiation.direct_surface_albedo
 
     launch!(arch, grid, :xy,
             _apply_breeze_air_land_radiative_fluxes!,

@@ -4,25 +4,6 @@
 ##### `short_name` / `version` passed in, so any Earthdata dataset module can use it.
 #####
 
-# Retry on transient failures, discarding a partial file between attempts.
-function download_with_retries(url, path; attempts = 3, downloader = nothing, description = "Download")
-    for attempt in 1:attempts
-        try
-            if isnothing(downloader)
-                Downloads.download(url, path)
-            else
-                Downloads.download(url, path; downloader)
-            end
-            return path
-        catch error
-            rm(path, force = true)
-            attempt == attempts && rethrow()
-            @warn "$description failed (attempt $attempt of $attempts); retrying..." url error
-            sleep(2attempt)
-        end
-    end
-end
-
 """
     earthdata_download(url, path; attempts = 3)
 

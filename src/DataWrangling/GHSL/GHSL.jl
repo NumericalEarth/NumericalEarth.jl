@@ -15,6 +15,7 @@ import Oceananigans
 download_GHSL_cache::String = ""
 function __init__()
     global download_GHSL_cache = DataWrangling.download_cache("GHSL")
+    return nothing
 end
 
 #####
@@ -132,6 +133,9 @@ Base.show(io::IO, dataset::AbstractGHSLDataset) = print(io, summary(dataset))
 const GHSBuiltHMetadatum = Metadatum{<:GHSBuiltH}
 const GHSBuiltSMetadatum = Metadatum{<:GHSBuiltS}
 const GHSLMetadatum      = Metadatum{<:AbstractGHSLDataset}
+
+# The 10 m built-up rasters are large and regridded by window rather than whole.
+DataWrangling.windowed_retrieval(::AbstractGHSLDataset) = true
 
 #####
 ##### Variables

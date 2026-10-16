@@ -1,6 +1,7 @@
 module NumericalEarthCDSAPIExt
 
 using CDSAPI: CDSAPI
+using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 
 using Dates: Dates
@@ -19,10 +20,10 @@ using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5Metadata, ERA5Metadatu
                                          batch_datetimes_for_cds, foreach_nc,
                                          split_era5_nc, split_era5_nc_by_datetime
 using NumericalEarth.DataWrangling.GloFAS: GloFASDataset, GloFASMetadata, GloFASMetadatum,
-                                           GloFAS_netcdf_variable_names
+                                           GloFAS_dataset_variable_names, GloFAS_netcdf_variable_names
 using NumericalEarth.DataWrangling.CopernicusLandAlbedo: ALBEDO_CDS_PRODUCT,
                                                          CopernicusAlbedoDatasetMetadata,
-                                                         download_albedo_dekads!
+                                                         download_ten_day_albedo!
 
 include("cds_utils.jl")
 include("era5.jl")

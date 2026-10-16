@@ -1,6 +1,6 @@
 using Oceananigans.Operators: Δzᶜᶜᶜ
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
-using ClimaSeaIce.SeaIceDynamics: x_momentum_stress, y_momentum_stress
+using ClimaSeaIce.SeaIceDynamics: implicit_τx_coefficient, implicit_τy_coefficient
 
 using ..EarthSystemModels: ocean_temperature, ocean_salinity
 
@@ -88,6 +88,8 @@ end
 
     τˣ = fluxes.x_momentum
     τʸ = fluxes.y_momentum
+    λˣ = fluxes.x_momentum_coefficient
+    λʸ = fluxes.y_momentum_coefficient
     Nz = size(grid, 3)
 
     uˢⁱ = sea_ice_u_velocity
@@ -95,11 +97,14 @@ end
     hˢⁱ = ice_thickness
     ℵ = ice_concentration
     sea_ice_fields = (; u = uˢⁱ, v = vˢⁱ, h = hˢⁱ, ℵ = ℵ)
+    τₛ = sea_ice_ocean_stress
 
-    # Momentum stresses
+    # The drag ρₑ Cᴰ |Δu| (uᵒ - uⁱ) split into the implicit coefficient λ = ρₑ Cᴰ |Δu| and the explicit remainder Fₑ = -λ uⁱ.
     @inbounds begin
-        τˣ[i, j, 1] = x_momentum_stress(i, j, Nz, grid, sea_ice_ocean_stress, clock, sea_ice_fields)
-        τʸ[i, j, 1] = y_momentum_stress(i, j, Nz, grid, sea_ice_ocean_stress, clock, sea_ice_fields)
+        λˣ[i, j, 1] = implicit_τx_coefficient(i, j, Nz, grid, τₛ, clock, sea_ice_fields)
+        λʸ[i, j, 1] = implicit_τy_coefficient(i, j, Nz, grid, τₛ, clock, sea_ice_fields)
+        τˣ[i, j, 1] = - λˣ[i, j, 1] * uˢⁱ[i, j, Nz]
+        τʸ[i, j, 1] = - λʸ[i, j, 1] * vˢⁱ[i, j, Nz]
     end
 end
 
@@ -132,6 +137,7 @@ end
     𝒬ⁱⁿ = fluxes.interface_heat
     Jˢ = fluxes.salt
     Jʷ = fluxes.freshwater
+    Jᴴ = fluxes.freshwater_heat_content
     τˣ = fluxes.x_momentum
     τʸ = fluxes.y_momentum
     T★ = interface_temperature
@@ -203,13 +209,13 @@ end
     # Part 3: Interface heat flux (formulation-specific)
     # =============================================
     # Returns interfacial heat flux and interface T, S
-    𝒬ⁱᵒ, Tᵦ, Sᵦ = compute_interface_heat_flux(flux_formulation,
+    𝒬ⁱᵒ, Tb, Sb = compute_interface_heat_flux(flux_formulation,
                                               ocean_surface_state, ice_state,
                                               liquidus, ocean_properties, ℰ, u★)
 
     # Store interface values and heat flux
     @inbounds 𝒬ⁱⁿ[i, j, 1] = 𝒬ⁱᵒ
-    store_interface_state!(flux_formulation, T★, S★, i, j, Tᵦ, Sᵦ)
+    store_interface_state!(flux_formulation, T★, S★, i, j, Tb, Sb)
 
     # =============================================
     # Part 4: Freshwater and salt fluxes
@@ -222,5 +228,6 @@ end
         Eₛ = snow_ocean_mass_flux[i, j, 1]
         Jʷ[i, j, 1] = - (Eᵢ + Eₛ) / ρᵒᶜ
         Jˢ[i, j, 1] = Eᵢ * Sˢⁱ / ρᵒᶜ # the snow term Sˢⁿ * Eₛ drops since Sˢⁿ == 0
+        Jᴴ[i, j, 1] = - Tb * Eᵢ / ρᵒᶜ # ice meltwater enters at the interface temperature, snow melts at 0
     end
 end

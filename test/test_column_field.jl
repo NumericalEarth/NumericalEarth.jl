@@ -11,7 +11,7 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: location
 using Oceananigans.Grids: λnodes, φnodes, topology, Flat, Bounded, Periodic
 
-# Test coordinates for end-to-end Column tests (ECCO4 ocean point)
+# Test coordinates for end-to-end Column tests (an ocean point of the synthetic dataset)
 const test_longitude = 12.0
 const test_latitude = -50.0
 
@@ -120,7 +120,7 @@ end
 
         @testset "Column Field with Linear interpolation on $A" begin
             col = Column(test_longitude, test_latitude; interpolation=Linear())
-            md = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col)
+            md = Metadatum(:temperature; dataset=SyntheticOcean(), region=col)
             field = Field(md, arch)
 
             @test field.grid isa RectilinearGrid
@@ -135,7 +135,7 @@ end
 
         @testset "Column Field with Nearest interpolation on $A" begin
             col = Column(test_longitude, test_latitude; interpolation=Nearest())
-            md = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col)
+            md = Metadatum(:temperature; dataset=SyntheticOcean(), region=col)
             field = Field(md, arch)
 
             @test field.grid isa RectilinearGrid
@@ -148,7 +148,7 @@ end
 
         @testset "set! with Column metadata on $A" begin
             col = Column(test_longitude, test_latitude)
-            md = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col)
+            md = Metadatum(:temperature; dataset=SyntheticOcean(), region=col)
 
             # Build a target column field
             column_grid = native_grid(md, arch)
@@ -165,8 +165,8 @@ end
             col_lin = Column(test_longitude, test_latitude; interpolation=Linear())
             col_near = Column(test_longitude, test_latitude; interpolation=Nearest())
 
-            md_lin = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col_lin)
-            md_near = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col_near)
+            md_lin = Metadatum(:temperature; dataset=SyntheticOcean(), region=col_lin)
+            md_near = Metadatum(:temperature; dataset=SyntheticOcean(), region=col_near)
 
             field_lin = Field(md_lin, arch)
             field_near = Field(md_near, arch)

@@ -2,6 +2,7 @@ include("runtests_setup.jl")
 
 using Oceananigans
 using Oceananigans.TimeSteppers: time_step!
+using NumericalEarth.Lands: viscosity_correction
 
 @testset "VariablySaturatedHydrology diagnostics" begin
     for arch in test_architectures
@@ -18,8 +19,8 @@ using Oceananigans.TimeSteppers: time_step!
             porosity = 0.4,
             residual_liquid_fraction = 0.0,
             storage_height = 1000,
-            retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
-            hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
+            retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
+            hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
             deep_liquid_flux = NoDeepLiquidFlux(),
             runoff = NoRunoff(),
         )
@@ -51,8 +52,8 @@ end
             slab_depth = 1.0,
             porosity = 0.4,
             storage_height = 1000,
-            retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
-            hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
+            retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
+            hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
             deep_liquid_flux = NoDeepLiquidFlux(),
             runoff = NoRunoff(),
         )
@@ -78,8 +79,8 @@ end
             slab_depth = 1.0,
             porosity = 0.4,
             storage_height = 1000,
-            retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
-            hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
+            retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
+            hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
             deep_liquid_flux = NoDeepLiquidFlux(),
             runoff = InfiltrationCapacityRunoff(infiltration_capacity = 7.0),
         )
@@ -98,23 +99,106 @@ end
         @test only(Array(interior(land_capped.water_storage))) ≈ 7.0
         @test only(Array(interior(land_capped.diagnostics.surface_runoff))) ≈ 3.0
 
-        # Free drainage: dM/dt = -ρˡ K_b. With K_sat = 1e-6, ρˡ = 1000:
-        # at full saturation, K = K_sat, so Jˡ_b = -1e-3 kg/m²/s.
+        # A per-cell capacity field caps the same way.
+        capacity = Field{Center, Center, Nothing}(grid)
+        set!(capacity, 7)
+        hydrology_field_capped = VariablySaturatedHydrology(eltype(grid);
+            slab_depth = 1,
+            porosity = 0.4,
+            storage_height = 1000,
+            retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1, pore_size_uniformity = 2),
+            hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2),
+            deep_liquid_flux = NoDeepLiquidFlux(),
+            runoff = InfiltrationCapacityRunoff(infiltration_capacity = capacity),
+        )
+        land_field_capped = SlabLand(grid; hydrology = hydrology_field_capped)
+        set!(land_field_capped; M = 0)
+        fill!(land_field_capped.fluxes.vapor_flux, 0)
+        fill!(land_field_capped.fluxes.liquid_precipitation_flux, 10)
+        time_step!(land_field_capped, 1)
+        @test maximum(land_field_capped.water_storage) ≈ 7
+        @test maximum(land_field_capped.diagnostics.surface_runoff) ≈ 3
+
+        # Free drainage: dM/dt = -ρˡ K_b. At full saturation K = K_sat Θ(T), where Θ is
+        # the viscosity correction, so the rate carries the slab temperature.
         hydrology_drain = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0,
             porosity = 0.4,
             storage_height = 1000,
-            retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
-            hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
+            retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
+            hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
             deep_liquid_flux = FreeDrainageFlux(),
             runoff = NoRunoff(),
         )
         land_drain = SlabLand(grid; hydrology = hydrology_drain)
-        set!(land_drain; M = 400.0)  # fully saturated
+        set!(land_drain; T = 303.0, M = 400.0)  # fully saturated, warmer than the reference
         fill!(land_drain.fluxes.vapor_flux, 0)
         fill!(land_drain.fluxes.liquid_precipitation_flux, 0)
-        time_step!(land_drain, 100.0)
-        # Expect M to decrease by 100 * 1e-3 = 0.1
-        @test only(Array(interior(land_drain.water_storage))) ≈ 399.9 atol = 1e-3
+        viscosity = hydrology_drain.hydraulic_conductivity.water_viscosity
+        Θ = viscosity_correction(viscosity, 303.0)
+        time_step!(land_drain, 100)
+        expected = 400 - 100 * 1000 * 1e-6 * Θ
+        @test only(Array(interior(land_drain.water_storage))) ≈ expected atol = 1e-5
+
+        # Rain on a column at pore capacity runs off: M stays at M⁺ less one step
+        # of drainage, and the runoff is the rain minus the drainage ρˡ K₀ = 1e-3.
+        hydrology_saturating = VariablySaturatedHydrology(eltype(grid);
+            slab_depth = 1,
+            porosity = 0.4,
+            storage_height = 1000,
+            retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1, pore_size_uniformity = 2),
+            hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2),
+            deep_liquid_flux = FreeDrainageFlux(),
+            runoff = InfiltrationCapacityRunoff(infiltration_capacity = 7),
+        )
+        land_saturating = SlabLand(grid; hydrology = hydrology_saturating)
+        set!(land_saturating; T = 293, M = 399)
+        fill!(land_saturating.fluxes.vapor_flux, 0)
+        fill!(land_saturating.fluxes.liquid_precipitation_flux, 5)  # below capacity 7
+        for _ in 1:20
+            time_step!(land_saturating, 1)
+        end
+        M = maximum(land_saturating.water_storage)
+        @test M ≤ 400
+        @test M ≈ 400 - 1e-3 atol = 1e-2
+        @test maximum(land_saturating.diagnostics.surface_runoff) ≈ 5 - 1e-3 atol = 1e-2
+    end
+end
+
+@testset "VariablySaturatedHydrology time-varying deep head" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch;
+                               size = 1,
+                               x = (0, 1),
+                               y = (0, 1),
+                               z = (-1, 0),
+                               topology = (Flat, Flat, Bounded))
+
+        Πᵈ = FieldTimeSeries{Center, Center, Nothing}(grid, [0.0, 200.0])
+        interior(Πᵈ[1]) .= -1.0
+        interior(Πᵈ[2]) .= -3.0
+
+        storage(deep_pressure_head) = begin
+            hydrology = VariablySaturatedHydrology(eltype(grid);
+                slab_depth = 1.0,
+                porosity = 0.4,
+                storage_height = 1000,
+                retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
+                hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
+                deep_liquid_flux = DarcyDeepLiquidFlux(exchange_length = 0.5),
+                deep_pressure_head,
+                runoff = NoRunoff(),
+            )
+            land = SlabLand(grid; hydrology)
+            set!(land; M = 300.0)
+            land.clock.time = 90.0
+            time_step!(land, 10.0)
+            only(Array(interior(land.water_storage)))
+        end
+
+        # The clock ticks before the hydrology step, so the series is read at t = 100 s,
+        # where it interpolates to −2 m: the step must match the constant head −2 m.
+        @test storage(Πᵈ) ≈ storage(-2.0)
+        @test storage(Πᵈ) != storage(-1.0)
     end
 end

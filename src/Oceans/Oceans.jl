@@ -1,35 +1,38 @@
 module Oceans
 
-export ocean_simulation, SlabOcean, PrescribedOcean
+export ocean_simulation, river_mouth_vertical_diffusivity, SlabOcean, PrescribedOcean,
+       TwoColorRadiation, ChlorophyllOptics, absorption_coefficient, equivalent_chlorophyll
 
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Advection: WENO, WENOVectorInvariant
+using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
-                                       FieldBoundaryConditions, FluxBoundaryCondition, getbc
-using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
+                                       FieldBoundaryConditions, FluxBoundaryCondition,
+                                       IMEXFluxBoundaryCondition, IMEXFlux, getbc
+using Oceananigans.BuoyancyFormulations: BuoyancyForce, SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
-using Oceananigans.Fields: Field, CenterField, set!, interior
+using Oceananigans.Fields: Field, CenterField, compute!, set!, interior
 using Oceananigans.Forcings: MultipleForcings, DiscreteForcing
-using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, RectilinearGrid
+using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, znodes, RectilinearGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition, MutableGridOfSomeKind
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
 using Oceananigans.Models.NonhydrostaticModels: NonhydrostaticModel
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids, TripolarGrid
-using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ
+using Oceananigans.Operators: active_weighted_ℑxyᶠᶜᶜ, active_weighted_ℑxyᶜᶠᶜ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TimeSteppers: Clock
-using Oceananigans.TurbulenceClosures: κzᶜᶜᶠ
+using Oceananigans.TurbulenceClosures: κzᶜᶜᶠ, VerticalScalarDiffusivity
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
                                                                      CATKEEquation
 using Oceananigans.Units: minutes, hours
 using Oceananigans.Utils: with_tracers, launch!
 using SeawaterPolynomials: SeawaterPolynomials
-using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
+using SeawaterPolynomials.TEOS10: TEOS10EquationOfState, θ_from_Θ
 
 using ..EarthSystemModels: EarthSystemModels,
                            ocean_surface_velocities,
@@ -37,7 +40,7 @@ using ..EarthSystemModels: EarthSystemModels,
                            DegreesKelvin,
                            default_stop_time,
                            heat_capacity
-using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger
+using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger, state2dindex
 
 default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate
@@ -67,6 +70,7 @@ include("radiative_forcing.jl")
 include("multiple_surface_fluxes.jl")
 include("ocean_simulation.jl")
 include("nonhydrostatic_ocean_simulation.jl")
+include("surface_layer_velocities.jl")
 include("assemble_net_ocean_fluxes.jl")
 
 #####
@@ -95,8 +99,21 @@ function EarthSystemModels.ocean_surface_velocities(ocean::OceananigansModelSimu
     return view(ocean.model.velocities.u, :, :, kᴺ), view(ocean.model.velocities.v, :, :, kᴺ)
 end
 
-# When using an Oceananigans simulation, we assume that the exchange grid is the ocean grid
-# We need, however, to interpolate the surface pressure to the ocean grid
+@kernel function _ocean_state_to_potential_temperature!(Tᵉˣ, Tᵒᶜ, Sᵒᶜ, kᴺ)
+    i, j = @index(Global, NTuple)
+    @inbounds Tᵉˣ[i, j, 1] = θ_from_Θ(max(0, Sᵒᶜ[i, j, kᴺ]), Tᵒᶜ[i, j, kᴺ])
+end
+
+function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::Simulation{<:HydrostaticFreeSurfaceModel}, coupled_model)
+    Tᵉˣ = exchanger.state.T
+    Tᵒᶜ = ocean.model.tracers.T
+    Sᵒᶜ = ocean.model.tracers.S
+    kᴺ = size(ocean.model.grid, 3)
+    arch = architecture(ocean.model.grid)
+    launch!(arch, grid, :xy, _ocean_state_to_potential_temperature!, Tᵉˣ, Tᵒᶜ, Sᵒᶜ, kᴺ)
+    return nothing
+end
+
 EarthSystemModels.interpolate_state!(exchanger, grid, ::OceananigansModelSimulations, coupled_model) = nothing
 
 function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::OceananigansModelSimulations, grid)
@@ -105,14 +122,14 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::Ocean
     if ocean_grid == grid
         u = ocean.model.velocities.u
         v = ocean.model.velocities.v
-        T = ocean.model.tracers.T
         S = ocean.model.tracers.S
     else
         u = Field{Center, Center, Nothing}(grid)
         v = Field{Center, Center, Nothing}(grid)
-        T = Field{Center, Center, Nothing}(grid)
         S = Field{Center, Center, Nothing}(grid)
     end
+
+    T = Field{Center, Center, Nothing}(grid)
 
     # Near-surface vertical tracer diffusivity, evaluated lazily inside the
     # interface flux kernel by formulations that consume it (`InteriorDiffusivity`).
@@ -168,14 +185,22 @@ end
 @inline net_flux(condition) = condition
 @inline net_flux(bc::MultipleFluxes) = bc.flux_field
 @inline net_flux(bc::DiscreteBoundaryFunction) = net_flux(bc.func)
+@inline net_flux(bc::IMEXFlux) = net_flux(bc.explicit_flux)
 @inline net_flux(f::DiscreteForcing)   = f.parameters
 @inline net_flux(mf::MultipleForcings) = net_flux(mf.forcings[1])
 
+# The implicit coefficient λ of an affine surface flux; `nothing` when the flux has no implicit part.
+@inline net_flux_coefficient(condition) = nothing
+@inline net_flux_coefficient(bc::IMEXFlux) = net_flux(bc.implicit_coefficient)
+
 function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::OceananigansModelSimulations)
     # TODO: Generalize this to work with any ocean model
-    τˣ = net_flux(ocean.model.velocities.u.boundary_conditions.top.condition)
-    τʸ = net_flux(ocean.model.velocities.v.boundary_conditions.top.condition)
-    net_ocean_surface_fluxes = (; u=τˣ, v=τʸ)
+    u_top = ocean.model.velocities.u.boundary_conditions.top.condition
+    v_top = ocean.model.velocities.v.boundary_conditions.top.condition
+    net_ocean_surface_fluxes = (; u = net_flux(u_top),
+                                  v = net_flux(v_top),
+                                  u_coefficient = net_flux_coefficient(u_top),
+                                  v_coefficient = net_flux_coefficient(v_top))
 
     tracers = ocean.model.tracers
     ocean_surface_tracer_fluxes = NamedTuple(name => net_flux(tracers[name].boundary_conditions.top.condition) for name in keys(tracers))

@@ -107,15 +107,8 @@ end
 # in space + time, while an `AbstractField` source is interpolated in space at
 # the parent's current state.
 
-# `loc` is the regularized boundary location passed in from `getbc`; for these
-# same-variable nesting BCs it equals the source field's location. Passing it
-# explicitly is essential on GPU: `Adapt` reduces an `AbstractField` source to its bare
-# data array (an `OffsetArray`, no longer `<:AbstractField` and with no
-# `instantiated_location`). So the prognostic-parent method must be generically typed —
-# otherwise `_query_source(::AbstractField, …)` fails to match the adapted source in the
-# halo-fill kernel (dynamic dispatch + device allocation → `InvalidIRError`) — and it
-# must NOT call `instantiated_location(source)` in-kernel. The FTS source survives
-# `Adapt` as a `FlavorOfFTS`, so its method is unchanged.
+# `loc` is passed explicitly because `Adapt` reduces an `AbstractField` source to a bare
+# `OffsetArray` on GPU, where `instantiated_location` is unavailable.
 @inline _query_source(fts::FlavorOfFTS, source_grid, X, loc, t) =
     Oceananigans.Fields.interpolate(X, Time(t), fts,
                                     Oceananigans.instantiated_location(fts),

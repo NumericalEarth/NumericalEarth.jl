@@ -109,9 +109,12 @@ end
 Return the native grid corresponding to `metadata` with `halo` size.
 Returns a `LatitudeLongitudeGrid` for global or `BoundingBox` regions,
 and a column `RectilinearGrid` for `Column` regions.
+
+The grid is built on the child architecture of `arch`, so with a `Distributed` architecture every rank reads and
+inpaints the whole dataset and then regrids onto its own subdomain.
 """
 native_grid(metadata::Metadata, arch=CPU(); halo=(3, 3, 3)) =
-    construct_native_grid(metadata, metadata.region, arch; halo)
+    construct_native_grid(metadata, metadata.region, child_architecture(arch); halo)
 
 # 2D-only datasets (surface forcing like JRA55) skip the z dimension.
 function construct_native_grid(metadata, ::Nothing, arch; halo)
@@ -189,32 +192,8 @@ end
 Retrieve data from netcdf file according to `metadata`.
 """
 function retrieve_data(metadata::Metadatum)
-    path = metadata_path(metadata)
-    name = dataset_variable_name(metadata)
-
-    # NetCDF shenanigans
-    ds = Dataset(path)
-
-    if is_three_dimensional(metadata)
-        data = ds[name][:, :, :, 1]
-
-        # Many ocean datasets use a "depth convention" for their vertical axis
-        if reversed_vertical_axis(metadata.dataset)
-            data = reverse(data, dims=3)
-        end
-    else
-        data = ds[name][:, :, 1]
-    end
-
-    close(ds)
-
-    # ERA5 (and some other datasets) store latitude north-to-south;
-    # flip to south-to-north to match the grid.
-    if reversed_latitude_axis(metadata.dataset)
-        data = reverse(data, dims=2)
-    end
-
-    return data
+    data, _, _ = retrieve_window(metadata, :, :)
+    return is_three_dimensional(metadata) ? data : dropdims(data, dims=3)
 end
 
 """
@@ -388,7 +367,8 @@ local file, pass `overwrite_cache = true` after replacing data upstream: it
 skips the lookup and overwrites the entry with a freshly regridded result.
 """
 function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid;
-                                   cache = false, overwrite_cache = false, kw...)
+                                   cache = false, overwrite_cache = false,
+                                   tile_bytes = default_tile_bytes, kw...)
     LX, LY, LZ = location(metadata)
 
     if cache && !overwrite_cache
@@ -402,9 +382,8 @@ function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid;
         end
     end
 
-    native = Field(metadata, architecture(grid); kw...)
     target = Field{LX, LY, LZ}(grid)
-    interpolate_physical!(target, native, metadata)
+    regrid_from_metadata!(target, metadata; tile_bytes, kw...)
     if cache
         # rebuild the key: the native read may have just downloaded the dataset file it stamps
         config = FieldRegridding(grid, metadata, values(kw))
@@ -413,26 +392,8 @@ function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid;
     return target
 end
 
-function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw...)
-    grid = target_field.grid
-    arch = child_architecture(grid)
-    meta_field = Field(metadata, arch; kw...)
-
-    Lzt = grid.Lz
-    Lzm = meta_field.grid.Lz
-
-    # Allow up to 1% vertical mismatch for pressure-level datasets with time-varying
-    # geopotential heights — the per-timestep vertical extent can be slightly smaller
-    # than the temporal-mean extent used for the target grid (e.g. when the atmosphere
-    # is compressed). Oceananigans' interpolate! does not extrapolate, so target points
-    # just outside the source domain will use the nearest interior values.
-    if is_three_dimensional(metadata) && Lzt > Lzm * (1 + 1e-2)
-        throw("The vertical range of the $(metadata.dataset) dataset ($(Lzm) m) is smaller than " *
-              "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
-    end
-
-    interpolate_physical!(target_field, meta_field, metadata)
-
+function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum, args...; kw...)
+    regrid_from_metadata!(target_field, metadata; kw...)
     return target_field
 end
 
@@ -586,10 +547,7 @@ multi-date sets, build a `NamedTuple` of `FieldTimeSeries` per variable, e.g.
 function Oceananigans.Fields.Field(mset::MetadataSet, arch=CPU(); kw...)
     dates = getfield(mset, :dates)
     if !(dates isa AnyDateTime)
-        throw(ArgumentError(
-            "Field(::MetadataSet) requires a scalar `date`, but this `MetadataSet` carries a multi-date axis. " *
-            "For multi-date sets build a NamedTuple of FieldTimeSeries per variable, e.g. " *
-            "`NamedTuple(name => FieldTimeSeries(mset[name], grid) for name in mset.names)`."))
+        throw(ArgumentError("Field(::MetadataSet) requires a scalar `date`, got a multi-date axis"))
     end
     names = getfield(mset, :names)
     return NamedTuple{names}(map(n -> Field(mset[n], arch; kw...), names))

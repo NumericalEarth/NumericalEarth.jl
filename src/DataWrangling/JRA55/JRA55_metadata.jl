@@ -5,7 +5,7 @@ using Oceananigans.DistributedComputations
 
 using ..DataWrangling: all_dates, DataWrangling, Metadata, metadata_path,
                        DownloadProgress, DatasetBackend, metadata_url,
-                       dataset_variable_name, getfilename
+                       dataset_variable_name, getfilename, download_with_retries
 
 abstract type JRA55Dataset end
 
@@ -54,7 +54,7 @@ DataWrangling.default_inpainting(::JRA55Metadata) = nothing
 
 # The whole range of dates in the different dataset datasets
 # NOTE! rivers and icebergs have a different frequency! (typical JRA55 data is three-hourly while rivers and icebergs are daily)
-function DataWrangling.all_dates(::RepeatYearJRA55, name)
+function native_repeat_year_JRA55_dates(name)
     if name == :river_freshwater_flux || name == :iceberg_freshwater_flux
         return DateTime(1990, 1, 1) : Day(1) : DateTime(1990, 12, 31)
     else
@@ -62,32 +62,53 @@ function DataWrangling.all_dates(::RepeatYearJRA55, name)
     end
 end
 
+const repeat_year_JRA55_instant_counts = Dict{Tuple{String, Int}, Int}()
+
+# Keyed on the file size too, so that re-downloading a file replaces its entry instead of reusing it.
+function repeat_year_JRA55_instants(path, native_instants)
+    return get!(repeat_year_JRA55_instant_counts, (path, filesize(path))) do
+        ds = Dataset(path)
+        instants = ds.dim["time"]
+        close(ds)
+        instants < native_instants && @warn "$(basename(path)) holds $instants of the $native_instants JRA55 time instants; the time axis follows the file."
+        return instants
+    end
+end
+
+function DataWrangling.all_dates(dataset::RepeatYearJRA55, name)
+    dates = native_repeat_year_JRA55_dates(name)
+    path = joinpath(DataWrangling.default_download_directory(dataset), DataWrangling.metadata_filename(dataset, name, nothing, nothing))
+
+    isfile(path) || return dates
+
+    # The file on disk owns the time axis: CI runs against RYF files cropped to a few days.
+    return dates[1:min(repeat_year_JRA55_instants(path, length(dates)), length(dates))]
+end
+
 DataWrangling.all_dates(::MultiYearJRA55, name) = JRA55_multiple_year_dates[name]
 
 # Fallback, if we not provide the name, take the highest frequency
 DataWrangling.all_dates(dataset::JRA55Dataset) = all_dates(dataset, :temperature)
 
-# Valid for all JRA55 datasets
-function JRA55_time_indices(dataset, dates, name)
-    all_JRA55_dates = all_dates(dataset, name)
-    indices = Int[]
+# Fluxes, radiation, and precipitation are means over the interval between stamps; the state
+# variables are instantaneous.
+const JRA55_window_averaged_variables = (:river_freshwater_flux,
+                                         :iceberg_freshwater_flux,
+                                         :rain_freshwater_flux,
+                                         :snow_freshwater_flux,
+                                         :downwelling_longwave_radiation,
+                                         :downwelling_shortwave_radiation)
 
-    for date in dates
-        index = findfirst(x -> x == date, all_JRA55_dates)
-        !isnothing(index) && push!(indices, index)
-    end
-
-    return indices
+# The repeat-year files label each mean with the start of its interval; the multi-year files label
+# it with the center.
+function DataWrangling.averaging_window(md::RepeatYearJRA55Metadatum)
+    md.name in JRA55_window_averaged_variables || return (md.dates, md.dates)
+    span = md.name in (:river_freshwater_flux, :iceberg_freshwater_flux) ? Day(1) : Hour(3)
+    return (md.dates, md.dates + span)
 end
 
-# File name generation specific to each Dataset dataset
-# Note that `RepeatYearJRA55` has only one file associated, so the filename
-# is independent of the date. Override the multi-date fallback to return a plain String.
-DataWrangling.metadata_filename(::RepeatYearJRA55, name, date, region) =
-    "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
-
-DataWrangling.build_filename(::RepeatYearJRA55, name, dates::AbstractArray, region) =
-    "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
+DataWrangling.metadata_filename(::RepeatYearJRA55, name, date, region) =  "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
+DataWrangling.build_filename(::RepeatYearJRA55, name, dates::AbstractArray, region) = "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
 
 function DataWrangling.metadata_filename(::MultiYearJRA55, name, date, region)
     shortname = JRA55_dataset_variable_names[name]
@@ -223,7 +244,7 @@ function Downloads.download(metadata::JRA55Metadata)
         filepath = metadata_path(metadatum)
 
         if !isfile(filepath)
-            Downloads.download(fileurl, filepath; progress=DownloadProgress())
+            download_with_retries(fileurl, filepath; progress=DownloadProgress())
         end
     end
 

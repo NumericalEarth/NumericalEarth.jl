@@ -169,9 +169,9 @@ ThreeEquationHeatFlux(::Nothing, FT::DataType = Oceananigans.defaults.FloatType;
     compute_interface_heat_flux(flux::IceBathHeatFlux, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
 
 Compute the heat flux at the sea ice-ocean interface using bulk formulation.
-Returns `(Q, Tᵦ, Sᵦ)` where:
+Returns `(Q, Tb, Sb)` where:
 - `Q > 0` means heat flux from ocean to ice (ocean cooling)
-- `Tᵦ, Sᵦ` are the interface temperature and salinity
+- `Tb, Sb` are the interface temperature and salinity
 """
 @inline function compute_interface_heat_flux(flux::IceBathHeatFlux,
                                              ocean_state, ice_state,
@@ -204,10 +204,10 @@ const ConductiveFluxTEF{FT} = ThreeEquationHeatFlux{<:ConductiveFlux, <:Abstract
 
 # For IceBathHeatFlux, T★ and S★ are views into ocean surface fields so we skip writing.
 # For ThreeEquationHeatFlux, T★ and S★ are dedicated interface fields.
-@inline store_interface_state!(::IceBathHeatFlux, T★, S★, i, j, Tᵦ, Sᵦ) = nothing
-@inline function store_interface_state!(::ThreeEquationHeatFlux, T★, S★, i, j, Tᵦ, Sᵦ)
-    @inbounds T★[i, j, 1] = Tᵦ
-    @inbounds S★[i, j, 1] = Sᵦ
+@inline store_interface_state!(::IceBathHeatFlux, T★, S★, i, j, Tb, Sb) = nothing
+@inline function store_interface_state!(::ThreeEquationHeatFlux, T★, S★, i, j, Tb, Sb)
+    @inbounds T★[i, j, 1] = Tb
+    @inbounds S★[i, j, 1] = Sb
 end
 
 """
@@ -217,9 +217,9 @@ Compute the heat flux at the sea ice-ocean interface using three-equation formul
 Dispatches to the appropriate `solve_interface_conditions` based on whether the flux has internal
 conductive flux or not.
 
-Returns `(Q, Tᵦ, Sᵦ)` where:
+Returns `(Q, Tb, Sb)` where:
 - `Q > 0` means heat flux from ocean to ice (ocean cooling)
-- `Tᵦ, Sᵦ` are the interface temperature and salinity
+- `Tb, Sb` are the interface temperature and salinity
 """
 @inline function compute_interface_heat_flux(flux::ThreeEquationHeatFlux,
                                              ocean_state, ice_state,
