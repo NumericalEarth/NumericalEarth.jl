@@ -241,23 +241,16 @@ conservative_restoring(other)                                = nothing
 #####
 #
 # A forced configuration cannot close its surface water budget: precipitation and runoff are prescribed
-# while evaporation is computed from the model state, so the global mean net freshwater flux is non-zero
-# and the ocean drifts in volume. Most OMIP-2 models remove that mean each step (Tsujino et al. 2020);
-# ICON-O normalizes the global mean sea level daily for the same reason. Only the atmospheric part is
-# corrected: the sea-ice exchange moves water between reservoirs rather than adding it, so normalizing it
-# would break the ocean + sea-ice water budget. Its mean is recovered as ⟨Jʷᵃᵒ⟩ = ⟨Jʷ⟩ - ⟨Jʷⁱᵒ⟩, since the
-# assembled flux carries both. Subtracting in place also fixes the salinity dilution, because
-# `carried_tracer_flux` reads the same field.
+# while evaporation is computed from the model state, so the ocean drifts in volume. Most OMIP-2 models
+# remove the global mean net freshwater flux each step (Tsujino et al. 2020); ICON-O normalizes the global
+# mean sea level daily for the same reason. Removing the mean flux at the surface caused spurious convection
+# where it should not appear when used with surface salinity restoring, so instead `NormalizeTotalWater`
+# holds the total ocean + sea-ice + snow water to its initial value by lowering the free surface, removing
+# the water from the whole column. Every tracer is rescaled by the same factor, so the water removed is pure
+# freshwater and no tracer content (heat, salt or biogeochemical) goes with it.
 
-# The salinity content flux is a `ZeroField` (incoming freshwater carries no salt), so salt follows the
-# correction through `Sᴺ · carrying_flux` on its own. The heat content flux `Jᴴ = Tᵒᶜ Jʷᵃᵒ` does not: since
-# the salinity/temperature top BCs evaluate `cᴺ · carrying_flux - content_flux`, correcting only the
-# carrying flux would leave a spurious surface heat flux `-ρ cₚ Tᵒᶜ ⟨Jʷᵃᵒ⟩`. Removing `Tᵒᶜ ⟨Jʷᵃᵒ⟩` from the
-# content flux as well leaves the carried heat flux unchanged: the water removed leaves at the local
-# surface temperature, so closing the water budget stays heat-neutral.
-
-# `:none` disables the correction, `:timestep` removes the instantaneous global mean, and `:annual`
-# removes a running mean relaxed over a year. `Bool` is accepted for `:none` / `:timestep`.
+# `:none` disables the correction, `:timestep` removes the whole excess every step, and `:annual` relaxes it
+# away over a year. `Bool` is accepted for `:none` / `:timestep`.
 freshwater_normalization(mode::Symbol) = mode
 freshwater_normalization(mode::Bool) = ifelse(mode, :timestep, :none)
 
@@ -328,9 +321,18 @@ function NormalizeTotalWater(coupled_model, Δt, averaging_timescale)
     return normalization
 end
 
-# Remove the volume drift by adjusting the free surface. Avoids problems with spurious convection 
-# appearing where it should not when using a surface restoring.
-@kernel function _correct_sea_level!(η, T, S, grid, δ, k_top)
+# Remove the volume drift by adjusting the free surface. Avoids problems with spurious convection
+# appearing where it should not when using a surface restoring. Every tracer's concentration is scaled
+# by H / (H - d) so its column content is unchanged: rescaling only T and S removed the biogeochemical
+# tracers with the water, at their column-mean concentration.
+@inline rescale_tracers!(::Tuple{}, i, j, k, f) = nothing
+
+@inline function rescale_tracers!(tracers, i, j, k, f)
+    @inbounds first(tracers)[i, j, k] *= f
+    return rescale_tracers!(Base.tail(tracers), i, j, k, f)
+end
+
+@kernel function _correct_sea_level!(η, tracers, grid, δ, k_top)
     i, j = @index(Global, NTuple)
     h = Oceananigans.Grids.static_column_depthᶜᶜᵃ(i, j, grid)
     @inbounds ηⁿ = η[i, j, k_top]
@@ -340,8 +342,7 @@ end
     f = ifelse(correctable, H / (H - d), one(grid))
 
     for k in 1:size(grid, 3)
-        @inbounds T[i, j, k] *= f
-        @inbounds S[i, j, k] *= f
+        rescale_tracers!(tracers, i, j, k, f)
     end
 
     @inbounds η[i, j, k_top] = ηⁿ - ifelse(correctable, d, zero(grid))
@@ -353,7 +354,7 @@ function correct_sea_level!(ocean_model, δ)
     η = ocean_model.free_surface.displacement
 
     launch!(architecture(grid), grid, Oceananigans.Utils.KernelParameters(1:Nx, 1:Ny), _correct_sea_level!,
-            η, ocean_model.tracers.T, ocean_model.tracers.S, grid, δ, Nz + 1)
+            η, values(ocean_model.tracers), grid, δ, Nz + 1)
 
     # Refresh `σⁿ` from the corrected `η`.
     Oceananigans.Models.HydrostaticFreeSurfaceModels.update_zstar_scaling!(grid, η)
