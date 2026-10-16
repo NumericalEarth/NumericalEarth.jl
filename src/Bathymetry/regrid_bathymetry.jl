@@ -15,13 +15,7 @@ end
 # methods specific to bathymetric datasets live within dataset modules
 
 """
-    regrid_bathymetry(target_grid, metadata;
-                      height_above_water = nothing,
-                      minimum_depth = 0,
-                      major_basins = 1,
-                      interpolation_passes = 1,
-                      cache = true,
-                      overwrite_cache = false)
+$(MethodSignatures(defaults = true))
 
 Return bathymetry that corresponds to  `metadata` onto `target_grid`.
 
@@ -167,7 +161,7 @@ function _regrid_bathymetry(target_grid, metadata;
 end
 
 """
-    regrid_bathymetry(target_grid; dataset=ETOPO2022(), cache=true, kw...)
+$(MethodSignatures(defaults = true))
 
 Regrid bathymetry from `dataset` onto `target_grid`. Default: `dataset = ETOPO2022()`.
 """
@@ -177,7 +171,7 @@ function regrid_bathymetry(target_grid; dataset = ETOPO2022(), cache = true, kw.
 end
 
 """
-    regrid_topography(target_grid; dataset = ETOPO2022(), kw...)
+$(MethodSignatures(defaults = true))
 
 Land surface elevation (m, ≥ 0) regridded onto `target_grid` — the topographic
 counterpart of [`regrid_bathymetry`](@ref) for land applications. Returns the

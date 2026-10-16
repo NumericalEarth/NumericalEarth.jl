@@ -97,8 +97,7 @@ end
 #####
 
 """
-    build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
-                        maximum_search_radius = 5, spread_radius = 1.2, maximum_spread_cells = nothing)
+$(MethodSignatures(defaults = true))
 
 Map each mouth at `(outlet_λ, outlet_φ)` onto the active ocean cells of `target_grid`, returning a [`RiverRouting`](@ref) that deposits
 `outlet_weight[n] * value[outletₙ] / Aᵒᶜᵉᵃⁿ`. The weight is the freshwater density for a volumetric discharge (m³ s⁻¹), the source-cell
@@ -182,9 +181,7 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
 end
 
 """
-    build_flux_routing(target_grid, flux_time_series;
-                       maximum_search_radius = 5, spread_radius = 1.2,
-                       maximum_spread_cells = nothing)
+$(MethodSignatures(defaults = true))
 
 Route a component stored as a per-area mass flux (kg m⁻² s⁻¹) on coastal cells — the JRA55-do convention — onto `target_grid`. Mouths are
 the cells positive in any record of `flux_time_series`, weighted by their source-cell area. Remaining keyword arguments

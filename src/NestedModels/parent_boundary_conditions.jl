@@ -12,11 +12,7 @@
 # scalars where NormalFlowBC writes asymmetrically into the interior.
 
 """
-    parent_boundary_conditions(grid;
-                               variables,
-                               sides    = (:west, :east, :south, :north),
-                               schemes  = NamedTuple(),
-                               bc_types = NamedTuple())
+$(MethodSignatures(defaults = true))
 
 Build a `NamedTuple` of `FieldBoundaryConditions` driving the child's lateral
 boundaries directly from a parent's `FieldTimeSeries`.

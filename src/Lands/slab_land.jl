@@ -112,10 +112,7 @@ SlabLand{FT}(grid, clock, temperature, water_storage, saturation,
                  fluxes, diagnostics, energy, hydrology)
 
 """
-    SlabLand(grid;
-             energy    = SlabEnergy(eltype(grid)),
-             hydrology = BucketHydrology(eltype(grid)),
-             clock     = Clock{eltype(grid)}(time = 0))
+$(MethodSignatures(defaults = true))
 
 Construct a `SlabLand` with the chosen closures. The prognostic
 `temperature` and `water_storage` fields and the diagnostic
@@ -213,7 +210,7 @@ function Oceananigans.TimeSteppers.update_state!(land::SlabLand)
 end
 
 """
-    set!(land::SlabLand; T=nothing, M=nothing)
+$(MethodSignatures(defaults = true))
 
 Set the slab's prognostic skin temperature `T` and water storage `M` and refresh
 diagnostics in one call (so `saturation` is consistent with `M` afterward).

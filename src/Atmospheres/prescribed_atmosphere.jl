@@ -180,19 +180,7 @@ EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = no
 EarthSystemModels.adopt_clock(atmos::PrescribedAtmosphere, clock) = EarthSystemModels.reclock(atmos, clock)
 
 """
-    PrescribedAtmosphere(grid, times=[zero(grid)];
-                         source = nothing,
-                         clock = Clock{Float64}(time = 0),
-                         surface_layer_height = 10, # meters
-                         boundary_layer_height = 512, # meters
-                         thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
-                         velocities              = default_atmosphere_velocities(grid, times),
-                         temperature             = default_atmosphere_temperature(grid, times),
-                         specific_humidity       = default_atmosphere_specific_humidity(grid, times),
-                         microphysical_variables = default_atmosphere_microphysical_variables(grid, times),
-                         pressure                = default_atmosphere_pressure(grid, times),
-                         tracers                 = NamedTuple(),
-                         precipitation_flux      = default_precipitation_flux(grid, times))
+$(MethodSignatures(defaults = true))
 
 Return a prescribed, time-evolving atmospheric state with data on `grid` at `times`.
 
@@ -275,7 +263,7 @@ Oceananigans.restore_prognostic_state!(atmos::PrescribedAtmosphere, ::Nothing) =
 #####
 
 """
-    set!(atmosphere::PrescribedAtmosphere; u=nothing, v=nothing, T=nothing, q=nothing, p=nothing)
+$(MethodSignatures(defaults = true))
 
 Set the prescribed atmospheric velocities (`u`, `v`), air temperature (`T`),
 specific humidity (`q`), and surface pressure (`p`), then refresh

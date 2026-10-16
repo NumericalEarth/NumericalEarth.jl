@@ -2,6 +2,7 @@ module GloBFP3D
 
 export GlobalBuildingFootprints3D, building_morphometry
 
+using DocStringExtensions: MethodSignatures
 using Downloads: Downloads
 using Oceananigans: Center, Face
 using Oceananigans.Fields: Field, set!
@@ -288,8 +289,7 @@ function morphometry_latitude_bands(target_grid, region, Δ, maximum_raster_cell
 end
 
 """
-    building_morphometry(target_grid; dataset = GlobalBuildingFootprints3D(), region,
-                         maximum_raster_cells = 400_000_000)
+$(MethodSignatures(defaults = true))
 
 Per-cell building morphometry on `target_grid` (a `LatitudeLongitudeGrid`, coarser than the
 `dataset` rasterization resolution), aggregated from the fine 3D-GloBFP building-height raster

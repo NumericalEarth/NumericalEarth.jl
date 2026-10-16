@@ -2,6 +2,7 @@ module Bathymetry
 
 export regrid_bathymetry, regrid_topography, smooth_topography!, ORCAGrid
 
+using DocStringExtensions: MethodSignatures
 using Downloads: Downloads, download
 using ImageMorphology: ImageMorphology
 using KernelAbstractions: @kernel, @index

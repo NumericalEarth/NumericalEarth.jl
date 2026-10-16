@@ -3,15 +3,7 @@ using Oceananigans.OutputReaders
 using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
 
 """
-    ECCOPrescribedAtmosphere([architecture = CPU()];
-                              dataset = ECCO4Monthly(),
-                              start_date = first_date(dataset, :air_temperature),
-                              end_date = last_date(dataset, :air_temperature),
-                              dir = default_download_directory(dataset),
-                              time_indices_in_memory = 10,
-                              time_indexing = Cyclical(),
-                              surface_layer_height = 2,  # meters
-                              other_kw...)
+$(MethodSignatures(defaults = true))
 
 Return a [`PrescribedAtmosphere`](@ref) representing ECCO state estimate data.
 The atmospheric data will be held in `FieldTimeSeries` objects containing

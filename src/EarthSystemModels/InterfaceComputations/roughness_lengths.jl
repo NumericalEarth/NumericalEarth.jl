@@ -29,8 +29,7 @@ struct WindDependentWaveFormulation{FT}
 end
 
 """
-    WindDependentWaveFormulation(FT = Oceananigans.defaults.FloatType;
-                                 Umax = 19, ℂ₁ = 0.0017, ℂ₂ = -0.005)
+$(MethodSignatures(defaults = true))
 
 A gravity wave parameter based on the wind speed `ΔU` with the formula `ℂ₁ * max(ΔU, Umax) + ℂ₂`
 as shown in (Edson (2013)'s)[@cite Edson2013] equation (13) and surrounding text.
@@ -44,10 +43,7 @@ gravity_wave_parameter(α::Number, args...) = α
 gravity_wave_parameter(α::WindDependentWaveFormulation, ΔU) = max(zero(ΔU), α.ℂ₁ * min(ΔU, α.Umax) + α.ℂ₂)
 
 """
-    ScalarRoughnessLength(FT = Float64;
-                          air_kinematic_viscosity = temperature_dependent_viscosity,
-                          reynolds_number_scaling_function = empirical_scaling_function,
-                          maximum_roughness_length = 1.6e-4)
+$(MethodSignatures(defaults = true))
 
 Construct a `ScalarRoughnessLength` object that represents the scalar roughness length
 that regulates the exchange of heat and water vapor between the ocean and the atmosphere.
@@ -70,12 +66,7 @@ function ScalarRoughnessLength(FT=Oceananigans.defaults.FloatType;
 end
 
 """
-    MomentumRoughnessLength(FT = Float64;
-                            gravitational_acceleration = default_gravitational_acceleration,
-                            maximum_roughness_length = 1.0,
-                            air_kinematic_viscosity = 1.5e-5,
-                            wave_formulation = 0.011,
-                            smooth_wall_parameter = 0.11)
+$(MethodSignatures(defaults = true))
 
 Construct a `MomentumRoughnessLength` object that represents the momentum roughness length that
 regulates the exchange of momentum, heat, and water vapor between the ocean and the atmosphere.
@@ -123,11 +114,7 @@ struct TemperatureDependentAirViscosity{FT}
 end
 
 """
-    TemperatureDependentAirViscosity([FT = Oceananigans.defaults.FloatType;
-                                      ℂ₀ = 1.326e-5,
-                                      ℂ₁ = ℂ₀ * 6.542e-3,
-                                      ℂ₂ = ℂ₀ * 8.301e-6,
-                                      ℂ₃ = - ℂ₀ * 4.84e-9])
+$(MethodSignatures(defaults = true))
 
 Construct a `TemperatureDependentAirViscosity` object that calculates the kinematic
 viscosity of air as
@@ -184,7 +171,7 @@ struct ReynoldsScalingFunction{FT}
 end
 
 """
-    ReynoldsScalingFunction(FT = Oceananigans.defaults.FloatType; A = 5.85e-5, b = 0.72)
+$(MethodSignatures(defaults = true))
 
 Empirical fit of the scalar roughness length with roughness Reynolds number `R_★ = u_★ ℓu / ν`.
 

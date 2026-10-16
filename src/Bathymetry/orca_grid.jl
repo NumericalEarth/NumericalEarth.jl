@@ -365,17 +365,7 @@ function remove_minor_orca_basins(bottom_height, major_basins)
 end
 
 """
-    ORCAGrid(arch = CPU(), FT::DataType = Float64;
-             dataset,
-             halo = (4, 4, 4),
-             z = (-6000, 0),
-             Nz = 50,
-             radius = Oceananigans.defaults.planet_radius,
-             with_bathymetry = true,
-             active_cells_map = true,
-             major_basins = Inf,
-             south_rows_to_remove = default_south_rows_to_remove(dataset),
-             dir = default_download_directory(dataset))
+$(MethodSignatures(defaults = true))
 
 Construct an `OrthogonalSphericalShellGrid` using coordinate and metric data from a NEMO eORCA `mesh_mask` file.
 The topology follows the north fold of the mesh: `(Periodic, RightFaceFolded, Bounded)` for the F-pivot eORCA1,

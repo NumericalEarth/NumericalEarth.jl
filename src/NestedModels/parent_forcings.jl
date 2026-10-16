@@ -9,7 +9,7 @@
 # typical use is a sponge layer near the open boundaries.
 
 """
-    parent_forcings(; variables, rate, mask = 1)
+$(MethodSignatures(defaults = true))
 
 Build a `NamedTuple` of `Relaxation` forcings driving the child interior toward
 the parent's `FieldTimeSeries` values.
