@@ -314,7 +314,6 @@ consistent defaults for advection, closures, the equation of state, surface flux
 barotropic pressure–gradient forcing, boundary conditions, and optional biogeochemistry.
 It then wraps the model into an Oceananigans's `Simulation` with the specified timestepping options.
 
-
 ## Behavior and automatic configuration
 
 ### Coriolis
