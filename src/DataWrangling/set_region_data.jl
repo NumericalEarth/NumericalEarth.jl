@@ -22,7 +22,7 @@ function compute_bounding_indices(bounds::Tuple, hc)
     h₁, h₂ = bounds
     Nh = length(hc)
     ε  = eps(Float32) * max(one(eltype(hc)), abs(h₁), abs(h₂))
-    i₁ = max(searchsortedfirst(hc, h₁ - ε), 1)
+    i₁ = max(searchsortedfirst(hc, h₁ - ε),  1)
     i₂ = min( searchsortedlast(hc, h₂ + ε), Nh)
     return i₁, i₂
 end
@@ -41,11 +41,16 @@ end
 struct ShiftSouth end
 struct AverageNorthSouth end
 
-# `mangle(i, j, k, data, mangling)` reads file `data` at metadata-grid index `(i, j, k)`, accounting 
+# `mangle(i, j, k, data, mangling)` reads file `data` at metadata-grid index `(i, j, k)`, accounting
 # for staggered lat-axis offsets. Used inside the region-aware kernel.
-@inline mangle(i, j, k, data, ::Nothing) = @inbounds data[i, j, k]
-@inline mangle(i, j, k, data, ::ShiftSouth) = @inbounds data[i, max(j - 1, 1), k]
-@inline mangle(i, j, k, data, ::AverageNorthSouth) = @inbounds (data[i, j, k] + data[i, j + 1, k]) / 2
+#
+# Clamp indices to avoid out-of-bounds access
+@inline clamp_i(i, data) = clamp(i, 1, size(data, 1))
+@inline clamp_j(j, data) = clamp(j, 1, size(data, 2))
+@inline mangle(i, j, k, data, ::Nothing) = @inbounds data[clamp_i(i, data), clamp_j(j, data), k]
+@inline mangle(i, j, k, data, ::ShiftSouth) = @inbounds data[clamp_i(i, data), clamp_j(j - 1, data), k]
+@inline mangle(i, j, k, data, ::AverageNorthSouth) =
+    @inbounds (data[clamp_i(i, data), clamp_j(j, data), k] + data[clamp_i(i, data), clamp_j(j + 1, data), k]) / 2
 
 #####
 ##### Region-aware filling for Fields and FieldTimeSeries via a single kernel.
@@ -63,7 +68,7 @@ end
 """
     ColumnInfo{F, I}
 
-Resolved location of a `Column` extraction inside the file grid. Built once per `set_region_data!` call by 
+Resolved location of a `Column` extraction inside the file grid. Built once per `set_region_data!` call by
 `region_info(::Column, …)` and captured into `_set_region_kernel!` as a stack-friendly struct.
 
 - `i⁻`, `i⁺`: bracketing longitude indices (`i⁺` wraps to `1` across the periodic seam).
@@ -89,7 +94,7 @@ function region_info(::BoundingBox, target, λc, φc)
     λmin, λmax = compute_bounding_nodes(target.grid, LX, λnodes)
     φmin, φmax = compute_bounding_nodes(target.grid, LY, φnodes)
 
-    # Shift the target's longitude into the file's `[λc[1], λc[1]+360)` 
+    # Shift the target's longitude into the file's `[λc[1], λc[1]+360)`
     if !isempty(λc)
         λmin = convert_to_λ₀_λ₀_plus360(λmin, λc[1])
         λmax = convert_to_λ₀_λ₀_plus360(λmax, λc[1])
@@ -119,7 +124,7 @@ function infer_longitudinal_period(λc)
     return span ≈ 360 ? 360 : nothing
 end
 
-# Cyclic-aware bracketing. With `period`, the cell between `coords[end]` and `coords[1] + period` is the wrap cell: 
+# Cyclic-aware bracketing. With `period`, the cell between `coords[end]` and `coords[1] + period` is the wrap cell:
 # returns `(n, 1, w)` so the blend reads `data[n, …]` and `data[1, …]`.
 function bracket_with_weight(coords, x; period = nothing)
     n = length(coords)
@@ -154,63 +159,78 @@ end
 
 # `read_data(data, i, j, k, region, mangling, FT)` returns the file value at
 # the grid's (i, j, k) as `FT`, with `Missing` converted to NaN.
-@inline read_data(data, i, j, k, ::Nothing,     mangling, FT) = nan_convert_missing(FT, mangle(i, j, k, data, mangling))
-@inline read_data(data, i, j, k, b::BoundingBoxOffset, mangling, FT) = nan_convert_missing(FT, mangle(i + b.di, j + b.dj, k, data, mangling))
-@inline read_data(data, _, _, k, c::ColumnInfo, mangling, FT) = blend(c.ℑ, data, c, k, mangling, FT)
+@inline read_data(data, i, j, k, ::Nothing,     mangling, missing_val, FT) = nan_convert_missing(FT, mangle(i, j, k, data, mangling), missing_val)
+@inline read_data(data, i, j, k, b::BoundingBoxOffset, mangling, missing_val, FT) = nan_convert_missing(FT, mangle(i + b.di, j + b.dj, k, data, mangling), missing_val)
+@inline read_data(data, _, _, k, c::ColumnInfo, mangling, missing_val, FT) = blend(c.ℑ, data, c, k, mangling, missing_val, FT)
 
 # Land cells arrive as NaN through `nan_convert_missing`.
 # A naive bilinear average of four corners would propagate that NaN into the
 # interior, biasing every column whose stencil touches a coast. Instead we drop
-# any NaN corner and renormalise the weights over the surviving wet corners,
+# any NaN corner and renormalize the weights over the surviving wet corners,
 # returning NaN only when all four are land.
-@inline function blend(::Linear, data, c, k, mangling, FT)
-    d00 = nan_convert_missing(FT, mangle(c.i⁻, c.j⁻, k, data, mangling))
-    d10 = nan_convert_missing(FT, mangle(c.i⁺, c.j⁻, k, data, mangling))
-    d01 = nan_convert_missing(FT, mangle(c.i⁻, c.j⁺, k, data, mangling))
-    d11 = nan_convert_missing(FT, mangle(c.i⁺, c.j⁺, k, data, mangling))
+@inline function blend(::Linear, data, c, k, mangling, missing_val, FT)
+    d00 = nan_convert_missing(FT, mangle(c.i⁻, c.j⁻, k, data, mangling), missing_val)
+    d10 = nan_convert_missing(FT, mangle(c.i⁺, c.j⁻, k, data, mangling), missing_val)
+    d01 = nan_convert_missing(FT, mangle(c.i⁻, c.j⁺, k, data, mangling), missing_val)
+    d11 = nan_convert_missing(FT, mangle(c.i⁺, c.j⁺, k, data, mangling), missing_val)
     w00 = (1 - c.wx) * (1 - c.wy) * !isnan(d00)
     w10 =      c.wx  * (1 - c.wy) * !isnan(d10)
     w01 = (1 - c.wx) *      c.wy  * !isnan(d01)
     w11 =      c.wx  *      c.wy  * !isnan(d11)
     Σw  = w00 + w10 + w01 + w11
-    Σw == 0 && return convert(FT, NaN)
-    return (w00 * ifelse(isnan(d00), zero(FT), d00) +
-            w10 * ifelse(isnan(d10), zero(FT), d10) +
-            w01 * ifelse(isnan(d01), zero(FT), d01) +
-            w11 * ifelse(isnan(d11), zero(FT), d11)) / Σw
+    numerator = (w00 * ifelse(isnan(d00), zero(FT), d00) +
+                 w10 * ifelse(isnan(d10), zero(FT), d10) +
+                 w01 * ifelse(isnan(d01), zero(FT), d01) +
+                 w11 * ifelse(isnan(d11), zero(FT), d11))
+    denominator = ifelse(Σw == 0, one(FT), Σw)
+    return ifelse(Σw == 0, convert(FT, NaN), numerator / denominator)
 end
 
-@inline function blend(::Nearest, data, c, k, mangling, FT)
-    i = c.wx ≥ 0.5 ? c.i⁺ : c.i⁻
-    j = c.wy ≥ 0.5 ? c.j⁺ : c.j⁻
-    near = nan_convert_missing(FT, mangle(i, j, k, data, mangling))
+@inline function blend(::Nearest, data, c, k, mangling, missing_val, FT)
+    i = ifelse(c.wx ≥ 0.5, c.i⁺, c.i⁻)
+    j = ifelse(c.wy ≥ 0.5, c.j⁺, c.j⁻)
+    near = nan_convert_missing(FT, mangle(i, j, k, data, mangling), missing_val)
     # If the closest corner is land, fall back to the NaN-aware Linear blend.
-    return isnan(near) ? blend(Linear(), data, c, k, mangling, FT) : near
+    return ifelse(isnan(near), blend(Linear(), data, c, k, mangling, missing_val, FT), near)
 end
 
-@kernel function _set_region_kernel!(dst, data, region, mangling, conversion, FT)
+# Fallback dispatch that assumes missing_val = missing
+blend(scheme, data, c, k, mangling, FT) = blend(scheme, data, c, k, mangling, missing, FT)
+
+@kernel function _set_region_kernel!(dst, data, region, mangling, conversion, missing_val, FT)
     i, j, k = @index(Global, NTuple)
-    d = read_data(data, i, j, k, region, mangling, FT)
+    d = read_data(data, i, j, k, region, mangling, missing_val, FT)
     d = convert_units(d, conversion)
     @inbounds dst[i, j, k] = d
 end
 
+# TODO: upstream to Oceananigans.Architectures alongside its SubArray/OffsetArray methods.
+# `on_architecture` has no `Base.ReshapedArray` method, so host data arriving reshaped — e.g. a
+# 2-D NetCDF variable reshaped to (Nx, Ny, 1) — falls through the generic identity fallback and
+# reaches GPU kernels as CPU memory (kernel compilation failure).
+architecture_ready(arch, data) = on_architecture(arch, data)
+architecture_ready(arch, data::Base.ReshapedArray) =
+    reshape(on_architecture(arch, parent(data)), size(data))
+
 """
     set_region_data!(target, data, λc, φc, metadata)
 
-Fill the region of `target` (Field or FieldTimeSeries) implied by `metadata.region` from `data`, 
+Fill the region of `target` (Field or FieldTimeSeries) implied by `metadata.region` from `data`,
 applying mangling, NaN conversion, and unit conversion in a single GPU-friendly kernel pass.
 """
 function set_region_data!(target::Field, data, λc, φc, metadata;
                           mangling = mangling_for(metadata, size(data, 2)),
-                          conversion = conversion_units(metadata))
-                          
-    region = region_info(metadata.region, target, λc, φc)
-    FT     = eltype(target)
-    grid   = target.grid
-    arch   = architecture(grid)
-    data   = on_architecture(arch, data)
-    launch!(arch, grid, :xyz, _set_region_kernel!, interior(target), data, region, mangling, conversion, FT)
+                          conversion = conversion_units(metadata),
+                          region = region_info(metadata.region, target, λc, φc),
+                          parameters = :xyz)
+
+    FT          = eltype(target)
+    grid        = target.grid
+    arch        = architecture(grid)
+    data        = architecture_ready(arch, data)
+    missing_val = missing_value(metadata)
+    # With `parameters`, a windowed field is then filled over its own indices.
+    launch!(arch, grid, parameters, _set_region_kernel!, target, data, region, mangling, conversion, missing_val, FT)
     return nothing
 end
 
@@ -219,15 +239,16 @@ function set_region_data!(target::FieldTimeSeries, data, λc, φc, metadata;
                           conversion = conversion_units(metadata),
                           slot_indices = 1:size(target, 4))
 
-    region = region_info(metadata.region, target, λc, φc)
-    grid   = target.grid
-    arch   = architecture(grid)
-    FT     = eltype(target)
-    data   = on_architecture(arch, data)
+    region      = region_info(metadata.region, target, λc, φc)
+    grid        = target.grid
+    arch        = architecture(grid)
+    FT          = eltype(target)
+    data        = architecture_ready(arch, data)
+    missing_val = missing_value(metadata)
     for (data_time, slot_time) in zip(axes(data, 4), slot_indices)
         dest = view(interior(target), :, :, :, slot_time)
         slice = view(data, :, :, :, data_time)
-        launch!(arch, grid, :xyz, _set_region_kernel!, dest, slice, region, mangling, conversion, FT)
+        launch!(arch, grid, :xyz, _set_region_kernel!, dest, slice, region, mangling, conversion, missing_val, FT)
     end
     return nothing
 end

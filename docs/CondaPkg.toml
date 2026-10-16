@@ -1,6 +1,3 @@
 
-[deps.copernicusmarine]
-channel = "conda-forge"
-
 [deps.python]
 version = ">=3.10,<3.14"

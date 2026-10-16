@@ -12,7 +12,7 @@ end
     tolerance = convergence.tolerance
     hasnt_started = iteration == 0
     reached_maxiter = iteration ≥ maxiter
-    drift = abs(Ψⁿ.u★ - Ψ⁻.u★) + abs(Ψⁿ.θ★ - Ψ⁻.θ★) + abs(Ψⁿ.q★ - Ψ⁻.q★)
+    drift = abs(Ψⁿ.fluxes.u★ - Ψ⁻.fluxes.u★) + abs(Ψⁿ.fluxes.θ★ - Ψ⁻.fluxes.θ★) + abs(Ψⁿ.fluxes.q★ - Ψ⁻.fluxes.q★)
     converged = drift < tolerance
     return !(converged | reached_maxiter) | hasnt_started
 end
@@ -85,14 +85,18 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
                                        interior_properties)
 
     FT = eltype(approximate_interface_state)
-    ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
 
-    # Recompute the saturation specific humidity at the interface based on the new temperature
+    # Recompute the interface specific humidity from the just-updated temperature.
+    # Diagnostic formulations (`ImpureSaturationSpecificHumidity`, `BulkHumidity`)
+    # evaluate qₛ explicitly; `SkinHumidity` solves a vapor-flux balance for qₛ
+    # using the previous iterate's turbulent fluxes (analog of `SkinTemperature`).
     q_formulation = interface_properties.specific_humidity_formulation
-    Sₛ = approximate_interface_state.S
-    pᵃᵗ = atmosphere_state.p
     qᵃᵗ = atmosphere_state.q
-    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tₛ, Sₛ)
+    qₛ = compute_interface_humidity(q_formulation, Tₛ,
+                                    approximate_interface_state,
+                                    atmosphere_state,
+                                    interior_state,
+                                    atmosphere_properties)
 
     # Compute the specific humidity increment
     Δq = qᵃᵗ - qₛ
@@ -108,16 +112,10 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
                                           interface_properties,
                                           atmosphere_properties)
 
-    u = approximate_interface_state.u
-    v = approximate_interface_state.v
-    S = approximate_interface_state.S
+    fluxes = InterfaceFluxScales(convert(FT, u★), convert(FT, θ★), convert(FT, q★))
 
-    return InterfaceState(convert(FT, u★),
-                          convert(FT, θ★),
-                          convert(FT, q★), 
-                          convert(FT, u), 
-                          convert(FT, v), 
-                          convert(FT, Tₛ), 
-                          convert(FT, S), 
-                          convert(FT, qₛ))
+    return rebuild_interface_state(approximate_interface_state,
+                                   fluxes,
+                                   convert(FT, Tₛ),
+                                   convert(FT, qₛ))
 end

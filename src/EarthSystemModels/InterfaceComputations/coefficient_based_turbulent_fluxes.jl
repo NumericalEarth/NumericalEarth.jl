@@ -187,7 +187,7 @@ Keyword Arguments
 =================
 
 - `transfer_coefficients`: Transfer coefficients for momentum, heat, and moisture.
-  Can be a `SimilarityScales`, a `Tuple`, or a `NamedTuple` with constant or callable entries, 
+  Can be a `SimilarityScales`, a `Tuple`, or a `NamedTuple` with constant or callable entries,
   or an `LargeYeagerTransferCoefficients`. Defaults to `(1e-3, 1e-3, 1e-3)`.
 - `solver_stop_criteria`: Criteria for iterative solver convergence. If `nothing`,
                           creates new criteria using `solver_tolerance` and `solver_maxiter`.
@@ -219,7 +219,7 @@ function CoefficientBasedFluxes(FT = Oceananigans.defaults.FloatType;
                                 solver_maxiter = 20)
 
     transfer_coefficients = validate_coefficients(FT, transfer_coefficients)
-    
+
     if isnothing(solver_stop_criteria)
         solver_tolerance = convert(FT, solver_tolerance)
         solver_stop_criteria = ConvergenceStopCriteria(solver_tolerance, solver_maxiter)
@@ -236,10 +236,7 @@ function validate_coefficients(FT, nt::NamedTuple)
     missing = filter(k -> !haskey(nt, k), required)
 
     if !isempty(missing)
-        throw(ArgumentError(
-            "Transfer coefficients NamedTuple must contain keys $(required). " *
-            "Missing keys: $(missing). Received: $(keys(nt))"
-        ))
+        throw(ArgumentError("transfer coefficients must contain keys $(required), missing $(missing)"))
     end
 
     return convert_transfer_coefficients(FT, nt)
@@ -247,11 +244,7 @@ end
 
 function validate_coefficients(FT, tc::Tuple)
     if length(tc) != 3
-        throw(ArgumentError(
-            "Transfer coefficients must be a tuple of length 3: " *
-            "(momentum, temperature, water_vapor). " *
-            "Got length $(length(tc)) with value $(tc)."
-        ))
+        throw(ArgumentError("transfer coefficients must be a 3-tuple (momentum, temperature, water_vapor), got $(length(tc))"))
     end
 
     return convert_transfer_coefficients(FT, tc)
@@ -295,9 +288,9 @@ end
     g   = atmosphere_properties.gravitational_acceleration
 
     κ  = ly.von_karman_constant
-    u★ = approximate_interface_state.u★
-    θ★ = approximate_interface_state.θ★
-    q★ = approximate_interface_state.q★
+    u★ = approximate_interface_state.fluxes.u★
+    θ★ = approximate_interface_state.fluxes.θ★
+    q★ = approximate_interface_state.fluxes.q★
 
     neutral_drag = ly.neutral_drag_coefficient
     h₀   = ly.reference_height
@@ -327,10 +320,11 @@ end
     CqN = sqrt(CdN) / 1000 * ly.moisture_transfer_coefficient
 
     # Stability corrections (L&Y eq. 10a-10c)
-    ξₘ = sqrt(CdN) / κ * (log(Δh / h₀) - ψₘ)
+    χs = log(Δh / h₀)
+    ξₘ = sqrt(CdN) / κ * (χs - ψₘ)
     Cd = CdN / (1 + ξₘ)^2
 
-    ξₕ = sqrt(CdN) / κ * (log(Δh / h₀) - ψₕ)
+    ξₕ = (χs - ψₕ) / (κ * sqrt(CdN))
     ratio = sqrt(Cd) / sqrt(CdN)
 
     Ch = ChN * ratio / (1 + ChN * ξₕ)

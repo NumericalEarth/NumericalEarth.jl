@@ -88,13 +88,15 @@ function Base.show(io::IO, ocean::SlabOcean)
 end
 Base.eltype(::SlabOcean{FT}) where FT = FT
 
+Grids.grid(ocean::SlabOcean) = ocean.grid
+
 #####
 ##### EarthSystemModels interface
 #####
 
 EarthSystemModels.reference_density(ocean::SlabOcean) = ocean.density
 EarthSystemModels.heat_capacity(ocean::SlabOcean) = ocean.heat_capacity
-EarthSystemModels.exchange_grid(atmosphere, ocean::SlabOcean, sea_ice) = ocean.grid
+EarthSystemModels.exchange_grid(atmosphere, ocean::SlabOcean, sea_ice, land=nothing) = ocean.grid
 EarthSystemModels.temperature_units(::SlabOcean) = DegreesKelvin()
 EarthSystemModels.ocean_temperature(ocean::SlabOcean) = ocean.temperature
 EarthSystemModels.ocean_salinity(ocean::SlabOcean{FT}) where FT = ConstantField(convert(FT, 35))
@@ -118,15 +120,27 @@ function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::SlabOcean)
     Jˢ = CenterField(grid)
     τx = CenterField(grid)
     τy = CenterField(grid)
-    return (T=ocean.temperature_flux, S=Jˢ, u=τx, v=τy)
+    Jʷ = CenterField(grid)
+    Jᴴ = CenterField(grid)
+    return (T=ocean.temperature_flux, S=Jˢ, u=τx, v=τy, η=Jʷ, freshwater_heat_content=Jᴴ, u_coefficient=nothing, v_coefficient=nothing)
 end
 
 # No interpolation needed: the slab ocean IS on the exchange grid
 EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabOcean, coupled_model) = nothing
+EarthSystemModels.InterfaceComputations.biogeochemical_interface(exchanger, ocean::SlabOcean; kwargs...) = NamedTuple()
 
 # Assemble net ocean fluxes from interface computations
 EarthSystemModels.update_net_fluxes!(coupled_model, ocean::SlabOcean) =
     update_net_ocean_fluxes!(coupled_model, ocean, ocean.grid)
+
+# `FT` is not inferable from the fields, so rebuild explicitly to preserve it.
+function EarthSystemModels.adopt_clock(ocean::SlabOcean{FT}, clock) where FT
+    new_clock = EarthSystemModels.matching_clock(ocean.clock, clock)
+    isnothing(new_clock) && return ocean
+    EarthSystemModels.warn_clock_coercion(ocean, new_clock)
+    return SlabOcean{FT}(ocean.grid, new_clock, ocean.temperature,
+                         ocean.temperature_flux, ocean.depth, ocean.density, ocean.heat_capacity)
+end
 
 #####
 ##### Time stepping

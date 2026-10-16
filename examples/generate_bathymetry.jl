@@ -48,13 +48,13 @@ h_one_basin = regrid_bathymetry(grid; major_basins = 1)
 nothing #hide
 
 # Finally, we visualize the generated bathymetry data for the Mediterranean Sea using CairoMakie.
-land_smooth = interior(h_smooth) .>= 0
+land_smooth = interior(h_smooth) .≥ 0
 interior(h_smooth)[land_smooth] .= NaN
 
-land_rough = interior(h_rough) .>= 0
+land_rough = interior(h_rough) .≥ 0
 interior(h_rough)[land_rough] .= NaN
 
-land_one_basin = interior(h_one_basin) .>= 0
+land_one_basin = interior(h_one_basin) .≥ 0
 interior(h_one_basin)[land_one_basin] .= NaN
 
 fig = Figure(size=(850, 1150))

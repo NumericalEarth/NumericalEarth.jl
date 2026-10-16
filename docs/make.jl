@@ -1,10 +1,16 @@
 using NumericalEarth
+using Breeze
+using PythonCall, CondaPkg
+using SpeedyWeather, ConservativeRegridding
 using CUDA
 using Documenter
 using DocumenterCitations
 using Literate
+using TOML
 
-CUDA.versioninfo()
+if CUDA.functional()
+    CUDA.versioninfo()
+end
 
 ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
 
@@ -32,16 +38,21 @@ mkpath(OUTPUT_DIR)
 # on pushes to `main`/tags, or when the `build all examples` label is added to a PR.
 examples = [
     Example("Single-column ocean simulation", "single_column_os_papa_simulation", true),
+    Example("Coupled conservation on a z-star grid", "coupled_conservation", true),
     Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
-    Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
+    # Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
     Example("Global climate simulation", "global_climate_simulation", false),
-    # Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
+    Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
     Example("Breeze over four oceans", "breeze_over_four_oceans", false),
-    Example("ERA5 hourly data", "ERA5_hourly_data", true),
+    Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data", true),
+    Example("Breeze over slab land", "breeze_over_slab_land", true),
+    Example("Differentiable ERA5-forced slab land", "era5_forced_slab_land", false),
+    Example("ERA5 downscaling with Breeze", "breeze_downscaling_era5", true),
 ]
 
 # Developer examples from docs/src/developers/ directory
 developer_examples = [
+    Example("Implementing a new dataset", "implement_a_dataset", true),
     # Example("EarthSystemModel interface", "slab_ocean", false),
 ]
 
@@ -74,14 +85,87 @@ else
     end
 end
 
+modules = Module[]
+NumericalEarthBreezeExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt) : NumericalEarth.NumericalEarthBreezeExt
+NumericalEarthSpeedyWeatherExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthSpeedyWeatherExt) : NumericalEarth.NumericalEarthSpeedyWeatherExt
+NumericalEarthVerosExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthVerosExt) : NumericalEarth.NumericalEarthVerosExt
+
+for m in [NumericalEarth, NumericalEarthBreezeExt, NumericalEarthSpeedyWeatherExt, NumericalEarthVerosExt]
+    if !isnothing(m)
+        push!(modules, m)
+    end
+end
+
+
+#####
+##### Automatically generate files with docstrings for all modules
+#####
+
+function walk_submodules!(result, visited, mod::Module)
+    for name in sort(names(mod; all=true, imported=false))
+        isdefined(mod, name) || continue
+        value = getproperty(mod, name)
+        if value isa Module &&
+            parentmodule(value) === mod &&
+            !(value in visited) &&
+            value !== mod
+
+            push!(visited, value)
+            push!(result, value)
+            walk_submodules!(result, visited, value)
+        end
+    end
+end
+
+function get_submodules(mod::Module)
+    result = Module[]
+    visited = Set{Module}()
+
+    walk_submodules!(result, visited, mod)
+    return result
+end
+
+function write_api_md(filename; public)
+    modules = get_submodules(NumericalEarth)
+    append!(modules, [NumericalEarthBreezeExt, NumericalEarthSpeedyWeatherExt, NumericalEarthVerosExt])
+    io = IOBuffer()
+
+    title = public ? "Public API" : "Private API"
+    privacy_keyword = public ? "Private = false" : "Public = false"
+
+    println(io, "# ", title)
+    println(io)
+    println(io, "```@autodocs")
+    println(io, "Modules = [NumericalEarth]")
+    println(io, privacy_keyword)
+    println(io, "```")
+    println(io)
+
+    for mod in modules
+        println(io, "## ", chopprefix(string(mod), "NumericalEarth."))
+        println(io)
+        println(io, "```@autodocs")
+        println(io, "Modules = [", mod, "]")
+        println(io, privacy_keyword)
+        println(io, "```")
+        println(io)
+    end
+
+    # Remove multiple trailing whitespaces, but keep the final one.
+    write(joinpath(@__DIR__, "src", "library", filename), strip(String(take!(io))) * "\n")
+end
+
+write_api_md("public_api.md"; public = true)
+write_api_md("private_api.md"; public = false)
+
 #####
 ##### Build docs
 #####
 
-examples_pages = [ex.title => joinpath("literated", ex.basename * ".md") for ex in examples]
+examples_pages  = [ex.title => joinpath("literated", ex.basename * ".md") for ex in examples]
 developer_pages = [ex.title => joinpath("literated", ex.basename * ".md") for ex in developer_examples]
 
-format = Documenter.HTML(collapselevel = 2,
+format = Documenter.HTML(collapselevel = 3,
                          size_threshold = nothing,
                          canonical = "https://numericalearth.github.io/NumericalEarthDocumentation/stable/")
 
@@ -108,34 +192,38 @@ pages = [
 
     "Library" => [
         "Contents"       => "library/outline.md",
-        "Public"         => "library/public.md",
-        "Private"        => "library/internals.md",
+        "Public API"     => "library/public_api.md",
+        "Private API"    => "library/private_api.md",
         "Function index" => "library/function_index.md",
     ],
 
     "References" => "references.md",
 ]
 
-modules = Module[]
-NumericalEarthSpeedyWeatherExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthSpeedyWeatherExt) : NumericalEarth.NumericalEarthSpeedyWeatherExt
-NumericalEarthVerosExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthVerosExt) : NumericalEarth.NumericalEarthVerosExt
-NumericalEarthBreezeExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt) : nothing
-
-for m in [NumericalEarth, NumericalEarthSpeedyWeatherExt, NumericalEarthBreezeExt, NumericalEarthVerosExt]
-    if !isnothing(m)
-        push!(modules, m)
-    end
-end
-
 makedocs(; sitename = "NumericalEarth.jl",
-         format, pages, modules,
+         format,
+         pages,
+         modules,
          plugins = [bib],
          doctest = true,
+         draft = false,
          doctestfilters = [
              r"┌ Warning:.*",  # remove standard warning lines
              r"│ Use at own risk",
              r"└ @ .*",        # remove the source location of warnings
+             r"(?s)(└── dir:).*" => s"\1",
          ],
          clean = true,
          warnonly = [:cross_references, :missing_docs],
-         checkdocs = :exports)
+         checkdocs = :exports,
+         linkcheck = true,
+         linkcheck_timeout = 30, # some hosts (e.g. JMA JRA-55) are slow; the default 10s times out
+         linkcheck_ignore = [
+             r"^https://ecco\.jpl\.nasa\.gov/.*",
+             r"https://www\.ncei\.noaa\.gov/products/etopo-global-relief-model",
+             r"https://www\.ncei\.noaa\.gov/products/world-ocean-atlas",
+             r"https://www\.ncei\.noaa\.gov/data/sea-surface-temperature-optimum-interpolation/v2\.1/access/avhrr",
+             # Self-referential links to this repo's own test files on `main`:
+             # they 404 during a PR's CI (the files only land on `main` at merge).
+             r"https://github\.com/NumericalEarth/NumericalEarth\.jl/blob/main/test/",
+        ],)

@@ -1,4 +1,3 @@
-using Dates: Second
 using JLD2
 using Oceananigans: location, instantiated_location
 using Oceananigans.Architectures: AbstractArchitecture, on_architecture, architecture
@@ -192,7 +191,8 @@ function DatasetRestoring(metadata::Metadata,
                           time_indices_in_memory = default_time_indices_in_memory(metadata),
                           time_indexing = Cyclical(),
                           inpainting = NearestNeighborInpainting(Inf),
-                          cache_inpainted_data = true)
+                          cache_inpainted_data = true,
+						  field_name = oceananigans_fieldnames[metadata.name])
 
     Downloads.download(metadata)
 
@@ -204,10 +204,6 @@ function DatasetRestoring(metadata::Metadata,
 
     arch = architecture(fts)
     mask = on_architecture(arch, mask)
-
-    # Grab the correct Oceananigans field to restore
-    variable_name = metadata.name
-    field_name = oceananigans_fieldnames[variable_name]
 
     # If we pass the grid we do not need to interpolate
     # so we can save parameter space by setting the native grid to nothing
@@ -241,11 +237,12 @@ tendency into a 2D surface flux boundary condition.
 When used as a boundary condition (via `getbc`), the wrapped `DatasetRestoring`
 is evaluated at the top cell (`k = Nz`) and the resulting tendency `G` is
 converted to a surface flux as `-G * Δz`, consistent with the Oceananigans
-top-flux sign convention (tendency contribution = `-J / Δz`).
+top-flux sign convention (tendency contribution = `- J / Δz`).
 
 This is intended for use with the `additional_surface_fluxes` keyword argument of
-[`ocean_simulation`](@ref), allowing a `DatasetRestoring` to contribute an
-additional flux at the surface without overwriting the coupled exchange fluxes.
+[`ocean_simulation`](@ref NumericalEarth.Oceans.ocean_simulation), allowing a
+`DatasetRestoring` to contribute an additional flux at the surface without
+overwriting the coupled exchange fluxes.
 
 Example
 =======
@@ -258,8 +255,8 @@ ocean = ocean_simulation(grid;
     additional_surface_fluxes = (; S = SurfaceFluxRestoring(restoring)))
 ```
 """
-struct SurfaceFluxRestoring <: Function
-    dataset_restoring :: DatasetRestoring
+struct SurfaceFluxRestoring{D} <: Function
+    dataset_restoring :: D
 end
 
 Adapt.adapt_structure(to, sf::SurfaceFluxRestoring) = SurfaceFluxRestoring(Adapt.adapt(to, sf.dataset_restoring))
@@ -272,6 +269,73 @@ function BoundaryConditions.getbc(sf::SurfaceFluxRestoring, i, j, grid, clock, f
     Δz = Δzᶜᶜᶜ(i, j, Nz, grid)
     return - G * Δz
 end
+
+"""
+$(TYPEDSIGNATURES)
+
+Wrap a surface flux and store a corrected flux whose area-weighted mean over wet cells is zero.
+"""
+struct ConservativeSurfaceFluxRestoring{R, F, M} <: Function
+    flux :: R
+    corrected_flux :: F
+    mean_flux :: M
+end
+
+function ConservativeSurfaceFluxRestoring(flux, grid)
+    corrected_flux = Field{Center, Center, Nothing}(grid)
+    mean_flux = Field(Average(corrected_flux, dims=(1, 2)))
+    return ConservativeSurfaceFluxRestoring(flux, corrected_flux, mean_flux)
+end
+
+Adapt.adapt_structure(to, restoring::ConservativeSurfaceFluxRestoring) =
+    ConservativeSurfaceFluxRestoring(Adapt.adapt(to, restoring.flux),
+                                     Adapt.adapt(to, restoring.corrected_flux),
+                                     nothing)
+
+@inline BoundaryConditions.getbc(restoring::ConservativeSurfaceFluxRestoring,
+                                 i, j, grid, clock, fields) =
+    @inbounds restoring.corrected_flux[i, j, 1]
+
+@kernel function _materialize_surface_flux!(buffer, flux, grid, clock, fields)
+    i, j = @index(Global, NTuple)
+    @inbounds buffer[i, j, 1] = BoundaryConditions.getbc(flux, i, j, grid, clock, fields)
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Evaluate `restoring.flux` from the current model state and subtract its area-weighted mean over wet cells.
+"""
+function update_restoring_flux!(restoring::ConservativeSurfaceFluxRestoring, model)
+    grid = model.grid
+    fields = merge(model.velocities, model.tracers)
+
+    launch!(architecture(grid), grid, :xy, _materialize_surface_flux!,
+            restoring.corrected_flux, restoring.flux, grid, model.clock, fields)
+
+    compute!(restoring.mean_flux)
+    interior(restoring.corrected_flux) .-= interior(restoring.mean_flux)
+    return nothing
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Refresh a conservative surface flux restoring from `model` whenever the callback runs.
+The restoring is also initialized at the beginning of `run!`.
+"""
+struct ConservativeSurfaceFluxRestoringCallback{R, M}
+    restoring :: R
+    model :: M
+end
+
+(callback::ConservativeSurfaceFluxRestoringCallback)(simulation) =
+    update_restoring_flux!(callback.restoring, callback.model)
+
+Oceananigans.initialize!(callback::ConservativeSurfaceFluxRestoringCallback, simulation) = callback(simulation)
+
+# The flux is rebuilt from the model on every call, so there is nothing to checkpoint
+Oceananigans.prognostic_state(::ConservativeSurfaceFluxRestoringCallback) = nothing
 
 #####
 ##### Masks for restoring
