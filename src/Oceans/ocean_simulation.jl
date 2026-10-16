@@ -1,6 +1,7 @@
 using DocStringExtensions: TYPEDSIGNATURES
 using Oceananigans.Architectures: architecture
 using Oceananigans.Biogeochemistry: required_biogeochemical_tracers
+using Oceananigans.BuoyancyFormulations: LinearEquationOfState
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition
 using Oceananigans.DistributedComputations: DistributedGrid, all_reduce
 using Oceananigans.Grids: inactive_node, topology
@@ -10,7 +11,6 @@ using Oceananigans.TimeSteppers: VerticallyImplicitTimeDiscretization, AdaptiveV
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
                                                                      CATKEEquation
-using Oceananigans.BuoyancyFormulations: LinearEquationOfState
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 using Statistics: mean
 
