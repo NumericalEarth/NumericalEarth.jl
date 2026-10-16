@@ -7,7 +7,7 @@ using Oceananigans.Fields: Center
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
 
-using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path
+using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path, retrieve_window
 
 import ..DataWrangling:
     all_dates,
@@ -131,6 +131,15 @@ end
 
 DataWrangling.inpainted_metadata_filename(metadata::GLORYSMetadatum) =
     string(metadata_prefix(metadata.dataset, metadata.name, metadata.dates, metadata.region), "_inpainted.jld2")
+
+# Ice-free ocean and land are both missing in the sea-ice variables, and both read as zero ice.
+function DataWrangling.retrieve_data(metadata::GLORYSMetadatum)
+    data, _, _ = retrieve_window(metadata, :, :)
+    if metadata.name ∈ (:sea_ice_thickness, :sea_ice_concentration)
+        data = coalesce.(data, zero(eltype(metadata)))
+    end
+    return is_three_dimensional(metadata) ? data : dropdims(data, dims=3)
+end
 
 const GLORYS_surface_variables = (:free_surface, :sea_ice_thickness, :sea_ice_concentration,
                                    :sea_ice_u_velocity, :sea_ice_v_velocity)
