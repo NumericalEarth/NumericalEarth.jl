@@ -5,6 +5,7 @@ using DocStringExtensions: TYPEDSIGNATURES, SIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: architecture
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, Field, Face, Center, FractionalIndices
 using Oceananigans.Grids: Flat, Periodic, halo_size, topology, _node
 using Oceananigans.Simulations: Simulation

@@ -1,5 +1,4 @@
 using Oceananigans.Architectures: architecture
-using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: update_field_time_series!, FieldTimeSeries
 using Oceananigans.TimeSteppers: Clock, tick!
 using Oceananigans.Units: Time
@@ -157,22 +156,13 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::Presc
     u = CenterField(grid)
     v = CenterField(grid)
 
-    state = (; u, v, T, S)
-    copy_prescribed_state!(state, ocean, 1) # initialize from the first time snapshot
+    # Initialize from the first time snapshot
+    interior(T) .= interior(ocean.sea_surface_temperature)[:, :, :, 1]
+    interior(S) .= interior(ocean.sea_surface_salinity)[:, :, :, 1]
+    interior(u) .= interior(ocean.velocities.u)[:, :, :, 1]
+    interior(v) .= interior(ocean.velocities.v)[:, :, :, 1]
 
-    return ComponentExchanger(state, nothing)
-end
-
-# The interface flux kernels run over the halo columns too (`interface_kernel_parameters` spans
-# 0:N+1), and the atmosphere's face-centered momentum fluxes average them into the first interior
-# face, so the halos must hold the ocean state rather than their zero initial value (#754).
-function copy_prescribed_state!(state, ocean::PrescribedOcean, n)
-    interior(state.T) .= interior(ocean.sea_surface_temperature)[:, :, :, n]
-    interior(state.S) .= interior(ocean.sea_surface_salinity)[:, :, :, n]
-    interior(state.u) .= interior(ocean.velocities.u)[:, :, :, n]
-    interior(state.v) .= interior(ocean.velocities.v)[:, :, :, n]
-    fill_halo_regions!((state.T, state.S, state.u, state.v))
-    return nothing
+    return ComponentExchanger((; u, v, T, S), nothing)
 end
 
 EarthSystemModels.InterfaceComputations.net_fluxes(ocean::PrescribedOcean) = nothing
@@ -182,7 +172,11 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::Prescribed
     # Copy from FieldTimeSeries to exchanger snapshot fields.
     # For single-time data (constant), time index 1 is always correct.
     # TODO: proper temporal interpolation for multi-time prescribed data.
-    copy_prescribed_state!(exchanger.state, ocean, 1)
+    n = 1
+    interior(exchanger.state.T) .= interior(ocean.sea_surface_temperature)[:, :, :, n]
+    interior(exchanger.state.S) .= interior(ocean.sea_surface_salinity)[:, :, :, n]
+    interior(exchanger.state.u) .= interior(ocean.velocities.u)[:, :, :, n]
+    interior(exchanger.state.v) .= interior(ocean.velocities.v)[:, :, :, n]
     return nothing
 end
 
