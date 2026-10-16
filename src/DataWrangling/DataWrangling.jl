@@ -17,9 +17,10 @@ export update_restoring_flux!, ConservativeSurfaceFluxRestoringCallback
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
 export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
+export CDSAPIClient, CopernicusClimateDataStoreClient
 
 using Adapt: Adapt
-using DocStringExtensions: TYPEDSIGNATURES
+using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
 using Downloads: Downloads
 using LibCURL: LibCURL
 using JLD2: JLD2, jldopen
@@ -325,6 +326,7 @@ include("inpainting.jl")
 include("restoring.jl")
 include("earthdata.jl")
 include("figshare.jl")
+include("cds_clients.jl")
 
 function metadata_time_step end
 function metadata_epoch end

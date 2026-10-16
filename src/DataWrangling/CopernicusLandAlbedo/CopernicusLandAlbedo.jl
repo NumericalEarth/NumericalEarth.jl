@@ -10,7 +10,8 @@ using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
-                       metadata_path, default_download_directory, native_convention_longitude, unzip
+                       metadata_path, default_download_directory, native_convention_longitude, unzip,
+                       default_cds_client, cds_retrieve, retrieve_with_retries
 
 # TODO: move `group_by_calendar_month` and `is_zip` (product-agnostic download helpers) from
 # ERA5 into DataWrangling proper, so dataset modules don't reach across siblings.
@@ -626,5 +627,17 @@ function download_ten_day_albedo!(retrieve, metadata::CopernicusAlbedoDatasetMet
     return metadata_path(metadata)
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Download the ten-day albedo for every date of `metadata` from the Copernicus Climate Data Store
+with `client` (default: `default_cds_client()`), or with `retrieve(product, request, path)` when given.
+"""
+function Downloads.download(metadata::CopernicusAlbedoDatasetMetadata;
+                            client = default_cds_client(), retrieve = cds_retrieve(client), kwargs...)
+    return download_ten_day_albedo!(metadata; kwargs...) do request, path
+        retrieve_with_retries(ALBEDO_CDS_PRODUCT, request, path; retrieve)
+    end
+end
 
 end # module CopernicusLandAlbedo
