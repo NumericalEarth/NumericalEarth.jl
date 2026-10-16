@@ -610,7 +610,7 @@ Grids.grid(ocean::OceananigansModelSimulations) = ocean.model.grid
 #####
 
 EarthSystemModels.reference_density(eos::TEOS10EquationOfState) = eos.reference_density
-EarthSystemModels.reference_density(eos::LinearEquationOfState) = 1026.0
+EarthSystemModels.reference_density(eos::LinearEquationOfState{FT}) where FT = FT(1026)
 EarthSystemModels.reference_density(buoyancy_formulation::SeawaterBuoyancy) = EarthSystemModels.reference_density(buoyancy_formulation.equation_of_state)
 EarthSystemModels.reference_density(ocean::OceananigansModelSimulations) = EarthSystemModels.reference_density(ocean.model.buoyancy.formulation)
 
