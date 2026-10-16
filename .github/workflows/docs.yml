@@ -88,6 +88,7 @@ jobs:
       JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
       # CondaPkg resolves against every environment on the load path, and the depot of this runner is shared.
       JULIA_LOAD_PATH: "@:@stdlib"
+      TMPDIR: ${{ runner.temp }}
     steps:
       - uses: actions/checkout@v6
         with:
