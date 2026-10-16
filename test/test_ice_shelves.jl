@@ -8,7 +8,7 @@ using NumericalEarth: IceShelfOceanInterface,
                       ice_shelf_tracer_forcing
 
 using NumericalEarth.IceShelves: ice_shelf_friction_velocity, ice_shelf_liquidus, ice_ocean_interface_heat_flux,
-                                 melting_temperature_salinity_derivative
+                                 melting_temperature_salinity_derivative, U²ᶜᶜᶜ
 
 using NumericalEarth.EarthSystemModels: ThreeEquationHeatFlux
 
@@ -106,7 +106,7 @@ end
 
 @testset "VelocityBasedFrictionVelocity" begin
     # Constant friction velocity passes through untouched
-    @test ice_shelf_friction_velocity(0.01, 1, 1, 1, nothing, nothing, nothing, nothing) == 0.01
+    @test ice_shelf_friction_velocity(0.01, 1, 1, 1, nothing, nothing, nothing) == 0.01
 
     fv = VelocityBasedFrictionVelocity()
     @test fv.drag_coefficient == 0.0015
@@ -123,16 +123,18 @@ end
     # Uniform velocities: interpolation and boundary-layer averaging are both
     # exact for a uniform field, u★ = √(Cd (u² + v²))
     H_TBL = 1.0
-    u★ = ice_shelf_friction_velocity(fv, 2, 2, 2, grid, u, v, H_TBL)
+    U² = KernelFunctionOperation{Center, Center, Center}(U²ᶜᶜᶜ, grid, u, v)
+    u★ = ice_shelf_friction_velocity(fv, 2, 2, 2, grid, U², H_TBL)
     @test u★ ≈ sqrt(0.0015 * (0.1^2 + 0.2^2))
 
     # Tidal RMS velocity keeps u★ from vanishing at rest (ISOMIP+, Eq. 27)
     fv_tidal = VelocityBasedFrictionVelocity(drag_coefficient = 2.5e-3, tidal_velocity = 0.01)
     u₀ = XFaceField(grid)
     v₀ = YFaceField(grid)
-    u★₀ = ice_shelf_friction_velocity(fv_tidal, 2, 2, 2, grid, u₀, v₀, H_TBL)
+    U²₀ = KernelFunctionOperation{Center, Center, Center}(U²ᶜᶜᶜ, grid, u₀, v₀)
+    u★₀ = ice_shelf_friction_velocity(fv_tidal, 2, 2, 2, grid, U²₀, H_TBL)
     @test u★₀ ≈ sqrt(2.5e-3) * 0.01
-    u★₁ = ice_shelf_friction_velocity(fv_tidal, 2, 2, 2, grid, u, v, H_TBL)
+    u★₁ = ice_shelf_friction_velocity(fv_tidal, 2, 2, 2, grid, U², H_TBL)
     @test u★₁ ≈ sqrt(2.5e-3 * (0.1^2 + 0.2^2 + 0.01^2))
 end
 

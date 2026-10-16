@@ -42,8 +42,7 @@ ice shelf melt/heat/salt fluxes computed by [`compute_ice_shelf_fluxes!`](@ref)
 as an explicit tracer tendency (Losch, 2008). The tendency is spread, weighted by
 cell thickness, across the same boundary layer (thickness
 `interface.properties.boundary_layer_thickness`) that the ocean state is averaged
-over (see [`boundary_layer_average`](@ref)), rather than concentrated in the topmost
-active cell. This avoids an amplified tendency in thin `PartialCellBottomAndTop` cells and
+over, rather than concentrated in the topmost active cell. This avoids an amplified tendency in thin `PartialCellBottomAndTop` cells and
 a mismatch between the sensing and forcing layers in shallow water columns. Merge into a model's own `forcing`
 `NamedTuple` before passing to the model constructor:
 

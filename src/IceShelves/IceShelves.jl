@@ -8,6 +8,7 @@ export IceShelfOceanInterface,
        ice_shelf_tracer_forcing
 
 using Oceananigans: Oceananigans
+using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions
 using Oceananigans.BuoyancyFormulations: BuoyancyForce, SeawaterBuoyancy
@@ -27,7 +28,8 @@ using ..EarthSystemModels.InterfaceComputations: ThreeEquationHeatFlux, compute_
 import ..EarthSystemModels.InterfaceComputations: ice_ocean_interface_heat_flux
 using ..Oceans: bottom_drag_bc,
                 u_immersed_drag_coefficient, v_immersed_drag_coefficient,
-                u_immersed_bottom_drag, v_immersed_bottom_drag
+                u_immersed_bottom_drag, v_immersed_bottom_drag,
+                surface_layer_average
 
 include("teos10_liquidus.jl")
 include("ice_shelf_ocean_interface.jl")

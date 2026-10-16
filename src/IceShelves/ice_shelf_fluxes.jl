@@ -12,9 +12,8 @@ interface, storing them in `interface.fluxes` (and the interface temperature,
 salinity, and friction velocity in the corresponding `interface` fields).
 
 `ocean` may be a `Simulation` or the ocean model itself. For each cavity
-column the three-equation system is solved with the ocean state
-boundary-layer-averaged over a fixed physical thickness beneath the topmost
-wet cell `k_draft(i, j)` (see [`boundary_layer_average`](@ref)), using the
+column the three-equation system is solved with the ocean state averaged over
+the top `boundary_layer_thickness` meters of the wet column, using the
 liquidus evaluated at the depth of the ice base (the top face of that cell),
 see [`ice_ocean_interface_heat_flux`](@ref).
 
@@ -34,19 +33,20 @@ function compute_ice_shelf_fluxes!(interface::IceShelfOceanInterface, model)
     Sᵒᶜ = model.tracers.S
     uᵒᶜ = model.velocities.u
     vᵒᶜ = model.velocities.v
+    U²  = KernelFunctionOperation{Center, Center, Center}(U²ᶜᶜᶜ, grid, uᵒᶜ, vᵒᶜ)
 
     launch!(arch, grid, :xy, _compute_ice_shelf_fluxes!,
             interface.fluxes, interface.temperature, interface.salinity,
             interface.friction_velocity, interface.k_draft, interface.ice_concentration, grid,
             interface.flux_formulation, ice_shelf_liquidus(interface, model),
-            Tᵒᶜ, Sᵒᶜ, uᵒᶜ, vᵒᶜ, interface.properties)
+            Tᵒᶜ, Sᵒᶜ, U², interface.properties)
 
     return nothing
 end
 
 @kernel function _compute_ice_shelf_fluxes!(fluxes, T★, S★, u★_field, k_draft, ℵ, grid,
                                             flux_formulation, liquidus,
-                                            Tᵒᶜ, Sᵒᶜ, uᵒᶜ, vᵒᶜ, properties)
+                                            Tᵒᶜ, Sᵒᶜ, U², properties)
     i, j = @index(Global, NTuple)
 
     FT = eltype(grid)
@@ -65,15 +65,15 @@ end
         zᵈ = znode(i, j, kd + 1, grid, Center(), Center(), Face())
 
         H_TBL = properties.boundary_layer_thickness
-        Tᵈ = boundary_layer_average(i, j, kd, grid, H_TBL, k -> @inbounds(Tᵒᶜ[i, j, k]))
-        Sᵈ = boundary_layer_average(i, j, kd, grid, H_TBL, k -> @inbounds(Sᵒᶜ[i, j, k]))
+        Tᵈ = surface_layer_average(i, j, kd, grid, Center(), Center(), Tᵒᶜ, H_TBL)
+        Sᵈ = surface_layer_average(i, j, kd, grid, Center(), Center(), Sᵒᶜ, H_TBL)
 
         ρᵒᶜ = properties.reference_density
         cᵒᶜ = properties.heat_capacity
         ℰ   = properties.latent_heat
         Sˢⁱ = properties.ice_salinity
 
-        u★ = ice_shelf_friction_velocity(flux_formulation.friction_velocity, i, j, kd, grid, uᵒᶜ, vᵒᶜ, H_TBL)
+        u★ = ice_shelf_friction_velocity(flux_formulation.friction_velocity, i, j, kd, grid, U², H_TBL)
 
         ocean_state = (; T = Tᵈ, S = Sᵈ)
         ice_state = (; S = Sˢⁱ, h = zero(FT), hc = zero(FT), ℵ = @inbounds(ℵ[i, j, 1]), T = zero(FT))
