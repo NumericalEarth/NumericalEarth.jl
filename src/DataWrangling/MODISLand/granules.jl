@@ -81,6 +81,34 @@ function lattice_cells(dataset, name, region)
            native_cell_range(region.latitude, DataWrangling.latitude_interfaces(dataset), Ny)
 end
 
+"""
+    write_lattice_file(filepath, lattice, layers)
+
+Write the `name => array` pairs of `layers` to the NetCDF file `filepath`, on the cell centers
+of the [`regional_lattice`](@ref) `lattice`, latitude ascending.
+"""
+function write_lattice_file(filepath, lattice, layers)
+    Δλ = (lattice.east - lattice.west) / lattice.Nx
+    Δφ = (lattice.north - lattice.south) / lattice.Ny
+    longitude = collect(range(lattice.west + Δλ / 2; step = Δλ, length = lattice.Nx))
+    latitude  = collect(range(lattice.south + Δφ / 2; step = Δφ, length = lattice.Ny))
+
+    write_atomically(filepath) do staging_path
+        NCDataset(staging_path, "c") do ds
+            defDim(ds, "lon", lattice.Nx)
+            defDim(ds, "lat", lattice.Ny)
+            defVar(ds, "lon", longitude, ("lon",);
+                   attrib = ["units" => "degrees_east", "long_name" => "longitude"])
+            defVar(ds, "lat", latitude, ("lat",);
+                   attrib = ["units" => "degrees_north", "long_name" => "latitude"])
+            for (name, data) in layers
+                defVar(ds, String(name), data, ("lon", "lat"); deflatelevel = 2, shuffle = true)
+            end
+        end
+    end
+    return filepath
+end
+
 #####
 ##### Granule discovery
 #####
@@ -139,7 +167,7 @@ modis_granules_to_netcdf(metadatum, nc_path) =
 
 function DataWrangling.retrieve_data(metadatum::MODISLAIMetadatum)
     variable = DataWrangling.dataset_variable_name(metadatum)
-    mask = screened_flags(metadatum.dataset)
+    mask = metadatum.dataset.screened_flags
 
     # The land-cover code describes the surface, not a retrieval, so the retrieval screen does
     # not apply to it: a cloudy urban pixel is still urban.

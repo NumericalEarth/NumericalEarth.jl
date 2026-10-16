@@ -207,6 +207,15 @@ function regrid_from_metadata!(target, metadata;
     if isnothing(native)
         source = Field(metadata, architecture(target.grid); inpainting, halo, kw...)
         validate_vertical_extent(target.grid, source.grid, metadata)
+
+        # A copy has no stencil to spread missing cells through.
+        if same_grid(target.grid, source.grid) && location(target) === location(source) &&
+           target.indices == source.indices
+            interior(target) .= interior(source)
+            fill_halo_regions!(target)
+            return target
+        end
+
         return interpolate_physical!(target, source, metadata)
     end
 

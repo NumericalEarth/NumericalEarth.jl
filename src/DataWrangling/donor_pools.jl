@@ -46,10 +46,9 @@ function BlockDonorTable(𝒜, class_index, Nclasses;
 
     Nx, Ny, Nt = size(𝒜)
     Nbx, Nby = cld(Nx, block_size), cld(Ny, block_size)
-    Nc = max(Nclasses, 1)
 
-    sums = zeros(Float64, Nbx + 1, Nby + 1, Nc, Nt)
-    counts = zeros(Int, Nbx + 1, Nby + 1, Nc, Nt)
+    sums = zeros(Float64, Nbx + 1, Nby + 1, Nclasses, Nt)
+    counts = zeros(Int, Nbx + 1, Nby + 1, Nclasses, Nt)
 
     for t in 1:Nt, j in 1:Ny, i in 1:Nx
         c = class_index[i, j]
@@ -64,7 +63,7 @@ function BlockDonorTable(𝒜, class_index, Nclasses;
     end
 
     # In-place 2-D prefix sums over the block indices, per class and period.
-    for t in 1:Nt, c in 1:Nc, bj in 2:(Nby + 1), bi in 2:(Nbx + 1)
+    for t in 1:Nt, c in 1:Nclasses, bj in 2:(Nby + 1), bi in 2:(Nbx + 1)
         sums[bi, bj, c, t] += sums[bi - 1, bj, c, t] + sums[bi, bj - 1, c, t] -
                               sums[bi - 1, bj - 1, c, t]
         counts[bi, bj, c, t] += counts[bi - 1, bj, c, t] + counts[bi, bj - 1, c, t] -
@@ -179,10 +178,10 @@ function AnchorDonorPool(anchor, anchor_periods, Nt, spatial)
     if isnothing(anchor_periods)
         mod(Nt, Na) == 0 ||
             throw(ArgumentError("The series has $Nt times and the anchor $Na periods; pass `anchor_periods`."))
+        return AnchorDonorPool(𝒜̄, [mod1(t, Na) for t in 1:Nt])
     end
 
-    periods = isnothing(anchor_periods) ? [mod1(t, Na) for t in 1:Nt] : collect(anchor_periods)
-
+    periods = collect(anchor_periods)
     length(periods) == Nt ||
         throw(ArgumentError("anchor_periods must give one anchor period per time of the series ($Nt); got $(length(periods))."))
     all(p -> 1 ≤ p ≤ Na, periods) ||

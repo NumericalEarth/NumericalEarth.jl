@@ -18,7 +18,7 @@ export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, 
 export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
 export fill_gaps!, fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial
-export class_fraction, class_fractions
+export class_fractions
 
 using Adapt: Adapt
 using DocStringExtensions: TYPEDSIGNATURES
@@ -213,12 +213,7 @@ function download_with_retries(url, path; attempts = 3, description = "Download"
 
     for attempt in 1:attempts
         try
-            # Same filesystem as the destination, so the rename is atomic rather than a copy.
-            mktemp(dir) do partial_path, partial_io
-                close(partial_io)
-                Downloads.download(url, partial_path; kw...)
-                mv(partial_path, path; force=true)
-            end
+            write_atomically(partial_path -> Downloads.download(url, partial_path; kw...), path)
             return path
         catch error
             attempt == attempts && rethrow()

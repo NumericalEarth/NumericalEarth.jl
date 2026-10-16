@@ -18,7 +18,7 @@ end
     build_lai_climatology!(dataset::MODISLAIClimatology;
                            name = :leaf_area_index,
                            region,
-                           periods = 1:periods_per_year(dataset),
+                           periods = eachindex(all_dates(dataset, name)),
                            dir = default_download_directory(dataset))
 
 Build the cached per-period files behind a [`MODISLAIClimatology`](@ref) over `region`. For
@@ -33,19 +33,20 @@ A date the archive holds no composite for is skipped with a warning.
 function build_lai_climatology!(dataset::MODISLAIClimatology;
                                 name = :leaf_area_index,
                                 region,
-                                periods = 1:periods_per_year(dataset),
+                                periods = eachindex(DataWrangling.all_dates(dataset, name)),
                                 dir = default_download_directory(dataset))
 
     haskey(MODISLAI_variable_names, name) ||
         throw(ArgumentError("$name cannot be composited; the variables that can are $(keys(MODISLAI_variable_names))."))
 
-    source = source_dataset(dataset)
+    source = dataset.dataset
     period_days = composite_period_days(dataset)
     source_dates = DataWrangling.all_dates(source, name)
+    stamps = DataWrangling.all_dates(dataset, name)
     paths = String[]
 
     for period in periods
-        stamp = climatology_year_start() + Day((period - 1) * period_days)
+        stamp = stamps[period]
         filepath = joinpath(dir, DataWrangling.metadata_filename(dataset, name, stamp, region))
         push!(paths, filepath)
         isfile(filepath) && continue
@@ -92,7 +93,6 @@ end
 
 function write_lai_composite(filepath, metadata, reducer)
     variable = DataWrangling.dataset_variable_name(first(metadata))
-    λ, φ = DataWrangling.read_file_coords(first(metadata))
     samples = stack(DataWrangling.retrieve_data(metadatum) for metadatum in metadata)
 
     Nx, Ny = size(samples, 1), size(samples, 2)
@@ -108,20 +108,8 @@ function write_lai_composite(filepath, metadata, reducer)
                  "% of the retrievals; ", round(100 * mean(isnan.(composite)), digits = 1),
                  "% of the cells have none")
 
-    write_atomically(filepath) do staging_path
-        NCDataset(staging_path, "c") do ds
-            defDim(ds, "lon", Nx)
-            defDim(ds, "lat", Ny)
-            defVar(ds, "lon", collect(λ), ("lon",);
-                   attrib = ["units" => "degrees_east", "long_name" => "longitude"])
-            defVar(ds, "lat", collect(φ), ("lat",);
-                   attrib = ["units" => "degrees_north", "long_name" => "latitude"])
-            defVar(ds, variable, composite, ("lon", "lat"); deflatelevel = 2, shuffle = true)
-            defVar(ds, retained_count_variable, retained_count, ("lon", "lat");
-                   attrib = ["long_name" => "number of retained retrievals"],
-                   deflatelevel = 2, shuffle = true)
-        end
-    end
+    write_lattice_file(filepath, regional_lattice(metadata),
+                       (variable => composite, retained_count_variable => retained_count))
     return nothing
 end
 

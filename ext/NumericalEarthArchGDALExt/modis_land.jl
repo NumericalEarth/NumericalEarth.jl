@@ -48,34 +48,7 @@ function warp_modis_layer(granule_paths, layer, lattice)
     return reverse(warped, dims = 2)
 end
 
-function write_modis_netcdf(nc_path, layers, lattice)
-    Δλ = (lattice.east - lattice.west) / lattice.Nx
-    Δφ = (lattice.north - lattice.south) / lattice.Ny
-    longitude = collect(range(lattice.west + Δλ / 2; step = Δλ, length = lattice.Nx))
-    latitude  = collect(range(lattice.south + Δφ / 2; step = Δφ, length = lattice.Ny))
-
-    write_atomically(nc_path) do staging_path
-        NCDataset(staging_path, "c") do ds
-            defDim(ds, "lon", lattice.Nx)
-            defDim(ds, "lat", lattice.Ny)
-            defVar(ds, "lon", longitude, ("lon",);
-                   attrib = ["units" => "degrees_east", "long_name" => "longitude"])
-            defVar(ds, "lat", latitude, ("lat",);
-                   attrib = ["units" => "degrees_north", "long_name" => "latitude"])
-            for (layer, data) in pairs(layers)
-                defVar(ds, String(layer), data, ("lon", "lat");
-                       deflatelevel = 2, shuffle = true)
-            end
-        end
-    end
-    return nothing
-end
-
 function MODISLand.modis_granules_to_netcdf(metadatum::MODISLand.MODISLandMetadatum, nc_path)
-    region = metadatum.region
-    (region isa BoundingBox && !isnothing(region.longitude) && !isnothing(region.latitude)) ||
-        error("modis_granules_to_netcdf requires a bounded BoundingBox region.")
-
     lattice = regional_lattice(metadatum)
     urls = granule_urls(metadatum)
 
@@ -90,7 +63,7 @@ function MODISLand.modis_granules_to_netcdf(metadatum::MODISLand.MODISLandMetada
     granule_paths = [earthdata_download_cached(url, granule_cache) for url in urls]
     layers = Dict(layer => warp_modis_layer(granule_paths, layer, lattice)
                   for layer in stored_granule_layers(metadatum.dataset))
-    write_modis_netcdf(nc_path, layers, lattice)
+    write_lattice_file(nc_path, lattice, layers)
 
     return nothing
 end

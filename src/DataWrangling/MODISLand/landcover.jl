@@ -80,15 +80,9 @@ const igbp_non_vegetated_classes = (igbp_class_names.urban,
                                     igbp_class_names.barren,
                                     igbp_class_names.water)
 
-const MODIS_LANDCOVER_LEGENDS = (IGBP = (layer = "LC_Type1",
-                                         valid = 1:17,
-                                         names = igbp_class_names),
-                                 LAI  = (layer = "LC_Type3",
-                                         valid = 0:10,
-                                         names = modis_lai_class_names),
-                                 PFT  = (layer = "LC_Type5",
-                                         valid = 0:11,
-                                         names = modis_plant_functional_type_names))
+const MODIS_LANDCOVER_LEGENDS = (IGBP = (layer = "LC_Type1", names = igbp_class_names),
+                                 LAI  = (layer = "LC_Type3", names = modis_lai_class_names),
+                                 PFT  = (layer = "LC_Type5", names = modis_plant_functional_type_names))
 
 function validate_legend(legend::Symbol)
     haskey(MODIS_LANDCOVER_LEGENDS, legend) ||
@@ -177,9 +171,6 @@ function zero_non_vegetated!(data::AbstractArray, land_cover;
 end
 
 function zero_non_vegetated!(fts::DataWrangling.FieldTimeSeries, land_cover; kw...)
-    DataWrangling.validate_whole_series(fts)
-    data = Array(DataWrangling.interior(fts))
-    zero_non_vegetated!(data, land_cover; kw...)
-    copyto!(DataWrangling.interior(fts), data)
+    DataWrangling.on_host!(data -> zero_non_vegetated!(data, land_cover; kw...), fts)
     return fts
 end

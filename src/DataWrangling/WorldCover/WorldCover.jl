@@ -428,11 +428,11 @@ function DataWrangling.interpolate_physical!(target, native, metadata::ESAWorldC
     arch = child_architecture(architecture(grid))
     LX, LY, LZ = location(metadata)
 
-    fractions = map(ESA_WORLDCOVER_FRACTION_VARIABLE_NAMES) do name
-        fraction_metadatum = Metadatum(name; dataset = metadata.dataset,
-                                       region = metadata.region, dir = metadata.dir)
-        regrid!(Field{LX, LY, LZ}(grid), Field(fraction_metadatum, arch))
-    end
+    # One buffer serves every class, each regridded as `majority_class!` reaches it.
+    fraction = Field{LX, LY, LZ}(grid)
+    fractions = (regrid!(fraction, Field(Metadatum(name; dataset = metadata.dataset,
+                                                   region = metadata.region, dir = metadata.dir), arch))
+                 for name in ESA_WORLDCOVER_FRACTION_VARIABLE_NAMES)
 
     return majority_class!(target, fractions, ESA_WORLDCOVER_CLASS_CODES)
 end

@@ -31,7 +31,7 @@
 
 using NumericalEarth
 using NumericalEarth.DataWrangling: fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial,
-                                    window_bounds, class_fraction, class_fractions
+                                    window_bounds, class_fractions
 using NumericalEarth.DataWrangling.MODISLand: landcover_class_names, igbp_class_names,
                                               igbp_non_vegetated_classes, class_maximum_gap,
                                               zero_non_vegetated!, period_index,
@@ -90,7 +90,7 @@ class_name(code) = only(key for (key, value) in pairs(class_names) if value == c
 @printf("\nMCD12Q1 IGBP classes over the box, on the product's own 500 m grid\n")
 for code in present
     @printf("  %-28s (%2d) : %5.2f%%\n", class_name(code), code,
-            100 * class_fraction(class_codes, code))
+            100 * count(==(code), class_codes) / count(!isnan, class_codes))
 end
 @printf("  no fractional codes : %s\n",
         all(code -> isnan(code) || code == round(code), class_codes))
@@ -121,15 +121,9 @@ grid = LatitudeLongitudeGrid(CPU(), Float32;
                              latitude = extrema(φnodes(native, Center(), Face(), Center())),
                              topology = (Bounded, Bounded, Flat))
 
-fractions = class_fractions(class_codes, present, aggregation_factor)
+fractions = class_fractions(grid, classes, MCD12Q1())
 
-fraction_sum = sum(values(fractions))
-
-function model_field(data)
-    field = Field{Center, Center, Nothing}(grid)
-    interior(field, :, :, 1) .= Float32.(data)
-    return field
-end
+fraction_sum = sum(Array(interior(fraction)) for fraction in fractions)
 
 @printf("  per-class fractions on the model grid sum to %.6f (largest departure %.2e)\n",
         mean(filter(!isnan, vec(fraction_sum))),
@@ -173,12 +167,12 @@ plot = heatmap!(ax, native_field(class_index),
 Colorbar(fig[1, 4], plot, ticks = (1:length(present), class_labels))
 
 ax = Axis(fig[2, 1]; title = "Deciduous broadleaf fraction (model grid)", axis_kw...)
-plot = heatmap!(ax, model_field(fractions[igbp_class_names.deciduous_broadleaf_forest]),
+plot = heatmap!(ax, fractions.deciduous_broadleaf_forest,
                 colormap = :magma, colorrange = (0, 1))
 Colorbar(fig[2, 2], plot, label = "area fraction")
 
 ax = Axis(fig[2, 3]; title = "Woody savanna fraction (model grid)", axis_kw...)
-plot = heatmap!(ax, model_field(fractions[igbp_class_names.woody_savanna]),
+plot = heatmap!(ax, fractions.woody_savanna,
                 colormap = :magma, colorrange = (0, 1))
 Colorbar(fig[2, 4], plot, label = "area fraction")
 
@@ -200,7 +194,6 @@ build_lai_climatology!(climatology; region)
 metadata = Metadata(:leaf_area_index; dataset = climatology, region)
 
 periods = eachindex(metadata.dates)
-period_date(n) = DateTime(2018, 1, 1) + Day(8 * (n - 1))
 
 # The retained-retrieval count says how many of the five years survived screening in each
 # cell. A period whose minimum is zero has cells no year observed, and a period whose mean is
@@ -212,12 +205,12 @@ raw_gaps = [gap_fraction(raw_leaf_area_index[n]) for n in periods]
 worst = argmax(raw_gaps)
 
 retained = Field(retained_retrieval_metadatum(
-    Metadatum(:leaf_area_index; dataset = climatology, region, date = period_date(worst))))
+    Metadatum(:leaf_area_index; dataset = climatology, region, date = metadata.dates[worst])))
 
 @printf("\nThe %s climatology, %d periods\n", climatology.years, length(periods))
 @printf("  gap fraction  : mean %.2f%%, worst %.2f%% (%s)\n",
         100 * mean(raw_gaps), 100 * raw_gaps[worst],
-        Dates.format(period_date(worst), "u dd"))
+        Dates.format(metadata.dates[worst], "u dd"))
 @printf("  retained count at the worst period : mean %.2f of %d, minimum %d\n",
         nanmean(retained), length(climatology.years),
         Int(minimum(Array(interior(retained)))))
@@ -235,25 +228,20 @@ max_gap = class_maximum_gap(classes)
 @printf("  class-keyed max_gap : %d–%d periods (a uniform table would use one number)\n",
         minimum(max_gap), maximum(max_gap))
 
-# Running the stages cumulatively is what makes the gap-fraction panel below readable: each
-# line is one more stage than the line above it, and each has to sit at or below it.
+filled_leaf_area_index = FieldTimeSeries(metadata; time_indices_in_memory = length(periods))
+fill_record = fill_seasonal_gaps!(filled_leaf_area_index, classes; cyclic = true, max_gap,
+                                  valid_range = (0, 10),
+                                  unfilled_classes = igbp_non_vegetated_classes)
 
-function run_chain(stages)
-    leaf_area_index = FieldTimeSeries(metadata; time_indices_in_memory = length(periods))
-    record = fill_seasonal_gaps!(leaf_area_index, classes; cyclic = true, max_gap,
-                                 valid_range = (0, 10),
-                                 unfilled_classes = igbp_non_vegetated_classes,
-                                 stages)
-    return leaf_area_index, record
-end
+# Every stage writes only where the stages before it left a gap, so the provenance codes give
+# the gap each stage leaves behind. That is what makes the gap-fraction panel below readable:
+# each line is one more stage than the line above it, and each has to sit at or below it.
 
-temporally_filled_leaf_area_index, _ = run_chain((:temporal,))
-scaled_donor_leaf_area_index, _ = run_chain((:temporal, :scaled))
-filled_leaf_area_index, fill_record = run_chain((:temporal, :scaled, :class_mean))
+gaps_after(stage) = [mean(fill_record.provenance[:, :, n] .> stage) for n in periods]
 
-temporal_gaps = [gap_fraction(temporally_filled_leaf_area_index[n]) for n in periods]
-scaled_gaps = [gap_fraction(scaled_donor_leaf_area_index[n]) for n in periods]
-filled_gaps = [gap_fraction(filled_leaf_area_index[n]) for n in periods]
+temporal_gaps = gaps_after(gap_fill_provenance.temporal)
+scaled_gaps = gaps_after(gap_fill_provenance.scaled)
+filled_gaps = gaps_after(gap_fill_provenance.class_mean)
 
 non_vegetated_fraction = mean(non_vegetated)
 
@@ -289,9 +277,9 @@ seasonal_mean = [nanmean(filled_leaf_area_index[n]) for n in periods]
 low, peak = argmin(seasonal_mean), argmax(seasonal_mean)
 
 @printf("  annual low  : 𝒜 = %.2f  (%s)\n", seasonal_mean[low],
-        Dates.format(period_date(low), "u dd"))
+        Dates.format(metadata.dates[low], "u dd"))
 @printf("  seasonal peak: 𝒜 = %.2f  (%s)\n", seasonal_mean[peak],
-        Dates.format(period_date(peak), "u dd"))
+        Dates.format(metadata.dates[peak], "u dd"))
 @printf("  peak / low  : %.2f×  — a deciduous box, not an evergreen one\n",
         seasonal_mean[peak] / seasonal_mean[low])
 
@@ -326,7 +314,7 @@ provenance_colors = cgrad([:gray70, :goldenrod, :seagreen, :steelblue, :firebric
                            categorical = true)
 provenance_ticks = (0:4, ["observed", "temporal", "scaled", "class mean", "unfilled"])
 
-day_of_year = 8 .* (periods .- 1) .+ 1
+day_of_year = dayofyear.(metadata.dates)
 
 # The product first: the two extremes of the filled climatology, which is the field a
 # simulation is actually handed. Everything else on this page is a diagnostic of how it was
@@ -335,12 +323,12 @@ day_of_year = 8 .* (periods .- 1) .+ 1
 fig = Figure(size = (1500, 900))
 
 ax = Axis(fig[1, 1]; axis_kw...,
-          title = "Filled climatology, annual low ($(Dates.format(period_date(low), "u dd")))")
+          title = "Filled climatology, annual low ($(Dates.format(metadata.dates[low], "u dd")))")
 heatmap!(ax, native_field(after[:, :, low]), colormap = :viridis,
          colorrange = leaf_area_index_range, nan_color = :gray80)
 
 ax = Axis(fig[1, 2]; axis_kw...,
-          title = "Filled climatology, seasonal peak ($(Dates.format(period_date(peak), "u dd")))")
+          title = "Filled climatology, seasonal peak ($(Dates.format(metadata.dates[peak], "u dd")))")
 plot = heatmap!(ax, native_field(after[:, :, peak]), colormap = :viridis,
                 colorrange = leaf_area_index_range, nan_color = :gray80)
 Colorbar(fig[1, 3], plot, label = "𝒜 (m² m⁻²)")
@@ -404,7 +392,7 @@ times = filled_leaf_area_index.times
 # Reading at a node returns the node, reading between two returns their mean, and the series
 # is continuous across the turn of the year.
 
-sample(t) = Array(interior(filled_leaf_area_index[Time(t)], :, :, 1))[i, j]
+sample(t) = filled_leaf_area_index[i, j, 1, Time(t)]
 
 @printf("  at a composite's own time   : %.6f vs the composite's %.6f\n",
         sample(times[10]), after[i, j, 10])

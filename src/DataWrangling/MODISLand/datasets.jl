@@ -146,7 +146,7 @@ landcover_class_names(dataset::MCD12Q1) = MODIS_LANDCOVER_LEGENDS[dataset.legend
 The legend's range of class codes. Codes outside it — the fill value 255, and 0 under IGBP,
 which has no class 0 — are read as `NaN`.
 """
-landcover_valid_range(dataset::MCD12Q1) = MODIS_LANDCOVER_LEGENDS[dataset.legend].valid
+landcover_valid_range(dataset::MCD12Q1) = range(extrema(landcover_class_names(dataset))...)
 
 landcover_layer(dataset::MCD12Q1) = MODIS_LANDCOVER_LEGENDS[dataset.legend].layer
 
@@ -155,7 +155,6 @@ const MODISLandMetadatum    = Metadatum{<:AbstractMODISLandDataset}
 const MODISLAIMetadatum     = Metadatum{<:MODISLAIDataset}
 const MODISLAIClimatologyMetadata{D} = Metadata{<:MODISLAIClimatology, D}
 const MODISLAIClimatologyMetadatum   = Metadatum{<:MODISLAIClimatology}
-const MODISLandCoverMetadata{D}      = Metadata{<:MCD12Q1, D}
 const MODISLandCoverMetadatum        = Metadatum{<:MCD12Q1}
 
 #####
@@ -181,12 +180,6 @@ last_composite_date(::MCD15A2H) = DateTime(2025, 12, 31)
 # lags the leaf-area record.
 first_landcover_year(::MCD12Q1) = 2001
 last_landcover_year(::MCD12Q1)  = 2024
-
-source_dataset(dataset::MODISLAIDataset) = dataset
-source_dataset(climatology::MODISLAIClimatology) = climatology.dataset
-
-screened_flags(dataset::MODISLAIDataset) = dataset.screened_flags
-screened_flags(climatology::MODISLAIClimatology) = screened_flags(climatology.dataset)
 
 #####
 ##### Variables
@@ -378,9 +371,6 @@ end
 
 # Every MCD12Q1 variable is categorical, so a model cell takes the code covering most of it.
 function DataWrangling.interpolate_physical!(target, classes, metadatum::MODISLandCoverMetadatum)
-    DataWrangling.same_grid(target.grid, classes.grid) &&
-        return DataWrangling.interpolate_physical!(target, classes)
-
     if metadatum.name === :landcover_class
         codes = landcover_class_names(metadatum.dataset)
         fractions = class_fractions(target.grid, classes, metadatum.dataset)
@@ -394,8 +384,7 @@ end
 
 # The land-cover codes MCD15A2H writes in place of a retrieval are classes too.
 function DataWrangling.interpolate_physical!(target, source, metadatum::MODISLAIMetadatum)
-    (metadatum.name === :landcover_code && !DataWrangling.same_grid(target.grid, source.grid)) ||
-        return DataWrangling.interpolate_physical!(target, source)
+    metadatum.name === :landcover_code || return DataWrangling.interpolate_physical!(target, source)
 
     fractions = class_fractions(target.grid, source, MODIS_LAI_LANDCOVER_CODES)
     return majority_class!(target, fractions, MODIS_LAI_LANDCOVER_CODES)

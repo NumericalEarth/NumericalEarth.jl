@@ -38,22 +38,9 @@ DataWrangling.all_dates(dataset::MODISLAIDataset, variable) =
     modis_composite_dates(first_composite_date(dataset), last_composite_date(dataset),
                           composite_period_days(dataset))
 
-"""
-    periods_per_year(dataset)
-
-The number of composites a year of `dataset` holds — 46 for an 8-day product, in leap and
-common years alike, since the cadence restarts every January.
-"""
-periods_per_year(dataset) = length(modis_composite_dates(climatology_year_start(),
-                                                         climatology_year_end(),
-                                                         composite_period_days(dataset)))
-
 # A common (non-leap) placeholder year carries the climatological stamps.
-climatology_year_start() = DateTime(2018, 1, 1)
-climatology_year_end()   = DateTime(2018, 12, 31)
-
 DataWrangling.all_dates(climatology::MODISLAIClimatology, variable) =
-    modis_composite_dates(climatology_year_start(), climatology_year_end(),
+    modis_composite_dates(DateTime(2018, 1, 1), DateTime(2018, 12, 31),
                           composite_period_days(climatology))
 
 DataWrangling.is_seasonal_climatology(::MODISLAIClimatology) = true

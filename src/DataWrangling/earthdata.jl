@@ -41,10 +41,7 @@ reuse a granule instead of re-downloading it.
 function earthdata_download_cached(url, cache_dir; attempts = 3)
     path = joinpath(cache_dir, basename(url))
     isfile(path) && return path
-    write_atomically(path) do staging_path
-        earthdata_download(url, staging_path; attempts)
-    end
-    return path
+    return earthdata_download(url, path; attempts)
 end
 
 """

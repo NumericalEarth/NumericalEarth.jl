@@ -10,21 +10,20 @@ using NumericalEarth.DataWrangling: DataWrangling, BoundingBox, Metadatum, Metad
 using NumericalEarth.DataWrangling.MODISLand: MODISLand, mask_lai_fill, lai_screening_flags,
     lai_rejection_flags, modis_composite_dates,
     parse_granule_name, select_granules, regional_lattice,
-    periods_per_year, period_index, reduce_retained, stored_granule_layers,
+    period_index, reduce_retained, stored_granule_layers,
     MODIS_LAI_SCALE, MODIS_FPAR_SCALE, MODIS_LAI_LANDCOVER_CODES,
     mask_landcover_fill, landcover_valid_range, landcover_layer, composite_window,
-    MissingGranulesError,
+    MissingGranulesError, write_lattice_file,
     modis_lai_class_names, modis_plant_functional_type_names,
     retained_retrieval_metadatum, lai_screening_mask, recommended_lai_screening,
     mask_lai_landcover, modis_landcover_class_names, landcover_class_names,
     igbp_class_names, class_maximum_gap, zero_non_vegetated!
 using Oceananigans.Grids: λnodes, φnodes, topology, Bounded
-using NCDatasets: NCDataset, defDim, defVar
+using NCDatasets: NCDataset
 using Dates: DateTime, Day, Month, dayofyear
 using Statistics: mean
 
-# The lattice the sinusoidal granules are reprojected onto, 1/240°.
-const Δᵛ = 1/240
+const Δ = MODISLand.MODIS_LATTICE_SPACING
 
 # `FparLai_QC`: bit 0 MODLAND_QC, bit 1 SENSOR, bit 2 DEADDETECTOR, bits 3-4 CLOUDSTATE,
 # bits 5-7 SCF_QC.
@@ -41,8 +40,6 @@ lai_extra_qc(; landsea = 0, snow = 0, aerosol = 0, cirrus = 0, cloudmask = 0, sh
 # bytes on the regional lattice, latitude ascending, coordinates on cell centers.
 function write_synthetic_modis_file(path, lattice; lai_at = Dict(), qc_at = Dict(), extra_at = Dict())
     Nx, Ny = lattice.Nx, lattice.Ny
-    λ = [lattice.west + (i - 1/2) * Δᵛ for i in 1:Nx]
-    φ = [lattice.south + (j - 1/2) * Δᵛ for j in 1:Ny]
 
     # A ramp unique per cell, so a shifted read cannot pass by coincidence.
     lai = UInt8[mod((i - 1) * Ny + (j - 1), 101) for i in 1:Nx, j in 1:Ny]
@@ -59,17 +56,8 @@ function write_synthetic_modis_file(path, lattice; lai_at = Dict(), qc_at = Dict
         extra[i, j] = value
     end
 
-    NCDataset(path, "c") do ds
-        defDim(ds, "lon", Nx)
-        defDim(ds, "lat", Ny)
-        defVar(ds, "lon", λ, ("lon",))
-        defVar(ds, "lat", φ, ("lat",))
-        defVar(ds, "Lai_500m", lai, ("lon", "lat"))
-        defVar(ds, "Fpar_500m", lai, ("lon", "lat"))
-        defVar(ds, "LaiStdDev_500m", lai, ("lon", "lat"))
-        defVar(ds, "FparLai_QC", qc, ("lon", "lat"))
-        defVar(ds, "FparExtra_QC", extra, ("lon", "lat"))
-    end
+    write_lattice_file(path, lattice, ("Lai_500m" => lai, "Fpar_500m" => lai, "LaiStdDev_500m" => lai,
+                                       "FparLai_QC" => qc, "FparExtra_QC" => extra))
 
     return lai, qc, extra
 end
@@ -78,8 +66,6 @@ end
 # on the same lattice, with a per-cell class ramp through the legend's valid range.
 function write_synthetic_landcover_file(path, lattice, dataset; class_at = Dict())
     Nx, Ny = lattice.Nx, lattice.Ny
-    λ = [lattice.west + (i - 1/2) * Δᵛ for i in 1:Nx]
-    φ = [lattice.south + (j - 1/2) * Δᵛ for j in 1:Ny]
 
     valid = landcover_valid_range(dataset)
     classes = UInt8[first(valid) + mod((i - 1) * Ny + (j - 1), length(valid))
@@ -89,15 +75,8 @@ function write_synthetic_landcover_file(path, lattice, dataset; class_at = Dict(
         classes[i, j] = value
     end
 
-    NCDataset(path, "c") do ds
-        defDim(ds, "lon", Nx)
-        defDim(ds, "lat", Ny)
-        defVar(ds, "lon", λ, ("lon",))
-        defVar(ds, "lat", φ, ("lat",))
-        defVar(ds, landcover_layer(dataset), classes, ("lon", "lat"))
-        defVar(ds, "QC", fill(0x00, Nx, Ny), ("lon", "lat"))
-        defVar(ds, "LW", fill(0x02, Nx, Ny), ("lon", "lat"))
-    end
+    write_lattice_file(path, lattice, (landcover_layer(dataset) => classes,
+                                       "QC" => fill(0x00, Nx, Ny), "LW" => fill(0x02, Nx, Ny)))
 
     return classes
 end
@@ -220,8 +199,8 @@ end
     φ₁, φ₂ = latitude_interfaces(metadatum)
     @test (λ₁, λ₂) == (-180, 180)
     @test (φ₁, φ₂) == (-90, 90)
-    @test (λ₂ - λ₁) / Nx ≈ Δᵛ
-    @test (φ₂ - φ₁) / Ny ≈ Δᵛ
+    @test (λ₂ - λ₁) / Nx ≈ Δ
+    @test (φ₂ - φ₁) / Ny ≈ Δ
 
     @test Set(keys(available_variables(dataset))) ==
           Set((:leaf_area_index, :fpar, :leaf_area_index_uncertainty, :landcover_code))
@@ -261,7 +240,6 @@ end
         @test first(year_dates) == DateTime(year, 1, 1)
         @test dayofyear.(year_dates) == collect(1:8:361)
     end
-    @test periods_per_year(dataset) == 46
 
     # Stepping uniformly by 8 days from the first date would drift out of phase; the
     # year-anchored sequence does not.
@@ -316,7 +294,7 @@ end
 
     # A file is keyed by the lattice cells it holds: bounds a hair apart that select different
     # cells name different files, and the same box in either longitude convention one file.
-    # (-92.5 + Δᵛ/2 is the cell center at which the window gains its western cell.)
+    # (-92.5 + Δ/2 is the cell center at which the window gains its western cell.)
     east_of_center = BoundingBox(longitude = (-92.4979, -91.5), latitude = (36.5, 37.5))
     west_of_center = BoundingBox(longitude = (-92.4980, -91.5), latitude = (36.5, 37.5))
     @test metadata_filename(dataset, :leaf_area_index, date, east_of_center) !=
@@ -406,14 +384,14 @@ end
     # The warp target is exactly the native grid, which is what pins the region offset of
     # the shared regrid to zero.
     @test (lattice.Nx, lattice.Ny) == (size(grid, 1), size(grid, 2))
-    @test lattice.west ≈ grid.λᶜᵃᵃ[1] - Δᵛ/2 atol = Δᵛ/20
-    @test lattice.south ≈ grid.φᵃᶜᵃ[1] - Δᵛ/2 atol = Δᵛ/20
-    @test (lattice.east - lattice.west) / lattice.Nx ≈ Δᵛ
-    @test (lattice.north - lattice.south) / lattice.Ny ≈ Δᵛ
+    @test lattice.west ≈ grid.λᶜᵃᵃ[1] - Δ/2 atol = Δ/20
+    @test lattice.south ≈ grid.φᵃᶜᵃ[1] - Δ/2 atol = Δ/20
+    @test (lattice.east - lattice.west) / lattice.Nx ≈ Δ
+    @test (lattice.north - lattice.south) / lattice.Ny ≈ Δ
 
     # Cell edges sit on the global lattice, so windows of different size share their cells.
-    @test (lattice.west + 180) / Δᵛ ≈ round((lattice.west + 180) / Δᵛ)
-    @test (lattice.south + 90) / Δᵛ ≈ round((lattice.south + 90) / Δᵛ)
+    @test (lattice.west + 180) / Δ ≈ round((lattice.west + 180) / Δ)
+    @test (lattice.south + 90) / Δ ≈ round((lattice.south + 90) / Δ)
 
     # A [0, 360] bounding box maps into the product's [-180, 180] convention.
     mapped = regional_lattice(Metadatum(:leaf_area_index; dataset,
@@ -460,7 +438,7 @@ end
         @test region_info(region, Field{Center, Center, Nothing}(grid), λc, φc) ==
               NumericalEarth.DataWrangling.BoundingBoxOffset(0, 0)
 
-        node_atol = Δᵛ / 20
+        node_atol = Δ / 20
         gλ = Array(λnodes(grid, Center(), Center(), Center()))
         gφ = Array(φnodes(grid, Center(), Center(), Center()))
         @test issorted(λc)
@@ -737,13 +715,13 @@ end
         # 7:5 so the fractions are exact column counts: grassland then cropland west of
         # -92.45, fill (read as no-data, counted as water) then urban east of it.
         function stripe_class(λ)
-            λ < -92.5 + 7Δᵛ  && return 0x0a  # grassland
+            λ < -92.5 + 7Δ  && return 0x0a  # grassland
             λ < -92.45       && return 0x0c  # cropland
-            λ < -92.45 + 7Δᵛ && return 0xff  # fill
+            λ < -92.45 + 7Δ && return 0xff  # fill
             return 0x0d                      # urban
         end
 
-        class_at = Dict((i, j) => stripe_class(lattice.west + (i - 1/2) * Δᵛ)
+        class_at = Dict((i, j) => stripe_class(lattice.west + (i - 1/2) * Δ)
                         for i in 1:lattice.Nx, j in 1:lattice.Ny)
         write_synthetic_landcover_file(joinpath(dir, metadatum.filename), lattice, dataset;
                                        class_at)
@@ -781,11 +759,11 @@ end
                                   date = DateTime(2019, 7, 4), dir)
         lai_lattice = regional_lattice(lai_metadatum)
         function stripe_code(λ)
-            λ < -92.5 + 7Δᵛ && return 0xfe  # water
+            λ < -92.5 + 7Δ && return 0xfe  # water
             λ < -92.45      && return 0xfa  # urban
             return 0x10                     # a retrieval
         end
-        lai_at = Dict((i, j) => stripe_code(lai_lattice.west + (i - 1/2) * Δᵛ)
+        lai_at = Dict((i, j) => stripe_code(lai_lattice.west + (i - 1/2) * Δ)
                       for i in 1:lai_lattice.Nx, j in 1:lai_lattice.Ny)
         write_synthetic_modis_file(joinpath(dir, lai_metadatum.filename), lai_lattice; lai_at)
 

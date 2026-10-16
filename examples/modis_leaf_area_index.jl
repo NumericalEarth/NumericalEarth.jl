@@ -226,13 +226,11 @@ year_gaps = [gap_fraction(single_year_leaf_area_index[n]) for n in periods]
 
 low_period, peak_period = argmin(seasonal_mean), argmax(seasonal_mean)
 
-period_date(n) = DateTime(2018, 1, 1) + Day(8 * (n - 1))
-
 @printf("\nSeasonal cycle over the 46 periods\n")
 @printf("  annual low : 𝒜 = %.2f  (%s)\n", seasonal_mean[low_period],
-        Dates.format(period_date(low_period), "u dd"))
+        Dates.format(metadata.dates[low_period], "u dd"))
 @printf("  peak       : 𝒜 = %.2f  (%s)\n", seasonal_mean[peak_period],
-        Dates.format(period_date(peak_period), "u dd"))
+        Dates.format(metadata.dates[peak_period], "u dd"))
 @printf("  peak / low : %.2f×  — evergreen canopy holds its leaf area year-round\n",
         seasonal_mean[peak_period] / seasonal_mean[low_period])
 
@@ -244,7 +242,7 @@ period_date(n) = DateTime(2018, 1, 1) + Day(8 * (n - 1))
 build_lai_climatology!(deep; region, periods = low_period:low_period)
 
 deep_low_period_leaf_area_index = Field(Metadatum(:leaf_area_index; dataset = deep, region,
-                            date = period_date(low_period)))
+                            date = metadata.dates[low_period]))
 
 @printf("  the low period at %s : 𝒜 = %.2f over %.0f%% of cells, against %.2f over %.0f%%\n",
         deep.years, nanmean(deep_low_period_leaf_area_index),
@@ -270,7 +268,7 @@ filled_gaps = [gap_fraction(filled_leaf_area_index[n]) for n in periods]
 @printf("  still missing after the cyclic fill : mean %.2f%%  (land-cover classes are %.2f%%)\n",
         100 * mean(filled_gaps), 100 * class_code_fraction)
 
-day_of_year = 8 .* (periods .- 1) .+ 1
+day_of_year = dayofyear.(metadata.dates)
 
 fig = Figure(size = (1400, 1050))
 
@@ -294,10 +292,10 @@ wettest = argmax(seasonal_gaps)
 build_lai_climatology!(deep; region, periods = wettest:wettest)
 
 deep_wettest_period_leaf_area_index = Field(Metadatum(:leaf_area_index; dataset = deep, region,
-                           date = period_date(wettest)))
+                           date = metadata.dates[wettest]))
 
 @printf("  cloudiest period (%s) : %.1f%% at %s → %.1f%% at %s\n",
-        Dates.format(period_date(wettest), "u dd"),
+        Dates.format(metadata.dates[wettest], "u dd"),
         100 * seasonal_gaps[wettest], climatology.years,
         100 * gap_fraction(deep_wettest_period_leaf_area_index), deep.years)
 
@@ -340,11 +338,11 @@ end
         100 * gap_fraction(on_model_grid(filled_leaf_area_index[low_period])),
         100 * gap_fraction(on_model_grid(filled_leaf_area_index[peak_period])))
 
-ax = Axis(fig[3, 1]; title = "Annual low, $(Dates.format(period_date(low_period), "u dd"))", axis_kw...)
+ax = Axis(fig[3, 1]; title = "Annual low, $(Dates.format(metadata.dates[low_period], "u dd"))", axis_kw...)
 heatmap!(ax, on_model_grid(filled_leaf_area_index[low_period]), colormap = :viridis,
          colorrange = leaf_area_index_range, nan_color = :midnightblue)
 
-ax = Axis(fig[3, 2]; title = "Seasonal peak, $(Dates.format(period_date(peak_period), "u dd"))", axis_kw...)
+ax = Axis(fig[3, 2]; title = "Seasonal peak, $(Dates.format(metadata.dates[peak_period], "u dd"))", axis_kw...)
 plot = heatmap!(ax, on_model_grid(filled_leaf_area_index[peak_period]), colormap = :viridis,
                 colorrange = leaf_area_index_range, nan_color = :midnightblue)
 Colorbar(fig[3, 3], plot, label = "𝒜 (m² m⁻²)")

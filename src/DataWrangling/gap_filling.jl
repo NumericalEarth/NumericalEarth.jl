@@ -19,11 +19,8 @@ spatial dimensions, giving each column its own tolerance.
 With `cyclic = true` the series is one period of a periodic signal, so a gap at either end
 interpolates across the wrap. An all-NaN column is left untouched either way.
 """
-function fill_gaps!(fts::FieldTimeSeries; max_gap=6, cyclic=false)
-    validate_whole_series(fts)
-    data_cpu = Array(interior(fts))
-    fill_gaps!(data_cpu; max_gap, cyclic)
-    copyto!(interior(fts), data_cpu)
+function fill_gaps!(fts::FieldTimeSeries; kw...)
+    on_host!(data -> fill_gaps!(data; kw...), fts)
     return fts
 end
 
@@ -32,6 +29,15 @@ function validate_whole_series(fts)
         throw(ArgumentError("Filling gaps along time needs the whole series in memory; " *
                             "rebuild it with `time_indices_in_memory = $(length(fts.times))`."))
     return nothing
+end
+
+# Apply `f!` to a host copy of the whole series and write the result back.
+function on_host!(f!, fts::FieldTimeSeries)
+    validate_whole_series(fts)
+    data = Array(interior(fts))
+    result = f!(data)
+    copyto!(interior(fts), data)
+    return result
 end
 
 function fill_gaps!(data::AbstractArray; max_gap=6, cyclic=false)
@@ -58,58 +64,21 @@ end
 @inline column_maximum_gap(max_gap::AbstractArray, I) =
     @inbounds max_gap[ntuple(d -> I[d], ndims(max_gap))...]
 
-# Records the gaps it refused to bridge in `unfilled`, so the caller can warn once.
+# Records the gaps it refused to bridge in `unfilled`, so the caller can warn once. A cyclic
+# series is scanned from its first valid point, so every wrapped gap is interior; an open
+# series' end gap is bridged from its one neighbor to itself, holding the nearest value.
 function fill_column_gaps!(data::AbstractVector, unfilled; max_gap, cyclic)
-    cyclic && return fill_cyclic_column_gaps!(data, unfilled; max_gap)
-
-    N = length(data)
-    i = 1
-    while i ≤ N
-        if isnan(data[i])
-            gap_start = i
-            while i ≤ N && isnan(data[i])
-                i += 1
-            end
-            gap_end = i - 1
-            gap_length = gap_end - gap_start + 1
-
-            if gap_length == N
-                continue
-            elseif gap_length > max_gap
-                push!(unfilled, (gap_start, gap_end))
-            elseif gap_start == 1
-                data[gap_start:gap_end] .= data[gap_end + 1]
-            elseif gap_end == N
-                data[gap_start:gap_end] .= data[gap_start - 1]
-            else
-                v0 = data[gap_start - 1]
-                v1 = data[gap_end + 1]
-                for j in gap_start:gap_end
-                    α = (j - gap_start + 1) / (gap_length + 1)
-                    data[j] = v0 + α * (v1 - v0)
-                end
-            end
-        else
-            i += 1
-        end
-    end
-    return data
-end
-
-# Rotating the series to start on a valid point turns every wrapped gap into an interior
-# one, so a single sweep in the rotated order fills them all with the same interpolation.
-function fill_cyclic_column_gaps!(data::AbstractVector, unfilled; max_gap)
     N = length(data)
     origin = findfirst(!isnan, data)
     isnothing(origin) && return data
 
-    rotated(k) = mod1(origin + k - 1, N)
+    index(k) = cyclic ? mod1(origin + k - 1, N) : k
 
-    k = 2
+    k = 1
     while k ≤ N
-        if isnan(data[rotated(k)])
+        if isnan(data[index(k)])
             gap_start = k
-            while k ≤ N && isnan(data[rotated(k)])
+            while k ≤ N && isnan(data[index(k)])
                 k += 1
             end
             gap_end = k - 1
@@ -118,11 +87,11 @@ function fill_cyclic_column_gaps!(data::AbstractVector, unfilled; max_gap)
             if gap_length > max_gap
                 push!(unfilled, (gap_start, gap_end))
             else
-                v0 = data[rotated(gap_start - 1)]
-                v1 = data[rotated(mod1(gap_end + 1, N))]
+                v0 = gap_start == 1 ? data[index(gap_end + 1)] : data[index(gap_start - 1)]
+                v1 = gap_end < N ? data[index(gap_end + 1)] : cyclic ? data[index(1)] : v0
                 for j in gap_start:gap_end
                     α = (j - gap_start + 1) / (gap_length + 1)
-                    data[rotated(j)] = v0 + α * (v1 - v0)
+                    data[index(j)] = v0 + α * (v1 - v0)
                 end
             end
         else
@@ -175,7 +144,10 @@ function seasonal_array(data::AbstractArray)
     return reshape(data, spatial[1], spatial[2], Nt)
 end
 
-seasonal_array(fts::FieldTimeSeries) = seasonal_array(Array(interior(fts)))
+function seasonal_array(fts::FieldTimeSeries)
+    validate_whole_series(fts)
+    return seasonal_array(Array(interior(fts)))
+end
 
 # Compact 1-based indices of the classes present.
 function class_indices(codes)
@@ -334,7 +306,8 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
         throw(ArgumentError("The land-cover array is $(size(codes)) but the series is " *
                             "$((Nx, Ny)) in space."))
 
-    key = seasonal_fill_key(; series = 𝒜, land_cover = codes, anchor, anchor_periods, cyclic,
+    key = isnothing(cache) ? nothing :
+          seasonal_fill_key(; series = 𝒜, land_cover = codes, anchor, anchor_periods, cyclic,
                             max_gap, block_size, initial_radius, minimum_donors, maximum_radius,
                             minimum_anchor_periods, scaling, valid_range, unfilled_classes, stages)
 
@@ -413,10 +386,7 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
 end
 
 function fill_seasonal_gaps!(fts::FieldTimeSeries, land_cover; kw...)
-    validate_whole_series(fts)
-    data = Array(interior(fts))
-    filled = fill_seasonal_gaps!(data, land_cover; kw...)
-    copyto!(interior(fts), data)
+    filled = on_host!(data -> fill_seasonal_gaps!(data, land_cover; kw...), fts)
     return (; series = fts, filled.provenance, filled.reach)
 end
 
@@ -447,7 +417,6 @@ by the mean of the withheld truth, and `estimated` the number of withheld entrie
 reached at all.
 """
 function gap_fill_denial(series, land_cover; samples_per_class = 100, kw...)
-    series isa FieldTimeSeries && validate_whole_series(series)
     𝒜 = seasonal_array(series isa FieldTimeSeries ? series : copy(series))
     codes = horizontal_array(land_cover)
     Nx, Ny, Nt = size(𝒜)
@@ -457,7 +426,7 @@ function gap_fill_denial(series, land_cover; samples_per_class = 100, kw...)
         isfinite(codes[i, j]) || continue
         isnan(𝒜[i, j, t]) && continue
         class = round(Int, codes[i, j])
-        push!(get!(candidates, class, CartesianIndex{3}[]), CartesianIndex(i, j, t))
+        push!(get!(Vector{CartesianIndex{3}}, candidates, class), CartesianIndex(i, j, t))
     end
 
     withheld = Dict(class => strided_sample(indices, samples_per_class)
@@ -469,24 +438,16 @@ function gap_fill_denial(series, land_cover; samples_per_class = 100, kw...)
 
     fill_seasonal_gaps!(𝒜, codes; kw...)
 
-    rows = NamedTuple[]
-    for class in sort!(collect(keys(withheld)))
+    return map(sort!(collect(keys(withheld)))) do class
         indices = withheld[class]
         estimate = [𝒜[I] for I in indices]
         reached = isfinite.(estimate)
         observed, modeled = truth[class][reached], estimate[reached]
+        scored = length(observed) ≥ 2
 
-        if length(observed) < 2
-            push!(rows, (; class, withheld = length(indices), estimated = count(reached),
-                         R² = NaN, cv_rmse = NaN))
-            continue
-        end
+        R² = scored ? cor(modeled, observed)^2 : NaN
+        cv_rmse = scored ? sqrt(mean(abs2, modeled .- observed)) / mean(observed) : NaN
 
-        rmse = sqrt(mean(abs2, modeled .- observed))
-
-        push!(rows, (; class, withheld = length(indices), estimated = count(reached),
-                     R² = cor(modeled, observed)^2, cv_rmse = rmse / mean(observed)))
+        (; class, withheld = length(indices), estimated = count(reached), R², cv_rmse)
     end
-
-    return rows
 end

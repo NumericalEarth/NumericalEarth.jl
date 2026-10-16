@@ -321,6 +321,8 @@ end
     @inbounds to_field[i, j, k] = interpolate(to_node, from_field, from_location, from_grid)
 end
 
+same_grid(a::AbstractGrid, b::AbstractGrid) = typeof(a) === typeof(b) && a == b
+
 """
     interpolate_physical!(to_field, from_field)
 
@@ -336,17 +338,7 @@ below the (clipped) surface of a `PressureLevelGrid` source.
     Drop this once Oceananigans' `interpolate!` resolves the target vertical node
     from the physical `znode` for mutable grids.
 """
-same_grid(a::AbstractGrid, b::AbstractGrid) = typeof(a) === typeof(b) && a == b
-
 function interpolate_physical!(to_field, from_field)
-    # A copy has no stencil to spread NaNs through.
-    if same_grid(to_field.grid, from_field.grid) && location(to_field) === location(from_field) &&
-       to_field.indices == from_field.indices
-        interior(to_field) .= interior(from_field)
-        fill_halo_regions!(to_field)
-        return to_field
-    end
-
     to_field.grid isa AbstractMutableGrid || return interpolate!(to_field, from_field)
 
     to_grid       = to_field.grid
