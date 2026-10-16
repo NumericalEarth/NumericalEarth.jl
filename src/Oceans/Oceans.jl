@@ -14,7 +14,7 @@ using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundar
                                        IMEXFluxBoundaryCondition, IMEXFlux, getbc
 using Oceananigans.BuoyancyFormulations: BuoyancyForce, SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
-using Oceananigans.Fields: Field, CenterField, set!, interior
+using Oceananigans.Fields: Field, CenterField, compute!, set!, interior
 using Oceananigans.Forcings: MultipleForcings, DiscreteForcing
 using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, znodes, RectilinearGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition, MutableGridOfSomeKind
@@ -70,6 +70,7 @@ include("radiative_forcing.jl")
 include("multiple_surface_fluxes.jl")
 include("ocean_simulation.jl")
 include("nonhydrostatic_ocean_simulation.jl")
+include("surface_layer_velocities.jl")
 include("assemble_net_ocean_fluxes.jl")
 
 #####
