@@ -11,7 +11,7 @@ using Oceananigans: Bounded, Center, CPU, Face, Field, Flat, LatitudeLongitudeGr
 using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Operators: Azᶜᶜᶜ
-using Oceananigans.Grids: λnodes, φnodes
+using Oceananigans.Grids: λnodes, φnodes, longitude_in_same_window
 using Oceananigans.Utils: launch!
 
 using NumericalEarth.DataWrangling: BoundingBox, native_grid, native_region_grid,

@@ -49,9 +49,10 @@ function ghsl_sources(f, dataset, region, cache_dir)
 end
 
 function ghsl_reprojected_raster(dataset, raster, cache_dir)
-    west, east   = raster.region.longitude
+    west, east   = longitude_in_same_window.(raster.region.longitude, 0)
     south, north = raster.region.latitude
-    return ghsl_sources(dataset, raster.region, cache_dir) do datasets
+    region = BoundingBox(longitude = (west, east), latitude = (south, north))
+    return ghsl_sources(dataset, region, cache_dir) do datasets
         ArchGDAL.gdalwarp(datasets,
             # `-ts` pins the cell count: with a pixel size, GDAL rounds the extent instead
             # and the raster comes back short of the grid.
@@ -123,7 +124,7 @@ end
 end
 
 function ghsl_raster_fields(dataset::GHSBuilt, raster, cache_dir, arch)
-    longitude_faces = Float64.(raster.longitude_faces)
+    longitude_faces = longitude_in_same_window.(Float64.(raster.longitude_faces), 0)
     latitude_faces = Float64.(raster.latitude_faces)
     region = BoundingBox(longitude = (first(longitude_faces), last(longitude_faces)),
                          latitude = (first(latitude_faces), last(latitude_faces)))
@@ -203,7 +204,7 @@ function NumericalEarth.Lands.building_morphometry(grid::LatitudeLongitudeGrid, 
     λᵖ = Field{Center, Center, Nothing}(grid)
     h  = Field{Center, Center, Nothing}(grid)
 
-    west, east = longitude_faces[1], longitude_faces[end]
+    west, east = longitude_in_same_window.((longitude_faces[1], longitude_faces[end]), 0)
     south, north = latitude_faces[1], latitude_faces[end]
     xmin, xmax, ymin, ymax = ghsl_mollweide_bounds(BoundingBox(longitude = (west, east), latitude = (south, north)))
     projected_pixels = (xmax - xmin) * (ymax - ymin) / native_resolution(dataset.surface)^2

@@ -42,9 +42,10 @@ function with_ghsl_tiles(f, dataset, surface, height;
     end
 end
 
-@testset "GHSL conserves native built area and volume away from the equator" begin
+@testset "GHSL conserves native built area and volume across longitude conventions" begin
     for arch in test_architectures, resolution in (GHSBuiltS100m, GHSBuiltS10m),
-        (longitude, latitude) in ((-74, 40), (140, 36), (-120, -60))
+        (longitude, latitude) in ((-74, 40), (140, 36), (-120, -60), (-118.45, 34.05)),
+        longitude_shift in (0, 360)
         dataset = GHSBuilt(surface = GHSBuiltS(; resolution))
         step = native_resolution(dataset.surface)
         region = BoundingBox(longitude = longitude .+ (-0.025, 0.025),
@@ -61,8 +62,9 @@ end
             j = floor(Int, (north - y) / 100) + 1
             height[i, j] = building_height
         end
-        longitude_faces = longitude .+ [-0.015, -0.003, 0.015]
+        longitude_faces = longitude + longitude_shift .+ [-0.015, -0.003, 0.015]
         latitude_faces = latitude .+ [-0.015, 0.004, 0.015]
+        region = BoundingBox(longitude = region.longitude .+ longitude_shift, latitude = region.latitude)
         grid = LatitudeLongitudeGrid(arch; size = (2, 2),
                                      longitude = longitude_faces, latitude = latitude_faces,
                                      topology = (Bounded, Bounded, Flat))
@@ -85,6 +87,11 @@ end
             properties = building_morphometry(grid, dataset)
             @test all(isapprox.(interior(properties.plan_area_index), 0.5; rtol=1e-6))
             @test all(isapprox.(interior(properties.mean_building_height), 20; rtol=1e-6))
+            for (name, product, expected) in ((:built_up_fraction, dataset.surface, 0.5),
+                                             (:building_height, dataset.height, 20))
+                field = Field(Metadatum(name; dataset = product, region = BoundingBox(grid)), arch)
+                @test all(isapprox.(interior(field), expected; rtol=1e-6))
+            end
         end
     end
 end
