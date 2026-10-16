@@ -31,9 +31,12 @@ Two `znodes` paths:
   locations, e.g. after `mean(...; dims=(1, 2))`); otherwise it returns
   a 3-D `Field` of per-cell heights at the field's own location.
 
-`geopotential` (units m²/s²) is a 3-D `Field` or a `TimeSeriesInterpolation`
-over a `FieldTimeSeries`. The former gives a static z-coordinate; the latter
-gives a time-evolving one driven by an attached `Clock`.
+`geopotential` (units m²/s²) is always a 3-D `Field`. Passing a `Field` to the
+constructor gives a static z-coordinate. Passing a `TimeSeriesInterpolation`
+over a `FieldTimeSeries` gives a time-evolving one driven by an attached
+`Clock`: the constructor materializes it into a `Field` that
+[`materialize_geopotential!`](@ref) refreshes from
+`update_state!(::PrescribedAtmosphere)`.
 
 The `LatitudeLongitudeGrid` constructor needs a value for `Lz`; we compute it
 as `extrema(geopotential) / g` inside `generate_coordinate`.
@@ -60,7 +63,9 @@ first above-ground level interpolates across the surface.
 function PressureLevelVerticalDiscretization(geopotential;
                                               gravitational_acceleration,
                                               surface_geopotential = nothing)
-    return PressureLevelVerticalDiscretization(gravitational_acceleration, geopotential, surface_geopotential)
+    return PressureLevelVerticalDiscretization(gravitational_acceleration,
+                                               field(geopotential),
+                                               surface_geopotential)
 end
 
 # Skip the generic validator (which would `length`-check the missing 1-D fields).
@@ -86,12 +91,26 @@ function generate_coordinate(FT, topo, sz, halo,
     return Lz, arch_discretization
 end
 
+"""
+    TimeSeriesInterpolatedField
+
+A `Field` whose operand is a `TimeSeriesInterpolation`: plain data holding the
+value at the time it was last `compute!`d, with the source series still
+reachable through the field's `operand`.
+"""
+const TimeSeriesInterpolatedField = Field{<:Any, <:Any, <:Any, <:TimeSeriesInterpolation}
+
+field(Φ::Field) = Φ
+field(Φ::TimeSeriesInterpolation) = Field(Φ)
+
 geopotential_data_for_extrema(Φ::Field) = interior(Φ)
 # Use `interior(fts)` — not `parent(fts)` — so halo zeros don't dominate the
 # extrema / column mean. For a TSI this reads every time slice, so `Lz` spans the
 # heights reached at any time in the window — the extent a child must be able to
 # bracket over the whole run. One-time setup, not a hot path.
 geopotential_data_for_extrema(Φ::TimeSeriesInterpolation) = interior(Φ.time_series)
+# A materialized snapshot holds one time; read the source series behind it instead.
+geopotential_data_for_extrema(Φ::TimeSeriesInterpolatedField) = geopotential_data_for_extrema(Φ.operand)
 
 Adapt.adapt_structure(to, z::PressureLevelVerticalDiscretization) =
     PressureLevelVerticalDiscretization(z.gravitational_acceleration,
@@ -116,6 +135,24 @@ Type alias for any underlying grid whose vertical coordinate is a
 """
 const PressureLevelGrid =
     AbstractUnderlyingGrid{<:Any, <:Any, <:Any, <:Any, <:PressureLevelVerticalDiscretization}
+
+"""
+    materialize_geopotential!(grid)
+
+Recompute the geopotential snapshot that a [`PressureLevelGrid`](@ref) with a
+time-varying vertical reads, at the current time of the `Clock` its
+`TimeSeriesInterpolation` is bound to. `znode` returns Φ at the time of the last
+refresh, not at the instant of access; `update_state!(::PrescribedAtmosphere)`
+refreshes.
+
+A no-op for any other grid, and for a static-`Field` geopotential.
+"""
+materialize_geopotential!(grid) = nothing
+
+function materialize_geopotential!(grid::PressureLevelGrid)
+    compute!(grid.z.geopotential)
+    return nothing
+end
 
 # Override the LLG show, which reads `grid.z.cᵃᵃᶠ` and crashes on PLVD.
 # We print the horizontal axes and report the z coordinate via the
