@@ -77,7 +77,7 @@ function PressureLevelVerticalDiscretization(geopotential;
                                               surface_geopotential = nothing)
     isnothing(surface_geopotential) || clip_subsurface!(geopotential, surface_geopotential)
     return PressureLevelVerticalDiscretization(gravitational_acceleration,
-                                               geopotential_field(geopotential),
+                                               field(geopotential),
                                                surface_geopotential)
 end
 
@@ -105,16 +105,16 @@ function generate_coordinate(FT, topo, sz, halo,
 end
 
 """
-    MaterializedGeopotential
+    TimeSeriesInterpolatedField
 
-A geopotential `Field` computed from a `TimeSeriesInterpolation`: Φ at the time
-of the last [`materialize_geopotential!`](@ref), stored as plain data, with the
-source series still reachable through the field's `operand`.
+A `Field` whose operand is a `TimeSeriesInterpolation`: plain data holding the
+value at the time it was last `compute!`d, with the source series still
+reachable through the field's `operand`.
 """
-const MaterializedGeopotential = Field{<:Any, <:Any, <:Any, <:TimeSeriesInterpolation}
+const TimeSeriesInterpolatedField = Field{<:Any, <:Any, <:Any, <:TimeSeriesInterpolation}
 
-geopotential_field(Φ::Field) = Φ
-geopotential_field(Φ::TimeSeriesInterpolation) = Field(Φ)
+field(Φ::Field) = Φ
+field(Φ::TimeSeriesInterpolation) = Field(Φ)
 
 geopotential_data_for_extrema(Φ::Field) = interior(Φ)
 # Use `interior(fts)` — not `parent(fts)` — so halo zeros don't dominate the
@@ -123,7 +123,7 @@ geopotential_data_for_extrema(Φ::Field) = interior(Φ)
 # bracket over the whole run. One-time setup, not a hot path.
 geopotential_data_for_extrema(Φ::TimeSeriesInterpolation) = interior(Φ.time_series)
 # A materialized snapshot holds one time; read the source series behind it instead.
-geopotential_data_for_extrema(Φ::MaterializedGeopotential) = geopotential_data_for_extrema(Φ.operand)
+geopotential_data_for_extrema(Φ::TimeSeriesInterpolatedField) = geopotential_data_for_extrema(Φ.operand)
 
 Adapt.adapt_structure(to, z::PressureLevelVerticalDiscretization) =
     PressureLevelVerticalDiscretization(z.gravitational_acceleration,
@@ -161,8 +161,11 @@ refreshes.
 A no-op for any other grid, and for a static-`Field` geopotential.
 """
 materialize_geopotential!(grid) = nothing
-materialize_geopotential!(grid::PressureLevelGrid) = materialize_geopotential!(grid.z.geopotential)
-materialize_geopotential!(Φ::MaterializedGeopotential) = (compute!(Φ); nothing)
+
+function materialize_geopotential!(grid::PressureLevelGrid)
+    compute!(grid.z.geopotential)
+    return nothing
+end
 
 # Override the LLG show, which reads `grid.z.cᵃᵃᶠ` and crashes on PLVD.
 # We print the horizontal axes and report the z coordinate via the
