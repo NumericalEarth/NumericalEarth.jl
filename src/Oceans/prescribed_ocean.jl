@@ -90,10 +90,10 @@ end
 Grids.grid(ocean::PrescribedOcean) = ocean.grid
 
 function Oceananigans.set!(ocean::PrescribedOcean; T=nothing, S=nothing, u=nothing, v=nothing)
-    !isnothing(T) && (parent(ocean.sea_surface_temperature) .= T)
-    !isnothing(S) && (parent(ocean.sea_surface_salinity) .= S)
-    !isnothing(u) && (parent(ocean.velocities.u) .= u)
-    !isnothing(v) && (parent(ocean.velocities.v) .= v)
+    !isnothing(T) && set!(ocean.sea_surface_temperature, T)
+    !isnothing(S) && set!(ocean.sea_surface_salinity, S)
+    !isnothing(u) && set!(ocean.velocities.u, u)
+    !isnothing(v) && set!(ocean.velocities.v, v)
     return nothing
 end
 
