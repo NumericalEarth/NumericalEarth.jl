@@ -161,9 +161,9 @@ function ghsl_raster_fields(dataset::GHSBuilt, raster, cache_dir, arch)
     return (; built_up_fraction, building_volume)
 end
 
-function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLMetadatum, nc_path, arch)
+function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLMetadatum, nc_path)
     raster = ghsl_regional_raster(metadatum)
-    fields = ghsl_raster_fields(metadatum.dataset, raster, joinpath(dirname(nc_path), "tiles"), arch)
+    fields = ghsl_raster_fields(metadatum.dataset, raster, joinpath(dirname(nc_path), "tiles"), CPU())
     variable_names = available_variables(metadatum.dataset)
 
     NCDataset(nc_path, "c") do ds
@@ -177,25 +177,13 @@ function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLM
         lat_var[:] = raster.latitude
         for (name, data) in pairs(fields)
             var = defVar(ds, variable_names[name], Float64, ("lon", "lat"))
-            var[:, :] = on_architecture(CPU(), data)
+            var[:, :] = data
         end
     end
 
     return nothing
 end
 
-"""
-$(TYPEDSIGNATURES)
-
-Plan-area index and built-area-weighted mean building height (m) on `grid` (a
-`LatitudeLongitudeGrid`) from the GHSL built-up surface and building-height rasters
-of `dataset`, as the NamedTuple of `Field`s
-`(; plan_area_index, mean_building_height)`: the area mean of the native-pixel built
-fraction, and the building volume over the built area of each cell. A pixel missing
-either its fraction or its height counts as unbuilt. The rasters are read in windows of
-at most about `maximum_raster_cells` native pixels and aggregated directly onto `grid`.
-Downloaded source tiles remain cached. Requires `using ArchGDAL`.
-"""
 function NumericalEarth.Lands.building_morphometry(grid::LatitudeLongitudeGrid, dataset::GHSBuilt; maximum_raster_cells = 100_000_000)
     arch = architecture(grid)
     Nx, Ny, _ = size(grid)

@@ -40,7 +40,6 @@ using NumericalEarth.DataWrangling.WorldCover: ESAWorldCoverMetadatum, version_y
                                                ESA_WORLDCOVER_NATIVE_STEP,
                                                ESA_WORLDCOVER_PIXELS_PER_DEGREE
 
-using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 
 include("gdal_utils.jl")

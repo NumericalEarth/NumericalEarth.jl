@@ -447,8 +447,7 @@ end
                                  longitude = (0, Nx * 0.0009), latitude = (0, 0.0009),
                                  topology = (Bounded, Bounded, Flat))
     closure = MorphometricRoughness()
-    odd = isodd.(1:Nx)
-    alternating(odd_value, even_value) = reshape(ifelse.(odd, odd_value, even_value), :, 1)
+    alternating(odd_value, even_value) = (λ, φ) -> ifelse(isodd(floor(Int, λ / 0.0009) + 1), odd_value, even_value)
     properties = (; plan_area_index = alternating(0.6, 0.2), mean_building_height = alternating(30.0, 10.0))
     measured_properties = (; properties..., building_height_deviation = alternating(0.0, 0.0),
                              maximum_building_height = alternating(30.0, 10.0), frontal_area_index = alternating(0.5, 0.1))
@@ -460,8 +459,8 @@ end
         displacement = Array(interior(fields.zero_plane_displacement, :, 1, 1))
         height       = Array(interior(fields.building_height, :, 1, 1))
 
-        # Cell 3 pools three dense cells and two sparse ones; cell 4 the reverse.
-        for (i, dense) in ((3, 3), (4, 2))
+        for i in 1:Nx
+            dense = isodd(i) ? 3 : 2
             sparse = 5 - dense
             built  = 0.6dense + 0.2sparse
             λᵖ = built / 5
@@ -472,6 +471,24 @@ end
             @test roughness[i] ≈ ℓᵐ
             @test displacement[i] ≈ d
             @test height[i] ≈ h
+        end
+    end
+end
+
+@testset "Urban neighborhoods are independent of domain edges on $arch" for arch in test_architectures
+    buildings = PrescribedBuildings((; plan_area_index = 0.4,
+                                       mean_building_height = (λ, φ) -> 20 + 1000λ + 500φ))
+    for FT in (Float32, Float64)
+        grid = LatitudeLongitudeGrid(arch, FT; size = (3, 3),
+                                     longitude = (0, 0.003), latitude = (0, 0.003),
+                                     topology = (Bounded, Bounded, Flat))
+        larger_grid = LatitudeLongitudeGrid(arch, FT; size = (7, 7),
+                                            longitude = (-0.002, 0.005), latitude = (-0.002, 0.005),
+                                            topology = (Bounded, Bounded, Flat))
+        fields = urban_roughness(grid, buildings; surface_layer_height = 100, neighborhood = 500)
+        larger_fields = urban_roughness(larger_grid, buildings; surface_layer_height = 100, neighborhood = 500)
+        for name in keys(fields)
+            @test Array(interior(fields[name])) ≈ Array(interior(larger_fields[name]))[3:5, 3:5, :]
         end
     end
 end
@@ -536,17 +553,18 @@ for arch in test_architectures
                                            maximum_building_height = built(20.0), frontal_area_index = built(0.3)))
         closure = uniform_height_closure()
         fields = urban_roughness(grid, buildings; closure, surface_layer_height = 100, neighborhood = 500)
-        ℓᵐ, d = aerodynamic_parameters(closure, 0.4 * 2 / 3, 20.0, 0.0, 20.0, 0.3 * 2 / 3)
-        @test all(≈(ℓᵐ), Array(interior(fields.momentum_roughness_length)))
-        @test all(≈(d), Array(interior(fields.zero_plane_displacement)))
+        expected = [aerodynamic_parameters(closure, 0.4 * built / 5, 20.0, 0.0, 20.0, 0.3 * built / 5) for built in 2:4]
+        @test Array(interior(fields.momentum_roughness_length))[:, 1, 1] ≈ first.(expected)
+        @test Array(interior(fields.zero_plane_displacement))[:, 1, 1] ≈ last.(expected)
         @test all(≈(20), Array(interior(fields.building_height)))
 
         # Raster height steps can assign a neighboring wall's frontal area to an unbuilt cell.
         buildings = PrescribedBuildings((; buildings.properties...,
                                            frontal_area_index = (λ, φ) -> λ < 0.0009 ? 0.15 : 0.3))
         fields = urban_roughness(grid, buildings; closure, surface_layer_height = 100, neighborhood = 500)
-        ℓᵐ, _ = aerodynamic_parameters(closure, 0.4 * 2 / 3, 20.0, 0.0, 20.0, 0.25)
-        @test all(≈(ℓᵐ), Array(interior(fields.momentum_roughness_length)))
+        expected = [aerodynamic_parameters(closure, 0.4 * built / 5, 20.0, 0.0, 20.0,
+                                           (0.3built + 0.15 * (5 - built)) / 5) for built in 2:4]
+        @test Array(interior(fields.momentum_roughness_length))[:, 1, 1] ≈ first.(expected)
 
         # Without a built-fraction floor the unbuilt neighborhood is urban, with no building height.
         fields = urban_roughness(grid, buildings; closure = MorphometricRoughness(minimum_built_fraction = 0),
@@ -561,15 +579,17 @@ for arch in test_architectures
         Δφ = 2.0^-13
         grid = LatitudeLongitudeGrid(arch, Float32; size = (1, Ny), longitude = (0, 0.0001),
                                      latitude = (51.5, 51.5 + Ny * Δφ), topology = (Bounded, Bounded, Flat))
-        odd = isodd.(1:Ny)'
-        λᵖ = ifelse.(odd, 0.6, 0.2)
-        h  = ifelse.(odd, 30.0, 10.0)
-        fields = urban_roughness(grid, PrescribedBuildings((; plan_area_index = λᵖ, mean_building_height = h));
+        alternating(odd_value, even_value) = (λ, φ) -> ifelse(isodd(floor(Int, (φ - 51.5) / Δφ) + 1), odd_value, even_value)
+        buildings = PrescribedBuildings((; plan_area_index = alternating(0.6, 0.2), mean_building_height = alternating(30.0, 10.0)))
+        fields = urban_roughness(grid, buildings;
                                  surface_layer_height = 100, neighborhood = 68)
 
-        φᶠ = 51.5 .+ (0:Ny) .* Δφ
+        φᶠ = 51.5 .+ (-2:Ny+2) .* Δφ
         area = sind.(φᶠ[2:end]) .- sind.(φᶠ[1:end-1])
-        rows(j) = max(1, j - 2):min(Ny, j + 2)
+        odd = isodd.(-1:Ny+2)
+        λᵖ = ifelse.(odd, 0.6, 0.2)
+        h  = ifelse.(odd, 30.0, 10.0)
+        rows(j) = j:j+4
         expected = [sum(λᵖ[b] * h[b] * area[b] for b in rows(j)) / sum(λᵖ[b] * area[b] for b in rows(j)) for j in 1:Ny]
         @test Array(interior(fields.building_height))[1, :, 1] ≈ expected rtol = 1e-5
     end

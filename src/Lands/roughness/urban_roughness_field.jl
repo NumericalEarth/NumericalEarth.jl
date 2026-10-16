@@ -170,9 +170,8 @@ the dataset measures them, `building_height_deviation` (m), `maximum_building_he
 function building_morphometry end
 
 # Neighborhood statistics use spherical overlap areas and built-area height moments.
-@kernel function _neighborhood_morphometry!(pooled, grid, properties, neighborhood)
+@kernel function _neighborhood_morphometry!(pooled, grid, properties, source_grid, neighborhood)
     i, j = @index(Global, NTuple)
-    Nx, Ny, _ = size(grid)
     longitude_faces = grid.λᶠᵃᵃ
     latitude_faces = grid.φᵃᶠᵃ
     longitude_center = (longitude_faces[i] + longitude_faces[i + 1]) / 2
@@ -185,6 +184,9 @@ function building_morphometry end
     east = ifelse(longitude_radius == 0, longitude_faces[i + 1], longitude_center + (longitude_radius + 1//2) * longitude_spacing)
     south = ifelse(latitude_radius == 0, latitude_faces[j], latitude_center - (latitude_radius + 1//2) * latitude_spacing)
     north = ifelse(latitude_radius == 0, latitude_faces[j + 1], latitude_center + (latitude_radius + 1//2) * latitude_spacing)
+    Nx, Ny, _ = size(source_grid)
+    longitude_faces = source_grid.λᶠᵃᵃ
+    latitude_faces = source_grid.φᵃᶠᵃ
     order = ForwardOrdering()
     first_column = max(1, searchsortedlast(longitude_faces, west, 1, Nx + 1, order))
     last_column = min(Nx, searchsortedfirst(longitude_faces, east, 1, Nx + 1, order) - 1)
@@ -241,7 +243,8 @@ function neighborhood_morphometry(properties, grid, neighborhood)
                 frontal_area_index = get(properties, :frontal_area_index, 0))
     outputs = hasproperty(properties, :frontal_area_index) ? inputs : (; inputs.plan_area_index, inputs.mean_building_height)
     pooled = map(_ -> Field{Center, Center, Nothing}(grid), outputs)
-    launch!(architecture(grid), grid, :xy, _neighborhood_morphometry!, pooled, grid, inputs, neighborhood)
+    source_grid = properties.plan_area_index.grid
+    launch!(architecture(grid), grid, :xy, _neighborhood_morphometry!, pooled, grid, inputs, source_grid, neighborhood)
     return pooled
 end
 
@@ -255,7 +258,8 @@ Momentum roughness length and zero-plane displacement (m) of the built-up surfac
 The closure is evaluated on neighborhoods about `neighborhood` (m) wide, from the morphometry
 that [`building_morphometry`](@ref) supplies on a lattice: a grid cell wider than `neighborhood`
 is subdivided into neighborhood-sized lattice cells, and on a finer grid each cell pools the
-cells within half a neighborhood of it, clipped at the grid edges. Neighborhoods with plan-area
+cells within half a neighborhood of it. The dataset region includes the padding needed for
+complete neighborhoods at the grid edges. Neighborhoods with plan-area
 index at least the closure's `minimum_built_fraction` are urban, and `urban_fraction` is their
 share of the grid-cell area. Each grid cell takes the displacement and roughness length whose
 neutral drag at `surface_layer_height` (m) is the area-mean drag of its urban neighborhoods
@@ -287,7 +291,22 @@ function urban_roughness(grid::LatitudeLongitudeGrid, dataset; surface_layer_hei
                                     longitude = longitude_lattice, latitude = latitude_lattice, radius = grid.radius,
                                     topology = (Bounded, Bounded, Flat))
 
-    properties = neighborhood_morphometry(building_morphometry(lattice, dataset; kw...), lattice, neighborhood)
+    function pad(faces, scale)
+        spacing = diff(faces)
+        radii = max.(0, round.(Int, (neighborhood ./ (scale .* spacing) .- 1) ./ 2))
+        lower = minimum(faces[1:end-1] .- radii .* spacing)
+        upper = maximum(faces[2:end] .+ radii .* spacing)
+        before = ceil(Int, (first(faces) - lower) / first(spacing))
+        after = ceil(Int, (upper - last(faces)) / last(spacing))
+        return [first(faces) .- (before:-1:1) .* first(spacing); faces; last(faces) .+ (1:after) .* last(spacing)]
+    end
+    longitude_scale = latitude_scale * minimum(cosd, latitude_faces)
+    padded_longitude = pad(longitude_lattice, longitude_scale)
+    padded_latitude = pad(latitude_lattice, latitude_scale)
+    source_grid = LatitudeLongitudeGrid(arch, FT; size = (length(padded_longitude) - 1, length(padded_latitude) - 1),
+                                        longitude = padded_longitude, latitude = padded_latitude, radius = grid.radius,
+                                        topology = (Bounded, Bounded, Flat))
+    properties = neighborhood_morphometry(building_morphometry(source_grid, dataset; kw...), lattice, neighborhood)
     lattice_is_grid = longitude_lattice == longitude_faces && latitude_lattice == latitude_faces
     reduction_grid = if lattice_is_grid
         lattice
@@ -296,11 +315,11 @@ function urban_roughness(grid::LatitudeLongitudeGrid, dataset; surface_layer_hei
                               longitude = longitude_faces, latitude = latitude_faces, radius = grid.radius,
                               topology = (Bounded, Bounded, Flat))
     end
-    evaluate(closure) = urban_roughness(grid, properties, closure, reduction_grid; surface_layer_height)
+    evaluate(closure) = reduce_urban_roughness(grid, properties, closure, reduction_grid; surface_layer_height)
     return closure isa NamedTuple ? map(evaluate, closure) : evaluate(closure)
 end
 
-function urban_roughness(grid::LatitudeLongitudeGrid, properties, closure::AbstractUrbanRoughness, reduction_grid; surface_layer_height)
+function reduce_urban_roughness(grid, properties, closure, reduction_grid; surface_layer_height)
     lattice = properties.mean_building_height.grid
     lattice_roughness    = Field{Center, Center, Nothing}(lattice)
     lattice_displacement = Field{Center, Center, Nothing}(lattice)
@@ -338,7 +357,7 @@ function urban_roughness(grid::LatitudeLongitudeGrid, properties, closure::Abstr
                                                                 exp.(-sqrt.(urban_fraction ./ mean_scaled_drag)), bare_roughness),
                  zero_plane_displacement = ifelse.(has_urban, mean_displacement, bare_displacement),
                  urban_fraction,
-                 building_height = ifelse.(built_fraction .> 0, mean_building_volume ./ built_fraction, 0))
+                 building_height = ifelse.(built_fraction .> 0, mean_building_volume ./ built_fraction, zero(grid)))
     return map(reduced) do data
         field = Field{Center, Center, Nothing}(grid)
         interior(field, :, :, 1) .= data

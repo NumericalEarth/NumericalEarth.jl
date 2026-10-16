@@ -7,6 +7,8 @@ using Oceananigans: Center, CPU, Face
 using Oceananigans.DistributedComputations: @root
 using Oceananigans.Grids: x_domain, y_domain, λnodes, φnodes
 
+using NumericalEarth.Lands: Lands
+
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
                        metadata_path, native_grid, BoundingBox, bounding_box_suffix
 
@@ -134,7 +136,7 @@ Base.show(io::IO, dataset::AbstractGHSLDataset) = print(io, summary(dataset))
 """
 $(TYPEDEF)
 
-The GHSL built-up pair that [`building_morphometry`](@ref) reads together: the built-up
+The GHSL built-up pair that [`building_morphometry`](@ref NumericalEarth.Lands.building_morphometry) reads together: the built-up
 `surface` ([`GHSBuiltS`](@ref)) and the building `height` ([`GHSBuiltH`](@ref)).
 Provides `:built_up_fraction` and `:building_volume` (m³ per m²) on a common grid at
 the surface product's resolution: the volume of each surface pixel is its built fraction
@@ -234,7 +236,7 @@ end
 DataWrangling.is_three_dimensional(::GHSLMetadatum) = false
 
 # Float64 preserves spherical cell areas at 10 m spacing.
-Base.eltype(::Metadatum{<:GHSBuilt}) = Float64
+Base.eltype(::GHSLMetadatum) = Float64
 
 # The regional NetCDF we materialize stores coordinates as "lon"/"lat".
 DataWrangling.longitude_name(::GHSLMetadatum) = "lon"
@@ -377,7 +379,7 @@ product_group(::GHSBuiltS) = "GHS_BUILT_S_GLOBE_R2023A"
 Return the JRC open-data HTTPS URL of the `(row, column)` GHSL tile `.zip` for
 `dataset` (each archive holds one Mollweide GeoTIFF of the built-up variable).
 """
-function ghsl_tile_url(dataset::AbstractGHSLDataset, row, column)
+function ghsl_tile_url(dataset::Union{GHSBuiltH, GHSBuiltS}, row, column)
     stem = product_stem(dataset)
     return string(GHSL_FTP, "/", product_group(dataset), "/", stem,
                   "/V1-0/tiles/", stem, "_V1_0_R", row, "_C", column, ".zip")
@@ -389,11 +391,11 @@ end
 `.zip` URLs of the GHSL tiles for `dataset` intersecting `region`, ready to be
 downloaded, unzipped, and mosaicked/reprojected by GDAL.
 """
-ghsl_tile_urls(dataset::AbstractGHSLDataset, region::BoundingBox) =
+ghsl_tile_urls(dataset::Union{GHSBuiltH, GHSBuiltS}, region::BoundingBox) =
     [ghsl_tile_url(dataset, row, column) for (row, column) in ghsl_tiles_in_bbox(region)]
 
 # GeoTIFF basename inside a tile `.zip` archive.
-ghsl_tile_tif_name(dataset::AbstractGHSLDataset, row, column) =
+ghsl_tile_tif_name(dataset::Union{GHSBuiltH, GHSBuiltS}, row, column) =
     string(product_stem(dataset), "_V1_0_R", row, "_C", column, ".tif")
 
 #####
@@ -491,19 +493,31 @@ function ghsl_regional_raster(metadatum::GHSLMetadatum)
               latitude  = collect(φnodes(grid, Center())))
 end
 
-function Downloads.download(metadatum::GHSLMetadatum; arch = CPU())
+function Downloads.download(metadatum::GHSLMetadatum)
     DataWrangling.validate_dataset_coverage(nothing, metadatum)
     nc_path = metadata_path(metadatum)
     @root if !isfile(nc_path)
-        ghsl_tiles_to_netcdf(metadatum, nc_path, arch)
+        ghsl_tiles_to_netcdf(metadatum, nc_path)
     end
     return nc_path
 end
 
-# Implemented in the ArchGDAL extension; this fallback fires when it is not loaded.
-ghsl_tiles_to_netcdf(metadatum, nc_path, arch = CPU()) =
-    error("Reading the $(summary(metadatum.dataset)) Mollweide GeoTIFF tiles requires " *
-          "the ArchGDAL package (for the ESRI:54009 → EPSG:4326 reprojection). " *
-          "Load it with `using ArchGDAL`.")
+ghsl_tiles_to_netcdf(metadatum, nc_path) =
+    error("Reading $(summary(metadatum.dataset)) Mollweide GeoTIFF tiles requires `using ArchGDAL`.")
+
+"""
+$(TYPEDSIGNATURES)
+
+Plan-area index and built-area-weighted mean building height (m) on `grid` (a
+`LatitudeLongitudeGrid`) from the GHSL built-up surface and building-height rasters
+of `dataset`, as the NamedTuple of `Field`s
+`(; plan_area_index, mean_building_height)`: the area mean of the native-pixel built
+fraction, and the building volume over the built area of each cell. A pixel missing
+either its fraction or its height counts as unbuilt. The rasters are read in windows of
+at most about `maximum_raster_cells` native pixels (default `100_000_000`) and aggregated
+directly onto `grid`. Downloaded source tiles remain cached. Requires `using ArchGDAL`.
+"""
+Lands.building_morphometry(grid, dataset::GHSBuilt; kw...) =
+    error("Reading $(summary(dataset)) building morphometry requires `using ArchGDAL`.")
 
 end # module GHSL
