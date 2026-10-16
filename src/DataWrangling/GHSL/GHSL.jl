@@ -514,8 +514,9 @@ of `dataset`, as the NamedTuple of `Field`s
 `(; plan_area_index, mean_building_height)`: the area mean of the native-pixel built
 fraction, and the building volume over the built area of each cell. A pixel missing
 either its fraction or its height counts as unbuilt. The rasters are read in windows of
-at most about `maximum_raster_cells` native pixels (default `100_000_000`) and aggregated
-directly onto `grid`. Downloaded source tiles remain cached. Requires `using ArchGDAL`.
+at most `maximum_raster_cells` native pixels (default `100_000_000`) per product, including
+when a grid cell spans multiple windows. Missing ocean tiles contribute zero built area
+and volume. Downloaded source tiles remain cached. Requires `using ArchGDAL`.
 """
 Lands.building_morphometry(grid, dataset::GHSBuilt; kw...) =
     error("Reading $(summary(dataset)) building morphometry requires `using ArchGDAL`.")

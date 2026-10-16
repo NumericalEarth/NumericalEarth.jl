@@ -29,7 +29,7 @@ using NumericalEarth.DataWrangling.GloBFP3D: GlobalBuildingFootprints3DMetadatum
 using NumericalEarth.DataWrangling.GHSL: GHSBuilt, GHSBuiltH, GHSBuiltS, GHSLMetadatum, native_resolution,
                                          ghsl_tile_url, ghsl_tile_tif_name, ghsl_tiles_in_bbox,
                                          ghsl_regional_raster, built_surface_to_fraction,
-                                         mask_building_height, ghsl_pixel_window, ghsl_mollweide_bounds, download_GHSL_cache,
+                                         mask_building_height, ghsl_pixel_window, download_GHSL_cache,
                                          longitude_latitude_to_mollweide, MOLLWEIDE_RADIUS
 using NumericalEarth.DataWrangling.OpenLandMap: assemble_raster_window, raster_window_indices,
                                                 validate_wgs84_longitude_latitude, validate_geographic_northup
