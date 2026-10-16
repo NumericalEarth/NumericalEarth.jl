@@ -176,14 +176,13 @@ function building_morphometry end
     latitude_faces = grid.φᵃᶠᵃ
     longitude_center = (longitude_faces[i] + longitude_faces[i + 1]) / 2
     latitude_center = (latitude_faces[j] + latitude_faces[j + 1]) / 2
-    longitude_spacing = longitude_faces[i + 1] - longitude_faces[i]
-    latitude_spacing = latitude_faces[j + 1] - latitude_faces[j]
-    longitude_radius = max(0, round(Int, (neighborhood / Δxᶜᶜᶜ(i, j, 1, grid) - 1) / 2))
-    latitude_radius = max(0, round(Int, (neighborhood / Δyᶜᶜᶜ(i, j, 1, grid) - 1) / 2))
-    west = ifelse(longitude_radius == 0, longitude_faces[i], longitude_center - (longitude_radius + 1//2) * longitude_spacing)
-    east = ifelse(longitude_radius == 0, longitude_faces[i + 1], longitude_center + (longitude_radius + 1//2) * longitude_spacing)
-    south = ifelse(latitude_radius == 0, latitude_faces[j], latitude_center - (latitude_radius + 1//2) * latitude_spacing)
-    north = ifelse(latitude_radius == 0, latitude_faces[j + 1], latitude_center + (latitude_radius + 1//2) * latitude_spacing)
+    # Half a neighborhood in degrees, at the meters per degree of this cell.
+    longitude_half_width = neighborhood / Δxᶜᶜᶜ(i, j, 1, grid) * (longitude_faces[i + 1] - longitude_faces[i]) / 2
+    latitude_half_width = neighborhood / Δyᶜᶜᶜ(i, j, 1, grid) * (latitude_faces[j + 1] - latitude_faces[j]) / 2
+    west = min(longitude_faces[i], longitude_center - longitude_half_width)
+    east = max(longitude_faces[i + 1], longitude_center + longitude_half_width)
+    south = min(latitude_faces[j], latitude_center - latitude_half_width)
+    north = max(latitude_faces[j + 1], latitude_center + latitude_half_width)
     Nx, Ny, _ = size(source_grid)
     longitude_faces = source_grid.λᶠᵃᵃ
     latitude_faces = source_grid.φᵃᶠᵃ
@@ -244,7 +243,8 @@ function neighborhood_morphometry(properties, grid, neighborhood)
     outputs = hasproperty(properties, :frontal_area_index) ? inputs : (; inputs.plan_area_index, inputs.mean_building_height)
     pooled = map(_ -> Field{Center, Center, Nothing}(grid), outputs)
     source_grid = properties.plan_area_index.grid
-    launch!(architecture(grid), grid, :xy, _neighborhood_morphometry!, pooled, grid, inputs, source_grid, neighborhood)
+    launch!(architecture(grid), grid, :xy, _neighborhood_morphometry!, pooled, grid, inputs, source_grid,
+            convert(eltype(grid), neighborhood))
     return pooled
 end
 
@@ -255,10 +255,11 @@ Momentum roughness length and zero-plane displacement (m) of the built-up surfac
 `grid` (a `LatitudeLongitudeGrid`) from a building `dataset`, as the NamedTuple of `Field`s
 `(; momentum_roughness_length, zero_plane_displacement, urban_fraction, building_height)`.
 
-The closure is evaluated on neighborhoods about `neighborhood` (m) wide, from the morphometry
-that [`building_morphometry`](@ref) supplies on a lattice: a grid cell wider than `neighborhood`
-is subdivided into neighborhood-sized lattice cells, and on a finer grid each cell pools the
-cells within half a neighborhood of it. The dataset region includes the padding needed for
+The closure is evaluated on neighborhoods `neighborhood` (m) wide, from the morphometry that
+[`building_morphometry`](@ref) supplies on a lattice: a grid cell wider than `neighborhood` is
+subdivided into lattice cells no wider than it. Each neighborhood is centered on a lattice cell
+and pools, by overlap area, the lattice cells within half a neighborhood of its center. The
+dataset region includes the padding needed for
 complete neighborhoods at the grid edges. Neighborhoods with plan-area
 index at least the closure's `minimum_built_fraction` are urban, and `urban_fraction` is their
 share of the grid-cell area. Each grid cell takes the displacement and roughness length whose
@@ -281,7 +282,8 @@ function urban_roughness(grid::LatitudeLongitudeGrid, dataset; surface_layer_hei
     longitude_scale = grid.radius * deg2rad(1) * cosd(clamp(0, first(latitude_faces), last(latitude_faces)))
     latitude_scale = grid.radius * deg2rad(1)
     function subdivide(faces, scale)
-        subdivisions = max.(1, round.(Int, diff(faces) .* scale ./ neighborhood))
+        # Lattice cells no wider than a neighborhood; the tolerance keeps exact multiples from splitting.
+        subdivisions = ceil.(Int, (1 - 1e-6) .* diff(faces) .* scale ./ neighborhood)
         return [[faces[i] + (faces[i + 1] - faces[i]) * k / subdivisions[i]
                  for i in eachindex(subdivisions) for k in 0:subdivisions[i]-1]; faces[end]]
     end
@@ -292,13 +294,11 @@ function urban_roughness(grid::LatitudeLongitudeGrid, dataset; surface_layer_hei
                                     topology = (Bounded, Bounded, Flat))
 
     function pad(faces, scale)
-        spacing = diff(faces)
-        radii = max.(0, round.(Int, (neighborhood ./ (scale .* spacing) .- 1) ./ 2))
-        lower = minimum(faces[1:end-1] .- radii .* spacing)
-        upper = maximum(faces[2:end] .+ radii .* spacing)
-        before = ceil(Int, (first(faces) - lower) / first(spacing))
-        after = ceil(Int, (upper - last(faces)) / last(spacing))
-        return [first(faces) .- (before:-1:1) .* first(spacing); faces; last(faces) .+ (1:after) .* last(spacing)]
+        half_width = neighborhood / scale / 2
+        first_spacing, last_spacing = faces[2] - faces[1], faces[end] - faces[end-1]
+        before = ceil(Int, half_width / first_spacing - 1/2)
+        after = ceil(Int, half_width / last_spacing - 1/2)
+        return [first(faces) .- (before:-1:1) .* first_spacing; faces; last(faces) .+ (1:after) .* last_spacing]
     end
     longitude_scale = latitude_scale * minimum(cosd, latitude_faces)
     padded_longitude = pad(longitude_lattice, longitude_scale)

@@ -276,42 +276,44 @@ end
 end
 
 @testset "GHSL urban roughness from native tiles on $arch with $FT" for arch in test_architectures, FT in (Float32, Float64)
-    # Four 1200 m cells of 600 m neighborhoods: cell (1, 1) holds a dense core in one neighborhood,
-    # cell (1, 2) one neighborhood alternating density and height by 100 m column, cell (2, 1) is
-    # no-data, and cell (2, 2) is uniformly built.
-    neighborhood(x, y) = (floor(Int, (x - 400) / 600) + 1, floor(Int, (y - 400) / 600) + 1)
-    odd_column(x) = isodd(floor(Int, x / 100))
-    function built_surface(x, y)
-        a, b = neighborhood(x, y)
-        (a, b) == (1, 1) && return 50.0
-        (a, b) == (1, 3) && return odd_column(x) ? 20.0 : 60.0
-        a > 2 && return b > 2 ? 50.0 : 65535.0
-        return 0.0
+    # Four 1200 m cells stacked south to north, each two 600 m rows: cell 1 holds a dense core in
+    # its southern row, cell 2 a southern row alternating density and height by 100 m, cell 3 is
+    # no-data, and cell 4 is uniformly built. Nothing varies east to west, where neighborhoods
+    # overlap the lattice cells.
+    row(y) = floor(Int, (y - 400) / 600) + 1
+    odd_stripe(y) = isodd(floor(Int, y / 100))
+    function built_surface(y)
+        row(y) == 1 && return 50.0
+        row(y) == 3 && return odd_stripe(y) ? 20.0 : 60.0
+        row(y) in (5, 6) && return 65535.0
+        return row(y) > 6 ? 50.0 : 0.0
     end
-    building_height(x, y) = neighborhood(x, y) == (1, 3) ? (odd_column(x) ? 10.0 : 30.0) : 20.0
-    surface = [built_surface(10i - 5, 3200 - 10j + 5) for i in 1:320, j in 1:320]
-    height = [building_height(100i - 50, 3200 - 100j + 50) for i in 1:32, j in 1:32]
+    building_height(y) = row(y) == 3 ? (odd_stripe(y) ? 10.0 : 30.0) : 20.0
+    surface = [built_surface(5600 - 10j + 5) for i in 1:200, j in 1:560]
+    height = [building_height(5600 - 100j + 50) for i in 1:20, j in 1:56]
 
     dataset = GHSBuilt()
-    grid = LatitudeLongitudeGrid(arch, FT; size = (2, 2),
-                                 longitude = (400, 2800) .* longitude_per_meter,
-                                 latitude = (400, 2800) .* latitude_per_meter,
+    grid = LatitudeLongitudeGrid(arch, FT; size = (1, 4),
+                                 longitude = (400, 1600) .* longitude_per_meter,
+                                 latitude = (400, 5200) .* latitude_per_meter,
                                  topology = (Bounded, Bounded, Flat))
     closures = (; variable = MorphometricRoughness(FT),
                   uniform = MorphometricRoughness(FT; height_distribution = UniformHeight()))
-    with_ghsl_tiles(dataset, surface, height; north = 3200) do
-        results = urban_roughness(grid, dataset; closure = closures, surface_layer_height = 100, neighborhood = 600)
+    # Neighborhoods as tall as the 600 m rows, in grid meters.
+    neighborhood = grid.radius * deg2rad(600latitude_per_meter)
+    with_ghsl_tiles(dataset, surface, height; north = 5600) do
+        results = urban_roughness(grid, dataset; closure = closures, surface_layer_height = 100, neighborhood)
         for name in keys(closures)
             closure = closures[name]
-            fields = map(field -> Array(interior(field, :, :, 1)), results[name])
+            fields = map(field -> vec(Array(interior(field, :, :, 1))), results[name])
             core = aerodynamic_parameters(closure, FT(0.5), FT(20))
             # Built-area-weighted height, (0.2 · 10 + 0.6 · 30) / 0.8, at plan-area index 0.4.
             mixed = aerodynamic_parameters(closure, FT(0.4), FT(25))
             bare = aerodynamic_parameters(closure, 0, 0)
-            @test fields.momentum_roughness_length ≈ [core[1] mixed[1]; bare[1] core[1]] rtol = 1e-5
-            @test fields.zero_plane_displacement ≈ [core[2] mixed[2]; bare[2] core[2]] rtol = 1e-5
-            @test fields.urban_fraction ≈ [1/4 1/4; 0 1] rtol = 1e-5
-            @test fields.building_height ≈ [20 25; 0 20] rtol = 1e-5
+            @test fields.momentum_roughness_length ≈ [core[1], mixed[1], bare[1], core[1]] rtol = 1e-5
+            @test fields.zero_plane_displacement ≈ [core[2], mixed[2], bare[2], core[2]] rtol = 1e-5
+            @test fields.urban_fraction ≈ [1/2, 1/2, 0, 1] rtol = 1e-5
+            @test fields.building_height ≈ [20, 25, 0, 20] rtol = 1e-5
             @test eltype(results[name].momentum_roughness_length) == FT
         end
         @test readdir(GHSL.download_GHSL_cache) == ["tiles"]
