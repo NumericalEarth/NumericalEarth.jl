@@ -227,7 +227,7 @@ for arch in test_architectures
             set!(Φ_fts[1], [1000.0 * k * g for i in 1:Nx, j in 1:Ny, k in 1:Nz])  # heights {1, 2, 3, 4} km
             set!(Φ_fts[2], [5000.0 * k * g for i in 1:Nx, j in 1:Ny, k in 1:Nz])  # heights {5, 10, 15, 20} km
 
-            clock = Clock(time = 0.0)
+            clock = Clock(time = 0)
             tsi  = TimeSeriesInterpolation(Φ_fts, Φ_fts.grid; clock)
             plvd = PressureLevelVerticalDiscretization(tsi; gravitational_acceleration = g)
             grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz),
