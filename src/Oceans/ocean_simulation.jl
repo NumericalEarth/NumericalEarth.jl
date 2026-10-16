@@ -5,8 +5,8 @@ using Oceananigans.BuoyancyFormulations: LinearEquationOfState
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition
 using Oceananigans.DistributedComputations: DistributedGrid, all_reduce
 using Oceananigans.Grids: inactive_node, topology
-using Oceananigans.OrthogonalSphericalShellGrids
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: maybe_extend_halos
+using Oceananigans.OrthogonalSphericalShellGrids
 using Oceananigans.TimeSteppers: VerticallyImplicitTimeDiscretization, AdaptiveVerticallyImplicitDiscretization
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
