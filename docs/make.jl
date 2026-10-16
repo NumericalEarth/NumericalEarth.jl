@@ -185,6 +185,7 @@ pages = [
         "Supported variables" => "Metadata/supported_variables.md",
     ],
     "Interface fluxes" => "interface_fluxes.md",
+    "Urban roughness" => "urban_roughness.md",
 
     "Appendix" => [
         "Notation" => "appendix/notation.md",

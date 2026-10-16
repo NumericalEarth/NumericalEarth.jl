@@ -1,8 +1,6 @@
-using Oceananigans.Grids: inactive_node, longitude_in_same_window, topology, Flat
+using Oceananigans.Grids: inactive_node, longitude_in_same_window, topology
 using Oceananigans.Operators: Azᶜᶜᶜ
-using Oceananigans.Architectures: on_architecture, CPU
 using Oceananigans.DistributedComputations: Distributed, all_reduce, global_size
-using Oceananigans.Fields: interior
 
 #####
 ##### River routing: map river-mouth discharge onto coastal ocean cells
