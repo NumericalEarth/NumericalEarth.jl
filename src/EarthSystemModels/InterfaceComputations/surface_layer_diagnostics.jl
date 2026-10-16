@@ -48,7 +48,7 @@ end
 
 # The velocity relative to the interface: the profile speed along `- ρτ / |ρτ|`, the unit
 # vector of the velocity difference the flux solve saw.
-@inline function surface_layer_velocity_difference(i, j, interface_state, z)
+@inline function surface_layer_velocity_difference(::Val{true}, i, j, grid, interface_state, z)
     scales = local_similarity_scales(i, j, interface_state)
     ℱ = scales.formulation
     Πu = displaced_similarity_profile(ℱ, ℱ.stability_functions.momentum, z, scales.ℓu₀, scales.L★)
@@ -62,13 +62,34 @@ end
            ifelse(ρτ == 0, zero(U), -U * ρτʸ / ρτ)
 end
 
+# The atmosphere velocity difference scaled by the profile, `Π(z - d) / Π(Δh - d)`.
+@inline function surface_layer_velocity_difference(::Val{false}, i, j, grid, interface_state, z)
+    scales = local_similarity_scales(i, j, interface_state)
+    ℱ = scales.formulation
+    ψu = ℱ.stability_functions.momentum
+    Δh = state2dindex(interface_state.surface_layer_height, i, j)
+    Πu = displaced_similarity_profile(ℱ, ψu, z, scales.ℓu₀, scales.L★)
+    Πh = displaced_similarity_profile(ℱ, ψu, Δh, scales.ℓu₀, scales.L★)
+
+    kᴺ = size(grid, 3)
+    uₛ = ℑxᶜᵃᵃ(i, j, kᴺ, grid, interface_state.surface_velocities.u)
+    vₛ = ℑyᵃᶜᵃ(i, j, kᴺ, grid, interface_state.surface_velocities.v)
+    @inbounds Δu = interface_state.atmosphere_velocities.u[i, j, 1] - uₛ
+    @inbounds Δv = interface_state.atmosphere_velocities.v[i, j, 1] - vₛ
+
+    return ifelse(scales.u★ == 0, zero(Πu), Δu * Πu / Πh),
+           ifelse(scales.u★ == 0, zero(Πu), Δv * Πu / Πh)
+end
+
 @inline function surface_layer_x_velocity(i, j, k, grid, interface_state, z)
-    Δu, Δv = surface_layer_velocity_difference(i, j, interface_state, z)
+    Δu, Δv = surface_layer_velocity_difference(interface_state.include_subgrid_velocities,
+                                               i, j, grid, interface_state, z)
     return ℑxᶜᵃᵃ(i, j, size(grid, 3), grid, interface_state.surface_velocities.u) + Δu
 end
 
 @inline function surface_layer_y_velocity(i, j, k, grid, interface_state, z)
-    Δu, Δv = surface_layer_velocity_difference(i, j, interface_state, z)
+    Δu, Δv = surface_layer_velocity_difference(interface_state.include_subgrid_velocities,
+                                               i, j, grid, interface_state, z)
     return ℑyᵃᶜᵃ(i, j, size(grid, 3), grid, interface_state.surface_velocities.v) + Δv
 end
 
@@ -116,14 +137,23 @@ The temperature is in situ: `θ_★` scales a potential temperature referenced t
 adiabatic increment `g z / cᵖᵐ` is subtracted at the geometric height `z`.
 
 Where the flux solve enhances the bulk velocity with subgrid velocities (convective gustiness,
-a mesoscale scale), that enhancement is carried by `u_★` and is not undone here, so `u` and `v`
-exceed the resolved wind. `T` and `q` are unaffected: their scales are built from the resolved
-increments.
+a mesoscale scale), that enhancement is carried by `u_★`. By default the wind leaves it out,
+taking `u_★ = ϰ ΔU / Π(Δh - d)` from the atmosphere velocity difference `ΔU` at the surface-layer
+height `Δh`, so that
+
+```math
+(u, v)(z) = (uₛ, vₛ) + (Δu, Δv) \\frac{Π(z - d)}{Π(Δh - d)} .
+```
+
+With `include_subgrid_velocities = true` the wind is built from the stored `u_★` and exceeds the
+profile of the atmosphere wind alone. `T` and `q` are unaffected: their scales are built from the
+resolved increments.
 """
 function surface_layer_diagnostics(model, interface = model.interfaces.atmosphere_land_interface;
                                    velocity_height = 10,
                                    temperature_height = 2,
-                                   specific_humidity_height = 2)
+                                   specific_humidity_height = 2,
+                                   include_subgrid_velocities = false)
 
     isnothing(interface) &&
         throw(ArgumentError("surface_layer_diagnostics requires an atmosphere interface, found nothing"))
@@ -168,6 +198,10 @@ function surface_layer_diagnostics(model, interface = model.interfaces.atmospher
                        temperature = interface.temperature,
                        specific_humidity = interface.specific_humidity,
                        atmosphere_specific_humidity = interfaces.exchanger.atmosphere.state.q,
+                       atmosphere_velocities = (u = interfaces.exchanger.atmosphere.state.u,
+                                                v = interfaces.exchanger.atmosphere.state.v),
+                       surface_layer_height = interfaces.properties.surface_layer_height,
+                       include_subgrid_velocities = Val(include_subgrid_velocities),
                        surface_velocities = surface_velocities,
                        flux_formulation = flux_formulation,
                        temperature_units = temperature_units,
