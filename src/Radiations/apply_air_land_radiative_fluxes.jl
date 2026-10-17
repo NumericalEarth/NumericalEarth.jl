@@ -47,8 +47,8 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     land_energy_flux = land_surface_energy_flux(land)
 
     # `nothing` for components that diagnose their own upwelling radiation.
-    land_shortwave_up = land_surface_shortwave_up(land)
-    land_longwave_up = land_surface_longwave_up(land)
+    land_shortwave_upwelling_flux = land_surface_shortwave_up(land)
+    land_longwave_upwelling_flux = land_surface_longwave_up(land)
 
     launch!(arch, grid, :xy,
             _apply_air_land_radiative_fluxes!,
@@ -59,15 +59,15 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
             rk,
             radiation_state,
             al_interface.temperature,
-            land_shortwave_up,
-            land_longwave_up)
+            land_shortwave_upwelling_flux,
+            land_longwave_upwelling_flux)
 
     return nothing
 end
 
 # Opting out with `nothing` is resolved at compile time, so it costs nothing in the kernel.
-@inline _maybe_write_up!(::Nothing, i, j, value) = nothing
-@inline _maybe_write_up!(field, i, j, value) = @inbounds field[i, j, 1] = value
+@inline maybe_set_upwelling_radiative_fluxes!(::Nothing, i, j, value) = nothing
+@inline maybe_set_upwelling_radiative_fluxes!(field, i, j, value) = @inbounds field[i, j, 1] = value
 
 @kernel function _apply_air_land_radiative_fluxes!(land_energy_flux,
                                                   interface_radiative_flux,
@@ -77,7 +77,7 @@ end
                                                   radiation_state,
                                                   land_surface_temperature,
                                                   land_shortwave_upwelling_flux,
-                                                  land_longwave_up)
+                                                  land_longwave_upwelling_flux)
 
     i, j = @index(Global, NTuple)
     kᴺ = size(grid, 3)
@@ -110,6 +110,6 @@ end
     end
 
     # Same `Tₛ`, `α`, `ϵ` as `ΣQ`, so the component cannot disagree with the assembled budget.
-    maybe_set_upwelling_radiative_fluxes!(land_shortwave_up, i, j, ℐꜛˢʷ)
-    _maybe_write_up!(land_longwave_up, i, j, ℐꜛˡʷ)
+    maybe_set_upwelling_radiative_fluxes!(land_shortwave_upwelling_flux, i, j, ℐꜛˢʷ)
+    maybe_set_upwelling_radiative_fluxes!(land_longwave_upwelling_flux, i, j, ℐꜛˡʷ)
 end
