@@ -58,17 +58,22 @@ end
                              boundary_layer_height = 512,  # meters
                              thermodynamics_parameters = nothing,
                              region = nothing,
+                             pressure = :surface_pressure,
                              other_kw...)
 
 Return a [`PrescribedAtmosphere`](@ref) representing ERA5 single-level reanalysis, suitable for regional hindcast forcing.
-Eastward/northward 10 m winds, 2 m temperature, and surface pressure are loaded directly; specific humidity is derived from
-the 2 m dewpoint and surface pressure (`qᵛ = qᵛ⁺(Tᵈ, pˢ)`) one in-memory window at a time; total precipitation is
+Eastward/northward 10 m winds, 2 m temperature, and the `pressure` variable are loaded directly; specific humidity is
+derived from the 2 m dewpoint and that pressure (`qᵛ = qᵛ⁺(Tᵈ, p)`) one in-memory window at a time; total precipitation is
 converted from hourly-accumulated depth (m) to a mass flux (kg m⁻² s⁻¹) at load time and wrapped in a
 `PrescribedPrecipitationFlux`.
 
 `region` (a `BoundingBox`) restricts the download and the native grid to a sub-domain; the coupled model interpolates the
 native-resolution atmosphere onto the exchange grid. Pass `thermodynamics_parameters` to share a specific thermodynamics with
 the rest of the model (defaults to `AtmosphereThermodynamicsParameters` at the data's float type).
+
+`pressure` names the ERA5 pressure variable. The default `:surface_pressure` is the pressure at the land or sea surface. Ocean
+and sea ice simulations should use `:mean_sea_level_pressure`: interpolated onto coastal ocean cells, the surface pressure
+of nearby high terrain (tens of kPa lower than at sea level) acts on the ocean like a sea level step of several meters.
 """
 function ERA5PrescribedAtmosphere(architecture = CPU();
                                   dataset = ERA5HourlySingleLevel(),
@@ -82,6 +87,7 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
                                   thermodynamics_parameters = nothing,
                                   region = nothing,
                                   tracers = NamedTuple(),
+                                  pressure = :surface_pressure,
                                   other_kw...)
 
     kw = (; time_indexing, time_indices_in_memory)
@@ -91,7 +97,7 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
     # across variables (one CDS request, or one era5cli invocation with concurrent
     # per-variable requests), so the `FieldTimeSeries` below find their files cached.
     mset = MetadataSet(:eastward_velocity, :northward_velocity, :temperature,
-                       :dewpoint_temperature, :surface_pressure, :total_precipitation;
+                       :dewpoint_temperature, pressure, :total_precipitation;
                        dataset, start_date, end_date, dir, region)
     Downloads.download(mset)
 
@@ -101,7 +107,7 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
     v    = era5_fts(:northward_velocity)
     T    = era5_fts(:temperature)
     Tᵈ   = era5_fts(:dewpoint_temperature)
-    p    = era5_fts(:surface_pressure)
+    p    = era5_fts(pressure)
     rain = era5_fts(:total_precipitation)
 
     grid  = u.grid
