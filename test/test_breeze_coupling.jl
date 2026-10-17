@@ -287,6 +287,32 @@ end
             @test_throws ArgumentError build_partition_test_model(arch; ocean_fraction=nothing)
         end
 
+        @testset "Atmospheres that do not feel the surface skip the blend on $A" begin
+            InterfaceComputations = NumericalEarth.EarthSystemModels.InterfaceComputations
+            SurfacePartition = InterfaceComputations.SurfacePartition
+            atmosphere_feels_surface = InterfaceComputations.atmosphere_feels_surface
+
+            grid = RectilinearGrid(arch; size = (4, 4), x = (0, 1), y = (0, 1), topology = (Periodic, Periodic, Flat))
+            prescribed = PrescribedAtmosphere(grid, [0.0])
+            @test !atmosphere_feels_surface(prescribed)
+            @test !atmosphere_feels_surface(nothing)
+
+            ## Placeholders stand in for the two interfaces: only their presence matters here.
+            ao, al = :ocean_interface, :land_interface
+
+            ## Without a fraction the partition is empty rather than an error ...
+            partition = SurfacePartition(grid, prescribed, nothing, ao, al)
+            @test isnothing(partition.ocean_fraction) && isnothing(partition.surface_temperature)
+
+            ## ... and with one, the fraction is kept but no skin temperature is blended.
+            partition = SurfacePartition(grid, prescribed, 1/4, ao, al)
+            @test all(≈(1/4), Array(interior(partition.ocean_fraction)))
+            @test isnothing(partition.surface_temperature)
+
+            ## The blend's no-op dispatch covers both, so stepping never touches them.
+            @test isnothing(InterfaceComputations.update_surface_temperature!(partition, nothing))
+        end
+
         @testset "A prescribed ocean follows its time series on $A" begin
             ## Two snapshots 100 s apart; the exchanger state should track the ocean clock
             ## linearly between them, and hold the end values outside the record.

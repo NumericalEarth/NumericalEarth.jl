@@ -14,7 +14,7 @@ land fraction is `1 - þ`, and the sea ice concentration ℵ further splits the 
 fraction into an open-ocean part `þ (1 - ℵ)` and an ice-covered part `þ ℵ`.
 `surface_temperature` is the partition-weighted skin temperature (K) — the single
 surface the atmosphere and radiation see; it is `nothing` unless the model carries
-both a land and an ocean interface.
+both a land and an ocean interface and an atmosphere that feels the surface.
 """
 struct SurfacePartition{F, T}
     ocean_fraction :: F
@@ -26,19 +26,32 @@ Base.summary(partition::SurfacePartition) =
 
 Base.show(io::IO, partition::SurfacePartition) = print(io, summary(partition))
 
-SurfacePartition(grid, ::PrescribedAtmosphere, args...) = nothing
+"""
+    atmosphere_feels_surface(atmosphere)
 
-function SurfacePartition(grid, atmos, ocean_fraction, ao_interface, al_interface)
+Whether `atmosphere` responds to the surface it is coupled to, and so needs the partition-weighted
+fluxes and skin temperature. A prescribed atmosphere (`false`, method added in `Atmospheres`) or no
+atmosphere at all does not: its surfaces only receive fluxes, each per unit of its own area.
+"""
+atmosphere_feels_surface(atmosphere) = true
+atmosphere_feels_surface(::Nothing) = false
+
+function SurfacePartition(grid, atmosphere, ocean_fraction, ao_interface, al_interface)
     isnothing(ao_interface) && return SurfacePartition(ZeroField(), nothing)
     isnothing(al_interface) && return SurfacePartition(OneField(), nothing)
 
-    isnothing(ocean_fraction) &&
-        throw(ArgumentError("a model with both ocean and land components requires an explicit `ocean_fraction`"))
+    feels_surface = atmosphere_feels_surface(atmosphere)
+
+    if isnothing(ocean_fraction)
+        feels_surface && throw(ArgumentError("a model with both ocean and land components " *
+                                             "requires an explicit `ocean_fraction`"))
+        return SurfacePartition(nothing, nothing)
+    end
 
     þ = Field{Center, Center, Nothing}(grid)
     set!(þ, ocean_fraction)
     fill_halo_regions!(þ)
-    Tₛ = Field{Center, Center, Nothing}(grid)
+    Tₛ = feels_surface ? Field{Center, Center, Nothing}(grid) : nothing
 
     return SurfacePartition(þ, Tₛ)
 end

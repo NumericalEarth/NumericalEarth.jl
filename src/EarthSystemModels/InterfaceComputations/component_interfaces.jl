@@ -474,7 +474,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     # sibling kwargs above by the same-named keyword default.
     al_interface = atmosphere_land_interface
 
-    surface_partition = SurfacePartition(exchange_grid, ocean_fraction, ao_interface, al_interface)
+    surface_partition = SurfacePartition(exchange_grid, atmosphere, ocean_fraction, ao_interface, al_interface)
 
     # Total interface fluxes
     total_fluxes = (ocean      = net_fluxes(ocean),
