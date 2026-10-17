@@ -116,7 +116,7 @@ export
     regrid_topography,
     smooth_topography!,
     Metadata, Metadatum, MetadataSet,
-    BoundingBox,
+    BoundingBox, ConformalConicBox, ConformalConicGrid,
     Column, Linear, Nearest,
     ECCOMetadatum,
     EN4Metadatum,
