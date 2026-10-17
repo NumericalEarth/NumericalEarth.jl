@@ -303,15 +303,18 @@ end
     wrapped = BoundingBox(longitude = (267.5, 268.5), latitude = (36.5, 37.5))
     @test metadata_filename(dataset, :leaf_area_index, date, wrapped) == filename
 
-    # A climatology reduces one variable at a time, and a different span or period is a
-    # different product.
+    # A climatology reduces one variable at a time, and a different span, screen or period is
+    # a different product.
     climatology = MODISLAIClimatology(years = 2003:2019)
     other_years = MODISLAIClimatology(years = 2010:2019)
+    unscreened = MODISLAIClimatology(dataset = MCD15A2H(screened_flags = 0x0000))
     stamp = DateTime(2018, 1, 1)
     @test metadata_filename(climatology, :leaf_area_index, stamp, region) !=
           metadata_filename(climatology, :fpar, stamp, region)
     @test metadata_filename(climatology, :leaf_area_index, stamp, region) !=
           metadata_filename(other_years, :leaf_area_index, stamp, region)
+    @test metadata_filename(climatology, :leaf_area_index, stamp, region) !=
+          metadata_filename(unscreened, :leaf_area_index, stamp, region)
     @test metadata_filename(climatology, :leaf_area_index, stamp, region) !=
           metadata_filename(climatology, :leaf_area_index, stamp + Day(8), region)
     @test occursin("2003-2019", metadata_filename(climatology, :leaf_area_index, stamp, region))

@@ -278,11 +278,13 @@ DataWrangling.conversion_units(::MODISLandCoverMetadatum) = nothing
 #####
 ##### Each granule read produces one regional file holding every layer, so the raw filename
 ##### is keyed by date and region but not by variable. The climatology reduces a single
-##### variable, so its filename carries the variable, the years, the reducer, and the period.
+##### variable, so its filename carries the variable, the years, the reducer, the quality
+##### screen, and the period.
 #####
 
 date_tag(date) = Dates.format(DateTime(date), "yyyymmdd")
 years_tag(years) = string(first(years), "-", last(years))
+screen_tag(dataset) = string("qc", string(dataset.screened_flags, base = 16, pad = 4))
 
 region_tag(dataset, name, ::Nothing) = "global"
 
@@ -306,6 +308,7 @@ function DataWrangling.metadata_filename(dataset::MODISLAIClimatology, name, dat
     period = period_index(date, composite_period_days(dataset))
     return string(modis_short_name(dataset), "_", modis_version(dataset), "_", name,
                   "_climatology_", years_tag(dataset.years), "_", nameof(dataset.reducer),
+                  "_", screen_tag(dataset.dataset),
                   "_p", lpad(period, 2, '0'), "_", region_tag(dataset, name, region), ".nc")
 end
 
