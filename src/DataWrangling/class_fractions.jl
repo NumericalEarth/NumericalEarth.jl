@@ -2,7 +2,30 @@
 ##### Per-class area fractions of a categorical (class-code) map
 #####
 
-using Oceananigans.Grids: constructor_arguments
+using Oceananigans.Grids: constructor_arguments, halo_size, pop_flat_elements
+
+# `source_grid` with its longitudes shifted by the multiple of 360 that lands it on `grid`'s.
+# TODO: drop the relabel once Oceananigans' `regrid!` matches longitudes modulo 360.
+function relabeled_source_grid(source_grid, grid)
+    source_grid isa LatitudeLongitudeGrid || return source_grid
+    longitude_shift = 360 * round((mean(x_domain(grid)) - mean(x_domain(source_grid))) / 360)
+    args, kwargs = constructor_arguments(source_grid)
+    kwargs[:longitude] = kwargs[:longitude] .+ longitude_shift
+    return LatitudeLongitudeGrid(args[:architecture], args[:number_type]; kwargs...)
+end
+
+# The columns of `grid` as a grid with a `Flat` vertical axis, the only target `regrid!` takes
+# from a horizontal source.
+# TODO: drop it once Oceananigans' `regrid!` lands a `Flat`-z source on a three-dimensional grid.
+function horizontal_grid(grid)
+    args, kwargs = constructor_arguments(grid)
+    TX, TY, _ = topology(grid)
+    kwargs[:topology] = (TX, TY, Flat)
+    kwargs[:size] = pop_flat_elements(size(grid), kwargs[:topology])
+    kwargs[:halo] = pop_flat_elements(halo_size(grid), kwargs[:topology])
+    delete!(kwargs, :z)
+    return LatitudeLongitudeGrid(args[:architecture], args[:number_type]; kwargs...)
+end
 
 """
     $(TYPEDSIGNATURES)
@@ -11,21 +34,14 @@ The area fraction of each of `codes` on `grid`, regridded conservatively from th
 `classes`. A cell with no class counts toward none of them.
 """
 function class_fractions(grid, classes::Field, codes)
-    source_grid = classes.grid
-
-    # TODO: drop the relabel once Oceananigans' `regrid!` matches longitudes modulo 360.
-    if source_grid isa LatitudeLongitudeGrid
-        longitude_shift = 360 * round((mean(x_domain(grid)) - mean(x_domain(source_grid))) / 360)
-        args, kwargs = constructor_arguments(source_grid)
-        kwargs[:longitude] = kwargs[:longitude] .+ longitude_shift
-        source_grid = LatitudeLongitudeGrid(args[:architecture], args[:number_type]; kwargs...)
-    end
-
+    source_grid = relabeled_source_grid(classes.grid, grid)
     indicator = Field{Center, Center, Nothing}(source_grid)
+    horizontal_fraction = Field{Center, Center, Nothing}(horizontal_grid(grid))
     return map(codes) do code
         interior(indicator) .= interior(classes) .== code
+        regrid!(horizontal_fraction, indicator)
         fraction = Field{Center, Center, Nothing}(grid)
-        regrid!(fraction, indicator)
+        interior(fraction) .= interior(horizontal_fraction)
         fill_halo_regions!(fraction)
         fraction
     end
