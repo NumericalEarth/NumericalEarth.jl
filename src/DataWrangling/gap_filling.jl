@@ -255,9 +255,9 @@ Keyword arguments
            file is written when the fill completes and read back when the inputs and the
            parameters below still match what produced it; otherwise it is rewritten.
            Default: `nothing`, no cache.
-- `cyclic`: `true` to wrap stage 1's interpolation across the ends of the time axis, as one
-            period of a periodic signal. Default: `true` without an `anchor` (a seasonal
-            climatology wraps), `false` with one (a date window does not).
+- `cyclic`: `true` to wrap stage 1's interpolation across the ends of the time axis, for a
+            series that is one period of a periodic signal such as a seasonal climatology.
+            Default: `false`.
 - `max_gap`: how many consecutive missing periods stage 1 may bridge — one `Int` for every
              cell, or an array over the spatial dimensions giving each cell its own
              ([`class_maximum_gap`](@ref) builds one from a class map). Default: `6`.
@@ -283,7 +283,7 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
                              anchor = nothing,
                              anchor_periods = nothing,
                              cache = nothing,
-                             cyclic = isnothing(anchor),
+                             cyclic = false,
                              max_gap = 6,
                              block_size = 32,
                              initial_radius = 1,
