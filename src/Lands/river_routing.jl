@@ -3,6 +3,7 @@ using Oceananigans.Operators: Azᶜᶜᶜ
 using Oceananigans.Architectures: on_architecture, CPU
 using Oceananigans.DistributedComputations: Distributed, all_reduce, global_size
 using Oceananigans.Fields: interior
+using Oceananigans.ImmersedBoundaries: underlying_grid
 
 #####
 ##### River routing: map river-mouth discharge onto coastal ocean cells
@@ -121,7 +122,9 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     wet  = Array(interior(wet_field))[:, :, 1]
     area = Array(interior(area_field))[:, :, 1]
 
-    ocean_cells = wet_cells(wet, on_architecture(CPU(), target_grid))
+    # TODO: use `target_grid` once Oceananigans' `on_architecture(CPU(), grid)` returns a `Distributed(CPU())`
+    # grid for a distributed `grid`; the serial rebuild keeps `Connected` topologies and cannot fill its halos.
+    ocean_cells = wet_cells(wet, on_architecture(CPU(), underlying_grid(target_grid)))
 
     # Account for distributed simulations by using the global size
     Nx, Ny, _ = global_grid_size(arch, size(target_grid))
