@@ -388,7 +388,9 @@ end
                                        building_height_deviation = 8.0, maximum_building_height = 60.0,
                                        frontal_area_index = 0.3, gross_building_height = 10.0))
     fields = urban_roughness(grid, buildings; closure, surface_layer_height = 100, neighborhood = 5000)
-    @test keys(fields) == (:momentum_roughness_length, :zero_plane_displacement, :urban_fraction, :building_height)
+    @test keys(fields) == (:momentum_roughness_length, :zero_plane_displacement,
+                           :urban_momentum_roughness_length, :urban_zero_plane_displacement,
+                           :urban_fraction, :building_height)
 
     ℓᵐ, d = aerodynamic_parameters(closure, 0.4, 25.0, 8.0, 60.0, 0.3)
     @test all(interior(fields.momentum_roughness_length, :, :, 1) .≈ ℓᵐ)
@@ -477,6 +479,21 @@ end
     end
 end
 
+@testset "Neighborhood maximum height comes from cells centered in the neighborhood on $arch" for arch in test_architectures
+    # The middle neighborhood, 1.2 cells wide, overlaps a tenth of the eastern cell and its 60 m tower.
+    grid = LatitudeLongitudeGrid(arch, Float64; size = (3, 1),
+                                 longitude = (0, 0.0027), latitude = (0, 0.0009),
+                                 topology = (Bounded, Bounded, Flat))
+    closure = MorphometricRoughness()
+    buildings = PrescribedBuildings((; plan_area_index = 0.4, mean_building_height = 20.0,
+                                       building_height_deviation = 0.0, frontal_area_index = 0.3,
+                                       maximum_building_height = (λ, φ) -> λ > 0.0018 ? 60.0 : 20.0))
+    fields = urban_roughness(grid, buildings; closure, surface_layer_height = 100,
+                             neighborhood = 1.2 * grid.radius * deg2rad(0.0009))
+    _, d = aerodynamic_parameters(closure, 0.4, 20.0, 0.0, 20.0, 0.3)
+    @test Array(interior(fields.zero_plane_displacement))[2, 1, 1] ≈ d
+end
+
 @testset "Urban neighborhoods are independent of domain edges on $arch" for arch in test_architectures
     buildings = PrescribedBuildings((; plan_area_index = 0.4,
                                        mean_building_height = (λ, φ) -> 20 + 1000λ + 500φ))
@@ -505,9 +522,28 @@ for arch in test_architectures
                                      z = (0, 10), topology = (Bounded, Bounded, Bounded))
         fields = urban_roughness(grid, patch_buildings; surface_layer_height = 100, neighborhood = grid.radius * deg2rad(0.009))
         @test Array(interior(fields.urban_fraction))[:, 1, 1] ≈ [0, 0, 0.01]
-        @test Array(interior(fields.building_height))[:, 1, 1] ≈ [0, 0, 20]
-        expected, _ = aerodynamic_parameters(MorphometricRoughness(), 0.6, 20)
-        @test Array(interior(fields.momentum_roughness_length))[end] ≈ expected
+        height = Array(interior(fields.building_height))[:, 1, 1]
+        @test all(isnan, height[1:2])
+        @test height[3] ≈ 20
+        closure = MorphometricRoughness()
+        urban_roughness_length, urban_displacement = aerodynamic_parameters(closure, 0.6, 20)
+        @test Array(interior(fields.urban_momentum_roughness_length))[end] ≈ urban_roughness_length
+        @test Array(interior(fields.urban_zero_plane_displacement))[end] ≈ urban_displacement
+
+        # The whole cell has the area-mean neutral drag of its urban part and its bare-soil remainder.
+        drag(ℓᵐ, d) = inv(log((100 - d) / ℓᵐ))^2
+        urban_drag = drag(urban_roughness_length, urban_displacement)
+        bare_drag = drag(aerodynamic_parameters(closure, 0, 0)...)
+        f = Array(interior(fields.urban_fraction))[:, 1, 1]
+        C = f .* urban_drag .+ (1 .- f) .* bare_drag
+        ℓᵐ = Array(interior(fields.momentum_roughness_length))[:, 1, 1]
+        d = Array(interior(fields.zero_plane_displacement))[:, 1, 1]
+        @test drag.(ℓᵐ, d) ≈ C
+        @test d ≈ f .* urban_drag .* urban_displacement ./ C
+
+        water = urban_roughness(grid, patch_buildings; surface_layer_height = 100, unbuilt = (1e-4, 0),
+                                neighborhood = grid.radius * deg2rad(0.009))
+        @test Array(interior(water.momentum_roughness_length))[1:2, 1, 1] ≈ [1e-4, 1e-4]
     end
 end
 
@@ -576,7 +612,9 @@ for arch in test_architectures
                                            maximum_building_height = built_east(20.0), frontal_area_index = built_east(0.3)))
         fields = urban_roughness(grid, buildings; closure = MorphometricRoughness(minimum_built_fraction = 0),
                                  surface_layer_height = 100, neighborhood = 100)
-        @test Array(interior(fields.building_height))[:, 1, 1] ≈ [0, 20, 20]
+        height = Array(interior(fields.building_height))[:, 1, 1]
+        @test isnan(height[1])
+        @test height[2:3] ≈ [20, 20]
     end
 
     @testset "Float32 thin cells pool by spherical area on $arch" begin

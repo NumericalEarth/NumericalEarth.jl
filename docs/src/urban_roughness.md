@@ -5,7 +5,9 @@ momentum roughness length and zero-plane displacement from building data on a
 `LatitudeLongitudeGrid`. It evaluates the closure on neighborhoods of the specified
 width in meters, then preserves their area-mean neutral drag when reducing to the
 model grid. `surface_layer_height` is the height in meters at which that drag is matched;
-it must exceed displacement plus roughness length in every urban neighborhood.
+it must exceed displacement plus roughness length in every urban neighborhood. Coupled
+fluxes evaluate the similarity profile at the atmosphere's surface-layer height, so the drag
+is exact there when `surface_layer_height` equals it.
 
 ## GHSL building data
 
@@ -28,10 +30,13 @@ roughness = urban_roughness(grid, dataset; surface_layer_height=500, neighborhoo
 roughness.momentum_roughness_length
 ```
 
-The result also contains `zero_plane_displacement`, `urban_fraction` (the fraction of
-each model cell covered by urban neighborhoods), and `building_height` (their mean
-height weighted by built area). Cells without urban neighborhoods receive the closure's
-bare-soil roughness and zero displacement.
+`momentum_roughness_length` and `zero_plane_displacement` match the neutral drag of the
+whole model cell: its urban neighborhoods, which cover `urban_fraction` of the cell, and an
+`unbuilt` surface over the rest, by default the closure's bare-soil roughness and zero
+displacement. Pass `unbuilt = (ℓᵐ, d)` for another surface, such as `(1e-4, 0)` for water.
+`urban_momentum_roughness_length` and `urban_zero_plane_displacement` describe the urban
+neighborhoods alone and are `NaN` where a cell has none. `building_height` is their mean
+height weighted by built area, also `NaN` where a cell has no built area.
 
 ```@example urban_roughness
 roughness.zero_plane_displacement

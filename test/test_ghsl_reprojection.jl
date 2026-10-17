@@ -129,24 +129,27 @@ latitude_per_meter = rad2deg(2sqrt(2) / (π * 6378137))
     end
 end
 
-@testset "GHSL jointly masks missing footprint and height pixels on $arch at $resolution" for arch in test_architectures,
-                                                                                           resolution in (GHSBuiltS100m, GHSBuiltS10m)
+@testset "GHSL keeps footprints without heights on $arch at $resolution" for arch in test_architectures,
+                                                                              resolution in (GHSBuiltS100m, GHSBuiltS10m)
     dataset = GHSBuilt(surface = GHSBuiltS(; resolution))
     pixel_size = native_resolution(dataset.surface)
-    grid = LatitudeLongitudeGrid(arch; size = (4, 2),
+    # Each cell spans two 100 m columns, one of them missing (65535) or zero in one product.
+    grid = LatitudeLongitudeGrid(arch; size = (2, 2),
                                  longitude = (400, 800) .* longitude_per_meter,
                                  latitude = (400, 800) .* latitude_per_meter,
                                  topology = (Bounded, Bounded, Flat))
-    for missing_height in (true, false)
+    for missing_height in (true, false), missing_value in (65535, 0)
         surface = fill(5000.0, 12, 12)
         height = fill(20.0, 12, 12)
         missing_values = missing_height ? height : surface
-        missing_values[1:2:end, :] .= 65535
+        missing_values[1:2:end, :] .= missing_value
         surface = repeat(surface; inner = (100 ÷ pixel_size, 100 ÷ pixel_size))
-        surface .= ifelse.(surface .== 65535, 65535, 0.5pixel_size^2)
+        surface .= ifelse.(surface .== 5000, 0.5pixel_size^2, surface)
         with_ghsl_tiles(dataset, surface, height) do
             properties = building_morphometry(grid, dataset)
-            @test all(0 .< interior(properties.plan_area_index) .< 0.5)
+            # A footprint without a height stays built; a pixel without a footprint does not.
+            expected_fraction = missing_height ? 0.5 : 0.25
+            @test all(isapprox.(interior(properties.plan_area_index), expected_fraction; rtol=1e-6))
             @test all(isapprox.(interior(properties.mean_building_height), 20; rtol=1e-6))
         end
     end
@@ -310,10 +313,18 @@ end
             # Built-area-weighted height, (0.2 · 10 + 0.6 · 30) / 0.8, at plan-area index 0.4.
             mixed = aerodynamic_parameters(closure, FT(0.4), FT(25))
             bare = aerodynamic_parameters(closure, 0, 0)
-            @test fields.momentum_roughness_length ≈ [core[1], mixed[1], bare[1], core[1]] rtol = 1e-5
-            @test fields.zero_plane_displacement ≈ [core[2], mixed[2], bare[2], core[2]] rtol = 1e-5
-            @test fields.urban_fraction ≈ [1/2, 1/2, 0, 1] rtol = 1e-5
-            @test fields.building_height ≈ [20, 25, 0, 20] rtol = 1e-5
+            urban = [1, 2, 4]
+            @test fields.urban_momentum_roughness_length[urban] ≈ [core[1], mixed[1], core[1]] rtol = 1e-5
+            @test fields.urban_zero_plane_displacement[urban] ≈ [core[2], mixed[2], core[2]] rtol = 1e-5
+            f = [1/2, 1/2, 0, 1]
+            @test fields.urban_fraction ≈ f rtol = 1e-5
+            # The unbuilt halves of cells 1 and 2 are bare soil, blended with the urban half by drag.
+            drag(ℓᵐ, d) = inv(log((100 - d) / ℓᵐ))^2
+            urban_pairs = (core, mixed, bare, core)
+            C = f .* [drag(pair...) for pair in urban_pairs] .+ (1 .- f) .* drag(bare...)
+            @test drag.(fields.momentum_roughness_length, fields.zero_plane_displacement) ≈ C rtol = 1e-5
+            @test fields.zero_plane_displacement ≈ f .* [drag(pair...) * pair[2] for pair in urban_pairs] ./ C rtol = 1e-5
+            @test fields.building_height[urban] ≈ [20, 25, 20] rtol = 1e-5
             @test eltype(results[name].momentum_roughness_length) == FT
         end
         @test readdir(GHSL.download_GHSL_cache) == ["tiles"]

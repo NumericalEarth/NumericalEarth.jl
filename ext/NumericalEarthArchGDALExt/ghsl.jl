@@ -96,14 +96,14 @@ ghsl_raster_fields(dataset::GHSBuiltH, raster, cache_dir, arch) =
     return ifelse(lower == upper, lower_clipped, integral / (upper - lower))
 end
 
-@kernel function _conservative_ghsl_moments!(built_fraction, building_volume, surface, height,
+@kernel function _conservative_ghsl_moments!(built_fraction, measured_built_fraction, building_volume, surface, height,
                                             meridians, projected_latitudes, grid, west, north, pixel_size, refinement, height_offset, radius)
     i, j = @index(Global, NTuple)
     @inbounds begin
         south_edge, north_edge = projected_latitudes[j], projected_latitudes[j + 1]
         first_row = max(1, floor(Int, (north - north_edge) / pixel_size) + 1)
         last_row = min(size(surface, 2), ceil(Int, (north - south_edge) / pixel_size))
-        built_area = built_volume = convert(eltype(built_fraction), 0)
+        built_area = measured_built_area = built_volume = convert(eltype(built_fraction), 0)
         for row in first_row:last_row
             south_overlap = max(south_edge, north - row * pixel_size)
             north_overlap = min(north_edge, north - (row - 1) * pixel_size)
@@ -123,13 +123,17 @@ end
                 fraction = built_surface_to_fraction(surface[column, row], pixel_size^2)
                 building_height = mask_building_height(height[cld(column + height_offset[1], refinement),
                                                               cld(row + height_offset[2], refinement)])
-                valid = isfinite(fraction) & isfinite(building_height)
-                built_area += ifelse(valid, area * fraction, 0)
-                built_volume += ifelse(valid, area * fraction * building_height, 0)
+                built = ifelse(isfinite(fraction), area * fraction, 0)
+                # A built pixel without a positive height counts as built but carries no height.
+                measured = ifelse(building_height > 0, built, 0)
+                built_area += built
+                measured_built_area += measured
+                built_volume += ifelse(measured > 0, measured * building_height, 0)
             end
         end
         area = Azᶜᶜᶜ(i, j, 1, grid)
         built_fraction[i, j] += built_area / area
+        measured_built_fraction[i, j] += measured_built_area / area
         building_volume[i, j] += built_volume / area
     end
 end
@@ -145,6 +149,7 @@ function ghsl_raster_fields(dataset::GHSBuilt, raster, cache_dir, arch; maximum_
                                  radius = MOLLWEIDE_RADIUS, topology = (Bounded, Bounded, Flat))
     projected_latitudes = on_architecture(arch, last.(longitude_latitude_to_mollweide.(0, latitude_faces)))
     built_up_fraction = zeros(arch, Float64, raster.Nx, raster.Ny)
+    measured_built_fraction = zeros(arch, Float64, raster.Nx, raster.Ny)
     building_volume = zeros(arch, Float64, raster.Nx, raster.Ny)
 
     for shift in antimeridian_shifts(last(longitude_faces))
@@ -183,12 +188,15 @@ function ghsl_raster_fields(dataset::GHSBuilt, raster, cache_dir, arch; maximum_
                     surface_north = north - (first_row - 1) * pixel_size
                     height_offset = (mod(first_column - 1, refinement), mod(first_row - 1, refinement))
                     launch!(arch, nothing, size(built_up_fraction), _conservative_ghsl_moments!,
-                            built_up_fraction, building_volume, surface, height, meridians, projected_latitudes,
-                            grid, surface_west, surface_north, pixel_size, refinement, height_offset, MOLLWEIDE_RADIUS)
+                            built_up_fraction, measured_built_fraction, building_volume, surface, height, meridians,
+                            projected_latitudes, grid, surface_west, surface_north, pixel_size, refinement, height_offset,
+                            MOLLWEIDE_RADIUS)
                 end
             end
         end
     end
+    # Built area without a height takes the mean height of the cell's measured built area.
+    building_volume .= ifelse.(built_up_fraction .> 0, built_up_fraction .* building_volume ./ measured_built_fraction, 0)
     return (; built_up_fraction, building_volume)
 end
 

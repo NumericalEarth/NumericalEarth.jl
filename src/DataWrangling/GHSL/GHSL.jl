@@ -141,7 +141,9 @@ The GHSL built-up pair that [`building_morphometry`](@ref NumericalEarth.Lands.b
 Provides `:built_up_fraction` and `:building_volume` (m³ per m²) on a common grid at
 the surface product's resolution: the volume of each surface pixel is its built fraction
 times the height of the 100 m height pixel containing it. Built area and volume are
-conservatively remapped onto the regional longitude/latitude grid. Heights are always
+conservatively remapped onto the regional longitude/latitude grid, where built area under a
+missing or zero height takes the mean height of the cell's built area with a height; a cell with
+built area but no heights has `NaN` volume. Heights are always
 the epoch-2018 ANBH, whatever the surface epoch. The default surface is the 10 m,
 epoch-2018 product, matching the height epoch.
 
@@ -512,8 +514,9 @@ Plan-area index and built-area-weighted mean building height (m) on `grid` (a
 `LatitudeLongitudeGrid`) from the GHSL built-up surface and building-height rasters
 of `dataset`, as the NamedTuple of `Field`s
 `(; plan_area_index, mean_building_height)`: the area mean of the native-pixel built
-fraction, and the building volume over the built area of each cell. A pixel missing
-either its fraction or its height counts as unbuilt. The rasters are read in windows of
+fraction, and the mean height of the built pixels with a positive height. A pixel missing
+its fraction counts as unbuilt; a cell with built pixels but no heights has a `NaN` mean
+height. The rasters are read in windows of
 at most `maximum_raster_cells` native pixels (default `100_000_000`) per product, including
 when a grid cell spans multiple windows. Missing ocean tiles contribute zero built area
 and volume. Downloaded source tiles remain cached. Requires `using ArchGDAL`.

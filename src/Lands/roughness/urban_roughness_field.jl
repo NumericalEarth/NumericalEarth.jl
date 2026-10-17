@@ -207,11 +207,15 @@ function building_morphometry end
         frontal = stateindex(properties.frontal_area_index, column, row, 1)
         frontal = ifelse((fraction == 0) & isnan(frontal), 0, frontal)
         built = area * fraction
+        # A cell's tallest building counts only in neighborhoods containing the cell's center.
+        column_center = (longitude_faces[column] + longitude_faces[column + 1]) / 2
+        row_center = (latitude_faces[row] + latitude_faces[row + 1]) / 2
+        centered = (west <= column_center) & (column_center <= east) & (south <= row_center) & (row_center <= north)
         ground_area += area
         built_area += built
         volume += ifelse(built > 0, built * height, 0)
         second_moment += ifelse(built > 0, built * (height^2 + deviation^2), 0)
-        maximum_height = max(maximum_height, ifelse(built > 0, tallest, 0))
+        maximum_height = max(maximum_height, ifelse((built > 0) & centered, tallest, 0))
         frontal_area += ifelse(area > 0, area * frontal, 0)
     end
     mean_height = ifelse(built_area > 0, volume / built_area, 0)
@@ -251,9 +255,10 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Momentum roughness length and zero-plane displacement (m) of the built-up surface on
-`grid` (a `LatitudeLongitudeGrid`) from a building `dataset`, as the NamedTuple of `Field`s
-`(; momentum_roughness_length, zero_plane_displacement, urban_fraction, building_height)`.
+Momentum roughness length and zero-plane displacement (m) on `grid`
+(a `LatitudeLongitudeGrid`) from a building `dataset`, as the NamedTuple of `Field`s
+`(; momentum_roughness_length, zero_plane_displacement, urban_momentum_roughness_length,
+urban_zero_plane_displacement, urban_fraction, building_height)`.
 
 The closure is evaluated on neighborhoods `neighborhood` (m) wide, from the morphometry that
 [`building_morphometry`](@ref) supplies on a lattice: a grid cell wider than `neighborhood` is
@@ -262,18 +267,21 @@ and pools, by overlap area, the lattice cells within half a neighborhood of its 
 dataset region includes the padding needed for
 complete neighborhoods at the grid edges. Neighborhoods with plan-area
 index at least the closure's `minimum_built_fraction` are urban, and `urban_fraction` is their
-share of the grid-cell area. Each grid cell takes the displacement and roughness length whose
-neutral drag at `surface_layer_height` (m) is the area-mean drag of its urban neighborhoods
+share of the grid-cell area. `urban_momentum_roughness_length` and `urban_zero_plane_displacement`
+have the area-mean neutral drag at `surface_layer_height` (m) of a grid cell's urban neighborhoods
 [Mason (1988)](@cite Mason1988), the displacement being their drag-weighted mean, the mean
-level of momentum absorption [Jackson (1981)](@cite Jackson1981). `building_height` is their
-mean height weighted by built area. A grid cell without urban neighborhoods takes the closure's
-bare-soil limit. A `NaN` plan-area index from the dataset, or an urban neighborhood with
+level of momentum absorption [Jackson (1981)](@cite Jackson1981), and are `NaN` in a grid cell
+without urban neighborhoods. `momentum_roughness_length` and `zero_plane_displacement` have the
+area-mean neutral drag of the whole grid cell, whose remaining `1 - urban_fraction` is covered by
+the `unbuilt` surface `(ℓᵐ, d)`, by default the closure's bare-soil limit
+`aerodynamic_parameters(closure, 0, 0)`. `building_height` is the urban neighborhoods'
+mean height weighted by built area, `NaN` without built area. A `NaN` plan-area index from the dataset, or an urban neighborhood with
 non-finite roughness or displacement, or non-positive roughness, raises an `ArgumentError`.
 A NamedTuple of closures returns matching NamedTuple results, sharing the dataset read and
 neighborhood morphometry. Remaining keyword arguments pass to `building_morphometry`.
 """
 function urban_roughness(grid::LatitudeLongitudeGrid, dataset; surface_layer_height, closure = MorphometricRoughness(eltype(grid)),
-                         neighborhood = 1000, kw...)
+                         neighborhood = 1000, unbuilt = nothing, kw...)
     FT = eltype(grid)
     arch = architecture(grid)
     longitude_cells, latitude_cells, _ = size(grid)
@@ -315,11 +323,12 @@ function urban_roughness(grid::LatitudeLongitudeGrid, dataset; surface_layer_hei
                               longitude = longitude_faces, latitude = latitude_faces, radius = grid.radius,
                               topology = (Bounded, Bounded, Flat))
     end
-    evaluate(closure) = reduce_urban_roughness(grid, properties, closure, reduction_grid; surface_layer_height)
+    evaluate(closure) = reduce_urban_roughness(grid, properties, closure, reduction_grid; surface_layer_height,
+                                               unbuilt = something(unbuilt, aerodynamic_parameters(closure, 0, 0)))
     return closure isa NamedTuple ? map(evaluate, closure) : evaluate(closure)
 end
 
-function reduce_urban_roughness(grid, properties, closure, reduction_grid; surface_layer_height)
+function reduce_urban_roughness(grid, properties, closure, reduction_grid; surface_layer_height, unbuilt)
     lattice = properties.mean_building_height.grid
     lattice_roughness    = Field{Center, Center, Nothing}(lattice)
     lattice_displacement = Field{Center, Center, Nothing}(lattice)
@@ -329,17 +338,22 @@ function reduce_urban_roughness(grid, properties, closure, reduction_grid; surfa
     displacement = interior(lattice_displacement, :, :, 1)
     fraction = interior(properties.plan_area_index, :, :, 1)
     height = interior(properties.mean_building_height, :, :, 1)
+    unbuilt_roughness, unbuilt_displacement = convert.(eltype(grid), unbuilt)
     urban = .!(fraction .< closure.minimum_built_fraction)  # a NaN plan-area index is urban, and fails the check below
     any(urban .& roughness_gap.(roughness, displacement)) &&
         throw(ArgumentError("urban neighborhoods must have finite, positive roughness lengths and finite displacements"))
-    any(urban .& (surface_layer_height .<= displacement .+ roughness)) &&
-        throw(ArgumentError("surface_layer_height = $surface_layer_height m must exceed d + ℓᵐ in every urban neighborhood"))
+    (any(urban .& (surface_layer_height .<= displacement .+ roughness)) ||
+     surface_layer_height <= unbuilt_displacement + unbuilt_roughness) &&
+        throw(ArgumentError("surface_layer_height = $surface_layer_height m must exceed d + ℓᵐ in every urban neighborhood and of the unbuilt surface"))
 
-    # Neutral drag coefficients over ϰ² of the urban neighborhoods at the surface-layer height
+    # Neutral drag coefficients over ϰ² at the surface-layer height, and the roughness length they imply
+    neutral_drag(ℓᵐ, d) = inv(log((surface_layer_height - d) / ℓᵐ))^2
+    neutral_roughness(drag, d) = (surface_layer_height - d) * exp(-1 / sqrt(drag))
+
     sources = ntuple(_ -> Field{Center, Center, Nothing}(lattice), 5)
     urban_cells, scaled_drag, scaled_drag_moment, built_area, building_volume = map(source -> interior(source, :, :, 1), sources)
     urban_cells .= urban
-    scaled_drag .= ifelse.(urban, inv.(log.((surface_layer_height .- displacement) ./ roughness)) .^ 2, 0)
+    scaled_drag .= ifelse.(urban, neutral_drag.(roughness, displacement), 0)
     scaled_drag_moment .= ifelse.(urban, scaled_drag .* displacement, 0)
     built_area .= ifelse.(urban, fraction, 0)
     building_volume .= ifelse.(urban, fraction .* height, 0)
@@ -350,14 +364,18 @@ function reduce_urban_roughness(grid, properties, closure, reduction_grid; surfa
         return interior(target, :, :, 1)
     end
 
-    mean_displacement = mean_scaled_drag_moment ./ mean_scaled_drag
-    has_urban = urban_fraction .> 0
-    bare_roughness, bare_displacement = aerodynamic_parameters(closure, 0, 0)
-    reduced = (; momentum_roughness_length = ifelse.(has_urban, (surface_layer_height .- mean_displacement) .*
-                                                                exp.(-sqrt.(urban_fraction ./ mean_scaled_drag)), bare_roughness),
-                 zero_plane_displacement = ifelse.(has_urban, mean_displacement, bare_displacement),
+    urban_drag = mean_scaled_drag ./ urban_fraction
+    urban_displacement = mean_scaled_drag_moment ./ mean_scaled_drag
+    unbuilt_drag = neutral_drag(unbuilt_roughness, unbuilt_displacement)
+    unbuilt_fraction = 1 .- urban_fraction
+    cell_drag = mean_scaled_drag .+ unbuilt_fraction .* unbuilt_drag
+    cell_displacement = (mean_scaled_drag_moment .+ unbuilt_fraction .* unbuilt_drag .* unbuilt_displacement) ./ cell_drag
+    reduced = (; momentum_roughness_length = neutral_roughness.(cell_drag, cell_displacement),
+                 zero_plane_displacement = cell_displacement,
+                 urban_momentum_roughness_length = neutral_roughness.(urban_drag, urban_displacement),
+                 urban_zero_plane_displacement = urban_displacement,
                  urban_fraction,
-                 building_height = ifelse.(built_fraction .> 0, mean_building_volume ./ built_fraction, zero(grid)))
+                 building_height = mean_building_volume ./ built_fraction)
     return map(reduced) do data
         field = Field{Center, Center, Nothing}(grid)
         interior(field, :, :, 1) .= data
