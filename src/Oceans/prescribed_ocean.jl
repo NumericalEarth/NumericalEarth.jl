@@ -120,6 +120,7 @@ Base.eltype(::PrescribedOcean{FT}) where FT = FT
 #####
 
 EarthSystemModels.is_sea_ice_component(::PrescribedOcean) = false
+EarthSystemModels.InterfaceComputations.biogeochemical_interface(exchanger, ::PrescribedOcean; kwargs...) = NamedTuple()
 
 function EarthSystemModels.adopt_clock(ocean::PrescribedOcean{FT}, clock) where FT
     new_clock = EarthSystemModels.matching_clock(ocean.clock, clock)
