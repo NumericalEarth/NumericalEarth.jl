@@ -5,7 +5,7 @@ MPI.Init()
 
 using CFTime
 using Dates
-using NumericalEarth.DataWrangling: metadata_path
+using NumericalEarth.DataWrangling: metadata_path, inpainted_metadata_path, NearestNeighborInpainting
 using NumericalEarth.DataWrangling.ORCA: ORCAOne
 using Oceananigans.DistributedComputations
 using Oceananigans.DistributedComputations: concatenate_local_sizes, local_size, reconstruct_global_grid
@@ -99,6 +99,24 @@ end
         global_bottom = global_grid.immersed_boundary.bottom_height[irange, jrange, 1]
         @test local_bottom == global_bottom
     end
+end
+
+@testset "Distributed inpainted-data cache" begin
+    # one data directory for all ranks
+    dir = MPI.bcast(mktempdir(), MPI.COMM_WORLD)
+    metadatum  = Metadatum(:temperature; dataset = SyntheticOcean(), dir)
+    inpainting = NearestNeighborInpainting(10)
+    @root download(metadatum)
+
+    # Only rank 0 needs this field: it inpaints it and caches it without waiting for the other ranks
+    MPI.Comm_rank(MPI.COMM_WORLD) == 0 && Field(metadatum; inpainting)
+    @test MPI.Allreduce(1, +, MPI.COMM_WORLD) == MPI.Comm_size(MPI.COMM_WORLD)
+    @test isfile(inpainted_metadata_path(metadatum))
+
+    cached = Field(metadatum; inpainting)
+    fresh  = Field(metadatum; inpainting, cache_inpainted_data = false)
+    @test interior(cached) == interior(fresh)
+    MPI.Barrier(MPI.COMM_WORLD)    # the directory goes when rank 0 exits
 end
 
 MPI.Finalize()

@@ -288,12 +288,15 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
         elapsed = 1e-9 * (time_ns() - start_time)
         @info string(" ... (", prettytime(elapsed), ")")
 
-        # We cache the inpainted data to avoid recomputing it
-        @root if cache_inpainted_data
-            file = jldopen(inpainted_path, "w+")
-            file["data"] = on_architecture(CPU(), parent(field))
-            file["inpainting_maxiter"] = inpainting.maxiter
-            close(file)
+        # We cache the inpainted data to avoid recomputing it. Any rank may write it, so it is written
+        # to a file of its own and renamed: a rank never reads a partly written cache.
+        if cache_inpainted_data
+            temporary_path = tempname(dirname(inpainted_path)) * ".jld2"
+            jldopen(temporary_path, "w") do file
+                file["data"] = on_architecture(CPU(), parent(field))
+                file["inpainting_maxiter"] = inpainting.maxiter
+            end
+            mv(temporary_path, inpainted_path; force = true)
         end
     end
 
