@@ -1,0 +1,69 @@
+#####
+##### MODIS land products — Earthdata granule fetch + sinusoidal HDF-EOS reprojection
+#####
+##### A region spans several sinusoidal tiles, so every granule covering it is fetched and
+##### the layers are mosaicked and warped to the region's latitude-longitude window in one
+##### `gdalwarp` call each. The digital numbers are written through unchanged; masking,
+##### quality screening, and scaling happen on read, where the product's decode rules live.
+#####
+
+# Locate the `HDF4_EOS:EOS_GRID:"…":<grid>:<layer>` subdataset without hardcoding the
+# product's grid-group name.
+function modis_subdataset(granule_path, layer)
+    ArchGDAL.read(granule_path) do ds
+        for entry in ArchGDAL.metadata(ds; domain = "SUBDATASETS")
+            occursin("_NAME=", entry) || continue
+            name = split(entry, "_NAME="; limit = 2)[2]
+            endswith(name, ":" * layer) && return name
+        end
+        error("Layer $(layer) not found among the HDF-EOS subdatasets of $(granule_path).")
+    end
+end
+
+# Mosaic one layer of `granule_paths` onto the regional lattice. Nearest-neighbor
+# resampling throughout: every layer is either a bit-packed quality byte or a digital number
+# whose out-of-range codes carry meaning, and averaging either would invent values. A lattice
+# cell is 463 m north-south but 463 cos φ m east-west, so away from the equator each 463 m
+# sinusoidal pixel fills about 1 / cos φ neighboring cells. Uncovered cells take the fill
+# code 255, which the read path rejects on both the digital numbers and the quality bytes.
+function warp_modis_layer(granule_paths, layer, lattice)
+    sources = [ArchGDAL.read(modis_subdataset(path, layer)) for path in granule_paths]
+
+    warped = try
+        ArchGDAL.gdalwarp(sources,
+            ["-t_srs", "EPSG:4326",
+             "-te", string(lattice.west), string(lattice.south),
+                    string(lattice.east), string(lattice.north),
+             "-ts", string(lattice.Nx), string(lattice.Ny),
+             "-r", "near",
+             "-ot", "Byte",
+             "-dstnodata", "255"]) do destination
+            ArchGDAL.read(destination, 1)
+        end
+    finally
+        foreach(ArchGDAL.destroy, sources)
+    end
+
+    # GDAL writes rows north→south; flip to the ascending latitude axis of the stored file.
+    return reverse(warped, dims = 2)
+end
+
+function MODISLand.modis_granules_to_netcdf(metadatum::MODISLand.MODISLandMetadatum, nc_path)
+    lattice = regional_lattice(metadatum)
+    urls = granule_urls(metadatum)
+
+    # A sinusoidal tile spans 10° and carries every layer of the product, so the same
+    # granules serve neighboring regions, sibling variables, and every year a climatology
+    # composites. Keeping them beside the warped files makes those warps a local operation.
+    granule_cache = mkpath(joinpath(dirname(nc_path), "granules"))
+    fetched = count(url -> !isfile(joinpath(granule_cache, basename(url))), urls)
+    fetched > 0 && @info string("Fetching ", fetched, " of ", length(urls),
+                                " MODIS granules for ", metadatum.dates, "...")
+
+    granule_paths = [earthdata_download_cached(url, granule_cache) for url in urls]
+    layers = Dict(layer => warp_modis_layer(granule_paths, layer, lattice)
+                  for layer in stored_granule_layers(metadatum.dataset))
+    write_lattice_file(nc_path, lattice, layers)
+
+    return nothing
+end

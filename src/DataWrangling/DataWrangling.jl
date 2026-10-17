@@ -17,6 +17,8 @@ export update_restoring_flux!, ConservativeSurfaceFluxRestoringCallback
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
 export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
+export fill_gaps!, fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial
+export class_fractions, valid_area_mean!
 
 using Adapt: Adapt
 using DocStringExtensions: TYPEDSIGNATURES
@@ -33,7 +35,7 @@ using Oceananigans.DistributedComputations: DistributedComputations, @root, all_
 using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
                           LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes,
                           topology, x_domain, y_domain, z_domain
-using Oceananigans.Fields: Fields, Field, compute!, interpolate, interpolate!, interior, set!
+using Oceananigans.Fields: Fields, Field, compute!, interpolate, interpolate!, interior, regrid!, set!
 using Oceananigans.Grids: node
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
@@ -72,6 +74,24 @@ function download_cache(key)
     else
         return @get_scratch!(key)
     end
+end
+
+"""
+    write_atomically(write!, filepath)
+
+Call `write!(staging_path)` with a staging path unique to this writer in `filepath`'s
+directory, then rename the staged file into place, so `filepath` never appears
+half-written. A failed `write!` removes its staging file.
+"""
+function write_atomically(write!, filepath)
+    staging_path = tempname(dirname(filepath); cleanup = false) * splitext(filepath)[2]
+    try
+        write!(staging_path)
+        mv(staging_path, filepath; force = true)
+    finally
+        rm(staging_path; force = true)
+    end
+    return filepath
 end
 
 """
@@ -193,12 +213,7 @@ function download_with_retries(url, path; attempts = 3, description = "Download"
 
     for attempt in 1:attempts
         try
-            # Same filesystem as the destination, so the rename is atomic rather than a copy.
-            mktemp(dir) do partial_path, partial_io
-                close(partial_io)
-                Downloads.download(url, partial_path; kw...)
-                mv(partial_path, path; force=true)
-            end
+            write_atomically(partial_path -> Downloads.download(url, partial_path; kw...), path)
             return path
         catch error
             attempt == attempts && rethrow()
@@ -322,6 +337,10 @@ include("tiled_regridding.jl")
 include("dataset_backend.jl")
 include("metadata_field_time_series.jl")
 include("inpainting.jl")
+include("donor_pools.jl")
+include("gap_filling.jl")
+include("class_fractions.jl")
+include("time_average.jl")
 include("restoring.jl")
 include("earthdata.jl")
 include("figshare.jl")
@@ -428,6 +447,7 @@ include("ASTERGED/ASTERGED.jl")
 include("GloBFP3D/GloBFP3D.jl")
 include("GHSL/GHSL.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
+include("MODISLand/MODISLand.jl")
 include("WorldCover/WorldCover.jl")
 
 using .ETOPO
@@ -450,6 +470,7 @@ using .ASTERGED
 using .GloBFP3D
 using .GHSL
 using .CopernicusLandAlbedo
+using .MODISLand
 using .WorldCover
 
 function dataset_modules()
