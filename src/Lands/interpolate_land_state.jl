@@ -23,10 +23,8 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, land::PrescribedL
     land_backend = first_flux.backend
     land_time_indexing = first_flux.time_indexing
 
-    kernel_parameters = interface_kernel_parameters(grid)
-
     for (flux, data) in ((runoff_freshwater_flux, runoff_data), (iceberg_freshwater_flux, iceberg_data))
-        launch!(arch, grid, kernel_parameters,
+        launch!(arch, grid, interior_kernel_parameters(grid),
                 _interpolate_land_freshwater_flux!,
                 flux.data,
                 grid,

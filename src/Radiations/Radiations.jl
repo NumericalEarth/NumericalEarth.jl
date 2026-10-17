@@ -30,7 +30,7 @@ using Oceananigans.Utils: launch!, prettysummary, interpolator
 
 using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, sea_ice_concentration, set_prescribed_field!
-using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters,
+using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, interior_kernel_parameters,
                                                  _compute_fractional_indices!,
                                                  ComponentExchanger,
                                                  kernel_radiation_properties,
