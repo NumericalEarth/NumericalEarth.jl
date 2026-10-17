@@ -1,185 +1,125 @@
-# NumericalEarth.jl — Agent Rules
+# NumericalEarth.jl
 
-## Project Overview
+Couples Earth system components (Oceananigans oceans, ClimaSeaIce sea ice, Breeze or
+SpeedyWeather atmospheres, land) to each other or to prescribed datasets such as JRA55, ERA5,
+and ECCO. It runs on CPUs and GPUs through Oceananigans and KernelAbstractions, so code that
+passes on a CPU can still fail on a GPU; `.claude/rules/kernel-rules.md` covers why.
 
-NumericalEarth.jl provides infrastructure for running Earth system model components—ocean, atmosphere, sea ice, and others—coupled together or driven by prescribed datasets. The coupling interface is generic: plug in [Oceananigans.jl](https://github.com/CliMA/Oceananigans.jl) for ocean dynamics, [ClimaSeaIce.jl](https://github.com/CliMA/ClimaSeaIce.jl) for sea ice, SpeedyWeather or other atmospheric models, or use reanalysis products like JRA55 and ERA5 as prescribed forcing.
+## Commands
 
-## Language & Environment
+```sh
+# Run one test file on CPU (test names are file names under test/, without .jl)
+CUDA_VISIBLE_DEVICES=-1 julia --project -e 'using Pkg; Pkg.test("NumericalEarth"; test_args=`test_breeze_coupling`)'
 
-- **Julia 1.10+** | CPU and GPU (CUDA)
-- **Key packages**: Oceananigans.jl, ClimaSeaIce.jl, SpeedyWeather.jl,
-                    KernelAbstractions.jl, CUDA.jl, Enzyme.jl, Reactant.jl
-- **Style**: ExplicitImports.jl for source code; `using NumericalEarth` for examples
-- **Testing**: ParallelTestRunner.jl for distributed testing
+# Explicit imports and Aqua checks (run after any change to src/ or ext/)
+CUDA_VISIBLE_DEVICES=-1 julia --project -e 'using Pkg; Pkg.test("NumericalEarth"; test_args=`test_quality_assurance`)'
 
-### Environments
+# Trailing whitespace and blank lines at end of file
+git diff --check origin/main
 
-- The root environment treats Breeze, Makie, and other extension triggers as **weakdeps** —
-  `julia --project=.` cannot `using Breeze`. Run Breeze-coupled code with `--project=test`
-  or `--project=docs`.
-- Manifests go stale when compat bounds or `[sources]` pins change —
-  re-resolve before diagnosing load errors or "undeclared at import time" warnings.
-- Quick syntax check without loading packages:
-  `julia -e 'Meta.parseall(read("file.jl", String))'`.
+# Syntax check without loading any packages
+julia -e 'Meta.parseall(read("file.jl", String))'
+```
 
-## Critical Rules
+## Environments
 
-### Kernel Functions (GPU compatibility)
+- The root environment treats Breeze, Makie, and other extension triggers as weak dependencies,
+  so `julia --project=.` cannot `using Breeze`. Run Breeze-coupled code with `--project=test` or
+  `--project=docs`.
+- Manifests go stale when compat bounds or `[sources]` pins change. Re-resolve before diagnosing
+  load errors or "undeclared at import time" warnings.
+- Tests run offline by default: `NUMERICALEARTH_DATA_DIRECTORY` points at a fresh temporary
+  directory, and any file that lands there is an accidental download. New tests use the analytic
+  stand-ins in `test/synthetic_datasets.jl`. Tests that need real data go in `remote_data_tests` in
+  `test/runtests.jl` and run with `NUMERICALEARTH_TEST_REMOTE_DATA=true`; `*_downloading` tests
+  run only in the DataDownload workflow.
+- Slurm and multi-GPU runs: read `.agents/cluster.md` first.
 
-- Use `@kernel` / `@index` (KernelAbstractions.jl)
-- Kernels must be **type-stable** and **allocation-free**
-- Use `ifelse` — never short-circuiting `if`/`else` or ternary `?`/`:` in kernels
-- No error messages, no Models inside kernels
-- Mark functions called inside kernels with `@inline`
-- **Never loop over grid points outside kernels** — use `launch!`
-- **Use literal zeros**: `max(0, a)` not `max(zero(FT), a)`. Julia handles type promotion.
+## Before you change these, ask
 
-### Type Stability & Memory
+- **`[deps]`, `[weakdeps]`, and `[sources]` in `Project.toml`**. They change load time, CI, and
+  every downstream environment. Touch `[compat]` only when asked.
+- **Expected values and tolerances in tests**. A numerical test that starts failing is evidence of
+  a behavior change; find the cause instead of updating the number.
+- **Exported names and keyword arguments of public constructors**. User scripts and the examples
+  depend on them.
 
-- All structs must be concretely typed. **Never use `Any` as a type parameter or field type.**
-- Use the **materialization pattern**: user-facing constructor creates a "skeleton" struct with
-  placeholder types (like `Nothing`), then `materialize_*` creates the fully-typed version.
-- For mutable state within an immutable struct, use a `mutable struct` as the field type.
-- Type annotations are for **dispatch**, not documentation
-- Minimize allocation; favor inline computation
+## Verifying your work
 
-### Imports
+- Read the current definition of anything you call (`@which`, `methods`, or the source),
+  including NumericalEarth's, Oceananigans', and Breeze's own APIs. They change quickly and
+  remembered signatures go stale. Search all of an installed package, including `ext/`, before
+  concluding a feature does not exist.
+- A test that fails on your branch is yours until you reproduce the same failure on `main`.
+- Report results by quoting the test summary line. An exit code alone is not a pass.
+- If a fix makes a failing test run but you cannot explain why it was failing, the fix is probably
+  wrong. Revisit the change that broke it.
+- GPU "dynamic invocation error": rerun on CPU. If it passes there, the cause is almost always a
+  type instability that the CPU tolerates.
+- Before presenting a change, review your own `git diff` against the checklist at the end of
+  `.claude/rules/restraint-rules.md`, cut what it catches, and report the result in one line.
 
-- Source code: explicit imports (checked by tests). Never use `import` to extend functions;
-  always use `Module.function_name(...) = ...` or `function Module.function_name() ... end`
-- Exports at the top of module files, before other code
-- Import Oceananigans/NumericalEarth names first, then external packages
-- Internal NumericalEarth imports use absolute paths, not relative
-- Examples/docs: rely on `using Oceananigans` and `using NumericalEarth`
-
-### Docstrings
-
-- Use `$(TYPEDSIGNATURES)` from DocStringExtensions.jl (never write explicit signatures)
-- **ALWAYS `jldoctest` blocks, NEVER plain `julia` blocks** — doctests are tested; plain blocks rot
-- Include expected output after `# output`; prefer `show` methods over boolean comparisons
-- **Citations**: Use inline `[Author (year)](@cite Key)` syntax woven into prose
-- Use unicode for math (`θ`, `ρ`, `Π`), not LaTeX
-
-### Documentation pages (`docs/src/**.md`)
-
-- **ALWAYS `@example <label>` blocks, NEVER plain `julia` code fences** — `@example` blocks
-  are executed by Documenter and their output is rendered into the page; plain `julia` blocks
-  are dead text (no execution, no output) and silently rot
-- Reuse the same `@example <label>` across blocks on one page to share state (imports, variables)
-
-### Software Design
+## Design
 
 - **Never unpack a property immediately after a constructor** (`foo(args...).bar`). It means the
-  constructor returns the wrong type for the call site — fix it by providing a constructor that
-  returns what's needed (e.g. a model-level `atmosphere_model(grid; …)` alongside the simulation-level
-  `atmosphere_simulation(grid; …)`), not by reaching into the result. Use constructors as designed.
-- **The example drives the API**: when an example (or script) hand-rolls infrastructure — region
-  padding, relaxation masks, terrain preparation, initialization, output slicing — push it into
-  the library as a constructor keyword, dataset hook, or exported utility. Don't polish the
-  hand-rolled version in place.
-- **Constructors own their domain**: derive what is derivable instead of requiring precomputed
-  inputs — regions from grids plus the dataset's `default_horizontal_padding`, anchors from the dataset,
-  physics defaults internally. The user supplies intent (`grid`, `dataset`, `dates`), not plumbing.
-- **Dataset objects carry product identity only** (cadence, levels, native grid) — never variable
+  constructor returns the wrong type for the call site. Add a constructor that returns what is
+  needed (for example `atmosphere_model(grid; …)` alongside `atmosphere_simulation(grid; …)`).
+- **The example drives the API.** When an example hand-rolls infrastructure (region padding,
+  relaxation masks, terrain preparation, initialization, output slicing), move it into the library
+  as a constructor keyword, dataset hook, or exported utility instead of polishing it in place.
+- **Constructors own their domain.** Derive what is derivable: regions from grids plus the
+  dataset's `default_horizontal_padding`, anchors from the dataset, physics defaults internally.
+  The user supplies intent (`grid`, `dataset`, `dates`), not plumbing.
+- **Dataset objects carry product identity only** (cadence, levels, native grid), never variable
   names, regions, or dates. Dataset-specific behavior enters through `DataWrangling` hooks
-  (`default_horizontal_padding`, `matching_single_level_dataset`, `default_download_directory`, …)
   dispatched on the dataset type, so downstream packages can add datasets without touching
   NumericalEarth.
-- **Date windows are `(start_date, end_date)` tuples**, expanded to the dataset's native cadence
-  by `DataWrangling.expand_dates`. Don't add `start_date`/`end_date` keyword arguments to new code.
-- **Put key identity in `Base.summary`** (e.g. a regional atmosphere's domain bounds) so composite
-  models' displays inherit it — never manually print what `show`/`summary` already displays.
-- **Extension-implemented API**: declare a stub with docstring and export in `src`
-  (`function foo end`), define the method in the extension as `NumericalEarth.Module.foo(...) = ...`.
-- Minimize code duplication (allow only for trivial one-liners)
-- When something would be better in Oceananigans, add a detailed TODO note
-- Almost always extend functions in source code, not in examples
-- Coding style: consult `docs/src/appendix/notation.md` for variable names
-- Use math or English consistently in expressions; don't mix
-- Keyword arguments: no-space for inline `f(x=1)`, single-space for multiline `f(a = 1, b = 2)`
+- **Date windows are `(start_date, end_date)` tuples**, expanded to the dataset's native cadence by
+  `DataWrangling.expand_dates`. Don't add `start_date`/`end_date` keyword arguments.
+- **Put key identity in `Base.summary`** (for example a regional atmosphere's domain bounds) so
+  composite models' displays inherit it; never print by hand what `show`/`summary` already shows.
+- **Extension-implemented API**: declare a documented, exported stub in `src` (`function foo end`)
+  and define the method in the extension as `NumericalEarth.Module.foo(...) = ...`.
+- **Materialization pattern**: a user-facing constructor builds a skeleton struct with placeholder
+  type parameters (such as `Nothing`); `materialize_*` builds the fully typed version once the grid
+  and model are known.
+- Structs are concretely typed; never use `Any` as a type parameter or field type. For mutable
+  state inside an immutable struct, use a `mutable struct` as the field type.
+- When something would be better in Oceananigans, add a detailed TODO note rather than a local
+  workaround.
 
-## Naming Conventions
+## Conventions that are not visible from the code
 
-- **Files**: snake_case — `atmosphere_model.jl`
-- **Types/Constructors**: PascalCase — `AtmosphereModel`
-- **Functions**: snake_case — `compute_pressure!`
-- **Kernels**: may prefix with underscore — `_kernel_function`
-- **Variables**: English long name or unicode from `notation.md`. Add new variables to that table.
-- **Avoid abbreviations**: `latitude` not `lat`, `temperature` not `temp`
-- **American English** in code, comments, docstrings, and docs: `center` not `centre`,
-  `meter` not `metre`, `neighbor` not `neighbour`, `behavior` not `behaviour`, `-ize` not `-ise`.
-  Proper nouns keep their own spelling (European **Centre** for Medium-Range Weather Forecasts).
+- Source code uses explicit imports, checked by `test_quality_assurance`. Extend functions with
+  `Module.function_name(...) = ...`, not `import`. Exports go at the top of module files. Import
+  Oceananigans/NumericalEarth names first, then external packages; internal imports use absolute
+  paths. Examples and docs use `using Oceananigans` and `using NumericalEarth`.
+- Docstrings use `$(TYPEDSIGNATURES)` and `jldoctest` examples; docs pages use `@example` blocks.
+  Details are in `.claude/rules/docstring-rules.md` and `.claude/rules/docs-rules.md`.
+- Variable names are full English (`latitude`, not `lat`) or Unicode math from
+  `docs/src/appendix/notation.md`, never a mix in one identifier. Add new symbols to that table.
+  A leading `_` is reserved for `@kernel` functions. Details are in `.claude/rules/style-rules.md`.
+- American English in code, comments, docstrings, and docs: `center`, `meter`, `neighbor`,
+  `behavior`, `-ize`. Proper nouns keep their spelling (European Centre for Medium-Range Weather
+  Forecasts).
+- Keyword arguments: no spaces inline, `f(x=1)`; single spaces when split over lines,
+  `f(a = 1, b = 2)`.
+- Never extend `getproperty` to make an undefined-property error go away; fix the caller.
+- A "type is not callable" error usually means a local variable shadows a function name.
+- Keep a PR to one concern and base it on `main`; never merge another feature branch into it.
 
-## Module Structure
+## Where to look
 
-```
-src/
-├── NumericalEarth.jl         # Main module, exports
-├── Atmospheres/              # Atmosphere components (prescribed, or Breeze via extension)
-├── Bathymetry/               # Downloading, regridding, and smoothing bathymetry and topography
-├── DataWrangling/            # Datasets for bathymetry, initialization, forcing, restoring, validation
-├── Diagnostics/              # Diagnostics across model components
-├── EarthSystemModels/        # Brings all Earth system model components together
-├── Grids/                    # Pressure-level grids
-├── Lands/                    # Land components (prescribed, slab, hydrology, river routing)
-├── NestedModels/             # Nested regional models driven by a parent
-├── Oceans/                   # Ocean components (Oceananigans simulations, slab, prescribed)
-├── Radiations/               # Prescribed radiation and surface radiative properties
-└── SeaIces/                  # Sea ice components
-```
+Rules in `.claude/rules/` load automatically in Claude Code when you edit matching files. Other
+agents should read the one that matches the task:
 
-## Common Pitfalls
-
-1. **Type instability** in kernels — ruins GPU performance
-2. **Overconstraining types**: use annotations for dispatch, not documentation
-3. **Missing imports**: tests will catch this — add explicit imports
-4. **Plain `julia` blocks in docstrings**: always use `jldoctest`
-5. **Subtle bugs from missing method imports**, especially in extensions
-6. **Never extend `getproperty`** to fix undefined property bugs — fix the caller instead
-7. **"Type is not callable"**: variable name shadows a function — rename or qualify
-8. **Quick fixes that break correctness**: if a test fails after a change, revisit the original edit
-9. **Scope creep in PRs**: keep changes focused on a single concern
-10. **Modifying Project.toml dependencies**: never add, remove, or change `[deps]` or `[weakdeps]`
-    in the root `Project.toml` unless the task absolutely requires it. Dependency changes have
-    wide-reaching consequences — they affect CI, load time, and downstream compatibility.
-    Only touch `[compat]` bounds when explicitly asked.
-
-## Git Workflow & Whitespace
-
-Follow [ColPrac](https://github.com/SciML/ColPrac). Feature branches, descriptive commits,
-update tests and docs with code changes, check CI before merging.
-
-Before committing: remove trailing whitespace, remove trailing blank lines, ensure each file
-ends with exactly one newline.
-
-## Agent Behavior
-
-- **Before presenting any change, run the checklist in `.claude/rules/restraint-rules.md` over your own
-  `git diff` and cut what it catches.** Report the result in one line. This is mandatory for every edit.
-- Prioritize type stability and GPU compatibility
-- Follow established patterns in existing code
-- Add tests for new functionality; update exports when adding public API
-- Reference physics equations in comments when implementing dynamics
-- When unsure: study working examples in `examples/` first, look at similar
-  Oceananigans implementations, review tests for usage patterns
-
-## Further Reading
-
-Detailed reference docs are in `.agents/` — read on demand:
-
-| Document | Content |
-|----------|---------|
-| `.agents/cluster.md` | Slurm/GPU clusters: precompilation, MPI launches, job health, sysimages |
-
-### Auto-loading Rules
-
-Rules in `.claude/rules/` load automatically when you touch matching files:
-- `kernel-rules.md` — GPU kernel requirements (src/)
-- `docstring-rules.md` — docstring and jldoctest conventions (src/)
-- `testing-rules.md` — test writing and running (test/)
-- `docs-rules.md` — documentation building and style (docs/)
-- `examples-rules.md` — Literate.jl example conventions (examples/)
-- `style-rules.md` — naming, notation, and comment style (src/, test/, validation/, examples/)
-- `julia-repl-rules.md` — prefer an MCP Julia REPL over Bash when available (always)
-- `restraint-rules.md` — **keeping the code human-written**: diff size, one invariant one mechanism,
-  no guards for unreachable states, comments that describe only this code (src/, test/, examples/)
+| Task | Read |
+|------|------|
+| Writing or editing kernels, operators, or anything in `src/` or `ext/` | `.claude/rules/kernel-rules.md` |
+| Any change to `src/`, `test/`, or `examples/` | `.claude/rules/restraint-rules.md` |
+| Naming, notation, comments | `.claude/rules/style-rules.md` |
+| Docstrings | `.claude/rules/docstring-rules.md` |
+| Tests | `.claude/rules/testing-rules.md` |
+| Docs pages | `.claude/rules/docs-rules.md` |
+| Examples | `.claude/rules/examples-rules.md` |
+| Slurm or multi-GPU runs | `.agents/cluster.md` |
