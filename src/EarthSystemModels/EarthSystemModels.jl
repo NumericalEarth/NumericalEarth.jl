@@ -5,6 +5,7 @@ abstract type AbstractPrescribedComponent end
 export
     EarthSystemModel,
     AbstractPrescribedComponent,
+    BoundaryPrescribedComponent,
     OceanOnlyModel,
     OceanSeaIceModel,
     AtmosphereOceanModel,
@@ -54,6 +55,7 @@ using Oceananigans.Diagnostics: NaNChecker
 using Oceananigans.Fields: ZeroField
 using Oceananigans.Simulations: reset_clock!, Simulation
 using Oceananigans.TimeSteppers: Clock, reset!, tick!, time_step!, update_state!, reconcile_state!
+using Oceananigans.Grids: x_domain, y_domain
 using Oceananigans.Utils: launch!, prettytime
 
 # Reactant does not support `stop_time`; it must stay `nothing` there.
@@ -62,6 +64,7 @@ default_stop_time(::AbstractArchitecture, clock) = clock.time isa Number ? Inf :
 default_stop_time(::ReactantState, clock) = nothing
 
 include("components.jl")
+include("boundary_prescribed_component.jl")
 
 #####
 ##### The coupled model
