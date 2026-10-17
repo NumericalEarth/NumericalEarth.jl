@@ -27,9 +27,7 @@ end
 const MixedLayerDepthField = Field{<:Any, <:Any, <:Any, <:MixedLayerDepthOperand}
 
 """
-    MixedLayerDepthField(bm, grid, tracers;
-                         difference_criterion = 2.87e-4,
-                         reference_depth = 10.0)
+$(MethodSignatures(defaults = true))
 
 Mixed-layer-depth diagnostic using the [de Boyer Montégut et al. (2004)](@cite de_boyer_montegut2004mixed)
 DR003 buoyancy-difference criterion.  The default `difference_criterion = 2.87e-4` m s⁻² corresponds

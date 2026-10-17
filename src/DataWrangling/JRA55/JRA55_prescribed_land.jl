@@ -1,18 +1,7 @@
 using ...Lands: PrescribedLand, build_flux_routing, routable_grid
 
 """
-    JRA55PrescribedLand(grid;
-                        dataset = RepeatYearJRA55(),
-                        start_date = first_date(dataset, :river_freshwater_flux),
-                        end_date = last_date(dataset, :river_freshwater_flux),
-                        dir = download_JRA55_cache,
-                        time_indices_in_memory = 10,
-                        time_indexing = Cyclical(),
-                        region = nothing,
-                        maximum_search_radius = 5,
-                        spread_radius = 1.2,
-                        maximum_spread_cells = nothing,
-                        other_kw...)
+$(MethodSignatures(defaults = true))
 
 Return a [`PrescribedLand`](@ref) holding the JRA55-do river runoff and iceberg calving fluxes, routed
 onto the coastline of the target ocean `grid` by [`build_flux_routing`](@ref).

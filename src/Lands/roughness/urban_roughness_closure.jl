@@ -118,7 +118,7 @@ struct VariableHeight{FT} <: AbstractHeightDistribution
 end
 
 """
-    VariableHeight(FT = Oceananigans.defaults.FloatType; kw...)
+$(MethodSignatures(defaults = true))
 
 Construct a [`VariableHeight`](@ref) distribution. All four defaults are the Method 1
 regressions of [Kanda et al. (2013)](@cite Kanda2013).
@@ -310,7 +310,7 @@ struct MorphometricRoughness{FT, E, H} <: AbstractUrbanRoughness
 end
 
 """
-    MorphometricRoughness(FT = Oceananigans.defaults.FloatType; kw...)
+$(MethodSignatures(defaults = true))
 
 Construct a [`MorphometricRoughness`](@ref) closure.
 

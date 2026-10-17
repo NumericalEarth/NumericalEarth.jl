@@ -109,10 +109,7 @@ Adapt.adapt_structure(to, R::TwoColorRadiation) =
                       adapt(to, R.surface_flux))
 
 """
-    TwoColorRadiation(grid; first_color_fraction = 0.58,
-                            first_decay_scale = 0.35,
-                            chlorophyll_optics = ChlorophyllOptics(eltype(grid)),
-                            chlorophyll = equivalent_chlorophyll(chlorophyll_optics, 1 / 23))
+$(MethodSignatures(defaults = true))
 
 Return `TwoColorRadiation` that computes the radiative flux divergence associated with
 a two-color radiation flux that decays according to Beer's law,

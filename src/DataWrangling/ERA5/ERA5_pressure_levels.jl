@@ -21,7 +21,7 @@ ERA5MonthlyPressureLevels(pressure_levels, z = nothing) =
     ERA5MonthlyPressureLevels{typeof(z)}(sort(pressure_levels, rev=true), z)
 
 """
-    ERA5HourlyPressureLevels(; pressure_levels = ERA5_all_pressure_levels, z = nothing)
+$(MethodSignatures(defaults = true))
 
 Hourly ERA5 pressure-levels dataset metadata. By default (`z = nothing`) the
 native grid's vertical coordinate is a 3-D
@@ -248,8 +248,7 @@ end
 #####
 
 """
-    per_column_geopotential_discretization(metadata::ERA5PressureMetadata;
-                                           clock = Clock{eltype(metadata)}(time = 0))
+$(MethodSignatures(defaults = true))
 
 Build a [`PressureLevelVerticalDiscretization`](@ref) whose per-column heights
 follow the ERA5 geopotential in time. The geopotential Φ(λ,φ,p,t) is loaded over
@@ -382,7 +381,7 @@ Oceananigans.OutputReaders.FieldTimeSeries(metadata::ERA5PressureMetadata, grid:
 #####
 
 """
-    pressure_field(metadata::ERA5PressureMetadatum, arch=CPU(); halo=(3,3,3))
+$(MethodSignatures(defaults = true))
 
 Return a `Field{Nothing, Nothing, Center}` on the native grid of `metadata`
 holding the pressure value (Pa) at each vertical level. Levels are ordered
@@ -397,4 +396,3 @@ function pressure_field(metadata::ERA5PressureMetadatum, arch=CPU(); halo=(3,3,3
     fill_halo_regions!(field)
     return field
 end
-

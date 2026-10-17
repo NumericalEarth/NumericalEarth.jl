@@ -41,11 +41,7 @@ const α_payne = [ 0.061 0.061 0.061 0.061 0.061 0.061 0.061 0.061 0.061 0.061 0
                   0.425 0.370 0.325 0.290 0.255 0.220 0.200 0.178 0.157 0.140 0.122 0.108 0.095 0.083 0.074 0.065 0.061 0.056 0.052 0.048 0.044 0.040 0.038 0.033 0.032 0.031 0.030 0.029 0.028 0.027 0.026 0.026 0.026 0.026 0.025 0.025 0.025 0.025 0.025 0.025 0.025 0.025 0.025 0.025 0.025 0.02]
 
 """
-    TabulatedAlbedo(arch = CPU(), FT = Float64;
-                    S₀ = convert(FT, 1365),
-                    α_table  = α_payne,
-                    φ_values = (0:2:90) ./ 180 * π,
-                    𝓉_values = 0:0.05:1)
+$(MethodSignatures(defaults = true))
 
 Constructs a `TabulatedAlbedo` object that interpolated the albedo from a value table `α_table` that
 is function of latitude `φ` and atmospheric transimissivity `𝓉`.

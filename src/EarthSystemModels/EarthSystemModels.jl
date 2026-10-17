@@ -42,7 +42,7 @@ export
 
 import Dates
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
-using DocStringExtensions: TYPEDSIGNATURES
+using DocStringExtensions: TYPEDSIGNATURES, MethodSignatures
 using KernelAbstractions: @kernel, @index
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 

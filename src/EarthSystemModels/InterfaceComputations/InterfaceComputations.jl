@@ -1,7 +1,7 @@
 module InterfaceComputations
 
 using Adapt: Adapt
-using DocStringExtensions: TYPEDSIGNATURES, SIGNATURES
+using DocStringExtensions: TYPEDSIGNATURES, SIGNATURES, MethodSignatures
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: architecture

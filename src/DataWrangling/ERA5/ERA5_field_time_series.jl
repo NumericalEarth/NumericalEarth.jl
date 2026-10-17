@@ -126,7 +126,7 @@ function read_era5_yearly_series(paths, requested_times, name)
 end
 
 """
-    set!(fts::ERA5NetCDFFTSMultipleYears, backend=fts.backend)
+$(MethodSignatures(defaults = true))
 
 Load multiple timesteps from the yearly ERA5 file(s) into the FieldTimeSeries.
 Reads a time range from each yearly file in one operation (efficient!); a
