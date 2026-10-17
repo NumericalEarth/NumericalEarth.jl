@@ -143,7 +143,7 @@ ocean.stop_time = 200days
 ocean.output_writers[:surface_fields] = JLD2Writer(ocean.model, merge(model.velocities, model.tracers);
                                                    indices = (:, :, Nz),
                                                    schedule = TimeInterval(1days),
-                                                   overwrite_existing = true,
+                                                   overwrite_files = true,
                                                    including = [:grid],
                                                    filename = "med_surface_field")
 

@@ -55,7 +55,6 @@ Oceananigans.Simulations.iteration(model::ESM) = model.clock.iteration
 Oceananigans.Simulations.timestepper(::ESM) = nothing
 Oceananigans.OutputWriters.default_included_properties(::ESM) = tuple()
 Oceananigans.Utils.prettytime(model::ESM) = prettytime(model.clock.time)
-default_clock(TT) = Clock{TT}(0, 0, 1)
 
 Oceananigans.Simulations.reset_clock!(::Nothing) = nothing
 Oceananigans.TimeSteppers.update_state!(::Nothing) = nothing
@@ -391,7 +390,7 @@ EarthSystemModel{GPU}(time = 0 seconds, iteration = 0)
 ├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
-├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── sea_ice: FreezingLimitedOceanTemperature
 ├── ocean: HydrostaticFreeSurfaceModel{CUDAGPU, LatitudeLongitudeGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```

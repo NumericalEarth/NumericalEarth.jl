@@ -15,6 +15,7 @@ import Oceananigans
 download_GHSL_cache::String = ""
 function __init__()
     global download_GHSL_cache = DataWrangling.download_cache("GHSL")
+    return nothing
 end
 
 #####

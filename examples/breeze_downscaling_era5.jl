@@ -315,7 +315,7 @@ section_filename = name * "_section.jld2"
 
 schedule = TimeInterval(20minutes)
 slice_writer(indices, filename) = JLD2Writer(model, fields; schedule, filename, indices,
-                                             overwrite_existing = true)
+                                             overwrite_files = true)
 
 simulation.output_writers[:surface] = slice_writer((:, :, 1),         surface_filename)
 simulation.output_writers[:aloft]   = slice_writer((:, :, k_aloft),   aloft_filename)
@@ -327,7 +327,7 @@ land_fields = (Tˡᵃ = land.temperature,
                Tₛ = surface_temperature(model.interfaces))
 simulation.output_writers[:land] = JLD2Writer(model, land_fields; schedule,
                                               filename = land_filename,
-                                              overwrite_existing = true)
+                                              overwrite_files = true)
 
 function progress(sim)
     child = sim.model.atmosphere.model.child

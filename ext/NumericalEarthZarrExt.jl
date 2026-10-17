@@ -32,6 +32,7 @@ Zarr.getfilter(::Type{<:BitRoundFilter}, d) = BitRoundFilter(; keepbits = d["kee
 # would be missing at runtime.
 function __init__()
     Zarr.filterdict["bitround"] = BitRoundFilter
+    return nothing
 end
 
 #####

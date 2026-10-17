@@ -7,7 +7,8 @@ using Oceananigans.Utils: launch!
 
 using Breeze: ThermodynamicConstants, CompressibleDynamics,
               SaturationAdjustment, WarmPhaseEquilibrium,
-              AtmosphereModel, moisture_prognostic_name, HydrostaticallyBalancedDensity
+              AtmosphereModel, moisture_prognostic_name, HydrostaticallyBalancedDensity,
+              total_energy_density_name
 
 # Per-side merge for FieldBoundaryConditions: user's non-default sides override
 # coupling's; coupling's non-default sides survive where the user leaves the
@@ -26,9 +27,7 @@ function merge_fbcs(coupling::FieldBoundaryConditions, user::FieldBoundaryCondit
                                    immersed = pick(coupling.immersed, user.immersed))
 end
 
-# Breeze 0.10 renamed static energy e → s (Breeze #926), and the energy-BC interface key
-# (converted to a ρθ BC for potential-temperature formulations) follows the symbol.
-energy_bc_key() = pkgversion(Breeze) >= v"0.10" ? :ρs : :ρe
+energy_bc_key() = total_energy_density_name
 
 function merge_boundary_conditions(coupling_bcs::NamedTuple, user_bcs::NamedTuple)
     all_keys = (keys(coupling_bcs)..., (k for k in keys(user_bcs) if !(k in keys(coupling_bcs)))...)
@@ -41,10 +40,10 @@ end
 
 """
     atmosphere_model(grid;
-                     surface_pressure = 101325,
+                     base_pressure = 101325,
                      potential_temperature = 285,
                      thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
-                     dynamics = CompressibleDynamics(; surface_pressure,
+                     dynamics = CompressibleDynamics(; base_pressure,
                                                      reference_potential_temperature = potential_temperature),
                      microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
                      momentum_advection = WENO(order=9),
@@ -62,7 +61,7 @@ the role of [`ocean_simulation`](@ref)).
 
 When `initialize` (the default) and `dynamics isa CompressibleDynamics`, the returned model is
 set to a resting, hydrostatically balanced state at the reference `potential_temperature` and
-`surface_pressure`, so its density is valid for anything that divides by it (e.g. the MOST
+`base_pressure`, so its density is valid for anything that divides by it (e.g. the MOST
 surface-flux coupling). `AnelasticDynamics` needs no such step: its `reference_state` already
 prescribes a valid resting density, and zero prognostic perturbation is by construction the
 resting hydrostatically balanced state. Pass `initialize = false` when a caller derives the full
@@ -87,10 +86,10 @@ extension), which derives the lateral BCs and Davies relaxation from the parent 
 in a `NestedModel`.
 """
 function NumericalEarth.Atmospheres.atmosphere_model(grid;
-                                                     surface_pressure = 101325,
+                                                     base_pressure = 101325,
                                                      potential_temperature = 285,
                                                      thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
-                                                     dynamics = CompressibleDynamics(; surface_pressure,
+                                                     dynamics = CompressibleDynamics(; base_pressure,
                                                                                      reference_potential_temperature = potential_temperature),
                                                      microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
                                                      momentum_advection = Oceananigans.WENO(order=9),
@@ -112,12 +111,12 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
     # Create 2D coupling-flux fields populated by the ESM coupler each step.
     ρτˣ = Field{Center, Center, Nothing}(grid)
     ρτʸ = Field{Center, Center, Nothing}(grid)
-    Jᵉ  = Field{Center, Center, Nothing}(grid)
+    Jᴱ  = Field{Center, Center, Nothing}(grid)
     Jᵛ  = Field{Center, Center, Nothing}(grid)
 
     moisture_key = moisture_prognostic_name(microphysics)
     moisture_bc = NamedTuple{tuple(moisture_key)}(tuple(FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵛ))))
-    energy_bc = NamedTuple{(energy_bc_key(),)}((FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵉ)),))
+    energy_bc = NamedTuple{(energy_bc_key(),)}((FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᴱ)),))
 
     momentum_bcs = (
         ρu = FieldBoundaryConditions(bottom = FluxBoundaryCondition(ρτˣ)),
@@ -151,7 +150,7 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
     # applying this compressible-only set! corrupts it in place (Breeze's set_to_mean.jl copies
     # between mismatched-shape Fields), NaN-ing every field that divides by density.
     initialize && dynamics isa CompressibleDynamics &&
-        set!(model; θ = potential_temperature, ρ = HydrostaticallyBalancedDensity(; surface_pressure))
+        set!(model; θ = potential_temperature, ρ = HydrostaticallyBalancedDensity())
 
     return model
 end

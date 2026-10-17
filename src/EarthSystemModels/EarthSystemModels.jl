@@ -20,6 +20,7 @@ export
     PowerLawTortuosity,
     AltitudeCorrection,
     atmosphere_land_interface,
+    surface_layer_diagnostics,
     SurfacePartition,
     SimilarityTheoryFluxes,
     FixedIterations,
@@ -69,6 +70,7 @@ include("components.jl")
 
 const default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 const default_freshwater_density = 1000 # kg m⁻³
+const default_latent_heat_of_fusion = 334e3 # J kg⁻¹
 
 include("InterfaceComputations/InterfaceComputations.jl")
 
