@@ -540,6 +540,44 @@ end
     @test length(nested.exchanger.prognostic.ρᵈ.backend) == 3
 end
 
+# A closure's own tracers (TKE `ρe`) get the child's bounds-preserving WENO by default. A NamedTuple
+# `scalar_advection` that omits them would leave them on the model default, unbounded `Centered(order=2)`.
+@testset "Breeze nested_atmosphere_model: closure tracers get bounded WENO advection" begin
+    parent_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 4),
+                                        longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),
+                                        z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(parent_grid, collect(0.0:1.0:2.0))
+    set!(parent.temperature,       (x, y, z, t) -> 280.0)
+    set!(parent.specific_humidity, (x, y, z, t) -> 0.005)
+    set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
+    set!(parent.pressure,          (x, y, z, t) -> 9.0e4)
+
+    child_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 8),
+                                       longitude = (-1, 1), latitude = (-1, 1), z = (0, 1000),
+                                       halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+
+    closure = TKEBasedTurbulenceClosure()
+    tke_name = only(Oceananigans.TurbulenceClosures.closure_required_tracers(closure))
+
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    microphysics = ext.default_nested_microphysics()
+    default = ext.default_nested_scalar_advection(microphysics, closure)
+    @test haskey(default, tke_name)
+    @test default[tke_name] isa WENO
+    @test default[tke_name].bounds.minimum_value == 0
+    @test isfinite(default[tke_name].bounds.maximum_value)
+    @test !haskey(ext.default_nested_scalar_advection(microphysics), tke_name)   # no closure, no TKE entry
+
+    nested = nested_atmosphere_model(parent, child_grid; closure,
+                                     parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
+    child_tke_advection = nested.child.advection[tke_name]
+    @test child_tke_advection isa WENO
+    @test !(child_tke_advection isa Centered)
+    @test !isnothing(child_tke_advection.bounds)
+    @test child_tke_advection.bounds.minimum_value == 0
+end
+
 # The Davies relaxation is keyed by the density-weighted prognostic, so a caller's own specific-key
 # forcing combines with it rather than replacing it.
 @testset "Davies relaxation survives a caller-supplied specific forcing" begin
