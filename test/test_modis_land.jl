@@ -6,7 +6,7 @@ using NumericalEarth.DataWrangling: DataWrangling, BoundingBox, Metadatum, Metad
     longitude_name, latitude_name, all_dates, native_times, available_variables,
     longitude_interfaces, latitude_interfaces, validate_dataset_coverage,
     retrieve_data, read_file_coords, region_info, fill_gaps!, cmr_granules_url,
-    window_center, averaging_window, window_bounds, class_fractions
+    window_center, averaging_window, window_bounds, class_fractions, valid_area_mean!
 using NumericalEarth.DataWrangling.MODISLand: MODISLand, mask_lai_fill, lai_screening_flags,
     lai_rejection_flags, modis_composite_dates,
     parse_granule_name, select_granules, regional_lattice,
@@ -423,8 +423,10 @@ end
 
         lai, _, _ = write_synthetic_modis_file(joinpath(dir, metadatum.filename), lattice;
                                               lai_at = Dict((2, 3) => 0xff,     # fill
-                                                            (2, 4) => 0xfe),    # water
-                                              qc_at = Dict((4, 5) => lai_qc(modland = 1),
+                                                            (2, 4) => 0xfe,     # water
+                                                            (3, 4) => 0xfa),    # urban
+                                              qc_at = Dict((3, 4) => lai_qc(cloud = 1),
+                                                           (4, 5) => lai_qc(modland = 1),
                                                            (5, 6) => lai_qc(scf = 3),
                                                            (6, 7) => lai_qc(cloud = 1),
                                                            (7, 8) => lai_qc(cloud = 3),
@@ -469,6 +471,10 @@ end
         @test !isnan(leaf_area_index[9, 10])      # nor is snow
         @test count(isnan, leaf_area_index) == 5
 
+        # Urban land carries no leaves, whatever the screen says about the sky over it.
+        @test leaf_area_index[3, 4] == 0
+        @test isnan(retrieve_data(Metadatum(:leaf_area_index_uncertainty; dataset, region, date, dir))[3, 4])
+
         # Screening only ever removes data.
         unscreened = Metadatum(:leaf_area_index; dataset = MCD15A2H(screened_flags = 0x0000),
                                region, date, dir)
@@ -492,10 +498,11 @@ end
         codes = retrieve_data(Metadatum(:landcover_code; dataset, region, date, dir))
         @test size(codes) == (Nx, Ny)
         @test codes[2, 4] == 254        # water, where the leaf area is a gap
+        @test codes[3, 4] == 250        # urban, where the leaf area is zero
         @test isnan(codes[2, 3])        # 255 is fill, not a class
         @test isnan(codes[4, 5])        # screened retrievals are not land cover
         @test isnan(codes[1, 1])        # a valid retrieval carries no class
-        @test count(!isnan, codes) == 1
+        @test count(!isnan, codes) == 2
 
         # On the grid the product's scale factor is applied, and each variable gets its own.
         field = Field(metadatum)
@@ -507,6 +514,22 @@ end
 
         fpar = Array(interior(Field(Metadatum(:fpar; dataset, region, date, dir)), :, :, 1))
         @test fpar[1, 1] ≈ Float32(lai[1, 1]) * MODIS_FPAR_SCALE
+        @test fpar[3, 4] == 0
+
+        # On one model column over the whole window, the area mean of the retrievals under it,
+        # whether or not the model grid has a vertical axis.
+        row_area = [sind(lattice.south + j * Δ) - sind(lattice.south + (j - 1) * Δ) for j in 1:Ny]
+        area = repeat(row_area', Nx)
+        valid = isfinite.(values)
+        expected = sum(values[valid] .* area[valid]) / sum(area[valid])
+
+        horizontal = (; longitude = (lattice.west, lattice.east), latitude = (lattice.south, lattice.north))
+        for model_grid in (LatitudeLongitudeGrid(CPU(), Float32; size = (1, 1), horizontal...,
+                                                 topology = (Bounded, Bounded, Flat)),
+                           LatitudeLongitudeGrid(CPU(), Float32; size = (1, 1, 2), horizontal...,
+                                                 z = (0, 100), topology = (Bounded, Bounded, Bounded)))
+            @test only(Array(interior(Field(metadatum, model_grid)))) ≈ expected rtol = 1e-4
+        end
 
         # A sub-360° window must be Bounded in x so halos do not wrap.
         @test topology(grid)[1] == Bounded
@@ -703,6 +726,30 @@ end
                                       repeat([0 1-southern_fraction 1 1], 2, 1)))
 
     @test_broken first(landed(source_grid)) ≈ (Array(interior(classes, :, :, 1)) .== 1)
+end
+
+@testset "Valid-area means [$arch]" for arch in test_architectures
+    source_grid = LatitudeLongitudeGrid(arch; size = (4, 4),
+                                        longitude = (-4, 0), latitude = (50, 70),
+                                        topology = (Bounded, Bounded, Flat))
+    source = Field{Center, Center, Nothing}(source_grid)
+    set!(source, (longitude, latitude) -> ifelse((longitude < -3) & (latitude < 55), NaN, latitude))
+
+    # Rows of the source, by the area of one cell and the latitude it carries.
+    row_area = [sind(55) - sind(50), sind(60) - sind(55), sind(65) - sind(60), sind(70) - sind(65)]
+    row_latitude = [52.5, 57.5, 62.5, 67.5]
+    south = (3 * row_area[1] * row_latitude[1] + 4 * row_area[2] * row_latitude[2]) /
+            (3 * row_area[1] + 4 * row_area[2])
+    north = (row_area[3] * row_latitude[3] + row_area[4] * row_latitude[4]) / (row_area[3] + row_area[4])
+
+    for longitude_shift in (0, 360)
+        grid = LatitudeLongitudeGrid(arch; size = (1, 3), longitude = (-4, 0) .+ longitude_shift,
+                                     latitude = [50, 60, 70, 80], topology = (Bounded, Bounded, Flat))
+        mean_latitude = Array(interior(valid_area_mean!(Field{Center, Center, Nothing}(grid), source), 1, :, 1))
+        @test mean_latitude[1] ≈ south
+        @test mean_latitude[2] ≈ north
+        @test isnan(mean_latitude[3])
+    end
 end
 
 @testset "MODIS class fractions on a model grid" begin
@@ -905,7 +952,8 @@ end
 @testset "Zeroing the non-vegetated classes" begin
     𝒜 = fill(NaN32, 3, 1, 4)
     𝒜[1, 1, :] .= 1f0:4f0                          # forest, observed
-    𝒜[3, 1, 2] = 7                                 # a stray retrieval over water
+    𝒜[2, 1, 2] = 5                                 # a stray retrieval over water
+    𝒜[3, 1, 2] = 7                                 # a stray retrieval over urban
 
     codes = Float32[igbp_class_names.deciduous_broadleaf_forest;
                     igbp_class_names.water;
@@ -913,14 +961,12 @@ end
 
     zero_non_vegetated!(𝒜, codes)
 
-    # The two non-vegetated columns carry zero at every period — leaf area per unit ground
-    # area over water and tarmac is zero, not unknown.
-    @test all(iszero, 𝒜[2, 1, :])
+    # The class decides, not the presence of a value: leaf area per unit land area is zero over
+    # tarmac at every period, and water is not land at all.
     @test all(iszero, 𝒜[3, 1, :])
-    @test count(isnan, 𝒜) == 0
+    @test all(isnan, 𝒜[2, 1, :])
 
-    # A vegetated column is untouched, and so is a value the product did retrieve over a
-    # non-vegetated cell: the class decides, not the presence of a value.
+    # A vegetated column is untouched.
     @test 𝒜[1, 1, :] == Float32[1, 2, 3, 4]
 
     # Cells with no class at all are left alone — nothing says they carry no canopy.
@@ -929,11 +975,11 @@ end
     @test all(isnan, unclassified)
 
     # Which classes count is a keyword, because a different legend numbers them differently.
-    grassland = reshape(Float32[NaN, NaN], 2, 1, 1)
+    grassland = reshape(Float32[NaN, 3], 2, 1, 1)
     zero_non_vegetated!(grassland, Float32[igbp_class_names.grassland; igbp_class_names.water;;];
-                        classes = (igbp_class_names.grassland,))
+                        classes = (igbp_class_names.grassland,), water_classes = ())
     @test iszero(grassland[1, 1, 1])
-    @test isnan(grassland[2, 1, 1])
+    @test grassland[2, 1, 1] == 3
 
     @test_throws ArgumentError zero_non_vegetated!(fill(NaN32, 3, 1, 4), fill(NaN32, 2, 1))
 end

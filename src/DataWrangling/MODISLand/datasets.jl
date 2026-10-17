@@ -22,6 +22,11 @@ composites on the sinusoidal grid, from 2002-07-04 onwards. Provides `:leaf_area
 a retrieval, listed under [`mask_lai_landcover`](@ref). The product reports *true* leaf
 area index, with per-biome clumping applied inside the retrieval.
 
+Leaf area and FPAR read as zero where the product codes land with no canopy (urban, snow or
+ice, barren) and as `NaN` over water and wherever there is no retrieval, so they are per unit
+land area. On a model grid, `Field(metadatum, grid)` gives each cell the area mean of the
+values under it, normalized by the area they cover; a cell with none is `NaN`.
+
 Granules are HDF-EOS2 tiles on the sinusoidal projection, discovered from NASA's Common
 Metadata Repository and reprojected to a regional latitude-longitude window at download
 time. Build the `Metadata` with a lon/lat [`BoundingBox`](@ref); a global read is not
@@ -385,9 +390,11 @@ function DataWrangling.interpolate_physical!(target, classes, metadatum::MODISLa
     return majority_class!(target, fractions, codes)
 end
 
-# The land-cover codes MCD15A2H writes in place of a retrieval are classes too.
-function DataWrangling.interpolate_physical!(target, source, metadatum::MODISLAIMetadatum)
-    metadatum.name === :landcover_code || return DataWrangling.interpolate_physical!(target, source)
+# The land-cover codes MCD15A2H writes in place of a retrieval are classes too; every other
+# variable lands as the area mean of the cells that hold a value.
+function DataWrangling.interpolate_physical!(target, source,
+                                             metadatum::Union{MODISLAIMetadatum, MODISLAIClimatologyMetadatum})
+    metadatum.name === :landcover_code || return valid_area_mean!(target, source)
 
     fractions = class_fractions(target.grid, source, MODIS_LAI_LANDCOVER_CODES)
     return majority_class!(target, fractions, MODIS_LAI_LANDCOVER_CODES)

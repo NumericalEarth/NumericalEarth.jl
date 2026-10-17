@@ -67,7 +67,10 @@ compositing leaves behind — see their docstrings and `examples/modis_landcover
   of phase after a year.
 - Class codes are not interpolable: read them on the product's own grid, and take
   `class_fractions` when a model grid is wanted.
-- Water and unretrieved pixels are `NaN`; no inpainting by default.
+- Leaf area is per unit land area. The product's urban, snow/ice and barren codes read as
+  zero; water, wetland and unretrieved pixels are `NaN`, with no inpainting by default. On a
+  model grid each cell takes the area mean of the values under it, normalized by the area
+  they cover, so `NaN` pixels drop out rather than counting as zero.
 - A longitude window straddling the ±180° seam is rejected; split it into two requests.
 - Whole tiles are downloaded (HDF4 defeats GDAL's windowed reads), and a climatology
   multiplies quickly: 46 periods × `length(years)` × tiles — a 1° box over five years is

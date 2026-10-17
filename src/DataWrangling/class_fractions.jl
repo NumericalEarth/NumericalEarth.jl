@@ -48,6 +48,37 @@ function class_fractions(grid, classes::Field, codes)
 end
 
 #####
+##### Area means over the valid cells of a field with gaps
+#####
+
+"""
+    $(TYPEDSIGNATURES)
+
+Set each cell of `target` to the area-weighted mean of the finite values of `source` under it:
+`source` is regridded conservatively and normalized by the area its finite cells cover rather
+than by the target cell's area. A cell with no finite value under it is `NaN`.
+"""
+function valid_area_mean!(target, source)
+    source_grid = relabeled_source_grid(source.grid, target.grid)
+    valid = Field{Center, Center, Nothing}(source_grid)
+    valid_values = Field{Center, Center, Nothing}(source_grid)
+
+    target_columns = horizontal_grid(target.grid)
+    valid_area_fraction = Field{Center, Center, Nothing}(target_columns)
+    regridded_values = Field{Center, Center, Nothing}(target_columns)
+
+    interior(valid) .= isfinite.(interior(source))
+    interior(valid_values) .= ifelse.(isfinite.(interior(source)), interior(source), zero(eltype(source)))
+    regrid!(valid_area_fraction, valid)
+    regrid!(regridded_values, valid_values)
+
+    # A cell with no valid area divides zero by zero.
+    interior(target) .= interior(regridded_values) ./ interior(valid_area_fraction)
+    fill_halo_regions!(target)
+    return target
+end
+
+#####
 ##### The majority class of regridded fractions
 #####
 

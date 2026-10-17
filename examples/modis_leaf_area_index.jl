@@ -26,10 +26,10 @@
 # through `EARTHDATA_USERNAME` and `EARTHDATA_PASSWORD`.
 
 using NumericalEarth
-using NumericalEarth.DataWrangling: fill_gaps!
+using NumericalEarth.DataWrangling: fill_gaps!, valid_area_mean!
+using NumericalEarth.DataWrangling.MODISLand: modis_landcover_class_names
 using ArchGDAL
 using Oceananigans
-using Oceananigans.Fields: interpolate!
 using Dates
 using Printf
 using Statistics
@@ -59,7 +59,7 @@ gap_fraction(field) = mean(isnan.(Array(interior(field))))
 # ## Why a single composite looks so sparse
 #
 # A single 8-day map of this box is missing a quarter of its cells, which looks alarming until
-# the three contributions are separated. They are different in kind, and only one of them is a
+# the two contributions are separated. They are different in kind, and only one of them is a
 # limitation of the retrieval.
 
 date = DateTime(2021, 7, 20)
@@ -69,18 +69,23 @@ single_composite = Metadatum(:leaf_area_index; dataset = MCD15A2H(), region, dat
 single_composite_leaf_area_index = Field(single_composite)
 
 # **The first is not missing data at all.** Where the product does not attempt a retrieval it
-# writes a land-cover class instead — water, urban, snow, barren — and the adapter reads those
-# codes back as `:landcover_code`. Over this box they are the river network and the city of
-# Manaus, so they are permanently unretrievable by design, and reporting them as leaf area of
-# zero would be worse than reporting them as missing.
+# writes a land-cover class instead, and the adapter reads those codes back as
+# `:landcover_code`. Urban, snow and barren carry no canopy, so they read as a leaf area of
+# zero. Water and wetland stay missing: leaf area is per unit land area, and nothing says what a
+# wetland carries. Over this box the missing classes are the river network, permanently
+# unretrievable by design.
 
 in_band_codes = Metadatum(:landcover_code; dataset = MCD15A2H(), region, date)
 
-class_code_fraction = mean(.!isnan.(Array(interior(Field(in_band_codes)))))
+no_canopy_codes = (modis_landcover_class_names.urban, modis_landcover_class_names.snow_and_ice,
+                   modis_landcover_class_names.barren)
+
+class_code_fraction = mean(code -> isfinite(code) && !(code in no_canopy_codes),
+                           Array(interior(Field(in_band_codes))))
 
 @printf("Single 8-day composite, %s, on the product's own 500 m grid\n",
         Dates.format(date, "yyyy-mm-dd"))
-@printf("  a land-cover class, not a failed retrieval : %.2f%%\n", 100 * class_code_fraction)
+@printf("  water or wetland, not a failed retrieval   : %.2f%%\n", 100 * class_code_fraction)
 @printf("  total missing                              : %.2f%%\n",
         100 * gap_fraction(single_composite_leaf_area_index))
 @printf("  → attributable to cloud and quality        : %.2f%%\n",
@@ -110,27 +115,14 @@ deep_composite_leaf_area_index = Field(deep_composite)
         100 * gap_fraction(deep_composite_leaf_area_index), 100 * class_code_fraction)
 @printf("  mean 𝒜        : %.2f m² m⁻²\n", nanmean(deep_composite_leaf_area_index))
 
-# **The third is the regrid, and it is the one worth knowing about.** Landing a field with
-# scattered gaps on a model grid goes through the shared bilinear interpolation, whose 2×2
-# stencil is not `NaN`-aware: one missing native cell makes up to four missing model cells.
-# Dilating the native mask by that stencil predicts the model-grid gap exactly, and the inflation
-# is the same at every target resolution — the signature of a stencil rather than of resolution.
-
-function stencil_dilated(field)
-    m = isnan.(Array(interior(field, :, :, 1)))
-    d = copy(m)
-    for i in 2:size(m, 1), j in 2:size(m, 2)
-        d[i, j] = m[i, j] | m[i-1, j] | m[i, j-1] | m[i-1, j-1]
-    end
-    return mean(d)
-end
+# The regrid onto the model grid adds no gap of its own. Each model cell takes the area mean of
+# the retrievals under it, normalized by the area they cover, so a model cell is missing only
+# where no native cell under it holds a retrieval.
 
 @printf("\nWhat the regrid onto the model grid costs\n")
-@printf("  native 500 m grid            : %.2f%% missing\n",
+@printf("  native 500 m grid  : %.2f%% missing\n",
         100 * gap_fraction(deep_composite_leaf_area_index))
-@printf("  the 2x2 stencil would dilate : %.2f%%\n",
-        100 * stencil_dilated(deep_composite_leaf_area_index))
-@printf("  measured on the model grid   : %.2f%%\n",
+@printf("  on the model grid  : %.2f%% missing\n",
         100 * gap_fraction(Field(deep_composite, grid)))
 
 # ## Is the magnitude right?
@@ -159,9 +151,9 @@ plot = heatmap!(ax, Field(deep_composite, grid), colormap = :viridis,
                 colorrange = leaf_area_index_range, nan_color = :midnightblue)
 Colorbar(fig[1, 3], plot, label = "𝒜 (m² m⁻²)")
 
-# The classes the product names instead of retrieving. They are the reason the composite's gap
-# does not close further, and their shape — a connected river network, not scattered speckle —
-# is what a correct geolocation looks like.
+# The classes the product names instead of retrieving. Its water and wetland codes are the
+# reason the composite's gap does not close further, and their shape — a connected river
+# network, not scattered speckle — is what a correct geolocation looks like.
 #
 # Plotted on the product's own 500 m grid, deliberately: these are class *codes*, so
 # interpolating them onto the model grid would average urban (250) against water (254) into
@@ -173,7 +165,7 @@ heatmap!(ax, Field(in_band_codes), colormap = cgrad(:tab10, 6, categorical = tru
          colorrange = (249.5, 255.5), nan_color = (:seagreen, 0.25))
 
 ax = Axis(fig[2, 2]; xlabel = "𝒜 (m² m⁻²)", ylabel = "Cells",
-          title = "Distribution over the retained canopy")
+          title = "Distribution over the land")
 hist!(ax, filter(!isnan, vec(Array(interior(deep_composite_leaf_area_index)))), bins = 50,
       color = (:seagreen, 0.8))
 
@@ -203,8 +195,8 @@ build_lai_climatology!(climatology; region)
 metadata = Metadata(:leaf_area_index; dataset = climatology, region)
 
 # The series is built on the product's own grid, not the model grid. Regional means do not care,
-# the gap fractions then stay comparable with the numbers above, and the temporal fill below wants
-# it this way — filling before the regrid leaves the 2×2 stencil almost nothing to dilate.
+# the gap fractions then stay comparable with the numbers above, and the temporal fill below runs
+# at the product's own resolution.
 
 climatology_leaf_area_index = FieldTimeSeries(metadata; time_indices_in_memory = 4)
 
@@ -315,22 +307,10 @@ hlines!(ax, [100 * class_code_fraction], color = :gray40, linestyle = :dash,
         label = "land-cover classes (the floor)")
 axislegend(ax, position = :rt)
 
-# The two extremes on the model grid, interpolated from the *filled* series rather than re-read
-# from the cache — filling first and regridding second is the order that keeps the stencil from
-# dilating gaps, and this is what a simulation would actually be handed.
-#
-# The two periods inflate by different factors even though the stencil is the same, because
-# dilation is a perimeter effect rather than an area one. The peak period's gaps are almost
-# entirely the connected river network, which has little perimeter for its area and grows by
-# about a third; the low period's are the scattered cells the temporal fill could not reach, and
-# each isolated cell recruits its three neighbors. Gap *geometry*, not gap fraction, sets what
-# the regrid costs.
+# The two extremes on the model grid, regridded from the *filled* series rather than re-read
+# from the cache, which is what a simulation would actually be handed.
 
-function on_model_grid(native)
-    field = Field{Center, Center, Nothing}(grid)
-    interpolate!(field, native)
-    return field
-end
+on_model_grid(native) = valid_area_mean!(Field{Center, Center, Nothing}(grid), native)
 
 @printf("  worst period after the cyclic fill  : %.2f%%  (%d of %d still above 15%%)\n",
         100 * maximum(filled_gaps), count(>(0.15), filled_gaps), length(periods))

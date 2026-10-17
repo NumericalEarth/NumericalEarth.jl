@@ -18,7 +18,7 @@ export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, 
 export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
 export fill_gaps!, fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial
-export class_fractions
+export class_fractions, valid_area_mean!
 
 using Adapt: Adapt
 using DocStringExtensions: TYPEDSIGNATURES

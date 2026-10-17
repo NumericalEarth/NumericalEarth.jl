@@ -147,14 +147,23 @@ function class_maximum_gap(land_cover; periods = igbp_maximum_gap_periods, defau
 end
 
 """
-    zero_non_vegetated!(series, land_cover; classes = igbp_non_vegetated_classes)
+    zero_non_vegetated!(series, land_cover; classes = igbp_non_vegetated_classes,
+                        water_classes = (igbp_class_names.water,))
 
-Write a leaf area index of zero into every cell of `series` whose land-cover class is in
-`classes`. Returns `series`. Run it after [`fill_seasonal_gaps!`](@ref) and before
-regridding, and score a fill with [`gap_fill_denial`](@ref) before zeroing.
+Make `series` a leaf area index per unit land area, with the land-cover class deciding
+whatever `series` held: `NaN` in every cell whose class is in `water_classes`, which is not
+land, and zero in every other cell whose class is in `classes`, which has no canopy. Returns
+`series`. Run it after [`fill_seasonal_gaps!`](@ref), score a fill with
+[`gap_fill_denial`](@ref) before it, and land the result on a model grid with
+[`valid_area_mean!`](@ref).
+
+Vegetated cells the fill could not reach stay `NaN`, among them those MCD15A2H codes as
+permanent wetland (251) rather than retrieving: their leaf area is unknown, so they drop out
+of the land-area mean instead of counting as zero.
 """
 function zero_non_vegetated!(data::AbstractArray, land_cover;
-                             classes = igbp_non_vegetated_classes)
+                             classes = igbp_non_vegetated_classes,
+                             water_classes = (igbp_class_names.water,))
 
     𝒜 = DataWrangling.seasonal_array(data)
     codes = DataWrangling.horizontal_array(land_cover)
@@ -164,7 +173,13 @@ function zero_non_vegetated!(data::AbstractArray, land_cover;
 
     for t in axes(𝒜, 3), j in axes(𝒜, 2), i in axes(𝒜, 1)
         code = codes[i, j]
-        isfinite(code) && round(Int, code) in classes && (𝒜[i, j, t] = 0)
+        isfinite(code) || continue
+        class = round(Int, code)
+        if class in water_classes
+            𝒜[i, j, t] = NaN
+        elseif class in classes
+            𝒜[i, j, t] = 0
+        end
     end
 
     return data

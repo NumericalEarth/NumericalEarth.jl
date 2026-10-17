@@ -31,11 +31,12 @@
 
 using NumericalEarth
 using NumericalEarth.DataWrangling: fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial,
-                                    window_bounds, class_fractions
+                                    window_bounds, class_fractions, valid_area_mean!
 using NumericalEarth.DataWrangling.MODISLand: landcover_class_names, igbp_class_names,
                                               igbp_non_vegetated_classes, class_maximum_gap,
                                               zero_non_vegetated!, period_index,
-                                              retained_retrieval_metadatum
+                                              retained_retrieval_metadatum,
+                                              modis_landcover_class_names
 using ArchGDAL
 using Oceananigans
 using Oceananigans.Units: Time   ## `Dates` exports a `Time` too, and it is not this one
@@ -64,10 +65,15 @@ in_band_codes = Metadatum(:landcover_code; dataset = MCD15A2H(), region, date)
 
 single_composite_leaf_area_index = Field(single_composite)
 
-in_band_fraction = mean(.!isnan.(Array(interior(Field(in_band_codes)))))
+## Urban, snow and barren codes read as a leaf area of zero, so only the other codes are gaps.
+no_canopy_codes = (modis_landcover_class_names.urban, modis_landcover_class_names.snow_and_ice,
+                   modis_landcover_class_names.barren)
+
+in_band_fraction = mean(code -> isfinite(code) && !(code in no_canopy_codes),
+                        Array(interior(Field(in_band_codes))))
 
 @printf("Single 8-day composite, %s\n", Dates.format(date, "yyyy-mm-dd"))
-@printf("  a land-cover class, not a failed retrieval : %.2f%%\n", 100 * in_band_fraction)
+@printf("  water or wetland, not a failed retrieval   : %.2f%%\n", 100 * in_band_fraction)
 @printf("  total missing                              : %.2f%%\n",
         100 * gap_fraction(single_composite_leaf_area_index))
 @printf("  → attributable to cloud and quality        : %.2f%%\n",
@@ -598,9 +604,11 @@ end
 # ## What the model is handed
 #
 # Everything the chain leaves missing is water, urban, permanent snow or barren — measured
-# below, it is *all* of it, with no vegetated cell left dry in either treatment. Those cells
-# are not missing a value. Their leaf area per unit ground area is zero, and that is the value
-# to write.
+# below, it is *all* of it, with no vegetated cell left dry in either treatment. The class map
+# then decides those cells whatever the product held there: urban, snow and barren are land
+# with no canopy, so their leaf area is zero, and water is not land, so it is `NaN`.
+
+water = class_codes .== igbp_class_names.water
 
 for (name, series) in ("climatology" => filled_leaf_area_index,
                        "2019" => single_year_leaf_area_index)
@@ -610,25 +618,26 @@ for (name, series) in ("climatology" => filled_leaf_area_index,
             name, 100 * mean(left), vegetated_left)
 
     zero_non_vegetated!(series, classes)
-    @printf("  after zeroing the non-vegetated classes : %d NaN remaining\n",
-            count(isnan, horizontal(series)))
+    remaining = isnan.(horizontal(series))
+    @printf("  after applying the class map : %d NaN remaining, %d of them off water\n",
+            count(remaining), count(remaining .& .!water))
 end
 
-# The regrid is conservative, so each model cell takes the area mean of the 500 m cells under
-# it, and leaf area is already per unit *ground* area: a model cell half lake and half forest
-# carries half the forest's leaf area. Zeroing before the regrid rather than after is what
-# makes that hold, because a `NaN` left on the lake would leave the whole model cell without
-# a value.
+# The regrid is conservative and normalized by the land area that holds a value, so each model
+# cell takes the area mean of the 500 m land cells under it: a model cell half lake and half
+# forest carries the forest's leaf area per unit of its land. Urban, snow and barren count
+# toward that land at zero; the lake does not count at all, and a cell that is all water has
+# no value.
 
-model_grid_leaf_area_index = Field{Center, Center, Nothing}(grid)
-regrid!(model_grid_leaf_area_index, filled_leaf_area_index[peak])
+model_grid_leaf_area_index = valid_area_mean!(Field{Center, Center, Nothing}(grid),
+                                              filled_leaf_area_index[peak])
 
 @printf("\nOn the %d x %d model grid at the seasonal peak\n", size(grid, 1), size(grid, 2))
 @printf("  cells with no value : %d\n", count(isnan, Array(interior(model_grid_leaf_area_index))))
-@printf("  regional mean 𝒜     : %.3f m² m⁻²\n", nanmean(model_grid_leaf_area_index))
+@printf("  regional mean 𝒜     : %.3f m² m⁻² of land\n", nanmean(model_grid_leaf_area_index))
 
-# The class field has to travel with it. Zero says there is no canopy; it does not say whether
-# the surface is a lake or a car park, and those want roughness lengths four orders of
-# magnitude apart. A canopy closure handed this field alone would read a city as smoother than
-# a wheat field — which is why `class_fractions` above is part of the deliverable and not a
-# diagnostic.
+# The class field has to travel with it. This field says how much leaf area the land carries; it
+# does not say how much of a cell is land, nor whether its leafless land is a car park or bare
+# rock, and those want roughness lengths orders of magnitude apart. A canopy closure handed this
+# field alone would read a city as smoother than a wheat field, which is why `class_fractions`
+# above is part of the deliverable and not a diagnostic.

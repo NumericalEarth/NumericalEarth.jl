@@ -177,7 +177,8 @@ function DataWrangling.retrieve_data(metadatum::MODISLAIMetadatum)
         end
 
     return NCDataset(metadata_path(metadatum)) do ds
-        𝒜 = mask_lai_fill.(ds[variable][:, :])
+        DN = ds[variable][:, :]
+        𝒜 = mask_lai_fill.(DN)
 
         if !iszero(mask)
             qc = ds[lai_quality_variable][:, :]
@@ -185,7 +186,9 @@ function DataWrangling.retrieve_data(metadatum::MODISLAIMetadatum)
             𝒜 = ifelse.(lai_screened.(qc, extra_qc, mask), NaN32, 𝒜)
         end
 
-        𝒜
+        # A no-canopy code describes the surface, so it reads as zero whatever the screen removed.
+        metadatum.name === :leaf_area_index_uncertainty && return 𝒜
+        return ifelse.(non_vegetated_land_code.(DN), 0f0, 𝒜)
     end
 end
 
