@@ -1,7 +1,7 @@
 using Oceananigans.Grids: inactive_node
 
 using ..EarthSystemModels: EarthSystemModel
-using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties
+using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties, skin_conductance
 
 """
     apply_air_land_radiative_fluxes!(coupled_model)
@@ -24,6 +24,10 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     # No atmosphere--land interface (no atmosphere): nothing to do.
     al_interface = coupled_model.interfaces.atmosphere_land_interface
     isnothing(al_interface) && return nothing
+
+    # A skin that closes its own energy balance already absorbs the radiation; the slab is
+    # then driven by the skin→bulk conduction.
+    isnothing(skin_conductance(al_interface)) || return nothing
 
     radiation = coupled_model.radiation
     interface_fluxes = radiation.interface_fluxes

@@ -91,7 +91,7 @@ value(operation) = column(compute!(Field(operation)))
                           typeof(approximate_state), typeof(atmosphere_state),
                           typeof(interface_properties), typeof(atmosphere_properties))
 
-        @test Base.return_types(iterate_interface_fluxes, argument_types) == [Tuple{FT, FT, FT}]
+        @test Base.return_types(iterate_interface_fluxes, argument_types) == [NTuple{5, FT}]
     end
 end
 

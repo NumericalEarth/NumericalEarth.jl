@@ -165,7 +165,7 @@ function surface_layer_diagnostics(model, interface = model.interfaces.atmospher
     FT = eltype(grid)
 
     interface_state = (fluxes = interface.fluxes,
-                       temperature = interface.temperature,
+                       temperature = interface_node_temperature(interface.temperature),
                        specific_humidity = interface.specific_humidity,
                        atmosphere_specific_humidity = interfaces.exchanger.atmosphere.state.q,
                        surface_velocities = surface_velocities,
