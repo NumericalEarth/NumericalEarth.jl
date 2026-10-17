@@ -39,6 +39,7 @@ mkpath(OUTPUT_DIR)
 examples = [
     Example("Single-column ocean simulation", "single_column_os_papa_simulation", true),
     Example("Coupled conservation on a z-star grid", "coupled_conservation", true),
+    Example("Ocean circulation beneath an ice shelf (ISOMIP)", "isomip_ice_shelf_cavity", false),
     Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
     # Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
     Example("Global climate simulation", "global_climate_simulation", false),
