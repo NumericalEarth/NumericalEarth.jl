@@ -46,7 +46,7 @@ examples = [
     # Near-global is the heaviest example (¼°, ~35M cells) and stays disabled.
     # Example("Near-global ocean simulation", "near_global_ocean_simulation"; build_always=false, gpu=true),
     Example("Global climate simulation", "global_climate_simulation"; build_always=false, gpu=true),
-    Example("Veros ocean simulation", "veros_ocean_forced_simulation"; build_always=false, gpu=false),
+    # Example("Veros ocean simulation", "veros_ocean_forced_simulation"; build_always=false, gpu=false),
     Example("Breeze over four oceans", "breeze_over_four_oceans"; build_always=false, gpu=false),
     Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data"; build_always=true, gpu=false),
     Example("Breeze over slab land", "breeze_over_slab_land"; build_always=true, gpu=false),
