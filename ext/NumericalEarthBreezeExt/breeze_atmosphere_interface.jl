@@ -7,7 +7,7 @@ using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
 using GPUArraysCore: @allowscalar
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using NumericalEarth.EarthSystemModels: component_model
-using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters, interior_kernel_parameters
+using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
 
 const BreezeAtmosphere    = Breeze.AtmosphereModel
 const BreezeAtmosphereSim = Simulation{<:Breeze.AtmosphereModel}
@@ -132,7 +132,8 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     p = dynamics_pressure(atmosphere.dynamics)
 
     arch = architecture(exchange_grid)
-    launch!(arch, exchange_grid, interior_kernel_parameters(exchange_grid),
+    kernel_parameters = interface_kernel_parameters(exchange_grid)
+    launch!(arch, exchange_grid, kernel_parameters,
             _interpolate_breeze_state!,
             state, u, v, T, qᵛ, p)
 

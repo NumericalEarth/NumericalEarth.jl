@@ -62,13 +62,6 @@ function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel
     InterfaceComputations.correct_state!(exchanger.sea_ice,    grid)
     InterfaceComputations.correct_state!(exchanger.ocean,      grid)
 
-    # Phase 1.75: fill the halos of the exchanged state
-    InterfaceComputations.fill_state_halo_regions!(exchanger.radiation)
-    InterfaceComputations.fill_state_halo_regions!(exchanger.atmosphere)
-    InterfaceComputations.fill_state_halo_regions!(exchanger.land)
-    InterfaceComputations.fill_state_halo_regions!(exchanger.sea_ice)
-    InterfaceComputations.fill_state_halo_regions!(exchanger.ocean)
-
     # Phase 2: compute interface turbulent fluxes
     compute_atmosphere_ocean_fluxes!(coupled_model)
     compute_atmosphere_sea_ice_fluxes!(coupled_model)

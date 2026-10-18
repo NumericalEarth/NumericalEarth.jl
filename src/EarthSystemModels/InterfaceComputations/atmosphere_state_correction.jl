@@ -126,7 +126,7 @@ end
 function correct_state!(correction::AltitudeCorrection, exchanger, grid)
     arch  = architecture(grid)
     state = exchanger.state
-    launch!(arch, grid, interior_kernel_parameters(grid),
+    launch!(arch, grid, interface_kernel_parameters(grid),
             _correct_atmosphere_elevation!,
             state.T, state.p,
             correction.elevation_difference,

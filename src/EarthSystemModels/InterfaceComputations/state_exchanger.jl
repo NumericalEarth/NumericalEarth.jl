@@ -21,10 +21,6 @@ end
 # `ComponentExchanger(state, regridder)` returns work unchanged.
 ComponentExchanger(state, regridder) = ComponentExchanger(state, regridder, nothing)
 
-fill_state_halo_regions!(exchanger::ComponentExchanger) = foreach(fill_state_halo_regions!, exchanger.state)
-fill_state_halo_regions!(field) = fill_halo_regions!(field)
-fill_state_halo_regions!(::Number) = nothing
-
 """
     StateExchanger(grid, radiation, atmosphere, land, ocean, sea_ice;
                    atmosphere_correction = nothing)

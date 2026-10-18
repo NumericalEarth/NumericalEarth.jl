@@ -57,7 +57,7 @@ using Oceananigans.Utils: launch!, prettysummary, prettytime
 
 using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
-using ..EarthSystemModels.InterfaceComputations: interior_kernel_parameters, ComponentExchanger
+using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger
 
 # Closure interfaces
 include("energy_balance/energy_balance.jl")

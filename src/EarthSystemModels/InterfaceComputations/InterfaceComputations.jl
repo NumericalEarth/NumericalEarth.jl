@@ -5,7 +5,6 @@ using DocStringExtensions: TYPEDSIGNATURES, SIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: architecture
-using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, Field, Face, Center, FractionalIndices
 using Oceananigans.Grids: Flat, Periodic, halo_size, topology, _node
 using Oceananigans.Simulations: Simulation
@@ -146,9 +145,6 @@ function interface_kernel_parameters(grid)
 
     return kernel_parameters
 end
-
-# Every interior column, immersed ones included
-interior_kernel_parameters(grid) = KernelParameters(1:size(grid, 1), 1:size(grid, 2))
 
 # Halo columns read the component's own halo, so the index is held where interpolation can
 # reach: `⌊f⌋` and `⌊f⌋ + 1` must both lie within `1 - H` and `N + H`.

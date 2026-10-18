@@ -38,6 +38,8 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
     # See https://github.com/CliMA/NumericalEarth.jl/issues/116.
     atmosphere_data = unwrap_fields(atmosphere_fields)
 
+    kernel_parameters = interface_kernel_parameters(grid)
+
     # Each field is interpolated in time on its own time axis
     t = clock.time
     precipitation_flux = something(atmosphere.precipitation_flux, PrescribedPrecipitationFlux())
@@ -52,7 +54,7 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
     tracer_time_arguments = map(tracer -> time_arguments(arch, tracer, t),
                                 merge((T = atmosphere.temperature, q = atmosphere.specific_humidity), atmosphere.tracers))
 
-    launch!(arch, grid, interior_kernel_parameters(grid),
+    launch!(arch, grid, kernel_parameters,
             _interpolate_primary_atmospheric_state!,
             atmosphere_data,
             space_fractional_indices,
@@ -77,7 +79,6 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
     ρᵒᶜ = coupled_model.interfaces.ocean_properties.reference_density
 
     if !isnothing(potential)
-        fill_halo_regions!(atmosphere_fields.p)
         parent(potential) .= parent(atmosphere_data.p) ./ ρᵒᶜ
     end
 end

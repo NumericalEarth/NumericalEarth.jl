@@ -1,4 +1,5 @@
 using Oceananigans.Architectures: architecture
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: update_field_time_series!, FieldTimeSeries
 using Oceananigans.TimeSteppers: Clock, tick!
 using Oceananigans.Units: Time
@@ -77,14 +78,18 @@ function PrescribedOcean(grid, times=[zero(grid)];
                          sea_surface_salinity = default_prescribed_sss(grid, times),
                          velocities = default_prescribed_velocities(grid, times))
 
-    return PrescribedOcean{FT}(grid, 
-                               clock,
-                               sea_surface_temperature,
-                               sea_surface_salinity,
-                               velocities, 
-                               times,
-                               convert(FT, density),
-                               convert(FT, heat_capacity))
+    ocean = PrescribedOcean{FT}(grid,
+                                clock,
+                                sea_surface_temperature,
+                                sea_surface_salinity,
+                                velocities,
+                                times,
+                                convert(FT, density),
+                                convert(FT, heat_capacity))
+
+    fill_prescribed_halo_regions!(ocean)
+
+    return ocean
 end
 
 Grids.grid(ocean::PrescribedOcean) = ocean.grid
@@ -94,6 +99,18 @@ function Oceananigans.set!(ocean::PrescribedOcean; T=nothing, S=nothing, u=nothi
     !isnothing(S) && set!(ocean.sea_surface_salinity, S)
     !isnothing(u) && set!(ocean.velocities.u, u)
     !isnothing(v) && set!(ocean.velocities.v, v)
+    fill_prescribed_halo_regions!(ocean)
+    return nothing
+end
+
+# The exchanger copies the halo columns straight out of the time series (see
+# `_copy_prescribed_ocean_state!`), so their halos must be valid. Fill them whenever the data is
+# set; a partly-in-memory series fills its own halos each time it loads a new window.
+function fill_prescribed_halo_regions!(ocean::PrescribedOcean)
+    fill_halo_regions!(ocean.sea_surface_temperature)
+    fill_halo_regions!(ocean.sea_surface_salinity)
+    fill_halo_regions!(ocean.velocities.u)
+    fill_halo_regions!(ocean.velocities.v)
     return nothing
 end
 
@@ -156,13 +173,38 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::Presc
     u = CenterField(grid)
     v = CenterField(grid)
 
-    # Initialize from the first time snapshot
-    interior(T) .= interior(ocean.sea_surface_temperature)[:, :, :, 1]
-    interior(S) .= interior(ocean.sea_surface_salinity)[:, :, :, 1]
-    interior(u) .= interior(ocean.velocities.u)[:, :, :, 1]
-    interior(v) .= interior(ocean.velocities.v)[:, :, :, 1]
+    state = (; u, v, T, S)
+    copy_prescribed_state!(state, ocean, 1) # initialize from the first time snapshot
 
-    return ComponentExchanger((; u, v, T, S), nothing)
+    return ComponentExchanger(state, nothing)
+end
+
+# The interface flux kernels run over the halo columns too (`interface_kernel_parameters` spans
+# 0:N+1), and the atmosphere's face-centered momentum fluxes average them into the first interior
+# face, so the copy covers those columns as well rather than leaving them at zero (#754).
+@kernel function _copy_prescribed_ocean_state!(T, S, u, v, Tᵖ, Sᵖ, uᵖ, vᵖ)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        T[i, j, 1] = Tᵖ[i, j, 1]
+        S[i, j, 1] = Sᵖ[i, j, 1]
+        u[i, j, 1] = uᵖ[i, j, 1]
+        v[i, j, 1] = vᵖ[i, j, 1]
+    end
+end
+
+# `n` is the in-memory slot, halos included (the time series' data is offset in x and y).
+memory_slot(fts, n) = view(fts.data, :, :, :, n)
+
+function copy_prescribed_state!(state, ocean::PrescribedOcean, n)
+    grid = ocean.grid
+    launch!(architecture(grid), grid, interface_kernel_parameters(grid),
+            _copy_prescribed_ocean_state!,
+            state.T, state.S, state.u, state.v,
+            memory_slot(ocean.sea_surface_temperature, n),
+            memory_slot(ocean.sea_surface_salinity, n),
+            memory_slot(ocean.velocities.u, n),
+            memory_slot(ocean.velocities.v, n))
+    return nothing
 end
 
 EarthSystemModels.InterfaceComputations.net_fluxes(ocean::PrescribedOcean) = nothing
@@ -172,11 +214,7 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::Prescribed
     # Copy from FieldTimeSeries to exchanger snapshot fields.
     # For single-time data (constant), time index 1 is always correct.
     # TODO: proper temporal interpolation for multi-time prescribed data.
-    n = 1
-    interior(exchanger.state.T) .= interior(ocean.sea_surface_temperature)[:, :, :, n]
-    interior(exchanger.state.S) .= interior(ocean.sea_surface_salinity)[:, :, :, n]
-    interior(exchanger.state.u) .= interior(ocean.velocities.u)[:, :, :, n]
-    interior(exchanger.state.v) .= interior(ocean.velocities.v)[:, :, :, n]
+    copy_prescribed_state!(exchanger.state, ocean, 1)
     return nothing
 end
 

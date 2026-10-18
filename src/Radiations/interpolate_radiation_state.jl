@@ -22,7 +22,9 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, radiation::Prescr
     time_interpolator = cpu_interpolating_time_indices(arch, radiation_times,
                                                        radiation_time_indexing, t)
 
-    launch!(arch, grid, interior_kernel_parameters(grid),
+    kernel_parameters = interface_kernel_parameters(grid)
+
+    launch!(arch, grid, kernel_parameters,
             _interpolate_radiation_state!,
             state_data,
             space_fractional_indices,

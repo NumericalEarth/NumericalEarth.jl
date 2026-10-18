@@ -161,8 +161,8 @@ end
         A = typeof(arch)
 
         @testset "Exchanger halos hold the prescribed state on $A" begin
-            # Bounded in x, so only filling the exchanged state's halos puts the SST in the halo
-            # columns the interface flux kernels visit (#754).
+            # Bounded in x, so nothing but the exchanger's own halo fill can put the SST in the
+            # halo columns the interface flux kernels visit (#754).
             grid = RectilinearGrid(arch,
                                    size = (16, 16), halo = (5, 5),
                                    x = (-10kilometers, 10kilometers),
@@ -182,6 +182,8 @@ end
             ocean = PrescribedOcean(sst_grid)
             set!(ocean, T=θ₀ + 1)
 
+            # Construction needs `biogeochemical_interface(exchanger, ::PrescribedOcean)`:
+            # PrescribedOcean has no `model` to read biogeochemistry from.
             model = AtmosphereOceanModel(atmosphere, ocean)
             @test model.ocean isa PrescribedOcean
 
