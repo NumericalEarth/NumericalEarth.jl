@@ -232,7 +232,8 @@ Observed values are never rewritten:
 2. `:scaled` — a donor's seasonal *shape* scaled to the cell's own magnitude. Over the
    periods where the cell was observed and the donor covers, the cell's sum divided by
    the donor's sum gives the scale; each missing period then fills with the donor's value
-   at that period multiplied by the scale.
+   at that period multiplied by the scale. Multiplicative scaling assumes a constant
+   target-to-donor ratio across observed and missing periods.
 3. `:class_mean` — the donor curve itself, for cells with no valid period to scale by.
 
 The donor curve has two sources, and `anchor` chooses between them. By default it is
@@ -266,9 +267,9 @@ Keyword arguments
                                       after growing. Defaults: `1` and `16`.
 - `minimum_donors`: valid same-class cells every period needs before the stencil stops
                     growing. Default: `20`.
-- `minimum_anchor_periods`: observed periods a cell must share with its donor before the
-                            scale is trusted; a cell below it falls through to
-                            `:class_mean`. Default: `6`.
+- `minimum_anchor_periods`: number of matching observed periods required to fit the scale;
+                            this count does not constrain their seasonal spread. Fewer
+                            periods fall through to `:class_mean`. Default: `6`.
 - `scaling`: `:multiplicative` (the ratio of sums, for a non-negative field) or `:additive`
              (the mean offset, for a field that may be negative). Default: `:multiplicative`.
 - `valid_range`: a `(minimum, maximum)` pair every estimate is clamped to, e.g. `(0, 10)`

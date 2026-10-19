@@ -67,10 +67,12 @@ compositing leaves behind — see their docstrings and `examples/modis_landcover
   of phase after a year.
 - Class codes are not interpolable: read them on the product's own grid, and take
   `class_fractions` when a model grid is wanted.
-- Leaf area is per unit land area. The product's urban, snow/ice and barren codes read as
-  zero; water, wetland and unretrieved pixels are `NaN`, with no inpainting by default. On a
-  model grid each cell takes the area mean of the values under it, normalized by the area
-  they cover, so `NaN` pixels drop out rather than counting as zero.
+- All land-cover codes and failed retrievals read as `NaN`. The [MOD15 user guide, Table 6](https://lpdaac.usgs.gov/documents/926/MOD15_User_Guide_V61.pdf)
+  identifies 253 as barren or sparsely vegetated, including tundra; these codes do not
+  measure zero leaf area. On a model grid, averages cover the valid retrieval area.
+  `zero_non_vegetated!` explicitly imposes a zero-LAI assumption on selected classes.
+- Climatology filenames include `climatology_retrievals` and reduce valid retrievals only.
+  Rebuild regridded fields previously saved with `cache=true` using `overwrite_cache=true`.
 - A longitude window straddling the ±180° seam is rejected; split it into two requests.
 - Whole tiles are downloaded (HDF4 defeats GDAL's windowed reads), and a climatology
   multiplies quickly: 46 periods × `length(years)` × tiles — a 1° box over five years is

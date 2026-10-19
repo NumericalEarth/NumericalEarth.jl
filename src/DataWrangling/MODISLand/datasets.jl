@@ -22,10 +22,10 @@ composites on the sinusoidal grid, from 2002-07-04 onwards. Provides `:leaf_area
 a retrieval, listed under [`mask_lai_landcover`](@ref). The product reports *true* leaf
 area index, with per-biome clumping applied inside the retrieval.
 
-Leaf area and FPAR read as zero where the product codes land with no canopy (urban, snow or
-ice, barren) and as `NaN` over water and wherever there is no retrieval, so they are per unit
-land area. On a model grid, `Field(metadatum, grid)` gives each cell the area mean of the
-values under it, normalized by the area they cover; a cell with none is `NaN`.
+Land-cover codes and failed retrievals read as `NaN`. Urban and barren/sparsely vegetated
+classes do not provide a measured LAI or FPAR. On a model grid, `Field(metadatum, grid)`
+gives each cell the area mean of the valid retrievals under it, normalized by the area
+they cover; a cell with none is `NaN`.
 
 Granules are HDF-EOS2 tiles on the sinusoidal projection, discovered from NASA's Common
 Metadata Repository and reprojected to a regional latitude-longitude window at download
@@ -312,7 +312,7 @@ DataWrangling.metadata_filename(dataset::MCD12Q1, name, date, region) =
 function DataWrangling.metadata_filename(dataset::MODISLAIClimatology, name, date, region)
     period = period_index(date, composite_period_days(dataset))
     return string(modis_short_name(dataset), "_", modis_version(dataset), "_", name,
-                  "_climatology_", years_tag(dataset.years), "_", nameof(dataset.reducer),
+                  "_climatology_retrievals_", years_tag(dataset.years), "_", nameof(dataset.reducer),
                   "_", screen_tag(dataset.dataset),
                   "_p", lpad(period, 2, '0'), "_", region_tag(dataset, name, region), ".nc")
 end

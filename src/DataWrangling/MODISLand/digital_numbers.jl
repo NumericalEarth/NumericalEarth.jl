@@ -16,16 +16,6 @@ const modis_landcover_class_names = (unclassified = 249,
                                      water = 254)
 
 """
-    non_vegetated_land_code(DN)
-
-Whether the MCD15A2H digital number `DN` is one of the codes the product writes, in place of a
-retrieval, over land with no canopy: urban, perennial snow or ice, and barren.
-"""
-@inline non_vegetated_land_code(DN) = (DN == modis_landcover_class_names.urban) |
-                                      (DN == modis_landcover_class_names.snow_and_ice) |
-                                      (DN == modis_landcover_class_names.barren)
-
-"""
     mask_lai_fill(DN)
 
 Return the MCD15 digital number `DN` as a `Float32`, or `NaN` when `DN` exceeds the valid

@@ -186,9 +186,7 @@ function DataWrangling.retrieve_data(metadatum::MODISLAIMetadatum)
             𝒜 = ifelse.(lai_screened.(qc, extra_qc, mask), NaN32, 𝒜)
         end
 
-        # A no-canopy code describes the surface, so it reads as zero whatever the screen removed.
-        metadatum.name === :leaf_area_index_uncertainty && return 𝒜
-        return ifelse.(non_vegetated_land_code.(DN), 0f0, 𝒜)
+        return 𝒜
     end
 end
 

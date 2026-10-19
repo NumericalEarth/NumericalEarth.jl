@@ -35,8 +35,7 @@ using NumericalEarth.DataWrangling: fill_seasonal_gaps!, gap_fill_provenance, ga
 using NumericalEarth.DataWrangling.MODISLand: landcover_class_names, igbp_class_names,
                                               igbp_non_vegetated_classes, class_maximum_gap,
                                               zero_non_vegetated!, period_index,
-                                              retained_retrieval_metadatum,
-                                              modis_landcover_class_names
+                                              retained_retrieval_metadatum
 using ArchGDAL
 using Oceananigans
 using Oceananigans.Units: Time   ## `Dates` exports a `Time` too, and it is not this one
@@ -65,15 +64,10 @@ in_band_codes = Metadatum(:landcover_code; dataset = MCD15A2H(), region, date)
 
 single_composite_leaf_area_index = Field(single_composite)
 
-## Urban, snow and barren codes read as a leaf area of zero, so only the other codes are gaps.
-no_canopy_codes = (modis_landcover_class_names.urban, modis_landcover_class_names.snow_and_ice,
-                   modis_landcover_class_names.barren)
-
-in_band_fraction = mean(code -> isfinite(code) && !(code in no_canopy_codes),
-                        Array(interior(Field(in_band_codes))))
+in_band_fraction = mean(isfinite, Array(interior(Field(in_band_codes))))
 
 @printf("Single 8-day composite, %s\n", Dates.format(date, "yyyy-mm-dd"))
-@printf("  water or wetland, not a failed retrieval   : %.2f%%\n", 100 * in_band_fraction)
+@printf("  land-cover codes, without a retrieval       : %.2f%%\n", 100 * in_band_fraction)
 @printf("  total missing                              : %.2f%%\n",
         100 * gap_fraction(single_composite_leaf_area_index))
 @printf("  → attributable to cloud and quality        : %.2f%%\n",
@@ -603,10 +597,9 @@ end
 
 # ## What the model is handed
 #
-# Everything the chain leaves missing is water, urban, permanent snow or barren — measured
-# below, it is *all* of it, with no vegetated cell left dry in either treatment. The class map
-# then decides those cells whatever the product held there: urban, snow and barren are land
-# with no canopy, so their leaf area is zero, and water is not land, so it is `NaN`.
+# The remaining gaps are counted by class below. This example explicitly assigns zero leaf
+# area to urban, permanent snow and barren classes, and leaves water missing. Zero in urban
+# and barren cells is a modeling assumption; those classes can contain vegetation.
 
 water = class_codes .== igbp_class_names.water
 

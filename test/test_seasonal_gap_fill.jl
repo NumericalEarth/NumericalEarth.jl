@@ -344,6 +344,23 @@ end
                                                    anchor = 𝒜̄season)
 end
 
+@testset "Seasonal fill: scaling from leaf-off observations" begin
+    anchor = reshape(Float32[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 2, 4, 6, 8, 6, 2], 1, 1, :)
+    series = 2 .* anchor
+    series[:, :, 7:12] .= NaN32
+
+    filled = fill_seasonal_gaps!(series, fill(1, 1, 1); anchor, stages = (:scaled,))
+    @test series ≈ 2 .* anchor
+    @test all(==(gap_fill_provenance.scaled), filled.provenance[:, :, 7:12])
+
+    anchor[:, :, 1:6] .= 0
+    series = 2 .* anchor
+    series[:, :, 7:12] .= NaN32
+    filled = fill_seasonal_gaps!(series, fill(1, 1, 1); anchor, stages = (:scaled,))
+    @test all(isnan, series[:, :, 7:12])
+    @test all(==(gap_fill_provenance.unfilled), filled.provenance[:, :, 7:12])
+end
+
 # The host-side chain reduces the whole record at once, so a sliding-window series is
 # rejected rather than silently processed as if its resident slice were the record.
 @testset "Whole-series guards" begin

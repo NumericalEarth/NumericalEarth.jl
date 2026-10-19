@@ -424,7 +424,11 @@ end
         lai, _, _ = write_synthetic_modis_file(joinpath(dir, metadatum.filename), lattice;
                                               lai_at = Dict((2, 3) => 0xff,     # fill
                                                             (2, 4) => 0xfe,     # water
-                                                            (3, 4) => 0xfa),    # urban
+                                                            (3, 4) => 0xfa,     # urban
+                                                            (3, 5) => 0xfd,     # barren or sparse vegetation
+                                                            (3, 6) => 0xfc,     # snow or ice
+                                                            (3, 7) => 0xfb,     # wetland
+                                                            (3, 8) => 0xf9),    # unclassified
                                               qc_at = Dict((3, 4) => lai_qc(cloud = 1),
                                                            (4, 5) => lai_qc(modland = 1),
                                                            (5, 6) => lai_qc(scf = 3),
@@ -459,27 +463,26 @@ end
             @test leaf_area_index[i, j] ≈ Float32(lai[i, j])
         end
 
-        # Both out-of-range codes are rejected, and the default screen removes exactly the
+        # All out-of-range codes are rejected, and the default screen removes exactly the
         # criteria it names.
         @test isnan(leaf_area_index[2, 3])        # 255, fill
         @test isnan(leaf_area_index[2, 4])        # 254, water
+        @test all(isnan, leaf_area_index[3, 4:8]) # 249:253 are classes, not measured zeros
         @test isnan(leaf_area_index[4, 5])        # MODLAND_QC other quality
         @test isnan(leaf_area_index[5, 6])        # back-up algorithm
         @test isnan(leaf_area_index[6, 7])        # significant cloud
         @test !isnan(leaf_area_index[7, 8])       # cloud state undefined, assumed clear
         @test !isnan(leaf_area_index[8, 9])       # dead detector is not in the default screen
         @test !isnan(leaf_area_index[9, 10])      # nor is snow
-        @test count(isnan, leaf_area_index) == 5
+        @test count(isnan, leaf_area_index) == 10
 
-        # Urban land carries no leaves, whatever the screen says about the sky over it.
-        @test leaf_area_index[3, 4] == 0
         @test isnan(retrieve_data(Metadatum(:leaf_area_index_uncertainty; dataset, region, date, dir))[3, 4])
 
         # Screening only ever removes data.
         unscreened = Metadatum(:leaf_area_index; dataset = MCD15A2H(screened_flags = 0x0000),
                                region, date, dir)
         unscreened_leaf_area_index = retrieve_data(unscreened)
-        @test count(isnan, unscreened_leaf_area_index) == 2      # only the two out-of-range codes
+        @test count(isnan, unscreened_leaf_area_index) == 7
         @test all(i -> isnan(leaf_area_index[i]) ||
                        leaf_area_index[i] == unscreened_leaf_area_index[i],
                   eachindex(leaf_area_index))
@@ -491,18 +494,19 @@ end
         snow_screened_leaf_area_index = retrieve_data(snow_screened)
         @test isnan(snow_screened_leaf_area_index[9, 10])
         @test !isnan(snow_screened_leaf_area_index[4, 5])
-        @test count(isnan, snow_screened_leaf_area_index) == 3
+        @test count(isnan, snow_screened_leaf_area_index) == 8
 
         # The land-cover code is the complement of the leaf-area read on the same layer: it
         # carries a class exactly where there is no retrieval, untouched by the screen.
         codes = retrieve_data(Metadatum(:landcover_code; dataset, region, date, dir))
         @test size(codes) == (Nx, Ny)
         @test codes[2, 4] == 254        # water, where the leaf area is a gap
-        @test codes[3, 4] == 250        # urban, where the leaf area is zero
+        @test codes[3, 4] == 250        # urban, without a leaf-area retrieval
+        @test codes[3, 5] == 253        # barren or sparse vegetation, without a retrieval
         @test isnan(codes[2, 3])        # 255 is fill, not a class
         @test isnan(codes[4, 5])        # screened retrievals are not land cover
         @test isnan(codes[1, 1])        # a valid retrieval carries no class
-        @test count(!isnan, codes) == 2
+        @test count(!isnan, codes) == 6
 
         # On the grid the product's scale factor is applied, and each variable gets its own.
         field = Field(metadatum)
@@ -514,7 +518,7 @@ end
 
         fpar = Array(interior(Field(Metadatum(:fpar; dataset, region, date, dir)), :, :, 1))
         @test fpar[1, 1] ≈ Float32(lai[1, 1]) * MODIS_FPAR_SCALE
-        @test fpar[3, 4] == 0
+        @test all(isnan, fpar[3, 4:8])
 
         # On one model column over the whole window, the area mean of the retrievals under it,
         # whether or not the model grid has a vertical axis.
@@ -953,7 +957,7 @@ end
     𝒜 = fill(NaN32, 3, 1, 4)
     𝒜[1, 1, :] .= 1f0:4f0                          # forest, observed
     𝒜[2, 1, 2] = 5                                 # a stray retrieval over water
-    𝒜[3, 1, 2] = 7                                 # a stray retrieval over urban
+    𝒜[3, 1, 2] = 7                                 # a retrieval in an urban class
 
     codes = Float32[igbp_class_names.deciduous_broadleaf_forest;
                     igbp_class_names.water;
@@ -961,8 +965,6 @@ end
 
     zero_non_vegetated!(𝒜, codes)
 
-    # The class decides, not the presence of a value: leaf area per unit land area is zero over
-    # tarmac at every period, and water is not land at all.
     @test all(iszero, 𝒜[3, 1, :])
     @test all(isnan, 𝒜[2, 1, :])
 
@@ -1016,7 +1018,11 @@ end
             metadatum = Metadatum(:leaf_area_index; dataset = MCD15A2H(), region, date, dir)
             lattice = regional_lattice(metadatum)
             write_synthetic_modis_file(joinpath(dir, metadatum.filename), lattice;
-                                       lai_at = Dict((1, 1) => UInt8(10 * n)),
+                                       lai_at = Dict((1, 1) => UInt8(10 * n),
+                                                     (5, 5) => n == 3 ? 0x28 : 0xfd,
+                                                     (6, 6) => 0xfa,
+                                                     (7, 7) => 0xfd,
+                                                     (8, 8) => 0x00),
                                        qc_at = Dict((3, 3) => lai_qc(cloud = 1),
                                                     (4, 4) => n == 3 ? lai_qc(cloud = 1) : lai_qc()),
                                        extra_at = Dict())
@@ -1051,6 +1057,13 @@ end
         # A cell cloudy in one year composites the other two.
         @test n[4, 4] == 2
         @test !isnan(𝒜[4, 4])
+
+        @test 𝒜[5, 5] ≈ 4
+        @test n[5, 5] == 1
+        @test all(isnan, (𝒜[6, 6], 𝒜[7, 7]))
+        @test n[6, 6] == n[7, 7] == 0
+        @test 𝒜[8, 8] == 0
+        @test n[8, 8] == 3
 
         # An already-built period is skipped, so an interrupted build resumes.
         modified = mtime(only(paths))

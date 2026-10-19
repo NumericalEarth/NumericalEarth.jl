@@ -27,7 +27,6 @@
 
 using NumericalEarth
 using NumericalEarth.DataWrangling: fill_gaps!, valid_area_mean!
-using NumericalEarth.DataWrangling.MODISLand: modis_landcover_class_names
 using ArchGDAL
 using Oceananigans
 using Dates
@@ -68,24 +67,18 @@ single_composite = Metadatum(:leaf_area_index; dataset = MCD15A2H(), region, dat
 
 single_composite_leaf_area_index = Field(single_composite)
 
-# **The first is not missing data at all.** Where the product does not attempt a retrieval it
-# writes a land-cover class instead, and the adapter reads those codes back as
-# `:landcover_code`. Urban, snow and barren carry no canopy, so they read as a leaf area of
-# zero. Water and wetland stay missing: leaf area is per unit land area, and nothing says what a
-# wetland carries. Over this box the missing classes are the river network, permanently
-# unretrievable by design.
+# **The first is land cover outside the retrieval's scope.** The product writes a land-cover
+# code in place of LAI, available as `:landcover_code`, and LAI stays missing. Urban and
+# barren/sparsely vegetated labels do not establish zero leaf area. Over this box the missing
+# classes are mainly the river network, unretrievable by design.
 
 in_band_codes = Metadatum(:landcover_code; dataset = MCD15A2H(), region, date)
 
-no_canopy_codes = (modis_landcover_class_names.urban, modis_landcover_class_names.snow_and_ice,
-                   modis_landcover_class_names.barren)
-
-class_code_fraction = mean(code -> isfinite(code) && !(code in no_canopy_codes),
-                           Array(interior(Field(in_band_codes))))
+class_code_fraction = mean(isfinite, Array(interior(Field(in_band_codes))))
 
 @printf("Single 8-day composite, %s, on the product's own 500 m grid\n",
         Dates.format(date, "yyyy-mm-dd"))
-@printf("  water or wetland, not a failed retrieval   : %.2f%%\n", 100 * class_code_fraction)
+@printf("  land-cover codes, without a retrieval       : %.2f%%\n", 100 * class_code_fraction)
 @printf("  total missing                              : %.2f%%\n",
         100 * gap_fraction(single_composite_leaf_area_index))
 @printf("  → attributable to cloud and quality        : %.2f%%\n",

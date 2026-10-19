@@ -73,7 +73,8 @@ const modis_plant_functional_type_names = (water = 0,
 """
     igbp_non_vegetated_classes
 
-The IGBP classes with no canopy: urban, permanent snow and ice, barren, and water.
+The IGBP classes selected by the default zero-LAI and water mask: urban, permanent snow
+and ice, barren, and water. Urban and barren classes can contain vegetation.
 """
 const igbp_non_vegetated_classes = (igbp_class_names.urban,
                                     igbp_class_names.permanent_snow_and_ice,
@@ -150,16 +151,12 @@ end
     zero_non_vegetated!(series, land_cover; classes = igbp_non_vegetated_classes,
                         water_classes = (igbp_class_names.water,))
 
-Make `series` a leaf area index per unit land area, with the land-cover class deciding
-whatever `series` held: `NaN` in every cell whose class is in `water_classes`, which is not
-land, and zero in every other cell whose class is in `classes`, which has no canopy. Returns
-`series`. Run it after [`fill_seasonal_gaps!`](@ref), score a fill with
-[`gap_fill_denial`](@ref) before it, and land the result on a model grid with
-[`valid_area_mean!`](@ref).
+Set `series` to `NaN` in cells whose land-cover class is in `water_classes`, and to zero
+in other cells whose class is in `classes`, overwriting existing values. Returns `series`.
 
-Vegetated cells the fill could not reach stay `NaN`, among them those MCD15A2H codes as
-permanent wetland (251) rather than retrieving: their leaf area is unknown, so they drop out
-of the land-area mean instead of counting as zero.
+This imposes a zero-LAI modeling assumption on the selected classes. The default urban
+and barren classes can include vegetation; their class labels do not measure zero LAI.
+Other cells retain their values, including missing retrievals.
 """
 function zero_non_vegetated!(data::AbstractArray, land_cover;
                              classes = igbp_non_vegetated_classes,
