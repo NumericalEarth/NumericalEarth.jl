@@ -2,7 +2,7 @@ module CopernicusLandAlbedo
 
 export CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!
 
-using Dates: Dates, DateTime, Day, Month, year, month, day, daysinmonth
+using Dates: Dates, DateTime, Day, Month, year, month, daysinmonth
 using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using NCDatasets: NCDataset, defVar, nomissing
@@ -59,6 +59,9 @@ The Copernicus Global Land Service (CGLS) 1 km surface-albedo dataset, a ten-day
 series derived from SPOT/VGT and PROBA-V observations. Provides `:albedo`, the broadband
 blue-sky albedo blended from the black-sky (`AL_DH_BB`) and white-sky (`AL_BH_BB`)
 broadband albedos with diffuse fraction `diffuse_fraction`.
+
+Each sample uses a trailing 20-day composite ending on its nominal date. Successive
+composites overlap, and the retrieval also uses prior BRDF estimates.
 
 Files are global on a regular 1/112° latitude-longitude grid; build the `Metadata`
 with a lon/lat [`BoundingBox`](@ref) to window a region at read time. Downloads come
@@ -174,13 +177,11 @@ DataWrangling.all_dates(::CopernicusAlbedoClimatology, variable) = [DateTime(201
 
 DataWrangling.is_seasonal_climatology(::CopernicusAlbedoClimatology) = true
 
-# A ten-day file is stamped on its last day; the third window of a month runs to the month's end.
-function copernicus_albedo_ten_day_window(date)
-    window_start = day(date) == 10 ? 1 : day(date) == 20 ? 11 : 21
-    return DateTime(year(date), month(date), window_start), DateTime(date) + Day(1)
-end
+# C3S v2 PUGS §2.5: the stamp labels the last observation of a 20-day composite.
+DataWrangling.averaging_window(md::Metadatum{<:CopernicusAlbedo}) =
+    (DateTime(md.dates) - Day(19), DateTime(md.dates) + Day(1))
 
-DataWrangling.averaging_window(md::Metadatum{<:CopernicusAlbedo}) = copernicus_albedo_ten_day_window(md.dates)
+DataWrangling.window_span(::Metadata{<:CopernicusAlbedo}) = nothing
 
 # Each climatological month averages every ten days falling in it, so it spans the calendar month.
 DataWrangling.averaging_window(md::Metadatum{<:CopernicusAlbedoClimatology}) =

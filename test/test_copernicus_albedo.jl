@@ -5,7 +5,7 @@ using NumericalEarth.DataWrangling: BoundingBox, Metadata, Metadatum, native_gri
     dataset_variable_name, metadata_filename,
     longitude_name, latitude_name, all_dates, native_times,
     longitude_interfaces, latitude_interfaces,
-    averaging_window, window_bounds, window_center, spans_whole_cycle
+    averaging_window, window_bounds, window_center, window_span, spans_whole_cycle
 using NumericalEarth.DataWrangling.CopernicusLandAlbedo: bluesky_blend, copernicus_albedo_decode,
     copernicus_albedo_ten_day_dates, albedo_satellite,
     albedo_cds_request_variables,
@@ -56,22 +56,20 @@ end
     dataset = CopernicusAlbedo()
     ten_day(date) = Metadatum(:albedo; dataset, date)
 
-    # A ten-day file is stamped on its last day; the third window of a month runs to the
-    # month's end.
-    @test averaging_window(ten_day(DateTime(2019, 7, 10))) == (DateTime(2019, 7, 1), DateTime(2019, 7, 11))
-    @test averaging_window(ten_day(DateTime(2019, 7, 20))) == (DateTime(2019, 7, 11), DateTime(2019, 7, 21))
-    @test averaging_window(ten_day(DateTime(2019, 7, 31))) == (DateTime(2019, 7, 21), DateTime(2019, 8, 1))
-    @test averaging_window(ten_day(DateTime(2019, 2, 28))) == (DateTime(2019, 2, 21), DateTime(2019, 3, 1))
+    @test averaging_window(ten_day(DateTime(2019, 7, 10))) == (DateTime(2019, 6, 21), DateTime(2019, 7, 11))
+    @test averaging_window(ten_day(DateTime(2019, 7, 20))) == (DateTime(2019, 7, 1), DateTime(2019, 7, 21))
+    @test averaging_window(ten_day(DateTime(2019, 7, 31))) == (DateTime(2019, 7, 12), DateTime(2019, 8, 1))
+    @test averaging_window(ten_day(DateTime(2019, 2, 28))) == (DateTime(2019, 2, 9), DateTime(2019, 3, 1))
+    @test averaging_window(ten_day(DateTime(2020, 3, 10))) == (DateTime(2020, 2, 20), DateTime(2020, 3, 11))
+    @test averaging_window(ten_day(DateTime(2019, 1, 10))) == (DateTime(2018, 12, 22), DateTime(2019, 1, 11))
 
-    @test window_center(ten_day(DateTime(2019, 7, 10))) == DateTime(2019, 7, 6)
-    @test window_center(ten_day(DateTime(2019, 7, 20))) == DateTime(2019, 7, 16)
-    @test window_center(ten_day(DateTime(2019, 7, 31))) == DateTime(2019, 7, 26, 12)
+    @test window_center(ten_day(DateTime(2019, 7, 10))) == DateTime(2019, 7, 1)
+    @test window_center(ten_day(DateTime(2019, 7, 20))) == DateTime(2019, 7, 11)
+    @test window_center(ten_day(DateTime(2019, 7, 31))) == DateTime(2019, 7, 22)
 
-    # The stamps close their windows, but the windows tile time, so the bounds are the
-    # window edges whatever the stamp convention.
-    @test window_bounds(Metadata(:albedo; dataset, dates = [DateTime(2019, 7, 10),
-                                                            DateTime(2019, 7, 20)])) ==
-          [DateTime(2019, 7, 1), DateTime(2019, 7, 11), DateTime(2019, 7, 21)]
+    composites = Metadata(:albedo; dataset, dates = [DateTime(2019, 7, 10), DateTime(2019, 7, 20)])
+    @test_throws ArgumentError window_bounds(composites)
+    @test isnothing(window_span(composites))
 
     # A climatological month is stamped at its start, so its value sits mid-month and the
     # twelve stamps tile a year.
