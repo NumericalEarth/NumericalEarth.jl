@@ -49,6 +49,7 @@ using Breeze:
     NoDivergenceDamping,
     MixedPhaseEquilibrium,
     SpecificForcing,
+    TKEBasedTurbulenceClosure,
     materialize_terrain!,
     moisture_prognostic_name,
     moisture_specific_name
@@ -190,8 +191,9 @@ absent, `qᵗ = qᵛ`).
 
 Provides sensible, overridable physics defaults: `microphysics` (1-moment mixed-phase when
 `CloudMicrophysics` is loaded), `momentum_advection = WENO(order=9)`, `coriolis = SphericalCoriolis()`,
-and a compressible split-explicit `dynamics` with an `UpperSponge` over the top `damping_depth` m at
-`damping_rate`; a matching ρw Rayleigh lid sponge (`Relaxation` toward zero) is added to `forcing`. Pass
+prognostic-TKE vertical mixing `closure = TKEBasedTurbulenceClosure()`, and a compressible split-explicit
+`dynamics` with an `UpperSponge` over the top `damping_depth` m at `damping_rate`; a matching ρw Rayleigh
+lid sponge (`Relaxation` toward zero) is added to `forcing`. Pass
 `base_pressure`/`reference_potential_temperature` to anchor the default dynamics. Any
 `boundary_conditions`/`forcing` the caller passes are merged with the parent-derived ones (caller wins).
 
@@ -234,6 +236,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     momentum_advection = WENO(order = 9),
     scalar_advection = default_nested_scalar_advection(microphysics),
     coriolis = SphericalCoriolis(),
+    closure = TKEBasedTurbulenceClosure(eltype(child_grid)),
     damping_rate = 1/5,
     damping_depth = default_lid_depth(child_grid),
     dynamics = default_nested_dynamics(child_grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth),
@@ -327,7 +330,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # `initialize_nested_child!` and destabilize the adiabatic balance twin — the child's full
     # state (and reference) is derived from the parent instead.
     child = NumericalEarth.Atmospheres.atmosphere_model(child_grid;
-        thermodynamic_constants, microphysics, momentum_advection, scalar_advection, coriolis, dynamics,
+        thermodynamic_constants, microphysics, momentum_advection, scalar_advection, coriolis, closure, dynamics,
         boundary_conditions = merge_boundary_conditions(child_bcs, NamedTuple(boundary_conditions)),
         forcing = merge(lid_sponge, davies, NamedTuple(forcing)),
         initialize = false,
