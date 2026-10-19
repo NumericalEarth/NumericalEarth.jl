@@ -165,7 +165,8 @@ $(TYPEDSIGNATURES)
 Per-cell building morphometry on `grid` from a building `dataset`, as a NamedTuple of `Field`s
 named after the closure inputs: `plan_area_index` and `mean_building_height` (m), and, where
 the dataset measures them, `building_height_deviation` (m), `maximum_building_height` (m) and
-`frontal_area_index`. Dataset modules add methods for their products.
+`frontal_area_index`. An optional `measured_plan_area_index` gives the built fraction with
+measured heights for neighborhood averaging. Dataset modules add methods for their products.
 """
 function building_morphometry end
 
@@ -191,7 +192,7 @@ function building_morphometry end
     last_column = min(Nx, searchsortedfirst(longitude_faces, east, 1, Nx + 1, order) - 1)
     first_row = max(1, searchsortedlast(latitude_faces, south, 1, Ny + 1, order))
     last_row = min(Ny, searchsortedfirst(latitude_faces, north, 1, Ny + 1, order) - 1)
-    ground_area = built_area = volume = second_moment = maximum_height = frontal_area = convert(eltype(grid), 0)
+    ground_area = built_area = measured_built_area = volume = second_moment = maximum_height = frontal_area = convert(eltype(grid), 0)
     for row in first_row:last_row, column in first_column:last_column
         overlap_south = max(south, latitude_faces[row])
         overlap_north = min(north, latitude_faces[row + 1])
@@ -207,23 +208,26 @@ function building_morphometry end
         frontal = stateindex(properties.frontal_area_index, column, row, 1)
         frontal = ifelse((fraction == 0) & isnan(frontal), 0, frontal)
         built = area * fraction
+        measured_fraction = stateindex(properties.measured_plan_area_index, column, row, 1)
+        measured = ifelse(isfinite(height), area * measured_fraction, 0)
         # A cell's tallest building counts only in neighborhoods containing the cell's center.
         column_center = (longitude_faces[column] + longitude_faces[column + 1]) / 2
         row_center = (latitude_faces[row] + latitude_faces[row + 1]) / 2
         centered = (west <= column_center) & (column_center <= east) & (south <= row_center) & (row_center <= north)
         ground_area += area
         built_area += built
-        volume += ifelse(built > 0, built * height, 0)
-        second_moment += ifelse(built > 0, built * (height^2 + deviation^2), 0)
-        maximum_height = max(maximum_height, ifelse((built > 0) & centered, tallest, 0))
+        measured_built_area += measured
+        volume += ifelse(measured > 0, measured * height, 0)
+        second_moment += ifelse(measured > 0, measured * (height^2 + deviation^2), 0)
+        maximum_height = max(maximum_height, ifelse((measured > 0) & centered, tallest, 0))
         frontal_area += ifelse(area > 0, area * frontal, 0)
     end
-    mean_height = ifelse(built_area > 0, volume / built_area, 0)
+    mean_height = ifelse(built_area > 0, volume / measured_built_area, 0)
     @inbounds begin
         pooled.plan_area_index[i, j, 1] = built_area / ground_area
         pooled.mean_building_height[i, j, 1] = mean_height
     end
-    store_height_moments!(pooled, i, j, built_area, ground_area, mean_height, second_moment, maximum_height, frontal_area)
+    store_height_moments!(pooled, i, j, measured_built_area, ground_area, mean_height, second_moment, maximum_height, frontal_area)
 end
 
 @inline store_height_moments!(pooled, i, j, built_area, ground_area, mean_height, second_moment, maximum_height, frontal_area) = nothing
@@ -246,6 +250,7 @@ function neighborhood_morphometry(properties, grid, neighborhood)
                 frontal_area_index = get(properties, :frontal_area_index, 0))
     outputs = hasproperty(properties, :frontal_area_index) ? inputs : (; inputs.plan_area_index, inputs.mean_building_height)
     pooled = map(_ -> Field{Center, Center, Nothing}(grid), outputs)
+    inputs = (; inputs..., measured_plan_area_index = get(properties, :measured_plan_area_index, properties.plan_area_index))
     source_grid = properties.plan_area_index.grid
     launch!(architecture(grid), grid, :xy, _neighborhood_morphometry!, pooled, grid, inputs, source_grid,
             convert(eltype(grid), neighborhood))
@@ -265,7 +270,9 @@ The closure is evaluated on neighborhoods `neighborhood` (m) wide, from the morp
 subdivided into lattice cells no wider than it. Each neighborhood is centered on a lattice cell
 and pools, by overlap area, the lattice cells within half a neighborhood of its center. The
 dataset region includes the padding needed for
-complete neighborhoods at the grid edges. Neighborhoods with plan-area
+complete neighborhoods at the grid edges. Missing heights take the built-area-weighted mean
+of the neighborhood's measured heights; a built neighborhood without any measured heights
+remains invalid. Neighborhoods with plan-area
 index at least the closure's `minimum_built_fraction` are urban, and `urban_fraction` is their
 share of the grid-cell area. `urban_momentum_roughness_length` and `urban_zero_plane_displacement`
 have the area-mean neutral drag at `surface_layer_height` (m) of a grid cell's urban neighborhoods

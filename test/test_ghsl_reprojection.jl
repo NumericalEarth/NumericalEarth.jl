@@ -155,6 +155,31 @@ end
     end
 end
 
+@testset "GHSL pools measured heights across missing pixels on $arch at $resolution" for arch in test_architectures,
+                                                                                          resolution in (GHSBuiltS100m, GHSBuiltS10m)
+    dataset = GHSBuilt(surface = GHSBuiltS(; resolution))
+    pixel_size = native_resolution(dataset.surface)
+    fractions = repeat([0.2, 0.6, 0.4], 4, 12)
+    surface = repeat(fractions; inner = (100 ÷ pixel_size, 100 ÷ pixel_size)) .* pixel_size^2
+    for missing_height in (0.0, 65535.0)
+        height = repeat([10.0, 30.0, missing_height], 4, 12)
+        with_ghsl_tiles(dataset, surface, height) do
+            for grid_size in ((1, 1), (6, 1))
+                grid = LatitudeLongitudeGrid(arch; size = grid_size,
+                                             longitude = (300, 900) .* longitude_per_meter,
+                                             latitude = (550, 650) .* latitude_per_meter,
+                                             topology = (Bounded, Bounded, Flat))
+                neighborhood = grid.radius * deg2rad(600longitude_per_meter)
+                fields = urban_roughness(grid, dataset; surface_layer_height = 100, neighborhood)
+                roughness, displacement = aerodynamic_parameters(MorphometricRoughness(), 0.4, 25.0)
+                @test all(isapprox.(interior(fields.building_height), 25; rtol=1e-5))
+                @test all(isapprox.(interior(fields.momentum_roughness_length), roughness; rtol=1e-5))
+                @test all(isapprox.(interior(fields.zero_plane_displacement), displacement; rtol=1e-5))
+            end
+        end
+    end
+end
+
 @testset "GHSL retains 10 m footprints on $arch" for arch in test_architectures
     dataset = GHSBuilt()
     surface = repeat(ifelse.(1:120 .<= 60, 0.0, 100.0), 1, 120)

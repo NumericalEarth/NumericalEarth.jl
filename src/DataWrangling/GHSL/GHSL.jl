@@ -143,8 +143,9 @@ the surface product's resolution: the volume of each surface pixel is its built 
 times the height of the 100 m height pixel containing it. Built area and volume are
 conservatively remapped onto the regional longitude/latitude grid, where built area under a
 missing or zero height takes the mean height of the cell's built area with a height; a cell with
-built area but no heights has `NaN` volume. Heights are always
-the epoch-2018 ANBH, whatever the surface epoch. The default surface is the 10 m,
+built area but no heights has `NaN` volume. `:measured_built_fraction` and
+`:measured_building_volume` retain the area and volume of pixels with positive heights.
+Heights are always the epoch-2018 ANBH, whatever the surface epoch. The default surface is the 10 m,
 epoch-2018 product, matching the height epoch.
 
 ```jldoctest
@@ -177,7 +178,9 @@ DataWrangling.windowed_retrieval(::AbstractGHSLDataset) = true
 
 GHSBuiltH_variable_names = Dict(:building_height   => "ANBH")
 GHSBuiltS_variable_names = Dict(:built_up_fraction => "built_up_fraction")
-GHSBuilt_variable_names = Dict(:built_up_fraction => "built_up_fraction", :building_volume => "building_volume")
+GHSBuilt_variable_names = Dict(:built_up_fraction => "built_up_fraction", :building_volume => "building_volume",
+                              :measured_built_fraction => "measured_built_fraction",
+                              :measured_building_volume => "measured_building_volume")
 
 DataWrangling.available_variables(::GHSBuiltH) = GHSBuiltH_variable_names
 DataWrangling.available_variables(::GHSBuiltS) = GHSBuiltS_variable_names
@@ -213,7 +216,7 @@ dataset_prefix(::GHSBuiltH) = "GHSBuiltH"
 dataset_prefix(dataset::GHSBuiltS) =
     string("GHSBuiltS_", native_resolution(dataset), "m_", dataset.epoch)
 dataset_prefix(dataset::GHSBuilt) =
-    string("GHSBuilt_", native_resolution(dataset), "m_", dataset.surface.epoch, "_conservative_moments")
+    string("GHSBuilt_", native_resolution(dataset), "m_", dataset.surface.epoch, "_measured_moments")
 
 DataWrangling.metadata_filename(dataset::AbstractGHSLDataset, name, date, region) =
     string(dataset_prefix(dataset), "_", bounding_box_suffix(region), ".nc")
@@ -513,8 +516,8 @@ $(TYPEDSIGNATURES)
 Plan-area index and built-area-weighted mean building height (m) on `grid` (a
 `LatitudeLongitudeGrid`) from the GHSL built-up surface and building-height rasters
 of `dataset`, as the NamedTuple of `Field`s
-`(; plan_area_index, mean_building_height)`: the area mean of the native-pixel built
-fraction, and the mean height of the built pixels with a positive height. A pixel missing
+`(; plan_area_index, mean_building_height, measured_plan_area_index)`: the area mean of the native-pixel built
+fraction, the mean height of the built pixels with a positive height, and their plan-area index. A pixel missing
 its fraction counts as unbuilt; a cell with built pixels but no heights has a `NaN` mean
 height. The rasters are read in windows of
 at most `maximum_raster_cells` native pixels (default `100_000_000`) per product, including

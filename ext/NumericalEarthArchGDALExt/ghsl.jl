@@ -195,14 +195,17 @@ function ghsl_raster_fields(dataset::GHSBuilt, raster, cache_dir, arch; maximum_
             end
         end
     end
-    # Built area without a height takes the mean height of the cell's measured built area.
-    building_volume .= ifelse.(built_up_fraction .> 0, built_up_fraction .* building_volume ./ measured_built_fraction, 0)
-    return (; built_up_fraction, building_volume)
+    return (; built_up_fraction, measured_built_fraction, measured_building_volume = building_volume)
 end
 
 function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLMetadatum, nc_path)
     raster = ghsl_regional_raster(metadatum)
     fields = ghsl_raster_fields(metadatum.dataset, raster, joinpath(dirname(nc_path), "tiles"), CPU())
+    if metadatum.dataset isa GHSBuilt
+        building_volume = ifelse.(fields.built_up_fraction .> 0,
+                                 fields.built_up_fraction .* fields.measured_building_volume ./ fields.measured_built_fraction, 0)
+        fields = (; fields..., building_volume)
+    end
     variable_names = available_variables(metadatum.dataset)
 
     NCDataset(nc_path, "c") do ds
@@ -229,13 +232,15 @@ function NumericalEarth.Lands.building_morphometry(grid::LatitudeLongitudeGrid, 
     latitude_faces  = on_architecture(CPU(), φnodes(grid, Face()))
     λᵖ = Field{Center, Center, Nothing}(grid)
     h  = Field{Center, Center, Nothing}(grid)
+    measured_plan_area_index = Field{Center, Center, Nothing}(grid)
 
     raster = (; Nx = size(grid, 1), Ny = size(grid, 2), longitude_faces, latitude_faces)
     moments = ghsl_raster_fields(dataset, raster, joinpath(download_GHSL_cache, "tiles"), arch; maximum_raster_cells)
     interior(λᵖ, :, :, 1) .= moments.built_up_fraction
-    interior(h,  :, :, 1) .= moments.building_volume
-    interior(h) .= ifelse.(interior(λᵖ) .> 0, interior(h) ./ interior(λᵖ), 0)
-    fill_halo_regions!((λᵖ, h))
+    interior(measured_plan_area_index, :, :, 1) .= moments.measured_built_fraction
+    interior(h, :, :, 1) .= ifelse.(moments.built_up_fraction .> 0,
+                                  moments.measured_building_volume ./ moments.measured_built_fraction, 0)
+    fill_halo_regions!((λᵖ, h, measured_plan_area_index))
 
-    return (; plan_area_index = λᵖ, mean_building_height = h)
+    return (; plan_area_index = λᵖ, mean_building_height = h, measured_plan_area_index)
 end

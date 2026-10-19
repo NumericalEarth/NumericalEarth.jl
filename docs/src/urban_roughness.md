@@ -42,6 +42,10 @@ height weighted by built area, also `NaN` where a cell has no built area.
 roughness.zero_plane_displacement
 ```
 
+Missing GHSL heights are averaged over the measured built area in each neighborhood;
+the built fraction includes footprints without heights. A built neighborhood with no
+measured height still raises an error.
+
 `GlobalBuildingFootprints3D()` can be passed in place of `GHSBuilt()`. It supplies
 measured height spread, maximum height, and frontal area from rasterized footprints.
 The GHSL closure estimates these quantities from mean height and built fraction.

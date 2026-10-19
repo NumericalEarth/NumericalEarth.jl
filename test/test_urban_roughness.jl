@@ -556,6 +556,19 @@ end
     @test all(≈(20), interior(fields.building_height))
 end
 
+@testset "Missing building heights use measured built area on $arch" for arch in test_architectures
+    grid = LatitudeLongitudeGrid(arch; size = (3, 1), longitude = (0, 0.0027), latitude = (0, 0.0009),
+                                 topology = (Bounded, Bounded, Flat))
+    neighborhood = 6 * grid.radius * deg2rad(0.0009)
+    height(λ, φ) = ifelse(mod(floor(Int, λ / 0.0009), 3) == 0, NaN, 20.0)
+    buildings = PrescribedBuildings((; plan_area_index = 0.4, mean_building_height = height))
+    fields = urban_roughness(grid, buildings; surface_layer_height = 100, neighborhood)
+    roughness, displacement = aerodynamic_parameters(MorphometricRoughness(), 0.4, 20.0)
+    @test all(interior(fields.building_height) .≈ 20)
+    @test all(interior(fields.momentum_roughness_length) .≈ roughness)
+    @test all(interior(fields.zero_plane_displacement) .≈ displacement)
+end
+
 @testset "Urban area uses spherical cell areas" begin
     grid = LatitudeLongitudeGrid(CPU(); size = (1, 1), longitude = (0, 1), latitude = (0, 80),
                                  topology = (Bounded, Bounded, Flat))
