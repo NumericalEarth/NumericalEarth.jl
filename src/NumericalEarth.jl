@@ -145,6 +145,8 @@ export
     DatasetRestoring,
     atmosphere_model,
     atmosphere_simulation,
+    land_model,
+    land_simulation,
     breeze_prognostic_state,
     hydrostatic_pressure_from_surface,
     ocean_simulation,
