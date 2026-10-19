@@ -329,63 +329,19 @@ function interpolate_bathymetry_in_passes(native_z, target_grid;
 end
 
 """
-    remove_minor_basins!(z_data, keep_major_basins)
+$(TYPEDSIGNATURES)
 
-Remove independent basins from the bathymetry data stored in `z_data` by identifying connected regions
-below sea level. Basins are removed from smallest to largest until only `keep_major_basins` remain.
+Remove independent basins from the bathymetry stored in `zb` by identifying connected regions below sea level.
+Basins are removed from smallest to largest until only `keep_major_basins` remain.
 
 Arguments
 =========
 
-- `z_data`: A 2D array representing the bathymetry data.
+- `zb`: A 2D `Field` representing the bottom height.
 - `keep_major_basins`: The maximum number of connected regions to keep.
-                       If `Inf` is provided then all connected regions are kept.
 
 """
 function remove_minor_basins!(zb::Field, keep_major_basins)
-    zb_cpu = on_architecture(CPU(), zb)
-    TX     = topology(zb_cpu.grid, 1)
-
-    core_size = Nx, Ny, _ = size(zb_cpu.grid)
-    zb_data   = maybe_extend_longitude(zb_cpu, TX()) # Outputs a 2D AbstractArray
-
-    # For periodic grids, `zb_data` may include an extended longitude domain so that
-    # ImageMorphology can identify connected components correctly across periodic
-    # boundaries. However, we want `keep_major_basins` to refer to the number of
-    # major basins in the *physical* model domain only.
-    #
-    # To achieve this, we rank basins by their area within the core region
-    # `1:Nx, 1:Ny` of `zb_data`, rather than within the whole extended array.
-    remove_minor_basins!(zb_data, keep_major_basins, core_size)
-    set!(zb, zb_data[1:Nx, 1:Ny])
-
-    return zb
-end
-
-maybe_extend_longitude(zb_cpu, tx) = interior(zb_cpu, :, :, 1)
-
-# Since the strel algorithm in `remove_major_basins` does not recognize periodic boundaries,
-# before removing connected regions, we extend the longitude direction if it is periodic.
-# An extension of half the domain is enough.
-function maybe_extend_longitude(zb_cpu, ::Periodic)
-    Nx = size(zb_cpu, 1)
-    nx = Nx ÷ 2
-
-    zb_data   = zb_cpu.data[1:Nx, :, 1]
-    zb_parent = zb_data.parent
-
-    # Add information on the LHS and to the RHS
-    zb_parent = vcat(zb_parent[nx:Nx, :], zb_parent, zb_parent[1:nx, :])
-
-    # Update offsets
-    yoffsets = zb_cpu.data.offsets[2]
-    xoffsets = - nx
-
-    return OffsetArray(zb_parent, xoffsets, yoffsets)
-end
-
-function remove_minor_basins!(zb, keep_major_basins, core_size)
-
     if !isfinite(keep_major_basins)
         throw(ArgumentError("`keep_major_basins` must be a finite number!"))
     end
@@ -394,56 +350,26 @@ function remove_minor_basins!(zb, keep_major_basins, core_size)
         throw(ArgumentError("keep_major_basins must be larger than 0."))
     end
 
-    water = zb .< 0
+    zb_cpu = on_architecture(CPU(), zb)
+    Nx, Ny, _ = size(zb_cpu.grid)
 
-    connectivity = ImageMorphology.strel(water)
-    labels = ImageMorphology.label_components(connectivity)
+    labels = label_ocean_basins(zb_cpu)
+    basin_sizes = [count(==(label), labels) for label in 1:maximum(labels)]
 
-    nlabels = maximum(labels)
+    # Basin labels are ranked by area, keeping at most `keep_major_basins` of the ones that exist
+    nbasins = min(floor(Int, keep_major_basins), count(>(0), basin_sizes))
+    major_basins = sortperm(basin_sizes, rev=true)[1:nbasins]
 
-    # Rank labels by the number of elements they occupy within the *core* region.
+    zb_data = interior(zb_cpu, :, :, 1)
 
-    Nx, Ny = core_size[1], core_size[2]
-    core_view = labels[1:Nx, 1:Ny]
-
-    total_elements = zeros(nlabels)
-    label_elements = zeros(Int, nlabels)
-
-    for e in 1:nlabels
-        cnt = count(==(e), core_view)
-        total_elements[e] = cnt
-        label_elements[e] = e
-    end
-
-    # Ignore labels that do not intersect the core at all.
-    # These correspond to basins that live only in the periodic extension.
-    valid = findall(>(0), total_elements)
-
-    mm_basins = [] # major basins indexes
-    m = 1
-
-    # We add basin indexes until we reach the specified number (m == keep_major_basins) or
-    # we run out of basins to keep -> isempty(valid)
-    while (m ≤ keep_major_basins) && !isempty(valid)
-        # Among the remaining valid labels, find the one with the largest core area.
-        _, idx = findmax(total_elements[valid])
-        next_label = label_elements[valid[idx]]
-        push!(mm_basins, next_label)
-        deleteat!(valid, idx)
-        m += 1
-    end
-
-    labels = map(Float64, labels)
-
-    for ℓ = 1:maximum(labels)
-        remove_basin = all(ℓ != m for m in mm_basins)
-        if remove_basin
-            labels[labels .== ℓ] .= NaN # Regions to remove
+    for j in 1:Ny, i in 1:Nx
+        label = labels[i, j]
+        if label > 0 && !(label in major_basins)
+            @inbounds zb_data[i, j] = 0
         end
     end
 
-    # Flatten minor basins, corresponding to regions where `labels == NaN`
-    zb[isnan.(labels)] .= 0
+    set!(zb, zb_cpu)
 
-    return nothing
+    return zb
 end
