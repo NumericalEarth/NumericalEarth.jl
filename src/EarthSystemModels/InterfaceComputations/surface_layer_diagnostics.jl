@@ -48,7 +48,7 @@ end
 
 # The velocity relative to the interface: the profile speed along `- ρτ / |ρτ|`, the unit
 # vector of the velocity difference the flux solve saw.
-@inline function surface_layer_velocity_difference(i, j, grid, ::Val{true}, interface_state, z)
+@inline function similarity_theory_velocity_difference(i, j, grid, ::Val{true}, interface_state, z)
     scales = local_similarity_scales(i, j, interface_state)
     ℱ = scales.formulation
     Πu = displaced_similarity_profile(ℱ, ℱ.stability_functions.momentum, z, scales.ℓu₀, scales.L★)
@@ -63,7 +63,7 @@ end
 end
 
 # The atmosphere velocity difference scaled by the profile, `Π(z - d) / Π(Δh - d)`.
-@inline function surface_layer_velocity_difference(i, j, grid, ::Val{false}, interface_state, z)
+@inline function similarity_theory_velocity_difference(i, j, grid, ::Val{false}, interface_state, z)
     scales = local_similarity_scales(i, j, interface_state)
     ℱ = scales.formulation
     ψu = ℱ.stability_functions.momentum
@@ -81,19 +81,19 @@ end
            Δv * Πu / Πh * (scales.u★ != 0)
 end
 
-@inline function surface_layer_x_velocity(i, j, k, grid, interface_state, z)
-    Δu, Δv = surface_layer_velocity_difference(i, j, grid, interface_state.include_subgrid_velocities,
-                                               interface_state, z)
+@inline function similarity_theory_x_velocity(i, j, k, grid, interface_state, z)
+    Δu, Δv = similarity_theory_velocity_difference(i, j, grid, interface_state.include_subgrid_velocities,
+                                                   interface_state, z)
     return ℑxᶜᵃᵃ(i, j, size(grid, 3), grid, interface_state.surface_velocities.u) + Δu
 end
 
-@inline function surface_layer_y_velocity(i, j, k, grid, interface_state, z)
-    Δu, Δv = surface_layer_velocity_difference(i, j, grid, interface_state.include_subgrid_velocities,
-                                               interface_state, z)
+@inline function similarity_theory_y_velocity(i, j, k, grid, interface_state, z)
+    Δu, Δv = similarity_theory_velocity_difference(i, j, grid, interface_state.include_subgrid_velocities,
+                                                   interface_state, z)
     return ℑyᵃᶜᵃ(i, j, size(grid, 3), grid, interface_state.surface_velocities.v) + Δv
 end
 
-@inline function surface_layer_temperature(i, j, k, grid, interface_state, z)
+@inline function similarity_theory_temperature(i, j, k, grid, interface_state, z)
     scales = local_similarity_scales(i, j, interface_state)
     ℱ = scales.formulation
     Πθ = displaced_similarity_profile(ℱ, ℱ.stability_functions.temperature, z, scales.ℓθ₀, scales.L★)
@@ -105,7 +105,7 @@ end
     return θ - interface_state.gravitational_acceleration * z / cᵖᵐ
 end
 
-@inline function surface_layer_specific_humidity(i, j, k, grid, interface_state, z)
+@inline function similarity_theory_specific_humidity(i, j, k, grid, interface_state, z)
     scales = local_similarity_scales(i, j, interface_state)
     ℱ = scales.formulation
     Πq = displaced_similarity_profile(ℱ, ℱ.stability_functions.water_vapor, z, scales.ℓq₀, scales.L★)
@@ -210,8 +210,8 @@ function surface_layer_diagnostics(model, interface = model.interfaces.atmospher
 
     SurfaceLayerOperation = KernelFunctionOperation{Center, Center, Nothing}
 
-    return (u = SurfaceLayerOperation(surface_layer_x_velocity, grid, interface_state, convert(FT, velocity_height)),
-            v = SurfaceLayerOperation(surface_layer_y_velocity, grid, interface_state, convert(FT, velocity_height)),
-            T = SurfaceLayerOperation(surface_layer_temperature, grid, interface_state, convert(FT, temperature_height)),
-            q = SurfaceLayerOperation(surface_layer_specific_humidity, grid, interface_state, convert(FT, specific_humidity_height)))
+    return (u = SurfaceLayerOperation(similarity_theory_x_velocity, grid, interface_state, convert(FT, velocity_height)),
+            v = SurfaceLayerOperation(similarity_theory_y_velocity, grid, interface_state, convert(FT, velocity_height)),
+            T = SurfaceLayerOperation(similarity_theory_temperature, grid, interface_state, convert(FT, temperature_height)),
+            q = SurfaceLayerOperation(similarity_theory_specific_humidity, grid, interface_state, convert(FT, specific_humidity_height)))
 end
