@@ -288,7 +288,7 @@ DataWrangling.conversion_units(::MODISLandCoverMetadatum) = nothing
 #####
 
 date_tag(date) = Dates.format(DateTime(date), "yyyymmdd")
-years_tag(years) = string(first(years), "-", last(years))
+years_tag(years) = join(sort!(unique(collect(years))), "-")
 screen_tag(dataset) = string("qc", string(dataset.screened_flags, base = 16, pad = 4))
 
 region_tag(dataset, name, ::Nothing) = "global"

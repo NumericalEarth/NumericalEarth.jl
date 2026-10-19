@@ -317,7 +317,11 @@ end
           metadata_filename(unscreened, :leaf_area_index, stamp, region)
     @test metadata_filename(climatology, :leaf_area_index, stamp, region) !=
           metadata_filename(climatology, :leaf_area_index, stamp + Day(8), region)
-    @test occursin("2003-2019", metadata_filename(climatology, :leaf_area_index, stamp, region))
+    selected_years = MODISLAIClimatology(years = [2003, 2019])
+    @test metadata_filename(climatology, :leaf_area_index, stamp, region) !=
+          metadata_filename(selected_years, :leaf_area_index, stamp, region)
+    @test metadata_filename(climatology, :leaf_area_index, stamp, region) ==
+          metadata_filename(MODISLAIClimatology(years = collect(2003:2019)), :leaf_area_index, stamp, region)
 
     # The retained count shares the file of the variable it counts.
     metadatum = Metadatum(:leaf_area_index; dataset = climatology, region, date = stamp)
@@ -1064,6 +1068,11 @@ end
         @test n[6, 6] == n[7, 7] == 0
         @test 𝒜[8, 8] == 0
         @test n[8, 8] == 3
+
+        selected = Metadatum(:leaf_area_index; dataset = MODISLAIClimatology(years = [2017, 2019]),
+                             region, date = stamp, dir)
+        selected_count = Field(retained_retrieval_metadatum(selected))
+        @test Array(interior(selected_count, :, :, 1))[1, 1] == 2
 
         # An already-built period is skipped, so an interrupted build resumes.
         modified = mtime(only(paths))

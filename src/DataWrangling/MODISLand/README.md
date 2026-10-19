@@ -18,8 +18,7 @@ product) — the quantity a canopy closure calibrated on MODIS expects.
 Downloads need a free NASA Earthdata login and GDAL's HDF4 driver:
 
 1. Register at https://urs.earthdata.nasa.gov
-2. Export `EARTHDATA_USERNAME` and `EARTHDATA_PASSWORD`, or add a `~/.netrc` entry for
-   `urs.earthdata.nasa.gov`
+2. Export `EARTHDATA_USERNAME` and `EARTHDATA_PASSWORD`
 3. Load the backend before downloading: `using ArchGDAL`
 
 Granule discovery goes through NASA's Common Metadata Repository and is anonymous; only

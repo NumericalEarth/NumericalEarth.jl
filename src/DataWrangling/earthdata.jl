@@ -49,13 +49,18 @@ end
 
 Build the NASA CMR granule-search URL for page `page_num` of the product `short_name` /
 `version` whose granules intersect the `bbox` `BoundingBox` (encoded `W,S,E,N`,
-longitudes in `[-180, 180]`). CMR search is anonymous; only the granule download itself
-needs Earthdata credentials. A `date` narrows the search to the day it opens; `nothing`
-searches the whole record.
+longitudes normalized to `[-180, 180]`). CMR search is anonymous; only the granule download
+itself needs Earthdata credentials. A `date` narrows the search to the day it opens;
+`nothing` searches the whole record.
 """
 function cmr_granules_url(short_name, version, bbox::BoundingBox;
                           date = nothing, page_size = 2000, page_num = 1)
     west, east = bbox.longitude
+    if east - west == 360
+        west, east = -180, 180
+    else
+        west, east = rem.((west, east), 360, RoundNearest)
+    end
     south, north = bbox.latitude
     return string("https://cmr.earthdata.nasa.gov/search/granules.json",
                   "?short_name=", short_name,

@@ -16,6 +16,13 @@ using Dates: DateTime
     @test occursin("page_num=1", url)
     @test occursin("page_num=3", cmr_granules_url("AG1KM", "003", region; page_num = 3))
 
+    wrapped = BoundingBox(longitude = (267.5, 268.5), latitude = (36.5, 37.5))
+    @test occursin("bounding_box=-92.5,36.5,-91.5,37.5", cmr_granules_url("MCD15A2H", "061", wrapped))
+    seam = BoundingBox(longitude = (179, 181), latitude = (36, 37))
+    @test occursin("bounding_box=179,36,-179,37", cmr_granules_url("AG100", "003", seam))
+    globe = BoundingBox(longitude = (0, 360), latitude = (-90, 90))
+    @test occursin("bounding_box=-180,-90,180,90", cmr_granules_url("AG100", "003", globe))
+
     # A static-epoch product searches the whole record; a dated one narrows to the day.
     @test !occursin("temporal=", url)
     dated = cmr_granules_url("MCD15A2H", "061", region; date = DateTime(2020, 7, 3))

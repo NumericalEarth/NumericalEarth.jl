@@ -133,11 +133,12 @@ Requires network access, but no credentials.
 """
 function granule_urls(metadatum::MODISLandMetadatum)
     dataset = metadatum.dataset
+    date = dataset isa MCD12Q1 ? DateTime(Dates.year(metadatum.dates)) : metadatum.dates
 
     candidates = cmr_granules(modis_short_name(dataset), modis_version(dataset),
-                              metadatum.region; extension = "hdf", date = metadatum.dates)
+                              metadatum.region; extension = "hdf", date)
 
-    granules = select_granules(candidates, metadatum.dates)
+    granules = select_granules(candidates, date)
     isempty(granules) &&
         throw(MissingGranulesError("The Common Metadata Repository holds no $(modis_short_name(dataset)) " *
                                    "granules for the region $(metadatum.region) on $(metadatum.dates)."))

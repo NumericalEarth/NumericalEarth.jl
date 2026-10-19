@@ -39,6 +39,20 @@ const modis_download_directory = mktempdir()
     @test all(granule -> granule.date == modis_composite_date, granules)
     @test allunique(granule.tile for granule in granules)   # one granule per tile
 
+    wrapped_region = BoundingBox(longitude = modis_region.longitude .+ 360,
+                                  latitude = modis_region.latitude)
+    wrapped = Metadatum(:leaf_area_index; dataset = MCD15A2H(), region = wrapped_region,
+                        date = modis_composite_date)
+    @test Set(granule_urls(wrapped)) == Set(urls)
+
+    annual = Metadatum(:landcover_class; dataset = MCD12Q1(), region = modis_region,
+                       date = modis_landcover_date)
+    midyear = Metadatum(:landcover_class; dataset = MCD12Q1(), region = modis_region,
+                        date = DateTime(2019, 7, 4))
+    annual_urls = granule_urls(annual)
+    @test !isempty(annual_urls)
+    @test Set(granule_urls(midyear)) == Set(annual_urls)
+
     # 2016-02-18 is one of the record's holes. A climatology skips a date the archive does
     # not carry, so the condition has to be distinguishable rather than a plain error.
     outage = Metadatum(:leaf_area_index; dataset = MCD15A2H(), region = modis_region,

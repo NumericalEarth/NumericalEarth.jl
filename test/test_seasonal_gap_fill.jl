@@ -361,6 +361,28 @@ end
     @test all(==(gap_fill_provenance.unfilled), filled.provenance[:, :, 7:12])
 end
 
+@testset "Filled series boundary interpolation [$arch]" for arch in test_architectures
+    grid = LatitudeLongitudeGrid(arch; size = (2, 2), longitude = (0, 1), latitude = (0, 1),
+                                 topology = (Bounded, Bounded, Flat))
+    series = FieldTimeSeries{Center, Center, Nothing}(grid, [0, 1, 2])
+    fill!(series[1], 1)
+    fill!(series[2], NaN)
+    fill!(series[3], 3)
+
+    boundary_grid = LatitudeLongitudeGrid(arch; size = (1, 1),
+                                          longitude = (0, 0.2), latitude = (0.4, 0.6),
+                                          topology = (Bounded, Bounded, Flat))
+    boundary_value = Field{Center, Center, Nothing}(boundary_grid)
+
+    fill_seasonal_gaps!(series, ones(2, 2); stages = (:temporal,))
+    interpolate!(boundary_value, series[2])
+    @test all(==(2), Array(interior(boundary_value)))
+
+    zero_non_vegetated!(series, fill(igbp_class_names.urban, 2, 2))
+    interpolate!(boundary_value, series[2])
+    @test all(iszero, Array(interior(boundary_value)))
+end
+
 # The host-side chain reduces the whole record at once, so a sliding-window series is
 # rejected rather than silently processed as if its resident slice were the record.
 @testset "Whole-series guards" begin

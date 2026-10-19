@@ -93,7 +93,7 @@ function set!(fts::DatasetFieldTimeSeries, backend=fts.backend)
         metadatum = @inbounds backend.metadata[t]
 
         # A copy has no stencil to spread missing cells through.
-        if on_native_grid(backend) && isnothing(inpainting)
+        if on_native_grid(backend) && isnothing(inpainting) && !(metadatum.region isa Column)
             isfile(metadata_path(metadatum)) || Downloads.download(metadatum)
             set_metadata_field!(fts[t], retrieve_data(metadatum), metadatum)
         else

@@ -37,6 +37,7 @@ function on_host!(f!, fts::FieldTimeSeries)
     data = Array(interior(fts))
     result = f!(data)
     copyto!(interior(fts), data)
+    fill_halo_regions!(fts)
     return result
 end
 
