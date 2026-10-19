@@ -37,6 +37,9 @@ using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters,
                                                  air_sea_interface_radiation_state,
                                                  air_sea_ice_interface_radiation_state,
                                                  air_land_interface_radiation_state,
+                                                 land_surface_energy_flux,
+                                                 land_surface_shortwave_up,
+                                                 land_surface_longwave_up,
                                                  AirLandRadiationState
 
 include("surface_radiation_properties.jl")
