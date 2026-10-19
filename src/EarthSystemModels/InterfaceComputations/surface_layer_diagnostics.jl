@@ -48,7 +48,7 @@ end
 
 # The velocity relative to the interface: the profile speed along `- ρτ / |ρτ|`, the unit
 # vector of the velocity difference the flux solve saw.
-@inline function surface_layer_velocity_difference(::Val{true}, i, j, grid, interface_state, z)
+@inline function surface_layer_velocity_difference(i, j, grid, ::Val{true}, interface_state, z)
     scales = local_similarity_scales(i, j, interface_state)
     ℱ = scales.formulation
     Πu = displaced_similarity_profile(ℱ, ℱ.stability_functions.momentum, z, scales.ℓu₀, scales.L★)
@@ -63,7 +63,7 @@ end
 end
 
 # The atmosphere velocity difference scaled by the profile, `Π(z - d) / Π(Δh - d)`.
-@inline function surface_layer_velocity_difference(::Val{false}, i, j, grid, interface_state, z)
+@inline function surface_layer_velocity_difference(i, j, grid, ::Val{false}, interface_state, z)
     scales = local_similarity_scales(i, j, interface_state)
     ℱ = scales.formulation
     ψu = ℱ.stability_functions.momentum
@@ -77,19 +77,19 @@ end
     @inbounds Δu = interface_state.atmosphere_velocities.u[i, j, 1] - uₛ
     @inbounds Δv = interface_state.atmosphere_velocities.v[i, j, 1] - vₛ
 
-    return ifelse(scales.u★ == 0, zero(Πu), Δu * Πu / Πh),
-           ifelse(scales.u★ == 0, zero(Πu), Δv * Πu / Πh)
+    return Δu * Πu / Πh * (scales.u★ != 0),
+           Δv * Πu / Πh * (scales.u★ != 0)
 end
 
 @inline function surface_layer_x_velocity(i, j, k, grid, interface_state, z)
-    Δu, Δv = surface_layer_velocity_difference(interface_state.include_subgrid_velocities,
-                                               i, j, grid, interface_state, z)
+    Δu, Δv = surface_layer_velocity_difference(i, j, grid, interface_state.include_subgrid_velocities,
+                                               interface_state, z)
     return ℑxᶜᵃᵃ(i, j, size(grid, 3), grid, interface_state.surface_velocities.u) + Δu
 end
 
 @inline function surface_layer_y_velocity(i, j, k, grid, interface_state, z)
-    Δu, Δv = surface_layer_velocity_difference(interface_state.include_subgrid_velocities,
-                                               i, j, grid, interface_state, z)
+    Δu, Δv = surface_layer_velocity_difference(i, j, grid, interface_state.include_subgrid_velocities,
+                                               interface_state, z)
     return ℑyᵃᶜᵃ(i, j, size(grid, 3), grid, interface_state.surface_velocities.v) + Δv
 end
 
