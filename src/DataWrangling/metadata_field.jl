@@ -288,8 +288,8 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
         elapsed = 1e-9 * (time_ns() - start_time)
         @info string(" ... (", prettytime(elapsed), ")")
 
-        # We cache the inpainted data to avoid recomputing it. Any rank may write it, so it is written
-        # to a file of its own and renamed: a rank never reads a partly written cache.
+        # We cache the inpainted data to avoid recomputing it. Any rank may write it,
+        # so it is written in a temporary directory to avoid races then moved.
         if cache_inpainted_data
             temporary_path = tempname(dirname(inpainted_path)) * ".jld2"
             jldopen(temporary_path, "w") do file
