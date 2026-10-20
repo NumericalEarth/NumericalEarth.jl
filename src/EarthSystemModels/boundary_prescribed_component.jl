@@ -34,7 +34,8 @@ function boundary_strips(component::BoundaryPrescribedComponent)
     return NamedTuple{sides}(map(side -> getproperty(component, side), sides))
 end
 
-# Width of a Davies relaxation zone spanning `width` cells along the coarser horizontal direction of `grid`.
+# Width of a boundary relaxation zone spanning `width` cells along the coarser horizontal direction
+# of `grid`, in the `grid`’s native coordinates.
 function relaxation_zone_width(grid, width)
     λ₁, λ₂ = x_domain(grid)
     φ₁, φ₂ = y_domain(grid)
