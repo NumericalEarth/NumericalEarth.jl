@@ -955,4 +955,16 @@ end
         @test difference(strip_model) ≤ 1e-12 * scale
         name in (:ρθ, :ρu, :ρv) && @test difference(unrelaxed_model) > 1e-6 * scale
     end
+
+    # Running the strip child in two `run!` calls reproduces its continuous run.
+    rerun_model = nest(strips, 1/30)
+    ext.initialize_nested_child!(rerun_model, nothing, first(times), ""; balancer = false, prognostic = initial_states[2])
+    simulation = Simulation(rerun_model; Δt = 0.5, stop_iteration = 4, verbose = false)
+    run!(simulation)
+    simulation.stop_iteration = 8
+    run!(simulation)
+
+    for (name, field) in pairs(prognostic_fields(strip_model.child))
+        @test maximum(abs, Field(prognostic_fields(rerun_model.child)[name] - field)) == 0
+    end
 end

@@ -66,11 +66,11 @@ iteration(nm::NestedModel)         = iteration(nm.child)
 Oceananigans.Advection.cell_advection_timescale(nm::NestedModel) =
     Oceananigans.Advection.cell_advection_timescale(nm.child)
 
-# `update_state!` may receive callbacks; forward verbatim. Refresh the parent-derived child state first
-# so the child's boundary conditions / forcings see current values.
+# Refresh the parent-derived child state first so the child's boundary conditions / forcings see current
+# values. The child's own callbacks run alongside any passed in.
 function update_state!(nm::NestedModel, callbacks=[]; kwargs...)
     exchange_state!(nm.exchanger, nm.clock.time)
-    return update_state!(nm.child, callbacks; kwargs...)
+    return update_state!(nm.child, (callbacks..., nm.child_callbacks...); kwargs...)
 end
 
 # Setting the initial state targets the child's prognostics.
