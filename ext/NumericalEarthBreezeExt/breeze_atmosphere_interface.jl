@@ -2,7 +2,7 @@ using Oceananigans.Grids: Center
 using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.Fields: compute!
 using Breeze.AtmosphereModels: thermodynamic_density, dynamics_pressure,
-                               specific_humidity, surface_precipitation_flux
+                               specific_humidity, bottom_precipitation_flux
 using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
 using GPUArraysCore: @allowscalar
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
@@ -75,14 +75,9 @@ NumericalEarth.EarthSystemModels.boundary_layer_height(atmos::BreezeAtmosphereSi
 
 function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::BreezeAtmosphere, exchange_grid;
                                                                                    correction = nothing)
-    # Breeze's surface rain-flux diagnostic (positive down, kg m⁻² s⁻¹); schemes with no
-    # precipitating species define no method — fall back to an inert zero field.
-    # TODO: move the fallback into Breeze; add a snow analog (Jˢⁿ stays zero below).
-    Jʳⁿ = if applicable(surface_precipitation_flux, atmosphere, atmosphere.microphysics)
-        surface_precipitation_flux(atmosphere)
-    else
-        Oceananigans.CenterField(exchange_grid)
-    end
+    # Breeze's bottom flux of every sedimenting condensate, liquid and frozen (positive down,
+    # kg m⁻² s⁻¹), enters as rain; Jˢⁿ stays zero.
+    Jʳⁿ = bottom_precipitation_flux(atmosphere)
 
     state = (; u    = Oceananigans.CenterField(exchange_grid),
                v    = Oceananigans.CenterField(exchange_grid),
@@ -127,7 +122,7 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     qᵛ = specific_humidity(atmosphere)
 
     # Breeze's diagnosed vapor mass fraction, not the scheme-dependent moisture prognostic;
-    # `dynamics_pressure` gives the per-column pressure (a single scalar `surface_pressure`
+    # `dynamics_pressure` gives the per-column pressure (a single scalar `base_pressure`
     # would bias fluxes over terrain).
     p = dynamics_pressure(atmosphere.dynamics)
 
@@ -137,7 +132,7 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
             _interpolate_breeze_state!,
             state, u, v, T, qᵛ, p)
 
-    compute!(state.Jʳⁿ)   # refresh the rain diagnostic (no-op for the zero-field fallback)
+    compute!(state.Jʳⁿ)   # refresh the precipitation diagnostic
 
     return nothing
 end
@@ -160,12 +155,12 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos
         "flux field, so its surface stress cannot come from the coupler. Build the atmosphere " *
         "without `bottom_drag_coefficient` (Breeze `BulkDrag`) when coupling to land or ocean."))
 
-    ρe = thermodynamic_density(atmosphere.formulation).boundary_conditions.bottom.condition.condition
+    ρE = thermodynamic_density(atmosphere.formulation).boundary_conditions.bottom.condition.condition
 
     # Moisture flux field
     ρqᵛᵉ = atmosphere.moisture_density.boundary_conditions.bottom.condition
 
-    return (; ρu, ρv, ρe, ρqᵛᵉ)
+    return (; ρu, ρv, ρE, ρqᵛᵉ)
 end
 
 NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos::BreezeAtmosphereSim) =
@@ -184,7 +179,7 @@ NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos::BreezeA
         # interpolate stresses on variable's location
         net.ρu[i, j, 1]  = ℑxᶠᵃᵃ(i, j, 1, grid, ao_fluxes.x_momentum)
         net.ρv[i, j, 1]  = ℑyᵃᶠᵃ(i, j, 1, grid, ao_fluxes.y_momentum)
-        net.ρe[i, j, 1]  = Qc   # sensible heat only; latent heat handled by moisture flux
+        net.ρE[i, j, 1]  = Qc   # sensible heat only; latent heat handled by moisture flux
         net.ρqᵛᵉ[i, j, 1] = Fv
     end
 end
