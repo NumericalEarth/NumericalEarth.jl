@@ -569,6 +569,42 @@ end
     @test all(interior(fields.zero_plane_displacement) .≈ displacement)
 end
 
+@testset "Urban neighborhoods wrap across periodic longitude on $arch" for arch in test_architectures
+    grid = LatitudeLongitudeGrid(arch; size = (4, 1), longitude = (0, 360), latitude = (-30, 30),
+                                 topology = (Periodic, Bounded, Flat))
+    height(λ, φ) = 10 + 10floor(Int, mod(λ, 360) / 90)
+    buildings = PrescribedBuildings((; plan_area_index = 0.4, mean_building_height = height))
+    closure = uniform_height_closure()
+    fields = urban_roughness(grid, buildings; closure, surface_layer_height = 100,
+                             neighborhood = grid.radius * deg2rad(120))
+    # Each 120° neighborhood covers its 90° cell and 15° of each neighboring cell.
+    expected_height = [15, 20, 30, 35]
+    @test vec(Array(interior(fields.building_height))) ≈ expected_height
+    @test vec(Array(interior(fields.momentum_roughness_length))) ≈
+          [roughness_at_point(0.4, h; closure) for h in expected_height]
+
+    buildings = PrescribedBuildings((; plan_area_index = 0.4, mean_building_height = 20.0))
+    fields = urban_roughness(grid, buildings; closure, surface_layer_height = 100,
+                             neighborhood = grid.radius * deg2rad(45))
+    @test all(interior(fields.momentum_roughness_length) .≈ roughness_at_point(0.4, 20; closure))
+    @test all(interior(fields.building_height) .≈ 20)
+end
+
+@testset "Urban neighborhoods clip at the poles on $arch with $FT" for arch in test_architectures, FT in (Float32, Float64)
+    buildings = PrescribedBuildings((; plan_area_index = 0.4, mean_building_height = 20.0))
+    roughness, displacement = aerodynamic_parameters(MorphometricRoughness(), 0.4, 20.0)
+    for hemisphere in (-1, 1), latitude in ((89.99, 90), (89.999, 89.9995))
+        latitude = extrema(hemisphere .* latitude)
+        grid = LatitudeLongitudeGrid(arch, FT; size = (2, 2), longitude = (0, 10), latitude,
+                                     topology = (Bounded, Bounded, Flat))
+        fields = urban_roughness(grid, buildings; surface_layer_height = 100, neighborhood = 1000)
+        @test all(interior(fields.momentum_roughness_length) .≈ FT(roughness))
+        @test all(interior(fields.zero_plane_displacement) .≈ FT(displacement))
+        @test all(interior(fields.building_height) .≈ 20)
+        @test all(interior(fields.urban_fraction) .≈ 1)
+    end
+end
+
 @testset "Urban area uses spherical cell areas" begin
     grid = LatitudeLongitudeGrid(CPU(); size = (1, 1), longitude = (0, 1), latitude = (0, 80),
                                  topology = (Bounded, Bounded, Flat))

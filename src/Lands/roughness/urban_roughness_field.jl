@@ -178,7 +178,7 @@ function building_morphometry end
     longitude_center = (longitude_faces[i] + longitude_faces[i + 1]) / 2
     latitude_center = (latitude_faces[j] + latitude_faces[j + 1]) / 2
     # Half a neighborhood in degrees, at the meters per degree of this cell.
-    longitude_half_width = neighborhood / Δxᶜᶜᶜ(i, j, 1, grid) * (longitude_faces[i + 1] - longitude_faces[i]) / 2
+    longitude_half_width = min(180, neighborhood / Δxᶜᶜᶜ(i, j, 1, grid) * (longitude_faces[i + 1] - longitude_faces[i]) / 2)
     latitude_half_width = neighborhood / Δyᶜᶜᶜ(i, j, 1, grid) * (latitude_faces[j + 1] - latitude_faces[j]) / 2
     west = min(longitude_faces[i], longitude_center - longitude_half_width)
     east = max(longitude_faces[i + 1], longitude_center + longitude_half_width)
@@ -188,39 +188,42 @@ function building_morphometry end
     longitude_faces = source_grid.λᶠᵃᵃ
     latitude_faces = source_grid.φᵃᶠᵃ
     order = ForwardOrdering()
-    first_column = max(1, searchsortedlast(longitude_faces, west, 1, Nx + 1, order))
-    last_column = min(Nx, searchsortedfirst(longitude_faces, east, 1, Nx + 1, order) - 1)
     first_row = max(1, searchsortedlast(latitude_faces, south, 1, Ny + 1, order))
     last_row = min(Ny, searchsortedfirst(latitude_faces, north, 1, Ny + 1, order) - 1)
     ground_area = built_area = measured_built_area = volume = second_moment = maximum_height = frontal_area = convert(eltype(grid), 0)
-    for row in first_row:last_row, column in first_column:last_column
-        overlap_south = max(south, latitude_faces[row])
-        overlap_north = min(north, latitude_faces[row + 1])
-        overlap_west = max(west, longitude_faces[column])
-        overlap_east = min(east, longitude_faces[column + 1])
-        # TODO Oceananigans: use a stable sine difference in fractional_horizontal_area for thin Float32 cells.
-        area = convert(eltype(grid), fractional_horizontal_area(grid, Float64(overlap_west), Float64(overlap_east),
-                                                               Float64(overlap_south), Float64(overlap_north)))
-        fraction = stateindex(properties.plan_area_index, column, row, 1)
-        height = stateindex(properties.mean_building_height, column, row, 1)
-        deviation = stateindex(properties.building_height_deviation, column, row, 1)
-        tallest = stateindex(properties.maximum_building_height, column, row, 1)
-        frontal = stateindex(properties.frontal_area_index, column, row, 1)
-        frontal = ifelse((fraction == 0) & isnan(frontal), 0, frontal)
-        built = area * fraction
-        measured_fraction = stateindex(properties.measured_plan_area_index, column, row, 1)
-        measured = ifelse(isfinite(height), area * measured_fraction, 0)
-        # A cell's tallest building counts only in neighborhoods containing the cell's center.
-        column_center = (longitude_faces[column] + longitude_faces[column + 1]) / 2
-        row_center = (latitude_faces[row] + latitude_faces[row + 1]) / 2
-        centered = (west <= column_center) & (column_center <= east) & (south <= row_center) & (row_center <= north)
-        ground_area += area
-        built_area += built
-        measured_built_area += measured
-        volume += ifelse(measured > 0, measured * height, 0)
-        second_moment += ifelse(measured > 0, measured * (height^2 + deviation^2), 0)
-        maximum_height = max(maximum_height, ifelse((measured > 0) & centered, tallest, 0))
-        frontal_area += ifelse(area > 0, area * frontal, 0)
+    for shift in -360:360:360
+        shifted_west, shifted_east = west + shift, east + shift
+        first_column = max(1, searchsortedlast(longitude_faces, shifted_west, 1, Nx + 1, order))
+        last_column = min(Nx, searchsortedfirst(longitude_faces, shifted_east, 1, Nx + 1, order) - 1)
+        for row in first_row:last_row, column in first_column:last_column
+            overlap_south = max(south, latitude_faces[row])
+            overlap_north = min(north, latitude_faces[row + 1])
+            overlap_west = max(shifted_west, longitude_faces[column])
+            overlap_east = min(shifted_east, longitude_faces[column + 1])
+            # TODO Oceananigans: use a stable sine difference in fractional_horizontal_area for thin Float32 cells.
+            area = convert(eltype(grid), fractional_horizontal_area(grid, Float64(overlap_west), Float64(overlap_east),
+                                                                   Float64(overlap_south), Float64(overlap_north)))
+            fraction = stateindex(properties.plan_area_index, column, row, 1)
+            height = stateindex(properties.mean_building_height, column, row, 1)
+            deviation = stateindex(properties.building_height_deviation, column, row, 1)
+            tallest = stateindex(properties.maximum_building_height, column, row, 1)
+            frontal = stateindex(properties.frontal_area_index, column, row, 1)
+            frontal = ifelse((fraction == 0) & isnan(frontal), 0, frontal)
+            built = area * fraction
+            measured_fraction = stateindex(properties.measured_plan_area_index, column, row, 1)
+            measured = ifelse(isfinite(height), area * measured_fraction, 0)
+            # A cell's tallest building counts only in neighborhoods containing the cell's center.
+            column_center = (longitude_faces[column] + longitude_faces[column + 1]) / 2
+            row_center = (latitude_faces[row] + latitude_faces[row + 1]) / 2
+            centered = (shifted_west <= column_center) & (column_center <= shifted_east) & (south <= row_center) & (row_center <= north)
+            ground_area += area
+            built_area += built
+            measured_built_area += measured
+            volume += ifelse(measured > 0, measured * height, 0)
+            second_moment += ifelse(measured > 0, measured * (height^2 + deviation^2), 0)
+            maximum_height = max(maximum_height, ifelse((measured > 0) & centered, tallest, 0))
+            frontal_area += ifelse(area > 0, area * frontal, 0)
+        end
     end
     mean_height = ifelse(built_area > 0, volume / measured_built_area, 0)
     @inbounds begin
@@ -270,7 +273,8 @@ The closure is evaluated on neighborhoods `neighborhood` (m) wide, from the morp
 subdivided into lattice cells no wider than it. Each neighborhood is centered on a lattice cell
 and pools, by overlap area, the lattice cells within half a neighborhood of its center. The
 dataset region includes the padding needed for
-complete neighborhoods at the grid edges. Missing heights take the built-area-weighted mean
+complete neighborhoods at the grid edges. Neighborhoods wrap in longitude, cover at most
+360°, and are clipped at the poles. Missing heights take the built-area-weighted mean
 of the neighborhood's measured heights; a built neighborhood without any measured heights
 remains invalid. Neighborhoods with plan-area
 index at least the closure's `minimum_built_fraction` are urban, and `urban_fraction` is their
@@ -292,8 +296,8 @@ function urban_roughness(grid::LatitudeLongitudeGrid, dataset; surface_layer_hei
     FT = eltype(grid)
     arch = architecture(grid)
     longitude_cells, latitude_cells, _ = size(grid)
-    longitude_faces = on_architecture(CPU(), λnodes(grid, Face()))
-    latitude_faces = on_architecture(CPU(), φnodes(grid, Face()))
+    longitude_faces = dimension_faces(grid, 1)
+    latitude_faces = dimension_faces(grid, 2)
     longitude_scale = grid.radius * deg2rad(1) * cosd(clamp(0, first(latitude_faces), last(latitude_faces)))
     latitude_scale = grid.radius * deg2rad(1)
     function subdivide(faces, scale)
@@ -308,16 +312,20 @@ function urban_roughness(grid::LatitudeLongitudeGrid, dataset; surface_layer_hei
                                     longitude = longitude_lattice, latitude = latitude_lattice, radius = grid.radius,
                                     topology = (Bounded, Bounded, Flat))
 
-    function pad(faces, scale)
-        half_width = neighborhood / scale / 2
+    function pad(faces, half_width, lower, upper)
         first_spacing, last_spacing = faces[2] - faces[1], faces[end] - faces[end-1]
-        before = ceil(Int, half_width / first_spacing - 1/2)
-        after = ceil(Int, half_width / last_spacing - 1/2)
-        return [first(faces) .- (before:-1:1) .* first_spacing; faces; last(faces) .+ (1:after) .* last_spacing]
+        before = ceil(Int, min(half_width / first_spacing - 1/2, (first(faces) - lower) / first_spacing))
+        after = ceil(Int, min(half_width / last_spacing - 1/2, (upper - last(faces)) / last_spacing))
+        return clamp.([first(faces) .- (before:-1:1) .* first_spacing; faces; last(faces) .+ (1:after) .* last_spacing],
+                      lower, upper)
     end
-    longitude_scale = latitude_scale * minimum(cosd, latitude_faces)
-    padded_longitude = pad(longitude_lattice, longitude_scale)
-    padded_latitude = pad(latitude_lattice, latitude_scale)
+    latitude_centers = ((latitude_lattice[1] + latitude_lattice[2]) / 2,
+                        (latitude_lattice[end-1] + latitude_lattice[end]) / 2)
+    longitude_scale = latitude_scale * minimum(cosd, latitude_centers)
+    longitude_center = (first(longitude_faces) + last(longitude_faces)) / 2
+    padded_longitude = pad(longitude_lattice, min(180, neighborhood / longitude_scale / 2),
+                           longitude_center - 180, longitude_center + 180)
+    padded_latitude = pad(latitude_lattice, neighborhood / latitude_scale / 2, -90, 90)
     source_grid = LatitudeLongitudeGrid(arch, FT; size = (length(padded_longitude) - 1, length(padded_latitude) - 1),
                                         longitude = padded_longitude, latitude = padded_latitude, radius = grid.radius,
                                         topology = (Bounded, Bounded, Flat))

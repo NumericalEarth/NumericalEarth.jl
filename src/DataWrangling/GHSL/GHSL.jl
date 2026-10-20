@@ -3,8 +3,9 @@ module GHSL
 export GHSBuiltH, GHSBuiltS, GHSBuiltSResolution, GHSBuiltS10m, GHSBuiltS100m, GHSBuilt
 
 using Downloads: Downloads
-using Oceananigans: Center, CPU, Face
+using Oceananigans: Center, CPU
 using Oceananigans.DistributedComputations: @root
+using Oceananigans.Fields: dimension_faces
 using Oceananigans.Grids: x_domain, y_domain, λnodes, φnodes
 
 using NumericalEarth.Lands: Lands
@@ -492,8 +493,8 @@ function ghsl_regional_raster(metadatum::GHSLMetadatum)
 
     return (; region = BoundingBox(longitude = (λ₁, λ₂), latitude = (φ₁, φ₂)),
               Nx, Ny,
-              longitude_faces = collect(λnodes(grid, Face())),
-              latitude_faces = collect(φnodes(grid, Face())),
+              longitude_faces = dimension_faces(grid, 1),
+              latitude_faces = dimension_faces(grid, 2),
               longitude = collect(λnodes(grid, Center())),
               latitude  = collect(φnodes(grid, Center())))
 end

@@ -37,7 +37,7 @@ function ghsl_mosaic(f, dataset, region, cache_dir)
         end
         isnothing(source) || push!(sources, source)
     end
-    isempty(sources) && return nothing
+    isempty(sources) && return f(nothing)
 
     datasets = [ArchGDAL.read(source) for source in sources]
     try
@@ -60,6 +60,7 @@ function ghsl_reprojected_raster(dataset, raster, cache_dir)
     for shift in antimeridian_shifts(east)
         region = BoundingBox(longitude = (west, east) .+ shift, latitude = (south, north))
         period = ghsl_mosaic(dataset, region, cache_dir) do mosaic
+            isnothing(mosaic) && return nothing
             ArchGDAL.gdalwarp([mosaic],
                 # `-ts` pins the cell count: with a pixel size, GDAL rounds the extent instead
                 # and the raster comes back short of the grid.
@@ -121,8 +122,8 @@ end
                 west_width = clipped_linear_mean(west_south - pixel_west, west_north - pixel_west, pixel_size)
                 area = (north_overlap - south_overlap) * (east_width - west_width)
                 fraction = built_surface_to_fraction(surface[column, row], pixel_size^2)
-                building_height = mask_building_height(height[cld(column + height_offset[1], refinement),
-                                                              cld(row + height_offset[2], refinement)])
+                building_height = mask_building_height(stateindex(height, cld(column + height_offset[1], refinement),
+                                                                 cld(row + height_offset[2], refinement), 1))
                 built = ifelse(isfinite(fraction), area * fraction, 0)
                 # A built pixel without a positive height counts as built but carries no height.
                 measured = ifelse(building_height > 0, built, 0)
@@ -165,12 +166,14 @@ function ghsl_raster_fields(dataset::GHSBuilt, raster, cache_dir, arch; maximum_
         window_rows = min(rows, maximum_raster_cells ÷ window_columns)
 
         ghsl_mosaic(dataset.surface, region, cache_dir) do surface_mosaic
+            isnothing(surface_mosaic) && return nothing
             ghsl_mosaic(dataset.height, region, cache_dir) do height_mosaic
                 for first_row in 1:window_rows:rows, first_column in 1:window_columns:columns
                     last_column = min(columns, first_column + window_columns - 1)
                     last_row = min(rows, first_row + window_rows - 1)
                     # Each product window follows its native pixel faces.
                     surface, height = map((surface_mosaic, height_mosaic), (1, refinement)) do mosaic, factor
+                        isnothing(mosaic) && return Float32(NaN)
                         step = pixel_size * factor
                         window_west = west + fld(first_column - 1, factor) * step
                         window_east = west + cld(last_column, factor) * step
@@ -228,8 +231,8 @@ end
 
 function NumericalEarth.Lands.building_morphometry(grid::LatitudeLongitudeGrid, dataset::GHSBuilt; maximum_raster_cells = 100_000_000)
     arch = architecture(grid)
-    longitude_faces = on_architecture(CPU(), λnodes(grid, Face()))
-    latitude_faces  = on_architecture(CPU(), φnodes(grid, Face()))
+    longitude_faces = dimension_faces(grid, 1)
+    latitude_faces  = dimension_faces(grid, 2)
     λᵖ = Field{Center, Center, Nothing}(grid)
     h  = Field{Center, Center, Nothing}(grid)
     measured_plan_area_index = Field{Center, Center, Nothing}(grid)

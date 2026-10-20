@@ -297,9 +297,30 @@ end
                 field = Field(metadata, arch)
                 @test all(isnan, interior(field))
             end
+
+            row, column = ghsl_tile_index(longitude, 0.005)
+            rm(joinpath(GHSL.download_GHSL_cache, "tiles", basename(ghsl_tile_url(dataset.height, row, column))))
+            properties = building_morphometry(grid, dataset; maximum_raster_cells = 1000)
+            @test vec(Array(interior(properties.plan_area_index))) ≈ [0, 0.5] atol = 1e-6
+            @test all(iszero, interior(properties.measured_plan_area_index))
+            @test isnan(last(Array(interior(properties.mean_building_height))))
+            @test_throws ArgumentError urban_roughness(grid, dataset; surface_layer_height = 100, neighborhood = 100)
         end
     finally
         Downloads.default_downloader!(previous_downloader)
+    end
+end
+
+@testset "GHSL includes the last periodic longitude cell on $arch" for arch in test_architectures
+    dataset = GHSBuilt()
+    grid = LatitudeLongitudeGrid(arch; size = (2, 2),
+                                 longitude = (400, 800) .* longitude_per_meter,
+                                 latitude = (400, 800) .* latitude_per_meter,
+                                 topology = (Periodic, Bounded, Flat))
+    with_ghsl_tiles(dataset, fill(50.0, 120, 120), fill(20.0, 12, 12)) do
+        properties = building_morphometry(grid, dataset)
+        @test all(interior(properties.plan_area_index) .≈ 0.5)
+        @test all(interior(properties.mean_building_height) .≈ 20)
     end
 end
 

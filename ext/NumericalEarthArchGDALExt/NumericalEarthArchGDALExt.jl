@@ -5,11 +5,12 @@ using GDAL: OGREnvelope, ogr_l_getextent, vsireaddirrecursive
 using NCDatasets: NCDataset, defDim, defVar
 using Downloads: Downloads
 using NetworkOptions: NetworkOptions
-using NumericalEarth: NumericalEarth
+using NumericalEarth: NumericalEarth, stateindex
 
-using Oceananigans: Bounded, Center, CPU, Face, Field, Flat, LatitudeLongitudeGrid, interior
+using Oceananigans: Bounded, Center, CPU, Field, Flat, LatitudeLongitudeGrid, interior
 using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.Fields: dimension_faces
 using Oceananigans.Operators: Azᶜᶜᶜ
 using Oceananigans.Grids: λnodes, φnodes, longitude_in_same_window
 using Oceananigans.Utils: launch!
