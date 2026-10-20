@@ -1149,6 +1149,54 @@ end
     @test NumericalEarth.DataWrangling.default_cds_client() isa NumericalEarth.DataWrangling.CDSClient
 end
 
+@testset "retrieve_with_retries" begin
+    retrieve_with_retries = NumericalEarth.DataWrangling.retrieve_with_retries
+    is_transient_cds_error = NumericalEarth.DataWrangling.is_transient_cds_error
+
+    @test is_transient_cds_error(ErrorException("502 Bad Gateway"))
+    @test !is_transient_cds_error(ArgumentError("no client"))
+
+    @testset "succeeds on the first attempt" begin
+        calls = 0
+        retrieve(product, request, path) = (calls += 1; path)
+        @test retrieve_with_retries("product", Dict(), "path"; retrieve) == "path"
+        @test calls == 1
+    end
+
+    @testset "retries past a transient error, then succeeds" begin
+        # max_retries=2 keeps this to a single 5s backoff sleep.
+        calls = 0
+        function retrieve(product, request, path)
+            calls += 1
+            calls < 2 && error("502 Bad Gateway")
+            return path
+        end
+        @test retrieve_with_retries("product", Dict(), "path"; retrieve, max_retries=2) == "path"
+        @test calls == 2
+    end
+
+    @testset "rethrows a non-transient error immediately, without retrying" begin
+        calls = 0
+        function retrieve(product, request, path)
+            calls += 1
+            throw(ArgumentError("no client"))
+        end
+        @test_throws ArgumentError retrieve_with_retries("product", Dict(), "path"; retrieve, max_retries=5)
+        @test calls == 1
+    end
+
+    @testset "gives up and rethrows after max_retries transient failures" begin
+        # max_retries=2 keeps this to a single 5s backoff sleep.
+        calls = 0
+        function retrieve(product, request, path)
+            calls += 1
+            error("502 Bad Gateway")
+        end
+        @test_throws ErrorException retrieve_with_retries("product", Dict(), "path"; retrieve, max_retries=2)
+        @test calls == 2
+    end
+end
+
 @testset "ERA5 CDSAPIExt download through an injected retrieve" begin
     dataset = ERA5HourlySingleLevel()
     dates = [DateTime(2005, 2, 16, 6), DateTime(2005, 2, 16, 18)]
