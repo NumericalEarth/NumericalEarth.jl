@@ -90,7 +90,7 @@ end
 @testset "CATKE sees the penetrating shortwave" begin
     for arch in test_architectures
         grid = RectilinearGrid(arch, size=20, z=(-100, 0), topology=(Flat, Flat, Bounded))
-        closure = (default_ocean_closure(radiation_adjustment=true), VerticalScalarDiffusivity(κ=1e-5))
+        closure = (default_ocean_closure(), VerticalScalarDiffusivity(κ=1e-5))
         ocean = ocean_simulation(grid; closure, momentum_advection=nothing, tracer_advection=nothing, warn=false)
         model = ocean.model
         radiation = get_radiative_forcing(model)

@@ -160,13 +160,10 @@ function default_free_surface(grid::DistributedGrid;
     return free_surface
 end
 
-function default_ocean_closure(FT=Oceananigans.defaults.FloatType; radiation_adjustment=true)
+function default_ocean_closure(FT=Oceananigans.defaults.FloatType)
     mixing_length = CATKEMixingLength(Cᵇ=0.01)
     turbulent_kinetic_energy_equation = CATKEEquation(Cᵂϵ=1.0)
-    return CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization(), FT; 
-                                    mixing_length, 
-                                    turbulent_kinetic_energy_equation,
-                                    radiation_adjustment)
+    return CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization(), FT; mixing_length, turbulent_kinetic_energy_equation)
 end
 
 @inline masked_river_mouth_diffusivity(i, j, k, grid, clock, fields, mask) = @inbounds mask[i, j, k]
@@ -280,8 +277,7 @@ end
                                  clock = Clock(grid),
                                  stop_time = default_stop_time(grid, clock),
                                  Δt = estimate_maximum_Δt(grid),
-                                 radiative_forcing = default_radiative_forcing(grid),
-                                 closure = default_ocean_closure(radiation_adjustment = !isnothing(penetrative_radiation(radiative_forcing))),
+                                 closure = default_ocean_closure(),
                                  tracers = (:T, :S),
                                  free_surface = default_free_surface(grid),
                                  reference_density = 1020,
@@ -301,6 +297,7 @@ end
                                  tracer_advection = WENO(order=7, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
                                  equation_of_state = TEOS10EquationOfState(; reference_density),
                                  boundary_conditions::NamedTuple = NamedTuple(),
+                                 radiative_forcing = default_radiative_forcing(grid),
                                  materialize_buoyancy_gradients = true,
                                  river_routing = nothing,
                                  river_mouth_diffusivity = 0.1,
@@ -362,8 +359,7 @@ override the defaults on a per-field basis.
   `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since 
   Reactant does not support `stop_time`.
 - `Δt`: Timestep used by the `Simulation`. Defaults to the maximum stable timestep estimated from the `grid`.
-- `closure`: A turbulence or mixing closure. Defaults to `default_ocean_closure()`, with `radiation_adjustment` on when
-  `radiative_forcing` is a penetrating radiation.
+- `closure`: A turbulence or mixing closure. Defaults to `default_ocean_closure()`.
 - `tracers`: Tuple of tracer names. Defaults to `(:T, :S)`.
 - `free_surface`: Free–surface solver. Defaults to `default_free_surface(grid)`.
 - `reference_density`: Reference seawater density used by the equation of state.
@@ -392,8 +388,8 @@ override the defaults on a per-field basis.
 - `tracer_advection`: Tracer advection scheme or named tuple of schemes. Defaults to `WENO(order=7, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5))`.
 - `equation_of_state`: Equation of state object. Defaults to TEOS-10 (`TEOS10EquationOfState`).
 - `boundary_conditions`: User-supplied boundary conditions; merged with defaults.
-- `radiative_forcing`: Additional temperature forcing; merged into `forcing`. A `CATKEVerticalDiffusivity` with
-  `radiation_adjustment = true` accounts for it in its convective scales.
+- `radiative_forcing`: Additional temperature forcing; merged into `forcing`. A `CATKEVerticalDiffusivity` accounts for
+  it in its convective scales.
 - `materialize_buoyancy_gradients`: whether the buoyancy gradients are precomputed and stored in fields. Default: `false`.
 - `river_routing`: `NamedTuple` of [`RiverRouting`](@ref), typically `land.river_routing`. Defaults to
   `nothing`, which leaves `closure` untouched.
@@ -406,8 +402,7 @@ function hydrostatic_ocean_simulation(grid;
                                       clock = Clock(grid),
                                       stop_time = default_stop_time(grid, clock),
                                       Δt = estimate_maximum_Δt(grid),
-                                      radiative_forcing = default_radiative_forcing(grid),
-                                      closure = default_ocean_closure(radiation_adjustment = !isnothing(penetrative_radiation(radiative_forcing))),
+                                      closure = default_ocean_closure(),
                                       tracers = (:T, :S),
                                       free_surface = default_free_surface(grid),
                                       reference_density = 1020,
@@ -427,6 +422,7 @@ function hydrostatic_ocean_simulation(grid;
                                       tracer_advection = WENO(order=7, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
                                       equation_of_state = TEOS10EquationOfState(; reference_density),
                                       boundary_conditions::NamedTuple = NamedTuple(),
+                                      radiative_forcing = default_radiative_forcing(grid),
                                       materialize_buoyancy_gradients = false,
                                       river_routing = nothing,
                                       river_mouth_diffusivity = 0.1,

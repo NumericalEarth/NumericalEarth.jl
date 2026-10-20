@@ -25,7 +25,7 @@ using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids,
 using Oceananigans.Operators: active_weighted_ℑxyᶠᶜᶜ, active_weighted_ℑxyᶜᶠᶜ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TimeSteppers: Clock
-using Oceananigans.TurbulenceClosures: TurbulenceClosures, κzᶜᶜᶠ, VerticalScalarDiffusivity, penetrative_radiation
+using Oceananigans.TurbulenceClosures: TurbulenceClosures, κzᶜᶜᶠ, VerticalScalarDiffusivity
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: TKEBasedVerticalDiffusivities,
                                                                      CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
