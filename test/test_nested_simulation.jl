@@ -439,6 +439,25 @@ end
     @test moisture_prognostic_name(μ) == :ρqᵉ
 end
 
+@testset "state exchanger: Float32 parent, Float64 constants" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    constants = ThermodynamicConstants(Float64)
+    pˢᵗ, T₀, p₀, qᵛ₀ = 1e5, 283.15, 9e4, 8.0e-3
+
+    grid = RectilinearGrid(Float32; size = (4, 4, 4), x = (-1, 1), y = (-1, 1), z = (0, 1),
+                           topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(grid, [0.0, 1.0, 2.0])
+    set!(parent.temperature,       (x, y, z, t) -> T₀)
+    set!(parent.specific_humidity, (x, y, z, t) -> qᵛ₀)
+    set!(parent.pressure,          (x, y, z, t) -> p₀)
+
+    condensates = (qᶜˡ = CenterField(grid), qʳ = CenterField(grid), qᶜⁱ = CenterField(grid), qˢ = CenterField(grid))
+    ex = ext.state_exchanger(parent, pˢᵗ, constants; condensates)
+    at(f) = Array(interior(f))[1, 1, 1]
+    θˡⁱ = at(ex.prognostic.ρθ[1]) / at(ex.prognostic.ρᵈ[1])
+    @test θˡⁱ ≈ ext.liquid_ice_potential_temperature(T₀, qᵛ₀, 0.0, 0.0, p₀, pˢᵗ, constants) rtol = 1e-6
+end
+
 @testset "Breeze AtmosphereModel as a NestedSimulation child on $(arch)" for arch in test_architectures
     # Parent: a 3D PrescribedAtmosphere strictly bracketing the child,
     # holding a uniform state. Velocity slots carry momentum (ρu, ρv) per the
