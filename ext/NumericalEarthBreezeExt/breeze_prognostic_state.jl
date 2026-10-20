@@ -35,10 +35,10 @@ using Breeze.Thermodynamics: MoistureMassFractions, LiquidIcePotentialTemperatur
 # divides the latent term again in `θˡⁱ = (T − (ℒˡqˡ + ℒⁱqⁱ)/cᵖᵐ)/Π`. `pˢᵗ` is the caller's
 # `standard_pressure`.
 @inline function liquid_ice_potential_temperature(T, qᵛ, qˡ, qⁱ, p, pˢᵗ, constants)
-    FT = typeof(T)
+    FT = eltype(constants)
     q  = MoistureMassFractions(convert(FT, qᵛ), convert(FT, qˡ), convert(FT, qⁱ))
     𝒰  = LiquidIcePotentialTemperatureState(zero(FT), q, convert(FT, pˢᵗ), convert(FT, p))
-    return with_temperature(𝒰, T, constants).potential_temperature
+    return with_temperature(𝒰, convert(FT, T), constants).potential_temperature
 end
 
 # `KernelFunctionOperation` form of the same map. `getvalue` indexes a `Field` or `AbstractOperation` and
