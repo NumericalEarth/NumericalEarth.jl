@@ -336,8 +336,8 @@ end
 #####
 
 default_ai_temperature(::Nothing) = nothing
-biogeochemical_interface(exchanger, ocean; kwargs...) = biogeochemical_interface(exchanger, ocean, ocean.model.biogeochemistry; kwargs...)
-biogeochemical_interface(exchanger, ocean::Nothing; kwargs...) = NamedTuple()
+biogeochemical_interface(exchanger, ocean; kwargs...) = NamedTuple()
+biogeochemical_interface(exchanger, ocean::Simulation; kwargs...) = biogeochemical_interface(exchanger, ocean, ocean.model.biogeochemistry; kwargs...)
 biogeochemical_interface(exchanger, ocean, biogeochemistry; kwargs...) = NamedTuple()
 
 function default_ao_specific_humidity(ocean)
