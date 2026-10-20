@@ -13,7 +13,7 @@
 using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
-using ClimaSeaIce: IncrementalRemapping
+using ClimaSeaIce: IncrementalRemapping, ConductiveFlux, UniformThicknessDistribution
 using WorldOceanAtlasTools
 using Dates
 using Printf
@@ -102,7 +102,7 @@ salinity_flux = ConservativeSurfaceFluxRestoring(SurfaceFluxRestoring(salinity_r
 free_surface       = SplitExplicitFreeSurface(grid; substeps = 300)
 momentum_advection = WENOVectorInvariant(order = 5, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl = 0.5))
 
-ocean = ocean_simulation(grid; momentum_advection, free_surface, radiative_forcing,
+ocean = ocean_simulation(grid; momentum_advection, free_surface, radiative_forcing, reference_density = 1026,
                          closure = (vertical_mixing, eddy_closure, horizontal_viscosity, background_mixing),
                          river_routing = land.river_routing,
                          additional_surface_fluxes = (; S = salinity_flux))
@@ -110,10 +110,14 @@ ocean = ocean_simulation(grid; momentum_advection, free_surface, radiative_forci
 # ### Sea Ice simulation
 #
 # The sea ice has EVP rheology, a snow layer over a slab of ice, and is advected by incremental remapping.
-# The ice--ocean drag is computed against the ocean velocity averaged over the top 6 m.
+# The ice--ocean drag is computed against the ocean velocity averaged over the top 6 m. Heat is conducted
+# through snow and ice as if the thickness were spread uniformly over four sub-grid categories, which
+# raises the effective conductivity by 1 + 1/3 + 1/5 + 1/7.
 
 dynamics = NumericalEarth.SeaIces.sea_ice_dynamics(grid, ocean; sea_ice_ocean_drag_reference_depth = 6)
-sea_ice = sea_ice_simulation(grid, ocean; dynamics, advection = IncrementalRemapping())
+internal_heat_flux = ConductiveFlux(conductivity = 2, itd_shape = UniformThicknessDistribution(categories = 4))
+
+sea_ice = sea_ice_simulation(grid, ocean; dynamics, internal_heat_flux, advection = IncrementalRemapping())
 
 # ### Initial condition
 #
@@ -145,9 +149,9 @@ radiation = JRA55PrescribedRadiation(arch; ocean_surface, sea_ice_surface)
 # Over the ocean, the turbulent fluxes follow COARE 3.6, with a wind-dependent Charnock parameter,
 # scalar roughness lengths that depend on the air viscosity, and a minimum gustiness of 0.5 m s⁻¹.
 # Over the sea ice the roughness lengths are fixed at 5 × 10⁻⁴ m for momentum and 5 × 10⁻⁵ m for heat and
-# moisture. The saturation specific humidity over the ocean is 98% of the pure-water value, enhanced by
-# the moist-air factor of Gill (1982). The ice--ocean heat flux follows the three-equation formulation,
-# with a friction velocity computed from the ice--ocean stress.
+# moisture. The saturation specific humidity is enhanced by the moist-air factor of Gill (1982) over both
+# the ocean, where it is 98% of the pure-water value, and the sea ice. The ice--ocean heat flux follows the
+# three-equation formulation, with a friction velocity computed from the ice--ocean stress.
 
 using NumericalEarth.EarthSystemModels: AtmosphericThermodynamics
 using NumericalEarth.EarthSystemModels.InterfaceComputations: COARELogarithmicSimilarityProfile,
@@ -160,9 +164,13 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: COARELogarithmicSi
                                                               MomentumBasedFrictionVelocity,
                                                               atmosphere_sea_ice_stability_functions
 
+saturation_enhancement = GillSaturationEnhancement()
+
 atmosphere_ocean_interface_specific_humidity =
-    ImpureSaturationSpecificHumidity(AtmosphericThermodynamics.Liquid(), 0.98;
-                                     saturation_enhancement = GillSaturationEnhancement())
+    ImpureSaturationSpecificHumidity(AtmosphericThermodynamics.Liquid(), 0.98; saturation_enhancement)
+
+atmosphere_sea_ice_interface_specific_humidity =
+    ImpureSaturationSpecificHumidity(AtmosphericThermodynamics.Ice(); saturation_enhancement)
 
 air_kinematic_viscosity = TemperatureDependentAirViscosity()
 
@@ -192,7 +200,8 @@ sea_ice_ocean_heat_flux = ThreeEquationHeatFlux(sea_ice; heat_transfer_coefficie
 
 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation,
                                  atmosphere_ocean_fluxes, atmosphere_sea_ice_fluxes, sea_ice_ocean_heat_flux,
-                                 atmosphere_ocean_interface_specific_humidity)
+                                 atmosphere_ocean_interface_specific_humidity,
+                                 atmosphere_sea_ice_interface_specific_humidity)
 
 simulation = Simulation(coupled_model; Δt=90minutes, stop_time=90days)
 

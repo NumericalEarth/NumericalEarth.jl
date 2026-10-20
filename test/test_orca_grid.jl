@@ -101,6 +101,14 @@ end
     @test grid.Nz == 5
 end
 
+@testset "ORCAGrid takes its vertical size from z on $(arch)" for arch in test_architectures
+    for z in (ExponentialDiscretization(7, -5000, 0; scale = 1000, mutable = true), collect(range(-5000, 0, length = 8)))
+        grid = ORCAGrid(arch; dataset=ORCAOne(), z, with_bathymetry=false)
+        @test grid.Nz == 7
+        @test first(znodes(grid, Face())) ≈ -5000
+    end
+end
+
 @testset "ORCAGrid with south_rows_to_remove on $(arch)" for arch in test_architectures
     Nremove = 40
     grid = ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove=Nremove)
