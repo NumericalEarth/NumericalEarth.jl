@@ -256,6 +256,62 @@ end
     @test mesh.AzFC == shift_x(e1u .* e2u)
 end
 
+@testset "ORCA narrowed strait widths and depths can be set" begin
+    Bathymetry = NumericalEarth.Bathymetry
+    path = metadata_path(Metadatum(:mesh_mask; dataset=ORCAOne()))
+
+    ds = Dataset(path)
+    overlap = periodic_overlap(ORCAOne())
+    Nx, Ny = size(Bathymetry.read_2d_nemo_variable(ds, "glamt"))
+    read_metric(name) = Bathymetry.orient_xy(Bathymetry.read_2d_nemo_variable(ds, name), Nx, Ny; name)
+    e1t, e2t, e1v, e2v = read_metric("e1t"), read_metric("e2t"), read_metric("e1v"), read_metric("e2v")
+
+    straits = (lombok = (longitude = 115.5, latitude = -8.5, width = 49e3, depth = 240),
+               ombai  = (longitude = 124.5, latitude = -8.5, width = Inf),
+               gibraltar = (longitude = -5.4, latitude = 36.2, width = 13e3))
+
+    mesh = Bathymetry.read_orca_staggered_mesh(ds, overlap; straits)
+
+    # Lombok, at NEMO's (44, 165): faces, channel cell and velocity cells all take the new width
+    @test mesh.e1t[44, 165] == 49e3
+    @test mesh.AzCC[44, 165] ≈ 49e3 * e2t[44, 165]
+    for j in (164, 165)
+        @test mesh.e1v[44, j] == 49e3
+        @test mesh.AzCF[44, j] == 49e3 * e2v[44, j]
+    end
+
+    # Ombai is no longer narrowed: its faces open to their corner distance and its channel cell keeps its size
+    for j in (164, 165)
+        @test mesh.e1v[53, j] > 100e3
+        @test mesh.AzCF[53, j] == mesh.e1v[53, j] * e2v[53, j]
+    end
+    @test mesh.e1t[53, 165] == e1t[53, 165]
+
+    # Gibraltar's e2u faces, shifted by one into Oceananigans' u convention; a strait left out keeps its width
+    @test mesh.e2u[283, 241] == mesh.e2u[284, 241] == 13e3
+    @test mesh.e1v[55, 181] == e1v[55, 181] == 30e3
+
+    # The depth is carried with its channel for the bathymetry
+    @test [(s.i, s.j, s.depth) for s in mesh.straits if !isnothing(s.depth)] == [(44, 165, 240)]
+
+    # A location with no narrowed strait nearby, or two entries for one strait, is an error
+    @test_throws ArgumentError Bathymetry.read_orca_staggered_mesh(ds, overlap;
+                                   straits = ((longitude = 0, latitude = 0, width = 1e3),))
+    @test_throws ArgumentError Bathymetry.read_orca_staggered_mesh(ds, overlap;
+                                   straits = ((longitude = 115.5, latitude = -8.5, width = 2e4),
+                                              (longitude = 115.6, latitude = -8.4, width = 3e4)))
+    close(ds)
+
+    # The depth reaches the bottom height, at NEMO T(44, 165) = Oceananigans (43, 130); GridFittedBottom snaps
+    # it to the 50 m faces, so the file's 166 m becomes 150 m and 240 m becomes 250 m
+    z = collect(-5500:50:0)
+    grid    = ORCAGrid(CPU(); dataset=ORCAOne(), Nz=length(z)-1, z, straits)
+    default = ORCAGrid(CPU(); dataset=ORCAOne(), Nz=length(z)-1, z)
+    @test grid.immersed_boundary.bottom_height[43, 130, 1] ≈ -250
+    @test default.immersed_boundary.bottom_height[43, 130, 1] ≈ -150
+    @test grid.underlying_grid.Δxᶜᶠᵃ[43, 130] == grid.underlying_grid.Δxᶜᶠᵃ[43, 131] == 49e3
+end
+
 @testset "ORCAOne bathymetry retrieval" begin
     bathy_md = Metadatum(:bottom_height; dataset=ORCAOne())
     download(bathy_md)
