@@ -119,7 +119,7 @@ function boundary_strip_regions(grid, width, sides)
                east  = KernelParameters(Nx-Wx+1:Nx, 1:Ny, 1:Nz),
                south = KernelParameters(i₁:i₂, 1:Wy, 1:Nz),
                north = KernelParameters(i₁:i₂, Ny-Wy+1:Ny, 1:Nz))
-    return NamedTuple{sides}(map(side -> regions[side], sides))
+    return regions[sides]
 end
 
 @kernel function _add_forcing!(G, grid, forcing, clock, model_fields)

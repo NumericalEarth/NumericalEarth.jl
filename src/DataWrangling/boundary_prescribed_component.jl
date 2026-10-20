@@ -27,8 +27,7 @@ function EarthSystemModels.BoundaryPrescribedComponent(Component, grid::Abstract
                south = BoundingBox(longitude = λ, latitude = (φ₁ - padding, φ₁ + w + padding)),
                north = BoundingBox(longitude = λ, latitude = (φ₂ - w - padding, φ₂ + padding)))
 
-    strips = NamedTuple{sides}(Component(regions[side], dates, dataset; architecture = architecture(grid), kw...)
-                               for side in sides)
+    strips = map(region -> Component(region, dates, dataset; architecture = architecture(grid), kw...), regions[sides])
 
     return BoundaryPrescribedComponent(; strips...)
 end
