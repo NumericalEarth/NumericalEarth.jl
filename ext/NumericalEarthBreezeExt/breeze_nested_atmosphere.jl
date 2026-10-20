@@ -5,7 +5,7 @@
 # The child's prognostic variables (dry density `ρᵈ`, momentum densities `ρu`/`ρv`, potential-temperature
 # density `ρθ`, moisture density `ρqᵛᵉ`) are precomputed from the parent's raw state ON THE PARENT GRID and
 # stored as `FieldTimeSeries` (see `breeze_state_exchanger.jl`). The child's lateral boundary conditions
-# and interior Davies relaxation then just interpolate those precomputed prognostics in space + time —
+# and lateral boundary relaxation then just interpolate those precomputed prognostics in space + time —
 # there is no thermodynamic combine inside the tendency/halo kernels. Both layers reuse the generic
 # FTS-driven `parent_boundary_conditions` / `parent_forcings` builders, so a child forcing/BC specializes
 # on a plain `FieldTimeSeries` (the same type Breeze compiles for any FTS forcing).
@@ -81,10 +81,10 @@ struct SmoothStepRamp end
 @inline (::CosineRamp)(s)     = (1 + cos(π * s)) / 2
 @inline (::SmoothStepRamp)(s) = 1 - s^2 * (3 - 2s)
 
-# Davies mask: 1 at the lateral walls, ramping to 0 over the outermost `width` cells.
+# Lateral boundary relaxation mask: 1 at the lateral walls, ramping to 0 over the outermost `width` cells.
 # The mask is evaluated per cell per stage inside the forcing kernel, so the default ramp
 # is the smoothstep polynomial (2 multiplies) rather than the ~1%-different raised cosine.
-function davies_relaxation_mask(grid, width; ramp = SmoothStepRamp())
+function boundary_relaxation_mask(grid, width; ramp = SmoothStepRamp())
     # `w` may use local values (spacing is rank-uniform) but the extents must be the GLOBAL
     # domain's, or partitioned ranks would relax at their seams (`all_reduce` is the identity
     # on serial architectures). Each capture is assigned exactly once: reassignment boxes it,
@@ -138,7 +138,7 @@ function relax_boundary_strips!(model, strips)
     return nothing
 end
 
-# Davies relaxation toward the strips' derived prognostics, applied over each strip's region by a
+# Lateral boundary relaxation toward the strips' derived prognostics, applied over each strip's region by a
 # tendency callback. Momentum and energy relax the specific state weighted by the child's own coupling
 # density; moisture relaxes its density.
 function boundary_relaxation(child, prognostic, rate, mask, width)
@@ -249,12 +249,12 @@ $(TYPEDSIGNATURES)
 Build a Breeze child atmosphere over `child_grid` nested in `parent_atmosphere`, wrapped in a
 `NestedModel`. The child's prognostics (`ρᵈ, ρu, ρv, ρθ, <moisture>`) are precomputed from the parent's
 raw state on the parent grid as `FieldTimeSeries` (see `child_prognostic_field_time_series`); the child's
-lateral boundary conditions — and, when `relaxation_rate` (s⁻¹) is given, its interior Davies relaxation
+lateral boundary conditions — and, when `relaxation_rate` (s⁻¹) is given, its lateral boundary relaxation
 over `relaxation_mask` (default: a cosine ramp over the outermost `relaxation_width` cells) — interpolate
 those precomputed prognostics (via `parent_boundary_conditions` / `parent_forcings`).
 
 When `parent_atmosphere` is a `BoundaryPrescribedComponent` of `PrescribedAtmosphere`s, each side's boundary conditions
-interpolate that side's strip, and the Davies relaxation acts only on the cells of each strip's
+interpolate that side's strip, and the lateral boundary relaxation acts only on the cells of each strip's
 relaxation zone, through a tendency callback the `NestedModel` adds to the child's at every time step.
 `parent_condensates` is then keyed by side.
 
@@ -296,7 +296,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
                                                               child_grid;
     relaxation_rate = nothing,
     relaxation_width = default_relaxation_width,
-    relaxation_mask = davies_relaxation_mask(child_grid, relaxation_width),
+    relaxation_mask = boundary_relaxation_mask(child_grid, relaxation_width),
     sides = (:west, :east, :south, :north),
     thermodynamic_constants = ThermodynamicConstants(eltype(child_grid)),
     base_pressure = nothing,
@@ -371,7 +371,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
 
     child_bcs = merge_boundary_conditions(nested_bcs, drag_bcs)
 
-    # Interior Davies relaxation toward the precomputed prognostics. Oceananigans' FTS `Relaxation`
+    # Lateral boundary relaxation toward the precomputed prognostics. Oceananigans' FTS `Relaxation`
     # calls `mask(x, y, z)`, so wrap a scalar mask in a callable. Momentum and energy relax toward the
     # parent's SPECIFIC state, which `SpecificForcing` weights by the child's own `ρᵈ` at kernel time;
     # relaxing toward the parent's `ρθ`/`ρu`/`ρv` instead equilibrates at `θ = θₚ ρᵈₚ / ρᵈ`, an absolute
@@ -384,7 +384,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # of replacing it in the `merge` below.
     relax_mask = relaxation_mask isa Number ? Returns(relaxation_mask) : relaxation_mask
     boundary_parent = parent_atmosphere isa BoundaryPrescribedComponent
-    davies = if isnothing(relaxation_rate) || boundary_parent
+    relax = if isnothing(relaxation_rate) || boundary_parent
         NamedTuple()
     else
         specific_targets = (ρθ = prognostic.θ, ρu = prognostic.u, ρv = prognostic.v)
@@ -394,12 +394,12 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     end
 
     # ρw Rayleigh sponge over BOTH the top `damping_depth` meters AND the lateral relaxation zone. The
-    # horizontal Davies nudging drives a persistent vertical-velocity wave up the (inflow) lateral walls
+    # lateral boundary relaxation drives a persistent vertical-velocity wave up the (inflow) lateral walls
     # (nudging the horizontal mass/momentum harder makes it worse); `ρw` is otherwise undamped there, so
     # the wave amplifies up the wall column until a top-only sponge catches it too late — at the wall/lid
     # corner, where ρ collapses and the run NaNs past ~2 h. Damping `ρw` toward zero across the wall zone,
     # where the parent's large-scale `w` is negligible, absorbs the creep at its source. One `Relaxation`
-    # on `ρw` with the pointwise max of the lid and lateral (Davies) masks.
+    # on `ρw` with the pointwise max of the lid and lateral boundary relaxation masks.
     lid_mask = lid_sponge_mask(child_grid, damping_depth)
     sponge_mask = (λ, φ, z) -> max(lid_mask(λ, φ, z), relax_mask(λ, φ, z))
     lid_sponge = (; ρw = Relaxation(rate = damping_rate, mask = sponge_mask))
@@ -410,7 +410,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     child = NumericalEarth.Atmospheres.atmosphere_model(child_grid;
         thermodynamic_constants, microphysics, momentum_advection, scalar_advection, coriolis, closure, dynamics,
         boundary_conditions = merge_boundary_conditions(child_bcs, NamedTuple(boundary_conditions)),
-        forcing = merge(lid_sponge, davies, NamedTuple(forcing)),
+        forcing = merge(lid_sponge, relax, NamedTuple(forcing)),
         initialize = false,
         kw...)
 

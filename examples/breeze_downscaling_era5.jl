@@ -9,7 +9,7 @@
 # `nested_atmosphere_model(grid, dataset; dates, …)` builds the whole nest: an ERA5 "parent"
 # `BoundaryPrescribedComponent` — `PrescribedAtmosphere` strips of ERA5 on its native 0.25° pressure-level
 # grid, covering the child's lateral boundaries — driving a Breeze "child" through open
-# lateral boundary conditions + interior Davies relaxation, both derived on the fly from the parent's
+# lateral boundary conditions + lateral boundary relaxation, both derived on the fly from the parent's
 # raw state. The constructor also initializes the child from the reanalysis and spins it into balance,
 # so a plain `Simulation(model)` then steps the ready nest.
 #
@@ -114,12 +114,12 @@ grid = LatitudeLongitudeGrid(arch;
 # `nested_atmosphere_model(grid, dataset; dates, …)` loads ERA5 on its native pressure-level grid along
 # strips that cover the child's boundaries and relaxation zone (padded by two native ERA5 cells),
 # initializes the child from a full-domain ERA5 snapshot, anchors the default split-explicit compressible dynamics at the domain-mean
-# ERA5 surface pressure, derives the parent-driven lateral BCs + Davies relaxation (cosine ramp over
+# ERA5 surface pressure, derives the parent-driven lateral BCs + boundary relaxation (cosine ramp over
 # `relaxation_width` cells), materializes the blended `terrain`, and wraps parent + child in a
 # `NestedModel` whose `time_step!` advances the child then ticks the parent clock.
 
 # Time window: a `(start, end)` tuple — the hourly forcing cadence is the dataset's own. The initial
-# outer time step is gentle (the adaptive wizard below ramps it). The Davies relaxation is an *explicit*
+# outer time step is gentle (the adaptive wizard below ramps it). The lateral boundary relaxation is an *explicit*
 # nudge `dφ/dt = −r(φ − φₚₐᵣₑₙₜ)`, stable only for `r·Δt ≲ 2`, so its rate is a fixed `1/300 s⁻¹` — small
 # enough that `r·Δt` stays well below 1 even at the wizard's `max_Δt`, rather than tied to Δt (which would
 # climb into the over-relaxation regime as Δt grows). Momentum uses a narrower `WENO(5)` stencil, which

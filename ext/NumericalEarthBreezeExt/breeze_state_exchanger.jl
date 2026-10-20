@@ -106,7 +106,7 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
         ρv[i, j, k]   = ρᵈ[i, j, k] * vₚ[i, j, k]
         ρqᵛᵉ[i, j, k] = ρ * qᵛᵉ
 
-        # When performing Davies `Relaxation` to a `PrescribedAtmosphere` parent, we construct
+        # When performing lateral boundary `Relaxation` toward a `PrescribedAtmosphere` parent, we construct
         # `SpecificForcing`s with these intensive quantities
         #
         # Note: we can do a memory optimization here for `parent_atmosphere.velocities.*`

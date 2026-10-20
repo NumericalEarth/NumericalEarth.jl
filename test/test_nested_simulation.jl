@@ -540,9 +540,9 @@ end
     @test length(nested.exchanger.prognostic.ρᵈ.backend) == 3
 end
 
-# The Davies relaxation is keyed by the density-weighted prognostic, so a caller's own specific-key
+# The lateral boundary relaxation is keyed by the density-weighted prognostic, so a caller's own specific-key
 # forcing combines with it rather than replacing it.
-@testset "Davies relaxation survives a caller-supplied specific forcing" begin
+@testset "Lateral boundary relaxation survives a caller-supplied specific forcing" begin
     parent_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 4),
                                         longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),
                                         z = (0, 1), topology = (Bounded, Bounded, Bounded))
@@ -564,7 +564,7 @@ end
 
     ρθ_forcing = nested.child.forcing.ρθ
     @test ρθ_forcing isa MultipleForcings
-    @test length(ρθ_forcing.forcings) == 2                       # Davies relaxation + the caller's θ forcing
+    @test length(ρθ_forcing.forcings) == 2                       # boundary relaxation + the caller's θ forcing
     @test all(f -> f isa SpecificForcing, ρθ_forcing.forcings)   # both ρᵈ-weighted at kernel time
 end
 

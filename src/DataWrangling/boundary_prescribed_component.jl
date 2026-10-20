@@ -5,7 +5,7 @@ $(TYPEDSIGNATURES)
 
 Return a [`BoundaryPrescribedComponent`](@ref NumericalEarth.EarthSystemModels.BoundaryPrescribedComponent)
 whose strips are `Component`s holding `dataset` at `dates` along the lateral boundaries of `grid`.
-Each strip spans its whole side and reaches `width` cells of `grid` inward, matching a Davies
+Each strip spans its whole side and reaches `width` cells of `grid` inward, matching a lateral boundary
 relaxation zone of `width` cells; every strip is padded by `padding` degrees. Keyword arguments
 `kw` go to each strip's `Component(region, dates, dataset; kw...)`, for example
 `Component = PrescribedAtmosphere`.
