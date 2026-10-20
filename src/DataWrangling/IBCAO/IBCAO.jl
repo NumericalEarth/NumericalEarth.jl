@@ -21,6 +21,7 @@ import ..DataWrangling:
 download_IBCAO_cache::String = ""
 function __init__()
     global download_IBCAO_cache = DataWrangling.download_cache("IBCAO")
+    return nothing
 end
 
 IBCAO_bathymetry_variable_names = Dict(

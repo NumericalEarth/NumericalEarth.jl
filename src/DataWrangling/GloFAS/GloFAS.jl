@@ -17,6 +17,7 @@ download_GloFAS_cache::String = ""
 
 function __init__()
     global download_GloFAS_cache = DataWrangling.download_cache("GloFAS")
+    return nothing
 end
 
 #####
@@ -74,14 +75,6 @@ function DataWrangling.metadata_filename(dataset::GloFASDataset, name, date, reg
     ds = dataset_name(dataset)
     return string(var, "_", ds, "_", date_str(date), region_suffix(region), ".nc")
 end
-
-function inpainted_metadata_filename(metadata::GloFASMetadatum)
-    without_extension = metadata.filename[1:end-3]
-    return without_extension * "_inpainted.jld2"
-end
-
-DataWrangling.inpainted_metadata_path(metadata::GloFASMetadatum) =
-    joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 include("glofas_reanalysis.jl")
 include("glofas_prescribed_land.jl")

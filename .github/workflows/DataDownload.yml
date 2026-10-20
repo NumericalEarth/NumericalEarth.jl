@@ -89,12 +89,24 @@ jobs:
                      test_aviso_downloading
                      test_globfp3d_downloading
                      test_ghsl_downloading
-                     test_esaworldcover_downloading)
+                     test_esaworldcover_downloading
+                     test_glofas_downloading
+                     test_openlandmap_downloading)
           # ASTER GED needs NASA Earthdata credentials
           if [[ -n "${EARTHDATA_USERNAME}" ]]; then
             TEST_ARGS+=(test_asterged_downloading)
           fi
           echo "runtest_test_args=${TEST_ARGS[@]}" | tee -a "${GITHUB_ENV}"
+      # From the root project `PythonCall` is a weakdep, so CondaPkg installs no Python and
+      # `NumericalEarthVerosExt` fails to precompile; `test` has it as a direct dep.
+      - name: Instantiate test environment
+        timeout-minutes: 60
+        shell: bash
+        run: |
+          julia --project=test --color=yes --check-bounds=yes -e '
+              using Pkg;
+              Pkg.instantiate()
+          '
       - name: Run tests
         run: |
           julia --project --color=yes --check-bounds=yes -e '

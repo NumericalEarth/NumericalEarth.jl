@@ -12,7 +12,8 @@ export AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum
 export metadata_time_step, metadata_epoch
 export supported_datasets
 export LinearlyTaperedPolarMask
-export DatasetRestoring, SurfaceFluxRestoring
+export DatasetRestoring, SurfaceFluxRestoring, ConservativeSurfaceFluxRestoring
+export update_restoring_flux!, ConservativeSurfaceFluxRestoringCallback
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
 export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
@@ -26,17 +27,19 @@ using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, pretty_filesize, location
 using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
                                   on_architecture, child_architecture
+using Oceananigans.AbstractOperations: Average
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
 using Oceananigans.DistributedComputations: DistributedComputations, @root, all_reduce
 using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
                           LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes,
                           topology, x_domain, y_domain, z_domain
-using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
+using Oceananigans.Fields: Fields, Field, compute!, interpolate, interpolate!, interior, set!
 using Oceananigans.Grids: node
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
 using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
 using Oceananigans.Utils: launch!, prettytime, prettysummary
+using DocStringExtensions: TYPEDSIGNATURES
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
 using ZipFile: ZipFile
@@ -179,16 +182,25 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Download `url` to `path` with `Downloads.download(url, path; kw...)`, retrying up to `attempts`
-times on failure and discarding a partial file between attempts.
+Download `url` to `path`, retrying up to `attempts` times on failure. Each transfer lands beside the
+destination and is renamed into place once it has arrived in full, so `path` never holds a partial file.
+
+Extra keyword arguments are forwarded to `Downloads.download` (`progress`, `downloader`, ...).
 """
 function download_with_retries(url, path; attempts = 3, description = "Download", kw...)
+    dir = dirname(path)
+    mkpath(dir)
+
     for attempt in 1:attempts
         try
-            Downloads.download(url, path; kw...)
+            # Same filesystem as the destination, so the rename is atomic rather than a copy.
+            mktemp(dir) do partial_path, partial_io
+                close(partial_io)
+                Downloads.download(url, partial_path; kw...)
+                mv(partial_path, path; force=true)
+            end
             return path
         catch error
-            rm(path, force = true)
             attempt == attempts && rethrow()
             @warn "$description failed (attempt $attempt of $attempts); retrying..." url error
             sleep(2attempt)
@@ -200,8 +212,8 @@ end
 ##### FieldTimeSeries utilities
 #####
 
-function save_field_time_series!(fts; path, name, overwrite_existing=false)
-    overwrite_existing && rm(path; force=true)
+function save_field_time_series!(fts; path, name, overwrite_files=false)
+    overwrite_files && rm(path; force=true)
 
     times = on_architecture(CPU(), fts.times)
     grid  = on_architecture(CPU(), fts.grid)
@@ -255,13 +267,11 @@ Arguments
 
     within julia. More detailed instructions for obtaining WebDAV credentials are at:
 
-        https://github.com/CliMA/NumericalEarth.jl/blob/main/src/DataWrangling/ECCO/README.md
+        https://github.com/NumericalEarth/NumericalEarth.jl/blob/main/src/DataWrangling/ECCO/README.md
 """
 # `download(::Metadata)` extends `Downloads.download` (the modern stdlib function,
 # not `Base.download` which is a 1.0-era shim). Per-dataset methods are added
 # within each dataset module via `Downloads.download(metadata::FooMetadata) = ...`.
-
-function inpainted_metadata_path end
 
 """
     z_interfaces(dataset)
@@ -393,6 +403,8 @@ function default_inpainting(metadata)
         return NearestNeighborInpainting(5)
     end
 end
+
+include("prescribed_radiation.jl")
 
 # Datasets
 include("ETOPO/ETOPO.jl")

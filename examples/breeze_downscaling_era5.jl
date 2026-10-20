@@ -30,8 +30,8 @@
 # - Single nest only (ERA5 → 12 km; coarsened 4× from Fan's 3 km Domain 3 for a fast configuration).
 # - The land is a slab: no soil column, no vegetation, and no boundary-layer or cumulus
 #   parameterization — diffusion is numerical, and deep convection is resolved on the grid.
-# - Snow does not reach the bucket yet (the coupler diagnoses the child's surface rain flux,
-#   but no snow analog); immaterial for this warm-season case.
+# - No snowpack: the child's frozen precipitation reaches the bucket as liquid water;
+#   immaterial for this warm-season case.
 
 using NumericalEarth
 using Oceananigans
@@ -212,7 +212,7 @@ radiation = RadiativeTransferModel(grid, AllSkyOptics(), nest.child.thermodynami
 # bounded by the advective CFL (acoustic modes are substepped).
 
 Δt = 10
-atmosphere = Simulation(nest; Δt)   ## the coupled model manages Δt; this sets only the initial value
+atmosphere = Simulation(nest; Δt, verbose = false)   ## the coupled model manages Δt and the stop time
 model = AtmosphereLandModel(atmosphere, land; radiation)
 
 simulation = Simulation(model; Δt, stop_time=duration)
@@ -246,7 +246,7 @@ section_filename = name * "_section.jld2"
 
 schedule = TimeInterval(20minutes)
 slice_writer(indices, filename) = JLD2Writer(model, fields; schedule, filename, indices,
-                                             overwrite_existing = true)
+                                             overwrite_files = true)
 
 simulation.output_writers[:surface] = slice_writer((:, :, 1),         surface_filename)
 simulation.output_writers[:aloft]   = slice_writer((:, :, k_aloft),   aloft_filename)
@@ -256,7 +256,7 @@ land_filename = name * "_land.jld2"
 land_fields = (Tˡᵃ = land.temperature, 𝒮 = land.saturation)
 simulation.output_writers[:land] = JLD2Writer(model, land_fields; schedule,
                                               filename = land_filename,
-                                              overwrite_existing = true)
+                                              overwrite_files = true)
 
 function progress(sim)
     child = sim.model.atmosphere.model.child

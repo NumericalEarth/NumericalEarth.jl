@@ -604,7 +604,7 @@ filename = "era5_forced_slab_land"
 simulation.output_writers[:land] = JLD2Writer(model, outputs;
                                               filename,
                                               schedule = TimeInterval(1hour),
-                                              overwrite_existing = true)
+                                              overwrite_files = true)
 
 # ## Run
 
@@ -965,6 +965,7 @@ N           = prod(patch_size)
 T_plus  = run_forward(cpu_grid, cpu_forcing, T₀_cpu, ν_plus)
 T_minus = run_forward(cpu_grid, cpu_forcing, T₀_cpu, ν_minus)
 fd_map  = (T_plus.T_final .- T_minus.T_final) ./ 2δν
+max_abs_error = maximum(abs, adjoint_map .- fd_map)
 
 @info @sprintf("Finite diff:  ⟨T(t=%.2f d)⟩ = %.4f K,  ⟨∂T/∂ν⟩ = %+.4e K",
                run_time / 86400, mean(forward.T_final), mean(fd_map))

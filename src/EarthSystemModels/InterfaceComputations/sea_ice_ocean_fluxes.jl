@@ -137,6 +137,7 @@ end
     𝒬ⁱⁿ = fluxes.interface_heat
     Jˢ = fluxes.salt
     Jʷ = fluxes.freshwater
+    Jᴴ = fluxes.freshwater_heat_content
     τˣ = fluxes.x_momentum
     τʸ = fluxes.y_momentum
     T★ = interface_temperature
@@ -227,5 +228,6 @@ end
         Eₛ = snow_ocean_mass_flux[i, j, 1]
         Jʷ[i, j, 1] = - (Eᵢ + Eₛ) / ρᵒᶜ
         Jˢ[i, j, 1] = Eᵢ * Sˢⁱ / ρᵒᶜ # the snow term Sˢⁿ * Eₛ drops since Sˢⁿ == 0
+        Jᴴ[i, j, 1] = - Tb * Eᵢ / ρᵒᶜ # ice meltwater enters at the interface temperature, snow melts at 0
     end
 end

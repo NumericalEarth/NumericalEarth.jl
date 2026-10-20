@@ -109,7 +109,9 @@ export
     IsotropicFrontalArea, EmpiricalFrontalArea,
     UniformHeight, VariableHeight,
     urban_roughness,
+    fill_aerodynamic_roughness_gaps!,
     surface_temperature,
+    surface_layer_diagnostics,
     regrid_bathymetry,
     regrid_topography,
     smooth_topography!,
@@ -144,6 +146,8 @@ export
     DatasetRestoring,
     atmosphere_model,
     atmosphere_simulation,
+    land_model,
+    land_simulation,
     breeze_prognostic_state,
     hydrostatic_pressure_from_surface,
     ocean_simulation,
@@ -255,7 +259,6 @@ include("Atmospheres/Atmospheres.jl")
 include("Lands/Lands.jl")
 include("Radiations/Radiations.jl")
 include("SeaIces/SeaIces.jl")
-include("InitialConditions/InitialConditions.jl")
 include("DataWrangling/DataWrangling.jl")
 include("Bathymetry/Bathymetry.jl")
 include("Diagnostics/Diagnostics.jl")
@@ -265,7 +268,6 @@ using .Grids
 using .DataWrangling
 using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55, TPXO
 using .Bathymetry
-using .InitialConditions
 using .EarthSystemModels
 using .Atmospheres
 using .Lands

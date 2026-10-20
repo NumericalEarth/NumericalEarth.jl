@@ -11,6 +11,7 @@ using ..DataWrangling: DataWrangling, DownloadProgress, AbstractStaticBathymetry
 download_ETOPO_cache::String = ""
 function __init__()
     global download_ETOPO_cache = DataWrangling.download_cache("ETOPO")
+    return nothing
 end
 
 ETOPO_bathymetry_variable_names = Dict(:bottom_height => "z",)
