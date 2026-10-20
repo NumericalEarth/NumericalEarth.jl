@@ -38,11 +38,15 @@ biogeochemical_interface(exchanger, ocean, biogeochemistry::DiscreteBiogeochemis
         biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.inorganic_carbon; warm_start, kwargs...)
     )
 
-biogeochemical_interface(exchanger, ocean, ::Oxygen; kwargs...) =
-    (; O₂ = OxygenGasExchangeBoundaryCondition(;
-                wind_speed = surface_wind_speed(exchanger),
-                air_concentration = GarciaGordonOxygenSaturation(; atmospheric_pressure = surface_atmospheric_pressure(exchanger)),
-                kwargs...).condition.func)
+function biogeochemical_interface(exchanger, ocean, ::Oxygen; kwargs...)
+    FT = eltype(ocean.model.grid)
+    air_concentration = GarciaGordonOxygenSaturation(FT; atmospheric_pressure = surface_atmospheric_pressure(exchanger))
+
+    return (; O₂ = OxygenGasExchangeBoundaryCondition(FT;
+                       wind_speed = surface_wind_speed(exchanger),
+                       air_concentration,
+                       kwargs...).condition.func)
+end
 
 biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{1}; kwargs...) =
     (; DIC = carbon_dioxide_exchange(exchanger, :DIC, :Alk; grid = ocean.model.grid, kwargs...))
@@ -54,17 +58,18 @@ function biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{N}
 end
 
 # same solubility as the boundary condition's default, so the air and water sides share a density
-function carbon_dioxide_exchange(exchanger, DIC, Alk; carbon_chemistry = CarbonChemistry(), kwargs...)
-    air_concentration = CarbonDioxideAirConcentration(; mole_fraction = exchanger.atmosphere.state.pCO₂,
-                                                        atmospheric_pressure = surface_atmospheric_pressure(exchanger),
-                                                        solubility = MolPerKgPerAtmToMMolPerCubicMPerMicroAtm(FF{Float64}(),
-                                                                                                              carbon_chemistry.density_function))
+function carbon_dioxide_exchange(exchanger, DIC, Alk; grid, carbon_chemistry = CarbonChemistry(eltype(grid)), kwargs...)
+    FT = eltype(grid)
+    air_concentration = CarbonDioxideAirConcentration(FT; mole_fraction = exchanger.atmosphere.state.pCO₂,
+                                                          atmospheric_pressure = surface_atmospheric_pressure(exchanger),
+                                                          solubility = MolPerKgPerAtmToMMolPerCubicMPerMicroAtm(FF{FT}(),
+                                                                                                                carbon_chemistry.density_function))
 
-    return CarbonDioxideGasExchangeBoundaryCondition(;
+    return CarbonDioxideGasExchangeBoundaryCondition(FT;
         wind_speed = surface_wind_speed(exchanger),
         air_concentration,
         carbon_chemistry,
-        DIC, Alk,
+        DIC, Alk, grid,
         kwargs...
     ).condition.func
 end
