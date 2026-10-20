@@ -248,11 +248,10 @@ end
 
 
 #####
-##### The penetrating shortwave as CATKE's convective velocity scale sees it
+##### The penetrating shortwave as the turbulence closures see it
 #####
 
-penetrating_radiation(radiative_forcing) = nothing
-penetrating_radiation(radiation::TwoColorRadiation) = radiation
+TurbulenceClosures.penetrative_radiation(radiation::TwoColorRadiation) = radiation
 
 @inline function two_color_parameters(R::TwoColorRadiation, i, j)
     κ₂ = blue_green_absorption_coefficient(R.second_absorption_coefficient, i, j)
@@ -260,7 +259,7 @@ penetrating_radiation(radiation::TwoColorRadiation) = radiation
 end
 
 # Fluxes positive upward: `surface_flux` holds the downward temperature flux J₀ ≥ 0, so the buoyancy flux is -g α J₀ ≤ 0
-@inline function TKEBasedVerticalDiffusivities.surface_radiative_buoyancy_flux(i, j, grid, R::TwoColorRadiation, buoyancy, fields)
+@inline function TurbulenceClosures.surface_radiative_buoyancy_flux(i, j, grid, R::TwoColorRadiation, buoyancy, fields)
     b = buoyancy.formulation
     T, S = get_temperature_and_salinity(b, fields)
     α = thermal_expansionᶜᶜᶠ(i, j, size(grid, 3) + 1, grid, b.equation_of_state, T, S)
@@ -268,7 +267,7 @@ end
     return - b.gravitational_acceleration * α * J₀
 end
 
-@inline function TKEBasedVerticalDiffusivities.transmitted_fraction(R::TwoColorRadiation, i, j, grid, d)
+@inline function TurbulenceClosures.transmitted_fraction(R::TwoColorRadiation, i, j, grid, d)
     ϵ₁, κ₁, κ₂ = two_color_parameters(R, i, j)
     return ϵ₁ * exp(-κ₁ * d) + (1 - ϵ₁) * exp(-κ₂ * d)
 end
@@ -278,7 +277,7 @@ end
     return - ϵ₁ * κ₁ * exp(-κ₁ * d) - (1 - ϵ₁) * κ₂ * exp(-κ₂ * d)
 end
 
-@inline function TKEBasedVerticalDiffusivities.transmitted_thickness(R::TwoColorRadiation, i, j, grid, h)
+@inline function TurbulenceClosures.transmitted_thickness(R::TwoColorRadiation, i, j, grid, h)
     ϵ₁, κ₁, κ₂ = two_color_parameters(R, i, j)
     return - ϵ₁ * expm1(-κ₁ * h) / κ₁ - (1 - ϵ₁) * expm1(-κ₂ * h) / κ₂
 end
