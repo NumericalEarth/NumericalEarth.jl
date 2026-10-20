@@ -2,7 +2,7 @@ using Oceananigans.Grids: Center
 using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.Fields: compute!
 using Breeze.AtmosphereModels: thermodynamic_density, dynamics_pressure,
-                               specific_humidity, surface_precipitation_flux
+                               specific_humidity, bottom_precipitation_flux
 using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
 using GPUArraysCore: @allowscalar
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
@@ -75,14 +75,9 @@ NumericalEarth.EarthSystemModels.boundary_layer_height(atmos::BreezeAtmosphereSi
 
 function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::BreezeAtmosphere, exchange_grid;
                                                                                    correction = nothing)
-    # Breeze's surface rain-flux diagnostic (positive down, kg m⁻² s⁻¹); schemes with no
-    # precipitating species define no method — fall back to an inert zero field.
-    # TODO: move the fallback into Breeze; add a snow analog (Jˢⁿ stays zero below).
-    Jʳⁿ = if applicable(surface_precipitation_flux, atmosphere, atmosphere.microphysics)
-        surface_precipitation_flux(atmosphere)
-    else
-        Oceananigans.CenterField(exchange_grid)
-    end
+    # Breeze's bottom flux of every sedimenting condensate, liquid and frozen (positive down,
+    # kg m⁻² s⁻¹), enters as rain; Jˢⁿ stays zero.
+    Jʳⁿ = bottom_precipitation_flux(atmosphere)
 
     state = (; u    = Oceananigans.CenterField(exchange_grid),
                v    = Oceananigans.CenterField(exchange_grid),
@@ -137,7 +132,7 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
             _interpolate_breeze_state!,
             state, u, v, T, qᵛ, p)
 
-    compute!(state.Jʳⁿ)   # refresh the rain diagnostic (no-op for the zero-field fallback)
+    compute!(state.Jʳⁿ)   # refresh the precipitation diagnostic
 
     return nothing
 end
