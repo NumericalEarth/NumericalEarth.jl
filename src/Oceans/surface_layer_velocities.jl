@@ -11,7 +11,7 @@ using Oceananigans.Operators: Δz
     ∫z = zero(grid)
     z  = zero(grid)
     for k′ = kᴺ:-1:1
-        Δzₖ = Δz(i, j, k′, grid, ℓx, ℓy, Center()) * !inactive_node(i, j, k′, grid, ℓx, ℓy, Center())
+        Δzₖ = Δz(i, j, k′, grid, ℓx, ℓy, Center()) * !peripheral_node(i, j, k′, grid, ℓx, ℓy, Center())
         δ   = min(Δzₖ, max(zero(grid), H - z))
         ∫c += δ * @inbounds c[i, j, k′]
         ∫z += δ

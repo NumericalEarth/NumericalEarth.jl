@@ -82,27 +82,37 @@ land = JRA55PrescribedLand(grid; spread_radius = nothing, maximum_spread_cells =
 # corresponds to a restoring rate of 0.254 / 1.5 day⁻¹. The restoring is applied as a surface salt flux
 # whose global mean is removed, so that it neither adds nor removes salt.
 
-using NumericalEarth.DataWrangling: SeaWiFSMonthly, SurfaceFluxRestoring, ConservativeSurfaceFluxRestoring,
+using NumericalEarth.DataWrangling: SeaWiFSMonthly,
+                                    SurfaceFluxRestoring,
+                                    ConservativeSurfaceFluxRestoring,
                                     ConservativeSurfaceFluxRestoringCallback
 
-chlorophyll_dates = (DateTime(2000, 1, 1), DateTime(2000, 12, 1))
-chlorophyll = FieldTimeSeries(Metadata(:chlorophyll; dataset = SeaWiFSMonthly(), dates = chlorophyll_dates), grid)
-radiative_forcing = TwoColorRadiation(grid; chlorophyll)
+chlorophyll_dates    = (DateTime(2000, 1, 1), DateTime(2000, 12, 1))
+chlorophyll_metadata = Metadata(:chlorophyll; dataset = SeaWiFSMonthly(), dates = chlorophyll_dates)
+chlorophyll          = FieldTimeSeries(chlorophyll_metadata, grid)
+radiative_forcing    = TwoColorRadiation(grid; chlorophyll)
+
+piston_velocity    = 0.254 / days # m s⁻¹
+top_cell_thickness = 1.5          # m
 
 salinity_restoring = DatasetRestoring(Metadata(:salinity; dataset = WOAMonthly()), arch;
-                                      rate = 0.254 / 1.5days,
+                                      rate = piston_velocity / top_cell_thickness,
                                       time_indices_in_memory = 12)
 
 salinity_flux = ConservativeSurfaceFluxRestoring(SurfaceFluxRestoring(salinity_restoring), grid)
 
 # We use a split-explicit free surface with 300 barotropic substeps, fifth-order WENO for momentum and
-# the default seventh-order WENO for tracers. Both treat vertical advection implicitly wherever the
-# vertical Courant number is large.
+# seventh-order WENO for tracers. Both treat vertical advection implicitly wherever the vertical Courant
+# number exceeds one.
+
+time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl = 1)
 
 free_surface       = SplitExplicitFreeSurface(grid; substeps = 300)
-momentum_advection = WENOVectorInvariant(order = 5, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl = 0.5))
+momentum_advection = WENOVectorInvariant(order = 5; time_discretization)
+tracer_advection   = WENO(order = 7; time_discretization)
 
-ocean = ocean_simulation(grid; momentum_advection, free_surface, radiative_forcing, reference_density = 1026,
+ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surface, radiative_forcing,
+                         reference_density = 1026,
                          closure = (vertical_mixing, eddy_closure, horizontal_viscosity, background_mixing),
                          river_routing = land.river_routing,
                          additional_surface_fluxes = (; S = salinity_flux))
@@ -117,7 +127,7 @@ ocean = ocean_simulation(grid; momentum_advection, free_surface, radiative_forci
 dynamics = NumericalEarth.SeaIces.sea_ice_dynamics(grid, ocean; sea_ice_ocean_drag_reference_depth = 6)
 
 itd_shape = UniformThicknessDistribution(categories = 4)
-internal_heat_flux  = ConductiveFlux(conductivity = 2, itd_shape)
+internal_heat_flux  = ConductiveFlux(; conductivity = 2, itd_shape)
 snow_thermodynamics = NumericalEarth.SeaIces.default_snow_thermodynamics(grid; itd_shape)
 
 sea_ice = sea_ice_simulation(grid, ocean; dynamics, internal_heat_flux, snow_thermodynamics,
@@ -150,18 +160,18 @@ radiation = JRA55PrescribedRadiation(arch; ocean_surface, sea_ice_surface)
 
 # ### Turbulent fluxes
 #
-# Over the ocean, the turbulent fluxes follow COARE 3.6, with a wind-dependent Charnock parameter,
-# scalar roughness lengths that depend on the air viscosity, and a minimum gustiness of 0.5 m s⁻¹.
-# Over the sea ice the roughness lengths are fixed at 5 × 10⁻⁴ m for momentum and 5 × 10⁻⁵ m for heat and
-# moisture. The saturation specific humidity is enhanced by the moist-air factor of Gill (1982) over both
-# the ocean, where it is 98% of the pure-water value, and the sea ice. The ice--ocean heat flux follows the
-# three-equation formulation, with a friction velocity computed from the ice--ocean stress.
+# Over the ocean, the turbulent fluxes follow the OMIP-2 bulk formulae of Large and Yeager (2004, 2009), whose
+# transfer coefficients are iterated directly, five times. Over the sea ice, Monin-Obukhov similarity uses the
+# SHEBA stability functions with roughness lengths fixed at 5 × 10⁻⁴ m for momentum and 5 × 10⁻⁵ m for heat and
+# moisture, and a minimum gustiness of 0.2 m s⁻¹. The saturation specific humidity is enhanced by the moist-air
+# factor of Gill (1982) over both the ocean, where it is 98% of the pure-water value, and the sea ice. The
+# ice--ocean heat flux follows the three-equation formulation, with a friction velocity computed from the
+# ice--ocean stress.
 
 using NumericalEarth.EarthSystemModels: AtmosphericThermodynamics
-using NumericalEarth.EarthSystemModels.InterfaceComputations: COARELogarithmicSimilarityProfile,
+using NumericalEarth.EarthSystemModels.InterfaceComputations: LargeYeagerTransferCoefficients,
+                                                              COARELogarithmicSimilarityProfile,
                                                               ConvectiveGustiness,
-                                                              WindDependentWaveFormulation,
-                                                              TemperatureDependentAirViscosity,
                                                               ImpureSaturationSpecificHumidity,
                                                               GillSaturationEnhancement,
                                                               ThreeEquationHeatFlux,
@@ -170,32 +180,20 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: COARELogarithmicSi
 
 saturation_enhancement = GillSaturationEnhancement()
 
-atmosphere_ocean_interface_specific_humidity =
-    ImpureSaturationSpecificHumidity(AtmosphericThermodynamics.Liquid(), 0.98; saturation_enhancement)
+atmosphere_ocean_interface_specific_humidity   = ImpureSaturationSpecificHumidity(AtmosphericThermodynamics.Liquid(), 0.98; saturation_enhancement)
+atmosphere_sea_ice_interface_specific_humidity = ImpureSaturationSpecificHumidity(AtmosphericThermodynamics.Ice(); saturation_enhancement)
 
-atmosphere_sea_ice_interface_specific_humidity =
-    ImpureSaturationSpecificHumidity(AtmosphericThermodynamics.Ice(); saturation_enhancement)
+atmosphere_ocean_fluxes = CoefficientBasedFluxes(transfer_coefficients = LargeYeagerTransferCoefficients(),
+                                                 solver_stop_criteria = FixedIterations(5))
 
-air_kinematic_viscosity = TemperatureDependentAirViscosity()
+atmosphere_sea_ice_fluxes = SimilarityTheoryFluxes(stability_functions = atmosphere_sea_ice_stability_functions(),
+                                                   similarity_form = COARELogarithmicSimilarityProfile(),
+                                                   subgrid_velocities = ConvectiveGustiness(minimum_gustiness = 0.2),
+                                                   momentum_roughness_length = 5e-4,
+                                                   temperature_roughness_length = 5e-5,
+                                                   water_vapor_roughness_length = 5e-5)
 
-atmosphere_ocean_fluxes =
-    SimilarityTheoryFluxes(similarity_form = COARELogarithmicSimilarityProfile(),
-                           subgrid_velocities = ConvectiveGustiness(minimum_gustiness = 0.5),
-                           momentum_roughness_length = MomentumRoughnessLength(; air_kinematic_viscosity,
-                                                                               wave_formulation = WindDependentWaveFormulation()),
-                           temperature_roughness_length = ScalarRoughnessLength(; air_kinematic_viscosity),
-                           water_vapor_roughness_length = ScalarRoughnessLength(; air_kinematic_viscosity))
-
-atmosphere_sea_ice_fluxes =
-    SimilarityTheoryFluxes(stability_functions = atmosphere_sea_ice_stability_functions(),
-                           similarity_form = COARELogarithmicSimilarityProfile(),
-                           subgrid_velocities = ConvectiveGustiness(minimum_gustiness = 0.2),
-                           momentum_roughness_length = 5e-4,
-                           temperature_roughness_length = 5e-5,
-                           water_vapor_roughness_length = 5e-5)
-
-sea_ice_ocean_heat_flux = ThreeEquationHeatFlux(sea_ice; heat_transfer_coefficient = 0.0057,
-                                                         friction_velocity = MomentumBasedFrictionVelocity())
+sea_ice_ocean_heat_flux = ThreeEquationHeatFlux(sea_ice; heat_transfer_coefficient = 0.0057, friction_velocity = MomentumBasedFrictionVelocity())
 
 # ### Coupled simulation
 #
