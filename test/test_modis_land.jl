@@ -11,7 +11,7 @@ using NumericalEarth.DataWrangling.MODISLand: MODISLand, mask_lai_fill, lai_scre
     lai_rejection_flags, modis_composite_dates,
     parse_granule_name, select_granules, regional_lattice,
     period_index, reduce_retained, stored_granule_layers,
-    MODIS_LAI_SCALE, MODIS_FPAR_SCALE, MODIS_LAI_LANDCOVER_CODES,
+    MODIS_LAI_SCALE, MODIS_FPAR_SCALE,
     mask_landcover_fill, landcover_valid_range, landcover_layer, composite_window,
     MissingGranulesError, write_lattice_file,
     modis_lai_class_names, modis_plant_functional_type_names,
@@ -97,7 +97,6 @@ end
         @test mask_lai_landcover(UInt8(code)) === Float32(code)
         @test isnan(mask_lai_fill(UInt8(code)))
     end
-    @test collect(MODIS_LAI_LANDCOVER_CODES) == sort(collect(values(modis_landcover_class_names)))
 
     # A valid retrieval carries no class, and the fill value names none either.
     for DN in (0x00, 0x32, 0x64, 0xf8, 0xff)
@@ -706,9 +705,8 @@ end
     end
 end
 
-# TODO: turn the `@test_broken`s back into `@test`s once the Oceananigans compat admits a release
-# with CliMA/Oceananigans.jl#6253. Before it, `regrid!` regrids grids that share a size in one
-# dimension only along the other, and throws for grids of equal horizontal size.
+# No target shares a horizontal size with the source, which `regrid!` mishandles before
+# CliMA/Oceananigans.jl#6253.
 @testset "Class fractions conserve horizontal area [$arch]" for arch in test_architectures
     source_grid = LatitudeLongitudeGrid(arch; size = (4, 4),
                                         longitude = (-4, 0), latitude = (50, 70),
@@ -717,22 +715,24 @@ end
     landed(grid) = map(fraction -> Array(interior(fraction, :, :, 1)), class_fractions(grid, classes, (1, 2)))
     set!(classes, (longitude, latitude) -> ifelse(longitude < -2, 1, 2))
 
-    for latitude_cells in (2, 4), longitude_shift in (0, 360)
-        grid = LatitudeLongitudeGrid(arch; size = (4, latitude_cells),
-                                     longitude = [-3.5, -2.5, -1.5, -1, -0.5] .+ longitude_shift,
+    for latitude_cells in (2, 3), longitude_shift in (0, 360)
+        grid = LatitudeLongitudeGrid(arch; size = (3, latitude_cells),
+                                     longitude = [-3.5, -2.5, -1.5, -1] .+ longitude_shift,
                                      latitude = (52, 68), topology = (Bounded, Bounded, Flat))
-        @test_broken all(landed(grid) .≈ (repeat([1, 0.5, 0, 0], 1, latitude_cells),
-                                          repeat([0, 0.5, 1, 1], 1, latitude_cells)))
+        @test all(landed(grid) .≈ (repeat([1, 0.5, 0], 1, latitude_cells),
+                                   repeat([0, 0.5, 1], 1, latitude_cells)))
     end
 
     set!(classes, (longitude, latitude) -> ifelse(latitude < 60, 1, 2))
-    grid = LatitudeLongitudeGrid(arch; size = (2, 4), longitude = (-4, 0),
-                                 latitude = [50, 55, 65, 68, 70],
+    grid = LatitudeLongitudeGrid(arch; size = (3, 3), longitude = (-4, 0),
+                                 latitude = [50, 55, 65, 70],
                                  topology = (Bounded, Bounded, Flat))
     southern_fraction = (sind(60) - sind(55)) / (sind(65) - sind(55))
-    @test_broken all(landed(grid) .≈ (repeat([1 southern_fraction 0 0], 2, 1),
-                                      repeat([0 1-southern_fraction 1 1], 2, 1)))
+    @test all(landed(grid) .≈ (repeat([1 southern_fraction 0], 3, 1),
+                               repeat([0 1-southern_fraction 1], 3, 1)))
 
+    # TODO: make this a `@test` once the Oceananigans compat admits a release with
+    # CliMA/Oceananigans.jl#6253; before it, `regrid!` throws for grids of equal horizontal size.
     @test_broken first(landed(source_grid)) ≈ (Array(interior(classes, :, :, 1)) .== 1)
 end
 

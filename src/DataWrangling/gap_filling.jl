@@ -17,7 +17,8 @@ to either end of an open series takes its nearest value. `max_gap` may be an arr
 spatial dimensions, giving each column its own tolerance.
 
 With `cyclic = true` the series is one period of a periodic signal, so a gap at either end
-interpolates across the wrap. An all-NaN column is left untouched either way.
+interpolates across the wrap. A column that is all NaN, or whose `max_gap` is zero, is left
+untouched and unreported either way.
 """
 function fill_gaps!(fts::FieldTimeSeries; kw...)
     on_host!(data -> fill_gaps!(data; kw...), fts)
@@ -43,7 +44,7 @@ end
 
 function fill_gaps!(data::AbstractArray; max_gap=6, cyclic=false)
     spatial_size = size(data)[1:end-1]
-    max_gap isa AbstractArray && size(max_gap) != spatial_size[1:ndims(max_gap)] &&
+    max_gap isa AbstractArray && size(max_gap) != spatial_size[1:min(end, ndims(max_gap))] &&
         throw(ArgumentError("A per-column max_gap must match the spatial dimensions of the " *
                             "data, $spatial_size; got $(size(max_gap))."))
 
@@ -71,7 +72,7 @@ end
 function fill_column_gaps!(data::AbstractVector, unfilled; max_gap, cyclic)
     N = length(data)
     origin = findfirst(!isnan, data)
-    isnothing(origin) && return data
+    (isnothing(origin) || iszero(max_gap)) && return data
 
     index(k) = cyclic ? mod1(origin + k - 1, N) : k
 
@@ -175,7 +176,7 @@ end
 fill_signature(parameter) = parameter
 fill_signature(parameter::AbstractArray) =
     (size(parameter), foldl((h, value) -> hash(value, h), parameter; init = zero(UInt)))
-fill_signature(fts::FieldTimeSeries) = fill_signature(Array(interior(fts)))
+fill_signature(fts::FieldTimeSeries) = fill_signature(seasonal_array(fts))
 
 seasonal_fill_key(; parameters...) = map(fill_signature, NamedTuple(parameters))
 
@@ -325,16 +326,8 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
     reach = zeros(Int, Nx, Ny)
 
     if :temporal in stages
-        fill_gaps!(𝒜; max_gap, cyclic)
-
-        for t in 1:Nt, j in 1:Ny, i in 1:Nx
-            observed[i, j, t] && continue
-            if !fillable[i, j]
-                𝒜[i, j, t] = NaN
-            elseif !isnan(𝒜[i, j, t])
-                provenance[i, j, t] = gap_fill_provenance.temporal
-            end
-        end
+        fill_gaps!(𝒜; max_gap = ifelse.(fillable, max_gap, 0), cyclic)
+        provenance[.!observed .& .!isnan.(𝒜)] .= gap_fill_provenance.temporal
     end
 
     scale_donors = :scaled in stages
@@ -413,10 +406,11 @@ remaining keyword arguments are passed to the fill, so `stages` scores each stag
 Sampling does not require temporal separation or observed neighbors. Short gaps may dominate
 the score when all stages run; it does not bound accuracy on long, clustered gaps.
 
-Returns one row per class: `(; class, withheld, estimated, R², cv_rmse)`, where `R²` is the
-squared correlation of estimate against truth, `cv_rmse` the root-mean-square error divided
-by the mean of the withheld truth, and `estimated` the number of withheld entries the chain
-reached at all.
+Returns one row per class: `(; class, withheld, estimated, R², relative_root_mean_square_error)`,
+where `R²` is the squared correlation of estimate against truth,
+`relative_root_mean_square_error` the root-mean-square error divided by the mean of the
+withheld truth, and `estimated` the number of withheld entries the chain reached at all.
+A `cache` keyword is ignored: the damaged copy is never cached.
 """
 function gap_fill_denial(series, land_cover; samples_per_class = 100, kw...)
     𝒜 = seasonal_array(series isa FieldTimeSeries ? series : copy(series))
@@ -438,7 +432,7 @@ function gap_fill_denial(series, land_cover; samples_per_class = 100, kw...)
         𝒜[I] = NaN
     end
 
-    fill_seasonal_gaps!(𝒜, codes; kw...)
+    fill_seasonal_gaps!(𝒜, codes; kw..., cache = nothing)
 
     return map(sort!(collect(keys(withheld)))) do class
         indices = withheld[class]
@@ -448,8 +442,10 @@ function gap_fill_denial(series, land_cover; samples_per_class = 100, kw...)
         scored = length(observed) ≥ 2
 
         R² = scored ? cor(modeled, observed)^2 : NaN
-        cv_rmse = scored ? sqrt(mean(abs2, modeled .- observed)) / mean(observed) : NaN
+        relative_root_mean_square_error =
+            scored ? sqrt(mean(abs2, modeled .- observed)) / mean(observed) : NaN
 
-        (; class, withheld = length(indices), estimated = count(reached), R², cv_rmse)
+        (; class, withheld = length(indices), estimated = count(reached), R²,
+           relative_root_mean_square_error)
     end
 end

@@ -57,13 +57,13 @@ function regional_lattice(metadata::MODISLandMetadata)
 
     native_longitude = DataWrangling.longitude_interfaces(metadata)
     native_latitude  = DataWrangling.latitude_interfaces(metadata)
-    icols, jrows = lattice_cells(metadata.dataset, metadata.name, region)
+    columns, rows = lattice_cells(metadata.dataset, metadata.name, region)
 
-    return (west  = first(native_longitude) + (first(icols) - 1) * MODIS_LATTICE_SPACING,
-            east  = first(native_longitude) + last(icols) * MODIS_LATTICE_SPACING,
-            south = first(native_latitude) + (first(jrows) - 1) * MODIS_LATTICE_SPACING,
-            north = first(native_latitude) + last(jrows) * MODIS_LATTICE_SPACING,
-            Nx = length(icols), Ny = length(jrows))
+    return (west  = first(native_longitude) + (first(columns) - 1) * MODIS_LATTICE_SPACING,
+            east  = first(native_longitude) + last(columns) * MODIS_LATTICE_SPACING,
+            south = first(native_latitude) + (first(rows) - 1) * MODIS_LATTICE_SPACING,
+            north = first(native_latitude) + last(rows) * MODIS_LATTICE_SPACING,
+            Nx = length(columns), Ny = length(rows))
 end
 
 # The columns and rows of the global lattice whose cells `region` selects.
@@ -73,9 +73,8 @@ function lattice_cells(dataset, name, region)
     bbox_longitude = native_convention_longitude(region.longitude, native_longitude)
 
     last(bbox_longitude) > last(native_longitude) &&
-        throw(ArgumentError("The requested longitude window $(region.longitude) wraps the ±180° " *
-                            "seam of the MODIS sinusoidal grid's reprojection. Split it into two " *
-                            "requests, one on each side of the seam."))
+        throw(ArgumentError("The longitude window $(region.longitude) must not cross the ±180° " *
+                            "seam of the MODIS lattice."))
 
     return native_cell_range(bbox_longitude, native_longitude, Nx),
            native_cell_range(region.latitude, DataWrangling.latitude_interfaces(dataset), Ny)

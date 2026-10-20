@@ -80,11 +80,12 @@ end
     write_atomically(write!, filepath)
 
 Call `write!(staging_path)` with a staging path unique to this writer in `filepath`'s
-directory, then rename the staged file into place, so `filepath` never appears
-half-written. A failed `write!` removes its staging file.
+directory, which is created if missing, then rename the staged file into place, so
+`filepath` never appears half-written. A failed `write!` removes its staging file.
 """
 function write_atomically(write!, filepath)
-    staging_path = tempname(dirname(filepath); cleanup = false) * splitext(filepath)[2]
+    directory = mkpath(dirname(abspath(filepath)))
+    staging_path = tempname(directory; cleanup = false) * splitext(filepath)[2]
     try
         write!(staging_path)
         mv(staging_path, filepath; force = true)
@@ -208,9 +209,6 @@ destination and is renamed into place once it has arrived in full, so `path` nev
 Extra keyword arguments are forwarded to `Downloads.download` (`progress`, `downloader`, ...).
 """
 function download_with_retries(url, path; attempts = 3, description = "Download", kw...)
-    dir = dirname(path)
-    mkpath(dir)
-
     for attempt in 1:attempts
         try
             write_atomically(partial_path -> Downloads.download(url, partial_path; kw...), path)

@@ -43,6 +43,7 @@ end
 
     # A per-column tolerance has to be on the data's own lattice.
     @test_throws ArgumentError fill_gaps!(stacked; max_gap = fill(2, 3, 1))
+    @test_throws ArgumentError fill_gaps!(stacked; max_gap = fill(2, 2, 1, 1))
 end
 
 @testset "Seasonal fill: the scaled donor preserves each cell's level" begin
@@ -93,7 +94,7 @@ end
     𝒜[3, 3, 5] = NaN32
     classes = fill(Float32(2), 8, 8)
 
-    cache = joinpath(mktempdir(), "seasonal_fill.jld2")
+    cache = joinpath(mktempdir(), "fills", "seasonal_fill.jld2")   # a directory not made yet
     parameters = (; cyclic = true, max_gap = 0, block_size = 4, minimum_donors = 4)
 
     expected = fill_seasonal_gaps!(copy(𝒜), classes; parameters...)
@@ -108,6 +109,10 @@ end
     # filling again.
     marker = fill(7f0, size(𝒜))
     overwrite_cached_series!(cache, marker)
+    @test fill_seasonal_gaps!(copy(𝒜), classes; cache, parameters...).series == marker
+
+    # Scoring the fill leaves the real series' cache alone.
+    gap_fill_denial(𝒜, classes; samples_per_class = 4, cache, parameters...)
     @test fill_seasonal_gaps!(copy(𝒜), classes; cache, parameters...).series == marker
 
     # A parameter the fill depends on, and the series itself, are both part of what the
@@ -275,6 +280,13 @@ end
     @test all(isnan, 𝒜[1, 1, :])
     @test all(==(gap_fill_provenance.unfilled), filled.provenance[1, 1, :])
 
+    # Nor are its gaps reported as left unfilled.
+    water = uniform_series(shape, 4, 4)
+    water[1, 1, 3:6] .= NaN32
+    @test_logs fill_seasonal_gaps!(water, classes; max_gap = 2,
+                                   unfilled_classes = (igbp_class_names.water,))
+    @test all(isnan, water[1, 1, 3:6])
+
     # The chain only ever adds: every observed value is bit-identical afterwards.
     observed = .!isnan.(template)
     @test 𝒜[observed] == template[observed]
@@ -408,7 +420,7 @@ end
     @test row.class == igbp_class_names.evergreen_broadleaf_forest
     @test row.withheld == 50
     @test row.estimated == 50
-    @test row.cv_rmse < 1e-4
+    @test row.relative_root_mean_square_error < 1e-4
     @test row.R² ≈ 1 atol = 1e-4
 
     # It also has to be non-destructive: the series it scores is the caller's.
@@ -440,7 +452,8 @@ end
         interior(ramp[n]) .= n
     end
 
-    averaged = time_average(ramp, bounds, Month(1))
+    truncation = (:warn, "The last window spans 5 days rather than 1 month")
+    averaged = @test_logs truncation time_average(ramp, bounds, Month(1))
     values = Array(interior(averaged))
 
     # January holds composites 1-3 whole and seven of composite 4's eight days.

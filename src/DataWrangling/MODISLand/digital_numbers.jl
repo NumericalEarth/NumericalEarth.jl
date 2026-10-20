@@ -6,14 +6,14 @@ const MODIS_LAI_MAXIMUM_VALID = 100
 const MODIS_LAI_SCALE  = 0.1
 const MODIS_FPAR_SCALE = 0.01
 
-const MODIS_LAI_LANDCOVER_CODES = 249:254
-
 const modis_landcover_class_names = (unclassified = 249,
                                      urban = 250,
                                      wetland = 251,
                                      snow_and_ice = 252,
                                      barren = 253,
                                      water = 254)
+
+const MODIS_LAI_LANDCOVER_CODES = values(modis_landcover_class_names)
 
 """
     mask_lai_fill(DN)
@@ -27,9 +27,9 @@ range of `0:$(MODIS_LAI_MAXIMUM_VALID)`, the fill value and the land-cover speci
     mask_lai_landcover(DN)
 
 The complement of [`mask_lai_fill`](@ref): return the digital number `DN` as a `Float32` when
-it is one of the land-cover codes `$(MODIS_LAI_LANDCOVER_CODES)` the product substitutes for a
-retrieval it does not attempt, and `NaN` otherwise — for a valid retrieval, and for the fill
-value 255, neither of which names a class.
+it is one of the land-cover codes below, which the product substitutes for a retrieval it does
+not attempt, and `NaN` otherwise — for a valid retrieval, and for the fill value 255, neither
+of which names a class.
 
 | code | class |
 |---|---|
@@ -40,9 +40,7 @@ value 255, neither of which names a class.
 | 253 | barren or sparsely vegetated |
 | 254 | perennial salt or fresh water |
 """
-@inline mask_lai_landcover(DN) =
-    ifelse((DN ≥ first(MODIS_LAI_LANDCOVER_CODES)) & (DN ≤ last(MODIS_LAI_LANDCOVER_CODES)),
-           Float32(DN), NaN32)
+@inline mask_lai_landcover(DN) = ifelse(DN in MODIS_LAI_LANDCOVER_CODES, Float32(DN), NaN32)
 
 #####
 ##### Quality screening

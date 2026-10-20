@@ -27,9 +27,13 @@ end
 # sinusoidal pixel fills about 1 / cos φ neighboring cells. Uncovered cells take the fill
 # code 255, which the read path rejects on both the digital numbers and the quality bytes.
 function warp_modis_layer(granule_paths, layer, lattice)
-    sources = [ArchGDAL.read(modis_subdataset(path, layer)) for path in granule_paths]
+    sources = ArchGDAL.IDataset[]
 
     warped = try
+        for path in granule_paths
+            push!(sources, ArchGDAL.read(modis_subdataset(path, layer)))
+        end
+
         ArchGDAL.gdalwarp(sources,
             ["-t_srs", "EPSG:4326",
              "-te", string(lattice.west), string(lattice.south),

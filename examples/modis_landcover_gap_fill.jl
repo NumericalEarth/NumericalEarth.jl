@@ -577,7 +577,7 @@ scores = gap_fill_denial(raw_leaf_area_index, classes; samples_per_class = 100, 
 @printf("  %-28s %8s %10s %8s %10s\n", "class", "withheld", "estimated", "R²", "CV(RMSE)")
 for row in scores
     @printf("  %-28s %8d %10d %8.2f %10.2f\n", class_name(row.class), row.withheld,
-            row.estimated, row.R², row.cv_rmse)
+            row.estimated, row.R², row.relative_root_mean_square_error)
 end
 
 # Compositing seventeen — or here five — years before the donors are drawn is what separates
