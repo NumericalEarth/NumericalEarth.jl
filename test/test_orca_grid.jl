@@ -101,11 +101,10 @@ end
     @test grid.Nz == 5
 end
 
-@testset "ORCAGrid takes its vertical size from z on $(arch)" for arch in test_architectures
+@testset "ORCAGrid validates z against Nz on $(arch)" for arch in test_architectures
     for z in (ExponentialDiscretization(7, -5000, 0; scale = 1000, mutable = true), collect(range(-5000, 0, length = 8)))
-        grid = ORCAGrid(arch; dataset=ORCAOne(), z, with_bathymetry=false)
-        @test grid.Nz == 7
-        @test first(znodes(grid, Face())) ≈ -5000
+        @test ORCAGrid(arch; dataset=ORCAOne(), Nz=7, z, with_bathymetry=false).Nz == 7
+        @test_throws ArgumentError ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z, with_bathymetry=false)
     end
 end
 

@@ -1,4 +1,5 @@
-using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, LinearLiquidus, ConductiveFlux, itd_factor
+using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, LinearLiquidus, ConductiveFlux, effective_conductivity,
+                                        thermal_resistance
 
 #####
 ##### Ice Bath Heat Flux (bulk formulation)
@@ -252,7 +253,7 @@ end
     h  = ice_state.h
     hc = ice_state.hc
     Tˢⁱ = ice_state.T
-    k  = flux.conductive_flux.conductivity * itd_factor(flux.conductive_flux.itd_shape, h)
+    k  = effective_conductivity(flux.conductive_flux, h)
     # Set κ to zero when h < hc (ice not consolidated)
     consolidated = h ≥ hc
     κ = ifelse(consolidated, k / (h * ℰ), zero(h))

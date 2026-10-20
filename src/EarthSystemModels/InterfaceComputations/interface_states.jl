@@ -544,19 +544,17 @@ end
     return Tₛ⁺
 end
 
-# Bare ice: R = hᵢ / (f kᵢ), with f the sub-grid thickness factor
+# Bare ice
 @inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.ConductiveFlux},
                                           Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
-    F  = st.internal_flux
-    R  = Ψᵢ.hi / (F.conductivity * itd_factor(F.itd_shape, Ψᵢ.hi))
+    R = thermal_resistance(st.internal_flux, Ψᵢ.hi)
     return conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
 end
 
-# Snow + ice: R = (hₛ / kₛ + hᵢ / kᵢ) / f
+# Snow + ice
 @inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.SeaIceThermodynamics.IceSnowConductiveFlux},
                                           Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
-    F  = st.internal_flux
-    R  = (Ψᵢ.hs / F.snow_conductivity + Ψᵢ.hi / F.ice_conductivity) / itd_factor(F.itd_shape, Ψᵢ.hi)
+    R = thermal_resistance(st.internal_flux, Ψᵢ.hi, Ψᵢ.hs)
     return conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
 end
 

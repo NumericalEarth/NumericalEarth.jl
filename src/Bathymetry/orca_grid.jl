@@ -4,8 +4,8 @@ using Distances: haversine
 using Oceananigans.BoundaryConditions: fill_halo_regions!, BoundaryCondition, Zipper, FPivot,
                                        NoFluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Fields: set!
-using Oceananigans.Grids: RightCenterFolded, RightFaceFolded, MutableVerticalDiscretization, generate_coordinate,
-                          longitude_in_same_window
+using Oceananigans.Grids: RightCenterFolded, RightFaceFolded, generate_coordinate, longitude_in_same_window,
+                          validate_dimension_specification
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, distribute_tripolar_grid
 
@@ -365,18 +365,12 @@ function remove_minor_orca_basins(bottom_height, major_basins)
     return Array(bottom_field.data[1:Nx, 1:Ny, 1])
 end
 
-# Number of cells a vertical coordinate describes; a `(bottom, top)` tuple describes none.
-vertical_size(z::Tuple) = 50
-vertical_size(z::AbstractVector) = length(z) - 1
-vertical_size(z::MutableVerticalDiscretization) = vertical_size(z.cᵃᵃᶠ)
-vertical_size(z) = length(z)
-
 """
     ORCAGrid(arch = CPU(), FT::DataType = Float64;
              dataset,
              halo = (4, 4, 4),
              z = (-6000, 0),
-             Nz = vertical_size(z),
+             Nz = 50,
              radius = Oceananigans.defaults.planet_radius,
              with_bathymetry = true,
              active_cells_map = true,
@@ -417,7 +411,7 @@ Keyword Arguments
 - `halo`: Halo size tuple `(Hx, Hy, Hz)`. Default: `(4, 4, 4)`.
 - `z`: Vertical coordinate specification. Can be a 2-tuple `(z_bottom, z_top)`, an array of z-interfaces,
        or, e.g., an `ExponentialDiscretization`. Default: `(-6000, 0)`.
-- `Nz`: Number of vertical levels. Default: the number of cells `z` describes, or `50` when `z` is a 2-tuple.
+- `Nz`: Number of vertical levels. Default: `50`.
 - `radius`: Planet radius. Default: `Oceananigans.defaults.planet_radius`.
 - `with_bathymetry`: If `true`, download the bathymetry and return an `ImmersedBoundaryGrid` with
                      `GridFittedBottom`. Default: `true`.
@@ -436,7 +430,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   dataset = ORCAOne(),
                   halo = (4, 4, 4),
                   z = (-6000, 0),
-                  Nz = vertical_size(z),
+                  Nz = 50,
                   radius = Oceananigans.defaults.planet_radius,
                   with_bathymetry = true,
                   active_cells_map = true,
@@ -484,6 +478,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     Hx, Hy, Hz = halo
 
     topo = (Periodic, fold_topology, Bounded)
+    z = validate_dimension_specification(Bounded, z, :z, Nz, FT)
     Lz, z_coord = generate_coordinate(FT, topo, (Nx, Ny, Nz), halo, z, :z, 3, CPU())
 
     helper_grid = RectilinearGrid(; size = (Nx, Ny), halo = (Hx, Hy),

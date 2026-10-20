@@ -36,7 +36,7 @@ z = ReferenceToStretchedDiscretization(extent = 5500,
                                        rounding_digits = 4,
                                        mutable = true)
 
-grid = ORCAGrid(arch; dataset = ORCAOne(), z, halo = (8, 8, 8), major_basins = 1)
+grid = ORCAGrid(arch; dataset = ORCAOne(), Nz = 100, z, halo = (8, 8, 8), major_basins = 1)
 
 # ### Closures
 #
@@ -111,13 +111,17 @@ ocean = ocean_simulation(grid; momentum_advection, free_surface, radiative_forci
 #
 # The sea ice has EVP rheology, a snow layer over a slab of ice, and is advected by incremental remapping.
 # The ice--ocean drag is computed against the ocean velocity averaged over the top 6 m. Heat is conducted
-# through snow and ice as if the thickness were spread uniformly over four sub-grid categories, which
-# raises the effective conductivity by 1 + 1/3 + 1/5 + 1/7.
+# through the snow and the ice as if each were spread uniformly over four sub-grid categories, which raises
+# the effective conductivity of both by 1 + 1/3 + 1/5 + 1/7.
 
 dynamics = NumericalEarth.SeaIces.sea_ice_dynamics(grid, ocean; sea_ice_ocean_drag_reference_depth = 6)
-internal_heat_flux = ConductiveFlux(conductivity = 2, itd_shape = UniformThicknessDistribution(categories = 4))
 
-sea_ice = sea_ice_simulation(grid, ocean; dynamics, internal_heat_flux, advection = IncrementalRemapping())
+itd_shape = UniformThicknessDistribution(categories = 4)
+internal_heat_flux  = ConductiveFlux(conductivity = 2, itd_shape)
+snow_thermodynamics = NumericalEarth.SeaIces.default_snow_thermodynamics(grid; itd_shape)
+
+sea_ice = sea_ice_simulation(grid, ocean; dynamics, internal_heat_flux, snow_thermodynamics,
+                             advection = IncrementalRemapping())
 
 # ### Initial condition
 #
