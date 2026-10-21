@@ -1,120 +1,215 @@
 # # [One-degree global ocean--sea ice simulation](@id one-degree-ocean-seaice)
 #
-# This example configures a global ocean--sea ice simulation at 1ᵒ horizontal resolution with
-# realistic bathymetry and a few closures including the "Gent-McWilliams" `IsopycnalSkewSymmetricDiffusivity`.
-# The simulation is forced by repeat-year JRA55 atmospheric reanalysis
-# and initialized by temperature, salinity, sea ice concentration, and sea ice thickness
-# from the ECCO state estimate.
+# This example configures a global ocean--sea ice simulation on the 1ᵒ NEMO eORCA1 grid, in an OMIP-like
+# configuration: 100 vertical levels, CATKE vertical mixing over a uniform background diffusivity,
+# Gent-McWilliams and Redi isopycnal mixing discretized on Griffies triads, and a biharmonic viscosity.
+# The simulation is forced by repeat-year JRA55 atmospheric reanalysis, its surface salinity is restored to the
+# World Ocean Atlas monthly climatology, and it is initialized by World Ocean Atlas temperature and salinity and
+# by ECCO sea ice concentration and thickness.
 #
-# For this example, we need Oceananigans, NumericalEarth, Dates, CUDA, and
+# For this example, we need Oceananigans, NumericalEarth, ClimaSeaIce, WorldOceanAtlasTools, Dates, CUDA, and
 # CairoMakie to visualize the simulation.
 
 using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
+using ClimaSeaIce: IncrementalRemapping, ConductiveFlux, UniformThicknessDistribution
+using WorldOceanAtlasTools
 using Dates
 using Printf
 using Statistics
 using CUDA
 
 # ### Grid and Bathymetry
-
-# We start by constructing an underlying TripolarGrid at ~1 degree resolution,
+#
+# The horizontal grid and the bathymetry come from the NEMO eORCA1 mesh, of which we keep only the largest
+# connected basin. In the vertical we use 100 levels whose spacing grows by 7.49% per level from 1.5 m at
+# the surface until it reaches 100 m at about 1400 m depth, so that the 100 levels span 5500 m.
 
 arch = GPU()
-Nx = 360
-Ny = 180
-Nz = 50
 
-depth = 5000meters
-z = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4, mutable = true)
+z = ReferenceToStretchedDiscretization(extent = 5500,
+                                       constant_spacing = 1.5,
+                                       constant_spacing_extent = 1.5,
+                                       maximum_spacing = 100,
+                                       stretching = LinearStretching(0.0749),
+                                       rounding_digits = 4,
+                                       mutable = true)
 
-underlying_grid = TripolarGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z)
-
-# Next, we build bathymetry on this grid, using interpolation passes to smooth the bathymetry.
-# With 2 major basins, we keep the Mediterranean (though we need to manually open the Gibraltar
-# Strait to connect it to the Atlantic):
-
-bottom_height = regrid_bathymetry(underlying_grid;
-                                  minimum_depth = 10,
-                                  interpolation_passes = 10,
-                                  major_basins = 2)
-
-# We then incorporate the bathymetry into an ImmersedBoundaryGrid,
-
-grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height);
-                            active_cells_map=true)
+grid = ORCAGrid(arch; dataset = ORCAOne(), Nz = 100, z, halo = (8, 8, 8), major_basins = 1)
 
 # ### Closures
 #
-# We include a Gent-McWilliams isopycnal diffusivity as a parameterization for the mesoscale
-# eddy fluxes. For vertical mixing at the upper-ocean boundary layer we include the CATKE
-# parameterization.
+# Vertical mixing is CATKE, on top of a uniform background diffusivity κ = 10⁻⁵ m² s⁻¹ and viscosity
+# ν = 3 × 10⁻⁵ m² s⁻¹. The mesoscale eddy fluxes are parameterized with a Gent-McWilliams skew diffusivity
+# of 500 m² s⁻¹ and a Redi isopycnal diffusivity of 800 m² s⁻¹, both discretized with Griffies triads.
+# Finally, a biharmonic viscosity ν = Az² / λ damps grid-scale motions on a timescale λ = 50 days
+# independently of the cell area Az.
 
-using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, AdvectiveFormulation
+using Oceananigans.TurbulenceClosures: TriadIsopycnalSkewSymmetricDiffusivity
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEMixingLength
+using Oceananigans.Operators: Az
 
-eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3, skew_flux_formulation=AdvectiveFormulation())
-vertical_mixing = NumericalEarth.Oceans.default_ocean_closure()
+vertical_mixing = CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization();
+                                           mixing_length = CATKEMixingLength(Cᵇ = 0.01),
+                                           maximum_viscosity = 3,
+                                           maximum_tracer_diffusivity = 3,
+                                           maximum_tke_diffusivity = 3,
+                                           negative_tke_damping_time_scale = 10)
+
+background_mixing = VerticalScalarDiffusivity(κ = 1e-5, ν = 3e-5)
+
+eddy_closure = TriadIsopycnalSkewSymmetricDiffusivity(κ_skew = 500, κ_symmetric = 800)
+
+@inline biharmonic_viscosity(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, λ) = Az(i, j, k, grid, ℓx, ℓy, ℓz)^2 / λ
+
+horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(ν = biharmonic_viscosity,
+                                                             discrete_form = true,
+                                                             parameters = 50days)
+
+# ### Land
+#
+# The river and iceberg runoff of JRA55-do is spread over the eight wet cells closest to each river mouth.
+# We build the land before the ocean, so that the ocean can enhance the vertical mixing at the river mouths.
+
+land = JRA55PrescribedLand(grid; spread_radius = nothing, maximum_spread_cells = 8)
 
 # ### Ocean simulation
-# Now we bring everything together to construct the ocean simulation.
-# We use a split-explicit timestepping with 70 substeps for the barotropic mode.
+#
+# The penetrating shortwave radiation is absorbed in two bands, whose attenuation follows the SeaWiFS
+# monthly chlorophyll climatology, cycled every year. The surface salinity is restored to the World Ocean
+# Atlas monthly climatology with a piston velocity of 0.254 m day⁻¹, which over the 1.5 m top cell
+# corresponds to a restoring rate of 0.254 / 1.5 day⁻¹. The restoring is applied as a surface salt flux
+# whose global mean is removed, so that it neither adds nor removes salt.
 
-free_surface       = SplitExplicitFreeSurface(grid; substeps=70)
-momentum_advection = WENOVectorInvariant(order=5)
-tracer_advection   = WENO(order=5)
+using NumericalEarth.DataWrangling: SeaWiFSMonthly,
+                                    SurfaceFluxRestoring,
+                                    ConservativeSurfaceFluxRestoring,
+                                    ConservativeSurfaceFluxRestoringCallback
 
-ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surface,
-                         closure=(eddy_closure, vertical_mixing))
+chlorophyll_dates    = (DateTime(2000, 1, 1), DateTime(2000, 12, 1))
+chlorophyll_metadata = Metadata(:chlorophyll; dataset = SeaWiFSMonthly(), dates = chlorophyll_dates)
+chlorophyll          = FieldTimeSeries(chlorophyll_metadata, grid)
+radiative_forcing    = TwoColorRadiation(grid; chlorophyll)
 
-@info "We've built an ocean simulation with model:"
-@show ocean.model
+piston_velocity    = 0.254 / days # m s⁻¹
+top_cell_thickness = 1.5          # m
+
+salinity_restoring = DatasetRestoring(Metadata(:salinity; dataset = WOAMonthly()), arch;
+                                      rate = piston_velocity / top_cell_thickness,
+                                      time_indices_in_memory = 12)
+
+salinity_flux = ConservativeSurfaceFluxRestoring(SurfaceFluxRestoring(salinity_restoring), grid)
+
+# We use a split-explicit free surface with 300 barotropic substeps, fifth-order WENO for momentum and
+# seventh-order WENO for tracers. Both treat vertical advection implicitly wherever the vertical Courant
+# number exceeds one.
+
+time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl = 1)
+
+free_surface       = SplitExplicitFreeSurface(grid; substeps = 300)
+momentum_advection = WENOVectorInvariant(order = 5; time_discretization)
+tracer_advection   = WENO(order = 7; time_discretization)
+
+ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surface, radiative_forcing,
+                         reference_density = 1026,
+                         closure = (vertical_mixing, eddy_closure, horizontal_viscosity, background_mixing),
+                         river_routing = land.river_routing,
+                         additional_surface_fluxes = (; S = salinity_flux))
 
 # ### Sea Ice simulation
 #
-# We also build a sea ice simulation. We use the default configuration:
-# EVP rheology and a zero-layer thermodynamic model that advances thickness
-# and concentration.
+# The sea ice has EVP rheology, a snow layer over a slab of ice, and is advected by incremental remapping.
+# The ice--ocean drag is computed against the ocean velocity averaged over the top 6 m. Heat is conducted
+# through the snow and the ice as if each were spread uniformly over four sub-grid categories, which raises
+# the effective conductivity of both by 1 + 1/3 + 1/5 + 1/7.
 
-sea_ice = sea_ice_simulation(grid, ocean; advection=tracer_advection)
+dynamics = NumericalEarth.SeaIces.sea_ice_dynamics(grid, ocean; sea_ice_ocean_drag_reference_depth = 6)
+
+itd_shape = UniformThicknessDistribution(categories = 4)
+internal_heat_flux  = ConductiveFlux(; conductivity = 2, itd_shape)
+snow_thermodynamics = NumericalEarth.SeaIces.default_snow_thermodynamics(grid; itd_shape)
+
+sea_ice = sea_ice_simulation(grid, ocean; dynamics, internal_heat_flux, snow_thermodynamics,
+                             advection = IncrementalRemapping())
 
 # ### Initial condition
-
-# We initialize the ocean and sea ice models with data from the ECCO state estimate.
-
-date = DateTime(1993, 1, 1)
-ecco_variables = (:temperature, :salinity, :sea_ice_thickness, :sea_ice_concentration)
-ecco_set = MetadataSet(ecco_variables; dataset = ECCO4Monthly(), date)
-
-# A single MetadataSet drives both components; variables not in
-# `variable_glossary` for a given model fall through silently.
-set!(ocean.model,   ecco_set)   # picks up :temperature, :salinity → T, S
-set!(sea_ice.model, ecco_set)   # picks up :sea_ice_thickness, :sea_ice_concentration → h, ℵ
-
-# ### JRA55-based atmospheric state, radiation, and land model
 #
-# We force the simulation with data derived from the JRA55-do atmospheric reanalysis,
-# which include the atmospheric state and radiative fluxes, as well as
-# land-based freshwater fluxes from rivers and icebergs.
-#
-# In the radiation component we prescribed a latitude-dependent ocean albedo due to
-# Large & Yeager 2009.
+# We initialize the ocean with the World Ocean Atlas annual climatology and the sea ice with the ECCO
+# state estimate of January 1993.
 
-land = JRA55PrescribedLand(grid)
+set!(ocean.model, MetadataSet((:temperature, :salinity); dataset = WOAAnnual()))
+set!(sea_ice.model, MetadataSet((:sea_ice_thickness, :sea_ice_concentration); dataset = ECCO4Monthly(),
+                                date = DateTime(1993, 1, 1)))
+
+# ### JRA55-based atmospheric state and radiation
+#
+# We force the simulation with the JRA55-do repeat-year atmospheric state and downwelling radiation.
+# The ocean has an albedo of 0.06, and the sea ice albedo depends on the ice thickness, the snow thickness,
+# and the surface temperature as in CCSM3.
+
 atmosphere = JRA55PrescribedAtmosphere(arch)
 
-ocean_surface = SurfaceRadiationProperties(albedo = LatitudeDependentAlbedo())
-radiation = JRA55PrescribedRadiation(arch; ocean_surface)
+sea_ice_albedo = SeaIceAlbedo(sea_ice.model.ice_thickness,
+                              sea_ice.model.snow_thickness,
+                              sea_ice.model.snow_thermodynamics.top_surface_temperature)
+
+ocean_surface   = SurfaceRadiationProperties(0.06, 1)
+sea_ice_surface = SurfaceRadiationProperties(sea_ice_albedo, 1)
+radiation = JRA55PrescribedRadiation(arch; ocean_surface, sea_ice_surface)
+
+# ### Turbulent fluxes
+#
+# Over the ocean, the turbulent fluxes follow the OMIP-2 bulk formulae of Large and Yeager (2004, 2009), whose
+# transfer coefficients are iterated directly, five times. Over the sea ice, Monin-Obukhov similarity uses the
+# SHEBA stability functions with roughness lengths fixed at 5 × 10⁻⁴ m for momentum and 5 × 10⁻⁵ m for heat and
+# moisture, and a minimum gustiness of 0.2 m s⁻¹. The saturation specific humidity is enhanced by the moist-air
+# factor of Gill (1982) over both the ocean, where it is 98% of the pure-water value, and the sea ice. The
+# ice--ocean heat flux follows the three-equation formulation, with a friction velocity computed from the
+# ice--ocean stress.
+
+using NumericalEarth.EarthSystemModels: AtmosphericThermodynamics
+using NumericalEarth.EarthSystemModels.InterfaceComputations: LargeYeagerTransferCoefficients,
+                                                              COARELogarithmicSimilarityProfile,
+                                                              ConvectiveGustiness,
+                                                              ImpureSaturationSpecificHumidity,
+                                                              GillSaturationEnhancement,
+                                                              ThreeEquationHeatFlux,
+                                                              MomentumBasedFrictionVelocity,
+                                                              atmosphere_sea_ice_stability_functions
+
+saturation_enhancement = GillSaturationEnhancement()
+
+atmosphere_ocean_interface_specific_humidity   = ImpureSaturationSpecificHumidity(AtmosphericThermodynamics.Liquid(), 0.98; saturation_enhancement)
+atmosphere_sea_ice_interface_specific_humidity = ImpureSaturationSpecificHumidity(AtmosphericThermodynamics.Ice(); saturation_enhancement)
+
+atmosphere_ocean_fluxes = CoefficientBasedFluxes(transfer_coefficients = LargeYeagerTransferCoefficients(),
+                                                 solver_stop_criteria = FixedIterations(5))
+
+atmosphere_sea_ice_fluxes = SimilarityTheoryFluxes(stability_functions = atmosphere_sea_ice_stability_functions(),
+                                                   similarity_form = COARELogarithmicSimilarityProfile(),
+                                                   subgrid_velocities = ConvectiveGustiness(minimum_gustiness = 0.2),
+                                                   momentum_roughness_length = 5e-4,
+                                                   temperature_roughness_length = 5e-5,
+                                                   water_vapor_roughness_length = 5e-5)
+
+sea_ice_ocean_heat_flux = ThreeEquationHeatFlux(sea_ice; heat_transfer_coefficient = 0.0057, friction_velocity = MomentumBasedFrictionVelocity())
 
 # ### Coupled simulation
 #
-# Now we are ready to build the coupled ocean--sea ice model and bring everything
-# together into a `simulation`.
+# Now we are ready to build the coupled ocean--sea ice model and bring everything together into a
+# `simulation` with a 90-minute time step.
 
-# With Runge-Kutta 3rd order time-stepping we can safely use a timestep of 20 minutes.
+coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation,
+                                 atmosphere_ocean_fluxes, atmosphere_sea_ice_fluxes, sea_ice_ocean_heat_flux,
+                                 atmosphere_ocean_interface_specific_humidity,
+                                 atmosphere_sea_ice_interface_specific_humidity)
 
-coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
-simulation = Simulation(coupled_model; Δt=20minutes, stop_time=90days)
+simulation = Simulation(coupled_model; Δt=90minutes, stop_time=90days)
+
+# The salinity restoring flux, and with it its global mean, is recomputed from the ocean state every time step.
+
+add_callback!(simulation, ConservativeSurfaceFluxRestoringCallback(salinity_flux, ocean.model))
 
 # ### A progress messenger
 #
@@ -210,6 +305,7 @@ n = Observable(Nt)
 # We create a land mask and use it to fill land points with `NaN`s.
 # The grid's `bottom_height` is stored as a halo-padded `OffsetArray`,
 # so we take a view of its interior to build the mask.
+Nx, Ny, _ = size(grid)
 land = view(To.grid.immersed_boundary.bottom_height, 1:Nx, 1:Ny, 1:1) .≥ 0
 
 Toₙ = @lift begin
