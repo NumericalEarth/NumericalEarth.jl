@@ -249,10 +249,10 @@ end
 end
 
 # A halo fill without a clock reads the first snapshot in memory, wherever reading snapshots left the window.
-@testset "Interpolated Value BC filled without a clock reads a snapshot in memory" begin
-    src_grid = RectilinearGrid(size = (6, 6, 2), x = (-1, 5), y = (-1, 5), z = (-2, 0),
+@testset "Interpolated Value BC filled without a clock reads a snapshot in memory on $(arch)" for arch in test_architectures
+    src_grid = RectilinearGrid(arch; size = (6, 6, 2), x = (-1, 5), y = (-1, 5), z = (-2, 0),
                                topology = (Bounded, Bounded, Bounded))
-    grid = RectilinearGrid(size = (4, 4, 2), x = (0, 4), y = (0, 4), z = (-2, 0),
+    grid = RectilinearGrid(arch; size = (4, 4, 2), x = (0, 4), y = (0, 4), z = (-2, 0),
                            topology = (Bounded, Bounded, Bounded))
 
     # Snapshots at noon of 4 days, cyclical: before the first noon the series wraps to the last day
@@ -264,7 +264,7 @@ end
         set!(snapshot, n)
         set!(on_disk, snapshot, n)
     end
-    fts = FieldTimeSeries(path, "c"; backend = InMemory(2), time_indexing = Cyclical())
+    fts = FieldTimeSeries(path, "c"; grid = src_grid, backend = InMemory(2), time_indexing = Cyclical())
 
     bcs = FieldBoundaryConditions(west = ValueBoundaryCondition(Interpolated(fts)))
     model = HydrostaticFreeSurfaceModel(grid; tracers = :c, buoyancy = nothing, boundary_conditions = (; c = bcs))
