@@ -518,7 +518,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
                                                                        parent_surface_elevation = surface_elevation(snapshot),
                                                                        kw...)
 
-    initial_state = state_exchanger(snapshot, first(nested_model.exchanger)).prognostic
+    initial_state = child_prognostic_state(snapshot, first(nested_model.exchanger))
     initialize_nested_child!(nested_model, parent_dataset, first(dates), dir; balancer, prognostic = initial_state)
     return nested_model
 end
