@@ -4,7 +4,6 @@ using ArchGDAL
 using NCDatasets: NCDataset
 
 using NumericalEarth: ESAWorldCover, WorldCoverV100, WorldCoverV200
-using NumericalEarth.DataWrangling: class_fractions
 using NumericalEarth.DataWrangling.WorldCover: WorldCoverVersion, class_counts, majority_class,
                                                class_fractions, vegetation_fraction,
                                                aggregate_blockwise, aggregate_landcover,
