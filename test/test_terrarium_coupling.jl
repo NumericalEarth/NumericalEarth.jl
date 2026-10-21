@@ -98,12 +98,11 @@ end
     @test all(interior(state.surface_shortwave_up) .≈ α * 400)
     @test all(interior(state.surface_longwave_up) .≈ interior(radiative.upwelling_longwave))
 
-    # `G` is the coupler's net surface energy flux (positive upward): turbulent fluxes plus
-    # emitted longwave minus absorbed longwave and shortwave.
+    # `G` is the coupler's net surface energy flux (positive upward): turbulent plus radiative fluxes.
     G = interior(state.ground_heat_flux)
     expected_G = interior(turbulent.sensible_heat) .+ interior(turbulent.latent_heat) .+
-                 interior(radiative.upwelling_longwave) .-
-                 interior(radiative.downwelling_longwave) .-
+                 interior(radiative.upwelling_longwave) .+
+                 interior(radiative.downwelling_longwave) .+
                  interior(radiative.downwelling_shortwave)
     @test all(G .≈ expected_G)
 
