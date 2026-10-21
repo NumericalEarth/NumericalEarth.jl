@@ -109,12 +109,14 @@ function compute_atmosphere_land_fluxes!(coupled_model, ti::TiledLandInterface, 
     clock = coupled_model.clock
 
     fraction, fraction_time_interpolator = kernel_surface_field(ti.fraction, arch, clock.time)
+    radiation_state = isnothing(exchanger.radiation) ? nothing : exchanger.radiation.state
 
     launch!(arch, grid, :xy, _blend_tiled_land_fluxes!,
             ti.fluxes, ti.temperature,
             ti.vegetated.fluxes, ti.vegetated.temperature,
             ti.bare.fluxes, ti.bare.temperature, skin_conductance(ti.bare), exchanger.land.state.T,
-            fraction, fraction_time_interpolator)
+            fraction, fraction_time_interpolator, grid, Time(clock.time),
+            kernel_radiation_properties(coupled_model.radiation, exchanger.radiation), radiation_state)
 
     return nothing
 end
@@ -122,10 +124,13 @@ end
 @kernel function _blend_tiled_land_fluxes!(blended_fluxes, blended_temperature,
                                            veg_fluxes, veg_temperature,
                                            bare_fluxes, bare_temperature, Λ, T,
-                                           fraction, fraction_time_interpolator)
+                                           fraction, fraction_time_interpolator, grid, time,
+                                           radiation_properties, radiation_state)
     i, j = @index(Global, NTuple)
     f = clamp(surface_field_value(fraction, i, j, fraction_time_interpolator), 0, 1)
     g = 1 - f
+    bare_radiation = air_land_interface_radiation_state(radiation_properties, radiation_state,
+                                                       i, j, size(grid, 3), grid, time)
 
     @inbounds begin
         blended_fluxes.latent_heat[i, j, 1]       = f * veg_fluxes.latent_heat[i, j, 1]       + g * bare_fluxes.latent_heat[i, j, 1]
@@ -153,7 +158,16 @@ end
         blended_temperature.canopy_wet_latent_heat[i, j, 1] = f * veg_temperature.canopy_wet_latent_heat[i, j, 1]
         blended_temperature.land_vapor_flux[i, j, 1]        = f * veg_temperature.land_vapor_flux[i, j, 1] + g * bare_fluxes.water_vapor[i, j, 1]
 
-        # Radiating temperature: area-weighted in σT⁴.
-        blended_temperature.effective[i, j, 1] = sqrt(sqrt(f * veg_temperature.effective[i, j, 1]^4 + g * Tᵇ^4))
+        # Effective (LST) temperature: σ T⁴ = f · LWꜛ(vegetated) + (1 − f) · LWꜛ(bare), where the
+        # bare tile emits ϵ σ Tᵇ⁴ and reflects (1 − ϵ) of the downwelling.
+        σ, ϵ = bare_radiation.σ, bare_radiation.ϵ
+        Tᵛ   = veg_temperature.effective[i, j, 1]
+        LWꜛᵇ = ϵ * σ * Tᵇ^4 - (1 - ϵ) * bare_radiation.ℐꜜˡʷ
+        T⁴   = f * Tᵛ^4 + g * ifelse(σ > 0, LWꜛᵇ / σ, Tᵇ^4)
+        blended_temperature.effective[i, j, 1] = sqrt(sqrt(T⁴))
+
+        # Both tiles see the same incident shortwave, so the mosaic albedo is their area weight.
+        blended_temperature.effective_albedo[i, j, 1] =
+            f * veg_temperature.effective_albedo[i, j, 1] + g * bare_radiation.α
     end
 end

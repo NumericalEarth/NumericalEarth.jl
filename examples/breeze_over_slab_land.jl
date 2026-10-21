@@ -26,7 +26,7 @@
 #     through the proxy (honoring the RTM's `schedule`).
 #   * Net surface SW/LW from the RTM feeds the slab's `surface_energy_flux`
 #     via `apply_air_land_radiative_fluxes!`, closing the surface
-#     energy balance — no example-level callbacks required.
+#     energy balance.
 
 using NumericalEarth
 using Breeze
@@ -68,8 +68,7 @@ grid = RectilinearGrid(arch;
 #
 # A 1D land grid (size Nx, flat in y and z) carrying skin temperature,
 # soil water, and surface saturation. The land grid spans the same x
-# extent as the atmosphere so that the slab T can serve directly as the
-# RRTMGP surface temperature.
+# extent as the atmosphere.
 
 land_grid = RectilinearGrid(arch;
                             size = Nx,
@@ -179,9 +178,7 @@ sponge = Forcing(stratospheric_relaxation; discrete_form = true,
 
 # ## RRTMGP radiation
 #
-# All-sky RRTMGP at 15°N starting at the equinox, midnight local. The
-# `surface_temperature` is the slab land's prognostic skin temperature,
-# so radiation responds to surface heating and cooling in real time.
+# All-sky RRTMGP at 15°N starting at the equinox, midnight local.
 #
 # A tropical ozone profile is required for stratospheric radiative balance:
 # without it the upper column is far from radiative equilibrium and
@@ -201,7 +198,6 @@ solar_position = ApparentSolarPosition(coordinate = (0, latitude),
 
 radiation = RadiativeTransferModel(grid, AllSkyOptics(), constants;
                                    solar_position, background_atmosphere,
-                                   surface_temperature = slab_land.temperature,
                                    surface_albedo      = 0.20,
                                    surface_emissivity  = 0.95,
                                    solar_constant      = 1361,
@@ -212,8 +208,7 @@ radiation = RadiativeTransferModel(grid, AllSkyOptics(), constants;
 # ## Atmosphere (Simulation wrapping a Breeze `AtmosphereModel`)
 #
 # The atmosphere is built with a skeleton `CoupledRadiation` placeholder.
-# `AtmosphereLandModel` materializes it against the RTM below — no
-# `radiation` kwarg is passed here.
+# `AtmosphereLandModel` materializes it against the RTM below.
 
 atmos = atmosphere_simulation(grid; dynamics,
                               forcing  = (; ρθ = sponge),
@@ -247,11 +242,8 @@ set!(θᵣ, liquid_ice_potential_temperature(atmos.model))
 
 # ## Coupled model
 #
-# Passing `radiation = radiative_transfer_model` here triggers
-# `materialize_earth_system_radiation!`, which aliases the atmosphere's
-# `CoupledRadiation.flux_divergence` to
-# `radiative_transfer_model.flux_divergence` and installs the Breeze-aware
-# `apply_air_land_radiative_fluxes!`.
+# Passing `radiation` here aliases the atmosphere's
+# `CoupledRadiation.flux_divergence` to the RTM's `flux_divergence`.
 
 # The surface specific humidity is solved by [`DryLayerHumidity`](@ref):
 # a Fickian vapor-flux balance between the saturated soil at depth `δᵛ` and
@@ -273,8 +265,7 @@ al_interface = atmosphere_land_interface(slab_land.grid, atmos, slab_land;
                                          specific_humidity = interface_specific_humidity)
 
 # The atmosphere runs in `Float32` (its clock follows the grid), so the coupled
-# model needs a matching `Float32` clock — `EarthSystemModel` otherwise defaults
-# to a `Float64` clock and rejects the mismatch.
+# model needs a matching `Float32` clock.
 model = AtmosphereLandModel(atmos, slab_land; radiation,
                             atmosphere_land_interface = al_interface,
                             clock = Clock{eltype(grid)}(time = 0))

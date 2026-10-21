@@ -108,9 +108,10 @@ net_fluxes(::Nothing) = nothing
 ##### with concrete methods for `PrescribedRadiation`.
 #####
 
-# `nothing` fallback (radiation is off). Concrete methods for
-# `PrescribedRadiation` (and future radiation types) are added in `Radiations`.
-@inline kernel_radiation_properties(::Nothing) = nothing
+# `nothing` fallback (radiation is off). Concrete methods for `PrescribedRadiation` (and
+# future radiation types) are added in `Radiations`; the exchanger is for radiations whose
+# surface optics the interfaces read from it.
+@inline kernel_radiation_properties(::Nothing, ::Nothing) = nothing
 
 @inline function air_sea_interface_radiation_state(::Nothing, ::Nothing, i, j, k, grid, time)
     z = zero(eltype(grid))

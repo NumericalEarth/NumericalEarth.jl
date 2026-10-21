@@ -89,6 +89,7 @@ end
         Ts.canopy[i, j, 1]                 = sol.Tˡᵉᵃᶠ
         Ts.soil_skin[i, j, 1]              = sol.Tᵍ
         Ts.effective[i, j, 1]              = sol.effective_temperature
+        Ts.effective_albedo[i, j, 1]       = sol.effective_albedo
         Ts.ground_heat_flux[i, j, 1]       = sol.𝒬ᵍ
         Ts.canopy_latent_heat[i, j, 1]     = sol.LEˡᵉᵃᶠ
         Ts.soil_latent_heat[i, j, 1]       = sol.LEᵍ
@@ -229,8 +230,8 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     vegetation, leaf_area_index_time_interpolator = kernel_surface_field(leaf_area_index, arch, clock.time)
 
     radiation = coupled_model.radiation
-    radiation_kernel_props = kernel_radiation_properties(radiation)
     radiation_exchanger    = exchanger.radiation
+    radiation_kernel_props = kernel_radiation_properties(radiation, radiation_exchanger)
     radiation_state        = isnothing(radiation_exchanger) ? nothing : radiation_exchanger.state
 
     # Interior cells only: halo cells of the atmosphere exchanger state are uninitialized when the

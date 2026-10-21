@@ -7,8 +7,8 @@ using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties, sk
     apply_air_land_radiative_fluxes!(coupled_model)
 
 Add the radiative contribution to the land `surface_energy_flux` (positive
-upward) and write diagnostic radiative fluxes into
-`coupled_model.radiation.interface_fluxes.land`.
+upward) and, for a radiation that keeps them, write the diagnostic radiative
+fluxes into `coupled_model.radiation.interface_fluxes.land`.
 
 When `coupled_model.radiation === nothing`, this is a no-op.
 """
@@ -20,6 +20,10 @@ EarthSystemModels.apply_air_land_radiative_fluxes!(coupled_model::EarthSystemMod
 # No land: nothing to do.
 apply_air_land_radiative_fluxes!(coupled_model, ::Nothing) = nothing
 
+# Diagnostic radiative fluxes at the land surface; a radiation that keeps none gets empty slots.
+land_interface_radiation_flux(radiation) = InterfaceRadiationFlux(nothing, nothing, nothing)
+land_interface_radiation_flux(radiation::PrescribedRadiation) = radiation.interface_fluxes.land
+
 function apply_air_land_radiative_fluxes!(coupled_model, land)
     # No atmosphere--land interface (no atmosphere): nothing to do.
     al_interface = coupled_model.interfaces.atmosphere_land_interface
@@ -29,16 +33,9 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     # then driven by the skin→bulk conduction.
     isnothing(skin_conductance(al_interface)) || return nothing
 
+    # Skip when the radiation was not configured with a land surface.
     radiation = coupled_model.radiation
-    interface_fluxes = radiation.interface_fluxes
-    isnothing(interface_fluxes) && return nothing
-
-    # Skip when the radiation was not configured with a land surface — the
-    # accumulator and the surface properties must both be present.
-    land_radiative_flux = get(interface_fluxes, :land, nothing)
-    isnothing(land_radiative_flux) && return nothing
-
-    rk = kernel_radiation_properties(radiation)
+    rk = kernel_radiation_properties(radiation, coupled_model.interfaces.exchanger.radiation)
     land_surface_props = get(rk.surface_properties, :land, nothing)
     isnothing(land_surface_props) && return nothing
 
@@ -57,7 +54,7 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     launch!(arch, grid, :xy,
             _apply_air_land_radiative_fluxes!,
             land_energy_flux,
-            land_radiative_flux,
+            land_interface_radiation_flux(radiation),
             grid,
             clock,
             rk,
@@ -70,11 +67,11 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
 end
 
 # Opting out with `nothing` is resolved at compile time, so it costs nothing in the kernel.
-@inline maybe_set_upwelling_radiative_fluxes!(::Nothing, i, j, value) = nothing
-@inline maybe_set_upwelling_radiative_fluxes!(field, i, j, value) = @inbounds field[i, j, 1] = value
+@inline maybe_set_radiative_flux!(::Nothing, i, j, value) = nothing
+@inline maybe_set_radiative_flux!(field, i, j, value) = @inbounds field[i, j, 1] = value
 
 @kernel function _apply_air_land_radiative_fluxes!(land_energy_flux,
-                                                  interface_radiative_flux,
+                                                  interface_radiation_flux,
                                                   grid,
                                                   clock,
                                                   rk,
@@ -106,14 +103,12 @@ end
 
     inactive = inactive_node(i, j, 1, grid, Center(), Center(), Center())
 
-    @inbounds begin
-        land_energy_flux[i, j, 1] += ifelse(inactive, zero(grid), ΣQ)
-        interface_radiative_flux.upwelling_longwave[i, j, 1]    = ℐꜛˡʷ
-        interface_radiative_flux.downwelling_longwave[i, j, 1]  = ℐₐˡʷ
-        interface_radiative_flux.downwelling_shortwave[i, j, 1] = ℐₜˢʷ
-    end
+    @inbounds land_energy_flux[i, j, 1] += ifelse(inactive, zero(grid), ΣQ)
 
-    # Same `Tₛ`, `α`, `ϵ` as `ΣQ`, so the component cannot disagree with the assembled budget.
-    maybe_set_upwelling_radiative_fluxes!(land_shortwave_upwelling_flux, i, j, ℐꜛˢʷ)
-    maybe_set_upwelling_radiative_fluxes!(land_longwave_upwelling_flux, i, j, ℐꜛˡʷ)
+    # Same `Tₛ`, `α`, `ϵ` as `ΣQ`, so the diagnostics cannot disagree with the assembled budget.
+    maybe_set_radiative_flux!(interface_radiation_flux.upwelling_longwave,    i, j, ℐꜛˡʷ)
+    maybe_set_radiative_flux!(interface_radiation_flux.downwelling_longwave,  i, j, ℐₐˡʷ)
+    maybe_set_radiative_flux!(interface_radiation_flux.downwelling_shortwave, i, j, ℐₜˢʷ)
+    maybe_set_radiative_flux!(land_shortwave_upwelling_flux, i, j, ℐꜛˢʷ)
+    maybe_set_radiative_flux!(land_longwave_upwelling_flux, i, j, ℐꜛˡʷ)
 end
