@@ -75,6 +75,12 @@ NumericalEarth.EarthSystemModels.boundary_layer_height(atmos::BreezeAtmosphereSi
 
 function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::BreezeAtmosphere, exchange_grid;
                                                                                    correction = nothing)
+    # Surface fields are copied index for index from the atmosphere grid.
+    atmosphere_size = (size(atmosphere.grid, 1), size(atmosphere.grid, 2))
+    exchange_size = (size(exchange_grid, 1), size(exchange_grid, 2))
+    atmosphere_size == exchange_size ||
+        throw(ArgumentError("The Breeze atmosphere's horizontal size $atmosphere_size must match the exchange grid's $exchange_size."))
+
     # Breeze's bottom flux of every sedimenting condensate, liquid and frozen (positive down,
     # kg m⁻² s⁻¹), enters as rain; Jˢⁿ stays zero.
     Jʳⁿ = bottom_precipitation_flux(atmosphere)

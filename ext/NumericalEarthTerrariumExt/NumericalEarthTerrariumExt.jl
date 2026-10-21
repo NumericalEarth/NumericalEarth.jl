@@ -1,8 +1,7 @@
 module NumericalEarthTerrariumExt
 
-using KernelAbstractions
+using KernelAbstractions: @kernel, @index
 using Oceananigans: Simulation, Center, architecture
-using Oceananigans.Architectures
 using Oceananigans.Fields: Field, ZeroField
 using Oceananigans.Grids: AbstractGrid
 using Oceananigans.Utils: launch!
@@ -13,7 +12,7 @@ import Terrarium.RingGrids
 import NumericalEarth
 import NumericalEarth.EarthSystemModels: interpolate_state!, update_net_fluxes!
 import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
-import NumericalEarth.Lands: land_simulation, land_model
+using NumericalEarth.Lands: land_model
 
 const TerrariumSimulation = Simulation{<:Terrarium.ModelIntegrator}
 
