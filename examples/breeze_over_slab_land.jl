@@ -179,9 +179,9 @@ sponge = Forcing(stratospheric_relaxation; discrete_form = true,
 
 # ## RRTMGP radiation
 #
-# All-sky RRTMGP at 15°N starting at the equinox, midnight local. The
-# `surface_temperature` is the slab land's prognostic skin temperature,
-# so radiation responds to surface heating and cooling in real time.
+# All-sky RRTMGP at 15°N starting at the equinox, midnight local. No
+# `surface_temperature`: the coupled model binds the atmosphere–land interface
+# temperature, so radiation responds to surface heating and cooling in real time.
 #
 # A tropical ozone profile is required for stratospheric radiative balance:
 # without it the upper column is far from radiative equilibrium and
@@ -201,7 +201,6 @@ solar_position = ApparentSolarPosition(coordinate = (0, latitude),
 
 radiation = RadiativeTransferModel(grid, AllSkyOptics(), constants;
                                    solar_position, background_atmosphere,
-                                   surface_temperature = slab_land.temperature,
                                    surface_albedo      = 0.20,
                                    surface_emissivity  = 0.95,
                                    solar_constant      = 1361,

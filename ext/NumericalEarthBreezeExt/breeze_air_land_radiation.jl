@@ -11,8 +11,8 @@ using NumericalEarth.Radiations: SurfaceRadiationProperties, default_stefan_bolt
 const BreezeRTM = Breeze.RadiativeTransferModel
 const GrayBreezeRTM = Breeze.RadiativeTransferModel{<:Number, <:Any, <:Any, Nothing}
 
-# A canopy column radiates σ (Tᵉᶠᶠ)⁴ and reflects αᵉᶠᶠ; any other surface keeps its configured
-# optics and an explicitly configured temperature.
+# A canopy column radiates σ (Tᵉᶠᶠ)⁴ and reflects αᵉᶠᶠ; any other land radiates at its interface
+# temperature through the configured optics. Without land, a configured temperature is kept.
 function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_properties(rtm::BreezeRTM, interfaces)
     land = interfaces.atmosphere_land_interface
     temperature = isnothing(land) ? nothing : land.temperature
@@ -23,7 +23,7 @@ function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_prope
         return @set rtm.surface_radiation = Breeze.AtmosphereModels.SurfaceRadiation(temperature.effective, ε, α, α)
     end
 
-    isnothing(rtm.surface_radiation.surface_temperature) || return rtm
+    isnothing(land) && !isnothing(rtm.surface_radiation.surface_temperature) && return rtm
     Tˢ = NumericalEarth.EarthSystemModels.surface_temperature(interfaces)
     isnothing(Tˢ) && return rtm
     return @set rtm.surface_radiation.surface_temperature = Tˢ
