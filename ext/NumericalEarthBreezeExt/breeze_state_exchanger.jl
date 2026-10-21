@@ -75,7 +75,7 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
     i, j, k = @index(Global, NTuple)
     @inbounds begin
         Tᵢ  = T[i, j, k]
-        qᵛᵢ = qᵛ[i, j, k]
+        qᵛᵢ = max(0, qᵛ[i, j, k])   # reanalysis humidity carries small negative values aloft
         qˡᵢ = qᶜˡ[i, j, k] + qʳ[i, j, k]
         qⁱᵢ = qᶜⁱ[i, j, k] + qˢ[i, j, k]
         pᵢ  = p[i, j, k]
@@ -116,10 +116,11 @@ end
 
 # A per-variable input accessor at time level `n`: a `FieldTimeSeries` yields its `n`-th snapshot, a
 # static `AbstractField` (e.g. the pressure-level coordinate) is time-constant, and `nothing` means the
-# variable is absent (a `ZeroField` — e.g. omitted cloud condensate, so `qᵗ = qᵛ`).
-@inline source_snapshot(fts::FieldTimeSeries, n) = fts[n]
-@inline source_snapshot(field::AbstractField, n) = field
-@inline source_snapshot(::Nothing, n) = ZeroField()
+# variable is absent (a `ZeroField` of the grid's float type `FT` — e.g. omitted cloud condensate, so
+# `qᵗ = qᵛ`).
+@inline source_snapshot(fts::FieldTimeSeries, n, FT) = fts[n]
+@inline source_snapshot(field::AbstractField, n, FT) = field
+@inline source_snapshot(::Nothing, n, FT) = ZeroField(FT)
 
 # Full-memory snapshot at `Time(time)` for the parity reconstruction (`reconstruct_parent_state`): an FTS
 # yields its time-interpolated snapshot over its *whole* series (not a 3-level window), a static
@@ -155,6 +156,7 @@ function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, const
                                    moisture_name)
     grid = parent_atmosphere.temperature.grid
     arch = architecture(grid)
+    FT = eltype(grid)
 
     equilibrium_moisture = moisture_name === :ρqᵉ   # host-side, so the kernel takes an isbits `Bool`
 
@@ -162,9 +164,9 @@ function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, const
         launch!(arch, grid, :xyz, _compute_child_prognostics!,
                 prognostic.ρᵈ[n], prognostic.ρu[n], prognostic.ρv[n], prognostic.ρθ[n], prognostic.ρqᵛᵉ[n], prognostic.θ[n], prognostic.u[n], prognostic.v[n],
                 parent_atmosphere.temperature[n], parent_atmosphere.specific_humidity[n],
-                source_snapshot(condensates.qᶜˡ, n), source_snapshot(condensates.qʳ, n),
-                source_snapshot(condensates.qᶜⁱ, n), source_snapshot(condensates.qˢ, n),
-                source_snapshot(parent_atmosphere.pressure, n),   # static Field (ERA5) or FTS: both handled
+                source_snapshot(condensates.qᶜˡ, n, FT), source_snapshot(condensates.qʳ, n, FT),
+                source_snapshot(condensates.qᶜⁱ, n, FT), source_snapshot(condensates.qˢ, n, FT),
+                source_snapshot(parent_atmosphere.pressure, n, FT),   # static Field (ERA5) or FTS: both handled
                 parent_atmosphere.velocities.u[n], parent_atmosphere.velocities.v[n],
                 pˢᵗ, constants, equilibrium_moisture)
     end

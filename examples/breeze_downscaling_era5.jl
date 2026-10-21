@@ -37,8 +37,8 @@
 #   parameterization — diffusion is numerical, and deep convection is resolved on the grid.
 # - The ocean is prescribed: the SST follows ERA5's hourly analysis but does not respond to the
 #   atmosphere above it.
-# - Snow does not reach the bucket yet (the coupler diagnoses the child's surface rain flux,
-#   but no snow analog); immaterial for this warm-season case.
+# - No snowpack: the child's frozen precipitation reaches the bucket as liquid water;
+#   immaterial for this warm-season case.
 
 using NumericalEarth
 using Oceananigans
@@ -72,7 +72,7 @@ Oceananigans.defaults.FloatType = Float32
 
 ## dates
 name = "mc3e"
-duration = 3hours
+duration = 6hours
 start_date = DateTime(2011, 05, 20, 0)
 stop_date = start_date + Second(duration)
 
@@ -280,7 +280,7 @@ radiation = RadiativeTransferModel(grid, AllSkyOptics(), nest.child.thermodynami
 # substepped).
 
 Δt = 10
-atmosphere = Simulation(nest; Δt)   ## the coupled model manages Δt; this sets only the initial value
+atmosphere = Simulation(nest; Δt, verbose = false)   ## the coupled model manages Δt and the stop time
 model = EarthSystemModel(; atmosphere, land, ocean, radiation, ocean_fraction)
 
 simulation = Simulation(model; Δt, stop_time=duration)
