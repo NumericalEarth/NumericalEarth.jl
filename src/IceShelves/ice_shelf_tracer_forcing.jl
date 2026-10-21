@@ -52,9 +52,8 @@ using NumericalEarth
 
 underlying_grid = RectilinearGrid(size = (2, 1, 4), x = (0, 2), y = (0, 1), z = (-1, 0),
                                   topology = (Bounded, Periodic, Bounded))
-bottom(x, y)  = -1
-top_height(x, y) = x < 1 ? -0.5 : 0.0
-grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom; top_height))
+bottom(x, y) = -1
+grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom))
 
 interface = IceShelfOceanInterface(grid)
 forcing = ice_shelf_tracer_forcing(interface)
