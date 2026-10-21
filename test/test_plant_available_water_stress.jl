@@ -10,7 +10,7 @@ using NumericalEarth.Lands: van_genuchten_saturation
 
 # Route through the per-cell materialization, as the flux kernel does: the endpoints come
 # off the land's retention curve, not off the closure.
-land_state(𝒮, curve) = (saturation = 𝒮, retention_curve = curve)
+land_state(𝒮, curve) = (saturation = 𝒮, root_zone_saturation = 𝒮, retention_curve = curve)
 
 # The moisture availability β the formulation derives from that state.
 availability(model, 𝒮, curve) =

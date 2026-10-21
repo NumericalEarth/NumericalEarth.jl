@@ -7,7 +7,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyAirSpace, CanopyConductanceHumidity, CanopyInterception,
     CriticalSaturation, InteractiveAbsorbedPAR, SoilConductiveFlux
 using NumericalEarth.Lands: SlabLand, SlabEnergy, VariablySaturatedHydrology, InterceptingHydrology,
-    VanGenuchtenRetention, VanGenuchtenConductivity
+    VanGenuchtenRetention, VanGenuchtenConductivity, canopy_store_update
 soil_hydrology(FT) = VariablySaturatedHydrology(FT;
     slab_depth = 1.0, porosity = 0.4, storage_height = 0.1,
     retention_curve = VanGenuchtenRetention(FT; inverse_air_entry_head = 2.0, pore_size_uniformity = 1.5),
@@ -48,6 +48,16 @@ end
         @test :throughfall in keys(land.diagnostics)
         @test :canopy_water_storage_tendency in keys(land.diagnostics)
         @test :water_storage_tendency in keys(land.diagnostics)   # from the wrapped soil
+    end
+end
+
+@testset "Canopy store budget closes when the store empties mid-step" begin
+    Wᶜ, rain, Wᶜᵐᵃˣ, fⁱⁿᵗ, f, Δt = 0.05, 1e-4, 0.3, 0.6, 0.5, 600.0
+    for Eʷᵉᵗ in (0.0, 1e-4, 5e-4)   # the last asks for more than the store and the rain hold
+        Wᶜⁿ⁺¹, drip, throughfall = canopy_store_update(Wᶜ, rain, Eʷᵉᵗ, Wᶜᵐᵃˣ, fⁱⁿᵗ, f, Δt)
+        @test 0 ≤ Wᶜⁿ⁺¹ ≤ Wᶜᵐᵃˣ
+        @test drip ≥ 0
+        @test rain ≈ f * ((Wᶜⁿ⁺¹ - Wᶜ) / Δt + Eʷᵉᵗ) + throughfall atol = 1e-15
     end
 end
 

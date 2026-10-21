@@ -43,11 +43,14 @@ land_surface_energy_flux(land::TerrariumSimulation) = interior(land.model.state.
 land_surface_shortwave_up(land::TerrariumSimulation) = interior(land.model.state.surface_shortwave_up)
 land_surface_longwave_up(land::TerrariumSimulation) = interior(land.model.state.surface_longwave_up)
 
-# Land exchanger: expose skin temperature `T` (K) and surface `saturation`, with no canopy
-# water store and no retention curve. No regridder (exchange grid == land grid).
+# Land exchanger: expose skin temperature `T` (K) and surface `saturation` (which also serves
+# as the root-zone saturation), with no canopy water store and no retention curve. No
+# regridder (exchange grid == land grid).
 function ComponentExchanger(land::TerrariumSimulation, exchange_grid)
+    saturation = Field{Center, Center, Nothing}(exchange_grid)
     state = (T                     = Field{Center, Center, Nothing}(exchange_grid),
-             saturation            = Field{Center, Center, Nothing}(exchange_grid),
+             saturation            = saturation,
+             root_zone_saturation  = saturation,
              canopy_water_storage  = ZeroField(),
              canopy_water_capacity = ZeroField(),
              retention_curve       = nothing)

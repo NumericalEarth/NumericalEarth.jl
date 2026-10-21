@@ -39,7 +39,8 @@ the permanent wilting point to 1 at field capacity,
 β(𝒮) = \\mathrm{clamp}\\left(\\frac{𝒮 - 𝒮ʷᵖ}{𝒮ᶠᶜ - 𝒮ʷᵖ}, 0, 1\\right),
 ```
 
-where `𝒮ᶠᶜ` and `𝒮ʷᵖ` are the effective saturations at the two suction heads on the
+where `𝒮` is the land's root-zone saturation (the root-weighted mean over a layered
+column) and `𝒮ᶠᶜ`, `𝒮ʷᵖ` are the effective saturations at the two suction heads on the
 land's own retention curve, evaluated per cell; a hydrology without a retention curve is
 rejected when the interface is built. The default heads follow
 [Balsamo et al. (2009)](@cite balsamo2009): `ψᶠᶜ = 1` m and `ψʷᵖ = 150` m of suction.
@@ -70,7 +71,7 @@ end
 # The endpoints arrive precomputed on the land's own curve — see
 # `interface_hydrology_state(i, j, grid, ::PlantAvailableWaterStress, land_state)`.
 @inline function evaporation_efficiency(::PlantAvailableWaterStress, hydrology)
-    𝒮   = hydrology.saturation
+    𝒮   = hydrology.root_zone_saturation
     FT  = typeof(𝒮)
     𝒮ᶠᶜ = convert(FT, hydrology.field_capacity_saturation)
     𝒮ʷᵖ = convert(FT, hydrology.wilting_saturation)

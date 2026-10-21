@@ -98,16 +98,24 @@ end
         Ts.canopy_wet_latent_heat[i, j, 1] = sol.ℒ * sol.Eʷᵉᵗ
         Ts.land_vapor_flux[i, j, 1]        = (sol.LEˡᵉᵃᶠ + sol.LEᵍ) / sol.ℒ - sol.Eʷᵉᵗ
     end
-    return advance_canopy_air_state!(Ts.state, i, j, sol, Ψₛ, Ψₐ, ℙₐ)
+    advance_canopy_air_state!(Ts.state, i, j, sol, Ψₛ)
+
+    # The exported scales are evaluated at the node the fluxes above were partitioned at, so
+    # the atmosphere receives exactly the Kirchhoff supply (minus the storage tendency of a
+    # prognostic node) and the stores are debited by the same solve.
+    FT  = eltype(Ψₛ)
+    θᵃᵗ = convert(FT, surface_atmosphere_temperature(Ψₐ, ℙₐ))
+    fluxes = InterfaceFluxScales(Ψₛ.fluxes.u★,
+                                 convert(FT, Ψₛ.fluxes.χθ * (θᵃᵗ - sol.Tᵃᶜ)),
+                                 convert(FT, Ψₛ.fluxes.χq * (Ψₐ.q - sol.qᵃᶜ)),
+                                 Ψₛ.fluxes.χθ, Ψₛ.fluxes.χq)
+    return rebuild_interface_state(Ψₛ, fluxes, sol.Tᵃᶜ, sol.qᵃᶜ)
 end
 
-@inline advance_canopy_air_state!(::Nothing, i, j, sol, Ψₛ, Ψₐ, ℙₐ) = Ψₛ
+@inline advance_canopy_air_state!(::Nothing, i, j, sol, Ψₛ) = nothing
 
-# The node advances by its exact relaxation toward the equilibrium the skins were solved
-# against; the exported scales are re-evaluated at the step-mean node, so the flux to the
-# atmosphere equals the Kirchhoff supply minus the storage tendency.
-@inline function advance_canopy_air_state!(state::CanopyAirState, i, j, sol, Ψₛ, Ψₐ, ℙₐ)
-    FT = eltype(Ψₛ)
+# The node advances by its exact relaxation toward the equilibrium the skins were solved against.
+@inline function advance_canopy_air_state!(state::CanopyAirState, i, j, sol, Ψₛ)
     Δt = Ψₛ.energy.time_step
     T⁺ = advance_canopy_air(Ψₛ.temperature, sol.equilibrium_temperature, sol.Σgᵀ, sol.Cᵀ, Δt)
     q⁺ = advance_canopy_air(Ψₛ.specific_humidity, sol.equilibrium_humidity, sol.Σgᵛ, sol.Cᵛ, Δt)
@@ -115,12 +123,7 @@ end
         state.temperature[i, j, 1]       = T⁺
         state.specific_humidity[i, j, 1] = q⁺
     end
-    θᵃᵗ = convert(FT, surface_atmosphere_temperature(Ψₐ, ℙₐ))
-    fluxes = InterfaceFluxScales(Ψₛ.fluxes.u★,
-                                 convert(FT, Ψₛ.fluxes.χθ * (θᵃᵗ - sol.Tᵃᶜ)),
-                                 convert(FT, Ψₛ.fluxes.χq * (Ψₐ.q - sol.qᵃᶜ)),
-                                 Ψₛ.fluxes.χθ, Ψₛ.fluxes.χq)
-    return rebuild_interface_state(Ψₛ, fluxes, sol.Tᵃᶜ, sol.qᵃᶜ)
+    return nothing
 end
 
 # A prognostic energy-balance skin is frozen through the fixed point and advanced once per
@@ -214,6 +217,7 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     FT = eltype(grid)
     land_state = (T = land_exchanger_state.T,
                   saturation = land_exchanger_state.saturation,
+                  root_zone_saturation = land_exchanger_state.root_zone_saturation,
                   canopy_water_storage = land_exchanger_state.canopy_water_storage,
                   canopy_water_capacity = land_exchanger_state.canopy_water_capacity,
                   retention_curve = land_exchanger_state.retention_curve,
@@ -315,13 +319,14 @@ end
 @inline interface_hydrology_state(i, j, grid, q::FractionalHumidity, land_state) = interface_hydrology_state(i, j, grid, q.efficiency, land_state)
 @inline requires_retention_curve(q::FractionalHumidity) = requires_retention_curve(q.efficiency)
 @inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) = (; saturation = land_saturation(i, j, grid, land_state))
-# The stress endpoints live on the *land's* retention curve, whose parameters may vary
-# per cell; evaluate them here, once per cell, so the flux solve reads plain scalars.
+# The stress reads the root-zone saturation, and its endpoints live on the *land's*
+# retention curve, whose parameters may vary per cell; evaluate them here, once per cell,
+# so the flux solve reads plain scalars.
 @inline function interface_hydrology_state(i, j, grid, p::PlantAvailableWaterStress, land_state)
-    𝒮 = state2dindex(land_state.saturation, i, j)
+    𝒮 = state2dindex(land_state.root_zone_saturation, i, j)
     FT = typeof(𝒮)
     r  = land_state.retention_curve
-    return (saturation = 𝒮,
+    return (root_zone_saturation = 𝒮,
             field_capacity_saturation = effective_saturation(i, j, grid, r, convert(FT, p.field_capacity_head)),
             wilting_saturation        = effective_saturation(i, j, grid, r, convert(FT, p.wilting_point_head)))
 end

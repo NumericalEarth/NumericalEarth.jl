@@ -21,9 +21,11 @@
 #####   * `surface_runoff`            (Rˢᶠᶜ ≥ 0)
 #####   * `subsurface_runoff`         (Rˡᵃᵗ ≥ 0, from the top layer)
 #####   * `water_storage_tendency`    (realized dM₁/dt)
+#####   * `root_zone_saturation`      (Σ rₖ 𝒮ₖ, read by the canopy stress)
+#####   * `column_water_storage`      (Σ Mₖ, the water the energy closure's heat capacity counts)
 #####
-##### `land.saturation` is the root-weighted `Σ rₖ 𝒮ₖ`; the interface humidity formulation
-##### maps it to the evaporation efficiency `β`.
+##### `land.saturation` is the top layer's `𝒮₁`; the interface's soil-evaporation models map
+##### it to the evaporation efficiency `β`.
 #####
 
 """
@@ -49,7 +51,8 @@ Neighboring layers exchange water by Darcy's law across the distance `ℓ = (h�
 between their centers, `Jₖ = ρˡ K̄ (Πₖ₊₁ − Πₖ − ℓ)/ℓ` with `K̄` the conductivity at their
 mean saturation, positive upward. The last layer exchanges with `deep_liquid_flux`; the
 surface fluxes and `runoff` act on the first. The vapor sink is drawn from layer `k` in
-proportion to `rₖ 𝒮ₖ`, and the `saturation` the atmosphere reads is `Σ rₖ 𝒮ₖ`. The interlayer
+proportion to `rₖ 𝒮ₖ`; `saturation` is the top layer's `𝒮₁` and the diagnostic
+`root_zone_saturation` the root-weighted `Σ rₖ 𝒮ₖ` the canopy stress reads. The interlayer
 exchanges and a Darcy bottom closure are linearized in head and stepped implicitly through a
 tridiagonal solve per column; surface fluxes and the other bottom closures are explicit. The
 interface conductivity, the root-weighted uptake, and the linearized step follow the Community
@@ -156,7 +159,8 @@ prognostic_variables(h::VariablySaturatedHydrology) =
 
 diagnostic_variables(h::VariablySaturatedHydrology) =
     (:deep_liquid_flux, interlayer_flux_names(h)...,
-     :surface_liquid_flux, :surface_runoff, :subsurface_runoff, :water_storage_tendency)
+     :surface_liquid_flux, :surface_runoff, :subsurface_runoff, :water_storage_tendency,
+     :root_zone_saturation, :column_water_storage)
 
 function initial_prognostic(h::VariablySaturatedHydrology, name::Symbol, grid)
     field = CenterField(grid)
@@ -194,8 +198,11 @@ interlayer_fluxes(h, land) = map(name -> getproperty(land.diagnostics, name), in
     return (; θ, 𝒮, Π, dΠdM, K, M⁺)
 end
 
-@inline root_weighted_saturation(h, M, T, i, j, grid) =
-    sum(ntuple(k -> h.root_fraction[k] * layer_state(h, M[k], T, k, i, j, grid).𝒮, Val(length(M))))
+# Surface (top-layer) and root-weighted saturations of a column holding `M`.
+@inline function column_saturations(h, M, T, i, j, grid)
+    𝒮 = ntuple(k -> layer_state(h, M[k], T, k, i, j, grid).𝒮, Val(length(M)))
+    return 𝒮[1], sum(map(*, h.root_fraction, 𝒮))
+end
 
 # Conductance Λ = ρˡ K̄/ℓ and explicit Darcy flux between layers k and k+1, a distance
 # ℓ = (hₖ + hₖ₊₁)/2 apart, with K̄ at their mean saturation (Oleson et al. 2013, eq. 7.89).
@@ -231,11 +238,14 @@ end
 ##### Kernels
 #####
 
-@kernel function _variably_saturated_saturation!(saturation, M, T, h, grid)
+@kernel function _variably_saturated_saturation!(saturation, diagnostics, M, T, h, grid)
     i, j = @index(Global, NTuple)
     @inbounds begin
         Mᵢⱼ = ntuple(k -> M[k][i, j, 1], Val(length(M)))
-        saturation[i, j, 1] = root_weighted_saturation(h, Mᵢⱼ, T[i, j, 1], i, j, grid)
+        surface_saturation, root_zone_saturation = column_saturations(h, Mᵢⱼ, T[i, j, 1], i, j, grid)
+        saturation[i, j, 1]                       = surface_saturation
+        diagnostics.root_zone_saturation[i, j, 1] = root_zone_saturation
+        diagnostics.column_water_storage[i, j, 1] = sum(Mᵢⱼ)
     end
 end
 
@@ -301,7 +311,10 @@ end
         diagnostics.surface_runoff[i, j, 1]         = Rˢᶠᶜ
         diagnostics.subsurface_runoff[i, j, 1]      = Rˡᵃᵗ
         diagnostics.water_storage_tendency[i, j, 1] = (Mⁿ⁺¹[1] - Mⁿ[1]) / δt
-        saturation[i, j, 1] = root_weighted_saturation(h, Mⁿ⁺¹, Tij, i, j, grid)
+        surface_saturation, root_zone_saturation = column_saturations(h, Mⁿ⁺¹, Tij, i, j, grid)
+        saturation[i, j, 1]                       = surface_saturation
+        diagnostics.root_zone_saturation[i, j, 1] = root_zone_saturation
+        diagnostics.column_water_storage[i, j, 1] = sum(Mⁿ⁺¹)
     end
 end
 
@@ -316,7 +329,7 @@ end
 
 function update_diagnostics!(h::VariablySaturatedHydrology, land)
     launch!(architecture(land.grid), land.grid, :xy, _variably_saturated_saturation!,
-            land.saturation, layer_storages(h, land), land.temperature, h, land.grid)
+            land.saturation, land.diagnostics, layer_storages(h, land), land.temperature, h, land.grid)
     return nothing
 end
 

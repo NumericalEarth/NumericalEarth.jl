@@ -32,7 +32,7 @@ end
     TiledLandInterface(grid, atmosphere, land;
                        vegetated,
                        fraction,
-                       bare                = EnergyBalanceTemperature(vegetated.soil_skin_flux),
+                       bare                = EnergyBalanceTemperature(vegetated.soil_skin_flux; storage = DiagnosticSkin()),
                        bare_specific_humidity = vegetated.soil,
                        vegetated_fluxes    = default_atmosphere_land_fluxes(land, eltype(grid)),
                        bare_fluxes         = default_atmosphere_land_fluxes(land, eltype(grid)),
@@ -40,13 +40,14 @@ end
 
 Build a two-tile (vegetated + bare) land interface. `vegetated` is a [`CanopyAirSpace`](@ref);
 the bare tile is a soil skin with the same skin→bulk conduction and soil vapor branch by
-default. `fraction` is the vegetated fraction (a `Number`, `Field`, or `FieldTimeSeries`).
-Pass `vegetated_fluxes` / `bare_fluxes` to give the tiles a roughness contrast.
+default, massless like the canopy's ground skin. `fraction` is the vegetated fraction (a
+`Number`, `Field`, or `FieldTimeSeries`). Pass `vegetated_fluxes` / `bare_fluxes` to give
+the tiles a roughness contrast.
 """
 function TiledLandInterface(grid, atmosphere, land;
                             vegetated,
                             fraction,
-                            bare                   = EnergyBalanceTemperature(vegetated.soil_skin_flux),
+                            bare                   = EnergyBalanceTemperature(vegetated.soil_skin_flux; storage = DiagnosticSkin()),
                             bare_specific_humidity = vegetated.soil,
                             vegetated_fluxes       = default_atmosphere_land_fluxes(land, eltype(grid)),
                             bare_fluxes            = default_atmosphere_land_fluxes(land, eltype(grid)),

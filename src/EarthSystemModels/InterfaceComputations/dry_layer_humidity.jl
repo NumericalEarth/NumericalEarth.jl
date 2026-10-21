@@ -314,8 +314,9 @@ end
 # Dry-layer flux terms, split off so the standalone formulation and the
 # composite (soil + canopy) share them. Returns the dry-layer conductance `Gᵉ`,
 # the front (dry-branch) source humidity `qᵉ = qᵛ⁺(Tᵉ)`, the wet-branch logistic
-# weight `σ`, and the wet (saturated-skin) humidity `qᵍ⁺ = qᵛ⁺(Tᵍ)`. The full
-# humidity is `(1 − σ) qᵍ⁺ + σ · [Δq-series divider with (Gᵉ, qᵉ)]`.
+# weight `σ`, the wet (saturated-skin) humidity `qᵍ⁺ = qᵛ⁺(Tᵍ)`, and the front
+# humidity's slope `dqᵉ/dTᵍ`. The full humidity is
+# `(1 − σ) qᵍ⁺ + σ · [Δq-series divider with (Gᵉ, qᵉ)]`.
 @inline function dry_layer_terms(q::DryLayerHumidity, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     FT  = eltype(Ψₛ)
@@ -352,12 +353,15 @@ end
     z    = 10 * (δᵛ - δᵛmin - δᵛʷ / 2) / max(δᵛʷ, eps(FT))
     σ    = 1 / (1 + exp(-z))
 
-    return Gᵉ, qᵉ, σ, qᵍ⁺
+    # The front moves with the skin by (1 − χ) K per K.
+    dqᵉ = (1 - χ) * saturation_humidity_slope(ℂᵃᵗ, Tᵉ, pᵃᵗ, q.phase)
+
+    return Gᵉ, qᵉ, σ, qᵍ⁺, dqᵉ
 end
 
 @inline function compute_interface_humidity(q::DryLayerHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     FT = eltype(Ψₛ)
-    Gᵉ, qᵉ, σ, qᵍ⁺ = dry_layer_terms(q, Tₛ, Ψₛ, Ψₐ, ℙₐ)
+    Gᵉ, qᵉ, σ, qᵍ⁺, _ = dry_layer_terms(q, Tₛ, Ψₛ, Ψₐ, ℙₐ)
 
     Gᵃ   = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
     qⁱⁿ★ = conductance_weighted_node(Ψₛ.specific_humidity, (Gᵉ, Gᵃ), (qᵉ, Ψₐ.q))

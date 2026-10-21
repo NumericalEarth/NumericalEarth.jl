@@ -6,18 +6,18 @@
 ##### Like `ForceRestoreEnergy`, this closure restores the bulk land temperature
 ##### toward a prescribed deep climatology, but with two refinements:
 #####
-##### 1. The areal heat capacity `cˡᵃ(Mˡᵃ) = cᵈʳʸ + cˡ Mˡᵃ` is recomputed every
-#####    step, so a wetting/drying slab has the correct thermal inertia.
+##### 1. The areal heat capacity `cˡᵃ(M) = cᵈʳʸ + cˡ M` is recomputed every step from the
+#####    column's water `M` (every layer of a layered column shares the slab temperature),
+#####    so a wetting/drying slab has the correct thermal inertia.
 ##### 2. The energy budget is written conservatively. With `eˡ = cˡ(Tˡᵃ − Tᵣ)` the
 #####    internal energy of slab liquid, water exchanged at the slab temperature
-#####    (evaporation, runoff, vapor drawn from deeper layers, the positivity floor)
-#####    carries no heat relative to the slab, and only the upwinded liquid fluxes
-#####    across the slab's top and bottom do:
+#####    (evaporation, runoff, interlayer exchange, the positivity floor) carries no
+#####    heat relative to the slab, and only the upwinded liquid fluxes across the
+#####    column's top and bottom do:
 #####
-#####        dTˡᵃ/dt = [Λᵈᵉᵉᵖ(Tᵈᵉᵉᵖ − Tˡᵃ) + (eᵇ − eˡ) Jˡᵇ − (eˢ − eˡ) Jˡˢ − Jᴱˢ] / cˡᵃ(Mˡᵃ).
+#####        dTˡᵃ/dt = [Λᵈᵉᵉᵖ(Tᵈᵉᵉᵖ − Tˡᵃ) + (eᵇ − eˡ) Jˡᵇ − (eˢ − eˡ) Jˡˢ − Jᴱˢ] / cˡᵃ(M).
 #####
-#####    `Jˡᵇ` is the liquid flux across the bottom of the slab layer: `deep_liquid_flux`,
-#####    or `interlayer_liquid_flux_1` under a layered soil column.
+#####    `Jˡᵇ` is the `deep_liquid_flux` across the column bottom.
 #####
 ##### The internal energies carried by the boundary liquid fluxes are upwinded:
 ##### with `advect_deep_liquid_energy = true`, capillary rise brings in
@@ -147,8 +147,8 @@ end
                                       prognostic, fluxes, diagnostics, time)
     @inbounds begin
         Tᵢⱼ  = prognostic.T[i, j, 1]
-        Mᵢⱼ  = prognostic.M[i, j, 1]
-        Jˡᵇ  = get(diagnostics, :interlayer_liquid_flux_1, diagnostics.deep_liquid_flux)[i, j, 1]
+        Mᵢⱼ  = get(diagnostics, :column_water_storage, prognostic.M)[i, j, 1]
+        Jˡᵇ  = diagnostics.deep_liquid_flux[i, j, 1]
         Jˡˢ  = diagnostics.surface_liquid_flux[i, j, 1]
         Jᴱs  = fluxes.surface_energy_flux[i, j, 1]
         Tˡᵖ  = fluxes.liquid_precipitation_temperature[i, j, 1]

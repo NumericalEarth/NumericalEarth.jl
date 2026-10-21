@@ -300,6 +300,11 @@ surface_saturation(land::SlabLand) = saturation(land.hydrology, land)
 EarthSystemModels.surface_retention_curve(land::SlabLand) =
     EarthSystemModels.surface_retention_curve(land.hydrology)
 
+# Root-zone saturation the canopy stress reads: the hydrology's own diagnostic when it
+# publishes one (a layered column), otherwise the surface saturation.
+surface_root_zone_saturation(land::SlabLand) =
+    hasproperty(land.diagnostics, :root_zone_saturation) ? land.diagnostics.root_zone_saturation : surface_saturation(land)
+
 # Prognostic canopy water store `Wᶜ` the interface reads to form the wet fraction
 # `fʷᵉᵗ` (a `CanopyAirSpace` with interception). A `ZeroField` when no closure
 # declares a store, so a dry canopy reads `Wᶜ = 0` and the interface reduces to the
@@ -395,14 +400,15 @@ EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabLand, coupled_model)
     ComponentExchanger(land::SlabLand, grid)
 
 Expose the generic atmosphere-facing SlabLand state: skin temperature `T`, surface
-`saturation`, and the hydrology's `retention_curve` (`nothing` when it owns none), which
-the interface's plant-stress formulations evaluate their suction endpoints on. Aerodynamic
-roughness lengths belong to the atmosphere-land flux closure (`atmosphere_land_fluxes`),
-not the land state.
+`saturation`, the `root_zone_saturation` the canopy stress reads, and the hydrology's
+`retention_curve` (`nothing` when it owns none), which the interface's plant-stress
+formulations evaluate their suction endpoints on. Aerodynamic roughness lengths belong to
+the atmosphere-land flux closure (`atmosphere_land_fluxes`), not the land state.
 """
 function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::SlabLand, grid)
     state = (T                     = surface_temperature(land),
              saturation            = surface_saturation(land),
+             root_zone_saturation  = surface_root_zone_saturation(land),
              canopy_water_storage  = surface_canopy_water_storage(land),
              canopy_water_capacity = surface_canopy_water_capacity(land),
              retention_curve       = EarthSystemModels.surface_retention_curve(land))

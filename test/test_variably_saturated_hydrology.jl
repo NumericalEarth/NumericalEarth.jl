@@ -353,17 +353,29 @@ end
         @test M₁ ≈ 1000ν * h₁ && M₂ > 1000ν * h₂
         @test Π₂ - Π₁ ≈ ℓ atol=1e-3
 
-        # Roots draw the vapor sink from each layer in proportion to rₖ 𝒮ₖ, and the
-        # atmosphere reads Σ rₖ 𝒮ₖ.
+        # Roots draw the vapor sink from each layer in proportion to rₖ 𝒮ₖ; the surface reads
+        # the top layer's 𝒮₁ and the canopy stress the root-weighted Σ rₖ 𝒮ₖ.
         land = column(matching_point_conductivity = 1e-15, root_fraction = (0.5, 0.5))
         set!(land; T = 293.0, M = 30.0, water_storage_2 = 245.0)
         𝒮₁, 𝒮₂ = effective_saturation(30.0, h₁), effective_saturation(245.0, h₂)
-        @test value(land.saturation) ≈ (𝒮₁ + 𝒮₂) / 2
+        @test value(land.saturation) ≈ 𝒮₁
+        @test value(land.diagnostics.root_zone_saturation) ≈ (𝒮₁ + 𝒮₂) / 2
+        @test value(land.diagnostics.column_water_storage) ≈ 275.0
         quiet!(land)
         fill!(land.fluxes.vapor_flux, 1e-5)
         time_step!(land, 600.0)
         @test 30 - value(land.water_storage) ≈ 600 * 1e-5 * 𝒮₁ / (𝒮₁ + 𝒮₂) rtol=1e-6
+
         @test 245 - value(land.prognostic.water_storage_2) ≈ 600 * 1e-5 * 𝒮₂ / (𝒮₁ + 𝒮₂) rtol=1e-6
+
+        # The whole column's water sets the thermal inertia of its single temperature.
+        land = column(matching_point_conductivity = 1e-15)
+        set!(land; T = 293.0, M = 30.0, water_storage_2 = 245.0)
+        quiet!(land)
+        fill!(land.fluxes.surface_energy_flux, 100.0)
+        time_step!(land, 600.0)
+        cᵈʳʸ, cˡ = land.energy.dry_heat_capacity, land.energy.liquid_heat_capacity
+        @test value(land.temperature) ≈ 293 - 100 * 600 / (cᵈʳʸ + cˡ * 275) rtol = 1e-10
 
         # Per-layer conductivity: the bottom layer drains with its own curve.
         land = column(deep_liquid_flux = FreeDrainageFlux(FT),

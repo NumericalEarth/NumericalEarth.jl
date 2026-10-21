@@ -3,13 +3,13 @@
 ##### conductance `gᶜ = LAI · gₛ` in series with the aerodynamic conductance.
 #####
 
-# Leaf-to-air vapor pressure deficit (Pa), floored so the Medlyn `√VPD` stays
-# differentiable at saturation.
+# Leaf-to-air vapor pressure deficit (Pa), floored at 50 Pa as in CLM5 so the Medlyn
+# `g₁/√VPD` stays bounded in near-saturated canopy air.
 @inline function vapor_pressure_deficit(ℂᵃᵗ, Tˡᵉᵃᶠ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, phase)
     eₛ = AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, Tˡᵉᵃᶠ, phase)
     ε  = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)   # Rᵈ/Rᵛ ≈ 0.622
     eₐ = pᵃᵗ * qᵃᵗ / (ε + (1 - ε) * qᵃᵗ)                            # air vapor pressure
-    return max(eₛ - eₐ, oftype(Tˡᵉᵃᶠ, 1))                              # ≥ 1 Pa
+    return max(eₛ - eₐ, oftype(Tˡᵉᵃᶠ, 50))                             # ≥ 50 Pa
 end
 
 """

@@ -83,14 +83,15 @@ initial_prognostic(h::InterceptingHydrology, name::Symbol, grid) = initial_progn
 
 # Canopy store update over one step, per unit vegetated area: returns the new store, the
 # drip, and the throughfall reaching the soil of a cell with vegetated fraction `f`,
-# with rain = (Wᶜⁿ⁺¹ − Wᶜ)/Δt · f + Eʷᵉᵗ f + throughfall exactly.
+# with rain = (Wᶜⁿ⁺¹ − Wᶜ)/Δt · f + Eʷᵉᵗ f + throughfall exactly: evaporation beyond what
+# the store held is taken from the throughfall, so the cell loses what the atmosphere received.
 @inline function canopy_store_update(Wᶜ, rain, Eʷᵉᵗ, Wᶜᵐᵃˣ, fⁱⁿᵗ, f, Δt)
     Pⁱⁿᵗ      = fⁱⁿᵗ * rain
     Wᶜᵗ       = Wᶜ + Δt * (Pⁱⁿᵗ - Eʷᵉᵗ)
-    drip_mass = max(Wᶜᵗ - Wᶜᵐᵃˣ, zero(Wᶜ))
-    Wᶜⁿ⁺¹     = max(Wᶜᵗ - drip_mass, zero(Wᶜ))
-    drip      = drip_mass / Δt
-    return Wᶜⁿ⁺¹, drip, rain - f * (Pⁱⁿᵗ - drip)
+    drip      = max(Wᶜᵗ - Wᶜᵐᵃˣ, zero(Wᶜ)) / Δt
+    shortfall = max(-Wᶜᵗ, zero(Wᶜ)) / Δt
+    Wᶜⁿ⁺¹     = max(Wᶜᵗ, zero(Wᶜ)) - Δt * drip
+    return Wᶜⁿ⁺¹, drip, rain - f * (Pⁱⁿᵗ - drip + shortfall)
 end
 
 @kernel function _interception_step!(Wc, Pl, Cev, throughfall, dWcdt, h, Δt, grid, time)

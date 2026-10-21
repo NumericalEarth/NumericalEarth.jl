@@ -65,12 +65,13 @@ Adapt.adapt_structure(to, energy::ForceRestoreEnergy) =
 # kinematic momentum flux `τ`. `Tᵈ` is the deep-target temperature.
 # `Jᴱs` is the surface energy flux, positive *upward* (out of the slab), so it
 # enters the budget with a minus sign:
-# ∂T/∂t = −Jᴱs/cˡᵃ + (Tᵈ − T)/τᵈ, with cˡᵃ = cᵈʳʸ + cˡ·max(Mˡᵃ, 0).
+# ∂T/∂t = −Jᴱs/cˡᵃ + (Tᵈ − T)/τᵈ, with cˡᵃ = cᵈʳʸ + cˡ·max(M, 0) and `M` the water of the
+# whole column (every layer of a layered column shares the slab temperature).
 @inline function temperature_tendency(i, j, grid, energy::ForceRestoreEnergy,
                                       prognostic, fluxes, diagnostics, time)
     @inbounds begin
         Tᵢⱼ = prognostic.T[i, j, 1]
-        Mᵢⱼ = prognostic.M[i, j, 1]
+        Mᵢⱼ = get(diagnostics, :column_water_storage, prognostic.M)[i, j, 1]
         Jᴱs = fluxes.surface_energy_flux[i, j, 1]
     end
     cᵈʳʸ = stateindex(energy.dry_heat_capacity, i, j, 1)

@@ -170,12 +170,12 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``h^{\mathrm{la}}`` | `slab_depth` | depth of prognostic land | Vertical thickness of the integrated land slab, from ``z_b`` to ``z_s`` (m) |
 | ``h_k`` | `slab_depth` | layer thickness | Thickness of soil layer ``k``, surface first, when `slab_depth` is a tuple; ``h_1 = h^{\mathrm{la}}`` (m) |
 | ``M_k`` | `water_storage`, `water_storage_2`, … | layer water | Water mass per area of soil layer ``k``; layer 1 is the container's `water_storage` (kg m⁻²) |
-| ``r_k`` | `root_fraction` | root fraction | Share of roots in soil layer ``k``; weights the vapor sink and the `saturation` the atmosphere reads (–) |
+| ``r_k`` | `root_fraction` | root fraction | Share of roots in soil layer ``k``; weights the vapor sink and the `root_zone_saturation` the canopy stress reads (–) |
 | ``\nu`` | `porosity` | soil porosity | Total pore fraction (–) |
 | ``\theta^l`` | – | pore liquid fraction | Physical liquid-filled pore fraction; surface physics consumes this (–) |
 | ``\vartheta^l`` | – | augmented liquid fraction | Conservative storage variable ``= \theta^l + \max(\Pi, 0)/h^{\mathrm{ss}}``; allows ``M > M⁺`` saturated overflow (–) |
 | ``\theta^r`` | `residual_liquid_fraction` | residual liquid fraction | Minimum liquid-filled pore fraction (–) |
-| ``𝒮`` | `saturation` | effective saturation | Effective (relative) saturation ``𝒮 = \mathrm{clamp}\!\left((\theta^l - \theta^r)/(\nu - \theta^r),\, 0,\, 1\right)``; the humidity availability and the front depth ``\delta^v`` derive from it. With several soil layers, `saturation` is the root-weighted ``\sum_k r_k 𝒮_k`` (–) |
+| ``𝒮`` | `saturation` | effective saturation | Effective (relative) saturation ``𝒮 = \mathrm{clamp}\!\left((\theta^l - \theta^r)/(\nu - \theta^r),\, 0,\, 1\right)``; the humidity availability and the front depth ``\delta^v`` derive from it. With several soil layers, `saturation` is the top layer's ``𝒮_1`` and the diagnostic `root_zone_saturation` the root-weighted ``\sum_k r_k 𝒮_k`` (–) |
 | ``h^{\mathrm{ss}}`` | `storage_height` | storage height | Saturated storage height — the head built per unit fractional over-saturation; reciprocal of the specific storage (``1/S_s``) (m) |
 | ``\Pi`` | – | soil pressure head | Matric/pressure head; ``\Pi \le 0`` unsaturated, ``\Pi > 0`` saturated overflow (m) |
 | ``\Pi^d`` | `deep_pressure_head` | deep pressure head | Pressure head of the deep reservoir below the last soil layer, passed to the deep-flux closure (m) |

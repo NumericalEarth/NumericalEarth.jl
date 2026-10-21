@@ -57,8 +57,8 @@ build_canopy_air_space(FT; optics...) = CanopyAirSpace(FT;
         LEˡᵉᵃᶠ = Array(interior(Ts.canopy_latent_heat))[1, 1, 1]
         LEᵍ = Array(interior(Ts.soil_latent_heat))[1, 1, 1]
         @test all(isfinite, (Hˡᵉᵃᶠ, Hᵍ, LEˡᵉᵃᶠ, LEᵍ))
-        @test Hˡᵉᵃᶠ + Hᵍ ≈ 𝒬ᵀ rtol = 1e-6
-        @test LEˡᵉᵃᶠ + LEᵍ ≈ 𝒬ᵛ rtol = 1e-6
+        @test Hˡᵉᵃᶠ + Hᵍ ≈ 𝒬ᵀ rtol = 1e-10
+        @test LEˡᵉᵃᶠ + LEᵍ ≈ 𝒬ᵛ rtol = 1e-10
         # Sunlit dense canopy: transpiration is the larger latent source.
         @test LEˡᵉᵃᶠ > LEᵍ
 
@@ -236,7 +236,7 @@ end
 
     # Dry limit: at low saturation the dry-branch weight fᵈ ≈ 1, so the blended soil
     # conductance reduces to the raw dry-layer Gᵉ (the blend is inactive where the soil is dry).
-    Gᵉ, qᵉ, fᵈ, qᵍ⁺ = dry_layer_terms(soil, FT(300), Ψ(0.1), Ψₐ, ℙₐ)
+    Gᵉ, qᵉ, fᵈ, qᵍ⁺, _ = dry_layer_terms(soil, FT(300), Ψ(0.1), Ψₐ, ℙₐ)
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
     @test fᵈ > 0.99
     @test fᵈ * Gᵉ + (1 - fᵈ) * (ρᵃᵗ * 0.5) ≈ Gᵉ rtol = 0.02

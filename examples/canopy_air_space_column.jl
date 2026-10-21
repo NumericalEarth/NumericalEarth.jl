@@ -125,9 +125,9 @@ conservative_energy() = WaterCoupledEnergy(;
     reference_temperature = 273.15, deep_temperature = 286, deep_time_scale = 10day)
 
 # The `InterceptingHydrology` wraps the soil with the canopy store; its `leaf_area_index`
-# sets the caught fraction and capacity `Wᶜᵐᵃˣ = c·LAI`.
-intercepting_hydrology(leaf_area_index) = InterceptingHydrology(;
-    soil = variably_saturated_soil(), leaf_area_index,
+# sets the caught fraction and capacity `Wᶜᵐᵃˣ = c·LAI`, per unit vegetated area.
+intercepting_hydrology(leaf_area_index; cover_fraction = 1) = InterceptingHydrology(;
+    soil = variably_saturated_soil(), leaf_area_index, cover_fraction,
     capacity_per_leaf_area = interception_capacity)
 
 # ## Model builder
@@ -489,13 +489,12 @@ nothing #hide
 # Subgrid tiling ([`TiledLandInterface`](@ref)) makes the cell a mosaic of a vegetated
 # fraction `f_veg` and bare-soil fraction `1 − f_veg`, area-weighted into one boundary
 # condition `𝒬 = f_veg·𝒬_veg + (1 − f_veg)·𝒬_bare`. It reuses the same soil, energy, and
-# interception store as above, with only the tiling and the shared store's cell-average
-# LAI `f_veg·LAI_veg` changing.
+# interception store as above, with only the tiling and the store's `cover_fraction` changing.
 
 # The vegetated tile is the same `canopy_with_interception` as above (full `LAI_veg`);
 # its bare (`LAI = 0`) counterpart is derived automatically by `TiledLandInterface`. The
-# interception store is a cell-average quantity (LAI `f_veg·LAI_veg`, capacity
-# `c·f_veg·LAI_veg`) set on the land's `InterceptingHydrology`.
+# interception store is kept per unit vegetated area (LAI `LAI_veg`, capacity `c·LAI_veg`);
+# `cover_fraction = f_veg` scales the interception and drip the shared soil sees.
 
 function tiled_intercepting_column(; fraction, label)
     grid       = RectilinearGrid(CPU(); size = (), topology = (Flat, Flat, Flat))
@@ -503,7 +502,7 @@ function tiled_intercepting_column(; fraction, label)
     radiation  = forced_radiation(grid, times)
 
     land = SlabLand(grid; energy = conservative_energy(),
-                    hydrology = intercepting_hydrology(fraction * vegetated_leaf_area_index))
+                    hydrology = intercepting_hydrology(vegetated_leaf_area_index; cover_fraction = fraction))
     set!(land; T = initial_temperature, M = initial_soil_storage, canopy_water_storage = 0.0)
 
     tiled = TiledLandInterface(grid, atmosphere, land;
@@ -517,8 +516,8 @@ function tiled_intercepting_column(; fraction, label)
     LE   = zeros(Nsteps)   # blended latent heat
     effective_temperature = zeros(Nsteps)   # land-surface (radiometric) temperature
     𝒮    = zeros(Nsteps)   # shared-column saturation
-    Wᶜ   = zeros(Nsteps)   # canopy water store (mm)
-    Ewet = zeros(Nsteps)   # wet-canopy evaporation (mass flux, positive up)
+    Wᶜ   = zeros(Nsteps)   # cell-average canopy water store f_veg·Wᶜ (mm)
+    Ewet = zeros(Nsteps)   # cell-average wet-canopy evaporation f_veg·Eʷᵉᵗ (mass flux, positive up)
     LEwet = zeros(Nsteps)  # wet-canopy latent heat ℒ·Eʷᵉᵗ (W m⁻², up)
     LEˡᵉᵃᶠ  = zeros(Nsteps)   # blended leaf latent (transpiration + wet-canopy)
     LEᵍ  = zeros(Nsteps)   # blended soil latent
@@ -534,8 +533,8 @@ function tiled_intercepting_column(; fraction, label)
         LE[n]   = scalar(interface.fluxes.latent_heat)
         effective_temperature[n] = scalar(interface.temperature.effective)
         𝒮[n]    = scalar(land.saturation)
-        Wᶜ[n]   = scalar(land.prognostic.canopy_water_storage)
-        Ewet[n]  = scalar(interface.temperature.canopy_evaporation)
+        Wᶜ[n]   = fraction * scalar(land.prognostic.canopy_water_storage)   # the store is per vegetated area
+        Ewet[n]  = fraction * scalar(interface.temperature.canopy_evaporation)
         LEwet[n] = scalar(interface.temperature.canopy_wet_latent_heat)
         LEˡᵉᵃᶠ[n]   = scalar(interface.temperature.canopy_latent_heat)
         LEᵍ[n]   = scalar(interface.temperature.soil_latent_heat)
@@ -575,8 +574,8 @@ end
 frac_panel(fig[1, 1], :LE,   "Latent heat (blended)",        "LE (W m⁻²)")
 frac_panel(fig[1, 2], :H,    "Sensible heat (blended)",      "H (W m⁻²)")
 frac_panel(fig[2, 1], :effective_temperature, "Land-surface temperature",     "effective_temperature (K)")
-frac_panel(fig[2, 2], :Ewet, "Wet-canopy evaporation Eʷᵉᵗ", "Eʷᵉᵗ (mm day⁻¹)"; transform = mm_per_day)
-frac_panel(fig[3, 1], :Wᶜ,   "Canopy water store Wᶜ",         "Wᶜ (mm)"; legend = :rt)
+frac_panel(fig[2, 2], :Ewet, "Wet-canopy evaporation f_veg·Eʷᵉᵗ", "f_veg·Eʷᵉᵗ (mm day⁻¹)"; transform = mm_per_day)
+frac_panel(fig[3, 1], :Wᶜ,   "Canopy water store f_veg·Wᶜ",         "f_veg·Wᶜ (mm)"; legend = :rt)
 ax = frac_panel(fig[3, 2], :𝒮, "Shared-column saturation 𝒮",  "𝒮"; legend = :rc)
 hlines!(ax, [critical_saturation]; color = :gray, linestyle = :dash)
 ylims!(ax, 0, 1.05)

@@ -529,16 +529,19 @@ end
     return leaf_vapor_conductance(gᶜ, gˡᵇ, fʷᵉᵗ, gʷ), gʷ, qˡᵉᵃᶠ
 end
 
-# Soil vapor conductance and source humidity at the soil-skin temperature `Tᵍ`: the
-# dry-layer branch (front humidity qᵉ through Gᵉ in series with the litter + undercanopy
-# path `gᵖ`) blended with the saturated-skin branch (qᵍ⁺ through gᵍᵛ) by the soil
-# model's weight `fᵈ`.
+# Soil vapor conductance, source humidity, and the source's slope in the soil-skin
+# temperature `Tᵍ`: the dry-layer branch (front humidity qᵉ through Gᵉ in series with the
+# litter + undercanopy path `gᵖ`) blended with the saturated-skin branch (qᵍ⁺ through gᵍᵛ)
+# by the soil model's weight `fᵈ`.
 @inline function soil_vapor_terms(soil, Tᵍ, gᵍᵛ, gᵖ, Ψₛ, Ψₐ, ℙₐ)
-    Gᵉ, qᵉ, fᵈ, qᵍ⁺ = dry_layer_terms(soil, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
+    Gᵉ, qᵉ, fᵈ, qᵍ⁺, dqᵉ = dry_layer_terms(soil, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
+    dqᵍ⁺ = saturation_humidity_slope(ℙₐ.thermodynamics_parameters, Tᵍ, Ψₐ.p, soil.phase)
     Gᵉ = Gᵉ * gᵖ / (gᵖ + Gᵉ)
     Gᵉ⁺ = fᵈ * Gᵉ + (1 - fᵈ) * gᵍᵛ
-    qᵉ⁺ = ifelse(Gᵉ⁺ > eps(eltype(Ψₛ)), (fᵈ * Gᵉ * qᵉ + (1 - fᵈ) * gᵍᵛ * qᵍ⁺) / Gᵉ⁺, qᵍ⁺)
-    return Gᵉ⁺, qᵉ⁺
+    blended = Gᵉ⁺ > eps(eltype(Ψₛ))
+    qᵉ⁺  = ifelse(blended, (fᵈ * Gᵉ * qᵉ  + (1 - fᵈ) * gᵍᵛ * qᵍ⁺)  / Gᵉ⁺, qᵍ⁺)
+    dqᵉ⁺ = ifelse(blended, (fᵈ * Gᵉ * dqᵉ + (1 - fᵈ) * gᵍᵛ * dqᵍ⁺) / Gᵉ⁺, dqᵍ⁺)
+    return Gᵉ⁺, qᵉ⁺, dqᵉ⁺
 end
 
 # Fraction of the start-of-step node value surviving in the step mean of the node
@@ -639,7 +642,7 @@ radiation state.
 
     for _ in 1:c.inner_iterations
         gˡᵉᵃᶠᵛ, gʷ, qˡᵉᵃᶠ = leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜ, gˡᵇ, Δt, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, transmittance)
-        Gᵉ, qᵉ = soil_vapor_terms(c.soil, Tᵍ, gᵍᵛ, gᵖ, Ψₛ, Ψₐ, ℙₐ)
+        Gᵉ, qᵉ, dqᵉ = soil_vapor_terms(c.soil, Tᵍ, gᵍᵛ, gᵖ, Ψₛ, Ψₐ, ℙₐ)
 
         # Node: the equilibrium mean of its sources blended with the start-of-step node by
         # the memory `m`; its sensitivity to source `i` is (1 − m) gᵢ/Σg.
@@ -661,16 +664,15 @@ radiation state.
         LWˡᵉᵃᶠ = εˡᵉᵃᶠ * (LWꜜ + LWꜛᵍ) - 2 * εˡᵉᵃᶠ * σ * Tˡᵉᵃᶠ^4
         LWᵍ    = εᵍ * (LWꜜᵍ - σ * Tᵍ^4)
         dqˡᵉᵃᶠ = saturation_humidity_slope(ℂᵃᵗ, Tˡᵉᵃᶠ, pᵃᵗ, c.phase)
-        dqᵍ    = saturation_humidity_slope(ℂᵃᵗ, Tᵍ, pᵃᵗ, c.phase)
 
         # Leaf and ground energy residuals and their Jacobian, including each balance's
         # dependence on the other skin through the node and the longwave exchange.
         Rˡᵉᵃᶠ = SWˡᵉᵃᶠ + LWˡᵉᵃᶠ - gˡᵉᵃᶠᵀ * (Tˡᵉᵃᶠ - Tᵃᶜ) - ℒ * gˡᵉᵃᶠᵛ * (qˡᵉᵃᶠ - qᵃᶜ)
         Rᵍ    = SWᵍ + LWᵍ - gᵍᵀ * (Tᵍ - Tᵃᶜ) - ℒ * Gᵉ * (qᵉ - qᵃᶜ) - Λ * (Tᵍ - Tˡᵃ)
         ∂Rˡᵉᵃᶠ∂Tˡᵉᵃᶠ = 4 * εˡᵉᵃᶠ * σ * Tˡᵉᵃᶠ^3 * (εˡᵉᵃᶠ * (1 - εᵍ) - 2) - gˡᵉᵃᶠᵀ * (1 - wˡᵉᵃᶠᵀ) - ℒ * gˡᵉᵃᶠᵛ * (1 - wˡᵉᵃᶠᵛ) * dqˡᵉᵃᶠ
-        ∂Rˡᵉᵃᶠ∂Tᵍ = 4 * εˡᵉᵃᶠ * εᵍ * σ * Tᵍ^3 + gˡᵉᵃᶠᵀ * wᵍᵀ + ℒ * gˡᵉᵃᶠᵛ * wᵍᵛ * dqᵍ
+        ∂Rˡᵉᵃᶠ∂Tᵍ = 4 * εˡᵉᵃᶠ * εᵍ * σ * Tᵍ^3 + gˡᵉᵃᶠᵀ * wᵍᵀ + ℒ * gˡᵉᵃᶠᵛ * wᵍᵛ * dqᵉ
         ∂Rᵍ∂Tˡᵉᵃᶠ = 4 * εᵍ * εˡᵉᵃᶠ * σ * Tˡᵉᵃᶠ^3 + gᵍᵀ * wˡᵉᵃᶠᵀ + ℒ * Gᵉ * wˡᵉᵃᶠᵛ * dqˡᵉᵃᶠ
-        ∂Rᵍ∂Tᵍ = -4 * εᵍ * σ * Tᵍ^3 - gᵍᵀ * (1 - wᵍᵀ) - ℒ * Gᵉ * (1 - wᵍᵛ) * dqᵍ - Λ
+        ∂Rᵍ∂Tᵍ = -4 * εᵍ * σ * Tᵍ^3 - gᵍᵀ * (1 - wᵍᵀ) - ℒ * Gᵉ * (1 - wᵍᵛ) * dqᵉ - Λ
         # A canopy-free cell (LAI = 0) has no leaf balance: Rˡᵉᵃᶠ = ∂Rˡᵉᵃᶠ/∂Tˡᵉᵃᶠ = 0.
         ∂Rˡᵉᵃᶠ∂Tˡᵉᵃᶠ = ifelse(∂Rˡᵉᵃᶠ∂Tˡᵉᵃᶠ < 0, ∂Rˡᵉᵃᶠ∂Tˡᵉᵃᶠ, -one(FT))
         determinant = ∂Rˡᵉᵃᶠ∂Tˡᵉᵃᶠ * ∂Rᵍ∂Tᵍ - ∂Rˡᵉᵃᶠ∂Tᵍ * ∂Rᵍ∂Tˡᵉᵃᶠ
@@ -682,7 +684,7 @@ radiation state.
 
     # The node and the flux partition at the final skins.
     gˡᵉᵃᶠᵛ, gʷ, qˡᵉᵃᶠ = leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜ, gˡᵇ, Δt, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, transmittance)
-    Gᵉ, qᵉ = soil_vapor_terms(c.soil, Tᵍ, gᵍᵛ, gᵖ, Ψₛ, Ψₐ, ℙₐ)
+    Gᵉ, qᵉ, _ = soil_vapor_terms(c.soil, Tᵍ, gᵍᵛ, gᵖ, Ψₛ, Ψₐ, ℙₐ)
     Σgᵀ = gᵃᵀ + gˡᵉᵃᶠᵀ + gᵍᵀ
     Σgᵛ = gᵃᵛ + gˡᵉᵃᶠᵛ + Gᵉ
     equilibrium_temperature = conductance_weighted_node(T⁻, (gᵍᵀ, gˡᵉᵃᶠᵀ, gᵃᵀ), (Tᵍ, Tˡᵉᵃᶠ, θᵃᵗ))
