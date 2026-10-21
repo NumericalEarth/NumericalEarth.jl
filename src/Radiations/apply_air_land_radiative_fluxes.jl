@@ -94,7 +94,7 @@ end
     ℐₜˢʷ = transmitted_shortwave_radiation(rs.α, rs.ℐꜜˢʷ)
 
     # Reflected shortwave, positive upward (`ΣQ` uses the absorbed part instead).
-    ℐꜛˢʷ = rs.α * rs.ℐꜜˢʷ
+    ℐꜛˢʷ = - rs.α * rs.ℐꜜˢʷ
 
     # Net radiative flux, positive upward like `surface_energy_flux`: emitted longwave minus
     # absorbed longwave and shortwave (`ℐₐˡʷ` and `ℐₜˢʷ` are negative).
@@ -105,8 +105,8 @@ end
     @inbounds begin
         land_energy_flux[i, j, 1] += ifelse(inactive, zero(grid), ΣQ)
         interface_radiative_flux.upwelling_longwave[i, j, 1]    = ℐꜛˡʷ
-        interface_radiative_flux.downwelling_longwave[i, j, 1]  = - ℐₐˡʷ
-        interface_radiative_flux.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ
+        interface_radiative_flux.downwelling_longwave[i, j, 1]  = ℐₐˡʷ
+        interface_radiative_flux.downwelling_shortwave[i, j, 1] = ℐₜˢʷ
     end
 
     # Same `Tₛ`, `α`, `ϵ` as `ΣQ`, so the component cannot disagree with the assembled budget.
