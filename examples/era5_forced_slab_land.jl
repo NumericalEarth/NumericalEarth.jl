@@ -253,8 +253,8 @@ for n in 1:Nsteps
     𝒮[n]  = scalar(land.saturation)
     H[n]  = scalar(interface.sensible_heat)   # positive upward
     LE[n] = scalar(interface.latent_heat)     # positive upward
-    Rₙ[n] = scalar(rad.downwelling_shortwave) + scalar(rad.downwelling_longwave) -
-            scalar(rad.upwelling_longwave)    # net radiation into the surface
+    Rₙ[n] = -(scalar(rad.downwelling_shortwave) + scalar(rad.downwelling_longwave) +
+              scalar(rad.upwelling_longwave)) # net radiation into the surface
     G[n]  = -scalar(land.fluxes.surface_energy_flux)  # storage residual Rₙ − H − LE
 end
 
