@@ -22,8 +22,7 @@ using NumericalEarth.NestedModels: NestedModel
 
 function Oceananigans.initialize!(model::NumericalEarth.EarthSystemModels.EarthSystemModel{<:Breeze.RadiativeTransferModel})
     Oceananigans.initialize!(model.interfaces.exchanger, model)
-    # The interface and the radiation each read the other's state: the first interface solve
-    # seeds the radiation, and the second pass solves both against it.
+    # The interface and the radiation each read the other's state, so the second pass solves both.
     for _ in 1:2
         update_state!(model)
         update_state!(component_model(model.atmosphere); compute_tendencies = false)

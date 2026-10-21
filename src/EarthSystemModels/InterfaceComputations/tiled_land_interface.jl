@@ -162,7 +162,7 @@ end
         σ, ϵ = bare_radiation.σ, bare_radiation.ϵ
         Tᵛ   = veg_temperature.effective[i, j, 1]
         LWꜛᵇ = ϵ * σ * Tᵇ^4 - (1 - ϵ) * bare_radiation.ℐꜜˡʷ
-        T⁴   = ifelse(σ > 0, (f * σ * Tᵛ^4 + g * LWꜛᵇ) / σ, f * Tᵛ^4 + g * Tᵇ^4)
+        T⁴   = f * Tᵛ^4 + g * ifelse(σ > 0, LWꜛᵇ / σ, Tᵇ^4)
         blended_temperature.effective[i, j, 1] = sqrt(sqrt(T⁴))
 
         # Both tiles see the same incident shortwave, so the mosaic albedo is their area weight.

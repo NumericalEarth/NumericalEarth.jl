@@ -10,9 +10,7 @@ using Dates: DateTime
 using Test
 
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyAirSpace, CanopyConductanceHumidity, ConstantTortuosity, CriticalSaturation,
-    DryLayerHumidity, DryLayerVaporPistonVelocity, InteractiveAbsorbedPAR, StorageBasedDryLayerDepth,
-    TiledLandInterface
+    CanopyAirSpace, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR, TiledLandInterface
 using NumericalEarth.Lands: BucketHydrology, SlabEnergy, SlabLand
 using NumericalEarth.Radiations: default_stefan_boltzmann_constant
 
@@ -52,14 +50,7 @@ function rtm_canopy_components(arch; hour = 12)
                                        schedule = IterationInterval(1))
 
     canopy = CanopyAirSpace(FT;
-        soil = DryLayerHumidity(FT;
-            dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
-                                                        dry_layer_onset_saturation = 0.5,
-                                                        dry_layer_exponent = 2),
-            vapor_exchange = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
-                                                         molecular_diffusivity = 2.4e-5,
-                                                         tortuosity = ConstantTortuosity()),
-            thermal_exchange_depth = 0.05, porosity = 0.4),
+        soil = bare_soil_humidity(FT),
         canopy = CanopyConductanceHumidity(FT; leaf_area_index = 4,
                                            moisture_stress = CriticalSaturation(0.5),
                                            absorbed_par = InteractiveAbsorbedPAR(FT)))
@@ -88,19 +79,21 @@ end
             # The canopy absorbs radiation in its own solve, so the slab receives only the skin conduction.
             @test Array(interior(model.land.fluxes.surface_energy_flux)) ≈ -Array(interior(canopy.ground_heat_flux))
 
-            # The RTM's surface albedo is the canopy column's rather than its configured one: leaf and
-            # ground albedo are both 0.15 by default, so the column's is too at any leaf area.
+            # Leaf and ground albedo default to 0.15, so the column albedo the RTM reflects is 0.15 at any leaf area.
             @test all(Array(interior(rtm.surface_radiation.direct_surface_albedo)) .≈ 0.15)
 
             # Sunlit leaves over shaded soil, radiating warmer than the canopy air.
-            Tᵃᶜ = Array(interior(canopy.interface))
             @test all(Array(interior(canopy.canopy)) .> Array(interior(canopy.soil_skin)))
-            @test all(Array(interior(canopy.effective)) .> Tᵃᶜ)
+            @test all(Array(interior(canopy.effective)) .> Array(interior(canopy.interface)))
 
-            # RRTMGP solves after the land interface, using the canopy temperature for this step.
             σ = default_stefan_boltzmann_constant
             Tᵉᶠᶠ = Array(interior(canopy.effective, :, :, 1))
             @test Array(interior(rtm.upwelling_longwave_flux))[:, :, 1] ≈ σ .* Tᵉᶠᶠ .^ 4 rtol = 1e-3
+
+            # The same column at midnight has cooler leaves.
+            night = build_rtm_canopy_model(arch; hour = 0)
+            time_step!(night, Δt)
+            @test all(Array(interior(canopy.canopy)) .> Array(interior(night.interfaces.atmosphere_land_interface.temperature.canopy)))
         end
 
         @testset "Tiled interface keeps the bare tile's configured optics on $A" begin
@@ -121,17 +114,6 @@ end
             ℐꜜˡʷ = Array(interior(model.interfaces.exchanger.radiation.state.ℐꜜˡʷ))
             bare_longwave = @. rtm_emissivity * σ * Tᵇ^4 - (1 - rtm_emissivity) * ℐꜜˡʷ
             @test σ .* Array(interior(mosaic.effective)) .^ 4 ≈ @. f * σ * Tᵛ^4 + (1 - f) * bare_longwave
-        end
-
-        @testset "Canopy cools at night on $A" begin
-            night = build_rtm_canopy_model(arch; hour = 0)
-            time_step!(night, Δt)
-
-            day = build_rtm_canopy_model(arch)
-            time_step!(day, Δt)
-
-            Tˡᵉᵃᶠ(model) = Array(interior(model.interfaces.atmosphere_land_interface.temperature.canopy))
-            @test all(Tˡᵉᵃᶠ(day) .> Tˡᵉᵃᶠ(night))
         end
     end
 end

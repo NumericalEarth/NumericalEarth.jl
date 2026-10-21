@@ -630,7 +630,7 @@ radiation state.
     transmittance = canopy_transmittance(c.extinction, c.clumping, LAI)
     SWˡᵉᵃᶠ = (1 - αˡᵉᵃᶠ) * (1 - transmittance) * SW
     SWᵍ    = transmittance * (1 - αᵍ) * SW
-    effective_albedo = 1 - ((1 - αˡᵉᵃᶠ) * (1 - transmittance) + transmittance * (1 - αᵍ))
+    effective_albedo = (1 - transmittance) * αˡᵉᵃᶠ + transmittance * αᵍ
 
     Tˡᵉᵃᶠ = Tˡᵃ
     Tᵍ    = Tˡᵃ

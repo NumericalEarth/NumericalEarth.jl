@@ -1,8 +1,6 @@
 #####
 ##### Surface coupling for the Breeze RRTMGP `RadiativeTransferModel`.
 #####
-##### The RTM reads the coupled surface through its `surface_properties`, bound at construction.
-#####
 
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Fields: ConstantField, Field
@@ -13,18 +11,16 @@ using NumericalEarth.Radiations: SurfaceRadiationProperties, default_stefan_bolt
 const BreezeRTM = Breeze.RadiativeTransferModel
 const GrayBreezeRTM = Breeze.RadiativeTransferModel{<:Number, <:Any, <:Any, Nothing}
 
-# A canopy column radiates as a blackbody at Tᵉᶠᶠ — σ (Tᵉᶠᶠ)⁴ is its total upwelling longwave —
-# and reflects αᵉᶠᶠ, so it overrides configured optics. Any other surface keeps the configured
+# A canopy column radiates σ (Tᵉᶠᶠ)⁴ and reflects αᵉᶠᶠ; any other surface keeps its configured
 # optics and an explicitly configured temperature.
 function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_properties(rtm::BreezeRTM, interfaces)
     land = interfaces.atmosphere_land_interface
     temperature = isnothing(land) ? nothing : land.temperature
 
     if temperature isa CanopyAirSpaceDiagnostics
-        rtm = @set rtm.surface_radiation.surface_temperature = temperature.effective
-        rtm = @set rtm.surface_radiation.surface_emissivity = ConstantField(one(eltype(temperature.effective)))
-        rtm = @set rtm.surface_radiation.direct_surface_albedo = temperature.effective_albedo
-        return @set rtm.surface_radiation.diffuse_surface_albedo = temperature.effective_albedo
+        α = temperature.effective_albedo
+        ε = ConstantField(one(eltype(α)))
+        return @set rtm.surface_radiation = Breeze.AtmosphereModels.SurfaceRadiation(temperature.effective, ε, α, α)
     end
 
     isnothing(rtm.surface_radiation.surface_temperature) || return rtm
@@ -33,8 +29,7 @@ function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_prope
     return @set rtm.surface_radiation.surface_temperature = Tˢ
 end
 
-# The exchanger keeps the configured surface optics, which the land reads as its ground's;
-# a bound canopy overrides the RTM's own slots with its column optics.
+# The RTM's configured surface optics, which the land kernels read as the ground's.
 function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(rtm::BreezeRTM, exchange_grid; kw...)
     ε = rtm.surface_radiation.surface_emissivity
     α = blue_sky_albedo(rtm)
