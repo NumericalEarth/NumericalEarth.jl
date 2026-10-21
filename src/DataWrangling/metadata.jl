@@ -17,7 +17,7 @@ Base.summary(bbox::BoundingBox) = string("BoundingBox(",
                                          latitude_summary(bbox.latitude), ")")
 
 """
-    BoundingBox(; longitude=nothing, latitude=nothing, z=nothing)
+$(MethodSignatures(defaults = true))
 
 Create a bounding box with `latitude`, `longitude`, and `z` bounds on the sphere.
 """
@@ -25,7 +25,7 @@ BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
     BoundingBox(longitude, latitude, z)
 
 """
-    BoundingBox(grid; padding = 0)
+$(MethodSignatures(defaults = true))
 
 Create a `BoundingBox` spanning the horizontal extent of `grid`, widened on every
 side by `padding` (degrees). For a distributed grid the box spans the *global* domain,
@@ -154,14 +154,7 @@ longitude_interfaces(md::Metadata) = longitude_interfaces(md.dataset)
 latitude_interfaces(md::Metadata) = latitude_interfaces(md.dataset)
 
 """
-    Metadata(variable_name;
-             dataset,
-             dates = all_dates(dataset, variable_name),
-             dir = default_download_directory(dataset),
-             region = default_region(dataset),
-             filename = nothing,
-             start_date = nothing,
-             end_date = nothing)
+$(MethodSignatures(defaults = true))
 
 Metadata holding a specific dataset information.
 
@@ -268,12 +261,7 @@ function Base.size(metadata::Metadata)
 end
 
 """
-    Metadatum(variable_name;
-              dataset,
-              region = default_region(dataset),
-              date = first_date(dataset, variable_name),
-              filename = nothing,
-              dir = default_download_directory(dataset))
+$(MethodSignatures(defaults = true))
 
 A specialized constructor for a [`Metadata`](@ref) object with a single date, representative of a snapshot in time.
 """
@@ -399,15 +387,7 @@ struct MetadataSet{V, D, R, N, F}
 end
 
 """
-    MetadataSet(variable_names::Symbol...;
-                dataset,
-                dates = all_dates(dataset, first(variable_names)),
-                date = nothing,
-                dir = default_download_directory(dataset),
-                region = default_region(dataset),
-                filenames = nothing,
-                start_date = nothing,
-                end_date = nothing)
+$(MethodSignatures(defaults = true))
 
 A bundle of [`Metadata`](@ref) for many variables that share `dataset`, `dates`,
 `region`, and `dir` — differing only in variable name.
@@ -617,7 +597,7 @@ function Fields.set!(fields::NamedTuple, mset::MetadataSet)
 end
 
 """
-    set!(model, mset::MetadataSet, names=keys(variable_glossary))
+$(MethodSignatures(defaults = true))
 
 Route variables from `mset` to `set!(model; kwargs...)`, translating verbose
 dataset names to short model field-names via [`variable_glossary`](@ref).
@@ -702,7 +682,7 @@ function Downloads.download(mset::MetadataSet; kwargs...)
 end
 
 """
-    native_times(metadata; start_time=first(metadata).dates)
+$(MethodSignatures(defaults = true))
 
 Extract the time values from the given `metadata`, calculate the time difference
 from the `start_time`, and return an array of time differences in seconds.

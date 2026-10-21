@@ -2,19 +2,7 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: Field
 
 """
-    GloFASPrescribedLand(grid;
-                         dataset = GloFASReanalysis(),
-                         start_date = first_date(dataset, :river_discharge),
-                         end_date = last_date(dataset, :river_discharge),
-                         dir = download_GloFAS_cache,
-                         time_indices_in_memory = 10,
-                         time_indexing = Cyclical(),
-                         region = nothing,
-                         freshwater_density = 1000,
-                         maximum_search_radius = 5,
-                         spread_radius = 1.2,
-                         maximum_spread_cells = 8,
-                         other_kw...)
+$(MethodSignatures(defaults = true))
 
 Return a [`PrescribedLand`](@ref) that forces the ocean with GloFAS river
 discharge routed onto the coastline of `grid` (the target ocean grid).

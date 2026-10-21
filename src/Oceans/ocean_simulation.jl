@@ -205,7 +205,7 @@ default_freshwater_tracer_content(val_name, biogeochemistry) = ZeroField()
 # TODO: Specify the grid to a grid on the sphere; otherwise we can provide a different
 # function that requires latitude and longitude etc for computing coriolis=FPlane...
 """
-    ocean_simulation(grid; model = :hydrostatic, kwargs...)
+$(MethodSignatures(defaults = true))
 
 Construct and return an ocean simulation tailored to `grid`. The `model` keyword
 selects the underlying Oceananigans model formulation:
@@ -273,37 +273,7 @@ function ocean_simulation(grid; model::Symbol = :hydrostatic, kwargs...)
 end
 
 """
-    hydrostatic_ocean_simulation(grid;
-                                 clock = Clock(grid),
-                                 stop_time = default_stop_time(grid, clock),
-                                 Δt = estimate_maximum_Δt(grid),
-                                 closure = default_ocean_closure(),
-                                 tracers = (:T, :S),
-                                 free_surface = default_free_surface(grid),
-                                 reference_density = 1020,
-                                 rotation_rate = default_planet_rotation_rate,
-                                 gravitational_acceleration = default_gravitational_acceleration,
-                                 bottom_drag_coefficient = Default(0.003),
-                                 bottom_drag_background_velocity = 0,
-                                 implicit_bottom_drag = true,
-                                 forcing = NamedTuple(),
-                                 additional_surface_fluxes = NamedTuple(),
-                                 freshwater_tracer_content = NamedTuple(),
-                                 surface_exchanged_tracers = (),
-                                 biogeochemistry = nothing,
-                                 timestepper = :SplitRungeKutta3,
-                                 coriolis = Default(HydrostaticSphericalCoriolis(; rotation_rate)),
-                                 momentum_advection = WENOVectorInvariant(time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
-                                 tracer_advection = WENO(order=7, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
-                                 equation_of_state = TEOS10EquationOfState(; reference_density),
-                                 boundary_conditions::NamedTuple = NamedTuple(),
-                                 radiative_forcing = default_radiative_forcing(grid),
-                                 materialize_buoyancy_gradients = true,
-                                 river_routing = nothing,
-                                 river_mouth_diffusivity = 0.1,
-                                 river_mouth_mixing_depth = 10,
-                                 warn = true,
-                                 verbose = false)
+$(MethodSignatures(defaults = true))
 
 Construct and return a hydrostatic ocean simulation tailored to `grid`. Called
 by `ocean_simulation(grid; model=:hydrostatic, ...)`.

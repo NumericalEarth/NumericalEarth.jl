@@ -23,7 +23,7 @@ function propagating(field, mask, iter, previous_gaps, inpainting::NearestNeighb
 end
 
 """
-    propagate_horizontally!(inpainting, field, mask [, substituting_field=deepcopy(field)])
+$(MethodSignatures(defaults = true))
 
 Horizontally propagate the values of `field` into the `mask`.
 In other words, cells where `mask[i, j, k] == false` are preserved,
@@ -110,7 +110,7 @@ end
 end
 
 """
-    inpaint_mask!(field, mask; inpainting=NearestNeighborInpainting(Inf))
+$(MethodSignatures(defaults = true))
 
 Inpaint `field` within `mask`, using values outside `mask`.
 In other words, cells where `mask[i, j, k] == true` are inpainted
@@ -174,7 +174,7 @@ end
 end
 
 """
-    propagate_vertically!(field; maxiter = size(field, 3))
+$(MethodSignatures(defaults = true))
 
 Fill the NaN cells of `field` by repeatedly averaging their valid vertical neighbours,
 the ``z``-axis analogue of [`propagate_horizontally!`](@ref).
@@ -215,9 +215,7 @@ end
 end
 
 """
-    fill_gaps!(fts::FieldTimeSeries; max_gap=6)
-    fill_gaps!(data::AbstractArray; max_gap=6)
-    fill_gaps!(data::AbstractVector; max_gap=6)
+$(MethodSignatures(defaults = true))
 
 Fill NaN gaps along the time dimension using linear interpolation, except at the ends
 of the record, where a gap takes the nearest valid value. For an `AbstractArray`, the

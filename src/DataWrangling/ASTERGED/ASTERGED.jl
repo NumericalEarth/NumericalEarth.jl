@@ -2,6 +2,7 @@ module ASTERGED
 
 export ASTERGEDv3, ASTERGEDResolution, ASTERGEDHigh100m, ASTERGEDLow1km
 
+using DocStringExtensions: MethodSignatures
 using Downloads: Downloads
 using Oceananigans: Center, CPU
 using Oceananigans.DistributedComputations: @root
@@ -95,7 +96,7 @@ struct ASTERGEDv3 <: AbstractStaticDataset
 end
 
 """
-    ASTERGEDv3(resolution = ASTERGEDLow1km)
+$(MethodSignatures(defaults = true))
 
 Construct an [`ASTERGEDv3`](@ref) dataset. `resolution` is `ASTERGEDLow1km` (1 km,
 default) or `ASTERGEDHigh100m` (100 m); see [`ASTERGEDResolution`](@ref).

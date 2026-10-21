@@ -121,14 +121,7 @@ default_time_indices_in_memory(metadata) = min(2, length(metadata))
 default_time_indices_in_memory(::Metadatum) = 1
 
 """
-    DatasetRestoring(metadata::Metadata,
-                     arch_or_grid = CPU();
-                     rate,
-                     mask = 1,
-                     time_indices_in_memory = 2, # Not more than this if we want to use GPU!
-                     time_indexing = Cyclical(),
-                     inpainting = NearestNeighborInpainting(Inf),
-                     cache_inpainted_data = true)
+$(MethodSignatures(defaults = true))
 
 Return a forcing term that restores to data from a dataset. The restoring is applied
 as a forcing on the right hand side of the evolution equations, calculated as:
@@ -348,9 +341,7 @@ struct LinearlyTaperedPolarMask{N, S, Z}
 end
 
 """
-    LinearlyTaperedPolarMask(; northern = (70,   75),
-                               southern = (-75, -70),
-                               z = (-20, 0))
+$(MethodSignatures(defaults = true))
 
 Build a mask that is linearly tapered in latitude between the northern and southern edges.
 The mask is constant in depth between the z and equals zero everywhere else.

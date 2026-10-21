@@ -90,7 +90,7 @@ end
     vsgs²(sv.convective, u★, b★, h_bℓ) + vsgs²(sv.mesoscale, u★, b★, h_bℓ)
 
 """
-    mahrt_sun_subgrid_velocity(Δx; threshold = 5e3)
+$(MethodSignatures(defaults = true))
 
 Return the mesoscale subgrid velocity [m/s] for grid spacing `Δx` [m] following
 [Mahrt and Sun (1995)](https://doi.org/10.1175/1520-0493(1995)123<3032:TSVSIT>2.0.CO;2),
@@ -124,18 +124,7 @@ function Base.show(io::IO, fluxes::SimilarityTheoryFluxes)
 end
 
 """
-    SimilarityTheoryFluxes(FT::DataType = Float64;
-                           gravitational_acceleration = 9.81,
-                           von_karman_constant = 0.4,
-                           turbulent_prandtl_number = 1,
-                           subgrid_velocities = ConvectiveGustiness{FT}(),
-                           stability_functions = default_stability_functions(FT),
-                           roughness_lengths = default_roughness_lengths(FT),
-                           zero_plane_displacement = 0,
-                           similarity_form = LogarithmicSimilarityProfile(),
-                           solver_stop_criteria = nothing,
-                           solver_tolerance = 1e-8,
-                           solver_maxiter = 100)
+$(MethodSignatures(defaults = true))
 
 `SimilarityTheoryFluxes` contains parameters and settings to calculate
 air-interface turbulent fluxes using Monin--Obukhov similarity theory.
@@ -766,7 +755,7 @@ Base.summary(::LinearStableStabilityFunction{FT}) where FT = "LinearStableStabil
 Base.show(io::IO, ::LinearStableStabilityFunction{FT}) where FT = print(io, "LinearStableStabilityFunction{$FT}")
 
 """
-    large_yeager_stability_functions(FT = Float64)
+$(MethodSignatures(defaults = true))
 
 NCAR/Large-Yeager (2004) stability functions combining:
 - Unstable: Paulson (1970) with γ = 16

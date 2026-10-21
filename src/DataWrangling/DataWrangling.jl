@@ -19,7 +19,7 @@ export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
 
 using Adapt: Adapt
-using DocStringExtensions: TYPEDSIGNATURES
+using DocStringExtensions: TYPEDSIGNATURES, MethodSignatures
 using Downloads: Downloads
 using LibCURL: LibCURL
 using JLD2: JLD2, jldopen
@@ -133,7 +133,7 @@ function (d::DownloadProgress)(total, now; filename="")
 end
 
 """
-    netrc_downloader(username, password, machine, dir; verify_ssl = true)
+$(MethodSignatures(defaults = true))
 
 Create a downloader that uses a netrc file to authenticate with the given machine.
 Pass `verify_ssl = false` only for hosts serving an untrusted CA certificate, as

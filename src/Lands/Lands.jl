@@ -46,7 +46,7 @@ instead.
 abstract type AbstractLand end
 
 using Adapt: Adapt
-using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
+using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES, MethodSignatures
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: CPU, architecture, on_architecture

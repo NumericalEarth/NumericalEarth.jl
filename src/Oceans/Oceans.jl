@@ -4,6 +4,7 @@ export ocean_simulation, river_mouth_vertical_diffusivity, SlabOcean, Prescribed
        TwoColorRadiation, ChlorophyllOptics, absorption_coefficient, equivalent_chlorophyll
 
 using Adapt: Adapt, adapt
+using DocStringExtensions: MethodSignatures
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
 using Oceananigans.AbstractOperations: KernelFunctionOperation
@@ -50,8 +51,7 @@ struct Default{V}
 end
 
 """
-    default_or_override(default::Default, alternative_default=default.value) = alternative_default
-    default_or_override(override, alternative_default) = override
+$(MethodSignatures(defaults = true))
 
 Either return `default.value`, an `alternative_default`, or an `override`.
 

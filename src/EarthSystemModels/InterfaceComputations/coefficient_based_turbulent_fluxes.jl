@@ -168,11 +168,7 @@ convert_transfer_coefficients(FT, c::SimilarityScales) = SimilarityScales(conver
                                                                           convert_if_number(FT, c.water_vapor))
 
 """
-    CoefficientBasedFluxes(FT = Oceananigans.defaults.FloatType;
-                           transfer_coefficients = (1e-3, 1e-3, 1e-3),
-                           solver_stop_criteria = nothing,
-                           solver_tolerance = 1e-8,
-                           solver_maxiter = 20)
+$(MethodSignatures(defaults = true))
 
 Return the structure for computing turbulent fluxes using bulk transfer coefficients.
 Used in bulk flux calculations to determine the exchange of momentum, heat, and moisture

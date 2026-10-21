@@ -39,21 +39,7 @@ function merge_boundary_conditions(coupling_bcs::NamedTuple, user_bcs::NamedTupl
 end
 
 """
-    atmosphere_model(grid;
-                     base_pressure = 101325,
-                     potential_temperature = 285,
-                     thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
-                     dynamics = CompressibleDynamics(; base_pressure,
-                                                     reference_potential_temperature = potential_temperature),
-                     microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
-                     momentum_advection = WENO(order=9),
-                     scalar_advection = WENO(order=5),
-                     boundary_conditions = NamedTuple(),
-                     coriolis = nothing,
-                     forcing = NamedTuple(),
-                     closure = nothing,
-                     clock = Clock{eltype(grid)}(time=0),
-                     initialize = true)
+$(MethodSignatures(defaults = true))
 
 Construct a Breeze `AtmosphereModel` with sensible defaults for coupled simulations.
 [`atmosphere_simulation`](@ref) wraps this in an Oceananigans `Simulation` (mirroring

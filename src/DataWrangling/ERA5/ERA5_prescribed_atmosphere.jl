@@ -47,18 +47,7 @@ function Oceananigans.Fields.set!(qᵛ::DewpointHumidityFTS, backend = qᵛ.back
 end
 
 """
-    ERA5PrescribedAtmosphere([architecture = CPU()];
-                             dataset = ERA5HourlySingleLevel(),
-                             start_date = first_date(dataset, :temperature),
-                             end_date = last_date(dataset, :temperature),
-                             dir = download_ERA5_cache,
-                             time_indices_in_memory = 24,
-                             time_indexing = Cyclical(),
-                             surface_layer_height = 10,    # meters
-                             boundary_layer_height = 512,  # meters
-                             thermodynamics_parameters = nothing,
-                             region = nothing,
-                             other_kw...)
+$(MethodSignatures(defaults = true))
 
 Return a [`PrescribedAtmosphere`](@ref) representing ERA5 single-level reanalysis, suitable for regional hindcast forcing.
 Eastward/northward 10 m winds, 2 m temperature, and surface pressure are loaded directly; specific humidity is derived from
@@ -142,13 +131,7 @@ function pressure_level_field(grid, dataset, architecture)
 end
 
 """
-    ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
-                             architecture = CPU(),
-                             dataset = ERA5HourlyPressureLevels(),
-                             dir = download_ERA5_cache,
-                             time_indices_in_memory = nothing,
-                             thermodynamics_parameters = nothing,
-                             other_kw...)
+$(MethodSignatures(defaults = true))
 
 Return a 3-D [`PrescribedAtmosphere`](@ref) built from ERA5 **pressure-level** reanalysis over `bounding_box` at the
 requested `dates` — a range or vector of dates, or a `(start_date, end_date)` tuple that expands to the dataset's native

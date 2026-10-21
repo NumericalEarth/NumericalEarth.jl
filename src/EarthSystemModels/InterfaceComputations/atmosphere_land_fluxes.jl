@@ -8,11 +8,7 @@ atmosphere_land_interface(grid, atmosphere, ::Nothing; kw...) = nothing
 atmosphere_land_interface(grid, ::Nothing,  ::Nothing; kw...) = nothing
 
 """
-    atmosphere_land_interface(grid, atmosphere, land;
-                              fluxes               = default_atmosphere_land_fluxes(land, eltype(grid)),
-                              temperature          = BulkTemperature(),
-                              velocity_difference  = RelativeVelocity(),
-                              specific_humidity    = default_al_specific_humidity(land))
+$(MethodSignatures(defaults = true))
 
 Build the atmosphere--land interface on `grid` from `atmosphere` and `land` with
 the given turbulent-flux closure, interface-temperature model, atmosphere-relative
