@@ -1,8 +1,10 @@
 module Bathymetry
 
 export regrid_bathymetry, regrid_topography, smooth_topography!, ORCAGrid
+export Basin
+export atlantic_ocean_basin, indian_ocean_basin, southern_ocean_basin, pacific_ocean_basin, arctic_ocean_basin
 
-using DocStringExtensions: MethodSignatures
+using DocStringExtensions: TYPEDSIGNATURES, MethodSignatures
 using Downloads: Downloads, download
 using ImageMorphology: ImageMorphology
 using KernelAbstractions: @kernel, @index
@@ -15,8 +17,8 @@ using Oceananigans.Fields: Field, interior, interpolate!
 using Oceananigans.Grids: x_domain, y_domain, topology, Face, Center,
                           Flat, Periodic, Bounded, LeftConnected, RightConnected,
                           RectilinearGrid, LatitudeLongitudeGrid, OrthogonalSphericalShellGrid
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using Oceananigans.Utils: launch!
-using OffsetArrays: OffsetArrays, OffsetArray
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf
 
@@ -25,7 +27,9 @@ using ..DataWrangling: Metadatum, native_grid, metadata_path,
                        FieldRegridding, load_field_cache, save_field_cache
 using ..DataWrangling.ETOPO: ETOPO2022
 
+include("label_ocean_basins.jl")
 include("regrid_bathymetry.jl")
+include("ocean_basin.jl")
 include("smooth_topography.jl")
 include("orca_grid.jl")
 

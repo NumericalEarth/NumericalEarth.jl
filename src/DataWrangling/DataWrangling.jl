@@ -31,7 +31,7 @@ using Oceananigans.AbstractOperations: Average
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
 using Oceananigans.DistributedComputations: DistributedComputations, @root, all_reduce
 using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
-                          LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes,
+                          LatitudeLongitudeGrid, RectilinearGrid, OrthogonalSphericalShellGrid, λnodes, φnodes,
                           topology, x_domain, y_domain, z_domain
 using Oceananigans.Fields: Fields, Field, compute!, interpolate, interpolate!, interior, set!
 using Oceananigans.Grids: node
@@ -267,7 +267,7 @@ Arguments
 
     within julia. More detailed instructions for obtaining WebDAV credentials are at:
 
-        https://github.com/CliMA/NumericalEarth.jl/blob/main/src/DataWrangling/ECCO/README.md
+        https://github.com/NumericalEarth/NumericalEarth.jl/blob/main/src/DataWrangling/ECCO/README.md
 """
 # `download(::Metadata)` extends `Downloads.download` (the modern stdlib function,
 # not `Base.download` which is a 1.0-era shim). Per-dataset methods are added
