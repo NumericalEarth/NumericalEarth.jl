@@ -8,8 +8,8 @@ using Oceananigans.Architectures: architecture, child_architecture
 using Oceananigans.DistributedComputations: @root
 using Oceananigans.Fields: Field, regrid!
 
-using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
-                       metadata_path, BoundingBox, Dataset, majority_class!
+using NumericalEarth.DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
+                                   metadata_path, BoundingBox, Dataset, majority_class!, class_fractions
 
 import Oceananigans
 
@@ -243,9 +243,9 @@ Return a `NamedTuple` of per-class area fractions (each in `[0, 1]`) of the bloc
 the fractions sum to the mapped share of the block: `1 - sum(class_fractions(pixels))`
 is the unmapped area — open water outside the product's land mask, in practice.
 """
-class_fractions(pixels::AbstractArray) = class_fractions(class_counts(pixels), length(pixels))
+DataWrangling.class_fractions(pixels::AbstractArray) = class_fractions(class_counts(pixels), length(pixels))
 
-function class_fractions(counts::NamedTuple, pixel_count)
+function DataWrangling.class_fractions(counts::NamedTuple, pixel_count)
     fractions = map(n -> n / pixel_count, values(counts))
     return NamedTuple{keys(ESA_WORLDCOVER_CLASS_NAMES)}(fractions)
 end

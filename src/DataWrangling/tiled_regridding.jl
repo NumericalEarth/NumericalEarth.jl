@@ -172,6 +172,7 @@ function tiled_native_grid(target, metadata, inpainting, halo)
     isnothing(horizontal_centers(target.grid)) && return nothing
 
     native = native_grid(metadata, child_architecture(target.grid); halo)
+    same_grid(target.grid, native) && return nothing
     topology(native, 1) === Bounded || return nothing
 
     return native
