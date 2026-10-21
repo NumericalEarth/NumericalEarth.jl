@@ -43,55 +43,21 @@ function VelocityBasedFrictionVelocity(FT::DataType = Oceananigans.defaults.Floa
 end
 
 @inline ϕ²(i, j, k, grid, ϕ) = @inbounds ϕ[i, j, k]^2
+@inline U²ᶜᶜᶜ(i, j, k, grid, u, v) = ℑxᶜᵃᵃ(i, j, k, grid, ϕ², u) + ℑyᵃᶜᵃ(i, j, k, grid, ϕ², v)
 
 """
 $(TYPEDSIGNATURES)
 
-Thickness-weighted average of `getvalue(k)` over the cells `kd, kd-1, ...`
-spanning a fixed physical boundary-layer thickness `H_TBL` beneath the ice
-base (Losch, 2008; Mathiot et al., 2017). Averaging over a fixed physical
-thickness, rather than reading the topmost cell `kd` alone, keeps the melt
-rate from depending on how thin that cell is in a `PartialCellBottomAndTop` column. The column is walked
-downward until `H_TBL` is spanned, the water column bottom (`k = 1`) is
-reached, or an immersed cell is hit; the last included cell contributes only
-its partial overlap with `H_TBL`.
-"""
-@inline function boundary_layer_average(i, j, kd, grid, H_TBL, getvalue)
-    FT = eltype(grid)
-    total_value  = zero(FT)
-    total_weight = zero(FT)
-    remaining    = H_TBL
-
-    for k in kd:-1:1
-        immersed_cell(i, j, k, grid) && break
-        Δz = Δzᶜᶜᶜ(i, j, k, grid)
-        w = min(Δz, remaining)
-        total_value  += w * getvalue(k)
-        total_weight += w
-        remaining -= w
-        remaining > zero(FT) || break
-    end
-
-    return total_value / total_weight
-end
-
-"""
-$(TYPEDSIGNATURES)
-
-Return the friction velocity at the ice-shelf base for column `(i, j)`,
-boundary-layer-averaged over the cells at and beneath the topmost wet cell
-`kd` spanning physical thickness `H_TBL` (see [`boundary_layer_average`](@ref)).
+Return the friction velocity at the ice-shelf base for column `(i, j)`.
 A `Number` is returned as-is (constant-``u_*`` formulation);
 `VelocityBasedFrictionVelocity` computes
-``u_* = \\sqrt{C_d (u² + v² + u_tidal²)}`` from the boundary-layer-averaged
-``u², v²``.
+``u_* = \\sqrt{C_d (u² + v² + u_tidal²)}`` from `U²` averaged over the top `H_TBL` meters of the wet column.
 """
-@inline ice_shelf_friction_velocity(u★::Number, i, j, kd, grid, u, v, H_TBL) = u★
+@inline ice_shelf_friction_velocity(u★::Number, i, j, kd, grid, U², H_TBL) = u★
 
-@inline function ice_shelf_friction_velocity(fv::VelocityBasedFrictionVelocity, i, j, kd, grid, u, v, H_TBL)
-    U² = boundary_layer_average(i, j, kd, grid, H_TBL,
-                                 k -> ℑxᶜᵃᵃ(i, j, k, grid, ϕ², u) + ℑyᵃᶜᵃ(i, j, k, grid, ϕ², v))
-    return sqrt(fv.drag_coefficient * (U² + fv.tidal_velocity^2))
+@inline function ice_shelf_friction_velocity(fv::VelocityBasedFrictionVelocity, i, j, kd, grid, U², H_TBL)
+    Ū² = surface_layer_average(i, j, kd, grid, Center(), Center(), U², H_TBL)
+    return sqrt(fv.drag_coefficient * (Ū² + fv.tidal_velocity^2))
 end
 
 Base.summary(::VelocityBasedFrictionVelocity) = "VelocityBasedFrictionVelocity"
@@ -122,7 +88,7 @@ mutable struct IceShelfOceanInterface{K, A, J, F, L, T, S, U, P}
     fluxes :: J
     "`ThreeEquationHeatFlux` or `IceBathHeatFlux`"
     flux_formulation :: F
-    "`TEOS10Liquidus`, `PressureDependentLiquidus`, `LinearLiquidus`, or `nothing` to follow the ocean's equation of state"
+    "`TEOS10Liquidus`, `LinearLiquidus`, or `nothing` for a `TEOS10Liquidus` consistent with the ocean"
     liquidus :: L
     "interface temperature"
     temperature :: T
@@ -138,7 +104,7 @@ end
 $(TYPEDSIGNATURES)
 
 Build an `IceShelfOceanInterface` on `grid`, which is expected to be an
-`ImmersedBoundaryGrid` with an immersed top (e.g. `GridFittedBottomAndTop`).
+`ImmersedBoundaryGrid` with an immersed top (e.g. `GridFittedVerticalBoundaries`).
 The draft index map `k_draft` is computed from
 the grid's `immersed_cell` at construction; columns whose topmost cell
 `k = Nz` is wet (no ice above) get `k_draft = 0` and are excluded from the
@@ -155,9 +121,9 @@ friction-velocity-based transfer coefficients (αₕ = 0.0095, αₛ = αₕ/35)
 ``u_*`` computed from the sub-shelf ocean velocities with drag coefficient
 ``C_d = 0.0015``.
 
-The default `liquidus = nothing` follows the ocean model's equation of state (see
-[`ice_shelf_liquidus`](@ref)): a [`TEOS10Liquidus`](@ref) when the buoyancy uses
-`TEOS10EquationOfState`, and the ISOMIP+ [`PressureDependentLiquidus`](@ref) otherwise.
+The default `liquidus = nothing` is a [`TEOS10Liquidus`](@ref) (see [`ice_shelf_liquidus`](@ref)),
+with the reference density of a `TEOS10EquationOfState` and the buoyancy's gravitational
+acceleration when the ocean provides them.
 
 `boundary_layer_thickness` sets the fixed physical thickness over which the
 ocean state feeding the melt-rate solver is averaged, default 30 m

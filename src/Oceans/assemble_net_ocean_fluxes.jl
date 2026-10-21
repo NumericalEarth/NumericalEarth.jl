@@ -13,8 +13,13 @@ using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 # Fallback for an ocean-only model (it has no interfaces!)
 EarthSystemModels.update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel, NoInterfaceModel}, ocean::OceananigansModelSimulations) = nothing
 
-EarthSystemModels.update_net_fluxes!(coupled_model, ocean::OceananigansModelSimulations) =
+function EarthSystemModels.update_net_fluxes!(coupled_model, ocean::OceananigansModelSimulations)
     update_net_ocean_fluxes!(coupled_model, ocean, ocean.model.grid)
+    update_net_ocean_biogeochemical_fluxes!(coupled_model, ocean.model.biogeochemistry, ocean, ocean.model.grid)
+    return nothing
+end
+
+update_net_ocean_biogeochemical_fluxes!(coupled_model, biogeochemistry, ocean, grid) = nothing
 
 rainfall_flux(coupled_model::NoAtmosInterfaceModel) = ZeroField(eltype(coupled_model))
 rainfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state.Jʳⁿ.data
@@ -114,7 +119,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         Jᵛ = atmos_ocean_fluxes.water_vapor[i, j, 1]
     end
 
-    # Turbulent contributions to surface heat flux (radiation added later), 
+    # Turbulent contributions to surface heat flux (radiation added later),
     # plus the fusion enthalpy the ocean supplies to melt the snowfall and icebergs
     ℒᶠ = ocean_properties.latent_heat_of_fusion
     ΣQao = (𝒬ᵀ + 𝒬ᵛ) * (1 - ℵᵢ) + ℒᶠ * (Jˢⁿ - Pˢⁿ + Jⁱᵇ)
@@ -147,7 +152,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         Jᴴio = sea_ice_ocean_fluxes.freshwater_heat_content[i, j, 1]
         Jᵀao = ΣQao * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
         Jᵀio =  𝒬ⁱⁿ * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
-        
+
         τˣᵃᵒ = ℑxᶠᵃᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτˣᵃᵒ)
         τʸᵃᵒ = ℑyᵃᶠᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτʸᵃᵒ)
         τˣⁱᵒ = ρτˣⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑxᶠᵃᵃ(i, j, 1, grid, ℵ)

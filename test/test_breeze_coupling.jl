@@ -219,49 +219,44 @@ end
         downwelling_shortwave_flux = CenterField(grid)
         surface_albedo = CenterField(grid)
 
-        initial_surface_energy_flux = 25
-        first_surface_temperature = 280
-        second_surface_temperature = 300
-        emissivity = 0.95
-        downwelling_longwave = -300
-        downwelling_shortwave = -600
-        albedo = 0.2
-        stefan_boltzmann_constant = convert(eltype(grid), default_stefan_boltzmann_constant)
+        𝒬₀ = 25
+        T₁ = 280
+        T₂ = 300
+        ϵ = 0.95
+        ℐꜜˡʷ = -300
+        ℐꜜˢʷ = -600
+        α = 0.2
+        σ = convert(eltype(grid), default_stefan_boltzmann_constant)
 
-        fill!(parent(surface_emissivity), emissivity)
-        fill!(parent(downwelling_longwave_flux), downwelling_longwave)
-        fill!(parent(downwelling_shortwave_flux), downwelling_shortwave)
-        fill!(parent(surface_albedo), albedo)
+        fill!(parent(surface_emissivity), ϵ)
+        fill!(parent(downwelling_longwave_flux), ℐꜜˡʷ)
+        fill!(parent(downwelling_shortwave_flux), ℐꜜˢʷ)
+        fill!(parent(surface_albedo), α)
 
-        function surface_energy_at(temperature)
-            fill!(parent(surface_energy_flux), initial_surface_energy_flux)
-            fill!(parent(surface_temperature), temperature)
+        function surface_energy_at(T)
+            fill!(parent(surface_energy_flux), 𝒬₀)
+            fill!(parent(surface_temperature), T)
             launch!(arch, grid, :xy,
                     NumericalEarthBreezeExt._apply_breeze_air_land_radiative_fluxes!,
                     surface_energy_flux,
+                    grid,
                     surface_temperature,
                     surface_emissivity,
-                    stefan_boltzmann_constant,
+                    σ,
                     downwelling_longwave_flux,
                     downwelling_shortwave_flux,
                     surface_albedo)
-            return only(Array(interior(surface_energy_flux)))
+            return @allowscalar only(surface_energy_flux)
         end
 
-        first_surface_energy = surface_energy_at(first_surface_temperature)
-        second_surface_energy = surface_energy_at(second_surface_temperature)
+        𝒬₁ = surface_energy_at(T₁)
+        𝒬₂ = surface_energy_at(T₂)
 
-        expected_surface_energy(temperature) =
-            initial_surface_energy_flux +
-            emissivity * stefan_boltzmann_constant * temperature^4 +
-            emissivity * downwelling_longwave +
-            (1 - albedo) * downwelling_shortwave
+        𝒬(T) = 𝒬₀ + ϵ * σ * T^4 + ϵ * ℐꜜˡʷ + (1 - α) * ℐꜜˢʷ
 
-        @test first_surface_energy ≈ expected_surface_energy(first_surface_temperature)
-        @test second_surface_energy ≈ expected_surface_energy(second_surface_temperature)
-        @test second_surface_energy - first_surface_energy ≈
-              emissivity * stefan_boltzmann_constant *
-              (second_surface_temperature^4 - first_surface_temperature^4)
+        @test 𝒬₁ ≈ 𝒬(T₁)
+        @test 𝒬₂ ≈ 𝒬(T₂)
+        @test 𝒬₂ - 𝒬₁ ≈ ϵ * σ * (T₂^4 - T₁^4)
     end
 end
 
@@ -423,6 +418,31 @@ end
             update_state!(model)
             al = model.interfaces.atmosphere_land_interface
             @test !any(isnan, Array(interior(al.fluxes.friction_velocity)))
+        end
+    end
+end
+
+# `base_pressure` is the datum at z = 0, which `reference_state` reduces to each column's surface.
+@testset "Cold start agrees with its own reference on a raised domain" begin
+    for arch in test_architectures
+        A = typeof(arch)
+
+        @testset "on $A" begin
+            p₀ = 101325
+            grid = RectilinearGrid(arch; size = (8, 20), halo = (5, 5),
+                                   x = (0, 10kilometers), z = (2kilometers, 6kilometers),
+                                   topology = (Periodic, Flat, Bounded))
+
+            model = atmosphere_model(grid; base_pressure = p₀)
+
+            p  = Array(interior(model.dynamics.pressure))
+            pᵣ = Array(interior(model.dynamics.reference_state.pressure))
+
+            @test all(p .≈ pᵣ)
+
+            # Both anchored at the datum would also agree, so pin that the reference really is
+            # reduced to the domain bottom: 2 km of hydrostatic descent is ~22 kPa.
+            @test maximum(p[:, :, 1]) < 0.9 * p₀
         end
     end
 end

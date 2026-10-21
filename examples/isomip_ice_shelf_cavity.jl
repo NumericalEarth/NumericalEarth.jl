@@ -17,7 +17,7 @@
 # The example shows the four ingredients needed to put an ice shelf in an
 # Oceananigans model:
 #
-# 1. An `ImmersedBoundaryGrid` with a `PartialCellBottomAndTop`, which takes both a
+# 1. An `ImmersedBoundaryGrid` with a `PartialCellVerticalBoundaries`, which takes both a
 #    bed and an ice draft.
 # 2. The weight of the ice, a `TopLoad` passed to the immersed boundary as its
 #    `top_load`.
@@ -82,10 +82,10 @@ bed(x, y) = (x < Δx || y < Δy) ? 0 : -Lz
 
 ice_draft(x, y) = min(-200, -700 + 125 * y / 111.13kilometers)
 
-# `PartialCellBottomAndTop` lets both the seafloor and the ice base cut through a
+# `PartialCellVerticalBoundaries` lets both the seafloor and the ice base cut through a
 # cell, so the sloping draft is represented smoothly rather than as a
 # staircase. `minimum_fractional_cell_height = 0.05` matches MITgcm's
-# `hFacMin`. `GridFittedBottomAndTop` is the full-cell alternative. The grid is
+# `hFacMin`. `GridFittedVerticalBoundaries` is the full-cell alternative. The grid is
 # built below, once the weight of the ice is defined.
 
 # ## Initial state and equation of state
@@ -123,7 +123,7 @@ Sᵢ(x, y, z) = S₀
 top_load = TopLoad(buoyancy, (; T = Tᵢ, S = Sᵢ))
 
 grid = ImmersedBoundaryGrid(underlying_grid,
-                            PartialCellBottomAndTop(bed, ice_draft; minimum_fractional_cell_height = 0.05, top_load))
+                            PartialCellBottom(bed; top_height = ice_draft, minimum_fractional_cell_height = 0.05, top_load))
 
 # ## Melting at the ice base
 #

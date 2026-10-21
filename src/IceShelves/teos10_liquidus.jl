@@ -8,8 +8,7 @@ Absolute Salinity ``Sᴬ`` (g/kg) freezes at sea pressure ``p`` (dbar), from the
 `gsw_CT_freezing_poly` of the Gibbs SeaWater toolbox (McDougall et al., 2014), which is
 accurate to 6 × 10⁻⁴ K. The sea pressure at depth ``z ≤ 0`` is ``p = - ρ₀ g z``.
 
-It is the default liquidus of [`IceShelfOceanInterface`](@ref) when the ocean buoyancy uses
-`TEOS10EquationOfState` (see [`ice_shelf_liquidus`](@ref)). The liquidus is nonlinear in ``Sᴬ``, so the three-equation solve is
+It is the default liquidus of [`IceShelfOceanInterface`](@ref) (see [`ice_shelf_liquidus`](@ref)). The liquidus is nonlinear in ``Sᴬ``, so the three-equation solve is
 repeated `iterations` times, each with the liquidus linearized about the previous interface salinity.
 
 $(TYPEDFIELDS)
@@ -129,18 +128,8 @@ end
     return LinearLiquidus(T₀, m)
 end
 
-"""
-$(TYPEDSIGNATURES)
-
-Solve the three-equation balance at the ice base at depth `zᵈ`, returning the interface heat
-flux, temperature and salinity. A linear liquidus is solved once at depth `zᵈ`; a
-[`TEOS10Liquidus`](@ref) is linearized about the ocean salinity and then about each new
-interface salinity, `liquidus.iterations` times.
-"""
-@inline ice_shelf_interface_heat_flux(flux_formulation, ocean_state, ice_state, liquidus, zᵈ, properties, ℰ, u★) =
-    compute_interface_heat_flux(flux_formulation, ocean_state, ice_state, at_depth(liquidus, zᵈ), properties, ℰ, u★)
-
-@inline function ice_shelf_interface_heat_flux(flux_formulation, ocean_state, ice_state, liquidus::TEOS10Liquidus,
+# Relinearize about each new interface salinity, `liquidus.iterations` times.
+@inline function ice_ocean_interface_heat_flux(flux_formulation, ocean_state, ice_state, liquidus::TEOS10Liquidus,
                                                zᵈ, properties, ℰ, u★)
     FT = typeof(ocean_state.S)
     𝒬  = zero(FT)
@@ -159,19 +148,18 @@ end
 $(TYPEDSIGNATURES)
 
 Return the liquidus used by `interface` for the ocean `model`: `interface.liquidus`, or, when
-that is `nothing`, a [`TEOS10Liquidus`](@ref) with the equation of state's reference density
-and the buoyancy's gravitational acceleration if `model.buoyancy` uses `TEOS10EquationOfState`,
-and the ISOMIP+ [`PressureDependentLiquidus`](@ref) otherwise.
+that is `nothing`, a [`TEOS10Liquidus`](@ref) with the buoyancy's gravitational acceleration and,
+if `model.buoyancy` uses `TEOS10EquationOfState`, its reference density.
 """
 ice_shelf_liquidus(interface, model) = ice_shelf_liquidus(interface.liquidus, eltype(model.grid), model.buoyancy)
 
 ice_shelf_liquidus(liquidus, FT, buoyancy) = liquidus
-ice_shelf_liquidus(::Nothing, FT, buoyancy) = PressureDependentLiquidus(FT)
+ice_shelf_liquidus(::Nothing, FT, buoyancy) = TEOS10Liquidus(FT)
 ice_shelf_liquidus(::Nothing, FT, buoyancy::BuoyancyForce) = ice_shelf_liquidus(nothing, FT, buoyancy.formulation)
 ice_shelf_liquidus(::Nothing, FT, buoyancy::SeawaterBuoyancy) =
     equation_of_state_liquidus(FT, buoyancy.equation_of_state, buoyancy.gravitational_acceleration)
 
-equation_of_state_liquidus(FT, equation_of_state, gravitational_acceleration) = PressureDependentLiquidus(FT)
+equation_of_state_liquidus(FT, equation_of_state, gravitational_acceleration) = TEOS10Liquidus(FT; gravitational_acceleration)
 equation_of_state_liquidus(FT, equation_of_state::TEOS10EquationOfState, gravitational_acceleration) =
     TEOS10Liquidus(FT; reference_density = equation_of_state.reference_density, gravitational_acceleration)
 

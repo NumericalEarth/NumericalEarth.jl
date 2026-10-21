@@ -6,7 +6,7 @@ using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: AbstractField, Field, Face, Center, FractionalIndices
-using Oceananigans.Grids: Flat, Periodic, halo_size, topology, _node
+using Oceananigans.Grids: Flat, Periodic, halo_size, topology, _node, znode
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: KernelParameters, worksize
 
@@ -100,14 +100,14 @@ end
 ##### Utilities
 #####
 
-@kernel function _compute_fractional_indices!(indices_tuple, exchange_grid, source_grid)
+@kernel function _compute_fractional_indices!(indices_tuple, exchange_grid, source_grid, ℓx, ℓy)
     i, j = @index(Global, NTuple)
     kᴺ = size(exchange_grid, 3)
     X = _node(i, j, kᴺ + 1, exchange_grid, Center(), Center(), Face())
     if topology(source_grid) == (Flat, Flat, Flat)
         fractional_indices_ij = FractionalIndices(nothing, nothing, nothing)
     else
-        fractional_indices_ij = FractionalIndices(X, source_grid, Center(), Center(), Center())
+        fractional_indices_ij = FractionalIndices(X, source_grid, ℓx, ℓy, Center())
     end
     TX, TY, _ = topology(source_grid)
     Nx, Ny, _ = size(source_grid)
@@ -179,6 +179,7 @@ include("state_exchanger.jl")
 # Sea ice-ocean heat flux formulations
 include("friction_velocity.jl")
 include("sea_ice_ocean_heat_flux_formulations.jl")
+include("ice_ocean_interface_fluxes.jl")
 
 include("component_interfaces.jl")
 include("atmosphere_state_correction.jl")

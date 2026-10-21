@@ -5,6 +5,7 @@ using Dates
 using Random: shuffle!
 using NCDatasets
 using ZipFile: ZipFile
+using Thermodynamics: Liquid
 
 using NumericalEarth.DataWrangling: metadata_path, BoundingBox, Column, Linear, Nearest, is_three_dimensional
 using NumericalEarth.DataWrangling.ERA5
@@ -15,6 +16,7 @@ using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5MonthlyPr
                                          ERA5PL_netcdf_variable_names, pressure_field
 using NumericalEarth.DataWrangling.ERA5: split_era5_nc_by_datetime, ERA5_COORD_VARS, ERA5_TIME_DIMNAMES
 using NumericalEarth.DataWrangling.GloFAS: GloFASReanalysis, GloFAS_dataset_variable_names
+using NumericalEarth.EarthSystemModels.InterfaceComputations: saturation_specific_humidity
 # ERA5-owned batching / NetCDF helpers are exercised at their owner module, not through the
 # CDS extension (the extension no longer re-imports the ones it does not itself use).
 using NumericalEarth.DataWrangling.ERA5: max_dts_per_cds_request, is_zip, ncvar_copy!, ncvar_copy_tslice!,
@@ -1196,6 +1198,62 @@ end
         # The files are on disk: nothing is fetched again
         download(metadata; retrieve = fake_retrieve)
         @test length(requests) == 1
+    end
+end
+
+@testset "ERA5PrescribedAtmosphere derives specific humidity one window at a time" begin
+    dataset = ERA5HourlySingleLevel()
+    start_date = DateTime(2005, 2, 16)
+    end_date = start_date + Hour(7)
+    region = BoundingBox(longitude=(0, 1), latitude=(40, 41))
+    netcdf_names = Dict(ERA5_dataset_variable_names[name] => ERA5_netcdf_variable_names[name]
+                        for name in keys(ERA5_netcdf_variable_names))
+
+    # Dewpoint and surface pressure change every hour, so each snapshot of qᵛ is distinct.
+    hourly_value(nc_name, time) = nc_name == "d2m" ? 260 + Dates.hour(time) :
+                                  nc_name == "sp"  ? 9e4 + 1e3 * Dates.hour(time) : 1
+
+    function fake_retrieve(product, request, path)
+        times = vec([DateTime(parse(Int, y), parse(Int, m), parse(Int, d), parse(Int, h[1:2]))
+                     for y in request["year"], m in request["month"], d in request["day"], h in request["time"]])
+        NCDataset(path, "c") do ds
+            defDim(ds, "longitude", 5)
+            defDim(ds, "latitude", 5)
+            defDim(ds, "valid_time", length(times))
+            defVar(ds, "longitude", collect(0:0.25:1), ("longitude",))
+            defVar(ds, "latitude", collect(41:-0.25:40), ("latitude",))
+            time_var = defVar(ds, "valid_time", Float64, ("valid_time",),
+                              attrib = Dict("units" => "seconds since 1970-01-01"))
+            time_var[:] = times
+            for variable in request["variable"]
+                nc_name = netcdf_names[variable]
+                data = defVar(ds, nc_name, Float32, ("longitude", "latitude", "valid_time"))
+                for (k, time) in enumerate(times)
+                    data[:, :, k] .= hourly_value(nc_name, time)
+                end
+            end
+        end
+        return path
+    end
+
+    mktempdir() do dir
+        names = (:eastward_velocity, :northward_velocity, :temperature,
+                 :dewpoint_temperature, :surface_pressure, :total_precipitation)
+        download(MetadataSet(names...; dataset, start_date, end_date, dir, region); retrieve = fake_retrieve)
+
+        atmosphere = ERA5PrescribedAtmosphere(CPU(); dataset, start_date, end_date, dir, region,
+                                              time_indices_in_memory = 3)
+        qᵛ = atmosphere.specific_humidity
+        ℂ = atmosphere.thermodynamics_parameters
+        @test size(parent(qᵛ), 4) == 3
+
+        # Snapshots 5 and 8 lie outside the first window
+        for n in (1, 5, 8)
+            time = start_date + Hour(n - 1)
+            Tᵈ = Float32(hourly_value("d2m", time))
+            pˢ = Float32(hourly_value("sp", time))
+            @test all(interior(qᵛ[n]) .≈ saturation_specific_humidity(ℂ, Tᵈ, pˢ, Liquid()))
+        end
     end
 end
 
