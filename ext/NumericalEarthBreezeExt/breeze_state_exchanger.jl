@@ -31,6 +31,8 @@ using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, AbstractInMemoryBac
 using Oceananigans.Units: Time
 import Oceananigans.OutputReaders: new_backend, update_field_time_series!
 import NumericalEarth.NestedModels: exchange_state!, total_density, reconstruct_parent_state
+using NumericalEarth.Atmospheres: PrescribedAtmosphere
+using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips
 
 #####
 ##### An in-memory backend whose resident window is filled by the StateExchanger (not by `set!`).
@@ -104,7 +106,7 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
         ρv[i, j, k]   = ρᵈ[i, j, k] * vₚ[i, j, k]
         ρqᵛᵉ[i, j, k] = ρ * qᵛᵉ
 
-        # When performing Davies `Relaxation` to a `PrescribedAtmosphere` parent, we construct
+        # When performing lateral boundary `Relaxation` toward a `PrescribedAtmosphere` parent, we construct
         # `SpecificForcing`s with these intensive quantities
         #
         # Note: we can do a memory optimization here for `parent_atmosphere.velocities.*`
@@ -227,12 +229,46 @@ function state_exchanger(parent_atmosphere, pˢᵗ, constants;
 
     # Fill any hydrometeor a caller-supplied `condensates` omits with `nothing` (⇒ ZeroField), so the
     # 4-species contract (qᶜˡ, qʳ, qᶜⁱ, qˢ) holds regardless of how many species the source carries.
-    condensates = merge((qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing), condensates)
+    condensates = merge((qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing), something(condensates, (;)))
 
-    prognostic = child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory)
+    prognostic = child_prognostic_state(parent_atmosphere, pˢᵗ, constants, condensates, moisture_name;
+                                        time_indices_in_memory)
     exchanger  = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates, moisture_name)
-    exchange_state!(exchanger, first(parent_atmosphere.temperature.times); force=true)   # fill the initial window
+    exchange_state!(exchanger, first(parent_atmosphere.temperature.times))   # position the parent's windows
     return exchanger
+end
+
+# The derived child prognostics of `parent_atmosphere`, filled over the initial resident window.
+function child_prognostic_state(parent_atmosphere, pˢᵗ, constants, condensates, moisture_name;
+                                time_indices_in_memory = 3)
+    prognostic = child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory)
+    return compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, constants, condensates, moisture_name)
+end
+
+# One exchanger per strip, keyed by side; `condensates` is keyed by side too, or `nothing`.
+function state_exchanger(parent_atmosphere::BoundaryPrescribedComponent, pˢᵗ, constants; condensates, kw...)
+    strips = boundary_strips(parent_atmosphere)
+    return NamedTuple{keys(strips)}(state_exchanger(strips[side], pˢᵗ, constants;
+                                                    condensates = isnothing(condensates) ? nothing : condensates[side], kw...)
+                                    for side in keys(strips))
+end
+
+# The derived child prognostics of `parent_atmosphere` with the constants, moisture and condensate species
+# of `exchanger`.
+function child_prognostic_state(parent_atmosphere::PrescribedAtmosphere, exchanger::StateExchanger)
+    names = keys(exchanger.condensates)
+    condensates = NamedTuple{names}(isnothing(exchanger.condensates[name]) ? nothing :
+                                    parent_atmosphere.microphysical_variables[name] for name in names)
+    return child_prognostic_state(parent_atmosphere, exchanger.pˢᵗ, exchanger.constants, condensates,
+                                  exchanger.moisture_name)
+end
+
+# The derived child prognostics, keyed by variable; for strips, each variable is keyed by side.
+parent_prognostic(exchanger::StateExchanger) = exchanger.prognostic
+
+function parent_prognostic(exchangers::NamedTuple)
+    names = keys(first(exchangers).prognostic)
+    return NamedTuple{names}(map(exchanger -> exchanger.prognostic[name], exchangers) for name in names)
 end
 
 # Advance the derived resident window (and the parent's own FTS windows) to bracket `time`, recomputing
