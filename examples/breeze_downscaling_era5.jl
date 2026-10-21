@@ -35,8 +35,8 @@
 # - Single nest only (ERA5 → 12 km; coarsened 4× from Fan's 3 km Domain 3 for a fast configuration).
 # - The land is a slab: no soil column, no vegetation, and no boundary-layer or cumulus
 #   parameterization — diffusion is numerical, and deep convection is resolved on the grid.
-# - The ocean is prescribed: the SST follows ERA5's hourly analysis but does not respond to the
-#   atmosphere above it.
+# - The ocean is prescribed: the SST follows ERA5's sea surface temperature but does not respond
+#   to the atmosphere above it.
 # - No snowpack: the child's frozen precipitation reaches the bucket as liquid water;
 #   immaterial for this warm-season case.
 
@@ -186,9 +186,8 @@ fig
 # horizontal grid. The land is an interactive `SlabLand` — prognostic skin temperature plus
 # bucket hydrology, driven by the coupled turbulent fluxes, the child's rain, and the radiation
 # below; its bucket starts with ≈ 20 mm of water. The ocean is a `PrescribedOcean` whose SST
-# follows ERA5's hourly analysis. ERA5's skin temperature supplies both — over open water it
-# carries the analyzed sea surface temperature — so land and ocean start from one consistent
-# field.
+# follows ERA5's sea surface temperature, a near-surface value distinct from the instantaneous skin
+# temperature that initializes the land.
 
 surface_grid = LatitudeLongitudeGrid(arch;
                                      longitude = (λ_west,  λ_east),
@@ -204,12 +203,12 @@ land = SlabLand(surface_grid)
 set!(land.temperature, skin_temperature)
 set!(land; M = 20)
 
-# The ocean follows ERA5's hourly skin temperature rather than holding the initial analysis: a
+# The ocean follows ERA5's sea surface temperature rather than holding the initial analysis: a
 # `FieldTimeSeries` over the same dates as the forcing, which the coupler reads at the ocean clock,
 # interpolating linearly between hours. `Clamp` holds the end values outside the record, where the
 # dataset default `Cyclical` would wrap May 20 03:00 back onto 00:00 at the final step.
 
-sea_surface_temperature = Metadata(:skin_temperature; dataset = ERA5HourlySingleLevel(),
+sea_surface_temperature = Metadata(:sea_surface_temperature; dataset = ERA5HourlySingleLevel(),
                                    dates, region = era5_region, dir = era5_datadir)
 
 sst = FieldTimeSeries(sea_surface_temperature, surface_grid;
@@ -229,7 +228,7 @@ ocean = PrescribedOcean(surface_grid, sst.times; sea_surface_temperature = sst)
 ocean_fraction = regrid_ocean_fraction(surface_grid; dataset = ETOPO2022())
 
 # Alongside þ in the left panel, the right panel shows the sea surface temperature the ocean part of each cell supplies.
-# ERA5's skin temperature is set into every cell, so the field holds *land* skin temperature inland;
+# ERA5's sea surface temperature is undefined over land and is inpainted there from the nearest water;
 # masking to þ > 1/2 shows the water the partition actually weights — the Gulf, the Florida Straits and the western Atlantic.
 
 Tᵒᶜ = Field{Center, Center, Nothing}(surface_grid)
