@@ -20,6 +20,14 @@
 using Accessors: @set
 using NumericalEarth.NestedModels: NestedModel
 
+function Oceananigans.initialize!(model::NumericalEarth.EarthSystemModels.EarthSystemModel{<:Breeze.RadiativeTransferModel})
+    Oceananigans.initialize!(model.interfaces.exchanger, model)
+    # Diagnose the interface surface temperature before solving radiation.
+    update_state!(model)
+    update_state!(component_model(model.atmosphere); compute_tendencies = false)
+    return nothing
+end
+
 """
 $(TYPEDSIGNATURES)
 

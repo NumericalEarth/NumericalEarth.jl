@@ -431,6 +431,9 @@ end
     for arch in test_architectures
         m1 = coupled_slab_model(arch)
         m2 = coupled_slab_model(arch)
+        radiation_fluxes = m1.radiation.interface_fluxes.land
+        @test only(Array(interior(radiation_fluxes.downwelling_shortwave))) ≈ -0.8 * 600
+        @test only(Array(interior(radiation_fluxes.downwelling_longwave))) ≈ -0.95 * 350
         for _ in 1:6
             time_step!(m1, 300.0)
         end
