@@ -242,7 +242,7 @@ end
 global_grid_size(arch, local_size) = local_size
 global_grid_size(arch::Distributed, local_size) = global_size(arch, local_size)
 
-# Index into `wet` of the cell closest to `(λₒ, φₒ)`, and its squared distance. 
+# Index into `wet` of the cell closest to `(λₒ, φₒ)`, and its squared distance.
 function nearest_wet_cell(wet, λₒ, φₒ)
     nearest = 0
     nearest_distance = Inf

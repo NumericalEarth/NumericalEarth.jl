@@ -61,7 +61,7 @@ Oceananigans.defaults.FloatType = Float32
 
 ## dates
 name = "mc3e"
-duration = 3hours
+duration = 6hours
 start_date = DateTime(2011, 05, 20, 0)
 stop_date = start_date + Second(duration)
 
