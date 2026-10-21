@@ -428,8 +428,8 @@ end
     end
 end
 
-# Needs an Oceananigans release with CliMA/Oceananigans.jl#6110
-if isdefined(Oceananigans, :GridFittedBottomAndTop)
+# Needs an Oceananigans release with CliMA/Oceananigans.jl#6153
+if isdefined(Oceananigans, :GridFittedVerticalBoundaries)
 
 @testset "No frazil under an ice shelf" begin
     for arch in test_architectures
@@ -444,7 +444,7 @@ if isdefined(Oceananigans, :GridFittedBottomAndTop)
 
         # An ice shelf with its draft at -200 m covers the western half (i = 1, 2).
         ice_draft(λ, φ) = λ < 5 ? -200 : 0
-        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottomAndTop(-400, ice_draft))
+        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(-400; top_height = ice_draft))
 
         ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
         sea_ice = sea_ice_simulation(grid, ocean)
@@ -468,7 +468,7 @@ if isdefined(Oceananigans, :GridFittedBottomAndTop)
 end
 
 else
-    @warn "Skipping the ice shelf frazil-masking test: this Oceananigans has no GridFittedBottomAndTop"
+    @warn "Skipping the ice shelf frazil-masking test: this Oceananigans has no GridFittedVerticalBoundaries"
 end
 
 @testset "Coupled model with different heat flux formulations" begin

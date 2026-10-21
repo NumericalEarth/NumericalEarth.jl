@@ -138,8 +138,8 @@ end
     @test u★₁ ≈ sqrt(2.5e-3 * (0.1^2 + 0.2^2 + 0.01^2))
 end
 
-# Bottom-and-top grids need an Oceananigans release with CliMA/Oceananigans.jl#6110
-if isdefined(Oceananigans, :GridFittedBottomAndTop)
+# Immersed-top grids need an Oceananigans release with CliMA/Oceananigans.jl#6153
+if isdefined(Oceananigans, :GridFittedVerticalBoundaries)
 
 for arch in test_architectures
     @testset "IceShelfOceanInterface k_draft map [$(typeof(arch))]" begin
@@ -155,7 +155,7 @@ for arch in test_architectures
         bottom(x, y)  = x < 3 ? -1.0 : -0.6
         top_height(x, y) = x < 1 ? 0.0 : (x < 2 ? -0.5 : (x < 3 ? -0.99 : 0.0))
 
-        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottomAndTop(bottom, top_height))
+        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom; top_height))
         interface = IceShelfOceanInterface(grid)
 
         @test Array(interior(interface.k_draft))[:, 2, 1] == [0, 2, 0, 0]
@@ -235,7 +235,7 @@ for arch in test_architectures
         T₀, S₀ = 1.0, 34.5
         buoyancy = SeawaterBuoyancy()
         top_load = TopLoad(buoyancy, (; T = (x, z) -> T₀, S = (x, z) -> S₀))
-        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottomAndTop(-1, cavity_test_top_height; top_load))
+        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(-1; top_height = cavity_test_top_height, top_load))
 
         # Constant u★: melt starts from rest and spins up the cavity circulation
         interface = IceShelfOceanInterface(grid; flux_formulation = ThreeEquationHeatFlux())
@@ -291,5 +291,5 @@ for arch in test_architectures
 end
 
 else
-    @warn "Skipping the ice shelf cavity tests: this Oceananigans has no GridFittedBottomAndTop"
+    @warn "Skipping the ice shelf cavity tests: this Oceananigans has no GridFittedVerticalBoundaries"
 end

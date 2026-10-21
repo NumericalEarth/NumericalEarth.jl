@@ -104,7 +104,7 @@ end
 $(TYPEDSIGNATURES)
 
 Build an `IceShelfOceanInterface` on `grid`, which is expected to be an
-`ImmersedBoundaryGrid` with an immersed top (e.g. `GridFittedBottomAndTop`).
+`ImmersedBoundaryGrid` with an immersed top (e.g. `GridFittedVerticalBoundaries`).
 The draft index map `k_draft` is computed from
 the grid's `immersed_cell` at construction; columns whose topmost cell
 `k = Nz` is wet (no ice above) get `k_draft = 0` and are excluded from the
