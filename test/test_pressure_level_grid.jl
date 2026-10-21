@@ -2,9 +2,8 @@ include("runtests_setup.jl")
 
 using Oceananigans
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Fields: instantiated_location
+using Oceananigans.Fields: instantiated_location, _fractional_indices, fractional_z_index
 using Oceananigans.Grids: Flat, Bounded, topology
-using Oceananigans.Fields: _fractional_indices, fractional_z_index
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
 using Oceananigans.TimeSteppers: time_step!
 using Statistics
@@ -452,10 +451,10 @@ for arch in test_architectures
             fill_halo_regions!(Φ_reference)
             @test Array(parent(grid.z.geopotential)) ≈ Array(parent(Φ_reference))
         end
+
         @testset "Lambert-conformal horizontal composes with the per-column vertical" begin
-            # A LambertConformalConicGrid specializes `_fractional_indices` on the horizontal, and
-            # that method is more specific than the PressureLevelGrid one. Without a joint method it
-            # wins outright and the vertical silently uses the column-mean profile.
+            # Without the joint method, Oceananigans' LambertConformalConicGrid method wins and the
+            # vertical silently reads the column-mean profile.
             Nx, Ny, Nz = 8, 6, 5
             g = 9.80665
             lcc_kw = (; size = (Nx, Ny, Nz), center = (-105, 40), spacing = 13545.0,
