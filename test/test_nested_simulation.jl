@@ -568,8 +568,8 @@ end
     @test all(isfinite, Array(interior(atmos.model.dynamics.total_density)))
 end
 
-@testset "Breeze nested_atmosphere_model defaults to a moving derived window on CPU()" begin
-    parent_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 4),
+@testset "Breeze nested_atmosphere_model defaults to a moving derived window on $(arch)" for arch in test_architectures
+    parent_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 4),
                                          longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),
                                          z = (0, 1), topology = (Bounded, Bounded, Bounded))
     times = collect(0.0:1.0:4.0)
@@ -580,7 +580,7 @@ end
     set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
     set!(parent.pressure,          (x, y, z, t) -> 9.0e4)
 
-    child_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 8),
+    child_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 8),
                                         longitude = (-1, 1), latitude = (-1, 1), z = (0, 1000),
                                         halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
 
