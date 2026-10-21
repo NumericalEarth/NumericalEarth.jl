@@ -23,8 +23,6 @@ using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
                        cmr_granules, write_atomically, class_fractions, majority_class!,
                        valid_area_mean!
 
-import Oceananigans
-
 download_MODISLand_cache::String = ""
 function __init__()
     global download_MODISLand_cache = DataWrangling.download_cache("MODISLand")

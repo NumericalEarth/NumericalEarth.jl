@@ -72,8 +72,9 @@ function valid_area_mean!(target, source)
     regrid!(valid_area_fraction, valid)
     regrid!(regridded_values, valid_values)
 
+    indices = (target.indices[1], target.indices[2], :)
     # A cell with no valid area divides zero by zero.
-    interior(target) .= interior(regridded_values) ./ interior(valid_area_fraction)
+    interior(target) .= interior(regridded_values, indices...) ./ interior(valid_area_fraction, indices...)
     fill_halo_regions!(target)
     return target
 end

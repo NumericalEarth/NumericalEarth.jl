@@ -259,7 +259,7 @@ DataWrangling.default_download_directory(::AbstractMODISLandDataset) = download_
 DataWrangling.longitude_name(::MODISLandMetadata) = "lon"
 DataWrangling.latitude_name(::MODISLandMetadata)  = "lat"
 
-Oceananigans.Fields.location(::MODISLandMetadatum) = (Center, Center, Nothing)
+DataWrangling.dataset_location(::AbstractMODISLandDataset, name) = (Center, Center, Nothing)
 
 struct MODISLAIScale end
 struct MODISFPARScale end
@@ -315,6 +315,11 @@ function DataWrangling.metadata_filename(dataset::MODISLAIClimatology, name, dat
                   "_climatology_retrievals_", years_tag(dataset.years), "_", nameof(dataset.reducer),
                   "_", screen_tag(dataset.dataset),
                   "_p", lpad(period, 2, '0'), "_", region_tag(dataset, name, region), ".nc")
+end
+
+function DataWrangling.inpainted_metadata_filename(metadatum::MODISLandMetadatum)
+    screening = metadatum.dataset isa MODISLAIDataset ? "_" * screen_tag(metadatum.dataset) : ""
+    return string(splitext(metadatum.filename)[1], "_", metadatum.name, screening, "_inpainted.jld2")
 end
 
 """

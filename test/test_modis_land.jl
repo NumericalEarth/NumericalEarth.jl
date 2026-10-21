@@ -6,7 +6,8 @@ using NumericalEarth.DataWrangling: DataWrangling, BoundingBox, Metadatum, Metad
     longitude_name, latitude_name, all_dates, native_times, available_variables,
     longitude_interfaces, latitude_interfaces, validate_dataset_coverage,
     retrieve_data, read_file_coords, region_info, fill_gaps!, cmr_granules_url,
-    window_center, averaging_window, window_bounds, class_fractions, valid_area_mean!
+    window_center, averaging_window, window_bounds, class_fractions, valid_area_mean!,
+    NearestNeighborInpainting
 using NumericalEarth.DataWrangling.MODISLand: MODISLand, mask_lai_fill, lai_screening_flags,
     lai_rejection_flags, modis_composite_dates,
     parse_granule_name, select_granules, regional_lattice,
@@ -547,6 +548,37 @@ end
     end
 end
 
+@testset "MODIS inpainting cache preserves variables and screening [$arch]" for arch in test_architectures
+    mktempdir() do dir
+        region = BoundingBox(longitude = (-92.5, -92.48), latitude = (36.5, 36.52))
+        date = DateTime(2020, 7, 3)
+        dataset = MCD15A2H()
+        metadatum = Metadatum(:leaf_area_index; dataset, region, date, dir)
+        lattice = regional_lattice(metadatum)
+        lai = fill(0x32, lattice.Nx, lattice.Ny)
+        fpar = fill(0x50, size(lai))
+        qc = fill(lai_qc(), size(lai))
+        center = CartesianIndex(cld.(size(lai), 2))
+        lai[center] = 0x64
+        qc[center] = lai_qc(cloud = 1)
+        write_lattice_file(metadata_path(metadatum), lattice,
+                           ("Lai_500m" => lai, "Fpar_500m" => fpar,
+                            "FparLai_QC" => qc, "FparExtra_QC" => zero.(qc)))
+
+        inpainting = NearestNeighborInpainting(1)
+        screened = Field(metadatum, arch; inpainting)
+        @test all(isapprox.(Array(interior(screened)), 5))
+
+        fpar_metadatum = Metadatum(:fpar; dataset, region, date, dir)
+        @test all(isapprox.(Array(interior(Field(fpar_metadatum, arch; inpainting))), 0.8))
+
+        unscreened = Metadatum(:leaf_area_index; dataset = MCD15A2H(screened_flags = 0x0000),
+                               region, date, dir)
+        @test Array(interior(Field(unscreened, arch; inpainting), :, :, 1))[center] ≈ 10
+        @test Array(interior(Field(metadatum, arch; inpainting))) ≈ Array(interior(screened))
+    end
+end
+
 @testset "MODIS land-cover legends and decode" begin
     @test MCD12Q1().legend == :IGBP
     @test MCD12Q1(legend = :PFT).legend == :PFT
@@ -758,6 +790,15 @@ end
         @test mean_latitude[2] ≈ north
         @test isnan(mean_latitude[3])
     end
+
+    grid = LatitudeLongitudeGrid(arch; size = (2, 2), longitude = (-4, 0), latitude = (50, 70),
+                                 topology = (Bounded, Bounded, Flat))
+    target = Field{Center, Center, Nothing}(grid)
+    set!(target, -1)
+    window = view(target, size(grid, 1):size(grid, 1), size(grid, 2):size(grid, 2), :)
+    valid_area_mean!(window, source)
+    @test only(Array(interior(window))) ≈ north
+    @test count(==(-1), Array(interior(target))) == prod(size(target)) - 1
 end
 
 @testset "MODIS class fractions on a model grid" begin
@@ -1069,6 +1110,11 @@ end
         @test 𝒜[8, 8] == 0
         @test n[8, 8] == 3
 
+        inpainting = NearestNeighborInpainting(1)
+        Field(metadatum; inpainting)
+        count_field = Field(retained_retrieval_metadatum(metadatum); inpainting)
+        @test Array(interior(count_field, :, :, 1))[1, 1] == n[1, 1]
+
         selected = Metadatum(:leaf_area_index; dataset = MODISLAIClimatology(years = [2017, 2019]),
                              region, date = stamp, dir)
         selected_count = Field(retained_retrieval_metadatum(selected))
@@ -1123,6 +1169,18 @@ end
         metadatum = Metadatum(:leaf_area_index; dataset, region, date = dates[1], dir)
         regridded = Array(interior(Field(metadatum, grid), :, :, 1))
         @test count(isnan, regridded) == 2
+
+        for arch in test_architectures
+            model_grid = LatitudeLongitudeGrid(arch; size = (2, 3, 4),
+                                               longitude = region.longitude, latitude = region.latitude,
+                                               z = (0, 100), topology = (Bounded, Bounded, Bounded))
+            series = FieldTimeSeries(metadata, model_grid; time_indices_in_memory = 1)
+            for n in eachindex(dates)
+                snapshot = Field(metadata[n], model_grid)
+                @test size(series[n]) == size(snapshot)
+                @test Array(interior(series[n])) ≈ Array(interior(snapshot))
+            end
+        end
     end
 end
 
