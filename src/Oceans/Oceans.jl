@@ -14,7 +14,7 @@ using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundar
                                        IMEXFluxBoundaryCondition, IMEXFlux, getbc
 using Oceananigans.BuoyancyFormulations: BuoyancyForce, SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
-using Oceananigans.Fields: Field, CenterField, set!, interior
+using Oceananigans.Fields: Field, CenterField, compute!, set!, interior
 using Oceananigans.Forcings: MultipleForcings, DiscreteForcing
 using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, znodes, RectilinearGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition, MutableGridOfSomeKind
@@ -70,6 +70,7 @@ include("radiative_forcing.jl")
 include("multiple_surface_fluxes.jl")
 include("ocean_simulation.jl")
 include("nonhydrostatic_ocean_simulation.jl")
+include("surface_layer_velocities.jl")
 include("assemble_net_ocean_fluxes.jl")
 
 #####
@@ -155,22 +156,22 @@ end
 @inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{}, K::Tuple{}, id, clock, model_fields) = zero(grid)
 
 @inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any}, K::Tuple{<:Any}, id, clock, model_fields) =
-    κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) 
+    κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields)
 
 @inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any}, K::Tuple{<:Any, <:Any}, id, clock, model_fields) =
     κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) +
-    κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields) 
+    κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields)
 
 @inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any, <:Any}, K::Tuple{<:Any, <:Any, <:Any}, id, clock, model_fields) =
     κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) +
     κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields) +
-    κzᶜᶜᶠ(i, j, k, grid, closure[3], K[3], id, clock, model_fields) 
+    κzᶜᶜᶠ(i, j, k, grid, closure[3], K[3], id, clock, model_fields)
 
 @inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any, <:Any, <:Any}, K::Tuple{<:Any, <:Any, <:Any, <:Any}, id, clock, model_fields) =
     κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) +
     κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields) +
     κzᶜᶜᶠ(i, j, k, grid, closure[3], K[3], id, clock, model_fields) +
-    κzᶜᶜᶠ(i, j, k, grid, closure[4], K[4], id, clock, model_fields) 
+    κzᶜᶜᶠ(i, j, k, grid, closure[4], K[4], id, clock, model_fields)
 
 @inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple, K::Tuple, id, clock, model_fields) =
     κzᶜᶜᶠ(i, j, k, grid,  closure[1],     K[1],     id, clock, model_fields) +

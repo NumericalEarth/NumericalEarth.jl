@@ -32,7 +32,10 @@ export AbstractLand,
        urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
        fill_aerodynamic_roughness_gaps!,
        # Atmosphere-facing accessors
-       surface_temperature, surface_saturation
+       surface_temperature, surface_saturation,
+       # Land model and simulations
+       land_model,
+       land_simulation
 
 """
     abstract type AbstractLand end
@@ -62,6 +65,10 @@ using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surfa
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger,
                                                  canopy_transmittance, skin_conductance, skin_temperature,
                                                  canopy_evaporation, land_vapor_flux
+
+# Extended by external land models
+function land_model end
+function land_simulation end
 
 # Closure interfaces
 include("energy_balance/energy_balance.jl")

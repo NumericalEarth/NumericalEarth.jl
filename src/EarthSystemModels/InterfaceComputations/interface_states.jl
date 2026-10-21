@@ -621,7 +621,7 @@ end
     ℐꜜˢʷ = radiation_state.ℐꜜˢʷ
     ℐꜜˡʷ = radiation_state.ℐꜜˡʷ
     ℐꜛˡʷ = σ * ϵ * Tₛ⁻^4
-    Qd = - (1 - α) * ℐꜜˢʷ - ϵ * ℐꜜˡʷ
+    Qd = (1 - α) * ℐꜜˢʷ + ϵ * ℐꜜˡʷ
 
     u★ = interface_state.fluxes.u★
     θ★ = interface_state.fluxes.θ★
@@ -756,7 +756,7 @@ Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
     Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
 
     q  = compute_interface_humidity(ℙₛ.specific_humidity_formulation, T, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
-    Rn = (1 - Ψᵣ.α) * Ψᵣ.ℐꜜˢʷ + Ψᵣ.ϵ * (Ψᵣ.ℐꜜˡʷ - Ψᵣ.σ * T^4)
+    Rn = - (1 - Ψᵣ.α) * Ψᵣ.ℐꜜˢʷ - Ψᵣ.ϵ * (Ψᵣ.ℐꜜˡʷ + Ψᵣ.σ * T^4)
     G  = Λ * (Ψᵢ.T - T)
     H  = gᵀ * (T - Tᵃᵗ)
     LE = ℒ * gᵛ * (q - Ψₐ.q)
@@ -1044,8 +1044,7 @@ end
 
 Air-land interface radiation state at one cell: Stefan–Boltzmann constant `σ`,
 surface albedo `α`, emissivity `ϵ`, downwelling shortwave `ℐꜜˢʷ`, and
-downwelling longwave `ℐꜜˡʷ`. Returned by `air_land_interface_radiation_state`
-and consumed by the air-land flux kernel and `apply_air_land_radiative_fluxes!`.
+downwelling longwave `ℐꜜˡʷ`, in W m⁻² with positive-upward signs.
 """
 struct AirLandRadiationState{FT}
     σ    :: FT

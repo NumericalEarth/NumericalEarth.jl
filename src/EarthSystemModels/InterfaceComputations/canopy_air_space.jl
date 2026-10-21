@@ -619,10 +619,10 @@ radiation state.
     T⁻  = Ψₛ.temperature
     q⁻  = Ψₛ.specific_humidity
 
-    # Shortwave split and longwave emissivities (broadband).
+    # Shortwave split and longwave emissivities (broadband), on downwelling magnitudes.
     σ   = Ψᵣ.σ
-    SW  = Ψᵣ.ℐꜜˢʷ
-    LWꜜ = Ψᵣ.ℐꜜˡʷ
+    SW  = - Ψᵣ.ℐꜜˢʷ
+    LWꜜ = - Ψᵣ.ℐꜜˡʷ
     αˡᵉᵃᶠ = convert(FT, c.leaf_albedo)
     αᵍ    = convert(FT, c.ground_albedo)
     εˡᵉᵃᶠ = convert(FT, c.max_canopy_emissivity) * (1 - exp(-LAI))

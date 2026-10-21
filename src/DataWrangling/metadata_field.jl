@@ -320,7 +320,7 @@ Interpolate `from_field` onto `to_field`. Identical to Oceananigans'
 `znode` rather than the reference `rnode`. `interpolate!` builds its target node
 from `_node`, whose vertical component is `rnode`, so it would place the source
 at the LAM's reference heights and ignore the terrain — putting the lowest cells
-below the (clipped) surface of a `PressureLevelGrid` source.
+below the surface of a `PressureLevelGrid` source.
 
 !!! note "TODO"
     Drop this once Oceananigans' `interpolate!` resolves the target vertical node

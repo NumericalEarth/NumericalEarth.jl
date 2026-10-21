@@ -213,19 +213,46 @@ end
 end
 
 @testset "Surface-layer diagnostics with convective gustiness" begin
-    for arch in test_architectures
-        h = 10.0
-        model = single_column_land_model(single_column_grid(arch); surface_layer_height = h)
+    for arch in test_architectures, FT in (Float64, Float32)
+        h = FT(10)
+        model = single_column_land_model(single_column_grid(arch, FT); surface_layer_height = h)
 
-        diagnostics = surface_layer_diagnostics(model; velocity_height = h,
-                                                       temperature_height = h,
-                                                       specific_humidity_height = h)
+        diagnostics_at(z; kw...) = surface_layer_diagnostics(model; velocity_height = z,
+                                                                    temperature_height = z,
+                                                                    specific_humidity_height = z, kw...)
 
-        # The gustiness enhancement is carried by u★ and is not undone here, while the
-        # temperature and humidity scales are built from the resolved increments.
-        @test value(diagnostics.u) > 5
-        @test value(diagnostics.T) ≈ 288
-        @test value(diagnostics.q) ≈ 0.003
+        gust_free = diagnostics_at(h)
+        gusty = diagnostics_at(h; include_subgrid_velocities = true)
+
+        # By default the profile returns the atmosphere wind at the surface-layer height; the
+        # gust-enhanced wind the fluxes saw is available on request.
+        @test isapprox(value(gust_free.u), 5; rtol = 8eps(FT))
+        @test value(gusty.u) > 5
+
+        # Both share the profile shape, `Π(z - d) / Π(Δh - d)`.
+        for z in (2, 5)
+            @test value(diagnostics_at(z).u) / value(gust_free.u) ≈
+                  value(diagnostics_at(z; include_subgrid_velocities = true).u) / value(gusty.u)
+        end
+
+        # The temperature and humidity scales are built from the resolved increments.
+        @test value(gust_free.T) == value(gusty.T)
+        @test value(gust_free.q) == value(gusty.q)
+        @test value(gust_free.T) ≈ 288
+        @test value(gust_free.q) ≈ 0.003
+
+        # The direction is the atmosphere wind's.
+        oblique = single_column_land_model(single_column_grid(arch, FT); surface_layer_height = h,
+                                           uᵃᵗ = 4, vᵃᵗ = 3)
+
+        for z in (2, 10)
+            diagnostics = surface_layer_diagnostics(oblique; velocity_height = z)
+            @test value(diagnostics.v) / value(diagnostics.u) ≈ 3 / 4
+        end
+
+        diagnostics = surface_layer_diagnostics(oblique; velocity_height = h)
+        @test isapprox(value(diagnostics.u), 4; rtol = 8eps(FT))
+        @test isapprox(value(diagnostics.v), 3; rtol = 8eps(FT))
     end
 end
 
@@ -284,6 +311,21 @@ end
         # The surface current is added back, and the Celsius interface temperature converted.
         @test value(diagnostics.u) ≈ uᵃᵗ
         @test value(diagnostics.T) ≈ 288
+
+        # With gustiness, the atmosphere wind's difference from the current is scaled by the profile.
+        gusty_model = ocean_column_model(SimilarityTheoryFluxes(Float64))
+
+        gusty_diagnostics(z; kw...) =
+            surface_layer_diagnostics(gusty_model, gusty_model.interfaces.atmosphere_ocean_interface;
+                                      velocity_height = z, kw...)
+
+        @test isapprox(value(gusty_diagnostics(h).u), uᵃᵗ; rtol = 8eps())
+        @test value(gusty_diagnostics(h; include_subgrid_velocities = true).u) > uᵃᵗ
+
+        Π_ratio = (value(gusty_diagnostics(2; include_subgrid_velocities = true).u) - uᵒᶜ) /
+                  (value(gusty_diagnostics(h; include_subgrid_velocities = true).u) - uᵒᶜ)
+
+        @test value(gusty_diagnostics(2).u) ≈ uᵒᶜ + (uᵃᵗ - uᵒᶜ) * Π_ratio
 
         # A wind-dependent wave formulation needs the bulk velocity, which is not stored.
         wave_roughness = MomentumRoughnessLength(Float64; wave_formulation = WindDependentWaveFormulation(Float64))

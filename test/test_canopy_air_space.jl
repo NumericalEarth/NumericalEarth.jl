@@ -89,7 +89,7 @@ build_canopy_air_space(FT; optics...) = CanopyAirSpace(FT;
                                    (saturation = FT(0.3),), (temperature = FT(298), time_step = FT(0)), (leaf_area_index = FT(3),))
         Ψₐ = (z = FT(10), u = FT(3), v = FT(0), T = FT(300), p = FT(101325), q = FT(0.008), h_bℓ = FT(600))
         Ψᵢ = (u = FT(0), v = FT(0), T = FT(298))
-        Ψᵣ = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(600), FT(350))
+        Ψᵣ = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(-600), FT(-350))
         @inferred canopy_air_space_solve(cas, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     end
 end
@@ -97,9 +97,9 @@ end
 @testset "Absorbed PAR absorbs on the canopy's own structure" begin
     FT = Float64
     par = InteractiveAbsorbedPAR(FT; leaf_albedo_par = 0.08, extinction = 0.5, clumping = 1)
-    Ψᵣ = AirLandRadiationState(FT(5.67e-8), FT(0.2), FT(0.95), FT(800), FT(350))
+    Ψᵣ = AirLandRadiationState(FT(5.67e-8), FT(0.2), FT(0.95), FT(-800), FT(-350))
     LAI = FT(3)
-    incident = par.par_fraction * Ψᵣ.ℐꜜˢʷ * par.photon_per_joule
+    incident = - par.par_fraction * Ψᵣ.ℐꜜˢʷ * par.photon_per_joule
 
     # With no canopy to supply one, the closure builds the transmittance from its own geometry.
     own = exp(-par.extinction * LAI * par.clumping)
@@ -174,7 +174,7 @@ end
 
     Ψₐ  = (z = FT(10), u = FT(3), v = FT(0), T = FT(305), p = FT(101325), q = FT(0.006), h_bℓ = FT(600))  # dry, warm → demand
     Ψᵢ  = (u = FT(0), v = FT(0), T = FT(298))
-    Ψᵣ  = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(600), FT(350))
+    Ψᵣ  = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(-600), FT(-350))
     # χθ = χq = 0.1 gives the node a physical aerodynamic branch (gᵃ = ρ u★ χ).
     flx = InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3), FT(0.1), FT(0.1)); vel = InterfaceVelocities(FT(0), FT(0))
     Wᶜᵐᵃˣ = c * LAI
@@ -220,7 +220,7 @@ end
 
     Ψₐ  = (z = FT(10), u = FT(3), v = FT(0), T = FT(305), p = FT(101325), q = FT(0.006), h_bℓ = FT(600))
     Ψᵢ  = (u = FT(0), v = FT(0), T = FT(298))
-    Ψᵣ  = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(600), FT(350))
+    Ψᵣ  = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(-600), FT(-350))
     # Vapor-coupled (χq) but thermally near-decoupled (χθ = 0) node, so the sweep
     # isolates the soil↔canopy-air vapor path from the skin-temperature response.
     flx = InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3), FT(0), FT(1/6)); vel = InterfaceVelocities(FT(0), FT(0))
@@ -272,7 +272,7 @@ end
     cas(; kw...) = CanopyAirSpace(FT; soil, canopy, kw...)
     Ψₐ  = (z = FT(10), u = FT(3), v = FT(0), T = FT(305), p = FT(101325), q = FT(0.006), h_bℓ = FT(600))
     Ψᵢ  = (u = FT(0), v = FT(0), T = FT(298))
-    Ψᵣ  = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(600), FT(350))
+    Ψᵣ  = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(-600), FT(-350))
     # Vapor-coupled (χq) but thermally near-decoupled (χθ = 0) node, so the
     # comparison isolates the ground vapor path from the skin-temperature response.
     flx = InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3), FT(0), FT(1/6)); vel = InterfaceVelocities(FT(0), FT(0))
@@ -359,7 +359,7 @@ end
         ℙₐ = (thermodynamics_parameters = ℂ, gravitational_acceleration = FT(9.81))
         Ψₐ = (z = FT(10), u = FT(3), v = FT(0), T = FT(300), p = FT(101325), q = FT(0.008), h_bℓ = FT(600))
         Ψᵢ = (u = FT(0), v = FT(0), T = FT(298))
-        Ψᵣ = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(600), FT(350))
+        Ψᵣ = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(-600), FT(-350))
         Ψ(LAI) = AirLandInterfaceState(InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3), FT(0.1), FT(0.1)),
                                        InterfaceVelocities(FT(0), FT(0)), FT(300), FT(0.012),
                                        (saturation = FT(0.3),), (temperature = FT(298), time_step = FT(0)),
