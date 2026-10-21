@@ -115,7 +115,7 @@ function compute_atmosphere_land_fluxes!(coupled_model, ti::TiledLandInterface, 
             ti.vegetated.fluxes, ti.vegetated.temperature,
             ti.bare.fluxes, ti.bare.temperature, skin_conductance(ti.bare), exchanger.land.state.T,
             fraction, fraction_time_interpolator, grid, Time(clock.time),
-            kernel_radiation_properties(coupled_model.radiation), radiation_state)
+            kernel_radiation_properties(coupled_model.radiation, exchanger.radiation), radiation_state)
 
     return nothing
 end
@@ -157,14 +157,13 @@ end
         blended_temperature.canopy_wet_latent_heat[i, j, 1] = f * veg_temperature.canopy_wet_latent_heat[i, j, 1]
         blended_temperature.land_vapor_flux[i, j, 1]        = f * veg_temperature.land_vapor_flux[i, j, 1] + g * bare_fluxes.water_vapor[i, j, 1]
 
-        # Effective (LST) temperature: area-weight in radiance (T⁴) space (σ cancels),
-        # σ T⁴ = f · LWꜛ(vegetated) + (1 − f) · LWꜛ(bare).
-        vegetated_temperature = veg_temperature.effective[i, j, 1]
-        bare_radiance_temperature⁴ = ifelse(bare_radiation.σ > 0,
-            bare_radiation.ϵ * Tᵇ^4 - (1 - bare_radiation.ϵ) * bare_radiation.ℐꜜˡʷ / bare_radiation.σ,
-            Tᵇ^4)
-        blended_temperature.effective[i, j, 1] =
-            sqrt(sqrt(f * vegetated_temperature^4 + g * bare_radiance_temperature⁴))
+        # Effective (LST) temperature: σ T⁴ = f · LWꜛ(vegetated) + (1 − f) · LWꜛ(bare), where the
+        # bare tile emits ϵ σ Tᵇ⁴ and reflects (1 − ϵ) of the downwelling.
+        σ, ϵ = bare_radiation.σ, bare_radiation.ϵ
+        Tᵛ   = veg_temperature.effective[i, j, 1]
+        LWꜛᵇ = ϵ * σ * Tᵇ^4 - (1 - ϵ) * bare_radiation.ℐꜜˡʷ
+        T⁴   = ifelse(σ > 0, (f * σ * Tᵛ^4 + g * LWꜛᵇ) / σ, f * Tᵛ^4 + g * Tᵇ^4)
+        blended_temperature.effective[i, j, 1] = sqrt(sqrt(T⁴))
 
         # Both tiles see the same incident shortwave, so the mosaic albedo is their area weight.
         blended_temperature.effective_albedo[i, j, 1] =

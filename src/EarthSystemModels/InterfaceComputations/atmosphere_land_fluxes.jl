@@ -226,8 +226,8 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     vegetation, leaf_area_index_time_interpolator = kernel_surface_field(leaf_area_index, arch, clock.time)
 
     radiation = coupled_model.radiation
-    radiation_kernel_props = kernel_radiation_properties(radiation)
     radiation_exchanger    = exchanger.radiation
+    radiation_kernel_props = kernel_radiation_properties(radiation, radiation_exchanger)
     radiation_state        = isnothing(radiation_exchanger) ? nothing : radiation_exchanger.state
 
     # Interior cells only: halo cells of the atmosphere exchanger state are uninitialized when the

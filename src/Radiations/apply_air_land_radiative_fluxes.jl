@@ -35,7 +35,7 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
 
     # Skip when the radiation was not configured with a land surface.
     radiation = coupled_model.radiation
-    rk = kernel_radiation_properties(radiation)
+    rk = kernel_radiation_properties(radiation, coupled_model.interfaces.exchanger.radiation)
     land_surface_props = get(rk.surface_properties, :land, nothing)
     isnothing(land_surface_props) && return nothing
 

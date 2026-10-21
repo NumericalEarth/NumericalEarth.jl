@@ -33,9 +33,14 @@ function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_prope
     return @set rtm.surface_radiation.surface_temperature = Tˢ
 end
 
+# The exchanger keeps the configured surface optics, which the land reads as its ground's;
+# a bound canopy overrides the RTM's own slots with its column optics.
 function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(rtm::BreezeRTM, exchange_grid; kw...)
+    ε = rtm.surface_radiation.surface_emissivity
+    α = blue_sky_albedo(rtm)
     state = (; ℐꜜˢʷ = Field{Center, Center, Nothing}(exchange_grid),
-               ℐꜜˡʷ = Field{Center, Center, Nothing}(exchange_grid))
+               ℐꜜˡʷ = Field{Center, Center, Nothing}(exchange_grid),
+               surface_properties = (; land = SurfaceRadiationProperties(α, ε)))
 
     return ComponentExchanger(state, nothing)
 end
@@ -63,12 +68,10 @@ end
 
 # σ is NumericalEarth's default: Breeze's `stefan_bolzmann_constant` is not reachable from the
 # model, so land emission pairs with atmospheric absorption only while Breeze keeps that default.
-function NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation_properties(rtm::BreezeRTM)
+function NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation_properties(rtm::BreezeRTM, exchanger)
     FT = eltype(rtm.downwelling_shortwave_flux)
-    ε = rtm.surface_radiation.surface_emissivity
-    α = blue_sky_albedo(rtm)
     return (σ = convert(FT, default_stefan_boltzmann_constant),
-            surface_properties = (; land = SurfaceRadiationProperties(α, ε)))
+            surface_properties = exchanger.state.surface_properties)
 end
 
 # Gray optics transmits the direct beam only.
