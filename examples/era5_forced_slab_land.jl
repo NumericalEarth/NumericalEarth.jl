@@ -253,8 +253,8 @@ for n in 1:Nsteps
     𝒮[n]  = scalar(land.saturation)
     H[n]  = scalar(interface.sensible_heat)   # positive upward
     LE[n] = scalar(interface.latent_heat)     # positive upward
-    Rₙ[n] = scalar(rad.downwelling_shortwave) + scalar(rad.downwelling_longwave) -
-            scalar(rad.upwelling_longwave)    # net radiation into the surface
+    Rₙ[n] = -(scalar(rad.downwelling_shortwave) + scalar(rad.downwelling_longwave) +
+              scalar(rad.upwelling_longwave)) # net radiation into the surface
     G[n]  = -scalar(land.fluxes.surface_energy_flux)  # storage residual Rₙ − H − LE
 end
 
@@ -965,6 +965,7 @@ N           = prod(patch_size)
 T_plus  = run_forward(cpu_grid, cpu_forcing, T₀_cpu, ν_plus)
 T_minus = run_forward(cpu_grid, cpu_forcing, T₀_cpu, ν_minus)
 fd_map  = (T_plus.T_final .- T_minus.T_final) ./ 2δν
+max_abs_error = maximum(abs, adjoint_map .- fd_map)
 
 @info @sprintf("Finite diff:  ⟨T(t=%.2f d)⟩ = %.4f K,  ⟨∂T/∂ν⟩ = %+.4e K",
                run_time / 86400, mean(forward.T_final), mean(fd_map))

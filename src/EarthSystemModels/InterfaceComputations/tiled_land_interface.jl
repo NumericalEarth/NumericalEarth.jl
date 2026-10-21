@@ -161,7 +161,7 @@ end
         # σ T⁴ = f · LWꜛ(vegetated) + (1 − f) · LWꜛ(bare).
         vegetated_temperature = veg_temperature.effective[i, j, 1]
         bare_radiance_temperature⁴ = ifelse(bare_radiation.σ > 0,
-            bare_radiation.ϵ * Tᵇ^4 + (1 - bare_radiation.ϵ) * bare_radiation.ℐꜜˡʷ / bare_radiation.σ,
+            bare_radiation.ϵ * Tᵇ^4 - (1 - bare_radiation.ϵ) * bare_radiation.ℐꜜˡʷ / bare_radiation.σ,
             Tᵇ^4)
         blended_temperature.effective[i, j, 1] =
             sqrt(sqrt(f * vegetated_temperature^4 + g * bare_radiance_temperature⁴))

@@ -8,8 +8,6 @@ using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.TimeSteppers: time_step!, update_state!
-using Oceananigans.Utils: launch!
-using NumericalEarth.Radiations: default_stefan_boltzmann_constant
 using Test
 
 NumericalEarthBreezeExt = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
@@ -361,6 +359,31 @@ end
             update_state!(model)
             al = model.interfaces.atmosphere_land_interface
             @test !any(isnan, Array(interior(al.fluxes.friction_velocity)))
+        end
+    end
+end
+
+# `base_pressure` is the datum at z = 0, which `reference_state` reduces to each column's surface.
+@testset "Cold start agrees with its own reference on a raised domain" begin
+    for arch in test_architectures
+        A = typeof(arch)
+
+        @testset "on $A" begin
+            p₀ = 101325
+            grid = RectilinearGrid(arch; size = (8, 20), halo = (5, 5),
+                                   x = (0, 10kilometers), z = (2kilometers, 6kilometers),
+                                   topology = (Periodic, Flat, Bounded))
+
+            model = atmosphere_model(grid; base_pressure = p₀)
+
+            p  = Array(interior(model.dynamics.pressure))
+            pᵣ = Array(interior(model.dynamics.reference_state.pressure))
+
+            @test all(p .≈ pᵣ)
+
+            # Both anchored at the datum would also agree, so pin that the reference really is
+            # reduced to the domain bottom: 2 km of hydrostatic descent is ~22 kPa.
+            @test maximum(p[:, :, 1]) < 0.9 * p₀
         end
     end
 end

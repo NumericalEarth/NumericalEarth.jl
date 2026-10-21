@@ -85,7 +85,7 @@ end
         σ = model.radiation.stefan_boltzmann_constant
         ε = model.radiation.surface_properties.land.emissivity
         LW = scalar(model.interfaces.exchanger.radiation.state.ℐꜜˡʷ)
-        bare_longwave = ε * σ * Tᵇ^4 + (1 - ε) * LW
+        bare_longwave = ε * σ * Tᵇ^4 - (1 - ε) * LW
         @test σ * scalar(ti.temperature.effective)^4 ≈ f * σ * Tv^4 + (1 - f) * bare_longwave rtol = 1e-12
         α = model.radiation.surface_properties.land.albedo
         @test scalar(ti.temperature.effective_albedo) ≈ f * scalar(veg.temperature.effective_albedo) + (1 - f) * α

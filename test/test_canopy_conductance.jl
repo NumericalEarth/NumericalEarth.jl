@@ -161,7 +161,7 @@ end
         @test absorbed_par_value(FT(4e-4), nothing, LAI, nothing) == FT(4e-4)
 
         inter = InteractiveAbsorbedPAR(FT)
-        rad(SW) = (; ℐꜜˢʷ = FT(SW))
+        rad(SW) = (; ℐꜜˢʷ = - FT(SW))
 
         # Night: no shortwave ⇒ no absorbed PAR.
         @test absorbed_par_value(inter, rad(0), LAI, nothing) == 0

@@ -43,10 +43,8 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
 
     Downloads.download(metadata)
 
-    # Match the time axis to the grid's float type. `native_times` returns `Float64` seconds, but with a
-    # Float32 grid that mismatch makes `interpolate`'s time weight `Float64`, so the interpolated value is
-    # `Union{Float32, Float64}` — a type instability that boxes inside GPU tendency/halo kernels.
-    times = convert.(eltype(grid), native_times(metadata))
+    # Float64 like the model clock: past 2^28 s a Float32 axis rounds the nodes by up to 32 s
+    times = native_times(metadata)
 
     # A window-averaged series repeats over the span its windows tile, not over the span of its
     # nodes, which sit half a window inside it at each end. Oceananigans infers the latter.

@@ -98,8 +98,8 @@ Oceananigans.set!(sea_ice.model, ecco_set)   # h, ℵ
 nlayers = 4
 output_interval = 3hours
 stop_time = 30days
-spectral_grid = SpeedyWeather.SpectralGrid(; NF=Float64, trunc=63, nlayers, Grid=FullClenshawGrid, architecture=SpeedyWeather.GPU())
-time_stepping = SpeedyWeather.Leapfrog(spectral_grid; Δt_at_T31=Minute(40)) # gives Δt_sec = 20 min at trunc=63
+spectral_grid = SpeedyWeather.SpectralGrid(; NF=Float64, truncation=64, nlayers, Grid=FullClenshawGrid, architecture=SpeedyWeather.GPU())
+time_stepping = SpeedyWeather.Leapfrog(spectral_grid; Δt_at_T32=Minute(40)) # gives Δt = 20 min at truncation=64
 atmosphere = atmosphere_simulation(spectral_grid; output_interval, time_stepping, stop_time)
 atmosphere.model.feedback.verbose = false  # disable SpeedyWeather's progress bar in favor of the callback defined below
 nothing #hide
@@ -112,7 +112,7 @@ atmosphere.model.initial_conditions
 # We are now ready to blend everything together.
 # Here we set the timestep to be the same across all models.
 
-Δt = convert(eltype(grid), atmosphere.model.time_stepping.Δt_sec)
+Δt = convert(eltype(grid), atmosphere.model.time_stepping.Δt)
 nothing #hide
 
 # We build the complete coupled `earth_model` and the coupled simulation.

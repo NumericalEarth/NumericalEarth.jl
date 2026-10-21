@@ -16,9 +16,9 @@ Fraction of incident shortwave a bulk canopy absorbs, `fᵃᵇˢ = (1 − α)(1 
                            leaf_albedo_par, extinction, clumping)
 
 Per-leaf absorbed PAR recomputed each step from the downwelling shortwave `ℐꜜˢʷ`
-(W m⁻²) in the radiation state,
+(W m⁻², positive upward) in the radiation state,
 
-    APAR = fᵃᵇˢ · (fᵖᵃʳ · ℐꜜˢʷ · Qᴶ) / LAI ,
+    APAR = - fᵃᵇˢ · (fᵖᵃʳ · ℐꜜˢʷ · Qᴶ) / LAI ,
 
 where `fᵖᵃʳ` (`par_fraction`) is the PAR energy fraction of shortwave, `Qᴶ`
 (`photon_per_joule`) converts PAR energy to a photon flux, and `fᵃᵇˢ` is the
@@ -67,7 +67,7 @@ Base.show(io::IO, p::InteractiveAbsorbedPAR) = print(io, summary(p),
 @inline absorbed_par_value(p::Number, radiation, leaf_area_index, transmittance) = p
 
 @inline function absorbed_par_value(p::InteractiveAbsorbedPAR, radiation, leaf_area_index, transmittance)
-    SW   = radiation.ℐꜜˢʷ                                      # downwelling shortwave (W m⁻²)
+    SW   = - radiation.ℐꜜˢʷ                                    # downwelling shortwave (W m⁻²)
     parQ = p.par_fraction * SW * p.photon_per_joule            # canopy-incident PAR photon flux
     fᵃᵇˢ = beer_lambert_absorbed_fraction(p.leaf_albedo_par,
                                           canopy_transmittance(p, leaf_area_index, transmittance))
