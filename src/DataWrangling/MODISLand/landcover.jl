@@ -93,7 +93,7 @@ function validate_legend(legend::Symbol)
 end
 
 """
-    mask_landcover_fill(code, valid)
+    $(TYPEDSIGNATURES)
 
 Return the MCD12Q1 class `code` as a `Float32`, or `NaN` when it falls outside the legend's
 `valid` range — the fill value 255, which the product also uses for "unclassified". The
@@ -118,7 +118,7 @@ codes are classes rather than measurements, so nothing is scaled.
 const igbp_maximum_gap_periods = (6, 6, 1, 1, 3, 3, 3, 3, 3, 1, 2, 1, 0, 1, 0, 0, 0)
 
 """
-    class_maximum_gap(land_cover; periods = igbp_maximum_gap_periods, default = 3)
+    $(TYPEDSIGNATURES)
 
 The per-cell `max_gap` for the temporal fill, as an array matching `land_cover`, a `Field`
 or array of IGBP class codes: `periods` maps each code to the number of consecutive missing
@@ -148,8 +148,7 @@ function class_maximum_gap(land_cover; periods = igbp_maximum_gap_periods, defau
 end
 
 """
-    zero_non_vegetated!(series, land_cover; classes = igbp_non_vegetated_classes,
-                        water_classes = (igbp_class_names.water,))
+    $(TYPEDSIGNATURES)
 
 Set `series` to `NaN` in cells whose land-cover class is in `water_classes`, and to zero
 in other cells whose class is in `classes`, overwriting existing values. Returns `series`.

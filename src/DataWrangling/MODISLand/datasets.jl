@@ -13,7 +13,7 @@ names, digital-number scales, and quality conventions, and differ only in cadenc
 abstract type MODISLAIDataset <: AbstractMODISLandDataset end
 
 """
-    MCD15A2H(; screened_flags = recommended_lai_screening())
+    $(TYPEDSIGNATURES)
 
 The MODIS MCD15A2H V061 combined Terra + Aqua leaf-area-index / FPAR product: 500 m, 8-day
 composites on the sinusoidal grid, from 2002-07-04 onwards. Provides `:leaf_area_index`
@@ -26,6 +26,8 @@ Land-cover codes and failed retrievals read as `NaN`. Urban and barren/sparsely 
 classes do not provide a measured LAI or FPAR. On a model grid, `Field(metadatum, grid)`
 gives each cell the area mean of the valid retrievals under it, normalized by the area
 they cover; a cell with none is `NaN`.
+
+Native dates follow the composite cadence through today; granule discovery determines availability.
 
 Granules are HDF-EOS2 tiles on the sinusoidal projection, discovered from NASA's Common
 Metadata Repository and reprojected to a regional latitude-longitude window at download
@@ -56,7 +58,7 @@ Base.show(io::IO, dataset::MCD15A2H) =
     print(io, "MCD15A2H(screened_flags=", repr(dataset.screened_flags), ")")
 
 """
-    MODISLAIClimatology(; dataset = MCD15A2H(), years = 2003:2019, reducer = mean)
+    $(TYPEDSIGNATURES)
 
 A seasonal climatology of a [`MODISLAIDataset`](@ref): one composite per period of the
 year, each combining the retrievals `dataset`'s screen retains across `years` pixel by pixel
@@ -91,7 +93,7 @@ Base.show(io::IO, climatology::MODISLAIClimatology) =
           ", reducer=", climatology.reducer, ")")
 
 """
-    MCD12Q1(; legend = :IGBP)
+    $(TYPEDSIGNATURES)
 
 The MODIS MCD12Q1 V061 annual land-cover product: 500 m, one map per calendar year from
 2001 onwards, on the same sinusoidal granules and the same reprojected 1/240° lattice as
@@ -100,6 +102,8 @@ their cells one for one, with no aggregation in between.
 
 Provides `:landcover_class` under one of three legends, `:quality_flag` (the product's
 enumerated classification quality, 0 being good classified land), and `:land_water_mask`.
+
+Native dates extend through the last complete calendar year; granule discovery determines availability.
 
 | `legend` | layer | classes | names |
 |---|---|---|---|
@@ -132,7 +136,7 @@ MCD12Q1(; legend = :IGBP) = MCD12Q1(validate_legend(legend))
 Base.show(io::IO, dataset::MCD12Q1) = print(io, "MCD12Q1(legend=", repr(dataset.legend), ")")
 
 """
-    landcover_class_names(dataset::MCD12Q1)
+    $(TYPEDSIGNATURES)
 
 The `(class_name = code, …)` table of the dataset's legend.
 
@@ -146,7 +150,7 @@ julia> landcover_class_names(MCD12Q1()).cropland
 landcover_class_names(dataset::MCD12Q1) = MODIS_LANDCOVER_LEGENDS[dataset.legend].names
 
 """
-    landcover_valid_range(dataset::MCD12Q1)
+    $(TYPEDSIGNATURES)
 
 The legend's range of class codes. Codes outside it — the fill value 255, and 0 under IGBP,
 which has no class 0 — are read as `NaN`.
@@ -177,14 +181,10 @@ composite_period_days(climatology::MODISLAIClimatology) = composite_period_days(
 
 first_composite_date(::MCD15A2H) = DateTime(2002, 7, 4)
 
-# Conservative end of the range `all_dates` advertises — the record is ongoing, and later
-# composites can still be requested with explicit `dates`.
-last_composite_date(::MCD15A2H) = DateTime(2025, 12, 31)
+last_composite_date(::MCD15A2H) = DateTime(Dates.today())
 
-# The land-cover map is produced about a year and a half in arrears, so the advertised range
-# lags the leaf-area record.
 first_landcover_year(::MCD12Q1) = 2001
-last_landcover_year(::MCD12Q1)  = 2024
+last_landcover_year(::MCD12Q1) = Dates.year(Dates.today()) - 1
 
 #####
 ##### Variables
@@ -206,7 +206,7 @@ const landcover_quality_variable   = "QC"
 const landcover_water_mask_variable = "LW"
 
 """
-    stored_granule_layers(dataset)
+    $(TYPEDSIGNATURES)
 
 The granule layers copied into the local regional file. One warp per granule serves every
 variable a read can ask for, so the set is a property of the product rather than of the
@@ -323,7 +323,7 @@ function DataWrangling.inpainted_metadata_filename(metadatum::MODISLandMetadatum
 end
 
 """
-    retained_retrieval_metadatum(metadatum)
+    $(TYPEDSIGNATURES)
 
 The companion [`Metadatum`](@ref) for the retained-retrieval count stored beside a
 climatology period's reduction — how many of the contributing years survived screening in
@@ -347,9 +347,7 @@ end
 #####
 
 """
-    class_fractions(grid, dataset::MCD12Q1; date,
-                    region = BoundingBox(grid),
-                    dir = default_download_directory(dataset))
+    $(TYPEDSIGNATURES)
 
 The MCD12Q1 class map of `date`'s year on `grid` as `(; fractions, majority_class)`: one
 area-fraction `Field` per legend class name, regridded conservatively from the native
@@ -369,7 +367,7 @@ function DataWrangling.class_fractions(grid, dataset::MCD12Q1;
 end
 
 """
-    class_fractions(grid, classes::Field, dataset::MCD12Q1)
+    $(TYPEDSIGNATURES)
 
 The area fraction of each legend class of `dataset` on `grid`, regridded conservatively
 from the class map `classes` on its native lattice with no-data counted as water.

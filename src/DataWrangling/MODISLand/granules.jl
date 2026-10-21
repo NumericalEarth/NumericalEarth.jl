@@ -3,7 +3,7 @@
 #####
 
 """
-    parse_granule_name(name)
+    $(TYPEDSIGNATURES)
 
 Split a MODIS land-product granule name — `MCD15A2H.A2020185.h10v05.061.2020340132006` —
 into `(; date, tile, production)`: the composite's first day, the sinusoidal tile it covers,
@@ -20,7 +20,7 @@ function parse_granule_name(name::AbstractString)
 end
 
 """
-    select_granules(urls, date)
+    $(TYPEDSIGNATURES)
 
 Keep the granule `urls` whose composite begins on `date`, one per sinusoidal tile: the
 most recently processed, so a reprocessed tile supersedes its predecessor.
@@ -43,7 +43,7 @@ end
 #####
 
 """
-    regional_lattice(metadata)
+    $(TYPEDSIGNATURES)
 
 The regional latitude-longitude window the sinusoidal granules are reprojected onto:
 `(; west, south, east, north, Nx, Ny)`, in degrees and cells of the product's 1/240°
@@ -81,7 +81,7 @@ function lattice_cells(dataset, name, region)
 end
 
 """
-    write_lattice_file(filepath, lattice, layers)
+    $(TYPEDSIGNATURES)
 
 Write the `name => array` pairs of `layers` to the NetCDF file `filepath`, on the cell centers
 of the [`regional_lattice`](@ref) `lattice`, latitude ascending.
@@ -124,7 +124,7 @@ end
 Base.showerror(io::IO, err::MissingGranulesError) = print(io, err.message)
 
 """
-    granule_urls(metadatum)
+    $(TYPEDSIGNATURES)
 
 Query the Common Metadata Repository and return the download URLs of the granules covering
 the metadatum's region and date, one per sinusoidal tile (see [`select_granules`](@ref)).

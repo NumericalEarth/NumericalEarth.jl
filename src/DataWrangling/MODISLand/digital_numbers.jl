@@ -16,7 +16,7 @@ const modis_landcover_class_names = (unclassified = 249,
 const MODIS_LAI_LANDCOVER_CODES = values(modis_landcover_class_names)
 
 """
-    mask_lai_fill(DN)
+    $(TYPEDSIGNATURES)
 
 Return the MCD15 digital number `DN` as a `Float32`, or `NaN` when `DN` exceeds the valid
 range of `0:$(MODIS_LAI_MAXIMUM_VALID)`, the fill value and the land-cover special codes.
@@ -24,7 +24,7 @@ range of `0:$(MODIS_LAI_MAXIMUM_VALID)`, the fill value and the land-cover speci
 @inline mask_lai_fill(DN) = ifelse(DN > MODIS_LAI_MAXIMUM_VALID, NaN32, Float32(DN))
 
 """
-    mask_lai_landcover(DN)
+    $(TYPEDSIGNATURES)
 
 The complement of [`mask_lai_fill`](@ref): return the digital number `DN` as a `Float32` when
 it is one of the land-cover codes below, which the product substitutes for a retrieval it does
@@ -76,7 +76,7 @@ const lai_screening_flags = (other_quality    = 0x0001,
                              cloud_shadow     = 0x0100)
 
 """
-    lai_rejection_flags(qc, extra_qc)
+    $(TYPEDSIGNATURES)
 
 Return the [`lai_screening_mask`](@ref) bits of every quality criterion the pixel with
 `FparLai_QC` byte `qc` and `FparExtra_QC` byte `extra_qc` fails:
@@ -112,7 +112,7 @@ A pixel that passes everything returns `0x0000`.
 end
 
 """
-    lai_screening_mask(names::Symbol...)
+    $(TYPEDSIGNATURES)
 
 Combine the named quality criteria into one screening mask, for use as the
 `screened_flags` of an [`MCD15A2H`](@ref) dataset. A pixel failing any criterion in the
@@ -137,7 +137,7 @@ function lai_screening_mask(names::Symbol...)
 end
 
 """
-    recommended_lai_screening()
+    $(TYPEDSIGNATURES)
 
 The screen the product's user guide recommends and the aerodynamic-roughness literature
 applies: keep only good-quality pixels retrieved by the main radiative-transfer algorithm

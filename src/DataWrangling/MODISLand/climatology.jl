@@ -3,7 +3,7 @@
 #####
 
 """
-    reduce_retained(reducer, samples)
+    $(TYPEDSIGNATURES)
 
 Apply `reducer` to the finite entries of `samples`, returning `(value, count)`, or
 `(NaN32, 0)` when none is finite.
@@ -15,11 +15,7 @@ function reduce_retained(reducer, samples)
 end
 
 """
-    build_lai_climatology!(dataset::MODISLAIClimatology;
-                           name = :leaf_area_index,
-                           region,
-                           periods = eachindex(all_dates(dataset, name)),
-                           dir = default_download_directory(dataset))
+    $(TYPEDSIGNATURES)
 
 Build the cached per-period files behind a [`MODISLAIClimatology`](@ref) over `region`. For
 each composite period in `periods`, every contributing date of `dataset.years` is

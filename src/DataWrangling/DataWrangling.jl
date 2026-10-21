@@ -77,7 +77,7 @@ function download_cache(key)
 end
 
 """
-    write_atomically(write!, filepath)
+    $(TYPEDSIGNATURES)
 
 Call `write!(staging_path)` with a staging path unique to this writer in `filepath`'s
 directory, which is created if missing, then rename the staged file into place, so

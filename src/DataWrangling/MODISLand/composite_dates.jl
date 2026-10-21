@@ -3,7 +3,7 @@
 #####
 
 """
-    modis_composite_dates(start_date, end_date, period_days)
+    $(TYPEDSIGNATURES)
 
 Return the year-anchored composite dates between `start_date` and `end_date` inclusive: in
 each year, day-of-year `1, 1 + period_days, 1 + 2 * period_days, …` up to the last period
@@ -49,8 +49,7 @@ DataWrangling.all_dates(dataset::MCD12Q1, variable) =
     [DateTime(year) for year in first_landcover_year(dataset):last_landcover_year(dataset)]
 
 """
-    period_index(date, period_days)
-    period_index(date, dataset)
+    $(TYPEDSIGNATURES)
 
 The 1-based index of the year-anchored composite period containing `date`.
 
@@ -67,7 +66,7 @@ period_index(date, dataset::AbstractMODISLandDataset) =
     period_index(date, composite_period_days(dataset))
 
 """
-    composite_window(dataset, date)
+    $(TYPEDSIGNATURES)
 
 The `(start, stop)` dates of the compositing window a file stamped `date` holds. The
 cadence restarts on 1 January, so the last window of a year is short — five days, or six in

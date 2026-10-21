@@ -5,8 +5,7 @@ using Statistics: mean, cor
 #####
 
 """
-    fill_gaps!(fts::FieldTimeSeries; max_gap=6, cyclic=false)
-    fill_gaps!(data::AbstractArray; max_gap=6, cyclic=false)
+    $(TYPEDSIGNATURES)
 
 Fill NaN gaps along the time dimension by linear interpolation. For an `AbstractArray` the
 last dimension is time and each spatial column is filled independently; a `FieldTimeSeries`
@@ -126,15 +125,9 @@ const gap_fill_provenance = (observed   = 0x00,
                             class_mean = 0x03,
                             unfilled   = 0xff)
 
-horizontal_array(codes::AbstractArray) = codes
+horizontal_array(codes::AbstractArray) = ndims(codes) == 3 ? dropdims(codes; dims=3) : codes
 
-function horizontal_array(field::Field)
-    codes = Array(interior(field))
-    size(codes, 3) == 1 ||
-        throw(ArgumentError("A land-cover field must be horizontal; this one has " *
-                            "$(size(codes, 3)) levels."))
-    return codes[:, :, 1]
-end
+horizontal_array(field::Field) = horizontal_array(Array(interior(field)))
 
 # A `(Nx, Ny, Nt)` view of a series whose last dimension is time.
 function seasonal_array(data::AbstractArray)
@@ -215,7 +208,7 @@ function cache_seasonal_fill!(cache, key, series, provenance, reach)
 end
 
 """
-    fill_seasonal_gaps!(series, land_cover; kw...)
+    $(TYPEDSIGNATURES)
 
 Fill what compositing and a temporal interpolation could not, using the land-cover class to
 decide how far each cell may borrow and from whom. `series` is a `FieldTimeSeries` or an
@@ -397,7 +390,7 @@ function strided_sample(candidates, count)
 end
 
 """
-    gap_fill_denial(series, land_cover; samples_per_class = 100, kw...)
+    $(TYPEDSIGNATURES)
 
 Score [`fill_seasonal_gaps!`](@ref) by withholding values it would otherwise have kept:
 `samples_per_class` observed cell-periods of each class are set to `NaN`, the chain is run

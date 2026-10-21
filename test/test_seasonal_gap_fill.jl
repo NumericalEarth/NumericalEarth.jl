@@ -23,6 +23,21 @@ function uniform_series(shape, Nx, Ny)
     return 𝒜
 end
 
+@testset "Seasonal fill accepts horizontal Fields and arrays [$arch]" for arch in test_architectures
+    grid = LatitudeLongitudeGrid(arch; size = (2, 2), longitude = (0, 1), latitude = (0, 1),
+                                 topology = (Bounded, Bounded, Flat))
+    classes = Field{Center, Center, Nothing}(grid)
+    fill!(classes, igbp_class_names.evergreen_broadleaf_forest)
+    codes = Array(interior(classes))
+
+    for land_cover in (classes, codes, dropdims(codes; dims=3))
+        series = repeat(reshape(Float32[1, NaN, 3], 1, 1, :), 2, 2, 1)
+        filled = fill_seasonal_gaps!(series, land_cover; stages = (:temporal,))
+        @test series == repeat(reshape(Float32[1, 2, 3], 1, 1, :), 2, 2, 1)
+        @test all(==(gap_fill_provenance.temporal), filled.provenance[:, :, 2])
+    end
+end
+
 @testset "Per-column max_gap" begin
     scalar = Float32[1, NaN, NaN, 4, 5]
     array = copy(scalar)

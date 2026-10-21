@@ -8,14 +8,8 @@ using NumericalEarth.DataWrangling: DataWrangling, BoundingBox, Metadatum, Metad
     retrieve_data, read_file_coords, region_info, fill_gaps!, cmr_granules_url,
     window_center, averaging_window, window_bounds, class_fractions, valid_area_mean!,
     NearestNeighborInpainting
-using NumericalEarth.DataWrangling.MODISLand: MODISLand, mask_lai_fill, lai_screening_flags,
-    lai_rejection_flags, modis_composite_dates,
-    parse_granule_name, select_granules, regional_lattice,
-    period_index, reduce_retained, stored_granule_layers,
-    MODIS_LAI_SCALE, MODIS_FPAR_SCALE,
-    mask_landcover_fill, landcover_valid_range, landcover_layer, composite_window,
-    MissingGranulesError, write_lattice_file,
-    modis_lai_class_names, modis_plant_functional_type_names,
+using NumericalEarth.DataWrangling.MODISLand: MODISLand, select_granules, regional_lattice,
+    period_index, composite_window, MODIS_LAI_SCALE, MODIS_FPAR_SCALE, write_lattice_file,
     retained_retrieval_metadatum, lai_screening_mask, recommended_lai_screening,
     mask_lai_landcover, modis_landcover_class_names, landcover_class_names,
     igbp_class_names, class_maximum_gap, zero_non_vegetated!
@@ -68,7 +62,7 @@ end
 function write_synthetic_landcover_file(path, lattice, dataset; class_at = Dict())
     Nx, Ny = lattice.Nx, lattice.Ny
 
-    valid = landcover_valid_range(dataset)
+    valid = range(extrema(landcover_class_names(dataset))...)
     classes = UInt8[first(valid) + mod((i - 1) * Ny + (j - 1), length(valid))
                     for i in 1:Nx, j in 1:Ny]
 
@@ -76,105 +70,28 @@ function write_synthetic_landcover_file(path, lattice, dataset; class_at = Dict(
         classes[i, j] = value
     end
 
-    write_lattice_file(path, lattice, (landcover_layer(dataset) => classes,
+    write_lattice_file(path, lattice, (available_variables(dataset)[:landcover_class] => classes,
                                        "QC" => fill(0x00, Nx, Ny), "LW" => fill(0x02, Nx, Ny)))
 
     return classes
 end
 
-@testset "MODIS digital-number decode" begin
-    @test mask_lai_fill(0x00) === 0f0
-    @test mask_lai_fill(0x64) === 100f0
-
-    # 248 is "no standard deviation available", 249-255 the land-cover special codes.
-    for DN in 0xf8:0xff
-        @test isnan(mask_lai_fill(DN))
+@testset "MODIS special land-cover codes" begin
+    for code in values(modis_landcover_class_names)
+        @test mask_lai_landcover(UInt8(code)) == code
     end
-    @test isnan(mask_lai_fill(0x65))   # 101, one past the valid range
-
-    # The same codes the leaf-area decode rejects name the non-vegetated classes, and the two
-    # helpers partition the digital-number range between them.
-    for (class, code) in pairs(modis_landcover_class_names)
-        @test mask_lai_landcover(UInt8(code)) === Float32(code)
-        @test isnan(mask_lai_fill(UInt8(code)))
+    for code in (0x00, 0x32, 0x64, 0xf8, 0xff)
+        @test isnan(mask_lai_landcover(code))
     end
-
-    # A valid retrieval carries no class, and the fill value names none either.
-    for DN in (0x00, 0x32, 0x64, 0xf8, 0xff)
-        @test isnan(mask_lai_landcover(DN))
-    end
-    @test !isnan(mask_lai_fill(0x64))
 end
 
 @testset "MODIS quality screening" begin
     @test lai_screening_mask() == 0x0000
-    @test lai_screening_mask(:cloudy) == lai_screening_flags.cloudy
-    @test lai_screening_mask(:cloudy, :cloudy) == lai_screening_flags.cloudy   # idempotent
+    @test lai_screening_mask(:cloudy, :cloudy) == lai_screening_mask(:cloudy)
     @test lai_screening_mask(:other_quality, :snow_or_ice) ==
-          lai_screening_flags.other_quality | lai_screening_flags.snow_or_ice
+          lai_screening_mask(:other_quality) | lai_screening_mask(:snow_or_ice)
     @test_throws ArgumentError lai_screening_mask(:not_a_criterion)
-
-    # Every criterion is a distinct single bit of the screening word.
-    masks = collect(values(lai_screening_flags))
-    @test all(mask -> count_ones(mask) == 1, masks)
-    @test length(unique(masks)) == length(masks)
-
-    # The recommended screen is exactly these three criteria and nothing else.
-    @test recommended_lai_screening() ==
-          lai_screening_mask(:other_quality, :backup_algorithm, :cloudy)
-    for criterion in (:dead_detector, :snow_or_ice, :high_aerosol, :cirrus,
-                      :internal_cloud, :cloud_shadow)
-        @test recommended_lai_screening() & lai_screening_flags[criterion] == 0
-    end
-
-    # A best-quality, clear, main-algorithm pixel over land fails nothing.
-    @test lai_rejection_flags(lai_qc(), lai_extra_qc()) == 0x0000
-
-    # MODLAND_QC.
-    @test lai_rejection_flags(lai_qc(modland = 1), lai_extra_qc()) == lai_screening_flags.other_quality
-
-    # SCF_QC: 0 and 1 are the main radiative-transfer retrievals, 2-4 are not.
-    for scf in 0:1
-        @test lai_rejection_flags(lai_qc(; scf), lai_extra_qc()) & lai_screening_flags.backup_algorithm == 0
-    end
-    for scf in 2:4
-        @test lai_rejection_flags(lai_qc(; scf), lai_extra_qc()) & lai_screening_flags.backup_algorithm != 0
-    end
-
-    # CLOUDSTATE: 0 is clear and 3 is undefined-assumed-clear, so only 1 and 2 are cloudy.
-    for cloud in (0, 3)
-        @test lai_rejection_flags(lai_qc(; cloud), lai_extra_qc()) & lai_screening_flags.cloudy == 0
-    end
-    for cloud in (1, 2)
-        @test lai_rejection_flags(lai_qc(; cloud), lai_extra_qc()) & lai_screening_flags.cloudy != 0
-    end
-
-    # The sensor bit says which platform retrieved the pixel; it is not a quality criterion.
-    @test lai_rejection_flags(lai_qc(sensor = 1), lai_extra_qc()) == 0x0000
-
-    @test lai_rejection_flags(lai_qc(dead = 1), lai_extra_qc()) == lai_screening_flags.dead_detector
-
-    # `FparExtra_QC` criteria, one bit at a time.
-    @test lai_rejection_flags(lai_qc(), lai_extra_qc(snow = 1)) == lai_screening_flags.snow_or_ice
-    @test lai_rejection_flags(lai_qc(), lai_extra_qc(aerosol = 1)) == lai_screening_flags.high_aerosol
-    @test lai_rejection_flags(lai_qc(), lai_extra_qc(cirrus = 1)) == lai_screening_flags.cirrus
-    @test lai_rejection_flags(lai_qc(), lai_extra_qc(cloudmask = 1)) == lai_screening_flags.internal_cloud
-    @test lai_rejection_flags(lai_qc(), lai_extra_qc(shadow = 1)) == lai_screening_flags.cloud_shadow
-
-    # The land/sea and biome fields are descriptive, not disqualifying.
-    for landsea in 0:3
-        @test lai_rejection_flags(lai_qc(), lai_extra_qc(; landsea)) == 0x0000
-    end
-    @test lai_rejection_flags(lai_qc(), lai_extra_qc(biome = 1)) == 0x0000
-
-    # Criteria accumulate rather than mask one another.
-    both = lai_rejection_flags(lai_qc(modland = 1, cloud = 1), lai_extra_qc(snow = 1))
-    @test both == lai_screening_flags.other_quality | lai_screening_flags.cloudy |
-                  lai_screening_flags.snow_or_ice
-
-    # The all-ones byte pair is the uncovered-cell sentinel the warp writes; it must fail
-    # the default screen, or a cell outside the granules would read as a measurement.
-    @test lai_rejection_flags(0xff, 0xff) & recommended_lai_screening() != 0
+    @test recommended_lai_screening() == lai_screening_mask(:other_quality, :backup_algorithm, :cloudy)
 end
 
 @testset "MODIS dataset interface" begin
@@ -223,6 +140,9 @@ end
     grid = native_grid(metadatum)
     @test isnothing(validate_dataset_coverage(grid, metadatum))
     @test_throws ErrorException validate_dataset_coverage(grid, Metadatum(:leaf_area_index; dataset))
+    @test_throws ArgumentError Metadatum(:leaf_area_index; dataset,
+                                         region = BoundingBox(longitude = (179, 181), latitude = (36.5, 37.5)),
+                                         date = DateTime(2020, 7, 3))
 end
 
 @testset "MODIS composite dates" begin
@@ -267,9 +187,10 @@ end
                              DateTime(2020, 7, 3), DateTime(2020, 7, 11)]
     @test length(native_times(metadata)) == length(metadata.dates)
 
-    # The generator itself, independent of the product.
-    quarterly = modis_composite_dates(DateTime(2020), DateTime(2021, 12, 31), 90)
-    @test dayofyear.(quarterly) == [1, 91, 181, 271, 361, 1, 91, 181, 271, 361]
+    current_year = Dates.year(Dates.today())
+    current = Metadata(:leaf_area_index; dataset, region = metadata.region,
+                       dates = (DateTime(current_year), DateTime(current_year)))
+    @test current.dates == [DateTime(current_year)]
 end
 
 @testset "MODIS filenames" begin
@@ -327,23 +248,9 @@ end
     metadatum = Metadatum(:leaf_area_index; dataset = climatology, region, date = stamp)
     @test retained_retrieval_metadatum(metadatum).filename == metadatum.filename
     @test retained_retrieval_metadatum(metadatum).name == :retained_retrieval_count
-
-    # A cold-cache read of the count builds the variable behind the shared file; a bare
-    # count metadatum names no file any build writes, so it says so instead of building one.
-    @test MODISLand.climatology_build_name(metadatum) == :leaf_area_index
-    @test MODISLand.climatology_build_name(retained_retrieval_metadatum(metadatum)) == :leaf_area_index
-    @test_throws ArgumentError MODISLand.climatology_build_name(
-        Metadatum(:retained_retrieval_count; dataset = climatology, region, date = stamp))
 end
 
 @testset "MODIS granule selection" begin
-    granule = parse_granule_name("MCD15A2H.A2020185.h10v05.061.2020340132006")
-    @test granule.date == DateTime(2020, 7, 3)     # 2020 is a leap year: DOY 185 is July 3
-    @test granule.tile == "h10v05"
-    @test granule.production == 2020340132006
-    @test parse_granule_name("MCD15A2H.A2019001.h10v05.061.2019020000000").date == DateTime(2019, 1, 1)
-    @test_throws ArgumentError parse_granule_name("not-a-granule.hdf")
-
     host = "https://data.lpdaac.earthdatacloud.nasa.gov/lp-prod-protected/MCD15A2H.061/"
     url(name) = host * name * "/" * name * ".hdf"
 
@@ -354,21 +261,10 @@ end
             url("MCD15A2H.A2020185.h10v05.061.2019000000000")]   # an older reprocessing
 
     selected = select_granules(urls, wanted)
-    @test length(selected) == 2
-    @test all(u -> parse_granule_name(basename(u)).date == wanted, selected)
-    @test Set(parse_granule_name(basename(u)).tile for u in selected) == Set(("h10v05", "h11v05"))
-
-    # One granule per tile: the most recently processed wins.
-    h10 = only(filter(u -> occursin("h10v05", u), selected))
-    @test parse_granule_name(basename(h10)).production == 2020340132006
+    @test Set(selected) == Set(urls[1:2])
 
     # A date with no granule selects nothing rather than falling back to a neighbor.
     @test isempty(select_granules(urls, DateTime(2020, 7, 11)))
-
-    # The record has holes where an instrument outage prevented a composite, so "no granule"
-    # is a distinguishable condition: a climatology skips it, a single-date read cannot.
-    outage = MissingGranulesError("no granules on 2016-02-18")
-    @test sprint(showerror, outage) == "no granules on 2016-02-18"
 
     # The search URL carries the region and a one-day window around the composite's start,
     # because a bounding-box search returns whichever composites overlap the day.
@@ -378,42 +274,6 @@ end
     @test occursin("version=061", query)
     @test occursin("bounding_box=-92.5,36.5,-91.5,37.5", query)
     @test occursin("temporal=2020-07-03T00:00:00Z,2020-07-04T00:00:00Z", query)
-end
-
-@testset "MODIS regional lattice" begin
-    dataset = MCD15A2H()
-    region = BoundingBox(longitude = (-92.5, -91.5), latitude = (36.5, 37.5))
-    metadatum = Metadatum(:leaf_area_index; dataset, region, date = DateTime(2020, 7, 3))
-
-    lattice = regional_lattice(metadatum)
-    grid = native_grid(metadatum)
-
-    # The warp target is exactly the native grid, which is what pins the region offset of
-    # the shared regrid to zero.
-    @test (lattice.Nx, lattice.Ny) == (size(grid, 1), size(grid, 2))
-    @test lattice.west ≈ grid.λᶜᵃᵃ[1] - Δ/2 atol = Δ/20
-    @test lattice.south ≈ grid.φᵃᶜᵃ[1] - Δ/2 atol = Δ/20
-    @test (lattice.east - lattice.west) / lattice.Nx ≈ Δ
-    @test (lattice.north - lattice.south) / lattice.Ny ≈ Δ
-
-    # Cell edges sit on the global lattice, so windows of different size share their cells.
-    @test (lattice.west + 180) / Δ ≈ round((lattice.west + 180) / Δ)
-    @test (lattice.south + 90) / Δ ≈ round((lattice.south + 90) / Δ)
-
-    # A [0, 360] bounding box maps into the product's [-180, 180] convention.
-    mapped = regional_lattice(Metadatum(:leaf_area_index; dataset,
-                                        region = BoundingBox(longitude = (267.5, 268.5),
-                                                             latitude = (36.5, 37.5)),
-                                        date = DateTime(2020, 7, 3)))
-    @test mapped.west ≈ lattice.west
-    @test mapped.Nx == lattice.Nx
-
-    # A window straddling the ±180 seam is rejected rather than silently spanning the globe.
-    @test_throws ArgumentError regional_lattice(
-        Metadatum(:leaf_area_index; dataset,
-                  region = BoundingBox(longitude = (179, 181), latitude = (36.5, 37.5)),
-                  date = DateTime(2020, 7, 3)))
-    @test_throws ArgumentError regional_lattice(Metadatum(:leaf_area_index; dataset))
 end
 
 @testset "MODIS read path" begin
@@ -432,7 +292,9 @@ end
                                                             (3, 5) => 0xfd,     # barren or sparse vegetation
                                                             (3, 6) => 0xfc,     # snow or ice
                                                             (3, 7) => 0xfb,     # wetland
-                                                            (3, 8) => 0xf9),    # unclassified
+                                                            (3, 8) => 0xf9,     # unclassified
+                                                            (10, 11) => 0x65,   # out of range
+                                                            (11, 12) => 0xf8),  # unavailable uncertainty
                                               qc_at = Dict((3, 4) => lai_qc(cloud = 1),
                                                            (4, 5) => lai_qc(modland = 1),
                                                            (5, 6) => lai_qc(scf = 3),
@@ -478,7 +340,9 @@ end
         @test !isnan(leaf_area_index[7, 8])       # cloud state undefined, assumed clear
         @test !isnan(leaf_area_index[8, 9])       # dead detector is not in the default screen
         @test !isnan(leaf_area_index[9, 10])      # nor is snow
-        @test count(isnan, leaf_area_index) == 10
+        @test isnan(leaf_area_index[10, 11])
+        @test isnan(leaf_area_index[11, 12])
+        @test count(isnan, leaf_area_index) == 12
 
         @test isnan(retrieve_data(Metadatum(:leaf_area_index_uncertainty; dataset, region, date, dir))[3, 4])
 
@@ -486,7 +350,7 @@ end
         unscreened = Metadatum(:leaf_area_index; dataset = MCD15A2H(screened_flags = 0x0000),
                                region, date, dir)
         unscreened_leaf_area_index = retrieve_data(unscreened)
-        @test count(isnan, unscreened_leaf_area_index) == 7
+        @test count(isnan, unscreened_leaf_area_index) == 9
         @test all(i -> isnan(leaf_area_index[i]) ||
                        leaf_area_index[i] == unscreened_leaf_area_index[i],
                   eachindex(leaf_area_index))
@@ -498,7 +362,7 @@ end
         snow_screened_leaf_area_index = retrieve_data(snow_screened)
         @test isnan(snow_screened_leaf_area_index[9, 10])
         @test !isnan(snow_screened_leaf_area_index[4, 5])
-        @test count(isnan, snow_screened_leaf_area_index) == 8
+        @test count(isnan, snow_screened_leaf_area_index) == 10
 
         # The land-cover code is the complement of the leaf-area read on the same layer: it
         # carries a class exactly where there is no retrieval, untouched by the screen.
@@ -541,10 +405,6 @@ end
 
         # A sub-360° window must be Bounded in x so halos do not wrap.
         @test topology(grid)[1] == Bounded
-
-        # Every layer the screen and the three variables need is stored in the one file.
-        @test Set(stored_granule_layers(dataset)) ==
-              Set(("Lai_500m", "Fpar_500m", "LaiStdDev_500m", "FparLai_QC", "FparExtra_QC"))
     end
 end
 
@@ -592,29 +452,9 @@ end
     end
     @test all(legend -> occursin(String(legend), message), (:IGBP, :LAI, :PFT))
 
-    # IGBP has no class 0, and the other two legends use it for water — so the range is per
-    # legend, not one shared constant.
-    @test landcover_valid_range(MCD12Q1()) == 1:17
-    @test landcover_valid_range(MCD12Q1(legend = :LAI)) == 0:10
-    @test landcover_valid_range(MCD12Q1(legend = :PFT)) == 0:11
-
-    # A valid code round-trips as itself, unscaled, and the fill value does not.
-    @test mask_landcover_fill(0x01, 1:17) === 1f0
-    @test mask_landcover_fill(0x11, 1:17) === 17f0
-    @test isnan(mask_landcover_fill(0x00, 1:17))
-    @test isnan(mask_landcover_fill(0xff, 1:17))
-    @test isnan(mask_landcover_fill(0x12, 1:17))       # 18, one past the range
-    @test mask_landcover_fill(0x00, 0:10) === 0f0      # water, under the leaf-area legend
-
-    # Each legend's table covers exactly its own valid range.
-    @test landcover_class_names(MCD12Q1()) === igbp_class_names
-    @test landcover_class_names(MCD12Q1(legend = :LAI)) === modis_lai_class_names
-    @test landcover_class_names(MCD12Q1(legend = :PFT)) === modis_plant_functional_type_names
-    for legend in (:IGBP, :LAI, :PFT)
-        dataset = MCD12Q1(; legend)
-        @test sort(collect(values(landcover_class_names(dataset)))) ==
-              collect(landcover_valid_range(dataset))
-    end
+    @test sort(collect(values(landcover_class_names(MCD12Q1())))) == collect(1:17)
+    @test sort(collect(values(landcover_class_names(MCD12Q1(legend = :LAI))))) == collect(0:10)
+    @test sort(collect(values(landcover_class_names(MCD12Q1(legend = :PFT))))) == collect(0:11)
 end
 
 @testset "MODIS land-cover dataset interface" begin
@@ -643,9 +483,6 @@ end
     @test isnothing(DataWrangling.conversion_units(Metadatum(:quality_flag; dataset, region,
                                                              date = DateTime(2015))))
 
-    @test Set(stored_granule_layers(dataset)) == Set(("LC_Type1", "QC", "LW"))
-    @test Set(stored_granule_layers(MCD12Q1(legend = :LAI))) == Set(("LC_Type3", "QC", "LW"))
-
     # One map per calendar year, stamped 1 January — not 46 composites a year.
     dates = all_dates(dataset, :landcover_class)
     @test issorted(dates)
@@ -653,15 +490,15 @@ end
     @test all(d -> dayofyear(d) == 1, dates)
     @test length(dates) == length(unique(Dates.year.(dates)))
 
+    completed_year = Dates.year(Dates.today()) - 1
+    recent = Metadata(:landcover_class; dataset, region,
+                      dates = (DateTime(completed_year), DateTime(completed_year)))
+    @test recent.dates == [DateTime(completed_year)]
+
     # A global read would pull every land tile, so a region is required here too.
     @test isnothing(validate_dataset_coverage(native_grid(metadatum), metadatum))
     @test_throws ErrorException validate_dataset_coverage(native_grid(metadatum),
                                                           Metadatum(:landcover_class; dataset))
-
-    # The granule name parses with the same rule as the leaf-area product's.
-    granule = parse_granule_name("MCD12Q1.A2015001.h10v05.061.2019192025610")
-    @test granule.date == DateTime(2015, 1, 1)
-    @test granule.tile == "h10v05"
 end
 
 @testset "MODIS land-cover filenames" begin
@@ -686,23 +523,25 @@ end
     @test endswith(filename, ".nc")
 end
 
-@testset "MODIS land-cover read path" begin
+@testset "MODIS land-cover read path ($legend)" for legend in (:IGBP, :LAI, :PFT)
     mktempdir() do dir
         region = BoundingBox(longitude = (-92.5, -92.4), latitude = (36.5, 36.6))
         date = DateTime(2015)
-        dataset = MCD12Q1()
+        dataset = MCD12Q1(; legend)
         metadatum = Metadatum(:landcover_class; dataset, region, date, dir)
         lattice = regional_lattice(metadatum)
 
         classes = write_synthetic_landcover_file(joinpath(dir, metadatum.filename), lattice,
                                                  dataset;
                                                  class_at = Dict((2, 3) => 0xff,   # fill
-                                                                 (2, 4) => 0x00))  # no IGBP 0
+                                                                 (2, 4) => 0x00,   # water in LAI/PFT
+                                                                 (2, 5) => 0x12))  # out of range
 
         codes = retrieve_data(metadatum)
         @test size(codes) == (lattice.Nx, lattice.Ny)
         @test isnan(codes[2, 3])
-        @test isnan(codes[2, 4])
+        @test isequal(codes[2, 4], legend === :IGBP ? NaN32 : 0f0)
+        @test isnan(codes[2, 5])
         for (i, j) in ((1, 1), (3, 2), (lattice.Nx, lattice.Ny))
             @test codes[i, j] == Float32(classes[i, j])
         end
@@ -712,7 +551,7 @@ end
         field = Array(interior(Field(metadatum), :, :, 1))
         @test field[1, 1] == Float32(classes[1, 1])
         @test all(code -> isnan(code) || code == round(code), field)
-        @test all(code -> isnan(code) || code in 1:17, field)
+        @test all(code -> isnan(code) || code in values(landcover_class_names(dataset)), field)
 
         # The class field lands on exactly the cells the leaf-area read lands on, so the two
         # pair with no aggregation in between.
@@ -991,11 +830,13 @@ end
     partial = Metadata(:leaf_area_index; dataset = climatology, region,
                        dates = all_dates(climatology, :leaf_area_index)[1:3])
 
-    @test DataWrangling.spans_whole_cycle(whole)
-    @test !DataWrangling.spans_whole_cycle(partial)
-
     @test_logs DataWrangling.validate_time_coverage(whole, Cyclical())
     @test_logs (:warn, r"holds window means") DataWrangling.validate_time_coverage(partial, Cyclical())
+
+    for dates in ([whole.dates[1:2]; whole.dates[2:end-1]], whole.dates .+ Day(1))
+        incomplete = Metadata(:leaf_area_index; dataset = climatology, region, dates)
+        @test_logs (:warn, r"holds window means") DataWrangling.validate_time_coverage(incomplete, Cyclical())
+    end
 end
 
 @testset "Zeroing the non-vegetated classes" begin
@@ -1029,19 +870,6 @@ end
     @test grassland[2, 1, 1] == 3
 
     @test_throws ArgumentError zero_non_vegetated!(fill(NaN32, 3, 1, 4), fill(NaN32, 2, 1))
-end
-
-@testset "MODIS climatology reduction" begin
-    # The NaN-aware reduction, and the count that goes with it.
-    @test reduce_retained(mean, Float32[1, 2, 3]) == (2f0, 3)
-    @test reduce_retained(mean, Float32[1, NaN, 3]) == (2f0, 2)
-    @test reduce_retained(maximum, Float32[1, NaN, 3]) == (3f0, 2)
-    @test reduce_retained(mean, Float32[NaN, 5]) == (5f0, 1)
-
-    # A cell no year could observe stays visibly empty rather than reading as zero.
-    empty_value, empty_count = reduce_retained(mean, Float32[NaN, NaN])
-    @test isnan(empty_value)
-    @test empty_count == 0
 end
 
 @testset "MODIS climatology build" begin

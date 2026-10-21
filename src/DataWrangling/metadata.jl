@@ -804,7 +804,7 @@ function uncovered_time_gaps(metadata)
 end
 
 """
-    is_seasonal_climatology(dataset)
+    $(TYPEDSIGNATURES)
 
 Whether `dataset`'s whole record is one period of the seasonal cycle, so that `Cyclical`
 wrapping across its ends continues the cycle rather than splicing two unrelated dates.
@@ -813,7 +813,7 @@ wrapping across its ends continues the cycle rather than splicing two unrelated 
 is_seasonal_climatology(dataset) = false
 
 """
-    spans_whole_cycle(metadata)
+    $(TYPEDSIGNATURES)
 
 Whether `metadata` covers every period of a seasonal climatology, in which case the half
 window `Cyclical` fills beyond each end node comes from the adjacent phase of the same
@@ -821,10 +821,10 @@ cycle, and wrapping is exact.
 """
 spans_whole_cycle(metadata) =
     is_seasonal_climatology(metadata.dataset) &&
-    length(metadata) == length(all_dates(metadata.dataset, metadata.name))
+    metadata.dates == all_dates(metadata.dataset, metadata.name)
 
 """
-    window_bounds(metadata)
+    $(TYPEDSIGNATURES)
 
 The `length(metadata) + 1` dates delimiting `metadata`'s samples, in the form
 [`time_average`](@ref) takes: sample `n` covers `[bounds[n], bounds[n+1])`. They are the
