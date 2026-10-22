@@ -263,19 +263,19 @@ end
     pl = ERA5HourlyPressureLevels(pressure_levels=[500hPa, 850hPa])
 
     @testset "cds_product / cds_varnames / nc_varnames" begin
-        @test CDSExt.cds_product(sl) == "reanalysis-era5-single-levels"
-        @test CDSExt.cds_product(pl) == "reanalysis-era5-pressure-levels"
+        @test ERA5.cds_product(sl) == "reanalysis-era5-single-levels"
+        @test ERA5.cds_product(pl) == "reanalysis-era5-pressure-levels"
 
-        @test CDSExt.cds_varnames(sl) === ERA5_dataset_variable_names
-        @test CDSExt.cds_varnames(pl) === ERA5PL_dataset_variable_names
+        @test ERA5.cds_varnames(sl) === ERA5_dataset_variable_names
+        @test ERA5.cds_varnames(pl) === ERA5PL_dataset_variable_names
 
-        @test CDSExt.nc_varnames(sl) === ERA5_netcdf_variable_names
-        @test CDSExt.nc_varnames(pl) === ERA5PL_netcdf_variable_names
+        @test ERA5.nc_varnames(sl) === ERA5_netcdf_variable_names
+        @test ERA5.nc_varnames(pl) === ERA5PL_netcdf_variable_names
     end
 
     @testset "coord_vars" begin
-        sl_coords = CDSExt.coord_vars(sl)
-        pl_coords = CDSExt.coord_vars(pl)
+        sl_coords = ERA5.coord_vars(sl)
+        pl_coords = ERA5.coord_vars(pl)
 
         @test sl_coords isa Set
         @test "longitude" in sl_coords
@@ -291,32 +291,32 @@ end
     @testset "extra_request_keys!" begin
         # ERA5Dataset (single level): no-op
         request = Dict{String, Any}("variable" => ["2m_temperature"])
-        CDSExt.extra_request_keys!(request, sl)
+        ERA5.extra_request_keys!(request, sl)
         @test !haskey(request, "pressure_level")
 
         # ERA5PressureLevelsDataset: populates `pressure_level` (in hPa, as strings)
-        CDSExt.extra_request_keys!(request, pl)
+        ERA5.extra_request_keys!(request, pl)
         @test haskey(request, "pressure_level")
         @test Set(request["pressure_level"]) == Set(["500", "850"])
     end
 
     @testset "build_era5_area" begin
         # Nothing → nothing
-        @test CDSExt.build_era5_area(nothing) === nothing
+        @test ERA5.build_era5_area(nothing) === nothing
 
         # BoundingBox with both axes → [N, W, S, E]
         bbox = BoundingBox(longitude=(-10.0, 5.0), latitude=(40.0, 50.0))
-        @test CDSExt.build_era5_area(bbox) == [50.0, -10.0, 40.0, 5.0]
+        @test ERA5.build_era5_area(bbox) == [50.0, -10.0, 40.0, 5.0]
 
         # BoundingBox with one axis missing → nothing (CDS gets the global slab)
         bbox_no_lat = BoundingBox(longitude=(-10.0, 5.0))
-        @test CDSExt.build_era5_area(bbox_no_lat) === nothing
+        @test ERA5.build_era5_area(bbox_no_lat) === nothing
         bbox_no_lon = BoundingBox(latitude=(40.0, 50.0))
-        @test CDSExt.build_era5_area(bbox_no_lon) === nothing
+        @test ERA5.build_era5_area(bbox_no_lon) === nothing
 
         # Column with Nearest interpolation → tight ε=1e-3 box around the point
         col_nr = Column(-61.5, 18.0; interpolation=Nearest())
-        area_nr = CDSExt.build_era5_area(col_nr)
+        area_nr = ERA5.build_era5_area(col_nr)
         @test length(area_nr) == 4
         # [N, W, S, E]
         @test area_nr[1] ≈ 18.0 + 1e-3      # north
@@ -326,7 +326,7 @@ end
 
         # Column with Linear interpolation → ε=0.3 padding for 2x2 stencil
         col_lin = Column(-61.5, 18.0; interpolation=Linear())
-        area_lin = CDSExt.build_era5_area(col_lin)
+        area_lin = ERA5.build_era5_area(col_lin)
         @test area_lin[1] ≈ 18.0 + 0.3
         @test area_lin[2] ≈ -61.5 - 0.3
         @test area_lin[3] ≈ 18.0 - 0.3
@@ -346,13 +346,13 @@ end
     dt = DateTime(2005, 2, 16, 12)
 
     @testset "Single-level dataset: no pressure_level key" begin
-        req = CDSExt.build_era5_request(:temperature, sl, dt; region=nothing)
+        req = ERA5.build_era5_request(:temperature, sl, dt; region=nothing)
         @test !haskey(req, "pressure_level")
     end
 
     @testset "Pressure-level dataset: pressure_level is sorted hPa strings" begin
         # Constructor sorts levels descending (highest-pressure-first); request preserves that order
-        req = CDSExt.build_era5_request(:temperature, pl, dt; region=nothing)
+        req = ERA5.build_era5_request(:temperature, pl, dt; region=nothing)
         @test haskey(req, "pressure_level")
         @test req["pressure_level"] == ["850", "500"]
         @test all(s -> s isa String, req["pressure_level"])
@@ -361,13 +361,13 @@ end
     @testset "BoundingBox region: area in [N, W, S, E] order, padded by 2 native cells" begin
         # The request fetches two native cells (2 × 0.25° = 0.5°) of margin so the
         # downloaded file covers the center-bracketed native grid the data lands on.
-        req = CDSExt.build_era5_request(:temperature, sl, dt; region=bbox)
+        req = ERA5.build_era5_request(:temperature, sl, dt; region=bbox)
         @test haskey(req, "area")
         @test req["area"] == [50.5, -10.5, 39.5, 5.5]
     end
 
     @testset "Column with Nearest interpolation: tight ε=1e-3 box" begin
-        req = CDSExt.build_era5_request(:temperature, sl, dt; region=col_nr)
+        req = ERA5.build_era5_request(:temperature, sl, dt; region=col_nr)
         @test haskey(req, "area")
         area = req["area"]
         @test area[1] ≈ 18.0 + 1e-3      # north
@@ -377,7 +377,7 @@ end
     end
 
     @testset "Column with Linear interpolation: ε=0.3 padding" begin
-        req = CDSExt.build_era5_request(:temperature, sl, dt; region=col_lin)
+        req = ERA5.build_era5_request(:temperature, sl, dt; region=col_lin)
         @test haskey(req, "area")
         area = req["area"]
         @test area[1] ≈ 18.0 + 0.3
@@ -387,13 +387,13 @@ end
     end
 
     @testset "region=nothing omits area key" begin
-        req = CDSExt.build_era5_request(:temperature, sl, dt; region=nothing)
+        req = ERA5.build_era5_request(:temperature, sl, dt; region=nothing)
         @test !haskey(req, "area")
     end
 
     @testset "Multiple datetimes on same day: time is an array, not a single string" begin
         dts = [DateTime(2005, 2, 16, 0), DateTime(2005, 2, 16, 6), DateTime(2005, 2, 16, 18)]
-        req = CDSExt.build_era5_request(:temperature, sl, dts; region=nothing)
+        req = ERA5.build_era5_request(:temperature, sl, dts; region=nothing)
         @test req["time"]  == ["00:00", "06:00", "18:00"]
         # year/month/day are scalars-in-an-array, taken from the first datetime
         @test req["year"]  == ["2005"]
@@ -409,7 +409,7 @@ end
                DateTime(2005, 2, 16, 12),
                DateTime(2005, 2, 17, 0),
                DateTime(2005, 2, 17, 12)]
-        req = CDSExt.build_era5_request(:temperature, sl, dts; region=nothing)
+        req = ERA5.build_era5_request(:temperature, sl, dts; region=nothing)
         @test req["year"]  == ["2005"]
         @test req["month"] == ["02"]
         @test Set(req["day"])  == Set(["16", "17"])
@@ -417,14 +417,14 @@ end
     end
 
     @testset "Single datetime still produces a one-element time array" begin
-        req = CDSExt.build_era5_request(:temperature, sl, dt; region=nothing)
+        req = ERA5.build_era5_request(:temperature, sl, dt; region=nothing)
         @test req["time"] isa AbstractVector
         @test req["time"] == ["12:00"]
     end
 
     @testset "Zero-padded month/day/hour" begin
         # Month=2, day=3, hour=4 — must come out "02", "03", "04:00"
-        req = CDSExt.build_era5_request(:temperature, sl, DateTime(2005, 2, 3, 4); region=nothing)
+        req = ERA5.build_era5_request(:temperature, sl, DateTime(2005, 2, 3, 4); region=nothing)
         @test req["year"]  == ["2005"]
         @test req["month"] == ["02"]
         @test req["day"]   == ["03"]
@@ -432,18 +432,18 @@ end
     end
 
     @testset "Single Symbol and Vector{Symbol} inputs are equivalent" begin
-        req_sym = CDSExt.build_era5_request(:temperature, sl, dt; region=nothing)
-        req_vec = CDSExt.build_era5_request([:temperature], sl, dt; region=nothing)
+        req_sym = ERA5.build_era5_request(:temperature, sl, dt; region=nothing)
+        req_vec = ERA5.build_era5_request([:temperature], sl, dt; region=nothing)
         @test req_sym["variable"] == req_vec["variable"] == ["2m_temperature"]
     end
 
     @testset "Multi-variable request unique-ifies variable list" begin
-        req = CDSExt.build_era5_request([:temperature, :temperature], sl, dt; region=nothing)
+        req = ERA5.build_era5_request([:temperature, :temperature], sl, dt; region=nothing)
         @test req["variable"] == ["2m_temperature"]
     end
 
     @testset "Constant keys present on every request" begin
-        req = CDSExt.build_era5_request(:temperature, sl, dt; region=nothing)
+        req = ERA5.build_era5_request(:temperature, sl, dt; region=nothing)
         @test req["product_type"]    == ["reanalysis"]
         @test req["data_format"]     == "netcdf"
         @test req["download_format"] == "unarchived"
@@ -465,7 +465,7 @@ end
         p1, p2 = expected_path(dt1), expected_path(dt2)
 
         @testset "all paths missing: all pending, full plan populated" begin
-            plan = CDSExt.plan_era5_month(:temperature, ds, [dt1, dt2];
+            plan = ERA5.plan_era5_month(:temperature, ds, [dt1, dt2];
                                           region, dir=tmp, skip_existing=true)
             @test plan.dt_path_pairs == [(dt1, p1), (dt2, p2)]
             @test length(plan.pending) == 2
@@ -480,7 +480,7 @@ end
 
         @testset "partial coverage: pending narrows to missing datetime" begin
             mkpath(dirname(p1)); touch(p1)
-            plan = CDSExt.plan_era5_month(:temperature, ds, [dt1, dt2];
+            plan = ERA5.plan_era5_month(:temperature, ds, [dt1, dt2];
                                           region, dir=tmp, skip_existing=true)
             @test length(plan.dt_path_pairs) == 2
             @test length(plan.pending) == 1
@@ -494,7 +494,7 @@ end
             for p in (p1, p2)
                 mkpath(dirname(p)); touch(p)
             end
-            plan = CDSExt.plan_era5_month(:temperature, ds, [dt1, dt2];
+            plan = ERA5.plan_era5_month(:temperature, ds, [dt1, dt2];
                                           region, dir=tmp, skip_existing=true)
             @test length(plan.dt_path_pairs) == 2
             @test isempty(plan.pending)
@@ -507,7 +507,7 @@ end
         @testset "skip_existing=false ignores existing files" begin
             mkpath(dirname(p1)); touch(p1)
             mkpath(dirname(p2)); touch(p2)
-            plan = CDSExt.plan_era5_month(:temperature, ds, [dt1, dt2];
+            plan = ERA5.plan_era5_month(:temperature, ds, [dt1, dt2];
                                           region, dir=tmp, skip_existing=false)
             @test length(plan.pending) == 2
             @test plan.request !== nothing
@@ -530,7 +530,7 @@ end
         end
 
         @testset "all missing: full plan with both names and times" begin
-            plan = CDSExt.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
+            plan = ERA5.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
                                                    region, dir=tmp, skip_existing=true)
             @test length(plan.name_dt_paths) == 4   # 2 names × 2 datetimes
             @test length(plan.pending) == 4
@@ -549,7 +549,7 @@ end
                 p = expected_path(:temperature, dt)
                 mkpath(dirname(p)); touch(p)
             end
-            plan = CDSExt.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
+            plan = ERA5.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
                                                    region, dir=tmp, skip_existing=true)
             @test length(plan.pending) == 2
             @test all(p -> p[1] == :eastward_velocity, plan.pending)
@@ -563,7 +563,7 @@ end
                 p = expected_path(name, dt)
                 mkpath(dirname(p)); touch(p)
             end
-            plan = CDSExt.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
+            plan = ERA5.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
                                                    region, dir=tmp, skip_existing=true)
             @test length(plan.name_dt_paths) == 4
             @test isempty(plan.pending)
@@ -580,7 +580,7 @@ end
                 p = expected_path(name, dt)
                 mkpath(dirname(p)); touch(p)
             end
-            plan = CDSExt.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
+            plan = ERA5.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
                                                    region, dir=tmp, skip_existing=false)
             @test length(plan.pending) == 4
             @test plan.request !== nothing
@@ -594,7 +594,7 @@ end
     same_month = [DateTime(2005, 2, 16, 0),
                   DateTime(2005, 2, 17, 6),
                   DateTime(2005, 2, 28, 23)]
-    g = CDSExt.group_by_calendar_month(same_month)
+    g = ERA5.group_by_calendar_month(same_month)
     @test length(g) == 1
     @test (2005, 2) in keys(g)
     @test length(g[(2005, 2)]) == 3
@@ -602,7 +602,7 @@ end
     # Month boundary: each month is its own group
     month_boundary = [DateTime(2005, 2, 28, 23),
                       DateTime(2005, 3, 1, 0)]
-    g = CDSExt.group_by_calendar_month(month_boundary)
+    g = ERA5.group_by_calendar_month(month_boundary)
     @test length(g) == 2
     @test g[(2005, 2)] == [DateTime(2005, 2, 28, 23)]
     @test g[(2005, 3)] == [DateTime(2005, 3, 1, 0)]
@@ -610,7 +610,7 @@ end
     # Year boundary: crossing Dec/Jan produces two groups under different years
     year_boundary = [DateTime(2004, 12, 31, 23),
                      DateTime(2005, 1, 1, 0)]
-    g = CDSExt.group_by_calendar_month(year_boundary)
+    g = ERA5.group_by_calendar_month(year_boundary)
     @test length(g) == 2
     @test g[(2004, 12)] == [DateTime(2004, 12, 31, 23)]
     @test g[(2005, 1)]  == [DateTime(2005, 1, 1, 0)]
@@ -620,19 +620,19 @@ end
              DateTime(2005, 2, 16),
              DateTime(2005, 3, 12),
              DateTime(2005, 2, 28)]
-    g = CDSExt.group_by_calendar_month(mixed)
+    g = ERA5.group_by_calendar_month(mixed)
     @test length(g) == 2
     @test Set(g[(2005, 2)]) == Set([DateTime(2005, 2, 16), DateTime(2005, 2, 28)])
     @test Set(g[(2005, 3)]) == Set([DateTime(2005, 3, 6),  DateTime(2005, 3, 12)])
 
     # Duplicate datetimes are preserved (CDS will dedupe; we don't)
     dups = [DateTime(2005, 2, 16, 12), DateTime(2005, 2, 16, 12)]
-    g = CDSExt.group_by_calendar_month(dups)
+    g = ERA5.group_by_calendar_month(dups)
     @test length(g) == 1
     @test length(g[(2005, 2)]) == 2
 
     # Single-element input
-    g = CDSExt.group_by_calendar_month([DateTime(2005, 2, 16, 12)])
+    g = ERA5.group_by_calendar_month([DateTime(2005, 2, 16, 12)])
     @test length(g) == 1
     @test g[(2005, 2)] == [DateTime(2005, 2, 16, 12)]
 end
@@ -647,7 +647,7 @@ end
 
     @testset "single-level fits in one batch per month" begin
         # Each datetime costs 1 field × 1 level = 1; well under the 5000 cap.
-        batches = CDSExt.batch_datetimes_for_cds(dates, sl, 1)
+        batches = ERA5.batch_datetimes_for_cds(dates, sl, 1)
         @test length(batches) == 2
         @test all(b -> length(unique(Dates.month.(b))) == 1, batches)
         # Dec 2004 group has 120 dts, Jan 2005 has 48
@@ -657,7 +657,7 @@ end
     @testset "pressure-level with many vars+levels splits within a month" begin
         # 5 vars × 37 levels = 185 fields per datetime → max 27 dts per request
         # at default cap of 5000.
-        batches = CDSExt.batch_datetimes_for_cds(dates, pl_21, 5)
+        batches = ERA5.batch_datetimes_for_cds(dates, pl_21, 5)
         @test length(batches) > 2   # must split within at least one month
         @test all(b -> length(unique(Dates.month.(b))) == 1, batches)
         # Batches are sorted in time and within each month
@@ -678,7 +678,7 @@ end
 
     @testset "ordering: batches come out chronologically" begin
         scrambled = shuffle!(collect(dates))
-        batches = CDSExt.batch_datetimes_for_cds(scrambled, sl, 1)
+        batches = ERA5.batch_datetimes_for_cds(scrambled, sl, 1)
         flattened = reduce(vcat, batches)
         @test flattened == sort(dates)
     end
@@ -771,7 +771,7 @@ end
             expected = [touch_expected(:temperature, ds_sl, dt) for dt in (date1, date2)]
 
             # Returns the existing paths without raising — the early-return guard fires
-            result = CDSExt.download_era5_month(:temperature, ds_sl, [date1, date2];
+            result = ERA5.download_era5_month(:temperature, ds_sl, [date1, date2];
                                               region, dir=tmp,
                                               skip_existing=true, cleanup=true)
             @test result isa Vector{String}
@@ -782,7 +782,7 @@ end
             ds_sl = ERA5HourlySingleLevel()
             expected = [touch_expected(name, ds_sl, dt) for name in names for dt in (date1, date2)]
 
-            result = CDSExt.download_era5_multivar_month(names, ds_sl, [date1, date2];
+            result = ERA5.download_era5_multivar_month(names, ds_sl, [date1, date2];
                                                        region, dir=tmp,
                                                        skip_existing=true, cleanup=true)
             @test result isa Vector{String}
@@ -941,7 +941,7 @@ end
                 ("missing_var", joinpath(dir, "should_not_exist.nc")),
             ]
 
-            CDSExt.split_era5_nc(src_path, pairs, coord_vars)
+            ERA5.split_era5_nc(src_path, pairs, coord_vars)
 
             @test !isfile(joinpath(dir, "should_not_exist.nc"))
 
@@ -1072,7 +1072,7 @@ end
             touch(nc_path)
 
             received = String[]
-            CDSExt.foreach_nc(p -> push!(received, p), nc_path, tmp)
+            ERA5.foreach_nc(p -> push!(received, p), nc_path, tmp)
 
             @test received == [nc_path]
         end
@@ -1090,7 +1090,7 @@ end
             close(archive)
 
             received = String[]
-            CDSExt.foreach_nc(p -> push!(received, basename(p)), zip_path, tmp)
+            ERA5.foreach_nc(p -> push!(received, basename(p)), zip_path, tmp)
 
             @test sort(received) == ["a.nc", "b.nc"]   # readme.txt filtered out
         end
@@ -1141,6 +1141,59 @@ end
     @testset "Metadatum resolves the NetCDF short name" begin
         metadatum = Metadatum(:river_discharge; dataset, date=dt)
         @test NumericalEarth.DataWrangling.dataset_variable_name(metadatum) == "avg_dis"
+    end
+end
+
+@testset "CDSAPI client" begin
+    @test NumericalEarth.DataWrangling.cds_retrieve(CDSAPIClient()) === CDSAPI.retrieve
+    @test NumericalEarth.DataWrangling.default_cds_client() isa NumericalEarth.DataWrangling.CDSClient
+end
+
+@testset "retrieve_with_retries" begin
+    retrieve_with_retries = NumericalEarth.DataWrangling.retrieve_with_retries
+    is_transient_cds_error = NumericalEarth.DataWrangling.is_transient_cds_error
+
+    @test is_transient_cds_error(ErrorException("502 Bad Gateway"))
+    @test !is_transient_cds_error(ArgumentError("no client"))
+
+    @testset "succeeds on the first attempt" begin
+        calls = 0
+        retrieve(product, request, path) = (calls += 1; path)
+        @test retrieve_with_retries("product", Dict(), "path"; retrieve) == "path"
+        @test calls == 1
+    end
+
+    @testset "retries past a transient error, then succeeds" begin
+        # max_retries=2 keeps this to a single 5s backoff sleep.
+        calls = 0
+        function retrieve(product, request, path)
+            calls += 1
+            calls < 2 && error("502 Bad Gateway")
+            return path
+        end
+        @test retrieve_with_retries("product", Dict(), "path"; retrieve, max_retries=2) == "path"
+        @test calls == 2
+    end
+
+    @testset "rethrows a non-transient error immediately, without retrying" begin
+        calls = 0
+        function retrieve(product, request, path)
+            calls += 1
+            throw(ArgumentError("no client"))
+        end
+        @test_throws ArgumentError retrieve_with_retries("product", Dict(), "path"; retrieve, max_retries=5)
+        @test calls == 1
+    end
+
+    @testset "gives up and rethrows after max_retries transient failures" begin
+        # max_retries=2 keeps this to a single 5s backoff sleep.
+        calls = 0
+        function retrieve(product, request, path)
+            calls += 1
+            error("502 Bad Gateway")
+        end
+        @test_throws ErrorException retrieve_with_retries("product", Dict(), "path"; retrieve, max_retries=2)
+        @test calls == 2
     end
 end
 
