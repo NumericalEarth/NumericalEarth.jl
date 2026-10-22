@@ -540,7 +540,7 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
                                   prognostic = nested_model.exchanger.prognostic)
     child = nested_model.child
     child_grid = child.grid
-    t₀ = first(prognostic.ρᵈ.times)
+    t₀ = @allowscalar first(prognostic.ρᵈ.times)
 
     ρᵈ   = interpolate_to_child(prognostic.ρᵈ, child_grid, t₀)
     ρθ   = interpolate_to_child(prognostic.ρθ, child_grid, t₀)

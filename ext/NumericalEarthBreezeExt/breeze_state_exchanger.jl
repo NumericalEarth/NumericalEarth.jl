@@ -234,7 +234,7 @@ function state_exchanger(parent_atmosphere, pˢᵗ, constants;
     prognostic = child_prognostic_state(parent_atmosphere, pˢᵗ, constants, condensates, moisture_name;
                                         time_indices_in_memory)
     exchanger  = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates, moisture_name)
-    exchange_state!(exchanger, first(parent_atmosphere.temperature.times))   # position the parent's windows
+    exchange_state!(exchanger, @allowscalar first(parent_atmosphere.temperature.times))   # position the parent's windows
     return exchanger
 end
 
@@ -295,7 +295,7 @@ function exchange_state!(ex::StateExchanger, time; force=false)
     # `parent[start]` would be non-resident → garbage → a discrete NaN at the crossing. Bracketing
     # `times[start]` keeps parent levels [start, start+1, start+2] resident (needs time_indices_in_memory ≥ 3).
     for fts in extract_field_time_series(parent)
-        update_field_time_series!(fts, Time(p.ρᵈ.times[start]))
+        update_field_time_series!(fts, Time(@allowscalar p.ρᵈ.times[start]))
     end
 
     moved = p.ρᵈ.backend.start != start
