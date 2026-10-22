@@ -78,6 +78,8 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
 # rotated by the cone convergence angle on a `LambertConformalConicGrid`. The angle comes from the child's
 # projection evaluated at a longitude, not from a child grid index, so it is defined for parent cells
 # outside the child's hull.
+# TODO: the convergence angle at a longitude belongs in Oceananigans (`lcc_rotation_angle`), alongside
+# `rotation_angle`, which only evaluates it at the child's own cells; call that instead of rotating here.
 child_frame(grid) = nothing
 child_frame(grid::LambertConformalConicGrid) = grid.conformal_mapping
 child_frame(grid::OrthogonalSphericalShellGrid) =
