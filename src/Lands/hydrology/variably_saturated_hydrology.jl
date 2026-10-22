@@ -5,9 +5,9 @@
 ##### augmented liquid fraction `ϑₖ = Mₖ/(ρˡ hₖ)`, so `Mₖ > Mₖ⁺` is admitted as saturated
 ##### positive-pressure storage (`Πₖ > 0`). With every flux positive upward,
 #####
-#####     dMₖ/dt = Jₖ − Jₖ₋₁ − fₖ Jᵗ − δₖ₁ (Jᵛ − Jᵗ + Jˡˢ + Rˡᵃᵗ),     J₀ ≡ 0,
+#####     dMₖ/dt = Jˡₖ − Jˡₖ₋₁ − fₖ Jᵗ − δₖ₁ (Jᵛ − Jᵗ + Jˡˢ + Rˡᵃᵗ),     Jˡ₀ ≡ 0,
 #####
-##### where `Jₖ` is the Darcy flux across the bottom of layer `k` (the `deep_liquid_flux`
+##### where `Jˡₖ` is the Darcy flux across the bottom of layer `k` (the `deep_liquid_flux`
 ##### closure under the last layer), `fₖ ∝ rₖ 𝒮ₖ` is the root-weighted share of the
 ##### transpiration `Jᵗ`, and the soil evaporation `Jᵛ − Jᵗ` leaves the top layer. The
 ##### interlayer exchanges are solved nonlinearly by backward Euler; a Darcy bottom closure
@@ -17,7 +17,7 @@
 #####
 ##### Diagnostics published every step:
 #####   * `deep_liquid_flux`          (Jₙ, across the column bottom)
-#####   * `interlayer_liquid_flux_k`  (Jₖ for k < N; several layers only)
+#####   * `interlayer_liquid_flux_k`  (Jˡₖ for k < N; several layers only)
 #####   * `surface_liquid_flux`       (Jˡˢ = −Pˡ + Rˢᶠᶜ)
 #####   * `surface_runoff`            (Rˢᶠᶜ ≥ 0)
 #####   * `subsurface_runoff`         (Rˡᵃᵗ ≥ 0, from the top layer)
@@ -49,7 +49,7 @@ first. The top layer's water is the container's `water_storage`; deeper layers a
 prognostics `water_storage_2`, `water_storage_3`, …, which start at half effective saturation.
 
 Neighboring layers exchange water by Darcy's law across the distance `ℓ = (hₖ + hₖ₊₁)/2`
-between their centers, `Jₖ = ρˡ (Πₖ₊₁ − Πₖ − ℓ) / (hₖ/2Kₖ + hₖ₊₁/2Kₖ₊₁)` with the two
+between their centers, `Jˡₖ = ρˡ (Πₖ₊₁ − Πₖ − ℓ) / (hₖ/2Kₖ + hₖ₊₁/2Kₖ₊₁)` with the two
 half-layers' conductivities in series at their mean saturation, positive upward. The last
 layer exchanges with `deep_liquid_flux`; the surface fluxes, the soil evaporation, and
 `runoff` act on the first. The transpiration is drawn from layer `k` in proportion to
@@ -226,7 +226,7 @@ end
     transfers = map(zero, storage)
     change = one(FT)
 
-    # Nonlinear Gauss–Seidel on Δt Jₖ; each bracket limits the transfer to the available water.
+    # Nonlinear Gauss–Seidel on Δt Jˡₖ; each bracket limits the transfer to the available water.
     while change > 8eps(FT)
         previous = transfers
         for k in 1:N-1

@@ -3,15 +3,6 @@
 #####
 
 """
-    beer_lambert_absorbed_fraction(leaf_albedo, canopy_transmittance)
-
-Fraction of incident shortwave a bulk canopy absorbs, `fᵃᵇˢ = (1 − α)(1 − transmittance)`
-(ClimaLand Eq D11).
-"""
-@inline beer_lambert_absorbed_fraction(leaf_albedo, canopy_transmittance) =
-    (1 - leaf_albedo) * (1 - canopy_transmittance)
-
-"""
     InteractiveAbsorbedPAR(FT = Float64; par_fraction, photon_per_joule,
                            leaf_albedo_par, extinction, clumping)
 
@@ -21,17 +12,24 @@ Per-leaf absorbed PAR recomputed each step from the downwelling shortwave `ℐ�
     APAR = - fᵃᵇˢ · (fᵖᵃʳ · ℐꜜˢʷ · Qᴶ) / LAI ,
 
 where `fᵖᵃʳ` (`par_fraction`) is the PAR energy fraction of shortwave, `Qᴶ`
-(`photon_per_joule`) converts PAR energy to a photon flux, and `fᵃᵇˢ` is the
-absorbed fraction on the canopy transmittance the caller supplies. Dividing by
-`LAI` returns the per-leaf value the leaf conductance models expect.
+(`photon_per_joule`) converts PAR energy to a photon flux, and
+`fᵃᵇˢ = (1 − α)(1 − e^{−K Ω L})` is the fraction of the incident PAR the canopy
+absorbs (ClimaLand Eq D11), with the PAR-band leaf albedo `α` and the Beer–Lambert
+transmittance the caller supplies. Dividing by `LAI` returns the per-leaf value the
+leaf conductance models expect.
 
 Fields:
 - `par_fraction`     : PAR/shortwave by energy (≈ 0.45).
 - `photon_per_joule` : mol photons per J in the PAR band (≈ 4.57e-6).
 - `leaf_albedo_par`  : leaf albedo in the PAR band.
-- `extinction`       : canopy extinction coefficient `K`, used only when no canopy supplies a
-                       transmittance.
-- `clumping`         : foliage clumping index `Ω`, used as `extinction` is.
+- `extinction`       : Beer–Lambert extinction coefficient `K`, used only when no canopy
+                       supplies a transmittance.
+- `clumping`         : foliage clumping index `Ω ∈ (0, 1]` ([Chen and Black (1992)](@cite chen1992)),
+                       the ratio of the effective to the true leaf area index in the
+                       transmittance `e^{−K Ω L}`: `Ω = 1` is randomly distributed foliage,
+                       `Ω < 1` foliage gathered into crowns and shoots, which leaves gaps and
+                       transmits more light than a random canopy of the same `L`. Used as
+                       `extinction` is.
 """
 struct InteractiveAbsorbedPAR{FT}
     par_fraction     :: FT
@@ -69,7 +67,6 @@ Base.show(io::IO, p::InteractiveAbsorbedPAR) = print(io, summary(p),
 @inline function absorbed_par_value(p::InteractiveAbsorbedPAR, radiation, leaf_area_index, transmittance)
     SW   = - radiation.ℐꜜˢʷ                                    # downwelling shortwave (W m⁻²)
     parQ = p.par_fraction * SW * p.photon_per_joule            # canopy-incident PAR photon flux
-    fᵃᵇˢ = beer_lambert_absorbed_fraction(p.leaf_albedo_par,
-                                          canopy_transmittance(p, leaf_area_index, transmittance))
+    fᵃᵇˢ = (1 - p.leaf_albedo_par) * (1 - canopy_transmittance(p, leaf_area_index, transmittance))
     return fᵃᵇˢ * parQ / max(leaf_area_index, sqrt(eps(leaf_area_index)))   # per-leaf; 0/0 → 0
 end

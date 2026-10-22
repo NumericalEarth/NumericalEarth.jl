@@ -31,7 +31,7 @@ prescribed.
 
 Fields:
 - `leaf_area_index` : bulk LAI (–), upscales leaf `gₛ` to the canopy.
-- `photosynthesis`  : a [`FarquharPhotosynthesis`](@ref), or `nothing` for Jarvis.
+- `photosynthesis`  : a [`RubiscoLightLimitedPhotosynthesis`](@ref), or `nothing` for Jarvis.
 - `conductance`     : a [`JarvisConductance`](@ref) (default) or [`MedlynConductance`](@ref).
 - `moisture_stress` : `β(𝒮)` model — a `Number`, a [`PlantAvailableWaterStress`](@ref)
   (wilting-point/field-capacity endpoints, the model meant for a transpiring canopy), or
@@ -51,10 +51,10 @@ struct CanopyConductanceHumidity{L, P, C, S, A, Q, Φ}
     phase           :: Φ
 end
 
-# Medlyn needs a Farquhar model; Jarvis needs none. Default `photosynthesis` per
+# Medlyn needs a photosynthesis model; Jarvis needs none. Default `photosynthesis` per
 # conductance type when the user leaves it unset (`nothing`).
 @inline default_photosynthesis(photosynthesis, conductance, FT) = photosynthesis
-@inline default_photosynthesis(::Nothing, ::MedlynConductance, FT) = FarquharPhotosynthesis(FT)
+@inline default_photosynthesis(::Nothing, ::MedlynConductance, FT) = RubiscoLightLimitedPhotosynthesis(FT)
 
 function CanopyConductanceHumidity(FT=Oceananigans.defaults.FloatType;
                                    leaf_area_index = 2,

@@ -7,19 +7,17 @@ using Oceananigans.TimeSteppers: update_state!, time_step!
 using Thermodynamics
 using NumericalEarth.Lands: SaturatedSurface
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    FarquharPhotosynthesis, MedlynConductance, JarvisConductance,
+    RubiscoLightLimitedPhotosynthesis, MedlynConductance, JarvisConductance,
     CanopyConductanceHumidity, BulkHumidity,
     InteractiveAbsorbedPAR, absorbed_par_value,
-    net_assimilation, medlyn_conductance, stomatal_conductance,
-    jarvis_light_factor, jarvis_vpd_factor, jarvis_temperature_factor,
-    peaked_arrhenius, heskel_respiration_scaling
+    net_assimilation, stomatal_conductance, temperature_response
 #####
 ##### Photosynthesis + conductance physics (pure functions — no grid needed).
 #####
 
-@testset "Farquhar–Medlyn canopy physics" begin
+@testset "FvCB–Medlyn canopy physics" begin
     for FT in (Float32, Float64)
-        photo = FarquharPhotosynthesis(FT)
+        photo = RubiscoLightLimitedPhotosynthesis(FT)
         cond  = MedlynConductance(FT)
 
         Tˡᵉᵃᶠ   = FT(298)      # leaf temperature (K)
@@ -40,12 +38,6 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
         @test net_assimilation(photo, FT(35), FT(1e-3), Tˡᵉᵃᶠ, P, β) >
               net_assimilation(photo, FT(15), FT(1e-3), Tˡᵉᵃᶠ, P, β)
 
-        # Medlyn conductance decreases with VPD and never falls below g₀.
-        An = FT(1e-5)
-        @test medlyn_conductance(cond, An, FT(500),  ca / P) >
-              medlyn_conductance(cond, An, FT(2000), ca / P)
-        @test medlyn_conductance(cond, FT(-1e-6), FT(1000), ca / P) ≈ cond.g0
-
         # Coupled solve: light drives conductance up, VPD and moisture stress down.
         gs_ref, An_ref, ci_ref = stomatal_conductance(cond, photo, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(1))
         gs_dry, _, _           = stomatal_conductance(cond, photo, FT(1e-3), FT(3000), Tˡᵉᵃᶠ, ca, P, FT(1))
@@ -57,7 +49,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
         @test photo.Γ★25 < ci_ref < ca          # intercellular CO₂ in physical band
         @test gs_dry < gs_ref                    # higher VPD closes stomata
         @test gs_str < gs_ref                    # moisture stress closes stomata
-        @test gs_drk ≈ cond.g0 atol=1e-3         # no light → minimum conductance
+        @test gs_drk ≈ cond.g0                   # dark: Aₙ = −Rᵈ < 0 is floored, leaving g₀
         @test eltype(gs_ref) == FT
 
         # The intercellular CO₂ is the closed-form Medlyn optimality ratio.
@@ -100,22 +92,22 @@ end
         T₂₅ = FT(298.15)
 
         # Normalization: both scalings are 1 at 25 °C.
-        @test peaked_arrhenius(T₂₅, PeakedArrheniusParameters(FT; activation_energy = 71513, entropy = 649, deactivation_energy = 200000)) ≈ 1
-        @test heskel_respiration_scaling(T₂₅, FT(0.1012), FT(-0.0005)) ≈ 1
+        @test temperature_response(T₂₅, PeakedArrheniusParameters(FT; activation_energy = 71513, entropy = 649, deactivation_energy = 200000)) ≈ 1
+        @test temperature_response(T₂₅, HeskelParameters(FT)) ≈ 1
 
         # Vcmax/Jmax rise then fall — interior optimum with high-T rolloff.
         Ts = FT(273):FT(1):FT(323)
-        vc = [peaked_arrhenius(T, PeakedArrheniusParameters(FT; activation_energy = 71513, entropy = 649, deactivation_energy = 200000)) for T in Ts]
-        jm = [peaked_arrhenius(T, PeakedArrheniusParameters(FT; activation_energy = 49884, entropy = 646, deactivation_energy = 200000)) for T in Ts]
+        vc = [temperature_response(T, PeakedArrheniusParameters(FT; activation_energy = 71513, entropy = 649, deactivation_energy = 200000)) for T in Ts]
+        jm = [temperature_response(T, PeakedArrheniusParameters(FT; activation_energy = 49884, entropy = 646, deactivation_energy = 200000)) for T in Ts]
         @test vc[end] < maximum(vc)                       # rolls off by 50 °C
         @test jm[end] < maximum(jm)
         @test Ts[argmax(vc)] ≥ Ts[argmax(jm)]             # Vcmax optimum ≥ Jmax optimum
 
         # Rd strictly increases over 0–45 °C (guards the Celsius-vs-Kelvin trap).
-        rd = [heskel_respiration_scaling(T, FT(0.1012), FT(-0.0005)) for T in FT(273):FT(1):FT(318)]
+        rd = [temperature_response(T, HeskelParameters(FT)) for T in FT(273):FT(1):FT(318)]
         @test all(diff(rd) .> 0)
 
-        photo_peak = FarquharPhotosynthesis(FT)
+        photo_peak = RubiscoLightLimitedPhotosynthesis(FT)
 
         # Aₙ(Tˡᵉᵃᶠ) reaches an interior maximum and rolls off at high leaf temperature.
         Tl = FT(273):FT(1):FT(318)
@@ -150,20 +142,17 @@ end
         @test An == 0 && ci == 0
         @test eltype(gs) == FT
 
-        # Factors: light saturates 0→1, VPD declines, temperature peaks at optimal_temperature.
-        @test jarvis_light_factor(jarv, FT(1e-2)) > jarvis_light_factor(jarv, FT(1e-4))
-        @test jarvis_light_factor(jarv, FT(1e6)) ≈ 1 atol=1e-3
-        @test jarvis_vpd_factor(jarv, FT(3000)) < jarvis_vpd_factor(jarv, FT(500))
-        @test jarvis_temperature_factor(jarv, jarv.optimal_temperature) ≈ 1
-        @test jarvis_temperature_factor(jarv, jarv.optimal_temperature + FT(15)) < 1
-        @test jarvis_temperature_factor(jarv, jarv.optimal_temperature - FT(15)) < 1
-
-        # gₛ rises and saturates with APAR, falls with VPD.
-        gs_dim = stomatal_conductance(jarv, nothing, FT(1e-5), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(1))[1]
-        gs_lit = stomatal_conductance(jarv, nothing, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(1))[1]
-        gs_dry = stomatal_conductance(jarv, nothing, FT(1e-3), FT(3000), Tˡᵉᵃᶠ, ca, P, FT(1))[1]
+        # gₛ rises and saturates with APAR, falls with VPD, and peaks at optimal_temperature.
+        gₛ(APAR, VPD, T) = stomatal_conductance(jarv, nothing, APAR, VPD, T, ca, P, FT(1))[1]
+        gs_dim = gₛ(FT(1e-5), FT(1000), Tˡᵉᵃᶠ)
+        gs_lit = gₛ(FT(1e-3), FT(1000), Tˡᵉᵃᶠ)
+        gs_dry = gₛ(FT(1e-3), FT(3000), Tˡᵉᵃᶠ)
         @test gs_lit > gs_dim
+        @test gₛ(FT(1e6), FT(1000), Tˡᵉᵃᶠ) ≈ gₛ(FT(1e5), FT(1000), Tˡᵉᵃᶠ) rtol=1e-3
         @test gs_dry < gs_lit
+        optimum = jarv.optimal_temperature
+        @test gₛ(FT(1e-3), FT(1000), optimum) > gₛ(FT(1e-3), FT(1000), optimum + FT(15))
+        @test gₛ(FT(1e-3), FT(1000), optimum) > gₛ(FT(1e-3), FT(1000), optimum - FT(15))
 
         # Scales linearly with the moisture-stress factor β and vanishes at β = 0.
         gs_half = stomatal_conductance(jarv, nothing, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(0.5))[1]

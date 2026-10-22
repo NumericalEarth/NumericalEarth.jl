@@ -27,7 +27,7 @@ function interception_model(arch, FT; leaf_area_index = 3.0, capacity = 0.1, rai
         canopy = CanopyConductanceHumidity(FT; leaf_area_index,
                                            moisture_stress = CriticalSaturation(0.5),
                                            absorbed_par = InteractiveAbsorbedPAR(FT)),
-        soil_skin_flux = SoilConductiveFlux(1.5, 0.05),
+        ground_heat_flux = SoilConductiveFlux(1.5, 0.05),
         interception = interception ? CanopyInterception() : nothing)
     return coupled_land_model(arch, FT; Tair = 298, qair = 0.010, wind = 3, rain, hydrology,
                               Tland = 298, water = water_storage, shortwave = 400,
@@ -98,7 +98,7 @@ end
         Fwithout = without.interfaces.atmosphere_land_interface.fluxes
 
         @test scalar(with.land.prognostic.canopy_water_storage) == 0
-        for name in (:interface, :canopy, :soil_skin, :effective)
+        for name in (:interface, :canopy, :ground, :effective)
             @test scalar(getproperty(Twith, name)) == scalar(getproperty(Twithout, name))
         end
         for name in (:sensible_heat, :latent_heat, :water_vapor)

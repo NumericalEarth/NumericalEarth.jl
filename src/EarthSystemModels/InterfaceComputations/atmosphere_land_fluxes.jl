@@ -97,7 +97,7 @@ end
     @inbounds begin
         Ts.interface[i, j, 1]              = sol.Tᵃᶜ
         Ts.canopy[i, j, 1]                 = sol.Tˡᵉᵃᶠ
-        Ts.soil_skin[i, j, 1]              = sol.Tᵍ
+        Ts.ground[i, j, 1]                 = sol.Tᵍ
         Ts.effective[i, j, 1]              = sol.effective_temperature
         Ts.effective_albedo[i, j, 1]       = sol.effective_albedo
         Ts.ground_heat_flux[i, j, 1]       = sol.𝒬ᵍ

@@ -120,9 +120,7 @@ variably_saturated_soil() = VariablySaturatedHydrology(;
     deep_liquid_flux       = NoDeepLiquidFlux(),
     runoff                 = InfiltrationCapacityRunoff(infiltration_capacity = 5e-4))
 
-conservative_energy() = WaterCoupledEnergy(;
-    dry_heat_capacity = 0.1 * 1500 * 1480, liquid_heat_capacity = 4186,
-    reference_temperature = 273.15, deep_temperature = 286, deep_time_scale = 10day)
+conservative_energy() = WaterCoupledEnergy(; deep_temperature = initial_temperature, deep_time_scale = 10day)
 
 # The `InterceptingHydrology` wraps the soil with the canopy store; its `leaf_area_index`
 # sets the caught fraction and capacity `Wᶜᵐᵃˣ = c·LAI`, per unit vegetated area.
@@ -142,7 +140,7 @@ canopy_with_interception(; leaf_area_index, conductance = JarvisConductance()) =
     canopy = CanopyConductanceHumidity(; leaf_area_index, conductance,
                                        moisture_stress = PlantAvailableWaterStress(),
                                        absorbed_par    = InteractiveAbsorbedPAR()),
-    soil_skin_flux = SoilConductiveFlux(1.5, 0.05),
+    ground_heat_flux = SoilConductiveFlux(1.5, 0.05),
     leaf_albedo, ground_albedo, max_canopy_emissivity, ground_emissivity,
     extinction, clumping,
     interception = CanopyInterception())
@@ -166,7 +164,7 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
                                 atmosphere_land_interface_temperature       = canopy_air_space,
                                 atmosphere_land_interface_specific_humidity = canopy_air_space)
 
-    ## Diagnostics: the CAS stores its node/leaf/soil-skin/effective temperatures, the
+    ## Diagnostics: the CAS stores its node/leaf/ground/effective temperatures, the
     ## skin→bulk ground heat flux, and the two-source latent/sensible shares plus the
     ## wet-canopy evaporation in `interface.temperature`; the atmosphere-facing turbulent
     ## totals live in `interface.fluxes`; the water fluxes/stores in `land`.
@@ -176,7 +174,7 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
     Tₐ  = zeros(Nsteps)   # air (forcing)
     Tˡᵉᵃᶠ  = zeros(Nsteps)   # leaf
     Tᵃᶜ = zeros(Nsteps)   # canopy-air node
-    Tᵍ = zeros(Nsteps)   # soil skin
+    Tᵍ = zeros(Nsteps)   # ground
     Tˡᵃ = zeros(Nsteps)   # bulk slab
     Tₑ  = zeros(Nsteps)   # effective radiating (LST)
     H   = zeros(Nsteps)   # sensible heat, atmosphere total (positive up)
@@ -206,7 +204,7 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
         Tₐ[n]  = air_temperature(time)
         Tˡᵉᵃᶠ[n]  = scalar(Ts.canopy)
         Tᵃᶜ[n] = scalar(Ts.interface)
-        Tᵍ[n] = scalar(Ts.soil_skin)
+        Tᵍ[n] = scalar(Ts.ground)
         Tˡᵃ[n] = scalar(land.temperature)
         Tₑ[n]  = scalar(Ts.effective)
         H[n]   = scalar(interface.fluxes.sensible_heat)
@@ -267,7 +265,7 @@ dense_m  = canopy_air_space_column(leaf_area_index = 4.0, conductance = medlyn, 
 # ## Radiation partition (reconstructed from the stored surface temperatures)
 #
 # The CAS keeps only the surface temperatures and turbulent totals, so the radiative
-# shares are reconstructed here from the stored leaf `Tˡᵉᵃᶠ` and soil-skin `Tᵍ`
+# shares are reconstructed here from the stored leaf `Tˡᵉᵃᶠ` and ground `Tᵍ`
 # temperatures using the Beer–Lambert shortwave split and two-face longwave ledger.
 
 function radiation_partition(case)
@@ -324,13 +322,13 @@ t    = ref.t
 
 fig = Figure(size = (1700, 1850), fontsize = 17)
 
-## (1,1) Temperatures — leaf leads and swings widest, shaded soil skin is damped,
+## (1,1) Temperatures — leaf leads and swings widest, shaded ground is damped,
 ## bulk slab lags, node sits between the surfaces and the air.
 ax = Axis(fig[1, 1]; title = "Temperatures", xlabel = "t (days)", ylabel = "T (K)")
 mark_pulse!(ax)
 lines!(ax, t, ref.Tₐ;  color = :gray,        linewidth = 3, label = "air Tₐ")
 lines!(ax, t, ref.Tˡᵉᵃᶠ;  color = :seagreen,    label = "leaf Tˡᵉᵃᶠ")
-lines!(ax, t, ref.Tᵍ; color = :saddlebrown, label = "soil skin Tᵍ")
+lines!(ax, t, ref.Tᵍ; color = :saddlebrown, label = "ground Tᵍ")
 lines!(ax, t, ref.Tᵃᶜ; color = :steelblue,   linestyle = :dash, label = "canopy air Tᵃᶜ")
 lines!(ax, t, ref.Tˡᵃ; color = :firebrick,   label = "bulk Tˡᵃ")
 lines!(ax, t, ref.Tₑ;  color = :black,       linestyle = :dot, label = "LST effective_temperature")
@@ -340,9 +338,9 @@ axislegend(ax; position = :lt, nbanks = 2, labelsize = 12)
 ax = Axis(fig[1, 2]; title = "Source temperature contrasts", xlabel = "t (days)", ylabel = "ΔT (K)")
 mark_pulse!(ax)
 hlines!(ax, [0]; color = :gray, linestyle = :dash)
-lines!(ax, t, ref.Tˡᵉᵃᶠ  .- ref.Tᵍ; color = :seagreen,    label = "leaf − soil skin")
+lines!(ax, t, ref.Tˡᵉᵃᶠ  .- ref.Tᵍ; color = :seagreen,    label = "leaf − ground")
 lines!(ax, t, ref.Tᵃᶜ .- ref.Tₐ;  color = :steelblue,   label = "node − air")
-lines!(ax, t, ref.Tᵍ .- ref.Tˡᵃ; color = :saddlebrown, label = "soil skin − bulk")
+lines!(ax, t, ref.Tᵍ .- ref.Tˡᵃ; color = :saddlebrown, label = "ground − bulk")
 axislegend(ax; position = :lt, labelsize = 12)
 
 ## (2,1) Shortwave partition — the canopy shades the soil.

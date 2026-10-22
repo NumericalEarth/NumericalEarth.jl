@@ -12,7 +12,7 @@ checkpoint_test_cas(FT; storage) = CanopyAirSpace(FT;
     soil = bare_soil_humidity(FT),
     canopy = CanopyConductanceHumidity(FT; leaf_area_index = 4.0, moisture_stress = CriticalSaturation(0.5),
                                        absorbed_par = InteractiveAbsorbedPAR(FT)),
-    soil_skin_flux = SoilConductiveFlux(1.5, 0.05), storage)
+    ground_heat_flux = SoilConductiveFlux(1.5, 0.05), storage)
 
 checkpoint_test_model(arch; temperature, humidity = temperature) =
     coupled_land_model(arch; atmosphere_land_interface_temperature = temperature,

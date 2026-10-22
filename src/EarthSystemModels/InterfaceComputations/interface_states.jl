@@ -513,11 +513,14 @@ end
 """
     SoilConductiveFlux(conductivity, thickness)
 
-Conductive coupling between a land skin temperature and the bulk slab across a
-surface layer of thermal conductivity `κᵀ` (`conductivity`, W m⁻¹ K⁻¹) and
-thickness `ℓᵀ` (`thickness`, m), giving the skin↔bulk conductance
-`Λᵍ = κᵀ/ℓᵀ` (W m⁻² K⁻¹). Use it through [`SoilSkinTemperature`](@ref);
-`conductivity = 1.5`, `thickness = 0.05` ⇒ `Λᵍ = 30` is a reasonable first cut.
+Conduction between a land surface temperature and the bulk slab temperature,
+`𝒬ᵍ = Λᵍ (Tᵍ − Tˡᵃ)` with `Λᵍ = κᵀ/ℓᵀ` (W m⁻² K⁻¹). `ℓᵀ` (`thickness`, m) is the
+distance from the surface to the bulk temperature node, half the slab depth for a
+node at its center, and `κᵀ` (`conductivity`, W m⁻¹ K⁻¹) the thermal conductivity
+over that distance: the soil's, or that of a thin surface layer (litter, a crust)
+with its own conductivity. No layer of thickness `ℓᵀ` is resolved. Use it through
+[`SoilSkinTemperature`](@ref); `conductivity = 1.5`, `thickness = 0.05` ⇒ `Λᵍ = 30`
+is a reasonable first cut.
 """
 struct SoilConductiveFlux{K, Z}
     conductivity :: K   # κᵀ, W m⁻¹ K⁻¹
@@ -530,7 +533,7 @@ end
 # surface energy balance, or `nothing` for a bulk skin.
 @inline skin_conductance(formulation) = nothing
 
-# The soil-skin temperature the slab conducts to.
+# The surface temperature the slab conducts to: the skin of bare soil, the ground beneath a canopy.
 @inline skin_temperature(Ts, i, j) = @inbounds Ts[i, j, 1]
 
 # Solve the surface flux balance equation:

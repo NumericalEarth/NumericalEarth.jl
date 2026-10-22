@@ -82,7 +82,7 @@ vegetated_tile() = CanopyAirSpace(;
     canopy = CanopyConductanceHumidity(; leaf_area_index = 4.0,
                                        moisture_stress = PlantAvailableWaterStress(),
                                        absorbed_par    = InteractiveAbsorbedPAR()),
-    soil_skin_flux = SoilConductiveFlux(1.5, 0.05))
+    ground_heat_flux = SoilConductiveFlux(1.5, 0.05))
 
 land_roughness(z₀m, z₀s) = SimilarityTheoryFluxes(;
     stability_functions          = atmosphere_land_stability_functions(Float64),

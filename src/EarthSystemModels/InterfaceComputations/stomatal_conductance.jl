@@ -20,9 +20,11 @@ Photosynthesis-coupled optimality stomatal conductance of
 
 with `gₛ`, `g₀` in mol H₂O m⁻² s⁻¹, `Aₙ` in mol CO₂ m⁻² s⁻¹, `cₐ` the CO₂ mole
 fraction at the leaf surface, VPD in Pa, and `g₁` in √Pa (ClimaLand molar form;
-`diffusivity_ratio = 1.6`). The `√VPD` water-use-efficiency response is *derived*
-from optimality, so a single parameter `g₁` carries the humidity sensitivity.
-Defaults are the ClimaLand US-Var grass values (`g₁ = 166 √Pa`).
+`diffusivity_ratio = 1.6`). The leaf-surface `cₐ` is taken equal to the ambient
+(canopy-air) mole fraction: the CO₂ drawdown across the leaf boundary layer is
+neglected. The `√VPD` water-use-efficiency response is *derived* from optimality,
+so a single parameter `g₁` carries the humidity sensitivity. Defaults are the
+ClimaLand US-Var grass values (`g₁ = 166 √Pa`).
 """
 struct MedlynConductance{FT} <: AbstractStomatalConductance
     g0                :: FT   # cuticular / minimum conductance (mol m⁻² s⁻¹)
@@ -38,40 +40,30 @@ Base.show(io::IO, c::MedlynConductance) = print(io, summary(c),
     "(g1=", prettysummary(c.g1), ")")
 
 """
-    medlyn_conductance(conductance, Aₙ, VPD, χCO₂)
-
-Leaf stomatal conductance `gₛ` (mol H₂O m⁻² s⁻¹) from net assimilation `Aₙ`
-(mol CO₂ m⁻² s⁻¹), leaf-to-air VPD (Pa), and leaf-surface CO₂ mole fraction
-`χCO₂`. Assimilation is floored at zero so a respiring leaf sits at the minimum
-conductance `g₀` rather than driving `gₛ` negative.
-"""
-@inline function medlyn_conductance(c::MedlynConductance, Aₙ, VPD, χCO₂)
-    A⁺ = max(Aₙ, zero(Aₙ))
-    return c.g0 + c.diffusivity_ratio * (1 + c.g1 / sqrt(VPD)) * A⁺ / χCO₂
-end
-
-"""
     stomatal_conductance(conductance, photosynthesis, APAR, VPD, Tˡᵉᵃᶠ, ca, P, β)
 
 Leaf stomatal conductance `gₛ` (mol H₂O m⁻² s⁻¹), dispatched on the conductance
-model. For [`MedlynConductance`](@ref) the Farquhar–Medlyn system closes in one
-pass: substituting the Medlyn `gₛ` into the CO₂ diffusion relation
+model. For [`MedlynConductance`](@ref) the photosynthesis–Medlyn system closes in
+one pass: substituting the Medlyn `gₛ` into the CO₂ diffusion relation
 `ci = cₐ − 1.6 Aₙ/gₛ` cancels the assimilation, leaving the optimality ratio
 
     ci / cₐ = g₁ / (g₁ + √VPD) ,
 
 so photosynthesis is evaluated once at that `ci` — no fixed point, exact up to
-the cuticular minimum `g₀`. For [`JarvisConductance`](@ref) `gₛ` is a closed-form
-product of environmental factors and `photosynthesis` is unused. `ca` is the
-atmospheric CO₂ partial pressure (Pa) and `P` the air pressure (Pa). Returns
-`(gₛ, Aₙ, ci)` (`Aₙ = ci = 0` for Jarvis).
+the cuticular minimum `g₀`. The assimilation entering the Medlyn formula is floored
+at zero, so a respiring leaf sits at `g₀` rather than driving `gₛ` negative. For
+[`JarvisConductance`](@ref) `gₛ` is a closed-form product of environmental factors
+and `photosynthesis` is unused. `ca` is the atmospheric CO₂ partial pressure (Pa),
+which also stands in for the leaf-surface value, and `P` the air pressure (Pa).
+Returns `(gₛ, Aₙ, ci)` (`Aₙ = ci = 0` for Jarvis).
 """
 @inline function stomatal_conductance(c::MedlynConductance, photosynthesis,
                                       APAR, VPD, Tˡᵉᵃᶠ, ca, P, β)
-    χa = ca / P                        # ambient CO₂ mole fraction
+    χₐ = ca / P                        # ambient CO₂ mole fraction, taken as the leaf-surface value
     ci = ca * c.g1 / (c.g1 + sqrt(VPD))
     Aₙ = net_assimilation(photosynthesis, ci, APAR, Tˡᵉᵃᶠ, P, β)
-    gₛ = medlyn_conductance(c, Aₙ, VPD, χa)
+    A⁺ = max(Aₙ, zero(Aₙ))
+    gₛ = c.g0 + c.diffusivity_ratio * (1 + c.g1 / sqrt(VPD)) * A⁺ / χₐ
     return gₛ, Aₙ, ci
 end
 
@@ -122,19 +114,11 @@ Base.summary(::JarvisConductance{FT}) where FT = "JarvisConductance{$FT}"
 Base.show(io::IO, c::JarvisConductance) = print(io, summary(c),
     "(maximum_conductance=", prettysummary(c.maximum_conductance), ")")
 
-@inline jarvis_light_factor(c::JarvisConductance, APAR) = APAR / (APAR + c.par_half_saturation)
-@inline jarvis_vpd_factor(c::JarvisConductance, VPD)    = 1 / (1 + c.vpd_sensitivity * VPD)
-
-@inline function jarvis_temperature_factor(c::JarvisConductance, T)
-    f = 1 - c.temperature_curvature * (c.optimal_temperature - T)^2
-    return clamp(f, 0, one(f))
-end
-
 @inline function stomatal_conductance(c::JarvisConductance, photosynthesis,
                                       APAR, VPD, Tˡᵉᵃᶠ, ca, P, β)
-    fPAR = jarvis_light_factor(c, APAR)
-    fVPD = jarvis_vpd_factor(c, VPD)
-    fT   = jarvis_temperature_factor(c, Tˡᵉᵃᶠ)
+    fPAR = APAR / (APAR + c.par_half_saturation)
+    fVPD = 1 / (1 + c.vpd_sensitivity * VPD)
+    fT   = clamp(1 - c.temperature_curvature * (c.optimal_temperature - Tˡᵉᵃᶠ)^2, 0, 1)
     gₛ   = c.maximum_conductance * fPAR * fVPD * fT * β
     z    = zero(gₛ)
     return gₛ, z, z          # (gₛ, Aₙ, ci); Aₙ, ci unused for Jarvis

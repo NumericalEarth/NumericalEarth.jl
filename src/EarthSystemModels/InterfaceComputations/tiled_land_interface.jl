@@ -7,16 +7,16 @@
 """
     struct TiledLandInterface
 
-A vegetated tile and a bare-soil tile over a shared soil column, each a full
+A forested tile and a bare-soil tile over a shared soil column, each a full
 [`atmosphere_land_interface`](@ref) with its own roughness, with the area-weighted fluxes
 and temperatures the atmosphere and slab read. Build it with
 [`TiledLandInterface(grid, atmosphere, land; …)`](@ref) and pass it as
 `atmosphere_land_interface = …` to `AtmosphereLandModel` / `ComponentInterfaces`.
 
 Fields:
-- `vegetated`   : the vegetated tile, an `AtmosphereInterface` with a [`CanopyAirSpace`](@ref).
+- `vegetated`   : the forested tile, an `AtmosphereInterface` with a [`CanopyAirSpace`](@ref).
 - `bare`        : the bare-soil tile, an `AtmosphereInterface` with an [`EnergyBalanceTemperature`](@ref).
-- `fraction`    : the vegetated fraction `f ∈ [0, 1]` — a `Number`, `Field`, or `FieldTimeSeries`.
+- `fraction`    : the forested fraction `f ∈ [0, 1]` — a `Number`, `Field`, or `FieldTimeSeries`.
 - `fluxes`      : the blended [`AtmosphereSurfaceFluxes`](@ref).
 - `temperature` : the blended [`CanopyAirSpaceDiagnostics`](@ref).
 """
@@ -34,22 +34,22 @@ transpiration(interface::TiledLandInterface) = interface.temperature.transpirati
     TiledLandInterface(grid, atmosphere, land;
                        vegetated,
                        fraction,
-                       bare                = EnergyBalanceTemperature(vegetated.soil_skin_flux; storage = DiagnosticSkin()),
+                       bare                = EnergyBalanceTemperature(vegetated.ground_heat_flux; storage = DiagnosticSkin()),
                        bare_specific_humidity = vegetated.soil,
                        vegetated_fluxes    = default_atmosphere_land_fluxes(land, eltype(grid)),
                        bare_fluxes         = default_atmosphere_land_fluxes(land, eltype(grid)),
                        velocity_difference = RelativeVelocity())
 
-Build a two-tile (vegetated + bare) land interface. `vegetated` is a [`CanopyAirSpace`](@ref);
-the bare tile is a soil skin with the same skin→bulk conduction and soil vapor branch by
-default, massless like the canopy's ground skin. `fraction` is the vegetated fraction (a
+Build a two-tile (forest + bare soil) land interface. `vegetated` is a [`CanopyAirSpace`](@ref),
+a forest canopy; the bare tile is a soil skin with the same ground→bulk conduction and soil
+vapor branch by default, massless like the canopy's ground. `fraction` is the forested fraction (a
 `Number`, `Field`, or `FieldTimeSeries`). Pass `vegetated_fluxes` / `bare_fluxes` to give
 the tiles a roughness contrast.
 """
 function TiledLandInterface(grid, atmosphere, land;
                             vegetated,
                             fraction,
-                            bare                   = EnergyBalanceTemperature(vegetated.soil_skin_flux; storage = DiagnosticSkin()),
+                            bare                   = EnergyBalanceTemperature(vegetated.ground_heat_flux; storage = DiagnosticSkin()),
                             bare_specific_humidity = vegetated.soil,
                             vegetated_fluxes       = default_atmosphere_land_fluxes(land, eltype(grid)),
                             bare_fluxes            = default_atmosphere_land_fluxes(land, eltype(grid)),
@@ -144,13 +144,13 @@ end
         blended_fluxes.temperature_scale[i, j, 1] = f * veg_fluxes.temperature_scale[i, j, 1] + g * bare_fluxes.temperature_scale[i, j, 1]
         blended_fluxes.water_vapor_scale[i, j, 1] = f * veg_fluxes.water_vapor_scale[i, j, 1] + g * bare_fluxes.water_vapor_scale[i, j, 1]
 
-        # The bare tile is a single skin: its own temperature is its soil skin and its
-        # turbulent fluxes are all soil fluxes. The canopy water store is kept per unit
-        # vegetated area, so its evaporation is not area-weighted.
+        # The bare tile is a single skin: its temperature is both its ground surface and
+        # its skin, and its turbulent fluxes are all soil fluxes. The canopy water store is
+        # kept per unit vegetated area, so its evaporation is not area-weighted.
         Tᵇ = bare_temperature[i, j, 1]
         blended_temperature.interface[i, j, 1]              = f * veg_temperature.interface[i, j, 1] + g * Tᵇ
         blended_temperature.canopy[i, j, 1]                 = veg_temperature.canopy[i, j, 1]
-        blended_temperature.soil_skin[i, j, 1]              = f * veg_temperature.soil_skin[i, j, 1] + g * Tᵇ
+        blended_temperature.ground[i, j, 1]                 = f * veg_temperature.ground[i, j, 1] + g * Tᵇ
         blended_temperature.ground_heat_flux[i, j, 1]       = f * veg_temperature.ground_heat_flux[i, j, 1] + g * Λ * (Tᵇ - T[i, j, 1])
         blended_temperature.canopy_latent_heat[i, j, 1]     = f * veg_temperature.canopy_latent_heat[i, j, 1]
         blended_temperature.soil_latent_heat[i, j, 1]       = f * veg_temperature.soil_latent_heat[i, j, 1] + g * bare_fluxes.latent_heat[i, j, 1]
@@ -161,8 +161,8 @@ end
         blended_temperature.land_vapor_flux[i, j, 1]        = f * veg_temperature.land_vapor_flux[i, j, 1] + g * bare_fluxes.water_vapor[i, j, 1]
         blended_temperature.transpiration[i, j, 1]          = f * veg_temperature.transpiration[i, j, 1]
 
-        # Effective (LST) temperature: σ T⁴ = f · LWꜛ(vegetated) + (1 − f) · LWꜛ(bare), where the
-        # bare tile emits ϵ σ Tᵇ⁴ and reflects (1 − ϵ) of the downwelling.
+        # Skin (effective radiating) temperature of the mosaic: σ T⁴ = f · LWꜛ(vegetated) +
+        # (1 − f) · LWꜛ(bare), where the bare tile emits ϵ σ Tᵇ⁴ and reflects (1 − ϵ) of the downwelling.
         σ, ϵ = bare_radiation.σ, bare_radiation.ϵ
         Tᵛ   = veg_temperature.effective[i, j, 1]
         LWꜛᵇ = ϵ * σ * Tᵇ^4 - (1 - ϵ) * bare_radiation.ℐꜜˡʷ

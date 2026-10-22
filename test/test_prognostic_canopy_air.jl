@@ -13,7 +13,7 @@ prognostic_test_cas(FT; kw...) = CanopyAirSpace(FT;
     soil = bare_soil_humidity(FT),
     canopy = CanopyConductanceHumidity(FT; leaf_area_index = 4.0, moisture_stress = CriticalSaturation(0.5),
                                        absorbed_par = InteractiveAbsorbedPAR(FT)),
-    soil_skin_flux = SoilConductiveFlux(1.5, 0.05), kw...)
+    ground_heat_flux = SoilConductiveFlux(1.5, 0.05), kw...)
 
 prognostic_test_model(arch, cas; shortwave = 600.0, longwave = 350.0,
                       wind = 3.0, Tair = 300.0, qair = 0.008,
@@ -113,7 +113,7 @@ end
         # --- the skins balance against the exported node: leaf Rₙ = H + LE at the stored
         # leaf temperature and node.
         ℂ  = AtmosphereThermodynamicsParameters(Float64)
-        Tˡ = scalar(Ts.canopy); Tᵍ = scalar(Ts.soil_skin)
+        Tˡ = scalar(Ts.canopy); Tᵍ = scalar(Ts.ground)
         σ  = 5.670374419e-8; LAI = 4.0
         εˡ = 0.98 * (1 - exp(-LAI)); εᵍ = 0.96
         LWꜜᵍ = (1 - εˡ) * 350.0 + εˡ * σ * Tˡ^4
@@ -123,8 +123,8 @@ end
 
         # --- the node stays inside the hull of its sources.
         θᵃᵗ = 300.0
-        @test min(scalar(Ts.canopy), scalar(Ts.soil_skin), θᵃᵗ) - 1 ≤ scalar(Ts.interface) ≤
-              max(scalar(Ts.canopy), scalar(Ts.soil_skin), θᵃᵗ) + 1
+        @test min(scalar(Ts.canopy), scalar(Ts.ground), θᵃᵗ) - 1 ≤ scalar(Ts.interface) ≤
+              max(scalar(Ts.canopy), scalar(Ts.ground), θᵃᵗ) + 1
     end
 
     # --- calm-dusk boundedness: the configuration where the diagnostic closure has no

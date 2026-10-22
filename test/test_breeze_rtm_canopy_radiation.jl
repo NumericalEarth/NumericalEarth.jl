@@ -83,7 +83,7 @@ end
             @test all(Array(interior(rtm.surface_radiation.direct_surface_albedo)) .≈ 0.15)
 
             # Sunlit leaves over shaded soil, radiating warmer than the canopy air.
-            @test all(Array(interior(canopy.canopy)) .> Array(interior(canopy.soil_skin)))
+            @test all(Array(interior(canopy.canopy)) .> Array(interior(canopy.ground)))
             @test all(Array(interior(canopy.effective)) .> Array(interior(canopy.interface)))
 
             σ = default_stefan_boltzmann_constant

@@ -11,7 +11,7 @@ build_tiled_canopy_air_space(FT) = CanopyAirSpace(FT;
     soil = bare_soil_humidity(FT),
     canopy = CanopyConductanceHumidity(FT; leaf_area_index = 3.0, moisture_stress = CriticalSaturation(0.5),
                                        absorbed_par = InteractiveAbsorbedPAR(FT)),
-    soil_skin_flux = SoilConductiveFlux(1.5, 0.05))
+    ground_heat_flux = SoilConductiveFlux(1.5, 0.05))
 
 land_roughness(FT, z₀m, z₀s) = SimilarityTheoryFluxes(FT;
     stability_functions          = atmosphere_land_stability_functions(FT),
@@ -73,7 +73,7 @@ end
         Tˡᵃ = scalar(model.land.temperature)
         Λ = 1.5 / 0.05
         @test scalar(ti.temperature.interface) ≈ f * scalar(veg.temperature.interface) + (1 - f) * Tᵇ rtol = 1e-12
-        @test scalar(ti.temperature.soil_skin) ≈ f * scalar(veg.temperature.soil_skin) + (1 - f) * Tᵇ rtol = 1e-12
+        @test scalar(ti.temperature.ground) ≈ f * scalar(veg.temperature.ground) + (1 - f) * Tᵇ rtol = 1e-12
         @test scalar(ti.temperature.ground_heat_flux) ≈
               f * scalar(veg.temperature.ground_heat_flux) + (1 - f) * Λ * (Tᵇ - Tˡᵃ) rtol = 1e-12
         @test scalar(ti.temperature.soil_latent_heat) ≈
@@ -90,10 +90,10 @@ end
         α = model.radiation.surface_properties.land.albedo
         @test scalar(ti.temperature.effective_albedo) ≈ f * scalar(veg.temperature.effective_albedo) + (1 - f) * α
 
-        # Sunlit veg tile: shaded soil skin cooler than the leaf; transpiration dominates the
+        # Sunlit veg tile: shaded ground cooler than the leaf; transpiration dominates the
         # tile's latent flux; and the shaded, litter-covered ground evaporates far less than
         # the sunlit bare tile.
-        @test scalar(veg.temperature.soil_skin) < scalar(veg.temperature.canopy)
+        @test scalar(veg.temperature.ground) < scalar(veg.temperature.canopy)
         @test scalar(veg.temperature.canopy_latent_heat) > scalar(veg.temperature.soil_latent_heat)
         @test scalar(veg.temperature.soil_latent_heat) < scalar(bare.fluxes.latent_heat)
 
@@ -107,7 +107,7 @@ end
             @test scalar(getproperty(t0.fluxes, name)) == scalar(getproperty(t0.bare.fluxes, name))
         end
         @test scalar(t1.temperature.ground_heat_flux) == scalar(t1.vegetated.temperature.ground_heat_flux)
-        @test scalar(t0.temperature.soil_skin) == scalar(t0.bare.temperature)
+        @test scalar(t0.temperature.ground) == scalar(t0.bare.temperature)
         @test scalar(m0.land.fluxes.surface_energy_flux) ≈ -Λ * (scalar(t0.bare.temperature) - scalar(m0.land.temperature)) atol = 1e-10
 
         # --- f=1 tiled ≡ a standalone CanopyAirSpace model (bit-for-bit). ---

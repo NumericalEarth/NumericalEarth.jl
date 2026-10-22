@@ -11,7 +11,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     SoilConductiveFlux, SoilSkinTemperature, canopy_air_space_solve, dry_layer_terms,
     saturation_specific_humidity, default_dry_air_molar_mass, AtmosphericThermodynamics,
     AirLandInterfaceState, InterfaceFluxScales, InterfaceVelocities, AirLandRadiationState,
-    AreaIndexUndercanopyConductance, FrictionVelocityUndercanopyConductance, undercanopy_conductance,
+    AreaIndexUndercanopyVelocity, FrictionVelocityUndercanopyVelocity, undercanopy_transfer_velocity,
     SellersSoilResistance, LitterResistance, soil_surface_resistance, litter_resistance,
     CanopyAirSpaceDiagnostics, DiagnosticSkin, kernel_surface_field, surface_field_value
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
@@ -19,7 +19,7 @@ build_canopy_air_space(FT; optics...) = CanopyAirSpace(FT;
     soil = bare_soil_humidity(FT),
     canopy = CanopyConductanceHumidity(FT; leaf_area_index = 4.0, moisture_stress = CriticalSaturation(0.5),
                                        absorbed_par = InteractiveAbsorbedPAR(FT)),
-    soil_skin_flux = SoilConductiveFlux(1.5, 0.05), optics...)
+    ground_heat_flux = SoilConductiveFlux(1.5, 0.05), optics...)
 
 @testset "CanopyAirSpace" begin
     for arch in test_architectures
@@ -32,7 +32,7 @@ build_canopy_air_space(FT; optics...) = CanopyAirSpace(FT;
         @test Ts isa CanopyAirSpaceDiagnostics
         Tᵃᶜ = Array(interior(Ts.interface))[1, 1, 1]
         Tˡᵉᵃᶠ  = Array(interior(Ts.canopy))[1, 1, 1]
-        Tᵍ = Array(interior(Ts.soil_skin))[1, 1, 1]
+        Tᵍ = Array(interior(Ts.ground))[1, 1, 1]
         Tₑ  = Array(interior(Ts.effective))[1, 1, 1]
         𝒬ᵍ  = Array(interior(Ts.ground_heat_flux))[1, 1, 1]
         𝒬ᵀ  = Array(interior(ali.fluxes.sensible_heat))[1, 1, 1]
@@ -42,7 +42,7 @@ build_canopy_air_space(FT; optics...) = CanopyAirSpace(FT;
         @test all(isfinite, (Tᵃᶜ, Tˡᵉᵃᶠ, Tᵍ, Tₑ, 𝒬ᵍ, 𝒬ᵀ, 𝒬ᵛ))
         @test 285 < Tᵃᶜ < 320
 
-        # Sunlit: the leaf is warmer than the shaded soil skin, and the node lies between
+        # Sunlit: the leaf is warmer than the shaded ground, and the node lies between
         # its coolest and warmest sources.
         @test Tᵍ < Tˡᵉᵃᶠ
         θᵃᵗ = 300.0
@@ -158,19 +158,19 @@ end
     end
 end
 
-# The wet-canopy vapor mass conductance is gˡᵇ = ρᵃᵗ·LAI·gᵇ. A molar-mass factor (Mᵈ ≈ 0.029)
+# The wet-canopy vapor mass conductance is gˡᵇ = ρᵃᵗ·LAI·wˡᵇ. A molar-mass factor (Mᵈ ≈ 0.029)
 # in place of the air density (ρᵃᵗ ≈ 1.2) would make it ~40× too small — smaller than the dry
 # stomatal conductance, so a wet leaf would evaporate *slower* than a dry one.
 @testset "Wet-canopy vapor conductance scales with air density" begin
     FT = Float64
     ℂ  = AtmosphereThermodynamicsParameters(FT)
     ℙₐ = (thermodynamics_parameters = ℂ, gravitational_acceleration = FT(9.81))
-    LAI = 3.0; gᵇ = 0.02; c = 0.1
+    LAI = 3.0; wˡᵇ = 0.02; c = 0.1
     cas = CanopyAirSpace(FT;
         soil = bare_soil_humidity(FT),
         canopy = CanopyConductanceHumidity(FT; leaf_area_index = LAI,
                                 moisture_stress = CriticalSaturation(0.5), absorbed_par = InteractiveAbsorbedPAR(FT)),
-        leaf_boundary_conductance = gᵇ,
+        leaf_boundary_layer_velocity = wˡᵇ,
         interception = CanopyInterception())
 
     Ψₐ  = (z = FT(10), u = FT(3), v = FT(0), T = FT(305), p = FT(101325), q = FT(0.006), h_bℓ = FT(600))  # dry, warm → demand
@@ -193,8 +193,8 @@ end
 
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
     qˡᵉᵃᶠ  = saturation_specific_humidity(ℂ, wet.Tˡᵉᵃᶠ, Ψₐ.p, cas.phase)
-    E_ρ = (ρᵃᵗ * LAI * gᵇ) * (qˡᵉᵃᶠ - wet.qᵃᶜ)                          # correct (air density)
-    E_M = (default_dry_air_molar_mass * LAI * gᵇ) * (qˡᵉᵃᶠ - wet.qᵃᶜ)   # erroneous (molar mass)
+    E_ρ = (ρᵃᵗ * LAI * wˡᵇ) * (qˡᵉᵃᶠ - wet.qᵃᶜ)                          # correct (air density)
+    E_M = (default_dry_air_molar_mass * LAI * wˡᵇ) * (qˡᵉᵃᶠ - wet.qᵃᶜ)   # erroneous (molar mass)
     @test wet.Eʷᵉᵗ ≈ E_ρ rtol = 1e-6
     @test wet.Eʷᵉᵗ / E_M ≈ ρᵃᵗ / default_dry_air_molar_mass rtol = 1e-3   # ≈ 40, not 1
 end
@@ -213,10 +213,10 @@ end
                             molecular_diffusivity = 2.4e-5, tortuosity = PowerLawTortuosity()),
         thermal_exchange_depth = 0.05, porosity = 0.4)
     # Bare soil (LAI = 0, no litter) isolates the soil branch from the canopy.
-    bare(gᵘᶜ) = CanopyAirSpace(FT; soil,
+    bare(wᵘᶜ) = CanopyAirSpace(FT; soil,
         canopy = CanopyConductanceHumidity(FT; leaf_area_index = 0.0,
                             moisture_stress = CriticalSaturation(0.5), absorbed_par = InteractiveAbsorbedPAR(FT)),
-        soil_skin_flux = SoilConductiveFlux(1.5, 0.05), undercanopy_conductance = gᵘᶜ,
+        ground_heat_flux = SoilConductiveFlux(1.5, 0.05), undercanopy_transfer_velocity = wᵘᶜ,
         litter_resistance = nothing)
 
     Ψₐ  = (z = FT(10), u = FT(3), v = FT(0), T = FT(305), p = FT(101325), q = FT(0.006), h_bℓ = FT(600))
@@ -227,7 +227,7 @@ end
     flx = InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3), FT(0), FT(1/6)); vel = InterfaceVelocities(FT(0), FT(0))
     Ψ(𝒮) = AirLandInterfaceState(flx, vel, FT(300), FT(0.012), (saturation = FT(𝒮),),
             (temperature = FT(300), time_step = FT(0)), (leaf_area_index = FT(0),))
-    LEᵍ(gᵘᶜ, 𝒮) = canopy_air_space_solve(bare(gᵘᶜ), Ψ(𝒮), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ).LEᵍ
+    LEᵍ(wᵘᶜ, 𝒮) = canopy_air_space_solve(bare(wᵘᶜ), Ψ(𝒮), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ).LEᵍ
 
     # A saturated soil evaporates a substantial positive latent flux (the pre-fix stall gives ≈ 0),
     # rising monotonically as the soil↔canopy-air path opens up.
@@ -301,57 +301,57 @@ end
     end
 end
 
-# The ground↔canopy-air conductance is a closure: a bare number keeps the constant
+# The ground↔canopy-air transfer velocity is a closure: a bare number keeps the constant
 # behavior bit-for-bit, and the area-index closure responds to canopy density and wind.
-@testset "Undercanopy conductance closures" begin
+@testset "Undercanopy transfer velocity closures" begin
     for FT in (Float32, Float64)
-        # A bare number is a constant conductance.
+        # A bare number is a constant transfer velocity.
         cas = build_canopy_air_space(FT)
-        @test undercanopy_conductance(cas.undercanopy_conductance, FT(3), FT(5), FT(0.3)) === FT(0.013)
+        @test undercanopy_transfer_velocity(cas.undercanopy_transfer_velocity, FT(3), FT(5), FT(0.3)) === FT(0.013)
 
-        u = AreaIndexUndercanopyConductance(FT)
-        g(LAI, Vₐ, u★) = undercanopy_conductance(u, FT(LAI), FT(Vₐ), FT(u★))
+        u = AreaIndexUndercanopyVelocity(FT)
+        w(LAI, Vₐ, u★) = undercanopy_transfer_velocity(u, FT(LAI), FT(Vₐ), FT(u★))
 
         # Denser canopy shields the ground more strongly; stronger wind ventilates it.
-        @test g(0.5, 3, 0.26) > g(5, 3, 0.26)
-        @test g(3, 5, 0.26) > g(3, 1, 0.26)
+        @test w(0.5, 3, 0.26) > w(5, 3, 0.26)
+        @test w(3, 5, 0.26) > w(3, 1, 0.26)
 
         # The sparse-canopy limit binds at the shielding floor and the aerodynamic cap,
         # never producing an infinity.
-        @test isfinite(g(0, 3, 0.26))
-        @test g(0, 3, 0.26) <= FT(0.26)^2 / 3
+        @test isfinite(w(0, 3, 0.26))
+        @test w(0, 3, 0.26) <= FT(0.26)^2 / 3
 
         # Stems shield like leaves.
-        u_stems = AreaIndexUndercanopyConductance(FT; stem_area_index = 1)
-        @test undercanopy_conductance(u_stems, FT(1), FT(3), FT(0.26)) < g(1, 3, 0.26)
+        u_stems = AreaIndexUndercanopyVelocity(FT; stem_area_index = 1)
+        @test undercanopy_transfer_velocity(u_stems, FT(1), FT(3), FT(0.26)) < w(1, 3, 0.26)
 
         # Calm air shuts the exchange down.
-        @test g(3, 0, 0.26) == 0
+        @test w(3, 0, 0.26) == 0
 
         # CLM5 closure (Zeng et al. 2005): u★-driven, blending a bare roughness-Reynolds
         # law with the dense-canopy constant Cₛᵈ·u★.
-        z = FrictionVelocityUndercanopyConductance(FT)
-        gz(LAI, u★) = undercanopy_conductance(z, FT(LAI), FT(3), FT(u★))
+        z = FrictionVelocityUndercanopyVelocity(FT)
+        wz(LAI, u★) = undercanopy_transfer_velocity(z, FT(LAI), FT(3), FT(u★))
 
         # Dense limit: Cₛᵈ·u★; bare ground ventilates faster than a dense canopy.
-        @test gz(20, 0.3) ≈ FT(0.004) * FT(0.3) rtol = 1e-3
-        @test gz(0, 0.3) > gz(5, 0.3)
+        @test wz(20, 0.3) ≈ FT(0.004) * FT(0.3) rtol = 1e-3
+        @test wz(0, 0.3) > wz(5, 0.3)
 
         # Bare endpoint follows the roughness-Reynolds law (k/0.13)(z₀ᵍu★/ν)^(−0.45)·u★.
         Cₛᵇ = (FT(0.4) / FT(0.13)) * (FT(0.01) * FT(0.3) / FT(1.5e-5))^(-FT(0.45))
-        @test gz(0, 0.3) ≈ Cₛᵇ * FT(0.3) rtol = 1e-5
+        @test wz(0, 0.3) ≈ Cₛᵇ * FT(0.3) rtol = 1e-5
 
         # Shear drives the exchange: calm air (u★ → 0) decouples the ground, finitely.
-        @test gz(3, 0) == 0
-        @test isfinite(gz(0, 0))
+        @test wz(3, 0) == 0
+        @test isfinite(wz(0, 0))
 
         # A rougher ground slows the bare exchange (thicker interfacial sublayer).
-        z_rough = FrictionVelocityUndercanopyConductance(FT; ground_roughness_length = 0.05)
-        @test undercanopy_conductance(z_rough, FT(0), FT(3), FT(0.3)) < gz(0, 0.3)
+        z_rough = FrictionVelocityUndercanopyVelocity(FT; ground_roughness_length = 0.05)
+        @test undercanopy_transfer_velocity(z_rough, FT(0), FT(3), FT(0.3)) < wz(0, 0.3)
 
         # Stems shield like leaves here too.
-        z_stems = FrictionVelocityUndercanopyConductance(FT; stem_area_index = 1)
-        @test undercanopy_conductance(z_stems, FT(1), FT(3), FT(0.3)) < gz(1, 0.3)
+        z_stems = FrictionVelocityUndercanopyVelocity(FT; stem_area_index = 1)
+        @test undercanopy_transfer_velocity(z_stems, FT(1), FT(3), FT(0.3)) < wz(1, 0.3)
     end
 
     # Every closure keeps the coupled solve inferred.
@@ -369,14 +369,14 @@ end
         soil = bare_soil_humidity(FT)
         canopy = CanopyConductanceHumidity(FT; leaf_area_index = 3.0,
                                 moisture_stress = CriticalSaturation(0.5), absorbed_par = InteractiveAbsorbedPAR(FT))
-        with_undercanopy(gᵘᶜ) = CanopyAirSpace(FT; soil, canopy, undercanopy_conductance = gᵘᶜ)
+        with_undercanopy(wᵘᶜ) = CanopyAirSpace(FT; soil, canopy, undercanopy_transfer_velocity = wᵘᶜ)
 
         @inferred canopy_air_space_solve(with_undercanopy(0.013), Ψ(3), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
 
-        area_index_cas = with_undercanopy(AreaIndexUndercanopyConductance(FT))
+        area_index_cas = with_undercanopy(AreaIndexUndercanopyVelocity(FT))
         @inferred canopy_air_space_solve(area_index_cas, Ψ(3), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
 
-        friction_cas = with_undercanopy(FrictionVelocityUndercanopyConductance(FT))
+        friction_cas = with_undercanopy(FrictionVelocityUndercanopyVelocity(FT))
         @inferred canopy_air_space_solve(friction_cas, Ψ(3), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
 
         # Two-source partition responds to canopy density: under identical forcing the
@@ -401,8 +401,8 @@ end
     cas = CanopyAirSpace(FT; soil,
         canopy = CanopyConductanceHumidity(FT; leaf_area_index = 3.0, moisture_stress = CriticalSaturation(0.5),
                                            absorbed_par = InteractiveAbsorbedPAR(FT)),
-        soil_skin_flux = SoilConductiveFlux(1.5, 0.05),
-        undercanopy_conductance = FrictionVelocityUndercanopyConductance(FT))
+        ground_heat_flux = SoilConductiveFlux(1.5, 0.05),
+        undercanopy_transfer_velocity = FrictionVelocityUndercanopyVelocity(FT))
 
     Ψₐ  = (z = FT(10), u = FT(0), v = FT(0), T = FT(300), p = FT(101325), q = FT(0.008), h_bℓ = FT(600))
     Ψᵢ  = (u = FT(0), v = FT(0), T = FT(298))

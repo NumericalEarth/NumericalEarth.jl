@@ -48,10 +48,6 @@
 ##### `Tᵍ = Tˡᵃ` and the χ term vanishes).
 #####
 
-using Oceananigans: Oceananigans
-using Oceananigans.Utils: prettysummary
-using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
-
 #####
 ##### Dry-layer depth diagnostics
 #####

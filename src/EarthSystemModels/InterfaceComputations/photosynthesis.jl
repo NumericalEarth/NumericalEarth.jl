@@ -1,42 +1,11 @@
 #####
-##### Farquhar C3 photosynthesis and its temperature-response helpers.
+##### C3 photosynthesis of the Farquhar–von Caemmerer–Berry (FvCB) model and the
+##### temperature responses of its rate parameters.
 #####
 
 # Reference temperature of the photosynthesis rate parameters (the "25" suffix
 # of Vcmax25, etc.) — distinct from the thermodynamic reference (triple point).
 const physiology_reference_temperature = 298.15 # K (25 °C)
-
-# Arrhenius temperature scaling `f(T) = exp[ΔH (T − T₂₅) / (T₂₅ R T)]`
-# (ClimaLand Eq C6). Normalized to 1 at `T = T₂₅`.
-@inline function arrhenius_scaling(T, ΔH)
-    T₂₅ = oftype(T, physiology_reference_temperature)
-    R   = oftype(T, default_gas_constant)
-    return exp(ΔH * (T - T₂₅) / (T₂₅ * R * T))
-end
-
-# Deactivation exponent `(ΔS T − ΔHd)/(R T)` of the peaked Arrhenius form.
-@inline function deactivation_exponent(T, ΔS, ΔHd)
-    R = oftype(T, default_gas_constant)
-    return (T * ΔS - ΔHd) / (R * T)
-end
-
-# Peaked Arrhenius for `Vcmax`/`Jmax`: plain Arrhenius times a high-temperature
-# deactivation term, normalized to 1 at 25 °C.
-@inline function peaked_arrhenius(T, p)
-    ΔS, ΔHd = p.entropy, p.deactivation_energy
-    T₂₅  = oftype(T, physiology_reference_temperature)
-    base = arrhenius_scaling(T, p.activation_energy)
-    return base * (1 + exp(deactivation_exponent(T₂₅, ΔS, ΔHd))) /
-                  (1 + exp(deactivation_exponent(T,   ΔS, ΔHd)))
-end
-
-# Heskel et al. (2016) leaf-respiration temperature response, in Celsius, normalized
-# to 1 at 25 °C.
-@inline function heskel_respiration_scaling(T, b, c)
-    Tᶜ   = T - oftype(T, celsius_to_kelvin)
-    T₂₅ᶜ = oftype(T, 25)
-    return exp(b * (Tᶜ - T₂₅ᶜ) + c * (Tᶜ^2 - T₂₅ᶜ^2))
-end
 
 """
     PeakedArrheniusParameters(FT = Oceananigans.defaults.FloatType;
@@ -45,7 +14,7 @@ end
 Parameters of the peaked Arrhenius temperature response of a photosynthetic
 capacity: `activation_energy` `ΔHᵃ` (J mol⁻¹), `entropy` `ΔS` (J mol⁻¹ K⁻¹),
 and `deactivation_energy` `ΔHᵈ` (J mol⁻¹). The Kattge & Knorr (2007) values for
-`Vcmax`/`Jmax` are the [`FarquharPhotosynthesis`](@ref) defaults.
+`Vcmax`/`Jmax` are the [`RubiscoLightLimitedPhotosynthesis`](@ref) defaults.
 """
 struct PeakedArrheniusParameters{FT}
     activation_energy   :: FT
@@ -87,6 +56,42 @@ Base.summary(p::HeskelParameters) =
            ", curvature=", prettysummary(p.curvature), ")")
 Base.show(io::IO, p::HeskelParameters) = print(io, summary(p))
 
+"""
+    temperature_response(T, parameters)
+
+Temperature response of a photosynthesis rate parameter given at 25 °C: the ratio of
+its value at `T` (K) to its value at `T₂₅ = 298.15 K`. An activation energy `ΔH`
+(J mol⁻¹) gives the Arrhenius form `exp[ΔH (T − T₂₅) / (T₂₅ R T)]` (ClimaLand Eq C6);
+[`PeakedArrheniusParameters`](@ref) add the high-temperature deactivation of `Vcmax`
+and `Jmax`; [`HeskelParameters`](@ref) give the leaf-respiration response, quadratic
+in the Celsius temperature.
+"""
+@inline function temperature_response(T, ΔH::Number)
+    T₂₅ = oftype(T, physiology_reference_temperature)
+    R   = oftype(T, default_gas_constant)
+    return exp(ΔH * (T - T₂₅) / (T₂₅ * R * T))
+end
+
+# Deactivation exponent `(ΔS T − ΔHd)/(R T)` of the peaked Arrhenius form.
+@inline function deactivation_exponent(T, ΔS, ΔHd)
+    R = oftype(T, default_gas_constant)
+    return (T * ΔS - ΔHd) / (R * T)
+end
+
+@inline function temperature_response(T, p::PeakedArrheniusParameters)
+    ΔS, ΔHd = p.entropy, p.deactivation_energy
+    T₂₅  = oftype(T, physiology_reference_temperature)
+    base = temperature_response(T, p.activation_energy)
+    return base * (1 + exp(deactivation_exponent(T₂₅, ΔS, ΔHd))) /
+                  (1 + exp(deactivation_exponent(T,   ΔS, ΔHd)))
+end
+
+@inline function temperature_response(T, p::HeskelParameters)
+    Tᶜ   = T - oftype(T, celsius_to_kelvin)
+    T₂₅ᶜ = oftype(T, 25)
+    return exp(p.slope * (Tᶜ - T₂₅ᶜ) + p.curvature * (Tᶜ^2 - T₂₅ᶜ^2))
+end
+
 # Smooth (θ-quadratic) minimum of two positive rates — the standard co-limitation
 # smoothing (Collatz/Bonan): the smaller root of `θ x² − (a+b) x + a b = 0`.
 # As `θ → 1` it approaches `min(a, b)` but stays differentiable. The discriminant
@@ -98,14 +103,15 @@ Base.show(io::IO, p::HeskelParameters) = print(io, summary(p))
 end
 
 """
-    struct FarquharPhotosynthesis
+    struct RubiscoLightLimitedPhotosynthesis
 
-C3 photosynthesis after [Farquhar et al. (1980)](@cite farquhar1980): net CO₂
-assimilation `Aₙ` is the (smoothly) co-limited minimum of the Rubisco-limited
-rate `Aᶜ` and the light (RuBP-regeneration)-limited rate `Aⱼ`, less dark
-respiration `Rᵈ`. Rate parameters are given at 25 °C and scaled to leaf
-temperature: `Vcmax`/`Jmax` by a peaked Arrhenius factor, `Rᵈ` by the Heskel (2016)
-form, and `Γ*`/`Kc`/`Ko` by plain Arrhenius. The peaked-Arrhenius entropies and
+C3 photosynthesis of the Farquhar–von Caemmerer–Berry (FvCB) model
+([Farquhar et al. (1980)](@cite farquhar1980)): net CO₂ assimilation `Aₙ` is the
+(smoothly) co-limited minimum of the Rubisco-limited rate `Aᶜ` and the light
+(RuBP-regeneration)-limited rate `Aⱼ`, less dark respiration `Rᵈ`. Rate parameters
+are given at 25 °C and scaled to leaf temperature: `Vcmax`/`Jmax` by a peaked
+Arrhenius factor, `Rᵈ` by the Heskel (2016) form, and `Γ*`/`Kc`/`Ko` by plain
+Arrhenius. The peaked-Arrhenius entropies and
 `jmax_to_vcmax` are Kattge & Knorr (2007) dataset means, a fixed temperate canopy;
 CTSM acclimates them to the 10-day canopy temperature `T` (°C) as
 `ΔSᵛ = 668.39 − 1.07 T`, `ΔSʲ = 659.70 − 0.75 T`, `Jmax25/Vcmax25 = 2.59 − 0.035 T`.
@@ -125,7 +131,7 @@ Fields (all at 25 °C unless noted):
 - `compensation_activation_energy`, `kc_activation_energy`, `ko_activation_energy` :
   plain-Arrhenius activation energies of `Γ★`, `Kc`, `Ko` (J mol⁻¹).
 """
-struct FarquharPhotosynthesis{FT, PV, PJ, H}
+struct RubiscoLightLimitedPhotosynthesis{FT, PV, PJ, H}
     Vcmax25              :: FT
     jmax_to_vcmax        :: FT
     respiration_to_vcmax :: FT
@@ -144,32 +150,32 @@ struct FarquharPhotosynthesis{FT, PV, PJ, H}
     ko_activation_energy :: FT
 end
 
-function FarquharPhotosynthesis(FT=Oceananigans.defaults.FloatType;
-                                Vcmax25              = 5e-5,
-                                jmax_to_vcmax        = 1.67,
-                                respiration_to_vcmax = 0.015,
-                                quantum_yield        = 0.425,
-                                Γ★25                 = 4.332,
-                                Kc25                 = 39.97,
-                                Ko25                 = 27480,
-                                O₂                   = 0.209,
-                                θⱼ                   = 0.9,
-                                θᶜⱼ                  = 0.98,
-                                vcmax_response       = PeakedArrheniusParameters(FT;
-                                                           activation_energy = 71513,
-                                                           entropy = 649,
-                                                           deactivation_energy = 200000),
-                                jmax_response        = PeakedArrheniusParameters(FT;
-                                                           activation_energy = 49884,
-                                                           entropy = 646,
-                                                           deactivation_energy = 200000),
-                                respiration_response = HeskelParameters(FT),
-                                compensation_activation_energy = 37830,
-                                kc_activation_energy = 79430,
-                                ko_activation_energy = 36380)
+function RubiscoLightLimitedPhotosynthesis(FT=Oceananigans.defaults.FloatType;
+                                           Vcmax25              = 5e-5,
+                                           jmax_to_vcmax        = 1.67,
+                                           respiration_to_vcmax = 0.015,
+                                           quantum_yield        = 0.425,
+                                           Γ★25                 = 4.332,
+                                           Kc25                 = 39.97,
+                                           Ko25                 = 27480,
+                                           O₂                   = 0.209,
+                                           θⱼ                   = 0.9,
+                                           θᶜⱼ                  = 0.98,
+                                           vcmax_response       = PeakedArrheniusParameters(FT;
+                                                                      activation_energy = 71513,
+                                                                      entropy = 649,
+                                                                      deactivation_energy = 200000),
+                                           jmax_response        = PeakedArrheniusParameters(FT;
+                                                                      activation_energy = 49884,
+                                                                      entropy = 646,
+                                                                      deactivation_energy = 200000),
+                                           respiration_response = HeskelParameters(FT),
+                                           compensation_activation_energy = 37830,
+                                           kc_activation_energy = 79430,
+                                           ko_activation_energy = 36380)
 
-    return FarquharPhotosynthesis{FT, typeof(vcmax_response),
-                                  typeof(jmax_response), typeof(respiration_response)}(
+    return RubiscoLightLimitedPhotosynthesis{FT, typeof(vcmax_response),
+                                             typeof(jmax_response), typeof(respiration_response)}(
         convert(FT, Vcmax25), convert(FT, jmax_to_vcmax), convert(FT, respiration_to_vcmax),
         convert(FT, quantum_yield), convert(FT, Γ★25), convert(FT, Kc25),
         convert(FT, Ko25), convert(FT, O₂), convert(FT, θⱼ), convert(FT, θᶜⱼ),
@@ -178,8 +184,8 @@ function FarquharPhotosynthesis(FT=Oceananigans.defaults.FloatType;
         convert(FT, kc_activation_energy), convert(FT, ko_activation_energy))
 end
 
-Base.summary(::FarquharPhotosynthesis{FT}) where FT = "FarquharPhotosynthesis{$FT}"
-Base.show(io::IO, p::FarquharPhotosynthesis) = print(io, summary(p),
+Base.summary(::RubiscoLightLimitedPhotosynthesis{FT}) where FT = "RubiscoLightLimitedPhotosynthesis{$FT}"
+Base.show(io::IO, p::RubiscoLightLimitedPhotosynthesis) = print(io, summary(p),
     "(Vcmax25=", prettysummary(p.Vcmax25), ")")
 
 """
@@ -191,16 +197,15 @@ air pressure `P` (Pa), and moisture-stress factor `β ∈ [0, 1]`. `β` multipli
 photosynthetic capacities `Vcmax`, `Jmax` (Egea-type stress), so it propagates to
 both `Aₙ` and — through the Medlyn coupling — the stomatal conductance.
 """
-@inline function net_assimilation(p::FarquharPhotosynthesis, ci, APAR, Tˡᵉᵃᶠ, P, β)
-    Γ★ = p.Γ★25 * arrhenius_scaling(Tˡᵉᵃᶠ, p.compensation_activation_energy) * P / oftype(P, 101325)
-    Kc = p.Kc25 * arrhenius_scaling(Tˡᵉᵃᶠ, p.kc_activation_energy)
-    Ko = p.Ko25 * arrhenius_scaling(Tˡᵉᵃᶠ, p.ko_activation_energy)
+@inline function net_assimilation(p::RubiscoLightLimitedPhotosynthesis, ci, APAR, Tˡᵉᵃᶠ, P, β)
+    Γ★ = p.Γ★25 * temperature_response(Tˡᵉᵃᶠ, p.compensation_activation_energy) * P / oftype(P, 101325)
+    Kc = p.Kc25 * temperature_response(Tˡᵉᵃᶠ, p.kc_activation_energy)
+    Ko = p.Ko25 * temperature_response(Tˡᵉᵃᶠ, p.ko_activation_energy)
     Km = Kc * (1 + p.O₂ * P / Ko)
 
-    Vcmax = β * p.Vcmax25 * peaked_arrhenius(Tˡᵉᵃᶠ, p.vcmax_response)
-    Jmax  = β * p.jmax_to_vcmax * p.Vcmax25 * peaked_arrhenius(Tˡᵉᵃᶠ, p.jmax_response)
-    Rd    = p.respiration_to_vcmax * p.Vcmax25 *
-            heskel_respiration_scaling(Tˡᵉᵃᶠ, p.respiration_response.slope, p.respiration_response.curvature)
+    Vcmax = β * p.Vcmax25 * temperature_response(Tˡᵉᵃᶠ, p.vcmax_response)
+    Jmax  = β * p.jmax_to_vcmax * p.Vcmax25 * temperature_response(Tˡᵉᵃᶠ, p.jmax_response)
+    Rd    = p.respiration_to_vcmax * p.Vcmax25 * temperature_response(Tˡᵉᵃᶠ, p.respiration_response)
 
     # Electron transport rate: smooth minimum of light supply and Jmax.
     J = smooth_minimum(p.quantum_yield * APAR, Jmax, p.θⱼ)
