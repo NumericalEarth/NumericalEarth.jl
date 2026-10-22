@@ -225,7 +225,7 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyGroundSurface
 | ``\mathcal{Q}^{g}`` | `ground_heat_flux` | ground heat flux | Skin→bulk conduction ``\mathcal{Q}^{g} = \Lambda^{g}(T^{g} - T^{\mathrm{la}})``, positive down (W m⁻²) |
 | ``H^{\mathrm{leaf}}``, ``H^{g}`` | – | per-source sensible heat | Leaf and ground sensible heat into the canopy air, positive up (W m⁻²) |
 | ``LE^{\mathrm{leaf}}``, ``LE^{g}`` | – | per-source latent heat | Leaf and ground latent heat into the canopy air, positive up (W m⁻²) |
-| ``g_s`` | – | stomatal conductance | Leaf stomatal conductance from the [`AbstractStomatalConductance`](@ref) model (mol m⁻² s⁻¹) |
+| ``g_s`` | – | stomatal conductance | Leaf stomatal conductance from a [`MedlynConductance`](@ref) or [`JarvisConductance`](@ref) (mol m⁻² s⁻¹) |
 | ``g^c`` | – | canopy conductance | Bulk stomatal conductance ``g^c = L g_s``, mass units (kg m⁻² s⁻¹) |
 | ``w^{\mathrm{lb}}`` | `leaf_boundary_layer_velocity` | leaf boundary-layer velocity | Per-leaf-area transfer velocity through the leaf boundary layer (m s⁻¹) |
 | ``g^{\mathrm{lb}}`` | – | leaf boundary-layer mass conductance | ``g^{\mathrm{lb}} = \rho^{\mathrm{at}} L w^{\mathrm{lb}}``; the stomata-free wet-leaf vapor path (kg m⁻² s⁻¹) |

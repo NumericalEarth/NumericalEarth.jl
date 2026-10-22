@@ -39,22 +39,22 @@ function TiledLandInterface(grid, atmosphere, land;
                             bare_fluxes            = default_atmosphere_land_fluxes(land, eltype(grid)),
                             velocity_difference    = RelativeVelocity())
 
-    surface = default_al_temperature(land)
+    surface = land_surface(land)
     vegetated, bare = surface.vegetated, surface.bare
     skin_conductance(bare.temperature) == skin_conductance(vegetated.temperature) ||
         throw(ArgumentError("the bare and vegetated tiles must share the skin conductance Λᵍ"))
 
-    vegetated_interface = atmosphere_land_interface(grid, atmosphere, land;
+    vegetated_interface = atmosphere_land_interface(grid, atmosphere, land, vegetated;
                                                     fluxes              = vegetated_fluxes,
                                                     temperature         = vegetated.temperature,
                                                     specific_humidity   = vegetated.specific_humidity,
                                                     velocity_difference = velocity_difference)
 
-    bare_interface = atmosphere_land_interface(grid, atmosphere, land;
+    bare_interface = atmosphere_land_interface(grid, atmosphere, land, bare;
                                                fluxes              = bare_fluxes,
                                                temperature         = bare.temperature,
-                                               velocity_difference = velocity_difference,
-                                               specific_humidity   = bare.specific_humidity)
+                                               specific_humidity   = bare.specific_humidity,
+                                               velocity_difference = velocity_difference)
 
     fluxes      = AtmosphereSurfaceFluxes(grid)
     temperature = build_interface_temperature(vegetated.temperature, grid)
@@ -106,7 +106,7 @@ end
                                            fraction, fraction_time_interpolator, grid, time,
                                            radiation_properties, radiation_state)
     i, j = @index(Global, NTuple)
-    f = clamp(surface_field_value(fraction, i, j, fraction_time_interpolator), 0, 1)
+    f = clamp(stateindex(fraction, i, j, 1, fraction_time_interpolator), 0, 1)
     g = 1 - f
     bare_radiation = air_land_interface_radiation_state(radiation_properties, radiation_state,
                                                        i, j, size(grid, 3), grid, time)
@@ -152,5 +152,6 @@ end
     end
 end
 
-land_surface_fluxes(interface::TiledLandInterface, bulk_temperature) = land_surface_fluxes(interface.temperature)
+land_surface_fluxes(interface::TiledLandInterface, bulk_temperature) =
+    land_surface_fluxes(interface.temperature, interface, bulk_temperature)
 radiative_surface(interface::TiledLandInterface, albedo, emissivity) = radiative_surface(interface.temperature, albedo, emissivity)

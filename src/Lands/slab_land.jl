@@ -111,7 +111,7 @@ struct SlabLand{FT, G, Clk, T, W, B, F, D, P, E, H, S} <: AbstractLand
     temperature   :: T
     water_storage :: W
     saturation    :: B
-    fluxes         :: F
+    fluxes        :: F
     diagnostics   :: D
     prognostic    :: P
     energy        :: E
@@ -150,7 +150,7 @@ function SlabLand(grid;
     temperature   = CenterField(grid)
     water_storage = CenterField(grid)
     saturation    = CenterField(grid)
-    fluxes         = build_flux_accumulators(grid, energy, hydrology)
+    fluxes        = build_flux_accumulators(grid, energy, hydrology)
     diagnostics   = build_diagnostic_accumulators(grid, energy, hydrology)
     prognostic    = build_closure_prognostics(grid, energy, hydrology)
     FT            = eltype(grid)
@@ -177,7 +177,7 @@ function Base.show(io::IO, land::SlabLand)
               "├── temperature:           ", summary(land.temperature), '\n',
               "├── water_storage:         ", summary(land.water_storage), '\n',
               "├── saturation:            ", summary(land.saturation), '\n',
-              "├── fluxes:                 ", keys(land.fluxes), '\n',
+              "├── fluxes:                ", keys(land.fluxes), '\n',
               "├── diagnostics:           ", keys(land.diagnostics), '\n',
               "└── prognostic:            ", keys(land.prognostic))
 end
@@ -311,19 +311,8 @@ Oceananigans.restore_prognostic_state!(land::SlabLand, ::Nothing) = land
 EarthSystemModels.surface_temperature(land::SlabLand) = surface_temperature(land.energy, land)
 surface_saturation(land::SlabLand) = saturation(land.hydrology, land)
 
-# Root-zone saturation the canopy stress reads: the hydrology's own diagnostic when it
-# publishes one (a layered column), otherwise the surface saturation.
-surface_root_zone_saturation(land::SlabLand) =
-    hasproperty(land.diagnostics, :root_zone_saturation) ? land.diagnostics.root_zone_saturation : surface_saturation(land)
-
-# Prognostic canopy water store `Wᶜ` the interface reads to form the wet fraction
-# `fʷᵉᵗ` (a `CanopyGroundSurface`). A `ZeroField` when no hydrology declares a store,
-# so a dry canopy reads `Wᶜ = 0`.
-surface_canopy_water_storage(land::SlabLand) =
-    hasproperty(land.prognostic, :canopy_water_storage) ? land.prognostic.canopy_water_storage : ZeroField()
-
-surface_canopy_water_capacity(land::SlabLand) =
-    hasproperty(land.diagnostics, :canopy_water_capacity) ? land.diagnostics.canopy_water_capacity : ZeroField()
+# Capacity of the canopy water store, `ZeroField` for a hydrology without one.
+canopy_water_capacity(hydrology, land) = ZeroField()
 
 #####
 ##### EarthSystemModel interface — generic SlabLand coupling.
@@ -360,13 +349,13 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     grid = land.grid
     arch = architecture(grid)
 
-    P   = hasproperty(fluxes, :precipitation)              ? fluxes.precipitation              : nothing
-    E   = hasproperty(fluxes, :evaporation)                ? fluxes.evaporation                : nothing
-    Jv  = hasproperty(fluxes, :vapor_flux)                  ? fluxes.vapor_flux                  : nothing
-    Es  = hasproperty(fluxes, :surface_energy_flux)         ? fluxes.surface_energy_flux         : nothing
-    Pl  = hasproperty(fluxes, :liquid_precipitation_flux)   ? fluxes.liquid_precipitation_flux   : nothing
-    Cev = hasproperty(fluxes, :canopy_evaporation)         ? fluxes.canopy_evaporation         : nothing
-    Jt  = hasproperty(fluxes, :transpiration)              ? fluxes.transpiration              : nothing
+    P   = get(fluxes, :precipitation, nothing)
+    E   = get(fluxes, :evaporation, nothing)
+    Jv  = get(fluxes, :vapor_flux, nothing)
+    Es  = get(fluxes, :surface_energy_flux, nothing)
+    Pl  = get(fluxes, :liquid_precipitation_flux, nothing)
+    Cev = get(fluxes, :canopy_evaporation, nothing)
+    Jt  = get(fluxes, :transpiration, nothing)
 
     (isnothing(P) && isnothing(E) &&
      isnothing(Jv) && isnothing(Es) && isnothing(Pl)) && return nothing
@@ -383,9 +372,6 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     return nothing
 end
 
-@inline _maybe_write!(::Nothing, i, j, value) = nothing
-@inline _maybe_write!(field, i, j, value) = @inbounds field[i, j, 1] = value
-
 @kernel function _assemble_slab_land_fluxes!(P, E, Jv, Jt, Es, Pl, Cev, interface_fluxes, Jʳⁿ)
     i, j = @index(Global, NTuple)
     @inbounds begin
@@ -395,13 +381,13 @@ end
         Eᶜ = interface_fluxes.canopy_evaporation[i, j, 1]
         rain = Jʳⁿ[i, j, 1]
     end
-    _maybe_write!(Es,  i, j, 𝒬)
-    _maybe_write!(P,   i, j, rain + max(zero(Jˡᵃ), -Jˡᵃ))
-    _maybe_write!(E,   i, j, max(zero(Jˡᵃ), Jˡᵃ))
-    _maybe_write!(Jv,  i, j, Jˡᵃ)
-    _maybe_write!(Jt,  i, j, max(0, Jᵗ))
-    _maybe_write!(Cev, i, j, Eᶜ)
-    _maybe_write!(Pl,  i, j, rain)
+    maybe_write!(Es,  i, j, 𝒬)
+    maybe_write!(P,   i, j, rain + max(0, -Jˡᵃ))
+    maybe_write!(E,   i, j, max(0, Jˡᵃ))
+    maybe_write!(Jv,  i, j, Jˡᵃ)
+    maybe_write!(Jt,  i, j, max(0, Jᵗ))
+    maybe_write!(Cev, i, j, Eᶜ)
+    maybe_write!(Pl,  i, j, rain)
 end
 
 EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabLand, coupled_model) = nothing
@@ -415,9 +401,9 @@ storage and capacity on the exchange grid.
 function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::SlabLand, grid)
     state = (T                     = surface_temperature(land),
              saturation            = surface_saturation(land),
-             root_zone_saturation  = surface_root_zone_saturation(land),
-             canopy_water_storage  = surface_canopy_water_storage(land),
-             canopy_water_capacity = surface_canopy_water_capacity(land))
+             root_zone_saturation  = get(land.diagnostics, :root_zone_saturation, surface_saturation(land)),
+             canopy_water_storage  = get(land.prognostic, :canopy_water_storage, ZeroField()),
+             canopy_water_capacity = canopy_water_capacity(land.hydrology, land))
     return ComponentExchanger(state, nothing)
 end
 

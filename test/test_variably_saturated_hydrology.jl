@@ -348,7 +348,6 @@ end
         quiet!(land) = foreach(flux -> fill!(flux, 0), land.fluxes)
 
         land = column()
-        @test keys(land.prognostic) == (:water_storage_2,)
         @test :interlayer_liquid_flux_1 in keys(land.diagnostics)
         @test value(land.prognostic.water_storage_2) ≈ 1000h₂ * (ν + θʳ) / 2   # half effective saturation
         @test_throws ArgumentError layered(root_fraction = (1.0,))

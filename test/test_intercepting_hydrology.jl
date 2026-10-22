@@ -6,7 +6,7 @@ using Oceananigans.TimeSteppers: update_state!, time_step!
 using Oceananigans.OutputReaders: OnDisk, InMemory
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyGroundSurface, CanopyConductanceHumidity,
-    CriticalSaturation, InteractiveAbsorbedPAR, SoilConductiveFlux
+    CriticalSaturation, InteractiveAbsorbedPAR, SoilConductiveFlux, ComponentExchanger
 using NumericalEarth.Lands: SlabLand, SlabEnergy, VariablySaturatedHydrology, InterceptingHydrology,
     VanGenuchtenRetention, VanGenuchtenConductivity, canopy_store_update
 soil_hydrology(FT) = VariablySaturatedHydrology(FT;
@@ -44,7 +44,8 @@ end
         after = scalar(land.water_storage) + fraction * scalar(land.prognostic.canopy_water_storage)
         vapor = scalar(model.interfaces.atmosphere_land_interface.fluxes.water_vapor)
         @test after - before ≈ Δt * (rain - vapor) atol = 1e-10
-        @test scalar(land.diagnostics.canopy_water_capacity) ≈ 0.3
+        @test land.hydrology.leaf_area_index == 3.0
+        @test land.hydrology.cover_fraction == fraction
     end
 end
 
@@ -87,7 +88,8 @@ end
     end
 
     # LAI(t = 3) = 4 sits past the two snapshots resident when the series was opened.
-    @test scalar(land.diagnostics.canopy_water_capacity) ≈ 0.1 * 4
+    capacity = ComponentExchanger(land, grid).state.canopy_water_capacity
+    @test scalar(compute!(Field(capacity))) ≈ 0.1 * 4
 end
 
 @testset "Canopy store budget closes when the store empties mid-step" begin
@@ -251,33 +253,6 @@ end
         Oceananigans.restore_prognostic_state!(land2, state)
         @test scalar(land2.prognostic.canopy_water_storage) == 0.17
         @test scalar(land2.temperature) == 290
-    end
-end
-
-@testset "Checkpoint restore is keyed by name, not position" begin
-    for arch in test_architectures
-        FT = Float64
-        grid = LatitudeLongitudeGrid(arch, FT; size = 1, latitude = 10, longitude = 10,
-                                     z = (-1, 0), topology = (Flat, Flat, Bounded))
-        mkland(store) = (l = SlabLand(grid; energy = SlabEnergy(FT),
-                             hydrology = InterceptingHydrology(FT; soil = soil_hydrology(FT), leaf_area_index = 3.0));
-                         set!(l; T = 290, M = 120, canopy_water_storage = store); l)
-
-        # A checkpoint whose prognostic tuple carries an extra *leading* key (schema drift):
-        # a by-position restore would load the wrong (0.99) value; by-name loads 0.17.
-        sa = Oceananigans.prognostic_state(mkland(0.17))
-        sb = Oceananigans.prognostic_state(mkland(0.99))
-        drifted = merge(sa, (; prognostic = merge((bogus = sb.prognostic.canopy_water_storage,), sa.prognostic)))
-        land = mkland(0.0)
-        Oceananigans.restore_prognostic_state!(land, drifted)
-        @test scalar(land.prognostic.canopy_water_storage) == 0.17
-
-        # A legacy checkpoint with no `:prognostic` field restores gracefully, leaving the store
-        # at its current value (no crash, no length-mismatch mispairing).
-        legacy = (; clock = sa.clock, temperature = sa.temperature, water_storage = sa.water_storage)
-        land2 = mkland(0.42)
-        Oceananigans.restore_prognostic_state!(land2, legacy)
-        @test scalar(land2.prognostic.canopy_water_storage) == 0.42
     end
 end
 

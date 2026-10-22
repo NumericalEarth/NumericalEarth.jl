@@ -111,11 +111,8 @@ C3 photosynthesis of the Farquhar–von Caemmerer–Berry (FvCB) model
 (RuBP-regeneration)-limited rate `Aⱼ`, less dark respiration `Rᵈ`. Rate parameters
 are given at 25 °C and scaled to leaf temperature: `Vcmax`/`Jmax` by a peaked
 Arrhenius factor, `Rᵈ` by the Heskel (2016) form, and `Γ*`/`Kc`/`Ko` by plain
-Arrhenius. The peaked-Arrhenius entropies and
-`jmax_to_vcmax` are Kattge & Knorr (2007) dataset means, a fixed temperate canopy;
-CTSM acclimates them to the 10-day canopy temperature `T` (°C) as
-`ΔSᵛ = 668.39 − 1.07 T`, `ΔSʲ = 659.70 − 0.75 T`, `Jmax25/Vcmax25 = 2.59 − 0.035 T`.
-The remaining constants are ClimaLand's.
+Arrhenius. The peaked-Arrhenius entropies and `jmax_to_vcmax` are the Kattge & Knorr
+(2007) dataset means, a fixed temperate canopy; the remaining constants are ClimaLand's.
 
 Fields (all at 25 °C unless noted):
 - `Vcmax25`      : maximum carboxylation rate (mol CO₂ m⁻² s⁻¹).

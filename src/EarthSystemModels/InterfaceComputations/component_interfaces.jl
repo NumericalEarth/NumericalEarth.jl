@@ -28,9 +28,6 @@ mutable struct AtmosphereInterface{J, F, ST, SQ, P, B}
     boundary :: B
 end
 
-AtmosphereInterface(fluxes, formulation, temperature, humidity, properties) =
-    AtmosphereInterface(fluxes, formulation, temperature, humidity, properties, nothing)
-
 validate_zero_plane_displacement(interface::AtmosphereInterface, zᵃᵗ) =
     validate_zero_plane_displacement(interface.flux_formulation, zᵃᵗ)
 
@@ -255,7 +252,7 @@ function atmosphere_ocean_interface(grid,
     interface_specific_humidity = Field{Center, Center, Nothing}(grid)
 
     return AtmosphereInterface(ao_fluxes, ao_flux_formulation, interface_temperature,
-                               interface_specific_humidity, ao_properties)
+                               interface_specific_humidity, ao_properties, nothing)
 end
 
 #####
@@ -292,7 +289,7 @@ function atmosphere_sea_ice_interface(grid,
     interface_specific_humidity = Field{Center, Center, Nothing}(grid)
 
     return AtmosphereInterface(fluxes, ai_flux_formulation, interface_temperature,
-                               interface_specific_humidity, properties)
+                               interface_specific_humidity, properties, nothing)
 end
 
 #####
@@ -510,12 +507,12 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                                properties)
 end
 
-# Default land surface humidity formulation: bulk (saturated where wet, dry otherwise);
-# a `CanopyGroundSurface` temperature formulation closes the humidity slot itself.
-default_al_specific_humidity(temperature, ::Nothing) = nothing
+# Default land surface closures: bulk temperature and bulk humidity (saturated where wet,
+# dry otherwise); a `CanopyGroundSurface` temperature closes the humidity slot itself.
 default_al_temperature(land) = BulkTemperature()
-default_al_specific_humidity(temperature, land) = BulkHumidity(AtmosphericThermodynamics.Liquid())
-default_al_specific_humidity(cas::CanopyGroundSurface, land) = cas
+default_al_specific_humidity(temperature, ::Nothing) = nothing
+default_al_specific_humidity(temperature, land) =
+    temperature isa CanopyGroundSurface ? temperature : BulkHumidity(AtmosphericThermodynamics.Liquid())
 
 # Default atmosphere--land flux formulation. Aerodynamic roughness lengths and the
 # zero-plane displacement are properties of the flux closure, not the land model:

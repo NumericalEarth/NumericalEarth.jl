@@ -13,7 +13,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     AirLandInterfaceState, InterfaceFluxScales, InterfaceVelocities, AirLandRadiationState,
     AreaIndexUndercanopyVelocity, FrictionVelocityUndercanopyVelocity, undercanopy_transfer_velocity,
     SellersSoilResistance, LitterResistance, soil_surface_resistance, litter_resistance,
-    CanopyGroundSurfaceDiagnostics, DiagnosticSkin, kernel_surface_field, surface_field_value
+    DiagnosticSkin, kernel_surface_field
+using NumericalEarth: stateindex
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 build_canopy_air_space(FT; optics...) = CanopyGroundSurface(FT;
     soil_humidity = bare_soil_humidity(FT),
@@ -29,7 +30,6 @@ build_canopy_air_space(FT; optics...) = CanopyGroundSurface(FT;
         ali = model.interfaces.atmosphere_land_interface
         Ts = ali.temperature
 
-        @test Ts isa CanopyGroundSurfaceDiagnostics
         Tᵃᶜ = Array(interior(Ts.interface))[1, 1, 1]
         Tˡᵉᵃᶠ  = Array(interior(Ts.canopy))[1, 1, 1]
         Tᵍ = Array(interior(Ts.ground))[1, 1, 1]
@@ -76,7 +76,6 @@ build_canopy_air_space(FT; optics...) = CanopyGroundSurface(FT;
                                    radiation = nothing,
                                    atmosphere_land_interface_temperature = SoilSkinTemperature(1.5, 0.05; storage = DiagnosticSkin()))
         T = model.interfaces.atmosphere_land_interface.temperature
-        @test T isa Oceananigans.Fields.Field
         @test Array(interior(T))[1, 1, 1] < 300.0   # evaporating skin cooler than the bulk
     end
 
@@ -191,7 +190,7 @@ end
     @test dry.Eʷᵉᵗ == 0
 
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
-    qˡᵉᵃᶠ  = saturation_specific_humidity(ℂ, wet.Tˡᵉᵃᶠ, Ψₐ.p, cas.phase)
+    qˡᵉᵃᶠ  = saturation_specific_humidity(ℂ, wet.Tˡᵉᵃᶠ, Ψₐ.p, cas.canopy_humidity.phase)
     E_ρ = (ρᵃᵗ * LAI * wˡᵇ) * (qˡᵉᵃᶠ - wet.qᵃᶜ)                          # correct (air density)
     E_M = (default_dry_air_molar_mass * LAI * wˡᵇ) * (qˡᵉᵃᶠ - wet.qᵃᶜ)   # erroneous (molar mass)
     @test wet.Eʷᵉᵗ ≈ E_ρ rtol = 1e-6
@@ -453,5 +452,5 @@ end
     # Two snapshots resident; sampling between the third and fourth has to load them first.
     lai = FieldTimeSeries(path, "lai"; backend = InMemory(2), architecture = arch)
     vegetation, interpolator = kernel_surface_field(lai, arch, 2.5)
-    @test surface_field_value(vegetation, 1, 1, interpolator) ≈ 3.5
+    @test stateindex(vegetation, 1, 1, 1, interpolator) ≈ 3.5
 end

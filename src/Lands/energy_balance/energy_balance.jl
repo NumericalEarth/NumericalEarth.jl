@@ -40,18 +40,15 @@ initial_flux(::AbstractEnergyBalance, ::Symbol, grid) = CenterField(grid)
 """
     prognostic_variables(energy::AbstractEnergyBalance) -> Tuple{Vararg{Symbol}}
 
-Names of *extra* prognostic fields this closure owns beyond the container's
-hardcoded `temperature`/`water_storage`. The container sizes the
-`SlabLand.prognostic` `NamedTuple` from these and checkpoints them generically.
-Default: none.
+Names of the prognostic fields this closure owns beyond `temperature`/`water_storage`,
+published into `SlabLand.prognostic`. Default: none.
 """
 prognostic_variables(::AbstractEnergyBalance) = ()
 
 """
     initial_prognostic(energy::AbstractEnergyBalance, name::Symbol, grid)
 
-Build the initial prognostic `Field` for prognostic variable `name`. Defaults to
-a zeroed `CenterField`.
+Build the initial prognostic `Field` for prognostic variable `name`. Defaults to a zeroed `CenterField`.
 """
 initial_prognostic(::AbstractEnergyBalance, ::Symbol, grid) = CenterField(grid)
 

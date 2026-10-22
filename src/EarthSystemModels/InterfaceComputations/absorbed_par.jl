@@ -22,14 +22,9 @@ Fields:
 - `par_fraction`     : PAR/shortwave by energy (≈ 0.45).
 - `photon_per_joule` : mol photons per J in the PAR band (≈ 4.57e-6).
 - `leaf_albedo_par`  : leaf albedo in the PAR band.
-- `extinction`       : Beer–Lambert extinction coefficient `K`, used only when no canopy
-                       supplies a transmittance.
-- `clumping`         : foliage clumping index `Ω ∈ (0, 1]` ([Chen and Black (1992)](@cite chen1992)),
-                       the ratio of the effective to the true leaf area index in the
-                       transmittance `e^{−K Ω L}`: `Ω = 1` is randomly distributed foliage,
-                       `Ω < 1` foliage gathered into crowns and shoots, which leaves gaps and
-                       transmits more light than a random canopy of the same `L`. Used as
-                       `extinction` is.
+- `extinction`, `clumping` : Beer–Lambert extinction `K` and foliage clumping index `Ω ∈ (0, 1]`
+                       ([Chen and Black (1992)](@cite chen1992)) of the transmittance `e^{−K Ω L}`,
+                       used only when no canopy supplies a transmittance.
 """
 struct InteractiveAbsorbedPAR{FT}
     par_fraction     :: FT

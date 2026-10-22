@@ -131,10 +131,10 @@ end
 # qᵛ⁺ = εᵈᵛ⁻¹ pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) pᵛ⁺) at fixed p leaves
 #
 #     dqᵛ⁺/dT = qᵛ⁺ (1 + (1 - εᵈᵛ⁻¹) qᵛ⁺/εᵈᵛ⁻¹) ℒ(T) / (Rᵛ T²) .
-@inline function saturation_humidity_slope(ℂᵃᵗ, Tₛ, pᵃᵗ, phase)
+@inline function saturation_humidity_slope(ℂᵃᵗ, Tₛ, pᵃᵗ, phase,
+                                           qᵛ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tₛ, pᵃᵗ, phase))
     CT    = eltype(ℂᵃᵗ)
     T     = convert(CT, Tₛ)
-    qᵛ⁺   = saturation_specific_humidity(ℂᵃᵗ, T, pᵃᵗ, phase)
     εᵈᵛ⁻¹ = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
     Rᵛ    = AtmosphericThermodynamics.Parameters.R_v(ℂᵃᵗ)
     ℒ     = ifelse(phase isa AtmosphericThermodynamics.Liquid,
@@ -519,8 +519,7 @@ distance from the surface to the bulk temperature node, half the slab depth for 
 node at its center, and `κᵀ` (`conductivity`, W m⁻¹ K⁻¹) the thermal conductivity
 over that distance: the soil's, or that of a thin surface layer (litter, a crust)
 with its own conductivity. No layer of thickness `ℓᵀ` is resolved. Use it through
-[`SoilSkinTemperature`](@ref); `conductivity = 1.5`, `thickness = 0.05` ⇒ `Λᵍ = 30`
-is a reasonable first cut.
+[`SoilSkinTemperature`](@ref).
 """
 struct SoilConductiveFlux{K, Z}
     conductivity :: K   # κᵀ, W m⁻¹ K⁻¹
@@ -696,7 +695,7 @@ struct PrognosticSkin{C}
 end
 
 PrognosticSkin(FT::Type = Oceananigans.defaults.FloatType; heat_capacity = 1e5) =
-    PrognosticSkin(heat_capacity isa Number ? convert(FT, heat_capacity) : heat_capacity)
+    PrognosticSkin(convert_if_number(FT, heat_capacity))
 
 Base.summary(s::PrognosticSkin) = string("PrognosticSkin(C=", prettysummary(s.heat_capacity), ")")
 Base.show(io::IO, s::PrognosticSkin) = print(io, summary(s))
@@ -714,7 +713,7 @@ Interface temperature that closes the surface energy balance
 [`DiagnosticSkin`](@ref) (massless). `Λᵍ → ∞` recovers [`BulkTemperature`](@ref).
 Construct one with [`SoilSkinTemperature`](@ref).
 """
-struct EnergyBalanceTemperature{C, ST}
+struct EnergyBalanceTemperature{ST, C}
     coupling :: C
     storage  :: ST
 end
@@ -722,7 +721,7 @@ end
 EnergyBalanceTemperature(coupling; storage=PrognosticSkin()) =
     EnergyBalanceTemperature(coupling, storage)
 
-const PrognosticEnergyBalanceTemperature = EnergyBalanceTemperature{<:Any, <:PrognosticSkin}
+const PrognosticEnergyBalanceTemperature = EnergyBalanceTemperature{<:PrognosticSkin}
 
 @inline skin_conductance(t::EnergyBalanceTemperature) = skin_conductance(t.coupling)
 
@@ -866,12 +865,9 @@ end
 The solved similarity-theory characteristic scales at an interface: friction
 velocity `u★`, temperature flux scale `θ★`, and specific-humidity flux scale
 `q★`, together with the transfer coefficients `χθ` and `χq` of the iterate that
-produced them (`θ★ = χθ Δθ`, `q★ = χq Δq`). Formulations that need the
-aerodynamic conductance read it as `ρ cᵖ u★ χθ` (heat) and `ρ u★ χq` (vapor)
-instead of reconstructing it from the flux/increment ratio, which is singular
-as the increment crosses zero. Shared by every interface-state type; the
-three-argument constructor zeroes the transfer coefficients (no aerodynamic
-conductance yet — an initial guess).
+produced them (`θ★ = χθ Δθ`, `q★ = χq Δq`), from which the aerodynamic
+conductances `ρ cᵖ u★ χθ` (heat) and `ρ u★ χq` (vapor) follow. The
+three-argument constructor zeroes the transfer coefficients (an initial guess).
 """
 struct InterfaceFluxScales{FT}
     u★ :: FT
@@ -1022,6 +1018,17 @@ end
 
 @inline rebuild_interface_state(Ψ⁻::AirLandInterfaceState, fluxes, T, q) =
     AirLandInterfaceState(fluxes, Ψ⁻.velocities, T, q, Ψ⁻.hydrology, Ψ⁻.energy, Ψ⁻.vegetation)
+
+# The next iterate at the node `(T, q)`, its scales re-evaluated there from the previous
+# iterate's transfer coefficients.
+@inline function rebuild_interface_state(Ψ⁻, Ψₐ, ℙₐ, T, q)
+    FT  = eltype(Ψ⁻)
+    θᵃᵗ = convert(FT, surface_atmosphere_temperature(Ψₐ, ℙₐ))
+    χθ  = Ψ⁻.fluxes.χθ
+    χq  = Ψ⁻.fluxes.χq
+    fluxes = InterfaceFluxScales(Ψ⁻.fluxes.u★, convert(FT, χθ * (θᵃᵗ - T)), convert(FT, χq * (Ψₐ.q - q)), χθ, χq)
+    return rebuild_interface_state(Ψ⁻, fluxes, convert(FT, T), convert(FT, q))
+end
 
 function Base.show(io::IO, Ψ::AbstractInterfaceState)
     print(io, nameof(typeof(Ψ)), "(",

@@ -4,7 +4,7 @@ using Oceananigans
 using Oceananigans.TimeSteppers: time_step!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyGroundSurface, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR,
-    SoilConductiveFlux, CanopyGroundSurfaceDiagnostics,
+    SoilConductiveFlux,
     DiagnosticCanopyAir, PrognosticCanopyAir, advance_canopy_air, node_memory,
     AtmosphericThermodynamics
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
@@ -24,7 +24,6 @@ prognostic_test_model(arch, cas; shortwave = 600.0, longwave = 350.0,
 
 @testset "CanopyGroundSurface defaults to a diagnostic node" begin
     cas = prognostic_test_cas(Float64)
-    @test cas.storage isa DiagnosticCanopyAir
 
     # A diagnostic node is massless, so it carries no state across time steps and the
     # flux path stays the one the massless closure has always taken.
@@ -66,7 +65,6 @@ end
         # of the first solve and the state fields are populated.
         mp = prognostic_test_model(arch, prognostic_test_cas(Float64; storage = PrognosticCanopyAir()))
         Ts = mp.interfaces.atmosphere_land_interface.temperature
-        @test Ts isa CanopyGroundSurfaceDiagnostics
         T₀ = scalar(mp.land.surface.prognostic.temperature)
         q₀ = scalar(mp.land.surface.prognostic.specific_humidity)
         @test 285 < T₀ < 320

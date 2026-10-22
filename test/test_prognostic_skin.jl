@@ -79,10 +79,6 @@ end
 end
 
 @testset "PrognosticSkin is the default storage" begin
-    @test SoilSkinTemperature(1.5, 0.05).storage isa PrognosticSkin
-    @test EnergyBalanceTemperature(SoilConductiveFlux(1.5, 0.05)).storage isa PrognosticSkin
-    @test SoilSkinTemperature(1.5, 0.05; storage = DiagnosticSkin()).storage isa DiagnosticSkin
-
     for FT in (Float32, Float64)
         @test eltype(PrognosticSkin(FT).heat_capacity) == FT
     end

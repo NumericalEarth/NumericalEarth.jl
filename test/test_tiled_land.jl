@@ -5,8 +5,8 @@ using Oceananigans: set!, interior, CenterField
 using Oceananigans.TimeSteppers: update_state!, time_step!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyGroundSurface, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR,
-    SoilConductiveFlux, TiledLandInterface, EnergyBalanceTemperature,
-    SimilarityTheoryFluxes, atmosphere_land_stability_functions, CanopyGroundSurfaceDiagnostics
+    SoilConductiveFlux, TiledLandInterface,
+    SimilarityTheoryFluxes, atmosphere_land_stability_functions
 build_tiled_canopy_air_space(FT) = CanopyGroundSurface(FT;
     soil_humidity = bare_soil_humidity(FT),
     canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index = 3.0, moisture_stress = CriticalSaturation(0.5),
@@ -43,7 +43,6 @@ end
         # --- Blended output is finite, physical, and drives the slab by conduction. ---
         model = tiled_land_model(arch, cas; fraction = 0.6)
         ti = model.interfaces.atmosphere_land_interface
-        @test ti.temperature isa CanopyGroundSurfaceDiagnostics
 
         𝒬ᵀ = scalar(ti.fluxes.sensible_heat)
         𝒬ᵛ = scalar(ti.fluxes.latent_heat)
@@ -63,7 +62,6 @@ end
         f = 0.6
         veg = ti.vegetated
         bare = ti.bare
-        @test bare.properties.temperature_formulation isa EnergyBalanceTemperature
         for name in (:sensible_heat, :latent_heat, :water_vapor, :x_momentum, :y_momentum)
             b  = scalar(getproperty(ti.fluxes, name))
             fv = scalar(getproperty(veg.fluxes, name))

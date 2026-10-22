@@ -2,43 +2,24 @@ include("runtests_setup.jl")
 
 using CUDA
 using Oceananigans
-using Oceananigans: set!, interior
-using Oceananigans.TimeSteppers: update_state!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    EnergyBalanceTemperature, SoilSkinTemperature, DiagnosticSkin,
-    BulkTemperature, SoilConductiveFlux, FractionalHumidity,
+    SoilSkinTemperature, DiagnosticSkin, BulkTemperature, FractionalHumidity,
     compute_interface_temperature,
     AirLandInterfaceState, InterfaceFluxScales, InterfaceVelocities
-using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
-using NumericalEarth.Atmospheres: PrescribedAtmosphere, AtmosphereThermodynamicsParameters
+using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 # Solve the coupled single-column interface and return the skin temperature, the turbulent
 # flux sum, and the conductive flux Λᵍ(Tˡᵃ − Tᵍ). With radiation off the massless balance
 # reduces to Λᵍ(Tˡᵃ − Tᵍ) = 𝒬ᵀ + 𝒬ᵛ, so the two agree at convergence.
 function skin_column(arch; temperature, Tair, Tland, efficiency, conductivity=1.5, thickness=0.05)
-    FT = Float64
-    grid = LatitudeLongitudeGrid(arch, FT; size=1, latitude=10, longitude=10,
-                                 z=(-1, 0), topology=(Flat, Flat, Bounded))
-    atmosphere = PrescribedAtmosphere(grid; surface_layer_height=10, boundary_layer_height=512)
-    fill!(parent(atmosphere.temperature), Tair)
-    fill!(parent(atmosphere.specific_humidity), 0.006)
-    fill!(parent(atmosphere.velocities.u), 5.0)
-    fill!(parent(atmosphere.pressure), 101325.0)
-    land = SlabLand(grid; hydrology=BucketHydrology(FT; maximum_water_storage=150.0), energy=SlabEnergy(FT))
-    set!(land; T=Tland)
-    fill!(parent(land.water_storage), 90.0)   # 𝒮 = 0.6
-    model = AtmosphereLandModel(atmosphere, land; radiation=nothing,
-                                atmosphere_land_interface_temperature=temperature,
-                                atmosphere_land_interface_specific_humidity=FractionalHumidity(AtmosphericThermodynamics.Liquid(); efficiency))
-    update_state!(model.land)
-    update_state!(model)
-    ai = model.interfaces.atmosphere_land_interface
-    Tin = Array(interior(ai.temperature))[1, 1, 1]
-    QT  = Array(interior(ai.fluxes.sensible_heat))[1, 1, 1]
-    QV  = Array(interior(ai.fluxes.latent_heat))[1, 1, 1]
+    model = coupled_land_model(arch; Tair, Tland, qair=0.006, wind=5.0, water=90.0, radiation=nothing,
+                               atmosphere_land_interface_temperature=temperature,
+                               atmosphere_land_interface_specific_humidity=FractionalHumidity(AtmosphericThermodynamics.Liquid(); efficiency))
+    ai  = model.interfaces.atmosphere_land_interface
+    Tin = scalar(ai.temperature)
     Λ   = conductivity / thickness
-    return Tin, QT + QV, Λ * (Tland - Tin)
+    return Tin, scalar(ai.fluxes.sensible_heat) + scalar(ai.fluxes.latent_heat), Λ * (Tland - Tin)
 end
 
 @testset "EnergyBalanceTemperature" begin

@@ -31,9 +31,6 @@ struct InterceptingHydrology{S, L, C, FT} <: AbstractHydrology
     clumping                 :: FT
 end
 
-@inline canopy_lai_property(x::Number, FT) = convert(FT, x)
-@inline canopy_lai_property(x, FT) = x
-
 function InterceptingHydrology(FT::Type = Oceananigans.defaults.FloatType;
                                soil,
                                leaf_area_index = nothing,
@@ -42,8 +39,8 @@ function InterceptingHydrology(FT::Type = Oceananigans.defaults.FloatType;
                                clumping = 1,
                                cover_fraction = nothing)
     return InterceptingHydrology(soil,
-                                 canopy_lai_property(leaf_area_index, FT),
-                                 canopy_lai_property(cover_fraction, FT),
+                                 convert_if_number(FT, leaf_area_index),
+                                 convert_if_number(FT, cover_fraction),
                                  convert(FT, capacity_per_leaf_area),
                                  convert(FT, extinction),
                                  convert(FT, clumping))
@@ -64,8 +61,7 @@ flux_variables(h::InterceptingHydrology) =
     merge_unique(flux_variables(h.soil), (:liquid_precipitation_flux, :canopy_evaporation))
 
 diagnostic_variables(h::InterceptingHydrology) =
-    merge_unique(diagnostic_variables(h.soil),
-                 (:throughfall, :canopy_water_storage_tendency, :canopy_water_capacity))
+    merge_unique(diagnostic_variables(h.soil), (:throughfall, :canopy_water_storage_tendency))
 
 initial_flux(h::InterceptingHydrology, name::Symbol, grid) = initial_flux(h.soil, name, grid)
 initial_diagnostic(h::InterceptingHydrology, name::Symbol, grid) = initial_diagnostic(h.soil, name, grid)
@@ -123,23 +119,16 @@ function time_step!(h::InterceptingHydrology, land, Δt, time)
     return nothing
 end
 
-# The store capacity `Wᶜᵐᵃˣ = c·LAI` the interface normalizes the wet fraction by.
-function update_diagnostics!(h::InterceptingHydrology, land)
-    update_diagnostics!(h.soil, land)
-    arch = architecture(land.grid)
-    launch!(arch, land.grid, :xy, _canopy_capacity!,
-            land.diagnostics.canopy_water_capacity, h, land.grid, land.clock.time)
-    return nothing
-end
-
-@kernel function _canopy_capacity!(capacity, h, grid, time)
-    i, j = @index(Global, NTuple)
-    FT  = eltype(capacity)
-    LAI = convert(FT, stateindex(h.leaf_area_index, i, j, 1, grid, Time(time), (Center, Center, Center)))
-    @inbounds capacity[i, j, 1] = h.capacity_per_leaf_area * LAI
-end
+update_diagnostics!(h::InterceptingHydrology, land) = update_diagnostics!(h.soil, land)
 
 saturation(h::InterceptingHydrology, land) = saturation(h.soil, land)
+
+# The store capacity `Wᶜᵐᵃˣ = c·LAI` the interface normalizes the wet fraction by.
+canopy_water_capacity(h::InterceptingHydrology, land) =
+    KernelFunctionOperation{Center, Center, Nothing}(canopy_water_capacity, land.grid, h, land.clock)
+
+@inline canopy_water_capacity(i, j, k, grid, h, clock) =
+    h.capacity_per_leaf_area * stateindex(h.leaf_area_index, i, j, 1, grid, Time(clock.time), (Center, Center, Center))
 
 Base.summary(h::InterceptingHydrology) =
     string("InterceptingHydrology(soil=", summary(h.soil),

@@ -29,18 +29,15 @@ initial_flux(::AbstractHydrology, ::Symbol, grid) = CenterField(grid)
 """
     prognostic_variables(hydrology::AbstractHydrology) -> Tuple{Vararg{Symbol}}
 
-Names of *extra* prognostic fields this closure owns beyond the container's
-hardcoded `temperature`/`water_storage` (e.g. a canopy water store). The container
-sizes the `SlabLand.prognostic` `NamedTuple` from these and checkpoints them
-generically. Default: none.
+Names of the prognostic fields this closure owns beyond `temperature`/`water_storage`
+(e.g. a canopy water store), published into `SlabLand.prognostic`. Default: none.
 """
 prognostic_variables(::AbstractHydrology) = ()
 
 """
     initial_prognostic(hydrology::AbstractHydrology, name::Symbol, grid)
 
-Build the initial prognostic `Field` for prognostic variable `name`. Defaults to
-a zeroed `CenterField`.
+Build the initial prognostic `Field` for prognostic variable `name`. Defaults to a zeroed `CenterField`.
 """
 initial_prognostic(::AbstractHydrology, ::Symbol, grid) = CenterField(grid)
 

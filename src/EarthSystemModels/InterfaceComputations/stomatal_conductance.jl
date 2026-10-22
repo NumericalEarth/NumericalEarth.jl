@@ -3,8 +3,6 @@
 ##### photosynthesis-coupled `MedlynConductance`.
 #####
 
-abstract type AbstractStomatalConductance end
-
 #####
 ##### Medlyn (2011) optimality stomatal conductance
 #####
@@ -26,7 +24,7 @@ neglected. The `√VPD` water-use-efficiency response is *derived* from optimali
 so a single parameter `g₁` carries the humidity sensitivity. Defaults are the
 ClimaLand US-Var grass values (`g₁ = 166 √Pa`).
 """
-struct MedlynConductance{FT} <: AbstractStomatalConductance
+struct MedlynConductance{FT}
     g0                :: FT   # cuticular / minimum conductance (mol m⁻² s⁻¹)
     g1                :: FT   # slope parameter (√Pa)
     diffusivity_ratio :: FT   # 1.6 (H₂O/CO₂ diffusivity ratio)
@@ -93,7 +91,7 @@ Fields:
 - `optimal_temperature`   : optimal leaf temperature (K).
 - `temperature_curvature` : temperature-factor curvature (K⁻²).
 """
-struct JarvisConductance{FT} <: AbstractStomatalConductance
+struct JarvisConductance{FT}
     maximum_conductance   :: FT
     par_half_saturation   :: FT
     vpd_sensitivity       :: FT

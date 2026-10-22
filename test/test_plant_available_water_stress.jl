@@ -12,8 +12,8 @@ using NumericalEarth.Lands: van_genuchten_saturation, effective_saturation
 # off the land's retention curve, not off the closure.
 function land_state(𝒮, curve, stress=PlantAvailableWaterStress(typeof(𝒮)); j=1)
     return (saturation=𝒮, root_zone_saturation=𝒮,
-            field_capacity_saturation=effective_saturation(1, j, nothing, curve, stress.field_capacity_head),
-            wilting_saturation=effective_saturation(1, j, nothing, curve, stress.wilting_point_head))
+            field_capacity_saturation=effective_saturation(1, j, 1, nothing, curve, stress.field_capacity_head),
+            wilting_saturation=effective_saturation(1, j, 1, nothing, curve, stress.wilting_point_head))
 end
 
 # The moisture availability β the formulation derives from that state.

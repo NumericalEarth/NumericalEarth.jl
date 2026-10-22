@@ -880,23 +880,10 @@ $(TYPEDSIGNATURES)
 
 Stability functions for the atmosphere--land interface: the free-convection matched
 unstable functions of [zeng1998intercomparison](@citet)
-([`FreeConvectionMomentumStabilityFunction`](@ref), [`FreeConvectionScalarStabilityFunction`](@ref)) and
-the linear stable function ``ψ = -5 ζ``, bounded at ``ζ ≤`` `stable_maximum_stability_parameter`.
-
-Both branches of the plain Businger--Dyer form used over the ocean misbehave over
-land, where calm transitions push ``|ζ|`` far outside its fitted range:
-
-  - unstable: ``ψ`` grows like ``\\log(4|ζ|)``, so the similarity profile
-    ``\\log(h / ℓ) - ψ(h / L_★) + ψ(ℓ / L_★)`` collapses toward zero and the transfer
-    coefficients grow without bound. The matched form removes the collapse.
-  - stable: extrapolating ``ψ = -5 ζ`` to the Large--Yeager ocean bound ``ζ ≤ 10``
-    cuts each transfer coefficient by ``\\sim 10 ×``, a near-decoupled state that
-    drives excessive surface cooling [louis1979parametric](@citep) and suppresses
-    turbulence that observations sustain to ``Ri_b ≥ 1`` [best2001modelling](@citep).
-    Bounding the stable branch is standard land practice (CLM4.5 at ``ζ = 2``,
-    CLM5 at ``0.5``, Noah-MP at ``1``).
-
-Ocean and sea-ice stability functions are unchanged.
+([`FreeConvectionMomentumStabilityFunction`](@ref), [`FreeConvectionScalarStabilityFunction`](@ref)),
+bounded at ``|ζ| ≤`` `maximum_stability_parameter`, and the linear stable function
+``ψ = -5 ζ``, bounded at ``ζ ≤`` `stable_maximum_stability_parameter` (CLM4.5 bounds it at 2,
+CLM5 at 0.5, Noah-MP at 1).
 """
 function atmosphere_land_stability_functions(FT=Oceananigans.defaults.FloatType;
                                              maximum_stability_parameter = 100,

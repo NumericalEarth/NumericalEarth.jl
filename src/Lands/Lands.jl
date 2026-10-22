@@ -54,7 +54,7 @@ using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Architectures: CPU, architecture, on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField, interior, regrid!,
+using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField, interior, regrid!, compute!,
                            fractional_horizontal_area, dimension_faces
 using Oceananigans.Grids: grid_name, Center, Face, LatitudeLongitudeGrid, Bounded, Flat,
                           znodes, λnode, φnode
@@ -75,7 +75,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: InterfaceComputati
                                                  EnergyBalanceTemperature, DiagnosticSkin,
                                                  PrognosticCanopyGroundSurface, PrognosticEnergyBalanceTemperature,
                                                  interface_kernel_parameters, ComponentExchanger,
-                                                 canopy_transmittance, canopy_leaf_area_index, land_surface_fluxes
+                                                 canopy_transmittance, canopy_leaf_area_index, land_surface_fluxes,
+                                                 convert_if_number, maybe_write!
 
 # Extended by external land models
 function land_model end

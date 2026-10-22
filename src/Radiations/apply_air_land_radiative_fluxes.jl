@@ -1,7 +1,8 @@
 using Oceananigans.Grids: inactive_node
 
 using ..EarthSystemModels: EarthSystemModel
-using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties, skin_conductance, radiative_surface
+using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties, skin_conductance, radiative_surface,
+                                                maybe_write!, maybe_accumulate!
 
 """
     apply_air_land_radiative_fluxes!(coupled_model)
@@ -65,12 +66,6 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     return nothing
 end
 
-# Opting out with `nothing` is resolved at compile time, so it costs nothing in the kernel.
-@inline maybe_set_radiative_flux!(::Nothing, i, j, value) = nothing
-@inline maybe_set_radiative_flux!(field, i, j, value) = @inbounds field[i, j, 1] = value
-@inline maybe_add_radiative_flux!(::Nothing, i, j, value) = nothing
-@inline maybe_add_radiative_flux!(field, i, j, value) = @inbounds field[i, j, 1] += value
-
 @inline radiating_surface(surface, i, j, rs) =
     (stateindex(surface.temperature, i, j, 1), radiative_surface_value(surface.albedo, rs.α, i, j),
      radiative_surface_value(surface.emissivity, rs.ϵ, i, j))
@@ -108,12 +103,12 @@ end
 
     inactive = inactive_node(i, j, 1, grid, Center(), Center(), Center())
 
-    maybe_add_radiative_flux!(land_energy_flux, i, j, ifelse(inactive, zero(grid), ΣQ))
+    maybe_accumulate!(land_energy_flux, i, j, ifelse(inactive, zero(grid), ΣQ))
 
     # Same `Tₛ`, `α`, `ϵ` as `ΣQ`, so the diagnostics cannot disagree with the assembled budget.
-    maybe_set_radiative_flux!(interface_radiation_flux.upwelling_longwave,    i, j, ℐꜛˡʷ)
-    maybe_set_radiative_flux!(interface_radiation_flux.downwelling_longwave,  i, j, ℐₐˡʷ)
-    maybe_set_radiative_flux!(interface_radiation_flux.downwelling_shortwave, i, j, ℐₜˢʷ)
-    maybe_set_radiative_flux!(land_shortwave_upwelling_flux, i, j, ℐꜛˢʷ)
-    maybe_set_radiative_flux!(land_longwave_upwelling_flux, i, j, ℐꜛˡʷ)
+    maybe_write!(interface_radiation_flux.upwelling_longwave,    i, j, ℐꜛˡʷ)
+    maybe_write!(interface_radiation_flux.downwelling_longwave,  i, j, ℐₐˡʷ)
+    maybe_write!(interface_radiation_flux.downwelling_shortwave, i, j, ℐₜˢʷ)
+    maybe_write!(land_shortwave_upwelling_flux, i, j, ℐꜛˢʷ)
+    maybe_write!(land_longwave_upwelling_flux, i, j, ℐꜛˡʷ)
 end

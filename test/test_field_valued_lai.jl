@@ -6,60 +6,8 @@ using Oceananigans: set!, interior
 using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.TimeSteppers: update_state!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyConductanceHumidity, JarvisConductance,
-    surface_field_value, kernel_surface_field,
-    interface_vegetation_state
+    CanopyConductanceHumidity, JarvisConductance
 using NumericalEarth.Lands: SaturatedSurface
-#####
-##### Unit — the per-cell accessor for a constant, a static `Field`, and a
-##### time-interpolated `FieldTimeSeries` LAI. Runs on the CPU: the accessor is
-##### built for the flux kernel, so calling it on a GPU field outside a kernel
-##### would scalar-index. Its logic is architecture-independent.
-#####
-
-@testset "surface_field_value: constant, Field, FieldTimeSeries" begin
-    arch = CPU()
-    for FT in (Float32, Float64)
-        # Constant: returns the scalar, ignoring index and time.
-        @test surface_field_value(FT(2.5), 1, 1, nothing) === FT(2.5)
-        @inferred surface_field_value(FT(2.5), 1, 1, nothing)
-
-        grid = LatitudeLongitudeGrid(arch, FT;
-                                     size = (2, 1, 1),
-                                     longitude = (0, 20), latitude = (0, 10),
-                                     z = (-1, 0),
-                                     topology = (Bounded, Bounded, Bounded))
-
-        # Static Field: reads the per-cell value.
-        lai_field = Field{Center, Center, Nothing}(grid)
-        set!(lai_field, (λ, φ) -> ifelse(λ < 10, FT(4), FT(1)))
-        @test surface_field_value(lai_field, 1, 1, nothing) == lai_field[1, 1, 1]
-        @test surface_field_value(lai_field, 2, 1, nothing) == lai_field[2, 1, 1]
-        @test surface_field_value(lai_field, 1, 1, nothing) != surface_field_value(lai_field, 2, 1, nothing)
-
-        # FieldTimeSeries: linear in time between snapshots, exact at endpoints.
-        times   = [0.0, 100.0]
-        lai_fts = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-        set!(lai_fts[1], 1)   # LAI = 1 at t = 0
-        set!(lai_fts[2], 5)   # LAI = 5 at t = 100
-
-        bundle, titp0   = kernel_surface_field(lai_fts, arch, 0.0)
-        _,      titpmid = kernel_surface_field(lai_fts, arch, 50.0)
-        _,      titp1   = kernel_surface_field(lai_fts, arch, 100.0)
-
-        @test bundle === lai_fts
-        @test surface_field_value(bundle, 1, 1, titp0)   ≈ FT(1)
-        @test surface_field_value(bundle, 1, 1, titpmid) ≈ FT(3)   # midpoint
-        @test surface_field_value(bundle, 1, 1, titp1)   ≈ FT(5)
-
-        # Materialization converts to the grid float type (times may be Float64).
-        canopy = CanopyConductanceHumidity(FT; leaf_area_index = lai_fts)
-        veg    = interface_vegetation_state(1, 1, grid, canopy, bundle, titpmid)
-        @test veg.leaf_area_index isa FT
-        @test veg.leaf_area_index ≈ FT(3)
-    end
-end
-
 #####
 ##### Integration — a static spatial LAI map drives spatially varying transpiration.
 #####

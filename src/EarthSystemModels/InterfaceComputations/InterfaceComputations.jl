@@ -7,7 +7,7 @@ using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: AbstractField, Field, Face, Center, FractionalIndices, ZeroField
 using Oceananigans.Grids: Flat, Periodic, halo_size, topology, _node
-using Oceananigans.OutputReaders: FieldTimeSeries, FlavorOfFTS, cpu_interpolating_time_indices, update_field_time_series!
+using Oceananigans.OutputReaders: FieldTimeSeries, cpu_interpolating_time_indices, update_field_time_series!
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: KernelParameters, worksize
 
@@ -65,7 +65,6 @@ export
     LitterResistance,
     TiledLandInterface,
     RubiscoLightLimitedPhotosynthesis,
-    AbstractStomatalConductance,
     MedlynConductance,
     JarvisConductance,
     InteractiveAbsorbedPAR,
@@ -128,6 +127,12 @@ end
 #####
 ##### Utilities
 #####
+
+# Optional kernel outputs: a `nothing` slot is skipped at compile time.
+@inline maybe_write!(::Nothing, i, j, value) = nothing
+@inline maybe_write!(field, i, j, value) = @inbounds field[i, j, 1] = value
+@inline maybe_accumulate!(::Nothing, i, j, value) = nothing
+@inline maybe_accumulate!(field, i, j, value) = @inbounds field[i, j, 1] += value
 
 @kernel function _compute_fractional_indices!(indices_tuple, exchange_grid, source_grid, ℓx, ℓy)
     i, j = @index(Global, NTuple)

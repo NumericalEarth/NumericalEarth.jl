@@ -259,10 +259,7 @@ end
 ##### is returned unchanged). This is the standard series solution of a surface
 ##### flux balance — eq. (12b) of Ye & Pielke (1993) with their pore relative
 ##### humidity hₛ = 1, and the same expression CLM5/ClimaLand evaluate with a
-##### prescribed exchange coefficient in place of Gᵃ. Reading `Gᵃ` off the
-##### similarity solution — instead of reconstructing it from the
-##### flux/increment ratio `Jᵃ/Δq`, which is singular as `Δq` crosses zero —
-##### keeps the divider a convex mean of `qᵉ` and `qᵃᵗ` for any iterate.
+##### prescribed exchange coefficient in place of Gᵃ.
 #####
 ##### Limits worth checking: δᵛ → 0 gives Gᵉ → ∞ and qⁱⁿ → qᵉ, the saturated
 ##### skin of the wet branch; a deep front gives Gᵉ → 0 and qⁱⁿ → qᵃᵗ, i.e.
@@ -270,11 +267,9 @@ end
 ##### linearization is exact, so the converged humidity satisfies the true
 ##### nonlinear balance Gᵉ (qᵉ - qⁱⁿ) = -ρᵃᵗ u★ q★(qⁱⁿ).
 #####
-# Dry-layer flux terms, split off so the standalone formulation and the
-# composite (soil + canopy) share them. Returns the dry-layer conductance `Gᵉ`,
-# the front (dry-branch) source humidity `qᵉ = qᵛ⁺(Tᵉ)`, the wet-branch logistic
-# weight `σ`, the wet (saturated-skin) humidity `qᵍ⁺ = qᵛ⁺(Tᵍ)`, and the front
-# humidity's slope `dqᵉ/dTᵍ`. The full humidity is
+# Dry-layer flux terms: the dry-layer conductance `Gᵉ`, the front (dry-branch) source
+# humidity `qᵉ = qᵛ⁺(Tᵉ)`, the wet-branch logistic weight `σ`, the wet (saturated-skin)
+# humidity `qᵍ⁺ = qᵛ⁺(Tᵍ)`, and the slopes `dqᵉ/dTᵍ` and `dqᵍ⁺/dTᵍ`. The full humidity is
 # `(1 − σ) qᵍ⁺ + σ · [Δq-series divider with (Gᵉ, qᵉ)]`.
 @inline function dry_layer_terms(q::DryLayerHumidity, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
@@ -309,14 +304,15 @@ end
     σ    = 1 / (1 + exp(-z))
 
     # The front moves with the skin by (1 − χ) K per K.
-    dqᵉ = (1 - χ) * saturation_humidity_slope(ℂᵃᵗ, Tᵉ, pᵃᵗ, q.phase)
+    dqᵉ  = (1 - χ) * saturation_humidity_slope(ℂᵃᵗ, Tᵉ, pᵃᵗ, q.phase, qᵉ)
+    dqᵍ⁺ = saturation_humidity_slope(ℂᵃᵗ, Tᵍ, pᵃᵗ, q.phase, qᵍ⁺)
 
-    return Gᵉ, qᵉ, σ, qᵍ⁺, dqᵉ
+    return Gᵉ, qᵉ, σ, qᵍ⁺, dqᵉ, dqᵍ⁺
 end
 
 @inline function compute_interface_humidity(q::DryLayerHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     FT = eltype(Ψₛ)
-    Gᵉ, qᵉ, σ, qᵍ⁺, _ = dry_layer_terms(q, Tₛ, Ψₛ, Ψₐ, ℙₐ)
+    Gᵉ, qᵉ, σ, qᵍ⁺, _, _ = dry_layer_terms(q, Tₛ, Ψₛ, Ψₐ, ℙₐ)
 
     Gᵃ   = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
     qⁱⁿ★ = conductance_weighted_node(Ψₛ.specific_humidity, (Gᵉ, Gᵃ), (qᵉ, Ψₐ.q))

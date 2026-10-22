@@ -181,6 +181,18 @@ interlayer_fluxes(h, land) = map(name -> getproperty(land.diagnostics, name), in
 ##### Per-layer state at one cell
 #####
 
+# Liquid fraction θ and effective saturation 𝒮 of layer `k` holding water `M`.
+@inline function layer_saturation(h, M, k, i, j, grid)
+    FT   = typeof(M)
+    hₗ   = convert(FT, stateindex(layer(h.slab_depth, k), i, j, 1))
+    ν    = convert(FT, stateindex(h.porosity, i, j, 1))
+    θʳ   = convert(FT, stateindex(h.residual_liquid_fraction, i, j, 1))
+    ρˡhₗ = convert(FT, h.liquid_density) * hₗ
+    θ    = min(M / ρˡhₗ, ν)
+    𝒮    = clamp((θ - θʳ) / (ν - θʳ), zero(FT), one(FT))
+    return θ, 𝒮
+end
+
 # θ, 𝒮, pressure head Π, its storage derivative dΠ/dM, K, and the pore capacity M⁺ of layer `k`
 # holding water `M`.
 @inline function layer_state(h, M, T, k, i, j, grid)
@@ -191,8 +203,7 @@ interlayer_fluxes(h, land) = map(name -> getproperty(land.diagnostics, name), in
     hˢˢ  = convert(FT, stateindex(h.storage_height, i, j, 1))
     ρˡhₗ = convert(FT, h.liquid_density) * hₗ
     M⁺   = ν * ρˡhₗ
-    θ    = min(M / ρˡhₗ, ν)
-    𝒮    = clamp((θ - θʳ) / (ν - θʳ), zero(FT), one(FT))
+    θ, 𝒮 = layer_saturation(h, M, k, i, j, grid)
     saturated = M ≥ M⁺
     Π    = ifelse(saturated, (M - M⁺) * hˢˢ / ρˡhₗ, pressure_head(i, j, grid, h.retention_curve, 𝒮))
     dΠdM = ifelse(saturated, hˢˢ, pressure_head_derivative(i, j, grid, h.retention_curve, 𝒮) / (ν - θʳ)) / ρˡhₗ
@@ -202,7 +213,7 @@ end
 
 # Surface (top-layer) and root-weighted saturations of a column holding `M`.
 @inline function column_saturations(h, M, T, i, j, grid)
-    𝒮 = ntuple(k -> layer_state(h, M[k], T, k, i, j, grid).𝒮, Val(length(M)))
+    𝒮 = ntuple(k -> layer_saturation(h, M[k], k, i, j, grid)[2], Val(length(M)))
     return 𝒮[1], sum(map(*, h.root_fraction, 𝒮))
 end
 
@@ -225,9 +236,11 @@ end
     N = length(storage)
     transfers = map(zero, storage)
     change = one(FT)
+    sweep = 0
 
     # Nonlinear Gauss–Seidel on Δt Jˡₖ; each bracket limits the transfer to the available water.
-    while change > 8eps(FT)
+    while (change > 8eps(FT)) & (sweep < 2precision(FT) + 4)
+        sweep += 1
         previous = transfers
         for k in 1:N-1
             above = (zero(FT), Base.front(transfers)...)

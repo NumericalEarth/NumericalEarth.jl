@@ -97,47 +97,31 @@ Base.show(io::IO, surface::LandSurface) = print(io, summary(surface))
 Base.summary(surface::TiledLandSurface) = string("TiledLandSurface(fraction=", prettysummary(surface.fraction), ")")
 Base.show(io::IO, surface::TiledLandSurface) = print(io, summary(surface))
 
-InterfaceComputations.default_al_temperature(land::SlabLand) =
-    land.surface isa LandSurface ? land.surface.temperature : land.surface
-InterfaceComputations.default_al_specific_humidity(temperature, land::SlabLand) =
-    land.surface isa LandSurface ? land.surface.specific_humidity : nothing
-InterfaceComputations.default_al_specific_humidity(temperature::CanopyGroundSurface, land::SlabLand) = temperature
+# The tile whose canopy sets the land's defaults.
+vegetated_tile(surface::LandSurface) = surface
+vegetated_tile(surface::TiledLandSurface) = surface.vegetated
 
-function InterfaceComputations.land_surface_state(land::SlabLand, temperature)
-    surface = land.surface
-    if surface isa TiledLandSurface
-        surface = temperature isa CanopyGroundSurface ? surface.vegetated : surface.bare
-    end
-    return (; state=surface.prognostic, next=surface.next_state)
-end
+InterfaceComputations.land_surface(land::SlabLand) = land.surface
+InterfaceComputations.land_surface_state(surface::LandSurface) = (; state=surface.prognostic, next=surface.next_state)
+InterfaceComputations.default_al_temperature(land::SlabLand) = vegetated_tile(land.surface).temperature
+InterfaceComputations.default_al_specific_humidity(temperature, land::SlabLand) = vegetated_tile(land.surface).specific_humidity
 
 EarthSystemModels.initialize_land_surface!(land::SlabLand) = time_step!(land.surface)
 
-function InterfaceComputations.atmosphere_land_interface(grid, atmosphere, land, surface::TiledLandSurface;
-                                                        fluxes, velocity_difference, specific_humidity)
-    return TiledLandInterface(grid, atmosphere, land;
-                              vegetated_fluxes = fluxes, bare_fluxes = fluxes, velocity_difference)
-end
+InterfaceComputations.atmosphere_land_interface(grid, atmosphere, land, surface::TiledLandSurface;
+                                                fluxes, velocity_difference, kw...) =
+    TiledLandInterface(grid, atmosphere, land; vegetated_fluxes = fluxes, bare_fluxes = fluxes, velocity_difference)
 
 materialize_surface_hydrology(hydrology, surface) = hydrology
 
+# The store's leaf area index and cover fraction default to the canopy's and the vegetated fraction.
 function materialize_surface_hydrology(hydrology::InterceptingHydrology, surface)
-    tiled = surface isa TiledLandSurface
-    canopy = tiled ? surface.vegetated : surface
-    leaf_area_index = canopy_leaf_area_index(canopy.specific_humidity)
-    fraction = tiled ? surface.fraction : 1
-    if isnothing(leaf_area_index)
-        leaf_area_index = hydrology.leaf_area_index
-        fraction = isnothing(hydrology.cover_fraction) ? fraction : hydrology.cover_fraction
-    else
-        isnothing(hydrology.leaf_area_index) || isequal(hydrology.leaf_area_index, leaf_area_index) ||
-            throw(ArgumentError("InterceptingHydrology and the land surface must share leaf_area_index."))
-        isnothing(hydrology.cover_fraction) || isequal(hydrology.cover_fraction, fraction) ||
-            throw(ArgumentError("InterceptingHydrology and the land surface must share cover_fraction."))
-    end
+    leaf_area_index = something(hydrology.leaf_area_index,
+                                canopy_leaf_area_index(vegetated_tile(surface).specific_humidity), Some(nothing))
     isnothing(leaf_area_index) && throw(ArgumentError("InterceptingHydrology requires a canopy surface or leaf_area_index."))
+    cover_fraction = something(hydrology.cover_fraction, surface isa TiledLandSurface ? surface.fraction : 1)
     return InterceptingHydrology(typeof(hydrology.capacity_per_leaf_area);
-                                 soil = hydrology.soil, leaf_area_index, cover_fraction = fraction,
+                                 soil = hydrology.soil, leaf_area_index, cover_fraction,
                                  capacity_per_leaf_area = hydrology.capacity_per_leaf_area,
                                  extinction = hydrology.extinction, clumping = hydrology.clumping)
 end
@@ -150,20 +134,18 @@ function InterfaceComputations.surface_hydrology(land::SlabLand, stress::PlantAv
     return plant_available_water(hydrology, stress, grid)
 end
 
+# The stress endpoints are fixed by the retention curve, so they are evaluated once.
 function plant_available_water(hydrology::VariablySaturatedHydrology, stress, grid)
     curve = hydrology.retention_curve
     FT = eltype(grid)
-    field_capacity_saturation = KernelFunctionOperation{Center, Center, Nothing}(retention_saturation,
-        grid, curve, convert(FT, stress.field_capacity_head))
-    wilting_saturation = KernelFunctionOperation{Center, Center, Nothing}(retention_saturation,
-        grid, curve, convert(FT, stress.wilting_point_head))
-    return (; field_capacity_saturation, wilting_saturation)
+    endpoint(head) = compute!(Field(KernelFunctionOperation{Center, Center, Nothing}(effective_saturation,
+                                                                                     grid, curve, convert(FT, head))))
+    return (; field_capacity_saturation = endpoint(stress.field_capacity_head),
+              wilting_saturation = endpoint(stress.wilting_point_head))
 end
 
 plant_available_water(hydrology, stress, grid) =
     throw(ArgumentError("PlantAvailableWaterStress requires soil water retention physics."))
-
-@inline retention_saturation(i, j, k, grid, curve, head) = effective_saturation(i, j, grid, curve, head)
 
 function InterfaceComputations.surface_hydrology(land::SlabLand, humidity::DryLayerHumidity, grid)
     vapor = humidity.vapor_exchange
