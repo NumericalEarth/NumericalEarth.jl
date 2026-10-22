@@ -26,7 +26,12 @@ using NumericalEarth
 using Oceananigans
 
 land_grid = RectilinearGrid(size=(), topology=(Flat, Flat, Flat))
-canopy = CanopyGroundSurface(soil_humidity=BulkHumidity(), storage=PrognosticCanopyAir())
+soil_humidity = DryLayerHumidity(
+    dry_layer_depth = StorageBasedDryLayerDepth(maximum_dry_layer_depth = 0.015,
+                                               dry_layer_onset_saturation = 0.5),
+    vapor_exchange = DryLayerVaporPistonVelocity(minimum_dry_layer_depth = 1e-3,
+                                                molecular_diffusivity = 2.4e-5))
+canopy = CanopyGroundSurface(; soil_humidity, storage=PrognosticCanopyAir())
 land = SlabLand(land_grid; surface=LandSurface(canopy))
 ```
 

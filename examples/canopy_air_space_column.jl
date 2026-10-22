@@ -192,11 +192,13 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
 
     @info "Running canopy-air-space column: $label ..."
     for n in 1:Nsteps
+        Tₐ[n] = scalar(model.interfaces.exchanger.atmosphere.state.T)
+        SW[n] = -scalar(model.interfaces.exchanger.radiation.state.ℐꜜˢʷ)
+        LW[n] = -scalar(model.interfaces.exchanger.radiation.state.ℐꜜˡʷ)
         time_step!(model, Δt)
         Ts   = interface.temperature
         time = model.clock.time
         T[n]   = time / day
-        Tₐ[n]  = air_temperature(time)
         Tˡᵉᵃᶠ[n]  = scalar(Ts.canopy)
         Tᵃᶜ[n] = scalar(Ts.interface)
         Tᵍ[n] = scalar(Ts.ground)
@@ -209,12 +211,10 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
         Hˡᵉᵃᶠ[n]  = scalar(Ts.canopy_sensible_heat)
         Hᵍ[n]  = scalar(Ts.soil_sensible_heat)
         𝒬ᵍ[n]  = scalar(Ts.ground_heat_flux)
-        SW[n]  = downwelling_shortwave(time)
-        LW[n]  = downwelling_longwave(time)
         E[n]     = scalar(land.fluxes.vapor_flux)
         Ewet[n]  = scalar(Ts.canopy_evaporation)
         LEwet[n] = scalar(Ts.canopy_wet_latent_heat)
-        P[n]     = applied_rain(model)
+        P[n]     = scalar(land.fluxes.liquid_precipitation_flux)
         Pˡ[n]    = scalar(land.diagnostics.throughfall)
         𝒮[n]   = scalar(land.saturation)
         M[n]   = scalar(land.water_storage)
@@ -232,10 +232,6 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
 end
 
 scalar(field) = first(interior(field))
-
-# The rain the land actually received this step — the atmosphere's hourly series interpolated
-# to the coupler — so incident rain and the model's throughfall are read from one source.
-applied_rain(model) = scalar(model.interfaces.exchanger.atmosphere.state.Jʳⁿ)
 
 # ## Integration length and the case set
 #
@@ -530,7 +526,7 @@ function tiled_intercepting_column(; fraction, label)
         LEwet[n] = scalar(interface.temperature.canopy_wet_latent_heat)
         LEˡᵉᵃᶠ[n]   = scalar(interface.temperature.canopy_latent_heat)
         LEᵍ[n]   = scalar(interface.temperature.soil_latent_heat)
-        P[n]     = applied_rain(model)
+        P[n]     = scalar(land.fluxes.liquid_precipitation_flux)
         Pˡ[n]    = scalar(land.diagnostics.throughfall)
     end
 

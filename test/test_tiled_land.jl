@@ -36,6 +36,34 @@ function tiled_land_model(arch, cas; fraction, shortwave = 600.0,
     return model
 end
 
+@testset "Tiled surface-layer diagnostics" begin
+    for arch in test_architectures
+        grid, _, _, _ = coupled_land_components(arch)
+        fraction = Field{Center, Center, Nothing}(grid)
+        set!(fraction, 0.6)
+        model = tiled_land_model(arch, build_tiled_canopy_air_space(Float64); fraction)
+        interface = model.interfaces.atmosphere_land_interface
+
+        for include_subgrid_velocities in (false, true)
+            heights = (; velocity_height = 2, temperature_height = 5, specific_humidity_height = 5,
+                         include_subgrid_velocities)
+            diagnostics = surface_layer_diagnostics(model; heights...)
+            vegetated = surface_layer_diagnostics(model, interface.vegetated; heights...)
+            bare = surface_layer_diagnostics(model, interface.bare; heights...)
+
+            for f in (0.0, 0.6, 1.0)
+                set!(fraction, f)
+                for name in keys(diagnostics)
+                    blended = Array(interior(compute!(Field(diagnostics[name]))))
+                    vegetated_profile = Array(interior(compute!(Field(vegetated[name]))))
+                    bare_profile = Array(interior(compute!(Field(bare[name]))))
+                    @test blended ≈ f .* vegetated_profile .+ (1 - f) .* bare_profile
+                end
+            end
+        end
+    end
+end
+
 @testset "TiledLandInterface" begin
     for arch in test_architectures
         cas = build_tiled_canopy_air_space(Float64)

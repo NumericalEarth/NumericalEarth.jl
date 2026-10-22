@@ -37,6 +37,31 @@ function roundtrip!(m1, m2; spinup = 6, continuation = 6, Δt = 300.0)
            (scalar(f2.latent_heat), scalar(f2.sensible_heat))
 end
 
+@testset "Checkpoint continuation with changing forcing" begin
+    for arch in test_architectures
+        models = ntuple(2) do _
+            grid, _, land, _ = coupled_land_components(arch)
+            times = [0.0, 1000.0]
+            atmosphere = PrescribedAtmosphere(grid, times)
+            radiation = PrescribedRadiation(grid, times)
+            fill!(parent(atmosphere.velocities.u), 3)
+            fill!(parent(atmosphere.specific_humidity), 0.008)
+            for (n, time) in enumerate(times)
+                set!(atmosphere.temperature[n], 280 + 0.04time)
+                set!(atmosphere.precipitation_flux.rain[n], 1e-6time)
+                set!(radiation.downwelling_shortwave[n], 200 + 0.6time)
+                set!(radiation.downwelling_longwave[n], 300 + 0.1time)
+            end
+            return AtmosphereLandModel(atmosphere, land; radiation)
+        end
+        m1, m2 = models
+        fluxes1, fluxes2 = roundtrip!(m1, m2; spinup = 5, continuation = 1, Δt = 100.0)
+        @test fluxes1 == fluxes2
+        @test Array(interior(m1.land.temperature)) == Array(interior(m2.land.temperature))
+        @test Array(interior(m1.land.water_storage)) == Array(interior(m2.land.water_storage))
+    end
+end
+
 @testset "Prognostic land surface checkpointing" begin
     for arch in test_architectures
         # --- prognostic canopy air: the node state must survive the round trip.

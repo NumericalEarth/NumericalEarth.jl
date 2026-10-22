@@ -543,6 +543,7 @@ function Oceananigans.restore_prognostic_state!(esm::EarthSystemModel, state)
     restore_prognostic_state!(esm.land, state.land)
     restore_prognostic_state!(esm.sea_ice, state.sea_ice)
     restore_prognostic_state!(esm.interfaces, state.interfaces)
+    update_state!(esm)
     return esm
 end
 
