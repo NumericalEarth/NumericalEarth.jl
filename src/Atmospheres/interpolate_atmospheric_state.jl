@@ -30,12 +30,6 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
     snowfall_flux = surface_snowfall_flux(atmosphere)
     atmosphere_pressure = atmosphere.pressure.data
 
-    # Extract info for time-interpolation
-    u = atmosphere.velocities.u # for example
-    atmosphere_times = u.times
-    atmosphere_backend = u.backend
-    atmosphere_time_indexing = u.time_indexing
-
     atmosphere_fields = exchanger.state
     regridder = exchanger.regridder
     space_fractional_indices = (i = regridder.i, j = regridder.j)
@@ -46,35 +40,36 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
 
     kernel_parameters = interface_kernel_parameters(grid)
 
-    # Assumption, should be generalized
-    ua = atmosphere.velocities.u
-
-    times = ua.times
-    time_indexing = ua.time_indexing
+    # Each field is interpolated in time on its own time axis
     t = clock.time
-    time_interpolator = cpu_interpolating_time_indices(arch, times, time_indexing, t)
+    precipitation_flux = something(atmosphere.precipitation_flux, PrescribedPrecipitationFlux())
 
-    # Tracers other than T and q carry their own grid, location and time axis
-    atmosphere_time_arguments = (time_interpolator, atmosphere_backend, atmosphere_time_indexing)
+    velocity_time_arguments = map(u -> time_arguments(arch, u, t), atmosphere.velocities)
+    pressure_time_arguments = time_arguments(arch, atmosphere.pressure, t)
+    rainfall_time_arguments = time_arguments(arch, precipitation_flux.rain, t)
+    snowfall_time_arguments = time_arguments(arch, precipitation_flux.snow, t)
+
+    # Tracers other than T and q carry their own grid and location
     tracer_fractional_indices = merge((T = space_fractional_indices, q = space_fractional_indices), regridder.tracers)
-    tracer_time_arguments = merge((T = atmosphere_time_arguments, q = atmosphere_time_arguments),
-                                  map(tracer -> time_arguments(arch, tracer, t), atmosphere.tracers))
+    tracer_time_arguments = map(tracer -> time_arguments(arch, tracer, t),
+                                merge((T = atmosphere.temperature, q = atmosphere.specific_humidity), atmosphere.tracers))
 
     launch!(arch, grid, kernel_parameters,
             _interpolate_primary_atmospheric_state!,
             atmosphere_data,
             space_fractional_indices,
-            time_interpolator,
             grid,
             atmosphere_velocities,
+            velocity_time_arguments,
             atmosphere_tracers,
             tracer_fractional_indices,
             tracer_time_arguments,
             atmosphere_pressure,
+            pressure_time_arguments,
             rainfall_flux,
+            rainfall_time_arguments,
             snowfall_flux,
-            atmosphere_backend,
-            atmosphere_time_indexing)
+            snowfall_time_arguments)
 
     # Set ocean barotropic pressure forcing
     #
@@ -95,6 +90,7 @@ end
 
 time_arguments(arch, fts, t) = (cpu_interpolating_time_indices(arch, fts.times, fts.time_indexing, t), fts.backend, fts.time_indexing)
 time_arguments(arch, ::ConstantField, t) = nothing
+time_arguments(arch, ::Nothing, t) = (nothing, nothing, nothing)
 
 @inline get_fractional_index(i, j, ::Nothing) = nothing
 @inline get_fractional_index(i, j, frac) = @inbounds frac[i, j, 1]
@@ -104,17 +100,18 @@ time_arguments(arch, ::ConstantField, t) = nothing
 
 @kernel function _interpolate_primary_atmospheric_state!(surface_atmos_state,
                                                          space_fractional_indices,
-                                                         time_interpolator,
                                                          exchange_grid,
                                                          atmos_velocities,
+                                                         velocity_time_arguments,
                                                          atmos_tracers,
                                                          tracer_fractional_indices,
                                                          tracer_time_arguments,
                                                          atmos_pressure,
+                                                         pressure_time_arguments,
                                                          rainfall_flux,
+                                                         rainfall_time_arguments,
                                                          snowfall_flux,
-                                                         atmos_backend,
-                                                         atmos_time_indexing)
+                                                         snowfall_time_arguments)
 
     i, j = @index(Global, NTuple)
 
@@ -124,15 +121,13 @@ time_arguments(arch, ::ConstantField, t) = nothing
     fj = get_fractional_index(i, j, jj)
 
     x_itp = FractionalIndices(fi, fj, nothing)
-    t_itp = time_interpolator
-    atmos_args = (x_itp, t_itp, atmos_backend, atmos_time_indexing)
 
-    uᵃᵗ = interp_atmos_time_series(atmos_velocities.u, atmos_args...)
-    vᵃᵗ = interp_atmos_time_series(atmos_velocities.v, atmos_args...)
-    pᵃᵗ = interp_atmos_time_series(atmos_pressure,     atmos_args...)
+    uᵃᵗ = interp_atmos_time_series(atmos_velocities.u, x_itp, velocity_time_arguments.u...)
+    vᵃᵗ = interp_atmos_time_series(atmos_velocities.v, x_itp, velocity_time_arguments.v...)
+    pᵃᵗ = interp_atmos_time_series(atmos_pressure,     x_itp, pressure_time_arguments...)
 
-    Mr = interp_atmos_time_series(rainfall_flux, atmos_args...)
-    Ms = interp_atmos_time_series(snowfall_flux, atmos_args...)
+    Mr = interp_atmos_time_series(rainfall_flux, x_itp, rainfall_time_arguments...)
+    Ms = interp_atmos_time_series(snowfall_flux, x_itp, snowfall_time_arguments...)
 
     # Convert atmosphere velocities (usually defined on a latitude-longitude grid) to
     # the frame of reference of the native grid
