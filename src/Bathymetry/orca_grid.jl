@@ -7,6 +7,7 @@ using Oceananigans.Fields: set!
 using Oceananigans.Grids: RightCenterFolded, RightFaceFolded, generate_coordinate, longitude_in_same_window
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, distribute_tripolar_grid
+using Printf: @sprintf
 
 using ..DataWrangling: dataset_variable_name, default_download_directory
 using ..DataWrangling.ORCA: ORCAOne, default_south_rows_to_remove, periodic_overlap, north_fold_pivot
@@ -240,7 +241,7 @@ function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF, overlap
 end
 
 """
-    read_orca_staggered_mesh(ds, overlap)
+    read_orca_staggered_mesh(ds, overlap; radius, straits = ())
 
 Read ORCA horizontal coordinates and metrics.
 
@@ -248,8 +249,11 @@ Supports:
 - full NEMO staggered mesh variables (`glamt/gphit/e1u/...`), and
 - approximate reconstruction from T/F coordinates only (`glamt/gphit/glamf/gphif`)
   using Tripolar-style spherical metric assumptions.
+
+The returned mesh also carries `straits`, the channel cells of the mesh's narrowed straits in NEMO's
+indexing (see [`narrow_strait_cells!`](@ref)), with any `straits` overrides applied.
 """
-function read_orca_staggered_mesh(ds, overlap; radius = Oceananigans.defaults.planet_radius)
+function read_orca_staggered_mesh(ds, overlap; radius = Oceananigans.defaults.planet_radius, straits = ())
     metrics = ("glamt", "glamu", "glamv", "glamf",
                "gphit", "gphiu", "gphiv", "gphif",
                "e1t", "e1u", "e1v", "e1f",
@@ -264,20 +268,29 @@ function read_orca_staggered_mesh(ds, overlap; radius = Oceananigans.defaults.pl
     if has_all_variables(ds, metrics)
         λCC, λFC, λCF, λFF = orcaread(ds, "glamt"), shift_x(orcaread(ds, "glamu")), orcaread(ds, "glamv"), shift_x(orcaread(ds, "glamf"))
         φCC, φFC, φCF, φFF = orcaread(ds, "gphit"), shift_x(orcaread(ds, "gphiu")), orcaread(ds, "gphiv"), shift_x(orcaread(ds, "gphif"))
-        e1t, e1u, e1v, e1f = orcaread(ds, "e1t"),   shift_x(orcaread(ds, "e1u")),   orcaread(ds, "e1v"),   shift_x(orcaread(ds, "e1f"))
-        e2t, e2u, e2v, e2f = orcaread(ds, "e2t"),   shift_x(orcaread(ds, "e2u")),   orcaread(ds, "e2v"),   shift_x(orcaread(ds, "e2f"))
+        e1t, e1u, e1v, e1f = orcaread(ds, "e1t"),   orcaread(ds, "e1u"),   orcaread(ds, "e1v"),   orcaread(ds, "e1f")
+        e2t, e2u, e2v, e2f = orcaread(ds, "e2t"),   orcaread(ds, "e2u"),   orcaread(ds, "e2v"),   orcaread(ds, "e2f")
 
         if "e1e2t" in keys(ds)
-            AzCC, AzFC = orcaread(ds, "e1e2t"), shift_x(orcaread(ds, "e1e2u"))
-            AzCF, AzFF = orcaread(ds, "e1e2v"), shift_x(orcaread(ds, "e1e2f"))
+            AzCC, AzFC = orcaread(ds, "e1e2t"), orcaread(ds, "e1e2u")
+            AzCF, AzFF = orcaread(ds, "e1e2v"), orcaread(ds, "e1e2f")
         else
             AzCC, AzFC, AzCF, AzFF = e1t .* e2t, e1u .* e2u, e1v .* e2v, e1f .* e2f
         end
 
+        channels = narrow_strait_cells!(e1t, e2t, AzCC, AzFC, AzCF, e1u, e2u, e1v, e2v,
+                                        orcaread(ds, "glamf"), orcaread(ds, "gphif"), λCC, φCC; radius, straits)
+
+        e1u, e1f, e2u, e2f = shift_x(e1u), shift_x(e1f), shift_x(e2u), shift_x(e2f)
+        AzFC, AzFF = shift_x(AzFC), shift_x(AzFF)
+
         return (; λCC, λFC, λCF, λFF, φCC, φFC, φCF, φFF,
                   e1t, e1u, e1v, e1f, e2t, e2u, e2v, e2f,
-                  AzCC, AzFC, AzCF, AzFF)
+                  AzCC, AzFC, AzCF, AzFF, straits = channels)
     end
+
+    # a reconstructed mesh has no stored metrics, so there are no narrowed straits to set
+    isempty(straits) || throw(ArgumentError("`straits` needs a mesh with NEMO's stored metrics (e1u, e2u, e1v, ...)"))
 
     coords = ("glamt", "gphit", "glamf", "gphif")
     if has_all_variables(ds, coords)
@@ -285,10 +298,153 @@ function read_orca_staggered_mesh(ds, overlap; radius = Oceananigans.defaults.pl
         λFF = orcaread(ds, "glamf")
         φCC = orcaread(ds, "gphit")
         φFF = orcaread(ds, "gphif")
-        return reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF, overlap; radius)
+        return merge(reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF, overlap; radius), (; straits = ()))
     end
 
     throw(ArgumentError("Unsupported ORCA mesh: needs staggered variables $(metrics) or T/F variables $(coords)"))
+end
+
+"""
+    narrow_strait_cells!(e1t, e2t, AzCC, AzFC, AzCF, e1u, e2u, e1v, e2v, λFF, φFF, λCC, φCC;
+                         radius, threshold = 0.9, straits = ())
+
+Make the cell geometry at NEMO's narrowed straits consistent with their narrowed faces, after setting the
+widths given in `straits`, and return the straits' channel cells.
+
+NEMO represents a strait narrower than a grid cell by cutting the width of its velocity faces, `e1v` for a
+north-south strait and `e2u` for an east-west one, and leaves the tracer cell between them and the
+velocity cells' areas at full size (`e1e2u`, `e1e2v` hold the original areas). The face then carries the
+strait's transport, but the tracer cell holds a 110 km-wide column of water behind a 13 km (say) face,
+and the velocity cell's area no longer matches its face. Here the geometry is made consistent:
+
+* a tracer cell between two narrowed faces (the strait itself) takes their width, so its volume and
+  surface area are those of the channel;
+* a velocity cell at a narrowed face takes the area `e1v e2v` (`e1u e2u`) of its narrowed face times its
+  length, the area for which the pressure work on it equals the work done by the transport through the
+  face, so the discrete kinetic energy budget closes.
+
+The face widths themselves are left narrowed: they set the transport through the strait. A velocity cell
+between the channel and the open sea is then handed half of the open column's vertical transport over a
+small area, so its vertical advection runs at a Courant number several times the columns' own; the
+transport-based CFL of `AdaptiveVerticallyImplicitDiscretization` treats that part implicitly.
+
+A face counts as narrowed when its width falls short of `threshold` times the distance between its two
+corners while the tracer cells either side do not, which leaves out the degenerate padding rows south of
+Antarctica, whose metrics are all small. All arrays are in NEMO's indexing: u(i, j) lies between T(i, j)
+and T(i+1, j) and is bounded by F(i, j-1) and F(i, j); v(i, j) lies between T(i, j) and T(i, j+1) and is
+bounded by F(i-1, j) and F(i, j).
+
+Each entry of `straits` is a `(; longitude, latitude, width, depth)`, matched to the channel cell nearest
+`(longitude, latitude)`, which must lie within one grid cell of it. `width` (m) replaces both faces' width
+before the geometry is made consistent; a width at or above `threshold` times the faces' corner distance
+removes the narrowing, and the faces then take their full corner distance. `depth` is not used here but
+returned with the channel, for the bathymetry. Either may be left out to keep the mesh's value.
+
+Returns a vector of `(; i, j, longitude, latitude, width, depth)`, one per channel cell, with `depth`
+`nothing` unless `straits` sets it.
+"""
+function narrow_strait_cells!(e1t, e2t, AzCC, AzFC, AzCF, e1u, e2u, e1v, e2v, λFF, φFF, λCC, φCC;
+                              radius, threshold = 0.9, straits = ())
+    Nx, Ny = size(e1t)
+
+    narrowed_v = falses(Nx, Ny)
+    narrowed_u = falses(Nx, Ny)
+    v_corners  = zeros(Nx, Ny)
+    u_corners  = zeros(Nx, Ny)
+
+    for j in 2:Ny-1, i in 2:Nx-1
+        v_corners[i, j]  = haversine((λFF[i-1, j], φFF[i-1, j]), (λFF[i, j], φFF[i, j]), radius)
+        narrowed_v[i, j] = (e1v[i, j] < threshold * v_corners[i, j]) &
+                           (e1t[i, j] > threshold * v_corners[i, j]) & (e1t[i, j+1] > threshold * v_corners[i, j])
+
+        u_corners[i, j]  = haversine((λFF[i, j-1], φFF[i, j-1]), (λFF[i, j], φFF[i, j]), radius)
+        narrowed_u[i, j] = (e2u[i, j] < threshold * u_corners[i, j]) &
+                           (e2t[i, j] > threshold * u_corners[i, j]) & (e2t[i+1, j] > threshold * u_corners[i, j])
+    end
+
+    # A channel is the tracer cell between two narrowed faces: the strait itself
+    channels = NamedTuple{(:i, :j, :axis), Tuple{Int, Int, Symbol}}[]
+    for j in 2:Ny-1, i in 2:Nx-1
+        narrowed_v[i, j-1] & narrowed_v[i, j] && push!(channels, (; i, j, axis = :v))
+        narrowed_u[i-1, j] & narrowed_u[i, j] && push!(channels, (; i, j, axis = :u))
+    end
+
+    channel_faces(c) = c.axis === :v ? ((c.i, c.j-1), (c.i, c.j)) : ((c.i-1, c.j), (c.i, c.j))
+    face_widths(c)   = c.axis === :v ? (e1v, v_corners, narrowed_v) : (e2u, u_corners, narrowed_u)
+
+    # Faces whose width `straits` sets, narrowed or not, so their velocity cells' areas follow
+    reset_v = copy(narrowed_v)
+    reset_u = copy(narrowed_u)
+    depths  = Dict{Int, Float64}()
+    matched = Dict{Int, Any}()
+
+    for (name, strait) in pairs(straits)
+        n = nearest_channel(channels, strait, λCC, φCC, e1t, e2t, radius, name)
+        haskey(matched, n) && throw(ArgumentError("straits $(matched[n]) and $name both match the channel cell at NEMO ($(channels[n].i), $(channels[n].j))"))
+        matched[n] = name
+        c = channels[n]
+
+        width = get(strait, :width, nothing)
+        if !isnothing(width)
+            widths, corners, narrowed = face_widths(c)
+            reset = c.axis === :v ? reset_v : reset_u
+            for (i, j) in channel_faces(c)
+                narrowed[i, j] = width < threshold * corners[i, j]
+                widths[i, j]   = narrowed[i, j] ? width : corners[i, j]
+                reset[i, j]    = true
+            end
+        end
+
+        depth = get(strait, :depth, nothing)
+        isnothing(depth) || (depths[n] = depth)
+    end
+
+    result = NamedTuple{(:i, :j, :longitude, :latitude, :width, :depth),
+                        Tuple{Int, Int, Float64, Float64, Float64, Union{Nothing, Float64}}}[]
+    descriptions = String[]
+
+    for (n, c) in enumerate(channels)
+        widths, _, narrowed = face_widths(c)
+        (f₁, f₂) = channel_faces(c)
+        width = (widths[f₁...] + widths[f₂...]) / 2
+
+        if narrowed[f₁...] & narrowed[f₂...]
+            if c.axis === :v
+                AzCC[c.i, c.j] *= width / e1t[c.i, c.j]
+                e1t[c.i, c.j]   = width
+            else
+                AzCC[c.i, c.j] *= width / e2t[c.i, c.j]
+                e2t[c.i, c.j]   = width
+            end
+        end
+
+        depth = get(depths, n, nothing)
+        push!(result, (; i = c.i, j = c.j, longitude = Float64(λCC[c.i, c.j]), latitude = Float64(φCC[c.i, c.j]),
+                         width = Float64(width), depth))
+        push!(descriptions, @sprintf("(%.1fᵒ, %.1fᵒ) %.1f km", λCC[c.i, c.j], φCC[c.i, c.j], width / 1e3) *
+                            (isnothing(depth) ? "" : @sprintf(" %.0f m deep", depth)))
+    end
+
+    AzCF[reset_v] .= e1v[reset_v] .* e2v[reset_v]
+    AzFC[reset_u] .= e1u[reset_u] .* e2u[reset_u]
+
+    nfaces = count(narrowed_u) + count(narrowed_v)
+    isempty(channels) || @info "Narrowed straits: $nfaces faces, channel cells at (λ, φ, width) $(join(descriptions, ", "))"
+
+    return result
+end
+
+# The channel nearest the strait's (longitude, latitude), which must lie within one (unnarrowed) cell of it
+function nearest_channel(channels, strait, λCC, φCC, e1t, e2t, radius, name)
+    location = (strait.longitude, strait.latitude)
+    distances = [haversine(location, (λCC[c.i, c.j], φCC[c.i, c.j]), radius) for c in channels]
+    isempty(distances) && throw(ArgumentError("strait $name at $location: the mesh has no narrowed straits"))
+    d, n = findmin(distances)
+    c = channels[n]
+    d <= max(e1t[c.i, c.j], e2t[c.i, c.j]) ||
+        throw(ArgumentError(@sprintf("strait %s at (%.2fᵒ, %.2fᵒ): the nearest narrowed strait is %.0f km away at (%.2fᵒ, %.2fᵒ)",
+                                     name, location..., d / 1e3, λCC[c.i, c.j], φCC[c.i, c.j])))
+    return n
 end
 
 function shift_face_x(data, overlap)
@@ -375,6 +531,7 @@ end
              active_cells_map = true,
              major_basins = Inf,
              south_rows_to_remove = default_south_rows_to_remove(dataset),
+             straits = (),
              dir = default_download_directory(dataset))
 
 Construct an `OrthogonalSphericalShellGrid` using coordinate and metric data from a NEMO eORCA `mesh_mask` file.
@@ -422,6 +579,13 @@ Keyword Arguments
 - `south_rows_to_remove`: Number of southern rows to remove from the eORCA grid.  The "extended" eORCA grid
                           contains degenerate padding rows near Antarctica that are entirely land.
                           Removing them reduces memory usage and computation.
+- `straits`: Widths and depths for the mesh's narrowed straits, overriding the mesh and bathymetry files.
+             A collection (e.g. a `NamedTuple` of named entries) of `(; longitude, latitude, width, depth)`,
+             each matched to the channel cell of the narrowed strait nearest `(longitude, latitude)`, which
+             must lie within one grid cell of it. `width` (m) sets both faces of the strait; a width of a
+             whole cell or more removes the narrowing. `depth` (m, positive) sets the channel cell's bottom.
+             Either may be left out to keep the files' value. Default: `()`, the files' geometry.
+             See [`narrow_strait_cells!`](@ref).
 - `dir`: Directory to store and look up ORCA files (`mesh_mask` and bathymetry).
          Defaults to the dataset scratch cache via `default_download_directory(dataset)`.
 """
@@ -435,6 +599,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   active_cells_map = true,
                   major_basins = Inf,
                   south_rows_to_remove = default_south_rows_to_remove(dataset),
+                  straits = (),
                   dir = default_download_directory(dataset))
 
     mesh_meta = Metadatum(:mesh_mask; dataset, dir)
@@ -442,7 +607,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     ds = Dataset(mesh_mask_path)
     overlap = periodic_overlap(dataset)
-    mesh = read_orca_staggered_mesh(ds, overlap; radius)
+    mesh = read_orca_staggered_mesh(ds, overlap; radius, straits)
     close(ds)
 
     λCC,  λFC,  λCF,  λFF  = mesh.λCC,  mesh.λFC,  mesh.λCF,  mesh.λFF
@@ -516,7 +681,11 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     underlying_grid = distribute_tripolar_grid(arch, global_grid)
 
-    with_bathymetry || return underlying_grid
+    if !with_bathymetry
+        any(!isnothing(strait.depth) for strait in mesh.straits) &&
+            throw(ArgumentError("a strait `depth` needs `with_bathymetry = true`"))
+        return underlying_grid
+    end
 
     bathy_meta = Metadatum(:bottom_height; dataset, dir)
     # `download` is `@root` internally, so every rank must call it.
@@ -535,6 +704,11 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
         bottom_height  = FT.(coalesce.(bathy_data, FT(0)))
         bottom_height .= ifelse.(isfinite.(bottom_height) .& (bottom_height .> 0), .-bottom_height, FT(100))
+
+        # the channel cells are in NEMO's indexing, which `chop` shifts by `ic` and `jr`
+        for strait in mesh.straits
+            isnothing(strait.depth) || (bottom_height[strait.i - ic, strait.j - jr] = -strait.depth)
+        end
 
         return bottom_height
     end
