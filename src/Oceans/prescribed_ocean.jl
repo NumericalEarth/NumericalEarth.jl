@@ -1,9 +1,10 @@
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.OutputReaders: update_field_time_series!, FieldTimeSeries
+using Oceananigans.OutputReaders: update_field_time_series!, FieldTimeSeries, cpu_interpolating_time_indices
 using Oceananigans.TimeSteppers: Clock, tick!
 using Oceananigans.Units: Time
-using Oceananigans.Utils: prettysummary, prettytime
+using Oceananigans.Utils: launch!, prettysummary, prettytime
+using KernelAbstractions: @kernel, @index
 using NumericalEarth.EarthSystemModels: AbstractPrescribedComponent
 
 """
@@ -103,8 +104,8 @@ function Oceananigans.set!(ocean::PrescribedOcean; T=nothing, S=nothing, u=nothi
     return nothing
 end
 
-# The exchanger copies the halo columns straight out of the time series (see
-# `_copy_prescribed_ocean_state!`), so their halos must be valid. Fill them whenever the data is
+# The exchanger reads the halo columns straight out of the time series (see
+# `interpolate_prescribed_state!`), so their halos must be valid. Fill them whenever the data is
 # set; a partly-in-memory series fills its own halos each time it loads a new window.
 function fill_prescribed_halo_regions!(ocean::PrescribedOcean)
     fill_halo_regions!(ocean.sea_surface_temperature)
@@ -142,13 +143,13 @@ function EarthSystemModels.adopt_clock(ocean::PrescribedOcean{FT}, clock) where 
     new_clock = EarthSystemModels.matching_clock(ocean.clock, clock)
     isnothing(new_clock) && return ocean
     EarthSystemModels.warn_clock_coercion(ocean, new_clock)
-    return PrescribedOcean{FT}(ocean.grid, 
+    return PrescribedOcean{FT}(ocean.grid,
                                new_clock,
                                ocean.sea_surface_temperature,
                                ocean.sea_surface_salinity,
-                               ocean.velocities, 
+                               ocean.velocities,
                                ocean.times,
-                               ocean.density, 
+                               ocean.density,
                                ocean.heat_capacity)
 end
 
@@ -174,52 +175,50 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::Presc
     v = CenterField(grid)
 
     state = (; u, v, T, S)
-    copy_prescribed_state!(state, ocean, 1) # initialize from the first time snapshot
+    interpolate_prescribed_state!(state, ocean)
 
     return ComponentExchanger(state, nothing)
-end
-
-# The interface flux kernels run over the halo columns too (`interface_kernel_parameters` spans
-# 0:N+1), and the atmosphere's face-centered momentum fluxes average them into the first interior
-# face, so the copy covers those columns as well rather than leaving them at zero (#754).
-@kernel function _copy_prescribed_ocean_state!(T, S, u, v, Tᵖ, Sᵖ, uᵖ, vᵖ)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        T[i, j, 1] = Tᵖ[i, j, 1]
-        S[i, j, 1] = Sᵖ[i, j, 1]
-        u[i, j, 1] = uᵖ[i, j, 1]
-        v[i, j, 1] = vᵖ[i, j, 1]
-    end
-end
-
-# `n` is the in-memory slot, halos included (the time series' data is offset in x and y).
-memory_slot(fts, n) = view(fts.data, :, :, :, n)
-
-function copy_prescribed_state!(state, ocean::PrescribedOcean, n)
-    grid = ocean.grid
-    launch!(architecture(grid), grid, interface_kernel_parameters(grid),
-            _copy_prescribed_ocean_state!,
-            state.T, state.S, state.u, state.v,
-            memory_slot(ocean.sea_surface_temperature, n),
-            memory_slot(ocean.sea_surface_salinity, n),
-            memory_slot(ocean.velocities.u, n),
-            memory_slot(ocean.velocities.v, n))
-    return nothing
 end
 
 EarthSystemModels.InterfaceComputations.net_fluxes(ocean::PrescribedOcean) = nothing
 EarthSystemModels.InterfaceComputations.biogeochemical_interface(exchanger, ::PrescribedOcean; kwargs...) = NamedTuple()
 
-function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::PrescribedOcean, coupled_model)
-    # Copy from FieldTimeSeries to exchanger snapshot fields.
-    # For single-time data (constant), time index 1 is always correct.
-    # TODO: proper temporal interpolation for multi-time prescribed data.
-    copy_prescribed_state!(exchanger.state, ocean, 1)
+EarthSystemModels.interpolate_state!(exchanger, grid, ocean::PrescribedOcean, coupled_model) =
+    interpolate_prescribed_state!(exchanger.state, ocean)
+
+# Read each series at the ocean clock, linearly interpolating between the two snapshots that bracket it.
+# The interface flux kernels run over the halo columns too (`interface_kernel_parameters` spans 0:N+1), and
+# the atmosphere's face-centered momentum fluxes average them into the first interior face, so the
+# interpolation covers those columns rather than leaving them at zero (#754).
+function interpolate_prescribed_state!(state, ocean::PrescribedOcean)
+    Tᵒ = ocean.sea_surface_temperature
+    Sᵒ = ocean.sea_surface_salinity
+    uᵒ, vᵒ = ocean.velocities
+
+    grid = ocean.grid
+    arch = architecture(grid)
+    t = ocean.clock.time
+    interpolator(fts) = cpu_interpolating_time_indices(arch, fts.times, fts.time_indexing, t)
+
+    launch!(arch, grid, interface_kernel_parameters(grid), _interpolate_prescribed_ocean_state!,
+            state.T, state.S, state.u, state.v,
+            Tᵒ, Sᵒ, uᵒ, vᵒ,
+            interpolator(Tᵒ), interpolator(Sᵒ), interpolator(uᵒ), interpolator(vᵒ))
+
     return nothing
 end
 
-# Prescribed ocean does not evolve, so net flux assembly is not needed.
-# The atmosphere still receives its fluxes from compute_atmosphere_ocean_fluxes!.
+@kernel function _interpolate_prescribed_ocean_state!(T, S, u, v, Tᵒ, Sᵒ, uᵒ, vᵒ, τT, τS, τu, τv)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        T[i, j, 1] = Tᵒ[i, j, 1, τT]
+        S[i, j, 1] = Sᵒ[i, j, 1, τS]
+        u[i, j, 1] = uᵒ[i, j, 1, τu]
+        v[i, j, 1] = vᵒ[i, j, 1, τv]
+    end
+end
+
+# A prescribed ocean follows its data rather than responding to fluxes, so net flux assembly is not needed.
 EarthSystemModels.update_net_fluxes!(coupled_model, ocean::PrescribedOcean) = nothing
 
 #####

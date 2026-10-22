@@ -111,11 +111,12 @@ end
 
 # Push the downwelling shortwave/longwave radiation from the radiation exchanger into
 # Terrarium's radiation input fields. Skipped when no radiation is configured.
+# Terrarium takes positive-downward magnitudes; the exchanged fluxes are positive upward.
 @kernel function _terrarium_push_downwelling!(shortwave_down, longwave_down, ℐꜜˢʷ, ℐꜜˡʷ)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        shortwave_down[i, j, end] = ℐꜜˢʷ[i, j, 1]
-        longwave_down[i, j, end] = ℐꜜˡʷ[i, j, 1]
+        shortwave_down[i, j, end] = - ℐꜜˢʷ[i, j, 1]
+        longwave_down[i, j, end] = - ℐꜜˡʷ[i, j, 1]
     end
 end
 

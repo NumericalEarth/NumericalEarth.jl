@@ -75,14 +75,15 @@ NumericalEarth.EarthSystemModels.boundary_layer_height(atmos::BreezeAtmosphereSi
 
 function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::BreezeAtmosphere, exchange_grid;
                                                                                    correction = nothing)
-    # Breeze's surface rain-flux diagnostic (positive down, kg m⁻² s⁻¹); schemes with no
-    # precipitating species define no method — fall back to an inert zero field.
-    # TODO: move the fallback into Breeze; add a snow analog (Jˢⁿ stays zero below).
-    Jʳⁿ = if applicable(bottom_precipitation_flux, atmosphere, atmosphere.microphysics)
-        bottom_precipitation_flux(atmosphere)
-    else
-        Oceananigans.CenterField(exchange_grid)
-    end
+    # Surface fields are copied index for index from the atmosphere grid.
+    atmosphere_size = (size(atmosphere.grid, 1), size(atmosphere.grid, 2))
+    exchange_size = (size(exchange_grid, 1), size(exchange_grid, 2))
+    atmosphere_size == exchange_size ||
+        throw(ArgumentError("The Breeze atmosphere's horizontal size $atmosphere_size must match the exchange grid's $exchange_size."))
+
+    # Breeze's bottom flux of every sedimenting condensate, liquid and frozen (positive down,
+    # kg m⁻² s⁻¹), enters as rain; Jˢⁿ stays zero.
+    Jʳⁿ = bottom_precipitation_flux(atmosphere)
 
     state = (; u    = Oceananigans.CenterField(exchange_grid),
                v    = Oceananigans.CenterField(exchange_grid),
@@ -137,7 +138,7 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
             _interpolate_breeze_state!,
             state, u, v, T, qᵛ, p)
 
-    compute!(state.Jʳⁿ)   # refresh the rain diagnostic (no-op for the zero-field fallback)
+    compute!(state.Jʳⁿ)   # refresh the precipitation diagnostic
 
     return nothing
 end
@@ -172,19 +173,33 @@ NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos::BreezeA
     NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(component_model(atmos))
 
 #####
-##### Assemble ESM similarity-theory fluxes into Breeze bottom BCs
+##### Assemble ESM similarity-theory fluxes into Breeze bottom BCs,
+##### weighting each surface's contribution by the surface partition:
+##### open ocean þ (1 - ℵ), sea ice þ ℵ, land (1 - þ).
 #####
 
-@kernel function _assemble_net_atmosphere_fluxes!(net, ao_fluxes, grid)
+# Center-located partition-weighted stress, interpolated to the face-located ρu/ρv
+# only after weighting.
+@inline function ρτᶜᶜᶜ(i, j, k, grid, ρτᵃᵒ, ρτᵃⁱ, ρτᵃˡ, þ, ℵ)
+    @inbounds begin
+        þᵢ = þ[i, j, k]
+        ℵᵢ = ℵ[i, j, k]
+        return þᵢ * ((1 - ℵᵢ) * ρτᵃᵒ[i, j, k] + ℵᵢ * ρτᵃⁱ[i, j, k]) + (1 - þᵢ) * ρτᵃˡ[i, j, k]
+    end
+end
+
+@kernel function _assemble_net_atmosphere_fluxes!(net, ao_fluxes, ai_fluxes, al_fluxes, þ, ℵ, grid)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        Qc = ao_fluxes.sensible_heat[i, j, 1]
-        Fv = ao_fluxes.water_vapor[i, j, 1]
+        þᵢ = þ[i, j, 1]
+        ℵᵢ = ℵ[i, j, 1]
 
-        # interpolate stresses on variable's location
-        net.ρu[i, j, 1]  = ℑxᶠᵃᵃ(i, j, 1, grid, ao_fluxes.x_momentum)
-        net.ρv[i, j, 1]  = ℑyᵃᶠᵃ(i, j, 1, grid, ao_fluxes.y_momentum)
-        net.ρE[i, j, 1]  = Qc   # sensible heat only; latent heat handled by moisture flux
+        Qc = þᵢ * ((1 - ℵᵢ) * ao_fluxes.sensible_heat[i, j, 1] + ℵᵢ * ai_fluxes.sensible_heat[i, j, 1]) + (1 - þᵢ) * al_fluxes.sensible_heat[i, j, 1]
+        Fv = þᵢ * ((1 - ℵᵢ) * ao_fluxes.water_vapor[i, j, 1]   + ℵᵢ * ai_fluxes.water_vapor[i, j, 1])   + (1 - þᵢ) * al_fluxes.water_vapor[i, j, 1]
+
+        net.ρu[i, j, 1] = ℑxᶠᵃᵃ(i, j, 1, grid, ρτᶜᶜᶜ, ao_fluxes.x_momentum, ai_fluxes.x_momentum, al_fluxes.x_momentum, þ, ℵ)
+        net.ρv[i, j, 1] = ℑyᵃᶠᵃ(i, j, 1, grid, ρτᶜᶜᶜ, ao_fluxes.y_momentum, ai_fluxes.y_momentum, al_fluxes.y_momentum, þ, ℵ)
+        net.ρE[i, j, 1] = Qc   # sensible heat only; latent heat handled by moisture flux
         net.ρqᵛᵉ[i, j, 1] = Fv
     end
 end
@@ -200,27 +215,15 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmo
     arch = architecture(grid)
     params = interface_kernel_parameters(grid)
 
-    # Atmosphere-ocean fluxes (when an ocean interface is present).
-    ao_interface = coupled_model.interfaces.atmosphere_ocean_interface
-    if !isnothing(ao_interface)
-        ao_fluxes = computed_fluxes(ao_interface)
-        if !isnothing(ao_fluxes)
-            launch!(arch, grid, params, _assemble_net_atmosphere_fluxes!, net, ao_fluxes, grid)
-        end
-    end
+    interfaces = coupled_model.interfaces
+    ao_fluxes = computed_fluxes(interfaces.atmosphere_ocean_interface)
+    ai_fluxes = computed_fluxes(interfaces.atmosphere_sea_ice_interface)
+    al_fluxes = computed_fluxes(interfaces.atmosphere_land_interface)
+    þ = interfaces.surface_partition.ocean_fraction
+    ℵ = sea_ice_concentration(coupled_model.sea_ice)
 
-    # Atmosphere-land fluxes (when a land interface is present).
-    # We assume at most one surface type per cell, so the kernel writes
-    # absolute values rather than accumulating; for full coverage with
-    # both ocean and land present, a tile-fraction weighted assembly
-    # would be needed.
-    al_interface = coupled_model.interfaces.atmosphere_land_interface
-    if !isnothing(al_interface)
-        al_fluxes = computed_fluxes(al_interface)
-        if !isnothing(al_fluxes)
-            launch!(arch, grid, params, _assemble_net_atmosphere_fluxes!, net, al_fluxes, grid)
-        end
-    end
+    launch!(arch, grid, params, _assemble_net_atmosphere_fluxes!,
+            net, ao_fluxes, ai_fluxes, al_fluxes, þ, ℵ, grid)
 
     return nothing
 end
