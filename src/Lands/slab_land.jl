@@ -199,11 +199,16 @@ applied this step.
 
 The clock is ticked first; subsequent closures see `land.clock.time =
 t + Δt`. Time-dependent property providers should therefore evaluate
-at the post-step time (consistent with `Atmospheres` and `Radiations`).
+at the post-step time (consistent with `Atmospheres` and `Radiations`),
+and every `FieldTimeSeries` among them is brought into memory at that time.
 """
 function Oceananigans.TimeSteppers.time_step!(land::SlabLand, Δt)
     tick!(land.clock, Δt)
     time = land.clock.time
+
+    for fts in extract_field_time_series(land)
+        update_field_time_series!(fts, Time(time))
+    end
 
     time_step!(land.hydrology, land, Δt, time)
     time_step!(land.energy,    land, Δt, time)
@@ -333,6 +338,8 @@ and `liquid_precipitation_flux` accumulators declared by the land closures.
 * `evaporation`                ← positive part of upward vapor flux.
 * `vapor_flux`                 ← the vapor flux drawn from the land water store (soil
                                  evaporation + transpiration), positive upward.
+* `transpiration`              ← upward dry-leaf vapor flux drawn from the root zone;
+                                 condensation remains a surface water input.
 * `liquid_precipitation_flux`  ← rainfall as Pˡ, positive downward (consumed by
                                  `VariablySaturatedHydrology`).
 
@@ -354,6 +361,7 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     Es  = hasproperty(fluxes, :surface_energy_flux)         ? fluxes.surface_energy_flux         : nothing
     Pl  = hasproperty(fluxes, :liquid_precipitation_flux)   ? fluxes.liquid_precipitation_flux   : nothing
     Cev = hasproperty(fluxes, :canopy_evaporation)         ? fluxes.canopy_evaporation         : nothing
+    Jt  = hasproperty(fluxes, :transpiration)              ? fluxes.transpiration              : nothing
 
     (isnothing(P) && isnothing(E) &&
      isnothing(Jv) && isnothing(Es) && isnothing(Pl)) && return nothing
@@ -366,8 +374,8 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     Jʳⁿ = hasproperty(atmos_state, :Jʳⁿ) ? atmos_state.Jʳⁿ : ZeroField()
 
     launch!(arch, grid, :xy, _assemble_slab_land_fluxes!,
-            P, E, Jv, Es, Pl, Cev, interface_fluxes, Jʳⁿ,
-            al_interface.temperature, skin_conductance(al_interface), land.temperature)
+            P, E, Jv, Jt, Es, Pl, Cev, interface_fluxes, Jʳⁿ,
+            al_interface.temperature, transpiration(al_interface), skin_conductance(al_interface), land.temperature)
     return nothing
 end
 
@@ -377,12 +385,13 @@ end
 @inline _maybe_write!(::Nothing, i, j, value) = nothing
 @inline _maybe_write!(field, i, j, value) = @inbounds field[i, j, 1] = value
 
-@kernel function _assemble_slab_land_fluxes!(P, E, Jv, Es, Pl, Cev, interface_fluxes, Jʳⁿ, Ts, Λ, T)
+@kernel function _assemble_slab_land_fluxes!(P, E, Jv, Jt, Es, Pl, Cev, interface_fluxes, Jʳⁿ, Ts, transpiration_flux, Λ, T)
     i, j = @index(Global, NTuple)
     @inbounds begin
         𝒬ᵀ = interface_fluxes.sensible_heat[i, j, 1]
         𝒬ᵛ = interface_fluxes.latent_heat[i, j, 1]
         Jᵛ = interface_fluxes.water_vapor[i, j, 1]
+        Jᵗ = transpiration_flux[i, j, 1]
         rain = Jʳⁿ[i, j, 1]
     end
     Jˡᵃ = land_vapor_flux(Ts, i, j, Jᵛ)
@@ -390,6 +399,7 @@ end
     _maybe_write!(P,   i, j, rain + max(zero(Jˡᵃ), -Jˡᵃ))
     _maybe_write!(E,   i, j, max(zero(Jˡᵃ), Jˡᵃ))
     _maybe_write!(Jv,  i, j, Jˡᵃ)
+    _maybe_write!(Jt,  i, j, max(0, Jᵗ))
     _maybe_write!(Cev, i, j, canopy_evaporation(Ts, i, j))
     _maybe_write!(Pl,  i, j, rain)
 end

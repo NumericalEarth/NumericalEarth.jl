@@ -2,7 +2,8 @@ include("runtests_setup.jl")
 
 using Oceananigans
 using Oceananigans: set!
-using Oceananigans.TimeSteppers: update_state!
+using Oceananigans.TimeSteppers: update_state!, time_step!
+using Oceananigans.OutputReaders: OnDisk, InMemory
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyAirSpace, CanopyConductanceHumidity, CanopyInterception,
     CriticalSaturation, InteractiveAbsorbedPAR, SoilConductiveFlux
@@ -49,6 +50,30 @@ end
         @test :canopy_water_storage_tendency in keys(land.diagnostics)
         @test :water_storage_tendency in keys(land.diagnostics)   # from the wrapped soil
     end
+end
+
+@testset "A buffered LAI series is brought into memory each step" begin
+    arch  = CPU()   # a FieldTimeSeries LAI runs on CPU only
+    FT    = Float64
+    grid  = LatitudeLongitudeGrid(arch, FT; size = 1, latitude = 10, longitude = 10, z = (-1, 0), topology = (Flat, Flat, Bounded))
+    times = 0.0:1.0:4.0
+    path  = joinpath(mktempdir(), "lai.jld2")
+    fts   = FieldTimeSeries{Center, Center, Nothing}(grid, times; backend = OnDisk(), path, name = "lai")
+    field = Field{Center, Center, Nothing}(grid)
+    for n in eachindex(times)
+        set!(field, 1 + times[n])
+        set!(fts, field, n)
+    end
+
+    lai  = FieldTimeSeries(path, "lai"; backend = InMemory(2), architecture = arch)
+    h    = InterceptingHydrology(FT; soil = soil_hydrology(FT), leaf_area_index = lai, capacity_per_leaf_area = 0.1)
+    land = SlabLand(grid; energy = SlabEnergy(FT), hydrology = h)
+    for _ in 1:3
+        time_step!(land, 1.0)
+    end
+
+    # LAI(t = 3) = 4 sits past the two snapshots resident when the series was opened.
+    @test scalar(land.diagnostics.canopy_water_capacity) ≈ 0.1 * 4
 end
 
 @testset "Canopy store budget closes when the store empties mid-step" begin

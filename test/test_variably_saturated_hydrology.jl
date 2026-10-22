@@ -4,6 +4,65 @@ using Oceananigans
 using Oceananigans.TimeSteppers: time_step!
 using NumericalEarth.Lands: viscosity_correction
 
+# Darcy's law with van Genuchten–Mualem properties, evaluated in Float64 for the reference.
+function reference_interlayer_flux(M₁, M₂, h₁, h₂, n, K₀)
+    m = 1 - 1/n
+    𝒮₁ = (Float64(M₁) / (1000h₁) - 0.05) / 0.35
+    𝒮₂ = (Float64(M₂) / (1000h₂) - 0.05) / 0.35
+    Π₁ = -expm1(-log(𝒮₁) / m)^(1/n)
+    Π₂ = -expm1(-log(𝒮₂) / m)^(1/n)
+    𝒮̄ = (𝒮₁ + 𝒮₂) / 2
+    K = K₀ * sqrt(𝒮̄) * expm1(m * log1p(-𝒮̄^(1/m)))^2
+    ℓ = (h₁ + h₂) / 2
+    return 1000K * (Π₂ - Π₁ - ℓ) / ℓ
+end
+
+@testset "Nonlinear wetting of dry soil" begin
+    for arch in test_architectures, FT in (Float32, Float64), n in (1.05, 1.2, 2.0),
+        (M₁, M₂) in ((0.0, 157.5), (15.0, 157.5), (75.0, 35.0))
+        grid = RectilinearGrid(arch, FT; size = 1, z = (-1, 0), topology = (Flat, Flat, Bounded))
+        hydrology = VariablySaturatedHydrology(FT; slab_depth = (0.3, 0.7), porosity = 0.4,
+            residual_liquid_fraction = 0.05, storage_height = 1000,
+            retention_curve = VanGenuchtenRetention(FT; inverse_air_entry_head = 1, pore_size_uniformity = n),
+            hydraulic_conductivity = VanGenuchtenConductivity(FT; matching_point_conductivity = 1e-5,
+                                                               pore_size_uniformity = n, water_viscosity = nothing))
+        land = SlabLand(grid; hydrology)
+        set!(land; T = 293, M = M₁, water_storage_2 = M₂)
+        time_step!(land, 60)
+        upper = scalar(land.water_storage)
+        lower = scalar(land.prognostic.water_storage_2)
+        flux = scalar(land.diagnostics.interlayer_liquid_flux_1)
+        tolerance = FT === Float32 ? 5e-3 : 1e-9
+        @test 15 < upper < 120
+        @test upper + lower ≈ M₁ + M₂ rtol = 8eps(FT)
+        @test upper - M₁ ≈ 60flux rtol = tolerance
+        @test flux ≈ reference_interlayer_flux(upper, lower, 0.3, 0.7, n, 1e-5) rtol = tolerance
+    end
+end
+
+@testset "Coupled nonlinear Darcy balance across three layers" begin
+    for arch in test_architectures, FT in (Float32, Float64)
+        grid = RectilinearGrid(arch, FT; size = 1, z = (-1, 0), topology = (Flat, Flat, Bounded))
+        hydrology = VariablySaturatedHydrology(FT; slab_depth = (0.3, 0.3, 0.4), porosity = 0.4,
+            residual_liquid_fraction = 0.05, storage_height = 1000,
+            retention_curve = VanGenuchtenRetention(FT; inverse_air_entry_head = 1, pore_size_uniformity = 2),
+            hydraulic_conductivity = VanGenuchtenConductivity(FT; matching_point_conductivity = 1e-3,
+                                                               pore_size_uniformity = 2, water_viscosity = nothing))
+        land = SlabLand(grid; hydrology)
+        set!(land; T = 293, M = 15, water_storage_2 = 100, water_storage_3 = 40)
+        time_step!(land, 600)
+        M₁, M₂, M₃ = scalar(land.water_storage), scalar(land.prognostic.water_storage_2), scalar(land.prognostic.water_storage_3)
+        J₁, J₂ = scalar(land.diagnostics.interlayer_liquid_flux_1), scalar(land.diagnostics.interlayer_liquid_flux_2)
+        tolerance = FT === Float32 ? 1e-4 : 1e-10
+        @test M₁ + M₂ + M₃ ≈ 155 rtol = 8eps(FT)
+        @test M₁ - 15 ≈ 600J₁ rtol = tolerance
+        @test M₂ - 100 ≈ 600 * (J₂ - J₁) rtol = tolerance
+        @test M₃ - 40 ≈ -600J₂ rtol = tolerance
+        @test J₁ ≈ reference_interlayer_flux(M₁, M₂, 0.3, 0.3, 2, 1e-3) rtol = tolerance
+        @test J₂ ≈ reference_interlayer_flux(M₂, M₃, 0.3, 0.4, 2, 1e-3) rtol = tolerance
+    end
+end
+
 @testset "VariablySaturatedHydrology diagnostics" begin
     for arch in test_architectures
         grid = RectilinearGrid(arch;
@@ -286,7 +345,7 @@ end
                                        retention_curve = retention, hydraulic_conductivity,
                                        deep_liquid_flux, root_fraction, runoff = NoRunoff())
         column(; kw...) = SlabLand(grid; hydrology = layered(; kw...))
-        quiet!(land) = (fill!(land.fluxes.vapor_flux, 0); fill!(land.fluxes.liquid_precipitation_flux, 0))
+        quiet!(land) = foreach(flux -> fill!(flux, 0), land.fluxes)
 
         land = column()
         @test keys(land.prognostic) == (:water_storage_2,)
@@ -336,6 +395,26 @@ end
         @test M₁ + M₂ ≈ 180 rtol=1e-12
         @test head(effective_saturation(M₂, h₂)) - head(effective_saturation(M₁, h₁)) ≈ ℓ atol=1e-2
 
+        # A top layer at residual wets from the moist layer below, without overshooting its pore volume.
+        land = column()
+        set!(land; T = 293.0, M = 1000h₁ * θʳ, water_storage_2 = 1000h₂ * (ν + θʳ) / 2)
+        quiet!(land)
+        for _ in 1:50
+            time_step!(land, 600.0)
+        end
+        M₁, M₂ = value(land.water_storage), value(land.prognostic.water_storage_2)
+        @test 1000h₁ * θʳ < M₁ < 1000h₁ * ν
+        @test M₁ + M₂ ≈ 1000h₁ * θʳ + 1000h₂ * (ν + θʳ) / 2 rtol=1e-12
+
+        # An impermeable layer passes nothing: the exchange sees the half-layers' conductivities in series.
+        land = column(hydraulic_conductivity = (VanGenuchtenConductivity(FT; matching_point_conductivity = 1e-5, pore_size_uniformity = 2.0),
+                                                VanGenuchtenConductivity(FT; matching_point_conductivity = 0, pore_size_uniformity = 2.0)))
+        set!(land; T = 293.0, M = 1000ν * h₁, water_storage_2 = 1000ν * h₂)
+        quiet!(land)
+        time_step!(land, 1.0)
+        @test value(land.diagnostics.interlayer_liquid_flux_1) == 0
+        @test value(land.prognostic.water_storage_2) == 1000ν * h₂
+
         # Rain fills the top layer to its pore volume and runs off; the layer below builds positive head.
         land = column()
         set!(land; T = 293.0, M = 75.0, water_storage_2 = 1000ν * h₂)
@@ -353,8 +432,9 @@ end
         @test M₁ ≈ 1000ν * h₁ && M₂ > 1000ν * h₂
         @test Π₂ - Π₁ ≈ ℓ atol=1e-3
 
-        # Roots draw the vapor sink from each layer in proportion to rₖ 𝒮ₖ; the surface reads
-        # the top layer's 𝒮₁ and the canopy stress the root-weighted Σ rₖ 𝒮ₖ.
+        # Roots draw the transpiration from each layer in proportion to rₖ 𝒮ₖ and the soil
+        # evaporation from the top layer; the surface reads the top layer's 𝒮₁ and the canopy
+        # stress the root-weighted Σ rₖ 𝒮ₖ.
         land = column(matching_point_conductivity = 1e-15, root_fraction = (0.5, 0.5))
         set!(land; T = 293.0, M = 30.0, water_storage_2 = 245.0)
         𝒮₁, 𝒮₂ = effective_saturation(30.0, h₁), effective_saturation(245.0, h₂)
@@ -363,10 +443,16 @@ end
         @test value(land.diagnostics.column_water_storage) ≈ 275.0
         quiet!(land)
         fill!(land.fluxes.vapor_flux, 1e-5)
+        fill!(land.fluxes.transpiration, 1e-5)
         time_step!(land, 600.0)
         @test 30 - value(land.water_storage) ≈ 600 * 1e-5 * 𝒮₁ / (𝒮₁ + 𝒮₂) rtol=1e-6
-
         @test 245 - value(land.prognostic.water_storage_2) ≈ 600 * 1e-5 * 𝒮₂ / (𝒮₁ + 𝒮₂) rtol=1e-6
+
+        set!(land; M = 30.0, water_storage_2 = 245.0)
+        fill!(land.fluxes.transpiration, 0)
+        time_step!(land, 600.0)
+        @test 30 - value(land.water_storage) ≈ 600 * 1e-5 rtol=1e-6
+        @test value(land.prognostic.water_storage_2) ≈ 245 rtol=1e-12
 
         # The whole column's water sets the thermal inertia of its single temperature.
         land = column(matching_point_conductivity = 1e-15)

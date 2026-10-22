@@ -5,12 +5,13 @@
 ##### augmented liquid fraction `ϑₖ = Mₖ/(ρˡ hₖ)`, so `Mₖ > Mₖ⁺` is admitted as saturated
 ##### positive-pressure storage (`Πₖ > 0`). With every flux positive upward,
 #####
-#####     dMₖ/dt = Jₖ − Jₖ₋₁ − fₖ Jᵛ − δₖ₁ (Jˡˢ + Rˡᵃᵗ),     J₀ ≡ 0,
+#####     dMₖ/dt = Jₖ − Jₖ₋₁ − fₖ Jᵗ − δₖ₁ (Jᵛ − Jᵗ + Jˡˢ + Rˡᵃᵗ),     J₀ ≡ 0,
 #####
 ##### where `Jₖ` is the Darcy flux across the bottom of layer `k` (the `deep_liquid_flux`
-##### closure under the last layer) and `fₖ ∝ rₖ 𝒮ₖ` is the root-weighted share of the
-##### vapor sink. The interlayer exchanges and a Darcy bottom closure are linearized in
-##### head and stepped implicitly; surface fluxes and the other bottom closures are explicit.
+##### closure under the last layer), `fₖ ∝ rₖ 𝒮ₖ` is the root-weighted share of the
+##### transpiration `Jᵗ`, and the soil evaporation `Jᵛ − Jᵗ` leaves the top layer. The
+##### interlayer exchanges are solved nonlinearly by backward Euler; a Darcy bottom closure
+##### is linearized in head. Surface fluxes and the other bottom closures are explicit.
 ##### Infiltration is limited to the pore volume the top layer has left, so positive-pressure
 ##### storage is reached only through upward Darcy flux or dew.
 #####
@@ -48,15 +49,16 @@ first. The top layer's water is the container's `water_storage`; deeper layers a
 prognostics `water_storage_2`, `water_storage_3`, …, which start at half effective saturation.
 
 Neighboring layers exchange water by Darcy's law across the distance `ℓ = (hₖ + hₖ₊₁)/2`
-between their centers, `Jₖ = ρˡ K̄ (Πₖ₊₁ − Πₖ − ℓ)/ℓ` with `K̄` the conductivity at their
-mean saturation, positive upward. The last layer exchanges with `deep_liquid_flux`; the
-surface fluxes and `runoff` act on the first. The vapor sink is drawn from layer `k` in
-proportion to `rₖ 𝒮ₖ`; `saturation` is the top layer's `𝒮₁` and the diagnostic
+between their centers, `Jₖ = ρˡ (Πₖ₊₁ − Πₖ − ℓ) / (hₖ/2Kₖ + hₖ₊₁/2Kₖ₊₁)` with the two
+half-layers' conductivities in series at their mean saturation, positive upward. The last
+layer exchanges with `deep_liquid_flux`; the surface fluxes, the soil evaporation, and
+`runoff` act on the first. The transpiration is drawn from layer `k` in proportion to
+`rₖ 𝒮ₖ`; `saturation` is the top layer's `𝒮₁` and the diagnostic
 `root_zone_saturation` the root-weighted `Σ rₖ 𝒮ₖ` the canopy stress reads. The interlayer
-exchanges and a Darcy bottom closure are linearized in head and stepped implicitly through a
-tridiagonal solve per column; surface fluxes and the other bottom closures are explicit. The
-interface conductivity, the root-weighted uptake, and the linearized step follow the Community
-Land Model [Oleson et al. (2013)](@cite oleson2013clm45).
+exchanges use backward Euler, with bracketed nonlinear solves for the conservative interlayer
+transfers iterated to convergence across the column. A Darcy bottom closure is linearized in
+head; surface fluxes and the other bottom closures are explicit. The interface conductivity
+and root-weighted uptake follow the Community Land Model [Oleson et al. (2013)](@cite oleson2013clm45).
 
 `slab_depth`, `porosity`, `residual_liquid_fraction`, and `storage_height` each accept a
 scalar (uniform) or a `Field` that varies grid point by grid point.
@@ -150,9 +152,9 @@ end
 layer_storage_names(h) = ntuple(k -> Symbol(:water_storage_, k + 1), length(h.root_fraction) - 1)
 interlayer_flux_names(h) = ntuple(k -> Symbol(:interlayer_liquid_flux_, k), length(h.root_fraction) - 1)
 
-# Coupler writes the signed vapor flux `Jᵛ` (positive upward) and the rainfall `Pˡ`
-# (positive downward) into `land.fluxes`.
-flux_variables(::VariablySaturatedHydrology) = (:vapor_flux, :liquid_precipitation_flux)
+# Coupler writes the signed vapor flux `Jᵛ` and its transpiration part `Jᵗ` (positive
+# upward) and the rainfall `Pˡ` (positive downward) into `land.fluxes`.
+flux_variables(::VariablySaturatedHydrology) = (:vapor_flux, :transpiration, :liquid_precipitation_flux)
 
 prognostic_variables(h::VariablySaturatedHydrology) =
     merge_unique(prognostic_variables(h.runoff), layer_storage_names(h))
@@ -204,34 +206,62 @@ end
     return 𝒮[1], sum(map(*, h.root_fraction, 𝒮))
 end
 
-# Conductance Λ = ρˡ K̄/ℓ and explicit Darcy flux between layers k and k+1, a distance
-# ℓ = (hₖ + hₖ₊₁)/2 apart, with K̄ at their mean saturation (Oleson et al. 2013, eq. 7.89).
-@inline function interlayer_exchange(h, s, T, k, i, j, grid)
-    FT = typeof(s[k].Π)
-    ℓ  = (convert(FT, stateindex(layer(h.slab_depth, k), i, j, 1)) +
-          convert(FT, stateindex(layer(h.slab_depth, k + 1), i, j, 1))) / 2
-    𝒮̄  = (s[k].𝒮 + s[k+1].𝒮) / 2
-    K̄  = (hydraulic_conductivity(i, j, grid, layer(h.hydraulic_conductivity, k), 𝒮̄, T) +
-          hydraulic_conductivity(i, j, grid, layer(h.hydraulic_conductivity, k + 1), 𝒮̄, T)) / 2
-    Λ  = convert(FT, h.liquid_density) * K̄ / ℓ
-    return Λ, Λ * (s[k+1].Π - s[k].Π - ℓ)
+# Conductance Λ and explicit Darcy flux between the centers of layers k and k+1, a distance
+# ℓ = (hₖ + hₖ₊₁)/2 apart: the two half-layers in series, each at the mean saturation
+# (Oleson et al. 2013, eq. 7.89), so an impermeable layer passes nothing.
+@inline function interlayer_exchange(h, s₁, s₂, T, k, i, j, grid)
+    FT   = typeof(s₁.Π)
+    hₖ   = convert(FT, stateindex(layer(h.slab_depth, k), i, j, 1))
+    hₖ₊₁ = convert(FT, stateindex(layer(h.slab_depth, k + 1), i, j, 1))
+    𝒮̄    = (s₁.𝒮 + s₂.𝒮) / 2
+    Kₖ   = hydraulic_conductivity(i, j, grid, layer(h.hydraulic_conductivity, k), 𝒮̄, T)
+    Kₖ₊₁ = hydraulic_conductivity(i, j, grid, layer(h.hydraulic_conductivity, k + 1), 𝒮̄, T)
+    Λ    = convert(FT, h.liquid_density) / (hₖ / (2Kₖ) + hₖ₊₁ / (2Kₖ₊₁))
+    return Λ, Λ * (s₂.Π - s₁.Π - (hₖ + hₖ₊₁) / 2)
 end
 
-# Thomas algorithm on tuples; `lower[k]` couples row k+1 to k and `upper[k]` row k to k+1.
-@inline function solve_tridiagonal(lower, diagonal, upper, rhs)
-    N = length(diagonal)
-    b = diagonal
-    d = rhs
-    for k in 2:N
-        w = lower[k-1] / b[k-1]
-        b = Base.setindex(b, b[k] - w * upper[k-1], k)
-        d = Base.setindex(d, d[k] - w * d[k-1], k)
+@inline function implicit_darcy_transfers(h, storage, bottom_storage, bottom_flux, bottom_slope, Δt, T, i, j, grid)
+    FT = eltype(storage)
+    N = length(storage)
+    transfers = map(zero, storage)
+    change = one(FT)
+
+    # Nonlinear Gauss–Seidel on Δt Jₖ; each bracket limits the transfer to the available water.
+    while change > 8eps(FT)
+        previous = transfers
+        for k in 1:N-1
+            above = (zero(FT), Base.front(transfers)...)
+            upper_storage = storage[k] - above[k]
+            lower_storage = storage[k+1] + transfers[k+1]
+            lo, hi = -upper_storage, lower_storage
+            transfer = clamp(zero(FT), lo, hi)
+            iteration = 0
+            tolerance = eps(FT) * max(1, abs(upper_storage), abs(lower_storage))
+            while (hi > lo) & (iteration < 2precision(FT) + 4)
+                s₁ = layer_state(h, upper_storage + transfer, T, k, i, j, grid)
+                s₂ = layer_state(h, lower_storage - transfer, T, k + 1, i, j, grid)
+                Λ, flux = interlayer_exchange(h, s₁, s₂, T, k, i, j, grid)
+                residual = transfer - Δt * flux
+                converged = abs(residual) ≤ tolerance
+                lo = ifelse((residual ≤ 0) | converged, transfer, lo)
+                hi = ifelse((residual ≥ 0) | converged, transfer, hi)
+                candidate = transfer - residual / (1 + Δt * Λ * (s₁.dΠdM + s₂.dΠdM))
+                # Alternate a bounded head-Newton step with bisection to guarantee bracket contraction.
+                newton = iseven(iteration) & (candidate > lo) & (candidate < hi)
+                transfer = ifelse(newton, candidate, (lo + hi) / 2)
+                iteration += 1
+            end
+            transfers = Base.setindex(transfers, transfer, k)
+        end
+
+        above = (zero(FT), Base.front(transfers)...)
+        bottom_change = storage[end] - above[end] - bottom_storage
+        transfer = Δt * (bottom_flux - bottom_slope * bottom_change) / (1 + Δt * bottom_slope)
+        transfers = Base.setindex(transfers, transfer, N)
+        scale = max(1, maximum(map(abs, storage)), maximum(map(abs, transfers)))
+        change = maximum(map((a, b) -> abs(a - b), transfers, previous)) / scale
     end
-    x = Base.setindex(d, d[N] / b[N], N)
-    for k in N-1:-1:1
-        x = Base.setindex(x, (d[k] - upper[k] * x[k+1]) / b[k], k)
-    end
-    return x
+    return transfers
 end
 
 #####
@@ -250,12 +280,13 @@ end
 end
 
 @kernel function _variably_saturated_step!(M, saturation, interlayer_flux_fields, diagnostics,
-                                           Jᵛ, Pˡ, T, prognostic, h, deep_pressure_head, Δt, grid, time)
+                                           Jᵛ, Jᵗ, Pˡ, T, prognostic, h, deep_pressure_head, Δt, grid, time)
     i, j = @index(Global, NTuple)
     N = length(M)
     @inbounds begin
         Mⁿ   = ntuple(k -> M[k][i, j, 1], Val(N))
         Jᵛᵢⱼ = Jᵛ[i, j, 1]
+        Jᵗᵢⱼ = Jᵗ[i, j, 1]
         Pˡᵢⱼ = Pˡ[i, j, 1]
         Tij  = T[i, j, 1]
         Πᵈ   = stateindex(deep_pressure_head, i, j, 1, grid, Time(time), (Center, Center, Center))
@@ -269,35 +300,21 @@ end
     Jˡˢ, Rˢᶠᶜ = surface_water_balance!(i, j, grid, h.runoff, prognostic, Pˡᵢⱼ, Mⁿ[1], s₁.M⁺, s₁.θ, s₁.𝒮, s₁.Π, s₁.K, δt)
     Rˡᵃᵗ      = subsurface_runoff(h.runoff, Mⁿ[1], s₁.Π, s₁.K)
     Jᵇ        = deep_liquid_flux(h.deep_liquid_flux, Mⁿ[end], sₙ.θ, sₙ.𝒮, sₙ.Π, sₙ.K, Πᵈ, time)
-    exchanges = ntuple(k -> interlayer_exchange(h, s, Tij, k, i, j, grid), Val(N - 1))
-    Λ  = (map(first, exchanges)..., -deep_liquid_flux_head_derivative(h.deep_liquid_flux, sₙ.K))
-    J⁰ = (map(last, exchanges)..., Jᵇ)
+    bottom_slope = -deep_liquid_flux_head_derivative(h.deep_liquid_flux, sₙ.K) * sₙ.dΠdM
 
-    # Root-weighted share of the vapor sink, fₖ = rₖ 𝒮ₖ / Σⱼ rⱼ 𝒮ⱼ (Oleson et al. 2013, eqs. 7.107 and
-    # 8.26); all from the top layer of a dry column.
+    # Root-weighted share of the transpiration, fₖ = rₖ 𝒮ₖ / Σⱼ rⱼ 𝒮ⱼ (Oleson et al. 2013, eqs. 7.107
+    # and 8.26); all from the top layer of a dry column.
     w   = map(*, h.root_fraction, map(x -> x.𝒮, s))
     Σw  = sum(w)
     wet = Σw > 0
     f   = ntuple(k -> ifelse(wet, w[k] / ifelse(wet, Σw, one(FT)), FT(k == 1)), Val(N))
 
-    # Explicit tendencies Fₖ, then the head-linearized implicit correction of the Darcy
-    # exchanges, ΔMₖ − δt Σⱼ (∂Fₖ/∂Mⱼ) ΔMⱼ = δt Fₖ, tridiagonal in the layers (Oleson et al.
-    # 2013, eq. 7.110).
-    flux_above        = (zero(FT), Base.front(J⁰)...)
-    conductance_above = (zero(FT), Base.front(Λ)...)
-    sink  = (Jˡˢ + Rˡᵃᵗ, ntuple(_ -> zero(FT), Val(N - 1))...)
-    F     = ntuple(k -> J⁰[k] - flux_above[k] - f[k] * Jᵛᵢⱼ - sink[k], Val(N))
-    dΠdM  = map(x -> x.dΠdM, s)
-    lower = ntuple(k -> -δt * Λ[k] * dΠdM[k], Val(N - 1))
-    diag  = ntuple(k -> 1 + δt * dΠdM[k] * (Λ[k] + conductance_above[k]), Val(N))
-    upper = ntuple(k -> -δt * Λ[k] * dΠdM[k+1], Val(N - 1))
-    ΔM    = solve_tridiagonal(lower, diag, upper, map(x -> δt * x, F))
-
-    # Fluxes realized by the implicit step; the fixed deep head under the last layer does not move.
-    storage_change_below = (Base.tail(ΔM)..., zero(FT))
-    head_slope_below     = (Base.tail(dΠdM)..., zero(FT))
-    J     = ntuple(k -> J⁰[k] + Λ[k] * (head_slope_below[k] * storage_change_below[k] - dΠdM[k] * ΔM[k]), Val(N))
-    Mⁿ⁺¹  = map((m, δ) -> max(m + δ, 0), Mⁿ, ΔM)
+    loss = ntuple(k -> f[k] * Jᵗᵢⱼ + ifelse(k == 1, Jᵛᵢⱼ - Jᵗᵢⱼ + Jˡˢ + Rˡᵃᵗ, zero(FT)), Val(N))
+    storage = map((m, l) -> m - δt * l, Mⁿ, loss)
+    transfers = implicit_darcy_transfers(h, storage, Mⁿ[end], Jᵇ, bottom_slope, δt, Tij, i, j, grid)
+    transfers_above = (zero(FT), Base.front(transfers)...)
+    Mⁿ⁺¹ = map((m, q, a) -> max(m + q - a, 0), storage, transfers, transfers_above)
+    J = map(q -> q / δt, transfers)
 
     @inbounds begin
         for k in 1:N
@@ -322,7 +339,7 @@ function time_step!(h::VariablySaturatedHydrology, land, Δt, time,
                     liquid_input = land.fluxes.liquid_precipitation_flux)
     launch!(architecture(land.grid), land.grid, :xy, _variably_saturated_step!,
             layer_storages(h, land), land.saturation, interlayer_fluxes(h, land), land.diagnostics,
-            land.fluxes.vapor_flux, liquid_input, land.temperature, land.prognostic,
+            land.fluxes.vapor_flux, land.fluxes.transpiration, liquid_input, land.temperature, land.prognostic,
             h, h.deep_pressure_head, Δt, land.grid, time)
     return nothing
 end

@@ -64,12 +64,12 @@ $(TYPEDSIGNATURES)
     αᵃᵉ  = convert(FT, stateindex(r.inverse_air_entry_head, i, j, 1))
     𝓃  = convert(FT, stateindex(r.pore_size_uniformity, i, j, 1))
     𝓂  = van_genuchten_m(𝓃)
-    𝒮c = clamp(𝒮, 0, 1)
+    # Keep the dry-end pressure finite.
+    𝒮c = clamp(𝒮, eps(FT), one(FT))
 
-    # the head is capped at √floatmax so the pole at 𝒮 = 0 stays finite
-    logΠᵐᵃˣ = log(floatmax(FT)) / 2
+    # Leave room for subtracting heads of opposite sign in Darcy's law.
     logΠ    = logexpm1(-log(𝒮c) / 𝓂) / 𝓃 - log(αᵃᵉ)
-    return ifelse(𝒮c >= 1, zero(FT), -exp(min(logΠ, logΠᵐᵃˣ)))
+    return ifelse(𝒮c >= 1, zero(FT), -min(exp(logΠ), floatmax(FT) / 2))
 end
 
 # Per-cell endpoint evaluation for the interface's plant-stress formulations.
@@ -91,7 +91,12 @@ Slope `dΠ/d𝒮` of the [`VanGenuchtenRetention`](@ref) pressure head at effect
     n = convert(FT, stateindex(r.pore_size_uniformity, i, j, 1))
     m = van_genuchten_m(n)
     𝒮c = clamp(𝒮, eps(FT), one(FT) - eps(FT))
-    return (𝒮c^(-1/m) - one(FT))^(1/n - one(FT)) * 𝒮c^(-1/m - one(FT)) / (α * n * m)
+    log𝒮 = log(𝒮c)
+    logΠ = logexpm1(-log𝒮 / m) / n - log(α)
+    log_slope = (1/n - 1) * logexpm1(-log𝒮 / m) - (1/m + 1) * log𝒮 - log(α * n * m)
+    # The capped head is constant below the dry endpoint.
+    capped = (𝒮 ≤ eps(FT)) | (logΠ ≥ log(floatmax(FT) / 2))
+    return ifelse(capped, zero(FT), min(exp(log_slope), floatmax(FT) / 2))
 end
 
 Base.summary(r::VanGenuchtenRetention) =

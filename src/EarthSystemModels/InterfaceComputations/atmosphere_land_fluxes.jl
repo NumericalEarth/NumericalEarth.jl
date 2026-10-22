@@ -55,6 +55,16 @@ end
 @inline build_interface_temperature(temperature_formulation, grid) = Field{Center, Center, Nothing}(grid)
 @inline build_interface_temperature(cas::CanopyAirSpace, grid) = CanopyAirSpaceDiagnostics(grid, cas.storage)
 
+function transpiration(interface::AtmosphereInterface)
+    if interface.properties.specific_humidity_formulation isa CanopyConductanceHumidity
+        return interface.fluxes.water_vapor
+    elseif interface.temperature isa CanopyAirSpaceDiagnostics
+        return interface.temperature.transpiration
+    else
+        return ZeroField()
+    end
+end
+
 # Initial interface values for the fixed point: the bulk land temperature and its
 # saturation humidity, or the stored state of a prognostic formulation once the model
 # is stepping (`Δt > 0`; the initializing call has `Δt = 0`).
@@ -98,6 +108,7 @@ end
         Ts.canopy_evaporation[i, j, 1]     = sol.Eʷᵉᵗ
         Ts.canopy_wet_latent_heat[i, j, 1] = sol.ℒ * sol.Eʷᵉᵗ
         Ts.land_vapor_flux[i, j, 1]        = (sol.LEˡᵉᵃᶠ + sol.LEᵍ) / sol.ℒ - sol.Eʷᵉᵗ
+        Ts.transpiration[i, j, 1]          = sol.LEˡᵉᵃᶠ / sol.ℒ - sol.Eʷᵉᵗ
     end
     advance_canopy_air_state!(Ts.state, i, j, sol, Ψₛ)
 
@@ -290,10 +301,11 @@ end
 
 # Host-side: pair a prescribed-surface spec (LAI, vegetation fraction, …) with the time
 # index used to interpolate it. Constants and static fields pass through untouched
-# (`nothing` interpolator); a `FieldTimeSeries` keeps its time index precomputed on the
-# host, so the kernel does not recompute it.
+# (`nothing` interpolator); a `FieldTimeSeries` is brought into memory at `time` and keeps
+# its time index precomputed on the host, so the kernel does not recompute it.
 @inline kernel_surface_field(surface_field, arch, time) = (surface_field, nothing)
 @inline function kernel_surface_field(surface_field::FieldTimeSeries, arch, time)
+    update_field_time_series!(surface_field, Time(time))
     time_interpolator = cpu_interpolating_time_indices(arch, surface_field.times,
                                                        surface_field.time_indexing, time)
     return surface_field, time_interpolator

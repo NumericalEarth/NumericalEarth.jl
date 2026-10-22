@@ -2,9 +2,10 @@ include("runtests_setup.jl")
 
 using Oceananigans
 using Oceananigans: set!, interior
-using Oceananigans.TimeSteppers: update_state!
+using Oceananigans.TimeSteppers: update_state!, time_step!
+using Oceananigans.OutputReaders: OnDisk, InMemory
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyAirSpace, CanopyConductanceHumidity, CanopyInterception,
+    CanopyAirSpace, CanopyConductanceHumidity, CanopyInterception, EnergyBalanceTemperature,
     DryLayerHumidity, StorageBasedDryLayerDepth, DryLayerVaporPistonVelocity, PowerLawTortuosity,
     CriticalSaturation, InteractiveAbsorbedPAR, absorbed_par_value,
     SoilConductiveFlux, SoilSkinTemperature, canopy_air_space_solve, dry_layer_terms,
@@ -12,7 +13,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     AirLandInterfaceState, InterfaceFluxScales, InterfaceVelocities, AirLandRadiationState,
     AreaIndexUndercanopyConductance, FrictionVelocityUndercanopyConductance, undercanopy_conductance,
     SellersSoilResistance, LitterResistance, soil_surface_resistance, litter_resistance,
-    CanopyAirSpaceDiagnostics, DiagnosticSkin
+    CanopyAirSpaceDiagnostics, DiagnosticSkin, kernel_surface_field, surface_field_value
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 build_canopy_air_space(FT; optics...) = CanopyAirSpace(FT;
     soil = bare_soil_humidity(FT),
@@ -385,4 +386,75 @@ end
         soil_share(sol) = sol.LEᵍ / (sol.LEᵍ + sol.LEˡᵉᵃᶠ)
         @test soil_share(sparse) > soil_share(closed)
     end
+end
+
+@testset "Saturated soil under calm air keeps the canopy solve finite" begin
+    FT = Float64
+    ℂ  = AtmosphereThermodynamicsParameters(FT)
+    ℙₐ = (thermodynamics_parameters = ℂ, gravitational_acceleration = FT(9.81))
+    soil = DryLayerHumidity(FT;
+        dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
+                                                    dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
+        vapor_exchange  = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
+                                                      molecular_diffusivity = 2.4e-5, tortuosity = PowerLawTortuosity()),
+        thermal_exchange_depth = 0.05, porosity = 0.4)
+    cas = CanopyAirSpace(FT; soil,
+        canopy = CanopyConductanceHumidity(FT; leaf_area_index = 3.0, moisture_stress = CriticalSaturation(0.5),
+                                           absorbed_par = InteractiveAbsorbedPAR(FT)),
+        soil_skin_flux = SoilConductiveFlux(1.5, 0.05),
+        undercanopy_conductance = FrictionVelocityUndercanopyConductance(FT))
+
+    Ψₐ  = (z = FT(10), u = FT(0), v = FT(0), T = FT(300), p = FT(101325), q = FT(0.008), h_bℓ = FT(600))
+    Ψᵢ  = (u = FT(0), v = FT(0), T = FT(298))
+    Ψᵣ  = AirLandRadiationState(FT(5.670374e-8), FT(0.2), FT(0.95), FT(-600), FT(-350))
+    flx = InterfaceFluxScales(FT(0), FT(0), FT(0), FT(0.1), FT(0.1)); vel = InterfaceVelocities(FT(0), FT(0))
+    Ψₛ  = AirLandInterfaceState(flx, vel, FT(298), FT(0.012), (saturation = FT(1),),
+                                (temperature = FT(298), time_step = FT(0)), (leaf_area_index = FT(3),))
+    sol = canopy_air_space_solve(cas, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+
+    # Saturated pores close the Fick path and calm air the undercanopy path: no ground vapor flux.
+    @test all(isfinite, (sol.Tˡᵉᵃᶠ, sol.Tᵍ, sol.Tᵃᶜ, sol.LEᵍ, sol.Hᵍ))
+    @test sol.LEᵍ == 0
+end
+
+@testset "Land radiation diagnostics follow the radiating surface" begin
+    for arch in test_architectures
+        α, ϵ, SW = 0.2, 0.95, 600.0
+
+        skin  = EnergyBalanceTemperature(SoilConductiveFlux(1.5, 0.05); storage = DiagnosticSkin())
+        model = coupled_land_model(arch; atmosphere_land_interface_temperature = skin)
+        time_step!(model, 60.0)
+        σ   = model.radiation.stefan_boltzmann_constant
+        rad = model.radiation.interface_fluxes.land
+        Tₛ  = scalar(model.interfaces.atmosphere_land_interface.temperature)
+        @test scalar(rad.upwelling_longwave) ≈ ϵ * σ * Tₛ^4 rtol = 1e-6
+        @test scalar(rad.downwelling_shortwave) ≈ -(1 - α) * SW rtol = 1e-6
+
+        cas   = build_canopy_air_space(Float64)
+        model = coupled_land_model(arch; atmosphere_land_interface_temperature = cas,
+                                   atmosphere_land_interface_specific_humidity = cas)
+        time_step!(model, 60.0)
+        rad = model.radiation.interface_fluxes.land
+        Ts  = model.interfaces.atmosphere_land_interface.temperature
+        @test scalar(rad.upwelling_longwave) ≈ σ * scalar(Ts.effective)^4 rtol = 1e-6
+        @test scalar(rad.downwelling_shortwave) ≈ -(1 - scalar(Ts.effective_albedo)) * SW rtol = 1e-6
+    end
+end
+
+@testset "Buffered vegetation series are brought into memory before sampling" begin
+    arch  = CPU()
+    grid  = LatitudeLongitudeGrid(arch; size = 1, latitude = 10, longitude = 10, z = (-1, 0), topology = (Flat, Flat, Bounded))
+    times = 0.0:1.0:4.0
+    path  = joinpath(mktempdir(), "lai.jld2")
+    fts   = FieldTimeSeries{Center, Center, Nothing}(grid, times; backend = OnDisk(), path, name = "lai")
+    field = Field{Center, Center, Nothing}(grid)
+    for n in eachindex(times)
+        set!(field, 1 + times[n])
+        set!(fts, field, n)
+    end
+
+    # Two snapshots resident; sampling between the third and fourth has to load them first.
+    lai = FieldTimeSeries(path, "lai"; backend = InMemory(2), architecture = arch)
+    vegetation, interpolator = kernel_surface_field(lai, arch, 2.5)
+    @test surface_field_value(vegetation, 1, 1, interpolator) ≈ 3.5
 end

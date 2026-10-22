@@ -68,7 +68,7 @@ using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger,
                                                  canopy_transmittance, skin_conductance, skin_temperature,
-                                                 canopy_evaporation, land_vapor_flux
+                                                 canopy_evaporation, land_vapor_flux, transpiration
 
 # Extended by external land models
 function land_model end

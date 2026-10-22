@@ -5,9 +5,9 @@ using DocStringExtensions: TYPEDSIGNATURES, SIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: architecture
-using Oceananigans.Fields: AbstractField, Field, Face, Center, FractionalIndices
+using Oceananigans.Fields: AbstractField, Field, Face, Center, FractionalIndices, ZeroField
 using Oceananigans.Grids: Flat, Periodic, halo_size, topology, _node
-using Oceananigans.OutputReaders: FieldTimeSeries, FlavorOfFTS, cpu_interpolating_time_indices
+using Oceananigans.OutputReaders: FieldTimeSeries, FlavorOfFTS, cpu_interpolating_time_indices, update_field_time_series!
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: KernelParameters, worksize
 

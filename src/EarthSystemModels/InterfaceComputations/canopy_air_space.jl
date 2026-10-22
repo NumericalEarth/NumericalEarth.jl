@@ -536,7 +536,7 @@ end
 @inline function soil_vapor_terms(soil, Tᵍ, gᵍᵛ, gᵖ, Ψₛ, Ψₐ, ℙₐ)
     Gᵉ, qᵉ, fᵈ, qᵍ⁺, dqᵉ = dry_layer_terms(soil, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
     dqᵍ⁺ = saturation_humidity_slope(ℙₐ.thermodynamics_parameters, Tᵍ, Ψₐ.p, soil.phase)
-    Gᵉ = Gᵉ * gᵖ / (gᵖ + Gᵉ)
+    Gᵉ = ifelse(gᵖ + Gᵉ > 0, Gᵉ * gᵖ / (gᵖ + Gᵉ), zero(Gᵉ))
     Gᵉ⁺ = fᵈ * Gᵉ + (1 - fᵈ) * gᵍᵛ
     blended = Gᵉ⁺ > eps(eltype(Ψₛ))
     qᵉ⁺  = ifelse(blended, (fᵈ * Gᵉ * qᵉ  + (1 - fᵈ) * gᵍᵛ * qᵍ⁺)  / Gᵉ⁺, qᵍ⁺)
@@ -777,6 +777,7 @@ struct CanopyAirSpaceDiagnostics{F, S}
     canopy_evaporation     :: F   # wet-canopy evaporation Eʷᵉᵗ (kg m⁻² s⁻¹, up)
     canopy_wet_latent_heat :: F   # wet-canopy latent heat ℒ·Eʷᵉᵗ (W m⁻², up)
     land_vapor_flux        :: F   # soil evaporation + transpiration, drawn from the land water store
+    transpiration          :: F   # leaf transpiration LEˡᵉᵃᶠ/ℒ − Eʷᵉᵗ, drawn from the root zone
     state                  :: S   # prognostic CanopyAirState, or nothing (diagnostic node)
 end
 
@@ -790,8 +791,9 @@ Adapt.@adapt_structure CanopyAirSpaceDiagnostics
 @inline skin_temperature(Ts::CanopyAirSpaceDiagnostics, i, j) = @inbounds Ts.soil_skin[i, j, 1]
 
 # Vapor fluxes the land closures consume: the wet-canopy evaporation `Eʷᵉᵗ` drains the canopy
-# store, the rest of the leaf and ground sources drain the land water store. A plain skin
-# has no canopy, and its atmospheric vapor flux `Jᵛ` is the land's loss.
+# store, the rest of the leaf and ground sources drain the land water store, the leaf part of
+# it from the root zone. A plain skin has no canopy, and its atmospheric vapor flux `Jᵛ` is
+# the land's loss.
 @inline canopy_evaporation(Ts, i, j) = false
 @inline canopy_evaporation(Ts::CanopyAirSpaceDiagnostics, i, j) = @inbounds Ts.canopy_evaporation[i, j, 1]
 @inline land_vapor_flux(Ts, i, j, Jᵛ) = Jᵛ

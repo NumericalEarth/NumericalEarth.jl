@@ -28,6 +28,8 @@ struct TiledLandInterface{V, B, F, FL, T}
     temperature :: T
 end
 
+transpiration(interface::TiledLandInterface) = interface.temperature.transpiration
+
 """
     TiledLandInterface(grid, atmosphere, land;
                        vegetated,
@@ -157,6 +159,7 @@ end
         blended_temperature.canopy_evaporation[i, j, 1]     = veg_temperature.canopy_evaporation[i, j, 1]
         blended_temperature.canopy_wet_latent_heat[i, j, 1] = f * veg_temperature.canopy_wet_latent_heat[i, j, 1]
         blended_temperature.land_vapor_flux[i, j, 1]        = f * veg_temperature.land_vapor_flux[i, j, 1] + g * bare_fluxes.water_vapor[i, j, 1]
+        blended_temperature.transpiration[i, j, 1]          = f * veg_temperature.transpiration[i, j, 1]
 
         # Effective (LST) temperature: σ T⁴ = f · LWꜛ(vegetated) + (1 − f) · LWꜛ(bare), where the
         # bare tile emits ϵ σ Tᵇ⁴ and reflects (1 − ϵ) of the downwelling.

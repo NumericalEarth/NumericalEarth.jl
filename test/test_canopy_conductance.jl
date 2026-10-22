@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using CUDA
 using Oceananigans
 using Oceananigans: set!
-using Oceananigans.TimeSteppers: update_state!
+using Oceananigans.TimeSteppers: update_state!, time_step!
 using Thermodynamics
 using NumericalEarth.Lands: SaturatedSurface
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
@@ -63,6 +63,31 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
         # The intercellular CO₂ is the closed-form Medlyn optimality ratio.
         @test ci_ref ≈ ca * cond.g1 / (cond.g1 + sqrt(FT(1000)))
         @inferred stomatal_conductance(cond, photo, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(1))
+    end
+end
+
+@testset "Standalone canopy transpiration draws from the root zone" begin
+    for arch in test_architectures, Tland in (300.0, 280.0)
+        hydrology = VariablySaturatedHydrology(; slab_depth = (0.3, 0.7), porosity = 0.4,
+            residual_liquid_fraction = 0.05, storage_height = 1000, root_fraction = (0.5, 0.5),
+            retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1, pore_size_uniformity = 2),
+            hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 0,
+                                                               pore_size_uniformity = 2))
+        model = coupled_land_model(arch; hydrology, Tland, water = 30.0,
+            Tair = 290.0, qair = 0.01, wind = 5.0,
+            atmosphere_land_interface_specific_humidity = CanopyConductanceHumidity(leaf_area_index = 3))
+        land = model.land
+        set!(land; M = 30, water_storage_2 = 245)
+        update_state!(model)
+        time_step!(model, 60)
+
+        vapor = scalar(land.fluxes.vapor_flux)
+        transpiration = scalar(land.fluxes.transpiration)
+        @test (Tland - 290) * vapor > 0
+        @test transpiration == max(0, vapor)
+        # Effective saturations are 1/7 and 6/7; equal root fractions give the same uptake shares.
+        @test scalar(land.water_storage) ≈ 30 - 60 * (vapor - transpiration + transpiration / 7)
+        @test scalar(land.prognostic.water_storage_2) ≈ 245 - 60 * transpiration * 6 / 7
     end
 end
 
