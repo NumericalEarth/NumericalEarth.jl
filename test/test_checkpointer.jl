@@ -1,6 +1,7 @@
 include("runtests_setup.jl")
 
 using Glob
+using Oceananigans.OutputReaders: OnDisk, InMemory
 using Oceananigans.OutputWriters: Checkpointer
 using Oceananigans.TimeSteppers: reset!
 using NumericalEarth.EarthSystemModels: components, AbstractPrescribedComponent
@@ -126,6 +127,85 @@ end
         @test model.clock.iteration == ref_iteration
 
         # Cleanup
+        rm.(glob("$(prefix)_iteration*.jld2"), force=true)
+    end
+end
+
+@testset "Checkpointing with windowed atmosphere time series" begin
+    for arch in test_architectures
+        A = typeof(arch)
+        @info "Testing checkpointing with windowed atmosphere time series on $A"
+
+        grid = LatitudeLongitudeGrid(arch;
+                                     size = (10, 10, 4),
+                                     z = (-100, 0),
+                                     latitude = (30, 40),
+                                     longitude = (-70, -60),
+                                     halo = (7, 7, 7))
+
+        times = 0:60:600.0
+        directory = mktempdir()
+
+        # u, v, T and p hold 3 of the 11 times in memory; q holds all 11.
+        for (name, value) in ((:u, t -> 5), (:v, t -> 1), (:T, t -> 290 + t / 60), (:p, t -> 101325))
+            fts = FieldTimeSeries{Center, Center, Nothing}(grid, times; backend = OnDisk(),
+                                                           path = joinpath(directory, "$name.jld2"),
+                                                           name = string(name))
+            field = Field{Center, Center, Nothing}(grid)
+            for n in eachindex(times)
+                set!(field, value(times[n]))
+                set!(fts, field, n)
+            end
+        end
+
+        windowed(name) = FieldTimeSeries(joinpath(directory, "$name.jld2"), string(name);
+                                         backend = InMemory(3), architecture = arch)
+
+        function make_model()
+            ocean = ocean_simulation(grid, closure=nothing)
+            set!(ocean.model, T=20, S=35)
+
+            q = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+            for n in eachindex(times)
+                set!(q[n], 0.008 + times[n] / 6e5)
+            end
+
+            atmosphere = PrescribedAtmosphere(grid, times;
+                                              velocities = (u = windowed(:u), v = windowed(:v)),
+                                              temperature = windowed(:T),
+                                              specific_humidity = q,
+                                              pressure = windowed(:p))
+
+            return OceanOnlyModel(ocean; atmosphere, radiation = PrescribedRadiation(grid))
+        end
+
+        # The windows of u, v, T and p start at time index 3 in the uninterrupted run and at
+        # index 4 after restoring at iteration 4.
+        model = make_model()
+        simulation = Simulation(model, Δt=60, stop_iteration=4, verbose=false)
+        run!(simulation)
+        simulation = Simulation(model, Δt=60, stop_iteration=6, verbose=false)
+        run!(simulation)
+
+        ref_T = Array(interior(model.ocean.model.tracers.T))
+        ref_S = Array(interior(model.ocean.model.tracers.S))
+
+        prefix = "windowed_atmosphere_checkpointer_test_$(typeof(arch))"
+
+        model = make_model()
+        simulation = Simulation(model, Δt=60, stop_iteration=4, verbose=false)
+        simulation.output_writers[:checkpointer] = Checkpointer(model; schedule = IterationInterval(4), prefix)
+        run!(simulation)
+
+        model = make_model()
+        simulation = Simulation(model, Δt=60, stop_iteration=6, verbose=false)
+        simulation.output_writers[:checkpointer] = Checkpointer(model; schedule = IterationInterval(4), prefix)
+        set!(simulation; checkpoint=:latest)
+        run!(simulation)
+
+        @test Array(interior(model.ocean.model.tracers.T)) ≈ ref_T rtol=1e-13
+        @test Array(interior(model.ocean.model.tracers.S)) ≈ ref_S rtol=1e-13
+
         rm.(glob("$(prefix)_iteration*.jld2"), force=true)
     end
 end

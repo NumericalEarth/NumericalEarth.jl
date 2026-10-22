@@ -1,8 +1,6 @@
-using Oceananigans.Grids: inactive_node, longitude_in_same_window, topology, Flat
+using Oceananigans.Grids: inactive_node, longitude_in_same_window, topology
 using Oceananigans.Operators: Azᶜᶜᶜ
-using Oceananigans.Architectures: on_architecture, CPU
 using Oceananigans.DistributedComputations: Distributed, all_reduce, global_size
-using Oceananigans.Fields: interior
 
 #####
 ##### River routing: map river-mouth discharge onto coastal ocean cells
@@ -242,7 +240,7 @@ end
 global_grid_size(arch, local_size) = local_size
 global_grid_size(arch::Distributed, local_size) = global_size(arch, local_size)
 
-# Index into `wet` of the cell closest to `(λₒ, φₒ)`, and its squared distance. 
+# Index into `wet` of the cell closest to `(λₒ, φₒ)`, and its squared distance.
 function nearest_wet_cell(wet, λₒ, φₒ)
     nearest = 0
     nearest_distance = Inf

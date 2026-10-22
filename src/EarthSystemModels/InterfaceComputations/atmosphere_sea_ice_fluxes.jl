@@ -30,6 +30,7 @@ function compute_atmosphere_sea_ice_fluxes!(coupled_model)
     flux_formulation = coupled_model.interfaces.atmosphere_sea_ice_interface.flux_formulation
     interface_fluxes = coupled_model.interfaces.atmosphere_sea_ice_interface.fluxes
     interface_temperature = coupled_model.interfaces.atmosphere_sea_ice_interface.temperature
+    interface_specific_humidity = coupled_model.interfaces.atmosphere_sea_ice_interface.specific_humidity
     interface_properties = coupled_model.interfaces.atmosphere_sea_ice_interface.properties
     sea_ice_properties = coupled_model.interfaces.sea_ice_properties
     ocean_properties = coupled_model.interfaces.ocean_properties
@@ -46,6 +47,7 @@ function compute_atmosphere_sea_ice_fluxes!(coupled_model)
             _compute_atmosphere_sea_ice_interface_state!,
             interface_fluxes,
             interface_temperature,
+            interface_specific_humidity,
             grid,
             clock,
             flux_formulation,
@@ -64,6 +66,7 @@ end
 """ Compute turbulent fluxes between an atmosphere and an interface state using similarity theory """
 @kernel function _compute_atmosphere_sea_ice_interface_state!(interface_fluxes,
                                                               interface_temperature,
+                                                              interface_specific_humidity,
                                                               grid,
                                                               clock,
                                                               turbulent_flux_formulation,
@@ -135,5 +138,6 @@ end
     ℒⁱ = AtmosphericThermodynamics.latent_heat_sublim(ℂᵃᵗ, Ψₐ.T)
     Tᵢ = convert_from_kelvin(sea_ice_properties.temperature_units, Ψₛ.temperature)
 
-    store_interface_fluxes!(interface_fluxes, interface_temperature, i, j, Ψₛ, Ψₐ, ℂᵃᵗ, ℒⁱ, Tᵢ, interface_properties)
+    store_interface_fluxes!(interface_fluxes, interface_temperature, interface_specific_humidity, i, j,
+                            Ψₛ, Ψₐ, ℂᵃᵗ, ℒⁱ, Tᵢ, interface_properties)
 end
