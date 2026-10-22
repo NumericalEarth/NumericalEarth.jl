@@ -242,7 +242,7 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyGroundSurface
 | ``\alpha^{\mathrm{leaf}}``, ``\alpha^{g}`` | `leaf_albedo`, `ground_albedo` | albedos | Shortwave albedo of the canopy and of the ground below it (–) |
 | ``r^s`` | – | soil surface resistance | Moist-soil evaporation resistance of a [`SellersSoilResistance`](@ref) (s m⁻¹) |
 | ``r^l``, ``L^l`` | `litter_area_index` | litter resistance, litter area index | Ground evaporation resistance of a [`LitterResistance`](@ref) (s m⁻¹) and its area index (m² m⁻²) |
-| ``W^c``, ``W^{c\,max}`` | `canopy_water_storage` | canopy water store | Intercepted water on the foliage and its capacity ``W^{c\,max} = c L``, with ``c`` the capacity per unit leaf area (`capacity_per_leaf_area`) (kg m⁻²) |
+| ``W^c``, ``W^{c\,max}`` | `canopy_water_storage` | canopy water store | Intercepted water on the foliage and its capacity ``W^{c\,max} = c L``, both per unit vegetated area, with ``c`` the capacity per unit leaf area (`capacity_per_leaf_area`) (kg m⁻²) |
 | ``f^{\mathrm{int}}`` | – | interception fraction | Caught fraction of rain, ``1 - e^{-K \Omega L}`` (–) |
 | ``f^{\mathrm{wet}}`` | – | wet-canopy fraction | Deardorff wetted-leaf fraction ``(W^c/W^{c\,max})^{2/3}`` (–) |
 | ``g^{w}`` | – | wet-canopy vapor conductance | Wetted fraction of the leaf boundary-layer conductance, capped so that ``E^{\mathrm{wet}} \le W^c/\Delta t`` (kg m⁻² s⁻¹) |

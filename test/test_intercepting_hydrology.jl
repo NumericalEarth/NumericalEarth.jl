@@ -49,6 +49,32 @@ end
     end
 end
 
+@testset "Changing vegetation cover conserves canopy and soil water" begin
+    for rain in (0.0, 1e-3)
+        grid = LatitudeLongitudeGrid(CPU(); size = 1, latitude = 10, longitude = 10, z = (-1, 0), topology = (Flat, Flat, Bounded))
+        Δt = 60.0
+        covers = (0.2, 0.8, 0.2, 0.0, 0.8)
+        fraction = FieldTimeSeries{Center, Center, Nothing}(grid, 0.0:Δt:4Δt)
+        for n in eachindex(covers)
+            set!(fraction[n], covers[n])
+        end
+        model = interception_model(CPU(), Float64; fraction, rain)
+        land = model.land
+        set!(land; canopy_water_storage = 0.15)
+        update_state!(model)
+
+        for n in 1:4
+            before = scalar(land.water_storage) + covers[n] * scalar(land.prognostic.canopy_water_storage)
+            time_step!(model, Δt)
+            storage = scalar(land.prognostic.canopy_water_storage)
+            after = scalar(land.water_storage) + covers[n+1] * storage
+            vapor = scalar(model.interfaces.atmosphere_land_interface.fluxes.water_vapor)
+            @test after - before ≈ Δt * (rain - vapor) atol = 1e-10
+            @test 0 ≤ storage ≤ 0.1 * 3
+        end
+    end
+end
+
 @testset "InterceptingHydrology declarations & container" begin
     for arch in test_architectures
         FT = Float64
@@ -67,24 +93,34 @@ end
     end
 end
 
-@testset "A buffered LAI series is brought into memory each step" begin
+@testset "Buffered canopy properties conserve water across time windows" begin
     arch  = CPU()   # a FieldTimeSeries LAI runs on CPU only
     FT    = Float64
     grid  = LatitudeLongitudeGrid(arch, FT; size = 1, latitude = 10, longitude = 10, z = (-1, 0), topology = (Flat, Flat, Bounded))
     times = 0.0:1.0:4.0
     path  = joinpath(mktempdir(), "lai.jld2")
     fts   = FieldTimeSeries{Center, Center, Nothing}(grid, times; backend = OnDisk(), path, name = "lai")
+    fraction = FieldTimeSeries{Center, Center, Nothing}(grid, times; backend = OnDisk(), path, name = "fraction")
+    covers = (0.2, 0.8, 0.2, 0.0, 0.8)
     field = Field{Center, Center, Nothing}(grid)
     for n in eachindex(times)
         set!(field, 1 + times[n])
         set!(fts, field, n)
+        set!(field, covers[n])
+        set!(fraction, field, n)
     end
 
     lai  = FieldTimeSeries(path, "lai"; backend = InMemory(2), architecture = arch)
-    h    = InterceptingHydrology(FT; soil = soil_hydrology(FT), leaf_area_index = lai, capacity_per_leaf_area = 0.1)
+    cover_fraction = FieldTimeSeries(path, "fraction"; backend = InMemory(2), architecture = arch)
+    h    = InterceptingHydrology(FT; soil = soil_hydrology(FT), leaf_area_index = lai, cover_fraction,
+                                capacity_per_leaf_area = 0.1)
     land = SlabLand(grid; energy = SlabEnergy(FT), hydrology = h)
-    for _ in 1:3
+    set!(land; M = 300, canopy_water_storage = 0.05)
+    before = scalar(land.water_storage) + covers[1] * scalar(land.prognostic.canopy_water_storage)
+    for n in 1:3
         time_step!(land, 1.0)
+        after = scalar(land.water_storage) + covers[n+1] * scalar(land.prognostic.canopy_water_storage)
+        @test after ≈ before atol = 1e-10
     end
 
     # LAI(t = 3) = 4 sits past the two snapshots resident when the series was opened.
@@ -95,7 +131,7 @@ end
 @testset "Canopy store budget closes when the store empties mid-step" begin
     Wᶜ, rain, Wᶜᵐᵃˣ, fⁱⁿᵗ, f, Δt = 0.05, 1e-4, 0.3, 0.6, 0.5, 600.0
     for Eʷᵉᵗ in (0.0, 1e-4, 5e-4)   # the last asks for more than the store and the rain hold
-        Wᶜⁿ⁺¹, drip, throughfall = canopy_store_update(Wᶜ, rain, Eʷᵉᵗ, Wᶜᵐᵃˣ, fⁱⁿᵗ, f, Δt)
+        Wᶜⁿ⁺¹, drip, throughfall = canopy_store_update(Wᶜ, rain, Eʷᵉᵗ, Wᶜᵐᵃˣ, fⁱⁿᵗ, f, f, Δt)
         @test 0 ≤ Wᶜⁿ⁺¹ ≤ Wᶜᵐᵃˣ
         @test drip ≥ 0
         @test rain ≈ f * ((Wᶜⁿ⁺¹ - Wᶜ) / Δt + Eʷᵉᵗ) + throughfall atol = 1e-15

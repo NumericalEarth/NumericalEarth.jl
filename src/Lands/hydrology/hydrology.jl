@@ -57,6 +57,8 @@ to a zeroed `CenterField`.
 """
 initial_diagnostic(::AbstractHydrology, ::Symbol, grid) = CenterField(grid)
 
+prepare_time_step!(::AbstractHydrology, land) = nothing
+
 time_step!(::AbstractHydrology, land, Δt) = nothing
 time_step!(hydrology::AbstractHydrology, land, Δt, time) = time_step!(hydrology, land, Δt)
 update_diagnostics!(::AbstractHydrology, land) = nothing
