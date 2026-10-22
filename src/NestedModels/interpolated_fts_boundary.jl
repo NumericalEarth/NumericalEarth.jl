@@ -93,12 +93,12 @@ function validate_source_bracket(source, grid::OrthogonalSphericalShellGrid, dim
     source_loc  = Oceananigans.instantiated_location(source)
     source_grid = source.grid
     Nx, Ny, _ = size(grid)
-    i = dim == 1 ? (SideType === LeftBoundary ? 1 : Nx + 1) : 1:Nx+1
-    j = dim == 2 ? (SideType === LeftBoundary ? 1 : Ny + 1) : 1:Ny+1
+    i = dim == 1 ? (SideType === LeftBoundary ? (1:1) : (Nx+1:Nx+1)) : 1:Nx+1
+    j = dim == 2 ? (SideType === LeftBoundary ? (1:1) : (Ny+1:Ny+1)) : 1:Ny+1
 
     for (label, child_nodes, source_nodes) in (("x", grid.λᶠᶠᵃ, Oceananigans.Grids.ξnodes),
                                                ("y", grid.φᶠᶠᵃ, Oceananigans.Grids.ηnodes))
-        sim_lo, sim_hi = extrema(view(child_nodes, i, j))
+        sim_lo, sim_hi = extrema(child_nodes[i, j])
         src_lo, src_hi = extrema(source_nodes(source_grid, source_loc...))
         (src_lo ≤ sim_lo && sim_hi ≤ src_hi) || throw(ArgumentError(
             "Interpolated boundary source $(label)-extent [$src_lo, $src_hi] does not " *
