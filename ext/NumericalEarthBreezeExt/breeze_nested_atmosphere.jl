@@ -355,7 +355,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
 
     # Precompute the child prognostics on the parent grid (combine-then-interpolate); the exchanger owns
     # its own 3-level moving window and refreshes it from the parent each step via `exchange_state!`.
-    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates = parent_condensates, moisture_name)
+    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates = parent_condensates, moisture_name, child_grid)
     prognostic = parent_prognostic(exchanger)
 
     ρqᵛᵉ = prognostic.ρqᵛᵉ
