@@ -338,7 +338,7 @@ function era5_native_pressure_fts(metadata, grid;
                                   time_indices_in_memory = nothing)
     Downloads.download(metadata)
     times = convert.(eltype(grid), native_times(metadata))
-    time_indexing = something(time_indexing, length(times) > 1 ? Cyclical() : Linear())
+    time_indexing = something(time_indexing, length(times) > 1 ? Cyclical() : Clamp())
 
     # As in the generic constructor: a window-averaged series repeats over the span its
     # windows tile, not over the node span Oceananigans would infer.

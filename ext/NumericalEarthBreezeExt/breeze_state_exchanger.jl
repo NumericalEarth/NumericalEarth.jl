@@ -26,7 +26,7 @@
 
 using Oceananigans.Fields: Center, ZeroField, AbstractField
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, Linear, AbstractInMemoryBackend,
+using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, Clamp, AbstractInMemoryBackend,
                                   time_indices, interpolating_time_indices, extract_field_time_series
 using Oceananigans.Units: Time
 import Oceananigans.OutputReaders: new_backend, update_field_time_series!
@@ -148,7 +148,7 @@ function child_prognostic_field_time_series(parent_atmosphere; time_indices_in_m
     window = clamp(time_indices_in_memory, 3, length(times))
     build() = FieldTimeSeries{Center, Center, Center}(grid, times;
                                                       backend = PrognosticStateBackend(1, window),
-                                                      time_indexing = length(times) > 1 ? Cyclical() : Linear())
+                                                      time_indexing = length(times) > 1 ? Cyclical() : Clamp())
     return (ρᵈ = build(), ρu = build(), ρv = build(), ρθ = build(), ρqᵛᵉ = build(), θ = build(), u = build(), v = build())
 end
 

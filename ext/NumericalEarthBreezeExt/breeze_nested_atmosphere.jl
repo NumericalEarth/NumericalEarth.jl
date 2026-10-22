@@ -19,8 +19,7 @@ using NumericalEarth:
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width
-using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset,
-                                    expand_dates
+using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!
 
 using Oceananigans:
@@ -475,8 +474,8 @@ Build the parent `BoundaryPrescribedComponent` of `PrescribedAtmosphere`s, nest 
 `parent_dataset` at `first(dates)` — the returned model is ready to step. The parent's strips hold
 `parent_dataset` at `dates` on its native grid, along each side of `child_grid` and `relaxation_width`
 cells inward, padded by `parent_padding` (default `parent_dataset`'s `default_horizontal_padding`,
-margin for the interpolation stencils). A full-domain snapshot of `parent_dataset` at the first two
-`dates`, with the same padding, initializes the child and supplies the surface elevation the `terrain` blends
+margin for the interpolation stencils). A full-domain snapshot of `parent_dataset` at
+`first(dates)`, with the same padding, initializes the child and supplies the surface elevation the `terrain` blends
 toward. Unless given, the default dynamics' `base_pressure` anchor is the domain-mean dataset
 mean-sea-level pressure over the child at `first(dates)`. When `bottom_drag_coefficient` is given,
 `drag_surface_temperature` defaults to the dataset's skin temperature at `first(dates)` regridded onto
@@ -500,8 +499,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
                                                     width = relaxation_width, padding = parent_padding, dir,
                                                     time_indices_in_memory = parent_time_indices_in_memory)
 
-    snapshot_dates = expand_dates(parent_dataset, :temperature, dates)[1:2]
-    snapshot = PrescribedAtmosphere(BoundingBox(child_grid; padding = parent_padding), snapshot_dates, parent_dataset;
+    snapshot = PrescribedAtmosphere(BoundingBox(child_grid; padding = parent_padding), [first(dates)], parent_dataset;
                                     architecture = architecture(child_grid), dir)
 
     if isnothing(base_pressure)
