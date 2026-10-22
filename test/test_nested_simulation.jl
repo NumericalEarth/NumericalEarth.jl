@@ -566,7 +566,7 @@ end
     @test haskey(default, tke_name)
     @test default[tke_name] isa WENO
     @test default[tke_name].bounds.minimum_value == 0
-    @test isfinite(default[tke_name].bounds.maximum_value)
+    @test default[tke_name].bounds.maximum_value == Inf
     @test !haskey(ext.default_nested_scalar_advection(microphysics), tke_name)   # no closure, no TKE entry
 
     nested = nested_atmosphere_model(parent, child_grid; closure,
