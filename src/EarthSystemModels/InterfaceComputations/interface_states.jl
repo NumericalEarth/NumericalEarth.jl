@@ -591,7 +591,7 @@ end
     ℐꜜˢʷ = radiation_state.ℐꜜˢʷ
     ℐꜜˡʷ = radiation_state.ℐꜜˡʷ
     ℐꜛˡʷ = σ * ϵ * Tₛ⁻^4
-    Qd = - (1 - α) * ℐꜜˢʷ - ϵ * ℐꜜˡʷ
+    Qd = (1 - α) * ℐꜜˢʷ + ϵ * ℐꜜˡʷ
 
     u★ = interface_state.fluxes.u★
     θ★ = interface_state.fluxes.θ★
@@ -805,6 +805,7 @@ end
                                        q_formulation,
                                        land_state,
                                        Tₛ, qₛ)
+    # `typeof(Tₛ)`, not `eltype(grid)`, which is a traced type inside a Reactant kernel.
     FT  = typeof(Tₛ)
     energy    = interface_energy_state(i, j, grid, q_formulation, land_state)
     hydrology = interface_hydrology_state(i, j, grid, q_formulation, land_state)
@@ -844,8 +845,7 @@ end
 
 Air-land interface radiation state at one cell: Stefan–Boltzmann constant `σ`,
 surface albedo `α`, emissivity `ϵ`, downwelling shortwave `ℐꜜˢʷ`, and
-downwelling longwave `ℐꜜˡʷ`. Returned by `air_land_interface_radiation_state`
-and consumed by the air-land flux kernel and `apply_air_land_radiative_fluxes!`.
+downwelling longwave `ℐꜜˡʷ`, in W m⁻² with positive-upward signs.
 """
 struct AirLandRadiationState{FT}
     σ    :: FT

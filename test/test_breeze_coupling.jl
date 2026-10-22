@@ -70,6 +70,42 @@ function build_land_test_model(arch)
     return model
 end
 
+# Helper to build a fresh atmosphere over a mixed land-ocean surface: a SlabLand and a
+# PrescribedOcean share the surface grid, partitioned by `ocean_fraction`.
+function build_partition_test_model(arch; ocean_fraction, ocean_times=nothing, sea_surface_temperatures=nothing)
+    grid = RectilinearGrid(arch,
+                           size = (16, 16), halo = (5, 5),
+                           x = (-10kilometers, 10kilometers),
+                           z = (0, 10kilometers),
+                           topology = (Periodic, Flat, Bounded))
+
+    θ₀ = 285
+
+    atmosphere = atmosphere_simulation(grid; potential_temperature=θ₀)
+    set!(atmosphere.model, θ=atmosphere.model.dynamics.reference_state.surface_potential_temperature, u=5)
+
+    surface_grid = RectilinearGrid(arch,
+                                   size = grid.Nx,
+                                   halo = grid.Hx,
+                                   x = (-10kilometers, 10kilometers),
+                                   topology = (Periodic, Flat, Flat))
+
+    land = SlabLand(surface_grid)
+    set!(land; T=θ₀ + 5)
+
+    if isnothing(ocean_times)
+        ocean = PrescribedOcean(surface_grid)
+        set!(ocean, T=θ₀ - 5)
+    else
+        ocean = PrescribedOcean(surface_grid, ocean_times)
+        for (n, T) in enumerate(sea_surface_temperatures)
+            interior(ocean.sea_surface_temperature[n]) .= T
+        end
+    end
+
+    return EarthSystemModel(; atmosphere, land, ocean, ocean_fraction)
+end
+
 # The land setup with the child wrapped in a NestedModel (inert prescribed parent) inside
 # a Simulation — the shape a parent-driven LAM presents to AtmosphereLandModel.
 function build_nested_land_test_model(arch;
@@ -156,6 +192,56 @@ end
     end
 end
 
+@testset "AtmosphereOceanModel with Breeze and a PrescribedOcean" begin
+    for arch in test_architectures
+        A = typeof(arch)
+
+        @testset "Exchanger halos hold the prescribed state on $A" begin
+            # Bounded in x, so nothing but the exchanger's own halo fill can put the SST in the
+            # halo columns the interface flux kernels visit (#754).
+            grid = RectilinearGrid(arch,
+                                   size = (16, 16), halo = (5, 5),
+                                   x = (-10kilometers, 10kilometers),
+                                   z = (0, 10kilometers),
+                                   topology = (Bounded, Flat, Bounded))
+
+            θ₀ = 285
+            atmosphere = atmosphere_simulation(grid; potential_temperature=θ₀)
+            set!(atmosphere.model, θ=atmosphere.model.dynamics.reference_state.surface_potential_temperature, u=1)
+
+            sst_grid = RectilinearGrid(arch,
+                                       size = grid.Nx,
+                                       halo = grid.Hx,
+                                       x = (-10kilometers, 10kilometers),
+                                       topology = (Bounded, Flat, Flat))
+
+            ocean = PrescribedOcean(sst_grid)
+            set!(ocean, T=θ₀ + 1)
+
+            # Construction needs `biogeochemical_interface(exchanger, ::PrescribedOcean)`:
+            # PrescribedOcean has no `model` to read biogeochemistry from.
+            model = AtmosphereOceanModel(atmosphere, ocean)
+            @test model.ocean isa PrescribedOcean
+
+            T = model.interfaces.exchanger.ocean.state.T
+            Hx = sst_grid.Hx
+            @test all(Array(parent(T))[Hx:Hx+grid.Nx+1, :, :] .≈ θ₀ + 1)
+
+            for _ in 1:3
+                time_step!(model, 1)
+            end
+
+            T = model.interfaces.exchanger.ocean.state.T
+            @test all(Array(parent(T))[Hx:Hx+grid.Nx+1, :, :] .≈ θ₀ + 1)
+
+            # The face-centered bottom stress averages the halo column into the first interior
+            # face, so a halo NaN would surface here at i = 1.
+            ρu_bottom = model.atmosphere.model.momentum.ρu.boundary_conditions.bottom.condition
+            @test all(isfinite, Array(interior(ρu_bottom)))
+        end
+    end
+end
+
 @testset "AtmosphereLandModel with Breeze: surface stress feedback" begin
     for arch in test_architectures
         A = typeof(arch)
@@ -203,6 +289,107 @@ end
     end
 end
 
+@testset "Surface partition blends land and ocean" begin
+    for arch in test_architectures
+        A = typeof(arch)
+
+        @testset "Net atmosphere fluxes are partition-weighted on $A" begin
+            ## West half land, east half ocean, with a fractional strip across the middle.
+            þ(x) = clamp(1/2 + x / 10kilometers, 0, 1)
+            model = build_partition_test_model(arch; ocean_fraction=þ)
+            update_state!(model)
+
+            interfaces = model.interfaces
+            partition = interfaces.surface_partition
+            fractions = Array(interior(partition.ocean_fraction))
+            @test minimum(fractions) == 0 && maximum(fractions) == 1
+            @test any(f -> 0 < f < 1, fractions)
+
+            al = interfaces.atmosphere_land_interface.fluxes
+            ao = interfaces.atmosphere_ocean_interface.fluxes
+            net = interfaces.net_fluxes.atmosphere
+
+            Qˡ = Array(interior(al.sensible_heat))
+            Qᵒ = Array(interior(ao.sensible_heat))
+            Fˡ = Array(interior(al.water_vapor))
+            Fᵒ = Array(interior(ao.water_vapor))
+            @test Array(interior(net.ρE))   ≈ fractions .* Qᵒ .+ (1 .- fractions) .* Qˡ
+            @test Array(interior(net.ρqᵛᵉ)) ≈ fractions .* Fᵒ .+ (1 .- fractions) .* Fˡ
+
+            ## Stresses are weighted at centers, then interpolated to the face-located ρu.
+            τˡ = Array(interior(al.x_momentum))
+            τᵒ = Array(interior(ao.x_momentum))
+            τ = fractions .* τᵒ .+ (1 .- fractions) .* τˡ
+            ρu = Array(interior(net.ρu))
+            @test ρu[2:end, :, :] ≈ (τ[1:end-1, :, :] .+ τ[2:end, :, :]) ./ 2
+            @test maximum(abs, ρu) > 0
+
+            ## The blended skin temperature interpolates the warm land and the cool ocean
+            ## (PrescribedOcean temperatures are already Kelvin).
+            Tˡ = Array(interior(interfaces.atmosphere_land_interface.temperature))
+            Tᵒ = Array(interior(interfaces.atmosphere_ocean_interface.temperature))
+            Tₛ = Array(interior(partition.surface_temperature))
+            @test Tₛ ≈ fractions .* Tᵒ .+ (1 .- fractions) .* Tˡ
+            @test surface_temperature(interfaces) === partition.surface_temperature
+        end
+
+        @testset "Both surfaces without an ocean_fraction refuse to build on $A" begin
+            @test_throws ArgumentError build_partition_test_model(arch; ocean_fraction=nothing)
+        end
+
+        @testset "Atmospheres that do not feel the surface skip the blend on $A" begin
+            InterfaceComputations = NumericalEarth.EarthSystemModels.InterfaceComputations
+            SurfacePartition = InterfaceComputations.SurfacePartition
+            atmosphere_feels_surface = InterfaceComputations.atmosphere_feels_surface
+
+            grid = RectilinearGrid(arch; size = (4, 4), x = (0, 1), y = (0, 1), topology = (Periodic, Periodic, Flat))
+            prescribed = PrescribedAtmosphere(grid, [0.0])
+            @test !atmosphere_feels_surface(prescribed)
+            @test !atmosphere_feels_surface(nothing)
+
+            ## Placeholders stand in for the two interfaces: only their presence matters here.
+            ao, al = :ocean_interface, :land_interface
+
+            ## Without a fraction the partition is empty rather than an error ...
+            partition = SurfacePartition(grid, prescribed, nothing, ao, al)
+            @test isnothing(partition.ocean_fraction) && isnothing(partition.surface_temperature)
+
+            ## ... and with one, the fraction is kept but no skin temperature is blended.
+            partition = SurfacePartition(grid, prescribed, 1/4, ao, al)
+            @test all(≈(1/4), Array(interior(partition.ocean_fraction)))
+            @test isnothing(partition.surface_temperature)
+
+            ## The blend's no-op dispatch covers both, so stepping never touches them.
+            @test isnothing(InterfaceComputations.update_surface_temperature!(partition, nothing))
+        end
+
+        @testset "A prescribed ocean follows its time series on $A" begin
+            ## Two snapshots 100 s apart; the exchanger state should track the ocean clock
+            ## linearly between them, and hold the end values outside the record.
+            model = build_partition_test_model(arch; ocean_fraction=1,
+                                               ocean_times = [0, 100],
+                                               sea_surface_temperatures = (280, 290))
+            exchanger = model.interfaces.exchanger.ocean
+
+            for (t, Tₑ) in ((0, 280), (25, 282.5), (50, 285), (100, 290))
+                model.ocean.clock.time = t
+                update_state!(model)
+                @test all(≈(Tₑ), Array(interior(exchanger.state.T)))
+            end
+
+            ## A single-time series is the degenerate case of the same path: bracketing
+            ## indices coincide, so the one snapshot holds for every clock value.
+            constant = build_partition_test_model(arch; ocean_fraction=1)
+            constant_exchanger = constant.interfaces.exchanger.ocean
+            for t in (0, 50, 1000)
+                constant.ocean.clock.time = t
+                update_state!(constant)
+                @test all(≈(280), Array(interior(constant_exchanger.state.T)))
+            end
+        end
+    end
+end
+
 @testset "Breeze RTM surface longwave follows live temperature" begin
     for arch in test_architectures
         grid = RectilinearGrid(arch;
@@ -219,49 +406,44 @@ end
         downwelling_shortwave_flux = CenterField(grid)
         surface_albedo = CenterField(grid)
 
-        initial_surface_energy_flux = 25
-        first_surface_temperature = 280
-        second_surface_temperature = 300
-        emissivity = 0.95
-        downwelling_longwave = -300
-        downwelling_shortwave = -600
-        albedo = 0.2
-        stefan_boltzmann_constant = convert(eltype(grid), default_stefan_boltzmann_constant)
+        𝒬₀ = 25
+        T₁ = 280
+        T₂ = 300
+        ϵ = 0.95
+        ℐꜜˡʷ = -300
+        ℐꜜˢʷ = -600
+        α = 0.2
+        σ = convert(eltype(grid), default_stefan_boltzmann_constant)
 
-        fill!(parent(surface_emissivity), emissivity)
-        fill!(parent(downwelling_longwave_flux), downwelling_longwave)
-        fill!(parent(downwelling_shortwave_flux), downwelling_shortwave)
-        fill!(parent(surface_albedo), albedo)
+        fill!(parent(surface_emissivity), ϵ)
+        fill!(parent(downwelling_longwave_flux), ℐꜜˡʷ)
+        fill!(parent(downwelling_shortwave_flux), ℐꜜˢʷ)
+        fill!(parent(surface_albedo), α)
 
-        function surface_energy_at(temperature)
-            fill!(parent(surface_energy_flux), initial_surface_energy_flux)
-            fill!(parent(surface_temperature), temperature)
+        function surface_energy_at(T)
+            fill!(parent(surface_energy_flux), 𝒬₀)
+            fill!(parent(surface_temperature), T)
             launch!(arch, grid, :xy,
                     NumericalEarthBreezeExt._apply_breeze_air_land_radiative_fluxes!,
                     surface_energy_flux,
+                    grid,
                     surface_temperature,
                     surface_emissivity,
-                    stefan_boltzmann_constant,
+                    σ,
                     downwelling_longwave_flux,
                     downwelling_shortwave_flux,
                     surface_albedo)
-            return only(Array(interior(surface_energy_flux)))
+            return @allowscalar only(surface_energy_flux)
         end
 
-        first_surface_energy = surface_energy_at(first_surface_temperature)
-        second_surface_energy = surface_energy_at(second_surface_temperature)
+        𝒬₁ = surface_energy_at(T₁)
+        𝒬₂ = surface_energy_at(T₂)
 
-        expected_surface_energy(temperature) =
-            initial_surface_energy_flux +
-            emissivity * stefan_boltzmann_constant * temperature^4 +
-            emissivity * downwelling_longwave +
-            (1 - albedo) * downwelling_shortwave
+        𝒬(T) = 𝒬₀ + ϵ * σ * T^4 + ϵ * ℐꜜˡʷ + (1 - α) * ℐꜜˢʷ
 
-        @test first_surface_energy ≈ expected_surface_energy(first_surface_temperature)
-        @test second_surface_energy ≈ expected_surface_energy(second_surface_temperature)
-        @test second_surface_energy - first_surface_energy ≈
-              emissivity * stefan_boltzmann_constant *
-              (second_surface_temperature^4 - first_surface_temperature^4)
+        @test 𝒬₁ ≈ 𝒬(T₁)
+        @test 𝒬₂ ≈ 𝒬(T₂)
+        @test 𝒬₂ - 𝒬₁ ≈ ϵ * σ * (T₂^4 - T₁^4)
     end
 end
 
@@ -435,35 +617,25 @@ end
             grid = RectilinearGrid(arch; size = (Nx, Ny, 10), halo = (5, 5, 5), x = (0, L), y = (0, L), z = (0, 1000),
                                    topology = (Periodic, Periodic, Bounded))
             atmosphere = atmosphere_simulation(grid; dynamics = AnelasticDynamics(ReferenceState(grid)))
-            set!(atmosphere.model; θ = 290, u = 8)
+            # Non-divergent winds that the anelastic projection keeps, over an SST varying in x and y
+            set!(atmosphere.model; θ = 290, u = (x, y, z) -> 8 + 2cos(2π * y / L), v = (x, y, z) -> 3sin(2π * x / L))
             ocean_grid = RectilinearGrid(arch; size = (Nx, Ny), halo = (5, 5), x = (0, L), y = (0, L),
                                          topology = (Periodic, Periodic, Flat))
             ocean = PrescribedOcean(ocean_grid)
-            set!(ocean, T = 292)
+            set!(ocean, T = (x, y, t) -> 292 + cos(2π * x / L) + sin(2π * y / L))
             model = AtmosphereOceanModel(atmosphere, ocean)
 
+            # The flux kernels compute the i = 0 / j = 0 halo stresses that the face average reads
             fluxes = model.interfaces.atmosphere_ocean_interface.fluxes
-            Δx, Δy = L / Nx, L / Ny
-            τx(x, y) = -0.1 * (1 + 0.5 * sin(2π * x / L))
-            τy(x, y) = 0.05 * cos(2π * y / L)
-            # Poison the halos: the assembly must not rely on stale halo values
-            fill!(fluxes.x_momentum, NaN)
-            fill!(fluxes.y_momentum, NaN)
-            set!(fluxes.x_momentum, τx)
-            set!(fluxes.y_momentum, τy)
-
             NumericalEarth.EarthSystemModels.update_net_fluxes!(model, atmosphere.model)
-            ρτˣ = atmosphere.model.momentum.ρu.boundary_conditions.bottom.condition
-            ρτʸ = atmosphere.model.momentum.ρv.boundary_conditions.bottom.condition
-            @test all(isfinite, ρτˣ) && all(isfinite, ρτʸ)
+            ρτˣ = Array(interior(atmosphere.model.momentum.ρu.boundary_conditions.bottom.condition, :, :, 1))
+            ρτʸ = Array(interior(atmosphere.model.momentum.ρv.boundary_conditions.bottom.condition, :, :, 1))
+            τˣ = Array(interior(fluxes.x_momentum, :, :, 1))
+            τʸ = Array(interior(fluxes.y_momentum, :, :, 1))
 
-            # Stresses averaged onto the u/v faces west and south of each cell
-            ρτˣ_expected = Field{Center, Center, Nothing}(grid)
-            ρτʸ_expected = Field{Center, Center, Nothing}(grid)
-            set!(ρτˣ_expected, (x, y) -> (τx(x - Δx, y) + τx(x, y)) / 2)
-            set!(ρτʸ_expected, (x, y) -> (τy(x, y - Δy) + τy(x, y)) / 2)
-            @test ρτˣ ≈ ρτˣ_expected
-            @test ρτʸ ≈ ρτʸ_expected
+            # Stresses averaged onto the u/v faces west and south of each cell, wrapping periodically
+            @test ρτˣ ≈ (circshift(τˣ, (1, 0)) .+ τˣ) ./ 2
+            @test ρτʸ ≈ (circshift(τʸ, (0, 1)) .+ τʸ) ./ 2
 
             # And a few coupled steps stay finite
             time_step!(model, 0.5)
