@@ -26,9 +26,48 @@ using Oceananigans.Grids: node, ξnode, ηnode, ξnodes, ηnodes, topology, Face
                           OrthogonalSphericalShellGrid, FullyConnected, LeftConnected, RightConnected
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Fields: Field, interior, compute!
+using Oceananigans.Operators: intrinsic_vector
+import Oceananigans.Forcings: evaluate_target
 using Adapt: Adapt, adapt
 
 const InterpolatedSource = Union{FlavorOfFTS, Oceananigans.Fields.AbstractField}
+
+"""
+    VectorComponent{Component}(eastward, northward)
+
+A horizontal vector source whose components are geographic — eastward and northward — wrapped so that
+`Interpolated` returns the `Component` (`:u` or `:v`) of the same vector in the queried grid's own frame.
+Both components are interpolated at the query node and rotated there with
+`Oceananigans.Operators.intrinsic_vector`, which is the identity on a `LatitudeLongitudeGrid` or a
+`RectilinearGrid` and a rotation on any `OrthogonalSphericalShellGrid`.
+
+Use it where a parent supplies east/north velocities and the child stores grid-aligned momentum:
+
+```julia
+u_bcs = FieldBoundaryConditions(west = NormalFlowBoundaryCondition(Interpolated(VectorComponent{:u}(uᵉ, vᵉ))))
+v_bcs = FieldBoundaryConditions(west = NormalFlowBoundaryCondition(Interpolated(VectorComponent{:v}(uᵉ, vᵉ))))
+```
+"""
+struct VectorComponent{Component, U, V, G}
+    eastward  :: U
+    northward :: V
+    grid      :: G   # kept through Adapt: `evaluate_target` reads it on the device
+end
+
+function VectorComponent{C}(eastward::U, northward::V) where {C, U, V}
+    C === :u || C === :v || throw(ArgumentError("a VectorComponent's component must be :u or :v, got :$C"))
+    return VectorComponent{C, U, V, typeof(eastward.grid)}(eastward, northward, eastward.grid)
+end
+
+VectorComponent{C}(eastward, northward, grid) where C =
+    VectorComponent{C, typeof(eastward), typeof(northward), typeof(grid)}(eastward, northward, grid)
+
+Adapt.adapt_structure(to, vc::VectorComponent{C}) where C =
+    VectorComponent{C}(adapt(to, vc.eastward), adapt(to, vc.northward), adapt(to, vc.grid))
+
+# A vector source sits where a field would, so it reports its components' location.
+@inline Oceananigans.instantiated_location(vc::VectorComponent) =
+    Oceananigans.instantiated_location(vc.eastward)
 
 """
     Interpolated(source)
@@ -36,9 +75,11 @@ const InterpolatedSource = Union{FlavorOfFTS, Oceananigans.Fields.AbstractField}
 Wrap a parent state source for use as the condition value in an
 `NormalFlowBoundaryCondition`. `source` can be:
 
-- a `FieldTimeSeries` (prescribed parent — interpolated in space + time), or
+- a `FieldTimeSeries` (prescribed parent — interpolated in space + time),
 - an `AbstractField` (prognostic parent — interpolated in space at the
-  parent's current state, which advances via `time_step!`).
+  parent's current state, which advances via `time_step!`), or
+- a [`VectorComponent`](@ref) (one component of a geographic vector, rotated
+  into the queried grid's frame at the boundary node).
 
 During model construction Oceananigans' standard boundary-condition
 regularization tags this with the boundary's dimension / side / field
@@ -60,7 +101,7 @@ end
 # for GPU compilation because `GPUAdaptedFieldTimeSeries` drops the `.grid`
 # field during Adapt, and `_query_source` (below) needs the grid to evaluate
 # the interpolation.
-Interpolated(source::S) where S<:InterpolatedSource =
+Interpolated(source::S) where S<:Union{InterpolatedSource, VectorComponent} =
     Interpolated{Nothing, Nothing, Nothing, Nothing, Nothing, S, typeof(source.grid)}(source, source.grid)
 
 # Type-stable post-regularization constructor.
@@ -148,13 +189,25 @@ validate_source_bracket(source, grid, dim, SideType,
 
 # `loc` is passed explicitly because `Adapt` reduces an `AbstractField` source to a bare
 # `OffsetArray` on GPU, where `instantiated_location` is unavailable.
-@inline _query_source(fts::FlavorOfFTS, source_grid, X, loc, t) =
+@inline _query_source(fts::FlavorOfFTS, source_grid, X, loc, t, i, j, k, grid) =
     Oceananigans.Fields.interpolate(X, Time(t), fts,
                                     Oceananigans.instantiated_location(fts),
                                     source_grid)
 
-@inline _query_source(source, source_grid, X, loc, t) =
+@inline _query_source(source, source_grid, X, loc, t, i, j, k, grid) =
     Oceananigans.Fields.interpolate(X, source, loc, source_grid)
+
+@inline function _query_source(source::VectorComponent{C}, source_grid, X, loc, t, i, j, k, grid) where C
+    uₑ = _query_source(source.eastward,  source_grid, X, loc, t, i, j, k, grid)
+    vₑ = _query_source(source.northward, source_grid, X, loc, t, i, j, k, grid)
+    uᵢ, vᵢ = intrinsic_vector(i, j, k, grid, uₑ, vₑ)
+    return ifelse(C === :u, uᵢ, vᵢ)
+end
+
+@inline function evaluate_target(i, j, k, grid, target::VectorComponent, ℓ, time)
+    X = node(i, j, k, grid, ℓ...)
+    return _query_source(target, target.grid, X, ℓ, time, i, j, k, grid)
+end
 
 @inline _boundary_index(::Type{LeftBoundary},  N) = 1
 @inline _boundary_index(::Type{RightBoundary}, N) = N + 1
@@ -176,19 +229,19 @@ validate_source_bracket(source, grid, dim, SideType,
     # field this must be the face, not the half-cell-inside center; for a Face-normal
     # field (the normal velocity) this is unchanged (its location is already Face).
     X = node(i, j, k, grid, Face(), LY(), LZ())
-    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock, grid))
+    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock, grid), i, j, k, grid)
 end
 
 @inline function getbc(bc::Interpolated{2, S, LX, LY, LZ},
                        i::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     j = _boundary_index(S, grid.Ny)
     X = node(i, j, k, grid, LX(), Face(), LZ())   # boundary face in the y-normal direction
-    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock, grid))
+    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock, grid), i, j, k, grid)
 end
 
 @inline function getbc(bc::Interpolated{3, S, LX, LY, LZ},
                        i::Integer, j::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     k = _boundary_index(S, grid.Nz)
     X = node(i, j, k, grid, LX(), LY(), Face())   # boundary face in the z-normal direction
-    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock, grid))
+    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock, grid), i, j, k, grid)
 end
