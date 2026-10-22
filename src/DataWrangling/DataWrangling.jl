@@ -21,7 +21,6 @@ export fill_gaps!, fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial
 export class_fractions, valid_area_mean!
 
 using Adapt: Adapt
-using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using LibCURL: LibCURL
 using JLD2: JLD2, jldopen
@@ -41,7 +40,7 @@ using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
 using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
 using Oceananigans.Utils: launch!, prettytime, prettysummary
-using DocStringExtensions: TYPEDSIGNATURES
+using DocStringExtensions: SIGNATURES, TYPEDSIGNATURES
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
 using ZipFile: ZipFile

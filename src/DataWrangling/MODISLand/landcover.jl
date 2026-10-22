@@ -148,20 +148,20 @@ function class_maximum_gap(land_cover; periods = igbp_maximum_gap_periods, defau
 end
 
 """
-    $(TYPEDSIGNATURES)
+    $(SIGNATURES)
 
-Set `series` to `NaN` in cells whose land-cover class is in `water_classes`, and to zero
-in other cells whose class is in `classes`, overwriting existing values. Returns `series`.
+Set the array `series` to `NaN` in cells whose land-cover class is in `water_classes`, and
+to zero in other cells whose class is in `classes`, overwriting existing values. Returns `series`.
 
 This imposes a zero-LAI modeling assumption on the selected classes. The default urban
 and barren classes can include vegetation; their class labels do not measure zero LAI.
 Other cells retain their values, including missing retrievals.
 """
-function zero_non_vegetated!(data::AbstractArray, land_cover;
+function zero_non_vegetated!(series::AbstractArray, land_cover;
                              classes = igbp_non_vegetated_classes,
                              water_classes = (igbp_class_names.water,))
 
-    𝒜 = DataWrangling.seasonal_array(data)
+    𝒜 = DataWrangling.seasonal_array(series)
     codes = DataWrangling.horizontal_array(land_cover)
 
     size(codes) == size(𝒜)[1:2] ||
@@ -178,9 +178,14 @@ function zero_non_vegetated!(data::AbstractArray, land_cover;
         end
     end
 
-    return data
+    return series
 end
 
+"""
+    $(TYPEDSIGNATURES)
+
+Apply the array method to `fts` through a host copy of its interior.
+"""
 function zero_non_vegetated!(fts::DataWrangling.FieldTimeSeries, land_cover; kw...)
     DataWrangling.on_host!(data -> zero_non_vegetated!(data, land_cover; kw...), fts)
     return fts

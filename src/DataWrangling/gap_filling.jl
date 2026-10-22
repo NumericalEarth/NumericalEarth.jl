@@ -7,17 +7,8 @@ using Statistics: mean, cor
 """
     $(TYPEDSIGNATURES)
 
-Fill NaN gaps along the time dimension by linear interpolation. For an `AbstractArray` the
-last dimension is time and each spatial column is filled independently; a `FieldTimeSeries`
-is filled through a host copy of its interior.
-
-Gaps longer than `max_gap` points are left as NaN, with one warning per call. A gap running
-to either end of an open series takes its nearest value. `max_gap` may be an array over the
-spatial dimensions, giving each column its own tolerance.
-
-With `cyclic = true` the series is one period of a periodic signal, so a gap at either end
-interpolates across the wrap. A column that is all NaN, or whose `max_gap` is zero, is left
-untouched and unreported either way.
+Fill the NaN gaps of `fts` along time through a host copy of its interior, with the
+keyword arguments of the array method.
 """
 function fill_gaps!(fts::FieldTimeSeries; kw...)
     on_host!(data -> fill_gaps!(data; kw...), fts)
@@ -41,6 +32,20 @@ function on_host!(f!, fts::FieldTimeSeries)
     return result
 end
 
+"""
+    $(SIGNATURES)
+
+Fill NaN gaps along the last dimension of `data`, time, by linear interpolation, each
+spatial column independently. Returns the modified array `data`.
+
+Gaps longer than `max_gap` points are left as NaN, with one warning per call. A gap running
+to either end of an open series takes its nearest value. `max_gap` may be an array over the
+spatial dimensions, giving each column its own tolerance.
+
+With `cyclic = true` the series is one period of a periodic signal, so a gap at either end
+interpolates across the wrap. A column that is all NaN, or whose `max_gap` is zero, is left
+untouched and unreported either way.
+"""
 function fill_gaps!(data::AbstractArray; max_gap=6, cyclic=false)
     spatial_size = size(data)[1:end-1]
     max_gap isa AbstractArray && size(max_gap) != spatial_size[1:min(end, ndims(max_gap))] &&
@@ -208,12 +213,11 @@ function cache_seasonal_fill!(cache, key, series, provenance, reach)
 end
 
 """
-    $(TYPEDSIGNATURES)
+    $(SIGNATURES)
 
 Fill what compositing and a temporal interpolation could not, using the land-cover class to
-decide how far each cell may borrow and from whom. `series` is a `FieldTimeSeries` or an
-array whose last dimension is time, `land_cover` a `Field` or array of class codes on the
-same lattice.
+decide how far each cell may borrow and from whom. `series` is an array whose last
+dimension is time, `land_cover` a `Field` or array of class codes on the same lattice.
 
 Returns `(; series, provenance, reach)`: the filled series, a `UInt8` code per cell and
 period naming the stage that produced it ([`gap_fill_provenance`](@ref)), and the donor
@@ -275,7 +279,7 @@ Keyword arguments
 - `stages`: which stages run, any subset of `(:temporal, :scaled, :class_mean)`, so each
             can be scored alone. Default: all three.
 """
-function fill_seasonal_gaps!(data::AbstractArray, land_cover;
+function fill_seasonal_gaps!(series::AbstractArray, land_cover;
                              anchor = nothing,
                              anchor_periods = nothing,
                              cache = nothing,
@@ -294,7 +298,7 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
     scaling in (:multiplicative, :additive) ||
         throw(ArgumentError("scaling must be :multiplicative or :additive; got $scaling."))
 
-    𝒜 = seasonal_array(data)
+    𝒜 = seasonal_array(series)
     Nx, Ny, Nt = size(𝒜)
 
     codes = horizontal_array(land_cover)
@@ -308,7 +312,7 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
                             minimum_anchor_periods, scaling, valid_range, unfilled_classes, stages)
 
     cached = cached_seasonal_fill(cache, key, 𝒜)
-    isnothing(cached) || return (; series = data, cached.provenance, cached.reach)
+    isnothing(cached) || return (; series, cached.provenance, cached.reach)
 
     class_index, classes_present = class_indices(codes)
     fillable = [!isfinite(code) || !(round(Int, code) in unfilled_classes) for code in codes]
@@ -328,7 +332,7 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
 
     if !(scale_donors || mean_donors)
         cache_seasonal_fill!(cache, key, 𝒜, provenance, reach)
-        return (; series = data, provenance, reach)
+        return (; series, provenance, reach)
     end
 
     # Built after the temporal stage, so a neighbor's short bridged gap is available as a donor.
@@ -370,9 +374,15 @@ function fill_seasonal_gaps!(data::AbstractArray, land_cover;
 
     cache_seasonal_fill!(cache, key, 𝒜, provenance, reach)
 
-    return (; series = data, provenance, reach)
+    return (; series, provenance, reach)
 end
 
+"""
+    $(TYPEDSIGNATURES)
+
+Fill `fts` through a host copy of its interior, with the keyword arguments of the array
+method, returning `(; series = fts, provenance, reach)`.
+"""
 function fill_seasonal_gaps!(fts::FieldTimeSeries, land_cover; kw...)
     filled = on_host!(data -> fill_seasonal_gaps!(data, land_cover; kw...), fts)
     return (; series = fts, filled.provenance, filled.reach)

@@ -13,7 +13,7 @@ names, digital-number scales, and quality conventions, and differ only in cadenc
 abstract type MODISLAIDataset <: AbstractMODISLandDataset end
 
 """
-    $(TYPEDSIGNATURES)
+    MCD15A2H(; screened_flags = recommended_lai_screening())
 
 The MODIS MCD15A2H V061 combined Terra + Aqua leaf-area-index / FPAR product: 500 m, 8-day
 composites on the sinusoidal grid, from 2002-07-04 onwards. Provides `:leaf_area_index`
@@ -58,7 +58,7 @@ Base.show(io::IO, dataset::MCD15A2H) =
     print(io, "MCD15A2H(screened_flags=", repr(dataset.screened_flags), ")")
 
 """
-    $(TYPEDSIGNATURES)
+    MODISLAIClimatology(; dataset = MCD15A2H(), years = 2003:2019, reducer = mean)
 
 A seasonal climatology of a [`MODISLAIDataset`](@ref): one composite per period of the
 year, each combining the retrievals `dataset`'s screen retains across `years` pixel by pixel
@@ -93,7 +93,7 @@ Base.show(io::IO, climatology::MODISLAIClimatology) =
           ", reducer=", climatology.reducer, ")")
 
 """
-    $(TYPEDSIGNATURES)
+    MCD12Q1(; legend = :IGBP)
 
 The MODIS MCD12Q1 V061 annual land-cover product: 500 m, one map per calendar year from
 2001 onwards, on the same sinusoidal granules and the same reprojected 1/240° lattice as

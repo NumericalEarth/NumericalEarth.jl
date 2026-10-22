@@ -16,7 +16,7 @@ using Oceananigans.Architectures: child_architecture
 using Oceananigans.DistributedComputations: @root
 using Oceananigans.Fields: Field, interior
 using Statistics: mean
-using DocStringExtensions: TYPEDSIGNATURES
+using DocStringExtensions: SIGNATURES, TYPEDSIGNATURES
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
                        metadata_path, default_download_directory,

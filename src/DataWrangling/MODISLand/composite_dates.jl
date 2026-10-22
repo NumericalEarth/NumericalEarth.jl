@@ -51,7 +51,15 @@ DataWrangling.all_dates(dataset::MCD12Q1, variable) =
 """
     $(TYPEDSIGNATURES)
 
-The 1-based index of the year-anchored composite period containing `date`.
+The 1-based index of the `period_days`-day composite period containing `date`, counted
+from 1 January of its year.
+"""
+period_index(date, period_days::Integer) = (dayofyear(date) - 1) ÷ period_days + 1
+
+"""
+    $(TYPEDSIGNATURES)
+
+The 1-based index of the composite period of `dataset`'s cadence containing `date`.
 
 ```jldoctest
 julia> using Dates, NumericalEarth.DataWrangling.MODISLand
@@ -60,8 +68,6 @@ julia> period_index(DateTime(2019, 7, 4), MCD15A2H())
 24
 ```
 """
-period_index(date, period_days::Integer) = (dayofyear(date) - 1) ÷ period_days + 1
-
 period_index(date, dataset::AbstractMODISLandDataset) =
     period_index(date, composite_period_days(dataset))
 
