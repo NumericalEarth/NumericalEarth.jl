@@ -352,8 +352,6 @@ end
 
 saturation(h::VariablySaturatedHydrology, land) = land.saturation
 
-EarthSystemModels.surface_retention_curve(h::VariablySaturatedHydrology) = h.retention_curve
-
 Base.summary(h::VariablySaturatedHydrology) =
     string("VariablySaturatedHydrology(",
            "slab_depth=", h.slab_depth isa Tuple ? string("(", join(map(prettysummary, h.slab_depth), ", "), ")") :

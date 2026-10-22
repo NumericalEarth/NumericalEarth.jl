@@ -1,7 +1,7 @@
 using Oceananigans.Grids: inactive_node
 
 using ..EarthSystemModels: EarthSystemModel
-using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties, skin_conductance, CanopyAirSpaceDiagnostics
+using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties, skin_conductance, radiative_surface
 
 """
     apply_air_land_radiative_fluxes!(coupled_model)
@@ -58,7 +58,7 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
             clock,
             rk,
             radiation_state,
-            al_interface.temperature,
+            radiative_surface(al_interface, nothing, nothing),
             land_shortwave_upwelling_flux,
             land_longwave_upwelling_flux)
 
@@ -71,12 +71,12 @@ end
 @inline maybe_add_radiative_flux!(::Nothing, i, j, value) = nothing
 @inline maybe_add_radiative_flux!(field, i, j, value) = @inbounds field[i, j, 1] += value
 
-# Temperature, albedo, and emissivity the land radiates with: a single skin uses the
-# radiation's surface properties; a canopy column radiates as a black body at its effective
-# temperature, σ T⁴ = LWꜛ above the canopy, with the column's albedo.
-@inline radiating_surface(Tₛ, i, j, rs) = @inbounds (Tₛ[i, j, 1], rs.α, rs.ϵ)
-@inline radiating_surface(Ts::CanopyAirSpaceDiagnostics, i, j, rs) =
-    @inbounds (Ts.effective[i, j, 1], Ts.effective_albedo[i, j, 1], one(rs.ϵ))
+@inline radiating_surface(surface, i, j, rs) =
+    (stateindex(surface.temperature, i, j, 1), radiative_surface_value(surface.albedo, rs.α, i, j),
+     radiative_surface_value(surface.emissivity, rs.ϵ, i, j))
+
+@inline radiative_surface_value(::Nothing, value, i, j) = value
+@inline radiative_surface_value(field, value, i, j) = stateindex(field, i, j, 1)
 
 @kernel function _apply_air_land_radiative_fluxes!(land_energy_flux,
                                                   interface_radiation_flux,

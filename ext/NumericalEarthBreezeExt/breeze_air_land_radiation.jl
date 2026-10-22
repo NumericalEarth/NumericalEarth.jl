@@ -5,7 +5,7 @@
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Fields: ConstantField, Field
 using Oceananigans.Grids: Center
-using NumericalEarth.EarthSystemModels.InterfaceComputations: CanopyAirSpaceDiagnostics
+using NumericalEarth.EarthSystemModels.InterfaceComputations: radiative_surface
 using NumericalEarth.Radiations: SurfaceRadiationProperties, default_stefan_boltzmann_constant
 
 const BreezeRTM = Breeze.RadiativeTransferModel
@@ -15,15 +15,17 @@ const GrayBreezeRTM = Breeze.RadiativeTransferModel{<:Number, <:Any, <:Any, Noth
 # temperature through the configured optics. Without land, a configured temperature is kept.
 function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_properties(rtm::BreezeRTM, interfaces)
     land = interfaces.atmosphere_land_interface
-    temperature = isnothing(land) ? nothing : land.temperature
-
-    if temperature isa CanopyAirSpaceDiagnostics
-        α = temperature.effective_albedo
-        ε = ConstantField(one(eltype(α)))
-        return @set rtm.surface_radiation = Breeze.AtmosphereModels.SurfaceRadiation(temperature.effective, ε, α, α)
+    if !isnothing(land)
+        properties = radiative_surface(land, rtm.surface_radiation.direct_surface_albedo,
+                                       rtm.surface_radiation.surface_emissivity)
+        diffuse = radiative_surface(land, rtm.surface_radiation.diffuse_surface_albedo,
+                                    rtm.surface_radiation.surface_emissivity)
+        emissivity = properties.emissivity isa Number ? ConstantField(properties.emissivity) : properties.emissivity
+        return @set rtm.surface_radiation = Breeze.AtmosphereModels.SurfaceRadiation(
+            properties.temperature, emissivity, properties.albedo, diffuse.albedo)
     end
 
-    isnothing(land) && !isnothing(rtm.surface_radiation.surface_temperature) && return rtm
+    !isnothing(rtm.surface_radiation.surface_temperature) && return rtm
     Tˢ = NumericalEarth.EarthSystemModels.surface_temperature(interfaces)
     isnothing(Tˢ) && return rtm
     return @set rtm.surface_radiation.surface_temperature = Tˢ

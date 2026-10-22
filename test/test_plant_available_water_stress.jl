@@ -2,20 +2,24 @@ include("runtests_setup.jl")
 
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     PlantAvailableWaterStress, CriticalSaturation, CanopyConductanceHumidity,
-    evaporation_efficiency, interface_hydrology_state, requires_retention_curve,
-    atmosphere_land_interface
+    evaporation_efficiency, interface_hydrology_state,
+    atmosphere_land_interface, surface_hydrology
 
 using NumericalEarth: VanGenuchtenRetention
-using NumericalEarth.Lands: van_genuchten_saturation
+using NumericalEarth.Lands: van_genuchten_saturation, effective_saturation
 
 # Route through the per-cell materialization, as the flux kernel does: the endpoints come
 # off the land's retention curve, not off the closure.
-land_state(𝒮, curve) = (saturation = 𝒮, root_zone_saturation = 𝒮, retention_curve = curve)
+function land_state(𝒮, curve, stress=PlantAvailableWaterStress(typeof(𝒮)); j=1)
+    return (saturation=𝒮, root_zone_saturation=𝒮,
+            field_capacity_saturation=effective_saturation(1, j, nothing, curve, stress.field_capacity_head),
+            wilting_saturation=effective_saturation(1, j, nothing, curve, stress.wilting_point_head))
+end
 
 # The moisture availability β the formulation derives from that state.
 availability(model, 𝒮, curve) =
     evaporation_efficiency(model, interface_hydrology_state(1, 1, nothing, model,
-                                                            land_state(𝒮, curve)))
+                                                            land_state(𝒮, curve, model isa PlantAvailableWaterStress ? model : PlantAvailableWaterStress(typeof(𝒮)))))
 
 @testset "PlantAvailableWaterStress" begin
     for FT in (Float32, Float64)
@@ -123,10 +127,15 @@ availability(model, 𝒮, curve) =
         columns = (VanGenuchtenRetention(FT; inverse_air_entry_head = 3.6, pore_size_uniformity = 1.56),
                    VanGenuchtenRetention(FT; inverse_air_entry_head = 0.8, pore_size_uniformity = 1.09))
 
-        column_availability(j, 𝒮) =
-            evaporation_efficiency(stress,
-                interface_hydrology_state(1, j, grid, stress,
-                                          land_state(𝒮, VanGenuchtenRetention(FT; inverse_air_entry_head = α, pore_size_uniformity = n))))
+        curve = VanGenuchtenRetention(FT; inverse_air_entry_head = α, pore_size_uniformity = n)
+        hydrology = VariablySaturatedHydrology(FT; slab_depth = 1, porosity = 0.4, storage_height = 0.1,
+            retention_curve = curve,
+            hydraulic_conductivity = VanGenuchtenConductivity(FT; matching_point_conductivity = 1e-6,
+                                                                  pore_size_uniformity = n))
+        land = SlabLand(grid; hydrology)
+        endpoints = surface_hydrology(land, stress, grid)
+        column_availability(j, 𝒮) = evaporation_efficiency(stress,
+            interface_hydrology_state(1, j, grid, stress, merge((; root_zone_saturation=𝒮), endpoints)))
 
         for (j, column) in enumerate(columns), 𝒮 in (FT(0.35), FT(0.6))
             @test column_availability(j, 𝒮) == availability(stress, 𝒮, column)
@@ -144,11 +153,6 @@ availability(model, 𝒮, curve) =
         transpiring = CanopyConductanceHumidity(FT; leaf_area_index = 2,
                                                 moisture_stress = stress)
         canopy = CanopyAirSpace(FT; soil = BulkHumidity(), canopy = transpiring)
-
-        @test !requires_retention_curve(CriticalSaturation(FT(0.5)))
-        @test requires_retention_curve(stress)
-        @test requires_retention_curve(transpiring)
-        @test requires_retention_curve(canopy)
 
         grid = RectilinearGrid(FT; size = (), topology = (Flat, Flat, Flat))
         atmosphere = PrescribedAtmosphere(grid, [0.0, 1.0]; surface_layer_height = 10)

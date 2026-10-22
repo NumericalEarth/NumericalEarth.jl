@@ -7,7 +7,7 @@ export AbstractLand,
        coastal_outlet_indices,
        routable_grid,
        # Composable container
-       SlabLand,
+       SlabLand, LandSurface, TiledLandSurface,
        # Energy-balance closures
        SlabEnergy,
        ForceRestoreEnergy,
@@ -51,6 +51,7 @@ using Adapt: Adapt
 using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
+using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Architectures: CPU, architecture, on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField, interior, regrid!,
@@ -66,9 +67,15 @@ using Base: ForwardOrdering
 
 using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
-using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger,
-                                                 canopy_transmittance, skin_conductance, skin_temperature,
-                                                 canopy_evaporation, land_vapor_flux, transpiration
+using NumericalEarth.EarthSystemModels.InterfaceComputations: InterfaceComputations,
+                                                 BulkTemperature, BulkHumidity, CanopyAirSpace, TiledLandInterface,
+                                                 CanopyConductanceHumidity, FractionalHumidity, PlantAvailableWaterStress,
+                                                 DryLayerHumidity, ConstantTortuosity, PowerLawTortuosity,
+                                                 effective_vapor_diffusivity, surface_hydrology,
+                                                 EnergyBalanceTemperature, DiagnosticSkin,
+                                                 PrognosticCanopyAirSpace, PrognosticEnergyBalanceTemperature,
+                                                 interface_kernel_parameters, ComponentExchanger,
+                                                 canopy_transmittance, canopy_leaf_area_index, land_surface_fluxes
 
 # Extended by external land models
 function land_model end
@@ -111,6 +118,8 @@ include("hydrology/variably_saturated_hydrology.jl")
 # Canopy interception store — wraps a soil hydrology (throughfall + wet-canopy
 # evaporation), depends on `merge_unique` from the container above.
 include("hydrology/intercepting_hydrology.jl")
+
+include("land_surface.jl")
 
 # Legacy PrescribedLand component (river / iceberg freshwater forcing).
 include("prescribed_land.jl")

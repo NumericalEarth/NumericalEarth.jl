@@ -17,9 +17,9 @@ soil_hydrology(FT) = VariablySaturatedHydrology(FT;
 # Coupled single-column model. `interception = true` wraps the soil hydrology in an
 # `InterceptingHydrology` and hands the CAS a matching `CanopyInterception`.
 function interception_model(arch, FT; leaf_area_index = 3.0, capacity = 0.1, rain = 1e-3,
-                            water_storage = 300.0, interception = true)
+                            water_storage = 300.0, interception = true, fraction = nothing)
     hydrology = interception ?
-        InterceptingHydrology(FT; soil = soil_hydrology(FT), leaf_area_index,
+        InterceptingHydrology(FT; soil = soil_hydrology(FT),
                               capacity_per_leaf_area = capacity) :
         soil_hydrology(FT)
     cas = CanopyAirSpace(FT;
@@ -29,9 +29,24 @@ function interception_model(arch, FT; leaf_area_index = 3.0, capacity = 0.1, rai
                                            absorbed_par = InteractiveAbsorbedPAR(FT)),
         ground_heat_flux = SoilConductiveFlux(1.5, 0.05),
         interception = interception ? CanopyInterception() : nothing)
-    return coupled_land_model(arch, FT; Tair = 298, qair = 0.010, wind = 3, rain, hydrology,
-                              Tland = 298, water = water_storage, shortwave = 400,
-                              atmosphere_land_interface_temperature = cas)
+    surface = LandSurface(cas)
+    isnothing(fraction) || (surface = TiledLandSurface(surface; fraction))
+    return coupled_land_model(arch, FT; Tair = 298, qair = 0.010, wind = 3, rain, hydrology, surface,
+                              Tland = 298, water = water_storage, shortwave = 400)
+end
+
+@testset "Tiled interception shares vegetation and conserves water" begin
+    for arch in test_architectures
+        fraction, rain, Δt = 0.4, 1e-3, 60.0
+        model = interception_model(arch, Float64; fraction, rain)
+        land = model.land
+        before = scalar(land.water_storage) + fraction * scalar(land.prognostic.canopy_water_storage)
+        time_step!(model, Δt)
+        after = scalar(land.water_storage) + fraction * scalar(land.prognostic.canopy_water_storage)
+        vapor = scalar(model.interfaces.atmosphere_land_interface.fluxes.water_vapor)
+        @test after - before ≈ Δt * (rain - vapor) atol = 1e-10
+        @test scalar(land.diagnostics.canopy_water_capacity) ≈ 0.3
+    end
 end
 
 @testset "InterceptingHydrology declarations & container" begin

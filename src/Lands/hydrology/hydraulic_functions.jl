@@ -73,7 +73,7 @@ $(TYPEDSIGNATURES)
 end
 
 # Per-cell endpoint evaluation for the interface's plant-stress formulations.
-@inline function EarthSystemModels.effective_saturation(i, j, grid, r::VanGenuchtenRetention, ψ)
+@inline function effective_saturation(i, j, grid, r::VanGenuchtenRetention, ψ)
     FT = typeof(ψ)
     αᵃᵉ = convert(FT, stateindex(r.inverse_air_entry_head, i, j, 1))
     𝓃   = convert(FT, stateindex(r.pore_size_uniformity, i, j, 1))

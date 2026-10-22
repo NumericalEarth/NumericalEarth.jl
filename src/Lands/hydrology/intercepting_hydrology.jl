@@ -5,13 +5,7 @@
 #####
 
 """
-    InterceptingHydrology(FT = Oceananigans.defaults.FloatType;
-                          soil,
-                          leaf_area_index,
-                          capacity_per_leaf_area = 0.1,
-                          extinction = 0.5,
-                          clumping = 1,
-                          cover_fraction = 1)
+$(TYPEDSIGNATURES)
 
 Canopy water store `Wᶜ` (kg m⁻²) wrapping a [`VariablySaturatedHydrology`](@ref)
 `soil`. Rain is caught by the Beer–Lambert canopy fraction `1 − e^{−KΩ·LAI}` up to the
@@ -19,10 +13,10 @@ capacity `c·LAI`; the wet canopy evaporates at the rate `Eʷᵉᵗ` the interfa
 (a [`CanopyAirSpace`](@ref) with `CanopyInterception`), and the uncaught rain plus the
 over-capacity drip reach the soil as throughfall.
 
-`leaf_area_index` should be the same LAI passed to the interface canopy; a
-`FieldTimeSeries` LAI runs on CPU only. The store is kept per unit vegetated area; on a
-tiled cell `cover_fraction` is the vegetated fraction of a [`TiledLandInterface`](@ref),
-which scales the interception and drip the soil sees.
+`leaf_area_index` and `cover_fraction` default to the land surface's canopy LAI and
+vegetated fraction when the land is constructed. A `FieldTimeSeries` LAI runs on CPU only.
+The store is kept per unit vegetated area; `cover_fraction` scales the interception
+and drip reaching the shared soil.
 
 * `capacity_per_leaf_area` — `c` (kg m⁻² per unit LAI).
 * `extinction`, `clumping` — Beer–Lambert `K`, `Ω` of the caught fraction.
@@ -42,11 +36,11 @@ end
 
 function InterceptingHydrology(FT::Type = Oceananigans.defaults.FloatType;
                                soil,
-                               leaf_area_index,
+                               leaf_area_index = nothing,
                                capacity_per_leaf_area = 0.1,
                                extinction = 0.5,
                                clumping = 1,
-                               cover_fraction = 1)
+                               cover_fraction = nothing)
     return InterceptingHydrology(soil,
                                  canopy_lai_property(leaf_area_index, FT),
                                  canopy_lai_property(cover_fraction, FT),
@@ -146,9 +140,6 @@ end
 end
 
 saturation(h::InterceptingHydrology, land) = saturation(h.soil, land)
-
-EarthSystemModels.surface_retention_curve(h::InterceptingHydrology) =
-    EarthSystemModels.surface_retention_curve(h.soil)
 
 Base.summary(h::InterceptingHydrology) =
     string("InterceptingHydrology(soil=", summary(h.soil),

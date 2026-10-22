@@ -63,9 +63,7 @@ function build_coupled_test_model(arch; M₀, T₀, with_radiation = false)
             vapor_exchange = DryLayerVaporPistonVelocity(
                 minimum_dry_layer_depth = 1e-4,
                 molecular_diffusivity = 2.5e-5,
-                tortuosity = PowerLawTortuosity()),
-            thermal_exchange_depth = 0.10,
-            porosity = 0.4))
+                tortuosity = PowerLawTortuosity())))
 
     radiation = nothing
     if with_radiation

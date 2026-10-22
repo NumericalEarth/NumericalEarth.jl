@@ -22,7 +22,7 @@ const Δt = 0.25
 
 # `hour` is the solar epoch at longitude 0, so 12 is local noon and 0 local midnight. Gray
 # optics needs no lookup tables.
-function rtm_canopy_components(arch; hour = 12)
+function rtm_canopy_components(arch; hour = 12, fraction = nothing)
     FT = Float64
 
     grid = RectilinearGrid(arch, FT; size = (8, 8), halo = (5, 5),
@@ -38,10 +38,6 @@ function rtm_canopy_components(arch; hour = 12)
                                x = (-1kilometer, 1kilometer),
                                topology = (Periodic, Flat, Flat))
 
-    land = SlabLand(land_grid; hydrology = BucketHydrology(FT; maximum_water_storage = 150),
-                    energy = SlabEnergy(FT))
-    set!(land; T = 298, M = 45)   # 𝒮 = 0.3
-
     radiation = RadiativeTransferModel(grid, GrayOptics(), constants;
                                        solar_position = ApparentSolarPosition(coordinate = (0, 30),
                                                                              epoch = DateTime(2024, 3, 20, hour)),
@@ -55,14 +51,18 @@ function rtm_canopy_components(arch; hour = 12)
                                            moisture_stress = CriticalSaturation(0.5),
                                            absorbed_par = InteractiveAbsorbedPAR(FT)))
 
+    surface = LandSurface(canopy)
+    isnothing(fraction) || (surface = TiledLandSurface(surface; fraction))
+    land = SlabLand(land_grid; hydrology = BucketHydrology(FT; maximum_water_storage = 150),
+                    energy = SlabEnergy(FT), surface)
+    set!(land; T = 298, M = 45)
+
     return atmosphere, land, radiation, canopy
 end
 
 function build_rtm_canopy_model(arch; hour = 12)
     atmosphere, land, radiation, canopy = rtm_canopy_components(arch; hour)
-    return AtmosphereLandModel(atmosphere, land; radiation,
-                               atmosphere_land_interface_temperature = canopy,
-                               atmosphere_land_interface_specific_humidity = canopy)
+    return AtmosphereLandModel(atmosphere, land; radiation)
 end
 
 @testset "Breeze RadiativeTransferModel driving a CanopyAirSpace" begin
@@ -97,9 +97,9 @@ end
         end
 
         @testset "Tiled interface keeps the bare tile's configured optics on $A" begin
-            atmosphere, land, radiation, canopy = rtm_canopy_components(arch)
             f = 0.6
-            tiled = TiledLandInterface(land.grid, atmosphere, land; vegetated = canopy, fraction = f)
+            atmosphere, land, radiation, canopy = rtm_canopy_components(arch; fraction = f)
+            tiled = TiledLandInterface(land.grid, atmosphere, land)
             model = AtmosphereLandModel(atmosphere, land; radiation, atmosphere_land_interface = tiled)
             update_state!(model)
 

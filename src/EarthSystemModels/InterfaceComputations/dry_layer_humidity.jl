@@ -177,66 +177,29 @@ Base.summary(v::DryLayerVaporPistonVelocity) =
 #####
 
 """
-    DryLayerHumidity(FT = Oceananigans.defaults.FloatType,
-                     phase = AtmosphericThermodynamics.Liquid();
-                     dry_layer_depth,
-                     vapor_exchange,
-                     thermal_exchange_depth,
-                     porosity)
+$(TYPEDSIGNATURES)
 
-Surface specific-humidity formulation for the *dry-layer* model:
-`qⁱⁿ` is solved from a vapor-flux balance between a Fick flux through an
-unresolved dry surface layer and the atmospheric vapor flux, following
-[Ye and Pielke (1993)](@cite yepielke1993) with the dry-layer (DSL)
-resistance of [Yamanaka et al. (1997)](@cite yamanaka1997surface) and
-[Swenson and Lawrence (2014)](@cite swenson2014dry). The
-formulation plugs into the `compute_interface_state` solver exactly where
-[`SkinHumidity`](@ref) does, and reduces to a saturated-skin boundary
-condition when the slab is wet enough (`𝒮 ≥ 𝒮ᶜ`).
-
-* `dry_layer_depth` — depth diagnostic, e.g.
-  [`StorageBasedDryLayerDepth`](@ref).
-* `vapor_exchange` — `δᵛ_min`, `Dᵛ₀`, tortuosity (a
-  [`DryLayerVaporPistonVelocity`](@ref)).
-* `thermal_exchange_depth` — `ℓᵀ` (m), the same depth used by
-  `SkinTemperature(DiffusiveFlux)` on the temperature side. Controls the
-  interpolation `Tᵉ = Tᵍ + χ(Tˡᵃ − Tᵍ)` with `χ = clip(δᵛ/ℓᵀ, 0, 1)`.
-* `porosity` — `ν`, soil porosity (matches the hydrology closure; needed
-  for the Millington–Quirk tortuosity).
-
-The dry-layer source humidity is the saturation value at the front
-temperature, `qᵉ = qᵛ⁺(Tᵉ)`, with no matric-suction (Kelvin-equation)
-reduction of the pore relative humidity (the `hₛ` of
-[Ye and Pielke (1993)](@cite yepielke1993), after Philip 1957) — that factor
-departs appreciably from 1 only at extreme dryness.
+Surface humidity from vapor diffusion through a dry soil layer, following
+[Ye and Pielke (1993)](@cite yepielke1993) with the dry-layer resistance of
+[Swenson and Lawrence (2014)](@cite swenson2014dry). `dry_layer_depth` is the
+moisture-dependent depth (m), and `vapor_exchange` specifies molecular transport.
+Soil diffusivity is supplied by land; the thermal exchange distance comes from the
+surface heat-transfer closure. Pore air at the evaporation front is saturated;
+matric-suction suppression of its vapor pressure is neglected.
 """
-struct DryLayerHumidity{EFD, VEX, FT, Φ}
-    dry_layer_depth        :: EFD
-    vapor_exchange         :: VEX
-    thermal_exchange_depth :: FT
-    porosity               :: FT
-    phase                  :: Φ
+struct DryLayerHumidity{D, V, P}
+    dry_layer_depth :: D
+    vapor_exchange :: V
+    phase :: P
 end
 
-DryLayerHumidity(FT::Type = Oceananigans.defaults.FloatType,
-                 phase = AtmosphericThermodynamics.Liquid();
-                 dry_layer_depth,
-                 vapor_exchange,
-                 thermal_exchange_depth,
-                 porosity) =
-    DryLayerHumidity(dry_layer_depth,
-                     vapor_exchange,
-                     convert(FT, thermal_exchange_depth),
-                     convert(FT, porosity),
-                     phase)
+DryLayerHumidity(FT::Type=Oceananigans.defaults.FloatType,
+                 phase=AtmosphericThermodynamics.Liquid(); dry_layer_depth, vapor_exchange) =
+    DryLayerHumidity(dry_layer_depth, vapor_exchange, phase)
 
-Base.summary(q::DryLayerHumidity{EFD, VEX, FT, Φ}) where {EFD, VEX, FT, Φ} =
-    string("DryLayerHumidity{",
-           Φ === AtmosphericThermodynamics.Liquid ? "Liquid" : "Ice",
-           "}(depth=", summary(q.dry_layer_depth),
-           ", vapor=", summary(q.vapor_exchange),
-           ", ℓᵀ=", prettysummary(q.thermal_exchange_depth),
-           ", ν=", prettysummary(q.porosity), ")")
+Base.summary(q::DryLayerHumidity{D, V, P}) where {D, V, P} =
+    string("DryLayerHumidity{", P === AtmosphericThermodynamics.Liquid ? "Liquid" : "Ice",
+           "}(depth=", summary(q.dry_layer_depth), ", vapor=", summary(q.vapor_exchange), ")")
 Base.show(io::IO, q::DryLayerHumidity) = print(io, summary(q))
 
 #####
@@ -328,16 +291,12 @@ end
     # qᵉ = qᵛ⁺(Tᵉ) — the saturation specific humidity at the front.
     δᵛ    = dry_layer_depth(q.dry_layer_depth, 𝒮)
     δᵛmin = convert(FT, q.vapor_exchange.minimum_dry_layer_depth)
-    ℓᵀ    = convert(FT, q.thermal_exchange_depth)
+    ℓᵀ    = convert(FT, Ψₛ.energy.thermal_exchange_depth)
     χ     = clamp(δᵛ / ℓᵀ, zero(FT), one(FT))
     Tᵉ    = Tᵍ + χ * (Tˡᵃ - Tᵍ)
     qᵉ    = saturation_specific_humidity(ℂᵃᵗ, Tᵉ, pᵃᵗ, q.phase)
 
-    # Dry-layer conductance. The actual pore liquid fraction is
-    # θˡ = 𝒮(ν − θʳ) + θʳ; we use the simpler θˡ ≈ 𝒮·ν (the residual is
-    # small and θˡ only enters the tortuosity scaling).
-    θˡ  = 𝒮 * convert(FT, q.porosity)
-    Dᵛ  = effective_vapor_diffusivity(q.vapor_exchange, q.porosity, θˡ)
+    Dᵛ  = convert(FT, Ψₛ.hydrology.vapor_diffusivity)
     Gᵉ  = ρᵃᵗ * Dᵛ / max(δᵛ, δᵛmin)
 
     # Wet branch: the front co-locates with the skin, which saturates. The wet

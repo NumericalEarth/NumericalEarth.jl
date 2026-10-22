@@ -28,51 +28,38 @@ struct TiledLandInterface{V, B, F, FL, T}
     temperature :: T
 end
 
-transpiration(interface::TiledLandInterface) = interface.temperature.transpiration
-
 """
-    TiledLandInterface(grid, atmosphere, land;
-                       vegetated,
-                       fraction,
-                       bare                = EnergyBalanceTemperature(vegetated.ground_heat_flux; storage = DiagnosticSkin()),
-                       bare_specific_humidity = vegetated.soil,
-                       vegetated_fluxes    = default_atmosphere_land_fluxes(land, eltype(grid)),
-                       bare_fluxes         = default_atmosphere_land_fluxes(land, eltype(grid)),
-                       velocity_difference = RelativeVelocity())
+$(TYPEDSIGNATURES)
 
-Build a two-tile (forest + bare soil) land interface. `vegetated` is a [`CanopyAirSpace`](@ref),
-a forest canopy; the bare tile is a soil skin with the same ground→bulk conduction and soil
-vapor branch by default, massless like the canopy's ground. `fraction` is the forested fraction (a
-`Number`, `Field`, or `FieldTimeSeries`). Pass `vegetated_fluxes` / `bare_fluxes` to give
-the tiles a roughness contrast.
+Build the exchange interface for a land component configured with `TiledLandSurface`.
+`vegetated_fluxes` and `bare_fluxes` specify the turbulent transport for each tile.
 """
 function TiledLandInterface(grid, atmosphere, land;
-                            vegetated,
-                            fraction,
-                            bare                   = EnergyBalanceTemperature(vegetated.ground_heat_flux; storage = DiagnosticSkin()),
-                            bare_specific_humidity = vegetated.soil,
                             vegetated_fluxes       = default_atmosphere_land_fluxes(land, eltype(grid)),
                             bare_fluxes            = default_atmosphere_land_fluxes(land, eltype(grid)),
                             velocity_difference    = RelativeVelocity())
 
-    skin_conductance(bare) == skin_conductance(vegetated) ||
+    surface = default_al_temperature(land)
+    vegetated, bare = surface.vegetated, surface.bare
+    skin_conductance(bare.temperature) == skin_conductance(vegetated.temperature) ||
         throw(ArgumentError("the bare and vegetated tiles must share the skin conductance Λᵍ"))
 
     vegetated_interface = atmosphere_land_interface(grid, atmosphere, land;
                                                     fluxes              = vegetated_fluxes,
-                                                    temperature         = vegetated,
+                                                    temperature         = vegetated.temperature,
+                                                    specific_humidity   = vegetated.specific_humidity,
                                                     velocity_difference = velocity_difference)
 
     bare_interface = atmosphere_land_interface(grid, atmosphere, land;
                                                fluxes              = bare_fluxes,
-                                               temperature         = bare,
+                                               temperature         = bare.temperature,
                                                velocity_difference = velocity_difference,
-                                               specific_humidity   = bare_specific_humidity)
+                                               specific_humidity   = bare.specific_humidity)
 
     fluxes      = AtmosphereSurfaceFluxes(grid)
-    temperature = build_interface_temperature(vegetated, grid)
+    temperature = build_interface_temperature(vegetated.temperature, grid)
 
-    return TiledLandInterface(vegetated_interface, bare_interface, fraction, fluxes, temperature)
+    return TiledLandInterface(vegetated_interface, bare_interface, surface.fraction, fluxes, temperature)
 end
 
 Base.summary(::TiledLandInterface) = "TiledLandInterface"
@@ -90,16 +77,6 @@ validate_zero_plane_displacement(ti::TiledLandInterface, zᵃᵗ) =
 EarthSystemModels.surface_temperature(ti::TiledLandInterface) = interface_node_temperature(ti.temperature)
 EarthSystemModels.surface_temperature(ti::TiledLandInterface, ocean_interface) =
     EarthSystemModels.surface_temperature(ti)
-
-interface_prognostic_state(ti::TiledLandInterface) =
-    (; vegetated = interface_prognostic_state(ti.vegetated),
-       bare      = interface_prognostic_state(ti.bare))
-
-function restore_interface_state!(ti::TiledLandInterface, state)
-    restore_interface_state!(ti.vegetated, state.vegetated)
-    restore_interface_state!(ti.bare, state.bare)
-    return nothing
-end
 
 function compute_atmosphere_land_fluxes!(coupled_model, ti::TiledLandInterface, Δt)
     compute_atmosphere_land_fluxes!(coupled_model, ti.vegetated, Δt)
@@ -174,3 +151,6 @@ end
             f * veg_temperature.effective_albedo[i, j, 1] + g * bare_radiation.α
     end
 end
+
+land_surface_fluxes(interface::TiledLandInterface, bulk_temperature) = land_surface_fluxes(interface.temperature)
+radiative_surface(interface::TiledLandInterface, albedo, emissivity) = radiative_surface(interface.temperature, albedo, emissivity)

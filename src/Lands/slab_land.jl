@@ -3,10 +3,11 @@
 ##### `EarthSystemModel` (and direct atmosphere-side coupling).
 #####
 ##### A `SlabLand` is a 2D land model on an Oceananigans grid composed of
-##### two closures along independent axes:
+##### bulk energy, hydrology, and surface exchange:
 #####
-#####   - `energy    :: AbstractEnergyBalance`     -- skin temperature
+#####   - `energy    :: AbstractEnergyBalance`     -- bulk temperature
 #####   - `hydrology :: AbstractHydrology`         -- water + moisture availability β ∈ [0, 1]
+#####   - `surface`                                -- boundary physics and surface storage
 #####
 ##### Aerodynamic roughness lengths are a property of the atmosphere-land flux
 ##### closure (`atmosphere_land_fluxes`), not of the land model.
@@ -102,8 +103,9 @@ roughness lengths are a property of the atmosphere-land flux closure
                             `(;)` when none.
 - `energy`                : an `AbstractEnergyBalance` (parameters).
 - `hydrology`             : an `AbstractHydrology` (parameters).
+- `surface`               : surface exchange physics and canopy-air or skin storage.
 """
-struct SlabLand{FT, G, Clk, T, W, B, F, D, P, E, H} <: AbstractLand
+struct SlabLand{FT, G, Clk, T, W, B, F, D, P, E, H, S} <: AbstractLand
     grid          :: G
     clock         :: Clk
     temperature   :: T
@@ -114,35 +116,37 @@ struct SlabLand{FT, G, Clk, T, W, B, F, D, P, E, H} <: AbstractLand
     prognostic    :: P
     energy        :: E
     hydrology     :: H
+    surface       :: S
 end
 
 # Inner-style typed constructor capturing FT.
 SlabLand{FT}(grid, clock, temperature, water_storage, saturation,
-             fluxes, diagnostics, prognostic, energy, hydrology) where FT =
+             fluxes, diagnostics, prognostic, energy, hydrology, surface) where FT =
     SlabLand{FT, typeof(grid), typeof(clock),
              typeof(temperature), typeof(water_storage), typeof(saturation),
              typeof(fluxes), typeof(diagnostics), typeof(prognostic),
-             typeof(energy), typeof(hydrology)}(
+             typeof(energy), typeof(hydrology), typeof(surface)}(
                  grid, clock, temperature, water_storage, saturation,
-                 fluxes, diagnostics, prognostic, energy, hydrology)
+                 fluxes, diagnostics, prognostic, energy, hydrology, surface)
 
 """
-    SlabLand(grid;
-             energy    = SlabEnergy(eltype(grid)),
-             hydrology = BucketHydrology(eltype(grid)),
-             clock     = Clock{eltype(grid)}(time = 0))
+$(TYPEDSIGNATURES)
 
 Construct a `SlabLand` with the chosen closures. The prognostic
 `temperature` and `water_storage` fields and the diagnostic
 `saturation` field are allocated on `grid`; the flux
 accumulators the coupler writes are sized from each closure's
-`flux_variables` declaration.
+`flux_variables` declaration. `surface` configures the surface temperature and humidity
+closures and owns any canopy-air or skin storage.
 """
 function SlabLand(grid;
                   energy    = SlabEnergy(eltype(grid)),
                   hydrology = BucketHydrology(eltype(grid)),
+                  surface   = LandSurface(),
                   clock     = Clock{eltype(grid)}(time = 0))
 
+    hydrology = materialize_surface_hydrology(hydrology, surface)
+    surface = materialize_land_surface(surface, grid)
     temperature   = CenterField(grid)
     water_storage = CenterField(grid)
     saturation    = CenterField(grid)
@@ -151,7 +155,7 @@ function SlabLand(grid;
     prognostic    = build_closure_prognostics(grid, energy, hydrology)
     FT            = eltype(grid)
     return SlabLand{FT}(grid, clock, temperature, water_storage, saturation,
-                        fluxes, diagnostics, prognostic, energy, hydrology)
+                        fluxes, diagnostics, prognostic, energy, hydrology, surface)
 end
 
 Base.eltype(::SlabLand{FT}) where FT = FT
@@ -169,6 +173,7 @@ function Base.show(io::IO, land::SlabLand)
               "├── grid:                  ", summary(land.grid), '\n',
               "├── energy:                ", summary(land.energy), '\n',
               "├── hydrology:             ", summary(land.hydrology), '\n',
+              "├── surface:               ", summary(land.surface), '\n',
               "├── temperature:           ", summary(land.temperature), '\n',
               "├── water_storage:         ", summary(land.water_storage), '\n',
               "├── saturation:            ", summary(land.saturation), '\n',
@@ -212,6 +217,7 @@ function Oceananigans.TimeSteppers.time_step!(land::SlabLand, Δt)
 
     time_step!(land.hydrology, land, Δt, time)
     time_step!(land.energy,    land, Δt, time)
+    time_step!(land.surface)
 
     Oceananigans.TimeSteppers.update_state!(land)
 
@@ -275,10 +281,12 @@ function Oceananigans.prognostic_state(land::SlabLand)
               temperature   = prognostic_state(land.temperature),
               water_storage = prognostic_state(land.water_storage),
               prognostic    = map(prognostic_state, land.prognostic),
-              fluxes        = map(prognostic_state, land.fluxes))
+              fluxes        = map(prognostic_state, land.fluxes),
+              surface       = prognostic_state(land.surface))
 end
 
 function Oceananigans.restore_prognostic_state!(land::SlabLand, state)
+    hasproperty(state, :surface) && restore_prognostic_state!(land.surface, state.surface)
     restore_prognostic_state!(land.clock,         state.clock)
     restore_prognostic_state!(land.temperature,   state.temperature)
     restore_prognostic_state!(land.water_storage, state.water_storage)
@@ -302,8 +310,6 @@ Oceananigans.restore_prognostic_state!(land::SlabLand, ::Nothing) = land
 
 EarthSystemModels.surface_temperature(land::SlabLand) = surface_temperature(land.energy, land)
 surface_saturation(land::SlabLand) = saturation(land.hydrology, land)
-EarthSystemModels.surface_retention_curve(land::SlabLand) =
-    EarthSystemModels.surface_retention_curve(land.hydrology)
 
 # Root-zone saturation the canopy stress reads: the hydrology's own diagnostic when it
 # publishes one (a layered column), otherwise the surface saturation.
@@ -350,7 +356,7 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     al_interface = coupled_model.interfaces.atmosphere_land_interface
     isnothing(al_interface) && return nothing
 
-    interface_fluxes = al_interface.fluxes
+    interface_fluxes = land_surface_fluxes(al_interface, land.temperature)
     fluxes = land.fluxes
     grid = land.grid
     arch = architecture(grid)
@@ -374,33 +380,28 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     Jʳⁿ = hasproperty(atmos_state, :Jʳⁿ) ? atmos_state.Jʳⁿ : ZeroField()
 
     launch!(arch, grid, :xy, _assemble_slab_land_fluxes!,
-            P, E, Jv, Jt, Es, Pl, Cev, interface_fluxes, Jʳⁿ,
-            al_interface.temperature, transpiration(al_interface), skin_conductance(al_interface), land.temperature)
+            P, E, Jv, Jt, Es, Pl, Cev, interface_fluxes, Jʳⁿ)
     return nothing
 end
-
-@inline slab_energy_flux(::Nothing, Ts, T, i, j, 𝒬ᵀ, 𝒬ᵛ) = 𝒬ᵀ + 𝒬ᵛ
-@inline slab_energy_flux(Λ, Ts, T, i, j, 𝒬ᵀ, 𝒬ᵛ) = @inbounds -Λ * (skin_temperature(Ts, i, j) - T[i, j, 1])
 
 @inline _maybe_write!(::Nothing, i, j, value) = nothing
 @inline _maybe_write!(field, i, j, value) = @inbounds field[i, j, 1] = value
 
-@kernel function _assemble_slab_land_fluxes!(P, E, Jv, Jt, Es, Pl, Cev, interface_fluxes, Jʳⁿ, Ts, transpiration_flux, Λ, T)
+@kernel function _assemble_slab_land_fluxes!(P, E, Jv, Jt, Es, Pl, Cev, interface_fluxes, Jʳⁿ)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        𝒬ᵀ = interface_fluxes.sensible_heat[i, j, 1]
-        𝒬ᵛ = interface_fluxes.latent_heat[i, j, 1]
-        Jᵛ = interface_fluxes.water_vapor[i, j, 1]
-        Jᵗ = transpiration_flux[i, j, 1]
+        𝒬 = interface_fluxes.energy[i, j, 1]
+        Jˡᵃ = interface_fluxes.vapor[i, j, 1]
+        Jᵗ = interface_fluxes.transpiration[i, j, 1]
+        Eᶜ = interface_fluxes.canopy_evaporation[i, j, 1]
         rain = Jʳⁿ[i, j, 1]
     end
-    Jˡᵃ = land_vapor_flux(Ts, i, j, Jᵛ)
-    _maybe_write!(Es,  i, j, slab_energy_flux(Λ, Ts, T, i, j, 𝒬ᵀ, 𝒬ᵛ))
+    _maybe_write!(Es,  i, j, 𝒬)
     _maybe_write!(P,   i, j, rain + max(zero(Jˡᵃ), -Jˡᵃ))
     _maybe_write!(E,   i, j, max(zero(Jˡᵃ), Jˡᵃ))
     _maybe_write!(Jv,  i, j, Jˡᵃ)
     _maybe_write!(Jt,  i, j, max(0, Jᵗ))
-    _maybe_write!(Cev, i, j, canopy_evaporation(Ts, i, j))
+    _maybe_write!(Cev, i, j, Eᶜ)
     _maybe_write!(Pl,  i, j, rain)
 end
 
@@ -409,19 +410,15 @@ EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabLand, coupled_model)
 """
     ComponentExchanger(land::SlabLand, grid)
 
-Expose the generic atmosphere-facing SlabLand state: skin temperature `T`, surface
-`saturation`, the `root_zone_saturation` the canopy stress reads, and the hydrology's
-`retention_curve` (`nothing` when it owns none), which the interface's plant-stress
-formulations evaluate their suction endpoints on. Aerodynamic roughness lengths belong to
-the atmosphere-land flux closure (`atmosphere_land_fluxes`), not the land state.
+Expose bulk temperature, surface and root-zone saturation, and canopy interception
+storage and capacity on the exchange grid.
 """
 function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::SlabLand, grid)
     state = (T                     = surface_temperature(land),
              saturation            = surface_saturation(land),
              root_zone_saturation  = surface_root_zone_saturation(land),
              canopy_water_storage  = surface_canopy_water_storage(land),
-             canopy_water_capacity = surface_canopy_water_capacity(land),
-             retention_curve       = EarthSystemModels.surface_retention_curve(land))
+             canopy_water_capacity = surface_canopy_water_capacity(land))
     return ComponentExchanger(state, nothing)
 end
 

@@ -87,7 +87,7 @@ build_canopy_air_space(FT; optics...) = CanopyAirSpace(FT;
         ℙₐ = (thermodynamics_parameters = ℂ, gravitational_acceleration = FT(9.81))
         Ψₛ = AirLandInterfaceState(InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3)),
                                    InterfaceVelocities(FT(0), FT(0)), FT(300), FT(0.012),
-                                   (saturation = FT(0.3),), (temperature = FT(298), time_step = FT(0)), (leaf_area_index = FT(3),))
+                                   (saturation = FT(0.3), vapor_diffusivity = FT(2.4e-5),), (temperature = FT(298), thermal_exchange_depth = FT(0.05), time_step = FT(0)), (leaf_area_index = FT(3),))
         Ψₐ = (z = FT(10), u = FT(3), v = FT(0), T = FT(300), p = FT(101325), q = FT(0.008), h_bℓ = FT(600))
         Ψᵢ = (u = FT(0), v = FT(0), T = FT(298))
         Ψᵣ = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(-600), FT(-350))
@@ -181,9 +181,9 @@ end
     Wᶜᵐᵃˣ = c * LAI
 
     Ψwet = AirLandInterfaceState(flx, vel, FT(300), FT(0.012),
-            (saturation = FT(0.3), canopy_water_storage = FT(Wᶜᵐᵃˣ), canopy_water_capacity = FT(Wᶜᵐᵃˣ)), (temperature = FT(298), time_step = FT(0)), (leaf_area_index = FT(LAI),))
+            (saturation = FT(0.3), vapor_diffusivity = FT(2.4e-5), canopy_water_storage = FT(Wᶜᵐᵃˣ), canopy_water_capacity = FT(Wᶜᵐᵃˣ)), (temperature = FT(298), thermal_exchange_depth = FT(0.05), time_step = FT(0)), (leaf_area_index = FT(LAI),))
     Ψdry = AirLandInterfaceState(flx, vel, FT(300), FT(0.012),
-            (saturation = FT(0.3), canopy_water_storage = FT(0), canopy_water_capacity = FT(Wᶜᵐᵃˣ)), (temperature = FT(298), time_step = FT(0)), (leaf_area_index = FT(LAI),))
+            (saturation = FT(0.3), vapor_diffusivity = FT(2.4e-5), canopy_water_storage = FT(0), canopy_water_capacity = FT(Wᶜᵐᵃˣ)), (temperature = FT(298), thermal_exchange_depth = FT(0.05), time_step = FT(0)), (leaf_area_index = FT(LAI),))
     wet = canopy_air_space_solve(cas, Ψwet, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     dry = canopy_air_space_solve(cas, Ψdry, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
 
@@ -210,8 +210,7 @@ end
         dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
                             dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
         vapor_exchange = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
-                            molecular_diffusivity = 2.4e-5, tortuosity = PowerLawTortuosity()),
-        thermal_exchange_depth = 0.05, porosity = 0.4)
+                            molecular_diffusivity = 2.4e-5, tortuosity = PowerLawTortuosity()))
     # Bare soil (LAI = 0, no litter) isolates the soil branch from the canopy.
     bare(wᵘᶜ) = CanopyAirSpace(FT; soil,
         canopy = CanopyConductanceHumidity(FT; leaf_area_index = 0.0,
@@ -225,8 +224,8 @@ end
     # Vapor-coupled (χq) but thermally near-decoupled (χθ = 0) node, so the sweep
     # isolates the soil↔canopy-air vapor path from the skin-temperature response.
     flx = InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3), FT(0), FT(1/6)); vel = InterfaceVelocities(FT(0), FT(0))
-    Ψ(𝒮) = AirLandInterfaceState(flx, vel, FT(300), FT(0.012), (saturation = FT(𝒮),),
-            (temperature = FT(300), time_step = FT(0)), (leaf_area_index = FT(0),))
+    Ψ(𝒮) = AirLandInterfaceState(flx, vel, FT(300), FT(0.012), (saturation = FT(𝒮), vapor_diffusivity = FT(2.4e-5) * (FT(0.4) * (1 - FT(𝒮)))^(FT(10/3)) / FT(0.4)^2,),
+            (temperature = FT(300), thermal_exchange_depth = FT(0.05), time_step = FT(0)), (leaf_area_index = FT(0),))
     LEᵍ(wᵘᶜ, 𝒮) = canopy_air_space_solve(bare(wᵘᶜ), Ψ(𝒮), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ).LEᵍ
 
     # A saturated soil evaporates a substantial positive latent flux (the pre-fix stall gives ≈ 0),
@@ -277,8 +276,8 @@ end
     # Vapor-coupled (χq) but thermally near-decoupled (χθ = 0) node, so the
     # comparison isolates the ground vapor path from the skin-temperature response.
     flx = InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3), FT(0), FT(1/6)); vel = InterfaceVelocities(FT(0), FT(0))
-    Ψ(𝒮) = AirLandInterfaceState(flx, vel, FT(300), FT(0.012), (saturation = FT(𝒮),),
-            (temperature = FT(300), time_step = FT(0)), (leaf_area_index = FT(0),))
+    Ψ(𝒮) = AirLandInterfaceState(flx, vel, FT(300), FT(0.012), (saturation = FT(𝒮), vapor_diffusivity = FT(2.4e-5),),
+            (temperature = FT(300), thermal_exchange_depth = FT(0.05), time_step = FT(0)), (leaf_area_index = FT(0),))
     LEᵍ(c, 𝒮) = canopy_air_space_solve(c, Ψ(𝒮), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ).LEᵍ
 
     unresisted = cas(litter_resistance = nothing)
@@ -363,7 +362,7 @@ end
         Ψᵣ = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(-600), FT(-350))
         Ψ(LAI) = AirLandInterfaceState(InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3), FT(0.1), FT(0.1)),
                                        InterfaceVelocities(FT(0), FT(0)), FT(300), FT(0.012),
-                                       (saturation = FT(0.3),), (temperature = FT(298), time_step = FT(0)),
+                                       (saturation = FT(0.3), vapor_diffusivity = FT(2.4e-5),), (temperature = FT(298), thermal_exchange_depth = FT(0.05), time_step = FT(0)),
                                        (leaf_area_index = FT(LAI),))
 
         soil = bare_soil_humidity(FT)
@@ -396,8 +395,7 @@ end
         dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
                                                     dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
         vapor_exchange  = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
-                                                      molecular_diffusivity = 2.4e-5, tortuosity = PowerLawTortuosity()),
-        thermal_exchange_depth = 0.05, porosity = 0.4)
+                                                      molecular_diffusivity = 2.4e-5, tortuosity = PowerLawTortuosity()))
     cas = CanopyAirSpace(FT; soil,
         canopy = CanopyConductanceHumidity(FT; leaf_area_index = 3.0, moisture_stress = CriticalSaturation(0.5),
                                            absorbed_par = InteractiveAbsorbedPAR(FT)),
@@ -408,8 +406,8 @@ end
     Ψᵢ  = (u = FT(0), v = FT(0), T = FT(298))
     Ψᵣ  = AirLandRadiationState(FT(5.670374e-8), FT(0.2), FT(0.95), FT(-600), FT(-350))
     flx = InterfaceFluxScales(FT(0), FT(0), FT(0), FT(0.1), FT(0.1)); vel = InterfaceVelocities(FT(0), FT(0))
-    Ψₛ  = AirLandInterfaceState(flx, vel, FT(298), FT(0.012), (saturation = FT(1),),
-                                (temperature = FT(298), time_step = FT(0)), (leaf_area_index = FT(3),))
+    Ψₛ  = AirLandInterfaceState(flx, vel, FT(298), FT(0.012), (saturation = FT(1), vapor_diffusivity = FT(0),),
+                                (temperature = FT(298), thermal_exchange_depth = FT(0.05), time_step = FT(0)), (leaf_area_index = FT(3),))
     sol = canopy_air_space_solve(cas, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
 
     # Saturated pores close the Fick path and calm air the undercanopy path: no ground vapor flux.

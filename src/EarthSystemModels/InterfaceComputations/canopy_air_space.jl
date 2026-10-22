@@ -375,8 +375,7 @@ soil = DryLayerHumidity(Float64;
                         dry_layer_depth = StorageBasedDryLayerDepth(Float64;
                             maximum_dry_layer_depth = 0.015, dry_layer_onset_saturation = 0.5),
                         vapor_exchange = DryLayerVaporPistonVelocity(Float64;
-                            minimum_dry_layer_depth = 1e-3, molecular_diffusivity = 2.4e-5),
-                        thermal_exchange_depth = 0.05, porosity = 0.4)
+                            minimum_dry_layer_depth = 1e-3, molecular_diffusivity = 2.4e-5))
 
 leaf_albedo = Field{Center, Center, Nothing}(grid)
 set!(leaf_albedo, (λ, φ) -> ifelse(λ < 11, 0.12, 0.35))
@@ -490,8 +489,6 @@ Adapt.@adapt_structure CanopyAirSpace
 # store Wᶜ (→ fʷᵉᵗ).
 @inline interface_hydrology_state(i, j, grid, c::CanopyAirSpace, land_state) =
     canopy_air_space_hydrology_state(c.interception, i, j, grid, c, land_state)
-@inline requires_retention_curve(c::CanopyAirSpace) =
-    requires_retention_curve(c.soil) || requires_retention_curve(c.canopy)
 @inline canopy_air_space_hydrology_state(::Nothing, i, j, grid, c, land_state) =
     merge(interface_hydrology_state(i, j, grid, c.soil, land_state),
           interface_hydrology_state(i, j, grid, c.canopy, land_state))
@@ -740,39 +737,13 @@ end
     (Ψₛ.temperature, Ψₛ.specific_humidity)
 
 """
-    struct CanopyAirState
-
-Prognostic canopy-air node state of a [`PrognosticCanopyAir`](@ref) storage: the node
-temperature `Tᵃᶜ` and specific humidity `qᵃᶜ` carried across time steps. Model state
-(unlike the pure-output [`CanopyAirSpaceDiagnostics`](@ref) fields): it enters
-checkpointing and is read back as the interface state at the start of each flux
-computation. Initialized to the diagnostic equilibrium on the first `update_state!`
-(`Δt = 0`), so a fresh start degrades gracefully to a diagnostic first step.
-"""
-struct CanopyAirState{F}
-    temperature       :: F   # Tᵃᶜ (Field{Center, Center, Nothing})
-    specific_humidity :: F   # qᵃᶜ
-end
-
-CanopyAirState(grid) = CanopyAirState(Field{Center, Center, Nothing}(grid),
-                                      Field{Center, Center, Nothing}(grid))
-
-Adapt.@adapt_structure CanopyAirState
-
-Base.summary(::CanopyAirState) = "CanopyAirState"
-Base.show(io::IO, s::CanopyAirState) = print(io, summary(s))
-
-@inline build_canopy_air_state(::DiagnosticCanopyAir, grid) = nothing
-@inline build_canopy_air_state(::PrognosticCanopyAir, grid) = CanopyAirState(grid)
-
-"""
     struct CanopyAirSpaceDiagnostics
 
 The `temperature` slot of a [`CanopyAirSpace`](@ref) interface: the canopy-air node
 temperature the atmosphere sees, the leaf and ground surface temperatures, the two-source flux
-shares, and the prognostic node state (`nothing` for a diagnostic node).
+shares.
 """
-struct CanopyAirSpaceDiagnostics{F, S}
+struct CanopyAirSpaceDiagnostics{F}
     interface              :: F   # canopy-air node Tᵃᶜ (what MOST sees)
     canopy                 :: F   # leaf temperature Tˡᵉᵃᶠ
     ground                 :: F   # ground surface temperature Tᵍ
@@ -787,26 +758,13 @@ struct CanopyAirSpaceDiagnostics{F, S}
     canopy_wet_latent_heat :: F   # wet-canopy latent heat ℒ·Eʷᵉᵗ (W m⁻², up)
     land_vapor_flux        :: F   # soil evaporation + transpiration, drawn from the land water store
     transpiration          :: F   # leaf transpiration LEˡᵉᵃᶠ/ℒ − Eʷᵉᵗ, drawn from the root zone
-    state                  :: S   # prognostic CanopyAirState, or nothing (diagnostic node)
 end
 
-CanopyAirSpaceDiagnostics(grid, storage = DiagnosticCanopyAir()) =
+CanopyAirSpaceDiagnostics(grid) =
     CanopyAirSpaceDiagnostics(ntuple(_ -> Field{Center, Center, Nothing}(grid),
-                                     Val(fieldcount(CanopyAirSpaceDiagnostics) - 1))...,
-                              build_canopy_air_state(storage, grid))
+                                     Val(fieldcount(CanopyAirSpaceDiagnostics)))...)
 
 Adapt.@adapt_structure CanopyAirSpaceDiagnostics
-
-@inline skin_temperature(Ts::CanopyAirSpaceDiagnostics, i, j) = @inbounds Ts.ground[i, j, 1]
-
-# Vapor fluxes the land closures consume: the wet-canopy evaporation `Eʷᵉᵗ` drains the canopy
-# store, the rest of the leaf and ground sources drain the land water store, the leaf part of
-# it from the root zone. A plain skin has no canopy, and its atmospheric vapor flux `Jᵛ` is
-# the land's loss.
-@inline canopy_evaporation(Ts, i, j) = false
-@inline canopy_evaporation(Ts::CanopyAirSpaceDiagnostics, i, j) = @inbounds Ts.canopy_evaporation[i, j, 1]
-@inline land_vapor_flux(Ts, i, j, Jᵛ) = Jᵛ
-@inline land_vapor_flux(Ts::CanopyAirSpaceDiagnostics, i, j, Jᵛ) = @inbounds Ts.land_vapor_flux[i, j, 1]
 
 Base.summary(::CanopyAirSpaceDiagnostics) = "CanopyAirSpaceDiagnostics"
 Base.show(io::IO, d::CanopyAirSpaceDiagnostics) = print(io, summary(d))

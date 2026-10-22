@@ -19,13 +19,17 @@ using ..EarthSystemModels: reference_density,
 ##### Container for organizing information related to fluxes
 #####
 
-mutable struct AtmosphereInterface{J, F, ST, SQ, P}
+mutable struct AtmosphereInterface{J, F, ST, SQ, P, B}
     fluxes :: J
     flux_formulation :: F
     temperature :: ST
     specific_humidity :: SQ
     properties :: P
+    boundary :: B
 end
+
+AtmosphereInterface(fluxes, formulation, temperature, humidity, properties) =
+    AtmosphereInterface(fluxes, formulation, temperature, humidity, properties, nothing)
 
 validate_zero_plane_displacement(interface::AtmosphereInterface, zᵃᵗ) =
     validate_zero_plane_displacement(interface.flux_formulation, zᵃᵗ)
@@ -403,7 +407,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              atmosphere_ocean_interface_specific_humidity = default_ao_specific_humidity(ocean),
                              atmosphere_sea_ice_interface_temperature = default_ai_temperature(sea_ice),
                              atmosphere_sea_ice_velocity_difference = RelativeVelocity(),
-                             atmosphere_land_interface_temperature = BulkTemperature(),
+                             atmosphere_land_interface_temperature = default_al_temperature(land),
                              atmosphere_land_velocity_difference = RelativeVelocity(),
                              atmosphere_land_interface_specific_humidity = default_al_specific_humidity(atmosphere_land_interface_temperature, land),
                              atmosphere_land_interface = atmosphere_land_interface(exchange_grid, atmosphere, land;
@@ -509,6 +513,7 @@ end
 # Default land surface humidity formulation: bulk (saturated where wet, dry otherwise);
 # a `CanopyAirSpace` temperature formulation closes the humidity slot itself.
 default_al_specific_humidity(temperature, ::Nothing) = nothing
+default_al_temperature(land) = BulkTemperature()
 default_al_specific_humidity(temperature, land) = BulkHumidity(AtmosphericThermodynamics.Liquid())
 default_al_specific_humidity(cas::CanopyAirSpace, land) = cas
 
@@ -530,38 +535,4 @@ function default_atmosphere_land_fluxes(land, FT; solver_stop_criteria = nothing
                                    solver_stop_criteria)
 end
 
-#####
-##### Checkpointing: the atmosphere-land interface temperature is the only interface state.
-#####
-
-Oceananigans.prognostic_state(ci::ComponentInterfaces) =
-    (; atmosphere_land_interface = interface_prognostic_state(ci.atmosphere_land_interface))
-
-interface_prognostic_state(::Nothing) = nothing
-interface_prognostic_state(ai::AtmosphereInterface) = interface_prognostic_state(ai.temperature)
-interface_prognostic_state(Ts) = Oceananigans.prognostic_state(Ts)
-interface_prognostic_state(Ts::CanopyAirSpaceDiagnostics) = interface_prognostic_state(Ts.state)
-interface_prognostic_state(state::CanopyAirState) =
-    (; temperature = Oceananigans.prognostic_state(state.temperature),
-       specific_humidity = Oceananigans.prognostic_state(state.specific_humidity))
-
-function Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, state)
-    if hasproperty(state, :atmosphere_land_interface)
-        restore_interface_state!(ci.atmosphere_land_interface, state.atmosphere_land_interface)
-    end
-    return ci
-end
-
-Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, ::Nothing) = ci
-
-restore_interface_state!(::Nothing, state) = nothing
-restore_interface_state!(ai::AtmosphereInterface, ::Nothing) = nothing
-restore_interface_state!(ai::AtmosphereInterface, state) = restore_interface_state!(ai.temperature, state)
-restore_interface_state!(Ts, state) = Oceananigans.restore_prognostic_state!(Ts, state)
-restore_interface_state!(Ts::CanopyAirSpaceDiagnostics, ::Nothing) = nothing
-restore_interface_state!(Ts::CanopyAirSpaceDiagnostics, state) = restore_interface_state!(Ts.state, state)
-function restore_interface_state!(state::CanopyAirState, saved)
-    Oceananigans.restore_prognostic_state!(state.temperature, saved.temperature)
-    Oceananigans.restore_prognostic_state!(state.specific_humidity, saved.specific_humidity)
-    return nothing
-end
+Oceananigans.prognostic_state(::ComponentInterfaces) = nothing

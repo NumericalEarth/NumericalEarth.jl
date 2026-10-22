@@ -68,8 +68,6 @@ function PlantAvailableWaterStress(FT::Type = Oceananigans.defaults.FloatType;
                                      convert(FT, wilting_point_head))
 end
 
-# The endpoints arrive precomputed on the land's own curve — see
-# `interface_hydrology_state(i, j, grid, ::PlantAvailableWaterStress, land_state)`.
 @inline function evaporation_efficiency(::PlantAvailableWaterStress, hydrology)
     𝒮   = hydrology.root_zone_saturation
     FT  = typeof(𝒮)
@@ -84,13 +82,3 @@ Base.summary(p::PlantAvailableWaterStress) =
            ", ψʷᵖ=", prettysummary(p.wilting_point_head), ")")
 
 Base.show(io::IO, p::PlantAvailableWaterStress) = print(io, summary(p))
-
-#####
-##### Which formulations need the land to own a retention curve.
-#####
-##### Checked once, when the atmosphere-land interface is built, so a stress paired with
-##### a curve-less hydrology fails there instead of reading a `nothing` in a kernel.
-#####
-
-@inline requires_retention_curve(model) = false
-@inline requires_retention_curve(::PlantAvailableWaterStress) = true

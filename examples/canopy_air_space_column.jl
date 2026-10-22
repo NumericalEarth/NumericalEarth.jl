@@ -89,8 +89,7 @@ soil_branch() = DryLayerHumidity(;
                                                 dry_layer_exponent         = 2),
     vapor_exchange  = DryLayerVaporPistonVelocity(minimum_dry_layer_depth = 1e-3,
                                                   molecular_diffusivity   = 2.4e-5,
-                                                  tortuosity              = ConstantTortuosity()),
-    thermal_exchange_depth = 0.05, porosity = soil_porosity)
+                                                  tortuosity              = ConstantTortuosity()))
 
 # The soil is a `VariablySaturatedHydrology` column wrapped by an `InterceptingHydrology`
 # canopy interception store, stepped with the conservative `WaterCoupledEnergy`. Every
@@ -124,13 +123,13 @@ conservative_energy() = WaterCoupledEnergy(; deep_temperature = initial_temperat
 
 # The `InterceptingHydrology` wraps the soil with the canopy store; its `leaf_area_index`
 # sets the caught fraction and capacity `Wᶜᵐᵃˣ = c·LAI`, per unit vegetated area.
-intercepting_hydrology(leaf_area_index; cover_fraction = 1) = InterceptingHydrology(;
-    soil = variably_saturated_soil(), leaf_area_index, cover_fraction,
+intercepting_hydrology() = InterceptingHydrology(;
+    soil = variably_saturated_soil(),
     capacity_per_leaf_area = interception_capacity)
 
 # ## Model builder
 #
-# Both interface slots take the same `CanopyAirSpace` object, carrying a
+# The land surface uses a `CanopyAirSpace`, carrying a
 # `CanopyInterception` so the wet leaf evaporates intercepted rain. Every column shares
 # one soil branch, moisture stress, PAR, skin flux, and optics; only the leaf-area
 # index and stomatal `conductance` vary.
@@ -154,15 +153,13 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
     atmosphere = forced_atmosphere(grid, times)
     radiation  = forced_radiation(grid, times)
 
+    canopy_air_space = canopy_with_interception(; leaf_area_index, conductance)
     land = SlabLand(grid; energy = conservative_energy(),
-                    hydrology = intercepting_hydrology(leaf_area_index))
+                    hydrology = intercepting_hydrology(),
+                    surface = LandSurface(canopy_air_space))
     set!(land; T = initial_temperature, M = initial_soil_storage, canopy_water_storage = 0.0)
 
-    canopy_air_space = canopy_with_interception(; leaf_area_index, conductance)
-
-    model = AtmosphereLandModel(atmosphere, land; radiation,
-                                atmosphere_land_interface_temperature       = canopy_air_space,
-                                atmosphere_land_interface_specific_humidity = canopy_air_space)
+    model = AtmosphereLandModel(atmosphere, land; radiation)
 
     ## Diagnostics: the CAS stores its node/leaf/ground/effective temperatures, the
     ## skin→bulk ground heat flux, and the two-source latent/sensible shares plus the
@@ -490,23 +487,22 @@ nothing #hide
 # interception store as above, with only the tiling and the store's `cover_fraction` changing.
 
 # The vegetated tile is the same `canopy_with_interception` as above (full `LAI_veg`);
-# its bare (`LAI = 0`) counterpart is derived automatically by `TiledLandInterface`. The
+# its bare (`LAI = 0`) counterpart is derived automatically by `TiledLandSurface`. The
 # interception store is kept per unit vegetated area (LAI `LAI_veg`, capacity `c·LAI_veg`);
-# `cover_fraction = f_veg` scales the interception and drip the shared soil sees.
+# the tile fraction scales the interception and drip the shared soil sees.
 
 function tiled_intercepting_column(; fraction, label)
     grid       = RectilinearGrid(CPU(); size = (), topology = (Flat, Flat, Flat))
     atmosphere = forced_atmosphere(grid, times)
     radiation  = forced_radiation(grid, times)
 
+    canopy = canopy_with_interception(; leaf_area_index = vegetated_leaf_area_index)
+    surface = TiledLandSurface(LandSurface(canopy); fraction)
     land = SlabLand(grid; energy = conservative_energy(),
-                    hydrology = intercepting_hydrology(vegetated_leaf_area_index; cover_fraction = fraction))
+                    hydrology = intercepting_hydrology(), surface)
     set!(land; T = initial_temperature, M = initial_soil_storage, canopy_water_storage = 0.0)
 
-    tiled = TiledLandInterface(grid, atmosphere, land;
-                               vegetated = canopy_with_interception(; leaf_area_index = vegetated_leaf_area_index),
-                               fraction)
-    model = AtmosphereLandModel(atmosphere, land; radiation, atmosphere_land_interface = tiled)
+    model = AtmosphereLandModel(atmosphere, land; radiation)
     interface = model.interfaces.atmosphere_land_interface
 
     T    = zeros(Nsteps)   # time (days)

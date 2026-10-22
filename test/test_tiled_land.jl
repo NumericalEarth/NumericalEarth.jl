@@ -22,9 +22,10 @@ land_roughness(FT, z₀m, z₀s) = SimilarityTheoryFluxes(FT;
 # Single-column coupled model with a `TiledLandInterface` (veg + bare over a shared slab).
 function tiled_land_model(arch, cas; fraction, shortwave = 600.0,
                           vegetated_fluxes = nothing, bare_fluxes = nothing, wind = 3.0)
-    grid, atmosphere, land, radiation = coupled_land_components(arch; wind, shortwave)
+    surface = TiledLandSurface(LandSurface(cas); fraction)
+    grid, atmosphere, land, radiation = coupled_land_components(arch; wind, shortwave, surface)
 
-    kw = (; vegetated = cas, fraction)
+    kw = (;)
     isnothing(vegetated_fluxes) || (kw = (; kw..., vegetated_fluxes))
     isnothing(bare_fluxes)      || (kw = (; kw..., bare_fluxes))
     tiled = TiledLandInterface(grid, atmosphere, land; kw...)
@@ -150,9 +151,9 @@ end
 
     # --- Float32 / Float64 end-to-end (blended buffers keep the grid float type). ---
     for FT in (Float32, Float64)
-        grid, atmosphere, land, radiation = coupled_land_components(CPU(), FT)
-        tiled = TiledLandInterface(grid, atmosphere, land;
-                                   vegetated = build_tiled_canopy_air_space(FT), fraction = FT(0.5))
+        surface = TiledLandSurface(LandSurface(build_tiled_canopy_air_space(FT)); fraction = FT(0.5))
+        grid, atmosphere, land, radiation = coupled_land_components(CPU(), FT; surface)
+        tiled = TiledLandInterface(grid, atmosphere, land)
         model = AtmosphereLandModel(atmosphere, land; radiation, atmosphere_land_interface = tiled)
         update_state!(model.land); update_state!(model)
         𝒬ᵀ = scalar(model.interfaces.atmosphere_land_interface.fluxes.sensible_heat)

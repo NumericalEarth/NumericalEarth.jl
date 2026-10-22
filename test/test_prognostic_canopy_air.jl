@@ -4,7 +4,7 @@ using Oceananigans
 using Oceananigans.TimeSteppers: time_step!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyAirSpace, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR,
-    SoilConductiveFlux, CanopyAirSpaceDiagnostics, CanopyAirState,
+    SoilConductiveFlux, CanopyAirSpaceDiagnostics,
     DiagnosticCanopyAir, PrognosticCanopyAir, advance_canopy_air, node_memory,
     AtmosphericThermodynamics
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
@@ -29,7 +29,7 @@ prognostic_test_model(arch, cas; shortwave = 600.0, longwave = 350.0,
     # A diagnostic node is massless, so it carries no state across time steps and the
     # flux path stays the one the massless closure has always taken.
     model = prognostic_test_model(CPU(), cas)
-    @test model.interfaces.atmosphere_land_interface.temperature.state === nothing
+    @test isempty(model.land.surface.prognostic)
 end
 
 @testset "advance_canopy_air" begin
@@ -67,9 +67,8 @@ end
         mp = prognostic_test_model(arch, prognostic_test_cas(Float64; storage = PrognosticCanopyAir()))
         Ts = mp.interfaces.atmosphere_land_interface.temperature
         @test Ts isa CanopyAirSpaceDiagnostics
-        @test Ts.state isa CanopyAirState
-        T₀ = scalar(Ts.state.temperature)
-        q₀ = scalar(Ts.state.specific_humidity)
+        T₀ = scalar(mp.land.surface.prognostic.temperature)
+        q₀ = scalar(mp.land.surface.prognostic.specific_humidity)
         @test 285 < T₀ < 320
         @test 0 < q₀ < 0.05
         @test scalar(Ts.interface) == T₀
@@ -77,7 +76,7 @@ end
         # --- daytime equivalence: at windy daytime the node's relaxation time is much
         # shorter than the step, so the prognostic column matches the diagnostic one.
         md = prognostic_test_model(arch, prognostic_test_cas(Float64; storage = DiagnosticCanopyAir()))
-        @test md.interfaces.atmosphere_land_interface.temperature.state === nothing
+        @test isempty(md.land.surface.prognostic)
         for _ in 1:24
             time_step!(md, 300.0)
             time_step!(mp, 300.0)
@@ -90,12 +89,12 @@ end
         # --- exact step ledger: flux to the atmosphere = Kirchhoff supply − storage
         # tendency, with capacities Cᵀ = ρ cᵖ hᶜ and Cᵛ = ρ hᶜ. The shares are evaluated
         # at the same node the skins were solved against.
-        T⁻ = scalar(Ts.state.temperature)
-        q⁻ = scalar(Ts.state.specific_humidity)
+        T⁻ = scalar(mp.land.surface.prognostic.temperature)
+        q⁻ = scalar(mp.land.surface.prognostic.specific_humidity)
         Δt = 300.0
         time_step!(mp, Δt)
-        T⁺ = scalar(Ts.state.temperature)
-        q⁺ = scalar(Ts.state.specific_humidity)
+        T⁺ = scalar(mp.land.surface.prognostic.temperature)
+        q⁺ = scalar(mp.land.surface.prognostic.specific_humidity)
         ℂ  = AtmosphereThermodynamicsParameters(Float64)
         ρ  = AtmosphericThermodynamics.air_density(ℂ, 300.0, 101325.0, 0.008)
         cᵖ = AtmosphericThermodynamics.cp_m(ℂ, 0.008)
@@ -144,8 +143,8 @@ end
             @test isfinite(LE)
             @test abs(LE) < 2000
         end
-        @test isfinite(scalar(Ts.state.temperature))
-        @test isfinite(scalar(Ts.state.specific_humidity))
-        @test 0 < scalar(Ts.state.specific_humidity) < 0.06
+        @test isfinite(scalar(mp.land.surface.prognostic.temperature))
+        @test isfinite(scalar(mp.land.surface.prognostic.specific_humidity))
+        @test 0 < scalar(mp.land.surface.prognostic.specific_humidity) < 0.06
     end
 end

@@ -533,9 +533,6 @@ end
 # surface energy balance, or `nothing` for a bulk skin.
 @inline skin_conductance(formulation) = nothing
 
-# The surface temperature the slab conducts to: the skin of bare soil, the ground beneath a canopy.
-@inline skin_temperature(Ts, i, j) = @inbounds Ts[i, j, 1]
-
 # Solve the surface flux balance equation:
 #   Qa(Tₛ) + Ωc (Tᵃᵗ - Tₛ) + (Tₛ - Tb) / R = 0
 # where R is the total thermal resistance (h/k for bare ice, hₛ/kₛ + hᵢ/kᵢ with snow),

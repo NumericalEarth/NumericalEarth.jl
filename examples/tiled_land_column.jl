@@ -72,8 +72,7 @@ soil_branch() = DryLayerHumidity(;
                                                 dry_layer_exponent         = 2),
     vapor_exchange  = DryLayerVaporPistonVelocity(minimum_dry_layer_depth = 1e-3,
                                                   molecular_diffusivity   = 2.4e-5,
-                                                  tortuosity              = ConstantTortuosity()),
-    thermal_exchange_depth = 0.05, porosity = soil_porosity)
+                                                  tortuosity              = ConstantTortuosity()))
 
 # The canopy stress runs on plant-available water: `β` ramps from the permanent wilting
 # point to field capacity, both read off the soil column's own retention curve below.
@@ -117,9 +116,8 @@ variably_saturated_soil() = VariablySaturatedHydrology(;
 
 # ## Model builder
 #
-# The `TiledLandInterface` wraps the vegetated tile, its auto-derived bare counterpart,
-# and the vegetation fraction `f_veg`, and is passed straight to the model as the
-# atmosphere–land interface.
+# `TiledLandSurface` owns the tile physics and vegetation fraction. The interface
+# supplies separate turbulent transport formulations for the forest and bare soil.
 
 function tiled_land_column(; fraction, label)
     grid       = RectilinearGrid(CPU(); size = (), topology = (Flat, Flat, Flat))
@@ -127,12 +125,11 @@ function tiled_land_column(; fraction, label)
     radiation  = forced_radiation(grid, times)
 
     land = SlabLand(grid; energy = SlabEnergy(),
-                    hydrology = variably_saturated_soil())
+                    hydrology = variably_saturated_soil(),
+                    surface = TiledLandSurface(LandSurface(vegetated_tile()); fraction))
     set!(land; T = initial_temperature, M = initial_water_storage)
 
     tiled = TiledLandInterface(grid, atmosphere, land;
-                               vegetated        = vegetated_tile(),
-                               fraction         = fraction,
                                vegetated_fluxes = forest_fluxes(),
                                bare_fluxes      = bare_fluxes())
 

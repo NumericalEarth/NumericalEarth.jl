@@ -38,9 +38,8 @@ function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, �
     return nothing
 end
 
-# The atmosphere–land interface may carry prognostic state (a skin or canopy-air node), so
-# its fluxes are computed once per step with the step's `Δt`, ahead of the components that
-# consume them; `update_state!` only initializes them (`Δt = 0`).
+initialize_land_surface!(land) = nothing
+
 function compute_land_fluxes!(coupled_model, Δt)
     compute_atmosphere_land_fluxes!(coupled_model, Δt)
     update_net_fluxes!(coupled_model, coupled_model.land)
@@ -90,7 +89,10 @@ function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel
     apply_air_sea_radiative_fluxes!(coupled_model)
     apply_air_sea_ice_radiative_fluxes!(coupled_model)
 
-    coupled_model.clock.iteration == 0 && compute_land_fluxes!(coupled_model, 0)
+    if coupled_model.clock.iteration == 0
+        compute_land_fluxes!(coupled_model, 0)
+        initialize_land_surface!(land)
+    end
 
     return nothing
 end

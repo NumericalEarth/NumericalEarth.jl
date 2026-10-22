@@ -10,11 +10,38 @@ computing turbulent fluxes between model components.
 
 ## Component interfaces we consider
 
-The `EarthSystemModel` has atmosphere, ocean, and sea ice components (and will someday also have land and radiation components).
+The `EarthSystemModel` has atmosphere, ocean, sea ice, land, and radiation components.
 We envision that the tutorial will eventually cover all turbulent flux computations; for the time being we
 focus on atmosphere-ocean fluxes.
 Future expansions of this tutorial should cover atmosphere-sea ice fluxes, ocean-sea ice fluxes, ocean-land fluxes,
 and surface optical computations for radiation.
+
+## Land surface configuration and storage
+
+`SlabLand` owns surface physics through `LandSurface`. Configure a canopy or skin
+on the land component; `AtmosphereLandModel` uses that configuration for its boundary solve.
+
+```@example interface_fluxes
+using NumericalEarth
+using Oceananigans
+
+land_grid = RectilinearGrid(size=(), topology=(Flat, Flat, Flat))
+canopy = CanopyAirSpace(soil=BulkHumidity(), storage=PrognosticCanopyAir())
+land = SlabLand(land_grid; surface=LandSurface(canopy))
+```
+
+The boundary solve computes turbulent fluxes and candidate surface updates from the
+current land state. The land step applies each update once. Canopy-air and skin storage
+are checkpointed with the land; interface temperatures and flux partitions are diagnostics.
+
+For vegetated and bare tiles, use `TiledLandSurface(LandSurface(canopy); fraction=0.6)`
+as the land's `surface`. `InterceptingHydrology` then derives its LAI and cover fraction
+from the same configuration. Separate tile roughnesses can be supplied through
+`TiledLandInterface`'s `vegetated_fluxes` and `bare_fluxes` keywords.
+
+Soil retention curves and porosity remain in land hydrology. The boundary solve receives
+derived moisture-stress endpoints and vapor diffusivity. `DryLayerHumidity` gets its
+thermal exchange distance from the surface heat-transfer closure.
 
 ## Turbulent exchanges between the atmosphere and underlying media
 

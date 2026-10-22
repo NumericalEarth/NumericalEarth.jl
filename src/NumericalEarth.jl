@@ -116,7 +116,7 @@ export
     SoilSkinTemperature,
     InteriorDiffusivity,
     # Land (prognostic SlabLand + closures)
-    SlabLand,
+    SlabLand, LandSurface, TiledLandSurface,
     SlabEnergy,
     BucketHydrology,
     WaterCoupledEnergy,

@@ -5,7 +5,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     AirLandInterfaceState,
     InterfaceFluxScales,
     InterfaceVelocities,
-    saturation_specific_humidity
+    saturation_specific_humidity, surface_hydrology
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
@@ -19,12 +19,45 @@ function _make_call_args(q; Tˡᵃ, Tᵍ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★,
     χq = q★ / (qᵃᵗ - qⁱⁿ⁻)   # transfer coefficient consistent with q★ = χq Δq
     Ψₛ = AirLandInterfaceState(InterfaceFluxScales(u★, 0.0, q★, 0.0, χq),
                                InterfaceVelocities(0.0, 0.0),
-                               Tᵍ, qⁱⁿ⁻, (saturation=𝒮,), (temperature=Tˡᵃ,))
+                               Tᵍ, qⁱⁿ⁻, (saturation=𝒮, vapor_diffusivity=q.vapor_exchange.molecular_diffusivity), (temperature=Tˡᵃ, thermal_exchange_depth=0.10,))
     Ψᵢ = (T = Tˡᵃ,)
     ℙₐ = (thermodynamics_parameters = ℂ,
           surface_layer_height = 10.0,
           gravitational_acceleration = 9.81)
     return ℂ, Ψₛ, Ψₐ, Ψᵢ, nothing, ℙₐ
+end
+
+@testset "Soil vapor diffusion follows porosity and residual water" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch; size = 2, x = (0, 2), topology = (Bounded, Flat, Flat))
+        porosity = CenterField(grid)
+        residual = CenterField(grid)
+        set!(porosity, reshape([0.35, 0.55], 2, 1, 1))
+        set!(residual, reshape([0.03, 0.10], 2, 1, 1))
+        hydrology = VariablySaturatedHydrology(;
+            slab_depth = 1, porosity, residual_liquid_fraction = residual, storage_height = 0.1,
+            retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 2, pore_size_uniformity = 1.5),
+            hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6,
+                                                              pore_size_uniformity = 1.5))
+        land = SlabLand(grid; hydrology)
+        humidity = DryLayerHumidity(;
+            dry_layer_depth = StorageBasedDryLayerDepth(maximum_dry_layer_depth = 0.05,
+                                                        dry_layer_onset_saturation = 0.5),
+            vapor_exchange = DryLayerVaporPistonVelocity(minimum_dry_layer_depth = 1e-4,
+                                                        molecular_diffusivity = 2.5e-5,
+                                                        tortuosity = PowerLawTortuosity()))
+        exchange = surface_hydrology(land, humidity, grid)
+        diffusivity = Field(exchange.vapor_diffusivity)
+        ν = Array(interior(porosity))
+        θʳ = Array(interior(residual))
+        D₀ = humidity.vapor_exchange.molecular_diffusivity
+        for 𝒮 in (0.2, 0.6)
+            θ = @. θʳ + 𝒮 * (ν - θʳ)
+            set!(land; M = 1000 .* θ)
+            compute!(diffusivity)
+            @test Array(interior(diffusivity)) ≈ @. D₀ * (ν - θ)^(10/3) / ν^2
+        end
+    end
 end
 
 @testset "DryLayerHumidity wet branch (𝒮 ≥ 𝒮ᶜ)" begin
@@ -34,8 +67,7 @@ end
             maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
             minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
-            wet_transition_width = 0),
-        thermal_exchange_depth = 0.10, porosity = 0.4)
+            wet_transition_width = 0))
 
     # 𝒮 = 0.5 ⇒ δᵛ = 0 ⇒ wet ⇒ qⁱⁿ = qᵛ⁺(Tᵍ).
     Tᵍ = 300.0
@@ -54,8 +86,7 @@ end
             maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5, dry_layer_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
             minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
-            tortuosity = ConstantTortuosity()),
-        thermal_exchange_depth = 0.10, porosity = 0.4)
+            tortuosity = ConstantTortuosity()))
 
     # Fully dry: 𝒮 = 0 ⇒ δᵛ = δᵛ_max = 0.05, χ = 0.5 ⇒ Tᵉ = (Tᵍ+Tˡᵃ)/2.
     Tˡᵃ = 290.0; Tᵍ = 300.0
@@ -95,8 +126,7 @@ end
             maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5, dry_layer_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
             minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
-            tortuosity = ConstantTortuosity(), wet_transition_width = 0),
-        thermal_exchange_depth = 0.10, porosity = 0.4)
+            tortuosity = ConstantTortuosity(), wet_transition_width = 0))
 
     ℂ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(q; Tˡᵃ, Tᵍ, 𝒮 = 0.0,
                                           pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
@@ -119,8 +149,7 @@ end
             maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5, dry_layer_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
             minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 1e-14,
-            tortuosity = ConstantTortuosity()),
-        thermal_exchange_depth = 0.10, porosity = 0.4)
+            tortuosity = ConstantTortuosity()))
 
     Tᵍ = 300.0; pᵃᵗ = 1.0e5; qᵃᵗ = 1.0e-2
     ℂ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(q; Tˡᵃ=290.0, Tᵍ=Tᵍ, 𝒮 = 0.0,
@@ -137,8 +166,7 @@ end
             maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5, dry_layer_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(;
             minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
-            tortuosity = ConstantTortuosity(), wet_transition_width),
-        thermal_exchange_depth = 0.10, porosity = 0.4)
+            tortuosity = ConstantTortuosity(), wet_transition_width))
 
     sharp = make_q(0)
     blend = make_q(1e-2)

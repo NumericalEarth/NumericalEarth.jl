@@ -112,13 +112,23 @@ energy = WaterCoupledEnergy(eltype(land_grid);
     advect_deep_liquid_energy = false,
     advect_surface_liquid_energy = false)
 
-slab_land = SlabLand(land_grid; hydrology, energy)
+surface_humidity = DryLayerHumidity(;
+    dry_layer_depth = StorageBasedDryLayerDepth(
+        maximum_dry_layer_depth = 0.05,
+        dry_layer_onset_saturation = 0.5,
+        dry_layer_exponent = 2),
+    vapor_exchange = DryLayerVaporPistonVelocity(
+        minimum_dry_layer_depth = 1e-4,
+        molecular_diffusivity = 2.5e-5,
+        tortuosity = PowerLawTortuosity()))
+slab_land = SlabLand(land_grid; hydrology, energy,
+                     surface = LandSurface(specific_humidity=surface_humidity))
 
 # ### Surface saturation and the wet/dry contrast
 #
 # The hydrology exposes the diagnostic surface saturation
 # `𝒮 = clamp(θˡ/ν, 0, 1) ∈ [0, 1]`. The interface's
-# [`DryLayerHumidity`](@ref) closure further below solves for the
+# [`DryLayerHumidity`](@ref) closure solves for the
 # atmosphere-facing specific humidity `qⁱⁿ` from a vapor-flux balance through
 # an unresolved dry layer at saturation-dependent depth
 # `δᵛ(𝒮) = δᵛ_max[1 − min(𝒮/𝒮ᶜ, 1)]^η`. The wet center (`𝒮 ≥ 𝒮ᶜ`) has
@@ -250,24 +260,9 @@ set!(θᵣ, liquid_ice_potential_temperature(atmos.model))
 # the atmosphere. The wet center has `δᵛ = 0` (saturated skin); the dry edges
 # have `δᵛ → δᵛ_max` and the dry-layer piston velocity `wᵈ = Dᵛ_eff/δᵛ`
 # limits evaporation self-consistently.
-interface_specific_humidity = DryLayerHumidity(;
-    dry_layer_depth = StorageBasedDryLayerDepth(
-        maximum_dry_layer_depth = 0.05,
-        dry_layer_onset_saturation = 0.5,
-        dry_layer_exponent = 2),
-    vapor_exchange = DryLayerVaporPistonVelocity(
-        minimum_dry_layer_depth = 1e-4,
-        molecular_diffusivity = 2.5e-5,
-        tortuosity = PowerLawTortuosity()),
-    thermal_exchange_depth = 0.10,
-    porosity = slab_land.hydrology.porosity)
-al_interface = atmosphere_land_interface(slab_land.grid, atmos, slab_land;
-                                         specific_humidity = interface_specific_humidity)
-
 # The atmosphere runs in `Float32` (its clock follows the grid), so the coupled
 # model needs a matching `Float32` clock.
 model = AtmosphereLandModel(atmos, slab_land; radiation,
-                            atmosphere_land_interface = al_interface,
                             clock = Clock{eltype(grid)}(time = 0))
 
 # The wizard recomputes Δt every iteration so the step always tracks the
