@@ -25,8 +25,9 @@
 # for `:ρqᵛ`, vapor + cloud condensate for `:ρqᵉ` (saturation adjustment).
 
 using Oceananigans.Fields: Center, ZeroField, AbstractField
-using Oceananigans.Grids: λnode
-using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid, LambertConformalConic
+using Oceananigans.Grids: λnode, OrthogonalSphericalShellGrid
+using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid, LambertConformalConic,
+                                                    lcc_wrap_to_π
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, AbstractInMemoryBackend,
                                   time_indices, interpolating_time_indices, extract_field_time_series
@@ -74,16 +75,19 @@ const PrognosticStateFTS = FieldTimeSeries{<:Any, <:Any, <:Any, <:Any, <:Prognos
 update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
 
 # The child's velocity components follow its grid axes: eastward/northward on a `LatitudeLongitudeGrid`,
-# rotated by the cone convergence angle on a `LambertConformalConicGrid`.
+# rotated by the cone convergence angle on a `LambertConformalConicGrid`. The angle comes from the child's
+# projection evaluated at a longitude, not from a child grid index, so it is defined for parent cells
+# outside the child's hull.
 child_frame(grid) = nothing
 child_frame(grid::LambertConformalConicGrid) = grid.conformal_mapping
+child_frame(grid::OrthogonalSphericalShellGrid) =
+    throw(ArgumentError("child_frame requires a LambertConformalConicGrid or a LatitudeLongitudeGrid, got a $(nameof(typeof(grid.conformal_mapping))) mapping"))
 
 @inline rotate_to_child_frame(::Nothing, i, j, k, grid, u, v) = (u, v)
 
 @inline function rotate_to_child_frame(map::LambertConformalConic, i, j, k, grid, u, v)
     λ = λnode(i, j, k, grid, Center(), Center(), Center())
-    Δλ = deg2rad(λ) - map.central_longitude
-    θ = map.cone_constant * atan(sin(Δλ), cos(Δλ))
+    θ = map.cone_constant * lcc_wrap_to_π(deg2rad(λ) - map.central_longitude)
     return u * cos(θ) - v * sin(θ), u * sin(θ) + v * cos(θ)
 end
 
