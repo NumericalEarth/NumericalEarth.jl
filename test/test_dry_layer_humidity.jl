@@ -19,7 +19,7 @@ function _make_call_args(q; Tˡᵃ, Tᵍ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★,
     χq = q★ / (qᵃᵗ - qⁱⁿ⁻)   # transfer coefficient consistent with q★ = χq Δq
     Ψₛ = AirLandInterfaceState(InterfaceFluxScales(u★, 0.0, q★, 0.0, χq),
                                InterfaceVelocities(0.0, 0.0),
-                               Tᵍ, qⁱⁿ⁻, (saturation=𝒮, vapor_diffusivity=q.vapor_exchange.molecular_diffusivity), (temperature=Tˡᵃ, thermal_exchange_depth=0.10,))
+                               Tᵍ, qⁱⁿ⁻, (saturation=𝒮, effective_vapor_diffusivity=q.vapor_exchange.molecular_diffusivity), (temperature=Tˡᵃ, thermal_exchange_depth=0.10,))
     Ψᵢ = (T = Tˡᵃ,)
     ℙₐ = (thermodynamics_parameters = ℂ,
           surface_layer_height = 10.0,
@@ -47,7 +47,7 @@ end
                                                         molecular_diffusivity = 2.5e-5,
                                                         tortuosity = PowerLawTortuosity()))
         exchange = surface_hydrology(land, humidity, grid)
-        diffusivity = Field(exchange.vapor_diffusivity)
+        diffusivity = Field(exchange.effective_vapor_diffusivity)
         ν = Array(interior(porosity))
         θʳ = Array(interior(residual))
         D₀ = humidity.vapor_exchange.molecular_diffusivity

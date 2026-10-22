@@ -224,7 +224,7 @@ EarthSystemModels.surface_temperature(::Nothing, ocean_interface::AtmosphereInte
     ocean_interface.temperature
 EarthSystemModels.surface_temperature(::Nothing, ::Nothing) = nothing
 
-skin_conductance(ai::AtmosphereInterface) = skin_conductance(ai.properties.temperature_formulation)
+ground_conductance(interface::AtmosphereInterface) = ground_conductance(interface.properties.temperature_formulation)
 
 #####
 ##### Atmosphere-Ocean Interface

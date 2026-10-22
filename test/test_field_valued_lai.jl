@@ -26,8 +26,9 @@ using NumericalEarth.Lands: SaturatedSurface
         set!(lai_field, (λ, φ) -> ifelse(λ < 10, 4.0, 0.0))
 
         canopy = CanopyConductanceHumidity(FT; leaf_area_index = lai_field, conductance = JarvisConductance(FT))
-        model = coupled_land_model(arch; grid, Tair = 290.0, qair = 0.006, wind = 5.0, Tland = 300.0,
-                                   water = nothing, hydrology = SaturatedSurface(), radiation = nothing,
+        model = coupled_land_model(arch; grid, air_temperature = 290.0, air_specific_humidity = 0.006,
+                                   wind = 5.0, land_temperature = 300.0, water = nothing,
+                                   hydrology = SaturatedSurface(), radiation = nothing,
                                    atmosphere_land_interface_specific_humidity = canopy)
         LE = Array(interior(model.interfaces.atmosphere_land_interface.fluxes.latent_heat))[:, 1, 1]
 
@@ -56,8 +57,9 @@ end
 
         function latent_heat_at(t)
             canopy = CanopyConductanceHumidity(FT; leaf_area_index = lai_fts, conductance = JarvisConductance(FT))
-            model = coupled_land_model(arch; grid, time = t, Tair = 290.0, qair = 0.006, wind = 5.0, Tland = 300.0,
-                                       water = nothing, hydrology = SaturatedSurface(), radiation = nothing,
+            model = coupled_land_model(arch; grid, time = t, air_temperature = 290.0, air_specific_humidity = 0.006,
+                                       wind = 5.0, land_temperature = 300.0, water = nothing,
+                                       hydrology = SaturatedSurface(), radiation = nothing,
                                        atmosphere_land_interface_specific_humidity = canopy)
             return scalar(model.interfaces.atmosphere_land_interface.fluxes.latent_heat)
         end

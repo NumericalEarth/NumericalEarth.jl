@@ -1,5 +1,5 @@
 #####
-##### `InterceptingHydrology` — a canopy water store `Wᶜ` between the rain and a soil
+##### `InterceptingHydrology` — a canopy water store `Mᶜ` between the rain and a soil
 ##### hydrology: intercepted rain fills it, the interface's wet-canopy evaporation drains
 ##### it, over-capacity drip and the uncaught rain reach the soil as throughfall.
 #####
@@ -7,16 +7,16 @@
 """
 $(TYPEDSIGNATURES)
 
-Canopy water store `Wᶜ` (kg m⁻²) wrapping a [`VariablySaturatedHydrology`](@ref)
+Canopy water store `Mᶜ` (kg m⁻²) wrapping a [`VariablySaturatedHydrology`](@ref)
 `soil`. Rain is caught by the Beer–Lambert canopy fraction `1 − e^{−KΩ·LAI}` up to the
-capacity `c·LAI`; the wet canopy evaporates at the rate `Eʷᵉᵗ` the interface computes
+capacity `c·LAI`; the wet canopy evaporates at the rate `Jʷᵉᵗ` the interface computes
 (a [`CanopyGroundSurface`](@ref)), and the uncaught rain plus the
 over-capacity drip reach the soil as throughfall.
 
 `leaf_area_index` and `cover_fraction` default to the land surface's canopy LAI and
 vegetated fraction when the land is constructed. A `FieldTimeSeries` LAI or cover
 fraction runs on CPU only. The store is kept per unit vegetated area. Changes in cover
-conserve `cover_fraction * Wᶜ`, with water exceeding the new canopy capacity reaching
+conserve `cover_fraction * Mᶜ`, with water exceeding the new canopy capacity reaching
 the soil as throughfall. Interception and evaporation use the cover at the start of the step.
 
 * `capacity_per_leaf_area` — `c` (kg m⁻² per unit LAI).
@@ -72,16 +72,17 @@ initial_prognostic(h::InterceptingHydrology, name::Symbol, grid) = initial_progn
 ##### Interception step, ahead of the soil step that reads its throughfall.
 #####
 
-# Wᶜ and Wᶜⁿ⁺¹ are per unit vegetated area; Wᶜᵗ, drip, and throughfall are per unit cell area.
-# rain = (fⁿ⁺¹ Wᶜⁿ⁺¹ − fⁿ Wᶜ)/Δt + fⁿ Eʷᵉᵗ + throughfall exactly: evaporation beyond what the
+# Mᶜ and Mᶜⁿ⁺¹ are per unit vegetated area; uncapped_storage, drip, and throughfall are per
+# unit cell area.
+# rain = (fⁿ⁺¹ Mᶜⁿ⁺¹ − fⁿ Mᶜ)/Δt + fⁿ Jʷᵉᵗ + throughfall exactly: evaporation beyond what the
 # store held is taken from the throughfall.
-@inline function canopy_store_update(Wᶜ, rain, Eʷᵉᵗ, Wᶜᵐᵃˣ, fⁱⁿᵗ, fⁿ, fⁿ⁺¹, Δt)
-    Pⁱⁿᵗ      = fⁱⁿᵗ * rain
-    Wᶜᵗ       = fⁿ * (Wᶜ + Δt * (Pⁱⁿᵗ - Eʷᵉᵗ))
-    drip      = max(Wᶜᵗ - fⁿ⁺¹ * Wᶜᵐᵃˣ, 0) / Δt
-    shortfall = max(-Wᶜᵗ, 0) / Δt
-    Wᶜⁿ⁺¹     = clamp(Wᶜᵗ, 0, fⁿ⁺¹ * Wᶜᵐᵃˣ) / ifelse(fⁿ⁺¹ > 0, fⁿ⁺¹, one(fⁿ⁺¹))
-    return Wᶜⁿ⁺¹, drip, rain - fⁿ * Pⁱⁿᵗ + drip - shortfall
+@inline function canopy_store_update(Mᶜ, rain, Jʷᵉᵗ, Mᶜ⁺, fⁱⁿᵗ, fⁿ, fⁿ⁺¹, Δt)
+    Pⁱⁿᵗ             = fⁱⁿᵗ * rain
+    uncapped_storage = fⁿ * (Mᶜ + Δt * (Pⁱⁿᵗ - Jʷᵉᵗ))
+    drip             = max(uncapped_storage - fⁿ⁺¹ * Mᶜ⁺, 0) / Δt
+    shortfall        = max(-uncapped_storage, 0) / Δt
+    Mᶜⁿ⁺¹            = clamp(uncapped_storage, 0, fⁿ⁺¹ * Mᶜ⁺) / ifelse(fⁿ⁺¹ > 0, fⁿ⁺¹, one(fⁿ⁺¹))
+    return Mᶜⁿ⁺¹, drip, rain - fⁿ * Pⁱⁿᵗ + drip - shortfall
 end
 
 function prepare_time_step!(h::InterceptingHydrology, land)
@@ -98,26 +99,28 @@ end
     @inbounds previous_cover_fraction[i, j, 1] = clamp(f, 0, 1)
 end
 
-@kernel function _interception_step!(Wc, Pl, Cev, throughfall, dWcdt, previous_cover_fraction, h, Δt, grid, time)
+@kernel function _interception_step!(canopy_water_storage, liquid_precipitation_flux, canopy_evaporation,
+                                     throughfall, canopy_water_storage_tendency, previous_cover_fraction,
+                                     h, Δt, grid, time)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        Wcⁿ  = Wc[i, j, 1]
-        rain = Pl[i, j, 1]
-        Eʷᵉᵗ = Cev[i, j, 1]
+        Mᶜⁿ  = canopy_water_storage[i, j, 1]
+        rain = liquid_precipitation_flux[i, j, 1]
+        Jʷᵉᵗ = canopy_evaporation[i, j, 1]
         fⁿ   = previous_cover_fraction[i, j, 1]
     end
-    FT    = typeof(Wcⁿ)
-    LAI   = convert(FT, stateindex(h.leaf_area_index, i, j, 1, grid, Time(time), (Center, Center, Center)))
-    fⁿ⁺¹  = clamp(convert(FT, stateindex(h.cover_fraction, i, j, 1, grid, Time(time), (Center, Center, Center))), 0, 1)
-    Wcᵐᵃˣ = h.capacity_per_leaf_area * LAI
-    fⁱⁿᵗ  = 1 - canopy_transmittance(h.extinction, h.clumping, LAI)
+    FT   = typeof(Mᶜⁿ)
+    LAI  = convert(FT, stateindex(h.leaf_area_index, i, j, 1, grid, Time(time), (Center, Center, Center)))
+    fⁿ⁺¹ = clamp(convert(FT, stateindex(h.cover_fraction, i, j, 1, grid, Time(time), (Center, Center, Center))), 0, 1)
+    Mᶜ⁺  = h.capacity_per_leaf_area * LAI
+    fⁱⁿᵗ = 1 - canopy_transmittance(h.extinction, h.clumping, LAI)
 
-    Wcⁿ⁺¹, _, Pˡ = canopy_store_update(Wcⁿ, rain, Eʷᵉᵗ, Wcᵐᵃˣ, fⁱⁿᵗ, fⁿ, fⁿ⁺¹, Δt)
+    Mᶜⁿ⁺¹, _, Pˡ = canopy_store_update(Mᶜⁿ, rain, Jʷᵉᵗ, Mᶜ⁺, fⁱⁿᵗ, fⁿ, fⁿ⁺¹, Δt)
 
     @inbounds begin
-        Wc[i, j, 1]          = Wcⁿ⁺¹
-        throughfall[i, j, 1] = Pˡ
-        dWcdt[i, j, 1]       = (Wcⁿ⁺¹ - Wcⁿ) / Δt
+        canopy_water_storage[i, j, 1]          = Mᶜⁿ⁺¹
+        throughfall[i, j, 1]                   = Pˡ
+        canopy_water_storage_tendency[i, j, 1] = (Mᶜⁿ⁺¹ - Mᶜⁿ) / Δt
     end
 end
 
@@ -139,7 +142,7 @@ update_diagnostics!(h::InterceptingHydrology, land) = update_diagnostics!(h.soil
 
 saturation(h::InterceptingHydrology, land) = saturation(h.soil, land)
 
-# The store capacity `Wᶜᵐᵃˣ = c·LAI` the interface normalizes the wet fraction by.
+# The store capacity `Mᶜ⁺ = c·LAI` the interface normalizes the wet fraction by.
 canopy_water_capacity(h::InterceptingHydrology, land) =
     KernelFunctionOperation{Center, Center, Nothing}(canopy_water_capacity, land.grid, h, land.clock)
 

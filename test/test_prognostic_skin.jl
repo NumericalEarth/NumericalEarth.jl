@@ -18,24 +18,26 @@ bare_soil_pair(arch, FT = Float64) =
 
 bare_soil_model(arch, temperature; grid = bare_soil_column(arch),
                shortwave = 600.0, longwave = 350.0,
-               wind = 5.0, Tair = 300.0, qair = 0.008,
-               Tland = 298.0, water = 90.0, α = 0.2, ϵ = 0.95) =
-    coupled_land_model(arch; grid, shortwave, longwave, wind, Tair, qair, Tland, water, α, ϵ,
+               wind = 5.0, air_temperature = 300.0, air_specific_humidity = 0.008,
+               land_temperature = 298.0, water = 90.0, α = 0.2, ϵ = 0.95) =
+    coupled_land_model(arch; grid, shortwave, longwave, wind, air_temperature, air_specific_humidity,
+                       land_temperature, water, α, ϵ,
                        atmosphere_land_interface_temperature = temperature,
                        atmosphere_land_interface_specific_humidity = bare_soil_humidity(Float64))
 
-# Surface energy-balance terms of the step just taken: Rₙ + G − H − LE at the stored
-# skin, with `Tˡ` the bulk temperature the step started from. The slab receives exactly G.
-function surface_imbalance(model, Tˡ; SW = 600.0, LW = 350.0, α = 0.2, ϵ = 0.95, Λ = 30.0)
-    ai = model.interfaces.atmosphere_land_interface
-    σ  = default_stefan_boltzmann_constant
-    Tₛ = scalar(ai.temperature)
-    Rn = (1 - α) * SW + ϵ * (LW - σ * Tₛ^4)
-    G  = Λ * (Tˡ - Tₛ)
-    H  = scalar(ai.fluxes.sensible_heat)
-    LE = scalar(ai.fluxes.latent_heat)
-    @test scalar(model.land.fluxes.surface_energy_flux) ≈ G atol = 1e-9
-    return Rn + G - H - LE, Tₛ
+# Surface energy-balance terms of the step just taken: net radiation − 𝒬ᵍ − 𝒬ᵀ − 𝒬ᵛ at the
+# stored skin, with `Tˡᵃ` the bulk temperature the step started from. The slab receives exactly 𝒬ᵍ.
+function surface_imbalance(model, Tˡᵃ; downwelling_shortwave = 600.0, downwelling_longwave = 350.0,
+                           α = 0.2, ϵ = 0.95, Λ = 30.0)
+    interface     = model.interfaces.atmosphere_land_interface
+    σ             = default_stefan_boltzmann_constant
+    Tₛ            = scalar(interface.temperature)
+    net_radiation = (1 - α) * downwelling_shortwave + ϵ * (downwelling_longwave - σ * Tₛ^4)
+    𝒬ᵍ            = Λ * (Tₛ - Tˡᵃ)
+    𝒬ᵀ            = scalar(interface.fluxes.sensible_heat)
+    𝒬ᵛ            = scalar(interface.fluxes.latent_heat)
+    @test scalar(model.land.fluxes.surface_energy_flux) ≈ -𝒬ᵍ atol = 1e-9
+    return net_radiation - 𝒬ᵍ - 𝒬ᵀ - 𝒬ᵛ, Tₛ
 end
 
 @testset "Prognostic energy-balance skin" begin
@@ -59,20 +61,20 @@ end
         # of silently violating it, and every exit stays bounded.
         C, Δt = 1e5, 300.0
         mp = bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05; storage = PrognosticSkin(heat_capacity = C));
-                             shortwave = 50.0, wind = 0.2, Tair = 304.0,
-                             Tland = 310.0, water = 135.0)
-        ai = mp.interfaces.atmosphere_land_interface
+                             shortwave = 50.0, wind = 0.2, air_temperature = 304.0,
+                             land_temperature = 310.0, water = 135.0)
+        interface = mp.interfaces.atmosphere_land_interface
         worst = 0.0
-        Tₛ⁻ = scalar(ai.temperature)
+        Tₛ⁻ = scalar(interface.temperature)
         for _ in 1:48
-            Tˡ⁻ = scalar(mp.land.temperature)
+            Tˡᵃ⁻ = scalar(mp.land.temperature)
             time_step!(mp, Δt)
-            F, Tₛ = surface_imbalance(mp, Tˡ⁻; SW = 50.0)
+            F, Tₛ = surface_imbalance(mp, Tˡᵃ⁻; downwelling_shortwave = 50.0)
             residual = F - C * (Tₛ - Tₛ⁻) / Δt   # imbalance beyond storage: linearization error only
             worst = max(worst, abs(residual))
             Tₛ⁻ = Tₛ
-            @test isfinite(scalar(ai.fluxes.latent_heat))
-            @test abs(scalar(ai.fluxes.latent_heat)) < 2000
+            @test isfinite(scalar(interface.fluxes.latent_heat))
+            @test abs(scalar(interface.fluxes.latent_heat)) < 2000
         end
         @test worst < 15
     end
@@ -103,7 +105,7 @@ end
         # interpolates between. Same grid and same forcing throughout, so the only
         # difference between the three models is C.
         skin(C) = SoilSkinTemperature(1.5, 0.05; storage = PrognosticSkin(heat_capacity = C))
-        calm = (; shortwave = 50.0, wind = 0.2, Tair = 304.0, Tland = 310.0, water = 135.0)
+        calm = (; shortwave = 50.0, wind = 0.2, air_temperature = 304.0, land_temperature = 310.0, water = 135.0)
 
         grid = bare_soil_pair(arch)
         Cfield = Field{Center, Center, Nothing}(grid)
@@ -129,7 +131,7 @@ end
 end
 
 # Λᵍ = 0 fully decouples the skin, and `radiation = nothing` zeroes ϵ, so with calm air
-# the conductance sum Σλ has no term left. There is then no root to solve for, and both
+# the conductance sum Σg has no term left. There is then no root to solve for, and both
 # storage paths must hold the skin rather than divide by zero.
 @testset "Fully decoupled skin stays finite" begin
     for arch in test_architectures
@@ -140,10 +142,10 @@ end
             for _ in 1:3
                 time_step!(model, 300.0)
             end
-            ai = model.interfaces.atmosphere_land_interface
-            @test isfinite(scalar(ai.temperature))
-            @test isfinite(scalar(ai.fluxes.latent_heat))
-            @test isfinite(scalar(ai.fluxes.sensible_heat))
+            interface = model.interfaces.atmosphere_land_interface
+            @test isfinite(scalar(interface.temperature))
+            @test isfinite(scalar(interface.fluxes.latent_heat))
+            @test isfinite(scalar(interface.fluxes.sensible_heat))
         end
     end
 end

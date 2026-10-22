@@ -13,7 +13,7 @@ using NumericalEarth.Lands: van_genuchten_saturation, effective_saturation
 function land_state(𝒮, curve, stress=PlantAvailableWaterStress(typeof(𝒮)); j=1)
     return (saturation=𝒮, root_zone_saturation=𝒮,
             field_capacity_saturation=effective_saturation(1, j, 1, nothing, curve, stress.field_capacity_head),
-            wilting_saturation=effective_saturation(1, j, 1, nothing, curve, stress.wilting_point_head))
+            wilting_point_saturation=effective_saturation(1, j, 1, nothing, curve, stress.wilting_point_head))
 end
 
 # The moisture availability β the formulation derives from that state.
@@ -106,9 +106,9 @@ availability(model, 𝒮, curve) =
             interface_hydrology_state(1, 1, nothing, stress, land_state(FT(0.3), curve))
 
         @test endpoints(loam).field_capacity_saturation ≈ 0.46628 atol = 1e-5
-        @test endpoints(loam).wilting_saturation        ≈ 0.02950 atol = 1e-5
+        @test endpoints(loam).wilting_point_saturation  ≈ 0.02950 atol = 1e-5
         # A clay wilts wetter than a loam is ever field-capacity dry.
-        @test endpoints(clay).wilting_saturation > endpoints(loam).field_capacity_saturation
+        @test endpoints(clay).wilting_point_saturation > endpoints(loam).field_capacity_saturation
         # So the same wetness is unstressed on one soil and wilted on the other.
         @test availability(stress, FT(0.6), loam) == 1
         @test availability(stress, FT(0.6), clay) == 0

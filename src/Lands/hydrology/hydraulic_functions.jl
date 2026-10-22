@@ -65,19 +65,19 @@ $(TYPEDSIGNATURES)
     𝓃  = convert(FT, stateindex(r.pore_size_uniformity, i, j, 1))
     𝓂  = van_genuchten_m(𝓃)
     # Keep the dry-end pressure finite.
-    𝒮c = clamp(𝒮, eps(FT), one(FT))
+    clamped_saturation = clamp(𝒮, eps(FT), one(FT))
 
     # Leave room for subtracting heads of opposite sign in Darcy's law.
-    logΠ    = logexpm1(-log(𝒮c) / 𝓂) / 𝓃 - log(αᵃᵉ)
-    return ifelse(𝒮c >= 1, zero(FT), -min(exp(logΠ), floatmax(FT) / 2))
+    logΠ    = logexpm1(-log(clamped_saturation) / 𝓂) / 𝓃 - log(αᵃᵉ)
+    return ifelse(clamped_saturation >= 1, zero(FT), -min(exp(logΠ), floatmax(FT) / 2))
 end
 
-# Effective saturation at the suction head `ψ` (m), for the interface's plant-stress endpoints.
-@inline function effective_saturation(i, j, k, grid, r::VanGenuchtenRetention, ψ)
-    FT = typeof(ψ)
+# Effective saturation at the `suction_head` (m), for the interface's plant-stress endpoints.
+@inline function effective_saturation(i, j, k, grid, r::VanGenuchtenRetention, suction_head)
+    FT = typeof(suction_head)
     αᵃᵉ = convert(FT, stateindex(r.inverse_air_entry_head, i, j, 1))
     𝓃   = convert(FT, stateindex(r.pore_size_uniformity, i, j, 1))
-    return van_genuchten_saturation(αᵃᵉ * ψ, 𝓃)
+    return van_genuchten_saturation(αᵃᵉ * suction_head, 𝓃)
 end
 
 """
@@ -87,13 +87,13 @@ Slope `dΠ/d𝒮` of the [`VanGenuchtenRetention`](@ref) pressure head at effect
 """
 @inline function pressure_head_derivative(i, j, grid, r::VanGenuchtenRetention, 𝒮)
     FT = typeof(𝒮)
-    α = convert(FT, stateindex(r.inverse_air_entry_head, i, j, 1))
-    n = convert(FT, stateindex(r.pore_size_uniformity, i, j, 1))
-    m = van_genuchten_m(n)
-    𝒮c = clamp(𝒮, eps(FT), one(FT) - eps(FT))
-    log𝒮 = log(𝒮c)
-    logΠ = logexpm1(-log𝒮 / m) / n - log(α)
-    log_slope = (1/n - 1) * logexpm1(-log𝒮 / m) - (1/m + 1) * log𝒮 - log(α * n * m)
+    αᵃᵉ = convert(FT, stateindex(r.inverse_air_entry_head, i, j, 1))
+    𝓃   = convert(FT, stateindex(r.pore_size_uniformity, i, j, 1))
+    𝓂   = van_genuchten_m(𝓃)
+    clamped_saturation = clamp(𝒮, eps(FT), one(FT) - eps(FT))
+    log𝒮 = log(clamped_saturation)
+    logΠ = logexpm1(-log𝒮 / 𝓂) / 𝓃 - log(αᵃᵉ)
+    log_slope = (1/𝓃 - 1) * logexpm1(-log𝒮 / 𝓂) - (1/𝓂 + 1) * log𝒮 - log(αᵃᵉ * 𝓃 * 𝓂)
     # The capped head is constant below the dry endpoint.
     capped = (𝒮 ≤ eps(FT)) | (logΠ ≥ log(floatmax(FT) / 2))
     return ifelse(capped, zero(FT), min(exp(log_slope), floatmax(FT) / 2))
@@ -161,16 +161,16 @@ Darcy hydraulic conductivity (m s⁻¹) of closure `c` at saturation `𝒮` and 
     𝓃  = convert(FT, stateindex(c.pore_size_uniformity, i, j, 1))
     ηᴷ = convert(FT, stateindex(c.pore_connectivity_exponent, i, j, 1))
     𝓂  = van_genuchten_m(𝓃)
-    𝒮c = clamp(𝒮, 0, 1)
+    clamped_saturation = clamp(𝒮, 0, 1)
 
-    log𝒮 = log(𝒮c)
+    log𝒮 = log(clamped_saturation)
     logu = log𝒮 / 𝓂
     u    = exp(logu)
     # summing logarithms keeps 𝒮^ηᴷ [⋯]² finite where the direct product is `Inf * 0`
     negligible = logu < log(eps(FT))
     logbracket = ifelse(negligible, log(𝓂) + logu, log(-expm1(𝓂 * log1p(-u))))
     K = K₀ * exp(ηᴷ * log𝒮 + 2 * logbracket) * viscosity_correction(c.water_viscosity, T)
-    return ifelse(𝒮c == 0, zero(FT), K)
+    return ifelse(clamped_saturation == 0, zero(FT), K)
 end
 
 """

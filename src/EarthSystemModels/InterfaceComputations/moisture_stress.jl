@@ -43,7 +43,8 @@ where `𝒮` is the land's root-zone saturation (the root-weighted mean over a l
 column) and `𝒮ᶠᶜ`, `𝒮ʷᵖ` are the effective saturations at the two suction heads on the
 land's own retention curve, evaluated per cell; a hydrology without a retention curve is
 rejected when the interface is built. The default heads follow
-[Balsamo et al. (2009)](@cite balsamo2009): `ψᶠᶜ = 1` m and `ψʷᵖ = 150` m of suction.
+[Balsamo et al. (2009)](@cite balsamo2009): `field_capacity_head = 1` m and
+`wilting_point_head = 150` m of suction.
 
 ```jldoctest
 using NumericalEarth
@@ -51,7 +52,7 @@ using NumericalEarth
 PlantAvailableWaterStress()
 
 # output
-PlantAvailableWaterStress(ψᶠᶜ=1.0, ψʷᵖ=150.0)
+PlantAvailableWaterStress(field_capacity_head=1.0, wilting_point_head=150.0)
 ```
 """
 struct PlantAvailableWaterStress{FT}
@@ -72,13 +73,13 @@ end
     𝒮   = hydrology.root_zone_saturation
     FT  = typeof(𝒮)
     𝒮ᶠᶜ = convert(FT, hydrology.field_capacity_saturation)
-    𝒮ʷᵖ = convert(FT, hydrology.wilting_saturation)
+    𝒮ʷᵖ = convert(FT, hydrology.wilting_point_saturation)
     return clamp((𝒮 - 𝒮ʷᵖ) / (𝒮ᶠᶜ - 𝒮ʷᵖ), zero(FT), one(FT))
 end
 
 Base.summary(p::PlantAvailableWaterStress) =
     string("PlantAvailableWaterStress",
-           "(ψᶠᶜ=", prettysummary(p.field_capacity_head),
-           ", ψʷᵖ=", prettysummary(p.wilting_point_head), ")")
+           "(field_capacity_head=", prettysummary(p.field_capacity_head),
+           ", wilting_point_head=", prettysummary(p.wilting_point_head), ")")
 
 Base.show(io::IO, p::PlantAvailableWaterStress) = print(io, summary(p))

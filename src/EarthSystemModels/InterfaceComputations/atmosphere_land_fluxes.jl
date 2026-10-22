@@ -80,7 +80,7 @@ end
 # The atmosphere-facing interface temperature: a single field, or the
 # `CanopyGroundSurfaceDiagnostics` of a canopy air space.
 @inline build_interface_temperature(temperature_formulation, grid) = Field{Center, Center, Nothing}(grid)
-@inline build_interface_temperature(cas::CanopyGroundSurface, grid) = CanopyGroundSurfaceDiagnostics(grid)
+@inline build_interface_temperature(surface::CanopyGroundSurface, grid) = CanopyGroundSurfaceDiagnostics(grid)
 
 # Initial interface values for the fixed point: the bulk land temperature and its
 # saturation humidity, or the stored state of a prognostic formulation once the model
@@ -108,47 +108,47 @@ end
 end
 
 @inline function finalize_interface_state!(Ts, next, i, j, c::CanopyGroundSurface, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, Δt)
-    sol = canopy_air_space_solve(c, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    solution = canopy_air_space_solve(c, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     @inbounds begin
-        Ts.interface[i, j, 1]              = sol.Tᵃᶜ
-        Ts.canopy[i, j, 1]                 = sol.Tˡᵉᵃᶠ
-        Ts.ground[i, j, 1]                 = sol.Tᵍ
-        Ts.effective[i, j, 1]              = sol.effective_temperature
-        Ts.effective_albedo[i, j, 1]       = sol.effective_albedo
-        Ts.ground_heat_flux[i, j, 1]       = sol.𝒬ᵍ
-        Ts.canopy_latent_heat[i, j, 1]     = sol.LEˡᵉᵃᶠ
-        Ts.soil_latent_heat[i, j, 1]       = sol.LEᵍ
-        Ts.canopy_sensible_heat[i, j, 1]   = sol.Hˡᵉᵃᶠ
-        Ts.soil_sensible_heat[i, j, 1]     = sol.Hᵍ
-        Ts.canopy_evaporation[i, j, 1]     = sol.Eʷᵉᵗ
-        Ts.canopy_wet_latent_heat[i, j, 1] = sol.ℒ * sol.Eʷᵉᵗ
-        Ts.land_vapor_flux[i, j, 1]        = (sol.LEˡᵉᵃᶠ + sol.LEᵍ) / sol.ℒ - sol.Eʷᵉᵗ
-        Ts.transpiration[i, j, 1]          = sol.LEˡᵉᵃᶠ / sol.ℒ - sol.Eʷᵉᵗ
+        Ts.interface[i, j, 1]              = solution.Tᵃᶜ
+        Ts.canopy[i, j, 1]                 = solution.Tˡᵉᵃᶠ
+        Ts.ground[i, j, 1]                 = solution.Tᵍ
+        Ts.effective[i, j, 1]              = solution.effective_temperature
+        Ts.effective_albedo[i, j, 1]       = solution.effective_albedo
+        Ts.ground_heat_flux[i, j, 1]       = solution.𝒬ᵍ
+        Ts.canopy_latent_heat[i, j, 1]     = solution.𝒬ᵛˡᵉᵃᶠ
+        Ts.ground_latent_heat[i, j, 1]     = solution.𝒬ᵛᵍ
+        Ts.canopy_sensible_heat[i, j, 1]   = solution.𝒬ᵀˡᵉᵃᶠ
+        Ts.ground_sensible_heat[i, j, 1]   = solution.𝒬ᵀᵍ
+        Ts.canopy_evaporation[i, j, 1]     = solution.Jʷᵉᵗ
+        Ts.wet_canopy_latent_heat[i, j, 1] = solution.ℒ * solution.Jʷᵉᵗ
+        Ts.land_vapor_flux[i, j, 1]        = (solution.𝒬ᵛˡᵉᵃᶠ + solution.𝒬ᵛᵍ) / solution.ℒ - solution.Jʷᵉᵗ
+        Ts.transpiration[i, j, 1]          = solution.𝒬ᵛˡᵉᵃᶠ / solution.ℒ - solution.Jʷᵉᵗ
     end
-    store_canopy_air_update!(next, i, j, sol, Ψₛ)
+    store_canopy_air_update!(next, i, j, solution, Ψₛ)
 
     # The exported scales are evaluated at the node the fluxes above were partitioned at.
-    return rebuild_interface_state(Ψₛ, Ψₐ, ℙₐ, sol.Tᵃᶜ, sol.qᵃᶜ)
+    return rebuild_interface_state(Ψₛ, Ψₐ, ℙₐ, solution.Tᵃᶜ, solution.qᵃᶜ)
 end
 
-@inline store_canopy_air_update!(::NamedTuple{()}, i, j, sol, Ψₛ) = nothing
+@inline store_canopy_air_update!(::NamedTuple{()}, i, j, solution, Ψₛ) = nothing
 
 # The node advances by its exact relaxation toward the equilibrium the skins were solved against.
-@inline function store_canopy_air_update!(state, i, j, sol, Ψₛ)
-    Δt = Ψₛ.energy.time_step
-    T⁺ = advance_canopy_air(Ψₛ.temperature, sol.equilibrium_temperature, sol.Σgᵀ, sol.Cᵀ, Δt)
-    q⁺ = advance_canopy_air(Ψₛ.specific_humidity, sol.equilibrium_humidity, sol.Σgᵛ, sol.Cᵛ, Δt)
+@inline function store_canopy_air_update!(state, i, j, solution, Ψₛ)
+    Δt   = Ψₛ.energy.time_step
+    Tⁿ⁺¹ = advance_canopy_air(Ψₛ.temperature, solution.equilibrium_temperature, solution.Σgᵀ, solution.Cᵀ, Δt)
+    qⁿ⁺¹ = advance_canopy_air(Ψₛ.specific_humidity, solution.equilibrium_humidity, solution.Σgᵛ, solution.Cᵛ, Δt)
     @inbounds begin
-        state.temperature[i, j, 1]       = T⁺
-        state.specific_humidity[i, j, 1] = q⁺
+        state.temperature[i, j, 1]       = Tⁿ⁺¹
+        state.specific_humidity[i, j, 1] = qⁿ⁺¹
     end
     return nothing
 end
 
 # A prognostic energy-balance skin is frozen through the fixed point and advanced once per
-# step by a backward-Euler update of C dTₛ/dt = Rₙ + G − H − LE, Newton-refined so the
-# radiative and vapor curvature is re-linearized each iterate. Δt⁻¹ = 0 (the initializing
-# call) lands the update on the equilibrium root.
+# step by a backward-Euler update of C dTₛ/dt = net radiation − 𝒬ᵍ − 𝒬ᵀ − 𝒬ᵛ, Newton-refined
+# so the radiative and vapor curvature is re-linearized each iterate. Δt⁻¹ = 0 (the
+# initializing call) lands the update on the equilibrium root.
 @inline function finalize_interface_state!(Ts, next, i, j, t::PrognosticEnergyBalanceTemperature,
                                           Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, Δt)
     FT = eltype(Ψₛ)
@@ -156,18 +156,18 @@ end
     C  = convert(FT, state2dindex(t.storage.heat_capacity, i, j))
     Δt⁻¹ = ifelse(Δt > 0, 1 / Δt, zero(FT))
 
-    T⁺ = Tₛ
+    Tⁿ⁺¹ = Tₛ
     for _ in 1:3
-        F, Σλ = skin_energy_imbalance(T⁺, t, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ)
-        R  = C * (T⁺ - Tₛ) * Δt⁻¹ - F
-        dR = C * Δt⁻¹ + Σλ
-        T⁺ = ifelse(dR > 0, T⁺ - R / dR, T⁺)
+        F, Σg = skin_energy_imbalance(Tⁿ⁺¹, t, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ)
+        R    = C * (Tⁿ⁺¹ - Tₛ) * Δt⁻¹ - F
+        dR   = C * Δt⁻¹ + Σg
+        Tⁿ⁺¹ = ifelse(dR > 0, Tⁿ⁺¹ - R / dR, Tⁿ⁺¹)
     end
 
-    @inbounds Ts[i, j, 1] = next.temperature[i, j, 1] = T⁺
+    @inbounds Ts[i, j, 1] = next.temperature[i, j, 1] = Tⁿ⁺¹
 
-    q⁺ = compute_interface_humidity(ℙₛ.specific_humidity_formulation, T⁺, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
-    return rebuild_interface_state(Ψₛ, Ψₐ, ℙₐ, T⁺, q⁺)
+    qⁿ⁺¹ = compute_interface_humidity(ℙₛ.specific_humidity_formulation, Tⁿ⁺¹, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    return rebuild_interface_state(Ψₛ, Ψₐ, ℙₐ, Tⁿ⁺¹, qⁿ⁺¹)
 end
 
 # Fallback: assume land has a `fluxes` property like SlabLand
@@ -308,12 +308,12 @@ end
 @inline function interface_hydrology_state(i, j, grid, ::PlantAvailableWaterStress, land_state)
     return (root_zone_saturation = state2dindex(land_state.root_zone_saturation, i, j),
             field_capacity_saturation = state2dindex(land_state.field_capacity_saturation, i, j),
-            wilting_saturation = state2dindex(land_state.wilting_saturation, i, j))
+            wilting_point_saturation = state2dindex(land_state.wilting_point_saturation, i, j))
 end
 
 @inline interface_hydrology_state(i, j, grid, ::DryLayerHumidity, land_state) =
     (saturation = land_saturation(i, j, grid, land_state),
-     vapor_diffusivity = state2dindex(land_state.vapor_diffusivity, i, j))
+     effective_vapor_diffusivity = state2dindex(land_state.effective_vapor_diffusivity, i, j))
 @inline interface_hydrology_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
 
 # Energy state: humidity formulations that need the bulk land temperature
@@ -422,7 +422,7 @@ land_surface_fluxes(interface::AtmosphereInterface, bulk_temperature) =
 
 function land_surface_fluxes(temperature, interface, bulk_temperature)
     fluxes = interface.fluxes
-    conductance = skin_conductance(interface)
+    conductance = ground_conductance(interface)
     energy = isnothing(conductance) ? fluxes.sensible_heat + fluxes.latent_heat :
                                      -conductance * (temperature - bulk_temperature)
     transpiration = transpiration_flux(interface.properties.specific_humidity_formulation, fluxes)

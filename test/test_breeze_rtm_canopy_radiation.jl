@@ -22,7 +22,7 @@ const Δt = 0.25
 
 # `hour` is the solar epoch at longitude 0, so 12 is local noon and 0 local midnight. Gray
 # optics needs no lookup tables.
-function rtm_canopy_components(arch; hour = 12, fraction = nothing)
+function rtm_canopy_components(arch; hour = 12, cover_fraction = nothing)
     FT = Float64
 
     grid = RectilinearGrid(arch, FT; size = (8, 8), halo = (5, 5),
@@ -52,7 +52,7 @@ function rtm_canopy_components(arch; hour = 12, fraction = nothing)
                                            absorbed_par = InteractiveAbsorbedPAR(FT)))
 
     surface = LandSurface(canopy)
-    isnothing(fraction) || (surface = TiledLandSurface(surface; fraction))
+    isnothing(cover_fraction) || (surface = TiledLandSurface(surface; cover_fraction))
     land = SlabLand(land_grid; hydrology = BucketHydrology(FT; maximum_water_storage = 150),
                     energy = SlabEnergy(FT), surface)
     set!(land; T = 298, M = 45)
@@ -98,7 +98,7 @@ end
 
         @testset "Tiled interface keeps the bare tile's configured optics on $A" begin
             f = 0.6
-            atmosphere, land, radiation, canopy = rtm_canopy_components(arch; fraction = f)
+            atmosphere, land, radiation, canopy = rtm_canopy_components(arch; cover_fraction = f)
             tiled = TiledLandInterface(land.grid, atmosphere, land)
             model = AtmosphereLandModel(atmosphere, land; radiation, atmosphere_land_interface = tiled)
             update_state!(model)

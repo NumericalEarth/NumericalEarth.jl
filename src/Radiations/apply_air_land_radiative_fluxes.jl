@@ -1,7 +1,7 @@
 using Oceananigans.Grids: inactive_node
 
 using ..EarthSystemModels: EarthSystemModel
-using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties, skin_conductance, radiative_surface,
+using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties, ground_conductance, radiative_surface,
                                                 maybe_write!, maybe_accumulate!
 
 """
@@ -45,7 +45,7 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
 
     # A skin that closes its own energy balance absorbs the radiation and drives the slab by
     # conduction, so nothing is added to the slab's flux.
-    land_energy_flux = isnothing(skin_conductance(al_interface)) ? land_surface_energy_flux(land) : nothing
+    land_energy_flux = isnothing(ground_conductance(al_interface)) ? land_surface_energy_flux(land) : nothing
 
     # `nothing` for components that diagnose their own upwelling radiation.
     land_shortwave_upwelling_flux = land_surface_shortwave_up(land)
@@ -66,9 +66,9 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     return nothing
 end
 
-@inline radiating_surface(surface, i, j, rs) =
-    (stateindex(surface.temperature, i, j, 1), radiative_surface_value(surface.albedo, rs.α, i, j),
-     radiative_surface_value(surface.emissivity, rs.ϵ, i, j))
+@inline radiating_surface(surface, i, j, Ψᵣ) =
+    (stateindex(surface.temperature, i, j, 1), radiative_surface_value(surface.albedo, Ψᵣ.α, i, j),
+     radiative_surface_value(surface.emissivity, Ψᵣ.ϵ, i, j))
 
 @inline radiative_surface_value(::Nothing, value, i, j) = value
 @inline radiative_surface_value(field, value, i, j) = stateindex(field, i, j, 1)

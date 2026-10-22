@@ -148,8 +148,8 @@ end
 # composite formulations forward to their soil branch.
 @inline interface_phase(q_formulation) = q_formulation.phase
 
-# Aerodynamic vapor `Gᵃ = ρᵃᵗ u★ χq` and heat `ρᵃᵗ cᵖ u★ χθ` conductances of the previous
-# similarity iterate, the bulk linearizations of the similarity fluxes the surface
+# Aerodynamic vapor `gᵃᵛ = ρᵃᵗ u★ χq` and heat `gᵃᵀ = ρᵃᵗ cᵖᵐ u★ χθ` conductances of the
+# previous similarity iterate, the bulk linearizations of the similarity fluxes the surface
 # balances close against.
 @inline function aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
@@ -158,15 +158,15 @@ end
 
 @inline function aerodynamic_heat_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
-    cᵖ  = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, Ψₐ.q)
-    return ρᵃᵗ * cᵖ * Ψₛ.fluxes.u★ * Ψₛ.fluxes.χθ
+    cᵖᵐ = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, Ψₐ.q)
+    return ρᵃᵗ * cᵖᵐ * Ψₛ.fluxes.u★ * Ψₛ.fluxes.χθ
 end
 
-# Conductance-weighted mean of the sources `xs` behind the conductances `gs`: the value
-# of a node in flux continuity with all of them. Every conductance zero keeps `x⁻`.
-@inline function conductance_weighted_node(x⁻, gs, xs)
-    D = sum(gs)
-    return ifelse(D > 0, sum(gs .* xs) / D, x⁻)
+# Conductance-weighted mean of the `sources` behind the `conductances`: the value of a
+# node in flux continuity with all of them. Every conductance zero keeps `x⁻`.
+@inline function conductance_weighted_node(x⁻, conductances, sources)
+    D = sum(conductances)
+    return ifelse(D > 0, sum(conductances .* sources) / D, x⁻)
 end
 
 # `BulkHumidity` — surface specific humidity for a bulk land surface with no
@@ -526,11 +526,11 @@ struct SoilConductiveFlux{K, Z}
     thickness    :: Z   # ℓᵀ, m
 end
 
-@inline skin_conductance(F::SoilConductiveFlux) = F.conductivity / F.thickness
+@inline ground_conductance(F::SoilConductiveFlux) = F.conductivity / F.thickness
 
 # Skin→bulk conductance of an interface temperature formulation that closes its own
 # surface energy balance, or `nothing` for a bulk skin.
-@inline skin_conductance(formulation) = nothing
+@inline ground_conductance(formulation) = nothing
 
 # Solve the surface flux balance equation:
 #   Qa(Tₛ) + Ωc (Tᵃᵗ - Tₛ) + (Tₛ - Tb) / R = 0
@@ -569,8 +569,8 @@ end
 
     # Damped-Newton trust region: cap how far the skin moves in one iterate.
     ΔT★ = T★ - Tₛ⁻
-    max_temperature_step = convert(typeof(T★), st.max_ΔT)
-    Tₛ⁺ = Tₛ⁻ + clamp(ΔT★, -max_temperature_step, max_temperature_step)
+    maximum_temperature_step = convert(typeof(T★), st.max_ΔT)
+    Tₛ⁺ = Tₛ⁻ + clamp(ΔT★, -maximum_temperature_step, maximum_temperature_step)
 
     # Cap at melting temperature
     Tₘ = ℙᵢ.liquidus.freshwater_melting_temperature
@@ -673,7 +673,7 @@ Prognostic skin storage (the default): the skin carries an areal `heat_capacity`
 ``C`` (J m⁻² K⁻¹, a `Number` or a per-cell `Field`) and integrates
 
 ```math
-C \\frac{dT_s}{dt} = R_n(T_s) + G(T_s) - H(T_s) - LE(T_s),
+C \\frac{dT_s}{dt} = \\text{net radiation}(T_s) - \\mathcal{Q}^g(T_s) - \\mathcal{Q}^T(T_s) - \\mathcal{Q}^v(T_s),
 ```
 
 frozen through the Monin–Obukhov fixed point and advanced once per step by a
@@ -706,9 +706,9 @@ Adapt.adapt_structure(to, s::PrognosticSkin) = PrognosticSkin(Adapt.adapt(to, s.
     EnergyBalanceTemperature(coupling; storage=PrognosticSkin())
 
 Interface temperature that closes the surface energy balance
-`F(Tₛ) = Rₙ + G − H − LE = 0` by Newton on the conductance sum
-`Σλ = 4ϵσTₛ³ + Λ + ρ u★ (cᵖ χθ + ℒ χq dq/dT)`. `coupling` is a
-[`SoilConductiveFlux`](@ref) carrying `G = Λᵍ(Tₛ − Tˡᵃ)`; `storage` is
+`F(Tₛ) = net radiation − 𝒬ᵍ − 𝒬ᵀ − 𝒬ᵛ = 0` by Newton on the conductance sum
+`Σg = 4ϵσTₛ³ + Λ + ρ u★ (cᵖᵐ χθ + ℒ χq dq/dT)`. `coupling` is a
+[`SoilConductiveFlux`](@ref) carrying `𝒬ᵍ = Λᵍ(Tₛ − Tˡᵃ)`; `storage` is
 [`PrognosticSkin`](@ref) (the default, the skin carries its heat capacity) or
 [`DiagnosticSkin`](@ref) (massless). `Λᵍ → ∞` recovers [`BulkTemperature`](@ref).
 Construct one with [`SoilSkinTemperature`](@ref).
@@ -723,7 +723,7 @@ EnergyBalanceTemperature(coupling; storage=PrognosticSkin()) =
 
 const PrognosticEnergyBalanceTemperature = EnergyBalanceTemperature{<:PrognosticSkin}
 
-@inline skin_conductance(t::EnergyBalanceTemperature) = skin_conductance(t.coupling)
+@inline ground_conductance(t::EnergyBalanceTemperature) = ground_conductance(t.coupling)
 
 Adapt.adapt_structure(to, t::EnergyBalanceTemperature) =
     EnergyBalanceTemperature(Adapt.adapt(to, t.coupling), Adapt.adapt(to, t.storage))
@@ -739,33 +739,33 @@ DiagnosticSkin()` recovers the massless equilibrium of the same balance.
 SoilSkinTemperature(conductivity, thickness; storage=PrognosticSkin()) =
     EnergyBalanceTemperature(SoilConductiveFlux(conductivity, thickness), storage)
 
-Base.summary(t::EnergyBalanceTemperature) = string("EnergyBalanceTemperature(Λ=", prettysummary(skin_conductance(t.coupling)), ")")
+Base.summary(t::EnergyBalanceTemperature) = string("EnergyBalanceTemperature(Λ=", prettysummary(ground_conductance(t.coupling)), ")")
 Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
 
-# The surface energy imbalance F(T) = Rₙ(T) + G(T) − H(T) − LE(T) and the conductance
-# sum Σλ = −dF/dT at skin temperature T, with the similarity scales frozen at the
-# current iterate.
+# The surface energy imbalance F(T) = net radiation − 𝒬ᵍ − 𝒬ᵀ − 𝒬ᵛ at skin temperature T
+# and the conductance sum Σg = −dF/dT, with the similarity scales frozen at the current
+# iterate.
 @inline function skin_energy_imbalance(T, t, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ)
     FT  = eltype(Ψₛ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     ℒ   = interface_latent_heat(ℂᵃᵗ, Ψₐ.T, Ψₛ)
-    gᵀ  = aerodynamic_heat_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
-    gᵛ  = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
-    Λ   = convert(FT, skin_conductance(t))
+    gᵃᵀ = aerodynamic_heat_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
+    gᵃᵛ = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
+    Λ   = convert(FT, ground_conductance(t))
     Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
 
-    q  = compute_interface_humidity(ℙₛ.specific_humidity_formulation, T, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
-    Rn = - (1 - Ψᵣ.α) * Ψᵣ.ℐꜜˢʷ - Ψᵣ.ϵ * (Ψᵣ.ℐꜜˡʷ + Ψᵣ.σ * T^4)
-    G  = Λ * (Ψᵢ.T - T)
-    H  = gᵀ * (T - Tᵃᵗ)
-    LE = ℒ * gᵛ * (q - Ψₐ.q)
-    F  = Rn + G - H - LE
+    q             = compute_interface_humidity(ℙₛ.specific_humidity_formulation, T, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    net_radiation = - (1 - Ψᵣ.α) * Ψᵣ.ℐꜜˢʷ - Ψᵣ.ϵ * (Ψᵣ.ℐꜜˡʷ + Ψᵣ.σ * T^4)
+    𝒬ᵍ            = Λ * (T - Ψᵢ.T)
+    𝒬ᵀ            = gᵃᵀ * (T - Tᵃᵗ)
+    𝒬ᵛ            = ℒ * gᵃᵛ * (q - Ψₐ.q)
+    F             = net_radiation - 𝒬ᵍ - 𝒬ᵀ - 𝒬ᵛ
 
     # dq/dT of the humidity the formulation actually diagnoses, by a one-sided difference.
     δT = sqrt(eps(FT)) * T
     dq = (compute_interface_humidity(ℙₛ.specific_humidity_formulation, T + δT, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ) - q) / δT
-    Σλ = 4 * Ψᵣ.ϵ * Ψᵣ.σ * T^3 + Λ + gᵀ + ℒ * gᵛ * dq
-    return F, Σλ
+    Σg = 4 * Ψᵣ.ϵ * Ψᵣ.σ * T^3 + Λ + gᵃᵀ + ℒ * gᵃᵛ * dq
+    return F, Σg
 end
 
 # A massless skin takes one Newton step on F(Tₛ) = 0 per iterate of the Monin–Obukhov
@@ -780,10 +780,10 @@ end
                                                interior_properties)
 
     T = interface_state.temperature
-    F, Σλ = skin_energy_imbalance(T, t, interface_state, atmosphere_state, interior_state,
+    F, Σg = skin_energy_imbalance(T, t, interface_state, atmosphere_state, interior_state,
                                   radiation_state, interface_properties, atmosphere_properties)
-    # Σλ = 0 leaves F independent of T: no root to step toward.
-    return ifelse(Σλ > 0, T + F / Σλ, T)
+    # Σg = 0 leaves F independent of T: no root to step toward.
+    return ifelse(Σg > 0, T + F / Σg, T)
 end
 
 # A prognostic skin is model state: frozen through the fixed point (only the
@@ -866,7 +866,7 @@ The solved similarity-theory characteristic scales at an interface: friction
 velocity `u★`, temperature flux scale `θ★`, and specific-humidity flux scale
 `q★`, together with the transfer coefficients `χθ` and `χq` of the iterate that
 produced them (`θ★ = χθ Δθ`, `q★ = χq Δq`), from which the aerodynamic
-conductances `ρ cᵖ u★ χθ` (heat) and `ρ u★ χq` (vapor) follow. The
+conductances `ρ cᵖᵐ u★ χθ` (heat) and `ρ u★ χq` (vapor) follow. The
 three-argument constructor zeroes the transfer coefficients (an initial guess).
 """
 struct InterfaceFluxScales{FT}

@@ -113,8 +113,8 @@ end
     FT = eltype(Ψₛ)
     gᶜ, qᵛ⁺ = canopy_conductance_terms(q, Tₛ, Ψₐ.q, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, nothing)
 
-    Gᵃ = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
-    qˢ = conductance_weighted_node(Ψₛ.specific_humidity, (gᶜ, Gᵃ), (qᵛ⁺, Ψₐ.q))
+    gᵃᵛ = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
+    qˢ  = conductance_weighted_node(Ψₛ.specific_humidity, (gᶜ, gᵃᵛ), (qᵛ⁺, Ψₐ.q))
 
     return convert(FT, qˢ)
 end

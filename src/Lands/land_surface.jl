@@ -28,19 +28,19 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Vegetated and bare surface physics sharing a soil column, with vegetated area `fraction`.
+Vegetated and bare surface physics sharing a soil column, with vegetated `cover_fraction`.
 """
 struct TiledLandSurface{V, B, F}
     vegetated :: V
     bare :: B
-    fraction :: F
+    cover_fraction :: F
 end
 
-function TiledLandSurface(vegetated::LandSurface; fraction,
+function TiledLandSurface(vegetated::LandSurface; cover_fraction,
                           bare = LandSurface(EnergyBalanceTemperature(vegetated.temperature.ground_heat_flux;
                                                                       storage = DiagnosticSkin());
                                              specific_humidity = vegetated.temperature.soil_humidity))
-    return TiledLandSurface(vegetated, bare, fraction)
+    return TiledLandSurface(vegetated, bare, cover_fraction)
 end
 
 function materialize_land_surface(surface::LandSurface, grid)
@@ -59,7 +59,7 @@ end
 
 materialize_land_surface(surface::TiledLandSurface, grid) =
     TiledLandSurface(materialize_land_surface(surface.vegetated, grid),
-                     materialize_land_surface(surface.bare, grid), surface.fraction)
+                     materialize_land_surface(surface.bare, grid), surface.cover_fraction)
 
 function time_step!(surface::LandSurface)
     foreach(values(surface.prognostic), values(surface.next_state)) do state, next
@@ -94,7 +94,7 @@ end
 
 Base.summary(surface::LandSurface) = string("LandSurface(", summary(surface.temperature), ")")
 Base.show(io::IO, surface::LandSurface) = print(io, summary(surface))
-Base.summary(surface::TiledLandSurface) = string("TiledLandSurface(fraction=", prettysummary(surface.fraction), ")")
+Base.summary(surface::TiledLandSurface) = string("TiledLandSurface(cover_fraction=", prettysummary(surface.cover_fraction), ")")
 Base.show(io::IO, surface::TiledLandSurface) = print(io, summary(surface))
 
 # The tile whose canopy sets the land's defaults.
@@ -119,7 +119,7 @@ function materialize_surface_hydrology(hydrology::InterceptingHydrology, surface
     leaf_area_index = something(hydrology.leaf_area_index,
                                 canopy_leaf_area_index(vegetated_tile(surface).specific_humidity), Some(nothing))
     isnothing(leaf_area_index) && throw(ArgumentError("InterceptingHydrology requires a canopy surface or leaf_area_index."))
-    cover_fraction = something(hydrology.cover_fraction, surface isa TiledLandSurface ? surface.fraction : 1)
+    cover_fraction = something(hydrology.cover_fraction, surface isa TiledLandSurface ? surface.cover_fraction : 1)
     return InterceptingHydrology(typeof(hydrology.capacity_per_leaf_area);
                                  soil = hydrology.soil, leaf_area_index, cover_fraction,
                                  capacity_per_leaf_area = hydrology.capacity_per_leaf_area,
@@ -141,7 +141,7 @@ function plant_available_water(hydrology::VariablySaturatedHydrology, stress, gr
     endpoint(head) = compute!(Field(KernelFunctionOperation{Center, Center, Nothing}(effective_saturation,
                                                                                      grid, curve, convert(FT, head))))
     return (; field_capacity_saturation = endpoint(stress.field_capacity_head),
-              wilting_saturation = endpoint(stress.wilting_point_head))
+              wilting_point_saturation = endpoint(stress.wilting_point_head))
 end
 
 plant_available_water(hydrology, stress, grid) =
@@ -151,7 +151,7 @@ function InterfaceComputations.surface_hydrology(land::SlabLand, humidity::DryLa
     vapor = humidity.vapor_exchange
     diffusivity = soil_vapor_diffusivity(soil_hydrology(land.hydrology), vapor.tortuosity,
                                        vapor, land.saturation, grid)
-    return (; vapor_diffusivity=diffusivity)
+    return (; effective_vapor_diffusivity=diffusivity)
 end
 
 soil_vapor_diffusivity(hydrology, ::ConstantTortuosity, vapor, saturation, grid) = vapor.molecular_diffusivity
@@ -165,8 +165,8 @@ end
     FT = eltype(grid)
     ν = convert(FT, stateindex(porosity, i, j, 1))
     θʳ = convert(FT, stateindex(residual, i, j, 1))
-    θ = θʳ + saturation[i, j, 1] * (ν - θʳ)
-    return effective_vapor_diffusivity(vapor, ν, θ)
+    θˡ = θʳ + saturation[i, j, 1] * (ν - θʳ)
+    return effective_vapor_diffusivity(vapor, ν, θˡ)
 end
 
 InterfaceComputations.surface_hydrology(land::SlabLand, humidity::CanopyConductanceHumidity, grid) =

@@ -9,15 +9,15 @@
 ##### 1. The areal heat capacity `cˡᵃ(M) = cᵈʳʸ + cˡ M` is recomputed every step from the
 #####    column's water `M` (every layer of a layered column shares the slab temperature),
 #####    so a wetting/drying slab has the correct thermal inertia.
-##### 2. The energy budget is written conservatively. With `eˡ = cˡ(Tˡᵃ − Tᵣ)` the
+##### 2. The energy budget is written conservatively. With `eˡ = cˡ(T − Tᵣ)` the
 #####    internal energy of slab liquid, water exchanged at the slab temperature
 #####    (evaporation, runoff, interlayer exchange, the positivity floor) carries no
 #####    heat relative to the slab, and only the upwinded liquid fluxes across the
 #####    column's top and bottom do:
 #####
-#####        dTˡᵃ/dt = [Λᵈᵉᵉᵖ(Tᵈᵉᵉᵖ − Tˡᵃ) + (eᵇ − eˡ) Jˡᵇ − (eˢ − eˡ) Jˡˢ − Jᴱˢ] / cˡᵃ(M).
+#####        dT/dt = [Λᵈᵉᵉᵖ(Tᵈᵉᵉᵖ − T) + (eᵇ − eˡ) Jˡₙ − (eˢ − eˡ) Jˡˢ − Jᴱˢ] / cˡᵃ(M).
 #####
-#####    `Jˡᵇ` is the `deep_liquid_flux` across the column bottom.
+#####    `Jˡₙ` is the `deep_liquid_flux` across the column bottom.
 #####
 ##### The internal energies carried by the boundary liquid fluxes are upwinded:
 ##### with `advect_deep_liquid_energy = true`, capillary rise brings in
@@ -133,8 +133,8 @@ Adapt.adapt_structure(to, energy::WaterCoupledEnergy) =
     end
 end
 
-@inline upwind_deep_internal_energy(Jˡᵇ, Tᵈ, T, Tᵣ, cˡ) =
-    ifelse(Jˡᵇ > 0, cˡ * (Tᵈ - Tᵣ), cˡ * (T - Tᵣ))
+@inline upwind_deep_internal_energy(Jˡₙ, Tᵈ, T, Tᵣ, cˡ) =
+    ifelse(Jˡₙ > 0, cˡ * (Tᵈ - Tᵣ), cˡ * (T - Tᵣ))
 
 @inline upwind_surface_internal_energy(Jˡˢ, T, Tˡᵖ, Tᵣ, cˡ) =
     ifelse(Jˡˢ > 0, cˡ * (T - Tᵣ), cˡ * (Tˡᵖ - Tᵣ))
@@ -148,7 +148,7 @@ end
     @inbounds begin
         Tᵢⱼ  = prognostic.T[i, j, 1]
         Mᵢⱼ  = get(diagnostics, :column_water_storage, prognostic.M)[i, j, 1]
-        Jˡᵇ  = diagnostics.deep_liquid_flux[i, j, 1]
+        Jˡₙ  = diagnostics.deep_liquid_flux[i, j, 1]
         Jˡˢ  = diagnostics.surface_liquid_flux[i, j, 1]
         Jᴱs  = fluxes.surface_energy_flux[i, j, 1]
         Tˡᵖ  = fluxes.liquid_precipitation_temperature[i, j, 1]
@@ -167,13 +167,13 @@ end
     # so the arbitrary reference Tᵣ cancels from the update.
     eˡ = cˡ * (Tᵢⱼ - Tᵣ)
     eᵇ = ifelse(energy.advect_deep_liquid_energy,
-                upwind_deep_internal_energy(Jˡᵇ, Tᵈ, Tᵢⱼ, Tᵣ, cˡ), eˡ)
+                upwind_deep_internal_energy(Jˡₙ, Tᵈ, Tᵢⱼ, Tᵣ, cˡ), eˡ)
     eˢ = ifelse(energy.advect_surface_liquid_energy,
                 upwind_surface_internal_energy(Jˡˢ, Tᵢⱼ, Tˡᵖ, Tᵣ, cˡ), eˡ)
 
     # Water exchanged at the slab temperature carries no heat relative to the slab; the
     # latent heat of evaporation is already inside Jᴱs.
-    return (Λᵈ * (Tᵈ - Tᵢⱼ) + (eᵇ - eˡ) * Jˡᵇ - (eˢ - eˡ) * Jˡˢ - Jᴱs) / cˡᵃ
+    return (Λᵈ * (Tᵈ - Tᵢⱼ) + (eᵇ - eˡ) * Jˡₙ - (eˢ - eˡ) * Jˡˢ - Jᴱs) / cˡᵃ
 end
 
 time_step!(energy::WaterCoupledEnergy, land, Δt, time) = step_land_temperature!(energy, land, Δt, time)

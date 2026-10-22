@@ -8,7 +8,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     SoilConductiveFlux, SoilSkinTemperature, DiagnosticSkin, PrognosticSkin,
     DiagnosticCanopyAir, PrognosticCanopyAir, compute_atmosphere_land_fluxes!
 
-checkpoint_test_cas(FT; storage) = CanopyGroundSurface(FT;
+checkpoint_test_canopy_surface(FT; storage) = CanopyGroundSurface(FT;
     soil_humidity = bare_soil_humidity(FT),
     canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index = 4.0, moisture_stress = CriticalSaturation(0.5),
                                        absorbed_par = InteractiveAbsorbedPAR(FT)),
@@ -65,9 +65,9 @@ end
 @testset "Prognostic land surface checkpointing" begin
     for arch in test_architectures
         # --- prognostic canopy air: the node state must survive the round trip.
-        cas() = checkpoint_test_cas(Float64; storage = PrognosticCanopyAir())
-        m1 = checkpoint_test_model(arch; temperature = cas())
-        m2 = checkpoint_test_model(arch; temperature = cas())
+        canopy_surface() = checkpoint_test_canopy_surface(Float64; storage = PrognosticCanopyAir())
+        m1 = checkpoint_test_model(arch; temperature = canopy_surface())
+        m2 = checkpoint_test_model(arch; temperature = canopy_surface())
         state = prognostic_state(m1)
         @test !isempty(state.land.surface)
         (LE1, H1), (LE2, H2) = roundtrip!(m1, m2)
@@ -89,7 +89,7 @@ end
         @test H2 ≈ H1
 
         # --- diagnostic surface temperatures are reconstructed after restart.
-        cd() = checkpoint_test_cas(Float64; storage = DiagnosticCanopyAir())
+        cd() = checkpoint_test_canopy_surface(Float64; storage = DiagnosticCanopyAir())
         m1 = checkpoint_test_model(arch; temperature = cd())
         m2 = checkpoint_test_model(arch; temperature = cd())
         @test isempty(prognostic_state(m1).land.surface)
@@ -101,7 +101,7 @@ end
 
 @testset "Flux evaluation preserves land surface storage" begin
     for arch in test_architectures
-        canopy = checkpoint_test_cas(Float64; storage = PrognosticCanopyAir())
+        canopy = checkpoint_test_canopy_surface(Float64; storage = PrognosticCanopyAir())
         skin = SoilSkinTemperature(1.5, 0.05; storage = PrognosticSkin(heat_capacity = 1e5))
         for surface in (LandSurface(canopy), LandSurface(skin; specific_humidity = bare_soil_humidity(Float64)))
             model = coupled_land_model(arch; surface)
@@ -124,9 +124,9 @@ end
 
 @testset "Tiled canopy and skin storage restart together" begin
     for arch in test_architectures
-        canopy = checkpoint_test_cas(Float64; storage = PrognosticCanopyAir())
+        canopy = checkpoint_test_canopy_surface(Float64; storage = PrognosticCanopyAir())
         skin = SoilSkinTemperature(1.5, 0.05; storage = PrognosticSkin(heat_capacity = 1e5))
-        surface = TiledLandSurface(LandSurface(canopy); fraction = 0.6,
+        surface = TiledLandSurface(LandSurface(canopy); cover_fraction = 0.6,
                                     bare = LandSurface(skin; specific_humidity = canopy.soil_humidity))
         m1 = coupled_land_model(arch; surface)
         m2 = coupled_land_model(arch; surface)

@@ -21,28 +21,28 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
         cond  = MedlynConductance(FT)
 
         Tˡᵉᵃᶠ   = FT(298)      # leaf temperature (K)
-        P    = FT(101325)   # air pressure (Pa)
+        p    = FT(101325)   # air pressure (Pa)
         ca   = FT(40)       # CO₂ partial pressure (Pa)
         ci   = FT(28)       # intercellular CO₂ (Pa)
         β    = FT(1)
 
         # Net assimilation rises with absorbed PAR and saturates (light limitation).
-        A_dim   = net_assimilation(photo, ci, FT(1e-4), Tˡᵉᵃᶠ, P, β)
-        A_light = net_assimilation(photo, ci, FT(1e-3), Tˡᵉᵃᶠ, P, β)
-        A_sat   = net_assimilation(photo, ci, FT(1e-2), Tˡᵉᵃᶠ, P, β)
+        A_dim   = net_assimilation(photo, ci, FT(1e-4), Tˡᵉᵃᶠ, p, β)
+        A_light = net_assimilation(photo, ci, FT(1e-3), Tˡᵉᵃᶠ, p, β)
+        A_sat   = net_assimilation(photo, ci, FT(1e-2), Tˡᵉᵃᶠ, p, β)
         @test A_light > A_dim
         @test A_sat ≥ A_light
         @test A_sat - A_light < A_light - A_dim   # saturating, not linear
 
         # ... and rises with intercellular CO₂.
-        @test net_assimilation(photo, FT(35), FT(1e-3), Tˡᵉᵃᶠ, P, β) >
-              net_assimilation(photo, FT(15), FT(1e-3), Tˡᵉᵃᶠ, P, β)
+        @test net_assimilation(photo, FT(35), FT(1e-3), Tˡᵉᵃᶠ, p, β) >
+              net_assimilation(photo, FT(15), FT(1e-3), Tˡᵉᵃᶠ, p, β)
 
         # Coupled solve: light drives conductance up, VPD and moisture stress down.
-        gs_ref, An_ref, ci_ref = stomatal_conductance(cond, photo, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(1))
-        gs_dry, _, _           = stomatal_conductance(cond, photo, FT(1e-3), FT(3000), Tˡᵉᵃᶠ, ca, P, FT(1))
-        gs_str, _, _           = stomatal_conductance(cond, photo, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(0.3))
-        gs_drk, _, _           = stomatal_conductance(cond, photo, FT(0),    FT(1000), Tˡᵉᵃᶠ, ca, P, FT(1))
+        gs_ref, An_ref, ci_ref = stomatal_conductance(cond, photo, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, p, FT(1))
+        gs_dry, _, _           = stomatal_conductance(cond, photo, FT(1e-3), FT(3000), Tˡᵉᵃᶠ, ca, p, FT(1))
+        gs_str, _, _           = stomatal_conductance(cond, photo, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, p, FT(0.3))
+        gs_drk, _, _           = stomatal_conductance(cond, photo, FT(0),    FT(1000), Tˡᵉᵃᶠ, ca, p, FT(1))
 
         @test gs_ref > cond.g0
         @test An_ref > 0
@@ -54,19 +54,19 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
 
         # The intercellular CO₂ is the closed-form Medlyn optimality ratio.
         @test ci_ref ≈ ca * cond.g1 / (cond.g1 + sqrt(FT(1000)))
-        @inferred stomatal_conductance(cond, photo, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(1))
+        @inferred stomatal_conductance(cond, photo, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, p, FT(1))
     end
 end
 
 @testset "Standalone canopy transpiration draws from the root zone" begin
-    for arch in test_architectures, Tland in (300.0, 280.0)
+    for arch in test_architectures, land_temperature in (300.0, 280.0)
         hydrology = VariablySaturatedHydrology(; slab_depth = (0.3, 0.7), porosity = 0.4,
             residual_liquid_fraction = 0.05, storage_height = 1000, root_fraction = (0.5, 0.5),
             retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1, pore_size_uniformity = 2),
             hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 0,
                                                                pore_size_uniformity = 2))
-        model = coupled_land_model(arch; hydrology, Tland, water = 30.0,
-            Tair = 290.0, qair = 0.01, wind = 5.0,
+        model = coupled_land_model(arch; hydrology, land_temperature, water = 30.0,
+            air_temperature = 290.0, air_specific_humidity = 0.01, wind = 5.0,
             atmosphere_land_interface_specific_humidity = CanopyConductanceHumidity(leaf_area_index = 3))
         land = model.land
         set!(land; M = 30, water_storage_2 = 245)
@@ -75,7 +75,7 @@ end
 
         vapor = scalar(land.fluxes.vapor_flux)
         transpiration = scalar(land.fluxes.transpiration)
-        @test (Tland - 290) * vapor > 0
+        @test (land_temperature - 290) * vapor > 0
         @test transpiration == max(0, vapor)
         # Effective saturations are 1/7 and 6/7; equal root fractions give the same uptake shares.
         @test scalar(land.water_storage) ≈ 30 - 60 * (vapor - transpiration + transpiration / 7)
@@ -134,16 +134,16 @@ end
 @testset "Jarvis stomatal conductance" begin
     for FT in (Float32, Float64)
         jarv = JarvisConductance(FT)
-        Tˡᵉᵃᶠ = FT(298.15); ca = FT(40); P = FT(101325)
+        Tˡᵉᵃᶠ = FT(298.15); ca = FT(40); p = FT(101325)
 
         # Runs with no photosynthesis model (no Farquhar call, no iteration).
-        gs, An, ci = stomatal_conductance(jarv, nothing, FT(2e-4), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(1))
+        gs, An, ci = stomatal_conductance(jarv, nothing, FT(2e-4), FT(1000), Tˡᵉᵃᶠ, ca, p, FT(1))
         @test gs > 0
         @test An == 0 && ci == 0
         @test eltype(gs) == FT
 
         # gₛ rises and saturates with APAR, falls with VPD, and peaks at optimal_temperature.
-        gₛ(APAR, VPD, T) = stomatal_conductance(jarv, nothing, APAR, VPD, T, ca, P, FT(1))[1]
+        gₛ(APAR, VPD, T) = stomatal_conductance(jarv, nothing, APAR, VPD, T, ca, p, FT(1))[1]
         gs_dim = gₛ(FT(1e-5), FT(1000), Tˡᵉᵃᶠ)
         gs_lit = gₛ(FT(1e-3), FT(1000), Tˡᵉᵃᶠ)
         gs_dry = gₛ(FT(1e-3), FT(3000), Tˡᵉᵃᶠ)
@@ -155,11 +155,11 @@ end
         @test gₛ(FT(1e-3), FT(1000), optimum) > gₛ(FT(1e-3), FT(1000), optimum - FT(15))
 
         # Scales linearly with the moisture-stress factor β and vanishes at β = 0.
-        gs_half = stomatal_conductance(jarv, nothing, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(0.5))[1]
+        gs_half = stomatal_conductance(jarv, nothing, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, p, FT(0.5))[1]
         @test gs_half ≈ gs_lit / 2
-        @test stomatal_conductance(jarv, nothing, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(0))[1] == 0
+        @test stomatal_conductance(jarv, nothing, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, p, FT(0))[1] == 0
 
-        @inferred stomatal_conductance(jarv, nothing, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, P, FT(1))
+        @inferred stomatal_conductance(jarv, nothing, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, p, FT(1))
     end
 end
 
@@ -175,7 +175,7 @@ end
         @test absorbed_par_value(FT(4e-4), nothing, LAI, nothing) == FT(4e-4)
 
         inter = InteractiveAbsorbedPAR(FT)
-        rad(SW) = (; ℐꜜˢʷ = - FT(SW))
+        rad(downwelling_shortwave) = (; ℐꜜˢʷ = - FT(downwelling_shortwave))
 
         # Night: no shortwave ⇒ no absorbed PAR.
         @test absorbed_par_value(inter, rad(0), LAI, nothing) == 0
@@ -205,8 +205,9 @@ end
 
         # Warm, wet surface under drier air → upward evaporation.
         function latent_heat(q_formulation)
-            model = coupled_land_model(arch; grid, Tair = 290.0, qair = 0.006, wind = 5.0, Tland = 300.0,
-                                       water = nothing, hydrology = SaturatedSurface(), radiation = nothing,
+            model = coupled_land_model(arch; grid, air_temperature = 290.0, air_specific_humidity = 0.006,
+                                       wind = 5.0, land_temperature = 300.0, water = nothing,
+                                       hydrology = SaturatedSurface(), radiation = nothing,
                                        atmosphere_land_interface_specific_humidity = q_formulation)
             return scalar(model.interfaces.atmosphere_land_interface.fluxes.latent_heat)
         end

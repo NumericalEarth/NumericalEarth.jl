@@ -33,11 +33,11 @@ end
 
 # The RTM's configured surface optics, which the land kernels read as the ground's.
 function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(rtm::BreezeRTM, exchange_grid; kw...)
-    ε = rtm.surface_radiation.surface_emissivity
+    ϵ = rtm.surface_radiation.surface_emissivity
     α = blue_sky_albedo(rtm)
     state = (; ℐꜜˢʷ = Field{Center, Center, Nothing}(exchange_grid),
                ℐꜜˡʷ = Field{Center, Center, Nothing}(exchange_grid),
-               surface_properties = (; land = SurfaceRadiationProperties(α, ε)))
+               surface_properties = (; land = SurfaceRadiationProperties(α, ϵ)))
 
     return ComponentExchanger(state, nothing)
 end

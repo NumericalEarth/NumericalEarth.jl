@@ -17,35 +17,35 @@ soil_hydrology(FT) = VariablySaturatedHydrology(FT;
 # Coupled single-column model. `interception = true` wraps the soil hydrology in an
 # `InterceptingHydrology`.
 function interception_model(arch, FT; leaf_area_index = 3.0, capacity = 0.1, rain = 1e-3,
-                            water_storage = 300.0, interception = true, fraction = nothing)
+                            water_storage = 300.0, interception = true, cover_fraction = nothing)
     hydrology = interception ?
         InterceptingHydrology(FT; soil = soil_hydrology(FT),
                               capacity_per_leaf_area = capacity) :
         soil_hydrology(FT)
-    cas = CanopyGroundSurface(FT;
+    canopy_surface = CanopyGroundSurface(FT;
         soil_humidity = bare_soil_humidity(FT),
         canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index,
                                            moisture_stress = CriticalSaturation(0.5),
                                            absorbed_par = InteractiveAbsorbedPAR(FT)),
         ground_heat_flux = SoilConductiveFlux(1.5, 0.05))
-    surface = LandSurface(cas)
-    isnothing(fraction) || (surface = TiledLandSurface(surface; fraction))
-    return coupled_land_model(arch, FT; Tair = 298, qair = 0.010, wind = 3, rain, hydrology, surface,
-                              Tland = 298, water = water_storage, shortwave = 400)
+    surface = LandSurface(canopy_surface)
+    isnothing(cover_fraction) || (surface = TiledLandSurface(surface; cover_fraction))
+    return coupled_land_model(arch, FT; air_temperature = 298, air_specific_humidity = 0.010, wind = 3, rain,
+                              hydrology, surface, land_temperature = 298, water = water_storage, shortwave = 400)
 end
 
 @testset "Tiled interception shares vegetation and conserves water" begin
     for arch in test_architectures
-        fraction, rain, Δt = 0.4, 1e-3, 60.0
-        model = interception_model(arch, Float64; fraction, rain)
+        cover_fraction, rain, Δt = 0.4, 1e-3, 60.0
+        model = interception_model(arch, Float64; cover_fraction, rain)
         land = model.land
-        before = scalar(land.water_storage) + fraction * scalar(land.prognostic.canopy_water_storage)
+        before = scalar(land.water_storage) + cover_fraction * scalar(land.prognostic.canopy_water_storage)
         time_step!(model, Δt)
-        after = scalar(land.water_storage) + fraction * scalar(land.prognostic.canopy_water_storage)
+        after = scalar(land.water_storage) + cover_fraction * scalar(land.prognostic.canopy_water_storage)
         vapor = scalar(model.interfaces.atmosphere_land_interface.fluxes.water_vapor)
         @test after - before ≈ Δt * (rain - vapor) atol = 1e-10
         @test land.hydrology.leaf_area_index == 3.0
-        @test land.hydrology.cover_fraction == fraction
+        @test land.hydrology.cover_fraction == cover_fraction
     end
 end
 
@@ -54,11 +54,11 @@ end
         grid = LatitudeLongitudeGrid(CPU(); size = 1, latitude = 10, longitude = 10, z = (-1, 0), topology = (Flat, Flat, Bounded))
         Δt = 60.0
         covers = (0.2, 0.8, 0.2, 0.0, 0.8)
-        fraction = FieldTimeSeries{Center, Center, Nothing}(grid, 0.0:Δt:4Δt)
+        cover_fraction = FieldTimeSeries{Center, Center, Nothing}(grid, 0.0:Δt:4Δt)
         for n in eachindex(covers)
-            set!(fraction[n], covers[n])
+            set!(cover_fraction[n], covers[n])
         end
-        model = interception_model(CPU(), Float64; fraction, rain)
+        model = interception_model(CPU(), Float64; cover_fraction, rain)
         land = model.land
         set!(land; canopy_water_storage = 0.15)
         update_state!(model)
@@ -129,16 +129,16 @@ end
 end
 
 @testset "Canopy store budget closes when the store empties mid-step" begin
-    Wᶜ, rain, Wᶜᵐᵃˣ, fⁱⁿᵗ, f, Δt = 0.05, 1e-4, 0.3, 0.6, 0.5, 600.0
-    for Eʷᵉᵗ in (0.0, 1e-4, 5e-4)   # the last asks for more than the store and the rain hold
-        Wᶜⁿ⁺¹, drip, throughfall = canopy_store_update(Wᶜ, rain, Eʷᵉᵗ, Wᶜᵐᵃˣ, fⁱⁿᵗ, f, f, Δt)
-        @test 0 ≤ Wᶜⁿ⁺¹ ≤ Wᶜᵐᵃˣ
+    Mᶜ, rain, Mᶜ⁺, fⁱⁿᵗ, f, Δt = 0.05, 1e-4, 0.3, 0.6, 0.5, 600.0
+    for Jʷᵉᵗ in (0.0, 1e-4, 5e-4)   # the last asks for more than the store and the rain hold
+        Mᶜⁿ⁺¹, drip, throughfall = canopy_store_update(Mᶜ, rain, Jʷᵉᵗ, Mᶜ⁺, fⁱⁿᵗ, f, f, Δt)
+        @test 0 ≤ Mᶜⁿ⁺¹ ≤ Mᶜ⁺
         @test drip ≥ 0
-        @test rain ≈ f * ((Wᶜⁿ⁺¹ - Wᶜ) / Δt + Eʷᵉᵗ) + throughfall atol = 1e-15
+        @test rain ≈ f * ((Mᶜⁿ⁺¹ - Mᶜ) / Δt + Jʷᵉᵗ) + throughfall atol = 1e-15
     end
 end
 
-@testset "Dry canopy (Wᶜ = 0) reduces to the bare CanopyGroundSurface bit-for-bit" begin
+@testset "Dry canopy (Mᶜ = 0) reduces to the bare CanopyGroundSurface bit-for-bit" begin
     for arch in test_architectures
         FT = Float64
         with    = interception_model(arch, FT; interception = true)   # store starts at 0
@@ -167,7 +167,7 @@ end
     for arch in test_architectures
         FT = Float64
         LAI = 3.0; c = 0.1
-        Wᶜᵐᵃˣ = c * LAI
+        Mᶜ⁺ = c * LAI
         model = interception_model(arch, FT; leaf_area_index = LAI, capacity = c, rain = 1e-3)
         land = model.land
         Δt = 600.0
@@ -176,9 +176,9 @@ end
             time_step!(model, Δt)
         end
 
-        Wᶜ = scalar(land.prognostic.canopy_water_storage)
-        @test 0 ≤ Wᶜ ≤ Wᶜᵐᵃˣ + eps(Wᶜᵐᵃˣ)
-        @test Wᶜ ≈ Wᶜᵐᵃˣ rtol=1e-6                       # heavy rain saturates the canopy
+        Mᶜ = scalar(land.prognostic.canopy_water_storage)
+        @test 0 ≤ Mᶜ ≤ Mᶜ⁺ + eps(Mᶜ⁺)
+        @test Mᶜ ≈ Mᶜ⁺ rtol=1e-6                       # heavy rain saturates the canopy
         # Wet canopy evaporates (potential rate), consistent interface ↔ land.
         @test scalar(model.interfaces.atmosphere_land_interface.temperature.canopy_evaporation) > 0
         @test scalar(land.fluxes.canopy_evaporation) ==
@@ -186,8 +186,8 @@ end
         # The land loses the atmospheric vapor flux less the wet-canopy share (to the
         # fixed-point tolerance of the source partition).
         Jᵛ = scalar(model.interfaces.atmosphere_land_interface.fluxes.water_vapor)
-        Ew = scalar(land.fluxes.canopy_evaporation)
-        @test scalar(land.fluxes.vapor_flux) ≈ Jᵛ - Ew rtol = 1e-5
+        Jʷᵉᵗ = scalar(land.fluxes.canopy_evaporation)
+        @test scalar(land.fluxes.vapor_flux) ≈ Jᵛ - Jʷᵉᵗ rtol = 1e-5
     end
 end
 
@@ -201,17 +201,17 @@ end
 
         # Off the clamp boundaries: a partially-full store draining/filling.
         set!(land; canopy_water_storage = 0.5 * c * LAI)
-        update_state!(model)   # refresh Eʷᵉᵗ with the reset store
+        update_state!(model)   # refresh Jʷᵉᵗ with the reset store
 
-        rain          = scalar(land.fluxes.liquid_precipitation_flux)   # raw rain the step will read
-        Ewet_demanded = scalar(land.fluxes.canopy_evaporation)          # interface Eʷᵉᵗ the step will consume
+        rain = scalar(land.fluxes.liquid_precipitation_flux)   # raw rain the step will read
+        Jʷᵉᵗ = scalar(land.fluxes.canopy_evaporation)          # interface Jʷᵉᵗ the step will consume
 
         time_step!(model, Δt)
 
-        dWcdt    = scalar(land.diagnostics.canopy_water_storage_tendency)
+        dMᶜdt    = scalar(land.diagnostics.canopy_water_storage_tendency)
         throughf = scalar(land.diagnostics.throughfall)
-        # Exact canopy water budget: rain = dWᶜ/dt + Eʷᵉᵗ + throughfall.
-        @test rain ≈ dWcdt + Ewet_demanded + throughf atol=1e-14
+        # Exact canopy water budget: rain = dMᶜ/dt + Jʷᵉᵗ + throughfall.
+        @test rain ≈ dMᶜdt + Jʷᵉᵗ + throughf atol=1e-14
         # The soil reads the throughfall; the rain accumulator is left as the coupler wrote it.
         @test scalar(land.fluxes.liquid_precipitation_flux) == rain
         # Interception caught a positive fraction ⇒ less than the raw rain reaches the soil.
@@ -223,7 +223,7 @@ end
     for arch in test_architectures
         FT = Float64
         LAI = 3.0; c = 0.1
-        # No rain, large step: the interface caps Eʷᵉᵗ at what the store holds, Wᶜ/Δt (to the
+        # No rain, large step: the interface caps Jʷᵉᵗ at what the store holds, Mᶜ/Δt (to the
         # tolerance of the canopy solve), so the atmosphere never receives water the canopy
         # did not lose.
         model = interception_model(arch, FT; leaf_area_index = LAI, capacity = c, rain = 0.0)
@@ -231,9 +231,9 @@ end
         set!(land; canopy_water_storage = 0.8 * c * LAI)
         Δt = 3600.0
         for _ in 1:200
-            Wᶜ⁻ = scalar(land.prognostic.canopy_water_storage)
+            Mᶜ⁻ = scalar(land.prognostic.canopy_water_storage)
             time_step!(model, Δt)
-            @test scalar(land.fluxes.canopy_evaporation) ≤ Wᶜ⁻ / Δt * (1 + 1e-5)
+            @test scalar(land.fluxes.canopy_evaporation) ≤ Mᶜ⁻ / Δt * (1 + 1e-5)
             @test scalar(land.prognostic.canopy_water_storage) ≥ 0
         end
         @test scalar(land.prognostic.canopy_water_storage) < 1e-3   # drains toward empty
@@ -297,10 +297,10 @@ end
         FT = Float32
         model = interception_model(arch, FT; leaf_area_index = 3.0f0, capacity = 0.1f0)
         time_step!(model, 600)
-        Wᶜ = scalar(model.land.prognostic.canopy_water_storage)
-        Ew = scalar(model.land.fluxes.canopy_evaporation)
-        @test Wᶜ isa Float32
-        @test isfinite(Wᶜ) && Wᶜ ≥ 0
-        @test isfinite(Ew)
+        Mᶜ = scalar(model.land.prognostic.canopy_water_storage)
+        Jʷᵉᵗ = scalar(model.land.fluxes.canopy_evaporation)
+        @test Mᶜ isa Float32
+        @test isfinite(Mᶜ) && Mᶜ ≥ 0
+        @test isfinite(Jʷᵉᵗ)
     end
 end

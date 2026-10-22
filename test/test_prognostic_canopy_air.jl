@@ -9,40 +9,41 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     AtmosphericThermodynamics
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 
-prognostic_test_cas(FT; kw...) = CanopyGroundSurface(FT;
+prognostic_test_canopy_surface(FT; kw...) = CanopyGroundSurface(FT;
     soil_humidity = bare_soil_humidity(FT),
     canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index = 4.0, moisture_stress = CriticalSaturation(0.5),
                                        absorbed_par = InteractiveAbsorbedPAR(FT)),
     ground_heat_flux = SoilConductiveFlux(1.5, 0.05), kw...)
 
-prognostic_test_model(arch, cas; shortwave = 600.0, longwave = 350.0,
-                      wind = 3.0, Tair = 300.0, qair = 0.008,
-                      Tland = 298.0, water = 45.0) =
-    coupled_land_model(arch; shortwave, longwave, wind, Tair, qair, Tland, water,
-                       atmosphere_land_interface_temperature = cas,
-                       atmosphere_land_interface_specific_humidity = cas)
+prognostic_test_model(arch, canopy_surface; shortwave = 600.0, longwave = 350.0,
+                      wind = 3.0, air_temperature = 300.0, air_specific_humidity = 0.008,
+                      land_temperature = 298.0, water = 45.0) =
+    coupled_land_model(arch; shortwave, longwave, wind, air_temperature, air_specific_humidity,
+                       land_temperature, water,
+                       atmosphere_land_interface_temperature = canopy_surface,
+                       atmosphere_land_interface_specific_humidity = canopy_surface)
 
 @testset "CanopyGroundSurface defaults to a diagnostic node" begin
-    cas = prognostic_test_cas(Float64)
+    canopy_surface = prognostic_test_canopy_surface(Float64)
 
     # A diagnostic node is massless, so it carries no state across time steps and the
     # flux path stays the one the massless closure has always taken.
-    model = prognostic_test_model(CPU(), cas)
+    model = prognostic_test_model(CPU(), canopy_surface)
     @test isempty(model.land.surface.prognostic)
 end
 
 @testset "advance_canopy_air" begin
-    x, x_eq, Σg, C = 300.0, 305.0, 50.0, 1e4
+    x, equilibrium, Σg, C = 300.0, 305.0, 50.0, 1e4
     τ = C / Σg
 
     # Exact exponential solution of the linearized node ODE.
     for Δt in (10.0, 300.0, 3600.0)
-        @test advance_canopy_air(x, x_eq, Σg, C, Δt) ≈ x_eq + (x - x_eq) * exp(-Δt / τ)
+        @test advance_canopy_air(x, equilibrium, Σg, C, Δt) ≈ equilibrium + (x - equilibrium) * exp(-Δt / τ)
     end
 
     # Δt = 0 (first update_state!) and C = 0 (massless) land on the equilibrium.
-    @test advance_canopy_air(x, x_eq, Σg, C, 0.0) == x_eq
-    @test advance_canopy_air(x, x_eq, Σg, 0.0, 300.0) == x_eq
+    @test advance_canopy_air(x, equilibrium, Σg, C, 0.0) == equilibrium
+    @test advance_canopy_air(x, equilibrium, Σg, 0.0, 300.0) == equilibrium
 
     # Hull-bounded: the update is a convex blend of the old value and the equilibrium.
     for (a, b, g, c, dt) in ((280.0, 310.0, 1.0, 1e5, 60.0), (310.0, 280.0, 200.0, 1e2, 600.0))
@@ -63,7 +64,7 @@ end
     for arch in test_architectures
         # --- initialization: before any time step the node lands on the equilibrium
         # of the first solve and the state fields are populated.
-        mp = prognostic_test_model(arch, prognostic_test_cas(Float64; storage = PrognosticCanopyAir()))
+        mp = prognostic_test_model(arch, prognostic_test_canopy_surface(Float64; storage = PrognosticCanopyAir()))
         Ts = mp.interfaces.atmosphere_land_interface.temperature
         T₀ = scalar(mp.land.surface.prognostic.temperature)
         q₀ = scalar(mp.land.surface.prognostic.specific_humidity)
@@ -73,7 +74,7 @@ end
 
         # --- daytime equivalence: at windy daytime the node's relaxation time is much
         # shorter than the step, so the prognostic column matches the diagnostic one.
-        md = prognostic_test_model(arch, prognostic_test_cas(Float64; storage = DiagnosticCanopyAir()))
+        md = prognostic_test_model(arch, prognostic_test_canopy_surface(Float64; storage = DiagnosticCanopyAir()))
         @test isempty(md.land.surface.prognostic)
         for _ in 1:24
             time_step!(md, 300.0)
@@ -85,38 +86,38 @@ end
         @test scalar(fp.sensible_heat) ≈ scalar(fd.sensible_heat) atol = 2
 
         # --- exact step ledger: flux to the atmosphere = Kirchhoff supply − storage
-        # tendency, with capacities Cᵀ = ρ cᵖ hᶜ and Cᵛ = ρ hᶜ. The shares are evaluated
+        # tendency, with capacities Cᵀ = ρ cᵖᵐ hᵃᶜ and Cᵛ = ρ hᵃᶜ. The shares are evaluated
         # at the same node the skins were solved against.
         T⁻ = scalar(mp.land.surface.prognostic.temperature)
         q⁻ = scalar(mp.land.surface.prognostic.specific_humidity)
         Δt = 300.0
         time_step!(mp, Δt)
-        T⁺ = scalar(mp.land.surface.prognostic.temperature)
-        q⁺ = scalar(mp.land.surface.prognostic.specific_humidity)
+        Tⁿ⁺¹ = scalar(mp.land.surface.prognostic.temperature)
+        qⁿ⁺¹ = scalar(mp.land.surface.prognostic.specific_humidity)
         ℂ  = AtmosphereThermodynamicsParameters(Float64)
         ρ  = AtmosphericThermodynamics.air_density(ℂ, 300.0, 101325.0, 0.008)
-        cᵖ = AtmosphericThermodynamics.cp_m(ℂ, 0.008)
+        cᵖᵐ = AtmosphericThermodynamics.cp_m(ℂ, 0.008)
         ℒ  = AtmosphericThermodynamics.latent_heat_vapor(ℂ, 300.0)
-        hᶜ = 10.0
-        Sᵀ = ρ * cᵖ * hᶜ * (T⁺ - T⁻) / Δt
-        Sᵛ = ℒ * ρ * hᶜ * (q⁺ - q⁻) / Δt
-        Hˡᵉᵃᶠ  = scalar(Ts.canopy_sensible_heat)
-        Hᵍ  = scalar(Ts.soil_sensible_heat)
-        LEˡᵉᵃᶠ = scalar(Ts.canopy_latent_heat)
-        LEᵍ = scalar(Ts.soil_latent_heat)
-        @test Hˡᵉᵃᶠ + Hᵍ - scalar(fp.sensible_heat) ≈ Sᵀ atol = 1e-6
-        @test LEˡᵉᵃᶠ + LEᵍ - scalar(fp.latent_heat) ≈ Sᵛ atol = 1e-6
+        hᵃᶜ = 10.0
+        Sᵀ = ρ * cᵖᵐ * hᵃᶜ * (Tⁿ⁺¹ - T⁻) / Δt
+        Sᵛ = ℒ * ρ * hᵃᶜ * (qⁿ⁺¹ - q⁻) / Δt
+        𝒬ᵀˡᵉᵃᶠ = scalar(Ts.canopy_sensible_heat)
+        𝒬ᵀᵍ    = scalar(Ts.ground_sensible_heat)
+        𝒬ᵛˡᵉᵃᶠ = scalar(Ts.canopy_latent_heat)
+        𝒬ᵛᵍ    = scalar(Ts.ground_latent_heat)
+        @test 𝒬ᵀˡᵉᵃᶠ + 𝒬ᵀᵍ - scalar(fp.sensible_heat) ≈ Sᵀ atol = 1e-6
+        @test 𝒬ᵛˡᵉᵃᶠ + 𝒬ᵛᵍ - scalar(fp.latent_heat) ≈ Sᵛ atol = 1e-6
 
-        # --- the skins balance against the exported node: leaf Rₙ = H + LE at the stored
+        # --- the skins balance against the exported node: leaf Rₙ = 𝒬ᵀˡᵉᵃᶠ + 𝒬ᵛˡᵉᵃᶠ at the stored
         # leaf temperature and node.
         ℂ  = AtmosphereThermodynamicsParameters(Float64)
         Tˡ = scalar(Ts.canopy); Tᵍ = scalar(Ts.ground)
         σ  = 5.670374419e-8; LAI = 4.0
-        εˡ = 0.98 * (1 - exp(-LAI)); εᵍ = 0.96
-        LWꜜᵍ = (1 - εˡ) * 350.0 + εˡ * σ * Tˡ^4
-        LWꜛᵍ = εᵍ * σ * Tᵍ^4 + (1 - εᵍ) * LWꜜᵍ
-        Rˡ = (1 - 0.15) * (1 - exp(-0.5 * LAI)) * 600.0 + εˡ * (350.0 + LWꜛᵍ) - 2 * εˡ * σ * Tˡ^4
-        @test Rˡ ≈ Hˡᵉᵃᶠ + LEˡᵉᵃᶠ atol = 1e-3
+        ϵˡ = 0.98 * (1 - exp(-LAI)); ϵᵍ = 0.96
+        ground_downwelling_longwave = (1 - ϵˡ) * 350.0 + ϵˡ * σ * Tˡ^4
+        ℐꜛˡʷᵍ = ϵᵍ * σ * Tᵍ^4 + (1 - ϵᵍ) * ground_downwelling_longwave
+        Rˡ = (1 - 0.15) * (1 - exp(-0.5 * LAI)) * 600.0 + ϵˡ * (350.0 + ℐꜛˡʷᵍ) - 2 * ϵˡ * σ * Tˡ^4
+        @test Rˡ ≈ 𝒬ᵀˡᵉᵃᶠ + 𝒬ᵛˡᵉᵃᶠ atol = 1e-3
 
         # --- the node stays inside the hull of its sources.
         θᵃᵗ = 300.0
@@ -129,10 +130,10 @@ end
     # The prognostic node keeps every exit finite, supply-consistent through the
     # ledger, and free of kW-scale artifacts.
     for arch in test_architectures
-        cas = prognostic_test_cas(Float64; storage = PrognosticCanopyAir())
-        mp = prognostic_test_model(arch, cas; shortwave = 50.0, longwave = 350.0,
-                                   wind = 0.2, Tair = 304.0, qair = 0.008,
-                                   Tland = 310.0, water = 135.0)
+        canopy_surface = prognostic_test_canopy_surface(Float64; storage = PrognosticCanopyAir())
+        mp = prognostic_test_model(arch, canopy_surface; shortwave = 50.0, longwave = 350.0,
+                                   wind = 0.2, air_temperature = 304.0, air_specific_humidity = 0.008,
+                                   land_temperature = 310.0, water = 135.0)
         Ts = mp.interfaces.atmosphere_land_interface.temperature
         fp = mp.interfaces.atmosphere_land_interface.fluxes
         for _ in 1:48

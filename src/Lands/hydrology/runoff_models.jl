@@ -48,7 +48,7 @@ Base.summary(::NoRunoff) = "NoRunoff"
 """
     InfiltrationCapacityRunoff(FT = Oceananigans.defaults.FloatType;
                                infiltration_capacity,
-                               drainage_timescale = nothing)
+                               drainage_time_scale = nothing)
 
 Cap the downward infiltration rate at `infiltration_capacity` (kg m⁻² s⁻¹,
 positive magnitude; a number or a per-cell `Field`):
@@ -58,9 +58,9 @@ J^{ls} = \\max(-P^l, -J^l_{cap}), \\qquad R^{\\mathrm{sfc}} = J^{ls} + P^l \\ge 
 ```
 
 By default the excess `Rˢᶠᶜ` leaves as surface runoff within the step. With a
-`drainage_timescale` `τ` (s) it instead ponds in the prognostic surface water store
-`Sˢᶠᶜ` (kg m⁻²), which is offered back to infiltration together with the rain each
-step and drains to surface runoff as a linear reservoir, `dSˢᶠᶜ/dt = −Sˢᶠᶜ/τ`
+`drainage_time_scale` `τ` (s) it instead ponds in the prognostic surface water store
+`Mˢᶠᶜ` (kg m⁻²), which is offered back to infiltration together with the rain each
+step and drains to surface runoff as a linear reservoir, `dMˢᶠᶜ/dt = −Mˢᶠᶜ/τ`
 (the water ponded during the step decays with it). The store exchanges mass only.
 
 No subsurface runoff.
@@ -68,26 +68,26 @@ No subsurface runoff.
 ```jldoctest
 julia> using NumericalEarth
 
-julia> summary(InfiltrationCapacityRunoff(infiltration_capacity = 1e-3, drainage_timescale = 3600))
-"InfiltrationCapacityRunoff(infiltration_capacity=0.001, drainage_timescale=3600.0)"
+julia> summary(InfiltrationCapacityRunoff(infiltration_capacity = 1e-3, drainage_time_scale = 3600))
+"InfiltrationCapacityRunoff(infiltration_capacity=0.001, drainage_time_scale=3600.0)"
 ```
 """
 struct InfiltrationCapacityRunoff{C, T}
     infiltration_capacity :: C
-    drainage_timescale    :: T
+    drainage_time_scale   :: T
 end
 
 InfiltrationCapacityRunoff(FT::Type = Oceananigans.defaults.FloatType;
                            infiltration_capacity,
-                           drainage_timescale = nothing) =
+                           drainage_time_scale = nothing) =
     InfiltrationCapacityRunoff(normalize_property(FT, infiltration_capacity),
-                               isnothing(drainage_timescale) ? nothing : convert(FT, drainage_timescale))
+                               isnothing(drainage_time_scale) ? nothing : convert(FT, drainage_time_scale))
 
 Adapt.adapt_structure(to, c::InfiltrationCapacityRunoff) =
-    InfiltrationCapacityRunoff(Adapt.adapt(to, c.infiltration_capacity), c.drainage_timescale)
+    InfiltrationCapacityRunoff(Adapt.adapt(to, c.infiltration_capacity), c.drainage_time_scale)
 
 prognostic_variables(c::InfiltrationCapacityRunoff) =
-    isnothing(c.drainage_timescale) ? () : (:surface_water_storage,)
+    isnothing(c.drainage_time_scale) ? () : (:surface_water_storage,)
 
 @inline function surface_liquid_flux_and_runoff(i, j, grid, c::InfiltrationCapacityRunoff,
                                                 Pˡ, M, θˡ, 𝒮, Π, K)
@@ -115,19 +115,19 @@ end
 end
 
 # The pond is offered to infiltration with the rain; the excess ponds again, and the
-# share `f` of it that survives the step's linear drain stays in the store.
+# share `retained_fraction` of it that survives the step's linear drain stays in the store.
 @inline function surface_water_balance!(i, j, grid, c::InfiltrationCapacityRunoff{<:Any, <:Number},
                                         prognostic, Pˡ, M, M⁺, θˡ, 𝒮, Π, K, Δt)
-    S = prognostic.surface_water_storage
-    @inbounds Sⁿ = S[i, j, 1]
-    Jˡˢ, Rˢᶠᶜ = surface_liquid_flux_and_runoff(i, j, grid, c, Pˡ + Sⁿ / Δt, M, θˡ, 𝒮, Π, K)
+    Mˢᶠᶜ = prognostic.surface_water_storage
+    @inbounds Mˢᶠᶜⁿ = Mˢᶠᶜ[i, j, 1]
+    Jˡˢ, Rˢᶠᶜ = surface_liquid_flux_and_runoff(i, j, grid, c, Pˡ + Mˢᶠᶜⁿ / Δt, M, θˡ, 𝒮, Π, K)
     Jˡˢ, Rˢᶠᶜ = pore_limited_surface_flux(Jˡˢ, Rˢᶠᶜ, M, M⁺, Δt)
-    f = exp(-Δt / c.drainage_timescale)
-    @inbounds S[i, j, 1] = f * Δt * Rˢᶠᶜ
-    return Jˡˢ, (1 - f) * Rˢᶠᶜ
+    retained_fraction = exp(-Δt / c.drainage_time_scale)
+    @inbounds Mˢᶠᶜ[i, j, 1] = retained_fraction * Δt * Rˢᶠᶜ
+    return Jˡˢ, (1 - retained_fraction) * Rˢᶠᶜ
 end
 
 Base.summary(c::InfiltrationCapacityRunoff) =
     string("InfiltrationCapacityRunoff(infiltration_capacity=", prettysummary(c.infiltration_capacity),
-           isnothing(c.drainage_timescale) ? "" : string(", drainage_timescale=", prettysummary(c.drainage_timescale)),
+           isnothing(c.drainage_time_scale) ? "" : string(", drainage_time_scale=", prettysummary(c.drainage_time_scale)),
            ")")

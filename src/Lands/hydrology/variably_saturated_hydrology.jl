@@ -16,7 +16,7 @@
 ##### storage is reached only through upward Darcy flux or dew.
 #####
 ##### Diagnostics published every step:
-#####   * `deep_liquid_flux`          (Jₙ, across the column bottom)
+#####   * `deep_liquid_flux`          (Jˡₙ, across the column bottom)
 #####   * `interlayer_liquid_flux_k`  (Jˡₖ for k < N; several layers only)
 #####   * `surface_liquid_flux`       (Jˡˢ = −Pˡ + Rˢᶠᶜ)
 #####   * `surface_runoff`            (Rˢᶠᶜ ≥ 0)
@@ -181,34 +181,34 @@ interlayer_fluxes(h, land) = map(name -> getproperty(land.diagnostics, name), in
 ##### Per-layer state at one cell
 #####
 
-# Liquid fraction θ and effective saturation 𝒮 of layer `k` holding water `M`.
+# Liquid fraction θˡ and effective saturation 𝒮 of layer `k` holding water `M`.
 @inline function layer_saturation(h, M, k, i, j, grid)
     FT   = typeof(M)
-    hₗ   = convert(FT, stateindex(layer(h.slab_depth, k), i, j, 1))
+    hₖ   = convert(FT, stateindex(layer(h.slab_depth, k), i, j, 1))
     ν    = convert(FT, stateindex(h.porosity, i, j, 1))
     θʳ   = convert(FT, stateindex(h.residual_liquid_fraction, i, j, 1))
-    ρˡhₗ = convert(FT, h.liquid_density) * hₗ
-    θ    = min(M / ρˡhₗ, ν)
-    𝒮    = clamp((θ - θʳ) / (ν - θʳ), zero(FT), one(FT))
-    return θ, 𝒮
+    ρˡhₖ = convert(FT, h.liquid_density) * hₖ
+    θˡ   = min(M / ρˡhₖ, ν)
+    𝒮    = clamp((θˡ - θʳ) / (ν - θʳ), zero(FT), one(FT))
+    return θˡ, 𝒮
 end
 
-# θ, 𝒮, pressure head Π, its storage derivative dΠ/dM, K, and the pore capacity M⁺ of layer `k`
+# θˡ, 𝒮, pressure head Π, its storage derivative dΠ/dM, K, and the pore capacity M⁺ of layer `k`
 # holding water `M`.
 @inline function layer_state(h, M, T, k, i, j, grid)
     FT   = typeof(M)
-    hₗ   = convert(FT, stateindex(layer(h.slab_depth, k), i, j, 1))
+    hₖ   = convert(FT, stateindex(layer(h.slab_depth, k), i, j, 1))
     ν    = convert(FT, stateindex(h.porosity, i, j, 1))
     θʳ   = convert(FT, stateindex(h.residual_liquid_fraction, i, j, 1))
     hˢˢ  = convert(FT, stateindex(h.storage_height, i, j, 1))
-    ρˡhₗ = convert(FT, h.liquid_density) * hₗ
-    M⁺   = ν * ρˡhₗ
-    θ, 𝒮 = layer_saturation(h, M, k, i, j, grid)
+    ρˡhₖ = convert(FT, h.liquid_density) * hₖ
+    M⁺   = ν * ρˡhₖ
+    θˡ, 𝒮 = layer_saturation(h, M, k, i, j, grid)
     saturated = M ≥ M⁺
-    Π    = ifelse(saturated, (M - M⁺) * hˢˢ / ρˡhₗ, pressure_head(i, j, grid, h.retention_curve, 𝒮))
-    dΠdM = ifelse(saturated, hˢˢ, pressure_head_derivative(i, j, grid, h.retention_curve, 𝒮) / (ν - θʳ)) / ρˡhₗ
+    Π    = ifelse(saturated, (M - M⁺) * hˢˢ / ρˡhₖ, pressure_head(i, j, grid, h.retention_curve, 𝒮))
+    dΠdM = ifelse(saturated, hˢˢ, pressure_head_derivative(i, j, grid, h.retention_curve, 𝒮) / (ν - θʳ)) / ρˡhₖ
     K    = hydraulic_conductivity(i, j, grid, layer(h.hydraulic_conductivity, k), 𝒮, T)
-    return (; θ, 𝒮, Π, dΠdM, K, M⁺)
+    return (; θˡ, 𝒮, Π, dΠdM, K, M⁺)
 end
 
 # Surface (top-layer) and root-weighted saturations of a column holding `M`.
@@ -246,22 +246,22 @@ end
             above = (zero(FT), Base.front(transfers)...)
             upper_storage = storage[k] - above[k]
             lower_storage = storage[k+1] + transfers[k+1]
-            lo, hi = -upper_storage, lower_storage
-            transfer = clamp(zero(FT), lo, hi)
+            lower_bound, upper_bound = -upper_storage, lower_storage
+            transfer = clamp(zero(FT), lower_bound, upper_bound)
             iteration = 0
             tolerance = eps(FT) * max(1, abs(upper_storage), abs(lower_storage))
-            while (hi > lo) & (iteration < 2precision(FT) + 4)
+            while (upper_bound > lower_bound) & (iteration < 2precision(FT) + 4)
                 s₁ = layer_state(h, upper_storage + transfer, T, k, i, j, grid)
                 s₂ = layer_state(h, lower_storage - transfer, T, k + 1, i, j, grid)
                 Λ, flux = interlayer_exchange(h, s₁, s₂, T, k, i, j, grid)
                 residual = transfer - Δt * flux
                 converged = abs(residual) ≤ tolerance
-                lo = ifelse((residual ≤ 0) | converged, transfer, lo)
-                hi = ifelse((residual ≥ 0) | converged, transfer, hi)
+                lower_bound = ifelse((residual ≤ 0) | converged, transfer, lower_bound)
+                upper_bound = ifelse((residual ≥ 0) | converged, transfer, upper_bound)
                 candidate = transfer - residual / (1 + Δt * Λ * (s₁.dΠdM + s₂.dΠdM))
                 # Alternate a bounded head-Newton step with bisection to guarantee bracket contraction.
-                newton = iseven(iteration) & (candidate > lo) & (candidate < hi)
-                transfer = ifelse(newton, candidate, (lo + hi) / 2)
+                newton = iseven(iteration) & (candidate > lower_bound) & (candidate < upper_bound)
+                transfer = ifelse(newton, candidate, (lower_bound + upper_bound) / 2)
                 iteration += 1
             end
             transfers = Base.setindex(transfers, transfer, k)
@@ -301,47 +301,48 @@ end
         Jᵛᵢⱼ = Jᵛ[i, j, 1]
         Jᵗᵢⱼ = Jᵗ[i, j, 1]
         Pˡᵢⱼ = Pˡ[i, j, 1]
-        Tij  = T[i, j, 1]
+        Tᵢⱼ  = T[i, j, 1]
         Πᵈ   = stateindex(deep_pressure_head, i, j, 1, grid, Time(time), (Center, Center, Center))
     end
     FT = typeof(Jᵛᵢⱼ)
     δt = convert(FT, Δt)
-    s  = ntuple(k -> layer_state(h, Mⁿ[k], Tij, k, i, j, grid), Val(N))
+    s  = ntuple(k -> layer_state(h, Mⁿ[k], Tᵢⱼ, k, i, j, grid), Val(N))
     s₁, sₙ = s[1], s[end]
 
     # Surface fluxes on the top layer, the deep closure under the last, Darcy exchanges between.
-    Jˡˢ, Rˢᶠᶜ = surface_water_balance!(i, j, grid, h.runoff, prognostic, Pˡᵢⱼ, Mⁿ[1], s₁.M⁺, s₁.θ, s₁.𝒮, s₁.Π, s₁.K, δt)
+    Jˡˢ, Rˢᶠᶜ = surface_water_balance!(i, j, grid, h.runoff, prognostic, Pˡᵢⱼ, Mⁿ[1], s₁.M⁺, s₁.θˡ, s₁.𝒮, s₁.Π, s₁.K, δt)
     Rˡᵃᵗ      = subsurface_runoff(h.runoff, Mⁿ[1], s₁.Π, s₁.K)
-    Jᵇ        = deep_liquid_flux(h.deep_liquid_flux, Mⁿ[end], sₙ.θ, sₙ.𝒮, sₙ.Π, sₙ.K, Πᵈ, time)
+    Jˡₙ       = deep_liquid_flux(h.deep_liquid_flux, Mⁿ[end], sₙ.θˡ, sₙ.𝒮, sₙ.Π, sₙ.K, Πᵈ, time)
     bottom_slope = -deep_liquid_flux_head_derivative(h.deep_liquid_flux, sₙ.K) * sₙ.dΠdM
 
     # Root-weighted share of the transpiration, fₖ = rₖ 𝒮ₖ / Σⱼ rⱼ 𝒮ⱼ (Oleson et al. 2013, eqs. 7.107
     # and 8.26); all from the top layer of a dry column.
-    w   = map(*, h.root_fraction, map(x -> x.𝒮, s))
-    Σw  = sum(w)
-    wet = Σw > 0
-    f   = ntuple(k -> ifelse(wet, w[k] / ifelse(wet, Σw, one(FT)), FT(k == 1)), Val(N))
+    r𝒮             = map(*, h.root_fraction, map(x -> x.𝒮, s))
+    Σr𝒮            = sum(r𝒮)
+    has_root_water = Σr𝒮 > 0
+    f              = ntuple(k -> ifelse(has_root_water, r𝒮[k] / ifelse(has_root_water, Σr𝒮, one(FT)), FT(k == 1)),
+                            Val(N))
 
     loss = ntuple(k -> f[k] * Jᵗᵢⱼ + ifelse(k == 1, Jᵛᵢⱼ - Jᵗᵢⱼ + Jˡˢ + Rˡᵃᵗ, zero(FT)), Val(N))
     storage = map((m, l) -> m - δt * l, Mⁿ, loss)
-    transfers = implicit_darcy_transfers(h, storage, Mⁿ[end], Jᵇ, bottom_slope, δt, Tij, i, j, grid)
+    transfers = implicit_darcy_transfers(h, storage, Mⁿ[end], Jˡₙ, bottom_slope, δt, Tᵢⱼ, i, j, grid)
     transfers_above = (zero(FT), Base.front(transfers)...)
     Mⁿ⁺¹ = map((m, q, a) -> max(m + q - a, 0), storage, transfers, transfers_above)
-    J = map(q -> q / δt, transfers)
+    Jˡ = map(q -> q / δt, transfers)
 
     @inbounds begin
         for k in 1:N
             M[k][i, j, 1] = Mⁿ⁺¹[k]
         end
         for k in 1:N-1
-            interlayer_flux_fields[k][i, j, 1] = J[k]
+            interlayer_flux_fields[k][i, j, 1] = Jˡ[k]
         end
-        diagnostics.deep_liquid_flux[i, j, 1]       = J[end]
+        diagnostics.deep_liquid_flux[i, j, 1]       = Jˡ[end]
         diagnostics.surface_liquid_flux[i, j, 1]    = Jˡˢ
         diagnostics.surface_runoff[i, j, 1]         = Rˢᶠᶜ
         diagnostics.subsurface_runoff[i, j, 1]      = Rˡᵃᵗ
         diagnostics.water_storage_tendency[i, j, 1] = (Mⁿ⁺¹[1] - Mⁿ[1]) / δt
-        surface_saturation, root_zone_saturation = column_saturations(h, Mⁿ⁺¹, Tij, i, j, grid)
+        surface_saturation, root_zone_saturation = column_saturations(h, Mⁿ⁺¹, Tᵢⱼ, i, j, grid)
         saturation[i, j, 1]                       = surface_saturation
         diagnostics.root_zone_saturation[i, j, 1] = root_zone_saturation
         diagnostics.column_water_storage[i, j, 1] = sum(Mⁿ⁺¹)

@@ -227,11 +227,11 @@ function surface_layer_diagnostics(model, interface::TiledLandInterface; kw...)
     return map(vegetated, bare) do vegetated_profile, bare_profile
         KernelFunctionOperation{Center, Center, Nothing}(tiled_surface_layer_profile, grid,
                                                          vegetated_profile, bare_profile,
-                                                         interface.fraction, model.clock)
+                                                         interface.cover_fraction, model.clock)
     end
 end
 
-@inline function tiled_surface_layer_profile(i, j, k, grid, vegetated, bare, fraction, clock)
-    f = clamp(state2dindex(fraction, i, j, grid, Time(clock.time)), 0, 1)
+@inline function tiled_surface_layer_profile(i, j, k, grid, vegetated, bare, cover_fraction, clock)
+    f = clamp(state2dindex(cover_fraction, i, j, grid, Time(clock.time)), 0, 1)
     return @inbounds f * vegetated[i, j, k] + (1 - f) * bare[i, j, k]
 end

@@ -327,7 +327,7 @@ Consume atmosphere-land turbulent fluxes and populate the
 and `liquid_precipitation_flux` accumulators declared by the land closures.
 
 * `surface_energy_flux`        ← `𝒬ᵀ + 𝒬ᵛ`, positive upward (out of the slab), or the
-                                 skin→bulk conduction `−Λᵍ (Tₛ − Tˡᵃ)` when the interface
+                                 skin→bulk conduction `−Λᵍ (Tᵍ − Tˡᵃ)` when the interface
                                  temperature formulation closes its own energy balance.
 * `precipitation`              ← rainfall + condensation, positive into the slab.
 * `evaporation`                ← positive part of upward vapor flux.
@@ -350,13 +350,13 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     grid = land.grid
     arch = architecture(grid)
 
-    P   = get(fluxes, :precipitation, nothing)
-    E   = get(fluxes, :evaporation, nothing)
-    Jv  = get(fluxes, :vapor_flux, nothing)
-    Es  = get(fluxes, :surface_energy_flux, nothing)
-    Pl  = get(fluxes, :liquid_precipitation_flux, nothing)
-    Cev = get(fluxes, :canopy_evaporation, nothing)
-    Jt  = get(fluxes, :transpiration, nothing)
+    P                  = get(fluxes, :precipitation, nothing)
+    E                  = get(fluxes, :evaporation, nothing)
+    Jv                 = get(fluxes, :vapor_flux, nothing)
+    Es                 = get(fluxes, :surface_energy_flux, nothing)
+    Pl                 = get(fluxes, :liquid_precipitation_flux, nothing)
+    canopy_evaporation = get(fluxes, :canopy_evaporation, nothing)
+    transpiration      = get(fluxes, :transpiration, nothing)
 
     (isnothing(P) && isnothing(E) &&
      isnothing(Jv) && isnothing(Es) && isnothing(Pl)) && return nothing
@@ -369,26 +369,27 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     Jʳⁿ = hasproperty(atmos_state, :Jʳⁿ) ? atmos_state.Jʳⁿ : ZeroField()
 
     launch!(arch, grid, :xy, _assemble_slab_land_fluxes!,
-            P, E, Jv, Jt, Es, Pl, Cev, interface_fluxes, Jʳⁿ)
+            P, E, Jv, transpiration, Es, Pl, canopy_evaporation, interface_fluxes, Jʳⁿ)
     return nothing
 end
 
-@kernel function _assemble_slab_land_fluxes!(P, E, Jv, Jt, Es, Pl, Cev, interface_fluxes, Jʳⁿ)
+@kernel function _assemble_slab_land_fluxes!(P, E, Jv, transpiration, Es, Pl, canopy_evaporation,
+                                             interface_fluxes, Jʳⁿ)
     i, j = @index(Global, NTuple)
     @inbounds begin
         𝒬 = interface_fluxes.energy[i, j, 1]
-        Jˡᵃ = interface_fluxes.vapor[i, j, 1]
+        Jᵛ = interface_fluxes.vapor[i, j, 1]
         Jᵗ = interface_fluxes.transpiration[i, j, 1]
-        Eᶜ = interface_fluxes.canopy_evaporation[i, j, 1]
+        Jʷᵉᵗ = interface_fluxes.canopy_evaporation[i, j, 1]
         rain = Jʳⁿ[i, j, 1]
     end
-    maybe_write!(Es,  i, j, 𝒬)
-    maybe_write!(P,   i, j, rain + max(0, -Jˡᵃ))
-    maybe_write!(E,   i, j, max(0, Jˡᵃ))
-    maybe_write!(Jv,  i, j, Jˡᵃ)
-    maybe_write!(Jt,  i, j, max(0, Jᵗ))
-    maybe_write!(Cev, i, j, Eᶜ)
-    maybe_write!(Pl,  i, j, rain)
+    maybe_write!(Es,                 i, j, 𝒬)
+    maybe_write!(P,                  i, j, rain + max(0, -Jᵛ))
+    maybe_write!(E,                  i, j, max(0, Jᵛ))
+    maybe_write!(Jv,                 i, j, Jᵛ)
+    maybe_write!(transpiration,      i, j, max(0, Jᵗ))
+    maybe_write!(canopy_evaporation, i, j, Jʷᵉᵗ)
+    maybe_write!(Pl,                 i, j, rain)
 end
 
 EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabLand, coupled_model) = nothing

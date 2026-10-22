@@ -72,15 +72,15 @@ bare_soil_humidity(FT) = DryLayerHumidity(FT;
 function coupled_land_components(arch, FT = Float64;
                                  grid = LatitudeLongitudeGrid(arch, FT; size = 1, latitude = 10, longitude = 10,
                                                               z = (-1, 0), topology = (Flat, Flat, Bounded)),
-                                 Tair = 300.0, qair = 0.008, wind = 3.0, pressure = 101325.0, rain = nothing,
-                                 hydrology = BucketHydrology(FT; maximum_water_storage = 150.0),
-                                 Tland = 298.0, water = 45.0, surface = LandSurface(),
+                                 air_temperature = 300.0, air_specific_humidity = 0.008, wind = 3.0, pressure = 101325.0,
+                                 rain = nothing, hydrology = BucketHydrology(FT; maximum_water_storage = 150.0),
+                                 land_temperature = 298.0, water = 45.0, surface = LandSurface(),
                                  shortwave = 600.0, longwave = 350.0, α = 0.2, ϵ = 0.95,
                                  radiation = PrescribedRadiation(grid; ocean_surface = nothing, sea_ice_surface = nothing,
                                                                  land_surface = SurfaceRadiationProperties(α, ϵ)))
     atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10, boundary_layer_height = 512)
-    fill!(parent(atmosphere.temperature), Tair)
-    fill!(parent(atmosphere.specific_humidity), qair)
+    fill!(parent(atmosphere.temperature), air_temperature)
+    fill!(parent(atmosphere.specific_humidity), air_specific_humidity)
     fill!(parent(atmosphere.velocities.u), wind)
     fill!(parent(atmosphere.pressure), pressure)
     if !isnothing(rain)
@@ -89,7 +89,7 @@ function coupled_land_components(arch, FT = Float64;
     end
 
     land = SlabLand(grid; hydrology, energy = SlabEnergy(FT), surface)
-    set!(land; T = Tland)
+    set!(land; T = land_temperature)
     isnothing(water) || fill!(parent(land.water_storage), water)
 
     if !isnothing(radiation)
@@ -101,8 +101,9 @@ function coupled_land_components(arch, FT = Float64;
     return grid, atmosphere, land, radiation
 end
 
-const coupled_land_component_keys = (:grid, :Tair, :qair, :wind, :pressure, :rain, :hydrology,
-                                     :Tland, :water, :surface, :shortwave, :longwave, :α, :ϵ, :radiation)
+const coupled_land_component_keys = (:grid, :air_temperature, :air_specific_humidity, :wind, :pressure, :rain,
+                                     :hydrology, :land_temperature, :water, :surface, :shortwave, :longwave,
+                                     :α, :ϵ, :radiation)
 
 # Surface formulations configure the land; transport keywords configure the interface.
 function coupled_land_model(arch, FT = Float64; time = nothing, kw...)

@@ -39,8 +39,8 @@ The boundary solve computes turbulent fluxes and candidate surface updates from 
 current land state. The land step applies each update once. Canopy-air and skin storage
 are checkpointed with the land; interface temperatures and flux partitions are diagnostics.
 
-For vegetated and bare tiles, use `TiledLandSurface(LandSurface(canopy); fraction=0.6)`
-as the land's `surface`. `InterceptingHydrology` then derives its LAI and cover fraction
+For vegetated and bare tiles, use `TiledLandSurface(LandSurface(canopy); cover_fraction=0.6)`
+as the land's `surface`. `InterceptingHydrology` then derives its leaf area index and cover fraction
 from the same configuration. Separate tile roughnesses can be supplied through
 `TiledLandInterface`'s `vegetated_fluxes` and `bare_fluxes` keywords.
 

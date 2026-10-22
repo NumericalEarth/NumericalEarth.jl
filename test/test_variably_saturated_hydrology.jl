@@ -271,14 +271,14 @@ end
                                z = (-1, 0),
                                topology = (Flat, Flat, Bounded))
 
-        ponded_hydrology(drainage_timescale; infiltration_capacity = 1e-3) =
+        ponded_hydrology(drainage_time_scale; infiltration_capacity = 1e-3) =
             VariablySaturatedHydrology(eltype(grid);
                 slab_depth = 1.0,
                 porosity = 0.4,
                 storage_height = 1000,
                 retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
                 hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
-                runoff = InfiltrationCapacityRunoff(; infiltration_capacity, drainage_timescale))
+                runoff = InfiltrationCapacityRunoff(; infiltration_capacity, drainage_time_scale))
 
         value(field) = only(Array(interior(field)))
 
