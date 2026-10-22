@@ -334,10 +334,11 @@ end
 # skips the generic `FieldTimeSeries(metadata, grid)` constructor's redundant
 # `native_grid` rebuild + column-mean equality check (once per variable).
 function era5_native_pressure_fts(metadata, grid;
-                                  time_indexing = Cyclical(),
+                                  time_indexing = nothing,
                                   time_indices_in_memory = nothing)
     Downloads.download(metadata)
     times = convert.(eltype(grid), native_times(metadata))
+    time_indexing = something(time_indexing, length(times) > 1 ? Cyclical() : Linear())
 
     # As in the generic constructor: a window-averaged series repeats over the span its
     # windows tile, not over the node span Oceananigans would infer.

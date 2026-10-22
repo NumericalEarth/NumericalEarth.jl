@@ -994,3 +994,19 @@ end
         @test maximum(abs, Field(prognostic_fields(rerun_model.child)[name] - field)) == 0
     end
 end
+
+@testset "StateExchanger: a single-time parent fills its derived state on $(arch)" for arch in test_architectures
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    grid = LatitudeLongitudeGrid(arch; size = (6, 6, 4), longitude = (-2, 2), latitude = (34, 38), z = (0, 16000),
+                                 halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(grid, [0.0])
+    set!(parent.temperature,       (λ, φ, z, t) -> 288 - 6.5e-3 * z)
+    set!(parent.specific_humidity, (λ, φ, z, t) -> 0.006)
+    set!(parent.velocities.u,      (λ, φ, z, t) -> 8)
+    set!(parent.velocities.v,      (λ, φ, z, t) -> 1)
+    set!(parent.pressure,          (λ, φ, z, t) -> 1e5 * exp(-z / 8000))
+
+    exchanger = ext.state_exchanger(parent, 1e5, ThermodynamicConstants(); condensates = nothing)
+    ρᵈ = Array(interior(exchanger.prognostic.ρᵈ[1]))
+    @test all(isfinite, ρᵈ) && all(>(0), ρᵈ)
+end
