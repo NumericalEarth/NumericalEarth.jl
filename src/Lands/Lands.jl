@@ -68,12 +68,12 @@ using Base: ForwardOrdering
 using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
 using NumericalEarth.EarthSystemModels.InterfaceComputations: InterfaceComputations,
-                                                 BulkTemperature, BulkHumidity, CanopyAirSpace, TiledLandInterface,
+                                                 BulkTemperature, BulkHumidity, CanopyGroundSurface, TiledLandInterface,
                                                  CanopyConductanceHumidity, FractionalHumidity, PlantAvailableWaterStress,
                                                  DryLayerHumidity, ConstantTortuosity, PowerLawTortuosity,
                                                  effective_vapor_diffusivity, surface_hydrology,
                                                  EnergyBalanceTemperature, DiagnosticSkin,
-                                                 PrognosticCanopyAirSpace, PrognosticEnergyBalanceTemperature,
+                                                 PrognosticCanopyGroundSurface, PrognosticEnergyBalanceTemperature,
                                                  interface_kernel_parameters, ComponentExchanger,
                                                  canopy_transmittance, canopy_leaf_area_index, land_surface_fluxes
 

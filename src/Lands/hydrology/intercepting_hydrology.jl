@@ -10,7 +10,7 @@ $(TYPEDSIGNATURES)
 Canopy water store `Wᶜ` (kg m⁻²) wrapping a [`VariablySaturatedHydrology`](@ref)
 `soil`. Rain is caught by the Beer–Lambert canopy fraction `1 − e^{−KΩ·LAI}` up to the
 capacity `c·LAI`; the wet canopy evaporates at the rate `Eʷᵉᵗ` the interface computes
-(a [`CanopyAirSpace`](@ref) with `CanopyInterception`), and the uncaught rain plus the
+(a [`CanopyGroundSurface`](@ref)), and the uncaught rain plus the
 over-capacity drip reach the soil as throughfall.
 
 `leaf_area_index` and `cover_fraction` default to the land surface's canopy LAI and

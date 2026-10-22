@@ -1,5 +1,5 @@
 #####
-##### `TiledLandInterface` — a mosaic of a vegetated `CanopyAirSpace` tile and a bare-soil
+##### `TiledLandInterface` — a mosaic of a vegetated `CanopyGroundSurface` tile and a bare-soil
 ##### skin tile over one soil column; each tile runs the single-tile interface solve and
 ##### the fluxes are area-weighted, 𝒬 = f 𝒬ᵛᵉᵍ + (1 − f) 𝒬ᵇᵃʳᵉ.
 #####
@@ -14,11 +14,11 @@ and temperatures the atmosphere and slab read. Build it with
 `atmosphere_land_interface = …` to `AtmosphereLandModel` / `ComponentInterfaces`.
 
 Fields:
-- `vegetated`   : the forested tile, an `AtmosphereInterface` with a [`CanopyAirSpace`](@ref).
+- `vegetated`   : the forested tile, an `AtmosphereInterface` with a [`CanopyGroundSurface`](@ref).
 - `bare`        : the bare-soil tile, an `AtmosphereInterface` with an [`EnergyBalanceTemperature`](@ref).
 - `fraction`    : the forested fraction `f ∈ [0, 1]` — a `Number`, `Field`, or `FieldTimeSeries`.
 - `fluxes`      : the blended [`AtmosphereSurfaceFluxes`](@ref).
-- `temperature` : the blended [`CanopyAirSpaceDiagnostics`](@ref).
+- `temperature` : the blended [`CanopyGroundSurfaceDiagnostics`](@ref).
 """
 struct TiledLandInterface{V, B, F, FL, T}
     vegetated   :: V

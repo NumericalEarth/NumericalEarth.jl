@@ -10,7 +10,7 @@ using Dates: DateTime
 using Test
 
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyAirSpace, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR, TiledLandInterface
+    CanopyGroundSurface, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR, TiledLandInterface
 using NumericalEarth.Lands: BucketHydrology, SlabEnergy, SlabLand
 using NumericalEarth.Radiations: default_stefan_boltzmann_constant
 
@@ -45,9 +45,9 @@ function rtm_canopy_components(arch; hour = 12, fraction = nothing)
                                        surface_emissivity = rtm_emissivity,
                                        schedule = IterationInterval(1))
 
-    canopy = CanopyAirSpace(FT;
-        soil = bare_soil_humidity(FT),
-        canopy = CanopyConductanceHumidity(FT; leaf_area_index = 4,
+    canopy = CanopyGroundSurface(FT;
+        soil_humidity = bare_soil_humidity(FT),
+        canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index = 4,
                                            moisture_stress = CriticalSaturation(0.5),
                                            absorbed_par = InteractiveAbsorbedPAR(FT)))
 
@@ -65,7 +65,7 @@ function build_rtm_canopy_model(arch; hour = 12)
     return AtmosphereLandModel(atmosphere, land; radiation)
 end
 
-@testset "Breeze RadiativeTransferModel driving a CanopyAirSpace" begin
+@testset "Breeze RadiativeTransferModel driving a CanopyGroundSurface" begin
     for arch in test_architectures
         A = typeof(arch)
 

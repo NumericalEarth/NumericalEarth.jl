@@ -3,15 +3,15 @@ include("runtests_setup.jl")
 using Oceananigans
 using Oceananigans.TimeSteppers: time_step!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyAirSpace, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR,
-    SoilConductiveFlux, CanopyAirSpaceDiagnostics,
+    CanopyGroundSurface, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR,
+    SoilConductiveFlux, CanopyGroundSurfaceDiagnostics,
     DiagnosticCanopyAir, PrognosticCanopyAir, advance_canopy_air, node_memory,
     AtmosphericThermodynamics
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 
-prognostic_test_cas(FT; kw...) = CanopyAirSpace(FT;
-    soil = bare_soil_humidity(FT),
-    canopy = CanopyConductanceHumidity(FT; leaf_area_index = 4.0, moisture_stress = CriticalSaturation(0.5),
+prognostic_test_cas(FT; kw...) = CanopyGroundSurface(FT;
+    soil_humidity = bare_soil_humidity(FT),
+    canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index = 4.0, moisture_stress = CriticalSaturation(0.5),
                                        absorbed_par = InteractiveAbsorbedPAR(FT)),
     ground_heat_flux = SoilConductiveFlux(1.5, 0.05), kw...)
 
@@ -22,7 +22,7 @@ prognostic_test_model(arch, cas; shortwave = 600.0, longwave = 350.0,
                        atmosphere_land_interface_temperature = cas,
                        atmosphere_land_interface_specific_humidity = cas)
 
-@testset "CanopyAirSpace defaults to a diagnostic node" begin
+@testset "CanopyGroundSurface defaults to a diagnostic node" begin
     cas = prognostic_test_cas(Float64)
     @test cas.storage isa DiagnosticCanopyAir
 
@@ -66,7 +66,7 @@ end
         # of the first solve and the state fields are populated.
         mp = prognostic_test_model(arch, prognostic_test_cas(Float64; storage = PrognosticCanopyAir()))
         Ts = mp.interfaces.atmosphere_land_interface.temperature
-        @test Ts isa CanopyAirSpaceDiagnostics
+        @test Ts isa CanopyGroundSurfaceDiagnostics
         T₀ = scalar(mp.land.surface.prognostic.temperature)
         q₀ = scalar(mp.land.surface.prognostic.specific_humidity)
         @test 285 < T₀ < 320

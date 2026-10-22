@@ -56,8 +56,8 @@ Base.show(io::IO, p::InteractiveAbsorbedPAR) = print(io, summary(p),
 # coefficient `K` and clumping `Ω`.
 @inline canopy_transmittance(K, Ω, leaf_area_index) = exp(-K * Ω * leaf_area_index)
 
-# `nothing` means no canopy supplied a transmittance, so the closure falls back on its
-# own `extinction` and `clumping`.
+# `nothing` means no canopy supplied a transmittance, so the absorbed-PAR model falls
+# back on its own `extinction` and `clumping`.
 @inline canopy_transmittance(p::InteractiveAbsorbedPAR, leaf_area_index, ::Nothing) =
     canopy_transmittance(p.extinction, p.clumping, leaf_area_index)
 @inline canopy_transmittance(p::InteractiveAbsorbedPAR, leaf_area_index, transmittance) = transmittance

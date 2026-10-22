@@ -109,7 +109,7 @@ function coupled_land_model(arch, FT = Float64; time = nothing, kw...)
     nt = (; kw...)
     temperature = get(nt, :atmosphere_land_interface_temperature, BulkTemperature())
     humidity = get(nt, :atmosphere_land_interface_specific_humidity,
-                   temperature isa CanopyAirSpace ? temperature : BulkHumidity())
+                   temperature isa CanopyGroundSurface ? temperature : BulkHumidity())
     surface = get(nt, :surface, LandSurface(temperature; specific_humidity=humidity))
     nt = Base.structdiff(nt, NamedTuple{(:atmosphere_land_interface_temperature, :atmosphere_land_interface_specific_humidity)})
     nt = merge(nt, (; surface))

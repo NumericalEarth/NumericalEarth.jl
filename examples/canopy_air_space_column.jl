@@ -1,6 +1,6 @@
 # # A canopy-air-space column: two-source vegetation, transpiration, and a rain pulse
 #
-# This idealized 0D example exercises the [`CanopyAirSpace`](@ref) land-surface
+# This idealized 0D example exercises the [`CanopyGroundSurface`](@ref) land-surface
 # component under an analytic diurnal forcing with a rain pulse dropped on day 2.
 # It sweeps leaf-area index and stomatal conductance, then adds subgrid tiling
 # ([`TiledLandInterface`](@ref)).
@@ -129,20 +129,18 @@ intercepting_hydrology() = InterceptingHydrology(;
 
 # ## Model builder
 #
-# The land surface uses a `CanopyAirSpace`, carrying a
-# `CanopyInterception` so the wet leaf evaporates intercepted rain. Every column shares
-# one soil branch, moisture stress, PAR, skin flux, and optics; only the leaf-area
-# index and stomatal `conductance` vary.
+# The land surface uses a `CanopyGroundSurface`; over the intercepting hydrology its wet
+# leaf evaporates intercepted rain. Every column shares one soil branch, moisture stress,
+# PAR, skin flux, and optics; only the leaf-area index and stomatal `conductance` vary.
 
-canopy_with_interception(; leaf_area_index, conductance = JarvisConductance()) = CanopyAirSpace(;
-    soil   = soil_branch(),
-    canopy = CanopyConductanceHumidity(; leaf_area_index, conductance,
-                                       moisture_stress = PlantAvailableWaterStress(),
-                                       absorbed_par    = InteractiveAbsorbedPAR()),
+canopy_with_interception(; leaf_area_index, conductance = JarvisConductance()) = CanopyGroundSurface(;
+    soil_humidity   = soil_branch(),
+    canopy_humidity = CanopyConductanceHumidity(; leaf_area_index, conductance,
+                                                moisture_stress = PlantAvailableWaterStress(),
+                                                absorbed_par    = InteractiveAbsorbedPAR()),
     ground_heat_flux = SoilConductiveFlux(1.5, 0.05),
     leaf_albedo, ground_albedo, max_canopy_emissivity, ground_emissivity,
-    extinction, clumping,
-    interception = CanopyInterception())
+    extinction, clumping)
 
 # The land is the shared variably-saturated soil with the interception store; the two knobs
 # enter here — `leaf_area_index` upscales the leaf conductance and sets the shading, and
@@ -161,7 +159,7 @@ function canopy_air_space_column(; leaf_area_index, conductance, label)
 
     model = AtmosphereLandModel(atmosphere, land; radiation)
 
-    ## Diagnostics: the CAS stores its node/leaf/ground/effective temperatures, the
+    ## Diagnostics: the surface stores its node/leaf/ground/effective temperatures, the
     ## skin→bulk ground heat flux, and the two-source latent/sensible shares plus the
     ## wet-canopy evaporation in `interface.temperature`; the atmosphere-facing turbulent
     ## totals live in `interface.fluxes`; the water fluxes/stores in `land`.
@@ -261,7 +259,7 @@ dense_m  = canopy_air_space_column(leaf_area_index = 4.0, conductance = medlyn, 
 
 # ## Radiation partition (reconstructed from the stored surface temperatures)
 #
-# The CAS keeps only the surface temperatures and turbulent totals, so the radiative
+# The interface keeps only the surface temperatures and turbulent totals, so the radiative
 # shares are reconstructed here from the stored leaf `Tˡᵉᵃᶠ` and ground `Tᵍ`
 # temperatures using the Beer–Lambert shortwave split and two-face longwave ledger.
 
@@ -376,7 +374,7 @@ lines!(ax, t, ref.H;   color = :orange,    label = "sensible (H)")
 lines!(ax, t, ref.𝒬ᵍ;  color = :seagreen,  linestyle = :dash, label = "ground heat 𝒬ᵍ")
 axislegend(ax; position = :lt, labelsize = 12)
 
-## (4,1) Latent-heat pathways — the atmosphere feels only the total LE, but the CAS
+## (4,1) Latent-heat pathways — the atmosphere feels only the total LE, but the surface
 ## resolves it into leaf transpiration, soil evaporation, and (while the canopy is wet)
 ## wet-canopy evaporation from the interception store.
 ax = Axis(fig[4, 1]; title = "Latent-heat pathways", xlabel = "t (days)", ylabel = "LE (W m⁻²)")

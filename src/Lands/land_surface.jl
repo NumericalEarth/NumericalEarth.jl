@@ -21,7 +21,7 @@ struct LandSurface{T, Q, P, N}
 end
 
 function LandSurface(temperature = BulkTemperature();
-                     specific_humidity = temperature isa CanopyAirSpace ? temperature : BulkHumidity())
+                     specific_humidity = temperature isa CanopyGroundSurface ? temperature : BulkHumidity())
     return LandSurface(temperature, specific_humidity, nothing, nothing)
 end
 
@@ -39,13 +39,13 @@ end
 function TiledLandSurface(vegetated::LandSurface; fraction,
                           bare = LandSurface(EnergyBalanceTemperature(vegetated.temperature.ground_heat_flux;
                                                                       storage = DiagnosticSkin());
-                                             specific_humidity = vegetated.temperature.soil))
+                                             specific_humidity = vegetated.temperature.soil_humidity))
     return TiledLandSurface(vegetated, bare, fraction)
 end
 
 function materialize_land_surface(surface::LandSurface, grid)
     temperature = surface.temperature
-    names = if temperature isa PrognosticCanopyAirSpace
+    names = if temperature isa PrognosticCanopyGroundSurface
         (:temperature, :specific_humidity)
     elseif temperature isa PrognosticEnergyBalanceTemperature
         (:temperature,)
@@ -101,12 +101,12 @@ InterfaceComputations.default_al_temperature(land::SlabLand) =
     land.surface isa LandSurface ? land.surface.temperature : land.surface
 InterfaceComputations.default_al_specific_humidity(temperature, land::SlabLand) =
     land.surface isa LandSurface ? land.surface.specific_humidity : nothing
-InterfaceComputations.default_al_specific_humidity(temperature::CanopyAirSpace, land::SlabLand) = temperature
+InterfaceComputations.default_al_specific_humidity(temperature::CanopyGroundSurface, land::SlabLand) = temperature
 
 function InterfaceComputations.land_surface_state(land::SlabLand, temperature)
     surface = land.surface
     if surface isa TiledLandSurface
-        surface = temperature isa CanopyAirSpace ? surface.vegetated : surface.bare
+        surface = temperature isa CanopyGroundSurface ? surface.vegetated : surface.bare
     end
     return (; state=surface.prognostic, next=surface.next_state)
 end
@@ -191,5 +191,5 @@ InterfaceComputations.surface_hydrology(land::SlabLand, humidity::CanopyConducta
     surface_hydrology(land, humidity.moisture_stress, grid)
 InterfaceComputations.surface_hydrology(land::SlabLand, humidity::FractionalHumidity, grid) =
     surface_hydrology(land, humidity.efficiency, grid)
-InterfaceComputations.surface_hydrology(land::SlabLand, canopy::CanopyAirSpace, grid) =
-    merge(surface_hydrology(land, canopy.soil, grid), surface_hydrology(land, canopy.canopy, grid))
+InterfaceComputations.surface_hydrology(land::SlabLand, canopy::CanopyGroundSurface, grid) =
+    merge(surface_hydrology(land, canopy.soil_humidity, grid), surface_hydrology(land, canopy.canopy_humidity, grid))

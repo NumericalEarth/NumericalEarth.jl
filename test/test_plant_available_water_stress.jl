@@ -152,7 +152,7 @@ availability(model, 𝒮, curve) =
         stress = PlantAvailableWaterStress(FT)
         transpiring = CanopyConductanceHumidity(FT; leaf_area_index = 2,
                                                 moisture_stress = stress)
-        canopy = CanopyAirSpace(FT; soil = BulkHumidity(), canopy = transpiring)
+        canopy = CanopyGroundSurface(FT; soil_humidity = BulkHumidity(), canopy_humidity = transpiring)
 
         grid = RectilinearGrid(FT; size = (), topology = (Flat, Flat, Flat))
         atmosphere = PrescribedAtmosphere(grid, [0.0, 1.0]; surface_layer_height = 10)

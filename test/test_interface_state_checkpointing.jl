@@ -4,13 +4,13 @@ using Oceananigans
 using Oceananigans: prognostic_state, restore_prognostic_state!
 using Oceananigans.TimeSteppers: time_step!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyAirSpace, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR,
+    CanopyGroundSurface, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR,
     SoilConductiveFlux, SoilSkinTemperature, DiagnosticSkin, PrognosticSkin,
     DiagnosticCanopyAir, PrognosticCanopyAir, compute_atmosphere_land_fluxes!
 
-checkpoint_test_cas(FT; storage) = CanopyAirSpace(FT;
-    soil = bare_soil_humidity(FT),
-    canopy = CanopyConductanceHumidity(FT; leaf_area_index = 4.0, moisture_stress = CriticalSaturation(0.5),
+checkpoint_test_cas(FT; storage) = CanopyGroundSurface(FT;
+    soil_humidity = bare_soil_humidity(FT),
+    canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index = 4.0, moisture_stress = CriticalSaturation(0.5),
                                        absorbed_par = InteractiveAbsorbedPAR(FT)),
     ground_heat_flux = SoilConductiveFlux(1.5, 0.05), storage)
 
@@ -102,7 +102,7 @@ end
         canopy = checkpoint_test_cas(Float64; storage = PrognosticCanopyAir())
         skin = SoilSkinTemperature(1.5, 0.05; storage = PrognosticSkin(heat_capacity = 1e5))
         surface = TiledLandSurface(LandSurface(canopy); fraction = 0.6,
-                                    bare = LandSurface(skin; specific_humidity = canopy.soil))
+                                    bare = LandSurface(skin; specific_humidity = canopy.soil_humidity))
         m1 = coupled_land_model(arch; surface)
         m2 = coupled_land_model(arch; surface)
         fluxes1, fluxes2 = roundtrip!(m1, m2)

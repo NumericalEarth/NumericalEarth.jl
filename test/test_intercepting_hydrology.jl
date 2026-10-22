@@ -5,7 +5,7 @@ using Oceananigans: set!
 using Oceananigans.TimeSteppers: update_state!, time_step!
 using Oceananigans.OutputReaders: OnDisk, InMemory
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyAirSpace, CanopyConductanceHumidity, CanopyInterception,
+    CanopyGroundSurface, CanopyConductanceHumidity,
     CriticalSaturation, InteractiveAbsorbedPAR, SoilConductiveFlux
 using NumericalEarth.Lands: SlabLand, SlabEnergy, VariablySaturatedHydrology, InterceptingHydrology,
     VanGenuchtenRetention, VanGenuchtenConductivity, canopy_store_update
@@ -15,20 +15,19 @@ soil_hydrology(FT) = VariablySaturatedHydrology(FT;
     hydraulic_conductivity = VanGenuchtenConductivity(FT; matching_point_conductivity = 1e-6, pore_size_uniformity = 1.5))
 
 # Coupled single-column model. `interception = true` wraps the soil hydrology in an
-# `InterceptingHydrology` and hands the CAS a matching `CanopyInterception`.
+# `InterceptingHydrology`.
 function interception_model(arch, FT; leaf_area_index = 3.0, capacity = 0.1, rain = 1e-3,
                             water_storage = 300.0, interception = true, fraction = nothing)
     hydrology = interception ?
         InterceptingHydrology(FT; soil = soil_hydrology(FT),
                               capacity_per_leaf_area = capacity) :
         soil_hydrology(FT)
-    cas = CanopyAirSpace(FT;
-        soil = bare_soil_humidity(FT),
-        canopy = CanopyConductanceHumidity(FT; leaf_area_index,
+    cas = CanopyGroundSurface(FT;
+        soil_humidity = bare_soil_humidity(FT),
+        canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index,
                                            moisture_stress = CriticalSaturation(0.5),
                                            absorbed_par = InteractiveAbsorbedPAR(FT)),
-        ground_heat_flux = SoilConductiveFlux(1.5, 0.05),
-        interception = interception ? CanopyInterception() : nothing)
+        ground_heat_flux = SoilConductiveFlux(1.5, 0.05))
     surface = LandSurface(cas)
     isnothing(fraction) || (surface = TiledLandSurface(surface; fraction))
     return coupled_land_model(arch, FT; Tair = 298, qair = 0.010, wind = 3, rain, hydrology, surface,
@@ -101,7 +100,7 @@ end
     end
 end
 
-@testset "Dry canopy (Wᶜ = 0) reduces to the bare CanopyAirSpace bit-for-bit" begin
+@testset "Dry canopy (Wᶜ = 0) reduces to the bare CanopyGroundSurface bit-for-bit" begin
     for arch in test_architectures
         FT = Float64
         with    = interception_model(arch, FT; interception = true)   # store starts at 0

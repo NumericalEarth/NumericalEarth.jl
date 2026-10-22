@@ -145,7 +145,7 @@ component-superscript rule above.
 | ``Λ^{g}`` | `ground_heat_flux` | ground conductance | Ground↔bulk conduction coefficient ``Λ^{g} = κ^T/ℓ^T`` of a `SoilConductiveFlux` (W m⁻² K⁻¹) |
 | ``ψ^{fc}`` | `field_capacity_head` | field-capacity suction head | Suction at which transpiration becomes unstressed (``β = 1``), for `PlantAvailableWaterStress` (m) |
 | ``ψ^{wp}`` | `wilting_point_head` | wilting-point suction head | Suction at which transpiration ceases (``β = 0``), for `PlantAvailableWaterStress` (m) |
-| ``w^{uc}`` | `undercanopy_transfer_velocity` | undercanopy transfer velocity | Ground↔canopy-air transfer velocity of a `CanopyAirSpace`: the flux per unit difference across the path, ``J = \rho^{\mathrm{at}} w^{uc} (q^g - q^{\mathrm{ac}})``, as ``u_\star \chi^q`` is for the canopy-air↔atmosphere exchange. A bulk transfer coefficient times a wind speed, not a diffusivity (m s⁻¹) |
+| ``w^{uc}`` | `undercanopy_transfer_velocity` | undercanopy transfer velocity | Ground↔canopy-air transfer velocity of a `CanopyGroundSurface`: the flux per unit difference across the path, ``J = \rho^{\mathrm{at}} w^{uc} (q^g - q^{\mathrm{ac}})``, as ``u_\star \chi^q`` is for the canopy-air↔atmosphere exchange. A bulk transfer coefficient times a wind speed, not a diffusivity (m s⁻¹) |
 | ``T^{\mathrm{deep}}`` | `deep_temperature` | deep climatological temperature | Prescribed deep/climatological target temperature for force-restore (K) |
 | ``τ^{\mathrm{deep}}`` | `deep_time_scale` | deep-restore time scale | Time scale of surface relaxation toward ``T^{\mathrm{deep}}`` (s) |
 | ``c^{\mathrm{dry}}`` | `dry_heat_capacity` | dry areal heat capacity | Areal heat capacity of the water-free slab; a `Number` or an `AbstractField` (J m⁻² K⁻¹) |
@@ -211,7 +211,7 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 
 ### Canopy and canopy air space
 
-Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyAirSpace`](@ref),
+Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyGroundSurface`](@ref),
 [`InterceptingHydrology`](@ref), and [`TiledLandInterface`](@ref).
 
 | Math | Code | Property | Description |

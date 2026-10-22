@@ -211,10 +211,10 @@ Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
 # Diagnostic surface (skin) temperature — what the atmosphere "sees"; for skin-temperature
 # closures it differs from `land.temperature`. The land interface wins; then the
 # atmosphere-ocean interface; `nothing` when the atmosphere touches neither.
-# A `CanopyAirSpace` interface holds several diagnostic temperatures; the atmosphere-facing
+# A `CanopyGroundSurface` interface holds several diagnostic temperatures; the atmosphere-facing
 # one is the canopy-air node.
 @inline interface_node_temperature(t) = t
-@inline interface_node_temperature(t::CanopyAirSpaceDiagnostics) = t.interface
+@inline interface_node_temperature(t::CanopyGroundSurfaceDiagnostics) = t.interface
 EarthSystemModels.surface_temperature(interface::AtmosphereInterface) =
     interface_node_temperature(interface.temperature)
 EarthSystemModels.surface_temperature(interfaces::ComponentInterfaces) =
@@ -511,11 +511,11 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
 end
 
 # Default land surface humidity formulation: bulk (saturated where wet, dry otherwise);
-# a `CanopyAirSpace` temperature formulation closes the humidity slot itself.
+# a `CanopyGroundSurface` temperature formulation closes the humidity slot itself.
 default_al_specific_humidity(temperature, ::Nothing) = nothing
 default_al_temperature(land) = BulkTemperature()
 default_al_specific_humidity(temperature, land) = BulkHumidity(AtmosphericThermodynamics.Liquid())
-default_al_specific_humidity(cas::CanopyAirSpace, land) = cas
+default_al_specific_humidity(cas::CanopyGroundSurface, land) = cas
 
 # Default atmosphere--land flux formulation. Aerodynamic roughness lengths and the
 # zero-plane displacement are properties of the flux closure, not the land model:

@@ -4,12 +4,12 @@ using Oceananigans
 using Oceananigans: set!, interior, CenterField
 using Oceananigans.TimeSteppers: update_state!, time_step!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyAirSpace, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR,
+    CanopyGroundSurface, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR,
     SoilConductiveFlux, TiledLandInterface, EnergyBalanceTemperature,
-    SimilarityTheoryFluxes, atmosphere_land_stability_functions, CanopyAirSpaceDiagnostics
-build_tiled_canopy_air_space(FT) = CanopyAirSpace(FT;
-    soil = bare_soil_humidity(FT),
-    canopy = CanopyConductanceHumidity(FT; leaf_area_index = 3.0, moisture_stress = CriticalSaturation(0.5),
+    SimilarityTheoryFluxes, atmosphere_land_stability_functions, CanopyGroundSurfaceDiagnostics
+build_tiled_canopy_air_space(FT) = CanopyGroundSurface(FT;
+    soil_humidity = bare_soil_humidity(FT),
+    canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index = 3.0, moisture_stress = CriticalSaturation(0.5),
                                        absorbed_par = InteractiveAbsorbedPAR(FT)),
     ground_heat_flux = SoilConductiveFlux(1.5, 0.05))
 
@@ -43,7 +43,7 @@ end
         # --- Blended output is finite, physical, and drives the slab by conduction. ---
         model = tiled_land_model(arch, cas; fraction = 0.6)
         ti = model.interfaces.atmosphere_land_interface
-        @test ti.temperature isa CanopyAirSpaceDiagnostics
+        @test ti.temperature isa CanopyGroundSurfaceDiagnostics
 
         𝒬ᵀ = scalar(ti.fluxes.sensible_heat)
         𝒬ᵛ = scalar(ti.fluxes.latent_heat)
@@ -111,7 +111,7 @@ end
         @test scalar(t0.temperature.ground) == scalar(t0.bare.temperature)
         @test scalar(m0.land.fluxes.surface_energy_flux) ≈ -Λ * (scalar(t0.bare.temperature) - scalar(m0.land.temperature)) atol = 1e-10
 
-        # --- f=1 tiled ≡ a standalone CanopyAirSpace model (bit-for-bit). ---
+        # --- f=1 tiled ≡ a standalone CanopyGroundSurface model (bit-for-bit). ---
         FT = Float64
         grid = LatitudeLongitudeGrid(arch, FT; size = 1, latitude = 10, longitude = 10,
                                      z = (-1, 0), topology = (Flat, Flat, Bounded))

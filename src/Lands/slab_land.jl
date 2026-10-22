@@ -317,9 +317,8 @@ surface_root_zone_saturation(land::SlabLand) =
     hasproperty(land.diagnostics, :root_zone_saturation) ? land.diagnostics.root_zone_saturation : surface_saturation(land)
 
 # Prognostic canopy water store `Wᶜ` the interface reads to form the wet fraction
-# `fʷᵉᵗ` (a `CanopyAirSpace` with interception). A `ZeroField` when no closure
-# declares a store, so a dry canopy reads `Wᶜ = 0` and the interface reduces to the
-# ordinary CAS.
+# `fʷᵉᵗ` (a `CanopyGroundSurface`). A `ZeroField` when no hydrology declares a store,
+# so a dry canopy reads `Wᶜ = 0`.
 surface_canopy_water_storage(land::SlabLand) =
     hasproperty(land.prognostic, :canopy_water_storage) ? land.prognostic.canopy_water_storage : ZeroField()
 

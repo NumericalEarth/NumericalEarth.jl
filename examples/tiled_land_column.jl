@@ -1,7 +1,7 @@
 # # A tiled land column: mosaic of vegetation and bare soil
 #
 # A [`TiledLandInterface`](@ref) treats a land cell as a mosaic of a vegetated fraction
-# `f_veg` and bare-soil fraction `1 − f_veg`, each running its own [`CanopyAirSpace`](@ref)
+# `f_veg` and bare-soil fraction `1 − f_veg`, each running its own [`CanopyGroundSurface`](@ref)
 # surface solve and area-weighted into one boundary condition. This example sweeps
 # `f_veg` under a diurnal forcing with a rain pulse, then decomposes one mosaic into
 # its vegetated and bare tile contributions.
@@ -59,7 +59,7 @@ end
 
 # ## The vegetated tile and the roughness contrast
 #
-# The vegetated tile is a full `CanopyAirSpace` (transpiring canopy, dry-layer soil
+# The vegetated tile is a full `CanopyGroundSurface` (transpiring canopy, dry-layer soil
 # evaporation branch); the bare tile is derived from it (LAI = 0). We give the two
 # tiles a strong roughness contrast — rough forest canopy versus smooth bare surface.
 
@@ -76,11 +76,11 @@ soil_branch() = DryLayerHumidity(;
 
 # The canopy stress runs on plant-available water: `β` ramps from the permanent wilting
 # point to field capacity, both read off the soil column's own retention curve below.
-vegetated_tile() = CanopyAirSpace(;
-    soil   = soil_branch(),
-    canopy = CanopyConductanceHumidity(; leaf_area_index = 4.0,
-                                       moisture_stress = PlantAvailableWaterStress(),
-                                       absorbed_par    = InteractiveAbsorbedPAR()),
+vegetated_tile() = CanopyGroundSurface(;
+    soil_humidity   = soil_branch(),
+    canopy_humidity = CanopyConductanceHumidity(; leaf_area_index = 4.0,
+                                                moisture_stress = PlantAvailableWaterStress(),
+                                                absorbed_par    = InteractiveAbsorbedPAR()),
     ground_heat_flux = SoilConductiveFlux(1.5, 0.05))
 
 land_roughness(z₀m, z₀s) = SimilarityTheoryFluxes(;
