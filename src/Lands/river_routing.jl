@@ -1,8 +1,7 @@
-using Oceananigans.Grids: inactive_node, longitude_in_same_window, topology, Flat
+using Oceananigans.Grids: inactive_node, longitude_in_same_window, topology
 using Oceananigans.Operators: Azᶜᶜᶜ
-using Oceananigans.Architectures: on_architecture, CPU
 using Oceananigans.DistributedComputations: Distributed, all_reduce, global_size
-using Oceananigans.Fields: interior
+using Oceananigans.ImmersedBoundaries: underlying_grid
 
 #####
 ##### River routing: map river-mouth discharge onto coastal ocean cells
@@ -121,14 +120,16 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     wet  = Array(interior(wet_field))[:, :, 1]
     area = Array(interior(area_field))[:, :, 1]
 
-    ocean_cells = wet_cells(wet, on_architecture(CPU(), target_grid))
+    # TODO: use `target_grid` once Oceananigans' `on_architecture(CPU(), grid)` returns a `Distributed(CPU())`
+    # grid for a distributed `grid`; the serial rebuild keeps `Connected` topologies and cannot fill its halos.
+    ocean_cells = wet_cells(wet, on_architecture(CPU(), underlying_grid(target_grid)))
 
     # Account for distributed simulations by using the global size
     Nx, Ny, _ = global_grid_size(arch, size(target_grid))
     maximum_degrees = maximum_search_radius * (360 / Nx + 180 / Ny) / 2
 
     # Check mouth ownership of the ranks
-    nearest_cells = [nearest_wet_cell(ocean_cells, outlet_λ[n], outlet_φ[n]) for n in eachindex(outlet_i)]
+    nearest_cells = [nearest_wet_cell(ocean_cells, outlet_λ[n], outlet_φ[n], maximum_degrees) for n in eachindex(outlet_i)]
     owned = mouth_ownership(arch, last.(nearest_cells))
 
     # Split each mouth's discharge equally over its plume footprint so no single coastal cell receives
@@ -226,6 +227,7 @@ function squared_distance(λ₁, φ₁, λ₂, φ₂)
     return Δλ^2 + Δφ^2
 end
 
+# The wet cells of `wet` with their nodes, sorted by latitude.
 function wet_cells(wet, grid)
     Nx, Ny = size(wet)
     wet_i = Int[]; wet_j = Int[]
@@ -236,17 +238,22 @@ function wet_cells(wet, grid)
         push!(wet_λ, λnode(i, j, 1, grid, Center(), Center(), Center()))
         push!(wet_φ, φnode(i, j, 1, grid, Center(), Center(), Center()))
     end
-    return (i = wet_i, j = wet_j, λ = wet_λ, φ = wet_φ)
+    order = sortperm(wet_φ)
+    return (i = wet_i[order], j = wet_j[order], λ = wet_λ[order], φ = wet_φ[order])
 end
+
+# Indices of the latitude-sorted `wet` cells within `Δφ` degrees of latitude `φₒ`.
+latitude_band(wet, φₒ, Δφ) = searchsortedfirst(wet.φ, φₒ - Δφ):searchsortedlast(wet.φ, φₒ + Δφ)
 
 global_grid_size(arch, local_size) = local_size
 global_grid_size(arch::Distributed, local_size) = global_size(arch, local_size)
 
-# Index into `wet` of the cell closest to `(λₒ, φₒ)`, and its squared distance.
-function nearest_wet_cell(wet, λₒ, φₒ)
+# Index into `wet` of the cell closest to `(λₒ, φₒ)` among those within `maximum_degrees` of its latitude,
+# and its squared distance.
+function nearest_wet_cell(wet, λₒ, φₒ, maximum_degrees)
     nearest = 0
     nearest_distance = Inf
-    for n in eachindex(wet.i)
+    for n in latitude_band(wet, φₒ, maximum_degrees)
         d = squared_distance(λₒ, φₒ, wet.λ[n], wet.φ[n])
         d < nearest_distance && (nearest_distance = d; nearest = n)
     end
@@ -272,15 +279,13 @@ the mouth, so a mouth relocated far offshore — the Ob and Yenisei move 2-3° �
 `spread_radius = nothing` spreads over the whole `maximum_degrees` reach. Empty when no wet cell lies within
 `maximum_degrees`.
 """
-function spread_target_cells(wet, λₒ, φₒ, maximum_degrees, spread_radius, maximum_cells, nearest_cell = nearest_wet_cell(wet, λₒ, φₒ))
+function spread_target_cells(wet, λₒ, φₒ, maximum_degrees, spread_radius, maximum_cells, nearest_cell = nearest_wet_cell(wet, λₒ, φₒ, maximum_degrees))
     reach = maximum_degrees^2
     nearest, nearest_distance = nearest_cell
     nearest_distance < reach || return Tuple{Int, Int}[]
 
     reachable = Int[]
-    for n in eachindex(wet.i)
-        # Cells further than `maximum_degrees` in latitude alone are out of reach, so skip the metric.
-        abs(wet.φ[n] - φₒ) < maximum_degrees || continue
+    for n in latitude_band(wet, φₒ, maximum_degrees)
         squared_distance(λₒ, φₒ, wet.λ[n], wet.φ[n]) < reach && push!(reachable, n)
     end
 
