@@ -41,6 +41,7 @@ using Oceananigans.Forcings: Relaxation, FieldTimeSeriesTarget
 using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
 using Oceananigans.Grids: OrthogonalSphericalShellGrid
 using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid, lcc_forward
+using Oceananigans.TurbulenceClosures: closure_required_tracers
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Utils: KernelParameters
@@ -229,10 +230,17 @@ end
 # minute. Bounding mirrors Breeze's own moist-convection examples (`ρqᵉ = WENO(order=5, bounds=(0, 1))`).
 # The energy density is unbounded (`ρθ` is not confined to `[0, 1]`). Names are derived from the
 # microphysics so the default tracks whichever moisture/precipitation prognostics it carries.
-function default_nested_scalar_advection(microphysics)
+function default_nested_scalar_advection(microphysics, closure = nothing; closure_tracer_maximum = Inf)
     bounded = WENO(order = 5, bounds = (0, 1))
     moist_names = (moisture_prognostic_name(microphysics), prognostic_field_names(microphysics)...)
-    return merge((ρθ = WENO(order = 5),), NamedTuple{moist_names}(map(_ -> bounded, moist_names)))
+    moist = NamedTuple{moist_names}(map(_ -> bounded, moist_names))
+
+    closure_names = closure_required_tracers(closure)
+    closure_bounds = promote(0, closure_tracer_maximum)
+    closure_scheme = WENO(order = 5, bounds = closure_bounds)
+    closure_tracers = NamedTuple{closure_names}(map(_ -> closure_scheme, closure_names))
+
+    return merge((ρθ = WENO(order = 5),), moist, closure_tracers)
 end
 
 # Blend-zone width in cells from a physical length: a fixed cell count steepens the parent→child
@@ -333,10 +341,10 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     drag_surface_temperature = nothing, # surface temperature entering the drag's surface density
     parent_condensates = default_parent_condensates(parent_atmosphere),
     microphysics = default_nested_microphysics(),
-    momentum_advection = WENO(order = 9),
-    scalar_advection = default_nested_scalar_advection(microphysics),
-    coriolis = SphericalCoriolis(),
     closure = TKEBasedTurbulenceClosure(eltype(child_grid)),
+    momentum_advection = WENO(order = 9),
+    scalar_advection = default_nested_scalar_advection(microphysics, closure),
+    coriolis = SphericalCoriolis(),
     damping_rate = 1/5,
     damping_depth = default_lid_depth(child_grid),
     dynamics = default_nested_dynamics(child_grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth),
