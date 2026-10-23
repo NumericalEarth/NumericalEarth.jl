@@ -18,8 +18,7 @@ const rtm_emissivity = 0.95
 
 # `hour` is the solar epoch at longitude 0, so 12 is local noon and 0 local midnight.
 function build_rtm_land_model(arch; hour = 12, optics = GrayOptics(),
-                              albedos = (; surface_albedo = rtm_albedo),
-                              surface_temperature = nothing)
+                              albedos = (; surface_albedo = rtm_albedo), surface_temperature = nothing)
     FT = Float64
 
     grid = RectilinearGrid(arch, FT; size = (rtm_Nx, rtm_Nx), halo = (rtm_Hx, rtm_Hx),
@@ -97,7 +96,6 @@ end
             # A step's land fluxes are computed from the radiation published before it.
             ℐꜜˡʷ = Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
             ℐꜜˢʷ = Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
-
             time_step!(model, 1.0)
 
             @test Array(interior(exchanger.state.ℐꜜˢʷ)) ≈ Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
@@ -124,7 +122,6 @@ end
             ℐꜜˡʷ = Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
             ℐꜜˢʷ = Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
             ℐꜛˢʷ = Array(interior(rtm.upwelling_shortwave_flux))[:, :, 1]
-
             time_step!(model, 1.0)
 
             σ = NumericalEarth.Radiations.default_stefan_boltzmann_constant

@@ -61,14 +61,12 @@ test_fields = Dict(
 scalar(field) = Array(interior(field))[1, 1, 1]
 
 bare_soil_humidity(FT) = DryLayerHumidity(FT;
-    dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
-                                                dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
-    vapor_exchange  = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
-                                                  molecular_diffusivity = 2.4e-5, tortuosity = ConstantTortuosity()))
+    dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015, dry_layer_onset_saturation = 0.5,
+                                                dry_layer_exponent = 2),
+    vapor_exchange = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3, molecular_diffusivity = 2.4e-5,
+                                                 tortuosity = ConstantTortuosity()))
 
-# Components of a coupled single-column land model: a 1-cell grid, a filled `PrescribedAtmosphere`,
-# a `SlabLand` (`BucketHydrology` + `SlabEnergy` unless `hydrology` is given), and (unless
-# `radiation = nothing`) a filled `PrescribedRadiation`.
+# Single-column land components; `rain = nothing` skips precipitation and `radiation = nothing` omits radiation.
 function coupled_land_components(arch, FT = Float64;
                                  grid = LatitudeLongitudeGrid(arch, FT; size = 1, latitude = 10, longitude = 10,
                                                               z = (-1, 0), topology = (Flat, Flat, Bounded)),
@@ -83,11 +81,7 @@ function coupled_land_components(arch, FT = Float64;
     fill!(parent(atmosphere.specific_humidity), air_specific_humidity)
     fill!(parent(atmosphere.velocities.u), wind)
     fill!(parent(atmosphere.pressure), pressure)
-    if !isnothing(rain)
-        fill!(parent(atmosphere.precipitation_flux.rain), rain)
-        update_state!(atmosphere)
-    end
-
+    isnothing(rain) || (fill!(parent(atmosphere.precipitation_flux.rain), rain); update_state!(atmosphere))
     land = SlabLand(grid; hydrology, energy = SlabEnergy(FT), surface)
     set!(land; T = land_temperature)
     isnothing(water) || fill!(parent(land.water_storage), water)
@@ -97,7 +91,6 @@ function coupled_land_components(arch, FT = Float64;
         fill!(parent(radiation.downwelling_longwave), longwave)
         update_state!(radiation)
     end
-
     return grid, atmosphere, land, radiation
 end
 
@@ -105,19 +98,14 @@ const coupled_land_component_keys = (:grid, :air_temperature, :air_specific_humi
                                      :hydrology, :land_temperature, :water, :surface, :shortwave, :longwave,
                                      :α, :ϵ, :radiation)
 
-# Surface formulations configure the land; transport keywords configure the interface.
-function coupled_land_model(arch, FT = Float64; time = nothing, kw...)
-    nt = (; kw...)
-    temperature = get(nt, :atmosphere_land_interface_temperature, BulkTemperature())
-    humidity = get(nt, :atmosphere_land_interface_specific_humidity,
-                   temperature isa CanopyGroundSurface ? temperature : BulkHumidity())
-    surface = get(nt, :surface, LandSurface(temperature; specific_humidity=humidity))
-    nt = Base.structdiff(nt, NamedTuple{(:atmosphere_land_interface_temperature, :atmosphere_land_interface_specific_humidity)})
-    nt = merge(nt, (; surface))
-    component_keys = filter(k -> k in coupled_land_component_keys, keys(nt))
-    model_keys     = filter(k -> !(k in coupled_land_component_keys), keys(nt))
-    grid, atmosphere, land, radiation = coupled_land_components(arch, FT; nt[component_keys]...)
-    model = AtmosphereLandModel(atmosphere, land; radiation, nt[model_keys]...)
+# Component keywords go to `coupled_land_components`, the rest to `AtmosphereLandModel`.
+function coupled_land_model(arch, FT = Float64; time = nothing, atmosphere_land_interface_temperature = BulkTemperature(),
+                            atmosphere_land_interface_specific_humidity = nothing, kw...)
+    T = atmosphere_land_interface_temperature
+    q = something(atmosphere_land_interface_specific_humidity, T isa CanopyGroundSurface ? T : BulkHumidity())
+    nt = (; surface = LandSurface(T; specific_humidity = q), kw...)
+    _, atmosphere, land, radiation = coupled_land_components(arch, FT; nt[filter(in(coupled_land_component_keys), keys(nt))]...)
+    model = AtmosphereLandModel(atmosphere, land; radiation, nt[filter(!in(coupled_land_component_keys), keys(nt))]...)
     isnothing(time) || (model.clock.time = time)
     update_state!(model.land)
     update_state!(model)

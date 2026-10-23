@@ -9,9 +9,7 @@ using NumericalEarth.DataWrangling: all_dates
 using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterfaces,
                                                               celsius_to_kelvin,
                                                               SimilarityScales,
-                                                              surface_specific_humidity,
-                                                              saturation_specific_humidity,
-                                                              saturation_humidity_slope,
+                                                              surface_specific_humidity, saturation_humidity_slope,
                                                               SkinTemperature,
                                                               BulkTemperature,
                                                               DiffusiveFlux,
@@ -22,8 +20,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterface
                                                               CriticalSaturation,
                                                               evaporation_efficiency,
                                                               AirLandInterfaceState,
-                                                              InterfaceFluxScales,
-                                                              InterfaceVelocities,
+                                                              InterfaceFluxScales, InterfaceVelocities,
                                                               compute_interface_humidity,
                                                               saturation_specific_humidity,
                                                               ImpureSaturationSpecificHumidity,
@@ -347,18 +344,12 @@ end
 
 @testset "Saturation humidity slope" begin
     for FT in (Float32, Float64), phase in (Thermodynamics.Liquid(), Thermodynamics.Ice())
-        ℂ = AtmosphereThermodynamicsParameters(FT)
-        p = FT(101325)
-
-        # dqᵛ⁺/dT is the derivative of qᵛ⁺(T), checked against a fourth-order
-        # central difference across the range the surface balances sample.
+        ℂ, p, h = AtmosphereThermodynamicsParameters(FT), FT(101325), FT(1//8)
+        q(T) = saturation_specific_humidity(ℂ, T, p, phase)
+        # Fourth-order central difference across the range the surface balances sample
         for T in FT.((200, 240, 273.15, 288, 300, 320, 340))
-            q(t) = saturation_specific_humidity(ℂ, t, p, phase)
-            h = FT(1//8)
-            fd = (-q(T + 2h) + 8q(T + h) - 8q(T - h) + q(T - 2h)) / 12h
-            @test saturation_humidity_slope(ℂ, T, p, phase) ≈ fd rtol=1e-3
+            @test saturation_humidity_slope(ℂ, T, p, phase) ≈ (-q(T + 2h) + 8q(T + h) - 8q(T - h) + q(T - 2h)) / 12h rtol=1e-3
         end
-
         @inferred saturation_humidity_slope(ℂ, FT(300), p, phase)
     end
 end
