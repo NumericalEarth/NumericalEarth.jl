@@ -603,9 +603,9 @@ end
     @test all(landed(grid) .≈ (repeat([1 southern_fraction 0], 3, 1),
                                repeat([0 1-southern_fraction 1], 3, 1)))
 
-    # TODO: make this a `@test` once the Oceananigans compat admits a release with
+    # TODO: drop `broken` once the Oceananigans compat floor is 0.114.1, the first release with
     # CliMA/Oceananigans.jl#6253; before it, `regrid!` throws for grids of equal horizontal size.
-    @test_broken first(landed(source_grid)) ≈ (Array(interior(classes, :, :, 1)) .== 1)
+    @test first(landed(source_grid)) ≈ (Array(interior(classes, :, :, 1)) .== 1) broken=pkgversion(Oceananigans) < v"0.114.1"
 end
 
 @testset "Valid-area means [$arch]" for arch in test_architectures
