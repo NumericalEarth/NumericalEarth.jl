@@ -1,7 +1,7 @@
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: update_field_time_series!, FieldTimeSeries, cpu_interpolating_time_indices
-using Oceananigans.TimeSteppers: Clock, tick!
+using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!, prettysummary, prettytime
 using KernelAbstractions: @kernel, @index
@@ -227,12 +227,15 @@ EarthSystemModels.update_net_fluxes!(coupled_model, ocean::PrescribedOcean) = no
 
 function Oceananigans.TimeSteppers.time_step!(ocean::PrescribedOcean, Δt)
     tick!(ocean.clock, Δt)
-    time = Time(ocean.clock.time)
+    update_state!(ocean)
+    return nothing
+end
 
+function Oceananigans.TimeSteppers.update_state!(ocean::PrescribedOcean)
+    time = Time(ocean.clock.time)
     update_field_time_series!(ocean.sea_surface_temperature, time)
     update_field_time_series!(ocean.sea_surface_salinity, time)
     update_field_time_series!(ocean.velocities.u, time)
     update_field_time_series!(ocean.velocities.v, time)
-
     return nothing
 end

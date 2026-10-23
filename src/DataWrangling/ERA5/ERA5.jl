@@ -31,6 +31,7 @@ using ..DataWrangling: DataWrangling, Metadata, Metadatum, MetadataSet, Bounding
                        first_date, last_date, native_times, set_metadata_field!, DatasetBackend,
                        instantiate, DatewiseFilename, window_span, validate_time_coverage, unzip
 using ...Grids: PressureLevelVerticalDiscretization, PressureLevelGrid
+using ...EarthSystemModels: default_clock
 
 download_ERA5_cache::String = ""
 
