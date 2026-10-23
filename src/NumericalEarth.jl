@@ -118,6 +118,7 @@ export
     regrid_topography,
     regrid_ocean_fraction,
     smooth_topography!,
+    connect_basins!,
     Metadata, Metadatum, MetadataSet,
     BoundingBox,
     Column, Linear, Nearest,

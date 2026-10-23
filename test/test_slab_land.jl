@@ -83,7 +83,7 @@ using Thermodynamics
         # roughness lengths belong to the flux closure, not the land.
         ex = NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(land, land.grid)
         @test hasproperty(ex.state, :T)
-        @test hasproperty(ex.state, :saturation)
+        @test hasproperty(ex.state, :𝒮)
         @test !hasproperty(ex.state, :momentum_roughness_length)
     end
 end
