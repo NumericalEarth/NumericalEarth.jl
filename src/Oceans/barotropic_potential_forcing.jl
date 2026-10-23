@@ -19,11 +19,10 @@ const YDirectionBPF = BarotropicPotentialForcing{<:YDirection}
 @inline (bpf::XDirectionBPF)(i, j, k, grid, clock, fields) = - ∂xᶠᶜᶜ(i, j, k, grid, barotropic_potentialᶜᶜᵃ, clock, bpf.potential)
 @inline (bpf::YDirectionBPF)(i, j, k, grid, clock, fields) = - ∂yᶜᶠᶜ(i, j, k, grid, barotropic_potentialᶜᶜᵃ, clock, bpf.potential)
 
-struct TimeInterpolatedPotential{P, T, I}
+struct TimeInterpolatedPotential{P, T}
     previous :: P
     next :: P
     times :: T
-    indices :: I # host-side indices of the source snapshots held by `previous` and `next`
 end
 
 """
@@ -31,19 +30,18 @@ $(TYPEDSIGNATURES)
 
 Return a barotropic potential (m² s⁻²) that varies linearly in time from `previous`
 at `times[1]` to `next` at `times[2]`, evaluated at the time of `clock`.
-A coupled model fills both snapshots with the atmospheric surface pressure snapshots
-that bracket the current time, and `times` with their times.
+A coupled model fills both snapshots and `times` from the atmospheric surface
+pressure before each ocean time step.
 """
 function TimeInterpolatedPotential(grid, clock=Clock(grid))
     previous = Field{Center, Center, Nothing}(grid)
     next = Field{Center, Center, Nothing}(grid)
     t = convert(kernel_time_type(clock), clock.time)
     times = on_architecture(architecture(grid), [t, t])
-    return TimeInterpolatedPotential(previous, next, times, [0, 0])
+    return TimeInterpolatedPotential(previous, next, times)
 end
 
-Adapt.adapt_structure(to, Φ::TimeInterpolatedPotential) =
-    TimeInterpolatedPotential(adapt(to, Φ.previous), adapt(to, Φ.next), adapt(to, Φ.times), nothing)
+Adapt.@adapt_structure TimeInterpolatedPotential
 
 @inline barotropic_potentialᶜᶜᵃ(i, j, k, grid, clock, Φ::AbstractArray) = @inbounds Φ[i, j, 1]
 @inline barotropic_potentialᶜᶜᵃ(i, j, k, grid, clock, Φ::Function) = Φ(node(i, j, 1, grid, Center(), Center(), nothing)..., clock.time)
