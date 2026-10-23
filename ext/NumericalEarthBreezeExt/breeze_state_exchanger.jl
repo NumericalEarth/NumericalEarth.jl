@@ -153,6 +153,12 @@ function child_prognostic_field_time_series(parent_atmosphere; time_indices_in_m
     return (ρᵈ = build(), ρu = build(), ρv = build(), ρθ = build(), ρqᵛᵉ = build(), θ = build(), u = build(), v = build())
 end
 
+# The number of time levels `parent_atmosphere` holds in memory (the fewest over the strips of a
+# `BoundaryPrescribedComponent`).
+resident_time_indices(parent_atmosphere::PrescribedAtmosphere) = length(time_indices(parent_atmosphere.temperature))
+resident_time_indices(parent_atmosphere::BoundaryPrescribedComponent) =
+    minimum(resident_time_indices, boundary_strips(parent_atmosphere))
+
 # Fill the derived FTS's resident window with one fused
 # `launch!` per level, reading the parent at the matching resident time index.
 function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, constants, condensates,
