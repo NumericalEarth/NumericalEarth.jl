@@ -11,8 +11,8 @@ using .InterfaceComputations: compute_atmosphere_ocean_fluxes!,
 apply_air_sea_radiative_fluxes!(::Any) = nothing
 apply_air_sea_ice_radiative_fluxes!(::Any) = nothing
 
-# Fills the ocean's barotropic potential over the interval [t, t + Δt] before the ocean steps.
-update_barotropic_potential!(atmosphere, coupled_model, Δt) = nothing
+# Fills the ocean's barotropic potential with the atmospheric pressure snapshots that bracket the current time.
+update_barotropic_potential!(atmosphere, coupled_model) = nothing
 
 function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     maybe_prepare_first_time_step!(coupled_model, Δt, callbacks)
@@ -23,7 +23,6 @@ function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, �
     sea_ice    = coupled_model.sea_ice
     ocean      = coupled_model.ocean
 
-    update_barotropic_potential!(atmosphere, coupled_model, Δt)
     !isnothing(radiation)  && time_step!(radiation, Δt)
     !isnothing(atmosphere) && time_step!(atmosphere, Δt)
     !isnothing(land)       && time_step!(land, Δt)
@@ -57,6 +56,7 @@ function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel
     interpolate_state!(exchanger.land,       grid, land,       coupled_model)
     interpolate_state!(exchanger.sea_ice,    grid, sea_ice,    coupled_model)
     interpolate_state!(exchanger.ocean,      grid, ocean,      coupled_model)
+    update_barotropic_potential!(atmosphere, coupled_model)
 
     # Phase 1.5: apply each component's optional post-regrid correction
     # (no-op when the component carries no correction).

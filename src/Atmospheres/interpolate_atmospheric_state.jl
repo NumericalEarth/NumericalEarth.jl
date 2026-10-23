@@ -1,8 +1,7 @@
 using Oceananigans.Operators: intrinsic_vector
 using Oceananigans.Fields: FractionalIndices, interpolate
-using Oceananigans.OutputReaders: cpu_interpolating_time_indices, FTS0
-
-using Oceananigans.TimeSteppers: next_time
+using Oceananigans.Architectures: CPU, on_architecture
+using Oceananigans.OutputReaders: cpu_interpolating_time_indices, interpolating_time_indices, Cyclical, FTS0
 
 using ..EarthSystemModels: component_model
 using ..Oceans: forcing_barotropic_potential
@@ -77,32 +76,60 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
     return nothing
 end
 
-"""Fill the ocean's barotropic potential `p / ρᵒᶜ` at the start and end of the coupled time step."""
-function EarthSystemModels.update_barotropic_potential!(atmosphere::PrescribedAtmosphere, coupled_model, Δt)
+"""
+Fill the ocean's barotropic potential `p / ρᵒᶜ` with the two atmospheric pressure snapshots that bracket
+the current time. The ocean interpolates between them at each stage, which reproduces the time-interpolated
+pressure between snapshots. The snapshots are refilled only when the bracket moves.
+"""
+function EarthSystemModels.update_barotropic_potential!(atmosphere::PrescribedAtmosphere, coupled_model)
     Φ = forcing_barotropic_potential(coupled_model.ocean)
     isnothing(Φ) && return nothing
 
+    p = atmosphere.pressure
+    times = on_architecture(CPU(), p.times)
+
+    # A time on a snapshot is bracketed by the interval that ends there, but the ocean's stages run
+    # forward, so bracket a time ϵ later
+    ϵ = 1e-6 * (last(times) - first(times)) / length(times)
+    ñ, n₁, n₂ = interpolating_time_indices(p.time_indexing, times, coupled_model.clock.time + ϵ)
+
+    if (n₁, n₂) != Tuple(Φ.indices)
+        if n₁ == Φ.indices[2]
+            parent(Φ.previous) .= parent(Φ.next)
+        else
+            fill_barotropic_potential!(Φ.previous, p, coupled_model, times[n₁])
+        end
+        fill_barotropic_potential!(Φ.next, p, coupled_model, times[n₂])
+        Φ.indices .= (n₁, n₂)
+    end
+
+    # The bracket in the ocean clock's frame: time t + ϵ lies a fraction ñ of the way from n₁ to n₂
+    Δ = snapshot_spacing(p.time_indexing, times, n₁, n₂)
+    t₁ = component_model(coupled_model.ocean).clock.time + ϵ - ñ * Δ
+    KT = eltype(Φ.times)
+    copyto!(Φ.times, KT[t₁, t₁ + Δ])
+
+    return nothing
+end
+
+# Time from snapshot n₁ to n₂, which wraps past the end of the period for a cycled pair (n₂ = 1).
+snapshot_spacing(time_indexing, times, n₁, n₂) = times[n₂] - times[n₁]
+snapshot_spacing(time_indexing::Cyclical, times, n₁, n₂) = mod(times[n₂] - times[n₁], time_indexing.period)
+
+function fill_barotropic_potential!(potential, p, coupled_model, t)
     exchanger = coupled_model.interfaces.exchanger
     grid = exchanger.grid
     arch = architecture(grid)
     regridder = exchanger.atmosphere.regridder
     space_fractional_indices = (i = regridder.i, j = regridder.j)
     ρᵒᶜ = coupled_model.interfaces.ocean_properties.reference_density
-    p = atmosphere.pressure
-    clock = coupled_model.clock
 
-    for (potential, t) in ((Φ.previous, clock.time), (Φ.next, next_time(clock, Δt)))
-        update_field_time_series!(p, Time(t))
-        time_interpolator = cpu_interpolating_time_indices(arch, p.times, p.time_indexing, t)
-        launch!(arch, grid, interface_kernel_parameters(grid),
-                _interpolate_barotropic_potential!,
-                potential, space_fractional_indices, time_interpolator,
-                p.data, p.backend, p.time_indexing, ρᵒᶜ)
-    end
-
-    ocean_clock = component_model(coupled_model.ocean).clock
-    KT = eltype(Φ.times)
-    copyto!(Φ.times, KT[ocean_clock.time, next_time(ocean_clock, Δt)])
+    update_field_time_series!(p, Time(t))
+    time_interpolator = cpu_interpolating_time_indices(arch, p.times, p.time_indexing, t)
+    launch!(arch, grid, interface_kernel_parameters(grid),
+            _interpolate_barotropic_potential!,
+            potential, space_fractional_indices, time_interpolator,
+            p.data, p.backend, p.time_indexing, ρᵒᶜ)
 
     return nothing
 end
