@@ -960,7 +960,7 @@ using Oceananigans.Fields: ZeroField, ConstantField
 # Formulations
 flux¹ = IceBathHeatFlux()
 flux² = ThreeEquationHeatFlux()
-flux³ = ThreeEquationHeatFlux(ConductiveFlux(conductivity=2.0), ConstantField(-40.0), 0.0095, 0.0095/35, 0.02)
+flux³ = ThreeEquationHeatFlux(ConductiveFlux(conductivity=2), ConstantField(-40), 0.0095, 0.0095/35, 0.02)
 
 # Parameters
 liquidus = LinearLiquidus()

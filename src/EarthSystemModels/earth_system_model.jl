@@ -84,7 +84,7 @@ function Oceananigans.initialize!(model::ESM)
 end
 
 function Oceananigans.TimeSteppers.reconcile_state!(model::ESM)
-    initialize!(model.interfaces.exchanger, model)
+    initialize!(model)
     update_state!(model)
     return nothing
 end
