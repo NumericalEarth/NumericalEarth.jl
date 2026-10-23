@@ -193,8 +193,7 @@ function ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
     # geopotential heights. `time_step!(atmosphere, Δt)` advances it, so the grid geometry a child
     # interpolates over follows the reanalysis in time.
     temperature_metadata = Metadata(:temperature; dataset, dates, region, dir)
-    FT = eltype(temperature_metadata)
-    clock = Clock{FT}(time = zero(FT))
+    clock = default_clock(architecture, eltype(temperature_metadata))
 
     # Build the native PressureLevelGrid once, with a geopotential `TimeSeriesInterpolation` bound to
     # `clock`. `_with_z` carries the fully built vertical only into this transient grid construction —
