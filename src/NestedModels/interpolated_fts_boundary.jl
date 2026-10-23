@@ -98,7 +98,12 @@ function validate_source_bracket(source, grid::OrthogonalSphericalShellGrid, dim
 
     for (label, child_nodes, source_nodes) in (("x", grid.λᶠᶠᵃ, Oceananigans.Grids.ξnodes),
                                                ("y", grid.φᶠᶠᵃ, Oceananigans.Grids.ηnodes))
-        sim_lo, sim_hi = extrema(child_nodes[i, j])
+        # `extrema` reduces on the device only for an unwrapped array or a view of one — CUDA's
+        # `AnyCuArray` does not cover `OffsetArray` — so shift into the parent's own indices and view
+        # that. A view of `child_nodes` itself would silently iterate on the host.
+        iᵖ = i .- (first(axes(child_nodes, 1)) - 1)
+        jᵖ = j .- (first(axes(child_nodes, 2)) - 1)
+        sim_lo, sim_hi = extrema(view(parent(child_nodes), iᵖ, jᵖ))
         src_lo, src_hi = extrema(source_nodes(source_grid, source_loc...))
         (src_lo ≤ sim_lo && sim_hi ≤ src_hi) || throw(ArgumentError(
             "Interpolated boundary source $(label)-extent [$src_lo, $src_hi] does not " *
