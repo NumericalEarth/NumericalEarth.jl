@@ -1,6 +1,7 @@
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using Oceananigans
 using Oceananigans.TimeSteppers: Clock
+using Oceananigans.Grids: znode, Center
 using KernelAbstractions: @kernel, @index
 
 mutable struct EarthSystemModel{R, A, L, I, O, F, C, Arch} <: AbstractModel{Nothing, Arch}
@@ -499,7 +500,8 @@ end
 
     @inbounds begin
         for k in 1:Nz
-            Tm = melting_temperature(liquidus, S[i, j, k])
+            z  = znode(i, j, k, grid, Center(), Center(), Center())
+            Tm = melting_temperature(liquidus, S[i, j, k], z)
             T[i, j, k] = max(T[i, j, k], Tm)
         end
     end
