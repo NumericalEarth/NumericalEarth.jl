@@ -51,10 +51,13 @@ Tᵒᶜ = 290 # K
 U₀ = 10 # m/s
 coriolis = FPlane(latitude=33)
 
-prescribed_ocean_atmos = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis)
-slab_ocean_atmos       = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis)
-full_ocean_atmos       = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis)
-nh_ocean_atmos         = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis)
+reference_state = ReferenceState(grid, ThermodynamicConstants(); potential_temperature=θᵃᵗ)
+dynamics = AnelasticDynamics(reference_state)
+
+prescribed_ocean_atmos = atmosphere_simulation(grid; dynamics, coriolis)
+slab_ocean_atmos       = atmosphere_simulation(grid; dynamics, coriolis)
+full_ocean_atmos       = atmosphere_simulation(grid; dynamics, coriolis)
+nh_ocean_atmos         = atmosphere_simulation(grid; dynamics, coriolis)
 
 # ## Atmospheric initial conditions
 #
@@ -64,13 +67,11 @@ nh_ocean_atmos         = atmosphere_simulation(grid; potential_temperature=θᵃ
 # A background zonal wind `U₀` provides a nonzero wind speed for the
 # similarity theory flux computation.
 
-reference_state = slab_ocean_atmos.dynamics.reference_state
-
-θᵢ(x, z) = reference_state.surface_potential_temperature + 0.1 * randn() * (z < 500)
-set!(prescribed_ocean_atmos, θ=θᵢ, u=U₀)
-set!(slab_ocean_atmos,       θ=θᵢ, u=U₀)
-set!(full_ocean_atmos,       θ=θᵢ, u=U₀)
-set!(nh_ocean_atmos,         θ=θᵢ, u=U₀)
+θᵢ(x, z) = reference_state.potential_temperature + 0.1 * randn() * (z < 500)
+set!(prescribed_ocean_atmos.model, θ=θᵢ, u=U₀)
+set!(slab_ocean_atmos.model,       θ=θᵢ, u=U₀)
+set!(full_ocean_atmos.model,       θ=θᵢ, u=U₀)
+set!(nh_ocean_atmos.model,         θ=θᵢ, u=U₀)
 
 # ## Prescribed ocean (constant SST)
 #
@@ -168,7 +169,7 @@ nh_sim         = Simulation(nh_model; Δt, stop_time)
 # ## Progress callbacks
 
 function prescribed_progress(sim)
-    atmos = sim.model.atmosphere
+    atmos = sim.model.atmosphere.model
     u, v, w = atmos.velocities
     umax = maximum(abs, u)
     wmax = maximum(abs, w)
@@ -179,7 +180,7 @@ function prescribed_progress(sim)
 end
 
 function slab_progress(sim)
-    atmos = sim.model.atmosphere
+    atmos = sim.model.atmosphere.model
     u, v, w = atmos.velocities
     umax = maximum(abs, u)
     wmax = maximum(abs, w)
@@ -193,7 +194,7 @@ function slab_progress(sim)
 end
 
 function full_progress(sim)
-    atmos = sim.model.atmosphere
+    atmos = sim.model.atmosphere.model
     u, v, w = atmos.velocities
     umax = maximum(abs, u)
     wmax = maximum(abs, w)
@@ -209,7 +210,7 @@ function full_progress(sim)
 end
 
 function nh_progress(sim)
-    atmos = sim.model.atmosphere
+    atmos = sim.model.atmosphere.model
     u, v, w = atmos.velocities
     umax = maximum(abs, u)
     wmax = maximum(abs, w)
@@ -236,16 +237,16 @@ add_callback!(nh_sim,         nh_progress,         IterationInterval(400))
 # * Full simulation: atmospheric θ, u, cloud water, and w, plus full-depth ocean temperature T.
 # * Nonhydrostatic simulation: atmospheric θ, u, cloud water, and w, plus full-depth ocean temperature T.
 
-u_p, v_p, w_p = prescribed_ocean_atmos.velocities
-θ_p = liquid_ice_potential_temperature(prescribed_ocean_atmos)
+u_p, v_p, w_p = prescribed_ocean_atmos.model.velocities
+θ_p = liquid_ice_potential_temperature(prescribed_ocean_atmos.model)
 
 prescribed_sim.output_writers[:atmos] = JLD2Writer(prescribed_model, (; θ=θ_p, u=u_p),
                                                    filename = "prescribed_ocean_atmos",
                                                    schedule = TimeInterval(1minute),
                                                    overwrite_files = true)
 
-u_s, v_s, w_s = slab_ocean_atmos.velocities
-θ_s = liquid_ice_potential_temperature(slab_ocean_atmos)
+u_s, v_s, w_s = slab_ocean_atmos.model.velocities
+θ_s = liquid_ice_potential_temperature(slab_ocean_atmos.model)
 
 slab_sim.output_writers[:atmos] = JLD2Writer(slab_model, (; θ=θ_s, u=u_s),
                                              filename = "slab_ocean_atmos",
@@ -257,9 +258,9 @@ slab_sim.output_writers[:sst] = JLD2Writer(slab_model, (; SST=slab_ocean.tempera
                                            schedule = TimeInterval(1minute),
                                            overwrite_files = true)
 
-u_f, v_f, w_f = full_ocean_atmos.velocities
-θ_f = liquid_ice_potential_temperature(full_ocean_atmos)
-qˡ_f = full_ocean_atmos.microphysical_fields.qˡ
+u_f, v_f, w_f = full_ocean_atmos.model.velocities
+θ_f = liquid_ice_potential_temperature(full_ocean_atmos.model)
+qˡ_f = full_ocean_atmos.model.microphysical_fields.qˡ
 
 full_sim.output_writers[:atmos] = JLD2Writer(full_model, (; θ=θ_f, u=u_f, qˡ=qˡ_f, w=w_f),
                                              filename = "full_ocean_atmos",
@@ -271,9 +272,9 @@ full_sim.output_writers[:ocean] = JLD2Writer(full_model, (; T=ocean.model.tracer
                                              schedule = TimeInterval(1minute),
                                              overwrite_files = true)
 
-u_nh, v_nh, w_nh = nh_ocean_atmos.velocities
-θ_nh = liquid_ice_potential_temperature(nh_ocean_atmos)
-qˡ_nh = nh_ocean_atmos.microphysical_fields.qˡ
+u_nh, v_nh, w_nh = nh_ocean_atmos.model.velocities
+θ_nh = liquid_ice_potential_temperature(nh_ocean_atmos.model)
+qˡ_nh = nh_ocean_atmos.model.microphysical_fields.qˡ
 
 nh_sim.output_writers[:atmos] = JLD2Writer(nh_model, (; θ=θ_nh, u=u_nh, qˡ=qˡ_nh, w=w_nh),
                                            filename = "nh_ocean_atmos",
@@ -379,30 +380,30 @@ end
 
 n = Observable(1)
 
-# Column 1 — prescribed atmosphere
+## Column 1 — prescribed atmosphere
 θn_p = @lift θ_prescribed_ts[$n]
 un_p = @lift u_prescribed_ts[$n]
 
-# Column 2 — slab atmosphere
+## Column 2 — slab atmosphere
 θn = @lift θ_slab_ts[$n]
 un = @lift u_slab_ts[$n]
 sstn_slab = @lift sst_slab_ts[$n]
 
-# SST comparison (convert °C to K for full/NH)
+## SST comparison (convert °C to K for full/NH)
 ocean_sst_kelvin = @lift interior(T_ocean_ts[$n], :, 1, Nzᵒᶜ) .+ celsius_to_kelvin
 nh_sst_kelvin    = @lift interior(T_nh_ts[$n], :, 1, Nzⁿʰ) .+ celsius_to_kelvin
 
-# Column 3 — hydrostatic atmosphere
+## Column 3 — hydrostatic atmosphere
 qˡn = @lift qˡ_full_ts[$n]
 wn  = @lift w_full_ts[$n]
 oTn = @lift T_ocean_ts[$n]
 
-# Column 4 — nonhydrostatic atmosphere
+## Column 4 — nonhydrostatic atmosphere
 qˡn_nh = @lift qˡ_nh_ts[$n]
 wn_nh  = @lift w_nh_ts[$n]
 oTn_nh = @lift T_nh_ts[$n]
 
-# Profile column — horizontal-mean profiles
+## Profile column — horizontal-mean profiles
 θ_avg_prescribed = @lift Field(Average(θ_prescribed_ts[$n], dims=1))
 θ_avg_slab       = @lift Field(Average(θ_slab_ts[$n], dims=1))
 θ_avg_full       = @lift Field(Average(θ_full_ts[$n], dims=1))
@@ -413,9 +414,10 @@ u_avg_full       = @lift Field(Average(u_full_ts[$n], dims=1))
 u_avg_nh         = @lift Field(Average(u_nh_ts[$n], dims=1))
 T_avg_ocean      = @lift Field(Average(T_ocean_ts[$n], dims=1))
 T_avg_nh         = @lift Field(Average(T_nh_ts[$n], dims=1))
-# Convert slab SST from K to °C for the ocean T profile comparison
+## Convert slab SST from K to °C for the ocean T profile comparison
 sst_avg_celsius        = @lift fill(mean(sst_slab_ts[$n]) - celsius_to_kelvin, 2)
 prescribed_avg_celsius = fill(Tᵒᶜ - celsius_to_kelvin, 2) # constant
+nothing #hide
 
 # ### Plot
 

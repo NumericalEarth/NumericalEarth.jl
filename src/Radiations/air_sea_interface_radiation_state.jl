@@ -12,9 +12,8 @@ end
 
 # Generic per-surface kernel: read σ from `rk`, downwelling SW/LW from
 # the exchanger, and the surface-specific albedo/emissivity from `s`.
-# Surface properties are optional: radiation schemes that force the surface themselves
-# (e.g. the Breeze RTM) supply no per-surface entry, and `s::Nothing` dispatches to the
-# zero radiation state — no interface radiative forcing.
+# A surface with no entry in `rk.surface_properties` (`s::Nothing`) gets the zero radiation
+# state: no interface radiative forcing.
 @inline function _surface_radiation_state(s, rk, exchanger_state, i, j, k, grid, time)
     σ = rk.σ
     @inbounds ℐꜜˢʷ = exchanger_state.ℐꜜˢʷ[i, j, 1]

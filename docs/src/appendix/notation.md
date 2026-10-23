@@ -113,10 +113,11 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``q`` | `q` | specific humidity | Mass mixing ratio of water vapor (kg kg⁻¹) |
 | ``u`` | `u` | zonal velocity | Eastward wind component (m s⁻¹) |
 | ``v`` | `v` | meridional velocity | Northward wind component (m s⁻¹) |
-| ``\mathscr{I}_\downarrow^{\mathrm{sw}}`` | `ℐꜜˢʷ` | downwelling shortwave | Downwelling shortwave radiation (W m⁻²) |
-| ``\mathscr{I}_\downarrow^{\mathrm{lw}}`` | `ℐꜜˡʷ` | downwelling longwave | Downwelling longwave radiation (W m⁻²) |
+| ``\mathscr{I}_\downarrow^{\mathrm{sw}}`` | `ℐꜜˢʷ` | downwelling shortwave | Downwelling shortwave radiation (W m⁻², negative) |
+| ``\mathscr{I}_\downarrow^{\mathrm{lw}}`` | `ℐꜜˡʷ` | downwelling longwave | Downwelling longwave radiation (W m⁻², negative) |
 | ``h_{b\ell}`` | `h_bℓ` | boundary layer height | Atmospheric boundary layer height (m) |
 | ``pᵛ⁺`` | ``pᵛ⁺`` | saturation vapor pressure | Vapor pressure at saturation (Pa) |
+| ``fᵛ`` | `fᵛ` | vapor pressure enhancement factor | Ratio of the saturation vapor pressure in moist air to that of pure water vapor (Gill 1982) (–) |
 | ``qᵛ⁺`` | `qᵛ⁺` | saturation specific humidity | Specific humidity at saturation, ``q^{v+}(T)`` (kg kg⁻¹) |
 | ``qˢ`` | `q` | surface specific humidity | Specific humidity at the interface; set by the humidity model (`β·qᵛ⁺` for `FractionalHumidity`, a vapor-flux balance for `SkinHumidity`) (kg kg⁻¹) |
 
@@ -280,9 +281,10 @@ zero-plane displacement, not the `surface_thickness` ``d`` of
 
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
-| ``\mathscr{I}_\downarrow^{\mathrm{sw}}`` | `ℐꜜˢʷ` | downwelling shortwave | Downwelling shortwave radiation (W m⁻²) |
-| ``\mathscr{I}_\downarrow^{\mathrm{lw}}`` | `ℐꜜˡʷ` | downwelling longwave | Downwelling longwave radiation (W m⁻²) |
+| ``\mathscr{I}_\downarrow^{\mathrm{sw}}`` | `ℐꜜˢʷ` | downwelling shortwave | Downwelling shortwave radiation (W m⁻², negative) |
+| ``\mathscr{I}_\downarrow^{\mathrm{lw}}`` | `ℐꜜˡʷ` | downwelling longwave | Downwelling longwave radiation (W m⁻², negative) |
 | ``\mathscr{I}_\uparrow^{\mathrm{lw}}`` | `ℐꜛˡʷ` | upwelling longwave | Emitted longwave radiation (W m⁻²) |
+| ``\mathscr{I}_\uparrow^{\mathrm{sw}}`` | `ℐꜛˢʷ` | upwelling shortwave | Reflected shortwave radiation (W m⁻²) |
 
 | ``\mathscr{I}_{t}^{\mathrm{sw}}`` | `ℐₜˢʷ` | transmitted shortwave | Shortwave passing through the surface, ``(1-\alpha) \mathscr{I}_\downarrow^{\mathrm{sw}}`` (W m⁻²) |
 | ``\mathscr{I}_{a}^{\mathrm{lw}}`` | `ℐₐˡʷ` | absorbed longwave | Longwave absorbed at the surface, ``\epsilon \mathscr{I}_\downarrow^{\mathrm{lw}}`` (W m⁻²) |
@@ -303,6 +305,7 @@ superscript band.
 | ``\tau^y`` | `τʸ` | meridional kinematic stress | Kinematic meridional momentum flux (m² s⁻²) |
 | ``\rho \tau^x`` | `ρτˣ` | zonal wind stress | Mass-weighted zonal stress (N m⁻²) |
 | ``\rho \tau^y`` | `ρτʸ` | meridional wind stress | Mass-weighted meridional stress (N m⁻²) |
+| ``\th`` | `þ` | ocean fraction | Areal fraction of a surface cell covered by ocean (`ocean_fraction`); the land fraction is ``1 - \th`` (–) |
 
 ## Net ocean fluxes
 
@@ -374,6 +377,7 @@ Most symbols can be entered in the Julia REPL and in editors with Julia support 
 | `α` | `\alpha` | Alpha (albedo) |
 | `ϵ` | `\epsilon` | Epsilon (emissivity) |
 | `ℵ` | `\aleph` | Aleph (ice concentration) |
+| `þ` | `\th` | Thorn (ocean fraction) |
 | `ϰ` | `\varkappa` | Varkappa (von Kármán constant) |
 | `Ψ` | `\Psi` | Capital Psi (interface state) |
 | `★` | `\bigstar` | Star (similarity-theory scale) |

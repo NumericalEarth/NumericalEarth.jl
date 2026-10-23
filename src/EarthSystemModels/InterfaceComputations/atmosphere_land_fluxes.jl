@@ -39,6 +39,23 @@ function atmosphere_land_interface(grid, atmosphere, land;
     return AtmosphereInterface(al_fluxes, interface_temperature, interface_specific_humidity, formulation)
 end
 
+# Fallback: assume land has a `fluxes` property like SlabLand
+land_surface_energy_flux(land) = land.fluxes.surface_energy_flux
+
+"""
+    land_surface_shortwave_up(land)
+    land_surface_longwave_up(land)
+
+Fields into which `apply_air_land_radiative_fluxes!` writes the upwelling radiation (positive
+upward), for land components that take it as a prescribed input. The upwelling fluxes are only
+known in the radiative phase, after `update_net_fluxes!`, so they are pushed rather than pulled.
+Returns `nothing` by default, in which case nothing is written.
+"""
+land_surface_shortwave_up(land) = nothing
+
+@doc (@doc land_surface_shortwave_up)
+land_surface_longwave_up(land) = nothing
+
 #####
 ##### Flux compute driver
 #####
@@ -139,6 +156,7 @@ function land_state_field end
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
     Ψᵃᵗ = local_atmosphere_state(i, j, atmosphere_state, atmosphere_properties)
     Ψˡᵃ = state2dindex(land_state, i, j, grid, time)
+    # `typeof(Ψˡᵃ.T)`, not `eltype(grid)`, which is a traced type inside a Reactant kernel.
     FT  = typeof(Ψˡᵃ.T)
 
     formulation = local_interface_formulation(interface_formulation, i, j)
