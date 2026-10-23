@@ -1,11 +1,11 @@
 include("runtests_setup.jl")
 
 using NumericalEarth
-using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model
+using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model, Interpolated
 using NumericalEarth.DataWrangling: BoundingBox
 using Oceananigans
 using Oceananigans: prognostic_fields
-using Oceananigans.OutputReaders: interpolating_time_indices, memory_index
+using Oceananigans.OutputReaders: interpolating_time_indices, memory_index, Cyclical, InMemory, OnDisk
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location
 using Oceananigans.Grids: node
@@ -246,6 +246,34 @@ end
     cy = reconstructed_c((x, y, z) -> y, (:south, :north))
     @test isapprox(CUDA.@allowscalar((cy[4, 0, 2] + cy[4, 1, 2]) / 2), 0.0; atol = 1e-4)
     @test isapprox(CUDA.@allowscalar((cy[4, 8, 2] + cy[4, 9, 2]) / 2), 2.0; atol = 1e-4)
+end
+
+# A halo fill without a clock reads the first snapshot in memory, wherever reading snapshots left the window.
+@testset "Interpolated Value BC filled without a clock reads a snapshot in memory on $(arch)" for arch in test_architectures
+    src_grid = RectilinearGrid(arch; size = (6, 6, 2), x = (-1, 5), y = (-1, 5), z = (-2, 0),
+                               topology = (Bounded, Bounded, Bounded))
+    grid = RectilinearGrid(arch; size = (4, 4, 2), x = (0, 4), y = (0, 4), z = (-2, 0),
+                           topology = (Bounded, Bounded, Bounded))
+
+    # Snapshots at noon of 4 days, cyclical: before the first noon the series wraps to the last day
+    times = (12:24:84) .* 3600
+    path = joinpath(mktempdir(), "c.jld2")
+    on_disk = FieldTimeSeries{Center, Center, Center}(src_grid, times; backend = OnDisk(), path, name = "c")
+    snapshot = CenterField(src_grid)
+    for n in eachindex(times)
+        set!(snapshot, n)
+        set!(on_disk, snapshot, n)
+    end
+    fts = FieldTimeSeries(path, "c"; grid = src_grid, backend = InMemory(2), time_indexing = Cyclical())
+
+    bcs = FieldBoundaryConditions(west = ValueBoundaryCondition(Interpolated(fts)))
+    model = HydrostaticFreeSurfaceModel(grid; tracers = :c, buoyancy = nothing, boundary_conditions = (; c = bcs))
+
+    # The window holds snapshots 2 and 3, while t = 0 lies between snapshots 4 and 1
+    fts[2]
+    c = model.tracers.c
+    fill_halo_regions!(c)
+    @test CUDA.@allowscalar c[0, 1, 1] == 4 # snapshot 2 on the west face, zero inside
 end
 
 @testset "breeze_prognostic_state derives (ρ, θˡⁱ, qᵗ)" begin
