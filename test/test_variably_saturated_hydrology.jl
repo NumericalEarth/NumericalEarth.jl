@@ -40,6 +40,22 @@ end
     end
 end
 
+@testset "Dry soil near the residual fraction holds its water" begin
+    for arch in test_architectures, FT in (Float32, Float64)
+        grid = RectilinearGrid(arch, FT; size = 1, z = (-1, 0), topology = (Flat, Flat, Bounded))
+        hydrology = VariablySaturatedHydrology(FT; slab_depth = 0.3, porosity = 0.4,
+            residual_liquid_fraction = 0.05, storage_height = 1000,
+            retention_curve = VanGenuchtenRetention(FT; inverse_air_entry_head = 1, pore_size_uniformity = 1.2),
+            hydraulic_conductivity = VanGenuchtenConductivity(FT; matching_point_conductivity = 1e-5,
+                                                               pore_size_uniformity = 1.2, water_viscosity = nothing))
+        land = SlabLand(grid; hydrology)
+        M₀ = convert(FT, 15.00002)
+        set!(land; T = 293, M = M₀)
+        time_step!(land, 60)
+        @test scalar(land.water_storage) == M₀
+    end
+end
+
 @testset "Coupled nonlinear Darcy balance across three layers" begin
     for arch in test_architectures, FT in (Float32, Float64)
         grid = RectilinearGrid(arch, FT; size = 1, z = (-1, 0), topology = (Flat, Flat, Bounded))
