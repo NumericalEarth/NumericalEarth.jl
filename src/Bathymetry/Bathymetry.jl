@@ -15,7 +15,7 @@ using Oceananigans.DistributedComputations: DistributedComputations, Distributed
                                             reconstruct_global_grid, all_reduce
 using Oceananigans.Fields: Field, interior, interpolate!
 using Oceananigans.Grids: x_domain, y_domain, topology, Face, Center,
-                          Flat, Periodic, Bounded, LeftConnected, RightConnected,
+                          Flat, Periodic, Bounded, Sides, Closed,
                           RectilinearGrid, LatitudeLongitudeGrid, OrthogonalSphericalShellGrid,
                           λnodes, φnodes
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid

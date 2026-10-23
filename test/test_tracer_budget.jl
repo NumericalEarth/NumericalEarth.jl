@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using CUDA: @allowscalar
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Diagnostics: NaNChecker, nan_detected
-using Oceananigans.Grids: MutableVerticalDiscretization
+using Oceananigans.Grids: MutableVerticalDiscretization, RightCenterFolded, RightFaceFolded
 using Oceananigans.Operators: volume
 using Oceananigans.Units
 using NumericalEarth.Oceans: get_radiative_forcing
@@ -100,7 +100,7 @@ end
             underlying_grid = TripolarGrid(arch;
                                            size = (20, 20, 20),
                                            z,
-                                           halo = (7, 7, 4),
+                                           halo = (7, 7, 5),
                                            fold_topology)
 
             bottom_height = synthetic_bottom_height(underlying_grid;

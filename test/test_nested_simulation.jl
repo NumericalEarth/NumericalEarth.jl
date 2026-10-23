@@ -633,8 +633,8 @@ end
 @testset "Boundary relaxation mask and parent region follow a Lambert-conformal child's walls on $(arch)" for arch in test_architectures
     ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
     Nx, Ny, width = 40, 30, 5
-    grid = LambertConformalConicGrid(arch; size = (Nx, Ny, 2), center = (-97.5, 38.5), spacing = 13e3,
-                                     standard_parallel = 38.5, z = (0, 1))
+    grid = ConformalConicGrid(arch; size = (Nx, Ny, 2), center = (-97.5, 38.5), spacing = 13e3,
+                              standard_parallel = 38.5, z = (0, 1))
 
     mask = CenterField(grid)
     set!(mask, ext.boundary_relaxation_mask(grid, width))

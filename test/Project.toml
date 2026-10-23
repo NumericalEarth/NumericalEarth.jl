@@ -39,14 +39,16 @@ ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
 
 [sources]
 NumericalEarth = {path = ".."}
+Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "main"} # TODO: remove once Oceananigans 0.116 is registered
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "glw/oceananigans-0.116"} # TODO: remove once Breeze 0.13 is registered
 
 [compat]
 ArchGDAL = "0.10"
-Breeze = "0.12"
+Breeze = "0.13"
 CDSAPI = "2.2.2"
 CFTime = "0.1, 0.2"
 CUDA = "5.9.5, 6"
-ClimaSeaIce = "0.5, 0.6"
+ClimaSeaIce = "0.6"
 CondaPkg = "0.2.33"
 ConservativeRegridding = "0.2"
 CopernicusClimateDataStore = "0.2"
@@ -60,7 +62,7 @@ JLD2 = "0.4, 0.5, 0.6"
 KernelAbstractions = "0.9"
 MPI = "0.20"
 NCDatasets = "0.12, 0.13, 0.14"
-Oceananigans = "0.113, 0.114"
+Oceananigans = "0.115, 0.116" # TODO: "0.116" once registered; main still reports 0.115.0
 OceanBioME = "0.19.1, 0.20"
 Profile = "<0.0.1, 1"
 PythonCall = "0.9.28"
