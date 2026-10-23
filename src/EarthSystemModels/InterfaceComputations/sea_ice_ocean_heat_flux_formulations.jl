@@ -284,7 +284,7 @@ Returns `(T★, S★, q)` where q is the melt rate (positive for melting).
     # Get conductive flux parameters - dispatches on flux type
     κ, Tˢⁱ = conductive_flux_parameters(flux, ice_state, ℰ)
 
-    λ₁ = -liquidus.slope
+    λ₁ = -liquidus.salinity_slope
     λ₂ = liquidus.freshwater_melting_temperature
 
     # Transfer coefficients
