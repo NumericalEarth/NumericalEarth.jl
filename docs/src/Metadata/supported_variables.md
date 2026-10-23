@@ -12,6 +12,7 @@ NumericalEarth currently ships connectors for the following data products:
 | `GLO30`            | [Supported variables](@ref dataset-glo30-vars)            | [Copernicus DEM GLO-30 (Earth Data Hub)](https://earthdatahub.destine.eu/collections/copernicus-dem/datasets/GLO-30) |
 | `GLO90`            | [Supported variables](@ref dataset-glo90-vars)            | [Copernicus DEM GLO-90 (Earth Data Hub)](https://earthdatahub.destine.eu/collections/copernicus-dem/datasets/GLO-90) |
 | `ORCAOne`          | `:bottom_height`, `:mesh_mask`                            | [eORCA1 mesh and bathymetry (Zenodo)](https://zenodo.org/records/4436658)                          |
+| `ORCATwo`          | `:bottom_height`, `:mesh_mask`                            | [ORCA2 domain configuration (Zenodo)](https://zenodo.org/records/15705144)                         |
 | `ORCAQuarter`      | `:bottom_height`, `:mesh_mask`                            | [eORCA025 mesh and bathymetry (Zenodo)](https://zenodo.org/records/15494369)                       |
 | `ORCATwelfth`      | `:bottom_height`, `:mesh_mask`                            | [eORCA12 mesh and bathymetry (Zenodo)](https://zenodo.org/records/15495870)                        |
 | `GLORYSStatic`     | `:depth`                                                  | [Copernicus GLORYS static product](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |

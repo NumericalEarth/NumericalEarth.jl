@@ -138,7 +138,7 @@ export
     ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel,
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
     ERA5HourlyLand, ERA5MonthlyLand,
-    ORCAOne, ORCAQuarter, ORCATwelfth,
+    ORCAOne, ORCATwo, ORCAQuarter, ORCATwelfth,
     ORCAGrid,
     OpenLandMapSoilDB,
     GlobalBuildingFootprints3D, building_morphometry,
