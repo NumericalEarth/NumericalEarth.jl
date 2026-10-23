@@ -1,6 +1,6 @@
 using Oceananigans.Operators: Δzᶜᶜᶜ
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
-using ClimaSeaIce.SeaIceDynamics: x_momentum_stress, y_momentum_stress
+using ClimaSeaIce.SeaIceDynamics: implicit_τx_coefficient, implicit_τy_coefficient
 
 using ..EarthSystemModels: ocean_temperature, ocean_salinity
 
@@ -56,6 +56,9 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     Tˢⁱ = interface.temperature
     Sˢⁱ = interface.salinity
 
+    # Mass the ice/snow exchanged with the ocean during the previous sea-ice step
+    mass_fluxes = sea_ice.model.mass_fluxes.thermodynamics
+
     if !isnothing(dynamics)
         kernel_parameters = interface_kernel_parameters(grid)
         τₛ = dynamics.external_momentum_stresses.bottom
@@ -68,7 +71,7 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     launch!(arch, grid, :xy, _compute_sea_ice_ocean_fluxes!,
             flux_formulation, fluxes, Tˢⁱ, Sˢⁱ, grid, clock,
             hˢⁱ, hc, ℵ, Sⁱ, Tᵒᶜ, Sᵒᶜ, uˢⁱ, vˢⁱ, τₛ,
-            liquidus, ocean_properties, L, Δt)
+            liquidus, ocean_properties, L, Δt, mass_fluxes.ice, mass_fluxes.snow)
 
     return nothing
 end
@@ -85,6 +88,8 @@ end
 
     τˣ = fluxes.x_momentum
     τʸ = fluxes.y_momentum
+    λˣ = fluxes.x_momentum_coefficient
+    λʸ = fluxes.y_momentum_coefficient
     Nz = size(grid, 3)
 
     uˢⁱ = sea_ice_u_velocity
@@ -92,11 +97,14 @@ end
     hˢⁱ = ice_thickness
     ℵ = ice_concentration
     sea_ice_fields = (; u = uˢⁱ, v = vˢⁱ, h = hˢⁱ, ℵ = ℵ)
+    τₛ = sea_ice_ocean_stress
 
-    # Momentum stresses
+    # The drag ρₑ Cᴰ |Δu| (uᵒ - uⁱ) split into the implicit coefficient λ = ρₑ Cᴰ |Δu| and the explicit remainder Fₑ = -λ uⁱ.
     @inbounds begin
-        τˣ[i, j, 1] = x_momentum_stress(i, j, Nz, grid, sea_ice_ocean_stress, clock, sea_ice_fields)
-        τʸ[i, j, 1] = y_momentum_stress(i, j, Nz, grid, sea_ice_ocean_stress, clock, sea_ice_fields)
+        λˣ[i, j, 1] = implicit_τx_coefficient(i, j, Nz, grid, τₛ, clock, sea_ice_fields)
+        λʸ[i, j, 1] = implicit_τy_coefficient(i, j, Nz, grid, τₛ, clock, sea_ice_fields)
+        τˣ[i, j, 1] = - λˣ[i, j, 1] * uˢⁱ[i, j, Nz]
+        τʸ[i, j, 1] = - λʸ[i, j, 1] * vˢⁱ[i, j, Nz]
     end
 end
 
@@ -118,7 +126,9 @@ end
                                                 liquidus,
                                                 ocean_properties,
                                                 latent_heat,
-                                                Δt)
+                                                Δt,
+                                                ice_ocean_mass_flux,
+                                                snow_ocean_mass_flux)
 
     i, j = @index(Global, NTuple)
 
@@ -126,6 +136,8 @@ end
     𝒬ᶠʳᶻ = fluxes.frazil_heat
     𝒬ⁱⁿ = fluxes.interface_heat
     Jˢ = fluxes.salt
+    Jʷ = fluxes.freshwater
+    Jᴴ = fluxes.freshwater_heat_content
     τˣ = fluxes.x_momentum
     τʸ = fluxes.y_momentum
     T★ = interface_temperature
@@ -174,9 +186,6 @@ end
     # Store frazil heat flux
     @inbounds 𝒬ᶠʳᶻ[i, j, 1] = δ𝒬ᶠʳᶻ
 
-    # Freezing rate
-    qᶠ = δ𝒬ᶠʳᶻ / ℰ
-
     @inbounds begin
         Tᴺ  = Tᵒᶜ[i, j, Nz]
         Sᴺ  = Sᵒᶜ[i, j, Nz]
@@ -199,20 +208,26 @@ end
     # =============================================
     # Part 3: Interface heat flux (formulation-specific)
     # =============================================
-    # Returns interfacial heat flux, melt rate qᵐ, and interface T, S
-    𝒬ⁱᵒ, qᵐ, Tᵦ, Sᵦ = compute_interface_heat_flux(flux_formulation,
-                                                   ocean_surface_state, ice_state,
-                                                   liquidus, ocean_properties, ℰ, u★)
+    # Returns interfacial heat flux and interface T, S
+    𝒬ⁱᵒ, Tb, Sb = compute_interface_heat_flux(flux_formulation,
+                                              ocean_surface_state, ice_state,
+                                              liquidus, ocean_properties, ℰ, u★)
 
     # Store interface values and heat flux
     @inbounds 𝒬ⁱⁿ[i, j, 1] = 𝒬ⁱᵒ
-    store_interface_state!(flux_formulation, T★, S★, i, j, Tᵦ, Sᵦ)
+    store_interface_state!(flux_formulation, T★, S★, i, j, Tb, Sb)
 
     # =============================================
-    # Part 4: Salt flux
+    # Part 4: Freshwater and salt fluxes
     # =============================================
-    # Salt flux from melting/freezing:
-    # - during ice melt   (qᵐ > 0), fresh meltwater dilutes the ocean
-    # - during ice growth (qᶠ < 0), brine rejection adds salt to ocean
-    @inbounds Jˢ[i, j, 1] = (qᵐ + qᶠ) / ρᵒᶜ * (Sᴺ - Sˢⁱ)
+    # Derived from the mass the sea-ice model actually exchanged with the ocean during its last step.
+    # Jˢ carries only the salt held in the ice itself (Eᵢ Sˢⁱ); the Sᴺ-weighted dilution from the
+    # freshwater volume Jʷ is applied live in the ocean salinity boundary condition.
+    @inbounds begin
+        Eᵢ = ice_ocean_mass_flux[i, j, 1]
+        Eₛ = snow_ocean_mass_flux[i, j, 1]
+        Jʷ[i, j, 1] = - (Eᵢ + Eₛ) / ρᵒᶜ
+        Jˢ[i, j, 1] = Eᵢ * Sˢⁱ / ρᵒᶜ # the snow term Sˢⁿ * Eₛ drops since Sˢⁿ == 0
+        Jᴴ[i, j, 1] = - Tb * Eᵢ / ρᵒᶜ # ice meltwater enters at the interface temperature, snow melts at 0
+    end
 end

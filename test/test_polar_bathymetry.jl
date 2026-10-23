@@ -42,8 +42,8 @@ using NumericalEarth.Bathymetry: regrid_bathymetry
         @test validate_dataset_coverage(grid_ok, meta) === nothing
     end
 
-    @testset "GEBCO2024 metadata" begin
-        ds = GEBCO2024()
+    @testset "GEBCO2026 metadata" begin
+        ds = GEBCO2026()
         @test longitude_interfaces(ds) == (-180, 180)
         @test latitude_interfaces(ds) == (-90, 90)
         @test z_interfaces(ds) == (0, 1)

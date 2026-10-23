@@ -8,16 +8,16 @@ export GloFASPrescribedLand
 
 using Dates: Dates, DateTime, Day
 using Oceananigans.OutputReaders: Cyclical, FieldTimeSeries
-using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum,
                        available_variables, first_date, last_date
-using ...Lands: PrescribedLand, build_river_routing, coastal_outlet_indices
+using ...Lands: PrescribedLand, build_river_routing, coastal_outlet_indices, routable_grid
 
 download_GloFAS_cache::String = ""
 
 function __init__()
-    global download_GloFAS_cache = @get_scratch!("GloFAS")
+    global download_GloFAS_cache = DataWrangling.download_cache("GloFAS")
+    return nothing
 end
 
 #####
@@ -27,7 +27,7 @@ end
 # The GloFAS (Global Flood Awareness System) river-discharge reanalysis is produced
 # by routing ERA5-forced LISFLOOD runoff through a channel-routing model. It provides
 # river discharge already accumulated downstream to river mouths — the ERA5-consistent
-# analogue of JRA55's pre-routed `river_freshwater_flux`. See Harrigan et al. (2020),
+# analog of JRA55's pre-routed `river_freshwater_flux`. See Harrigan et al. (2020),
 # https://essd.copernicus.org/articles/12/2043/2020/.
 abstract type GloFASDataset end
 
@@ -75,14 +75,6 @@ function DataWrangling.metadata_filename(dataset::GloFASDataset, name, date, reg
     ds = dataset_name(dataset)
     return string(var, "_", ds, "_", date_str(date), region_suffix(region), ".nc")
 end
-
-function inpainted_metadata_filename(metadata::GloFASMetadatum)
-    without_extension = metadata.filename[1:end-3]
-    return without_extension * "_inpainted.jld2"
-end
-
-DataWrangling.inpainted_metadata_path(metadata::GloFASMetadatum) =
-    joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 include("glofas_reanalysis.jl")
 include("glofas_prescribed_land.jl")

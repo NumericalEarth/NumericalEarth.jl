@@ -1,14 +1,16 @@
 module ORCA
 
-export ORCA1, ORCA2, ORCA12
+export ORCAOne, ORCATwo, ORCAQuarter, ORCATwelfth
 
-using Downloads
-using Tar
-using CodecZlib
+using CodecZlib: GzipDecompressorStream
+using Downloads: Downloads
 using Oceananigans: Oceananigans
+using Oceananigans.BoundaryConditions: FPivot, TPivot
 using Oceananigans.DistributedComputations: @root
+using Tar: Tar
 
-using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path
+using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, metadata_url,
+                       download_with_retries
 
 import ..DataWrangling:
     metadata_filename,
@@ -20,21 +22,22 @@ import ..DataWrangling:
     longitude_interfaces,
     latitude_interfaces,
     z_interfaces,
-    reversed_vertical_axis,
-    metadata_url
-
-import Downloads: download
+    reversed_vertical_axis
 
 download_ORCA_cache::String = ""
 
 function __init__()
     global download_ORCA_cache = DataWrangling.download_cache("ORCA")
+    return nothing
 end
 
 abstract type ORCADataset end
 
-struct ORCA1 <: ORCADataset end
-struct ORCA12 <: ORCADataset end
+# Names spell out the nominal horizontal resolution: 1°, 2° (ORCA2), 1/4° (eORCA025), and 1/12° (eORCA12).
+struct ORCAOne <: ORCADataset end
+struct ORCATwo <: ORCADataset end
+struct ORCAQuarter <: ORCADataset end
+struct ORCATwelfth <: ORCADataset end
 
 default_download_directory(::ORCADataset) = download_ORCA_cache
 reversed_vertical_axis(::ORCADataset) = false
@@ -44,71 +47,60 @@ all_dates(::ORCADataset, args...) = nothing
 first_date(::ORCADataset, args...) = nothing
 last_date(::ORCADataset, args...) = nothing
 
-const ORCA1Metadatum = Metadatum{<:ORCA1}
-const ORCA1Metadatum = Metadatum{<:ORCA1}
-const ORCA12Metadatum = Metadatum{<:ORCA12}
+const ORCATwoMetadatum = Metadatum{<:ORCATwo}
+const ORCATwelfthMetadatum = Metadatum{<:ORCATwelfth}
 const ORCAMetadatum = Metadatum{<:ORCADataset}
 
-ORCA1_variable_names = Dict(
+const ORCA_variable_names = Dict(
     :bottom_height => "Bathymetry",
     :mesh_mask     => "glamt",
 )
 
-ORCA12_variable_names = Dict(
+const ORCATwelfth_variable_names = Dict(
     :bottom_height => "Bathymetry",
     :mesh_mask     => "e1t",
 )
 
-dataset_variable_name(data::ORCA1Metadatum) = ORCA1_variable_names[data.name]
-dataset_variable_name(data::ORCA12Metadatum) = ORCA12_variable_names[data.name]
+const ORCATwo_variable_names = Dict(
+    :bottom_height => "bathy_metry",
+    :mesh_mask     => "glamt",
+)
+
+dataset_variable_name(data::ORCAMetadatum)         = ORCA_variable_names[data.name]
+dataset_variable_name(data::ORCATwoMetadatum)      = ORCATwo_variable_names[data.name]
+dataset_variable_name(data::ORCATwelfthMetadatum)  = ORCATwelfth_variable_names[data.name]
 
 # Zenodo record 4436658: eORCA1 mesh_mask and bathymetry
-const ORCA1_mesh_mask_url  = "https://zenodo.org/records/4436658/files/eORCA1.2_mesh_mask.nc"
-const ORCA1_bathymetry_url = "https://zenodo.org/records/4436658/files/eORCA_R1_bathy_meter_v2.2.nc"
+mesh_mask_url(::ORCAOne)  = "https://zenodo.org/records/4436658/files/eORCA1.2_mesh_mask.nc"
+bathymetry_url(::ORCAOne) = "https://zenodo.org/records/4436658/files/eORCA_R1_bathy_meter_v2.2.nc"
 
-# Google Drive records for GLORYS12 (ORCA12) mesh mask and bathymetry
-const ORCA12_mesh_mask_url  = "https://zenodo.org/records/15495870/files/grid_mask_eORCA12-GO6.nc"
-const ORCA12_bathymetry_url = "https://zenodo.org/records/15495870/files/bathy_eORCA12_noclosea_from_GEBCO2021_FillZero_S21TT_CloseaCopy.nc"
+# Zenodo record 15705144: an ORCA2L75 tarball whose domain_cfg holds both the mesh and the bathymetry
+const ORCATwo_url = "https://zenodo.org/records/15705144/files/ORCA2L75_domaincfg_forcings.tar.gz"
+mesh_mask_url(::ORCATwo)  = ORCATwo_url
+bathymetry_url(::ORCATwo) = ORCATwo_url
 
-function DataWrangling.metadata_url(metadatum::ORCA1Metadatum)
-    if metadatum.name == :mesh_mask
-        return ORCA1_mesh_mask_url
-    elseif metadatum.name == :bottom_height
-        return ORCA1_bathymetry_url
-    else
-        error("Unknown ORCA1 variable: $(metadatum.name)")
-    end
-end
+# Zenodo record 15494369: eORCA025 mesh_mask and bathymetry
+mesh_mask_url(::ORCAQuarter)  = "https://zenodo.org/records/15494369/files/grid_mask_eORCA025-GO6.nc"
+bathymetry_url(::ORCAQuarter) = "https://zenodo.org/records/15494369/files/bathy_eORCA025_noclosea_from_GEBCO2021_S21TT_CloseaCopy_edit.nc"
 
-function DataWrangling.metadata_url(metadatum::ORCA12Metadatum)
-    if metadatum.name == :mesh_mask
-        return ORCA12_mesh_mask_url
-    elseif metadatum.name == :bottom_height
-        return ORCA12_bathymetry_url
-    else
-        error("Unknown ORCA12 variable: $(metadatum.name)")
-    end
-end
+# Zenodo record 15495870: eORCA12 mesh_mask and bathymetry
+mesh_mask_url(::ORCATwelfth)  = "https://zenodo.org/records/15495870/files/grid_mask_eORCA12-GO6.nc"
+bathymetry_url(::ORCATwelfth) = "https://zenodo.org/records/15495870/files/bathy_eORCA12_noclosea_from_GEBCO2021_FillZero_S21TT_CloseaCopy.nc"
 
-function metadata_filename(::ORCA1, name, date, region)
+function dataset_url(dataset::ORCADataset, name)
     if name == :mesh_mask
-        return "eORCA1.2_mesh_mask.nc"
+        return mesh_mask_url(dataset)
     elseif name == :bottom_height
-        return "eORCA_R1_bathy_meter_v2.2.nc"
+        return bathymetry_url(dataset)
     else
-        error("Unknown ORCA1 variable: $name")
+        error("Unknown $(dataset) variable: $(name)")
     end
 end
 
-function metadata_filename(::ORCA12, name, date, region)
-    if name == :mesh_mask
-        return "grid_mask_eORCA12-GO6.nc"
-    elseif name == :bottom_height
-        return "bathy_eORCA12_noclosea_from_GEBCO2021_FillZero_S21TT_CloseaCopy.nc"
-    else
-        error("Unknown ORCA12 variable: $name")
-    end
-end
+DataWrangling.metadata_url(metadatum::ORCAMetadatum) = dataset_url(metadatum.dataset, metadatum.name)
+
+metadata_filename(dataset::ORCADataset, name, date, region) = basename(dataset_url(dataset, name))
+metadata_filename(::ORCATwo, name, date, region) = "domain_cfg_orca2l75_nemo5.nc"
 
 z_interfaces(::ORCAMetadatum) = nothing
 
@@ -119,61 +111,38 @@ function Downloads.download(metadatum::ORCAMetadatum)
     @root if !isfile(filepath)
         dataset_name = nameof(typeof(metadatum.dataset))
         @info "Downloading $(dataset_name) data: $(metadatum.name) to $(metadatum.dir)..."
-        Downloads.download(fileurl, filepath; progress=DownloadProgress())
+        download_with_retries(fileurl, filepath; progress=DownloadProgress())
     end
 
     return filepath
 end
 
-default_south_rows_to_remove(::ORCA1) = 35
-# Conservative default: keep all rows unless user requests trimming.
-default_south_rows_to_remove(::ORCA12) = 0
-
-# ORCA2
-struct ORCA2 <:ORCADataset end
-
-const ORCA2Metadatum = Metadatum{<:ORCA2}
-
-ORCA2_variable_names = Dict( 
-    :bottom_height => "bathy_metry",
-    :mesh_mask     => "glamt",
-)
-
-dataset_variable_name(data::ORCA2Metadatum) = ORCA2_variable_names[data.name]
-
-# Zenodo record 15705144
-const ORCA2_url = "https://zenodo.org/records/15705144/files/ORCA2L75_domaincfg_forcings.tar.gz"
-
-metadata_url(::ORCA2Metadatum) = ORCA2_url
-
-function metadata_filename(::ORCA2, name, date, bounding_box)
-    if name == :mesh_mask
-        return "ORCA2L75/ORCA2L75/domain_cfg_orca2l75_nemo5.nc"
-    elseif name == :bottom_height
-        return "ORCA2L75/ORCA2L75/domain_cfg_orca2l75_nemo5.nc"
-    else
-        error("Unknown ORCA2 variable: $name")
-    end
-end
-
-z_interfaces(::ORCA2Metadatum) = nothing
-
-function Downloads.download(metadatum::ORCA2Metadatum)
-    fileurl  = metadata_url(metadatum)
+function Downloads.download(metadatum::ORCATwoMetadatum)
     filepath = metadata_path(metadatum)
-    fileroute = metadatum.dir
 
     @root if !isfile(filepath)
-        @info "Downloading ORCA2 data: $(metadatum.name) to $(metadatum.dir)..."
-        Downloads.download(fileurl, fileroute*"ORCA2L75.tar.gz"; progress=download_progress)
-        open(GzipDecompressorStream, fileroute*"ORCA2L75.tar.gz") do io
-            Tar.extract(io, fileroute*"/ORCA2L75")
-        end
+        @info "Downloading ORCATwo data: $(metadatum.name) to $(metadatum.dir)..."
+        archive = joinpath(metadatum.dir, basename(ORCATwo_url))
+        download_with_retries(metadata_url(metadatum), archive; progress=DownloadProgress())
+        extracted = open(Tar.extract, GzipDecompressorStream, archive)
+        mv(joinpath(extracted, "ORCA2L75", basename(filepath)), filepath; force=true)
+        rm(extracted; recursive=true)
+        rm(archive)
     end
 
     return filepath
 end
 
-default_south_rows_to_remove(::ORCA2) = 0
+# NEMO's north fold: eORCA1 pivots on F points, ORCA2, eORCA025, and eORCA12 on T points
+north_fold_pivot(::ORCAOne)     = FPivot
+north_fold_pivot(::ORCADataset) = TPivot
+
+default_south_rows_to_remove(::ORCAOne)     = 35
+default_south_rows_to_remove(::ORCATwo)     = 0
+default_south_rows_to_remove(::ORCAQuarter) = 155
+default_south_rows_to_remove(::ORCATwelfth) = 460
+
+# Number of first columns repeated at the east edge of the mesh
+periodic_overlap(::ORCADataset) = 2
 
 end # module

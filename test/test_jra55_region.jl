@@ -14,7 +14,7 @@ using Oceananigans.Grids: topology, Bounded
             atm = JRA55PrescribedAtmosphere(arch;
                                             time_indices_in_memory=2,
                                             region=bbox)
-            Ta = atm.tracers.T
+            Ta = atm.temperature
             # Coordinates of the field grid should fall inside the requested bbox.
             λnodes_T = λnodes(Ta.grid, Center())
             φnodes_T = φnodes(Ta.grid, Center())
@@ -34,7 +34,7 @@ using Oceananigans.Grids: topology, Bounded
             atm = JRA55PrescribedAtmosphere(arch;
                                             time_indices_in_memory=2,
                                             region=col)
-            Ta = atm.tracers.T
+            Ta = atm.temperature
             @test size(Ta.grid, 1) == 1
             @test size(Ta.grid, 2) == 1
             @test any(!iszero, interior(Ta))
@@ -51,8 +51,8 @@ using Oceananigans.Grids: topology, Bounded
                                                  region=BoundingBox(longitude=(148, 152),
                                                                     latitude=(-2, 2)))
 
-            Ta_col  = col_atm.tracers.T
-            Ta_bbox = bbox_atm.tracers.T
+            Ta_col  = col_atm.temperature
+            Ta_bbox = bbox_atm.temperature
 
             T_col_t1 = @allowscalar interior(Ta_col)[1, 1, 1, 1]
             loc = (Center(), Center(), Center())

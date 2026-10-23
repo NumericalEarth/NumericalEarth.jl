@@ -26,6 +26,22 @@ flux_variables(::AbstractHydrology) = ()
 
 initial_flux(::AbstractHydrology, ::Symbol, grid) = CenterField(grid)
 
+"""
+    diagnostic_variables(hydrology::AbstractHydrology) -> Tuple{Vararg{Symbol}}
+
+Names of closure-owned diagnostic fields published into `SlabLand.diagnostics`.
+Default: no diagnostics.
+"""
+diagnostic_variables(::AbstractHydrology) = ()
+
+"""
+    initial_diagnostic(hydrology::AbstractHydrology, name::Symbol, grid)
+
+Build the initial diagnostic `Field` for diagnostic variable `name`. Defaults
+to a zeroed `CenterField`.
+"""
+initial_diagnostic(::AbstractHydrology, ::Symbol, grid) = CenterField(grid)
+
 time_step!(::AbstractHydrology, land, Δt) = nothing
 time_step!(hydrology::AbstractHydrology, land, Δt, time) = time_step!(hydrology, land, Δt)
 update_diagnostics!(::AbstractHydrology, land) = nothing

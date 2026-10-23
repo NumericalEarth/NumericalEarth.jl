@@ -9,12 +9,10 @@ import Downloads
     sg_mean = SoilGrids2()
     sg_sand = Metadatum(:sand_fraction, dataset=sg_mean)
     Downloads.download(sg_sand)
-    # Check that data is successfully downloaded
     @test isfile(DataWrangling.metadata_path(sg_sand))
     for var in keys(SoilGrids.SoilGrids2_dataset_variable_names)
         sgmd = Metadatum(var, dataset=sg_mean)
         field = Field(sgmd)
-        # Check that at least some grid cells are finite
         @test any(isfinite.(field))
     end
     for var in (:sand_fraction, :silt_fraction, :clay_fraction)

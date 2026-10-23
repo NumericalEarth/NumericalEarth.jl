@@ -25,7 +25,7 @@ grid = ECCO_immersed_grid()
 
 # We visualize the bottom height of the ECCO grid using CairoMakie.
 
-fig, ax, hm = heatmap(grid.immersed_boundary.bottom_height)
+fig, ax, hm = heatmap(bottom_height_field(grid))
 Colorbar(fig[1, 2], hm, height = Relative(3/4), label = "Depth (m)")
 
 save("ECCO_continents.png", fig)

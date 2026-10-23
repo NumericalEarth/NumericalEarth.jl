@@ -497,14 +497,14 @@ fig4
 # (GloFAS)](https://www.globalfloods.eu/) solves this: it forces the LISFLOOD
 # hydrological and channel-routing model with ERA5 runoff to produce **river
 # discharge already accumulated to river mouths** [harrigan2020glofas](@citep) —
-# the ERA5-consistent analogue of JRA55's pre-routed river freshwater flux.
+# the ERA5-consistent analog of JRA55's pre-routed river freshwater flux.
 #
 # GloFAS lives on the Copernicus Early Warning Data Store (EWDS), a separate
 # endpoint from the ERA5 CDS. The download automatically targets the EWDS url
 # (https://ewds.climate.copernicus.eu/api) while reusing the ECMWF token from
 # `~/.cdsapirc` — the same token works across both data stores — so the ERA5
 # sections above and this GloFAS section run in one session without editing
-# `~/.cdsapirc`. You still need to accept the `cems-glofas-historical` licence
+# `~/.cdsapirc`. You still need to accept the `cems-glofas-historical` license
 # once on the dataset page (see <https://ewds.climate.copernicus.eu/how-to-api>).
 #
 # We focus on the mouth of the Amazon, the largest freshwater source to the
@@ -560,8 +560,8 @@ ocean_grid = ImmersedBoundaryGrid(ocean_grid, GridFittedBottom(bottom_height))
 nothing #hide
 
 # `GloFASPrescribedLand` downloads the discharge, locates the river mouths from
-# the land/ocean boundary, and maps each mouth to the nearest active ocean cell
-# of `ocean_grid` — conserving the total volume of freshwater (see
+# the land/ocean boundary, and spreads each mouth over the active ocean cells of
+# `ocean_grid` around it — conserving the total volume of freshwater (see
 # [`build_river_routing`](@ref)).
 
 land = @suppress_out GloFASPrescribedLand(ocean_grid; dataset = glofas,
@@ -572,11 +572,11 @@ land = @suppress_out GloFASPrescribedLand(ocean_grid; dataset = glofas,
 nothing #hide
 
 # The resulting `RiverRouting` records, for each river mouth, the coastal ocean
-# cell that receives its discharge. We overlay the mouths (on the GloFAS network)
+# cells that receive its discharge. We overlay the mouths (on the GloFAS network)
 # and their destination ocean cells (on the coastline) on the discharge map to
 # visualize the relocation.
 
-routing = land.river_routing
+routing = land.river_routing.rivers
 
 λn = λnodes(land.grid, Center(), Center(), Center())
 φn = φnodes(land.grid, Center(), Center(), Center())
