@@ -246,6 +246,42 @@ end
     return zero(Iˢʷ)
 end
 
+
+#####
+##### The penetrating shortwave as the turbulence closures see it
+#####
+
+TurbulenceClosures.penetrative_radiation(radiation::TwoColorRadiation) = radiation
+
+@inline function two_color_parameters(R::TwoColorRadiation, i, j)
+    κ₂ = blue_green_absorption_coefficient(R.second_absorption_coefficient, i, j)
+    return R.first_color_fraction, R.first_absorption_coefficient, κ₂
+end
+
+# Fluxes positive upward: `surface_flux` holds the downward temperature flux J₀ ≥ 0, so the buoyancy flux is -g α J₀ ≤ 0
+@inline function TurbulenceClosures.surface_radiative_buoyancy_flux(i, j, grid, R::TwoColorRadiation, buoyancy, fields)
+    b = buoyancy.formulation
+    T, S = get_temperature_and_salinity(b, fields)
+    α = thermal_expansionᶜᶜᶠ(i, j, size(grid, 3) + 1, grid, b.equation_of_state, T, S)
+    J₀ = @inbounds R.surface_flux[i, j, 1]
+    return - b.gravitational_acceleration * α * J₀
+end
+
+@inline function TurbulenceClosures.transmitted_fraction(R::TwoColorRadiation, i, j, grid, d)
+    ϵ₁, κ₁, κ₂ = two_color_parameters(R, i, j)
+    return ϵ₁ * exp(-κ₁ * d) + (1 - ϵ₁) * exp(-κ₂ * d)
+end
+
+@inline function TKEBasedVerticalDiffusivities.transmitted_fraction_derivative(R::TwoColorRadiation, i, j, grid, d)
+    ϵ₁, κ₁, κ₂ = two_color_parameters(R, i, j)
+    return - ϵ₁ * κ₁ * exp(-κ₁ * d) - (1 - ϵ₁) * κ₂ * exp(-κ₂ * d)
+end
+
+@inline function TurbulenceClosures.transmitted_thickness(R::TwoColorRadiation, i, j, grid, h)
+    ϵ₁, κ₁, κ₂ = two_color_parameters(R, i, j)
+    return - ϵ₁ * expm1(-κ₁ * h) / κ₁ - (1 - ϵ₁) * expm1(-κ₂ * h) / κ₂
+end
+
 get_radiative_forcing(something) = nothing
 get_radiative_forcing(tcr::TwoColorRadiation) = tcr
 
