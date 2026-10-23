@@ -2,11 +2,14 @@ include("runtests_setup.jl")
 
 using NumericalEarth
 using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model
+using NumericalEarth.DataWrangling: BoundingBox
 using Oceananigans
 using Oceananigans: prognostic_fields
 using Oceananigans.OutputReaders: interpolating_time_indices, memory_index
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location
+using Oceananigans.Grids: node
+using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
 using Oceananigans.Forcings: MultipleForcings
 using Breeze
@@ -439,6 +442,25 @@ end
     @test moisture_prognostic_name(μ) == :ρqᵉ
 end
 
+@testset "state exchanger: Float32 parent, Float64 constants" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    constants = ThermodynamicConstants(Float64)
+    pˢᵗ, T₀, p₀, qᵛ₀ = 1e5, 283.15, 9e4, 8.0e-3
+
+    grid = RectilinearGrid(Float32; size = (4, 4, 4), x = (-1, 1), y = (-1, 1), z = (0, 1),
+                           topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(grid, [0.0, 1.0, 2.0])
+    set!(parent.temperature,       (x, y, z, t) -> T₀)
+    set!(parent.specific_humidity, (x, y, z, t) -> qᵛ₀)
+    set!(parent.pressure,          (x, y, z, t) -> p₀)
+
+    condensates = (qᶜˡ = CenterField(grid), qʳ = CenterField(grid), qᶜⁱ = CenterField(grid), qˢ = CenterField(grid))
+    ex = ext.state_exchanger(parent, pˢᵗ, constants; condensates)
+    at(f) = Array(interior(f))[1, 1, 1]
+    θˡⁱ = at(ex.prognostic.ρθ[1]) / at(ex.prognostic.ρᵈ[1])
+    @test θˡⁱ ≈ ext.liquid_ice_potential_temperature(T₀, qᵛ₀, 0.0, 0.0, p₀, pˢᵗ, constants) rtol = 1e-6
+end
+
 @testset "Breeze AtmosphereModel as a NestedSimulation child on $(arch)" for arch in test_architectures
     # Parent: a 3D PrescribedAtmosphere strictly bracketing the child,
     # holding a uniform state. Velocity slots carry momentum (ρu, ρv) per the
@@ -518,8 +540,8 @@ end
     @test all(isfinite, Array(interior(atmos.model.dynamics.total_density)))
 end
 
-@testset "Breeze nested_atmosphere_model defaults to a moving derived window on CPU()" begin
-    parent_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 4),
+@testset "Breeze nested_atmosphere_model defaults to a moving derived window on $(arch)" for arch in test_architectures
+    parent_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 4),
                                          longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),
                                          z = (0, 1), topology = (Bounded, Bounded, Bounded))
     times = collect(0.0:1.0:4.0)
@@ -530,7 +552,7 @@ end
     set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
     set!(parent.pressure,          (x, y, z, t) -> 9.0e4)
 
-    child_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 8),
+    child_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 8),
                                         longitude = (-1, 1), latitude = (-1, 1), z = (0, 1000),
                                         halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
 
@@ -578,9 +600,9 @@ end
     @test child_tke_advection.bounds.minimum_value == 0
 end
 
-# The Davies relaxation is keyed by the density-weighted prognostic, so a caller's own specific-key
+# The lateral boundary relaxation is keyed by the density-weighted prognostic, so a caller's own specific-key
 # forcing combines with it rather than replacing it.
-@testset "Davies relaxation survives a caller-supplied specific forcing" begin
+@testset "Lateral boundary relaxation survives a caller-supplied specific forcing" begin
     parent_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 4),
                                         longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),
                                         z = (0, 1), topology = (Bounded, Bounded, Bounded))
@@ -602,8 +624,31 @@ end
 
     ρθ_forcing = nested.child.forcing.ρθ
     @test ρθ_forcing isa MultipleForcings
-    @test length(ρθ_forcing.forcings) == 2                       # Davies relaxation + the caller's θ forcing
+    @test length(ρθ_forcing.forcings) == 2                       # boundary relaxation + the caller's θ forcing
     @test all(f -> f isa SpecificForcing, ρθ_forcing.forcings)   # both ρᵈ-weighted at kernel time
+end
+
+# On a Lambert-conformal child the relaxation zone follows the panel's walls (constant projected x or y),
+# and the parent region is the lon/lat hull of the panel's faces.
+@testset "Boundary relaxation mask and parent region follow a Lambert-conformal child's walls on $(arch)" for arch in test_architectures
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    Nx, Ny, width = 40, 30, 5
+    grid = LambertConformalConicGrid(arch; size = (Nx, Ny, 2), center = (-97.5, 38.5), spacing = 13e3,
+                                     standard_parallel = 38.5, z = (0, 1))
+
+    mask = CenterField(grid)
+    set!(mask, ext.boundary_relaxation_mask(grid, width))
+    m = Array(interior(mask, :, :, 1))
+    half_cell = ext.SmoothStepRamp()(0.5 / width)
+    @test all(isapprox(m[i, j], half_cell) for i in 1:Nx for j in (1, Ny))
+    @test all(isapprox(m[i, j], half_cell) for j in 1:Ny for i in (1, Nx))
+    @test m[Nx ÷ 2, Ny ÷ 2] == 0
+
+    box = BoundingBox(grid)
+    cpu_grid = on_architecture(CPU(), grid)
+    faces = [node(i, j, 1, cpu_grid, Face(), Face(), Center()) for i in 1:Nx+1, j in 1:Ny+1]
+    @test box.longitude == extrema(first, faces)
+    @test box.latitude  == extrema(x -> x[2], faces)
 end
 
 # The exchanger's 3-level window advances as the clock crosses parent intervals and back, with
@@ -917,4 +962,73 @@ end
     Δxf = minimum_xspacing(fine,   Center(), Center(), Center())
     @test isapprox(wc * Δxc, 60_000; rtol = 0.2)
     @test isapprox(wf * Δxf, 60_000; rtol = 0.2)
+end
+
+# Strips cut from the same parent drive the child exactly as the full-domain parent does.
+@testset "BoundaryPrescribedComponent strips reproduce the full-domain parent on $(arch)" for arch in test_architectures
+    ext   = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    times = [0.0, 4.0, 8.0, 12.0, 16.0]
+
+    function parent_atmosphere(longitude, latitude, Nx, Ny, times = times)
+        grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny, 8), longitude, latitude, z = (0, 16000),
+                                     halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+        atmosphere = PrescribedAtmosphere(grid, times)
+        set!(atmosphere.temperature,       (λ, φ, z, t) -> 288 - 6.5e-3 * z + λ + t / 4)
+        set!(atmosphere.specific_humidity, (λ, φ, z, t) -> 0.006)
+        set!(atmosphere.velocities.u,      (λ, φ, z, t) -> 8 + t / 10)
+        set!(atmosphere.velocities.v,      (λ, φ, z, t) -> φ - 36.6)
+        set!(atmosphere.pressure,          (λ, φ, z, t) -> 1e5 * exp(-z / 8000))
+        return atmosphere
+    end
+
+    # Each strip is a sub-window of the full parent's 1/3° lattice.
+    full = parent_atmosphere((-2, 2), (34.6, 38.6), 12, 12)
+    strips = BoundaryPrescribedComponent(west  = parent_atmosphere((-2, 0), (34.6, 38.6), 6, 12),
+                                         east  = parent_atmosphere((0, 2),  (34.6, 38.6), 6, 12),
+                                         south = parent_atmosphere((-2, 2), (34.6, 36.6), 12, 6),
+                                         north = parent_atmosphere((-2, 2), (36.6, 38.6), 12, 6))
+
+    child_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 8),
+                                       longitude = (-1, 1), latitude = (35.6, 37.6),
+                                       z = (0, 16000), halo = (5, 5, 5),
+                                       topology = (Bounded, Bounded, Bounded))
+
+    nest(parent, relaxation_rate) = nested_atmosphere_model(parent, child_grid; relaxation_rate, relaxation_width = 3,
+                                                            base_pressure = 1e5, coriolis = nothing,
+                                                            parent_condensates = nothing)
+    full_model      = nest(full, 1/30)
+    strip_model     = nest(strips, 1/30)
+    unrelaxed_model = nest(full, nothing)
+
+    # The strip child starts from a one-time full-domain snapshot, as the dataset-driven constructor does.
+    snapshot = parent_atmosphere((-2, 2), (34.6, 38.6), 12, 12, times[1:2])
+    initial_states = (full_model.exchanger.prognostic,
+                      ext.child_prognostic_state(snapshot, first(strip_model.exchanger)),
+                      unrelaxed_model.exchanger.prognostic)
+
+    for (model, prognostic) in zip((full_model, strip_model, unrelaxed_model), initial_states)
+        ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false, prognostic)
+        for _ in 1:8
+            time_step!(model, 0.5)
+        end
+    end
+
+    for (name, full_field) in pairs(prognostic_fields(full_model.child))
+        difference(model) = maximum(abs, Field(prognostic_fields(model.child)[name] - full_field))
+        scale = maximum(abs, full_field)
+        @test difference(strip_model) ≤ 1e-12 * scale
+        name in (:ρθ, :ρu, :ρv) && @test difference(unrelaxed_model) > 1e-6 * scale
+    end
+
+    # Running the strip child in two `run!` calls reproduces its continuous run.
+    rerun_model = nest(strips, 1/30)
+    ext.initialize_nested_child!(rerun_model, nothing, first(times), ""; balancer = false, prognostic = initial_states[2])
+    simulation = Simulation(rerun_model; Δt = 0.5, stop_iteration = 4, verbose = false)
+    run!(simulation)
+    simulation.stop_iteration = 8
+    run!(simulation)
+
+    for (name, field) in pairs(prognostic_fields(strip_model.child))
+        @test maximum(abs, Field(prognostic_fields(rerun_model.child)[name] - field)) == 0
+    end
 end
