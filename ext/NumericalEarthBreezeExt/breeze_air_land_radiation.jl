@@ -107,7 +107,7 @@ function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
     arch = architecture(grid)
     rk = NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation_properties(rtm)
     surface_properties = rk.surface_properties.land
-    Tˢ = rtm.surface_radiation.surface_temperature
+    Tˢ = al_interface.temperature   # land skin temperature (K)
 
     state = coupled_model.interfaces.exchanger.radiation.state
 
