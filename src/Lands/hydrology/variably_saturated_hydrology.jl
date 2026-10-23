@@ -10,7 +10,9 @@
 ##### where every term is positive-upward (`Jˡˢ = −Pˡ + Rˢᶠᶜ`). The
 ##### conservative storage variable is the *augmented* liquid fraction
 ##### `ϑˡ = θˡ + max(Π,0)/hˢˢ`, so `Mˡᵃ > Mˡᵃ⁺` is admitted and corresponds to
-##### saturated positive-pressure storage (`Π > 0`).
+##### saturated positive-pressure storage (`Π > 0`), reachable only through an
+##### upward deep liquid flux or dew since infiltration is limited to the
+##### remaining pore volume.
 #####
 ##### Diagnostics published every step:
 #####   * `deep_liquid_flux`        (Jˡᵇ, positive upward)
@@ -136,31 +138,37 @@ diagnostic_variables(::VariablySaturatedHydrology) =
 
 @inline function augmented_liquid_fraction(i, j, grid, h, M)
     FT  = typeof(M)
-    hˡᵃ = convert(FT, property_value(h.slab_depth, i, j))
+    hˡᵃ = convert(FT, stateindex(h.slab_depth, i, j, 1))
     return M / (convert(FT, h.liquid_density) * hˡᵃ)
 end
 
 @inline function liquid_fraction(i, j, grid, h, M)
     ϑˡ = augmented_liquid_fraction(i, j, grid, h, M)
-    ν  = property_value(h.porosity, i, j)
+    ν  = stateindex(h.porosity, i, j, 1)
     return min(ϑˡ, convert(typeof(ϑˡ), ν))
 end
 
 @inline function liquid_saturation(i, j, grid, h, θˡ)
     FT  = typeof(θˡ)
-    ν   = convert(FT, property_value(h.porosity, i, j))
-    θʳ  = convert(FT, property_value(h.residual_liquid_fraction, i, j))
+    ν   = convert(FT, stateindex(h.porosity, i, j, 1))
+    θʳ  = convert(FT, stateindex(h.residual_liquid_fraction, i, j, 1))
     Δ   = ν - θʳ
     return clamp((θˡ - θʳ) / Δ, 0, 1)
 end
 
+@inline function saturated_water_storage(i, j, grid, h, M)
+    FT  = typeof(M)
+    ν   = convert(FT, stateindex(h.porosity, i, j, 1))
+    hˡᵃ = convert(FT, stateindex(h.slab_depth, i, j, 1))
+    return convert(FT, h.liquid_density) * ν * hˡᵃ
+end
+
 @inline function diagnostic_pressure_head(i, j, grid, h, M, θˡ, 𝒮)
     FT  = typeof(M)
-    ν   = convert(FT, property_value(h.porosity, i, j))
     ρˡ  = convert(FT, h.liquid_density)
-    hˡᵃ = convert(FT, property_value(h.slab_depth, i, j))
-    hˢˢ = convert(FT, property_value(h.storage_height, i, j))
-    Mˡᵃ⁺ = ρˡ * ν * hˡᵃ
+    hˡᵃ = convert(FT, stateindex(h.slab_depth, i, j, 1))
+    hˢˢ = convert(FT, stateindex(h.storage_height, i, j, 1))
+    Mˡᵃ⁺ = saturated_water_storage(i, j, grid, h, M)
     # Unsaturated branch: Π = Π_m(𝒮). Saturated branch: Π = (M − M⁺) hˢˢ/(ρˡ hˡᵃ).
     return ifelse(M < Mˡᵃ⁺,
                   pressure_head(i, j, grid, h.retention_curve, 𝒮),
@@ -203,7 +211,7 @@ saturation(h::VariablySaturatedHydrology, land) = land.saturation
         Mij = M[i, j, 1]
         Jvij = Jv[i, j, 1]
         Plij = Pl[i, j, 1]
-        Πᵈ   = stateindex(deep_pressure_head, i, j, 1, grid, time, (Center, Center, Center))
+        Πᵈ   = stateindex(deep_pressure_head, i, j, 1, grid, Time(time), (Center, Center, Center))
         Tij  = T[i, j, 1]
     end
 
@@ -212,9 +220,16 @@ saturation(h::VariablySaturatedHydrology, land) = land.saturation
     Π  = diagnostic_pressure_head(i, j, grid, h, Mij, θˡ, 𝒮)
     K  = hydraulic_conductivity(i, j, grid, h.hydraulic_conductivity, 𝒮, Tij)
 
-    Jˡs, Rsfc = surface_liquid_flux_and_runoff(h.runoff, Plij, Mij, θˡ, 𝒮, Π, K)
+    Jˡs, Rsfc = surface_liquid_flux_and_runoff(i, j, grid, h.runoff, Plij, Mij, θˡ, 𝒮, Π, K)
     Jˡb       = deep_liquid_flux(h.deep_liquid_flux, Mij, θˡ, 𝒮, Π, K, Πᵈ, time)
     Rlat      = subsurface_runoff(h.runoff, Mij, Π, K)
+
+    # Infiltration cannot exceed the pore volume the column has left; the surplus
+    # is saturation-excess runoff.
+    pore_limited_flux = -max(saturated_water_storage(i, j, grid, h, Mij) - Mij, 0) / Δt
+    saturation_excess = max(pore_limited_flux - Jˡs, 0)
+    Jˡs  += saturation_excess
+    Rsfc += saturation_excess
 
     dMdt = Jˡb - Jˡs - Jvij - Rlat
 

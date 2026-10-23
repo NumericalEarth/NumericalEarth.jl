@@ -119,9 +119,11 @@ function regrid_in_tiles!(target, metadata, native, tile_bytes = default_tile_by
     λ, φ = read_file_coords(metadata)
     mangling = mangling_for(metadata, length(φ))
 
-    native_longitude = λnodes(native, Center(), Center(), Center())
-    native_latitude = φnodes(native, Center(), Center(), Center())
+    native_longitude = on_architecture(CPU(), λnodes(native, Center(), Center(), Center()))
+    native_latitude = on_architecture(CPU(), φnodes(native, Center(), Center(), Center()))
     target_longitude, target_latitude = horizontal_centers(grid)
+    target_longitude = on_architecture(CPU(), target_longitude)
+    target_latitude = on_architecture(CPU(), target_latitude)
 
     offset_i = native_file_offset(λ, native_longitude)
     offset_j = native_file_offset(φ, native_latitude)

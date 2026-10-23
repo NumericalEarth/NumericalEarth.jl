@@ -1,25 +1,34 @@
 include("runtests_setup.jl")
 
-using ArchGDAL  # activates NumericalEarthArchGDALExt (the windowed /vsicurl COG read)
+using ArchGDAL  # loads NumericalEarthArchGDALExt (the windowed /vsicurl COG reader)
+using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_grid
+using Oceananigans.Grids: topology, Bounded
 
-using NumericalEarth.DataWrangling: BoundingBox, metadata_path
-using NumericalEarth.DataWrangling.OpenLandMap: OpenLandMapSoilDB
+# Network-gated: reads the 30 m global COGs over /vsicurl (anonymous, no credentials).
+# Excluded from the default suite in runtests.jl, mirroring the other *_downloading tests.
+@testset "OpenLandMap-soilDB windowed download" begin
+    dataset = OpenLandMapSoilDB()
+    # Cropland near Ames, Iowa: real soil retrievals, no ice or sand-desert mask.
+    region = BoundingBox(longitude = (-93.70, -93.60), latitude = (41.90, 42.00))
 
-# `test_openlandmap.jl` covers the dataset interface and the windowing logic against a
-# synthetic on-disk tile; it never touches the network. This is the counterpart that proves
-# the real /vsicurl reads still resolve.
-#
-# The global grid is ~1.44M × 528k cells, so a region is mandatory. A ~0.05° box keeps each
-# depth window to a few hundred kilobytes.
-const openlandmap_region = BoundingBox(longitude = (-112.05, -112.00), latitude = (36.00, 36.05))
+    metadatum = Metadatum(:clay_fraction; dataset, region)
+    grid = native_grid(metadatum)
+    clay_fraction = Field(metadatum)
+    values = Array(interior(clay_fraction))
 
-@testset "Downloading OpenLandMap soil properties" begin
-    for name in (:clay_fraction, :bulk_density)
-        metadatum = Metadatum(name; dataset=OpenLandMapSoilDB(), region=openlandmap_region)
-        filepath = metadata_path(metadatum)
-        isfile(filepath) && rm(filepath; force=true)
+    @test size(values)[1:2] == (size(grid, 1), size(grid, 2))
+    @test size(values, 3) == 3  # the three native depth intervals
 
-        download(metadatum)
-        @test isfile(filepath)
-    end
+    valid = filter(!isnan, vec(values))
+    @test !isempty(valid)
+    @test all(x -> 0 ≤ x ≤ 1, valid)     # mass fraction in kg/kg after WeightPercent
+    @test length(unique(valid)) > 1      # a real window, not a constant fill
+
+    # Sub-360° window must be Bounded in x so halos do not wrap.
+    @test topology(clay_fraction.grid)[1] == Bounded
+
+    bulk_density = Field(Metadatum(:bulk_density; dataset, region))
+    dense = filter(!isnan, vec(Array(interior(bulk_density))))
+    @test !isempty(dense)
+    @test all(x -> 500 ≤ x ≤ 2200, dense)  # fine-earth bulk density in kg/m³
 end

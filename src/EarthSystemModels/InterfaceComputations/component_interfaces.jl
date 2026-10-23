@@ -54,7 +54,7 @@ end
 vector_component_boundary_conditions(grid, loc) = FieldBoundaryConditions(grid, loc)
 
 function vector_component_boundary_conditions(grid::OrthogonalSphericalShellGrids.TripolarGridOfSomeKind, loc)
-    north_bc = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid)(-1)
+    north_bc = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid, -1)
     return FieldBoundaryConditions(grid, loc; north = north_bc)
 end
 
@@ -182,7 +182,7 @@ ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 15)...)
 
 @inline computed_fluxes(::Nothing) = ZeroFluxes()
 
-mutable struct ComponentInterfaces{AO, ASI, SIO, AL, C, AP, OP, SIP, EX, P}
+mutable struct ComponentInterfaces{AO, ASI, SIO, AL, C, AP, OP, SIP, EX, P, SP}
     atmosphere_ocean_interface :: AO
     atmosphere_sea_ice_interface :: ASI
     sea_ice_ocean_interface :: SIO
@@ -193,6 +193,7 @@ mutable struct ComponentInterfaces{AO, ASI, SIO, AL, C, AP, OP, SIP, EX, P}
     exchanger :: EX
     net_fluxes :: C
     properties :: P
+    surface_partition :: SP
 end
 
 using ..EarthSystemModels: DegreesCelsius, temperature_units, exchange_grid,
@@ -202,12 +203,17 @@ Base.summary(crf::ComponentInterfaces) = "ComponentInterfaces"
 Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
 
 # Diagnostic surface (skin) temperature — what the atmosphere "sees"; for skin-temperature
-# closures it differs from `land.temperature`. The land interface wins; then the
+# closures it differs from `land.temperature`. With both land and ocean interfaces the
+# surface partition's blended temperature wins; otherwise the land interface, then the
 # atmosphere-ocean interface; `nothing` when the atmosphere touches neither.
 EarthSystemModels.surface_temperature(interface::AtmosphereInterface) = interface.temperature
-EarthSystemModels.surface_temperature(interfaces::ComponentInterfaces) =
-    EarthSystemModels.surface_temperature(interfaces.atmosphere_land_interface,
-                                          interfaces.atmosphere_ocean_interface)
+
+function EarthSystemModels.surface_temperature(interfaces::ComponentInterfaces)
+    Tₛ = interfaces.surface_partition.surface_temperature
+    isnothing(Tₛ) || return Tₛ
+    return EarthSystemModels.surface_temperature(interfaces.atmosphere_land_interface,
+                                                 interfaces.atmosphere_ocean_interface)
+end
 
 EarthSystemModels.surface_temperature(land_interface::AtmosphereInterface, ocean_interface) =
     land_interface.temperature
@@ -336,6 +342,9 @@ end
 #####
 
 default_ai_temperature(::Nothing) = nothing
+biogeochemical_interface(exchanger, ocean; kwargs...) = NamedTuple()
+biogeochemical_interface(exchanger, ocean::Simulation; kwargs...) = biogeochemical_interface(exchanger, ocean, ocean.model.biogeochemistry; kwargs...)
+biogeochemical_interface(exchanger, ocean, biogeochemistry; kwargs...) = NamedTuple()
 
 function default_ao_specific_humidity(ocean)
     FT    = eltype(ocean)
@@ -367,6 +376,10 @@ Keyword Arguments
    `InteriorDiffusivity()` assessed from the ocean turbulence closure.
 - `atmosphere_ocean_interface_specific_humidity`: specific humidity formulation. Default: `default_ao_specific_humidity(ocean)`.
 - `atmosphere_sea_ice_interface_temperature`: temperature formulation for atmosphere-sea ice interface. Default: `default_ai_temperature(sea_ice)`.
+- `ocean_fraction`: fraction of each exchange-grid cell covered by ocean (anything `set!` accepts:
+   a `Field`, function, or number), forming the [`SurfacePartition`](@ref) that weights the
+   atmosphere's net surface fluxes. Required when the model has both land and ocean interfaces;
+   unused otherwise.
 - `ocean_reference_density`: reference density for the ocean. Default: `reference_density(ocean)`.
 - `ocean_heat_capacity`: heat capacity for the ocean. Default: `heat_capacity(ocean)`.
 - `ocean_temperature_units`: temperature units for the ocean. Default: `DegreesCelsius()`.
@@ -398,6 +411,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                                                                                    temperature         = atmosphere_land_interface_temperature,
                                                                                    velocity_difference = atmosphere_land_velocity_difference,
                                                                                    specific_humidity   = atmosphere_land_interface_specific_humidity),
+                             ocean_fraction = nothing,
                              ocean_reference_density = reference_density(ocean),
                              ocean_heat_capacity = heat_capacity(ocean),
                              ocean_temperature_units = temperature_units(ocean),
@@ -405,7 +419,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              sea_ice_reference_density = reference_density(sea_ice),
                              sea_ice_heat_capacity = heat_capacity(sea_ice),
                              gravitational_acceleration = default_gravitational_acceleration,
-                             exchanger_correction = nothing)
+                             exchanger_correction = nothing,
+                             biogeochemistry_interface_kwargs = NamedTuple())
 
     FT = eltype(exchange_grid)
 
@@ -458,6 +473,9 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     # `atmosphere_land_interface` is either user-supplied or built from the four
     # sibling kwargs above by the same-named keyword default.
     al_interface = atmosphere_land_interface
+
+    surface_partition = SurfacePartition(exchange_grid, atmosphere, ocean_fraction, ao_interface, al_interface)
+
     # Total interface fluxes
     total_fluxes = (ocean      = net_fluxes(ocean),
                     sea_ice    = net_fluxes(sea_ice),
@@ -477,7 +495,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
         isnothing(interface) || validate_zero_plane_displacement(interface.flux_formulation, zᵃᵗ)
     end
 
-    properties = (; gravitational_acceleration, surface_layer_height = zᵃᵗ)
+    properties = merge((; gravitational_acceleration, surface_layer_height = zᵃᵗ),
+                          biogeochemical_interface(exchanger, ocean; biogeochemistry_interface_kwargs...))
 
     return ComponentInterfaces(ao_interface,
                                ai_interface,
@@ -488,7 +507,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                                sea_ice_properties,
                                exchanger,
                                total_fluxes,
-                               properties)
+                               properties,
+                               surface_partition)
 end
 
 # Default land surface humidity formulation: bulk (saturated where wet, dry
