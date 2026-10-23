@@ -609,6 +609,42 @@ end
     end
 end
 
+@testset "Interface stresses at periodic u/v faces (3D Breeze + PrescribedOcean)" begin
+    for arch in test_architectures
+        A = typeof(arch)
+        @testset "net stress equals periodic face average on $A" begin
+            Nx, Ny, L = 8, 6, 800
+            grid = RectilinearGrid(arch; size = (Nx, Ny, 10), halo = (5, 5, 5), x = (0, L), y = (0, L), z = (0, 1000),
+                                   topology = (Periodic, Periodic, Bounded))
+            atmosphere = atmosphere_simulation(grid; dynamics = AnelasticDynamics(ReferenceState(grid)))
+            # Non-divergent winds that the anelastic projection keeps, over an SST varying in x and y
+            set!(atmosphere.model; θ = 290, u = (x, y, z) -> 8 + 2cos(2π * y / L), v = (x, y, z) -> 3sin(2π * x / L))
+            ocean_grid = RectilinearGrid(arch; size = (Nx, Ny), halo = (5, 5), x = (0, L), y = (0, L),
+                                         topology = (Periodic, Periodic, Flat))
+            ocean = PrescribedOcean(ocean_grid)
+            set!(ocean, T = (x, y, t) -> 292 + cos(2π * x / L) + sin(2π * y / L))
+            model = AtmosphereOceanModel(atmosphere, ocean)
+
+            # The flux kernels compute the i = 0 / j = 0 halo stresses that the face average reads
+            fluxes = model.interfaces.atmosphere_ocean_interface.fluxes
+            NumericalEarth.EarthSystemModels.update_net_fluxes!(model, atmosphere.model)
+            ρτˣ = Array(interior(atmosphere.model.momentum.ρu.boundary_conditions.bottom.condition, :, :, 1))
+            ρτʸ = Array(interior(atmosphere.model.momentum.ρv.boundary_conditions.bottom.condition, :, :, 1))
+            τˣ = Array(interior(fluxes.x_momentum, :, :, 1))
+            τʸ = Array(interior(fluxes.y_momentum, :, :, 1))
+
+            # Stresses averaged onto the u/v faces west and south of each cell, wrapping periodically
+            @test ρτˣ ≈ (circshift(τˣ, (1, 0)) .+ τˣ) ./ 2
+            @test ρτʸ ≈ (circshift(τʸ, (0, 1)) .+ τʸ) ./ 2
+
+            # And a few coupled steps stay finite
+            time_step!(model, 0.5)
+            time_step!(model, 0.5)
+            @test all(isfinite, atmosphere.model.momentum.ρu)
+        end
+    end
+end
+
 # `base_pressure` is the datum at z = 0, which `reference_state` reduces to each column's surface.
 @testset "Cold start agrees with its own reference on a raised domain" begin
     for arch in test_architectures
