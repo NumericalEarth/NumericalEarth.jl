@@ -206,7 +206,7 @@ end
     θˡ, 𝒮 = layer_saturation(h, M, k, i, j, grid)
     saturated = M ≥ M⁺
     Π    = ifelse(saturated, (M - M⁺) * hˢˢ / ρˡhₖ, pressure_head(i, j, grid, h.retention_curve, 𝒮))
-    dΠdM = ifelse(saturated, hˢˢ, pressure_head_derivative(i, j, grid, h.retention_curve, 𝒮) / (ν - θʳ)) / ρˡhₖ
+    dΠdM = ifelse(saturated, hˢˢ / ρˡhₖ, pressure_head_derivative(i, j, grid, h.retention_curve, 𝒮) / ((ν - θʳ) * ρˡhₖ))
     K    = hydraulic_conductivity(i, j, grid, layer(h.hydraulic_conductivity, k), 𝒮, T)
     return (; θˡ, 𝒮, Π, dΠdM, K, M⁺)
 end
