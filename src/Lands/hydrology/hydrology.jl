@@ -27,6 +27,21 @@ flux_variables(::AbstractHydrology) = ()
 initial_flux(::AbstractHydrology, ::Symbol, grid) = CenterField(grid)
 
 """
+    prognostic_variables(hydrology::AbstractHydrology) -> Tuple{Vararg{Symbol}}
+
+Names of the prognostic fields this closure owns beyond `temperature`/`water_storage`
+(e.g. a canopy water store), published into `SlabLand.prognostic`. Default: none.
+"""
+prognostic_variables(::AbstractHydrology) = ()
+
+"""
+    initial_prognostic(hydrology::AbstractHydrology, name::Symbol, grid)
+
+Build the initial prognostic `Field` for prognostic variable `name`. Defaults to a zeroed `CenterField`.
+"""
+initial_prognostic(::AbstractHydrology, ::Symbol, grid) = CenterField(grid)
+
+"""
     diagnostic_variables(hydrology::AbstractHydrology) -> Tuple{Vararg{Symbol}}
 
 Names of closure-owned diagnostic fields published into `SlabLand.diagnostics`.
@@ -41,6 +56,8 @@ Build the initial diagnostic `Field` for diagnostic variable `name`. Defaults
 to a zeroed `CenterField`.
 """
 initial_diagnostic(::AbstractHydrology, ::Symbol, grid) = CenterField(grid)
+
+prepare_time_step!(::AbstractHydrology, land) = nothing
 
 time_step!(::AbstractHydrology, land, Δt) = nothing
 time_step!(hydrology::AbstractHydrology, land, Δt, time) = time_step!(hydrology, land, Δt)

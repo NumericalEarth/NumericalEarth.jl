@@ -8,8 +8,6 @@ using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.TimeSteppers: time_step!, update_state!
-using Oceananigans.Utils: launch!
-using NumericalEarth.Radiations: default_stefan_boltzmann_constant
 using Test
 
 NumericalEarthBreezeExt = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
@@ -387,63 +385,6 @@ end
                 @test all(≈(280), Array(interior(constant_exchanger.state.T)))
             end
         end
-    end
-end
-
-@testset "Breeze RTM surface longwave follows live temperature" begin
-    for arch in test_architectures
-        grid = RectilinearGrid(arch;
-                               size = 1,
-                               x = (0, 1),
-                               y = (0, 1),
-                               z = (-1, 0),
-                               topology = (Flat, Flat, Bounded))
-
-        surface_energy_flux = CenterField(grid)
-        surface_temperature = CenterField(grid)
-        surface_emissivity = CenterField(grid)
-        downwelling_longwave_flux = CenterField(grid)
-        downwelling_shortwave_flux = CenterField(grid)
-        surface_albedo = CenterField(grid)
-
-        𝒬₀ = 25
-        T₁ = 280
-        T₂ = 300
-        ϵ = 0.95
-        ℐꜜˡʷ = -300
-        ℐꜜˢʷ = -600
-        α = 0.2
-        σ = convert(eltype(grid), default_stefan_boltzmann_constant)
-
-        fill!(parent(surface_emissivity), ϵ)
-        fill!(parent(downwelling_longwave_flux), ℐꜜˡʷ)
-        fill!(parent(downwelling_shortwave_flux), ℐꜜˢʷ)
-        fill!(parent(surface_albedo), α)
-
-        function surface_energy_at(T)
-            fill!(parent(surface_energy_flux), 𝒬₀)
-            fill!(parent(surface_temperature), T)
-            launch!(arch, grid, :xy,
-                    NumericalEarthBreezeExt._apply_breeze_air_land_radiative_fluxes!,
-                    surface_energy_flux,
-                    grid,
-                    surface_temperature,
-                    surface_emissivity,
-                    σ,
-                    downwelling_longwave_flux,
-                    downwelling_shortwave_flux,
-                    surface_albedo)
-            return @allowscalar only(surface_energy_flux)
-        end
-
-        𝒬₁ = surface_energy_at(T₁)
-        𝒬₂ = surface_energy_at(T₂)
-
-        𝒬(T) = 𝒬₀ + ϵ * σ * T^4 + ϵ * ℐꜜˡʷ + (1 - α) * ℐꜜˢʷ
-
-        @test 𝒬₁ ≈ 𝒬(T₁)
-        @test 𝒬₂ ≈ 𝒬(T₂)
-        @test 𝒬₂ - 𝒬₁ ≈ ϵ * σ * (T₂^4 - T₁^4)
     end
 end
 

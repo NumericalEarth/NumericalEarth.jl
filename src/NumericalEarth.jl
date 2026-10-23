@@ -50,11 +50,29 @@ export
     SkinHumidity,
     FractionalHumidity,
     CriticalSaturation,
+    PlantAvailableWaterStress,
     DryLayerHumidity,
     StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     PowerLawTortuosity,
+    CanopyConductanceHumidity,
+    CanopyGroundSurface,
+    DiagnosticCanopyAir,
+    PrognosticCanopyAir,
+    DiagnosticSkin,
+    PrognosticSkin,
+    AreaIndexUndercanopyVelocity,
+    FrictionVelocityUndercanopyVelocity,
+    SellersSoilResistance,
+    LitterResistance,
+    TiledLandInterface,
+    RubiscoLightLimitedPhotosynthesis,
+    MedlynConductance,
+    JarvisConductance,
+    InteractiveAbsorbedPAR,
+    PeakedArrheniusParameters,
+    HeskelParameters,
     AltitudeCorrection,
     atmosphere_land_interface,
     SlabOcean,
@@ -93,13 +111,17 @@ export
     SkinTemperature,
     BulkTemperature,
     DiffusiveFlux,
+    SoilConductiveFlux,
+    EnergyBalanceTemperature,
+    SoilSkinTemperature,
     InteriorDiffusivity,
     # Land (prognostic SlabLand + closures)
-    SlabLand,
+    SlabLand, LandSurface, TiledLandSurface,
     SlabEnergy,
     BucketHydrology,
     WaterCoupledEnergy,
     VariablySaturatedHydrology,
+    InterceptingHydrology,
     VanGenuchtenRetention, VanGenuchtenConductivity,
     WaterViscosity, CosbyConductivity, saturated_conductivity,
     NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
@@ -174,7 +196,7 @@ using Oceananigans: Oceananigans, initialize!
 using Oceananigans.Architectures: CPU
 using Oceananigans.Grids: _node
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
-using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries
+using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries, TimeInterpolator
 
 import Oceananigans: location
 
@@ -227,6 +249,7 @@ const SKOFTS = SomeKindOfFieldTimeSeries
 @inline stateindex(a::Number, i, j, k, args...) = a
 @inline stateindex(a::AbstractArray, i, j, k, args...) = @inbounds a[i, j, k]
 @inline stateindex(a::SKOFTS, i, j, k, grid, time, args...) = @inbounds a[i, j, k, time]
+@inline stateindex(a::SKOFTS, i, j, k, time_interpolator::TimeInterpolator) = @inbounds a[i, j, k, time_interpolator]
 
 @inline function stateindex(a::Function, i, j, k, grid, time, (LX, LY, LZ), args...)
     # `_node` always returns the full (λ, φ, z) triple — with placeholder

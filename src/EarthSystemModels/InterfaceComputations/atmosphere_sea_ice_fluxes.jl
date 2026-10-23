@@ -38,7 +38,7 @@ function compute_atmosphere_sea_ice_fluxes!(coupled_model)
     atmosphere_properties = atmosphere_sea_ice_properties(coupled_model)
 
     radiation = coupled_model.radiation
-    radiation_kernel_props = kernel_radiation_properties(radiation)
+    radiation_kernel_props = kernel_radiation_properties(radiation, exchanger.radiation)
     radiation_state = atmosphere_sea_ice_radiation_state(coupled_model)
 
     kernel_parameters = interface_kernel_parameters(grid)

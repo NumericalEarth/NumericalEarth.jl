@@ -161,15 +161,13 @@ variably_saturated_hydrology(FT, porosity; slab_depth) = VariablySaturatedHydrol
 # The dry-layer humidity closure: the front depth grows from 0 (saturated skin)
 # toward `δᵛ_max` as the slab dries past `𝒮ᶜ`, and `qⁱⁿ` is solved from the
 # vapor-flux balance through it.
-make_dry_layer_humidity(porosity) = DryLayerHumidity(;
+make_dry_layer_humidity() = DryLayerHumidity(;
     dry_layer_depth = StorageBasedDryLayerDepth(; maximum_dry_layer_depth = 0.05,
                                                 dry_layer_onset_saturation,
                                                 dry_layer_exponent      = 2),
     vapor_exchange = DryLayerVaporPistonVelocity(minimum_dry_layer_depth = 1e-4,
                                                  molecular_diffusivity   = 2.5e-5,
-                                                 tortuosity              = PowerLawTortuosity()),
-    thermal_exchange_depth = 0.10,
-    porosity)
+                                                 tortuosity              = PowerLawTortuosity()))
 
 # Now, we assemble the coupled model used by the *differentiable* stages.
 # For differentiability purposes, the turbulent fluxes use a fixed-iteration Monin–Obukhov solver
@@ -181,16 +179,14 @@ make_dry_layer_humidity(porosity) = DryLayerHumidity(;
 # but a Reactant `ConcreteRNumber` clock on a `ReactantState` grid — the latter
 # advances model time *inside* the compiled XLA loop, so the time-dependent forcing
 # is sampled correctly each step.
-function coupled_slab_land_model(grid, atmosphere, radiation; energy, hydrology, humidity_porosity,
+function coupled_slab_land_model(grid, atmosphere, radiation; energy, hydrology,
                                  exchanger_correction = nothing)
-    slab_land = SlabLand(grid; energy, hydrology)
+    surface = LandSurface(specific_humidity=make_dry_layer_humidity())
+    slab_land = SlabLand(grid; energy, hydrology, surface)
     fluxes = NumericalEarth.EarthSystemModels.InterfaceComputations.default_atmosphere_land_fluxes(
                  slab_land, eltype(grid); solver_stop_criteria = FixedIterations(8))
-    al_interface = atmosphere_land_interface(grid, atmosphere, slab_land;
-                                             specific_humidity = make_dry_layer_humidity(humidity_porosity),
-                                             fluxes)
     return AtmosphereLandModel(atmosphere, slab_land; radiation,
-                               atmosphere_land_interface = al_interface,
+                               atmosphere_land_fluxes = fluxes,
                                exchanger_correction, clock = Clock(grid))
 end
 
@@ -201,8 +197,7 @@ function dry_layer_model(grid, times, 𝒫̇)
     hydrology  = variably_saturated_hydrology(eltype(grid), porosity; slab_depth)
     atmosphere = forced_atmosphere(grid, times, 𝒫̇)
     radiation  = forced_radiation(grid, times)
-    return coupled_slab_land_model(grid, atmosphere, radiation;
-                                   energy, hydrology, humidity_porosity = porosity)
+    return coupled_slab_land_model(grid, atmosphere, radiation; energy, hydrology)
 end
 
 # ## Integration length
@@ -540,7 +535,8 @@ nominal_porosity = 0.4
 
 slab_land = SlabLand(land_grid;
                      energy    = soil_energy(eltype(land_grid); deep_time_scale = 12hours),
-                     hydrology = variably_saturated_hydrology(eltype(land_grid), porosity; slab_depth))
+                     hydrology = variably_saturated_hydrology(eltype(land_grid), porosity; slab_depth),
+                     surface   = LandSurface(specific_humidity=make_dry_layer_humidity()))
 
 # Initialize skin temperature from the elevation-corrected ERA5 T₂ₘ.
 # Initial soil water `Mˡᵃ = 100 kg m⁻²` sits well below the slab's saturation
@@ -561,11 +557,8 @@ atmosphere_land_fluxes = SimilarityTheoryFluxes(momentum_roughness_length    = 0
                                                 temperature_roughness_length = 0.01,
                                                 water_vapor_roughness_length = 0.01)
 
-interface_specific_humidity = make_dry_layer_humidity(nominal_porosity)
-
 al_interface = atmosphere_land_interface(slab_land.grid, atmosphere, slab_land;
-                                         fluxes = atmosphere_land_fluxes,
-                                         specific_humidity = interface_specific_humidity)
+                                         fluxes = atmosphere_land_fluxes)
 
 model = AtmosphereLandModel(atmosphere, slab_land;
                             radiation,
@@ -814,11 +807,11 @@ function porosity_field_on(grid, value)
     return ν
 end
 
-function era5_slab_land_model(grid, forcing, porosity_field, porosity_scalar; exchanger_correction = nothing)
+function era5_slab_land_model(grid, forcing, porosity_field; exchanger_correction = nothing)
     energy    = soil_energy(eltype(grid); deep_time_scale = 12hours)
     hydrology = variably_saturated_hydrology(eltype(grid), porosity_field; slab_depth)
     return coupled_slab_land_model(grid, forcing.atmos, forcing.rad;
-                                   energy, hydrology, humidity_porosity = porosity_scalar,
+                                   energy, hydrology,
                                    exchanger_correction)
 end
 
@@ -853,7 +846,7 @@ atmosphere_elevation = Array(interior(z_era5_patch, :, :, 1))
 patch_correction     = AltitudeCorrection(surface_elevation, atmosphere_elevation; lapse_rate = Γ_lapse)
 
 function run_forward(grid, forcing, T₀, porosity_field)
-    model = era5_slab_land_model(grid, forcing, porosity_field, nominal_porosity;
+    model = era5_slab_land_model(grid, forcing, porosity_field;
                                  exchanger_correction = patch_correction)
     parent(model.land.temperature) .= parent(T₀)
     set!(model.land; M = initial_water_storage)
@@ -877,7 +870,7 @@ forward = run_forward(cpu_grid, cpu_forcing, T₀_cpu, cpu_porosity)
 grid_ad    = make_land_grid(ReactantState())
 forcing_ad = transfer_forcing(grid_ad, cpu_forcing)
 model_ad   = era5_slab_land_model(grid_ad, forcing_ad,
-                                  porosity_field_on(grid_ad, nominal_porosity), nominal_porosity;
+                                  porosity_field_on(grid_ad, nominal_porosity);
                                   exchanger_correction = patch_correction)
 
 # Populate the state-exchanger regridder explicitly before the compiled run.

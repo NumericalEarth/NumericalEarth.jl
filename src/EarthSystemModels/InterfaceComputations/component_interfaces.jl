@@ -19,13 +19,17 @@ using ..EarthSystemModels: reference_density,
 ##### Container for organizing information related to fluxes
 #####
 
-mutable struct AtmosphereInterface{J, F, ST, SQ, P}
+mutable struct AtmosphereInterface{J, F, ST, SQ, P, B}
     fluxes :: J
     flux_formulation :: F
     temperature :: ST
     specific_humidity :: SQ
     properties :: P
+    boundary :: B
 end
+
+validate_zero_plane_displacement(interface::AtmosphereInterface, zᵃᵗ) =
+    validate_zero_plane_displacement(interface.flux_formulation, zᵃᵗ)
 
 """
     SeaIceOceanInterface{J, F, T, S, P}
@@ -206,7 +210,12 @@ Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
 # closures it differs from `land.temperature`. With both land and ocean interfaces the
 # surface partition's blended temperature wins; otherwise the land interface, then the
 # atmosphere-ocean interface; `nothing` when the atmosphere touches neither.
-EarthSystemModels.surface_temperature(interface::AtmosphereInterface) = interface.temperature
+# A `CanopyGroundSurface` interface holds several diagnostic temperatures; the atmosphere-facing
+# one is the canopy-air node.
+@inline interface_node_temperature(t) = t
+@inline interface_node_temperature(t::CanopyGroundSurfaceDiagnostics) = t.interface
+EarthSystemModels.surface_temperature(interface::AtmosphereInterface) =
+    interface_node_temperature(interface.temperature)
 
 function EarthSystemModels.surface_temperature(interfaces::ComponentInterfaces)
     Tₛ = interfaces.surface_partition.surface_temperature
@@ -216,10 +225,12 @@ function EarthSystemModels.surface_temperature(interfaces::ComponentInterfaces)
 end
 
 EarthSystemModels.surface_temperature(land_interface::AtmosphereInterface, ocean_interface) =
-    land_interface.temperature
+    interface_node_temperature(land_interface.temperature)
 EarthSystemModels.surface_temperature(::Nothing, ocean_interface::AtmosphereInterface) =
     ocean_interface.temperature
 EarthSystemModels.surface_temperature(::Nothing, ::Nothing) = nothing
+
+ground_conductance(interface::AtmosphereInterface) = ground_conductance(interface.properties.temperature_formulation)
 
 #####
 ##### Atmosphere-Ocean Interface
@@ -247,7 +258,7 @@ function atmosphere_ocean_interface(grid,
     interface_specific_humidity = Field{Center, Center, Nothing}(grid)
 
     return AtmosphereInterface(ao_fluxes, ao_flux_formulation, interface_temperature,
-                               interface_specific_humidity, ao_properties)
+                               interface_specific_humidity, ao_properties, nothing)
 end
 
 #####
@@ -284,7 +295,7 @@ function atmosphere_sea_ice_interface(grid,
     interface_specific_humidity = Field{Center, Center, Nothing}(grid)
 
     return AtmosphereInterface(fluxes, ai_flux_formulation, interface_temperature,
-                               interface_specific_humidity, properties)
+                               interface_specific_humidity, properties, nothing)
 end
 
 #####
@@ -403,9 +414,9 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              atmosphere_ocean_interface_specific_humidity = default_ao_specific_humidity(ocean),
                              atmosphere_sea_ice_interface_temperature = default_ai_temperature(sea_ice),
                              atmosphere_sea_ice_velocity_difference = RelativeVelocity(),
-                             atmosphere_land_interface_temperature = BulkTemperature(),
+                             atmosphere_land_interface_temperature = default_al_temperature(land),
                              atmosphere_land_velocity_difference = RelativeVelocity(),
-                             atmosphere_land_interface_specific_humidity = default_al_specific_humidity(land),
+                             atmosphere_land_interface_specific_humidity = default_al_specific_humidity(atmosphere_land_interface_temperature, land),
                              atmosphere_land_interface = atmosphere_land_interface(exchange_grid, atmosphere, land;
                                                                                    fluxes              = atmosphere_land_fluxes,
                                                                                    temperature         = atmosphere_land_interface_temperature,
@@ -492,7 +503,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     zᵃᵗ = surface_layer_height(atmosphere, exchange_grid)
 
     for interface in (ao_interface, ai_interface, al_interface)
-        isnothing(interface) || validate_zero_plane_displacement(interface.flux_formulation, zᵃᵗ)
+        isnothing(interface) || validate_zero_plane_displacement(interface, zᵃᵗ)
     end
 
     properties = merge((; gravitational_acceleration, surface_layer_height = zᵃᵗ),
@@ -511,12 +522,12 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                                surface_partition)
 end
 
-# Default land surface humidity formulation: bulk (saturated where wet, dry
-# otherwise). The binary saturation is read from `saturation` per cell
-# by the flux kernel and threaded through the iteration's `S` slot.
-default_al_specific_humidity(::Nothing) = nothing
-default_al_specific_humidity(land) =
-    BulkHumidity(AtmosphericThermodynamics.Liquid())
+# Default land surface closures: bulk temperature and bulk humidity (saturated where wet,
+# dry otherwise); a `CanopyGroundSurface` temperature closes the humidity slot itself.
+default_al_temperature(land) = BulkTemperature()
+default_al_specific_humidity(temperature, ::Nothing) = nothing
+default_al_specific_humidity(temperature, land) =
+    temperature isa CanopyGroundSurface ? temperature : BulkHumidity(AtmosphericThermodynamics.Liquid())
 
 # Default atmosphere--land flux formulation. Aerodynamic roughness lengths and the
 # zero-plane displacement are properties of the flux closure, not the land model:
@@ -535,11 +546,3 @@ function default_atmosphere_land_fluxes(land, FT; solver_stop_criteria = nothing
                                    water_vapor_roughness_length = convert(FT, 0.01),
                                    solver_stop_criteria)
 end
-
-#####
-##### Chekpointing (not needed for ComponentInterfaces)
-#####
-
-Oceananigans.prognostic_state(::ComponentInterfaces) = nothing
-Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, state) = ci
-Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, ::Nothing) = ci

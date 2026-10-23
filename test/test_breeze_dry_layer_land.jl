@@ -51,9 +51,9 @@ function build_coupled_test_model(arch; M₀, T₀, with_radiation = false)
     land = SlabLand(land_grid; hydrology, energy)
     set!(land; T = T₀, M = M₀)
 
-    # Default `BulkTemperature()` on the temperature side: Tⁱⁿ = Tˡᵃ. The
+    # Default `BulkTemperature()` on the temperature side: Tᵍ = Tˡᵃ. The
     # χ-interpolation in the humidity formulation collapses gracefully:
-    # Tᵉ = Tˡᵃ when Tⁱⁿ = Tˡᵃ.
+    # Tᵉ = Tˡᵃ when Tᵍ = Tˡᵃ.
     al = atmosphere_land_interface(land_grid, atmosphere, land;
         specific_humidity = DryLayerHumidity(;
             dry_layer_depth = StorageBasedDryLayerDepth(
@@ -63,9 +63,7 @@ function build_coupled_test_model(arch; M₀, T₀, with_radiation = false)
             vapor_exchange = DryLayerVaporPistonVelocity(
                 minimum_dry_layer_depth = 1e-4,
                 molecular_diffusivity = 2.5e-5,
-                tortuosity = PowerLawTortuosity()),
-            thermal_exchange_depth = 0.10,
-            porosity = 0.4))
+                tortuosity = PowerLawTortuosity())))
 
     radiation = nothing
     if with_radiation

@@ -37,7 +37,7 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
     # returns zero-valued radiative state, so SkinTemperature degrades to
     # a turbulent-only flux balance.
     radiation = coupled_model.radiation
-    radiation_kernel_props = kernel_radiation_properties(radiation)
+    radiation_kernel_props = kernel_radiation_properties(radiation, exchanger.radiation)
     radiation_state = atmosphere_ocean_radiation_state(coupled_model)
 
     kernel_parameters = interface_kernel_parameters(grid)

@@ -82,7 +82,7 @@ function update_surface_temperature!(partition::SurfacePartition, coupled_model)
             ℵ,
             interfaces.atmosphere_ocean_interface.temperature,
             Tᵃⁱ,
-            interfaces.atmosphere_land_interface.temperature,
+            EarthSystemModels.surface_temperature(interfaces.atmosphere_land_interface),
             interfaces.ocean_properties.temperature_units,
             sea_ice_units)
 

@@ -5,24 +5,45 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     AirLandInterfaceState,
     InterfaceFluxScales,
     InterfaceVelocities,
-    saturation_specific_humidity
+    saturation_specific_humidity, surface_hydrology
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
-# Build a state that the formulation can read; the kernel signature mirrors
-# `compute_interface_humidity(formulation, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)`.
-function make_call_args(; Tˡᵃ, Tⁱⁿ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
-    FT = Float64
-    ℂ  = AtmosphereThermodynamicsParameters(FT)
+const ℂ = AtmosphereThermodynamicsParameters(Float64)
+qᵛ⁺(T) = saturation_specific_humidity(ℂ, T, 1.0e5, AtmosphericThermodynamics.Liquid())
+
+# `compute_interface_humidity(q, Tᵍ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)`; the dry-layer soil model ignores the radiation state Ψᵣ.
+function humidity(q, 𝒮; Tˡᵃ = 290.0, Tᵍ = 300.0, pᵃᵗ = 1.0e5, qᵃᵗ = 1.0e-2, Tᵃᵗ = 295.0, u★ = 0.3, q★ = 2.0e-4, qⁱⁿ⁻ = 0.005)
     Ψₐ = (T = Tᵃᵗ, p = pᵃᵗ, q = qᵃᵗ, u = 1.0, v = 0.0, z = 10.0, h_bℓ = 1000.0)
-    Ψₛ = AirLandInterfaceState(InterfaceFluxScales(u★, 0.0, q★),
-                               InterfaceVelocities(0.0, 0.0),
-                               Tⁱⁿ, qⁱⁿ⁻, (saturation=𝒮,), (temperature=Tˡᵃ,))
-    Ψᵢ = (T = Tˡᵃ,)
-    ℙₐ = (thermodynamics_parameters = ℂ,
-          surface_layer_height = 10.0,
-          gravitational_acceleration = 9.81)
-    return ℂ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ
+    χq = q★ / (qᵃᵗ - qⁱⁿ⁻)   # transfer coefficient consistent with q★ = χq Δq
+    Ψₛ = AirLandInterfaceState(InterfaceFluxScales(u★, 0.0, q★, 0.0, χq), InterfaceVelocities(0.0, 0.0), Tᵍ, qⁱⁿ⁻,
+                               (saturation = 𝒮, effective_vapor_diffusivity = q.vapor_exchange.molecular_diffusivity),
+                               (temperature = Tˡᵃ, thermal_exchange_depth = 0.10))
+    ℙₐ = (thermodynamics_parameters = ℂ, surface_layer_height = 10.0, gravitational_acceleration = 9.81)
+    return compute_interface_humidity(q, Tᵍ, Ψₛ, Ψₐ, (T = Tˡᵃ,), nothing, ℙₐ)
+end
+
+@testset "Soil vapor diffusion follows porosity and residual water" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch; size = 2, x = (0, 2), topology = (Bounded, Flat, Flat))
+        ν, θʳ = reshape([0.35, 0.55], 2, 1, 1), reshape([0.03, 0.10], 2, 1, 1)
+        porosity, residual = set!(CenterField(grid), ν), set!(CenterField(grid), θʳ)
+        hydrology = VariablySaturatedHydrology(; slab_depth = 1, porosity, residual_liquid_fraction = residual, storage_height = 0.1,
+            retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 2, pore_size_uniformity = 1.5),
+            hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 1.5))
+        land = SlabLand(grid; hydrology)
+        formulation = DryLayerHumidity(;
+            dry_layer_depth = StorageBasedDryLayerDepth(maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5),
+            vapor_exchange = DryLayerVaporPistonVelocity(minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
+                                                         tortuosity = PowerLawTortuosity()))
+        diffusivity = Field(surface_hydrology(land, formulation, grid).effective_vapor_diffusivity)
+        for 𝒮 in (0.2, 0.6)
+            θ = @. θʳ + 𝒮 * (ν - θʳ)
+            set!(land; M = 1000 .* θ)
+            compute!(diffusivity)
+            @test Array(interior(diffusivity)) ≈ @. 2.5e-5 * (ν - θ)^(10/3) / ν^2
+        end
+    end
 end
 
 @testset "DryLayerHumidity wet branch (𝒮 ≥ 𝒮ᶜ)" begin
@@ -32,18 +53,10 @@ end
             maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
             minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
-            wet_transition_width = 0),
-        thermal_exchange_depth = 0.10, porosity = 0.4)
+            wet_transition_width = 0))
 
-    # 𝒮 = 0.5 ⇒ δᵛ = 0 ⇒ wet ⇒ qⁱⁿ = qᵛ⁺(Tⁱⁿ).
-    Tⁱⁿ = 300.0
-    pᵃᵗ = 1.0e5
-    ℂ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ = make_call_args(; Tˡᵃ=290.0, Tⁱⁿ=Tⁱⁿ, 𝒮=0.5,
-                                        pᵃᵗ=pᵃᵗ, qᵃᵗ=1.0e-2, Tᵃᵗ=295.0,
-                                        u★=0.3, q★=-2.0e-4, qⁱⁿ⁻=0.005)
-    qⁱⁿ★ = compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
-    qˢᵃᵗ = saturation_specific_humidity(ℂ, Tⁱⁿ, pᵃᵗ, AtmosphericThermodynamics.Liquid())
-    @test isapprox(qⁱⁿ★, qˢᵃᵗ; atol = 1e-15)
+    # 𝒮 = 0.5 ⇒ δᵛ = 0 ⇒ wet ⇒ qⁱⁿ = qᵛ⁺(Tᵍ).
+    @test isapprox(humidity(q, 0.5), qᵛ⁺(300.0); atol = 1e-15)
 end
 
 @testset "DryLayerHumidity vapor divider" begin
@@ -52,18 +65,15 @@ end
             maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5, dry_layer_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
             minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
-            tortuosity = ConstantTortuosity()),
-        thermal_exchange_depth = 0.10, porosity = 0.4)
+            tortuosity = ConstantTortuosity()))
 
-    # Fully dry: 𝒮 = 0 ⇒ δᵛ = δᵛ_max = 0.05, χ = 0.5 ⇒ Tᵉ = (Tⁱⁿ+Tˡᵃ)/2.
-    Tˡᵃ = 290.0; Tⁱⁿ = 300.0
+    # Fully dry: 𝒮 = 0 ⇒ δᵛ = δᵛ_max = 0.05, χ = 0.5 ⇒ Tᵉ = (Tᵍ+Tˡᵃ)/2.
+    Tˡᵃ = 290.0; Tᵍ = 300.0
     pᵃᵗ = 1.0e5; qᵃᵗ = 1.0e-2; Tᵃᵗ = 295.0
-    u★ = 0.3;   q★ = -2.0e-4; qⁱⁿ⁻ = 0.005
-    ℂ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ = make_call_args(; Tˡᵃ, Tⁱⁿ, 𝒮 = 0.0,
-                                        pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
-    qⁱⁿ★ = compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+    u★ = 0.3;   q★ = 2.0e-4; qⁱⁿ⁻ = 0.005
+    qⁱⁿ★ = humidity(q, 0.0; Tˡᵃ, Tᵍ, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
 
-    Tᵉ  = (Tⁱⁿ + Tˡᵃ) / 2
+    Tᵉ  = (Tᵍ + Tˡᵃ) / 2
     qᵉ  = saturation_specific_humidity(ℂ, Tᵉ, pᵃᵗ, AtmosphericThermodynamics.Liquid())
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
     wᵈ  = 2.5e-5 / 0.05
@@ -77,15 +87,13 @@ end
 end
 
 @testset "DryLayerHumidity Tᵉ interpolation" begin
-    # δᵛ controls χ = clip(δᵛ/ℓᵀ, 0, 1) ⇒ Tᵉ = Tⁱⁿ + χ(Tˡᵃ - Tⁱⁿ).
+    # δᵛ controls χ = clip(δᵛ/ℓᵀ, 0, 1) ⇒ Tᵉ = Tᵍ + χ(Tˡᵃ - Tᵍ).
     # We don't directly expose Tᵉ, but the source humidity is qᵛ⁺(Tᵉ), so the
     # vapor balance pins Tᵉ implicitly. Use cases where 𝒮 → δᵛ is known.
     # 𝒮ᶜ = 0.5, η = 1, δᵛ_max = 0.05, ℓᵀ = 0.10:
     # 𝒮 = 0  → δᵛ = 0.05, χ = 0.5
     # 𝒮 = 0.25 → δᵛ = 0.025, χ = 0.25
     # 𝒮 = 0.5 → δᵛ = 0, wet branch.
-    Tˡᵃ = 290.0; Tⁱⁿ = 310.0; pᵃᵗ = 1.0e5
-    qᵃᵗ = 1.0e-2; Tᵃᵗ = 295.0; u★ = 0.3; q★ = -2.0e-4; qⁱⁿ⁻ = 0.005
 
     # wet_transition_width = 0 pins the sharp switch so the wet limit is exact.
     q = DryLayerHumidity(;
@@ -93,20 +101,13 @@ end
             maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5, dry_layer_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
             minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
-            tortuosity = ConstantTortuosity(), wet_transition_width = 0),
-        thermal_exchange_depth = 0.10, porosity = 0.4)
+            tortuosity = ConstantTortuosity(), wet_transition_width = 0))
 
-    ℂ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ = make_call_args(; Tˡᵃ, Tⁱⁿ, 𝒮 = 0.0,
-                                        pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
-    qᵈʳʸ = compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+    qᵈʳʸ = humidity(q, 0.0; Tᵍ = 310.0)
+    qʷᵉᵗ = humidity(q, 0.5; Tᵍ = 310.0)
 
-    ℂ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ = make_call_args(; Tˡᵃ, Tⁱⁿ, 𝒮 = 0.5,
-                                        pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
-    qʷᵉᵗ = compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
-
-    # Wet (𝒮 ≥ 𝒮ᶜ): qⁱⁿ = qᵛ⁺(Tⁱⁿ); dry: qⁱⁿ < qᵛ⁺(Tⁱⁿ) because the source is colder.
-    qˢᵃᵗ = saturation_specific_humidity(ℂ, Tⁱⁿ, pᵃᵗ, AtmosphericThermodynamics.Liquid())
-    @test qʷᵉᵗ ≈ qˢᵃᵗ
+    # Wet (𝒮 ≥ 𝒮ᶜ): qⁱⁿ = qᵛ⁺(Tᵍ); dry: qⁱⁿ < qᵛ⁺(Tᵍ) because the source is colder.
+    @test qʷᵉᵗ ≈ qᵛ⁺(310.0)
     @test qᵈʳʸ < qʷᵉᵗ
 end
 
@@ -117,15 +118,8 @@ end
             maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5, dry_layer_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
             minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 1e-14,
-            tortuosity = ConstantTortuosity()),
-        thermal_exchange_depth = 0.10, porosity = 0.4)
-
-    Tⁱⁿ = 300.0; pᵃᵗ = 1.0e5; qᵃᵗ = 1.0e-2
-    ℂ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ = make_call_args(; Tˡᵃ=290.0, Tⁱⁿ=Tⁱⁿ, 𝒮 = 0.0,
-                                        pᵃᵗ=pᵃᵗ, qᵃᵗ=qᵃᵗ, Tᵃᵗ=295.0,
-                                        u★=0.3, q★=-2.0e-4, qⁱⁿ⁻=0.005)
-    qⁱⁿ★ = compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
-    @test isapprox(qⁱⁿ★, qᵃᵗ; atol = 1e-6)
+            tortuosity = ConstantTortuosity()))
+    @test isapprox(humidity(q, 0.0), 1.0e-2; atol = 1e-6)
 end
 
 @testset "DryLayerHumidity wet-transition blend" begin
@@ -135,21 +129,11 @@ end
             maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5, dry_layer_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(;
             minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
-            tortuosity = ConstantTortuosity(), wet_transition_width),
-        thermal_exchange_depth = 0.10, porosity = 0.4)
+            tortuosity = ConstantTortuosity(), wet_transition_width))
 
     sharp = make_q(0)
     blend = make_q(1e-2)
-
-    Tˡᵃ = 290.0; Tⁱⁿ = 300.0; pᵃᵗ = 1.0e5
-    qᵃᵗ = 1.0e-2; Tᵃᵗ = 295.0; u★ = 0.3; q★ = -2.0e-4; qⁱⁿ⁻ = 0.005
-    function humidity(q, 𝒮)
-        _, Ψₛ, Ψₐ, Ψᵢ, ℙₐ = make_call_args(; Tˡᵃ, Tⁱⁿ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
-        return compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
-    end
-
-    ℂ = AtmosphereThermodynamicsParameters(Float64)
-    qˢᵃᵗ = saturation_specific_humidity(ℂ, Tⁱⁿ, pᵃᵗ, AtmosphericThermodynamics.Liquid())
+    qˢᵃᵗ = qᵛ⁺(300.0)
 
     # The default width is 5 δᵛ_min.
     default_exchange = DryLayerVaporPistonVelocity(

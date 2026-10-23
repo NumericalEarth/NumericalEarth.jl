@@ -10,11 +10,44 @@ computing turbulent fluxes between model components.
 
 ## Component interfaces we consider
 
-The `EarthSystemModel` has atmosphere, ocean, and sea ice components (and will someday also have land and radiation components).
+The `EarthSystemModel` has atmosphere, ocean, sea ice, land, and radiation components.
 We envision that the tutorial will eventually cover all turbulent flux computations; for the time being we
 focus on atmosphere-ocean fluxes.
 Future expansions of this tutorial should cover atmosphere-sea ice fluxes, ocean-sea ice fluxes, ocean-land fluxes,
 and surface optical computations for radiation.
+
+## Land surface configuration and storage
+
+`SlabLand` owns surface physics through `LandSurface`. Configure a canopy or skin
+on the land component; `AtmosphereLandModel` uses that configuration for its boundary solve.
+
+```@example interface_fluxes
+using NumericalEarth
+using Oceananigans
+
+land_grid = RectilinearGrid(size=(), topology=(Flat, Flat, Flat))
+soil_humidity = DryLayerHumidity(
+    dry_layer_depth = StorageBasedDryLayerDepth(maximum_dry_layer_depth = 0.015,
+                                               dry_layer_onset_saturation = 0.5),
+    vapor_exchange = DryLayerVaporPistonVelocity(minimum_dry_layer_depth = 1e-3,
+                                                molecular_diffusivity = 2.4e-5))
+canopy = CanopyGroundSurface(; soil_humidity, storage=PrognosticCanopyAir())
+land = SlabLand(land_grid; surface=LandSurface(canopy))
+```
+
+The boundary solve computes turbulent fluxes and candidate surface updates from the
+current land state. The land step applies each update once. Canopy-air and skin storage
+are checkpointed with the land. Checkpoints also preserve interface temperatures and flux
+partitions from the completed step so diagnostics remain consistent immediately after pickup.
+
+For vegetated and bare tiles, use `TiledLandSurface(LandSurface(canopy); cover_fraction=0.6)`
+as the land's `surface`. `InterceptingHydrology` then derives its leaf area index and cover fraction
+from the same configuration. Separate tile roughnesses can be supplied through
+`TiledLandInterface`'s `vegetated_fluxes` and `bare_fluxes` keywords.
+
+Soil retention curves and porosity remain in land hydrology. The boundary solve receives
+derived moisture-stress endpoints and vapor diffusivity. `DryLayerHumidity` gets its
+thermal exchange distance from the surface heat-transfer closure.
 
 ## Turbulent exchanges between the atmosphere and underlying media
 
@@ -622,7 +655,9 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     ShebaMomentumStabilityFunction,     # Grachev et al. 2007
     ShebaScalarStabilityFunction,       # Grachev et al. 2007
     PaulsonMomentumStabilityFunction,   # Paulson 1970
-    PaulsonScalarStabilityFunction      # Paulson 1970
+    PaulsonScalarStabilityFunction,     # Paulson 1970
+    FreeConvectionMomentumStabilityFunction,      # Zeng et al. 1998
+    FreeConvectionScalarStabilityFunction         # Zeng et al. 1998
 
 edson_momentum   = EdsonMomentumStabilityFunction()
 edson_scalar     = EdsonScalarStabilityFunction()
@@ -630,6 +665,8 @@ sheba_momentum   = ShebaMomentumStabilityFunction()
 sheba_scalar     = ShebaScalarStabilityFunction()
 paulson_momentum = PaulsonMomentumStabilityFunction()
 paulson_scalar   = PaulsonScalarStabilityFunction()
+free_convection_momentum    = FreeConvectionMomentumStabilityFunction()
+free_convection_scalar      = FreeConvectionScalarStabilityFunction()
 
 ζstep = 0.01
 ζ = -4:ζstep:4
@@ -644,11 +681,13 @@ axs = Axis(fig[1, 2], xlabel="Stability parameter ζ", ylabel="Scalar auxiliary 
 lines!(axm, ζ,  edson_momentum.(ζ), label="Edson et al. (2013)", alpha=0.7)
 lines!(axm, ζ⁺, sheba_momentum.(ζ⁺), label="Grachev et al. (2007)", alpha=0.7)
 lines!(axm, ζ⁻, paulson_momentum.(ζ⁻), label="Paulson (1970)", alpha=0.7)
+lines!(axm, ζ⁻, free_convection_momentum.(ζ⁻), label="Zeng et al. (1998)", alpha=0.7)
 axislegend(axm, position=:lb)
 
 lines!(axs, ζ,  edson_scalar.(ζ), label="Edson et al. (2013)", alpha=0.7)
 lines!(axs, ζ⁺, sheba_scalar.(ζ⁺), label="Grachev et al. (2007)", alpha=0.7)
 lines!(axs, ζ⁻, paulson_scalar.(ζ⁻), label="Paulson (1970)", alpha=0.7)
+lines!(axs, ζ⁻, free_convection_scalar.(ζ⁻), label="Zeng et al. (1998)", alpha=0.7)
 
 for ax in (axm, axs)
     ylims!(ax, -14, 4)
