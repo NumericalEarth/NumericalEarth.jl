@@ -538,11 +538,11 @@ function Oceananigans.restore_prognostic_state!(esm::EarthSystemModel, state)
     if hasproperty(state, :radiation)
         restore_prognostic_state!(esm.radiation, state.radiation)
     end
+    restore_prognostic_state!(esm.interfaces, state.interfaces)
     restore_prognostic_state!(esm.ocean, state.ocean)
     restore_prognostic_state!(esm.atmosphere, state.atmosphere)
     restore_prognostic_state!(esm.land, state.land)
     restore_prognostic_state!(esm.sea_ice, state.sea_ice)
-    restore_prognostic_state!(esm.interfaces, state.interfaces)
     update_state!(esm)
     return esm
 end

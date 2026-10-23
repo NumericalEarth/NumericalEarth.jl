@@ -89,10 +89,15 @@ function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel
     apply_air_sea_radiative_fluxes!(coupled_model)
     apply_air_sea_ice_radiative_fluxes!(coupled_model)
 
+    maybe_initialize_land_surface!(coupled_model)
+
+    return nothing
+end
+
+function maybe_initialize_land_surface!(coupled_model)
     if coupled_model.clock.iteration == 0
         compute_land_fluxes!(coupled_model, 0)
-        initialize_land_surface!(land)
+        initialize_land_surface!(coupled_model.land)
     end
-
     return nothing
 end

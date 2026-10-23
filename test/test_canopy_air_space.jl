@@ -25,6 +25,15 @@ canopy_ground_surface(FT; optics...) = CanopyGroundSurface(FT;
 @testset "CanopyGroundSurface" begin
     for arch in test_architectures
         canopy_surface = canopy_ground_surface(Float64)
+        latent_heat = map(((;), (; specific_humidity=canopy_surface))) do humidity
+            grid, atmosphere, land, radiation = coupled_land_components(arch)
+            interface = atmosphere_land_interface(grid, atmosphere, land; temperature=canopy_surface, humidity...)
+            model = AtmosphereLandModel(atmosphere, land; radiation, atmosphere_land_interface=interface)
+            time_step!(model, 300.0)
+            return scalar(interface.fluxes.latent_heat)
+        end
+        @test latent_heat[1] ≈ latent_heat[2]
+
         model = coupled_land_model(arch; atmosphere_land_interface_temperature = canopy_surface,
                                    atmosphere_land_interface_specific_humidity = canopy_surface)
         interface = model.interfaces.atmosphere_land_interface

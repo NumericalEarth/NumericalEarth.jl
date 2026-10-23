@@ -27,6 +27,8 @@ function roundtrip!(m1, m2; spinup = 6, continuation = 6, Δt = 300.0)
     end
     state = deepcopy(prognostic_state(m1))
     restore_prognostic_state!(m2, state)
+    @test prognostic_state(m2.interfaces) == state.interfaces
+    @test prognostic_state(m2.land) == state.land
     for _ in 1:continuation
         time_step!(m1, Δt)
         time_step!(m2, Δt)
@@ -88,7 +90,7 @@ end
         @test LE2 ≈ LE1
         @test H2 ≈ H1
 
-        # --- diagnostic surface temperatures are reconstructed after restart.
+        # --- diagnostic surface temperatures survive the round trip.
         cd() = checkpoint_test_canopy_surface(Float64; storage = DiagnosticCanopyAir())
         m1 = checkpoint_test_model(arch; temperature = cd())
         m2 = checkpoint_test_model(arch; temperature = cd())

@@ -377,7 +377,7 @@ end
                                              interface_fluxes, Jʳⁿ)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        𝒬 = interface_fluxes.energy[i, j, 1]
+        𝒬 = surface_energy_loss(i, j, interface_fluxes.energy...)
         Jᵛ = interface_fluxes.vapor[i, j, 1]
         Jᵗ = interface_fluxes.transpiration[i, j, 1]
         Jʷᵉᵗ = interface_fluxes.canopy_evaporation[i, j, 1]

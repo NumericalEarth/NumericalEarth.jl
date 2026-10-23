@@ -76,7 +76,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: InterfaceComputati
                                                  PrognosticCanopyGroundSurface, PrognosticEnergyBalanceTemperature,
                                                  interface_kernel_parameters, ComponentExchanger,
                                                  canopy_transmittance, canopy_leaf_area_index, land_surface_fluxes,
-                                                 convert_if_number, maybe_write!
+                                                 surface_energy_loss, convert_if_number, maybe_write!
 
 # Extended by external land models
 function land_model end

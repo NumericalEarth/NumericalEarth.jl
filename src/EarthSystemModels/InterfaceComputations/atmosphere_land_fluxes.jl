@@ -423,15 +423,22 @@ land_surface_fluxes(interface::AtmosphereInterface, bulk_temperature) =
 function land_surface_fluxes(temperature, interface, bulk_temperature)
     fluxes = interface.fluxes
     conductance = ground_conductance(interface)
-    energy = isnothing(conductance) ? fluxes.sensible_heat + fluxes.latent_heat :
-                                     -conductance * (temperature - bulk_temperature)
+    energy = (temperature, fluxes, bulk_temperature, conductance)
     transpiration = transpiration_flux(interface.properties.specific_humidity_formulation, fluxes)
     return (; energy, vapor=fluxes.water_vapor, transpiration, canopy_evaporation=ZeroField())
 end
 
 land_surface_fluxes(temperature::CanopyGroundSurfaceDiagnostics, interface, bulk_temperature) =
-    (; energy=-temperature.ground_heat_flux, vapor=temperature.land_vapor_flux,
+    (; energy=(temperature.ground_heat_flux,), vapor=temperature.land_vapor_flux,
        transpiration=temperature.transpiration, canopy_evaporation=temperature.canopy_evaporation)
+
+@inline surface_energy_loss(i, j, temperature, fluxes, bulk_temperature, ::Nothing) =
+    @inbounds fluxes.sensible_heat[i, j, 1] + fluxes.latent_heat[i, j, 1]
+
+@inline surface_energy_loss(i, j, temperature, fluxes, bulk_temperature, conductance) =
+    @inbounds -conductance * (temperature[i, j, 1] - bulk_temperature[i, j, 1])
+
+@inline surface_energy_loss(i, j, ground_heat_flux) = @inbounds -ground_heat_flux[i, j, 1]
 
 # The vapor flux drawn from the root zone: all of a transpiring canopy's.
 transpiration_flux(q_formulation, fluxes) = ZeroField()

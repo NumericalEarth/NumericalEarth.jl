@@ -104,7 +104,8 @@ vegetated_tile(surface::TiledLandSurface) = surface.vegetated
 InterfaceComputations.land_surface(land::SlabLand) = land.surface
 InterfaceComputations.land_surface_state(surface::LandSurface) = (; state=surface.prognostic, next=surface.next_state)
 InterfaceComputations.default_al_temperature(land::SlabLand) = vegetated_tile(land.surface).temperature
-InterfaceComputations.default_al_specific_humidity(temperature, land::SlabLand) = vegetated_tile(land.surface).specific_humidity
+InterfaceComputations.default_al_specific_humidity(temperature, land::SlabLand) =
+    temperature isa CanopyGroundSurface ? temperature : vegetated_tile(land.surface).specific_humidity
 
 EarthSystemModels.initialize_land_surface!(land::SlabLand) = time_step!(land.surface)
 

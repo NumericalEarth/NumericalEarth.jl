@@ -3,7 +3,7 @@ module InterfaceComputations
 using Adapt: Adapt
 using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
-using Oceananigans: Oceananigans, location
+using Oceananigans: Oceananigans, location, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: AbstractField, Field, Face, Center, FractionalIndices, ZeroField
 using Oceananigans.Grids: Flat, Periodic, halo_size, topology, _node
@@ -229,5 +229,6 @@ include("atmosphere_land_fluxes.jl")
 include("tiled_land_interface.jl")
 include("sea_ice_ocean_fluxes.jl")
 include("surface_layer_diagnostics.jl")
+include("checkpointing.jl")
 
 end # module

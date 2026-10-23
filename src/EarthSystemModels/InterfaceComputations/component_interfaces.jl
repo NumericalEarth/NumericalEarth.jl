@@ -531,5 +531,3 @@ function default_atmosphere_land_fluxes(land, FT; solver_stop_criteria = nothing
                                    water_vapor_roughness_length = convert(FT, 0.01),
                                    solver_stop_criteria)
 end
-
-Oceananigans.prognostic_state(::ComponentInterfaces) = nothing
