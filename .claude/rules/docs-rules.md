@@ -33,9 +33,10 @@ serve(dir="docs/build")
 - Use Documenter.jl syntax for cross-references
 - Add paper references via bibtex in `NumericalEarth.bib` with corresponding citations
 - Make use of cross-references with equations
-- In example code, NEVER explicitly import names already exported by `using NumericalEarth`
+- In example code, rely on `using NumericalEarth`; explicitly importing an exported name hides
+  what users actually need to type
+- Code on docs pages goes in `@example <label>` blocks, which Documenter runs and renders with
+  their output. Plain `julia` fences are never executed and go stale. Reuse one label across a
+  page to share state between blocks
 
-## Docstrings
-
-- ALWAYS use `jldoctest` blocks, NEVER plain `julia` blocks
-- See `.claude/rules/docstring-rules.md` for full details
+Docstring conventions are in `.claude/rules/docstring-rules.md`.
