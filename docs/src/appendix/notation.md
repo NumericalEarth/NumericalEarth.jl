@@ -220,6 +220,12 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``\alpha`` | `α` | albedo | Surface reflectivity (–) |
 | ``\epsilon`` | `ϵ` | emissivity | Surface emissivity (–) |
 
+## Vegetation properties
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``L`` | `leaf_area_index`, `LAI` | leaf area index | One-sided leaf area per unit ground area (m² m⁻²) |
+
 ## Similarity theory / surface layer
 
 | Math | Code | Property | Description |
