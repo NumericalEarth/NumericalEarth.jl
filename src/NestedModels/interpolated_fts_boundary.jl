@@ -22,7 +22,7 @@
 import Oceananigans.BoundaryConditions: regularize_boundary_condition, getbc,
                                         LeftBoundary, RightBoundary
 import Oceananigans.OutputReaders: FlavorOfFTS
-using Oceananigans.Grids: node, Face
+using Oceananigans.Grids: node, Face, OrthogonalSphericalShellGrid
 using Adapt: Adapt, adapt
 
 const InterpolatedSource = Union{FlavorOfFTS, Oceananigans.Fields.AbstractField}
@@ -84,6 +84,34 @@ end
 # vertical is intentionally NOT required to bracket: a child legitimately extends below
 # the parent's lowest level (e.g. ERA5 pressure-level data doesn't reach the surface), and the
 # vertical interpolation clamps to the parent's edge value there rather than extrapolating.
+# A curvilinear grid has no separable horizontal axes — its `λnodes`/`φnodes` are indexed jointly in
+# `(i, j)` — so `ξnodes`/`ηnodes`, which return one axis at a time, are not defined for it. Take the
+# child's extent from the face coordinates of the boundary's own line instead: that covers the cells
+# this boundary samples while leaving a per-side source free to span only its own side.
+function validate_source_bracket(source, grid::OrthogonalSphericalShellGrid, dim, SideType,
+                                 ::Type{LX}, ::Type{LY}, ::Type{LZ}) where {LX, LY, LZ}
+    source_loc  = Oceananigans.instantiated_location(source)
+    source_grid = source.grid
+    Nx, Ny, _ = size(grid)
+    i = dim == 1 ? (SideType === LeftBoundary ? (1:1) : (Nx+1:Nx+1)) : 1:Nx+1
+    j = dim == 2 ? (SideType === LeftBoundary ? (1:1) : (Ny+1:Ny+1)) : 1:Ny+1
+
+    for (label, child_nodes, source_nodes) in (("x", grid.λᶠᶠᵃ, Oceananigans.Grids.ξnodes),
+                                               ("y", grid.φᶠᶠᵃ, Oceananigans.Grids.ηnodes))
+        # `extrema` reduces on the device only for an unwrapped array or a view of one — CUDA's
+        # `AnyCuArray` does not cover `OffsetArray` — so shift into the parent's own indices and view
+        # that. A view of `child_nodes` itself would silently iterate on the host.
+        iᵖ = i .- (first(axes(child_nodes, 1)) - 1)
+        jᵖ = j .- (first(axes(child_nodes, 2)) - 1)
+        sim_lo, sim_hi = extrema(view(parent(child_nodes), iᵖ, jᵖ))
+        src_lo, src_hi = extrema(source_nodes(source_grid, source_loc...))
+        (src_lo ≤ sim_lo && sim_hi ≤ src_hi) || throw(ArgumentError(
+            "Interpolated boundary source $(label)-extent [$src_lo, $src_hi] does not " *
+            "bracket model grid $(label)-extent [$sim_lo, $sim_hi]"))
+    end
+    return nothing
+end
+
 function validate_source_bracket(source, grid, dim, SideType, ::Type{LX}, ::Type{LY}, ::Type{LZ}) where {LX, LY, LZ}
     sim_loc    = (LX(), LY(), LZ())
     source_loc = Oceananigans.instantiated_location(source)
