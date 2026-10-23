@@ -430,6 +430,7 @@ include("GloBFP3D/GloBFP3D.jl")
 include("GHSL/GHSL.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
 include("WorldCover/WorldCover.jl")
+include("TPXO/TPXO.jl")
 
 using .ETOPO
 using .ECCO
@@ -452,6 +453,7 @@ using .GloBFP3D
 using .GHSL
 using .CopernicusLandAlbedo
 using .WorldCover
+using .TPXO
 
 function dataset_modules()
     modules = Module[]
