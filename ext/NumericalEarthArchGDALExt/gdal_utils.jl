@@ -27,3 +27,16 @@ function source_coordinate_system_code(dataset)
         nothing
     end
 end
+
+# Read one band over the native-pixel window into a `factor`-times-coarser buffer. A destination
+# buffer smaller than the window makes GDAL serve the read from the coarsest overview level that
+# resolves it; `AVERAGE` keeps the values means of the pixels underneath even when the factor
+# falls between two levels of the pyramid.
+function read_raster_band(dataset, band_index, column_offset, row_offset, Nx, Ny, factor)
+    factor == 1 && return ArchGDAL.read(dataset, band_index, column_offset, row_offset, Nx, Ny)
+
+    buffer = Array{Float32}(undef, Nx ÷ factor, Ny ÷ factor)
+    return ArchGDAL.environment(globalconfig = ["GDAL_RASTERIO_RESAMPLING" => "AVERAGE"]) do
+        ArchGDAL.read!(dataset, buffer, band_index, column_offset, row_offset, Nx, Ny)
+    end
+end
