@@ -17,7 +17,8 @@ abstract type MODISLAIDataset <: AbstractMODISLandDataset end
 
 The MODIS MCD15A2H V061 combined Terra + Aqua leaf-area-index / FPAR product: 500 m, 8-day
 composites on the sinusoidal grid, from 2002-07-04 onwards. Provides `:leaf_area_index`
-(``𝒜``, one-sided green leaf area per unit *ground* area, m² m⁻²), `:fpar`,
+(``L``, one-sided green leaf area per unit *ground* area, m² m⁻²), `:absorbed_par_fraction`
+(FPAR, the fraction of incident PAR the green canopy absorbs, –),
 `:leaf_area_index_uncertainty`, and `:landcover_code` — the class the product names in place of
 a retrieval, listed under [`mask_lai_landcover`](@ref). The product reports *true* leaf
 area index, with per-biome clumping applied inside the retrieval.
@@ -191,7 +192,7 @@ last_landcover_year(::MCD12Q1) = Dates.year(Dates.today()) - 1
 #####
 
 const MODISLAI_variable_names = Dict(:leaf_area_index             => "Lai_500m",
-                                     :fpar                       => "Fpar_500m",
+                                     :absorbed_par_fraction       => "Fpar_500m",
                                      :leaf_area_index_uncertainty => "LaiStdDev_500m")
 
 # `:landcover_code` is the class the leaf-area layer writes where it has no retrieval; a
@@ -270,7 +271,7 @@ DataWrangling.convert_units(x::FT, ::MODISFPARScale) where FT = x * convert(FT, 
 # Files store digital numbers (and the climatology their reduction, which is linear in
 # them), so the product's scale factor is applied on the way onto the grid.
 function DataWrangling.conversion_units(metadatum::MODISLandMetadatum)
-    metadatum.name === :fpar && return MODISFPARScale()
+    metadatum.name === :absorbed_par_fraction && return MODISFPARScale()
     metadatum.name in (:retained_retrieval_count, :landcover_code) && return nothing
     return MODISLAIScale()
 end

@@ -161,20 +161,20 @@ function zero_non_vegetated!(series::AbstractArray, land_cover;
                              classes = igbp_non_vegetated_classes,
                              water_classes = (igbp_class_names.water,))
 
-    𝒜 = DataWrangling.seasonal_array(series)
+    data = DataWrangling.seasonal_array(series)
     codes = DataWrangling.horizontal_array(land_cover)
 
-    size(codes) == size(𝒜)[1:2] ||
-        throw(ArgumentError("The land-cover array is $(size(codes)) but the series is $(size(𝒜)[1:2]) in space."))
+    size(codes) == size(data)[1:2] ||
+        throw(ArgumentError("The land-cover array is $(size(codes)) but the series is $(size(data)[1:2]) in space."))
 
-    for t in axes(𝒜, 3), j in axes(𝒜, 2), i in axes(𝒜, 1)
+    for t in axes(data, 3), j in axes(data, 2), i in axes(data, 1)
         code = codes[i, j]
         isfinite(code) || continue
         class = round(Int, code)
         if class in water_classes
-            𝒜[i, j, t] = NaN
+            data[i, j, t] = NaN
         elseif class in classes
-            𝒜[i, j, t] = 0
+            data[i, j, t] = 0
         end
     end
 

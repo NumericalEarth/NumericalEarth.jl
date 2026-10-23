@@ -1,6 +1,6 @@
 # # Leaf area index from MODIS, as a seasonal climatology
 #
-# This example builds a leaf-area-index (``𝒜``) boundary condition from MODIS MCD15A2H —
+# This example builds a leaf-area-index (LAI) boundary condition from MODIS MCD15A2H —
 # 500 m combined Terra + Aqua composites, one every eight days since 2002.
 #
 # The region is the central Amazon around the Rio Negro–Solimões confluence, on the same grid
@@ -106,7 +106,7 @@ deep_composite_leaf_area_index = Field(deep_composite)
 @printf("\n%s composite of the same period\n", deep.years)
 @printf("  total missing : %.2f%%  (the land-cover classes are %.2f%%)\n",
         100 * gap_fraction(deep_composite_leaf_area_index), 100 * class_code_fraction)
-@printf("  mean 𝒜        : %.2f m² m⁻²\n", nanmean(deep_composite_leaf_area_index))
+@printf("  mean LAI      : %.2f m² m⁻²\n", nanmean(deep_composite_leaf_area_index))
 
 # The regrid onto the model grid adds no gap of its own. Each model cell takes the area mean of
 # the retrievals under it, normalized by the area they cover, so a model cell is missing only
@@ -127,7 +127,7 @@ deep_composite_leaf_area_index = Field(deep_composite)
 # considerably lower, and the difference is one of definition rather than of quality.
 
 @printf("\nCentral Amazon, %s composite\n", deep.years)
-@printf("  MCD15A2H mean 𝒜 : %.2f m² m⁻²   (closed rainforest is 5-6)\n",
+@printf("  MCD15A2H mean LAI : %.2f m² m⁻²   (closed rainforest is 5-6)\n",
         nanmean(deep_composite_leaf_area_index))
 
 axis_kw = (xlabel = "Longitude (ᵒ)", ylabel = "Latitude (ᵒ)")
@@ -142,7 +142,7 @@ heatmap!(ax, Field(single_composite, grid), colormap = :viridis, colorrange = le
 ax = Axis(fig[1, 2]; title = "$(deep.years) composite, same period", axis_kw...)
 plot = heatmap!(ax, Field(deep_composite, grid), colormap = :viridis,
                 colorrange = leaf_area_index_range, nan_color = :midnightblue)
-Colorbar(fig[1, 3], plot, label = "𝒜 (m² m⁻²)")
+Colorbar(fig[1, 3], plot, label = "LAI (m² m⁻²)")
 
 # The classes the product names instead of retrieving. Its water and wetland codes are the
 # reason the composite's gap does not close further, and their shape — a connected river
@@ -157,7 +157,7 @@ ax = Axis(fig[2, 1]; title = "Land-cover code (native 500 m grid)", axis_kw...)
 heatmap!(ax, Field(in_band_codes), colormap = cgrad(:tab10, 6, categorical = true),
          colorrange = (249.5, 255.5), nan_color = (:seagreen, 0.25))
 
-ax = Axis(fig[2, 2]; xlabel = "𝒜 (m² m⁻²)", ylabel = "Cells",
+ax = Axis(fig[2, 2]; xlabel = "LAI (m² m⁻²)", ylabel = "Cells",
           title = "Distribution over the land")
 hist!(ax, filter(!isnan, vec(Array(interior(deep_composite_leaf_area_index)))), bins = 50,
       color = (:seagreen, 0.8))
@@ -212,9 +212,9 @@ year_gaps = [gap_fraction(single_year_leaf_area_index[n]) for n in periods]
 low_period, peak_period = argmin(seasonal_mean), argmax(seasonal_mean)
 
 @printf("\nSeasonal cycle over the 46 periods\n")
-@printf("  annual low : 𝒜 = %.2f  (%s)\n", seasonal_mean[low_period],
+@printf("  annual low : LAI = %.2f  (%s)\n", seasonal_mean[low_period],
         Dates.format(metadata.dates[low_period], "u dd"))
-@printf("  peak       : 𝒜 = %.2f  (%s)\n", seasonal_mean[peak_period],
+@printf("  peak       : LAI = %.2f  (%s)\n", seasonal_mean[peak_period],
         Dates.format(metadata.dates[peak_period], "u dd"))
 @printf("  peak / low : %.2f×  — evergreen canopy holds its leaf area year-round\n",
         seasonal_mean[peak_period] / seasonal_mean[low_period])
@@ -229,7 +229,7 @@ build_lai_climatology!(deep; region, periods = low_period:low_period)
 deep_low_period_leaf_area_index = Field(Metadatum(:leaf_area_index; dataset = deep, region,
                             date = metadata.dates[low_period]))
 
-@printf("  the low period at %s : 𝒜 = %.2f over %.0f%% of cells, against %.2f over %.0f%%\n",
+@printf("  the low period at %s : LAI = %.2f over %.0f%% of cells, against %.2f over %.0f%%\n",
         deep.years, nanmean(deep_low_period_leaf_area_index),
         100 * (1 - gap_fraction(deep_low_period_leaf_area_index)),
         seasonal_mean[low_period], 100 * (1 - seasonal_gaps[low_period]))
@@ -258,7 +258,7 @@ day_of_year = dayofyear.(metadata.dates)
 fig = Figure(size = (1400, 1050))
 
 ax = Axis(fig[1, 1:3];
-          xlabel = "Day of year", ylabel = "𝒜 (m² m⁻²)",
+          xlabel = "Day of year", ylabel = "LAI (m² m⁻²)",
           title = "Regional-mean leaf area index")
 scatterlines!(ax, day_of_year, year_mean, color = (:goldenrod, 0.8), markersize = 7,
               label = "2019 alone")
@@ -318,7 +318,7 @@ heatmap!(ax, on_model_grid(filled_leaf_area_index[low_period]), colormap = :viri
 ax = Axis(fig[3, 2]; title = "Seasonal peak, $(Dates.format(metadata.dates[peak_period], "u dd"))", axis_kw...)
 plot = heatmap!(ax, on_model_grid(filled_leaf_area_index[peak_period]), colormap = :viridis,
                 colorrange = leaf_area_index_range, nan_color = :midnightblue)
-Colorbar(fig[3, 3], plot, label = "𝒜 (m² m⁻²)")
+Colorbar(fig[3, 3], plot, label = "LAI (m² m⁻²)")
 
 save("modis_leaf_area_index_seasonal.png", fig)
 nothing #hide

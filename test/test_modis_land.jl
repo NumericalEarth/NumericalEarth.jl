@@ -120,8 +120,8 @@ end
     @test (φ₂ - φ₁) / Ny ≈ Δ
 
     @test Set(keys(available_variables(dataset))) ==
-          Set((:leaf_area_index, :fpar, :leaf_area_index_uncertainty, :landcover_code))
-    @test dataset_variable_name(Metadatum(:fpar; dataset, region)) == "Fpar_500m"
+          Set((:leaf_area_index, :absorbed_par_fraction, :leaf_area_index_uncertainty, :landcover_code))
+    @test dataset_variable_name(Metadatum(:absorbed_par_fraction; dataset, region)) == "Fpar_500m"
 
     # The land-cover code is read from the leaf-area layer itself, and is not scaled.
     code = Metadatum(:landcover_code; dataset, region, date = DateTime(2020, 7, 3))
@@ -202,7 +202,7 @@ end
     # One warp per date and region serves every variable, so the raw filename is keyed by
     # date and region but not by variable.
     @test metadata_filename(dataset, :leaf_area_index, date, region) ==
-          metadata_filename(dataset, :fpar, date, region)
+          metadata_filename(dataset, :absorbed_par_fraction, date, region)
     @test metadata_filename(dataset, :leaf_area_index, date, region) !=
           metadata_filename(dataset, :leaf_area_index, date, other_region)
     @test metadata_filename(dataset, :leaf_area_index, date, region) !=
@@ -231,7 +231,7 @@ end
     unscreened = MODISLAIClimatology(dataset = MCD15A2H(screened_flags = 0x0000))
     stamp = DateTime(2018, 1, 1)
     @test metadata_filename(climatology, :leaf_area_index, stamp, region) !=
-          metadata_filename(climatology, :fpar, stamp, region)
+          metadata_filename(climatology, :absorbed_par_fraction, stamp, region)
     @test metadata_filename(climatology, :leaf_area_index, stamp, region) !=
           metadata_filename(other_years, :leaf_area_index, stamp, region)
     @test metadata_filename(climatology, :leaf_area_index, stamp, region) !=
@@ -384,9 +384,10 @@ end
         @test values[Nx, Ny] ≈ Float32(lai[Nx, Ny]) * MODIS_LAI_SCALE
         @test isnan(values[2, 3])
 
-        fpar = Array(interior(Field(Metadatum(:fpar; dataset, region, date, dir)), :, :, 1))
-        @test fpar[1, 1] ≈ Float32(lai[1, 1]) * MODIS_FPAR_SCALE
-        @test all(isnan, fpar[3, 4:8])
+        absorbed_par_fraction_metadatum = Metadatum(:absorbed_par_fraction; dataset, region, date, dir)
+        absorbed_par_fraction = Array(interior(Field(absorbed_par_fraction_metadatum), :, :, 1))
+        @test absorbed_par_fraction[1, 1] ≈ Float32(lai[1, 1]) * MODIS_FPAR_SCALE
+        @test all(isnan, absorbed_par_fraction[3, 4:8])
 
         # On one model column over the whole window, the area mean of the retrievals under it,
         # whether or not the model grid has a vertical axis.
@@ -429,8 +430,8 @@ end
         screened = Field(metadatum, arch; inpainting)
         @test all(isapprox.(Array(interior(screened)), 5))
 
-        fpar_metadatum = Metadatum(:fpar; dataset, region, date, dir)
-        @test all(isapprox.(Array(interior(Field(fpar_metadatum, arch; inpainting))), 0.8))
+        absorbed_par_fraction_metadatum = Metadatum(:absorbed_par_fraction; dataset, region, date, dir)
+        @test all(isapprox.(Array(interior(Field(absorbed_par_fraction_metadatum, arch; inpainting))), 0.8))
 
         unscreened = Metadatum(:leaf_area_index; dataset = MCD15A2H(screened_flags = 0x0000),
                                region, date, dir)
@@ -560,10 +561,10 @@ end
         write_synthetic_modis_file(joinpath(dir, lai_metadatum.filename),
                                    regional_lattice(lai_metadatum))
 
-        𝒜 = retrieve_data(lai_metadatum)
+        LAI = retrieve_data(lai_metadatum)
         λc, φc = read_file_coords(metadatum)
         λl, φl = read_file_coords(lai_metadatum)
-        @test size(codes) == size(𝒜)
+        @test size(codes) == size(LAI)
         @test λc == λl
         @test φc == φl
         @test region_info(region, Field{Center, Center, Nothing}(native_grid(metadatum)),
@@ -731,15 +732,15 @@ end
     @test class_maximum_gap(classes; default = 2) == [6, 1, 2]
 
     # Two columns, one gap, two answers.
-    𝒜 = fill(NaN32, 2, 1, 12)
-    𝒜[1, 1, :] .= 1f0:12f0
-    𝒜[2, 1, :] .= 1f0:12f0
-    𝒜[:, :, 4:6] .= NaN32
+    LAI = fill(NaN32, 2, 1, 12)
+    LAI[1, 1, :] .= 1f0:12f0
+    LAI[2, 1, :] .= 1f0:12f0
+    LAI[:, :, 4:6] .= NaN32
     pair = Float32[igbp_class_names.evergreen_broadleaf_forest;
                    igbp_class_names.deciduous_broadleaf_forest;;]
-    @test_logs (:warn,) fill_gaps!(𝒜; max_gap = class_maximum_gap(pair))
-    @test 𝒜[1, 1, 4:6] ≈ Float32[4, 5, 6]
-    @test all(isnan, 𝒜[2, 1, 4:6])
+    @test_logs (:warn,) fill_gaps!(LAI; max_gap = class_maximum_gap(pair))
+    @test LAI[1, 1, 4:6] ≈ Float32[4, 5, 6]
+    @test all(isnan, LAI[2, 1, 4:6])
 end
 
 # A stand-in for an end-stamped window, so the MODIS tests stay clear of another product's dataset.
@@ -840,22 +841,22 @@ end
 end
 
 @testset "Zeroing the non-vegetated classes" begin
-    𝒜 = fill(NaN32, 3, 1, 4)
-    𝒜[1, 1, :] .= 1f0:4f0                          # forest, observed
-    𝒜[2, 1, 2] = 5                                 # a stray retrieval over water
-    𝒜[3, 1, 2] = 7                                 # a retrieval in an urban class
+    LAI = fill(NaN32, 3, 1, 4)
+    LAI[1, 1, :] .= 1f0:4f0                          # forest, observed
+    LAI[2, 1, 2] = 5                                 # a stray retrieval over water
+    LAI[3, 1, 2] = 7                                 # a retrieval in an urban class
 
     codes = Float32[igbp_class_names.deciduous_broadleaf_forest;
                     igbp_class_names.water;
                     igbp_class_names.urban;;]
 
-    zero_non_vegetated!(𝒜, codes)
+    zero_non_vegetated!(LAI, codes)
 
-    @test all(iszero, 𝒜[3, 1, :])
-    @test all(isnan, 𝒜[2, 1, :])
+    @test all(iszero, LAI[3, 1, :])
+    @test all(isnan, LAI[2, 1, :])
 
     # A vegetated column is untouched.
-    @test 𝒜[1, 1, :] == Float32[1, 2, 3, 4]
+    @test LAI[1, 1, :] == Float32[1, 2, 3, 4]
 
     # Cells with no class at all are left alone — nothing says they carry no canopy.
     unclassified = fill(NaN32, 2, 1, 3)
@@ -916,26 +917,26 @@ end
         metadatum = Metadatum(:leaf_area_index; dataset = climatology, region, date = stamp, dir)
         @test basename(only(paths)) == metadatum.filename
 
-        𝒜 = Array(interior(Field(metadatum), :, :, 1))
+        LAI = Array(interior(Field(metadatum), :, :, 1))
         n = Array(interior(Field(retained_retrieval_metadatum(metadatum)), :, :, 1))
 
         # The reduction is the mean of the retained digital numbers, scaled on read.
-        @test 𝒜[1, 1] ≈ mean((10, 20, 30)) * MODIS_LAI_SCALE
+        @test LAI[1, 1] ≈ mean((10, 20, 30)) * MODIS_LAI_SCALE
         @test n[1, 1] == 3
 
         # A cell cloudy in every year has nothing to composite.
-        @test isnan(𝒜[2, 2])
+        @test isnan(LAI[2, 2])
         @test n[2, 2] == 0
 
         # A cell cloudy in one year composites the other two.
         @test n[4, 4] == 2
-        @test !isnan(𝒜[4, 4])
+        @test !isnan(LAI[4, 4])
 
-        @test 𝒜[5, 5] ≈ 4
+        @test LAI[5, 5] ≈ 4
         @test n[5, 5] == 1
-        @test all(isnan, (𝒜[6, 6], 𝒜[7, 7]))
+        @test all(isnan, (LAI[6, 6], LAI[7, 7]))
         @test n[6, 6] == n[7, 7] == 0
-        @test 𝒜[8, 8] == 0
+        @test LAI[8, 8] == 0
         @test n[8, 8] == 3
 
         inpainting = NearestNeighborInpainting(1)

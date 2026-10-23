@@ -4,8 +4,8 @@ This module ingests two MODIS V061 land products and builds seasonal climatologi
 the first:
 
 - **MCD15A2H** — combined Terra + Aqua leaf area index / FPAR: 500 m, 8-day composites
-  from 2002-07-04. Variables `:leaf_area_index`, `:fpar`, `:leaf_area_index_uncertainty`,
-  and `:landcover_code`.
+  from 2002-07-04. Variables `:leaf_area_index`, `:absorbed_par_fraction` (FPAR),
+  `:leaf_area_index_uncertainty`, and `:landcover_code`.
 - **MCD12Q1** — annual land cover from 2001 under the `:IGBP` (default), `:LAI`, or `:PFT`
   legend, plus `:quality_flag` and `:land_water_mask`. Same granules, same reprojected
   lattice, so a class field and a leaf-area field pair cell for cell.

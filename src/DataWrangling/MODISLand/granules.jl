@@ -178,15 +178,15 @@ function DataWrangling.retrieve_data(metadatum::MODISLAIMetadatum)
 
     return NCDataset(metadata_path(metadatum)) do ds
         DN = ds[variable][:, :]
-        𝒜 = mask_lai_fill.(DN)
+        data = mask_lai_fill.(DN)
 
         if !iszero(mask)
             qc = ds[lai_quality_variable][:, :]
             extra_qc = ds[lai_extra_quality_variable][:, :]
-            𝒜 = ifelse.(lai_screened.(qc, extra_qc, mask), NaN32, 𝒜)
+            data = ifelse.(lai_screened.(qc, extra_qc, mask), NaN32, data)
         end
 
-        return 𝒜
+        return data
     end
 end
 

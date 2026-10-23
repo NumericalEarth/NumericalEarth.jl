@@ -26,7 +26,7 @@ stencil widens ring by ring until every period holds `minimum_donors` same-class
 Each (block, class) curve is computed once and cached; the target cell's own contribution
 is removed when it is read.
 
-`BlockDonorTable(𝒜, class_index, Nclasses; ...)` takes the series and a matrix giving each
+`BlockDonorTable(series, class_index, Nclasses; ...)` takes the series and a matrix giving each
 cell's class index, `0` marking cells in no class. Both tables carry a leading row and
 column of zeros, so block `(bi, bj)` sits at array index `(bi + 1, bj + 1)`.
 """
@@ -41,10 +41,10 @@ struct BlockDonorTable{S, C}
     curves :: Dict{Tuple{Int, Int, Int}, Tuple{Vector{Float64}, Vector{Int}, Int}}
 end
 
-function BlockDonorTable(𝒜, class_index, Nclasses;
+function BlockDonorTable(series, class_index, Nclasses;
                          block_size, initial_radius, maximum_radius, minimum_donors)
 
-    Nx, Ny, Nt = size(𝒜)
+    Nx, Ny, Nt = size(series)
     Nbx, Nby = cld(Nx, block_size), cld(Ny, block_size)
 
     sums = zeros(Float64, Nbx + 1, Nby + 1, Nclasses, Nt)
@@ -53,7 +53,7 @@ function BlockDonorTable(𝒜, class_index, Nclasses;
     for t in 1:Nt, j in 1:Ny, i in 1:Nx
         c = class_index[i, j]
         c == 0 && continue
-        value = 𝒜[i, j, t]
+        value = series[i, j, t]
         isnan(value) && continue
         # +1 for the block index, +1 again past the guard row of zeros at index 1.
         bi = (i - 1) ÷ block_size + 2
@@ -121,7 +121,7 @@ function block_donor_curve(table, bi, bj, c)
     return sums, counts, radius
 end
 
-function donor_series!(curve, table::BlockDonorTable, 𝒜, i, j)
+function donor_series!(curve, table::BlockDonorTable, series, i, j)
     c = table.class_index[i, j]
     if c == 0
         fill!(curve, NaN)
@@ -135,7 +135,7 @@ function donor_series!(curve, table::BlockDonorTable, 𝒜, i, j)
     for t in eachindex(curve)
         total, n = sums[t], counts[t]
         # The cell's own value leaves its reference curve.
-        value = 𝒜[i, j, t]
+        value = series[i, j, t]
         if !isnan(value)
             total -= value
             n -= 1
@@ -169,16 +169,16 @@ struct AnchorDonorPool{A}
 end
 
 function AnchorDonorPool(anchor, anchor_periods, Nt, spatial)
-    𝒜̄ = seasonal_array(anchor)
-    size(𝒜̄)[1:2] == spatial ||
-        throw(ArgumentError("The anchor climatology is $(size(𝒜̄)[1:2]) but the series is $spatial in space."))
+    climatology = seasonal_array(anchor)
+    size(climatology)[1:2] == spatial ||
+        throw(ArgumentError("The anchor climatology is $(size(climatology)[1:2]) but the series is $spatial in space."))
 
-    Na = size(𝒜̄, 3)
+    Na = size(climatology, 3)
 
     if isnothing(anchor_periods)
         mod(Nt, Na) == 0 ||
             throw(ArgumentError("The series has $Nt times and the anchor $Na periods; pass `anchor_periods`."))
-        return AnchorDonorPool(𝒜̄, [mod1(t, Na) for t in 1:Nt])
+        return AnchorDonorPool(climatology, [mod1(t, Na) for t in 1:Nt])
     end
 
     periods = collect(anchor_periods)
@@ -187,10 +187,10 @@ function AnchorDonorPool(anchor, anchor_periods, Nt, spatial)
     all(p -> 1 ≤ p ≤ Na, periods) ||
         throw(ArgumentError("anchor_periods must index the anchor's $Na periods."))
 
-    return AnchorDonorPool(𝒜̄, periods)
+    return AnchorDonorPool(climatology, periods)
 end
 
-function donor_series!(curve, pool::AnchorDonorPool, 𝒜, i, j)
+function donor_series!(curve, pool::AnchorDonorPool, series, i, j)
     for t in eachindex(curve)
         curve[t] = pool.anchor[i, j, pool.periods[t]]
     end
@@ -198,13 +198,13 @@ function donor_series!(curve, pool::AnchorDonorPool, 𝒜, i, j)
 end
 
 # The ratio of sums, not a mean of ratios, over the periods the cell was observed.
-function donor_scaling(𝒜, curve, observed, i, j, scaling, minimum_anchor_periods)
+function donor_scaling(series, curve, observed, i, j, scaling, minimum_anchor_periods)
     observed_total = 0.0
     donor_total = 0.0
     anchors = 0
 
     for t in eachindex(curve)
-        value, donor = 𝒜[i, j, t], curve[t]
+        value, donor = series[i, j, t], curve[t]
         (!observed[i, j, t] || isnan(donor)) && continue
         observed_total += value
         donor_total += donor

@@ -298,8 +298,8 @@ function fill_seasonal_gaps!(series::AbstractArray, land_cover;
     scaling in (:multiplicative, :additive) ||
         throw(ArgumentError("scaling must be :multiplicative or :additive; got $scaling."))
 
-    𝒜 = seasonal_array(series)
-    Nx, Ny, Nt = size(𝒜)
+    data = seasonal_array(series)
+    Nx, Ny, Nt = size(data)
 
     codes = horizontal_array(land_cover)
     size(codes) == (Nx, Ny) ||
@@ -307,37 +307,37 @@ function fill_seasonal_gaps!(series::AbstractArray, land_cover;
                             "$((Nx, Ny)) in space."))
 
     key = isnothing(cache) ? nothing :
-          seasonal_fill_key(; series = 𝒜, land_cover = codes, anchor, anchor_periods, cyclic,
+          seasonal_fill_key(; series = data, land_cover = codes, anchor, anchor_periods, cyclic,
                             max_gap, block_size, initial_radius, minimum_donors, maximum_radius,
                             minimum_anchor_periods, scaling, valid_range, unfilled_classes, stages)
 
-    cached = cached_seasonal_fill(cache, key, 𝒜)
+    cached = cached_seasonal_fill(cache, key, data)
     isnothing(cached) || return (; series, cached.provenance, cached.reach)
 
     class_index, classes_present = class_indices(codes)
     fillable = [!isfinite(code) || !(round(Int, code) in unfilled_classes) for code in codes]
 
-    observed = .!isnan.(𝒜)
+    observed = .!isnan.(data)
     provenance = fill(gap_fill_provenance.unfilled, Nx, Ny, Nt)
     provenance[observed] .= gap_fill_provenance.observed
     reach = zeros(Int, Nx, Ny)
 
     if :temporal in stages
-        fill_gaps!(𝒜; max_gap = ifelse.(fillable, max_gap, 0), cyclic)
-        provenance[.!observed .& .!isnan.(𝒜)] .= gap_fill_provenance.temporal
+        fill_gaps!(data; max_gap = ifelse.(fillable, max_gap, 0), cyclic)
+        provenance[.!observed .& .!isnan.(data)] .= gap_fill_provenance.temporal
     end
 
     scale_donors = :scaled in stages
     mean_donors  = :class_mean in stages
 
     if !(scale_donors || mean_donors)
-        cache_seasonal_fill!(cache, key, 𝒜, provenance, reach)
+        cache_seasonal_fill!(cache, key, data, provenance, reach)
         return (; series, provenance, reach)
     end
 
     # Built after the temporal stage, so a neighbor's short bridged gap is available as a donor.
     pool = isnothing(anchor) ?
-        BlockDonorTable(𝒜, class_index, length(classes_present);
+        BlockDonorTable(data, class_index, length(classes_present);
                         block_size, initial_radius, maximum_radius, minimum_donors) :
         AnchorDonorPool(anchor, anchor_periods, Nt, (Nx, Ny))
 
@@ -345,22 +345,22 @@ function fill_seasonal_gaps!(series::AbstractArray, land_cover;
 
     for j in 1:Ny, i in 1:Nx
         fillable[i, j] || continue
-        any(t -> isnan(𝒜[i, j, t]), 1:Nt) || continue
+        any(t -> isnan(data[i, j, t]), 1:Nt) || continue
 
-        radius = donor_series!(curve, pool, 𝒜, i, j)
-        scale = donor_scaling(𝒜, curve, observed, i, j, scaling, minimum_anchor_periods)
+        radius = donor_series!(curve, pool, data, i, j)
+        scale = donor_scaling(data, curve, observed, i, j, scaling, minimum_anchor_periods)
         filled = false
 
         for t in 1:Nt
-            isnan(𝒜[i, j, t]) || continue
+            isnan(data[i, j, t]) || continue
             donor = curve[t]
             isnan(donor) && continue
 
             if scale_donors && !isnan(scale)
-                𝒜[i, j, t] = clamp_to_range(apply_scaling(donor, scale, scaling), valid_range)
+                data[i, j, t] = clamp_to_range(apply_scaling(donor, scale, scaling), valid_range)
                 provenance[i, j, t] = gap_fill_provenance.scaled
             elseif mean_donors
-                𝒜[i, j, t] = clamp_to_range(donor, valid_range)
+                data[i, j, t] = clamp_to_range(donor, valid_range)
                 provenance[i, j, t] = gap_fill_provenance.class_mean
             else
                 continue
@@ -372,7 +372,7 @@ function fill_seasonal_gaps!(series::AbstractArray, land_cover;
         filled && (reach[i, j] = radius)
     end
 
-    cache_seasonal_fill!(cache, key, 𝒜, provenance, reach)
+    cache_seasonal_fill!(cache, key, data, provenance, reach)
 
     return (; series, provenance, reach)
 end
@@ -416,30 +416,30 @@ withheld truth, and `estimated` the number of withheld entries the chain reached
 A `cache` keyword is ignored: the damaged copy is never cached.
 """
 function gap_fill_denial(series, land_cover; samples_per_class = 100, kw...)
-    𝒜 = seasonal_array(series isa FieldTimeSeries ? series : copy(series))
+    data = seasonal_array(series isa FieldTimeSeries ? series : copy(series))
     codes = horizontal_array(land_cover)
-    Nx, Ny, Nt = size(𝒜)
+    Nx, Ny, Nt = size(data)
 
     candidates = Dict{Int, Vector{CartesianIndex{3}}}()
     for t in 1:Nt, j in 1:Ny, i in 1:Nx
         isfinite(codes[i, j]) || continue
-        isnan(𝒜[i, j, t]) && continue
+        isnan(data[i, j, t]) && continue
         class = round(Int, codes[i, j])
         push!(get!(Vector{CartesianIndex{3}}, candidates, class), CartesianIndex(i, j, t))
     end
 
     withheld = Dict(class => strided_sample(indices, samples_per_class)
                     for (class, indices) in candidates)
-    truth = Dict(class => [𝒜[I] for I in indices] for (class, indices) in withheld)
+    truth = Dict(class => [data[I] for I in indices] for (class, indices) in withheld)
     for indices in values(withheld), I in indices
-        𝒜[I] = NaN
+        data[I] = NaN
     end
 
-    fill_seasonal_gaps!(𝒜, codes; kw..., cache = nothing)
+    fill_seasonal_gaps!(data, codes; kw..., cache = nothing)
 
     return map(sort!(collect(keys(withheld)))) do class
         indices = withheld[class]
-        estimate = [𝒜[I] for I in indices]
+        estimate = [data[I] for I in indices]
         reached = isfinite.(estimate)
         observed, modeled = truth[class][reached], estimate[reached]
         scored = length(observed) ≥ 2

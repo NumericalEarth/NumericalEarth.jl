@@ -83,12 +83,12 @@ end
     @test region_info(modis_region, Field{Center, Center, Nothing}(grid), λc, φc) ==
           DataWrangling.BoundingBoxOffset(0, 0)
 
-    𝒜 = Array(interior(Field(metadatum), :, :, 1))
-    @test size(𝒜) == (lattice.Nx, lattice.Ny)
+    LAI = Array(interior(Field(metadatum), :, :, 1))
+    @test size(LAI) == (lattice.Nx, lattice.Ny)
 
-    valid = filter(!isnan, vec(𝒜))
+    valid = filter(!isnan, vec(LAI))
     @test !isempty(valid)
-    @test all(𝒜 -> 0 ≤ 𝒜 ≤ 10, valid)          # the product's own ceiling, once scaled
+    @test all(LAI -> 0 ≤ LAI ≤ 10, valid)      # the product's own ceiling, once scaled
     @test length(unique(valid)) > 1            # a real window, not a constant fill
     @test mean(valid) > 1                      # a closed canopy in July
 
@@ -96,12 +96,14 @@ end
     @test topology(grid)[1] == Bounded
 
     # FPAR reads the same file, and takes its own scale factor.
-    fpar_metadatum = Metadatum(:fpar; dataset, region = modis_region,
-                               date = modis_composite_date, dir = modis_download_directory)
-    @test metadata_path(fpar_metadatum) == path
-    fpar = filter(!isnan, vec(Array(interior(Field(fpar_metadatum), :, :, 1))))
-    @test !isempty(fpar)
-    @test all(f -> 0 ≤ f ≤ 1, fpar)
+    absorbed_par_fraction_metadatum = Metadatum(:absorbed_par_fraction; dataset,
+                                                region = modis_region, date = modis_composite_date,
+                                                dir = modis_download_directory)
+    @test metadata_path(absorbed_par_fraction_metadatum) == path
+    absorbed_par_fraction = Array(interior(Field(absorbed_par_fraction_metadatum), :, :, 1))
+    valid = filter(!isnan, vec(absorbed_par_fraction))
+    @test !isempty(valid)
+    @test all(f -> 0 ≤ f ≤ 1, valid)
 end
 
 @testset "Warping a second region from cached granules" begin
@@ -163,18 +165,18 @@ end
     download(metadatum)
     @test isfile(metadata_path(metadatum))
 
-    𝒜 = Array(interior(Field(metadatum), :, :, 1))
+    LAI = Array(interior(Field(metadatum), :, :, 1))
     retained = Array(interior(Field(retained_retrieval_metadatum(metadatum)), :, :, 1))
-    @test size(retained) == size(𝒜)
+    @test size(retained) == size(LAI)
     @test all(n -> 0 ≤ n ≤ length(climatology.years), vec(retained))
 
     # The count is what makes a gap honest: a cell no year could observe stays NaN.
-    @test all(i -> (retained[i] == 0) == isnan(𝒜[i]), eachindex(𝒜))
-    @test all(𝒜 -> 0 ≤ 𝒜 ≤ 10, filter(!isnan, vec(𝒜)))
+    @test all(i -> (retained[i] == 0) == isnan(LAI[i]), eachindex(LAI))
+    @test all(LAI -> 0 ≤ LAI ≤ 10, filter(!isnan, vec(LAI)))
 
     # One of the composited years is the single date read above, so compositing can only
     # have filled gaps, never opened them.
     single = Metadatum(:leaf_area_index; dataset = MCD15A2H(), region = modis_region,
                        date = modis_composite_date, dir = modis_download_directory)
-    @test count(!isnan, 𝒜) ≥ count(!isnan, Array(interior(Field(single), :, :, 1)))
+    @test count(!isnan, LAI) ≥ count(!isnan, Array(interior(Field(single), :, :, 1)))
 end

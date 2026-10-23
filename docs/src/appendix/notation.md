@@ -224,7 +224,7 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
-| ``𝒜`` | `𝒜` | leaf area index | One-sided leaf area per unit ground area (m² m⁻²) |
+| ``L`` | `leaf_area_index`, `LAI` | leaf area index | One-sided leaf area per unit ground area (m² m⁻²) |
 
 ## Similarity theory / surface layer
 
@@ -372,7 +372,6 @@ Most symbols can be entered in the Julia REPL and in editors with Julia support 
 | `𝒬` | `\scrQ` | Script Q (heat flux) |
 | `ℐ` | `\scrI` | Script I (radiative intensity) |
 | `ℒ` | `\scrL` | Script L (latent heat) |
-| `𝒜` | `\scrA` | Script A (area index) |
 | `𝓃` | `\scrn` | Script n (pore-size uniformity) |
 | `𝓂` | `\scrm` | Script m (van Genuchten `1 - 1/𝓃`) |
 | `τ` | `\tau` | Tau (kinematic stress) |

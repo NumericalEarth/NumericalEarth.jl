@@ -158,7 +158,7 @@ fig = Figure(size = (1600, 950))
 ax = Axis(fig[1, 1]; title = "One 8-day composite, $(Dates.format(date, "u dd yyyy"))", axis_kw...)
 plot = heatmap!(ax, single_composite_leaf_area_index, colormap = :viridis,
                 colorrange = leaf_area_index_range, nan_color = :gray80)
-Colorbar(fig[1, 2], plot, label = "𝒜 (m² m⁻²)")
+Colorbar(fig[1, 2], plot, label = "LAI (m² m⁻²)")
 
 ax = Axis(fig[1, 3]; title = "MCD12Q1 IGBP class (native 500 m grid)", axis_kw...)
 plot = heatmap!(ax, native_field(class_index),
@@ -276,9 +276,9 @@ observed = .!isnan.(before)
 seasonal_mean = [nanmean(filled_leaf_area_index[n]) for n in periods]
 low, peak = argmin(seasonal_mean), argmax(seasonal_mean)
 
-@printf("  annual low  : 𝒜 = %.2f  (%s)\n", seasonal_mean[low],
+@printf("  annual low  : LAI = %.2f  (%s)\n", seasonal_mean[low],
         Dates.format(metadata.dates[low], "u dd"))
-@printf("  seasonal peak: 𝒜 = %.2f  (%s)\n", seasonal_mean[peak],
+@printf("  seasonal peak: LAI = %.2f  (%s)\n", seasonal_mean[peak],
         Dates.format(metadata.dates[peak], "u dd"))
 @printf("  peak / low  : %.2f×  — a deciduous box, not an evergreen one\n",
         seasonal_mean[peak] / seasonal_mean[low])
@@ -331,9 +331,9 @@ ax = Axis(fig[1, 2]; axis_kw...,
           title = "Filled climatology, seasonal peak ($(Dates.format(metadata.dates[peak], "u dd")))")
 plot = heatmap!(ax, native_field(after[:, :, peak]), colormap = :viridis,
                 colorrange = leaf_area_index_range, nan_color = :gray80)
-Colorbar(fig[1, 3], plot, label = "𝒜 (m² m⁻²)")
+Colorbar(fig[1, 3], plot, label = "LAI (m² m⁻²)")
 
-ax = Axis(fig[2, 1]; xlabel = "Day of year", ylabel = "𝒜 (m² m⁻²)",
+ax = Axis(fig[2, 1]; xlabel = "Day of year", ylabel = "LAI (m² m⁻²)",
           title = "Regional-mean seasonal cycle")
 scatterlines!(ax, day_of_year, seasonal_mean, color = :seagreen, markersize = 8)
 scatter!(ax, day_of_year[[low, peak]], seasonal_mean[[low, peak]], color = :firebrick,
@@ -404,7 +404,7 @@ sample(t) = filled_leaf_area_index[i, j, 1, Time(t)]
 green_up = 60:0.5:160
 
 fig = Figure(size = (1200, 450))
-ax = Axis(fig[1, 1]; xlabel = "Day of year", ylabel = "𝒜 (m² m⁻²)",
+ax = Axis(fig[1, 1]; xlabel = "Day of year", ylabel = "LAI (m² m⁻²)",
           title = "Interpolating the series through green-up")
 lines!(ax, collect(green_up), [sample((day - 1) * 86400) for day in green_up],
        color = :seagreen, label = "interpolated")
@@ -491,7 +491,7 @@ green_up_samples = [n for n in eachindex(target.dates)
 
 @printf("\nTwo-month means of the 2019 series\n")
 for w in windows
-    @printf("  %s – %s : 𝒜 = %.3f\n", Dates.format(edges[w], "u dd"),
+    @printf("  %s – %s : LAI = %.3f\n", Dates.format(edges[w], "u dd"),
             Dates.format(edges[w + 1], "u dd"), bimonthly_mean[w])
 end
 @printf("  green-up window, overlap-weighted %.4f vs unweighted %.4f (%.1f%% apart)\n",
@@ -520,14 +520,14 @@ heatmap!(ax, native_field(raw_2019[:, :, worst_2019]), colormap = :viridis,
 ax = Axis(fig[1, 2]; axis_kw..., title = "2019-$worst_date after the chain")
 plot = heatmap!(ax, native_field(filled_2019[:, :, worst_2019]), colormap = :viridis,
                 colorrange = leaf_area_index_range, nan_color = :gray80)
-Colorbar(fig[1, 3], plot, label = "𝒜 (m² m⁻²)")
+Colorbar(fig[1, 3], plot, label = "LAI (m² m⁻²)")
 
 ax = Axis(fig[1, 4]; axis_kw..., title = "What produced each cell")
 plot = heatmap!(ax, provenance_map(anchored.provenance[:, :, worst_2019]),
                 colormap = provenance_colors, colorrange = (-0.5, 4.5))
 Colorbar(fig[1, 5], plot, ticks = provenance_ticks)
 
-ax = Axis(fig[2, 1:3]; xlabel = "Days from 1 January 2019", ylabel = "𝒜 (m² m⁻²)",
+ax = Axis(fig[2, 1:3]; xlabel = "Days from 1 January 2019", ylabel = "LAI (m² m⁻²)",
           title = "One deciduous cell: 2019 against the $(climatology.years) climatology")
 lines!(ax, elapsed.(target.dates), climatology_2019[i, j, :], color = :gray40,
        linestyle = :dash, label = "climatology (the anchor)")
@@ -544,7 +544,7 @@ axislegend(ax, position = :lt)
 ax = Axis(fig[2, 4:5]; axis_kw..., title = "2019 minus the climatology, seasonal peak")
 plot = heatmap!(ax, native_field(filled_2019[:, :, peak_2019] .- climatology_2019[:, :, peak_2019]),
                 colormap = :balance, colorrange = (-2, 2))
-Colorbar(fig[2, 6], plot, label = "Δ𝒜 (m² m⁻²)")
+Colorbar(fig[2, 6], plot, label = "ΔLAI (m² m⁻²)")
 
 save("modis_landcover_gap_fill_single_year.png", fig)
 nothing #hide
@@ -627,7 +627,7 @@ model_grid_leaf_area_index = valid_area_mean!(Field{Center, Center, Nothing}(gri
 
 @printf("\nOn the %d x %d model grid at the seasonal peak\n", size(grid, 1), size(grid, 2))
 @printf("  cells with no value : %d\n", count(isnan, Array(interior(model_grid_leaf_area_index))))
-@printf("  regional mean 𝒜     : %.3f m² m⁻² of land\n", nanmean(model_grid_leaf_area_index))
+@printf("  regional mean LAI   : %.3f m² m⁻² of land\n", nanmean(model_grid_leaf_area_index))
 
 # The class field has to travel with it. This field says how much leaf area the land carries; it
 # does not say how much of a cell is land, nor whether its leafless land is a car park or bare
