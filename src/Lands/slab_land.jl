@@ -397,12 +397,12 @@ EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabLand, coupled_model)
 """
     ComponentExchanger(land::SlabLand, grid)
 
-Expose bulk temperature, surface and root-zone saturation, and canopy interception
-storage and capacity on the exchange grid.
+Expose skin temperature `T`, surface saturation `𝒮`, root-zone saturation, and canopy
+interception storage and capacity on the exchange grid.
 """
 function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::SlabLand, grid)
     state = (T                     = surface_temperature(land),
-             saturation            = surface_saturation(land),
+             𝒮                     = surface_saturation(land),
              root_zone_saturation  = get(land.diagnostics, :root_zone_saturation, surface_saturation(land)),
              canopy_water_storage  = get(land.prognostic, :canopy_water_storage, ZeroField()),
              canopy_water_capacity = canopy_water_capacity(land.hydrology, land))

@@ -8,7 +8,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
 using NumericalEarth: VanGenuchtenRetention
 using NumericalEarth.Lands: van_genuchten_saturation, effective_saturation
 
-land_state(𝒮, curve, stress) = (saturation = 𝒮, root_zone_saturation = 𝒮,
+land_state(𝒮, curve, stress) = (𝒮 = 𝒮, root_zone_saturation = 𝒮,
     field_capacity_saturation = effective_saturation(1, 1, 1, nothing, curve, stress.field_capacity_head),
     wilting_point_saturation = effective_saturation(1, 1, 1, nothing, curve, stress.wilting_point_head))
 

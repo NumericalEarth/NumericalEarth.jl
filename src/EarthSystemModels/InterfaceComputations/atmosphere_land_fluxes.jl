@@ -226,16 +226,11 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     # `interface_hydrology_state` read these per cell to build the land
     # interface state; the surface models derive `β`, the reservoir
     # temperature, etc. from them.
-    land_exchanger_state = exchanger.land.state
     FT = eltype(grid)
-    land_state = merge((T = land_exchanger_state.T,
-                  saturation = land_exchanger_state.saturation,
-                  root_zone_saturation = land_exchanger_state.root_zone_saturation,
-                  canopy_water_storage = land_exchanger_state.canopy_water_storage,
-                  canopy_water_capacity = land_exchanger_state.canopy_water_capacity,
-                  time_step = convert(FT, Δt),
-                  thermal_exchange_depth = thermal_exchange_depth(interface_properties.temperature_formulation)),
-                  atmosphere_land_interface.boundary.hydrology)
+    land_state = merge(exchanger.land.state,
+                       (time_step = convert(FT, Δt),
+                        thermal_exchange_depth = thermal_exchange_depth(interface_properties.temperature_formulation)),
+                       atmosphere_land_interface.boundary.hydrology)
 
     # Prescribed leaf area index off the canopy formulation (or `nothing`),
     # reduced to a kernel-friendly value plus its host-side time interpolator.
@@ -299,7 +294,7 @@ end
 ##### model then derives `β`, the reservoir temperature, etc. from what it pulled.
 #####
 
-@inline land_saturation(i, j, grid, land_state) = state2dindex(land_state.saturation, i, j)
+@inline land_saturation(i, j, grid, land_state) = state2dindex(land_state.𝒮, i, j)
 
 # Hydrology state, per humidity formulation. The caller adds the `saturation` key.
 @inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) = (; saturation = land_saturation(i, j, grid, land_state))

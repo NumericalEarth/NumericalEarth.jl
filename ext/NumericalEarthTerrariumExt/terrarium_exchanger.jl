@@ -43,14 +43,14 @@ land_surface_energy_flux(land::TerrariumSimulation) = interior(land.model.state.
 land_surface_shortwave_up(land::TerrariumSimulation) = interior(land.model.state.surface_shortwave_up)
 land_surface_longwave_up(land::TerrariumSimulation) = interior(land.model.state.surface_longwave_up)
 
-# Land exchanger: expose skin temperature `T` (K) and surface `saturation` (which also serves
+# Land exchanger: expose skin temperature `T` (K) and surface saturation `𝒮` (which also serves
 # as the root-zone saturation), with no canopy water store. No regridder (exchange grid ==
 # land grid).
 function ComponentExchanger(land::TerrariumSimulation, exchange_grid)
-    saturation = Field{Center, Center, Nothing}(exchange_grid)
+    𝒮 = Field{Center, Center, Nothing}(exchange_grid)
     state = (T                     = Field{Center, Center, Nothing}(exchange_grid),
-             saturation            = saturation,
-             root_zone_saturation  = saturation,
+             𝒮                     = 𝒮,
+             root_zone_saturation  = 𝒮,
              canopy_water_storage  = ZeroField(),
              canopy_water_capacity = ZeroField())
     return ComponentExchanger(state, nothing)
@@ -78,7 +78,7 @@ function interpolate_state!(exchanger, exchange_grid, land::TerrariumSimulation,
     launch!(arch, exchange_grid, :xy,
             _terrarium_surface_to_exchange!,
             exchanger.state.T,
-            exchanger.state.saturation,
+            exchanger.state.𝒮,
             state.temperature,
             state.saturation_water_ice,
             Nz)
