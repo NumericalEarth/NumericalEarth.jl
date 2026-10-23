@@ -119,7 +119,7 @@ export
     regrid_ocean_fraction,
     smooth_topography!,
     Metadata, Metadatum, MetadataSet,
-    BoundingBox,
+    BoundingBox, ConformalConicBox, ConformalConicGrid,
     Column, Linear, Nearest,
     ECCOMetadatum,
     EN4Metadatum,
