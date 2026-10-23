@@ -24,9 +24,10 @@
 # `qᵛᵉ` is the scheme-dependent moisture the child binds under `moisture_prognostic_name`: true vapor
 # for `:ρqᵛ`, vapor + cloud condensate for `:ρqᵉ` (saturation adjustment).
 
+using Oceananigans.Architectures: CPU, on_architecture
 using Oceananigans.Fields: Center, ZeroField, AbstractField
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, AbstractInMemoryBackend,
+using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, Clamp, AbstractInMemoryBackend,
                                   time_indices, interpolating_time_indices, extract_field_time_series
 using Oceananigans.Units: Time
 import Oceananigans.OutputReaders: new_backend, update_field_time_series!
@@ -148,7 +149,7 @@ function child_prognostic_field_time_series(parent_atmosphere; time_indices_in_m
     window = clamp(time_indices_in_memory, 3, length(times))
     build() = FieldTimeSeries{Center, Center, Center}(grid, times;
                                                       backend = PrognosticStateBackend(1, window),
-                                                      time_indexing = Cyclical())
+                                                      time_indexing = length(times) > 1 ? Cyclical() : Clamp())
     return (ρᵈ = build(), ρu = build(), ρv = build(), ρθ = build(), ρqᵛᵉ = build(), θ = build(), u = build(), v = build())
 end
 
@@ -234,7 +235,7 @@ function state_exchanger(parent_atmosphere, pˢᵗ, constants;
     prognostic = child_prognostic_state(parent_atmosphere, pˢᵗ, constants, condensates, moisture_name;
                                         time_indices_in_memory)
     exchanger  = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates, moisture_name)
-    exchange_state!(exchanger, first(parent_atmosphere.temperature.times))   # position the parent's windows
+    exchange_state!(exchanger, @allowscalar first(parent_atmosphere.temperature.times))   # position the parent's windows
     return exchanger
 end
 
@@ -284,8 +285,10 @@ function exchange_state!(ex::StateExchanger, time; force=false)
     # (the hourly-seam kick that tips the child at every ERA5 crossing).
     # A full window (memory ≥ the whole time axis) holds every level, so it never moves — pinned at
     # start = 1. Only a limited (streaming) window slides to bracket `time` one level below `t + Δt`.
-    _, n₁, _ = interpolating_time_indices(p.ρᵈ.time_indexing, p.ρᵈ.times, time)
-    N = length(p.ρᵈ.times)
+    # Host copy of the times: a single time stays a device array (only 2+ evenly spaced times become a range)
+    times = on_architecture(CPU(), p.ρᵈ.times)
+    _, n₁, _ = interpolating_time_indices(p.ρᵈ.time_indexing, times, time)
+    N = length(times)
     window = length(p.ρᵈ.backend)
     start = window >= N ? 1 : clamp(n₁ - 1, 1, max(1, N - window + 1))
 
@@ -295,7 +298,7 @@ function exchange_state!(ex::StateExchanger, time; force=false)
     # `parent[start]` would be non-resident → garbage → a discrete NaN at the crossing. Bracketing
     # `times[start]` keeps parent levels [start, start+1, start+2] resident (needs time_indices_in_memory ≥ 3).
     for fts in extract_field_time_series(parent)
-        update_field_time_series!(fts, Time(p.ρᵈ.times[start]))
+        update_field_time_series!(fts, Time(times[start]))
     end
 
     moved = p.ρᵈ.backend.start != start

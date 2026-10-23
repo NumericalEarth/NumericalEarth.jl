@@ -192,6 +192,56 @@ end
     end
 end
 
+@testset "AtmosphereOceanModel with Breeze and a PrescribedOcean" begin
+    for arch in test_architectures
+        A = typeof(arch)
+
+        @testset "Exchanger halos hold the prescribed state on $A" begin
+            # Bounded in x, so nothing but the exchanger's own halo fill can put the SST in the
+            # halo columns the interface flux kernels visit (#754).
+            grid = RectilinearGrid(arch,
+                                   size = (16, 16), halo = (5, 5),
+                                   x = (-10kilometers, 10kilometers),
+                                   z = (0, 10kilometers),
+                                   topology = (Bounded, Flat, Bounded))
+
+            θ₀ = 285
+            atmosphere = atmosphere_simulation(grid; potential_temperature=θ₀)
+            set!(atmosphere.model, θ=atmosphere.model.dynamics.reference_state.surface_potential_temperature, u=1)
+
+            sst_grid = RectilinearGrid(arch,
+                                       size = grid.Nx,
+                                       halo = grid.Hx,
+                                       x = (-10kilometers, 10kilometers),
+                                       topology = (Bounded, Flat, Flat))
+
+            ocean = PrescribedOcean(sst_grid)
+            set!(ocean, T=θ₀ + 1)
+
+            # Construction needs `biogeochemical_interface(exchanger, ::PrescribedOcean)`:
+            # PrescribedOcean has no `model` to read biogeochemistry from.
+            model = AtmosphereOceanModel(atmosphere, ocean)
+            @test model.ocean isa PrescribedOcean
+
+            T = model.interfaces.exchanger.ocean.state.T
+            Hx = sst_grid.Hx
+            @test all(Array(parent(T))[Hx:Hx+grid.Nx+1, :, :] .≈ θ₀ + 1)
+
+            for _ in 1:3
+                time_step!(model, 1)
+            end
+
+            T = model.interfaces.exchanger.ocean.state.T
+            @test all(Array(parent(T))[Hx:Hx+grid.Nx+1, :, :] .≈ θ₀ + 1)
+
+            # The face-centered bottom stress averages the halo column into the first interior
+            # face, so a halo NaN would surface here at i = 1.
+            ρu_bottom = model.atmosphere.model.momentum.ρu.boundary_conditions.bottom.condition
+            @test all(isfinite, Array(interior(ρu_bottom)))
+        end
+    end
+end
+
 @testset "AtmosphereLandModel with Breeze: surface stress feedback" begin
     for arch in test_architectures
         A = typeof(arch)
@@ -555,6 +605,42 @@ end
             update_state!(model)
             al = model.interfaces.atmosphere_land_interface
             @test !any(isnan, Array(interior(al.fluxes.friction_velocity)))
+        end
+    end
+end
+
+@testset "Interface stresses at periodic u/v faces (3D Breeze + PrescribedOcean)" begin
+    for arch in test_architectures
+        A = typeof(arch)
+        @testset "net stress equals periodic face average on $A" begin
+            Nx, Ny, L = 8, 6, 800
+            grid = RectilinearGrid(arch; size = (Nx, Ny, 10), halo = (5, 5, 5), x = (0, L), y = (0, L), z = (0, 1000),
+                                   topology = (Periodic, Periodic, Bounded))
+            atmosphere = atmosphere_simulation(grid; dynamics = AnelasticDynamics(ReferenceState(grid)))
+            # Non-divergent winds that the anelastic projection keeps, over an SST varying in x and y
+            set!(atmosphere.model; θ = 290, u = (x, y, z) -> 8 + 2cos(2π * y / L), v = (x, y, z) -> 3sin(2π * x / L))
+            ocean_grid = RectilinearGrid(arch; size = (Nx, Ny), halo = (5, 5), x = (0, L), y = (0, L),
+                                         topology = (Periodic, Periodic, Flat))
+            ocean = PrescribedOcean(ocean_grid)
+            set!(ocean, T = (x, y, t) -> 292 + cos(2π * x / L) + sin(2π * y / L))
+            model = AtmosphereOceanModel(atmosphere, ocean)
+
+            # The flux kernels compute the i = 0 / j = 0 halo stresses that the face average reads
+            fluxes = model.interfaces.atmosphere_ocean_interface.fluxes
+            NumericalEarth.EarthSystemModels.update_net_fluxes!(model, atmosphere.model)
+            ρτˣ = Array(interior(atmosphere.model.momentum.ρu.boundary_conditions.bottom.condition, :, :, 1))
+            ρτʸ = Array(interior(atmosphere.model.momentum.ρv.boundary_conditions.bottom.condition, :, :, 1))
+            τˣ = Array(interior(fluxes.x_momentum, :, :, 1))
+            τʸ = Array(interior(fluxes.y_momentum, :, :, 1))
+
+            # Stresses averaged onto the u/v faces west and south of each cell, wrapping periodically
+            @test ρτˣ ≈ (circshift(τˣ, (1, 0)) .+ τˣ) ./ 2
+            @test ρτʸ ≈ (circshift(τʸ, (0, 1)) .+ τʸ) ./ 2
+
+            # And a few coupled steps stay finite
+            time_step!(model, 0.5)
+            time_step!(model, 0.5)
+            @test all(isfinite, atmosphere.model.momentum.ρu)
         end
     end
 end

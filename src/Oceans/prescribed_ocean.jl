@@ -79,23 +79,39 @@ function PrescribedOcean(grid, times=[zero(grid)];
                          sea_surface_salinity = default_prescribed_sss(grid, times),
                          velocities = default_prescribed_velocities(grid, times))
 
-    return PrescribedOcean{FT}(grid,
-                               clock,
-                               sea_surface_temperature,
-                               sea_surface_salinity,
-                               velocities,
-                               times,
-                               convert(FT, density),
-                               convert(FT, heat_capacity))
+    ocean = PrescribedOcean{FT}(grid,
+                                clock,
+                                sea_surface_temperature,
+                                sea_surface_salinity,
+                                velocities,
+                                times,
+                                convert(FT, density),
+                                convert(FT, heat_capacity))
+
+    fill_prescribed_halo_regions!(ocean)
+
+    return ocean
 end
 
 Grids.grid(ocean::PrescribedOcean) = ocean.grid
 
 function Oceananigans.set!(ocean::PrescribedOcean; T=nothing, S=nothing, u=nothing, v=nothing)
-    !isnothing(T) && (parent(ocean.sea_surface_temperature) .= T)
-    !isnothing(S) && (parent(ocean.sea_surface_salinity) .= S)
-    !isnothing(u) && (parent(ocean.velocities.u) .= u)
-    !isnothing(v) && (parent(ocean.velocities.v) .= v)
+    !isnothing(T) && set!(ocean.sea_surface_temperature, T)
+    !isnothing(S) && set!(ocean.sea_surface_salinity, S)
+    !isnothing(u) && set!(ocean.velocities.u, u)
+    !isnothing(v) && set!(ocean.velocities.v, v)
+    fill_prescribed_halo_regions!(ocean)
+    return nothing
+end
+
+# The exchanger reads the halo columns straight out of the time series (see
+# `interpolate_prescribed_state!`), so their halos must be valid. Fill them whenever the data is
+# set; a partly-in-memory series fills its own halos each time it loads a new window.
+function fill_prescribed_halo_regions!(ocean::PrescribedOcean)
+    fill_halo_regions!(ocean.sea_surface_temperature)
+    fill_halo_regions!(ocean.sea_surface_salinity)
+    fill_halo_regions!(ocean.velocities.u)
+    fill_halo_regions!(ocean.velocities.v)
     return nothing
 end
 
@@ -158,39 +174,36 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::Presc
     u = CenterField(grid)
     v = CenterField(grid)
 
-    # Initialize from the first time snapshot
-    interior(T) .= interior(ocean.sea_surface_temperature)[:, :, :, 1]
-    interior(S) .= interior(ocean.sea_surface_salinity)[:, :, :, 1]
-    interior(u) .= interior(ocean.velocities.u)[:, :, :, 1]
-    interior(v) .= interior(ocean.velocities.v)[:, :, :, 1]
+    state = (; u, v, T, S)
+    interpolate_prescribed_state!(state, ocean)
 
-    return ComponentExchanger((; u, v, T, S), nothing)
+    return ComponentExchanger(state, nothing)
 end
 
 EarthSystemModels.InterfaceComputations.net_fluxes(ocean::PrescribedOcean) = nothing
 EarthSystemModels.InterfaceComputations.biogeochemical_interface(exchanger, ::PrescribedOcean; kwargs...) = NamedTuple()
 
+EarthSystemModels.interpolate_state!(exchanger, grid, ocean::PrescribedOcean, coupled_model) =
+    interpolate_prescribed_state!(exchanger.state, ocean)
+
 # Read each series at the ocean clock, linearly interpolating between the two snapshots that bracket it.
-function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::PrescribedOcean, coupled_model)
+# The interface flux kernels run over the halo columns too (`interface_kernel_parameters` spans 0:N+1), and
+# the atmosphere's face-centered momentum fluxes average them into the first interior face, so the
+# interpolation covers those columns rather than leaving them at zero (#754).
+function interpolate_prescribed_state!(state, ocean::PrescribedOcean)
     Tᵒ = ocean.sea_surface_temperature
     Sᵒ = ocean.sea_surface_salinity
     uᵒ, vᵒ = ocean.velocities
 
-    ocean_grid = ocean.grid
-    arch = architecture(ocean_grid)
+    grid = ocean.grid
+    arch = architecture(grid)
     t = ocean.clock.time
     interpolator(fts) = cpu_interpolating_time_indices(arch, fts.times, fts.time_indexing, t)
 
-    launch!(arch, ocean_grid, :xy, _interpolate_prescribed_ocean_state!,
-            exchanger.state.T, exchanger.state.S, exchanger.state.u, exchanger.state.v,
+    launch!(arch, grid, interface_kernel_parameters(grid), _interpolate_prescribed_ocean_state!,
+            state.T, state.S, state.u, state.v,
             Tᵒ, Sᵒ, uᵒ, vᵒ,
             interpolator(Tᵒ), interpolator(Sᵒ), interpolator(uᵒ), interpolator(vᵒ))
-
-    # The flux kernel also evaluates halo columns; a 0 K halo temperature NaNs the solve.
-    fill_halo_regions!(exchanger.state.T)
-    fill_halo_regions!(exchanger.state.S)
-    fill_halo_regions!(exchanger.state.u)
-    fill_halo_regions!(exchanger.state.v)
 
     return nothing
 end
