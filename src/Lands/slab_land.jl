@@ -115,7 +115,7 @@ SlabLand{FT}(grid, clock, temperature, water_storage, saturation,
     SlabLand(grid;
              energy    = SlabEnergy(eltype(grid)),
              hydrology = BucketHydrology(eltype(grid)),
-             clock     = Clock{eltype(grid)}(time = 0))
+             clock     = Clock(grid))
 
 Construct a `SlabLand` with the chosen closures. The prognostic
 `temperature` and `water_storage` fields and the diagnostic
@@ -126,7 +126,7 @@ accumulators the coupler writes are sized from each closure's
 function SlabLand(grid;
                   energy    = SlabEnergy(eltype(grid)),
                   hydrology = BucketHydrology(eltype(grid)),
-                  clock     = Clock{eltype(grid)}(time = 0))
+                  clock     = Clock(grid))
 
     temperature   = CenterField(grid)
     water_storage = CenterField(grid)
@@ -186,7 +186,8 @@ at the post-step time (consistent with `Atmospheres` and `Radiations`).
 """
 function Oceananigans.TimeSteppers.time_step!(land::SlabLand, Δt)
     tick!(land.clock, Δt)
-    time = land.clock.time
+    # The clock accumulates in Float64; the closures' kernels see the time at the grid's precision
+    time = clock_convert(kernel_time_type(land.clock), land.clock.time)
 
     time_step!(land.hydrology, land, Δt, time)
     time_step!(land.energy,    land, Δt, time)
