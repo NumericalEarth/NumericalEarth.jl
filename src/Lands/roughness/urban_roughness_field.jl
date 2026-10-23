@@ -170,6 +170,11 @@ measured heights for neighborhood averaging. Dataset modules add methods for the
 """
 function building_morphometry end
 
+# Area (m²) of the longitude-latitude box (λ₁, λ₂) × (φ₁, φ₂).
+# TODO: use a stable sine difference for thin Float32 cells.
+@inline spherical_box_area(grid, λ₁, λ₂, φ₁, φ₂) =
+    grid.radius^2 * deg2rad(λ₂ - λ₁) * (hack_sind(φ₂) - hack_sind(φ₁))
+
 # Neighborhood statistics use spherical overlap areas and built-area height moments.
 @kernel function _neighborhood_morphometry!(pooled, grid, properties, source_grid, neighborhood)
     i, j = @index(Global, NTuple)
@@ -200,9 +205,8 @@ function building_morphometry end
             overlap_north = min(north, latitude_faces[row + 1])
             overlap_west = max(shifted_west, longitude_faces[column])
             overlap_east = min(shifted_east, longitude_faces[column + 1])
-            # TODO Oceananigans: use a stable sine difference in fractional_horizontal_area for thin Float32 cells.
-            area = convert(eltype(grid), fractional_horizontal_area(grid, Float64(overlap_west), Float64(overlap_east),
-                                                                   Float64(overlap_south), Float64(overlap_north)))
+            area = convert(eltype(grid), spherical_box_area(grid, Float64(overlap_west), Float64(overlap_east),
+                                                            Float64(overlap_south), Float64(overlap_north)))
             fraction = stateindex(properties.plan_area_index, column, row, 1)
             height = stateindex(properties.mean_building_height, column, row, 1)
             deviation = stateindex(properties.building_height_deviation, column, row, 1)
