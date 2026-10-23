@@ -13,6 +13,7 @@ using Oceananigans.Utils: KernelParameters, worksize
 
 export
     ComponentInterfaces,
+    SurfacePartition,
     SimilarityTheoryFluxes,
     FixedIterations,
     ConvergenceStopCriteria,
@@ -215,6 +216,7 @@ include("coefficient_based_turbulent_fluxes.jl")
 
 # State exchanger and interfaces
 include("state_exchanger.jl")
+include("surface_partition.jl")
 
 # Sea ice-ocean heat flux formulations
 include("friction_velocity.jl")

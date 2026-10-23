@@ -562,6 +562,44 @@ end
     @test length(nested.exchanger.prognostic.ρᵈ.backend) == 3
 end
 
+# A closure's own tracers (TKE `ρe`) get the child's bounds-preserving WENO by default. A NamedTuple
+# `scalar_advection` that omits them would leave them on the model default, unbounded `Centered(order=2)`.
+@testset "Breeze nested_atmosphere_model: closure tracers get bounded WENO advection" begin
+    parent_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 4),
+                                        longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),
+                                        z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(parent_grid, collect(0.0:1.0:2.0))
+    set!(parent.temperature,       (x, y, z, t) -> 280.0)
+    set!(parent.specific_humidity, (x, y, z, t) -> 0.005)
+    set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
+    set!(parent.pressure,          (x, y, z, t) -> 9.0e4)
+
+    child_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 8),
+                                       longitude = (-1, 1), latitude = (-1, 1), z = (0, 1000),
+                                       halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+
+    closure = TKEBasedTurbulenceClosure()
+    tke_name = only(Oceananigans.TurbulenceClosures.closure_required_tracers(closure))
+
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    microphysics = ext.default_nested_microphysics()
+    default = ext.default_nested_scalar_advection(microphysics, closure)
+    @test haskey(default, tke_name)
+    @test default[tke_name] isa WENO
+    @test default[tke_name].bounds.minimum_value == 0
+    @test default[tke_name].bounds.maximum_value == Inf
+    @test !haskey(ext.default_nested_scalar_advection(microphysics), tke_name)   # no closure, no TKE entry
+
+    nested = nested_atmosphere_model(parent, child_grid; closure,
+                                     parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
+    child_tke_advection = nested.child.advection[tke_name]
+    @test child_tke_advection isa WENO
+    @test !(child_tke_advection isa Centered)
+    @test !isnothing(child_tke_advection.bounds)
+    @test child_tke_advection.bounds.minimum_value == 0
+end
+
 # The lateral boundary relaxation is keyed by the density-weighted prognostic, so a caller's own specific-key
 # forcing combines with it rather than replacing it.
 @testset "Lateral boundary relaxation survives a caller-supplied specific forcing" begin
@@ -963,7 +1001,7 @@ end
     unrelaxed_model = nest(full, nothing)
 
     # The strip child starts from a one-time full-domain snapshot, as the dataset-driven constructor does.
-    snapshot = parent_atmosphere((-2, 2), (34.6, 38.6), 12, 12, times[1:2])
+    snapshot = parent_atmosphere((-2, 2), (34.6, 38.6), 12, 12, times[1:1])
     initial_states = (full_model.exchanger.prognostic,
                       ext.child_prognostic_state(snapshot, first(strip_model.exchanger)),
                       unrelaxed_model.exchanger.prognostic)
@@ -993,4 +1031,20 @@ end
     for (name, field) in pairs(prognostic_fields(strip_model.child))
         @test maximum(abs, Field(prognostic_fields(rerun_model.child)[name] - field)) == 0
     end
+end
+
+@testset "StateExchanger: a single-time parent fills its derived state on $(arch)" for arch in test_architectures
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    grid = LatitudeLongitudeGrid(arch; size = (6, 6, 4), longitude = (-2, 2), latitude = (34, 38), z = (0, 16000),
+                                 halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(grid, [0.0])
+    set!(parent.temperature,       (λ, φ, z, t) -> 288 - 6.5e-3 * z)
+    set!(parent.specific_humidity, (λ, φ, z, t) -> 0.006)
+    set!(parent.velocities.u,      (λ, φ, z, t) -> 8)
+    set!(parent.velocities.v,      (λ, φ, z, t) -> 1)
+    set!(parent.pressure,          (λ, φ, z, t) -> 1e5 * exp(-z / 8000))
+
+    exchanger = ext.state_exchanger(parent, 1e5, ThermodynamicConstants(); condensates = nothing)
+    ρᵈ = Array(interior(exchanger.prognostic.ρᵈ[1]))
+    @test all(isfinite, ρᵈ) && all(>(0), ρᵈ)
 end

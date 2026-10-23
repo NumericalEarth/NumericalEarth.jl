@@ -57,5 +57,6 @@ include("prescribed_atmosphere_regridder.jl")
 include("interpolate_atmospheric_state.jl")
 
 EarthSystemModels.InterfaceComputations.net_fluxes(::PrescribedAtmosphere) = nothing
+EarthSystemModels.InterfaceComputations.atmosphere_feels_surface(::PrescribedAtmosphere) = false
 
 end # module Atmospheres

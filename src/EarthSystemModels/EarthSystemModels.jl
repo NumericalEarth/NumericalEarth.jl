@@ -40,6 +40,7 @@ export
     AltitudeCorrection,
     atmosphere_land_interface,
     surface_layer_diagnostics,
+    SurfacePartition,
     SimilarityTheoryFluxes,
     FixedIterations,
     ConvergenceStopCriteria,
