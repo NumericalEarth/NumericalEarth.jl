@@ -92,7 +92,7 @@ function regrid_bathymetry(target_grid, metadata;
     if cache && !overwrite_cache
         config = bathymetry_regridding_key(target_grid, metadata;
                                            height_above_water, minimum_depth,
-                                           interpolation_passes, major_basins, connections = ())
+                                           interpolation_passes, major_basins, connections)
         cached_data = load_field_cache(config)
         if !isnothing(cached_data)
             target_z = Field{Center, Center, Nothing}(target_grid)
@@ -115,7 +115,7 @@ function regrid_bathymetry(target_grid, metadata;
         # rebuild the key: `download` may have just fetched the dataset file it stamps
         config = bathymetry_regridding_key(target_grid, metadata;
                                            height_above_water, minimum_depth,
-                                           interpolation_passes, major_basins, connections = ())
+                                           interpolation_passes, major_basins, connections)
         save_field_cache(config, Array(interior(target_z, :, :, 1)))
     end
 
@@ -308,7 +308,7 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
 
     config = cache ? bathymetry_regridding_key(global_grid, metadata;
                                                height_above_water, minimum_depth,
-                                               interpolation_passes, major_basins, connections = ()) : nothing
+                                               interpolation_passes, major_basins, connections) : nothing
 
     # Only rank 0 performs cache lookup and computation to avoid OOM.
     # Every rank must contribute the same element type to the shared reduction:
@@ -321,7 +321,7 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
         else
             bottom_field = _regrid_bathymetry(global_grid, metadata;
                                               height_above_water, minimum_depth,
-                                              interpolation_passes, major_basins, connections = ())
+                                              interpolation_passes, major_basins, connections)
             bh = Array(bottom_field.data[1:Nx, 1:Ny, 1])
             if cache
                 save_field_cache(config, bh)
