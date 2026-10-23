@@ -24,6 +24,7 @@
 # `qᵛᵉ` is the scheme-dependent moisture the child binds under `moisture_prognostic_name`: true vapor
 # for `:ρqᵛ`, vapor + cloud condensate for `:ρqᵉ` (saturation adjustment).
 
+using Oceananigans.Architectures: CPU, on_architecture
 using Oceananigans.Fields: Center, ZeroField, AbstractField
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, Clamp, AbstractInMemoryBackend,
@@ -284,8 +285,10 @@ function exchange_state!(ex::StateExchanger, time; force=false)
     # (the hourly-seam kick that tips the child at every ERA5 crossing).
     # A full window (memory ≥ the whole time axis) holds every level, so it never moves — pinned at
     # start = 1. Only a limited (streaming) window slides to bracket `time` one level below `t + Δt`.
-    _, n₁, _ = interpolating_time_indices(p.ρᵈ.time_indexing, p.ρᵈ.times, time)
-    N = length(p.ρᵈ.times)
+    # Host copy of the times: a single time stays a device array (only 2+ evenly spaced times become a range)
+    times = on_architecture(CPU(), p.ρᵈ.times)
+    _, n₁, _ = interpolating_time_indices(p.ρᵈ.time_indexing, times, time)
+    N = length(times)
     window = length(p.ρᵈ.backend)
     start = window >= N ? 1 : clamp(n₁ - 1, 1, max(1, N - window + 1))
 
@@ -295,7 +298,7 @@ function exchange_state!(ex::StateExchanger, time; force=false)
     # `parent[start]` would be non-resident → garbage → a discrete NaN at the crossing. Bracketing
     # `times[start]` keeps parent levels [start, start+1, start+2] resident (needs time_indices_in_memory ≥ 3).
     for fts in extract_field_time_series(parent)
-        update_field_time_series!(fts, Time(@allowscalar p.ρᵈ.times[start]))
+        update_field_time_series!(fts, Time(times[start]))
     end
 
     moved = p.ρᵈ.backend.start != start
