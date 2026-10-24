@@ -14,7 +14,9 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: default_atmosphere
                                                               SimilarityScales,
                                                               iterate_interface_fluxes,
                                                               RelativeVelocity,
-                                                              celsius_to_kelvin
+                                                              celsius_to_kelvin,
+                                                              land_temperature,
+                                                              land_saturation
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using Thermodynamics
 
@@ -80,7 +82,7 @@ using Thermodynamics
         @test only(Array(interior(land.temperature))) > 10
 
         # The land publishes the state the interface requests.
-        ex = NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(land, land.grid; state_names = (:T, :𝒮))
+        ex = NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(land, land.grid; state_accessors = (T = land_temperature, 𝒮 = land_saturation))
         @test keys(ex.state) == (:T, :𝒮)
         @test ex.state.T === land.temperature
     end

@@ -117,26 +117,32 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Names of the land-state quantities that the atmosphere--land interface described by
-`formulation` reads at each cell. The land component publishes exactly these, on the
-exchange grid, through its `ComponentExchanger`; the flux kernel reads them pointwise
-as the land state `Ψˡᵃ`. The bulk land temperature `T` is always included: it is the
-initial guess for the interface temperature.
+The land state that the atmosphere--land interface described by `formulation` reads at
+each cell, as a `NamedTuple` of accessor functions such as `(T = land_temperature, 𝒮 = land_saturation)`.
+The land component publishes `accessor(land)` for each entry, on the exchange grid, through
+its `ComponentExchanger`; the flux kernel reads them pointwise as the land state `Ψˡᵃ`, under
+the same names. The bulk land temperature `T` is always included: it is the initial guess for
+the interface temperature.
 """
-land_state_names(formulation::InterfaceFormulation) = land_state_names(formulation.specific_humidity)
+land_state_accessors(formulation::InterfaceFormulation) = land_state_accessors(formulation.specific_humidity)
 
-land_state_names(specific_humidity_formulation) = (:T, :𝒮)
-land_state_names(::SkinHumidity) = (:T,)
-land_state_names(::FractionalHumidity{<:Number}) = (:T,)
+land_state_accessors(specific_humidity_formulation) = (T = land_temperature, 𝒮 = land_saturation)
+land_state_accessors(::SkinHumidity) = (T = land_temperature,)
+land_state_accessors(::FractionalHumidity{<:Number}) = (T = land_temperature,)
 
 """
-    land_state_field(land, ::Val{name})
+    land_temperature(land)
 
-Return the land quantity `name` on the land grid, e.g. the bulk land temperature for
-`Val(:T)` or the surface saturation for `Val(:𝒮)`. Land components extend this for
-every name in `land_state_names` they support.
+Return the bulk land temperature on the land grid.
 """
-function land_state_field end
+function land_temperature end
+
+"""
+    land_saturation(land)
+
+Return the surface soil saturation `𝒮` on the land grid.
+"""
+function land_saturation end
 
 @kernel function _compute_atmosphere_land_interface_state!(interface_fluxes,
                                                            interface_temperature,

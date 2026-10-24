@@ -1,6 +1,6 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.EarthSystemModels.InterfaceComputations: InterfaceComputations, saturation_specific_humidity
+using NumericalEarth.EarthSystemModels.InterfaceComputations: InterfaceComputations, saturation_specific_humidity, land_temperature
 using Thermodynamics: Thermodynamics
 using Oceananigans.TimeSteppers: update_state!
 
@@ -13,10 +13,10 @@ end
 
 BigLeafHumidity(gₛ) = BigLeafHumidity(gₛ, Thermodynamics.Liquid())
 
-InterfaceComputations.land_state_names(::BigLeafHumidity) = (:T, :λˡᵉᵃᶠ)
+const leaf_area = Ref(1.0)
+leaf_area_index(::SlabLand) = leaf_area[]
 
-const leaf_area_index = Ref(1.0)
-InterfaceComputations.land_state_field(::SlabLand, ::Val{:λˡᵉᵃᶠ}) = leaf_area_index[]
+InterfaceComputations.land_state_accessors(::BigLeafHumidity) = (T = land_temperature, λˡᵉᵃᶠ = leaf_area_index)
 
 # Vapor-flux balance gᶜ (qᵛ⁺(Tₛ) - qˢ) = J with J = -u★ q★ from the previous iterate.
 @inline function InterfaceComputations.compute_interface_humidity(q::BigLeafHumidity, Tₛ, Ψₛ, Ψᵃᵗ, Ψˡᵃ, ℙᵃᵗ)
@@ -28,8 +28,11 @@ InterfaceComputations.land_state_field(::SlabLand, ::Val{:λˡᵉᵃᶠ}) = leaf
     return ifelse(D == 0, Ψₛ.specific_humidity, (gᶜ * qᵛ⁺ * Δq + J * Ψᵃᵗ.q) / D)
 end
 
+# A quantity no land provides
+function momentum_roughness_length end
+
 struct RoughnessHumidity end
-InterfaceComputations.land_state_names(::RoughnessHumidity) = (:T, :ℓᵐ)
+InterfaceComputations.land_state_accessors(::RoughnessHumidity) = (T = land_temperature, ℓᵐ = momentum_roughness_length)
 
 function column_latent_heat(grid; kw...)
     atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10, boundary_layer_height = 512)
@@ -63,10 +66,10 @@ end
         # Transpiration grows with leaf area toward the saturated bare surface.
         bare = column_latent_heat(grid)
 
-        leaf_area_index[] = 0.5
+        leaf_area[] = 0.5
         sparse = column_latent_heat(grid; atmosphere_land_interface_specific_humidity = BigLeafHumidity(0.005))
 
-        leaf_area_index[] = 5.0
+        leaf_area[] = 5.0
         dense = column_latent_heat(grid; atmosphere_land_interface_specific_humidity = BigLeafHumidity(0.005))
         open_stomata = column_latent_heat(grid; atmosphere_land_interface_specific_humidity = BigLeafHumidity(1e3))
 

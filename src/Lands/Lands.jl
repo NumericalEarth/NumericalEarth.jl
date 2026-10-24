@@ -63,7 +63,7 @@ using Base: ForwardOrdering
 
 using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
-using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger, land_state_field
+using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger
 
 # Extended by external land models
 function land_model end

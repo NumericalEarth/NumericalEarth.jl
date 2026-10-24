@@ -24,11 +24,11 @@ ComponentExchanger(state, regridder) = ComponentExchanger(state, regridder, noth
 """
     StateExchanger(grid, radiation, atmosphere, land, ocean, sea_ice;
                    atmosphere_correction = nothing,
-                   land_names = ())
+                   land_accessors = (;))
 
 Container for one `ComponentExchanger` per component. The `grid` is the shared
 exchange grid onto which each component's state is regridded each time step.
-The land exchanger publishes the land quantities named by `land_names`.
+The land exchanger publishes the land state returned by the `land_accessors`.
 Per-component post-regrid corrections live on each `ComponentExchanger` and run
 as a sweep in phase 1.5 of the time step (see `correct_state!`).
 """
@@ -42,11 +42,11 @@ struct StateExchanger{G, R, A, L, O, S}
 
     function StateExchanger(grid, radiation, atmosphere, land, ocean, sea_ice;
                             atmosphere_correction = nothing,
-                            land_names = ())
+                            land_accessors = (;))
         radiation_exchanger  = ComponentExchanger(radiation, grid)
         atmosphere_exchanger = ComponentExchanger(atmosphere, grid;
                                                   correction = atmosphere_correction)
-        land_exchanger       = ComponentExchanger(land, grid; state_names = land_names)
+        land_exchanger       = ComponentExchanger(land, grid; state_accessors = land_accessors)
         ocean_exchanger      = ComponentExchanger(ocean, grid)
         sea_ice_exchanger    = ComponentExchanger(sea_ice, grid)
 

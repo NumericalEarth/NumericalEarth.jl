@@ -240,7 +240,7 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``\psi`` | `ψ` | stability function | Integrated stability correction (–) |
 | ``\Psi`` | `Ψ` | interface state | Aggregate interface state (an `AbstractInterfaceState`) carried through the similarity-theory fixed-point solver `compute_interface_state` |
 | ``\Psi^{\mathrm{in}}`` | `Ψⁱⁿ` | iterated interface state | The `AbstractInterfaceState` updated at each iteration of `compute_interface_state` |
-| ``\Psi^{\mathrm{at}}``, ``\Psi^{\mathrm{la}}`` | `Ψᵃᵗ`, `Ψˡᵃ` | atmosphere, land state | Pointwise `NamedTuple`s of atmosphere and land quantities read by the interface solver; ``\Psi^{\mathrm{la}}`` holds the names in `land_state_names`, e.g. ``(T, 𝒮)`` |
+| ``\Psi^{\mathrm{at}}``, ``\Psi^{\mathrm{la}}`` | `Ψᵃᵗ`, `Ψˡᵃ` | atmosphere, land state | Pointwise `NamedTuple`s of atmosphere and land quantities read by the interface solver; ``\Psi^{\mathrm{la}}`` holds the keys of `land_state_accessors`, e.g. ``(T, 𝒮)`` |
 | ``\zeta`` | `ζ` | stability parameter | ``z / L_\star`` (–) |
 | ``\Delta h^d`` | `Δhᵈ` | displaced profile height | Height ``\Delta h - d`` above the zero-plane displacement at which the similarity profiles are evaluated (m) |
 | ``\ell`` | `ℓ` | roughness length | Aerodynamic roughness length (m) |
