@@ -832,6 +832,8 @@ Q_f = -\sum_{k=1}^{N_z} \rho_o c_o (T_m(S_k) - T_k) \frac{\Delta z_k}{\Delta t}
 
 where the sum is over all vertical levels where ``T_k < T_m(S_k)``. This heat flux (negative, indicating heat transfer
 from ice to ocean) represents the latent heat released during frazil ice formation.
+The keyword `frazil_formation_depth` of `ComponentInterfaces` restricts the sum to cells whose centers lie
+within that depth of the surface (default `Inf`).
 
 ### Bulk heat flux formulation (`IceBathHeatFlux`)
 
