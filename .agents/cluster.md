@@ -50,7 +50,7 @@ NFS home directories and NVIDIA GPUs. Every rule below was learned from a real f
 - On a single node with NVLink, `NCCLDistributed(GPU(); partition = Partition(N))`
   (drop-in for `Distributed`, activated by `using NCCL, CUDA`) moves device halo buffers
   over NCCL while host MPI handles launch, bootstrap, and scalar reductions — a cluster
-  with no CUDA-aware MPI is NOT a blocker for single-node multi-GPU.
+  with no CUDA-aware MPI is not a blocker for single-node multi-GPU.
 - Validate transports with `fill_halo_regions!` on a distributed `Field` (rank-constant
   interior, assert halos equal the neighbor's constant) — a meaningful end-to-end test,
   unlike raw send/recv smoke tests.
