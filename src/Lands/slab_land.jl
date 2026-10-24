@@ -341,17 +341,20 @@ end
 
 EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabLand, coupled_model) = nothing
 
-"""
-    ComponentExchanger(land::SlabLand, grid)
+EarthSystemModels.InterfaceComputations.land_state_field(land::SlabLand, ::Val{:T}) = surface_temperature(land)
+EarthSystemModels.InterfaceComputations.land_state_field(land::SlabLand, ::Val{:𝒮}) = surface_saturation(land)
 
-Expose the generic atmosphere-facing SlabLand state: skin temperature `T` and
-surface saturation `𝒮`. Aerodynamic roughness lengths belong to the atmosphere-land
-flux closure (`atmosphere_land_fluxes`), not the land state.
 """
-function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::SlabLand, grid)
-    state = (T = surface_temperature(land),
-             𝒮 = surface_saturation(land))
-    return ComponentExchanger(state, nothing)
+    ComponentExchanger(land::SlabLand, grid; state_names)
+
+Publish the land state named by `state_names` (declared by the atmosphere--land
+interface) as a `NamedTuple` of the slab's own fields. Aerodynamic roughness lengths
+belong to the atmosphere-land flux closure (`atmosphere_land_fluxes`), not the land state.
+"""
+function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::SlabLand, grid; state_names)
+    # TODO: regrid onto `grid` when it differs from `land.grid`; today the two coincide.
+    fields = map(name -> land_state_field(land, Val(name)), state_names)
+    return ComponentExchanger(NamedTuple{state_names}(fields), nothing)
 end
 
 EarthSystemModels.InterfaceComputations.initialize!(::ComponentExchanger, grid, ::SlabLand) = nothing
