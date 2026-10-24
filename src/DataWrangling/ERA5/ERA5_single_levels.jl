@@ -16,10 +16,10 @@ const ERA5_wave_variables = Set([
 ##### ERA5 single-level data availability
 #####
 
-# ERA5 reanalysis data available from 1940 to present (we use a practical range here)
-DataWrangling.all_dates(::ERA5HourlySingleLevel,  var) = range(DateTime("1940-01-01"), stop=DateTime("2025-12-31"), step=Hour(1))
-DataWrangling.all_dates(::ERA5MonthlySingleLevel, var) = range(DateTime("1940-01-01"), stop=DateTime("2025-12-01"), step=Month(1))
-DataWrangling.all_dates(::ERA5YearlySingleLevel, var) = range(DateTime("1940-01-01"), stop=DateTime("2025-12-31"), step=Hour(1))
+# ERA5 reanalysis runs from 1940 to about five days behind real time (see `era5_last_hourly_date`).
+DataWrangling.all_dates(::ERA5HourlySingleLevel,  var) = range(DateTime("1940-01-01"), stop=era5_last_hourly_date(), step=Hour(1))
+DataWrangling.all_dates(::ERA5MonthlySingleLevel, var) = range(DateTime("1940-01-01"), stop=era5_last_monthly_date(), step=Month(1))
+DataWrangling.all_dates(::ERA5YearlySingleLevel, var) = range(DateTime("1940-01-01"), stop=era5_last_hourly_date(), step=Hour(1))
 
 # ERA5 single-level data is a spatially 2-D dataset
 DataWrangling.is_three_dimensional(::ERA5Metadata) = false
