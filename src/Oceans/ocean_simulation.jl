@@ -294,7 +294,7 @@ end
                                  timestepper = :SplitRungeKutta3,
                                  coriolis = Default(HydrostaticSphericalCoriolis(; rotation_rate)),
                                  momentum_advection = WENOVectorInvariant(time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
-                                 tracer_advection = WENO(order=7, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
+                                 tracer_advection = WENO(order=7, minimum_buffer_upwind_order=1, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
                                  equation_of_state = TEOS10EquationOfState(; reference_density),
                                  boundary_conditions::NamedTuple = NamedTuple(),
                                  radiative_forcing = default_radiative_forcing(grid),
@@ -385,7 +385,10 @@ override the defaults on a per-field basis.
 - `timestepper`: Time-stepping scheme; options are `:SplitRungeKutta3` (default), or `:QuasiAdamsBashforth2`.
 - `coriolis`: Coriolis object or `Default(...)` wrapper.
 - `momentum_advection`: Momentum advection scheme. Defaults to `WENOVectorInvariant(time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5))`.
-- `tracer_advection`: Tracer advection scheme or named tuple of schemes. Defaults to `WENO(order=7, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5))`.
+- `tracer_advection`: Tracer advection scheme or named tuple of schemes. Defaults to `WENO(order=7, minimum_buffer_upwind_order=1, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5))`,
+  which falls back to first-order upwind rather than second-order centered reconstruction next to immersed boundaries.
+  Centered fluxes do not damp a cell whose every open face is next to a wall, such as a bottom corner cell,
+  and the tracer in such a cell drifts without bound.
 - `equation_of_state`: Equation of state object. Defaults to TEOS-10 (`TEOS10EquationOfState`).
 - `boundary_conditions`: User-supplied boundary conditions; merged with defaults.
 - `radiative_forcing`: Additional temperature forcing; merged into `forcing`.
@@ -418,7 +421,7 @@ function hydrostatic_ocean_simulation(grid;
                                       timestepper = :SplitRungeKutta3,
                                       coriolis = Default(HydrostaticSphericalCoriolis(; rotation_rate)),
                                       momentum_advection = WENOVectorInvariant(time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
-                                      tracer_advection = WENO(order=7, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
+                                      tracer_advection = WENO(order=7, minimum_buffer_upwind_order=1, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
                                       equation_of_state = TEOS10EquationOfState(; reference_density),
                                       boundary_conditions::NamedTuple = NamedTuple(),
                                       radiative_forcing = default_radiative_forcing(grid),
