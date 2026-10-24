@@ -116,9 +116,7 @@ end
 
 One yearly file covers every date within that year, so a request spanning
 multiple years resolves to multiple (repeated) filenames — one per date,
-naming that date's year file. `set!` for the resulting `FieldTimeSeries`
-groups consecutive same-year dates together and opens each yearly file once
-(see `read_era5_yearly_series` in `ERA5_field_time_series.jl`).
+naming that date's year file.
 """
 function DataWrangling.build_filename(dataset::ERA5LandDataset, name, dates::AbstractArray, region)
     return DatewiseFilename([DataWrangling.metadata_filename(dataset, name, d, region) for d in dates])

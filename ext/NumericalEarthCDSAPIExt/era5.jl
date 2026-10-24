@@ -136,13 +136,11 @@ Returned NamedTuple fields:
 - `pending`: subset of `dt_path_pairs` that still need a download.
 - `request`, `tmp_path`, `nc_triples`: `nothing` when `pending` is empty; otherwise the
   CDS request dict, the temporary multi-step NetCDF path, and the per-datetime split
-  triples consumed by `split_era5_nc_by_datetime`.
+  triples consumed by `store_era5_nc`.
 """
 function plan_era5_month(name, dataset, dates; region, dir, skip_existing)
-    meta_filename = NumericalEarth.DataWrangling.metadata_filename
-
-    dt_path_pairs = [(dt, joinpath(dir, meta_filename(dataset, name, dt, region)))
-                     for dt in dates]
+    filenames = build_filename(dataset, name, dates, region)
+    dt_path_pairs = [(dt, joinpath(dir, filenames[n])) for (n, dt) in enumerate(dates)]
 
     pending = if skip_existing
         filter(dt_path -> !isfile(dt_path[2]), dt_path_pairs)
@@ -164,8 +162,8 @@ function plan_era5_month(name, dataset, dates; region, dir, skip_existing)
     month = lpad(string(Dates.month(dt0)), 2, '0')
     day   = lpad(string(Dates.day(dt0)),   2, '0')
 
-    tmp_path   = joinpath(dir, "_tmp_$(year)$(month)$(day).nc")
     nc_varname = nc_varnames(dataset)[name]
+    tmp_path   = joinpath(dir, "_tmp_$(nc_varname)_$(year)$(month)$(day).nc")
     nc_triples = [(nc_varname, dt, path) for (dt, path) in pending]
 
     return (; dt_path_pairs, pending, request, tmp_path, nc_triples)
@@ -182,7 +180,7 @@ function download_era5_month(name, dataset, dates;
     @root begin
         retrieve_with_retries(cds_product(dataset), plan.request, plan.tmp_path; retrieve)
         foreach_nc(plan.tmp_path, dir) do nc_path
-            split_era5_nc_by_datetime(nc_path, plan.nc_triples, coord_vars(dataset), ERA5_TIME_DIMNAMES)
+            store_era5_nc(nc_path, plan.nc_triples, dataset)
         end
         cleanup && rm(plan.tmp_path; force=true)
     end
@@ -322,6 +320,21 @@ function Downloads.download(names::Vector{Symbol},
     end
 
     return paths
+end
+
+# Hourly single-level variables are requested separately, so each delivered file holds one variable
+function Downloads.download(names::Vector{Symbol},
+                            dataset::ERA5HourlySingleLevel,
+                            datetimes::AbstractVector;
+                            region = nothing,
+                            dir = default_download_directory(dataset),
+                            kw...)
+
+    paths = asyncmap(names) do name
+        Downloads.download(Metadata(name; dataset, dates=datetimes, region, dir); kw...)
+    end
+
+    return reduce(vcat, paths)
 end
 
 function Downloads.download(name::Symbol,
