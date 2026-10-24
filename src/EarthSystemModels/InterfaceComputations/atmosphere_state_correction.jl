@@ -78,7 +78,8 @@ end
 ##### `ComponentExchanger` constructors).
 #####
 
-@inline materialize_correction(::Nothing, grid, component) = nothing
+# Corrections that need nothing from the exchange grid are used as constructed.
+@inline materialize_correction(correction, grid, component) = correction
 
 # Fill an exchange-grid field from an elevation spec (`Field`, function, number,
 # or a horizontal exchange-grid array).
@@ -115,15 +116,16 @@ end
 #####
 
 # Generic dispatcher: read the correction from the component's exchanger and
-# apply it. No-op when the component is absent or carries no correction.
-@inline correct_state!(::Nothing, grid) = nothing
-@inline correct_state!(exchanger::ComponentExchanger, grid) =
-    correct_state!(exchanger.correction, exchanger, grid)
+# apply it. No-op when the component is absent or carries no correction. The
+# coupled model is passed so corrections can read its clock and properties.
+@inline correct_state!(::Nothing, grid, coupled_model) = nothing
+@inline correct_state!(exchanger::ComponentExchanger, grid, coupled_model) =
+    correct_state!(exchanger.correction, exchanger, grid, coupled_model)
 
 # Per-correction-type kernels.
-@inline correct_state!(::Nothing, exchanger, grid) = nothing
+@inline correct_state!(::Nothing, exchanger, grid, coupled_model) = nothing
 
-function correct_state!(correction::AltitudeCorrection, exchanger, grid)
+function correct_state!(correction::AltitudeCorrection, exchanger, grid, coupled_model)
     arch  = architecture(grid)
     state = exchanger.state
     launch!(arch, grid, interface_kernel_parameters(grid),
