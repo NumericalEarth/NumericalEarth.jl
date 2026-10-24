@@ -1,9 +1,8 @@
-# # Inspecting World Ocean Atlas (WOA) Temperature and Salinity
+# # Inspecting World Ocean Atlas (WOA) temperature and salinity
 #
-# This example demonstrates how to load and visualize WOA climatological
-# temperature and salinity data using NumericalEarth.jl.
-# The World Ocean Atlas provides objectively analyzed climatological mean
-# fields for various ocean properties at 1° resolution.
+# This example loads and visualizes the WOA climatological temperature and salinity
+# with NumericalEarth.jl. The World Ocean Atlas provides objectively analyzed
+# climatological means of various ocean properties at 1° resolution.
 
 using Oceananigans
 using NumericalEarth
@@ -12,53 +11,53 @@ using CairoMakie
 
 arch = CPU()
 
-# ## Loading WOA annual climatology
+# ## Loading the WOA annual climatology
 #
-# We create metadata for WOA annual temperature and salinity climatology,
+# We create metadata for the WOA annual temperature and salinity climatology,
 # then load each as an Oceananigans `Field` on the native WOA grid.
 
 woa = MetadataSet(:temperature, :salinity; dataset=WOAAnnual())
 
-fields = Field(woa, arch)            # → (; temperature = Field, salinity = Field)
+fields = Field(woa, arch) ## (; temperature, salinity)
 T, S = fields.temperature, fields.salinity
 
 # ## Surface fields
 #
-# Let's visualize the surface (top-most level) of temperature and salinity.
+# We plot the top level, that is, the sea surface, of temperature and salinity.
 
 Nz = size(T.grid, 3)
 
 fig = Figure(size=(1200, 800))
 
-axT = Axis(fig[1, 1], title="WOA Annual Surface Temperature (°C)")
-hmT = heatmap!(axT, interior(T, :, :, Nz), colorrange=(-2, 30), colormap=:thermal)
+axT = Axis(fig[1, 1], title="WOA annual surface temperature (°C)")
+hmT = heatmap!(axT, view(T, :, :, Nz), colorrange=(-2, 30), colormap=:thermal)
 Colorbar(fig[1, 2], hmT)
 
-axS = Axis(fig[2, 1], title="WOA Annual Surface Salinity (PSU)")
-hmS = heatmap!(axS, interior(S, :, :, Nz), colorrange=(31, 37), colormap=:haline)
+axS = Axis(fig[2, 1], title="WOA annual surface salinity (PSU)")
+hmS = heatmap!(axS, view(S, :, :, Nz), colorrange=(31, 37), colormap=:haline)
 Colorbar(fig[2, 2], hmS)
 
-current_figure()
+fig
 
-# ## Loading WOA monthly climatology
+# ## Loading the WOA monthly climatology
 #
-# WOA also provides monthly climatological fields. The `WOAMonthly()` dataset
-# has 12 dates representing January through December. A `Metadatum` with the
-# default date corresponds to January (the first month).
+# WOA also provides monthly climatologies. The `WOAMonthly()` dataset has 12 dates,
+# January through December. A `Metadatum` without a `date` defaults to the first
+# month, January.
 
-T_jan = Field(Metadatum(:temperature; dataset=WOAMonthly()), arch)
-Nz = size(T_jan.grid, 3)
+january_temperature = Field(Metadatum(:temperature; dataset=WOAMonthly()), arch)
+Nz = size(january_temperature.grid, 3)
 
 fig = Figure(size=(1200, 400))
-ax_jan = Axis(fig[1, 1], title="WOA January Surface Temperature (°C)")
-hm_jan = heatmap!(ax_jan, interior(T_jan, :, :, Nz), colorrange=(-2, 30), colormap=:thermal)
-Colorbar(fig[1, 2], hm_jan)
+ax = Axis(fig[1, 1], title="WOA January surface temperature (°C)")
+hm = heatmap!(ax, view(january_temperature, :, :, Nz), colorrange=(-2, 30), colormap=:thermal)
+Colorbar(fig[1, 2], hm)
 
-current_figure()
+fig
 
 # ## Setting WOA data on a custom grid
 #
-# We can also interpolate WOA data onto a coarser Oceananigans grid.
+# We can also interpolate the WOA data onto a coarser Oceananigans grid.
 
 grid = LatitudeLongitudeGrid(arch;
                              size = (90, 45, 20),
@@ -66,22 +65,21 @@ grid = LatitudeLongitudeGrid(arch;
                              longitude = (0, 360),
                              z = (-2000, 0))
 
-T_interp = CenterField(grid)
-S_interp = CenterField(grid)
+coarse_temperature = CenterField(grid)
+coarse_salinity = CenterField(grid)
 
-# set `T_interp` from `woa.temperature`, etc.
-set!((; temperature = T_interp, salinity = S_interp), woa)
+set!((; temperature = coarse_temperature, salinity = coarse_salinity), woa)
 
-Nz_interp = size(grid, 3)
+Nz = size(grid, 3)
 
 fig = Figure(size=(1200, 400))
 
-ax1 = Axis(fig[1, 1], title="Interpolated WOA Temperature (°C) at surface")
-hm1 = heatmap!(ax1, interior(T_interp, :, :, Nz_interp), colorrange=(-2, 30), colormap=:thermal)
-Colorbar(fig[1, 2], hm1)
+axT = Axis(fig[1, 1], title="Interpolated WOA surface temperature (°C)")
+hmT = heatmap!(axT, view(coarse_temperature, :, :, Nz), colorrange=(-2, 30), colormap=:thermal)
+Colorbar(fig[1, 2], hmT)
 
-ax2 = Axis(fig[1, 3], title="Interpolated WOA Salinity (PSU) at surface")
-hm2 = heatmap!(ax2, interior(S_interp, :, :, Nz_interp), colorrange=(31, 37), colormap=:haline)
-Colorbar(fig[1, 4], hm2)
+axS = Axis(fig[1, 3], title="Interpolated WOA surface salinity (PSU)")
+hmS = heatmap!(axS, view(coarse_salinity, :, :, Nz), colorrange=(31, 37), colormap=:haline)
+Colorbar(fig[1, 4], hmS)
 
-current_figure()
+fig
