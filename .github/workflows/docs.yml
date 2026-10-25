@@ -111,6 +111,8 @@ jobs:
         shell: julia --project=docs --color=yes {0}
         run: |
           using Pkg
+          # The depot is shared and persists between runs, so its registry goes stale.
+          Pkg.Registry.update()
           Pkg.resolve()
           Pkg.instantiate(verbose=true)
           Pkg.precompile(strict=true)
