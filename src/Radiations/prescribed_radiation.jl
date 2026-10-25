@@ -52,7 +52,8 @@ $(MethodSignatures(defaults = true))
 
 Construct a `PrescribedRadiation` component from `FieldTimeSeries` of
 downwelling shortwave and longwave radiation. Grid + times are inferred from
-the shortwave FTS.
+the shortwave FTS. Inputs are positive downwelling magnitudes (W m⁻²);
+the exchanged radiation state uses positive-upward fluxes.
 
 Pass `*_surface = nothing` to omit that surface from `surface_properties`.
 """
@@ -117,7 +118,7 @@ end
 """
 $(MethodSignatures(defaults = true))
 
-Set the prescribed downwelling shortwave and longwave radiative fluxes (W m⁻²),
+Set the prescribed downwelling shortwave and longwave magnitudes (positive downward, W m⁻²),
 then refresh the interpolated state. Omitted keywords are left untouched. A
 `Number` sets a constant in space and time.
 """

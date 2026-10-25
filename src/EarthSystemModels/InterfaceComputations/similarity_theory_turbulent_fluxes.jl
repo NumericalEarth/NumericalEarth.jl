@@ -332,7 +332,6 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     h_bℓ = atmosphere_state.h_bℓ
     Uˢᵍ² = vsgs²(flux_formulation.subgrid_velocities, u★, b★, h_bℓ)
 
-    # Velocity difference accounting for subgrid velocity enhancements
     Δu, Δv = velocity_difference(interface_properties.velocity_formulation,
                                  atmosphere_state,
                                  approximate_interface_state)

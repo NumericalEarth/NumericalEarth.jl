@@ -4,16 +4,13 @@ export ESAWorldCover, WorldCoverVersion, WorldCoverV100, WorldCoverV200
 
 using DocStringExtensions: MethodSignatures
 using Downloads: Downloads
-using KernelAbstractions: @kernel, @index
 using Oceananigans: Center, location
 using Oceananigans.Architectures: architecture, child_architecture
-using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.DistributedComputations: @root
 using Oceananigans.Fields: Field, regrid!
-using Oceananigans.Utils: launch!
 
-using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
-                       metadata_path, BoundingBox, Dataset
+using NumericalEarth.DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
+                                   metadata_path, BoundingBox, Dataset, majority_class!, class_fractions
 
 import Oceananigans
 
@@ -247,9 +244,9 @@ Return a `NamedTuple` of per-class area fractions (each in `[0, 1]`) of the bloc
 the fractions sum to the mapped share of the block: `1 - sum(class_fractions(pixels))`
 is the unmapped area — open water outside the product's land mask, in practice.
 """
-class_fractions(pixels::AbstractArray) = class_fractions(class_counts(pixels), length(pixels))
+DataWrangling.class_fractions(pixels::AbstractArray) = class_fractions(class_counts(pixels), length(pixels))
 
-function class_fractions(counts::NamedTuple, pixel_count)
+function DataWrangling.class_fractions(counts::NamedTuple, pixel_count)
     fractions = map(n -> n / pixel_count, values(counts))
     return NamedTuple{keys(ESA_WORLDCOVER_CLASS_NAMES)}(fractions)
 end
@@ -424,75 +421,21 @@ Oceananigans.Fields.location(::ESAWorldCoverMetadatum) = (Center, Center, Center
 #####
 ##### Regridding onto a model grid
 #####
-##### The fraction products ride Oceananigans' conservative (area-weighted)
-##### `regrid!`, so each target cell carries the true area fraction of every class
-##### and the fractions still sum to the mapped share of the cell. The categorical
-##### `:landcover_class` is the argmax of
-##### those fractions — the class covering the most area of the target cell.
-##### Bilinear interpolation of the codes would instead invent intermediate,
-##### non-legend classes. Both extend the shared `interpolate_physical!` regrid
-##### hook, dispatched on the metadatum.
-#####
 
 function DataWrangling.interpolate_physical!(target, native, metadata::ESAWorldCoverMetadatum)
-    if metadata.name === :landcover_class
-        majority_class_regrid!(target, metadata)
-    else
-        regrid!(target, native)
-    end
-    return target
-end
+    metadata.name === :landcover_class || return regrid!(target, native)
 
-# Majority class of each target cell: the class holding the largest conservatively
-# regridded area fraction. This keeps the class consistent with the fraction
-# fields and confined to the legend. Refining rather than coarsening needs no
-# special case — the conservative regrid then reduces to the containing native
-# cell, whose majority class the target inherits. Ties resolve to the lower code,
-# matching `majority_class`, because the classes accumulate in ascending order.
-function majority_class_regrid!(target, metadata)
     grid = target.grid
     arch = child_architecture(architecture(grid))
     LX, LY, LZ = location(metadata)
 
+    # One buffer serves every class, each regridded as `majority_class!` reaches it.
     fraction = Field{LX, LY, LZ}(grid)
-    largest_fraction = Field{LX, LY, LZ}(grid)
-    total_fraction = Field{LX, LY, LZ}(grid)
+    fractions = (regrid!(fraction, Field(Metadatum(name; dataset = metadata.dataset,
+                                                   region = metadata.region, dir = metadata.dir), arch))
+                 for name in ESA_WORLDCOVER_FRACTION_VARIABLE_NAMES)
 
-    fill!(target, 0)
-    fill!(largest_fraction, 0)
-    fill!(total_fraction, 0)
-
-    for (name, code) in zip(ESA_WORLDCOVER_FRACTION_VARIABLE_NAMES, ESA_WORLDCOVER_CLASS_CODES)
-        fraction_metadatum = Metadatum(name; dataset = metadata.dataset,
-                                       region = metadata.region, dir = metadata.dir)
-        regrid!(fraction, Field(fraction_metadatum, arch))
-        launch!(arch, grid, :xyz, _accumulate_majority_class!,
-                target, largest_fraction, total_fraction, fraction, code)
-    end
-
-    launch!(arch, grid, :xyz, _mask_uncovered_class!, target, total_fraction)
-    fill_halo_regions!(target)
-    return target
-end
-
-@kernel function _accumulate_majority_class!(target, largest_fraction, total_fraction, fraction, code)
-    i, j, k = @index(Global, NTuple)
-    @inbounds begin
-        f = fraction[i, j, k]
-        larger = f > largest_fraction[i, j, k]
-        largest_fraction[i, j, k] = ifelse(larger, f, largest_fraction[i, j, k])
-        target[i, j, k] = ifelse(larger, convert(eltype(target), code), target[i, j, k])
-        total_fraction[i, j, k] += f
-    end
-end
-
-# Cells outside the product's coverage have no valid pixels, so every fraction is
-# zero and no class holds a majority.
-@kernel function _mask_uncovered_class!(target, total_fraction)
-    i, j, k = @index(Global, NTuple)
-    FT = eltype(target)
-    @inbounds covered = total_fraction[i, j, k] > convert(FT, 1//2)
-    @inbounds target[i, j, k] = ifelse(covered, target[i, j, k], convert(FT, NaN))
+    return majority_class!(target, fractions, ESA_WORLDCOVER_CLASS_CODES)
 end
 
 #####

@@ -41,7 +41,7 @@ using ..EarthSystemModels: EarthSystemModels,
                            DegreesKelvin,
                            default_stop_time,
                            heat_capacity
-using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger, state2dindex
+using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger, state2dindex, interface_kernel_parameters
 
 default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate
@@ -110,7 +110,9 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::Simulation
     Sᵒᶜ = ocean.model.tracers.S
     kᴺ = size(ocean.model.grid, 3)
     arch = architecture(ocean.model.grid)
-    launch!(arch, grid, :xy, _ocean_state_to_potential_temperature!, Tᵉˣ, Tᵒᶜ, Sᵒᶜ, kᴺ)
+    # Over the halo columns too, which the interface flux kernels visit: the ocean's own tracer
+    # halos are already filled, so this needs no separate fill of `Tᵉˣ`.
+    launch!(arch, grid, interface_kernel_parameters(grid), _ocean_state_to_potential_temperature!, Tᵉˣ, Tᵒᶜ, Sᵒᶜ, kᴺ)
     return nothing
 end
 
@@ -156,22 +158,22 @@ end
 @inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{}, K::Tuple{}, id, clock, model_fields) = zero(grid)
 
 @inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any}, K::Tuple{<:Any}, id, clock, model_fields) =
-    κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) 
+    κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields)
 
 @inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any}, K::Tuple{<:Any, <:Any}, id, clock, model_fields) =
     κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) +
-    κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields) 
+    κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields)
 
 @inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any, <:Any}, K::Tuple{<:Any, <:Any, <:Any}, id, clock, model_fields) =
     κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) +
     κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields) +
-    κzᶜᶜᶠ(i, j, k, grid, closure[3], K[3], id, clock, model_fields) 
+    κzᶜᶜᶠ(i, j, k, grid, closure[3], K[3], id, clock, model_fields)
 
 @inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any, <:Any, <:Any}, K::Tuple{<:Any, <:Any, <:Any, <:Any}, id, clock, model_fields) =
     κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) +
     κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields) +
     κzᶜᶜᶠ(i, j, k, grid, closure[3], K[3], id, clock, model_fields) +
-    κzᶜᶜᶠ(i, j, k, grid, closure[4], K[4], id, clock, model_fields) 
+    κzᶜᶜᶠ(i, j, k, grid, closure[4], K[4], id, clock, model_fields)
 
 @inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple, K::Tuple, id, clock, model_fields) =
     κzᶜᶜᶠ(i, j, k, grid,  closure[1],     K[1],     id, clock, model_fields) +

@@ -10,6 +10,7 @@ using Oceananigans.BoundaryConditions: FluxBoundaryCondition, FieldBoundaryCondi
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: launch!
 using NumericalEarth: NumericalEarth
+using NumericalEarth.EarthSystemModels: sea_ice_concentration
 using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, computed_fluxes
 
 include("coupled_radiation.jl")
