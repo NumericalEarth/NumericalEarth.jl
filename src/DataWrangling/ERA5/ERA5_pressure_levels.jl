@@ -26,9 +26,9 @@ ERA5MonthlyPressureLevels(pressure_levels, z = nothing) =
 Hourly ERA5 pressure-levels dataset metadata. By default (`z = nothing`) the
 native grid's vertical coordinate is a 3-D
 [`PressureLevelVerticalDiscretization`](@ref) built from the **time-evolving**
-geopotential Φ(λ,φ,p,t)/g with sub-surface levels clipped at the surface — the
-right thing over terrain and synoptic Φ-displacement (issue #236). Each pressure
-level's height follows the reanalysis in time as the atmosphere's clock advances.
+geopotential Φ(λ,φ,p,t)/g — the right thing over terrain and synoptic
+Φ-displacement (issue #236). Each pressure level's height follows the reanalysis
+in time as the atmosphere's clock advances.
 
 To pin the z-coordinate to something static — e.g. for a quick test without an
 extra Φ download — pass a precomputed vector:
@@ -52,7 +52,7 @@ DataWrangling.all_dates(::ERA5HourlyPressureLevels, var) = range(DateTime("1940-
 DataWrangling.all_dates(::ERA5MonthlyPressureLevels, var) = range(DateTime("1940-01-01"), stop=DateTime("2025-12-01"), step=Month(1))
 
 # Pressure-level variables are all instantaneous, so only the monthly means carry a window.
-DataWrangling.sample_window(md::Metadatum{<:ERA5MonthlyPressureLevels}) = DataWrangling.calendar_month_window(md)
+DataWrangling.averaging_window(md::Metadatum{<:ERA5MonthlyPressureLevels}) = DataWrangling.calendar_month_window(md)
 
 # ERA5 pressure-level data is a spatially 3-D dataset
 DataWrangling.is_three_dimensional(::ERA5PressureMetadata) = true
@@ -254,11 +254,11 @@ end
 Build a [`PressureLevelVerticalDiscretization`](@ref) whose per-column heights
 follow the ERA5 geopotential in time. The geopotential Φ(λ,φ,p,t) is loaded over
 the whole date window of `metadata` (all snapshots in memory) and wrapped in a
-`TimeSeriesInterpolation` bound to `clock`; `znode` reads Φ interpolated to
-`clock.time` and divides by `g`. Sub-surface levels are clipped to the local
-surface geopotential so that columns stay monotonic. The single-level surface
-geopotential (orography × g, static in time) is downloaded from the matching
-`ERA5*SingleLevel` dataset and used as the clip source.
+`TimeSeriesInterpolation` bound to `clock`, which the discretization materializes
+into a `Field` refreshed at each `update_state!(::PrescribedAtmosphere)`; `znode`
+reads that snapshot and divides by `g`. The single-level surface geopotential
+(orography × g, static in time) is downloaded from the matching `ERA5*SingleLevel`
+dataset and exposed through [`surface_elevation`](@ref).
 
 A static-z copy of the pressure-level dataset backs the Φ `FieldTimeSeries`, to
 break the recursive `Field(ϕ) → native_grid → z_interfaces` chain. The static z
@@ -286,7 +286,7 @@ function per_column_geopotential_discretization(metadata::ERA5PressureMetadata;
     Φ_fts = FieldTimeSeries(ϕ_meta, CPU(); time_indices_in_memory = Nt, time_indexing)
     Φ = TimeSeriesInterpolation(Φ_fts, Φ_fts.grid; clock)
 
-    # Surface geopotential is orography × g — static in time — so a single snapshot is the clip source.
+    # Surface geopotential is orography × g — static in time — so a single snapshot suffices.
     date = first(metadata).dates
     ϕ_sl_datum = Metadatum(:geopotential; dataset=sl_ds, date, region=metadata.region, dir=metadata.dir)
     Downloads.download(ϕ_sl_datum)
@@ -301,7 +301,7 @@ _with_z(ds::ERA5HourlyPressureLevels, z) = ERA5HourlyPressureLevels(ds.pressure_
 _with_z(ds::ERA5MonthlyPressureLevels, z) = ERA5MonthlyPressureLevels(ds.pressure_levels, z)
 
 # Match each pressure-level dataset to the single-level dataset at the same
-# temporal cadence so surface fields (the geopotential clip-source, the surface
+# temporal cadence so surface fields (the surface geopotential, the surface
 # pressure anchor) match the data they accompany.
 DataWrangling.matching_single_level_dataset(::ERA5HourlyPressureLevels) = ERA5HourlySingleLevel()
 DataWrangling.matching_single_level_dataset(::ERA5MonthlyPressureLevels) = ERA5MonthlySingleLevel()
@@ -334,15 +334,16 @@ end
 # skips the generic `FieldTimeSeries(metadata, grid)` constructor's redundant
 # `native_grid` rebuild + column-mean equality check (once per variable).
 function era5_native_pressure_fts(metadata, grid;
-                                  time_indexing = Cyclical(),
+                                  time_indexing = nothing,
                                   time_indices_in_memory = nothing)
     Downloads.download(metadata)
     times = convert.(eltype(grid), native_times(metadata))
+    time_indexing = something(time_indexing, length(times) > 1 ? Cyclical() : Clamp())
 
     # As in the generic constructor: a window-averaged series repeats over the span its
     # windows tile, not over the node span Oceananigans would infer.
     if time_indexing isa Cyclical{Nothing}
-        period = sample_window_span(metadata)
+        period = window_span(metadata)
         isnothing(period) || (time_indexing = Cyclical(convert(eltype(grid), period)))
     end
 

@@ -11,16 +11,21 @@ struct InterfaceProperties{Q, T, V}
     velocity_formulation :: V
 end
 
+Adapt.adapt_structure(to, p::InterfaceProperties) = InterfaceProperties(Adapt.adapt(to, p.specific_humidity_formulation),
+                                                                        Adapt.adapt(to, p.temperature_formulation),
+                                                                        Adapt.adapt(to, p.velocity_formulation))
+
 #####
 ##### Interface specific humidity formulations
 #####
 
 # TODO: allow different saturation models
 # struct ClasiusClapyeronSaturation end
-struct ImpureSaturationSpecificHumidity{Φ, X}
+struct ImpureSaturationSpecificHumidity{Φ, X, E}
     # saturation :: S
     phase :: Φ
     water_mole_fraction :: X
+    saturation_enhancement :: E
 end
 
 function Base.summary(q★::ImpureSaturationSpecificHumidity)
@@ -31,20 +36,51 @@ function Base.summary(q★::ImpureSaturationSpecificHumidity)
     end
 
     return string("ImpureSaturationSpecificHumidity{$phase_str}(water_mole_fraction=",
-                  prettysummary(q★.water_mole_fraction), ")")
+                  prettysummary(q★.water_mole_fraction),
+                  ", saturation_enhancement=", prettysummary(q★.saturation_enhancement), ")")
 end
 
 Base.show(io::IO, q★::ImpureSaturationSpecificHumidity) = print(io, summary(q★))
 
 """
-    ImpureSaturationSpecificHumidity(phase [, water_mole_fraction=1])
+    ImpureSaturationSpecificHumidity(phase [, water_mole_fraction=1]; saturation_enhancement=nothing)
 
-Return the formulation for computing specific humidity at an interface.
+Return the formulation for computing specific humidity at an interface. `saturation_enhancement` multiplies the
+saturation vapor pressure by the enhancement factor of moist air, for example `GillSaturationEnhancement()`;
+with `nothing` the saturation vapor pressure is not enhanced.
 """
-ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase, nothing)
+ImpureSaturationSpecificHumidity(phase, water_mole_fraction=nothing; saturation_enhancement=nothing) =
+    ImpureSaturationSpecificHumidity(phase, water_mole_fraction, saturation_enhancement)
 
 @inline compute_water_mole_fraction(::Nothing, salinity) = 1
 @inline compute_water_mole_fraction(x_H₂O::Number, salinity) = x_H₂O
+
+"""
+    GillSaturationEnhancement{FT}
+
+Enhancement factor of the saturation vapor pressure in moist air from [Gill (1982)](@cite gill1982atmosphere),
+
+    fᵛ = 1 + p (a + b t²),
+
+with `p` the air pressure (Pa), `t` the temperature (ᵒC), `a = pressure_coefficient` (Pa⁻¹) and
+`b = temperature_coefficient` (Pa⁻¹ ᵒC⁻²).
+"""
+struct GillSaturationEnhancement{FT}
+    pressure_coefficient :: FT
+    temperature_coefficient :: FT
+end
+
+GillSaturationEnhancement(FT = Oceananigans.defaults.FloatType; pressure_coefficient = 4.5e-8, temperature_coefficient = 6e-12) =
+    GillSaturationEnhancement(convert(FT, pressure_coefficient), convert(FT, temperature_coefficient))
+
+Base.summary(::GillSaturationEnhancement{FT}) where FT = "GillSaturationEnhancement{$FT}"
+
+@inline saturation_enhancement_factor(::Nothing, T, p) = 1
+
+@inline function saturation_enhancement_factor(enhancement::GillSaturationEnhancement, T, p)
+    t = convert(typeof(T), T - celsius_to_kelvin)
+    return 1 + p * (enhancement.pressure_coefficient + enhancement.temperature_coefficient * t^2)
+end
 
 # COARE 3.6 / Edson (2013) pressure-based saturation specific humidity:
 #   qₛ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − εᵈᵛ⁻¹) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵥ
@@ -58,9 +94,10 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
     T  = convert(CT, Tₛ)
     p  = convert(CT, pᵃᵗ)
 
-    # Raoult's law on the saturation vapor pressure.
+    # Raoult's law on the saturation vapor pressure, enhanced in moist air by fᵛ
     χ_H₂O = compute_water_mole_fraction(formulation.water_mole_fraction, Sₛ)
-    pᵛ⁺   = χ_H₂O * AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
+    fᵛ    = saturation_enhancement_factor(formulation.saturation_enhancement, T, p)
+    pᵛ⁺   = fᵛ * χ_H₂O * AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
     εᵈᵛ⁻¹ = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
 
     # Guard against unphysically warm interface temperatures: once pᵛ⁺ exceeds
@@ -457,21 +494,21 @@ assemble_interior_fields(state, temperature_formulation::IDST) = state
 end
 
 # Solve the surface flux balance equation:
-#   Qa(Tₛ) + Ωc (Tᵃᵗ - Tₛ) + (Tₛ - Tᵦ) / R = 0
+#   Qa(Tₛ) + Ωc (Tᵃᵗ - Tₛ) + (Tₛ - Tb) / R = 0
 # where R is the total thermal resistance (h/k for bare ice, hₛ/kₛ + hᵢ/kᵢ with snow),
 # Ωc = 𝒬ᵀ/(Tᵃᵗ-Tₛ) is the linearized sensible heat coefficient, and Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd.
 # The upward longwave ℐꜛˡʷ = σ ε Tₛ⁴ is strongly nonlinear in Tₛ; a pure Picard
 # iteration (treating Qa constant) is unstable when 4σεTₛ³ ≳ 1/R (radiation
 # dominated). We linearize: Qa(Tₛ) ≈ Qa(Tₛ⁻) + β (Tₛ − Tₛ⁻) with β = 4σεTₛ⁻³,
 # yielding the Newton-like semi-implicit update:
-#   Tₛ = [Tᵦ + β R Tₛ⁻ - Ωc R Tᵃᵗ - Qa R] / [1 + β R - Ωc R]
+#   Tₛ = [Tb + β R Tₛ⁻ - Ωc R Tᵃᵗ - Qa R] / [1 + β R - Ωc R]
 @inline function conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     hᵢ = Ψᵢ.hi
     hc = Ψᵢ.hc
 
     # Bottom temperature at the melting point
-    Tᵦ = ClimaSeaIce.SeaIceThermodynamics.melting_temperature(ℙᵢ.liquidus, Ψᵢ.S)
-    Tᵦ = convert_to_kelvin(ℙᵢ.temperature_units, Tᵦ)
+    Tb = ClimaSeaIce.SeaIceThermodynamics.melting_temperature(ℙᵢ.liquidus, Ψᵢ.S)
+    Tb = convert_to_kelvin(ℙᵢ.temperature_units, Tb)
     Tₛ⁻ = Ψₛ.temperature
 
     Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
@@ -487,7 +524,7 @@ end
 
     # Flux balance solution with T⁴ linearization (stable even at ΔT = 0):
     D  = 1 + β * R - Ωc * R
-    T★ = (Tᵦ + β * R * Tₛ⁻ - Ωc * R * Tᵃᵗ - Qa * R) / D
+    T★ = (Tb + β * R * Tₛ⁻ - Ωc * R * Tᵃᵗ - Qa * R) / D
     T★ = ifelse(D == 0, Tₛ⁻, T★)
     T★ = ifelse(isnan(T★), Tₛ⁻, T★)
 
@@ -502,7 +539,7 @@ end
     Tₛ⁺ = min(Tₛ⁺, Tₘ)
 
     # If ice is not consolidated, use the bottom temperature
-    Tₛ⁺ = ifelse(hᵢ ≥ hc, Tₛ⁺, Tᵦ)
+    Tₛ⁺ = ifelse(hᵢ ≥ hc, Tₛ⁺, Tb)
 
     return Tₛ⁺
 end
@@ -554,7 +591,7 @@ end
     ℐꜜˢʷ = radiation_state.ℐꜜˢʷ
     ℐꜜˡʷ = radiation_state.ℐꜜˡʷ
     ℐꜛˡʷ = σ * ϵ * Tₛ⁻^4
-    Qd = - (1 - α) * ℐꜜˢʷ - ϵ * ℐꜜˡʷ
+    Qd = (1 - α) * ℐꜜˢʷ + ϵ * ℐꜜˡʷ
 
     u★ = interface_state.fluxes.u★
     θ★ = interface_state.fluxes.θ★
@@ -768,6 +805,7 @@ end
                                        q_formulation,
                                        land_state,
                                        Tₛ, qₛ)
+    # `typeof(Tₛ)`, not `eltype(grid)`, which is a traced type inside a Reactant kernel.
     FT  = typeof(Tₛ)
     energy    = interface_energy_state(i, j, grid, q_formulation, land_state)
     hydrology = interface_hydrology_state(i, j, grid, q_formulation, land_state)
@@ -807,8 +845,7 @@ end
 
 Air-land interface radiation state at one cell: Stefan–Boltzmann constant `σ`,
 surface albedo `α`, emissivity `ϵ`, downwelling shortwave `ℐꜜˢʷ`, and
-downwelling longwave `ℐꜜˡʷ`. Returned by `air_land_interface_radiation_state`
-and consumed by the air-land flux kernel and `apply_air_land_radiative_fluxes!`.
+downwelling longwave `ℐꜜˡʷ`, in W m⁻² with positive-upward signs.
 """
 struct AirLandRadiationState{FT}
     σ    :: FT

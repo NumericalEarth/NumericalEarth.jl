@@ -5,6 +5,7 @@ export AbstractLand,
        RiverRouting,
        build_river_routing,
        coastal_outlet_indices,
+       routable_grid,
        # Composable container
        SlabLand,
        # Energy-balance closures
@@ -15,16 +16,24 @@ export AbstractLand,
        BucketHydrology, DryLand, SaturatedSurface,
        # Variably saturated hydrology + sub-closures
        VanGenuchtenRetention, VanGenuchtenConductivity,
+       WaterViscosity, CosbyConductivity, saturated_conductivity,
        NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
        NoRunoff, InfiltrationCapacityRunoff,
        VariablySaturatedHydrology,
+       # Pedotransfer functions + depth-layer combination
+       WeynantsPedotransfer, HYPRESPedotransfer,
+       soil_hydraulic_parameters, soil_hydraulic_properties,
        # Urban aerodynamic roughness closures
        AbstractUrbanRoughness, MorphometricRoughness,
        IsotropicFrontalArea, EmpiricalFrontalArea,
        UniformHeight, VariableHeight,
-       urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
+       urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters, building_morphometry,
+       fill_aerodynamic_roughness_gaps!,
        # Atmosphere-facing accessors
-       surface_temperature, surface_saturation
+       surface_temperature, surface_saturation,
+       # Land model and simulations
+       land_model,
+       land_simulation
 
 """
     abstract type AbstractLand end
@@ -40,23 +49,34 @@ using Adapt: Adapt
 using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
-using Oceananigans.Architectures: architecture
+using Oceananigans.Architectures: CPU, architecture, on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField
-using Oceananigans.Grids: grid_name, Center, Face, φnode
+using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField, interior, regrid!, dimension_faces
+using Oceananigans.Grids: grid_name, Center, Face, LatitudeLongitudeGrid, Bounded, Flat,
+                          znodes, λnode, φnode, hack_cosd, hack_sind
+using Oceananigans.Operators: Δxᶜᶜᶜ, Δyᶜᶜᶜ
 using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!, prettysummary, prettytime
+using Base: ForwardOrdering
 
 using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger
 
+# Extended by external land models
+function land_model end
+function land_simulation end
+
 # Closure interfaces
 include("energy_balance/energy_balance.jl")
 include("hydrology/hydrology.jl")
 include("properties/property_providers.jl")
+
+# Pedotransfer functions and depth-layer combination.
+include("properties/pedotransfer.jl")
+include("properties/soil_hydraulic_properties.jl")
 
 # Urban aerodynamic roughness closures.
 include("roughness/urban_roughness_closure.jl")

@@ -18,6 +18,15 @@
 #####
 
 using Accessors: @set
+using NumericalEarth.NestedModels: NestedModel
+
+function Oceananigans.initialize!(model::NumericalEarth.EarthSystemModels.EarthSystemModel{<:Breeze.RadiativeTransferModel})
+    Oceananigans.initialize!(model.interfaces.exchanger, model)
+    # Diagnose the interface surface temperature before solving radiation.
+    update_state!(model)
+    update_state!(component_model(model.atmosphere); compute_tendencies = false)
+    return nothing
+end
 
 """
 $(TYPEDSIGNATURES)
@@ -80,4 +89,16 @@ function NumericalEarth.EarthSystemModels.materialize_earth_system_radiation!(
         radiative_transfer_model :: Breeze.RadiativeTransferModel)
     materialized = CoupledRadiation(radiative_transfer_model)
     return @set atmosphere.model.radiation = materialized
+end
+
+# Nested atmosphere: materialize the child, then rebuild the (concretely-typed) nest and
+# Simulation around it; all child fields are shared by reference.
+function NumericalEarth.EarthSystemModels.materialize_earth_system_radiation!(
+        atmosphere               :: Simulation{<:NestedModel{<:Any, <:Breeze.AtmosphereModel}},
+        radiative_transfer_model :: Breeze.RadiativeTransferModel)
+    nest = atmosphere.model
+    child = nest.child
+    child = @set child.radiation = CoupledRadiation(radiative_transfer_model)
+    nest = NestedModel(nest.parent, child, nest.exchanger, nest.child_callbacks)
+    return Simulation(nest; Δt = atmosphere.Δt, verbose = atmosphere.verbose)
 end

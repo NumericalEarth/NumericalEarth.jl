@@ -45,12 +45,7 @@ export
     NestedSimulation,
     nested_atmosphere_model,
     nested_ocean_model,
-    nested_ocean_grid,
-    bathymetry_from_missing_values,
-    ocean_model,
-    underlying_ocean_model,
     parent_boundary_conditions,
-    parent_forcings,
     # Atmosphere-land interface closures
     BulkHumidity,
     SkinHumidity,
@@ -61,13 +56,17 @@ export
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     PowerLawTortuosity,
-    ElevationCorrection,
+    AltitudeCorrection,
     atmosphere_land_interface,
     SlabOcean,
     PrescribedOcean,
-    AbstractPrescribedComponent,
+    TwoColorRadiation,
+    ChlorophyllOptics,
+    absorption_coefficient,
+    equivalent_chlorophyll,
     PrescribedRadiation,
     PrescribedAtmosphere,
+    BoundaryPrescribedComponent,
     PrescribedLand,
     ECCOPrescribedRadiation,
     JRA55PrescribedRadiation,
@@ -77,10 +76,6 @@ export
     GloFASReanalysis,
     ERA5PrescribedAtmosphere,
     ERA5PrescribedRadiation,
-    OSPapaPrescribedRadiation,
-    OSPapaPrescribedAtmosphere,
-    os_papa_prescribed_fluxes,
-    os_papa_prescribed_flux_boundary_conditions,
     FreezingLimitedOceanTemperature,
     SurfaceRadiationProperties,
     InterfaceRadiationFlux,
@@ -95,6 +90,7 @@ export
     MomentumRoughnessLength,
     ScalarRoughnessLength,
     ComponentInterfaces,
+    SurfacePartition,
     SkinTemperature,
     BulkTemperature,
     DiffusiveFlux,
@@ -106,55 +102,64 @@ export
     WaterCoupledEnergy,
     VariablySaturatedHydrology,
     VanGenuchtenRetention, VanGenuchtenConductivity,
+    WaterViscosity, CosbyConductivity, saturated_conductivity,
     NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
     NoRunoff, InfiltrationCapacityRunoff,
+    WeynantsPedotransfer, HYPRESPedotransfer,
+    soil_hydraulic_parameters, soil_hydraulic_properties,
     # Urban aerodynamic roughness closures
-    AbstractUrbanRoughness, MorphometricRoughness,
+    MorphometricRoughness,
     IsotropicFrontalArea, EmpiricalFrontalArea,
     UniformHeight, VariableHeight,
-    urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
+    urban_roughness,
+    fill_aerodynamic_roughness_gaps!,
     surface_temperature,
+    surface_layer_diagnostics,
     regrid_bathymetry,
     regrid_topography,
+    regrid_ocean_fraction,
+    smooth_topography!,
+    connect_basins!,
     Metadata, Metadatum, MetadataSet,
     BoundingBox,
     Column, Linear, Nearest,
     ECCOMetadatum,
     EN4Metadatum,
     ETOPO2022,
+    GLO30, GLO90,
     ECCO2Daily, ECCO2Monthly, ECCO4Monthly,
     ECCO2DarwinMonthly, ECCO4DarwinMonthly,
     EN4Monthly,
-    WOAClimatology, WOAAnnual, WOAMonthly,
-    ASTERGEDv3, ASTERGEDResolution, ASTERGEDHigh100m, ASTERGEDLow1km,
+    WOAAnnual, WOAMonthly,
+    ASTERGEDv3, ASTERGEDHigh100m, ASTERGEDLow1km,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
-    ESAWorldCover, WorldCoverVersion, WorldCoverV100, WorldCoverV200,
+    ESAWorldCover, WorldCoverV100, WorldCoverV200,
+    MCD15A2H, MCD12Q1, MODISLAIClimatology, build_lai_climatology!,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
-    AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum,
+    AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
     ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel,
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
     ERA5HourlyLand, ERA5MonthlyLand,
-    OSPapaHourly,
-    JRA55FieldTimeSeries,
     ORCAOne, ORCAQuarter, ORCATwelfth,
     ORCAGrid,
     OpenLandMapSoilDB,
     GlobalBuildingFootprints3D, building_morphometry,
-    GHSBuiltH, GHSBuiltS, GHSBuiltSResolution, GHSBuiltS10m, GHSBuiltS100m,
+    GHSBuiltH, GHSBuiltS, GHSBuiltS10m, GHSBuiltS100m, GHSBuilt,
     first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,
     DatasetRestoring,
     atmosphere_model,
     atmosphere_simulation,
+    land_model,
+    land_simulation,
     breeze_prognostic_state,
-    bulk_drag,
     hydrostatic_pressure_from_surface,
-    density_from_pressure,
     ocean_simulation,
+    ocean_model,
+    river_mouth_vertical_diffusivity,
     sea_ice_simulation,
     default_sea_ice,
-    sea_ice_dynamics,
     initialize!,
     net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
     net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux,
@@ -253,23 +258,20 @@ end
 
 include("Grids/Grids.jl")
 include("EarthSystemModels/EarthSystemModels.jl")
-include("NestedModels/NestedModels.jl")   # generic nesting core: depends only on Oceananigans
 include("Oceans/Oceans.jl")
 include("Atmospheres/Atmospheres.jl")
 include("Lands/Lands.jl")
 include("Radiations/Radiations.jl")
 include("SeaIces/SeaIces.jl")
-include("InitialConditions/InitialConditions.jl")
 include("DataWrangling/DataWrangling.jl")
 include("Bathymetry/Bathymetry.jl")
 include("Diagnostics/Diagnostics.jl")
-include("NestedOceans/NestedOceans.jl")   # last: the ocean child of a nest, over Oceans + DataWrangling
+include("NestedModels/NestedModels.jl")   # last: wraps a parent + a child (any component) model
 
 using .Grids
 using .DataWrangling
-using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55, OSPapa
+using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55
 using .Bathymetry
-using .InitialConditions
 using .EarthSystemModels
 using .Atmospheres
 using .Lands
@@ -279,9 +281,7 @@ using .SeaIces
 using .Diagnostics
 using .EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
 using .NestedModels
-using .NestedModels: NestedModel, NestedSimulation, nested_atmosphere_model, nested_ocean_model,
-                     parent_boundary_conditions, parent_forcings
-using .NestedOceans
+using .NestedModels: NestedModel, NestedSimulation, nested_atmosphere_model, nested_ocean_model, parent_boundary_conditions
 using .DataWrangling.ETOPO
 using .DataWrangling.ECCO
 using .DataWrangling.GLORYS
@@ -290,14 +290,15 @@ using .DataWrangling.ORCA
 using .DataWrangling.WOA
 using .DataWrangling.JRA55
 using .DataWrangling.GloFAS
-using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
 using .DataWrangling.ASTERGED
+using .DataWrangling.CopernicusDEM
 using .DataWrangling.CopernicusLandAlbedo
 using .DataWrangling.OpenLandMap
 using .DataWrangling.GloBFP3D
 using .DataWrangling.GHSL
+using .DataWrangling.MODISLand
 using .DataWrangling.WorldCover
 
 using PrecompileTools: @setup_workload, @compile_workload

@@ -75,7 +75,6 @@ using NumericalEarth.JRA55: download_JRA55_cache
 
         md_first = Metadatum(ds_var; dataset=JRA55.RepeatYearJRA55())
         f_first  = Field(md_first, arch)
-        @test f_first isa Field
         @test size(f_first) == (640, 320, 1)
         @allowscalar @test f_first[1, 1, 1] == 430.98105f0
         @allowscalar @test view(f_first.data, 1, :, 1) == view(f_first.data, 641, :, 1)
@@ -132,10 +131,9 @@ using NumericalEarth.JRA55: download_JRA55_cache
         @info "Testing save_field_time_series! on $A..."
         filepath = "JRA55_downwelling_shortwave_radiation_test_$(string(typeof(arch))).jld2" # different filename for each arch so that the CPU and GPU tests do not crash
         NumericalEarth.DataWrangling.save_field_time_series!(target_fts, path=filepath, name="Qsw",
-                                                         overwrite_existing = true)
+                                                             overwrite_files=true)
         @test isfile(filepath)
 
-        # Test that we can load the data back
         Qswt = FieldTimeSeries(filepath, "Qsw")
         @test on_architecture(CPU(), parent(Qswt.data)) == on_architecture(CPU(), parent(target_fts.data))
         @test Qswt.times == target_fts.times
@@ -149,7 +147,10 @@ using NumericalEarth.JRA55: download_JRA55_cache
         @test atmosphere isa PrescribedAtmosphere
 
         # Test JRA55PrescribedLand loads river and iceberg data with correct frequency
-        land = JRA55PrescribedLand(arch; time_indices_in_memory=2)
+        land_grid = LatitudeLongitudeGrid(arch; size=(20, 10, 1), longitude=(0, 360),
+                                          latitude=(-60, 60), z=(-100, 0))
+        river_dates = NumericalEarth.DataWrangling.all_dates(JRA55.RepeatYearJRA55(), :river_freshwater_flux)
+        land = JRA55PrescribedLand(land_grid; time_indices_in_memory=2, end_date=river_dates[2])
         @test land isa NumericalEarth.Lands.PrescribedLand
         @test haskey(land.freshwater_flux, :rivers)
         @test haskey(land.freshwater_flux, :icebergs)
@@ -187,10 +188,21 @@ using NumericalEarth.JRA55: download_JRA55_cache
         end
         @test Second(end_date - start_date).value ≈ river_flux.times[end] - river_flux.times[1]
 
+        for t in eachindex(river_flux.times)
+            @test river_flux[t] isa Field
+        end
+        @test Second(end_date - start_date).value ≈ river_flux.times[end] - river_flux.times[1]
+
         # Test we can access all the data
         for t in eachindex(river_flux.times)
             @test river_flux[t] isa Field
         end
+
+        # friver is daily, so it takes the `Hour(12)` branch of `metadata_filename`. Keep the
+        # three-hourly branch that tas exercises covered; building a path downloads nothing.
+        three_hourly_datum = Metadatum(:temperature; dataset, date=DateTime(1958, 6, 1))
+        @test basename(metadata_path(three_hourly_datum)) ==
+            "tas_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_195801010000-195812312100.nc"
 
         # friver is daily, so it takes the `Hour(12)` branch of `metadata_filename`; keep the
         # three-hourly branch that tas exercises covered. Building a path downloads nothing.
@@ -200,11 +212,8 @@ using NumericalEarth.JRA55: download_JRA55_cache
 
         @info "Testing MultiYearJRA55 single-window crossing year boundary on $A..."
 
-        # Force a single in-memory window to straddle the 1958 → 1959 file
-        # boundary. Before the per-file `ftsn_loc` fix, the second file's
-        # iteration in `set!` would clobber the outer `ftsn` and write to the
-        # wrong slots; this regression test would then leave some in-memory
-        # slots untouched (zero-valued).
+        # A single in-memory window straddling the 1958 → 1959 file boundary must have every slot
+        # written, with each file's iteration going to its own slots.
         start_date_span = DateTime("1958-12-27T12:00:00")
         end_date_span   = DateTime("1959-01-05T12:00:00")
 

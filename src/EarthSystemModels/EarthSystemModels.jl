@@ -5,6 +5,7 @@ abstract type AbstractPrescribedComponent end
 export
     EarthSystemModel,
     AbstractPrescribedComponent,
+    BoundaryPrescribedComponent,
     OceanOnlyModel,
     OceanSeaIceModel,
     AtmosphereOceanModel,
@@ -18,13 +19,13 @@ export
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     PowerLawTortuosity,
-    ElevationCorrection,
+    AltitudeCorrection,
     atmosphere_land_interface,
+    surface_layer_diagnostics,
+    SurfacePartition,
     SimilarityTheoryFluxes,
     FixedIterations,
     ConvergenceStopCriteria,
-    LandRoughnessLength,
-    LandZeroPlaneDisplacement,
     CoefficientBasedFluxes,
     FreezingLimitedOceanTemperature,
     SkinTemperature,
@@ -43,16 +44,19 @@ export
 
 import Dates
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
+using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 using Oceananigans: Oceananigans, AbstractModel, initialize!,
                     prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture, AbstractArchitecture, ReactantState
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Diagnostics: NaNChecker
 using Oceananigans.Fields: ZeroField
 using Oceananigans.Simulations: reset_clock!, Simulation
 using Oceananigans.TimeSteppers: Clock, reset!, tick!, time_step!, update_state!, reconcile_state!
+using Oceananigans.Grids: x_domain, y_domain
 using Oceananigans.Utils: launch!, prettytime
 
 # Reactant does not support `stop_time`; it must stay `nothing` there.
@@ -61,6 +65,7 @@ default_stop_time(::AbstractArchitecture, clock) = clock.time isa Number ? Inf :
 default_stop_time(::ReactantState, clock) = nothing
 
 include("components.jl")
+include("boundary_prescribed_component.jl")
 
 #####
 ##### The coupled model
@@ -68,6 +73,7 @@ include("components.jl")
 
 const default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 const default_freshwater_density = 1000 # kg m⁻³
+const default_latent_heat_of_fusion = 334e3 # J kg⁻¹
 
 include("InterfaceComputations/InterfaceComputations.jl")
 

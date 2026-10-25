@@ -82,14 +82,9 @@ using NumericalEarth.SeaIces: default_snow_thermodynamics
         end
 
         @testset "Snow insulates: warmer surface temperature [$A]" begin
-            # Build two coupled models — one without snow, one with snow and
-            # nonzero snow thickness — then compare surface temperatures after
-            # one coupled time step. Snow adds thermal resistance, so the
-            # surface should be warmer (closer to the warmer atmosphere).
-            #
-            # Radiation is disabled (ε=0) so the surface energy balance
-            # reduces to conductive + turbulent fluxes; otherwise the
-            # Stefan–Boltzmann loss swamps the small snow-insulation signal.
+            # Snow adds thermal resistance, so the surface ends up warmer after one coupled step.
+            # Radiation is disabled (ε=0) so the energy balance reduces to conductive + turbulent
+            # fluxes; otherwise the Stefan-Boltzmann loss swamps the snow-insulation signal.
             ocean_grid = RectilinearGrid(arch;
                                          size = (1, 1, 2),
                                          extent = (1, 1, 1),

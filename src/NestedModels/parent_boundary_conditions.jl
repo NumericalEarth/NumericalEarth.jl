@@ -30,15 +30,17 @@ Arguments
 
 - `variables`: a `NamedTuple` mapping child field names to the parent
   `FieldTimeSeries` that should drive them, e.g.
-  `(u = parent.velocities.u, v = parent.velocities.v)`.
+  `(u = parent.velocities.u, v = parent.velocities.v)`. An entry may instead be a
+  per-side `NamedTuple` of sources (keyed by `:west/:east/:south/:north`), as for
+  the strips of a [`BoundaryPrescribedComponent`](@ref).
 
 - `sides`: a tuple of `Symbol`s naming which boundaries to drive. Choices are
   `:west, :east, :south, :north, :bottom, :top`.
 
-- `schemes`: optional `NamedTuple` keyed by child field name giving the open-boundary scheme (e.g. a
-  `PerturbationAdvection` or a `NormalRadiation`). Fields not listed default to `scheme = nothing`
-  (stiff Dirichlet). The scheme is carried by the boundary condition's classification, so it applies
-  to whichever BC type that field uses.
+- `schemes`: optional `NamedTuple` keyed by child field name giving the
+  `NormalFlowBoundaryCondition` scheme (e.g. a `PerturbationAdvection`). Fields not
+  listed default to `scheme = nothing` (stiff Dirichlet). Only consulted when
+  the BC type for that field is `NormalFlowBoundaryCondition`.
 
 - `bc_types`: optional `NamedTuple` keyed by child field name giving the BC
   constructor to use for that field. Each entry is either a single BC constructor
@@ -57,16 +59,23 @@ function parent_boundary_conditions(grid;
                                     bc_types = NamedTuple())
 
     field_pairs = []
-    for (child_name, fts) in pairs(variables)
+    for (child_name, source) in pairs(variables)
         spec      = haskey(bc_types, child_name) ? getproperty(bc_types, child_name) : NormalFlowBoundaryCondition
         scheme    = haskey(schemes, child_name) ? getproperty(schemes, child_name) : nothing
-        condition = Interpolated(fts)
+        condition(side) = Interpolated(source isa NamedTuple ? getproperty(source, side) : source)
 
-        # `spec` is either one BC constructor for all sides or a per-side NamedTuple. An open-boundary
-        # `scheme` is carried by the classification, so it reaches `NormalFlowBoundaryCondition` (normal
-        # velocities) and `ValueBoundaryCondition` (tracers, tangential velocities) alike.
+        # `spec` is either one BC constructor for all sides or a per-side NamedTuple; `scheme`
+        # (e.g. PerturbationAdvection) is consulted only where the chosen type is NormalFlow.
         bc_type(side) = spec isa NamedTuple ? getproperty(spec, side) : spec
-        bc_at(side)   = isnothing(scheme) ? bc_type(side)(condition) : bc_type(side)(condition; scheme)
+        bc_at(side)   = bc_type(side) === NormalFlowBoundaryCondition ?
+                            NormalFlowBoundaryCondition(condition(side); scheme) : bc_type(side)(condition(side))
+
+        # A `scheme` only takes effect on NormalFlow sides; requesting one for a field that is
+        # NormalFlow on no side means it would be silently ignored — flag that as a user error.
+        if haskey(schemes, child_name) && !any(side -> bc_type(side) === NormalFlowBoundaryCondition, sides)
+            throw(ArgumentError("`schemes` was given for :$child_name, but none of its sides use a " *
+                                "NormalFlowBoundaryCondition, so the scheme would be ignored."))
+        end
 
         side_pairs = [side => bc_at(side) for side in sides]
         push!(field_pairs, child_name => FieldBoundaryConditions(; side_pairs...))

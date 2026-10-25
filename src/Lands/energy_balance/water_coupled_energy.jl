@@ -90,13 +90,8 @@ function WaterCoupledEnergy(FT::Type = Oceananigans.defaults.FloatType;
             "WaterCoupledEnergy requires exactly one of " *
             "`deep_conductance` (Λᵈᵉᵉᵖ, W m⁻² K⁻¹) or `deep_time_scale` (τᵈᵉᵉᵖ, s)."))
     end
-    # The surface-advective term needs the temperature of incoming liquid
-    # precipitation, which the atmosphere–land flux assembly does not write.
     if advect_surface_liquid_energy
-        throw(ArgumentError(
-            "advect_surface_liquid_energy=true is not yet supported: the " *
-            "atmosphere–land flux assembly does not write " *
-            "`land.fluxes.liquid_precipitation_temperature`."))
+        throw(ArgumentError("advect_surface_liquid_energy requires `land.fluxes.liquid_precipitation_temperature`, which is unset"))
     end
     Λ = isnothing(deep_conductance) ? nothing : normalize_property(FT, deep_conductance)
     τ = isnothing(deep_time_scale)  ? nothing : convert(FT, deep_time_scale)
@@ -132,13 +127,13 @@ Adapt.adapt_structure(to, energy::WaterCoupledEnergy) =
 #####
 
 @inline function deep_conductance_value(energy::WaterCoupledEnergy, cˡᵃ, i, j, grid, time)
-    FT = eltype(grid)
+    FT = typeof(cˡᵃ)
     Λ  = energy.deep_conductance
     τ  = energy.deep_time_scale
     if Λ === nothing
         return cˡᵃ / convert(FT, τ)
     else
-        return property_value(Λ, i, j, 1)
+        return stateindex(Λ, i, j, 1)
     end
 end
 
@@ -168,7 +163,7 @@ end
 
     cˡ   = energy.liquid_heat_capacity
     Tᵣ   = energy.reference_temperature
-    cᵈʳʸ = property_value(energy.dry_heat_capacity, i, j, 1)
+    cᵈʳʸ = stateindex(energy.dry_heat_capacity, i, j, 1)
     cˡᵃ  = cᵈʳʸ + cˡ * max(Mᵢⱼ, 0)
 
     Tᵈ = stateindex(energy.deep_temperature, i, j, 1, grid, time, (Center, Center, Center))

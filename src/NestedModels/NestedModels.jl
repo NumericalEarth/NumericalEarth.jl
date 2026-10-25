@@ -2,20 +2,14 @@ module NestedModels
 
 export NestedModel, NestedSimulation, nested_atmosphere_model, nested_ocean_model,
        parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
-       davies_relaxation_mask, CosineRamp, SmoothStepRamp,
        exchange_state!, total_density, reconstruct_parent_state
 
 # Model-specific extension point (methods defined in the Breeze extension):
 #   `nested_atmosphere_model(parent, child_grid; …)` builds a child atmosphere over `child_grid` driven
-#       by `parent` (lateral BCs + Davies relaxation derived on the fly), wrapped in a `NestedModel`.
+#       by `parent` (lateral BCs + boundary relaxation derived on the fly), wrapped in a `NestedModel`.
 # The child's lateral BCs / interior relaxation are built from the exchanger's parent-derived prognostic
 # `FieldTimeSeries` via the generic `parent_boundary_conditions` / `parent_forcings`.
 function nested_atmosphere_model end
-
-# `nested_ocean_model(parent, child_grid; …)` builds a child ocean over `child_grid` driven by `parent`
-# (lateral open boundary conditions + interior Davies relaxation), wrapped in a `NestedModel`. Methods
-# live in the `NestedOceans` submodule, which is loaded after `Oceans` and `DataWrangling`.
-function nested_ocean_model end
 
 # Total air density ρ = ρᵈ + Σρqˣ from a state exchanger's density-weighted prognostics at time index
 # `n` (method in the Breeze extension). Centralizes the partial-density sum so recovering specific
@@ -29,20 +23,31 @@ function total_density end
 # (method in the Breeze extension).
 function reconstruct_parent_state end
 
-using DocStringExtensions: TYPEDSIGNATURES
 using Oceananigans
 using Oceananigans.Forcings: Relaxation
-using Oceananigans.Grids: AbstractGrid, Center, Face, xnodes, ynodes
+using Oceananigans.Grids: AbstractGrid
 using Oceananigans.BoundaryConditions: NormalFlowBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Units: Time
+using DocStringExtensions: TYPEDSIGNATURES
+
+using Oceananigans.Architectures: CPU, architecture, on_architecture
+using Oceananigans.Fields: location
+
+using ..EarthSystemModels: EarthSystemModels, component_model
+using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger
 
 include("nested_model.jl")
-include("relaxation_masks.jl")
+include("nested_component.jl")
 include("nested_simulation.jl")
 include("interpolated_fts_boundary.jl")
 include("parent_boundary_conditions.jl")
 include("parent_forcings.jl")
 include("parent_terrain.jl")
+include("ocean_boundary_bands.jl")
+include("ocean_open_boundaries.jl")
+include("ocean_boundary_relaxation.jl")
+include("ocean_boundary_exchanger.jl")
+include("nested_ocean_model.jl")
 
 end # module NestedModels

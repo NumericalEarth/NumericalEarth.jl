@@ -1,42 +1,94 @@
 #####
-##### Surface energy balance coupling for the Breeze RRTMGP `RadiativeTransferModel`.
+##### Surface radiation uses positive-upward fluxes (W m⁻²).
+##### The net surface flux is ε σ Tₛ⁴ + ε ℐꜜˡʷ + (1 - α) ℐꜜˢʷ.
 #####
-##### The RTM lives at `coupled_model.radiation`. Its surface-level flux fields
-##### already bake in albedo and emissivity at the surface (RRTMGP handles
-##### both reflection of downwelling shortwave and ε σ Tₛ⁴ for upwelling
-##### longwave internally), so we simply add the *net radiative flux* to the
-##### slab's `surface_energy_flux` accumulator. Both use the "positive flux =
-##### upward" sign convention (downwelling components are negative), so the
-##### net upward radiative flux at the surface face `k = 1` is
-#####
-#####    ℐˡʷꜛ + ℐˡʷꜜ + ℐˢʷꜜ
-#####
-##### This runs in `update_state!` after the turbulent (sensible + latent)
-##### flux has been written to `surface_energy_flux`, so the kernel adds the
-##### radiative term on top.
-#####
+
+using Oceananigans.AbstractOperations: KernelFunctionOperation
+using Oceananigans.Fields: Field
+using Oceananigans.Grids: Center, inactive_node
+using NumericalEarth.Radiations: SurfaceRadiationProperties, default_stefan_boltzmann_constant,
+                                 emitted_longwave_radiation, absorbed_longwave_radiation,
+                                 transmitted_shortwave_radiation
 
 const BreezeRTM = Breeze.RadiativeTransferModel
+const GrayBreezeRTM = Breeze.RadiativeTransferModel{<:Number, <:Any, <:Any, Nothing}
 
-# The turbulent-flux kernel asks the radiation for "kernel properties" used to
-# augment its interface energy balance. With a Breeze RTM the radiative
-# contribution to the surface energy balance is handled separately by
-# `apply_air_land_radiative_fluxes!` below, so we return an empty
-# `surface_properties` here — `air_land_interface_radiation_state` already
-# handles the "no land surface_properties" path by returning a zero radiation
-# state.
-NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation_properties(::BreezeRTM) =
-    (surface_properties = NamedTuple(),)
-
-@kernel function _apply_breeze_air_land_radiative_fluxes!(Es, ℐˡʷꜛ, ℐˡʷꜜ, ℐˢʷꜜ)
-    i, j = @index(Global, NTuple)
-    @inbounds Es[i, j, 1] += ℐˡʷꜛ[i, j, 1] + ℐˡʷꜜ[i, j, 1] + ℐˢʷꜜ[i, j, 1]
+# Bind the interfaces' diagnostic skin temperature — what the atmosphere actually sees;
+# equal to land.temperature only for bulk formulations — into an RTM constructed without
+# one. Explicit construction wins; with no land interface, Breeze errors at first solve.
+function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_temperature(rtm::BreezeRTM, interfaces)
+    isnothing(rtm.surface_radiation.surface_temperature) || return rtm
+    Tˢ = NumericalEarth.EarthSystemModels.surface_temperature(interfaces)
+    isnothing(Tˢ) && return rtm
+    return @set rtm.surface_radiation.surface_temperature = Tˢ
 end
 
-# Dispatch on `EarthSystemModel{<:BreezeRTM}`: the existing generic
-# `apply_air_land_radiative_fluxes!` only handles `PrescribedRadiation`-style
-# radiation (which carries `interface_fluxes.land` etc.); the Breeze RTM
-# carries the surface flux fields directly on the model.
+function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(rtm::BreezeRTM, exchange_grid; kw...)
+    state = (; ℐꜜˢʷ = Field{Center, Center, Nothing}(exchange_grid),
+               ℐꜜˡʷ = Field{Center, Center, Nothing}(exchange_grid))
+
+    return ComponentExchanger(state, nothing)
+end
+
+# Downwelling fluxes are negative in both Breeze and the interface state.
+@kernel function _interpolate_breeze_radiation_state!(state, ℐꜜˢʷ, ℐꜜˡʷ)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        state.ℐꜜˢʷ[i, j, 1] = ℐꜜˢʷ[i, j, 1]
+        state.ℐꜜˡʷ[i, j, 1] = ℐꜜˡʷ[i, j, 1]
+    end
+end
+
+function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, rtm::BreezeRTM, coupled_model)
+    state = exchanger.state
+
+    launch!(architecture(exchange_grid), exchange_grid, :xy,
+            _interpolate_breeze_radiation_state!,
+            state,
+            rtm.downwelling_shortwave_flux,
+            rtm.downwelling_longwave_flux)
+
+    return nothing
+end
+
+# σ is NumericalEarth's default: Breeze's `stefan_bolzmann_constant` is not reachable from the
+# model, so land emission pairs with atmospheric absorption only while Breeze keeps that default.
+function NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation_properties(rtm::BreezeRTM)
+    FT = eltype(rtm.downwelling_shortwave_flux)
+    ε = rtm.surface_radiation.surface_emissivity
+    α = blue_sky_albedo(rtm)
+    return (σ = convert(FT, default_stefan_boltzmann_constant),
+            surface_properties = (; land = SurfaceRadiationProperties(α, ε)))
+end
+
+# Gray optics transmits the direct beam only.
+blue_sky_albedo(rtm::GrayBreezeRTM) = rtm.surface_radiation.direct_surface_albedo
+
+# Two-stream optics reflect the direct and diffuse beams with their own albedos;
+# their blend is the ratio of upwelling to downwelling shortwave at the surface face k = 1.
+blue_sky_albedo(rtm::BreezeRTM) =
+    KernelFunctionOperation{Center, Center, Nothing}(reflected_shortwave_fraction,
+                                                     rtm.downwelling_shortwave_flux.grid,
+                                                     rtm.upwelling_shortwave_flux,
+                                                     rtm.downwelling_shortwave_flux)
+
+@inline reflected_shortwave_fraction(i, j, k, grid, ℐꜛˢʷ, ℐꜜˢʷ) =
+    @inbounds ifelse(ℐꜜˢʷ[i, j, 1] < 0, - ℐꜛˢʷ[i, j, 1] / ℐꜜˢʷ[i, j, 1], zero(grid))
+
+@kernel function _apply_breeze_air_land_radiative_fluxes!(Es, grid, Tˢ, ε, σ, ℐꜜˡʷ, ℐꜜˢʷ, α)
+    i, j = @index(Global, NTuple)
+
+    inactive = inactive_node(i, j, 1, grid, Center(), Center(), Center())
+
+    @inbounds begin
+        ℐꜛˡʷ = emitted_longwave_radiation(Tˢ[i, j, 1], σ, ε[i, j, 1])
+        ℐₐˡʷ = absorbed_longwave_radiation(ε[i, j, 1], ℐꜜˡʷ[i, j, 1])
+        ℐₜˢʷ = transmitted_shortwave_radiation(α[i, j, 1], ℐꜜˢʷ[i, j, 1])
+        Es[i, j, 1] += !inactive * (ℐꜛˡʷ + ℐₐˡʷ + ℐₜˢʷ)
+    end
+end
+
+# The land emits from the current Tˢ; the atmosphere absorbs emission from Tˢ at the last RTM solve.
 function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
         coupled_model :: NumericalEarth.EarthSystemModels.EarthSystemModel{<:BreezeRTM})
 
@@ -51,13 +103,38 @@ function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
     Es = fluxes.surface_energy_flux
 
     rtm = coupled_model.radiation
-    grid = land.grid
+    grid = coupled_model.interfaces.exchanger.grid
     arch = architecture(grid)
+    rk = NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation_properties(rtm)
+    surface_properties = rk.surface_properties.land
+    Tˢ = al_interface.temperature   # land skin temperature (K)
+
+    state = coupled_model.interfaces.exchanger.radiation.state
+
     launch!(arch, grid, :xy,
             _apply_breeze_air_land_radiative_fluxes!,
             Es,
-            rtm.upwelling_longwave_flux,
-            rtm.downwelling_longwave_flux,
-            rtm.downwelling_shortwave_flux)
+            grid,
+            Tˢ,
+            surface_properties.emissivity,
+            rk.σ,
+            state.ℐꜜˡʷ,
+            state.ℐꜜˢʷ,
+            surface_properties.albedo)
     return nothing
 end
+
+# The air–sea analog: dispatch peels off no-ocean and prescribed-SST (no net fluxes) cases.
+# A responsive ocean under a Breeze RTM raises a MethodError until its radiative heating
+# is implemented.
+NumericalEarth.EarthSystemModels.apply_air_sea_radiative_fluxes!(
+        coupled_model :: NumericalEarth.EarthSystemModels.EarthSystemModel{<:BreezeRTM}) =
+    apply_breeze_air_sea_radiative_fluxes!(coupled_model, coupled_model.ocean)
+
+apply_breeze_air_sea_radiative_fluxes!(coupled_model, ::Nothing) = nothing
+
+apply_breeze_air_sea_radiative_fluxes!(coupled_model, ocean) =
+    apply_breeze_air_sea_radiative_fluxes!(coupled_model, ocean,
+        NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(ocean))
+
+apply_breeze_air_sea_radiative_fluxes!(coupled_model, ocean, ::Nothing) = nothing

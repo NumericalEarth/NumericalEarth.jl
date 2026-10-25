@@ -2,24 +2,29 @@ include("runtests_setup.jl")
 
 using NumericalEarth
 using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model
+using NumericalEarth.DataWrangling: BoundingBox
 using Oceananigans
 using Oceananigans: prognostic_fields
 using Oceananigans.OutputReaders: interpolating_time_indices, memory_index
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location
-using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, NormalRadiation,
-                                       fill_halo_regions!
+using Oceananigans.Grids: node
+using Oceananigans.Architectures: on_architecture
+using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
 using Oceananigans.Forcings: MultipleForcings
 using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics,
-              SpecificForcing
+              SpecificForcing, SaturationAdjustment, WarmPhaseEquilibrium, moisture_prognostic_name,
+              adjustment_saturation_specific_humidity
+using Breeze.Thermodynamics: MoistureMassFractions, LiquidIcePotentialTemperatureState, temperature,
+                             with_temperature
+using Breeze.Microphysics: compute_temperature
+using Breeze.AtmosphereModels: prognostic_field_names
 using Test
 
 @testset "PrescribedAtmosphere: grid vertical topology selects surface vs volumetric fields" begin
-    # A `Flat` vertical builds a surface atmosphere (u, v; 2D temperature / specific_humidity /
-    # pressure) for ocean / sea-ice coupling. Temperature & humidity are direct properties now;
-    # `tracers` is reserved for gas species (empty by default), and `microphysical_variables` for
-    # cloud / precip species (also empty by default).
+    # A `Flat` vertical gives a surface atmosphere: u, v and 2D temperature, specific humidity
+    # and pressure, with no gas or microphysical species.
     gs = RectilinearGrid(size = (8, 8), x = (-1, 1), y = (-1, 1), topology = (Bounded, Bounded, Flat))
     pas = PrescribedAtmosphere(gs, [0.0, 1.0])
     @test keys(pas.velocities) == (:u, :v)
@@ -66,12 +71,8 @@ const y₀_LO = 0.0
 end
 
 @testset "NestedSimulation: Lamb-Oseen vortex through a child NonhydrostaticModel" begin
-    # Parent atmosphere holds the analytic Lamb-Oseen state on a 3D PrescribedAtmosphere,
-    # populated by set! at a few coarse time snapshots; interpolation handles the rest.
-    # The resolved-vertical (3D) grid gives CCC velocities/tracers/pressure so the FTS can be
-    # interpolated at the child's interior z-nodes.
-    # Domain extends strictly beyond the child so the FTS brackets every child
-    # boundary node (required by InterpolatedFTSBoundary's validation).
+    # The parent holds the analytic Lamb-Oseen state at a few coarse time snapshots on a 3D grid,
+    # and extends strictly beyond the child so it brackets every child boundary node.
     parent_grid = RectilinearGrid(size     = (16, 16, 4),
                                   x        = (-1.5, 1.5),
                                   y        = (-1.5, 1.5),
@@ -148,29 +149,18 @@ end
         @test getproperty(bcs.T, side).classification isa Oceananigans.BoundaryConditions.Value
     end
 
-    # A scheme is carried by the classification, so it reaches a `ValueBoundaryCondition` field too —
-    # the tracer side of an open-boundary radiation condition.
-    radiating = parent_boundary_conditions(child_grid;
-                                           variables = (T = T_fts,),
-                                           sides     = (:west, :east),
-                                           schemes   = (T = NormalRadiation(),),
-                                           bc_types  = (T = ValueBoundaryCondition,))
-
-    for side in (:west, :east)
-        classification = getproperty(radiating.T, side).classification
-        @test classification isa Oceananigans.BoundaryConditions.Value
-        @test classification.scheme isa NormalRadiation
-    end
+    # Passing `schemes` for a non-NormalFlowBC field must error.
+    @test_throws ArgumentError parent_boundary_conditions(
+        child_grid;
+        variables = (T = T_fts,),
+        sides     = (:west, :east),
+        schemes   = (T = nothing,),
+        bc_types  = (T = ValueBoundaryCondition,))
 end
 
-# Regression for the GPU `InvalidIRError` in the prognostic-parent path: a LIVE model
-# parent (not a PrescribedAtmosphere/FTS) drives the child through
-# `Interpolated{<:AbstractField}` BCs. On GPU the source field `Adapt`s to a bare data
-# array inside the halo-fill kernel, so `getbc`/`_query_source` must stay generically
-# typed and take the location explicitly (rather than dispatching on `::AbstractField`
-# and calling `instantiated_location(source)` in-kernel). Includes a Center
-# `ValueBoundaryCondition` — the exact BC kind that failed. Runs on every
-# `test_architecture` (GPU CI is where the regression bites).
+# A live model parent (rather than a PrescribedAtmosphere or FieldTimeSeries) drives the child
+# through `Interpolated` BCs, including a Center `ValueBoundaryCondition`. On GPU the source
+# field `Adapt`s to a bare data array inside the halo-fill kernel.
 @testset "NestedSimulation: prognostic (live AbstractField) parent on $(arch)" for arch in test_architectures
     parent_grid = RectilinearGrid(arch; size = (16, 16, 4),
                                   x = (-1.5, 1.5), y = (-1.5, 1.5), z = (-0.2, 1.2),
@@ -191,7 +181,7 @@ end
     set!(child, u = (x, y, z) -> 0.1, v = (x, y, z) -> 0.05, c = (x, y, z) -> x + y)
 
     nested = NestedSimulation(parent, child; Δt = 0.001, stop_iteration = 3, verbose = false)
-    run!(nested)   # pre-fix: InvalidIRError on GPU during the first child halo fill
+    run!(nested)
 
     @test child.clock.iteration == 3
     @test parent.clock.time ≈ child.clock.time
@@ -199,13 +189,9 @@ end
     @test all(isfinite, Array(interior(child.tracers.c)))
 end
 
-# The era5_breeze telescoping nest can't use a live AbstractField BC source (it fails GPU
-# codegen — see the prognostic-parent regression above), so it drives the inner child from a
-# "rolling FieldTimeSeries": each boundary variable is a 2-slot FTS on the parent grid whose both
-# slots are overwritten from the live parent field every step. An FTS survives Adapt as a
-# FlavorOfFTS (GPU-clean), and the wide [0, 1e9] time bracket makes the time-interpolation return
-# the current state at any clock time. This guards the rolling idiom: a refresh propagates the
-# live field into the FTS, and time-interpolation returns the refreshed state.
+# A "rolling FieldTimeSeries" drives a child from a live parent field: a 2-slot FTS whose slots
+# are both overwritten from the field every step, with a time bracket wide enough that
+# interpolation returns the refreshed state at any clock time.
 @testset "Rolling FieldTimeSeries tracks a live parent field" begin
     grid = RectilinearGrid(size = (4, 4, 4), x = (0, 1), y = (0, 1), z = (0, 1),
                            topology = (Bounded, Bounded, Bounded))
@@ -231,14 +217,9 @@ end
     @test interior(fts[Time(123.4)]) ≈ interior(src)
 end
 
-# An `Interpolated` Value BC must sample the source at the boundary FACE, not the child
-# field's center node — otherwise a Center field's halo is reconstructed from a value a
-# half-cell *inside* the boundary (a half-cell-gradient bias). With a source exactly
-# linear in the boundary-normal coordinate, the reconstructed boundary-face value
-# ½(halo + first-interior) must equal the source AT the face — i.e. = 0 to roundoff with
-# the face fix, but off by ½Δ·(slope) with the (buggy) center placement. Covers BOTH
-# normal directions, so the Dim-1 (west/east) and Dim-2 (south/north) `node` edits are
-# each exercised.
+# An `Interpolated` Value BC samples the source at the boundary face, not at the child field's
+# center node. With a source exactly linear in the boundary-normal coordinate, the reconstructed
+# face value ½(halo + first interior) equals the source at the face. Covers both normal directions.
 @testset "Interpolated Value BC samples at the boundary face on $(arch)" for arch in test_architectures
     src_grid = RectilinearGrid(arch; size = (16, 16, 4), x = (-1, 3), y = (-1, 3), z = (0, 1),
                                topology = (Bounded, Bounded, Bounded))
@@ -267,10 +248,6 @@ end
     @test isapprox(CUDA.@allowscalar((cy[4, 8, 2] + cy[4, 9, 2]) / 2), 2.0; atol = 1e-4)
 end
 
-# Unit test for the Breeze-ext helper that converts a moist thermodynamic state
-# (T, qᵛ, qᶜ, qⁱ, p) into the prognostic fields Breeze's `CompressibleDynamics`
-# integrates (ρ, θˡⁱ, qᵗ). Checks the dry/saturation-pressure limit exactly and
-# the moist + condensate case against the documented formulas.
 @testset "breeze_prognostic_state derives (ρ, θˡⁱ, qᵗ)" begin
     constants = ThermodynamicConstants()
     Rᵈ   = dry_air_gas_constant(constants)
@@ -278,7 +255,6 @@ end
     cₚᵈ  = constants.dry_air.heat_capacity
     Lᵥ   = constants.liquid.reference_latent_heat
     Lₛ   = constants.ice.reference_latent_heat
-    κ    = Rᵈ / cₚᵈ
     pˢᵗ  = 1e5
 
     grid = RectilinearGrid(size = (2, 2, 2), x = (0, 1), y = (0, 1), z = (0, 1),
@@ -293,20 +269,25 @@ end
     @test all(isapprox.(interior(s.θˡⁱ), 300.0; rtol = 1e-12))
     @test all(isapprox.(interior(s.ρ), pˢᵗ / (Rᵈ * 300.0); rtol = 1e-12))
 
-    # Moist + condensate, p ≠ pˢᵗ ⇒ check against the documented formulas.
+    # Moist + condensate, p ≠ pˢᵗ: `temperature` must return T exactly.
     set!(T, 290.0); set!(qᵛ, 0.01); set!(qᶜ, 1e-3); set!(qⁱ, 5e-4); set!(p, 9e4)
     s2 = breeze_prognostic_state(constants, pˢᵗ, T, qᵛ, qᶜ, qⁱ, p)
     Rᵐ = (1 - 0.01 - 1e-3 - 5e-4) * Rᵈ + 0.01 * Rᵛ   # mixture gas constant: condensate loads the mixture
-    θ  = 290.0 * (pˢᵗ / 9e4)^κ
     @test all(isapprox.(interior(s2.qᵗ), 0.01 + 1e-3 + 5e-4; rtol = 1e-12))
     @test all(isapprox.(interior(s2.ρ), 9e4 / (Rᵐ * 290.0); rtol = 1e-10))
-    @test all(isapprox.(interior(s2.θˡⁱ), θ * (1 - (Lᵥ * 1e-3 + Lₛ * 5e-4) / (cₚᵈ * 290.0)); rtol = 1e-10))
-    @test all(interior(s2.θˡⁱ) .< θ)   # condensate loading lowers θˡⁱ below the dry θ
+
+    q  = MoistureMassFractions(0.01, 1e-3, 5e-4)
+    θˡⁱ = Array(interior(s2.θˡⁱ))[1, 1, 1]
+    @test temperature(LiquidIcePotentialTemperatureState(θˡⁱ, q, pˢᵗ, 9e4), constants) ≈ 290.0 rtol = 1e-12
+    @test all(interior(s2.θˡⁱ) .< 290.0 * (pˢᵗ / 9e4)^(Rᵈ / cₚᵈ))   # condensate lowers θˡⁱ below the dry θ
+
+    # A dry-κ formula does not invert here; guards against a revert to a hand-rolled definition.
+    θdry = 290.0 * (pˢᵗ / 9e4)^(Rᵈ / cₚᵈ) * (1 - (Lᵥ * 1e-3 + Lₛ * 5e-4) / (cₚᵈ * 290.0))
+    @test !isapprox(temperature(LiquidIcePotentialTemperatureState(θdry, q, pˢᵗ, 9e4), constants), 290.0;
+                    atol = 1e-3)
 end
 
-# Unit test that the state exchanger carries the specific members (`θ`, `u`, `v`) consistently with the
-# density-weighted ones — `ρθ = ρᵈ·θ`, `ρu = ρᵈ·u`, `ρv = ρᵈ·v`, and `u`/`v` are verbatim parent copies.
-# This is the invariant the intensive (`SpecificForcing`) Davies relaxation relies on.
+# The specific members (`θ`, `u`, `v`) are the intensive partners of the density-weighted ones.
 @testset "state exchanger: specific θ/u/v are the intensive partners of ρθ/ρu/ρv" begin
     ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
     grid = RectilinearGrid(size = (8, 8, 4), x = (-1, 1), y = (-1, 1), z = (0, 1),
@@ -328,11 +309,158 @@ end
     @test es.v[1]  ≈ parent.velocities.v[1]
 end
 
-# Integration test for the example's production path: a Breeze `AtmosphereModel`
-# driven as a `NestedSimulation` child via the direct-wiring primitives
-# (`atmosphere_simulation(…).model` + `parent_boundary_conditions`). Exercises the
-# #220 contract that `atmosphere_simulation` returns a `Simulation` whose `.model`
-# is an `AbstractModel` suitable for `NestedModel`, and steps it a few iterations.
+@testset "state exchanger: the moisture slot matches the child's moisture_prognostic_name" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    constants = ThermodynamicConstants()
+    pˢᵗ, T₀, p₀ = 1e5, 283.15, 9e4
+    qᵛ₀, qᶜˡ₀, qᶜⁱ₀, qʳ₀, qˢ₀ = 8.0e-3, 5.0e-4, 1.0e-4, 2.0e-4, 5.0e-5
+
+    grid = RectilinearGrid(size = (4, 4, 4), x = (-1, 1), y = (-1, 1), z = (0, 1),
+                           topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(grid, [0.0, 1.0, 2.0])
+    set!(parent.temperature,       (x, y, z, t) -> T₀)
+    set!(parent.specific_humidity, (x, y, z, t) -> qᵛ₀)
+    set!(parent.pressure,          (x, y, z, t) -> p₀)
+    set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
+    uniform(v) = (f = CenterField(grid); set!(f, (x, y, z) -> v); f)
+    condensates = (qᶜˡ = uniform(qᶜˡ₀), qʳ = uniform(qʳ₀), qᶜⁱ = uniform(qᶜⁱ₀), qˢ = uniform(qˢ₀))
+
+    # Every hydrometeor loads the mixture.
+    Rᵈ, Rᵛ = dry_air_gas_constant(constants), vapor_gas_constant(constants)
+    qᵗ = qᵛ₀ + qᶜˡ₀ + qʳ₀ + qᶜⁱ₀ + qˢ₀
+    ρ  = p₀ / (((1 - qᵗ) * Rᵈ + qᵛ₀ * Rᵛ) * T₀)
+
+    exᵛ = ext.state_exchanger(parent, pˢᵗ, constants; condensates, moisture_name = :ρqᵛ)
+    @test all(isapprox.(interior(exᵛ.prognostic.ρqᵛᵉ[1]), ρ * qᵛ₀; rtol = 1e-12))
+
+    # qᵉ = qᵗ − qʳ − qˢ.
+    exᵉ = ext.state_exchanger(parent, pˢᵗ, constants; condensates, moisture_name = :ρqᵉ)
+    @test all(isapprox.(interior(exᵉ.prognostic.ρqᵛᵉ[1]), ρ * (qᵛ₀ + qᶜˡ₀ + qᶜⁱ₀); rtol = 1e-12))
+
+    @test all(isapprox.(interior(exᵉ.prognostic.ρqᵛᵉ[1]) .- interior(exᵛ.prognostic.ρqᵛᵉ[1]),
+                        ρ * (qᶜˡ₀ + qᶜⁱ₀); rtol = 1e-12))
+
+    # Saturation adjustment is the default nesting path, so it must land on `:ρqᵉ`.
+    @test moisture_prognostic_name(SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())) == :ρqᵉ
+end
+
+@testset "state exchanger: the child recovers the parent temperature it was sent" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    constants = ThermodynamicConstants()
+    microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())
+    pˢᵗ, T₀, p₀, qᶜˡ₀ = 1e5, 283.15, 9e4, 5.0e-4
+
+    # Saturate with the adjustment's own qsat, so the state is one it leaves alone.
+    qᵛ₀ = 8.0e-3
+    for _ in 1:80
+        qᵛ₀ = adjustment_saturation_specific_humidity(T₀, p₀, qᵛ₀ + qᶜˡ₀, constants, WarmPhaseEquilibrium())
+    end
+
+    grid = RectilinearGrid(size = (4, 4, 4), x = (-1, 1), y = (-1, 1), z = (0, 1),
+                           topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(grid, [0.0, 1.0, 2.0])
+    set!(parent.temperature,       (x, y, z, t) -> T₀)
+    set!(parent.specific_humidity, (x, y, z, t) -> qᵛ₀)
+    set!(parent.pressure,          (x, y, z, t) -> p₀)
+    set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
+    uniform(v) = (f = CenterField(grid); set!(f, (x, y, z) -> v); f)
+
+    # `qʳ` is deliberately varied: θˡⁱ must not remove latent heat for precipitation, which `qᵉ`
+    # excludes and the child has no prognostic to hold, so the round trip must be insensitive to it.
+    emitted(name; qʳ₀ = 0.0) = begin
+        condensates = (qᶜˡ = uniform(qᶜˡ₀), qʳ = uniform(qʳ₀), qᶜⁱ = nothing, qˢ = nothing)
+        ex = ext.state_exchanger(parent, pˢᵗ, constants; condensates, moisture_name = name)
+        Rᵈ, Rᵛ = dry_air_gas_constant(constants), vapor_gas_constant(constants)
+        ρ = p₀ / (((1 - qᵛ₀ - qᶜˡ₀ - qʳ₀) * Rᵈ + qᵛ₀ * Rᵛ) * T₀)
+        at(f) = Array(interior(f))[1, 1, 1]
+        (θˡⁱ = at(ex.prognostic.ρθ[1]) / at(ex.prognostic.ρᵈ[1]),
+         qᵛᵉ = at(ex.prognostic.ρqᵛᵉ[1]) / ρ)
+    end
+
+    invert(θˡⁱ, q) = compute_temperature(
+        LiquidIcePotentialTemperatureState(θˡⁱ, MoistureMassFractions(q), pˢᵗ, p₀), microphysics, constants)
+
+    for name in (:ρqᵉ, :ρqᵛ), qʳ₀ in (0.0, 2.0e-4, 1.0e-3)
+        e = emitted(name; qʳ₀)
+        @test invert(e.θˡⁱ, e.qᵛᵉ) ≈ T₀ atol = 1e-3
+    end
+
+    # Regression on the moisture write: pairing that same θˡⁱ with vapor alone loses a damped ℒqᶜˡ/cᵖ,
+    # ≈ 0.5 K here, and worsens as the air cools.
+    let e = emitted(:ρqᵉ)
+        @test T₀ - invert(e.θˡⁱ, qᵛ₀) > 0.4
+        @test T₀ - invert(e.θˡⁱ, qᵛ₀) < 0.7
+    end
+end
+
+# The child makes its own precipitation, at its own resolution and dynamics, so the parent's `qʳ`/`qˢ`
+# cross neither channel: not the moisture slot, and not θˡⁱ. A parent that rains hands over the same
+# state as one that does not, so the child recovers the parent's temperature from the pair it was given.
+@testset "state exchanger: the parent's precipitation crosses neither channel" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    constants = ThermodynamicConstants()
+    pˢᵗ, T₀, p₀ = 1e5, 283.15, 9e4
+    qᵛ₀, qᶜˡ₀, qᶜⁱ₀ = 8.0e-3, 5.0e-4, 1.0e-4
+
+    grid = RectilinearGrid(size = (4, 4, 4), x = (-1, 1), y = (-1, 1), z = (0, 1),
+                           topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(grid, [0.0, 1.0, 2.0])
+    set!(parent.temperature,       (x, y, z, t) -> T₀)
+    set!(parent.specific_humidity, (x, y, z, t) -> qᵛ₀)
+    set!(parent.pressure,          (x, y, z, t) -> p₀)
+    set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
+    uniform(v) = (f = CenterField(grid); set!(f, (x, y, z) -> v); f)
+
+    emitted(moisture_name, qʳ₀, qˢ₀) = begin
+        condensates = (qᶜˡ = uniform(qᶜˡ₀), qʳ = uniform(qʳ₀), qᶜⁱ = uniform(qᶜⁱ₀), qˢ = uniform(qˢ₀))
+        ex = ext.state_exchanger(parent, pˢᵗ, constants; condensates, moisture_name)
+        at(f) = Array(interior(f))[1, 1, 1]
+        (θˡⁱ = at(ex.prognostic.ρθ[1]) / at(ex.prognostic.ρᵈ[1]), ρqᵛᵉ = at(ex.prognostic.ρqᵛᵉ[1]))
+    end
+
+    # θˡⁱ is `with_temperature` on the condensate the moisture slot carries, and on nothing else.
+    expected(qˡ, qⁱ) = ext.liquid_ice_potential_temperature(T₀, qᵛ₀, qˡ, qⁱ, p₀, pˢᵗ, constants)
+
+    dry, wet = emitted(:ρqᵉ, 0.0, 0.0), emitted(:ρqᵉ, 2.0e-4, 5.0e-5)
+    @test dry.θˡⁱ ≈ expected(qᶜˡ₀, qᶜⁱ₀) rtol = 1e-12
+    @test wet.θˡⁱ ≈ expected(qᶜˡ₀, qᶜⁱ₀) rtol = 1e-12   # the parent's rain changes nothing
+
+    # ρᵈ does carry every species, so the two parents differ there — θˡⁱ's invariance is not an artifact
+    # of the rain being ignored everywhere.
+    @test wet.ρqᵛᵉ != dry.ρqᵛᵉ
+
+    dryᵛ, wetᵛ = emitted(:ρqᵛ, 0.0, 0.0), emitted(:ρqᵛ, 2.0e-4, 5.0e-5)
+    @test dryᵛ.θˡⁱ ≈ expected(0.0, 0.0) rtol = 1e-12
+    @test wetᵛ.θˡⁱ ≈ expected(0.0, 0.0) rtol = 1e-12
+
+    # The default nested child carries `ρqʳ`/`ρqˢ` when CloudMicrophysics is loaded; it still receives
+    # precipitation-free air and spins its own precipitation up.
+    μ = ext.default_nested_microphysics()
+    @test moisture_prognostic_name(μ) == :ρqᵉ
+end
+
+@testset "state exchanger: Float32 parent, Float64 constants" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    constants = ThermodynamicConstants(Float64)
+    pˢᵗ, T₀, p₀, qᵛ₀ = 1e5, 283.15, 9e4, 8.0e-3
+
+    grid = RectilinearGrid(Float32; size = (4, 4, 4), x = (-1, 1), y = (-1, 1), z = (0, 1),
+                           topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(grid, [0.0, 1.0, 2.0])
+    set!(parent.temperature,       (x, y, z, t) -> T₀)
+    set!(parent.specific_humidity, (x, y, z, t) -> qᵛ₀)
+    set!(parent.pressure,          (x, y, z, t) -> p₀)
+
+    condensates = (qᶜˡ = CenterField(grid), qʳ = CenterField(grid), qᶜⁱ = CenterField(grid), qˢ = CenterField(grid))
+    ex = ext.state_exchanger(parent, pˢᵗ, constants; condensates)
+    at(f) = Array(interior(f))[1, 1, 1]
+    θˡⁱ = at(ex.prognostic.ρθ[1]) / at(ex.prognostic.ρᵈ[1])
+    @test θˡⁱ ≈ ext.liquid_ice_potential_temperature(T₀, qᵛ₀, 0.0, 0.0, p₀, pˢᵗ, constants) rtol = 1e-6
+end
+
 @testset "Breeze AtmosphereModel as a NestedSimulation child on $(arch)" for arch in test_architectures
     # Parent: a 3D PrescribedAtmosphere strictly bracketing the child,
     # holding a uniform state. Velocity slots carry momentum (ρu, ρv) per the
@@ -356,13 +484,13 @@ end
 
     bcs = parent_boundary_conditions(child_grid;
               variables = (ρu = parent.velocities.u, ρv = parent.velocities.v,
-                           ρ = ρ_fts, ρe = ρθ_fts, ρqᵉ = ρqᵉ_fts),
+                           ρᵈ = ρ_fts, ρE = ρθ_fts, ρqᵉ = ρqᵉ_fts),
               sides     = (:west, :east, :south, :north),
-              bc_types  = (ρ = ValueBoundaryCondition, ρe = ValueBoundaryCondition, ρqᵉ = ValueBoundaryCondition))
+              bc_types  = (ρᵈ = ValueBoundaryCondition, ρE = ValueBoundaryCondition, ρqᵉ = ValueBoundaryCondition))
 
     # No ESM coupling here, so override the coupling bottom-flux BCs with Dirichlet placeholders.
-    bcs = merge(bcs, (; ρe  = FieldBoundaryConditions(west = bcs.ρe.west,  east = bcs.ρe.east,
-                                                      south = bcs.ρe.south, north = bcs.ρe.north,
+    bcs = merge(bcs, (; ρE  = FieldBoundaryConditions(west = bcs.ρE.west,  east = bcs.ρE.east,
+                                                      south = bcs.ρE.south, north = bcs.ρE.north,
                                                       bottom = ValueBoundaryCondition(ρ̄ * θ̄)),
                         ρqᵉ = FieldBoundaryConditions(west = bcs.ρqᵉ.west,  east = bcs.ρqᵉ.east,
                                                       south = bcs.ρqᵉ.south, north = bcs.ρqᵉ.north,
@@ -370,7 +498,7 @@ end
 
     # #220: `atmosphere_simulation` returns a `Simulation`; its `.model` is the child model.
     child_sim = atmosphere_simulation(child_grid; boundary_conditions = bcs,
-                                      dynamics = CompressibleDynamics(surface_pressure = 1e5))
+                                      dynamics = CompressibleDynamics(base_pressure = 1e5))
     @test child_sim isa Simulation
     child = child_sim.model
     @test child isa Breeze.AtmosphereModel
@@ -386,12 +514,8 @@ end
     @test all(isfinite, Array(interior(child.dynamics.total_density)))
 end
 
-# Coupling a Breeze `CompressibleDynamics` atmosphere to a `SlabLand` via
-# `AtmosphereLandModel`, then wrapping it as a `NestedSimulation` child. The coupled
-# `update_state!` runs `interpolate_state!`, which must handle compressible dynamics
-# (prognostic density, no anelastic reference state) via the Breeze ext's
-# `dynamics_density`/`surface_pressure` accessors. Construction-level: stepping the
-# coupled child awaits a Breeze energy-flux/qᵛ fix for the compressible path.
+# Construction only: stepping the coupled child awaits a Breeze energy-flux/qᵛ fix for the
+# compressible path.
 @testset "AtmosphereLandModel (compressible Breeze) as a NestedSimulation child on $(arch)" for arch in test_architectures
     atmos_grid = RectilinearGrid(arch; size = (8, 8, 16),
                                  x = (0, 8000), y = (0, 8000), z = (0, 8000),
@@ -399,7 +523,7 @@ end
     land_grid = RectilinearGrid(arch; size = (8, 8), x = (0, 8000), y = (0, 8000),
                                 halo = (atmos_grid.Hx, atmos_grid.Hy), topology = (Periodic, Periodic, Flat))
 
-    atmos = atmosphere_simulation(atmos_grid; dynamics = CompressibleDynamics(surface_pressure = 1e5))
+    atmos = atmosphere_simulation(atmos_grid; dynamics = CompressibleDynamics(base_pressure = 1e5))
     set!(atmos.model; ρ = 1.2, θˡⁱ = 288.0, qᵗ = 0.0)
 
     land = SlabLand(land_grid)
@@ -416,8 +540,8 @@ end
     @test all(isfinite, Array(interior(atmos.model.dynamics.total_density)))
 end
 
-@testset "Breeze nested_atmosphere_model defaults to a moving derived window on CPU()" begin
-    parent_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 4),
+@testset "Breeze nested_atmosphere_model defaults to a moving derived window on $(arch)" for arch in test_architectures
+    parent_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 4),
                                          longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),
                                          z = (0, 1), topology = (Bounded, Bounded, Bounded))
     times = collect(0.0:1.0:4.0)
@@ -428,7 +552,7 @@ end
     set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
     set!(parent.pressure,          (x, y, z, t) -> 9.0e4)
 
-    child_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 8),
+    child_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 8),
                                         longitude = (-1, 1), latitude = (-1, 1), z = (0, 1000),
                                         halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
 
@@ -438,10 +562,47 @@ end
     @test length(nested.exchanger.prognostic.ρᵈ.backend) == 3
 end
 
-# The Davies relaxation is keyed by the density-weighted prognostic and pre-wrapped in `SpecificForcing`,
-# so a caller's own specific-key forcing COMBINES with it rather than replacing it in the constructor's
-# `merge`. Had it been keyed `θ`, the merge would drop it and `forcing.ρθ` would be a lone SpecificForcing.
-@testset "Davies relaxation survives a caller-supplied specific forcing" begin
+# A closure's own tracers (TKE `ρe`) get the child's bounds-preserving WENO by default. A NamedTuple
+# `scalar_advection` that omits them would leave them on the model default, unbounded `Centered(order=2)`.
+@testset "Breeze nested_atmosphere_model: closure tracers get bounded WENO advection" begin
+    parent_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 4),
+                                        longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),
+                                        z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(parent_grid, collect(0.0:1.0:2.0))
+    set!(parent.temperature,       (x, y, z, t) -> 280.0)
+    set!(parent.specific_humidity, (x, y, z, t) -> 0.005)
+    set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
+    set!(parent.pressure,          (x, y, z, t) -> 9.0e4)
+
+    child_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 8),
+                                       longitude = (-1, 1), latitude = (-1, 1), z = (0, 1000),
+                                       halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+
+    closure = TKEBasedTurbulenceClosure()
+    tke_name = only(Oceananigans.TurbulenceClosures.closure_required_tracers(closure))
+
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    microphysics = ext.default_nested_microphysics()
+    default = ext.default_nested_scalar_advection(microphysics, closure)
+    @test haskey(default, tke_name)
+    @test default[tke_name] isa WENO
+    @test default[tke_name].bounds.minimum_value == 0
+    @test default[tke_name].bounds.maximum_value == Inf
+    @test !haskey(ext.default_nested_scalar_advection(microphysics), tke_name)   # no closure, no TKE entry
+
+    nested = nested_atmosphere_model(parent, child_grid; closure,
+                                     parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
+    child_tke_advection = nested.child.advection[tke_name]
+    @test child_tke_advection isa WENO
+    @test !(child_tke_advection isa Centered)
+    @test !isnothing(child_tke_advection.bounds)
+    @test child_tke_advection.bounds.minimum_value == 0
+end
+
+# The lateral boundary relaxation is keyed by the density-weighted prognostic, so a caller's own specific-key
+# forcing combines with it rather than replacing it.
+@testset "Lateral boundary relaxation survives a caller-supplied specific forcing" begin
     parent_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 4),
                                         longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),
                                         z = (0, 1), topology = (Bounded, Bounded, Bounded))
@@ -463,16 +624,35 @@ end
 
     ρθ_forcing = nested.child.forcing.ρθ
     @test ρθ_forcing isa MultipleForcings
-    @test length(ρθ_forcing.forcings) == 2                       # Davies relaxation + the caller's θ forcing
+    @test length(ρθ_forcing.forcings) == 2                       # boundary relaxation + the caller's θ forcing
     @test all(f -> f isa SpecificForcing, ρθ_forcing.forcings)   # both ρᵈ-weighted at kernel time
 end
 
-# The Breeze-ext `StateExchanger` holds the child prognostics as a 3-level FieldTimeSeries bracketing
-# the child clock (memory-O(1) in time); `exchange_state!` positions that window one level below the
-# bracket of `t + Δt` so it spans a node-crossing step, recomputing the resident levels from the parent.
-# This guards the cycling: the window `start` advances as the clock crosses parent intervals and back,
-# with finite + physical prognostics throughout. Uses a synthetic `PrescribedAtmosphere` parent (no ERA5
-# download); here `pressure` is an FTS (the ERA5 parent uses a static `Field`) — the exchanger handles both.
+# On a Lambert-conformal child the relaxation zone follows the panel's walls (constant projected x or y),
+# and the parent region is the lon/lat hull of the panel's faces.
+@testset "Boundary relaxation mask and parent region follow a Lambert-conformal child's walls on $(arch)" for arch in test_architectures
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    Nx, Ny, width = 40, 30, 5
+    grid = LambertConformalConicGrid(arch; size = (Nx, Ny, 2), center = (-97.5, 38.5), spacing = 13e3,
+                                     standard_parallel = 38.5, z = (0, 1))
+
+    mask = CenterField(grid)
+    set!(mask, ext.boundary_relaxation_mask(grid, width))
+    m = Array(interior(mask, :, :, 1))
+    half_cell = ext.SmoothStepRamp()(0.5 / width)
+    @test all(isapprox(m[i, j], half_cell) for i in 1:Nx for j in (1, Ny))
+    @test all(isapprox(m[i, j], half_cell) for j in 1:Ny for i in (1, Nx))
+    @test m[Nx ÷ 2, Ny ÷ 2] == 0
+
+    box = BoundingBox(grid)
+    cpu_grid = on_architecture(CPU(), grid)
+    faces = [node(i, j, 1, cpu_grid, Face(), Face(), Center()) for i in 1:Nx+1, j in 1:Ny+1]
+    @test box.longitude == extrema(first, faces)
+    @test box.latitude  == extrema(x -> x[2], faces)
+end
+
+# The exchanger's 3-level window advances as the clock crosses parent intervals and back, with
+# finite and physical prognostics throughout.
 @testset "StateExchanger: 3-level window cycles across parent intervals on $(arch)" for arch in test_architectures
     ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
 
@@ -508,20 +688,22 @@ end
 
     # reconstruct_parent_state reads the parent's FULL-memory fields, not the windowed levels: with the
     # window parked forward, a reconstruction at t = 0 still recovers the parent's t = 0 state
-    # (θˡⁱ = T (pˢᵗ/p)^κ with T = 280 + t, condensate-free), proving no residency aliasing.
+    # (T = 280 + t, condensate-free), proving no residency aliasing.
+    #
+    # Condensate-free is not dry: qᵛ = 0.005 makes Rᵐ/cᵖᵐ differ from Rᵈ/cᵖᵈ by ≈0.02 K here.
     reconstruct = NumericalEarth.NestedModels.reconstruct_parent_state
-    κ = dry_air_gas_constant(constants) / constants.dry_air.heat_capacity
+    θˡⁱ_of(T) = with_temperature(LiquidIcePotentialTemperatureState(0.0, MoistureMassFractions(0.005),
+                                                                    1e5, 9.0e4), T, constants).potential_temperature
     exchange(exchanger, 2.5)                                    # park the window forward
     θ₀ = Array(interior(reconstruct(exchanger, 0.0).θˡⁱ))
     θ₃ = Array(interior(reconstruct(exchanger, 3.0).θˡⁱ))
-    @test all(θ₀ .≈ 280 * (1e5 / 9e4)^κ)
-    @test all(θ₃ .≈ 283 * (1e5 / 9e4)^κ)
+    @test all(θ₀ .≈ θˡⁱ_of(280.0))
+    @test all(θ₃ .≈ θˡⁱ_of(283.0))
 end
 
-# Every liquid/ice hydrometeor the parent carries — cloud liquid + rain, cloud ice + snow — is mass that
-# is NOT dry gas, so it must load the density through Breeze's mixture gas constant (ρ = p / (Rᵐ T),
-# Rᵐ = (1 − qᵗ) Rᵈ + qᵛ Rᵛ) and enter qᵗ. Verifies both the kernel prognostics (`ρᵈ`) and the
-# `breeze_prognostic_state` broadcast path (`reconstruct_parent_state`) sum ALL hydrometeors, not just cloud.
+# Every liquid and ice hydrometeor the parent carries — cloud liquid and rain, cloud ice and snow —
+# is mass that is not dry gas, so it loads the density through the mixture gas constant
+# (ρ = p / (Rᵐ T), Rᵐ = (1 − qᵗ) Rᵈ + qᵛ Rᵛ) and enters qᵗ.
 @testset "StateExchanger: cloud + precipitation load the density on $(arch)" for arch in test_architectures
     ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
     reconstruct = NumericalEarth.NestedModels.reconstruct_parent_state
@@ -619,7 +801,7 @@ end
     full = ext.state_exchanger(parent_for_exchanger_equivalence(), 1.0e5, constants; condensates,
                                time_indices_in_memory = 7)
     exchange = NumericalEarth.NestedModels.exchange_state!
-    field_names = (:ρᵈ, :ρθ, :ρqᵛ, :ρu, :ρv)
+    field_names = (:ρᵈ, :ρθ, :ρqᵛᵉ, :ρu, :ρv)
     indices = ((1, 1, 1), (2, 2, 2), (8, 8, 4))
 
     for step_end_time in (0.5, 1.1, 2.1, 3.1, 4.1, 5.1)
@@ -641,14 +823,9 @@ end
     end
 end
 
-# Temporal-seam correctness of the ON-THE-FLY (windowed FTS) interpolation the child's boundary
-# conditions + Davies relaxation actually query. `NestedModel.time_step!` refreshes the exchanger at the
-# step END (`t + Δt`), so on a step that CROSSES a parent node the derived 2-level window sits at
-# `[node, node+1]` while the child's start-of-step sub-stages sample at `t < node` — a start-side query
-# one interval BELOW the resident window. That query must return FINITE, PHYSICAL values (a clean
-# extrapolation/clamp toward the window edge), NOT window-eviction/wrap garbage. This is the exact
-# hourly-seam the ERA5 nest crosses every hour; the reconstruct_parent_state test above covers the
-# full-memory diagnostic path, but the RUNTIME path is the windowed `fts[Time(t)]` probed here.
+# The exchanger refreshes at the end of a step, so on a step that crosses a parent node the child's
+# start-of-step sub-stages query the window one interval below its resident levels. Such a query must
+# return finite, physical values.
 @testset "StateExchanger: windowed query across a parent node is finite + physical on $(arch)" for arch in test_architectures
     ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
 
@@ -666,8 +843,10 @@ end
     exchanger = ext.state_exchanger(parent, 1.0e5, constants; condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
     prog      = exchanger.prognostic
     exchange  = NumericalEarth.NestedModels.exchange_state!
-    κ = dry_air_gas_constant(constants) / constants.dry_air.heat_capacity
-    θtrue(t) = (280 + 5t) * (1e5 / 9e4)^κ
+    # Condensate-free but moist (qᵛ = 0.005): θˡⁱ carries the mixture exponent Rᵐ/cᵖᵐ.
+    θtrue(t) = with_temperature(LiquidIcePotentialTemperatureState(0.0, MoistureMassFractions(0.005),
+                                                                   1e5, 9.0e4),
+                                280 + 5t, constants).potential_temperature
 
     # Baseline: an in-window query is correct.
     exchange(exchanger, 0.5)                                    # bracket n₁ = 1 ⇒ start = 1 (levels 1,2,3)
@@ -675,10 +854,8 @@ end
     θin = Array(interior(prog.ρθ[Time(0.5)])) ./ Array(interior(prog.ρᵈ[Time(0.5)]))
     @test all(isapprox.(θin, θtrue(0.5); rtol = 1e-4))
 
-    # CROSSING STEP over the node at t = 2.0: bracket t+Δt = 2.1 ⇒ window advances to start = 2 (resident
-    # levels 2,3,4 = times [1,2,3]). The child's start-of-step query at t = 1.9 (< node) sits one interval
-    # BELOW where a 2-level window would sit — with a 2-level window that read a stale/wrong target (the
-    # hourly-seam kick); the 3-level window keeps [1.9's bracket] resident so the target stays correct.
+    # Crossing the node at t = 2: the window advances to start = 2 (times [1, 2, 3]), so the child's
+    # start-of-step query at t = 1.9 still falls inside the resident levels.
     exchange(exchanger, 2.1)
     @test prog.ρᵈ.backend.start == 2
 
@@ -689,17 +866,12 @@ end
     @test all(0.05 .< ρdq .< 2.0)               # physical dry density (not a stale/aliased value)
     θq = ρθq ./ ρdq
     @test all(250 .< θq .< 400)                 # physical θ
-    @test all(isapprox.(θq, θtrue(1.9); rtol = 1e-4))   # linear-in-t ⇒ exact; a stale target would miss by ~5 K
+    @test all(isapprox.(θq, θtrue(1.9); rtol = 1e-4))   # linear in t ⇒ exact
 end
 
-# End-to-end guard for the moving-window fix: step the FULL coupled Breeze child across a derived-window
-# MOVE and assert its prognostics stay finite. The exchanger/`memory_index` @testsets above check the
-# derived FTS in isolation; this exercises the RUNTIME path that actually broke — the child's BC + Davies
-# forcing kernels reading the derived FTS elementwise while the window rolls `start` 1→2 mid-run. A uniform
-# synthetic parent with short (4 s) node spacing reaches the move (crossing node #3 at t = 8 s) in a few
-# acoustically-stable steps; the move is what triggered the blow-up, not the parent's data, so the minimal
-# parent reproduces it. Pre-fix (generic cyclic `memory_index` indexing past the window's storage) the
-# child NaNs the step `start` advances 1→2 (`InexactError: Int64(NaN)`).
+# The full coupled Breeze child steps across a window move and its prognostics stay finite. A uniform
+# synthetic parent with 4 s node spacing reaches the move (crossing node 3 at t = 8 s) in a few
+# acoustically stable steps.
 @testset "Nested child survives a derived-window move (moving-window regression) on $(arch)" for arch in test_architectures
     ext   = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
     times = [0.0, 4.0, 8.0, 12.0, 16.0]        # 5 levels ⇒ the 3-level window moves when crossing node #3
@@ -723,7 +895,7 @@ end
     # Default microphysics: with CloudMicrophysics unloaded (as in the test env) this is the Breeze-native
     # `SaturationAdjustment(WarmPhaseEquilibrium())` — no extra dependency needed to exercise the seam.
     model = nested_atmosphere_model(parent, child_grid;
-                relaxation_rate = 1/300, relaxation_width = 3, surface_pressure = 1e5,
+                relaxation_rate = 1/300, relaxation_width = 3, base_pressure = 1e5,
                 coriolis = nothing, terrain = nothing, parent_condensates = nothing)
     ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false)
 
@@ -738,10 +910,42 @@ end
     end
 end
 
-# The parent→child terrain blend is specified as a PHYSICAL length (`terrain_blend_length`, meters) and
-# converted to a cell count per grid. A fixed cell count would steepen the blend slope ~1/Δx as resolution
-# increases (which regenerates spurious vertical momentum aloft at high resolution); deriving cells from a
-# physical length keeps the transition slope resolution-invariant — so a 4×-finer grid gets ~4× the cells.
+# Over terrain, the child's initial u and v match a sheared parent at each face's physical height.
+@testset "Nested child over terrain initializes u, v at their physical face heights on $(arch)" for arch in test_architectures
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    parent_u(z) = 8 + 2e-3 * z
+    parent_v(z) = -3 + 1e-3 * z
+
+    parent_grid = LatitudeLongitudeGrid(arch; size = (12, 12, 32),
+                                        longitude = (-2, 2), latitude = (34.6, 38.6),
+                                        z = (0, 16000), halo = (5, 5, 5),
+                                        topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(parent_grid, [0.0, 4.0])
+    set!(parent.temperature,       (λ, φ, z, t) -> 288 - 6.5e-3 * z)
+    set!(parent.specific_humidity, (λ, φ, z, t) -> 0.006)
+    set!(parent.velocities.u,      (λ, φ, z, t) -> parent_u(z))
+    set!(parent.velocities.v,      (λ, φ, z, t) -> parent_v(z))
+    set!(parent.pressure,          (λ, φ, z, t) -> 1e5 * exp(-z / 8000))
+
+    z = TerrainFollowingVerticalDiscretization(collect(range(0, 16000, length = 17)))
+    child_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 16),
+                                       longitude = (-1, 1), latitude = (35.6, 37.6), z,
+                                       halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+    terrain = Field{Center, Center, Nothing}(child_grid)
+    set!(terrain, (λ, φ) -> 1000 * exp(-(λ^2 + (φ - 36.6)^2) / 0.25))
+
+    model = nested_atmosphere_model(parent, child_grid; terrain, terrain_smoothing_passes = 0,
+                                    base_pressure = 1e5, coriolis = nothing, parent_condensates = nothing)
+    ext.initialize_nested_child!(model, nothing, 0.0, ""; balancer = false)
+
+    expected_u = XFaceField(child_grid); set!(expected_u, (λ, φ, z) -> parent_u(z))
+    expected_v = YFaceField(child_grid); set!(expected_v, (λ, φ, z) -> parent_v(z))
+    @test maximum(abs, Array(interior(model.child.velocities.u)) .- Array(interior(expected_u))) < 0.05
+    @test maximum(abs, Array(interior(model.child.velocities.v)) .- Array(interior(expected_v))) < 0.05
+end
+
+# `terrain_blend_length` is a physical length converted to a cell count per grid, so the blend slope is
+# resolution-invariant: a 4×-finer grid gets ~4× the cells.
 @testset "default_terrain_blend_width: physical length gives a resolution-invariant slope" begin
     ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
     lon, lat = (-98.8, -96.2), (35.4, 37.8)
@@ -758,4 +962,89 @@ end
     Δxf = minimum_xspacing(fine,   Center(), Center(), Center())
     @test isapprox(wc * Δxc, 60_000; rtol = 0.2)
     @test isapprox(wf * Δxf, 60_000; rtol = 0.2)
+end
+
+# Strips cut from the same parent drive the child exactly as the full-domain parent does.
+@testset "BoundaryPrescribedComponent strips reproduce the full-domain parent on $(arch)" for arch in test_architectures
+    ext   = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    times = [0.0, 4.0, 8.0, 12.0, 16.0]
+
+    function parent_atmosphere(longitude, latitude, Nx, Ny, times = times)
+        grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny, 8), longitude, latitude, z = (0, 16000),
+                                     halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+        atmosphere = PrescribedAtmosphere(grid, times)
+        set!(atmosphere.temperature,       (λ, φ, z, t) -> 288 - 6.5e-3 * z + λ + t / 4)
+        set!(atmosphere.specific_humidity, (λ, φ, z, t) -> 0.006)
+        set!(atmosphere.velocities.u,      (λ, φ, z, t) -> 8 + t / 10)
+        set!(atmosphere.velocities.v,      (λ, φ, z, t) -> φ - 36.6)
+        set!(atmosphere.pressure,          (λ, φ, z, t) -> 1e5 * exp(-z / 8000))
+        return atmosphere
+    end
+
+    # Each strip is a sub-window of the full parent's 1/3° lattice.
+    full = parent_atmosphere((-2, 2), (34.6, 38.6), 12, 12)
+    strips = BoundaryPrescribedComponent(west  = parent_atmosphere((-2, 0), (34.6, 38.6), 6, 12),
+                                         east  = parent_atmosphere((0, 2),  (34.6, 38.6), 6, 12),
+                                         south = parent_atmosphere((-2, 2), (34.6, 36.6), 12, 6),
+                                         north = parent_atmosphere((-2, 2), (36.6, 38.6), 12, 6))
+
+    child_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 8),
+                                       longitude = (-1, 1), latitude = (35.6, 37.6),
+                                       z = (0, 16000), halo = (5, 5, 5),
+                                       topology = (Bounded, Bounded, Bounded))
+
+    nest(parent, relaxation_rate) = nested_atmosphere_model(parent, child_grid; relaxation_rate, relaxation_width = 3,
+                                                            base_pressure = 1e5, coriolis = nothing,
+                                                            parent_condensates = nothing)
+    full_model      = nest(full, 1/30)
+    strip_model     = nest(strips, 1/30)
+    unrelaxed_model = nest(full, nothing)
+
+    # The strip child starts from a one-time full-domain snapshot, as the dataset-driven constructor does.
+    snapshot = parent_atmosphere((-2, 2), (34.6, 38.6), 12, 12, times[1:1])
+    initial_states = (full_model.exchanger.prognostic,
+                      ext.child_prognostic_state(snapshot, first(strip_model.exchanger)),
+                      unrelaxed_model.exchanger.prognostic)
+
+    for (model, prognostic) in zip((full_model, strip_model, unrelaxed_model), initial_states)
+        ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false, prognostic)
+        for _ in 1:8
+            time_step!(model, 0.5)
+        end
+    end
+
+    for (name, full_field) in pairs(prognostic_fields(full_model.child))
+        difference(model) = maximum(abs, Field(prognostic_fields(model.child)[name] - full_field))
+        scale = maximum(abs, full_field)
+        @test difference(strip_model) ≤ 1e-12 * scale
+        name in (:ρθ, :ρu, :ρv) && @test difference(unrelaxed_model) > 1e-6 * scale
+    end
+
+    # Running the strip child in two `run!` calls reproduces its continuous run.
+    rerun_model = nest(strips, 1/30)
+    ext.initialize_nested_child!(rerun_model, nothing, first(times), ""; balancer = false, prognostic = initial_states[2])
+    simulation = Simulation(rerun_model; Δt = 0.5, stop_iteration = 4, verbose = false)
+    run!(simulation)
+    simulation.stop_iteration = 8
+    run!(simulation)
+
+    for (name, field) in pairs(prognostic_fields(strip_model.child))
+        @test maximum(abs, Field(prognostic_fields(rerun_model.child)[name] - field)) == 0
+    end
+end
+
+@testset "StateExchanger: a single-time parent fills its derived state on $(arch)" for arch in test_architectures
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    grid = LatitudeLongitudeGrid(arch; size = (6, 6, 4), longitude = (-2, 2), latitude = (34, 38), z = (0, 16000),
+                                 halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(grid, [0.0])
+    set!(parent.temperature,       (λ, φ, z, t) -> 288 - 6.5e-3 * z)
+    set!(parent.specific_humidity, (λ, φ, z, t) -> 0.006)
+    set!(parent.velocities.u,      (λ, φ, z, t) -> 8)
+    set!(parent.velocities.v,      (λ, φ, z, t) -> 1)
+    set!(parent.pressure,          (λ, φ, z, t) -> 1e5 * exp(-z / 8000))
+
+    exchanger = ext.state_exchanger(parent, 1e5, ThermodynamicConstants(); condensates = nothing)
+    ρᵈ = Array(interior(exchanger.prognostic.ρᵈ[1]))
+    @test all(isfinite, ρᵈ) && all(>(0), ρᵈ)
 end
