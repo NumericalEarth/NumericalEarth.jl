@@ -118,6 +118,7 @@ export
     regrid_topography,
     regrid_ocean_fraction,
     smooth_topography!,
+    connect_basins!,
     Metadata, Metadatum, MetadataSet,
     BoundingBox,
     Column, Linear, Nearest,
@@ -132,6 +133,7 @@ export
     ASTERGEDv3, ASTERGEDHigh100m, ASTERGEDLow1km,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
     ESAWorldCover, WorldCoverV100, WorldCoverV200,
+    MCD15A2H, MCD12Q1, MODISLAIClimatology, build_lai_climatology!,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
@@ -298,6 +300,7 @@ using .DataWrangling.CopernicusLandAlbedo
 using .DataWrangling.OpenLandMap
 using .DataWrangling.GloBFP3D
 using .DataWrangling.GHSL
+using .DataWrangling.MODISLand
 using .DataWrangling.WorldCover
 
 using PrecompileTools: @setup_workload, @compile_workload
