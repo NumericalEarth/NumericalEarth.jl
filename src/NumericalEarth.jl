@@ -60,6 +60,8 @@ export
     SlabOcean,
     PrescribedOcean,
     TimeInterpolatedPotential,
+    ScalarSelfAttractionAndLoading,
+    SphericalHarmonicSelfAttractionAndLoading,
     TwoColorRadiation,
     ChlorophyllOptics,
     absorption_coefficient,
