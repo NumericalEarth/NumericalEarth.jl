@@ -65,6 +65,7 @@ export
     equivalent_chlorophyll,
     PrescribedRadiation,
     PrescribedAtmosphere,
+    BoundaryPrescribedComponent,
     PrescribedLand,
     ECCOPrescribedRadiation,
     JRA55PrescribedRadiation,
@@ -88,6 +89,7 @@ export
     MomentumRoughnessLength,
     ScalarRoughnessLength,
     ComponentInterfaces,
+    SurfacePartition,
     SkinTemperature,
     BulkTemperature,
     DiffusiveFlux,
@@ -114,7 +116,9 @@ export
     surface_layer_diagnostics,
     regrid_bathymetry,
     regrid_topography,
+    regrid_ocean_fraction,
     smooth_topography!,
+    connect_basins!,
     Metadata, Metadatum, MetadataSet,
     BoundingBox,
     Column, Linear, Nearest,
@@ -129,6 +133,7 @@ export
     ASTERGEDv3, ASTERGEDHigh100m, ASTERGEDLow1km,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
     ESAWorldCover, WorldCoverV100, WorldCoverV200,
+    MCD15A2H, MCD12Q1, MODISLAIClimatology, build_lai_climatology!,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
@@ -140,12 +145,14 @@ export
     OpenLandMapSoilDB,
     SoilGrids2,
     GlobalBuildingFootprints3D, building_morphometry,
-    GHSBuiltH, GHSBuiltS, GHSBuiltS10m, GHSBuiltS100m,
+    GHSBuiltH, GHSBuiltS, GHSBuiltS10m, GHSBuiltS100m, GHSBuilt,
     first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,
     DatasetRestoring,
     atmosphere_model,
     atmosphere_simulation,
+    land_model,
+    land_simulation,
     breeze_prognostic_state,
     hydrostatic_pressure_from_surface,
     ocean_simulation,
@@ -290,6 +297,7 @@ using .DataWrangling.CopernicusLandAlbedo
 using .DataWrangling.OpenLandMap
 using .DataWrangling.GloBFP3D
 using .DataWrangling.GHSL
+using .DataWrangling.MODISLand
 using .DataWrangling.WorldCover
 
 using PrecompileTools: @setup_workload, @compile_workload
