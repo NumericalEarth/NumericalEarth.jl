@@ -288,6 +288,7 @@ end
                                  implicit_bottom_drag = true,
                                  forcing = NamedTuple(),
                                  barotropic_potential = TimeInterpolatedPotential(grid, clock),
+                                 self_attraction_and_loading = nothing,
                                  additional_surface_fluxes = NamedTuple(),
                                  freshwater_tracer_content = NamedTuple(),
                                  surface_exchanged_tracers = (),
@@ -377,6 +378,10 @@ override the defaults on a per-field basis.
   by a coupled model, a function `Φ(x, y, t)` (e.g. a tidal potential, with `(λ, φ)` on spherical grids),
   a `Field`, a tuple of these whose sum is the potential, or `nothing`.
   Default: `TimeInterpolatedPotential(grid, clock)`.
+- `self_attraction_and_loading`: `nothing`, [`ScalarSelfAttractionAndLoading`](@ref), which reduces the
+  gravitational acceleration of the free surface by `1 - β`, or [`SphericalHarmonicSelfAttractionAndLoading`](@ref),
+  whose potential is added to `barotropic_potential` and updated from the bottom pressure every time the state is updated.
+  Default: `nothing`.
 - `additional_surface_fluxes`: Named tuple of additional top boundary flux conditions (e.g. `(; S=SurfaceFluxRestoring(...))`) for any field (`u`, `v`, or any tracer).
 - `freshwater_tracer_content`: Named tuple giving, per tracer, the concentration carried into that
   tracer by the net freshwater volume flux (e.g. `Σᵢ cᵢ Jʷᵢ`). Defaults to `ZeroField()` for every
@@ -418,6 +423,7 @@ function hydrostatic_ocean_simulation(grid;
                                       implicit_bottom_drag = true,
                                       forcing = NamedTuple(),
                                       barotropic_potential = TimeInterpolatedPotential(grid, clock),
+                                      self_attraction_and_loading = nothing,
                                       additional_surface_fluxes = NamedTuple(),
                                       freshwater_tracer_content::NamedTuple = NamedTuple(),
                                       biogeochemistry = nothing,
@@ -485,6 +491,8 @@ function hydrostatic_ocean_simulation(grid;
         u_immersed_bc = ImmersedBoundaryCondition(bottom = bottom_drag_bc(u_immersed_drag_coefficient, u_immersed_bottom_drag, drag_parameters, implicit_bottom_drag))
         v_immersed_bc = ImmersedBoundaryCondition(bottom = bottom_drag_bc(v_immersed_drag_coefficient, v_immersed_bottom_drag, drag_parameters, implicit_bottom_drag))
 
+        barotropic_potential = self_attraction_and_loading_potential(barotropic_potential, self_attraction_and_loading)
+
         if !isnothing(barotropic_potential)
             u_forcing = BarotropicPotentialForcing(XDirection(), barotropic_potential)
             v_forcing = BarotropicPotentialForcing(YDirection(), barotropic_potential)
@@ -516,6 +524,8 @@ function hydrostatic_ocean_simulation(grid;
 
     implicit_zonal_momentum_coefficient      = λˣ = Field{Face, Center, Nothing}(grid)
     implicit_meridional_momentum_coefficient = λʸ = Field{Center, Face, Nothing}(grid)
+
+    free_surface = self_attraction_and_loading_free_surface(free_surface, self_attraction_and_loading)
 
     TX, TY, _ = topology(grid)
     η_grid = if free_surface isa SplitExplicitFreeSurface
@@ -597,6 +607,7 @@ function hydrostatic_ocean_simulation(grid;
                                               boundary_conditions)
 
     ocean = Simulation(ocean_model; Δt, stop_time, verbose)
+    add_self_attraction_and_loading_callback!(ocean, self_attraction_and_loading)
 
     return ocean
 end
