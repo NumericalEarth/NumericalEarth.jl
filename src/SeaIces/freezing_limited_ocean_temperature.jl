@@ -1,7 +1,7 @@
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, LinearLiquidus
 using Oceananigans.Operators: Δzᶜᶜᶜ
 
-using ..EarthSystemModels: EarthSystemModels, EarthSystemModel, NoSeaIceInterface
+using ..EarthSystemModels: EarthSystemModels, EarthSystemModel, NoSeaIceInterface, prognostic_model
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations
 
 #####
@@ -28,7 +28,7 @@ FreezingLimitedOceanTemperature(FT::DataType=Oceananigans.defaults.FloatType; li
 const FreezingLimitedEarthSystemModel = EarthSystemModel{R, A, L, <:FreezingLimitedOceanTemperature, O, <:NoSeaIceInterface} where {R, A, L, O}
 
 function EarthSystemModels.materialize_sea_ice!(sea_ice::FreezingLimitedOceanTemperature, ocean)
-    frazil_heat = Field{Center, Center, Nothing}(ocean.model.grid)
+    frazil_heat = Field{Center, Center, Nothing}(prognostic_model(ocean).grid)
     return FreezingLimitedOceanTemperature(sea_ice.liquidus, frazil_heat)
 end
 
@@ -64,7 +64,7 @@ const OnlyAtmospherewithFreezingLimited = EarthSystemModel{<:Any, <:Any,     <:A
 const SingleComponentPlusFreezingLimited = Union{OnlyAtmospherewithFreezingLimited, OnlyOceanwithFreezingLimited}
 
 # Also for the ocean nothing really happens here
-EarthSystemModels.update_net_fluxes!(::SingleComponentPlusFreezingLimited, ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = nothing
+EarthSystemModels.update_net_fluxes!(::SingleComponentPlusFreezingLimited, ocean::HydrostaticFreeSurfaceModel) = nothing
 
 # No need to compute fluxes for this "sea ice model"
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(cm::FreezingLimitedEarthSystemModel) = nothing
@@ -75,17 +75,18 @@ function InterfaceComputations.compute_sea_ice_ocean_fluxes!(cm::FreezingLimited
     sea_ice = cm.sea_ice
     liquidus = sea_ice.liquidus
     𝒬ᶠʳᶻ = sea_ice.frazil_heat
-    grid = ocean.model.grid
+    ocean_model = prognostic_model(ocean)
+    grid = ocean_model.grid
     arch = architecture(grid)
-    Sᵒᶜ = ocean.model.tracers.S
-    Tᵒᶜ = ocean.model.tracers.T
+    Sᵒᶜ = ocean_model.tracers.S
+    Tᵒᶜ = ocean_model.tracers.T
     Δt = ocean.Δt
     ocean_properties = cm.interfaces.ocean_properties
     ρᵒᶜ = ocean_properties.reference_density
     cᵒᶜ = ocean_properties.heat_capacity
 
-    # Guard for ocean.model.clock.iteration == 0
-    Δt_frazil = ifelse(ocean.model.clock.iteration == 0, convert(typeof(Δt), Inf), Δt)
+    # Guard for the first iteration
+    Δt_frazil = ifelse(ocean_model.clock.iteration == 0, convert(typeof(Δt), Inf), Δt)
 
     launch!(arch, grid, :xy, _freeze_ocean_temperature!, 𝒬ᶠʳᶻ, Tᵒᶜ, Sᵒᶜ, liquidus, grid, ρᵒᶜ, cᵒᶜ, Δt_frazil)
 

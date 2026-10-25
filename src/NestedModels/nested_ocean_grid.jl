@@ -11,6 +11,12 @@
 # fixed when the `ImmersedBoundaryGrid` is built — `compute_numerical_bottom_height!` snaps the bottom to
 # cell interfaces there — so by the time a model receives its grid the blend is already too late.
 
+using Oceananigans.ImmersedBoundaries: GridFittedBottom
+
+using ..Bathymetry: bathymetry_from_missing_values, regrid_bathymetry
+using ..DataWrangling: Metadatum
+using ..DataWrangling.ETOPO: ETOPO2022
+
 """
 $(TYPEDSIGNATURES)
 

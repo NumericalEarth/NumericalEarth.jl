@@ -15,15 +15,15 @@ using NumericalEarth.EarthSystemModels: AbstractPrescribedComponent
                     temperature = default_prescribed_temperature(grid, times),
                     salinity = default_prescribed_salinity(grid, times),
                     velocities = default_prescribed_velocities(grid, times),
-                    free_surface = nothing)
+                    free_surface = default_prescribed_free_surface(grid, times))
 
 A prescribed ocean component with temperature, salinity, velocities and (optionally) free surface
-prescribed as `FieldTimeSeries`.
+prescribed as `FieldTimeSeries`. By default these are surface fields on a single-level `grid` and
+volumetric fields (with a free surface) when `grid` resolves the vertical.
 
 The ocean state does not evolve in response to surface fluxes — it follows the prescribed data.
 As an `EarthSystemModel` component, surface fluxes are still computed so the atmosphere feels the
-ocean. The series may be surface fields (e.g. sea surface temperature, the default) or volumetric
-fields, in which case the surface is their top level; a volumetric `PrescribedOcean` (see
+ocean; the surface of a volumetric series is its top level. A volumetric `PrescribedOcean` (see
 `PrescribedOcean(region, dates, dataset)`) can also drive a regional ocean as the parent of
 [`nested_ocean_model`](@ref).
 
@@ -42,7 +42,8 @@ Keyword Arguments
 - `temperature`: `FieldTimeSeries` for the (sea surface or volumetric) temperature.
 - `salinity`: `FieldTimeSeries` for the (sea surface or volumetric) salinity.
 - `velocities`: `NamedTuple` of `FieldTimeSeries` for `(u, v)`.
-- `free_surface`: `FieldTimeSeries` for the sea surface height, or `nothing`. Default: `nothing`.
+- `free_surface`: `FieldTimeSeries` for the sea surface height, or `nothing`. Default: a series when
+  `grid` is volumetric, `nothing` otherwise.
 """
 mutable struct PrescribedOcean{FT, G, C, T, S, U, E, TI, R, HC} <: AbstractPrescribedComponent
     grid :: G
@@ -60,21 +61,32 @@ mutable struct PrescribedOcean{FT, G, C, T, S, U, E, TI, R, HC} <: AbstractPresc
     end
 end
 
+# A single-level grid (even one with a `Bounded` z, like an ocean coupling grid) carries surface fields;
+# a resolved vertical carries volumetric ones, such as the parent of a nested ocean.
+prescribed_ocean_location(grid) = (Center, Center, size(grid, 3) > 1 ? Center : Nothing)
+
 function default_prescribed_temperature(grid, times)
-    return FieldTimeSeries{Center, Center, Nothing}(grid, times)
+    LX, LY, LZ = prescribed_ocean_location(grid)
+    return FieldTimeSeries{LX, LY, LZ}(grid, times)
 end
 
 function default_prescribed_salinity(grid, times)
-    S = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+    LX, LY, LZ = prescribed_ocean_location(grid)
+    S = FieldTimeSeries{LX, LY, LZ}(grid, times)
     parent(S) .= 35
     return S
 end
 
 function default_prescribed_velocities(grid, times)
-    u = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    v = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+    LX, LY, LZ = prescribed_ocean_location(grid)
+    u = FieldTimeSeries{LX, LY, LZ}(grid, times)
+    v = FieldTimeSeries{LX, LY, LZ}(grid, times)
     return (; u, v)
 end
+
+# Only a volumetric ocean, which may parent a nest, needs its free surface.
+default_prescribed_free_surface(grid, times) =
+    size(grid, 3) > 1 ? FieldTimeSeries{Center, Center, Nothing}(grid, times) : nothing
 
 function PrescribedOcean(grid, times=[zero(grid)];
                          FT = eltype(grid),
@@ -84,7 +96,7 @@ function PrescribedOcean(grid, times=[zero(grid)];
                          temperature = default_prescribed_temperature(grid, times),
                          salinity = default_prescribed_salinity(grid, times),
                          velocities = default_prescribed_velocities(grid, times),
-                         free_surface = nothing)
+                         free_surface = default_prescribed_free_surface(grid, times))
 
     ocean = PrescribedOcean{FT}(grid,
                                 clock,
@@ -103,11 +115,12 @@ end
 
 Grids.grid(ocean::PrescribedOcean) = ocean.grid
 
-function Oceananigans.set!(ocean::PrescribedOcean; T=nothing, S=nothing, u=nothing, v=nothing)
+function Oceananigans.set!(ocean::PrescribedOcean; T=nothing, S=nothing, u=nothing, v=nothing, η=nothing)
     !isnothing(T) && set!(ocean.temperature, T)
     !isnothing(S) && set!(ocean.salinity, S)
     !isnothing(u) && set!(ocean.velocities.u, u)
     !isnothing(v) && set!(ocean.velocities.v, v)
+    !isnothing(η) && set!(ocean.free_surface, η)
     fill_prescribed_halo_regions!(ocean)
     return nothing
 end
@@ -120,8 +133,12 @@ function fill_prescribed_halo_regions!(ocean::PrescribedOcean)
     fill_halo_regions!(ocean.salinity)
     fill_halo_regions!(ocean.velocities.u)
     fill_halo_regions!(ocean.velocities.v)
+    fill_prescribed_free_surface_halo_regions!(ocean.free_surface)
     return nothing
 end
+
+fill_prescribed_free_surface_halo_regions!(η) = fill_halo_regions!(η)
+fill_prescribed_free_surface_halo_regions!(::Nothing) = nothing
 
 function Base.summary(ocean::PrescribedOcean{FT}) where FT
     A = nameof(typeof(architecture(ocean.grid)))

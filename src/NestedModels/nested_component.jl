@@ -32,6 +32,24 @@ InterfaceComputations.net_fluxes(nm::NestedModel) = InterfaceComputations.net_fl
 EarthSystemModels.update_net_fluxes!(coupled_model, nm::NestedModel) =
     EarthSystemModels.update_net_fluxes!(coupled_model, nm.child)
 
+EarthSystemModels.prognostic_model(nm::NestedModel) = nm.child
+
+# The ocean interface: a nested ocean couples like its child.
+for f in (:is_sea_ice_component, :reference_density, :heat_capacity,
+          :ocean_temperature, :ocean_salinity,
+          :ocean_surface_temperature, :ocean_surface_salinity, :ocean_surface_velocities)
+    @eval EarthSystemModels.$f(nm::NestedModel) = EarthSystemModels.$f(nm.child)
+    @eval EarthSystemModels.$f(sim::NestedModelSimulation) = EarthSystemModels.$f(component_model(sim))
+end
+
+EarthSystemModels.surface_layer_velocities(nm::NestedModel, reference_depth) =
+    EarthSystemModels.surface_layer_velocities(nm.child, reference_depth)
+
+EarthSystemModels.surface_layer_velocities(sim::NestedModelSimulation, reference_depth) =
+    EarthSystemModels.surface_layer_velocities(component_model(sim), reference_depth)
+
+Oceananigans.Grids.grid(sim::NestedModelSimulation) = component_model(sim).child.grid
+
 # Simulation-wrapped delegates: unwrap once to the NestedModel.
 
 EarthSystemModels.thermodynamics_parameters(sim::NestedModelSimulation) =

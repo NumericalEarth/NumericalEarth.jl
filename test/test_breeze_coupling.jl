@@ -99,7 +99,7 @@ function build_partition_test_model(arch; ocean_fraction, ocean_times=nothing, s
     else
         ocean = PrescribedOcean(surface_grid, ocean_times)
         for (n, T) in enumerate(sea_surface_temperatures)
-            interior(ocean.sea_surface_temperature[n]) .= T
+            interior(ocean.temperature[n]) .= T
         end
     end
 

@@ -19,7 +19,6 @@ using Oceananigans.Utils: Utils, prettysummary, launch!
 using Thermodynamics.Parameters: AbstractThermodynamicsParameters
 
 using ...NumericalEarth: NumericalEarth
-using ..Grids: is_three_dimensional
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, set_prescribed_field!
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger, _compute_fractional_indices!
 

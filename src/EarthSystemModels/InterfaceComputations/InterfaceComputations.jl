@@ -62,7 +62,8 @@ using ..EarthSystemModels: EarthSystemModels,
                            default_latent_heat_of_fusion,
                            thermodynamics_parameters,
                            surface_layer_height,
-                           boundary_layer_height
+                           boundary_layer_height,
+                           prognostic_model
 
 using ...NumericalEarth: NumericalEarth, stateindex
 

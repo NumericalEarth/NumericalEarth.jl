@@ -14,7 +14,7 @@ const synthetic_data_directory = mktempdir()
 struct SyntheticBathymetry <: AbstractStaticBathymetry end
 
 abstract type SyntheticDataset end
-struct SyntheticOcean <: SyntheticDataset end      # 3-D `:temperature` and `:salinity`
+struct SyntheticOcean <: SyntheticDataset end      # 3-D `:temperature`, `:salinity`, `:u_velocity`, `:v_velocity`; 2-D `:free_surface`
 struct SyntheticAtmosphere <: SyntheticDataset end # 2-D fields named as in JRA55
 
 const Synthetic = Union{SyntheticBathymetry, SyntheticDataset}
@@ -27,18 +27,22 @@ DataWrangling.dataset_variable_name(metadata::Metadata{<:Synthetic}) = string(me
 Base.size(::SyntheticBathymetry) = (36, 18, 1)
 DataWrangling.metadata_filename(::SyntheticBathymetry, name, date, region) = "synthetic_bathymetry.nc"
 
-Base.size(::SyntheticOcean, name) = (36, 18, 4)
+Base.size(::SyntheticOcean, name) = name == :free_surface ? (36, 18, 1) : (36, 18, 4)
 Base.size(::SyntheticAtmosphere, name) = (36, 18, 1)
 DataWrangling.z_interfaces(::SyntheticOcean) = (-5000, 0)
 DataWrangling.reversed_vertical_axis(::SyntheticOcean) = false
 DataWrangling.is_three_dimensional(::Metadata{<:SyntheticAtmosphere}) = false
+DataWrangling.is_three_dimensional(metadata::Metadata{<:SyntheticOcean}) = metadata.name != :free_surface
+DataWrangling.dataset_location(::SyntheticOcean, name) = name == :free_surface ? (Center, Center, Nothing) : (Center, Center, Center)
 DataWrangling.all_dates(::SyntheticDataset, name) = DateTime(2000, 1, 1):Month(1):DateTime(2000, 12, 1)
 
-DataWrangling.metadata_filename(::SyntheticDataset, name, date, region) =
-    string("synthetic_", name, "_", year(date), "_", lpad(month(date), 2, '0'), ".nc")
+# Named by dataset too: the ocean and the atmosphere share variable names (e.g. `temperature`).
+DataWrangling.metadata_filename(dataset::SyntheticDataset, name, date, region) =
+    string(nameof(typeof(dataset)), "_", name, "_", year(date), "_", lpad(month(date), 2, '0'), ".nc")
 
+# One file serves every region, but the inpainted data is the region's own.
 DataWrangling.inpainted_metadata_path(metadata::Metadatum{<:SyntheticDataset}) =
-    joinpath(metadata.dir, replace(metadata.filename, ".nc" => "_inpainted.jld2"))
+    joinpath(metadata.dir, replace(metadata.filename, ".nc" => string("_", hash(metadata.region), "_inpainted.jld2")))
 
 # A continent across the equator, a south polar cap, and land under the two north poles of the
 # default `TripolarGrid` (55°N at 70°E and 110°W)
@@ -49,6 +53,9 @@ synthetic_value(::SyntheticBathymetry, name, λ, φ, z) = synthetic_land(λ, φ)
 
 function synthetic_value(::SyntheticOcean, name, λ, φ, z)
     synthetic_land(λ, φ) && return NaN
+    name == :u_velocity && return 0.1
+    name == :v_velocity && return -0.05
+    name == :free_surface && return 0.2
     stratification = cosd(φ)^2 * (1 + z / 5000)
     return name == :temperature ? 2 + 20 * stratification : 34 + stratification
 end
@@ -80,7 +87,7 @@ function write_synthetic_netcdf(path, metadatum)
     grid = native_grid(Metadata(metadatum.name, metadatum.dataset, metadatum.dates, nothing, metadatum.dir))
     λ = λnodes(grid, Center())
     φ = φnodes(grid, Center())
-    three_dimensional = metadatum.dataset isa SyntheticOcean
+    three_dimensional = metadatum.dataset isa SyntheticOcean && DataWrangling.is_three_dimensional(metadatum)
     z = three_dimensional ? znodes(grid, Center()) : [0]
     data = [Float32(synthetic_value(metadatum.dataset, metadatum.name, λ[i], φ[j], z[k]))
             for i in eachindex(λ), j in eachindex(φ), k in eachindex(z)]
@@ -94,6 +101,10 @@ function write_synthetic_netcdf(path, metadatum)
             defDim(ds, "z", length(z))
             defVar(ds, "z", Float64, ("z",))[:] = z
             defVar(ds, string(metadatum.name), Float32, ("longitude", "latitude", "z"))[:, :, :] = data
+        elseif metadatum.dataset isa SyntheticOcean
+            # Surface ocean fields carry a time dimension, as in the ocean reanalyses
+            defDim(ds, "time", 1)
+            defVar(ds, string(metadatum.name), Float32, ("longitude", "latitude", "time"))[:, :, :] = data
         else
             defVar(ds, string(metadatum.name), Float32, ("longitude", "latitude"))[:, :] = data[:, :, 1]
         end

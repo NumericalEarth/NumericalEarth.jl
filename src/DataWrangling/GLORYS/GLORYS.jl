@@ -32,6 +32,7 @@ end
 abstract type GLORYSDataset end
 
 default_download_directory(::GLORYSDataset) = download_GLORYS_cache
+DataWrangling.default_horizontal_padding(::GLORYSDataset) = 1/6  # two native (1/12°) cells
 
 # This contains "static" variables -- eg the grid
 struct GLORYSStatic <: GLORYSDataset end
@@ -68,10 +69,6 @@ const GLORYSMetadatum = Metadatum{<:GLORYSDataset}
 Base.size(::GLORYSMetadatum) = (4320, 2040, 50, 1)
 
 reversed_vertical_axis(::GLORYSDataset) = true
-
-# Two native (1/12°) cells of margin, so a nested child's lateral-boundary interpolation stencils
-# stay inside the parent region.
-DataWrangling.default_horizontal_padding(::GLORYSDataset) = 1/6
 
 available_variables(::GLORYSDataset) = GLORYS_dataset_variable_names
 

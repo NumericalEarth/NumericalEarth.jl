@@ -23,11 +23,14 @@ end
 @inline surface_layer_uᶠᶜᵃ(i, j, k, grid, u, H) = surface_layer_average(i, j, k, grid, Face(), Center(), u, H)
 @inline surface_layer_vᶜᶠᵃ(i, j, k, grid, v, H) = surface_layer_average(i, j, k, grid, Center(), Face(), v, H)
 
-function EarthSystemModels.surface_layer_velocities(ocean::OceananigansModelSimulations, reference_depth)
+EarthSystemModels.surface_layer_velocities(ocean::OceananigansModelSimulations, reference_depth) =
+    EarthSystemModels.surface_layer_velocities(ocean.model, reference_depth)
+
+function EarthSystemModels.surface_layer_velocities(ocean::OceananigansOceanModels, reference_depth)
     isnothing(reference_depth) && return ocean_surface_velocities(ocean)
 
-    grid = ocean.model.grid
-    u, v = ocean.model.velocities.u, ocean.model.velocities.v
+    grid = ocean.grid
+    u, v = ocean.velocities.u, ocean.velocities.v
     H = convert(eltype(grid), reference_depth)
 
     uˢˡ = Field(KernelFunctionOperation{Face, Center, Nothing}(surface_layer_uᶠᶜᵃ, grid, u, H))

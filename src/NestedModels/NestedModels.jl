@@ -1,6 +1,6 @@
 module NestedModels
 
-export NestedModel, NestedSimulation, nested_atmosphere_model, nested_ocean_model,
+export NestedModel, NestedSimulation, nested_atmosphere_model, nested_ocean_model, nested_ocean_grid,
        parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
        exchange_state!, total_density, reconstruct_parent_state
 
@@ -49,5 +49,6 @@ include("ocean_open_boundaries.jl")
 include("ocean_boundary_relaxation.jl")
 include("ocean_boundary_exchanger.jl")
 include("nested_ocean_model.jl")
+include("nested_ocean_grid.jl")
 
 end # module NestedModels
