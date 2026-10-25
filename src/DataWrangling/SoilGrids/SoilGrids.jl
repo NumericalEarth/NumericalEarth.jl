@@ -36,10 +36,10 @@ The three ways [`SoilGrids2`](@ref) can source its data:
 
 - `Clenshaw10km`: a small preprocessed global NetCDF projected onto a standard Clenshaw-Curtis grid.
   No ArchGDAL dependency required.
-- `SoilGrids1000m`: downloads directly from ISRIC (`files.isric.org`) at 1000 m, reprojecting
+- `SoilGrids1000m`: downloads directly from ISRIC (`files.isric.org`) at 1000 m grid spacing, reprojecting
   each depth's Homolosine (IGH) VRT to EPSG:4326 with GDAL. Global by default (no region needed);
-  at 1000 m the full global 6-depth stack for one variable+statistic is ~19 GB.
-- `SoilGrids250m`: the same ISRIC-direct pipeline at native resolution. A global read at 250 m
+  at 1000 m grid spacing the full global 6-depth stack for one variable+statistic is ~19 GB.
+- `SoilGrids250m`: the same ISRIC-direct pipeline at native resolution. A global read at 250 m grid spacing
   would be ~300 GB per variable, so `SoilGrids250m` requires a bounded `region::BoundingBox`.
 
 Note that `SoilGrids1000m`/`SoilGrids250m` require `using ArchGDAL` (for the Homolosine → EPSG:4326
@@ -105,7 +105,7 @@ const SoilGrids2Metadatum = Metadatum{<:SoilGrids2}
 const clenshaw_10km_url = "https://syncandshare.lrz.de/dl/fiVMyHskjL3FNbceuUFJev/soilgrids2_clenshaw989_10km.nc"
 
 """
-    soilgrids_spacing_meters(resolution::Resolution)
+    soilgrids_pixel_size(resolution::Resolution)
 
 The native pixel size in meters of a [`Resolution`](@ref). Note that, for the postprocessed `Clenshaw10km`
 dataset, the native grid is spherical so the grid spacing in meters is only approximate.
