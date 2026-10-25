@@ -58,7 +58,7 @@ load_love_numbers(::Nothing) = read_load_love_numbers(default_load_love_numbers(
 ##### The operator
 #####
 
-struct SpectralLoadingOperator{R, V, F, S, C, W, D}
+struct SpectralLoadingOperator{R, V, F, S, C, W, D, A}
     regridder :: R           # conservative map from the ocean grid to the Gaussian grid
     gaussian_values :: V     # pᵇ on the Gaussian grid, on the ocean's architecture
     gaussian_field :: F      # pᵇ on the Gaussian grid, on the CPU
@@ -66,6 +66,7 @@ struct SpectralLoadingOperator{R, V, F, S, C, W, D}
     coefficients :: C        # spherical harmonic coefficients on the CPU
     weights :: W             # γₗ for each coefficient
     device_coefficients :: D # γₗ pᵇₗₘ on the ocean's architecture
+    recursion :: A           # Legendre recursion coefficients on the ocean's architecture
     degree :: Int            # maximum degree
 end
 
@@ -135,9 +136,28 @@ function Oceans.spherical_harmonic_loading_operator(grid::Oceananigans.Grids.Abs
 
     FT = eltype(grid)
     device_coefficients = on_architecture(architecture(grid), zeros(Complex{FT}, length(coefficients.data)))
+    recursion = on_architecture(architecture(grid), legendre_recursion_coefficients(FT, truncation))
 
     return SpectralLoadingOperator(regridder, gaussian_values, gaussian_field, transform, coefficients,
-                                   weights, device_coefficients, truncation)
+                                   weights, device_coefficients, recursion, truncation)
+end
+
+# Coefficients of the recursion for orthonormal associated Legendre functions P̄ₗₘ(x), stored like the spherical
+# harmonic coefficients (by order m, then by degree ℓ ≥ m):
+#   P̄ₘₘ = - √((2m + 1) / 2m) √(1 - x²) P̄ₘ₋₁ₘ₋₁       (column 1 holds the factor, at ℓ = m)
+#   P̄ₗₘ = aₗₘ (x P̄ₗ₋₁ₘ - bₗₘ P̄ₗ₋₂ₘ)                   (columns 1 and 2, at ℓ > m)
+function legendre_recursion_coefficients(FT, L)
+    coefficients = zeros(FT, (L + 1) * (L + 2) ÷ 2, 2)
+    n = 1
+    for m in 0:L
+        coefficients[n, 1] = m == 0 ? 1 / sqrt(4 * big(π)) : - sqrt(big(2m + 1) / 2m)
+        for ℓ in m+1:L
+            coefficients[n + ℓ - m, 1] = sqrt(big(4ℓ^2 - 1) / (ℓ^2 - m^2))
+            coefficients[n + ℓ - m, 2] = sqrt(big((ℓ - 1)^2 - m^2) / (4 * (ℓ - 1)^2 - 1))
+        end
+        n += L + 1 - m
+    end
+    return coefficients
 end
 
 function Oceans.apply_loading_operator!(Ψ, op::SpectralLoadingOperator, pᵇ)
@@ -156,14 +176,14 @@ function Oceans.apply_loading_operator!(Ψ, op::SpectralLoadingOperator, pᵇ)
     op.coefficients.data .*= op.weights
     copyto!(op.device_coefficients, op.coefficients.data)
 
-    launch!(architecture(grid), grid, :xy, _synthesize_loading_potential!, Ψ, grid, op.device_coefficients, op.degree)
+    launch!(architecture(grid), grid, :xy, _synthesize_loading_potential!, Ψ, grid, op.device_coefficients, op.recursion, op.degree)
 
     return nothing
 end
 
 # Ψ = - Σₗₘ γₗ pᵇₗₘ Yₗₘ evaluated at cell centers, with orthonormal associated Legendre functions computed by
-# recursion. Coefficients are stored as SpeedyTransforms stores them: by order m, then by degree l ≥ m.
-@kernel function _synthesize_loading_potential!(Ψ, grid, coefficients, L)
+# recursion. Coefficients are stored as SpeedyTransforms stores them: by order m, then by degree ℓ ≥ m.
+@kernel function _synthesize_loading_potential!(Ψ, grid, coefficients, recursion, L)
     i, j = @index(Global, NTuple)
     FT = eltype(grid)
 
@@ -173,20 +193,18 @@ end
     y = cos(φ)
 
     ψ = zero(FT)
-    Pᵐᵐ = 1 / sqrt(4 * FT(π))
+    Pᵐᵐ = one(FT)
     n = 1
 
     for m in 0:L
-        Pᵐᵐ = ifelse(m == 0, Pᵐᵐ, - sqrt(FT(2m + 1) / 2m) * y * Pᵐᵐ)
+        Pᵐᵐ *= @inbounds recursion[n, 1] * ifelse(m == 0, one(FT), y)
         Pˡ⁻² = zero(FT)
         Pˡ⁻¹ = Pᵐᵐ
         S = @inbounds coefficients[n] * Pᵐᵐ
 
-        for ℓ in m+1:L
-            a = sqrt(FT(4ℓ^2 - 1) / (ℓ^2 - m^2))
-            b = sqrt(FT((ℓ - 1)^2 - m^2) / (4 * (ℓ - 1)^2 - 1))
-            Pˡ = a * (x * Pˡ⁻¹ - b * Pˡ⁻²)
-            S += @inbounds coefficients[n + ℓ - m] * Pˡ
+        for q in n+1:n+L-m
+            Pˡ = @inbounds recursion[q, 1] * (x * Pˡ⁻¹ - recursion[q, 2] * Pˡ⁻²)
+            S += @inbounds coefficients[q] * Pˡ
             Pˡ⁻², Pˡ⁻¹ = Pˡ⁻¹, Pˡ
         end
 
