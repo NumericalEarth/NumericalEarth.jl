@@ -2,7 +2,7 @@ module TPXO
 
 export TPXO10Atlas
 
-using DocStringExtensions: TYPEDSIGNATURES
+using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
 using NCDatasets: Dataset
 using Oceananigans: Oceananigans
 using Oceananigans.Fields: Field, interior, interpolate
@@ -16,7 +16,7 @@ function __init__()
 end
 
 """
-    TPXO10Atlas()
+$(TYPEDEF)
 
 The TPXO10-atlas-v2 solution for the barotropic tide, on a 1/30° grid
 [Egbert and Erofeeva (2002)](@cite egbert2002efficient).
@@ -95,7 +95,8 @@ second.
 function Oceananigans.BoundaryConditions.tidal_atlas_constants(dataset::TPXO10Atlas, nodes, constituent;
                                                                 dir = DataWrangling.default_download_directory(dataset))
 
-    λs = first.(nodes) ; φs = last.(nodes)
+    λs = first.(nodes)
+    φs = last.(nodes)
     region = (longitude = (minimum(λs) - 1, maximum(λs) + 1), latitude = (minimum(φs) - 1, maximum(φs) + 1))
 
     window = atlas_window(dataset, dir, region)

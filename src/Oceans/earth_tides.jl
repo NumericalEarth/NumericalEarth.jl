@@ -17,14 +17,14 @@ const lunar_node_rate = -1934.1420
 
 """
 Properties of Earth's tidal constituents: the equilibrium `amplitude` [m], which is the
-Cartwright–Tayler amplitude times the Love number factor ``1 + k - h`` of an elastic Earth; the
-multiples of the angles in `astronomical_angles` that sum to the equilibrium argument ``V``; and the
-`nodal` coefficients, with which the 18.6-year cycle of the lunar node longitude ``N`` modulates
-amplitude as ``f = f₀ + f₁ \\cos N`` and phase as ``u = u₁ \\sin N`` [°].
+Cartwright–Tayler amplitude times the Love number factor 1 + k - h of an elastic Earth; the
+multiples of the angles in `astronomical_angles` that sum to the equilibrium argument V; and the
+`nodal` coefficients, with which the 18.6-year cycle of the lunar node longitude N modulates
+amplitude as f = f₀ + f₁ cos N and phase as u = u₁ sin N [°].
 
 The first multiple is the constituent's species: 2 semidiurnal, 1 diurnal, 0 long-period.
 
-References: Schureman (1958), [Kowalik and Luick (2019)](@cite kowalik2019modern).
+References: [Schureman (1958)](@cite schureman1958manual), [Kowalik and Luick (2019)](@cite kowalik2019modern).
 """
 const earth_tidal_constituents = (
     M2 = (amplitude = 0.242334 * 0.693, argument = ( 2, -2,  2,  0,  0), nodal = (f₀ = 1.000, f₁ = -0.037, u₁ =  -2.1)),
@@ -43,15 +43,15 @@ const earth_tidal_constituents = (
 $(TYPEDSIGNATURES)
 
 `TidalHarmonics` for Earth's astronomical tide of `constituents` at `reference_date`: their
-frequencies ``ω`` and the phases ``V + u`` that the equilibrium arguments and the nodal corrections
-reach at that date. Model time is seconds from `reference_date`, so a constituent of amplitude ``A``
-and phase lag ``G`` contributes ``f A \\cos(ω t + V + u - G)``.
+frequencies ω and the phases V + u that the equilibrium arguments and the nodal corrections
+reach at that date. Model time is seconds from `reference_date`, so a constituent of amplitude A
+and phase lag G contributes f A cos(ω t + V + u - G).
 
 The available constituents are the eight primary astronomical ones, `:M2`, `:S2`, `:N2`, `:K2`,
 `:K1`, `:O1`, `:P1` and `:Q1`, and the two dominant long-period ones, `:Mf` and `:Mm`. A shelf
 generates the compound and overtides internally, so those are not offered.
 
-`ramp_time` eases the tide in from rest as ``\\tanh(t / T)``, which a basin started impulsively needs
+`ramp_time` eases the tide in from rest as tanh(t / T), which a basin started impulsively needs
 to avoid ringing its gravest gravity mode.
 
 ```jldoctest
