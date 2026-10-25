@@ -35,6 +35,7 @@ Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 Terrarium = "80418d68-07fa-499d-ae2b-c12e531f5cd8"
 
 [sources]
+CloudMicrophysics = {url = "https://github.com/CliMA/CloudMicrophysics.jl", rev = "navidcy-patch-2"}
 Documenter = {url = "https://github.com/JuliaDocs/Documenter.jl", rev = "master"}
 Makie = {url = "https://github.com/MakieOrg/Makie.jl", rev = "master", subdir = "Makie"}
 NumericalEarth = {path = ".."}

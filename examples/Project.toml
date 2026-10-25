@@ -15,6 +15,7 @@ RRTMGP = "a01a1ee8-cea4-48fc-987c-fc7878d79da1"
 Terrarium = "80418d68-07fa-499d-ae2b-c12e531f5cd8"
 
 [sources]
+CloudMicrophysics = {url = "https://github.com/CliMA/CloudMicrophysics.jl", rev = "navidcy-patch-2"}
 Makie = {url = "https://github.com/MakieOrg/Makie.jl", rev = "master", subdir = "Makie"}
 NumericalEarth = {path = ".."}
 
