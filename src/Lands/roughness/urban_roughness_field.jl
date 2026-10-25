@@ -170,9 +170,6 @@ measured heights for neighborhood averaging. Dataset modules add methods for the
 """
 function building_morphometry end
 
-# Area of the region between longitudes λ₁, λ₂ and latitudes φ₁, φ₂ on a sphere of radius R
-@inline spherical_rectangle_area(R, λ₁, λ₂, φ₁, φ₂) = R^2 * deg2rad(λ₂ - λ₁) * (sind(φ₂) - sind(φ₁))
-
 # Neighborhood statistics use spherical overlap areas and built-area height moments.
 @kernel function _neighborhood_morphometry!(pooled, grid, properties, source_grid, neighborhood)
     i, j = @index(Global, NTuple)
@@ -203,9 +200,9 @@ function building_morphometry end
             overlap_north = min(north, latitude_faces[row + 1])
             overlap_west = max(shifted_west, longitude_faces[column])
             overlap_east = min(shifted_east, longitude_faces[column + 1])
-            # Float64, because the sine difference of a thin Float32 cell is unstable.
-            area = convert(eltype(grid), spherical_rectangle_area(Float64(grid.radius), Float64(overlap_west), Float64(overlap_east),
-                                                                  Float64(overlap_south), Float64(overlap_north)))
+            # sin φ₂ - sin φ₁ = 2 cos((φ₁ + φ₂) / 2) sin((φ₂ - φ₁) / 2), which does not cancel for thin Float32 cells
+            area = convert(eltype(grid), 2 * grid.radius^2 * deg2rad(overlap_east - overlap_west) *
+                                         hack_cosd((overlap_south + overlap_north) / 2) * hack_sind((overlap_north - overlap_south) / 2))
             fraction = stateindex(properties.plan_area_index, column, row, 1)
             height = stateindex(properties.mean_building_height, column, row, 1)
             deviation = stateindex(properties.building_height_deviation, column, row, 1)

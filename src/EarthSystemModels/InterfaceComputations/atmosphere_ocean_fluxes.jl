@@ -20,7 +20,7 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
     arch = architecture(grid)
     clock = coupled_model.clock
     # Simplify NamedTuple to reduce parameter space consumption.
-    # See https://github.com/CliMA/NumericalEarth.jl/issues/116.
+    # See https://github.com/CliMA/ClimaOcean.jl/issues/116.
     atmosphere_data = atmosphere_ocean_data(coupled_model)
 
     flux_formulation = coupled_model.interfaces.atmosphere_ocean_interface.flux_formulation

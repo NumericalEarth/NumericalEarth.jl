@@ -35,7 +35,6 @@ Terrarium = "80418d68-07fa-499d-ae2b-c12e531f5cd8"
 
 [sources]
 NumericalEarth = {path = ".."}
-Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "main"} # TODO: remove once Oceananigans 0.116 is registered
 Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "glw/oceananigans-0.116"} # TODO: remove once Breeze 0.13 is registered
 
 [compat]
@@ -48,7 +47,7 @@ Documenter = "1"
 DocumenterCitations = "1.3"
 Enzyme = "0.13.166"
 Literate = "2.2"
-Oceananigans = "0.115, 0.116" # TODO: "0.116" once registered; main still reports 0.115.0
+Oceananigans = "0.116"
 Reactant = "0.2.278"
 SpeedyWeather = "0.23"
 Terrarium = "0.1.8"
