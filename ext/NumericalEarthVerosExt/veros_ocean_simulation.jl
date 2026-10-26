@@ -276,7 +276,7 @@ function surface_grid(ocean::VerosOceanSimulation)
 end
 
 """
-    set!(ocean, v, x; path = :variable)
+$(MethodSignatures(defaults = true))
 
 Set the `v` variable in the `ocean` model to the value of `x`.
 the path corresponds to the path inside the class where to locate the

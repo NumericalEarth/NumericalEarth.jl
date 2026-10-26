@@ -354,7 +354,7 @@ function default_ao_specific_humidity(ocean)
 end
 
 """
-    ComponentInterfaces(atmosphere, ocean, sea_ice=nothing; kwargs...)
+$(MethodSignatures(defaults = true))
 
 Construct component interfaces for atmosphere-ocean-sea ice coupling.
 

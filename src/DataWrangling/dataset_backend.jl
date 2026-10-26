@@ -42,11 +42,7 @@ Adapt.adapt_structure(to, b::DatasetBackend{N, C}) where {N, C} =
     DatasetBackend{N, C}(b.start, b.length, nothing, nothing)
 
 """
-    DatasetBackend(length, metadata;
-                   on_native_grid = false,
-                   cache_inpainted_data = false,
-                   inpainting = NearestNeighborInpainting(Inf))
-    DatasetBackend(start, length, metadata; ...)
+$(MethodSignatures(defaults = true))
 
 Construct a `DatasetBackend` holding `length` in-memory time indices starting
 at `start` (default `1`). `inpainting = nothing` selects the dispatch path

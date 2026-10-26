@@ -43,10 +43,7 @@ end
 Base.show(io::IO, p::ConstitutiveParameters) = print(io, summary(p))
 
 """
-    ConstitutiveParameters(FT = Oceananigans.defaults.FloatType;
-                           gas_constant       = 8.3144598,
-                           dry_air_molar_mass = 0.02897,
-                           water_molar_mass   = 0.018015)
+$(MethodSignatures(defaults = true))
 
 Construct a set of parameters that define the density of moist air,
 
@@ -95,11 +92,7 @@ end
 Base.show(io::IO, p::HeatCapacityParameters) = print(io, summary(p))
 
 """
-    HeatCapacityParameters(FT = Oceananigans.defaults.FloatType;
-                           dry_air_adiabatic_exponent = 2/7,
-                           water_vapor_heat_capacity = 1859,
-                           liquid_water_heat_capacity = 4181,
-                           water_ice_heat_capacity = 2100)
+$(MethodSignatures(defaults = true))
 
 Isobaric heat capacities.
 """

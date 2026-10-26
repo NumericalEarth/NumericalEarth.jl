@@ -12,12 +12,7 @@ struct SlabOcean{FT, G, Clk, T, F, H, ρ, C}
 end
 
 """
-    SlabOcean(grid;
-              FT = eltype(grid),
-              depth = 50,
-              density = 1025,
-              heat_capacity = 4000,
-              clock = Clock{FT}(time=0))
+$(MethodSignatures(defaults = true))
 
 A slab ocean component for `EarthSystemModel`. Represents the ocean as a single
 well-mixed layer of fixed depth, with temperature evolving in response to

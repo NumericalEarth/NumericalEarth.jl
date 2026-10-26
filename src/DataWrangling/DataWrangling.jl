@@ -40,7 +40,7 @@ using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
 using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
 using Oceananigans.Utils: launch!, prettytime, prettysummary
-using DocStringExtensions: SIGNATURES, TYPEDSIGNATURES
+using DocStringExtensions: SIGNATURES, TYPEDSIGNATURES, MethodSignatures
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
 using ZipFile: ZipFile
@@ -153,7 +153,7 @@ function (d::DownloadProgress)(total, now; filename="")
 end
 
 """
-    netrc_downloader(username, password, machine, dir; verify_ssl = true)
+$(MethodSignatures(defaults = true))
 
 Create a downloader that uses a netrc file to authenticate with the given machine.
 Pass `verify_ssl = false` only for hosts serving an untrusted CA certificate, as

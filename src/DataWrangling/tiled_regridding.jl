@@ -189,7 +189,7 @@ function validate_vertical_extent(target_grid, native, metadata)
 end
 
 """
-    regrid_from_metadata!(target, metadata; tile_bytes = default_tile_bytes, kw...)
+$(MethodSignatures(defaults = true))
 
 Fill `target` from `metadata`, regridding in tiles of at most `tile_bytes` of source each where
 the dataset reads windows, and in a single pass otherwise. Remaining keyword arguments go to

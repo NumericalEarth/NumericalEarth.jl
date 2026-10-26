@@ -16,7 +16,7 @@ function NumericalEarth.Lands.land_model(
 end
 
 """
-    land_simulation(grid::AbstractGrid; Δt = 300, initializers = (;), inputs, kwargs...)
+$(MethodSignatures(defaults = true))
 
 Build a Terrarium `LandModel` on `grid` in the deferred-flux configuration (surface
 turbulent fluxes computed by NumericalEarth), initialize it, and wrap it in an Oceananigans

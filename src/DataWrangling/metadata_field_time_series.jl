@@ -1,9 +1,5 @@
 """
-    FieldTimeSeries(metadata::Metadata [, arch_or_grid=CPU() ];
-                    time_indices_in_memory = 2,
-                    time_indexing = Cyclical(),
-                    inpainting = nothing,
-                    cache_inpainted_data = true)
+$(MethodSignatures(defaults = true))
 
 Create a FieldTimeSeries from a dataset that corresponds to `metadata`.
 

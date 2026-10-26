@@ -94,7 +94,7 @@ function restrict_longitude(bbox_interfaces, interfaces::NTuple{2,Any}, N)
 end
 
 """
-    native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
+$(MethodSignatures(defaults = true))
 
 Regular lat/lon raster of cell steps `Δλ`/`Δφ` (degrees) covering `region`, snapped to the global
 lattice anchored at `(-180, -90)` and padded by `pad` cells on each side. Returns
@@ -114,7 +114,7 @@ function native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
 end
 
 """
-    native_grid(metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
+$(MethodSignatures(defaults = true))
 
 Return the native grid corresponding to `metadata` with `halo` size.
 Returns a `LatitudeLongitudeGrid` for global or `BoundingBox` regions,
@@ -207,11 +207,7 @@ function retrieve_data(metadata::Metadatum)
 end
 
 """
-    Field(metadata::Metadatum, arch=CPU();
-          inpainting = default_inpainting(metadata),
-          mask = nothing,
-          halo = (3, 3, 3),
-          cache_inpainted_data = true)
+$(MethodSignatures(defaults = true))
 
 Return a `Field` on `arch`itecture described by `metadata` with `halo` size.
 If not `nothing`, the `inpainting` method is used to fill the cells
@@ -362,7 +358,7 @@ end
 interpolate_physical!(to_field, from_field, metadata) = interpolate_physical!(to_field, from_field)
 
 """
-    Field(metadata::Metadatum, grid::AbstractGrid; cache = false, overwrite_cache = false, kw...)
+$(MethodSignatures(defaults = true))
 
 Load `metadata` on its native grid and interpolate onto `grid` — the
 `Field` analog of `FieldTimeSeries(metadata, grid)`. Keyword arguments are
@@ -511,10 +507,7 @@ lower_bound(metadata, name) = -1f5
 higher_bound(metadata, name) = 1f5
 
 """
-    compute_mask(metadata::Metadatum, dataset_field,
-                 mask_value = default_mask_value(metadata),
-                 minimum_value = -1f5,
-                 maximum_value = 1f5)
+$(MethodSignatures(defaults = true))
 
 A boolean field where `true` represents a missing value in the dataset_field.
 """
@@ -547,7 +540,7 @@ end
 #####
 
 """
-    Field(mset::MetadataSet, arch=CPU(); kw...)
+$(MethodSignatures(defaults = true))
 
 Build a `NamedTuple` of `Field`s — one per variable in `mset`, keyed by the
 verbose dataset variable name. Each value is `Field(mset[name], arch; kw...)`.

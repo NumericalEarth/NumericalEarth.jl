@@ -51,28 +51,7 @@ function correct_tripolar_bcs(grid::TripolarGridOfSomeKind, bcs)
 end
 
 """
-    sea_ice_simulation(grid, ocean=nothing;
-                       clock = Clock(grid),
-                       stop_time = default_stop_time(grid, clock),
-                       Δt = 5minutes,
-                       ice_salinity = 4, # psu
-                       advection = nothing,
-                       tracers = (),
-                       ice_heat_capacity = 2100, # J kg⁻¹ K⁻¹
-                       ice_consolidation_thickness = 0.05, # m
-                       sea_ice_density = 900, # kg m⁻³
-                       snow_density = 330, # kg m⁻³
-                       lateral_boundary_condition = :no_slip,
-                       dynamics = sea_ice_dynamics(grid, ocean),
-                       bottom_heat_boundary_condition = nothing,
-                       top_heat_boundary_condition = nothing,
-                       timestepper = :ForwardEuler,
-                       phase_transitions = PhaseTransitions(eltype(grid);
-                                                            heat_capacity=ice_heat_capacity,
-                                                            density=sea_ice_density),
-                       conductivity = 2, # W m⁻¹ K⁻¹
-                       internal_heat_flux = ConductiveFlux(; conductivity),
-                       snow_thermodynamics = default_snow_thermodynamics(grid))
+$(MethodSignatures(defaults = true))
 
 Construct a sea ice simulation with the given grid and optional ocean simulation.
 The sea ice model is configured with a slab thermodynamics, Elasto-Visco-Plastic rheology,

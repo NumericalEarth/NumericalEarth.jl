@@ -5,7 +5,7 @@
 #####
 
 """
-    earthdata_download(url, path; attempts = 3)
+$(MethodSignatures(defaults = true))
 
 Download the NASA Earthdata granule at `url` to `path`, authenticating with the
 `EARTHDATA_USERNAME` / `EARTHDATA_PASSWORD` environment variables (register free at
@@ -32,7 +32,7 @@ function earthdata_download(url, path; attempts = 3)
 end
 
 """
-    earthdata_download_cached(url, cache_dir; attempts = 3)
+$(MethodSignatures(defaults = true))
 
 Download the granule at `url` into `cache_dir` unless it is already there, and return
 its path. Keyed on the granule name, so overlapping regions and sibling variables
@@ -45,7 +45,7 @@ function earthdata_download_cached(url, cache_dir; attempts = 3)
 end
 
 """
-    cmr_granules_url(short_name, version, bbox; date = nothing, page_size = 2000, page_num = 1)
+$(MethodSignatures(defaults = true))
 
 Build the NASA CMR granule-search URL for page `page_num` of the product `short_name` /
 `version` whose granules intersect the `bbox` `BoundingBox` (encoded `W,S,E,N`,
@@ -77,8 +77,7 @@ cmr_temporal_query(date) = string("&temporal=", cmr_time(date), ",", cmr_time(Da
 cmr_time(date) = string(Dates.format(DateTime(date), "yyyy-mm-ddTHH:MM:SS"), "Z")
 
 """
-    cmr_granules(short_name, version, bbox; extension = "h5", date = nothing,
-                 page_size = 2000, attempts = 3)
+$(MethodSignatures(defaults = true))
 
 Return the download URLs of the `short_name` / `version` granules whose footprints
 intersect `bbox`, querying NASA CMR page by page until a short page signals the last

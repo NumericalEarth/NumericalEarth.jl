@@ -21,6 +21,7 @@ GeoInterface = "cf35fbd7-0cd7-5166-be24-54bfbe79505f"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 Literate = "98b081ad-f1c9-55d3-8b20-4c87d4299306"
 LiveServer = "16fef848-5104-11e9-1b77-fb7a48bbb589"
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
 NaturalEarth = "436b0209-26ab-4e65-94a9-6526d86fea76"
 NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
@@ -34,6 +35,9 @@ Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 Terrarium = "80418d68-07fa-499d-ae2b-c12e531f5cd8"
 
 [sources]
+CloudMicrophysics = {url = "https://github.com/CliMA/CloudMicrophysics.jl", rev = "navidcy-patch-2"}
+Documenter = {url = "https://github.com/JuliaDocs/Documenter.jl", rev = "master"}
+Makie = {url = "https://github.com/MakieOrg/Makie.jl", rev = "master", subdir = "Makie"}
 NumericalEarth = {path = ".."}
 
 [compat]

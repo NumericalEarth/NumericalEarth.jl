@@ -4,6 +4,7 @@ export EN4Metadatum, EN4_immersed_grid, adjusted_EN4_tracers, initialize!
 export EN4Monthly
 
 using Dates: Dates, DateTime, Month
+using DocStringExtensions: MethodSignatures
 using Downloads: Downloads
 using Oceananigans.DistributedComputations: @root
 
@@ -103,9 +104,7 @@ DataWrangling.inpainted_metadata_filename(metadata::EN4Metadatum) =
     metadata.filename[1:end-3] * "_" * string(metadata.name) * "_inpainted.jld2"
 
 """
-    EN4Metadatum(name;
-                 date = first_date(EN4Monthly()),
-                 dir = download_EN4_cache)
+$(MethodSignatures(defaults = true))
 
 An alias to construct a [`Metadatum`](@ref) of `EN4Monthly`.
 """

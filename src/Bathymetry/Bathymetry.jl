@@ -4,7 +4,7 @@ export regrid_bathymetry, regrid_topography, regrid_ocean_fraction, smooth_topog
 export Basin
 export atlantic_ocean_basin, indian_ocean_basin, southern_ocean_basin, pacific_ocean_basin, arctic_ocean_basin
 
-using DocStringExtensions: TYPEDSIGNATURES
+using DocStringExtensions: TYPEDSIGNATURES, MethodSignatures
 using Downloads: Downloads, download
 using ImageMorphology: ImageMorphology
 using KernelAbstractions: @kernel, @index

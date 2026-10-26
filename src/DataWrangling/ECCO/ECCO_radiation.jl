@@ -2,17 +2,7 @@ using ...Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_st
                      default_water_emissivity
 
 """
-    ECCOPrescribedRadiation([architecture = CPU()];
-                            dataset = ECCO4Monthly(),
-                            start_date = first_date(dataset, :downwelling_shortwave),
-                            end_date = last_date(dataset, :downwelling_shortwave),
-                            dir = default_download_directory(dataset),
-                            time_indices_in_memory = 10,
-                            time_indexing = Cyclical(),
-                            ocean_surface = SurfaceRadiationProperties(0.05, default_water_emissivity),
-                            sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
-                            stefan_boltzmann_constant = default_stefan_boltzmann_constant,
-                            other_kw...)
+$(MethodSignatures(defaults = true))
 
 Return a [`PrescribedRadiation`](@ref) backed by ECCO downwelling shortwave
 and longwave fields.

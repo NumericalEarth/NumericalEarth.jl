@@ -23,7 +23,7 @@ function propagating(field, mask, iter, previous_gaps, inpainting::NearestNeighb
 end
 
 """
-    propagate_horizontally!(inpainting, field, mask [, substituting_field=deepcopy(field)])
+$(MethodSignatures(defaults = true))
 
 Horizontally propagate the values of `field` into the `mask`.
 In other words, cells where `mask[i, j, k] == false` are preserved,
@@ -104,7 +104,7 @@ end
 end
 
 """
-    inpaint_mask!(field, mask; inpainting=NearestNeighborInpainting(Inf))
+$(MethodSignatures(defaults = true))
 
 Inpaint `field` within `mask`, using values outside `mask`.
 In other words, cells where `mask[i, j, k] == true` are inpainted
@@ -179,7 +179,7 @@ end
 end
 
 """
-    propagate_vertically!(field; maxiter = size(field, 3))
+$(MethodSignatures(defaults = true))
 
 Fill the NaN cells of `field` by repeatedly averaging their valid vertical neighbours,
 the ``z``-axis analogue of [`propagate_horizontally!`](@ref).

@@ -4,6 +4,7 @@ export atmosphere_model, atmosphere_simulation, breeze_prognostic_state, bulk_dr
        hydrostatic_pressure_from_surface, density_from_pressure, PrescribedAtmosphere, PrescribedPrecipitationFlux
 
 using Adapt: Adapt, adapt
+using DocStringExtensions: MethodSignatures
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture

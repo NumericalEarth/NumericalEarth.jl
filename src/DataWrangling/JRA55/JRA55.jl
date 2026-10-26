@@ -9,6 +9,7 @@ export JRA55PrescribedAtmosphere,
 using Adapt: Adapt
 using CFTime: CFTime
 using Dates: Dates, DateTime, Day, Hour
+using DocStringExtensions: MethodSignatures
 using Downloads: Downloads
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: CPU

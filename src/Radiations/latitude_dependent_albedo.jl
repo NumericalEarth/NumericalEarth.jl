@@ -6,7 +6,7 @@ struct LatitudeDependentAlbedo{FT}
 end
 
 """
-    LatitudeDependentAlbedo([FT::DataType=Float64]; diffuse = 0.069, direct = 0.011)
+$(MethodSignatures(defaults = true))
 
 Constructs a `LatitudeDependentAlbedo` object. The albedo of the ocean surface is assumed to be a function of the latitude,
 obeying the following formula [large2009global](@citep):
@@ -51,4 +51,3 @@ Base.show(io::IO, α::LatitudeDependentAlbedo) = print(io, summary(α))
     α₁ = α.direct
     return α₀ - α₁ * hack_cosd(2φ)
 end
-
