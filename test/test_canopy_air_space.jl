@@ -13,7 +13,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     AirLandInterfaceState, InterfaceFluxScales, InterfaceVelocities, AirLandRadiationState,
     AreaIndexUndercanopyVelocity, FrictionVelocityUndercanopyVelocity, undercanopy_transfer_velocity,
     SellersSoilResistance, LitterResistance, soil_surface_resistance, litter_resistance,
-    DiagnosticSkin, kernel_surface_field
+    DiagnosticSkin, kernel_surface_field, canopy_transmittance
 using NumericalEarth: stateindex
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 
@@ -96,6 +96,33 @@ ground_vapor_state(𝒮) = (air_temperature = 305, air_specific_humidity = 0.006
                         canopy_ground_surface(FT; litter_resistance = nothing, wet_soil_resistance = SellersSoilResistance(FT)))
             @inferred canopy_air_space_solve(surface, args...)
         end
+    end
+end
+
+# Leaf and ground energy residuals at a canopy solution, rebuilt from the surface optics.
+function canopy_residuals(c, solution, Ψˡᵃ, Ψᵣ)
+    L, σ = Ψˡᵃ.leaf_area_index, Ψᵣ.σ
+    shortwave, longwave = -Ψᵣ.ℐꜜˢʷ, -Ψᵣ.ℐꜜˡʷ
+    τ = canopy_transmittance(c.extinction, c.clumping, L)
+    ϵˡᵉᵃᶠ, ϵᵍ = c.maximum_canopy_emissivity * (1 - exp(-L)), c.ground_emissivity
+    Tˡᵉᵃᶠ, Tᵍ = solution.Tˡᵉᵃᶠ, solution.Tᵍ
+    ground_downwelling = (1 - ϵˡᵉᵃᶠ) * longwave + ϵˡᵉᵃᶠ * σ * Tˡᵉᵃᶠ^4
+    ground_upwelling = ϵᵍ * σ * Tᵍ^4 + (1 - ϵᵍ) * ground_downwelling
+    Rˡᵉᵃᶠ = (1 - c.leaf_albedo) * (1 - τ) * shortwave + ϵˡᵉᵃᶠ * (longwave + ground_upwelling) -
+            2ϵˡᵉᵃᶠ * σ * Tˡᵉᵃᶠ^4 - solution.𝒬ᵀˡᵉᵃᶠ - solution.𝒬ᵛˡᵉᵃᶠ
+    Rᵍ = τ * (1 - c.ground_albedo) * shortwave + ϵᵍ * (ground_downwelling - σ * Tᵍ^4) -
+         solution.𝒬ᵀᵍ - solution.𝒬ᵛᵍ - solution.𝒬ᵍ
+    return Rˡᵉᵃᶠ, Rᵍ
+end
+
+@testset "Quasi-Newton skin solve closes the leaf and ground energy balances" begin
+    for (FT, tolerance) in ((Float32, 1e-2), (Float64, 1e-4)),
+        (leaf_area_index, canopy_water_storage) in ((3, 0), (3, 0.2), (0.5, 0), (6, 0))
+        c = canopy_ground_surface(FT)
+        args = canopy_arguments(FT; leaf_area_index, canopy_water_storage, canopy_water_capacity = 0.3)
+        Rˡᵉᵃᶠ, Rᵍ = canopy_residuals(c, canopy_air_space_solve(c, args...), args[3], args[4])
+        @test abs(Rˡᵉᵃᶠ) < tolerance
+        @test abs(Rᵍ) < tolerance
     end
 end
 

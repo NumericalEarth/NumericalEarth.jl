@@ -323,7 +323,7 @@ Fields:
   undercanopy path carry the resistance).
 - `litter_resistance` : plant-litter resistance in series on both ground vapor branches
   (a [`LitterResistance`](@ref), the default), or `nothing` for litter-free ground.
-- `inner_iterations` : Newton iterations of the coupled skin solve.
+- `inner_iterations` : quasi-Newton iterations of the coupled skin solve.
 - `storage` : the canopy-air node storage — [`DiagnosticCanopyAir`](@ref) (the default,
   massless node) or [`PrognosticCanopyAir`](@ref) (the node carries the canopy-air
   heat and moisture capacity and is advanced with the model time step).
@@ -541,9 +541,13 @@ end
 """
     canopy_air_space_solve(c::CanopyGroundSurface, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
 
-Solve the leaf temperature `Tˡᵉᵃᶠ` and ground surface temperature `Tᵍ` of one cell by Newton
-iteration on their energy balances, with the canopy-air node `(Tᵃᶜ, qᵃᶜ)` eliminated as
-the conductance-weighted mean of its sources. The storage enters only through the node
+Solve the leaf temperature `Tˡᵉᵃᶠ` and ground surface temperature `Tᵍ` of one cell by a
+quasi-Newton iteration on their energy balances, with the canopy-air node `(Tᵃᶜ, qᵃᶜ)`
+eliminated as the conductance-weighted mean of its sources. The aerodynamic conductances
+are frozen at the similarity scales of `Ψₛ` (the Monin–Obukhov fixed point outside updates
+them), and the Jacobian's dependence on the leaf vapor conductance `gˡᵉᵃᶠᵛ(Tˡᵉᵃᶠ)` (stomata
+and wet-canopy cap) is a one-sided difference, with the canopy-air node memory held at its
+iterate value; the rest of the Jacobian is exact. The storage enters only through the node
 capacities `Cᵀ = ρcᵖᵐhᵃᶜ` and `Cᵛ = ρhᵃᶜ`: zero for a [`DiagnosticCanopyAir`](@ref), so the
 node is that mean; for a [`PrognosticCanopyAir`](@ref) the node relaxes from its
 start-of-step value toward the mean over the step. `Ψₛ` is the previous fixed-point
@@ -620,14 +624,20 @@ radiation state.
 
     for _ in 1:c.inner_iterations
         gˡᵉᵃᶠᵛ, gʷᵉᵗ, qˡᵉᵃᶠ = leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜ, gˡᵇ, Δt, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
+        # The leaf vapor conductance depends on the leaf temperature through the stomata and the
+        # wet-canopy cap; its slope is a one-sided difference at the same node humidity.
+        δT = sqrt(eps(FT)) * Tˡᵉᵃᶠ
+        gˡᵉᵃᶠᵛ⁺, _, _ = leaf_vapor_terms(c, Tˡᵉᵃᶠ + δT, qᵃᶜ, gˡᵇ, Δt, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
+        ∂gˡᵉᵃᶠᵛ∂Tˡᵉᵃᶠ = (gˡᵉᵃᶠᵛ⁺ - gˡᵉᵃᶠᵛ) / δT
         gᵍᵛ, qᵍ, dqᵍ = soil_vapor_terms(c.soil_humidity, Tᵍ, gᵍᵛ⁺, gˡⁱᵗ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
 
         Σgᵛ = gᵃᵛ + gˡᵉᵃᶠᵛ + gᵍᵛ
         mᵛ  = node_memory(Σgᵛ, Cᵛ, Δt)
         Tᵃᶜ, _ = canopy_air_node(T⁻, (gᵍᵀ, gˡᵉᵃᶠᵀ, gᵃᵀ), (Tᵍ, Tˡᵉᵃᶠ, θᵃᵗ), mᵀ)
-        qᵃᶜ, _ = canopy_air_node(q⁻, (gᵍᵛ, gˡᵉᵃᶠᵛ, gᵃᵛ), (qᵍ, qˡᵉᵃᶠ, qᵃᵗ), mᵛ)
+        qᵃᶜ, equilibrium_humidity = canopy_air_node(q⁻, (gᵍᵛ, gˡᵉᵃᶠᵛ, gᵃᵛ), (qᵍ, qˡᵉᵃᶠ, qᵃᵗ), mᵛ)
         ∂qᵃᶜ∂qˡᵉᵃᶠ = (1 - mᵛ) * gˡᵉᵃᶠᵛ / max(Σgᵛ, eps(FT))
         ∂qᵃᶜ∂qᵍ    = (1 - mᵛ) * gᵍᵛ / max(Σgᵛ, eps(FT))
+        ∂qᵃᶜ∂gˡᵉᵃᶠᵛ = (1 - mᵛ) * (qˡᵉᵃᶠ - equilibrium_humidity) / max(Σgᵛ, eps(FT))
 
         ground_downwelling_longwave, ℐꜛˡʷᵍ = ground_longwave(downwelling_longwave, Tˡᵉᵃᶠ, Tᵍ, ϵˡᵉᵃᶠ, ϵᵍ, σ)
         leaf_net_longwave   = ϵˡᵉᵃᶠ * (downwelling_longwave + ℐꜛˡʷᵍ) - 2 * ϵˡᵉᵃᶠ * σ * Tˡᵉᵃᶠ^4
@@ -638,9 +648,11 @@ radiation state.
         # dependence on the other skin through the node and the longwave exchange.
         Rˡᵉᵃᶠ = leaf_absorbed_shortwave + leaf_net_longwave - gˡᵉᵃᶠᵀ * (Tˡᵉᵃᶠ - Tᵃᶜ) - ℒ * gˡᵉᵃᶠᵛ * (qˡᵉᵃᶠ - qᵃᶜ)
         Rᵍ    = ground_absorbed_shortwave + ground_net_longwave - gᵍᵀ * (Tᵍ - Tᵃᶜ) - ℒ * gᵍᵛ * (qᵍ - qᵃᶜ) - Λᵍ * (Tᵍ - Tˡᵃ)
-        ∂Rˡᵉᵃᶠ∂Tˡᵉᵃᶠ = 4 * ϵˡᵉᵃᶠ * σ * Tˡᵉᵃᶠ^3 * (ϵˡᵉᵃᶠ * (1 - ϵᵍ) - 2) - gˡᵉᵃᶠᵀ * (1 - ∂Tᵃᶜ∂Tˡᵉᵃᶠ) - ℒ * gˡᵉᵃᶠᵛ * (1 - ∂qᵃᶜ∂qˡᵉᵃᶠ) * dqˡᵉᵃᶠ
+        ∂Rˡᵉᵃᶠ∂Tˡᵉᵃᶠ = 4 * ϵˡᵉᵃᶠ * σ * Tˡᵉᵃᶠ^3 * (ϵˡᵉᵃᶠ * (1 - ϵᵍ) - 2) - gˡᵉᵃᶠᵀ * (1 - ∂Tᵃᶜ∂Tˡᵉᵃᶠ) - ℒ * gˡᵉᵃᶠᵛ * (1 - ∂qᵃᶜ∂qˡᵉᵃᶠ) * dqˡᵉᵃᶠ -
+                       ℒ * ∂gˡᵉᵃᶠᵛ∂Tˡᵉᵃᶠ * (qˡᵉᵃᶠ - qᵃᶜ - gˡᵉᵃᶠᵛ * ∂qᵃᶜ∂gˡᵉᵃᶠᵛ)
         ∂Rˡᵉᵃᶠ∂Tᵍ = 4 * ϵˡᵉᵃᶠ * ϵᵍ * σ * Tᵍ^3 + gˡᵉᵃᶠᵀ * ∂Tᵃᶜ∂Tᵍ + ℒ * gˡᵉᵃᶠᵛ * ∂qᵃᶜ∂qᵍ * dqᵍ
-        ∂Rᵍ∂Tˡᵉᵃᶠ = 4 * ϵᵍ * ϵˡᵉᵃᶠ * σ * Tˡᵉᵃᶠ^3 + gᵍᵀ * ∂Tᵃᶜ∂Tˡᵉᵃᶠ + ℒ * gᵍᵛ * ∂qᵃᶜ∂qˡᵉᵃᶠ * dqˡᵉᵃᶠ
+        ∂Rᵍ∂Tˡᵉᵃᶠ = 4 * ϵᵍ * ϵˡᵉᵃᶠ * σ * Tˡᵉᵃᶠ^3 + gᵍᵀ * ∂Tᵃᶜ∂Tˡᵉᵃᶠ + ℒ * gᵍᵛ * ∂qᵃᶜ∂qˡᵉᵃᶠ * dqˡᵉᵃᶠ +
+                    ℒ * gᵍᵛ * ∂qᵃᶜ∂gˡᵉᵃᶠᵛ * ∂gˡᵉᵃᶠᵛ∂Tˡᵉᵃᶠ
         ∂Rᵍ∂Tᵍ = -4 * ϵᵍ * σ * Tᵍ^3 - gᵍᵀ * (1 - ∂Tᵃᶜ∂Tᵍ) - ℒ * gᵍᵛ * (1 - ∂qᵃᶜ∂qᵍ) * dqᵍ - Λᵍ
         # A canopy-free cell (LAI = 0) has no leaf balance: Rˡᵉᵃᶠ = ∂Rˡᵉᵃᶠ/∂Tˡᵉᵃᶠ = 0.
         ∂Rˡᵉᵃᶠ∂Tˡᵉᵃᶠ = ifelse(∂Rˡᵉᵃᶠ∂Tˡᵉᵃᶠ < 0, ∂Rˡᵉᵃᶠ∂Tˡᵉᵃᶠ, -one(FT))
