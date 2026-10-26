@@ -172,17 +172,14 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
 | ``h^{\mathrm{la}}`` | `slab_depth` | depth of prognostic land | Vertical thickness of the integrated land slab, from ``z_b`` to ``z_s`` (m) |
-| ``h_k`` | `slab_depth` | layer thickness | Thickness of soil layer ``k``, surface first, when `slab_depth` is a tuple; ``h_1 = h^{\mathrm{la}}`` (m) |
-| ``M_k`` | `water_storage`, `water_storage_2`, … | layer water | Water mass per area of soil layer ``k``; layer 1 is the container's `water_storage` (kg m⁻²) |
-| ``r_k`` | `root_fraction` | root fraction | Share of roots in soil layer ``k``; weights the vapor sink and the `root_zone_saturation` the canopy stress reads (–) |
 | ``\nu`` | `porosity` | soil porosity | Total pore fraction (–) |
 | ``\theta^l`` | – | pore liquid fraction | Physical liquid-filled pore fraction; surface physics consumes this (–) |
 | ``\vartheta^l`` | – | augmented liquid fraction | Conservative storage variable ``= \theta^l + \max(\Pi, 0)/h^{\mathrm{ss}}``; allows ``M > M⁺`` saturated overflow (–) |
 | ``\theta^r`` | `residual_liquid_fraction` | residual liquid fraction | Minimum liquid-filled pore fraction (–) |
-| ``𝒮`` | `saturation` | effective saturation | Effective (relative) saturation ``𝒮 = \mathrm{clamp}\!\left((\theta^l - \theta^r)/(\nu - \theta^r),\, 0,\, 1\right)``; the humidity availability and the front depth ``\delta^v`` derive from it. With several soil layers, `saturation` is the top layer's ``𝒮_1`` and the diagnostic `root_zone_saturation` the root-weighted ``\sum_k r_k 𝒮_k`` (–) |
+| ``𝒮`` | `saturation` | effective saturation | Effective (relative) saturation ``𝒮 = \mathrm{clamp}\!\left((\theta^l - \theta^r)/(\nu - \theta^r),\, 0,\, 1\right)``; the humidity availability and the front depth ``\delta^v`` derive from it (–) |
 | ``h^{\mathrm{ss}}`` | `storage_height` | storage height | Saturated storage height — the head built per unit fractional over-saturation; reciprocal of the specific storage (``1/S_s``) (m) |
 | ``\Pi`` | – | soil pressure head | Matric/pressure head; ``\Pi \le 0`` unsaturated, ``\Pi > 0`` saturated overflow (m) |
-| ``\Pi^d`` | `deep_pressure_head` | deep pressure head | Pressure head of the deep reservoir below the last soil layer, passed to the deep-flux closure (m) |
+| ``\Pi^d`` | `deep_pressure_head` | deep pressure head | Pressure head of the deep reservoir below the slab, passed to the deep-flux closure (m) |
 | ``h`` | – | hydraulic head | ``h = z + \Pi`` (m) |
 | ``K`` | – | hydraulic conductivity | Darcy conductivity (m s⁻¹) |
 | ``K_0`` | `matching_point_conductivity` | matching-point conductivity | Conductivity the Mualem–van Genuchten curve reaches at ``𝒮 = 1``; a *matrix* value when it comes from a pedotransfer function, excluding macropore flow (m s⁻¹) |
@@ -192,9 +189,7 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``\eta^K`` | `ηᴷ`, `pore_connectivity_exponent` | pore-connectivity exponent | Mualem exponent on saturation in ``K(\mathcal S)`` (–) |
 | ``T_0`` | `reference_temperature` | viscosity reference temperature | Temperature at which ``K_0`` holds and the viscosity factor ``\Theta(T)`` on ``K`` is unity (K) |
 | ``J^{Es}`` | `surface_energy_flux` | surface energy flux | Signed surface energy flux, positive upward (out of the slab) (W m⁻²) |
-| ``J^{\ell}_n`` | `deep_liquid_flux` | deep-boundary liquid flux | Liquid mass flux across the bottom of the last soil layer ``n``, positive upward (into the soil, capillary rise / groundwater return); drainage is ``J^{\ell}_n < 0`` (kg m⁻² s⁻¹) |
-| ``J^{\ell}_k`` | `interlayer_liquid_flux_k` | interlayer liquid water flux | Liquid water mass flux across the bottom of soil layer ``k`` into layer ``k+1``, positive upward; under the last layer it is ``J^{\ell}_n`` (kg m⁻² s⁻¹) |
-| ``\Lambda_k`` | – | interlayer hydraulic conductance | ``\rho^l \bar K/\ell`` with ``\ell = (h_k + h_{k+1})/2`` and ``\bar K`` the conductivity at the two layers' mean saturation (kg m⁻³ s⁻¹) |
+| ``J^{lb}`` | `deep_liquid_flux` | deep-boundary liquid flux | Liquid mass flux across the slab bottom, positive upward (into the slab, capillary rise / groundwater return); drainage is ``J^{lb} < 0`` (kg m⁻² s⁻¹) |
 | ``J^{ls}`` | `surface_liquid_flux` | surface liquid flux | Liquid mass flux at the surface, ``J^{ls} = -P^l + R^{\mathrm{sfc}}`` without a surface water store, positive upward (out of the slab); infiltration is ``J^{ls} < 0`` (kg m⁻² s⁻¹) |
 | ``R^{\mathrm{sfc}}`` | `surface_runoff` | surface runoff | Liquid leaving the column at the surface, ``\ge 0``: the infiltration excess, or the share of the surface water store drained over the step (kg m⁻² s⁻¹) |
 | ``M^{\mathrm{sfc}}`` | `surface_water_storage` | surface water store | Infiltration excess ponded at the surface, draining on `drainage_time_scale` (kg m⁻²) |
@@ -364,7 +359,7 @@ superscript band.
 | ``\mathcal{Q}^v`` | `𝒬ᵛ` | latent heat flux | Turbulent latent heat flux (W m⁻²) |
 | ``\mathcal{Q}^T`` | `𝒬ᵀ` | sensible heat flux | Turbulent sensible heat flux (W m⁻²) |
 | ``J^v`` | `Jᵛ` | water vapor flux | Turbulent mass flux of water vapor (kg m⁻² s⁻¹) |
-| ``J^t`` | `Jᵗ` | transpiration flux | Mass flux of water vapor transpired by the canopy, the root-zone part of ``J^v`` (kg m⁻² s⁻¹) |
+| ``J^t`` | `Jᵗ` | transpiration flux | Mass flux of water vapor transpired by the canopy, part of ``J^v`` (kg m⁻² s⁻¹) |
 | ``\tau^x`` | `τˣ` | zonal kinematic stress | Kinematic zonal momentum flux (m² s⁻²) |
 | ``\tau^y`` | `τʸ` | meridional kinematic stress | Kinematic meridional momentum flux (m² s⁻²) |
 | ``\rho \tau^x`` | `ρτˣ` | zonal wind stress | Mass-weighted zonal stress (N m⁻²) |

@@ -3,17 +3,12 @@
 #####
 ##### Each closure implements
 #####
-#####     deep_liquid_flux(closure, M, θˡ, 𝒮, Π, K, Πᵈ, time) -> Jˡₙ  (kg m⁻² s⁻¹)
+#####     deep_liquid_flux(closure, M, θˡ, 𝒮, Π, K, Πᵈ, time) -> Jˡᵇ  (kg m⁻² s⁻¹)
 #####
-##### with `Jˡₙ` positive upward (capillary rise / groundwater return) and
+##### with `Jˡᵇ` positive upward (capillary rise / groundwater return) and
 ##### negative downward (drainage). All scalars are per-cell; the kernel
-##### passes them in. A closure whose flux depends on the layer's own head also
-##### supplies `∂Jˡₙ/∂Π` so the exchange can be stepped implicitly:
+##### passes them in.
 #####
-#####     deep_liquid_flux_head_derivative(closure, K) -> ∂Jˡₙ/∂Π   (kg m⁻³ s⁻¹)
-#####
-
-@inline deep_liquid_flux_head_derivative(closure, K) = zero(K)
 
 """
     NoDeepLiquidFlux()
@@ -55,7 +50,7 @@ the deep height is `z_D = z_b − ℓ_l`. With hydraulic heads `h_b = z_b + Π_b
 and `h_D = z_D + Πᵈ`,
 
 ```math
-J^l_n = \\rho^l K_b\\,\\frac{h_D - h_b}{\\ell_l}.
+J^{lb} = \\rho^l K_b\\,\\frac{h_D - h_b}{\\ell_l}.
 ```
 """
 struct DarcyDeepLiquidFlux{FT}
@@ -76,9 +71,6 @@ DarcyDeepLiquidFlux(FT::Type = Oceananigans.defaults.FloatType;
     return ρˡ * K * (Πᵈ - Π - ℓ) / ℓ
 end
 
-@inline deep_liquid_flux_head_derivative(c::DarcyDeepLiquidFlux, K) =
-    -convert(typeof(K), c.liquid_density) * K / convert(typeof(K), c.exchange_length)
-
 Base.summary(c::DarcyDeepLiquidFlux) =
     string("DarcyDeepLiquidFlux(exchange_length=", prettysummary(c.exchange_length),
            ", liquid_density=", prettysummary(c.liquid_density), ")")
@@ -89,7 +81,7 @@ Base.summary(c::DarcyDeepLiquidFlux) =
 Cheap linear-reservoir drainage:
 
 ```math
-J^l_n = -\\frac{\\max(M^{la} - M_{eq}, 0)}{\\tau_l}.
+J^{lb} = -\\frac{\\max(M^{la} - M_{eq}, 0)}{\\tau_l}.
 ```
 
 Storage above `equilibrium_storage` drains out the bottom on time scale `τ_l`.

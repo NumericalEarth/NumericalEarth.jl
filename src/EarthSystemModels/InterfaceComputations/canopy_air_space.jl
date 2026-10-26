@@ -719,7 +719,7 @@ struct CanopyGroundSurfaceDiagnostics{F}
     canopy_evaporation     :: F   # wet-canopy evaporation Jʷᵉᵗ (kg m⁻² s⁻¹, up)
     wet_canopy_latent_heat :: F   # wet-canopy latent heat ℒ·Jʷᵉᵗ (W m⁻², up)
     land_vapor_flux        :: F   # soil evaporation + transpiration, drawn from the land water store
-    transpiration          :: F   # leaf transpiration 𝒬ᵛˡᵉᵃᶠ/ℒ − Jʷᵉᵗ, drawn from the root zone
+    transpiration          :: F   # leaf transpiration 𝒬ᵛˡᵉᵃᶠ/ℒ − Jʷᵉᵗ, drawn from the soil
 end
 
 CanopyGroundSurfaceDiagnostics(grid) =

@@ -159,7 +159,7 @@ soil_vapor_diffusivity(hydrology, ::ConstantTortuosity, vapor, saturation, grid)
 
 function soil_vapor_diffusivity(hydrology::VariablySaturatedHydrology, ::PowerLawTortuosity, vapor, saturation, grid)
     return KernelFunctionOperation{Center, Center, Nothing}(surface_vapor_diffusivity, grid,
-        saturation, layer(hydrology.porosity, 1), layer(hydrology.residual_liquid_fraction, 1), vapor)
+        saturation, hydrology.porosity, hydrology.residual_liquid_fraction, vapor)
 end
 
 @inline function surface_vapor_diffusivity(i, j, k, grid, saturation, porosity, residual, vapor)

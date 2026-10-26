@@ -333,8 +333,6 @@ and `liquid_precipitation_flux` accumulators declared by the land closures.
 * `evaporation`                ← positive part of upward vapor flux.
 * `vapor_flux`                 ← the vapor flux drawn from the land water store (soil
                                  evaporation + transpiration), positive upward.
-* `transpiration`              ← upward dry-leaf vapor flux drawn from the root zone;
-                                 condensation remains a surface water input.
 * `liquid_precipitation_flux`  ← rainfall as Pˡ, positive downward (consumed by
                                  `VariablySaturatedHydrology`).
 
@@ -356,7 +354,6 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     Es                 = get(fluxes, :surface_energy_flux, nothing)
     Pl                 = get(fluxes, :liquid_precipitation_flux, nothing)
     canopy_evaporation = get(fluxes, :canopy_evaporation, nothing)
-    transpiration      = get(fluxes, :transpiration, nothing)
 
     (isnothing(P) && isnothing(E) &&
      isnothing(Jv) && isnothing(Es) && isnothing(Pl)) && return nothing
@@ -369,17 +366,16 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     Jʳⁿ = hasproperty(atmos_state, :Jʳⁿ) ? atmos_state.Jʳⁿ : ZeroField()
 
     launch!(arch, grid, :xy, _assemble_slab_land_fluxes!,
-            P, E, Jv, transpiration, Es, Pl, canopy_evaporation, interface_fluxes, Jʳⁿ)
+            P, E, Jv, Es, Pl, canopy_evaporation, interface_fluxes, Jʳⁿ)
     return nothing
 end
 
-@kernel function _assemble_slab_land_fluxes!(P, E, Jv, transpiration, Es, Pl, canopy_evaporation,
+@kernel function _assemble_slab_land_fluxes!(P, E, Jv, Es, Pl, canopy_evaporation,
                                              interface_fluxes, Jʳⁿ)
     i, j = @index(Global, NTuple)
     @inbounds begin
         𝒬 = surface_energy_loss(i, j, interface_fluxes.energy...)
         Jᵛ = interface_fluxes.vapor[i, j, 1]
-        Jᵗ = interface_fluxes.transpiration[i, j, 1]
         Jʷᵉᵗ = interface_fluxes.canopy_evaporation[i, j, 1]
         rain = Jʳⁿ[i, j, 1]
     end
@@ -387,7 +383,6 @@ end
     maybe_write!(P,                  i, j, rain + max(0, -Jᵛ))
     maybe_write!(E,                  i, j, max(0, Jᵛ))
     maybe_write!(Jv,                 i, j, Jᵛ)
-    maybe_write!(transpiration,      i, j, max(0, Jᵗ))
     maybe_write!(canopy_evaporation, i, j, Jʷᵉᵗ)
     maybe_write!(Pl,                 i, j, rain)
 end
@@ -397,13 +392,12 @@ EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabLand, coupled_model)
 """
     ComponentExchanger(land::SlabLand, grid)
 
-Expose skin temperature `T`, surface saturation `𝒮`, root-zone saturation, and canopy
+Expose skin temperature `T`, surface saturation `𝒮`, and canopy
 interception storage and capacity on the exchange grid.
 """
 function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::SlabLand, grid)
     state = (T                     = surface_temperature(land),
              𝒮                     = surface_saturation(land),
-             root_zone_saturation  = get(land.diagnostics, :root_zone_saturation, surface_saturation(land)),
              canopy_water_storage  = get(land.prognostic, :canopy_water_storage, ZeroField()),
              canopy_water_capacity = canopy_water_capacity(land.hydrology, land))
     return ComponentExchanger(state, nothing)

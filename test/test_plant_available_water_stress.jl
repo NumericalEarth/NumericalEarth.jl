@@ -8,7 +8,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
 using NumericalEarth: VanGenuchtenRetention
 using NumericalEarth.Lands: van_genuchten_saturation, effective_saturation
 
-land_state(𝒮, curve, stress) = (𝒮 = 𝒮, root_zone_saturation = 𝒮,
+land_state(𝒮, curve, stress) = (𝒮 = 𝒮,
     field_capacity_saturation = effective_saturation(1, 1, 1, nothing, curve, stress.field_capacity_head),
     wilting_point_saturation = effective_saturation(1, 1, 1, nothing, curve, stress.wilting_point_head))
 
@@ -78,7 +78,7 @@ end
         hydraulic_conductivity = VanGenuchtenConductivity(FT; matching_point_conductivity = 1e-6, pore_size_uniformity))
     column_endpoints = surface_hydrology(SlabLand(columns_grid; hydrology), stress, columns_grid)
     for (j, curve) in enumerate((loam, clay)), 𝒮 in (FT(0.35), FT(0.6))
-        state = interface_hydrology_state(1, j, columns_grid, stress, merge((; root_zone_saturation = 𝒮), column_endpoints))
+        state = interface_hydrology_state(1, j, columns_grid, stress, merge((; 𝒮 = 𝒮), column_endpoints))
         @test evaporation_efficiency(stress, state) == availability(stress, 𝒮, curve)
     end
 

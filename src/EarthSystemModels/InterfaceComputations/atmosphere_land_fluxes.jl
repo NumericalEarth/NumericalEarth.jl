@@ -301,7 +301,7 @@ end
 @inline interface_hydrology_state(i, j, grid, q::FractionalHumidity, land_state) = interface_hydrology_state(i, j, grid, q.efficiency, land_state)
 @inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) = (; saturation = land_saturation(i, j, grid, land_state))
 @inline function interface_hydrology_state(i, j, grid, ::PlantAvailableWaterStress, land_state)
-    return (root_zone_saturation = state2dindex(land_state.root_zone_saturation, i, j),
+    return (saturation = land_saturation(i, j, grid, land_state),
             field_capacity_saturation = state2dindex(land_state.field_capacity_saturation, i, j),
             wilting_point_saturation = state2dindex(land_state.wilting_point_saturation, i, j))
 end
@@ -419,13 +419,12 @@ function land_surface_fluxes(temperature, interface, bulk_temperature)
     fluxes = interface.fluxes
     conductance = ground_conductance(interface)
     energy = (temperature, fluxes, bulk_temperature, conductance)
-    transpiration = transpiration_flux(interface.properties.specific_humidity_formulation, fluxes)
-    return (; energy, vapor=fluxes.water_vapor, transpiration, canopy_evaporation=ZeroField())
+    return (; energy, vapor=fluxes.water_vapor, canopy_evaporation=ZeroField())
 end
 
 land_surface_fluxes(temperature::CanopyGroundSurfaceDiagnostics, interface, bulk_temperature) =
     (; energy=(temperature.ground_heat_flux,), vapor=temperature.land_vapor_flux,
-       transpiration=temperature.transpiration, canopy_evaporation=temperature.canopy_evaporation)
+       canopy_evaporation=temperature.canopy_evaporation)
 
 @inline surface_energy_loss(i, j, temperature, fluxes, bulk_temperature, ::Nothing) =
     @inbounds fluxes.sensible_heat[i, j, 1] + fluxes.latent_heat[i, j, 1]
@@ -434,10 +433,6 @@ land_surface_fluxes(temperature::CanopyGroundSurfaceDiagnostics, interface, bulk
     @inbounds -conductance * (temperature[i, j, 1] - bulk_temperature[i, j, 1])
 
 @inline surface_energy_loss(i, j, ground_heat_flux) = @inbounds -ground_heat_flux[i, j, 1]
-
-# The vapor flux drawn from the root zone: all of a transpiring canopy's.
-transpiration_flux(q_formulation, fluxes) = ZeroField()
-transpiration_flux(::CanopyConductanceHumidity, fluxes) = fluxes.water_vapor
 
 """
 $(TYPEDSIGNATURES)

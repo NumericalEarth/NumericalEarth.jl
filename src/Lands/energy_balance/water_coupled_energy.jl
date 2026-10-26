@@ -6,18 +6,20 @@
 ##### Like `ForceRestoreEnergy`, this closure restores the bulk land temperature
 ##### toward a prescribed deep climatology, but with two refinements:
 #####
-##### 1. The areal heat capacity `cˡᵃ(M) = cᵈʳʸ + cˡ M` is recomputed every step from the
-#####    column's water `M` (every layer of a layered column shares the slab temperature),
-#####    so a wetting/drying slab has the correct thermal inertia.
-##### 2. The energy budget is written conservatively. With `eˡ = cˡ(T − Tᵣ)` the
-#####    internal energy of slab liquid, water exchanged at the slab temperature
-#####    (evaporation, runoff, interlayer exchange, the positivity floor) carries no
-#####    heat relative to the slab, and only the upwinded liquid fluxes across the
-#####    column's top and bottom do:
+##### 1. The areal heat capacity `cˡᵃ(Mˡᵃ) = cᵈʳʸ + cˡ Mˡᵃ` is recomputed every
+#####    step, so a wetting/drying slab has the correct thermal inertia.
+##### 2. The energy budget is written conservatively as
 #####
-#####        dT/dt = [Λᵈᵉᵉᵖ(Tᵈᵉᵉᵖ − T) + (eᵇ − eˡ) Jˡₙ − (eˢ − eˡ) Jˡˢ − Jᴱˢ] / cˡᵃ(M).
+#####        dEˡᵃ/dt = Λᵈᵉᵉᵖ(Tᵈᵉᵉᵖ − Tˡᵃ) + eᵇ Jˡᵇ − eˢ Jˡˢ − Jᴱˢ − eˡ Jᵛ − eˡ Rˡᵃᵗ
 #####
-#####    `Jˡₙ` is the `deep_liquid_flux` across the column bottom.
+#####    with `eˡ = cˡ(Tˡᵃ − Tᵣ)` the internal energy of slab liquid, and `Tˡᵃ`
+#####    is updated via
+#####
+#####        dTˡᵃ/dt = [dEˡᵃ/dt − eˡ dMˡᵃ/dt] / cˡᵃ(Mˡᵃ),
+#####
+#####    so adding/removing water *at the slab temperature* leaves `Tˡᵃ`
+#####    unchanged. `dMˡᵃ/dt` is consumed from `land.diagnostics.water_storage_tendency`
+#####    written by the hydrology step.
 #####
 ##### The internal energies carried by the boundary liquid fluxes are upwinded:
 ##### with `advect_deep_liquid_energy = true`, capillary rise brings in
@@ -60,8 +62,8 @@ for example pavement carrying building thermal mass next to soil that does not.
 
 `reference_temperature` is the reference for internal energy `eˡ(T) = cˡ(T − Tᵣ)`.
 The temperature update is invariant to `Tᵣ`: fluxes whose advective switch is
-disabled enter and leave at the slab temperature, so `Tᵣ` cancels exactly. A
-standard choice is the triple point 273.15 K.
+disabled enter and leave at the slab temperature, so `Tᵣ` cancels exactly (up
+to the positivity floor on `Mˡᵃ`). A standard choice is the triple point 273.15 K.
 """
 struct WaterCoupledEnergy{CD, FT, TD, ΛD, Tau} <: AbstractEnergyBalance
     dry_heat_capacity            :: CD
@@ -102,9 +104,11 @@ function WaterCoupledEnergy(FT::Type = Oceananigans.defaults.FloatType;
                               advect_surface_liquid_energy)
 end
 
-# Consumes the signed surface energy flux `Jᴱˢ` (positive upward, written by the
-# interface) and the optional precipitation temperature for the surface advective term.
-flux_variables(::WaterCoupledEnergy) = (:surface_energy_flux, :liquid_precipitation_temperature)
+# Consumes the signed surface energy flux `Jᴱˢ` (positive upward, written by
+# the interface), the signed vapor flux `Jᵛ` (for the advective sensible-energy
+# term), and the optional precipitation temperature for the surface advective term.
+flux_variables(::WaterCoupledEnergy) =
+    (:surface_energy_flux, :vapor_flux, :liquid_precipitation_temperature)
 
 # The closure rides into `_step_land_temperature!` whole, so Field-valued
 # properties must adapt to their GPU forms.
@@ -133,8 +137,8 @@ Adapt.adapt_structure(to, energy::WaterCoupledEnergy) =
     end
 end
 
-@inline upwind_deep_internal_energy(Jˡₙ, Tᵈ, T, Tᵣ, cˡ) =
-    ifelse(Jˡₙ > 0, cˡ * (Tᵈ - Tᵣ), cˡ * (T - Tᵣ))
+@inline upwind_deep_internal_energy(Jˡᵇ, Tᵈ, T, Tᵣ, cˡ) =
+    ifelse(Jˡᵇ > 0, cˡ * (Tᵈ - Tᵣ), cˡ * (T - Tᵣ))
 
 @inline upwind_surface_internal_energy(Jˡˢ, T, Tˡᵖ, Tᵣ, cˡ) =
     ifelse(Jˡˢ > 0, cˡ * (T - Tᵣ), cˡ * (Tˡᵖ - Tᵣ))
@@ -147,10 +151,13 @@ end
                                       prognostic, fluxes, diagnostics, time)
     @inbounds begin
         Tᵢⱼ  = prognostic.T[i, j, 1]
-        Mᵢⱼ  = get(diagnostics, :column_water_storage, prognostic.M)[i, j, 1]
-        Jˡₙ  = diagnostics.deep_liquid_flux[i, j, 1]
+        Mᵢⱼ  = prognostic.M[i, j, 1]
+        dMdt = diagnostics.water_storage_tendency[i, j, 1]
+        Jˡᵇ  = diagnostics.deep_liquid_flux[i, j, 1]
         Jˡˢ  = diagnostics.surface_liquid_flux[i, j, 1]
+        Rˡᵃᵗ = diagnostics.subsurface_runoff[i, j, 1]
         Jᴱs  = fluxes.surface_energy_flux[i, j, 1]
+        Jᵛ   = fluxes.vapor_flux[i, j, 1]
         Tˡᵖ  = fluxes.liquid_precipitation_temperature[i, j, 1]
     end
 
@@ -167,13 +174,15 @@ end
     # so the arbitrary reference Tᵣ cancels from the update.
     eˡ = cˡ * (Tᵢⱼ - Tᵣ)
     eᵇ = ifelse(energy.advect_deep_liquid_energy,
-                upwind_deep_internal_energy(Jˡₙ, Tᵈ, Tᵢⱼ, Tᵣ, cˡ), eˡ)
+                upwind_deep_internal_energy(Jˡᵇ, Tᵈ, Tᵢⱼ, Tᵣ, cˡ), eˡ)
     eˢ = ifelse(energy.advect_surface_liquid_energy,
                 upwind_surface_internal_energy(Jˡˢ, Tᵢⱼ, Tˡᵖ, Tᵣ, cˡ), eˡ)
 
-    # Water exchanged at the slab temperature carries no heat relative to the slab; the
-    # latent heat of evaporation is already inside Jᴱs.
-    return (Λᵈ * (Tᵈ - Tᵢⱼ) + (eᵇ - eˡ) * Jˡₙ - (eˢ - eˡ) * Jˡˢ - Jᴱs) / cˡᵃ
+    # Evaporating liquid (Jᵛ > 0) and lateral runoff leave at the slab
+    # temperature; the latent heat of evaporation is already inside Jᴱs.
+    dEdt = Λᵈ * (Tᵈ - Tᵢⱼ) + eᵇ * Jˡᵇ - eˢ * Jˡˢ - Jᴱs - eˡ * Jᵛ - eˡ * Rˡᵃᵗ
+
+    return (dEdt - eˡ * dMdt) / cˡᵃ
 end
 
 time_step!(energy::WaterCoupledEnergy, land, Δt, time) = step_land_temperature!(energy, land, Δt, time)
