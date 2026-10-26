@@ -19,8 +19,7 @@ using NumericalEarth:
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width
-using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset,
-                                    expand_dates
+using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!
 
 using Oceananigans:
@@ -41,6 +40,7 @@ using Oceananigans.Forcings: Relaxation, FieldTimeSeriesTarget
 using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
 using Oceananigans.Grids: OrthogonalSphericalShellGrid
 using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid, lcc_forward
+using Oceananigans.TurbulenceClosures: closure_required_tracers
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Utils: KernelParameters
@@ -229,10 +229,17 @@ end
 # minute. Bounding mirrors Breeze's own moist-convection examples (`ρqᵉ = WENO(order=5, bounds=(0, 1))`).
 # The energy density is unbounded (`ρθ` is not confined to `[0, 1]`). Names are derived from the
 # microphysics so the default tracks whichever moisture/precipitation prognostics it carries.
-function default_nested_scalar_advection(microphysics)
+function default_nested_scalar_advection(microphysics, closure = nothing; closure_tracer_maximum = Inf)
     bounded = WENO(order = 5, bounds = (0, 1))
     moist_names = (moisture_prognostic_name(microphysics), prognostic_field_names(microphysics)...)
-    return merge((ρθ = WENO(order = 5),), NamedTuple{moist_names}(map(_ -> bounded, moist_names)))
+    moist = NamedTuple{moist_names}(map(_ -> bounded, moist_names))
+
+    closure_names = closure_required_tracers(closure)
+    closure_bounds = promote(0, closure_tracer_maximum)
+    closure_scheme = WENO(order = 5, bounds = closure_bounds)
+    closure_tracers = NamedTuple{closure_names}(map(_ -> closure_scheme, closure_names))
+
+    return merge((ρθ = WENO(order = 5),), moist, closure_tracers)
 end
 
 # Blend-zone width in cells from a physical length: a fixed cell count steepens the parent→child
@@ -333,10 +340,10 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     drag_surface_temperature = nothing, # surface temperature entering the drag's surface density
     parent_condensates = default_parent_condensates(parent_atmosphere),
     microphysics = default_nested_microphysics(),
-    momentum_advection = WENO(order = 9),
-    scalar_advection = default_nested_scalar_advection(microphysics),
-    coriolis = SphericalCoriolis(),
     closure = TKEBasedTurbulenceClosure(eltype(child_grid)),
+    momentum_advection = WENO(order = 9),
+    scalar_advection = default_nested_scalar_advection(microphysics, closure),
+    coriolis = SphericalCoriolis(),
     damping_rate = 1/5,
     damping_depth = default_lid_depth(child_grid),
     dynamics = default_nested_dynamics(child_grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth),
@@ -454,7 +461,7 @@ function mean_sea_level_pressure(dataset, child_grid, date, dir)
     # TODO: this belongs in Oceananigans — `sum`/`mean` on a distributed `Field` should
     # perform the global reduction themselves (Oceananigans.jl's reductions are rank-local).
     arch = architecture(child_grid)
-    return all_reduce(+, sum(interior(p₀)), arch) / all_reduce(+, length(interior(p₀)), arch)
+    return all_reduce(+, sum(p₀), arch) / all_reduce(+, length(interior(p₀)), arch)
 end
 
 # Dataset skin temperature at `date`, regridded onto the child grid — the surface temperature
@@ -475,8 +482,8 @@ Build the parent `BoundaryPrescribedComponent` of `PrescribedAtmosphere`s, nest 
 `parent_dataset` at `first(dates)` — the returned model is ready to step. The parent's strips hold
 `parent_dataset` at `dates` on its native grid, along each side of `child_grid` and `relaxation_width`
 cells inward, padded by `parent_padding` (default `parent_dataset`'s `default_horizontal_padding`,
-margin for the interpolation stencils). A full-domain snapshot of `parent_dataset` at the first two
-`dates`, with the same padding, initializes the child and supplies the surface elevation the `terrain` blends
+margin for the interpolation stencils). A full-domain snapshot of `parent_dataset` at
+`first(dates)`, with the same padding, initializes the child and supplies the surface elevation the `terrain` blends
 toward. Unless given, the default dynamics' `base_pressure` anchor is the domain-mean dataset
 mean-sea-level pressure over the child at `first(dates)`. When `bottom_drag_coefficient` is given,
 `drag_surface_temperature` defaults to the dataset's skin temperature at `first(dates)` regridded onto
@@ -500,8 +507,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
                                                     width = relaxation_width, padding = parent_padding, dir,
                                                     time_indices_in_memory = parent_time_indices_in_memory)
 
-    snapshot_dates = expand_dates(parent_dataset, :temperature, dates)[1:2]
-    snapshot = PrescribedAtmosphere(BoundingBox(child_grid; padding = parent_padding), snapshot_dates, parent_dataset;
+    snapshot = PrescribedAtmosphere(BoundingBox(child_grid; padding = parent_padding), [first(dates)], parent_dataset;
                                     architecture = architecture(child_grid), dir)
 
     if isnothing(base_pressure)
@@ -542,7 +548,7 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
                                   prognostic = nested_model.exchanger.prognostic)
     child = nested_model.child
     child_grid = child.grid
-    t₀ = first(prognostic.ρᵈ.times)
+    t₀ = @allowscalar first(prognostic.ρᵈ.times)
 
     ρᵈ   = interpolate_to_child(prognostic.ρᵈ, child_grid, t₀)
     ρθ   = interpolate_to_child(prognostic.ρθ, child_grid, t₀)
