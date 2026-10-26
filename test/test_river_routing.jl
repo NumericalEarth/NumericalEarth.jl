@@ -1,14 +1,15 @@
 include("runtests_setup.jl")
 
 using Oceananigans.Grids: Center, Face, Flat, λnodes, φnodes
-using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶜᶜᶜ
 using Oceananigans.ImmersedBoundaries: inactive_node
+using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶜᶜᶜ
+using Oceananigans.TurbulenceClosures: VerticalScalarDiffusivity
 using Oceananigans.Units: Time
-using NumericalEarth.Lands: RiverRouting, build_river_routing, coastal_outlet_indices, routable_grid
+
 using NumericalEarth.EarthSystemModels: interpolate_state!
 using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
+using NumericalEarth.Lands: RiverRouting, build_river_routing, coastal_outlet_indices, routable_grid
 using NumericalEarth.Oceans: river_mouth_vertical_diffusivity
-using Oceananigans.TurbulenceClosures: VerticalScalarDiffusivity
 
 # A target ocean grid whose western half (longitude < 0) is ocean and whose
 # eastern half is land, so the coastline runs down longitude = 0.
