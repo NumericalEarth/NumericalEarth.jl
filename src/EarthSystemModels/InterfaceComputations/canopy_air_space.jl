@@ -147,8 +147,8 @@ rᵍ = e^{a - b 𝒮},
 
 with the surface saturation `𝒮`, fit by [Sellers et al. (1992)](@cite sellers1992) to the
 FIFE prairie flux stations (`rᵍ(1) ≈ 52` s m⁻¹). The FIFE sites carried litter, so the fit
-is an effective soil-plus-litter resistance, an alternative to an explicit
-[`LitterResistance`](@ref) rather than a companion to one.
+is an effective soil-plus-litter resistance, an alternative to a
+[`GroundSurfaceResistance`](@ref) rather than a companion to one.
 
 ```jldoctest
 using NumericalEarth
@@ -182,51 +182,48 @@ Base.show(io::IO, r::SellersSoilResistance) = print(io, summary(r))
 end
 
 """
-    LitterResistance(FT = Oceananigans.defaults.FloatType;
-                     litter_area_index = 1, transfer_coefficient = 0.004)
+    GroundSurfaceResistance(FT = Oceananigans.defaults.FloatType; transfer_coefficient = 0.00633)
 
-Plant-litter resistance to ground evaporation
-([Sakaguchi and Zeng (2009)](@cite sakaguchi2009), Eq. 13),
+Bulk resistance of the ground surface to evaporation, in series with the undercanopy path
+on both ground vapor branches of a [`CanopyGroundSurface`](@ref),
 
 ```math
-rˡⁱᵗ = \\frac{1 - e^{-Lˡⁱᵗ}}{C u★},
+rᵍˢ = \\frac{1}{Cᵍˢ u★},
 ```
 
-with the litter area index `Lˡⁱᵗ` (m² m⁻²), a turbulent transfer coefficient `C`, and the
-friction velocity `u★` standing in for the wind speed in the canopy air space. The
-resistance vanishes without litter (`Lˡⁱᵗ = 0`) and saturates at `1/(C u★)` under a thick
-blanket. The default `Lˡⁱᵗ = 1` is the minimum stem-plus-litter area of the global surface
-dataset behind the fit; the snow-burial reduction of the original scheme is omitted.
+with a bulk transfer coefficient `Cᵍˢ` and the friction velocity `u★` standing in for the
+wind speed near the ground. It lumps whatever covers the soil (plant litter, mulch, a
+crust) into one parameter. The default `Cᵍˢ = 0.00633` reproduces the litter resistance of
+[Sakaguchi and Zeng (2009)](@cite sakaguchi2009), Eq. 13, at unit litter area index,
+`Cᵍˢ = 0.004 / (1 - e^{-1})`. A `CanopyGroundSurface` also takes a `Number`, a constant
+resistance in s m⁻¹.
 
 ```jldoctest
 using NumericalEarth
 
-LitterResistance()
+GroundSurfaceResistance()
 
 # output
-LitterResistance(Lˡⁱᵗ=1.0, C=0.004)
+GroundSurfaceResistance(C=0.00633)
 ```
 """
-struct LitterResistance{FT}
-    litter_area_index    :: FT
+struct GroundSurfaceResistance{FT}
     transfer_coefficient :: FT
 end
 
-LitterResistance(FT::Type = Oceananigans.defaults.FloatType;
-                 litter_area_index = 1, transfer_coefficient = 0.004) =
-    LitterResistance(convert(FT, litter_area_index), convert(FT, transfer_coefficient))
+GroundSurfaceResistance(FT::Type = Oceananigans.defaults.FloatType; transfer_coefficient = 0.00633) =
+    GroundSurfaceResistance(convert(FT, transfer_coefficient))
 
-Base.summary(r::LitterResistance) =
-    string("LitterResistance(Lˡⁱᵗ=", prettysummary(r.litter_area_index),
-           ", C=", prettysummary(r.transfer_coefficient), ")")
-Base.show(io::IO, r::LitterResistance) = print(io, summary(r))
+Base.summary(r::GroundSurfaceResistance) =
+    string("GroundSurfaceResistance(C=", prettysummary(r.transfer_coefficient), ")")
+Base.show(io::IO, r::GroundSurfaceResistance) = print(io, summary(r))
 
-@inline litter_resistance(::Nothing, u★) = zero(u★)
-@inline function litter_resistance(r::LitterResistance, u★)
-    FT   = typeof(u★)
-    Lˡⁱᵗ = convert(FT, r.litter_area_index)
-    C    = convert(FT, r.transfer_coefficient)
-    return (1 - exp(-Lˡⁱᵗ)) / max(C * u★, eps(FT))
+@inline ground_surface_resistance(::Nothing, u★) = zero(u★)
+@inline ground_surface_resistance(r::Number, u★) = convert(typeof(u★), r)
+@inline function ground_surface_resistance(r::GroundSurfaceResistance, u★)
+    FT = typeof(u★)
+    C  = convert(FT, r.transfer_coefficient)
+    return 1 / max(C * u★, eps(FT))
 end
 
 #####
@@ -319,10 +316,11 @@ Fields:
   [`FrictionVelocityUndercanopyVelocity`](@ref).
 - `wet_soil_resistance` : soil surface resistance on the moist-soil (vanishing dry layer)
   vapor branch (a [`SellersSoilResistance`](@ref)), or `nothing` (the default: above the
-  dry-layer onset the soil itself does not limit evaporation, and the litter layer and
-  undercanopy path carry the resistance).
-- `litter_resistance` : plant-litter resistance in series on both ground vapor branches
-  (a [`LitterResistance`](@ref), the default), or `nothing` for litter-free ground.
+  dry-layer onset the soil itself does not limit evaporation, and the ground-surface
+  resistance and undercanopy path carry it).
+- `ground_surface_resistance` : bulk ground-surface resistance in series on both ground
+  vapor branches (a [`GroundSurfaceResistance`](@ref), the default, or a constant `Number`
+  in s m⁻¹), or `nothing` for none.
 - `inner_iterations` : quasi-Newton iterations of the coupled skin solve.
 - `storage` : the canopy-air node storage — [`DiagnosticCanopyAir`](@ref) (the default,
   massless node) or [`PrognosticCanopyAir`](@ref) (the node carries the canopy-air
@@ -370,7 +368,7 @@ struct CanopyGroundSurface{ST, S, C, RF, LA, GA, CE, GE, FT, U, W, L}
     leaf_boundary_layer_velocity  :: FT
     undercanopy_transfer_velocity :: U
     wet_soil_resistance           :: W
-    litter_resistance             :: L
+    ground_surface_resistance     :: L
     inner_iterations              :: Int
     storage                       :: ST
 end
@@ -388,7 +386,7 @@ function CanopyGroundSurface(FT=Oceananigans.defaults.FloatType;
                              leaf_boundary_layer_velocity  = 0.02,
                              undercanopy_transfer_velocity = 0.013,
                              wet_soil_resistance           = nothing,
-                             litter_resistance             = LitterResistance(FT),
+                             ground_surface_resistance     = GroundSurfaceResistance(FT),
                              inner_iterations              = 10,
                              storage                       = DiagnosticCanopyAir())
 
@@ -402,7 +400,7 @@ function CanopyGroundSurface(FT=Oceananigans.defaults.FloatType;
                                convert(FT, extinction), convert(FT, clumping),
                                convert(FT, leaf_boundary_layer_velocity),
                                convert_if_number(FT, undercanopy_transfer_velocity),
-                               wet_soil_resistance, litter_resistance,
+                               wet_soil_resistance, ground_surface_resistance,
                                inner_iterations, storage)
 end
 
@@ -428,7 +426,7 @@ const PrognosticCanopyGroundSurface = CanopyGroundSurface{<:PrognosticCanopyAir}
                         state2dindex(c.maximum_canopy_emissivity, i, j),
                         state2dindex(c.ground_emissivity, i, j),
                         c.extinction, c.clumping, c.leaf_boundary_layer_velocity,
-                        c.undercanopy_transfer_velocity, c.wet_soil_resistance, c.litter_resistance,
+                        c.undercanopy_transfer_velocity, c.wet_soil_resistance, c.ground_surface_resistance,
                         c.inner_iterations, local_canopy_air_storage(c.storage, i, j))
 
 Base.summary(::CanopyGroundSurface) = "CanopyGroundSurface"
@@ -485,11 +483,11 @@ end
 
 # Ground vapor conductance `gᵍᵛ`, source humidity `qᵍ`, and the source's slope `dqᵍ` in the
 # ground surface temperature `Tᵍ`: the dry-layer branch (front humidity qᵉ through Gᵉ in series with the
-# litter + undercanopy path `gˡⁱᵗ`) blended with the saturated-skin branch (qᵍ⁺ through gᵍᵛ⁺)
+# ground-surface + undercanopy path `gᵍˢ`) blended with the saturated-skin branch (qᵍ⁺ through gᵍᵛ⁺)
 # by the soil model's weight `fᵈ`.
-@inline function soil_vapor_terms(soil, Tᵍ, gᵍᵛ⁺, gˡⁱᵗ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
+@inline function soil_vapor_terms(soil, Tᵍ, gᵍᵛ⁺, gᵍˢ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
     Gᵉ, qᵉ, fᵈ, qᵍ⁺, dqᵉ, dqᵍ⁺ = dry_layer_terms(soil, Tᵍ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
-    Gᵉ = ifelse(gˡⁱᵗ + Gᵉ > 0, Gᵉ * gˡⁱᵗ / (gˡⁱᵗ + Gᵉ), zero(Gᵉ))
+    Gᵉ = ifelse(gᵍˢ + Gᵉ > 0, Gᵉ * gᵍˢ / (gᵍˢ + Gᵉ), zero(Gᵉ))
     gᵍᵛ = fᵈ * Gᵉ + (1 - fᵈ) * gᵍᵛ⁺
     blended = gᵍᵛ > eps(eltype(Ψₛ))
     qᵍ  = ifelse(blended, (fᵈ * Gᵉ * qᵉ  + (1 - fᵈ) * gᵍᵛ⁺ * qᵍ⁺)  / gᵍᵛ, qᵍ⁺)
@@ -579,12 +577,12 @@ radiation state.
     gˡᵉᵃᶠᵀ = ρᵃᵗ * cᵖᵐ * LAI * c.leaf_boundary_layer_velocity
     gˡᵇ    = ρᵃᵗ * LAI * c.leaf_boundary_layer_velocity
     gᵍᵀ    = ρᵃᵗ * cᵖᵐ * wᵘᶜ
-    # Ground vapor path: the litter resistance `rˡⁱᵗ` and, on the moist-soil branch, the soil
+    # Ground vapor path: the ground-surface resistance `rᵍˢ` and, on the moist-soil branch, the soil
     # surface resistance `rᵍ` in series with the undercanopy path (Sakaguchi & Zeng 2009).
-    rˡⁱᵗ = litter_resistance(c.litter_resistance, u★)
+    rᵍˢ  = ground_surface_resistance(c.ground_surface_resistance, u★)
     rᵍ   = soil_surface_resistance(c.wet_soil_resistance, Ψˡᵃ.𝒮)
-    gˡⁱᵗ = ρᵃᵗ * wᵘᶜ / (1 + wᵘᶜ * rˡⁱᵗ)
-    gᵍᵛ⁺ = ρᵃᵗ * wᵘᶜ / (1 + wᵘᶜ * (rˡⁱᵗ + rᵍ))
+    gᵍˢ  = ρᵃᵗ * wᵘᶜ / (1 + wᵘᶜ * rᵍˢ)
+    gᵍᵛ⁺ = ρᵃᵗ * wᵘᶜ / (1 + wᵘᶜ * (rᵍˢ + rᵍ))
     Λᵍ   = convert(FT, ground_conductance(c.ground_heat_flux))
 
     # Canopy-air heat and vapor capacities (zero for a massless node) and the
@@ -629,7 +627,7 @@ radiation state.
         δT = sqrt(eps(FT)) * Tˡᵉᵃᶠ
         gˡᵉᵃᶠᵛ⁺, _, _ = leaf_vapor_terms(c, Tˡᵉᵃᶠ + δT, qᵃᶜ, gˡᵇ, Δt, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
         ∂gˡᵉᵃᶠᵛ∂Tˡᵉᵃᶠ = (gˡᵉᵃᶠᵛ⁺ - gˡᵉᵃᶠᵛ) / δT
-        gᵍᵛ, qᵍ, dqᵍ = soil_vapor_terms(c.soil_humidity, Tᵍ, gᵍᵛ⁺, gˡⁱᵗ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
+        gᵍᵛ, qᵍ, dqᵍ = soil_vapor_terms(c.soil_humidity, Tᵍ, gᵍᵛ⁺, gᵍˢ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
 
         Σgᵛ = gᵃᵛ + gˡᵉᵃᶠᵛ + gᵍᵛ
         mᵛ  = node_memory(Σgᵛ, Cᵛ, Δt)
@@ -665,7 +663,7 @@ radiation state.
 
     # The node and the flux partition at the final skins.
     gˡᵉᵃᶠᵛ, gʷᵉᵗ, qˡᵉᵃᶠ = leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜ, gˡᵇ, Δt, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
-    gᵍᵛ, qᵍ, _ = soil_vapor_terms(c.soil_humidity, Tᵍ, gᵍᵛ⁺, gˡⁱᵗ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
+    gᵍᵛ, qᵍ, _ = soil_vapor_terms(c.soil_humidity, Tᵍ, gᵍᵛ⁺, gᵍˢ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
     Σgᵛ = gᵃᵛ + gˡᵉᵃᶠᵛ + gᵍᵛ
     Tᵃᶜ, equilibrium_temperature = canopy_air_node(T⁻, (gᵍᵀ, gˡᵉᵃᶠᵀ, gᵃᵀ), (Tᵍ, Tˡᵉᵃᶠ, θᵃᵗ), mᵀ)
     qᵃᶜ, equilibrium_humidity    = canopy_air_node(q⁻, (gᵍᵛ, gˡᵉᵃᶠᵛ, gᵃᵛ), (qᵍ, qˡᵉᵃᶠ, qᵃᵗ), node_memory(Σgᵛ, Cᵛ, Δt))

@@ -12,7 +12,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     saturation_specific_humidity, AtmosphericThermodynamics,
     AirLandInterfaceState, InterfaceFluxScales, InterfaceVelocities, AirLandRadiationState,
     AreaIndexUndercanopyVelocity, FrictionVelocityUndercanopyVelocity, undercanopy_transfer_velocity,
-    SellersSoilResistance, LitterResistance, soil_surface_resistance, litter_resistance,
+    SellersSoilResistance, GroundSurfaceResistance, soil_surface_resistance, ground_surface_resistance,
     DiagnosticSkin, kernel_surface_field, canopy_transmittance
 using NumericalEarth: stateindex
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
@@ -92,8 +92,8 @@ ground_vapor_state(𝒮) = (air_temperature = 305, air_specific_humidity = 0.006
         for surface in (canopy_ground_surface(FT),
                         canopy_ground_surface(FT; undercanopy_transfer_velocity = AreaIndexUndercanopyVelocity(FT)),
                         canopy_ground_surface(FT; undercanopy_transfer_velocity = FrictionVelocityUndercanopyVelocity(FT)),
-                        canopy_ground_surface(FT; litter_resistance = nothing),
-                        canopy_ground_surface(FT; litter_resistance = nothing, wet_soil_resistance = SellersSoilResistance(FT)))
+                        canopy_ground_surface(FT; ground_surface_resistance = nothing),
+                        canopy_ground_surface(FT; ground_surface_resistance = nothing, wet_soil_resistance = SellersSoilResistance(FT)))
             @inferred canopy_air_space_solve(surface, args...)
         end
     end
@@ -187,7 +187,7 @@ end
 @testset "Saturated soil keeps evaporating (dry-layer wet blend in CanopyGroundSurface)" begin
     soil = power_law_soil_humidity(Float64)
     bare(wᵘᶜ) = canopy_ground_surface(Float64; leaf_area_index = 0.0, soil_humidity = soil,
-                                      undercanopy_transfer_velocity = wᵘᶜ, litter_resistance = nothing)
+                                      undercanopy_transfer_velocity = wᵘᶜ, ground_surface_resistance = nothing)
     state(𝒮) = (; ground_vapor_state(𝒮)..., vapor_diffusivity = 2.4e-5 * (0.4 * (1 - 𝒮))^(10/3) / 0.4^2)
 
     E = [canopy_solve(bare(wᵘᶜ); state(0.99)...).𝒬ᵛᵍ for wᵘᶜ in (0.05, 0.5, 5.0)]
@@ -201,7 +201,7 @@ end
     @test fᵈ * Gᵉ + (1 - fᵈ) * (ρᵃᵗ * 0.5) ≈ Gᵉ rtol = 0.02
 end
 
-@testset "Ground-surface resistances (litter layer, Sellers fit)" begin
+@testset "Ground-surface resistances (bulk cover, Sellers fit)" begin
     for FT in (Float32, Float64)
         r = SellersSoilResistance(FT)
         @test soil_surface_resistance(r, FT(1)) ≈ exp(FT(8.206) - FT(4.255))   # Sellers et al. (1992), Eq. (19)
@@ -209,22 +209,23 @@ end
         @test soil_surface_resistance(r, FT(0.4)) > soil_surface_resistance(r, FT(0.7))
         @test soil_surface_resistance(nothing, FT(0.5)) == 0
 
-        l = LitterResistance(FT)
-        @test litter_resistance(l, FT(0.3)) ≈ (1 - exp(-FT(1))) / (FT(0.004) * FT(0.3))   # Sakaguchi & Zeng (2009), Eq. (13)
-        @test litter_resistance(LitterResistance(FT; litter_area_index = 0), FT(0.3)) == 0
-        @test litter_resistance(l, FT(0.1)) > litter_resistance(l, FT(0.3))
-        @test isfinite(litter_resistance(l, FT(0)))
-        @test litter_resistance(nothing, FT(0.3)) == 0
+        r = GroundSurfaceResistance(FT)
+        # Sakaguchi & Zeng (2009), Eq. (13), at unit litter area index
+        @test ground_surface_resistance(r, FT(0.3)) ≈ (1 - exp(-FT(1))) / (FT(0.004) * FT(0.3)) rtol = 1e-3
+        @test ground_surface_resistance(r, FT(0.1)) > ground_surface_resistance(r, FT(0.3))
+        @test isfinite(ground_surface_resistance(r, FT(0)))
+        @test ground_surface_resistance(FT(50), FT(0.3)) == 50
+        @test ground_surface_resistance(nothing, FT(0.3)) == 0
     end
 
     bare(; kw...) = canopy_ground_surface(Float64; leaf_area_index = 0.0, kw...)
-    unresisted = bare(litter_resistance = nothing)
-    sellers    = bare(litter_resistance = nothing, wet_soil_resistance = SellersSoilResistance(Float64))
-    litter     = bare()
+    unresisted = bare(ground_surface_resistance = nothing)
+    sellers    = bare(ground_surface_resistance = nothing, wet_soil_resistance = SellersSoilResistance(Float64))
+    covered    = bare()
     𝒬ᵛᵍ(surface, 𝒮) = canopy_solve(surface; ground_vapor_state(𝒮)...).𝒬ᵛᵍ
 
-    @test 𝒬ᵛᵍ(litter, 0.9) < 𝒬ᵛᵍ(sellers, 0.9) < 𝒬ᵛᵍ(unresisted, 0.9)
-    @test issorted([𝒬ᵛᵍ(litter, 𝒮) for 𝒮 in 0.50:-0.03:0.14], rev = true)
+    @test 𝒬ᵛᵍ(covered, 0.9) < 𝒬ᵛᵍ(sellers, 0.9) < 𝒬ᵛᵍ(unresisted, 0.9)
+    @test issorted([𝒬ᵛᵍ(covered, 𝒮) for 𝒮 in 0.50:-0.03:0.14], rev = true)
 end
 
 @testset "Undercanopy transfer velocity closures" begin

@@ -87,7 +87,7 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``\mathrm{ac}`` | `ᵃᶜ` | canopy air | ``T^{\mathrm{ac}}`` (canopy-air temperature) |
 | ``\mathrm{lb}`` | `ˡᵇ` | leaf boundary layer | ``g^{\mathrm{lb}}`` (leaf boundary-layer conductance) |
 | ``\mathrm{wet}`` | `ʷᵉᵗ` | wet (intercepted) canopy water | ``J^{\mathrm{wet}}`` (wet-canopy evaporation) |
-| ``\mathrm{lit}`` | `ˡⁱᵗ` | plant litter | ``r^{\mathrm{lit}}`` (litter resistance) |
+| ``gs`` | `ᵍˢ` | ground surface cover | ``r^{gs}`` (ground-surface resistance) |
 | ``\mathrm{int}`` | `ⁱⁿᵗ` | interception | ``f^{\mathrm{int}}`` (caught fraction of rain) |
 | ``t`` | `ᵗ` | transpiration | ``J^t`` (transpiration flux) |
 | ``\mathrm{eff}`` | `ᵉᶠᶠ` | effective (radiating) | ``T^{\mathrm{eff}}`` (effective radiating temperature) |
@@ -231,7 +231,7 @@ and [`InterceptingHydrology`](@ref).
 | ``g^{\mathrm{lb}}`` | – | leaf boundary-layer mass conductance | ``g^{\mathrm{lb}} = \rho^{\mathrm{at}} L w^{\mathrm{lb}}``; the stomata-free wet-leaf vapor path (kg m⁻² s⁻¹) |
 | ``g^{\mathrm{leaf}\,T}``, ``g^{\mathrm{leaf}\,v}`` | – | leaf conductances | Leaf sensible-heat and vapor conductance to the canopy air (W m⁻² K⁻¹, kg m⁻² s⁻¹) |
 | ``g^{gT}``, ``g^{gv}`` | – | ground conductances | Ground sensible-heat and vapor conductance to the canopy air; ``g^{gv}`` blends the dry-layer branch with the saturated-skin branch ``g^{gv+}`` (W m⁻² K⁻¹, kg m⁻² s⁻¹) |
-| ``g^{\mathrm{lit}}`` | – | litter-path vapor conductance | Undercanopy vapor path through the litter alone, in series with ``G^e`` on the dry-layer branch (kg m⁻² s⁻¹) |
+| ``g^{gs}`` | – | ground-surface vapor conductance | Undercanopy vapor path through the ground-surface resistance alone, in series with ``G^e`` on the dry-layer branch (kg m⁻² s⁻¹) |
 | ``g^{aT}``, ``g^{av}`` | – | aerodynamic conductances | Canopy-air↔atmosphere sensible-heat and vapor conductance of the similarity solution, ``g^{av} = \rho^{\mathrm{at}} u_\star \chi^q``; [`DryLayerHumidity`](@ref) writes ``g^{av}`` as ``G^a``, the divider every humidity formulation closes against (W m⁻² K⁻¹, kg m⁻² s⁻¹) |
 | ``G^e`` | – | dry-layer vapor conductance | Soil vapor conductance of [`DryLayerHumidity`](@ref) (kg m⁻² s⁻¹) |
 | ``f^d`` | – | dry-branch weight | Weight of the dry-layer branch in the blended soil vapor exchange (–) |
@@ -242,7 +242,7 @@ and [`InterceptingHydrology`](@ref).
 | ``\epsilon^{\mathrm{leaf}}``, ``\epsilon^{g}`` | `maximum_canopy_emissivity`, `ground_emissivity` | emissivities | Longwave emissivity of the canopy (``\epsilon^{\mathrm{leaf}} = \epsilon^{max}(1 - e^{-L})``) and of the ground (–) |
 | ``\alpha^{\mathrm{leaf}}``, ``\alpha^{g}`` | `leaf_albedo`, `ground_albedo` | albedos | Shortwave albedo of the canopy and of the ground below it (–) |
 | ``r^g`` | – | ground surface resistance | Moist-soil evaporation resistance of a [`SellersSoilResistance`](@ref) (s m⁻¹) |
-| ``r^{\mathrm{lit}}``, ``L^{\mathrm{lit}}`` | `litter_area_index` | litter resistance, litter area index | Ground evaporation resistance of a [`LitterResistance`](@ref) (s m⁻¹) and its area index (m² m⁻²) |
+| ``r^{gs}``, ``C^{gs}`` | `transfer_coefficient` | ground-surface resistance, transfer coefficient | Bulk ground evaporation resistance of a [`GroundSurfaceResistance`](@ref) (s m⁻¹) and its transfer coefficient (–) |
 | ``M^c``, ``M^{c+}`` | `canopy_water_storage` | canopy water store | Intercepted water on the foliage and its capacity ``M^{c+} = c L``, with ``c`` the capacity per unit leaf area (`capacity_per_leaf_area`) (kg m⁻²) |
 | ``f^{\mathrm{int}}`` | – | interception fraction | Caught fraction of rain, ``1 - e^{-K \Omega L}`` (–) |
 | ``f^{\mathrm{wet}}`` | – | wet-canopy fraction | Deardorff wetted-leaf fraction ``(M^c/M^{c+})^{2/3}`` (–) |

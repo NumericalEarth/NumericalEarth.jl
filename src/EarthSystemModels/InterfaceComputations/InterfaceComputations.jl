@@ -63,7 +63,7 @@ export
     AreaIndexUndercanopyVelocity,
     FrictionVelocityUndercanopyVelocity,
     SellersSoilResistance,
-    LitterResistance,
+    GroundSurfaceResistance,
     RubiscoLightLimitedPhotosynthesis,
     MedlynConductance,
     JarvisConductance,
