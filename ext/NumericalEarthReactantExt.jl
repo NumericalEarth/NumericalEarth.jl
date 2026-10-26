@@ -36,10 +36,18 @@ function first_time_step!(model::ReactantESM, Δt)
     return nothing
 end
 
-import NumericalEarth.EarthSystemModels: same_time_type
+import NumericalEarth.EarthSystemModels: same_time_type, clock_at_time_zero
+using Oceananigans.TimeSteppers: Clock
 
 same_time_type(::Reactant.ConcreteRNumber{FT}, ::TT) where {FT,TT} = FT == TT
 same_time_type(::Reactant.ConcreteRNumber{FT}, ::Reactant.ConcreteRNumber{TT}) where {FT,TT} = FT == TT
 same_time_type(::FT, ::Reactant.ConcreteRNumber{TT}) where {FT,TT} = FT == TT
+
+# Reactant's `tick!` advances the time, the iteration and the last Δt of a device clock as device numbers, so
+# `Clock{TT}(time = 0)`, which leaves the iteration a host `Int`, cannot be ticked inside a compiled step
+clock_at_time_zero(::Clock{<:Reactant.ConcreteRNumber{FT}, KT}) where {FT, KT} =
+    Clock(; time = Reactant.ConcreteRNumber(zero(FT)), iteration = Reactant.ConcreteRNumber(0), stage = 1,
+            last_Δt = Reactant.ConcreteRNumber(convert(FT, Inf)), last_stage_Δt = Reactant.ConcreteRNumber(convert(FT, Inf)),
+            kernel_time_type = KT)
 
 end # module NumericalEarthReactantExt
