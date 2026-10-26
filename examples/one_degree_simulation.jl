@@ -1,4 +1,4 @@
-# # [One-degree global ocean--sea ice simulation](@id one-degree-ocean-seaice)
+# # [One-degree global ocean--sea ice OMIP-style simulation](@id one-degree-ocean-seaice)
 #
 # This example configures a global ocean--sea ice simulation on the 1ᵒ NEMO eORCA1 grid, in an OMIP-like
 # configuration: 100 vertical levels, CATKE vertical mixing over a uniform background diffusivity,
@@ -28,9 +28,11 @@ using CUDA
 
 arch = GPU()
 
+top_cell_thickness = 1.5          # m
+
 z = ReferenceToStretchedDiscretization(extent = 5500,
-                                       constant_spacing = 1.5,
-                                       constant_spacing_extent = 1.5,
+                                       constant_spacing = top_cell_thickness,
+                                       constant_spacing_extent = top_cell_thickness,
                                        maximum_spacing = 100,
                                        stretching = LinearStretching(0.0749),
                                        rounding_digits = 4,
@@ -93,7 +95,6 @@ chlorophyll          = FieldTimeSeries(chlorophyll_metadata, grid)
 radiative_forcing    = TwoColorRadiation(grid; chlorophyll)
 
 piston_velocity    = 0.254 / days # m s⁻¹
-top_cell_thickness = 1.5          # m
 
 salinity_restoring = DatasetRestoring(Metadata(:salinity; dataset = WOAMonthly()), arch;
                                       rate = piston_velocity / top_cell_thickness,
