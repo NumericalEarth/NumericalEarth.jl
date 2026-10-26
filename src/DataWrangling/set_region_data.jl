@@ -215,9 +215,15 @@ end
 # `on_architecture` has no `Base.ReshapedArray` method, so host data arriving reshaped — e.g. a
 # 2-D NetCDF variable reshaped to (Nx, Ny, 1) — falls through the generic identity fallback and
 # reaches GPU kernels as CPU memory (kernel compilation failure).
-architecture_ready(arch, data) = on_architecture(arch, data)
+architecture_ready(arch, data) = on_architecture(arch, without_missing(data))
 architecture_ready(arch, data::Base.ReshapedArray) =
-    reshape(on_architecture(arch, parent(data)), size(data))
+    reshape(on_architecture(arch, without_missing(parent(data))), size(data))
+
+# A NetCDF slice arrives as `Array{Union{Missing, T}}`, an element type a device array may not hold
+# (Reactant cannot: EnzymeAD/Reactant.jl#3569). `missing` becomes NaN on the host, which is what
+# `nan_convert_missing` makes of it in the kernel.
+without_missing(data) = data
+without_missing(data::AbstractArray{Union{Missing, T}}) where T <: AbstractFloat = coalesce.(data, convert(T, NaN))
 
 """
     set_region_data!(target, data, λc, φc, metadata)

@@ -116,3 +116,13 @@ end
 
     @test T_reactant ≈ T_cpu rtol=1e-4
 end
+
+# A NetCDF slice (`Array{Union{Missing, T}}`) reaches the device with `missing` as NaN: Reactant cannot
+# hold the `Missing` element type (EnzymeAD/Reactant.jl#3569).
+@testset "A slice with missing values moved to ReactantState" begin
+    slice = Union{Missing, Float32}[1, missing, 1]
+    device_slice = NumericalEarth.DataWrangling.architecture_ready(ReactantState(), slice)
+    @test device_slice isa Reactant.AbstractConcreteArray{Float32}
+    @test isequal(Array(device_slice), Float32[1, NaN, 1])
+end
+

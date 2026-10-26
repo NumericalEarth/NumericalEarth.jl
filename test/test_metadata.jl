@@ -423,3 +423,19 @@ end
     @test DataWrangling.nan_convert_missing(Float32, 1.0, -999) === 1f0
     @test DataWrangling.nan_convert_missing(Float32, Inf, -999) === Inf32
 end
+
+@testset "set_region_data! from a slice with missing values" begin
+    slice = convert(Array{Union{Missing, Float32}}, ones(Float32, 4, 4, 2))
+    slice[2, 3, 1] = missing
+
+    # `missing` becomes NaN on the host, before the transfer
+    @test DataWrangling.architecture_ready(CPU(), slice) isa Array{Float32, 3}
+    @test eltype(DataWrangling.architecture_ready(CPU(), reshape(view(slice, :, :, :), 4, 4, 2))) == Float32
+
+    grid = LatitudeLongitudeGrid(CPU(); size = (4, 4, 2), longitude = (0, 4), latitude = (0, 4), z = (0, 1))
+    field = CenterField(grid)
+    DataWrangling.set_region_data!(field, slice, nothing, nothing, nothing; mangling = nothing, conversion = nothing,
+                                   region = DataWrangling.BoundingBoxOffset(0, 0))
+    @test isnan(interior(field)[2, 3, 1])
+    @test count(isnan, interior(field)) == 1
+end
