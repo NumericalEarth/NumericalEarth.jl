@@ -33,13 +33,13 @@ using Oceananigans.Fields: interior
     model = AtmosphereLandModel(atmosphere, land; radiation = nothing)
     update_state!(model)
 
-    # The land exchanger publishes skin temperature (K) and surface saturation for the
+    # The land exchanger publishes skin temperature `T` (K) and surface saturation `𝒮` for the
     # atmosphere-land flux kernel.
     ex = model.interfaces.exchanger.land
     @test hasproperty(ex.state, :T)
-    @test hasproperty(ex.state, :saturation)
+    @test hasproperty(ex.state, :𝒮)
     @test all(isfinite.(interior(ex.state.T)))
-    @test all(interior(ex.state.saturation) .≈ 0.5)
+    @test all(interior(ex.state.𝒮) .≈ 0.5)
 
     # The MO scheme produced finite turbulent fluxes, pushed into Terrarium's inputs.
     state = land.model.state
@@ -98,12 +98,11 @@ end
     @test all(interior(state.surface_shortwave_up) .≈ α * 400)
     @test all(interior(state.surface_longwave_up) .≈ interior(radiative.upwelling_longwave))
 
-    # `G` is the coupler's net surface energy flux (positive upward): turbulent fluxes plus
-    # emitted longwave minus absorbed longwave and shortwave.
+    # `G` is the coupler's net surface energy flux (positive upward): turbulent plus radiative fluxes.
     G = interior(state.ground_heat_flux)
     expected_G = interior(turbulent.sensible_heat) .+ interior(turbulent.latent_heat) .+
-                 interior(radiative.upwelling_longwave) .-
-                 interior(radiative.downwelling_longwave) .-
+                 interior(radiative.upwelling_longwave) .+
+                 interior(radiative.downwelling_longwave) .+
                  interior(radiative.downwelling_shortwave)
     @test all(G .≈ expected_G)
 

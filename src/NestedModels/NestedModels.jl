@@ -6,7 +6,7 @@ export NestedModel, NestedSimulation, nested_atmosphere_model,
 
 # Model-specific extension point (methods defined in the Breeze extension):
 #   `nested_atmosphere_model(parent, child_grid; …)` builds a child atmosphere over `child_grid` driven
-#       by `parent` (lateral BCs + Davies relaxation derived on the fly), wrapped in a `NestedModel`.
+#       by `parent` (lateral BCs + boundary relaxation derived on the fly), wrapped in a `NestedModel`.
 # The child's lateral BCs / interior relaxation are built from the exchanger's parent-derived prognostic
 # `FieldTimeSeries` via the generic `parent_boundary_conditions` / `parent_forcings`.
 function nested_atmosphere_model end

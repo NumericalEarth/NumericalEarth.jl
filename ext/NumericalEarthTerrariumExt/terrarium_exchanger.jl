@@ -43,11 +43,11 @@ land_surface_energy_flux(land::TerrariumSimulation) = interior(land.model.state.
 land_surface_shortwave_up(land::TerrariumSimulation) = interior(land.model.state.surface_shortwave_up)
 land_surface_longwave_up(land::TerrariumSimulation) = interior(land.model.state.surface_longwave_up)
 
-# Land exchanger: expose skin temperature `T` (K) and surface `saturation`, the two
+# Land exchanger: expose skin temperature `T` (K) and surface saturation `𝒮`, the two
 # fields the atmosphere-land flux kernel reads. No regridder (exchange grid == land grid).
 function ComponentExchanger(land::TerrariumSimulation, exchange_grid)
-    state = (T          = Field{Center, Center, Nothing}(exchange_grid),
-             saturation = Field{Center, Center, Nothing}(exchange_grid))
+    state = (T = Field{Center, Center, Nothing}(exchange_grid),
+             𝒮 = Field{Center, Center, Nothing}(exchange_grid))
     return ComponentExchanger(state, nothing)
 end
 
@@ -73,7 +73,7 @@ function interpolate_state!(exchanger, exchange_grid, land::TerrariumSimulation,
     launch!(arch, exchange_grid, :xy,
             _terrarium_surface_to_exchange!,
             exchanger.state.T,
-            exchanger.state.saturation,
+            exchanger.state.𝒮,
             state.temperature,
             state.saturation_water_ice,
             Nz)
@@ -111,11 +111,12 @@ end
 
 # Push the downwelling shortwave/longwave radiation from the radiation exchanger into
 # Terrarium's radiation input fields. Skipped when no radiation is configured.
+# Terrarium takes positive-downward magnitudes; the exchanged fluxes are positive upward.
 @kernel function _terrarium_push_downwelling!(shortwave_down, longwave_down, ℐꜜˢʷ, ℐꜜˡʷ)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        shortwave_down[i, j, end] = ℐꜜˢʷ[i, j, 1]
-        longwave_down[i, j, end] = ℐꜜˡʷ[i, j, 1]
+        shortwave_down[i, j, end] = - ℐꜜˢʷ[i, j, 1]
+        longwave_down[i, j, end] = - ℐꜜˡʷ[i, j, 1]
     end
 end
 

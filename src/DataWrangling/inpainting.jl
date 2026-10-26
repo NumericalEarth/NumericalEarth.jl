@@ -13,7 +13,7 @@ end
 
 propagate_horizontally!(::NearestNeighborInpainting, field, ::Nothing, args...; kw...) = field
 
-remaining_gaps(field, mask) = sum(isnan, field; condition=interior(mask))
+remaining_gaps(field, mask) = count(isnan.(interior(field)) .& interior(mask))
 
 # Stop once a sweep fills nothing: no donor is reachable for what is left, and the
 # default `maxiter = Inf` would otherwise never terminate.
@@ -38,9 +38,6 @@ function propagate_horizontally!(inpainting::NearestNeighborInpainting, field, m
     grid  = field.grid
     arch  = architecture(grid)
 
-    launch!(arch, grid, size(field), _nan_mask!, field, mask)
-    fill_halo_regions!(field)
-
     # Need temporary field to avoid a race condition
     parent(substituting_field) .= parent(field)
 
@@ -57,9 +54,6 @@ function propagate_horizontally!(inpainting::NearestNeighborInpainting, field, m
 
         iter += 1
     end
-
-    launch!(arch, grid, size(field), _fill_nans!, field)
-    fill_halo_regions!(field)
 
     return field
 end
@@ -130,17 +124,28 @@ Arguments
                 `Int` is taken as that `maxiter`.
                 Default: `NearestNeighborInpainting(Inf)`.
 """
+inpaint_mask!(field, ::Nothing; kw...) = field
+
 function inpaint_mask!(field, mask; inpainting=NearestNeighborInpainting(Inf))
 
     if inpainting isa Int
         inpainting = NearestNeighborInpainting(inpainting)
     end
 
+    arch = architecture(field)
+    launch!(arch, field.grid, size(field), _nan_mask!, field, mask)
+    fill_halo_regions!(field)
+
+    # Same-depth neighbors first: continuing downwards first puts surface water at depth
+    # wherever the data is shallower than the grid
+    propagate_horizontally!(inpainting, field, mask)
+
     if size(field, 3) > 1
         continue_downwards!(field, mask)
     end
 
-    propagate_horizontally!(inpainting, field, mask)
+    launch!(arch, field.grid, size(field), _fill_nans!, field)
+    fill_halo_regions!(field)
 
     return field
 end
@@ -169,7 +174,7 @@ end
     Nz = size(grid, 3)
 
     for k = Nz-1 : -1 : 1
-        @inbounds field[i, j, k] = ifelse(mask[i, j, k], field[i, j, k+1], field[i, j, k])
+        @inbounds field[i, j, k] = ifelse(mask[i, j, k] & isnan(field[i, j, k]), field[i, j, k+1], field[i, j, k])
     end
 end
 
@@ -212,69 +217,4 @@ end
 
     FT_NaN = convert(eltype(field), NaN)
     @inbounds substituting_field[i, j, k] = ifelse(donors == 0, FT_NaN, value / donors)
-end
-
-"""
-    fill_gaps!(fts::FieldTimeSeries; max_gap=6)
-    fill_gaps!(data::AbstractArray; max_gap=6)
-    fill_gaps!(data::AbstractVector; max_gap=6)
-
-Fill NaN gaps along the time dimension using linear interpolation, except at the ends
-of the record, where a gap takes the nearest valid value. For an `AbstractArray`, the
-last dimension is assumed to be time, and each spatial column is filled independently.
-For a `FieldTimeSeries`, `interior(fts)` is copied to the CPU, filled in place, and
-copied back.
-
-Interior gaps longer than `max_gap` points are left as NaN with a warning.
-"""
-function fill_gaps!(fts::FieldTimeSeries; max_gap=6)
-    data_cpu = Array(interior(fts))
-    fill_gaps!(data_cpu; max_gap)
-    copyto!(interior(fts), data_cpu)
-    return fts
-end
-
-function fill_gaps!(data::AbstractArray; max_gap=6)
-    spatial_inds = CartesianIndices(size(data)[1:end-1])
-    for I in spatial_inds
-        fill_gaps!(view(data, I, :); max_gap)
-    end
-    return data
-end
-
-function fill_gaps!(data::AbstractVector; max_gap=6)
-    N = length(data)
-    i = 1
-    while i ≤ N
-        if isnan(data[i])
-            gap_start = i
-            while i ≤ N && isnan(data[i])
-                i += 1
-            end
-            gap_end = i - 1
-            gap_length = gap_end - gap_start + 1
-
-            if gap_start == 1 || gap_end == N
-                # Edge gap: fill with nearest valid value
-                if gap_start == 1 && gap_end < N
-                    data[gap_start:gap_end] .= data[gap_end + 1]
-                elseif gap_end == N && gap_start > 1
-                    data[gap_start:gap_end] .= data[gap_start - 1]
-                end
-            elseif gap_length > max_gap
-                @warn "Large gap of $gap_length points at indices $gap_start:$gap_end left unfilled"
-            else
-                # Linear interpolation
-                v0 = data[gap_start - 1]
-                v1 = data[gap_end + 1]
-                for j in gap_start:gap_end
-                    α = (j - gap_start + 1) / (gap_length + 1)
-                    data[j] = v0 + α * (v1 - v0)
-                end
-            end
-        else
-            i += 1
-        end
-    end
-    return data
 end
