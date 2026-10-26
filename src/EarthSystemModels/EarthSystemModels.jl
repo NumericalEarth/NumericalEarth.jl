@@ -30,7 +30,6 @@ export
     FrictionVelocityUndercanopyVelocity,
     SellersSoilResistance,
     LitterResistance,
-    TiledLandInterface,
     RubiscoLightLimitedPhotosynthesis,
     MedlynConductance,
     JarvisConductance,

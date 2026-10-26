@@ -87,17 +87,3 @@ end
         @test arrays(state) == candidate
     end
 end
-
-@testset "Tiled canopy and skin storage restart together" begin
-    for arch in test_architectures
-        canopy = checkpoint_canopy(PrognosticCanopyAir())
-        surface = TiledLandSurface(LandSurface(canopy); cover_fraction = 0.6,
-                                   bare = LandSurface(checkpoint_skin(); specific_humidity = canopy.soil_humidity))
-        m1, m2 = coupled_land_model(arch; surface), coupled_land_model(arch; surface)
-        fluxes1, fluxes2 = roundtrip!(m1, m2)
-        @test fluxes1 == fluxes2
-        for tile in (:vegetated, :bare)
-            @test arrays(getproperty(m1.land.surface, tile).prognostic) == arrays(getproperty(m2.land.surface, tile).prognostic)
-        end
-    end
-end
