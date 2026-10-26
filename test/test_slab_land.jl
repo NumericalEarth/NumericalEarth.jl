@@ -245,7 +245,7 @@ end
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                P, E, nothing, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
+                P, E, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
 
         @test isapprox(CUDA.@allowscalar(P[1, 1, 1]), 0; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(E[1, 1, 1]), 0.5; atol=1e-12)
@@ -257,7 +257,7 @@ end
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                P, E, nothing, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
+                P, E, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
 
         @test isapprox(CUDA.@allowscalar(P[1, 1, 1]), 0.5; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(E[1, 1, 1]), 0; atol=1e-12)
@@ -271,7 +271,7 @@ end
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                P, E, nothing, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
+                P, E, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
 
         @test isapprox(CUDA.@allowscalar(P[1, 1, 1]), 1.7; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(E[1, 1, 1]), 0; atol=1e-12)
@@ -286,7 +286,7 @@ end
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                P, E, nothing, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
+                P, E, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
 
         @test isapprox(only(Array(interior(Es))), -3; atol=1e-12)
     end
