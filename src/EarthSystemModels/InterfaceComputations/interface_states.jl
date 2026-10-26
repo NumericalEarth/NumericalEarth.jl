@@ -179,7 +179,7 @@ end
 # node in flux continuity with all of them. Every conductance zero keeps `x⁻`.
 @inline function conductance_weighted_node(x⁻, conductances, sources)
     D = sum(conductances)
-    return ifelse(D > 0, sum(conductances .* sources) / D, x⁻)
+    return ifelse(D > 0, sum(map(*, conductances, sources)) / D, x⁻)
 end
 
 # `BulkHumidity` — surface specific humidity for a bulk land surface with no
