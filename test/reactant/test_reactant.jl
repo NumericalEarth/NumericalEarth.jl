@@ -117,6 +117,17 @@ end
     @test T_reactant ≈ T_cpu rtol=1e-4
 end
 
+# Broadcasting into `interior` of a ReactantState field reads device memory element by element, which
+# Reactant refuses, so the level pressure goes through `set!`.
+@testset "ERA5 pressure_level_field on ReactantState" begin
+    levels = Float32[1000, 850, 500] .* 100
+    for arch in (CPU(), ReactantState())
+        grid = LatitudeLongitudeGrid(arch, Float32; size = (4, 4, 3), longitude = (0, 1), latitude = (0, 1), z = (0, 1))
+        pressure = NumericalEarth.DataWrangling.ERA5.pressure_level_field(grid, (; pressure_levels = levels), arch)
+        @test all(Array(interior(pressure))[i, j, :] == levels for i in 1:4, j in 1:4)
+    end
+end
+
 # A NetCDF slice (`Array{Union{Missing, T}}`) reaches the device with `missing` as NaN: Reactant cannot
 # hold the `Missing` element type (EnzymeAD/Reactant.jl#3569).
 @testset "A slice with missing values moved to ReactantState" begin
@@ -129,4 +140,3 @@ end
     @test size(reshaped_slice) == (1, 3)
     @test isequal(Array(reshaped_slice), Float32[1 NaN 1])
 end
-
