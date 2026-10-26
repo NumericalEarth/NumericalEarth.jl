@@ -22,7 +22,8 @@
 import Oceananigans.BoundaryConditions: regularize_boundary_condition, getbc,
                                         LeftBoundary, RightBoundary
 import Oceananigans.OutputReaders: FlavorOfFTS
-using Oceananigans.Grids: node, Face, OrthogonalSphericalShellGrid
+using Oceananigans.Grids: node, topology, Face, OrthogonalSphericalShellGrid,
+                          FullyConnected, LeftConnected, RightConnected
 using Adapt: Adapt, adapt
 
 const InterpolatedSource = Union{FlavorOfFTS, Oceananigans.Fields.AbstractField}
@@ -75,9 +76,19 @@ function regularize_boundary_condition(c::Interpolated{Nothing}, grid, loc, dim,
     LX = typeof(loc[1])
     LY = typeof(loc[2])
     LZ = typeof(loc[3])
-    validate_source_bracket(c.source, grid, dim, SideType, LX, LY, LZ)
+    on_physical_boundary(topology(grid, dim), SideType) &&
+        validate_source_bracket(c.source, grid, dim, SideType, LX, LY, LZ)
     return Interpolated{dim, SideType, LX, LY, LZ}(c.source, c.source_grid)
 end
+
+# Every rank regularizes the user's boundary conditions on its own local grid, but a rank whose side
+# borders another rank replaces this condition with halo communication — its local edge is interior to
+# the domain, and a source spanning only the physical boundary need not bracket it. A `LeftConnected`
+# direction borders a rank on its left, a `RightConnected` one on its right.
+on_physical_boundary(topology, SideType) = true
+on_physical_boundary(::Type{FullyConnected}, SideType) = false
+on_physical_boundary(::Type{LeftConnected}, ::Type{LeftBoundary}) = false
+on_physical_boundary(::Type{RightConnected}, ::Type{RightBoundary}) = false
 
 # The source must bracket the boundary *horizontally* (a too-small parent region there is a real
 # error): along the boundary, the child's whole extent; across it, only the boundary itself. The
