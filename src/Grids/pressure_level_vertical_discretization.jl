@@ -3,7 +3,7 @@ using Statistics: mean
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans: instantiated_location
-using Oceananigans.Fields: Field, compute!, interior
+using Oceananigans.Fields: Field, compute!, interior, set!
 using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Center, Face, Flat, LatitudeLongitudeGrid, topology
 using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid, lcc_fractional_indices
@@ -220,7 +220,7 @@ function surface_elevation(grid::PressureLevelGrid)
     Φˢᶠᶜ = grid.z.surface_geopotential
     isnothing(Φˢᶠᶜ) && return nothing
     elevation = Field{Center, Center, Nothing}(Φˢᶠᶜ.grid)
-    interior(elevation) .= interior(Φˢᶠᶜ) ./ grid.z.gravitational_acceleration
+    set!(elevation, Φˢᶠᶜ / grid.z.gravitational_acceleration)
     fill_halo_regions!(elevation)
     return elevation
 end

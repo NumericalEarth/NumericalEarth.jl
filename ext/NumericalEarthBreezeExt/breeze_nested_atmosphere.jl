@@ -461,7 +461,7 @@ function mean_sea_level_pressure(dataset, child_grid, date, dir)
     # TODO: this belongs in Oceananigans — `sum`/`mean` on a distributed `Field` should
     # perform the global reduction themselves (Oceananigans.jl's reductions are rank-local).
     arch = architecture(child_grid)
-    return all_reduce(+, sum(interior(p₀)), arch) / all_reduce(+, length(interior(p₀)), arch)
+    return all_reduce(+, sum(p₀), arch) / all_reduce(+, length(interior(p₀)), arch)
 end
 
 # Dataset skin temperature at `date`, regridded onto the child grid — the surface temperature

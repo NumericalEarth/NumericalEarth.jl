@@ -491,3 +491,17 @@ for arch in test_architectures
         end
     end
 end
+
+for arch in test_architectures
+    @testset "surface_elevation divides the surface geopotential by g [$(typeof(arch))]" begin
+        g = 9.81
+        horizontal = (longitude = (0, 1), latitude = (0, 1))
+        Φ = CenterField(LatitudeLongitudeGrid(arch; size = (4, 4, 3), horizontal..., z = (0, 1)))
+        set!(Φ, [1000k * g for i in 1:4, j in 1:4, k in 1:3])
+        Φˢ = Field{Center, Center, Nothing}(LatitudeLongitudeGrid(arch; size = (4, 4, 1), horizontal..., z = (0, 1)))
+        set!(Φˢ, [100i * g for i in 1:4, j in 1:4, k in 1:1])
+        z = PressureLevelVerticalDiscretization(Φ; gravitational_acceleration = g, surface_geopotential = Φˢ)
+        grid = LatitudeLongitudeGrid(arch; size = (4, 4, 3), horizontal..., z)
+        @test Array(interior(surface_elevation(grid)))[:, :, 1] ≈ [100i for i in 1:4, j in 1:4]
+    end
+end
