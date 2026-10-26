@@ -290,8 +290,7 @@ end
 
 # More specific than both the `PressureLevelGrid` method above and Oceananigans' own
 # `LambertConformalConicGrid` method: the conic horizontal with the per-column vertical.
-const LCCPressureLevelGrid =
-    LambertConformalConicGrid{<:Any, <:Any, <:Any, <:Any, <:PressureLevelVerticalDiscretization}
+const LCCPressureLevelGrid = LambertConformalConicGrid{<:Any, <:Any, <:Any, <:Any, <:PressureLevelVerticalDiscretization}
 
 @inline function _fractional_indices(
         (λ, φ, z)::NTuple{3, Any}, grid::LCCPressureLevelGrid,
