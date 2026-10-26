@@ -36,10 +36,16 @@ function first_time_step!(model::ReactantESM, Δt)
     return nothing
 end
 
-import NumericalEarth.EarthSystemModels: same_time_type
+import NumericalEarth.EarthSystemModels: same_time_type, default_clock
+using Oceananigans.TimeSteppers: Clock
 
 same_time_type(::Reactant.ConcreteRNumber{FT}, ::TT) where {FT,TT} = FT == TT
 same_time_type(::Reactant.ConcreteRNumber{FT}, ::Reactant.ConcreteRNumber{TT}) where {FT,TT} = FT == TT
 same_time_type(::FT, ::Reactant.ConcreteRNumber{TT}) where {FT,TT} = FT == TT
+
+# The device clock `Clock(grid)` gives on ReactantState, for constructors that build their clock before the grid
+default_clock(::ReactantState, FT) = Clock(; time = Reactant.ConcreteRNumber(0.0), iteration = Reactant.ConcreteRNumber(0),
+                                           stage = 1, last_Δt = Reactant.ConcreteRNumber(Inf),
+                                           last_stage_Δt = Reactant.ConcreteRNumber(Inf), kernel_time_type = FT)
 
 end # module NumericalEarthReactantExt

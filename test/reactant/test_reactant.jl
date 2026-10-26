@@ -3,7 +3,8 @@ using Reactant
 using Reactant: @trace
 using Oceananigans: Oceananigans, CPU, interior, set!
 using Oceananigans.Architectures: ReactantState
-using Oceananigans.Grids: Bounded, Flat, LatitudeLongitudeGrid, Periodic
+using Oceananigans.Grids: Bounded, Flat, LatitudeLongitudeGrid, Periodic, RectilinearGrid
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
 using Oceananigans.TimeSteppers: time_step!, update_state!, first_time_step!
 using Oceananigans.Units: minutes
@@ -115,6 +116,26 @@ end
     T_reactant = Reactant.to_number(compiled_run(reactant_model, Δt, N))
 
     @test T_reactant ≈ T_cpu rtol=1e-4
+end
+
+# A compiled step of a NestedModel advances a prescribed parent with the child: the parent takes the
+# child's (device) clock instead of branching on the traced gap between them (issue #816).
+@testset "NestedModel with a prescribed parent steps under compilation" begin
+    grid = RectilinearGrid(ReactantState(); size = (4, 4, 4), extent = (1, 1, 1), topology = (Periodic, Periodic, Bounded))
+    parent = PrescribedAtmosphere(grid, [0.0, 10.0])
+    # An explicit free surface: the implicit one's FFT solver works on complex arrays, which Reactant cannot raise
+    child = HydrostaticFreeSurfaceModel(grid; free_surface = ExplicitFreeSurface())
+    nested = NumericalEarth.NestedModels.NestedModel(parent, child)
+    @test parent.clock.time isa Reactant.ConcreteRNumber
+
+    step! = @compile raise_first = true raise = true time_step!(nested, 1.0)
+    step!(nested, 1.0)
+    step!(nested, 1.0)
+    @test Reactant.to_number(nested.child.clock.time) == 2
+    @test Reactant.to_number(parent.clock.time) == 2
+
+    clock = NumericalEarth.EarthSystemModels.default_clock(ReactantState(), Float32)
+    @test clock.time isa Reactant.ConcreteRNumber{Float64}
 end
 
 # Broadcasting into `interior` of a ReactantState field reads device memory element by element, which

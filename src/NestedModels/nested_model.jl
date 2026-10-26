@@ -82,17 +82,42 @@ set!(nm::NestedModel, args...; kwargs...) = set!(nm.child, args...; kwargs...)
 # 2-level window around the passed time, so refreshing at `t` leaves the whole step extrapolated
 # whenever `t` lands on a parent time level (every hourly ERA5 crossing). Refreshing at `t + Δt`
 # keeps the step's late stages in-window; at most a ≤Δt start-side extrapolation remains on the
-# crossing step (a 2-level window cannot span a parent interval). Then step the child, and advance
-# the parent to the child's new time with (adaptive) Δt. For a prescribed parent that reduces to a
-# clock tick + FTS-window refresh; a live prognostic parent would integrate its own dynamics over
-# Δt_parent. `Simulation` calls `time_step!(model, Δt; callbacks=...)`.
+# crossing step (a 2-level window cannot span a parent interval). Then step the child, and bring the
+# parent to the child's new time (`advance_parent!`). `Simulation` calls
+# `time_step!(model, Δt; callbacks=...)`.
 function time_step!(nm::NestedModel, Δt; callbacks=())
     exchange_state!(nm.exchanger, nm.clock.time + Δt)
     time_step!(nm.child, Δt; callbacks = (callbacks..., nm.child_callbacks...))
+    advance_parent!(nm.parent, nm.child.clock)
+    return nothing
+end
 
-    Δt_parent = nm.child.clock.time - nm.parent.clock.time
-    Δt_parent > 0 && time_step!(nm.parent, Δt_parent)
+# A prescribed parent is a function of time: it takes the child's clock and refreshes its state there.
+# No branch on the gap between the clocks, which is a traced number inside a compiled step.
+function advance_parent!(parent::AbstractPrescribedComponent, clock)
+    copy_clock!(parent.clock, clock)
+    update_state!(parent)
+    return nothing
+end
 
+function advance_parent!(parent::BoundaryPrescribedComponent, clock)
+    copy_clock!(parent.clock, clock)
+    foreach(strip -> advance_parent!(strip, clock), boundary_strips(parent))
+    return nothing
+end
+
+# A parent with its own dynamics integrates over the gap to the child's time.
+function advance_parent!(parent, clock)
+    Δt_parent = clock.time - parent.clock.time
+    Δt_parent > 0 && time_step!(parent, Δt_parent)
+    return nothing
+end
+
+function copy_clock!(clock, source)
+    clock.time = source.time
+    clock.iteration = source.iteration
+    clock.last_Δt = source.last_Δt
+    clock.last_stage_Δt = source.last_stage_Δt
     return nothing
 end
 
