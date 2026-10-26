@@ -698,7 +698,7 @@ Tᵒᶜ = 273.15 + 20 # in Kelvin
 Sᵒᶜ = 35
 interfaces = default_model.interfaces
 ℂᵃᵗ = interfaces.atmosphere_properties
-q_formulation = interfaces.atmosphere_ocean_interface.properties.specific_humidity_formulation
+q_formulation = interfaces.atmosphere_ocean_interface.formulation.specific_humidity
 qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tᵒᶜ, Sᵒᶜ)
 @show qₛ
 ```
