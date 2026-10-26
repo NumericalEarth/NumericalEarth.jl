@@ -5,7 +5,7 @@ MPI.Init()
 
 using CFTime
 using Dates
-using NumericalEarth.DataWrangling: metadata_path
+using NumericalEarth.DataWrangling: NearestNeighborInpainting, inpainted_metadata_path, metadata_path
 using NumericalEarth.DataWrangling.ORCA: ORCAOne
 using Oceananigans.DistributedComputations
 using Oceananigans.DistributedComputations: all_reduce, concatenate_local_sizes, local_size, reconstruct_global_grid
@@ -140,6 +140,19 @@ end
         river_mixing = river_mouth_vertical_diffusivity(local_grid, (; rivers = routing))
         @test count(>(0), interior(river_mixing.κ.parameters)) == length(routing.target_i)
     end
+end
+
+@testset "Inpainted-data cache written by one rank" begin
+    arch = Distributed(CPU(), partition = Partition(4, 1))
+    metadatum = Metadatum(:temperature; dataset = SyntheticOcean())
+
+    # Mid-run, only some ranks may build a field (eg open-boundary data on boundary ranks)
+    if arch.local_rank == 0
+        Field(metadatum, arch; inpainting = NearestNeighborInpainting(2), cache_inpainted_data = true)
+        @test isfile(inpainted_metadata_path(metadatum))
+    end
+
+    @test all_reduce(+, 1, arch) == 4
 end
 
 MPI.Finalize()
