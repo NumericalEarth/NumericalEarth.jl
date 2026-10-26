@@ -22,8 +22,9 @@
 import Oceananigans.BoundaryConditions: regularize_boundary_condition, getbc,
                                         LeftBoundary, RightBoundary
 import Oceananigans.OutputReaders: FlavorOfFTS
-using Oceananigans.Grids: node, topology, Face, OrthogonalSphericalShellGrid,
+using Oceananigans.Grids: node, ξnode, ηnode, topology, Face, Center, OrthogonalSphericalShellGrid,
                           FullyConnected, LeftConnected, RightConnected
+using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Adapt: Adapt, adapt
 
 const InterpolatedSource = Union{FlavorOfFTS, Oceananigans.Fields.AbstractField}
@@ -90,31 +91,30 @@ on_physical_boundary(::Type{FullyConnected}, SideType) = false
 on_physical_boundary(::Type{LeftConnected}, ::Type{LeftBoundary}) = false
 on_physical_boundary(::Type{RightConnected}, ::Type{RightBoundary}) = false
 
+# Reducing an operation keeps the reduction where the grid lives: CUDA's `AnyCuArray` does not cover
+# `OffsetArray`, so reducing the grid's node arrays, or a view of one, silently iterates on the host.
+function boundary_coordinate_extent(coordinate, grid, dim, SideType, ::Type{LX}, ::Type{LY}) where {LX, LY}
+    operation = KernelFunctionOperation{LX, LY, Center}(coordinate, grid, LX(), LY(), Center())
+    # A `Face` extent exceeds the grid's by one only where the axis is bounded, not where it is connected
+    Nx, Ny, _ = size(operation)
+    i = dim == 1 ? (SideType === LeftBoundary ? (1:1) : (Nx:Nx)) : 1:Nx
+    j = dim == 2 ? (SideType === LeftBoundary ? (1:1) : (Ny:Ny)) : 1:Ny
+    return extrema(view(operation, i, j, :))
+end
+
 # The source must bracket the boundary *horizontally* (a too-small parent region there is a real
-# error): along the boundary, the child's whole extent; across it, only the boundary itself. The
-# vertical is intentionally NOT required to bracket: a child legitimately extends below
-# the parent's lowest level (e.g. ERA5 pressure-level data doesn't reach the surface), and the
-# vertical interpolation clamps to the parent's edge value there rather than extrapolating.
-# A curvilinear grid has no separable horizontal axes — its `λnodes`/`φnodes` are indexed jointly in
-# `(i, j)` — so `ξnodes`/`ηnodes`, which return one axis at a time, are not defined for it. Take the
-# child's extent from the face coordinates of the boundary's own line instead: that covers the cells
-# this boundary samples while leaving a per-side source free to span only its own side.
-function validate_source_bracket(source, grid::OrthogonalSphericalShellGrid, dim, SideType,
-                                 ::Type{LX}, ::Type{LY}, ::Type{LZ}) where {LX, LY, LZ}
+# error): along the boundary, the child's whole extent; across it, only the boundary itself, which
+# leaves a per-side source free to span only its own side. The vertical is intentionally NOT required
+# to bracket: a child legitimately extends below the parent's lowest level (e.g. ERA5 pressure-level
+# data doesn't reach the surface), and the vertical interpolation clamps to the parent's edge value
+# there rather than extrapolating.
+function validate_bracket(source, grid, dim, SideType, ::Type{LX}, ::Type{LY}) where {LX, LY}
     source_loc  = Oceananigans.instantiated_location(source)
     source_grid = source.grid
-    Nx, Ny, _ = size(grid)
-    i = dim == 1 ? (SideType === LeftBoundary ? (1:1) : (Nx+1:Nx+1)) : 1:Nx+1
-    j = dim == 2 ? (SideType === LeftBoundary ? (1:1) : (Ny+1:Ny+1)) : 1:Ny+1
 
-    for (label, child_nodes, source_nodes) in (("x", grid.λᶠᶠᵃ, Oceananigans.Grids.ξnodes),
-                                               ("y", grid.φᶠᶠᵃ, Oceananigans.Grids.ηnodes))
-        # `extrema` reduces on the device only for an unwrapped array or a view of one — CUDA's
-        # `AnyCuArray` does not cover `OffsetArray` — so shift into the parent's own indices and view
-        # that. A view of `child_nodes` itself would silently iterate on the host.
-        iᵖ = i .- (first(axes(child_nodes, 1)) - 1)
-        jᵖ = j .- (first(axes(child_nodes, 2)) - 1)
-        sim_lo, sim_hi = extrema(view(parent(child_nodes), iᵖ, jᵖ))
+    for (label, coordinate, source_nodes) in (("x", ξnode, Oceananigans.Grids.ξnodes),
+                                              ("y", ηnode, Oceananigans.Grids.ηnodes))
+        sim_lo, sim_hi = boundary_coordinate_extent(coordinate, grid, dim, SideType, LX, LY)
         src_lo, src_hi = extrema(source_nodes(source_grid, source_loc...))
         (src_lo ≤ sim_lo && sim_hi ≤ src_hi) || throw(ArgumentError(
             "Interpolated boundary source $(label)-extent [$src_lo, $src_hi] does not " *
@@ -123,23 +123,15 @@ function validate_source_bracket(source, grid::OrthogonalSphericalShellGrid, dim
     return nothing
 end
 
-function validate_source_bracket(source, grid, dim, SideType, ::Type{LX}, ::Type{LY}, ::Type{LZ}) where {LX, LY, LZ}
-    sim_loc    = (LX(), LY(), LZ())
-    source_loc = Oceananigans.instantiated_location(source)
-    source_grid = source.grid
-    for (d, label, nodes_fn) in ((1, "x", Oceananigans.Grids.ξnodes),
-                                 (2, "y", Oceananigans.Grids.ηnodes))
-        boundary_loc = d == 1 ? (Face(), LY(), LZ()) : (LX(), Face(), LZ())
-        face_lo, face_hi = extrema(nodes_fn(grid, boundary_loc...))
-        boundary = SideType === LeftBoundary ? face_lo : face_hi
-        sim_lo, sim_hi = d == dim ? (boundary, boundary) : extrema(nodes_fn(grid, sim_loc...))
-        src_lo, src_hi = extrema(nodes_fn(source_grid, source_loc...))
-        (src_lo ≤ sim_lo && sim_hi ≤ src_hi) || throw(ArgumentError(
-            "Interpolated boundary source $(label)-extent [$src_lo, $src_hi] does not " *
-            "bracket model grid $(label)-extent [$sim_lo, $sim_hi]"))
-    end
-    return nothing
-end
+# A curvilinear grid's coordinates vary along both axes, so its extent comes from the cell corners.
+validate_source_bracket(source, grid::OrthogonalSphericalShellGrid, dim, SideType,
+                        ::Type{LX}, ::Type{LY}, ::Type{LZ}) where {LX, LY, LZ} =
+    validate_bracket(source, grid, dim, SideType, Face, Face)
+
+# A separable grid's comes from the field's own location, with `Face` across the boundary.
+validate_source_bracket(source, grid, dim, SideType,
+                        ::Type{LX}, ::Type{LY}, ::Type{LZ}) where {LX, LY, LZ} =
+    validate_bracket(source, grid, dim, SideType, dim == 1 ? Face : LX, dim == 2 ? Face : LY)
 
 #####
 ##### getbc: evaluate the source at the boundary-face node.
