@@ -102,12 +102,8 @@ function boundary_coordinate_extent(coordinate, grid, dim, SideType, ::Type{LX},
     return extrema(view(operation, i, j, :))
 end
 
-# The source must bracket the boundary *horizontally* (a too-small parent region there is a real
-# error): along the boundary, the child's whole extent; across it, only the boundary itself, which
-# leaves a per-side source free to span only its own side. The vertical is intentionally NOT required
-# to bracket: a child legitimately extends below the parent's lowest level (e.g. ERA5 pressure-level
-# data doesn't reach the surface), and the vertical interpolation clamps to the parent's edge value
-# there rather than extrapolating.
+# The source must bracket the boundary horizontally: along the boundary, the child's whole extent;
+# across it, only the boundary itself, which leaves a per-side source free to span only its own side.
 function validate_bracket(source, grid, dim, SideType, ::Type{LX}, ::Type{LY}) where {LX, LY}
     source_loc  = Oceananigans.instantiated_location(source)
     source_grid = source.grid
