@@ -188,26 +188,26 @@ Base.show(io::IO, p::RubiscoLightLimitedPhotosynthesis) = print(io, summary(p),
     "(Vcmax25=", prettysummary(p.Vcmax25), ")")
 
 """
-    net_assimilation(photosynthesis, ci, APAR, Tˡᵉᵃᶠ, p, β)
+    net_assimilation(photosynthesis, ci, APAR, Tˡᵉᵃ, p, β)
 
 Net CO₂ assimilation `Aₙ` (mol CO₂ m⁻² s⁻¹) at intercellular CO₂ partial pressure
-`ci` (Pa), absorbed PAR `APAR` (mol photon m⁻² s⁻¹), leaf temperature `Tˡᵉᵃᶠ` (K),
+`ci` (Pa), absorbed PAR `APAR` (mol photon m⁻² s⁻¹), leaf temperature `Tˡᵉᵃ` (K),
 air pressure `p` (Pa), and moisture-stress factor `β ∈ [0, 1]`. `β` multiplies the
 photosynthetic capacities `Vcmax`, `Jmax` (Egea-type stress), so it propagates to
 both `Aₙ` and — through the Medlyn coupling — the stomatal conductance.
 """
-@inline function net_assimilation(photosynthesis::RubiscoLightLimitedPhotosynthesis, ci, APAR, Tˡᵉᵃᶠ, p, β)
-    Γ★ = photosynthesis.Γ★25 * temperature_response(Tˡᵉᵃᶠ, photosynthesis.compensation_activation_energy) *
+@inline function net_assimilation(photosynthesis::RubiscoLightLimitedPhotosynthesis, ci, APAR, Tˡᵉᵃ, p, β)
+    Γ★ = photosynthesis.Γ★25 * temperature_response(Tˡᵉᵃ, photosynthesis.compensation_activation_energy) *
          p / oftype(p, 101325)
-    Kc = photosynthesis.Kc25 * temperature_response(Tˡᵉᵃᶠ, photosynthesis.carboxylation_constant_activation_energy)
-    Ko = photosynthesis.Ko25 * temperature_response(Tˡᵉᵃᶠ, photosynthesis.oxygenation_constant_activation_energy)
+    Kc = photosynthesis.Kc25 * temperature_response(Tˡᵉᵃ, photosynthesis.carboxylation_constant_activation_energy)
+    Ko = photosynthesis.Ko25 * temperature_response(Tˡᵉᵃ, photosynthesis.oxygenation_constant_activation_energy)
     Km = Kc * (1 + photosynthesis.O₂ * p / Ko)
 
-    Vcmax = β * photosynthesis.Vcmax25 * temperature_response(Tˡᵉᵃᶠ, photosynthesis.carboxylation_response)
+    Vcmax = β * photosynthesis.Vcmax25 * temperature_response(Tˡᵉᵃ, photosynthesis.carboxylation_response)
     Jmax  = β * photosynthesis.electron_transport_ratio * photosynthesis.Vcmax25 *
-            temperature_response(Tˡᵉᵃᶠ, photosynthesis.electron_transport_response)
+            temperature_response(Tˡᵉᵃ, photosynthesis.electron_transport_response)
     Rᵈ    = photosynthesis.respiration_ratio * photosynthesis.Vcmax25 *
-            temperature_response(Tˡᵉᵃᶠ, photosynthesis.respiration_response)
+            temperature_response(Tˡᵉᵃ, photosynthesis.respiration_response)
 
     # Electron transport rate: smooth minimum of light supply and Jmax.
     J = smooth_minimum(photosynthesis.quantum_yield * APAR, Jmax, photosynthesis.θⱼ)

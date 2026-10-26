@@ -1,13 +1,13 @@
 #####
 ##### `CanopyConductanceHumidity` — a single-source (big-leaf) canopy: the stomatal
-##### conductance `gᶜ = LAI · gₛ` in series with the aerodynamic conductance.
+##### conductance `gᶜᵃⁿ = LAI · gₛ` in series with the aerodynamic conductance.
 #####
 
 """
     struct CanopyConductanceHumidity
 
 Surface specific humidity `qˢ` for a single-source (big-leaf) canopy: the
-canopy conductance `gᶜ = LAI · gₛ` in series with the aerodynamic conductance,
+canopy conductance `gᶜᵃⁿ = LAI · gₛ` in series with the aerodynamic conductance,
 solved inside the Monin–Obukhov fixed point exactly as [`SkinHumidity`](@ref)
 solves a soil-resistance balance. The stomatal conductance `gₛ` comes from the
 `conductance` model driven by the per-cell leaf-to-air VPD, leaf temperature
@@ -82,36 +82,36 @@ land_state_accessors(q::CanopyConductanceHumidity) = land_state_accessors(q.mois
 @inline interface_vegetation_state(i, j, grid, ::CanopyConductanceHumidity, vegetation, time_interpolator) =
     (leaf_area_index = convert(eltype(grid), stateindex(vegetation, i, j, 1, time_interpolator)),)
 
-# Bulk canopy (stomatal) mass conductance `gᶜ = LAI · gₛ · Mᵈ` (kg m⁻² s⁻¹) and the leaf
-# saturation humidity `qᵛ⁺(Tˡᵉᵃᶠ)`; `qᵃ` is the humidity of the air the leaf exchanges with.
-@inline function canopy_conductance_terms(q::CanopyConductanceHumidity, Tˡᵉᵃᶠ, qᵃ, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ,
+# Bulk canopy (stomatal) mass conductance `gᶜᵃⁿ = LAI · gₛ · Mᵈ` (kg m⁻² s⁻¹) and the leaf
+# saturation humidity `qᵛ⁺(Tˡᵉᵃ)`; `qᵃ` is the humidity of the air the leaf exchanges with.
+@inline function canopy_conductance_terms(q::CanopyConductanceHumidity, Tˡᵉᵃ, qᵃ, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ,
                                           canopy_transmittance)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     pᵃᵗ = Ψₐ.p
 
-    LAI  = Ψˡᵃ.leaf_area_index
-    qᵛ⁺  = saturation_specific_humidity(ℂᵃᵗ, Tˡᵉᵃᶠ, pᵃᵗ, q.phase)
+    LAI = Ψˡᵃ.leaf_area_index
+    qᵛ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tˡᵉᵃ, pᵃᵗ, q.phase)
     # Leaf-to-air VPD, floored at 50 Pa as in CLM5 so the Medlyn `g₁/√VPD` stays bounded.
-    VPD  = max(AtmosphericThermodynamics.vapor_pressure_deficit(ℂᵃᵗ, Tˡᵉᵃᶠ, pᵃᵗ, qᵃ, 0, 0, q.phase),
-               oftype(Tˡᵉᵃᶠ, 50))
+    VPD  = max(AtmosphericThermodynamics.vapor_pressure_deficit(ℂᵃᵗ, Tˡᵉᵃ, pᵃᵗ, qᵃ, 0, 0, q.phase),
+               oftype(Tˡᵉᵃ, 50))
     β    = evaporation_efficiency(q.moisture_stress, Ψˡᵃ)
     APAR = absorbed_par_value(q.absorbed_par, Ψᵣ, LAI, canopy_transmittance)
 
     gₛ, _, _ = stomatal_conductance(q.conductance, q.photosynthesis,
-                                    APAR, VPD, Tˡᵉᵃᶠ, q.atmospheric_co2, pᵃᵗ, β)
+                                    APAR, VPD, Tˡᵉᵃ, q.atmospheric_co2, pᵃᵗ, β)
 
     # Molar leaf conductance → canopy mass conductance (kg m⁻² s⁻¹).
-    gᶜ = LAI * gₛ * oftype(gₛ, default_dry_air_molar_mass)
+    gᶜᵃⁿ = LAI * gₛ * oftype(gₛ, default_dry_air_molar_mass)
 
-    return gᶜ, qᵛ⁺
+    return gᶜᵃⁿ, qᵛ⁺
 end
 
 @inline function compute_interface_humidity(q::CanopyConductanceHumidity, Tₛ, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
     FT = eltype(Ψₛ)
-    gᶜ, qᵛ⁺ = canopy_conductance_terms(q, Tₛ, Ψₐ.q, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, nothing)
+    gᶜᵃⁿ, qᵛ⁺ = canopy_conductance_terms(q, Tₛ, Ψₐ.q, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, nothing)
 
     gᵃᵛ = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
-    qˢ  = conductance_weighted_node(Ψₛ.specific_humidity, (gᶜ, gᵃᵛ), (qᵛ⁺, Ψₐ.q))
+    qˢ  = conductance_weighted_node(Ψₛ.specific_humidity, (gᶜᵃⁿ, gᵃᵛ), (qᵛ⁺, Ψₐ.q))
 
     return convert(FT, qˢ)
 end

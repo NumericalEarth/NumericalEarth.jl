@@ -105,25 +105,25 @@ end
 @inline function finalize_interface_state!(Ts, next, i, j, c::CanopyGroundSurface, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, Δt)
     solution = canopy_air_space_solve(c, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
     @inbounds begin
-        Ts.interface[i, j, 1]              = solution.Tᵃᶜ
-        Ts.canopy[i, j, 1]                 = solution.Tˡᵉᵃᶠ
-        Ts.ground[i, j, 1]                 = solution.Tᵍ
+        Ts.interface[i, j, 1]              = solution.Tᵃᶜᵃⁿ
+        Ts.canopy[i, j, 1]                 = solution.Tˡᵉᵃ
+        Ts.ground[i, j, 1]                 = solution.Tᵍʳᵒ
         Ts.effective[i, j, 1]              = solution.effective_temperature
         Ts.effective_albedo[i, j, 1]       = solution.effective_albedo
-        Ts.ground_heat_flux[i, j, 1]       = solution.𝒬ᵍ
-        Ts.canopy_latent_heat[i, j, 1]     = solution.𝒬ᵛˡᵉᵃᶠ
-        Ts.ground_latent_heat[i, j, 1]     = solution.𝒬ᵛᵍ
-        Ts.canopy_sensible_heat[i, j, 1]   = solution.𝒬ᵀˡᵉᵃᶠ
-        Ts.ground_sensible_heat[i, j, 1]   = solution.𝒬ᵀᵍ
+        Ts.ground_heat_flux[i, j, 1]       = solution.𝒬ᵍʳᵒ
+        Ts.canopy_latent_heat[i, j, 1]     = solution.𝒬ᵛˡᵉᵃ
+        Ts.ground_latent_heat[i, j, 1]     = solution.𝒬ᵛᵍʳᵒ
+        Ts.canopy_sensible_heat[i, j, 1]   = solution.𝒬ᵀˡᵉᵃ
+        Ts.ground_sensible_heat[i, j, 1]   = solution.𝒬ᵀᵍʳᵒ
         Ts.canopy_evaporation[i, j, 1]     = solution.Jʷᵉᵗ
         Ts.wet_canopy_latent_heat[i, j, 1] = solution.ℒ * solution.Jʷᵉᵗ
-        Ts.land_vapor_flux[i, j, 1]        = (solution.𝒬ᵛˡᵉᵃᶠ + solution.𝒬ᵛᵍ) / solution.ℒ - solution.Jʷᵉᵗ
-        Ts.transpiration[i, j, 1]          = solution.𝒬ᵛˡᵉᵃᶠ / solution.ℒ - solution.Jʷᵉᵗ
+        Ts.land_vapor_flux[i, j, 1]        = (solution.𝒬ᵛˡᵉᵃ + solution.𝒬ᵛᵍʳᵒ) / solution.ℒ - solution.Jʷᵉᵗ
+        Ts.transpiration[i, j, 1]          = solution.𝒬ᵛˡᵉᵃ / solution.ℒ - solution.Jʷᵉᵗ
     end
     store_canopy_air_update!(next, i, j, solution, Ψₛ, Δt)
 
     # The exported scales are evaluated at the node the fluxes above were partitioned at.
-    return rebuild_interface_state(Ψₛ, Ψₐ, ℙₐ, solution.Tᵃᶜ, solution.qᵃᶜ)
+    return rebuild_interface_state(Ψₛ, Ψₐ, ℙₐ, solution.Tᵃᶜᵃⁿ, solution.qᵃᶜᵃⁿ)
 end
 
 @inline store_canopy_air_update!(::NamedTuple{()}, i, j, solution, Ψₛ, Δt) = nothing
@@ -140,7 +140,7 @@ end
 end
 
 # A prognostic energy-balance skin is frozen through the fixed point and advanced once per
-# step by a backward-Euler update of C dTₛ/dt = net radiation − 𝒬ᵍ − 𝒬ᵀ − 𝒬ᵛ, Newton-refined
+# step by a backward-Euler update of C dTₛ/dt = net radiation − 𝒬ᵍʳᵒ − 𝒬ᵀ − 𝒬ᵛ, Newton-refined
 # so the radiative and vapor curvature is re-linearized each iterate. Δt⁻¹ = 0 (the
 # initializing call) lands the update on the equilibrium root.
 @inline function finalize_interface_state!(Ts, next, i, j, t::PrognosticEnergyBalanceTemperature,
@@ -311,14 +311,14 @@ function land_saturation end
 """
     land_canopy_water_storage(land)
 
-Return the canopy interception store `Mᶜ` (kg m⁻²) on the land grid.
+Return the canopy interception store `Mᶜᵃⁿ` (kg m⁻²) on the land grid.
 """
 function land_canopy_water_storage end
 
 """
     land_canopy_water_capacity(land)
 
-Return the canopy interception capacity `Mᶜ⁺` (kg m⁻²) on the land grid.
+Return the canopy interception capacity `Mᶜᵃⁿ⁺` (kg m⁻²) on the land grid.
 """
 function land_canopy_water_capacity end
 

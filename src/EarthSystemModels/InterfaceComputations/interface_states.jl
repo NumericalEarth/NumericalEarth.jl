@@ -525,7 +525,7 @@ end
     SoilConductiveFlux(conductivity, thickness)
 
 Conduction between a land surface temperature and the bulk slab temperature,
-`𝒬ᵍ = Λᵍ (Tᵍ − Tˡᵃ)` with `Λᵍ = κᵀ/ℓᵀ` (W m⁻² K⁻¹). `ℓᵀ` (`thickness`, m) is the
+`𝒬ᵍʳᵒ = Λᵍʳᵒ (Tᵍʳᵒ − Tˡᵃ)` with `Λᵍʳᵒ = κᵀ/ℓᵀ` (W m⁻² K⁻¹). `ℓᵀ` (`thickness`, m) is the
 distance from the surface to the bulk temperature node, half the slab depth for a
 node at its center, and `κᵀ` (`conductivity`, W m⁻¹ K⁻¹) the thermal conductivity
 over that distance: the soil's, or that of a thin surface layer (litter, a crust)
@@ -684,7 +684,7 @@ Prognostic skin storage (the default): the skin carries an areal `heat_capacity`
 ``C`` (J m⁻² K⁻¹, a `Number` or a per-cell `Field`) and integrates
 
 ```math
-C \\frac{dT_s}{dt} = \\text{net radiation}(T_s) - \\mathcal{Q}^g(T_s) - \\mathcal{Q}^T(T_s) - \\mathcal{Q}^v(T_s),
+C \\frac{dT_s}{dt} = \\text{net radiation}(T_s) - \\mathcal{Q}^{\\mathrm{gro}}(T_s) - \\mathcal{Q}^T(T_s) - \\mathcal{Q}^v(T_s),
 ```
 
 frozen through the Monin–Obukhov fixed point and advanced once per step by a
@@ -717,11 +717,11 @@ Adapt.adapt_structure(to, s::PrognosticSkin) = PrognosticSkin(Adapt.adapt(to, s.
     EnergyBalanceTemperature(coupling; storage=PrognosticSkin())
 
 Interface temperature that closes the surface energy balance
-`F(Tₛ) = net radiation − 𝒬ᵍ − 𝒬ᵀ − 𝒬ᵛ = 0` by Newton on the conductance sum
+`F(Tₛ) = net radiation − 𝒬ᵍʳᵒ − 𝒬ᵀ − 𝒬ᵛ = 0` by Newton on the conductance sum
 `Σg = 4ϵσTₛ³ + Λ + ρ u★ (cᵖᵐ χθ + ℒ χq dq/dT)`. `coupling` is a
-[`SoilConductiveFlux`](@ref) carrying `𝒬ᵍ = Λᵍ(Tₛ − Tˡᵃ)`; `storage` is
+[`SoilConductiveFlux`](@ref) carrying `𝒬ᵍʳᵒ = Λᵍʳᵒ(Tₛ − Tˡᵃ)`; `storage` is
 [`PrognosticSkin`](@ref) (the default, the skin carries its heat capacity) or
-[`DiagnosticSkin`](@ref) (massless). `Λᵍ → ∞` recovers [`BulkTemperature`](@ref).
+[`DiagnosticSkin`](@ref) (massless). `Λᵍʳᵒ → ∞` recovers [`BulkTemperature`](@ref).
 Construct one with [`SoilSkinTemperature`](@ref).
 """
 struct EnergyBalanceTemperature{ST, C}
@@ -743,7 +743,7 @@ Adapt.adapt_structure(to, t::EnergyBalanceTemperature) =
     SoilSkinTemperature(conductivity, thickness; storage=PrognosticSkin())
 
 A soil-skin [`EnergyBalanceTemperature`](@ref): the skin conducts to the bulk
-slab with conductance `Λᵍ = conductivity/thickness` (W m⁻² K⁻¹). The default
+slab with conductance `Λᵍʳᵒ = conductivity/thickness` (W m⁻² K⁻¹). The default
 [`PrognosticSkin`](@ref) storage carries the skin's heat capacity; `storage =
 DiagnosticSkin()` recovers the massless equilibrium of the same balance.
 """
@@ -753,7 +753,7 @@ SoilSkinTemperature(conductivity, thickness; storage=PrognosticSkin()) =
 Base.summary(t::EnergyBalanceTemperature) = string("EnergyBalanceTemperature(Λ=", prettysummary(ground_conductance(t.coupling)), ")")
 Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
 
-# The surface energy imbalance F(T) = net radiation − 𝒬ᵍ − 𝒬ᵀ − 𝒬ᵛ at skin temperature T
+# The surface energy imbalance F(T) = net radiation − 𝒬ᵍʳᵒ − 𝒬ᵀ − 𝒬ᵛ at skin temperature T
 # and the conductance sum Σg = −dF/dT, with the similarity scales frozen at the current
 # iterate.
 @inline function skin_energy_imbalance(T, t, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ)
@@ -767,10 +767,10 @@ Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
 
     q             = compute_interface_humidity(ℙₛ.specific_humidity, T, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
     net_radiation = - (1 - Ψᵣ.α) * Ψᵣ.ℐꜜˢʷ - Ψᵣ.ϵ * (Ψᵣ.ℐꜜˡʷ + Ψᵣ.σ * T^4)
-    𝒬ᵍ            = Λ * (T - Ψˡᵃ.T)
+    𝒬ᵍʳᵒ          = Λ * (T - Ψˡᵃ.T)
     𝒬ᵀ            = gᵃᵀ * (T - Tᵃᵗ)
     𝒬ᵛ            = ℒ * gᵃᵛ * (q - Ψₐ.q)
-    F             = net_radiation - 𝒬ᵍ - 𝒬ᵀ - 𝒬ᵛ
+    F             = net_radiation - 𝒬ᵍʳᵒ - 𝒬ᵀ - 𝒬ᵛ
 
     # dq/dT of the humidity the formulation actually diagnoses, by a one-sided difference.
     δT = sqrt(eps(FT)) * T

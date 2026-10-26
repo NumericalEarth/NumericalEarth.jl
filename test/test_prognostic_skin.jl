@@ -36,13 +36,13 @@ calm = (; shortwave = 50.0, wind = 0.2, air_temperature = 304.0, land_temperatur
         for _ in 1:48
             Tˡᵃ = scalar(model.land.temperature)
             time_step!(model, Δt)
-            Tₛ = scalar(interface.temperature)
-            𝒬ᵍ = Λ * (Tₛ - Tˡᵃ)
-            𝒬ᵛ = scalar(interface.fluxes.latent_heat)
-            @test scalar(model.land.fluxes.surface_energy_flux) ≈ -𝒬ᵍ atol = 1e-9
+            Tₛ   = scalar(interface.temperature)
+            𝒬ᵍʳᵒ = Λ * (Tₛ - Tˡᵃ)
+            𝒬ᵛ   = scalar(interface.fluxes.latent_heat)
+            @test scalar(model.land.fluxes.surface_energy_flux) ≈ -𝒬ᵍʳᵒ atol = 1e-9
             @test abs(𝒬ᵛ) < 2000
             net_radiation = (1 - 0.2) * 50 + 0.95 * (350 - σ * Tₛ^4)
-            residual = net_radiation - 𝒬ᵍ - scalar(interface.fluxes.sensible_heat) - 𝒬ᵛ - C * (Tₛ - Tₛ⁻) / Δt
+            residual = net_radiation - 𝒬ᵍʳᵒ - scalar(interface.fluxes.sensible_heat) - 𝒬ᵛ - C * (Tₛ - Tₛ⁻) / Δt
             worst = max(worst, abs(residual))
             Tₛ⁻ = Tₛ
         end
@@ -82,7 +82,7 @@ end
     end
 end
 
-# Λᵍ = 0, ϵ = 0 and calm air leave no conductance, so the skin must be held rather than divided by zero.
+# Λᵍʳᵒ = 0, ϵ = 0 and calm air leave no conductance, so the skin must be held rather than divided by zero.
 @testset "Fully decoupled skin stays finite" begin
     for arch in test_architectures, storage in (DiagnosticSkin(), PrognosticSkin(heat_capacity = 1e5))
         model = bare_soil_model(arch, SoilSkinTemperature(0, 0.05; storage);

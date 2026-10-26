@@ -51,9 +51,9 @@ function build_coupled_test_model(arch; M₀, T₀, with_radiation = false)
     land = SlabLand(land_grid; hydrology, energy)
     set!(land; T = T₀, M = M₀)
 
-    # Default `BulkTemperature()` on the temperature side: Tᵍ = Tˡᵃ. The
+    # Default `BulkTemperature()` on the temperature side: Tᵍʳᵒ = Tˡᵃ. The
     # χ-interpolation in the humidity formulation collapses gracefully:
-    # Tᵉ = Tˡᵃ when Tᵍ = Tˡᵃ.
+    # Tᵉ = Tˡᵃ when Tᵍʳᵒ = Tˡᵃ.
     al = atmosphere_land_interface(land_grid, atmosphere, land;
         specific_humidity = DryLayerHumidity(;
             dry_layer_depth = StorageBasedDryLayerDepth(

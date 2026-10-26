@@ -8,8 +8,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
-# Skin temperature, turbulent flux sum, and conductive flux Λᵍ(Tˡᵃ − Tᵍ) over a 300 K slab with Λᵍ = 1.5 / 0.05.
-# With radiation off the balance is Λᵍ(Tˡᵃ − Tᵍ) = 𝒬ᵀ + 𝒬ᵛ.
+# Skin temperature, turbulent flux sum, and conductive flux Λᵍʳᵒ(Tˡᵃ − Tᵍʳᵒ) over a 300 K slab with Λᵍʳᵒ = 1.5 / 0.05.
+# With radiation off the balance is Λᵍʳᵒ(Tˡᵃ − Tᵍʳᵒ) = 𝒬ᵀ + 𝒬ᵛ.
 function skin_column(arch, temperature; air_temperature = 290.0, efficiency = 1.0)
     humidity = FractionalHumidity(AtmosphericThermodynamics.Liquid(); efficiency)
     model = coupled_land_model(arch; air_temperature, land_temperature=300.0, air_specific_humidity=0.006, wind=5.0,

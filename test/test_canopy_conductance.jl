@@ -15,15 +15,15 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
 @testset "FvCB–Medlyn canopy physics" begin
     for FT in (Float32, Float64)
         photo, cond = RubiscoLightLimitedPhotosynthesis(FT), MedlynConductance(FT)
-        Tˡᵉᵃᶠ, p, ca = FT(298), FT(101325), FT(40)
-        A(ci, APAR) = net_assimilation(photo, FT(ci), FT(APAR), Tˡᵉᵃᶠ, p, FT(1))
+        Tˡᵉᵃ, p, ca = FT(298), FT(101325), FT(40)
+        A(ci, APAR) = net_assimilation(photo, FT(ci), FT(APAR), Tˡᵉᵃ, p, FT(1))
         A_dim, A_light, A_sat = A(28, 1e-4), A(28, 1e-3), A(28, 1e-2)
         @test A_dim < A_light ≤ A_sat
         @test A_sat - A_light < A_light - A_dim   # saturating, not linear
         @test A(35, 1e-3) > A(15, 1e-3)
 
-        gs_ref, An_ref, ci_ref = @inferred stomatal_conductance(cond, photo, FT(1e-3), FT(1000), Tˡᵉᵃᶠ, ca, p, FT(1))
-        gₛ(APAR, VPD, β) = stomatal_conductance(cond, photo, FT(APAR), FT(VPD), Tˡᵉᵃᶠ, ca, p, FT(β))[1]
+        gs_ref, An_ref, ci_ref = @inferred stomatal_conductance(cond, photo, FT(1e-3), FT(1000), Tˡᵉᵃ, ca, p, FT(1))
+        gₛ(APAR, VPD, β) = stomatal_conductance(cond, photo, FT(APAR), FT(VPD), Tˡᵉᵃ, ca, p, FT(β))[1]
         @test gs_ref isa FT && gs_ref > cond.g0
         @test An_ref > 0
         @test photo.Γ★25 < ci_ref < ca
@@ -82,19 +82,19 @@ end
 @testset "Jarvis stomatal conductance" begin
     for FT in (Float32, Float64)
         jarv = JarvisConductance(FT)
-        Tˡᵉᵃᶠ, ca, p = FT(298.15), FT(40), FT(101325)
-        gs, An, ci = @inferred stomatal_conductance(jarv, nothing, FT(2e-4), FT(1000), Tˡᵉᵃᶠ, ca, p, FT(1))
+        Tˡᵉᵃ, ca, p = FT(298.15), FT(40), FT(101325)
+        gs, An, ci = @inferred stomatal_conductance(jarv, nothing, FT(2e-4), FT(1000), Tˡᵉᵃ, ca, p, FT(1))
         @test gs isa FT && gs > 0
         @test An == 0 && ci == 0
 
-        gₛ(APAR, VPD, T = Tˡᵉᵃᶠ, β = 1) = stomatal_conductance(jarv, nothing, FT(APAR), FT(VPD), FT(T), ca, p, FT(β))[1]
+        gₛ(APAR, VPD, T = Tˡᵉᵃ, β = 1) = stomatal_conductance(jarv, nothing, FT(APAR), FT(VPD), FT(T), ca, p, FT(β))[1]
         T₀ = jarv.optimal_temperature
         @test gₛ(1e-3, 1000) > gₛ(1e-5, 1000)
         @test gₛ(1e6, 1000) ≈ gₛ(1e5, 1000) rtol=1e-3
         @test gₛ(1e-3, 3000) < gₛ(1e-3, 1000)
         @test gₛ(1e-3, 1000, T₀) > max(gₛ(1e-3, 1000, T₀ + 15), gₛ(1e-3, 1000, T₀ - 15))
-        @test gₛ(1e-3, 1000, Tˡᵉᵃᶠ, 0.5) ≈ gₛ(1e-3, 1000) / 2
-        @test gₛ(1e-3, 1000, Tˡᵉᵃᶠ, 0) == 0
+        @test gₛ(1e-3, 1000, Tˡᵉᵃ, 0.5) ≈ gₛ(1e-3, 1000) / 2
+        @test gₛ(1e-3, 1000, Tˡᵉᵃ, 0) == 0
     end
 end
 

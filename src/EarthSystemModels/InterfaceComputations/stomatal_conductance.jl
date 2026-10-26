@@ -38,7 +38,7 @@ Base.show(io::IO, c::MedlynConductance) = print(io, summary(c),
     "(g1=", prettysummary(c.g1), ")")
 
 """
-    stomatal_conductance(conductance, photosynthesis, APAR, VPD, Tˡᵉᵃᶠ, ca, p, β)
+    stomatal_conductance(conductance, photosynthesis, APAR, VPD, Tˡᵉᵃ, ca, p, β)
 
 Leaf stomatal conductance `gₛ` (mol H₂O m⁻² s⁻¹), dispatched on the conductance
 model. For [`MedlynConductance`](@ref) the photosynthesis–Medlyn system closes in
@@ -56,10 +56,10 @@ which also stands in for the leaf-surface value, and `p` the air pressure (Pa).
 Returns `(gₛ, Aₙ, ci)` (`Aₙ = ci = 0` for Jarvis).
 """
 @inline function stomatal_conductance(c::MedlynConductance, photosynthesis,
-                                      APAR, VPD, Tˡᵉᵃᶠ, ca, p, β)
+                                      APAR, VPD, Tˡᵉᵃ, ca, p, β)
     χₐ = ca / p                        # ambient CO₂ mole fraction, taken as the leaf-surface value
     ci = ca * c.g1 / (c.g1 + sqrt(VPD))
-    Aₙ = net_assimilation(photosynthesis, ci, APAR, Tˡᵉᵃᶠ, p, β)
+    Aₙ = net_assimilation(photosynthesis, ci, APAR, Tˡᵉᵃ, p, β)
     A⁺ = max(Aₙ, zero(Aₙ))
     gₛ = c.g0 + c.diffusivity_ratio * (1 + c.g1 / sqrt(VPD)) * A⁺ / χₐ
     return gₛ, Aₙ, ci
@@ -75,11 +75,11 @@ end
 Jarvis-type multiplicative stomatal conductance: a maximum conductance reduced by
 independent environmental factors,
 
-    gₛ = gₛ,max · fᴾᴬᴿ(APAR) · fⱽᴾᴰ(VPD) · fᵀ(Tˡᵉᵃᶠ) · β ,
+    gₛ = gₛ,max · fᴾᴬᴿ(APAR) · fⱽᴾᴰ(VPD) · fᵀ(Tˡᵉᵃ) · β ,
 
 with `gₛ`, `gₛ,max` in mol H₂O m⁻² s⁻¹, a saturating light factor
 `APAR/(APAR + APAR₁ᐟ₂)`, a hyperbolic VPD factor `1/(1 + kᴰ VPD)`, the Noah-MP
-quadratic temperature factor `1 − c (Tᵒᵖᵗ − Tˡᵉᵃᶠ)²` evaluated at the leaf
+quadratic temperature factor `1 − c (Tᵒᵖᵗ − Tˡᵉᵃ)²` evaluated at the leaf
 temperature, and the soil-moisture factor `β(𝒮)`. `gₛ,max = 0.4` corresponds to a
 minimum stomatal resistance of about 100 s m⁻¹. The light and VPD factors are this
 model's own forms, not those of Jarvis (1976), Stewart (1988), or Noilhan & Planton (1989).
@@ -113,10 +113,10 @@ Base.show(io::IO, c::JarvisConductance) = print(io, summary(c),
     "(maximum_conductance=", prettysummary(c.maximum_conductance), ")")
 
 @inline function stomatal_conductance(c::JarvisConductance, photosynthesis,
-                                      APAR, VPD, Tˡᵉᵃᶠ, ca, p, β)
+                                      APAR, VPD, Tˡᵉᵃ, ca, p, β)
     fPAR = APAR / (APAR + c.par_half_saturation)
     fVPD = 1 / (1 + c.vpd_sensitivity * VPD)
-    fT   = clamp(1 - c.temperature_curvature * (c.optimal_temperature - Tˡᵉᵃᶠ)^2, 0, 1)
+    fT   = clamp(1 - c.temperature_curvature * (c.optimal_temperature - Tˡᵉᵃ)^2, 0, 1)
     gₛ   = c.maximum_conductance * fPAR * fVPD * fT * β
     z    = zero(gₛ)
     return gₛ, z, z          # (gₛ, Aₙ, ci); Aₙ, ci unused for Jarvis

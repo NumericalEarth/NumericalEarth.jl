@@ -55,27 +55,27 @@ end
         @test scalar(fp.latent_heat) ≈ scalar(fd.latent_heat) atol = 2
         @test scalar(fp.sensible_heat) ≈ scalar(fd.sensible_heat) atol = 2
 
-        # Flux to the atmosphere = supply − storage tendency, with Cᵀ = ρ cᵖᵐ hᵃᶜ and Cᵛ = ρ hᵃᶜ (hᵃᶜ = 10 m).
+        # Flux to the atmosphere = supply − storage tendency, with Cᵀ = ρ cᵖᵐ hᵃᶜᵃⁿ and Cᵛ = ρ hᵃᶜᵃⁿ (hᵃᶜᵃⁿ = 10 m).
         T⁻, q⁻ = scalar(prognostic.temperature), scalar(prognostic.specific_humidity)
         Δt = 300.0
         time_step!(mp, Δt)
         ℂ = AtmosphereThermodynamicsParameters(Float64)
-        ρhᵃᶜ = AtmosphericThermodynamics.air_density(ℂ, 300.0, 101325.0, 0.008) * 10.0
-        Sᵀ = ρhᵃᶜ * AtmosphericThermodynamics.cp_m(ℂ, 0.008) * (scalar(prognostic.temperature) - T⁻) / Δt
-        Sᵛ = AtmosphericThermodynamics.latent_heat_vapor(ℂ, 300.0) * ρhᵃᶜ * (scalar(prognostic.specific_humidity) - q⁻) / Δt
-        𝒬ᵀˡᵉᵃᶠ, 𝒬ᵛˡᵉᵃᶠ = scalar(Ts.canopy_sensible_heat), scalar(Ts.canopy_latent_heat)
-        @test 𝒬ᵀˡᵉᵃᶠ + scalar(Ts.ground_sensible_heat) - scalar(fp.sensible_heat) ≈ Sᵀ atol = 1e-6
-        @test 𝒬ᵛˡᵉᵃᶠ + scalar(Ts.ground_latent_heat) - scalar(fp.latent_heat) ≈ Sᵛ atol = 1e-6
+        ρhᵃᶜᵃⁿ = AtmosphericThermodynamics.air_density(ℂ, 300.0, 101325.0, 0.008) * 10.0
+        Sᵀ = ρhᵃᶜᵃⁿ * AtmosphericThermodynamics.cp_m(ℂ, 0.008) * (scalar(prognostic.temperature) - T⁻) / Δt
+        Sᵛ = AtmosphericThermodynamics.latent_heat_vapor(ℂ, 300.0) * ρhᵃᶜᵃⁿ * (scalar(prognostic.specific_humidity) - q⁻) / Δt
+        𝒬ᵀˡᵉᵃ, 𝒬ᵛˡᵉᵃ = scalar(Ts.canopy_sensible_heat), scalar(Ts.canopy_latent_heat)
+        @test 𝒬ᵀˡᵉᵃ + scalar(Ts.ground_sensible_heat) - scalar(fp.sensible_heat) ≈ Sᵀ atol = 1e-6
+        @test 𝒬ᵛˡᵉᵃ + scalar(Ts.ground_latent_heat) - scalar(fp.latent_heat) ≈ Sᵛ atol = 1e-6
 
         # Leaf net radiation balances the leaf fluxes at the stored leaf temperature.
-        Tˡ, Tᵍ = scalar(Ts.canopy), scalar(Ts.ground)
-        σ, LAI, ϵᵍ = 5.670374419e-8, 4.0, 0.96
+        Tˡ, Tᵍʳᵒ = scalar(Ts.canopy), scalar(Ts.ground)
+        σ, LAI, ϵᵍʳᵒ = 5.670374419e-8, 4.0, 0.96
         ϵˡ = 0.98 * (1 - exp(-LAI))
-        ℐꜛˡʷᵍ = ϵᵍ * σ * Tᵍ^4 + (1 - ϵᵍ) * ((1 - ϵˡ) * 350.0 + ϵˡ * σ * Tˡ^4)
-        Rˡ = (1 - 0.15) * (1 - exp(-0.5 * LAI)) * 600.0 + ϵˡ * (350.0 + ℐꜛˡʷᵍ) - 2 * ϵˡ * σ * Tˡ^4
-        @test Rˡ ≈ 𝒬ᵀˡᵉᵃᶠ + 𝒬ᵛˡᵉᵃᶠ atol = 1e-3
+        ℐꜛˡʷᵍʳᵒ = ϵᵍʳᵒ * σ * Tᵍʳᵒ^4 + (1 - ϵᵍʳᵒ) * ((1 - ϵˡ) * 350.0 + ϵˡ * σ * Tˡ^4)
+        Rˡ = (1 - 0.15) * (1 - exp(-0.5 * LAI)) * 600.0 + ϵˡ * (350.0 + ℐꜛˡʷᵍʳᵒ) - 2 * ϵˡ * σ * Tˡ^4
+        @test Rˡ ≈ 𝒬ᵀˡᵉᵃ + 𝒬ᵛˡᵉᵃ atol = 1e-3
 
-        @test min(Tˡ, Tᵍ, 300) - 1 ≤ scalar(Ts.interface) ≤ max(Tˡ, Tᵍ, 300) + 1   # 300 K is the air temperature
+        @test min(Tˡ, Tᵍʳᵒ, 300) - 1 ≤ scalar(Ts.interface) ≤ max(Tˡ, Tᵍʳᵒ, 300) + 1   # 300 K is the air temperature
     end
 
     # Hot wet soil under cooler dry air at near-calm dusk, where the diagnostic node has no steady state.
