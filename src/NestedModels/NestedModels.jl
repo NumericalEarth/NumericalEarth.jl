@@ -47,6 +47,7 @@ include("parent_terrain.jl")
 include("ocean_boundary_bands.jl")
 include("ocean_open_boundaries.jl")
 include("ocean_boundary_relaxation.jl")
+include("ocean_boundary_bathymetry.jl")
 include("ocean_boundary_exchanger.jl")
 include("nested_ocean_model.jl")
 

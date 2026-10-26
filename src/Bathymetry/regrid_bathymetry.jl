@@ -194,6 +194,11 @@ end
 # Any other dataset holds a three-dimensional ocean state, whose missing values mark the seafloor:
 # read without inpainting, so the mask survives.
 function native_bottom_height(metadata::Metadatum, arch, FT; height_above_water)
+    is_three_dimensional(metadata) ||
+        throw(ArgumentError("cannot derive a seafloor from $(metadata.name) of $(summary(metadata.dataset)): " *
+                            "it is neither a static bathymetry nor a three-dimensional variable whose " *
+                            "missing values mark the seafloor."))
+
     dataset_field = Field(metadata, arch; inpainting = nothing)
     native_z = bottom_height_from_mask(compute_mask(metadata, dataset_field))
     fill_halo_regions!(native_z)

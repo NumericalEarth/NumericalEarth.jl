@@ -23,7 +23,7 @@ using Oceananigans.Utils: launch!
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf
 
-using ..DataWrangling: AbstractStaticBathymetry, Metadatum, compute_mask, native_grid, metadata_path,
+using ..DataWrangling: AbstractStaticBathymetry, Metadatum, compute_mask, is_three_dimensional, native_grid, metadata_path,
                        dataset_variable_name, validate_dataset_coverage,
                        FieldRegridding, load_field_cache, save_field_cache
 using ..DataWrangling.ETOPO: ETOPO2022

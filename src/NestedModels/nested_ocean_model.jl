@@ -2,9 +2,8 @@
 ##### nested_ocean_model: a regional ocean nested in a parent ocean
 #####
 
-using Oceananigans.Fields: AbstractField, CenterField, XFaceField, YFaceField, interpolate!
+using Oceananigans.Fields: CenterField, XFaceField, YFaceField, interpolate!
 using Oceananigans.Grids: LatitudeLongitudeGrid
-using Oceananigans.ImmersedBoundaries: GridFittedBottom, ImmersedBoundaryGrid
 using Oceananigans.TimeSteppers: Clock
 using Oceananigans.Units: hours
 
@@ -13,6 +12,7 @@ using ..Oceans: hydrostatic_ocean_model, merge_boundary_conditions
 using ..DataWrangling: BoundingBox, Metadatum, default_download_directory, default_horizontal_padding
 
 const default_ocean_relaxation_width = 8
+const default_bathymetry_blend_width = 4
 
 const OceanParent = Union{PrescribedOcean, BoundaryPrescribedComponent}
 
@@ -42,34 +42,9 @@ function combine_forcings(relaxation, user)
     return NamedTuple(name => combined(name) for name in names)
 end
 
-# Child bathymetry: an immersed grid's own bottom, or `bathymetry` — a bottom height `Field`, or a dataset
-# (e.g. `ETOPO2022()`) regridded onto the grid — which replaces it. Blending toward the parent's seafloor
-# keeps the geometry at the open boundaries consistent with the transport the parent imposes there.
-child_bottom_height(grid, ::Nothing) = nothing
-function child_bottom_height(grid::ImmersedBoundaryGrid, ::Nothing)
-    bottom_height = Field{Center, Center, Nothing}(grid.underlying_grid)
-    Base.parent(bottom_height) .= Base.parent(grid.immersed_boundary.bottom_height)
-    return bottom_height
-end
-
-child_bottom_height(grid, bathymetry::AbstractField) = bathymetry
-child_bottom_height(grid, bathymetry) = regrid_bathymetry(underlying_grid(grid); dataset = bathymetry)
-
-function materialize_nested_bathymetry(grid, bathymetry, parent_bottom_height, blend_width)
-    blending = !isnothing(parent_bottom_height) && blend_width > 0
-    isnothing(bathymetry) && !blending && return grid
-
-    bottom_height = child_bottom_height(grid, bathymetry)
-    isnothing(bottom_height) && return grid
-
-    if blending
-        parent_height = Field{Center, Center, Nothing}(underlying_grid(grid))
-        interpolate!(parent_height, parent_bottom_height)
-        blend_parent_terrain!(bottom_height, parent_height; width = blend_width)
-    end
-
-    return ImmersedBoundaryGrid(underlying_grid(grid), GridFittedBottom(bottom_height))
-end
+# The child steps from the parent's time.
+nested_clock(grid, time::Number) = Clock{Float64}(; time, kernel_time_type = eltype(grid))
+nested_clock(grid, time) = Clock{typeof(time)}(; time, kernel_time_type = eltype(grid))
 
 # A strip parent knows only the boundaries, so it cannot initialize the interior.
 default_initial_state(parent) = parent
@@ -92,14 +67,13 @@ boundary-normal and tangential velocities and on the tracers (`normal_velocity_s
 outermost `relaxation_width` cells of each open side, `u`, `v`, `T` and `S` relax toward the parent at
 `relaxation_rate` (s⁻¹; see [`ocean_boundary_relaxation`](@ref)); `relaxation_rate = nothing` disables it.
 
-The child's bathymetry is `grid`'s immersed bottom or, when given, `bathymetry`: a bottom height `Field` or a
-dataset (e.g. `ETOPO2022()`) regridded onto `grid` (see [`regrid_bathymetry`](@ref)). When the parent's seafloor
-`parent_bottom_height` is known, the child bathymetry is blended toward it over an outer frame of physical width
-`bathymetry_blend_length` (meters; converted to a resolution-invariant cell count, or overridden directly with
-`bathymetry_blend_width`), as [`nested_atmosphere_model`](@ref) blends its terrain, so the geometry at the open
-boundaries matches the one the parent state was produced over.
+When the parent's seafloor `parent_bottom_height` (a bottom height `Field`) is known, the immersed bottom of
+`grid` is blended toward it in place within `bathymetry_blend_width` cells of each open side (see
+[`blend_parent_bathymetry!`](@ref)), so that the geometry at the open boundaries matches the one the parent state
+was produced over, but never shallower than `minimum_depth`.
 
-The child's `clock` starts at the parent's time. It is initialized from `initial_state` (default: the
+The child's `clock` starts at the parent's time; a `clock` passed in must already be there. The child is
+initialized from `initial_state` (default: the
 parent, unless the parent knows only the boundaries), a parent-like ocean interpolated onto `grid` at the
 parent's time; `nothing` leaves the child as built. `boundary_conditions` and `forcing` the caller passes
 are merged with the nested ones: a caller's boundary condition replaces the nested one on its side, and a
@@ -107,7 +81,7 @@ caller's forcing is added to the relaxation. The remaining keyword arguments `kw
 [`hydrostatic_ocean_model`](@ref).
 """
 function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
-                            open_sides = nothing,
+                            open_sides = open_boundary_sides(grid),
                             boundary_inflow_timescale = 6hours,
                             normal_velocity_scheme = NormalRadiation(inflow_timescale = boundary_inflow_timescale,
                                                                      outflow_timescale = Inf),
@@ -115,27 +89,23 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
                             tracer_scheme = normal_velocity_scheme,
                             relaxation_rate = 1/12hours,
                             relaxation_width = default_ocean_relaxation_width,
-                            bathymetry = nothing,
-                            bathymetry_blend_length = 60_000,
-                            bathymetry_blend_width = nothing,
+                            bathymetry_blend_width = default_bathymetry_blend_width,
+                            minimum_depth = 10,
                             parent_bottom_height = nothing,
                             initial_state = default_initial_state(parent),
-                            clock = Clock(grid),
+                            clock = nested_clock(grid, parent.clock.time),
                             boundary_conditions = NamedTuple(),
                             forcing = NamedTuple(),
                             kw...)
 
     validate_nested_ocean_grid(grid)
-
-    blend_width = something(bathymetry_blend_width, default_terrain_blend_width(grid, bathymetry_blend_length))
-    grid = materialize_nested_bathymetry(grid, bathymetry, parent_bottom_height, blend_width)
-
-    open_sides = something(open_sides, open_boundary_sides(grid))
     isempty(open_sides) && throw(ArgumentError("$(summary(grid)) has no open sides to nest through."))
 
-    # The child starts at the parent's time, and steps the parent along from there.
     time = parent.clock.time
-    clock.time = time
+    clock.time == time ||
+        throw(ArgumentError("the child clock (time $(clock.time)) must start at the parent's time, $time."))
+
+    blend_parent_bathymetry!(grid, parent_bottom_height, open_sides; width = bathymetry_blend_width, minimum_depth)
     width = isnothing(relaxation_rate) ? 1 : relaxation_width
     exchanger = OceanBoundaryExchanger(parent, grid, open_sides; width, time)
 
@@ -168,37 +138,29 @@ along each side and `relaxation_width` cells inward, padded by `parent_padding` 
 `default_horizontal_padding`), streaming `parent_time_indices_in_memory` samples at a time. A full-domain
 snapshot of `parent_dataset` at `first(dates)`, with the same padding, initializes the child, and the seafloor
 `parent_dataset` marks with missing values there (see [`regrid_bathymetry`](@ref)) is the
-`parent_bottom_height` the child bathymetry (`bathymetry`, blended over `bathymetry_blend_length` or
-`bathymetry_blend_width`) blends toward. The strips follow the open sides of the blended bathymetry. The
-remaining keyword arguments `kw` go to `nested_ocean_model(parent, grid; kw...)`.
+`parent_bottom_height` the child bathymetry blends toward. The remaining keyword arguments `kw` go to
+`nested_ocean_model(parent, grid; kw...)`.
 """
 function nested_ocean_model(grid::AbstractGrid, parent_dataset; dates,
                             dir = default_download_directory(parent_dataset),
                             parent_padding = default_horizontal_padding(parent_dataset),
                             parent_time_indices_in_memory = 2,
                             relaxation_width = default_ocean_relaxation_width,
-                            bathymetry = nothing,
-                            bathymetry_blend_length = 60_000,
-                            bathymetry_blend_width = nothing,
+                            bathymetry_blend_width = default_bathymetry_blend_width,
                             parent_bottom_height = nothing,
-                            open_sides = nothing,
+                            open_sides = open_boundary_sides(grid),
                             kw...)
 
     validate_nested_ocean_grid(grid)
+    isempty(open_sides) && throw(ArgumentError("$(summary(grid)) has no open sides to nest through."))
     region = BoundingBox(grid; padding = parent_padding)
 
-    if isnothing(parent_bottom_height)
+    # Every basin of the parent, as the parent state was produced over it; read only when there is a
+    # bathymetry to blend.
+    if isnothing(parent_bottom_height) && grid isa GridFittedBottomGrid && bathymetry_blend_width > 0
         metadatum = Metadatum(:temperature; dataset = parent_dataset, date = first(dates), region, dir)
-        # Every basin of the parent, as the parent state was produced over it
         parent_bottom_height = regrid_bathymetry(underlying_grid(grid), metadatum; major_basins = Inf)
     end
-
-    # The strips follow the open sides of the blended child bathymetry.
-    blend_width = something(bathymetry_blend_width, default_terrain_blend_width(grid, bathymetry_blend_length))
-    grid = materialize_nested_bathymetry(grid, bathymetry, parent_bottom_height, blend_width)
-
-    open_sides = something(open_sides, open_boundary_sides(grid))
-    isempty(open_sides) && throw(ArgumentError("$(summary(grid)) has no open sides to nest through."))
 
     parent = BoundaryPrescribedComponent(PrescribedOcean, grid, dates, parent_dataset;
                                          width = relaxation_width, padding = parent_padding, sides = open_sides,
@@ -206,7 +168,8 @@ function nested_ocean_model(grid::AbstractGrid, parent_dataset; dates,
 
     snapshot = PrescribedOcean(region, [first(dates)], parent_dataset; architecture = architecture(grid), dir)
 
-    return nested_ocean_model(parent, grid; open_sides, relaxation_width, initial_state = snapshot, kw...)
+    return nested_ocean_model(parent, grid; open_sides, relaxation_width, bathymetry_blend_width,
+                              parent_bottom_height, initial_state = snapshot, kw...)
 end
 
 # Interpolate the parent onto the whole child grid at `time`, so the interior starts consistent with the

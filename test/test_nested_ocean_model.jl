@@ -1,6 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.Bathymetry: bottom_height_from_mask
+using NumericalEarth.DataWrangling: bracketing_dates
 using NumericalEarth.NestedModels: open_boundary_sides, parent_ocean_sources, BoundaryTimeSeries,
                                    BarotropicBoundaryTransport, OceanBoundaryExchanger
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, ocean_surface_temperature,
@@ -8,6 +9,7 @@ using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, ocean_surfa
 using Oceananigans.BoundaryConditions: getbc, GravityWaveRadiation, NormalFlow, NormalRadiation,
                                        SurfaceWaveRadiation, Value
 using Oceananigans.Grids: inactive_cell
+using Oceananigans.ImmersedBoundaries: bottom_height_field
 using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶠᶜᶜ
 using Oceananigans.Units: days
 
@@ -279,26 +281,30 @@ end
 
 @testset "nested_ocean_model blends the child bathymetry toward the parent's seafloor on $(arch)" for arch in test_architectures
     parent_ocean = nesting_test_parent(arch)
-    child_grid = nesting_test_child_grid(arch)
 
-    # Without bathymetry the grid passes through
-    @test nested_ocean_model(parent_ocean, child_grid).child.grid isa LatitudeLongitudeGrid
+    # A flat 1000 m seafloor, with land in the southwest corner
+    underlying_grid = nesting_test_child_grid(arch)
+    coastal_bottom(λ, φ) = (λ < -0.8) & (φ < 29.5) ? 0 : -1000
+    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(coastal_bottom))
 
-    bathymetry = Field{Center, Center, Nothing}(child_grid)
-    set!(bathymetry, -1000)
     parent_bottom_height = Field{Center, Center, Nothing}(parent_ocean.grid)
     set!(parent_bottom_height, -500)
 
-    model = nested_ocean_model(parent_ocean, child_grid; bathymetry, parent_bottom_height, bathymetry_blend_width = 4)
-    grid = model.child.grid
-    @test grid isa ImmersedBoundaryGrid
+    model = nested_ocean_model(parent_ocean, grid; parent_bottom_height, open_sides = (:west, :east, :north))
+    @test model.child.grid === grid
 
-    # The parent's seafloor at the boundary, the child's inside the blend
-    bottom_height = Array(interior(grid.immersed_boundary.bottom_height))
+    # The parent's seafloor in the boundary cells of the open sides, the child's beyond the blend, on the
+    # closed south side, and on land
+    bottom_height = Array(interior(bottom_height_field(grid)))
     @test bottom_height[1, 10, 1] ≈ -500
     @test bottom_height[20, 10, 1] ≈ -500
-    @test bottom_height[10, 1, 1] ≈ -500
+    @test bottom_height[10, 20, 1] ≈ -500
     @test bottom_height[10, 10, 1] ≈ -1000
+    @test bottom_height[10, 1, 1] ≈ -1000
+    @test bottom_height[1, 1, 1] == 0
+
+    # The child steps from the parent's time
+    @test_throws ArgumentError nested_ocean_model(parent_ocean, underlying_grid; clock = Clock(time = 60.0))
 end
 
 @testset "regrid_bathymetry from the missing values of an ocean dataset on $(arch)" for arch in test_architectures
@@ -311,6 +317,13 @@ end
     # The western columns lie on the synthetic continent (λ ≤ 20°); the eastern ones are open ocean
     @test all(bottom_height[1, :, 1] .== 0)
     @test all(bottom_height[end, :, 1] .< -1000)
+end
+
+@testset "A daily-mean parent brackets the run with its samples" begin
+    # GLORYSDaily samples sit at noon, so a run starting at midnight needs the day before
+    dates = (DateTime(2018, 1, 29), DateTime(2018, 2, 5))
+    @test bracketing_dates(GLORYSDaily(), :temperature, dates) == DateTime(2018, 1, 28):Day(1):DateTime(2018, 2, 5)
+    @test bracketing_dates(GLORYSDaily(), :temperature, [first(dates)]) == [DateTime(2018, 1, 28), DateTime(2018, 1, 29)]
 end
 
 @testset "bottom_height_from_mask: the seafloor a dataset marks with missing values" begin

@@ -20,8 +20,7 @@ using NumericalEarth:
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
-using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
-                                   default_terrain_blend_width
+using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!
 
 using Oceananigans:
     Oceananigans,
@@ -38,7 +37,7 @@ using Oceananigans.DistributedComputations: all_reduce
 using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, interior, interpolate!
 using Oceananigans.Forcings: Relaxation, FieldTimeSeriesTarget
-using Oceananigans.Grids: znode, x_domain, y_domain
+using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
 using Oceananigans.Grids: OrthogonalSphericalShellGrid
 using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid, lcc_forward
 using Oceananigans.TurbulenceClosures: closure_required_tracers
@@ -242,6 +241,12 @@ function default_nested_scalar_advection(microphysics, closure = nothing; closur
 
     return merge((ρθ = WENO(order = 5),), moist, closure_tracers)
 end
+
+# Blend-zone width in cells from a physical length: a fixed cell count steepens the parent→child
+# terrain transition ~1/Δx as resolution increases, and the steeper σ-surface tilt destabilizes
+# high-resolution runs at the boundary corner.
+default_terrain_blend_width(grid, blend_length) =
+    max(1, round(Int, blend_length / minimum_xspacing(grid, Center(), Center(), Center())))
 
 # Child terrain: an elevation `Field` passes through; anything else is regridded from a
 # topography dataset. Smoothing damps the grid-scale orographic roughness that excites standing
