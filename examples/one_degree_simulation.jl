@@ -1,8 +1,9 @@
 # # [One-degree global ocean--sea ice OMIP-style simulation](@id one-degree-ocean-seaice)
 #
-# This example configures a global ocean--sea ice simulation on the 1ᵒ NEMO eORCA1 grid, in an OMIP-like
-# configuration: 100 vertical levels, CATKE vertical mixing over a uniform background diffusivity,
-# Gent-McWilliams and Redi isopycnal mixing discretized on Griffies triads, and a biharmonic viscosity.
+# This example configures a global ocean--sea ice simulation on the 1ᵒ NEMO eORCA1 grid, in a configuration
+# similar to the Ocean Model Intercomparison Project (OMIP) protocol of [griffies2016omip](@citet):
+# 100 vertical levels, CATKE vertical mixing over a uniform background diffusivity, Gent-McWilliams and Redi
+# isopycnal mixing discretized on Griffies triads, and a biharmonic viscosity.
 # The simulation is forced by repeat-year JRA55 atmospheric reanalysis, its surface salinity is restored to the
 # World Ocean Atlas monthly climatology, and it is initialized by World Ocean Atlas temperature and salinity and
 # by ECCO sea ice concentration and thickness.
@@ -42,11 +43,13 @@ grid = ORCAGrid(arch; dataset = ORCAOne(), Nz = 100, z, halo = (8, 8, 8), major_
 
 # ### Closures
 #
-# Vertical mixing is CATKE, on top of a uniform background diffusivity κ = 10⁻⁵ m² s⁻¹ and viscosity
-# ν = 3 × 10⁻⁵ m² s⁻¹. The mesoscale eddy fluxes are parameterized with a Gent-McWilliams skew diffusivity
-# of 500 m² s⁻¹ and a Redi isopycnal diffusivity of 800 m² s⁻¹, both discretized with Griffies triads.
-# Finally, a biharmonic viscosity ν = Az² / λ damps grid-scale motions on a timescale λ = 50 days
-# independently of the cell area Az.
+# Vertical mixing is CATKE [wagner2025catke](@citep), on top of a uniform background
+# diffusivity ``κ`` = 10⁻⁵ m² s⁻¹ and viscosity ``ν`` = 3 × 10⁻⁵ m² s⁻¹. The mesoscale eddy fluxes are
+# parameterized with a [gent1990isopycnal](@citet) skew diffusivity of 500 m² s⁻¹
+# and a [redi1982oceanic](@citet) isopycnal diffusivity of 800 m² s⁻¹, both discretized with the
+# triads of [griffies1998isoneutral](@citet) and [griffies1998skew](@citet).
+# Finally, a biharmonic viscosity ``ν = A_z^2 / λ`` damps grid-scale motions on a timescale ``λ`` = 50 days
+# independently of the cell area ``A_z``.
 
 using Oceananigans.TurbulenceClosures: TriadIsopycnalSkewSymmetricDiffusivity
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEMixingLength
@@ -71,7 +74,7 @@ horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(ν = biharmonic_vis
 
 # ### Land
 #
-# The river and iceberg runoff of JRA55-do is spread over the eight wet cells closest to each river mouth.
+# The river and iceberg runoff of JRA55-do [tsujino2018jra](@citep) is spread over the eight wet cells closest to each river mouth.
 # We build the land before the ocean, so that the ocean can enhance the vertical mixing at the river mouths.
 
 land = JRA55PrescribedLand(grid; spread_radius = nothing, maximum_spread_cells = 8)
@@ -79,7 +82,7 @@ land = JRA55PrescribedLand(grid; spread_radius = nothing, maximum_spread_cells =
 # ### Ocean simulation
 #
 # The penetrating shortwave radiation is absorbed in two bands, whose attenuation follows the SeaWiFS
-# monthly chlorophyll climatology, cycled every year. The surface salinity is restored to the World Ocean
+# monthly chlorophyll climatology, cycled every year, as in [manizza2005bio](@citet). The surface salinity is restored to the World Ocean
 # Atlas monthly climatology with a piston velocity of 0.254 m day⁻¹, which over the 1.5 m top cell
 # corresponds to a restoring rate of 0.254 / 1.5 day⁻¹. The restoring is applied as a surface salt flux
 # whose global mean is removed, so that it neither adds nor removes salt.
@@ -120,10 +123,12 @@ ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surfac
 
 # ### Sea Ice simulation
 #
-# The sea ice has EVP rheology, a snow layer over a slab of ice, and is advected by incremental remapping.
-# The ice--ocean drag is computed against the ocean velocity averaged over the top 6 m. Heat is conducted
-# through the snow and the ice as if each were spread uniformly over four sub-grid categories, which raises
-# the effective conductivity of both by 1 + 1/3 + 1/5 + 1/7.
+# The sea ice has the elastic--viscous--plastic (EVP) rheology of [hunke1997elastic](@citet),
+# a snow layer over a slab of ice, and is advected by the incremental remapping of
+# [lipscomb2004modeling](@citet). The ice--ocean drag is computed against the ocean
+# velocity averaged over the top 6 m. Heat is conducted through the snow and the ice as if each were spread
+# uniformly over four sub-grid categories, which raises the effective conductivity of both by a factor
+# ``1 + 1/3 + 1/5 + 1/7``.
 
 dynamics = NumericalEarth.SeaIces.sea_ice_dynamics(grid, ocean; sea_ice_ocean_drag_reference_depth = 6)
 
@@ -145,9 +150,10 @@ set!(sea_ice.model, MetadataSet((:sea_ice_thickness, :sea_ice_concentration); da
 
 # ### JRA55-based atmospheric state and radiation
 #
-# We force the simulation with the JRA55-do repeat-year atmospheric state and downwelling radiation.
-# The ocean has an albedo of 0.06, and the sea ice albedo depends on the ice thickness, the snow thickness,
-# and the surface temperature as in CCSM3.
+# We force the simulation with the JRA55-do repeat-year atmospheric state and downwelling radiation
+# [stewart2020jra55](@citep). The ocean has an albedo of 0.06, and the sea ice albedo
+# depends on the ice thickness, the snow thickness, and the surface temperature as in CCSM3
+# [briegleb2004scientific](@citep).
 
 atmosphere = JRA55PrescribedAtmosphere(arch)
 
@@ -161,12 +167,14 @@ radiation = JRA55PrescribedRadiation(arch; ocean_surface, sea_ice_surface)
 
 # ### Turbulent fluxes
 #
-# Over the ocean, the turbulent fluxes follow the OMIP-2 bulk formulae of Large and Yeager (2004, 2009), whose
-# transfer coefficients are iterated directly, five times. Over the sea ice, Monin-Obukhov similarity uses the
-# SHEBA stability functions with roughness lengths fixed at 5 × 10⁻⁴ m for momentum and 5 × 10⁻⁵ m for heat and
-# moisture, and a minimum gustiness of 0.2 m s⁻¹. The saturation specific humidity is enhanced by the moist-air
-# factor of Gill (1982) over both the ocean, where it is 98% of the pure-water value, and the sea ice. The
-# ice--ocean heat flux follows the three-equation formulation, with a friction velocity computed from the
+# Over the ocean, the turbulent fluxes follow the OMIP-2 bulk formulae of [large2004diurnal](@citet)
+# and [large2009global](@citet), whose transfer coefficients are iterated directly, five times.
+# Over the sea ice, Monin-Obukhov similarity uses the SHEBA stability functions of
+# [grachev2007sheba](@citet) with roughness lengths fixed at 5 × 10⁻⁴ m for momentum and
+# 5 × 10⁻⁵ m for heat and moisture, and a minimum gustiness of 0.2 m s⁻¹. The saturation specific humidity is
+# enhanced by the moist-air factor of [gill1982atmosphere](@citet) over both the ocean, where it is
+# 98% of the pure-water value, and the sea ice. The ice--ocean heat flux follows the three-equation formulation
+# of [holland1999modeling](@citet), with a friction velocity computed from the
 # ice--ocean stress.
 
 using NumericalEarth.EarthSystemModels: AtmosphericThermodynamics
@@ -250,7 +258,7 @@ add_callback!(simulation, progress, TimeInterval(5days))
 # We are almost there! We need to save some output. Below we choose to save _only surface_
 # fields using the `indices` keyword argument. We save all the velocity and tracer components.
 # Note, that besides temperature and salinity, the CATKE vertical mixing parameterization
-# also uses a prognostic turbulent kinetic energy, `e`, to diagnose the vertical mixing length.
+# also uses a prognostic turbulent kinetic energy, ``e``, to diagnose the vertical mixing length.
 
 ocean_outputs = merge(ocean.model.tracers, ocean.model.velocities)
 free_surface = ocean.model.free_surface.displacement
@@ -285,14 +293,14 @@ run!(simulation)
 # We load the saved output and make a movie of the simulation. First we plot a snapshot:
 using CairoMakie
 
-# We suffix the ocean fields with "o":
+# We suffix the ocean fields with ``o``:
 uo = FieldTimeSeries("ocean_one_degree_surface_fields.jld2",  "u"; backend = OnDisk())
 vo = FieldTimeSeries("ocean_one_degree_surface_fields.jld2",  "v"; backend = OnDisk())
 To = FieldTimeSeries("ocean_one_degree_surface_fields.jld2",  "T"; backend = OnDisk())
 eo = FieldTimeSeries("ocean_one_degree_surface_fields.jld2",  "e"; backend = OnDisk())
 ηo = FieldTimeSeries("ocean_one_degree_free_surface.jld2",    "η"; backend = OnDisk())
 
-# and sea ice fields with "i":
+# and sea ice fields with ``i``:
 ui = FieldTimeSeries("sea_ice_one_degree_surface_fields.jld2", "u"; backend = OnDisk())
 vi = FieldTimeSeries("sea_ice_one_degree_surface_fields.jld2", "v"; backend = OnDisk())
 hi = FieldTimeSeries("sea_ice_one_degree_surface_fields.jld2", "h"; backend = OnDisk())
