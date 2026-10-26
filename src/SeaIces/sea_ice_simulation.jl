@@ -2,13 +2,19 @@ using ClimaSeaIce: ClimaSeaIce, SeaIceModel, PhaseTransitions, ConductiveFlux,
                    sea_ice_slab_thermodynamics, snow_slab_thermodynamics,
                    default_sea_ice_boundary_conditions
 using ClimaSeaIce.SeaIceThermodynamics.HeatBoundaryConditions: PrescribedTemperature
-using ClimaSeaIce.SeaIceThermodynamics: IceWaterThermalEquilibrium, IceSnowConductiveFlux
+using ClimaSeaIce.SeaIceThermodynamics: IceWaterThermalEquilibrium, IceSnowConductiveFlux,
+                                      LinearizedSurfaceFlux, ColumnBasalHeatFlux,
+                                      ColumnEnergyThermodynamics, SeaIceColumnDiscretization,
+                                      FixedSalinityBrinePocketEnergyRelation,
+                                      prescribed_salinity_enthalpy_thermodynamics,
+                                      ConductiveTemperatureTransport, MaykutUntersteinerConductivity,
+                                      MeltingConstrainedFluxBalance
 using ClimaSeaIce.SeaIceDynamics: SplitExplicitSolver, SemiImplicitStress, SeaIceMomentumEquation, StressBalanceFreeDrift, LandfastBasalStress, maybe_extended_grid
 using ClimaSeaIce.Rheologies: ElastoViscoPlasticRheology
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGridOfSomeKind
 
 using ..EarthSystemModels: ocean_surface_salinity, surface_layer_velocities, reference_density
-using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, SkinTemperature
+using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, SkinTemperature, BulkTemperature
 
 default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
 
@@ -55,7 +61,9 @@ end
                        clock = Clock(grid),
                        stop_time = default_stop_time(grid, clock),
                        Δt = 5minutes,
+                       thermodynamics = :slab,
                        ice_salinity = 4, # psu
+                       column_bulk_salinity = 4, # psu
                        advection = nothing,
                        tracers = (),
                        ice_heat_capacity = 2100, # J kg⁻¹ K⁻¹
@@ -67,19 +75,15 @@ end
                        bottom_heat_boundary_condition = nothing,
                        top_heat_boundary_condition = nothing,
                        timestepper = :ForwardEuler,
-                       phase_transitions = PhaseTransitions(eltype(grid);
-                                                            heat_capacity=ice_heat_capacity,
-                                                            density=sea_ice_density),
+                       phase_transitions = nothing,
                        conductivity = 2, # W m⁻¹ K⁻¹
                        internal_heat_flux = ConductiveFlux(; conductivity),
-                       snow_thermodynamics = default_snow_thermodynamics(grid))
+                       snow_thermodynamics = nothing)
 
 Construct a sea ice simulation with the given grid and optional ocean simulation.
-The sea ice model is configured with a slab thermodynamics, Elasto-Visco-Plastic rheology,
-and a forward Euler time stepper by default. The thermodynamics
-include conductive internal heat flux, and the option to specify top and bottom heat
-boundary conditions. The dynamics include a semi-implicit ocean stress formulation,
-with the option to specify a free drift velocity.
+Select slab thermodynamics (default) or a layered column with `thermodynamics = :column`.
+The column requires a grid with `SeaIceColumnDiscretization` as its vertical coordinate.
+Both options use Elasto-Visco-Plastic rheology and a forward Euler time stepper by default.
 
 Arguments
 =========
@@ -94,11 +98,13 @@ Keyword Arguments
   `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since
   Reactant does not support `stop_time`.
 - `Δt`: time step for the sea ice simulation
+- `thermodynamics`: `:slab` (default) or `:column` for the prescribed-salinity BL99 column
 - `ice_salinity`: salinity of the sea ice (psu)
+- `column_bulk_salinity`: prescribed bulk salinity of column ice (psu), either a number or a fixed vertical profile
 - `advection`: optional advection scheme for the sea ice model; if `nothing` (default), no advection
                is applied and only thermodynamics evolve the sea ice state
 - `tracers`: optional tracers to include in the sea ice model
-- `ice_heat_capacity`: heat capacity of the sea ice (J kg⁻¹ K⁻¹)
+- `ice_heat_capacity`: heat capacity of slab sea ice (J kg⁻¹ K⁻¹)
 - `ice_consolidation_thickness`: thickness threshold for sea ice consolidation (m)
 - `sea_ice_density`: density of the sea ice (kg m⁻³)
 - `snow_density`: density of the snow (kg m⁻³)
@@ -108,22 +114,22 @@ Keyword Arguments
 - `dynamics`: sea ice dynamics model to use (default is `sea_ice_dynamics(grid, ocean)`)
 - `bottom_heat_boundary_condition`: heat boundary condition at the ice-ocean interface (default
                                     is `IceWaterThermalEquilibrium` with ocean surface salinity)
-- `top_heat_boundary_condition`: heat boundary condition at the ice-atmosphere interface (default
-                                 is a prescribed temperature calculated in the flux computation)
+- `top_heat_boundary_condition`: top boundary condition (prescribed temperature for the slab;
+                                 melting-constrained flux balance for the column)
 - `timestepper`: time stepper to use for the sea ice model (default is `:ForwardEuler`)
-- `phase_transitions`: phase transition properties for the sea ice (default is a `PhaseTransitions`
-                       with specified heat capacity and density)
-- `conductivity`: thermal conductivity for the internal heat flux (W m⁻¹ K⁻¹)
-- `internal_heat_flux`: internal heat flux formulation for the sea ice (default is a
-                        `ConductiveFlux` with specified conductivity)
-- `snow_thermodynamics`: thermodynamics for the snow layer (default is a slab thermodynamics with
-                         specified conductivity and prescribed temperature)
+- `phase_transitions`: phase transition properties (slab defaults use `ice_heat_capacity` and
+                       `sea_ice_density`; column defaults use the BL99 energy relation)
+- `conductivity`: slab internal thermal conductivity (W m⁻¹ K⁻¹)
+- `internal_heat_flux`: slab internal heat flux formulation (default is `ConductiveFlux`)
+- `snow_thermodynamics`: snow slab thermodynamics (default top boundary follows the selected ice thermodynamics)
 """
 function sea_ice_simulation(grid, ocean=nothing;
                             clock = Clock(grid),
                             stop_time = default_stop_time(grid, clock),
                             Δt = 5minutes,
+                            thermodynamics = :slab,
                             ice_salinity = 4, # psu
+                            column_bulk_salinity = 4, # psu
                             advection = nothing,
                             tracers = (),
                             ice_heat_capacity = 2100, # J kg⁻¹ K⁻¹
@@ -135,21 +141,10 @@ function sea_ice_simulation(grid, ocean=nothing;
                             bottom_heat_boundary_condition = nothing,
                             top_heat_boundary_condition = nothing,
                             timestepper = :ForwardEuler,
-                            phase_transitions = PhaseTransitions(eltype(grid);
-                                                                 heat_capacity=ice_heat_capacity,
-                                                                 density=sea_ice_density),
+                            phase_transitions = nothing,
                             conductivity = 2, # W m⁻¹ K⁻¹
                             internal_heat_flux = ConductiveFlux(; conductivity),
-                            snow_thermodynamics = default_snow_thermodynamics(grid))
-
-    # Build consistent boundary conditions for the ice model:
-    # - bottom -> flux boundary condition
-    # - top -> prescribed temperature boundary condition (calculated in the flux computation)
-
-    if isnothing(top_heat_boundary_condition)
-        top_surface_temperature = Field{Center, Center, Nothing}(grid)
-        top_heat_boundary_condition = PrescribedTemperature(top_surface_temperature.data)
-    end
+                            snow_thermodynamics = nothing)
 
     if isnothing(bottom_heat_boundary_condition)
         if isnothing(ocean)
@@ -160,13 +155,47 @@ function sea_ice_simulation(grid, ocean=nothing;
         bottom_heat_boundary_condition = IceWaterThermalEquilibrium(surface_ocean_salinity)
     end
 
-    ice_thermodynamics = sea_ice_slab_thermodynamics(grid;
-                                                     internal_heat_flux,
-                                                     top_heat_boundary_condition,
-                                                     bottom_heat_boundary_condition)
+    if thermodynamics == :slab
+        if isnothing(top_heat_boundary_condition)
+            top_surface_temperature = Field{Center, Center, Nothing}(grid)
+            top_heat_boundary_condition = PrescribedTemperature(top_surface_temperature.data)
+        end
+        phase_transitions = isnothing(phase_transitions) ?
+            PhaseTransitions(eltype(grid); heat_capacity=ice_heat_capacity, density=sea_ice_density) : phase_transitions
+        ice_thermodynamics = sea_ice_slab_thermodynamics(grid;
+                                                         internal_heat_flux,
+                                                         top_heat_boundary_condition,
+                                                         bottom_heat_boundary_condition)
+        snow_thermodynamics = isnothing(snow_thermodynamics) ? default_snow_thermodynamics(grid) : snow_thermodynamics
+        bottom_heat_flux = Field{Center, Center, Nothing}(grid)
+        top_heat_flux = Field{Center, Center, Nothing}(grid)
+    elseif thermodynamics == :column
+        column_grid = grid isa ImmersedBoundaryGrid ? grid.underlying_grid : grid
+        column_grid.z isa SeaIceColumnDiscretization ||
+            throw(ArgumentError("Column thermodynamics requires a SeaIceColumnDiscretization grid"))
+        relation = isnothing(phase_transitions) ?
+            FixedSalinityBrinePocketEnergyRelation(eltype(grid)) :
+            FixedSalinityBrinePocketEnergyRelation(eltype(grid); phase_transitions)
+        phase_transitions = relation.phase_transitions
+        top_heat_boundary_condition = isnothing(top_heat_boundary_condition) ? MeltingConstrainedFluxBalance() : top_heat_boundary_condition
+        salinity_profile = column_bulk_salinity isa Number ? convert(eltype(grid), column_bulk_salinity) : column_bulk_salinity
+        ice_thermodynamics = prescribed_salinity_enthalpy_thermodynamics(grid;
+            relation,
+            salinity_profile,
+            energy_transport = ConductiveTemperatureTransport(
+                conductivity = MaykutUntersteinerConductivity(eltype(grid))),
+            heat_boundary_conditions = (top = top_heat_boundary_condition, bottom = bottom_heat_boundary_condition))
+        snow_thermodynamics = isnothing(snow_thermodynamics) ?
+            snow_slab_thermodynamics(grid; top_heat_boundary_condition = MeltingConstrainedFluxBalance()) : snow_thermodynamics
+        surface_flux = Field{Center, Center, Nothing}(grid)
+        reference_temperature = Field{Center, Center, Nothing}(grid)
+        temperature_derivative = Field{Center, Center, Nothing}(grid)
+        top_heat_flux = LinearizedSurfaceFlux(surface_flux, reference_temperature, temperature_derivative)
+        bottom_heat_flux = ColumnBasalHeatFlux((Field{Center, Center, Nothing}(grid) for _ in 1:3)...)
+    else
+        throw(ArgumentError("thermodynamics must be :slab or :column"))
+    end
 
-    bottom_heat_flux = Field{Center, Center, Nothing}(grid)
-    top_heat_flux    = Field{Center, Center, Nothing}(grid)
     snowfall         = Field{Center, Center, Nothing}(grid)
 
     velocity_bcs = sea_ice_velocity_boundary_conditions(grid, lateral_boundary_condition)
@@ -258,19 +287,24 @@ function InterfaceComputations.net_fluxes(sea_ice::Simulation{<:SeaIceModel})
         (; u, v)
     end
 
-    net_top_sea_ice_fluxes = merge((; heat=sea_ice.model.external_heat_fluxes.top, snowfall=sea_ice.model.snowfall), net_momentum_fluxes)
+    top_heat_flux = sea_ice.model.external_heat_fluxes.top
+    top_heat_flux = top_heat_flux isa LinearizedSurfaceFlux ? top_heat_flux.reference_flux : top_heat_flux
+    net_top_sea_ice_fluxes = merge((; heat=top_heat_flux, snowfall=sea_ice.model.snowfall), net_momentum_fluxes)
     net_bottom_sea_ice_fluxes = (; heat=sea_ice.model.external_heat_fluxes.bottom)
 
     return (; bottom = net_bottom_sea_ice_fluxes, top = net_top_sea_ice_fluxes)
 end
 
 function InterfaceComputations.default_ai_temperature(sea_ice::Simulation{<:SeaIceModel})
+    sea_ice.model.ice_thermodynamics isa ColumnEnergyThermodynamics && return BulkTemperature()
     ice_flux = sea_ice.model.ice_thermodynamics.internal_heat_flux
     snow_thermo = sea_ice.model.snow_thermodynamics
     internal_flux = if isnothing(snow_thermo)
         ice_flux
     else
-        IceSnowConductiveFlux(snow_thermo.internal_heat_flux, ice_flux)
+        IceSnowConductiveFlux(snow_thermo.internal_heat_flux.conductivity,
+                              ice_flux.conductivity,
+                              ice_flux.itd_shape)
     end
     return SkinTemperature(internal_flux)
 end
@@ -280,6 +314,9 @@ function InterfaceComputations.ThreeEquationHeatFlux(sea_ice::Simulation{<:SeaIc
                                                      heat_transfer_coefficient = 0.0095,
                                                      salt_transfer_coefficient = heat_transfer_coefficient / 35,
                                                      friction_velocity = convert(FT, 0.002))
+
+    sea_ice.model.ice_thermodynamics isa ColumnEnergyThermodynamics &&
+        return ThreeEquationHeatFlux(FT; heat_transfer_coefficient, salt_transfer_coefficient, friction_velocity)
 
     conductive_flux = sea_ice.model.ice_thermodynamics.internal_heat_flux
     ice_temperature = sea_ice.model.ice_thermodynamics.top_surface_temperature

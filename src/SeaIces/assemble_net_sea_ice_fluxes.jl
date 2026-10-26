@@ -23,6 +23,7 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, sea_ice::Simulation
 
     sea_ice_properties = coupled_model.interfaces.sea_ice_properties
     ice_concentration = sea_ice_concentration(sea_ice)
+    per_ice_area = sea_ice.model.ice_thermodynamics isa ColumnEnergyThermodynamics
 
     launch!(arch, grid, :xy,
             _assemble_net_sea_ice_fluxes!,
@@ -34,6 +35,7 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, sea_ice::Simulation
             sea_ice_ocean_fluxes,
             snowfall,
             ice_concentration,
+            per_ice_area,
             sea_ice_properties)
 
     return nothing
@@ -47,6 +49,7 @@ end
                                                sea_ice_ocean_fluxes,
                                                snowfall_flux,
                                                ice_concentration,
+                                               per_ice_area,
                                                sea_ice_properties)
 
     i, j = @index(Global, NTuple)
@@ -64,11 +67,7 @@ end
     ρτˣ = atmosphere_sea_ice_fluxes.x_momentum # zonal momentum flux
     ρτʸ = atmosphere_sea_ice_fluxes.y_momentum # meridional momentum flux
 
-    ΣQt = (𝒬ᵀ + 𝒬ᵛ) * ℵi
-
-    # Frazil ice does not depend on the ice concentration (it is already per-cell)
-    # While interface heat is pre-multiplied by concentration
-    ΣQb = 𝒬ᶠʳᶻ + 𝒬ⁱⁿ
+    ΣQt = (𝒬ᵀ + 𝒬ᵛ) * ifelse(per_ice_area, one(ℵi), ℵi)
 
     # Mask fluxes over land for convenience
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
@@ -77,5 +76,20 @@ end
     @inbounds top_fluxes.snowfall[i, j, 1] = ifelse(inactive, zero(grid), Jˢⁿ)
     @inbounds top_fluxes.u[i, j, 1]        = ifelse(inactive, zero(grid), ℑxᶠᵃᵃ(i, j, 1, grid, ρτˣ))
     @inbounds top_fluxes.v[i, j, 1]        = ifelse(inactive, zero(grid), ℑyᵃᶠᵃ(i, j, 1, grid, ρτʸ))
-    @inbounds bottom_heat_flux[i, j, 1]    = ifelse(inactive, zero(grid), ΣQb)
+    store_bottom_heat_flux!(bottom_heat_flux, i, j, grid, ℵi, 𝒬ⁱⁿ, 𝒬ᶠʳᶻ, inactive)
+end
+
+@inline function store_bottom_heat_flux!(flux, i, j, grid, ice_fraction, interface_cell, frazil_cell, inactive)
+    @inbounds flux[i, j, 1] = ifelse(inactive, zero(grid), interface_cell + frazil_cell)
+    return nothing
+end
+
+@inline function store_bottom_heat_flux!(flux::ColumnBasalHeatFlux, i, j, grid, ice_fraction, interface_cell, frazil_cell, inactive)
+    interface_ice = interface_cell / ifelse(ice_fraction > 0, ice_fraction, one(ice_fraction))
+    @inbounds begin
+        flux.interface[i, j, 1] = ifelse(inactive | (ice_fraction <= 0), zero(grid), interface_ice)
+        flux.interface_cell[i, j, 1] = ifelse(inactive, zero(grid), interface_cell)
+        flux.frazil[i, j, 1] = ifelse(inactive, zero(grid), frazil_cell)
+    end
+    return nothing
 end

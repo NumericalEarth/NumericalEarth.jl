@@ -2,9 +2,15 @@ include("runtests_setup.jl")
 
 using CUDA
 using Oceananigans.OrthogonalSphericalShellGrids
+using Oceananigans.Grids: znode
+using Oceananigans.Fields: interior
 using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
 using ClimaSeaIce.SeaIceDynamics
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
+using ClimaSeaIce.SeaIceThermodynamics: SlabThermodynamics, ColumnEnergyThermodynamics,
+                                        SeaIceColumnDiscretization, FixedDrainedIceSalinityProfile
+using NumericalEarth.EarthSystemModels.InterfaceComputations: BulkTemperature, SkinTemperature,
+                                                              default_ai_temperature, ThreeEquationHeatFlux
 using ClimaSeaIce.Rheologies
 
 @inline kernel_melting_temperature(i, j, k, grid, liquidus, S) = @inbounds melting_temperature(liquidus, S[i, j, k])
@@ -54,9 +60,9 @@ using ClimaSeaIce.Rheologies
         # Fluxes are computed when the model is constructed, so we just test that this works.
         # And that we can time step with sea ice
         @test begin
-            coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+            coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, sea_ice_substeps=3)
             time_step!(coupled_model, 1)
-            true
+            iteration(sea_ice) == 3 && sea_ice.model.clock.time == ocean.model.clock.time
         end
 
         @info "Testing OceanSeaIceModel with land on $A..."
@@ -74,4 +80,45 @@ using ClimaSeaIce.Rheologies
             true
         end
     end
+end
+
+@testset "Selectable sea-ice thermodynamics" begin
+    horizontal = (x = (0, 4), y = (0, 4))
+    slab_grid = RectilinearGrid(CPU(); size = (4, 4, 1), halo = (3, 3, 3),
+                                z = (-1, 0), topology = (Periodic, Periodic, Bounded), horizontal...)
+    column_grid = RectilinearGrid(CPU(); size = (4, 4, 8), halo = (3, 3, 3),
+                                  z = SeaIceColumnDiscretization((0, 1)),
+                                  topology = (Periodic, Periodic, Bounded), horizontal...)
+
+    slab = sea_ice_simulation(slab_grid; dynamics = nothing)
+    column = sea_ice_simulation(column_grid; thermodynamics = :column, dynamics = nothing)
+
+    @test slab.model.ice_thermodynamics isa SlabThermodynamics
+    @test default_ai_temperature(slab) isa SkinTemperature
+    @test !isnothing(ThreeEquationHeatFlux(slab).conductive_flux)
+
+    @test column.model.ice_thermodynamics isa ColumnEnergyThermodynamics
+    @test default_ai_temperature(column) isa BulkTemperature
+    @test isnothing(ThreeEquationHeatFlux(column).conductive_flux)
+
+    profile = FixedDrainedIceSalinityProfile(Float64)
+    profiled_column = sea_ice_simulation(column_grid; thermodynamics = :column,
+                                         column_bulk_salinity = profile, dynamics = nothing)
+    salinity = Array(interior(profiled_column.model.ice_thermodynamics.fields.bulk_salinity))
+    @test salinity[1, 1, 1] > salinity[1, 1, end]
+    @test isapprox(salinity[1, 1, end], profile(7.5 / 8); atol = 1e-14)
+
+    set!(profiled_column.model; h = 1, ℵ = 0.8, hs = 0.1)
+    set!(profiled_column.model.ice_thermodynamics; bulk_salinity = profile, temperature = -5)
+    time_step!(profiled_column.model, 60)
+    initialized_salinity = Array(interior(profiled_column.model.ice_thermodynamics.fields.bulk_salinity))
+    initialized_energy = Array(interior(profiled_column.model.ice_thermodynamics.fields.internal_energy))
+    @test initialized_salinity == salinity
+    @test all(isfinite, initialized_energy)
+    @test initialized_energy[1, 1, 1] != initialized_energy[1, 1, end]
+
+    set!(column.model; h = 1, ℵ = 0.8, hs = 0.1)
+    set!(column.model.ice_thermodynamics; temperature = -5)
+    time_step!(column.model, 60)
+    @test all(isfinite, Array(interior(column.model.ice_thermodynamics.fields.temperature)))
 end

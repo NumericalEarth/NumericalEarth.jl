@@ -31,8 +31,35 @@ EarthSystemModels.default_sea_ice() = FreezingLimitedOceanTemperature()
 # in the convenience constructors (e.g. `OceanSeaIceModel`).
 EarthSystemModels.is_ocean_component(::Simulation{<:SeaIceModel}) = false
 
-# When using an ClimaSeaIce simulation, we assume that the exchange grid is the sea-ice grid
-EarthSystemModels.interpolate_state!(exchanger, grid, ::Simulation{<:SeaIceModel},       coupled_model) = nothing
+# A separate sea-ice vertical grid shares the ocean's horizontal cells.
+# Transfer the two-dimensional state used by the interface fluxes.
+@kernel function _copy_sea_ice_surface_state!(destination, source, ice_grid)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        destination.u[i, j, 1]  = ℑxᶠᵃᵃ(i, j, 1, ice_grid, source.u)
+        destination.v[i, j, 1]  = ℑyᵃᶠᵃ(i, j, 1, ice_grid, source.v)
+        destination.hi[i, j, 1] = source.hi[i, j, 1]
+        destination.hc[i, j, 1] = source.hc[i, j, 1]
+        destination.ℵ[i, j, 1]  = source.ℵ[i, j, 1]
+        destination.hs[i, j, 1] = source.hs[i, j, 1]
+    end
+end
+
+function EarthSystemModels.interpolate_state!(exchanger, grid, sea_ice::Simulation{<:SeaIceModel}, coupled_model)
+    ice_grid = sea_ice.model.grid
+    ice_grid == grid && return nothing
+    isnothing(sea_ice.model.snow_thickness) &&
+        error("The separate-grid sea-ice exchanger currently requires a snow layer")
+    size(ice_grid)[1:2] == size(grid)[1:2] ||
+        error("Sea-ice and ocean exchange grids must have the same horizontal size")
+    model = sea_ice.model
+    source = (u = model.velocities.u, v = model.velocities.v,
+              hi = model.ice_thickness, hc = model.ice_consolidation_thickness,
+              ℵ = model.ice_concentration, hs = model.snow_thickness)
+    launch!(architecture(grid), grid, :xy, _copy_sea_ice_surface_state!,
+            exchanger.state, source, ice_grid)
+    return nothing
+end
 EarthSystemModels.interpolate_state!(exchanger, grid, ::FreezingLimitedOceanTemperature, coupled_model) = nothing
 
 # ComponentExchangers

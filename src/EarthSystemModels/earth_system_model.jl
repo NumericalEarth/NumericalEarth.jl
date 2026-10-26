@@ -1,9 +1,10 @@
+using ClimaSeaIce: SeaIceModel
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using Oceananigans
 using Oceananigans.TimeSteppers: Clock
 using KernelAbstractions: @kernel, @index
 
-mutable struct EarthSystemModel{R, A, L, I, O, F, C, Arch} <: AbstractModel{Nothing, Arch}
+mutable struct EarthSystemModel{R, A, L, I, O, F, C, Arch, SC} <: AbstractModel{Nothing, Arch}
     architecture :: Arch
     clock :: C
     radiation :: R
@@ -12,6 +13,7 @@ mutable struct EarthSystemModel{R, A, L, I, O, F, C, Arch} <: AbstractModel{Noth
     sea_ice :: I
     ocean :: O
     interfaces :: F
+    sea_ice_subcycling :: SC
 end
 
 const ESM = EarthSystemModel
@@ -207,6 +209,7 @@ Keyword Arguments
 - `sea_ice_heat_capacity`: Heat capacity for sea ice. Defaults to value from sea ice model.
 - `interfaces`: Component interfaces for coupling. Defaults to `nothing` and will be constructed automatically.
   To customize the sea ice-ocean heat flux formulation, create interfaces manually using `ComponentInterfaces`.
+- `sea_ice_substeps`: Number of sea-ice steps within each coupled step. Defaults to 1.
 """
 function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                           clock = default_earth_system_clock(atmosphere),
@@ -214,8 +217,14 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                           ocean_heat_capacity = heat_capacity(ocean),
                           sea_ice_reference_density = reference_density(sea_ice),
                           sea_ice_heat_capacity = heat_capacity(sea_ice),
+                          sea_ice_substeps = 1,
                           interfaces = nothing,
                           interface_kw...) # e.g. `atmosphere_land_interface_specific_humidity`
+
+    sea_ice_substeps >= 1 || throw(ArgumentError("sea_ice_substeps must be positive"))
+    if sea_ice_substeps > 1 && !(sea_ice isa Simulation{<:SeaIceModel})
+        throw(ArgumentError("sea_ice_substeps requires a SeaIceModel Simulation"))
+    end
 
     if isnothing(radiation) && atmosphere isa AbstractPrescribedComponent
         @warn """
@@ -279,6 +288,16 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
     surfaces = present_surfaces(ocean, sea_ice, land)
     allocate_interface_fluxes!(radiation, interfaces.exchanger.grid, surfaces)
 
+    sea_ice_subcycling = if sea_ice_substeps == 1
+        nothing
+    else
+        ice_grid = sea_ice.model.grid
+        fluxes = (ice = Field{Center, Center, Nothing}(ice_grid),
+                  snow = Field{Center, Center, Nothing}(ice_grid),
+                  intercepted_snowfall = Field{Center, Center, Nothing}(ice_grid))
+        (; substeps = sea_ice_substeps, fluxes)
+    end
+
     earth_system_model = EarthSystemModel(arch,
                                           clock,
                                           radiation,
@@ -286,7 +305,8 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                                           land,
                                           sea_ice,
                                           ocean,
-                                          interfaces)
+                                          interfaces,
+                                          sea_ice_subcycling)
 
     # Make sure the initial temperature of the ocean
     # is not below freezing and above melting near the surface
