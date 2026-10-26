@@ -428,9 +428,10 @@ end
     slice = convert(Array{Union{Missing, Float32}}, ones(Float32, 4, 4, 2))
     slice[2, 3, 1] = missing
 
-    # `missing` becomes NaN on the host, before the transfer
-    @test DataWrangling.architecture_ready(CPU(), slice) isa Array{Float32, 3}
-    @test eltype(DataWrangling.architecture_ready(CPU(), reshape(view(slice, :, :, :), 4, 4, 2))) == Float32
+    # On the CPU the slice stays as it is; the region kernel turns `missing` into NaN
+    @test on_architecture(CPU(), slice) === slice
+    reshaped = reshape(view(slice, :, :, :), 4, 4, 2)
+    @test isequal(on_architecture(CPU(), reshaped), reshaped)
 
     grid = LatitudeLongitudeGrid(CPU(); size = (4, 4, 2), longitude = (0, 4), latitude = (0, 4), z = (0, 1))
     field = CenterField(grid)

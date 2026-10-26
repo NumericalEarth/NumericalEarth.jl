@@ -121,8 +121,12 @@ end
 # hold the `Missing` element type (EnzymeAD/Reactant.jl#3569).
 @testset "A slice with missing values moved to ReactantState" begin
     slice = Union{Missing, Float32}[1, missing, 1]
-    device_slice = NumericalEarth.DataWrangling.architecture_ready(ReactantState(), slice)
+    device_slice = Oceananigans.Architectures.on_architecture(ReactantState(), slice)
     @test device_slice isa Reactant.AbstractConcreteArray{Float32}
     @test isequal(Array(device_slice), Float32[1, NaN, 1])
+
+    reshaped_slice = Oceananigans.Architectures.on_architecture(ReactantState(), reshape(slice, 1, 3))
+    @test size(reshaped_slice) == (1, 3)
+    @test isequal(Array(reshaped_slice), Float32[1 NaN 1])
 end
 
