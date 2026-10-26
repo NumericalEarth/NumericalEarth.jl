@@ -40,6 +40,11 @@ current land state. The land step applies each update once. Canopy-air and skin 
 are checkpointed with the land. Checkpoints also preserve interface temperatures and flux
 partitions from the completed step so diagnostics remain consistent immediately after pickup.
 
+For vegetated and bare tiles, use `TiledLandSurface(LandSurface(canopy); cover_fraction=0.6)`
+as the land's `surface`. `InterceptingHydrology` then derives its leaf area index and cover fraction
+from the same configuration. Separate tile roughnesses can be supplied through
+`TiledLandInterface`'s `vegetated_fluxes` and `bare_fluxes` keywords.
+
 Soil retention curves and porosity remain in land hydrology. The boundary solve receives
 derived moisture-stress endpoints and vapor diffusivity. `DryLayerHumidity` gets its
 thermal exchange distance from the surface heat-transfer closure.

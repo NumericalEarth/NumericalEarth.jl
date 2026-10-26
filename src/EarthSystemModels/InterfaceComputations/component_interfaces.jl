@@ -228,6 +228,11 @@ EarthSystemModels.surface_temperature(::Nothing, ::Nothing) = nothing
 
 ground_conductance(interface::AtmosphereInterface) = ground_conductance(interface.formulation.temperature)
 
+land_state_accessors(interface::AtmosphereInterface) = land_state_accessors(interface.formulation)
+
+validate_zero_plane_displacement(interface::AtmosphereInterface, zᵃᵗ) =
+    validate_zero_plane_displacement(interface.formulation.turbulent_fluxes, zᵃᵗ)
+
 #####
 ##### Atmosphere-Ocean Interface
 #####
@@ -488,7 +493,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                     sea_ice    = net_fluxes(sea_ice),
                     atmosphere = net_fluxes(atmosphere))
 
-    land_accessors = isnothing(al_interface) ? (;) : land_state_accessors(al_interface.formulation)
+    land_accessors = isnothing(al_interface) ? (;) : land_state_accessors(al_interface)
 
     exchanger = StateExchanger(exchange_grid, radiation, atmosphere, land, ocean, sea_ice;
                                atmosphere_correction = exchanger_correction,
@@ -502,7 +507,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     zᵃᵗ = surface_layer_height(atmosphere, exchange_grid)
 
     for interface in (ao_interface, ai_interface, al_interface)
-        isnothing(interface) || validate_zero_plane_displacement(interface.formulation.turbulent_fluxes, zᵃᵗ)
+        isnothing(interface) || validate_zero_plane_displacement(interface, zᵃᵗ)
     end
 
     properties = merge((; gravitational_acceleration, surface_layer_height = zᵃᵗ),

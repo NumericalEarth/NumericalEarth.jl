@@ -66,6 +66,7 @@ export
     FrictionVelocityUndercanopyVelocity,
     SellersSoilResistance,
     GroundSurfaceResistance,
+    TiledLandInterface,
     RubiscoLightLimitedPhotosynthesis,
     MedlynConductance,
     JarvisConductance,
@@ -115,7 +116,7 @@ export
     SoilSkinTemperature,
     InteriorDiffusivity,
     # Land (prognostic SlabLand + closures)
-    SlabLand, LandSurface,
+    SlabLand, LandSurface, TiledLandSurface,
     SlabEnergy,
     BucketHydrology,
     WaterCoupledEnergy,

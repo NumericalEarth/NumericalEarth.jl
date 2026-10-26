@@ -152,6 +152,7 @@ component-superscript rule above.
 | ``Λ^{\mathrm{gro}}`` | `ground_heat_flux` | ground conductance | Ground↔bulk conduction coefficient ``Λ^{\mathrm{gro}} = κ^T/ℓ^T`` of a `SoilConductiveFlux` (W m⁻² K⁻¹) |
 | ``-\Pi^{fc}`` | `field_capacity_head` | field-capacity suction head | Suction (negative pressure head) at which transpiration becomes unstressed (``β = 1``), for `PlantAvailableWaterStress` (m) |
 | ``-\Pi^{wp}`` | `wilting_point_head` | wilting-point suction head | Suction (negative pressure head) at which transpiration ceases (``β = 0``), for `PlantAvailableWaterStress` (m) |
+| ``f`` | `cover_fraction` | vegetated cover fraction | Vegetated fraction of a cell: the area weight of the vegetated tile of a `TiledLandSurface`, and the cover an `InterceptingHydrology` store occupies (–) |
 | ``w^{\mathrm{ucan}}`` | `undercanopy_transfer_velocity` | undercanopy transfer velocity | Ground↔canopy-air transfer velocity of a `CanopyGroundSurface`: the flux per unit difference across the path, ``J = \rho^{\mathrm{at}} w^{\mathrm{ucan}} (q^{\mathrm{gro}} - q^{\mathrm{acan}})``, as ``u_\star \chi^q`` is for the canopy-air↔atmosphere exchange. A bulk transfer coefficient times a wind speed, not a diffusivity (m s⁻¹) |
 | ``\lambda^{\mathrm{lea}}`` | `λˡᵉᵃ`, `leaf_area_index` | leaf area index | One-sided leaf area per unit ground area (m² m⁻²) |
 | ``T^{\mathrm{deep}}`` | `deep_temperature` | deep climatological temperature | Prescribed deep/climatological target temperature for force-restore (K) |
@@ -215,7 +216,7 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 ### Canopy and canopy air space
 
 Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyGroundSurface`](@ref),
-and [`InterceptingHydrology`](@ref).
+[`InterceptingHydrology`](@ref), and [`TiledLandInterface`](@ref).
 
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
@@ -247,7 +248,7 @@ and [`InterceptingHydrology`](@ref).
 | ``\alpha^{\mathrm{lea}}``, ``\alpha^{\mathrm{gro}}`` | `leaf_albedo`, `ground_albedo` | albedos | Shortwave albedo of the canopy and of the ground below it (–) |
 | ``r^{\mathrm{soi}}`` | – | ground surface resistance | Moist-soil evaporation resistance of a [`SellersSoilResistance`](@ref) (s m⁻¹) |
 | ``r^{\mathrm{gro}}``, ``C^{\mathrm{gro}}`` | `transfer_coefficient` | ground-surface resistance, transfer coefficient | Bulk ground evaporation resistance of a [`GroundSurfaceResistance`](@ref) (s m⁻¹) and its transfer coefficient (–) |
-| ``M^{\mathrm{can}}``, ``M^{\mathrm{can}+}`` | `canopy_water_storage` | canopy water store | Intercepted water on the foliage and its capacity ``M^{\mathrm{can}+} = c L``, with ``c`` the capacity per unit leaf area (`capacity_per_leaf_area`) (kg m⁻²) |
+| ``M^{\mathrm{can}}``, ``M^{\mathrm{can}+}`` | `canopy_water_storage` | canopy water store | Intercepted water on the foliage and its capacity ``M^{\mathrm{can}+} = c L``, both per unit vegetated area, with ``c`` the capacity per unit leaf area (`capacity_per_leaf_area`) (kg m⁻²) |
 | ``f^{\mathrm{int}}`` | – | interception fraction | Caught fraction of rain, ``1 - e^{-K \Omega L}`` (–) |
 | ``f^{\mathrm{wet}}`` | – | wet-canopy fraction | Deardorff wetted-leaf fraction ``(M^{\mathrm{can}}/M^{\mathrm{can}+})^{2/3}`` (–) |
 | ``g^{\mathrm{wet}}`` | – | wet-canopy vapor conductance | Wetted fraction of the leaf boundary-layer conductance, capped so that ``J^{\mathrm{wet}} \le M^{\mathrm{can}}/\Delta t`` (kg m⁻² s⁻¹) |

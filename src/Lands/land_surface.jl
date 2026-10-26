@@ -25,6 +25,24 @@ function LandSurface(temperature = BulkTemperature();
     return LandSurface(temperature, specific_humidity, nothing, nothing)
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Vegetated and bare surface physics sharing a soil column, with vegetated `cover_fraction`.
+"""
+struct TiledLandSurface{V, B, F}
+    vegetated :: V
+    bare :: B
+    cover_fraction :: F
+end
+
+function TiledLandSurface(vegetated::LandSurface; cover_fraction,
+                          bare = LandSurface(EnergyBalanceTemperature(vegetated.temperature.ground_heat_flux;
+                                                                      storage = DiagnosticSkin());
+                                             specific_humidity = vegetated.temperature.soil_humidity))
+    return TiledLandSurface(vegetated, bare, cover_fraction)
+end
+
 function materialize_land_surface(surface::LandSurface, grid)
     temperature = surface.temperature
     names = if temperature isa PrognosticCanopyGroundSurface
@@ -39,6 +57,10 @@ function materialize_land_surface(surface::LandSurface, grid)
     return LandSurface(temperature, surface.specific_humidity, prognostic, next_state)
 end
 
+materialize_land_surface(surface::TiledLandSurface, grid) =
+    TiledLandSurface(materialize_land_surface(surface.vegetated, grid),
+                     materialize_land_surface(surface.bare, grid), surface.cover_fraction)
+
 function time_step!(surface::LandSurface)
     foreach(values(surface.prognostic), values(surface.next_state)) do state, next
         copyto!(parent(state), parent(next))
@@ -47,7 +69,15 @@ function time_step!(surface::LandSurface)
     return nothing
 end
 
+function time_step!(surface::TiledLandSurface)
+    time_step!(surface.vegetated)
+    time_step!(surface.bare)
+    return nothing
+end
+
 Oceananigans.prognostic_state(surface::LandSurface) = map(prognostic_state, surface.prognostic)
+Oceananigans.prognostic_state(surface::TiledLandSurface) =
+    (; vegetated=prognostic_state(surface.vegetated), bare=prognostic_state(surface.bare))
 
 function Oceananigans.restore_prognostic_state!(surface::LandSurface, state)
     for name in keys(surface.prognostic)
@@ -56,26 +86,43 @@ function Oceananigans.restore_prognostic_state!(surface::LandSurface, state)
     return surface
 end
 
+function Oceananigans.restore_prognostic_state!(surface::TiledLandSurface, state)
+    restore_prognostic_state!(surface.vegetated, state.vegetated)
+    restore_prognostic_state!(surface.bare, state.bare)
+    return surface
+end
+
 Base.summary(surface::LandSurface) = string("LandSurface(", summary(surface.temperature), ")")
 Base.show(io::IO, surface::LandSurface) = print(io, summary(surface))
+Base.summary(surface::TiledLandSurface) = string("TiledLandSurface(cover_fraction=", prettysummary(surface.cover_fraction), ")")
+Base.show(io::IO, surface::TiledLandSurface) = print(io, summary(surface))
+
+# The tile whose canopy sets the land's defaults.
+vegetated_tile(surface::LandSurface) = surface
+vegetated_tile(surface::TiledLandSurface) = surface.vegetated
 
 InterfaceComputations.land_surface(land::SlabLand) = land.surface
 InterfaceComputations.land_surface_state(surface::LandSurface) = (; state=surface.prognostic, next=surface.next_state)
-InterfaceComputations.default_al_temperature(land::SlabLand) = land.surface.temperature
+InterfaceComputations.default_al_temperature(land::SlabLand) = vegetated_tile(land.surface).temperature
 InterfaceComputations.default_al_specific_humidity(temperature, land::SlabLand) =
-    temperature isa CanopyGroundSurface ? temperature : land.surface.specific_humidity
+    temperature isa CanopyGroundSurface ? temperature : vegetated_tile(land.surface).specific_humidity
 
 EarthSystemModels.initialize_land_surface!(land::SlabLand) = time_step!(land.surface)
 
+InterfaceComputations.atmosphere_land_interface(grid, atmosphere, land, surface::TiledLandSurface;
+                                                fluxes, velocity_difference, kw...) =
+    TiledLandInterface(grid, atmosphere, land; vegetated_fluxes = fluxes, bare_fluxes = fluxes, velocity_difference)
+
 materialize_surface_hydrology(hydrology, surface) = hydrology
 
-# The store's leaf area index defaults to the canopy's.
+# The store's leaf area index and cover fraction default to the canopy's and the vegetated fraction.
 function materialize_surface_hydrology(hydrology::InterceptingHydrology, surface)
     leaf_area_index = something(hydrology.leaf_area_index,
-                                canopy_leaf_area_index(surface.specific_humidity), Some(nothing))
+                                canopy_leaf_area_index(vegetated_tile(surface).specific_humidity), Some(nothing))
     isnothing(leaf_area_index) && throw(ArgumentError("InterceptingHydrology requires a canopy surface or leaf_area_index."))
+    cover_fraction = something(hydrology.cover_fraction, surface isa TiledLandSurface ? surface.cover_fraction : 1)
     return InterceptingHydrology(typeof(hydrology.capacity_per_leaf_area);
-                                 soil = hydrology.soil, leaf_area_index,
+                                 soil = hydrology.soil, leaf_area_index, cover_fraction,
                                  capacity_per_leaf_area = hydrology.capacity_per_leaf_area,
                                  extinction = hydrology.extinction, clumping = hydrology.clumping)
 end

@@ -6,7 +6,7 @@ using Oceananigans.TimeSteppers: time_step!
 using RRTMGP   # activates Breeze's RadiativeTransferModel extension
 
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyGroundSurface, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR
+    CanopyGroundSurface, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR, TiledLandInterface
 using NumericalEarth.Lands: BucketHydrology, SlabEnergy, SlabLand
 using NumericalEarth.Radiations: default_stefan_boltzmann_constant
 
@@ -18,7 +18,7 @@ const σ = default_stefan_boltzmann_constant
 const Δt = 0.25
 
 # `hour` is the solar epoch at longitude 0, so 12 is local noon and 0 local midnight.
-function rtm_canopy_components(arch; hour = 12)
+function rtm_canopy_components(arch; hour = 12, cover_fraction = nothing)
     grid = RectilinearGrid(arch; size = (8, 8), halo = (5, 5), x = (-1kilometer, 1kilometer), z = (0, 1kilometer),
                            topology = (Periodic, Flat, Bounded))
     constants = ThermodynamicConstants(Float64)
@@ -33,6 +33,7 @@ function rtm_canopy_components(arch; hour = 12)
         canopy_humidity = CanopyConductanceHumidity(Float64; leaf_area_index = 4, moisture_stress = CriticalSaturation(0.5),
                                                     absorbed_par = InteractiveAbsorbedPAR(Float64)))
     surface = LandSurface(canopy)
+    isnothing(cover_fraction) || (surface = TiledLandSurface(surface; cover_fraction))
 
     land_grid = RectilinearGrid(arch; size = grid.Nx, halo = grid.Hx, x = (-1kilometer, 1kilometer), topology = (Periodic, Flat, Flat))
     land = SlabLand(land_grid; hydrology = BucketHydrology(Float64; maximum_water_storage = 150), energy = SlabEnergy(Float64), surface)
@@ -65,6 +66,23 @@ end
             night = rtm_canopy_model(arch; hour = 0)
             time_step!(night, Δt)
             @test all(Array(interior(canopy.canopy)) .> Array(interior(night.interfaces.atmosphere_land_interface.temperature.canopy)))
+        end
+
+        @testset "Tiled interface keeps the bare tile's configured optics on $A" begin
+            f = 0.6
+            atmosphere, land, radiation = rtm_canopy_components(arch; cover_fraction = f)
+            tiled = TiledLandInterface(land.grid, atmosphere, land)
+            model = AtmosphereLandModel(atmosphere, land; radiation, atmosphere_land_interface = tiled)
+            update_state!(model)
+
+            mosaic = model.interfaces.atmosphere_land_interface.temperature
+            @test all(Array(interior(mosaic.effective_albedo)) .≈ f * 0.15 + (1 - f) * rtm_albedo)
+
+            Tᵛ = Array(interior(tiled.vegetated.temperature.effective))
+            Tᵇ = Array(interior(tiled.bare.temperature))
+            ℐꜜˡʷ = Array(interior(model.interfaces.exchanger.radiation.state.ℐꜜˡʷ))
+            bare_longwave = @. rtm_emissivity * σ * Tᵇ^4 - (1 - rtm_emissivity) * ℐꜜˡʷ
+            @test σ .* Array(interior(mosaic.effective)) .^ 4 ≈ @. f * σ * Tᵛ^4 + (1 - f) * bare_longwave
         end
     end
 end

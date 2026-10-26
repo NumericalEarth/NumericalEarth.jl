@@ -2,8 +2,8 @@
 #
 # This idealized 0D example exercises the [`CanopyGroundSurface`](@ref) land-surface
 # component under an analytic diurnal forcing with a rain pulse dropped on day 2.
-# It sweeps leaf-area index and stomatal conductance, then looks inside the canopy
-# interception store.
+# It sweeps leaf-area index and stomatal conductance, then adds subgrid tiling
+# ([`TiledLandInterface`](@ref)).
 
 # ## Load packages
 using NumericalEarth
@@ -122,7 +122,7 @@ variably_saturated_soil() = VariablySaturatedHydrology(;
 conservative_energy() = WaterCoupledEnergy(; deep_temperature = initial_temperature, deep_time_scale = 10day)
 
 # The `InterceptingHydrology` wraps the soil with the canopy store; its `leaf_area_index`
-# sets the caught fraction and capacity `Mᶜᵃⁿ⁺ = c·LAI`.
+# sets the caught fraction and capacity `Mᶜᵃⁿ⁺ = c·LAI`, per unit vegetated area.
 intercepting_hydrology() = InterceptingHydrology(;
     soil = variably_saturated_soil(),
     capacity_per_leaf_area = interception_capacity)
@@ -476,13 +476,119 @@ nothing #hide
 
 # ![](canopy_air_space_knobs.png)
 
-# ## Figure 3 — anatomy of the interception store
+# ## Sweeping the bare-soil fraction: a vegetation/bare mosaic
+#
+# Subgrid tiling ([`TiledLandInterface`](@ref)) makes the cell a mosaic of a vegetated
+# fraction `f` and bare-soil fraction `1 − f`, area-weighted into one boundary condition:
+# `f` times the vegetated flux plus `1 − f` times the bare flux. It reuses the same soil,
+# energy, and interception store as above, with only the tiling and the store's
+# `cover_fraction` changing.
+
+# The vegetated tile is the same `canopy_with_interception` as above (full
+# `vegetated_leaf_area_index`); its bare (`LAI = 0`) counterpart is derived automatically by
+# `TiledLandSurface`. The interception store is kept per unit vegetated area (leaf area index
+# `vegetated_leaf_area_index`, capacity `Mᶜᵃⁿ⁺ = c·LAI`); the tile fraction scales the
+# interception and drip the shared soil sees.
+
+function tiled_intercepting_column(; cover_fraction, label)
+    grid       = RectilinearGrid(CPU(); size = (), topology = (Flat, Flat, Flat))
+    atmosphere = forced_atmosphere(grid, times)
+    radiation  = forced_radiation(grid, times)
+
+    canopy = canopy_with_interception(; leaf_area_index = vegetated_leaf_area_index)
+    surface = TiledLandSurface(LandSurface(canopy); cover_fraction)
+    land = SlabLand(grid; energy = conservative_energy(),
+                    hydrology = intercepting_hydrology(), surface)
+    set!(land; T = initial_temperature, M = initial_water_storage, canopy_water_storage = 0.0)
+
+    model = AtmosphereLandModel(atmosphere, land; radiation)
+    interface = model.interfaces.atmosphere_land_interface
+
+    t                      = zeros(number_of_steps)   # time (days)
+    𝒬ᵀ                     = zeros(number_of_steps)   # blended sensible heat
+    𝒬ᵛ                     = zeros(number_of_steps)   # blended latent heat
+    Tʳᵃᵈ                   = zeros(number_of_steps)   # land-surface (radiometric) temperature
+    𝒮                      = zeros(number_of_steps)   # shared-column saturation
+    Mᶜᵃⁿ                   = zeros(number_of_steps)   # cell-average canopy water store f·Mᶜᵃⁿ (mm)
+    Jʷᵉᵗ                   = zeros(number_of_steps)   # cell-average wet-canopy evaporation f·Jʷᵉᵗ (mass flux, positive up)
+    wet_canopy_latent_heat = zeros(number_of_steps)   # wet-canopy latent heat ℒ·Jʷᵉᵗ (W m⁻², up)
+    𝒬ᵛˡᵉᵃ                  = zeros(number_of_steps)   # blended leaf latent (transpiration + wet-canopy)
+    𝒬ᵛᵍʳᵒ                  = zeros(number_of_steps)   # blended soil latent
+    rain                   = zeros(number_of_steps)   # incident rain (mass flux, down)
+    throughfall            = zeros(number_of_steps)   # throughfall reaching the soil (mass flux, down)
+
+    @info "Running tiled interception column: $label ..."
+    for n in 1:number_of_steps
+        time_step!(model, Δt)
+        time                      = model.clock.time
+        t[n]                      = time / day
+        𝒬ᵀ[n]                     = scalar(interface.fluxes.sensible_heat)
+        𝒬ᵛ[n]                     = scalar(interface.fluxes.latent_heat)
+        Tʳᵃᵈ[n]                   = scalar(interface.temperature.effective)
+        𝒮[n]                      = scalar(land.saturation)
+        Mᶜᵃⁿ[n]                   = cover_fraction * scalar(land.prognostic.canopy_water_storage)   # the store is per vegetated area
+        Jʷᵉᵗ[n]                   = cover_fraction * scalar(interface.temperature.canopy_evaporation)
+        wet_canopy_latent_heat[n] = scalar(interface.temperature.wet_canopy_latent_heat)
+        𝒬ᵛˡᵉᵃ[n]                  = scalar(interface.temperature.canopy_latent_heat)
+        𝒬ᵛᵍʳᵒ[n]                  = scalar(interface.temperature.ground_latent_heat)
+        rain[n]                   = scalar(land.fluxes.liquid_precipitation_flux)
+        throughfall[n]            = scalar(land.diagnostics.throughfall)
+    end
+
+    return (; label, cover_fraction, t, 𝒬ᵀ, 𝒬ᵛ, Tʳᵃᵈ, 𝒮, Mᶜᵃⁿ, Jʷᵉᵗ, wet_canopy_latent_heat, 𝒬ᵛˡᵉᵃ, 𝒬ᵛᵍʳᵒ, rain, throughfall)
+end
+
+# ## The bare-soil-fraction sweep
+
+fractions   = (0.0, 0.25, 0.5, 0.75, 1.0)
+tiled_cases = map(f -> tiled_intercepting_column(cover_fraction = f, label = "f = $f"), fractions)
+full_canopy = tiled_cases[end]   # f = 1 — the interception store's anatomy
+
+# ## Figure 3 — sweeping the vegetation fraction with an active interception store
+#
+# As `f` rises the partition shifts from a hot, sensible-dominated bare surface toward a
+# cooler, transpiring canopy — and the interception store and wet-canopy evaporation, absent
+# over bare soil, grow with the vegetated area.
+
+fraction_colors = cgrad(:viridis, length(fractions); categorical = true)
+
+fig = Figure(size = (1500, 1200), fontsize = 17)
+
+function fraction_panel(cell, field, title, ylabel; transform = identity, legend = :lt)
+    ax = Axis(cell; title, xlabel = "t (days)", ylabel)
+    mark_pulse!(ax)
+    for (case, color) in zip(tiled_cases, fraction_colors)
+        lines!(ax, case.t, transform(getproperty(case, field)); color, label = case.label)
+    end
+    axislegend(ax; position = legend, labelsize = 11)
+    return ax
+end
+
+fraction_panel(fig[1, 1], :𝒬ᵛ,   "Latent heat (blended)",         "𝒬ᵛ (W m⁻²)")
+fraction_panel(fig[1, 2], :𝒬ᵀ,   "Sensible heat (blended)",       "𝒬ᵀ (W m⁻²)")
+fraction_panel(fig[2, 1], :Tʳᵃᵈ, "Land-surface temperature",      "Tʳᵃᵈ (K)")
+fraction_panel(fig[2, 2], :Jʷᵉᵗ, "Wet-canopy evaporation f·Jʷᵉᵗ", "f·Jʷᵉᵗ (mm day⁻¹)"; transform = mm_per_day)
+fraction_panel(fig[3, 1], :Mᶜᵃⁿ,   "Canopy water store f·Mᶜᵃⁿ",       "f·Mᶜᵃⁿ (mm)"; legend = :rt)
+ax = fraction_panel(fig[3, 2], :𝒮, "Shared-column saturation 𝒮", "𝒮"; legend = :rc)
+hlines!(ax, [critical_saturation]; color = :gray, linestyle = :dash)
+ylims!(ax, 0, 1.05)
+
+Label(fig[0, 1:2], "Tiled canopy/bare mosaic with interception — sweeping the vegetation fraction", fontsize = 22)
+
+save("canopy_air_space_tiled_interception.png", fig)
+@info "Saved canopy_air_space_tiled_interception.png"
+
+nothing #hide
+
+# ![](canopy_air_space_tiled_interception.png)
+
+# ## Figure 4 — anatomy of the interception store (full canopy, f = 1)
 #
 # The store buffers the rain and opens a third latent pathway. During the pulse the canopy
 # catches part of the rain and fills `Mᶜᵃⁿ`; the wet leaf then evaporates at the potential
 # rate, so wet-canopy evaporation spikes while the store drains.
 
-case                      = dense
+case                      = full_canopy
 Mᶜᵃⁿ⁺                     = interception_capacity * vegetated_leaf_area_index
 wet_canopy_latent_heat    = case.wet_canopy_latent_heat                 # ℒ·Jʷᵉᵗ (W m⁻²)
 transpiration_latent_heat = case.𝒬ᵛˡᵉᵃ .- case.wet_canopy_latent_heat  # dry (stomatal) leaf latent
@@ -520,7 +626,7 @@ mark_pulse!(ax)
 lines!(ax, case.t, fʷᵉᵗ; color = :steelblue, linewidth = 2)
 ylims!(ax, 0, 1.05)
 
-Label(fig[0, 1:2], "Interception store anatomy — dense canopy (LAI = 4)", fontsize = 22)
+Label(fig[0, 1:2], "Interception store anatomy — full canopy (f = 1)", fontsize = 22)
 
 save("canopy_air_space_interception.png", fig)
 @info "Saved canopy_air_space_interception.png"

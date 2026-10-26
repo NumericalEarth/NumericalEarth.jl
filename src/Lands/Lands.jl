@@ -7,7 +7,7 @@ export AbstractLand,
        coastal_outlet_indices,
        routable_grid,
        # Composable container
-       SlabLand, LandSurface,
+       SlabLand, LandSurface, TiledLandSurface,
        # Energy-balance closures
        SlabEnergy,
        ForceRestoreEnergy,
@@ -68,9 +68,10 @@ using Base: ForwardOrdering
 using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
 using NumericalEarth.EarthSystemModels.InterfaceComputations: InterfaceComputations,
-                                                 BulkTemperature, BulkHumidity, CanopyGroundSurface,
+                                                 BulkTemperature, BulkHumidity, CanopyGroundSurface, TiledLandInterface,
                                                  ConstantTortuosity, PowerLawTortuosity,
                                                  effective_vapor_diffusivity,
+                                                 EnergyBalanceTemperature, DiagnosticSkin,
                                                  PrognosticCanopyGroundSurface, PrognosticEnergyBalanceTemperature,
                                                  interface_kernel_parameters, ComponentExchanger,
                                                  canopy_transmittance, canopy_leaf_area_index, land_surface_fluxes,

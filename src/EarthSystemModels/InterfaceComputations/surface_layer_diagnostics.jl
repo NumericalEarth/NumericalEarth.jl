@@ -122,6 +122,9 @@ specific humidity at `specific_humidity_height`, all in meters. The heights defa
 observation heights, `velocity_height = 10` and `temperature_height = specific_humidity_height
 = 2`, and `interface` defaults to `model.interfaces.atmosphere_land_interface`.
 
+For tiled land, each variable is the area-weighted mean of the two tile profiles.
+Pass `interface.vegetated` or `interface.bare` to obtain an individual tile's profile.
+
 Each variable is the similarity profile evaluated with the scales that `interface` stored at
 the last flux solve,
 
@@ -214,4 +217,21 @@ function surface_layer_diagnostics(model, interface = model.interfaces.atmospher
             v = SurfaceLayerOperation(similarity_theory_y_velocity, grid, interface_state, convert(FT, velocity_height)),
             T = SurfaceLayerOperation(similarity_theory_temperature, grid, interface_state, convert(FT, temperature_height)),
             q = SurfaceLayerOperation(similarity_theory_specific_humidity, grid, interface_state, convert(FT, specific_humidity_height)))
+end
+
+function surface_layer_diagnostics(model, interface::TiledLandInterface; kw...)
+    vegetated = surface_layer_diagnostics(model, interface.vegetated; kw...)
+    bare = surface_layer_diagnostics(model, interface.bare; kw...)
+    grid = model.interfaces.exchanger.grid
+
+    return map(vegetated, bare) do vegetated_profile, bare_profile
+        KernelFunctionOperation{Center, Center, Nothing}(tiled_surface_layer_profile, grid,
+                                                         vegetated_profile, bare_profile,
+                                                         interface.cover_fraction, model.clock)
+    end
+end
+
+@inline function tiled_surface_layer_profile(i, j, k, grid, vegetated, bare, cover_fraction, clock)
+    f = clamp(state2dindex(cover_fraction, i, j, grid, Time(clock.time)), 0, 1)
+    return @inbounds f * vegetated[i, j, k] + (1 - f) * bare[i, j, k]
 end

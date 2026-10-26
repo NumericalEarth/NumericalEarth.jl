@@ -56,6 +56,7 @@ examples = [
     Example("Canopy air space column", "canopy_air_space_column"; build_always=false, gpu=false),
     Example("MODIS leaf area index", "modis_leaf_area_index"; build_always=false, gpu=false),
     Example("MODIS land cover and gap filling", "modis_landcover_gap_fill"; build_always=false, gpu=false),
+    Example("Tiled land column", "tiled_land_column"; build_always=false, gpu=false),
 ]
 
 # Developer examples from docs/src/developers/ directory

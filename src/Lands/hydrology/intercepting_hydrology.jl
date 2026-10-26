@@ -13,15 +13,20 @@ capacity `c·LAI`; the wet canopy evaporates at the rate `Jʷᵉᵗ` the interfa
 (a [`CanopyGroundSurface`](@ref)), and the uncaught rain plus the
 over-capacity drip reach the soil as throughfall.
 
-`leaf_area_index` defaults to the land surface's canopy LAI when the land is constructed.
-A `FieldTimeSeries` LAI runs on CPU only.
+`leaf_area_index` and `cover_fraction` default to the land surface's canopy LAI and
+vegetated fraction when the land is constructed. A `FieldTimeSeries` LAI or cover
+fraction runs on CPU only. The store is kept per unit vegetated area. Changes in cover
+conserve `cover_fraction * Mᶜᵃⁿ`, with water exceeding the new canopy capacity reaching
+the soil as throughfall. Interception and evaporation use the cover at the start of the step.
 
 * `capacity_per_leaf_area` — `c` (kg m⁻² per unit LAI).
 * `extinction`, `clumping` — Beer–Lambert `K`, `Ω` of the caught fraction.
+* `cover_fraction` — vegetated fraction of the cell (a `Number`, `Field`, or `FieldTimeSeries`).
 """
-struct InterceptingHydrology{S, L, FT} <: AbstractHydrology
+struct InterceptingHydrology{S, L, C, FT} <: AbstractHydrology
     soil                     :: S
     leaf_area_index          :: L
+    cover_fraction           :: C
     capacity_per_leaf_area   :: FT
     extinction               :: FT
     clumping                 :: FT
@@ -32,9 +37,11 @@ function InterceptingHydrology(FT::Type = Oceananigans.defaults.FloatType;
                                leaf_area_index = nothing,
                                capacity_per_leaf_area = 0.1,
                                extinction = 0.5,
-                               clumping = 1)
+                               clumping = 1,
+                               cover_fraction = nothing)
     return InterceptingHydrology(soil,
                                  convert_if_number(FT, leaf_area_index),
+                                 convert_if_number(FT, cover_fraction),
                                  convert(FT, capacity_per_leaf_area),
                                  convert(FT, extinction),
                                  convert(FT, clumping))
@@ -43,6 +50,7 @@ end
 Adapt.adapt_structure(to, h::InterceptingHydrology) =
     InterceptingHydrology(Adapt.adapt(to, h.soil),
                           Adapt.adapt(to, h.leaf_area_index),
+                          Adapt.adapt(to, h.cover_fraction),
                           h.capacity_per_leaf_area,
                           h.extinction,
                           h.clumping)
@@ -54,7 +62,7 @@ flux_variables(h::InterceptingHydrology) =
     merge_unique(flux_variables(h.soil), (:liquid_precipitation_flux, :canopy_evaporation))
 
 diagnostic_variables(h::InterceptingHydrology) =
-    merge_unique(diagnostic_variables(h.soil), (:throughfall, :canopy_water_storage_tendency))
+    merge_unique(diagnostic_variables(h.soil), (:throughfall, :canopy_water_storage_tendency, :previous_cover_fraction))
 
 initial_flux(h::InterceptingHydrology, name::Symbol, grid) = initial_flux(h.soil, name, grid)
 initial_diagnostic(h::InterceptingHydrology, name::Symbol, grid) = initial_diagnostic(h.soil, name, grid)
@@ -63,32 +71,50 @@ initial_diagnostic(h::InterceptingHydrology, name::Symbol, grid) = initial_diagn
 ##### Interception step, ahead of the soil step that reads its throughfall.
 #####
 
-# rain = (Mᶜᵃⁿⁿ⁺¹ − Mᶜᵃⁿ)/Δt + Jʷᵉᵗ + throughfall exactly: evaporation beyond what the
+# Mᶜᵃⁿ and Mᶜᵃⁿⁿ⁺¹ are per unit vegetated area; uncapped_storage, drip, and throughfall are per
+# unit cell area.
+# rain = (fⁿ⁺¹ Mᶜᵃⁿⁿ⁺¹ − fⁿ Mᶜᵃⁿ)/Δt + fⁿ Jʷᵉᵗ + throughfall exactly: evaporation beyond what the
 # store held is taken from the throughfall.
-@inline function canopy_store_update(Mᶜᵃⁿ, rain, Jʷᵉᵗ, Mᶜᵃⁿ⁺, fⁱⁿᵗ, Δt)
+@inline function canopy_store_update(Mᶜᵃⁿ, rain, Jʷᵉᵗ, Mᶜᵃⁿ⁺, fⁱⁿᵗ, fⁿ, fⁿ⁺¹, Δt)
     Pⁱⁿᵗ             = fⁱⁿᵗ * rain
-    uncapped_storage = Mᶜᵃⁿ + Δt * (Pⁱⁿᵗ - Jʷᵉᵗ)
-    drip             = max(uncapped_storage - Mᶜᵃⁿ⁺, 0) / Δt
+    uncapped_storage = fⁿ * (Mᶜᵃⁿ + Δt * (Pⁱⁿᵗ - Jʷᵉᵗ))
+    drip             = max(uncapped_storage - fⁿ⁺¹ * Mᶜᵃⁿ⁺, 0) / Δt
     shortfall        = max(-uncapped_storage, 0) / Δt
-    Mᶜᵃⁿⁿ⁺¹          = clamp(uncapped_storage, 0, Mᶜᵃⁿ⁺)
-    return Mᶜᵃⁿⁿ⁺¹, drip, rain - Pⁱⁿᵗ + drip - shortfall
+    Mᶜᵃⁿⁿ⁺¹          = clamp(uncapped_storage, 0, fⁿ⁺¹ * Mᶜᵃⁿ⁺) / ifelse(fⁿ⁺¹ > 0, fⁿ⁺¹, one(fⁿ⁺¹))
+    return Mᶜᵃⁿⁿ⁺¹, drip, rain - fⁿ * Pⁱⁿᵗ + drip - shortfall
+end
+
+function prepare_time_step!(h::InterceptingHydrology, land)
+    time = land.clock.time
+    update_field_time_series!(h.cover_fraction, Time(time))
+    launch!(architecture(land.grid), land.grid, :xy, _cache_cover_fraction!,
+            land.diagnostics.previous_cover_fraction, h.cover_fraction, land.grid, time)
+    return nothing
+end
+
+@kernel function _cache_cover_fraction!(previous_cover_fraction, cover_fraction, grid, time)
+    i, j = @index(Global, NTuple)
+    f = stateindex(cover_fraction, i, j, 1, grid, Time(time), (Center, Center, Center))
+    @inbounds previous_cover_fraction[i, j, 1] = clamp(f, 0, 1)
 end
 
 @kernel function _interception_step!(canopy_water_storage, liquid_precipitation_flux, canopy_evaporation,
-                                     throughfall, canopy_water_storage_tendency,
+                                     throughfall, canopy_water_storage_tendency, previous_cover_fraction,
                                      h, Δt, grid, time)
     i, j = @index(Global, NTuple)
     @inbounds begin
         Mᶜᵃⁿⁿ = canopy_water_storage[i, j, 1]
         rain  = liquid_precipitation_flux[i, j, 1]
         Jʷᵉᵗ  = canopy_evaporation[i, j, 1]
+        fⁿ    = previous_cover_fraction[i, j, 1]
     end
     FT    = typeof(Mᶜᵃⁿⁿ)
     LAI   = convert(FT, stateindex(h.leaf_area_index, i, j, 1, grid, Time(time), (Center, Center, Center)))
+    fⁿ⁺¹  = clamp(convert(FT, stateindex(h.cover_fraction, i, j, 1, grid, Time(time), (Center, Center, Center))), 0, 1)
     Mᶜᵃⁿ⁺ = h.capacity_per_leaf_area * LAI
     fⁱⁿᵗ  = 1 - canopy_transmittance(h.extinction, h.clumping, LAI)
 
-    Mᶜᵃⁿⁿ⁺¹, _, Pˡ = canopy_store_update(Mᶜᵃⁿⁿ, rain, Jʷᵉᵗ, Mᶜᵃⁿ⁺, fⁱⁿᵗ, Δt)
+    Mᶜᵃⁿⁿ⁺¹, _, Pˡ = canopy_store_update(Mᶜᵃⁿⁿ, rain, Jʷᵉᵗ, Mᶜᵃⁿ⁺, fⁱⁿᵗ, fⁿ, fⁿ⁺¹, Δt)
 
     @inbounds begin
         canopy_water_storage[i, j, 1]          = Mᶜᵃⁿⁿ⁺¹
@@ -105,6 +131,7 @@ function time_step!(h::InterceptingHydrology, land, Δt, time)
             land.fluxes.canopy_evaporation,
             land.diagnostics.throughfall,
             land.diagnostics.canopy_water_storage_tendency,
+            land.diagnostics.previous_cover_fraction,
             h, Δt, land.grid, time)
     time_step!(h.soil, land, Δt, time, land.diagnostics.throughfall)
     return nothing
