@@ -32,6 +32,8 @@ using NumericalEarth.DataWrangling.GHSL: GHSBuilt, GHSBuiltH, GHSBuiltS, GHSLMet
                                          ghsl_regional_raster, built_surface_to_fraction,
                                          mask_building_height, ghsl_pixel_window, download_GHSL_cache,
                                          longitude_latitude_to_mollweide, MOLLWEIDE_RADIUS
+using NumericalEarth.DataWrangling.MODISLand: MODISLand, granule_urls, regional_lattice,
+                                              stored_granule_layers, write_lattice_file
 using NumericalEarth.DataWrangling.OpenLandMap: assemble_raster_window, raster_window_indices,
                                                 validate_wgs84_longitude_latitude, validate_geographic_northup
 using NumericalEarth.DataWrangling.WorldCover: ESAWorldCoverMetadatum, version_year, version_string,
@@ -48,6 +50,7 @@ include("ibcao.jl")
 include("asterged.jl")
 include("globfp3d.jl")
 include("ghsl.jl")
+include("modis_land.jl")
 include("openlandmap.jl")
 include("worldcover.jl")
 
