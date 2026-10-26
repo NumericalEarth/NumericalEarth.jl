@@ -887,6 +887,14 @@ cadence — e.g. the surface companion of a pressure-level reanalysis product.
 function matching_single_level_dataset end
 
 """
+    matching_bathymetry(dataset; region = nothing, dir)
+
+Return the `Metadatum` of the seafloor `dataset` was produced over, for example the static sea floor depth of an
+ocean reanalysis, or `nothing` when `dataset` carries none.
+"""
+matching_bathymetry(dataset; kw...) = nothing
+
+"""
     dataset_variable_name(metadata)
 
 Return the name used for the variable `metadata.name` in its raw dataset file.

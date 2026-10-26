@@ -2,12 +2,12 @@ include("runtests_setup.jl")
 
 using NumericalEarth.Bathymetry: bottom_height_from_mask
 using NumericalEarth.DataWrangling: bracketing_dates
-using NumericalEarth.NestedModels: open_boundary_sides, parent_ocean_sources, BoundaryTimeSeries,
+using NumericalEarth.NestedModels: open_boundary_sides, parent_ocean_sources, relaxation_masks, BoundaryTimeSeries,
                                    BarotropicBoundaryTransport, OceanBoundaryExchanger
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, ocean_surface_temperature,
                                         ocean_temperature, prognostic_model
-using Oceananigans.BoundaryConditions: getbc, GravityWaveRadiation, NormalFlow, NormalRadiation,
-                                       SurfaceWaveRadiation, Value
+using Oceananigans.BoundaryConditions: getbc, GravityWaveRadiation, NormalFlow, ObliqueRadiation,
+                                       SurfaceWaveRadiation, TracerReservoir, Value
 using Oceananigans.Grids: inactive_cell
 using Oceananigans.ImmersedBoundaries: bottom_height_field
 using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶠᶜᶜ
@@ -218,20 +218,21 @@ end
         @test getproperty(η_bcs, side).classification.scheme isa SurfaceWaveRadiation
     end
 
-    # Tracers radiate as Value; momentum is NormalFlow on its own side and Value on the tangential ones
+    # Tracers are reservoirs (Value); momentum radiates obliquely, NormalFlow on its own side and Value on the
+    # tangential ones
     for side in lateral_sides
         for name in (:T, :S)
             bc = getproperty(child.tracers[name].boundary_conditions, side)
             @test bc.classification isa Value
-            @test bc.classification.scheme isa NormalRadiation
+            @test bc.classification.scheme isa TracerReservoir
         end
 
         u_bc = getproperty(child.velocities.u.boundary_conditions, side)
         v_bc = getproperty(child.velocities.v.boundary_conditions, side)
         @test u_bc.classification isa (side in (:west, :east) ? NormalFlow : Value)
         @test v_bc.classification isa (side in (:south, :north) ? NormalFlow : Value)
-        @test u_bc.classification.scheme isa NormalRadiation
-        @test v_bc.classification.scheme isa NormalRadiation
+        @test u_bc.classification.scheme isa ObliqueRadiation
+        @test v_bc.classification.scheme isa ObliqueRadiation
     end
 
     # The coupled interface reaches the child through the wrapper
@@ -305,6 +306,35 @@ end
 
     # The child steps from the parent's time
     @test_throws ArgumentError nested_ocean_model(parent_ocean, underlying_grid; clock = Clock(time = 60.0))
+end
+
+@testset "Boundary relaxation: cos² masks, and velocities relax only their baroclinic part" begin
+    grid = nesting_test_child_grid(CPU())
+    width = 4
+    masks = relaxation_masks(grid, lateral_sides, width)
+    μ = Array(interior(masks.c))[:, :, 1]
+    m = cos(π / 4width)^2   # half a cell from a boundary face
+
+    @test μ[1, 10] ≈ m
+    @test μ[1, 1] ≈ 1 - (1 - m)^2      # two sides combine near a corner
+    @test μ[10, 10] == 0
+
+    # A band stops at the first land cell in from its side
+    coastal_bottom(λ, φ) = (λ < -0.8) & (φ < 29.5) ? 0 : -1000
+    coastal = ImmersedBoundaryGrid(grid, GridFittedBottom(coastal_bottom))
+    μ = Array(interior(relaxation_masks(coastal, (:west,), width).c))[:, :, 1]
+    @test μ[1, 3] == 0 && μ[3, 3] == 0   # behind the land in rows j ≤ 5
+    @test μ[1, 10] ≈ m
+
+    # A sheared child current under a uniform parent one: the relaxation removes the shear, not the transport
+    model = nested_ocean_model(nesting_test_parent(CPU(); u = 0.1), grid; coriolis = nothing)
+    set!(model, u = (λ, φ, z) -> 0.1 + 1e-4 * (z + 500), v = 0, T = 15, S = 35)
+    child = model.child
+    forcing = child.forcing.u
+    model_fields = merge(child.velocities, child.tracers)
+    column = [forcing(2, 10, k, grid, child.clock, model_fields) for k in 1:size(grid, 3)]
+    @test maximum(abs, column) > 0
+    @test abs(sum(column)) < 1e-12 * maximum(abs, column)   # uniform levels: the depth integral is the sum
 end
 
 @testset "regrid_bathymetry from the missing values of an ocean dataset on $(arch)" for arch in test_architectures

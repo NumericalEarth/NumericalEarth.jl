@@ -27,6 +27,7 @@ using ..DataWrangling: AbstractStaticBathymetry, Metadatum, compute_mask, is_thr
                        dataset_variable_name, validate_dataset_coverage,
                        FieldRegridding, load_field_cache, save_field_cache
 using ..DataWrangling.ETOPO: ETOPO2022
+using ..DataWrangling.GLORYS: GLORYSStatic
 
 include("label_ocean_basins.jl")
 include("regrid_bathymetry.jl")

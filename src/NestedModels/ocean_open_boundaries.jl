@@ -2,8 +2,7 @@
 ##### Open lateral boundary conditions for a regional ocean, read from its boundary bands
 #####
 
-using Oceananigans.BoundaryConditions: BoundaryConditions, NormalRadiation,
-                                       GravityWaveRadiationBoundaryCondition,
+using Oceananigans.BoundaryConditions: BoundaryConditions, GravityWaveRadiationBoundaryCondition,
                                        SurfaceWaveRadiationBoundaryCondition,
                                        ValueBoundaryCondition
 using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ
@@ -91,10 +90,7 @@ boundary_location(name) = name ∈ keys(velocity_locations) ? velocity_locations
                           name === :η ? free_surface_location : tracer_location
 
 """
-    ocean_open_boundary_conditions(grid, bands;
-                                   normal_velocity_scheme = NormalRadiation(),
-                                   tangential_velocity_scheme = normal_velocity_scheme,
-                                   tracer_scheme = normal_velocity_scheme)
+    ocean_open_boundary_conditions(grid, bands; normal_velocity_scheme, tangential_velocity_scheme, tracer_scheme)
 
 Build the open lateral boundary conditions of a regional ocean on `grid` from its boundary `bands`, a
 `NamedTuple` keyed by open side of `NamedTuple`s of [`BoundaryBand`](@ref)s holding the parent's velocities
@@ -110,10 +106,7 @@ Build the open lateral boundary conditions of a regional ocean on `grid` from it
 
 Returns a `NamedTuple` of `FieldBoundaryConditions` for `u`, `v`, `U`, `V`, `η`, and the tracers.
 """
-function ocean_open_boundary_conditions(grid, bands;
-                                        normal_velocity_scheme = NormalRadiation(),
-                                        tangential_velocity_scheme = normal_velocity_scheme,
-                                        tracer_scheme = normal_velocity_scheme)
+function ocean_open_boundary_conditions(grid, bands; normal_velocity_scheme, tangential_velocity_scheme, tracer_scheme)
 
     sides = keys(bands)
     tracer_names = isempty(sides) ? () : filter(name -> name ∉ (:u, :v, :η), keys(first(bands)))

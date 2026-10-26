@@ -28,7 +28,8 @@ end
 Return bathymetry that corresponds to  `metadata` onto `target_grid`.
 
 The metadata of a static bathymetry (e.g. `Metadatum(:bottom_height; dataset = ETOPO2022())`) supplies
-the seafloor elevation directly. Any other metadatum is taken as a three-dimensional ocean variable, such as
+the seafloor elevation directly, and that of an ocean product's static depth (e.g.
+`Metadatum(:depth; dataset = GLORYSStatic())`, see [`matching_bathymetry`](@ref)) its positive depth. Any other metadatum is taken as a three-dimensional ocean variable, such as
 `Metadatum(:temperature; dataset = GLORYSDaily(), date, region)`, whose missing values mark the seafloor:
 the bottom of each column is the bottom face of its deepest wet cell, and a column wet nowhere is land.
 
@@ -188,6 +189,15 @@ function native_bottom_height(metadata::Metadatum{<:AbstractStaticBathymetry}, a
     set!(native_z, z_data)
     fill_halo_regions!(native_z)
 
+    return native_z
+end
+
+# GLORYS's static sea floor depth is positive downward and missing over land.
+function native_bottom_height(metadata::Metadatum{<:GLORYSStatic}, arch, FT; height_above_water)
+    depth = Field(metadata, arch; inpainting = nothing)
+    native_z = Field{Center, Center, Nothing}(depth.grid)
+    interior(native_z) .= ifelse.(isnan.(interior(depth)), 0, .-interior(depth))
+    fill_halo_regions!(native_z)
     return native_z
 end
 

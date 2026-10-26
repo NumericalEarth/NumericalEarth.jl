@@ -1,61 +1,95 @@
 #####
 ##### Boundary relaxation of a regional ocean toward its boundary bands
 #####
+#
+# As in the reference Mid-Atlantic Bight configuration (NumericalEarthSandbox, script 05): a mask falls as cos² from
+# the open sides, two sides combine near a corner as 1 - (1 - m₁)(1 - m₂), and a side's band stops at the first
+# land cell in from the boundary, so bays and sounds behind land are left alone. Tracers relax as they are; the
+# velocities relax only their baroclinic part, which integrates to zero over the column and leaves the barotropic
+# flow to the Flather condition.
 
 using Oceananigans.Forcings: Forcing
+using Oceananigans.Grids: peripheral_node
+using Oceananigans.Operators: Δz
 
 """
-    BandRelaxation{Dim}(band, irange, jrange, origin, sign, width)
+    BandRelaxation{Dim}(band, irange, jrange)
 
-Relaxation toward one open side's [`BoundaryBand`](@ref) over the cells `irange × jrange` of the band. The
-relaxation weight tapers as `cos²(π d / 2 width)` with the distance `d = sign * (n - origin)` in cells from
-the boundary, where `n` is the boundary-normal index (`i` for `Dim = 1`, `j` for `Dim = 2`).
+Relaxation toward one open side's [`BoundaryBand`](@ref) over the cells `irange × jrange` of the band. The bands of
+the open sides partition the relaxation zone, so that each cell reads the parent from one of them.
 """
-struct BandRelaxation{Dim, B, FT}
+struct BandRelaxation{Dim, B}
     band   :: B
     irange :: NTuple{2, Int}
     jrange :: NTuple{2, Int}
-    origin :: FT
-    sign   :: Int
-    width  :: Int
 end
 
-BandRelaxation{Dim}(band::B, irange, jrange, origin::FT, sign, width) where {Dim, B, FT} =
-    BandRelaxation{Dim, B, FT}(band, irange, jrange, origin, sign, width)
+BandRelaxation{Dim}(band::B, irange, jrange) where {Dim, B} = BandRelaxation{Dim, B}(band, irange, jrange)
 
-Adapt.adapt_structure(to, r::BandRelaxation{Dim}) where Dim =
-    BandRelaxation{Dim}(adapt(to, r.band), r.irange, r.jrange, r.origin, r.sign, r.width)
+Adapt.adapt_structure(to, r::BandRelaxation{Dim}) where Dim = BandRelaxation{Dim}(adapt(to, r.band), r.irange, r.jrange)
 
-@inline boundary_normal_index(::BandRelaxation{1}, i, j) = i
-@inline boundary_normal_index(::BandRelaxation{2}, i, j) = j
+@inline inside(r::BandRelaxation, i, j) = (r.irange[1] ≤ i) & (i ≤ r.irange[2]) & (r.jrange[1] ≤ j) & (j ≤ r.jrange[2])
+@inline band_indices(r::BandRelaxation, i, j) = (clamp(i, r.irange[1], r.irange[2]), clamp(j, r.jrange[1], r.jrange[2]))
 
-@inline relaxation_taper(d, width) = ifelse(d < width, cos(π * max(0, d) / 2width)^2, zero(d))
+@inline column_weight(i, j, k, grid, loc) = ifelse(peripheral_node(i, j, k, grid, loc...), zero(grid), Δz(i, j, k, grid, loc...))
 
-@inline function band_relaxation(i, j, k, time, ψ, r::BandRelaxation)
-    i₁, i₂ = r.irange
-    j₁, j₂ = r.jrange
-    inside = (i₁ ≤ i) & (i ≤ i₂) & (j₁ ≤ j) & (j ≤ j₂)
-    d = r.sign * (boundary_normal_index(r, i, j) - r.origin)
-    μ = relaxation_taper(d, r.width)
-    μ = ifelse(inside, μ, zero(μ))
-    ψᵖ = band_value(r.band, clamp(i, i₁, i₂), clamp(j, j₁, j₂), k, time)
-    ψᶜ = @inbounds ψ[i, j, k]
-    return μ * (ψᵖ - ψᶜ)
+# The wet-column mean of the child field `ψ` and of the parent in band `r`, at (i, j)
+@inline function column_means(i, j, grid, loc, ψ, r, time)
+    iᵇ, jᵇ = band_indices(r, i, j)
+    H = zero(grid)
+    ψ̄ = zero(grid)
+    ψ̄ᵖ = zero(grid)
+    for k in 1:size(grid, 3)
+        w = column_weight(i, j, k, grid, loc)
+        H += w
+        ψ̄ += w * @inbounds ψ[i, j, k]
+        ψ̄ᵖ += w * band_value(r.band, iᵇ, jᵇ, k, time)
+    end
+    H = max(H, eps(H))
+    return ψ̄ / H, ψ̄ᵖ / H
 end
 
-@inline total_band_relaxation(i, j, k, time, ψ, ::Tuple{}) = 0
-@inline total_band_relaxation(i, j, k, time, ψ, relaxations::Tuple) =
-    band_relaxation(i, j, k, time, ψ, first(relaxations)) + total_band_relaxation(i, j, k, time, ψ, Base.tail(relaxations))
+@inline function band_anomaly(i, j, k, grid, loc, ψ, r, time, ::Val{false})
+    iᵇ, jᵇ = band_indices(r, i, j)
+    ψᵖ = band_value(r.band, iᵇ, jᵇ, k, time)
+    return ψᵖ - @inbounds ψ[i, j, k]
+end
 
-@inline relax_u(i, j, k, grid, clock, fields, p) = p.rate * total_band_relaxation(i, j, k, Time(clock.time), fields.u, p.relaxations)
-@inline relax_v(i, j, k, grid, clock, fields, p) = p.rate * total_band_relaxation(i, j, k, Time(clock.time), fields.v, p.relaxations)
-@inline relax_T(i, j, k, grid, clock, fields, p) = p.rate * total_band_relaxation(i, j, k, Time(clock.time), fields.T, p.relaxations)
-@inline relax_S(i, j, k, grid, clock, fields, p) = p.rate * total_band_relaxation(i, j, k, Time(clock.time), fields.S, p.relaxations)
+@inline function band_anomaly(i, j, k, grid, loc, ψ, r, time, ::Val{true})
+    iᵇ, jᵇ = band_indices(r, i, j)
+    ψ̄, ψ̄ᵖ = column_means(i, j, grid, loc, ψ, r, time)
+    ψᵖ = band_value(r.band, iᵇ, jᵇ, k, time)
+    return (ψᵖ - ψ̄ᵖ) - (@inbounds(ψ[i, j, k]) - ψ̄)
+end
+
+@inline function band_relaxation(i, j, k, grid, loc, ψ, r, time, baroclinic)
+    δ = band_anomaly(i, j, k, grid, loc, ψ, r, time, baroclinic)
+    return ifelse(inside(r, i, j), δ, zero(δ))
+end
+
+@inline total_band_relaxation(i, j, k, grid, loc, ψ, ::Tuple{}, time, baroclinic) = 0
+@inline total_band_relaxation(i, j, k, grid, loc, ψ, relaxations::Tuple, time, baroclinic) =
+    band_relaxation(i, j, k, grid, loc, ψ, first(relaxations), time, baroclinic) +
+    total_band_relaxation(i, j, k, grid, loc, ψ, Base.tail(relaxations), time, baroclinic)
+
+@inline function relaxation_tendency(i, j, k, grid, clock, ψ, p)
+    μ = @inbounds p.mask[i, j, 1]
+    δ = total_band_relaxation(i, j, k, grid, p.location, ψ, p.relaxations, Time(clock.time), p.baroclinic)
+    return p.rate * μ * δ
+end
+
+@inline relax_u(i, j, k, grid, clock, fields, p) = relaxation_tendency(i, j, k, grid, clock, fields.u, p)
+@inline relax_v(i, j, k, grid, clock, fields, p) = relaxation_tendency(i, j, k, grid, clock, fields.v, p)
+@inline relax_T(i, j, k, grid, clock, fields, p) = relaxation_tendency(i, j, k, grid, clock, fields.T, p)
+@inline relax_S(i, j, k, grid, clock, fields, p) = relaxation_tendency(i, j, k, grid, clock, fields.S, p)
 
 const relaxation_functions = (u = relax_u, v = relax_v, T = relax_T, S = relax_S)
 
+# The velocities relax only their baroclinic part.
+baroclinic_relaxation(name) = Val(name ∈ (:u, :v))
+
 # Cells of `side`'s band that it relaxes. Along the boundary the band stops short of the bands of the
-# perpendicular open sides, so that no corner cell is relaxed twice: the corners belong to west and east.
+# perpendicular open sides, so that each corner cell reads the parent once: the corners belong to west and east.
 function band_relaxation_ranges(grid, loc, side, width, sides)
     dim = boundary_dimension(side)
     Nx, Ny, _ = size(grid)
@@ -73,37 +107,87 @@ function band_relaxation_ranges(grid, loc, side, width, sides)
     end
 end
 
-function band_relaxation_geometry(grid, loc, side)
-    dim = boundary_dimension(side)
-    ℓ = loc[dim]
-    N = size(grid, dim)
-    FT = eltype(grid)
-    origin = side ∈ (:west, :south) ? (ℓ isa Face ? 1 : 1/2) : (ℓ isa Face ? N + 1 : N + 1/2)
-    sign = side ∈ (:west, :south) ? 1 : -1
-    return convert(FT, origin), sign
+"""
+    relaxation_masks(grid, sides, width)
+
+The relaxation masks of a regional ocean on `grid` with open `sides`, at cell centers and at `u` and `v` points:
+`cos²(π d / 2 width)` at the distance `d` in cells from each open side's boundary face, zero from `width` cells in
+and beyond the first land cell in from the boundary, combined across sides as `1 - ∏(1 - mₛ)`. The masks at the
+velocity points average the two neighboring cell centers.
+"""
+function relaxation_masks(grid, sides, width)
+    cpu_grid = on_architecture(CPU(), grid)
+    Nx, Ny, Nz = size(grid)
+    wet = [!inactive_cell(i, j, Nz, cpu_grid) for i in 1:Nx, j in 1:Ny]
+    taper(d) = d < width ? cos(π * d / 2width)^2 : 0.0
+
+    keep = ones(Nx, Ny)   # ∏(1 - mₛ)
+    for j in 1:Ny
+        if :west in sides
+            for i in 1:min(width, Nx)
+                wet[i, j] || break
+                keep[i, j] *= 1 - taper(i - 1/2)
+            end
+        end
+        if :east in sides
+            for i in Nx:-1:max(Nx - width + 1, 1)
+                wet[i, j] || break
+                keep[i, j] *= 1 - taper(Nx - i + 1/2)
+            end
+        end
+    end
+    for i in 1:Nx
+        if :south in sides
+            for j in 1:min(width, Ny)
+                wet[i, j] || break
+                keep[i, j] *= 1 - taper(j - 1/2)
+            end
+        end
+        if :north in sides
+            for j in Ny:-1:max(Ny - width + 1, 1)
+                wet[i, j] || break
+                keep[i, j] *= 1 - taper(Ny - j + 1/2)
+            end
+        end
+    end
+
+    μᶜ = 1 .- keep
+    μᵘ = [(μᶜ[clamp(i - 1, 1, Nx), j] + μᶜ[clamp(i, 1, Nx), j]) / 2 for i in 1:Nx+1, j in 1:Ny]
+    μᵛ = [(μᶜ[i, clamp(j - 1, 1, Ny)] + μᶜ[i, clamp(j, 1, Ny)]) / 2 for i in 1:Nx, j in 1:Ny+1]
+
+    function mask_field(LX, LY, μ)
+        field = Field{LX, LY, Nothing}(grid)
+        set!(field, μ)
+        return field
+    end
+
+    return (u = mask_field(Face, Center, μᵘ), v = mask_field(Center, Face, μᵛ), c = mask_field(Center, Center, μᶜ))
 end
 
 """
     ocean_boundary_relaxation(grid, bands; rate, width)
 
-Return a `NamedTuple` of discrete `Forcing`s that relax `u`, `v`, `T` and `S` toward the parent state in
-`bands` (see [`ocean_open_boundary_conditions`](@ref)) at `rate` (s⁻¹), over the outermost `width` cells
-of each open side with a `cos²` taper from the boundary.
+Return a `NamedTuple` of discrete `Forcing`s that relax `T` and `S`, and the baroclinic parts of `u` and `v`, toward
+the parent state in `bands` (see [`ocean_open_boundary_conditions`](@ref)) at `rate` (s⁻¹) times the
+[`relaxation_masks`](@ref) over the outermost `width` cells of each open side. The baroclinic part of a velocity is
+its departure from its mean over the child's wet column, for the child and the parent alike.
 """
 function ocean_boundary_relaxation(grid, bands; rate, width)
     sides = keys(bands)
     names = filter(name -> name ∈ keys(relaxation_functions), keys(first(bands)))
+    masks = relaxation_masks(grid, sides, width)
 
-    function relaxation(name)
+    function relaxation_forcing(name)
         loc = boundary_location(name)
         relaxations = map(sides) do side
             irange, jrange = band_relaxation_ranges(grid, loc, side, width, sides)
-            origin, sign = band_relaxation_geometry(grid, loc, side)
-            BandRelaxation{boundary_dimension(side)}(bands[side][name], irange, jrange, origin, sign, width)
+            BandRelaxation{boundary_dimension(side)}(bands[side][name], irange, jrange)
         end
-        parameters = (; rate = convert(eltype(grid), rate), relaxations)
+        mask = name === :u ? masks.u : name === :v ? masks.v : masks.c
+        parameters = (; rate = convert(eltype(grid), rate), mask, location = loc, relaxations,
+                        baroclinic = baroclinic_relaxation(name))
         return Forcing(relaxation_functions[name]; discrete_form = true, parameters)
     end
 
-    return NamedTuple(name => relaxation(name) for name in names)
+    return NamedTuple(name => relaxation_forcing(name) for name in names)
 end

@@ -3,16 +3,31 @@
 #####
 
 using Oceananigans.Fields: CenterField, XFaceField, YFaceField, interpolate!
-using Oceananigans.Grids: LatitudeLongitudeGrid
+using Oceananigans.BoundaryConditions: ObliqueRadiation, TracerReservoir
+using Oceananigans.Grids: LatitudeLongitudeGrid, λnodes, φnodes
 using Oceananigans.TimeSteppers: Clock
-using Oceananigans.Units: hours
+using Oceananigans.Units: days, hours, kilometers
 
 using ..Bathymetry: regrid_bathymetry
 using ..Oceans: hydrostatic_ocean_model, merge_boundary_conditions
-using ..DataWrangling: BoundingBox, Metadatum, default_download_directory, default_horizontal_padding
+using ..DataWrangling: BoundingBox, Metadatum, default_download_directory, default_horizontal_padding,
+                       matching_bathymetry
 
-const default_ocean_relaxation_width = 8
-const default_bathymetry_blend_width = 4
+# The open-boundary defaults of the reference Mid-Atlantic Bight configuration (NumericalEarthSandbox, script 05):
+# oblique radiation on the velocities and tracer reservoirs on the tracers, a 6-hour sponge 8 cells wide and a
+# bathymetry blend 4 cells wide at 1/12°, the widths held fixed in degrees across resolutions.
+default_velocity_scheme() = ObliqueRadiation(inflow_timescale = 3days, outflow_timescale = 360days)
+default_tracer_scheme() = TracerReservoir(inflow_length_scale = 20kilometers, outflow_length_scale = 0)
+
+const default_relaxation_degrees = 8 / 12
+const default_bathymetry_blend_degrees = 4 / 12
+
+# The number of cells of `grid` that span `degrees` along its finest horizontal direction.
+function cells_spanning(grid, degrees)
+    cpu_grid = on_architecture(CPU(), underlying_grid(grid))
+    Δ = min(minimum(diff(λnodes(cpu_grid, Face()))), minimum(diff(φnodes(cpu_grid, Face()))))
+    return max(1, round(Int, degrees / Δ))
+end
 
 const OceanParent = Union{PrescribedOcean, BoundaryPrescribedComponent}
 
@@ -60,15 +75,17 @@ that knows the parent only on strips along the boundaries. Time stepping the `Ne
 first, samples it onto the boundary bands of `grid` (an [`OceanBoundaryExchanger`](@ref)), then steps the child.
 
 Each side in `open_sides` (default: the `Bounded` sides of the child grid that touch water; see
-[`open_boundary_sides`](@ref)) gets the open boundary conditions of [`ocean_open_boundary_conditions`](@ref): radiation conditions on the
-boundary-normal and tangential velocities and on the tracers (`normal_velocity_scheme`,
-`tangential_velocity_scheme`, `tracer_scheme`, which relax toward the parent on inflow over
-`boundary_inflow_timescale`), Flather on the barotropic transport, and Chapman on the free surface. Over the
-outermost `relaxation_width` cells of each open side, `u`, `v`, `T` and `S` relax toward the parent at
-`relaxation_rate` (s⁻¹; see [`ocean_boundary_relaxation`](@ref)); `relaxation_rate = nothing` disables it.
+[`open_boundary_sides`](@ref)) gets the open boundary conditions of [`ocean_open_boundary_conditions`](@ref): oblique
+radiation on the boundary-normal and tangential velocities (`normal_velocity_scheme`, `tangential_velocity_scheme`;
+nudged toward the parent over 3 days on inflow and 360 days on outflow), tracer reservoirs on the tracers
+(`tracer_scheme`; relaxing toward the parent over 20 km on inflow), Flather on the barotropic transport, and Chapman
+on the free surface. Over the outermost `relaxation_width` cells of each open side (default: 2/3°), `T` and `S` and
+the baroclinic parts of `u` and `v` relax toward the parent at `relaxation_rate` (s⁻¹; default 1/6 hours), leaving
+the barotropic flow to Flather (see [`ocean_boundary_relaxation`](@ref)); `relaxation_rate = nothing` disables it.
+These defaults follow the reference Mid-Atlantic Bight configuration of NumericalEarthSandbox.
 
 When the parent's seafloor `parent_bottom_height` (a bottom height `Field`) is known, the immersed bottom of
-`grid` is blended toward it in place within `bathymetry_blend_width` cells of each open side (see
+`grid` is blended toward it in place within `bathymetry_blend_width` cells of each open side (default: 1/3°; see
 [`blend_parent_bathymetry!`](@ref)), so that the geometry at the open boundaries matches the one the parent state
 was produced over, but never shallower than `minimum_depth`.
 
@@ -82,14 +99,12 @@ caller's forcing is added to the relaxation. The remaining keyword arguments `kw
 """
 function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
                             open_sides = open_boundary_sides(grid),
-                            boundary_inflow_timescale = 6hours,
-                            normal_velocity_scheme = NormalRadiation(inflow_timescale = boundary_inflow_timescale,
-                                                                     outflow_timescale = Inf),
+                            normal_velocity_scheme = default_velocity_scheme(),
                             tangential_velocity_scheme = normal_velocity_scheme,
-                            tracer_scheme = normal_velocity_scheme,
-                            relaxation_rate = 1/12hours,
-                            relaxation_width = default_ocean_relaxation_width,
-                            bathymetry_blend_width = default_bathymetry_blend_width,
+                            tracer_scheme = default_tracer_scheme(),
+                            relaxation_rate = 1/6hours,
+                            relaxation_width = cells_spanning(grid, default_relaxation_degrees),
+                            bathymetry_blend_width = cells_spanning(grid, default_bathymetry_blend_degrees),
                             minimum_depth = 10,
                             parent_bottom_height = nothing,
                             initial_state = default_initial_state(parent),
@@ -136,17 +151,17 @@ at `first(dates)`; time `0` is the start of `first(dates)`. The parent is a
 volumetric [`PrescribedOcean`](@ref)s on strips along the open sides: `parent_dataset` on its native grid,
 along each side and `relaxation_width` cells inward, padded by `parent_padding` degrees (default the dataset's
 `default_horizontal_padding`), streaming `parent_time_indices_in_memory` samples at a time. A full-domain
-snapshot of `parent_dataset` at `first(dates)`, with the same padding, initializes the child, and the seafloor
-`parent_dataset` marks with missing values there (see [`regrid_bathymetry`](@ref)) is the
-`parent_bottom_height` the child bathymetry blends toward. The remaining keyword arguments `kw` go to
+snapshot of `parent_dataset` at `first(dates)`, with the same padding, initializes the child. The child bathymetry
+blends toward `parent_dataset`'s own seafloor (see [`matching_bathymetry`](@ref)), or, for a dataset without one,
+the seafloor its temperature marks with missing values at `first(dates)` (see [`regrid_bathymetry`](@ref)). The remaining keyword arguments `kw` go to
 `nested_ocean_model(parent, grid; kw...)`.
 """
 function nested_ocean_model(grid::AbstractGrid, parent_dataset; dates,
                             dir = default_download_directory(parent_dataset),
                             parent_padding = default_horizontal_padding(parent_dataset),
                             parent_time_indices_in_memory = 2,
-                            relaxation_width = default_ocean_relaxation_width,
-                            bathymetry_blend_width = default_bathymetry_blend_width,
+                            relaxation_width = cells_spanning(grid, default_relaxation_degrees),
+                            bathymetry_blend_width = cells_spanning(grid, default_bathymetry_blend_degrees),
                             parent_bottom_height = nothing,
                             open_sides = open_boundary_sides(grid),
                             kw...)
@@ -155,10 +170,11 @@ function nested_ocean_model(grid::AbstractGrid, parent_dataset; dates,
     isempty(open_sides) && throw(ArgumentError("$(summary(grid)) has no open sides to nest through."))
     region = BoundingBox(grid; padding = parent_padding)
 
-    # Every basin of the parent, as the parent state was produced over it; read only when there is a
-    # bathymetry to blend.
+    # The seafloor the parent state was produced over, every basin of it: the dataset's own, or where its
+    # temperature is missing. It is read only when there is a bathymetry to blend.
     if isnothing(parent_bottom_height) && grid isa GridFittedBottomGrid && bathymetry_blend_width > 0
-        metadatum = Metadatum(:temperature; dataset = parent_dataset, date = first(dates), region, dir)
+        metadatum = something(matching_bathymetry(parent_dataset; region, dir),
+                              Metadatum(:temperature; dataset = parent_dataset, date = first(dates), region, dir))
         parent_bottom_height = regrid_bathymetry(underlying_grid(grid), metadatum; major_basins = Inf)
     end
 
