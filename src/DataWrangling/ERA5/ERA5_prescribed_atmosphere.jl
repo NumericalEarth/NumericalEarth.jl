@@ -2,8 +2,7 @@ using ...Atmospheres: Atmospheres, PrescribedPrecipitationFlux, AtmosphereThermo
 using ...EarthSystemModels.InterfaceComputations: saturation_specific_humidity
 using Adapt: Adapt
 using Oceananigans.AbstractOperations: KernelFunctionOperation
-using Oceananigans.Architectures: on_architecture
-using Oceananigans.Fields: CenterField, interior
+using Oceananigans.Fields: CenterField
 using Oceananigans.OutputReaders: OutputReaders, AbstractInMemoryBackend, InMemory
 using Thermodynamics: Liquid
 
@@ -139,10 +138,9 @@ end
 # Pressure on a `PressureLevelGrid` is the level coordinate (Pa), constant in space and time
 function pressure_level_field(grid, dataset, architecture)
     FT = eltype(grid)
-    pˡᵉᵛᵉˡ = on_architecture(architecture, FT.(dataset.pressure_levels))
     pressure = CenterField(grid)
-    Nz = length(dataset.pressure_levels)
-    interior(pressure) .= reshape(pˡᵉᵛᵉˡ, 1, 1, Nz)
+    pˡᵉᵛᵉˡ = reshape(FT.(dataset.pressure_levels), 1, 1, :)
+    set!(pressure, zeros(FT, size(pressure)) .+ pˡᵉᵛᵉˡ)   # one host-to-device copy, on every architecture
     fill_halo_regions!(pressure)
     return pressure
 end
