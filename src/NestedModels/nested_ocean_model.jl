@@ -84,7 +84,10 @@ the baroclinic parts of `u` and `v` relax toward the parent at `relaxation_rate`
 the barotropic flow to Flather (see [`ocean_boundary_relaxation`](@ref)); `relaxation_rate = nothing` disables it.
 These defaults follow the reference Mid-Atlantic Bight configuration of NumericalEarthSandbox.
 
-When the parent's seafloor `parent_bottom_height` (a bottom height `Field`) is known, the immersed bottom of
+When the parent's seafloor `parent_bottom_height` (a bottom height `Field`) is known, the Flather exterior transport
+is the parent's depth mean velocity over its own column times the child's wet depth, and the boundary-normal
+velocity is corrected to integrate to it ([`BarotropicBoundaryTransport`](@ref), [`ConsistentBoundaryVelocity`](@ref)),
+and the immersed bottom of
 `grid` is blended toward it in place within `bathymetry_blend_width` cells of each open side (default: 1/3°; see
 [`blend_parent_bathymetry!`](@ref)), so that the geometry at the open boundaries matches the one the parent state
 was produced over, but never shallower than `minimum_depth`.
@@ -122,9 +125,9 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
 
     blend_parent_bathymetry!(grid, parent_bottom_height, open_sides; width = bathymetry_blend_width, minimum_depth)
     width = isnothing(relaxation_rate) ? 1 : relaxation_width
-    exchanger = OceanBoundaryExchanger(parent, grid, open_sides; width, time)
+    exchanger = OceanBoundaryExchanger(parent, grid, open_sides; width, time, parent_bottom_height)
 
-    nested_bcs = ocean_open_boundary_conditions(grid, exchanger.bands;
+    nested_bcs = ocean_open_boundary_conditions(grid, exchanger.bands; depth_means = exchanger.depth_means,
                                                 normal_velocity_scheme, tangential_velocity_scheme, tracer_scheme)
 
     relaxation = isnothing(relaxation_rate) ? NamedTuple() :
@@ -171,8 +174,8 @@ function nested_ocean_model(grid::AbstractGrid, parent_dataset; dates,
     region = BoundingBox(grid; padding = parent_padding)
 
     # The seafloor the parent state was produced over, every basin of it: the dataset's own, or where its
-    # temperature is missing. It is read only when there is a bathymetry to blend.
-    if isnothing(parent_bottom_height) && grid isa GridFittedBottomGrid && bathymetry_blend_width > 0
+    # temperature is missing. The Flather exterior takes the parent's depth mean over it.
+    if isnothing(parent_bottom_height)
         metadatum = something(matching_bathymetry(parent_dataset; region, dir),
                               Metadatum(:temperature; dataset = parent_dataset, date = first(dates), region, dir))
         parent_bottom_height = regrid_bathymetry(underlying_grid(grid), metadatum; major_basins = Inf)

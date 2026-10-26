@@ -30,20 +30,47 @@ function parent_ocean_sources(parent::BoundaryPrescribedComponent, sides)
 end
 
 """
-    OceanBoundaryExchanger(parent, grid, sides; width, time)
+    OceanBoundaryExchanger(parent, grid, sides; width, time, parent_bottom_height = nothing)
 
 Mediates the `parent` ocean state to a nested ocean on `grid`: holds, for each open side in `sides`, the
 parent's [`parent_ocean_sources`](@ref) and the [`BoundaryBand`](@ref)s they are sampled onto — `width`
 cells wide for the velocities and tracers (the boundary relaxation zone), one cell for the free surface —
 and the [`ParentTimes`](@ref) of the two states the bands hold, both initially the parent at `time`.
+
+When the parent's seafloor `parent_bottom_height` is known, each side also holds the parent's depth mean of its
+boundary-normal velocity, over the parent's own levels above that seafloor ([`sample_parent_depth_mean!`](@ref)),
+on a one-cell band at the boundary face: the barotropic velocity of the Flather exterior.
 """
-struct OceanBoundaryExchanger{S, B, T}
-    sources :: S
-    bands   :: B
-    times   :: T
+struct OceanBoundaryExchanger{S, B, D, F, T}
+    sources     :: S
+    bands       :: B
+    depth_means :: D
+    floors      :: F
+    times       :: T
 end
 
-function OceanBoundaryExchanger(parent, grid::AbstractGrid, sides::Tuple; width, time)
+normal_velocity_name(side) = boundary_dimension(side) == 1 ? :u : :v
+
+# The parent's seafloor at the boundary-normal velocity points of `grid`
+boundary_floor(grid, side, ::Nothing) = nothing
+
+function boundary_floor(grid, side, parent_bottom_height)
+    LX, LY, _ = typeof.(boundary_location(normal_velocity_name(side)))
+    floor = Field{LX, LY, Nothing}(underlying_grid(grid))
+    interpolate!(floor, parent_bottom_height)
+    return floor
+end
+
+depth_mean_location(side) = (boundary_location(normal_velocity_name(side))[1:2]..., nothing)
+
+depth_mean_band(grid, side, ::Nothing, times) = nothing
+depth_mean_band(grid, side, floor, times) = BoundaryBand(grid, depth_mean_location(side), side, 1, times)
+
+sample_depth_mean!(::Nothing, source, floor, side, time) = nothing
+sample_depth_mean!(band, source, floor, side, time) =
+    sample_parent_depth_mean!(band.current, depth_mean_location(side), source, floor, time)
+
+function OceanBoundaryExchanger(parent, grid::AbstractGrid, sides::Tuple; width, time, parent_bottom_height = nothing)
     sources = parent_ocean_sources(parent, sides)
     times = ParentTimes(time, time)
 
@@ -54,15 +81,26 @@ function OceanBoundaryExchanger(parent, grid::AbstractGrid, sides::Tuple; width,
     end
 
     bands = NamedTuple{sides}(map(side_bands, sides))
+    floors = NamedTuple{sides}(map(side -> boundary_floor(grid, side, parent_bottom_height), sides))
+    depth_means = NamedTuple{sides}(map(side -> depth_mean_band(grid, side, floors[side], times), sides))
 
-    for side in sides, name in keys(bands[side])
-        band = bands[side][name]
-        sample_parent!(band.current, boundary_location(name), sources[side][name], time)
-        Base.parent(band.previous) .= Base.parent(band.current)
+    for side in sides
+        for name in keys(bands[side])
+            band = bands[side][name]
+            sample_parent!(band.current, boundary_location(name), sources[side][name], time)
+            Base.parent(band.previous) .= Base.parent(band.current)
+        end
+
+        depth_mean = depth_means[side]
+        sample_depth_mean!(depth_mean, sources[side][normal_velocity_name(side)], floors[side], side, time)
+        isnothing(depth_mean) || (Base.parent(depth_mean.previous) .= Base.parent(depth_mean.current))
     end
 
-    return OceanBoundaryExchanger(sources, bands, times)
+    return OceanBoundaryExchanger(sources, bands, depth_means, floors, times)
 end
+
+roll_band!(::Nothing) = nothing
+roll_band!(band) = (Base.parent(band.previous) .= Base.parent(band.current); nothing)
 
 # Sample the parent at `time` into the bands, keeping the state they held as the earlier time level.
 # Idempotent at the current time, so `update_state!` can call it freely.
@@ -70,10 +108,16 @@ function exchange_state!(exchanger::OceanBoundaryExchanger, time)
     times = exchanger.times
     time > times.current || return nothing
 
-    for side in keys(exchanger.bands), name in keys(exchanger.bands[side])
-        band = exchanger.bands[side][name]
-        Base.parent(band.previous) .= Base.parent(band.current)
-        sample_parent!(band.current, boundary_location(name), exchanger.sources[side][name], time)
+    for side in keys(exchanger.bands)
+        for name in keys(exchanger.bands[side])
+            band = exchanger.bands[side][name]
+            roll_band!(band)
+            sample_parent!(band.current, boundary_location(name), exchanger.sources[side][name], time)
+        end
+
+        depth_mean = exchanger.depth_means[side]
+        roll_band!(depth_mean)
+        sample_depth_mean!(depth_mean, exchanger.sources[side][normal_velocity_name(side)], exchanger.floors[side], side, time)
     end
 
     times.previous = times.current

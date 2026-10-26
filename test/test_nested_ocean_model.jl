@@ -3,7 +3,8 @@ include("runtests_setup.jl")
 using NumericalEarth.Bathymetry: bottom_height_from_mask
 using NumericalEarth.DataWrangling: bracketing_dates
 using NumericalEarth.NestedModels: open_boundary_sides, parent_ocean_sources, relaxation_masks, BoundaryTimeSeries,
-                                   BarotropicBoundaryTransport, OceanBoundaryExchanger
+                                   BarotropicBoundaryTransport, ConsistentBoundaryVelocity, OceanBoundaryExchanger
+using NumericalEarth.Oceans: fill_prescribed_halo_regions!
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, ocean_surface_temperature,
                                         ocean_temperature, prognostic_model
 using Oceananigans.BoundaryConditions: getbc, GravityWaveRadiation, NormalFlow, ObliqueRadiation,
@@ -60,7 +61,7 @@ function check_nested_ocean(nested, grid)
 
     # Five conditions on each open side, none on the closed (land) west side
     @test u.boundary_conditions.east.classification isa NormalFlow
-    @test u.boundary_conditions.east.condition isa BoundaryTimeSeries
+    @test u.boundary_conditions.east.condition isa Union{BoundaryTimeSeries, ConsistentBoundaryVelocity}
     @test u.boundary_conditions.south.condition isa BoundaryTimeSeries    # tangential
     @test v.boundary_conditions.north.classification isa NormalFlow
     @test v.boundary_conditions.east.condition isa BoundaryTimeSeries     # tangential
@@ -278,6 +279,38 @@ end
     # A steady throughflow leaves the mean sea level alone to within a micrometer over ~3 hours
     mean_sea_level_drift = (total_volume() - initial_volume) / sum(cell_area)
     @test abs(mean_sea_level_drift) < 1e-6
+end
+
+@testset "Flather takes the parent's own depth mean, and the normal velocity integrates to it, on $(arch)" for arch in test_architectures
+    # A sheared parent current, u = 0.1 + 0.01k on its six levels, over a 500 m seafloor
+    parent_ocean = nesting_test_parent(arch)
+    for k in 1:6
+        interior(parent_ocean.velocities.u)[:, :, k, :] .= 0.1 + 0.01k
+    end
+    fill_prescribed_halo_regions!(parent_ocean)
+
+    parent_bottom_height = Field{Center, Center, Nothing}(parent_ocean.grid)
+    set!(parent_bottom_height, -500)
+
+    grid = nesting_test_child_grid(arch)
+    model = nested_ocean_model(parent_ocean, grid; parent_bottom_height)
+    child = model.child
+    clock = child.clock
+    Nz = size(grid, 3)
+    Δz = 1000 / Nz
+
+    @allowscalar begin
+        u_condition = child.velocities.u.boundary_conditions.west.condition
+        @test u_condition isa ConsistentBoundaryVelocity
+        U_condition = child.free_surface.barotropic_velocities.U.boundary_conditions.west.condition
+
+        # The parent's levels with centers above -500 m are k = 4, 5, 6: ū = 0.15, over the child's 1000 m column
+        Uᵉˣᵗ, _ = getbc(on_architecture(CPU(), U_condition), 10, 1, on_architecture(CPU(), grid), clock)
+        @test Uᵉˣᵗ ≈ 0.15 * 1000
+
+        transport = sum(getbc(on_architecture(CPU(), u_condition), 10, k, on_architecture(CPU(), grid), clock) * Δz for k in 1:Nz)
+        @test transport ≈ Uᵉˣᵗ
+    end
 end
 
 @testset "nested_ocean_model blends the child bathymetry toward the parent's seafloor on $(arch)" for arch in test_architectures

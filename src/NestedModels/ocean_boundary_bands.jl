@@ -10,7 +10,8 @@
 # boundary, not with the length of the run.
 
 using Oceananigans.Fields: Field, flatten_node, interpolate
-using Oceananigans.Grids: Bounded, Center, Face, inactive_cell, topology, _node
+using Oceananigans.Grids: Bounded, Center, Face, inactive_cell, topology, _node, λnode, φnode, znode
+using Oceananigans.Operators: Δz
 using Oceananigans.OutputReaders: FlavorOfFTS
 using Oceananigans.Utils: KernelParameters, launch!
 using KernelAbstractions: @kernel, @index
@@ -128,6 +129,47 @@ end
     k′ = clamp(k, 1, N[3])
     X = flatten_node(_node(i′, j′, k′, grid, loc...)...)
     @inbounds field[i, j, k] = parent_value(source, X, source_loc, source_grid, time)
+end
+
+"""
+    sample_parent_depth_mean!(field, loc, source, floor, time)
+
+Interpolate onto every point of the two-dimensional `field` at horizontal location `loc` the depth mean of the
+parent `source` at `time`, over the parent's own levels whose centers lie above the parent's seafloor `floor` (a
+bottom height `Field` at the points of `field`), as the reference Mid-Atlantic Bight configuration computes the
+barotropic exterior of its Flather condition. Columns where the parent is dry hold zero.
+"""
+function sample_parent_depth_mean!(field, loc, source, floor, time)
+    grid = field.grid
+    ranges = axes(field.data)[1:2]
+    params = KernelParameters(length.(ranges), first.(ranges) .- 1)
+    interior_size = map((ℓ, N) -> last_index(ℓ, N), loc[1:2], size(grid)[1:2])
+    source_loc = Tuple(L() for L in location(source))
+    launch!(architecture(field), grid, params, _sample_parent_depth_mean!,
+            field, grid, loc, interior_size, source, source.grid, source_loc, floor, Time(time))
+    return field
+end
+
+@kernel function _sample_parent_depth_mean!(field, grid, loc, N, source, source_grid, source_loc, floor, time)
+    i, j = @index(Global, NTuple)
+    i′ = clamp(i, 1, N[1])
+    j′ = clamp(j, 1, N[2])
+    λ = λnode(i′, j′, 1, grid, loc[1], loc[2], Center())
+    φ = φnode(i′, j′, 1, grid, loc[1], loc[2], Center())
+    zᵇ = @inbounds floor[i′, j′, 1]
+
+    U = zero(grid)
+    H = zero(grid)
+    for k in 1:size(source_grid, 3)
+        z = znode(1, 1, k, source_grid, Center(), Center(), Center())
+        Δzᵏ = Δz(1, 1, k, source_grid, Center(), Center(), Center())
+        u = parent_value(source, (λ, φ, z), source_loc, source_grid, time)
+        wet = z > zᵇ
+        U += ifelse(wet, u * Δzᵏ, zero(U))
+        H += ifelse(wet, Δzᵏ, zero(H))
+    end
+
+    @inbounds field[i, j, 1] = ifelse(H > 0, U / max(H, eps(H)), zero(U))
 end
 
 """
