@@ -116,7 +116,6 @@ export
     surface_temperature,
     surface_layer_diagnostics,
     regrid_bathymetry,
-    bathymetry_from_missing_values,
     regrid_topography,
     regrid_ocean_fraction,
     smooth_topography!,

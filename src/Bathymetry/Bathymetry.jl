@@ -1,7 +1,6 @@
 module Bathymetry
 
 export regrid_bathymetry, regrid_topography, regrid_ocean_fraction, smooth_topography!, connect_basins!, ORCAGrid
-export bathymetry_from_missing_values
 export Basin
 export atlantic_ocean_basin, indian_ocean_basin, southern_ocean_basin, pacific_ocean_basin, arctic_ocean_basin
 
@@ -24,7 +23,7 @@ using Oceananigans.Utils: launch!
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf
 
-using ..DataWrangling: DataWrangling, Metadatum, native_grid, metadata_path,
+using ..DataWrangling: AbstractStaticBathymetry, Metadatum, compute_mask, native_grid, metadata_path,
                        dataset_variable_name, validate_dataset_coverage,
                        FieldRegridding, load_field_cache, save_field_cache
 using ..DataWrangling.ETOPO: ETOPO2022
@@ -34,7 +33,7 @@ include("regrid_bathymetry.jl")
 include("ocean_basin.jl")
 include("smooth_topography.jl")
 include("connect_basins.jl")
-include("bathymetry_from_missing_values.jl")
+include("bottom_height_from_mask.jl")
 include("orca_grid.jl")
 
 end # module

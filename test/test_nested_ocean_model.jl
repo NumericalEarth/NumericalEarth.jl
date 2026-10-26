@@ -301,6 +301,18 @@ end
     @test bottom_height[10, 10, 1] ≈ -1000
 end
 
+@testset "regrid_bathymetry from the missing values of an ocean dataset on $(arch)" for arch in test_architectures
+    grid = coastal_grid(arch).underlying_grid
+    metadatum = Metadatum(:temperature; dataset = SyntheticOcean(), date = first(synthetic_dates),
+                          region = BoundingBox(grid; padding = 10))
+
+    bottom_height = Array(interior(regrid_bathymetry(grid, metadatum; major_basins = Inf, cache = false)))
+
+    # The western columns lie on the synthetic continent (λ ≤ 20°); the eastern ones are open ocean
+    @test all(bottom_height[1, :, 1] .== 0)
+    @test all(bottom_height[end, :, 1] .< -1000)
+end
+
 @testset "bottom_height_from_mask: the seafloor a dataset marks with missing values" begin
     # z runs bottom-to-top: k = 1 is the deepest cell, whose bottom face sits at -100
     grid = LatitudeLongitudeGrid(size = (3, 1, 4), longitude = (-1, 1), latitude = (-1, 1),

@@ -8,7 +8,7 @@ using Oceananigans.ImmersedBoundaries: GridFittedBottom, ImmersedBoundaryGrid
 using Oceananigans.TimeSteppers: Clock
 using Oceananigans.Units: hours
 
-using ..Bathymetry: bathymetry_from_missing_values, regrid_bathymetry
+using ..Bathymetry: regrid_bathymetry
 using ..Oceans: hydrostatic_ocean_model, merge_boundary_conditions
 using ..DataWrangling: BoundingBox, Metadatum, default_download_directory, default_horizontal_padding
 
@@ -167,7 +167,7 @@ volumetric [`PrescribedOcean`](@ref)s on strips along the open sides: `parent_da
 along each side and `relaxation_width` cells inward, padded by `parent_padding` degrees (default the dataset's
 `default_horizontal_padding`), streaming `parent_time_indices_in_memory` samples at a time. A full-domain
 snapshot of `parent_dataset` at `first(dates)`, with the same padding, initializes the child, and the seafloor
-`parent_dataset` marks with missing values there (see [`bathymetry_from_missing_values`](@ref)) is the
+`parent_dataset` marks with missing values there (see [`regrid_bathymetry`](@ref)) is the
 `parent_bottom_height` the child bathymetry (`bathymetry`, blended over `bathymetry_blend_length` or
 `bathymetry_blend_width`) blends toward. The strips follow the open sides of the blended bathymetry. The
 remaining keyword arguments `kw` go to `nested_ocean_model(parent, grid; kw...)`.
@@ -189,7 +189,8 @@ function nested_ocean_model(grid::AbstractGrid, parent_dataset; dates,
 
     if isnothing(parent_bottom_height)
         metadatum = Metadatum(:temperature; dataset = parent_dataset, date = first(dates), region, dir)
-        parent_bottom_height = bathymetry_from_missing_values(underlying_grid(grid), metadatum)
+        # Every basin of the parent, as the parent state was produced over it
+        parent_bottom_height = regrid_bathymetry(underlying_grid(grid), metadatum; major_basins = Inf)
     end
 
     # The strips follow the open sides of the blended child bathymetry.
