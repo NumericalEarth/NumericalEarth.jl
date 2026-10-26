@@ -2,7 +2,7 @@
 ##### nested_ocean_model: a regional ocean nested in a parent ocean
 #####
 
-using Oceananigans.Fields: CenterField, XFaceField, YFaceField, interpolate!
+using Oceananigans.Fields: CenterField, XFaceField, YFaceField, interior, interpolate!
 using Oceananigans.BoundaryConditions: ObliqueRadiation, TracerReservoir
 using Oceananigans.Grids: LatitudeLongitudeGrid, λnodes, φnodes
 using Oceananigans.TimeSteppers: Clock
