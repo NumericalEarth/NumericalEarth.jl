@@ -12,6 +12,7 @@ using Oceananigans.BoundaryConditions: getbc, GravityWaveRadiation, NormalFlow, 
 using Oceananigans.Grids: inactive_cell
 using Oceananigans.ImmersedBoundaries: bottom_height_field
 using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶠᶜᶜ
+using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: days
 
 # The synthetic ocean is 10° resolution, with land over λ ∈ [-60, 20], φ ∈ [-30, 40]. Its velocities
