@@ -2,8 +2,7 @@ include("runtests_setup.jl")
 
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     PlantAvailableWaterStress, CriticalSaturation, CanopyConductanceHumidity,
-    evaporation_efficiency, interface_hydrology_state,
-    atmosphere_land_interface, surface_hydrology
+    evaporation_efficiency, land_state_accessors, ComponentExchanger
 
 using NumericalEarth: VanGenuchtenRetention
 using NumericalEarth.Lands: van_genuchten_saturation, effective_saturation
@@ -14,7 +13,7 @@ land_state(𝒮, curve, stress) = (𝒮 = 𝒮,
 
 function availability(model, 𝒮, curve)
     stress = model isa PlantAvailableWaterStress ? model : PlantAvailableWaterStress(typeof(𝒮))
-    return evaporation_efficiency(model, interface_hydrology_state(1, 1, nothing, model, land_state(𝒮, curve, stress)))
+    return evaporation_efficiency(model, land_state(𝒮, curve, stress))
 end
 
 @testset "PlantAvailableWaterStress" begin
@@ -62,37 +61,38 @@ end
     # One stress object reads two soils onto two stress bands (Carsel-Parrish loam and clay)
     loam = VanGenuchtenRetention(FT; inverse_air_entry_head = 3.6, pore_size_uniformity = 1.56)
     clay = VanGenuchtenRetention(FT; inverse_air_entry_head = 0.8, pore_size_uniformity = 1.09)
-    endpoints(curve) = interface_hydrology_state(1, 1, nothing, stress, land_state(FT(0.3), curve, stress))
+    endpoints(curve) = land_state(FT(0.3), curve, stress)
     @test endpoints(loam).field_capacity_saturation ≈ 0.46628 atol = 1e-5
     @test endpoints(loam).wilting_point_saturation  ≈ 0.02950 atol = 1e-5
     @test endpoints(clay).wilting_point_saturation > endpoints(loam).field_capacity_saturation
     @test availability(stress, FT(0.6), loam) == 1
     @test availability(stress, FT(0.6), clay) == 0
 
-    # A Field-valued curve puts each column on its own endpoints
+    # The land publishes the endpoints, and a Field-valued curve puts each column on its own
     columns_grid = RectilinearGrid(FT; size = (1, 2), extent = (1, 1), topology = (Periodic, Periodic, Flat))
     inverse_air_entry_head = set!(Field{Center, Center, Nothing}(columns_grid), (x, y) -> y < 0.5 ? 3.6 : 0.8)
     pore_size_uniformity = set!(Field{Center, Center, Nothing}(columns_grid), (x, y) -> y < 0.5 ? 1.56 : 1.09)
     hydrology = VariablySaturatedHydrology(FT; slab_depth = 1, porosity = 0.4, storage_height = 0.1,
         retention_curve = VanGenuchtenRetention(FT; inverse_air_entry_head, pore_size_uniformity),
         hydraulic_conductivity = VanGenuchtenConductivity(FT; matching_point_conductivity = 1e-6, pore_size_uniformity))
-    column_endpoints = surface_hydrology(SlabLand(columns_grid; hydrology), stress, columns_grid)
+    published = ComponentExchanger(SlabLand(columns_grid; hydrology), columns_grid;
+                                   state_accessors = land_state_accessors(stress)).state
     for (j, curve) in enumerate((loam, clay)), 𝒮 in (FT(0.35), FT(0.6))
-        state = interface_hydrology_state(1, j, columns_grid, stress, merge((; 𝒮 = 𝒮), column_endpoints))
+        state = (; 𝒮, field_capacity_saturation = published.field_capacity_saturation[1, j, 1],
+                      wilting_point_saturation  = published.wilting_point_saturation[1, j, 1])
         @test evaporation_efficiency(stress, state) == availability(stress, 𝒮, curve)
     end
 
     @test_throws ArgumentError PlantAvailableWaterStress(field_capacity_head = 200)
     @test_throws ArgumentError PlantAvailableWaterStress(field_capacity_head = 0)
 
-    # Nested formulations expose the requirement for a retention curve to the interface
+    # A nested stress declares the endpoints; a land without a retention curve cannot publish them
     canopy = CanopyGroundSurface(FT; soil_humidity = BulkHumidity(),
                                  canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index = 2, moisture_stress = stress))
     point_grid = RectilinearGrid(FT; size = (), topology = (Flat, Flat, Flat))
-    atmosphere = PrescribedAtmosphere(point_grid, [0.0, 1.0]; surface_layer_height = 10)
-    interface(hydrology) = atmosphere_land_interface(point_grid, atmosphere, SlabLand(point_grid; hydrology);
-                                                     temperature = canopy, specific_humidity = canopy)
-    @test_throws ArgumentError interface(BucketHydrology())
-    interface(VariablySaturatedHydrology(FT; slab_depth = 0.1, porosity = 0.4, storage_height = 1000, retention_curve = loam,
+    exchanger(hydrology) = ComponentExchanger(SlabLand(point_grid; hydrology), point_grid;
+                                              state_accessors = land_state_accessors(canopy))
+    @test_throws ArgumentError exchanger(BucketHydrology())
+    exchanger(VariablySaturatedHydrology(FT; slab_depth = 0.1, porosity = 0.4, storage_height = 1000, retention_curve = loam,
               hydraulic_conductivity = VanGenuchtenConductivity(FT; matching_point_conductivity = 1e-6, pore_size_uniformity = 1.56)))
 end

@@ -149,6 +149,7 @@ component-superscript rule above.
 | ``-\Pi^{fc}`` | `field_capacity_head` | field-capacity suction head | Suction (negative pressure head) at which transpiration becomes unstressed (``β = 1``), for `PlantAvailableWaterStress` (m) |
 | ``-\Pi^{wp}`` | `wilting_point_head` | wilting-point suction head | Suction (negative pressure head) at which transpiration ceases (``β = 0``), for `PlantAvailableWaterStress` (m) |
 | ``w^{uc}`` | `undercanopy_transfer_velocity` | undercanopy transfer velocity | Ground↔canopy-air transfer velocity of a `CanopyGroundSurface`: the flux per unit difference across the path, ``J = \rho^{\mathrm{at}} w^{uc} (q^g - q^{\mathrm{ac}})``, as ``u_\star \chi^q`` is for the canopy-air↔atmosphere exchange. A bulk transfer coefficient times a wind speed, not a diffusivity (m s⁻¹) |
+| ``\lambda^{\mathrm{leaf}}`` | `λˡᵉᵃᶠ`, `leaf_area_index` | leaf area index | One-sided leaf area per unit ground area (m² m⁻²) |
 | ``T^{\mathrm{deep}}`` | `deep_temperature` | deep climatological temperature | Prescribed deep/climatological target temperature for force-restore (K) |
 | ``τ^{\mathrm{deep}}`` | `deep_time_scale` | deep-restore time scale | Time scale of surface relaxation toward ``T^{\mathrm{deep}}`` (s) |
 | ``c^{\mathrm{dry}}`` | `dry_heat_capacity` | dry areal heat capacity | Areal heat capacity of the water-free slab; a `Number` or an `AbstractField` (J m⁻² K⁻¹) |
@@ -280,6 +281,12 @@ and [`InterceptingHydrology`](@ref).
 | ``\alpha^{\mathrm{eff}}`` | `effective_albedo` | column albedo | Broadband shortwave albedo of the canopy + ground column (–) |
 | ``\epsilon`` | `ϵ` | emissivity | Surface emissivity (–) |
 
+## Vegetation properties
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``L`` | `leaf_area_index`, `LAI` | leaf area index | One-sided leaf area per unit ground area (m² m⁻²) |
+
 ## Similarity theory / surface layer
 
 | Math | Code | Property | Description |
@@ -292,6 +299,8 @@ and [`InterceptingHydrology`](@ref).
 | ``C^D`` | `Cᴰ` | drag coefficient | Bulk transfer coefficient for momentum (–) |
 | ``\psi`` | `ψ` | stability function | Integrated stability correction (–) |
 | ``\Psi`` | `Ψ` | interface state | Aggregate interface state (an `AbstractInterfaceState`) carried through the similarity-theory fixed-point solver `compute_interface_state` |
+| ``\Psi^{\mathrm{in}}`` | `Ψⁱⁿ` | iterated interface state | The `AbstractInterfaceState` updated at each iteration of `compute_interface_state` |
+| ``\Psi^{\mathrm{at}}``, ``\Psi^{\mathrm{la}}`` | `Ψᵃᵗ`, `Ψˡᵃ` | atmosphere, land state | Pointwise `NamedTuple`s of atmosphere and land quantities read by the interface solver; ``\Psi^{\mathrm{la}}`` holds the keys of `land_state_accessors`, e.g. ``(T, 𝒮)`` |
 | ``\zeta`` | `ζ` | stability parameter | ``z / L_\star`` (–) |
 | ``\Delta h^d`` | `Δhᵈ` | displaced profile height | Height ``\Delta h - d`` above the zero-plane displacement at which the similarity profiles are evaluated (m) |
 | ``\ell`` | `ℓ` | roughness length | Aerodynamic roughness length (m) |

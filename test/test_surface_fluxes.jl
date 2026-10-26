@@ -180,8 +180,7 @@ end
             Sᵒᶜ = ocean.model.tracers.S[1, 1, 1]
             Tᵒᶜ = θ_from_Θ(Sᵒᶜ, ocean.model.tracers.T[1, 1, 1]) + celsius_to_kelvin
 
-            interface_properties = interfaces.atmosphere_ocean_interface.properties
-            q_formulation = interface_properties.specific_humidity_formulation
+            q_formulation = interfaces.atmosphere_ocean_interface.formulation.specific_humidity
             qᵒᶜ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tᵒᶜ, Sᵒᶜ)
             g = ocean.model.buoyancy.formulation.gravitational_acceleration
 
@@ -366,23 +365,21 @@ end
     # The saturated reservoir is at the bulk (energy) temperature `Tᵈ`; the skin
     # temperature does not enter the vapor balance.
     Tᵈ = 295.0
-    Ψᵢ = (; T = Tᵈ) # interior state (unused by SkinHumidity, passed for signature)
+    Ψˡᵃ = (; T = Tᵈ) # land state: the bulk reservoir temperature
     Tₛ = 310.0 # skin temperature, deliberately ≠ Tᵈ — qˢ must be independent of it
     qᵛ⁺ = saturation_specific_humidity(ℂ, Tᵈ, pᵃᵗ, Thermodynamics.Liquid())
     @test qᵛ⁺ > qᵃᵗ # reservoir saturation exceeds the sub-saturated air
 
-    # AirLandInterfaceState with a fixed aerodynamic conductance Gᵃ = ρ u★ χq;
-    # bulk reservoir temperature carried in the energy component.
+    # AirLandInterfaceState with a fixed aerodynamic conductance Gᵃ = ρ u★ χq.
     mkΨₛ(q) = AirLandInterfaceState(InterfaceFluxScales(0.3, -0.01, -1e-4, 0.0, 0.2),
-                                    InterfaceVelocities(0.0, 0.0), Tₛ, q,
-                                    (saturation = 1.0,), (temperature = Tᵈ,))
+                                    InterfaceVelocities(0.0, 0.0), Tₛ, q)
 
     # Drive the fixed point to convergence for a few saturation depths
     converge(d) = begin
         sh = SkinHumidity(surface_thickness=d, vapor_diffusivity=2e-2)
         q = qᵛ⁺
         for _ in 1:100
-            q = compute_interface_humidity(sh, Tₛ, mkΨₛ(q), Ψₐ, Ψᵢ, nothing, ℙₐ)
+            q = compute_interface_humidity(sh, Tₛ, mkΨₛ(q), Ψₐ, Ψˡᵃ, nothing, ℙₐ)
         end
         return q
     end
@@ -404,9 +401,8 @@ end
 
     # Zero turbulent flux (first iterate) ⟹ saturated surface qˢ = qᵛ⁺
     sh = SkinHumidity(surface_thickness=0.1, vapor_diffusivity=2e-2)
-    Ψₛ⁰ = AirLandInterfaceState(0.0, 0.0, 0.0, 0.0, 0.0, Tₛ, 0.0,
-                                (saturation = 1.0,), (temperature = Tᵈ,))
-    @test compute_interface_humidity(sh, Tₛ, Ψₛ⁰, Ψₐ, Ψᵢ, nothing, ℙₐ) ≈ qᵛ⁺
+    Ψₛ⁰ = AirLandInterfaceState(0.0, 0.0, 0.0, 0.0, 0.0, Tₛ, 0.0)
+    @test compute_interface_humidity(sh, Tₛ, Ψₛ⁰, Ψₐ, Ψˡᵃ, nothing, ℙₐ) ≈ qᵛ⁺
 end
 
 @testset "FractionalHumidity (Manabe critical wetness)" begin
@@ -414,30 +410,30 @@ end
     ℙₐ = (; thermodynamics_parameters = ℂ)
     pᵃᵗ = 101325.0
     Ψₐ = (; p = pᵃᵗ, q = 0.005, T = 290.0)
-    Ψᵢ = (; T = 295.0) # unused by FractionalHumidity, passed for signature
     Tₛ = 295.0
     qᵛ⁺ = saturation_specific_humidity(ℂ, Tₛ, pᵃᵗ, Thermodynamics.Liquid())
 
     # Manabe efficiency: β = min(𝒮/𝒮ᶜ, 1), 𝒮ᶜ = 0.75
     cs = CriticalSaturation(0.75)
-    @test evaporation_efficiency(cs, (saturation = 0.0,))   == 0.0
-    @test evaporation_efficiency(cs, (saturation = 0.375,)) ≈ 0.5
-    @test evaporation_efficiency(cs, (saturation = 0.75,))  ≈ 1.0
-    @test evaporation_efficiency(cs, (saturation = 1.0,))   ≈ 1.0   # saturated above 𝒮ᶜ
+    @test evaporation_efficiency(cs, (𝒮 = 0.0,))   == 0.0
+    @test evaporation_efficiency(cs, (𝒮 = 0.375,)) ≈ 0.5
+    @test evaporation_efficiency(cs, (𝒮 = 0.75,))  ≈ 1.0
+    @test evaporation_efficiency(cs, (𝒮 = 1.0,))   ≈ 1.0   # saturated above 𝒮ᶜ
 
     # Constant efficiency ignores the land state
-    @test evaporation_efficiency(0.3, (saturation = 0.9,)) == 0.3
+    @test evaporation_efficiency(0.3, (𝒮 = 0.9,)) == 0.3
 
-    # qˢ = β · qᵛ⁺(Tₛ), with β derived from the materialized hydrology state
-    mkΨₛ(𝒮) = AirLandInterfaceState(0.3, 0.0, 0.0, 0.0, 0.0, Tₛ, 0.0, (saturation = 𝒮,), (;))
+    # qˢ = β · qᵛ⁺(Tₛ), with β derived from the land state
+    Ψₛ = AirLandInterfaceState(0.3, 0.0, 0.0, 0.0, 0.0, Tₛ, 0.0)
+    Ψˡᵃ(𝒮) = (; T = 295.0, 𝒮)
     fh = FractionalHumidity(efficiency = cs)
-    @test compute_interface_humidity(fh, Tₛ, mkΨₛ(0.0),   Ψₐ, Ψᵢ, nothing, ℙₐ) ≈ 0.0
-    @test compute_interface_humidity(fh, Tₛ, mkΨₛ(0.375), Ψₐ, Ψᵢ, nothing, ℙₐ) ≈ 0.5 * qᵛ⁺
-    @test compute_interface_humidity(fh, Tₛ, mkΨₛ(1.0),   Ψₐ, Ψᵢ, nothing, ℙₐ) ≈ qᵛ⁺ # saturated
+    @test compute_interface_humidity(fh, Tₛ, Ψₛ, Ψₐ, Ψˡᵃ(0.0),   nothing, ℙₐ) ≈ 0.0
+    @test compute_interface_humidity(fh, Tₛ, Ψₛ, Ψₐ, Ψˡᵃ(0.375), nothing, ℙₐ) ≈ 0.5 * qᵛ⁺
+    @test compute_interface_humidity(fh, Tₛ, Ψₛ, Ψₐ, Ψˡᵃ(1.0),   nothing, ℙₐ) ≈ qᵛ⁺ # saturated
 
     # Constant-efficiency FractionalHumidity is a uniform fraction of saturation
     fc = FractionalHumidity(efficiency = 0.4)
-    @test compute_interface_humidity(fc, Tₛ, mkΨₛ(0.1), Ψₐ, Ψᵢ, nothing, ℙₐ) ≈ 0.4 * qᵛ⁺
+    @test compute_interface_humidity(fc, Tₛ, Ψₛ, Ψₐ, Ψˡᵃ(0.1), nothing, ℙₐ) ≈ 0.4 * qᵛ⁺
 end
 
 @testset "Saturation vapor pressure enhancement (Gill 1982)" begin

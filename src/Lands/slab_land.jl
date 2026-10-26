@@ -388,17 +388,23 @@ end
 
 EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabLand, coupled_model) = nothing
 
-"""
-    ComponentExchanger(land::SlabLand, grid)
+EarthSystemModels.InterfaceComputations.land_temperature(land::SlabLand) = surface_temperature(land)
+EarthSystemModels.InterfaceComputations.land_saturation(land::SlabLand) = surface_saturation(land)
+EarthSystemModels.InterfaceComputations.land_canopy_water_storage(land::SlabLand) =
+    get(land.prognostic, :canopy_water_storage, ZeroField())
+EarthSystemModels.InterfaceComputations.land_canopy_water_capacity(land::SlabLand) =
+    canopy_water_capacity(land.hydrology, land)
 
-Expose skin temperature `T`, surface saturation `𝒮`, and canopy
-interception storage and capacity on the exchange grid.
 """
-function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::SlabLand, grid)
-    state = (T                     = surface_temperature(land),
-             𝒮                     = surface_saturation(land),
-             canopy_water_storage  = get(land.prognostic, :canopy_water_storage, ZeroField()),
-             canopy_water_capacity = canopy_water_capacity(land.hydrology, land))
+    ComponentExchanger(land::SlabLand, grid; state_accessors)
+
+Publish the land state returned by `state_accessors` (declared by the atmosphere--land
+interface) as a `NamedTuple` of the slab's own fields. Aerodynamic roughness lengths
+belong to the atmosphere-land flux closure (`atmosphere_land_fluxes`), not the land state.
+"""
+function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::SlabLand, grid; state_accessors)
+    # TODO: regrid onto `grid` when it differs from `land.grid`; today the two coincide.
+    state = map(accessor -> accessor(land), state_accessors)
     return ComponentExchanger(state, nothing)
 end
 

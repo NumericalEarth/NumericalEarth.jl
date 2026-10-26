@@ -55,9 +55,9 @@ using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Architectures: CPU, architecture, on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField, interior, regrid!, compute!,
-                           fractional_horizontal_area, dimension_faces
+                           dimension_faces
 using Oceananigans.Grids: grid_name, Center, Face, LatitudeLongitudeGrid, Bounded, Flat,
-                          znodes, λnode, φnode
+                          znodes, λnode, φnode, hack_cosd, hack_sind
 using Oceananigans.Operators: Δxᶜᶜᶜ, Δyᶜᶜᶜ
 using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
@@ -69,9 +69,8 @@ using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
 using NumericalEarth.EarthSystemModels.InterfaceComputations: InterfaceComputations,
                                                  BulkTemperature, BulkHumidity, CanopyGroundSurface,
-                                                 CanopyConductanceHumidity, FractionalHumidity, PlantAvailableWaterStress,
-                                                 DryLayerHumidity, ConstantTortuosity, PowerLawTortuosity,
-                                                 effective_vapor_diffusivity, surface_hydrology,
+                                                 ConstantTortuosity, PowerLawTortuosity,
+                                                 effective_vapor_diffusivity,
                                                  PrognosticCanopyGroundSurface, PrognosticEnergyBalanceTemperature,
                                                  interface_kernel_parameters, ComponentExchanger,
                                                  canopy_transmittance, canopy_leaf_area_index, land_surface_fluxes,

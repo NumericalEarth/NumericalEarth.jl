@@ -10,9 +10,6 @@ land_surface(land) = nothing
 # Prognostic storage of a `LandSurface`: the state the solve reads and the update it writes.
 land_surface_state(::Nothing) = (; state=(;), next=(;))
 
-# Derived hydrology a land exposes on the exchange grid for a humidity formulation.
-surface_hydrology(land, humidity, grid) = (;)
-
 # Distance over which a skin conducts to the bulk temperature.
 thermal_exchange_depth(temperature) = Inf
 thermal_exchange_depth(temperature::EnergyBalanceTemperature) = temperature.coupling.thickness
@@ -67,14 +64,12 @@ function atmosphere_land_interface(grid, atmosphere, land, surface;
     if (temperature isa PrognosticCanopyGroundSurface || temperature isa PrognosticEnergyBalanceTemperature) && isempty(boundary.state)
         throw(ArgumentError("Configure prognostic surface physics on LandSurface when constructing the land."))
     end
-    boundary = merge(boundary, (; hydrology=surface_hydrology(land, specific_humidity, grid)))
 
     al_fluxes = AtmosphereSurfaceFluxes(grid)
-    al_properties = InterfaceProperties(specific_humidity, temperature, velocity_difference)
+    formulation = InterfaceFormulation(fluxes, specific_humidity, temperature, velocity_difference)
     interface_temperature = build_interface_temperature(temperature, grid)
     interface_specific_humidity = Field{Center, Center, Nothing}(grid)
-    return AtmosphereInterface(al_fluxes, fluxes, interface_temperature,
-                               interface_specific_humidity, al_properties, boundary)
+    return AtmosphereInterface(al_fluxes, interface_temperature, interface_specific_humidity, formulation, boundary)
 end
 
 # The atmosphere-facing interface temperature: a single field, or the
@@ -102,13 +97,13 @@ end
 end
 
 # Store diagnostics and candidate land updates from the converged boundary solve.
-@inline function finalize_interface_state!(Ts, next, i, j, formulation, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, Δt)
+@inline function finalize_interface_state!(Ts, next, i, j, formulation, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, Δt)
     @inbounds Ts[i, j, 1] = Ψₛ.temperature
     return Ψₛ
 end
 
-@inline function finalize_interface_state!(Ts, next, i, j, c::CanopyGroundSurface, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, Δt)
-    solution = canopy_air_space_solve(c, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+@inline function finalize_interface_state!(Ts, next, i, j, c::CanopyGroundSurface, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, Δt)
+    solution = canopy_air_space_solve(c, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
     @inbounds begin
         Ts.interface[i, j, 1]              = solution.Tᵃᶜ
         Ts.canopy[i, j, 1]                 = solution.Tˡᵉᵃᶠ
@@ -125,17 +120,16 @@ end
         Ts.land_vapor_flux[i, j, 1]        = (solution.𝒬ᵛˡᵉᵃᶠ + solution.𝒬ᵛᵍ) / solution.ℒ - solution.Jʷᵉᵗ
         Ts.transpiration[i, j, 1]          = solution.𝒬ᵛˡᵉᵃᶠ / solution.ℒ - solution.Jʷᵉᵗ
     end
-    store_canopy_air_update!(next, i, j, solution, Ψₛ)
+    store_canopy_air_update!(next, i, j, solution, Ψₛ, Δt)
 
     # The exported scales are evaluated at the node the fluxes above were partitioned at.
     return rebuild_interface_state(Ψₛ, Ψₐ, ℙₐ, solution.Tᵃᶜ, solution.qᵃᶜ)
 end
 
-@inline store_canopy_air_update!(::NamedTuple{()}, i, j, solution, Ψₛ) = nothing
+@inline store_canopy_air_update!(::NamedTuple{()}, i, j, solution, Ψₛ, Δt) = nothing
 
 # The node advances by its exact relaxation toward the equilibrium the skins were solved against.
-@inline function store_canopy_air_update!(state, i, j, solution, Ψₛ)
-    Δt   = Ψₛ.energy.time_step
+@inline function store_canopy_air_update!(state, i, j, solution, Ψₛ, Δt)
     Tⁿ⁺¹ = advance_canopy_air(Ψₛ.temperature, solution.equilibrium_temperature, solution.Σgᵀ, solution.Cᵀ, Δt)
     qⁿ⁺¹ = advance_canopy_air(Ψₛ.specific_humidity, solution.equilibrium_humidity, solution.Σgᵛ, solution.Cᵛ, Δt)
     @inbounds begin
@@ -150,7 +144,7 @@ end
 # so the radiative and vapor curvature is re-linearized each iterate. Δt⁻¹ = 0 (the
 # initializing call) lands the update on the equilibrium root.
 @inline function finalize_interface_state!(Ts, next, i, j, t::PrognosticEnergyBalanceTemperature,
-                                          Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, Δt)
+                                          Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, Δt)
     FT = eltype(Ψₛ)
     Tₛ = Ψₛ.temperature
     C  = convert(FT, state2dindex(t.storage.heat_capacity, i, j))
@@ -158,7 +152,7 @@ end
 
     Tⁿ⁺¹ = Tₛ
     for _ in 1:3
-        F, Σg = skin_energy_imbalance(Tⁿ⁺¹, t, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ)
+        F, Σg = skin_energy_imbalance(Tⁿ⁺¹, t, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ)
         R    = C * (Tⁿ⁺¹ - Tₛ) * Δt⁻¹ - F
         dR   = C * Δt⁻¹ + Σg
         Tⁿ⁺¹ = ifelse(dR > 0, Tⁿ⁺¹ - R / dR, Tⁿ⁺¹)
@@ -166,7 +160,7 @@ end
 
     @inbounds Ts[i, j, 1] = next.temperature[i, j, 1] = Tⁿ⁺¹
 
-    qⁿ⁺¹ = compute_interface_humidity(ℙₛ.specific_humidity_formulation, Tⁿ⁺¹, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    qⁿ⁺¹ = compute_interface_humidity(ℙₛ.specific_humidity, Tⁿ⁺¹, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
     return rebuild_interface_state(Ψₛ, Ψₐ, ℙₐ, Tⁿ⁺¹, qⁿ⁺¹)
 end
 
@@ -213,28 +207,24 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     atmosphere_data = merge(atmosphere_fields,
                             (; h_bℓ = boundary_layer_height(coupled_model.atmosphere)))
 
-    flux_formulation = atmosphere_land_interface.flux_formulation
     interface_fluxes = atmosphere_land_interface.fluxes
     interface_temperature = atmosphere_land_interface.temperature
     interface_specific_humidity = atmosphere_land_interface.specific_humidity
-    interface_properties = atmosphere_land_interface.properties
+    interface_formulation = atmosphere_land_interface.formulation
     atmosphere_properties = (thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
                              surface_layer_height = coupled_model.interfaces.properties.surface_layer_height,
                              gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
 
-    # Land surface state from the exchanger. `interface_energy_state` /
-    # `interface_hydrology_state` read these per cell to build the land
-    # interface state; the surface models derive `β`, the reservoir
-    # temperature, etc. from them.
+    # The land state the interface formulation reads (see `land_state_accessors`), with the
+    # step the solve spans and the depth over which the skin conducts to the bulk land.
     FT = eltype(grid)
     land_state = merge(exchanger.land.state,
                        (time_step = convert(FT, Δt),
-                        thermal_exchange_depth = thermal_exchange_depth(interface_properties.temperature_formulation)),
-                       atmosphere_land_interface.boundary.hydrology)
+                        thermal_exchange_depth = thermal_exchange_depth(interface_formulation.temperature)))
 
     # Prescribed leaf area index off the canopy formulation (or `nothing`),
     # reduced to a kernel-friendly value plus its host-side time interpolator.
-    leaf_area_index = canopy_leaf_area_index(interface_properties.specific_humidity_formulation)
+    leaf_area_index = canopy_leaf_area_index(interface_formulation.specific_humidity)
     vegetation, leaf_area_index_time_interpolator = kernel_surface_field(leaf_area_index, arch, clock.time)
 
     radiation = coupled_model.radiation
@@ -251,12 +241,11 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
             interface_specific_humidity,
             grid,
             clock,
-            flux_formulation,
+            interface_formulation,
             land_state,
             vegetation,
             leaf_area_index_time_interpolator,
             atmosphere_data,
-            interface_properties,
             atmosphere_land_interface.boundary,
             atmosphere_properties,
             radiation_kernel_props,
@@ -285,41 +274,53 @@ end
 @inline canopy_leaf_area_index(q_formulation) = nothing
 
 #####
-##### Land surface state materialized into the interface state.
-#####
-##### The surface model (`interface_model`, here the specific-humidity
-##### formulation) dispatches these helpers to pull *exactly* the per-cell land
-##### state it consumes — saturation for the moisture-availability models, the
-##### bulk temperature for the reservoir model — and nothing otherwise. The
-##### model then derives `β`, the reservoir temperature, etc. from what it pulled.
+##### Land state read by the interface solver
 #####
 
-@inline land_saturation(i, j, grid, land_state) = state2dindex(land_state.𝒮, i, j)
+"""
+$(TYPEDSIGNATURES)
 
-# Hydrology state, per humidity formulation. The caller adds the `saturation` key.
-@inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) = (; saturation = land_saturation(i, j, grid, land_state))
-@inline interface_hydrology_state(i, j, grid, q::FractionalHumidity, land_state) = interface_hydrology_state(i, j, grid, q.efficiency, land_state)
-@inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) = (; saturation = land_saturation(i, j, grid, land_state))
-@inline function interface_hydrology_state(i, j, grid, ::PlantAvailableWaterStress, land_state)
-    return (saturation = land_saturation(i, j, grid, land_state),
-            field_capacity_saturation = state2dindex(land_state.field_capacity_saturation, i, j),
-            wilting_point_saturation = state2dindex(land_state.wilting_point_saturation, i, j))
-end
+The land state that the atmosphere--land interface described by `formulation` reads at
+each cell, as a `NamedTuple` of accessor functions such as `(T = land_temperature, 𝒮 = land_saturation)`.
+The land component publishes `accessor(land)` for each entry, on the exchange grid, through
+its `ComponentExchanger`; the flux kernel reads them pointwise as the land state `Ψˡᵃ`, under
+the same names. The bulk land temperature `T` is always included: it is the initial guess for
+the interface temperature.
+"""
+land_state_accessors(formulation::InterfaceFormulation) = land_state_accessors(formulation.specific_humidity)
 
-@inline interface_hydrology_state(i, j, grid, ::DryLayerHumidity, land_state) =
-    (saturation = land_saturation(i, j, grid, land_state),
-     effective_vapor_diffusivity = state2dindex(land_state.effective_vapor_diffusivity, i, j))
-@inline interface_hydrology_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
+land_state_accessors(specific_humidity_formulation) = (T = land_temperature, 𝒮 = land_saturation)
+land_state_accessors(::SkinHumidity) = (T = land_temperature,)
+land_state_accessors(::FractionalHumidity{<:Number}) = (T = land_temperature,)
+land_state_accessors(q::FractionalHumidity) = land_state_accessors(q.efficiency)
 
-# Energy state: humidity formulations that need the bulk land temperature
-# (the SkinHumidity reservoir and the DryLayerHumidity dry-layer model)
-# pull it from the materialized land state.
-@inline interface_energy_state(i, j, grid, ::SkinHumidity, land_state) =
-    (temperature = state2dindex(land_state.T, i, j),)
-@inline interface_energy_state(i, j, grid, ::DryLayerHumidity, land_state) =
-    (temperature = state2dindex(land_state.T, i, j),
-     thermal_exchange_depth = state2dindex(land_state.thermal_exchange_depth, i, j))
-@inline interface_energy_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
+"""
+    land_temperature(land)
+
+Return the bulk land temperature on the land grid.
+"""
+function land_temperature end
+
+"""
+    land_saturation(land)
+
+Return the surface soil saturation `𝒮` on the land grid.
+"""
+function land_saturation end
+
+"""
+    land_canopy_water_storage(land)
+
+Return the canopy interception store `Mᶜ` (kg m⁻²) on the land grid.
+"""
+function land_canopy_water_storage end
+
+"""
+    land_canopy_water_capacity(land)
+
+Return the canopy interception capacity `Mᶜ⁺` (kg m⁻²) on the land grid.
+"""
+function land_canopy_water_capacity end
 
 # Vegetation state, per humidity formulation. Only the canopy formulations
 # (defined in their own files) pull a leaf area index; everything else is empty.
@@ -330,12 +331,11 @@ end
                                                            interface_specific_humidity,
                                                            grid,
                                                            clock,
-                                                           turbulent_flux_formulation,
+                                                           interface_formulation,
                                                            land_state,
                                                            vegetation,
                                                            leaf_area_index_time_interpolator,
                                                            atmosphere_state,
-                                                           interface_properties,
                                                            boundary,
                                                            atmosphere_properties,
                                                            radiation_kernel_props,
@@ -343,68 +343,41 @@ end
 
     i, j = @index(Global, NTuple)
     time = Time(clock.time)
-    Δt = land_state.time_step
 
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
-    Ψₐ  = local_atmosphere_state(i, j, atmosphere_state, atmosphere_properties)
+    Ψᵃᵗ = local_atmosphere_state(i, j, atmosphere_state, atmosphere_properties)
 
-    # `CanopyGroundSurface` optics slots may be per-cell `Field`s; collapse them to this cell's
-    # values before the index-free solve.
-    temperature_formulation = local_interface_formulation(interface_properties.temperature_formulation, i, j)
-    q_formulation           = local_interface_formulation(interface_properties.specific_humidity_formulation, i, j)
+    # The land state at this cell, with the canopy's prescribed vegetation (leaf area index).
+    vegetation_state = interface_vegetation_state(i, j, grid, interface_formulation.specific_humidity,
+                                                  vegetation, leaf_area_index_time_interpolator)
+    Ψˡᵃ = merge(state2dindex(land_state, i, j, grid, time), vegetation_state)
+    Δt  = Ψˡᵃ.time_step
+    # `typeof(Ψˡᵃ.T)`, not `eltype(grid)`, which is a traced type inside a Reactant kernel.
+    FT  = typeof(Ψˡᵃ.T)
 
-    local_interface_properties = InterfaceProperties(q_formulation, temperature_formulation,
-                                                     interface_properties.velocity_formulation)
-
-    # Bulk land temperature serves as the initial skin-temperature guess.
-    Tₛ = state2dindex(land_state.T, i, j)
-    FT = typeof(Tₛ)
-
-    # Collapse Field-valued roughness lengths and displacement to this cell's values.
-    local_turbulent_flux_formulation = local_flux_formulation(turbulent_flux_formulation, i, j)
-
-    # Surface velocities are zero for land.
-    uₛ = zero(FT)
-    vₛ = zero(FT)
-
-    local_interior_state = (u = uₛ, v = vₛ, T = Tₛ)
+    formulation = local_interface_formulation(interface_formulation, i, j)
 
     radiation_state = air_land_interface_radiation_state(radiation_kernel_props,
                                                          radiation_exchanger_state,
                                                          i, j, 1, grid, time)
 
-    # Estimate initial interface state. Use the saturated value as the initial
-    # surface humidity guess (the solver recomputes it via the formulation);
-    # prognostic formulations read their stored state back instead.
-    u★ = convert(FT, 1e-4)
-    qₛ = convert(FT, saturation_specific_humidity(ℂᵃᵗ, Tₛ, Ψₐ.p, interface_phase(q_formulation)))
-    Tₛ, qₛ = initial_interface_values(temperature_formulation,
-                                      boundary.state, i, j, Tₛ, qₛ, Δt)
-    initial_interface_state = AirLandInterfaceState(i, j, grid,
-                                                    InterfaceFluxScales(u★, u★, u★),
-                                                    InterfaceVelocities(uₛ, vₛ),
-                                                    q_formulation, land_state,
-                                                    vegetation, leaf_area_index_time_interpolator,
-                                                    Tₛ, qₛ)
+    # The bulk land temperature and its saturation humidity are the initial guess, or the
+    # stored state of a prognostic formulation once the model is stepping; the solver
+    # recomputes both via the interface formulations.
+    u★  = convert(FT, 1e-4)
+    qⁱⁿ = convert(FT, saturation_specific_humidity(ℂᵃᵗ, Ψˡᵃ.T, Ψᵃᵗ.p, interface_phase(formulation.specific_humidity)))
+    Tⁱⁿ, qⁱⁿ = initial_interface_values(formulation.temperature, boundary.state, i, j, Ψˡᵃ.T, qⁱⁿ, Δt)
+    Ψⁱⁿ⁰ = AirLandInterfaceState(u★, u★, u★, zero(FT), zero(FT), convert(FT, Tⁱⁿ), convert(FT, qⁱⁿ))
 
-    Ψₛ = compute_interface_state(local_turbulent_flux_formulation,
-                                 initial_interface_state,
-                                 Ψₐ,
-                                 local_interior_state,
-                                 radiation_state,
-                                 local_interface_properties,
-                                 atmosphere_properties,
-                                 (;))
+    Ψⁱⁿ = compute_interface_state(formulation, Ψⁱⁿ⁰, Ψᵃᵗ, Ψˡᵃ, radiation_state, atmosphere_properties, (;))
 
-    Ψₛ = finalize_interface_state!(interface_temperature, boundary.next, i, j,
-                                  temperature_formulation, Ψₛ, Ψₐ,
-                                  local_interior_state, radiation_state,
-                                  local_interface_properties, atmosphere_properties, Δt)
+    Ψⁱⁿ = finalize_interface_state!(interface_temperature, boundary.next, i, j, formulation.temperature,
+                                    Ψⁱⁿ, Ψᵃᵗ, Ψˡᵃ, radiation_state, formulation, atmosphere_properties, Δt)
 
-    ℒˡ = AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, Ψₐ.T)
+    ℒˡ = AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, Ψᵃᵗ.T)
 
-    @inbounds interface_specific_humidity[i, j, 1] = Ψₛ.specific_humidity
-    store_interface_fluxes!(interface_fluxes, i, j, Ψₛ, Ψₐ, ℂᵃᵗ, ℒˡ, local_interface_properties)
+    @inbounds interface_specific_humidity[i, j, 1] = Ψⁱⁿ.specific_humidity
+    store_interface_fluxes!(interface_fluxes, i, j, Ψⁱⁿ, Ψᵃᵗ, ℂᵃᵗ, ℒˡ, formulation)
 end
 
 """

@@ -202,6 +202,20 @@ Base.summary(q::DryLayerHumidity{D, V, P}) where {D, V, P} =
            "}(depth=", summary(q.dry_layer_depth), ", vapor=", summary(q.vapor_exchange), ")")
 Base.show(io::IO, q::DryLayerHumidity) = print(io, summary(q))
 
+"""
+    SoilVaporDiffusivity(vapor_exchange)
+
+Land state accessor for the effective soil vapor diffusivity `Dᵛ` of `vapor_exchange`
+(a [`DryLayerVaporPistonVelocity`](@ref)) at the land's own porosity and saturation. A land
+that supports [`DryLayerHumidity`](@ref) implements `(d::SoilVaporDiffusivity)(land)`.
+"""
+struct SoilVaporDiffusivity{V}
+    vapor_exchange :: V
+end
+
+land_state_accessors(q::DryLayerHumidity) =
+    (T = land_temperature, 𝒮 = land_saturation, effective_vapor_diffusivity = SoilVaporDiffusivity(q.vapor_exchange))
+
 #####
 ##### Effective vapor diffusivity (tortuosity)
 #####
@@ -271,7 +285,7 @@ end
 # humidity `qᵉ = qᵛ⁺(Tᵉ)`, the dry-branch logistic weight `fᵈ`, the wet (saturated-skin)
 # humidity `qᵍ⁺ = qᵛ⁺(Tᵍ)`, and the slopes `dqᵉ/dTᵍ` and `dqᵍ⁺/dTᵍ`. The full humidity is
 # `(1 − fᵈ) qᵍ⁺ + fᵈ · [Δq-series divider with (Gᵉ, qᵉ)]`.
-@inline function dry_layer_terms(q::DryLayerHumidity, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
+@inline function dry_layer_terms(q::DryLayerHumidity, Tᵍ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     FT  = eltype(Ψₛ)
     pᵃᵗ = Ψₐ.p
@@ -279,19 +293,19 @@ end
     qᵃᵗ = Ψₐ.q
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
 
-    Tˡᵃ = Ψₛ.energy.temperature       # bulk land
-    𝒮   = Ψₛ.hydrology.saturation     # surface saturation
+    Tˡᵃ = Ψˡᵃ.T  # bulk land
+    𝒮   = Ψˡᵃ.𝒮  # surface saturation
 
     # Dry-layer depth, front temperature, and front (source) humidity
     # qᵉ = qᵛ⁺(Tᵉ) — the saturation specific humidity at the front.
     δᵛ    = dry_layer_depth(q.dry_layer_depth, 𝒮)
     δᵛmin = convert(FT, q.vapor_exchange.minimum_dry_layer_depth)
-    ℓᵀ    = convert(FT, Ψₛ.energy.thermal_exchange_depth)
+    ℓᵀ    = convert(FT, Ψˡᵃ.thermal_exchange_depth)
     χ     = clamp(δᵛ / ℓᵀ, zero(FT), one(FT))
     Tᵉ    = Tᵍ + χ * (Tˡᵃ - Tᵍ)
     qᵉ    = saturation_specific_humidity(ℂᵃᵗ, Tᵉ, pᵃᵗ, q.phase)
 
-    Dᵛ  = convert(FT, Ψₛ.hydrology.effective_vapor_diffusivity)
+    Dᵛ  = convert(FT, Ψˡᵃ.effective_vapor_diffusivity)
     Gᵉ  = ρᵃᵗ * Dᵛ / max(δᵛ, δᵛmin)
 
     # Wet branch: the front co-locates with the skin, which saturates. The wet
@@ -310,9 +324,9 @@ end
     return Gᵉ, qᵉ, fᵈ, qᵍ⁺, dqᵉ, dqᵍ⁺
 end
 
-@inline function compute_interface_humidity(q::DryLayerHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+@inline function compute_interface_humidity(q::DryLayerHumidity, Tₛ, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
     FT = eltype(Ψₛ)
-    Gᵉ, qᵉ, fᵈ, qᵍ⁺, _, _ = dry_layer_terms(q, Tₛ, Ψₛ, Ψₐ, ℙₐ)
+    Gᵉ, qᵉ, fᵈ, qᵍ⁺, _, _ = dry_layer_terms(q, Tₛ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
 
     Gᵃ   = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
     qⁱⁿ★ = conductance_weighted_node(Ψₛ.specific_humidity, (Gᵉ, Gᵃ), (qᵉ, Ψₐ.q))

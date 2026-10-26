@@ -443,16 +443,12 @@ Adapt.@adapt_structure CanopyGroundSurface
 # state carries the soil saturation, bulk temperature, and LAI the branches read.
 @inline interface_phase(c::CanopyGroundSurface) = interface_phase(c.soil_humidity)
 @inline ground_conductance(c::CanopyGroundSurface) = ground_conductance(c.ground_heat_flux)
-# The soil branch publishes the saturation 𝒮, the canopy branch its stress state, and the
+# The soil branch reads the saturation 𝒮, the canopy branch its stress state, and the
 # canopy water store Mᶜ with its capacity gives the wet fraction fʷᵉᵗ.
-@inline interface_hydrology_state(i, j, grid, c::CanopyGroundSurface, land_state) =
-    merge(interface_hydrology_state(i, j, grid, c.soil_humidity, land_state),
-          interface_hydrology_state(i, j, grid, c.canopy_humidity, land_state),
-          (canopy_water_storage  = state2dindex(land_state.canopy_water_storage, i, j),
-           canopy_water_capacity = state2dindex(land_state.canopy_water_capacity, i, j)))
-@inline interface_energy_state(i, j, grid, c::CanopyGroundSurface, land_state) =
-    merge(interface_energy_state(i, j, grid, c.soil_humidity, land_state),
-          (time_step = land_state.time_step,))
+land_state_accessors(c::CanopyGroundSurface) =
+    merge(land_state_accessors(c.soil_humidity),
+          land_state_accessors(c.canopy_humidity),
+          (canopy_water_storage = land_canopy_water_storage, canopy_water_capacity = land_canopy_water_capacity))
 @inline canopy_leaf_area_index(c::CanopyGroundSurface) = canopy_leaf_area_index(c.canopy_humidity)
 @inline interface_vegetation_state(i, j, grid, c::CanopyGroundSurface, vegetation, time_interpolator) =
     interface_vegetation_state(i, j, grid, c.canopy_humidity, vegetation, time_interpolator)
@@ -468,10 +464,10 @@ end
 # Wet-canopy vapor conductance: the wetted fraction fʷᵉᵗ = (Mᶜ/Mᶜ⁺)^(2/3) (Deardorff 1978)
 # of the leaf boundary-layer conductance, capped so the store cannot evaporate more than
 # it holds over the step, Jʷᵉᵗ = gʷᵉᵗ Δq ≤ Mᶜ/Δt. A dry canopy (Mᶜ = 0) has no wet path.
-@inline function wet_canopy_conductance(hydrology, gˡᵇ, Δq, Δt)
+@inline function wet_canopy_conductance(Ψˡᵃ, gˡᵇ, Δq, Δt)
     FT   = typeof(gˡᵇ)
-    Mᶜ   = convert(FT, hydrology.canopy_water_storage)
-    Mᶜ⁺  = convert(FT, hydrology.canopy_water_capacity)
+    Mᶜ   = convert(FT, Ψˡᵃ.canopy_water_storage)
+    Mᶜ⁺  = convert(FT, Ψˡᵃ.canopy_water_capacity)
     fʷᵉᵗ = ifelse(Mᶜ⁺ > 0, min(Mᶜ / Mᶜ⁺, one(FT))^convert(FT, 2//3), zero(FT))
     gʷᵉᵗ = fʷᵉᵗ * gˡᵇ
     gʷᵉᵗ = ifelse((Δt > 0) & (Δq > 0), min(gʷᵉᵗ, Mᶜ / (Δt * Δq)), gʷᵉᵗ)
@@ -481,9 +477,9 @@ end
 # Leaf vapor conductance `gˡᵉᵃᶠᵛ`, its wet-canopy part `gʷᵉᵗ`, and the leaf-saturated
 # humidity `qˡᵉᵃᶠ` at the leaf temperature; the stomata and the wet cap see the node
 # humidity `qᵃᶜ`.
-@inline function leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜ, gˡᵇ, Δt, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, transmittance)
-    gᶜ, qˡᵉᵃᶠ = canopy_conductance_terms(c.canopy_humidity, Tˡᵉᵃᶠ, qᵃᶜ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, transmittance)
-    fʷᵉᵗ, gʷᵉᵗ = wet_canopy_conductance(Ψₛ.hydrology, gˡᵇ, qˡᵉᵃᶠ - qᵃᶜ, Δt)
+@inline function leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜ, gˡᵇ, Δt, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
+    gᶜ, qˡᵉᵃᶠ = canopy_conductance_terms(c.canopy_humidity, Tˡᵉᵃᶠ, qᵃᶜ, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
+    fʷᵉᵗ, gʷᵉᵗ = wet_canopy_conductance(Ψˡᵃ, gˡᵇ, qˡᵉᵃᶠ - qᵃᶜ, Δt)
     return leaf_vapor_conductance(gᶜ, gˡᵇ, fʷᵉᵗ, gʷᵉᵗ), gʷᵉᵗ, qˡᵉᵃᶠ
 end
 
@@ -491,8 +487,8 @@ end
 # ground surface temperature `Tᵍ`: the dry-layer branch (front humidity qᵉ through Gᵉ in series with the
 # litter + undercanopy path `gˡⁱᵗ`) blended with the saturated-skin branch (qᵍ⁺ through gᵍᵛ⁺)
 # by the soil model's weight `fᵈ`.
-@inline function soil_vapor_terms(soil, Tᵍ, gᵍᵛ⁺, gˡⁱᵗ, Ψₛ, Ψₐ, ℙₐ)
-    Gᵉ, qᵉ, fᵈ, qᵍ⁺, dqᵉ, dqᵍ⁺ = dry_layer_terms(soil, Tᵍ, Ψₛ, Ψₐ, ℙₐ)
+@inline function soil_vapor_terms(soil, Tᵍ, gᵍᵛ⁺, gˡⁱᵗ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
+    Gᵉ, qᵉ, fᵈ, qᵍ⁺, dqᵉ, dqᵍ⁺ = dry_layer_terms(soil, Tᵍ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
     Gᵉ = ifelse(gˡⁱᵗ + Gᵉ > 0, Gᵉ * gˡⁱᵗ / (gˡⁱᵗ + Gᵉ), zero(Gᵉ))
     gᵍᵛ = fᵈ * Gᵉ + (1 - fᵈ) * gᵍᵛ⁺
     blended = gᵍᵛ > eps(eltype(Ψₛ))
@@ -543,7 +539,7 @@ end
 @inline canopy_air_depth(s::PrognosticCanopyAir) = s.layer_depth
 
 """
-    canopy_air_space_solve(c::CanopyGroundSurface, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    canopy_air_space_solve(c::CanopyGroundSurface, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
 
 Solve the leaf temperature `Tˡᵉᵃᶠ` and ground surface temperature `Tᵍ` of one cell by Newton
 iteration on their energy balances, with the canopy-air node `(Tᵃᶜ, qᵃᶜ)` eliminated as
@@ -552,10 +548,10 @@ capacities `Cᵀ = ρcᵖᵐhᵃᶜ` and `Cᵛ = ρhᵃᶜ`: zero for a [`Diagno
 node is that mean; for a [`PrognosticCanopyAir`](@ref) the node relaxes from its
 start-of-step value toward the mean over the step. `Ψₛ` is the previous fixed-point
 iterate, whose similarity scales set the aerodynamic conductances and whose node values
-are the start-of-step node; `Ψᵢ.T` is the bulk reservoir `Tˡᵃ`, and `Ψᵣ` the interface
+are the start-of-step node; `Ψˡᵃ` is the land state (`Ψˡᵃ.T` the bulk reservoir `Tˡᵃ`), and `Ψᵣ` the interface
 radiation state.
 """
-@inline function canopy_air_space_solve(c::CanopyGroundSurface, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+@inline function canopy_air_space_solve(c::CanopyGroundSurface, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     FT  = eltype(Ψₛ)
     pᵃᵗ = Ψₐ.p
@@ -565,9 +561,9 @@ radiation state.
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
     cᵖᵐ = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, qᵃᵗ)
     θᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
-    Tˡᵃ = Ψᵢ.T
-    Δt  = Ψₛ.energy.time_step
-    LAI = Ψₛ.vegetation.leaf_area_index
+    Tˡᵃ = Ψˡᵃ.T
+    Δt  = Ψˡᵃ.time_step
+    LAI = Ψˡᵃ.leaf_area_index
     u★  = Ψₛ.fluxes.u★
 
     gᵃᵀ = aerodynamic_heat_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
@@ -582,7 +578,7 @@ radiation state.
     # Ground vapor path: the litter resistance `rˡⁱᵗ` and, on the moist-soil branch, the soil
     # surface resistance `rᵍ` in series with the undercanopy path (Sakaguchi & Zeng 2009).
     rˡⁱᵗ = litter_resistance(c.litter_resistance, u★)
-    rᵍ   = soil_surface_resistance(c.wet_soil_resistance, Ψₛ.hydrology.saturation)
+    rᵍ   = soil_surface_resistance(c.wet_soil_resistance, Ψˡᵃ.𝒮)
     gˡⁱᵗ = ρᵃᵗ * wᵘᶜ / (1 + wᵘᶜ * rˡⁱᵗ)
     gᵍᵛ⁺ = ρᵃᵗ * wᵘᶜ / (1 + wᵘᶜ * (rˡⁱᵗ + rᵍ))
     Λᵍ   = convert(FT, ground_conductance(c.ground_heat_flux))
@@ -623,8 +619,8 @@ radiation state.
     maximum_temperature_step = convert(FT, 25)
 
     for _ in 1:c.inner_iterations
-        gˡᵉᵃᶠᵛ, gʷᵉᵗ, qˡᵉᵃᶠ = leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜ, gˡᵇ, Δt, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, transmittance)
-        gᵍᵛ, qᵍ, dqᵍ = soil_vapor_terms(c.soil_humidity, Tᵍ, gᵍᵛ⁺, gˡⁱᵗ, Ψₛ, Ψₐ, ℙₐ)
+        gˡᵉᵃᶠᵛ, gʷᵉᵗ, qˡᵉᵃᶠ = leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜ, gˡᵇ, Δt, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
+        gᵍᵛ, qᵍ, dqᵍ = soil_vapor_terms(c.soil_humidity, Tᵍ, gᵍᵛ⁺, gˡⁱᵗ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
 
         Σgᵛ = gᵃᵛ + gˡᵉᵃᶠᵛ + gᵍᵛ
         mᵛ  = node_memory(Σgᵛ, Cᵛ, Δt)
@@ -656,8 +652,8 @@ radiation state.
     end
 
     # The node and the flux partition at the final skins.
-    gˡᵉᵃᶠᵛ, gʷᵉᵗ, qˡᵉᵃᶠ = leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜ, gˡᵇ, Δt, Ψₛ, Ψₐ, Ψᵣ, ℙₐ, transmittance)
-    gᵍᵛ, qᵍ, _ = soil_vapor_terms(c.soil_humidity, Tᵍ, gᵍᵛ⁺, gˡⁱᵗ, Ψₛ, Ψₐ, ℙₐ)
+    gˡᵉᵃᶠᵛ, gʷᵉᵗ, qˡᵉᵃᶠ = leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜ, gˡᵇ, Δt, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
+    gᵍᵛ, qᵍ, _ = soil_vapor_terms(c.soil_humidity, Tᵍ, gᵍᵛ⁺, gˡⁱᵗ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
     Σgᵛ = gᵃᵛ + gˡᵉᵃᶠᵛ + gᵍᵛ
     Tᵃᶜ, equilibrium_temperature = canopy_air_node(T⁻, (gᵍᵀ, gˡᵉᵃᶠᵀ, gᵃᵀ), (Tᵍ, Tˡᵉᵃᶠ, θᵃᵗ), mᵀ)
     qᵃᶜ, equilibrium_humidity    = canopy_air_node(q⁻, (gᵍᵛ, gˡᵉᵃᶠᵛ, gᵃᵛ), (qᵍ, qˡᵉᵃᶠ, qᵃᵗ), node_memory(Σgᵛ, Cᵛ, Δt))
@@ -688,14 +684,14 @@ end
 
 # A diagnostic node is re-solved every iterate; one shared solve returns both node values.
 @inline function interface_temperature_and_humidity(c::DiagnosticCanopyGroundSurface, ::CanopyGroundSurface,
-                                                    Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ)
-    solution = canopy_air_space_solve(c, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+                                                    Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ)
+    solution = canopy_air_space_solve(c, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
     return solution.Tᵃᶜ, solution.qᵃᶜ
 end
 
 # A prognostic node is model state, frozen through the fixed point.
 @inline interface_temperature_and_humidity(::PrognosticCanopyGroundSurface, ::CanopyGroundSurface,
-                                           Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ) =
+                                           Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ) =
     (Ψₛ.temperature, Ψₛ.specific_humidity)
 
 """

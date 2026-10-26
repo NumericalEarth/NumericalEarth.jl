@@ -31,24 +31,23 @@ power_law_soil_humidity(FT) = DryLayerHumidity(FT;
 function canopy_arguments(FT; air_temperature = 300, air_specific_humidity = 0.008, wind = 3, albedo = 0, emissivity = 0,
                           flux_scales = (0.26, 1e-3, -1e-3, 0, 0), temperature = 300, saturation = 0.3,
                           vapor_diffusivity = 2.4e-5, canopy_water_storage = 0, canopy_water_capacity = 0,
-                          skin_temperature = 298, leaf_area_index = 3)
-    hydrology = (saturation = FT(saturation), effective_vapor_diffusivity = FT(vapor_diffusivity),
-                 canopy_water_storage = FT(canopy_water_storage), canopy_water_capacity = FT(canopy_water_capacity))
-    energy = (temperature = FT(skin_temperature), thermal_exchange_depth = FT(0.05), time_step = FT(0))
+                          land_temperature = 298, leaf_area_index = 3)
     Ψₛ = AirLandInterfaceState(InterfaceFluxScales(FT.(flux_scales)...), InterfaceVelocities(FT(0), FT(0)),
-                               FT(temperature), FT(0.012), hydrology, energy, (leaf_area_index = FT(leaf_area_index),))
+                               FT(temperature), FT(0.012))
     Ψₐ = (z = FT(10), u = FT(wind), v = FT(0), T = FT(air_temperature), p = FT(101325), q = FT(air_specific_humidity), h_bℓ = FT(600))
-    Ψᵢ = (u = FT(0), v = FT(0), T = FT(298))
+    Ψˡᵃ = (T = FT(land_temperature), 𝒮 = FT(saturation), effective_vapor_diffusivity = FT(vapor_diffusivity),
+           canopy_water_storage = FT(canopy_water_storage), canopy_water_capacity = FT(canopy_water_capacity),
+           thermal_exchange_depth = FT(0.05), time_step = FT(0), leaf_area_index = FT(leaf_area_index))
     Ψᵣ = AirLandRadiationState(FT(5.670374e-8), FT(albedo), FT(emissivity), FT(-600), FT(-350))
     ℙₐ = (thermodynamics_parameters = AtmosphereThermodynamicsParameters(FT), gravitational_acceleration = FT(9.81))
-    return Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ
+    return Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ
 end
 
 canopy_solve(surface, FT = Float64; kw...) = canopy_air_space_solve(surface, canopy_arguments(FT; kw...)...)
 
 # Dry warm air over a bare (LAI = 0) ground; χθ = 0 decouples the node thermally to isolate the ground vapor path.
 ground_vapor_state(𝒮) = (air_temperature = 305, air_specific_humidity = 0.006, flux_scales = (0.26, 1e-3, -1e-3, 0, 1/6),
-                         saturation = 𝒮, skin_temperature = 300, leaf_area_index = 0)
+                         saturation = 𝒮, land_temperature = 300, leaf_area_index = 0)
 
 @testset "CanopyGroundSurface" begin
     canopy_surface = canopy_ground_surface(Float64)
@@ -168,8 +167,8 @@ end
     @test all(E .> 50)
     @test issorted(E)
 
-    Ψₛ, Ψₐ, _, _, ℙₐ = canopy_arguments(Float64; state(0.1)...)
-    Gᵉ, qᵉ, fᵈ = dry_layer_terms(soil, 300.0, Ψₛ, Ψₐ, ℙₐ)
+    Ψₛ, Ψₐ, Ψˡᵃ, _, ℙₐ = canopy_arguments(Float64; state(0.1)...)
+    Gᵉ, qᵉ, fᵈ = dry_layer_terms(soil, 300.0, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℙₐ.thermodynamics_parameters, Ψₐ.T, Ψₐ.p, Ψₐ.q)
     @test fᵈ > 0.99
     @test fᵈ * Gᵉ + (1 - fᵈ) * (ρᵃᵗ * 0.5) ≈ Gᵉ rtol = 0.02

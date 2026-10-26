@@ -83,29 +83,22 @@ end
 soil_hydrology(hydrology) = hydrology
 soil_hydrology(hydrology::InterceptingHydrology) = hydrology.soil
 
-function InterfaceComputations.surface_hydrology(land::SlabLand, stress::PlantAvailableWaterStress, grid)
-    hydrology = soil_hydrology(land.hydrology)
-    return plant_available_water(hydrology, stress, grid)
+# The plant-stress endpoints are fixed by the soil's retention curve, so they are evaluated once.
+(s::InterfaceComputations.SaturationAtSuction)(land::SlabLand) =
+    saturation_at_suction(soil_hydrology(land.hydrology), s.suction_head, land.grid)
+
+function saturation_at_suction(hydrology::VariablySaturatedHydrology, suction_head, grid)
+    saturation = KernelFunctionOperation{Center, Center, Nothing}(effective_saturation, grid, hydrology.retention_curve,
+                                                                  convert(eltype(grid), suction_head))
+    return compute!(Field(saturation))
 end
 
-# The stress endpoints are fixed by the retention curve, so they are evaluated once.
-function plant_available_water(hydrology::VariablySaturatedHydrology, stress, grid)
-    curve = hydrology.retention_curve
-    FT = eltype(grid)
-    endpoint(head) = compute!(Field(KernelFunctionOperation{Center, Center, Nothing}(effective_saturation,
-                                                                                     grid, curve, convert(FT, head))))
-    return (; field_capacity_saturation = endpoint(stress.field_capacity_head),
-              wilting_point_saturation = endpoint(stress.wilting_point_head))
-end
-
-plant_available_water(hydrology, stress, grid) =
+saturation_at_suction(hydrology, suction_head, grid) =
     throw(ArgumentError("PlantAvailableWaterStress requires soil water retention physics."))
 
-function InterfaceComputations.surface_hydrology(land::SlabLand, humidity::DryLayerHumidity, grid)
-    vapor = humidity.vapor_exchange
-    diffusivity = soil_vapor_diffusivity(soil_hydrology(land.hydrology), vapor.tortuosity,
-                                       vapor, land.saturation, grid)
-    return (; effective_vapor_diffusivity=diffusivity)
+function (d::InterfaceComputations.SoilVaporDiffusivity)(land::SlabLand)
+    vapor = d.vapor_exchange
+    return soil_vapor_diffusivity(soil_hydrology(land.hydrology), vapor.tortuosity, vapor, land.saturation, land.grid)
 end
 
 soil_vapor_diffusivity(hydrology, ::ConstantTortuosity, vapor, saturation, grid) = vapor.molecular_diffusivity
@@ -122,10 +115,3 @@ end
     θˡ = θʳ + saturation[i, j, 1] * (ν - θʳ)
     return effective_vapor_diffusivity(vapor, ν, θˡ)
 end
-
-InterfaceComputations.surface_hydrology(land::SlabLand, humidity::CanopyConductanceHumidity, grid) =
-    surface_hydrology(land, humidity.moisture_stress, grid)
-InterfaceComputations.surface_hydrology(land::SlabLand, humidity::FractionalHumidity, grid) =
-    surface_hydrology(land, humidity.efficiency, grid)
-InterfaceComputations.surface_hydrology(land::SlabLand, canopy::CanopyGroundSurface, grid) =
-    merge(surface_hydrology(land, canopy.soil_humidity, grid), surface_hydrology(land, canopy.canopy_humidity, grid))

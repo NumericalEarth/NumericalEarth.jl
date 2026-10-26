@@ -36,13 +36,13 @@ end
 
     for FT in (Float32, Float64)
         Ψₛ = AirLandInterfaceState(InterfaceFluxScales(FT(0.3), FT(0.1), FT(-2e-4)), InterfaceVelocities(FT(0), FT(0)),
-                                   FT(300), FT(8e-3), (saturation=FT(0.6),), (temperature=FT(300),))
+                                   FT(300), FT(8e-3))
         Ψₐ = (T=FT(290), p=FT(1e5), q=FT(6e-3), z=FT(10))
-        Ψᵢ = (u=FT(0), v=FT(0), T=FT(300))
+        Ψˡᵃ = (T=FT(300), 𝒮=FT(0.6))
         Ψᵣ = (σ=FT(0), α=FT(0), ϵ=FT(0), ℐꜜˢʷ=FT(0), ℐꜜˡʷ=FT(0))
-        ℙₛ = (specific_humidity_formulation=FractionalHumidity(AtmosphericThermodynamics.Liquid(); efficiency=FT(1)),)
+        ℙₛ = (specific_humidity=FractionalHumidity(AtmosphericThermodynamics.Liquid(); efficiency=FT(1)),)
         ℙₐ = (thermodynamics_parameters=AtmosphereThermodynamicsParameters(FT), gravitational_acceleration=FT(9.81))
         skin = SoilSkinTemperature(FT(1.5), FT(0.05); storage=DiagnosticSkin())
-        @test @inferred(compute_interface_temperature(skin, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, (;))) isa FT
+        @test @inferred(compute_interface_temperature(skin, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, (;))) isa FT
     end
 end

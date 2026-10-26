@@ -1,5 +1,5 @@
 #####
-##### Moisture-availability models: `evaporation_efficiency(model, hydrology)` maps the land
+##### Moisture-availability models: `evaporation_efficiency(model, Ψˡᵃ)` maps the land
 ##### surface saturation 𝒮 to a factor β ∈ [0, 1].
 #####
 
@@ -13,19 +13,19 @@ critical saturation `𝒮ᶜ`, and the efficiency falls off linearly below it,
 β(𝒮) = \\min(𝒮 / 𝒮ᶜ, 1),   𝒮 = Mˡᵃ / Mˡᵃ⁺.
 ```
 
-Used as the `efficiency` of [`FractionalHumidity`](@ref).
+Used as the `efficiency` of [`FractionalHumidity`](@ref); reads the land saturation `𝒮`.
 """
 struct CriticalSaturation{FT}
     critical_saturation :: FT
 end
 
-@inline function evaporation_efficiency(𝒮ᶜ::CriticalSaturation, hydrology)
-    𝒮 = hydrology.saturation
+@inline function evaporation_efficiency(𝒮ᶜ::CriticalSaturation, Ψˡᵃ)
+    𝒮 = Ψˡᵃ.𝒮
     return min(𝒮 / convert(typeof(𝒮), 𝒮ᶜ.critical_saturation), one(𝒮))
 end
 
 # Constant efficiency — a uniformly sub-saturated surface; reads no land state.
-@inline evaporation_efficiency(β::Number, hydrology) = β
+@inline evaporation_efficiency(β::Number, Ψˡᵃ) = β
 
 """
     PlantAvailableWaterStress(FT = Oceananigans.defaults.FloatType;
@@ -68,11 +68,28 @@ function PlantAvailableWaterStress(FT::Type = Oceananigans.defaults.FloatType;
                                      convert(FT, wilting_point_head))
 end
 
-@inline function evaporation_efficiency(::PlantAvailableWaterStress, hydrology)
-    𝒮   = hydrology.saturation
+"""
+    SaturationAtSuction(suction_head)
+
+Land state accessor for the effective saturation at `suction_head` (m) on the land's own
+retention curve. A land that supports [`PlantAvailableWaterStress`](@ref) implements
+`(s::SaturationAtSuction)(land)`.
+"""
+struct SaturationAtSuction{FT}
+    suction_head :: FT
+end
+
+# The land publishes the stress endpoints, so the interface never sees the retention curve.
+land_state_accessors(stress::PlantAvailableWaterStress) =
+    (T = land_temperature, 𝒮 = land_saturation,
+     field_capacity_saturation = SaturationAtSuction(stress.field_capacity_head),
+     wilting_point_saturation  = SaturationAtSuction(stress.wilting_point_head))
+
+@inline function evaporation_efficiency(::PlantAvailableWaterStress, Ψˡᵃ)
+    𝒮   = Ψˡᵃ.𝒮
     FT  = typeof(𝒮)
-    𝒮ᶠᶜ = convert(FT, hydrology.field_capacity_saturation)
-    𝒮ʷᵖ = convert(FT, hydrology.wilting_point_saturation)
+    𝒮ᶠᶜ = convert(FT, Ψˡᵃ.field_capacity_saturation)
+    𝒮ʷᵖ = convert(FT, Ψˡᵃ.wilting_point_saturation)
     return clamp((𝒮 - 𝒮ʷᵖ) / (𝒮ᶠᶜ - 𝒮ʷᵖ), zero(FT), one(FT))
 end
 

@@ -5,22 +5,22 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     AirLandInterfaceState,
     InterfaceFluxScales,
     InterfaceVelocities,
-    saturation_specific_humidity, surface_hydrology
+    saturation_specific_humidity, SoilVaporDiffusivity
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 const ℂ = AtmosphereThermodynamicsParameters(Float64)
 qᵛ⁺(T) = saturation_specific_humidity(ℂ, T, 1.0e5, AtmosphericThermodynamics.Liquid())
 
-# `compute_interface_humidity(q, Tᵍ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)`; the dry-layer soil model ignores the radiation state Ψᵣ.
+# `compute_interface_humidity(q, Tᵍ, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)`; the dry-layer soil model ignores the radiation state Ψᵣ.
 function humidity(q, 𝒮; Tˡᵃ = 290.0, Tᵍ = 300.0, pᵃᵗ = 1.0e5, qᵃᵗ = 1.0e-2, Tᵃᵗ = 295.0, u★ = 0.3, q★ = 2.0e-4, qⁱⁿ⁻ = 0.005)
     Ψₐ = (T = Tᵃᵗ, p = pᵃᵗ, q = qᵃᵗ, u = 1.0, v = 0.0, z = 10.0, h_bℓ = 1000.0)
     χq = q★ / (qᵃᵗ - qⁱⁿ⁻)   # transfer coefficient consistent with q★ = χq Δq
-    Ψₛ = AirLandInterfaceState(InterfaceFluxScales(u★, 0.0, q★, 0.0, χq), InterfaceVelocities(0.0, 0.0), Tᵍ, qⁱⁿ⁻,
-                               (saturation = 𝒮, effective_vapor_diffusivity = q.vapor_exchange.molecular_diffusivity),
-                               (temperature = Tˡᵃ, thermal_exchange_depth = 0.10))
+    Ψₛ = AirLandInterfaceState(InterfaceFluxScales(u★, 0.0, q★, 0.0, χq), InterfaceVelocities(0.0, 0.0), Tᵍ, qⁱⁿ⁻)
+    Ψˡᵃ = (T = Tˡᵃ, 𝒮 = 𝒮, effective_vapor_diffusivity = q.vapor_exchange.molecular_diffusivity,
+           thermal_exchange_depth = 0.10)
     ℙₐ = (thermodynamics_parameters = ℂ, surface_layer_height = 10.0, gravitational_acceleration = 9.81)
-    return compute_interface_humidity(q, Tᵍ, Ψₛ, Ψₐ, (T = Tˡᵃ,), nothing, ℙₐ)
+    return compute_interface_humidity(q, Tᵍ, Ψₛ, Ψₐ, Ψˡᵃ, nothing, ℙₐ)
 end
 
 @testset "Soil vapor diffusion follows porosity and residual water" begin
@@ -36,7 +36,7 @@ end
             dry_layer_depth = StorageBasedDryLayerDepth(maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5),
             vapor_exchange = DryLayerVaporPistonVelocity(minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
                                                          tortuosity = PowerLawTortuosity()))
-        diffusivity = Field(surface_hydrology(land, formulation, grid).effective_vapor_diffusivity)
+        diffusivity = Field(SoilVaporDiffusivity(formulation.vapor_exchange)(land))
         for 𝒮 in (0.2, 0.6)
             θ = @. θʳ + 𝒮 * (ν - θʳ)
             set!(land; M = 1000 .* θ)

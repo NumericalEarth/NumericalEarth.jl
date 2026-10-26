@@ -6,7 +6,7 @@ using Oceananigans.TimeSteppers: update_state!, time_step!
 using Oceananigans.OutputReaders: OnDisk, InMemory
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyGroundSurface, CanopyConductanceHumidity,
-    CriticalSaturation, InteractiveAbsorbedPAR, SoilConductiveFlux, ComponentExchanger
+    CriticalSaturation, InteractiveAbsorbedPAR, SoilConductiveFlux, land_canopy_water_capacity
 using NumericalEarth.Lands: SlabLand, SlabEnergy, VariablySaturatedHydrology, InterceptingHydrology,
     VanGenuchtenRetention, VanGenuchtenConductivity, canopy_store_update
 
@@ -68,7 +68,7 @@ end
     end
 
     # LAI(t = 3) = 4 lies beyond the two snapshots loaded when the series was opened
-    capacity = ComponentExchanger(land, grid).state.canopy_water_capacity
+    capacity = land_canopy_water_capacity(land)
     @test scalar(compute!(Field(capacity))) ≈ 0.1 * 4
 end
 
