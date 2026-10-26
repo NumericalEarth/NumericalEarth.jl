@@ -220,6 +220,12 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``\alpha`` | `α` | albedo | Surface reflectivity (–) |
 | ``\epsilon`` | `ϵ` | emissivity | Surface emissivity (–) |
 
+## Vegetation properties
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``L`` | `leaf_area_index`, `LAI` | leaf area index | One-sided leaf area per unit ground area (m² m⁻²) |
+
 ## Similarity theory / surface layer
 
 | Math | Code | Property | Description |
@@ -302,6 +308,7 @@ superscript band.
 | ``\tau^y`` | `τʸ` | meridional kinematic stress | Kinematic meridional momentum flux (m² s⁻²) |
 | ``\rho \tau^x`` | `ρτˣ` | zonal wind stress | Mass-weighted zonal stress (N m⁻²) |
 | ``\rho \tau^y`` | `ρτʸ` | meridional wind stress | Mass-weighted meridional stress (N m⁻²) |
+| ``\th`` | `þ` | ocean fraction | Areal fraction of a surface cell covered by ocean (`ocean_fraction`); the land fraction is ``1 - \th`` (–) |
 
 ## Net ocean fluxes
 
@@ -373,6 +380,7 @@ Most symbols can be entered in the Julia REPL and in editors with Julia support 
 | `α` | `\alpha` | Alpha (albedo) |
 | `ϵ` | `\epsilon` | Epsilon (emissivity) |
 | `ℵ` | `\aleph` | Aleph (ice concentration) |
+| `þ` | `\th` | Thorn (ocean fraction) |
 | `ϰ` | `\varkappa` | Varkappa (von Kármán constant) |
 | `Ψ` | `\Psi` | Capital Psi (interface state) |
 | `★` | `\bigstar` | Star (similarity-theory scale) |

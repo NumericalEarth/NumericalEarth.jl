@@ -1,6 +1,6 @@
 module Bathymetry
 
-export regrid_bathymetry, regrid_topography, smooth_topography!, ORCAGrid
+export regrid_bathymetry, regrid_topography, regrid_ocean_fraction, smooth_topography!, connect_basins!, ORCAGrid
 export Basin
 export atlantic_ocean_basin, indian_ocean_basin, southern_ocean_basin, pacific_ocean_basin, arctic_ocean_basin
 
@@ -14,9 +14,10 @@ using Oceananigans.BoundaryConditions: BoundaryConditions
 using Oceananigans.DistributedComputations: DistributedComputations, DistributedGrid,
                                             reconstruct_global_grid, all_reduce
 using Oceananigans.Fields: Field, interior, interpolate!
-using Oceananigans.Grids: x_domain, y_domain, topology, Face, Center,
+using Oceananigans.Grids: x_domain, y_domain, topology, λnode, φnode, Face, Center,
                           Flat, Periodic, Bounded, LeftConnected, RightConnected,
-                          RectilinearGrid, LatitudeLongitudeGrid, OrthogonalSphericalShellGrid
+                          RectilinearGrid, LatitudeLongitudeGrid, OrthogonalSphericalShellGrid,
+                          λnodes, φnodes
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using Oceananigans.Utils: launch!
 using NCDatasets: NCDatasets, Dataset
@@ -31,6 +32,7 @@ include("label_ocean_basins.jl")
 include("regrid_bathymetry.jl")
 include("ocean_basin.jl")
 include("smooth_topography.jl")
+include("connect_basins.jl")
 include("orca_grid.jl")
 
 end # module
