@@ -13,7 +13,27 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: BulkTemperature, S
                                                               default_ai_temperature, ThreeEquationHeatFlux
 using ClimaSeaIce.Rheologies
 
-@inline kernel_melting_temperature(i, j, k, grid, liquidus, S) = @inbounds melting_temperature(liquidus, S[i, j, k])
+@inline kernel_melting_temperature(i, j, k, grid, liquidus, S) =
+    @inbounds melting_temperature(liquidus, S[i, j, k], znode(i, j, k, grid, Center(), Center(), Center()))
+
+@testset "Deep ocean initialization uses in situ freezing" begin
+    grid = RectilinearGrid(size = 2, z = (-1000, 0), topology = (Flat, Flat, Bounded))
+    ocean = ocean_simulation(grid; momentum_advection = nothing, tracer_advection = nothing,
+                             closure = nothing, radiative_forcing = nothing)
+    sea_ice = sea_ice_simulation(grid, ocean; dynamics = nothing)
+    liquidus = sea_ice.model.phase_transitions.liquidus
+    salinity = 35.0
+    surface_freezing = melting_temperature(liquidus, salinity)
+    bottom_depth = znode(1, 1, 1, grid, Center(), Center(), Center())
+    bottom_freezing = melting_temperature(liquidus, salinity, bottom_depth)
+    initial_temperature = (surface_freezing + bottom_freezing) / 2
+
+    set!(ocean.model; T = initial_temperature, S = salinity)
+    above_freezing_ocean_temperature!(ocean, grid, sea_ice)
+
+    @test bottom_freezing < initial_temperature < surface_freezing
+    @test Array(interior(ocean.model.tracers.T))[1, 1, 1] ≈ initial_temperature
+end
 
 @testset "Time stepping test" begin
     for arch in test_architectures
