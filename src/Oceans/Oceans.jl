@@ -35,7 +35,6 @@ using SeawaterPolynomials: SeawaterPolynomials
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState, θ_from_Θ
 
 using ..EarthSystemModels: EarthSystemModels,
-                           component_model,
                            ocean_surface_velocities,
                            ocean_surface_salinity,
                            DegreesKelvin,
