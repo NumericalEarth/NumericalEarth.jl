@@ -3,13 +3,20 @@
 #####
 #
 # A nested child's lateral boundary conditions interpolate parent state that was produced over the
-# parent's (smoother) orography. Blending the child elevation toward the parent's over the outermost
-# cells makes the terrain at the open boundaries consistent with that state, avoiding spurious
-# boundary-layer flows where the two orographies disagree.
+# parent's (smoother) orography or bathymetry. Blending the child elevation toward the parent's over the
+# outermost cells makes the terrain at the open boundaries consistent with that state, avoiding spurious
+# boundary flows where the two disagree.
 
 using KernelAbstractions: @kernel, @index
 using Oceananigans.Architectures: architecture
+using Oceananigans.Grids: Center, minimum_xspacing
 using Oceananigans.Utils: launch!
+
+# Blend-zone width in cells from a physical length: a fixed cell count steepens the parent→child
+# terrain transition ~1/Δx as resolution increases, and the steeper σ-surface tilt destabilizes
+# high-resolution runs at the boundary corner.
+default_terrain_blend_width(grid, blend_length) =
+    max(1, round(Int, blend_length / minimum_xspacing(grid, Center(), Center(), Center())))
 
 @kernel function _blend_parent_terrain!(elevation, parent_elevation, width, Nx, Ny)
     i, j = @index(Global, NTuple)

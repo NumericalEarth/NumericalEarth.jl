@@ -277,6 +277,30 @@ end
     @test abs(mean_sea_level_drift) < 1e-6
 end
 
+@testset "nested_ocean_model blends the child bathymetry toward the parent's seafloor on $(arch)" for arch in test_architectures
+    parent_ocean = nesting_test_parent(arch)
+    child_grid = nesting_test_child_grid(arch)
+
+    # Without bathymetry the grid passes through
+    @test nested_ocean_model(parent_ocean, child_grid).child.grid isa LatitudeLongitudeGrid
+
+    bathymetry = Field{Center, Center, Nothing}(child_grid)
+    set!(bathymetry, -1000)
+    parent_bottom_height = Field{Center, Center, Nothing}(parent_ocean.grid)
+    set!(parent_bottom_height, -500)
+
+    model = nested_ocean_model(parent_ocean, child_grid; bathymetry, parent_bottom_height, bathymetry_blend_width = 4)
+    grid = model.child.grid
+    @test grid isa ImmersedBoundaryGrid
+
+    # The parent's seafloor at the boundary, the child's inside the blend
+    bottom_height = Array(interior(grid.immersed_boundary.bottom_height))
+    @test bottom_height[1, 10, 1] ≈ -500
+    @test bottom_height[20, 10, 1] ≈ -500
+    @test bottom_height[10, 1, 1] ≈ -500
+    @test bottom_height[10, 10, 1] ≈ -1000
+end
+
 @testset "bottom_height_from_mask: the seafloor a dataset marks with missing values" begin
     # z runs bottom-to-top: k = 1 is the deepest cell, whose bottom face sits at -100
     grid = LatitudeLongitudeGrid(size = (3, 1, 4), longitude = (-1, 1), latitude = (-1, 1),
