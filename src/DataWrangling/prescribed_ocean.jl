@@ -53,7 +53,7 @@ end
 # The native dates of `dataset` that cover `dates`, plus the neighboring samples needed to interpolate up to
 # `first(dates)` and `last(dates)` when the samples sit at the centers of their averaging windows.
 function bracketing_dates(dataset, name, dates)
-    available = all_dates(dataset, name)
+    available = collect(all_dates(dataset, name))
     native = expand_dates(dataset, name, dates)
     start, stop = comparable_datetime(first(dates)), comparable_datetime(last(dates))
     center(date) = window_center(Metadatum(name; dataset, date))
