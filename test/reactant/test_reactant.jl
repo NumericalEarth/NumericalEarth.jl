@@ -123,7 +123,9 @@ end
 @testset "NestedModel with a prescribed parent steps under compilation" begin
     grid = RectilinearGrid(ReactantState(); size = (4, 4, 4), extent = (1, 1, 1), topology = (Periodic, Periodic, Bounded))
     parent = PrescribedAtmosphere(grid, [0.0, 10.0])
-    nested = NumericalEarth.NestedModels.NestedModel(parent, HydrostaticFreeSurfaceModel(grid))
+    # An explicit free surface: the implicit one's FFT solver works on complex arrays, which Reactant cannot raise
+    child = HydrostaticFreeSurfaceModel(grid; free_surface = ExplicitFreeSurface())
+    nested = NumericalEarth.NestedModels.NestedModel(parent, child)
     @test parent.clock.time isa Reactant.ConcreteRNumber
 
     step! = @compile raise_first = true raise = true time_step!(nested, 1.0)
