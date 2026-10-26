@@ -42,10 +42,4 @@ same_time_type(::Reactant.ConcreteRNumber{FT}, ::TT) where {FT,TT} = FT == TT
 same_time_type(::Reactant.ConcreteRNumber{FT}, ::Reactant.ConcreteRNumber{TT}) where {FT,TT} = FT == TT
 same_time_type(::FT, ::Reactant.ConcreteRNumber{TT}) where {FT,TT} = FT == TT
 
-# A NetCDF slice arrives as `Array{Union{Missing, T}}`, an element type Reactant cannot hold
-# (EnzymeAD/Reactant.jl#3569). It moves as a float array with `missing` as NaN, which is what
-# `nan_convert_missing` makes of `missing` in the region kernel on every other architecture.
-Oceananigans.Architectures.on_architecture(arch::ReactantState, data::Array{Union{Missing, T}}) where T <: AbstractFloat =
-    Oceananigans.Architectures.on_architecture(arch, coalesce.(data, convert(T, NaN)))
-
 end # module NumericalEarthReactantExt

@@ -211,16 +211,6 @@ blend(scheme, data, c, k, mangling, FT) = blend(scheme, data, c, k, mangling, mi
     @inbounds dst[i, j, k] = d
 end
 
-# TODO: upstream to Oceananigans.Architectures alongside its SubArray/OffsetArray methods.
-# Without it, host data arriving reshaped — e.g. a 2-D NetCDF variable reshaped to (Nx, Ny, 1) —
-# falls through the generic identity fallback and reaches GPU kernels as CPU memory. Host data only,
-# so that it does not overlap the methods for reshaped device and traced arrays.
-const HostData{T} = Union{Array{T}, SubArray{T, <:Any, <:Array}}
-
-Oceananigans.Architectures.on_architecture(arch::AbstractSerialArchitecture,
-                                           data::Base.ReshapedArray{T, <:Any, <:HostData{T}}) where T <: Union{Missing, Real} =
-    reshape(on_architecture(arch, parent(data)), size(data))
-
 """
     set_region_data!(target, data, λc, φc, metadata)
 
