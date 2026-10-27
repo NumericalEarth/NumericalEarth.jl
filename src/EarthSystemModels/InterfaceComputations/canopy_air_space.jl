@@ -225,8 +225,8 @@ end
 Two-source canopy + ground surface with a canopy-air node, for forests: tall vegetation
 whose crowns enclose a canopy air space with the ground as a second source beneath it.
 Low vegetation (grass, crops) has no separable canopy air layer and belongs to a
-single-source [`CanopyConductanceHumidity`](@ref) over a soil skin. Solves the
-leaf temperature `Tˡᵉᵃ`, the ground surface temperature `Tᵍʳᵒ`, and the canopy-air node
+single-source [`CanopyConductanceHumidity`](@ref) over the ground surface. Solves the
+leaf temperature `Tˡᵉᵃ`, the ground temperature `Tᵍʳᵒ`, and the canopy-air node
 `(Tᵃᶜᵃⁿ, qᵃᶜᵃⁿ)` inside the Monin–Obukhov fixed point (diagnostic node, the default),
 or couples to the land component's prognostic canopy-air reservoir. Pass it as the interface state
 formulation to solve temperature and specific humidity together. Over an
@@ -258,7 +258,7 @@ Fields:
 - `ground_surface_resistance` : bulk ground-surface resistance in series on both ground
   vapor branches (a [`GroundSurfaceResistance`](@ref), the default, or a constant `Number`
   in s m⁻¹), or `nothing` for none.
-- `inner_iterations` : quasi-Newton iterations of the coupled skin solve.
+- `inner_iterations` : quasi-Newton iterations of the coupled leaf and ground temperature solve.
 
 The four optics slots accept a per-cell `Field{Center, Center, Nothing}` alongside a
 `Number`, so a satellite albedo product reaches the two-source radiation balance cell by
@@ -409,7 +409,7 @@ end
 end
 
 # Ground vapor conductance `gᵍʳᵒᵛ`, source humidity `qᵍʳᵒ`, and the source's slope `dqᵍʳᵒ` in the
-# ground surface temperature `Tᵍʳᵒ`: the dry-layer branch (front humidity qᵉ through Gᵉ in series with the
+# ground temperature `Tᵍʳᵒ`: the dry-layer branch (front humidity qᵉ through Gᵉ in series with the
 # ground-surface + undercanopy path `gᵈᵇʳ`) blended with the saturated-skin branch (qᵍʳᵒ⁺ through gᵍʳᵒᵛ⁺)
 # by the soil model's weight `fᵈᵇʳ`.
 @inline function soil_vapor_terms(soil, Tᵍʳᵒ, gᵍʳᵒᵛ⁺, gᵈᵇʳ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
@@ -524,7 +524,7 @@ The leaf-conductance derivative is evaluated by a one-sided difference.
     ground_absorbed_shortwave = transmittance * (1 - αᵍʳᵒ) * downwelling_shortwave
     effective_albedo = (1 - transmittance) * αˡᵉᵃ + transmittance * αᵍʳᵒ
 
-    # Thermal node: its conductances are fixed through the skin iteration. The node is the
+    # Thermal node: its conductances are fixed through the temperature iteration. The node is the
     # equilibrium mean of its sources blended with the start-of-step node by the memory `m`,
     # so its sensitivity to source `i` is (1 − m) gᵢ/Σg.
     Σgᵀ = gᵃᵀ + gˡᵉᵃᵀ + gᵍʳᵒᵀ
@@ -561,7 +561,7 @@ The leaf-conductance derivative is evaluated by a one-sided difference.
         dqˡᵉᵃ = saturation_humidity_slope(ℂᵃᵗ, Tˡᵉᵃ, pᵃᵗ, c.canopy_humidity.phase, qˡᵉᵃ)
 
         # Leaf and ground energy residuals and their Jacobian, including each balance's
-        # dependence on the other skin through the node and the longwave exchange.
+        # dependence on the other surface temperature through the node and the longwave exchange.
         Rˡᵉᵃ = leaf_absorbed_shortwave + leaf_net_longwave - gˡᵉᵃᵀ * (Tˡᵉᵃ - Tᵃᶜᵃⁿ) - ℒ * gˡᵉᵃᵛ * (qˡᵉᵃ - qᵃᶜᵃⁿ)
         Rᵍʳᵒ = ground_absorbed_shortwave + ground_net_longwave - gᵍʳᵒᵀ * (Tᵍʳᵒ - Tᵃᶜᵃⁿ) - ℒ * gᵍʳᵒᵛ * (qᵍʳᵒ - qᵃᶜᵃⁿ) - Λᵍʳᵒ * (Tᵍʳᵒ - Tˡᵃ)
         ∂Rˡᵉᵃ∂Tˡᵉᵃ = 4 * ϵˡᵉᵃ * σ * Tˡᵉᵃ^3 * (ϵˡᵉᵃ * (1 - ϵᵍʳᵒ) - 2) - gˡᵉᵃᵀ * (1 - ∂Tᵃᶜᵃⁿ∂Tˡᵉᵃ) - ℒ * gˡᵉᵃᵛ * (1 - ∂qᵃᶜᵃⁿ∂qˡᵉᵃ) * dqˡᵉᵃ -
@@ -579,7 +579,7 @@ The leaf-conductance derivative is evaluated by a one-sided difference.
         Tᵍʳᵒ    -= clamp(ΔTᵍʳᵒ, -maximum_temperature_step, maximum_temperature_step)
     end
 
-    # The node and the flux partition at the final skins.
+    # The node and the flux partition at the final leaf and ground temperatures.
     gˡᵉᵃᵛ, gʷᵉᵗ, qˡᵉᵃ = leaf_vapor_terms(c, Tˡᵉᵃ, qᵃᶜᵃⁿ, gˡᵇˡ, Δt, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
     gᵍʳᵒᵛ, qᵍʳᵒ, _ = soil_vapor_terms(c.soil_humidity, Tᵍʳᵒ, gᵍʳᵒᵛ⁺, gᵈᵇʳ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
     Σgᵛ = gᵃᵛ + gˡᵉᵃᵛ + gᵍʳᵒᵛ
@@ -633,10 +633,10 @@ temperatures, and the two-source flux partition the land and the radiation read.
 struct CanopyInterfaceDiagnostics{F}
     interface              :: F   # canopy-air node Tᵃᶜᵃⁿ (what MOST sees)
     canopy                 :: F   # leaf temperature Tˡᵉᵃ
-    ground                 :: F   # ground surface temperature Tᵍʳᵒ
+    ground                 :: F   # ground temperature Tᵍʳᵒ
     effective              :: F   # blackbody-equivalent radiating temperature Tʳᵃᵈ
     effective_albedo       :: F   # broadband shortwave albedo of the canopy + ground column
-    ground_heat_flux       :: F   # skin→bulk conduction 𝒬ᵍʳᵒ
+    ground_heat_flux       :: F   # ground→bulk conduction 𝒬ᵍʳᵒ
     canopy_latent_heat     :: F   # leaf latent heat 𝒬ᵛˡᵉᵃ (transpiration + wet canopy)
     ground_latent_heat     :: F   # soil evaporation 𝒬ᵛᵍʳᵒ
     canopy_sensible_heat   :: F   # leaf sensible 𝒬ᵀˡᵉᵃ

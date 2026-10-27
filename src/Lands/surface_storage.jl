@@ -29,9 +29,9 @@ PrognosticCanopyAir(FT::Type = Oceananigans.defaults.FloatType; layer_depth=10) 
 """
 $(TYPEDSIGNATURES)
 
-Ground-skin heat storage for `SlabLand(surface_storage=...)`.
+Ground heat storage for `SlabLand(surface_storage=...)`.
 `heat_capacity` is the areal heat capacity in J m⁻² K⁻¹, supplied as a number or a
-horizontal field. The bulk land heat capacity describes the soil below this skin.
+horizontal field. The bulk land heat capacity describes the soil below the ground surface.
 Temperature is initialized by the coupled interface solve.
 
 ```jldoctest

@@ -87,7 +87,7 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``\mathrm{can}`` | `ᶜᵃⁿ` | canopy | ``M^{\mathrm{can}}`` (canopy water store), ``g^{\mathrm{can}}`` (canopy conductance) |
 | ``\mathrm{acan}`` | `ᵃᶜᵃⁿ` | canopy air | ``T^{\mathrm{acan}}`` (canopy-air temperature) |
 | ``\mathrm{ucan}`` | `ᵘᶜᵃⁿ` | undercanopy | ``w^{\mathrm{ucan}}`` (undercanopy transfer velocity) |
-| ``\mathrm{gro}`` | `ᵍʳᵒ` | ground surface (beneath the canopy, or a bare skin) | ``T^{\mathrm{gro}}`` (ground surface temperature), ``r^{\mathrm{gro}}`` (ground-surface resistance) |
+| ``\mathrm{gro}`` | `ᵍʳᵒ` | ground surface (beneath the canopy, or bare soil) | ``T^{\mathrm{gro}}`` (ground temperature), ``r^{\mathrm{gro}}`` (ground-surface resistance) |
 | ``\mathrm{soi}`` | `ˢᵒⁱ` | soil | ``r^{\mathrm{soi}}`` (moist-soil surface resistance) |
 | ``\mathrm{dbr}`` | `ᵈᵇʳ` | dry-layer branch of the ground vapor exchange | ``f^{\mathrm{dbr}}`` (dry-branch weight), ``g^{\mathrm{dbr}}`` (dry-branch conductance) |
 | ``\mathrm{wet}`` | `ʷᵉᵗ` | wet (intercepted) canopy water | ``J^{\mathrm{wet}}`` (wet-canopy evaporation) |
@@ -148,7 +148,7 @@ component-superscript rule above.
 | ``𝒮`` | `saturation` | surface saturation | Continuous land surface saturation ``\mathrm{clamp}(M/M⁺, 0, 1)``; the interface humidity models derive their availability ``β`` from it (–) |
 | ``𝒮ᶜ`` | `critical_saturation` | critical saturation | Saturation above which the surface evaporates at full efficiency, for `CriticalSaturation` (–) |
 | ``𝒮ᶜ`` | `dry_layer_onset_saturation` | dry-layer onset saturation | Saturation below which a dry surface layer forms, for `StorageBasedDryLayerDepth`; shares the symbol ``𝒮ᶜ`` with `critical_saturation` above (–) |
-| ``T^{\mathrm{gro}}`` | `ground` | ground surface temperature | Temperature of the ground surface the slab conducts to: the skin of a bare-soil tile, or the ground node beneath a canopy in the canopy-air-space two-source solve (K) |
+| ``T^{\mathrm{gro}}`` | `ground` | ground temperature | Temperature of the ground surface that exchanges heat with the bulk slab, over bare soil or beneath a canopy (K) |
 | ``Λ^{\mathrm{gro}}`` | `ground_heat_flux` | ground conductance | Ground↔bulk conduction coefficient ``Λ^{\mathrm{gro}} = κ^T/ℓ^T`` of a `SoilConductiveFlux` (W m⁻² K⁻¹) |
 | ``-\Pi^{fc}`` | `field_capacity_head` | field-capacity suction head | Suction (negative pressure head) at which transpiration becomes unstressed (``β = 1``), for `PlantAvailableWaterStress` (m) |
 | ``-\Pi^{wp}`` | `wilting_point_head` | wilting-point suction head | Suction (negative pressure head) at which transpiration ceases (``β = 0``), for `PlantAvailableWaterStress` (m) |
@@ -226,7 +226,7 @@ and [`InterceptingHydrology`](@ref).
 | ``T^{\mathrm{lea}}`` | – | leaf temperature | Diagnostic temperature of the massless leaf, whose net radiation balances ``\mathcal{Q}^{T\,\mathrm{lea}} + \mathcal{Q}^{v\,\mathrm{lea}}`` (K) |
 | ``T^{\mathrm{acan}}``, ``q^{\mathrm{acan}}`` | – | canopy-air node | Temperature (K) and specific humidity (kg kg⁻¹) of the canopy air the atmosphere exchanges with |
 | ``T^{\mathrm{rad}}`` | `effective_temperature` | effective radiating temperature | Blackbody-equivalent temperature defined by the total upwelling longwave flux above the canopy, ``\sigma (T^{\mathrm{rad}})^4 = \mathscr{I}_\uparrow^{\mathrm{lw}}``. This flux includes thermal emission and reflected downwelling longwave, so ``T^{\mathrm{rad}}`` need not equal ground temperature even over bare soil (K) |
-| ``\mathcal{Q}^{\mathrm{gro}}`` | `ground_heat_flux` | ground heat flux | Skin→bulk conduction ``\mathcal{Q}^{\mathrm{gro}} = \Lambda^{\mathrm{gro}}(T^{\mathrm{gro}} - T^{\mathrm{la}})``, positive down (W m⁻²) |
+| ``\mathcal{Q}^{\mathrm{gro}}`` | `ground_heat_flux` | ground heat flux | Ground→bulk conduction ``\mathcal{Q}^{\mathrm{gro}} = \Lambda^{\mathrm{gro}}(T^{\mathrm{gro}} - T^{\mathrm{la}})``, positive down (W m⁻²) |
 | ``\mathcal{Q}^{T\,\mathrm{lea}}``, ``\mathcal{Q}^{T\,\mathrm{gro}}`` | `𝒬ᵀˡᵉᵃ`, `𝒬ᵀᵍʳᵒ` | per-source sensible heat | Leaf and ground sensible heat into the canopy air, positive up (W m⁻²) |
 | ``\mathcal{Q}^{v\,\mathrm{lea}}``, ``\mathcal{Q}^{v\,\mathrm{gro}}`` | `𝒬ᵛˡᵉᵃ`, `𝒬ᵛᵍʳᵒ` | per-source latent heat | Leaf and ground latent heat into the canopy air, positive up (W m⁻²) |
 | ``g_s`` | – | stomatal conductance | Leaf stomatal conductance from a [`JarvisConductance`](@ref) (mol m⁻² s⁻¹) |

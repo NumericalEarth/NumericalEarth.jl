@@ -24,9 +24,9 @@ a named tuple. A `CanopyInterface` occupies `formulation.state` directly and sol
 the coupled canopy and ground balances. The computed temperatures, humidity, and fluxes
 are stored on the interface.
 
-`SlabLand` stores prognostic canopy-air or skin state through `surface_storage`.
+`SlabLand` stores prognostic canopy-air state or ground temperature through `surface_storage`.
 Use `PrognosticCanopyAir` for canopy-air temperature and humidity, `PrognosticSkin` for
-ground-skin temperature, or `nothing` (the default) for diagnostic interface balances.
+ground temperature, or `nothing` (the default) for diagnostic interface balances.
 
 ```@example interface_fluxes
 using NumericalEarth
@@ -47,9 +47,9 @@ land_model = AtmosphereLandModel(atmosphere, land; atmosphere_land_interface_sta
 ```
 
 The interface solve computes step-mean canopy fluxes and an analytical canopy-air update
-using fixed effective conductances and source states over each time step. Prognostic skin
+using fixed effective conductances and source states over each time step. Prognostic ground
 temperature uses backward Euler with Newton refinement in the interface solve. The land
-step applies each candidate update once. Canopy-air and skin storage
+step applies each candidate update once. Canopy-air and ground heat storage
 are checkpointed with the land. Checkpoints also preserve interface temperatures and flux
 partitions from the completed step so diagnostics remain consistent immediately after pickup.
 
