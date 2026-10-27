@@ -8,6 +8,7 @@
 # velocities relax only their baroclinic part, which integrates to zero over the column and leaves the barotropic
 # flow to the Flather condition.
 
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Forcings: Forcing
 using Oceananigans.Grids: peripheral_node
 using Oceananigans.Operators: Δz
@@ -151,17 +152,21 @@ function relaxation_masks(grid, sides, width)
         end
     end
 
-    μᶜ = 1 .- keep
-    μᵘ = [(μᶜ[clamp(i - 1, 1, Nx), j] + μᶜ[clamp(i, 1, Nx), j]) / 2 for i in 1:Nx+1, j in 1:Ny]
-    μᵛ = [(μᶜ[i, clamp(j - 1, 1, Ny)] + μᶜ[i, clamp(j, 1, Ny)]) / 2 for i in 1:Nx, j in 1:Ny+1]
+    μᶜ = Field{Center, Center, Nothing}(grid)
+    interior(μᶜ) .= on_architecture(architecture(grid), 1 .- keep)
 
-    function mask_field(LX, LY, μ)
-        field = Field{LX, LY, Nothing}(grid)
-        set!(field, μ)
-        return field
-    end
+    # The halos hold the neighboring rank's mask on a distributed grid, and the boundary cell's mask at a wall.
+    fill_halo_regions!(μᶜ)
+    μ = on_architecture(CPU(), μᶜ.data)
 
-    return (u = mask_field(Face, Center, μᵘ), v = mask_field(Center, Face, μᵛ), c = mask_field(Center, Center, μᶜ))
+    μᵘ = Field{Face, Center, Nothing}(grid)
+    μᵛ = Field{Center, Face, Nothing}(grid)
+    Nxᵘ, Nyᵘ, _ = size(μᵘ)
+    Nxᵛ, Nyᵛ, _ = size(μᵛ)
+    interior(μᵘ) .= on_architecture(architecture(grid), [(μ[i - 1, j, 1] + μ[i, j, 1]) / 2 for i in 1:Nxᵘ, j in 1:Nyᵘ, _ in 1:1])
+    interior(μᵛ) .= on_architecture(architecture(grid), [(μ[i, j - 1, 1] + μ[i, j, 1]) / 2 for i in 1:Nxᵛ, j in 1:Nyᵛ, _ in 1:1])
+
+    return (u = μᵘ, v = μᵛ, c = μᶜ)
 end
 
 """

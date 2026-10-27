@@ -9,8 +9,9 @@
 # condition and forcing kernels never interpolate the parent in space, and memory scales with the
 # boundary, not with the length of the run.
 
-using Oceananigans.Fields: Field, flatten_node, interpolate
-using Oceananigans.Grids: Bounded, Center, Face, inactive_cell, topology, _node, λnode, φnode, znode
+using Oceananigans.Fields: Field, flatten_node, interpolate, validate_indices
+using Oceananigans.Grids: Bounded, Center, Face, FullyConnected, LeftConnected, RightConnected, inactive_cell, new_data, topology,
+                          _node, λnode, φnode, znode
 using Oceananigans.Operators: Δz
 using Oceananigans.OutputReaders: FlavorOfFTS
 using Oceananigans.Utils: KernelParameters, launch!
@@ -74,6 +75,25 @@ last_index(::Center, N) = N
 
 boundary_index(ℓ, side, N) = side ∈ (:west, :south) ? 1 : last_index(ℓ, N)
 
+# Whether the left and right ends of a direction with topology `T` are seams with a neighboring rank.
+rank_seams(::Type{FullyConnected}) = (true, true)
+rank_seams(::Type{LeftConnected}) = (true, false)
+rank_seams(::Type{RightConnected}) = (false, true)
+rank_seams(T) = (false, false)
+
+# The indices at which a field at location `ℓ` holds the parent along a direction with topology `T`, `N` interior
+# cells and data `axis`: the interior points, extended into the halo across a rank seam, where the halo holds
+# the neighboring rank's points.
+function parent_index_bounds(ℓ, T, N, axis)
+    left_seam, right_seam = rank_seams(T)
+    return (left_seam ? first(axis) : 1, right_seam ? last(axis) : last_index(ℓ, N))
+end
+
+parent_index_bounds(::Nothing, T, N, axis) = (1, 1)
+
+parent_index_bounds(field, loc) =
+    map(parent_index_bounds, loc, topology(field.grid), size(field.grid), axes(field.data)[1:length(loc)])
+
 function band_range(ℓ, side, N, width)
     n = last_index(ℓ, N)
     return side ∈ (:west, :south) ? (1:width) : (n - width + 1:n)
@@ -91,11 +111,17 @@ end
 Return a `BoundaryBand` at location `loc` on the outermost `width` rows or columns of `grid` along `side`.
 """
 function BoundaryBand(grid, loc, side, width, times)
-    LX, LY, LZ = typeof.(loc)
-    indices = band_indices(grid, loc, side, width)
-    previous = Field{LX, LY, LZ}(grid; indices)
-    current  = Field{LX, LY, LZ}(grid; indices)
+    indices = validate_indices(band_indices(grid, loc, side, width), loc, grid)
+    previous = band_field(grid, loc, indices)
+    current  = band_field(grid, loc, indices)
     return BoundaryBand(previous, current, times)
+end
+
+# Without boundary conditions, so bands built only on some ranks draw no distributed halo-communication tag
+function band_field(grid, loc, indices)
+    LX, LY, LZ = typeof.(loc)
+    data = new_data(eltype(grid), grid, loc, indices)
+    return Field{LX, LY, LZ}(grid, data, nothing, indices, nothing, nothing, nothing)
 end
 
 #####
@@ -108,25 +134,25 @@ end
     sample_parent!(field, loc, source, time)
 
 Interpolate the parent `source`, a `FieldTimeSeries`, at `time` onto every point of `field`
-at location `loc`, halos included. Halo points, which can lie outside the parent's region, take the value
-at the nearest interior point.
+at location `loc`, halos included. Halo points beyond a wall of the domain, which can lie outside the parent's
+region, take the value at the nearest interior point; halo points across a rank seam are sampled where they are.
 """
 function sample_parent!(field, loc, source, time)
     grid = field.grid
     ranges = axes(field.data)[1:3]
     params = KernelParameters(length.(ranges), first.(ranges) .- 1)
-    interior_size = map((ℓ, N) -> isnothing(ℓ) ? 1 : last_index(ℓ, N), loc, size(grid))
+    bounds = parent_index_bounds(field, loc)
     source_loc = Tuple(L() for L in location(source))
     launch!(architecture(field), grid, params, _sample_parent!,
-            field, grid, loc, interior_size, source, source.grid, source_loc, Time(time))
+            field, grid, loc, bounds, source, source.grid, source_loc, Time(time))
     return field
 end
 
-@kernel function _sample_parent!(field, grid, loc, N, source, source_grid, source_loc, time)
+@kernel function _sample_parent!(field, grid, loc, bounds, source, source_grid, source_loc, time)
     i, j, k = @index(Global, NTuple)
-    i′ = clamp(i, 1, N[1])
-    j′ = clamp(j, 1, N[2])
-    k′ = clamp(k, 1, N[3])
+    i′ = clamp(i, bounds[1]...)
+    j′ = clamp(j, bounds[2]...)
+    k′ = clamp(k, bounds[3]...)
     X = flatten_node(_node(i′, j′, k′, grid, loc...)...)
     @inbounds field[i, j, k] = parent_value(source, X, source_loc, source_grid, time)
 end
@@ -143,17 +169,17 @@ function sample_parent_depth_mean!(field, loc, source, floor, time)
     grid = field.grid
     ranges = axes(field.data)[1:2]
     params = KernelParameters(length.(ranges), first.(ranges) .- 1)
-    interior_size = map((ℓ, N) -> last_index(ℓ, N), loc[1:2], size(grid)[1:2])
+    bounds = parent_index_bounds(field, loc[1:2])
     source_loc = Tuple(L() for L in location(source))
     launch!(architecture(field), grid, params, _sample_parent_depth_mean!,
-            field, grid, loc, interior_size, source, source.grid, source_loc, floor, Time(time))
+            field, grid, loc, bounds, source, source.grid, source_loc, floor, Time(time))
     return field
 end
 
-@kernel function _sample_parent_depth_mean!(field, grid, loc, N, source, source_grid, source_loc, floor, time)
+@kernel function _sample_parent_depth_mean!(field, grid, loc, bounds, source, source_grid, source_loc, floor, time)
     i, j = @index(Global, NTuple)
-    i′ = clamp(i, 1, N[1])
-    j′ = clamp(j, 1, N[2])
+    i′ = clamp(i, bounds[1]...)
+    j′ = clamp(j, bounds[2]...)
     λ = λnode(i′, j′, 1, grid, loc[1], loc[2], Center())
     φ = φnode(i′, j′, 1, grid, loc[1], loc[2], Center())
     zᵇ = @inbounds floor[i′, j′, 1]
@@ -172,22 +198,41 @@ end
     @inbounds field[i, j, 1] = ifelse(H > 0, U / max(H, eps(H)), zero(U))
 end
 
+# Whether `side` of a grid with topology `T` in its direction is a wall of the whole domain: on a distributed grid,
+# a `Bounded` direction is `RightConnected` on its first rank, `LeftConnected` on its last, `FullyConnected` between.
+on_domain_boundary(::Type{Bounded}, side) = true
+on_domain_boundary(::Type{RightConnected}, side) = side ∈ (:west, :south)
+on_domain_boundary(::Type{LeftConnected}, side) = side ∈ (:east, :north)
+on_domain_boundary(T, side) = false
+
+"""
+    domain_boundary_sides(grid, sides)
+
+Return the `sides` of `grid` that are walls of the whole domain: all `Bounded` sides of a serial grid, and on a
+distributed grid only the sides of the local rank that lie on the edge of the global domain.
+"""
+function domain_boundary_sides(grid, sides)
+    TX, TY, _ = topology(grid)
+    side_topology(side) = boundary_dimension(side) == 1 ? TX : TY
+    return Tuple(side for side in sides if on_domain_boundary(side_topology(side), side))
+end
+
 """
     open_boundary_sides(grid)
 
-Return the lateral sides of `grid` that are open to the ocean: the `Bounded` sides with at least one
-wet surface cell in their boundary-adjacent row or column. Sides that are entirely land stay closed.
+Return the lateral sides of `grid` that are open to the ocean: the sides on a `Bounded` wall of the domain
+(see [`domain_boundary_sides`](@ref)) with at least one wet surface cell in their boundary-adjacent row or
+column. Sides that are entirely land stay closed. On a distributed grid, these are the local rank's sides.
 """
 function open_boundary_sides(grid)
-    TX, TY, _ = topology(grid)
     Nx, Ny, Nz = size(grid)
     cpu_grid = on_architecture(CPU(), grid)
     wet(i, j) = !inactive_cell(i, j, Nz, cpu_grid)
 
-    open = (west  = TX === Bounded && any(j -> wet(1,  j), 1:Ny),
-            east  = TX === Bounded && any(j -> wet(Nx, j), 1:Ny),
-            south = TY === Bounded && any(i -> wet(i,  1), 1:Nx),
-            north = TY === Bounded && any(i -> wet(i, Ny), 1:Nx))
+    touches_water = (west  = any(j -> wet(1,  j), 1:Ny),
+                     east  = any(j -> wet(Nx, j), 1:Ny),
+                     south = any(i -> wet(i,  1), 1:Nx),
+                     north = any(i -> wet(i, Ny), 1:Nx))
 
-    return Tuple(side for side in lateral_sides if open[side])
+    return Tuple(side for side in domain_boundary_sides(grid, lateral_sides) if touches_water[side])
 end

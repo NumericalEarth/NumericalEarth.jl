@@ -27,6 +27,7 @@ const default_bathymetry_blend_degrees = 4 / 12
 function cells_spanning(grid, degrees)
     cpu_grid = on_architecture(CPU(), underlying_grid(grid))
     Δ = min(minimum(diff(λnodes(cpu_grid, Face()))), minimum(diff(φnodes(cpu_grid, Face()))))
+    Δ = all_reduce(min, Δ, architecture(grid))
     return max(1, round(Int, degrees / Δ))
 end
 
@@ -39,6 +40,13 @@ function validate_nested_ocean_grid(grid)
     underlying_grid(grid) isa LatitudeLongitudeGrid ||
         throw(ArgumentError("a nested ocean requires a LatitudeLongitudeGrid (possibly immersed), whose velocity " *
                             "components are eastward and northward like the parent's; got $(summary(grid))."))
+    return nothing
+end
+
+# Every rank takes part, so that on a distributed grid all of them throw together.
+function validate_open_sides(grid, open_sides)
+    Nopen = all_reduce(+, length(open_sides), architecture(grid))
+    Nopen > 0 || throw(ArgumentError("$(summary(grid)) has no open sides to nest through."))
     return nothing
 end
 
@@ -85,7 +93,7 @@ that knows the parent only on strips along the boundaries. Time stepping the `Ne
 first, samples it onto the boundary bands of `grid` (an [`OceanBoundaryExchanger`](@ref)), then steps the child.
 
 Each side in `open_sides` (default: the `Bounded` sides of the child grid that touch water; see
-[`open_boundary_sides`](@ref)) gets the open boundary conditions of [`ocean_open_boundary_conditions`](@ref): oblique
+[`open_boundary_sides`](@ref)) that is a wall of the domain gets the open boundary conditions of [`ocean_open_boundary_conditions`](@ref): oblique
 radiation on the boundary-normal and tangential velocities (`normal_velocity_scheme`, `tangential_velocity_scheme`;
 nudged toward the parent over 3 days on inflow and 360 days on outflow), tracer reservoirs on the tracers
 (`tracer_scheme`; relaxing toward the parent over 20 km on inflow), Flather on the barotropic transport, and Chapman
@@ -126,7 +134,8 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
                             kw...)
 
     validate_nested_ocean_grid(grid)
-    isempty(open_sides) && throw(ArgumentError("$(summary(grid)) has no open sides to nest through."))
+    open_sides = domain_boundary_sides(grid, open_sides)
+    validate_open_sides(grid, open_sides)
 
     time = parent.clock.time
     clock.time == time ||
@@ -134,6 +143,7 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
 
     grid = blend_parent_bathymetry(grid, parent_bottom_height, open_sides; width = bathymetry_blend_width, minimum_depth)
     width = isnothing(relaxation_rate) ? 1 : relaxation_width
+    validate_band_width(grid, open_sides, width, "relaxation_width")
     exchanger = OceanBoundaryExchanger(parent, grid, open_sides; width, time, parent_bottom_height)
 
     nested_bcs = ocean_open_boundary_conditions(grid, exchanger.bands; depth_means = exchanger.depth_means,
@@ -179,7 +189,8 @@ function nested_ocean_model(grid::AbstractGrid, parent_dataset; dates,
                             kw...)
 
     validate_nested_ocean_grid(grid)
-    isempty(open_sides) && throw(ArgumentError("$(summary(grid)) has no open sides to nest through."))
+    open_sides = domain_boundary_sides(grid, open_sides)
+    validate_open_sides(grid, open_sides)
     region = BoundingBox(grid; padding = parent_padding)
 
     # The seafloor the parent state was produced over, every basin of it: the dataset's own, or where its

@@ -51,14 +51,22 @@ end
 
 normal_velocity_name(side) = boundary_dimension(side) == 1 ? :u : :v
 
-# The parent's seafloor at the boundary-normal velocity points of `grid`
-boundary_floor(grid, side, ::Nothing) = nothing
-
-function boundary_floor(grid, side, parent_bottom_height)
-    LX, LY, _ = typeof.(boundary_location(normal_velocity_name(side)))
+# The parent's seafloor at the `name` velocity points of `grid`
+function boundary_floor(grid, name, parent_bottom_height)
+    LX, LY, _ = typeof.(boundary_location(name))
     floor = Field{LX, LY, Nothing}(underlying_grid(grid))
     interpolate!(floor, parent_bottom_height)
+    fill_halo_regions!(floor)
     return floor
+end
+
+# Every rank builds both floors, whatever its open sides, since the halo fill is collective.
+boundary_floors(grid, sides, ::Nothing) = NamedTuple{sides}(map(Returns(nothing), sides))
+
+function boundary_floors(grid, sides, parent_bottom_height)
+    floors = (u = boundary_floor(grid, :u, parent_bottom_height),
+              v = boundary_floor(grid, :v, parent_bottom_height))
+    return NamedTuple{sides}(map(side -> floors[normal_velocity_name(side)], sides))
 end
 
 depth_mean_location(side) = (boundary_location(normal_velocity_name(side))[1:2]..., nothing)
@@ -81,7 +89,7 @@ function OceanBoundaryExchanger(parent, grid::AbstractGrid, sides::Tuple; width,
     end
 
     bands = NamedTuple{sides}(map(side_bands, sides))
-    floors = NamedTuple{sides}(map(side -> boundary_floor(grid, side, parent_bottom_height), sides))
+    floors = boundary_floors(grid, sides, parent_bottom_height)
     depth_means = NamedTuple{sides}(map(side -> depth_mean_band(grid, side, floors[side], times), sides))
 
     for side in sides

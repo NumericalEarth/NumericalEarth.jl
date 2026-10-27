@@ -9,8 +9,10 @@ using NumericalEarth.DataWrangling: metadata_path
 using NumericalEarth.DataWrangling.ORCA: ORCAOne
 using Oceananigans.DistributedComputations
 using Oceananigans.DistributedComputations: all_reduce, concatenate_local_sizes, local_size, reconstruct_global_grid
+using Oceananigans.ImmersedBoundaries: bottom_height_field
 using Oceananigans.Operators: Azᶜᶜᶜ
 using NumericalEarth.Lands: build_flux_routing
+using NumericalEarth.NestedModels: default_velocity_scheme, open_boundary_sides, relaxation_masks
 using NumericalEarth.Oceans: river_mouth_vertical_diffusivity
 
 @testset "Distributed ECCO download" begin
@@ -139,6 +141,72 @@ end
 
         river_mixing = river_mouth_vertical_diffusivity(local_grid, (; rivers = routing))
         @test count(>(0), interior(river_mixing.κ.parameters)) == length(routing.target_i)
+    end
+end
+
+@testset "Distributed nested ocean model" begin
+    function nested_parent()
+        grid = LatitudeLongitudeGrid(CPU(); size = (12, 12, 6), longitude = (-2, 2), latitude = (28, 32),
+                                     z = (-1000, 0), topology = (Bounded, Bounded, Bounded))
+        parent_ocean = PrescribedOcean(grid, [0.0, 864000.0])
+        set!(parent_ocean; T = (λ, φ, z, t) -> 15 + λ + (φ - 30) / 2 + z / 1000,
+                           S = (λ, φ, z, t) -> 35 + φ / 100,
+                           u = (λ, φ, z, t) -> 0.02φ - 0.5, v = (λ, φ, z, t) -> 0.05λ, η = 0)
+        return parent_ocean
+    end
+
+    function nested_child(arch)
+        underlying_grid = LatitudeLongitudeGrid(arch; size = (32, 32, 6), halo = (7, 7, 7), longitude = (-1, 1),
+                                                latitude = (29, 31), z = (-1000, 0),
+                                                topology = (Bounded, Bounded, Bounded))
+        bottom = PartialCellBottom((λ, φ) -> -900 + 100 * sin(3λ) * cos(3φ); minimum_fractional_cell_height = 0.2)
+        grid = ImmersedBoundaryGrid(underlying_grid, bottom; active_cells_map = true)
+        parent_bottom_height = Field{Center, Center, Nothing}(underlying_grid)
+        set!(parent_bottom_height, -700)
+        # ObliqueRadiation's tangential stencil differs across rank seams over an immersed bottom in Oceananigans itself
+        nested = nested_ocean_model(nested_parent(), grid; parent_bottom_height, relaxation_width = 4,
+                                    bathymetry_blend_width = 3,
+                                    normal_velocity_scheme = NormalRadiation(inflow_timescale = 3 * 86400, outflow_timescale = 360 * 86400),
+                                    tangential_velocity_scheme = default_velocity_scheme(),
+                                    free_surface = SplitExplicitFreeSurface(grid; substeps = 6))
+        for _ in 1:5
+            time_step!(nested, 60)
+        end
+        return nested.child
+    end
+
+    serial = nested_child(CPU())
+    serial_masks = relaxation_masks(serial.grid, open_boundary_sides(serial.grid), 4)
+
+    for partition in (Partition(4, 1), Partition(1, 4), Partition(2, 2))
+        arch = Distributed(CPU(); partition)
+        child = nested_child(arch)
+        grid = child.grid
+        Nx, Ny, _ = size(grid)
+        irange, jrange = rank_window(arch, size(serial.grid), size(grid))
+        window(field, serial_field) = (Array(interior(serial_field))[irange, jrange, :],
+                                       Array(interior(field))[1:Nx, 1:Ny, :])
+
+        Rx, Ry, _ = arch.ranks
+        rx, ry, _ = arch.local_index
+        walls = (west = rx == 1, east = rx == Rx, south = ry == 1, north = ry == Ry)
+        @test Set(open_boundary_sides(grid)) == Set(side for side in keys(walls) if walls[side])
+
+        @test ==(window(bottom_height_field(grid), bottom_height_field(serial.grid))...)
+
+        masks = relaxation_masks(grid, open_boundary_sides(grid), 4)
+        for name in (:c, :u, :v)
+            @test ==(window(masks[name], serial_masks[name])...)
+        end
+
+        fields = (u = child.velocities.u, v = child.velocities.v, T = child.tracers.T, S = child.tracers.S,
+                  η = child.free_surface.displacement)
+        serial_fields = (u = serial.velocities.u, v = serial.velocities.v, T = serial.tracers.T, S = serial.tracers.S,
+                         η = serial.free_surface.displacement)
+        for name in keys(fields)
+            expected, local_values = window(fields[name], serial_fields[name])
+            @test maximum(abs, local_values .- expected) < 1e-5
+        end
     end
 end
 
