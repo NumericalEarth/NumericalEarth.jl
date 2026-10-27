@@ -4,6 +4,7 @@ using Breeze
 using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
+using Oceananigans.OutputWriters: Checkpointer
 using Oceananigans.TimeSteppers: time_step!
 using RRTMGP   # activates Breeze's radiative-transfer extension (RadiativeTransferModel)
 using Dates: DateTime
@@ -138,6 +139,26 @@ end
 
             @test all(Array(interior(night.interfaces.exchanger.radiation.state.ℐꜜˢʷ)) .== 0)
             @test all(Array(interior(night.interfaces.exchanger.radiation.state.ℐꜜˡʷ)) .< 0)
+        end
+
+        @testset "Checkpoint restores the coupled atmosphere and land on $A" begin
+            mktempdir() do dir
+                model = build_rtm_land_model(arch)
+                simulation = Simulation(model; Δt = 1.0, stop_iteration = 2, verbose = false)
+                simulation.output_writers[:checkpointer] = Checkpointer(model; schedule = IterationInterval(2), dir)
+                run!(simulation)
+
+                restored = build_rtm_land_model(arch)
+                simulation = Simulation(restored; Δt = 1.0, verbose = false)
+                set!(simulation; checkpoint = joinpath(dir, "checkpoint_iteration2.jld2"))
+
+                @test restored.clock.iteration == 2
+                restored_fields = Oceananigans.prognostic_fields(restored.atmosphere.model)
+                for (name, field) in pairs(Oceananigans.prognostic_fields(model.atmosphere.model))
+                    @test Array(interior(restored_fields[name])) == Array(interior(field))
+                end
+                @test Array(interior(restored.land.temperature)) == Array(interior(model.land.temperature))
+            end
         end
     end
 end
