@@ -7,6 +7,7 @@ using Oceananigans.BoundaryConditions: ObliqueRadiation, TracerReservoir
 using Oceananigans.Grids: LatitudeLongitudeGrid, λnodes, φnodes
 using Oceananigans.TimeSteppers: Clock
 using Oceananigans.Units: days, hours, kilometers
+using Oceananigans.DistributedComputations: all_reduce
 
 using ..Bathymetry: regrid_bathymetry
 using ..Oceans: hydrostatic_ocean_model, merge_boundary_conditions
@@ -38,6 +39,15 @@ function validate_nested_ocean_grid(grid)
     underlying_grid(grid) isa LatitudeLongitudeGrid ||
         throw(ArgumentError("a nested ocean requires a LatitudeLongitudeGrid (possibly immersed), whose velocity " *
                             "components are eastward and northward like the parent's; got $(summary(grid))."))
+    return nothing
+end
+
+# A band must fit within the grid, or the rank of a distributed grid, along each open side.
+function validate_band_width(grid, sides, width, name)
+    fits = all(side -> width ≤ size(grid, boundary_dimension(side)), sides)
+    Nmisfits = all_reduce(+, Int(!fits), architecture(grid))
+    Nmisfits == 0 ||
+        throw(ArgumentError("$name = $width is wider than the grid, or a rank of it, normal to an open side."))
     return nothing
 end
 
@@ -87,9 +97,8 @@ These defaults follow the reference Mid-Atlantic Bight configuration of Numerica
 When the parent's seafloor `parent_bottom_height` (a bottom height `Field`) is known, the Flather exterior transport
 is the parent's depth mean velocity over its own column times the child's wet depth, and the boundary-normal
 velocity is corrected to integrate to it ([`BarotropicBoundaryTransport`](@ref), [`ConsistentBoundaryVelocity`](@ref)),
-and the immersed bottom of
-`grid` is blended toward it in place within `bathymetry_blend_width` cells of each open side (default: 1/3°; see
-[`blend_parent_bathymetry!`](@ref)), so that the geometry at the open boundaries matches the one the parent state
+and the child is built on a copy of `grid` whose immersed bottom is blended toward it within `bathymetry_blend_width` cells of each open side (default: 1/3°; see
+[`blend_parent_bathymetry`](@ref)), so that the geometry at the open boundaries matches the one the parent state
 was produced over, but never shallower than `minimum_depth`.
 
 The child's `clock` starts at the parent's time; a `clock` passed in must already be there. The child is
@@ -123,7 +132,7 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
     clock.time == time ||
         throw(ArgumentError("the child clock (time $(clock.time)) must start at the parent's time, $time."))
 
-    blend_parent_bathymetry!(grid, parent_bottom_height, open_sides; width = bathymetry_blend_width, minimum_depth)
+    grid = blend_parent_bathymetry(grid, parent_bottom_height, open_sides; width = bathymetry_blend_width, minimum_depth)
     width = isnothing(relaxation_rate) ? 1 : relaxation_width
     exchanger = OceanBoundaryExchanger(parent, grid, open_sides; width, time, parent_bottom_height)
 

@@ -10,7 +10,7 @@ using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, ocean_surfa
 using Oceananigans.BoundaryConditions: getbc, GravityWaveRadiation, NormalFlow, ObliqueRadiation,
                                        SurfaceWaveRadiation, TracerReservoir, Value
 using Oceananigans.Grids: inactive_cell
-using Oceananigans.ImmersedBoundaries: bottom_height_field
+using Oceananigans.ImmersedBoundaries: bottom_height_field, has_active_cells_map
 using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶠᶜᶜ
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: days
@@ -326,17 +326,37 @@ end
     set!(parent_bottom_height, -500)
 
     model = nested_ocean_model(parent_ocean, grid; parent_bottom_height, open_sides = (:west, :east, :north))
-    @test model.child.grid === grid
 
     # The parent's seafloor in the boundary cells of the open sides, the child's beyond the blend, on the
     # closed south side, and on land
-    bottom_height = Array(interior(bottom_height_field(grid)))
+    bottom_height = Array(interior(bottom_height_field(model.child.grid)))
     @test bottom_height[1, 10, 1] ≈ -500
     @test bottom_height[20, 10, 1] ≈ -500
     @test bottom_height[10, 20, 1] ≈ -500
     @test bottom_height[10, 10, 1] ≈ -1000
     @test bottom_height[10, 1, 1] ≈ -1000
     @test bottom_height[1, 1, 1] == 0
+
+    # The grid passed in keeps its own seafloor
+    @test Array(interior(bottom_height_field(grid)))[1, 10, 1] ≈ -1000
+
+    # Partial cells keep their minimum fractional cell height, and an active cells map follows the blended seafloor
+    partial_cell_grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(coastal_bottom; minimum_fractional_cell_height = 0.3);
+                                             active_cells_map = true)
+    set!(parent_bottom_height, -350)
+    model = nested_ocean_model(parent_ocean, partial_cell_grid; parent_bottom_height, open_sides = (:west, :east, :north))
+    child_grid = model.child.grid
+    @test child_grid.immersed_boundary isa PartialCellBottom
+    @test child_grid.immersed_boundary.minimum_fractional_cell_height ≈ 0.3
+    @test has_active_cells_map(child_grid)
+
+    # A -350 m seafloor leaves a bottom cell 0.1Δz tall, which the partial cell deepens to 0.3Δz
+    Δz = 1000 / size(underlying_grid, 3)
+    @test Array(interior(bottom_height_field(child_grid)))[1, 10, 1] ≈ -2Δz - 0.3Δz
+    reference_grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(bottom_height_field(child_grid); minimum_fractional_cell_height = 0.3);
+                                          active_cells_map = true)
+    @test length(child_grid.interior_active_cells) == length(reference_grid.interior_active_cells)
+    @test length(child_grid.interior_active_cells) < length(partial_cell_grid.interior_active_cells)
 
     # The child steps from the parent's time
     @test_throws ArgumentError nested_ocean_model(parent_ocean, underlying_grid; clock = Clock(time = 60.0))

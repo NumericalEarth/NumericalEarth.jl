@@ -8,35 +8,33 @@
 # open side removes that mismatch while leaving the interior at the child's own resolution.
 
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.ImmersedBoundaries: GridFittedBottom, ImmersedBoundaryGrid, bottom_height_field,
-                                       compute_numerical_bottom_height!, has_active_cells_map
+using Oceananigans.ImmersedBoundaries: AbstractGridFittedBottom, GridFittedBottom, PartialCellBottom, ImmersedBoundaryGrid,
+                                       bottom_height_field, has_active_cells_map, has_active_z_columns
 using KernelAbstractions: @kernel, @index
 
-const GridFittedBottomGrid = ImmersedBoundaryGrid{<:Any, <:Any, <:Any, <:Any, <:Any, <:GridFittedBottom}
+const GridFittedBottomGrid = ImmersedBoundaryGrid{<:Any, <:Any, <:Any, <:Any, <:Any, <:AbstractGridFittedBottom}
 
 """
-    blend_parent_bathymetry!(grid, parent_bottom_height, sides; width, minimum_depth)
+    blend_parent_bathymetry(grid, parent_bottom_height, sides; width, minimum_depth)
 
-Blend the immersed bottom of `grid` in place toward `parent_bottom_height` (a bottom height `Field`, interpolated
-onto `grid`) within `width` cells of each side in `sides`. The weight of the parent's seafloor is a raised cosine,
-1 in the boundary cell and 0 `width` cells inward. Columns that are land in either bathymetry keep the child's
-seafloor, so the blend moves no coastline, and the blended seafloor is at least `minimum_depth` deep. A grid
-without a grid-fitted bottom, or a parent without a known seafloor (`nothing`), is left as it is.
+Return a copy of `grid` whose immersed bottom is blended toward `parent_bottom_height` (a bottom height `Field`,
+interpolated onto `grid`) within `width` cells of each side in `sides`. The weight of the parent's seafloor is a
+raised cosine, 1 in the boundary cell and 0 `width` cells inward. Columns that are land in either bathymetry keep
+the child's seafloor, so the blend moves no coastline, and the blended seafloor is at least `minimum_depth` deep.
+The copy keeps the immersed boundary of `grid` (a `PartialCellBottom` its minimum fractional cell height) and
+rebuilds any active cells map for the blended seafloor; `grid` itself is not changed. A grid without a grid-fitted
+bottom, or a parent without a known seafloor (`nothing`), is returned as it is.
 """
-blend_parent_bathymetry!(grid, parent_bottom_height, sides; kw...) = grid
-blend_parent_bathymetry!(grid::GridFittedBottomGrid, ::Nothing, sides; kw...) = grid
+blend_parent_bathymetry(grid, parent_bottom_height, sides; kw...) = grid
+blend_parent_bathymetry(grid::GridFittedBottomGrid, ::Nothing, sides; kw...) = grid
 
-function blend_parent_bathymetry!(grid::GridFittedBottomGrid, parent_bottom_height, sides; width, minimum_depth)
+function blend_parent_bathymetry(grid::GridFittedBottomGrid, parent_bottom_height, sides; width, minimum_depth)
     width > 0 || return grid
-
-    # TODO: Oceananigans could provide a public way to reset the bottom of an existing ImmersedBoundaryGrid,
-    # rebuilding its active cells map with it.
-    has_active_cells_map(grid) &&
-        throw(ArgumentError("blending the bathymetry of a grid with an active cells map would leave the map " *
-                            "stale; build the grid without one, or pass `bathymetry_blend_width = 0`."))
+    validate_band_width(grid, sides, width, "bathymetry_blend_width")
 
     underlying_grid = grid.underlying_grid
-    bottom_height = bottom_height_field(grid)   # shares the grid's bottom height data
+    bottom_height = Field{Center, Center, Nothing}(underlying_grid)
+    set!(bottom_height, bottom_height_field(grid))
 
     parent_height = Field{Center, Center, Nothing}(underlying_grid)
     interpolate!(parent_height, parent_bottom_height)
@@ -48,12 +46,15 @@ function blend_parent_bathymetry!(grid::GridFittedBottomGrid, parent_bottom_heig
     launch!(architecture(grid), underlying_grid, :xy, _blend_parent_bathymetry!,
             bottom_height, parent_height, width, Nx, Ny, open, convert(FT, minimum_depth))
 
-    fill_halo_regions!(bottom_height)
-    immersed_boundary = GridFittedBottom(bottom_height, grid.immersed_boundary.immersed_condition)
-    compute_numerical_bottom_height!(bottom_height, underlying_grid, immersed_boundary)
+    immersed_boundary = with_bottom_height(grid.immersed_boundary, bottom_height)
 
-    return grid
+    return ImmersedBoundaryGrid(underlying_grid, immersed_boundary;
+                                active_cells_map = has_active_cells_map(grid),
+                                active_z_columns = has_active_z_columns(grid))
 end
+
+with_bottom_height(ib::GridFittedBottom, bottom_height) = GridFittedBottom(bottom_height, ib.immersed_condition)
+with_bottom_height(ib::PartialCellBottom, bottom_height) = PartialCellBottom(bottom_height, ib.minimum_fractional_cell_height)
 
 @kernel function _blend_parent_bathymetry!(bottom_height, parent_height, width, Nx, Ny, open, minimum_depth)
     i, j = @index(Global, NTuple)
