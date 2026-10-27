@@ -229,7 +229,7 @@ and [`InterceptingHydrology`](@ref).
 | ``\mathcal{Q}^{\mathrm{gro}}`` | `ground_heat_flux` | ground heat flux | Ground→bulk conduction ``\mathcal{Q}^{\mathrm{gro}} = \Lambda^{\mathrm{gro}}(T^{\mathrm{gro}} - T^{\mathrm{la}})``, positive down (W m⁻²) |
 | ``\mathcal{Q}^{T\,\mathrm{lea}}``, ``\mathcal{Q}^{T\,\mathrm{gro}}`` | `𝒬ᵀˡᵉᵃ`, `𝒬ᵀᵍʳᵒ` | per-source sensible heat | Leaf and ground sensible heat into the canopy air, positive up (W m⁻²) |
 | ``\mathcal{Q}^{v\,\mathrm{lea}}``, ``\mathcal{Q}^{v\,\mathrm{gro}}`` | `𝒬ᵛˡᵉᵃ`, `𝒬ᵛᵍʳᵒ` | per-source latent heat | Leaf and ground latent heat into the canopy air, positive up (W m⁻²) |
-| ``g_s`` | – | stomatal conductance | Leaf stomatal conductance from a [`JarvisConductance`](@ref) (mol m⁻² s⁻¹) |
+| ``g_s`` | – | stomatal conductance | Leaf stomatal conductance from a [`MedlynConductance`](@ref) or [`JarvisConductance`](@ref) (mol m⁻² s⁻¹) |
 | ``g^{\mathrm{can}}`` | – | canopy conductance | Bulk stomatal conductance ``g^{\mathrm{can}} = \lambda^{\mathrm{leaf}} g_s``, mass units (kg m⁻² s⁻¹) |
 | ``w^{\mathrm{lbl}}`` | `leaf_boundary_layer_velocity` | leaf boundary-layer velocity | Per-leaf-area transfer velocity through the leaf boundary layer (m s⁻¹) |
 | ``g^{\mathrm{lbl}}`` | – | leaf boundary-layer mass conductance | ``g^{\mathrm{lbl}} = \rho^{\mathrm{at}} \lambda^{\mathrm{leaf}} w^{\mathrm{lbl}}``; the stomata-free wet-leaf vapor path (kg m⁻² s⁻¹) |
@@ -251,6 +251,7 @@ and [`InterceptingHydrology`](@ref).
 | ``f^{\mathrm{wet}}`` | – | wet-canopy fraction | Deardorff wetted-leaf fraction ``(M^{\mathrm{can}}/M^{\mathrm{can}+})^{2/3}`` (–) |
 | ``g^{\mathrm{wet}}`` | – | wet-canopy vapor conductance | Wetted fraction of the leaf boundary-layer conductance, capped so that ``J^{\mathrm{wet}} \le M^{\mathrm{can}}/\Delta t`` (kg m⁻² s⁻¹) |
 | ``J^{\mathrm{wet}}``, ``\mathcal{Q}^{v\,\mathrm{wet}}`` | – | wet-canopy evaporation | Evaporation of intercepted water (kg m⁻² s⁻¹) and its latent heat (W m⁻²) |
+| ``A_n`` | – | net assimilation | Net CO₂ assimilation of [`RubiscoLightLimitedPhotosynthesis`](@ref) (mol m⁻² s⁻¹) |
 | ``\Delta U`` | – | surface wind speed | Wind speed relative to the surface at the surface-layer reference height (m s⁻¹) |
 | ``R^v`` | – | vapor gas constant | Specific gas constant of water vapor (J kg⁻¹ K⁻¹) |
 

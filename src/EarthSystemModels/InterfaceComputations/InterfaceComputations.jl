@@ -61,8 +61,12 @@ export
     FrictionVelocityUndercanopyVelocity,
     ExponentialSoilResistance,
     GroundSurfaceResistance,
+    RubiscoLightLimitedPhotosynthesis,
+    MedlynConductance,
     JarvisConductance,
     AbsorbedPhotosyntheticallyActiveRadiation,
+    PeakedArrheniusParameters,
+    HeskelParameters,
     AltitudeCorrection,
     atmosphere_land_interface,
     surface_layer_diagnostics,
@@ -75,6 +79,7 @@ export
 using ..EarthSystemModels: EarthSystemModels,
                            default_gravitational_acceleration,
                            default_freshwater_density,
+                           default_gas_constant,
                            default_dry_air_molar_mass,
                            celsius_to_kelvin,
                            default_latent_heat_of_fusion,
@@ -196,6 +201,7 @@ include("roughness_lengths.jl")
 include("moisture_stress.jl")
 include("interface_states.jl")
 include("dry_layer_humidity.jl")
+include("photosynthesis.jl")
 include("stomatal_conductance.jl")
 include("absorbed_par.jl")
 include("canopy_conductance.jl")
