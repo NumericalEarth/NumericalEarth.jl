@@ -11,6 +11,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: compute_interface_
                                                               ComponentInterfaces
 
 using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
+using ClimaSeaIce: SeaIceModel, snow_slab_thermodynamics
 
 @testset "Ocean-sea ice heat flux formulations" begin
 
@@ -424,6 +425,62 @@ end
                 @test all(isfinite.(𝒬ᶠʳᶻ_cpu))
             end
         end
+    end
+end
+
+@testset "Frazil uses in situ freezing in wet ocean cells" begin
+    for arch in test_architectures
+        underlying_grid = LatitudeLongitudeGrid(arch;
+                                                size = (4, 4, 16),
+                                                longitude = (0, 10), latitude = (-10, 10),
+                                                z = (-1000, 0))
+        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(-900))
+        ocean = ocean_simulation(grid; momentum_advection = nothing,
+                                tracer_advection = nothing, closure = nothing,
+                                radiative_forcing = nothing)
+        ice_grid = LatitudeLongitudeGrid(arch;
+                                         size = (4, 4, size(grid, 3)),
+                                         longitude = (0, 10), latitude = (-10, 10),
+                                         z = (-1, 0))
+        snow = snow_slab_thermodynamics(ice_grid)
+        top_heat_flux = Field{Center, Center, Nothing}(ice_grid)
+        bottom_heat_flux = Field{Center, Center, Nothing}(ice_grid)
+        snowfall = Field{Center, Center, Nothing}(ice_grid)
+        dynamics = NumericalEarth.SeaIces.sea_ice_dynamics(ice_grid, ocean;
+            sea_ice_ocean_drag_reference_depth = 6)
+        sea_ice = Simulation(SeaIceModel(ice_grid; snow_thermodynamics = snow,
+                                        top_heat_flux, bottom_heat_flux, snowfall, dynamics);
+                             Δt = 60, stop_time = 60)
+        coupled = OceanSeaIceModel(ocean, sea_ice; sea_ice_ocean_heat_flux=IceBathHeatFlux())
+        frazil_heat = coupled.interfaces.sea_ice_ocean_interface.fluxes.frazil_heat
+
+        # At 35 psu, -1.93 °C is below surface freezing but above in situ freezing at depth.
+        set!(ocean.model; T=(x, y, z) -> z < -100 ? -1.93 : 5.0, S=35.0)
+        Oceananigans.TimeSteppers.update_state!(coupled)
+        @test all(iszero, Array(interior(frazil_heat)))
+
+        # Only cells below the 900 m seafloor are cold.
+        set!(ocean.model.tracers.T, (x, y, z) -> z < -900 ? -3.0 : 5.0)
+        Oceananigans.TimeSteppers.update_state!(coupled)
+        @test all(iszero, Array(interior(frazil_heat)))
+
+        set!(ocean.model.tracers.T, (x, y, z) -> z > -100 ? -2.0 : 5.0)
+        Oceananigans.TimeSteppers.update_state!(coupled)
+        @test all(q -> q < 0, Array(interior(frazil_heat)))
+
+        # Deep frazil melts in warm water above it before reaching sea ice.
+        set!(ocean.model.tracers.T, (x, y, z) -> -900 < z < -800 ? -2.8 : 9.0)
+        before = Array(interior(ocean.model.tracers.T))
+        Oceananigans.TimeSteppers.update_state!(coupled)
+        @test all(iszero, Array(interior(frazil_heat)))
+        temperature = Array(interior(ocean.model.tracers.T))
+        @test all(temperature[:, :, end] .≈ 9.0)
+        @test minimum(temperature) > -2.8
+
+        cpu_grid = Oceananigans.Architectures.on_architecture(CPU(), grid)
+        column_heat(T) = sum(T[1, 1, k] * Oceananigans.Operators.Δzᶜᶜᶜ(1, 1, k, cpu_grid)
+                             for k in 1:size(grid, 3))
+        @test column_heat(temperature) ≈ column_heat(before) atol=1e-3
     end
 end
 

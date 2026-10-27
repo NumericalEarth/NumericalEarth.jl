@@ -60,7 +60,87 @@ function compute_atmosphere_sea_ice_fluxes!(coupled_model)
             radiation_kernel_props,
             radiation_state)
 
+    top_flux = coupled_model.sea_ice.model.external_heat_fluxes.top
+    if top_flux isa LinearizedSurfaceFlux
+        launch!(arch, grid, kernel_parameters,
+                _linearize_sea_ice_turbulent_flux!,
+                top_flux.reference_temperature,
+                top_flux.temperature_derivative,
+                interface_fluxes,
+                interface_temperature,
+                grid,
+                clock,
+                flux_formulation,
+                interior_state,
+                atmosphere_data,
+                interface_properties,
+                atmosphere_properties,
+                sea_ice_properties,
+                ocean_properties,
+                radiation_kernel_props,
+                radiation_state)
+    end
+
     return nothing
+end
+
+@kernel function _linearize_sea_ice_turbulent_flux!(reference_temperature,
+                                                     temperature_derivative,
+                                                     interface_fluxes,
+                                                     interface_temperature,
+                                                     grid,
+                                                     clock,
+                                                     flux_formulation,
+                                                     interior_state,
+                                                     atmosphere_state,
+                                                     interface_properties,
+                                                     atmosphere_properties,
+                                                     sea_ice_properties,
+                                                     ocean_properties,
+                                                     radiation_kernel_props,
+                                                     radiation_exchanger_state)
+    i, j = @index(Global, NTuple)
+    kᴺ = size(grid, 3)
+    @inbounds begin
+        Tref = interface_temperature[i, j, 1]
+        reference_temperature[i, j, 1] = Tref
+        ℵ = interior_state.ℵ[i, j, 1]
+    end
+
+    inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
+    if ℵ == 0 || inactive
+        @inbounds temperature_derivative[i, j, 1] = zero(eltype(grid))
+    else
+        FT = eltype(grid)
+        δT = one(FT)
+        Tplus = convert_to_kelvin(sea_ice_properties.temperature_units, Tref) + δT
+        Ψₐ = local_atmosphere_state(i, j, atmosphere_state, atmosphere_properties)
+        @inbounds begin
+            Sᵒᶜ = interior_state.Sᵒᶜ[i, j, kᴺ]
+            Tᵒᶜ = convert_to_kelvin(ocean_properties.temperature_units, interior_state.Tᵒᶜ[i, j, kᴺ])
+            hi = interior_state.hi[i, j, 1]
+            hs = interior_state.hs[i, j, 1]
+            hc = interior_state.hc[i, j, 1]
+            Qref = interface_fluxes.sensible_heat[i, j, 1] + interface_fluxes.latent_heat[i, j, 1]
+        end
+        ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
+        qplus = surface_specific_humidity(interface_properties.specific_humidity_formulation,
+                                          ℂᵃᵗ, Ψₐ.p, Tplus, Sᵒᶜ)
+        u★ = convert(FT, 1f-4)
+        initial = AirIceInterfaceState(u★, u★, u★, zero(FT), zero(FT), Tplus, convert(FT, qplus))
+        interior = (u=zero(FT), v=zero(FT), T=Tᵒᶜ, S=Sᵒᶜ, hi=hi, hs=hs, hc=hc)
+        radiation_state = air_sea_ice_interface_radiation_state(radiation_kernel_props,
+                                                                radiation_exchanger_state,
+                                                                i, j, kᴺ, grid, Time(clock.time))
+        Ψplus = compute_interface_state(flux_formulation, initial, Ψₐ, interior,
+                                        radiation_state, interface_properties,
+                                        atmosphere_properties, sea_ice_properties)
+        ρ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
+        cp = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, Ψₐ.q)
+        ℒ = AtmosphericThermodynamics.latent_heat_sublim(ℂᵃᵗ, Ψₐ.T)
+        Qplus = -ρ * Ψplus.fluxes.u★ * (cp * Ψplus.fluxes.θ★ + ℒ * Ψplus.fluxes.q★)
+        @inbounds temperature_derivative[i, j, 1] = max(zero(FT), (Qplus - Qref) / δT)
+    end
 end
 
 """ Compute turbulent fluxes between an atmosphere and an interface state using similarity theory """

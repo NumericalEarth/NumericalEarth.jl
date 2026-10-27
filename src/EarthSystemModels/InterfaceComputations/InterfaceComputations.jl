@@ -1,6 +1,7 @@
 module InterfaceComputations
 
 using Adapt: Adapt
+using ClimaSeaIce.SeaIceThermodynamics: LinearizedSurfaceFlux
 using DocStringExtensions: TYPEDSIGNATURES, SIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, location
