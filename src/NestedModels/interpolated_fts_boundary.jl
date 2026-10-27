@@ -24,7 +24,7 @@ import Oceananigans.BoundaryConditions: regularize_boundary_condition, getbc,
 import Oceananigans.OutputReaders: FlavorOfFTS
 using Oceananigans.Grids: node, ξnode, ηnode, ξnodes, ηnodes, topology, Face, Center,
                           OrthogonalSphericalShellGrid, FullyConnected, LeftConnected, RightConnected
-using Oceananigans.AbstractOperations: KernelFunctionOperation
+using Oceananigans.AbstractOperations: KernelFunctionOperation, validate_grid
 using Oceananigans.Fields: Field, interior, compute!
 using Oceananigans.Operators: intrinsic_vector
 import Oceananigans.Forcings: evaluate_target
@@ -56,7 +56,8 @@ end
 
 function VectorComponent{C}(eastward::U, northward::V) where {C, U, V}
     C === :u || C === :v || throw(ArgumentError("a VectorComponent's component must be :u or :v, got :$C"))
-    return VectorComponent{C, U, V, typeof(eastward.grid)}(eastward, northward, eastward.grid)
+    grid = validate_grid(eastward, northward)
+    return VectorComponent{C, U, V, typeof(grid)}(eastward, northward, grid)
 end
 
 VectorComponent{C}(eastward, northward, grid) where C =
