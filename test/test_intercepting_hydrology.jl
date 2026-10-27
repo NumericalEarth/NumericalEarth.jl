@@ -6,7 +6,7 @@ using Oceananigans.TimeSteppers: update_state!, time_step!
 using Oceananigans.OutputReaders: OnDisk, InMemory
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyInterface, CanopyConductanceHumidity,
-    CriticalSaturation, InteractiveAbsorbedPAR, SoilConductiveFlux, land_canopy_water_capacity
+    CriticalSaturation, AbsorbedPhotosyntheticallyActiveRadiation, SoilConductiveFlux, land_canopy_water_capacity
 using NumericalEarth.Lands: SlabLand, SlabEnergy, VariablySaturatedHydrology, InterceptingHydrology,
     VanGenuchtenRetention, VanGenuchtenConductivity, canopy_store_update
 
@@ -22,7 +22,7 @@ vapor_flux(model) = scalar(model.interfaces.atmosphere_land_interface.fluxes.wat
 
 function interception_model(arch, FT; leaf_area_index = 3.0, capacity = 0.1, rain = 1e-3, interception = true)
     hydrology = interception ? InterceptingHydrology(FT; soil = soil_hydrology(FT), leaf_area_index, capacity_per_leaf_area = capacity) : soil_hydrology(FT)
-    canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index, moisture_stress = CriticalSaturation(0.5), absorbed_par = InteractiveAbsorbedPAR(FT))
+    canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index, moisture_stress = CriticalSaturation(0.5), absorbed_par = AbsorbedPhotosyntheticallyActiveRadiation(FT))
     surface = CanopyInterface(FT; soil_humidity = bare_soil_humidity(FT), canopy_humidity, ground_heat_flux = SoilConductiveFlux(1.5, 0.05))
     return coupled_land_model(arch, FT; air_temperature = 298, air_specific_humidity = 0.010, wind = 3, rain,
                               hydrology, atmosphere_land_interface_state=surface, land_temperature = 298, water = 300.0, shortwave = 400)

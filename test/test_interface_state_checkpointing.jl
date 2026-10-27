@@ -4,12 +4,12 @@ using Oceananigans
 using Oceananigans: prognostic_state, restore_prognostic_state!
 using Oceananigans.TimeSteppers: time_step!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyInterface, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR,
+    CanopyInterface, CanopyConductanceHumidity, CriticalSaturation, AbsorbedPhotosyntheticallyActiveRadiation,
     SoilConductiveFlux, SoilSkinTemperature, compute_atmosphere_land_fluxes!
 
 checkpoint_canopy() = CanopyInterface(Float64; soil_humidity = bare_soil_humidity(Float64),
     canopy_humidity = CanopyConductanceHumidity(Float64; leaf_area_index = 4.0, moisture_stress = CriticalSaturation(0.5),
-                                                absorbed_par = InteractiveAbsorbedPAR(Float64)),
+                                                absorbed_par = AbsorbedPhotosyntheticallyActiveRadiation(Float64)),
     ground_heat_flux = SoilConductiveFlux(1.5, 0.05))
 
 checkpoint_skin() = SoilSkinTemperature(1.5, 0.05)

@@ -65,7 +65,7 @@ export
     ExponentialSoilResistance,
     GroundSurfaceResistance,
     JarvisConductance,
-    InteractiveAbsorbedPAR,
+    AbsorbedPhotosyntheticallyActiveRadiation,
     AltitudeCorrection,
     atmosphere_land_interface,
     SlabOcean,

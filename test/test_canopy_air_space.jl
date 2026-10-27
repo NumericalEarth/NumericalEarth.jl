@@ -7,7 +7,7 @@ using Oceananigans.OutputReaders: OnDisk, InMemory
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyInterface, CanopyConductanceHumidity, EnergyBalanceTemperature,
     DryLayerHumidity, StorageBasedDryLayerDepth, DryLayerVaporPistonVelocity, PowerLawTortuosity,
-    CriticalSaturation, InteractiveAbsorbedPAR, absorbed_par_value,
+    CriticalSaturation, AbsorbedPhotosyntheticallyActiveRadiation, absorbed_par_value,
     SoilConductiveFlux, SoilSkinTemperature, canopy_air_space_solve, dry_layer_terms,
     saturation_specific_humidity, AtmosphericThermodynamics,
     AirLandInterfaceState, InterfaceFluxScales, InterfaceVelocities, AirLandRadiationState,
@@ -20,7 +20,7 @@ using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 canopy_ground_surface(FT; leaf_area_index = 4.0, soil_humidity = bare_soil_humidity(FT), kw...) =
     CanopyInterface(FT; soil_humidity, kw...,
         canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index, moisture_stress = CriticalSaturation(0.5),
-                                                    absorbed_par = InteractiveAbsorbedPAR(FT)))
+                                                    absorbed_par = AbsorbedPhotosyntheticallyActiveRadiation(FT)))
 
 power_law_soil_humidity(FT) = DryLayerHumidity(FT;
     dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
@@ -119,7 +119,7 @@ end
 
 @testset "Absorbed PAR absorbs on the canopy's own structure" begin
     FT = Float64
-    par = InteractiveAbsorbedPAR(FT; leaf_par_albedo = 0.08, extinction = 0.5, clumping = 1)
+    par = AbsorbedPhotosyntheticallyActiveRadiation(FT; leaf_par_albedo = 0.08, extinction = 0.5, clumping = 1)
     Ψᵣ = AirLandRadiationState(FT(5.67e-8), FT(0.2), FT(0.95), FT(-800), FT(-350))
     λˡᵉᵃᶠ = FT(3)
     incident = - par.par_fraction * Ψᵣ.ℐꜜˢʷ * par.photon_per_joule
@@ -132,7 +132,7 @@ end
     transmittance = FT(0.4)
     supplied = absorbed_par_value(par, Ψᵣ, λˡᵉᵃᶠ, transmittance)
     @test supplied ≈ (1 - par.leaf_par_albedo) * (1 - transmittance) * incident / λˡᵉᵃᶠ
-    @test absorbed_par_value(InteractiveAbsorbedPAR(FT; leaf_par_albedo = 0.08, extinction = 0.9), Ψᵣ, λˡᵉᵃᶠ, transmittance) ≈ supplied
+    @test absorbed_par_value(AbsorbedPhotosyntheticallyActiveRadiation(FT; leaf_par_albedo = 0.08, extinction = 0.9), Ψᵣ, λˡᵉᵃᶠ, transmittance) ≈ supplied
 
     canopy_surface = canopy_ground_surface(FT; leaf_area_index = λˡᵉᵃᶠ, extinction = 0.55, clumping = 0.75)
     @test exp(-canopy_surface.extinction * λˡᵉᵃᶠ * canopy_surface.clumping) != own

@@ -6,7 +6,7 @@ using Oceananigans.TimeSteppers: time_step!
 using RRTMGP   # activates Breeze's RadiativeTransferModel extension
 
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyInterface, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR
+    CanopyInterface, CanopyConductanceHumidity, CriticalSaturation, AbsorbedPhotosyntheticallyActiveRadiation
 using NumericalEarth.Lands: BucketHydrology, SlabEnergy, SlabLand
 using NumericalEarth.Radiations: default_stefan_boltzmann_constant
 
@@ -31,7 +31,7 @@ function rtm_canopy_components(arch; hour = 12, surface_storage = nothing)
 
     canopy = CanopyInterface(Float64; soil_humidity = bare_soil_humidity(Float64),
         canopy_humidity = CanopyConductanceHumidity(Float64; leaf_area_index = 4, moisture_stress = CriticalSaturation(0.5),
-                                                    absorbed_par = InteractiveAbsorbedPAR(Float64)))
+                                                    absorbed_par = AbsorbedPhotosyntheticallyActiveRadiation(Float64)))
 
     land_grid = RectilinearGrid(arch; size = grid.Nx, halo = grid.Hx, x = (-1kilometer, 1kilometer), topology = (Periodic, Flat, Flat))
     land = SlabLand(land_grid; surface_storage, hydrology = BucketHydrology(Float64; maximum_water_storage = 150), energy = SlabEnergy(Float64))

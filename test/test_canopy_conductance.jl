@@ -9,7 +9,7 @@ using NumericalEarth.Lands: SaturatedSurface
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     JarvisConductance,
     CanopyConductanceHumidity, BulkHumidity,
-    InteractiveAbsorbedPAR, absorbed_par_value,
+    AbsorbedPhotosyntheticallyActiveRadiation, absorbed_par_value,
     stomatal_conductance
 
 @testset "Standalone canopy transpiration draws from the soil" begin
@@ -54,7 +54,7 @@ end
         λˡᵉᵃᶠ = FT(2)
         @test absorbed_par_value(FT(4e-4), nothing, λˡᵉᵃᶠ, nothing) == FT(4e-4)
 
-        inter = InteractiveAbsorbedPAR(FT)
+        inter = AbsorbedPhotosyntheticallyActiveRadiation(FT)
         APAR(ℐꜜˢʷ) = absorbed_par_value(inter, (; ℐꜜˢʷ = -FT(ℐꜜˢʷ)), λˡᵉᵃᶠ, nothing)
         @test APAR(0) == 0
         @test 1e-4 < APAR(500) < 1e-3   # same order as the prescribed default
@@ -82,6 +82,6 @@ end
         @test abs(canopy_latent_heat(moisture_stress = 0.3)) < LE_canopy
         @test 0 < canopy_latent_heat(conductance = JarvisConductance(FT)) < LE_bulk
         # With radiation off the interactive canopy sees no light, so LE ≈ 0 up to roundoff.
-        @test -1e-10 ≤ canopy_latent_heat(absorbed_par = InteractiveAbsorbedPAR(FT)) < LE_canopy
+        @test -1e-10 ≤ canopy_latent_heat(absorbed_par = AbsorbedPhotosyntheticallyActiveRadiation(FT)) < LE_canopy
     end
 end

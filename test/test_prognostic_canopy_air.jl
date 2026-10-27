@@ -3,14 +3,14 @@ include("runtests_setup.jl")
 using Oceananigans
 using Oceananigans.TimeSteppers: time_step!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyInterface, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR,
+    CanopyInterface, CanopyConductanceHumidity, CriticalSaturation, AbsorbedPhotosyntheticallyActiveRadiation,
     AtmosphericThermodynamics
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 
 canopy_model(arch; kw...) = coupled_land_model(arch; kw...,
     atmosphere_land_interface_state = CanopyInterface(Float64; soil_humidity = bare_soil_humidity(Float64),
         canopy_humidity = CanopyConductanceHumidity(Float64; leaf_area_index = 4.0, moisture_stress = CriticalSaturation(0.5),
-                                                    absorbed_par = InteractiveAbsorbedPAR(Float64))))
+                                                    absorbed_par = AbsorbedPhotosyntheticallyActiveRadiation(Float64))))
 
 @testset "Prognostic canopy air space" begin
     for arch in test_architectures

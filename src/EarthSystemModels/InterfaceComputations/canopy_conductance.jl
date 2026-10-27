@@ -16,7 +16,7 @@ read from the ground hydrology (`moisture_stress`, a `Number`, a
 [`PlantAvailableWaterStress`](@ref) — the model meant for transpiration — or a
 [`CriticalSaturation`](@ref)). The default conductance is
 [`JarvisConductance`](@ref). Absorbed PAR is a prescribed `Number` or live from the
-radiation state ([`InteractiveAbsorbedPAR`](@ref)).
+radiation state ([`AbsorbedPhotosyntheticallyActiveRadiation`](@ref)).
 
 Fields:
 - `leaf_area_index` : bulk λˡᵉᵃᶠ (–), upscales leaf `gₛ` to the canopy.
@@ -25,7 +25,7 @@ Fields:
   (wilting-point/field-capacity endpoints, the model meant for a transpiring canopy), or
   a [`CriticalSaturation`](@ref) (the bare-soil evaporation model).
 - `absorbed_par`    : a prescribed per-leaf absorbed PAR (`Number`, mol photon m⁻² s⁻¹) or an
-  [`InteractiveAbsorbedPAR`](@ref).
+  [`AbsorbedPhotosyntheticallyActiveRadiation`](@ref).
 - `phase`           : saturation phase (Liquid).
 """
 struct CanopyConductanceHumidity{L, C, S, A, Φ}
