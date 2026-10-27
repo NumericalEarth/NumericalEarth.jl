@@ -633,6 +633,28 @@ end
     @test child_tke_advection.bounds.minimum_value == 0
 end
 
+@testset "Breeze nested_atmosphere_model: divergence_damping reaches the acoustic substeps" begin
+    parent_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 4),
+                                        longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),
+                                        z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(parent_grid, collect(0.0:1.0:2.0))
+    set!(parent.temperature,       (x, y, z, t) -> 280.0)
+    set!(parent.specific_humidity, (x, y, z, t) -> 0.005)
+    set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
+    set!(parent.pressure,          (x, y, z, t) -> 9.0e4)
+
+    child_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 8),
+                                       longitude = (-1, 1), latitude = (-1, 1), z = (0, 1000),
+                                       halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+
+    nested = nested_atmosphere_model(parent, child_grid;
+                                     divergence_damping = ThermalDivergenceDamping(),
+                                     parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
+
+    @test nested.child.dynamics.time_discretization.damping isa ThermalDivergenceDamping
+end
+
 # The lateral boundary relaxation is keyed by the density-weighted prognostic, so a caller's own specific-key
 # forcing combines with it rather than replacing it.
 @testset "Lateral boundary relaxation survives a caller-supplied specific forcing" begin

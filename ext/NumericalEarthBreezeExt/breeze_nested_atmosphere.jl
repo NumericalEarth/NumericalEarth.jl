@@ -209,13 +209,13 @@ end
 default_lid_depth(grid) = convert(eltype(grid), grid.Lz / 4)
 
 # Default child dynamics: compressible with split-explicit acoustic substepping, an `UpperSponge`
-# Rayleigh layer over the top `damping_depth` meters at `damping_rate`, and no divergence damping
-# (its (ρθ)′-proxy damper injects a spurious force on an unbalanced cold start). When given,
-# `base_pressure`/`reference_potential_temperature` anchor the hydrostatic reference and the
-# perturbation-form pressure-gradient reference profile.
-function default_nested_dynamics(grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth)
+# Rayleigh layer over the top `damping_depth` meters at `damping_rate`, and `divergence_damping` in
+# the acoustic substeps. When given, `base_pressure`/`reference_potential_temperature` anchor the
+# hydrostatic reference and the perturbation-form pressure-gradient reference profile.
+function default_nested_dynamics(grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth,
+                                 divergence_damping)
     time_discretization = SplitExplicitTimeDiscretization(sponge = UpperSponge(; damping_rate, depth = damping_depth),
-                                                          damping = NoDivergenceDamping())
+                                                          damping = divergence_damping)
     kw = (;)
     isnothing(base_pressure)                   || (kw = merge(kw, (; base_pressure)))
     isnothing(reference_potential_temperature) || (kw = merge(kw, (; reference_potential_temperature)))
@@ -297,8 +297,9 @@ absent, `qᵗ = qᵛ`).
 Provides sensible, overridable physics defaults: `microphysics` (1-moment mixed-phase when
 `CloudMicrophysics` is loaded), `momentum_advection = WENO(order=9)`, `coriolis = SphericalCoriolis()`,
 prognostic-TKE vertical mixing `closure = TKEBasedTurbulenceClosure()`, and a compressible split-explicit
-`dynamics` with an `UpperSponge` over the top `damping_depth` m at `damping_rate`; a matching ρw Rayleigh
-lid sponge (`Relaxation` toward zero) is added to `forcing`. Pass
+`dynamics` with an `UpperSponge` over the top `damping_depth` m at `damping_rate` and the acoustic
+`divergence_damping` (default `NoDivergenceDamping()`; e.g. Breeze's `ThermalDivergenceDamping()`); a
+matching ρw Rayleigh lid sponge (`Relaxation` toward zero) is added to `forcing`. Pass
 `base_pressure`/`reference_potential_temperature` to anchor the default dynamics. Any
 `boundary_conditions`/`forcing` the caller passes are merged with the parent-derived ones (caller wins).
 
@@ -346,7 +347,9 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     coriolis = SphericalCoriolis(),
     damping_rate = 1/5,
     damping_depth = default_lid_depth(child_grid),
-    dynamics = default_nested_dynamics(child_grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth),
+    divergence_damping = NoDivergenceDamping(),
+    dynamics = default_nested_dynamics(child_grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth,
+                                       divergence_damping),
     boundary_conditions = NamedTuple(),
     forcing = NamedTuple(),
     kw...)
