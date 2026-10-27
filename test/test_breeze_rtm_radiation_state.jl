@@ -93,9 +93,10 @@ end
             exchanger = model.interfaces.exchanger.radiation
             interface = model.interfaces.atmosphere_land_interface
 
-            time_step!(model, 1.0)
+            # A step's land fluxes are computed from the radiation published before it.
             ℐꜜˡʷ = Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
             ℐꜜˢʷ = Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
+            time_step!(model, 1.0)
 
             @test Array(interior(exchanger.state.ℐꜜˢʷ)) ≈ Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
             @test Array(interior(exchanger.state.ℐꜜˡʷ)) ≈ Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
@@ -118,10 +119,10 @@ end
             rtm = model.radiation
             interface = model.interfaces.atmosphere_land_interface
 
-            time_step!(model, 1.0)
             ℐꜜˡʷ = Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
             ℐꜜˢʷ = Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
             ℐꜛˢʷ = Array(interior(rtm.upwelling_shortwave_flux))[:, :, 1]
+            time_step!(model, 1.0)
 
             σ = NumericalEarth.Radiations.default_stefan_boltzmann_constant
             Tₛ = Array(interior(interface.temperature))

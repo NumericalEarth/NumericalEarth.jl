@@ -71,19 +71,15 @@ end
         time_step!(model, 300.0)
         state = model.land.surface_storage.prognostic
         before = arrays(state)
-        compute_atmosphere_land_fluxes!(model)
-        tendencies = arrays(model.land.surface_storage.tendencies)
+        compute_atmosphere_land_fluxes!(model, 300.0)
+        candidate = arrays(model.land.surface_storage.next_state)
         latent_heat = model.interfaces.atmosphere_land_interface.fluxes.latent_heat
         heat = scalar(latent_heat)
-        compute_atmosphere_land_fluxes!(model)
+        compute_atmosphere_land_fluxes!(model, 300.0)
         @test arrays(state) == before
-        @test arrays(model.land.surface_storage.tendencies) == tendencies
+        @test arrays(model.land.surface_storage.next_state) == candidate
         @test scalar(latent_heat) == heat
-        update_state!(model)
-        @test arrays(state) == before
-        time_step!(model.land, 300.0)
-        accepted_tendencies = arrays(model.land.surface_storage.tendencies)
-        expected = map((x, tendency) -> x .+ 300 .* tendency, before, accepted_tendencies)
-        @test all(map((x, y) -> isapprox(x, y; atol=1e-9), arrays(state), expected))
+        time_step!(model, 300.0)
+        @test arrays(state) == candidate
     end
 end

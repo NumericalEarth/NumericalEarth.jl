@@ -37,7 +37,7 @@ function canopy_arguments(FT; air_temperature = 300, air_specific_humidity = 0.0
     Ψₐ = (z = FT(10), u = FT(wind), v = FT(0), T = FT(air_temperature), p = FT(101325), q = FT(air_specific_humidity), h_bℓ = FT(600))
     Ψˡᵃ = (T = FT(land_temperature), 𝒮 = FT(saturation), effective_vapor_diffusivity = FT(vapor_diffusivity),
            canopy_water_storage = FT(canopy_water_storage), canopy_water_capacity = FT(canopy_water_capacity),
-           surface_storage = nothing, thermal_exchange_depth = FT(0.05), leaf_area_index = FT(leaf_area_index))
+           surface_storage = nothing, thermal_exchange_depth = FT(0.05), time_step = FT(0), leaf_area_index = FT(leaf_area_index))
     Ψᵣ = AirLandRadiationState(FT(5.670374e-8), FT(albedo), FT(emissivity), FT(-600), FT(-350))
     ℙₐ = (thermodynamics_parameters = AtmosphereThermodynamicsParameters(FT), gravitational_acceleration = FT(9.81))
     return Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ

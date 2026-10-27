@@ -46,11 +46,10 @@ land_model = AtmosphereLandModel(atmosphere, land; atmosphere_land_interface_sta
                                 radiation=PrescribedRadiation(land_grid))
 ```
 
-The interface solve computes instantaneous fluxes and storage tendencies from the current
-component states, without a time step. `time_step!(land, Δt)` advances the canopy-air or
-skin state with backward Euler. Its nonlinear solve evaluates diagnostic fluxes at trial
-states through the coupled flux boundary condition. The converged fluxes drive the bulk
-land and atmosphere updates. Canopy-air and skin storage
+The interface solve computes step-mean canopy fluxes and an analytical canopy-air update
+using fixed effective conductances and source states over each time step. Prognostic skin
+temperature uses backward Euler with Newton refinement in the interface solve. The land
+step applies each candidate update once. Canopy-air and skin storage
 are checkpointed with the land. Checkpoints also preserve interface temperatures and flux
 partitions from the completed step so diagnostics remain consistent immediately after pickup.
 

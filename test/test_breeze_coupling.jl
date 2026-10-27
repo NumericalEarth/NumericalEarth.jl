@@ -432,9 +432,7 @@ end
         end
 
         @testset "Child rain reaches the exchanger and the land bucket on $A" begin
-            # After one coupled step the Kessler child's surface rain flux must be positive
-            # and assembled into the land's precipitation accumulator. Kessler requires
-            # Tetens saturation constants (Breeze.jl#858).
+            # Kessler requires Tetens saturation constants (Breeze.jl#858).
             model = build_nested_land_test_model(arch;
                 microphysics = DCMIP2016KesslerMicrophysics(),
                 thermodynamic_constants = ThermodynamicConstants(saturation_vapor_pressure = TetensFormula(liquid_temperature_offset = 36)))
@@ -444,11 +442,12 @@ end
 
             Jʳⁿ = model.interfaces.exchanger.atmosphere.state.Jʳⁿ
             @test maximum(Array(interior(Jʳⁿ))) > 0
-            precipitation = Array(interior(model.land.fluxes.precipitation))
-            evaporation = Array(interior(model.land.fluxes.evaporation))
-            @test maximum(precipitation) > 0
+            rain = Array(interior(Jʳⁿ))
             water_before = Array(interior(model.land.water_storage))
             time_step!(model, 1)
+            precipitation = Array(interior(model.land.fluxes.precipitation))
+            @test all(precipitation .>= rain)
+            evaporation = Array(interior(model.land.fluxes.evaporation))
             @test Array(interior(model.land.water_storage)) ≈ water_before .+ precipitation .- evaporation
 
             dry = build_nested_land_test_model(arch)

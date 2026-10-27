@@ -33,9 +33,8 @@ end
         model = interception_model(arch, Float64)
         land = model.land
         before = scalar(land.water_storage) + canopy_storage(land)
-        evaporation = vapor_flux(model)
         time_step!(model, 60.0)
-        @test scalar(land.water_storage) + canopy_storage(land) - before ≈ 60 * (1e-3 - evaporation) atol = 1e-10
+        @test scalar(land.water_storage) + canopy_storage(land) - before ≈ 60 * (1e-3 - vapor_flux(model)) atol = 1e-10
         @test land.hydrology.leaf_area_index == 3.0
     end
 end
@@ -137,7 +136,7 @@ end
         for _ in 1:200
             Mᶜᵃⁿ⁻ = canopy_storage(land)
             time_step!(model, 3600.0)
-            @test canopy_storage(land) ≤ Mᶜᵃⁿ⁻
+            @test scalar(land.fluxes.canopy_evaporation) ≤ Mᶜᵃⁿ⁻ / 3600 * (1 + 1e-5)
             @test canopy_storage(land) ≥ 0
         end
         @test canopy_storage(land) < 1e-3
