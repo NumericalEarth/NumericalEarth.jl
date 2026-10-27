@@ -261,6 +261,26 @@ end
     @test model.parent.clock.time == model.clock.time == 20 * 60.0
 end
 
+@testset "Split-explicit substeps past the child step hold the parent, not extrapolate it, on $(arch)" for arch in test_architectures
+    # A parent free surface rising from 0 to 1 m over its 10 days
+    parent_ocean = nesting_test_parent(arch)
+    interior(parent_ocean.free_surface)[:, :, 1, 2] .= 1
+    fill_prescribed_halo_regions!(parent_ocean)
+
+    grid = nesting_test_child_grid(arch)
+    model = nested_ocean_model(parent_ocean, grid)
+    Δt = 600.0
+    time_step!(model, Δt)
+
+    U_condition = on_architecture(CPU(), model.child.free_surface.barotropic_velocities.U.boundary_conditions.west.condition)
+    η_parent(t) = t / 10days
+    η_boundary(t) = getbc(U_condition, 10, 1, on_architecture(CPU(), grid), (; time = t))[2]
+
+    @test η_boundary(Δt / 2) ≈ η_parent(Δt / 2)
+    @test η_boundary(Δt) ≈ η_parent(Δt)
+    @test η_boundary(3Δt / 2) ≈ η_parent(Δt)
+end
+
 @testset "Open boundary conditions move to the CPU with the child's fields on $(arch)" for arch in test_architectures
     # As when output written on `arch` is read back on the CPU
     model = nested_ocean_model(nesting_test_parent(arch), nesting_test_child_grid(arch))
