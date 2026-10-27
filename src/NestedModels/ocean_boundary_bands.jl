@@ -52,6 +52,9 @@ end
 Adapt.adapt_structure(to, band::BoundaryBand) =
     BoundaryBand(adapt(to, band.previous), adapt(to, band.current), time_bounds(band.times))
 
+Oceananigans.Architectures.on_architecture(to, band::BoundaryBand) =
+    BoundaryBand(on_architecture(to, band.previous), on_architecture(to, band.current), band.times)
+
 """
     band_value(band, i, j, k, time)
 

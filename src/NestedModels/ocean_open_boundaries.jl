@@ -26,6 +26,9 @@ BoundaryTimeSeries{Dim}(series::S, index, along) where {Dim, S} = BoundaryTimeSe
 Adapt.adapt_structure(to, b::BoundaryTimeSeries{Dim}) where Dim =
     BoundaryTimeSeries{Dim}(adapt(to, b.series), b.index, b.along)
 
+Oceananigans.Architectures.on_architecture(to, b::BoundaryTimeSeries{Dim}) where Dim =
+    BoundaryTimeSeries{Dim}(on_architecture(to, b.series), b.index, b.along)
+
 """
     BarotropicBoundaryTransport{Dim}(velocity, depth_mean, face, cell, along)
 
@@ -50,6 +53,9 @@ BarotropicBoundaryTransport{Dim}(velocity::U, depth_mean::M, face, cell, along) 
 Adapt.adapt_structure(to, U::BarotropicBoundaryTransport{Dim}) where Dim =
     BarotropicBoundaryTransport{Dim}(adapt(to, U.velocity), adapt(to, U.depth_mean), U.face, U.cell, U.along)
 
+Oceananigans.Architectures.on_architecture(to, U::BarotropicBoundaryTransport{Dim}) where Dim =
+    BarotropicBoundaryTransport{Dim}(on_architecture(to, U.velocity), on_architecture(to, U.depth_mean), U.face, U.cell, U.along)
+
 """
     ConsistentBoundaryVelocity{Dim}(series, depth_mean, index, cell, along)
 
@@ -72,6 +78,9 @@ ConsistentBoundaryVelocity{Dim}(series::S, depth_mean::M, index, cell, along) wh
 
 Adapt.adapt_structure(to, b::ConsistentBoundaryVelocity{Dim}) where Dim =
     ConsistentBoundaryVelocity{Dim}(adapt(to, b.series), adapt(to, b.depth_mean), b.index, b.cell, b.along)
+
+Oceananigans.Architectures.on_architecture(to, b::ConsistentBoundaryVelocity{Dim}) where Dim =
+    ConsistentBoundaryVelocity{Dim}(on_architecture(to, b.series), on_architecture(to, b.depth_mean), b.index, b.cell, b.along)
 
 # Halo fills without a clock (e.g. during `set!`) evaluate the boundary at t = 0.
 @inline boundary_time(clock) = Time(clock.time)

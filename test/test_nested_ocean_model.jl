@@ -8,7 +8,7 @@ using NumericalEarth.NestedModels: open_boundary_sides, parent_ocean_sources, re
 using NumericalEarth.Oceans: fill_prescribed_halo_regions!
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, ocean_surface_temperature,
                                         ocean_temperature, prognostic_model
-using Oceananigans.BoundaryConditions: getbc, GravityWaveRadiation, NormalFlow, ObliqueRadiation,
+using Oceananigans.BoundaryConditions: fill_halo_regions!, getbc, GravityWaveRadiation, NormalFlow, ObliqueRadiation,
                                        SurfaceWaveRadiation, TracerReservoir, Value
 using Oceananigans.Grids: MutableVerticalDiscretization, inactive_cell
 using Oceananigans.ImmersedBoundaries: bottom_height_field, has_active_cells_map
@@ -259,6 +259,21 @@ end
     @test maximum(abs, T .- T₀) < 1e-10
     @test maximum(abs, S .- S₀) < 1e-10
     @test model.parent.clock.time == model.clock.time == 20 * 60.0
+end
+
+@testset "Open boundary conditions move to the CPU with the child's fields on $(arch)" for arch in test_architectures
+    # As when output written on `arch` is read back on the CPU
+    model = nested_ocean_model(nesting_test_parent(arch), nesting_test_child_grid(arch))
+    child = model.child
+    fields = (u = child.velocities.u, v = child.velocities.v, T = child.tracers.T)
+
+    for name in keys(fields)
+        field = fields[name]
+        cpu_field = on_architecture(CPU(), field)
+        fill_halo_regions!(field)
+        fill_halo_regions!(cpu_field)
+        @test Array(parent(cpu_field)) ≈ Array(parent(field))
+    end
 end
 
 @testset "A z★ child samples the parent at its reference depths on $(arch)" for arch in test_architectures
