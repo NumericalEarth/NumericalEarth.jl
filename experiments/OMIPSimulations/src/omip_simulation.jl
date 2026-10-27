@@ -2259,9 +2259,10 @@ globally uniform optics, a surface `Field`, or a `FieldTimeSeries`.
 
 `:none` returns `nothing`, which routes the whole shortwave into the surface heat flux instead of the
 interior: `shortwave_radiative_forcing` falls back to returning the flux to the boundary condition
-rather than stashing it for a penetrating scheme. The vertical closure's surface buoyancy flux is
-built from the tracer boundary conditions, so this is also the only setting under which it sees the
-shortwave at all.
+rather than stashing it for a penetrating scheme. With a `TwoColorRadiation`, a
+`CATKEVerticalDiffusivity` receives it as `penetrative_radiation` and counts the shortwave absorbed
+below the surface in its convective scales; closures that read only the tracer boundary conditions
+(`:nemo_tke`) see none of it, and `:none` is then the only setting under which they see the shortwave.
 """
 function omip_radiative_forcing(grid, chlorophyll, restoring_dir)
     chlorophyll === :none && return nothing
