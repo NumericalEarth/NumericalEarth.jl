@@ -153,7 +153,6 @@ function boundary_relaxation(child, prognostic, rate, mask, width)
     ρᵈ = dynamics_density(child.dynamics)
     θ = Oceananigans.fields(child.formulation).θ
 
-    # Wrapping a `VectorComponent` would interpolate it as a scalar and silently drop the rotation.
     fts_target(target) = FieldTimeSeriesTarget(target, target.grid)
     fts_target(target::VectorComponent) = target
 
@@ -167,10 +166,8 @@ function boundary_relaxation(child, prognostic, rate, mask, width)
     names = (:ρθ, :ρu, :ρv, moisture_name)
     strips = NamedTuple{sides}(
         (forcings = NamedTuple{names}((specific(:ρθ, θ, prognostic.θ[side]),
-                                       specific(:ρu, child.velocities.u,
-                                                VectorComponent{:u}(prognostic.u[side], prognostic.v[side])),
-                                       specific(:ρv, child.velocities.v,
-                                                VectorComponent{:v}(prognostic.u[side], prognostic.v[side])),
+                                       specific(:ρu, child.velocities.u, VectorComponent{:u}(prognostic.u[side], prognostic.v[side])),
+                                       specific(:ρv, child.velocities.v, VectorComponent{:v}(prognostic.u[side], prognostic.v[side])),
                                        relaxation(child_fields[moisture_name], prognostic.ρqᵛᵉ[side]))),
          region = regions[side])
         for side in sides)
@@ -561,13 +558,12 @@ child_momentum(prognostic, child_grid, t₀) =
     (interpolate_to_child(prognostic.ρu, child_grid, t₀, (Face, Center, Center)),
      interpolate_to_child(prognostic.ρv, child_grid, t₀, (Center, Face, Center)))
 
-# The rotation angle is defined at cell centers, so rotate there and interpolate to the staggered
-# locations afterwards.
+# Rotate at cell centers with `intrinsic_vector`, then interpolate to the staggered locations.
 function child_momentum(prognostic, child_grid::OrthogonalSphericalShellGrid, t₀)
     ρuᵉ = interpolate_to_child(prognostic.ρu, child_grid, t₀)
     ρvᵉ = interpolate_to_child(prognostic.ρv, child_grid, t₀)
-    ρuᶜ = Field(KernelFunctionOperation{Center, Center, Center}(rotated_x_component, child_grid, ρuᵉ, ρvᵉ))
-    ρvᶜ = Field(KernelFunctionOperation{Center, Center, Center}(rotated_y_component, child_grid, ρuᵉ, ρvᵉ))
+    ρuᶜ = KernelFunctionOperation{Center, Center, Center}(rotated_x_component, child_grid, ρuᵉ, ρvᵉ)
+    ρvᶜ = KernelFunctionOperation{Center, Center, Center}(rotated_y_component, child_grid, ρuᵉ, ρvᵉ)
     return Field(@at (Face, Center, Center) ρuᶜ), Field(@at (Center, Face, Center) ρvᶜ)
 end
 
