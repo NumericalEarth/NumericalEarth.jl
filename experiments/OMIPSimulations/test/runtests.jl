@@ -1,5 +1,6 @@
 using OMIPSimulations
-using OMIPSimulations: ConservativeSurfaceFluxRestoring, update_restoring_flux!, BoundaryValueTransport
+using OMIPSimulations: BoundaryValueTransport
+using NumericalEarth.DataWrangling: ConservativeSurfaceFluxRestoring, update_restoring_flux!
 
 using Oceananigans
 using Oceananigans.Units
