@@ -55,13 +55,13 @@ end
 
 @testset "Reactant land energy flux assembly" begin
     for (temperature, expected_flux) in ((BulkTemperature(), 200),
-                                        (SoilSkinTemperature(1.5, 0.05; storage=DiagnosticSkin()), -150))
+                                        (SoilSkinTemperature(1.5, 0.05), -150))
         grid = LatitudeLongitudeGrid(ReactantState(); size = 1, latitude = 10, longitude = 10,
                                      z = (-1, 0), topology = (Flat, Flat, Bounded))
         atmosphere = PrescribedAtmosphere(grid, [0.0, 1.0e8])
-        land = SlabLand(grid; surface=LandSurface(temperature))
+        land = SlabLand(grid)
         fluxes = SimilarityTheoryFluxes(; solver_stop_criteria=FixedIterations(8))
-        model = AtmosphereLandModel(atmosphere, land; atmosphere_land_fluxes=fluxes)
+        model = AtmosphereLandModel(atmosphere, land; atmosphere_land_fluxes=fluxes, atmosphere_land_interface_temperature=temperature)
         interface = model.interfaces.atmosphere_land_interface
         set!(land; T=290)
         set!(interface.temperature, 295)

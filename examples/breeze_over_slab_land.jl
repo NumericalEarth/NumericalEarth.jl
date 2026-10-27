@@ -121,8 +121,7 @@ surface_humidity = DryLayerHumidity(;
         minimum_dry_layer_depth = 1e-4,
         molecular_diffusivity = 2.5e-5,
         tortuosity = PowerLawTortuosity()))
-slab_land = SlabLand(land_grid; hydrology, energy,
-                     surface = LandSurface(specific_humidity=surface_humidity))
+slab_land = SlabLand(land_grid; hydrology, energy)
 
 # ### Surface saturation and the wet/dry contrast
 #
@@ -263,6 +262,7 @@ set!(θᵣ, liquid_ice_potential_temperature(atmos.model))
 # The atmosphere runs in `Float32` (its clock follows the grid), so the coupled
 # model needs a matching `Float32` clock.
 model = AtmosphereLandModel(atmos, slab_land; radiation,
+                            atmosphere_land_interface_specific_humidity = surface_humidity,
                             clock = Clock{eltype(grid)}(time = 0))
 
 # The wizard recomputes Δt every iteration so the step always tracks the

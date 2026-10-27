@@ -226,61 +226,6 @@ Base.show(io::IO, r::GroundSurfaceResistance) = print(io, summary(r))
     return 1 / max(C * u★, eps(FT))
 end
 
-#####
-##### Canopy-air storage: diagnostic (massless) or prognostic (the node carries the
-##### heat and moisture capacity of the canopy air layer).
-#####
-
-"""
-    DiagnosticCanopyAir()
-
-Massless canopy-air node (the default): `(Tᵃᶜᵃⁿ, qᵃᶜᵃⁿ)` is the conductance-weighted mean
-of the leaf, ground, and atmosphere states every iterate of the Monin–Obukhov fixed point.
-"""
-struct DiagnosticCanopyAir end
-
-Base.summary(::DiagnosticCanopyAir) = "DiagnosticCanopyAir"
-Base.show(io::IO, s::DiagnosticCanopyAir) = print(io, summary(s))
-
-"""
-    PrognosticCanopyAir(FT = Oceananigans.defaults.FloatType; layer_depth = 10)
-
-Prognostic canopy-air storage: the node `(Tᵃᶜᵃⁿ, qᵃᶜᵃⁿ)` carries the heat and moisture
-capacity of the canopy air layer of depth ``hᵃᶜᵃⁿ`` (`layer_depth`, m — a `Number`, or
-a `Field` of canopy heights),
-
-```math
-ρ c^{pm} h^{\\mathrm{acan}} \\frac{dT^{\\mathrm{acan}}}{dt} = \\mathcal{Q}^{T\\,\\mathrm{lea}} + \\mathcal{Q}^{T\\,\\mathrm{gro}} - \\mathcal{Q}^T, \\qquad
-ρ h^{\\mathrm{acan}} \\frac{dq^{\\mathrm{acan}}}{dt} = J^{v\\,\\mathrm{lea}} + J^{v\\,\\mathrm{gro}} - J^v,
-```
-
-integrated with the model time step. The node is frozen while the similarity scales
-iterate and advanced once per step by the exact exponential relaxation toward the
-conductance-weighted equilibrium of its sources; the skins are solved, and the fluxes
-exported, at the step-mean node. `layer_depth → 0` recovers the massless node.
-
-```jldoctest
-using NumericalEarth
-
-PrognosticCanopyAir(layer_depth = 12)
-
-# output
-PrognosticCanopyAir(hᵃᶜᵃⁿ=12.0)
-```
-"""
-struct PrognosticCanopyAir{H}
-    layer_depth :: H
-end
-
-PrognosticCanopyAir(FT::Type = Oceananigans.defaults.FloatType; layer_depth = 10) =
-    PrognosticCanopyAir(convert_if_number(FT, layer_depth))
-
-Base.summary(s::PrognosticCanopyAir) =
-    string("PrognosticCanopyAir(hᵃᶜᵃⁿ=", prettysummary(s.layer_depth), ")")
-Base.show(io::IO, s::PrognosticCanopyAir) = print(io, summary(s))
-
-Adapt.adapt_structure(to, s::PrognosticCanopyAir) = PrognosticCanopyAir(Adapt.adapt(to, s.layer_depth))
-
 """
     struct CanopyGroundSurface
 
@@ -290,9 +235,8 @@ Low vegetation (grass, crops) has no separable canopy air layer and belongs to a
 single-source [`CanopyConductanceHumidity`](@ref) over a soil skin. Solves the
 leaf temperature `Tˡᵉᵃ`, the ground surface temperature `Tᵍʳᵒ`, and the canopy-air node
 `(Tᵃᶜᵃⁿ, qᵃᶜᵃⁿ)` inside the Monin–Obukhov fixed point (diagnostic node, the default),
-or advances a prognostic node carrying the canopy-air heat and moisture capacity
-(`storage = PrognosticCanopyAir(...)`). Pass it as the interface temperature
-formulation; it closes the specific-humidity slot as well. Over an
+or couples to the land component's prognostic canopy-air reservoir. Pass it as the interface state
+formulation to solve temperature and specific humidity together. Over an
 [`InterceptingHydrology`](@ref) the wetted fraction `fʷᵉᵗ = (Mᶜᵃⁿ/Mᶜᵃⁿ⁺)^{2/3}` of the leaf
 ([Deardorff, 1978](@cite deardorff1978)) evaporates intercepted water at the potential
 rate through the leaf boundary layer alone; a dry canopy (`Mᶜᵃⁿ = 0`) has no wet branch.
@@ -322,9 +266,6 @@ Fields:
   vapor branches (a [`GroundSurfaceResistance`](@ref), the default, or a constant `Number`
   in s m⁻¹), or `nothing` for none.
 - `inner_iterations` : quasi-Newton iterations of the coupled skin solve.
-- `storage` : the canopy-air node storage — [`DiagnosticCanopyAir`](@ref) (the default,
-  massless node) or [`PrognosticCanopyAir`](@ref) (the node carries the canopy-air
-  heat and moisture capacity and is advanced with the model time step).
 
 The four optics slots accept a per-cell `Field{Center, Center, Nothing}` alongside a
 `Number`, so a satellite albedo product reaches the two-source radiation balance cell by
@@ -355,7 +296,7 @@ local_interface_formulation(surface, 2, 1).leaf_albedo
 0.35
 ```
 """
-struct CanopyGroundSurface{ST, S, C, RF, LA, GA, CE, GE, FT, U, W, L}
+struct CanopyGroundSurface{S, C, RF, LA, GA, CE, GE, FT, U, W, L}
     soil_humidity                 :: S
     canopy_humidity               :: C
     ground_heat_flux              :: RF
@@ -370,7 +311,6 @@ struct CanopyGroundSurface{ST, S, C, RF, LA, GA, CE, GE, FT, U, W, L}
     wet_soil_resistance           :: W
     ground_surface_resistance     :: L
     inner_iterations              :: Int
-    storage                       :: ST
 end
 
 function CanopyGroundSurface(FT=Oceananigans.defaults.FloatType;
@@ -387,8 +327,7 @@ function CanopyGroundSurface(FT=Oceananigans.defaults.FloatType;
                              undercanopy_transfer_velocity = 0.013,
                              wet_soil_resistance           = nothing,
                              ground_surface_resistance     = GroundSurfaceResistance(FT),
-                             inner_iterations              = 10,
-                             storage                       = DiagnosticCanopyAir())
+                             inner_iterations              = 10)
 
     # Convert only a scalar optics slot; a `Field` passes through and is materialized
     # per cell in the flux kernel.
@@ -401,11 +340,11 @@ function CanopyGroundSurface(FT=Oceananigans.defaults.FloatType;
                                convert(FT, leaf_boundary_layer_velocity),
                                convert_if_number(FT, undercanopy_transfer_velocity),
                                wet_soil_resistance, ground_surface_resistance,
-                               inner_iterations, storage)
+                               inner_iterations)
 end
 
-const DiagnosticCanopyGroundSurface = CanopyGroundSurface{<:DiagnosticCanopyAir}
-const PrognosticCanopyGroundSurface = CanopyGroundSurface{<:PrognosticCanopyAir}
+@inline temperature_formulation(state::CanopyGroundSurface) = state
+@inline specific_humidity_formulation(state::CanopyGroundSurface) = state
 
 #####
 ##### Per-cell optics: localization
@@ -415,10 +354,6 @@ const PrognosticCanopyGroundSurface = CanopyGroundSurface{<:PrognosticCanopyAir}
 # `state2dindex` returns a `Number` slot unchanged.
 @inline local_interface_formulation(formulation, i, j) = formulation
 
-@inline local_canopy_air_storage(storage, i, j) = storage
-@inline local_canopy_air_storage(s::PrognosticCanopyAir, i, j) =
-    PrognosticCanopyAir(state2dindex(s.layer_depth, i, j))
-
 @inline local_interface_formulation(c::CanopyGroundSurface, i, j) =
     CanopyGroundSurface(c.soil_humidity, c.canopy_humidity, c.ground_heat_flux,
                         state2dindex(c.leaf_albedo, i, j),
@@ -427,13 +362,12 @@ const PrognosticCanopyGroundSurface = CanopyGroundSurface{<:PrognosticCanopyAir}
                         state2dindex(c.ground_emissivity, i, j),
                         c.extinction, c.clumping, c.leaf_boundary_layer_velocity,
                         c.undercanopy_transfer_velocity, c.wet_soil_resistance, c.ground_surface_resistance,
-                        c.inner_iterations, local_canopy_air_storage(c.storage, i, j))
+                        c.inner_iterations)
 
 Base.summary(::CanopyGroundSurface) = "CanopyGroundSurface"
 Base.show(io::IO, c::CanopyGroundSurface) =
     print(io, "CanopyGroundSurface(soil_humidity=", summary(c.soil_humidity),
-          ", canopy_humidity=", summary(c.canopy_humidity),
-          ", storage=", summary(c.storage), ")")
+          ", canopy_humidity=", summary(c.canopy_humidity), ")")
 
 Adapt.@adapt_structure CanopyGroundSurface
 
@@ -533,8 +467,8 @@ at fixed conductances: ``x ← x^{eq} + (x - x^{eq}) e^{-Δt Σg / C}``. `Δt = 
     return equilibrium + (x - equilibrium) * decay
 end
 
-@inline canopy_air_depth(::DiagnosticCanopyAir) = 0
-@inline canopy_air_depth(s::PrognosticCanopyAir) = s.layer_depth
+@inline canopy_air_depth(::Nothing) = 0
+@inline canopy_air_depth(storage) = storage.layer_depth
 
 """
     canopy_air_space_solve(c::CanopyGroundSurface, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
@@ -546,8 +480,8 @@ are frozen at the similarity scales of `Ψₛ` (the Monin–Obukhov fixed point 
 them), and the Jacobian's dependence on the leaf vapor conductance `gˡᵉᵃᵛ(Tˡᵉᵃ)` (stomata
 and wet-canopy cap) is a one-sided difference, with the canopy-air node memory held at its
 iterate value; the rest of the Jacobian is exact. The storage enters only through the node
-capacities `Cᵀ = ρcᵖᵐhᵃᶜᵃⁿ` and `Cᵛ = ρhᵃᶜᵃⁿ`: zero for a [`DiagnosticCanopyAir`](@ref), so the
-node is that mean; for a [`PrognosticCanopyAir`](@ref) the node relaxes from its
+capacities `Cᵀ = ρcᵖᵐhᵃᶜᵃⁿ` and `Cᵛ = ρhᵃᶜᵃⁿ`: zero without land surface storage, so the
+node is that mean; with canopy-air storage the node relaxes from its
 start-of-step value toward the mean over the step. `Ψₛ` is the previous fixed-point
 iterate, whose similarity scales set the aerodynamic conductances and whose node values
 are the start-of-step node; `Ψˡᵃ` is the land state (`Ψˡᵃ.T` the bulk reservoir `Tˡᵃ`), and `Ψᵣ` the interface
@@ -587,7 +521,7 @@ radiation state.
 
     # Canopy-air heat and vapor capacities (zero for a massless node) and the
     # start-of-step node.
-    hᵃᶜᵃⁿ = convert(FT, canopy_air_depth(c.storage))
+    hᵃᶜᵃⁿ = convert(FT, canopy_air_depth(Ψˡᵃ.surface_storage))
     Cᵀ    = ρᵃᵗ * cᵖᵐ * hᵃᶜᵃⁿ
     Cᵛ    = ρᵃᵗ * hᵃᶜᵃⁿ
     T⁻    = Ψₛ.temperature
@@ -693,15 +627,16 @@ radiation state.
 end
 
 # A diagnostic node is re-solved every iterate; one shared solve returns both node values.
-@inline function interface_temperature_and_humidity(c::DiagnosticCanopyGroundSurface, ::CanopyGroundSurface,
-                                                    Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ)
+@inline function interface_temperature_and_humidity(c::CanopyGroundSurface,
+                                                    Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ,
+                                                    storage::Nothing = Ψˡᵃ.surface_storage)
     solution = canopy_air_space_solve(c, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
     return solution.Tᵃᶜᵃⁿ, solution.qᵃᶜᵃⁿ
 end
 
 # A prognostic node is model state, frozen through the fixed point.
-@inline interface_temperature_and_humidity(::PrognosticCanopyGroundSurface, ::CanopyGroundSurface,
-                                           Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ) =
+@inline interface_temperature_and_humidity(::CanopyGroundSurface,
+                                           Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ, storage) =
     (Ψₛ.temperature, Ψₛ.specific_humidity)
 
 """

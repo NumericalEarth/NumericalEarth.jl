@@ -58,9 +58,7 @@ export
     PowerLawTortuosity,
     CanopyConductanceHumidity,
     CanopyGroundSurface,
-    DiagnosticCanopyAir,
     PrognosticCanopyAir,
-    DiagnosticSkin,
     PrognosticSkin,
     AreaIndexUndercanopyVelocity,
     FrictionVelocityUndercanopyVelocity,
@@ -115,7 +113,7 @@ export
     SoilSkinTemperature,
     InteriorDiffusivity,
     # Land (prognostic SlabLand + closures)
-    SlabLand, LandSurface,
+    SlabLand,
     SlabEnergy,
     BucketHydrology,
     WaterCoupledEnergy,
@@ -246,7 +244,7 @@ const SomeKindOfFieldTimeSeries = Union{FieldTimeSeries,
 
 const SKOFTS = SomeKindOfFieldTimeSeries
 
-@inline stateindex(a::Number, i, j, k, args...) = a
+@inline stateindex(a::Union{Number, Nothing}, i, j, k, args...) = a
 @inline stateindex(a::AbstractArray, i, j, k, args...) = @inbounds a[i, j, k]
 @inline stateindex(a::SKOFTS, i, j, k, grid, time, args...) = @inbounds a[i, j, k, time]
 @inline stateindex(a::SKOFTS, i, j, k, time_interpolator::TimeInterpolator) = @inbounds a[i, j, k, time_interpolator]

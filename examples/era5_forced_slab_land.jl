@@ -181,12 +181,12 @@ make_dry_layer_humidity() = DryLayerHumidity(;
 # is sampled correctly each step.
 function coupled_slab_land_model(grid, atmosphere, radiation; energy, hydrology,
                                  exchanger_correction = nothing)
-    surface = LandSurface(specific_humidity=make_dry_layer_humidity())
-    slab_land = SlabLand(grid; energy, hydrology, surface)
+    slab_land = SlabLand(grid; energy, hydrology)
     fluxes = NumericalEarth.EarthSystemModels.InterfaceComputations.default_atmosphere_land_fluxes(
                  slab_land, eltype(grid); solver_stop_criteria = FixedIterations(8))
     return AtmosphereLandModel(atmosphere, slab_land; radiation,
                                atmosphere_land_fluxes = fluxes,
+                               atmosphere_land_interface_specific_humidity = make_dry_layer_humidity(),
                                exchanger_correction, clock = Clock(grid))
 end
 
@@ -535,8 +535,7 @@ nominal_porosity = 0.4
 
 slab_land = SlabLand(land_grid;
                      energy    = soil_energy(eltype(land_grid); deep_time_scale = 12hours),
-                     hydrology = variably_saturated_hydrology(eltype(land_grid), porosity; slab_depth),
-                     surface   = LandSurface(specific_humidity=make_dry_layer_humidity()))
+                     hydrology = variably_saturated_hydrology(eltype(land_grid), porosity; slab_depth))
 
 # Initialize skin temperature from the elevation-corrected ERA5 T₂ₘ.
 # Initial soil water `Mˡᵃ = 100 kg m⁻²` sits well below the slab's saturation
@@ -558,7 +557,8 @@ atmosphere_land_fluxes = SimilarityTheoryFluxes(momentum_roughness_length    = 0
                                                 water_vapor_roughness_length = 0.01)
 
 al_interface = atmosphere_land_interface(slab_land.grid, atmosphere, slab_land;
-                                         fluxes = atmosphere_land_fluxes)
+                                         fluxes = atmosphere_land_fluxes,
+                                         specific_humidity = make_dry_layer_humidity())
 
 model = AtmosphereLandModel(atmosphere, slab_land;
                             radiation,

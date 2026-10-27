@@ -62,12 +62,10 @@ end
     return Ψₛⁿ
 end
 
-# Interface temperature and specific humidity for one iterate, the humidity from the
-# just-updated temperature; a formulation filling both slots solves them jointly.
-@inline function interface_temperature_and_humidity(temperature_formulation, humidity_formulation,
+@inline function interface_temperature_and_humidity(state::NamedTuple,
                                                     Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ)
-    Tₛ = compute_interface_temperature(temperature_formulation, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ)
-    qₛ = compute_interface_humidity(humidity_formulation, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    Tₛ = compute_interface_temperature(state.temperature, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ)
+    qₛ = compute_interface_humidity(state.specific_humidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     return Tₛ, qₛ
 end
 
@@ -90,8 +88,7 @@ downwelling radiation `Qᵣ`, and the atmosphere and interior properties `ℙₐ
     FT = eltype(approximate_interface_state)
 
     qᵃᵗ = atmosphere_state.q
-    Tₛ, qₛ = interface_temperature_and_humidity(interface_formulation.temperature,
-                                                interface_formulation.specific_humidity,
+    Tₛ, qₛ = interface_temperature_and_humidity(interface_formulation.state,
                                                 approximate_interface_state,
                                                 atmosphere_state,
                                                 interior_state,

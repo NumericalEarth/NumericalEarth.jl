@@ -29,7 +29,7 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
     interface_formulation = coupled_model.interfaces.atmosphere_ocean_interface.formulation
     ocean_properties = coupled_model.interfaces.ocean_properties
     atmosphere_properties = atmosphere_ocean_properties(coupled_model)
-    ocean_state = assemble_interior_fields(exchanger.ocean.state, interface_formulation.temperature)
+    ocean_state = assemble_interior_fields(exchanger.ocean.state, temperature_formulation(interface_formulation.state))
 
     # Radiation state for the interface solve (used by SkinTemperature).
     # When `radiation === nothing` these are `nothing`s and the getter
@@ -97,7 +97,7 @@ end
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
     Ψₐ  = local_atmosphere_state(i, j, atmosphere_state, atmosphere_properties)
 
-    local_interior_state = assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, interface_formulation.temperature)
+    local_interior_state = assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, temperature_formulation(interface_formulation.state))
     Tᵒᶜ = local_interior_state.T
     Sᵒᶜ = local_interior_state.S
 
@@ -109,7 +109,7 @@ end
     u★ = convert(FT, 1e-4)
 
     # Estimate interface specific humidity using interior temperature
-    q_formulation = interface_formulation.specific_humidity
+    q_formulation = specific_humidity_formulation(interface_formulation.state)
     qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Ψₐ.p, Tᵒᶜ, Sᵒᶜ)
     initial_interface_state = AirSeaInterfaceState(u★, u★, u★, local_interior_state.u, local_interior_state.v, Tᵒᶜ, Sᵒᶜ, qₛ)
 

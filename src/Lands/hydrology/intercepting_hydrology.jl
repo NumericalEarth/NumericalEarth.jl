@@ -13,7 +13,7 @@ capacity `c·LAI`; the wet canopy evaporates at the rate `Jʷᵉᵗ` the interfa
 (a [`CanopyGroundSurface`](@ref)), and the uncaught rain plus the
 over-capacity drip reach the soil as throughfall.
 
-`leaf_area_index` defaults to the land surface's canopy LAI when the land is constructed.
+`leaf_area_index` supplies the canopy LAI; use the same value or field for the canopy interface.
 A `FieldTimeSeries` LAI runs on CPU only.
 
 * `capacity_per_leaf_area` — `c` (kg m⁻² per unit LAI).
@@ -29,7 +29,7 @@ end
 
 function InterceptingHydrology(FT::Type = Oceananigans.defaults.FloatType;
                                soil,
-                               leaf_area_index = nothing,
+                               leaf_area_index,
                                capacity_per_leaf_area = 0.1,
                                extinction = 0.5,
                                clumping = 1)

@@ -7,7 +7,7 @@ export AbstractLand,
        coastal_outlet_indices,
        routable_grid,
        # Composable container
-       SlabLand, LandSurface,
+       SlabLand, PrognosticCanopyAir, PrognosticSkin,
        # Energy-balance closures
        SlabEnergy,
        ForceRestoreEnergy,
@@ -68,12 +68,11 @@ using Base: ForwardOrdering
 using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
 using NumericalEarth.EarthSystemModels.InterfaceComputations: InterfaceComputations,
-                                                 BulkTemperature, BulkHumidity, CanopyGroundSurface,
+                                                 CanopyGroundSurface, EnergyBalanceTemperature,
                                                  ConstantTortuosity, PowerLawTortuosity,
                                                  effective_vapor_diffusivity,
-                                                 PrognosticCanopyGroundSurface, PrognosticEnergyBalanceTemperature,
                                                  interface_kernel_parameters, ComponentExchanger,
-                                                 canopy_transmittance, canopy_leaf_area_index, land_surface_fluxes,
+                                                 canopy_transmittance, land_surface_fluxes,
                                                  surface_energy_loss, convert_if_number, maybe_write!
 
 # Extended by external land models
@@ -118,7 +117,7 @@ include("hydrology/variably_saturated_hydrology.jl")
 # evaporation), depends on `merge_unique` from the container above.
 include("hydrology/intercepting_hydrology.jl")
 
-include("land_surface.jl")
+include("surface_storage.jl")
 
 # Legacy PrescribedLand component (river / iceberg freshwater forcing).
 include("prescribed_land.jl")

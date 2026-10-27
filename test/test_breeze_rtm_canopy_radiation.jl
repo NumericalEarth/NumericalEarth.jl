@@ -32,18 +32,17 @@ function rtm_canopy_components(arch; hour = 12)
     canopy = CanopyGroundSurface(Float64; soil_humidity = bare_soil_humidity(Float64),
         canopy_humidity = CanopyConductanceHumidity(Float64; leaf_area_index = 4, moisture_stress = CriticalSaturation(0.5),
                                                     absorbed_par = InteractiveAbsorbedPAR(Float64)))
-    surface = LandSurface(canopy)
 
     land_grid = RectilinearGrid(arch; size = grid.Nx, halo = grid.Hx, x = (-1kilometer, 1kilometer), topology = (Periodic, Flat, Flat))
-    land = SlabLand(land_grid; hydrology = BucketHydrology(Float64; maximum_water_storage = 150), energy = SlabEnergy(Float64), surface)
+    land = SlabLand(land_grid; hydrology = BucketHydrology(Float64; maximum_water_storage = 150), energy = SlabEnergy(Float64))
     set!(land; T = 298, M = 45)
 
-    return atmosphere, land, radiation
+    return atmosphere, land, radiation, canopy
 end
 
 function rtm_canopy_model(arch; hour = 12)
-    atmosphere, land, radiation = rtm_canopy_components(arch; hour)
-    return AtmosphereLandModel(atmosphere, land; radiation)
+    atmosphere, land, radiation, canopy = rtm_canopy_components(arch; hour)
+    return AtmosphereLandModel(atmosphere, land; radiation, atmosphere_land_interface_state=canopy)
 end
 
 @testset "Breeze RadiativeTransferModel driving a CanopyGroundSurface" begin

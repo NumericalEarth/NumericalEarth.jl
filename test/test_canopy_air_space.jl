@@ -13,7 +13,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     AirLandInterfaceState, InterfaceFluxScales, InterfaceVelocities, AirLandRadiationState,
     AreaIndexUndercanopyVelocity, FrictionVelocityUndercanopyVelocity, undercanopy_transfer_velocity,
     SellersSoilResistance, GroundSurfaceResistance, soil_surface_resistance, ground_surface_resistance,
-    DiagnosticSkin, kernel_surface_field, canopy_transmittance
+    kernel_surface_field, canopy_transmittance
 using NumericalEarth: stateindex
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 
@@ -37,7 +37,7 @@ function canopy_arguments(FT; air_temperature = 300, air_specific_humidity = 0.0
     Ψₐ = (z = FT(10), u = FT(wind), v = FT(0), T = FT(air_temperature), p = FT(101325), q = FT(air_specific_humidity), h_bℓ = FT(600))
     Ψˡᵃ = (T = FT(land_temperature), 𝒮 = FT(saturation), effective_vapor_diffusivity = FT(vapor_diffusivity),
            canopy_water_storage = FT(canopy_water_storage), canopy_water_capacity = FT(canopy_water_capacity),
-           thermal_exchange_depth = FT(0.05), time_step = FT(0), leaf_area_index = FT(leaf_area_index))
+           surface_storage = nothing, thermal_exchange_depth = FT(0.05), time_step = FT(0), leaf_area_index = FT(leaf_area_index))
     Ψᵣ = AirLandRadiationState(FT(5.670374e-8), FT(albedo), FT(emissivity), FT(-600), FT(-350))
     ℙₐ = (thermodynamics_parameters = AtmosphereThermodynamicsParameters(FT), gravitational_acceleration = FT(9.81))
     return Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ
@@ -51,18 +51,9 @@ ground_vapor_state(𝒮) = (air_temperature = 305, air_specific_humidity = 0.006
 
 @testset "CanopyGroundSurface" begin
     canopy_surface = canopy_ground_surface(Float64)
-    canopy_model(arch; kw...) = coupled_land_model(arch; atmosphere_land_interface_temperature = canopy_surface, kw...)
+    canopy_model(arch; kw...) = coupled_land_model(arch; atmosphere_land_interface_state = canopy_surface, kw...)
 
     for arch in test_architectures
-        latent_heat = map(((;), (; specific_humidity = canopy_surface))) do humidity
-            grid, atmosphere, land, radiation = coupled_land_components(arch)
-            interface = atmosphere_land_interface(grid, atmosphere, land; temperature = canopy_surface, humidity...)
-            model = AtmosphereLandModel(atmosphere, land; radiation, atmosphere_land_interface = interface)
-            time_step!(model, 300.0)
-            return scalar(interface.fluxes.latent_heat)
-        end
-        @test latent_heat[1] ≈ latent_heat[2]
-
         model = canopy_model(arch)
         Ts = model.interfaces.atmosphere_land_interface.temperature
         fluxes = model.interfaces.atmosphere_land_interface.fluxes
@@ -80,7 +71,7 @@ ground_vapor_state(𝒮) = (air_temperature = 305, air_specific_humidity = 0.006
         @test 𝒬ᵛˡᵉᵃ > 𝒬ᵛᵍʳᵒ
         @test Tˡᵉᵃ > scalar(canopy_model(arch; shortwave = 0.0).interfaces.atmosphere_land_interface.temperature.canopy)
 
-        skin = SoilSkinTemperature(1.5, 0.05; storage = DiagnosticSkin())
+        skin = SoilSkinTemperature(1.5, 0.05)
         model = coupled_land_model(arch; air_temperature = 290.0, air_specific_humidity = 0.006, wind = 5.0,
                                    land_temperature = 300.0, water = 90.0, radiation = nothing,
                                    atmosphere_land_interface_temperature = skin)
@@ -157,7 +148,7 @@ end
         set!(leaf_albedo, (λ, φ) -> ifelse(λ < 11, scalar_canopy_surface.leaf_albedo, 0.6))
 
         function leaf_temperature(surface)
-            model = coupled_land_model(arch; grid, atmosphere_land_interface_temperature = surface)
+            model = coupled_land_model(arch; grid, atmosphere_land_interface_state = surface)
             return Array(interior(model.interfaces.atmosphere_land_interface.temperature.canopy))
         end
         Tˡᵉᵃ = leaf_temperature(canopy_ground_surface(Float64; leaf_albedo))
@@ -272,15 +263,16 @@ end
 @testset "Land radiation diagnostics follow the radiating surface" begin
     for arch in test_architectures
         α, ϵ, ℐꜜˢʷ = 0.2, 0.95, 600.0
-        skin  = EnergyBalanceTemperature(SoilConductiveFlux(1.5, 0.05); storage = DiagnosticSkin())
+        skin  = EnergyBalanceTemperature(SoilConductiveFlux(1.5, 0.05))
         canopy_surface = canopy_ground_surface(Float64)
-        for surface in (skin, canopy_surface)
-            model = coupled_land_model(arch; atmosphere_land_interface_temperature = surface)
+        skin_state = (temperature=skin, specific_humidity=BulkHumidity())
+        for state in (skin_state, canopy_surface)
+            model = coupled_land_model(arch; atmosphere_land_interface_state = state)
             time_step!(model, 60.0)
             σ  = model.radiation.stefan_boltzmann_constant
             radiation = model.radiation.interface_fluxes.land
             Ts = model.interfaces.atmosphere_land_interface.temperature
-            ϵσT⁴, αₛ = surface === skin ? (ϵ * σ * scalar(Ts)^4, α) : (σ * scalar(Ts.effective)^4, scalar(Ts.effective_albedo))
+            ϵσT⁴, αₛ = state === skin_state ? (ϵ * σ * scalar(Ts)^4, α) : (σ * scalar(Ts.effective)^4, scalar(Ts.effective_albedo))
             @test scalar(radiation.upwelling_longwave) ≈ ϵσT⁴ rtol = 1e-6
             @test scalar(radiation.downwelling_shortwave) ≈ -(1 - αₛ) * ℐꜜˢʷ rtol = 1e-6
         end
