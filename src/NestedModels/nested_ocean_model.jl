@@ -100,6 +100,7 @@ nudged toward the parent over 3 days on inflow and 360 days on outflow), tracer 
 on the free surface. Over the outermost `relaxation_width` cells of each open side (default: 2/3°), `T` and `S` and
 the baroclinic parts of `u` and `v` relax toward the parent at `relaxation_rate` (s⁻¹; default 1/6 hours), leaving
 the barotropic flow to Flather (see [`ocean_boundary_relaxation`](@ref)); `relaxation_rate = nothing` disables it.
+`relaxation_rate = (inflow = 1/6hours, outflow = 0)` relaxes `T` and `S` only where the flow enters through the side.
 These defaults follow the reference Mid-Atlantic Bight configuration of NumericalEarthSandbox.
 
 When the parent's seafloor `parent_bottom_height` (a bottom height `Field`) is known, the Flather exterior transport

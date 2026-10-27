@@ -9,25 +9,28 @@
 # flow to the Flather condition.
 
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Forcings: Forcing
+using Oceananigans.Forcings: Forcing, InflowOutflowRate, evaluate_rate
 using Oceananigans.Grids: peripheral_node
 using Oceananigans.Operators: Δz
 
 """
-    BandRelaxation{Dim}(band, irange, jrange)
+    BandRelaxation{Dim}(band, irange, jrange, rate)
 
-Relaxation toward one open side's [`BoundaryBand`](@ref) over the cells `irange × jrange` of the band. The bands of
-the open sides partition the relaxation zone, so that each cell reads the parent from one of them.
+Relaxation toward one open side's [`BoundaryBand`](@ref) over the cells `irange × jrange` of the band, at `rate`: a
+number, or an `InflowOutflowRate` of the side. The bands of the open sides partition the relaxation zone, so that
+each cell reads the parent from one of them.
 """
-struct BandRelaxation{Dim, B}
+struct BandRelaxation{Dim, B, R}
     band   :: B
     irange :: NTuple{2, Int}
     jrange :: NTuple{2, Int}
+    rate   :: R
 end
 
-BandRelaxation{Dim}(band::B, irange, jrange) where {Dim, B} = BandRelaxation{Dim, B}(band, irange, jrange)
+BandRelaxation{Dim}(band::B, irange, jrange, rate::R) where {Dim, B, R} = BandRelaxation{Dim, B, R}(band, irange, jrange, rate)
 
-Adapt.adapt_structure(to, r::BandRelaxation{Dim}) where Dim = BandRelaxation{Dim}(adapt(to, r.band), r.irange, r.jrange)
+Adapt.adapt_structure(to, r::BandRelaxation{Dim}) where Dim =
+    BandRelaxation{Dim}(adapt(to, r.band), r.irange, r.jrange, r.rate)
 
 @inline inside(r::BandRelaxation, i, j) = (r.irange[1] ≤ i) & (i ≤ r.irange[2]) & (r.jrange[1] ≤ j) & (j ≤ r.jrange[2])
 @inline band_indices(r::BandRelaxation, i, j) = (clamp(i, r.irange[1], r.irange[2]), clamp(j, r.jrange[1], r.jrange[2]))
@@ -63,31 +66,39 @@ end
     return (ψᵖ - ψ̄ᵖ) - (@inbounds(ψ[i, j, k]) - ψ̄)
 end
 
-@inline function band_relaxation(i, j, k, grid, loc, ψ, r, time, baroclinic)
-    δ = band_anomaly(i, j, k, grid, loc, ψ, r, time, baroclinic)
+@inline band_rate(i, j, k, grid, rate::Number, fields, loc) = rate
+@inline band_rate(i, j, k, grid, rate::InflowOutflowRate, fields, loc) = evaluate_rate(i, j, k, grid, rate, fields, loc)
+
+@inline function band_relaxation(i, j, k, grid, loc, ψ, fields, r, time, baroclinic)
+    δ = band_rate(i, j, k, grid, r.rate, fields, loc) * band_anomaly(i, j, k, grid, loc, ψ, r, time, baroclinic)
     return ifelse(inside(r, i, j), δ, zero(δ))
 end
 
-@inline total_band_relaxation(i, j, k, grid, loc, ψ, ::Tuple{}, time, baroclinic) = 0
-@inline total_band_relaxation(i, j, k, grid, loc, ψ, relaxations::Tuple, time, baroclinic) =
-    band_relaxation(i, j, k, grid, loc, ψ, first(relaxations), time, baroclinic) +
-    total_band_relaxation(i, j, k, grid, loc, ψ, Base.tail(relaxations), time, baroclinic)
+@inline total_band_relaxation(i, j, k, grid, loc, ψ, fields, ::Tuple{}, time, baroclinic) = 0
+@inline total_band_relaxation(i, j, k, grid, loc, ψ, fields, relaxations::Tuple, time, baroclinic) =
+    band_relaxation(i, j, k, grid, loc, ψ, fields, first(relaxations), time, baroclinic) +
+    total_band_relaxation(i, j, k, grid, loc, ψ, fields, Base.tail(relaxations), time, baroclinic)
 
-@inline function relaxation_tendency(i, j, k, grid, clock, ψ, p)
+@inline function relaxation_tendency(i, j, k, grid, clock, ψ, fields, p)
     μ = @inbounds p.mask[i, j, 1]
-    δ = total_band_relaxation(i, j, k, grid, p.location, ψ, p.relaxations, Time(clock.time), p.baroclinic)
-    return p.rate * μ * δ
+    return μ * total_band_relaxation(i, j, k, grid, p.location, ψ, fields, p.relaxations, Time(clock.time), p.baroclinic)
 end
 
-@inline relax_u(i, j, k, grid, clock, fields, p) = relaxation_tendency(i, j, k, grid, clock, fields.u, p)
-@inline relax_v(i, j, k, grid, clock, fields, p) = relaxation_tendency(i, j, k, grid, clock, fields.v, p)
-@inline relax_T(i, j, k, grid, clock, fields, p) = relaxation_tendency(i, j, k, grid, clock, fields.T, p)
-@inline relax_S(i, j, k, grid, clock, fields, p) = relaxation_tendency(i, j, k, grid, clock, fields.S, p)
+@inline relax_u(i, j, k, grid, clock, fields, p) = relaxation_tendency(i, j, k, grid, clock, fields.u, fields, p)
+@inline relax_v(i, j, k, grid, clock, fields, p) = relaxation_tendency(i, j, k, grid, clock, fields.v, fields, p)
+@inline relax_T(i, j, k, grid, clock, fields, p) = relaxation_tendency(i, j, k, grid, clock, fields.T, fields, p)
+@inline relax_S(i, j, k, grid, clock, fields, p) = relaxation_tendency(i, j, k, grid, clock, fields.S, fields, p)
 
 const relaxation_functions = (u = relax_u, v = relax_v, T = relax_T, S = relax_S)
 
 # The velocities relax only their baroclinic part.
 baroclinic_relaxation(name) = Val(name ∈ (:u, :v))
+
+# An `(; inflow, outflow)` rate is flow dependent for the tracers; the velocities relax at the inflow rate.
+side_rate(rate::Number, side, baroclinic, FT) = convert(FT, rate)
+side_rate(rate::NamedTuple, side, ::Val{true}, FT) = convert(FT, rate.inflow)
+side_rate(rate::NamedTuple, side, ::Val{false}, FT) =
+    InflowOutflowRate{side}(inflow_rate = convert(FT, rate.inflow), outflow_rate = convert(FT, rate.outflow))
 
 # Cells of `side`'s band that it relaxes. Along the boundary the band stops short of the bands of the
 # perpendicular open sides, so that each corner cell reads the parent once: the corners belong to west and east.
@@ -176,6 +187,10 @@ Return a `NamedTuple` of discrete `Forcing`s that relax `T` and `S`, and the bar
 the parent state in `bands` (see [`ocean_open_boundary_conditions`](@ref)) at `rate` (s⁻¹) times the
 [`relaxation_masks`](@ref) over the outermost `width` cells of each open side. The baroclinic part of a velocity is
 its departure from its mean over the child's wet column, for the child and the parent alike.
+
+`rate` is a number, or `(inflow = ..., outflow = ...)` for a flow-dependent relaxation of the tracers: in each side's
+band, `T` and `S` relax at `inflow` where the velocity at the cell flows in through that side and at `outflow` where
+it flows out (Oceananigans' `InflowOutflowRate`). The velocities relax at `inflow` everywhere.
 """
 function ocean_boundary_relaxation(grid, bands; rate, width)
     sides = keys(bands)
@@ -184,13 +199,14 @@ function ocean_boundary_relaxation(grid, bands; rate, width)
 
     function relaxation_forcing(name)
         loc = boundary_location(name)
+        baroclinic = baroclinic_relaxation(name)
         relaxations = map(sides) do side
             irange, jrange = band_relaxation_ranges(grid, loc, side, width, sides)
-            BandRelaxation{boundary_dimension(side)}(bands[side][name], irange, jrange)
+            BandRelaxation{boundary_dimension(side)}(bands[side][name], irange, jrange,
+                                                     side_rate(rate, side, baroclinic, eltype(grid)))
         end
         mask = name === :u ? masks.u : name === :v ? masks.v : masks.c
-        parameters = (; rate = convert(eltype(grid), rate), mask, location = loc, relaxations,
-                        baroclinic = baroclinic_relaxation(name))
+        parameters = (; mask, location = loc, relaxations, baroclinic)
         return Forcing(relaxation_functions[name]; discrete_form = true, parameters)
     end
 

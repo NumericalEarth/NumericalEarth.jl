@@ -451,6 +451,38 @@ end
     @test abs(sum(column)) < 1e-12 * maximum(abs, column)   # uniform levels: the depth integral is the sum
 end
 
+@testset "Boundary relaxation: flow-dependent tracer rates" begin
+    grid = nesting_test_child_grid(CPU())
+    Nx, Ny, Nz = size(grid)
+    j = Ny ÷ 2
+    rate = (inflow = 1e-4, outflow = 0)
+
+    # An eastward current enters through the west side and leaves through the east side
+    model = nested_ocean_model(nesting_test_parent(CPU(); u = 0.1, T = 15), grid; coriolis = nothing, relaxation_rate = rate)
+    set!(model, u = (λ, φ, z) -> 0.1 + 1e-4 * (z + 500), v = 0, T = 10, S = 35)
+    child = model.child
+    model_fields = merge(child.velocities, child.tracers)
+    T_forcing(i) = [child.forcing.T(i, j, k, grid, child.clock, model_fields) for k in 1:Nz]
+    u_forcing(i) = [child.forcing.u(i, j, k, grid, child.clock, model_fields) for k in 1:Nz]
+
+    @test all(T_forcing(2) .> 0)
+    @test all(T_forcing(Nx - 1) .== 0)
+
+    # The velocities relax at the inflow rate on either side
+    @test maximum(abs, u_forcing(2)) > 0
+    @test maximum(abs, u_forcing(Nx - 1)) > 0
+end
+
+@testset "A flow-dependent relaxation steps on $(arch)" for arch in test_architectures
+    model = nested_ocean_model(nesting_test_parent(arch; u = 0.1, T = 15), nesting_test_child_grid(arch);
+                               coriolis = nothing, relaxation_rate = (inflow = 1e-4, outflow = 0))
+    set!(model, u = 0.1, v = 0, T = 10, S = 35)
+    time_step!(model, 60)
+    T = Array(interior(model.child.tracers.T))
+    @test all(isfinite, T)
+    @test maximum(T) > 10
+end
+
 @testset "regrid_bathymetry from the missing values of an ocean dataset on $(arch)" for arch in test_architectures
     grid = coastal_grid(arch).underlying_grid
     metadatum = Metadatum(:temperature; dataset = SyntheticOcean(), date = first(synthetic_dates),
