@@ -243,7 +243,7 @@ rate through the leaf boundary layer alone; a dry canopy (`Mᶜᵃⁿ = 0`) has 
 
 Fields:
 - `soil_humidity`   : the soil vapor branch (a [`DryLayerHumidity`](@ref)).
-- `canopy_humidity` : the leaf vapor/photosynthesis branch (a [`CanopyConductanceHumidity`](@ref)).
+- `canopy_humidity` : the leaf vapor branch (a [`CanopyConductanceHumidity`](@ref)).
 - `ground_heat_flux` : ground↔bulk conduction `Λᵍʳᵒ = κᵀ/ℓᵀ` (a [`SoilConductiveFlux`](@ref)).
 - `leaf_albedo`, `ground_albedo` : broadband shortwave albedos. A `Number`, or a
   `Field{Center, Center, Nothing}` of per-cell values (see [`atmosphere_land_interface`](@ref)).
