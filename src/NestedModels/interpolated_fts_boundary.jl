@@ -25,6 +25,7 @@ import Oceananigans.OutputReaders: FlavorOfFTS
 using Oceananigans.Grids: node, ξnode, ηnode, topology, Face, Center, OrthogonalSphericalShellGrid,
                           FullyConnected, LeftConnected, RightConnected
 using Oceananigans.AbstractOperations: KernelFunctionOperation
+using Oceananigans.Fields: Field, interior, compute!
 using Adapt: Adapt, adapt
 
 const InterpolatedSource = Union{FlavorOfFTS, Oceananigans.Fields.AbstractField}
@@ -91,15 +92,18 @@ on_physical_boundary(::Type{FullyConnected}, SideType) = false
 on_physical_boundary(::Type{LeftConnected}, ::Type{LeftBoundary}) = false
 on_physical_boundary(::Type{RightConnected}, ::Type{RightBoundary}) = false
 
-# Reducing an operation keeps the reduction where the grid lives: CUDA's `AnyCuArray` does not cover
-# `OffsetArray`, so reducing the grid's node arrays, or a view of one, silently iterates on the host.
+# `extrema` needs a real array: a view of an operation is a `SubArray`, not a `Field`, and reduces on
+# the host, while reducing the operation as a `Field` would `MPI.Allreduce` across a partitioned grid,
+# a collective only the ranks owning this side would reach.
 function boundary_coordinate_extent(coordinate, grid, dim, SideType, ::Type{LX}, ::Type{LY}) where {LX, LY}
     operation = KernelFunctionOperation{LX, LY, Center}(coordinate, grid, LX(), LY(), Center())
     # A `Face` extent exceeds the grid's by one only where the axis is bounded, not where it is connected
     Nx, Ny, _ = size(operation)
     i = dim == 1 ? (SideType === LeftBoundary ? (1:1) : (Nx:Nx)) : 1:Nx
     j = dim == 2 ? (SideType === LeftBoundary ? (1:1) : (Ny:Ny)) : 1:Ny
-    return extrema(view(operation, i, j, :))
+    line = Field(operation; indices = (i, j, 1:1))
+    compute!(line)
+    return extrema(interior(line))
 end
 
 # The source must bracket the boundary horizontally: along the boundary, the child's whole extent;
