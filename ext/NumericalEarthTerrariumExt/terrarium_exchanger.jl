@@ -43,9 +43,9 @@ land_surface_energy_flux(land::TerrariumSimulation) = interior(land.model.state.
 land_surface_shortwave_up(land::TerrariumSimulation) = interior(land.model.state.surface_shortwave_up)
 land_surface_longwave_up(land::TerrariumSimulation) = interior(land.model.state.surface_longwave_up)
 
-# Land exchanger: expose skin temperature `T` (K) and surface saturation `𝒮`, the two
-# fields the atmosphere-land flux kernel reads. No regridder (exchange grid == land grid).
-function ComponentExchanger(land::TerrariumSimulation, exchange_grid)
+# Land exchanger: expose skin temperature `T` (K) and surface saturation `𝒮`, the land state
+# the default atmosphere-land interface formulations read. No regridder (exchange grid == land grid).
+function ComponentExchanger(land::TerrariumSimulation, exchange_grid; kw...)
     state = (T = Field{Center, Center, Nothing}(exchange_grid),
              𝒮 = Field{Center, Center, Nothing}(exchange_grid))
     return ComponentExchanger(state, nothing)
