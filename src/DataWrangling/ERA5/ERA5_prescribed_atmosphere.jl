@@ -45,16 +45,12 @@ function Oceananigans.Fields.set!(qᵛ::DewpointHumidityFTS, backend = qᵛ.back
     return nothing
 end
 
-# ERA5's total precipitation includes snowfall, so rain is their difference, floored at zero
-# where rounding leaves an hour's snowfall slightly larger than its total precipitation.
 @inline function rain_from_total_precipitation(i, j, k, grid, total_precipitation, snowfall)
     @inbounds Jᵖ = total_precipitation[i, j, k]
     @inbounds Jˢⁿ = snowfall[i, j, k]
     return max(Jᵖ - Jˢⁿ, zero(Jᵖ))
 end
 
-# Like `DewpointHumidityBackend`: derives each in-memory window of rain from the same window
-# of the total precipitation and snowfall series.
 struct RainBackend{P, S} <: AbstractInMemoryBackend{Int}
     start :: Int
     length :: Int
