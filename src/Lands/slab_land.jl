@@ -403,7 +403,7 @@ interface) as a `NamedTuple` of the slab's own fields. Aerodynamic roughness len
 belong to the atmosphere-land flux closure (`atmosphere_land_fluxes`), not the land state.
 """
 function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::SlabLand, grid; state_accessors)
-    # TODO: regrid onto `grid` when it differs from `land.grid`; today the two coincide.
+    # TODO: regrid onto `grid` when it differs from `land.grid`; currently it is assumed that the two coincide
     state = map(accessor -> accessor(land), state_accessors)
     return ComponentExchanger(state, nothing)
 end
