@@ -2,14 +2,15 @@ include("runtests_setup.jl")
 
 using NumericalEarth.Bathymetry: bottom_height_from_mask
 using NumericalEarth.DataWrangling: bracketing_dates
-using NumericalEarth.NestedModels: open_boundary_sides, parent_ocean_sources, relaxation_masks, BoundaryTimeSeries,
-                                   BarotropicBoundaryTransport, ConsistentBoundaryVelocity, OceanBoundaryExchanger
+using NumericalEarth.NestedModels: open_boundary_sides, parent_ocean_sources, relaxation_masks, sample_parent!,
+                                   BoundaryTimeSeries, BarotropicBoundaryTransport, ConsistentBoundaryVelocity,
+                                   OceanBoundaryExchanger
 using NumericalEarth.Oceans: fill_prescribed_halo_regions!
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, ocean_surface_temperature,
                                         ocean_temperature, prognostic_model
 using Oceananigans.BoundaryConditions: getbc, GravityWaveRadiation, NormalFlow, ObliqueRadiation,
                                        SurfaceWaveRadiation, TracerReservoir, Value
-using Oceananigans.Grids: inactive_cell
+using Oceananigans.Grids: MutableVerticalDiscretization, inactive_cell
 using Oceananigans.ImmersedBoundaries: bottom_height_field, has_active_cells_map
 using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶠᶜᶜ
 using Oceananigans.TimeSteppers: update_state!
@@ -258,6 +259,30 @@ end
     @test maximum(abs, T .- T₀) < 1e-10
     @test maximum(abs, S .- S₀) < 1e-10
     @test model.parent.clock.time == model.clock.time == 20 * 60.0
+end
+
+@testset "A z★ child samples the parent at its reference depths on $(arch)" for arch in test_architectures
+    parent_ocean = nesting_test_parent(arch; T = (λ, φ, z, t) -> 20 + z / 100)
+    T_parent = parent_ocean_sources(parent_ocean).T
+
+    zstar_grid(arch) = LatitudeLongitudeGrid(arch; size = (20, 20, 6), halo = (7, 7, 7),
+                                             longitude = (-1, 1), latitude = (29, 31),
+                                             z = MutableVerticalDiscretization((-1000, 0)),
+                                             topology = (Bounded, Bounded, Bounded))
+
+    # A 50 m rise of the free surface lifts every z★ level, and the top cell above the parent's top level
+    grid = zstar_grid(arch)
+    fill!(grid.z.ηⁿ, 50)
+
+    T_static = CenterField(nesting_test_child_grid(arch))
+    T_zstar = CenterField(grid)
+    sample_parent!(T_static, (Center(), Center(), Center()), T_parent, 0)
+    sample_parent!(T_zstar, (Center(), Center(), Center()), T_parent, 0)
+    @test Array(interior(T_zstar)) ≈ Array(interior(T_static))
+
+    model = nested_ocean_model(parent_ocean, zstar_grid(arch))
+    time_step!(model, 60.0)
+    @test all(isfinite, Array(interior(model.child.tracers.T)))
 end
 
 @testset "nested_ocean_model: Flather holds the volume budget on $(arch)" for arch in test_architectures

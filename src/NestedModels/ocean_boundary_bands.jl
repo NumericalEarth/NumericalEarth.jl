@@ -9,9 +9,9 @@
 # condition and forcing kernels never interpolate the parent in space, and memory scales with the
 # boundary, not with the length of the run.
 
-using Oceananigans.Fields: Field, flatten_node, interpolate, validate_indices
+using Oceananigans.Fields: Field, interpolate, validate_indices
 using Oceananigans.Grids: Bounded, Center, Face, FullyConnected, LeftConnected, RightConnected, inactive_cell, new_data, topology,
-                          _node, λnode, φnode, znode
+                          λnode, φnode, rnode, ξnode, ηnode
 using Oceananigans.Operators: Δz
 using Oceananigans.OutputReaders: FlavorOfFTS
 using Oceananigans.Utils: KernelParameters, launch!
@@ -130,6 +130,12 @@ end
 
 @inline parent_value(source::FlavorOfFTS, X, loc, grid, time) = interpolate(X, time, source, loc, grid)
 
+# The parent's depths are below its free surface, so a z★ child samples it at its reference depth `rnode`, not its
+# `znode`, which rises with η above the parent's top level.
+@inline parent_node(i, j, k, grid, ℓx, ℓy, ℓz) = (ξnode(i, j, k, grid, ℓx, ℓy, ℓz), ηnode(i, j, k, grid, ℓx, ℓy, ℓz),
+                                                  rnode(i, j, k, grid, ℓx, ℓy, ℓz))
+@inline parent_node(i, j, k, grid, ℓx, ℓy, ℓz::Nothing) = (ξnode(i, j, k, grid, ℓx, ℓy, ℓz), ηnode(i, j, k, grid, ℓx, ℓy, ℓz))
+
 """
     sample_parent!(field, loc, source, time)
 
@@ -153,7 +159,7 @@ end
     i′ = clamp(i, bounds[1]...)
     j′ = clamp(j, bounds[2]...)
     k′ = clamp(k, bounds[3]...)
-    X = flatten_node(_node(i′, j′, k′, grid, loc...)...)
+    X = parent_node(i′, j′, k′, grid, loc...)
     @inbounds field[i, j, k] = parent_value(source, X, source_loc, source_grid, time)
 end
 
@@ -187,7 +193,7 @@ end
     U = zero(grid)
     H = zero(grid)
     for k in 1:size(source_grid, 3)
-        z = znode(1, 1, k, source_grid, Center(), Center(), Center())
+        z = rnode(1, 1, k, source_grid, Center(), Center(), Center())
         Δzᵏ = Δz(1, 1, k, source_grid, Center(), Center(), Center())
         u = parent_value(source, (λ, φ, z), source_loc, source_grid, time)
         wet = z > zᵇ
