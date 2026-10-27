@@ -1000,14 +1000,10 @@ end
     strip_model     = nest(strips, 1/30)
     unrelaxed_model = nest(full, nothing)
 
-    # A whole-domain parent has one exchanger, a strip parent one per side; either yields the child's.
-    @test ext.child_state_exchanger(full_model.exchanger) === full_model.exchanger
-    @test ext.child_state_exchanger(strip_model.exchanger) === first(strip_model.exchanger)
-
     # The strip child starts from a one-time full-domain snapshot, as the dataset-driven constructor does.
     snapshot = parent_atmosphere((-2, 2), (34.6, 38.6), 12, 12, times[1:1])
     initial_states = (full_model.exchanger.prognostic,
-                      ext.child_prognostic_state(snapshot, first(strip_model.exchanger)),
+                      ext.child_prognostic_state(snapshot, strip_model.exchanger),
                       unrelaxed_model.exchanger.prognostic)
 
     for (model, prognostic) in zip((full_model, strip_model, unrelaxed_model), initial_states)

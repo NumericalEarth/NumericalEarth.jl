@@ -475,11 +475,6 @@ function dataset_skin_temperature(dataset, child_grid, date, dir)
     return T₀
 end
 
-# A boundary-strip parent carries one exchanger per side and a whole-domain parent a single one;
-# all of them share the child's prognostic layout, so any one reconstructs the initial state.
-child_state_exchanger(exchanger) = first(exchanger)
-child_state_exchanger(exchanger::StateExchanger) = exchanger
-
 """
     nested_atmosphere_model(child_grid, parent_dataset; dates, kw...)
 
@@ -530,7 +525,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
                                                                        parent_surface_elevation = surface_elevation(snapshot),
                                                                        kw...)
 
-    initial_state = child_prognostic_state(snapshot, child_state_exchanger(nested_model.exchanger))
+    initial_state = child_prognostic_state(snapshot, nested_model.exchanger)
     initialize_nested_child!(nested_model, parent_dataset, first(dates), dir; balancer, prognostic = initial_state)
     return nested_model
 end

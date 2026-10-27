@@ -264,6 +264,11 @@ function child_prognostic_state(parent_atmosphere::PrescribedAtmosphere, exchang
                                   exchanger.moisture_name)
 end
 
+# A strip parent carries one exchanger per side, all with the child's constants, moisture and
+# condensate species, so the first one reconstructs the state.
+child_prognostic_state(parent_atmosphere::PrescribedAtmosphere, exchangers::NamedTuple) =
+    child_prognostic_state(parent_atmosphere, first(exchangers))
+
 # The derived child prognostics, keyed by variable; for strips, each variable is keyed by side.
 parent_prognostic(exchanger::StateExchanger) = exchanger.prognostic
 
