@@ -10,7 +10,9 @@ using Oceananigans.Units: Time
 using Oceananigans.Fields: location
 using Oceananigans.Grids: node
 using Oceananigans.Architectures: on_architecture
-using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
+using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!,
+                                       regularize_boundary_condition, LeftBoundary, RightBoundary
+using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid
 using Oceananigans.Forcings: MultipleForcings
 using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics,
@@ -121,6 +123,37 @@ end
     # few short timesteps — i.e. max |u| stays well above the background U.
     u_interior = Array(interior(model.velocities.u))
     @test maximum(abs, u_interior) > 1.5 * U_LO
+end
+
+# A curvilinear child has no separable horizontal axes, so the source-bracket check cannot read its
+# extent one axis at a time.
+@testset "Interpolated source brackets a curvilinear child on $(arch)" for arch in test_architectures
+    NM = NumericalEarth.NestedModels
+
+    parent_grid = LatitudeLongitudeGrid(arch; size = (32, 32, 4), longitude = (-130, -65),
+                                        latitude = (20, 55), z = (0, 1),
+                                        topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(parent_grid, [0.0, 1.0, 2.0])
+    set!(parent.temperature, (λ, φ, z, t) -> 290)
+
+    child_grid = LambertConformalConicGrid(arch; size = (20, 20, 4), x = (200e3, 600e3), y = (-200e3, 200e3),
+                                           standard_parallels = (33, 45), central_longitude = -100,
+                                           latitude_of_origin = 39, z = (0, 1))
+    loc = (Center(), Center(), Center())
+    bc = NM.Interpolated(parent.temperature)
+
+    for (dim, side) in ((1, LeftBoundary), (1, RightBoundary), (2, LeftBoundary), (2, RightBoundary))
+        @test regularize_boundary_condition(bc, child_grid, loc, dim, side) isa NM.Interpolated
+    end
+
+    # A parent that covers only part of the child is still rejected.
+    narrow_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 4), longitude = (-105, -100),
+                                        latitude = (36, 40), z = (0, 1),
+                                        topology = (Bounded, Bounded, Bounded))
+    narrow = PrescribedAtmosphere(narrow_grid, [0.0, 1.0, 2.0])
+    set!(narrow.temperature, (λ, φ, z, t) -> 290)
+    @test_throws ArgumentError regularize_boundary_condition(NM.Interpolated(narrow.temperature),
+                                                             child_grid, loc, 1, LeftBoundary)
 end
 
 @testset "parent_boundary_conditions: bc_types selects BC kind per field" begin
@@ -1001,9 +1034,9 @@ end
     unrelaxed_model = nest(full, nothing)
 
     # The strip child starts from a one-time full-domain snapshot, as the dataset-driven constructor does.
-    snapshot = parent_atmosphere((-2, 2), (34.6, 38.6), 12, 12, times[1:2])
+    snapshot = parent_atmosphere((-2, 2), (34.6, 38.6), 12, 12, times[1:1])
     initial_states = (full_model.exchanger.prognostic,
-                      ext.child_prognostic_state(snapshot, first(strip_model.exchanger)),
+                      ext.child_prognostic_state(snapshot, strip_model.exchanger),
                       unrelaxed_model.exchanger.prognostic)
 
     for (model, prognostic) in zip((full_model, strip_model, unrelaxed_model), initial_states)
@@ -1031,4 +1064,20 @@ end
     for (name, field) in pairs(prognostic_fields(strip_model.child))
         @test maximum(abs, Field(prognostic_fields(rerun_model.child)[name] - field)) == 0
     end
+end
+
+@testset "StateExchanger: a single-time parent fills its derived state on $(arch)" for arch in test_architectures
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    grid = LatitudeLongitudeGrid(arch; size = (6, 6, 4), longitude = (-2, 2), latitude = (34, 38), z = (0, 16000),
+                                 halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(grid, [0.0])
+    set!(parent.temperature,       (λ, φ, z, t) -> 288 - 6.5e-3 * z)
+    set!(parent.specific_humidity, (λ, φ, z, t) -> 0.006)
+    set!(parent.velocities.u,      (λ, φ, z, t) -> 8)
+    set!(parent.velocities.v,      (λ, φ, z, t) -> 1)
+    set!(parent.pressure,          (λ, φ, z, t) -> 1e5 * exp(-z / 8000))
+
+    exchanger = ext.state_exchanger(parent, 1e5, ThermodynamicConstants(); condensates = nothing)
+    ρᵈ = Array(interior(exchanger.prognostic.ρᵈ[1]))
+    @test all(isfinite, ρᵈ) && all(>(0), ρᵈ)
 end

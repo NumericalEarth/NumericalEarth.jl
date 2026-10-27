@@ -33,13 +33,13 @@ using Oceananigans.Fields: interior
     model = AtmosphereLandModel(atmosphere, land; radiation = nothing)
     update_state!(model)
 
-    # The land exchanger publishes skin temperature (K) and surface saturation for the
+    # The land exchanger publishes skin temperature `T` (K) and surface saturation `𝒮` for the
     # atmosphere-land flux kernel.
     ex = model.interfaces.exchanger.land
     @test hasproperty(ex.state, :T)
-    @test hasproperty(ex.state, :saturation)
+    @test hasproperty(ex.state, :𝒮)
     @test all(isfinite.(interior(ex.state.T)))
-    @test all(interior(ex.state.saturation) .≈ 0.5)
+    @test all(interior(ex.state.𝒮) .≈ 0.5)
 
     # The MO scheme produced finite turbulent fluxes, pushed into Terrarium's inputs.
     state = land.model.state
