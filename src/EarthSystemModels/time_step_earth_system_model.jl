@@ -26,27 +26,7 @@ function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, �
     !isnothing(land)       && time_step!(land, Δt)
     # Ocean before sea ice: the ice-ocean drag is evaluated against the just-updated ocean velocity.
     !isnothing(ocean)      && time_step!(ocean, Δt)
-    if !isnothing(sea_ice)
-        subcycling = coupled_model.sea_ice_subcycling
-        if isnothing(subcycling)
-            time_step!(sea_ice, Δt)
-        else
-            average = subcycling.fluxes
-            mass_fluxes = sea_ice.model.mass_fluxes
-            fill!(average.ice, 0)
-            fill!(average.snow, 0)
-            fill!(average.intercepted_snowfall, 0)
-            for _ in 1:subcycling.substeps
-                time_step!(sea_ice, Δt / subcycling.substeps)
-                average.ice .+= mass_fluxes.thermodynamics.ice ./ subcycling.substeps
-                average.snow .+= mass_fluxes.thermodynamics.snow ./ subcycling.substeps
-                average.intercepted_snowfall .+= mass_fluxes.intercepted_snowfall ./ subcycling.substeps
-            end
-            copyto!(mass_fluxes.thermodynamics.ice, average.ice)
-            copyto!(mass_fluxes.thermodynamics.snow, average.snow)
-            copyto!(mass_fluxes.intercepted_snowfall, average.intercepted_snowfall)
-        end
-    end
+    !isnothing(sea_ice)    && time_step!(sea_ice, Δt)
 
     # TODO:
     # - Store fractional ice-free / ice-covered _time_ for more

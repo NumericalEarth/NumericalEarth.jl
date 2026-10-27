@@ -80,9 +80,9 @@ end
         # Fluxes are computed when the model is constructed, so we just test that this works.
         # And that we can time step with sea ice
         @test begin
-            coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, sea_ice_substeps=3)
+            coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
             time_step!(coupled_model, 1)
-            iteration(sea_ice) == 3 && sea_ice.model.clock.time == ocean.model.clock.time
+            iteration(sea_ice) == 1 && sea_ice.model.clock.time == ocean.model.clock.time
         end
 
         @info "Testing OceanSeaIceModel with land on $A..."
