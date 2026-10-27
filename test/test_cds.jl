@@ -134,11 +134,12 @@ start_date = DateTime(2005, 2, 16, 12)
         era5m(name) = Metadatum(name; dataset=ds, date=start_date)
 
         # Surface geopotential ÷ g → meters; accumulated SW/LW (J/m²) ÷ 3600 → W/m²;
-        # accumulated precip depth (m) × 1000/3600 → kg/m²/s. Others are unconverted.
+        # accumulated precip and snowfall depth (m) × 1000/3600 → kg/m²/s. Others are unconverted.
         @test conversion_units(era5m(:topography)) isa InverseGravity
         @test conversion_units(era5m(:downwelling_shortwave_radiation)) isa Jm²ph
         @test conversion_units(era5m(:downwelling_longwave_radiation))  isa Jm²ph
         @test conversion_units(era5m(:total_precipitation)) isa MetersPerHour
+        @test conversion_units(era5m(:snowfall)) isa MetersPerHour
         @test conversion_units(era5m(:temperature)) === nothing
 
         @test convert_units(3600, Jm²ph()) ≈ 1               # 3600 J/m²/hr → 1 W/m²
@@ -1201,7 +1202,7 @@ end
     end
 end
 
-@testset "ERA5PrescribedAtmosphere derives specific humidity one window at a time" begin
+@testset "ERA5PrescribedAtmosphere derives specific humidity and rain one window at a time" begin
     dataset = ERA5HourlySingleLevel()
     start_date = DateTime(2005, 2, 16)
     end_date = start_date + Hour(7)
@@ -1209,9 +1210,13 @@ end
     netcdf_names = Dict(ERA5_dataset_variable_names[name] => ERA5_netcdf_variable_names[name]
                         for name in keys(ERA5_netcdf_variable_names))
 
-    # Dewpoint and surface pressure change every hour, so each snapshot of qᵛ is distinct.
+    # Dewpoint, surface pressure, total precipitation and snowfall change every hour, so each snapshot of qᵛ and of
+    # the rain is distinct. Precipitation and snowfall are hourly depths (m): 3.6e-3 m is 1e-3 kg m⁻² s⁻¹. At hour 0
+    # the snowfall exceeds the total precipitation, so the rain is floored at zero.
     hourly_value(nc_name, time) = nc_name == "d2m" ? 260 + Dates.hour(time) :
-                                  nc_name == "sp"  ? 9e4 + 1e3 * Dates.hour(time) : 1
+                                  nc_name == "sp"  ? 9e4 + 1e3 * Dates.hour(time) :
+                                  nc_name == "tp"  ? 3.6e-3 * (1 + Dates.hour(time)) :
+                                  nc_name == "sf"  ? 3.6e-3 * 1.5 : 1
 
     function fake_retrieve(product, request, path)
         times = vec([DateTime(parse(Int, y), parse(Int, m), parse(Int, d), parse(Int, h[1:2]))
@@ -1238,7 +1243,7 @@ end
 
     mktempdir() do dir
         names = (:eastward_velocity, :northward_velocity, :temperature,
-                 :dewpoint_temperature, :surface_pressure, :total_precipitation)
+                 :dewpoint_temperature, :surface_pressure, :total_precipitation, :snowfall)
         download(MetadataSet(names...; dataset, start_date, end_date, dir, region); retrieve = fake_retrieve)
 
         atmosphere = ERA5PrescribedAtmosphere(CPU(); dataset, start_date, end_date, dir, region,
@@ -1254,6 +1259,19 @@ end
             pˢ = Float32(hourly_value("sp", time))
             @test all(interior(qᵛ[n]) .≈ saturation_specific_humidity(ℂ, Tᵈ, pˢ, Liquid()))
         end
+
+        rain = atmosphere.precipitation_flux.rain
+        snow = atmosphere.precipitation_flux.snow
+        @test size(parent(rain), 4) == 3
+
+        for n in (1, 5, 8)
+            time = start_date + Hour(n - 1)
+            Jᵖ  = Float32(hourly_value("tp", time) * 1000 / 3600)
+            Jˢⁿ = Float32(hourly_value("sf", time) * 1000 / 3600)
+            @test all(interior(snow[n]) .≈ Jˢⁿ)
+            @test all(interior(rain[n]) .≈ max(Jᵖ - Jˢⁿ, 0))
+        end
+        @test all(interior(rain[1]) .== 0)
     end
 end
 

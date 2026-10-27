@@ -763,6 +763,7 @@ function map_forcing_slices!(op!, times, dst_atmos, dst_rad, src_atmos, src_rad)
         op!(dst_atmos.specific_humidity[n],       src_atmos.specific_humidity[n])
         op!(dst_atmos.pressure[n],                src_atmos.pressure[n])
         op!(dst_atmos.precipitation_flux.rain[n], src_atmos.precipitation_flux.rain[n])
+        op!(dst_atmos.precipitation_flux.snow[n], src_atmos.precipitation_flux.snow[n])
         op!(dst_rad.downwelling_shortwave[n],     src_rad.downwelling_shortwave[n])
         op!(dst_rad.downwelling_longwave[n],      src_rad.downwelling_longwave[n])
     end

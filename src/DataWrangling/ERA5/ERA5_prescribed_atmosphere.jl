@@ -46,6 +46,39 @@ function Oceananigans.Fields.set!(qᵛ::DewpointHumidityFTS, backend = qᵛ.back
     return nothing
 end
 
+# ERA5's total precipitation includes snowfall, so rain is their difference, floored at zero
+# where rounding leaves an hour's snowfall slightly larger than its total precipitation.
+@inline function rain_from_total_precipitation(i, j, k, grid, total_precipitation, snowfall)
+    @inbounds Jᵖ = total_precipitation[i, j, k]
+    @inbounds Jˢⁿ = snowfall[i, j, k]
+    return max(Jᵖ - Jˢⁿ, zero(Jᵖ))
+end
+
+# Like `DewpointHumidityBackend`: derives each in-memory window of rain from the same window
+# of the total precipitation and snowfall series.
+struct RainBackend{P, S} <: AbstractInMemoryBackend{Int}
+    start :: Int
+    length :: Int
+    total_precipitation :: P
+    snowfall :: S
+end
+
+OutputReaders.new_backend(b::RainBackend, start, length) =
+    RainBackend(start, length, b.total_precipitation, b.snowfall)
+
+Adapt.adapt_structure(to, b::RainBackend) = InMemory(b.start, b.length)
+
+const RainFTS = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:RainBackend}
+
+function Oceananigans.Fields.set!(rain::RainFTS, backend = rain.backend)
+    Jᵖ, Jˢⁿ = backend.total_precipitation, backend.snowfall
+    for n in time_indices(rain)
+        r = KernelFunctionOperation{Center, Center, Nothing}(rain_from_total_precipitation, rain.grid, Jᵖ[n], Jˢⁿ[n])
+        set!(rain[n], r)
+    end
+    return nothing
+end
+
 """
     ERA5PrescribedAtmosphere([architecture = CPU()];
                              dataset = ERA5HourlySingleLevel(),
@@ -62,9 +95,10 @@ end
 
 Return a [`PrescribedAtmosphere`](@ref) representing ERA5 single-level reanalysis, suitable for regional hindcast forcing.
 Eastward/northward 10 m winds, 2 m temperature, and surface pressure are loaded directly; specific humidity is derived from
-the 2 m dewpoint and surface pressure (`qᵛ = qᵛ⁺(Tᵈ, pˢ)`) one in-memory window at a time; total precipitation is
-converted from hourly-accumulated depth (m) to a mass flux (kg m⁻² s⁻¹) at load time and wrapped in a
-`PrescribedPrecipitationFlux`.
+the 2 m dewpoint and surface pressure (`qᵛ = qᵛ⁺(Tᵈ, pˢ)`) one in-memory window at a time. Total precipitation and snowfall
+are converted from hourly-accumulated depths (m of water equivalent) to mass fluxes (kg m⁻² s⁻¹) at load time; snowfall is
+the `PrescribedPrecipitationFlux`'s snow and, since ERA5's total precipitation includes it, the rain is
+`max(total precipitation - snowfall, 0)`, also derived one in-memory window at a time.
 
 `region` (a `BoundingBox`) restricts the download and the native grid to a sub-domain; the coupled model interpolates the
 native-resolution atmosphere onto the exchange grid. Pass `thermodynamics_parameters` to share a specific thermodynamics with
@@ -91,7 +125,7 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
     # across variables (one CDS request, or one era5cli invocation with concurrent
     # per-variable requests), so the `FieldTimeSeries` below find their files cached.
     mset = MetadataSet(:eastward_velocity, :northward_velocity, :temperature,
-                       :dewpoint_temperature, :surface_pressure, :total_precipitation;
+                       :dewpoint_temperature, :surface_pressure, :total_precipitation, :snowfall;
                        dataset, start_date, end_date, dir, region)
     Downloads.download(mset)
 
@@ -102,7 +136,8 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
     T    = era5_fts(:temperature)
     Tᵈ   = era5_fts(:dewpoint_temperature)
     p    = era5_fts(:surface_pressure)
-    rain = era5_fts(:total_precipitation)
+    Jᵖ   = era5_fts(:total_precipitation)
+    snow = era5_fts(:snowfall)
 
     grid  = u.grid
     times = u.times
@@ -115,7 +150,11 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
     qᵛ = FieldTimeSeries{Center, Center, Nothing}(grid, times; backend, time_indexing = Tᵈ.time_indexing)
     set!(qᵛ)
 
-    precipitation_flux = PrescribedPrecipitationFlux(; rain)
+    rain = FieldTimeSeries{Center, Center, Nothing}(Jᵖ.grid, Jᵖ.times; backend = RainBackend(1, length(Jᵖ.backend), Jᵖ, snow),
+                                                    time_indexing = Jᵖ.time_indexing)
+    set!(rain)
+
+    precipitation_flux = PrescribedPrecipitationFlux(; rain, snow)
 
     return Atmospheres.PrescribedAtmosphere(grid, times;
                                             source = dataset,
