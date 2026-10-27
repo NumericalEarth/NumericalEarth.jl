@@ -5,7 +5,10 @@ MPI.Init()
 
 using CFTime
 using Dates
-using NumericalEarth.DataWrangling: NearestNeighborInpainting, inpainted_metadata_path, metadata_path
+using NumericalEarth.DataWrangling: NearestNeighborInpainting, all_dates, inpainted_metadata_path, metadata_path
+using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.OutputReaders: update_field_time_series!
+using Oceananigans.Grids: halo_size
 using NumericalEarth.DataWrangling.ORCA: ORCAOne
 using Oceananigans.DistributedComputations
 using Oceananigans.DistributedComputations: all_reduce, concatenate_local_sizes, local_size, reconstruct_global_grid
@@ -153,6 +156,32 @@ end
     end
 
     @test all_reduce(+, 1, arch) == 4
+end
+
+@testset "Dataset FieldTimeSeries advanced on one rank" begin
+    arch = Distributed(CPU(), partition = Partition(4, 1))
+    grid = LatitudeLongitudeGrid(arch; size = (16, 8, 4), longitude = (0, 80), latitude = (-20, 20), z = (-1000, 0))
+    dates = all_dates(SyntheticOcean(), :temperature)[1:4]
+    metadata = Metadata(:temperature; dataset = SyntheticOcean(), dates)
+    kw = (; time_indices_in_memory = 2, cache_inpainted_data = false)
+
+    # Mid-run, only some ranks may advance a series (eg open-boundary data on boundary ranks)
+    alone = FieldTimeSeries(metadata, grid; kw...)
+    arch.local_rank == 0 && update_field_time_series!(alone, 3)
+    @test all_reduce(min, arch.field_count[], arch) == all_reduce(max, arch.field_count[], arch)
+
+    # The interpolated halo facing a neighbour matches what a halo exchange delivers
+    together = FieldTimeSeries(metadata, grid; kw...)
+    exchanged = CenterField(grid)
+    interior(exchanged) .= interior(together[3])
+    fill_halo_regions!(exchanged)
+    Nx, Ny, Nz = size(grid)
+    east_halo = (Nx+1:Nx+halo_size(grid)[1], 1:Ny, 1:Nz)
+
+    if arch.local_rank == 0
+        @test interior(alone[3]) ≈ interior(exchanged)
+        @test alone[3].data[east_halo...] ≈ exchanged.data[east_halo...]
+    end
 end
 
 MPI.Finalize()
