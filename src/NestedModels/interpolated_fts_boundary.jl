@@ -22,8 +22,8 @@
 import Oceananigans.BoundaryConditions: regularize_boundary_condition, getbc,
                                         LeftBoundary, RightBoundary
 import Oceananigans.OutputReaders: FlavorOfFTS
-using Oceananigans.Grids: node, ξnode, ηnode, topology, Face, Center, OrthogonalSphericalShellGrid,
-                          FullyConnected, LeftConnected, RightConnected
+using Oceananigans.Grids: node, ξnode, ηnode, ξnodes, ηnodes, topology, Face, Center,
+                          OrthogonalSphericalShellGrid, FullyConnected, LeftConnected, RightConnected
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Fields: Field, interior, compute!
 using Adapt: Adapt, adapt
@@ -106,20 +106,25 @@ function boundary_coordinate_extent(coordinate, grid, dim, SideType, ::Type{LX},
     return extrema(interior(line))
 end
 
+function validate_axis_bracket(label, (src_lo, src_hi), (sim_lo, sim_hi))
+    (src_lo ≤ sim_lo && sim_hi ≤ src_hi) || throw(ArgumentError(
+        "Interpolated boundary source $(label)-extent [$src_lo, $src_hi] does not " *
+        "bracket model grid $(label)-extent [$sim_lo, $sim_hi]"))
+    return nothing
+end
+
 # The source must bracket the boundary horizontally: along the boundary, the child's whole extent;
 # across it, only the boundary itself, which leaves a per-side source free to span only its own side.
 function validate_bracket(source, grid, dim, SideType, ::Type{LX}, ::Type{LY}) where {LX, LY}
     source_loc  = Oceananigans.instantiated_location(source)
     source_grid = source.grid
 
-    for (label, coordinate, source_nodes) in (("x", ξnode, Oceananigans.Grids.ξnodes),
-                                              ("y", ηnode, Oceananigans.Grids.ηnodes))
-        sim_lo, sim_hi = boundary_coordinate_extent(coordinate, grid, dim, SideType, LX, LY)
-        src_lo, src_hi = extrema(source_nodes(source_grid, source_loc...))
-        (src_lo ≤ sim_lo && sim_hi ≤ src_hi) || throw(ArgumentError(
-            "Interpolated boundary source $(label)-extent [$src_lo, $src_hi] does not " *
-            "bracket model grid $(label)-extent [$sim_lo, $sim_hi]"))
-    end
+    validate_axis_bracket("x", extrema(ξnodes(source_grid, source_loc...)),
+                          boundary_coordinate_extent(ξnode, grid, dim, SideType, LX, LY))
+
+    validate_axis_bracket("y", extrema(ηnodes(source_grid, source_loc...)),
+                          boundary_coordinate_extent(ηnode, grid, dim, SideType, LX, LY))
+
     return nothing
 end
 
