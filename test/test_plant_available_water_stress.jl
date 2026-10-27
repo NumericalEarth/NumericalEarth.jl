@@ -87,7 +87,7 @@ end
     @test_throws ArgumentError PlantAvailableWaterStress(field_capacity_head = 0)
 
     # A nested stress declares the endpoints; a land without a retention curve cannot publish them
-    canopy = CanopyGroundSurface(FT; soil_humidity = BulkHumidity(),
+    canopy = CanopyInterface(FT; soil_humidity = BulkHumidity(),
                                  canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index = 2, moisture_stress = stress))
     point_grid = RectilinearGrid(FT; size = (), topology = (Flat, Flat, Flat))
     exchanger(hydrology) = ComponentExchanger(SlabLand(point_grid; hydrology), point_grid;

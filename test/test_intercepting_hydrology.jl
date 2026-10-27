@@ -5,7 +5,7 @@ using Oceananigans: set!
 using Oceananigans.TimeSteppers: update_state!, time_step!
 using Oceananigans.OutputReaders: OnDisk, InMemory
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyGroundSurface, CanopyConductanceHumidity,
+    CanopyInterface, CanopyConductanceHumidity,
     CriticalSaturation, InteractiveAbsorbedPAR, SoilConductiveFlux, land_canopy_water_capacity
 using NumericalEarth.Lands: SlabLand, SlabEnergy, VariablySaturatedHydrology, InterceptingHydrology,
     VanGenuchtenRetention, VanGenuchtenConductivity, canopy_store_update
@@ -23,7 +23,7 @@ vapor_flux(model) = scalar(model.interfaces.atmosphere_land_interface.fluxes.wat
 function interception_model(arch, FT; leaf_area_index = 3.0, capacity = 0.1, rain = 1e-3, interception = true)
     hydrology = interception ? InterceptingHydrology(FT; soil = soil_hydrology(FT), leaf_area_index, capacity_per_leaf_area = capacity) : soil_hydrology(FT)
     canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index, moisture_stress = CriticalSaturation(0.5), absorbed_par = InteractiveAbsorbedPAR(FT))
-    surface = CanopyGroundSurface(FT; soil_humidity = bare_soil_humidity(FT), canopy_humidity, ground_heat_flux = SoilConductiveFlux(1.5, 0.05))
+    surface = CanopyInterface(FT; soil_humidity = bare_soil_humidity(FT), canopy_humidity, ground_heat_flux = SoilConductiveFlux(1.5, 0.05))
     return coupled_land_model(arch, FT; air_temperature = 298, air_specific_humidity = 0.010, wind = 3, rain,
                               hydrology, atmosphere_land_interface_state=surface, land_temperature = 298, water = 300.0, shortwave = 400)
 end
@@ -33,8 +33,9 @@ end
         model = interception_model(arch, Float64)
         land = model.land
         before = scalar(land.water_storage) + canopy_storage(land)
+        evaporation = vapor_flux(model)
         time_step!(model, 60.0)
-        @test scalar(land.water_storage) + canopy_storage(land) - before ≈ 60 * (1e-3 - vapor_flux(model)) atol = 1e-10
+        @test scalar(land.water_storage) + canopy_storage(land) - before ≈ 60 * (1e-3 - evaporation) atol = 1e-10
         @test land.hydrology.leaf_area_index == 3.0
     end
 end
@@ -67,7 +68,7 @@ end
         @test scalar(land.water_storage) + canopy_storage(land) ≈ before atol = 1e-10
     end
 
-    # LAI(t = 3) = 4 lies beyond the two snapshots loaded when the series was opened
+    # λˡᵉᵃᶠ(t = 3) = 4 lies beyond the two snapshots loaded when the series was opened
     capacity = land_canopy_water_capacity(land)
     @test scalar(compute!(Field(capacity))) ≈ 0.1 * 4
 end
@@ -82,7 +83,7 @@ end
     end
 end
 
-@testset "Dry canopy reduces to the bare CanopyGroundSurface bit-for-bit" begin
+@testset "Dry canopy reduces to the bare CanopyInterface bit-for-bit" begin
     for arch in test_architectures
         with, without = interception_model(arch, Float64), interception_model(arch, Float64; interception = false)
         interface, bare = with.interfaces.atmosphere_land_interface, without.interfaces.atmosphere_land_interface
@@ -136,21 +137,21 @@ end
         for _ in 1:200
             Mᶜᵃⁿ⁻ = canopy_storage(land)
             time_step!(model, 3600.0)
-            @test scalar(land.fluxes.canopy_evaporation) ≤ Mᶜᵃⁿ⁻ / 3600 * (1 + 1e-5)
+            @test canopy_storage(land) ≤ Mᶜᵃⁿ⁻
             @test canopy_storage(land) ≥ 0
         end
         @test canopy_storage(land) < 1e-3
     end
 end
 
-@testset "Field- and FieldTimeSeries-valued LAI cap the store at c LAI" begin
+@testset "Field- and FieldTimeSeries-valued λˡᵉᵃᶠ cap the store at c λˡᵉᵃᶠ" begin
     for arch in test_architectures
         grid = column_grid(arch)
         lai_field = set!(CenterField(grid), 2.0)
         lai_series = FieldTimeSeries{Center, Center, Nothing}(grid, [0.0, 100.0])
         set!(lai_series[1], 1.0)
         set!(lai_series[2], 3.0)
-        # The FieldTimeSeries LAI is interpolated to LAI(t = 50) = 2 and runs on CPU only
+        # The FieldTimeSeries λˡᵉᵃᶠ is interpolated to λˡᵉᵃᶠ(t = 50) = 2 and runs on CPU only
         for (lai, Δt) in ((lai_field, 600.0), (lai_series, 50.0))
             lai isa FieldTimeSeries && !(arch isa CPU) && continue
             land = intercepting_land(grid; leaf_area_index = lai, capacity_per_leaf_area = 0.1)

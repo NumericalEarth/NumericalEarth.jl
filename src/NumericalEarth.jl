@@ -57,12 +57,12 @@ export
     ConstantTortuosity,
     PowerLawTortuosity,
     CanopyConductanceHumidity,
-    CanopyGroundSurface,
+    CanopyInterface,
     PrognosticCanopyAir,
     PrognosticSkin,
     AreaIndexUndercanopyVelocity,
     FrictionVelocityUndercanopyVelocity,
-    SellersSoilResistance,
+    ExponentialSoilResistance,
     GroundSurfaceResistance,
     JarvisConductance,
     InteractiveAbsorbedPAR,
@@ -253,17 +253,8 @@ const SKOFTS = SomeKindOfFieldTimeSeries
     return a(λ, φ, z, time)
 end
 
-@inline function stateindex(a::Tuple, i, j, k, grid, time, args...)
-    N = length(a)
-    ntuple(Val(N)) do n
-        stateindex(a[n], i, j, k, grid, time, args...)
-    end
-end
-
-@inline function stateindex(a::NamedTuple, i, j, k, grid, time, args...)
-    vals = stateindex(values(a), i, j, k, grid, time, args...)
-    names = keys(a)
-    return NamedTuple{names}(vals)
+@inline function stateindex(a::Union{Tuple, NamedTuple}, i, j, k, grid, time, args...)
+    return map(value -> stateindex(value, i, j, k, grid, time, args...), a)
 end
 
 #####

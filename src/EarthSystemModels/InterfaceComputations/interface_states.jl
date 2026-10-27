@@ -11,7 +11,7 @@ $(TYPEDSIGNATURES)
 The physics of one atmosphere interface (air–sea, air–ice, or air–land): the turbulent-flux
 closure (e.g. `SimilarityTheoryFluxes`), the interface-state formulation, and the
 atmosphere–surface velocity difference. `state` is a named tuple of `temperature` and
-`specific_humidity` formulations, or a coupled formulation such as `CanopyGroundSurface`.
+`specific_humidity` formulations, or a coupled formulation such as `CanopyInterface`.
 """
 struct InterfaceFormulation{F, S, V}
     turbulent_fluxes     :: F

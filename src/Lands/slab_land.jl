@@ -222,6 +222,7 @@ at the post-step time (consistent with `Atmospheres` and `Radiations`),
 and every `FieldTimeSeries` among them is brought into memory at that time.
 """
 function Oceananigans.TimeSteppers.time_step!(land::SlabLand, Δt)
+    step_surface_storage!(land.surface_storage, land, Δt)
     tick!(land.clock, Δt)
     time = land.clock.time
 
@@ -231,7 +232,6 @@ function Oceananigans.TimeSteppers.time_step!(land::SlabLand, Δt)
 
     time_step!(land.hydrology, land, Δt, time)
     time_step!(land.energy,    land, Δt, time)
-    step_surface_storage!(land.surface_storage)
 
     Oceananigans.TimeSteppers.update_state!(land)
 
@@ -355,7 +355,11 @@ Radiative contributions are added on top in
 function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     al_interface = coupled_model.interfaces.atmosphere_land_interface
     isnothing(al_interface) && return nothing
+    atmos_state = coupled_model.interfaces.exchanger.atmosphere.state
+    return EarthSystemModels.update_net_fluxes!(land, al_interface, atmos_state)
+end
 
+function EarthSystemModels.update_net_fluxes!(land::SlabLand, al_interface, atmos_state)
     interface_fluxes = land_surface_fluxes(al_interface, land.temperature)
     fluxes = land.fluxes
     grid = land.grid
@@ -375,7 +379,6 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     # exchanger (`Jʳⁿ` is allocated by `PrescribedAtmosphere`'s exchanger
     # state). When absent (e.g. radiatively decoupled or atmosphere
     # without precipitation), fall back to a `ZeroField`.
-    atmos_state = coupled_model.interfaces.exchanger.atmosphere.state
     Jʳⁿ = hasproperty(atmos_state, :Jʳⁿ) ? atmos_state.Jʳⁿ : ZeroField()
 
     launch!(arch, grid, :xy, _assemble_slab_land_fluxes!,
@@ -387,7 +390,7 @@ end
                                              interface_fluxes, Jʳⁿ)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        𝒬 = surface_energy_loss(i, j, interface_fluxes.energy...)
+        𝒬 = interface_fluxes.energy[i, j, 1]
         Jᵛ = interface_fluxes.vapor[i, j, 1]
         Jʷᵉᵗ = interface_fluxes.canopy_evaporation[i, j, 1]
         rain = Jʳⁿ[i, j, 1]

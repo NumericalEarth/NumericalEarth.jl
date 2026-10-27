@@ -8,15 +8,15 @@
 $(TYPEDSIGNATURES)
 
 Canopy water store `Mᶜᵃⁿ` (kg m⁻²) wrapping a [`VariablySaturatedHydrology`](@ref)
-`soil`. Rain is caught by the Beer–Lambert canopy fraction `1 − e^{−KΩ·LAI}` up to the
-capacity `c·LAI`; the wet canopy evaporates at the rate `Jʷᵉᵗ` the interface computes
-(a [`CanopyGroundSurface`](@ref)), and the uncaught rain plus the
+`soil`. Rain is caught by the Beer–Lambert canopy fraction `1 − e^{−KΩ·λˡᵉᵃᶠ}` up to the
+capacity `c·λˡᵉᵃᶠ`; the wet canopy evaporates at the rate `Jʷᵉᵗ` the interface computes
+(a [`CanopyInterface`](@ref)), and the uncaught rain plus the
 over-capacity drip reach the soil as throughfall.
 
-`leaf_area_index` supplies the canopy LAI; use the same value or field for the canopy interface.
-A `FieldTimeSeries` LAI runs on CPU only.
+`leaf_area_index` supplies the canopy λˡᵉᵃᶠ; use the same value or field for the canopy interface.
+A `FieldTimeSeries` λˡᵉᵃᶠ runs on CPU only.
 
-* `capacity_per_leaf_area` — `c` (kg m⁻² per unit LAI).
+* `capacity_per_leaf_area` — `c` (kg m⁻² per unit λˡᵉᵃᶠ).
 * `extinction`, `clumping` — Beer–Lambert `K`, `Ω` of the caught fraction.
 """
 struct InterceptingHydrology{S, L, FT} <: AbstractHydrology
@@ -84,9 +84,9 @@ end
         Jʷᵉᵗ  = canopy_evaporation[i, j, 1]
     end
     FT    = typeof(Mᶜᵃⁿⁿ)
-    LAI   = convert(FT, stateindex(h.leaf_area_index, i, j, 1, grid, Time(time), (Center, Center, Center)))
-    Mᶜᵃⁿ⁺ = h.capacity_per_leaf_area * LAI
-    fⁱⁿᵗ  = 1 - canopy_transmittance(h.extinction, h.clumping, LAI)
+    λˡᵉᵃᶠ   = convert(FT, stateindex(h.leaf_area_index, i, j, 1, grid, Time(time), (Center, Center, Center)))
+    Mᶜᵃⁿ⁺ = h.capacity_per_leaf_area * λˡᵉᵃᶠ
+    fⁱⁿᵗ  = 1 - canopy_transmittance(h.extinction, h.clumping, λˡᵉᵃᶠ)
 
     Mᶜᵃⁿⁿ⁺¹, _, Pˡ = canopy_store_update(Mᶜᵃⁿⁿ, rain, Jʷᵉᵗ, Mᶜᵃⁿ⁺, fⁱⁿᵗ, Δt)
 
@@ -114,7 +114,7 @@ update_diagnostics!(h::InterceptingHydrology, land) = update_diagnostics!(h.soil
 
 saturation(h::InterceptingHydrology, land) = saturation(h.soil, land)
 
-# The store capacity `Mᶜᵃⁿ⁺ = c·LAI` the interface normalizes the wet fraction by.
+# The store capacity `Mᶜᵃⁿ⁺ = c·λˡᵉᵃᶠ` the interface normalizes the wet fraction by.
 canopy_water_capacity(h::InterceptingHydrology, land) =
     KernelFunctionOperation{Center, Center, Nothing}(canopy_water_capacity, land.grid, h, land.clock)
 

@@ -18,7 +18,7 @@ function jarvis_latent_heat(arch, grid, leaf_area_index; time = nothing)
     return Array(interior(model.interfaces.atmosphere_land_interface.fluxes.latent_heat))[:, 1, 1]
 end
 
-@testset "Field-valued LAI: spatial coupled fluxes" begin
+@testset "Field-valued λˡᵉᵃᶠ: spatial coupled fluxes" begin
     for arch in test_architectures
         grid = LatitudeLongitudeGrid(arch; size = (2, 1, 1), longitude = (0, 20), latitude = (0, 10),
                                      z = (-1, 0), topology = (Bounded, Bounded, Bounded))
@@ -31,7 +31,7 @@ end
     end
 end
 
-@testset "Field-valued LAI: temporal coupled fluxes" begin
+@testset "Field-valued λˡᵉᵃᶠ: temporal coupled fluxes" begin
     for arch in test_architectures
         grid = LatitudeLongitudeGrid(arch; size = 1, latitude = 10, longitude = 10, z = (-1, 0), topology = (Flat, Flat, Bounded))
         leaf_area_index = FieldTimeSeries{Center, Center, Nothing}(grid, [0.0, 100.0])

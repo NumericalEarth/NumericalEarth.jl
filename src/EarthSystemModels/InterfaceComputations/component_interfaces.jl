@@ -205,10 +205,10 @@ Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
 # closures it differs from `land.temperature`. With both land and ocean interfaces the
 # surface partition's blended temperature wins; otherwise the land interface, then the
 # atmosphere-ocean interface; `nothing` when the atmosphere touches neither.
-# A `CanopyGroundSurface` interface holds several diagnostic temperatures; the atmosphere-facing
+# A `CanopyInterface` interface holds several diagnostic temperatures; the atmosphere-facing
 # one is the canopy-air node.
 @inline interface_node_temperature(t) = t
-@inline interface_node_temperature(t::CanopyGroundSurfaceDiagnostics) = t.interface
+@inline interface_node_temperature(t::CanopyInterfaceDiagnostics) = t.interface
 EarthSystemModels.surface_temperature(interface::AtmosphereInterface) =
     interface_node_temperature(interface.temperature)
 

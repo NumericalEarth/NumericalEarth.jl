@@ -47,6 +47,7 @@ instead.
 """
 abstract type AbstractLand end
 
+using Accessors: @set
 using Adapt: Adapt
 using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
@@ -68,12 +69,17 @@ using Base: ForwardOrdering
 using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
 using NumericalEarth.EarthSystemModels.InterfaceComputations: InterfaceComputations,
-                                                 CanopyGroundSurface, EnergyBalanceTemperature,
+                                                 CanopyInterface, EnergyBalanceTemperature,
                                                  ConstantTortuosity, PowerLawTortuosity,
                                                  effective_vapor_diffusivity,
                                                  interface_kernel_parameters, ComponentExchanger,
                                                  canopy_transmittance, land_surface_fluxes,
-                                                 surface_energy_loss, convert_if_number, maybe_write!
+                                                 convert_if_number, maybe_write!,
+                                                 LandInterfaceBoundaryCondition, land_interface_problem,
+                                                 evaluate_land_interface, store_land_interface!,
+                                                 canopy_leaf_area_index, specific_humidity_formulation, temperature_formulation,
+                                                 kernel_surface_field, rebuild_interface_state,
+                                                 canopy_air_space_solve, skin_energy_imbalance
 
 # Extended by external land models
 function land_model end

@@ -4,10 +4,10 @@ using Oceananigans
 using Oceananigans: prognostic_state, restore_prognostic_state!
 using Oceananigans.TimeSteppers: time_step!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyGroundSurface, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR,
+    CanopyInterface, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR,
     SoilConductiveFlux, SoilSkinTemperature, compute_atmosphere_land_fluxes!
 
-checkpoint_canopy() = CanopyGroundSurface(Float64; soil_humidity = bare_soil_humidity(Float64),
+checkpoint_canopy() = CanopyInterface(Float64; soil_humidity = bare_soil_humidity(Float64),
     canopy_humidity = CanopyConductanceHumidity(Float64; leaf_area_index = 4.0, moisture_stress = CriticalSaturation(0.5),
                                                 absorbed_par = InteractiveAbsorbedPAR(Float64)),
     ground_heat_flux = SoilConductiveFlux(1.5, 0.05))
@@ -71,15 +71,19 @@ end
         time_step!(model, 300.0)
         state = model.land.surface_storage.prognostic
         before = arrays(state)
-        compute_atmosphere_land_fluxes!(model, 300.0)
-        candidate = arrays(model.land.surface_storage.next_state)
+        compute_atmosphere_land_fluxes!(model)
+        tendencies = arrays(model.land.surface_storage.tendencies)
         latent_heat = model.interfaces.atmosphere_land_interface.fluxes.latent_heat
         heat = scalar(latent_heat)
-        compute_atmosphere_land_fluxes!(model, 300.0)
+        compute_atmosphere_land_fluxes!(model)
         @test arrays(state) == before
-        @test arrays(model.land.surface_storage.next_state) == candidate
+        @test arrays(model.land.surface_storage.tendencies) == tendencies
         @test scalar(latent_heat) == heat
-        time_step!(model, 300.0)
-        @test arrays(state) == candidate
+        update_state!(model)
+        @test arrays(state) == before
+        time_step!(model.land, 300.0)
+        accepted_tendencies = arrays(model.land.surface_storage.tendencies)
+        expected = map((x, tendency) -> x .+ 300 .* tendency, before, accepted_tendencies)
+        @test all(map((x, y) -> isapprox(x, y; atol=1e-9), arrays(state), expected))
     end
 end

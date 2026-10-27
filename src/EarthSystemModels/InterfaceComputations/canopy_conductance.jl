@@ -1,13 +1,13 @@
 #####
 ##### `CanopyConductanceHumidity` — a single-source (big-leaf) canopy: the stomatal
-##### conductance `gᶜᵃⁿ = LAI · gₛ` in series with the aerodynamic conductance.
+##### conductance `gᶜᵃⁿ = λˡᵉᵃᶠ · gₛ` in series with the aerodynamic conductance.
 #####
 
 """
     struct CanopyConductanceHumidity
 
 Surface specific humidity `qˢ` for a single-source (big-leaf) canopy: the
-canopy conductance `gᶜᵃⁿ = LAI · gₛ` in series with the aerodynamic conductance,
+canopy conductance `gᶜᵃⁿ = λˡᵉᵃᶠ · gₛ` in series with the aerodynamic conductance,
 solved inside the Monin–Obukhov fixed point exactly as [`SkinHumidity`](@ref)
 solves a soil-resistance balance. The stomatal conductance `gₛ` comes from the
 `conductance` model driven by the per-cell leaf-to-air VPD, leaf temperature
@@ -19,7 +19,7 @@ read from the ground hydrology (`moisture_stress`, a `Number`, a
 radiation state ([`InteractiveAbsorbedPAR`](@ref)).
 
 Fields:
-- `leaf_area_index` : bulk LAI (–), upscales leaf `gₛ` to the canopy.
+- `leaf_area_index` : bulk λˡᵉᵃᶠ (–), upscales leaf `gₛ` to the canopy.
 - `conductance`     : a [`JarvisConductance`](@ref) by default.
 - `moisture_stress` : `β(𝒮)` model — a `Number`, a [`PlantAvailableWaterStress`](@ref)
   (wilting-point/field-capacity endpoints, the model meant for a transpiring canopy), or
@@ -61,31 +61,31 @@ Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
 # The canopy reads the land state its moisture stress declares.
 land_state_accessors(q::CanopyConductanceHumidity) = land_state_accessors(q.moisture_stress)
 
-# The bulk LAI (a constant, a static `Field`, or a `FieldTimeSeries`) upscales the leaf
+# The bulk λˡᵉᵃᶠ (a constant, a static `Field`, or a `FieldTimeSeries`) upscales the leaf
 # conductance and shades the absorbed PAR.
 @inline canopy_leaf_area_index(q::CanopyConductanceHumidity) = q.leaf_area_index
 @inline interface_vegetation_state(i, j, grid, ::CanopyConductanceHumidity, vegetation, time_interpolator) =
     (leaf_area_index = convert(eltype(grid), stateindex(vegetation, i, j, 1, time_interpolator)),)
 
-# Bulk canopy (stomatal) mass conductance `gᶜᵃⁿ = LAI · gₛ · Mᵈ` (kg m⁻² s⁻¹) and the leaf
+# Bulk canopy (stomatal) mass conductance `gᶜᵃⁿ = λˡᵉᵃᶠ · gₛ · Mᵈ` (kg m⁻² s⁻¹) and the leaf
 # saturation humidity `qᵛ⁺(Tˡᵉᵃ)`; `qᵃ` is the humidity of the air the leaf exchanges with.
 @inline function canopy_conductance_terms(q::CanopyConductanceHumidity, Tˡᵉᵃ, qᵃ, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ,
                                           canopy_transmittance)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     pᵃᵗ = Ψₐ.p
 
-    LAI = Ψˡᵃ.leaf_area_index
+    λˡᵉᵃᶠ = Ψˡᵃ.leaf_area_index
     qᵛ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tˡᵉᵃ, pᵃᵗ, q.phase)
     # Leaf-to-air vapor pressure deficit (Pa).
     VPD  = max(AtmosphericThermodynamics.vapor_pressure_deficit(ℂᵃᵗ, Tˡᵉᵃ, pᵃᵗ, qᵃ, 0, 0, q.phase),
                oftype(Tˡᵉᵃ, 50))
     β    = evaporation_efficiency(q.moisture_stress, Ψˡᵃ)
-    APAR = absorbed_par_value(q.absorbed_par, Ψᵣ, LAI, canopy_transmittance)
+    APAR = absorbed_par_value(q.absorbed_par, Ψᵣ, λˡᵉᵃᶠ, canopy_transmittance)
 
     gₛ = stomatal_conductance(q.conductance, APAR, VPD, Tˡᵉᵃ, β)
 
     # Molar leaf conductance → canopy mass conductance (kg m⁻² s⁻¹).
-    gᶜᵃⁿ = LAI * gₛ * oftype(gₛ, default_dry_air_molar_mass)
+    gᶜᵃⁿ = λˡᵉᵃᶠ * gₛ * oftype(gₛ, default_dry_air_molar_mass)
 
     return gᶜᵃⁿ, qᵛ⁺
 end

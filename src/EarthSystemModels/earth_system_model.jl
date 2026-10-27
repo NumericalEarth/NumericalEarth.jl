@@ -140,6 +140,8 @@ takes as configuration. Radiation components that read surface properties (e.g. 
 """
 materialize_earth_system_surface_properties(radiation, interfaces) = radiation
 
+materialize_land_interface(land, interfaces, atmosphere, radiation) = land
+
 """
 $(TYPEDSIGNATURES)
 
@@ -276,6 +278,8 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
     # Allocate per-surface InterfaceRadiationFlux on the exchange grid.
     surfaces = present_surfaces(ocean, sea_ice, land)
     allocate_interface_fluxes!(radiation, interfaces.exchanger.grid, surfaces)
+
+    land = materialize_land_interface(land, interfaces, atmosphere, radiation)
 
     earth_system_model = EarthSystemModel(arch,
                                           clock,

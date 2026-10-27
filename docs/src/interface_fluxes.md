@@ -20,7 +20,7 @@ and surface optical computations for radiation.
 
 The interface's `formulation.state` specifies how to compute the interface state. For an
 ordinary surface it holds separate `temperature` and `specific_humidity` formulations in
-a named tuple. A `CanopyGroundSurface` occupies `formulation.state` directly and solves
+a named tuple. A `CanopyInterface` occupies `formulation.state` directly and solves
 the coupled canopy and ground balances. The computed temperatures, humidity, and fluxes
 are stored on the interface.
 
@@ -40,14 +40,17 @@ soil_humidity = DryLayerHumidity(
                                                dry_layer_onset_saturation = 0.5),
     vapor_exchange = DryLayerVaporPistonVelocity(minimum_dry_layer_depth = 1e-3,
                                                 molecular_diffusivity = 2.4e-5))
-canopy = CanopyGroundSurface(; soil_humidity)
+canopy = CanopyInterface(; soil_humidity)
 atmosphere = PrescribedAtmosphere(land_grid)
 land_model = AtmosphereLandModel(atmosphere, land; atmosphere_land_interface_state=canopy,
                                 radiation=PrescribedRadiation(land_grid))
 ```
 
-The interface solve computes turbulent fluxes and candidate surface updates from the
-current land state. The land step applies each update once. Canopy-air and skin storage
+The interface solve computes instantaneous fluxes and storage tendencies from the current
+component states, without a time step. `time_step!(land, Δt)` advances the canopy-air or
+skin state with backward Euler. Its nonlinear solve evaluates diagnostic fluxes at trial
+states through the coupled flux boundary condition. The converged fluxes drive the bulk
+land and atmosphere updates. Canopy-air and skin storage
 are checkpointed with the land. Checkpoints also preserve interface temperatures and flux
 partitions from the completed step so diagnostics remain consistent immediately after pickup.
 

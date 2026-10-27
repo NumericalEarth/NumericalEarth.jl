@@ -24,9 +24,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
         land = model.land
         set!(land; M = 200)
         update_state!(model)
-        time_step!(model, 60)
-
         vapor = scalar(land.fluxes.vapor_flux)
+        time_step!(model, 60)
         @test (land_temperature - 290) * vapor > 0
         @test scalar(land.water_storage) ≈ 200 - 60 * vapor
     end
@@ -52,15 +51,15 @@ end
 
 @testset "Absorbed PAR (prescribed vs interactive)" begin
     for FT in (Float32, Float64)
-        LAI = FT(2)
-        @test absorbed_par_value(FT(4e-4), nothing, LAI, nothing) == FT(4e-4)
+        λˡᵉᵃᶠ = FT(2)
+        @test absorbed_par_value(FT(4e-4), nothing, λˡᵉᵃᶠ, nothing) == FT(4e-4)
 
         inter = InteractiveAbsorbedPAR(FT)
-        APAR(ℐꜜˢʷ) = absorbed_par_value(inter, (; ℐꜜˢʷ = -FT(ℐꜜˢʷ)), LAI, nothing)
+        APAR(ℐꜜˢʷ) = absorbed_par_value(inter, (; ℐꜜˢʷ = -FT(ℐꜜˢʷ)), λˡᵉᵃᶠ, nothing)
         @test APAR(0) == 0
         @test 1e-4 < APAR(500) < 1e-3   # same order as the prescribed default
         @test APAR(1000) ≈ 2 * APAR(500)
-        @test (@inferred absorbed_par_value(inter, (; ℐꜜˢʷ = -FT(500)), LAI, nothing)) isa FT
+        @test (@inferred absorbed_par_value(inter, (; ℐꜜˢʷ = -FT(500)), λˡᵉᵃᶠ, nothing)) isa FT
     end
 end
 

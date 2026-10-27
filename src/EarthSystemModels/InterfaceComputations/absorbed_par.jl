@@ -9,13 +9,13 @@
 Per-leaf absorbed PAR recomputed each step from the downwelling shortwave `ℐꜜˢʷ`
 (W m⁻², positive upward) in the radiation state,
 
-    APAR = - fₐ · (fᵖᵃʳ · ℐꜜˢʷ · Qᴶ) / LAI ,
+    APAR = - fₐ · (fᵖᵃʳ · ℐꜜˢʷ · Qᴶ) / λˡᵉᵃᶠ ,
 
 where `fᵖᵃʳ` (`par_fraction`) is the PAR energy fraction of shortwave, `Qᴶ`
 (`photon_per_joule`) converts PAR energy to a photon flux, and
-`fₐ = (1 − α)(1 − e^{−K Ω L})` is the fraction of the incident PAR the canopy
+`fₐ = (1 − α)(1 − e^{−K Ω λˡᵉᵃᶠ})` is the fraction of the incident PAR the canopy
 absorbs (ClimaLand Eq D11), with the PAR-band leaf albedo `α` and the Beer–Lambert
-transmittance the caller supplies. Dividing by `LAI` returns the per-leaf value the
+transmittance the caller supplies. Dividing by `λˡᵉᵃᶠ` returns the per-leaf value the
 leaf conductance models expect.
 
 Fields:
@@ -23,7 +23,7 @@ Fields:
 - `photon_per_joule` : mol photons per J in the PAR band (≈ 4.57e-6).
 - `leaf_par_albedo`  : leaf albedo in the PAR band.
 - `extinction`, `clumping` : Beer–Lambert extinction `K` and foliage clumping index `Ω ∈ (0, 1]`
-                       ([Chen and Black (1992)](@cite chen1992)) of the transmittance `e^{−K Ω L}`,
+                       ([Chen and Black (1992)](@cite chen1992)) of the transmittance `e^{−K Ω λˡᵉᵃᶠ}`,
                        used only when no canopy supplies a transmittance.
 """
 struct InteractiveAbsorbedPAR{FT}
@@ -47,7 +47,7 @@ Base.summary(::InteractiveAbsorbedPAR{FT}) where FT = "InteractiveAbsorbedPAR{$F
 Base.show(io::IO, p::InteractiveAbsorbedPAR) = print(io, summary(p),
     "(par_fraction=", prettysummary(p.par_fraction), ")")
 
-# Beer–Lambert transmittance through a canopy of leaf area index `LAI`, extinction
+# Beer–Lambert transmittance through a canopy of leaf area index `λˡᵉᵃᶠ`, extinction
 # coefficient `K` and clumping `Ω`.
 @inline canopy_transmittance(K, Ω, leaf_area_index) = exp(-K * Ω * leaf_area_index)
 

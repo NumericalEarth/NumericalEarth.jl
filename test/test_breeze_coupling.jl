@@ -444,7 +444,12 @@ end
 
             Jʳⁿ = model.interfaces.exchanger.atmosphere.state.Jʳⁿ
             @test maximum(Array(interior(Jʳⁿ))) > 0
-            @test maximum(Array(interior(model.land.fluxes.precipitation))) > 0
+            precipitation = Array(interior(model.land.fluxes.precipitation))
+            evaporation = Array(interior(model.land.fluxes.evaporation))
+            @test maximum(precipitation) > 0
+            water_before = Array(interior(model.land.water_storage))
+            time_step!(model, 1)
+            @test Array(interior(model.land.water_storage)) ≈ water_before .+ precipitation .- evaporation
 
             dry = build_nested_land_test_model(arch)
             update_state!(dry)
