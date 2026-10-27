@@ -14,7 +14,7 @@ using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryCond
                                        regularize_boundary_condition, LeftBoundary, RightBoundary, getbc
 using Oceananigans.Operators: intrinsic_vector, rotation_angle
 using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid
-using Oceananigans.Forcings: MultipleForcings
+using Oceananigans.Forcings: MultipleForcings, evaluate_target
 using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics,
               SpecificForcing, SaturationAdjustment, WarmPhaseEquilibrium, moisture_prognostic_name,
@@ -197,11 +197,17 @@ end
     @test uᵢ ≈ uᵒ rtol = 1e-5
     @test vᵢ ≈ vᵒ rtol = 1e-5
 
+    # A `Relaxation` target reaches the rotation through `evaluate_target` rather than `getbc`.
+    @test evaluate_target(1, j, k, ccg, NM.VectorComponent{:u}(uᵉ, vᵉ), loc, 0.0) ≈ uᵒ rtol = 1e-5
+    @test evaluate_target(1, j, k, ccg, NM.VectorComponent{:v}(uᵉ, vᵉ), loc, 0.0) ≈ vᵒ rtol = 1e-5
+
     # On a child whose axes are already geographic the rotation is the identity.
     llg = LatitudeLongitudeGrid(CPU(); size = (10, 10, 4), longitude = (-105, -95), latitude = (35, 43),
                                 z = (0, 1), topology = (Bounded, Bounded, Bounded))
     @test getbc(regularized(:u, llg), j, k, llg, nothing) ≈ 10 rtol = 1e-4
     @test abs(getbc(regularized(:v, llg), j, k, llg, nothing)) < 1e-5
+    @test evaluate_target(1, j, k, llg, NM.VectorComponent{:u}(uᵉ, vᵉ), loc, 0.0) ≈ 10 rtol = 1e-4
+    @test abs(evaluate_target(1, j, k, llg, NM.VectorComponent{:v}(uᵉ, vᵉ), loc, 0.0)) < 1e-5
 end
 
 @testset "parent_boundary_conditions: bc_types selects BC kind per field" begin
