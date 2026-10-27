@@ -38,7 +38,7 @@ function build_coupled_test_model(arch; M₀, T₀, with_radiation = false)
         storage_height = 1000,
         retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
         hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
-        deep_liquid_flux = NoDeepLiquidFlux(),
+        deep_liquid_water_flux = NoDeepLiquidWaterFlux(),
         runoff = NoRunoff())
     energy = WaterCoupledEnergy(eltype(land_grid);
         dry_heat_capacity = 1e6,

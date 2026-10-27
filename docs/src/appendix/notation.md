@@ -193,8 +193,8 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``\eta^K`` | `ηᴷ`, `pore_connectivity_exponent` | pore-connectivity exponent | Mualem exponent on saturation in ``K(\mathcal S)`` (–) |
 | ``T_0`` | `reference_temperature` | viscosity reference temperature | Temperature at which ``K_0`` holds and the viscosity factor ``\Theta(T)`` on ``K`` is unity (K) |
 | ``J^{Es}`` | `surface_energy_flux` | surface energy flux | Signed surface energy flux, positive upward (out of the slab) (W m⁻²) |
-| ``J^{lb}`` | `deep_liquid_flux` | deep-boundary liquid flux | Liquid mass flux across the slab bottom, positive upward (into the slab, capillary rise / groundwater return); drainage is ``J^{lb} < 0`` (kg m⁻² s⁻¹) |
-| ``J^{ls}`` | `surface_liquid_flux` | surface liquid flux | Liquid mass flux at the surface, ``J^{ls} = -P^l + R^{\mathrm{sfc}}`` without a surface water store, positive upward (out of the slab); infiltration is ``J^{ls} < 0`` (kg m⁻² s⁻¹) |
+| ``J^{lb}`` | `deep_liquid_water_flux` | deep-boundary liquid water flux | Liquid water mass flux across the slab bottom, positive upward (into the slab, capillary rise / groundwater return); drainage is ``J^{lb} < 0`` (kg m⁻² s⁻¹) |
+| ``J^{ls}`` | `surface_liquid_water_flux` | surface liquid water flux | Liquid water mass flux at the surface, ``J^{ls} = -P^l + R^{\mathrm{sfc}}`` without a surface water store, positive upward (out of the slab); infiltration is ``J^{ls} < 0`` (kg m⁻² s⁻¹) |
 | ``R^{\mathrm{sfc}}`` | `surface_runoff` | surface runoff | Liquid leaving the column at the surface, ``\ge 0``: the infiltration excess, or the share of the surface water store drained over the step (kg m⁻² s⁻¹) |
 | ``M^{\mathrm{sfc}}`` | `surface_water_storage` | surface water store | Infiltration excess ponded at the surface, draining on `drainage_time_scale` (kg m⁻²) |
 | ``R^{\mathrm{lat}}`` | `subsurface_runoff` | subsurface runoff | Lateral storage export, ``\ge 0`` (kg m⁻² s⁻¹) |

@@ -56,7 +56,7 @@ build_flux_accumulators(grid, energy, hydrology) =
 """
     build_diagnostic_accumulators(grid, energy, hydrology)
 
-Allocate the closure-owned diagnostics `NamedTuple` (e.g. `deep_liquid_flux`,
+Allocate the closure-owned diagnostics `NamedTuple` (e.g. `deep_liquid_water_flux`,
 `surface_runoff`, `water_storage_tendency`). One closure can write a key the
 other reads (hydrology publishes `water_storage_tendency`; energy reads it for
 the variable-heat-capacity correction). Closures that need no diagnostics
@@ -337,7 +337,7 @@ canopy_water_capacity(hydrology, land) = ZeroField()
 
 Consume atmosphere-land turbulent fluxes and populate the
 `precipitation`, `evaporation`, `vapor_flux`, `surface_energy_flux`,
-and `liquid_precipitation_flux` accumulators declared by the land closures.
+and `liquid_water_precipitation_flux` accumulators declared by the land closures.
 
 * `surface_energy_flux`        ← `𝒬ᵀ + 𝒬ᵛ`, positive upward (out of the slab), or the
                                  skin→bulk conduction `−Λᵍʳᵒ (Tᵍʳᵒ − Tˡᵃ)` when the interface
@@ -346,7 +346,7 @@ and `liquid_precipitation_flux` accumulators declared by the land closures.
 * `evaporation`                ← positive part of upward vapor flux.
 * `vapor_flux`                 ← the vapor flux drawn from the land water store (soil
                                  evaporation + transpiration), positive upward.
-* `liquid_precipitation_flux`  ← rainfall as Pˡ, positive downward (consumed by
+* `liquid_water_precipitation_flux`  ← rainfall as Pˡ, positive downward (consumed by
                                  `VariablySaturatedHydrology`).
 
 Radiative contributions are added on top in
@@ -365,7 +365,7 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     E                  = get(fluxes, :evaporation, nothing)
     Jv                 = get(fluxes, :vapor_flux, nothing)
     Es                 = get(fluxes, :surface_energy_flux, nothing)
-    Pl                 = get(fluxes, :liquid_precipitation_flux, nothing)
+    Pl                 = get(fluxes, :liquid_water_precipitation_flux, nothing)
     canopy_evaporation = get(fluxes, :canopy_evaporation, nothing)
 
     (isnothing(P) && isnothing(E) &&

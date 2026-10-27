@@ -17,7 +17,7 @@ export AbstractLand,
        # Variably saturated hydrology + sub-closures
        VanGenuchtenRetention, VanGenuchtenConductivity,
        WaterViscosity, CosbyConductivity, saturated_conductivity,
-       NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
+       NoDeepLiquidWaterFlux, FreeDrainageFlux, DarcyDeepLiquidWaterFlux, LinearReservoirDrainage,
        NoRunoff, InfiltrationCapacityRunoff,
        VariablySaturatedHydrology,
        # Canopy interception store
@@ -105,11 +105,11 @@ include("hydrology/bucket_hydrology.jl")
 include("hydrology/dry_land.jl")
 include("hydrology/saturated_surface.jl")
 
-# Variably saturated hydrology + sub-closures (deep liquid flux, runoff,
+# Variably saturated hydrology + sub-closures (deep liquid water flux, runoff,
 # retention/conductivity). These are pure helpers and small types used by
 # `VariablySaturatedHydrology`; they have no dependence on each other.
 include("hydrology/hydraulic_functions.jl")
-include("hydrology/deep_liquid_fluxes.jl")
+include("hydrology/deep_liquid_water_fluxes.jl")
 include("hydrology/runoff_models.jl")
 include("hydrology/variably_saturated_hydrology.jl")
 

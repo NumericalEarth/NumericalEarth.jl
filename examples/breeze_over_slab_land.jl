@@ -91,7 +91,7 @@ hydrology = VariablySaturatedHydrology(eltype(land_grid);
     storage_height = 1000,
     retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1, pore_size_uniformity = 2),
     hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-7, pore_size_uniformity = 2),
-    deep_liquid_flux = NoDeepLiquidFlux(),
+    deep_liquid_water_flux = NoDeepLiquidWaterFlux(),
     runoff = InfiltrationCapacityRunoff(infiltration_capacity = 1e-3))
 
 # Water-mass-coupled energy with a water-mass-dependent areal heat capacity

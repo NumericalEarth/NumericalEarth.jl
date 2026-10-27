@@ -51,7 +51,7 @@ prognostic_variables(h::InterceptingHydrology) =
     merge_unique(prognostic_variables(h.soil), (:canopy_water_storage,))
 
 flux_variables(h::InterceptingHydrology) =
-    merge_unique(flux_variables(h.soil), (:liquid_precipitation_flux, :canopy_evaporation))
+    merge_unique(flux_variables(h.soil), (:liquid_water_precipitation_flux, :canopy_evaporation))
 
 diagnostic_variables(h::InterceptingHydrology) =
     merge_unique(diagnostic_variables(h.soil), (:throughfall, :canopy_water_storage_tendency))
@@ -74,13 +74,13 @@ initial_diagnostic(h::InterceptingHydrology, name::Symbol, grid) = initial_diagn
     return Mᶜᵃⁿⁿ⁺¹, drip, rain - Pⁱⁿᵗ + drip - shortfall
 end
 
-@kernel function _interception_step!(canopy_water_storage, liquid_precipitation_flux, canopy_evaporation,
+@kernel function _interception_step!(canopy_water_storage, liquid_water_precipitation_flux, canopy_evaporation,
                                      throughfall, canopy_water_storage_tendency,
                                      h, Δt, grid, time)
     i, j = @index(Global, NTuple)
     @inbounds begin
         Mᶜᵃⁿⁿ = canopy_water_storage[i, j, 1]
-        rain  = liquid_precipitation_flux[i, j, 1]
+        rain  = liquid_water_precipitation_flux[i, j, 1]
         Jʷᵉᵗ  = canopy_evaporation[i, j, 1]
     end
     FT    = typeof(Mᶜᵃⁿⁿ)
@@ -101,7 +101,7 @@ function time_step!(h::InterceptingHydrology, land, Δt, time)
     arch = architecture(land.grid)
     launch!(arch, land.grid, :xy, _interception_step!,
             land.prognostic.canopy_water_storage,
-            land.fluxes.liquid_precipitation_flux,
+            land.fluxes.liquid_water_precipitation_flux,
             land.fluxes.canopy_evaporation,
             land.diagnostics.throughfall,
             land.diagnostics.canopy_water_storage_tendency,

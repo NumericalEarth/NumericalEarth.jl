@@ -4,7 +4,7 @@
 ##### Two diagnostic categories:
 #####
 ##### * `Rˢᶠᶜ`: surface runoff — liquid leaving the column at the surface.
-#####   Returned together with the actual surface liquid flux `Jˡˢ` because
+#####   Returned together with the actual surface liquid water flux `Jˡˢ` because
 #####   they are coupled (the infiltration-capacity model splits the water
 #####   offered at the surface between the two). The hydrology adds saturation
 #####   excess (input the remaining pore volume cannot hold) to `Rˢᶠᶜ` outside
@@ -14,7 +14,7 @@
 #####
 ##### Each closure implements
 #####
-#####     surface_liquid_flux_and_runoff(i, j, grid, runoff, Pˡ, M, θˡ, 𝒮, Π, K)
+#####     surface_liquid_water_flux_and_runoff(i, j, grid, runoff, Pˡ, M, θˡ, 𝒮, Π, K)
 #####         -> (Jˡˢ, Rˢᶠᶜ)
 #####
 #####     subsurface_runoff(runoff, M, Π, K) -> Rˡᵃᵗ
@@ -37,7 +37,7 @@ struct NoRunoff end
 
 prognostic_variables(::NoRunoff) = ()
 
-@inline function surface_liquid_flux_and_runoff(i, j, grid, ::NoRunoff, Pˡ, M, θˡ, 𝒮, Π, K)
+@inline function surface_liquid_water_flux_and_runoff(i, j, grid, ::NoRunoff, Pˡ, M, θˡ, 𝒮, Π, K)
     return -Pˡ, zero(Pˡ)
 end
 
@@ -89,8 +89,8 @@ Adapt.adapt_structure(to, c::InfiltrationCapacityRunoff) =
 prognostic_variables(c::InfiltrationCapacityRunoff) =
     isnothing(c.drainage_time_scale) ? () : (:surface_water_storage,)
 
-@inline function surface_liquid_flux_and_runoff(i, j, grid, c::InfiltrationCapacityRunoff,
-                                                Pˡ, M, θˡ, 𝒮, Π, K)
+@inline function surface_liquid_water_flux_and_runoff(i, j, grid, c::InfiltrationCapacityRunoff,
+                                                      Pˡ, M, θˡ, 𝒮, Π, K)
     FT   = typeof(Pˡ)
     Jcap = convert(FT, stateindex(c.infiltration_capacity, i, j, 1))
     # Available downward flux is -Pˡ. Cap its downward magnitude at Jcap.
@@ -110,7 +110,7 @@ end
 end
 
 @inline function surface_water_balance!(i, j, grid, runoff, prognostic, Pˡ, M, M⁺, θˡ, 𝒮, Π, K, Δt)
-    Jˡˢ, Rˢᶠᶜ = surface_liquid_flux_and_runoff(i, j, grid, runoff, Pˡ, M, θˡ, 𝒮, Π, K)
+    Jˡˢ, Rˢᶠᶜ = surface_liquid_water_flux_and_runoff(i, j, grid, runoff, Pˡ, M, θˡ, 𝒮, Π, K)
     return pore_limited_surface_flux(Jˡˢ, Rˢᶠᶜ, M, M⁺, Δt)
 end
 
@@ -120,7 +120,7 @@ end
                                         prognostic, Pˡ, M, M⁺, θˡ, 𝒮, Π, K, Δt)
     Mˢᶠᶜ = prognostic.surface_water_storage
     @inbounds Mˢᶠᶜⁿ = Mˢᶠᶜ[i, j, 1]
-    Jˡˢ, Rˢᶠᶜ = surface_liquid_flux_and_runoff(i, j, grid, c, Pˡ + Mˢᶠᶜⁿ / Δt, M, θˡ, 𝒮, Π, K)
+    Jˡˢ, Rˢᶠᶜ = surface_liquid_water_flux_and_runoff(i, j, grid, c, Pˡ + Mˢᶠᶜⁿ / Δt, M, θˡ, 𝒮, Π, K)
     Jˡˢ, Rˢᶠᶜ = pore_limited_surface_flux(Jˡˢ, Rˢᶠᶜ, M, M⁺, Δt)
     retained_fraction = exp(-Δt / c.drainage_time_scale)
     @inbounds Mˢᶠᶜ[i, j, 1] = retained_fraction * Δt * Rˢᶠᶜ

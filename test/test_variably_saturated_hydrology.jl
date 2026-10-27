@@ -28,7 +28,7 @@ van_genuchten_hydrology(FT, slab_depth; n = 2, K₀ = 1e-5, kw...) =
             storage_height = 1000,
             retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
             hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
-            deep_liquid_flux = NoDeepLiquidFlux(),
+            deep_liquid_water_flux = NoDeepLiquidWaterFlux(),
             runoff = NoRunoff(),
         )
         land = SlabLand(grid; hydrology)
@@ -61,13 +61,13 @@ end
             storage_height = 1000,
             retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
             hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
-            deep_liquid_flux = NoDeepLiquidFlux(),
+            deep_liquid_water_flux = NoDeepLiquidWaterFlux(),
             runoff = NoRunoff(),
         )
         land = SlabLand(grid; hydrology)
         set!(land; M = 200.0)
         fill!(land.fluxes.vapor_flux, 0)
-        fill!(land.fluxes.liquid_precipitation_flux, 0)
+        fill!(land.fluxes.liquid_water_precipitation_flux, 0)
 
         Δt = 100.0
         for _ in 1:10
@@ -88,20 +88,20 @@ end
             storage_height = 1000,
             retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
             hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
-            deep_liquid_flux = NoDeepLiquidFlux(),
+            deep_liquid_water_flux = NoDeepLiquidWaterFlux(),
             runoff = InfiltrationCapacityRunoff(infiltration_capacity = 7.0),
         )
         land_capped = SlabLand(grid; hydrology = hydrology_capped)
         set!(land_capped; M = 0.0)
         fill!(land_capped.fluxes.vapor_flux, 0.0)
-        fill!(land_capped.fluxes.liquid_precipitation_flux, 5.0)  # below capacity 7
+        fill!(land_capped.fluxes.liquid_water_precipitation_flux, 5.0)  # below capacity 7
         time_step!(land_capped, 1.0)
         @test only(Array(interior(land_capped.water_storage))) ≈ 5.0
         @test only(Array(interior(land_capped.diagnostics.surface_runoff))) ≈ 0.0
 
         # Precip above capacity: surface runoff = Pˡ - capacity.
         set!(land_capped; M = 0.0)
-        fill!(land_capped.fluxes.liquid_precipitation_flux, 10.0)  # above capacity 7
+        fill!(land_capped.fluxes.liquid_water_precipitation_flux, 10.0)  # above capacity 7
         time_step!(land_capped, 1.0)
         @test only(Array(interior(land_capped.water_storage))) ≈ 7.0
         @test only(Array(interior(land_capped.diagnostics.surface_runoff))) ≈ 3.0
@@ -115,13 +115,13 @@ end
             storage_height = 1000,
             retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1, pore_size_uniformity = 2),
             hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2),
-            deep_liquid_flux = NoDeepLiquidFlux(),
+            deep_liquid_water_flux = NoDeepLiquidWaterFlux(),
             runoff = InfiltrationCapacityRunoff(infiltration_capacity = capacity),
         )
         land_field_capped = SlabLand(grid; hydrology = hydrology_field_capped)
         set!(land_field_capped; M = 0)
         fill!(land_field_capped.fluxes.vapor_flux, 0)
-        fill!(land_field_capped.fluxes.liquid_precipitation_flux, 10)
+        fill!(land_field_capped.fluxes.liquid_water_precipitation_flux, 10)
         time_step!(land_field_capped, 1)
         @test maximum(land_field_capped.water_storage) ≈ 7
         @test maximum(land_field_capped.diagnostics.surface_runoff) ≈ 3
@@ -134,13 +134,13 @@ end
             storage_height = 1000,
             retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
             hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
-            deep_liquid_flux = FreeDrainageFlux(),
+            deep_liquid_water_flux = FreeDrainageFlux(),
             runoff = NoRunoff(),
         )
         land_drain = SlabLand(grid; hydrology = hydrology_drain)
         set!(land_drain; T = 303.0, M = 400.0)  # fully saturated, warmer than the reference
         fill!(land_drain.fluxes.vapor_flux, 0)
-        fill!(land_drain.fluxes.liquid_precipitation_flux, 0)
+        fill!(land_drain.fluxes.liquid_water_precipitation_flux, 0)
         viscosity = hydrology_drain.hydraulic_conductivity.water_viscosity
         Θ = viscosity_correction(viscosity, 303.0)
         time_step!(land_drain, 100)
@@ -155,13 +155,13 @@ end
             storage_height = 1000,
             retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1, pore_size_uniformity = 2),
             hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2),
-            deep_liquid_flux = FreeDrainageFlux(),
+            deep_liquid_water_flux = FreeDrainageFlux(),
             runoff = InfiltrationCapacityRunoff(infiltration_capacity = 7),
         )
         land_saturating = SlabLand(grid; hydrology = hydrology_saturating)
         set!(land_saturating; T = 293, M = 399)
         fill!(land_saturating.fluxes.vapor_flux, 0)
-        fill!(land_saturating.fluxes.liquid_precipitation_flux, 5)  # below capacity 7
+        fill!(land_saturating.fluxes.liquid_water_precipitation_flux, 5)  # below capacity 7
         for _ in 1:20
             time_step!(land_saturating, 1)
         end
@@ -192,7 +192,7 @@ end
                 storage_height = 1000,
                 retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
                 hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
-                deep_liquid_flux = DarcyDeepLiquidFlux(exchange_length = 0.5),
+                deep_liquid_water_flux = DarcyDeepLiquidWaterFlux(exchange_length = 0.5),
                 deep_pressure_head,
                 runoff = NoRunoff(),
             )
@@ -224,7 +224,7 @@ advance!(land, N, Δt) = foreach(_ -> time_step!(land, Δt), 1:N)
         land = SlabLand(grid; hydrology = ponded(3600))
         set!(land; M = 100.0)
         quiet!(land)
-        fill!(land.fluxes.liquid_precipitation_flux, 5e-3)
+        fill!(land.fluxes.liquid_water_precipitation_flux, 5e-3)
         ∫R = 0.0
         for _ in 1:200
             time_step!(land, 60.0)
@@ -246,7 +246,7 @@ advance!(land, N, Δt) = foreach(_ -> time_step!(land, Δt), 1:N)
         land = SlabLand(grid; hydrology = InterceptingHydrology(eltype(grid); soil = ponded(3600), leaf_area_index = 3.0))
         set!(land; M = 100.0)
         for _ in 1:20
-            fill!(land.fluxes.liquid_precipitation_flux, 5e-3)
+            fill!(land.fluxes.liquid_water_precipitation_flux, 5e-3)
             time_step!(land, 60.0)
         end
         @test scalar(land.prognostic.canopy_water_storage) > 0

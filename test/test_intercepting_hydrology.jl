@@ -43,7 +43,7 @@ end
     for arch in test_architectures
         land = intercepting_land(column_grid(arch); leaf_area_index = 3.0)
         @test :canopy_water_storage in keys(land.prognostic)
-        @test (:canopy_evaporation, :liquid_precipitation_flux, :vapor_flux) ⊆ keys(land.fluxes)
+        @test (:canopy_evaporation, :liquid_water_precipitation_flux, :vapor_flux) ⊆ keys(land.fluxes)
         @test (:throughfall, :canopy_water_storage_tendency, :water_storage_tendency) ⊆ keys(land.diagnostics)
     end
 end
@@ -118,12 +118,12 @@ end
         land = model.land
         set!(land; canopy_water_storage = 0.5 * 0.1 * 3)
         update_state!(model)
-        rain = scalar(land.fluxes.liquid_precipitation_flux)
+        rain = scalar(land.fluxes.liquid_water_precipitation_flux)
         Jʷᵉᵗ = scalar(land.fluxes.canopy_evaporation)
         time_step!(model, 600.0)
         throughfall = scalar(land.diagnostics.throughfall)
         @test rain ≈ scalar(land.diagnostics.canopy_water_storage_tendency) + Jʷᵉᵗ + throughfall atol=1e-14
-        @test scalar(land.fluxes.liquid_precipitation_flux) == rain
+        @test scalar(land.fluxes.liquid_water_precipitation_flux) == rain
         @test 0 ≤ throughfall < rain
     end
 end
@@ -155,7 +155,7 @@ end
             lai isa FieldTimeSeries && !(arch isa CPU) && continue
             land = intercepting_land(grid; leaf_area_index = lai, capacity_per_leaf_area = 0.1)
             set!(land; T = 295, M = 300, canopy_water_storage = 1.0)
-            fill!(parent(land.fluxes.liquid_precipitation_flux), 0)
+            fill!(parent(land.fluxes.liquid_water_precipitation_flux), 0)
             fill!(parent(land.fluxes.canopy_evaporation), 0)
             time_step!(land, Δt)
             @test canopy_storage(land) ≈ 0.2 rtol=1e-6
