@@ -383,24 +383,11 @@ Surface energy loss and water fluxes consumed by land, positive upward (W m⁻²
 land_surface_fluxes(interface::AtmosphereInterface, bulk_temperature) =
     land_surface_fluxes(interface.temperature, interface, bulk_temperature)
 
-# TODO: Use KernelFunctionOperation after Oceananigans reconciles its Reactant traced
-# scalar type with the unwrapped element type produced by GPU adaptation.
-struct LandSurfaceEnergyFlux{T, F, B, C}
-    temperature :: T
-    fluxes :: F
-    bulk_temperature :: B
-    conductance :: C
-end
-
-Adapt.@adapt_structure LandSurfaceEnergyFlux
-
-@inline Base.getindex(energy::LandSurfaceEnergyFlux, i, j, k) =
-    surface_energy_loss(i, j, energy.temperature, energy.fluxes, energy.bulk_temperature, energy.conductance)
-
 function land_surface_fluxes(temperature, interface, bulk_temperature)
     fluxes = interface.fluxes
     conductance = ground_conductance(interface)
-    energy = LandSurfaceEnergyFlux(temperature, fluxes, bulk_temperature, conductance)
+    energy = KernelFunctionOperation{Center, Center, Nothing}(surface_energy_loss, bulk_temperature.grid,
+                                                              temperature, fluxes, bulk_temperature, conductance)
     return (; energy, vapor=fluxes.water_vapor, canopy_evaporation=ZeroField())
 end
 
@@ -408,10 +395,10 @@ land_surface_fluxes(temperature::CanopyInterfaceDiagnostics, interface, bulk_tem
     (; energy=-temperature.ground_heat_flux, vapor=temperature.land_vapor_flux,
        canopy_evaporation=temperature.canopy_evaporation)
 
-@inline surface_energy_loss(i, j, temperature, fluxes, bulk_temperature, ::Nothing) =
+@inline surface_energy_loss(i, j, k, grid, temperature, fluxes, bulk_temperature, ::Nothing) =
     @inbounds fluxes.sensible_heat[i, j, 1] + fluxes.latent_heat[i, j, 1]
 
-@inline surface_energy_loss(i, j, temperature, fluxes, bulk_temperature, conductance) =
+@inline surface_energy_loss(i, j, k, grid, temperature, fluxes, bulk_temperature, conductance) =
     @inbounds -conductance * (temperature[i, j, 1] - bulk_temperature[i, j, 1])
 
 """
