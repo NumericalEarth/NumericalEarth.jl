@@ -586,7 +586,7 @@ The leaf-conductance derivative is evaluated by a one-sided difference.
     Tᵃᶜᵃⁿ, equilibrium_temperature = canopy_air_node(T⁻, (gᵍʳᵒᵀ, gˡᵉᵃᵀ, gᵃᵀ), (Tᵍʳᵒ, Tˡᵉᵃ, θᵃᵗ), mᵀ)
     qᵃᶜᵃⁿ, equilibrium_humidity    = canopy_air_node(q⁻, (gᵍʳᵒᵛ, gˡᵉᵃᵛ, gᵃᵛ), (qᵍʳᵒ, qˡᵉᵃ, qᵃᵗ), node_memory(Σgᵛ, Cᵛ, Δt))
 
-    # Effective radiating temperature: σ T⁴ = upwelling longwave above the canopy.
+    # Effective radiating temperature: σ T⁴ = total upwelling longwave (emission + reflection).
     _, ℐꜛˡʷᵍʳᵒ = ground_longwave(downwelling_longwave, Tˡᵉᵃ, Tᵍʳᵒ, ϵˡᵉᵃ, ϵᵍʳᵒ, σ)
     ℐꜛˡʷ = (1 - ϵˡᵉᵃ) * ℐꜛˡʷᵍʳᵒ + ϵˡᵉᵃ * σ * Tˡᵉᵃ^4
     effective_temperature = ifelse(σ > 0, (ℐꜛˡʷ / σ)^convert(FT, 1//4), Tᵃᶜᵃⁿ)
@@ -634,7 +634,7 @@ struct CanopyInterfaceDiagnostics{F}
     interface              :: F   # canopy-air node Tᵃᶜᵃⁿ (what MOST sees)
     canopy                 :: F   # leaf temperature Tˡᵉᵃ
     ground                 :: F   # ground surface temperature Tᵍʳᵒ
-    effective              :: F   # skin (effective radiating) temperature Tʳᵃᵈ
+    effective              :: F   # blackbody-equivalent radiating temperature Tʳᵃᵈ
     effective_albedo       :: F   # broadband shortwave albedo of the canopy + ground column
     ground_heat_flux       :: F   # skin→bulk conduction 𝒬ᵍʳᵒ
     canopy_latent_heat     :: F   # leaf latent heat 𝒬ᵛˡᵉᵃ (transpiration + wet canopy)
