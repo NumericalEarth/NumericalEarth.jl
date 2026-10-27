@@ -2,11 +2,10 @@
 ##### Boundary relaxation of a regional ocean toward its boundary bands
 #####
 #
-# As in the reference Mid-Atlantic Bight configuration (NumericalEarthSandbox, script 05): a mask falls as cos² from
-# the open sides, two sides combine near a corner as 1 - (1 - m₁)(1 - m₂), and a side's band stops at the first
-# land cell in from the boundary, so bays and sounds behind land are left alone. Tracers relax as they are; the
-# velocities relax only their baroclinic part, which integrates to zero over the column and leaves the barotropic
-# flow to the Flather condition.
+# A mask falls as cos² from the open sides, two sides combine near a corner as 1 - (1 - m₁)(1 - m₂), and a side's
+# band stops at the first land cell in from the boundary, so bays and sounds behind land are left alone. Tracers
+# relax as they are; the velocities relax only their baroclinic part, which integrates to zero over the column and
+# leaves the barotropic flow to the Flather condition.
 
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Forcings: Forcing, InflowOutflowRate, evaluate_rate

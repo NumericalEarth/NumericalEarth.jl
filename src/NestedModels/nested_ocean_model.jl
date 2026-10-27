@@ -14,7 +14,7 @@ using ..Oceans: hydrostatic_ocean_model, merge_boundary_conditions
 using ..DataWrangling: BoundingBox, Metadatum, default_download_directory, default_horizontal_padding,
                        matching_bathymetry
 
-# The open-boundary defaults of the reference Mid-Atlantic Bight configuration (NumericalEarthSandbox, script 05):
+# The open-boundary defaults:
 # oblique radiation on the velocities and tracer reservoirs on the tracers, a 6-hour sponge 8 cells wide and a
 # bathymetry blend 4 cells wide at 1/12°, the widths held fixed in degrees across resolutions.
 default_velocity_scheme() = ObliqueRadiation(inflow_timescale = 3days, outflow_timescale = 360days)
@@ -101,7 +101,6 @@ on the free surface. Over the outermost `relaxation_width` cells of each open si
 the baroclinic parts of `u` and `v` relax toward the parent at `relaxation_rate` (s⁻¹; default 1/6 hours), leaving
 the barotropic flow to Flather (see [`ocean_boundary_relaxation`](@ref)); `relaxation_rate = nothing` disables it.
 `relaxation_rate = (inflow = 1/6hours, outflow = 0)` relaxes `T` and `S` only where the flow enters through the side.
-These defaults follow the reference Mid-Atlantic Bight configuration of NumericalEarthSandbox.
 
 When the parent's seafloor `parent_bottom_height` (a bottom height `Field`) is known, the Flather exterior transport
 is the parent's depth mean velocity over its own column times the child's wet depth, and the boundary-normal
