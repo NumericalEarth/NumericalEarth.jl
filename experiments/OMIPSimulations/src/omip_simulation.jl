@@ -607,7 +607,11 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
   Conducting through the cell-mean thickness underestimates growth because the conductive flux goes
   as ``1/h``; placing `N` categories at ``(2i-1) h / N`` multiplies the conductivity by
   ``\\sum_i 1/(2i-1)`` — 1.53 for `N = 3`, 1.79 for `N = 5`. Default: `1`, which conducts through
-  the mean and applies no enhancement.
+  the mean and applies no enhancement. In ClimaSeaIce 0.7 this is a `UniformThicknessDistribution`
+  (`itd_shape`) on the ice and, through `snow_thickness_categories`, the snow.
+- `itd_shape`: sub-grid thickness distribution of the ice conductive flux instead of `thickness_categories`:
+  `nothing`, a `UniformThicknessDistribution` or a `GammaThicknessDistribution` (`ThicknessDependentConductivity`).
+  Not to be combined with `thickness_categories > 1`. Default: `nothing`.
 - `implicit_bottom_drag::Bool`: if `true` (default), the bottom and immersed quadratic drag are affine
   fluxes `J = λ φᵦ` with `λ = -μ |u|` in the vertical solver's diagonal. `false` applies both
   explicitly, the treatment this replaced, so the pair can be A/B'd. The two differ most in shallow

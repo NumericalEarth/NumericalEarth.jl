@@ -2,7 +2,8 @@ using ClimaSeaIce: ClimaSeaIce, SeaIceModel, PhaseTransitions, ConductiveFlux,
                    sea_ice_slab_thermodynamics, snow_slab_thermodynamics,
                    default_sea_ice_boundary_conditions
 using ClimaSeaIce.SeaIceThermodynamics.HeatBoundaryConditions: PrescribedTemperature
-using ClimaSeaIce.SeaIceThermodynamics: IceWaterThermalEquilibrium, IceSnowConductiveFlux, ThicknessDependentConductivity
+using ClimaSeaIce.SeaIceThermodynamics: IceWaterThermalEquilibrium, IceSnowConductiveFlux,
+                                        UniformThicknessDistribution, GammaThicknessDistribution
 using ClimaSeaIce.SeaIceDynamics: SplitExplicitSolver, SemiImplicitStress, SeaIceMomentumEquation, StressBalanceFreeDrift,
                                   LandfastBasalStress, maybe_extended_grid
 using ClimaSeaIce.Rheologies: ElastoViscoPlasticRheology
@@ -36,24 +37,33 @@ function sea_ice_velocity_boundary_conditions(grid, lateral_boundary_condition)
     return (; u, v)
 end
 
-# `thickness_categories` requires a ClimaSeaIce that supports the sub-grid effective conductivity, so
-# it is forwarded only when it differs from the mean-thickness default.
-subgrid_conductivity_keyword(thickness_categories) =
-    thickness_categories == 1 ? NamedTuple() : (; thickness_categories)
+# The old name of `GammaThicknessDistribution`, kept so that existing scripts keep working.
+const ThicknessDependentConductivity = GammaThicknessDistribution
+
+# `thickness_categories = N` is the sub-grid ice thickness distribution of Fichefet and Morales Maqueda (1997),
+# `UniformThicknessDistribution(FT; categories = N)`, which ClimaSeaIce applies as a factor on the whole series
+# conduction of the column. An explicit `itd_shape` (`nothing`, `UniformThicknessDistribution` or
+# `GammaThicknessDistribution`) is used as it is, and cannot be combined with `thickness_categories > 1`.
+function thickness_distribution(FT, thickness_categories, itd_shape)
+    thickness_categories == 1 && return itd_shape
+    isnothing(itd_shape) || throw(ArgumentError("Pass either `thickness_categories > 1` or `itd_shape`, not both: " *
+                                                "ClimaSeaIce has a single sub-grid thickness distribution per layer."))
+    return UniformThicknessDistribution(FT; categories = thickness_categories)
+end
 
 # typed so that no `Int` zero enters the Float sea-ice kernels; the ice reads η at its own topmost index,
 # so it gets the `(Center, Center, Nothing)` mirror of the displacement
 ocean_surface_height(ocean::Simulation, grid) = EarthSystemModels.ocean_surface_height(ocean)
 ocean_surface_height(::Nothing, grid) = ZeroField(eltype(grid))
 
-function default_snow_thermodynamics(grid; thickness_categories = 1)
+function default_snow_thermodynamics(grid; thickness_categories = 1, itd_shape = nothing)
     FT = eltype(grid)
+    itd_shape = thickness_distribution(FT, thickness_categories, itd_shape)
     snow_conductivity = FT(0.31)
     snow_surface_temperature = Field{Center, Center, Nothing}(grid)
     top_heat_boundary_condition = PrescribedTemperature(snow_surface_temperature.data)
     return snow_slab_thermodynamics(grid; conductivity = snow_conductivity,
-                                    subgrid_conductivity_keyword(thickness_categories)...,
-                                    top_heat_boundary_condition)
+                                    itd_shape, top_heat_boundary_condition)
 end
 
 correct_tripolar_bcs(grid, bcs) = bcs
@@ -91,8 +101,8 @@ end
                        thickness_categories = 1,
                        snow_thickness_categories = thickness_categories,
                        itd_shape = nothing,
-                       internal_heat_flux = ConductiveFlux(; conductivity, itd_shape,
-                                                           subgrid_conductivity_keyword(thickness_categories)...),
+                       internal_heat_flux = ConductiveFlux(eltype(grid); conductivity,
+                                                           itd_shape = thickness_distribution(eltype(grid), thickness_categories, itd_shape)),
                        snow_thermodynamics = default_snow_thermodynamics(grid; thickness_categories = snow_thickness_categories))
 
 Construct a sea ice simulation with the given grid and optional ocean simulation.
@@ -135,6 +145,14 @@ Keyword Arguments
 - `phase_transitions`: phase transition properties for the sea ice (default is a `PhaseTransitions`
                        with specified heat capacity and density and a `DepthDependentLiquidus`)
 - `conductivity`: thermal conductivity for the internal heat flux (W m⁻¹ K⁻¹)
+- `thickness_categories`: number `N` of equal-area sub-grid thickness categories through which the ice conducts, after
+                          Fichefet and Morales Maqueda (1997). `N > 1` is the `itd_shape =
+                          UniformThicknessDistribution(; categories = N)` of ClimaSeaIce, which multiplies the whole
+                          conduction through the column by ``∑ᵢ 1/(2i-1)``. Default: `1`, conduction through the mean thickness.
+- `snow_thickness_categories`: the same for the snow of the default `snow_thermodynamics`. Default: `thickness_categories`.
+- `itd_shape`: sub-grid thickness distribution of the default `internal_heat_flux`: `nothing`, a
+               `UniformThicknessDistribution` or a `GammaThicknessDistribution` (also called `ThicknessDependentConductivity`).
+               Not to be combined with `thickness_categories > 1`.
 - `internal_heat_flux`: internal heat flux formulation for the sea ice (default is a
                         `ConductiveFlux` with specified conductivity)
 - `snow_thermodynamics`: thermodynamics for the snow layer (default is a slab thermodynamics with
@@ -165,8 +183,8 @@ function sea_ice_simulation(grid, ocean=nothing;
                             thickness_categories = 1,
                             snow_thickness_categories = thickness_categories,
                             itd_shape = nothing,
-                            internal_heat_flux = ConductiveFlux(; conductivity, itd_shape,
-                                                                subgrid_conductivity_keyword(thickness_categories)...),
+                            internal_heat_flux = ConductiveFlux(eltype(grid); conductivity,
+                                                                itd_shape = thickness_distribution(eltype(grid), thickness_categories, itd_shape)),
                             snow_thermodynamics = default_snow_thermodynamics(grid; thickness_categories = snow_thickness_categories))
 
     # Build consistent boundary conditions for the ice model:
@@ -299,8 +317,7 @@ function InterfaceComputations.default_ai_temperature(sea_ice::Simulation{<:SeaI
     internal_flux = if isnothing(snow_thermo)
         ice_flux
     else
-        IceSnowConductiveFlux(snow_thermo.internal_heat_flux.conductivity, ice_flux.conductivity,
-                              ice_flux.itd_shape)
+        IceSnowConductiveFlux(snow_thermo.internal_heat_flux, ice_flux)
     end
     return SkinTemperature(internal_flux)
 end

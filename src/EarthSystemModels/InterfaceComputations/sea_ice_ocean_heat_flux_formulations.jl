@@ -1,4 +1,8 @@
-using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, ConductiveFlux
+using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, LinearLiquidus, ConductiveFlux, effective_conductivity
+
+# Slope of the liquidus with salinity (ᵒC per unit salinity): `salinity_slope` of ClimaSeaIce's `LinearLiquidus`;
+# NumericalEarth's `DepthDependentLiquidus` (`slope`) adds its method in `SeaIces`.
+@inline liquidus_salinity_slope(liquidus::LinearLiquidus) = liquidus.salinity_slope
 
 #####
 ##### Ice Bath Heat Flux (bulk formulation)
@@ -252,7 +256,7 @@ end
     h  = ice_state.h
     hc = ice_state.hc
     Tˢⁱ = ice_state.T
-    k  = flux.conductive_flux.conductivity
+    k  = effective_conductivity(flux.conductive_flux, h)
     # Set κ to zero when h < hc (ice not consolidated)
     consolidated = h ≥ hc
     κ = ifelse(consolidated, k / (h * ℰ), zero(h))
@@ -284,7 +288,7 @@ Returns `(T★, S★, q)` where q is the melt rate (positive for melting).
     # Get conductive flux parameters - dispatches on flux type
     κ, Tˢⁱ = conductive_flux_parameters(flux, ice_state, ℰ)
 
-    λ₁ = -liquidus.slope
+    λ₁ = -liquidus_salinity_slope(liquidus)
     λ₂ = liquidus.freshwater_melting_temperature
 
     # Transfer coefficients

@@ -1,7 +1,8 @@
 include("runtests_setup.jl")
 
 using ClimaSeaIce: SeaIceModel, ConductiveFlux
-using ClimaSeaIce.SeaIceThermodynamics: IceSnowConductiveFlux
+using ClimaSeaIce.SeaIceThermodynamics: IceSnowConductiveFlux, UniformThicknessDistribution, GammaThicknessDistribution,
+                                        thermal_resistance, effective_conductivity
 using Oceananigans.Fields: ZeroField
 using Oceananigans.Units: hours, days
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
@@ -12,7 +13,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     SkinTemperature,
     InterfaceProperties,
     conductive_flux_balance_temperature
-using NumericalEarth.SeaIces: default_snow_thermodynamics
+using NumericalEarth.SeaIces: default_snow_thermodynamics, ThicknessDependentConductivity
 
 #####
 ##### Unit tests
@@ -201,8 +202,44 @@ end
 
             ai_temp = default_ai_temperature(sea_ice)
             @test ai_temp.internal_flux isa IceSnowConductiveFlux
-            @test ai_temp.internal_flux.ice_conductivity == 2.0
-            @test ai_temp.internal_flux.snow_conductivity == 0.31
+            @test ai_temp.internal_flux.ice.conductivity == 2.0
+            @test ai_temp.internal_flux.snow.conductivity == 0.31
         end
     end
+end
+
+@testset "Sub-grid thickness distribution of the ice and snow conductivity" begin
+    grid = RectilinearGrid(size = (2, 2), x = (0, 1), y = (0, 1), topology = (Periodic, Periodic, Flat))
+
+    # `ThicknessDependentConductivity` is the former name of `GammaThicknessDistribution`
+    @test ThicknessDependentConductivity === GammaThicknessDistribution
+
+    # `thickness_categories = N` is a `UniformThicknessDistribution` on the ice and the snow, and the
+    # conductivities stay the raw ones: the factor ∑ 1/(2i-1) enters through `effective_conductivity`
+    N = 4
+    F = sum(1 / (2i - 1) for i in 1:N)
+    sea_ice = sea_ice_simulation(grid; dynamics = nothing, thickness_categories = N)
+    flux = default_ai_temperature(sea_ice).internal_flux
+
+    @test flux.ice.itd_shape == UniformThicknessDistribution(Float64; categories = N)
+    @test flux.snow.itd_shape == UniformThicknessDistribution(Float64; categories = N)
+    @test flux.ice.conductivity == 2 && flux.snow.conductivity == 0.31
+    @test effective_conductivity(flux.ice, 1.0) ≈ 2F
+
+    # The series resistance of the column is the old one, with both conductivities premultiplied by F
+    for (hi, hs) in ((0.3, 0.0), (1.0, 0.1), (2.5, 0.5))
+        @test thermal_resistance(flux, hi, hs) ≈ (hs / 0.31 + hi / 2) / F
+    end
+
+    # One category, and an explicit distribution for the ice and for the snow
+    @test sea_ice_simulation(grid; dynamics = nothing).model.ice_thermodynamics.internal_heat_flux.itd_shape === nothing
+    gamma = sea_ice_simulation(grid; dynamics = nothing, itd_shape = GammaThicknessDistribution())
+    @test gamma.model.ice_thermodynamics.internal_heat_flux.itd_shape isa GammaThicknessDistribution
+    @test default_snow_thermodynamics(grid; itd_shape = UniformThicknessDistribution(categories = 3)).internal_heat_flux.itd_shape ==
+          UniformThicknessDistribution(Float64; categories = 3)
+    @test default_snow_thermodynamics(grid; thickness_categories = 3).internal_heat_flux.itd_shape ==
+          UniformThicknessDistribution(Float64; categories = 3)
+
+    # ClimaSeaIce has one distribution per layer
+    @test_throws ArgumentError sea_ice_simulation(grid; dynamics = nothing, thickness_categories = 4, itd_shape = GammaThicknessDistribution())
 end

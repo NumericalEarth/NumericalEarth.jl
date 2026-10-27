@@ -1,4 +1,5 @@
 using ClimaSeaIce.SeaIceThermodynamics: SeaIceThermodynamics
+using ..EarthSystemModels.InterfaceComputations: InterfaceComputations
 
 struct DepthDependentLiquidus{FT}
     freshwater_melting_temperature :: FT
@@ -34,3 +35,5 @@ end
 
 @inline SeaIceThermodynamics.melting_temperature(liquidus::DepthDependentLiquidus, S, z=0) =
     liquidus.freshwater_melting_temperature - liquidus.slope * S + liquidus.depth_slope * z
+
+@inline InterfaceComputations.liquidus_salinity_slope(liquidus::DepthDependentLiquidus) = liquidus.slope
