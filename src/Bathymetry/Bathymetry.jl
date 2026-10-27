@@ -23,7 +23,7 @@ using Oceananigans.Utils: launch!
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf
 
-using ..DataWrangling: Metadatum, native_grid, metadata_path,
+using ..DataWrangling: Metadatum, native_grid,
                        dataset_variable_name, validate_dataset_coverage,
                        FieldRegridding, load_field_cache, save_field_cache, retrieve_bathymetry
 using ..DataWrangling.ETOPO: ETOPO2022
