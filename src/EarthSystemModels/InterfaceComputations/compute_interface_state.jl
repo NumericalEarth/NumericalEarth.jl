@@ -41,7 +41,8 @@ end
                                          interior_state,
                                          radiation_state,
                                          atmosphere_properties,
-                                         interior_properties)
+                                         interior_properties,
+                                         Δt = 0)
 
     Ψₐ = atmosphere_state
     Ψᵢ = interior_state
@@ -55,7 +56,7 @@ end
                                       Ψₛ⁻, Ψₐ, Ψᵢ,
                                       radiation_state,
                                       atmosphere_properties,
-                                      interior_properties)
+                                      interior_properties, Δt)
         iteration += 1
     end
 
@@ -63,14 +64,14 @@ end
 end
 
 @inline function interface_temperature_and_humidity(state::NamedTuple,
-                                                    Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ)
+                                                    Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ, Δt)
     Tₛ = compute_interface_temperature(state.temperature, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ)
     qₛ = compute_interface_humidity(state.specific_humidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     return Tₛ, qₛ
 end
 
 """
-    iterate_interface_state(interface_formulation, Ψₛⁿ⁻¹, Ψₐ, Ψᵢ, Qᵣ, ℙₐ, ℙᵢ)
+$(TYPEDSIGNATURES)
 
 Return the nth iterate of the interface state `Ψₛⁿ` computed according to the
 `interface_formulation`, given the interface state at the previous iterate `Ψₛⁿ⁻¹`,
@@ -83,7 +84,8 @@ downwelling radiation `Qᵣ`, and the atmosphere and interior properties `ℙₐ
                                          interior_state,
                                          radiation_state,
                                          atmosphere_properties,
-                                         interior_properties)
+                                         interior_properties,
+                                         Δt)
 
     FT = eltype(approximate_interface_state)
 
@@ -95,7 +97,7 @@ downwelling radiation `Qᵣ`, and the atmosphere and interior properties `ℙₐ
                                                 radiation_state,
                                                 interface_formulation,
                                                 atmosphere_properties,
-                                                interior_properties)
+                                                interior_properties, Δt)
 
     # Compute the specific humidity increment
     Δq = qᵃᵗ - qₛ

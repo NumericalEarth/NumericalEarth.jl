@@ -467,11 +467,12 @@ end
 $(TYPEDSIGNATURES)
 
 Solve the leaf and ground energy balances by quasi-Newton iteration, using the analytical
-step-mean canopy-air temperature and humidity at fixed effective conductances and sources.
+step-mean canopy-air temperature and humidity over `Δt` at fixed effective conductances
+and sources. `Δt = 0` computes diagnostic equilibrium.
 Without canopy-air storage, the node balances its heat and vapor fluxes instantaneously.
 The leaf-conductance derivative is evaluated by a one-sided difference.
 """
-@inline function canopy_air_space_solve(c::CanopyInterface, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
+@inline function canopy_air_space_solve(c::CanopyInterface, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, Δt)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     FT  = eltype(Ψₛ)
     pᵃᵗ = Ψₐ.p
@@ -482,7 +483,6 @@ The leaf-conductance derivative is evaluated by a one-sided difference.
     cᵖᵐ = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, qᵃᵗ)
     θᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
     Tˡᵃ = Ψˡᵃ.T
-    Δt  = Ψˡᵃ.time_step
     λˡᵉᵃᶠ = Ψˡᵃ.leaf_area_index
     u★  = Ψₛ.fluxes.u★
 
@@ -612,15 +612,15 @@ end
 
 # A diagnostic node is re-solved every iterate; one shared solve returns both node values.
 @inline function interface_temperature_and_humidity(c::CanopyInterface,
-                                                    Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ,
+                                                    Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ, Δt,
                                                     storage::Nothing = Ψˡᵃ.surface_storage)
-    solution = canopy_air_space_solve(c, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
+    solution = canopy_air_space_solve(c, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, Δt)
     return solution.Tᵃᶜᵃⁿ, solution.qᵃᶜᵃⁿ
 end
 
 # A prognostic node is model state, frozen through the fixed point.
 @inline interface_temperature_and_humidity(::CanopyInterface,
-                                           Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ, storage) =
+                                           Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ, Δt, storage) =
     (Ψₛ.temperature, Ψₛ.specific_humidity)
 
 """

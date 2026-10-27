@@ -119,7 +119,7 @@ end
 end
 
 @inline function finalize_interface_state!(Ts, next, i, j, c::CanopyInterface, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, Δt)
-    solution = canopy_air_space_solve(c, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
+    solution = canopy_air_space_solve(c, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, Δt)
     @inbounds begin
         Ts.interface[i, j, 1]              = solution.Tᵃᶜᵃⁿ
         Ts.canopy[i, j, 1]                 = solution.Tˡᵉᵃ
@@ -230,7 +230,7 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     FT = eltype(grid)
     surface_state = land_surface_state(coupled_model.land)
     land_state = merge(exchanger.land.state,
-                       (time_step = convert(FT, Δt), surface_storage = surface_state.state,
+                       (surface_storage = surface_state.state,
                         thermal_exchange_depth = thermal_exchange_depth(temperature_formulation(interface_formulation.state))))
 
     # Prescribed leaf area index off the canopy formulation (or `nothing`),
@@ -248,7 +248,7 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     launch!(arch, grid, :xy, _compute_atmosphere_land_interface_state!,
             interface_fluxes, interface_temperature, interface_specific_humidity, grid, clock,
             interface_formulation, land_state, vegetation, time_interpolator, atmosphere_data,
-            surface_state.next, atmosphere_properties, radiation_kernel_props, radiation_state)
+            surface_state.next, atmosphere_properties, radiation_kernel_props, radiation_state, convert(FT, Δt))
 
     return nothing
 end
@@ -337,7 +337,8 @@ function land_canopy_water_capacity end
                                                            next_surface_state,
                                                            atmosphere_properties,
                                                            radiation_kernel_props,
-                                                           radiation_exchanger_state)
+                                                           radiation_exchanger_state,
+                                                           Δt)
 
     i, j = @index(Global, NTuple)
     time = Time(clock.time)
@@ -349,7 +350,6 @@ function land_canopy_water_capacity end
     vegetation_state = interface_vegetation_state(i, j, grid, specific_humidity_formulation(interface_formulation.state),
                                                   vegetation, time_interpolator)
     Ψˡᵃ = merge(state2dindex(land_state, i, j, grid, time), vegetation_state)
-    Δt  = Ψˡᵃ.time_step
     # `typeof(Ψˡᵃ.T)`, not `eltype(grid)`, which is a traced type inside a Reactant kernel.
     FT  = typeof(Ψˡᵃ.T)
 
@@ -364,7 +364,7 @@ function land_canopy_water_capacity end
     Tⁱⁿ, qⁱⁿ = initial_interface_values(temperature_formulation(formulation.state), Ψˡᵃ.surface_storage, Ψˡᵃ.T, qⁱⁿ, Δt)
     Ψⁱⁿ⁰ = AirLandInterfaceState(u★, u★, u★, zero(FT), zero(FT), convert(FT, Tⁱⁿ), convert(FT, qⁱⁿ))
 
-    Ψⁱⁿ = compute_interface_state(formulation, Ψⁱⁿ⁰, Ψᵃᵗ, Ψˡᵃ, radiation_state, atmosphere_properties, (;))
+    Ψⁱⁿ = compute_interface_state(formulation, Ψⁱⁿ⁰, Ψᵃᵗ, Ψˡᵃ, radiation_state, atmosphere_properties, (;), Δt)
 
     Ψⁱⁿ = finalize_interface_state!(interface_temperature, next_surface_state, i, j, temperature_formulation(formulation.state),
                                     Ψⁱⁿ, Ψᵃᵗ, Ψˡᵃ, radiation_state, formulation, atmosphere_properties, Δt)

@@ -37,13 +37,13 @@ function canopy_arguments(FT; air_temperature = 300, air_specific_humidity = 0.0
     Ψₐ = (z = FT(10), u = FT(wind), v = FT(0), T = FT(air_temperature), p = FT(101325), q = FT(air_specific_humidity), h_bℓ = FT(600))
     Ψˡᵃ = (T = FT(land_temperature), 𝒮 = FT(saturation), effective_vapor_diffusivity = FT(vapor_diffusivity),
            canopy_water_storage = FT(canopy_water_storage), canopy_water_capacity = FT(canopy_water_capacity),
-           surface_storage = nothing, thermal_exchange_depth = FT(0.05), time_step = FT(0), leaf_area_index = FT(leaf_area_index))
+           surface_storage = nothing, thermal_exchange_depth = FT(0.05), leaf_area_index = FT(leaf_area_index))
     Ψᵣ = AirLandRadiationState(FT(5.670374e-8), FT(albedo), FT(emissivity), FT(-600), FT(-350))
     ℙₐ = (thermodynamics_parameters = AtmosphereThermodynamicsParameters(FT), gravitational_acceleration = FT(9.81))
     return Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ
 end
 
-canopy_solve(surface, FT = Float64; kw...) = canopy_air_space_solve(surface, canopy_arguments(FT; kw...)...)
+canopy_solve(surface, FT = Float64; kw...) = canopy_air_space_solve(surface, canopy_arguments(FT; kw...)..., FT(0))
 
 # Dry warm air over a bare (λˡᵉᵃᶠ = 0) ground; χθ = 0 decouples the node thermally to isolate the ground vapor path.
 ground_vapor_state(𝒮) = (air_temperature = 305, air_specific_humidity = 0.006, flux_scales = (0.26, 1e-3, -1e-3, 0, 1/6),
@@ -85,7 +85,7 @@ ground_vapor_state(𝒮) = (air_temperature = 305, air_specific_humidity = 0.006
                         canopy_ground_surface(FT; undercanopy_transfer_velocity = FrictionVelocityUndercanopyVelocity(FT)),
                         canopy_ground_surface(FT; ground_surface_resistance = nothing),
                         canopy_ground_surface(FT; ground_surface_resistance = nothing, wet_soil_resistance = ExponentialSoilResistance(FT)))
-            @inferred canopy_air_space_solve(surface, args...)
+            @inferred canopy_air_space_solve(surface, args..., FT(0))
         end
     end
 end
@@ -111,7 +111,7 @@ end
         (leaf_area_index, canopy_water_storage) in ((3, 0), (3, 0.2), (0.5, 0), (6, 0))
         c = canopy_ground_surface(FT)
         args = canopy_arguments(FT; leaf_area_index, canopy_water_storage, canopy_water_capacity = 0.3)
-        Rˡᵉᵃ, Rᵍʳᵒ = canopy_residuals(c, canopy_air_space_solve(c, args...), args[3], args[4])
+        Rˡᵉᵃ, Rᵍʳᵒ = canopy_residuals(c, canopy_air_space_solve(c, args..., FT(0)), args[3], args[4])
         @test abs(Rˡᵉᵃ) < tolerance
         @test abs(Rᵍʳᵒ) < tolerance
     end
