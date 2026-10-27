@@ -53,9 +53,13 @@ step applies each candidate update once. Canopy-air and ground heat storage
 are checkpointed with the land. Checkpoints also preserve interface temperatures and flux
 partitions from the completed step so diagnostics remain consistent immediately after pickup.
 
-Soil retention curves and porosity remain in land hydrology. The interface solve receives
-derived moisture-stress endpoints and vapor diffusivity. `DryLayerHumidity` gets its
-thermal exchange distance from the surface heat-transfer closure.
+Soil retention curves, porosity, and water storage remain in land hydrology. The interface
+receives saturation, derived moisture-stress endpoints, and vapor diffusivity from land.
+The interface's `SoilConductiveFlux` specifies the conductivity and exchange distance of the
+unresolved ground-to-bulk heat-transfer path. `DryLayerHumidity` uses that same distance
+for its evaporation-front temperature. Surface-resistance coefficients also belong to the
+interface's exchange formulations; `ExponentialSoilResistance` evaluates its resistance
+using the land's current saturation.
 
 ## Turbulent exchanges between the atmosphere and underlying media
 

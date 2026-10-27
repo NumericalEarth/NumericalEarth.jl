@@ -138,9 +138,10 @@ branch of a [`CanopyInterface`](@ref),
 rˢᵒⁱ = e^{a - b 𝒮},
 ```
 
-with the surface saturation `𝒮`, fit by [Sellers et al. (1992)](@cite sellers1992) to the
-FIFE prairie flux stations (`rˢᵒⁱ(1) ≈ 52` s m⁻¹). The FIFE sites carried litter, so the fit
-is an effective soil-plus-litter resistance, an alternative to a
+with the current surface saturation `𝒮` supplied by land. The interface coefficients
+`a` and `b` were fit by [Sellers et al. (1992)](@cite sellers1992) to the FIFE prairie flux
+stations (`rˢᵒⁱ(1) ≈ 52` s m⁻¹). The FIFE sites carried litter, so the fit is an effective
+soil-plus-litter resistance, an alternative to a
 [`GroundSurfaceResistance`](@ref) rather than a companion to one.
 
 ```jldoctest

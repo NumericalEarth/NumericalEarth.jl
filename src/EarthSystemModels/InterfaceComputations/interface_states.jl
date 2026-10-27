@@ -534,8 +534,9 @@ Conduction between a land surface temperature and the bulk slab temperature,
 distance from the surface to the bulk temperature node, half the slab depth for a
 node at its center, and `κᵀ` (`conductivity`, W m⁻¹ K⁻¹) the thermal conductivity
 over that distance: the soil's, or that of a thin surface layer (litter, a crust)
-with its own conductivity. No layer of thickness `ℓᵀ` is resolved. Use it through
-[`SoilSkinTemperature`](@ref).
+with its own conductivity. These are interface exchange parameters for an unresolved
+heat-transfer path. The humidity formulation uses the same `ℓᵀ` to interpolate the
+evaporation-front temperature. Use it through [`SoilSkinTemperature`](@ref).
 """
 struct SoilConductiveFlux{K, Z}
     conductivity :: K   # κᵀ, W m⁻¹ K⁻¹
