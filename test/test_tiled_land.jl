@@ -51,6 +51,28 @@ end
     end
 end
 
+@testset "Zero-area tiles do not contaminate surface-layer diagnostics" begin
+    for arch in test_architectures, f in (0.0, 1.0)
+        rough, smooth = land_roughness(3.0, 3.0), land_roughness(0.01, 0.001)
+        model = tiled_land_model(arch; cover_fraction = f,
+                                 vegetated_fluxes = f == 0 ? rough : smooth,
+                                 bare_fluxes = f == 0 ? smooth : rough)
+        interface = model.interfaces.atmosphere_land_interface
+        active = f == 0 ? interface.bare : interface.vegetated
+        absent = f == 0 ? interface.vegetated : interface.bare
+        for include_subgrid_velocities in (false, true)
+            heights = (; velocity_height = 2, temperature_height = 2, specific_humidity_height = 2, include_subgrid_velocities)
+            blended = surface_layer_diagnostics(model; heights...)
+            expected = surface_layer_diagnostics(model, active; heights...)
+            undefined = surface_layer_diagnostics(model, absent; heights...)
+            @test isnan(scalar(compute!(Field(undefined.T))))
+            for name in keys(blended)
+                @test scalar(compute!(Field(blended[name]))) == scalar(compute!(Field(expected[name])))
+            end
+        end
+    end
+end
+
 @testset "TiledLandInterface" begin
     flux_names = (:sensible_heat, :latent_heat, :water_vapor, :x_momentum, :y_momentum)
     for arch in test_architectures

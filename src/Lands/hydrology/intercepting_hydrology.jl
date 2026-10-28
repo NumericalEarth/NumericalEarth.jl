@@ -14,8 +14,10 @@ capacity `c·LAI`; the wet canopy evaporates at the rate `Jʷᵉᵗ` the interfa
 over-capacity drip reach the soil as throughfall.
 
 `leaf_area_index` and `cover_fraction` default to the land surface's canopy LAI and
-vegetated fraction when the land is constructed. A `FieldTimeSeries` LAI or cover
-fraction runs on CPU only. The store is kept per unit vegetated area. Changes in cover
+vegetated fraction when the land is constructed. On tiled land, an explicit `cover_fraction`
+must match the surface's value or share its `Field` or `FieldTimeSeries`.
+A `FieldTimeSeries` LAI or cover fraction runs on CPU only.
+The store is kept per unit vegetated area. Changes in cover
 conserve `cover_fraction * Mᶜᵃⁿ`, with water exceeding the new canopy capacity reaching
 the soil as throughfall. Interception and evaporation use the cover at the start of the step.
 

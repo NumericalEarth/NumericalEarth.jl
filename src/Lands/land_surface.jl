@@ -115,12 +115,21 @@ InterfaceComputations.atmosphere_land_interface(grid, atmosphere, land, surface:
 
 materialize_surface_hydrology(hydrology, surface) = hydrology
 
-# The store's leaf area index and cover fraction default to the canopy's and the vegetated fraction.
 function materialize_surface_hydrology(hydrology::InterceptingHydrology, surface)
     leaf_area_index = something(hydrology.leaf_area_index,
                                 canopy_leaf_area_index(vegetated_tile(surface).specific_humidity), Some(nothing))
     isnothing(leaf_area_index) && throw(ArgumentError("InterceptingHydrology requires a canopy surface or leaf_area_index."))
-    cover_fraction = something(hydrology.cover_fraction, surface isa TiledLandSurface ? surface.cover_fraction : 1)
+    cover_fraction = hydrology.cover_fraction
+    if surface isa TiledLandSurface
+        surface_fraction = convert_if_number(typeof(hydrology.capacity_per_leaf_area), surface.cover_fraction)
+        matching_fraction = cover_fraction isa Number && surface_fraction isa Number ?
+                            cover_fraction == surface_fraction : cover_fraction === surface_fraction
+        isnothing(cover_fraction) || matching_fraction ||
+            throw(ArgumentError("InterceptingHydrology cover_fraction must match the tiled surface's value or share its field or time series."))
+        cover_fraction = surface_fraction
+    else
+        cover_fraction = something(cover_fraction, 1)
+    end
     return InterceptingHydrology(typeof(hydrology.capacity_per_leaf_area);
                                  soil = hydrology.soil, leaf_area_index, cover_fraction,
                                  capacity_per_leaf_area = hydrology.capacity_per_leaf_area,

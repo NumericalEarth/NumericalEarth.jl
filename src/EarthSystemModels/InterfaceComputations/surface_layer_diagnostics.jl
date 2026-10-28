@@ -233,5 +233,8 @@ end
 
 @inline function tiled_surface_layer_profile(i, j, k, grid, vegetated, bare, cover_fraction, clock)
     f = clamp(state2dindex(cover_fraction, i, j, grid, Time(clock.time)), 0, 1)
-    return @inbounds f * vegetated[i, j, k] + (1 - f) * bare[i, j, k]
+    @inbounds vegetated_value = vegetated[i, j, k]
+    @inbounds bare_value = bare[i, j, k]
+    return ifelse(f == 0, bare_value, ifelse(f == 1, vegetated_value,
+                  f * vegetated_value + (1 - f) * bare_value))
 end
