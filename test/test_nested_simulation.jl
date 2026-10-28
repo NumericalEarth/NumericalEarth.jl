@@ -10,7 +10,9 @@ using Oceananigans.Units: Time
 using Oceananigans.Fields: location
 using Oceananigans.Grids: node
 using Oceananigans.Architectures: on_architecture
-using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
+using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!,
+                                       regularize_boundary_condition, LeftBoundary, RightBoundary
+using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid
 using Oceananigans.Forcings: MultipleForcings
 using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics,
@@ -121,6 +123,37 @@ end
     # few short timesteps — i.e. max |u| stays well above the background U.
     u_interior = Array(interior(model.velocities.u))
     @test maximum(abs, u_interior) > 1.5 * U_LO
+end
+
+# A curvilinear child has no separable horizontal axes, so the source-bracket check cannot read its
+# extent one axis at a time.
+@testset "Interpolated source brackets a curvilinear child on $(arch)" for arch in test_architectures
+    NM = NumericalEarth.NestedModels
+
+    parent_grid = LatitudeLongitudeGrid(arch; size = (32, 32, 4), longitude = (-130, -65),
+                                        latitude = (20, 55), z = (0, 1),
+                                        topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(parent_grid, [0.0, 1.0, 2.0])
+    set!(parent.temperature, (λ, φ, z, t) -> 290)
+
+    child_grid = LambertConformalConicGrid(arch; size = (20, 20, 4), x = (200e3, 600e3), y = (-200e3, 200e3),
+                                           standard_parallels = (33, 45), central_longitude = -100,
+                                           latitude_of_origin = 39, z = (0, 1))
+    loc = (Center(), Center(), Center())
+    bc = NM.Interpolated(parent.temperature)
+
+    for (dim, side) in ((1, LeftBoundary), (1, RightBoundary), (2, LeftBoundary), (2, RightBoundary))
+        @test regularize_boundary_condition(bc, child_grid, loc, dim, side) isa NM.Interpolated
+    end
+
+    # A parent that covers only part of the child is still rejected.
+    narrow_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 4), longitude = (-105, -100),
+                                        latitude = (36, 40), z = (0, 1),
+                                        topology = (Bounded, Bounded, Bounded))
+    narrow = PrescribedAtmosphere(narrow_grid, [0.0, 1.0, 2.0])
+    set!(narrow.temperature, (λ, φ, z, t) -> 290)
+    @test_throws ArgumentError regularize_boundary_condition(NM.Interpolated(narrow.temperature),
+                                                             child_grid, loc, 1, LeftBoundary)
 end
 
 @testset "parent_boundary_conditions: bc_types selects BC kind per field" begin
@@ -540,7 +573,7 @@ end
     @test all(isfinite, Array(interior(atmos.model.dynamics.total_density)))
 end
 
-@testset "Breeze nested_atmosphere_model defaults to a moving derived window on $(arch)" for arch in test_architectures
+@testset "Breeze nested_atmosphere_model holds as many derived levels as the parent on $(arch)" for arch in test_architectures
     parent_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 4),
                                          longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),
                                          z = (0, 1), topology = (Bounded, Bounded, Bounded))
@@ -556,10 +589,12 @@ end
                                         longitude = (-1, 1), latitude = (-1, 1), z = (0, 1000),
                                         halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
 
-    nested = nested_atmosphere_model(parent, child_grid; parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
-    @test length(parent.temperature.times) == length(times)
+    condensates = (qᶜˡ = nothing, qᶜⁱ = nothing)
+    resident = nested_atmosphere_model(parent, child_grid; parent_condensates = condensates)
+    moving = nested_atmosphere_model(parent, child_grid; parent_condensates = condensates, time_indices_in_memory = 3)
     @test length(times) > 3
-    @test length(nested.exchanger.prognostic.ρᵈ.backend) == 3
+    @test length(resident.exchanger.prognostic.ρᵈ.backend) == length(times)
+    @test length(moving.exchanger.prognostic.ρᵈ.backend) == 3
 end
 
 # A closure's own tracers (TKE `ρe`) get the child's bounds-preserving WENO by default. A NamedTuple
@@ -896,7 +931,8 @@ end
     # `SaturationAdjustment(WarmPhaseEquilibrium())` — no extra dependency needed to exercise the seam.
     model = nested_atmosphere_model(parent, child_grid;
                 relaxation_rate = 1/300, relaxation_width = 3, base_pressure = 1e5,
-                coriolis = nothing, terrain = nothing, parent_condensates = nothing)
+                coriolis = nothing, terrain = nothing, parent_condensates = nothing,
+                time_indices_in_memory = 3)
     ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false)
 
     sim = Simulation(model; Δt = 0.5, stop_time = 10.0)
