@@ -356,6 +356,7 @@ end
                                        approximate_interface_state,
                                        atmosphere_properties)
 
+    # Flux-scale transfer coefficients: u★ = √Cd ΔU, θ★ = χθ Δθ, q★ = χq Δq.
     u★ = sqrt(Cd) * ΔU
     χθ = ifelse(Cd == 0, zero(ΔU), Ch / sqrt(Cd))
     χq = ifelse(Cd == 0, zero(ΔU), Cq / sqrt(Cd))

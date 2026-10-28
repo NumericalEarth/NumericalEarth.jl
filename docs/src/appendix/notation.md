@@ -230,7 +230,7 @@ and [`InterceptingHydrology`](@ref).
 | ``\mathcal{Q}^{T\,\mathrm{lea}}``, ``\mathcal{Q}^{T\,\mathrm{gro}}`` | `𝒬ᵀˡᵉᵃ`, `𝒬ᵀᵍʳᵒ` | per-source sensible heat | Leaf and ground sensible heat into the canopy air, positive up (W m⁻²) |
 | ``\mathcal{Q}^{v\,\mathrm{lea}}``, ``\mathcal{Q}^{v\,\mathrm{gro}}`` | `𝒬ᵛˡᵉᵃ`, `𝒬ᵛᵍʳᵒ` | per-source latent heat | Leaf and ground latent heat into the canopy air, positive up (W m⁻²) |
 | ``g_s`` | – | stomatal conductance | Leaf stomatal conductance from a [`JarvisConductance`](@ref) (mol m⁻² s⁻¹) |
-| ``g^{\mathrm{can}}`` | – | canopy conductance | Bulk stomatal conductance ``g^{\mathrm{can}} = \lambda^{\mathrm{leaf}} M^d g_s``, mass units (kg m⁻² s⁻¹). The molar vapor flux ``g_s Δχ`` across a mole-fraction difference ``Δχ ≈ (M^d/M^w) Δq`` carries mass ``M^d g_s Δq`` |
+| ``g^{\mathrm{can}}`` | – | canopy conductance | Bulk stomatal conductance ``g^{\mathrm{can}} = \lambda^{\mathrm{leaf}} M^d g_s``, mass units (kg m⁻² s⁻¹). The molar vapor flux ``g_s Δx`` across a mole-fraction difference ``Δx ≈ (M^d/M^w) Δq`` carries mass ``M^d g_s Δq`` |
 | ``M^d`` | `molmass_dryair` | dry-air molar mass | From the atmosphere's thermodynamic parameters (kg mol⁻¹) |
 | ``w^{\mathrm{lbl}}`` | `leaf_boundary_layer_velocity` | leaf boundary-layer velocity | Per-leaf-area transfer velocity through the leaf boundary layer (m s⁻¹) |
 | ``g^{\mathrm{lbl}}`` | – | leaf boundary-layer mass conductance | ``g^{\mathrm{lbl}} = \rho^{\mathrm{at}} \lambda^{\mathrm{leaf}} w^{\mathrm{lbl}}``; the stomata-free wet-leaf vapor path (kg m⁻² s⁻¹) |
@@ -297,6 +297,7 @@ and [`InterceptingHydrology`](@ref).
 | ``u_\star`` | `u★` | friction velocity | Surface friction velocity (m s⁻¹) |
 | ``\theta_\star`` | `θ★` | temperature scale | Flux characteristic temperature (K) |
 | ``q_\star`` | `q★` | humidity scale | Flux characteristic specific humidity (kg kg⁻¹) |
+| ``\chi^u``, ``\chi^\theta``, ``\chi^q`` | `χu`, `χθ`, `χq` | flux-scale transfer coefficients | Relate the flux scales to the air–surface differences, ``u_\star = \chi^u ΔU``, ``\theta_\star = \chi^\theta Δθ``, ``q_\star = \chi^q Δq``. Similarity theory gives ``\chi = ϰ / (\log(Δh^d/ℓ) - ψ)``; bulk coefficients give ``\chi^u = \sqrt{C^D}``, ``\chi^\theta = C^H/\sqrt{C^D}``, ``\chi^q = C^q/\sqrt{C^D}`` (–) |
 | ``b_\star`` | `b★` | buoyancy scale | Flux characteristic buoyancy (m s⁻²) |
 | ``L_\star`` | `L★` | Obukhov length | Monin–Obukhov length scale (m) |
 | ``C^D`` | `Cᴰ` | drag coefficient | Bulk transfer coefficient for momentum (–) |
