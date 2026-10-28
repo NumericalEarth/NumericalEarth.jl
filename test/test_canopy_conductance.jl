@@ -20,7 +20,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
             hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 0, pore_size_uniformity = 2))
         model = coupled_land_model(arch; hydrology, land_temperature, water = 200.0,
             air_temperature = 290.0, air_specific_humidity = 0.01, wind = 5.0,
-            atmosphere_land_interface_specific_humidity = CanopyConductanceHumidity(leaf_area_index = 3))
+            atmosphere_land_interface_state = (temperature = BulkTemperature(),
+                                               specific_humidity = CanopyConductanceHumidity(leaf_area_index = 3)))
         land = model.land
         set!(land; M = 200)
         update_state!(model)
@@ -70,7 +71,7 @@ end
             model = coupled_land_model(arch; air_temperature = 290.0, air_specific_humidity = 0.006,
                                        wind = 5.0, land_temperature = 300.0, water = nothing,
                                        hydrology = SaturatedSurface(), radiation = nothing,
-                                       atmosphere_land_interface_specific_humidity = q_formulation)
+                                       atmosphere_land_interface_state = (temperature = BulkTemperature(), specific_humidity = q_formulation))
             return scalar(model.interfaces.atmosphere_land_interface.fluxes.latent_heat)
         end
         canopy_latent_heat(; kw...) = latent_heat(CanopyConductanceHumidity(FT; kw...))

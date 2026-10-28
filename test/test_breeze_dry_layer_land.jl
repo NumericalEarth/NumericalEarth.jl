@@ -54,16 +54,17 @@ function build_coupled_test_model(arch; M₀, T₀, with_radiation = false)
     # Default `BulkTemperature()` on the temperature side: Tᵍʳᵒ = Tˡᵃ. The
     # χ-interpolation in the humidity formulation collapses gracefully:
     # Tᵉ = Tˡᵃ when Tᵍʳᵒ = Tˡᵃ.
+    specific_humidity = DryLayerHumidity(;
+        dry_layer_depth = StorageBasedDryLayerDepth(
+            maximum_dry_layer_depth = 0.05,
+            dry_layer_onset_saturation = 0.5,
+            dry_layer_exponent = 2.0),
+        vapor_exchange = DryLayerVaporPistonVelocity(
+            minimum_dry_layer_depth = 1e-4,
+            molecular_diffusivity = 2.5e-5,
+            tortuosity = PowerLawTortuosity()))
     al = atmosphere_land_interface(land_grid, atmosphere, land;
-        specific_humidity = DryLayerHumidity(;
-            dry_layer_depth = StorageBasedDryLayerDepth(
-                maximum_dry_layer_depth = 0.05,
-                dry_layer_onset_saturation = 0.5,
-                dry_layer_exponent = 2.0),
-            vapor_exchange = DryLayerVaporPistonVelocity(
-                minimum_dry_layer_depth = 1e-4,
-                molecular_diffusivity = 2.5e-5,
-                tortuosity = PowerLawTortuosity())))
+                                   state = (temperature = BulkTemperature(), specific_humidity))
 
     radiation = nothing
     if with_radiation

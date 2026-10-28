@@ -34,6 +34,8 @@ function momentum_roughness_length end
 struct RoughnessHumidity end
 InterfaceComputations.land_state_accessors(::RoughnessHumidity) = (T = land_temperature, ℓᵐ = momentum_roughness_length)
 
+humidity_state(specific_humidity) = (temperature = BulkTemperature(), specific_humidity)
+
 function column_latent_heat(grid; kw...)
     atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10, boundary_layer_height = 512)
     model = AtmosphereLandModel(atmosphere, SlabLand(grid); kw...)
@@ -56,22 +58,22 @@ end
         @test keys(model.interfaces.exchanger.land.state) == (:T, :𝒮)
 
         model = AtmosphereLandModel(atmosphere, SlabLand(grid);
-                                    atmosphere_land_interface_specific_humidity = BigLeafHumidity(0.005))
+                                    atmosphere_land_interface_state = humidity_state(BigLeafHumidity(0.005)))
         @test keys(model.interfaces.exchanger.land.state) == (:T, :λˡᵉᵃ)
 
         # A land that cannot provide a requested quantity fails at construction.
         @test_throws MethodError AtmosphereLandModel(atmosphere, SlabLand(grid);
-                                                     atmosphere_land_interface_specific_humidity = RoughnessHumidity())
+                                                     atmosphere_land_interface_state = humidity_state(RoughnessHumidity()))
 
         # Transpiration grows with leaf area toward the saturated bare surface.
         bare = column_latent_heat(grid)
 
         leaf_area[] = 0.5
-        sparse = column_latent_heat(grid; atmosphere_land_interface_specific_humidity = BigLeafHumidity(0.005))
+        sparse = column_latent_heat(grid; atmosphere_land_interface_state = humidity_state(BigLeafHumidity(0.005)))
 
         leaf_area[] = 5.0
-        dense = column_latent_heat(grid; atmosphere_land_interface_specific_humidity = BigLeafHumidity(0.005))
-        open_stomata = column_latent_heat(grid; atmosphere_land_interface_specific_humidity = BigLeafHumidity(1e3))
+        dense = column_latent_heat(grid; atmosphere_land_interface_state = humidity_state(BigLeafHumidity(0.005)))
+        open_stomata = column_latent_heat(grid; atmosphere_land_interface_state = humidity_state(BigLeafHumidity(1e3)))
 
         @test 0 < sparse < dense < bare
         @test open_stomata ≈ bare rtol = 1e-3

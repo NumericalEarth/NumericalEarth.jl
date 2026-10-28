@@ -186,7 +186,8 @@ function coupled_slab_land_model(grid, atmosphere, radiation; energy, hydrology,
                  slab_land, eltype(grid); solver_stop_criteria = FixedIterations(8))
     return AtmosphereLandModel(atmosphere, slab_land; radiation,
                                atmosphere_land_fluxes = fluxes,
-                               atmosphere_land_interface_specific_humidity = make_dry_layer_humidity(),
+                               atmosphere_land_interface_state = (temperature = BulkTemperature(),
+                                                                  specific_humidity = make_dry_layer_humidity()),
                                exchanger_correction, clock = Clock(grid))
 end
 
@@ -558,7 +559,8 @@ atmosphere_land_fluxes = SimilarityTheoryFluxes(momentum_roughness_length    = 0
 
 al_interface = atmosphere_land_interface(slab_land.grid, atmosphere, slab_land;
                                          fluxes = atmosphere_land_fluxes,
-                                         specific_humidity = make_dry_layer_humidity())
+                                         state = (temperature = BulkTemperature(),
+                                                  specific_humidity = make_dry_layer_humidity()))
 
 model = AtmosphereLandModel(atmosphere, slab_land;
                             radiation,

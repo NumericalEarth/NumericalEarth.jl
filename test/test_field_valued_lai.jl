@@ -14,7 +14,7 @@ function jarvis_latent_heat(arch, grid, leaf_area_index; time = nothing)
     model = coupled_land_model(arch; grid, time, air_temperature = 290.0, air_specific_humidity = 0.006,
                                wind = 5.0, land_temperature = 300.0, water = nothing,
                                hydrology = SaturatedSurface(), radiation = nothing,
-                               atmosphere_land_interface_specific_humidity = canopy)
+                               atmosphere_land_interface_state = (temperature = BulkTemperature(), specific_humidity = canopy))
     return Array(interior(model.interfaces.atmosphere_land_interface.fluxes.latent_heat))[:, 1, 1]
 end
 

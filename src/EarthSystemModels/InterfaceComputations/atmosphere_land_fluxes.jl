@@ -35,10 +35,8 @@ Monin--Obukhov solve.
 """
 function atmosphere_land_interface(grid, atmosphere, land;
                                    fluxes              = default_atmosphere_land_fluxes(land, eltype(grid)),
-                                   temperature         = BulkTemperature(),
-                                   velocity_difference = RelativeVelocity(),
-                                   specific_humidity   = default_al_specific_humidity(land),
-                                   state               = (; temperature, specific_humidity))
+                                   state               = default_al_interface_state(land),
+                                   velocity_difference = RelativeVelocity())
     validate_surface_storage(land, state)
     return build_atmosphere_land_interface(grid, fluxes, state, velocity_difference)
 end

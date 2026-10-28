@@ -413,11 +413,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              atmosphere_ocean_interface_specific_humidity = default_ao_specific_humidity(ocean),
                              atmosphere_sea_ice_interface_temperature = default_ai_temperature(sea_ice),
                              atmosphere_sea_ice_velocity_difference = RelativeVelocity(),
-                             atmosphere_land_interface_temperature = BulkTemperature(),
                              atmosphere_land_velocity_difference = RelativeVelocity(),
-                             atmosphere_land_interface_specific_humidity = default_al_specific_humidity(land),
-                             atmosphere_land_interface_state = (temperature = atmosphere_land_interface_temperature,
-                                                                specific_humidity = atmosphere_land_interface_specific_humidity),
+                             atmosphere_land_interface_state = default_al_interface_state(land),
                              atmosphere_land_interface = atmosphere_land_interface(exchange_grid, atmosphere, land;
                                                                                    fluxes              = atmosphere_land_fluxes,
                                                                                    state               = atmosphere_land_interface_state,
@@ -525,8 +522,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                                surface_partition)
 end
 
-default_al_specific_humidity(::Nothing) = nothing
-default_al_specific_humidity(land) = BulkHumidity(AtmosphericThermodynamics.Liquid())
+default_al_interface_state(land) = (temperature = BulkTemperature(),
+                                    specific_humidity = BulkHumidity(AtmosphericThermodynamics.Liquid()))
 
 # Default atmosphere--land flux formulation. Aerodynamic roughness lengths and the
 # zero-plane displacement are properties of the flux closure, not the land model:
