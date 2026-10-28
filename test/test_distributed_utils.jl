@@ -8,7 +8,7 @@ using Dates
 using NumericalEarth.DataWrangling: metadata_path
 using NumericalEarth.DataWrangling.ORCA: ORCAOne
 using Oceananigans.DistributedComputations
-using Oceananigans.DistributedComputations: all_reduce, concatenate_local_sizes, local_size, reconstruct_global_grid, synchronize_communication!
+using Oceananigans.DistributedComputations: all_reduce, concatenate_local_sizes, local_size, reconstruct_global_grid
 using Oceananigans.Operators: Azᶜᶜᶜ
 using NumericalEarth.Lands: build_flux_routing
 using NumericalEarth.Oceans: river_mouth_vertical_diffusivity
