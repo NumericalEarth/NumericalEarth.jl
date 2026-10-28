@@ -6,7 +6,7 @@ using NumericalEarth.SeaIces: LandfastBasalStress, sea_ice_dynamics, sea_ice_sim
 using ClimaSeaIce.Rheologies: FreeSlip, NoSlip, u_lateral_boundary_condition, v_lateral_boundary_condition
 using ClimaSeaIce.SeaIceDynamics: SemiImplicitStress, StressBalanceFreeDrift
 
-using Oceananigans.BoundaryConditions: Value
+using Oceananigans.BoundaryConditions: Value, fill_halo_regions!
 
 # A shallow shelf (20 m) next to a deep basin (40 m), vertically resolved so the shelf column depth
 # does not collapse onto a single cell.
@@ -61,4 +61,52 @@ end
 
     @test u_lateral_boundary_condition(u.boundary_conditions.immersed) isa NoSlip
     @test v_lateral_boundary_condition(v.boundary_conditions.immersed) isa NoSlip
+end
+
+@testset "Sea-ice simulation boundary conditions" begin
+    grid = shelf_grid()
+    h = FieldBoundaryConditions(grid, (Center(), Center(), nothing); east = ValueBoundaryCondition(1.5))
+    ℵ = FieldBoundaryConditions(grid, (Center(), Center(), nothing); east = ValueBoundaryCondition(0.8))
+    sea_ice = sea_ice_simulation(grid; boundary_conditions = (; h, ℵ))
+
+    h_east = sea_ice.model.ice_thickness.boundary_conditions.east
+    ℵ_east = sea_ice.model.ice_concentration.boundary_conditions.east
+    @test h_east.classification isa Value
+    @test h_east.condition == 1.5
+    @test ℵ_east.classification isa Value
+    @test ℵ_east.condition == 0.8
+
+    # Fields not passed keep the defaults, including the lateral condition on the velocities
+    u = sea_ice.model.velocities.u
+    @test u_lateral_boundary_condition(u.boundary_conditions.immersed) isa NoSlip
+
+    v_bcs = FieldBoundaryConditions(grid, (Center(), Face(), nothing); east = ValueBoundaryCondition(0.1))
+    sea_ice = sea_ice_simulation(grid; boundary_conditions = (; v = v_bcs))
+    v_east = sea_ice.model.velocities.v.boundary_conditions.east
+    @test v_east.classification isa Value
+    @test v_east.condition == 0.1
+end
+
+@testset "Sea-ice simulation boundary conditions from a time series" begin
+    Nx, Ny = 4, 3
+    grid = RectilinearGrid(size = (Nx, Ny), x = (0, 4e4), y = (0, 3e4), topology = (Bounded, Bounded, Flat))
+
+    times = [0.0, 1.0, 2.0]
+    h_boundary = FieldTimeSeries{Nothing, Center, Nothing}(grid, times)
+    for n in eachindex(times)
+        interior(h_boundary, 1, :, 1, n) .= (1:Ny) .+ times[n]
+    end
+
+    h_bcs = FieldBoundaryConditions(grid, (Center(), Center(), nothing); east = ValueBoundaryCondition(h_boundary))
+    sea_ice = sea_ice_simulation(grid; boundary_conditions = (; h = h_bcs))
+
+    model = sea_ice.model
+    h = model.ice_thickness
+    model.clock.time = 1.5
+    fill_halo_regions!(h, model.clock)
+
+    # The halo mirrors the interior about the boundary value, interpolated in time
+    for j in 1:Ny
+        @test h[Nx+1, j, 1] ≈ 2 * (j + 1.5) - h[Nx, j, 1]
+    end
 end
