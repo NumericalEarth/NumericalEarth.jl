@@ -85,7 +85,6 @@ include("boundary_prescribed_component.jl")
 
 const default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 const default_freshwater_density = 1000 # kg m⁻³
-const default_dry_air_molar_mass = 0.02897 # kg mol⁻¹
 const default_latent_heat_of_fusion = 334e3 # J kg⁻¹
 
 include("InterfaceComputations/InterfaceComputations.jl")

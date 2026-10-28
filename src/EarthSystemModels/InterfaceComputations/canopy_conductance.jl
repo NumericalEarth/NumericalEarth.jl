@@ -85,7 +85,8 @@ land_state_accessors(q::CanopyConductanceHumidity) = land_state_accessors(q.mois
     gₛ = stomatal_conductance(q.conductance, APAR, VPD, Tˡᵉᵃ, β)
 
     # gᶜᵃⁿ = λˡᵉᵃᶠ Mᵈ gₛ: the dry-air molar mass Mᵈ converts molar to mass conductance.
-    gᶜᵃⁿ = λˡᵉᵃᶠ * gₛ * oftype(gₛ, default_dry_air_molar_mass)
+    Mᵈ   = molmass_dryair(ℂᵃᵗ)
+    gᶜᵃⁿ = λˡᵉᵃᶠ * gₛ * convert(typeof(gₛ), Mᵈ)
 
     return gᶜᵃⁿ, qᵛ⁺
 end

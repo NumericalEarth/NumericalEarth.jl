@@ -74,10 +74,10 @@ export
 using ..EarthSystemModels: EarthSystemModels,
                            default_gravitational_acceleration,
                            default_freshwater_density,
-                           default_dry_air_molar_mass,
                            celsius_to_kelvin,
                            default_latent_heat_of_fusion,
                            thermodynamics_parameters,
+                           molmass_dryair,
                            surface_layer_height,
                            boundary_layer_height
 
