@@ -146,7 +146,8 @@ end
 function child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory = 3)
     grid  = parent_atmosphere.temperature.grid
     times = parent_atmosphere.temperature.times
-    window = clamp(time_indices_in_memory, 3, length(times))
+    # Not `clamp`: with fewer than 3 times its lower bound would win over `length(times)`
+    window = min(max(time_indices_in_memory, 3), length(times))
     build() = FieldTimeSeries{Center, Center, Center}(grid, times;
                                                       backend = PrognosticStateBackend(1, window),
                                                       time_indexing = length(times) > 1 ? Cyclical() : Clamp())
