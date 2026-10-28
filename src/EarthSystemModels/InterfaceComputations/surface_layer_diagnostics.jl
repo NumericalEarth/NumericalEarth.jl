@@ -235,6 +235,7 @@ end
     f = clamp(state2dindex(cover_fraction, i, j, grid, Time(clock.time)), 0, 1)
     @inbounds vegetated_value = vegetated[i, j, k]
     @inbounds bare_value = bare[i, j, k]
+    # A zero-area tile's profile can be NaN (e.g. below its roughness length), and 0 * NaN = NaN
     return ifelse(f == 0, bare_value, ifelse(f == 1, vegetated_value,
                   f * vegetated_value + (1 - f) * bare_value))
 end
