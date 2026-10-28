@@ -312,7 +312,7 @@ function CanopyInterface(FT=Oceananigans.defaults.FloatType;
                              canopy_humidity               = CanopyConductanceHumidity(FT),
                              ground_heat_flux              = SoilConductiveFlux(1.5, 0.05),
                              leaf_albedo                   = 0.15,
-                             ground_albedo                 = 0.15,
+                             ground_albedo                 = 0.2,
                              maximum_canopy_emissivity     = 0.98,
                              ground_emissivity             = 0.96,
                              extinction                    = 0.5,
@@ -379,34 +379,35 @@ land_state_accessors(c::CanopyInterface) =
 @inline interface_vegetation_state(i, j, grid, c::CanopyInterface, vegetation, time_interpolator) =
     interface_vegetation_state(i, j, grid, c.canopy_humidity, vegetation, time_interpolator)
 
-# Leaf vapor conductance: stomata in series with the leaf boundary layer on the dry
-# fraction, the wet-canopy conductance `gʷᵉᵗ` in parallel. λˡᵉᵃᶠ enters through the
-# arguments: `gᶜᵃⁿ`, `gˡᵇˡ`, and `gʷᵉᵗ` all scale with it, so a leafless canopy has no leaf path.
-@inline function leaf_vapor_conductance(gᶜᵃⁿ, gˡᵇˡ, fʷᵉᵗ, gʷᵉᵗ)
-    gᵈ = ifelse(gᶜᵃⁿ + gˡᵇˡ > 0, gᶜᵃⁿ * gˡᵇˡ / (gᶜᵃⁿ + gˡᵇˡ), zero(gᶜᵃⁿ))
-    return (1 - fʷᵉᵗ) * gᵈ + gʷᵉᵗ
+# Wetted fraction of the canopy, fʷᵉᵗ = (Mᶜᵃⁿ/Mᶜᵃⁿ⁺)^(2/3) (Deardorff 1978).
+@inline function wetted_fraction(Mᶜᵃⁿ, Mᶜᵃⁿ⁺)
+    FT = typeof(Mᶜᵃⁿ)
+    return ifelse(Mᶜᵃⁿ⁺ > 0, min(Mᶜᵃⁿ / Mᶜᵃⁿ⁺, one(FT))^convert(FT, 2//3), zero(FT))
 end
 
-# Wet-canopy vapor conductance: the wetted fraction fʷᵉᵗ = (Mᶜᵃⁿ/Mᶜᵃⁿ⁺)^(2/3) (Deardorff 1978)
-# of the leaf boundary-layer conductance, capped so the store cannot evaporate more than
-# it holds over the step, Jʷᵉᵗ = gʷᵉᵗ Δq ≤ Mᶜᵃⁿ/Δt. A dry canopy (Mᶜᵃⁿ = 0) has no wet path.
-@inline function wet_canopy_conductance(Ψˡᵃ, gˡᵇˡ, Δq, Δt)
-    FT    = typeof(gˡᵇˡ)
-    Mᶜᵃⁿ  = convert(FT, Ψˡᵃ.canopy_water_storage)
-    Mᶜᵃⁿ⁺ = convert(FT, Ψˡᵃ.canopy_water_capacity)
-    fʷᵉᵗ  = ifelse(Mᶜᵃⁿ⁺ > 0, min(Mᶜᵃⁿ / Mᶜᵃⁿ⁺, one(FT))^convert(FT, 2//3), zero(FT))
-    gʷᵉᵗ  = fʷᵉᵗ * gˡᵇˡ
-    gʷᵉᵗ  = ifelse((Δt > 0) & (Δq > 0), min(gʷᵉᵗ, Mᶜᵃⁿ / (Δt * Δq)), gʷᵉᵗ)
-    return fʷᵉᵗ, gʷᵉᵗ
+# Leaf vapor conductance `gˡᵉᵃᵛ` and its wet-canopy part `gʷᵉᵗ`: stomata in series with
+# the leaf boundary layer on the dry fraction 1 − fʷᵉᵗ, the leaf boundary layer alone on the
+# wet fraction fʷᵉᵗ. The wet path is capped so the store cannot evaporate more than it holds
+# over the step, Jʷᵉᵗ = gʷᵉᵗ Δq ≤ Mᶜᵃⁿ/Δt. λˡᵉᵃᶠ enters through `gᶜᵃⁿ` and `gˡᵇˡ`, which
+# both scale with it, so a leafless canopy has no leaf path.
+@inline function leaf_vapor_conductance(gᶜᵃⁿ, gˡᵇˡ, fʷᵉᵗ, Mᶜᵃⁿ, Δq, Δt)
+    gᵈʳʸ = ifelse(gᶜᵃⁿ + gˡᵇˡ > 0, gᶜᵃⁿ * gˡᵇˡ / (gᶜᵃⁿ + gˡᵇˡ), zero(gᶜᵃⁿ))
+    gʷᵉᵗ = fʷᵉᵗ * gˡᵇˡ
+    gʷᵉᵗ = ifelse((Δt > 0) & (Δq > 0), min(gʷᵉᵗ, Mᶜᵃⁿ / (Δt * Δq)), gʷᵉᵗ)
+    return (1 - fʷᵉᵗ) * gᵈʳʸ + gʷᵉᵗ, gʷᵉᵗ
 end
 
 # Leaf vapor conductance `gˡᵉᵃᵛ`, its wet-canopy part `gʷᵉᵗ`, and the leaf-saturated
 # humidity `qˡᵉᵃ` at the leaf temperature; the stomata and the wet cap see the node
 # humidity `qᵃᶜᵃⁿ`.
 @inline function leaf_vapor_terms(c, Tˡᵉᵃ, qᵃᶜᵃⁿ, gˡᵇˡ, Δt, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
+    FT = typeof(gˡᵇˡ)
     gᶜᵃⁿ, qˡᵉᵃ = canopy_conductance_terms(c.canopy_humidity, Tˡᵉᵃ, qᵃᶜᵃⁿ, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
-    fʷᵉᵗ, gʷᵉᵗ = wet_canopy_conductance(Ψˡᵃ, gˡᵇˡ, qˡᵉᵃ - qᵃᶜᵃⁿ, Δt)
-    return leaf_vapor_conductance(gᶜᵃⁿ, gˡᵇˡ, fʷᵉᵗ, gʷᵉᵗ), gʷᵉᵗ, qˡᵉᵃ
+    Mᶜᵃⁿ  = convert(FT, Ψˡᵃ.canopy_water_storage)
+    Mᶜᵃⁿ⁺ = convert(FT, Ψˡᵃ.canopy_water_capacity)
+    fʷᵉᵗ  = wetted_fraction(Mᶜᵃⁿ, Mᶜᵃⁿ⁺)
+    gˡᵉᵃᵛ, gʷᵉᵗ = leaf_vapor_conductance(gᶜᵃⁿ, gˡᵇˡ, fʷᵉᵗ, Mᶜᵃⁿ, qˡᵉᵃ - qᵃᶜᵃⁿ, Δt)
+    return gˡᵉᵃᵛ, gʷᵉᵗ, qˡᵉᵃ
 end
 
 # Ground vapor conductance `gᵍʳᵒᵛ`, source humidity `qᵍʳᵒ`, and the source's slope `dqᵍʳᵒ` in the

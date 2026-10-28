@@ -378,39 +378,39 @@ $(TYPEDSIGNATURES)
 
 Surface energy loss and water fluxes consumed by land, positive upward (W m⁻² and kg m⁻² s⁻¹).
 """
-land_surface_fluxes(interface::AtmosphereInterface, bulk_temperature) =
-    land_surface_fluxes(interface.temperature, interface, bulk_temperature)
+land_surface_fluxes(interface::AtmosphereInterface, Tˡᵃ) = land_surface_fluxes(interface.temperature, interface, Tˡᵃ)
 
 # TODO: Use KernelFunctionOperation after Oceananigans reconciles its Reactant traced
 # scalar type with the unwrapped element type produced by GPU adaptation.
-struct LandSurfaceEnergyFlux{T, F, B, C}
-    temperature :: T
+struct LandSurfaceEnergyFlux{G, T, F, L, C}
+    grid :: G
+    interface_temperature :: T
     fluxes :: F
-    bulk_temperature :: B
-    conductance :: C
+    land_temperature :: L
+    ground_conductance :: C
 end
 
 Adapt.@adapt_structure LandSurfaceEnergyFlux
 
-@inline Base.getindex(energy::LandSurfaceEnergyFlux, i, j, k) =
-    surface_energy_loss(i, j, energy.temperature, energy.fluxes, energy.bulk_temperature, energy.conductance)
+@inline Base.getindex(𝒬::LandSurfaceEnergyFlux, i, j, k) =
+    surface_energy_loss(i, j, 𝒬.grid, 𝒬.interface_temperature, 𝒬.fluxes, 𝒬.land_temperature, 𝒬.ground_conductance)
 
-function land_surface_fluxes(temperature, interface, bulk_temperature)
+function land_surface_fluxes(Tⁱⁿ, interface, Tˡᵃ)
     fluxes = interface.fluxes
-    conductance = ground_conductance(interface)
-    energy = LandSurfaceEnergyFlux(temperature, fluxes, bulk_temperature, conductance)
+    Λᵍʳᵒ = ground_conductance(interface)
+    energy = LandSurfaceEnergyFlux(Tⁱⁿ.grid, Tⁱⁿ, fluxes, Tˡᵃ, Λᵍʳᵒ)
     return (; energy, vapor=fluxes.water_vapor, canopy_evaporation=ZeroField())
 end
 
-land_surface_fluxes(temperature::CanopyInterfaceDiagnostics, interface, bulk_temperature) =
-    (; energy=-temperature.ground_heat_flux, vapor=temperature.land_vapor_flux,
-       canopy_evaporation=temperature.canopy_evaporation)
+land_surface_fluxes(canopy::CanopyInterfaceDiagnostics, interface, Tˡᵃ) =
+    (; energy=-canopy.ground_heat_flux, vapor=canopy.land_vapor_flux,
+       canopy_evaporation=canopy.canopy_evaporation)
 
-@inline surface_energy_loss(i, j, temperature, fluxes, bulk_temperature, ::Nothing) =
+@inline surface_energy_loss(i, j, grid, Tⁱⁿ, fluxes, Tˡᵃ, ::Nothing) =
     @inbounds fluxes.sensible_heat[i, j, 1] + fluxes.latent_heat[i, j, 1]
 
-@inline surface_energy_loss(i, j, temperature, fluxes, bulk_temperature, conductance) =
-    @inbounds -conductance * (temperature[i, j, 1] - bulk_temperature[i, j, 1])
+@inline surface_energy_loss(i, j, grid, Tⁱⁿ, fluxes, Tˡᵃ, Λᵍʳᵒ) =
+    @inbounds -Λᵍʳᵒ * (Tⁱⁿ[i, j, 1] - Tˡᵃ[i, j, 1])
 
 """
 $(TYPEDSIGNATURES)

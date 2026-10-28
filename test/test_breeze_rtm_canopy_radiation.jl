@@ -55,8 +55,8 @@ end
             canopy = model.interfaces.atmosphere_land_interface.temperature
 
             @test Array(interior(model.land.fluxes.surface_energy_flux)) ≈ -Array(interior(canopy.ground_heat_flux))
-            # Leaf and ground albedo both default to 0.15
-            @test all(Array(interior(model.radiation.surface_radiation.direct_surface_albedo)) .≈ 0.15)
+            # The effective albedo blends the leaf (0.15) and ground (0.2) albedos
+            @test all(0.15 .< Array(interior(model.radiation.surface_radiation.direct_surface_albedo)) .< 0.2)
             @test all(Array(interior(canopy.canopy)) .> Array(interior(canopy.ground)))
             @test all(Array(interior(canopy.effective)) .> Array(interior(canopy.interface)))
             @test Array(interior(model.radiation.upwelling_longwave_flux))[:, :, 1] ≈ σ .* Array(interior(canopy.effective, :, :, 1)) .^ 4 rtol = 1e-3
