@@ -281,7 +281,9 @@ Build a Breeze child atmosphere over `child_grid` nested in `parent_atmosphere`,
 raw state on the parent grid as `FieldTimeSeries` (see `child_prognostic_field_time_series`); the child's
 lateral boundary conditions — and, when `relaxation_rate` (s⁻¹) is given, its lateral boundary relaxation
 over `relaxation_mask` (default: a cosine ramp over the outermost `relaxation_width` cells) — interpolate
-those precomputed prognostics (via `parent_boundary_conditions` / `parent_forcings`).
+those precomputed prognostics (via `parent_boundary_conditions` / `parent_forcings`). The precomputed
+prognostics hold `time_indices_in_memory` time levels, by default as many as the parent holds, so a parent
+with every snapshot in memory gives a window that never moves; fewer (at least 3) stream a moving window.
 
 When `parent_atmosphere` is a `BoundaryPrescribedComponent` of `PrescribedAtmosphere`s, each side's boundary conditions
 interpolate that side's strip, and the lateral boundary relaxation acts only on the cells of each strip's
@@ -349,6 +351,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     dynamics = default_nested_dynamics(child_grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth),
     boundary_conditions = NamedTuple(),
     forcing = NamedTuple(),
+    time_indices_in_memory = resident_time_indices(parent_atmosphere),
     kw...)
 
     if !isnothing(terrain)
@@ -360,9 +363,10 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     moisture_name = moisture_prognostic_name(microphysics)
     pˢᵗ = dynamics.standard_pressure
 
-    # Precompute the child prognostics on the parent grid (combine-then-interpolate); the exchanger owns
-    # its own 3-level moving window and refreshes it from the parent each step via `exchange_state!`.
-    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates = parent_condensates, moisture_name)
+    # Precompute the child prognostics on the parent grid (combine-then-interpolate); `exchange_state!`
+    # slides the resident window from the parent each step when it holds fewer levels than the parent's times.
+    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates = parent_condensates,
+                                 moisture_name, time_indices_in_memory)
     prognostic = parent_prognostic(exchanger)
 
     ρqᵛᵉ = prognostic.ρqᵛᵉ
@@ -487,7 +491,9 @@ margin for the interpolation stencils). A full-domain snapshot of `parent_datase
 toward. Unless given, the default dynamics' `base_pressure` anchor is the domain-mean dataset
 mean-sea-level pressure over the child at `first(dates)`. When `bottom_drag_coefficient` is given,
 `drag_surface_temperature` defaults to the dataset's skin temperature at `first(dates)` regridded onto
-the child grid (a static snapshot, not the dataset's diurnal cycle). `balancer` controls the
+the child grid (a static snapshot, not the dataset's diurnal cycle). `parent_atmosphere` overrides the
+strips: pass a `PrescribedAtmosphere` over the whole padded box to hold the parent in full, at the
+cost of its memory and of reading the interior the child never relaxes toward. `balancer` controls the
 post-initialization adiabatic (DFI) balance: `true` (default) runs it, `false` skips it, and an
 `AdiabaticBalancer(Δt=…)` runs a custom (e.g. gentler) excursion. Remaining keyword arguments flow to
 `nested_atmosphere_model(parent, child_grid; kw...)`.
@@ -497,15 +503,14 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
     parent_padding = default_horizontal_padding(parent_dataset),
     parent_time_indices_in_memory = nothing,   # nothing ⇒ every date resident; ≥3 streams a moving window
     relaxation_width = default_relaxation_width,
+    parent_atmosphere = BoundaryPrescribedComponent(PrescribedAtmosphere, child_grid, dates, parent_dataset;
+                                                    width = relaxation_width, padding = parent_padding, dir,
+                                                    time_indices_in_memory = parent_time_indices_in_memory),
     base_pressure = nothing,
     bottom_drag_coefficient = nothing,
     drag_surface_temperature = nothing,
     balancer = true,
     kw...)
-
-    parent_atmosphere = BoundaryPrescribedComponent(PrescribedAtmosphere, child_grid, dates, parent_dataset;
-                                                    width = relaxation_width, padding = parent_padding, dir,
-                                                    time_indices_in_memory = parent_time_indices_in_memory)
 
     snapshot = PrescribedAtmosphere(BoundingBox(child_grid; padding = parent_padding), [first(dates)], parent_dataset;
                                     architecture = architecture(child_grid), dir)
@@ -524,7 +529,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
                                                                        parent_surface_elevation = surface_elevation(snapshot),
                                                                        kw...)
 
-    initial_state = child_prognostic_state(snapshot, first(nested_model.exchanger))
+    initial_state = child_prognostic_state(snapshot, nested_model.exchanger)
     initialize_nested_child!(nested_model, parent_dataset, first(dates), dir; balancer, prognostic = initial_state)
     return nested_model
 end
