@@ -201,12 +201,14 @@ GroundSurfaceResistance()
 GroundSurfaceResistance(C=0.00633)
 ```
 """
-struct GroundSurfaceResistance{FT}
-    transfer_coefficient :: FT
+struct GroundSurfaceResistance{C}
+    transfer_coefficient :: C
 end
 
 GroundSurfaceResistance(FT::Type = Oceananigans.defaults.FloatType; transfer_coefficient = 0.00633) =
-    GroundSurfaceResistance(convert(FT, transfer_coefficient))
+    GroundSurfaceResistance(convert_if_number(FT, transfer_coefficient))
+
+Adapt.@adapt_structure GroundSurfaceResistance
 
 Base.summary(r::GroundSurfaceResistance) =
     string("GroundSurfaceResistance(C=", prettysummary(r.transfer_coefficient), ")")
@@ -238,7 +240,8 @@ rate through the leaf boundary layer alone; a dry canopy (`Mᶜⁿᵖʸ = 0`) ha
 Fields:
 - `soil_humidity`   : the soil vapor branch (a [`DryLayerHumidity`](@ref)).
 - `canopy_humidity` : the leaf vapor branch (a [`CanopyConductanceHumidity`](@ref)).
-- `ground_heat_flux` : ground↔bulk conduction `Λᵍʳⁿᵈ = κᵀ/ℓᵀ` (a [`SoilConductiveFlux`](@ref)).
+- `ground_heat_flux` : ground↔bulk conduction `Λᵍʳⁿᵈ = κᵀ/ℓᵀ` (a [`SoilConductiveFlux`](@ref),
+  whose `κᵀ` and `ℓᵀ` may be per-cell `Field`s).
 - `leaf_albedo`, `ground_albedo` : broadband shortwave albedos. A `Number`, or a
   `Field{Center, Center, Nothing}` of per-cell values (see [`atmosphere_land_interface`](@ref)).
 - `maximum_canopy_emissivity`, `ground_emissivity` : longwave emissivities (`ϵˡᵉᵃᶠ = ϵᵐᵃˣ(1 − e^{−λˡᵉᵃᶠ})`),
@@ -257,13 +260,14 @@ Fields:
   dry-layer onset the soil itself does not limit evaporation, and the ground-surface
   resistance and undercanopy path carry it).
 - `ground_surface_resistance` : bulk ground-surface resistance in series on both ground
-  vapor branches (a [`GroundSurfaceResistance`](@ref), the default, or a constant `Number`
-  in s m⁻¹), or `nothing` for none.
+  vapor branches (a [`GroundSurfaceResistance`](@ref), the default, whose `Cᵍʳⁿᵈ` may be a
+  per-cell `Field`, or a constant `Number` in s m⁻¹), or `nothing` for none.
 - `inner_iterations` : quasi-Newton iterations of the coupled leaf and ground temperature solve.
 
 The four optics slots accept a per-cell `Field{Center, Center, Nothing}` alongside a
 `Number`, so a satellite albedo product reaches the two-source radiation balance cell by
-cell. The land flux kernel localizes them before the canopy solve.
+cell. So do the ground conduction and the ground-surface resistance. The land flux kernel
+localizes them before the canopy solve.
 
 ```jldoctest
 using NumericalEarth
@@ -341,21 +345,28 @@ end
 @inline specific_humidity_formulation(state::CanopyInterface) = state
 
 #####
-##### Per-cell optics: localization
+##### Per-cell localization
 #####
 
 # Collapse `Field`-valued slots to cell (i, j) before the index-free canopy solve;
 # `state2dindex` returns a `Number` slot unchanged.
 @inline local_interface_formulation(formulation, i, j) = formulation
 
+@inline local_interface_formulation(F::SoilConductiveFlux, i, j) =
+    SoilConductiveFlux(state2dindex(F.conductivity, i, j), state2dindex(F.thickness, i, j))
+
+@inline local_interface_formulation(r::GroundSurfaceResistance, i, j) =
+    GroundSurfaceResistance(state2dindex(r.transfer_coefficient, i, j))
+
 @inline local_interface_formulation(c::CanopyInterface, i, j) =
-    CanopyInterface(c.soil_humidity, c.canopy_humidity, c.ground_heat_flux,
+    CanopyInterface(c.soil_humidity, c.canopy_humidity, local_interface_formulation(c.ground_heat_flux, i, j),
                         state2dindex(c.leaf_albedo, i, j),
                         state2dindex(c.ground_albedo, i, j),
                         state2dindex(c.maximum_canopy_emissivity, i, j),
                         state2dindex(c.ground_emissivity, i, j),
                         c.extinction, c.clumping, c.leaf_boundary_layer_velocity,
-                        c.undercanopy_transfer_velocity, c.wet_soil_resistance, c.ground_surface_resistance,
+                        c.undercanopy_transfer_velocity, c.wet_soil_resistance,
+                        local_interface_formulation(c.ground_surface_resistance, i, j),
                         c.inner_iterations)
 
 Base.summary(::CanopyInterface) = "CanopyInterface"

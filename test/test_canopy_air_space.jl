@@ -22,6 +22,8 @@ canopy_ground_surface(FT; leaf_area_index = 4.0, soil_humidity = bare_soil_humid
         canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index, moisture_stress = CriticalSaturation(0.5),
                                                     absorbed_par = AbsorbedPhotosyntheticallyActiveRadiation(FT)))
 
+bare(; kw...) = canopy_ground_surface(Float64; leaf_area_index = 0.0, kw...)
+
 power_law_soil_humidity(FT) = DryLayerHumidity(FT;
     dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
                                                 dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
@@ -157,6 +159,39 @@ end
     end
 end
 
+@testset "Coupled per-cell ground conduction and ground-surface resistance" begin
+    for arch in test_architectures
+        grid = LatitudeLongitudeGrid(arch; size = (2, 1, 1), latitude = (10, 11), longitude = (10, 12), z = (-1, 0),
+                                     topology = (Bounded, Bounded, Bounded))
+
+        function per_cell(soil, water)
+            field = Field{Center, Center, Nothing}(grid)
+            set!(field, (λ, φ) -> ifelse(λ < 11, soil, water))
+            return field
+        end
+
+        # Cell 1 keeps the scalar defaults; cell 2 is open water, with a skin held near the bulk
+        # temperature and no resistance on the ground vapor path.
+        scalar_surface = bare()
+        conducting_surface = bare(ground_heat_flux = SoilConductiveFlux(per_cell(1.5, 50.0), 0.05))
+        evaporating_surface = bare(ground_surface_resistance = GroundSurfaceResistance(Float64; transfer_coefficient = per_cell(0.00633, 1e6)))
+
+        function ground_state(surface)
+            model = coupled_land_model(arch; grid, atmosphere_land_interface_state = surface, land_temperature = 298.0)
+            Ts = model.interfaces.atmosphere_land_interface.temperature
+            return (Tᵍʳⁿᵈ = Array(interior(Ts.ground))[:, 1, 1], 𝒬ᵛᵍʳⁿᵈ = Array(interior(Ts.ground_latent_heat))[:, 1, 1])
+        end
+
+        reference = ground_state(scalar_surface)
+        conducting = ground_state(conducting_surface)
+        evaporating = ground_state(evaporating_surface)
+        @test conducting.Tᵍʳⁿᵈ[1] == reference.Tᵍʳⁿᵈ[1]
+        @test abs(conducting.Tᵍʳⁿᵈ[2] - 298) < abs(conducting.Tᵍʳⁿᵈ[1] - 298)
+        @test evaporating.𝒬ᵛᵍʳⁿᵈ[1] == reference.𝒬ᵛᵍʳⁿᵈ[1]
+        @test evaporating.𝒬ᵛᵍʳⁿᵈ[2] > evaporating.𝒬ᵛᵍʳⁿᵈ[1]
+    end
+end
+
 @testset "Wet-canopy vapor conductance scales with air density" begin
     λˡᵉᵃᶠ, wˡᵇˡ = 3.0, 0.02
     canopy_surface = canopy_ground_surface(Float64; leaf_area_index = λˡᵉᵃᶠ, leaf_boundary_layer_velocity = wˡᵇˡ)
@@ -209,7 +244,6 @@ end
         @test ground_surface_resistance(nothing, FT(0.3)) == 0
     end
 
-    bare(; kw...) = canopy_ground_surface(Float64; leaf_area_index = 0.0, kw...)
     unresisted = bare(ground_surface_resistance = nothing)
     exponential    = bare(ground_surface_resistance = nothing, wet_soil_resistance = ExponentialSoilResistance(Float64))
     covered    = bare()
