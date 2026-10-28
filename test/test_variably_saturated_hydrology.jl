@@ -241,7 +241,29 @@ advance!(land, N, Δt) = foreach(_ -> time_step!(land, Δt), 1:N)
         quiet!(land)
         advance!(land, 12, 150.0)
         @test scalar(land.prognostic.surface_water_storage) ≈ 10 * exp(-1)
+
         @test scalar(land.water_storage) == 100
+
+        # The pond and its runoff do not depend on the time step, whether it grows under heavy
+        # rain or empties by infiltration under light rain.
+        function pond_after_one_hour(Δt; rain, S₀)
+            pond = SlabLand(grid; hydrology = ponded(1800))
+            set!(pond; M = 100.0, surface_water_storage = S₀)
+            quiet!(pond)
+            ∫R = 0.0
+            for _ in 1:round(Int, 3600 / Δt)
+                fill!(pond.fluxes.liquid_water_precipitation_flux, rain)
+                time_step!(pond, Δt)
+                ∫R += scalar(pond.diagnostics.surface_runoff) * Δt
+            end
+            return scalar(pond.prognostic.surface_water_storage), ∫R
+        end
+        for (rain, S₀) in ((5e-3, 0.0), (2e-4, 1.0))
+            S_fine, R_fine = pond_after_one_hour(60.0; rain, S₀)
+            S_coarse, R_coarse = pond_after_one_hour(1200.0; rain, S₀)
+            @test S_coarse ≈ S_fine rtol=1e-10 atol=1e-12
+            @test R_coarse ≈ R_fine rtol=1e-10
+        end
 
         land = SlabLand(grid; hydrology = InterceptingHydrology(eltype(grid); soil = ponded(3600), leaf_area_index = 3.0))
         set!(land; M = 100.0)

@@ -210,6 +210,12 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``J^{ls}`` | `surface_liquid_water_flux` | surface liquid water flux | Liquid water mass flux at the surface, ``J^{ls} = -P^l + R^{\mathrm{sfc}}`` without a surface water store, positive upward (out of the slab); infiltration is ``J^{ls} < 0`` (kg m⁻² s⁻¹) |
 | ``R^{\mathrm{sfc}}`` | `surface_runoff` | surface runoff | Liquid leaving the column at the surface, ``\ge 0``: the infiltration excess, or the share of the surface water store drained over the step (kg m⁻² s⁻¹) |
 | ``M^{\mathrm{sfc}}`` | `surface_water_storage` | surface water store | Infiltration excess ponded at the surface, draining on `drainage_time_scale` (kg m⁻²) |
+| ``\tau^{\mathrm{sfc}}`` | `τˢᶠᶜ`, `drainage_time_scale` | pond drainage time scale | Linear-reservoir time scale of the surface water store, ``dM^{\mathrm{sfc}}/dt = P^l - I - M^{\mathrm{sfc}}/\tau^{\mathrm{sfc}}`` (s) |
+| ``I``, ``\bar{I}`` | `I`, `Ī` | infiltration | Liquid water entering the slab at its surface, and its step mean, positive into the slab (kg m⁻² s⁻¹) |
+| ``I^{\mathrm{cap}}``, ``I^{\mathrm{dry}}`` | `Iᶜᵃᵖ`, `Iᵈʳʸ` | infiltration capacity, unponded infiltration | Capacity limited by the remaining pore volume, ``\min(I_0, (M^+ - M)/\Delta t)``, and the infiltration of unponded ground, ``\min(P^l, I^{\mathrm{cap}})`` (kg m⁻² s⁻¹) |
+| ``J^{\mathrm{pon}}`` | `Jᵖᵒⁿ` | net pond inflow | ``P^l - I`` (kg m⁻² s⁻¹) |
+| ``M^e`` | `Mᵉ` | equilibrium pond | Pond the linear reservoir relaxes toward, ``\tau^{\mathrm{sfc}} J^{\mathrm{pon}}`` (kg m⁻²) |
+| ``t^0`` | `t⁰` | pond emptying time | Time within a step at which the surface water store reaches zero (s) |
 | ``R^{\mathrm{lat}}`` | `subsurface_runoff` | subsurface runoff | Lateral storage export, ``\ge 0`` (kg m⁻² s⁻¹) |
 | ``\kappa^T`` | `thermal_conductivity` | thermal conductivity | Effective ground thermal conductivity (W m⁻¹ K⁻¹) |
 | ``\Lambda^{\mathrm{deep}}`` | `deep_conductance` | deep energy conductance | Force-restore deep energy conductance (W m⁻² K⁻¹); see also ``τ^{\mathrm{deep}}`` |

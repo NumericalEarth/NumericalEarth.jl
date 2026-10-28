@@ -59,9 +59,9 @@ J^{ls} = \\max(-P^l, -J^l_{cap}), \\qquad R^{\\mathrm{sfc}} = J^{ls} + P^l \\ge 
 
 By default the excess `Rˢᶠᶜ` leaves as surface runoff within the step. With a
 `drainage_time_scale` `τ` (s) it instead ponds in the prognostic surface water store
-`Mˢᶠᶜ` (kg m⁻²), which is offered back to infiltration together with the rain each
-step and drains to surface runoff as a linear reservoir, `dMˢᶠᶜ/dt = −Mˢᶠᶜ/τ`
-(the water ponded during the step decays with it). The store exchanges mass only.
+`Mˢᶠᶜ` (kg m⁻²), which infiltrates at capacity while it stands and drains to surface
+runoff as a linear reservoir, `dMˢᶠᶜ/dt = Pˡ − I − Mˢᶠᶜ/τ`, integrated exactly over each
+step. The store exchanges mass only.
 
 No subsurface runoff.
 
@@ -114,17 +114,40 @@ end
     return pore_limited_surface_flux(Jˡˢ, Rˢᶠᶜ, M, M⁺, Δt)
 end
 
-# The pond is offered to infiltration with the rain; the excess ponds again, and the
-# share `retained_fraction` of it that survives the step's linear drain stays in the store.
+# Exact solution of the pond balance dMˢᶠᶜ/dt = Pˡ − I − Mˢᶠᶜ/τˢᶠᶜ over the step. Infiltration is
+# I = Iᶜᵃᵖ while a pond stands and I = Iᵈʳʸ = min(Pˡ, Iᶜᵃᵖ) on unponded ground, where the capacity
+# Iᶜᵃᵖ is limited by the pore volume M⁺ − M the slab has left. With the net pond inflow
+# Jᵖᵒⁿ = Pˡ − I and its equilibrium pond Mᵉ = τˢᶠᶜ Jᵖᵒⁿ,
+#
+#     Mˢᶠᶜ(t) = Mᵉ + (Mˢᶠᶜⁿ − Mᵉ) e^{−t/τˢᶠᶜ}.
+#
+# If the pond empties, at t⁰ = τˢᶠᶜ log((Mˢᶠᶜⁿ − Mᵉ)/(−Mᵉ)) < Δt, the rest of the step infiltrates Iᵈʳʸ.
+# The step-mean runoff Rˢᶠᶜ (the drained ∫ Mˢᶠᶜ/τˢᶠᶜ dt over Δt) and infiltration Ī close the balance
+# Pˡ Δt + Mˢᶠᶜⁿ = (Ī + Rˢᶠᶜ) Δt + Mˢᶠᶜⁿ⁺¹.
 @inline function surface_water_balance!(i, j, grid, c::InfiltrationCapacityRunoff{<:Any, <:Number},
                                         prognostic, Pˡ, M, M⁺, θˡ, 𝒮, Π, K, Δt)
+    FT   = typeof(Pˡ)
     Mˢᶠᶜ = prognostic.surface_water_storage
     @inbounds Mˢᶠᶜⁿ = Mˢᶠᶜ[i, j, 1]
-    Jˡˢ, Rˢᶠᶜ = surface_liquid_water_flux_and_runoff(i, j, grid, c, Pˡ + Mˢᶠᶜⁿ / Δt, M, θˡ, 𝒮, Π, K)
-    Jˡˢ, Rˢᶠᶜ = pore_limited_surface_flux(Jˡˢ, Rˢᶠᶜ, M, M⁺, Δt)
-    retained_fraction = exp(-Δt / c.drainage_time_scale)
-    @inbounds Mˢᶠᶜ[i, j, 1] = retained_fraction * Δt * Rˢᶠᶜ
-    return Jˡˢ, (1 - retained_fraction) * Rˢᶠᶜ
+    τˢᶠᶜ = convert(FT, c.drainage_time_scale)
+
+    Iᶜᵃᵖ = min(convert(FT, stateindex(c.infiltration_capacity, i, j, 1)), max(M⁺ - M, 0) / Δt)
+    Iᵈʳʸ = min(Pˡ, Iᶜᵃᵖ)
+    I    = ifelse(Mˢᶠᶜⁿ > 0, Iᶜᵃᵖ, Iᵈʳʸ)
+    Jᵖᵒⁿ = Pˡ - I
+    Mᵉ   = τˢᶠᶜ * Jᵖᵒⁿ
+    M̃ˢᶠᶜ = Mᵉ + (Mˢᶠᶜⁿ - Mᵉ) * exp(-Δt / τˢᶠᶜ)
+
+    empties = M̃ˢᶠᶜ < 0
+    ratio   = ifelse(empties, (Mˢᶠᶜⁿ - Mᵉ) / -Mᵉ, one(FT))
+    t⁰      = ifelse(empties, τˢᶠᶜ * log(ratio), Δt)
+
+    Mˢᶠᶜⁿ⁺¹ = max(M̃ˢᶠᶜ, 0)
+    Rˢᶠᶜ    = (Jᵖᵒⁿ * t⁰ + Mˢᶠᶜⁿ - Mˢᶠᶜⁿ⁺¹) / Δt
+    Ī       = (I * t⁰ + Iᵈʳʸ * (Δt - t⁰)) / Δt
+
+    @inbounds Mˢᶠᶜ[i, j, 1] = Mˢᶠᶜⁿ⁺¹
+    return -Ī, Rˢᶠᶜ
 end
 
 Base.summary(c::InfiltrationCapacityRunoff) =
