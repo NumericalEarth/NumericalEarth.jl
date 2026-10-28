@@ -140,7 +140,7 @@ function tiled_land_column(; cover_fraction, label)
     𝒬ᵀ                          = zeros(number_of_steps)   # sensible heat, blended (positive up)
     𝒬ᵛ                          = zeros(number_of_steps)   # latent heat, blended (positive up)
     Tʳᵃᵈ                        = zeros(number_of_steps)   # land-surface (radiometric) temperature
-    𝒬ᵍʳᵒ                        = zeros(number_of_steps)   # skin → bulk ground heat flux (into slab)
+    𝒬ᵍʳⁿᵈ                        = zeros(number_of_steps)   # skin → bulk ground heat flux (into slab)
     𝒮                           = zeros(number_of_steps)   # shared-column surface saturation
     vegetated_latent_heat       = zeros(number_of_steps)   # vegetated-tile latent (weighted contribution)
     bare_latent_heat            = zeros(number_of_steps)   # bare-tile latent (weighted contribution)
@@ -155,7 +155,7 @@ function tiled_land_column(; cover_fraction, label)
         𝒬ᵀ[n]                          = scalar(interface.fluxes.sensible_heat)
         𝒬ᵛ[n]                          = scalar(interface.fluxes.latent_heat)
         Tʳᵃᵈ[n]                        = scalar(interface.temperature.effective)
-        𝒬ᵍʳᵒ[n]                        = scalar(interface.temperature.ground_heat_flux)
+        𝒬ᵍʳⁿᵈ[n]                        = scalar(interface.temperature.ground_heat_flux)
         𝒮[n]                           = scalar(land.saturation)
         vegetated_latent_heat[n]       = cover_fraction       * scalar(interface.vegetated.fluxes.latent_heat)
         bare_latent_heat[n]            = (1 - cover_fraction) * scalar(interface.bare.fluxes.latent_heat)
@@ -163,7 +163,7 @@ function tiled_land_column(; cover_fraction, label)
         bare_friction_velocity[n]      = scalar(interface.bare.fluxes.friction_velocity)
     end
 
-    return (; label, cover_fraction, t, 𝒬ᵀ, 𝒬ᵛ, Tʳᵃᵈ, 𝒬ᵍʳᵒ, 𝒮,
+    return (; label, cover_fraction, t, 𝒬ᵀ, 𝒬ᵛ, Tʳᵃᵈ, 𝒬ᵍʳⁿᵈ, 𝒮,
               vegetated_latent_heat, bare_latent_heat, vegetated_friction_velocity, bare_friction_velocity)
 end
 
@@ -221,7 +221,7 @@ axislegend(ax; position = :lt, labelsize = 11)
 ax = sweep_panel(fig[3, 1], :𝒮, "Shared-column saturation 𝒮", "𝒮"; legend = :rc)
 hlines!(ax, [critical_saturation]; color = :gray, linestyle = :dash)
 ylims!(ax, 0, 1.05)
-sweep_panel(fig[3, 2], :𝒬ᵍʳᵒ, "Ground heat flux (into slab)", "𝒬ᵍʳᵒ (W m⁻²)")
+sweep_panel(fig[3, 2], :𝒬ᵍʳⁿᵈ, "Ground heat flux (into slab)", "𝒬ᵍʳⁿᵈ (W m⁻²)")
 
 Label(fig[0, 1:2], "Tiled land column — sweeping the vegetation fraction f", fontsize = 21)
 

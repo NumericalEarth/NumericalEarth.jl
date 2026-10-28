@@ -88,9 +88,9 @@ end
     time = Time(clock.time)
 
     rs = air_land_interface_radiation_state(rk, radiation_state, i, j, kᴺ, grid, time)
-    Tₛ, α, ϵ = radiating_surface(land_surface_temperature, i, j, rs)
+    Tⁱⁿ, α, ϵ = radiating_surface(land_surface_temperature, i, j, rs)
 
-    ℐꜛˡʷ = emitted_longwave_radiation(Tₛ, rs.σ, ϵ)
+    ℐꜛˡʷ = emitted_longwave_radiation(Tⁱⁿ, rs.σ, ϵ)
     ℐₐˡʷ = absorbed_longwave_radiation(ϵ, rs.ℐꜜˡʷ)
     ℐₜˢʷ = transmitted_shortwave_radiation(α, rs.ℐꜜˢʷ)
 
@@ -105,7 +105,7 @@ end
 
     maybe_accumulate!(land_energy_flux, i, j, ifelse(inactive, zero(grid), ΣQ))
 
-    # Same `Tₛ`, `α`, `ϵ` as `ΣQ`, so the diagnostics cannot disagree with the assembled budget.
+    # Same `Tⁱⁿ`, `α`, `ϵ` as `ΣQ`, so the diagnostics cannot disagree with the assembled budget.
     maybe_write!(interface_radiation_flux.upwelling_longwave,    i, j, ℐꜛˡʷ)
     maybe_write!(interface_radiation_flux.downwelling_longwave,  i, j, ℐₐˡʷ)
     maybe_write!(interface_radiation_flux.downwelling_shortwave, i, j, ℐₜˢʷ)

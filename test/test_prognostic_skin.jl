@@ -29,19 +29,19 @@ calm = (; shortwave = 50.0, wind = 0.2, air_temperature = 304.0, land_temperatur
         C, Δt, Λ, σ = 1e5, 300.0, 30.0, default_stefan_boltzmann_constant
         model = bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05); surface_storage=PrognosticSkin(heat_capacity=C), calm...)
         interface = model.interfaces.atmosphere_land_interface
-        Tₛ⁻, worst = scalar(interface.temperature), 0.0
+        Tⁱⁿ⁻, worst = scalar(interface.temperature), 0.0
         for _ in 1:48
             Tˡᵃ = scalar(model.land.temperature)
             time_step!(model, Δt)
-            Tₛ   = scalar(interface.temperature)
-            𝒬ᵍʳᵒ = Λ * (Tₛ - Tˡᵃ)
+            Tⁱⁿ   = scalar(interface.temperature)
+            𝒬ᵍʳⁿᵈ = Λ * (Tⁱⁿ - Tˡᵃ)
             𝒬ᵛ   = scalar(interface.fluxes.latent_heat)
-            @test scalar(model.land.fluxes.surface_energy_flux) ≈ -𝒬ᵍʳᵒ atol = 1e-9
+            @test scalar(model.land.fluxes.surface_energy_flux) ≈ -𝒬ᵍʳⁿᵈ atol = 1e-9
             @test abs(𝒬ᵛ) < 2000
-            net_radiation = (1 - 0.2) * 50 + 0.95 * (350 - σ * Tₛ^4)
-            residual = net_radiation - 𝒬ᵍʳᵒ - scalar(interface.fluxes.sensible_heat) - 𝒬ᵛ - C * (Tₛ - Tₛ⁻) / Δt
+            net_radiation = (1 - 0.2) * 50 + 0.95 * (350 - σ * Tⁱⁿ^4)
+            residual = net_radiation - 𝒬ᵍʳⁿᵈ - scalar(interface.fluxes.sensible_heat) - 𝒬ᵛ - C * (Tⁱⁿ - Tⁱⁿ⁻) / Δt
             worst = max(worst, abs(residual))
-            Tₛ⁻ = Tₛ
+            Tⁱⁿ⁻ = Tⁱⁿ
         end
         @test worst < 15
     end
@@ -79,7 +79,7 @@ end
     end
 end
 
-# Λᵍʳᵒ = 0, ϵ = 0 and calm air leave no conductance, so the skin must be held rather than divided by zero.
+# Λᵍʳⁿᵈ = 0, ϵ = 0 and calm air leave no conductance, so the skin must be held rather than divided by zero.
 @testset "Fully decoupled skin stays finite" begin
     for arch in test_architectures, storage in (nothing, PrognosticSkin(heat_capacity = 1e5))
         model = bare_soil_model(arch, SoilSkinTemperature(0, 0.05); surface_storage=storage,

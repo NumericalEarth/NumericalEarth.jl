@@ -311,7 +311,7 @@ end
 validate_flux_formulation(flux_formulation, grid) = nothing
 
 function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
-                                  Tₛ, qₛ, Δθ, Δq, Δh,
+                                  Tⁱⁿ, qⁱⁿ, Δθ, Δq, Δh,
                                   approximate_interface_state,
                                   atmosphere_state,
                                   interface_formulation,
@@ -336,7 +336,7 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     ℓq = flux_formulation.roughness_lengths.water_vapor
 
     # Compute Monin--Obukhov length scale depending on a `buoyancy flux`
-    b★ = buoyancy_scale(θ★, q★, ℂᵃᵗ, Tₛ, qₛ, g)
+    b★ = buoyancy_scale(θ★, q★, ℂᵃᵗ, Tⁱⁿ, qⁱⁿ, g)
 
     # Squared subgrid velocity enhancements: convective gustiness and, on coarse
     # grids, an optional mesoscale contribution (see `SubgridVelocityCorrection`).
@@ -350,9 +350,9 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     U = sqrt(Δu^2 + Δv^2 + Uˢᵍ²)
 
     # Compute roughness length scales (pass surface temperature for viscosity calculation)
-    ℓu₀ = roughness_length(ℓu, u★, U, ℂᵃᵗ, Tₛ)
-    ℓq₀ = roughness_length(ℓq, ℓu₀, u★, U, ℂᵃᵗ, Tₛ)
-    ℓθ₀ = roughness_length(ℓθ, ℓu₀, u★, U, ℂᵃᵗ, Tₛ)
+    ℓu₀ = roughness_length(ℓu, u★, U, ℂᵃᵗ, Tⁱⁿ)
+    ℓq₀ = roughness_length(ℓq, ℓu₀, u★, U, ℂᵃᵗ, Tⁱⁿ)
+    ℓθ₀ = roughness_length(ℓθ, ℓu₀, u★, U, ℂᵃᵗ, Tⁱⁿ)
 
     # Tall roughness elements displace the similarity profiles upward by `d`.
     d = flux_formulation.zero_plane_displacement
@@ -363,24 +363,24 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     L★ = monin_obukhov_length(u★, b★, ϰ)
     form = flux_formulation.similarity_form
 
-    χu = ϰ / similarity_profile(form, ψu, Δhᵈ, ℓu₀, L★)
-    χθ = ϰ / similarity_profile(form, ψθ, Δhᵈ, ℓθ₀, L★)
-    χq = ϰ / similarity_profile(form, ψq, Δhᵈ, ℓq₀, L★)
+    Ξu = ϰ / similarity_profile(form, ψu, Δhᵈ, ℓu₀, L★)
+    Ξθ = ϰ / similarity_profile(form, ψθ, Δhᵈ, ℓθ₀, L★)
+    Ξq = ϰ / similarity_profile(form, ψq, Δhᵈ, ℓq₀, L★)
 
     # Recompute
-    u★ = χu * U
-    θ★ = χθ * Δθ
-    q★ = χq * Δq
+    u★ = Ξu * U
+    θ★ = Ξθ * Δθ
+    q★ = Ξq * Δq
 
-    return u★, θ★, q★, χθ, χq
+    return u★, θ★, q★, Ξθ, Ξq
 end
 
 """
-    buoyancy_scale(θ★, q★, ℂᵃᵗ, Tₛ, qₛ, g)
+    buoyancy_scale(θ★, q★, ℂᵃᵗ, Tⁱⁿ, qⁱⁿ, g)
 
 Return the characteristic buoyancy scale `b★` associated with
 the characteristic temperature `θ★`, specific humidity scale `q★`,
-surface temperature `Tₛ`, surface specific humidity `qₛ`,
+surface temperature `Tⁱⁿ`, surface specific humidity `qⁱⁿ`,
 atmosphere thermodynamic parameters `ℂᵃᵗ`, and gravitational acceleration `g`.
 
 The buoyancy scale is defined in terms of the interface buoyancy flux,
@@ -393,7 +393,7 @@ where `u_★` is the friction velocity.
 Using the definition of buoyancy for clear air without condensation, we find that
 
 ```math
-b★ = (g / 𝒯ₛ) [θ★ (1 + δ qₛ) + δ 𝒯ₛ q★] ,
+b★ = (g / 𝒯ₛ) [θ★ (1 + δ qⁱⁿ) + δ 𝒯ₛ q★] ,
 ```
 where ``𝒯ₛ`` is the virtual temperature at the surface, and ``δ = Rᵛ / Rᵈ - 1``,
 where ``Rᵛ`` is the molar mass of water vapor and ``Rᵈ`` is the molar mass of dry air.
@@ -405,12 +405,12 @@ in terms of ``b★`` and additionally the Von Karman constant ``ϰ``,
 L★ = u★² / ϰ b★ .
 ```
 """
-@inline function buoyancy_scale(θ★, q★, ℂᵃᵗ, Tₛ, qₛ, g)
-    𝒯ₛ = AtmosphericThermodynamics.virtual_temperature(ℂᵃᵗ, Tₛ, qₛ)
+@inline function buoyancy_scale(θ★, q★, ℂᵃᵗ, Tⁱⁿ, qⁱⁿ, g)
+    𝒯ₛ = AtmosphericThermodynamics.virtual_temperature(ℂᵃᵗ, Tⁱⁿ, qⁱⁿ)
     ε  = AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
     δ  = ε - 1 # typically equal to 0.608
 
-    b★ = g / 𝒯ₛ * (θ★ * (1 + δ * qₛ) + δ * 𝒯ₛ * q★)
+    b★ = g / 𝒯ₛ * (θ★ * (1 + δ * qⁱⁿ) + δ * 𝒯ₛ * q★)
 
     return b★
 end

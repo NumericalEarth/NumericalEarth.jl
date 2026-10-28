@@ -341,7 +341,7 @@ Consume atmosphere-land turbulent fluxes and populate the
 and `liquid_water_precipitation_flux` accumulators declared by the land closures.
 
 * `surface_energy_flux`        ← `𝒬ᵀ + 𝒬ᵛ`, positive upward (out of the slab), or the
-                                 skin→bulk conduction `−Λᵍʳᵒ (Tᵍʳᵒ − Tˡᵃ)` when the interface
+                                 skin→bulk conduction `−Λᵍʳⁿᵈ (Tᵍʳⁿᵈ − Tˡᵃ)` when the interface
                                  temperature formulation closes its own energy balance.
 * `precipitation`              ← rainfall + condensation, positive into the slab.
 * `evaporation`                ← positive part of upward vapor flux.

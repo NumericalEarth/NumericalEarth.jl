@@ -35,18 +35,18 @@ end
 @testset "Jarvis stomatal conductance" begin
     for FT in (Float32, Float64)
         jarv = JarvisConductance(FT)
-        Tˡᵉᵃ = FT(298.15)
-        gs = @inferred stomatal_conductance(jarv, FT(2e-4), FT(1000), Tˡᵉᵃ, FT(1))
+        Tˡᵉᵃᶠ = FT(298.15)
+        gs = @inferred stomatal_conductance(jarv, FT(2e-4), FT(1000), Tˡᵉᵃᶠ, FT(1))
         @test gs isa FT && gs > 0
 
-        gₛ(APAR, VPD, T = Tˡᵉᵃ, β = 1) = stomatal_conductance(jarv, FT(APAR), FT(VPD), FT(T), FT(β))
+        gₛ(APAR, VPD, T = Tˡᵉᵃᶠ, β = 1) = stomatal_conductance(jarv, FT(APAR), FT(VPD), FT(T), FT(β))
         T₀ = jarv.optimal_temperature
         @test gₛ(1e-3, 1000) > gₛ(1e-5, 1000)
         @test gₛ(1e6, 1000) ≈ gₛ(1e5, 1000) rtol=1e-3
         @test gₛ(1e-3, 3000) < gₛ(1e-3, 1000)
         @test gₛ(1e-3, 1000, T₀) > max(gₛ(1e-3, 1000, T₀ + 15), gₛ(1e-3, 1000, T₀ - 15))
-        @test gₛ(1e-3, 1000, Tˡᵉᵃ, 0.5) ≈ gₛ(1e-3, 1000) / 2
-        @test gₛ(1e-3, 1000, Tˡᵉᵃ, 0) == 0
+        @test gₛ(1e-3, 1000, Tˡᵉᵃᶠ, 0.5) ≈ gₛ(1e-3, 1000) / 2
+        @test gₛ(1e-3, 1000, Tˡᵉᵃᶠ, 0) == 0
     end
 end
 

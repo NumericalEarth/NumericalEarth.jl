@@ -55,11 +55,11 @@ roughness-Reynolds-number law,
 
 ```math
 wᵘᶜᵃⁿ = Cₛ u★, \\qquad Cₛ = Cₛᵇ W + Cₛᵈ (1 - W), \\qquad W = e^{-(\\lambda^{\\mathrm{leaf}} + \\lambda^{\\mathrm{stem}})},
-\\qquad Cₛᵇ = \\frac{ϰ}{0.13} \\left(\\frac{ℓᵍʳᵒ u★}{ν}\\right)^{-0.45},
+\\qquad Cₛᵇ = \\frac{ϰ}{0.13} \\left(\\frac{ℓᵍʳⁿᵈ u★}{ν}\\right)^{-0.45},
 ```
 
 with the dense-canopy coefficient `Cₛᵈ` (`dense_canopy_coefficient`, 0.004 after
-Dickinson et al. 1993), the ground roughness length `ℓᵍʳᵒ` (`ground_roughness_length`, m),
+Dickinson et al. 1993), the ground roughness length `ℓᵍʳⁿᵈ` (`ground_roughness_length`, m),
 the kinematic viscosity of air `ν` (`kinematic_viscosity`, m² s⁻¹), and the von Kármán
 constant `ϰ = 0.4` (CLM5 Tech Note Eqs. 2.5.116–2.5.121). Unlike
 [`AreaIndexUndercanopyVelocity`](@ref), the sparse-canopy limit is closed physically
@@ -71,7 +71,7 @@ using NumericalEarth
 FrictionVelocityUndercanopyVelocity()
 
 # output
-FrictionVelocityUndercanopyVelocity(Cₛᵈ=0.004, ℓᵍʳᵒ=0.01, λˢᵗᵉᵐ=0.0)
+FrictionVelocityUndercanopyVelocity(Cₛᵈ=0.004, ℓᵍʳⁿᵈ=0.01, λˢᵗᵉᵐ=0.0)
 ```
 """
 struct FrictionVelocityUndercanopyVelocity{FT}
@@ -98,7 +98,7 @@ Base.show(io::IO, u::AreaIndexUndercanopyVelocity) = print(io, summary(u))
 
 Base.summary(u::FrictionVelocityUndercanopyVelocity) =
     string("FrictionVelocityUndercanopyVelocity(Cₛᵈ=", prettysummary(u.dense_canopy_coefficient),
-           ", ℓᵍʳᵒ=", prettysummary(u.ground_roughness_length),
+           ", ℓᵍʳⁿᵈ=", prettysummary(u.ground_roughness_length),
            ", λˢᵗᵉᵐ=", prettysummary(u.stem_area_index), ")")
 Base.show(io::IO, u::FrictionVelocityUndercanopyVelocity) = print(io, summary(u))
 
@@ -118,13 +118,13 @@ end
     FT   = typeof(λˡᵉᵃᶠ)
     W    = exp(-(λˡᵉᵃᶠ + convert(FT, u.stem_area_index)))
     Cᵈ   = convert(FT, u.dense_canopy_coefficient)
-    ℓᵍʳᵒ = convert(FT, u.ground_roughness_length)
+    ℓᵍʳⁿᵈ = convert(FT, u.ground_roughness_length)
     ν    = convert(FT, u.kinematic_viscosity)
     ϰ    = convert(FT, 2//5)
     a    = convert(FT, 13//100)
     n    = convert(FT, 9//20)
     # Cₛᵇ u★ grouped as u★^(1−n) so u★ → 0 gives 0 rather than Inf·0.
-    wᵇ = (ϰ / a) * (ℓᵍʳᵒ / ν)^(-n) * u★^(1 - n)
+    wᵇ = (ϰ / a) * (ℓᵍʳⁿᵈ / ν)^(-n) * u★^(1 - n)
     return W * wᵇ + (1 - W) * Cᵈ * u★
 end
 
@@ -182,14 +182,14 @@ Bulk resistance of the ground surface to evaporation, in series with the underca
 on both ground vapor branches of a [`CanopyInterface`](@ref),
 
 ```math
-rᵍʳᵒ = \\frac{1}{Cᵍʳᵒ u★},
+rᵍʳⁿᵈ = \\frac{1}{Cᵍʳⁿᵈ u★},
 ```
 
-with a bulk transfer coefficient `Cᵍʳᵒ` and the friction velocity `u★` standing in for the
+with a bulk transfer coefficient `Cᵍʳⁿᵈ` and the friction velocity `u★` standing in for the
 wind speed near the ground. It lumps whatever covers the soil (plant litter, mulch, a
-crust) into one parameter. The default `Cᵍʳᵒ = 0.00633` reproduces the litter resistance of
+crust) into one parameter. The default `Cᵍʳⁿᵈ = 0.00633` reproduces the litter resistance of
 [Sakaguchi and Zeng (2009)](@cite sakaguchi2009), Eq. 13, at unit litter area index,
-`Cᵍʳᵒ = 0.004 / (1 - e^{-1})`. A `CanopyInterface` also takes a `Number`, a constant
+`Cᵍʳⁿᵈ = 0.004 / (1 - e^{-1})`. A `CanopyInterface` also takes a `Number`, a constant
 resistance in s m⁻¹.
 
 ```jldoctest
@@ -227,29 +227,29 @@ Two-source canopy + ground surface with a canopy-air node, for forests: tall veg
 whose crowns enclose a canopy air space with the ground as a second source beneath it.
 Low vegetation (grass, crops) has no separable canopy air layer and belongs to a
 single-source [`CanopyConductanceHumidity`](@ref) over the ground surface. Solves the
-leaf temperature `Tˡᵉᵃ`, the ground temperature `Tᵍʳᵒ`, and the canopy-air node
+leaf temperature `Tˡᵉᵃᶠ`, the ground temperature `Tᵍʳⁿᵈ`, and the canopy-air node
 `(Tᵃᶜᵃⁿ, qᵃᶜᵃⁿ)` inside the Monin–Obukhov fixed point (diagnostic node, the default),
 or couples to the land component's prognostic canopy-air reservoir. Pass it as the interface state
 formulation to solve temperature and specific humidity together. Over an
-[`InterceptingHydrology`](@ref) the wetted fraction `fʷᵉᵗ = (Mᶜᵃⁿ/Mᶜᵃⁿ⁺)^{2/3}` of the leaf
+[`InterceptingHydrology`](@ref) the wetted fraction `fʷᵉᵗ = (Mᶜⁿᵖʸ/Mᶜⁿᵖʸ⁺)^{2/3}` of the leaf
 ([Deardorff, 1978](@cite deardorff1978)) evaporates intercepted water at the potential
-rate through the leaf boundary layer alone; a dry canopy (`Mᶜᵃⁿ = 0`) has no wet branch.
+rate through the leaf boundary layer alone; a dry canopy (`Mᶜⁿᵖʸ = 0`) has no wet branch.
 
 Fields:
 - `soil_humidity`   : the soil vapor branch (a [`DryLayerHumidity`](@ref)).
 - `canopy_humidity` : the leaf vapor branch (a [`CanopyConductanceHumidity`](@ref)).
-- `ground_heat_flux` : ground↔bulk conduction `Λᵍʳᵒ = κᵀ/ℓᵀ` (a [`SoilConductiveFlux`](@ref)).
+- `ground_heat_flux` : ground↔bulk conduction `Λᵍʳⁿᵈ = κᵀ/ℓᵀ` (a [`SoilConductiveFlux`](@ref)).
 - `leaf_albedo`, `ground_albedo` : broadband shortwave albedos. A `Number`, or a
   `Field{Center, Center, Nothing}` of per-cell values (see [`atmosphere_land_interface`](@ref)).
-- `maximum_canopy_emissivity`, `ground_emissivity` : longwave emissivities (`ϵˡᵉᵃ = ϵᵐᵃˣ(1 − e^{−λˡᵉᵃᶠ})`),
+- `maximum_canopy_emissivity`, `ground_emissivity` : longwave emissivities (`ϵˡᵉᵃᶠ = ϵᵐᵃˣ(1 − e^{−λˡᵉᵃᶠ})`),
   each a `Number` or a per-cell `Field`.
 - `extinction`, `clumping` : Beer–Lambert extinction `K` and foliage clumping index `Ω` of the
   shortwave transmittance `e^{−KΩL}` (`Ω = 1` random foliage, `Ω < 1` foliage gathered into
   crowns that leave gaps).
 - `leaf_boundary_layer_velocity` : constant per-leaf transfer velocity through the leaf
-  boundary layer `wˡᵇˡ` (m s⁻¹) → sensible `gˡᵉᵃᵀ = ρcᵖᵐ·λˡᵉᵃᶠ·wˡᵇˡ`, vapor `gˡᵇˡ = ρ·λˡᵉᵃᶠ·wˡᵇˡ` (in
+  boundary layer `wˡᵇˡ` (m s⁻¹) → sensible `gˡᵉᵃᶠᵀ = ρcᵖᵐ·λˡᵉᵃᶠ·wˡᵇˡ`, vapor `gˡᵇˡ = ρ·λˡᵉᵃᶠ·wˡᵇˡ` (in
   series with the stomata when dry, alone over the wetted fraction).
-- `undercanopy_transfer_velocity` : ground↔canopy-air transfer velocity `wᵘᶜᵃⁿ` → `gᵍʳᵒᵀ = ρcᵖᵐ·wᵘᶜᵃⁿ`;
+- `undercanopy_transfer_velocity` : ground↔canopy-air transfer velocity `wᵘᶜᵃⁿ` → `gᵍʳⁿᵈᵀ = ρcᵖᵐ·wᵘᶜᵃⁿ`;
   a constant `Number` (m s⁻¹), an [`AreaIndexUndercanopyVelocity`](@ref), or a
   [`FrictionVelocityUndercanopyVelocity`](@ref).
 - `wet_soil_resistance` : soil surface resistance on the moist-soil (vanishing dry layer)
@@ -312,7 +312,7 @@ function CanopyInterface(FT=Oceananigans.defaults.FloatType;
                              canopy_humidity               = CanopyConductanceHumidity(FT),
                              ground_heat_flux              = SoilConductiveFlux(1.5, 0.05),
                              leaf_albedo                   = 0.15,
-                             ground_albedo                 = 0.15,
+                             ground_albedo                 = 0.2,
                              maximum_canopy_emissivity     = 0.98,
                              ground_emissivity             = 0.96,
                              extinction                    = 0.5,
@@ -370,7 +370,7 @@ Adapt.@adapt_structure CanopyInterface
 @inline interface_phase(c::CanopyInterface) = interface_phase(c.soil_humidity)
 @inline ground_conductance(c::CanopyInterface) = ground_conductance(c.ground_heat_flux)
 # The soil branch reads the saturation 𝒮, the canopy branch its stress state, and the
-# canopy water store Mᶜᵃⁿ with its capacity gives the wet fraction fʷᵉᵗ.
+# canopy water store Mᶜⁿᵖʸ with its capacity gives the wet fraction fʷᵉᵗ.
 land_state_accessors(c::CanopyInterface) =
     merge(land_state_accessors(c.soil_humidity),
           land_state_accessors(c.canopy_humidity),
@@ -379,48 +379,49 @@ land_state_accessors(c::CanopyInterface) =
 @inline interface_vegetation_state(i, j, grid, c::CanopyInterface, vegetation, time_interpolator) =
     interface_vegetation_state(i, j, grid, c.canopy_humidity, vegetation, time_interpolator)
 
-# Leaf vapor conductance: stomata in series with the leaf boundary layer on the dry
-# fraction, the wet-canopy conductance `gʷᵉᵗ` in parallel. λˡᵉᵃᶠ enters through the
-# arguments: `gᶜᵃⁿ`, `gˡᵇˡ`, and `gʷᵉᵗ` all scale with it, so a leafless canopy has no leaf path.
-@inline function leaf_vapor_conductance(gᶜᵃⁿ, gˡᵇˡ, fʷᵉᵗ, gʷᵉᵗ)
-    gᵈ = ifelse(gᶜᵃⁿ + gˡᵇˡ > 0, gᶜᵃⁿ * gˡᵇˡ / (gᶜᵃⁿ + gˡᵇˡ), zero(gᶜᵃⁿ))
-    return (1 - fʷᵉᵗ) * gᵈ + gʷᵉᵗ
+# Wetted fraction of the canopy, fʷᵉᵗ = (Mᶜⁿᵖʸ/Mᶜⁿᵖʸ⁺)^(2/3) (Deardorff 1978).
+@inline function wetted_fraction(Mᶜⁿᵖʸ, Mᶜⁿᵖʸ⁺)
+    FT = typeof(Mᶜⁿᵖʸ)
+    return ifelse(Mᶜⁿᵖʸ⁺ > 0, min(Mᶜⁿᵖʸ / Mᶜⁿᵖʸ⁺, one(FT))^convert(FT, 2//3), zero(FT))
 end
 
-# Wet-canopy vapor conductance: the wetted fraction fʷᵉᵗ = (Mᶜᵃⁿ/Mᶜᵃⁿ⁺)^(2/3) (Deardorff 1978)
-# of the leaf boundary-layer conductance, capped so the store cannot evaporate more than
-# it holds over the step, Jʷᵉᵗ = gʷᵉᵗ Δq ≤ Mᶜᵃⁿ/Δt. A dry canopy (Mᶜᵃⁿ = 0) has no wet path.
-@inline function wet_canopy_conductance(Ψˡᵃ, gˡᵇˡ, Δq, Δt)
-    FT    = typeof(gˡᵇˡ)
-    Mᶜᵃⁿ  = convert(FT, Ψˡᵃ.canopy_water_storage)
-    Mᶜᵃⁿ⁺ = convert(FT, Ψˡᵃ.canopy_water_capacity)
-    fʷᵉᵗ  = ifelse(Mᶜᵃⁿ⁺ > 0, min(Mᶜᵃⁿ / Mᶜᵃⁿ⁺, one(FT))^convert(FT, 2//3), zero(FT))
-    gʷᵉᵗ  = fʷᵉᵗ * gˡᵇˡ
-    gʷᵉᵗ  = ifelse((Δt > 0) & (Δq > 0), min(gʷᵉᵗ, Mᶜᵃⁿ / (Δt * Δq)), gʷᵉᵗ)
-    return fʷᵉᵗ, gʷᵉᵗ
+# Leaf vapor conductance `gˡᵉᵃᶠᵛ` and its wet-canopy part `gʷᵉᵗ`: stomata in series with
+# the leaf boundary layer on the dry fraction 1 − fʷᵉᵗ, the leaf boundary layer alone on the
+# wet fraction fʷᵉᵗ. The wet path is capped so the store cannot evaporate more than it holds
+# over the step, Jʷᵉᵗ = gʷᵉᵗ Δq ≤ Mᶜⁿᵖʸ/Δt. λˡᵉᵃᶠ enters through `gᶜⁿᵖʸ` and `gˡᵇˡ`, which
+# both scale with it, so a leafless canopy has no leaf path.
+@inline function leaf_vapor_conductance(gᶜⁿᵖʸ, gˡᵇˡ, fʷᵉᵗ, Mᶜⁿᵖʸ, Δq, Δt)
+    gᵈʳʸ = ifelse(gᶜⁿᵖʸ + gˡᵇˡ > 0, gᶜⁿᵖʸ * gˡᵇˡ / (gᶜⁿᵖʸ + gˡᵇˡ), zero(gᶜⁿᵖʸ))
+    gʷᵉᵗ = fʷᵉᵗ * gˡᵇˡ
+    gʷᵉᵗ = ifelse((Δt > 0) & (Δq > 0), min(gʷᵉᵗ, Mᶜⁿᵖʸ / (Δt * Δq)), gʷᵉᵗ)
+    return (1 - fʷᵉᵗ) * gᵈʳʸ + gʷᵉᵗ, gʷᵉᵗ
 end
 
-# Leaf vapor conductance `gˡᵉᵃᵛ`, its wet-canopy part `gʷᵉᵗ`, and the leaf-saturated
-# humidity `qˡᵉᵃ` at the leaf temperature; the stomata and the wet cap see the node
+# Leaf vapor conductance `gˡᵉᵃᶠᵛ`, its wet-canopy part `gʷᵉᵗ`, and the leaf-saturated
+# humidity `qˡᵉᵃᶠ` at the leaf temperature; the stomata and the wet cap see the node
 # humidity `qᵃᶜᵃⁿ`.
-@inline function leaf_vapor_terms(c, Tˡᵉᵃ, qᵃᶜᵃⁿ, gˡᵇˡ, Δt, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
-    gᶜᵃⁿ, qˡᵉᵃ = canopy_conductance_terms(c.canopy_humidity, Tˡᵉᵃ, qᵃᶜᵃⁿ, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
-    fʷᵉᵗ, gʷᵉᵗ = wet_canopy_conductance(Ψˡᵃ, gˡᵇˡ, qˡᵉᵃ - qᵃᶜᵃⁿ, Δt)
-    return leaf_vapor_conductance(gᶜᵃⁿ, gˡᵇˡ, fʷᵉᵗ, gʷᵉᵗ), gʷᵉᵗ, qˡᵉᵃ
+@inline function leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜᵃⁿ, gˡᵇˡ, Δt, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
+    FT = typeof(gˡᵇˡ)
+    gᶜⁿᵖʸ, qˡᵉᵃᶠ = canopy_conductance_terms(c.canopy_humidity, Tˡᵉᵃᶠ, qᵃᶜᵃⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
+    Mᶜⁿᵖʸ  = convert(FT, Ψˡᵃ.canopy_water_storage)
+    Mᶜⁿᵖʸ⁺ = convert(FT, Ψˡᵃ.canopy_water_capacity)
+    fʷᵉᵗ  = wetted_fraction(Mᶜⁿᵖʸ, Mᶜⁿᵖʸ⁺)
+    gˡᵉᵃᶠᵛ, gʷᵉᵗ = leaf_vapor_conductance(gᶜⁿᵖʸ, gˡᵇˡ, fʷᵉᵗ, Mᶜⁿᵖʸ, qˡᵉᵃᶠ - qᵃᶜᵃⁿ, Δt)
+    return gˡᵉᵃᶠᵛ, gʷᵉᵗ, qˡᵉᵃᶠ
 end
 
-# Ground vapor conductance `gᵍʳᵒᵛ`, source humidity `qᵍʳᵒ`, and the source's slope `dqᵍʳᵒ` in the
-# ground temperature `Tᵍʳᵒ`: the dry-layer branch (front humidity qᵉ through Gᵉ in series with the
-# ground-surface + undercanopy path `gᵈᵇʳ`) blended with the saturated-skin branch (qᵍʳᵒ⁺ through gᵍʳᵒᵛ⁺)
+# Ground vapor conductance `gᵍʳⁿᵈᵛ`, source humidity `qᵍʳⁿᵈ`, and the source's slope `dqᵍʳⁿᵈ` in the
+# ground temperature `Tᵍʳⁿᵈ`: the dry-layer branch (front humidity qᵉ through Gᵉ in series with the
+# ground-surface + undercanopy path `gᵈᵇʳ`) blended with the saturated-skin branch (qᵍʳⁿᵈ⁺ through gᵍʳⁿᵈᵛ⁺)
 # by the soil model's weight `fᵈᵇʳ`.
-@inline function soil_vapor_terms(soil, Tᵍʳᵒ, gᵍʳᵒᵛ⁺, gᵈᵇʳ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
-    Gᵉ, qᵉ, fᵈᵇʳ, qᵍʳᵒ⁺, dqᵉ, dqᵍʳᵒ⁺ = dry_layer_terms(soil, Tᵍʳᵒ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
+@inline function soil_vapor_terms(soil, Tᵍʳⁿᵈ, gᵍʳⁿᵈᵛ⁺, gᵈᵇʳ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, ℙₐ)
+    Gᵉ, qᵉ, fᵈᵇʳ, qᵍʳⁿᵈ⁺, dqᵉ, dqᵍʳⁿᵈ⁺ = dry_layer_terms(soil, Tᵍʳⁿᵈ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, ℙₐ)
     Gᵉ = ifelse(gᵈᵇʳ + Gᵉ > 0, Gᵉ * gᵈᵇʳ / (gᵈᵇʳ + Gᵉ), zero(Gᵉ))
-    gᵍʳᵒᵛ = fᵈᵇʳ * Gᵉ + (1 - fᵈᵇʳ) * gᵍʳᵒᵛ⁺
-    blended = gᵍʳᵒᵛ > eps(eltype(Ψₛ))
-    qᵍʳᵒ  = ifelse(blended, (fᵈᵇʳ * Gᵉ * qᵉ  + (1 - fᵈᵇʳ) * gᵍʳᵒᵛ⁺ * qᵍʳᵒ⁺)  / gᵍʳᵒᵛ, qᵍʳᵒ⁺)
-    dqᵍʳᵒ = ifelse(blended, (fᵈᵇʳ * Gᵉ * dqᵉ + (1 - fᵈᵇʳ) * gᵍʳᵒᵛ⁺ * dqᵍʳᵒ⁺) / gᵍʳᵒᵛ, dqᵍʳᵒ⁺)
-    return gᵍʳᵒᵛ, qᵍʳᵒ, dqᵍʳᵒ
+    gᵍʳⁿᵈᵛ = fᵈᵇʳ * Gᵉ + (1 - fᵈᵇʳ) * gᵍʳⁿᵈᵛ⁺
+    blended = gᵍʳⁿᵈᵛ > eps(eltype(Ψⁱⁿ))
+    qᵍʳⁿᵈ  = ifelse(blended, (fᵈᵇʳ * Gᵉ * qᵉ  + (1 - fᵈᵇʳ) * gᵍʳⁿᵈᵛ⁺ * qᵍʳⁿᵈ⁺)  / gᵍʳⁿᵈᵛ, qᵍʳⁿᵈ⁺)
+    dqᵍʳⁿᵈ = ifelse(blended, (fᵈᵇʳ * Gᵉ * dqᵉ + (1 - fᵈᵇʳ) * gᵍʳⁿᵈᵛ⁺ * dqᵍʳⁿᵈ⁺) / gᵍʳⁿᵈᵛ, dqᵍʳⁿᵈ⁺)
+    return gᵍʳⁿᵈᵛ, qᵍʳⁿᵈ, dqᵍʳⁿᵈ
 end
 
 # Fraction of the start-of-step node value surviving in the step mean of the node
@@ -441,10 +442,10 @@ end
 end
 
 # Longwave reaching the ground under the canopy, and leaving it upward.
-@inline function ground_longwave(downwelling_longwave, Tˡᵉᵃ, Tᵍʳᵒ, ϵˡᵉᵃ, ϵᵍʳᵒ, σ)
-    ground_downwelling_longwave = (1 - ϵˡᵉᵃ) * downwelling_longwave + ϵˡᵉᵃ * σ * Tˡᵉᵃ^4
-    ℐꜛˡʷᵍʳᵒ = ϵᵍʳᵒ * σ * Tᵍʳᵒ^4 + (1 - ϵᵍʳᵒ) * ground_downwelling_longwave
-    return ground_downwelling_longwave, ℐꜛˡʷᵍʳᵒ
+@inline function ground_longwave(downwelling_longwave, Tˡᵉᵃᶠ, Tᵍʳⁿᵈ, ϵˡᵉᵃᶠ, ϵᵍʳⁿᵈ, σ)
+    ground_downwelling_longwave = (1 - ϵˡᵉᵃᶠ) * downwelling_longwave + ϵˡᵉᵃᶠ * σ * Tˡᵉᵃᶠ^4
+    ℐꜛˡʷᵍʳⁿᵈ = ϵᵍʳⁿᵈ * σ * Tᵍʳⁿᵈ^4 + (1 - ϵᵍʳⁿᵈ) * ground_downwelling_longwave
+    return ground_downwelling_longwave, ℐꜛˡʷᵍʳⁿᵈ
 end
 
 """
@@ -473,9 +474,9 @@ and sources. `Δt = 0` computes diagnostic equilibrium.
 Without canopy-air storage, the node balances its heat and vapor fluxes instantaneously.
 The leaf-conductance derivative is evaluated by a one-sided difference.
 """
-@inline function canopy_air_space_solve(c::CanopyInterface, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, Δt)
+@inline function canopy_air_space_solve(c::CanopyInterface, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, Δt)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
-    FT  = eltype(Ψₛ)
+    FT  = eltype(Ψⁱⁿ)
     pᵃᵗ = Ψₐ.p
     qᵃᵗ = Ψₐ.q
     Tᵃᵗ = Ψₐ.T
@@ -485,127 +486,127 @@ The leaf-conductance derivative is evaluated by a one-sided difference.
     θᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
     Tˡᵃ = Ψˡᵃ.T
     λˡᵉᵃᶠ = Ψˡᵃ.leaf_area_index
-    u★  = Ψₛ.fluxes.u★
+    u★  = Ψⁱⁿ.fluxes.u★
 
-    gᵃᵀ = aerodynamic_heat_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
-    gᵃᵛ = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
+    gᵃᵀ = aerodynamic_heat_conductance(Ψⁱⁿ, Ψₐ, ℂᵃᵗ)
+    gᵃᵛ = aerodynamic_vapor_conductance(Ψⁱⁿ, Ψₐ, ℂᵃᵗ)
 
     # Land surface velocities are zero, so the surface wind speed is the atmospheric one.
     ΔU    = sqrt(Ψₐ.u^2 + Ψₐ.v^2)
     wᵘᶜᵃⁿ = undercanopy_transfer_velocity(c.undercanopy_transfer_velocity, λˡᵉᵃᶠ, ΔU, u★)
-    gˡᵉᵃᵀ = ρᵃᵗ * cᵖᵐ * λˡᵉᵃᶠ * c.leaf_boundary_layer_velocity
+    gˡᵉᵃᶠᵀ = ρᵃᵗ * cᵖᵐ * λˡᵉᵃᶠ * c.leaf_boundary_layer_velocity
     gˡᵇˡ  = ρᵃᵗ * λˡᵉᵃᶠ * c.leaf_boundary_layer_velocity
-    gᵍʳᵒᵀ = ρᵃᵗ * cᵖᵐ * wᵘᶜᵃⁿ
-    # Ground vapor path: the ground-surface resistance `rᵍʳᵒ` and, on the moist-soil branch, the soil
+    gᵍʳⁿᵈᵀ = ρᵃᵗ * cᵖᵐ * wᵘᶜᵃⁿ
+    # Ground vapor path: the ground-surface resistance `rᵍʳⁿᵈ` and, on the moist-soil branch, the soil
     # surface resistance `rˢᵒⁱ` in series with the undercanopy path (Sakaguchi & Zeng 2009).
-    rᵍʳᵒ   = ground_surface_resistance(c.ground_surface_resistance, u★)
+    rᵍʳⁿᵈ   = ground_surface_resistance(c.ground_surface_resistance, u★)
     rˢᵒⁱ   = soil_surface_resistance(c.wet_soil_resistance, Ψˡᵃ.𝒮)
-    gᵈᵇʳ   = ρᵃᵗ * wᵘᶜᵃⁿ / (1 + wᵘᶜᵃⁿ * rᵍʳᵒ)
-    gᵍʳᵒᵛ⁺ = ρᵃᵗ * wᵘᶜᵃⁿ / (1 + wᵘᶜᵃⁿ * (rᵍʳᵒ + rˢᵒⁱ))
-    Λᵍʳᵒ   = convert(FT, ground_conductance(c.ground_heat_flux))
+    gᵈᵇʳ   = ρᵃᵗ * wᵘᶜᵃⁿ / (1 + wᵘᶜᵃⁿ * rᵍʳⁿᵈ)
+    gᵍʳⁿᵈᵛ⁺ = ρᵃᵗ * wᵘᶜᵃⁿ / (1 + wᵘᶜᵃⁿ * (rᵍʳⁿᵈ + rˢᵒⁱ))
+    Λᵍʳⁿᵈ   = convert(FT, ground_conductance(c.ground_heat_flux))
 
     # Canopy-air heat and vapor capacities (zero for a massless node) and the
     # start-of-step node.
     hᵃᶜᵃⁿ = convert(FT, canopy_air_depth(Ψˡᵃ.surface_storage))
     Cᵀ    = ρᵃᵗ * cᵖᵐ * hᵃᶜᵃⁿ
     Cᵛ    = ρᵃᵗ * hᵃᶜᵃⁿ
-    T⁻    = Ψₛ.temperature
-    q⁻    = Ψₛ.specific_humidity
+    T⁻    = Ψⁱⁿ.temperature
+    q⁻    = Ψⁱⁿ.specific_humidity
 
     # Shortwave split and longwave emissivities (broadband), on downwelling magnitudes.
     σ = Ψᵣ.σ
     downwelling_shortwave = - Ψᵣ.ℐꜜˢʷ
     downwelling_longwave  = - Ψᵣ.ℐꜜˡʷ
-    αˡᵉᵃ = convert(FT, c.leaf_albedo)
-    αᵍʳᵒ = convert(FT, c.ground_albedo)
-    ϵˡᵉᵃ = convert(FT, c.maximum_canopy_emissivity) * (1 - exp(-λˡᵉᵃᶠ))
-    ϵᵍʳᵒ = convert(FT, c.ground_emissivity)
+    αˡᵉᵃᶠ = convert(FT, c.leaf_albedo)
+    αᵍʳⁿᵈ = convert(FT, c.ground_albedo)
+    ϵˡᵉᵃᶠ = convert(FT, c.maximum_canopy_emissivity) * (1 - exp(-λˡᵉᵃᶠ))
+    ϵᵍʳⁿᵈ = convert(FT, c.ground_emissivity)
     transmittance = canopy_transmittance(c.extinction, c.clumping, λˡᵉᵃᶠ)
-    leaf_absorbed_shortwave   = (1 - αˡᵉᵃ) * (1 - transmittance) * downwelling_shortwave
-    ground_absorbed_shortwave = transmittance * (1 - αᵍʳᵒ) * downwelling_shortwave
-    effective_albedo = (1 - transmittance) * αˡᵉᵃ + transmittance * αᵍʳᵒ
+    leaf_absorbed_shortwave   = (1 - αˡᵉᵃᶠ) * (1 - transmittance) * downwelling_shortwave
+    ground_absorbed_shortwave = transmittance * (1 - αᵍʳⁿᵈ) * downwelling_shortwave
+    effective_albedo = (1 - transmittance) * αˡᵉᵃᶠ + transmittance * αᵍʳⁿᵈ
 
     # Thermal node: its conductances are fixed through the temperature iteration. The node is the
     # equilibrium mean of its sources blended with the start-of-step node by the memory `m`,
     # so its sensitivity to source `i` is (1 − m) gᵢ/Σg.
-    Σgᵀ = gᵃᵀ + gˡᵉᵃᵀ + gᵍʳᵒᵀ
+    Σgᵀ = gᵃᵀ + gˡᵉᵃᶠᵀ + gᵍʳⁿᵈᵀ
     mᵀ  = node_memory(Σgᵀ, Cᵀ, Δt)
-    ∂Tᵃᶜᵃⁿ∂Tˡᵉᵃ = (1 - mᵀ) * gˡᵉᵃᵀ / max(Σgᵀ, eps(FT))
-    ∂Tᵃᶜᵃⁿ∂Tᵍʳᵒ = (1 - mᵀ) * gᵍʳᵒᵀ / max(Σgᵀ, eps(FT))
+    ∂Tᵃᶜᵃⁿ∂Tˡᵉᵃᶠ = (1 - mᵀ) * gˡᵉᵃᶠᵀ / max(Σgᵀ, eps(FT))
+    ∂Tᵃᶜᵃⁿ∂Tᵍʳⁿᵈ = (1 - mᵀ) * gᵍʳⁿᵈᵀ / max(Σgᵀ, eps(FT))
 
-    Tˡᵉᵃ  = Tˡᵃ
-    Tᵍʳᵒ  = Tˡᵃ
+    Tˡᵉᵃᶠ  = Tˡᵃ
+    Tᵍʳⁿᵈ  = Tˡᵃ
     Tᵃᶜᵃⁿ = T⁻
     qᵃᶜᵃⁿ = q⁻
     maximum_temperature_step = convert(FT, 25)
 
     for _ in 1:c.inner_iterations
-        gˡᵉᵃᵛ, gʷᵉᵗ, qˡᵉᵃ = leaf_vapor_terms(c, Tˡᵉᵃ, qᵃᶜᵃⁿ, gˡᵇˡ, Δt, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
+        gˡᵉᵃᶠᵛ, gʷᵉᵗ, qˡᵉᵃᶠ = leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜᵃⁿ, gˡᵇˡ, Δt, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
         # The leaf vapor conductance depends on the leaf temperature through the stomata and the
         # wet-canopy cap; its slope is a one-sided difference at the same node humidity.
-        δT = sqrt(eps(FT)) * Tˡᵉᵃ
-        gˡᵉᵃᵛ⁺, _, _ = leaf_vapor_terms(c, Tˡᵉᵃ + δT, qᵃᶜᵃⁿ, gˡᵇˡ, Δt, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
-        ∂gˡᵉᵃᵛ∂Tˡᵉᵃ  = (gˡᵉᵃᵛ⁺ - gˡᵉᵃᵛ) / δT
-        gᵍʳᵒᵛ, qᵍʳᵒ, dqᵍʳᵒ = soil_vapor_terms(c.soil_humidity, Tᵍʳᵒ, gᵍʳᵒᵛ⁺, gᵈᵇʳ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
+        δT = sqrt(eps(FT)) * Tˡᵉᵃᶠ
+        gˡᵉᵃᶠᵛ⁺, _, _ = leaf_vapor_terms(c, Tˡᵉᵃᶠ + δT, qᵃᶜᵃⁿ, gˡᵇˡ, Δt, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
+        ∂gˡᵉᵃᶠᵛ∂Tˡᵉᵃᶠ  = (gˡᵉᵃᶠᵛ⁺ - gˡᵉᵃᶠᵛ) / δT
+        gᵍʳⁿᵈᵛ, qᵍʳⁿᵈ, dqᵍʳⁿᵈ = soil_vapor_terms(c.soil_humidity, Tᵍʳⁿᵈ, gᵍʳⁿᵈᵛ⁺, gᵈᵇʳ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, ℙₐ)
 
-        Σgᵛ = gᵃᵛ + gˡᵉᵃᵛ + gᵍʳᵒᵛ
+        Σgᵛ = gᵃᵛ + gˡᵉᵃᶠᵛ + gᵍʳⁿᵈᵛ
         mᵛ  = node_memory(Σgᵛ, Cᵛ, Δt)
-        Tᵃᶜᵃⁿ, _ = canopy_air_node(T⁻, (gᵍʳᵒᵀ, gˡᵉᵃᵀ, gᵃᵀ), (Tᵍʳᵒ, Tˡᵉᵃ, θᵃᵗ), mᵀ)
-        qᵃᶜᵃⁿ, equilibrium_humidity = canopy_air_node(q⁻, (gᵍʳᵒᵛ, gˡᵉᵃᵛ, gᵃᵛ), (qᵍʳᵒ, qˡᵉᵃ, qᵃᵗ), mᵛ)
-        ∂qᵃᶜᵃⁿ∂qˡᵉᵃ = (1 - mᵛ) * gˡᵉᵃᵛ / max(Σgᵛ, eps(FT))
-        ∂qᵃᶜᵃⁿ∂qᵍʳᵒ = (1 - mᵛ) * gᵍʳᵒᵛ / max(Σgᵛ, eps(FT))
-        ∂qᵃᶜᵃⁿ∂gˡᵉᵃᵛ = (1 - mᵛ) * (qˡᵉᵃ - equilibrium_humidity) / max(Σgᵛ, eps(FT))
+        Tᵃᶜᵃⁿ, _ = canopy_air_node(T⁻, (gᵍʳⁿᵈᵀ, gˡᵉᵃᶠᵀ, gᵃᵀ), (Tᵍʳⁿᵈ, Tˡᵉᵃᶠ, θᵃᵗ), mᵀ)
+        qᵃᶜᵃⁿ, equilibrium_humidity = canopy_air_node(q⁻, (gᵍʳⁿᵈᵛ, gˡᵉᵃᶠᵛ, gᵃᵛ), (qᵍʳⁿᵈ, qˡᵉᵃᶠ, qᵃᵗ), mᵛ)
+        ∂qᵃᶜᵃⁿ∂qˡᵉᵃᶠ = (1 - mᵛ) * gˡᵉᵃᶠᵛ / max(Σgᵛ, eps(FT))
+        ∂qᵃᶜᵃⁿ∂qᵍʳⁿᵈ = (1 - mᵛ) * gᵍʳⁿᵈᵛ / max(Σgᵛ, eps(FT))
+        ∂qᵃᶜᵃⁿ∂gˡᵉᵃᶠᵛ = (1 - mᵛ) * (qˡᵉᵃᶠ - equilibrium_humidity) / max(Σgᵛ, eps(FT))
 
-        ground_downwelling_longwave, ℐꜛˡʷᵍʳᵒ = ground_longwave(downwelling_longwave, Tˡᵉᵃ, Tᵍʳᵒ, ϵˡᵉᵃ, ϵᵍʳᵒ, σ)
-        leaf_net_longwave   = ϵˡᵉᵃ * (downwelling_longwave + ℐꜛˡʷᵍʳᵒ) - 2 * ϵˡᵉᵃ * σ * Tˡᵉᵃ^4
-        ground_net_longwave = ϵᵍʳᵒ * (ground_downwelling_longwave - σ * Tᵍʳᵒ^4)
-        dqˡᵉᵃ = saturation_humidity_slope(ℂᵃᵗ, Tˡᵉᵃ, pᵃᵗ, c.canopy_humidity.phase, qˡᵉᵃ)
+        ground_downwelling_longwave, ℐꜛˡʷᵍʳⁿᵈ = ground_longwave(downwelling_longwave, Tˡᵉᵃᶠ, Tᵍʳⁿᵈ, ϵˡᵉᵃᶠ, ϵᵍʳⁿᵈ, σ)
+        leaf_net_longwave   = ϵˡᵉᵃᶠ * (downwelling_longwave + ℐꜛˡʷᵍʳⁿᵈ) - 2 * ϵˡᵉᵃᶠ * σ * Tˡᵉᵃᶠ^4
+        ground_net_longwave = ϵᵍʳⁿᵈ * (ground_downwelling_longwave - σ * Tᵍʳⁿᵈ^4)
+        dqˡᵉᵃᶠ = saturation_humidity_slope(ℂᵃᵗ, Tˡᵉᵃᶠ, pᵃᵗ, c.canopy_humidity.phase, qˡᵉᵃᶠ)
 
         # Leaf and ground energy residuals and their Jacobian, including each balance's
         # dependence on the other surface temperature through the node and the longwave exchange.
-        Rˡᵉᵃ = leaf_absorbed_shortwave + leaf_net_longwave - gˡᵉᵃᵀ * (Tˡᵉᵃ - Tᵃᶜᵃⁿ) - ℒ * gˡᵉᵃᵛ * (qˡᵉᵃ - qᵃᶜᵃⁿ)
-        Rᵍʳᵒ = ground_absorbed_shortwave + ground_net_longwave - gᵍʳᵒᵀ * (Tᵍʳᵒ - Tᵃᶜᵃⁿ) - ℒ * gᵍʳᵒᵛ * (qᵍʳᵒ - qᵃᶜᵃⁿ) - Λᵍʳᵒ * (Tᵍʳᵒ - Tˡᵃ)
-        ∂Rˡᵉᵃ∂Tˡᵉᵃ = 4 * ϵˡᵉᵃ * σ * Tˡᵉᵃ^3 * (ϵˡᵉᵃ * (1 - ϵᵍʳᵒ) - 2) - gˡᵉᵃᵀ * (1 - ∂Tᵃᶜᵃⁿ∂Tˡᵉᵃ) - ℒ * gˡᵉᵃᵛ * (1 - ∂qᵃᶜᵃⁿ∂qˡᵉᵃ) * dqˡᵉᵃ -
-                       ℒ * ∂gˡᵉᵃᵛ∂Tˡᵉᵃ * (qˡᵉᵃ - qᵃᶜᵃⁿ - gˡᵉᵃᵛ * ∂qᵃᶜᵃⁿ∂gˡᵉᵃᵛ)
-        ∂Rˡᵉᵃ∂Tᵍʳᵒ = 4 * ϵˡᵉᵃ * ϵᵍʳᵒ * σ * Tᵍʳᵒ^3 + gˡᵉᵃᵀ * ∂Tᵃᶜᵃⁿ∂Tᵍʳᵒ + ℒ * gˡᵉᵃᵛ * ∂qᵃᶜᵃⁿ∂qᵍʳᵒ * dqᵍʳᵒ
-        ∂Rᵍʳᵒ∂Tˡᵉᵃ = 4 * ϵᵍʳᵒ * ϵˡᵉᵃ * σ * Tˡᵉᵃ^3 + gᵍʳᵒᵀ * ∂Tᵃᶜᵃⁿ∂Tˡᵉᵃ + ℒ * gᵍʳᵒᵛ * ∂qᵃᶜᵃⁿ∂qˡᵉᵃ * dqˡᵉᵃ +
-                    ℒ * gᵍʳᵒᵛ * ∂qᵃᶜᵃⁿ∂gˡᵉᵃᵛ * ∂gˡᵉᵃᵛ∂Tˡᵉᵃ
-        ∂Rᵍʳᵒ∂Tᵍʳᵒ = -4 * ϵᵍʳᵒ * σ * Tᵍʳᵒ^3 - gᵍʳᵒᵀ * (1 - ∂Tᵃᶜᵃⁿ∂Tᵍʳᵒ) - ℒ * gᵍʳᵒᵛ * (1 - ∂qᵃᶜᵃⁿ∂qᵍʳᵒ) * dqᵍʳᵒ - Λᵍʳᵒ
-        # A canopy-free cell (λˡᵉᵃᶠ = 0) has no leaf balance: Rˡᵉᵃ = ∂Rˡᵉᵃ/∂Tˡᵉᵃ = 0.
-        ∂Rˡᵉᵃ∂Tˡᵉᵃ = ifelse(∂Rˡᵉᵃ∂Tˡᵉᵃ < 0, ∂Rˡᵉᵃ∂Tˡᵉᵃ, -one(FT))
-        determinant = ∂Rˡᵉᵃ∂Tˡᵉᵃ * ∂Rᵍʳᵒ∂Tᵍʳᵒ - ∂Rˡᵉᵃ∂Tᵍʳᵒ * ∂Rᵍʳᵒ∂Tˡᵉᵃ
-        ΔTˡᵉᵃ = (∂Rᵍʳᵒ∂Tᵍʳᵒ * Rˡᵉᵃ - ∂Rˡᵉᵃ∂Tᵍʳᵒ * Rᵍʳᵒ) / determinant
-        ΔTᵍʳᵒ = (∂Rˡᵉᵃ∂Tˡᵉᵃ * Rᵍʳᵒ - ∂Rᵍʳᵒ∂Tˡᵉᵃ * Rˡᵉᵃ) / determinant
-        Tˡᵉᵃ -= clamp(ΔTˡᵉᵃ, -maximum_temperature_step, maximum_temperature_step)
-        Tᵍʳᵒ    -= clamp(ΔTᵍʳᵒ, -maximum_temperature_step, maximum_temperature_step)
+        Rˡᵉᵃᶠ = leaf_absorbed_shortwave + leaf_net_longwave - gˡᵉᵃᶠᵀ * (Tˡᵉᵃᶠ - Tᵃᶜᵃⁿ) - ℒ * gˡᵉᵃᶠᵛ * (qˡᵉᵃᶠ - qᵃᶜᵃⁿ)
+        Rᵍʳⁿᵈ = ground_absorbed_shortwave + ground_net_longwave - gᵍʳⁿᵈᵀ * (Tᵍʳⁿᵈ - Tᵃᶜᵃⁿ) - ℒ * gᵍʳⁿᵈᵛ * (qᵍʳⁿᵈ - qᵃᶜᵃⁿ) - Λᵍʳⁿᵈ * (Tᵍʳⁿᵈ - Tˡᵃ)
+        ∂Rˡᵉᵃᶠ∂Tˡᵉᵃᶠ = 4 * ϵˡᵉᵃᶠ * σ * Tˡᵉᵃᶠ^3 * (ϵˡᵉᵃᶠ * (1 - ϵᵍʳⁿᵈ) - 2) - gˡᵉᵃᶠᵀ * (1 - ∂Tᵃᶜᵃⁿ∂Tˡᵉᵃᶠ) - ℒ * gˡᵉᵃᶠᵛ * (1 - ∂qᵃᶜᵃⁿ∂qˡᵉᵃᶠ) * dqˡᵉᵃᶠ -
+                       ℒ * ∂gˡᵉᵃᶠᵛ∂Tˡᵉᵃᶠ * (qˡᵉᵃᶠ - qᵃᶜᵃⁿ - gˡᵉᵃᶠᵛ * ∂qᵃᶜᵃⁿ∂gˡᵉᵃᶠᵛ)
+        ∂Rˡᵉᵃᶠ∂Tᵍʳⁿᵈ = 4 * ϵˡᵉᵃᶠ * ϵᵍʳⁿᵈ * σ * Tᵍʳⁿᵈ^3 + gˡᵉᵃᶠᵀ * ∂Tᵃᶜᵃⁿ∂Tᵍʳⁿᵈ + ℒ * gˡᵉᵃᶠᵛ * ∂qᵃᶜᵃⁿ∂qᵍʳⁿᵈ * dqᵍʳⁿᵈ
+        ∂Rᵍʳⁿᵈ∂Tˡᵉᵃᶠ = 4 * ϵᵍʳⁿᵈ * ϵˡᵉᵃᶠ * σ * Tˡᵉᵃᶠ^3 + gᵍʳⁿᵈᵀ * ∂Tᵃᶜᵃⁿ∂Tˡᵉᵃᶠ + ℒ * gᵍʳⁿᵈᵛ * ∂qᵃᶜᵃⁿ∂qˡᵉᵃᶠ * dqˡᵉᵃᶠ +
+                    ℒ * gᵍʳⁿᵈᵛ * ∂qᵃᶜᵃⁿ∂gˡᵉᵃᶠᵛ * ∂gˡᵉᵃᶠᵛ∂Tˡᵉᵃᶠ
+        ∂Rᵍʳⁿᵈ∂Tᵍʳⁿᵈ = -4 * ϵᵍʳⁿᵈ * σ * Tᵍʳⁿᵈ^3 - gᵍʳⁿᵈᵀ * (1 - ∂Tᵃᶜᵃⁿ∂Tᵍʳⁿᵈ) - ℒ * gᵍʳⁿᵈᵛ * (1 - ∂qᵃᶜᵃⁿ∂qᵍʳⁿᵈ) * dqᵍʳⁿᵈ - Λᵍʳⁿᵈ
+        # A canopy-free cell (λˡᵉᵃᶠ = 0) has no leaf balance: Rˡᵉᵃᶠ = ∂Rˡᵉᵃᶠ/∂Tˡᵉᵃᶠ = 0.
+        ∂Rˡᵉᵃᶠ∂Tˡᵉᵃᶠ = ifelse(∂Rˡᵉᵃᶠ∂Tˡᵉᵃᶠ < 0, ∂Rˡᵉᵃᶠ∂Tˡᵉᵃᶠ, -one(FT))
+        determinant = ∂Rˡᵉᵃᶠ∂Tˡᵉᵃᶠ * ∂Rᵍʳⁿᵈ∂Tᵍʳⁿᵈ - ∂Rˡᵉᵃᶠ∂Tᵍʳⁿᵈ * ∂Rᵍʳⁿᵈ∂Tˡᵉᵃᶠ
+        ΔTˡᵉᵃᶠ = (∂Rᵍʳⁿᵈ∂Tᵍʳⁿᵈ * Rˡᵉᵃᶠ - ∂Rˡᵉᵃᶠ∂Tᵍʳⁿᵈ * Rᵍʳⁿᵈ) / determinant
+        ΔTᵍʳⁿᵈ = (∂Rˡᵉᵃᶠ∂Tˡᵉᵃᶠ * Rᵍʳⁿᵈ - ∂Rᵍʳⁿᵈ∂Tˡᵉᵃᶠ * Rˡᵉᵃᶠ) / determinant
+        Tˡᵉᵃᶠ -= clamp(ΔTˡᵉᵃᶠ, -maximum_temperature_step, maximum_temperature_step)
+        Tᵍʳⁿᵈ    -= clamp(ΔTᵍʳⁿᵈ, -maximum_temperature_step, maximum_temperature_step)
     end
 
     # The node and the flux partition at the final leaf and ground temperatures.
-    gˡᵉᵃᵛ, gʷᵉᵗ, qˡᵉᵃ = leaf_vapor_terms(c, Tˡᵉᵃ, qᵃᶜᵃⁿ, gˡᵇˡ, Δt, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
-    gᵍʳᵒᵛ, qᵍʳᵒ, _ = soil_vapor_terms(c.soil_humidity, Tᵍʳᵒ, gᵍʳᵒᵛ⁺, gᵈᵇʳ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
-    Σgᵛ = gᵃᵛ + gˡᵉᵃᵛ + gᵍʳᵒᵛ
-    Tᵃᶜᵃⁿ, equilibrium_temperature = canopy_air_node(T⁻, (gᵍʳᵒᵀ, gˡᵉᵃᵀ, gᵃᵀ), (Tᵍʳᵒ, Tˡᵉᵃ, θᵃᵗ), mᵀ)
-    qᵃᶜᵃⁿ, equilibrium_humidity    = canopy_air_node(q⁻, (gᵍʳᵒᵛ, gˡᵉᵃᵛ, gᵃᵛ), (qᵍʳᵒ, qˡᵉᵃ, qᵃᵗ), node_memory(Σgᵛ, Cᵛ, Δt))
+    gˡᵉᵃᶠᵛ, gʷᵉᵗ, qˡᵉᵃᶠ = leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜᵃⁿ, gˡᵇˡ, Δt, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
+    gᵍʳⁿᵈᵛ, qᵍʳⁿᵈ, _ = soil_vapor_terms(c.soil_humidity, Tᵍʳⁿᵈ, gᵍʳⁿᵈᵛ⁺, gᵈᵇʳ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, ℙₐ)
+    Σgᵛ = gᵃᵛ + gˡᵉᵃᶠᵛ + gᵍʳⁿᵈᵛ
+    Tᵃᶜᵃⁿ, equilibrium_temperature = canopy_air_node(T⁻, (gᵍʳⁿᵈᵀ, gˡᵉᵃᶠᵀ, gᵃᵀ), (Tᵍʳⁿᵈ, Tˡᵉᵃᶠ, θᵃᵗ), mᵀ)
+    qᵃᶜᵃⁿ, equilibrium_humidity    = canopy_air_node(q⁻, (gᵍʳⁿᵈᵛ, gˡᵉᵃᶠᵛ, gᵃᵛ), (qᵍʳⁿᵈ, qˡᵉᵃᶠ, qᵃᵗ), node_memory(Σgᵛ, Cᵛ, Δt))
 
     # Effective radiating temperature: σ T⁴ = total upwelling longwave (emission + reflection).
-    _, ℐꜛˡʷᵍʳᵒ = ground_longwave(downwelling_longwave, Tˡᵉᵃ, Tᵍʳᵒ, ϵˡᵉᵃ, ϵᵍʳᵒ, σ)
-    ℐꜛˡʷ = (1 - ϵˡᵉᵃ) * ℐꜛˡʷᵍʳᵒ + ϵˡᵉᵃ * σ * Tˡᵉᵃ^4
+    _, ℐꜛˡʷᵍʳⁿᵈ = ground_longwave(downwelling_longwave, Tˡᵉᵃᶠ, Tᵍʳⁿᵈ, ϵˡᵉᵃᶠ, ϵᵍʳⁿᵈ, σ)
+    ℐꜛˡʷ = (1 - ϵˡᵉᵃᶠ) * ℐꜛˡʷᵍʳⁿᵈ + ϵˡᵉᵃᶠ * σ * Tˡᵉᵃᶠ^4
     effective_temperature = ifelse(σ > 0, (ℐꜛˡʷ / σ)^convert(FT, 1//4), Tᵃᶜᵃⁿ)
 
-    𝒬ᵀˡᵉᵃ = gˡᵉᵃᵀ * (Tˡᵉᵃ - Tᵃᶜᵃⁿ)
-    𝒬ᵀᵍʳᵒ = gᵍʳᵒᵀ * (Tᵍʳᵒ - Tᵃᶜᵃⁿ)
-    𝒬ᵛˡᵉᵃ = ℒ * gˡᵉᵃᵛ * (qˡᵉᵃ - qᵃᶜᵃⁿ)
-    𝒬ᵛᵍʳᵒ = ℒ * gᵍʳᵒᵛ * (qᵍʳᵒ - qᵃᶜᵃⁿ)
-    𝒬ᵍʳᵒ  = Λᵍʳᵒ * (Tᵍʳᵒ - Tˡᵃ)
-    Jʷᵉᵗ  = gʷᵉᵗ * (qˡᵉᵃ - qᵃᶜᵃⁿ)
+    𝒬ᵀˡᵉᵃᶠ = gˡᵉᵃᶠᵀ * (Tˡᵉᵃᶠ - Tᵃᶜᵃⁿ)
+    𝒬ᵀᵍʳⁿᵈ = gᵍʳⁿᵈᵀ * (Tᵍʳⁿᵈ - Tᵃᶜᵃⁿ)
+    𝒬ᵛˡᵉᵃᶠ = ℒ * gˡᵉᵃᶠᵛ * (qˡᵉᵃᶠ - qᵃᶜᵃⁿ)
+    𝒬ᵛᵍʳⁿᵈ = ℒ * gᵍʳⁿᵈᵛ * (qᵍʳⁿᵈ - qᵃᶜᵃⁿ)
+    𝒬ᵍʳⁿᵈ  = Λᵍʳⁿᵈ * (Tᵍʳⁿᵈ - Tˡᵃ)
+    Jʷᵉᵗ  = gʷᵉᵗ * (qˡᵉᵃᶠ - qᵃᶜᵃⁿ)
 
-    return (; Tˡᵉᵃ = convert(FT, Tˡᵉᵃ), Tᵍʳᵒ = convert(FT, Tᵍʳᵒ),
+    return (; Tˡᵉᵃᶠ = convert(FT, Tˡᵉᵃᶠ), Tᵍʳⁿᵈ = convert(FT, Tᵍʳⁿᵈ),
               Tᵃᶜᵃⁿ = convert(FT, Tᵃᶜᵃⁿ), qᵃᶜᵃⁿ = convert(FT, qᵃᶜᵃⁿ),
               effective_temperature = convert(FT, effective_temperature),
               effective_albedo = convert(FT, effective_albedo),
-              𝒬ᵀˡᵉᵃ = convert(FT, 𝒬ᵀˡᵉᵃ), 𝒬ᵀᵍʳᵒ = convert(FT, 𝒬ᵀᵍʳᵒ),
-              𝒬ᵛˡᵉᵃ = convert(FT, 𝒬ᵛˡᵉᵃ), 𝒬ᵛᵍʳᵒ = convert(FT, 𝒬ᵛᵍʳᵒ),
-              𝒬ᵍʳᵒ = convert(FT, 𝒬ᵍʳᵒ), Jʷᵉᵗ = convert(FT, Jʷᵉᵗ), ℒ = convert(FT, ℒ),
+              𝒬ᵀˡᵉᵃᶠ = convert(FT, 𝒬ᵀˡᵉᵃᶠ), 𝒬ᵀᵍʳⁿᵈ = convert(FT, 𝒬ᵀᵍʳⁿᵈ),
+              𝒬ᵛˡᵉᵃᶠ = convert(FT, 𝒬ᵛˡᵉᵃᶠ), 𝒬ᵛᵍʳⁿᵈ = convert(FT, 𝒬ᵛᵍʳⁿᵈ),
+              𝒬ᵍʳⁿᵈ = convert(FT, 𝒬ᵍʳⁿᵈ), Jʷᵉᵗ = convert(FT, Jʷᵉᵗ), ℒ = convert(FT, ℒ),
               Σgᵀ = convert(FT, Σgᵀ), Σgᵛ = convert(FT, Σgᵛ),
               equilibrium_temperature = convert(FT, equilibrium_temperature), equilibrium_humidity = convert(FT, equilibrium_humidity),
               Cᵀ = convert(FT, Cᵀ), Cᵛ = convert(FT, Cᵛ))
@@ -613,16 +614,16 @@ end
 
 # A diagnostic node is re-solved every iterate; one shared solve returns both node values.
 @inline function interface_temperature_and_humidity(c::CanopyInterface,
-                                                    Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ, Δt,
+                                                    Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙⁱⁿ, ℙₐ, ℙᵢ, Δt,
                                                     storage::Nothing = Ψˡᵃ.surface_storage)
-    solution = canopy_air_space_solve(c, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, Δt)
+    solution = canopy_air_space_solve(c, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, Δt)
     return solution.Tᵃᶜᵃⁿ, solution.qᵃᶜᵃⁿ
 end
 
 # A prognostic node is model state, frozen through the fixed point.
 @inline interface_temperature_and_humidity(::CanopyInterface,
-                                           Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ, Δt, storage) =
-    (Ψₛ.temperature, Ψₛ.specific_humidity)
+                                           Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙⁱⁿ, ℙₐ, ℙᵢ, Δt, storage) =
+    (Ψⁱⁿ.temperature, Ψⁱⁿ.specific_humidity)
 
 """
     struct CanopyInterfaceDiagnostics
@@ -633,19 +634,19 @@ temperatures, and the two-source flux partition the land and the radiation read.
 """
 struct CanopyInterfaceDiagnostics{F}
     interface              :: F   # canopy-air node Tᵃᶜᵃⁿ (what MOST sees)
-    canopy                 :: F   # leaf temperature Tˡᵉᵃ
-    ground                 :: F   # ground temperature Tᵍʳᵒ
+    canopy                 :: F   # leaf temperature Tˡᵉᵃᶠ
+    ground                 :: F   # ground temperature Tᵍʳⁿᵈ
     effective              :: F   # blackbody-equivalent radiating temperature Tʳᵃᵈ
     effective_albedo       :: F   # broadband shortwave albedo of the canopy + ground column
-    ground_heat_flux       :: F   # ground→bulk conduction 𝒬ᵍʳᵒ
-    canopy_latent_heat     :: F   # leaf latent heat 𝒬ᵛˡᵉᵃ (transpiration + wet canopy)
-    ground_latent_heat     :: F   # soil evaporation 𝒬ᵛᵍʳᵒ
-    canopy_sensible_heat   :: F   # leaf sensible 𝒬ᵀˡᵉᵃ
-    ground_sensible_heat   :: F   # ground sensible 𝒬ᵀᵍʳᵒ
+    ground_heat_flux       :: F   # ground→bulk conduction 𝒬ᵍʳⁿᵈ
+    canopy_latent_heat     :: F   # leaf latent heat 𝒬ᵛˡᵉᵃᶠ (transpiration + wet canopy)
+    ground_latent_heat     :: F   # soil evaporation 𝒬ᵛᵍʳⁿᵈ
+    canopy_sensible_heat   :: F   # leaf sensible 𝒬ᵀˡᵉᵃᶠ
+    ground_sensible_heat   :: F   # ground sensible 𝒬ᵀᵍʳⁿᵈ
     canopy_evaporation     :: F   # wet-canopy evaporation Jʷᵉᵗ (kg m⁻² s⁻¹, up)
     wet_canopy_latent_heat :: F   # wet-canopy latent heat ℒ·Jʷᵉᵗ (W m⁻², up)
     land_vapor_flux        :: F   # soil evaporation + transpiration, drawn from the land water store
-    transpiration          :: F   # leaf transpiration 𝒬ᵛˡᵉᵃ/ℒ − Jʷᵉᵗ, drawn from the soil
+    transpiration          :: F   # leaf transpiration 𝒬ᵛˡᵉᵃᶠ/ℒ − Jʷᵉᵗ, drawn from the soil
 end
 
 CanopyInterfaceDiagnostics(grid) =

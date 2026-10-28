@@ -42,19 +42,19 @@ canopy_model(arch; kw...) = coupled_land_model(arch; kw...,
         ρhᵃᶜᵃⁿ = AtmosphericThermodynamics.air_density(ℂ, 300.0, 101325.0, 0.008) * 10.0
         Sᵀ = ρhᵃᶜᵃⁿ * AtmosphericThermodynamics.cp_m(ℂ, 0.008) * (scalar(prognostic.temperature) - T⁻) / Δt
         Sᵛ = AtmosphericThermodynamics.latent_heat_vapor(ℂ, 300.0) * ρhᵃᶜᵃⁿ * (scalar(prognostic.specific_humidity) - q⁻) / Δt
-        𝒬ᵀˡᵉᵃ, 𝒬ᵛˡᵉᵃ = scalar(Ts.canopy_sensible_heat), scalar(Ts.canopy_latent_heat)
-        @test 𝒬ᵀˡᵉᵃ + scalar(Ts.ground_sensible_heat) - scalar(fp.sensible_heat) ≈ Sᵀ atol = 1e-6
-        @test 𝒬ᵛˡᵉᵃ + scalar(Ts.ground_latent_heat) - scalar(fp.latent_heat) ≈ Sᵛ atol = 1e-6
+        𝒬ᵀˡᵉᵃᶠ, 𝒬ᵛˡᵉᵃᶠ = scalar(Ts.canopy_sensible_heat), scalar(Ts.canopy_latent_heat)
+        @test 𝒬ᵀˡᵉᵃᶠ + scalar(Ts.ground_sensible_heat) - scalar(fp.sensible_heat) ≈ Sᵀ atol = 1e-6
+        @test 𝒬ᵛˡᵉᵃᶠ + scalar(Ts.ground_latent_heat) - scalar(fp.latent_heat) ≈ Sᵛ atol = 1e-6
 
         # Leaf net radiation balances the leaf fluxes at the stored leaf temperature.
-        Tˡ, Tᵍʳᵒ = scalar(Ts.canopy), scalar(Ts.ground)
-        σ, λˡᵉᵃᶠ, ϵᵍʳᵒ = 5.670374419e-8, 4.0, 0.96
+        Tˡ, Tᵍʳⁿᵈ = scalar(Ts.canopy), scalar(Ts.ground)
+        σ, λˡᵉᵃᶠ, ϵᵍʳⁿᵈ = 5.670374419e-8, 4.0, 0.96
         ϵˡ = 0.98 * (1 - exp(-λˡᵉᵃᶠ))
-        ℐꜛˡʷᵍʳᵒ = ϵᵍʳᵒ * σ * Tᵍʳᵒ^4 + (1 - ϵᵍʳᵒ) * ((1 - ϵˡ) * 350.0 + ϵˡ * σ * Tˡ^4)
-        Rˡ = (1 - 0.15) * (1 - exp(-0.5 * λˡᵉᵃᶠ)) * 600.0 + ϵˡ * (350.0 + ℐꜛˡʷᵍʳᵒ) - 2 * ϵˡ * σ * Tˡ^4
-        @test Rˡ ≈ 𝒬ᵀˡᵉᵃ + 𝒬ᵛˡᵉᵃ atol = 1e-3
+        ℐꜛˡʷᵍʳⁿᵈ = ϵᵍʳⁿᵈ * σ * Tᵍʳⁿᵈ^4 + (1 - ϵᵍʳⁿᵈ) * ((1 - ϵˡ) * 350.0 + ϵˡ * σ * Tˡ^4)
+        Rˡ = (1 - 0.15) * (1 - exp(-0.5 * λˡᵉᵃᶠ)) * 600.0 + ϵˡ * (350.0 + ℐꜛˡʷᵍʳⁿᵈ) - 2 * ϵˡ * σ * Tˡ^4
+        @test Rˡ ≈ 𝒬ᵀˡᵉᵃᶠ + 𝒬ᵛˡᵉᵃᶠ atol = 1e-3
 
-        @test min(Tˡ, Tᵍʳᵒ, 300) - 1 ≤ scalar(Ts.interface) ≤ max(Tˡ, Tᵍʳᵒ, 300) + 1   # 300 K is the air temperature
+        @test min(Tˡ, Tᵍʳⁿᵈ, 300) - 1 ≤ scalar(Ts.interface) ≤ max(Tˡ, Tᵍʳⁿᵈ, 300) + 1   # 300 K is the air temperature
     end
 
     # Hot wet soil under cooler dry air at near-calm dusk.

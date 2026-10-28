@@ -46,7 +46,7 @@ function TiledLandInterface(grid, atmosphere, land;
                             velocity_difference = RelativeVelocity())
 
     ground_conductance(temperature_formulation(bare)) == ground_conductance(vegetated) ||
-        throw(ArgumentError("the bare and vegetated tiles must share the ground conductance Λᵍʳᵒ"))
+        throw(ArgumentError("the bare and vegetated tiles must share the ground conductance Λᵍʳⁿᵈ"))
     validate_surface_storage(land, vegetated)
 
     vegetated_interface = build_atmosphere_land_interface(grid, vegetated_fluxes, vegetated, velocity_difference)

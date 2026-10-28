@@ -8,8 +8,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
-# Skin temperature, turbulent flux sum, and conductive flux Λᵍʳᵒ(Tˡᵃ − Tᵍʳᵒ) over a 300 K slab with Λᵍʳᵒ = 1.5 / 0.05.
-# With radiation off the balance is Λᵍʳᵒ(Tˡᵃ − Tᵍʳᵒ) = 𝒬ᵀ + 𝒬ᵛ.
+# Skin temperature, turbulent flux sum, and conductive flux Λᵍʳⁿᵈ(Tˡᵃ − Tᵍʳⁿᵈ) over a 300 K slab with Λᵍʳⁿᵈ = 1.5 / 0.05.
+# With radiation off the balance is Λᵍʳⁿᵈ(Tˡᵃ − Tᵍʳⁿᵈ) = 𝒬ᵀ + 𝒬ᵛ.
 function skin_column(arch, temperature; air_temperature = 290.0, efficiency = 1.0)
     humidity = FractionalHumidity(AtmosphericThermodynamics.Liquid(); efficiency)
     model = coupled_land_model(arch; air_temperature, land_temperature=300.0, air_specific_humidity=0.006, wind=5.0,
@@ -34,14 +34,14 @@ end
     end
 
     for FT in (Float32, Float64)
-        Ψₛ = AirLandInterfaceState(InterfaceFluxScales(FT(0.3), FT(0.1), FT(-2e-4)), InterfaceVelocities(FT(0), FT(0)),
+        Ψⁱⁿ = AirLandInterfaceState(InterfaceFluxScales(FT(0.3), FT(0.1), FT(-2e-4)), InterfaceVelocities(FT(0), FT(0)),
                                    FT(300), FT(8e-3))
         Ψₐ = (T=FT(290), p=FT(1e5), q=FT(6e-3), z=FT(10))
         Ψˡᵃ = (T=FT(300), 𝒮=FT(0.6), surface_storage=nothing)
         Ψᵣ = (σ=FT(0), α=FT(0), ϵ=FT(0), ℐꜜˢʷ=FT(0), ℐꜜˡʷ=FT(0))
-        ℙₛ = (; state = (; specific_humidity = FractionalHumidity(AtmosphericThermodynamics.Liquid(); efficiency=FT(1))))
+        ℙⁱⁿ = (; state = (; specific_humidity = FractionalHumidity(AtmosphericThermodynamics.Liquid(); efficiency=FT(1))))
         ℙₐ = (thermodynamics_parameters=AtmosphereThermodynamicsParameters(FT), gravitational_acceleration=FT(9.81))
         skin = SoilSkinTemperature(FT(1.5), FT(0.05))
-        @test @inferred(compute_interface_temperature(skin, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, (;))) isa FT
+        @test @inferred(compute_interface_temperature(skin, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙⁱⁿ, ℙₐ, (;))) isa FT
     end
 end
