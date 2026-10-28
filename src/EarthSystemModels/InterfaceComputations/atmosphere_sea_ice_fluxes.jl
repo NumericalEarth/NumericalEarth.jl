@@ -27,11 +27,10 @@ function compute_atmosphere_sea_ice_fluxes!(coupled_model)
 
     atmosphere_data = atmosphere_sea_ice_data(coupled_model)
 
-    flux_formulation = coupled_model.interfaces.atmosphere_sea_ice_interface.flux_formulation
     interface_fluxes = coupled_model.interfaces.atmosphere_sea_ice_interface.fluxes
     interface_temperature = coupled_model.interfaces.atmosphere_sea_ice_interface.temperature
     interface_specific_humidity = coupled_model.interfaces.atmosphere_sea_ice_interface.specific_humidity
-    interface_properties = coupled_model.interfaces.atmosphere_sea_ice_interface.properties
+    interface_formulation = coupled_model.interfaces.atmosphere_sea_ice_interface.formulation
     sea_ice_properties = coupled_model.interfaces.sea_ice_properties
     ocean_properties = coupled_model.interfaces.ocean_properties
 
@@ -50,10 +49,9 @@ function compute_atmosphere_sea_ice_fluxes!(coupled_model)
             interface_specific_humidity,
             grid,
             clock,
-            flux_formulation,
+            interface_formulation,
             interior_state,
             atmosphere_data,
-            interface_properties,
             atmosphere_properties,
             sea_ice_properties,
             ocean_properties,
@@ -69,10 +67,9 @@ end
                                                               interface_specific_humidity,
                                                               grid,
                                                               clock,
-                                                              turbulent_flux_formulation,
+                                                              interface_formulation,
                                                               interior_state,
                                                               atmosphere_state,
-                                                              interface_properties,
                                                               atmosphere_properties,
                                                               sea_ice_properties,
                                                               ocean_properties,
@@ -111,7 +108,7 @@ end
     # Estimate initial interface state (FP32 compatible)
     u★ = convert(FT, 1f-4)
 
-    q_formulation = interface_properties.specific_humidity_formulation
+    q_formulation = interface_formulation.specific_humidity
     qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Ψₐ.p, Tₛ, Sᵒᶜ)
 
     # Air–ice sublimation is over fresh ice — no interface salinity.
@@ -119,18 +116,17 @@ end
     not_water = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
     ice_free = ℵᵢ == 0
 
-    stop_criteria = turbulent_flux_formulation.solver_stop_criteria
+    stop_criteria = interface_formulation.turbulent_fluxes.solver_stop_criteria
     needs_to_converge = stop_criteria isa ConvergenceStopCriteria
 
     if (needs_to_converge && not_water) || ice_free
         Ψₛ = AirIceInterfaceState(zero(FT), zero(FT), zero(FT), uˢⁱ, vˢⁱ, Tᵒᶜ, zero(FT))
     else
-        Ψₛ = compute_interface_state(turbulent_flux_formulation,
+        Ψₛ = compute_interface_state(interface_formulation,
                                      initial_interface_state,
                                      Ψₐ,
                                      local_interior_state,
                                      radiation_state,
-                                     interface_properties,
                                      atmosphere_properties,
                                      sea_ice_properties)
     end
@@ -139,5 +135,5 @@ end
     Tᵢ = convert_from_kelvin(sea_ice_properties.temperature_units, Ψₛ.temperature)
 
     store_interface_fluxes!(interface_fluxes, interface_temperature, interface_specific_humidity, i, j,
-                            Ψₛ, Ψₐ, ℂᵃᵗ, ℒⁱ, Tᵢ, interface_properties)
+                            Ψₛ, Ψₐ, ℂᵃᵗ, ℒⁱ, Tᵢ, interface_formulation)
 end

@@ -14,6 +14,8 @@ using Oceananigans.Operators: Azᶜᶜᶜ
 using NumericalEarth.Lands: build_flux_routing
 using NumericalEarth.Oceans: river_mouth_vertical_diffusivity
 using SeawaterPolynomials.TEOS10: θ_from_Θ
+using Oceananigans.BoundaryConditions: regularize_boundary_condition, LeftBoundary
+using Oceananigans.Grids: topology
 
 @testset "Distributed ECCO download" begin
     dates = DateTimeProlepticGregorian(1992, 1, 1) : Month(1) : DateTimeProlepticGregorian(1994, 4, 1)
@@ -174,6 +176,30 @@ rank_window(serial, field) = Oceananigans.DistributedComputations.partition(inte
         τ = model.interfaces.net_fluxes.ocean
         @test interior(τ.u) == rank_window(τˢ.u, τ.u)
         @test interior(τ.v) == rank_window(τˢ.v, τ.v)
+    end
+end
+
+# Every rank regularizes the west boundary condition, but only the westmost ranks keep it, so a source
+# spanning only the child's west edge must not be checked against the other ranks' local edges.
+@testset "Distributed interpolated boundary source bracket" begin
+    loc = (Center(), Center(), Center())
+
+    for (longitude, valid) in (((-101, -99), true), ((-99, -97), false))
+        source_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 4), longitude, latitude = (29, 41), z = (0, 1),
+                                            topology = (Bounded, Bounded, Bounded))
+        source = NumericalEarth.NestedModels.Interpolated(CenterField(source_grid))
+
+        for partition in (Partition(4, 1), Partition(2, 2))
+            grid = LatitudeLongitudeGrid(Distributed(CPU(); partition); size = (20, 20, 4), longitude = (-100, -90),
+                                         latitude = (30, 40), z = (0, 1), topology = (Bounded, Bounded, Bounded))
+            west_rank = topology(grid, 1) ∈ (Bounded, RightConnected)
+
+            if valid || !west_rank
+                @test regularize_boundary_condition(source, grid, loc, 1, LeftBoundary) isa NumericalEarth.NestedModels.Interpolated
+            else
+                @test_throws ArgumentError regularize_boundary_condition(source, grid, loc, 1, LeftBoundary)
+            end
+        end
     end
 end
 

@@ -38,13 +38,13 @@ The sign convention is `+` for cooling of the interface and `-` for heating.
 """
 @inline function store_interface_fluxes!(interface_fluxes, interface_temperature,
                                          interface_specific_humidity, i, j,
-                                         Ψₛ, Ψₐ, ℂᵃᵗ, ℒ, Tₛ, interface_properties)
+                                         Ψₛ, Ψₐ, ℂᵃᵗ, ℒ, Tₛ, interface_formulation)
 
     u★ = Ψₛ.fluxes.u★
     θ★ = Ψₛ.fluxes.θ★
     q★ = Ψₛ.fluxes.q★
 
-    Δu, Δv = velocity_difference(interface_properties.velocity_formulation, Ψₐ, Ψₛ)
+    Δu, Δv = velocity_difference(interface_formulation.velocity_difference, Ψₐ, Ψₛ)
     ΔU = sqrt(Δu^2 + Δv^2)
 
     τˣ = ifelse(ΔU == 0, zero(ΔU), - u★^2 * Δu / ΔU)
