@@ -71,7 +71,8 @@ initial_diagnostic(h::InterceptingHydrology, name::Symbol, grid) = initial_diagn
     drip             = max(uncapped_storage - Mᶜᵃⁿ⁺, 0) / Δt
     shortfall        = max(-uncapped_storage, 0) / Δt
     Mᶜᵃⁿⁿ⁺¹          = clamp(uncapped_storage, 0, Mᶜᵃⁿ⁺)
-    return Mᶜᵃⁿⁿ⁺¹, drip, rain - Pⁱⁿᵗ + drip - shortfall
+    throughfall      = rain - Pⁱⁿᵗ + drip - shortfall
+    return Mᶜᵃⁿⁿ⁺¹, drip, throughfall
 end
 
 @kernel function _interception_step!(canopy_water_storage, liquid_water_precipitation_flux, canopy_evaporation,
