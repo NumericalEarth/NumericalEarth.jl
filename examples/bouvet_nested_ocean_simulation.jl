@@ -76,11 +76,11 @@ grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(bottom_height; mi
 
 dates = (DateTime(2000, 1, 1), DateTime(2000, 1, 16))
 
-nested = nested_ocean_model(grid, GLORYSDaily(); dates)
+model = nested_ocean_model(grid, GLORYSDaily(); dates)
 
 # The child is an ordinary `HydrostaticFreeSurfaceModel` on the blended bathymetry.
 
-child = nested.child
+child = model.child
 
 # ### Atmosphere and coupled model
 #
@@ -94,7 +94,7 @@ radiation  = ERA5PrescribedRadiation(arch;  start_date = first(dates), end_date 
 # A `NestedModel` goes into a `Simulation` and an `OceanOnlyModel` like any other ocean model.
 
 Δt = 10minutes
-ocean = Simulation(nested; Δt)
+ocean = Simulation(model; Δt)
 coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
 simulation = Simulation(coupled_model; Δt, stop_time = 15days)
 
