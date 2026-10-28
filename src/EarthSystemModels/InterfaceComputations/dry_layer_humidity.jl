@@ -314,7 +314,7 @@ end
 ##### linearization is exact, so the converged humidity satisfies the true
 ##### nonlinear balance Gᵉ (qᵉ - qⁱⁿ) = -ρᵃᵗ u★ q★(qⁱⁿ).
 #####
-@inline function compute_interface_humidity(q::DryLayerHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+@inline function compute_interface_humidity(q::DryLayerHumidity, Tₛ, Ψₛ, Ψₐ, Ψˡᵃ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     FT  = eltype(Ψₛ)
     pᵃᵗ = Ψₐ.p
@@ -322,8 +322,8 @@ end
     Tᵃᵗ = Ψₐ.T
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
 
-    Tˡᵃ = Ψₛ.energy.temperature       # bulk land
-    𝒮   = Ψₛ.hydrology.saturation     # surface saturation
+    Tˡᵃ = Ψˡᵃ.T
+    𝒮   = Ψˡᵃ.𝒮
     Tⁱⁿ = Tₛ                           # current iterate of the skin temp
 
     # Dry-layer depth, front temperature, and front (source) humidity
