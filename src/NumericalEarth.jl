@@ -43,6 +43,8 @@ export
     AtmosphereLandModel,
     NestedModel,
     NestedSimulation,
+    NestMover,
+    PrescribedTrack,
     nested_atmosphere_model,
     parent_boundary_conditions,
     # Atmosphere-land interface closures
@@ -279,7 +281,7 @@ using .SeaIces
 using .Diagnostics
 using .EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
 using .NestedModels
-using .NestedModels: NestedModel, NestedSimulation, nested_atmosphere_model, parent_boundary_conditions
+using .NestedModels: NestedModel, NestedSimulation, NestMover, PrescribedTrack, nested_atmosphere_model, parent_boundary_conditions
 using .DataWrangling.ETOPO
 using .DataWrangling.ECCO
 using .DataWrangling.GLORYS

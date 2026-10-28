@@ -53,6 +53,7 @@ examples = [
     # Example("Differentiable ERA5-forced slab land", "era5_forced_slab_land"; build_always=false, gpu=false),
     Example("ERA5-forced Terrarium land", "era5_forced_terrarium_land"; build_always=false, gpu=false),
     Example("ERA5 downscaling with Breeze", "breeze_downscaling_era5"; build_always=true, gpu=true),
+    Example("Moving nest: the 11 August 2026 derecho", "breeze_derecho_moving_nest"; build_always=false, gpu=true),
     Example("MODIS leaf area index", "modis_leaf_area_index"; build_always=false, gpu=false),
     Example("MODIS land cover and gap filling", "modis_landcover_gap_fill"; build_always=false, gpu=false),
 ]

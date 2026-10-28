@@ -1,14 +1,14 @@
 include("runtests_setup.jl")
 
 using NumericalEarth
-using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model
+using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model, translate_domain!
 using NumericalEarth.DataWrangling: BoundingBox
 using Oceananigans
 using Oceananigans: prognostic_fields
 using Oceananigans.OutputReaders: interpolating_time_indices, memory_index
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location
-using Oceananigans.Grids: node
+using Oceananigans.Grids: node, x_domain, y_domain
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!,
                                        regularize_boundary_condition, LeftBoundary, RightBoundary
@@ -1080,4 +1080,74 @@ end
     exchanger = ext.state_exchanger(parent, 1e5, ThermodynamicConstants(); condensates = nothing)
     ρᵈ = Array(interior(exchanger.prognostic.ρᵈ[1]))
     @test all(isfinite, ρᵈ) && all(>(0), ρᵈ)
+end
+
+@testset "Moving nest: translate_domain! keeps the overlap and follows a track on $(arch)" for arch in test_architectures
+    ext   = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    times = [0.0, 60.0, 120.0, 180.0]
+
+    parent_grid = LatitudeLongitudeGrid(arch; size = (24, 16, 8),
+                                        longitude = (-4, 4), latitude = (34, 39.333),
+                                        z = (0, 16000), halo = (5, 5, 5),
+                                        topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(parent_grid, times)
+    set!(parent.temperature,       (λ, φ, z, t) -> 288 - 6.5e-3 * z + λ)
+    set!(parent.specific_humidity, (λ, φ, z, t) -> 0.006)
+    set!(parent.velocities.u,      (λ, φ, z, t) -> 8)
+    set!(parent.velocities.v,      (λ, φ, z, t) -> 0)
+    set!(parent.pressure,          (λ, φ, z, t) -> 1e5 * exp(-z / 8000))
+
+    child_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 8),
+                                       longitude = (-1, 1), latitude = (35.6, 37.6),
+                                       z = (0, 16000), halo = (5, 5, 5),
+                                       topology = (Bounded, Bounded, Bounded))
+    Δλ, Δφ = 2/8, 2/8
+
+    # The track leaves the child's initial center (0°, 36.6°) for (1°, 37.1°) by t = 10.
+    track = PrescribedTrack([0.0, 10.0], [0.0, 1.0], [36.6, 37.1])
+    nest(schedule) = nested_atmosphere_model(parent, child_grid; mover = NestMover(track; schedule),
+                                             relaxation_rate = 1/300, relaxation_width = 3, base_pressure = 1e5,
+                                             coriolis = nothing, terrain = nothing, parent_condensates = nothing)
+
+    # Translate by hand: the shared cells carry over by index, the clock is the same object.
+    model = nest(TimeInterval(1e9))
+    ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false)
+    time_step!(model, 0.5)
+    clock = model.clock
+    ρθ_before = Array(interior(prognostic_fields(model.child).ρθ))
+
+    translate_domain!(model, (2, 1))
+
+    grid = model.child.grid
+    @test all(x_domain(grid) .≈ (-1 + 2Δλ, 1 + 2Δλ))
+    @test all(y_domain(grid) .≈ (35.6 + Δφ, 37.6 + Δφ))
+    @test model.clock === clock
+    ρθ_after = Array(interior(prognostic_fields(model.child).ρθ))
+    @test ρθ_after[1:6, 1:7, :] == ρθ_before[3:8, 2:8, :]
+    @test all(>(0), Array(interior(model.child.dynamics.dry_density)))
+    time_step!(model, 0.5)
+    for (name, field) in pairs(prognostic_fields(model.child))
+        @test all(isfinite, Array(interior(field)))
+    end
+
+    # Follow the track on a schedule: two relocations of (2, 1) cells land the center on the track's end.
+    model = nest(TimeInterval(5))
+    ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false)
+    simulation = Simulation(model; Δt = 0.5, stop_time = 10.0, verbose = false)
+    run!(simulation)
+
+    @test length(model.mover.track) == 2
+    @test all(NumericalEarth.NestedModels.domain_center(model.child.grid) .≈ (1.0, 37.1))
+    @test model.clock.time ≈ 10.0
+    for (name, field) in pairs(prognostic_fields(model.child))
+        @test all(isfinite, Array(interior(field)))
+    end
+
+    # A terrain-following child comes back as a skeleton at the new location, for the terrain to be re-materialized.
+    z = TerrainFollowingVerticalDiscretization(collect(range(0, 16000, length = 9)))
+    terrain_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 8), longitude = (-1, 1), latitude = (35.6, 37.6), z,
+                                         halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+    shifted = ext.translated_grid(terrain_grid, (2, 1))
+    @test all(x_domain(shifted) .≈ (-1 + 2Δλ, 1 + 2Δλ))
+    @test shifted.z.formulation isa typeof(terrain_grid.z.formulation)
 end
