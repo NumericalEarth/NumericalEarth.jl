@@ -14,7 +14,6 @@ using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundar
                                        IMEXFluxBoundaryCondition, IMEXFlux, getbc
 using Oceananigans.BuoyancyFormulations: BuoyancyForce, SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
-using Oceananigans.DistributedComputations: synchronize_communication!
 using Oceananigans.Fields: Field, CenterField, compute!, set!, interior
 using Oceananigans.Forcings: MultipleForcings, DiscreteForcing
 using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, znodes, RectilinearGrid
