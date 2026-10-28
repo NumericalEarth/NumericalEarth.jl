@@ -110,10 +110,6 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::Simulation
     Sᵒᶜ = ocean.model.tracers.S
     kᴺ = size(ocean.model.grid, 3)
     arch = architecture(ocean.model.grid)
-    # Over the halo columns too, which the interface flux kernels visit, so the ocean's tracer halo
-    # exchange has to be complete.
-    synchronize_communication!(Tᵒᶜ)
-    synchronize_communication!(Sᵒᶜ)
     launch!(arch, grid, interface_kernel_parameters(grid), _ocean_state_to_potential_temperature!, Tᵉˣ, Tᵒᶜ, Sᵒᶜ, kᴺ)
     return nothing
 end
