@@ -13,8 +13,7 @@ using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 function skin_column(arch, temperature; air_temperature = 290.0, efficiency = 1.0)
     humidity = FractionalHumidity(AtmosphericThermodynamics.Liquid(); efficiency)
     model = coupled_land_model(arch; air_temperature, land_temperature=300.0, air_specific_humidity=0.006, wind=5.0,
-                               water=90.0, radiation=nothing, atmosphere_land_interface_temperature=temperature,
-                               atmosphere_land_interface_specific_humidity=humidity)
+                               water=90.0, radiation=nothing, atmosphere_land_interface_state=(; temperature, specific_humidity=humidity))
     interface = model.interfaces.atmosphere_land_interface
     T = scalar(interface.temperature)
     return T, scalar(interface.fluxes.sensible_heat) + scalar(interface.fluxes.latent_heat), 1.5 / 0.05 * (300 - T)

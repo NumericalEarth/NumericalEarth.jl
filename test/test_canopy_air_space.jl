@@ -74,7 +74,7 @@ ground_vapor_state(𝒮) = (air_temperature = 305, air_specific_humidity = 0.006
         skin = SoilSkinTemperature(1.5, 0.05)
         model = coupled_land_model(arch; air_temperature = 290.0, air_specific_humidity = 0.006, wind = 5.0,
                                    land_temperature = 300.0, water = 90.0, radiation = nothing,
-                                   atmosphere_land_interface_temperature = skin)
+                                   atmosphere_land_interface_state = (temperature = skin, specific_humidity = BulkHumidity()))
         @test scalar(model.interfaces.atmosphere_land_interface.temperature) < 300.0
     end
 

@@ -112,7 +112,7 @@ energy = WaterCoupledEnergy(eltype(land_grid);
     advect_deep_liquid_energy = false,
     advect_surface_liquid_energy = false)
 
-surface_humidity = DryLayerHumidity(;
+soil_humidity = DryLayerHumidity(;
     dry_layer_depth = StorageBasedDryLayerDepth(
         maximum_dry_layer_depth = 0.05,
         dry_layer_onset_saturation = 0.5,
@@ -128,7 +128,7 @@ slab_land = SlabLand(land_grid; hydrology, energy)
 # The hydrology exposes the diagnostic surface saturation
 # `𝒮 = clamp(θˡ/ν, 0, 1) ∈ [0, 1]`. The interface's
 # [`DryLayerHumidity`](@ref) closure solves for the
-# atmosphere-facing specific humidity `qⁱⁿ` from a vapor-flux balance through
+# soil-surface specific humidity `qⁱⁿ` from a vapor-flux balance through
 # an unresolved dry layer at saturation-dependent depth
 # `δᵛ(𝒮) = δᵛ_max[1 − min(𝒮/𝒮ᶜ, 1)]^η`. The wet center (`𝒮 ≥ 𝒮ᶜ`) has
 # `δᵛ = 0` and a saturated skin (`qⁱⁿ = qᵛ⁺`); the dry edges have
@@ -254,15 +254,21 @@ set!(θᵣ, liquid_ice_potential_temperature(atmos.model))
 # Passing `radiation` here aliases the atmosphere's
 # `CoupledRadiation.flux_divergence` to the RTM's `flux_divergence`.
 
-# The surface specific humidity is solved by [`DryLayerHumidity`](@ref):
+# The interface is a [`CanopyInterface`](@ref): a big-leaf canopy over the soil,
+# exchanging heat and vapor with the atmosphere through the canopy air space.
+# Soil evaporation beneath the canopy is solved by [`DryLayerHumidity`](@ref):
 # a Fickian vapor-flux balance between the saturated soil at depth `δᵛ` and
-# the atmosphere. The wet center has `δᵛ = 0` (saturated skin); the dry edges
-# have `δᵛ → δᵛ_max` and the dry-layer piston velocity `wᵈ = Dᵛ_eff/δᵛ`
-# limits evaporation self-consistently.
+# the canopy air. The wet center has `δᵛ = 0` (saturated soil surface); the dry
+# edges have `δᵛ → δᵛ_max` and the dry-layer piston velocity `wᵈ = Dᵛ_eff/δᵛ`
+# limits evaporation self-consistently. Stomata close as the soil dries below
+# the critical saturation, so the dry edges neither evaporate nor transpire.
 # The atmosphere runs in `Float32` (its clock follows the grid), so the coupled
 # model needs a matching `Float32` clock.
+canopy_humidity = CanopyConductanceHumidity(moisture_stress = CriticalSaturation(0.5))
+canopy = CanopyInterface(; soil_humidity, canopy_humidity)
+
 model = AtmosphereLandModel(atmos, slab_land; radiation,
-                            atmosphere_land_interface_specific_humidity = surface_humidity,
+                            atmosphere_land_interface_state = canopy,
                             clock = Clock{eltype(grid)}(time = 0))
 
 # The wizard recomputes Δt every iteration so the step always tracks the

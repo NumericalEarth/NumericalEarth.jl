@@ -213,7 +213,7 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                           sea_ice_reference_density = reference_density(sea_ice),
                           sea_ice_heat_capacity = heat_capacity(sea_ice),
                           interfaces = nothing,
-                          interface_kw...) # e.g. `atmosphere_land_interface_specific_humidity`
+                          interface_kw...) # e.g. `atmosphere_land_interface_state`
 
     if isnothing(radiation) && atmosphere isa AbstractPrescribedComponent
         @warn """

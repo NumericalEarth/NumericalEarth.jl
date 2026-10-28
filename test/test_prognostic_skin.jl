@@ -7,8 +7,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
 using NumericalEarth.Radiations: default_stefan_boltzmann_constant
 
 bare_soil_model(arch, temperature; wind = 5.0, water = 90.0, kw...) =
-    coupled_land_model(arch; wind, water, kw..., atmosphere_land_interface_temperature = temperature,
-                       atmosphere_land_interface_specific_humidity = bare_soil_humidity(Float64))
+    coupled_land_model(arch; wind, water, kw..., atmosphere_land_interface_state = (; temperature, specific_humidity = bare_soil_humidity(Float64)))
 
 skin_temperature(model) = model.interfaces.atmosphere_land_interface.temperature
 

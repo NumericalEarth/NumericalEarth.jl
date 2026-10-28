@@ -61,7 +61,7 @@ end
         atmosphere = PrescribedAtmosphere(grid, [0.0, 1.0e8])
         land = SlabLand(grid)
         fluxes = SimilarityTheoryFluxes(; solver_stop_criteria=FixedIterations(8))
-        model = AtmosphereLandModel(atmosphere, land; atmosphere_land_fluxes=fluxes, atmosphere_land_interface_temperature=temperature)
+        model = AtmosphereLandModel(atmosphere, land; atmosphere_land_fluxes=fluxes, atmosphere_land_interface_state=(; temperature, specific_humidity=BulkHumidity()))
         interface = model.interfaces.atmosphere_land_interface
         set!(land; T=290)
         set!(interface.temperature, 295)
