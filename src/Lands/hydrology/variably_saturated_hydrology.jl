@@ -7,7 +7,7 @@
 #####
 #####     dMˡᵃ/dt = Jˡᵇ − Jˡˢ − Jᵛ − Rˡᵃᵗ
 #####
-##### where every term is positive-upward (`Jˡˢ = −Pˡ + Rˢᶠᶜ`). The
+##### where every term is positive-upward (`Jˡˢ = −Pˡ + Rᵒᵛᵉʳ`). The
 ##### conservative storage variable is the *augmented* liquid fraction
 ##### `ϑˡ = θˡ + max(Π,0)/hˢˢ`, so `Mˡᵃ > Mˡᵃ⁺` is admitted and corresponds to
 ##### saturated positive-pressure storage (`Π > 0`), reachable only through an
@@ -17,7 +17,7 @@
 ##### Diagnostics published every step:
 #####   * `deep_liquid_water_flux`   (Jˡᵇ, positive upward)
 #####   * `surface_liquid_water_flux` (Jˡˢ, positive upward)
-#####   * `surface_runoff`          (Rˢᶠᶜ, ≥ 0; rejected input)
+#####   * `surface_runoff`          (Rᵒᵛᵉʳ, ≥ 0; rejected input)
 #####   * `subsurface_runoff`       (Rˡᵃᵗ, ≥ 0; storage export)
 #####   * `water_storage_tendency`  (dMˡᵃ/dt, kg m⁻² s⁻¹)
 #####

@@ -326,8 +326,8 @@ end
             ## (PrescribedOcean temperatures are already Kelvin).
             Tˡ = Array(interior(interfaces.atmosphere_land_interface.temperature))
             Tᵒ = Array(interior(interfaces.atmosphere_ocean_interface.temperature))
-            Tₛ = Array(interior(partition.surface_temperature))
-            @test Tₛ ≈ fractions .* Tᵒ .+ (1 .- fractions) .* Tˡ
+            Tⁱⁿ = Array(interior(partition.surface_temperature))
+            @test Tⁱⁿ ≈ fractions .* Tᵒ .+ (1 .- fractions) .* Tˡ
             @test surface_temperature(interfaces) === partition.surface_temperature
         end
 

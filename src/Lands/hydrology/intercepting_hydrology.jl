@@ -1,5 +1,5 @@
 #####
-##### `InterceptingHydrology` — a canopy water store `Mᶜᵃⁿ` between the rain and a soil
+##### `InterceptingHydrology` — a canopy water store `Mᶜⁿᵖʸ` between the rain and a soil
 ##### hydrology: intercepted rain fills it, the interface's wet-canopy evaporation drains
 ##### it, over-capacity drip and the uncaught rain reach the soil as throughfall.
 #####
@@ -7,7 +7,7 @@
 """
 $(TYPEDSIGNATURES)
 
-Canopy water store `Mᶜᵃⁿ` (kg m⁻²) wrapping a [`VariablySaturatedHydrology`](@ref)
+Canopy water store `Mᶜⁿᵖʸ` (kg m⁻²) wrapping a [`VariablySaturatedHydrology`](@ref)
 `soil`. Rain is caught by the Beer–Lambert canopy fraction `1 − e^{−KΩ·λˡᵉᵃᶠ}` up to the
 capacity `c·λˡᵉᵃᶠ`; the wet canopy evaporates at the rate `Jʷᵉᵗ` the interface computes
 (a [`CanopyInterface`](@ref)), and the uncaught rain plus the
@@ -63,45 +63,45 @@ initial_diagnostic(h::InterceptingHydrology, name::Symbol, grid) = initial_diagn
 ##### Interception step, ahead of the soil step that reads its throughfall.
 #####
 
-# One step of the canopy water store Mᶜᵃⁿ ∈ [0, Mᶜᵃⁿ⁺] under rain Pˡ and wet-canopy evaporation Jʷᵉᵗ.
+# One step of the canopy water store Mᶜⁿᵖʸ ∈ [0, Mᶜⁿᵖʸ⁺] under rain Pˡ and wet-canopy evaporation Jʷᵉᵗ.
 # The canopy intercepts Pⁱⁿᵗ = fⁱⁿᵗ Pˡ, giving the unclamped store
 #
-#     M̃ᶜᵃⁿ = Mᶜᵃⁿ + Δt (Pⁱⁿᵗ − Jʷᵉᵗ),     Mᶜᵃⁿⁿ⁺¹ = clamp(M̃ᶜᵃⁿ, 0, Mᶜᵃⁿ⁺).
+#     M̃ᶜⁿᵖʸ = Mᶜⁿᵖʸ + Δt (Pⁱⁿᵗ − Jʷᵉᵗ),     Mᶜⁿᵖʸⁿ⁺¹ = clamp(M̃ᶜⁿᵖʸ, 0, Mᶜⁿᵖʸ⁺).
 #
-# Water above capacity drips, Jᵈʳⁱ = max(M̃ᶜᵃⁿ − Mᶜᵃⁿ⁺, 0)/Δt, and evaporation the store could not
-# supply, Jᵈᵉᶠ = max(−M̃ᶜᵃⁿ, 0)/Δt, is taken from the throughfall reaching the soil,
+# Water above capacity drips, Jᵈʳⁱᵖ = max(M̃ᶜⁿᵖʸ − Mᶜⁿᵖʸ⁺, 0)/Δt, and evaporation the store could not
+# supply, Jᵈᶠᶜᵗ = max(−M̃ᶜⁿᵖʸ, 0)/Δt, is taken from the throughfall reaching the soil,
 #
-#     Pᵗʰʳ = (1 − fⁱⁿᵗ) Pˡ + Jᵈʳⁱ − Jᵈᵉᶠ,
+#     Pᵗʰʳᵘ = (1 − fⁱⁿᵗ) Pˡ + Jᵈʳⁱᵖ − Jᵈᶠᶜᵗ,
 #
-# so that Pˡ = (Mᶜᵃⁿⁿ⁺¹ − Mᶜᵃⁿ)/Δt + Jʷᵉᵗ + Pᵗʰʳ exactly.
-@inline function canopy_store_update(Mᶜᵃⁿ, Pˡ, Jʷᵉᵗ, Mᶜᵃⁿ⁺, fⁱⁿᵗ, Δt)
+# so that Pˡ = (Mᶜⁿᵖʸⁿ⁺¹ − Mᶜⁿᵖʸ)/Δt + Jʷᵉᵗ + Pᵗʰʳᵘ exactly.
+@inline function canopy_store_update(Mᶜⁿᵖʸ, Pˡ, Jʷᵉᵗ, Mᶜⁿᵖʸ⁺, fⁱⁿᵗ, Δt)
     Pⁱⁿᵗ    = fⁱⁿᵗ * Pˡ
-    M̃ᶜᵃⁿ    = Mᶜᵃⁿ + Δt * (Pⁱⁿᵗ - Jʷᵉᵗ)
-    Jᵈʳⁱ    = max(M̃ᶜᵃⁿ - Mᶜᵃⁿ⁺, 0) / Δt
-    Jᵈᵉᶠ    = max(-M̃ᶜᵃⁿ, 0) / Δt
-    Mᶜᵃⁿⁿ⁺¹ = clamp(M̃ᶜᵃⁿ, 0, Mᶜᵃⁿ⁺)
-    Pᵗʰʳ    = Pˡ - Pⁱⁿᵗ + Jᵈʳⁱ - Jᵈᵉᶠ
-    return Mᶜᵃⁿⁿ⁺¹, Jᵈʳⁱ, Pᵗʰʳ
+    M̃ᶜⁿᵖʸ    = Mᶜⁿᵖʸ + Δt * (Pⁱⁿᵗ - Jʷᵉᵗ)
+    Jᵈʳⁱᵖ    = max(M̃ᶜⁿᵖʸ - Mᶜⁿᵖʸ⁺, 0) / Δt
+    Jᵈᶠᶜᵗ    = max(-M̃ᶜⁿᵖʸ, 0) / Δt
+    Mᶜⁿᵖʸⁿ⁺¹ = clamp(M̃ᶜⁿᵖʸ, 0, Mᶜⁿᵖʸ⁺)
+    Pᵗʰʳᵘ    = Pˡ - Pⁱⁿᵗ + Jᵈʳⁱᵖ - Jᵈᶠᶜᵗ
+    return Mᶜⁿᵖʸⁿ⁺¹, Jᵈʳⁱᵖ, Pᵗʰʳᵘ
 end
 
 @kernel function _interception_step!(canopy_water_storage, liquid_water_precipitation_flux, canopy_evaporation,
                                      throughfall, h, Δt, grid, time)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        Mᶜᵃⁿⁿ = canopy_water_storage[i, j, 1]
+        Mᶜⁿᵖʸⁿ = canopy_water_storage[i, j, 1]
         Pˡ    = liquid_water_precipitation_flux[i, j, 1]
         Jʷᵉᵗ  = canopy_evaporation[i, j, 1]
     end
-    FT    = typeof(Mᶜᵃⁿⁿ)
+    FT    = typeof(Mᶜⁿᵖʸⁿ)
     λˡᵉᵃᶠ   = convert(FT, stateindex(h.leaf_area_index, i, j, 1, grid, Time(time), (Center, Center, Center)))
-    Mᶜᵃⁿ⁺ = h.capacity_per_leaf_area * λˡᵉᵃᶠ
+    Mᶜⁿᵖʸ⁺ = h.capacity_per_leaf_area * λˡᵉᵃᶠ
     fⁱⁿᵗ  = 1 - canopy_transmittance(h.extinction, h.clumping, λˡᵉᵃᶠ)
 
-    Mᶜᵃⁿⁿ⁺¹, _, Pᵗʰʳ = canopy_store_update(Mᶜᵃⁿⁿ, Pˡ, Jʷᵉᵗ, Mᶜᵃⁿ⁺, fⁱⁿᵗ, Δt)
+    Mᶜⁿᵖʸⁿ⁺¹, _, Pᵗʰʳᵘ = canopy_store_update(Mᶜⁿᵖʸⁿ, Pˡ, Jʷᵉᵗ, Mᶜⁿᵖʸ⁺, fⁱⁿᵗ, Δt)
 
     @inbounds begin
-        canopy_water_storage[i, j, 1] = Mᶜᵃⁿⁿ⁺¹
-        throughfall[i, j, 1]          = Pᵗʰʳ
+        canopy_water_storage[i, j, 1] = Mᶜⁿᵖʸⁿ⁺¹
+        throughfall[i, j, 1]          = Pᵗʰʳᵘ
     end
 end
 
@@ -121,7 +121,7 @@ update_diagnostics!(h::InterceptingHydrology, land) = update_diagnostics!(h.soil
 
 saturation(h::InterceptingHydrology, land) = saturation(h.soil, land)
 
-# The store capacity `Mᶜᵃⁿ⁺ = c·λˡᵉᵃᶠ` the interface normalizes the wet fraction by.
+# The store capacity `Mᶜⁿᵖʸ⁺ = c·λˡᵉᵃᶠ` the interface normalizes the wet fraction by.
 canopy_water_capacity(h::InterceptingHydrology, land) =
     KernelFunctionOperation{Center, Center, Nothing}(canopy_water_capacity, land.grid, h, land.clock)
 

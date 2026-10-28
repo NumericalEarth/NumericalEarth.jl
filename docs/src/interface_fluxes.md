@@ -733,7 +733,7 @@ Note that if a skin temperature model is used, then we obtain a four-variable sy
 u_⋆^{n+1} = \, Δ u \, \, Ξ_u \left (h, \ell_u^n, L_⋆^n \right ) \\[2ex]
 θ_⋆^{n+1} = \, Δ θ^n \, \, Ξ_θ \left (h, \ell_θ^n, L_⋆^n \right ) \\[2ex]
 q_⋆^{n+1} = \, Δ q^n \, \, Ξ_q \left (h, \ell_q^n, L_⋆^n \right ) \\[2ex]
-T_s^{n+1} = F_T \left (θ_⋆, q_⋆, I_{sw}, I_{lw}, \cdots \right )
+T^{\mathrm{in}\,n+1} = F_T \left (θ_⋆, q_⋆, I_{sw}, I_{lw}, \cdots \right )
 ```
 
 where ``F_T`` denotes an estimate of the surface temperature that, in general, requires all incoming heat fluxes
@@ -750,15 +750,15 @@ Sᵒᶜ = 35
 interfaces = default_model.interfaces
 ℂᵃᵗ = interfaces.atmosphere_properties
 q_formulation = interfaces.atmosphere_ocean_interface.formulation.state.specific_humidity
-qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tᵒᶜ, Sᵒᶜ)
-@show qₛ
+qⁱⁿ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tᵒᶜ, Sᵒᶜ)
+@show qⁱⁿ
 ```
 
 We then set the atmospheric state:
 
 ```@example interface_fluxes
 interior(atmosphere.pressure) .= 101352
-interior(atmosphere.specific_humidity) .= qₛ
+interior(atmosphere.specific_humidity) .= qⁱⁿ
 
 Tᵃᵗ = 273.15 .+ range(-40, stop=40, length=Ny)
 Tᵃᵗ = reshape(Tᵃᵗ, 1, Ny)

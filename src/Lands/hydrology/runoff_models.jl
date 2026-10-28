@@ -3,11 +3,11 @@
 #####
 ##### Two diagnostic categories:
 #####
-##### * `Rˢᶠᶜ`: surface runoff — liquid leaving the column at the surface.
+##### * `Rᵒᵛᵉʳ`: surface runoff — liquid leaving the column at the surface.
 #####   Returned together with the actual surface liquid water flux `Jˡˢ` because
 #####   they are coupled (the infiltration-capacity model splits the water
 #####   offered at the surface between the two). The hydrology adds saturation
-#####   excess (input the remaining pore volume cannot hold) to `Rˢᶠᶜ` outside
+#####   excess (input the remaining pore volume cannot hold) to `Rᵒᵛᵉʳ` outside
 #####   the closure.
 ##### * `Rˡᵃᵗ`: lateral / subsurface runoff — true storage export. Carries
 #####   internal energy with it.
@@ -15,16 +15,16 @@
 ##### Each closure implements
 #####
 #####     surface_liquid_water_flux_and_runoff(i, j, grid, runoff, Pˡ, M, θˡ, 𝒮, Π, K)
-#####         -> (Jˡˢ, Rˢᶠᶜ)
+#####         -> (Jˡˢ, Rᵒᵛᵉʳ)
 #####
 #####     subsurface_runoff(runoff, M, Π, K) -> Rˡᵃᵗ
 #####
 ##### with the sign convention `Jˡˢ > 0` upward, `Pˡ > 0` downward,
-##### `Rˢᶠᶜ ≥ 0`, `Rˡᵃᵗ ≥ 0`. A closure with prognostic surface storage
+##### `Rᵒᵛᵉʳ ≥ 0`, `Rˡᵃᵗ ≥ 0`. A closure with prognostic surface storage
 ##### declares it through `prognostic_variables` and steps it in
 #####
 #####     surface_water_balance!(i, j, grid, runoff, prognostic, Pˡ, M, M⁺, θˡ, 𝒮, Π, K, Δt)
-#####         -> (Jˡˢ, Rˢᶠᶜ)
+#####         -> (Jˡˢ, Rᵒᵛᵉʳ)
 #####
 
 """
@@ -54,13 +54,13 @@ Cap the downward infiltration rate at `infiltration_capacity` (kg m⁻² s⁻¹,
 positive magnitude; a number or a per-cell `Field`):
 
 ```math
-J^{ls} = \\max(-P^l, -J^l_{cap}), \\qquad R^{\\mathrm{sfc}} = J^{ls} + P^l \\ge 0.
+J^{ls} = \\max(-P^l, -J^l_{cap}), \\qquad R^{\\mathrm{over}} = J^{ls} + P^l \\ge 0.
 ```
 
-By default the excess `Rˢᶠᶜ` leaves as surface runoff within the step. With a
+By default the excess `Rᵒᵛᵉʳ` leaves as surface runoff within the step. With a
 `drainage_time_scale` `τ` (s) it instead ponds in the prognostic surface water store
-`Mˢᶠᶜ` (kg m⁻²), which infiltrates at capacity while it stands and drains to surface
-runoff as a linear reservoir, `dMˢᶠᶜ/dt = Pˡ − I − Mˢᶠᶜ/τ`, integrated exactly over each
+`Mᵖᵒⁿᵈ` (kg m⁻²), which infiltrates at capacity while it stands and drains to surface
+runoff as a linear reservoir, `dMᵖᵒⁿᵈ/dt = Pˡ − I − Mᵖᵒⁿᵈ/τ`, integrated exactly over each
 step. The store exchanges mass only.
 
 No subsurface runoff.
@@ -103,51 +103,51 @@ end
 
 # Infiltration cannot exceed the pore volume `M⁺ − M` the top layer has left; the surplus
 # is saturation-excess runoff.
-@inline function pore_limited_surface_flux(Jˡˢ, Rˢᶠᶜ, M, M⁺, Δt)
+@inline function pore_limited_surface_flux(Jˡˢ, Rᵒᵛᵉʳ, M, M⁺, Δt)
     pore_limited_flux = -max(M⁺ - M, 0) / Δt
     saturation_excess = max(pore_limited_flux - Jˡˢ, 0)
-    return Jˡˢ + saturation_excess, Rˢᶠᶜ + saturation_excess
+    return Jˡˢ + saturation_excess, Rᵒᵛᵉʳ + saturation_excess
 end
 
 @inline function surface_water_balance!(i, j, grid, runoff, prognostic, Pˡ, M, M⁺, θˡ, 𝒮, Π, K, Δt)
-    Jˡˢ, Rˢᶠᶜ = surface_liquid_water_flux_and_runoff(i, j, grid, runoff, Pˡ, M, θˡ, 𝒮, Π, K)
-    return pore_limited_surface_flux(Jˡˢ, Rˢᶠᶜ, M, M⁺, Δt)
+    Jˡˢ, Rᵒᵛᵉʳ = surface_liquid_water_flux_and_runoff(i, j, grid, runoff, Pˡ, M, θˡ, 𝒮, Π, K)
+    return pore_limited_surface_flux(Jˡˢ, Rᵒᵛᵉʳ, M, M⁺, Δt)
 end
 
-# Exact solution of the pond balance dMˢᶠᶜ/dt = Pˡ − I − Mˢᶠᶜ/τˢᶠᶜ over the step. Infiltration is
+# Exact solution of the pond balance dMᵖᵒⁿᵈ/dt = Pˡ − I − Mᵖᵒⁿᵈ/τᵖᵒⁿᵈ over the step. Infiltration is
 # I = Iᶜᵃᵖ while a pond stands and I = Iᵈʳʸ = min(Pˡ, Iᶜᵃᵖ) on unponded ground, where the capacity
 # Iᶜᵃᵖ is limited by the pore volume M⁺ − M the slab has left. With the net pond inflow
-# Jᵖᵒⁿ = Pˡ − I and its equilibrium pond Mᵉ = τˢᶠᶜ Jᵖᵒⁿ,
+# Jᵖᵒⁿᵈ = Pˡ − I and its equilibrium pond Mᵉ = τᵖᵒⁿᵈ Jᵖᵒⁿᵈ,
 #
-#     Mˢᶠᶜ(t) = Mᵉ + (Mˢᶠᶜⁿ − Mᵉ) e^{−t/τˢᶠᶜ}.
+#     Mᵖᵒⁿᵈ(t) = Mᵉ + (Mᵖᵒⁿᵈⁿ − Mᵉ) e^{−t/τᵖᵒⁿᵈ}.
 #
-# If the pond empties, at t⁰ = τˢᶠᶜ log((Mˢᶠᶜⁿ − Mᵉ)/(−Mᵉ)) < Δt, the rest of the step infiltrates Iᵈʳʸ.
-# The step-mean runoff Rˢᶠᶜ (the drained ∫ Mˢᶠᶜ/τˢᶠᶜ dt over Δt) and infiltration Ī close the balance
-# Pˡ Δt + Mˢᶠᶜⁿ = (Ī + Rˢᶠᶜ) Δt + Mˢᶠᶜⁿ⁺¹.
+# If the pond empties, at t⁰ = τᵖᵒⁿᵈ log((Mᵖᵒⁿᵈⁿ − Mᵉ)/(−Mᵉ)) < Δt, the rest of the step infiltrates Iᵈʳʸ.
+# The step-mean runoff Rᵒᵛᵉʳ (the drained ∫ Mᵖᵒⁿᵈ/τᵖᵒⁿᵈ dt over Δt) and infiltration Ī close the balance
+# Pˡ Δt + Mᵖᵒⁿᵈⁿ = (Ī + Rᵒᵛᵉʳ) Δt + Mᵖᵒⁿᵈⁿ⁺¹.
 @inline function surface_water_balance!(i, j, grid, c::InfiltrationCapacityRunoff{<:Any, <:Number},
                                         prognostic, Pˡ, M, M⁺, θˡ, 𝒮, Π, K, Δt)
     FT   = typeof(Pˡ)
-    Mˢᶠᶜ = prognostic.surface_water_storage
-    @inbounds Mˢᶠᶜⁿ = Mˢᶠᶜ[i, j, 1]
-    τˢᶠᶜ = convert(FT, c.drainage_time_scale)
+    Mᵖᵒⁿᵈ = prognostic.surface_water_storage
+    @inbounds Mᵖᵒⁿᵈⁿ = Mᵖᵒⁿᵈ[i, j, 1]
+    τᵖᵒⁿᵈ = convert(FT, c.drainage_time_scale)
 
     Iᶜᵃᵖ = min(convert(FT, stateindex(c.infiltration_capacity, i, j, 1)), max(M⁺ - M, 0) / Δt)
     Iᵈʳʸ = min(Pˡ, Iᶜᵃᵖ)
-    I    = ifelse(Mˢᶠᶜⁿ > 0, Iᶜᵃᵖ, Iᵈʳʸ)
-    Jᵖᵒⁿ = Pˡ - I
-    Mᵉ   = τˢᶠᶜ * Jᵖᵒⁿ
-    M̃ˢᶠᶜ = Mᵉ + (Mˢᶠᶜⁿ - Mᵉ) * exp(-Δt / τˢᶠᶜ)
+    I    = ifelse(Mᵖᵒⁿᵈⁿ > 0, Iᶜᵃᵖ, Iᵈʳʸ)
+    Jᵖᵒⁿᵈ = Pˡ - I
+    Mᵉ   = τᵖᵒⁿᵈ * Jᵖᵒⁿᵈ
+    M̃ᵖᵒⁿᵈ = Mᵉ + (Mᵖᵒⁿᵈⁿ - Mᵉ) * exp(-Δt / τᵖᵒⁿᵈ)
 
-    empties = M̃ˢᶠᶜ < 0
-    ratio   = ifelse(empties, (Mˢᶠᶜⁿ - Mᵉ) / -Mᵉ, one(FT))
-    t⁰      = ifelse(empties, τˢᶠᶜ * log(ratio), Δt)
+    empties = M̃ᵖᵒⁿᵈ < 0
+    ratio   = ifelse(empties, (Mᵖᵒⁿᵈⁿ - Mᵉ) / -Mᵉ, one(FT))
+    t⁰      = ifelse(empties, τᵖᵒⁿᵈ * log(ratio), Δt)
 
-    Mˢᶠᶜⁿ⁺¹ = max(M̃ˢᶠᶜ, 0)
-    Rˢᶠᶜ    = (Jᵖᵒⁿ * t⁰ + Mˢᶠᶜⁿ - Mˢᶠᶜⁿ⁺¹) / Δt
+    Mᵖᵒⁿᵈⁿ⁺¹ = max(M̃ᵖᵒⁿᵈ, 0)
+    Rᵒᵛᵉʳ    = (Jᵖᵒⁿᵈ * t⁰ + Mᵖᵒⁿᵈⁿ - Mᵖᵒⁿᵈⁿ⁺¹) / Δt
     Ī       = (I * t⁰ + Iᵈʳʸ * (Δt - t⁰)) / Δt
 
-    @inbounds Mˢᶠᶜ[i, j, 1] = Mˢᶠᶜⁿ⁺¹
-    return -Ī, Rˢᶠᶜ
+    @inbounds Mᵖᵒⁿᵈ[i, j, 1] = Mᵖᵒⁿᵈⁿ⁺¹
+    return -Ī, Rᵒᵛᵉʳ
 end
 
 Base.summary(c::InfiltrationCapacityRunoff) =

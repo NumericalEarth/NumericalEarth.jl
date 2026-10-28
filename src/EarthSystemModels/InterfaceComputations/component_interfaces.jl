@@ -213,8 +213,8 @@ EarthSystemModels.surface_temperature(interface::AtmosphereInterface) =
     interface_node_temperature(interface.temperature)
 
 function EarthSystemModels.surface_temperature(interfaces::ComponentInterfaces)
-    Tₛ = interfaces.surface_partition.surface_temperature
-    isnothing(Tₛ) || return Tₛ
+    Tⁱⁿ = interfaces.surface_partition.surface_temperature
+    isnothing(Tⁱⁿ) || return Tⁱⁿ
     return EarthSystemModels.surface_temperature(interfaces.atmosphere_land_interface,
                                                  interfaces.atmosphere_ocean_interface)
 end

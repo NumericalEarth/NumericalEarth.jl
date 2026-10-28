@@ -11,23 +11,23 @@ using ..EarthSystemModels: DegreesKelvin
     ℂᵃᵗ = interface_state.thermodynamics_parameters
 
     @inbounds begin
-        Tₛ = convert_to_kelvin(interface_state.temperature_units, interface_state.temperature[i, j, 1])
-        qₛ = interface_state.specific_humidity[i, j, 1]
+        Tⁱⁿ = convert_to_kelvin(interface_state.temperature_units, interface_state.temperature[i, j, 1])
+        qⁱⁿ = interface_state.specific_humidity[i, j, 1]
         u★ = interface_state.fluxes.friction_velocity[i, j, 1]
         θ★ = interface_state.fluxes.temperature_scale[i, j, 1]
         q★ = interface_state.fluxes.water_vapor_scale[i, j, 1]
     end
 
-    b★ = buoyancy_scale(θ★, q★, ℂᵃᵗ, Tₛ, qₛ, interface_state.gravitational_acceleration)
+    b★ = buoyancy_scale(θ★, q★, ℂᵃᵗ, Tⁱⁿ, qⁱⁿ, interface_state.gravitational_acceleration)
     L★ = monin_obukhov_length(u★, b★, ℱ.von_karman_constant)
 
     # The admissible roughness formulations do not read the bulk velocity.
     U = zero(u★)
-    ℓu₀ = roughness_length(ℱ.roughness_lengths.momentum, u★, U, ℂᵃᵗ, Tₛ)
-    ℓθ₀ = roughness_length(ℱ.roughness_lengths.temperature, ℓu₀, u★, U, ℂᵃᵗ, Tₛ)
-    ℓq₀ = roughness_length(ℱ.roughness_lengths.water_vapor, ℓu₀, u★, U, ℂᵃᵗ, Tₛ)
+    ℓu₀ = roughness_length(ℱ.roughness_lengths.momentum, u★, U, ℂᵃᵗ, Tⁱⁿ)
+    ℓθ₀ = roughness_length(ℱ.roughness_lengths.temperature, ℓu₀, u★, U, ℂᵃᵗ, Tⁱⁿ)
+    ℓq₀ = roughness_length(ℱ.roughness_lengths.water_vapor, ℓu₀, u★, U, ℂᵃᵗ, Tⁱⁿ)
 
-    return (; formulation = ℱ, L★, Tₛ, qₛ, u★, θ★, q★, ℓu₀, ℓθ₀, ℓq₀)
+    return (; formulation = ℱ, L★, Tⁱⁿ, qⁱⁿ, u★, θ★, q★, ℓu₀, ℓθ₀, ℓq₀)
 end
 
 # The similarity profile `Π` at the geometric height `z`, undefined inside the
@@ -97,7 +97,7 @@ end
     scales = local_similarity_scales(i, j, interface_state)
     ℱ = scales.formulation
     Πθ = displaced_similarity_profile(ℱ, ℱ.stability_functions.temperature, z, scales.ℓθ₀, scales.L★)
-    θ = similarity_theory_state(scales.Tₛ, scales.θ★, ℱ.von_karman_constant, Πθ)
+    θ = similarity_theory_state(scales.Tⁱⁿ, scales.θ★, ℱ.von_karman_constant, Πθ)
 
     # `θ★` scales a potential temperature referenced to z = 0; the diagnostic is in situ.
     @inbounds qᵃᵗ = interface_state.atmosphere_specific_humidity[i, j, 1]
@@ -109,7 +109,7 @@ end
     scales = local_similarity_scales(i, j, interface_state)
     ℱ = scales.formulation
     Πq = displaced_similarity_profile(ℱ, ℱ.stability_functions.water_vapor, z, scales.ℓq₀, scales.L★)
-    return similarity_theory_state(scales.qₛ, scales.q★, ℱ.von_karman_constant, Πq)
+    return similarity_theory_state(scales.qⁱⁿ, scales.q★, ℱ.von_karman_constant, Πq)
 end
 
 """

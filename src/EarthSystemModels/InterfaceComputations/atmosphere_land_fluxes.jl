@@ -111,41 +111,41 @@ end
 end
 
 # Store diagnostics and candidate land updates from the converged boundary solve.
-@inline function finalize_interface_state!(Ts, next, i, j, formulation, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, Δt)
-    @inbounds Ts[i, j, 1] = Ψₛ.temperature
-    return Ψₛ
+@inline function finalize_interface_state!(Ts, next, i, j, formulation, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙⁱⁿ, ℙₐ, Δt)
+    @inbounds Ts[i, j, 1] = Ψⁱⁿ.temperature
+    return Ψⁱⁿ
 end
 
-@inline function finalize_interface_state!(Ts, next, i, j, c::CanopyInterface, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, Δt)
-    solution = canopy_air_space_solve(c, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, Δt)
+@inline function finalize_interface_state!(Ts, next, i, j, c::CanopyInterface, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙⁱⁿ, ℙₐ, Δt)
+    solution = canopy_air_space_solve(c, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, Δt)
     @inbounds begin
         Ts.interface[i, j, 1]              = solution.Tᵃᶜᵃⁿ
-        Ts.canopy[i, j, 1]                 = solution.Tˡᵉᵃ
-        Ts.ground[i, j, 1]                 = solution.Tᵍʳᵒ
+        Ts.canopy[i, j, 1]                 = solution.Tˡᵉᵃᶠ
+        Ts.ground[i, j, 1]                 = solution.Tᵍʳⁿᵈ
         Ts.effective[i, j, 1]              = solution.effective_temperature
         Ts.effective_albedo[i, j, 1]       = solution.effective_albedo
-        Ts.ground_heat_flux[i, j, 1]       = solution.𝒬ᵍʳᵒ
-        Ts.canopy_latent_heat[i, j, 1]     = solution.𝒬ᵛˡᵉᵃ
-        Ts.ground_latent_heat[i, j, 1]     = solution.𝒬ᵛᵍʳᵒ
-        Ts.canopy_sensible_heat[i, j, 1]   = solution.𝒬ᵀˡᵉᵃ
-        Ts.ground_sensible_heat[i, j, 1]   = solution.𝒬ᵀᵍʳᵒ
+        Ts.ground_heat_flux[i, j, 1]       = solution.𝒬ᵍʳⁿᵈ
+        Ts.canopy_latent_heat[i, j, 1]     = solution.𝒬ᵛˡᵉᵃᶠ
+        Ts.ground_latent_heat[i, j, 1]     = solution.𝒬ᵛᵍʳⁿᵈ
+        Ts.canopy_sensible_heat[i, j, 1]   = solution.𝒬ᵀˡᵉᵃᶠ
+        Ts.ground_sensible_heat[i, j, 1]   = solution.𝒬ᵀᵍʳⁿᵈ
         Ts.canopy_evaporation[i, j, 1]     = solution.Jʷᵉᵗ
         Ts.wet_canopy_latent_heat[i, j, 1] = solution.ℒ * solution.Jʷᵉᵗ
-        Ts.land_vapor_flux[i, j, 1]        = (solution.𝒬ᵛˡᵉᵃ + solution.𝒬ᵛᵍʳᵒ) / solution.ℒ - solution.Jʷᵉᵗ
-        Ts.transpiration[i, j, 1]          = solution.𝒬ᵛˡᵉᵃ / solution.ℒ - solution.Jʷᵉᵗ
+        Ts.land_vapor_flux[i, j, 1]        = (solution.𝒬ᵛˡᵉᵃᶠ + solution.𝒬ᵛᵍʳⁿᵈ) / solution.ℒ - solution.Jʷᵉᵗ
+        Ts.transpiration[i, j, 1]          = solution.𝒬ᵛˡᵉᵃᶠ / solution.ℒ - solution.Jʷᵉᵗ
     end
-    store_canopy_air_update!(next, i, j, solution, Ψₛ, Δt)
+    store_canopy_air_update!(next, i, j, solution, Ψⁱⁿ, Δt)
 
     # The exported scales are evaluated at the node the fluxes above were partitioned at.
-    return rebuild_interface_state(Ψₛ, Ψₐ, ℙₐ, solution.Tᵃᶜᵃⁿ, solution.qᵃᶜᵃⁿ)
+    return rebuild_interface_state(Ψⁱⁿ, Ψₐ, ℙₐ, solution.Tᵃᶜᵃⁿ, solution.qᵃᶜᵃⁿ)
 end
 
-@inline store_canopy_air_update!(::NamedTuple{()}, i, j, solution, Ψₛ, Δt) = nothing
+@inline store_canopy_air_update!(::NamedTuple{()}, i, j, solution, Ψⁱⁿ, Δt) = nothing
 
 # The node advances by its exact relaxation toward the equilibrium the skins were solved against.
-@inline function store_canopy_air_update!(state, i, j, solution, Ψₛ, Δt)
-    Tⁿ⁺¹ = advance_canopy_air(Ψₛ.temperature, solution.equilibrium_temperature, solution.Σgᵀ, solution.Cᵀ, Δt)
-    qⁿ⁺¹ = advance_canopy_air(Ψₛ.specific_humidity, solution.equilibrium_humidity, solution.Σgᵛ, solution.Cᵛ, Δt)
+@inline function store_canopy_air_update!(state, i, j, solution, Ψⁱⁿ, Δt)
+    Tⁿ⁺¹ = advance_canopy_air(Ψⁱⁿ.temperature, solution.equilibrium_temperature, solution.Σgᵀ, solution.Cᵀ, Δt)
+    qⁿ⁺¹ = advance_canopy_air(Ψⁱⁿ.specific_humidity, solution.equilibrium_humidity, solution.Σgᵛ, solution.Cᵛ, Δt)
     @inbounds begin
         state.temperature[i, j, 1]       = Tⁿ⁺¹
         state.specific_humidity[i, j, 1] = qⁿ⁺¹
@@ -155,24 +155,24 @@ end
 
 # Backward Euler for skin heat storage, with Newton refinement of radiation and vapor fluxes.
 @inline function finalize_interface_state!(Ts, next::NamedTuple{(:temperature,)}, i, j, t::EnergyBalanceTemperature,
-                                          Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ, Δt)
-    FT = eltype(Ψₛ)
-    Tₛ = Ψₛ.temperature
+                                          Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙⁱⁿ, ℙₐ, Δt)
+    FT = eltype(Ψⁱⁿ)
+    Tⁱⁿ = Ψⁱⁿ.temperature
     C  = convert(FT, Ψˡᵃ.surface_storage.heat_capacity)
     Δt⁻¹ = ifelse(Δt > 0, 1 / Δt, zero(FT))
 
-    Tⁿ⁺¹ = Tₛ
+    Tⁿ⁺¹ = Tⁱⁿ
     for _ in 1:3
-        F, Σg = skin_energy_imbalance(Tⁿ⁺¹, t, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₛ, ℙₐ)
-        R    = C * (Tⁿ⁺¹ - Tₛ) * Δt⁻¹ - F
+        F, Σg = skin_energy_imbalance(Tⁿ⁺¹, t, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙⁱⁿ, ℙₐ)
+        R    = C * (Tⁿ⁺¹ - Tⁱⁿ) * Δt⁻¹ - F
         dR   = C * Δt⁻¹ + Σg
         Tⁿ⁺¹ = ifelse(dR > 0, Tⁿ⁺¹ - R / dR, Tⁿ⁺¹)
     end
 
     @inbounds Ts[i, j, 1] = next.temperature[i, j, 1] = Tⁿ⁺¹
 
-    qⁿ⁺¹ = compute_interface_humidity(specific_humidity_formulation(ℙₛ.state), Tⁿ⁺¹, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
-    return rebuild_interface_state(Ψₛ, Ψₐ, ℙₐ, Tⁿ⁺¹, qⁿ⁺¹)
+    qⁿ⁺¹ = compute_interface_humidity(specific_humidity_formulation(ℙⁱⁿ.state), Tⁿ⁺¹, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
+    return rebuild_interface_state(Ψⁱⁿ, Ψₐ, ℙₐ, Tⁿ⁺¹, qⁿ⁺¹)
 end
 
 # Fallback: assume land has a `fluxes` property like SlabLand
@@ -307,14 +307,14 @@ function land_saturation end
 """
     land_canopy_water_storage(land)
 
-Return the canopy interception store `Mᶜᵃⁿ` (kg m⁻²) on the land grid.
+Return the canopy interception store `Mᶜⁿᵖʸ` (kg m⁻²) on the land grid.
 """
 function land_canopy_water_storage end
 
 """
     land_canopy_water_capacity(land)
 
-Return the canopy interception capacity `Mᶜᵃⁿ⁺` (kg m⁻²) on the land grid.
+Return the canopy interception capacity `Mᶜⁿᵖʸ⁺` (kg m⁻²) on the land grid.
 """
 function land_canopy_water_capacity end
 
@@ -397,8 +397,8 @@ Adapt.@adapt_structure LandSurfaceEnergyFlux
 
 function land_surface_fluxes(Tⁱⁿ, interface, Tˡᵃ)
     fluxes = interface.fluxes
-    Λᵍʳᵒ = ground_conductance(interface)
-    energy = LandSurfaceEnergyFlux(Tⁱⁿ.grid, Tⁱⁿ, fluxes, Tˡᵃ, Λᵍʳᵒ)
+    Λᵍʳⁿᵈ = ground_conductance(interface)
+    energy = LandSurfaceEnergyFlux(Tⁱⁿ.grid, Tⁱⁿ, fluxes, Tˡᵃ, Λᵍʳⁿᵈ)
     return (; energy, vapor=fluxes.water_vapor, canopy_evaporation=ZeroField())
 end
 
@@ -409,8 +409,8 @@ land_surface_fluxes(canopy::CanopyInterfaceDiagnostics, interface, Tˡᵃ) =
 @inline surface_energy_loss(i, j, grid, Tⁱⁿ, fluxes, Tˡᵃ, ::Nothing) =
     @inbounds fluxes.sensible_heat[i, j, 1] + fluxes.latent_heat[i, j, 1]
 
-@inline surface_energy_loss(i, j, grid, Tⁱⁿ, fluxes, Tˡᵃ, Λᵍʳᵒ) =
-    @inbounds -Λᵍʳᵒ * (Tⁱⁿ[i, j, 1] - Tˡᵃ[i, j, 1])
+@inline surface_energy_loss(i, j, grid, Tⁱⁿ, fluxes, Tˡᵃ, Λᵍʳⁿᵈ) =
+    @inbounds -Λᵍʳⁿᵈ * (Tⁱⁿ[i, j, 1] - Tˡᵃ[i, j, 1])
 
 """
 $(TYPEDSIGNATURES)

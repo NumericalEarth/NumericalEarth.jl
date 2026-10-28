@@ -12,15 +12,15 @@ using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 const ℂ = AtmosphereThermodynamicsParameters(Float64)
 qᵛ⁺(T) = saturation_specific_humidity(ℂ, T, 1.0e5, AtmosphericThermodynamics.Liquid())
 
-# `compute_interface_humidity(q, Tᵍʳᵒ, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)`; the dry-layer soil model ignores the radiation state Ψᵣ.
-function humidity(q, 𝒮; Tˡᵃ = 290.0, Tᵍʳᵒ = 300.0, pᵃᵗ = 1.0e5, qᵃᵗ = 1.0e-2, Tᵃᵗ = 295.0, u★ = 0.3, q★ = 2.0e-4, qⁱⁿ⁻ = 0.005)
+# `compute_interface_humidity(q, Tᵍʳⁿᵈ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)`; the dry-layer soil model ignores the radiation state Ψᵣ.
+function humidity(q, 𝒮; Tˡᵃ = 290.0, Tᵍʳⁿᵈ = 300.0, pᵃᵗ = 1.0e5, qᵃᵗ = 1.0e-2, Tᵃᵗ = 295.0, u★ = 0.3, q★ = 2.0e-4, qⁱⁿ⁻ = 0.005)
     Ψₐ = (T = Tᵃᵗ, p = pᵃᵗ, q = qᵃᵗ, u = 1.0, v = 0.0, z = 10.0, h_bℓ = 1000.0)
     Ξq = q★ / (qᵃᵗ - qⁱⁿ⁻)   # transfer coefficient consistent with q★ = Ξq Δq
-    Ψₛ = AirLandInterfaceState(InterfaceFluxScales(u★, 0.0, q★, 0.0, Ξq), InterfaceVelocities(0.0, 0.0), Tᵍʳᵒ, qⁱⁿ⁻)
+    Ψⁱⁿ = AirLandInterfaceState(InterfaceFluxScales(u★, 0.0, q★, 0.0, Ξq), InterfaceVelocities(0.0, 0.0), Tᵍʳⁿᵈ, qⁱⁿ⁻)
     Ψˡᵃ = (T = Tˡᵃ, 𝒮 = 𝒮, effective_vapor_diffusivity = q.vapor_exchange.molecular_diffusivity,
            thermal_exchange_depth = 0.10)
     ℙₐ = (thermodynamics_parameters = ℂ, surface_layer_height = 10.0, gravitational_acceleration = 9.81)
-    return compute_interface_humidity(q, Tᵍʳᵒ, Ψₛ, Ψₐ, Ψˡᵃ, nothing, ℙₐ)
+    return compute_interface_humidity(q, Tᵍʳⁿᵈ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, nothing, ℙₐ)
 end
 
 @testset "Soil vapor diffusion follows porosity and residual water" begin
@@ -55,7 +55,7 @@ end
             minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
             wet_transition_width = 0))
 
-    # 𝒮 = 0.5 ⇒ δᵛ = 0 ⇒ wet ⇒ qⁱⁿ = qᵛ⁺(Tᵍʳᵒ).
+    # 𝒮 = 0.5 ⇒ δᵛ = 0 ⇒ wet ⇒ qⁱⁿ = qᵛ⁺(Tᵍʳⁿᵈ).
     @test isapprox(humidity(q, 0.5), qᵛ⁺(300.0); atol = 1e-15)
 end
 
@@ -67,13 +67,13 @@ end
             minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
             tortuosity = ConstantTortuosity()))
 
-    # Fully dry: 𝒮 = 0 ⇒ δᵛ = δᵛ_max = 0.05, χ = 0.5 ⇒ Tᵉ = (Tᵍʳᵒ+Tˡᵃ)/2.
-    Tˡᵃ = 290.0; Tᵍʳᵒ = 300.0
+    # Fully dry: 𝒮 = 0 ⇒ δᵛ = δᵛ_max = 0.05, χ = 0.5 ⇒ Tᵉ = (Tᵍʳⁿᵈ+Tˡᵃ)/2.
+    Tˡᵃ = 290.0; Tᵍʳⁿᵈ = 300.0
     pᵃᵗ = 1.0e5; qᵃᵗ = 1.0e-2; Tᵃᵗ = 295.0
     u★ = 0.3;   q★ = 2.0e-4; qⁱⁿ⁻ = 0.005
-    qⁱⁿ★ = humidity(q, 0.0; Tˡᵃ, Tᵍʳᵒ, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
+    qⁱⁿ★ = humidity(q, 0.0; Tˡᵃ, Tᵍʳⁿᵈ, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
 
-    Tᵉ  = (Tᵍʳᵒ + Tˡᵃ) / 2
+    Tᵉ  = (Tᵍʳⁿᵈ + Tˡᵃ) / 2
     qᵉ  = saturation_specific_humidity(ℂ, Tᵉ, pᵃᵗ, AtmosphericThermodynamics.Liquid())
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
     wᵈ  = 2.5e-5 / 0.05
@@ -87,7 +87,7 @@ end
 end
 
 @testset "DryLayerHumidity Tᵉ interpolation" begin
-    # δᵛ controls χ = clip(δᵛ/ℓᵀ, 0, 1) ⇒ Tᵉ = Tᵍʳᵒ + χ(Tˡᵃ - Tᵍʳᵒ).
+    # δᵛ controls χ = clip(δᵛ/ℓᵀ, 0, 1) ⇒ Tᵉ = Tᵍʳⁿᵈ + χ(Tˡᵃ - Tᵍʳⁿᵈ).
     # We don't directly expose Tᵉ, but the source humidity is qᵛ⁺(Tᵉ), so the
     # vapor balance pins Tᵉ implicitly. Use cases where 𝒮 → δᵛ is known.
     # 𝒮ᶜ = 0.5, η = 1, δᵛ_max = 0.05, ℓᵀ = 0.10:
@@ -103,10 +103,10 @@ end
             minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
             tortuosity = ConstantTortuosity(), wet_transition_width = 0))
 
-    qᵈʳʸ = humidity(q, 0.0; Tᵍʳᵒ = 310.0)
-    qʷᵉᵗ = humidity(q, 0.5; Tᵍʳᵒ = 310.0)
+    qᵈʳʸ = humidity(q, 0.0; Tᵍʳⁿᵈ = 310.0)
+    qʷᵉᵗ = humidity(q, 0.5; Tᵍʳⁿᵈ = 310.0)
 
-    # Wet (𝒮 ≥ 𝒮ᶜ): qⁱⁿ = qᵛ⁺(Tᵍʳᵒ); dry: qⁱⁿ < qᵛ⁺(Tᵍʳᵒ) because the source is colder.
+    # Wet (𝒮 ≥ 𝒮ᶜ): qⁱⁿ = qᵛ⁺(Tᵍʳⁿᵈ); dry: qⁱⁿ < qᵛ⁺(Tᵍʳⁿᵈ) because the source is colder.
     @test qʷᵉᵗ ≈ qᵛ⁺(310.0)
     @test qᵈʳʸ < qʷᵉᵗ
 end

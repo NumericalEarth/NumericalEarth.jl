@@ -279,7 +279,7 @@ end
 
 # NCAR transfer coefficients: full L&Y stability correction (eqs. 6c-6d, 10a-10c)
 @inline function evaluate_coefficients(ly::LargeYeagerTransferCoefficients,
-                                       ΔU, Tₛ, qₛ, Δh,
+                                       ΔU, Tⁱⁿ, qⁱⁿ, Δh,
                                        approximate_interface_state,
                                        atmosphere_properties)
 
@@ -298,7 +298,7 @@ end
     ΔU   = max(ΔU, Umin)
 
     # Monin-Obukhov length from previous iteration scales
-    b★ = buoyancy_scale(θ★, q★, ℂᵃᵗ, Tₛ, qₛ, g)
+    b★ = buoyancy_scale(θ★, q★, ℂᵃᵗ, Tⁱⁿ, qⁱⁿ, g)
     L★ = ifelse(b★ == 0, convert(FT, Inf), u★^2 / (κ * b★))
     ζ  = Δh / L★
 
@@ -338,7 +338,7 @@ end
 #####
 
 @inline function iterate_interface_fluxes(flux_formulation::CoefficientBasedFluxes,
-                                          Tₛ, qₛ, Δθ, Δq, Δh,
+                                          Tⁱⁿ, qⁱⁿ, Δθ, Δq, Δh,
                                           approximate_interface_state,
                                           atmosphere_state,
                                           interface_formulation,
@@ -352,7 +352,7 @@ end
     ΔU   = max(sqrt(Δu^2 + Δv^2), Umin)
 
     Cd, Ch, Cq = evaluate_coefficients(flux_formulation.transfer_coefficients,
-                                       ΔU, Tₛ, qₛ, Δh,
+                                       ΔU, Tⁱⁿ, qⁱⁿ, Δh,
                                        approximate_interface_state,
                                        atmosphere_properties)
 

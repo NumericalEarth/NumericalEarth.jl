@@ -1,17 +1,17 @@
 #####
 ##### `CanopyConductanceHumidity` — a single-source (big-leaf) canopy: the stomatal
-##### conductance `gᶜᵃⁿ = λˡᵉᵃᶠ · gₛ` in series with the aerodynamic conductance.
+##### conductance `gᶜⁿᵖʸ = λˡᵉᵃᶠ · gₛ` in series with the aerodynamic conductance.
 #####
 
 """
     struct CanopyConductanceHumidity
 
 Surface specific humidity `qˢ` for a single-source (big-leaf) canopy: the
-canopy conductance `gᶜᵃⁿ = λˡᵉᵃᶠ · gₛ` in series with the aerodynamic conductance,
+canopy conductance `gᶜⁿᵖʸ = λˡᵉᵃᶠ · gₛ` in series with the aerodynamic conductance,
 solved inside the Monin–Obukhov fixed point exactly as [`SkinHumidity`](@ref)
 solves a soil-resistance balance. The stomatal conductance `gₛ` comes from the
 `conductance` model driven by the per-cell leaf-to-air VPD, leaf temperature
-(`= Tₛ`, single-source), and absorbed PAR, with the moisture-stress factor `β(𝒮)`
+(`= Tⁱⁿ`, single-source), and absorbed PAR, with the moisture-stress factor `β(𝒮)`
 read from the ground hydrology (`moisture_stress`, a `Number`, a
 [`PlantAvailableWaterStress`](@ref) — the model meant for transpiration — or a
 [`CriticalSaturation`](@ref)). The default conductance is
@@ -67,36 +67,36 @@ land_state_accessors(q::CanopyConductanceHumidity) = land_state_accessors(q.mois
 @inline interface_vegetation_state(i, j, grid, ::CanopyConductanceHumidity, vegetation, time_interpolator) =
     (leaf_area_index = convert(eltype(grid), stateindex(vegetation, i, j, 1, time_interpolator)),)
 
-# Bulk canopy (stomatal) mass conductance `gᶜᵃⁿ = λˡᵉᵃᶠ · gₛ · Mᵈ` (kg m⁻² s⁻¹) and the leaf
-# saturation humidity `qᵛ⁺(Tˡᵉᵃ)`; `qᵃ` is the humidity of the air the leaf exchanges with.
-@inline function canopy_conductance_terms(q::CanopyConductanceHumidity, Tˡᵉᵃ, qᵃ, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ,
+# Bulk canopy (stomatal) mass conductance `gᶜⁿᵖʸ = λˡᵉᵃᶠ · gₛ · Mᵈ` (kg m⁻² s⁻¹) and the leaf
+# saturation humidity `qᵛ⁺(Tˡᵉᵃᶠ)`; `qᵃ` is the humidity of the air the leaf exchanges with.
+@inline function canopy_conductance_terms(q::CanopyConductanceHumidity, Tˡᵉᵃᶠ, qᵃ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ,
                                           canopy_transmittance)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     pᵃᵗ = Ψₐ.p
 
     λˡᵉᵃᶠ = Ψˡᵃ.leaf_area_index
-    qᵛ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tˡᵉᵃ, pᵃᵗ, q.phase)
+    qᵛ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tˡᵉᵃᶠ, pᵃᵗ, q.phase)
     # Leaf-to-air vapor pressure deficit (Pa).
-    VPD  = max(AtmosphericThermodynamics.vapor_pressure_deficit(ℂᵃᵗ, Tˡᵉᵃ, pᵃᵗ, qᵃ, 0, 0, q.phase),
-               oftype(Tˡᵉᵃ, 50))
+    VPD  = max(AtmosphericThermodynamics.vapor_pressure_deficit(ℂᵃᵗ, Tˡᵉᵃᶠ, pᵃᵗ, qᵃ, 0, 0, q.phase),
+               oftype(Tˡᵉᵃᶠ, 50))
     β    = evaporation_efficiency(q.moisture_stress, Ψˡᵃ)
     APAR = absorbed_par_value(q.absorbed_par, Ψᵣ, λˡᵉᵃᶠ, canopy_transmittance)
 
-    gₛ = stomatal_conductance(q.conductance, APAR, VPD, Tˡᵉᵃ, β)
+    gₛ = stomatal_conductance(q.conductance, APAR, VPD, Tˡᵉᵃᶠ, β)
 
-    # gᶜᵃⁿ = λˡᵉᵃᶠ Mᵈ gₛ: the dry-air molar mass Mᵈ converts molar to mass conductance.
+    # gᶜⁿᵖʸ = λˡᵉᵃᶠ Mᵈ gₛ: the dry-air molar mass Mᵈ converts molar to mass conductance.
     Mᵈ   = molmass_dryair(ℂᵃᵗ)
-    gᶜᵃⁿ = λˡᵉᵃᶠ * gₛ * convert(typeof(gₛ), Mᵈ)
+    gᶜⁿᵖʸ = λˡᵉᵃᶠ * gₛ * convert(typeof(gₛ), Mᵈ)
 
-    return gᶜᵃⁿ, qᵛ⁺
+    return gᶜⁿᵖʸ, qᵛ⁺
 end
 
-@inline function compute_interface_humidity(q::CanopyConductanceHumidity, Tₛ, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
-    FT = eltype(Ψₛ)
-    gᶜᵃⁿ, qᵛ⁺ = canopy_conductance_terms(q, Tₛ, Ψₐ.q, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, nothing)
+@inline function compute_interface_humidity(q::CanopyConductanceHumidity, Tⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
+    FT = eltype(Ψⁱⁿ)
+    gᶜⁿᵖʸ, qᵛ⁺ = canopy_conductance_terms(q, Tⁱⁿ, Ψₐ.q, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, nothing)
 
-    gᵃᵛ = aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
-    qˢ  = conductance_weighted_node(Ψₛ.specific_humidity, (gᶜᵃⁿ, gᵃᵛ), (qᵛ⁺, Ψₐ.q))
+    gᵃᵛ = aerodynamic_vapor_conductance(Ψⁱⁿ, Ψₐ, ℙₐ.thermodynamics_parameters)
+    qˢ  = conductance_weighted_node(Ψⁱⁿ.specific_humidity, (gᶜⁿᵖʸ, gᵃᵛ), (qᵛ⁺, Ψₐ.q))
 
     return convert(FT, qˢ)
 end

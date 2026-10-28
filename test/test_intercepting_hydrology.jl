@@ -73,12 +73,12 @@ end
 end
 
 @testset "Canopy store budget closes when the store empties mid-step" begin
-    Mᶜᵃⁿ, rain, Mᶜᵃⁿ⁺, fⁱⁿᵗ, Δt = 0.05, 1e-4, 0.3, 0.6, 600.0
+    Mᶜⁿᵖʸ, rain, Mᶜⁿᵖʸ⁺, fⁱⁿᵗ, Δt = 0.05, 1e-4, 0.3, 0.6, 600.0
     for Jʷᵉᵗ in (0.0, 1e-4, 5e-4)
-        Mᶜᵃⁿⁿ⁺¹, drip, throughfall = canopy_store_update(Mᶜᵃⁿ, rain, Jʷᵉᵗ, Mᶜᵃⁿ⁺, fⁱⁿᵗ, Δt)
-        @test 0 ≤ Mᶜᵃⁿⁿ⁺¹ ≤ Mᶜᵃⁿ⁺
+        Mᶜⁿᵖʸⁿ⁺¹, drip, throughfall = canopy_store_update(Mᶜⁿᵖʸ, rain, Jʷᵉᵗ, Mᶜⁿᵖʸ⁺, fⁱⁿᵗ, Δt)
+        @test 0 ≤ Mᶜⁿᵖʸⁿ⁺¹ ≤ Mᶜⁿᵖʸ⁺
         @test drip ≥ 0
-        @test rain ≈ (Mᶜᵃⁿⁿ⁺¹ - Mᶜᵃⁿ) / Δt + Jʷᵉᵗ + throughfall atol = 1e-15
+        @test rain ≈ (Mᶜⁿᵖʸⁿ⁺¹ - Mᶜⁿᵖʸ) / Δt + Jʷᵉᵗ + throughfall atol = 1e-15
     end
 end
 
@@ -120,10 +120,10 @@ end
         update_state!(model)
         rain = scalar(land.fluxes.liquid_water_precipitation_flux)
         Jʷᵉᵗ = scalar(land.fluxes.canopy_evaporation)
-        Mᶜᵃⁿⁿ = canopy_storage(land)
+        Mᶜⁿᵖʸⁿ = canopy_storage(land)
         time_step!(model, 600.0)
         throughfall = scalar(land.diagnostics.throughfall)
-        @test rain ≈ (canopy_storage(land) - Mᶜᵃⁿⁿ) / 600 + Jʷᵉᵗ + throughfall atol=1e-14
+        @test rain ≈ (canopy_storage(land) - Mᶜⁿᵖʸⁿ) / 600 + Jʷᵉᵗ + throughfall atol=1e-14
         @test scalar(land.fluxes.liquid_water_precipitation_flux) == rain
         @test 0 ≤ throughfall < rain
     end
@@ -135,9 +135,9 @@ end
         land = model.land
         set!(land; canopy_water_storage = 0.8 * 0.1 * 3)
         for _ in 1:200
-            Mᶜᵃⁿ⁻ = canopy_storage(land)
+            Mᶜⁿᵖʸ⁻ = canopy_storage(land)
             time_step!(model, 3600.0)
-            @test scalar(land.fluxes.canopy_evaporation) ≤ Mᶜᵃⁿ⁻ / 3600 * (1 + 1e-5)
+            @test scalar(land.fluxes.canopy_evaporation) ≤ Mᶜⁿᵖʸ⁻ / 3600 * (1 + 1e-5)
             @test canopy_storage(land) ≥ 0
         end
         @test canopy_storage(land) < 1e-3
@@ -182,8 +182,8 @@ end
     for arch in test_architectures
         model = interception_model(arch, Float32; leaf_area_index = 3.0f0, capacity = 0.1f0)
         time_step!(model, 600)
-        Mᶜᵃⁿ = canopy_storage(model.land)
-        @test Mᶜᵃⁿ isa Float32 && isfinite(Mᶜᵃⁿ) && Mᶜᵃⁿ ≥ 0
+        Mᶜⁿᵖʸ = canopy_storage(model.land)
+        @test Mᶜⁿᵖʸ isa Float32 && isfinite(Mᶜⁿᵖʸ) && Mᶜⁿᵖʸ ≥ 0
         @test isfinite(scalar(model.land.fluxes.canopy_evaporation))
     end
 end
