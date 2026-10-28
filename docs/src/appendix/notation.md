@@ -44,6 +44,7 @@ In Julia code, superscripts are entered with Unicode (e.g. `\scrQ<tab>` → `�
 | ``\tau`` | `τ` | `\tau` | Kinematic momentum flux (m² s⁻²) |
 | ``\mathcal{L}`` | `ℒ` | `\scrL` | Latent heat (J kg⁻¹) |
 | ``M`` | `M` | | Layer-integrated mass per area (kg m⁻²) |
+| ``P`` | `P` | | Precipitation (liquid water) mass flux reaching a surface (kg m⁻² s⁻¹) |
 
 Note: ``\tau^x`` (`τˣ`) is the _kinematic_ momentum flux (stress divided
 by density). The mass-weighted stress is ``\rho \tau^x`` (`ρτˣ`, in N m⁻²).
@@ -92,6 +93,9 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``\mathrm{dbr}`` | `ᵈᵇʳ` | dry-layer branch of the ground vapor exchange | ``f^{\mathrm{dbr}}`` (dry-branch weight), ``g^{\mathrm{dbr}}`` (dry-branch conductance) |
 | ``\mathrm{wet}`` | `ʷᵉᵗ` | wet (intercepted) canopy water | ``J^{\mathrm{wet}}`` (wet-canopy evaporation) |
 | ``\mathrm{int}`` | `ⁱⁿᵗ` | interception | ``f^{\mathrm{int}}`` (caught fraction of rain) |
+| ``\mathrm{thr}`` | `ᵗʰʳ` | throughfall | ``P^{\mathrm{thr}}`` (rain reaching the soil beneath the canopy) |
+| ``\mathrm{dri}`` | `ᵈʳⁱ` | drip | ``J^{\mathrm{dri}}`` (drainage from a full canopy store) |
+| ``\mathrm{def}`` | `ᵈᵉᶠ` | deficit | ``J^{\mathrm{def}}`` (evaporation the canopy store could not supply) |
 | ``\mathrm{tra}`` | `ᵗʳᵃ` | transpiration | ``J^{\mathrm{tra}}`` (transpiration flux) |
 | ``\mathrm{rad}`` | `ʳᵃᵈ` | radiating (effective) | ``T^{\mathrm{rad}}`` (radiating temperature), ``\alpha^{\mathrm{rad}}`` (effective albedo) |
 | ``\mathrm{fc}``, ``\mathrm{wp}`` | `ᶠᶜ`, `ʷᵖ` | field capacity, wilting point | ``𝒮^{\mathrm{fc}}``, ``𝒮^{\mathrm{wp}}`` (plant-stress endpoint saturations) |
@@ -116,6 +120,14 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``a`` | `ₐ` | absorbed | ``\mathscr{I}_{a}^{\mathrm{lw}}`` (absorbed longwave) |
 | ``\star`` | `★` | similarity theory scale | ``u_\star`` (friction velocity) |
 | ``b`` | `b` | boundary value, or background | ``T_b`` (interface temperature), ``u_b`` (background bottom velocity) |
+
+### Time levels
+
+| Notation | Code | Meaning | Example |
+|:--------:|:----:|:--------|:--------|
+| ``\Delta t`` | `Δt` | time step (s) | |
+| ``\cdot^n``, ``\cdot^{n+1}`` | `ⁿ`, `ⁿ⁺¹` | value at the start and end of a time step | ``M^{\mathrm{can}\,n+1}`` (`Mᶜᵃⁿⁿ⁺¹`) |
+| ``\tilde{\cdot}`` | `M̃` (`\tilde`) | provisional value before a constraint (e.g. clamping) is applied | ``\tilde{M}^{\mathrm{can}}`` (`M̃ᶜᵃⁿ`) |
 
 ## Atmosphere state variables
 
@@ -194,6 +206,7 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 | ``T_0`` | `reference_temperature` | viscosity reference temperature | Temperature at which ``K_0`` holds and the viscosity factor ``\Theta(T)`` on ``K`` is unity (K) |
 | ``J^{Es}`` | `surface_energy_flux` | surface energy flux | Signed surface energy flux, positive upward (out of the slab) (W m⁻²) |
 | ``J^{lb}`` | `deep_liquid_water_flux` | deep-boundary liquid water flux | Liquid water mass flux across the slab bottom, positive upward (into the slab, capillary rise / groundwater return); drainage is ``J^{lb} < 0`` (kg m⁻² s⁻¹) |
+| ``P^l`` | `Pˡ`, `liquid_water_precipitation_flux` | liquid precipitation | Rain reaching the land surface, positive into the land (kg m⁻² s⁻¹) |
 | ``J^{ls}`` | `surface_liquid_water_flux` | surface liquid water flux | Liquid water mass flux at the surface, ``J^{ls} = -P^l + R^{\mathrm{sfc}}`` without a surface water store, positive upward (out of the slab); infiltration is ``J^{ls} < 0`` (kg m⁻² s⁻¹) |
 | ``R^{\mathrm{sfc}}`` | `surface_runoff` | surface runoff | Liquid leaving the column at the surface, ``\ge 0``: the infiltration excess, or the share of the surface water store drained over the step (kg m⁻² s⁻¹) |
 | ``M^{\mathrm{sfc}}`` | `surface_water_storage` | surface water store | Infiltration excess ponded at the surface, draining on `drainage_time_scale` (kg m⁻²) |
@@ -249,6 +262,8 @@ and [`InterceptingHydrology`](@ref).
 | ``r^{\mathrm{gro}}``, ``C^{\mathrm{gro}}`` | `transfer_coefficient` | ground-surface resistance, transfer coefficient | Bulk ground evaporation resistance of a [`GroundSurfaceResistance`](@ref) (s m⁻¹) and its transfer coefficient (–) |
 | ``M^{\mathrm{can}}``, ``M^{\mathrm{can}+}`` | `canopy_water_storage` | canopy water store | Intercepted water on the foliage and its capacity ``M^{\mathrm{can}+} = c \lambda^{\mathrm{leaf}}``, with ``c`` the capacity per unit leaf area (`capacity_per_leaf_area`) (kg m⁻²) |
 | ``f^{\mathrm{int}}`` | – | interception fraction | Caught fraction of rain, ``1 - e^{-K \Omega \lambda^{\mathrm{leaf}}}`` (–) |
+| ``P^{\mathrm{int}}``, ``P^{\mathrm{thr}}`` | `Pⁱⁿᵗ`, `throughfall` | intercepted rain, throughfall | Rain caught by the canopy, ``f^{\mathrm{int}} P^l``, and the liquid water reaching the soil beneath it (kg m⁻² s⁻¹) |
+| ``J^{\mathrm{dri}}``, ``J^{\mathrm{def}}`` | `Jᵈʳⁱ`, `Jᵈᵉᶠ` | canopy drip, evaporation deficit | Water draining from a full canopy store, and wet-canopy evaporation the store could not supply, over one step (kg m⁻² s⁻¹) |
 | ``f^{\mathrm{wet}}`` | – | wet-canopy fraction | Deardorff wetted-leaf fraction ``(M^{\mathrm{can}}/M^{\mathrm{can}+})^{2/3}`` (–) |
 | ``g^{\mathrm{wet}}`` | – | wet-canopy vapor conductance | Wetted fraction of the leaf boundary-layer conductance, capped so that ``J^{\mathrm{wet}} \le M^{\mathrm{can}}/\Delta t`` (kg m⁻² s⁻¹) |
 | ``J^{\mathrm{wet}}``, ``\mathcal{Q}^{v\,\mathrm{wet}}`` | – | wet-canopy evaporation | Evaporation of intercepted water (kg m⁻² s⁻¹) and its latent heat (W m⁻²) |

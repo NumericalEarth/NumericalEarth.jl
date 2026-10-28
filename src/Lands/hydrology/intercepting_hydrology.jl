@@ -63,16 +63,25 @@ initial_diagnostic(h::InterceptingHydrology, name::Symbol, grid) = initial_diagn
 ##### Interception step, ahead of the soil step that reads its throughfall.
 #####
 
-# rain = (Mᶜᵃⁿⁿ⁺¹ − Mᶜᵃⁿ)/Δt + Jʷᵉᵗ + throughfall exactly: evaporation beyond what the
-# store held is taken from the throughfall.
-@inline function canopy_store_update(Mᶜᵃⁿ, rain, Jʷᵉᵗ, Mᶜᵃⁿ⁺, fⁱⁿᵗ, Δt)
-    Pⁱⁿᵗ             = fⁱⁿᵗ * rain
-    uncapped_storage = Mᶜᵃⁿ + Δt * (Pⁱⁿᵗ - Jʷᵉᵗ)
-    drip             = max(uncapped_storage - Mᶜᵃⁿ⁺, 0) / Δt
-    shortfall        = max(-uncapped_storage, 0) / Δt
-    Mᶜᵃⁿⁿ⁺¹          = clamp(uncapped_storage, 0, Mᶜᵃⁿ⁺)
-    throughfall      = rain - Pⁱⁿᵗ + drip - shortfall
-    return Mᶜᵃⁿⁿ⁺¹, drip, throughfall
+# One step of the canopy water store Mᶜᵃⁿ ∈ [0, Mᶜᵃⁿ⁺] under rain Pˡ and wet-canopy evaporation Jʷᵉᵗ.
+# The canopy intercepts Pⁱⁿᵗ = fⁱⁿᵗ Pˡ, giving the unclamped store
+#
+#     M̃ᶜᵃⁿ = Mᶜᵃⁿ + Δt (Pⁱⁿᵗ − Jʷᵉᵗ),     Mᶜᵃⁿⁿ⁺¹ = clamp(M̃ᶜᵃⁿ, 0, Mᶜᵃⁿ⁺).
+#
+# Water above capacity drips, Jᵈʳⁱ = max(M̃ᶜᵃⁿ − Mᶜᵃⁿ⁺, 0)/Δt, and evaporation the store could not
+# supply, Jᵈᵉᶠ = max(−M̃ᶜᵃⁿ, 0)/Δt, is taken from the throughfall reaching the soil,
+#
+#     Pᵗʰʳ = (1 − fⁱⁿᵗ) Pˡ + Jᵈʳⁱ − Jᵈᵉᶠ,
+#
+# so that Pˡ = (Mᶜᵃⁿⁿ⁺¹ − Mᶜᵃⁿ)/Δt + Jʷᵉᵗ + Pᵗʰʳ exactly.
+@inline function canopy_store_update(Mᶜᵃⁿ, Pˡ, Jʷᵉᵗ, Mᶜᵃⁿ⁺, fⁱⁿᵗ, Δt)
+    Pⁱⁿᵗ    = fⁱⁿᵗ * Pˡ
+    M̃ᶜᵃⁿ    = Mᶜᵃⁿ + Δt * (Pⁱⁿᵗ - Jʷᵉᵗ)
+    Jᵈʳⁱ    = max(M̃ᶜᵃⁿ - Mᶜᵃⁿ⁺, 0) / Δt
+    Jᵈᵉᶠ    = max(-M̃ᶜᵃⁿ, 0) / Δt
+    Mᶜᵃⁿⁿ⁺¹ = clamp(M̃ᶜᵃⁿ, 0, Mᶜᵃⁿ⁺)
+    Pᵗʰʳ    = Pˡ - Pⁱⁿᵗ + Jᵈʳⁱ - Jᵈᵉᶠ
+    return Mᶜᵃⁿⁿ⁺¹, Jᵈʳⁱ, Pᵗʰʳ
 end
 
 @kernel function _interception_step!(canopy_water_storage, liquid_water_precipitation_flux, canopy_evaporation,
@@ -80,7 +89,7 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         Mᶜᵃⁿⁿ = canopy_water_storage[i, j, 1]
-        rain  = liquid_water_precipitation_flux[i, j, 1]
+        Pˡ    = liquid_water_precipitation_flux[i, j, 1]
         Jʷᵉᵗ  = canopy_evaporation[i, j, 1]
     end
     FT    = typeof(Mᶜᵃⁿⁿ)
@@ -88,11 +97,11 @@ end
     Mᶜᵃⁿ⁺ = h.capacity_per_leaf_area * λˡᵉᵃᶠ
     fⁱⁿᵗ  = 1 - canopy_transmittance(h.extinction, h.clumping, λˡᵉᵃᶠ)
 
-    Mᶜᵃⁿⁿ⁺¹, _, Pˡ = canopy_store_update(Mᶜᵃⁿⁿ, rain, Jʷᵉᵗ, Mᶜᵃⁿ⁺, fⁱⁿᵗ, Δt)
+    Mᶜᵃⁿⁿ⁺¹, _, Pᵗʰʳ = canopy_store_update(Mᶜᵃⁿⁿ, Pˡ, Jʷᵉᵗ, Mᶜᵃⁿ⁺, fⁱⁿᵗ, Δt)
 
     @inbounds begin
         canopy_water_storage[i, j, 1] = Mᶜᵃⁿⁿ⁺¹
-        throughfall[i, j, 1]          = Pˡ
+        throughfall[i, j, 1]          = Pᵗʰʳ
     end
 end
 
