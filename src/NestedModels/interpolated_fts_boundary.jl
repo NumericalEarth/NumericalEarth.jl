@@ -37,7 +37,7 @@ const InterpolatedSource = Union{FlavorOfFTS, Oceananigans.Fields.AbstractField}
 
 A horizontal vector source whose components are geographic — eastward and northward — wrapped so that
 `Interpolated` returns the `Component` (`:u` or `:v`) of the same vector in the queried grid's own frame.
-Both components are interpolated at the query node and rotated there with
+Both components are interpolated at the query node, each at its own location, and rotated there with
 `Oceananigans.Operators.intrinsic_vector`, which is the identity on a `LatitudeLongitudeGrid` or a
 `RectilinearGrid` and a rotation on any `OrthogonalSphericalShellGrid`.
 
@@ -48,27 +48,30 @@ u_bcs = FieldBoundaryConditions(west = NormalFlowBoundaryCondition(Interpolated(
 v_bcs = FieldBoundaryConditions(west = NormalFlowBoundaryCondition(Interpolated(VectorComponent{:v}(uᵉ, vᵉ))))
 ```
 """
-struct VectorComponent{Component, U, V, G}
-    eastward  :: U
-    northward :: V
-    grid      :: G   # kept through Adapt: `evaluate_target` reads it on the device
+struct VectorComponent{Component, U, V, LU, LV, G}
+    eastward      :: U
+    northward     :: V
+    eastward_loc  :: LU
+    northward_loc :: LV
+    grid          :: G   # kept through Adapt: `evaluate_target` reads it on the device
 end
 
-function VectorComponent{C}(eastward::U, northward::V) where {C, U, V}
+function VectorComponent{C}(eastward, northward) where C
     C === :u || C === :v || throw(ArgumentError("a VectorComponent's component must be :u or :v, got :$C"))
     grid = validate_grid(eastward, northward)
-    return VectorComponent{C, U, V, typeof(grid)}(eastward, northward, grid)
+    ℓe = Oceananigans.instantiated_location(eastward)
+    ℓn = Oceananigans.instantiated_location(northward)
+    return VectorComponent{C}(eastward, northward, ℓe, ℓn, grid)
 end
 
-VectorComponent{C}(eastward, northward, grid) where C =
-    VectorComponent{C, typeof(eastward), typeof(northward), typeof(grid)}(eastward, northward, grid)
+function VectorComponent{C}(eastward, northward, ℓe, ℓn, grid) where C
+    U, V, LU, LV, G = typeof(eastward), typeof(northward), typeof(ℓe), typeof(ℓn), typeof(grid)
+    return VectorComponent{C, U, V, LU, LV, G}(eastward, northward, ℓe, ℓn, grid)
+end
 
 Adapt.adapt_structure(to, vc::VectorComponent{C}) where C =
-    VectorComponent{C}(adapt(to, vc.eastward), adapt(to, vc.northward), adapt(to, vc.grid))
-
-# A vector source sits where a field would, so it reports its components' location.
-@inline Oceananigans.instantiated_location(vc::VectorComponent) =
-    Oceananigans.instantiated_location(vc.eastward)
+    VectorComponent{C}(adapt(to, vc.eastward), adapt(to, vc.northward),
+                       vc.eastward_loc, vc.northward_loc, adapt(to, vc.grid))
 
 """
     Interpolated(source)
@@ -170,6 +173,13 @@ function validate_bracket(source, grid, dim, SideType, ::Type{LX}, ::Type{LY}) w
     return nothing
 end
 
+# A vector source brackets the boundary only if both of its components do, each at its own location.
+function validate_bracket(source::VectorComponent, grid, dim, SideType, ::Type{LX}, ::Type{LY}) where {LX, LY}
+    validate_bracket(source.eastward,  grid, dim, SideType, LX, LY)
+    validate_bracket(source.northward, grid, dim, SideType, LX, LY)
+    return nothing
+end
+
 # A curvilinear grid's coordinates vary along both axes, so its extent comes from the cell corners.
 validate_source_bracket(source, grid::OrthogonalSphericalShellGrid, dim, SideType,
                         ::Type{LX}, ::Type{LY}, ::Type{LZ}) where {LX, LY, LZ} =
@@ -199,8 +209,8 @@ validate_source_bracket(source, grid, dim, SideType,
     Oceananigans.Fields.interpolate(X, source, loc, source_grid)
 
 @inline function _query_source(source::VectorComponent{C}, source_grid, X, loc, t, i, j, k, grid) where C
-    uₑ = _query_source(source.eastward,  source_grid, X, loc, t, i, j, k, grid)
-    vₑ = _query_source(source.northward, source_grid, X, loc, t, i, j, k, grid)
+    uₑ = _query_source(source.eastward,  source_grid, X, source.eastward_loc,  t, i, j, k, grid)
+    vₑ = _query_source(source.northward, source_grid, X, source.northward_loc, t, i, j, k, grid)
     uᵢ, vᵢ = intrinsic_vector(i, j, k, grid, uₑ, vₑ)
     return ifelse(C === :u, uᵢ, vᵢ)
 end

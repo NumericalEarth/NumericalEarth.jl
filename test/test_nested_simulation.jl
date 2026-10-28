@@ -4,10 +4,10 @@ using NumericalEarth
 using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model
 using NumericalEarth.DataWrangling: BoundingBox
 using Oceananigans
-using Oceananigans: prognostic_fields
+using Oceananigans: prognostic_fields, instantiated_location
 using Oceananigans.OutputReaders: interpolating_time_indices, memory_index
 using Oceananigans.Units: Time
-using Oceananigans.Fields: location
+using Oceananigans.Fields: location, interpolate
 using Oceananigans.Grids: node
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!,
@@ -208,6 +208,30 @@ end
     @test abs(getbc(regularized(:v, llg), j, k, llg, nothing)) < 1e-5
     @test evaluate_target(1, j, k, llg, NM.VectorComponent{:u}(uᵉ, vᵉ), loc, 0.0) ≈ 10 rtol = 1e-4
     @test abs(evaluate_target(1, j, k, llg, NM.VectorComponent{:v}(uᵉ, vᵉ), loc, 0.0)) < 1e-5
+
+    # A C-grid parent's components sit at two different locations, and each is read at its own.
+    staggered = LatitudeLongitudeGrid(CPU(); size = (40, 32, 4), longitude = (-110, -90),
+                                      latitude = (30, 46), z = (0, 1),
+                                      topology = (Bounded, Bounded, Bounded))
+    uˢ = XFaceField(staggered)
+    vˢ = YFaceField(staggered)
+    set!(uˢ, (λ, φ, z) -> 10 + (λ + 100))   # 1 m/s per degree, so half a 0.5° cell is 0.25 m/s
+    set!(vˢ, (λ, φ, z) -> φ - 38)
+
+    vc = NM.VectorComponent{:u}(uˢ, vˢ)
+    @test vc.eastward_loc  === instantiated_location(uˢ)
+    @test vc.northward_loc === instantiated_location(vˢ)
+
+    ℓu = (Face(), Center(), Center())
+    X  = node(1, j, k, ccg, ℓu...)
+    uₒ = interpolate(X, uˢ, instantiated_location(uˢ), staggered)
+    vₒ = interpolate(X, vˢ, instantiated_location(vˢ), staggered)
+    @test evaluate_target(1, j, k, ccg, vc, ℓu, 0.0) ≈ intrinsic_vector(1, j, k, ccg, uₒ, vₒ)[1] rtol = 1e-12
+
+    # Reading the northward component at the consumer's location instead moves the result.
+    vₓ = interpolate(X, vˢ, ℓu, staggered)
+    @test !isapprox(intrinsic_vector(1, j, k, ccg, uₒ, vₓ)[1],
+                    intrinsic_vector(1, j, k, ccg, uₒ, vₒ)[1]; rtol = 1e-6)
 end
 
 @testset "parent_boundary_conditions: bc_types selects BC kind per field" begin
