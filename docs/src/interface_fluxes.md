@@ -18,36 +18,54 @@ and surface optical computations for radiation.
 
 ## Land surface configuration and storage
 
-`SlabLand` owns surface physics through `LandSurface`. Configure a canopy or skin
-on the land component; `AtmosphereLandModel` uses that configuration for its boundary solve.
+The interface's `formulation.state` specifies how to compute the interface state. For an
+ordinary surface it holds separate `temperature` and `specific_humidity` formulations in
+a named tuple. A `CanopyInterface` occupies `formulation.state` directly and solves
+the coupled canopy and ground balances. The computed temperatures, humidity, and fluxes
+are stored on the interface.
+
+`SlabLand` stores prognostic canopy-air state or ground temperature through `surface_storage`.
+Use `PrognosticCanopyAir` for canopy-air temperature and humidity, `PrognosticSkin` for
+ground temperature, or `nothing` (the default) for diagnostic interface balances.
 
 ```@example interface_fluxes
 using NumericalEarth
 using Oceananigans
 
 land_grid = RectilinearGrid(size=(), topology=(Flat, Flat, Flat))
+land = SlabLand(land_grid; surface_storage=PrognosticCanopyAir())
+set!(land; T=298, M=45)
 soil_humidity = DryLayerHumidity(
     dry_layer_depth = StorageBasedDryLayerDepth(maximum_dry_layer_depth = 0.015,
                                                dry_layer_onset_saturation = 0.5),
     vapor_exchange = DryLayerVaporPistonVelocity(minimum_dry_layer_depth = 1e-3,
                                                 molecular_diffusivity = 2.4e-5))
-canopy = CanopyGroundSurface(; soil_humidity, storage=PrognosticCanopyAir())
-land = SlabLand(land_grid; surface=LandSurface(canopy))
+canopy = CanopyInterface(; soil_humidity)
+atmosphere = PrescribedAtmosphere(land_grid)
+land_model = AtmosphereLandModel(atmosphere, land; atmosphere_land_interface_state=canopy,
+                                radiation=PrescribedRadiation(land_grid))
 ```
 
-The boundary solve computes turbulent fluxes and candidate surface updates from the
-current land state. The land step applies each update once. Canopy-air and skin storage
+The interface solve computes step-mean canopy fluxes and an analytical canopy-air update
+using fixed effective conductances and source states over each time step. Prognostic ground
+temperature uses backward Euler with Newton refinement in the interface solve. The land
+step applies each candidate update once. Canopy-air and ground heat storage
 are checkpointed with the land. Checkpoints also preserve interface temperatures and flux
 partitions from the completed step so diagnostics remain consistent immediately after pickup.
 
-For vegetated and bare tiles, use `TiledLandSurface(LandSurface(canopy); cover_fraction=0.6)`
-as the land's `surface`. `InterceptingHydrology` then derives its leaf area index and cover fraction
-from the same configuration. Separate tile roughnesses can be supplied through
-`TiledLandInterface`'s `vegetated_fluxes` and `bare_fluxes` keywords.
+For vegetated and bare tiles, pass
+`atmosphere_land_interface = TiledLandInterface(grid, atmosphere, land; vegetated = canopy, cover_fraction = 0.6)`.
+The bare tile defaults to a soil skin sharing the canopy's ground heat flux and soil humidity.
+Pass the same `cover_fraction` to `InterceptingHydrology`. Separate tile roughnesses can be
+supplied through the `vegetated_fluxes` and `bare_fluxes` keywords.
 
-Soil retention curves and porosity remain in land hydrology. The boundary solve receives
-derived moisture-stress endpoints and vapor diffusivity. `DryLayerHumidity` gets its
-thermal exchange distance from the surface heat-transfer closure.
+Soil retention curves, porosity, and water storage remain in land hydrology. The interface
+receives saturation, derived moisture-stress endpoints, and vapor diffusivity from land.
+The interface's `SoilConductiveFlux` specifies the conductivity and exchange distance of the
+unresolved ground-to-bulk heat-transfer path. `DryLayerHumidity` uses that same distance
+for its evaporation-front temperature. Surface-resistance coefficients also belong to the
+interface's exchange formulations; `ExponentialSoilResistance` evaluates its resistance
+using the land's current saturation.
 
 ## Turbulent exchanges between the atmosphere and underlying media
 
@@ -737,7 +755,7 @@ Tᵒᶜ = 273.15 + 20 # in Kelvin
 Sᵒᶜ = 35
 interfaces = default_model.interfaces
 ℂᵃᵗ = interfaces.atmosphere_properties
-q_formulation = interfaces.atmosphere_ocean_interface.formulation.specific_humidity
+q_formulation = interfaces.atmosphere_ocean_interface.formulation.state.specific_humidity
 qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tᵒᶜ, Sᵒᶜ)
 @show qₛ
 ```

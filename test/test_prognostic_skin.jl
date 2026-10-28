@@ -3,15 +3,13 @@ include("runtests_setup.jl")
 using Oceananigans
 using Oceananigans.TimeSteppers: time_step!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    SoilSkinTemperature, EnergyBalanceTemperature, SoilConductiveFlux,
-    DiagnosticSkin, PrognosticSkin
+    SoilSkinTemperature, EnergyBalanceTemperature, SoilConductiveFlux
 using NumericalEarth.Radiations: default_stefan_boltzmann_constant
 
 bare_soil_model(arch, temperature; wind = 5.0, water = 90.0, kw...) =
     coupled_land_model(arch; wind, water, kw..., atmosphere_land_interface_temperature = temperature,
                        atmosphere_land_interface_specific_humidity = bare_soil_humidity(Float64))
 
-prognostic_skin(C) = SoilSkinTemperature(1.5, 0.05; storage = PrognosticSkin(heat_capacity = C))
 skin_temperature(model) = model.interfaces.atmosphere_land_interface.temperature
 
 # Calm, moist transition (the issue-549 bare-soil exemplar).
@@ -19,8 +17,8 @@ calm = (; shortwave = 50.0, wind = 0.2, air_temperature = 304.0, land_temperatur
 
 @testset "Prognostic energy-balance skin" begin
     for arch in test_architectures
-        windy = [bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05; storage))
-                 for storage in (PrognosticSkin(heat_capacity = 1e5), DiagnosticSkin())]
+        windy = [bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05); surface_storage=storage)
+                 for storage in (PrognosticSkin(heat_capacity = 1e5), nothing)]
         for _ in 1:36, model in windy
             time_step!(model, 300.0)
         end
@@ -30,7 +28,7 @@ calm = (; shortwave = 50.0, wind = 0.2, air_temperature = 304.0, land_temperatur
 
         # The storage tendency closes the surface energy balance up to linearization error.
         C, Δt, Λ, σ = 1e5, 300.0, 30.0, default_stefan_boltzmann_constant
-        model = bare_soil_model(arch, prognostic_skin(C); calm...)
+        model = bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05); surface_storage=PrognosticSkin(heat_capacity=C), calm...)
         interface = model.interfaces.atmosphere_land_interface
         Tₛ⁻, worst = scalar(interface.temperature), 0.0
         for _ in 1:48
@@ -50,15 +48,15 @@ calm = (; shortwave = 50.0, wind = 0.2, air_temperature = 304.0, land_temperatur
     end
 end
 
-@testset "PrognosticSkin is the default storage" begin
+@testset "Explicit prognostic skin initialization" begin
     for FT in (Float32, Float64)
         @test PrognosticSkin(FT).heat_capacity isa FT
     end
 
     # The first update_state! lands near, but not exactly on, the massless energy-balance root.
     for arch in test_architectures
-        Tp = scalar(skin_temperature(bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05))))
-        Td = scalar(skin_temperature(bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05; storage = DiagnosticSkin()))))
+        Tp = scalar(skin_temperature(bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05); surface_storage=PrognosticSkin())))
+        Td = scalar(skin_temperature(bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05))))
         @test Tp ≈ Td atol = 1
         @test abs(Tp - Td) < abs(298 - Td)
     end
@@ -70,7 +68,7 @@ end
                                      z = (-1, 0), topology = (Bounded, Bounded, Bounded))
         Cfield = Field{Center, Center, Nothing}(grid)
         set!(Cfield, reshape([1e4, 1e6], 2, 1, 1))
-        models = [bare_soil_model(arch, prognostic_skin(C); grid, calm...) for C in (Cfield, 1e4, 1e6)]
+        models = [bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05); surface_storage=PrognosticSkin(heat_capacity=C), grid, calm...) for C in (Cfield, 1e4, 1e6)]
         for _ in 1:12, model in models
             time_step!(model, 300.0)
         end
@@ -84,8 +82,8 @@ end
 
 # Λᵍʳᵒ = 0, ϵ = 0 and calm air leave no conductance, so the skin must be held rather than divided by zero.
 @testset "Fully decoupled skin stays finite" begin
-    for arch in test_architectures, storage in (DiagnosticSkin(), PrognosticSkin(heat_capacity = 1e5))
-        model = bare_soil_model(arch, SoilSkinTemperature(0, 0.05; storage);
+    for arch in test_architectures, storage in (nothing, PrognosticSkin(heat_capacity = 1e5))
+        model = bare_soil_model(arch, SoilSkinTemperature(0, 0.05); surface_storage=storage,
                                 shortwave = 0.0, longwave = 0.0, wind = 0.0, ϵ = 0)
         interface = model.interfaces.atmosphere_land_interface
         @test isfinite(scalar(interface.temperature))

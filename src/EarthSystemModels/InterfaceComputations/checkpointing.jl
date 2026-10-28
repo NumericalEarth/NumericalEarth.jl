@@ -10,14 +10,14 @@ Oceananigans.prognostic_state(interface::TiledLandInterface) =
     (; vegetated=prognostic_state(interface.vegetated), bare=prognostic_state(interface.bare),
        fluxes=prognostic_state(interface.fluxes), temperature=prognostic_state(interface.temperature))
 
-function Oceananigans.prognostic_state(fields::Union{AtmosphereSurfaceFluxes, CanopyGroundSurfaceDiagnostics})
+function Oceananigans.prognostic_state(fields::Union{AtmosphereSurfaceFluxes, CanopyInterfaceDiagnostics})
     names = fieldnames(typeof(fields))
     return NamedTuple{names}(map(name -> prognostic_state(getproperty(fields, name)), names))
 end
 
 function Oceananigans.restore_prognostic_state!(interface::Union{ComponentInterfaces, AtmosphereInterface,
                                                                TiledLandInterface, AtmosphereSurfaceFluxes,
-                                                               CanopyGroundSurfaceDiagnostics}, state::NamedTuple)
+                                                               CanopyInterfaceDiagnostics}, state::NamedTuple)
     for name in keys(state)
         restore_prognostic_state!(getproperty(interface, name), state[name])
     end

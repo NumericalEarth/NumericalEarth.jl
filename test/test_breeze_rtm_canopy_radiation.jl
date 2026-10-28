@@ -6,7 +6,8 @@ using Oceananigans.TimeSteppers: time_step!
 using RRTMGP   # activates Breeze's RadiativeTransferModel extension
 
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyGroundSurface, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR, TiledLandInterface
+    CanopyInterface, CanopyConductanceHumidity, CriticalSaturation, AbsorbedPhotosyntheticallyActiveRadiation,
+    TiledLandInterface
 using NumericalEarth.Lands: BucketHydrology, SlabEnergy, SlabLand
 using NumericalEarth.Radiations: default_stefan_boltzmann_constant
 
@@ -18,7 +19,7 @@ const σ = default_stefan_boltzmann_constant
 const Δt = 0.25
 
 # `hour` is the solar epoch at longitude 0, so 12 is local noon and 0 local midnight.
-function rtm_canopy_components(arch; hour = 12, cover_fraction = nothing)
+function rtm_canopy_components(arch; hour = 12, surface_storage = nothing)
     grid = RectilinearGrid(arch; size = (8, 8), halo = (5, 5), x = (-1kilometer, 1kilometer), z = (0, 1kilometer),
                            topology = (Periodic, Flat, Bounded))
     constants = ThermodynamicConstants(Float64)
@@ -29,30 +30,28 @@ function rtm_canopy_components(arch; hour = 12, cover_fraction = nothing)
     radiation = RadiativeTransferModel(grid, GrayOptics(), constants; solar_position, surface_albedo = rtm_albedo,
                                        surface_emissivity = rtm_emissivity, schedule = IterationInterval(1))
 
-    canopy = CanopyGroundSurface(Float64; soil_humidity = bare_soil_humidity(Float64),
+    canopy = CanopyInterface(Float64; soil_humidity = bare_soil_humidity(Float64),
         canopy_humidity = CanopyConductanceHumidity(Float64; leaf_area_index = 4, moisture_stress = CriticalSaturation(0.5),
-                                                    absorbed_par = InteractiveAbsorbedPAR(Float64)))
-    surface = LandSurface(canopy)
-    isnothing(cover_fraction) || (surface = TiledLandSurface(surface; cover_fraction))
+                                                    absorbed_par = AbsorbedPhotosyntheticallyActiveRadiation(Float64)))
 
     land_grid = RectilinearGrid(arch; size = grid.Nx, halo = grid.Hx, x = (-1kilometer, 1kilometer), topology = (Periodic, Flat, Flat))
-    land = SlabLand(land_grid; hydrology = BucketHydrology(Float64; maximum_water_storage = 150), energy = SlabEnergy(Float64), surface)
+    land = SlabLand(land_grid; surface_storage, hydrology = BucketHydrology(Float64; maximum_water_storage = 150), energy = SlabEnergy(Float64))
     set!(land; T = 298, M = 45)
 
-    return atmosphere, land, radiation
+    return atmosphere, land, radiation, canopy
 end
 
-function rtm_canopy_model(arch; hour = 12)
-    atmosphere, land, radiation = rtm_canopy_components(arch; hour)
-    return AtmosphereLandModel(atmosphere, land; radiation)
+function rtm_canopy_model(arch; hour = 12, surface_storage = nothing)
+    atmosphere, land, radiation, canopy = rtm_canopy_components(arch; hour, surface_storage)
+    return AtmosphereLandModel(atmosphere, land; radiation, atmosphere_land_interface_state=canopy)
 end
 
-@testset "Breeze RadiativeTransferModel driving a CanopyGroundSurface" begin
-    for arch in test_architectures
+@testset "Breeze RadiativeTransferModel driving a CanopyInterface" begin
+    for arch in test_architectures, surface_storage in (nothing, PrognosticCanopyAir())
         A = typeof(arch)
 
-        @testset "Canopy radiation budget under an RTM on $A" begin
-            model = rtm_canopy_model(arch)
+        @testset "Canopy radiation budget under an RTM with $surface_storage on $A" begin
+            model = rtm_canopy_model(arch; surface_storage)
             time_step!(model, Δt)
             canopy = model.interfaces.atmosphere_land_interface.temperature
 
@@ -63,15 +62,15 @@ end
             @test all(Array(interior(canopy.effective)) .> Array(interior(canopy.interface)))
             @test Array(interior(model.radiation.upwelling_longwave_flux))[:, :, 1] ≈ σ .* Array(interior(canopy.effective, :, :, 1)) .^ 4 rtol = 1e-3
 
-            night = rtm_canopy_model(arch; hour = 0)
+            night = rtm_canopy_model(arch; hour = 0, surface_storage)
             time_step!(night, Δt)
             @test all(Array(interior(canopy.canopy)) .> Array(interior(night.interfaces.atmosphere_land_interface.temperature.canopy)))
         end
 
         @testset "Tiled interface keeps the bare tile's configured optics on $A" begin
             f = 0.6
-            atmosphere, land, radiation = rtm_canopy_components(arch; cover_fraction = f)
-            tiled = TiledLandInterface(land.grid, atmosphere, land)
+            atmosphere, land, radiation, canopy = rtm_canopy_components(arch)
+            tiled = TiledLandInterface(land.grid, atmosphere, land; vegetated = canopy, cover_fraction = f)
             model = AtmosphereLandModel(atmosphere, land; radiation, atmosphere_land_interface = tiled)
             update_state!(model)
 

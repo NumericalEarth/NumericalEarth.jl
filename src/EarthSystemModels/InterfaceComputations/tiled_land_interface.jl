@@ -1,5 +1,5 @@
 #####
-##### `TiledLandInterface` — a mosaic of a vegetated `CanopyGroundSurface` tile and a bare-soil
+##### `TiledLandInterface` — a mosaic of a vegetated `CanopyInterface` tile and a bare-soil
 ##### skin tile over one soil column; each tile runs the single-tile interface solve and
 ##### the vegetated and bare fluxes are area-weighted by the vegetated cover fraction f.
 #####
@@ -14,11 +14,11 @@ and temperatures the atmosphere and slab read. Build it with
 `atmosphere_land_interface = …` to `AtmosphereLandModel` / `ComponentInterfaces`.
 
 Fields:
-- `vegetated`      : the forested tile, an `AtmosphereInterface` with a [`CanopyGroundSurface`](@ref).
+- `vegetated`      : the forested tile, an `AtmosphereInterface` with a [`CanopyInterface`](@ref).
 - `bare`           : the bare-soil tile, an `AtmosphereInterface` with an [`EnergyBalanceTemperature`](@ref).
 - `cover_fraction` : the vegetated cover fraction `f ∈ [0, 1]` — a `Number`, `Field`, or `FieldTimeSeries`.
 - `fluxes`         : the blended [`AtmosphereSurfaceFluxes`](@ref).
-- `temperature`    : the blended [`CanopyGroundSurfaceDiagnostics`](@ref).
+- `temperature`    : the blended [`CanopyInterfaceDiagnostics`](@ref).
 """
 struct TiledLandInterface{V, B, F, FL, T}
     vegetated      :: V
@@ -31,41 +31,35 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Build the exchange interface for a land component configured with `TiledLandSurface`.
+Build a tiled atmosphere–land interface from the `vegetated` canopy formulation and the
+vegetated `cover_fraction`. `bare` defaults to a soil skin that shares the canopy's ground heat
+flux and soil humidity. The land's surface storage belongs to the vegetated tile.
 `vegetated_fluxes` and `bare_fluxes` specify the turbulent transport for each tile.
 """
 function TiledLandInterface(grid, atmosphere, land;
-                            vegetated_fluxes       = default_atmosphere_land_fluxes(land, eltype(grid)),
-                            bare_fluxes            = default_atmosphere_land_fluxes(land, eltype(grid)),
-                            velocity_difference    = RelativeVelocity())
+                            vegetated,
+                            cover_fraction,
+                            bare                = (temperature       = EnergyBalanceTemperature(vegetated.ground_heat_flux),
+                                                   specific_humidity = vegetated.soil_humidity),
+                            vegetated_fluxes    = default_atmosphere_land_fluxes(land, eltype(grid)),
+                            bare_fluxes         = default_atmosphere_land_fluxes(land, eltype(grid)),
+                            velocity_difference = RelativeVelocity())
 
-    surface = land_surface(land)
-    vegetated, bare = surface.vegetated, surface.bare
-    ground_conductance(bare.temperature) == ground_conductance(vegetated.temperature) ||
+    ground_conductance(temperature_formulation(bare)) == ground_conductance(vegetated) ||
         throw(ArgumentError("the bare and vegetated tiles must share the ground conductance Λᵍʳᵒ"))
+    validate_surface_storage(land, vegetated)
 
-    vegetated_interface = atmosphere_land_interface(grid, atmosphere, land, vegetated;
-                                                    fluxes              = vegetated_fluxes,
-                                                    temperature         = vegetated.temperature,
-                                                    specific_humidity   = vegetated.specific_humidity,
-                                                    velocity_difference = velocity_difference)
+    vegetated_interface = build_atmosphere_land_interface(grid, vegetated_fluxes, vegetated, velocity_difference)
+    bare_interface      = build_atmosphere_land_interface(grid, bare_fluxes, bare, velocity_difference)
 
-    bare_interface = atmosphere_land_interface(grid, atmosphere, land, bare;
-                                               fluxes              = bare_fluxes,
-                                               temperature         = bare.temperature,
-                                               specific_humidity   = bare.specific_humidity,
-                                               velocity_difference = velocity_difference)
-
-    fluxes      = AtmosphereSurfaceFluxes(grid)
-    temperature = build_interface_temperature(vegetated.temperature, grid)
-
-    return TiledLandInterface(vegetated_interface, bare_interface, surface.cover_fraction, fluxes, temperature)
+    return TiledLandInterface(vegetated_interface, bare_interface, cover_fraction,
+                              AtmosphereSurfaceFluxes(grid), CanopyInterfaceDiagnostics(grid))
 end
 
 Base.summary(::TiledLandInterface) = "TiledLandInterface"
 Base.show(io::IO, interface::TiledLandInterface) =
-    print(io, "TiledLandInterface(vegetated=", summary(interface.vegetated.formulation.temperature),
-              ", bare=", summary(interface.bare.formulation.temperature), ")")
+    print(io, "TiledLandInterface(vegetated=", summary(temperature_formulation(interface.vegetated.formulation.state)),
+              ", bare=", summary(temperature_formulation(interface.bare.formulation.state)), ")")
 
 @inline computed_fluxes(interface::TiledLandInterface) = interface.fluxes
 
@@ -82,10 +76,22 @@ EarthSystemModels.surface_temperature(interface::TiledLandInterface) = interface
 EarthSystemModels.surface_temperature(interface::TiledLandInterface, ocean_interface) =
     EarthSystemModels.surface_temperature(interface)
 
+# The land's surface storage belongs to the vegetated tile; the bare tile is a diagnostic skin.
 function compute_atmosphere_land_fluxes!(coupled_model, interface::TiledLandInterface, Δt)
     compute_atmosphere_land_fluxes!(coupled_model, interface.vegetated, Δt)
-    compute_atmosphere_land_fluxes!(coupled_model, interface.bare, Δt)
+    compute_atmosphere_land_fluxes!(coupled_model, interface.bare, Δt, land_surface_state(nothing))
+    blend_tiles!(coupled_model, interface)
+    return nothing
+end
 
+function initialize_land_interface!(coupled_model, interface::TiledLandInterface)
+    initialize_land_interface!(coupled_model, interface.vegetated)
+    initialize_land_interface!(coupled_model, interface.bare, land_surface_state(nothing))
+    blend_tiles!(coupled_model, interface)
+    return nothing
+end
+
+function blend_tiles!(coupled_model, interface)
     exchanger = coupled_model.interfaces.exchanger
     grid  = exchanger.grid
     arch  = architecture(grid)

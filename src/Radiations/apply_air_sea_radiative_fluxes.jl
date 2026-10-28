@@ -34,7 +34,7 @@ function EarthSystemModels.apply_air_sea_radiative_fluxes!(coupled_model::EarthS
 
     net_ocean_fluxes = coupled_model.interfaces.net_fluxes.ocean
     radiation_state = coupled_model.interfaces.exchanger.radiation.state
-    rk = kernel_radiation_properties(radiation, coupled_model.interfaces.exchanger.radiation)
+    rk = kernel_radiation_properties(radiation)
 
     sea_ice = coupled_model.sea_ice
     ice_concentration = sea_ice_concentration(sea_ice)

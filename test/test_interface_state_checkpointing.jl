@@ -4,16 +4,15 @@ using Oceananigans
 using Oceananigans: prognostic_state, restore_prognostic_state!
 using Oceananigans.TimeSteppers: time_step!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyGroundSurface, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR,
-    SoilConductiveFlux, SoilSkinTemperature, PrognosticSkin,
-    DiagnosticCanopyAir, PrognosticCanopyAir, compute_atmosphere_land_fluxes!
+    CanopyInterface, CanopyConductanceHumidity, CriticalSaturation, AbsorbedPhotosyntheticallyActiveRadiation,
+    SoilConductiveFlux, SoilSkinTemperature, compute_atmosphere_land_fluxes!
 
-checkpoint_canopy(storage) = CanopyGroundSurface(Float64; storage, soil_humidity = bare_soil_humidity(Float64),
+checkpoint_canopy() = CanopyInterface(Float64; soil_humidity = bare_soil_humidity(Float64),
     canopy_humidity = CanopyConductanceHumidity(Float64; leaf_area_index = 4.0, moisture_stress = CriticalSaturation(0.5),
-                                                absorbed_par = InteractiveAbsorbedPAR(Float64)),
+                                                absorbed_par = AbsorbedPhotosyntheticallyActiveRadiation(Float64)),
     ground_heat_flux = SoilConductiveFlux(1.5, 0.05))
 
-checkpoint_skin() = SoilSkinTemperature(1.5, 0.05; storage = PrognosticSkin(heat_capacity = 1e5))
+checkpoint_skin() = SoilSkinTemperature(1.5, 0.05)
 arrays(fields) = map(f -> Array(interior(f)), fields)
 
 # Step `m1`, restore its checkpoint into the fresh `m2`, step both, and return each model's (latent, sensible) heat flux.
@@ -52,52 +51,45 @@ end
 end
 
 @testset "Prognostic land surface checkpointing" begin
-    # Each case pairs a surface with the state that must survive the round trip.
-    cases = ((checkpoint_canopy(PrognosticCanopyAir()), nothing, m -> m.land.surface.prognostic),
-             (checkpoint_skin(), bare_soil_humidity(Float64), m -> (m.interfaces.atmosphere_land_interface.temperature,)),
-             (checkpoint_canopy(DiagnosticCanopyAir()), nothing, m -> (;)))
-    for arch in test_architectures, (temperature, humidity, restored) in cases
-        m1, m2 = ntuple(_ -> coupled_land_model(arch; atmosphere_land_interface_temperature = temperature,
-                                                atmosphere_land_interface_specific_humidity = humidity), 2)
-        @test isempty(prognostic_state(m1).land.surface) == isempty(restored(m1))
+    cases = ((checkpoint_canopy(), PrognosticCanopyAir()),
+             ((temperature=checkpoint_skin(), specific_humidity=bare_soil_humidity(Float64)), PrognosticSkin()),
+             (checkpoint_canopy(), nothing))
+    for arch in test_architectures, (state, storage) in cases
+        m1, m2 = ntuple(_ -> coupled_land_model(arch; atmosphere_land_interface_state=state, surface_storage=storage), 2)
         (LE1, H1), (LE2, H2) = roundtrip!(m1, m2)
         @test LE2 ≈ LE1
         @test H2 ≈ H1
-        @test all(map(isapprox, arrays(restored(m2)), arrays(restored(m1))))
+        @test prognostic_state(m2.land.surface_storage) == prognostic_state(m1.land.surface_storage)
     end
 end
 
 @testset "Flux evaluation preserves land surface storage" begin
-    surfaces = (LandSurface(checkpoint_canopy(PrognosticCanopyAir())),
-                LandSurface(checkpoint_skin(); specific_humidity = bare_soil_humidity(Float64)))
-    for arch in test_architectures, surface in surfaces
-        model = coupled_land_model(arch; surface)
+    cases = ((checkpoint_canopy(), PrognosticCanopyAir()),
+             ((temperature=checkpoint_skin(), specific_humidity=bare_soil_humidity(Float64)), PrognosticSkin()))
+    for arch in test_architectures, (formulation, storage) in cases
+        model = coupled_land_model(arch; atmosphere_land_interface_state=formulation, surface_storage=storage)
         time_step!(model, 300.0)
-        state = model.land.surface.prognostic
+        state = model.land.surface_storage.prognostic
         before = arrays(state)
         compute_atmosphere_land_fluxes!(model, 300.0)
-        candidate = arrays(model.land.surface.next_state)
+        candidate = arrays(model.land.surface_storage.next_state)
         latent_heat = model.interfaces.atmosphere_land_interface.fluxes.latent_heat
         heat = scalar(latent_heat)
         compute_atmosphere_land_fluxes!(model, 300.0)
         @test arrays(state) == before
-        @test arrays(model.land.surface.next_state) == candidate
+        @test arrays(model.land.surface_storage.next_state) == candidate
         @test scalar(latent_heat) == heat
         time_step!(model, 300.0)
         @test arrays(state) == candidate
     end
 end
 
-@testset "Tiled canopy and skin storage restart together" begin
+@testset "Tiled canopy storage restarts" begin
     for arch in test_architectures
-        canopy = checkpoint_canopy(PrognosticCanopyAir())
-        surface = TiledLandSurface(LandSurface(canopy); cover_fraction = 0.6,
-                                   bare = LandSurface(checkpoint_skin(); specific_humidity = canopy.soil_humidity))
-        m1, m2 = coupled_land_model(arch; surface), coupled_land_model(arch; surface)
+        m1, m2 = ntuple(_ -> tiled_land_model(arch; vegetated = checkpoint_canopy(), cover_fraction = 0.6,
+                                              surface_storage = PrognosticCanopyAir()), 2)
         fluxes1, fluxes2 = roundtrip!(m1, m2)
         @test fluxes1 == fluxes2
-        for tile in (:vegetated, :bare)
-            @test arrays(getproperty(m1.land.surface, tile).prognostic) == arrays(getproperty(m2.land.surface, tile).prognostic)
-        end
+        @test prognostic_state(m2.land.surface_storage) == prognostic_state(m1.land.surface_storage)
     end
 end

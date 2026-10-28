@@ -108,7 +108,7 @@ end
     # Estimate initial interface state (FP32 compatible)
     u★ = convert(FT, 1f-4)
 
-    q_formulation = interface_formulation.specific_humidity
+    q_formulation = specific_humidity_formulation(interface_formulation.state)
     qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Ψₐ.p, Tₛ, Sᵒᶜ)
 
     # Air–ice sublimation is over fresh ice — no interface salinity.

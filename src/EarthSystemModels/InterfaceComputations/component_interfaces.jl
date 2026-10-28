@@ -19,12 +19,11 @@ using ..EarthSystemModels: reference_density,
 ##### Container for organizing information related to fluxes
 #####
 
-mutable struct AtmosphereInterface{J, ST, SQ, F, B}
+mutable struct AtmosphereInterface{J, ST, SQ, F}
     fluxes :: J
     temperature :: ST
     specific_humidity :: SQ
     formulation :: F
-    boundary :: B
 end
 
 """
@@ -206,10 +205,10 @@ Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
 # closures it differs from `land.temperature`. With both land and ocean interfaces the
 # surface partition's blended temperature wins; otherwise the land interface, then the
 # atmosphere-ocean interface; `nothing` when the atmosphere touches neither.
-# A `CanopyGroundSurface` interface holds several diagnostic temperatures; the atmosphere-facing
+# A `CanopyInterface` interface holds several diagnostic temperatures; the atmosphere-facing
 # one is the canopy-air node.
 @inline interface_node_temperature(t) = t
-@inline interface_node_temperature(t::CanopyGroundSurfaceDiagnostics) = t.interface
+@inline interface_node_temperature(t::CanopyInterfaceDiagnostics) = t.interface
 EarthSystemModels.surface_temperature(interface::AtmosphereInterface) =
     interface_node_temperature(interface.temperature)
 
@@ -226,7 +225,7 @@ EarthSystemModels.surface_temperature(::Nothing, ocean_interface::AtmosphereInte
     ocean_interface.temperature
 EarthSystemModels.surface_temperature(::Nothing, ::Nothing) = nothing
 
-ground_conductance(interface::AtmosphereInterface) = ground_conductance(interface.formulation.temperature)
+ground_conductance(interface::AtmosphereInterface) = ground_conductance(temperature_formulation(interface.formulation.state))
 
 land_state_accessors(interface::AtmosphereInterface) = land_state_accessors(interface.formulation)
 
@@ -252,14 +251,13 @@ function atmosphere_ocean_interface(grid,
     ao_fluxes = AtmosphereSurfaceFluxes(grid)
 
     formulation = InterfaceFormulation(ao_flux_formulation,
-                                       specific_humidity_formulation,
-                                       temperature_formulation,
+                                       (temperature = temperature_formulation, specific_humidity = specific_humidity_formulation),
                                        velocity_formulation)
 
     interface_temperature = Field{Center, Center, Nothing}(grid)
     interface_specific_humidity = Field{Center, Center, Nothing}(grid)
 
-    return AtmosphereInterface(ao_fluxes, interface_temperature, interface_specific_humidity, formulation, nothing)
+    return AtmosphereInterface(ao_fluxes, interface_temperature, interface_specific_humidity, formulation)
 end
 
 #####
@@ -283,8 +281,7 @@ function atmosphere_sea_ice_interface(grid,
     specific_humidity_formulation = ImpureSaturationSpecificHumidity(phase)
 
     formulation = InterfaceFormulation(ai_flux_formulation,
-                                       specific_humidity_formulation,
-                                       temperature_formulation,
+                                       (temperature = temperature_formulation, specific_humidity = specific_humidity_formulation),
                                        velocity_formulation)
 
     snow_thermo = sea_ice.model.snow_thermodynamics
@@ -296,7 +293,7 @@ function atmosphere_sea_ice_interface(grid,
 
     interface_specific_humidity = Field{Center, Center, Nothing}(grid)
 
-    return AtmosphereInterface(fluxes, interface_temperature, interface_specific_humidity, formulation, nothing)
+    return AtmosphereInterface(fluxes, interface_temperature, interface_specific_humidity, formulation)
 end
 
 #####
@@ -388,6 +385,7 @@ Keyword Arguments
    `InteriorDiffusivity()` assessed from the ocean turbulence closure.
 - `atmosphere_ocean_interface_specific_humidity`: specific humidity formulation. Default: `default_ao_specific_humidity(ocean)`.
 - `atmosphere_sea_ice_interface_temperature`: temperature formulation for atmosphere-sea ice interface. Default: `default_ai_temperature(sea_ice)`.
+- `atmosphere_land_interface_state`: a coupled canopy formulation or a named tuple of temperature and humidity formulations.
 - `ocean_fraction`: fraction of each exchange-grid cell covered by ocean (anything `set!` accepts:
    a `Field`, function, or number), forming the [`SurfacePartition`](@ref) that weights the
    atmosphere's net surface fluxes. Required when the model has both land and ocean interfaces;
@@ -415,14 +413,15 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              atmosphere_ocean_interface_specific_humidity = default_ao_specific_humidity(ocean),
                              atmosphere_sea_ice_interface_temperature = default_ai_temperature(sea_ice),
                              atmosphere_sea_ice_velocity_difference = RelativeVelocity(),
-                             atmosphere_land_interface_temperature = default_al_temperature(land),
+                             atmosphere_land_interface_temperature = BulkTemperature(),
                              atmosphere_land_velocity_difference = RelativeVelocity(),
-                             atmosphere_land_interface_specific_humidity = default_al_specific_humidity(atmosphere_land_interface_temperature, land),
+                             atmosphere_land_interface_specific_humidity = default_al_specific_humidity(land),
+                             atmosphere_land_interface_state = (temperature = atmosphere_land_interface_temperature,
+                                                                specific_humidity = atmosphere_land_interface_specific_humidity),
                              atmosphere_land_interface = atmosphere_land_interface(exchange_grid, atmosphere, land;
                                                                                    fluxes              = atmosphere_land_fluxes,
-                                                                                   temperature         = atmosphere_land_interface_temperature,
-                                                                                   velocity_difference = atmosphere_land_velocity_difference,
-                                                                                   specific_humidity   = atmosphere_land_interface_specific_humidity),
+                                                                                   state               = atmosphere_land_interface_state,
+                                                                                   velocity_difference = atmosphere_land_velocity_difference),
                              ocean_fraction = nothing,
                              ocean_reference_density = reference_density(ocean),
                              ocean_heat_capacity = heat_capacity(ocean),
@@ -526,12 +525,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                                surface_partition)
 end
 
-# Default land surface closures: bulk temperature and bulk humidity (saturated where wet,
-# dry otherwise); a `CanopyGroundSurface` temperature closes the humidity slot itself.
-default_al_temperature(land) = BulkTemperature()
-default_al_specific_humidity(temperature, ::Nothing) = nothing
-default_al_specific_humidity(temperature, land) =
-    temperature isa CanopyGroundSurface ? temperature : BulkHumidity(AtmosphericThermodynamics.Liquid())
+default_al_specific_humidity(::Nothing) = nothing
+default_al_specific_humidity(land) = BulkHumidity(AtmosphericThermodynamics.Liquid())
 
 # Default atmosphere--land flux formulation. Aerodynamic roughness lengths and the
 # zero-plane displacement are properties of the flux closure, not the land model:

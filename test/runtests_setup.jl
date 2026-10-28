@@ -72,7 +72,7 @@ function coupled_land_components(arch, FT = Float64;
                                                               z = (-1, 0), topology = (Flat, Flat, Bounded)),
                                  air_temperature = 300.0, air_specific_humidity = 0.008, wind = 3.0, pressure = 101325.0,
                                  rain = nothing, hydrology = BucketHydrology(FT; maximum_water_storage = 150.0),
-                                 land_temperature = 298.0, water = 45.0, surface = LandSurface(),
+                                 land_temperature = 298.0, water = 45.0, surface_storage = nothing,
                                  shortwave = 600.0, longwave = 350.0, α = 0.2, ϵ = 0.95,
                                  radiation = PrescribedRadiation(grid; ocean_surface = nothing, sea_ice_surface = nothing,
                                                                  land_surface = SurfaceRadiationProperties(α, ϵ)))
@@ -82,7 +82,7 @@ function coupled_land_components(arch, FT = Float64;
     fill!(parent(atmosphere.velocities.u), wind)
     fill!(parent(atmosphere.pressure), pressure)
     isnothing(rain) || (fill!(parent(atmosphere.precipitation_flux.rain), rain); update_state!(atmosphere))
-    land = SlabLand(grid; hydrology, energy = SlabEnergy(FT), surface)
+    land = SlabLand(grid; hydrology, energy = SlabEnergy(FT), surface_storage)
     set!(land; T = land_temperature)
     isnothing(water) || fill!(parent(land.water_storage), water)
 
@@ -95,18 +95,24 @@ function coupled_land_components(arch, FT = Float64;
 end
 
 const coupled_land_component_keys = (:grid, :air_temperature, :air_specific_humidity, :wind, :pressure, :rain,
-                                     :hydrology, :land_temperature, :water, :surface, :shortwave, :longwave,
+                                     :hydrology, :land_temperature, :water, :surface_storage, :shortwave, :longwave,
                                      :α, :ϵ, :radiation)
 
 # Component keywords go to `coupled_land_components`, the rest to `AtmosphereLandModel`.
-function coupled_land_model(arch, FT = Float64; time = nothing, atmosphere_land_interface_temperature = BulkTemperature(),
-                            atmosphere_land_interface_specific_humidity = nothing, kw...)
-    T = atmosphere_land_interface_temperature
-    q = something(atmosphere_land_interface_specific_humidity, T isa CanopyGroundSurface ? T : BulkHumidity())
-    nt = (; surface = LandSurface(T; specific_humidity = q), kw...)
+function coupled_land_model(arch, FT = Float64; time = nothing, kw...)
+    nt = (; kw...)
     _, atmosphere, land, radiation = coupled_land_components(arch, FT; nt[filter(in(coupled_land_component_keys), keys(nt))]...)
     model = AtmosphereLandModel(atmosphere, land; radiation, nt[filter(!in(coupled_land_component_keys), keys(nt))]...)
     isnothing(time) || (model.clock.time = time)
+    update_state!(model.land)
+    update_state!(model)
+    return model
+end
+
+function tiled_land_model(arch, FT = Float64; vegetated, cover_fraction, interface_kw = (;), kw...)
+    grid, atmosphere, land, radiation = coupled_land_components(arch, FT; kw...)
+    tiled = TiledLandInterface(grid, atmosphere, land; vegetated, cover_fraction, interface_kw...)
+    model = AtmosphereLandModel(atmosphere, land; radiation, atmosphere_land_interface = tiled)
     update_state!(model.land)
     update_state!(model)
     return model

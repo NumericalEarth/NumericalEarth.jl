@@ -55,13 +55,13 @@ end
 
 @testset "Reactant land energy flux assembly" begin
     for (temperature, expected_flux) in ((BulkTemperature(), 200),
-                                        (SoilSkinTemperature(1.5, 0.05; storage=DiagnosticSkin()), -150))
+                                        (SoilSkinTemperature(1.5, 0.05), -150))
         grid = LatitudeLongitudeGrid(ReactantState(); size = 1, latitude = 10, longitude = 10,
                                      z = (-1, 0), topology = (Flat, Flat, Bounded))
         atmosphere = PrescribedAtmosphere(grid, [0.0, 1.0e8])
-        land = SlabLand(grid; surface=LandSurface(temperature))
+        land = SlabLand(grid)
         fluxes = SimilarityTheoryFluxes(; solver_stop_criteria=FixedIterations(8))
-        model = AtmosphereLandModel(atmosphere, land; atmosphere_land_fluxes=fluxes)
+        model = AtmosphereLandModel(atmosphere, land; atmosphere_land_fluxes=fluxes, atmosphere_land_interface_temperature=temperature)
         interface = model.interfaces.atmosphere_land_interface
         set!(land; T=290)
         set!(interface.temperature, 295)
@@ -135,4 +135,15 @@ end
     T_reactant = Reactant.to_number(compiled_run(reactant_model, Δt, N))
 
     @test T_reactant ≈ T_cpu rtol=1e-4
+end
+
+# Broadcasting into `interior` of a ReactantState field reads device memory element by element, which
+# Reactant refuses, so the level pressure goes through `set!`.
+@testset "ERA5 pressure_level_field on ReactantState" begin
+    levels = Float32[1000, 850, 500] .* 100
+    for arch in (CPU(), ReactantState())
+        grid = LatitudeLongitudeGrid(arch, Float32; size = (4, 4, 3), longitude = (0, 1), latitude = (0, 1), z = (0, 1))
+        pressure = NumericalEarth.DataWrangling.ERA5.pressure_level_field(grid, (; pressure_levels = levels), arch)
+        @test all(Array(interior(pressure))[i, j, :] == levels for i in 1:4, j in 1:4)
+    end
 end

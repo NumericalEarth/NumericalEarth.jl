@@ -6,6 +6,7 @@ using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Fields: ConstantField, Field
 using Oceananigans.Grids: Center
 using NumericalEarth.EarthSystemModels.InterfaceComputations: radiative_surface
+using NumericalEarth: stateindex
 using NumericalEarth.Radiations: SurfaceRadiationProperties, default_stefan_boltzmann_constant
 
 const BreezeRTM = Breeze.RadiativeTransferModel
@@ -31,23 +32,26 @@ function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_prope
     return @set rtm.surface_radiation.surface_temperature = Tˢ
 end
 
-# The RTM's configured surface optics, which the land kernels read as the ground's.
+# The RTM's configured surface optics, which the land kernels read as the ground's. The blue-sky
+# albedo is captured here, before the land's radiating surface replaces the RTM's albedos.
 function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(rtm::BreezeRTM, exchange_grid; kw...)
     ϵ = rtm.surface_radiation.surface_emissivity
-    α = blue_sky_albedo(rtm)
+    α = Field{Center, Center, Nothing}(exchange_grid)
     state = (; ℐꜜˢʷ = Field{Center, Center, Nothing}(exchange_grid),
                ℐꜜˡʷ = Field{Center, Center, Nothing}(exchange_grid),
-               surface_properties = (; land = SurfaceRadiationProperties(α, ϵ)))
+               surface_properties = (; land = SurfaceRadiationProperties(α, ϵ)),
+               configured_albedo = blue_sky_albedo(rtm))
 
     return ComponentExchanger(state, nothing)
 end
 
 # Downwelling fluxes are negative in both Breeze and the interface state.
-@kernel function _interpolate_breeze_radiation_state!(state, ℐꜜˢʷ, ℐꜜˡʷ)
+@kernel function _interpolate_breeze_radiation_state!(state, ℐꜜˢʷ, ℐꜜˡʷ, albedo)
     i, j = @index(Global, NTuple)
     @inbounds begin
         state.ℐꜜˢʷ[i, j, 1] = ℐꜜˢʷ[i, j, 1]
         state.ℐꜜˡʷ[i, j, 1] = ℐꜜˡʷ[i, j, 1]
+        state.surface_properties.land.albedo[i, j, 1] = stateindex(albedo, i, j, 1)
     end
 end
 
@@ -58,7 +62,8 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
             _interpolate_breeze_radiation_state!,
             state,
             rtm.downwelling_shortwave_flux,
-            rtm.downwelling_longwave_flux)
+            rtm.downwelling_longwave_flux,
+            state.configured_albedo)
 
     return nothing
 end

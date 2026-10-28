@@ -1,7 +1,7 @@
 # # A tiled land column: mosaic of vegetation and bare soil
 #
 # A [`TiledLandInterface`](@ref) treats a land cell as a mosaic of a vegetated fraction
-# `f` and bare-soil fraction `1 − f`, each running its own [`CanopyGroundSurface`](@ref)
+# `f` and bare-soil fraction `1 − f`, each running its own [`CanopyInterface`](@ref)
 # surface solve and area-weighted into one boundary condition. This example sweeps
 # `f` under a diurnal forcing with a rain pulse, then decomposes one mosaic into
 # its vegetated and bare tile contributions.
@@ -59,7 +59,7 @@ end
 
 # ## The vegetated tile and the roughness contrast
 #
-# The vegetated tile is a full `CanopyGroundSurface` (transpiring canopy, dry-layer soil
+# The vegetated tile is a full `CanopyInterface` (transpiring canopy, dry-layer soil
 # evaporation branch); the bare tile is derived from it (LAI = 0). We give the two
 # tiles a strong roughness contrast — rough forest canopy versus smooth bare surface.
 
@@ -76,11 +76,11 @@ soil_branch() = DryLayerHumidity(;
 
 # The canopy stress runs on plant-available water: `β` ramps from the permanent wilting
 # point to field capacity, both read off the soil column's own retention curve below.
-vegetated_tile() = CanopyGroundSurface(;
+vegetated_tile() = CanopyInterface(;
     soil_humidity   = soil_branch(),
     canopy_humidity = CanopyConductanceHumidity(; leaf_area_index = 4.0,
                                                 moisture_stress = PlantAvailableWaterStress(),
-                                                absorbed_par    = InteractiveAbsorbedPAR()),
+                                                absorbed_par    = AbsorbedPhotosyntheticallyActiveRadiation()),
     ground_heat_flux = SoilConductiveFlux(1.5, 0.05))
 
 land_roughness(ℓᵐ, ℓˢ) = SimilarityTheoryFluxes(;
@@ -111,13 +111,13 @@ variably_saturated_soil() = VariablySaturatedHydrology(;
     residual_liquid_fraction = soil_residual_fraction, storage_height = 1000,
     retention_curve        = soil_retention,
     hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 1.56),
-    deep_liquid_flux       = NoDeepLiquidFlux(),
+    deep_liquid_water_flux = NoDeepLiquidWaterFlux(),
     runoff                 = InfiltrationCapacityRunoff(infiltration_capacity = 5e-4))
 
 # ## Model builder
 #
-# `TiledLandSurface` owns the tile physics and vegetation fraction. The interface
-# supplies separate turbulent transport formulations for the forest and bare soil.
+# `TiledLandInterface` pairs the vegetated tile with a bare soil skin at the vegetation fraction,
+# with separate turbulent transport formulations for the forest and bare soil.
 
 function tiled_land_column(; cover_fraction, label)
     grid       = RectilinearGrid(CPU(); size = (), topology = (Flat, Flat, Flat))
@@ -125,11 +125,11 @@ function tiled_land_column(; cover_fraction, label)
     radiation  = forced_radiation(grid, times)
 
     land = SlabLand(grid; energy = SlabEnergy(),
-                    hydrology = variably_saturated_soil(),
-                    surface = TiledLandSurface(LandSurface(vegetated_tile()); cover_fraction))
+                    hydrology = variably_saturated_soil())
     set!(land; T = initial_temperature, M = initial_water_storage)
 
-    tiled = TiledLandInterface(grid, atmosphere, land;
+    tiled = TiledLandInterface(grid, atmosphere, land; cover_fraction,
+                               vegetated        = vegetated_tile(),
                                vegetated_fluxes = forest_fluxes(),
                                bare_fluxes      = bare_fluxes())
 

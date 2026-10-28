@@ -21,22 +21,14 @@ export
     ConstantTortuosity,
     PowerLawTortuosity,
     CanopyConductanceHumidity,
-    CanopyGroundSurface,
-    DiagnosticCanopyAir,
-    PrognosticCanopyAir,
-    DiagnosticSkin,
-    PrognosticSkin,
+    CanopyInterface,
     AreaIndexUndercanopyVelocity,
     FrictionVelocityUndercanopyVelocity,
-    SellersSoilResistance,
+    ExponentialSoilResistance,
     GroundSurfaceResistance,
     TiledLandInterface,
-    RubiscoLightLimitedPhotosynthesis,
-    MedlynConductance,
     JarvisConductance,
-    InteractiveAbsorbedPAR,
-    PeakedArrheniusParameters,
-    HeskelParameters,
+    AbsorbedPhotosyntheticallyActiveRadiation,
     AltitudeCorrection,
     atmosphere_land_interface,
     surface_layer_diagnostics,
@@ -94,7 +86,6 @@ include("boundary_prescribed_component.jl")
 
 const default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 const default_freshwater_density = 1000 # kg m⁻³
-const default_gas_constant = 8.3144598 # J mol⁻¹ K⁻¹ (universal gas constant)
 const default_dry_air_molar_mass = 0.02897 # kg mol⁻¹
 const default_latent_heat_of_fusion = 334e3 # J kg⁻¹
 

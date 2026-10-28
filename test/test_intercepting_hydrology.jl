@@ -5,8 +5,8 @@ using Oceananigans: set!
 using Oceananigans.TimeSteppers: update_state!, time_step!
 using Oceananigans.OutputReaders: OnDisk, InMemory
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyGroundSurface, CanopyConductanceHumidity,
-    CriticalSaturation, InteractiveAbsorbedPAR, SoilConductiveFlux, land_canopy_water_capacity
+    CanopyInterface, CanopyConductanceHumidity,
+    CriticalSaturation, AbsorbedPhotosyntheticallyActiveRadiation, SoilConductiveFlux, land_canopy_water_capacity
 using NumericalEarth.Lands: SlabLand, SlabEnergy, VariablySaturatedHydrology, InterceptingHydrology,
     VanGenuchtenRetention, VanGenuchtenConductivity, canopy_store_update
 
@@ -21,33 +21,28 @@ canopy_storage(land) = scalar(land.prognostic.canopy_water_storage)
 vapor_flux(model) = scalar(model.interfaces.atmosphere_land_interface.fluxes.water_vapor)
 
 function interception_model(arch, FT; leaf_area_index = 3.0, capacity = 0.1, rain = 1e-3, interception = true,
-                            cover_fraction = nothing, hydrology_cover_fraction = nothing)
-    hydrology = interception ? InterceptingHydrology(FT; soil = soil_hydrology(FT), capacity_per_leaf_area = capacity,
-                                                    cover_fraction = hydrology_cover_fraction) : soil_hydrology(FT)
-    canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index, moisture_stress = CriticalSaturation(0.5), absorbed_par = InteractiveAbsorbedPAR(FT))
-    surface = LandSurface(CanopyGroundSurface(FT; soil_humidity = bare_soil_humidity(FT), canopy_humidity, ground_heat_flux = SoilConductiveFlux(1.5, 0.05)))
-    isnothing(cover_fraction) || (surface = TiledLandSurface(surface; cover_fraction))
-    return coupled_land_model(arch, FT; air_temperature = 298, air_specific_humidity = 0.010, wind = 3, rain,
-                              hydrology, surface, land_temperature = 298, water = 300.0, shortwave = 400)
+                            cover_fraction = nothing)
+    hydrology = interception ? InterceptingHydrology(FT; soil = soil_hydrology(FT), leaf_area_index, capacity_per_leaf_area = capacity,
+                                                    cover_fraction = something(cover_fraction, 1)) : soil_hydrology(FT)
+    canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index, moisture_stress = CriticalSaturation(0.5), absorbed_par = AbsorbedPhotosyntheticallyActiveRadiation(FT))
+    surface = CanopyInterface(FT; soil_humidity = bare_soil_humidity(FT), canopy_humidity, ground_heat_flux = SoilConductiveFlux(1.5, 0.05))
+    kw = (; air_temperature = 298, air_specific_humidity = 0.010, wind = 3, rain, hydrology,
+            land_temperature = 298, water = 300.0, shortwave = 400)
+    isnothing(cover_fraction) && return coupled_land_model(arch, FT; atmosphere_land_interface_state = surface, kw...)
+    return tiled_land_model(arch, FT; vegetated = surface, cover_fraction, kw...)
 end
 
-@testset "Tiled interception requires a shared cover fraction" begin
+@testset "Interception keeps the cover fraction it is given" begin
     for arch in test_architectures
         grid = column_grid(arch)
         field = Field{Center, Center, Nothing}(grid)
         set!(field, 0.4)
         series = FieldTimeSeries{Center, Center, Nothing}(grid, [0.0, 60.0])
         foreach(n -> set!(series[n], 0.4), 1:2)
-        for cover_fraction in (0.4, field, series)
-            model = interception_model(arch, Float64; cover_fraction, hydrology_cover_fraction = cover_fraction)
-            @test model.land.hydrology.cover_fraction === cover_fraction
-            @test_throws ArgumentError interception_model(arch, Float64; cover_fraction, hydrology_cover_fraction = 0.8)
+        for cover_fraction in (field, series)
+            @test interception_model(arch, Float64; cover_fraction).land.hydrology.cover_fraction === cover_fraction
         end
-        other_field = Field{Center, Center, Nothing}(grid)
-        set!(other_field, 0.4)
-        @test_throws ArgumentError interception_model(arch, Float64; cover_fraction = field, hydrology_cover_fraction = other_field)
-        model = interception_model(arch, Float32; cover_fraction = 0.4, hydrology_cover_fraction = 0.4)
-        @test model.land.hydrology.cover_fraction == Float32(0.4)
+        @test interception_model(arch, Float32; cover_fraction = 0.4).land.hydrology.cover_fraction == Float32(0.4)
     end
 end
 
@@ -86,7 +81,7 @@ end
     for arch in test_architectures
         land = intercepting_land(column_grid(arch); leaf_area_index = 3.0)
         @test :canopy_water_storage in keys(land.prognostic)
-        @test (:canopy_evaporation, :liquid_precipitation_flux, :vapor_flux) ⊆ keys(land.fluxes)
+        @test (:canopy_evaporation, :liquid_water_precipitation_flux, :vapor_flux) ⊆ keys(land.fluxes)
         @test (:throughfall, :canopy_water_storage_tendency, :water_storage_tendency) ⊆ keys(land.diagnostics)
     end
 end
@@ -111,7 +106,7 @@ end
         @test scalar(land.water_storage) + covers[n+1] * canopy_storage(land) ≈ before atol = 1e-10
     end
 
-    # LAI(t = 3) = 4 lies beyond the two snapshots loaded when the series was opened
+    # λˡᵉᵃᶠ(t = 3) = 4 lies beyond the two snapshots loaded when the series was opened
     capacity = land_canopy_water_capacity(land)
     @test scalar(compute!(Field(capacity))) ≈ 0.1 * 4
 end
@@ -126,7 +121,7 @@ end
     end
 end
 
-@testset "Dry canopy reduces to the bare CanopyGroundSurface bit-for-bit" begin
+@testset "Dry canopy reduces to the bare CanopyInterface bit-for-bit" begin
     for arch in test_architectures
         with, without = interception_model(arch, Float64), interception_model(arch, Float64; interception = false)
         interface, bare = with.interfaces.atmosphere_land_interface, without.interfaces.atmosphere_land_interface
@@ -162,12 +157,12 @@ end
         land = model.land
         set!(land; canopy_water_storage = 0.5 * 0.1 * 3)
         update_state!(model)
-        rain = scalar(land.fluxes.liquid_precipitation_flux)
+        rain = scalar(land.fluxes.liquid_water_precipitation_flux)
         Jʷᵉᵗ = scalar(land.fluxes.canopy_evaporation)
         time_step!(model, 600.0)
         throughfall = scalar(land.diagnostics.throughfall)
         @test rain ≈ scalar(land.diagnostics.canopy_water_storage_tendency) + Jʷᵉᵗ + throughfall atol=1e-14
-        @test scalar(land.fluxes.liquid_precipitation_flux) == rain
+        @test scalar(land.fluxes.liquid_water_precipitation_flux) == rain
         @test 0 ≤ throughfall < rain
     end
 end
@@ -187,19 +182,19 @@ end
     end
 end
 
-@testset "Field- and FieldTimeSeries-valued LAI cap the store at c LAI" begin
+@testset "Field- and FieldTimeSeries-valued λˡᵉᵃᶠ cap the store at c λˡᵉᵃᶠ" begin
     for arch in test_architectures
         grid = column_grid(arch)
         lai_field = set!(CenterField(grid), 2.0)
         lai_series = FieldTimeSeries{Center, Center, Nothing}(grid, [0.0, 100.0])
         set!(lai_series[1], 1.0)
         set!(lai_series[2], 3.0)
-        # The FieldTimeSeries LAI is interpolated to LAI(t = 50) = 2 and runs on CPU only
+        # The FieldTimeSeries λˡᵉᵃᶠ is interpolated to λˡᵉᵃᶠ(t = 50) = 2 and runs on CPU only
         for (lai, Δt) in ((lai_field, 600.0), (lai_series, 50.0))
             lai isa FieldTimeSeries && !(arch isa CPU) && continue
             land = intercepting_land(grid; leaf_area_index = lai, capacity_per_leaf_area = 0.1)
             set!(land; T = 295, M = 300, canopy_water_storage = 1.0)
-            fill!(parent(land.fluxes.liquid_precipitation_flux), 0)
+            fill!(parent(land.fluxes.liquid_water_precipitation_flux), 0)
             fill!(parent(land.fluxes.canopy_evaporation), 0)
             time_step!(land, Δt)
             @test canopy_storage(land) ≈ 0.2 rtol=1e-6

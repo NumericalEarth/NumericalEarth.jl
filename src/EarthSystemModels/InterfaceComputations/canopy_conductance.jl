@@ -1,107 +1,91 @@
 #####
 ##### `CanopyConductanceHumidity` — a single-source (big-leaf) canopy: the stomatal
-##### conductance `gᶜᵃⁿ = LAI · gₛ` in series with the aerodynamic conductance.
+##### conductance `gᶜᵃⁿ = λˡᵉᵃᶠ · gₛ` in series with the aerodynamic conductance.
 #####
 
 """
     struct CanopyConductanceHumidity
 
 Surface specific humidity `qˢ` for a single-source (big-leaf) canopy: the
-canopy conductance `gᶜᵃⁿ = LAI · gₛ` in series with the aerodynamic conductance,
+canopy conductance `gᶜᵃⁿ = λˡᵉᵃᶠ · gₛ` in series with the aerodynamic conductance,
 solved inside the Monin–Obukhov fixed point exactly as [`SkinHumidity`](@ref)
 solves a soil-resistance balance. The stomatal conductance `gₛ` comes from the
 `conductance` model driven by the per-cell leaf-to-air VPD, leaf temperature
 (`= Tₛ`, single-source), and absorbed PAR, with the moisture-stress factor `β(𝒮)`
 read from the ground hydrology (`moisture_stress`, a `Number`, a
 [`PlantAvailableWaterStress`](@ref) — the model meant for transpiration — or a
-[`CriticalSaturation`](@ref)). The conductance is either the empirical
-[`JarvisConductance`](@ref) (default; needs no `photosynthesis` model) or the
-photosynthesis-coupled [`MedlynConductance`](@ref). Absorbed PAR is a prescribed
-`Number` or live from the radiation state ([`InteractiveAbsorbedPAR`](@ref)); CO₂ is
-prescribed.
+[`CriticalSaturation`](@ref)). The default conductance is
+[`JarvisConductance`](@ref). Absorbed PAR is a prescribed `Number` or live from the
+radiation state ([`AbsorbedPhotosyntheticallyActiveRadiation`](@ref)).
 
 Fields:
-- `leaf_area_index` : bulk LAI (–), upscales leaf `gₛ` to the canopy.
-- `photosynthesis`  : a [`RubiscoLightLimitedPhotosynthesis`](@ref), or `nothing` for Jarvis.
-- `conductance`     : a [`JarvisConductance`](@ref) (default) or [`MedlynConductance`](@ref).
+- `leaf_area_index` : bulk λˡᵉᵃᶠ (–), upscales leaf `gₛ` to the canopy.
+- `conductance`     : a [`JarvisConductance`](@ref) by default.
 - `moisture_stress` : `β(𝒮)` model — a `Number`, a [`PlantAvailableWaterStress`](@ref)
   (wilting-point/field-capacity endpoints, the model meant for a transpiring canopy), or
   a [`CriticalSaturation`](@ref) (the bare-soil evaporation model).
 - `absorbed_par`    : a prescribed per-leaf absorbed PAR (`Number`, mol photon m⁻² s⁻¹) or an
-  [`InteractiveAbsorbedPAR`](@ref).
-- `atmospheric_co2` : prescribed CO₂ partial pressure (Pa).
+  [`AbsorbedPhotosyntheticallyActiveRadiation`](@ref).
 - `phase`           : saturation phase (Liquid).
 """
-struct CanopyConductanceHumidity{L, P, C, S, A, Q, Φ}
+struct CanopyConductanceHumidity{L, C, S, A, Φ}
     leaf_area_index :: L
-    photosynthesis  :: P
     conductance     :: C
     moisture_stress :: S
     absorbed_par    :: A
-    atmospheric_co2 :: Q
     phase           :: Φ
 end
 
-# Medlyn needs a photosynthesis model; Jarvis needs none. Default `photosynthesis` per
-# conductance type when the user leaves it unset (`nothing`).
-@inline default_photosynthesis(photosynthesis, conductance, FT) = photosynthesis
-@inline default_photosynthesis(::Nothing, ::MedlynConductance, FT) = RubiscoLightLimitedPhotosynthesis(FT)
-
 function CanopyConductanceHumidity(FT=Oceananigans.defaults.FloatType;
                                    leaf_area_index = 2,
-                                   photosynthesis  = nothing,
                                    conductance     = JarvisConductance(FT),
                                    moisture_stress = 1,
                                    absorbed_par    = 4e-4,
-                                   atmospheric_co2 = 40,
                                    phase           = AtmosphericThermodynamics.Liquid())
 
-    photosynthesis = default_photosynthesis(photosynthesis, conductance, FT)
-
     return CanopyConductanceHumidity(convert_if_number(FT, leaf_area_index),
-                                     photosynthesis, conductance, moisture_stress,
+                                     conductance, moisture_stress,
                                      convert_if_number(FT, absorbed_par),
-                                     convert(FT, atmospheric_co2), phase)
+                                     phase)
 end
 
 Adapt.adapt_structure(to, q::CanopyConductanceHumidity) =
     CanopyConductanceHumidity(Adapt.adapt(to, q.leaf_area_index),
-                              q.photosynthesis, q.conductance, q.moisture_stress,
-                              q.absorbed_par, q.atmospheric_co2, q.phase)
+                              q.conductance, q.moisture_stress,
+                              q.absorbed_par, q.phase)
 
-Base.summary(::CanopyConductanceHumidity{L, P, C, S, A, Q, Φ}) where {L, P, C, S, A, Q, Φ} =
+Base.summary(::CanopyConductanceHumidity{L, C, S, A, Φ}) where {L, C, S, A, Φ} =
     string("CanopyConductanceHumidity{", Φ === AtmosphericThermodynamics.Liquid ? "Liquid" : "Ice", "}")
 Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
 
 # The canopy reads the land state its moisture stress declares.
 land_state_accessors(q::CanopyConductanceHumidity) = land_state_accessors(q.moisture_stress)
 
-# The bulk LAI (a constant, a static `Field`, or a `FieldTimeSeries`) upscales the leaf
+# The bulk λˡᵉᵃᶠ (a constant, a static `Field`, or a `FieldTimeSeries`) upscales the leaf
 # conductance and shades the absorbed PAR.
 @inline canopy_leaf_area_index(q::CanopyConductanceHumidity) = q.leaf_area_index
 @inline interface_vegetation_state(i, j, grid, ::CanopyConductanceHumidity, vegetation, time_interpolator) =
     (leaf_area_index = convert(eltype(grid), stateindex(vegetation, i, j, 1, time_interpolator)),)
 
-# Bulk canopy (stomatal) mass conductance `gᶜᵃⁿ = LAI · gₛ · Mᵈ` (kg m⁻² s⁻¹) and the leaf
+# Bulk canopy (stomatal) mass conductance `gᶜᵃⁿ = λˡᵉᵃᶠ · gₛ · Mᵈ` (kg m⁻² s⁻¹) and the leaf
 # saturation humidity `qᵛ⁺(Tˡᵉᵃ)`; `qᵃ` is the humidity of the air the leaf exchanges with.
 @inline function canopy_conductance_terms(q::CanopyConductanceHumidity, Tˡᵉᵃ, qᵃ, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ,
                                           canopy_transmittance)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     pᵃᵗ = Ψₐ.p
 
-    LAI = Ψˡᵃ.leaf_area_index
+    λˡᵉᵃᶠ = Ψˡᵃ.leaf_area_index
     qᵛ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tˡᵉᵃ, pᵃᵗ, q.phase)
-    # Leaf-to-air VPD, floored at 50 Pa as in CLM5 so the Medlyn `g₁/√VPD` stays bounded.
+    # Leaf-to-air vapor pressure deficit (Pa).
     VPD  = max(AtmosphericThermodynamics.vapor_pressure_deficit(ℂᵃᵗ, Tˡᵉᵃ, pᵃᵗ, qᵃ, 0, 0, q.phase),
                oftype(Tˡᵉᵃ, 50))
     β    = evaporation_efficiency(q.moisture_stress, Ψˡᵃ)
-    APAR = absorbed_par_value(q.absorbed_par, Ψᵣ, LAI, canopy_transmittance)
+    APAR = absorbed_par_value(q.absorbed_par, Ψᵣ, λˡᵉᵃᶠ, canopy_transmittance)
 
-    gₛ, _, _ = stomatal_conductance(q.conductance, q.photosynthesis,
-                                    APAR, VPD, Tˡᵉᵃ, q.atmospheric_co2, pᵃᵗ, β)
+    gₛ = stomatal_conductance(q.conductance, APAR, VPD, Tˡᵉᵃ, β)
 
     # Molar leaf conductance → canopy mass conductance (kg m⁻² s⁻¹).
-    gᶜᵃⁿ = LAI * gₛ * oftype(gₛ, default_dry_air_molar_mass)
+    gᶜᵃⁿ = λˡᵉᵃᶠ * gₛ * oftype(gₛ, default_dry_air_molar_mass)
 
     return gᶜᵃⁿ, qᵛ⁺
 end

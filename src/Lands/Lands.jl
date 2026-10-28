@@ -7,7 +7,7 @@ export AbstractLand,
        coastal_outlet_indices,
        routable_grid,
        # Composable container
-       SlabLand, LandSurface, TiledLandSurface,
+       SlabLand, PrognosticCanopyAir, PrognosticSkin,
        # Energy-balance closures
        SlabEnergy,
        ForceRestoreEnergy,
@@ -17,7 +17,7 @@ export AbstractLand,
        # Variably saturated hydrology + sub-closures
        VanGenuchtenRetention, VanGenuchtenConductivity,
        WaterViscosity, CosbyConductivity, saturated_conductivity,
-       NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
+       NoDeepLiquidWaterFlux, FreeDrainageFlux, DarcyDeepLiquidWaterFlux, LinearReservoirDrainage,
        NoRunoff, InfiltrationCapacityRunoff,
        VariablySaturatedHydrology,
        # Canopy interception store
@@ -68,14 +68,12 @@ using Base: ForwardOrdering
 using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
 using NumericalEarth.EarthSystemModels.InterfaceComputations: InterfaceComputations,
-                                                 BulkTemperature, BulkHumidity, CanopyGroundSurface, TiledLandInterface,
+                                                 CanopyInterface, EnergyBalanceTemperature,
                                                  ConstantTortuosity, PowerLawTortuosity,
                                                  effective_vapor_diffusivity,
-                                                 EnergyBalanceTemperature, DiagnosticSkin,
-                                                 PrognosticCanopyGroundSurface, PrognosticEnergyBalanceTemperature,
                                                  interface_kernel_parameters, ComponentExchanger,
-                                                 canopy_transmittance, canopy_leaf_area_index, land_surface_fluxes,
-                                                 surface_energy_loss, convert_if_number, maybe_write!
+                                                 canopy_transmittance, land_surface_fluxes,
+                                                 convert_if_number, maybe_write!
 
 # Extended by external land models
 function land_model end
@@ -107,11 +105,11 @@ include("hydrology/bucket_hydrology.jl")
 include("hydrology/dry_land.jl")
 include("hydrology/saturated_surface.jl")
 
-# Variably saturated hydrology + sub-closures (deep liquid flux, runoff,
+# Variably saturated hydrology + sub-closures (deep liquid water flux, runoff,
 # retention/conductivity). These are pure helpers and small types used by
 # `VariablySaturatedHydrology`; they have no dependence on each other.
 include("hydrology/hydraulic_functions.jl")
-include("hydrology/deep_liquid_fluxes.jl")
+include("hydrology/deep_liquid_water_fluxes.jl")
 include("hydrology/runoff_models.jl")
 include("hydrology/variably_saturated_hydrology.jl")
 
@@ -119,7 +117,7 @@ include("hydrology/variably_saturated_hydrology.jl")
 # evaporation), depends on `merge_unique` from the container above.
 include("hydrology/intercepting_hydrology.jl")
 
-include("land_surface.jl")
+include("surface_storage.jl")
 
 # Legacy PrescribedLand component (river / iceberg freshwater forcing).
 include("prescribed_land.jl")

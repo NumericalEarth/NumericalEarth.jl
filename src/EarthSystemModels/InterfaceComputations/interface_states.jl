@@ -6,26 +6,31 @@ using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 #####
 
 """
-    InterfaceFormulation{F, Q, T, V}
+$(TYPEDSIGNATURES)
 
 The physics of one atmosphere interface (air–sea, air–ice, or air–land): the turbulent-flux
-closure (e.g. `SimilarityTheoryFluxes`), and the formulations for the interface specific
-humidity, the interface temperature, and the atmosphere–surface velocity difference.
+closure (e.g. `SimilarityTheoryFluxes`), the interface-state formulation, and the
+atmosphere–surface velocity difference. `state` is a named tuple of `temperature` and
+`specific_humidity` formulations, or a coupled formulation such as `CanopyInterface`.
 """
-struct InterfaceFormulation{F, Q, T, V}
-    turbulent_fluxes    :: F
-    specific_humidity   :: Q
-    temperature         :: T
+struct InterfaceFormulation{F, S, V}
+    turbulent_fluxes     :: F
+    state               :: S
     velocity_difference :: V
 end
 
 Adapt.@adapt_structure InterfaceFormulation
 
+@inline temperature_formulation(state::NamedTuple) = state.temperature
+@inline specific_humidity_formulation(state::NamedTuple) = state.specific_humidity
+
+@inline local_interface_formulation(state::NamedTuple, i, j) =
+    map(formulation -> local_interface_formulation(formulation, i, j), state)
+
 # Collapse Field-valued roughness lengths, displacement, and surface optics to the values at cell `(i, j)`.
 @inline local_interface_formulation(formulation::InterfaceFormulation, i, j) =
     InterfaceFormulation(local_flux_formulation(formulation.turbulent_fluxes, i, j),
-                         local_interface_formulation(formulation.specific_humidity, i, j),
-                         local_interface_formulation(formulation.temperature, i, j),
+                         local_interface_formulation(formulation.state, i, j),
                          formulation.velocity_difference)
 
 #####
@@ -179,7 +184,7 @@ end
 # node in flux continuity with all of them. Every conductance zero keeps `x⁻`.
 @inline function conductance_weighted_node(x⁻, conductances, sources)
     D = sum(conductances)
-    return ifelse(D > 0, sum(conductances .* sources) / D, x⁻)
+    return ifelse(D > 0, sum(map(*, conductances, sources)) / D, x⁻)
 end
 
 # `BulkHumidity` — surface specific humidity for a bulk land surface with no
@@ -529,8 +534,9 @@ Conduction between a land surface temperature and the bulk slab temperature,
 distance from the surface to the bulk temperature node, half the slab depth for a
 node at its center, and `κᵀ` (`conductivity`, W m⁻¹ K⁻¹) the thermal conductivity
 over that distance: the soil's, or that of a thin surface layer (litter, a crust)
-with its own conductivity. No layer of thickness `ℓᵀ` is resolved. Use it through
-[`SoilSkinTemperature`](@ref).
+with its own conductivity. These are interface exchange parameters for an unresolved
+heat-transfer path. The humidity formulation uses the same `ℓᵀ` to interpolate the
+evaporation-front temperature. Use it through [`SoilSkinTemperature`](@ref).
 """
 struct SoilConductiveFlux{K, Z}
     conductivity :: K   # κᵀ, W m⁻¹ K⁻¹
@@ -667,88 +673,26 @@ end
 end
 
 """
-    DiagnosticSkin()
+$(TYPEDSIGNATURES)
 
-Massless skin: the energy-balance temperature is solved to equilibrium inside the
-Monin–Obukhov fixed point, one Newton step per iterate.
+Interface temperature from a surface energy balance with conductive coupling to the
+bulk land. Without land skin storage, solve the equilibrium balance. With land skin
+storage, evaluate the implicit energy balance over the coupled time step.
 """
-struct DiagnosticSkin end
-
-Base.summary(::DiagnosticSkin) = "DiagnosticSkin"
-Base.show(io::IO, s::DiagnosticSkin) = print(io, summary(s))
-
-"""
-    PrognosticSkin(FT = Oceananigans.defaults.FloatType; heat_capacity = 1e5)
-
-Prognostic skin storage (the default): the skin carries an areal `heat_capacity`
-``C`` (J m⁻² K⁻¹, a `Number` or a per-cell `Field`) and integrates
-
-```math
-C \\frac{dT_s}{dt} = \\text{net radiation}(T_s) - \\mathcal{Q}^{\\mathrm{gro}}(T_s) - \\mathcal{Q}^T(T_s) - \\mathcal{Q}^v(T_s),
-```
-
-frozen through the Monin–Obukhov fixed point and advanced once per step by a
-backward-Euler update. The default `heat_capacity = 10⁵` is about 5 cm of moist soil.
-The skin stores energy at this capacity, so the slab's own heat capacity should cover
-only the soil below the skin layer.
-
-```jldoctest
-using NumericalEarth
-
-PrognosticSkin()
-
-# output
-PrognosticSkin(C=100000.0)
-```
-"""
-struct PrognosticSkin{C}
-    heat_capacity :: C
-end
-
-PrognosticSkin(FT::Type = Oceananigans.defaults.FloatType; heat_capacity = 1e5) =
-    PrognosticSkin(convert_if_number(FT, heat_capacity))
-
-Base.summary(s::PrognosticSkin) = string("PrognosticSkin(C=", prettysummary(s.heat_capacity), ")")
-Base.show(io::IO, s::PrognosticSkin) = print(io, summary(s))
-
-Adapt.adapt_structure(to, s::PrognosticSkin) = PrognosticSkin(Adapt.adapt(to, s.heat_capacity))
-
-"""
-    EnergyBalanceTemperature(coupling; storage=PrognosticSkin())
-
-Interface temperature that closes the surface energy balance
-`F(Tₛ) = net radiation − 𝒬ᵍʳᵒ − 𝒬ᵀ − 𝒬ᵛ = 0` by Newton on the conductance sum
-`Σg = 4ϵσTₛ³ + Λ + ρ u★ (cᵖᵐ χθ + ℒ χq dq/dT)`. `coupling` is a
-[`SoilConductiveFlux`](@ref) carrying `𝒬ᵍʳᵒ = Λᵍʳᵒ(Tₛ − Tˡᵃ)`; `storage` is
-[`PrognosticSkin`](@ref) (the default, the skin carries its heat capacity) or
-[`DiagnosticSkin`](@ref) (massless). `Λᵍʳᵒ → ∞` recovers [`BulkTemperature`](@ref).
-Construct one with [`SoilSkinTemperature`](@ref).
-"""
-struct EnergyBalanceTemperature{ST, C}
+struct EnergyBalanceTemperature{C}
     coupling :: C
-    storage  :: ST
 end
-
-EnergyBalanceTemperature(coupling; storage=PrognosticSkin()) =
-    EnergyBalanceTemperature(coupling, storage)
-
-const PrognosticEnergyBalanceTemperature = EnergyBalanceTemperature{<:PrognosticSkin}
 
 @inline ground_conductance(t::EnergyBalanceTemperature) = ground_conductance(t.coupling)
-
-Adapt.adapt_structure(to, t::EnergyBalanceTemperature) =
-    EnergyBalanceTemperature(Adapt.adapt(to, t.coupling), Adapt.adapt(to, t.storage))
+Adapt.@adapt_structure EnergyBalanceTemperature
 
 """
-    SoilSkinTemperature(conductivity, thickness; storage=PrognosticSkin())
+$(TYPEDSIGNATURES)
 
-A soil-skin [`EnergyBalanceTemperature`](@ref): the skin conducts to the bulk
-slab with conductance `Λᵍʳᵒ = conductivity/thickness` (W m⁻² K⁻¹). The default
-[`PrognosticSkin`](@ref) storage carries the skin's heat capacity; `storage =
-DiagnosticSkin()` recovers the massless equilibrium of the same balance.
+Ground energy balance with conductance `conductivity/thickness` (W m⁻² K⁻¹)
+to the bulk land. Configure `PrognosticSkin` on the land to include ground heat storage.
 """
-SoilSkinTemperature(conductivity, thickness; storage=PrognosticSkin()) =
-    EnergyBalanceTemperature(SoilConductiveFlux(conductivity, thickness), storage)
+SoilSkinTemperature(conductivity, thickness) = EnergyBalanceTemperature(SoilConductiveFlux(conductivity, thickness))
 
 Base.summary(t::EnergyBalanceTemperature) = string("EnergyBalanceTemperature(Λ=", prettysummary(ground_conductance(t.coupling)), ")")
 Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
@@ -765,7 +709,7 @@ Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
     Λ   = convert(FT, ground_conductance(t))
     Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
 
-    q             = compute_interface_humidity(ℙₛ.specific_humidity, T, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
+    q             = compute_interface_humidity(specific_humidity_formulation(ℙₛ.state), T, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
     net_radiation = - (1 - Ψᵣ.α) * Ψᵣ.ℐꜜˢʷ - Ψᵣ.ϵ * (Ψᵣ.ℐꜜˡʷ + Ψᵣ.σ * T^4)
     𝒬ᵍʳᵒ          = Λ * (T - Ψˡᵃ.T)
     𝒬ᵀ            = gᵃᵀ * (T - Tᵃᵗ)
@@ -774,7 +718,7 @@ Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
 
     # dq/dT of the humidity the formulation actually diagnoses, by a one-sided difference.
     δT = sqrt(eps(FT)) * T
-    dq = (compute_interface_humidity(ℙₛ.specific_humidity, T + δT, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ) - q) / δT
+    dq = (compute_interface_humidity(specific_humidity_formulation(ℙₛ.state), T + δT, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ) - q) / δT
     Σg = 4 * Ψᵣ.ϵ * Ψᵣ.σ * T^3 + Λ + gᵃᵀ + ℒ * gᵃᵛ * dq
     return F, Σg
 end
@@ -788,7 +732,8 @@ end
                                                radiation_state,
                                                interface_formulation,
                                                atmosphere_properties,
-                                               interior_properties)
+                                               interior_properties,
+                                               storage::Nothing = interior_state.surface_storage)
 
     T = interface_state.temperature
     F, Σg = skin_energy_imbalance(T, t, interface_state, atmosphere_state, interior_state,
@@ -798,15 +743,15 @@ end
 end
 
 # A prognostic skin is model state: frozen through the fixed point (only the
-# similarity scales iterate) and advanced once per step in `advance_interface_state!`.
-@inline compute_interface_temperature(::PrognosticEnergyBalanceTemperature,
+# similarity scales iterate) and advanced once per step after the flux solve.
+@inline compute_interface_temperature(::EnergyBalanceTemperature,
                                       interface_state,
                                       atmosphere_state,
                                       interior_state,
                                       radiation_state,
                                       interface_formulation,
                                       atmosphere_properties,
-                                      interior_properties) = interface_state.temperature
+                                      interior_properties, storage) = interface_state.temperature
 
 ####
 #### Interface specific humidity

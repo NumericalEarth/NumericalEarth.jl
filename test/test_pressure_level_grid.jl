@@ -2,7 +2,7 @@ include("runtests_setup.jl")
 
 using Oceananigans
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Fields: instantiated_location
+using Oceananigans.Fields: instantiated_location, _fractional_indices, fractional_z_index
 using Oceananigans.Grids: Flat, Bounded, topology
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
 using Oceananigans.TimeSteppers: time_step!
@@ -205,6 +205,30 @@ for arch in test_architectures
             clock.time = 1.0
             materialize_geopotential!(grid)
             @test znodes(grid, Center()) ≈ [3000.0, 6000.0, 9000.0, 12000.0]
+        end
+
+        @testset "the column is picked by nearest node, not by truncation" begin
+            # `fractional_y_index` returns a node index a few ulp below the integer for most nodes,
+            # so truncating drops a whole column. No LCC here: this is the plain lat-lon path.
+            Nx, Ny, Nz = 4, 3, 5
+            g = 9.80665
+            height(j, k) = 100.0j + 400.0 * (k - 1)
+
+            Φ_grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny, Nz),
+                                           longitude = (0, 1), latitude = (30, 44), z = (0, 1))
+            Φ = CenterField(Φ_grid)
+            set!(Φ, [g * height(j, k) for i in 1:Nx, j in 1:Ny, k in 1:Nz])
+            plvd = PressureLevelVerticalDiscretization(Φ; gravitational_acceleration = g)
+            grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny, Nz),
+                                         longitude = (0, 1), latitude = (30, 44), z = plvd)
+            ℓ = (Center(), Center(), Center())
+
+            @allowscalar for j in 1:Ny, z in (700.0, 1100.0)
+                λ = Oceananigans.Grids.λnode(1, j, 1, grid, ℓ...)
+                φ = Oceananigans.Grids.φnode(1, j, 1, grid, ℓ...)
+                idx = _fractional_indices((λ, φ, z), grid, ℓ...)
+                @test height(j, 1) + 400.0 * (idx.k - 1) ≈ z
+            end
         end
 
         @testset "TimeSeriesInterpolation-backed Φ heights follow the clock" begin
@@ -427,5 +451,57 @@ for arch in test_architectures
             fill_halo_regions!(Φ_reference)
             @test Array(parent(grid.z.geopotential)) ≈ Array(parent(Φ_reference))
         end
+
+        @testset "Lambert-conformal horizontal composes with the per-column vertical" begin
+            # Without the joint method, Oceananigans' LambertConformalConicGrid method wins and the
+            # vertical silently reads the column-mean profile.
+            Nx, Ny, Nz = 8, 6, 5
+            g = 9.80665
+            lcc_kw = (; size = (Nx, Ny, Nz), center = (-105, 40), spacing = 13545.0,
+                        standard_parallel = 25.0, warn = false)
+
+            # Column i spans 100i to 100i + 1600 m, so the columns vary laterally.
+            height(i, k) = 100.0i + 400.0 * (k - 1)
+
+            placeholder = LambertConformalConicGrid(arch, Float64; z = (0, 1), lcc_kw...)
+            Φ = CenterField(placeholder)
+            set!(Φ, [g * height(i, k) for i in 1:Nx, j in 1:Ny, k in 1:Nz])
+            plvd = PressureLevelVerticalDiscretization(Φ; gravitational_acceleration = g)
+            grid = LambertConformalConicGrid(arch, Float64; z = plvd, lcc_kw...)
+
+            @test grid isa PressureLevelGrid
+            ℓ = (Center(), Center(), Center())
+
+            @allowscalar for (i, z) in ((1, 300.0), (3, 400.0), (3, 1000.0))
+                λ = Oceananigans.Grids.λnode(i, 1, 1, grid, ℓ...)
+                φ = Oceananigans.Grids.φnode(i, 1, 1, grid, ℓ...)
+                idx = _fractional_indices((λ, φ, z), grid, ℓ...)
+                # The column is linear in k, so the fractional index inverts exactly.
+                @test height(i, 1) + 400.0 * (idx.k - 1) ≈ z
+                # And it is the column, not the domain mean, which is what the generic path reads.
+                i > 1 && @test !isapprox(idx.k, fractional_z_index(z, ℓ, grid))
+            end
+
+            # Above the column top, clamped rather than extrapolated off the end.
+            @allowscalar begin
+                λ = Oceananigans.Grids.λnode(3, 1, 1, grid, ℓ...)
+                φ = Oceananigans.Grids.φnode(3, 1, 1, grid, ℓ...)
+                @test _fractional_indices((λ, φ, 1.0e5), grid, ℓ...).k ≈ Nz
+            end
+        end
+    end
+end
+
+for arch in test_architectures
+    @testset "surface_elevation divides the surface geopotential by g [$(typeof(arch))]" begin
+        g = 9.81
+        horizontal = (longitude = (0, 1), latitude = (0, 1))
+        Φ = CenterField(LatitudeLongitudeGrid(arch; size = (4, 4, 3), horizontal..., z = (0, 1)))
+        set!(Φ, [1000k * g for i in 1:4, j in 1:4, k in 1:3])
+        Φˢ = Field{Center, Center, Nothing}(LatitudeLongitudeGrid(arch; size = (4, 4, 1), horizontal..., z = (0, 1)))
+        set!(Φˢ, [100i * g for i in 1:4, j in 1:4, k in 1:1])
+        z = PressureLevelVerticalDiscretization(Φ; gravitational_acceleration = g, surface_geopotential = Φˢ)
+        grid = LatitudeLongitudeGrid(arch; size = (4, 4, 3), horizontal..., z)
+        @test Array(interior(surface_elevation(grid)))[:, :, 1] ≈ [100i for i in 1:4, j in 1:4]
     end
 end

@@ -57,22 +57,16 @@ export
     ConstantTortuosity,
     PowerLawTortuosity,
     CanopyConductanceHumidity,
-    CanopyGroundSurface,
-    DiagnosticCanopyAir,
+    CanopyInterface,
     PrognosticCanopyAir,
-    DiagnosticSkin,
     PrognosticSkin,
     AreaIndexUndercanopyVelocity,
     FrictionVelocityUndercanopyVelocity,
-    SellersSoilResistance,
+    ExponentialSoilResistance,
     GroundSurfaceResistance,
     TiledLandInterface,
-    RubiscoLightLimitedPhotosynthesis,
-    MedlynConductance,
     JarvisConductance,
-    InteractiveAbsorbedPAR,
-    PeakedArrheniusParameters,
-    HeskelParameters,
+    AbsorbedPhotosyntheticallyActiveRadiation,
     AltitudeCorrection,
     atmosphere_land_interface,
     SlabOcean,
@@ -116,7 +110,7 @@ export
     SoilSkinTemperature,
     InteriorDiffusivity,
     # Land (prognostic SlabLand + closures)
-    SlabLand, LandSurface, TiledLandSurface,
+    SlabLand,
     SlabEnergy,
     BucketHydrology,
     WaterCoupledEnergy,
@@ -124,7 +118,7 @@ export
     InterceptingHydrology,
     VanGenuchtenRetention, VanGenuchtenConductivity,
     WaterViscosity, CosbyConductivity, saturated_conductivity,
-    NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
+    NoDeepLiquidWaterFlux, FreeDrainageFlux, DarcyDeepLiquidWaterFlux, LinearReservoirDrainage,
     NoRunoff, InfiltrationCapacityRunoff,
     WeynantsPedotransfer, HYPRESPedotransfer,
     soil_hydraulic_parameters, soil_hydraulic_properties,
@@ -247,7 +241,7 @@ const SomeKindOfFieldTimeSeries = Union{FieldTimeSeries,
 
 const SKOFTS = SomeKindOfFieldTimeSeries
 
-@inline stateindex(a::Number, i, j, k, args...) = a
+@inline stateindex(a::Union{Number, Nothing}, i, j, k, args...) = a
 @inline stateindex(a::AbstractArray, i, j, k, args...) = @inbounds a[i, j, k]
 @inline stateindex(a::SKOFTS, i, j, k, grid, time, args...) = @inbounds a[i, j, k, time]
 @inline stateindex(a::SKOFTS, i, j, k, time_interpolator::TimeInterpolator) = @inbounds a[i, j, k, time_interpolator]
@@ -260,17 +254,8 @@ const SKOFTS = SomeKindOfFieldTimeSeries
     return a(λ, φ, z, time)
 end
 
-@inline function stateindex(a::Tuple, i, j, k, grid, time, args...)
-    N = length(a)
-    ntuple(Val(N)) do n
-        stateindex(a[n], i, j, k, grid, time, args...)
-    end
-end
-
-@inline function stateindex(a::NamedTuple, i, j, k, grid, time, args...)
-    vals = stateindex(values(a), i, j, k, grid, time, args...)
-    names = keys(a)
-    return NamedTuple{names}(vals)
+@inline function stateindex(a::Union{Tuple, NamedTuple}, i, j, k, grid, time, args...)
+    return map(value -> stateindex(value, i, j, k, grid, time, args...), a)
 end
 
 #####

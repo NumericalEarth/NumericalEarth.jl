@@ -4,35 +4,28 @@ using Oceananigans
 using Oceananigans: set!, interior, CenterField
 using Oceananigans.TimeSteppers: update_state!, time_step!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyGroundSurface, CanopyConductanceHumidity, CriticalSaturation, InteractiveAbsorbedPAR,
-    SoilConductiveFlux, TiledLandInterface,
+    CanopyInterface, CanopyConductanceHumidity, CriticalSaturation, AbsorbedPhotosyntheticallyActiveRadiation,
+    SoilConductiveFlux,
     SimilarityTheoryFluxes, atmosphere_land_stability_functions
 
-tiled_canopy_ground_surface(FT) = CanopyGroundSurface(FT;
+tiled_canopy(FT) = CanopyInterface(FT;
     soil_humidity = bare_soil_humidity(FT),
     canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index = 3.0, moisture_stress = CriticalSaturation(0.5),
-                                                absorbed_par = InteractiveAbsorbedPAR(FT)),
+                                                absorbed_par = AbsorbedPhotosyntheticallyActiveRadiation(FT)),
     ground_heat_flux = SoilConductiveFlux(1.5, 0.05))
 
 land_roughness(ℓᵐ, ℓˢ) = SimilarityTheoryFluxes(Float64; stability_functions = atmosphere_land_stability_functions(Float64),
     momentum_roughness_length = ℓᵐ, temperature_roughness_length = ℓˢ, water_vapor_roughness_length = ℓˢ)
 
-function tiled_land_model(arch, FT = Float64; cover_fraction, wind = 3.0, interface_kw...)
-    surface = TiledLandSurface(LandSurface(tiled_canopy_ground_surface(FT)); cover_fraction)
-    grid, atmosphere, land, radiation = coupled_land_components(arch, FT; wind, surface)
-    tiled = TiledLandInterface(grid, atmosphere, land; interface_kw...)
-    model = AtmosphereLandModel(atmosphere, land; radiation, atmosphere_land_interface = tiled)
-    update_state!(model.land)
-    update_state!(model)
-    return model
-end
+tiled_canopy_model(arch, FT = Float64; cover_fraction, wind = 3.0, interface_kw...) =
+    tiled_land_model(arch, FT; vegetated = tiled_canopy(FT), cover_fraction, wind, interface_kw = (; interface_kw...))
 
 @testset "Tiled surface-layer diagnostics" begin
     for arch in test_architectures
         grid, _, _, _ = coupled_land_components(arch)
         cover_fraction = Field{Center, Center, Nothing}(grid)
         set!(cover_fraction, 0.6)
-        model = tiled_land_model(arch; cover_fraction)
+        model = tiled_canopy_model(arch; cover_fraction)
         interface = model.interfaces.atmosphere_land_interface
 
         for include_subgrid_velocities in (false, true)
@@ -54,7 +47,7 @@ end
 @testset "Zero-area tiles do not contaminate surface-layer diagnostics" begin
     for arch in test_architectures, f in (0.0, 1.0)
         rough, smooth = land_roughness(3.0, 3.0), land_roughness(0.01, 0.001)
-        model = tiled_land_model(arch; cover_fraction = f,
+        model = tiled_canopy_model(arch; cover_fraction = f,
                                  vegetated_fluxes = f == 0 ? rough : smooth,
                                  bare_fluxes = f == 0 ? smooth : rough)
         interface = model.interfaces.atmosphere_land_interface
@@ -77,7 +70,7 @@ end
     flux_names = (:sensible_heat, :latent_heat, :water_vapor, :x_momentum, :y_momentum)
     for arch in test_architectures
         f, Λ = 0.6, 1.5 / 0.05
-        model = tiled_land_model(arch; cover_fraction = f)
+        model = tiled_canopy_model(arch; cover_fraction = f)
         tiled = model.interfaces.atmosphere_land_interface
         T, veg, bare = tiled.temperature, tiled.vegetated, tiled.bare
         @test all(isfinite, scalar.((tiled.fluxes.sensible_heat, tiled.fluxes.latent_heat, T.ground_heat_flux, T.effective)))
@@ -108,8 +101,8 @@ end
         @test scalar(veg.temperature.canopy_latent_heat) > scalar(veg.temperature.ground_latent_heat)
         @test scalar(veg.temperature.ground_latent_heat) < scalar(bare.fluxes.latent_heat)
 
-        # Endpoints reduce bit-for-bit to one tile, and f = 1 to a standalone CanopyGroundSurface.
-        m1, m0 = tiled_land_model(arch; cover_fraction = 1.0), tiled_land_model(arch; cover_fraction = 0.0)
+        # Endpoints reduce bit-for-bit to one tile, and f = 1 to a standalone CanopyInterface.
+        m1, m0 = tiled_canopy_model(arch; cover_fraction = 1.0), tiled_canopy_model(arch; cover_fraction = 0.0)
         t1, t0 = m1.interfaces.atmosphere_land_interface, m0.interfaces.atmosphere_land_interface
         for name in flux_names
             @test scalar(getproperty(t1.fluxes, name)) == scalar(getproperty(t1.vegetated.fluxes, name))
@@ -119,20 +112,20 @@ end
         @test scalar(t0.temperature.ground) == scalar(t0.bare.temperature)
         @test scalar(m0.land.fluxes.surface_energy_flux) ≈ -Λ * (scalar(t0.bare.temperature) - scalar(m0.land.temperature)) atol = 1e-10
 
-        standalone = coupled_land_model(arch; atmosphere_land_interface_temperature = tiled_canopy_ground_surface(Float64))
+        standalone = coupled_land_model(arch; atmosphere_land_interface_state = tiled_canopy(Float64))
         s = standalone.interfaces.atmosphere_land_interface
         @test scalar(t1.fluxes.sensible_heat) == scalar(s.fluxes.sensible_heat)
         @test scalar(t1.fluxes.latent_heat) == scalar(s.fluxes.latent_heat)
         @test scalar(t1.temperature.ground_heat_flux) == scalar(s.temperature.ground_heat_flux)
 
-        rough = tiled_land_model(arch; cover_fraction = 0.5, wind = 6.0,
+        rough = tiled_canopy_model(arch; cover_fraction = 0.5, wind = 6.0,
                                  vegetated_fluxes = land_roughness(1.0, 0.1), bare_fluxes = land_roughness(1e-3, 1e-4))
         tr = rough.interfaces.atmosphere_land_interface
         @test scalar(tr.vegetated.fluxes.friction_velocity) > scalar(tr.bare.fluxes.friction_velocity)
 
         cover_field = CenterField(model.land.grid)
         set!(cover_field, f)
-        tf = tiled_land_model(arch; cover_fraction = cover_field).interfaces.atmosphere_land_interface
+        tf = tiled_canopy_model(arch; cover_fraction = cover_field).interfaces.atmosphere_land_interface
         @test scalar(tf.fluxes.sensible_heat) ≈ scalar(tiled.fluxes.sensible_heat) rtol = 1e-12
         @test scalar(tf.fluxes.latent_heat) ≈ scalar(tiled.fluxes.latent_heat) rtol = 1e-12
 
@@ -145,7 +138,7 @@ end
     end
 
     for FT in (Float32, Float64)
-        model = tiled_land_model(CPU(), FT; cover_fraction = FT(0.5))
+        model = tiled_canopy_model(CPU(), FT; cover_fraction = FT(0.5))
         𝒬ᵀ = scalar(model.interfaces.atmosphere_land_interface.fluxes.sensible_heat)
         @test 𝒬ᵀ isa FT && isfinite(𝒬ᵀ)
     end

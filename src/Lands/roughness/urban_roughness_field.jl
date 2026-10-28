@@ -314,8 +314,9 @@ function urban_roughness(grid::LatitudeLongitudeGrid, dataset; surface_layer_hei
 
     function pad(faces, half_width, lower, upper)
         first_spacing, last_spacing = faces[2] - faces[1], faces[end] - faces[end-1]
-        before = ceil(Int, min(half_width / first_spacing - 1/2, (first(faces) - lower) / first_spacing))
-        after = ceil(Int, min(half_width / last_spacing - 1/2, (upper - last(faces)) / last_spacing))
+        # Ignore roundoff when a neighborhood edge coincides with a lattice face.
+        before = ceil(Int, min(half_width / first_spacing - 1/2, (first(faces) - lower) / first_spacing) - 1e-6)
+        after = ceil(Int, min(half_width / last_spacing - 1/2, (upper - last(faces)) / last_spacing) - 1e-6)
         return clamp.([first(faces) .- (before:-1:1) .* first_spacing; faces; last(faces) .+ (1:after) .* last_spacing],
                       lower, upper)
     end
