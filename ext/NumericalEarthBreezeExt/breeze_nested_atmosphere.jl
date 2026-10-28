@@ -281,7 +281,9 @@ Build a Breeze child atmosphere over `child_grid` nested in `parent_atmosphere`,
 raw state on the parent grid as `FieldTimeSeries` (see `child_prognostic_field_time_series`); the child's
 lateral boundary conditions — and, when `relaxation_rate` (s⁻¹) is given, its lateral boundary relaxation
 over `relaxation_mask` (default: a cosine ramp over the outermost `relaxation_width` cells) — interpolate
-those precomputed prognostics (via `parent_boundary_conditions` / `parent_forcings`).
+those precomputed prognostics (via `parent_boundary_conditions` / `parent_forcings`). The precomputed
+prognostics hold `time_indices_in_memory` time levels, by default as many as the parent holds, so a parent
+with every snapshot in memory gives a window that never moves; fewer (at least 3) stream a moving window.
 
 When `parent_atmosphere` is a `BoundaryPrescribedComponent` of `PrescribedAtmosphere`s, each side's boundary conditions
 interpolate that side's strip, and the lateral boundary relaxation acts only on the cells of each strip's
@@ -349,6 +351,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     dynamics = default_nested_dynamics(child_grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth),
     boundary_conditions = NamedTuple(),
     forcing = NamedTuple(),
+    time_indices_in_memory = resident_time_indices(parent_atmosphere),
     kw...)
 
     if !isnothing(terrain)
@@ -360,9 +363,10 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     moisture_name = moisture_prognostic_name(microphysics)
     pˢᵗ = dynamics.standard_pressure
 
-    # Precompute the child prognostics on the parent grid (combine-then-interpolate); the exchanger owns
-    # its own 3-level moving window and refreshes it from the parent each step via `exchange_state!`.
-    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates = parent_condensates, moisture_name)
+    # Precompute the child prognostics on the parent grid (combine-then-interpolate); `exchange_state!`
+    # slides the resident window from the parent each step when it holds fewer levels than the parent's times.
+    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates = parent_condensates,
+                                 moisture_name, time_indices_in_memory)
     prognostic = parent_prognostic(exchanger)
 
     ρqᵛᵉ = prognostic.ρqᵛᵉ
