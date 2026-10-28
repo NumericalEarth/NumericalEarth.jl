@@ -4,7 +4,6 @@ using Adapt: Adapt
 using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, location, prognostic_state, restore_prognostic_state!
-using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: AbstractField, Field, Face, Center, FractionalIndices, ZeroField
 using Oceananigans.Grids: Flat, Periodic, halo_size, topology, _node
