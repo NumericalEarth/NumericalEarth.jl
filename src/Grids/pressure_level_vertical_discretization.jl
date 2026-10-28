@@ -6,7 +6,7 @@ using Oceananigans: instantiated_location
 using Oceananigans.Fields: Field, compute!, interior, set!
 using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Center, Face, Flat, LatitudeLongitudeGrid, topology
-using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid, lcc_fractional_indices
+using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid, conformal_conic_fractional_indices
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
 
 import Oceananigans.Architectures: on_architecture
@@ -288,15 +288,14 @@ end
     return FractionalIndices(ii, jj, kk)
 end
 
-# More specific than both the `PressureLevelGrid` method above and Oceananigans' own
-# `LambertConformalConicGrid` method: the conic horizontal with the per-column vertical.
-const LCCPressureLevelGrid = LambertConformalConicGrid{<:Any, <:Any, <:Any, <:Any, <:PressureLevelVerticalDiscretization}
+# Pressure levels on conformal horizontal coordinates.
+const LCCPressureLevelGrid = ConformalConicGrid{<:Any, <:Any, <:Any, <:Any, <:PressureLevelVerticalDiscretization}
 
 @inline function _fractional_indices(
         (λ, φ, z)::NTuple{3, Any}, grid::LCCPressureLevelGrid,
         ℓx::Union{Center, Face}, ℓy::Union{Center, Face}, ℓz::Union{Center, Face}
     )
-    ii, jj = lcc_fractional_indices(λ, φ, grid, ℓx, ℓy)
+    ii, jj = conformal_conic_fractional_indices(λ, φ, grid, ℓx, ℓy)
     kk = column_fractional_z_index(z, ii, jj, grid)
     return FractionalIndices(ii, jj, kk)
 end
