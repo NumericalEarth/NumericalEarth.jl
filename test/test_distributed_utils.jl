@@ -128,8 +128,6 @@ end
         time_step!(model, 60)
 
         T, S = ocean.model.tracers.T, ocean.model.tracers.S
-        synchronize_communication!(T)
-        synchronize_communication!(S)
 
         Tᵉˣ = model.interfaces.exchanger.ocean.state.T
         Nx, Ny, Nz = size(grid)
