@@ -75,7 +75,8 @@ end
             update_state!(model)
 
             mosaic = model.interfaces.atmosphere_land_interface.temperature
-            @test all(Array(interior(mosaic.effective_albedo)) .≈ f * 0.15 + (1 - f) * rtm_albedo)
+            αᵛ = Array(interior(tiled.vegetated.temperature.effective_albedo))
+            @test Array(interior(mosaic.effective_albedo)) ≈ @. f * αᵛ + (1 - f) * rtm_albedo
 
             Tᵛ = Array(interior(tiled.vegetated.temperature.effective))
             Tᵇ = Array(interior(tiled.bare.temperature))
