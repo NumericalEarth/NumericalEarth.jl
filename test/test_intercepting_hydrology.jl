@@ -8,7 +8,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyInterface, CanopyConductanceHumidity,
     CriticalSaturation, AbsorbedPhotosyntheticallyActiveRadiation, SoilConductiveFlux, land_canopy_water_capacity
 using NumericalEarth.Lands: SlabLand, SlabEnergy, VariablySaturatedHydrology, InterceptingHydrology,
-    VanGenuchtenRetention, VanGenuchtenConductivity, canopy_store_update
+    VanGenuchtenRetention, VanGenuchtenConductivity, canopy_store_update, cover_change_update
 
 soil_hydrology(FT) = VariablySaturatedHydrology(FT;
     slab_depth = 1.0, porosity = 0.4, storage_height = 0.1,
@@ -58,7 +58,13 @@ end
     end
 end
 
-@testset "Changing vegetation cover conserves canopy and soil water" begin
+@testset "Removed leaves shed their water and new leaves start dry" begin
+    @test all(cover_change_update(0.2, 0.8, 0.5, 60.0) .≈ (0.2, 0.3 * 0.2 / 60))
+    @test all(cover_change_update(0.2, 0.4, 0.8, 60.0) .≈ (0.1, 0))
+    @test all(cover_change_update(0.2, 0.4, 0.0, 60.0) .≈ (0, 0.4 * 0.2 / 60))
+end
+
+@testset "Changing vegetation cover conserves total water" begin
     covers = (0.2, 0.8, 0.2, 0.0, 0.8)
     for rain in (0.0, 1e-3)
         cover_fraction = FieldTimeSeries{Center, Center, Nothing}(column_grid(), 0.0:60.0:240.0)

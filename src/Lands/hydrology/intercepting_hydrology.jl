@@ -16,9 +16,9 @@ over-capacity drip reach the soil as throughfall.
 `leaf_area_index` supplies the canopy λˡᵉᵃᶠ; use the same value or field for the canopy interface.
 `cover_fraction` supplies the vegetated fraction of the cell; on tiled land, use the same value or
 field for [`TiledLandInterface`](@ref). A `FieldTimeSeries` λˡᵉᵃᶠ or cover fraction runs on CPU only.
-The store is kept per unit vegetated area. Changes in cover
-conserve `cover_fraction * Mᶜⁿᵖʸ`, with water exceeding the new canopy capacity reaching
-the soil as throughfall. Interception and evaporation use the cover at the start of the step.
+The store is kept per unit vegetated area. When the cover shrinks, the water on the removed
+leaves reaches the soil as throughfall; when it grows, the new leaves start dry. Interception
+and evaporation use the cover at the start of the step.
 
 * `capacity_per_leaf_area` — `c` (kg m⁻² per unit λˡᵉᵃᶠ).
 * `extinction`, `clumping` — Beer–Lambert `K`, `Ω` of the caught fraction.
@@ -93,11 +93,12 @@ initial_diagnostic(h::InterceptingHydrology, name::Symbol, grid) = initial_diagn
     return Mᶜⁿᵖʸⁿ⁺¹, Jᵈʳⁱᵖ, Pᵗʰʳᵘ
 end
 
-# A change of cover from fⁿ to fⁿ⁺¹ conserves the canopy water per unit cell area, fⁿ Mᶜⁿᵖʸ, and what
-# the new cover cannot hold drips to the soil at Jᶜᵒᵛ = max(fⁿ Mᶜⁿᵖʸ − fⁿ⁺¹ Mᶜⁿᵖʸ⁺, 0)/Δt per unit cell area.
-@inline function cover_change_update(Mᶜⁿᵖʸ, Mᶜⁿᵖʸ⁺, fⁿ, fⁿ⁺¹, Δt)
-    Jᶜᵒᵛ     = max(fⁿ * Mᶜⁿᵖʸ - fⁿ⁺¹ * Mᶜⁿᵖʸ⁺, 0) / Δt
-    Mᶜⁿᵖʸⁿ⁺¹ = min(fⁿ * Mᶜⁿᵖʸ, fⁿ⁺¹ * Mᶜⁿᵖʸ⁺) / ifelse(fⁿ⁺¹ > 0, fⁿ⁺¹, one(fⁿ⁺¹))
+# A change of cover from fⁿ to fⁿ⁺¹. Removed leaves carry their water to the soil at
+# Jᶜᵒᵛ = max(fⁿ − fⁿ⁺¹, 0) Mᶜⁿᵖʸ/Δt per unit cell area, and new leaves start dry, so the store becomes
+# Mᶜⁿᵖʸⁿ⁺¹ = min(fⁿ, fⁿ⁺¹) Mᶜⁿᵖʸ/fⁿ⁺¹ and fⁿ Mᶜⁿᵖʸ = fⁿ⁺¹ Mᶜⁿᵖʸⁿ⁺¹ + Δt Jᶜᵒᵛ.
+@inline function cover_change_update(Mᶜⁿᵖʸ, fⁿ, fⁿ⁺¹, Δt)
+    Jᶜᵒᵛ     = max(fⁿ - fⁿ⁺¹, 0) * Mᶜⁿᵖʸ / Δt
+    Mᶜⁿᵖʸⁿ⁺¹ = min(fⁿ, fⁿ⁺¹) * Mᶜⁿᵖʸ / ifelse(fⁿ⁺¹ > 0, fⁿ⁺¹, one(fⁿ⁺¹))
     return Mᶜⁿᵖʸⁿ⁺¹, Jᶜᵒᵛ
 end
 
@@ -131,7 +132,7 @@ end
     fⁱⁿᵗ  = 1 - canopy_transmittance(h.extinction, h.clumping, λˡᵉᵃᶠ)
 
     M̃ᶜⁿᵖʸ, _, Pᵗʰʳᵘ = canopy_store_update(Mᶜⁿᵖʸⁿ, Pˡ, Jʷᵉᵗ, Mᶜⁿᵖʸ⁺, fⁱⁿᵗ, Δt)
-    Mᶜⁿᵖʸⁿ⁺¹, Jᶜᵒᵛ = cover_change_update(M̃ᶜⁿᵖʸ, Mᶜⁿᵖʸ⁺, fⁿ, fⁿ⁺¹, Δt)
+    Mᶜⁿᵖʸⁿ⁺¹, Jᶜᵒᵛ = cover_change_update(M̃ᶜⁿᵖʸ, fⁿ, fⁿ⁺¹, Δt)
 
     # The soil, per unit cell area, receives the rain on the uncovered fraction and the throughfall beneath the canopy.
     @inbounds begin
