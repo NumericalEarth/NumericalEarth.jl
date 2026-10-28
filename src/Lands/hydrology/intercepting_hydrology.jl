@@ -54,7 +54,7 @@ flux_variables(h::InterceptingHydrology) =
     merge_unique(flux_variables(h.soil), (:liquid_water_precipitation_flux, :canopy_evaporation))
 
 diagnostic_variables(h::InterceptingHydrology) =
-    merge_unique(diagnostic_variables(h.soil), (:throughfall, :canopy_water_storage_tendency))
+    merge_unique(diagnostic_variables(h.soil), (:throughfall,))
 
 initial_flux(h::InterceptingHydrology, name::Symbol, grid) = initial_flux(h.soil, name, grid)
 initial_diagnostic(h::InterceptingHydrology, name::Symbol, grid) = initial_diagnostic(h.soil, name, grid)
@@ -75,8 +75,7 @@ initial_diagnostic(h::InterceptingHydrology, name::Symbol, grid) = initial_diagn
 end
 
 @kernel function _interception_step!(canopy_water_storage, liquid_water_precipitation_flux, canopy_evaporation,
-                                     throughfall, canopy_water_storage_tendency,
-                                     h, Δt, grid, time)
+                                     throughfall, h, Δt, grid, time)
     i, j = @index(Global, NTuple)
     @inbounds begin
         Mᶜᵃⁿⁿ = canopy_water_storage[i, j, 1]
@@ -91,9 +90,8 @@ end
     Mᶜᵃⁿⁿ⁺¹, _, Pˡ = canopy_store_update(Mᶜᵃⁿⁿ, rain, Jʷᵉᵗ, Mᶜᵃⁿ⁺, fⁱⁿᵗ, Δt)
 
     @inbounds begin
-        canopy_water_storage[i, j, 1]          = Mᶜᵃⁿⁿ⁺¹
-        throughfall[i, j, 1]                   = Pˡ
-        canopy_water_storage_tendency[i, j, 1] = (Mᶜᵃⁿⁿ⁺¹ - Mᶜᵃⁿⁿ) / Δt
+        canopy_water_storage[i, j, 1] = Mᶜᵃⁿⁿ⁺¹
+        throughfall[i, j, 1]          = Pˡ
     end
 end
 
@@ -104,7 +102,6 @@ function time_step!(h::InterceptingHydrology, land, Δt, time)
             land.fluxes.liquid_water_precipitation_flux,
             land.fluxes.canopy_evaporation,
             land.diagnostics.throughfall,
-            land.diagnostics.canopy_water_storage_tendency,
             h, Δt, land.grid, time)
     time_step!(h.soil, land, Δt, time, land.diagnostics.throughfall)
     return nothing

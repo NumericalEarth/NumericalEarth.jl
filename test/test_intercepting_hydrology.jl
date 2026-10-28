@@ -44,7 +44,7 @@ end
         land = intercepting_land(column_grid(arch); leaf_area_index = 3.0)
         @test :canopy_water_storage in keys(land.prognostic)
         @test (:canopy_evaporation, :liquid_water_precipitation_flux, :vapor_flux) ⊆ keys(land.fluxes)
-        @test (:throughfall, :canopy_water_storage_tendency, :water_storage_tendency) ⊆ keys(land.diagnostics)
+        @test (:throughfall, :water_storage_tendency) ⊆ keys(land.diagnostics)
     end
 end
 
@@ -120,9 +120,10 @@ end
         update_state!(model)
         rain = scalar(land.fluxes.liquid_water_precipitation_flux)
         Jʷᵉᵗ = scalar(land.fluxes.canopy_evaporation)
+        Mᶜᵃⁿⁿ = canopy_storage(land)
         time_step!(model, 600.0)
         throughfall = scalar(land.diagnostics.throughfall)
-        @test rain ≈ scalar(land.diagnostics.canopy_water_storage_tendency) + Jʷᵉᵗ + throughfall atol=1e-14
+        @test rain ≈ (canopy_storage(land) - Mᶜᵃⁿⁿ) / 600 + Jʷᵉᵗ + throughfall atol=1e-14
         @test scalar(land.fluxes.liquid_water_precipitation_flux) == rain
         @test 0 ≤ throughfall < rain
     end
