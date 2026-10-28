@@ -18,7 +18,10 @@ Fields:
 - `bare`           : the bare-soil tile, an `AtmosphereInterface` with an [`EnergyBalanceTemperature`](@ref).
 - `cover_fraction` : the vegetated cover fraction `f ∈ [0, 1]` — a `Number`, `Field`, or `FieldTimeSeries`.
 - `fluxes`         : the blended [`AtmosphereSurfaceFluxes`](@ref).
-- `temperature`    : the blended [`CanopyInterfaceDiagnostics`](@ref).
+- `temperature`    : the blended [`CanopyInterfaceDiagnostics`](@ref). Canopy quantities (`canopy`,
+                     `canopy_latent_heat`, `canopy_sensible_heat`, `canopy_evaporation`,
+                     `wet_canopy_latent_heat`, `transpiration`) are those of the vegetated tile, per unit
+                     vegetated area; the others are per unit cell area.
 """
 struct TiledLandInterface{V, B, F, FL, T}
     vegetated      :: V
@@ -131,21 +134,21 @@ end
         blended_fluxes.water_vapor_scale[i, j, 1] = f * vegetated_fluxes.water_vapor_scale[i, j, 1] + (1 - f) * bare_fluxes.water_vapor_scale[i, j, 1]
 
         # The bare tile is a single skin: its temperature is both its ground surface and
-        # its skin, and its turbulent fluxes are all ground fluxes. The canopy water store is
-        # kept per unit vegetated area, so its evaporation is not area-weighted.
+        # its skin, and its turbulent fluxes are all ground fluxes. Canopy quantities are
+        # per unit vegetated area, so they are not area-weighted.
         bare_skin_temperature = bare_temperature[i, j, 1]
         blended_temperature.interface[i, j, 1]              = f * vegetated_temperature.interface[i, j, 1] + (1 - f) * bare_skin_temperature
         blended_temperature.canopy[i, j, 1]                 = vegetated_temperature.canopy[i, j, 1]
         blended_temperature.ground[i, j, 1]                 = f * vegetated_temperature.ground[i, j, 1] + (1 - f) * bare_skin_temperature
         blended_temperature.ground_heat_flux[i, j, 1]       = f * vegetated_temperature.ground_heat_flux[i, j, 1] + (1 - f) * Λ * (bare_skin_temperature - T[i, j, 1])
-        blended_temperature.canopy_latent_heat[i, j, 1]     = f * vegetated_temperature.canopy_latent_heat[i, j, 1]
+        blended_temperature.canopy_latent_heat[i, j, 1]     = vegetated_temperature.canopy_latent_heat[i, j, 1]
         blended_temperature.ground_latent_heat[i, j, 1]     = f * vegetated_temperature.ground_latent_heat[i, j, 1] + (1 - f) * bare_fluxes.latent_heat[i, j, 1]
-        blended_temperature.canopy_sensible_heat[i, j, 1]   = f * vegetated_temperature.canopy_sensible_heat[i, j, 1]
+        blended_temperature.canopy_sensible_heat[i, j, 1]   = vegetated_temperature.canopy_sensible_heat[i, j, 1]
         blended_temperature.ground_sensible_heat[i, j, 1]   = f * vegetated_temperature.ground_sensible_heat[i, j, 1] + (1 - f) * bare_fluxes.sensible_heat[i, j, 1]
         blended_temperature.canopy_evaporation[i, j, 1]     = vegetated_temperature.canopy_evaporation[i, j, 1]
-        blended_temperature.wet_canopy_latent_heat[i, j, 1] = f * vegetated_temperature.wet_canopy_latent_heat[i, j, 1]
+        blended_temperature.wet_canopy_latent_heat[i, j, 1] = vegetated_temperature.wet_canopy_latent_heat[i, j, 1]
         blended_temperature.land_vapor_flux[i, j, 1]        = f * vegetated_temperature.land_vapor_flux[i, j, 1] + (1 - f) * bare_fluxes.water_vapor[i, j, 1]
-        blended_temperature.transpiration[i, j, 1]          = f * vegetated_temperature.transpiration[i, j, 1]
+        blended_temperature.transpiration[i, j, 1]          = vegetated_temperature.transpiration[i, j, 1]
 
         # Skin (effective radiating) temperature of the mosaic: σ T⁴ = f · ℐꜛˡʷ(vegetated) +
         # (1 − f) · ℐꜛˡʷ(bare), where the bare tile emits ϵ σ T⁴ at its skin temperature and

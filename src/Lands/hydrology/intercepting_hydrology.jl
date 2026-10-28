@@ -72,26 +72,33 @@ initial_diagnostic(h::InterceptingHydrology, name::Symbol, grid) = initial_diagn
 ##### Interception step, ahead of the soil step that reads its throughfall.
 #####
 
-# One step of the canopy water store Mᶜⁿᵖʸ ∈ [0, Mᶜⁿᵖʸ⁺], kept per unit vegetated area, under rain Pˡ
-# and wet-canopy evaporation Jʷᵉᵗ while the cover fraction changes from fⁿ to fⁿ⁺¹. The canopy
-# intercepts Pⁱⁿᵗ = fⁱⁿᵗ Pˡ, giving the unclamped store per unit cell area
+# One step of the canopy water store Mᶜⁿᵖʸ ∈ [0, Mᶜⁿᵖʸ⁺] under rain Pˡ and wet-canopy evaporation Jʷᵉᵗ,
+# all per unit vegetated area. The canopy intercepts Pⁱⁿᵗ = fⁱⁿᵗ Pˡ, giving the unclamped store
 #
-#     M̃ᶜⁿᵖʸ = fⁿ (Mᶜⁿᵖʸ + Δt (Pⁱⁿᵗ − Jʷᵉᵗ)),     fⁿ⁺¹ Mᶜⁿᵖʸⁿ⁺¹ = clamp(M̃ᶜⁿᵖʸ, 0, fⁿ⁺¹ Mᶜⁿᵖʸ⁺).
+#     M̃ᶜⁿᵖʸ = Mᶜⁿᵖʸ + Δt (Pⁱⁿᵗ − Jʷᵉᵗ),     Mᶜⁿᵖʸⁿ⁺¹ = clamp(M̃ᶜⁿᵖʸ, 0, Mᶜⁿᵖʸ⁺).
 #
-# Water above capacity drips, Jᵈʳⁱᵖ = max(M̃ᶜⁿᵖʸ − fⁿ⁺¹ Mᶜⁿᵖʸ⁺, 0)/Δt, and evaporation the store could
-# not supply, Jᵈᶠᶜᵗ = max(−M̃ᶜⁿᵖʸ, 0)/Δt, is taken from the throughfall reaching the soil,
+# Water above capacity drips, Jᵈʳⁱᵖ = max(M̃ᶜⁿᵖʸ − Mᶜⁿᵖʸ⁺, 0)/Δt, and evaporation the store could not
+# supply, Jᵈᶠᶜᵗ = max(−M̃ᶜⁿᵖʸ, 0)/Δt, is taken from the throughfall,
 #
-#     Pᵗʰʳᵘ = Pˡ − fⁿ Pⁱⁿᵗ + Jᵈʳⁱᵖ − Jᵈᶠᶜᵗ,
+#     Pᵗʰʳᵘ = (1 − fⁱⁿᵗ) Pˡ + Jᵈʳⁱᵖ − Jᵈᶠᶜᵗ,
 #
-# so that Pˡ = (fⁿ⁺¹ Mᶜⁿᵖʸⁿ⁺¹ − fⁿ Mᶜⁿᵖʸ)/Δt + fⁿ Jʷᵉᵗ + Pᵗʰʳᵘ exactly, per unit cell area.
-@inline function canopy_store_update(Mᶜⁿᵖʸ, Pˡ, Jʷᵉᵗ, Mᶜⁿᵖʸ⁺, fⁱⁿᵗ, fⁿ, fⁿ⁺¹, Δt)
+# so that Pˡ = (Mᶜⁿᵖʸⁿ⁺¹ − Mᶜⁿᵖʸ)/Δt + Jʷᵉᵗ + Pᵗʰʳᵘ exactly.
+@inline function canopy_store_update(Mᶜⁿᵖʸ, Pˡ, Jʷᵉᵗ, Mᶜⁿᵖʸ⁺, fⁱⁿᵗ, Δt)
     Pⁱⁿᵗ     = fⁱⁿᵗ * Pˡ
-    M̃ᶜⁿᵖʸ    = fⁿ * (Mᶜⁿᵖʸ + Δt * (Pⁱⁿᵗ - Jʷᵉᵗ))
-    Jᵈʳⁱᵖ    = max(M̃ᶜⁿᵖʸ - fⁿ⁺¹ * Mᶜⁿᵖʸ⁺, 0) / Δt
+    M̃ᶜⁿᵖʸ    = Mᶜⁿᵖʸ + Δt * (Pⁱⁿᵗ - Jʷᵉᵗ)
+    Jᵈʳⁱᵖ    = max(M̃ᶜⁿᵖʸ - Mᶜⁿᵖʸ⁺, 0) / Δt
     Jᵈᶠᶜᵗ    = max(-M̃ᶜⁿᵖʸ, 0) / Δt
-    Mᶜⁿᵖʸⁿ⁺¹ = clamp(M̃ᶜⁿᵖʸ, 0, fⁿ⁺¹ * Mᶜⁿᵖʸ⁺) / ifelse(fⁿ⁺¹ > 0, fⁿ⁺¹, one(fⁿ⁺¹))
-    Pᵗʰʳᵘ    = Pˡ - fⁿ * Pⁱⁿᵗ + Jᵈʳⁱᵖ - Jᵈᶠᶜᵗ
+    Mᶜⁿᵖʸⁿ⁺¹ = clamp(M̃ᶜⁿᵖʸ, 0, Mᶜⁿᵖʸ⁺)
+    Pᵗʰʳᵘ    = Pˡ - Pⁱⁿᵗ + Jᵈʳⁱᵖ - Jᵈᶠᶜᵗ
     return Mᶜⁿᵖʸⁿ⁺¹, Jᵈʳⁱᵖ, Pᵗʰʳᵘ
+end
+
+# A change of cover from fⁿ to fⁿ⁺¹ conserves the canopy water per unit cell area, fⁿ Mᶜⁿᵖʸ, and what
+# the new cover cannot hold drips to the soil at Jᶜᵒᵛ = max(fⁿ Mᶜⁿᵖʸ − fⁿ⁺¹ Mᶜⁿᵖʸ⁺, 0)/Δt per unit cell area.
+@inline function cover_change_update(Mᶜⁿᵖʸ, Mᶜⁿᵖʸ⁺, fⁿ, fⁿ⁺¹, Δt)
+    Jᶜᵒᵛ     = max(fⁿ * Mᶜⁿᵖʸ - fⁿ⁺¹ * Mᶜⁿᵖʸ⁺, 0) / Δt
+    Mᶜⁿᵖʸⁿ⁺¹ = min(fⁿ * Mᶜⁿᵖʸ, fⁿ⁺¹ * Mᶜⁿᵖʸ⁺) / ifelse(fⁿ⁺¹ > 0, fⁿ⁺¹, one(fⁿ⁺¹))
+    return Mᶜⁿᵖʸⁿ⁺¹, Jᶜᵒᵛ
 end
 
 function prepare_time_step!(h::InterceptingHydrology, land)
@@ -123,11 +130,13 @@ end
     Mᶜⁿᵖʸ⁺ = h.capacity_per_leaf_area * λˡᵉᵃᶠ
     fⁱⁿᵗ  = 1 - canopy_transmittance(h.extinction, h.clumping, λˡᵉᵃᶠ)
 
-    Mᶜⁿᵖʸⁿ⁺¹, _, Pᵗʰʳᵘ = canopy_store_update(Mᶜⁿᵖʸⁿ, Pˡ, Jʷᵉᵗ, Mᶜⁿᵖʸ⁺, fⁱⁿᵗ, fⁿ, fⁿ⁺¹, Δt)
+    M̃ᶜⁿᵖʸ, _, Pᵗʰʳᵘ = canopy_store_update(Mᶜⁿᵖʸⁿ, Pˡ, Jʷᵉᵗ, Mᶜⁿᵖʸ⁺, fⁱⁿᵗ, Δt)
+    Mᶜⁿᵖʸⁿ⁺¹, Jᶜᵒᵛ = cover_change_update(M̃ᶜⁿᵖʸ, Mᶜⁿᵖʸ⁺, fⁿ, fⁿ⁺¹, Δt)
 
+    # The soil, per unit cell area, receives the rain on the uncovered fraction and the throughfall beneath the canopy.
     @inbounds begin
         canopy_water_storage[i, j, 1] = Mᶜⁿᵖʸⁿ⁺¹
-        throughfall[i, j, 1]          = Pᵗʰʳᵘ
+        throughfall[i, j, 1]          = (1 - fⁿ) * Pˡ + fⁿ * Pᵗʰʳᵘ + Jᶜᵒᵛ
     end
 end
 

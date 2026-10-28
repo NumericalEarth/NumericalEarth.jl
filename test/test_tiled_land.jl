@@ -88,7 +88,7 @@ end
         @test scalar(T.ground) ≈ blend(:ground, Tᵇ) rtol = 1e-12
         @test scalar(T.ground_heat_flux) ≈ blend(:ground_heat_flux, Λ * (Tᵇ - scalar(model.land.temperature))) rtol = 1e-12
         @test scalar(T.ground_latent_heat) ≈ blend(:ground_latent_heat, scalar(bare.fluxes.latent_heat)) rtol = 1e-12
-        @test scalar(T.canopy_latent_heat) ≈ blend(:canopy_latent_heat, 0) rtol = 1e-12
+        @test scalar(T.canopy_latent_heat) == scalar(veg.temperature.canopy_latent_heat)
         @test scalar(T.canopy) == scalar(veg.temperature.canopy)
         σ = model.radiation.stefan_boltzmann_constant
         ϵ = model.radiation.surface_properties.land.emissivity

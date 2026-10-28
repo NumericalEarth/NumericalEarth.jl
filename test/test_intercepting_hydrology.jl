@@ -112,12 +112,12 @@ end
 end
 
 @testset "Canopy store budget closes when the store empties mid-step" begin
-    Mᶜⁿᵖʸ, rain, Mᶜⁿᵖʸ⁺, fⁱⁿᵗ, f, Δt = 0.05, 1e-4, 0.3, 0.6, 0.5, 600.0
+    Mᶜⁿᵖʸ, rain, Mᶜⁿᵖʸ⁺, fⁱⁿᵗ, Δt = 0.05, 1e-4, 0.3, 0.6, 600.0
     for Jʷᵉᵗ in (0.0, 1e-4, 5e-4)
-        Mᶜⁿᵖʸⁿ⁺¹, drip, throughfall = canopy_store_update(Mᶜⁿᵖʸ, rain, Jʷᵉᵗ, Mᶜⁿᵖʸ⁺, fⁱⁿᵗ, f, f, Δt)
+        Mᶜⁿᵖʸⁿ⁺¹, drip, throughfall = canopy_store_update(Mᶜⁿᵖʸ, rain, Jʷᵉᵗ, Mᶜⁿᵖʸ⁺, fⁱⁿᵗ, Δt)
         @test 0 ≤ Mᶜⁿᵖʸⁿ⁺¹ ≤ Mᶜⁿᵖʸ⁺
         @test drip ≥ 0
-        @test rain ≈ f * ((Mᶜⁿᵖʸⁿ⁺¹ - Mᶜⁿᵖʸ) / Δt + Jʷᵉᵗ) + throughfall atol = 1e-15
+        @test rain ≈ (Mᶜⁿᵖʸⁿ⁺¹ - Mᶜⁿᵖʸ) / Δt + Jʷᵉᵗ + throughfall atol = 1e-15
     end
 end
 
