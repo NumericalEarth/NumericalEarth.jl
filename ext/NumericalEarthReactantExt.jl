@@ -36,10 +36,22 @@ function first_time_step!(model::ReactantESM, Δt)
     return nothing
 end
 
-import NumericalEarth.EarthSystemModels: same_time_type
+import NumericalEarth.EarthSystemModels: same_time_type, clock_at_time_zero
+using Oceananigans.TimeSteppers: Clock
 
 same_time_type(::Reactant.ConcreteRNumber{FT}, ::TT) where {FT,TT} = FT == TT
 same_time_type(::Reactant.ConcreteRNumber{FT}, ::Reactant.ConcreteRNumber{TT}) where {FT,TT} = FT == TT
 same_time_type(::FT, ::Reactant.ConcreteRNumber{TT}) where {FT,TT} = FT == TT
+
+# Reactant's `tick!` advances the time, the iteration and the last Δt of a device clock as device numbers, so
+# `Clock{TT}(time = 0)`, which leaves the iteration a host `Int`, cannot be ticked inside a compiled step. The kernel
+# time type is the time's own, as `Clock{TT}` gives a host clock, and the numbers are placed as the atmosphere's are.
+function clock_at_time_zero(clock::Clock{<:Reactant.ConcreteRNumber{FT}}) where FT
+    sharding = Reactant.Sharding.is_sharded(clock.time) ? clock.time.sharding : Reactant.Sharding.NoSharding()
+    device_number(x) = Reactant.ConcreteRNumber(x; sharding)
+    return Clock(; time = device_number(zero(FT)), iteration = device_number(0), stage = 1,
+                   last_Δt = device_number(convert(FT, Inf)), last_stage_Δt = device_number(convert(FT, Inf)),
+                   kernel_time_type = FT)
+end
 
 end # module NumericalEarthReactantExt
