@@ -354,10 +354,10 @@ Radiative contributions are added on top in
 `apply_air_land_radiative_fluxes!`.
 """
 function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
-    al_interface = coupled_model.interfaces.atmosphere_land_interface
-    isnothing(al_interface) && return nothing
+    atmosphere_land_interface = coupled_model.interfaces.atmosphere_land_interface
+    isnothing(atmosphere_land_interface) && return nothing
 
-    interface_fluxes = land_surface_fluxes(al_interface, land.temperature)
+    interface_fluxes = land_surface_fluxes(atmosphere_land_interface, land.temperature)
     fluxes = land.fluxes
     grid = land.grid
     arch = architecture(grid)

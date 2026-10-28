@@ -480,16 +480,15 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
 
     # `atmosphere_land_interface` is either user-supplied or built from the four
     # sibling kwargs above by the same-named keyword default.
-    al_interface = atmosphere_land_interface
 
-    surface_partition = SurfacePartition(exchange_grid, atmosphere, ocean_fraction, ao_interface, al_interface)
+    surface_partition = SurfacePartition(exchange_grid, atmosphere, ocean_fraction, ao_interface, atmosphere_land_interface)
 
     # Total interface fluxes
     total_fluxes = (ocean      = net_fluxes(ocean),
                     sea_ice    = net_fluxes(sea_ice),
                     atmosphere = net_fluxes(atmosphere))
 
-    land_accessors = isnothing(al_interface) ? (;) : land_state_accessors(al_interface)
+    land_accessors = isnothing(atmosphere_land_interface) ? (;) : land_state_accessors(atmosphere_land_interface)
 
     exchanger = StateExchanger(exchange_grid, radiation, atmosphere, land, ocean, sea_ice;
                                atmosphere_correction = exchanger_correction,
@@ -502,7 +501,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     # refreshed every step in the flux builders.
     zᵃᵗ = surface_layer_height(atmosphere, exchange_grid)
 
-    for interface in (ao_interface, ai_interface, al_interface)
+    for interface in (ao_interface, ai_interface, atmosphere_land_interface)
         isnothing(interface) || validate_zero_plane_displacement(interface, zᵃᵗ)
     end
 
@@ -512,7 +511,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     return ComponentInterfaces(ao_interface,
                                ai_interface,
                                io_interface,
-                               al_interface,
+                               atmosphere_land_interface,
                                atmosphere_properties,
                                ocean_properties,
                                sea_ice_properties,
