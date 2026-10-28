@@ -573,7 +573,7 @@ end
     @test all(isfinite, Array(interior(atmos.model.dynamics.total_density)))
 end
 
-@testset "Breeze nested_atmosphere_model defaults to a moving derived window on $(arch)" for arch in test_architectures
+@testset "Breeze nested_atmosphere_model holds as many derived levels as the parent on $(arch)" for arch in test_architectures
     parent_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 4),
                                          longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),
                                          z = (0, 1), topology = (Bounded, Bounded, Bounded))
@@ -589,10 +589,12 @@ end
                                         longitude = (-1, 1), latitude = (-1, 1), z = (0, 1000),
                                         halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
 
-    nested = nested_atmosphere_model(parent, child_grid; parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
-    @test length(parent.temperature.times) == length(times)
+    condensates = (qᶜˡ = nothing, qᶜⁱ = nothing)
+    resident = nested_atmosphere_model(parent, child_grid; parent_condensates = condensates)
+    moving = nested_atmosphere_model(parent, child_grid; parent_condensates = condensates, time_indices_in_memory = 3)
     @test length(times) > 3
-    @test length(nested.exchanger.prognostic.ρᵈ.backend) == 3
+    @test length(resident.exchanger.prognostic.ρᵈ.backend) == length(times)
+    @test length(moving.exchanger.prognostic.ρᵈ.backend) == 3
 end
 
 # A closure's own tracers (TKE `ρe`) get the child's bounds-preserving WENO by default. A NamedTuple
@@ -929,7 +931,8 @@ end
     # `SaturationAdjustment(WarmPhaseEquilibrium())` — no extra dependency needed to exercise the seam.
     model = nested_atmosphere_model(parent, child_grid;
                 relaxation_rate = 1/300, relaxation_width = 3, base_pressure = 1e5,
-                coriolis = nothing, terrain = nothing, parent_condensates = nothing)
+                coriolis = nothing, terrain = nothing, parent_condensates = nothing,
+                time_indices_in_memory = 3)
     ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false)
 
     sim = Simulation(model; Δt = 0.5, stop_time = 10.0)
