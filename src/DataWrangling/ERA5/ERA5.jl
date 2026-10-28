@@ -11,7 +11,7 @@ export standard_atmosphere_z_interfaces, mean_geopotential_z_interfaces
 # Prescribed components
 export ERA5PrescribedAtmosphere, ERA5PrescribedRadiation
 
-using Dates: Dates, DateTime, Month, Hour
+using Dates: Dates, DateTime, Month, Day, Hour, now, UTC
 using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using Oceananigans: Oceananigans, location
@@ -145,6 +145,10 @@ end
 #####
 ##### Single-level and pressure-level specifics
 #####
+
+# ERA5 is extended daily, with ERA5T filling the last five days
+era5_last_date() = floor(now(UTC), Day) - Day(6)
+era5_last_month() = floor(era5_last_date(), Month) - Month(1)
 
 include("ERA5_single_levels.jl")
 include("ERA5_land.jl")
