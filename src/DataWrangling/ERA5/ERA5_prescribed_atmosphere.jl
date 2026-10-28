@@ -58,18 +58,17 @@ struct RainBackend{P, S} <: AbstractInMemoryBackend{Int}
     snowfall :: S
 end
 
-OutputReaders.new_backend(b::RainBackend, start, length) =
-    RainBackend(start, length, b.total_precipitation, b.snowfall)
+OutputReaders.new_backend(b::RainBackend, start, length) = RainBackend(start, length, b.total_precipitation, b.snowfall)
 
 Adapt.adapt_structure(to, b::RainBackend) = InMemory(b.start, b.length)
 
 const RainFTS = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:RainBackend}
 
-function Oceananigans.Fields.set!(rain::RainFTS, backend = rain.backend)
+function Oceananigans.Fields.set!(Jʳⁿ::RainFTS, backend = Jʳⁿ.backend)
     Jᵖ, Jˢⁿ = backend.total_precipitation, backend.snowfall
-    for n in time_indices(rain)
-        r = KernelFunctionOperation{Center, Center, Nothing}(rain_from_total_precipitation, rain.grid, Jᵖ[n], Jˢⁿ[n])
-        set!(rain[n], r)
+    for n in time_indices(Jʳⁿ)
+        r = KernelFunctionOperation{Center, Center, Nothing}(rain_from_total_precipitation, Jʳⁿ.grid, Jᵖ[n], Jˢⁿ[n])
+        set!(Jʳⁿ[n], r)
     end
     return nothing
 end
@@ -138,7 +137,7 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
     Tᵈ   = era5_fts(:dewpoint_temperature)
     p    = era5_fts(pressure)
     Jᵖ   = era5_fts(:total_precipitation)
-    snow = era5_fts(:snowfall)
+    Jˢⁿ  = era5_fts(:snowfall)
 
     grid  = u.grid
     times = u.times
@@ -151,11 +150,11 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
     qᵛ = FieldTimeSeries{Center, Center, Nothing}(grid, times; backend, time_indexing = Tᵈ.time_indexing)
     set!(qᵛ)
 
-    rain = FieldTimeSeries{Center, Center, Nothing}(Jᵖ.grid, Jᵖ.times; backend = RainBackend(1, length(Jᵖ.backend), Jᵖ, snow),
-                                                    time_indexing = Jᵖ.time_indexing)
-    set!(rain)
+    Jʳⁿ = FieldTimeSeries{Center, Center, Nothing}(Jᵖ.grid, Jᵖ.times; backend = RainBackend(1, length(Jᵖ.backend), Jᵖ, Jˢⁿ),
+                                                   time_indexing = Jᵖ.time_indexing)
+    set!(Jʳⁿ)
 
-    precipitation_flux = PrescribedPrecipitationFlux(; rain, snow)
+    precipitation_flux = PrescribedPrecipitationFlux(rain=Jʳⁿ, snow=Jˢⁿ)
 
     return Atmospheres.PrescribedAtmosphere(grid, times;
                                             source = dataset,
