@@ -23,7 +23,7 @@ import Oceananigans.BoundaryConditions: regularize_boundary_condition, getbc,
                                         LeftBoundary, RightBoundary
 import Oceananigans.OutputReaders: FlavorOfFTS
 using Oceananigans.Grids: node, ξnode, ηnode, ξnodes, ηnodes, topology, Face, Center,
-                          OrthogonalSphericalShellGrid, FullyConnected, LeftConnected, RightConnected
+                          OrthogonalSphericalShellGrid, Sides, Connected
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Fields: Field, interior, compute!
 using Adapt: Adapt, adapt
@@ -88,9 +88,8 @@ end
 # the domain, and a source spanning only the physical boundary need not bracket it. A `LeftConnected`
 # direction borders a rank on its left, a `RightConnected` one on its right.
 on_physical_boundary(topology, SideType) = true
-on_physical_boundary(::Type{FullyConnected}, SideType) = false
-on_physical_boundary(::Type{LeftConnected}, ::Type{LeftBoundary}) = false
-on_physical_boundary(::Type{RightConnected}, ::Type{RightBoundary}) = false
+on_physical_boundary(::Type{<:Sides{Connected}}, ::Type{LeftBoundary}) = false
+on_physical_boundary(::Type{<:Sides{<:Any, Connected}}, ::Type{RightBoundary}) = false
 
 # `extrema` needs a real array: a view of an operation is a `SubArray`, not a `Field`, and reduces on
 # the host, while reducing the operation as a `Field` would `MPI.Allreduce` across a partitioned grid,
