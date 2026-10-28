@@ -84,10 +84,7 @@ land_state_accessors(q::CanopyConductanceHumidity) = land_state_accessors(q.mois
 
     gₛ = stomatal_conductance(q.conductance, APAR, VPD, Tˡᵉᵃ, β)
 
-    # gₛ (mol m⁻² s⁻¹ per m² leaf) drives a molar vapor flux gₛ Δχ across a mole-fraction
-    # difference Δχ ≈ (Mᵈ/Mʷ) Δq, so its mass flux is Mʷ gₛ Δχ = Mᵈ gₛ Δq. λˡᵉᵃᶠ (m² leaf m⁻² ground)
-    # upscales it to the canopy, and Mᵈ = 0.02897 kg mol⁻¹ is the dry-air molar mass, giving
-    # gᶜᵃⁿ in kg m⁻² s⁻¹.
+    # gᶜᵃⁿ = λˡᵉᵃᶠ Mᵈ gₛ: the dry-air molar mass Mᵈ converts molar to mass conductance.
     gᶜᵃⁿ = λˡᵉᵃᶠ * gₛ * oftype(gₛ, default_dry_air_molar_mass)
 
     return gᶜᵃⁿ, qᵛ⁺

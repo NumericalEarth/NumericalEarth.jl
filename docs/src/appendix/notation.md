@@ -230,7 +230,8 @@ and [`InterceptingHydrology`](@ref).
 | ``\mathcal{Q}^{T\,\mathrm{lea}}``, ``\mathcal{Q}^{T\,\mathrm{gro}}`` | `𝒬ᵀˡᵉᵃ`, `𝒬ᵀᵍʳᵒ` | per-source sensible heat | Leaf and ground sensible heat into the canopy air, positive up (W m⁻²) |
 | ``\mathcal{Q}^{v\,\mathrm{lea}}``, ``\mathcal{Q}^{v\,\mathrm{gro}}`` | `𝒬ᵛˡᵉᵃ`, `𝒬ᵛᵍʳᵒ` | per-source latent heat | Leaf and ground latent heat into the canopy air, positive up (W m⁻²) |
 | ``g_s`` | – | stomatal conductance | Leaf stomatal conductance from a [`JarvisConductance`](@ref) (mol m⁻² s⁻¹) |
-| ``g^{\mathrm{can}}`` | – | canopy conductance | Bulk stomatal conductance ``g^{\mathrm{can}} = \lambda^{\mathrm{leaf}} g_s``, mass units (kg m⁻² s⁻¹) |
+| ``g^{\mathrm{can}}`` | – | canopy conductance | Bulk stomatal conductance ``g^{\mathrm{can}} = \lambda^{\mathrm{leaf}} M^d g_s``, mass units (kg m⁻² s⁻¹). The molar vapor flux ``g_s Δχ`` across a mole-fraction difference ``Δχ ≈ (M^d/M^w) Δq`` carries mass ``M^d g_s Δq`` |
+| ``M^d`` | `default_dry_air_molar_mass` | dry-air molar mass | 0.02897 kg mol⁻¹ |
 | ``w^{\mathrm{lbl}}`` | `leaf_boundary_layer_velocity` | leaf boundary-layer velocity | Per-leaf-area transfer velocity through the leaf boundary layer (m s⁻¹) |
 | ``g^{\mathrm{lbl}}`` | – | leaf boundary-layer mass conductance | ``g^{\mathrm{lbl}} = \rho^{\mathrm{at}} \lambda^{\mathrm{leaf}} w^{\mathrm{lbl}}``; the stomata-free wet-leaf vapor path (kg m⁻² s⁻¹) |
 | ``g^{\mathrm{lea}\,T}``, ``g^{\mathrm{lea}\,v}`` | – | leaf conductances | Leaf sensible-heat and vapor conductance to the canopy air (W m⁻² K⁻¹, kg m⁻² s⁻¹) |
