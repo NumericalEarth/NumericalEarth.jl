@@ -166,18 +166,18 @@ end
 # composite formulations forward to their soil branch.
 @inline interface_phase(q_formulation) = q_formulation.phase
 
-# Aerodynamic vapor `gᵃᵛ = ρᵃᵗ u★ χq` and heat `gᵃᵀ = ρᵃᵗ cᵖᵐ u★ χθ` conductances of the
+# Aerodynamic vapor `gᵃᵛ = ρᵃᵗ u★ Ξq` and heat `gᵃᵀ = ρᵃᵗ cᵖᵐ u★ Ξθ` conductances of the
 # previous similarity iterate, the bulk linearizations of the similarity fluxes the surface
 # balances close against.
 @inline function aerodynamic_vapor_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
-    return ρᵃᵗ * Ψₛ.fluxes.u★ * Ψₛ.fluxes.χq
+    return ρᵃᵗ * Ψₛ.fluxes.u★ * Ψₛ.fluxes.Ξq
 end
 
 @inline function aerodynamic_heat_conductance(Ψₛ, Ψₐ, ℂᵃᵗ)
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
     cᵖᵐ = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, Ψₐ.q)
-    return ρᵃᵗ * cᵖᵐ * Ψₛ.fluxes.u★ * Ψₛ.fluxes.χθ
+    return ρᵃᵗ * cᵖᵐ * Ψₛ.fluxes.u★ * Ψₛ.fluxes.Ξθ
 end
 
 # Conductance-weighted mean of the `sources` behind the `conductances`: the value of a
@@ -784,7 +784,7 @@ end
 #
 # which must equal the atmospheric vapor flux carried away by turbulence,
 # linearized as `Jᵃ(q) = Gᵃ (q - qᵃᵗ)` with the previous iterate's aerodynamic
-# conductance `Gᵃ = ρᵃᵗ u★ χq` (see `aerodynamic_vapor_conductance`). The
+# conductance `Gᵃ = ρᵃᵗ u★ Ξq` (see `aerodynamic_vapor_conductance`). The
 # balance gˢ(qᵛ⁺ - qˢ) = Gᵃ(qˢ - qᵃᵗ) gives the series solution
 #
 #     qˢ = (gˢ qᵛ⁺ + Gᵃ qᵃᵗ) / (gˢ + Gᵃ).
@@ -822,17 +822,17 @@ end
 
 The solved similarity-theory characteristic scales at an interface: friction
 velocity `u★`, temperature flux scale `θ★`, and specific-humidity flux scale
-`q★`, together with the transfer coefficients `χθ` and `χq` of the iterate that
-produced them (`θ★ = χθ Δθ`, `q★ = χq Δq`), from which the aerodynamic
-conductances `ρ cᵖᵐ u★ χθ` (heat) and `ρ u★ χq` (vapor) follow. The
+`q★`, together with the transfer coefficients `Ξθ` and `Ξq` of the iterate that
+produced them (`θ★ = Ξθ Δθ`, `q★ = Ξq Δq`), from which the aerodynamic
+conductances `ρ cᵖᵐ u★ Ξθ` (heat) and `ρ u★ Ξq` (vapor) follow. The
 three-argument constructor zeroes the transfer coefficients (an initial guess).
 """
 struct InterfaceFluxScales{FT}
     u★ :: FT
     θ★ :: FT
     q★ :: FT
-    χθ :: FT
-    χq :: FT
+    Ξθ :: FT
+    Ξq :: FT
 end
 
 @inline InterfaceFluxScales(u★, θ★, q★) = InterfaceFluxScales(u★, θ★, q★, zero(u★), zero(u★))
@@ -944,9 +944,9 @@ end
 @inline function rebuild_interface_state(Ψ⁻, Ψₐ, ℙₐ, T, q)
     FT  = eltype(Ψ⁻)
     θᵃᵗ = convert(FT, surface_atmosphere_temperature(Ψₐ, ℙₐ))
-    χθ  = Ψ⁻.fluxes.χθ
-    χq  = Ψ⁻.fluxes.χq
-    fluxes = InterfaceFluxScales(Ψ⁻.fluxes.u★, convert(FT, χθ * (θᵃᵗ - T)), convert(FT, χq * (Ψₐ.q - q)), χθ, χq)
+    Ξθ  = Ψ⁻.fluxes.Ξθ
+    Ξq  = Ψ⁻.fluxes.Ξq
+    fluxes = InterfaceFluxScales(Ψ⁻.fluxes.u★, convert(FT, Ξθ * (θᵃᵗ - T)), convert(FT, Ξq * (Ψₐ.q - q)), Ξθ, Ξq)
     return rebuild_interface_state(Ψ⁻, fluxes, convert(FT, T), convert(FT, q))
 end
 

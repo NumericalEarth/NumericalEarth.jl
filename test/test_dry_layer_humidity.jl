@@ -15,8 +15,8 @@ qᵛ⁺(T) = saturation_specific_humidity(ℂ, T, 1.0e5, AtmosphericThermodynami
 # `compute_interface_humidity(q, Tᵍʳᵒ, Ψₛ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)`; the dry-layer soil model ignores the radiation state Ψᵣ.
 function humidity(q, 𝒮; Tˡᵃ = 290.0, Tᵍʳᵒ = 300.0, pᵃᵗ = 1.0e5, qᵃᵗ = 1.0e-2, Tᵃᵗ = 295.0, u★ = 0.3, q★ = 2.0e-4, qⁱⁿ⁻ = 0.005)
     Ψₐ = (T = Tᵃᵗ, p = pᵃᵗ, q = qᵃᵗ, u = 1.0, v = 0.0, z = 10.0, h_bℓ = 1000.0)
-    χq = q★ / (qᵃᵗ - qⁱⁿ⁻)   # transfer coefficient consistent with q★ = χq Δq
-    Ψₛ = AirLandInterfaceState(InterfaceFluxScales(u★, 0.0, q★, 0.0, χq), InterfaceVelocities(0.0, 0.0), Tᵍʳᵒ, qⁱⁿ⁻)
+    Ξq = q★ / (qᵃᵗ - qⁱⁿ⁻)   # transfer coefficient consistent with q★ = Ξq Δq
+    Ψₛ = AirLandInterfaceState(InterfaceFluxScales(u★, 0.0, q★, 0.0, Ξq), InterfaceVelocities(0.0, 0.0), Tᵍʳᵒ, qⁱⁿ⁻)
     Ψˡᵃ = (T = Tˡᵃ, 𝒮 = 𝒮, effective_vapor_diffusivity = q.vapor_exchange.molecular_diffusivity,
            thermal_exchange_depth = 0.10)
     ℙₐ = (thermodynamics_parameters = ℂ, surface_layer_height = 10.0, gravitational_acceleration = 9.81)

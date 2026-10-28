@@ -258,11 +258,11 @@ end
 ##### The solver. Over one Picard iteration we linearize the similarity flux
 ##### as a bulk conductance law,
 #####
-#####     Jᵃ(q) ≈ Gᵃ (q - qᵃᵗ),      Gᵃ = ρᵃᵗ u★ χq,
+#####     Jᵃ(q) ≈ Gᵃ (q - qᵃᵗ),      Gᵃ = ρᵃᵗ u★ Ξq,
 #####
 ##### with the friction velocity and vapor transfer coefficient of the previous
 ##### similarity iterate, so `Jᵃ(qⁱⁿ⁻)` reproduces the flux `-ρᵃᵗ u★ q★` the
-##### similarity solver actually returned (`q★ = χq Δq`). The linearized balance
+##### similarity solver actually returned (`q★ = Ξq Δq`). The linearized balance
 ##### then has the two-conductances-in-series solution
 #####
 #####     Gᵉ (qᵉ - qⁱⁿ) = Gᵃ (qⁱⁿ - qᵃᵗ)

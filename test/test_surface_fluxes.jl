@@ -370,7 +370,7 @@ end
     qᵛ⁺ = saturation_specific_humidity(ℂ, Tᵈ, pᵃᵗ, Thermodynamics.Liquid())
     @test qᵛ⁺ > qᵃᵗ # reservoir saturation exceeds the sub-saturated air
 
-    # AirLandInterfaceState with a fixed aerodynamic conductance Gᵃ = ρ u★ χq.
+    # AirLandInterfaceState with a fixed aerodynamic conductance Gᵃ = ρ u★ Ξq.
     mkΨₛ(q) = AirLandInterfaceState(InterfaceFluxScales(0.3, -0.01, -1e-4, 0.0, 0.2),
                                     InterfaceVelocities(0.0, 0.0), Tₛ, q)
 

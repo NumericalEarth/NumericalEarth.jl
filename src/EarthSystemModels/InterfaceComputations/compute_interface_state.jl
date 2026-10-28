@@ -106,7 +106,7 @@ downwelling radiation `Qᵣ`, and the atmosphere and interior properties `ℙₐ
     Δθ = θᵃᵗ - Tₛ
     Δh = atmosphere_state.z # Assumption! The surface is at z = 0 -> Δh = zᵃᵗ - 0
 
-    u★, θ★, q★, χθ, χq = iterate_interface_fluxes(interface_formulation.turbulent_fluxes,
+    u★, θ★, q★, Ξθ, Ξq = iterate_interface_fluxes(interface_formulation.turbulent_fluxes,
                                                   Tₛ, qₛ, Δθ, Δq, Δh,
                                                   approximate_interface_state,
                                                   atmosphere_state,
@@ -114,7 +114,7 @@ downwelling radiation `Qᵣ`, and the atmosphere and interior properties `ℙₐ
                                                   atmosphere_properties)
 
     fluxes = InterfaceFluxScales(convert(FT, u★), convert(FT, θ★), convert(FT, q★),
-                                 convert(FT, χθ), convert(FT, χq))
+                                 convert(FT, Ξθ), convert(FT, Ξq))
 
     return rebuild_interface_state(approximate_interface_state,
                                    fluxes,

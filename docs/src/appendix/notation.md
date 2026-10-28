@@ -152,7 +152,7 @@ component-superscript rule above.
 | ``Λ^{\mathrm{gro}}`` | `ground_heat_flux` | ground conductance | Ground↔bulk conduction coefficient ``Λ^{\mathrm{gro}} = κ^T/ℓ^T`` of a `SoilConductiveFlux` (W m⁻² K⁻¹) |
 | ``-\Pi^{fc}`` | `field_capacity_head` | field-capacity suction head | Suction (negative pressure head) at which transpiration becomes unstressed (``β = 1``), for `PlantAvailableWaterStress` (m) |
 | ``-\Pi^{wp}`` | `wilting_point_head` | wilting-point suction head | Suction (negative pressure head) at which transpiration ceases (``β = 0``), for `PlantAvailableWaterStress` (m) |
-| ``w^{\mathrm{ucan}}`` | `undercanopy_transfer_velocity` | undercanopy transfer velocity | Ground↔canopy-air transfer velocity of a `CanopyInterface`: the flux per unit difference across the path, ``J = \rho^{\mathrm{at}} w^{\mathrm{ucan}} (q^{\mathrm{gro}} - q^{\mathrm{acan}})``, as ``u_\star \chi^q`` is for the canopy-air↔atmosphere exchange. A bulk transfer coefficient times a wind speed, not a diffusivity (m s⁻¹) |
+| ``w^{\mathrm{ucan}}`` | `undercanopy_transfer_velocity` | undercanopy transfer velocity | Ground↔canopy-air transfer velocity of a `CanopyInterface`: the flux per unit difference across the path, ``J = \rho^{\mathrm{at}} w^{\mathrm{ucan}} (q^{\mathrm{gro}} - q^{\mathrm{acan}})``, as ``u_\star \Xi_q`` is for the canopy-air↔atmosphere exchange. A bulk transfer coefficient times a wind speed, not a diffusivity (m s⁻¹) |
 | ``\lambda^{\mathrm{lea}}`` | `λˡᵉᵃ`, `leaf_area_index` | leaf area index | One-sided leaf area per unit ground area (m² m⁻²) |
 | ``T^{\mathrm{deep}}`` | `deep_temperature` | deep climatological temperature | Prescribed deep/climatological target temperature for force-restore (K) |
 | ``τ^{\mathrm{deep}}`` | `deep_time_scale` | deep-restore time scale | Time scale of surface relaxation toward ``T^{\mathrm{deep}}`` (s) |
@@ -237,7 +237,7 @@ and [`InterceptingHydrology`](@ref).
 | ``g^{\mathrm{lea}\,T}``, ``g^{\mathrm{lea}\,v}`` | – | leaf conductances | Leaf sensible-heat and vapor conductance to the canopy air (W m⁻² K⁻¹, kg m⁻² s⁻¹) |
 | ``g^{\mathrm{gro}\,T}``, ``g^{\mathrm{gro}\,v}`` | – | ground conductances | Ground sensible-heat and vapor conductance to the canopy air; ``g^{\mathrm{gro}\,v}`` blends the dry-layer branch with the saturated-skin branch ``g^{\mathrm{gro}\,v+}`` (W m⁻² K⁻¹, kg m⁻² s⁻¹) |
 | ``g^{\mathrm{dbr}}`` | – | ground-surface vapor conductance | Undercanopy vapor path through the ground-surface resistance alone, in series with ``G^e`` on the dry-layer branch (kg m⁻² s⁻¹) |
-| ``g^{aT}``, ``g^{av}`` | – | aerodynamic conductances | Canopy-air↔atmosphere sensible-heat and vapor conductance of the similarity solution, ``g^{av} = \rho^{\mathrm{at}} u_\star \chi^q``; [`DryLayerHumidity`](@ref) writes ``g^{av}`` as ``G^a``, the divider every humidity formulation closes against (W m⁻² K⁻¹, kg m⁻² s⁻¹) |
+| ``g^{aT}``, ``g^{av}`` | – | aerodynamic conductances | Canopy-air↔atmosphere sensible-heat and vapor conductance of the similarity solution, ``g^{av} = \rho^{\mathrm{at}} u_\star \Xi_q``; [`DryLayerHumidity`](@ref) writes ``g^{av}`` as ``G^a``, the divider every humidity formulation closes against (W m⁻² K⁻¹, kg m⁻² s⁻¹) |
 | ``G^e`` | – | dry-layer vapor conductance | Soil vapor conductance of [`DryLayerHumidity`](@ref) (kg m⁻² s⁻¹) |
 | ``f^{\mathrm{dbr}}`` | – | dry-branch weight | Weight of the dry-layer branch in the blended soil vapor exchange (–) |
 | ``\Sigma g^T``, ``\Sigma g^v`` | – | node conductance sums | Sums over the three branches feeding the canopy-air node, per side |
@@ -297,7 +297,7 @@ and [`InterceptingHydrology`](@ref).
 | ``u_\star`` | `u★` | friction velocity | Surface friction velocity (m s⁻¹) |
 | ``\theta_\star`` | `θ★` | temperature scale | Flux characteristic temperature (K) |
 | ``q_\star`` | `q★` | humidity scale | Flux characteristic specific humidity (kg kg⁻¹) |
-| ``\chi^u``, ``\chi^\theta``, ``\chi^q`` | `χu`, `χθ`, `χq` | flux-scale transfer coefficients | Relate the flux scales to the air–surface differences, ``u_\star = \chi^u ΔU``, ``\theta_\star = \chi^\theta Δθ``, ``q_\star = \chi^q Δq``. Similarity theory gives ``\chi = ϰ / (\log(Δh^d/ℓ) - ψ)``; bulk coefficients give ``\chi^u = \sqrt{C^D}``, ``\chi^\theta = C^H/\sqrt{C^D}``, ``\chi^q = C^q/\sqrt{C^D}`` (–) |
+| ``\Xi_u``, ``\Xi_\theta``, ``\Xi_q`` | `Ξu`, `Ξθ`, `Ξq` | flux-scale transfer coefficients | Relate the flux scales to the air–surface differences, ``u_\star = \Xi_u ΔU``, ``\theta_\star = \Xi_\theta Δθ``, ``q_\star = \Xi_q Δq``. Similarity theory gives ``\Xi = ϰ / (\log(Δh^d/ℓ) - ψ)``; bulk coefficients give ``\Xi_u = \sqrt{C^D}``, ``\Xi_\theta = C^H/\sqrt{C^D}``, ``\Xi_q = C^q/\sqrt{C^D}`` (–) |
 | ``b_\star`` | `b★` | buoyancy scale | Flux characteristic buoyancy (m s⁻²) |
 | ``L_\star`` | `L★` | Obukhov length | Monin–Obukhov length scale (m) |
 | ``C^D`` | `Cᴰ` | drag coefficient | Bulk transfer coefficient for momentum (–) |

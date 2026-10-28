@@ -363,16 +363,16 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     L★ = monin_obukhov_length(u★, b★, ϰ)
     form = flux_formulation.similarity_form
 
-    χu = ϰ / similarity_profile(form, ψu, Δhᵈ, ℓu₀, L★)
-    χθ = ϰ / similarity_profile(form, ψθ, Δhᵈ, ℓθ₀, L★)
-    χq = ϰ / similarity_profile(form, ψq, Δhᵈ, ℓq₀, L★)
+    Ξu = ϰ / similarity_profile(form, ψu, Δhᵈ, ℓu₀, L★)
+    Ξθ = ϰ / similarity_profile(form, ψθ, Δhᵈ, ℓθ₀, L★)
+    Ξq = ϰ / similarity_profile(form, ψq, Δhᵈ, ℓq₀, L★)
 
     # Recompute
-    u★ = χu * U
-    θ★ = χθ * Δθ
-    q★ = χq * Δq
+    u★ = Ξu * U
+    θ★ = Ξθ * Δθ
+    q★ = Ξq * Δq
 
-    return u★, θ★, q★, χθ, χq
+    return u★, θ★, q★, Ξθ, Ξq
 end
 
 """

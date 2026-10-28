@@ -45,7 +45,7 @@ end
 
 canopy_solve(surface, FT = Float64; kw...) = canopy_air_space_solve(surface, canopy_arguments(FT; kw...)..., FT(0))
 
-# Dry warm air over a bare (λˡᵉᵃᶠ = 0) ground; χθ = 0 decouples the node thermally to isolate the ground vapor path.
+# Dry warm air over a bare (λˡᵉᵃᶠ = 0) ground; Ξθ = 0 decouples the node thermally to isolate the ground vapor path.
 ground_vapor_state(𝒮) = (air_temperature = 305, air_specific_humidity = 0.006, flux_scales = (0.26, 1e-3, -1e-3, 0, 1/6),
                          saturation = 𝒮, land_temperature = 300, leaf_area_index = 0)
 
