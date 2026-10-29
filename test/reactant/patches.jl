@@ -2,6 +2,7 @@
 # landed. Every patch names what retires it: when that lands, delete the patch and rerun the tests;
 # delete this file when no patch is left.
 
+using Oceananigans: Oceananigans
 using Oceananigans.Architectures: ReactantState
 using Oceananigans.TimeSteppers: time_step!
 using NumericalEarth.NestedModels: NestedModel, exchange_state!

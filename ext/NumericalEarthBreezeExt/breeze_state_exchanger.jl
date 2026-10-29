@@ -167,7 +167,8 @@ function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, const
                                    moisture_name)
     grid = parent_atmosphere.temperature.grid
     arch = architecture(grid)
-    FT = eltype(grid)
+    # Inside a compiled program the grid's element type is traced; the kernel's `ZeroField`s take the plain one
+    FT = Oceananigans.Grids.unwrapped_eltype(eltype(grid))
 
     equilibrium_moisture = moisture_name === :ρqᵉ   # host-side, so the kernel takes an isbits `Bool`
 
