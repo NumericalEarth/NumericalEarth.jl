@@ -138,8 +138,8 @@ end
     set!(parent.temperature, (λ, φ, z, t) -> 290)
 
     child_grid = ConformalConicGrid(arch; size = (20, 20, 4), x = (200e3, 600e3), y = (-200e3, 200e3),
-                                           standard_parallels = (33, 45), central_longitude = -100,
-                                           latitude_of_origin = 39, z = (0, 1))
+                                    standard_parallels = (33, 45), central_longitude = -100,
+                                    latitude_of_origin = 39, z = (0, 1))
     loc = (Center(), Center(), Center())
     bc = NM.Interpolated(parent.temperature)
 
