@@ -92,7 +92,7 @@ end
         hˢⁱ = interior_state.hi[i, j, 1]
         hˢⁿ = interior_state.hs[i, j, 1]
         hc  = interior_state.hc[i, j, 1]
-        ℵᵢ  = interior_state.ℵ[i, j, 1]
+        ℵˢⁱᵢ = interior_state.ℵ[i, j, 1]
         Tⁱⁿ  = convert_to_kelvin(sea_ice_properties.temperature_units, interface_temperature[i, j, 1])
     end
 
@@ -114,7 +114,7 @@ end
     # Air–ice sublimation is over fresh ice — no interface salinity.
     initial_interface_state = AirIceInterfaceState(u★, u★, u★, uˢⁱ, vˢⁱ, Tⁱⁿ, convert(FT, qⁱⁿ))
     not_water = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
-    ice_free = ℵᵢ == 0
+    ice_free = ℵˢⁱᵢ == 0
 
     stop_criteria = interface_formulation.turbulent_fluxes.solver_stop_criteria
     needs_to_converge = stop_criteria isa ConvergenceStopCriteria

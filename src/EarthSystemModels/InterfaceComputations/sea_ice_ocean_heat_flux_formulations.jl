@@ -178,7 +178,7 @@ Returns `(Q, Tb, Sb)` where:
                                              liquidus, ocean_properties, ℰ, u★)
     Tᵒᶜ = ocean_state.T
     Sᵒᶜ = ocean_state.S
-    ℵ  = ice_state.ℵ
+    ℵˢⁱ = ice_state.ℵ
 
     ρᵒᶜ = ocean_properties.reference_density
     cᵒᶜ = ocean_properties.heat_capacity
@@ -188,7 +188,7 @@ Returns `(Q, Tb, Sb)` where:
     Tₘ = melting_temperature(liquidus, Sᵒᶜ)
 
     # Heat flux: Q > 0 means heat flux from ocean to ice (ocean cooling)
-    Qᵢₒ = ρᵒᶜ * cᵒᶜ * αₕ * u★ * (Tᵒᶜ - Tₘ) * ℵ
+    Qᵢₒ = ρᵒᶜ * cᵒᶜ * αₕ * u★ * (Tᵒᶜ - Tₘ) * ℵˢⁱ
 
     # For IceBathHeatFlux, interface is at ocean surface values
     return Qᵢₒ, Tₘ, Sᵒᶜ
@@ -227,7 +227,7 @@ Returns `(Q, Tb, Sb)` where:
     # Unpack states
     Tᵒᶜ = ocean_state.T
     Sᵒᶜ = ocean_state.S
-    ℵ  = ice_state.ℵ
+    ℵˢⁱ = ice_state.ℵ
 
     ρᵒᶜ = ocean_properties.reference_density
     cᵒᶜ = ocean_properties.heat_capacity
@@ -240,7 +240,7 @@ Returns `(Q, Tb, Sb)` where:
     T★, S★, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, ℰ, ρᵒᶜ, cᵒᶜ, liquidus)
 
     # Scale by ice concentration
-    Qᵢₒ = ℰ * q * ℵ
+    Qᵢₒ = ℰ * q * ℵˢⁱ
 
     return Qᵢₒ, T★, S★
 end

@@ -3,7 +3,7 @@ using Oceananigans.Fields: ZeroField
 using ..EarthSystemModels: NoAtmosInterfaceModel, NoOceanInterfaceModel, NoInterfaceModel, sea_ice_concentration, intercepted_snowfall
 using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 
-@inline τᶜᶜᶜ(i, j, k, grid, ρᵒᶜ⁻¹, ℵ, ρτᶜᶜᶜ) = @inbounds ρᵒᶜ⁻¹ * (1 - ℵ[i, j, k]) * ρτᶜᶜᶜ[i, j, k]
+@inline τᶜᶜᶜ(i, j, k, grid, ρᵒᶜ⁻¹, ℵˢⁱ, ρτᶜᶜᶜ) = @inbounds ρᵒᶜ⁻¹ * (1 - ℵˢⁱ[i, j, k]) * ρτᶜᶜᶜ[i, j, k]
 
 #####
 ##### Generic flux assembler — turbulent + sea-ice contributions only.
@@ -111,7 +111,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
     ρλʸⁱᵒ = sea_ice_ocean_fluxes.y_momentum_coefficient # implicit ice-ocean drag coefficient (meridional)
 
     @inbounds begin
-        ℵᵢ = sea_ice_concentration[i, j, 1]
+        ℵˢⁱᵢ = sea_ice_concentration[i, j, 1]
         Tᵒᶜ = ocean_surface_temperature[i, j, 1]
 
         Jʳⁿ = rainfall_flux[i, j, 1]
@@ -127,15 +127,15 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
     # Turbulent contributions to surface heat flux (radiation added later),
     # plus the fusion enthalpy the ocean supplies to melt the snowfall and icebergs
     ℒᶠ = ocean_properties.latent_heat_of_fusion
-    ΣQao = (𝒬ᵀ + 𝒬ᵛ) * (1 - ℵᵢ) + ℒᶠ * (Jˢⁿ - Pˢⁿ + Jⁱᵇ)
+    ΣQao = (𝒬ᵀ + 𝒬ᵛ) * (1 - ℵˢⁱᵢ) + ℒᶠ * (Jˢⁿ - Pˢⁿ + Jⁱᵇ)
 
     # Freshwater flux to the ocean per unit cell area (volume flux, positive up = leaving ocean):
     # - rain, land runoff, and icebergs reach the ocean everywhere (rain runs through cracks in ice)
     # - snowfall reaches the ocean except the part the sea ice reports having intercepted (Pˢⁿ)
-    # - evaporation acts only over the open-water fraction (1 - ℵᵢ)
+    # - evaporation acts only over the open-water fraction (1 - ℵˢⁱᵢ)
     # The atmospheric mass-flux convention is positive down; Jᵛ is positive up.
     ρᵒᶜ⁻¹ = 1 / ocean_properties.reference_density
-    ΣFao  = - (Jʳⁿ + Jˡⁿ + Jⁱᵇ + Jˢⁿ - Pˢⁿ) * ρᵒᶜ⁻¹ + (1 - ℵᵢ) * Jᵛ * ρᵒᶜ⁻¹
+    ΣFao  = - (Jʳⁿ + Jˡⁿ + Jⁱᵇ + Jˢⁿ - Pˢⁿ) * ρᵒᶜ⁻¹ + (1 - ℵˢⁱᵢ) * Jᵛ * ρᵒᶜ⁻¹
     Jʷao  = - ΣFao # Freshwater flux (positive increases the volume)
 
     τˣ = net_ocean_fluxes.u
@@ -146,7 +146,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
     Jˢ = net_ocean_fluxes.S
     Jʷ = net_ocean_fluxes.η
     Jᴴ = net_ocean_fluxes.freshwater_heat_content # Σᵢ Tᵢ Jʷᵢ — atmosphere freshwater enters at SST, ice meltwater at Tb
-    ℵ  = sea_ice_concentration
+    ℵˢⁱ = sea_ice_concentration
     cᵒᶜ⁻¹ = 1 / ocean_properties.heat_capacity
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
 
@@ -158,12 +158,12 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         Jᵀao = ΣQao * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
         Jᵀio =  𝒬ⁱⁿ * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
 
-        τˣᵃᵒ = ℑxᶠᵃᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτˣᵃᵒ)
-        τʸᵃᵒ = ℑyᵃᶠᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτʸᵃᵒ)
-        τˣⁱᵒ = ρτˣⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑxᶠᵃᵃ(i, j, 1, grid, ℵ)
-        τʸⁱᵒ = ρτʸⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑyᵃᶠᵃ(i, j, 1, grid, ℵ)
-        λˣⁱᵒ = ρλˣⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑxᶠᵃᵃ(i, j, 1, grid, ℵ)
-        λʸⁱᵒ = ρλʸⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑyᵃᶠᵃ(i, j, 1, grid, ℵ)
+        τˣᵃᵒ = ℑxᶠᵃᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵˢⁱ, ρτˣᵃᵒ)
+        τʸᵃᵒ = ℑyᵃᶠᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵˢⁱ, ρτʸᵃᵒ)
+        τˣⁱᵒ = ρτˣⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑxᶠᵃᵃ(i, j, 1, grid, ℵˢⁱ)
+        τʸⁱᵒ = ρτʸⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑyᵃᶠᵃ(i, j, 1, grid, ℵˢⁱ)
+        λˣⁱᵒ = ρλˣⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑxᶠᵃᵃ(i, j, 1, grid, ℵˢⁱ)
+        λʸⁱᵒ = ρλʸⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑyᵃᶠᵃ(i, j, 1, grid, ℵˢⁱ)
 
         # A branch rather than one `ifelse` per store: with CUDA.jl's external NVPTX back-end
         # (NVPTX_LLVM_Backend_jll 23.1.1 and 23.1.2), the eight `ifelse`-guarded stores
