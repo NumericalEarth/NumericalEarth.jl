@@ -83,13 +83,13 @@ apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, ocean::Simulation)
 
     @inbounds begin
         ℵᵢ = ice_concentration[i, j, 1]
-        Tₛ = ocean_surface_temperature[i, j, 1]
+        Tⁱⁿ = ocean_surface_temperature[i, j, 1]
     end
-    Tₛ = convert_to_kelvin(ocean_properties.temperature_units, Tₛ)
+    Tⁱⁿ = convert_to_kelvin(ocean_properties.temperature_units, Tⁱⁿ)
 
     rs = air_sea_interface_radiation_state(rk, radiation_state, i, j, kᴺ, grid, time)
 
-    ℐꜛˡʷ = emitted_longwave_radiation(Tₛ, rs.σ, rs.ϵ)
+    ℐꜛˡʷ = emitted_longwave_radiation(Tⁱⁿ, rs.σ, rs.ϵ)
     ℐₐˡʷ = absorbed_longwave_radiation(rs.ϵ, rs.ℐꜜˡʷ)
     ℐₜˢʷ = transmitted_shortwave_radiation(rs.α, rs.ℐꜜˢʷ)
 
