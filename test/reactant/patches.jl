@@ -20,3 +20,13 @@ function Oceananigans.TimeSteppers.time_step!(nm::ReactantNestedModel, Δt; call
     time_step!(nm.child, Δt; callbacks = (callbacks..., nm.child_callbacks...))
     return nothing
 end
+
+#####
+##### Still to patch properly
+#####
+
+# TODO. `validate_bracket` (src/NestedModels/interpolated_fts_boundary.jl) reduces node views of the
+# parent grid and a computed boundary line with `extrema`; on a GPU ReactantState grid those are views of
+# device arrays, which reduce only element by element on the host. It runs under `@allowscalar` for now.
+# The proper fix copies the nodes to the host in one transfer, as the hailmary's `host_nodes` does for
+# `xnodes`/`ynodes` (AeFS projects/4dvar-hailmary/patches.jl, A11 and A13).
