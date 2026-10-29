@@ -543,6 +543,8 @@ struct SoilConductiveFlux{K, Z}
     thickness    :: Z   # ℓᵀ, m
 end
 
+Adapt.@adapt_structure SoilConductiveFlux
+
 @inline ground_conductance(F::SoilConductiveFlux) = F.conductivity / F.thickness
 
 # Skin→bulk conductance of an interface temperature formulation that closes its own
