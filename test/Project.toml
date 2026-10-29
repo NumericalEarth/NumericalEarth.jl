@@ -41,6 +41,7 @@ ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
 NumericalEarth = {path = ".."}
 OceanBioME = {url = "https://github.com/OceanBioME/OceanBioME.jl", rev = "main"} # TODO: remove once OceanBioME 0.21 is registered
 Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "glw/oceananigans-0.116"} # TODO: remove once Terrarium 0.1.10 is registered (NumericalEarth/Terrarium.jl#225)
+SpeedyWeather = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", subdir = "SpeedyWeather", rev = "main"} # TODO: remove once SpeedyWeather 0.24 is registered
 
 [compat]
 ArchGDAL = "0.10"
@@ -70,7 +71,7 @@ RRTMGP = "0.21.9, 0.22"
 Random = "<0.0.1, 1"
 Scratch = "1"
 SeawaterPolynomials = "0.3.11"
-SpeedyWeather = "0.23"
+SpeedyWeather = "0.23, 0.24"
 Statistics = "<0.0.1, 1"
 Terrarium = "0.1.10"
 Test = "<0.0.1, 1"
